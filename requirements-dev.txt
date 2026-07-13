@@ -1,0 +1,4 @@
+# Инструменты для тестов (в проде не нужны). Ставить в тот же venv:
+#   ./venv/bin/pip install -r requirements-dev.txt
+pytest>=8
+pytest-asyncio>=0.23

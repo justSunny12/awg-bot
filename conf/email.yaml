@@ -1,0 +1,7 @@
+imap_host: ""
+imap_port: 993
+smtp_host: ""
+smtp_port: 587
+resume_address: ""
+poll_interval_sec: 60
+resume_code_len: 8

@@ -1,0 +1,8 @@
+# conf/quiet_hours.yaml — тихие часы: ночью уведомления доставляются без
+# звука/вибро (disable_notification). Сообщение приходит, просто не будит. Окно
+# может пересекать полночь (start > end: час >= start ИЛИ час < end). Критичные
+# уведомления шлются со звуком всегда (Notification.force_sound).
+
+quiet_hours_enabled: true
+quiet_hours_start: 20       # с 20:00 МСК
+quiet_hours_end: 7          # до 07:00 МСК

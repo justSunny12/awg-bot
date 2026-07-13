@@ -1,0 +1,20 @@
+[Unit]
+Description=AmneziaWG Telegram bot
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+# Бот работает от root: нужен docker exec + управление iptables в контейнере.
+User=root
+WorkingDirectory=/opt/awg-bot
+# Точка входа — пакет: python -m awgbot (нужен cwd=WorkingDirectory, где лежит awgbot/).
+ExecStart=/opt/awg-bot/venv/bin/python -m awgbot
+Restart=on-failure
+RestartSec=5
+# Секреты config читает сам из /etc/awg-bot/env; для ручного запуска — можно и так:
+# EnvironmentFile=/etc/awg-bot/env
+
+[Install]
+WantedBy=multi-user.target
