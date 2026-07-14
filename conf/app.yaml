@@ -14,7 +14,10 @@ docker:
 # Сеть: сервер занимает .0, клиенты идут с .1 (квирк докерной Amnezia)
 network:
   subnet_prefix: "10.8.1"
-  subnet_cidr: "10.8.1.0/24"     # читает install/harden_firewall.sh (SSH-вайтлист)
+  subnet_cidr: "10.8.1.0/24"     # информационное; harden_firewall.sh выводит
+                                 # источник SSH-вайтлиста (bridge-подсеть) из docker
+  ssh_port: 22                   # порт sshd хоста: общий для harden_firewall.sh
+                                 # и пер-пирного фильтра в контейнере
   ip_host_start: 1                 # первый выдаваемый хост (.1); .0 — сервер
   ip_host_end: 254
   # ── ДЕПЛОЙ-ЗНАЧЕНИЯ ЭТОГО ХОСТА. Пустые в шаблоне — установщик заполнит под

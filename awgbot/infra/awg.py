@@ -157,6 +157,15 @@ def _validate_ip(ip: str) -> str:
     return ip
 
 
+def _is_ipv4(ip: str) -> bool:
+    """Не-бросающая проверка IPv4 (для отсеивания мусора из docker/ip-вывода)."""
+    try:
+        _validate_ip(ip)
+        return True
+    except AwgError:
+        return False
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ЧИСТЫЕ ПАРСЕРЫ (тестируются без контейнера)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -557,6 +566,159 @@ def is_blocked(ip: str) -> bool:
     proc = _exec(["iptables", "-C", "FORWARD", "-s", f"{ip}/32", "-j", "DROP"],
                  check=False)
     return proc.returncode == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Пер-пирный SSH-доступ к хосту (только для админских пиров) — iptables в
+# контейнере. Хост за MASQUERADE видит всех пиров одним bridge-IP контейнера и
+# различать их не может; единственное место, где исходный 10.8.1.x ещё настоящий,
+# — FORWARD контейнера (до маскарадинга). Правила держим в отдельной цепочке
+# AWGBOT_SSH: реассертится в тех же точках, что блокировки (старт/тик/рестарт),
+# с дифф-скипом — пересборка только при фактическом изменении набора правил.
+# ─────────────────────────────────────────────────────────────────────────────
+_SSH_CHAIN = "AWGBOT_SSH"
+
+
+def host_ssh_targets() -> list[str]:
+    """Адреса ХОСТА, по которым до него дотягивается трафик из туннеля: шлюзы всех
+    docker-сетей контейнера (bridge-стороны) + внешний egress-IP хоста (на случай
+    hairpin: full-tunnel пир стучит по публичному IP → NAT → тот же хост). Их и
+    гейтим. Хостовые команды (docker/ip) — через _run, не docker exec."""
+    targets: list[str] = []
+
+    def _add(v: str) -> None:
+        v = v.strip()
+        if v and v not in targets and _is_ipv4(v):
+            targets.append(v)
+
+    try:
+        out = _run(["docker", "inspect", config.CONTAINER, "-f",
+                    "{{range .NetworkSettings.Networks}}{{.Gateway}}\n{{end}}"]
+                   ).stdout.decode(errors="replace")
+        for line in out.splitlines():
+            _add(line)
+    except AwgError:
+        pass
+    try:
+        out = _run(["ip", "route", "get", "1.1.1.1"]).stdout.decode(errors="replace")
+        m = re.search(r"\bsrc\s+([0-9.]+)", out)
+        if m:
+            _add(m.group(1))
+    except AwgError:
+        pass
+    return targets
+
+
+def ssh_reconcile(admin_ips: list[str], targets: list[str]) -> None:
+    """Идемпотентно привести пер-пирный SSH-фильтр (цепочка AWGBOT_SSH) к
+    желаемому виду: для каждого target — ACCEPT с адресов админских устройств на
+    SSH-порт, затем DROP всем остальным. Прочий трафик проходит цепочку насквозь.
+
+    Дифф-скип: желаемый набор правил сравнивается с текущим (`iptables -S`), и
+    если совпадает — ничего не трогаем. Реассерт идёт каждый монитор-тик
+    (3 мин), пересобирать цепочку вслепую — шум из docker exec и лишнее окно
+    «пустой цепочки» между flush и refill.
+
+    Пустой targets → фильтр не накладываем (не смогли определить адреса хоста —
+    безопаснее ничего не трогать, чем повесить неверный DROP)."""
+    if not targets:
+        return
+    port = str(config.SSH_PORT)
+    iface = config.AWG_INTERFACE
+    valid_ips = []
+    for ip in admin_ips:
+        try:
+            _validate_ip(ip)
+            valid_ips.append(ip)
+        except AwgError:
+            continue
+    valid_targets = [t for t in targets if _is_ipv4(t)]
+
+    # желаемое содержимое цепочки — в нотации `iptables -S` (как её печатает
+    # iptables-nft: -s/-d с /32, протокол и до, и после -d)
+    desired: list[str] = []
+    for tgt in valid_targets:
+        for ip in valid_ips:
+            desired.append(f"-A {_SSH_CHAIN} -s {ip}/32 -d {tgt}/32 -i {iface} "
+                           f"-p tcp -m tcp --dport {port} -j ACCEPT")
+    for tgt in valid_targets:
+        desired.append(f"-A {_SSH_CHAIN} -d {tgt}/32 -i {iface} "
+                       f"-p tcp -m tcp --dport {port} -j DROP")
+
+    # текущее состояние: -S <chain> (код ≠ 0 = цепочки нет)
+    cur_proc = _exec(["iptables", "-S", _SSH_CHAIN], check=False)
+    current = [ln.strip() for ln in
+               cur_proc.stdout.decode(errors="replace").splitlines()
+               if ln.startswith("-A ")] if cur_proc.returncode == 0 else None
+
+    jump_ok = _exec(["iptables", "-C", "FORWARD", "-j", _SSH_CHAIN],
+                    check=False).returncode == 0
+    if current == desired and jump_ok:
+        return                                       # состояние уже целевое
+
+    # цепочка (может уже существовать — код 1, игнорируем)
+    _exec(["iptables", "-N", _SSH_CHAIN], check=False)
+    # джамп из начала FORWARD (перед широким ACCEPT подсети), если ещё нет
+    if not jump_ok:
+        _exec(["iptables", "-I", "FORWARD", "1", "-j", _SSH_CHAIN])
+    # пересобрать содержимое: ACCEPT-и админам, затем DROP-и всем
+    _exec(["iptables", "-F", _SSH_CHAIN])
+    for tgt in valid_targets:
+        for ip in valid_ips:
+            _exec(["iptables", "-A", _SSH_CHAIN, "-i", iface, "-s", f"{ip}/32",
+                   "-d", tgt, "-p", "tcp", "--dport", port, "-j", "ACCEPT"])
+    for tgt in valid_targets:
+        _exec(["iptables", "-A", _SSH_CHAIN, "-i", iface,
+               "-d", tgt, "-p", "tcp", "--dport", port, "-j", "DROP"])
+
+
+# Fail-closed: пер-пирный фильтр держит бот, но между рестартом контейнера и
+# реассертом бота (до тика/если бот лежит) awg0 уже принимает пиров, а цепочки
+# ещё нет → широкий FORWARD ACCEPT пускает всех на :22. Закрываем это на самом
+# контейнере: отдельная PostUp-строка ставит ГЛУХОЙ DROP на SSH-к-хосту в момент
+# подъёма awg0 (до бота). ACCEPT'ы админам добавит бот на реассерте — то есть по
+# умолчанию закрыто, открывается только для админских пиров.
+#
+# Почему это безопасно для подъёма интерфейса: awg-quick прерывает bringup, если
+# команда PostUp вернула ненулевой код. Поэтому строка сконструирована так, что
+# ВСЕГДА завершается 0 (все iptables — под `|| true`, финал — `; true`), а нет
+# `ip`/`awk` → GW пустой → DROP просто не ставится, без ошибки. И `apply_config`
+# (awg syncconf через `awg-quick strip`) PostUp вырезает — на правках пиров эта
+# строка не исполняется, только при старте контейнера.
+_SSH_FAILSAFE_MARK = _SSH_CHAIN            # наличие в header = строка уже вставлена
+
+
+def _ssh_failsafe_postup() -> str:
+    i = config.AWG_INTERFACE
+    p = str(config.SSH_PORT)
+    return (
+        'PostUp = GW="$(ip route 2>/dev/null | awk \'/^default/{print $3; exit}\')"; '
+        f'iptables -N {_SSH_CHAIN} 2>/dev/null || true; '
+        f'iptables -C FORWARD -j {_SSH_CHAIN} 2>/dev/null || '
+        f'iptables -I FORWARD 1 -j {_SSH_CHAIN} 2>/dev/null || true; '
+        f'[ -n "$GW" ] && {{ iptables -C {_SSH_CHAIN} -i {i} -d "$GW" -p tcp '
+        f'--dport {p} -j DROP 2>/dev/null || iptables -A {_SSH_CHAIN} -i {i} '
+        f'-d "$GW" -p tcp --dport {p} -j DROP 2>/dev/null; }}; true'
+    )
+
+
+def ensure_ssh_failsafe() -> bool:
+    """Идемпотентно внедрить fail-closed PostUp в [Interface] awg0.conf.
+    Уже есть (маркер в header) → ничего не делает, False. Контейнер НЕ
+    перезапускаем: строка вступит в силу при следующем естественном старте.
+    Если Amnezia перегенерит конфиг и строку сотрёт — бот вернёт её на реассерте.
+    Возвращает True, если вставил."""
+    with mutation_lock:
+        conf = read_file(config.CONF_PATH)
+        header, peers = _split_conf(conf)
+        if _SSH_FAILSAFE_MARK in header:
+            return False
+        header = header.rstrip() + "\n" + _ssh_failsafe_postup()
+        new_conf = _build_conf(header, peers)
+        with writing():
+            _backup_conf()
+            write_file(config.CONF_PATH, new_conf)
+    return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────

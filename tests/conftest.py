@@ -68,6 +68,8 @@ def fake_awg(monkeypatch):
         blocked=set(), peers={}, clientstable={}, occupied=set(),
         responding=True, started_at="2026-01-01T00:00:00+03:00",
         _n=0, privpub={},
+        ssh_targets=["172.29.172.1", "172.17.0.1", "88.218.78.157"],
+        ssh_rules=None,
     )
     server_params = {
         "obfuscation": {k: str(i) for i, k in enumerate(configgen._OBF_ORDER)},
@@ -98,6 +100,11 @@ def fake_awg(monkeypatch):
     _set("is_blocked", lambda addr: addr in state.blocked)
     _set("container_started_at", lambda: state.started_at)
     _set("awg_responding", lambda: state.responding)
+    _set("host_ssh_targets", lambda: list(state.ssh_targets))
+    _set("ssh_reconcile",
+         lambda admin_ips, targets: setattr(state, "ssh_rules",
+                                            (sorted(admin_ips), list(targets))))
+    _set("ensure_ssh_failsafe", lambda: False)
     return state
 
 

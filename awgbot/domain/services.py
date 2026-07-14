@@ -576,6 +576,9 @@ class Services:
             pass
 
         cfg = configgen.generate(priv, pub, ip, server_params)
+        # новое устройство админа → сразу открыть ему SSH-к-хосту (не ждать цикла)
+        if client.tg_id == config.ADMIN_ID:
+            self.reconcile_ssh_access()
         return DeviceCreated(device_id=device_id, address=ip, vpn=cfg["vpn"], conf=cfg["conf"])
 
     def remove_device(self, device_id: int) -> Optional[int]:
@@ -1566,6 +1569,27 @@ class Services:
                 except awg.AwgError:
                     pass
 
+    def reconcile_ssh_access(self) -> None:
+        """Пер-пирный SSH-к-хосту для устройств админа. Пересобирает фильтр в
+        контейнере (цепочка AWGBOT_SSH): ACCEPT SSH только с адресов админских
+        устройств на адреса хоста, DROP остальным. Идемпотентно и эфемерно, как
+        блокировки, поэтому реассертится в тех же точках (старт, рестарт
+        контейнера, монитор-цикл) плюс сразу при создании админского устройства.
+
+        Пер-тик реассерт закрывает и удаление админского устройства, и
+        переиспользование его IP другим (не-админским) — иначе осиротевший ACCEPT
+        стал бы дырой."""
+        try:
+            targets = awg.host_ssh_targets()
+            admin_ips = self.db.admin_device_addresses(config.ADMIN_ID)
+            awg.ssh_reconcile(admin_ips, targets)
+            # fail-closed на контейнере: DROP-по-умолчанию при подъёме awg0 (до
+            # бота), чтобы окно «контейнер взлетел, бот ещё не реассертил» не
+            # пускало никого на SSH-к-хосту. Идемпотентно.
+            awg.ensure_ssh_failsafe()
+        except awg.AwgError:
+            pass
+
     def detect_and_handle_restart(self) -> bool:
         """Сверяет StartedAt контейнера с сохранённым. Если изменился (был
         рестарт) — реконсиляция блокировок. Возвращает True, если был рестарт."""
@@ -1577,6 +1601,7 @@ class Services:
             self.db.set_state("container_started_at", current)
             if stored is not None:                        # не первый запуск
                 self.reconcile_blocks()
+                self.reconcile_ssh_access()               # SSH-фильтр тоже слетел
                 return True
         return False
 
