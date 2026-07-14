@@ -18,11 +18,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import (AdminLinkGate, FaHintCB, AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
-                       Menu, PeriodCB, ReassignCB)
+                       Menu, PeriodCB, ReassignCB, UpdateCB)
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message,
                              remove_device_and_notify, send_conf, cleanup_content,
-                             send_link, send_qr, send_menu, content_finisher)
+                             send_link, send_qr, send_menu, content_finisher,
+                             show_main_menu)
 from awgbot.bot.notifier import notify_one, send_notifications
 from awgbot.domain.services import BYTES_PER_GB, SECONDS_PER_DAY, LimitReached, ServiceError
 from awgbot.bot.states import (AdminAddDevice, AdminSelfAddDevice, BlockPauseDays, CreateClient,
@@ -1219,6 +1220,83 @@ async def restart_apply(cb: CallbackQuery, callback_data: ConfirmCB, services):
                    await _main_menu_markup(services))
     except Exception as e:                            # noqa: BLE001
         await edit_nav(cb, services, f"Ошибка перезапуска: {e}", await _main_menu_markup(services))
+
+
+# ── Обновления бота (self-update) ────────────────────────────────────────────
+
+@router.callback_query(UpdateCB.filter(F.action == "check"))
+async def update_check(cb: CallbackQuery, services):
+    """Кнопка «Обновление бота» в админ-меню (работает даже при mute)."""
+    await cb.answer("Проверяю…")
+    nxt = await call(services.update_next)
+    if nxt is None:
+        await edit(cb, texts.update_current_ok(config.INSTALLED_VERSION), kb.to_menu())
+        return
+    await edit(cb, texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body),
+               kb.update_admin_available())
+
+
+@router.callback_query(UpdateCB.filter(F.action == "install"))
+async def update_install(cb: CallbackQuery, services):
+    """«Обновить» (из уведомления или меню обновления). Целевой поток:
+    стереть цепочку до этого шага ВКЛЮЧИТЕЛЬНО (контент-сообщения + само
+    сообщение с кнопкой), оставить единственное «дождись завершения» (без
+    кнопок), запомнить его для удаления после рестарта и запустить апдейтер.
+    Итог («успешно обновлен…» + changelog + «В меню») пришлёт новый процесс."""
+    nxt = await call(services.update_next)
+    if nxt is None:
+        await cb.answer("Обновлять не на что — версия актуальна.", show_alert=True)
+        return
+    await cb.answer("Запускаю обновление…")
+    chat_id = cb.message.chat.id
+    await cleanup_content(cb.bot, services, chat_id)
+    try:
+        await cb.message.delete()                     # сам шаг — тоже в утиль
+    except Exception:                                 # noqa: BLE001
+        pass
+    wait = await cb.bot.send_message(chat_id, texts.update_wait(nxt.tag))
+    await call(services.set_update_wait, chat_id, wait.message_id)
+    try:
+        await call(services.apply_update, nxt)
+        # успех: апдейтер вот-вот остановит сервис; «дождись» удалит и итог
+        # пришлёт уже новый процесс (confirm_applied_update на старте).
+    except Exception as e:                            # noqa: BLE001
+        # не взлетело ещё ДО апдейтера (сеть/sha256/запись файла) — прибраться:
+        # wait-сообщение, wait-ссылка и pending-флаг (иначе следующий рестарт
+        # принесёт ложный «не применилось»)
+        await call(services.pop_update_wait)
+        await call(services.db.set_state, "update_pending", "")
+        try:
+            await wait.delete()
+        except Exception:                             # noqa: BLE001
+            pass
+        await cb.bot.send_message(chat_id, texts.update_failed(str(e)),
+                                  reply_markup=kb.update_done_menu())
+
+
+@router.callback_query(UpdateCB.filter(F.action == "menu"))
+async def update_menu(cb: CallbackQuery, services, state: FSMContext):
+    """«В меню» на итоговом сообщении self-update: текст остаётся в истории,
+    снимаем только клавиатуру; меню — новым сообщением."""
+    await state.clear()
+    try:
+        await cb.message.edit_reply_markup(reply_markup=None)
+    except Exception:                                 # noqa: BLE001
+        pass
+    await show_main_menu(cb.message, services, "admin")
+    await cb.answer()
+
+
+@router.callback_query(UpdateCB.filter(F.action == "mute"))
+async def update_mute(cb: CallbackQuery, services):
+    """«Не уведомлять об обновлениях» — глушит автоуведомления и стартовую
+    проверку. Само уведомление убираем; ручная кнопка остаётся живой."""
+    await call(services.mute_updates)
+    await cb.answer("Уведомления об обновлениях выключены.")
+    try:
+        await cb.message.delete()
+    except Exception:                                 # noqa: BLE001
+        pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────

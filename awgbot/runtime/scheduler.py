@@ -147,6 +147,13 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             restarted = await asyncio.to_thread(services.detect_and_handle_restart)
             if restarted:
                 log.info("Обнаружен рестарт контейнера — блокировки переналожены")
+            # пер-пирный SSH-к-хосту: реассерт каждый тик — дёшево и гарантирует
+            # сходимость (удаление админ-устройства, переиспользование его IP,
+            # рестарт контейнера уберут/вернут правила в пределах одного цикла).
+            try:
+                await asyncio.to_thread(services.reconcile_ssh_access)
+            except Exception as e:                       # noqa: BLE001
+                log.warning("reconcile_ssh_access: %s", e)
             # ребайнд вотчдога: PID меняется ТОЛЬКО при рестарте (который мы
             # детектим по StartedAt), поэтому дёргать container_pid каждый тик
             # незачем — только при рестарте или если наблюдатель умер.
@@ -242,6 +249,29 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                           misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
         log.info("Email-выход из приостановки включён (опрос каждые %d сек)",
                  config.EMAIL_POLL_INTERVAL_SEC)
+
+    # проверка обновлений бота: раз в сутки (по умолчанию 10:00 МСК) + разово на
+    # старте (сразу после апдейта увидим следующую ступень, не дожидаясь утра).
+    # update_to_notify сам учитывает mute и «ровно один раз на версию».
+    async def job_update_check():
+        try:
+            nxt = await asyncio.to_thread(services.update_to_notify)
+            if nxt is not None:
+                from awgbot.bot import texts
+                from awgbot.bot import keyboards as kb
+                await send_notifications(bot, [Notification(
+                    config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body),
+                    reply_markup=kb.update_notify())])
+        except Exception as e:                        # noqa: BLE001
+            log.warning("update_check: %s", e)
+
+    scheduler.add_job(job_update_check,
+                      CronTrigger(hour=config.UPDATES_POLL_HOUR,
+                                  minute=config.UPDATES_POLL_MINUTE, timezone=config.TZ),
+                      id="update_check", max_instances=1, coalesce=True,
+                      misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
+    scheduler.add_job(job_update_check, "date", run_date=now, id="update_check_startup",
+                      max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
 
     return scheduler
 

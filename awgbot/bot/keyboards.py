@@ -37,7 +37,7 @@ def reply_hide() -> ReplyKeyboardRemove:
 
 from awgbot.bot.callbacks import (AdminLinkGate, FaHintCB, AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
                        FriendCB, GraceCB, GuideCB, HelpCB, Menu, PauseCB,
-                       PeriodCB, ReassignCB)
+                       PeriodCB, ReassignCB, UpdateCB)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -341,6 +341,8 @@ def admin_main(unassigned_count: int, self_has_devices: bool = False) -> InlineK
     kb.button(text="🔄 Статус", callback_data=Menu(action="refresh"))
     kb.button(text="💾 Бэкап", callback_data=Menu(action="backup"))
     pattern.append(2)
+    kb.button(text="⬆️ Обновление бота", callback_data=UpdateCB(action="check"))
+    pattern.append(1)
     kb.button(text="🔄 Перезапустить AWG", callback_data=Menu(action="restart"))
     pattern.append(1)
     kb.adjust(*pattern)
@@ -552,6 +554,37 @@ def to_menu() -> InlineKeyboardMarkup:
     """Одна кнопка «В меню» — завершитель под контентом (admin/client)."""
     kb = InlineKeyboardBuilder()
     kb.button(text="\u2b05\ufe0f В меню", callback_data=Menu(action="main"))
+    return kb.as_markup()
+
+
+def update_notify() -> InlineKeyboardMarkup:
+    """Кнопки уведомления о новой версии: Обновить / Скрыть / Не уведомлять.
+    «Скрыть» — универсальная HideCB (удаляет сообщение); «один раз на версию»
+    держит notified_tag в БД, не кнопка."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬆️ Обновить", callback_data=UpdateCB(action="install"))
+    kb.button(text="Скрыть", callback_data=HideCB())
+    kb.button(text="🔕 Не уведомлять об обновлениях", callback_data=UpdateCB(action="mute"))
+    kb.adjust(2, 1)
+    return kb.as_markup()
+
+
+def update_admin_available() -> InlineKeyboardMarkup:
+    """Админ-проверка «Обновление бота» с доступной версией: Обновить / Назад."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬆️ Обновить", callback_data=UpdateCB(action="install"))
+    kb.button(text="\u2b05\ufe0f Назад", callback_data=Menu(action="main"))
+    kb.adjust(2)
+    return kb.as_markup()
+
+
+def update_done_menu() -> InlineKeyboardMarkup:
+    """«В меню» на итоговом сообщении self-update. Свой колбэк (upd:menu), а не
+    Menu(main): стандартный обработчик РЕДАКТИРУЕТ сообщение в панель, а итог
+    должен остаться в истории — кнопка лишь снимается, меню приходит новым
+    сообщением."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="\u2b05\ufe0f В меню", callback_data=UpdateCB(action="menu"))
     return kb.as_markup()
 
 
