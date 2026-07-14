@@ -106,6 +106,10 @@ async def main() -> None:
         await asyncio.to_thread(services.reconcile_blocks)   # восстановить блокировки
     except Exception as e:                               # noqa: BLE001
         log.warning("reconcile_blocks на старте: %s", e)
+    try:
+        await asyncio.to_thread(services.reconcile_ssh_access)  # пер-пирный SSH-к-хосту
+    except Exception as e:                               # noqa: BLE001
+        log.warning("reconcile_ssh_access на старте: %s", e)
 
     # Публичное имя/описания бота — из conf/bot_identity.yaml (маскирующие
     # формулировки, ничего не должно выдавать назначение бота стороннему

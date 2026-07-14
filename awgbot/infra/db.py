@@ -895,6 +895,17 @@ class Database:
             "SELECT COUNT(*) AS c FROM devices WHERE client_id = ?", (client_id,)
         ).fetchone()["c"]
 
+    def admin_device_addresses(self, admin_tg_id: int) -> list[str]:
+        """Адреса (10.8.1.X) всех устройств, чей владелец — админ (по tg_id).
+        Источник вайтлиста для пер-пирного SSH-к-хосту (reconcile_ssh_access).
+        Служебный клиент («устройства без профиля») исключён явно: сегодня у него
+        нет tg_id, но SSH-вайтлист не должен зависеть от этого неявно."""
+        rows = self._connection().execute(
+            "SELECT d.address FROM devices d "
+            "JOIN clients c ON c.id = d.client_id "
+            "WHERE c.tg_id = ? AND c.is_service = 0", (admin_tg_id,)).fetchall()
+        return [r["address"] for r in rows]
+
     _DEVICE_FIELD_TABLE = {
         "name": "devices", "private_key": "devices",
         "block_reason": "devices", "client_id": "devices",

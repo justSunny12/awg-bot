@@ -161,10 +161,18 @@ PSK_PATH = f"{AWG_DIR}/wireguard_psk.key"
 
 _net = _app.get("network", {})
 SUBNET_PREFIX = _net.get("subnet_prefix", "10.8.1")
-# subnet_cidr из app.yaml Python-кодом не потребляется — его читает напрямую
-# install/harden_firewall.sh (дефолт VPN-подсети для SSH-вайтлиста).
+# subnet_cidr из app.yaml Python-кодом не потребляется — информационное поле.
+# install/harden_firewall.sh теперь выводит источник SSH-вайтлиста (bridge-подсеть
+# контейнера) динамически из docker, а не из subnet_cidr (тот адрес не доезжает
+# до хоста из-за MASQUERADE — см. reconcile_ssh_access).
 IP_HOST_START = _net.get("ip_host_start", 1)
 IP_HOST_END = _net.get("ip_host_end", 254)
+
+# Порт SSH хоста. Общий источник истины для двух слоёв фильтра доступа к SSH:
+# (1) хостовый вайтлист в harden_firewall.sh и (2) пер-пирный фильтр в контейнере
+# (reconcile_ssh_access). Если развести — при нестандартном порте фильтр молча
+# перестанет совпадать. Меняешь порт sshd — правь и здесь.
+SSH_PORT = int(_net.get("ssh_port", 22))
 
 
 # Деплой-топология этого хоста. Источник истины — yaml в /etc/awg-bot/conf:
