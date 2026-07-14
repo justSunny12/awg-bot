@@ -53,25 +53,47 @@ if ! command -v nft >/dev/null 2>&1; then
 fi
 
 # ── опрос параметров ─────────────────────────────────────────────────────────
+# дефолт порта — из app.yaml (network.ssh_port), чтобы хостовый вайтлист и
+# пер-пирный фильтр бота совпадали.
+_def_port="22"
+for _cfg in /etc/awg-bot/conf/app.yaml "$(dirname "$0")/../conf/app.yaml"; do
+    if [[ -r "$_cfg" ]]; then
+        _p="$(grep -oP '^\s*ssh_port:\s*"?\K[0-9]+' "$_cfg" 2>/dev/null | head -n1 || true)"
+        [[ -n "$_p" ]] && { _def_port="$_p"; break; }
+    fi
+done
 echo "Рекомендуется НЕСТАНДАРТНЫЙ порт SSH (меньше сканов). Должен совпадать с"
-echo "портом в /etc/ssh/sshd_config (менять его — отдельно от этого скрипта)."
-read -r -p "Порт SSH [22]: " SSH_PORT;   SSH_PORT="${SSH_PORT:-22}"
+echo "портом в /etc/ssh/sshd_config и в conf/app.yaml (network.ssh_port)."
+read -r -p "Порт SSH [${_def_port}]: " SSH_PORT;   SSH_PORT="${SSH_PORT:-$_def_port}"
 [[ "$SSH_PORT" =~ ^[0-9]+$ ]] || die "порт SSH должен быть числом"
 [[ "$SSH_PORT" == "22" ]] && echo "[!] порт 22 — стандартный; смена на нестандартный рекомендуется."
 
 echo
-echo "VPN-подсеть этого сервера попадёт в SSH-вайтлист: зайти по SSH можно будет,"
-echo "подключившись к собственному VPN (подсеть из conf/app.yaml, network.subnet_cidr)."
-# дефолт берём из уже настроенного app.yaml (визард положил туда subnet_cidr из
-# живого контейнера — подсеть может быть нестандартной); иначе 10.8.1.0/24.
-_def_net="10.8.1.0/24"
+echo "SSH «через свой туннель»: в вайтлист попадёт BRIDGE-подсеть контейнера AWG —"
+echo "именно её (а НЕ 10.8.1.0/24) хост видит как источник туннельного трафика,"
+echo "потому что контейнер маскарадит пиров в свой bridge-адрес до прихода на хост."
+echo "Пер-пирный доступ (только устройства админа) накладывает уже сам бот внутри"
+echo "контейнера — здесь лишь грубый гейт «пускать туннель на SSH вообще»."
+# имя контейнера — из app.yaml (docker.container), дальше bridge-подсеть из docker.
+_ctr="amnezia-awg2"
 for _cfg in /etc/awg-bot/conf/app.yaml "$(dirname "$0")/../conf/app.yaml"; do
     if [[ -r "$_cfg" ]]; then
-        _v="$(grep -oP '^\s*subnet_cidr:\s*"?\K[0-9./]+' "$_cfg" 2>/dev/null | head -n1)"
-        [[ -n "$_v" ]] && { _def_net="$_v"; break; }
+        _c="$(grep -oP '^\s*container:\s*"?\K[A-Za-z0-9._-]+' "$_cfg" 2>/dev/null | head -n1 || true)"
+        [[ -n "$_c" ]] && { _ctr="$_c"; break; }
     fi
 done
-read -r -p "VPN-подсеть (Enter — ${_def_net}; '-' — не добавлять): " VPN_NET
+# bridge-подсеть: сеть контейнера, отличная от дефолтного 'bridge' → её CIDR.
+_def_net=""
+if command -v docker >/dev/null 2>&1; then
+    _net="$(docker inspect "$_ctr" -f '{{range $k,$v := .NetworkSettings.Networks}}{{if ne $k "bridge"}}{{$k}}{{"\n"}}{{end}}{{end}}' 2>/dev/null | head -n1 || true)"
+    [[ -n "$_net" ]] && _def_net="$(docker network inspect "$_net" -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null | head -n1 || true)"
+fi
+if [[ -z "$_def_net" ]]; then
+    err "Не удалось определить bridge-подсеть контейнера '$_ctr' из docker."
+    err "Туннельный источник в вайтлист не подставлю — задайте вручную или '-'."
+    _def_net="-"
+fi
+read -r -p "Bridge-подсеть контейнера (Enter — ${_def_net}; '-' — не добавлять): " VPN_NET
 VPN_NET="${VPN_NET:-$_def_net}"
 
 # ── валидатор IP/CIDR (v4 и v6). Печатает 4|6, код 0; иначе код 1 ─────────────
@@ -102,8 +124,8 @@ echo "  • Enter (пусто) → SSH останется ОТКРЫТ ДЛЯ В
 echo "Формат: через запятую ИЛИ пробел. Пример: 203.0.113.7, 198.51.100.0/24, 2001:db8::/48"
 read -r -p "Whitelist для SSH (ваши IP): " USER_LIST_RAW
 
-# awg-IP — в вайтлисте по умолчанию: агент едет на awg-хост, это наш законный
-# управляющий адрес (вход через туннель). Плюс список пользователя.
+# bridge-подсеть контейнера — в вайтлисте по умолчанию: именно её хост видит как
+# источник туннельного SSH (после MASQUERADE). Плюс список пользователя.
 declare -a SSH_V4=("127.0.0.1") SSH_V6=("::1")
 vpn_in_list=0
 if [[ "$VPN_NET" != "-" && -n "$VPN_NET" ]]; then
