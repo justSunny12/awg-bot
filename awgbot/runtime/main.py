@@ -111,6 +111,22 @@ async def main() -> None:
     except Exception as e:                               # noqa: BLE001
         log.warning("reconcile_ssh_access на старте: %s", e)
 
+    # итог self-update: если перед рестартом запускалось обновление — удалить
+    # «дождись завершения» и отчитаться админу («успешно обновлен…» + changelog
+    # с кнопкой «В меню» / «не применилось»). Флаги стираются однократно.
+    try:
+        wait = await asyncio.to_thread(services.pop_update_wait)
+        note = await asyncio.to_thread(services.confirm_applied_update)
+        if wait is not None:                             # прибрать «дождись» всегда
+            try:
+                await bot.delete_message(chat_id=wait[0], message_id=wait[1])
+            except Exception:                           # noqa: BLE001
+                pass
+        if note is not None:
+            await send_notifications(bot, [note])
+    except Exception as e:                               # noqa: BLE001
+        log.warning("confirm_applied_update: %s", e)
+
     # Публичное имя/описания бота — из conf/bot_identity.yaml (маскирующие
     # формулировки, ничего не должно выдавать назначение бота стороннему
     # наблюдателю профиля). Правки, вбитые вручную в BotFather, переживут

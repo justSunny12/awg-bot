@@ -878,3 +878,76 @@ def pause_resumed_self(actual_days: int, new_end) -> str:
 HB_SERVER_DOWN = "🔴 Сервис AWG недоступен — контейнер не отвечает."
 HB_SERVER_UP = "🟢 Сервис AWG снова в строю."
 
+
+# ── Обновления бота (self-update) ────────────────────────────────────────────
+# Лимит сообщения Telegram — 4096 символов. Changelog кладём в сворачиваемую
+# цитату; если тело релиза + шапка не влезают, режем тело по границе строки.
+_TG_LIMIT = 4096
+
+
+def _changelog_block(body: str, header: str) -> str:
+    """<blockquote expandable> с телом релиза, усечённым под лимит Telegram.
+
+    Тело экранируем целиком ДО обрезки (рвать нечего — тегов внутри нет), режем
+    по границам строк под остаток бюджета. Обрезали — честный хвост. Возвращает
+    готовую цитату (или пустую строку, если тела нет)."""
+    body = (body or "").strip()
+    if not body:
+        return ""
+    tail = "\n…\n(изменения обрезаны)"
+    # бюджет под содержимое цитаты = лимит − шапка − теги − запас на хвост
+    budget = _TG_LIMIT - len(header) - len("<blockquote expandable></blockquote>") \
+        - len(tail) - 16
+    esc = _e(body)
+    if len(esc) <= budget:
+        inner = esc
+    else:
+        # режем исходный текст по строкам, затем экранируем срез
+        kept, used = [], 0
+        for line in body.split("\n"):
+            add = len(_e(line)) + 1
+            if used + add > budget:
+                break
+            kept.append(line)
+            used += add
+        inner = _e("\n".join(kept)) + tail
+    return f"<blockquote expandable>{inner}</blockquote>"
+
+
+def update_available(tag: str, body: str) -> str:
+    """Уведомление о доступной новой версии (следующей ступени)."""
+    header = f"Доступна новая версия бота: {_e(tag)}\nСписок изменений:\n"
+    return header + _changelog_block(body, header)
+
+
+def update_current_ok(installed: str) -> str:
+    """Админ-проверка: обновляться не на что."""
+    return f"Текущая версия бота ({_e(installed)}) актуальна"
+
+
+def update_admin_available(installed: str, tag: str, body: str) -> str:
+    """Админ-проверка: доступна следующая версия."""
+    header = (f"Текущая версия бота {_e(installed)}.\n"
+              f"Доступно обновление до {_e(tag)}\nСписок изменений:\n")
+    return header + _changelog_block(body, header)
+
+
+def update_wait(tag: str) -> str:
+    """Единственное сообщение на время обновления (цепочка до него стёрта)."""
+    return f"⏳ Обновление до {_e(tag)}, дождись завершения."
+
+
+def update_failed(reason: str) -> str:
+    return f"⚠️ Не удалось обновить: {_e(reason)}"
+
+
+def update_applied(tag: str, body: str) -> str:
+    """Итог успешного self-update (после рестарта): остаётся в истории.
+    Changelog установленной версии — под катом, как в уведомлении."""
+    header = f"✅ Бот успешно обновлен до {_e(tag)}\nСписок изменений:\n"
+    return header + _changelog_block(body, header)
+
+
+def update_not_applied(tag: str, installed: str) -> str:
+    return (f"⚠️ Обновление до {_e(tag)} не применилось — версия осталась "
+            f"{_e(installed)}. Смотри журнал: journalctl -u awg-bot-selfupdate*")

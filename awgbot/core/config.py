@@ -116,6 +116,21 @@ EMAIL_RESUME_ENABLED: bool = bool(
     EMAIL_RESUME_LOGIN and EMAIL_RESUME_PASSWORD
     and EMAIL_IMAP_HOST and EMAIL_SMTP_HOST and EMAIL_RESUME_ADDRESS)
 
+# ── Обновления бота (self-update из ПУБЛИЧНОГО GitHub-репо) ───────────────────
+# Бот раз в сутки (и на старте) смотрит релизы репо, находит СЛЕДУЮЩУЮ версию за
+# установленной (__version__) и уведомляет; по кнопке качает ассет, сверяет
+# sha256 (GitHub отдаёт его в assets[].digest) и зовёт `awg-bot update`. Репо
+# публичный → анонимный GET, никаких токенов. Фича «спит» только если наша версия
+# не найдена среди тегов релизов (нерелизная сборка) — это решает сам модуль.
+from awgbot import __version__ as _version_mod  # noqa: E402
+INSTALLED_VERSION = _version_mod.__version__
+_updates = _load_yaml("updates")
+UPDATES_REPO: str = _updates.get("repo", "justSunny12/awg-bot")
+UPDATES_ASSET_NAME: str = _updates.get("asset_name", "awg-bot.tgz")
+# Ежедневная проверка, часы:минуты в TZ бота (по умолчанию 10:00).
+UPDATES_POLL_HOUR: int = int(_updates.get("poll_hour", 10))
+UPDATES_POLL_MINUTE: int = int(_updates.get("poll_minute", 0))
+
 
 def validate() -> None:
     """Проверка обязательных параметров. Зовётся из main.py при старте (импорт
