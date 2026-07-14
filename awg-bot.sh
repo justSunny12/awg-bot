@@ -604,17 +604,33 @@ cmd_status() {
 }
 cmd_logs() { exec journalctl -u "$SERVICE" -n 200 -f; }
 
+cmd_start()   { require_root; systemctl start "$SERVICE";   _svc_feedback "запущен"; }
+cmd_stop()    { require_root; systemctl stop "$SERVICE";    _svc_feedback "остановлен"; }
+cmd_restart() { require_root; systemctl restart "$SERVICE"; _svc_feedback "перезапущен"; }
+_svc_feedback() {  # короткий итог после start/stop/restart
+    sleep 1
+    if systemctl is-active --quiet "$SERVICE"; then
+        ok "$SERVICE $1 (active)."
+    else
+        [[ "$1" == "остановлен" ]] && ok "$SERVICE $1." \
+            || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+    fi
+}
+
 usage() {
     cat <<EOF
 awg-bot — управление установленным ботом.
 
-  awg-bot reconfigure        перенастроить топологию/секреты (визард)
+  awg-bot status             состояние сервиса
+  awg-bot start              запустить сервис
+  awg-bot stop               остановить сервис
+  awg-bot restart            перезапустить сервис
+  awg-bot reconfigure        перенастроить топологию/секреты (wizard)
   awg-bot update [tgz]       обновить код из архива (по умолч. awg-bot-update.tgz)
   awg-bot backup             снимок БД + конфига + секретов
   awg-bot restore [tgz]      восстановить из снимка (по умолч. — самый свежий)
-  awg-bot status             состояние сервиса
   awg-bot logs               журнал сервиса (follow)
-  awg-bot uninstall          снять сервис (данные — по согласию)
+  awg-bot uninstall          удалить приложение (опционально: данные приложения)
 EOF
 }
 
@@ -627,6 +643,9 @@ case "$VERB" in
     uninstall)   cmd_uninstall ;;
     __post_uninstall) cmd_post_uninstall ;;
     status)      cmd_status ;;
+    start)       cmd_start ;;
+    stop)        cmd_stop ;;
+    restart)     cmd_restart ;;
     logs)        cmd_logs ;;
     -h|--help|help|"") usage ;;
     *) usage; die "неизвестная команда: $VERB" ;;
