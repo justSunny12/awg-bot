@@ -8,6 +8,7 @@ import pytest
 from awgbot.bot import notifier
 from awgbot.bot import keyboards as kb
 from awgbot.core import config
+from awgbot.core import settings
 from awgbot.domain.services import Notification
 from awgbot.util import timeutil
 
@@ -52,7 +53,7 @@ async def test_send_notifications_survives_one_failure():
 
 
 async def test_quiet_hours_silences_normal_but_not_force_sound(monkeypatch):
-    monkeypatch.setattr(config, "QUIET_HOURS_ENABLED", True)
+    settings.set_value("quiet_hours.quiet_hours_enabled", True)
     monkeypatch.setattr(timeutil, "in_quiet_hours", lambda *a, **k: True)
     bot = RecordingBot()
     await notifier.send_notifications(bot, [
@@ -64,7 +65,7 @@ async def test_quiet_hours_silences_normal_but_not_force_sound(monkeypatch):
 
 
 async def test_quiet_hours_disabled_never_silent(monkeypatch):
-    monkeypatch.setattr(config, "QUIET_HOURS_ENABLED", False)
+    settings.set_value("quiet_hours.quiet_hours_enabled", False)
     bot = RecordingBot()
     await notifier.send_notifications(bot, [Notification(111, "x")])
     assert bot.calls[0]["silent"] is False
@@ -82,7 +83,7 @@ async def test_default_markup_is_hide_only_else_passthrough():
 
 
 async def test_notify_one_skips_empty_and_delivers(monkeypatch):
-    monkeypatch.setattr(config, "QUIET_HOURS_ENABLED", False)
+    settings.set_value("quiet_hours.quiet_hours_enabled", False)
     bot = RecordingBot()
     await notifier.notify_one(bot, 0, "skip")               # нет адресата
     await notifier.notify_one(bot, 555, "hi")

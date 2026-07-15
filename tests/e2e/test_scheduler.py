@@ -11,6 +11,7 @@ import pytest
 
 from awgbot.runtime.scheduler import setup_scheduler, _service_failure_alerts
 from awgbot.core import config
+from awgbot.core import settings
 from awgbot.infra import awg
 from awgbot.util import timeutil
 
@@ -96,7 +97,7 @@ def test_service_failure_alert_after_sustained_downtime(services):
     assert _service_failure_alerts(db, ok=True) == []        # всё хорошо — тишина
     assert _service_failure_alerts(db, ok=False) == []       # первый сбой — только фиксируем
     # перематываем начало простоя за порог
-    past = timeutil.now() - datetime.timedelta(minutes=config.SERVICE_FAILURE_ALERT_MINUTES + 1)
+    past = timeutil.now() - datetime.timedelta(minutes=settings.get_int("app.monitoring.service_failure_alert_minutes", 5) + 1)
     db.set_state("service_down_since", timeutil.to_iso(past))
     alerts = _service_failure_alerts(db, ok=False)
     assert len(alerts) == 1 and alerts[0].force_sound is True

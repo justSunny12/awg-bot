@@ -2,6 +2,7 @@
 import pytest
 
 from awgbot.core import config
+from awgbot.core import settings
 from awgbot.domain import configgen as cg
 
 pytestmark = pytest.mark.unit
@@ -106,4 +107,4 @@ def test_pause_available_wording():
     """Приостановка показывает доступные (оставшиеся) дни, не использованные."""
     import awgbot.core.config as cfg
     # 21 использовано из 28 → доступно 7
-    assert cfg.PAUSE_MAX_TOTAL_DAYS - 21 == 7
+    assert settings.get_int("pause.pause_max_total_days", 28) - 21 == 7

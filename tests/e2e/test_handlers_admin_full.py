@@ -207,27 +207,25 @@ async def test_reassign_slot_no_aborts(services, fake_bot, make_active_client):
     assert services.db.get_device(dc.device_id).client_id == a.id   # не перепривязано
 
 
-# ── бэкап / перезапуск ───────────────────────────────────────────────────────
+# ── бэкап / перезапуск (переехали в ⚙️ Настройки) ────────────────────────────
 async def test_backup_now_sends_files(services, fake_bot, monkeypatch, tmp_path):
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
     f = tmp_path / "bot_backup.db"
     f.write_bytes(b"x")
     monkeypatch.setattr(services, "make_backup", lambda: [str(f)])
     cb, nav = _acb(fake_bot)
-    await ah.backup_now(cb, services)
+    await sh.do_action(cb, SetCB(sec="backup", act="do", key="now"), services)
     assert any(s[0] == "document" for s in nav.sent)
 
 
-async def test_restart_confirm_and_apply(services, fake_bot, monkeypatch):
+async def test_restart_awg_from_settings(services, fake_bot, monkeypatch):
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
     monkeypatch.setattr(services, "restart_service", lambda: None)
     cb, nav = _acb(fake_bot)
-    await ah.restart_confirm(cb)
+    await sh.do_action(cb, SetCB(sec="svc", act="do", key="awg"), services)
     assert any(s[0] == "edit_text" for s in nav.sent)
-    cb2, nav2 = _acb(fake_bot)
-    await ah.restart_apply(cb2, ConfirmCB(action="restart", ref=0, yes=True), services)
-    assert any(s[0] == "edit_text" for s in nav2.sent)
-    cb3, nav3 = _acb(fake_bot)
-    await ah.restart_apply(cb3, ConfirmCB(action="restart", ref=0, yes=False), services)
-    assert cb3.answers
 
 
 # ── личный VPN админа ────────────────────────────────────────────────────────

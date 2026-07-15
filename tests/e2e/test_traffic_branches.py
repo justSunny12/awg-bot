@@ -4,6 +4,7 @@
 import pytest
 
 from awgbot.core import config
+from awgbot.core import settings
 from awgbot.domain.services import BYTES_PER_GB
 
 pytestmark = pytest.mark.e2e
@@ -40,7 +41,7 @@ def test_client_warn_threshold_notice(services, fake_awg, make_active_client):
     client = make_active_client(tg_id=1201)
     dc = services.add_device(client.id, "d")
     services.set_client_traffic_limit(client.id, 100 * BYTES_PER_GB)
-    warn = config.TRAFFIC_WARN_PERCENT
+    warn = settings.get_int("limits.traffic_warn_percent", 80)
     used = (warn + 5) * BYTES_PER_GB
     services.db.add_traffic(dc.device_id, used, 0)
     notes = services.check_traffic_limits()
