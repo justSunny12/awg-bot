@@ -9,6 +9,7 @@ from aiogram.types import (InlineKeyboardButton, InlineKeyboardMarkup,
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.core import config
+from awgbot.core import settings
 from awgbot.bot import texts
 from awgbot.core import blocks as _blocks
 from awgbot.core.enums import SubStatus, ActivationStatus
@@ -37,7 +38,7 @@ def reply_hide() -> ReplyKeyboardRemove:
 
 from awgbot.bot.callbacks import (AdminLinkGate, FaHintCB, AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
                        FriendCB, GraceCB, GuideCB, HelpCB, Menu, PauseCB,
-                       PeriodCB, ReassignCB, UpdateCB)
+                       PeriodCB, ReassignCB, UpdateCB, SetCB)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -339,12 +340,8 @@ def admin_main(unassigned_count: int, self_has_devices: bool = False) -> InlineK
     kb.button(text="➕ Новый профиль", callback_data=Menu(action="add_client"))
     pattern.append(2)
     kb.button(text="🔄 Статус", callback_data=Menu(action="refresh"))
-    kb.button(text="💾 Бэкап", callback_data=Menu(action="backup"))
+    kb.button(text="⚙️ Настройки", callback_data=SetCB(sec="root"))
     pattern.append(2)
-    kb.button(text="⬆️ Обновление бота", callback_data=UpdateCB(action="check"))
-    pattern.append(1)
-    kb.button(text="🔄 Перезапустить AWG", callback_data=Menu(action="restart"))
-    pattern.append(1)
     kb.adjust(*pattern)
     return kb.as_markup()
 
@@ -937,4 +934,147 @@ def pause_resume_confirm(client_id: int) -> InlineKeyboardMarkup:
     kb.button(text="▶️ Да, возобновить сейчас", callback_data=PauseCB(action="resume", ref=client_id))
     kb.button(text="⬅️ Отмена", callback_data=PauseCB(action="cancel", ref=client_id))
     kb.adjust(1)
+    return kb.as_markup()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Экран «⚙️ Настройки» (админ). Значения читаются из settings в момент рендера —
+# после правки экран перерисовывается и показывает актуальное.
+# ─────────────────────────────────────────────────────────────────────────────
+def _chk(on: bool) -> str:
+    return "✅" if on else "⬜"
+
+
+def settings_root() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔔 Уведомления", callback_data=SetCB(sec="notify"))
+    kb.button(text="💳 Параметры подписок", callback_data=SetCB(sec="subs"))
+    kb.button(text="📊 Мониторинг", callback_data=SetCB(sec="mon"))
+    kb.button(text="💾 Резервное копирование", callback_data=SetCB(sec="backup"))
+    kb.button(text="🔄 Сервис", callback_data=SetCB(sec="svc"))
+    kb.button(text="⬆️ Обновления бота", callback_data=SetCB(sec="upd"))
+    kb.button(text="\u2b05\ufe0f В меню", callback_data=Menu(action="main"))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def _back(sec_to: str = "root") -> InlineKeyboardButton:
+    return InlineKeyboardButton(text="\u2b05\ufe0f Назад", callback_data=SetCB(sec=sec_to).pack())
+
+
+def settings_notify() -> InlineKeyboardMarkup:
+    s = settings
+    kb = InlineKeyboardBuilder()
+    qh = s.get_bool("quiet_hours.quiet_hours_enabled", True)
+    kb.button(text=f"{_chk(qh)} Тихие часы",
+              callback_data=SetCB(sec="notify", act="toggle", key="quiet_hours.quiet_hours_enabled"))
+    kb.button(text=f"Начало: {s.get_int('quiet_hours.quiet_hours_start', 20)}:00",
+              callback_data=SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_start"))
+    kb.button(text=f"Конец: {s.get_int('quiet_hours.quiet_hours_end', 7)}:00",
+              callback_data=SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_end"))
+    ra = s.get_bool("resource_alerts.enabled", True)
+    kb.button(text=f"{_chk(ra)} Алерты хоста (CPU/RAM/диск)",
+              callback_data=SetCB(sec="notify", act="toggle", key="resource_alerts.enabled"))
+    if ra:
+        kb.button(text=f"CPU: {s.get_int('resource_alerts.thresholds_percent.cpu', 80)}%",
+                  callback_data=SetCB(sec="notify", act="edit", key="resource_alerts.thresholds_percent.cpu"))
+        kb.button(text=f"RAM: {s.get_int('resource_alerts.thresholds_percent.ram', 80)}%",
+                  callback_data=SetCB(sec="notify", act="edit", key="resource_alerts.thresholds_percent.ram"))
+        kb.button(text=f"Диск: {s.get_int('resource_alerts.thresholds_percent.disk', 80)}%",
+                  callback_data=SetCB(sec="notify", act="edit", key="resource_alerts.thresholds_percent.disk"))
+    ce = "notifications.client_events"
+    for k, label in (("activation", "Активация клиента"), ("grace", "Самопродление"),
+                     ("over_limit", "Превышение лимита"), ("bonus", "Выдача бонуса")):
+        on = s.get_bool(f"{ce}.{k}", True)
+        kb.button(text=f"{_chk(on)} {label}",
+                  callback_data=SetCB(sec="notify", act="toggle", key=f"{ce}.{k}"))
+    # раскладка: тихие часы (1) + начало/конец (2) + алерты (1) [+ 3 порога] +
+    # 4 события клиентов — по одной кнопке в ряд для читаемости
+    rows = [1, 2, 1] + ([1, 1, 1] if ra else []) + [1, 1, 1, 1]
+    kb.adjust(*rows)
+    kb.row(_back())
+    return kb.as_markup()
+
+
+def settings_subs() -> InlineKeyboardMarkup:
+    s = settings
+    kb = InlineKeyboardBuilder()
+    kb.button(text=f"Бонус-квота: {s.get_int('limits.traffic_bonus_gb', 100)} ГБ",
+              callback_data=SetCB(sec="subs", act="edit", key="limits.traffic_bonus_gb"))
+    kb.button(text=f"Макс. дней паузы: {s.get_int('pause.pause_max_total_days', 28)}",
+              callback_data=SetCB(sec="subs", act="edit", key="pause.pause_max_total_days"))
+    kb.button(text=f"Grace-дней: {s.get_int('grace.grace_days', 14)}",
+              callback_data=SetCB(sec="subs", act="edit", key="grace.grace_days"))
+    kb.adjust(1)
+    kb.row(_back())
+    return kb.as_markup()
+
+
+def settings_mon() -> InlineKeyboardMarkup:
+    s = settings
+    kb = InlineKeyboardBuilder()
+    kb.button(text=f"Частота опроса: {s.get_int('app.scheduler.monitor_minutes', 3)} мин",
+              callback_data=SetCB(sec="mon", act="edit", key="app.scheduler.monitor_minutes"))
+    kb.button(text=f"Порог стрика: {s.get_int('app.monitoring.alert_streak', 5)}",
+              callback_data=SetCB(sec="mon", act="edit", key="app.monitoring.alert_streak"))
+    loud = s.get_bool("app.monitoring.service_failure_alert_loud", True)
+    kb.button(text=f"{_chk(loud)} Громкий алерт простоя AWG",
+              callback_data=SetCB(sec="mon", act="toggle", key="app.monitoring.service_failure_alert_loud"))
+    kb.button(text=f"Порог простоя: {s.get_int('app.monitoring.service_failure_alert_minutes', 5)} мин",
+              callback_data=SetCB(sec="mon", act="edit", key="app.monitoring.service_failure_alert_minutes"))
+    kb.adjust(1)
+    kb.row(_back())
+    return kb.as_markup()
+
+
+def settings_backup() -> InlineKeyboardMarkup:
+    s = settings
+    kb = InlineKeyboardBuilder()
+    kb.button(text=f"День автобэкапа: {s.get_int('app.scheduler.backup_day', 1)}",
+              callback_data=SetCB(sec="backup", act="edit", key="app.scheduler.backup_day"))
+    kb.button(text=f"Час автобэкапа: {s.get_int('app.scheduler.backup_hour', 12)}:00",
+              callback_data=SetCB(sec="backup", act="edit", key="app.scheduler.backup_hour"))
+    kb.button(text="💾 Сделать бэкап сейчас", callback_data=SetCB(sec="backup", act="do", key="now"))
+    kb.adjust(1)
+    kb.row(_back())
+    return kb.as_markup()
+
+
+def settings_svc() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔄 Перезапустить AWG", callback_data=SetCB(sec="svc", act="do", key="awg"))
+    kb.button(text="🔄 Перезапустить бота", callback_data=SetCB(sec="svc", act="do", key="bot"))
+    kb.adjust(1)
+    kb.row(_back())
+    return kb.as_markup()
+
+
+def settings_updates(muted: bool) -> InlineKeyboardMarkup:
+    """muted — из services (DB-state), не из YAML. never-расписание в UI
+    дизейблит тумблер уведомлений (принудительно off)."""
+    s = settings
+    kb = InlineKeyboardBuilder()
+    sched = str(s.get("updates.poll_schedule", "day")).lower()
+    never = sched == "never"
+    notify_on = (not muted) and not never
+    lbl = "Уведомлять об обновлениях" + (" (выкл: расписание «никогда»)" if never else "")
+    kb.button(text=f"{_chk(notify_on)} {lbl}",
+              callback_data=SetCB(sec="upd", act="toggle", key="notify"))
+    kb.adjust(1)
+    # пикер расписания
+    labels = {"hour": "Каждый час", "day": "Каждый день", "week": "Раз в неделю",
+              "month": "Раз в месяц", "never": "Никогда"}
+    for opt, text in labels.items():
+        mark = "🔘 " if opt == sched else ""
+        kb.button(text=f"{mark}{text}", callback_data=SetCB(sec="upd", act="pick", key="sched", val=opt))
+    kb.button(text="🔍 Проверить сейчас", callback_data=SetCB(sec="upd", act="do", key="check"))
+    kb.adjust(1, 2, 2, 1, 1)
+    kb.row(_back())
+    return kb.as_markup()
+
+
+def settings_cancel(sec: str) -> InlineKeyboardMarkup:
+    """Отмена ввода значения — вернуться в раздел sec без изменений."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="\u2b05\ufe0f Отмена", callback_data=SetCB(sec=sec))
     return kb.as_markup()

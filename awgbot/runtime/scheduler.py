@@ -221,8 +221,21 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         return CronTrigger(hour=settings.get_int("app.history.purge_hour", 3), minute=0, timezone=_TZ)
 
     def _trig_update_check():
-        return CronTrigger(hour=settings.get_int("updates.poll_hour", 10),
-                           minute=settings.get_int("updates.poll_minute", 0), timezone=_TZ)
+        """Триггер проверки обновлений по poll_schedule (hour|day|week|month|
+        never). never → None (job снимается/не тикает). Время — poll_hour:minute
+        (для hour берётся только минута)."""
+        sch = str(settings.get("updates.poll_schedule", "day")).lower()
+        h = settings.get_int("updates.poll_hour", 10)
+        m = settings.get_int("updates.poll_minute", 0)
+        if sch == "never":
+            return None
+        if sch == "hour":
+            return CronTrigger(minute=m, timezone=_TZ)
+        if sch == "week":
+            return CronTrigger(day_of_week=0, hour=h, minute=m, timezone=_TZ)
+        if sch == "month":
+            return CronTrigger(day=1, hour=h, minute=m, timezone=_TZ)
+        return CronTrigger(hour=h, minute=m, timezone=_TZ)     # day (дефолт)
 
     # ключ настройки → (job_id, фабрика триггера) для горячего reschedule
     _CLASS2 = {
@@ -234,8 +247,6 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         "app.scheduler.backup_day": ("backup", _trig_backup),
         "app.scheduler.backup_hour": ("backup", _trig_backup),
         "app.history.purge_hour": ("purge_history", _trig_purge),
-        "updates.poll_hour": ("update_check", _trig_update_check),
-        "updates.poll_minute": ("update_check", _trig_update_check),
     }
 
     scheduler.add_job(job_poll, _trig_poll(),
@@ -305,9 +316,13 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         except Exception as e:                        # noqa: BLE001
             log.warning("update_check: %s", e)
 
-    scheduler.add_job(job_update_check, _trig_update_check(),
+    _uc_trig = _trig_update_check()
+    scheduler.add_job(job_update_check,
+                      _uc_trig or CronTrigger(hour=10, minute=0, timezone=_TZ),
                       id="update_check", max_instances=1, coalesce=True,
                       misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
+    if _uc_trig is None:                              # «никогда» — job есть, но спит
+        scheduler.pause_job("update_check")
     scheduler.add_job(job_update_check, "date", run_date=now, id="update_check_startup",
                       max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
 
@@ -326,6 +341,23 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
 
     for _key, (_job_id, _factory) in _CLASS2.items():
         settings.on_change(_key, _make_reschedule(_job_id, _factory))
+
+    # update_check — особый: poll_schedule=never → триггер None → job на паузу;
+    # иначе reschedule (сам снимет паузу, если была). Три ключа ведут сюда.
+    def _hook_update_check(key, value):
+        try:
+            trig = _trig_update_check()
+            if trig is None:
+                scheduler.pause_job("update_check")
+                log.info("проверка обновлений выключена (never)")
+            else:
+                scheduler.reschedule_job("update_check", trigger=trig)
+                log.info("расписание проверки обновлений обновлено (%s=%s)", key, value)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("reschedule update_check (%s): %s", key, e)
+
+    for _k in ("updates.poll_schedule", "updates.poll_hour", "updates.poll_minute"):
+        settings.on_change(_k, _hook_update_check)
 
     return scheduler
 
