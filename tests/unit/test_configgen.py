@@ -105,6 +105,5 @@ def test_device_created_report_variants():
 
 def test_pause_available_wording():
     """Приостановка показывает доступные (оставшиеся) дни, не использованные."""
-    import awgbot.core.config as cfg
     # 21 использовано из 28 → доступно 7
     assert settings.get_int("pause.pause_max_total_days", 28) - 21 == 7

@@ -36,7 +36,10 @@ class _Handler(FileSystemEventHandler):
         return path.endswith(".yaml")
 
     def _schedule(self):
-        # игнор собственных записей settings.set()
+        # Самозапись settings.set_value: событие в пределах жизни флага —
+        # пропускаем. Событие может прилететь и ПОСЛЕ снятия флага (он живёт
+        # миллисекунды) — тогда случится «лишний» reload, но он безвреден:
+        # кэш уже обновлён set_value, diff пуст, хуки не дёргаются.
         if settings.is_self_writing():
             return
         with self._lock:

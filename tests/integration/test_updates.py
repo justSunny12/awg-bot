@@ -216,3 +216,19 @@ def test_apply_update_sets_pending(services, monkeypatch):
     monkeypatch.setattr(updates, "apply", lambda blob: None)
     services.apply_update(rel)
     assert services.db.get_state("update_pending") == "v9.9.9"
+
+
+def test_update_to_notify_respects_never_schedule(services, monkeypatch, tmp_path):
+    """poll_schedule=never глушит уведомления и при ручной правке YAML —
+    инвариант в самом update_to_notify, не только в UI."""
+    from awgbot.core import settings as st
+    (tmp_path / "updates.yaml").write_text('poll_schedule: "never"\n', encoding="utf-8")
+    st.init(tmp_path)
+    try:
+        rel = updates.Release("v9.9.9", (9, 9, 9), "x", "u", "a" * 64)
+        monkeypatch.setattr(services, "update_next", lambda: rel)
+        assert services.updates_muted() is False        # мьют НЕ включён
+        assert services.update_to_notify() is None      # но never глушит
+    finally:
+        from awgbot.core import config
+        st.init(config.CONF_DIR)

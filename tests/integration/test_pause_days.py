@@ -55,7 +55,6 @@ def test_pause_not_capped_by_subscription_remainder(services, fake_awg):
     services.db.activate_client("c", 5)
     avail = services.pause_available_days(cid)
     # не должно быть 2 (остаток подписки) — должно быть весь суммарный лимит
-    import awgbot.core.config as cfg
     assert avail == settings.get_int("pause.pause_max_total_days", 28)
     # и реально можно поставить на весь лимит
     ok, reserved, _, _ = services.enter_pause(cid, settings.get_int("pause.pause_max_total_days", 28))

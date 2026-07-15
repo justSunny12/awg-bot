@@ -4,9 +4,7 @@
 по всей кодовой базе разом.
 """
 import importlib
-import os
 import pkgutil
-import sys
 
 import pytest
 

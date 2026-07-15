@@ -8,7 +8,6 @@ import subprocess
 
 import pytest
 
-from awgbot.core import config
 from awgbot.infra import awg
 
 pytestmark = pytest.mark.unit

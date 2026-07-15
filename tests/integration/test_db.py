@@ -1,7 +1,6 @@
 """Integration: awgbot.infra.db на настоящей временной SQLite (без awg)."""
 import pytest
 
-from awgbot.core import models
 
 pytestmark = pytest.mark.integration
 
@@ -187,19 +186,18 @@ def test_content_cleanup_dedup(db):
     assert db.pop_content_msg_ids(200) == [50, 51]
 
 
-def test_additive_migration_resume_code(tmp_path):
-    """ПРОД-КРИТИЧНО: resume_code присутствует и миграция идемпотентна.
-    Симулируем боевую БД: инициализируем, дропаем колонку через пересоздание не
-    можем (SQLite), поэтому проверяем факт наличия + повторную миграцию."""
+def test_resume_code_migration_idempotent(tmp_path):
+    """ПРОД-КРИТИЧНО: resume_code присутствует, повторная миграция идемпотентна
+    (не падает и колонку не дублирует). Имя уникально: раньше тест затенялся
+    одноимённым соседом и НЕ ВЫПОЛНЯЛСЯ вовсе."""
     from awgbot.infra.db import Database
     path = str(tmp_path / "prod2.db")
     db = Database(path); db.init_schema()
     have = {r["name"] for r in db._connection().execute("PRAGMA table_info(client_pause)")}
     assert "resume_code" in have
-    # идемпотентность: повторная миграция не падает и колонку не дублирует
-    db._migrate_additive()
-    have2 = {r["name"] for r in db._connection().execute("PRAGMA table_info(client_pause)")}
-    assert list(have2).count("resume_code") if False else "resume_code" in have2
+    db._migrate_additive()                     # повторный прогон
+    cols = [r["name"] for r in db._connection().execute("PRAGMA table_info(client_pause)")]
+    assert cols.count("resume_code") == 1      # есть и ровно одна
 
 
 def test_additive_migration_resume_code(tmp_path):

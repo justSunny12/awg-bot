@@ -10,7 +10,6 @@ import datetime
 import pytest
 
 from awgbot.runtime.scheduler import setup_scheduler, _service_failure_alerts
-from awgbot.core import config
 from awgbot.core import settings
 from awgbot.infra import awg
 from awgbot.util import timeutil

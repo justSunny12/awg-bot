@@ -1,7 +1,6 @@
 """E2E: приостановка подписки («в отпуск») и отсрочка «продли на пару недель»."""
 import pytest
 
-from awgbot.core import config
 from awgbot.core import settings
 from awgbot.core.blocks import ClientBlock, DeviceBlock
 
