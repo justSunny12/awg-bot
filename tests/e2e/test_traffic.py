@@ -3,6 +3,7 @@ import pytest
 
 from awgbot.core.blocks import ClientBlock, DeviceBlock
 from awgbot.core import config
+from awgbot.core import settings
 from awgbot.domain.services import BYTES_PER_GB
 
 pytestmark = pytest.mark.e2e
@@ -39,7 +40,7 @@ def test_client_total_first_over_grants_bonus(services, make_active_client):
     services.check_traffic_limits()
     fresh = services.db.get_client(client.id)
     assert fresh.bonus_granted_month == 1                  # выдана разовая доп.квота
-    assert fresh.bonus_bytes == config.TRAFFIC_BONUS_GB * BYTES_PER_GB
+    assert fresh.bonus_bytes == settings.get_int("limits.traffic_bonus_gb", 100) * BYTES_PER_GB
     assert int(fresh.block_reason) & int(ClientBlock.TRAFFIC_CLIENT) == 0   # ещё не блок
 
 

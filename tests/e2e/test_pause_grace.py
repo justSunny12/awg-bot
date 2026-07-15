@@ -2,6 +2,7 @@
 import pytest
 
 from awgbot.core import config
+from awgbot.core import settings
 from awgbot.core.blocks import ClientBlock, DeviceBlock
 
 pytestmark = pytest.mark.e2e
@@ -11,7 +12,7 @@ pytestmark = pytest.mark.e2e
 def test_pause_available_days_year(services, make_active_client):
     client = make_active_client(period_kind="year")
     # min(единичный лимит, остаток суммарного, остаток подписки); подписка ~год
-    assert services.pause_available_days(client.id) == config.PAUSE_MAX_TOTAL_DAYS
+    assert services.pause_available_days(client.id) == settings.get_int("pause.pause_max_total_days", 28)
 
 
 def test_pause_unavailable_on_month(services, make_active_client):
@@ -27,7 +28,7 @@ def test_enter_and_exit_pause_blocks_then_restores(services, fake_awg, make_acti
     end_before = services.db.get_client(client.id).period_end
 
     ok, reserved, _, _ = services.enter_pause(client.id)
-    assert ok and reserved == config.PAUSE_MAX_TOTAL_DAYS
+    assert ok and reserved == settings.get_int("pause.pause_max_total_days", 28)
     paused = services.db.get_client(client.id)
     dev = services.db.get_device(dc.device_id)
     assert paused.is_paused is True
@@ -59,7 +60,7 @@ def test_pause_accumulates_used_days_limit(services, make_active_client):
     used = services.db.get_client(client.id).pause_used_days
     assert used >= 1                                       # фактические дни зачтены
     # доступное теперь = min(single, total-used, remaining)
-    left = config.PAUSE_MAX_TOTAL_DAYS - used
+    left = settings.get_int("pause.pause_max_total_days", 28) - used
     assert services.pause_available_days(client.id) == left
 
 

@@ -127,9 +127,8 @@ INSTALLED_VERSION = _version_mod.__version__
 _updates = _load_yaml("updates")
 UPDATES_REPO: str = _updates.get("repo", "justSunny12/awg-bot")
 UPDATES_ASSET_NAME: str = _updates.get("asset_name", "awg-bot.tgz")
-# Ежедневная проверка, часы:минуты в TZ бота (по умолчанию 10:00).
-UPDATES_POLL_HOUR: int = int(_updates.get("poll_hour", 10))
-UPDATES_POLL_MINUTE: int = int(_updates.get("poll_minute", 0))
+# Расписание проверки (poll_schedule/poll_hour/poll_minute) — hot, читается в
+# scheduler через settings.get, не здесь.
 
 
 def validate() -> None:
@@ -206,16 +205,14 @@ KEEPALIVE_SECONDS = _cc.get("keepalive_seconds", 25)
 CLIENT_ALLOWED_IPS = _cc.get("allowed_ips", "0.0.0.0/0, ::/0")
 SERVER_NAME = _cc.get("server_name", "Сервер 1")
 
-ONLINE_HANDSHAKE_SECONDS = _app.get("online_handshake_seconds", 300)
+# ПРИМЕЧАНИЕ: hot-параметры (лимиты, пауза, grace, тихие часы, пороги алертов,
+# частота монитора, расписания планировщика/обновлений) БОЛЬШЕ НЕ ЖИВУТ здесь —
+# они читаются в точке использования через settings.get из горячего кэша
+# conf/*.yaml (см. awgbot/core/settings.py), чтобы применяться без рестарта.
+# В config остаётся только то, что вплавлено в инициализацию (класс 3): деплой,
+# таймзона, секреты, а также немногое, что читается на старте и меняется редко.
 
 _sch = _app.get("scheduler", {})
-TRAFFIC_POLL_MINUTES = _sch.get("traffic_poll_minutes", 5)
-EXPIRY_CHECK_MINUTES = _sch.get("expiry_check_minutes", 60)
-MONITOR_MINUTES = _sch.get("monitor_minutes", 3)
-MONTHLY_RESET_DAY = _sch.get("monthly_reset_day", 1)
-MONTHLY_RESET_HOUR = _sch.get("monthly_reset_hour", 0)
-BACKUP_DAY = _sch.get("backup_day", 1)
-BACKUP_HOUR = _sch.get("backup_hour", 12)
 WATCHER_DEBOUNCE_SECONDS = _sch.get("watcher_debounce_seconds", 2)
 
 _mis = _app.get("misfire_grace", {})
@@ -227,7 +224,6 @@ MISSING_SWEEPS_THRESHOLD = _app.get("missing_sweeps_threshold", 2)
 
 _hist = _app.get("history", {})
 HISTORY_RETENTION_YEARS = _hist.get("retention_years", 2)
-HISTORY_PURGE_HOUR = _hist.get("purge_hour", 3)
 HISTORY_PURGE_BATCH_SIZE = _hist.get("purge_batch_size", 500)
 
 
@@ -238,54 +234,6 @@ _sub = _load_yaml("subscription")
 PERIOD_CHOICES = _sub.get("period_choices", ["day", "week", "month", "year", "never"])
 PERIOD_LABELS = _sub.get("period_labels", {})
 NOTIFY_THRESHOLDS_MINUTES = [tuple(x) for x in _sub.get("notify_thresholds_minutes", [])]
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# limits.yaml
-# ─────────────────────────────────────────────────────────────────────────────
-_lim = _load_yaml("limits")
-TRAFFIC_BONUS_GB = _lim.get("traffic_bonus_gb", 100)
-TRAFFIC_WARN_PERCENT = _lim.get("traffic_warn_percent", 80)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# grace.yaml / pause.yaml
-# ─────────────────────────────────────────────────────────────────────────────
-GRACE_DAYS = _load_yaml("grace").get("grace_days", 14)
-
-_pause = _load_yaml("pause")
-PAUSE_MAX_TOTAL_DAYS = _pause.get("pause_max_total_days", 28)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# quiet_hours.yaml
-# ─────────────────────────────────────────────────────────────────────────────
-_qh = _load_yaml("quiet_hours")
-QUIET_HOURS_ENABLED = _qh.get("quiet_hours_enabled", True)
-QUIET_HOURS_START = _qh.get("quiet_hours_start", 20)
-QUIET_HOURS_END = _qh.get("quiet_hours_end", 7)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Мониторинг co-located хоста (метрики читаем локально: /proc + statvfs)
-# ─────────────────────────────────────────────────────────────────────────────
-_mon = _app.get("monitoring") or {}
-SERVICE_FAILURE_ALERT_LOUD = _mon.get("service_failure_alert_loud", True)
-SERVICE_FAILURE_ALERT_MINUTES = _mon.get("service_failure_alert_minutes", 5)
-# Стрик гистерезиса ресурс-алертов: столько замеров подряд (тиков монитора)
-# нужно для срабатывания «высокая загрузка» и столько же — для отбоя.
-RESOURCE_ALERT_STREAK = _mon.get("alert_streak", 5)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# resource_alerts.yaml — алерты о загрузке хоста (CPU/RAM/диск)
-# ─────────────────────────────────────────────────────────────────────────────
-_ra = _load_yaml("resource_alerts")
-RESOURCE_ALERTS_ENABLED = _ra.get("enabled", True)
-_ra_th = _ra.get("thresholds_percent", {})
-RESOURCE_ALERT_CPU_PERCENT = _ra_th.get("cpu", 80)
-RESOURCE_ALERT_RAM_PERCENT = _ra_th.get("ram", 80)
-RESOURCE_ALERT_DISK_PERCENT = _ra_th.get("disk", 80)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

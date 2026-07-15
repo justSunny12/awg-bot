@@ -1,3 +1,4 @@
+from awgbot.core import settings
 def test_pause_day_choice_and_days(services, fake_awg):
     from awgbot.bot import keyboards as kb
     from awgbot.util import timeutil
@@ -55,10 +56,10 @@ def test_pause_not_capped_by_subscription_remainder(services, fake_awg):
     avail = services.pause_available_days(cid)
     # не должно быть 2 (остаток подписки) — должно быть весь суммарный лимит
     import awgbot.core.config as cfg
-    assert avail == cfg.PAUSE_MAX_TOTAL_DAYS
+    assert avail == settings.get_int("pause.pause_max_total_days", 28)
     # и реально можно поставить на весь лимит
-    ok, reserved, _, _ = services.enter_pause(cid, cfg.PAUSE_MAX_TOTAL_DAYS)
-    assert ok and reserved == cfg.PAUSE_MAX_TOTAL_DAYS
+    ok, reserved, _, _ = services.enter_pause(cid, settings.get_int("pause.pause_max_total_days", 28))
+    assert ok and reserved == settings.get_int("pause.pause_max_total_days", 28)
 
 
 def test_email_resume_code_cycle(services, fake_awg):

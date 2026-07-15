@@ -1187,54 +1187,7 @@ async def admin_link_deliver(cb: CallbackQuery, callback_data: AdminLinkGate, se
     await cb.answer()
 
 
-@router.callback_query(Menu.filter(F.action == "backup"))
-async def backup_now(cb: CallbackQuery, services):
-    await cb.answer("Готовлю бэкап…")
-    paths = await call(services.make_backup)
-    from aiogram.types import FSInputFile
-    for p in paths:
-        try:
-            await cb.message.answer_document(FSInputFile(p))
-        except Exception:
-            pass
-    await _return_panel(cb.message, services)
-
-
-@router.callback_query(Menu.filter(F.action == "restart"))
-async def restart_confirm(cb: CallbackQuery):
-    await edit(cb, "Перезапустить сервис AmneziaWG? (текущие подключения кратко прервутся)",
-               kb.yes_no("restart", ref=0))
-    await cb.answer()
-
-
-@router.callback_query(ConfirmCB.filter(F.action == "restart"))
-async def restart_apply(cb: CallbackQuery, callback_data: ConfirmCB, services):
-    if not callback_data.yes:
-        await edit_nav(cb, services, "Отменено.", await _main_menu_markup(services))
-        await cb.answer()
-        return
-    await cb.answer("Перезапускаю…")
-    try:
-        await call(services.restart_service)
-        await edit(cb, "✅ Сервис перезапущен, блокировки восстановлены.",
-                   await _main_menu_markup(services))
-    except Exception as e:                            # noqa: BLE001
-        await edit_nav(cb, services, f"Ошибка перезапуска: {e}", await _main_menu_markup(services))
-
-
 # ── Обновления бота (self-update) ────────────────────────────────────────────
-
-@router.callback_query(UpdateCB.filter(F.action == "check"))
-async def update_check(cb: CallbackQuery, services):
-    """Кнопка «Обновление бота» в админ-меню (работает даже при mute)."""
-    await cb.answer("Проверяю…")
-    nxt = await call(services.update_next)
-    if nxt is None:
-        await edit(cb, texts.update_current_ok(config.INSTALLED_VERSION), kb.to_menu())
-        return
-    await edit(cb, texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body),
-               kb.update_admin_available())
-
 
 @router.callback_query(UpdateCB.filter(F.action == "install"))
 async def update_install(cb: CallbackQuery, services):

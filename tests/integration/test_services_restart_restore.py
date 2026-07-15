@@ -6,6 +6,7 @@ import json
 import pytest
 
 from awgbot.core import config
+from awgbot.core import settings
 from awgbot.core.blocks import DeviceBlock
 from awgbot.domain import configgen
 from awgbot.domain.services import ServiceError
@@ -79,7 +80,7 @@ def test_reconcile_blocks_skips_unblocked_devices(services, fake_awg, make_activ
 
 # ── check_resource_alerts (гистерезис по стрикам) ────────────────────────────
 def test_resource_alert_fires_after_streak_and_recovers(services, fake_awg):
-    streak = config.RESOURCE_ALERT_STREAK
+    streak = settings.get_int("app.monitoring.alert_streak", 5)
     hi = {"cpu": 95, "ram": 10, "disk": 10}
     fired = []
     for _ in range(streak):
@@ -97,7 +98,7 @@ def test_resource_alert_fires_after_streak_and_recovers(services, fake_awg):
 
 
 def test_resource_alert_none_metric_does_not_move_counters(services, fake_awg):
-    streak = config.RESOURCE_ALERT_STREAK
+    streak = settings.get_int("app.monitoring.alert_streak", 5)
     # None по CPU не должен ни копить превышение, ни давать ложный отбой
     for _ in range(streak + 2):
         assert services.check_resource_alerts({"cpu": None, "ram": 10, "disk": 10}) == []

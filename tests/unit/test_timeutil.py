@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 from awgbot.core import config
+from awgbot.core import settings
 from awgbot.util import timeutil as t
 
 pytestmark = pytest.mark.unit
@@ -92,7 +93,7 @@ def test_handshake_online():
     base = int(ref.timestamp())
     assert t.handshake_is_online(None, ref=ref) is False
     assert t.handshake_is_online(base - 10, ref=ref) is True
-    assert t.handshake_is_online(base - (config.ONLINE_HANDSHAKE_SECONDS + 100), ref=ref) is False
+    assert t.handshake_is_online(base - (settings.get_int("app.online_handshake_seconds", 300) + 100), ref=ref) is False
     assert t.handshake_is_online(base + 100, ref=ref) is False       # из будущего → не онлайн
 
 
