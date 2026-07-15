@@ -135,3 +135,16 @@ def test_broken_yaml_at_init_skipped(tmp_path):
     assert settings.get("bad.x", "dflt") == "dflt"
     from awgbot.core import config
     settings.init(config.CONF_DIR)                 # восстановить для остальных
+
+
+def test_set_value_creates_missing_file(tmp_path):
+    """set_value на файл, которого нет в conf_dir (новый конфиг не досеян),
+    не роняет KeyError — создаёт файл и пишет значение."""
+    (tmp_path / "app.yaml").write_text("x: 1\n", encoding="utf-8")
+    settings.init(tmp_path)
+    assert not (tmp_path / "notifications.yaml").exists()
+    settings.set_value("notifications.client_events.activation", False)   # не падает
+    assert (tmp_path / "notifications.yaml").exists()
+    assert settings.get_bool("notifications.client_events.activation") is False
+    from awgbot.core import config
+    settings.init(config.CONF_DIR)

@@ -3,6 +3,6 @@
 # может пересекать полночь (start > end: час >= start ИЛИ час < end). Критичные
 # уведомления шлются со звуком всегда (Notification.force_sound).
 
-quiet_hours_enabled: true
+quiet_hours_enabled: false
 quiet_hours_start: 20       # с 20:00 МСК
 quiet_hours_end: 7          # до 07:00 МСК

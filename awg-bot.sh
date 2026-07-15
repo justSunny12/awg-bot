@@ -493,6 +493,8 @@ cmd_update() {
 
     build_venv
     install_unit
+    seed_conf                              # досеять НОВЫЕ conf-файлы этой версии
+                                           # (существующие не трогаем — idempotent)
     validate_config
 
     if [[ "$wipe" -eq 1 ]]; then

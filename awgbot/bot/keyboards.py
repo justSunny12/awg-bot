@@ -942,7 +942,7 @@ def pause_resume_confirm(client_id: int) -> InlineKeyboardMarkup:
 # после правки экран перерисовывается и показывает актуальное.
 # ─────────────────────────────────────────────────────────────────────────────
 def _chk(on: bool) -> str:
-    return "✅" if on else "⬜"
+    return "🟢" if on else "🔴"
 
 
 def settings_root() -> InlineKeyboardMarkup:
@@ -969,9 +969,9 @@ def settings_notify() -> InlineKeyboardMarkup:
     kb.button(text=f"{_chk(qh)} Тихие часы",
               callback_data=SetCB(sec="notify", act="toggle", key="quiet_hours.quiet_hours_enabled"))
     if qh:
-        kb.button(text=f"Начало: {s.get_int('quiet_hours.quiet_hours_start', 20)}:00",
+        kb.button(text=f"Начало: {s.get_int('quiet_hours.quiet_hours_start', 20)}:00 МСК",
                   callback_data=SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_start"))
-        kb.button(text=f"Конец: {s.get_int('quiet_hours.quiet_hours_end', 7)}:00",
+        kb.button(text=f"Конец: {s.get_int('quiet_hours.quiet_hours_end', 7)}:00 МСК",
                   callback_data=SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_end"))
     ra = s.get_bool("resource_alerts.enabled", True)
     kb.button(text=f"{_chk(ra)} Алерты хоста (CPU/RAM/диск)",
@@ -984,8 +984,8 @@ def settings_notify() -> InlineKeyboardMarkup:
         kb.button(text=f"Диск: {s.get_int('resource_alerts.thresholds_percent.disk', 80)}%",
                   callback_data=SetCB(sec="notify", act="edit", key="resource_alerts.thresholds_percent.disk"))
     ce = "notifications.client_events"
-    for k, label in (("activation", "Активация клиента"), ("grace", "Самопродление"),
-                     ("over_limit", "Превышение лимита"), ("bonus", "Выдача бонуса")):
+    for k, label in (("activation", "Активация клиента"), ("grace", "Активация грейс-периода"),
+                     ("over_limit", "Превышение лимита потребления"), ("bonus", "Выдача бонусного объёма")):
         on = s.get_bool(f"{ce}.{k}", True)
         kb.button(text=f"{_chk(on)} {label}",
                   callback_data=SetCB(sec="notify", act="toggle", key=f"{ce}.{k}"))
@@ -1004,7 +1004,7 @@ def settings_subs() -> InlineKeyboardMarkup:
               callback_data=SetCB(sec="subs", act="edit", key="limits.traffic_bonus_gb"))
     kb.button(text=f"Макс. дней паузы: {s.get_int('pause.pause_max_total_days', 28)}",
               callback_data=SetCB(sec="subs", act="edit", key="pause.pause_max_total_days"))
-    kb.button(text=f"Grace-дней: {s.get_int('grace.grace_days', 14)}",
+    kb.button(text=f"Продолжительность грейс-периода: {s.get_int('grace.grace_days', 14)}",
               callback_data=SetCB(sec="subs", act="edit", key="grace.grace_days"))
     kb.adjust(1)
     kb.row(_back())
@@ -1016,10 +1016,10 @@ def settings_mon() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text=f"Частота опроса: {s.get_int('app.scheduler.monitor_minutes', 3)} мин",
               callback_data=SetCB(sec="mon", act="edit", key="app.scheduler.monitor_minutes"))
-    kb.button(text=f"Порог стрика: {s.get_int('app.monitoring.alert_streak', 5)}",
+    kb.button(text=f"Отсчётов до сработки алерта: {s.get_int('app.monitoring.alert_streak', 5)}",
               callback_data=SetCB(sec="mon", act="edit", key="app.monitoring.alert_streak"))
     loud = s.get_bool("app.monitoring.service_failure_alert_loud", True)
-    kb.button(text=f"{_chk(loud)} Громкий алерт простоя AWG",
+    kb.button(text=f"{_chk(loud)} Алерт простоя AWG со звуком 24/7",
               callback_data=SetCB(sec="mon", act="toggle", key="app.monitoring.service_failure_alert_loud"))
     kb.button(text=f"Порог простоя: {s.get_int('app.monitoring.service_failure_alert_minutes', 5)} мин",
               callback_data=SetCB(sec="mon", act="edit", key="app.monitoring.service_failure_alert_minutes"))
@@ -1031,11 +1031,11 @@ def settings_mon() -> InlineKeyboardMarkup:
 def settings_backup() -> InlineKeyboardMarkup:
     s = settings
     kb = InlineKeyboardBuilder()
-    kb.button(text=f"День автобэкапа: {s.get_int('app.scheduler.backup_day', 1)}",
+    kb.button(text=f"📆 День месяца для автобэкапа: {s.get_int('app.scheduler.backup_day', 1)}",
               callback_data=SetCB(sec="backup", act="edit", key="app.scheduler.backup_day"))
-    kb.button(text=f"Час автобэкапа: {s.get_int('app.scheduler.backup_hour', 12)}:00",
+    kb.button(text=f"🕘 Время запуска автобэкапа: {s.get_int('app.scheduler.backup_hour', 12)}:00",
               callback_data=SetCB(sec="backup", act="edit", key="app.scheduler.backup_hour"))
-    kb.button(text="💾 Сделать бэкап сейчас", callback_data=SetCB(sec="backup", act="do", key="now"))
+    kb.button(text="💾 Создать резервную копию", callback_data=SetCB(sec="backup", act="do", key="now"))
     kb.adjust(1)
     kb.row(_back())
     return kb.as_markup()
