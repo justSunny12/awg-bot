@@ -200,7 +200,14 @@ def set_value(key: str, value: Any) -> list[str]:
         raise RuntimeError("settings.init() не вызван")
     fpath = _conf_dir / f"{stem}.yaml"
     if not fpath.exists():
-        raise KeyError(f"нет файла conf/{stem}.yaml для ключа {key!r}")
+        # Файл ещё не досеян в conf_dir (например, добавлен новой версией, а
+        # апдейтер не скопировал его в /etc). Не роняем хендлер KeyError'ом —
+        # создаём файл: значение станет источником, дефолты остальных ключей
+        # берутся из get(..., default) в точках использования. Досев из поставки
+        # (seed_conf) при следующем апдейте просто не тронет уже существующий.
+        log.warning("settings: conf/%s.yaml отсутствовал — создаю под ключ %r",
+                    stem, key)
+        fpath.write_text("", encoding="utf-8")
 
     ruamel = YAML()
     ruamel.preserve_quotes = True

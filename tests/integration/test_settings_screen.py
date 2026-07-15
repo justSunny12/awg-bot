@@ -61,7 +61,7 @@ def test_settings_updates_kb_never_disables_notify(conf):
     markup = kb.settings_updates(muted=False)     # mute снят, но never
     texts_in_kb = [b.text for row in markup.inline_keyboard for b in row]
     notify_btn = next(t for t in texts_in_kb if "Уведомлять" in t)
-    assert notify_btn.startswith("⬜")             # выключено визуально
+    assert notify_btn.startswith("🔴")             # выключено визуально
     assert "никогда" in notify_btn.lower()
 
 
