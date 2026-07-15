@@ -85,17 +85,35 @@ def test_backup_cron_reschedules(sched_conf, services, db, monkeypatch):
 
 
 def test_update_schedule_variants_and_never_pause(sched_conf, services, db, monkeypatch):
-    """poll_schedule: hour/week/month → reschedule; never → pause_job."""
+    """poll_schedule: week/month → reschedule; never → pause_job."""
     scheduler = _build_scheduler(services, db)
     resched, paused = [], []
     monkeypatch.setattr(scheduler, "reschedule_job",
                         lambda job_id, trigger=None: resched.append((job_id, str(trigger))))
     monkeypatch.setattr(scheduler, "pause_job", lambda job_id: paused.append(job_id))
 
-    settings.set_value("updates.poll_schedule", "hour")
     settings.set_value("updates.poll_schedule", "week")
     settings.set_value("updates.poll_schedule", "month")
-    assert [j for j, _ in resched] == ["update_check"] * 3
-    assert "day_of_week" in resched[1][1]           # week — по дню недели
+    assert [j for j, _ in resched] == ["update_check"] * 2
+    assert "day_of_week" in resched[0][1]           # week — по дню недели
     settings.set_value("updates.poll_schedule", "never")
     assert paused == ["update_check"]               # never — пауза, не reschedule
+
+
+def test_legacy_hour_schedule_migrates_to_day(tmp_path, services, db, monkeypatch):
+    """Снятый вариант poll_schedule=hour при построении расписания трактуется
+    как day и однократно переписывается в YAML (чистая миграция)."""
+    (tmp_path / "app.yaml").write_text(
+        "timezone: \"Europe/Moscow\"\nscheduler:\n  monitor_minutes: 3\nhistory:\n  purge_hour: 3\n",
+        encoding="utf-8")
+    (tmp_path / "updates.yaml").write_text(
+        'poll_schedule: "hour"\npoll_hour: 10\npoll_minute: 0\n', encoding="utf-8")
+    settings.init(tmp_path)
+    try:
+        _build_scheduler(services, db)                 # регистрация зовёт _trig_update_check
+        assert settings.get("updates.poll_schedule") == "day"      # мигрировано
+        assert 'poll_schedule: "day"' in (tmp_path / "updates.yaml").read_text(encoding="utf-8")
+    finally:
+        settings._on_change.clear()
+        from awgbot.core import config
+        settings.init(config.CONF_DIR)

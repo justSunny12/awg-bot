@@ -52,12 +52,12 @@ def client_main(has_devices: bool = True) -> InlineKeyboardMarkup:
         kb.button(text="📱 Мои устройства", callback_data=Menu(action="devices"))
     kb.button(text="⚙️ Управлять подпиской", callback_data=Menu(action="info"))
     if has_devices:
-        kb.button(text="🔗 Получить ссылку", callback_data=Menu(action="gen_link"))
-        kb.button(text="🔳 Получить QR-код", callback_data=Menu(action="gen_qr"))
-        kb.button(text="📄 Получить файл", callback_data=Menu(action="gen_file"))
+        kb.button(text="🔗 Ссылка", callback_data=Menu(action="gen_link"))
+        kb.button(text="🔳 QR-код", callback_data=Menu(action="gen_qr"))
+        kb.button(text="📄 Файл", callback_data=Menu(action="gen_file"))
     kb.button(text="❓ Помощь с настройкой", callback_data=HelpCB(platform="root"))
     if has_devices:
-        kb.adjust(1, 1, 1, 1, 2, 1)     # добавить/устройства/инфо / ссылка / [QR|файл] / помощь
+        kb.adjust(1, 1, 1, 3, 1)        # добавить/устройства/инфо / [ссылка|QR|файл] / помощь
     else:
         kb.adjust(1, 1, 1)          # добавить / инфо / помощь
     return kb.as_markup()
@@ -327,11 +327,10 @@ def admin_main(unassigned_count: int, self_has_devices: bool = False) -> InlineK
     if self_has_devices:
         kb.button(text="📱 Мои устройства", callback_data=AdminSelfCB(action="devices"))
         pattern.append(1)
-        kb.button(text="🔗 Получить ссылку", callback_data=AdminSelfCB(action="gen_link"))
-        pattern.append(1)
-        kb.button(text="🔳 Получить QR-код", callback_data=AdminSelfCB(action="gen_qr"))
-        kb.button(text="📄 Получить файл", callback_data=AdminSelfCB(action="gen_file"))
-        pattern.append(2)
+        kb.button(text="🔗 Ссылка", callback_data=AdminSelfCB(action="gen_link"))
+        kb.button(text="🔳 QR-код", callback_data=AdminSelfCB(action="gen_qr"))
+        kb.button(text="📄 Файл", callback_data=AdminSelfCB(action="gen_file"))
+        pattern.append(3)
     if unassigned_count > 0:
         kb.button(text=f"📦 Устройства без профиля ({unassigned_count})",
                   callback_data=Menu(action="unassigned"))
@@ -951,7 +950,7 @@ def settings_root() -> InlineKeyboardMarkup:
     kb.button(text="💳 Параметры подписок", callback_data=SetCB(sec="subs"))
     kb.button(text="📊 Мониторинг", callback_data=SetCB(sec="mon"))
     kb.button(text="💾 Резервное копирование", callback_data=SetCB(sec="backup"))
-    kb.button(text="🔄 Сервис", callback_data=SetCB(sec="svc"))
+    kb.button(text="🔄 Обслуживание", callback_data=SetCB(sec="svc"))
     kb.button(text="⬆️ Обновления бота", callback_data=SetCB(sec="upd"))
     kb.button(text="\u2b05\ufe0f В меню", callback_data=Menu(action="main"))
     kb.adjust(1)
@@ -989,9 +988,9 @@ def settings_notify() -> InlineKeyboardMarkup:
         on = s.get_bool(f"{ce}.{k}", True)
         kb.button(text=f"{_chk(on)} {label}",
                   callback_data=SetCB(sec="notify", act="toggle", key=f"{ce}.{k}"))
-    # раскладка: тихие часы (1) [+ начало/конец (2)] + алерты (1) [+ 3 порога] +
+    # раскладка: тихие часы (1) [+ начало/конец (2)] + алерты (1) [+ 3 порога в ряд] +
     # 4 события клиентов — по одной кнопке в ряд для читаемости
-    rows = [1] + ([2] if qh else []) + [1] + ([1, 1, 1] if ra else []) + [1, 1, 1, 1]
+    rows = [1] + ([2] if qh else []) + [1] + ([3] if ra else []) + [1, 1, 1, 1]
     kb.adjust(*rows)
     kb.row(_back())
     return kb.as_markup()
@@ -1063,13 +1062,13 @@ def settings_updates(muted: bool) -> InlineKeyboardMarkup:
               callback_data=SetCB(sec="upd", act="toggle", key="notify"))
     kb.adjust(1)
     # пикер расписания
-    labels = {"hour": "Каждый час", "day": "Каждый день", "week": "Раз в неделю",
+    labels = {"day": "Каждый день", "week": "Раз в неделю",
               "month": "Раз в месяц", "never": "Никогда"}
     for opt, text in labels.items():
         mark = "🔘 " if opt == sched else ""
         kb.button(text=f"{mark}{text}", callback_data=SetCB(sec="upd", act="pick", key="sched", val=opt))
     kb.button(text="🔍 Проверить сейчас", callback_data=SetCB(sec="upd", act="do", key="check"))
-    kb.adjust(1, 2, 2, 1, 1)
+    kb.adjust(1, 2, 2, 1)
     kb.row(_back())
     return kb.as_markup()
 
