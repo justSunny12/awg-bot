@@ -9,5 +9,8 @@ tzdata>=2024.1            # таймзоны для zoneinfo на минимал
 qrcode>=7.4                # генерация QR-кодов (QR для импорта в AmneziaVPN)
 Pillow>=10               # сборка кадров QR в анимированный GIF
 PyYAML>=6                # чтение conf/*.yaml (конфигурация приложения)
+ruamel.yaml>=0.18        # round-trip запись conf/*.yaml из чат-настроек с
+                         # сохранением комментариев/порядка (PyYAML их теряет);
+                         # чистый Python, ~1.3 МБ, +3.4 МБ RSS, ~11 мс на запись
 PyNaCl>=1.5              # libsodium: SecretBox + argon2id (шифрование бэкапов,
                          # секреты); restore_backup.py расшифровывает бэкап этим же пакетом.
