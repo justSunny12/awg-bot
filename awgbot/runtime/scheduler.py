@@ -24,6 +24,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from aiogram.types import FSInputFile
 
 from awgbot.core import config
+from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.bot.notifier import send_notifications
 from awgbot.domain.services import Notification
@@ -46,11 +47,11 @@ def _service_failure_alerts(db, ok: bool) -> list:
         db.set_state("service_down_since", timeutil.to_iso(timeutil.now()))
         return []
     down_secs = (timeutil.now() - timeutil.parse_iso(since)).total_seconds()
-    if (down_secs >= config.SERVICE_FAILURE_ALERT_MINUTES * 60
+    if (down_secs >= settings.get_int("app.monitoring.service_failure_alert_minutes", 5) * 60
             and db.get_state("service_alert_sent") != "1"):
         db.set_state("service_alert_sent", "1")
-        if config.SERVICE_FAILURE_ALERT_LOUD:
-            mins = config.SERVICE_FAILURE_ALERT_MINUTES
+        if settings.get_bool("app.monitoring.service_failure_alert_loud", True):
+            mins = settings.get_int("app.monitoring.service_failure_alert_minutes", 5)
             return [Notification(
                 config.ADMIN_ID,
                 f"🚨 VPN-сервис не поднимается уже более {mins} мин. "
@@ -81,7 +82,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             from awgbot.bot import keyboards as kb
             for n in notifs:
                 if getattr(n, "grace_offer_client_id", 0):
-                    n.reply_markup = kb.grace_offer(n.grace_offer_client_id, config.GRACE_DAYS)
+                    n.reply_markup = kb.grace_offer(n.grace_offer_client_id, settings.get_int("grace.grace_days", 14))
             await send_notifications(bot, notifs)
             # авто-выход из приостановок по истечении зарезервированного срока
             pause_notes = await asyncio.to_thread(services.check_pauses)

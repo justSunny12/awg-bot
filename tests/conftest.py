@@ -28,6 +28,14 @@ os.environ.setdefault("ADMIN_ID", "1")
 
 import pytest  # noqa: E402
 
+# settings читает conf/*.yaml в горячий кэш; мигрированные точки (лимиты, пауза,
+# grace, тихие часы, пороги алертов) идут через settings.get, поэтому кэш нужен
+# инициализировать теми же conf-файлами, что читает config.py — иначе get вернёт
+# дефолты вместо репозиторных значений и часть тестов разъедется.
+from awgbot.core import config as _config          # noqa: E402
+from awgbot.core import settings as _settings       # noqa: E402
+_settings.init(_config.CONF_DIR)
+
 
 @pytest.fixture()
 def tz():

@@ -16,6 +16,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.core import config
+from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
@@ -626,7 +627,7 @@ async def grace_take(cb: CallbackQuery, callback_data: GraceCB, client, services
     if callback_data.ref != client.id:
         await cb.answer(texts.GRACE_STALE, show_alert=True)
         return
-    ok, new_end = await call(services.activate_grace, client.id, config.GRACE_DAYS)
+    ok, new_end = await call(services.activate_grace, client.id, settings.get_int("grace.grace_days", 14))
     if not ok:
         await cb.answer(texts.GRACE_STALE, show_alert=True)
         try:
@@ -640,9 +641,9 @@ async def grace_take(cb: CallbackQuery, callback_data: GraceCB, client, services
     except Exception:
         pass
     await cb.message.answer(
-        texts.grace_activated_client(config.GRACE_DAYS, timeutil.fmt_dt(new_end)))
+        texts.grace_activated_client(settings.get_int("grace.grace_days", 14), timeutil.fmt_dt(new_end)))
     await notify_one(cb.message.bot, config.ADMIN_ID,
-                     texts.grace_activated_admin(client.name, config.GRACE_DAYS))
+                     texts.grace_activated_admin(client.name, settings.get_int("grace.grace_days", 14)))
     await cb.answer("Продлено")
 
 # ── Ручная блокировка своего устройства (клиент) ─────────────────────────────
@@ -716,7 +717,7 @@ async def pause_ask(cb: CallbackQuery, callback_data: PauseCB, client, services)
             await cb.answer(texts.pause_unavailable(), show_alert=True)
         return
     await edit(cb, texts.pause_ask(avail, int(client.pause_used_days),
-                                   config.PAUSE_MAX_TOTAL_DAYS),
+                                   settings.get_int("pause.pause_max_total_days", 28)),
                kb.pause_day_choice(client.id, avail))
     await cb.answer()
 

@@ -21,6 +21,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from awgbot.core import config
+from awgbot.core import settings
 from awgbot.infra import awg
 from awgbot.infra.db import Database
 from awgbot.domain.services import Services
@@ -28,6 +29,7 @@ from awgbot.bot.middleware import AccessMiddleware
 from awgbot.bot.notifier import send_notifications
 from awgbot.runtime.scheduler import setup_scheduler
 from awgbot.runtime.watcher import AwgWatcher
+from awgbot.runtime.conf_watcher import ConfWatcher
 from awgbot.bot.handlers import admin as admin_handlers
 from awgbot.bot.handlers import reply_commands as reply_commands_handlers
 from awgbot.bot.handlers import client as client_handlers
@@ -56,6 +58,7 @@ async def do_reconcile(services: Services, bot: Bot) -> None:
 async def main() -> None:
     config.validate()
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    settings.init(config.CONF_DIR)          # горячий кэш conf/*.yaml (до чтений)
 
     db = Database(config.DB_PATH)
     db.init_schema()
@@ -89,6 +92,8 @@ async def main() -> None:
         asyncio.run_coroutine_threadsafe(do_reconcile(services, bot), loop)
 
     watcher = AwgWatcher(on_change)
+    conf_watcher = ConfWatcher(config.CONF_DIR)   # горячая правка настроек
+    conf_watcher.start()
     scheduler = setup_scheduler(services, bot, db, watcher)
 
     # ── стартовые задачи ─────────────────────────────────────────────────────
@@ -181,6 +186,7 @@ async def main() -> None:
         log.info("Останавливаюсь…")
         scheduler.shutdown(wait=False)
         watcher.stop()
+        conf_watcher.stop()
         await bot.session.close()
         db.close()
 
