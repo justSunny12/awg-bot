@@ -5,7 +5,6 @@ import json
 
 import pytest
 
-from awgbot.core import config
 from awgbot.core import settings
 from awgbot.core.blocks import DeviceBlock
 from awgbot.domain import configgen

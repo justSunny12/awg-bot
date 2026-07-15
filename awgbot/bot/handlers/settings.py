@@ -81,6 +81,9 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
 @router.callback_query(SetCB.filter(F.act == "edit"))
 async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext):
     key = callback_data.key
+    if key not in texts.SETTINGS_BOUNDS:      # старая/битая клавиатура
+        await cb.answer("Эта настройка недоступна.", show_alert=True)
+        return
     await state.set_state(SettingsInput.value)
     await state.update_data(key=key, sec=callback_data.sec)
     await edit(cb, texts.settings_prompt(key), kb.settings_cancel(callback_data.sec))
@@ -91,6 +94,11 @@ async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext)
 async def receive_value(message: Message, state: FSMContext, services):
     data = await state.get_data()
     key, sec = data.get("key"), data.get("sec", "root")
+    if key not in texts.SETTINGS_BOUNDS:      # рассинхрон state (не должен случаться)
+        await state.clear()
+        text, markup = _screen(sec, services)
+        await message.answer(text, reply_markup=markup)
+        return
     lo, hi, _label, _unit = texts.SETTINGS_BOUNDS[key]
     raw = (message.text or "").strip()
     try:

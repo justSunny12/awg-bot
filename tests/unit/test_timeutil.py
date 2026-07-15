@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 
 import pytest
 
-from awgbot.core import config
 from awgbot.core import settings
 from awgbot.util import timeutil as t
 

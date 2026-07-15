@@ -7,7 +7,6 @@ import pytest
 
 from awgbot.bot import notifier
 from awgbot.bot import keyboards as kb
-from awgbot.core import config
 from awgbot.core import settings
 from awgbot.domain.services import Notification
 from awgbot.util import timeutil

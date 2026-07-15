@@ -6,7 +6,6 @@ import pytest
 
 from awgbot.bot.handlers import client as ch
 from awgbot.bot.callbacks import (BlockCB, DelDeviceCB, DeviceCB, GraceCB, Menu, PauseCB)
-from awgbot.core import config
 from awgbot.core.blocks import ClientBlock, DeviceBlock
 from awgbot.domain import configgen
 from awgbot.infra import awg

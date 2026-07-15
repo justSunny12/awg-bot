@@ -116,3 +116,22 @@ def test_migrated_read_is_hot(conf, monkeypatch):
     # выключаем тихие часы на горячую — та же функция сразу видит новое
     settings.set_value("quiet_hours.quiet_hours_enabled", False)
     assert notifier._silent_now(force_sound=False) is False
+
+
+def test_broken_yaml_keeps_previous_values(conf):
+    """Битый YAML при reload: warning + прежние значения, без исключений."""
+    assert settings.get("limits.traffic_bonus_gb") == 100
+    (conf / "limits.yaml").write_text("traffic_bonus_gb: [unclosed", encoding="utf-8")
+    changed = settings.reload()                    # не должно упасть
+    assert changed == []                           # битый файл кэш не менял
+    assert settings.get("limits.traffic_bonus_gb") == 100   # прежнее живо
+
+
+def test_broken_yaml_at_init_skipped(tmp_path):
+    (tmp_path / "good.yaml").write_text("x: 1\n", encoding="utf-8")
+    (tmp_path / "bad.yaml").write_text("x: [broken", encoding="utf-8")
+    settings.init(tmp_path)                        # не падает
+    assert settings.get("good.x") == 1
+    assert settings.get("bad.x", "dflt") == "dflt"
+    from awgbot.core import config
+    settings.init(config.CONF_DIR)                 # восстановить для остальных

@@ -45,11 +45,22 @@ _on_change: list[tuple[str, Callable[[str, Any], None]]] = []
 
 
 # ── загрузка/кэш ─────────────────────────────────────────────────────────────
-def _read_yaml(path: Path) -> dict:
+_PARSE_ERROR = object()      # маркер «файл не распарсился» (кэш не трогаем)
+
+
+def _read_yaml(path: Path):
+    """dict файла; {} если файла нет; _PARSE_ERROR при битом YAML (лог-warning).
+    Битый файл НЕ роняет init/reload и не затирает прежние значения в кэше —
+    правишь yaml дальше, вотчдог подхватит валидную версию."""
     if not path.exists():
         return {}
-    with path.open(encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    try:
+        with path.open(encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except yaml.YAMLError as e:
+        log.warning("settings: %s не распарсился (%s) — прежние значения сохранены",
+                    path.name, e)
+        return _PARSE_ERROR
 
 
 def init(conf_dir) -> None:
@@ -59,7 +70,8 @@ def init(conf_dir) -> None:
         _conf_dir = Path(conf_dir)
         _cache.clear()
         for p in sorted(_conf_dir.glob("*.yaml")):
-            _cache[p.stem] = _read_yaml(p)
+            data = _read_yaml(p)
+            _cache[p.stem] = {} if data is _PARSE_ERROR else data
         log.info("settings: загружено файлов конфигурации: %d", len(_cache))
 
 
@@ -160,6 +172,8 @@ def reload() -> list[str]:
             stems.add(p.stem)
         for stem in stems:
             new = _read_yaml(_conf_dir / f"{stem}.yaml")
+            if new is _PARSE_ERROR:
+                continue                     # битый файл: кэш не трогаем
             old = _cache.get(stem, {})
             if new != old:
                 changed.extend(_diff_stem(stem, old, new))
@@ -212,6 +226,8 @@ def set_value(key: str, value: Any) -> list[str]:
 
         old = _cache.get(stem, {})
         new = _read_yaml(fpath)
+        if new is _PARSE_ERROR:              # немыслимо после нашей же записи
+            raise RuntimeError(f"conf/{stem}.yaml после записи не парсится")
         changed = _diff_stem(stem, old, new)
         _cache[stem] = new
     if changed:

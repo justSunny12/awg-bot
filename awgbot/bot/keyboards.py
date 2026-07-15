@@ -968,10 +968,11 @@ def settings_notify() -> InlineKeyboardMarkup:
     qh = s.get_bool("quiet_hours.quiet_hours_enabled", True)
     kb.button(text=f"{_chk(qh)} Тихие часы",
               callback_data=SetCB(sec="notify", act="toggle", key="quiet_hours.quiet_hours_enabled"))
-    kb.button(text=f"Начало: {s.get_int('quiet_hours.quiet_hours_start', 20)}:00",
-              callback_data=SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_start"))
-    kb.button(text=f"Конец: {s.get_int('quiet_hours.quiet_hours_end', 7)}:00",
-              callback_data=SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_end"))
+    if qh:
+        kb.button(text=f"Начало: {s.get_int('quiet_hours.quiet_hours_start', 20)}:00",
+                  callback_data=SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_start"))
+        kb.button(text=f"Конец: {s.get_int('quiet_hours.quiet_hours_end', 7)}:00",
+                  callback_data=SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_end"))
     ra = s.get_bool("resource_alerts.enabled", True)
     kb.button(text=f"{_chk(ra)} Алерты хоста (CPU/RAM/диск)",
               callback_data=SetCB(sec="notify", act="toggle", key="resource_alerts.enabled"))
@@ -988,9 +989,9 @@ def settings_notify() -> InlineKeyboardMarkup:
         on = s.get_bool(f"{ce}.{k}", True)
         kb.button(text=f"{_chk(on)} {label}",
                   callback_data=SetCB(sec="notify", act="toggle", key=f"{ce}.{k}"))
-    # раскладка: тихие часы (1) + начало/конец (2) + алерты (1) [+ 3 порога] +
+    # раскладка: тихие часы (1) [+ начало/конец (2)] + алерты (1) [+ 3 порога] +
     # 4 события клиентов — по одной кнопке в ряд для читаемости
-    rows = [1, 2, 1] + ([1, 1, 1] if ra else []) + [1, 1, 1, 1]
+    rows = [1] + ([2] if qh else []) + [1] + ([1, 1, 1] if ra else []) + [1, 1, 1, 1]
     kb.adjust(*rows)
     kb.row(_back())
     return kb.as_markup()

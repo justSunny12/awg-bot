@@ -82,3 +82,20 @@ def test_backup_cron_reschedules(sched_conf, services, db, monkeypatch):
                         lambda job_id, trigger=None: calls.append((job_id, str(trigger))))
     settings.set_value("app.scheduler.backup_hour", 4)
     assert len(calls) == 1 and calls[0][0] == "backup"
+
+
+def test_update_schedule_variants_and_never_pause(sched_conf, services, db, monkeypatch):
+    """poll_schedule: hour/week/month → reschedule; never → pause_job."""
+    scheduler = _build_scheduler(services, db)
+    resched, paused = [], []
+    monkeypatch.setattr(scheduler, "reschedule_job",
+                        lambda job_id, trigger=None: resched.append((job_id, str(trigger))))
+    monkeypatch.setattr(scheduler, "pause_job", lambda job_id: paused.append(job_id))
+
+    settings.set_value("updates.poll_schedule", "hour")
+    settings.set_value("updates.poll_schedule", "week")
+    settings.set_value("updates.poll_schedule", "month")
+    assert [j for j, _ in resched] == ["update_check"] * 3
+    assert "day_of_week" in resched[1][1]           # week — по дню недели
+    settings.set_value("updates.poll_schedule", "never")
+    assert paused == ["update_check"]               # never — пауза, не reschedule
