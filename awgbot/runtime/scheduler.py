@@ -191,23 +191,64 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     # timezone=config.TZ и в интервальных триггерах — чтобы всё жило в UTC+3,
     # а не в системной зоне сервера (у нас Europe/London).
     now = timeutil.now()
-    scheduler.add_job(job_poll,
-                      IntervalTrigger(minutes=config.TRAFFIC_POLL_MINUTES, timezone=config.TZ),
+
+    # ── Класс 2: расписания/интервалы читаем из settings ФАБРИКАМИ. Одна фабрика
+    #    строит триггер и при первичной регистрации, и в on-change хуке ниже
+    #    (reschedule_job) — единый источник, смена в conf/*.yaml применяется на
+    #    лету без рестарта. Ключи → job_id для перевешивания в _CLASS2.
+    _TZ = config.TZ
+
+    def _trig_poll():
+        return IntervalTrigger(minutes=settings.get_int("app.scheduler.traffic_poll_minutes", 5), timezone=_TZ)
+
+    def _trig_expiry():
+        return IntervalTrigger(minutes=settings.get_int("app.scheduler.expiry_check_minutes", 60), timezone=_TZ)
+
+    def _trig_monitor():
+        return IntervalTrigger(minutes=settings.get_int("app.scheduler.monitor_minutes", 3), timezone=_TZ)
+
+    def _trig_monthly():
+        return CronTrigger(day=settings.get_int("app.scheduler.monthly_reset_day", 1),
+                           hour=settings.get_int("app.scheduler.monthly_reset_hour", 0),
+                           minute=0, timezone=_TZ)
+
+    def _trig_backup():
+        return CronTrigger(day=settings.get_int("app.scheduler.backup_day", 1),
+                           hour=settings.get_int("app.scheduler.backup_hour", 12),
+                           minute=0, timezone=_TZ)
+
+    def _trig_purge():
+        return CronTrigger(hour=settings.get_int("app.history.purge_hour", 3), minute=0, timezone=_TZ)
+
+    def _trig_update_check():
+        return CronTrigger(hour=settings.get_int("updates.poll_hour", 10),
+                           minute=settings.get_int("updates.poll_minute", 0), timezone=_TZ)
+
+    # ключ настройки → (job_id, фабрика триггера) для горячего reschedule
+    _CLASS2 = {
+        "app.scheduler.traffic_poll_minutes": ("poll", _trig_poll),
+        "app.scheduler.expiry_check_minutes": ("expiry", _trig_expiry),
+        "app.scheduler.monitor_minutes": ("monitor", _trig_monitor),
+        "app.scheduler.monthly_reset_day": ("monthly", _trig_monthly),
+        "app.scheduler.monthly_reset_hour": ("monthly", _trig_monthly),
+        "app.scheduler.backup_day": ("backup", _trig_backup),
+        "app.scheduler.backup_hour": ("backup", _trig_backup),
+        "app.history.purge_hour": ("purge_history", _trig_purge),
+        "updates.poll_hour": ("update_check", _trig_update_check),
+        "updates.poll_minute": ("update_check", _trig_update_check),
+    }
+
+    scheduler.add_job(job_poll, _trig_poll(),
                       id="poll", max_instances=1, coalesce=True,
                       next_run_time=now, misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
-    scheduler.add_job(job_expiry,
-                      IntervalTrigger(minutes=config.EXPIRY_CHECK_MINUTES, timezone=config.TZ),
+    scheduler.add_job(job_expiry, _trig_expiry(),
                       id="expiry", max_instances=1, coalesce=True,
                       next_run_time=now, misfire_grace_time=config.MISFIRE_GRACE_EXPIRY_SECONDS)
-    scheduler.add_job(job_monthly,
-                      CronTrigger(day=config.MONTHLY_RESET_DAY, hour=config.MONTHLY_RESET_HOUR,
-                                  minute=0, timezone=config.TZ),
+    scheduler.add_job(job_monthly, _trig_monthly(),
                       id="monthly", max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
     scheduler.add_job(job_monthly, "date", run_date=now, id="monthly_catchup",
                       misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
-    scheduler.add_job(job_backup,
-                      CronTrigger(day=config.BACKUP_DAY, hour=config.BACKUP_HOUR,
-                                  minute=0, timezone=config.TZ),
+    scheduler.add_job(job_backup, _trig_backup(),
                       id="backup", max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
     scheduler.add_job(job_backup, "date", run_date=now, id="backup_catchup",
                       misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
@@ -231,13 +272,11 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         except Exception as e:                        # noqa: BLE001
             log.warning("email_resume poll: %s", e)
 
-    scheduler.add_job(job_monitor,
-                      IntervalTrigger(minutes=config.MONITOR_MINUTES, timezone=config.TZ),
+    scheduler.add_job(job_monitor, _trig_monitor(),
                       id="monitor", max_instances=1, coalesce=True,
                       next_run_time=now, misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
     # ежедневная очистка истории (батчами), в тихий ночной час
-    scheduler.add_job(job_purge_history,
-                      CronTrigger(hour=config.HISTORY_PURGE_HOUR, minute=0, timezone=config.TZ),
+    scheduler.add_job(job_purge_history, _trig_purge(),
                       id="purge_history", max_instances=1,
                       misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
 
@@ -266,13 +305,27 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         except Exception as e:                        # noqa: BLE001
             log.warning("update_check: %s", e)
 
-    scheduler.add_job(job_update_check,
-                      CronTrigger(hour=config.UPDATES_POLL_HOUR,
-                                  minute=config.UPDATES_POLL_MINUTE, timezone=config.TZ),
+    scheduler.add_job(job_update_check, _trig_update_check(),
                       id="update_check", max_instances=1, coalesce=True,
                       misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
     scheduler.add_job(job_update_check, "date", run_date=now, id="update_check_startup",
                       max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
+
+    # ── Класс 2: горячее перевешивание расписаний по изменению настройки ──────
+    # settings.reload()/set_value() зовёт эти хуки ТОЛЬКО по изменившимся ключам
+    # (diff), поэтому неизменённые job'ы не трогаем. reschedule_job безопасно
+    # звать из потока вотчдога — APScheduler разбудит планировщик сам.
+    def _make_reschedule(job_id, factory):
+        def hook(key, value):
+            try:
+                scheduler.reschedule_job(job_id, trigger=factory())
+                log.info("расписание '%s' обновлено на лету (%s=%s)", job_id, key, value)
+            except Exception as e:                            # noqa: BLE001
+                log.warning("reschedule '%s' (%s): %s", job_id, key, e)
+        return hook
+
+    for _key, (_job_id, _factory) in _CLASS2.items():
+        settings.on_change(_key, _make_reschedule(_job_id, _factory))
 
     return scheduler
 
