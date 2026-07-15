@@ -8,25 +8,28 @@ handlers/admin.py — роутер администратора.
 
 from __future__ import annotations
 
+import time
+
 from awgbot.core import config
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.util import timeutil
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import (AdminLinkGate, FaHintCB, AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
-                       Menu, PeriodCB, ReassignCB, UpdateCB)
+                       Menu, PeriodCB, ReassignCB, UpdateCB, BroadcastCB)
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message,
                              remove_device_and_notify, send_conf, cleanup_content,
                              send_link, send_qr, send_menu, content_finisher,
                              show_main_menu)
-from awgbot.bot.notifier import notify_one, send_notifications
+from awgbot.bot.notifier import notify_one, send_notifications, broadcast
 from awgbot.domain.services import BYTES_PER_GB, SECONDS_PER_DAY, LimitReached, ServiceError
-from awgbot.bot.states import (AdminAddDevice, AdminSelfAddDevice, BlockPauseDays, CreateClient,
+from awgbot.bot.states import (AdminAddDevice, AdminSelfAddDevice, BlockPauseDays, Broadcast, CreateClient,
                     EditLimit, EditName, EditDeviceName, EditPeriod, EditTrafficLimit, RestoreDevice)
 
 router = Router(name="admin")
@@ -720,7 +723,7 @@ async def admin_client_devices(cb: CallbackQuery, callback_data: ClientCB, servi
         await cb.answer()
         return
     lines = "\n".join(texts.device_line(d) for d in devices)
-    await edit(cb, f"📱 Устройства профиля:\n{lines}",
+    await edit(cb, f"📋 Устройства профиля:\n{lines}",
                kb.admin_client_device_list(devices, callback_data.client_id))
     await cb.answer()
 
@@ -1602,3 +1605,63 @@ async def admin_block_cancel(cb: CallbackQuery, callback_data: BlockCB, services
 
 
 __all__ = ["router"]
+
+
+# ── Броадкаст объявлений всем клиентам и друзьям ─────────────────────────────
+_BROADCAST_COOLDOWN_SEC = 30          # анти-дабл-тап: не слать одно и то же чаще
+_last_broadcast_at = 0.0
+
+
+@router.callback_query(BroadcastCB.filter(F.action == "start"))
+async def broadcast_start(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(Broadcast.text)
+    await edit(cb, texts.BROADCAST_PROMPT, kb.broadcast_cancel())
+    await cb.answer()
+
+
+@router.message(Broadcast.text)
+async def broadcast_receive(message: Message, state: FSMContext, services):
+    text = (message.text or "").strip()
+    if not text:
+        await message.answer(texts.BROADCAST_EMPTY)
+        return
+    n = len(services.db.broadcast_recipients(config.ADMIN_ID))
+    if n == 0:
+        await state.clear()
+        await message.answer("Некому отправлять — нет активных получателей.")
+        return
+    # текст держим в FSM-data до подтверждения; отправляем HTML как есть.
+    # Битую разметку ловим здесь: если превью (обёрнутое в HTML) не отправилось —
+    # тот же текст провалил бы и рассылку. Просим поправить, состояние держим.
+    await state.update_data(text=text)
+    try:
+        await message.answer(texts.broadcast_preview(text, n), reply_markup=kb.broadcast_confirm())
+    except TelegramBadRequest:
+        await message.answer(
+            "⚠️ Разметка бракованная (незакрытый тег?). Проверь HTML "
+            "(&lt;b&gt;…&lt;/b&gt;, ссылки) и пришли текст заново.")
+
+
+@router.callback_query(BroadcastCB.filter(F.action == "send"))
+async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
+    global _last_broadcast_at
+    data = await state.get_data()
+    text = data.get("text")
+    await state.clear()
+    if not text:
+        await cb.answer("Нечего отправлять.", show_alert=True)
+        return
+    now = time.monotonic()
+    if now - _last_broadcast_at < _BROADCAST_COOLDOWN_SEC:
+        await cb.answer("Только что уже отправляли — подожди немного.", show_alert=True)
+        return
+    _last_broadcast_at = now                     # метку ставим ДО await'ов —
+    await cb.answer("Рассылаю…")                 # второе нажатие уже отсечётся
+    await edit(cb, "📢 Рассылаю объявление…", None)   # и кнопки сняты (markup=None)
+    tg_ids = await call(services.db.broadcast_recipients, config.ADMIN_ID)
+    if not tg_ids:
+        await edit(cb, "Некому отправлять — нет активных получателей.",
+                   await _main_menu_markup(services))
+        return
+    ok, failed = await broadcast(cb.message.bot, tg_ids, text)
+    await edit(cb, texts.broadcast_report(ok, failed), await _main_menu_markup(services))

@@ -38,7 +38,7 @@ def reply_hide() -> ReplyKeyboardRemove:
 
 from awgbot.bot.callbacks import (AdminLinkGate, FaHintCB, AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
                        FriendCB, GraceCB, GuideCB, HelpCB, Menu, PauseCB,
-                       PeriodCB, ReassignCB, UpdateCB, SetCB)
+                       PeriodCB, ReassignCB, UpdateCB, SetCB, BroadcastCB)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -73,13 +73,23 @@ def _btn_suffix(dev) -> str:
     return ""
 
 
+def _dev_emoji(d) -> str:
+    """Иконка типа устройства: 🕹 полный доступ к серверу, 📲 передано другу,
+    📱 обычное. Приоритет — полный доступ выше признака друга."""
+    if d.is_admin:
+        return "🕹"
+    if d.friend is not None:
+        return "📲"
+    return "📱"
+
+
 def client_devices(devices) -> InlineKeyboardMarkup:
     """Список своих устройств. Без кнопки добавления — она уже есть в главном
     меню, дублировать здесь избыточно."""
     kb = InlineKeyboardBuilder()
     for d in devices:
         marker = _blocks.blocked_marker_device(int(d.block_reason), for_admin=False)
-        kb.button(text=f"{marker}⚙️ {d.name}{_btn_suffix(d)}",
+        kb.button(text=f"{marker}{_dev_emoji(d)} {d.name}{_btn_suffix(d)}",
                   callback_data=DeviceCB(action="open", device_id=d.id))
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
     kb.adjust(1)
@@ -93,7 +103,7 @@ def admin_client_device_list(devices, client_id: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for d in devices:
         marker = _blocks.blocked_marker_device(int(d.block_reason), for_admin=True)
-        kb.button(text=f"{marker}⚙️ {d.name}", callback_data=DeviceCB(action="open", device_id=d.id))
+        kb.button(text=f"{marker}{_dev_emoji(d)} {d.name}", callback_data=DeviceCB(action="open", device_id=d.id))
     kb.button(text="⬅️ Назад", callback_data=ClientCB(action="open", client_id=client_id))
     kb.adjust(1)
     return kb.as_markup()
@@ -338,10 +348,26 @@ def admin_main(unassigned_count: int, self_has_devices: bool = False) -> InlineK
     kb.button(text="👥 Профили", callback_data=Menu(action="clients"))
     kb.button(text="➕ Новый профиль", callback_data=Menu(action="add_client"))
     pattern.append(2)
+    kb.button(text="📢 Объявление пользователям", callback_data=BroadcastCB(action="start"))
+    pattern.append(1)
     kb.button(text="🔄 Статус", callback_data=Menu(action="refresh"))
     kb.button(text="⚙️ Настройки", callback_data=SetCB(sec="root"))
     pattern.append(2)
     kb.adjust(*pattern)
+    return kb.as_markup()
+
+
+def broadcast_cancel() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="\u2b05\ufe0f Отмена", callback_data=Menu(action="main"))
+    return kb.as_markup()
+
+
+def broadcast_confirm() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📢 Отправить", callback_data=BroadcastCB(action="send"))
+    kb.button(text="\u2b05\ufe0f Отмена", callback_data=Menu(action="main"))
+    kb.adjust(2)
     return kb.as_markup()
 
 
