@@ -221,16 +221,23 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         return CronTrigger(hour=settings.get_int("app.history.purge_hour", 3), minute=0, timezone=_TZ)
 
     def _trig_update_check():
-        """Триггер проверки обновлений по poll_schedule (hour|day|week|month|
-        never). never → None (job снимается/не тикает). Время — poll_hour:minute
-        (для hour берётся только минута)."""
+        """Триггер проверки обновлений по poll_schedule (day|week|month|never).
+        never → None (job снимается/не тикает). Время — poll_hour:minute.
+
+        Легаси-миграция: снятый вариант "hour" трактуется как "day" и однократно
+        переписывается в YAML (значение станет честным; повтор не сработает —
+        diff пуст)."""
         sch = str(settings.get("updates.poll_schedule", "day")).lower()
+        if sch == "hour":                         # снятый вариант → day
+            try:
+                settings.set_value("updates.poll_schedule", "day")
+            except Exception:                     # noqa: BLE001
+                pass
+            sch = "day"
         h = settings.get_int("updates.poll_hour", 10)
         m = settings.get_int("updates.poll_minute", 0)
         if sch == "never":
             return None
-        if sch == "hour":
-            return CronTrigger(minute=m, timezone=_TZ)
         if sch == "week":
             return CronTrigger(day_of_week=0, hour=h, minute=m, timezone=_TZ)
         if sch == "month":

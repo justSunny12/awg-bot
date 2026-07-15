@@ -7,9 +7,9 @@ repo: "justSunny12/awg-bot"
 # Имя ассета с поставкой в релизе (sha256 берётся из assets[].digest — GitHub
 # считает его сам, свой .sha256-ассет не нужен).
 asset_name: "awg-bot.tgz"
-# Периодичность проверки обновлений: hour|day|week|month|never.
+# Периодичность проверки обновлений: day|week|month|never.
 # never → проверка выключается И уведомления авто-выключаются.
 poll_schedule: "day"
-# Время проверки (в таймзоне бота) — для day/week/month; для hour берётся только минута.
+# Время проверки (в таймзоне бота) — для day/week/month.
 poll_hour: 10
 poll_minute: 0
