@@ -18,7 +18,7 @@ import logging
 
 from aiogram.exceptions import TelegramRetryAfter
 
-from awgbot.core import config
+from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.bot import keyboards as kb
 
@@ -30,9 +30,9 @@ _BATCH_PACING_SECONDS = 0.05         # ~20 msg/с — с запасом под �
 def _silent_now(force_sound: bool) -> bool:
     """Слать ли БЕЗ звука: тихие часы включены, сейчас тихое окно и уведомление
     не помечено как всегда-громкое (force_sound)."""
-    if force_sound or not config.QUIET_HOURS_ENABLED:
+    if force_sound or not settings.get_bool("quiet_hours.quiet_hours_enabled", True):
         return False
-    return timeutil.in_quiet_hours(config.QUIET_HOURS_START, config.QUIET_HOURS_END)
+    return timeutil.in_quiet_hours(settings.get_int("quiet_hours.quiet_hours_start", 20), settings.get_int("quiet_hours.quiet_hours_end", 7))
 
 
 async def _send(bot, tg_id, text, markup, silent) -> None:

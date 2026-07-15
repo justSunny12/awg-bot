@@ -27,6 +27,11 @@ def conf(tmp_path):
     settings.init(tmp_path)
     yield tmp_path
     settings._on_change.clear()
+    # ВАЖНО: этот фикстур переинициализировал ГЛОБАЛЬНЫЙ settings на tmp_path.
+    # Вернуть его на репозиторный conf/, иначе последующие тесты (мигрированные
+    # чтения через settings.get) увидят удалённый tmp и свалятся на дефолты.
+    from awgbot.core import config
+    settings.init(config.CONF_DIR)
 
 
 def test_get_dotted_and_types(conf):
@@ -96,3 +101,18 @@ def test_self_writing_flag_clears(conf):
     assert settings.is_self_writing() is False
     settings.set_value("limits.traffic_bonus_gb", 111)
     assert settings.is_self_writing() is False                 # снят после записи
+
+
+def test_migrated_read_is_hot(conf, monkeypatch):
+    """Мигрированное чтение идёт через settings в точке использования: смена
+    значения в кэше видна СРАЗУ, без рестарта. Проверяем сквозь notifier
+    (_silent_now читает quiet_hours.* через settings.get)."""
+    from awgbot.bot import notifier
+    # окно тихих часов 0..24 → всегда тихо, если включено
+    settings.set_value("quiet_hours.quiet_hours_enabled", True)
+    settings.set_value("quiet_hours.quiet_hours_start", 0)
+    settings.set_value("quiet_hours.quiet_hours_end", 23)
+    assert notifier._silent_now(force_sound=False) is True
+    # выключаем тихие часы на горячую — та же функция сразу видит новое
+    settings.set_value("quiet_hours.quiet_hours_enabled", False)
+    assert notifier._silent_now(force_sound=False) is False

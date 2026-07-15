@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from awgbot.core import config
+from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.infra import awg
 from awgbot.infra import email_resume
@@ -1020,7 +1021,7 @@ class Services:
         client = self.db.get_client(client_id)
         if client is None or client.period_kind != PeriodKind.YEAR or not client.period_end:
             return 0
-        return max(0, config.PAUSE_MAX_TOTAL_DAYS - int(client.pause_used_days))
+        return max(0, settings.get_int("pause.pause_max_total_days", 28) - int(client.pause_used_days))
 
     def enter_pause(self, client_id: int, days: int = None):
         """Клиентский самоблок (mode=user). Резервирует `days` дней вперёд
@@ -1273,7 +1274,7 @@ class Services:
         Меряем против СУММЫ up+down. Блокировки — битом TRAFFIC (не трогая EXPIRY).
         """
         notes: list[Notification] = []
-        warn_pct = config.TRAFFIC_WARN_PERCENT
+        warn_pct = settings.get_int("limits.traffic_warn_percent", 80)
         until = timeutil.first_of_next_month_str()
         admin_id = config.ADMIN_ID
 
@@ -1333,7 +1334,7 @@ class Services:
                     continue
                 if not client.bonus_granted_month:
                     # первая доп.квота этого месяца
-                    bonus = config.TRAFFIC_BONUS_GB * BYTES_PER_GB
+                    bonus = settings.get_int("limits.traffic_bonus_gb", 100) * BYTES_PER_GB
                     # аудит: снимок квоты до выдачи разовой доп.квоты
                     self.db.archive_quota(client.id, "bonus_granted")
                     self.db.update_client_fields(
@@ -1342,9 +1343,9 @@ class Services:
                         bonus_granted_month=1)
                     notes.append(Notification(
                         client.tg_id,
-                        _cli_bonus_text(config.TRAFFIC_BONUS_GB, until)))
+                        _cli_bonus_text(settings.get_int("limits.traffic_bonus_gb", 100), until)))
                     notes.append(Notification(
-                        admin_id, _cli_bonus_admin_text(client.name, config.TRAFFIC_BONUS_GB)))
+                        admin_id, _cli_bonus_admin_text(client.name, settings.get_int("limits.traffic_bonus_gb", 100))))
                     self.db.add_traffic_notified(client.id, "bonus")
                 else:
                     # доп.квота уже выдавалась и тоже исчерпана → блок всех устройств
@@ -1831,13 +1832,13 @@ class Services:
         При streak=5 и тике монитора 3 мин реакция ≤ 15 мин. Обычные Notification
         (force_sound=False) → в тихие часы без звука. None-метрика не двигает
         счётчики (нет данных ≠ норма)."""
-        if not config.RESOURCE_ALERTS_ENABLED:
+        if not settings.get_bool("resource_alerts.enabled", True):
             return []
-        streak_n = config.RESOURCE_ALERT_STREAK
+        streak_n = settings.get_int("app.monitoring.alert_streak", 5)
         thresholds = {
-            "cpu": (config.RESOURCE_ALERT_CPU_PERCENT, "CPU", "🖥"),
-            "ram": (config.RESOURCE_ALERT_RAM_PERCENT, "RAM", "🧠"),
-            "disk": (config.RESOURCE_ALERT_DISK_PERCENT, "Диск", "💽"),
+            "cpu": (settings.get_int("resource_alerts.thresholds_percent.cpu", 80), "CPU", "🖥"),
+            "ram": (settings.get_int("resource_alerts.thresholds_percent.ram", 80), "RAM", "🧠"),
+            "disk": (settings.get_int("resource_alerts.thresholds_percent.disk", 80), "Диск", "💽"),
         }
         notes: list[Notification] = []
         for key, (threshold, label, icon) in thresholds.items():

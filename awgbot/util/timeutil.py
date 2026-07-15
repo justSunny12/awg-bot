@@ -15,6 +15,7 @@ from typing import Optional
 from dateutil.relativedelta import relativedelta
 
 from awgbot.core import config
+from awgbot.core import settings
 
 TZ = config.TZ
 
@@ -211,7 +212,7 @@ def handshake_is_online(unix_ts: Optional[int], ref: Optional[datetime] = None) 
         return False
     ref = ref or now()
     age = ref.timestamp() - unix_ts
-    return 0 <= age <= config.ONLINE_HANDSHAKE_SECONDS
+    return 0 <= age <= settings.get_int("app.online_handshake_seconds", 300)
 
 
 def fmt_handshake(unix_ts: Optional[int]) -> str:
