@@ -67,3 +67,9 @@ class AdminSelfAddDevice(StatesGroup):
 
 __all__ = ["AddDevice", "AddDeviceGuide", "CreateClient", "EditName", "EditDeviceName", "EditPeriod", "PauseDays", "EditLimit",
            "EditTrafficLimit", "BlockPauseDays", "RestoreDevice", "AdminAddDevice", "AdminSelfAddDevice"]
+
+
+class SettingsInput(StatesGroup):
+    """Ввод числового значения настройки. В FSM-data кладём dotted-ключ (key),
+    раздел для возврата (sec) и границы валидации (lo/hi)."""
+    value = State()

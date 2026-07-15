@@ -951,3 +951,43 @@ def update_applied(tag: str, body: str) -> str:
 def update_not_applied(tag: str, installed: str) -> str:
     return (f"⚠️ Обновление до {_e(tag)} не применилось — версия осталась "
             f"{_e(installed)}. Смотри журнал: journalctl -u awg-bot-selfupdate*")
+
+
+# ── Экран настроек ───────────────────────────────────────────────────────────
+SETTINGS_ROOT = "⚙️ <b>Настройки</b>\n\nВыбери раздел. Изменения применяются сразу."
+SETTINGS_NOTIFY = ("🔔 <b>Уведомления</b>\n\nТихие часы (ночью без звука), алерты "
+                   "о загрузке хоста и уведомления админу о событиях клиентов.")
+SETTINGS_SUBS = "💳 <b>Параметры подписок</b>\n\nЛимиты и сроки, общие для всех клиентов."
+SETTINGS_MON = ("📊 <b>Мониторинг</b>\n\nЧастота опроса, чувствительность алертов "
+                "и поведение при простое AWG.")
+SETTINGS_BACKUP = "💾 <b>Резервное копирование</b>\n\nРасписание автобэкапа и разовый бэкап."
+SETTINGS_SVC = "🔄 <b>Сервис</b>\n\nПерезапуск AmneziaWG и самого бота."
+SETTINGS_UPD = ("⬆️ <b>Обновления бота</b>\n\nАвтоуведомления, периодичность проверки "
+                "и ручная проверка новой версии.")
+
+# границы валидации ввода: dotted-ключ → (мин, макс, подпись, единица)
+SETTINGS_BOUNDS = {
+    "quiet_hours.quiet_hours_start": (0, 23, "Начало тихих часов", "час (0–23)"),
+    "quiet_hours.quiet_hours_end": (0, 23, "Конец тихих часов", "час (0–23)"),
+    "resource_alerts.thresholds_percent.cpu": (1, 100, "Порог CPU", "% (1–100)"),
+    "resource_alerts.thresholds_percent.ram": (1, 100, "Порог RAM", "% (1–100)"),
+    "resource_alerts.thresholds_percent.disk": (1, 100, "Порог диска", "% (1–100)"),
+    "limits.traffic_bonus_gb": (1, 100000, "Бонус-квота", "ГБ"),
+    "pause.pause_max_total_days": (1, 365, "Макс. дней паузы", "дней (1–365)"),
+    "grace.grace_days": (1, 365, "Grace-дней", "дней (1–365)"),
+    "app.scheduler.monitor_minutes": (1, 1440, "Частота опроса", "мин (1–1440)"),
+    "app.monitoring.alert_streak": (1, 100, "Порог стрика", "замеров (1–100)"),
+    "app.monitoring.service_failure_alert_minutes": (1, 1440, "Порог простоя", "мин (1–1440)"),
+    "app.scheduler.backup_day": (1, 28, "День автобэкапа", "число месяца (1–28)"),
+    "app.scheduler.backup_hour": (0, 23, "Час автобэкапа", "час (0–23)"),
+}
+
+
+def settings_prompt(key: str) -> str:
+    lo, hi, label, unit = SETTINGS_BOUNDS[key]
+    return f"Введи новое значение: <b>{_e(label)}</b>\nЕдиница: {_e(unit)}\nДиапазон: {lo}–{hi}."
+
+
+def settings_bad_value(key: str) -> str:
+    lo, hi, label, unit = SETTINGS_BOUNDS[key]
+    return f"⚠️ Нужно целое число в диапазоне {lo}–{hi} ({_e(unit)}). Попробуй ещё раз."

@@ -161,3 +161,13 @@ class FriendCB(CallbackData, prefix="fr"):
 __all__ = ["Menu", "ClientCB", "DeviceCB", "PeriodCB", "ConfirmCB", "AdminLinkGate", "FaHintCB", "ReassignCB",
            "HelpCB", "DelDeviceCB", "GuideCB", "AdminSelfCB", "FriendCB", "GraceCB",
            "BlockCB", "PauseCB"]
+
+
+class SetCB(CallbackData, prefix="set"):
+    """Экран настроек. sec — раздел (root/notify/subs/mon/backup/svc/upd);
+    act — действие (open/toggle/edit/pick/do); key — dotted-ключ настройки или
+    id действия; val — необязательное значение (для pick-выбора enum)."""
+    sec: str
+    act: str = "open"
+    key: str = ""
+    val: str = ""

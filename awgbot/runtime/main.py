@@ -31,6 +31,7 @@ from awgbot.runtime.scheduler import setup_scheduler
 from awgbot.runtime.watcher import AwgWatcher
 from awgbot.runtime.conf_watcher import ConfWatcher
 from awgbot.bot.handlers import admin as admin_handlers
+from awgbot.bot.handlers import settings as settings_handlers
 from awgbot.bot.handlers import reply_commands as reply_commands_handlers
 from awgbot.bot.handlers import client as client_handlers
 from awgbot.bot.handlers import friend as friend_handlers
@@ -81,6 +82,7 @@ async def main() -> None:
 
     dp.include_router(reply_commands_handlers.router)   # ПЕРВЫМ: reply-команды бьют раньше FSM
     dp.include_router(admin_handlers.router)
+    dp.include_router(settings_handlers.router)
     dp.include_router(guide_handlers.router)
     dp.include_router(friend_handlers.router)
     dp.include_router(client_handlers.router)

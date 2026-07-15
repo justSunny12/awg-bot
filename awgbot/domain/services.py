@@ -15,6 +15,7 @@ services.py — бизнес-логика: склейка db + awg + configgen.
 from __future__ import annotations
 
 import datetime
+import time
 import secrets
 import string
 import sqlite3
@@ -1344,8 +1345,9 @@ class Services:
                     notes.append(Notification(
                         client.tg_id,
                         _cli_bonus_text(settings.get_int("limits.traffic_bonus_gb", 100), until)))
-                    notes.append(Notification(
-                        admin_id, _cli_bonus_admin_text(client.name, settings.get_int("limits.traffic_bonus_gb", 100))))
+                    if settings.get_bool("notifications.client_events.bonus", True):
+                        notes.append(Notification(
+                            admin_id, _cli_bonus_admin_text(client.name, settings.get_int("limits.traffic_bonus_gb", 100))))
                     self.db.add_traffic_notified(client.id, "bonus")
                 else:
                     # доп.квота уже выдавалась и тоже исчерпана → блок всех устройств
@@ -1359,8 +1361,9 @@ class Services:
                                 notes.append(Notification(
                                     dev.friend_tg_id, _dev_over_text(dev.name, until)))
                         notes.append(Notification(client.tg_id, _cli_over_text(until)))
-                        notes.append(Notification(
-                            admin_id, _cli_over_admin_text(client.name)))
+                        if settings.get_bool("notifications.client_events.over_limit", True):
+                            notes.append(Notification(
+                                admin_id, _cli_over_admin_text(client.name)))
                         self.db.add_traffic_notified(client.id, "cli_over")
             elif total >= effective * warn_pct // 100:
                 if "cli80" not in sent and not is_admin_client:
@@ -1602,9 +1605,12 @@ class Services:
 
     def mute_updates(self) -> None:
         """Выключить автоуведомления и стартовую проверку об обновлениях.
-        Ручная проверка «Обновление бота» продолжает работать (единственный путь
-        узнать/обновиться до будущего пункта настроек)."""
+        Ручная проверка «Обновление бота» продолжает работать."""
         self.db.set_state(self._MUTE_KEY, "1")
+
+    def unmute_updates(self) -> None:
+        """Включить автоуведомления об обновлениях обратно."""
+        self.db.set_state(self._MUTE_KEY, "0")
 
     def update_next(self):
         """Следующая доступная версия (updates.Release) или None. Сетевые ошибки
@@ -1926,6 +1932,25 @@ class Services:
         # StartedAt изменится → сохранить и переналожить блокировки
         self.detect_and_handle_restart()
         self.reconcile_blocks()
+
+    def restart_bot(self) -> None:
+        """Перезапустить сам сервис бота. Как и self-update, запускаем рестарт
+        ОТДЕЛЬНО от нашего процесса (systemd-run вне cgroup), иначе `systemctl
+        restart` убьёт нас на середине команды. Без systemd-run — падаем в
+        обычный рестарт через выход (systemd поднимет по Restart=always)."""
+        import shutil
+        import subprocess
+        if shutil.which("systemd-run"):
+            subprocess.Popen(
+                ["systemd-run", "--collect", "--quiet",
+                 f"--unit=awg-bot-restart-{int(time.time())}",
+                 "systemctl", "restart", "awg-bot"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, close_fds=True)
+        else:
+            subprocess.Popen(["systemctl", "restart", "awg-bot"],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
 
 
 __all__ = [

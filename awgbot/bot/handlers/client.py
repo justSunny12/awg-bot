@@ -101,8 +101,9 @@ async def _try_activate(message: Message, services, code: str):
     # уведомить админа об активации (единственная точка для deep-link и /code)
     u = message.from_user
     handle = f"@{u.username}" if u.username else (u.full_name or str(u.id))
-    await notify_one(message.bot, config.ADMIN_ID,
-                     texts.activated_admin_notice(res.client.name, handle))
+    if settings.get_bool("notifications.client_events.activation", True):
+        await notify_one(message.bot, config.ADMIN_ID,
+                         texts.activated_admin_notice(res.client.name, handle))
 
 
 async def _activate_friend(message: Message, services, code: str):
@@ -642,8 +643,9 @@ async def grace_take(cb: CallbackQuery, callback_data: GraceCB, client, services
         pass
     await cb.message.answer(
         texts.grace_activated_client(settings.get_int("grace.grace_days", 14), timeutil.fmt_dt(new_end)))
-    await notify_one(cb.message.bot, config.ADMIN_ID,
-                     texts.grace_activated_admin(client.name, settings.get_int("grace.grace_days", 14)))
+    if settings.get_bool("notifications.client_events.grace", True):
+        await notify_one(cb.message.bot, config.ADMIN_ID,
+                         texts.grace_activated_admin(client.name, settings.get_int("grace.grace_days", 14)))
     await cb.answer("Продлено")
 
 # ── Ручная блокировка своего устройства (клиент) ─────────────────────────────
