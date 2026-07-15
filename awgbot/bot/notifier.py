@@ -80,3 +80,35 @@ async def notify_one(bot, tg_id, text, *, reply_markup=None, force_sound=False) 
 
 
 __all__ = ["send_notifications", "notify_one"]
+
+
+async def broadcast(bot, tg_ids, text) -> tuple[int, int]:
+    """Массовая рассылка объявления по списку tg_id. Возвращает (доставлено,
+    не удалось). Ошибки отправки (заблокировали бота, удалён аккаунт) считаем в
+    «не удалось» и продолжаем. Пейсинг между сообщениями — как в общей рассылке
+    (флуд-контроль Telegram); RetryAfter внутри _send пережидается один раз.
+    parse_mode берётся дефолтный (бот сконфигурирован с HTML). Тихие часы к
+    объявлениям НЕ применяем — это осознанная явная отправка админом."""
+    ok = failed = 0
+    first = True
+    for tg_id in tg_ids:
+        if not tg_id:
+            continue
+        if not first:
+            await asyncio.sleep(_BATCH_PACING_SECONDS)
+        first = False
+        try:
+            await bot.send_message(tg_id, text, reply_markup=kb.hide_only())
+            ok += 1
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after)
+            try:
+                await bot.send_message(tg_id, text, reply_markup=kb.hide_only())
+                ok += 1
+            except Exception as e2:                  # noqa: BLE001
+                log.warning("broadcast: не доставлено %s (после retry): %s", tg_id, e2)
+                failed += 1
+        except Exception as e:                       # noqa: BLE001
+            log.warning("broadcast: не доставлено %s: %s", tg_id, e)
+            failed += 1
+    return ok, failed

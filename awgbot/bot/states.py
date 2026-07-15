@@ -73,3 +73,9 @@ class SettingsInput(StatesGroup):
     """Ввод числового значения настройки. В FSM-data кладём dotted-ключ (key),
     раздел для возврата (sec) и границы валидации (lo/hi)."""
     value = State()
+
+
+class Broadcast(StatesGroup):
+    """Броадкаст: ввод текста объявления. Готовый текст держим в FSM-data до
+    подтверждения отправки."""
+    text = State()

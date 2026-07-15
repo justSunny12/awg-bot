@@ -171,3 +171,9 @@ class SetCB(CallbackData, prefix="set"):
     act: str = "open"
     key: str = ""
     val: str = ""
+
+
+class BroadcastCB(CallbackData, prefix="bc"):
+    """Броадкаст объявления. action: start (ввести текст) / send (подтвердить
+    отправку подготовленного) / cancel."""
+    action: str

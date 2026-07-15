@@ -895,6 +895,22 @@ class Database:
             "SELECT COUNT(*) AS c FROM devices WHERE client_id = ?", (client_id,)
         ).fetchone()["c"]
 
+    def broadcast_recipients(self, exclude_tg_id: int) -> list[int]:
+        """Уникальные tg_id для броадкаста: активированные клиенты (tg_id
+        задан, не служебный) + активные друзья. Админ (exclude_tg_id) исключён.
+        Один человек может быть и клиентом, и другом, и иметь несколько
+        устройств — DISTINCT + set гарантируют одну доставку на человека."""
+        rows = self._connection().execute(
+            "SELECT tg_id FROM clients "
+            "WHERE tg_id IS NOT NULL AND is_service = 0 "
+            "UNION "
+            "SELECT friend_tg_id AS tg_id FROM device_friend "
+            "WHERE friend_tg_id IS NOT NULL AND friend_status = 'active'"
+        ).fetchall()
+        ids = {int(r["tg_id"]) for r in rows}
+        ids.discard(int(exclude_tg_id))
+        return sorted(ids)
+
     def admin_device_addresses(self, admin_tg_id: int) -> list[str]:
         """Адреса (10.8.1.X) всех устройств, чей владелец — админ (по tg_id).
         Источник вайтлиста для пер-пирного SSH-к-хосту (reconcile_ssh_access).
