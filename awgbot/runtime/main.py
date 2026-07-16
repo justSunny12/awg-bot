@@ -16,6 +16,7 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.exceptions import TelegramUnauthorizedError
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -58,7 +59,8 @@ async def do_reconcile(services: Services, bot: Bot) -> None:
 
 async def main() -> None:
     config.validate()
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    from awgbot.runtime import preflight
+    preflight.check_fatal()                 # стоп-факторы: data-dir, целостность БД
     settings.init(config.CONF_DIR)          # горячий кэш conf/*.yaml (до чтений)
 
     db = Database(config.DB_PATH)
@@ -70,6 +72,20 @@ async def main() -> None:
         config.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
+    # Токен: getMe ловит протухший/отозванный токен сразу (внятное сообщение
+    # вместо «молчаливого» бота). ВАЖНО: fatal — ТОЛЬКО явный отказ Bot API
+    # (401 Unauthorized). Сетевые ошибки (VPS стартовал раньше сети/DNS) не
+    # фатальны: polling ниже ретраится сам, а fatal-цикл здесь исчерпал бы
+    # systemd StartLimit и уложил бота там, где надо было подождать 30 секунд.
+    try:
+        await bot.get_me()
+    except TelegramUnauthorizedError as e:
+        raise preflight.PreflightError(
+            f"Bot API отверг токен (getMe: {e}). Проверьте BOT_TOKEN в "
+            f"/etc/awg-bot/env и перезапустите.") from e
+    except Exception as e:                               # noqa: BLE001
+        log.warning("getMe на старте не прошёл (сеть ещё не готова?): %s — "
+                    "продолжаю, polling дождётся сети", e)
     dp = Dispatcher(storage=MemoryStorage())
     dp["services"] = services
 
@@ -164,6 +180,15 @@ async def main() -> None:
     watcher.ensure_watching()
     scheduler.start()
     log.info("Бот запущен")
+
+    # Отложенные warning-замечания preflight: бот уже готов слать — отправляем
+    # админу первым содержательным сообщением. Собственный сбой блока не критичен.
+    try:
+        warns = await asyncio.to_thread(preflight.collect_warnings, services)
+        if warns:
+            await bot.send_message(config.ADMIN_ID, preflight.format_warnings(warns))
+    except Exception as e:                       # noqa: BLE001
+        log.warning("preflight warnings: %s", e)
 
     # Подсветка админу: не назначено устройство полного доступа (см. концепт).
     # Шлём при каждом старте, пока не назначено ИЛИ не нажато «Игнорировать».
