@@ -46,17 +46,20 @@ from awgbot.bot.callbacks import (AdminLinkGate, FaHintCB, AdminSelfCB, BlockCB,
 # ─────────────────────────────────────────────────────────────────────────────
 
 def client_main(has_devices: bool = True, routing_visible: bool = False,
-                client_id: int = 0) -> InlineKeyboardMarkup:
-    """Главное меню клиента. Пункт «Российский IP» появляется только после того,
-    как админ выдал разрешение: до этого фича невидима, иначе каждый первый
-    пойдёт спрашивать, что это за пункт и почему не работает."""
+                client_id: int = 0, routing_on: bool = False) -> InlineKeyboardMarkup:
+    """Главное меню клиента. Пункт «Доступ к РФ-сервисам» появляется только после
+    того, как админ выдал разрешение: до этого фича невидима, иначе каждый первый
+    пойдёт спрашивать, что это за пункт и почему не работает.
+
+    Кружок на кнопке дублирует строку инфобокса — состояние видно и в тексте, и
+    на самой кнопке, которой оно меняется."""
     kb = InlineKeyboardBuilder()
     kb.button(text="➕ Добавить устройство", callback_data=DeviceCB(action="add"))
     if has_devices:
         kb.button(text="📱 Мои устройства", callback_data=Menu(action="devices"))
     kb.button(text="⚙️ Управлять подпиской", callback_data=Menu(action="info"))
     if routing_visible:
-        kb.button(text="🇷🇺 РФ-доступ",
+        kb.button(text=f"{_chk(routing_on)} Доступ к РФ-сервисам",
                   callback_data=RoutingCB(action="panel", ref=client_id))
     if has_devices:
         kb.button(text="🔗 Ссылка", callback_data=Menu(action="gen_link"))
@@ -450,7 +453,8 @@ def admin_clients(clients) -> InlineKeyboardMarkup:
 
 
 def admin_client_actions(client, *, has_devices: bool = True,
-                         is_admin_owner: bool = False) -> InlineKeyboardMarkup:
+                         is_admin_owner: bool = False,
+                         routing_visible: bool = False) -> InlineKeyboardMarkup:
     """has_devices=False скрывает «Выдать конфиг»/«Устройства» — клиенту
     нечего выдавать и нечего показывать в списке устройств.
 
@@ -483,9 +487,12 @@ def admin_client_actions(client, *, has_devices: bool = True,
         # только безопасное: имя. Никаких блок/лимит/пауза/продлить/удалить.
         kb.button(text="✏️ Имя", callback_data=ClientCB(action="edit_name", client_id=client.id))
         pattern.append(1)
-        # Условная маршрутизация — ВОЗМОЖНОСТЬ, а не ограничение, поэтому она в
-        # эту ветку входит: держать админа в стороне от собственной функции
-        # незачем, а запереть себя ею нельзя (VPN работает в обоих режимах).
+        # РФ-доступ — ВОЗМОЖНОСТЬ, а не ограничение, поэтому в урезанную ветку
+        # входит: иначе у админа не было бы точки входа к своему переключателю.
+        if routing_visible:
+            kb.button(text=f"{_chk(client.routing_master)} Доступ к РФ-сервисам",
+                      callback_data=RoutingCB(action="master", ref=client.id))
+            pattern.append(1)
         kb.button(text="⬅️ Назад", callback_data=Menu(action="clients"))
         pattern.append(1)
         kb.adjust(*pattern)
@@ -498,6 +505,14 @@ def admin_client_actions(client, *, has_devices: bool = True,
     pattern.append(2)
     kb.button(text="📊 Лимит потребления", callback_data=ClientCB(action="edit_traffic", client_id=client.id))
     pattern.append(1)
+    # Клиентский переключатель РФ-доступа — админу тоже: он настраивает функцию
+    # при разборе проблем, а гонять человека «включи у себя» ради проверки
+    # значило бы делать поддержку невозможной. Над блокировкой намеренно:
+    # это настройка, а не карательное действие.
+    if routing_visible:
+        kb.button(text=f"{_chk(client.routing_master)} Доступ к РФ-сервисам",
+                  callback_data=RoutingCB(action="master", ref=client.id))
+        pattern.append(1)
     bt, bcb = _manual_block_button("cli", client.id, int(client.block_reason), for_admin=True)
     kb.button(text=bt, callback_data=bcb)
     pattern.append(1)

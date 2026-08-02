@@ -275,3 +275,71 @@ def test_infobox_line_appears_only_when_granted(services, make_active_client):
     c = services.db.get_client(c.id)
     assert services.routing_access_for_client(c) is True
     assert "🟢 включен" in texts.greeting_client(c, True, (1, 3), None, True)
+
+
+# ── админ управляет клиентскими настройками ──────────────────────────────────
+
+async def test_admin_toggles_client_master(services, make_active_client, fake_bot):
+    """Админ переключает РФ-доступ ЧУЖОГО профиля: без этого разбор проблемы
+    упирался бы в «включи у себя и перезайди»."""
+    c = _allowed_client(services, make_active_client, 96)
+    cb, _ = _cb(fake_bot, 1)
+    await admin_h.admin_routing_master(cb, RoutingCB(action="master", ref=c.id), services)
+    assert services.db.get_client(c.id).routing_master == 1
+
+    cb2, _ = _cb(fake_bot, 1)
+    await admin_h.admin_routing_master(cb2, RoutingCB(action="master", ref=c.id), services)
+    assert services.db.get_client(c.id).routing_master == 0
+
+
+async def test_admin_master_refused_without_grant(services, make_active_client, fake_bot):
+    c = make_active_client(tg_id=97)                      # разрешения нет
+    cb, _ = _cb(fake_bot, 1)
+    await admin_h.admin_routing_master(cb, RoutingCB(action="master", ref=c.id), services)
+    assert cb.answers[0][1] is True
+    assert services.db.get_client(c.id).routing_master == 0
+
+
+async def test_admin_toggles_client_device(services, make_active_client, fake_bot,
+                                           fake_routing):
+    """И тумблер на УСТРОЙСТВЕ чужого профиля — тоже админу."""
+    from awgbot.core import config
+    c = _allowed_client(services, make_active_client, 98)
+    services.set_routing_master(c.id, True)
+    dc = services.add_device(c.id, "Чужой телефон")
+
+    cb, _ = _cb(fake_bot, 1)
+    await admin_h.admin_routing_device(cb, RoutingCB(action="dev", ref=dc.device_id), services)
+    assert services.db.get_device(dc.device_id).routing_enabled == 1
+    assert fake_routing.sets[config.ROUTING_SET_SRC] == [dc.address]
+
+
+def test_client_menu_button_position_and_state(monkeypatch):
+    """Кнопка «Доступ к РФ-сервисам» — сразу под «Управлять подпиской», с кружком."""
+    from awgbot.bot import keyboards as kb
+    labels = [b.text for row in kb.client_main(
+        has_devices=True, routing_visible=True, client_id=1, routing_on=True
+    ).inline_keyboard for b in row]
+    assert "🟢 Доступ к РФ-сервисам" in labels
+    assert labels.index("🟢 Доступ к РФ-сервисам") == labels.index("⚙️ Управлять подпиской") + 1
+
+    off = [b.text for row in kb.client_main(
+        has_devices=True, routing_visible=True, client_id=1, routing_on=False
+    ).inline_keyboard for b in row]
+    assert "🔴 Доступ к РФ-сервисам" in off
+
+
+def test_admin_card_button_above_block(monkeypatch):
+    """В карточке профиля кнопка стоит НАД «Заблокировать»: это настройка,
+    а не карательное действие."""
+    from awgbot.core import models
+    from awgbot.bot import keyboards as kb
+    c = models.Client(id=7, tg_id=500, name="Клиент", device_limit=1, block_reason=0,
+                      is_service=0, activation_status="active", invite_code=None,
+                      created_at="2026-01-01", routing_allowed=1, routing_master=1)
+    labels = [b.text for row in kb.admin_client_actions(
+        c, has_devices=True, routing_visible=True).inline_keyboard for b in row]
+    rt = next(i for i, t in enumerate(labels) if "РФ-сервисам" in t)
+    blk = next(i for i, t in enumerate(labels) if "локировать" in t)
+    assert rt < blk, labels
+    assert labels[rt].startswith("🟢")

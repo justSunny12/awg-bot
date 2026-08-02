@@ -114,14 +114,37 @@ async def _show_client_card(cb: CallbackQuery, services, client_id: int):
     online = await call(services.client_is_online, client_id)
     text = texts.client_card(client, devices, traffic, online, for_admin=True)
     is_admin_owner = client.tg_id == config.ADMIN_ID
+    rt_visible = await call(services.routing_client_visible, client)
     await edit(cb, text, kb.admin_client_actions(
-        client, has_devices=bool(devices), is_admin_owner=is_admin_owner))
+        client, has_devices=bool(devices), is_admin_owner=is_admin_owner,
+        routing_visible=rt_visible))
 
 
 @router.callback_query(ClientCB.filter(F.action == "open"))
 async def client_open(cb: CallbackQuery, callback_data: ClientCB, services):
     await _show_client_card(cb, services, callback_data.client_id)
     await cb.answer()
+
+
+@router.callback_query(RoutingCB.filter(F.action == "master"))
+async def admin_routing_master(cb: CallbackQuery, callback_data: RoutingCB, services):
+    """Переключатель РФ-доступа профиля со стороны админа.
+
+    Нужен и для своего профиля (клиентское меню админу закрыто ролью), и для
+    чужих: без него разбор проблемы упирался бы в «включи у себя и перезайди»,
+    что делает поддержку невозможной."""
+    client = await call(services.db.get_client, callback_data.ref)
+    if client is None:
+        await cb.answer("Профиль не найден", show_alert=True)
+        return
+    if not await call(services.routing_client_visible, client):
+        await cb.answer("Профилю не разрешён РФ-доступ — выдай в настройках",
+                        show_alert=True)
+        return
+    new_state = not client.routing_master
+    await call(services.set_routing_master, client.id, new_state)
+    await _show_client_card(cb, services, client.id)
+    await cb.answer("РФ-доступ включён" if new_state else "РФ-доступ выключен")
 
 
 @router.callback_query(RoutingCB.filter(F.action == "dev"))
