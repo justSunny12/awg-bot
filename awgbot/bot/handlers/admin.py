@@ -124,47 +124,6 @@ async def client_open(cb: CallbackQuery, callback_data: ClientCB, services):
     await cb.answer()
 
 
-@router.callback_query(RoutingCB.filter(F.action == "allow"))
-async def client_routing_allow(cb: CallbackQuery, callback_data: RoutingCB, services):
-    """Разрешение клиенту на условную маршрутизацию — верхний слой флага.
-
-    Отзыв гасит эффект немедленно, но пользовательские настройки (мастер-тумблер
-    и флаги устройств) сохраняет: вернул разрешение — у человека всё как было."""
-    client = await call(services.db.get_client, callback_data.ref)
-    if client is None:
-        await cb.answer("Профиль не найден", show_alert=True)
-        return
-    ok, reason = await call(services.routing_status)
-    new_state = not client.routing_allowed
-    if new_state and not ok:
-        await cb.answer(f"Маршрутизация недоступна: {reason}", show_alert=True)
-        return
-    await call(services.set_routing_allowed, client.id, new_state)
-    await _show_client_card(cb, services, client.id)
-    await cb.answer("Российский IP разрешён" if new_state else "Российский IP запрещён")
-
-
-@router.callback_query(RoutingCB.filter(F.action == "master"))
-async def client_routing_master(cb: CallbackQuery, callback_data: RoutingCB, services):
-    """Мастер-тумблер профиля со стороны админа.
-
-    Дубль клиентского хендлера намеренно: у админа роль admin и client=None, так
-    что клиентский роутер его не пропускает. Без этой кнопки админ не мог бы
-    включить функцию себе, разрешив её. Клиенту это ничего не меняет — у него
-    свой путь через раздел в профиле."""
-    client = await call(services.db.get_client, callback_data.ref)
-    if client is None:
-        await cb.answer("Профиль не найден", show_alert=True)
-        return
-    if not client.routing_allowed:
-        await cb.answer("Сначала разреши профилю российский IP", show_alert=True)
-        return
-    new_state = not client.routing_master
-    await call(services.set_routing_master, client.id, new_state)
-    await _show_client_card(cb, services, client.id)
-    await cb.answer("Включено для профиля" if new_state else "Выключено для профиля")
-
-
 @router.callback_query(RoutingCB.filter(F.action == "dev"))
 async def admin_routing_device(cb: CallbackQuery, callback_data: RoutingCB, services):
     """Тумблер режима на устройстве со стороны админа (без own_device: админ
@@ -886,7 +845,11 @@ async def admin_device_open(cb: CallbackQuery, callback_data: DeviceCB, services
     # ролью (middleware отдаёт role=admin и client=None), поэтому иначе он не
     # смог бы включить функцию ни себе, ни при разборе проблемы у клиента.
     owner = await call(services.db.get_client, dev.client_id)
-    rt_visible = bool(owner is not None and owner.routing_on
+    # routing_allowed_for, а не owner.routing_on: у админа верхний слой
+    # подразумевается, а модель про ADMIN_ID не знает
+    rt_visible = bool(owner is not None
+                      and await call(services.routing_allowed_for, owner)
+                      and owner.routing_master
                       and await call(services.routing_available))
     markup = kb.device_actions(dev, is_admin=True, back_target=back_target,
                                reassign_label=reassign_label,

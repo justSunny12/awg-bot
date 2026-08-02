@@ -16,6 +16,7 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
+from awgbot.core import config
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.callbacks import Menu, RoutingCB
@@ -24,8 +25,19 @@ from awgbot.bot.handlers.common import call, ask_tracked, edit, own_device
 from awgbot.bot.states import RoutingDomains
 
 router = Router(name="routing")
-router.message.filter(RoleFilter("client"))
-router.callback_query.filter(RoleFilter("client"))
+# Админ тоже пользуется VPN, а middleware отдаёт ему role=admin и client=None.
+# Без него в фильтре у админа не было бы ни мастер-тумблера, ни списка адресов —
+# только право раздавать доступ другим.
+router.message.filter(RoleFilter("client", "admin"))
+router.callback_query.filter(RoleFilter("client", "admin"))
+
+
+async def _own(services, client):
+    """Клиентская запись говорящего. У админа middleware кладёт client=None —
+    достаём его собственный профиль по ADMIN_ID."""
+    if client is not None:
+        return client
+    return await call(services.db.get_client_by_tg, config.ADMIN_ID)
 
 
 async def _guard(cb: CallbackQuery, services, client) -> bool:
@@ -52,6 +64,7 @@ async def _show_panel(cb: CallbackQuery, services, client):
 
 @router.callback_query(RoutingCB.filter(F.action == "panel"))
 async def routing_panel(cb: CallbackQuery, client, services, state: FSMContext):
+    client = await _own(services, client)
     if not await _guard(cb, services, client):
         return
     await state.clear()
@@ -62,19 +75,21 @@ async def routing_panel(cb: CallbackQuery, client, services, state: FSMContext):
 @router.callback_query(RoutingCB.filter(F.action == "master"))
 async def routing_master(cb: CallbackQuery, client, services):
     """Мастер-тумблер: «выключить всё разом», не обходя каждое устройство."""
+    client = await _own(services, client)
     if not await _guard(cb, services, client):
         return
     new_state = not client.routing_master
     await call(services.set_routing_master, client.id, new_state)
     client = await call(services.db.get_client, client.id)
     await _show_panel(cb, services, client)
-    await cb.answer("Российский IP включён" if new_state else "Российский IP выключен")
+    await cb.answer("РФ-доступ включён" if new_state else "РФ-доступ выключен")
 
 
 @router.callback_query(RoutingCB.filter(F.action == "dev"))
 async def routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
                                 client, services):
     """Тумблер устройства. own_device — защита от чужого device_id в колбэке."""
+    client = await _own(services, client)
     if not await _guard(cb, services, client):
         return
     dev = await call(own_device, services, client, callback_data.ref)
@@ -92,13 +107,14 @@ async def routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
     await edit(cb, text, kb.device_actions(
         dev, is_admin=False, back_target=Menu(action="devices").pack(),
         routing_visible=True, routing_on=bool(dev.routing_enabled)))
-    await cb.answer("Российский IP включён" if new_state else "Российский IP выключен")
+    await cb.answer("РФ-доступ включён" if new_state else "РФ-доступ выключен")
 
 
 # ── Личный список адресов ────────────────────────────────────────────────────
 
 @router.callback_query(RoutingCB.filter(F.action == "add"))
 async def routing_add_start(cb: CallbackQuery, client, services, state: FSMContext):
+    client = await _own(services, client)
     if not await _guard(cb, services, client):
         return
     await state.set_state(RoutingDomains.value)
@@ -111,6 +127,7 @@ async def routing_add_start(cb: CallbackQuery, client, services, state: FSMConte
 async def routing_add_apply(message: Message, client, services, state: FSMContext):
     """Приём пачки. Разбор показываем построчно: человек вставляет списком, и
     молча взять половину — оставить его гадать, почему добавилось меньше."""
+    client = await _own(services, client)
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     await state.clear()
     res = await call(services.routing_add_domains, client.id, message.text or "")
@@ -127,6 +144,7 @@ async def routing_delete(cb: CallbackQuery, callback_data: RoutingCB, client, se
     индекс и перечитываем список на применении: если он успел измениться в
     другом окне, границы не сойдутся и мы ничего не удалим молча наугад.
     """
+    client = await _own(services, client)
     if not await _guard(cb, services, client):
         return
     domains = await call(services.routing_domains, client.id)
@@ -143,6 +161,7 @@ async def routing_delete(cb: CallbackQuery, callback_data: RoutingCB, client, se
 
 @router.callback_query(RoutingCB.filter(F.action == "clear"))
 async def routing_clear_ask(cb: CallbackQuery, client, services):
+    client = await _own(services, client)
     if not await _guard(cb, services, client):
         return
     await edit(cb, texts.ROUTING_CLEAR_CONFIRM, kb.routing_clear_confirm(client.id))
@@ -151,6 +170,7 @@ async def routing_clear_ask(cb: CallbackQuery, client, services):
 
 @router.callback_query(RoutingCB.filter(F.action == "clear_yes"))
 async def routing_clear_apply(cb: CallbackQuery, client, services):
+    client = await _own(services, client)
     if not await _guard(cb, services, client):
         return
     n = await call(services.routing_clear_domains, client.id)
