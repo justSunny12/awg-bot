@@ -1630,13 +1630,39 @@ class Services:
         return routing.self_check()
 
     def routing_available(self) -> bool:
-        return routing.available()
+        """Функция работоспособна И включена админом.
+
+        Два слоя намеренно разные по природе: инфраструктурный (self_check —
+        есть ли чем маршрутизировать) холодный, а выключатель в настройках
+        горячий. Первый отвечает «можно ли», второй — «нужно ли»."""
+        return bool(settings.get_bool("app.routing.enabled", False)
+                    and routing.available())
+
+    def routing_grantable_clients(self) -> list:
+        """Профили, которым можно выдать РФ-доступ, — для экрана настроек.
+
+        Служебный профиль исключён (у него нет владельца), админский тоже:
+        разрешение у него по умолчанию, и строка в списке предлагала бы выдать
+        то, что и так есть."""
+        return self.db.list_clients(exclude_tg=config.ADMIN_ID)
+
+    def routing_allowed_for(self, client) -> bool:
+        """Разрешён ли клиенту РФ-доступ.
+
+        Админу — всегда: разрешение выдаёт он сам, и заставлять его сначала
+        отмечать галочку себе бессмысленно. Остальным — по флагу, который админ
+        ставит в их профиле.
+        """
+        if client is None:
+            return False
+        if client.tg_id and client.tg_id == config.ADMIN_ID:
+            return True
+        return bool(client.routing_allowed)
 
     def routing_client_visible(self, client) -> bool:
         """Показывать ли фичу клиенту вообще. Пока админ не выдал разрешение,
         она невидима: иначе каждый первый пойдёт спрашивать, что это за пункт."""
-        return bool(client is not None and client.routing_allowed
-                    and self.routing_available())
+        return bool(self.routing_allowed_for(client) and self.routing_available())
 
     def routing_client_summary(self, client) -> tuple[int, int]:
         """(устройств с эффективно включённым режимом, всего bot-устройств).
@@ -1648,8 +1674,21 @@ class Services:
             return (0, 0)
         devices = [d for d in self.db.list_devices(client.id)
                    if d.is_managed and not d.is_admin]
-        on = sum(1 for d in devices if d.routing_effective(client))
+        # эффективность считаем через routing_allowed_for, а не Client.routing_on:
+        # у админа верхний слой подразумевается, и модель про ADMIN_ID не знает
+        upper = self.routing_allowed_for(client) and bool(client.routing_master)
+        on = sum(1 for d in devices if upper and d.routing_enabled)
         return (on, len(devices))
+
+    def routing_access_for_client(self, client) -> Optional[bool]:
+        """Состояние РФ-доступа для инфобокса: None — не показывать строку.
+
+        Строка появляется, как только функция клиенту разрешена, и показывает
+        положение ЕГО переключателя — чтобы он видел, включено сейчас или нет,
+        не заходя в раздел."""
+        if not self.routing_client_visible(client):
+            return None
+        return bool(client.routing_master)
 
     def routing_status_for_client(self, client) -> Optional[bool]:
         """Показывать ли клиенту статусную строку и что в ней.
@@ -1743,11 +1782,20 @@ class Services:
         полной сверкой значило бы завести второй путь, который однажды разойдётся
         с первым.
         """
-        if not routing.available():
+        if not routing.available():          # инфраструктуры нет — трогать нечего
             return
         try:
             with routing.mutation_lock:
-                addrs = self.db.routing_active_addresses()
+                # Выключено админом — приводим инфраструктуру к пустому виду, а
+                # не просто выходим: иначе выключатель не выключал бы уже
+                # размеченный трафик, а лишь запрещал новые включения.
+                if not settings.get_bool("app.routing.enabled", False):
+                    routing.replace_members(config.ROUTING_SET_SRC, "hash:ip", ())
+                    routing.sync_nat_exempt(())
+                    routing.rebuild_chain(())
+                    routing.set_marking_enabled(False)
+                    return
+                addrs = self.db.routing_active_addresses(config.ADMIN_ID)
                 domains = self.db.routing_domains_by_client()
                 # клиенты, которым нужны собственные наборы: у кого есть
                 # включённые устройства ИЛИ личные домены (наборы должны

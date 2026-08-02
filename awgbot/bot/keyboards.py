@@ -56,7 +56,7 @@ def client_main(has_devices: bool = True, routing_visible: bool = False,
         kb.button(text="📱 Мои устройства", callback_data=Menu(action="devices"))
     kb.button(text="⚙️ Управлять подпиской", callback_data=Menu(action="info"))
     if routing_visible:
-        kb.button(text="🇷🇺 Российский IP",
+        kb.button(text="🇷🇺 РФ-доступ",
                   callback_data=RoutingCB(action="panel", ref=client_id))
     if has_devices:
         kb.button(text="🔗 Ссылка", callback_data=Menu(action="gen_link"))
@@ -137,8 +137,7 @@ def routing_panel(client_id: int, *, master_on: bool, domains: list,
     Список адресов при выключенном мастере не показываем — он не действует, и
     предлагать редактировать неработающее значит путать."""
     kb = InlineKeyboardBuilder()
-    kb.button(text=("🔴 Выключить российский IP" if master_on
-                    else "🟢 Включить российский IP"),
+    kb.button(text=f"{_chk(master_on)} РФ-доступ: {'включён' if master_on else 'выключен'}",
               callback_data=RoutingCB(action="master", ref=client_id))
     rows = [1]
     if master_on:
@@ -222,8 +221,7 @@ def device_actions(dev, *, is_admin: bool, back_target: str,
     # клиенту и включена мастером. Конфиг от тумблера не меняется, поэтому
     # переключать можно в любой момент, ничего не перевыпуская.
     if is_bot_device and routing_visible:
-        kb.button(text=("🇷🇺 Российский IP: вкл" if routing_on
-                        else "🇷🇺 Российский IP: выкл"),
+        kb.button(text=f"{_chk(routing_on)} РФ-доступ",
                   callback_data=RoutingCB(action="dev", ref=dev.id))
         rows += 1
     # 4) Передать другу / перевыдать инвайт
@@ -488,18 +486,6 @@ def admin_client_actions(client, *, has_devices: bool = True,
         # Условная маршрутизация — ВОЗМОЖНОСТЬ, а не ограничение, поэтому она в
         # эту ветку входит: держать админа в стороне от собственной функции
         # незачем, а запереть себя ею нельзя (VPN работает в обоих режимах).
-        if config.ROUTING_ENABLED:
-            kb.button(text=("🇷🇺 Российский IP: разрешён" if client.routing_allowed
-                            else "🇷🇺 Российский IP: запрещён"),
-                      callback_data=RoutingCB(action="allow", ref=client.id))
-            pattern.append(1)
-            # Мастер-тумблер прямо здесь — иначе админ, разрешив функцию себе,
-            # не смог бы её включить: клиентский раздел ему закрыт ролью.
-            if client.routing_allowed:
-                kb.button(text=("🇷🇺 Режим: включён" if client.routing_master
-                                else "🇷🇺 Режим: выключен"),
-                          callback_data=RoutingCB(action="master", ref=client.id))
-                pattern.append(1)
         kb.button(text="⬅️ Назад", callback_data=Menu(action="clients"))
         pattern.append(1)
         kb.adjust(*pattern)
@@ -512,13 +498,6 @@ def admin_client_actions(client, *, has_devices: bool = True,
     pattern.append(2)
     kb.button(text="📊 Лимит потребления", callback_data=ClientCB(action="edit_traffic", client_id=client.id))
     pattern.append(1)
-    # Разрешение на условную маршрутизацию — верхний слой флага. Кнопки нет,
-    # когда фича выключена в конфиге: разрешать нечего.
-    if config.ROUTING_ENABLED and not client.is_service:
-        kb.button(text=("🇷🇺 Российский IP: разрешён" if client.routing_allowed
-                        else "🇷🇺 Российский IP: запрещён"),
-                  callback_data=RoutingCB(action="allow", ref=client.id))
-        pattern.append(1)
     bt, bcb = _manual_block_button("cli", client.id, int(client.block_reason), for_admin=True)
     kb.button(text=bt, callback_data=bcb)
     pattern.append(1)
@@ -1062,12 +1041,39 @@ def settings_root() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="🔔 Уведомления", callback_data=SetCB(sec="notify"))
     kb.button(text="💳 Параметры подписок", callback_data=SetCB(sec="subs"))
+    if config.ROUTING_ENABLED:
+        kb.button(text="🇷🇺 Условная маршрутизация", callback_data=SetCB(sec="rt"))
     kb.button(text="📊 Мониторинг", callback_data=SetCB(sec="mon"))
     kb.button(text="💾 Резервное копирование", callback_data=SetCB(sec="backup"))
     kb.button(text="🔄 Обслуживание", callback_data=SetCB(sec="svc"))
     kb.button(text="⬆️ Обновления бота", callback_data=SetCB(sec="upd"))
     kb.button(text="\u2b05\ufe0f В меню", callback_data=Menu(action="main"))
     kb.adjust(1)
+    return kb.as_markup()
+
+
+def settings_routing(enabled: bool, clients=()) -> InlineKeyboardMarkup:
+    """Раздел «Условная маршрутизация».
+
+    Первой кнопкой — общий выключатель функции. Список профилей показываем
+    ТОЛЬКО когда она включена: раздавать разрешения на выключённое — приглашение
+    к недоумению «почему у клиента не работает, я же разрешил».
+
+    Разрешение живёт здесь, а не в карточке профиля, потому что это настройка
+    сервиса, а не свойство клиента: так все, кому выдан доступ, видны одним
+    списком, а не собираются обходом карточек.
+    """
+    kb = InlineKeyboardBuilder()
+    kb.button(text=f"{_chk(enabled)} Условная маршрутизация",
+              callback_data=SetCB(sec="rt", act="toggle", key="app.routing.enabled"))
+    rows = [1]
+    if enabled:
+        for c in clients:
+            kb.button(text=f"{_chk(c.routing_allowed)} {c.name}",
+                      callback_data=SetCB(sec="rt", act="do", key="allow", val=str(c.id)))
+            rows.append(1)
+    kb.row(_back())
+    kb.adjust(*rows)
     return kb.as_markup()
 
 

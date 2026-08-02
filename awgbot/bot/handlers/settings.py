@@ -39,6 +39,13 @@ def _screen(sec: str, services):
         return texts.SETTINGS_SVC, kb.settings_svc()
     if sec == "upd":
         return texts.SETTINGS_UPD, kb.settings_updates(services.updates_muted())
+    if sec == "rt":
+        on = settings.get_bool("app.routing.enabled", False)
+        # список профилей нужен только при включённой функции — клавиатура его
+        # всё равно не покажет, а лишний запрос к БД на каждый рендер ни к чему
+        clients = services.routing_grantable_clients() if on else []
+        return texts.settings_routing_text(on, services.routing_status()), \
+            kb.settings_routing(on, clients)
     return texts.SETTINGS_ROOT, kb.settings_root()
 
 
@@ -73,8 +80,30 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
     else:
         cur = settings.get_bool(key, True)
         await call(settings.set_value, key, not cur)
+        # выключатель условной маршрутизации меняет состояние системы, а не
+        # только значение в yaml: применяем сразу, не дожидаясь тика монитора
+        if key == "app.routing.enabled":
+            await call(services.reconcile_routing)
     await _render(cb, callback_data.sec, services)
     await cb.answer()
+
+
+@router.callback_query(SetCB.filter((F.sec == "rt") & (F.act == "do")))
+async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
+    """Разрешение профилю на РФ-доступ. Верхний слой флага: снимая его, гасим
+    эффект, но настройки самого клиента не разрушаем."""
+    if callback_data.key != "allow":
+        await cb.answer("Действие недоступно.", show_alert=True)
+        return
+    client = await call(services.db.get_client, int(callback_data.val or 0))
+    if client is None:
+        await cb.answer("Профиль не найден", show_alert=True)
+        return
+    new_state = not client.routing_allowed
+    await call(services.set_routing_allowed, client.id, new_state)
+    await _render(cb, "rt", services)
+    await cb.answer(f"{client.name}: РФ-доступ "
+                    + ("разрешён" if new_state else "запрещён"))
 
 
 # ── ввод числового значения (FSM) ────────────────────────────────────────────

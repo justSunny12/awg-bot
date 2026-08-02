@@ -39,7 +39,9 @@ async def _greeting(services, client):
     server_ok = await call(services.server_ok_cached)     # 0 exec: статус из state
     slots = await call(services.device_slots, client.id)
     routing_ok = await call(services.routing_status_for_client, client)
-    return texts.greeting_client(client, server_ok, slots, routing_ok), slots
+    routing_access = await call(services.routing_access_for_client, client)
+    return texts.greeting_client(client, server_ok, slots, routing_ok,
+                                 routing_access), slots
 
 
 async def _show_main(target, services, client, *, via_edit=None):

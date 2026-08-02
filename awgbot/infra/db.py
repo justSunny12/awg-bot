@@ -1361,7 +1361,7 @@ class Database:
             out.setdefault(int(r["client_id"]), []).append(r["domain"])
         return out
 
-    def routing_active_addresses(self) -> dict[int, list[str]]:
+    def routing_active_addresses(self, admin_tg_id: int = 0) -> dict[int, list[str]]:
         """{client_id: [адреса]} устройств с ЭФФЕКТИВНО включённым режимом —
         подняты все три слоя флага. Источник истины для src-наборов ipset.
 
@@ -1376,9 +1376,10 @@ class Database:
                      FROM devices d
                      JOIN clients c ON c.id = d.client_id
                     WHERE d.routing_enabled = 1
-                      AND c.routing_allowed = 1
                       AND c.routing_master = 1
-                    ORDER BY d.client_id, d.address""").fetchall():
+                      AND (c.routing_allowed = 1 OR c.tg_id = ?)
+                    ORDER BY d.client_id, d.address""",
+                (admin_tg_id,)).fetchall():
             out.setdefault(int(r["client_id"]), []).append(r["address"])
         return out
 

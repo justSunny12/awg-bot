@@ -191,28 +191,79 @@ async def test_admin_revoke_keeps_user_settings(services, make_active_client,
 
 # ── карточка админского профиля ──────────────────────────────────────────────
 
-def test_admin_own_profile_card_has_routing_button(monkeypatch):
-    """У админского профиля карточка урезана до безопасных действий и делает
-    ранний return. Условная маршрутизация — возможность, а не ограничение,
-    поэтому в эту ветку она входить обязана: иначе админ не может включить
-    функцию себе, хотя пользуется тем же VPN."""
+def test_profile_cards_have_no_routing_controls(monkeypatch):
+    """Управление РФ-доступом живёт в настройках, а не в карточках профилей:
+    это настройка сервиса, а не свойство клиента. В карточках его быть не должно
+    ни у обычного профиля, ни у админского."""
     from awgbot.core import config, models
     from awgbot.bot import keyboards as kb
 
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
-    client = models.Client(id=5, tg_id=1, name="Админ", device_limit=0,
+    client = models.Client(id=5, tg_id=1, name="Профиль", device_limit=0,
                            block_reason=0, is_service=0, activation_status="active",
                            invite_code=None, created_at="2026-01-01")
     for is_owner in (True, False):
         markup = kb.admin_client_actions(client, has_devices=True,
                                          is_admin_owner=is_owner)
         labels = [b.text for row in markup.inline_keyboard for b in row]
-        assert any("Российский IP" in t for t in labels), \
-            f"кнопки нет при is_admin_owner={is_owner}"
-    # но опасных действий в админской карточке по-прежнему нет
-    own = [b.text for row in kb.admin_client_actions(
-        client, has_devices=True, is_admin_owner=True).inline_keyboard for b in row]
-    assert not any(w in t for t in own for w in ("Удалить", "Заблокировать", "Лимит"))
+        assert not any("РФ-доступ" in t for t in labels), \
+            f"кнопка осталась в карточке при is_admin_owner={is_owner}"
+
+
+def test_settings_screen_lists_clients_only_when_enabled():
+    """Список профилей показываем только при включённой функции: раздавать
+    разрешения на выключённое — приглашение к «я же разрешил, почему не работает»."""
+    from awgbot.core import models
+    from awgbot.bot import keyboards as kb
+
+    clients = [models.Client(id=i, tg_id=100 + i, name=f"К{i}", device_limit=0,
+                             block_reason=0, is_service=0, activation_status="active",
+                             invite_code=None, created_at="2026-01-01",
+                             routing_allowed=i % 2)
+               for i in (1, 2)]
+
+    off = [b.text for row in kb.settings_routing(False, clients).inline_keyboard
+           for b in row]
+    assert not any("К1" in t or "К2" in t for t in off)
+    assert any("🔴" in t and "Условная маршрутизация" in t for t in off)
+
+    on = [b.text for row in kb.settings_routing(True, clients).inline_keyboard
+          for b in row]
+    assert "🟢 К1" in on and "🔴 К2" in on          # кружок = состояние разрешения
+    assert any("🟢" in t and "Условная маршрутизация" in t for t in on)
+
+
+async def test_grant_from_settings_screen(services, make_active_client, fake_bot):
+    """Выдача разрешения из настроек — тот же верхний слой флага."""
+    from awgbot.bot.handlers import settings as settings_h
+    from awgbot.bot.callbacks import SetCB
+    from awgbot.core import config
+
+    c = make_active_client(tg_id=91)
+    cb, _ = _cb(fake_bot, config.ADMIN_ID)
+    await settings_h.routing_action(
+        cb, SetCB(sec="rt", act="do", key="allow", val=str(c.id)), services)
+    assert services.db.get_client(c.id).routing_allowed == 1
+
+    cb2, _ = _cb(fake_bot, config.ADMIN_ID)
+    await settings_h.routing_action(
+        cb2, SetCB(sec="rt", act="do", key="allow", val=str(c.id)), services)
+    assert services.db.get_client(c.id).routing_allowed == 0
+
+
+def test_admin_has_access_without_grant(services, make_active_client):
+    """Админу разрешение не требуется — он его сам и выдаёт. Иначе пришлось бы
+    отмечать галочку себе, а в списке профилей появилась бы бессмысленная строка."""
+    from awgbot.core import config
+    admin = make_active_client(tg_id=config.ADMIN_ID)
+    assert admin.routing_allowed == 0
+    assert services.routing_allowed_for(admin) is True
+    assert admin.id not in [c.id for c in services.routing_grantable_clients()]
+
+    dc = services.add_device(admin.id, "Телефон")
+    services.set_routing_master(admin.id, True)
+    services.set_device_routing(dc.device_id, True)
+    assert services.db.routing_active_addresses(config.ADMIN_ID) == {admin.id: [dc.address]}
 
 
 async def test_admin_can_enable_feature_for_himself(services, make_active_client,
@@ -245,3 +296,23 @@ async def test_admin_master_requires_permission_first(services, make_active_clie
     await admin_h.client_routing_master(cb, RoutingCB(action="master", ref=c.id), services)
     assert cb.answers[0][1] is True
     assert services.db.get_client(c.id).routing_master == 0
+
+
+def test_infobox_line_appears_only_when_granted(services, make_active_client):
+    """Строка «Доступ к РФ-сервисам» появляется, как только админ разрешил, и
+    показывает положение переключателя самого клиента."""
+    from awgbot.bot import texts
+    c = make_active_client(tg_id=95)
+    assert services.routing_access_for_client(c) is None      # не разрешено — строки нет
+    assert "РФ-сервисам" not in texts.greeting_client(c, True, (1, 3), None, None)
+
+    services.set_routing_allowed(c.id, True)
+    c = services.db.get_client(c.id)
+    assert services.routing_access_for_client(c) is False      # разрешено, но выключено
+    out = texts.greeting_client(c, True, (1, 3), None, False)
+    assert "Доступ к РФ-сервисам" in out and "🔴 выключен" in out
+
+    services.set_routing_master(c.id, True)
+    c = services.db.get_client(c.id)
+    assert services.routing_access_for_client(c) is True
+    assert "🟢 включен" in texts.greeting_client(c, True, (1, 3), None, True)

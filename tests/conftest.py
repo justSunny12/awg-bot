@@ -147,6 +147,19 @@ def fake_routing(monkeypatch):
     def _set(name, fn):
         monkeypatch.setattr(routing, name, fn, raising=False)
 
+    # Горячий выключатель функции (settings) и работоспособность инфраструктуры
+    # (self_check) — разные слои, но в тестах ими удобно управлять одним флагом:
+    # state.enabled=False означает «функции нет», откуда бы это ни следовало.
+    from awgbot.core import settings as _settings
+    _orig_get_bool = _settings.get_bool
+
+    def _get_bool(key, default=None):
+        if key == "app.routing.enabled":
+            return state.enabled
+        return _orig_get_bool(key, default)
+
+    monkeypatch.setattr(_settings, "get_bool", _get_bool)
+
     monkeypatch.setattr(routing, "mutation_lock", threading.RLock(), raising=False)
     _set("self_check", lambda force=False: (state.enabled, "ок" if state.enabled else "выключена"))
     _set("available", lambda: state.enabled)

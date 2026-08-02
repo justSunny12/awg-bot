@@ -157,6 +157,8 @@ if [ "$MODE" = "rollback" ]; then
     drop_rule filter FORWARD -d "$CLIENT_SUBNET" -j ACCEPT
     run "ip route del $CLIENT_SUBNET via $CONT_IP 2>/dev/null || true"
     run "rm -f $DNSMASQ_CONF"
+    run "rm -rf /etc/systemd/system/${DNSMASQ_SERVICE}.service.d/ipset.conf"
+    run "systemctl daemon-reload"
     run "systemctl restart ${DNSMASQ_SERVICE} 2>/dev/null || true"
     run "ip link del $DNS_IF 2>/dev/null || true"
     run "systemctl disable --now awg-bot-routing.service 2>/dev/null || true"
@@ -223,7 +225,28 @@ if ! systemctl list-unit-files 2>/dev/null | grep -q "^${DNSMASQ_SERVICE}\.servi
     say "и запустить этот скрипт ещё раз — он доделает шаги 3-6 (идемпотентен)."
     exit 0
 fi
+# CAP_NET_ADMIN: без него директивы ipset= выполняются ВХОЛОСТУЮ. Демон
+# стартует от root и сбрасывает привилегии до пользователя dnsmasq; capability
+# для записи в наборы при этом теряется. Ошибки нет ни одной — dnsmasq исправно
+# резолвит, наборы просто остаются пустыми, маркировать нечего, и трафик молча
+# идёт мимо шлюза. Диагностируется только сравнением «резолв есть, набор пуст».
+step "2a. CAP_NET_ADMIN для dnsmasq"
+say "  Возвращаем ровно одну привилегию, а не запускаем демон от root."
+if [ "$MODE" = "apply" ]; then
+    mkdir -p /etc/systemd/system/${DNSMASQ_SERVICE}.service.d
+    cat > /etc/systemd/system/${DNSMASQ_SERVICE}.service.d/ipset.conf <<'CAPEOF'
+# Поставлено routing-host-setup.sh. Без CAP_NET_ADMIN dnsmasq не может писать в
+# ipset, и условная маршрутизация не работает БЕЗ сообщений об ошибке.
+[Service]
+AmbientCapabilities=CAP_NET_ADMIN
+CAPEOF
+    printf '  записан override\n'
+else
+    printf '  would: записать override с AmbientCapabilities=CAP_NET_ADMIN\n'
+fi
+run "systemctl daemon-reload"
 run "systemctl enable --now ${DNSMASQ_SERVICE}"
+run "systemctl restart ${DNSMASQ_SERVICE}"
 
 # 3) DNAT :53 — чтобы выданные конфиги с DNS=1.1.1.1 работали без перевыпуска
 step "3. Перехват DNS клиентов на dnsmasq"
@@ -269,6 +292,10 @@ step "Проверка"
 say "  ip route get 10.8.1.1"
 say "  iptables -t nat -C POSTROUTING -s $CLIENT_SUBNET -j MASQUERADE && echo ok"
 say "  dig +short @$DNS_ADDR example.com"
+say ""
+say "  ГЛАВНАЯ проверка — наполняется ли набор (иначе маркировать нечего):"
+say "    dig +short @$DNS_ADDR sberbank.ru >/dev/null; ipset list ru_base | grep -c '^[0-9]'"
+say "  Ноль при живом резолве = dnsmasq не может писать в ipset (см. шаг 2a)."
 say ""
 say "ВАЖНО: правила iptables и адрес на $DNS_IF эфемерны — переживут перезапуск"
 say "бота, но не ребут хоста. Закрепи (netfilter-persistent / systemd-юнит),"
