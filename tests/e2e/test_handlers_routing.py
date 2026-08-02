@@ -14,6 +14,13 @@ from tests.conftest import FakeCallback, FakeMessage, FakeState
 pytestmark = pytest.mark.e2e
 
 
+def _srcset(client_id):
+    """Имя src-набора клиента: общего набора больше нет — каждый включённый
+    профиль получает своё правило и свой набор адресов."""
+    from awgbot.infra import routing as _rt
+    return _rt.src_set(client_id)
+
+
 def _cb(bot, uid, data=""):
     nav = FakeMessage(chat_id=uid, user_id=uid, bot=bot)
     return FakeCallback(data=data, message=nav, user_id=uid, bot=bot), nav
@@ -84,7 +91,7 @@ async def test_device_toggle_applies_to_infrastructure(
     await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=dc.device_id),
                                           c, services)
     assert services.db.get_device(dc.device_id).routing_enabled == 1
-    assert fake_routing.sets[config.ROUTING_SET_SRC] == [dc.address]
+    assert fake_routing.sets[_srcset(c.id)] == [dc.address]
 
 
 async def test_device_toggle_rejects_foreign_device(
@@ -311,7 +318,7 @@ async def test_admin_toggles_client_device(services, make_active_client, fake_bo
     cb, _ = _cb(fake_bot, 1)
     await admin_h.admin_routing_device(cb, RoutingCB(action="dev", ref=dc.device_id), services)
     assert services.db.get_device(dc.device_id).routing_enabled == 1
-    assert fake_routing.sets[config.ROUTING_SET_SRC] == [dc.address]
+    assert fake_routing.sets[_srcset(c.id)] == [dc.address]
 
 
 def test_client_menu_button_position_and_state(monkeypatch):

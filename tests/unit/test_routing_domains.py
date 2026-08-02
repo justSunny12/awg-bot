@@ -54,11 +54,11 @@ def test_normalize_rejects_too_long():
 
 # ── покрытие базой и денай-лист ──────────────────────────────────────────────
 
-def test_covered_by_base_matches_zone_with_subdomains():
-    zones = ["ru", "xn--p1ai", "su"]
-    assert routing.covered_by_base("sberbank.ru", zones)
-    assert routing.covered_by_base("lk.deep.sberbank.ru", zones)
-    assert not routing.covered_by_base("example.com", zones)
+def test_covered_by_base_is_inert_after_inversion():
+    """Базовый набор наполняется извне и по имени домена не проверяется —
+    принадлежность видна только по адресу, уже после резолва."""
+    assert not routing.covered_by_base("sberbank.ru", ["ru"])
+    assert not routing.covered_by_base("example.com", [])
 
 
 def test_is_denied_matches_suffix():
@@ -74,14 +74,9 @@ def test_is_denied_matches_suffix():
 
 def test_parse_batch_splits_and_reports_reasons():
     accepted, rejected = routing.parse_batch(
-        "https://bank.com\nnetflix.com, мусор_тут\nsberbank.ru",
-        base_zones=["ru"], denylist=[])
+        "https://bank.com\nnetflix.com, мусор_тут", base_zones=(), denylist=[])
     assert accepted == ["bank.com", "netflix.com"]
-    reasons = dict(rejected)
-    assert "мусор_тут" in reasons
-    # .ru уже покрыт базой — это не ошибка ввода, но и добавлять незачем
-    assert "sberbank.ru" in reasons
-    assert "базов" in reasons["sberbank.ru"]
+    assert "мусор_тут" in dict(rejected)
 
 
 def test_parse_batch_dedupes_within_one_paste():
@@ -104,29 +99,29 @@ def test_parse_batch_empty_input():
 
 # ── build_dnsmasq_conf ───────────────────────────────────────────────────────
 
-def test_conf_has_base_zones():
+def test_conf_has_only_user_domains():
+    """Базовые списки бот не генерит — их наполняют извне, вместе с подсетями,
+    которые в DNS вообще не участвуют."""
     out = routing.build_dnsmasq_conf(
-        base_zones=["ru", "xn--p1ai", "su"], domains_by_client={},
-        set_base="ru_base", set_user_prefix="ru_u")
-    assert "ipset=/ru/ru_base" in out
-    assert "ipset=/xn--p1ai/ru_base" in out
-    assert "ipset=/su/ru_base" in out
+        domains_by_client={3: ["netflix.com"]}, set_user_prefix="vpn_u")
+    assert "ipset=/netflix.com/vpn_u3" in out
+    assert "ipset=/ru/" not in out
 
 
 def test_conf_merges_shared_domain_into_one_directive():
     """Один домен у двух клиентов — ОДНА директива с обоими наборами: тогда
     единственный резолв наполняет оба, и кэш никого не обделяет."""
     out = routing.build_dnsmasq_conf(
-        base_zones=[], set_base="ru_base", set_user_prefix="ru_u",
+        set_user_prefix="vpn_u",
         domains_by_client={3: ["shared.com", "only3.com"], 7: ["shared.com"]})
-    assert "ipset=/shared.com/ru_u3,ru_u7" in out
-    assert "ipset=/only3.com/ru_u3" in out
+    assert "ipset=/shared.com/vpn_u3,vpn_u7" in out
+    assert "ipset=/only3.com/vpn_u3" in out
     assert out.count("shared.com") == 1
 
 
 def test_conf_is_deterministic():
     """Один и тот же вход → байт-в-байт тот же файл: иначе каждая реконсиляция
     выглядела бы как изменение и дёргала рестарт dnsmasq."""
-    kw = dict(base_zones=["ru"], set_base="ru_base", set_user_prefix="ru_u",
+    kw = dict(set_user_prefix="vpn_u",
               domains_by_client={7: ["b.com", "a.com"], 3: ["c.com"]})
     assert routing.build_dnsmasq_conf(**kw) == routing.build_dnsmasq_conf(**kw)

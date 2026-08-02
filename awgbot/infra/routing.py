@@ -152,6 +152,20 @@ def _check_host_tools() -> None:
         raise RoutingUnavailable(
             "iptables собран без поддержки `-m set` — маркировать по наборам нечем")
 
+    # Базовый набор описывает то, чему нужна ЗАГРАНИЦА, а правило работает от
+    # обратного. Пустой набор означает «на шлюз уходит всё», включая заблокированное,
+    # которое с российского адреса не откроется. Это не мелкая недостача, а
+    # состояние, при котором включать функцию нельзя.
+    probe = _host(["ipset", "list", config.ROUTING_SET_BASE], check=False)
+    if probe.returncode == 0:
+        entries = sum(1 for l in probe.stdout.decode(errors="replace").splitlines()
+                      if l[:1].isdigit())
+        if entries == 0:
+            raise RoutingUnavailable(
+                f"набор {config.ROUTING_SET_BASE} пуст — при инверсии логики это "
+                f"отправило бы на шлюз ВЕСЬ трафик. Запустите "
+                f"install/routing-lists-update.sh")
+
 
 def _check_static_plumbing() -> None:
     """Проверить обвяз, который ставится при развёртывании, а не ботом.
@@ -271,8 +285,18 @@ def drop_nat_exempt() -> None:
 # Плечо ХОСТА: наборы
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _ensure_set(name: str, kind: str) -> None:
+def ensure_set(name: str, kind: str) -> None:
+    """Создать набор, если его нет. Содержимое НЕ трогает.
+
+    Для доменных наборов это единственная допустимая операция со стороны бота:
+    наполняет их dnsmasq по мере резолва, и любая перезапись стирала бы всё
+    накопленное. Бот отвечает лишь за то, чтобы набор существовал к моменту,
+    когда на него сошлётся правило или директива ipset=.
+    """
     _host(["ipset", "create", name, kind, "-exist"])
+
+
+_ensure_set = ensure_set          # прежнее приватное имя (внутренние вызовы)
 
 
 def list_sets() -> list[str]:
@@ -320,21 +344,22 @@ def rebuild_chain(client_ids) -> None:
     и появляются/исчезают. С `-C || -I` пришлось бы вычислять разницу и удалять
     осиротевшие правила удалённых клиентов; флаш своей цепочки делает это даром.
 
-    Правило на клиента: «источник — его устройство И назначение — его домен».
-    Плюс одно общее: «источник — любое включённое устройство И назначение — в
-    базовом списке».
+    Правило на клиента — ОТ ОБРАТНОГО: «источник его, а назначение НЕ в списке
+    тех, кому нужна заграница» → на шлюз. Так российский адрес достаётся всему,
+    что не заблокировано, включая сервисы на .com, и вести перечень российских
+    сайтов не приходится вовсе.
+
+    Оба отрицания в одном правиле дают пересечение: мимо шлюза уходит и то, что
+    в базовом списке, и то, что клиент добавил себе лично.
     """
     chain = config.ROUTING_CHAIN
     _mangle(["-N", chain], check=False)          # уже есть → код 1, это норма
     _mangle(["-F", chain])
-    _mangle(["-A", chain,
-             "-m", "set", "--match-set", config.ROUTING_SET_SRC, "src",
-             "-m", "set", "--match-set", config.ROUTING_SET_BASE, "dst",
-             "-j", "MARK", "--set-xmark", _MARK])
     for cid in sorted(client_ids):
         _mangle(["-A", chain,
                  "-m", "set", "--match-set", src_set(cid), "src",
-                 "-m", "set", "--match-set", user_set(cid), "dst",
+                 "-m", "set", "!", "--match-set", config.ROUTING_SET_BASE, "dst",
+                 "-m", "set", "!", "--match-set", user_set(cid), "dst",
                  "-j", "MARK", "--set-xmark", _MARK])
     # хук в PREROUTING — идемпотентно. Сужен клиентской подсетью: до цепочки
     # доходит только немаскараженный трафик включённых устройств, остальному в
@@ -455,7 +480,7 @@ __all__ = [
     "RoutingError", "RoutingUnavailable", "mutation_lock",
     "self_check", "available", "user_set", "src_set",
     "sync_nat_exempt", "drop_nat_exempt",
-    "replace_members", "destroy_set", "list_sets",
+    "ensure_set", "replace_members", "destroy_set", "list_sets",
     "rebuild_chain", "drop_chain", "ensure_route", "set_marking_enabled",
     "link_handshake_age", "write_dnsmasq_conf",
 ]

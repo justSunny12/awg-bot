@@ -137,6 +137,11 @@ def fake_routing(monkeypatch):
     def replace_members(name, kind, members):
         state.sets[name] = list(members)
 
+    def ensure_set(name, kind):
+        # создать, не трогая содержимое — так бот обращается с доменными
+        # наборами, которые наполняет не он
+        state.sets.setdefault(name, [])
+
     def write_conf(text):
         changed = text != state.conf
         state.conf = text
@@ -164,6 +169,7 @@ def fake_routing(monkeypatch):
     _set("self_check", lambda force=False: (state.enabled, "ок" if state.enabled else "выключена"))
     _set("available", lambda: state.enabled)
     _set("replace_members", replace_members)
+    _set("ensure_set", ensure_set)
     _set("destroy_set", lambda name: state.sets.pop(name, None))
     _set("list_sets", lambda: sorted(state.sets))
     _set("rebuild_chain", lambda ids: setattr(state, "chain", sorted(ids)))

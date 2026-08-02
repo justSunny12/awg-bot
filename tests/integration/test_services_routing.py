@@ -12,6 +12,13 @@ from awgbot.core.blocks import DeviceBlock
 pytestmark = pytest.mark.integration
 
 
+def _srcset(client_id):
+    """Имя src-набора клиента: общего набора больше нет — каждый включённый
+    профиль получает своё правило и свой набор адресов."""
+    from awgbot.infra import routing as _rt
+    return _rt.src_set(client_id)
+
+
 def _device(services, client, name="Телефон"):
     return services.add_device(client.id, name)
 
@@ -22,16 +29,15 @@ def test_all_three_layers_required(services, db, make_active_client, fake_routin
     """Адрес попадает в набор только когда подняты ВСЕ три слоя."""
     c = make_active_client()
     dc = _device(services, c)
-    src = config.ROUTING_SET_SRC
 
     services.set_device_routing(dc.device_id, True)          # только нижний
-    assert fake_routing.sets.get(src) == []
+    assert not fake_routing.sets.get(_srcset(c.id))
 
     services.set_routing_master(c.id, True)                  # + мастер клиента
-    assert fake_routing.sets.get(src) == []
+    assert not fake_routing.sets.get(_srcset(c.id))
 
     services.set_routing_allowed(c.id, True)                 # + разрешение админа
-    assert fake_routing.sets[src] == [dc.address]
+    assert fake_routing.sets[_srcset(c.id)] == [dc.address]
 
 
 def test_enabled_device_is_exempted_from_masquerade(
@@ -58,15 +64,15 @@ def test_revoking_permission_kills_effect_but_keeps_flags(
     services.set_routing_allowed(c.id, True)
     services.set_routing_master(c.id, True)
     services.set_device_routing(dc.device_id, True)
-    assert fake_routing.sets[config.ROUTING_SET_SRC] == [dc.address]
+    assert fake_routing.sets[_srcset(c.id)] == [dc.address]
 
     services.set_routing_allowed(c.id, False)
-    assert fake_routing.sets[config.ROUTING_SET_SRC] == []
+    assert not fake_routing.sets.get(_srcset(c.id))
     assert db.get_client(c.id).routing_master == 1            # нижние слои целы
     assert db.get_device(dc.device_id).routing_enabled == 1
 
     services.set_routing_allowed(c.id, True)
-    assert fake_routing.sets[config.ROUTING_SET_SRC] == [dc.address]
+    assert fake_routing.sets[_srcset(c.id)] == [dc.address]
 
 
 def test_master_toggle_switches_all_devices_at_once(
@@ -77,11 +83,11 @@ def test_master_toggle_switches_all_devices_at_once(
     services.set_routing_master(c.id, True)
     services.set_device_routing(d1.device_id, True)
     services.set_device_routing(d2.device_id, True)
-    assert sorted(fake_routing.sets[config.ROUTING_SET_SRC]) == sorted(
+    assert sorted(fake_routing.sets[_srcset(c.id)]) == sorted(
         [d1.address, d2.address])
 
     services.set_routing_master(c.id, False)
-    assert fake_routing.sets[config.ROUTING_SET_SRC] == []
+    assert not fake_routing.sets.get(_srcset(c.id))
 
 
 def test_blocked_device_stays_in_set(services, make_active_client, fake_routing):
@@ -96,7 +102,7 @@ def test_blocked_device_stays_in_set(services, make_active_client, fake_routing)
 
     services._device_set_block(dc.device_id, DeviceBlock.USER)
     services.reconcile_routing()
-    assert fake_routing.sets[config.ROUTING_SET_SRC] == [dc.address]
+    assert fake_routing.sets[_srcset(c.id)] == [dc.address]
 
 
 # ── Личные списки доменов ────────────────────────────────────────────────────
@@ -118,13 +124,13 @@ def test_add_domain_twice_is_reported_not_duplicated(services, make_active_clien
     assert services.routing_domains(c.id) == ["bank.com"]
 
 
-def test_domain_in_base_zone_is_refused_with_explanation(services, make_active_client):
-    """.ru уже покрыт базовой директивой — добавлять незачем, и человеку надо
-    сказать об этом, иначе он решит, что кнопка не работает."""
+def test_ru_domain_is_accepted_after_inversion(services, make_active_client):
+    """После инверсии логики .ru-домен в личном списке ОСМЫСЛЕН: список описывает
+    то, чему нужна заграница, и российский домен туда добавляют осознанно —
+    например, если сервис требует зарубежный адрес."""
     c = make_active_client()
-    res = services.routing_add_domains(c.id, "sberbank.ru")
-    assert res.added == []
-    assert "базов" in dict(res.rejected)["sberbank.ru"]
+    res = services.routing_add_domains(c.id, "example.ru")
+    assert res.added == ["example.ru"]
 
 
 def test_denylist_blocks_own_infrastructure(services, make_active_client, monkeypatch):
@@ -158,13 +164,15 @@ def test_remove_and_clear(services, make_active_client):
 
 # ── Проекция в dnsmasq ───────────────────────────────────────────────────────
 
-def test_dnsmasq_conf_has_base_zones_and_user_domains(
+def test_dnsmasq_conf_has_only_user_domains(
         services, make_active_client, fake_routing):
+    """Базовый набор бот не генерит: он наполняется извне готовыми списками, и
+    подсети попадают туда без участия DNS."""
     c = make_active_client()
     services.routing_add_domains(c.id, "bank.com")
     conf = fake_routing.conf
-    assert "ipset=/ru/" in conf
     assert f"ipset=/bank.com/{config.ROUTING_SET_USER_PREFIX}{c.id}" in conf
+    assert "ipset=/ru/" not in conf
 
 
 def test_dnsmasq_not_rewritten_when_nothing_changed(

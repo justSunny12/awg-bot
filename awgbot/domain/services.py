@@ -1738,10 +1738,7 @@ class Services:
         """
         limit = int(settings.get("app.routing.user_domains_max", 100))
         accepted, rejected = domain_routing.parse_batch(
-            text,
-            base_zones=config.ROUTING_BASE_ZONES,
-            denylist=config.routing_denylist(),
-        )
+            text, base_zones=(), denylist=config.routing_denylist())
         existing = set(self.db.list_routing_domains(client_id))
         free = max(0, limit - len(existing))
         added: list[str] = []
@@ -1790,7 +1787,6 @@ class Services:
                 # не просто выходим: иначе выключатель не выключал бы уже
                 # размеченный трафик, а лишь запрещал новые включения.
                 if not settings.get_bool("app.routing.enabled", False):
-                    routing.replace_members(config.ROUTING_SET_SRC, "hash:ip", ())
                     routing.sync_nat_exempt(())
                     routing.rebuild_chain(())
                     routing.set_marking_enabled(False)
@@ -1802,24 +1798,26 @@ class Services:
                 # существовать до того, как на них сошлётся правило или dnsmasq)
                 client_ids = sorted(set(addrs) | set(domains))
 
-                routing.replace_members(config.ROUTING_SET_BASE, "hash:net", ())
+                # Доменные наборы только СОЗДАЁМ: базовый наполняется извне
+                # готовыми списками, личные — dnsmasq по мере резолва. Перезапись
+                # стирала бы всё накопленное, и до следующего запроса к каждому
+                # домену маркировать было бы нечем.
+                routing.ensure_set(config.ROUTING_SET_BASE, "hash:net")
                 all_addrs = [a for lst in addrs.values() for a in lst]
-                routing.replace_members(config.ROUTING_SET_SRC, "hash:ip", all_addrs)
                 # плечо контейнера: выпустить трафик включённых устройств
                 # немаскараженным, иначе на хосте их не отличить от остальных
                 routing.sync_nat_exempt(all_addrs)
                 for cid in client_ids:
+                    # src-набор — наш, его перезаписываем; доменный — dnsmasq'а
                     routing.replace_members(routing.src_set(cid), "hash:ip",
                                             addrs.get(cid, ()))
-                    routing.replace_members(routing.user_set(cid), "hash:net", ())
+                    routing.ensure_set(routing.user_set(cid), "hash:net")
 
                 routing.rebuild_chain(client_ids)
                 self._routing_drop_orphan_sets(client_ids)
 
                 conf_text = domain_routing.build_dnsmasq_conf(
-                    base_zones=config.ROUTING_BASE_ZONES,
                     domains_by_client=domains,
-                    set_base=config.ROUTING_SET_BASE,
                     set_user_prefix=config.ROUTING_SET_USER_PREFIX,
                 )
                 routing.write_dnsmasq_conf(conf_text)

@@ -84,13 +84,11 @@ def zone_of(domain: str) -> str:
 
 
 def covered_by_base(domain: str, base_zones) -> bool:
-    """Домен уже покрыт базовой частью — он в одной из национальных зон.
-
-    Добавлять такой в личный список бессмысленно: базовая директива матчит зону
-    со всеми поддоменами, и общее правило маркировки сработает и без него.
-    Пользователю про это говорим явно, иначе он решит, что кнопка не работает.
-    """
-    return zone_of(domain) in set(base_zones or ())
+    """Оставлено для совместимости вызовов: с инверсией логики базовый набор
+    наполняется извне готовыми списками, и проверить принадлежность к нему по
+    имени домена нельзя — только по адресу, уже после резолва. Пользователю
+    добавление лишнего не вредит: правило матчит объединение наборов."""
+    return False
 
 
 def is_denied(domain: str, denylist) -> bool:
@@ -152,15 +150,17 @@ def parse_batch(text: str, *, base_zones=(), denylist=()) -> tuple[list[str], li
 
 def build_dnsmasq_conf(
     *,
-    base_zones,
     domains_by_client: dict[int, list[str]],
-    set_base: str,
     set_user_prefix: str,
 ) -> str:
-    """Собирает ВЕСЬ конфиг списков одним файлом.
+    """Собирает конфиг ЛИЧНЫХ списков одним файлом.
+
+    Базовый набор здесь не участвует: он наполняется извне готовыми списками
+    доменов и подсетей, и подсети попадают в него напрямую, без DNS. Бот отвечает
+    только за то, что человек добавил себе сам.
 
     Один домен — одна директива со всеми наборами, куда он входит:
-        ipset=/sberbank.ru/ru_u3,ru_u7
+        ipset=/netflix.com/vpn_u3,vpn_u7
     Так единственный резолв наполняет все нужные наборы разом, и вопрос
     «попадёт ли адрес в набор второго клиента при ответе из кэша» не возникает.
     Разносить директивы одного домена по разным файлам нельзя — на слияние в
@@ -171,25 +171,18 @@ def build_dnsmasq_conf(
     """
     lines = [
         "# Сгенерировано awg-bot. Правки будут перезаписаны.",
-        "# Условная маршрутизация: домены → ipset → маркировка → туннель до шлюза.",
+        "# Личные списки: домены, которым нужен ЗАРУБЕЖНЫЙ адрес. Всё, чего нет",
+        "# ни здесь, ни в базовом наборе, уходит на шлюз и выходит с российского.",
         "",
-        "# Базовая часть: национальные зоны целиком (со всеми поддоменами).",
     ]
-    for zone in base_zones or ():
-        zone = (zone or "").strip().lower()
-        if zone:
-            lines.append(f"ipset=/{zone}/{set_base}")
-
     # домен → наборы клиентов, у которых он в личном списке
     per_domain: dict[str, list[str]] = {}
     for client_id, domains in sorted((domains_by_client or {}).items()):
         for dom in domains:
             per_domain.setdefault(dom, []).append(f"{set_user_prefix}{client_id}")
 
-    if per_domain:
-        lines += ["", "# Личные списки пользователей."]
-        for dom in sorted(per_domain):
-            lines.append(f"ipset=/{dom}/{','.join(per_domain[dom])}")
+    for dom in sorted(per_domain):
+        lines.append(f"ipset=/{dom}/{','.join(per_domain[dom])}")
     lines.append("")
     return "\n".join(lines)
 
