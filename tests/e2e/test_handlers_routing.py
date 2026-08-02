@@ -213,3 +213,35 @@ def test_admin_own_profile_card_has_routing_button(monkeypatch):
     own = [b.text for row in kb.admin_client_actions(
         client, has_devices=True, is_admin_owner=True).inline_keyboard for b in row]
     assert not any(w in t for t in own for w in ("Удалить", "Заблокировать", "Лимит"))
+
+
+async def test_admin_can_enable_feature_for_himself(services, make_active_client,
+                                                    fake_bot, monkeypatch):
+    """У админа роль admin и client=None (middleware), поэтому клиентский роутер
+    его не пропускает. Без админских дублей тумблеров он мог бы разрешить себе
+    функцию, но не включить её — что и наблюдалось: rt_src оставался пустым."""
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    c = make_active_client(tg_id=config.ADMIN_ID)
+    dc = services.add_device(c.id, "Телефон")
+
+    cb, _ = _cb(fake_bot, config.ADMIN_ID)
+    await admin_h.client_routing_allow(cb, RoutingCB(action="allow", ref=c.id), services)
+    cb2, _ = _cb(fake_bot, config.ADMIN_ID)
+    await admin_h.client_routing_master(cb2, RoutingCB(action="master", ref=c.id), services)
+    cb3, _ = _cb(fake_bot, config.ADMIN_ID)
+    await admin_h.admin_routing_device(cb3, RoutingCB(action="dev", ref=dc.device_id), services)
+
+    assert services.db.get_device(dc.device_id).routing_enabled == 1
+    assert services.db.routing_active_addresses() == {c.id: [dc.address]}
+
+
+async def test_admin_master_requires_permission_first(services, make_active_client,
+                                                      fake_bot, monkeypatch):
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    c = make_active_client(tg_id=90)
+    cb, _ = _cb(fake_bot, config.ADMIN_ID)
+    await admin_h.client_routing_master(cb, RoutingCB(action="master", ref=c.id), services)
+    assert cb.answers[0][1] is True
+    assert services.db.get_client(c.id).routing_master == 0

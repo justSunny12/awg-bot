@@ -493,6 +493,13 @@ def admin_client_actions(client, *, has_devices: bool = True,
                             else "🇷🇺 Российский IP: запрещён"),
                       callback_data=RoutingCB(action="allow", ref=client.id))
             pattern.append(1)
+            # Мастер-тумблер прямо здесь — иначе админ, разрешив функцию себе,
+            # не смог бы её включить: клиентский раздел ему закрыт ролью.
+            if client.routing_allowed:
+                kb.button(text=("🇷🇺 Режим: включён" if client.routing_master
+                                else "🇷🇺 Режим: выключен"),
+                          callback_data=RoutingCB(action="master", ref=client.id))
+                pattern.append(1)
         kb.button(text="⬅️ Назад", callback_data=Menu(action="clients"))
         pattern.append(1)
         kb.adjust(*pattern)

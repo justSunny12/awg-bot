@@ -144,6 +144,39 @@ async def client_routing_allow(cb: CallbackQuery, callback_data: RoutingCB, serv
     await cb.answer("Российский IP разрешён" if new_state else "Российский IP запрещён")
 
 
+@router.callback_query(RoutingCB.filter(F.action == "master"))
+async def client_routing_master(cb: CallbackQuery, callback_data: RoutingCB, services):
+    """Мастер-тумблер профиля со стороны админа.
+
+    Дубль клиентского хендлера намеренно: у админа роль admin и client=None, так
+    что клиентский роутер его не пропускает. Без этой кнопки админ не мог бы
+    включить функцию себе, разрешив её. Клиенту это ничего не меняет — у него
+    свой путь через раздел в профиле."""
+    client = await call(services.db.get_client, callback_data.ref)
+    if client is None:
+        await cb.answer("Профиль не найден", show_alert=True)
+        return
+    if not client.routing_allowed:
+        await cb.answer("Сначала разреши профилю российский IP", show_alert=True)
+        return
+    new_state = not client.routing_master
+    await call(services.set_routing_master, client.id, new_state)
+    await _show_client_card(cb, services, client.id)
+    await cb.answer("Включено для профиля" if new_state else "Выключено для профиля")
+
+
+@router.callback_query(RoutingCB.filter(F.action == "dev"))
+async def admin_routing_device(cb: CallbackQuery, callback_data: RoutingCB, services):
+    """Тумблер режима на устройстве со стороны админа (без own_device: админ
+    работает с любым устройством, в том числе при разборе проблемы клиента)."""
+    dev = await call(services.db.get_device, callback_data.ref)
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
+        return
+    await call(services.set_device_routing, dev.id, not dev.routing_enabled)
+    await admin_device_open(cb, DeviceCB(action="open", device_id=dev.id), services)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Создание клиента (FSM: имя → лимит → период)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -849,8 +882,16 @@ async def admin_device_open(cb: CallbackQuery, callback_data: DeviceCB, services
         await cb.answer("Устройство не найдено", show_alert=True)
         return
     back_target, reassign_label = await _device_back_target_and_label(services, dev)
+    # Тумблер режима доступен админу и здесь: клиентские экраны ему закрыты
+    # ролью (middleware отдаёт role=admin и client=None), поэтому иначе он не
+    # смог бы включить функцию ни себе, ни при разборе проблемы у клиента.
+    owner = await call(services.db.get_client, dev.client_id)
+    rt_visible = bool(owner is not None and owner.routing_on
+                      and await call(services.routing_available))
     markup = kb.device_actions(dev, is_admin=True, back_target=back_target,
-                               reassign_label=reassign_label)
+                               reassign_label=reassign_label,
+                               routing_visible=rt_visible,
+                               routing_on=bool(dev.routing_enabled))
     text = texts.device_card_text(dev, for_admin=True)
     marker = texts.friend_marker(dev)
     if marker:
