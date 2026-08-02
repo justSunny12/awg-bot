@@ -125,3 +125,28 @@ def test_conf_is_deterministic():
     kw = dict(set_user_prefix="vpn_u",
               domains_by_client={7: ["b.com", "a.com"], 3: ["c.com"]})
     assert routing.build_dnsmasq_conf(**kw) == routing.build_dnsmasq_conf(**kw)
+
+
+# ── имена наборов — константы, не настройка ──────────────────────────────────
+
+def test_set_names_are_constants_not_yaml():
+    """Имена наборов и цепочек НЕ должны читаться из conf.
+
+    Боевой app.yaml при обновлении не мигрирует — seed_conf копирует только
+    отсутствующие файлы целиком. Поэтому однажды прописанное имя переживает смену
+    схемы, и бот начинает искать набор, которого больше никто не создаёт:
+    инфраструктура исправна, а функция молча не работает. Ровно это и случилось
+    при переходе ru_base → vpn_base.
+    """
+    import pathlib
+    from awgbot.core import config
+
+    src = pathlib.Path(config.__file__).read_text(encoding="utf-8")
+    for key in ("set_base", "set_user_prefix", "set_src_prefix",
+                '"chain"', '"nat_chain"'):
+        assert f'_rt.get({key}' not in src, f"{key} снова читается из yaml"
+
+    assert config.ROUTING_SET_BASE == "vpn_base"
+    assert config.ROUTING_SET_USER_PREFIX == "vpn_u"
+    assert config.ROUTING_CHAIN == "AWGBOT_RT"
+    assert config.ROUTING_NAT_CHAIN == "AWGBOT_RTNAT"

@@ -209,13 +209,21 @@ _rt = _app.get("routing", {})
 ROUTING_GW_INTERFACE: str = _rt.get("gw_interface", "")
 ROUTING_ENABLED: bool = bool(ROUTING_GW_INTERFACE)
 ROUTING_CLIENT_SUBNET = _rt.get("client_subnet", f"{SUBNET_PREFIX}.0/24")
-ROUTING_NAT_CHAIN = _rt.get("nat_chain", "AWGBOT_RTNAT")
 ROUTING_TABLE = int(_rt.get("table", 100))
 ROUTING_FWMARK = int(_rt.get("fwmark", 1))
-ROUTING_SET_BASE = _rt.get("set_base", "vpn_base")
-ROUTING_SET_USER_PREFIX = _rt.get("set_user_prefix", "vpn_u")
-ROUTING_SET_SRC_PREFIX = _rt.get("set_src_prefix", "rt_src_u")
-ROUTING_CHAIN = _rt.get("chain", "AWGBOT_RT")
+
+# Имена наборов и цепочек — КОНСТАНТЫ, а не настройка. Админу менять их незачем,
+# а сама возможность менять создаёт рассинхрон при обновлении: боевой yaml не
+# мигрирует (seed_conf копирует только отсутствующие файлы целиком), поэтому
+# однажды прописанное имя переживает смену схемы, и бот начинает искать набор,
+# которого больше никто не создаёт. Именно так и вышло при переходе
+# ru_base → vpn_base: инфраструктура была исправна, а бот смотрел не туда.
+# Оставшиеся в старых yaml ключи set_*/chain/nat_chain просто игнорируются.
+ROUTING_SET_BASE = "vpn_base"          # кому нужна заграница (наполняется извне)
+ROUTING_SET_USER_PREFIX = "vpn_u"      # личные исключения клиента N → vpn_u<N>
+ROUTING_SET_SRC_PREFIX = "rt_src_u"    # адреса устройств клиента N → rt_src_u<N>
+ROUTING_CHAIN = "AWGBOT_RT"            # маркировка на хосте
+ROUTING_NAT_CHAIN = "AWGBOT_RTNAT"     # исключения из MASQUERADE в контейнере
 ROUTING_DNSMASQ_CONF = _rt.get("dnsmasq_conf", "/etc/dnsmasq.d/awgbot-routing.conf")
 ROUTING_DNSMASQ_SERVICE = _rt.get("dnsmasq_service", "dnsmasq")
 
