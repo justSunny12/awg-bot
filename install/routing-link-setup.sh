@@ -80,14 +80,29 @@ for t in awg awg-quick; do
         say "ОШИБКА: $t не найден. Собери amneziawg-tools из исходников."
         exit 1; }
 done
-if ss -lnup 2>/dev/null | grep -q ":$LINK_PORT "; then
-    say "ОШИБКА: порт $LINK_PORT уже занят. Задай другой: LINK_PORT=51831 $0 --apply"
-    exit 1
-fi
+# Порядок проверок важен: свой же поднятый линк держит порт, и проверка порта
+# первой сообщала бы «порт занят» вместо «уже настроено» — диагноз, уводящий в
+# сторону ровно после успешного запуска.
 if [ -f "$CONF" ] && [ "$MODE" = "apply" ]; then
-    say "ОШИБКА: $CONF уже существует — линк, похоже, уже настроен."
-    say "Пересоздать: сначала $0 --rollback (сменятся ключи, малинку тоже"
-    say "придётся перенастроить)."
+    say ""
+    say "Линк уже настроен: $CONF существует."
+    if ip link show "$LINK_IF" >/dev/null 2>&1; then
+        say "Интерфейс $LINK_IF поднят — делать нечего."
+        say "Состояние:  awg show $LINK_IF"
+        say "Конфиг для шлюза: $GW_CONF_OUT"
+    else
+        say "Интерфейс $LINK_IF НЕ поднят. Поднять из существующего конфига:"
+        say "    awg-quick up $LINK_IF"
+    fi
+    say ""
+    say "Пересоздать с нуля: сначала $0 --rollback — сменятся ключи, и малинку"
+    say "придётся перенастроить заново."
+    exit 0
+fi
+if ss -lnup 2>/dev/null | grep -q ":$LINK_PORT "; then
+    say "ОШИБКА: порт $LINK_PORT занят кем-то другим (конфига $CONF нет)."
+    say "Кто держит:  ss -lnup | grep :$LINK_PORT"
+    say "Взять другой:  LINK_PORT=51834 $0 --apply"
     exit 1
 fi
 
