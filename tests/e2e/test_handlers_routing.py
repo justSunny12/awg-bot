@@ -187,3 +187,29 @@ async def test_admin_revoke_keeps_user_settings(services, make_active_client,
     assert services.db.get_client(c.id).routing_allowed == 0
     assert services.db.get_client(c.id).routing_master == 1
     assert services.db.get_device(dc.device_id).routing_enabled == 1
+
+
+# ── карточка админского профиля ──────────────────────────────────────────────
+
+def test_admin_own_profile_card_has_routing_button(monkeypatch):
+    """У админского профиля карточка урезана до безопасных действий и делает
+    ранний return. Условная маршрутизация — возможность, а не ограничение,
+    поэтому в эту ветку она входить обязана: иначе админ не может включить
+    функцию себе, хотя пользуется тем же VPN."""
+    from awgbot.core import config, models
+    from awgbot.bot import keyboards as kb
+
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    client = models.Client(id=5, tg_id=1, name="Админ", device_limit=0,
+                           block_reason=0, is_service=0, activation_status="active",
+                           invite_code=None, created_at="2026-01-01")
+    for is_owner in (True, False):
+        markup = kb.admin_client_actions(client, has_devices=True,
+                                         is_admin_owner=is_owner)
+        labels = [b.text for row in markup.inline_keyboard for b in row]
+        assert any("Российский IP" in t for t in labels), \
+            f"кнопки нет при is_admin_owner={is_owner}"
+    # но опасных действий в админской карточке по-прежнему нет
+    own = [b.text for row in kb.admin_client_actions(
+        client, has_devices=True, is_admin_owner=True).inline_keyboard for b in row]
+    assert not any(w in t for t in own for w in ("Удалить", "Заблокировать", "Лимит"))

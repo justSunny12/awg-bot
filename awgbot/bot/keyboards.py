@@ -485,6 +485,14 @@ def admin_client_actions(client, *, has_devices: bool = True,
         # только безопасное: имя. Никаких блок/лимит/пауза/продлить/удалить.
         kb.button(text="✏️ Имя", callback_data=ClientCB(action="edit_name", client_id=client.id))
         pattern.append(1)
+        # Условная маршрутизация — ВОЗМОЖНОСТЬ, а не ограничение, поэтому она в
+        # эту ветку входит: держать админа в стороне от собственной функции
+        # незачем, а запереть себя ею нельзя (VPN работает в обоих режимах).
+        if config.ROUTING_ENABLED:
+            kb.button(text=("🇷🇺 Российский IP: разрешён" if client.routing_allowed
+                            else "🇷🇺 Российский IP: запрещён"),
+                      callback_data=RoutingCB(action="allow", ref=client.id))
+            pattern.append(1)
         kb.button(text="⬅️ Назад", callback_data=Menu(action="clients"))
         pattern.append(1)
         kb.adjust(*pattern)
