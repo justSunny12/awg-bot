@@ -50,7 +50,12 @@ async def _guard(cb: CallbackQuery, services, client) -> bool:
     return False
 
 
-async def _show_panel(cb: CallbackQuery, services, client):
+async def show_panel(cb: CallbackQuery, services, client, back_target: str = None):
+    """Раздел РФ-доступа: тумблер, охват по устройствам, личный список.
+
+    back_target параметризован, потому что вход в раздел бывает из двух мест: у
+    клиента — из главного меню, у админа — из карточки профиля, и возвращать его
+    в клиентское меню было бы некуда."""
     domains = await call(services.routing_domains, client.id)
     on, total = await call(services.routing_client_summary, client)
     link_ok = await call(services.routing_link_ok)
@@ -59,7 +64,10 @@ async def _show_panel(cb: CallbackQuery, services, client):
         devices_on=on, devices_total=total, link_ok=link_ok)
     await edit(cb, text, kb.routing_panel(
         client.id, master_on=bool(client.routing_master), domains=domains,
-        back_target=Menu(action="main").pack()))
+        back_target=back_target or Menu(action="main").pack()))
+
+
+_show_panel = show_panel          # прежнее имя (внутренние вызовы)
 
 
 @router.callback_query(RoutingCB.filter(F.action == "panel"))

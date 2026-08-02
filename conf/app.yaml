@@ -76,7 +76,20 @@ routing:
   # их настраивать создавала рассинхрон: боевой конфиг при обновлении не
   # мигрирует, и однажды прописанное имя переживало смену схемы, после чего бот
   # искал набор, которого никто не создаёт.
-  dnsmasq_conf: "/etc/dnsmasq.d/awgbot-routing.conf"   # генерится ботом ЦЕЛИКОМ
+  # Источники базового набора. Бот обновляет его САМ — при старте и по
+  # расписанию; руками ничего запускать не нужно. Подсети грузятся напрямую в
+  # ipset (без DNS), домены — через отдельный файл dnsmasq.
+  lists_refresh_hours: 6            # как часто обновлять
+  lists_domains_url: "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Russia/inside-dnsmasq-ipset.lst"
+  lists_subnet_urls:
+    - "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/telegram.lst"
+    - "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/meta.lst"
+    - "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/twitter.lst"
+    - "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/cloudflare.lst"
+    - "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/discord.lst"
+    - "https://www.gstatic.com/ipranges/goog.json"
+  dnsmasq_base_conf: "/etc/dnsmasq.d/awgbot-vpn-domains.conf"  # базовые домены
+  dnsmasq_conf: "/etc/dnsmasq.d/awgbot-routing.conf"   # личные списки, генерится ботом
   dnsmasq_service: "dnsmasq"       # unit для restart (reload не применяет ipset=)
   user_domains_max: 100            # потолок личного списка на клиента
   # Домены, запрещённые к добавлению в личный список (совпадение по суффиксу:

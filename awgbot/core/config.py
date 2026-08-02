@@ -225,7 +225,11 @@ ROUTING_SET_SRC_PREFIX = "rt_src_u"    # адреса устройств кли�
 ROUTING_CHAIN = "AWGBOT_RT"            # маркировка на хосте
 ROUTING_NAT_CHAIN = "AWGBOT_RTNAT"     # исключения из MASQUERADE в контейнере
 ROUTING_DNSMASQ_CONF = _rt.get("dnsmasq_conf", "/etc/dnsmasq.d/awgbot-routing.conf")
+ROUTING_DNSMASQ_BASE_CONF = _rt.get("dnsmasq_base_conf",
+                                    "/etc/dnsmasq.d/awgbot-vpn-domains.conf")
 ROUTING_DNSMASQ_SERVICE = _rt.get("dnsmasq_service", "dnsmasq")
+ROUTING_LISTS_DOMAINS_URL = _rt.get("lists_domains_url", "")
+ROUTING_LISTS_SUBNET_URLS = list(_rt.get("lists_subnet_urls") or [])
 
 
 def routing_denylist() -> list[str]:

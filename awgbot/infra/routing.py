@@ -439,7 +439,53 @@ def link_handshake_age() -> Optional[int]:
 # Конфиг dnsmasq (на хосте)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def write_dnsmasq_conf(text: str) -> bool:
+# ─────────────────────────────────────────────────────────────────────────────
+# Наполнение базового набора
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fetch(url: str, timeout: int = 60) -> Optional[str]:
+    """Скачать текст. None при любой неудаче — вызывающий сам решит, что делать.
+
+    Молчаливый None, а не исключение: недоступность апстрима не должна ронять
+    ни старт бота, ни цикл мониторинга. Прежний набор при этом остаётся в силе —
+    устаревшие списки лучше пустых, потому что пустой отправил бы на шлюз всё.
+    """
+    import urllib.request
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "awg-bot"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except Exception as e:                                # noqa: BLE001
+        log.warning("routing: не скачался %s (%s)", url, e)
+        return None
+
+
+def add_networks(members) -> int:
+    """Залить подсети в базовый набор. Возвращает число принятых.
+
+    Через `ipset restore` одной пачкой, а не по одной команде на запись: списки
+    измеряются тысячами строк, и раздельные вызовы растянули бы обновление на
+    минуты. `-exist` делает операцию идемпотентной — набор пополняется, а не
+    пересоздаётся, поэтому то, что уже накопил dnsmasq, остаётся на месте.
+    """
+    ensure_set(config.ROUTING_SET_BASE, "hash:net")
+    payload = "".join(f"add {config.ROUTING_SET_BASE} {m} -exist\n" for m in members)
+    if not payload:
+        return 0
+    _host(["ipset", "restore", "-exist"], input_data=payload.encode())
+    return payload.count("\n")
+
+
+def base_set_size() -> int:
+    """Сколько записей в базовом наборе (0 — в том числе если его нет)."""
+    proc = _host(["ipset", "list", config.ROUTING_SET_BASE], check=False)
+    if proc.returncode != 0:
+        return 0
+    return sum(1 for l in proc.stdout.decode(errors="replace").splitlines()
+               if l[:1].isdigit())
+
+
+def write_dnsmasq_conf(text: str, path: str = None) -> bool:
     """Записать конфиг списков и применить. True — файл изменился (был рестарт).
 
     Дифф-скип обязателен: реконсиляция ходит по расписанию, а рестарт dnsmasq
@@ -449,7 +495,7 @@ def write_dnsmasq_conf(text: str) -> bool:
     Именно restart, а не reload: SIGHUP перечитывает hosts и чистит кэш, но НЕ
     конфиг-файлы — новые директивы ipset= через reload не подхватываются.
     """
-    path = config.ROUTING_DNSMASQ_CONF
+    path = path or config.ROUTING_DNSMASQ_CONF
     try:
         with open(path, "r", encoding="utf-8") as f:
             if f.read() == text:

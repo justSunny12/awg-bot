@@ -39,6 +39,8 @@ DNSMASQ_CONF="/etc/dnsmasq.d/awgbot-base.conf"
 DNSMASQ_SERVICE="${DNSMASQ_SERVICE:-dnsmasq}"
 UPSTREAM1="${UPSTREAM1:-1.1.1.1}"
 UPSTREAM2="${UPSTREAM2:-9.9.9.9}"
+# имя контейнера берём из conf бота, а не хардкодим
+CONTAINER="${CONTAINER:-$(awk -F'"' '/^  container:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
 CONTAINER="${CONTAINER:-amnezia-awg2}"
 
 MODE="plan"

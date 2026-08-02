@@ -137,6 +137,15 @@ async def main() -> None:
         await asyncio.to_thread(services.reconcile_ssh_access)  # пер-пирный SSH-к-хосту
     except Exception as e:                               # noqa: BLE001
         log.warning("reconcile_ssh_access на старте: %s", e)
+    try:
+        # Списки условной маршрутизации — на старте, а не руками до него. Метод
+        # сам решает, пора ли обновлять; при пустом наборе делает это немедленно,
+        # потому что пустой набор при инверсии логики отправил бы на шлюз ВЕСЬ
+        # трафик, включая заблокированное.
+        await asyncio.to_thread(services.routing_update_lists)
+        await asyncio.to_thread(services.reconcile_routing)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("routing на старте: %s", e)
 
     # итог self-update: если перед рестартом запускалось обновление — удалить
     # «дождись завершения» и отчитаться админу («успешно обновлен…» + changelog

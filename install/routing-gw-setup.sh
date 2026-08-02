@@ -3,11 +3,14 @@
 # routing-gw-setup.sh — сторона ШЛЮЗА (малинки) для условной маршрутизации.
 # Запускается НА МАЛИНКЕ. См. docs/conditional-routing.md, §12.
 #
-# КОНТЕКСТ. Контейнер awg-test работает с network_mode=host, поэтому интерфейсы
-# и правила, созданные внутри него, живут в хостовом namespace. Инструменты awg
-# есть только в контейнере, iptables — и там, и на хосте (это одни и те же
-# правила). Конфиги примонтированы read-only из /root/awg-test/configs, значит
-# файл кладём на хост, а поднимаем через контейнер.
+# КОНТЕКСТ. Контейнер AmneziaWG на шлюзе работает с network_mode=host, поэтому
+# интерфейсы и правила, созданные внутри него, живут в хостовом namespace.
+# Инструменты awg есть только в контейнере, iptables — и там, и на хосте (это
+# одни и те же правила). Конфиги примонтированы read-only, значит файл кладём на
+# хост, а поднимаем через контейнер.
+#
+# Имя контейнера, интерфейс выхода и каталог конфигов ОПРЕДЕЛЯЮТСЯ сами —
+# переопределяются переменными CONTAINER / WAN_IF / HOST_CONF_DIR.
 #
 # ЧТО ДЕЛАЕТ:
 #   1) кладёт конфиг линка и поднимает интерфейс;
@@ -18,8 +21,8 @@
 #      и путь к NAS, роутеру и торрент-клиенту;
 #   4) автозапуск.
 #
-# ЧЕГО НЕ ДЕЛАЕТ: не трогает awg0/awg1 и домашнюю схему (vpn_domains,
-# awg-routing.sh, awg-lists-update.sh) — они продолжают работать как работали.
+# ЧЕГО НЕ ДЕЛАЕТ: не трогает существующие интерфейсы и уже настроенную на шлюзе
+# маршрутизацию — они продолжают работать как работали.
 #
 # ЗАПУСК:
 #   sudo sh routing-gw-setup.sh                    # показать план
@@ -30,13 +33,29 @@
 set -e
 
 LINK_IF="${LINK_IF:-awglink}"
-CONTAINER="${CONTAINER:-awg-test}"
-HOST_CONF_DIR="${HOST_CONF_DIR:-/root/awg-test/configs}"
 CLIENT_SUBNET="${CLIENT_SUBNET:-10.8.1.0/24}"
-WAN_IF="${WAN_IF:-eth0}"
-HOME_LAN="${HOME_LAN:-192.168.68.0/24}"
 FWD_CHAIN="AWGLINK_FWD"
 UNIT="/etc/systemd/system/awg-link-gw.service"
+
+# Контейнер, интерфейс выхода и каталог конфигов ОПРЕДЕЛЯЮТСЯ, а не задаются
+# дефолтом: чужие имена в поставке — источник тихих ошибок «скрипт отработал, но
+# не там». Любое можно переопределить переменной окружения.
+detect_container() {
+    [ -n "${CONTAINER:-}" ] && { printf '%s' "$CONTAINER"; return; }
+    for n in $(docker ps --format '{{.Names}}' 2>/dev/null); do
+        docker exec "$n" sh -c 'command -v awg' >/dev/null 2>&1 && { printf '%s' "$n"; return; }
+    done
+}
+detect_wan() {
+    [ -n "${WAN_IF:-}" ] && { printf '%s' "$WAN_IF"; return; }
+    ip route show default 2>/dev/null | awk '/^default/{print $5; exit}'
+}
+detect_conf_dir() {   # каталог, примонтированный в /etc/amnezia/amneziawg
+    [ -n "${HOST_CONF_DIR:-}" ] && { printf '%s' "$HOST_CONF_DIR"; return; }
+    docker inspect -f \
+      '{{range .Mounts}}{{if eq .Destination "/etc/amnezia/amneziawg"}}{{.Source}}{{end}}{{end}}' \
+      "$1" 2>/dev/null
+}
 
 MODE="plan"; SRC_CONF=""
 case "${1:-}" in
@@ -57,13 +76,20 @@ run()  {
 }
 dexec() { docker exec "$CONTAINER" "$@"; }
 
-say "Параметры:"
+CONTAINER="$(detect_container)"
+[ -n "$CONTAINER" ] || { say "ОШИБКА: не нашёл контейнер с awg. Укажи: CONTAINER=имя $0 ..."; exit 1; }
+WAN_IF="$(detect_wan)"
+[ -n "$WAN_IF" ] || { say "ОШИБКА: не определил интерфейс выхода. Укажи: WAN_IF=eth0 $0 ..."; exit 1; }
+HOST_CONF_DIR="$(detect_conf_dir "$CONTAINER")"
+[ -n "$HOST_CONF_DIR" ] || { say "ОШИБКА: не нашёл каталог конфигов контейнера. Укажи: HOST_CONF_DIR=... $0 ..."; exit 1; }
+
+say "Параметры (определены автоматически, переопределяются переменными):"
 say "  интерфейс линка   : $LINK_IF"
-say "  контейнер         : $CONTAINER (net=host)"
+say "  контейнер         : $CONTAINER"
 say "  конфиг на хосте   : $HOST_CONF_DIR/$LINK_IF.conf"
 say "  клиенты ВПС       : $CLIENT_SUBNET"
 say "  выход в интернет  : $WAN_IF"
-say "  домашняя сеть     : $HOME_LAN (будет ЗАКРЫТА для клиентов)"
+say "  локальные сети    : будут ЗАКРЫТЫ для клиентов (все приватные диапазоны)"
 
 # ── откат ────────────────────────────────────────────────────────────────────
 if [ "$MODE" = "rollback" ]; then
@@ -86,7 +112,7 @@ if [ "$MODE" = "rollback" ]; then
     run "rm -f $HOST_CONF_DIR/$LINK_IF.conf $UNIT"
     run "systemctl daemon-reload"
     say ""
-    say "Готово. awg0/awg1 и домашняя схема не тронуты."
+    say "Готово. Существующие интерфейсы и маршрутизация шлюза не тронуты."
     exit 0
 fi
 
@@ -97,7 +123,7 @@ if [ "$MODE" = "plan" ]; then
     say "Будет сделано:"
     say "  1. конфиг → $HOST_CONF_DIR/$LINK_IF.conf, awg-quick up через контейнер"
     say "  2. iptables -t nat -A POSTROUTING -s $CLIENT_SUBNET -o $WAN_IF -j MASQUERADE"
-    say "  3. цепочка $FWD_CHAIN: DROP в приватные сети, затем ACCEPT"
+    say "  3. цепочка $FWD_CHAIN: DROP во все приватные сети, затем ACCEPT"
     say "  4. юнит awg-link-gw.service"
     exit 0
 fi
@@ -132,12 +158,15 @@ fi
 step "3. Изоляция клиентов от домашней сети"
 say "  ОБЯЗАТЕЛЬНО. Чтобы фича работала, из туннеля должны проходить НОВЫЕ"
 say "  соединения (сейчас правила пускают только RELATED,ESTABLISHED). Это же"
-say "  открывает клиентам путь к NAS, роутеру и торрент-клиенту — закрываем."
+say "  открывает путь во все локальные сети шлюза — закрываем."
 say "  Отдельная цепочка, а не вставки в FORWARD: она пересобирается целиком,"
 say "  и порядок DROP-перед-ACCEPT не зависит от того, что уже лежит в FORWARD."
 run "iptables -N $FWD_CHAIN 2>/dev/null || true"
 run "iptables -F $FWD_CHAIN"
-for net in "$HOME_LAN" 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16; do
+# Перечислены ВСЕ приватные диапазоны, а не конкретная домашняя подсеть: так
+# скрипт не несёт в себе чужую топологию и закрывает заодно докеровские сети и
+# link-local, о которых легко забыть.
+for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10; do
     run "iptables -A $FWD_CHAIN -d $net -j DROP"
 done
 run "iptables -A $FWD_CHAIN -j ACCEPT"

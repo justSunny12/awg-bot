@@ -165,6 +165,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             # правила эфемерны, а сходимость должна наступать в пределах цикла
             # (рестарт контейнера, ручная правка, переиспользование адреса).
             try:
+                # списки обновляются здесь же: метод сам решает, пора ли (по
+                # расписанию из conf) и не пуст ли набор — при пустом обновляет
+                # немедленно, потому что пустой отправил бы на шлюз весь трафик
+                await asyncio.to_thread(services.routing_update_lists)
                 await asyncio.to_thread(services.reconcile_routing)
             except Exception as e:                       # noqa: BLE001
                 log.warning("reconcile_routing: %s", e)

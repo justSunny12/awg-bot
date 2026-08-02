@@ -244,3 +244,41 @@ def test_feature_disabled_is_a_no_op(services, make_active_client, fake_routing)
     services.reconcile_routing()
     assert fake_routing.chain is None
     assert services.routing_monitor() == []
+
+
+# ── обновление базовых списков ───────────────────────────────────────────────
+
+def test_lists_update_fills_base_set(services, fake_routing, monkeypatch):
+    """Бот наполняет базовый набор сам: требовать ручного запуска значит
+    гарантировать, что однажды забудут, а пустой набор при инверсии логики
+    отправляет на шлюз ВЕСЬ трафик."""
+    from awgbot.core import config
+    from awgbot.infra import routing as infra_routing
+
+    monkeypatch.setattr(config, "ROUTING_LISTS_SUBNET_URLS", ["http://x/nets"])
+    monkeypatch.setattr(config, "ROUTING_LISTS_DOMAINS_URL", "http://x/domains")
+    monkeypatch.setattr(infra_routing, "fetch", lambda url, timeout=60: (
+        "1.2.3.0/24\n5.6.7.0/28\nмусор\n" if "nets" in url
+        else "ipset=/netflix.com/other_set\nмусор\n"))
+
+    got = {}
+    monkeypatch.setattr(infra_routing, "add_networks",
+                        lambda m: got.setdefault("nets", list(m)) or len(list(m)))
+    monkeypatch.setattr(infra_routing, "base_set_size", lambda: len(got.get("nets", [])))
+
+    services.routing_update_lists(force=True)
+    assert got["nets"] == ["1.2.3.0/24", "5.6.7.0/28"]      # мусор отсеян
+    # чужое имя набора в директиве заменено на наше
+    assert f"ipset=/netflix.com/{config.ROUTING_SET_BASE}" in fake_routing.conf
+
+
+def test_lists_update_survives_dead_source(services, fake_routing, monkeypatch):
+    """Апстрим недоступен — прежний набор остаётся в силе. Устаревшие списки
+    лучше пустых: пустой отправил бы на шлюз всё."""
+    from awgbot.core import config
+    from awgbot.infra import routing as infra_routing
+    monkeypatch.setattr(config, "ROUTING_LISTS_SUBNET_URLS", ["http://dead/nets"])
+    monkeypatch.setattr(config, "ROUTING_LISTS_DOMAINS_URL", "")
+    monkeypatch.setattr(infra_routing, "fetch", lambda url, timeout=60: None)
+    monkeypatch.setattr(infra_routing, "base_set_size", lambda: 42)
+    assert services.routing_update_lists(force=True) == 42

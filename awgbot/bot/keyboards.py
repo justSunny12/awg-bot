@@ -491,7 +491,7 @@ def admin_client_actions(client, *, has_devices: bool = True,
         # входит: иначе у админа не было бы точки входа к своему переключателю.
         if routing_visible:
             kb.button(text=f"{_chk(client.routing_master)} Доступ к РФ-сервисам",
-                      callback_data=RoutingCB(action="master", ref=client.id))
+                      callback_data=RoutingCB(action="panel", ref=client.id))
             pattern.append(1)
         kb.button(text="⬅️ Назад", callback_data=Menu(action="clients"))
         pattern.append(1)
@@ -511,7 +511,7 @@ def admin_client_actions(client, *, has_devices: bool = True,
     # это настройка, а не карательное действие.
     if routing_visible:
         kb.button(text=f"{_chk(client.routing_master)} Доступ к РФ-сервисам",
-                  callback_data=RoutingCB(action="master", ref=client.id))
+                  callback_data=RoutingCB(action="panel", ref=client.id))
         pattern.append(1)
     bt, bcb = _manual_block_button("cli", client.id, int(client.block_reason), for_admin=True)
     kb.button(text=bt, callback_data=bcb)

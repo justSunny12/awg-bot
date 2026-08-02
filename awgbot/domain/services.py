@@ -1842,6 +1842,55 @@ class Services:
                 if tail.isdigit() and int(tail) not in live:
                     routing.destroy_set(name)
 
+    _RT_LISTS_KEY = "routing_lists_updated_at"
+
+    def routing_update_lists(self, force: bool = False) -> int:
+        """Обновить базовый набор из внешних источников. Возвращает число записей.
+
+        Зовётся ботом самостоятельно — при старте и по расписанию. Руками
+        запускать ничего не нужно: требовать этого от админа значит гарантировать,
+        что однажды забудут, а пустой набор при инверсии логики отправляет на шлюз
+        ВЕСЬ трафик.
+
+        Недоступность источника не считается ошибкой: прежний набор остаётся в
+        силе. Устаревшие списки лучше пустых ровно по той же причине.
+        """
+        if not routing.available() and not force:
+            return 0
+        now = int(time.time())
+        every = int(settings.get("app.routing.lists_refresh_hours", 6)) * 3600
+        if not force:
+            last = self.db.get_state(self._RT_LISTS_KEY)
+            # обновляем по расписанию ИЛИ немедленно, если набор пуст: пустой
+            # набор — состояние, при котором функцию включать нельзя
+            if last and now - int(last) < every and routing.base_set_size() > 0:
+                return routing.base_set_size()
+        try:
+            with routing.mutation_lock:
+                nets: list[str] = []
+                for url in config.ROUTING_LISTS_SUBNET_URLS:
+                    body = routing.fetch(url)
+                    if body:
+                        nets.extend(domain_routing.parse_networks(body))
+                if nets:
+                    routing.add_networks(sorted(set(nets)))
+
+                if config.ROUTING_LISTS_DOMAINS_URL:
+                    body = routing.fetch(config.ROUTING_LISTS_DOMAINS_URL)
+                    if body:
+                        conf = domain_routing.parse_dnsmasq_domains(
+                            body, config.ROUTING_SET_BASE)
+                        if conf:
+                            routing.write_dnsmasq_conf(
+                                conf, path=config.ROUTING_DNSMASQ_BASE_CONF)
+                size = routing.base_set_size()
+                self.db.set_state(self._RT_LISTS_KEY, str(now))
+                log.info("routing: списки обновлены, в базовом наборе %d записей", size)
+                return size
+        except routing.RoutingError as e:
+            log.warning("routing_update_lists: %s", e)
+            return routing.base_set_size()
+
     def routing_link_ok(self) -> bool:
         """Жив ли шлюз: хендшейк линка свежее порога."""
         if not routing.available():

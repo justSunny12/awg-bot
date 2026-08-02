@@ -187,7 +187,57 @@ def build_dnsmasq_conf(
     return "\n".join(lines)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Разбор внешних списков
+# ─────────────────────────────────────────────────────────────────────────────
+
+_RE_CIDR = re.compile(r"^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$")
+
+
+def parse_networks(text: str) -> list[str]:
+    """Вытащить IPv4-подсети из произвольного текста списка.
+
+    Форматы у источников разные — простые построчные списки, JSON Google, — но
+    подсеть везде выглядит одинаково, поэтому вытаскиваем регуляркой, а не
+    парсим каждый формат отдельно. Мусор отсеивается проверкой октетов и маски:
+    один битый CIDR в `ipset restore` роняет всю пачку.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for m in re.finditer(r"\d{1,3}(?:\.\d{1,3}){3}/\d{1,2}", text or ""):
+        cidr = m.group(0)
+        if cidr in seen:
+            continue
+        addr, mask = cidr.split("/")
+        if int(mask) > 32 or any(int(o) > 255 for o in addr.split(".")):
+            continue
+        seen.add(cidr)
+        out.append(cidr)
+    return out
+
+
+def parse_dnsmasq_domains(text: str, set_name: str) -> str:
+    """Привести чужой dnsmasq-список к нашему набору.
+
+    Источники отдают директивы со своим именем набора — подставляем своё, иначе
+    dnsmasq наполнял бы набор, которого у нас нет, и списки бы не работали при
+    полностью исправной на вид конфигурации.
+    """
+    lines = []
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line.startswith("ipset=/"):
+            continue
+        body = line[len("ipset="):]
+        parts = body.split("/")
+        if len(parts) < 3 or not parts[1]:
+            continue
+        lines.append(f"ipset=/{parts[1]}/{set_name}")
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
 __all__ = [
     "DomainRejected", "normalize", "zone_of", "covered_by_base", "is_denied",
-    "parse_batch", "build_dnsmasq_conf", "MAX_DOMAIN_LEN", "MAX_LABEL_LEN",
+    "parse_batch", "build_dnsmasq_conf", "parse_networks", "parse_dnsmasq_domains",
+    "MAX_DOMAIN_LEN", "MAX_LABEL_LEN",
 ]

@@ -126,6 +126,28 @@ async def client_open(cb: CallbackQuery, callback_data: ClientCB, services):
     await cb.answer()
 
 
+@router.callback_query(RoutingCB.filter(F.action == "panel"))
+async def admin_routing_panel(cb: CallbackQuery, callback_data: RoutingCB, services):
+    """Раздел РФ-доступа ЛЮБОГО профиля со стороны админа.
+
+    Отдельный хендлер, потому что клиентский берёт профиль из контекста, а у
+    админа его нет (middleware отдаёт client=None). Здесь профиль приходит в
+    ref — так админ попадает и в свой раздел, и в чужой при разборе проблемы.
+    """
+    client = await call(services.db.get_client, callback_data.ref)
+    if client is None:
+        await cb.answer("Профиль не найден", show_alert=True)
+        return
+    if not await call(services.routing_client_visible, client):
+        await cb.answer("Профилю не разрешён РФ-доступ — выдай в настройках",
+                        show_alert=True)
+        return
+    from awgbot.bot.handlers.routing import show_panel
+    await show_panel(cb, services, client,
+                     back_target=ClientCB(action="open", client_id=client.id).pack())
+    await cb.answer()
+
+
 @router.callback_query(RoutingCB.filter(F.action == "master"))
 async def admin_routing_master(cb: CallbackQuery, callback_data: RoutingCB, services):
     """Переключатель РФ-доступа профиля со стороны админа.

@@ -142,7 +142,8 @@ def fake_routing(monkeypatch):
         # наборами, которые наполняет не он
         state.sets.setdefault(name, [])
 
-    def write_conf(text):
+    def write_conf(text, path=None):
+        # path задан → базовый список (пишется отдельным файлом), иначе личные
         changed = text != state.conf
         state.conf = text
         if changed:
