@@ -15,6 +15,7 @@ services.py — бизнес-логика: склейка db + awg + configgen.
 from __future__ import annotations
 
 import datetime
+import logging
 import time
 import secrets
 import string
@@ -27,8 +28,10 @@ from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.infra import awg
 from awgbot.infra import email_resume
+from awgbot.infra import routing
 from awgbot.infra import updates
 from awgbot.domain import configgen
+from awgbot.domain import routing as domain_routing
 from awgbot.core.blocks import DeviceBlock, ClientBlock, DEVICE_TRAFFIC_ANY
 from awgbot.core import models
 from awgbot.core.enums import SubStatus, ActivationStatus, PauseMode, PeriodKind, FriendStatus
@@ -37,6 +40,8 @@ from awgbot.core.enums import SubStatus, ActivationStatus, PauseMode, PeriodKind
 # Байт в гигабайте — физическая константа (не настройка), потому в коде, не в
 # config. Лимиты храним в байтах, вводим/показываем пользователю в ГБ.
 # У texts.py есть свой приватный дубль (_BYTES_PER_GB) — намеренно, см. там.
+log = logging.getLogger("awgbot.services")
+
 BYTES_PER_GB = 1024 ** 3
 
 # Секунд в сутках — физическая константа. Резервы/сроки храним в днях, но «долг»
@@ -77,6 +82,19 @@ class ActivationResult:
     ok: bool
     reason: str = ""              # invalid | already_has_access | ok
     client: Optional[object] = None
+
+
+@dataclass
+class RoutingAddResult:
+    """Разбор пачки доменов: что взято, что отброшено и почему.
+
+    Отклонённые несут причину строкой — пользователь вставляет списком, и он
+    должен видеть, что именно не прошло, а не гадать, почему добавилось меньше.
+    """
+    added: list[str] = field(default_factory=list)
+    rejected: list[tuple[str, str]] = field(default_factory=list)
+    over_limit: int = 0            # не влезло в потолок списка
+    limit: int = 0                 # сам потолок (для текста)
 
 
 @dataclass
@@ -1594,6 +1612,219 @@ class Services:
             awg.ensure_ssh_failsafe()
         except awg.AwgError:
             pass
+
+    # ── Условная маршрутизация (docs/conditional-routing.md) ─────────────────
+    # Российский IP для российских сервисов. Конфиги устройств не меняются:
+    # режим — серверное состояние. Проекция состояния в инфраструктуру ровно
+    # одна — членство адреса устройства в наборе ipset, поэтому переключение
+    # стоит одну запись и обратимо без последствий для выданных ссылок.
+
+    _RT_LINK_KEY = "routing_link_ok"
+    _TXT_RT_GW_DOWN = ("🔴 Шлюз условной маршрутизации недоступен. Маркировка снята: "
+                       "российские сервисы у пользователей временно открываются "
+                       "с зарубежного адреса. Интернет при этом работает.")
+    _TXT_RT_GW_UP = "🟢 Шлюз условной маршрутизации снова в строю."
+
+    def routing_status(self) -> tuple[bool, str]:
+        """(работоспособна ли фича, причина) — для preflight и админ-UI."""
+        return routing.self_check()
+
+    def routing_available(self) -> bool:
+        return routing.available()
+
+    def routing_client_visible(self, client) -> bool:
+        """Показывать ли фичу клиенту вообще. Пока админ не выдал разрешение,
+        она невидима: иначе каждый первый пойдёт спрашивать, что это за пункт."""
+        return bool(client is not None and client.routing_allowed
+                    and self.routing_available())
+
+    def routing_client_summary(self, client) -> tuple[int, int]:
+        """(устройств с эффективно включённым режимом, всего bot-устройств).
+
+        Считаем по эффективному значению: показывать «включено на 2 из 3», когда
+        мастер выключен и не работает ни одно, значило бы врать в интерфейсе.
+        """
+        if client is None:
+            return (0, 0)
+        devices = [d for d in self.db.list_devices(client.id)
+                   if d.is_managed and not d.is_admin]
+        on = sum(1 for d in devices if d.routing_effective(client))
+        return (on, len(devices))
+
+    def routing_status_for_client(self, client) -> Optional[bool]:
+        """Показывать ли клиенту статусную строку и что в ней.
+
+        None — не показывать вовсе: у человека нет ни одного устройства с
+        включённым режимом, и сообщать ему о состоянии механизма, которым он не
+        пользуется, — только путать. Значение берём из кэша монитора, чтобы
+        открытие меню не порождало сетевых вызовов.
+        """
+        if not self.routing_client_visible(client):
+            return None
+        if self.routing_client_summary(client)[0] == 0:
+            return None
+        return self.db.get_state(self._RT_LINK_KEY) != "0"
+
+    def set_routing_allowed(self, client_id: int, allowed: bool) -> None:
+        """Разрешение админа — верхний слой флага.
+
+        Нижние слои (мастер клиента, флаги устройств) НЕ трогаем: отзыв должен
+        гасить эффект, а не разрушать настройку. Вернул разрешение — у человека
+        всё как было, перенастраивать нечего.
+        """
+        self.db.update_client_fields(client_id, routing_allowed=1 if allowed else 0)
+        self.reconcile_routing()
+
+    def set_routing_master(self, client_id: int, on: bool) -> None:
+        """Мастер-тумблер клиента — «выключить всё разом», не обходя устройства."""
+        self.db.update_client_fields(client_id, routing_master=1 if on else 0)
+        self.reconcile_routing()
+
+    def set_device_routing(self, device_id: int, on: bool) -> None:
+        """Тумблер устройства — нижний слой."""
+        self.db.update_device_fields(device_id, routing_enabled=1 if on else 0)
+        self.reconcile_routing()
+
+    # ── Личный список доменов ────────────────────────────────────────────────
+
+    def routing_domains(self, client_id: int) -> list[str]:
+        return self.db.list_routing_domains(client_id)
+
+    def routing_add_domains(self, client_id: int, text: str) -> "RoutingAddResult":
+        """Добавить домены пачкой. Возвращает разбор: что взято, что отброшено.
+
+        Пользователь вставляет списком из мессенджера, и молча проглотить часть
+        нельзя — он должен видеть причину по каждой строке, иначе решит, что
+        кнопка сломана.
+        """
+        limit = int(settings.get("app.routing.user_domains_max", 100))
+        accepted, rejected = domain_routing.parse_batch(
+            text,
+            base_zones=config.ROUTING_BASE_ZONES,
+            denylist=config.routing_denylist(),
+        )
+        existing = set(self.db.list_routing_domains(client_id))
+        free = max(0, limit - len(existing))
+        added: list[str] = []
+        over = 0
+        for dom in accepted:
+            if dom in existing:
+                rejected.append((dom, "уже в списке"))
+                continue
+            if len(added) >= free:
+                over += 1
+                continue
+            if self.db.add_routing_domain(client_id, dom):
+                added.append(dom)
+        if added:
+            self.reconcile_routing()
+        return RoutingAddResult(added=added, rejected=rejected,
+                                over_limit=over, limit=limit)
+
+    def routing_remove_domain(self, client_id: int, domain: str) -> bool:
+        removed = self.db.remove_routing_domain(client_id, domain)
+        if removed:
+            self.reconcile_routing()
+        return removed
+
+    def routing_clear_domains(self, client_id: int) -> int:
+        n = self.db.clear_routing_domains(client_id)
+        if n:
+            self.reconcile_routing()
+        return n
+
+    # ── Реконсиляция и мониторинг ────────────────────────────────────────────
+
+    def reconcile_routing(self) -> None:
+        """Привести инфраструктуру к состоянию БД. Идемпотентно.
+
+        Единственная точка, где состояние фичи проецируется наружу: и тумблеры,
+        и правки списков зовут её же. Дублировать «точечные» обновления рядом с
+        полной сверкой значило бы завести второй путь, который однажды разойдётся
+        с первым.
+        """
+        if not routing.available():
+            return
+        try:
+            with routing.mutation_lock:
+                addrs = self.db.routing_active_addresses()
+                domains = self.db.routing_domains_by_client()
+                # клиенты, которым нужны собственные наборы: у кого есть
+                # включённые устройства ИЛИ личные домены (наборы должны
+                # существовать до того, как на них сошлётся правило или dnsmasq)
+                client_ids = sorted(set(addrs) | set(domains))
+
+                routing.replace_members(config.ROUTING_SET_BASE, "hash:net", ())
+                all_addrs = [a for lst in addrs.values() for a in lst]
+                routing.replace_members(config.ROUTING_SET_SRC, "hash:ip", all_addrs)
+                # плечо контейнера: выпустить трафик включённых устройств
+                # немаскараженным, иначе на хосте их не отличить от остальных
+                routing.sync_nat_exempt(all_addrs)
+                for cid in client_ids:
+                    routing.replace_members(routing.src_set(cid), "hash:ip",
+                                            addrs.get(cid, ()))
+                    routing.replace_members(routing.user_set(cid), "hash:net", ())
+
+                routing.rebuild_chain(client_ids)
+                self._routing_drop_orphan_sets(client_ids)
+
+                conf_text = domain_routing.build_dnsmasq_conf(
+                    base_zones=config.ROUTING_BASE_ZONES,
+                    domains_by_client=domains,
+                    set_base=config.ROUTING_SET_BASE,
+                    set_user_prefix=config.ROUTING_SET_USER_PREFIX,
+                )
+                routing.write_dnsmasq_conf(conf_text)
+        except routing.RoutingError as e:
+            log.warning("reconcile_routing: %s", e)
+
+    def _routing_drop_orphan_sets(self, live_ids) -> None:
+        """Снести наборы удалённых клиентов.
+
+        Осиротевший набор сам по себе безвреден (правила на него уже нет), но
+        накапливается и однажды совпадёт по имени с новым client_id — тогда
+        чужие домены достанутся другому человеку. Ровно та же логика, по которой
+        remove_device снимает осиротевший DROP.
+        """
+        live = {int(c) for c in live_ids}
+        prefixes = (config.ROUTING_SET_USER_PREFIX, config.ROUTING_SET_SRC_PREFIX)
+        for name in routing.list_sets():
+            for pref in prefixes:
+                if not name.startswith(pref) or name.endswith("_tmp"):
+                    continue
+                tail = name[len(pref):]
+                if tail.isdigit() and int(tail) not in live:
+                    routing.destroy_set(name)
+
+    def routing_link_ok(self) -> bool:
+        """Жив ли шлюз: хендшейк линка свежее порога."""
+        if not routing.available():
+            return False
+        age = routing.link_handshake_age()
+        stale = int(settings.get("app.routing.link_stale_seconds", 180))
+        return age is not None and age <= stale
+
+    def routing_monitor(self) -> list[Notification]:
+        """Тик мониторинга: деградация при недоступном шлюзе + алерт админу.
+
+        Об отвале сообщаем ТОЛЬКО админу — пользователю хватает статусной строки,
+        а чинить всё равно не ему.
+        """
+        if not routing.available():
+            return []
+        ok = self.routing_link_ok()
+        try:
+            routing.set_marking_enabled(ok)
+        except routing.RoutingError as e:
+            log.warning("routing_monitor: %s", e)
+            return []
+        prev = self.db.get_state(self._RT_LINK_KEY)
+        cur = "1" if ok else "0"
+        self.db.set_state(self._RT_LINK_KEY, cur)
+        if prev is None or prev == cur:
+            return []
+        return [Notification(config.ADMIN_ID,
+                             self._TXT_RT_GW_UP if ok else self._TXT_RT_GW_DOWN)]
 
     # ── Обновления бота (self-update) ────────────────────────────────────────
 

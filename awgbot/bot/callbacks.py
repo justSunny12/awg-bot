@@ -173,6 +173,26 @@ class SetCB(CallbackData, prefix="set"):
     val: str = ""
 
 
+class RoutingCB(CallbackData, prefix="rt"):
+    """Условная маршрутизация (docs/conditional-routing.md). action:
+      panel   — открыть раздел клиента (мастер-тумблер + список доменов);
+      master  — переключить мастер-тумблер клиента;
+      dev     — переключить режим устройства (ref = device_id);
+      add     — начать ввод доменов;
+      del     — удалить домен (idx — позиция в списке, ref = client_id);
+      clear   — спросить подтверждение очистки; clear_yes — очистить;
+      allow   — админский тумблер разрешения (ref = client_id).
+
+    Домен в callback_data не носим: лимит Telegram — 64 байта на всю строку, а
+    имена бывают длиннее. Позиция берётся из того же порядка, что показан
+    пользователю (added_at, domain), и на применении перепроверяется по границам.
+    """
+    action: str
+    ref: int = 0
+    idx: int = -1
+    page: int = 0
+
+
 class BroadcastCB(CallbackData, prefix="bc"):
     """Броадкаст объявления. action: start (ввести текст) / send (подтвердить
     отправку подготовленного) / cancel."""

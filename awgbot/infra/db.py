@@ -61,6 +61,8 @@ def _client_from_row(row) -> Optional["models.Client"]:
         activation_status=row["activation_status"],
         invite_code=row["invite_code"],
         created_at=row["created_at"],
+        routing_allowed=(int(row["routing_allowed"]) if "routing_allowed" in keys else 0),
+        routing_master=(int(row["routing_master"]) if "routing_master" in keys else 0),
         subscription=models.Subscription(
             period_start=row["period_start"], period_end=row["period_end"],
             period_kind=row["period_kind"], status=row["status"],
@@ -93,6 +95,7 @@ def _device_from_row(row) -> Optional["models.Device"]:
         block_reason=int(row["block_reason"]),
         created_at=row["created_at"],
         full_access_link=(row["full_access_link"] if "full_access_link" in row.keys() else None),
+        routing_enabled=(int(row["routing_enabled"]) if "routing_enabled" in row.keys() else 0),
         traffic=models.DeviceTraffic(
             limit=int(row["traffic_limit"]),
             rx_month=int(row["traffic_rx_month"]), tx_month=int(row["traffic_tx_month"]),
@@ -152,7 +155,13 @@ CREATE TABLE IF NOT EXISTS clients (
     activation_status   TEXT    NOT NULL DEFAULT 'pending',  -- pending | active
     invite_code         TEXT,                         -- гасится (NULL) после активации
     is_service          INTEGER NOT NULL DEFAULT 0,   -- 1 = служебный «Устройства без клиента»
-    created_at          TEXT    NOT NULL
+    created_at          TEXT    NOT NULL,
+    -- Условная маршрутизация (docs/conditional-routing.md). Два ВЕРХНИХ уровня
+    -- трёхслойного флага; нижний — devices.routing_enabled. Эффективное значение
+    -- = И всех трёх. Снятие верхнего гасит эффект, но нижние НЕ стирает: вернул
+    -- разрешение — настройка пользователя восстановилась сама.
+    routing_allowed     INTEGER NOT NULL DEFAULT 0,   -- 0/1: админ разрешил фичу клиенту
+    routing_master      INTEGER NOT NULL DEFAULT 0    -- 0/1: мастер-тумблер клиента
 );
 
 -- ── Подписка клиента (1:1, всегда есть) ─────────────────────────────────────
@@ -208,6 +217,8 @@ CREATE TABLE IF NOT EXISTS devices (
     full_access_link    TEXT,                            -- nullable: vpn:// полного доступа (admin-устройство), храним как есть
     block_reason        INTEGER NOT NULL DEFAULT 0,      -- маска DeviceBlock; 0 = не заблокирован
     created_at          TEXT    NOT NULL,
+    routing_enabled     INTEGER NOT NULL DEFAULT 0,      -- 0/1: нижний слой флага условной
+                                                         -- маршрутизации (см. clients.routing_*)
     FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
 );
 
@@ -231,6 +242,18 @@ CREATE TABLE IF NOT EXISTS device_friend (
     friend_code         TEXT,                            -- инвайт-код; NULL после активации
     friend_status       TEXT,                            -- pending | active
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+);
+
+-- ── Личный список доменов условной маршрутизации (1:N, ЛЕНИВАЯ) ─────────────
+-- Строк нет ⇔ список пуст. Базовую часть (национальные зоны) сюда НЕ пишем:
+-- она статична, живёт в conf и добавляется генератором dnsmasq-конфига поверх.
+-- PK (client_id, domain) даёт дедуп даром и он же — индекс выборки по клиенту.
+CREATE TABLE IF NOT EXISTS client_routing_domains (
+    client_id           INTEGER NOT NULL,
+    domain              TEXT    NOT NULL,             -- нормализованный (нижний регистр, без схемы/www)
+    added_at            TEXT    NOT NULL,
+    PRIMARY KEY (client_id, domain),
+    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS traffic_samples (
@@ -493,6 +516,9 @@ class Database:
         want = {
             "ui_state": [("content_msg_ids", "TEXT")],
             "client_pause": [("resume_code", "TEXT")],
+            "clients": [("routing_allowed", "INTEGER NOT NULL DEFAULT 0"),
+                        ("routing_master", "INTEGER NOT NULL DEFAULT 0")],
+            "devices": [("routing_enabled", "INTEGER NOT NULL DEFAULT 0")],
         }
         con = self._connection()
         for table, cols in want.items():
@@ -673,6 +699,7 @@ class Database:
         # clients
         "name": "clients", "device_limit": "clients", "tg_id": "clients",
         "activation_status": "clients", "invite_code": "clients", "block_reason": "clients",
+        "routing_allowed": "clients", "routing_master": "clients",
         # client_subscription
         "period_start": "client_subscription", "period_end": "client_subscription",
         "period_kind": "client_subscription", "status": "client_subscription",
@@ -925,7 +952,7 @@ class Database:
     _DEVICE_FIELD_TABLE = {
         "name": "devices", "private_key": "devices",
         "block_reason": "devices", "client_id": "devices",
-        "full_access_link": "devices",
+        "full_access_link": "devices", "routing_enabled": "devices",
         "traffic_limit": "device_traffic", "traffic_rx_month": "device_traffic",
         "traffic_tx_month": "device_traffic", "traffic_rx_period": "device_traffic",
         "traffic_tx_period": "device_traffic", "last_handshake": "device_traffic",
@@ -1283,6 +1310,77 @@ class Database:
                    ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
                 (key, value),
             )
+
+    # ── Условная маршрутизация ───────────────────────────────────────────────
+    # Личные списки доменов и выборка адресов для реконсиляции наборов ipset.
+    # Базовая часть (национальные зоны) здесь не живёт: она статична и лежит в
+    # conf — в БД хранится только то, что завёл пользователь.
+
+    def list_routing_domains(self, client_id: int) -> list[str]:
+        """Личный список клиента, в порядке добавления."""
+        return [r["domain"] for r in self._connection().execute(
+            "SELECT domain FROM client_routing_domains WHERE client_id = ? "
+            "ORDER BY added_at, domain", (client_id,)).fetchall()]
+
+    def count_routing_domains(self, client_id: int) -> int:
+        return self._connection().execute(
+            "SELECT COUNT(*) AS c FROM client_routing_domains WHERE client_id = ?",
+            (client_id,)).fetchone()["c"]
+
+    def add_routing_domain(self, client_id: int, domain: str) -> bool:
+        """True — добавлен, False — уже был. Дедуп даёт PK, отдельной проверки
+        (с гонкой между SELECT и INSERT) не требуется."""
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT OR IGNORE INTO client_routing_domains (client_id, domain, added_at) "
+                "VALUES (?, ?, ?)", (client_id, domain, _now_iso()))
+            return cur.rowcount > 0
+
+    def remove_routing_domain(self, client_id: int, domain: str) -> bool:
+        """True — удалён, False — такого и не было."""
+        with self._tx() as cur:
+            cur.execute(
+                "DELETE FROM client_routing_domains WHERE client_id = ? AND domain = ?",
+                (client_id, domain))
+            return cur.rowcount > 0
+
+    def clear_routing_domains(self, client_id: int) -> int:
+        """Очистить список целиком. Возвращает число удалённых записей."""
+        with self._tx() as cur:
+            cur.execute("DELETE FROM client_routing_domains WHERE client_id = ?",
+                        (client_id,))
+            return cur.rowcount
+
+    def routing_domains_by_client(self) -> dict[int, list[str]]:
+        """{client_id: [домены]} по ВСЕМ клиентам — для генерации dnsmasq-конфига.
+        Клиенты без личных доменов в результат не попадают."""
+        out: dict[int, list[str]] = {}
+        for r in self._connection().execute(
+                "SELECT client_id, domain FROM client_routing_domains "
+                "ORDER BY client_id, added_at, domain").fetchall():
+            out.setdefault(int(r["client_id"]), []).append(r["domain"])
+        return out
+
+    def routing_active_addresses(self) -> dict[int, list[str]]:
+        """{client_id: [адреса]} устройств с ЭФФЕКТИВНО включённым режимом —
+        подняты все три слоя флага. Источник истины для src-наборов ipset.
+
+        Заблокированные устройства не отфильтровываем намеренно: DROP по адресу
+        стоит раньше стадии маркировки, до неё пакет не доходит. Убирать их из
+        набора значило бы дублировать инвариант блокировок вторым механизмом,
+        который может с ним разойтись.
+        """
+        out: dict[int, list[str]] = {}
+        for r in self._connection().execute(
+                """SELECT d.client_id, d.address
+                     FROM devices d
+                     JOIN clients c ON c.id = d.client_id
+                    WHERE d.routing_enabled = 1
+                      AND c.routing_allowed = 1
+                      AND c.routing_master = 1
+                    ORDER BY d.client_id, d.address""").fetchall():
+            out.setdefault(int(r["client_id"]), []).append(r["address"])
+        return out
 
     # ── Аллокация IP ─────────────────────────────────────────────────────────
 

@@ -521,13 +521,106 @@ def server_status_client(ok: bool) -> str:
     return "🟢 VPN-сервер работает нормально" if ok else "🔴 VPN-сервер не отвечает"
 
 
-def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None) -> str:
+# ── Условная маршрутизация (docs/conditional-routing.md) ─────────────────────
+
+ROUTING_NAME = "Российский IP"
+
+def routing_status_client(ok: bool) -> str:
+    """Вторая статусная строка инфобокса. Ровно два состояния — по решению
+    концепта. Показывается ТОЛЬКО тем, у кого режим где-то включён: остальным
+    она сообщала бы о механизме, которым они не пользуются."""
+    return ("🟢 Российский IP работает" if ok else
+            "🔴 Российский IP временно недоступен — сайты открываются с зарубежного адреса")
+
+
+ROUTING_ABOUT = (
+    "Некоторые российские сайты — банки, госуслуги, маркетплейсы — не пускают "
+    "с зарубежного адреса. С включённым режимом они будут открываться "
+    "с российского, а всё остальное продолжит работать как раньше.\n\n"
+    "Ссылки и QR-коды при этом <b>не меняются</b> — ничего перевыпускать "
+    "и переподключать не нужно."
+)
+
+ROUTING_ADD_PROMPT = (
+    "Пришли адреса сайтов, которым нужен российский IP.\n\n"
+    "Можно списком — по одному в строке или через запятую. Ссылку целиком тоже "
+    "можно, лишнее уберу сам.\n\n"
+    "Сайты в зонах .ru, .рф и .su добавлять не нужно — они уже работают."
+)
+
+ROUTING_APPLY_HINT = (
+    "\n\n<i>Изменения применяются в течение минуты. Если сайт всё ещё "
+    "открывается по-старому — переподключись.</i>"
+)
+
+
+def routing_panel_text(*, master_on: bool, domains: list, devices_on: int,
+                       devices_total: int, link_ok: bool) -> str:
+    """Раздел «Российский IP» в профиле: состояние, охват, личный список."""
+    head = f"<b>🇷🇺 {ROUTING_NAME}</b>\n\n{routing_status_client(link_ok)}\n"
+    if not master_on:
+        return (head + "\nРежим выключен.\n\n" + ROUTING_ABOUT)
+    lines = [head, ""]
+    if devices_total:
+        lines.append(f"Включён на устройствах: {devices_on} из {devices_total}.")
+    if devices_on == 0:
+        lines.append("Пока ни на одном устройстве не включён — "
+                     "включи в карточке нужного устройства.")
+    lines.append("")
+    lines.append("Базовый список: зоны .ru, .рф и .su целиком — их добавлять не нужно.")
+    if domains:
+        shown = "\n".join(f"• {_e(d)}" for d in domains)
+        lines.append(f"\nТвои адреса ({len(domains)}):\n{shown}")
+    else:
+        lines.append("\nСвоих адресов пока нет. Добавь те сайты вне этих зон, "
+                     "которые ругаются на твой адрес.")
+    return "\n".join(lines)
+
+
+def routing_add_report(added: list, rejected: list, over_limit: int, limit: int) -> str:
+    """Отчёт о разборе пачки. Показываем причину по каждой отклонённой строке:
+    человек вставляет списком, и молча взять половину — значит оставить его
+    гадать, почему добавилось меньше, чем он прислал."""
+    parts = []
+    if added:
+        parts.append("✅ Добавлено:\n" + "\n".join(f"• {_e(d)}" for d in added))
+    if rejected:
+        parts.append("⚠️ Не добавлено:\n" + "\n".join(
+            f"• {_e(raw)} — {_e(reason)}" for raw, reason in rejected))
+    if over_limit:
+        parts.append(f"📦 Не поместилось: {over_limit} — в списке максимум {limit} "
+                     f"{plural_ru(limit, 'адрес', 'адреса', 'адресов')}. "
+                     f"Удали ненужные и попробуй снова.")
+    if not parts:
+        return "Ничего не добавлено — не нашёл в сообщении ни одного адреса."
+    text = "\n\n".join(parts)
+    return text + (ROUTING_APPLY_HINT if added else "")
+
+
+ROUTING_CLEAR_CONFIRM = (
+    "Удалить <b>все</b> твои адреса из списка?\n\n"
+    "Базовый список (.ru, .рф, .su) останется — российские сайты в этих зонах "
+    "продолжат открываться с российского адреса."
+)
+
+ROUTING_UNAVAILABLE = ("Режим сейчас недоступен — идут работы на стороне сервера. "
+                       "Попробуй позже.")
+
+
+def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
+                    routing_ok: bool = None) -> str:
     """Инфобокс главного меню клиента: приветствие, статус сервера (отдельным
     абзацем сразу после приветствия — пустая строка с обеих сторон), статус
     подписки (только статус — период/даты в «Управлять подпиской»), максимум
-    устройств и текущее количество."""
+    устройств и текущее количество.
+
+    routing_ok=None — строки о российском IP нет вовсе: у клиента режим нигде не
+    включён, и сообщать о состоянии неиспользуемого механизма незачем."""
+    status_block = server_status_client(server_ok)
+    if routing_ok is not None:
+        status_block += "\n" + routing_status_client(routing_ok)
     text = (f"Привет, {_e(client.name)}! 👋\n\n"
-           f"{server_status_client(server_ok)}\n\n"
+           f"{status_block}\n\n"
            f"Статус подписки: {subscription_status_only(client)}")
     if slots is not None:
         used, limit = slots

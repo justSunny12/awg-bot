@@ -37,6 +37,7 @@ from awgbot.bot.handlers import reply_commands as reply_commands_handlers
 from awgbot.bot.handlers import client as client_handlers
 from awgbot.bot.handlers import friend as friend_handlers
 from awgbot.bot.handlers import guide as guide_handlers
+from awgbot.bot.handlers import routing as routing_handlers
 
 logging.basicConfig(
     level=logging.INFO,
@@ -101,6 +102,9 @@ async def main() -> None:
     dp.include_router(settings_handlers.router)
     dp.include_router(guide_handlers.router)
     dp.include_router(friend_handlers.router)
+    # ДО client: у обоих роль client, и FSM-состояние ввода адресов должно
+    # ловиться здесь, а не общим message-хендлером клиента
+    dp.include_router(routing_handlers.router)
     dp.include_router(client_handlers.router)
 
     loop = asyncio.get_running_loop()

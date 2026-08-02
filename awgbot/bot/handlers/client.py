@@ -38,7 +38,8 @@ router.callback_query.filter(RoleFilter("client"))
 async def _greeting(services, client):
     server_ok = await call(services.server_ok_cached)     # 0 exec: статус из state
     slots = await call(services.device_slots, client.id)
-    return texts.greeting_client(client, server_ok, slots), slots
+    routing_ok = await call(services.routing_status_for_client, client)
+    return texts.greeting_client(client, server_ok, slots, routing_ok), slots
 
 
 async def _show_main(target, services, client, *, via_edit=None):
@@ -46,7 +47,9 @@ async def _show_main(target, services, client, *, via_edit=None):
     Держит инвариант «одно активное меню»: новое гасит прежнее. Стирает
     промежуточные служебные сообщения диалога при возврате."""
     text, (used, _) = await _greeting(services, client)
-    markup = kb.client_main(has_devices=used > 0)
+    routing_visible = await call(services.routing_client_visible, client)
+    markup = kb.client_main(has_devices=used > 0, routing_visible=routing_visible,
+                            client_id=client.id)
     if via_edit is not None:
         await cleanup_content(via_edit.bot, services, via_edit.message.chat.id)
         await edit_nav(via_edit, services, text, markup)
@@ -174,7 +177,7 @@ async def menu_devices(cb: CallbackQuery, client, services):
     devices = await call(services.db.list_devices, client.id)
     slots = await call(services.device_slots, client.id)
     header = "<b>📱Твои устройства</b>\n\n" + texts.device_slots_line(*slots)
-    await edit(cb, header, kb.client_devices(devices))
+    await edit(cb, header, kb.client_devices(devices, client))
     await cb.answer()
 
 
@@ -222,7 +225,12 @@ async def device_open(cb: CallbackQuery, callback_data: DeviceCB, client, servic
     marker = texts.friend_marker(dev)
     if marker:
         text += f"\n\n{marker}"
-    await edit(cb, text, kb.device_actions(dev, is_admin=False, back_target=Menu(action="devices").pack()))
+    # тумблер режима виден, только когда подняты оба клиентских слоя: предлагать
+    # переключить то, что всё равно не заработает, — обманывать
+    rt_visible = await call(services.routing_client_visible, client) and bool(client.routing_master)
+    await edit(cb, text, kb.device_actions(
+        dev, is_admin=False, back_target=Menu(action="devices").pack(),
+        routing_visible=rt_visible, routing_on=bool(dev.routing_enabled)))
     await cb.answer()
 
 
@@ -602,7 +610,7 @@ async def device_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
     devices = await call(services.db.list_devices, client.id)
     slots = await call(services.device_slots, client.id)
     await edit(cb, "🗑 Устройство удалено.\n\n<b>📱Твои устройства</b>\n\n" + texts.device_slots_line(*slots),
-               kb.client_devices(devices))
+               kb.client_devices(devices, client))
     await cb.answer()
 
 

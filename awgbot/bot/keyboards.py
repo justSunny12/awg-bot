@@ -38,28 +38,38 @@ def reply_hide() -> ReplyKeyboardRemove:
 
 from awgbot.bot.callbacks import (AdminLinkGate, FaHintCB, AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
                        FriendCB, GraceCB, GuideCB, HelpCB, Menu, PauseCB,
-                       PeriodCB, ReassignCB, UpdateCB, SetCB, BroadcastCB)
+                       PeriodCB, ReassignCB, RoutingCB, UpdateCB, SetCB, BroadcastCB)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Клиентские меню
 # ─────────────────────────────────────────────────────────────────────────────
 
-def client_main(has_devices: bool = True) -> InlineKeyboardMarkup:
+def client_main(has_devices: bool = True, routing_visible: bool = False,
+                client_id: int = 0) -> InlineKeyboardMarkup:
+    """Главное меню клиента. Пункт «Российский IP» появляется только после того,
+    как админ выдал разрешение: до этого фича невидима, иначе каждый первый
+    пойдёт спрашивать, что это за пункт и почему не работает."""
     kb = InlineKeyboardBuilder()
     kb.button(text="➕ Добавить устройство", callback_data=DeviceCB(action="add"))
     if has_devices:
         kb.button(text="📱 Мои устройства", callback_data=Menu(action="devices"))
     kb.button(text="⚙️ Управлять подпиской", callback_data=Menu(action="info"))
+    if routing_visible:
+        kb.button(text="🇷🇺 Российский IP",
+                  callback_data=RoutingCB(action="panel", ref=client_id))
     if has_devices:
         kb.button(text="🔗 Ссылка", callback_data=Menu(action="gen_link"))
         kb.button(text="🔳 QR-код", callback_data=Menu(action="gen_qr"))
         kb.button(text="📄 Файл", callback_data=Menu(action="gen_file"))
     kb.button(text="❓ Помощь с настройкой", callback_data=HelpCB(platform="root"))
+    head = [1, 1, 1] if has_devices else [1, 1]
+    if routing_visible:
+        head.append(1)
     if has_devices:
-        kb.adjust(1, 1, 1, 3, 1)        # добавить/устройства/инфо / [ссылка|QR|файл] / помощь
+        kb.adjust(*head, 3, 1)      # …/ [ссылка|QR|файл] / помощь
     else:
-        kb.adjust(1, 1, 1)          # добавить / инфо / помощь
+        kb.adjust(*head, 1)
     return kb.as_markup()
 
 
@@ -83,13 +93,24 @@ def _dev_emoji(d) -> str:
     return "📱"
 
 
-def client_devices(devices) -> InlineKeyboardMarkup:
+def routing_marker(dev, client) -> str:
+    """Метка «у этого устройства включён российский IP» для списков.
+
+    Считается по ЭФФЕКТИВНОМУ значению (все три слоя), а не по флагу устройства:
+    иначе при выключенном мастере метка обещала бы режим, которого нет."""
+    if client is None or not getattr(dev, "routing_enabled", 0):
+        return ""
+    return " 🇷🇺" if dev.routing_effective(client) else ""
+
+
+def client_devices(devices, client=None) -> InlineKeyboardMarkup:
     """Список своих устройств. Без кнопки добавления — она уже есть в главном
     меню, дублировать здесь избыточно."""
     kb = InlineKeyboardBuilder()
     for d in devices:
         marker = _blocks.blocked_marker_device(int(d.block_reason), for_admin=False)
-        kb.button(text=f"{marker}{_dev_emoji(d)} {d.name}{_btn_suffix(d)}",
+        kb.button(text=f"{marker}{_dev_emoji(d)} {d.name}{_btn_suffix(d)}"
+                       f"{routing_marker(d, client)}",
                   callback_data=DeviceCB(action="open", device_id=d.id))
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
     kb.adjust(1)
@@ -109,8 +130,45 @@ def admin_client_device_list(devices, client_id: int) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def routing_panel(client_id: int, *, master_on: bool, domains: list,
+                  back_target: str) -> InlineKeyboardMarkup:
+    """Раздел «Российский IP»: мастер-тумблер и личный список адресов.
+
+    Список адресов при выключенном мастере не показываем — он не действует, и
+    предлагать редактировать неработающее значит путать."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text=("🔴 Выключить российский IP" if master_on
+                    else "🟢 Включить российский IP"),
+              callback_data=RoutingCB(action="master", ref=client_id))
+    rows = [1]
+    if master_on:
+        kb.button(text="➕ Добавить адреса", callback_data=RoutingCB(action="add", ref=client_id))
+        rows.append(1)
+        for i, dom in enumerate(domains):
+            kb.button(text=f"🗑 {dom}",
+                      callback_data=RoutingCB(action="del", ref=client_id, idx=i))
+            rows.append(1)
+        if domains:
+            kb.button(text="🧹 Очистить список",
+                      callback_data=RoutingCB(action="clear", ref=client_id))
+            rows.append(1)
+    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
+    kb.adjust(*rows, 1)
+    return kb.as_markup()
+
+
+def routing_clear_confirm(client_id: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🧹 Да, очистить", callback_data=RoutingCB(action="clear_yes", ref=client_id))
+    kb.button(text="⬅️ Отмена", callback_data=RoutingCB(action="panel", ref=client_id))
+    kb.adjust(1, 1)
+    return kb.as_markup()
+
+
 def device_actions(dev, *, is_admin: bool, back_target: str,
-                    reassign_label: str = None) -> InlineKeyboardMarkup:
+                    reassign_label: str = None,
+                    routing_visible: bool = False,
+                    routing_on: bool = False) -> InlineKeyboardMarkup:
     """Единая карточка устройства — для ЛЮБОГО пути входа (свои устройства,
     устройства конкретного клиента, устройства без клиента). back_target —
     куда ведёт «Назад» (packed callback_data, вычисляется вызывающим кодом из
@@ -160,6 +218,14 @@ def device_actions(dev, *, is_admin: bool, back_target: str,
     # 3) Лимит потребления
     kb.button(text="📊 Лимит потребления", callback_data=DeviceCB(action="edit_traffic", device_id=dev.id))
     rows += 1
+    # 3a) Российский IP — только у bot-устройств и только когда фича разрешена
+    # клиенту и включена мастером. Конфиг от тумблера не меняется, поэтому
+    # переключать можно в любой момент, ничего не перевыпуская.
+    if is_bot_device and routing_visible:
+        kb.button(text=("🇷🇺 Российский IP: вкл" if routing_on
+                        else "🇷🇺 Российский IP: выкл"),
+                  callback_data=RoutingCB(action="dev", ref=dev.id))
+        rows += 1
     # 4) Передать другу / перевыдать инвайт
     fstatus = dev.friend_status
     if is_bot_device and fstatus is None:
@@ -431,6 +497,13 @@ def admin_client_actions(client, *, has_devices: bool = True,
     pattern.append(2)
     kb.button(text="📊 Лимит потребления", callback_data=ClientCB(action="edit_traffic", client_id=client.id))
     pattern.append(1)
+    # Разрешение на условную маршрутизацию — верхний слой флага. Кнопки нет,
+    # когда фича выключена в конфиге: разрешать нечего.
+    if config.ROUTING_ENABLED and not client.is_service:
+        kb.button(text=("🇷🇺 Российский IP: разрешён" if client.routing_allowed
+                        else "🇷🇺 Российский IP: запрещён"),
+                  callback_data=RoutingCB(action="allow", ref=client.id))
+        pattern.append(1)
     bt, bcb = _manual_block_button("cli", client.id, int(client.block_reason), for_admin=True)
     kb.button(text=bt, callback_data=bcb)
     pattern.append(1)

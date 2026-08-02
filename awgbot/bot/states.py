@@ -75,6 +75,12 @@ class SettingsInput(StatesGroup):
     value = State()
 
 
+class RoutingDomains(StatesGroup):
+    """Ввод доменов в личный список условной маршрутизации. Принимаем пачкой —
+    человек вставляет списком, а не по одному."""
+    value = State()
+
+
 class Broadcast(StatesGroup):
     """Броадкаст: ввод текста объявления. Готовый текст держим в FSM-data до
     подтверждения отправки."""

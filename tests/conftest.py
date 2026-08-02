@@ -117,8 +117,56 @@ def fake_awg(monkeypatch):
 
 
 @pytest.fixture()
-def services(db, fake_awg):
-    """Services поверх временной БД и фейкового awg."""
+def fake_routing(monkeypatch):
+    """Замена слоя условной маршрутизации (ipset/iptables/ip/dnsmasq) на фейк.
+
+    Возвращает состояние: .sets {имя: [члены]}, .chain (список client_id в
+    цепочке), .conf (текст dnsmasq), .conf_writes, .marking, .link_age.
+    RoutingError оставляем настоящим — код его ловит.
+    """
+    import threading
+    import types
+
+    from awgbot.infra import routing
+
+    state = types.SimpleNamespace(
+        sets={}, chain=None, conf=None, conf_writes=0,
+        marking=None, link_age=10, enabled=True, nat_exempt=None,
+    )
+
+    def replace_members(name, kind, members):
+        state.sets[name] = list(members)
+
+    def write_conf(text):
+        changed = text != state.conf
+        state.conf = text
+        if changed:
+            state.conf_writes += 1
+        return changed
+
+    def _set(name, fn):
+        monkeypatch.setattr(routing, name, fn, raising=False)
+
+    monkeypatch.setattr(routing, "mutation_lock", threading.RLock(), raising=False)
+    _set("self_check", lambda force=False: (state.enabled, "ок" if state.enabled else "выключена"))
+    _set("available", lambda: state.enabled)
+    _set("replace_members", replace_members)
+    _set("destroy_set", lambda name: state.sets.pop(name, None))
+    _set("list_sets", lambda: sorted(state.sets))
+    _set("rebuild_chain", lambda ids: setattr(state, "chain", sorted(ids)))
+    _set("drop_chain", lambda: setattr(state, "chain", None))
+    _set("sync_nat_exempt", lambda addrs: setattr(state, "nat_exempt", sorted(addrs)))
+    _set("drop_nat_exempt", lambda: setattr(state, "nat_exempt", None))
+    _set("ensure_route", lambda: None)
+    _set("set_marking_enabled", lambda on: setattr(state, "marking", on))
+    _set("link_handshake_age", lambda: state.link_age)
+    _set("write_dnsmasq_conf", write_conf)
+    return state
+
+
+@pytest.fixture()
+def services(db, fake_awg, fake_routing):
+    """Services поверх временной БД и фейковых awg/routing."""
     from awgbot.domain.services import Services
     return Services(db)
 

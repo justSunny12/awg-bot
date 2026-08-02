@@ -21,7 +21,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import (AdminLinkGate, FaHintCB, AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
-                       Menu, PeriodCB, ReassignCB, UpdateCB, BroadcastCB)
+                       Menu, PeriodCB, ReassignCB, RoutingCB, UpdateCB, BroadcastCB)
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message,
                              remove_device_and_notify, send_conf, cleanup_content,
@@ -122,6 +122,26 @@ async def _show_client_card(cb: CallbackQuery, services, client_id: int):
 async def client_open(cb: CallbackQuery, callback_data: ClientCB, services):
     await _show_client_card(cb, services, callback_data.client_id)
     await cb.answer()
+
+
+@router.callback_query(RoutingCB.filter(F.action == "allow"))
+async def client_routing_allow(cb: CallbackQuery, callback_data: RoutingCB, services):
+    """Разрешение клиенту на условную маршрутизацию — верхний слой флага.
+
+    Отзыв гасит эффект немедленно, но пользовательские настройки (мастер-тумблер
+    и флаги устройств) сохраняет: вернул разрешение — у человека всё как было."""
+    client = await call(services.db.get_client, callback_data.ref)
+    if client is None:
+        await cb.answer("Профиль не найден", show_alert=True)
+        return
+    ok, reason = await call(services.routing_status)
+    new_state = not client.routing_allowed
+    if new_state and not ok:
+        await cb.answer(f"Маршрутизация недоступна: {reason}", show_alert=True)
+        return
+    await call(services.set_routing_allowed, client.id, new_state)
+    await _show_client_card(cb, services, client.id)
+    await cb.answer("Российский IP разрешён" if new_state else "Российский IP запрещён")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

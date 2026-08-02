@@ -9,12 +9,13 @@ from aiogram import Dispatcher, Router
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from awgbot.bot.handlers import (admin, client, friend, guide,
-                                 reply_commands)
+                                 reply_commands, routing)
 
 pytestmark = pytest.mark.smoke
 
-# Порядок включения — как в awgbot.runtime.main (reply_commands первым).
-_HANDLER_MODULES = [reply_commands, admin, guide, friend, client]
+# Порядок включения — как в awgbot.runtime.main (reply_commands первым; routing
+# ДО client, иначе FSM ввода адресов перехватит общий message-хендлер клиента).
+_HANDLER_MODULES = [reply_commands, admin, guide, friend, routing, client]
 
 
 @pytest.mark.parametrize("mod", _HANDLER_MODULES, ids=lambda m: m.__name__.split(".")[-1])

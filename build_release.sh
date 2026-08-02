@@ -35,6 +35,9 @@ build_bot() {
     for p in awgbot tools conf; do _stage_copy "$p" "$s"; done
     mkdir -p "$s/install"
     cp "$ROOT/install/harden_firewall.sh" "$s/install/"
+    # Обвяз условной маршрутизации: без этих скриптов админ получит код фичи, но
+    # не сможет её развернуть — они и есть недостающая половина поставки.
+    cp "$ROOT"/install/routing-*.sh "$s/install/"
     cp "$ROOT/awg-bot.sh" "$s/"; chmod +x "$s/awg-bot.sh"           # единый инструмент — в корне
     cp "$ROOT/awg-bot.service" "$ROOT/run.sh" "$ROOT/requirements.txt" "$ROOT/.env.example" "$s/"
     cp "$ROOT/docs/README-bot.md" "$s/README.md"

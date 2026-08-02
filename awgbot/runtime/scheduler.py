@@ -160,6 +160,14 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             # незачем — только при рестарте или если наблюдатель умер.
             if watcher is not None and (restarted or not watcher.alive()):
                 watcher.ensure_watching()
+            # условная маршрутизация: реассерт наборов/правил + рубильник
+            # деградации. Реассерт каждый тик по той же причине, что и у SSH —
+            # правила эфемерны, а сходимость должна наступать в пределах цикла
+            # (рестарт контейнера, ручная правка, переиспользование адреса).
+            try:
+                await asyncio.to_thread(services.reconcile_routing)
+            except Exception as e:                       # noqa: BLE001
+                log.warning("reconcile_routing: %s", e)
             # статус сервиса awg → уведомления админу (единый notifier-путь)
             ok = await asyncio.to_thread(services.server_ok)
             prev = db.get_state("last_server_ok")
@@ -178,6 +186,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             from awgbot.runtime import hostmetrics
             snap = await asyncio.to_thread(hostmetrics.collect_and_store, db)
             alert_notes += services.check_resource_alerts(snap)
+            # (4) живость шлюза условной маршрутизации: деградация + алерт админу
+            #     на смену состояния. Пользователям не шлём — им хватает
+            #     статусной строки, а чинить всё равно не им.
+            alert_notes += await asyncio.to_thread(services.routing_monitor)
             await send_notifications(bot, alert_notes)
         except Exception as e:                       # noqa: BLE001
             log.warning("monitor: %s", e)

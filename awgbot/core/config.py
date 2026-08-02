@@ -197,6 +197,50 @@ SSH_PORT = int(_net.get("ssh_port", 22))
 SERVER_HOST = _net.get("server_host", "")
 SERVER_PORT = int(_net.get("server_port") or 0)
 
+# ── Условная маршрутизация (docs/conditional-routing.md) ─────────────────────
+# Топология фичи — холодная (класс 3): имена наборов, цепочки и таблиц вплавлены
+# в реконсиляцию, менять их на горячую нечем. Пороги (потолок списка, свежесть
+# хендшейка) — горячие, читаются через settings.get в точке использования.
+#
+# ROUTING_ENABLED=False (пустой gw_interface) ⇒ фича спит целиком: UI её не
+# показывает, реконсиляция не трогает инфраструктуру. Это и аварийный рубильник:
+# очистил ключ, перезапустил бота — маршрутизация выключена у всех разом.
+_rt = _app.get("routing", {})
+ROUTING_GW_INTERFACE: str = _rt.get("gw_interface", "")
+ROUTING_ENABLED: bool = bool(ROUTING_GW_INTERFACE)
+ROUTING_CLIENT_SUBNET = _rt.get("client_subnet", f"{SUBNET_PREFIX}.0/24")
+ROUTING_NAT_CHAIN = _rt.get("nat_chain", "AWGBOT_RTNAT")
+ROUTING_TABLE = int(_rt.get("table", 100))
+ROUTING_FWMARK = int(_rt.get("fwmark", 1))
+ROUTING_SET_BASE = _rt.get("set_base", "ru_base")
+ROUTING_SET_SRC = _rt.get("set_src", "rt_src")
+ROUTING_SET_USER_PREFIX = _rt.get("set_user_prefix", "ru_u")
+ROUTING_SET_SRC_PREFIX = _rt.get("set_src_prefix", "rt_src_u")
+ROUTING_CHAIN = _rt.get("chain", "AWGBOT_RT")
+ROUTING_BASE_ZONES = list(_rt.get("base_zones") or ["ru", "xn--p1ai", "su"])
+ROUTING_DNSMASQ_CONF = _rt.get("dnsmasq_conf", "/etc/dnsmasq.d/awgbot-routing.conf")
+ROUTING_DNSMASQ_SERVICE = _rt.get("dnsmasq_service", "dnsmasq")
+
+
+def routing_denylist() -> list[str]:
+    """Домены, запрещённые к добавлению в личный список.
+
+    Собственная инфраструктура попадает сюда АВТОМАТИЧЕСКИ, а не переписыванием
+    руками в yaml: увести в туннель хост бота или IMAP-ящик email-выхода из
+    паузы — это запереть себя, причём тем сильнее, чем нужнее выход. Ручные
+    записи из conf добавляются сверху.
+
+    Функция, а не константа: почтовые хосты приходят из email.yaml, который
+    заполняет визард уже после первого импорта config.
+    """
+    out = {d.strip().lower().lstrip(".") for d in (_rt.get("denylist") or []) if d}
+    for host in (SERVER_HOST, EMAIL_IMAP_HOST, EMAIL_SMTP_HOST):
+        host = (host or "").strip().lower()
+        # только домены: IP в списке бессмысленен (принимаем лишь доменные имена)
+        if host and not host.replace(".", "").isdigit():
+            out.add(host)
+    return sorted(out)
+
 _cc = _app.get("client_config", {})
 DNS1 = _cc.get("dns1", "1.1.1.1")
 DNS2 = _cc.get("dns2", "1.0.0.1")
