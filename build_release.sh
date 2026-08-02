@@ -23,9 +23,19 @@ _stage_copy() {  # _stage_copy SRC DEST_DIR — копия без питон-к�
     find "$dest" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
     find "$dest" -name '*.pyc' -delete 2>/dev/null || true
 }
+# Сборка на macOS кладёт в архив расширенные атрибуты (com.apple.provenance и
+# т.п.), а GNU tar на целевом Linux их не понимает и сыплет «Ignoring unknown
+# extended header keyword» на каждый файл. Распаковке это не мешает, но админ
+# видит стену предупреждений при штатном обновлении. Флаги есть только у bsdtar,
+# поэтому подставляем их, лишь если поддерживаются.
+TAR_FLAGS=""
+for _f in --no-xattrs --no-mac-metadata; do
+    tar "$_f" -cf /dev/null -T /dev/null 2>/dev/null && TAR_FLAGS="$TAR_FLAGS $_f"
+done
+
 _targz() {  # _targz STAGE_DIR OUT_TGZ — собрать во временном, затем копировать
     local tmp; tmp="$(mktemp -u).tgz"
-    ( cd "$1" && tar czf "$tmp" . ); cp -f "$tmp" "$2"; rm -f "$tmp"
+    ( cd "$1" && tar $TAR_FLAGS -czf "$tmp" . ); cp -f "$tmp" "$2"; rm -f "$tmp"
 }
 _count() { tar tzf "$1" | grep -vc '/$'; }
 
@@ -49,7 +59,7 @@ build_bot() {
 # ── полный проект (dev) ──────────────────────────────────────────────────────
 build_project() {
     local tmp; tmp="$(mktemp -u).tgz"
-    ( cd "$ROOT" && tar czf "$tmp" \
+    ( cd "$ROOT" && tar $TAR_FLAGS -czf "$tmp" \
         --exclude='./.git' --exclude='*/__pycache__' --exclude='*.pyc' \
         --exclude='./data' --exclude='*.db' --exclude='./.pytest_cache' \
         --exclude='./venv' --exclude='./dist' . )
