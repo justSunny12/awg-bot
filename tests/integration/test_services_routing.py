@@ -315,3 +315,24 @@ def test_empty_base_set_disables_marking(services, make_active_client, fake_rout
 
     assert fake_routing.chain == []          # цепочка пуста
     assert fake_routing.marking is False     # политика снята
+
+
+def test_monitor_does_not_enable_marking_without_lists(services, fake_routing,
+                                                       monkeypatch, tmp_path):
+    """Монитор не должен включать политику, пока списков нет.
+
+    Раньше он смотрел только на живость шлюза и возвращал политику сразу после
+    того, как реконсиляция её сняла: два места спорили за один рубильник, и
+    состояние выходило противоречивым — цепочка пуста, а ip rule жив."""
+    from awgbot.core import config
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)      # кэши пусты
+    fake_routing.link_age = 5                              # шлюз жив
+    services.routing_monitor()
+    assert fake_routing.marking is False
+
+
+def test_monitor_enables_marking_when_ready(services, fake_routing):
+    """Списки на месте и шлюз жив — политика включается."""
+    fake_routing.link_age = 5
+    services.routing_monitor()
+    assert fake_routing.marking is True

@@ -1817,7 +1817,7 @@ class Services:
                 # откроется. Маркировку в таком состоянии не включаем: цепочку
                 # оставляем пустой, политику снимаем. Отказ безопасный — трафик
                 # идёт обычным путём, как при выключенной функции.
-                if not base_nets and not base_doms:
+                if not self.routing_lists_ready():
                     routing.rebuild_chain(())
                     routing.set_marking_enabled(False)
                     log.warning("routing: списки не загружены — маркировка не "
@@ -1943,6 +1943,12 @@ class Services:
             log.warning("routing_update_lists: %s", e)
             return len(self._routing_read_cache("subnets"))
 
+    def routing_lists_ready(self) -> bool:
+        """Загружены ли списки. Без них маркировать нельзя: при инверсии пустой
+        набор означает «на шлюз уходит всё», включая заблокированное."""
+        return bool(self._routing_read_cache("subnets")
+                    or self._routing_read_cache("domains"))
+
     def routing_link_ok(self) -> bool:
         """Жив ли шлюз: хендшейк линка свежее порога."""
         if not routing.available():
@@ -1959,7 +1965,11 @@ class Services:
         """
         if not routing.available():
             return []
-        ok = self.routing_link_ok()
+        # И живость шлюза, И наличие списков: без второго маркировка отправила бы
+        # на шлюз ВСЁ. Раньше монитор смотрел только на шлюз и включал политику
+        # обратно сразу после того, как реконсиляция её сняла, — два места
+        # спорили за один рубильник, и состояние выходило противоречивым.
+        ok = self.routing_link_ok() and self.routing_lists_ready()
         try:
             routing.set_marking_enabled(ok)
         except routing.RoutingError as e:

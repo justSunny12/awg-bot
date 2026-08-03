@@ -225,8 +225,22 @@ ROUTING_CHAIN = "AWGBOT_RT"            # маркировка на хосте
 ROUTING_NAT_CHAIN = "AWGBOT_RTNAT"     # исключения из MASQUERADE в контейнере
 ROUTING_DNSMASQ_CONF = _rt.get("dnsmasq_conf", "/etc/dnsmasq.d/awgbot-routing.conf")
 ROUTING_DNSMASQ_SERVICE = _rt.get("dnsmasq_service", "dnsmasq")
-ROUTING_LISTS_DOMAINS_URL = _rt.get("lists_domains_url", "")
-ROUTING_LISTS_SUBNET_URLS = list(_rt.get("lists_subnet_urls") or [])
+# Источники базовых списков. Дефолты ЗАШИТЫ в код, а не только в шаблон yaml:
+# боевой конфиг при обновлении не мигрирует, и ключ, добавленный в шаблон позже,
+# до сервера не доезжает — функция молча остаётся без списков. Один раз мы на
+# это уже наступили с именами наборов. В yaml их можно переопределить, но
+# отсутствие ключа больше ничего не ломает.
+_ITDOG = "https://raw.githubusercontent.com/itdoginfo/allow-domains/main"
+ROUTING_LISTS_DOMAINS_URL = _rt.get(
+    "lists_domains_url", f"{_ITDOG}/Russia/inside-dnsmasq-ipset.lst")
+ROUTING_LISTS_SUBNET_URLS = list(_rt.get("lists_subnet_urls") or [
+    f"{_ITDOG}/Subnets/IPv4/telegram.lst",
+    f"{_ITDOG}/Subnets/IPv4/meta.lst",
+    f"{_ITDOG}/Subnets/IPv4/twitter.lst",
+    f"{_ITDOG}/Subnets/IPv4/cloudflare.lst",
+    f"{_ITDOG}/Subnets/IPv4/discord.lst",
+    "https://www.gstatic.com/ipranges/goog.json",
+])
 
 
 def routing_denylist() -> list[str]:
