@@ -72,6 +72,11 @@ routing:
   # (install/routing-lists-update.sh): подсети попадают туда напрямую, без DNS,
   # поэтому основной путь не зависит от резолвера.
   #
+  # У КАЖДОГО ПРОФИЛЯ СВОЙ НАБОР = базовый список + его личные исключения.
+  # Общего набора рядом с личными нет намеренно: dnsmasq применяет для домена
+  # только ОДНУ директиву ipset=, и домен из базы, добавленный кем-то себе,
+  # переставал бы попадать в общий — у остальных он уезжал бы на шлюз.
+  #
   # ИМЁН НАБОРОВ И ЦЕПОЧЕК ЗДЕСЬ НЕТ намеренно — они константы в коде. Возможность
   # их настраивать создавала рассинхрон: боевой конфиг при обновлении не
   # мигрирует, и однажды прописанное имя переживало смену схемы, после чего бот
@@ -88,8 +93,7 @@ routing:
     - "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/cloudflare.lst"
     - "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/discord.lst"
     - "https://www.gstatic.com/ipranges/goog.json"
-  dnsmasq_base_conf: "/etc/dnsmasq.d/awgbot-vpn-domains.conf"  # базовые домены
-  dnsmasq_conf: "/etc/dnsmasq.d/awgbot-routing.conf"   # личные списки, генерится ботом
+  dnsmasq_conf: "/etc/dnsmasq.d/awgbot-routing.conf"   # генерится ботом ЦЕЛИКОМ
   dnsmasq_service: "dnsmasq"       # unit для restart (reload не применяет ipset=)
   user_domains_max: 100            # потолок личного списка на клиента
   # Домены, запрещённые к добавлению в личный список (совпадение по суффиксу:

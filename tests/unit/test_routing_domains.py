@@ -99,31 +99,41 @@ def test_parse_batch_empty_input():
 
 # ── build_dnsmasq_conf ───────────────────────────────────────────────────────
 
-def test_conf_has_only_user_domains():
-    """Базовые списки бот не генерит — их наполняют извне, вместе с подсетями,
-    которые в DNS вообще не участвуют."""
+def test_conf_merges_base_into_each_user_set():
+    """Пер-юзерный merge: базовый домен получает НАБОРЫ ВСЕХ включённых профилей
+    в одной директиве. Разносить их нельзя — dnsmasq применяет для домена только
+    одну директиву ipset=, и домен из обоих списков попал бы лишь в один набор."""
     out = routing.build_dnsmasq_conf(
-        domains_by_client={3: ["netflix.com"]}, set_user_prefix="vpn_u")
-    assert "ipset=/netflix.com/vpn_u3" in out
-    assert "ipset=/ru/" not in out
+        base_domains=["blocked.com"], domains_by_client={2: ["example.com"]},
+        client_ids=[2, 7], set_user_prefix="vpn_u")
+    assert "ipset=/blocked.com/vpn_u2,vpn_u7" in out
+    assert "ipset=/example.com/vpn_u2" in out
 
 
-def test_conf_merges_shared_domain_into_one_directive():
-    """Один домен у двух клиентов — ОДНА директива с обоими наборами: тогда
-    единственный резолв наполняет оба, и кэш никого не обделяет."""
+def test_conf_domain_in_both_lists_gets_single_directive():
+    """Домен и в базе, и в личном списке — ОДНА директива без дублей набора.
+    Раньше такой домен ломал маршрутизацию остальным: он уходил в личный набор
+    и переставал попадать в общий."""
     out = routing.build_dnsmasq_conf(
-        set_user_prefix="vpn_u",
-        domains_by_client={3: ["shared.com", "only3.com"], 7: ["shared.com"]})
-    assert "ipset=/shared.com/vpn_u3,vpn_u7" in out
-    assert "ipset=/only3.com/vpn_u3" in out
-    assert out.count("shared.com") == 1
+        base_domains=["example.com"], domains_by_client={2: ["example.com"]},
+        client_ids=[2, 7], set_user_prefix="vpn_u")
+    lines = [l for l in out.splitlines() if "example.com" in l]
+    assert lines == ["ipset=/example.com/vpn_u2,vpn_u7"], lines
+
+
+def test_conf_without_clients_is_empty():
+    """Никто не включён — директив нет: наборов, в которые писать, не существует."""
+    out = routing.build_dnsmasq_conf(
+        base_domains=["blocked.com"], domains_by_client={}, client_ids=[],
+        set_user_prefix="vpn_u")
+    assert "ipset=" not in out
 
 
 def test_conf_is_deterministic():
     """Один и тот же вход → байт-в-байт тот же файл: иначе каждая реконсиляция
     выглядела бы как изменение и дёргала рестарт dnsmasq."""
-    kw = dict(set_user_prefix="vpn_u",
-              domains_by_client={7: ["b.com", "a.com"], 3: ["c.com"]})
+    kw = dict(base_domains=["b.com", "a.com"], set_user_prefix="vpn_u",
+              domains_by_client={7: ["z.com"], 3: ["c.com"]}, client_ids=[3, 7])
     assert routing.build_dnsmasq_conf(**kw) == routing.build_dnsmasq_conf(**kw)
 
 
@@ -146,7 +156,6 @@ def test_set_names_are_constants_not_yaml():
                 '"chain"', '"nat_chain"'):
         assert f'_rt.get({key}' not in src, f"{key} снова читается из yaml"
 
-    assert config.ROUTING_SET_BASE == "vpn_base"
     assert config.ROUTING_SET_USER_PREFIX == "vpn_u"
     assert config.ROUTING_CHAIN == "AWGBOT_RT"
     assert config.ROUTING_NAT_CHAIN == "AWGBOT_RTNAT"

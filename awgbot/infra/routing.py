@@ -346,13 +346,14 @@ def rebuild_chain(client_ids) -> None:
     и появляются/исчезают. С `-C || -I` пришлось бы вычислять разницу и удалять
     осиротевшие правила удалённых клиентов; флаш своей цепочки делает это даром.
 
-    Правило на клиента — ОТ ОБРАТНОГО: «источник его, а назначение НЕ в списке
-    тех, кому нужна заграница» → на шлюз. Так российский адрес достаётся всему,
-    что не заблокировано, включая сервисы на .com, и вести перечень российских
-    сайтов не приходится вовсе.
+    Правило на клиента — ОТ ОБРАТНОГО и с ОДНИМ отрицанием: «источник его, а
+    назначение не в ЕГО наборе» → на шлюз. Набор у каждого свой и уже содержит и
+    базовый список, и личные исключения (пер-юзерный merge, см.
+    domain/routing.build_dnsmasq_conf), поэтому пересечение двух наборов
+    проверять не нужно.
 
-    Оба отрицания в одном правиле дают пересечение: мимо шлюза уходит и то, что
-    в базовом списке, и то, что клиент добавил себе лично.
+    Так российский адрес достаётся всему, что не заблокировано, включая сервисы
+    на .com, и вести перечень российских сайтов не приходится вовсе.
     """
     chain = config.ROUTING_CHAIN
     _mangle(["-N", chain], check=False)          # уже есть → код 1, это норма
@@ -360,7 +361,6 @@ def rebuild_chain(client_ids) -> None:
     for cid in sorted(client_ids):
         _mangle(["-A", chain,
                  "-m", "set", "--match-set", src_set(cid), "src",
-                 "-m", "set", "!", "--match-set", config.ROUTING_SET_BASE, "dst",
                  "-m", "set", "!", "--match-set", user_set(cid), "dst",
                  "-j", "MARK", "--set-xmark", _MARK])
     # хук в PREROUTING — идемпотентно. Сужен клиентской подсетью: до цепочки
@@ -462,25 +462,28 @@ def fetch(url: str, timeout: int = 15) -> Optional[str]:
         return None
 
 
-def add_networks(members) -> int:
-    """Залить подсети в базовый набор. Возвращает число принятых.
+def add_networks(name: str, members) -> int:
+    """Дописать подсети в набор. Возвращает число принятых.
 
-    Через `ipset restore` одной пачкой, а не по одной команде на запись: списки
-    измеряются тысячами строк, и раздельные вызовы растянули бы обновление на
-    минуты. `-exist` делает операцию идемпотентной — набор пополняется, а не
-    пересоздаётся, поэтому то, что уже накопил dnsmasq, остаётся на месте.
+    ДОПИСАТЬ, а не заменить: в том же наборе живут адреса, которые накопил
+    dnsmasq по мере резолва доменов, и перезапись стёрла бы их — маркировать
+    стало бы нечем до следующего запроса к каждому домену.
+
+    Через `ipset restore` одной пачкой, а не по команде на запись: списки
+    измеряются сотнями строк на профиль, и раздельные вызовы растянули бы
+    обновление. `-exist` делает операцию идемпотентной.
     """
-    ensure_set(config.ROUTING_SET_BASE, "hash:net")
-    payload = "".join(f"add {config.ROUTING_SET_BASE} {m} -exist\n" for m in members)
+    ensure_set(name, "hash:net")
+    payload = "".join(f"add {name} {m} -exist\n" for m in members)
     if not payload:
         return 0
     _host(["ipset", "restore", "-exist"], input_data=payload.encode())
     return payload.count("\n")
 
 
-def base_set_size() -> int:
-    """Сколько записей в базовом наборе (0 — в том числе если его нет)."""
-    proc = _host(["ipset", "list", config.ROUTING_SET_BASE], check=False)
+def set_size(name: str) -> int:
+    """Сколько записей в наборе (0 — в том числе если его нет)."""
+    proc = _host(["ipset", "list", name], check=False)
     if proc.returncode != 0:
         return 0
     return sum(1 for l in proc.stdout.decode(errors="replace").splitlines()

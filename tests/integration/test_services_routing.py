@@ -164,15 +164,12 @@ def test_remove_and_clear(services, make_active_client):
 
 # ── Проекция в dnsmasq ───────────────────────────────────────────────────────
 
-def test_dnsmasq_conf_has_only_user_domains(
+def test_dnsmasq_conf_uses_per_client_set(
         services, make_active_client, fake_routing):
-    """Базовый набор бот не генерит: он наполняется извне готовыми списками, и
-    подсети попадают туда без участия DNS."""
+    """Личный домен идёт в набор своего профиля — общего набора нет вовсе."""
     c = make_active_client()
     services.routing_add_domains(c.id, "bank.com")
-    conf = fake_routing.conf
-    assert f"ipset=/bank.com/{config.ROUTING_SET_USER_PREFIX}{c.id}" in conf
-    assert "ipset=/ru/" not in conf
+    assert f"ipset=/bank.com/{config.ROUTING_SET_USER_PREFIX}{c.id}" in fake_routing.conf
 
 
 def test_dnsmasq_not_rewritten_when_nothing_changed(
@@ -248,28 +245,23 @@ def test_feature_disabled_is_a_no_op(services, make_active_client, fake_routing)
 
 # ── обновление базовых списков ───────────────────────────────────────────────
 
-def test_lists_update_fills_base_set(services, fake_routing, monkeypatch):
-    """Бот наполняет базовый набор сам: требовать ручного запуска значит
-    гарантировать, что однажды забудут, а пустой набор при инверсии логики
-    отправляет на шлюз ВЕСЬ трафик."""
+def test_lists_update_fills_base_set(services, fake_routing, monkeypatch, tmp_path):
+    """Списки складываются в КЭШ, а не сразу в наборы: наборы пер-юзерные, их
+    состав пересобирается при каждой реконсиляции — исходник нужен отдельно."""
     from awgbot.core import config
     from awgbot.infra import routing as infra_routing
 
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     monkeypatch.setattr(config, "ROUTING_LISTS_SUBNET_URLS", ["http://x/nets"])
     monkeypatch.setattr(config, "ROUTING_LISTS_DOMAINS_URL", "http://x/domains")
-    monkeypatch.setattr(infra_routing, "fetch", lambda url, timeout=60: (
+    monkeypatch.setattr(infra_routing, "fetch", lambda url, timeout=15: (
         "1.2.3.0/24\n5.6.7.0/28\nмусор\n" if "nets" in url
-        else "ipset=/netflix.com/other_set\nмусор\n"))
-
-    got = {}
-    monkeypatch.setattr(infra_routing, "add_networks",
-                        lambda m: got.setdefault("nets", list(m)) or len(list(m)))
-    monkeypatch.setattr(infra_routing, "base_set_size", lambda: len(got.get("nets", [])))
+        else "ipset=/netflix.com/other_set\n#комментарий\n"))
 
     services.routing_update_lists(force=True)
-    assert got["nets"] == ["1.2.3.0/24", "5.6.7.0/28"]      # мусор отсеян
-    # чужое имя набора в директиве заменено на наше
-    assert f"ipset=/netflix.com/{config.ROUTING_SET_BASE}" in fake_routing.conf
+    assert services._routing_read_cache("subnets") == ["1.2.3.0/24", "5.6.7.0/28"]
+    # чужое имя набора из источника отброшено — оставлен только домен
+    assert services._routing_read_cache("domains") == ["netflix.com"]
 
 
 def test_lists_update_survives_dead_source(services, fake_routing, monkeypatch):
@@ -280,11 +272,11 @@ def test_lists_update_survives_dead_source(services, fake_routing, monkeypatch):
     monkeypatch.setattr(config, "ROUTING_LISTS_SUBNET_URLS", ["http://dead/nets"])
     monkeypatch.setattr(config, "ROUTING_LISTS_DOMAINS_URL", "")
     monkeypatch.setattr(infra_routing, "fetch", lambda url, timeout=60: None)
-    monkeypatch.setattr(infra_routing, "base_set_size", lambda: 42)
-    assert services.routing_update_lists(force=True) == 42
+    # прежний кэш из фикстуры остался нетронутым — устаревшие списки лучше пустых
+    assert services._routing_read_cache("subnets") == ["1.2.3.0/24"]
 
 
-def test_lists_update_not_blocked_by_empty_base_set(services, fake_routing, monkeypatch):
+def test_lists_update_not_blocked_by_empty_base_set(services, fake_routing, monkeypatch, tmp_path):
     """Наполнение списков НЕ должно зависеть от полной самопроверки.
 
     Иначе выходит взаимоблокировка: набор пуст → самопроверка говорит
@@ -294,30 +286,27 @@ def test_lists_update_not_blocked_by_empty_base_set(services, fake_routing, monk
     from awgbot.infra import routing as infra_routing
 
     fake_routing.enabled = True
-    monkeypatch.setattr(infra_routing, "available", lambda: False)   # пустой набор
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(infra_routing, "available", lambda: False)   # списков нет
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
     monkeypatch.setattr(config, "ROUTING_LISTS_SUBNET_URLS", ["http://x/nets"])
     monkeypatch.setattr(config, "ROUTING_LISTS_DOMAINS_URL", "")
     monkeypatch.setattr(infra_routing, "fetch", lambda url, timeout=15: "1.2.3.0/24\n")
 
     got = {}
-    monkeypatch.setattr(infra_routing, "add_networks",
-                        lambda m: got.setdefault("nets", list(m)))
-    monkeypatch.setattr(infra_routing, "base_set_size", lambda: len(got.get("nets", [])))
-    monkeypatch.setattr(infra_routing, "invalidate_self_check", lambda: got.setdefault("inv", True))
+    monkeypatch.setattr(infra_routing, "invalidate_self_check",
+                        lambda: got.setdefault("inv", True))
 
     services.routing_update_lists()
-    assert got.get("nets") == ["1.2.3.0/24"], "наполнение не запустилось"
+    assert services._routing_read_cache("subnets") == ["1.2.3.0/24"], "наполнение не запустилось"
     assert got.get("inv"), "кэш самопроверки не сброшен после наполнения"
 
 
 def test_empty_base_set_disables_marking(services, make_active_client, fake_routing,
-                                         monkeypatch):
+                                         monkeypatch, tmp_path):
     """Пустой базовый набор при инверсии = «на шлюз уходит ВСЁ». Маркировку в
     таком состоянии не включаем: отказ безопасный, трафик идёт обычным путём."""
-    from awgbot.infra import routing as infra_routing
-    monkeypatch.setattr(infra_routing, "base_set_size", lambda: 0)
-
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)    # кэши пусты
     c = make_active_client()
     dc = _device(services, c)
     services.set_routing_allowed(c.id, True)

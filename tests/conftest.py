@@ -117,7 +117,7 @@ def fake_awg(monkeypatch):
 
 
 @pytest.fixture()
-def fake_routing(monkeypatch):
+def fake_routing(monkeypatch, tmp_path):
     """Замена слоя условной маршрутизации (ipset/iptables/ip/dnsmasq) на фейк.
 
     Возвращает состояние: .sets {имя: [члены]}, .chain (список client_id в
@@ -128,6 +128,16 @@ def fake_routing(monkeypatch):
     import types
 
     from awgbot.infra import routing
+    from awgbot.core import config as _config
+
+    # По умолчанию списки СЧИТАЮТСЯ загруженными: пустые кэши — особое состояние,
+    # при котором маркировка не включается, и тесты про него подставляют пустой
+    # каталог сами.
+    _cache = tmp_path / "routing-cache"
+    _cache.mkdir()
+    (_cache / "routing-subnets.lst").write_text("1.2.3.0/24\n", encoding="utf-8")
+    (_cache / "routing-domains.lst").write_text("blocked.example\n", encoding="utf-8")
+    monkeypatch.setattr(_config, "DATA_DIR", _cache)
 
     state = types.SimpleNamespace(
         sets={}, chain=None, conf=None, conf_writes=0,
@@ -146,7 +156,6 @@ def fake_routing(monkeypatch):
         state.sets.setdefault(name, [])
 
     def write_conf(text, path=None):
-        # path задан → базовый список (пишется отдельным файлом), иначе личные
         changed = text != state.conf
         state.conf = text
         if changed:
@@ -174,9 +183,9 @@ def fake_routing(monkeypatch):
     _set("available", lambda: state.enabled)
     _set("replace_members", replace_members)
     _set("ensure_set", ensure_set)
-    _set("base_set_size", lambda: state.base_size)
+    _set("set_size", lambda name: state.base_size)
     _set("invalidate_self_check", lambda: None)
-    _set("add_networks", lambda members: len(list(members)))
+    _set("add_networks", lambda name, members: state.sets.setdefault(name, []) or len(list(members)))
     _set("fetch", lambda url, timeout=15: None)
     _set("destroy_set", lambda name: state.sets.pop(name, None))
     _set("list_sets", lambda: sorted(state.sets))

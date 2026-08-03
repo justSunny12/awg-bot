@@ -1798,38 +1798,39 @@ class Services:
                 # существовать до того, как на них сошлётся правило или dnsmasq)
                 client_ids = sorted(set(addrs) | set(domains))
 
-                # Доменные наборы только СОЗДАЁМ: базовый наполняется извне
-                # готовыми списками, личные — dnsmasq по мере резолва. Перезапись
-                # стирала бы всё накопленное, и до следующего запроса к каждому
-                # домену маркировать было бы нечем.
-                routing.ensure_set(config.ROUTING_SET_BASE, "hash:net")
+                base_nets = self._routing_read_cache("subnets")
+                base_doms = self._routing_read_cache("domains")
                 all_addrs = [a for lst in addrs.values() for a in lst]
                 # плечо контейнера: выпустить трафик включённых устройств
                 # немаскараженным, иначе на хосте их не отличить от остальных
                 routing.sync_nat_exempt(all_addrs)
                 for cid in client_ids:
-                    # src-набор — наш, его перезаписываем; доменный — dnsmasq'а
+                    # src-набор наш — перезаписываем целиком; набор назначений
+                    # ДОПОЛНЯЕМ: туда же dnsmasq кладёт адреса по мере резолва,
+                    # и перезапись стёрла бы накопленное
                     routing.replace_members(routing.src_set(cid), "hash:ip",
                                             addrs.get(cid, ()))
-                    routing.ensure_set(routing.user_set(cid), "hash:net")
+                    routing.add_networks(routing.user_set(cid), base_nets)
 
                 # Пустой базовый набор при инверсии означает «на шлюз уходит
                 # ВСЁ», включая заблокированное, которое с российского адреса не
                 # откроется. Маркировку в таком состоянии не включаем: цепочку
                 # оставляем пустой, политику снимаем. Отказ безопасный — трафик
                 # идёт обычным путём, как при выключенной функции.
-                if routing.base_set_size() == 0:
+                if not base_nets and not base_doms:
                     routing.rebuild_chain(())
                     routing.set_marking_enabled(False)
-                    log.warning("routing: базовый набор пуст — маркировка не "
-                                "включена, ждём загрузки списков")
+                    log.warning("routing: списки не загружены — маркировка не "
+                                "включена, ждём загрузки")
                     return
 
                 routing.rebuild_chain(client_ids)
                 self._routing_drop_orphan_sets(client_ids)
 
                 conf_text = domain_routing.build_dnsmasq_conf(
+                    base_domains=base_doms,
                     domains_by_client=domains,
+                    client_ids=client_ids,
                     set_user_prefix=config.ROUTING_SET_USER_PREFIX,
                 )
                 routing.write_dnsmasq_conf(conf_text)
@@ -1855,6 +1856,31 @@ class Services:
                     routing.destroy_set(name)
 
     _RT_LISTS_KEY = "routing_lists_updated_at"
+
+    # Скачанные списки лежат в КЭШЕ рядом с БД, а не сразу в наборах: наборы
+    # пер-юзерные, их состав вычисляется при каждой реконсиляции, и держать
+    # исходник отдельно от результата — единственный способ пересобрать состав
+    # при появлении нового профиля, не выкачивая всё заново.
+    def _routing_cache(self, kind: str):
+        return config.DATA_DIR / f"routing-{kind}.lst"
+
+    def _routing_write_cache(self, kind: str, items) -> None:
+        path = self._routing_cache(kind)
+        tmp = path.with_suffix(".tmp")
+        try:
+            tmp.write_text("\n".join(items) + "\n", encoding="utf-8")
+            tmp.replace(path)                 # атомарно: без полуфайла
+        except OSError as e:
+            log.warning("routing: не записать кэш %s (%s)", kind, e)
+
+    def _routing_read_cache(self, kind: str) -> list[str]:
+        """Пусто — значит списки ещё не качали."""
+        try:
+            return [l.strip() for l in
+                    self._routing_cache(kind).read_text(encoding="utf-8").splitlines()
+                    if l.strip()]
+        except OSError:
+            return []
 
     def routing_update_lists(self, force: bool = False) -> int:
         """Обновить базовый набор из внешних источников. Возвращает число записей.
@@ -1883,8 +1909,12 @@ class Services:
             last = self.db.get_state(self._RT_LISTS_KEY)
             # обновляем по расписанию ИЛИ немедленно, если набор пуст: пустой
             # набор — состояние, при котором функцию включать нельзя
-            if last and now - int(last) < every and routing.base_set_size() > 0:
-                return routing.base_set_size()
+            cached = len(self._routing_read_cache("subnets")) \
+                + len(self._routing_read_cache("domains"))
+            # по расписанию ИЛИ немедленно, если кэш пуст: без списков функцию
+            # включать нельзя, и ждать следующего окна незачем
+            if last and now - int(last) < every and cached > 0:
+                return cached
         try:
             with routing.mutation_lock:
                 nets: list[str] = []
@@ -1893,17 +1923,16 @@ class Services:
                     if body:
                         nets.extend(domain_routing.parse_networks(body))
                 if nets:
-                    routing.add_networks(sorted(set(nets)))
+                    self._routing_write_cache("subnets", sorted(set(nets)))
 
                 if config.ROUTING_LISTS_DOMAINS_URL:
                     body = routing.fetch(config.ROUTING_LISTS_DOMAINS_URL)
                     if body:
-                        conf = domain_routing.parse_dnsmasq_domains(
-                            body, config.ROUTING_SET_BASE)
-                        if conf:
-                            routing.write_dnsmasq_conf(
-                                conf, path=config.ROUTING_DNSMASQ_BASE_CONF)
-                size = routing.base_set_size()
+                        doms = domain_routing.parse_domain_list(body)
+                        if doms:
+                            self._routing_write_cache("domains", doms)
+                size = len(self._routing_read_cache("subnets")) \
+                    + len(self._routing_read_cache("domains"))
                 self.db.set_state(self._RT_LISTS_KEY, str(now))
                 # окружение изменилось нашими руками — прежний вердикт
                 # самопроверки протух
@@ -1912,7 +1941,7 @@ class Services:
                 return size
         except routing.RoutingError as e:
             log.warning("routing_update_lists: %s", e)
-            return routing.base_set_size()
+            return len(self._routing_read_cache("subnets"))
 
     def routing_link_ok(self) -> bool:
         """Жив ли шлюз: хендшейк линка свежее порога."""

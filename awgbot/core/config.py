@@ -219,14 +219,11 @@ ROUTING_FWMARK = int(_rt.get("fwmark", 1))
 # которого больше никто не создаёт. Именно так и вышло при переходе
 # ru_base → vpn_base: инфраструктура была исправна, а бот смотрел не туда.
 # Оставшиеся в старых yaml ключи set_*/chain/nat_chain просто игнорируются.
-ROUTING_SET_BASE = "vpn_base"          # кому нужна заграница (наполняется извне)
-ROUTING_SET_USER_PREFIX = "vpn_u"      # личные исключения клиента N → vpn_u<N>
+ROUTING_SET_USER_PREFIX = "vpn_u"      # набор клиента N: база + его личные → vpn_u<N>
 ROUTING_SET_SRC_PREFIX = "rt_src_u"    # адреса устройств клиента N → rt_src_u<N>
 ROUTING_CHAIN = "AWGBOT_RT"            # маркировка на хосте
 ROUTING_NAT_CHAIN = "AWGBOT_RTNAT"     # исключения из MASQUERADE в контейнере
 ROUTING_DNSMASQ_CONF = _rt.get("dnsmasq_conf", "/etc/dnsmasq.d/awgbot-routing.conf")
-ROUTING_DNSMASQ_BASE_CONF = _rt.get("dnsmasq_base_conf",
-                                    "/etc/dnsmasq.d/awgbot-vpn-domains.conf")
 ROUTING_DNSMASQ_SERVICE = _rt.get("dnsmasq_service", "dnsmasq")
 ROUTING_LISTS_DOMAINS_URL = _rt.get("lists_domains_url", "")
 ROUTING_LISTS_SUBNET_URLS = list(_rt.get("lists_subnet_urls") or [])

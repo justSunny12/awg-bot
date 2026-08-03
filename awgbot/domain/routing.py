@@ -150,39 +150,56 @@ def parse_batch(text: str, *, base_zones=(), denylist=()) -> tuple[list[str], li
 
 def build_dnsmasq_conf(
     *,
+    base_domains=(),
     domains_by_client: dict[int, list[str]],
+    client_ids=(),
     set_user_prefix: str,
 ) -> str:
-    """Собирает конфиг ЛИЧНЫХ списков одним файлом.
+    """Конфиг доменов одним файлом: у каждого профиля СВОЙ набор = база + личные.
 
-    Базовый набор здесь не участвует: он наполняется извне готовыми списками
-    доменов и подсетей, и подсети попадают в него напрямую, без DNS. Бот отвечает
-    только за то, что человек добавил себе сам.
+    Пер-юзерный merge, а не общий набор плюс личный. Причина в поведении dnsmasq:
+    для домена применяется ТОЛЬКО ОДНА директива `ipset=`. Общий набор рядом с
+    личными означал бы, что домен из базы, добавленный кем-то себе, перестаёт
+    попадать в общий — и у остальных уезжает на шлюз. Один человек ломал бы
+    маршрутизацию другим.
 
-    Один домен — одна директива со всеми наборами, куда он входит:
-        ipset=/netflix.com/vpn_u3,vpn_u7
-    Так единственный резолв наполняет все нужные наборы разом, и вопрос
-    «попадёт ли адрес в набор второго клиента при ответе из кэша» не возникает.
-    Разносить директивы одного домена по разным файлам нельзя — на слияние в
-    этом случае полагаться не стоит.
+    Здесь домен получает одну директиву со списком наборов ВСЕХ, кому он нужен:
+        ipset=/blocked.com/vpn_u2,vpn_u7      (базовый — всем включённым)
+        ipset=/example.com/vpn_u2               (личный — только этому)
 
-    Файл генерится целиком и перезаписывается: инкрементальные правки означали бы
-    второй источник истины (файл против БД), который однажды разойдётся.
+    Правило маркировки тогда одно и с одним отрицанием: «не в моём наборе → на
+    шлюз». Проверять пересечение двух наборов не нужно.
+
+    Файл генерится целиком: инкрементальные правки означали бы второй источник
+    истины (файл против БД), который однажды разойдётся.
     """
-    lines = [
-        "# Сгенерировано awg-bot. Правки будут перезаписаны.",
-        "# Личные списки: домены, которым нужен ЗАРУБЕЖНЫЙ адрес. Всё, чего нет",
-        "# ни здесь, ни в базовом наборе, уходит на шлюз и выходит с российского.",
-        "",
-    ]
-    # домен → наборы клиентов, у которых он в личном списке
+    def _s(cid) -> str:
+        return f"{set_user_prefix}{cid}"
+
+    live = sorted({int(c) for c in (client_ids or ())})
     per_domain: dict[str, list[str]] = {}
+    for dom in base_domains or ():
+        dom = (dom or "").strip().lower()
+        if dom:
+            per_domain.setdefault(dom, []).extend(_s(c) for c in live)
     for client_id, domains in sorted((domains_by_client or {}).items()):
         for dom in domains:
-            per_domain.setdefault(dom, []).append(f"{set_user_prefix}{client_id}")
+            per_domain.setdefault(dom, []).append(_s(client_id))
 
+    lines = [
+        "# Сгенерировано awg-bot. Правки будут перезаписаны.",
+        "# Домены, которым нужен ЗАРУБЕЖНЫЙ адрес. У каждого профиля свой набор:",
+        "# базовый список + личные исключения. Чего в наборе нет — уходит на шлюз.",
+        "",
+    ]
     for dom in sorted(per_domain):
-        lines.append(f"ipset=/{dom}/{','.join(per_domain[dom])}")
+        sets, seen = [], set()
+        for s in per_domain[dom]:
+            if s not in seen:
+                seen.add(s)
+                sets.append(s)
+        if sets:
+            lines.append(f"ipset=/{dom}/{','.join(sets)}")
     lines.append("")
     return "\n".join(lines)
 
@@ -216,28 +233,38 @@ def parse_networks(text: str) -> list[str]:
     return out
 
 
-def parse_dnsmasq_domains(text: str, set_name: str) -> str:
-    """Привести чужой dnsmasq-список к нашему набору.
+def parse_domain_list(text: str) -> list[str]:
+    """Вытащить домены из внешнего списка.
 
-    Источники отдают директивы со своим именем набора — подставляем своё, иначе
-    dnsmasq наполнял бы набор, которого у нас нет, и списки бы не работали при
-    полностью исправной на вид конфигурации.
+    Возвращает ИМЕНА, а не готовые директивы: имя набора подставляется потом, при
+    сборке общего файла. Иначе базовые домены пришлось бы писать отдельно от
+    личных, а dnsmasq применяет для домена только одну директиву `ipset=` — и
+    домен, попавший в оба файла, оказался бы лишь в одном наборе.
+
+    Формат источников — строки `ipset=/домен/чужой_набор`; годится и простой
+    построчный список доменов.
     """
-    lines = []
+    out: list[str] = []
+    seen: set[str] = set()
     for raw in (text or "").splitlines():
         line = raw.strip()
-        if not line.startswith("ipset=/"):
+        if not line or line.startswith("#"):
             continue
-        body = line[len("ipset="):]
-        parts = body.split("/")
-        if len(parts) < 3 or not parts[1]:
+        if line.startswith("ipset=/") or line.startswith("nftset=/"):
+            parts = line.split("/")
+            dom = parts[1] if len(parts) > 2 else ""
+        else:
+            dom = line
+        dom = dom.strip().lower().strip(".")
+        if not dom or "/" in dom or " " in dom or dom in seen:
             continue
-        lines.append(f"ipset=/{parts[1]}/{set_name}")
-    return "\n".join(lines) + ("\n" if lines else "")
+        seen.add(dom)
+        out.append(dom)
+    return out
 
 
 __all__ = [
     "DomainRejected", "normalize", "zone_of", "covered_by_base", "is_denied",
-    "parse_batch", "build_dnsmasq_conf", "parse_networks", "parse_dnsmasq_domains",
+    "parse_batch", "build_dnsmasq_conf", "parse_networks", "parse_domain_list",
     "MAX_DOMAIN_LEN", "MAX_LABEL_LEN",
 ]
