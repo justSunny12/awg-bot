@@ -43,6 +43,7 @@ UNIT="/etc/systemd/system/awg-link.service"
 MODE="plan"
 case "${1:-}" in
     --apply)    MODE="apply" ;;
+    --reassert) MODE="reassert" ;;
     --rollback) MODE="rollback" ;;
     ""|--plan)  MODE="plan" ;;
     -h|--help)  sed -n '2,27p' "$0"; exit 0 ;;
@@ -57,6 +58,26 @@ run()  {
     if [ "$MODE" = "plan" ]; then printf '  would: %s\n' "$*"
     else printf '  $ %s\n' "$*"; sh -c "$*"; fi
 }
+
+# Исключение линка из MASQUERADE. Вынесено в функцию, потому что нужно не только
+# при установке: правила iptables эфемерны, и после ребута это правило исчезает,
+# а обвяз хоста свой MASQUERADE восстанавливает. Тогда шлюз увидит адрес ВПС
+# вместо адреса клиента, его собственный MASQUERADE по -s 10.8.1.0/24 не
+# сработает, и трафик молча перестанет ходить. Поэтому юнит зовёт --reassert.
+assert_nat_exempt() {
+    if iptables -t nat -C POSTROUTING -s "$CLIENT_SUBNET" -o "$LINK_IF" -j ACCEPT 2>/dev/null; then
+        say "  исключение из MASQUERADE уже есть"
+    else
+        run "iptables -t nat -I POSTROUTING -s $CLIENT_SUBNET -o $LINK_IF -j ACCEPT"
+    fi
+}
+
+if [ "$MODE" = "reassert" ]; then
+    [ -f "$CONF" ] || { say "линк не настроен ($CONF нет) — нечего поднимать"; exit 0; }
+    ip link show "$LINK_IF" >/dev/null 2>&1 || run "awg-quick up $LINK_IF"
+    assert_nat_exempt
+    exit 0
+fi
 
 # ── откат ────────────────────────────────────────────────────────────────────
 if [ "$MODE" = "rollback" ]; then
@@ -190,14 +211,11 @@ run "awg-quick up $LINK_IF"
 step "3. Исключение линка из MASQUERADE"
 say "  Обвяз хоста маскарадит всю $CLIENT_SUBNET. Без исключения шлюз увидел бы"
 say "  адрес ВПС вместо адреса клиента — и различать клиентов стало бы нечем."
-if iptables -t nat -C POSTROUTING -s "$CLIENT_SUBNET" -o "$LINK_IF" -j ACCEPT 2>/dev/null; then
-    say "  уже есть"
-else
-    run "iptables -t nat -I POSTROUTING -s $CLIENT_SUBNET -o $LINK_IF -j ACCEPT"
-fi
+assert_nat_exempt
 
 # ── 4. автозапуск ────────────────────────────────────────────────────────────
 step "4. Автозапуск"
+SELF="$(readlink -f "$0")"
 cat > "$UNIT" <<UNITEOF
 [Unit]
 Description=awg-bot: линк-туннель до шлюза условной маршрутизации
@@ -207,7 +225,9 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/awg-quick up $LINK_IF
+# --reassert, а не только awg-quick: правила iptables эфемерны, и исключение
+# линка из MASQUERADE после ребута пришлось бы ставить заново вручную.
+ExecStart=$SELF --reassert
 ExecStop=/usr/bin/awg-quick down $LINK_IF
 
 [Install]

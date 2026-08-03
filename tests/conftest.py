@@ -132,6 +132,9 @@ def fake_routing(monkeypatch):
     state = types.SimpleNamespace(
         sets={}, chain=None, conf=None, conf_writes=0,
         marking=None, link_age=10, enabled=True, nat_exempt=None,
+        # базовый набор по умолчанию НЕ пуст: пустой — особое состояние, при
+        # котором маркировка не включается, и тесты про него включают его явно
+        base_size=100,
     )
 
     def replace_members(name, kind, members):
@@ -171,6 +174,10 @@ def fake_routing(monkeypatch):
     _set("available", lambda: state.enabled)
     _set("replace_members", replace_members)
     _set("ensure_set", ensure_set)
+    _set("base_set_size", lambda: state.base_size)
+    _set("invalidate_self_check", lambda: None)
+    _set("add_networks", lambda members: len(list(members)))
+    _set("fetch", lambda url, timeout=15: None)
     _set("destroy_set", lambda name: state.sets.pop(name, None))
     _set("list_sets", lambda: sorted(state.sets))
     _set("rebuild_chain", lambda ids: setattr(state, "chain", sorted(ids)))

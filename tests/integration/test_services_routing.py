@@ -282,3 +282,47 @@ def test_lists_update_survives_dead_source(services, fake_routing, monkeypatch):
     monkeypatch.setattr(infra_routing, "fetch", lambda url, timeout=60: None)
     monkeypatch.setattr(infra_routing, "base_set_size", lambda: 42)
     assert services.routing_update_lists(force=True) == 42
+
+
+def test_lists_update_not_blocked_by_empty_base_set(services, fake_routing, monkeypatch):
+    """Наполнение списков НЕ должно зависеть от полной самопроверки.
+
+    Иначе выходит взаимоблокировка: набор пуст → самопроверка говорит
+    «недоступна» → код наполнения не запускается → набор остаётся пуст. На чистой
+    установке функция не поднялась бы никогда."""
+    from awgbot.core import config
+    from awgbot.infra import routing as infra_routing
+
+    fake_routing.enabled = True
+    monkeypatch.setattr(infra_routing, "available", lambda: False)   # пустой набор
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    monkeypatch.setattr(config, "ROUTING_LISTS_SUBNET_URLS", ["http://x/nets"])
+    monkeypatch.setattr(config, "ROUTING_LISTS_DOMAINS_URL", "")
+    monkeypatch.setattr(infra_routing, "fetch", lambda url, timeout=15: "1.2.3.0/24\n")
+
+    got = {}
+    monkeypatch.setattr(infra_routing, "add_networks",
+                        lambda m: got.setdefault("nets", list(m)))
+    monkeypatch.setattr(infra_routing, "base_set_size", lambda: len(got.get("nets", [])))
+    monkeypatch.setattr(infra_routing, "invalidate_self_check", lambda: got.setdefault("inv", True))
+
+    services.routing_update_lists()
+    assert got.get("nets") == ["1.2.3.0/24"], "наполнение не запустилось"
+    assert got.get("inv"), "кэш самопроверки не сброшен после наполнения"
+
+
+def test_empty_base_set_disables_marking(services, make_active_client, fake_routing,
+                                         monkeypatch):
+    """Пустой базовый набор при инверсии = «на шлюз уходит ВСЁ». Маркировку в
+    таком состоянии не включаем: отказ безопасный, трафик идёт обычным путём."""
+    from awgbot.infra import routing as infra_routing
+    monkeypatch.setattr(infra_routing, "base_set_size", lambda: 0)
+
+    c = make_active_client()
+    dc = _device(services, c)
+    services.set_routing_allowed(c.id, True)
+    services.set_routing_master(c.id, True)
+    services.set_device_routing(dc.device_id, True)
+
+    assert fake_routing.chain == []          # цепочка пуста
+    assert fake_routing.marking is False     # политика снята

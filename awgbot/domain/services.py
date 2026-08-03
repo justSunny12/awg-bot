@@ -1813,6 +1813,18 @@ class Services:
                                             addrs.get(cid, ()))
                     routing.ensure_set(routing.user_set(cid), "hash:net")
 
+                # Пустой базовый набор при инверсии означает «на шлюз уходит
+                # ВСЁ», включая заблокированное, которое с российского адреса не
+                # откроется. Маркировку в таком состоянии не включаем: цепочку
+                # оставляем пустой, политику снимаем. Отказ безопасный — трафик
+                # идёт обычным путём, как при выключенной функции.
+                if routing.base_set_size() == 0:
+                    routing.rebuild_chain(())
+                    routing.set_marking_enabled(False)
+                    log.warning("routing: базовый набор пуст — маркировка не "
+                                "включена, ждём загрузки списков")
+                    return
+
                 routing.rebuild_chain(client_ids)
                 self._routing_drop_orphan_sets(client_ids)
 
@@ -1855,8 +1867,16 @@ class Services:
         Недоступность источника не считается ошибкой: прежний набор остаётся в
         силе. Устаревшие списки лучше пустых ровно по той же причине.
         """
-        if not routing.available() and not force:
-            return 0
+        # Гейт НАМЕРЕННО не routing.available(): полная самопроверка требует
+        # рабочего окружения, а наполнение списков — это как раз то, чем оно
+        # становится рабочим. Проверять её здесь значило бы получить
+        # взаимоблокировку: набор пуст → «недоступна» → наполнять не идём →
+        # набор пуст. Достаточно того, что функция вообще включена.
+        if not force:
+            if not config.ROUTING_ENABLED:
+                return 0
+            if not settings.get_bool("app.routing.enabled", False):
+                return 0
         now = int(time.time())
         every = int(settings.get("app.routing.lists_refresh_hours", 6)) * 3600
         if not force:
@@ -1885,6 +1905,9 @@ class Services:
                                 conf, path=config.ROUTING_DNSMASQ_BASE_CONF)
                 size = routing.base_set_size()
                 self.db.set_state(self._RT_LISTS_KEY, str(now))
+                # окружение изменилось нашими руками — прежний вердикт
+                # самопроверки протух
+                routing.invalidate_self_check()
                 log.info("routing: списки обновлены, в базовом наборе %d записей", size)
                 return size
         except routing.RoutingError as e:
