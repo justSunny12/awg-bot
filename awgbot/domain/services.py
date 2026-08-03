@@ -1680,7 +1680,7 @@ class Services:
         on = sum(1 for d in devices if upper and d.routing_enabled)
         return (on, len(devices))
 
-    def routing_access_for_client(self, client) -> Optional[bool]:
+    def routing_toggle_for_client(self, client) -> Optional[bool]:
         """Состояние РФ-доступа для инфобокса: None — не показывать строку.
 
         Строка появляется, как только функция клиенту разрешена, и показывает
@@ -1690,7 +1690,7 @@ class Services:
             return None
         return bool(client.routing_master)
 
-    def routing_status_for_client(self, client) -> Optional[bool]:
+    def routing_health_for_client(self, client) -> Optional[bool]:
         """Показывать ли клиенту статусную строку и что в ней.
 
         None — не показывать вовсе: у человека нет ни одного устройства с
@@ -1738,7 +1738,7 @@ class Services:
         """
         limit = int(settings.get("app.routing.user_domains_max", 100))
         accepted, rejected = domain_routing.parse_batch(
-            text, base_zones=(), denylist=config.routing_denylist())
+            text, denylist=config.routing_denylist())
         existing = set(self.db.list_routing_domains(client_id))
         free = max(0, limit - len(existing))
         added: list[str] = []
@@ -1783,59 +1783,62 @@ class Services:
             return
         try:
             with routing.mutation_lock:
-                # Выключено админом — приводим инфраструктуру к пустому виду, а
-                # не просто выходим: иначе выключатель не выключал бы уже
-                # размеченный трафик, а лишь запрещал новые включения.
                 if not settings.get_bool("app.routing.enabled", False):
-                    routing.sync_nat_exempt(())
-                    routing.rebuild_chain(())
-                    routing.set_marking_enabled(False)
-                    return
-                addrs = self.db.routing_active_addresses(config.ADMIN_ID)
-                domains = self.db.routing_domains_by_client()
-                # клиенты, которым нужны собственные наборы: у кого есть
-                # включённые устройства ИЛИ личные домены (наборы должны
-                # существовать до того, как на них сошлётся правило или dnsmasq)
-                client_ids = sorted(set(addrs) | set(domains))
-
-                base_nets = self._routing_read_cache("subnets")
-                base_doms = self._routing_read_cache("domains")
-                all_addrs = [a for lst in addrs.values() for a in lst]
-                # плечо контейнера: выпустить трафик включённых устройств
-                # немаскараженным, иначе на хосте их не отличить от остальных
-                routing.sync_nat_exempt(all_addrs)
-                for cid in client_ids:
-                    # src-набор наш — перезаписываем целиком; набор назначений
-                    # ДОПОЛНЯЕМ: туда же dnsmasq кладёт адреса по мере резолва,
-                    # и перезапись стёрла бы накопленное
-                    routing.replace_members(routing.src_set(cid), "hash:ip",
-                                            addrs.get(cid, ()))
-                    routing.add_networks(routing.user_set(cid), base_nets)
-
-                # Пустой базовый набор при инверсии означает «на шлюз уходит
-                # ВСЁ», включая заблокированное, которое с российского адреса не
-                # откроется. Маркировку в таком состоянии не включаем: цепочку
-                # оставляем пустой, политику снимаем. Отказ безопасный — трафик
-                # идёт обычным путём, как при выключенной функции.
-                if not self.routing_lists_ready():
-                    routing.rebuild_chain(())
-                    routing.set_marking_enabled(False)
-                    log.warning("routing: списки не загружены — маркировка не "
-                                "включена, ждём загрузки")
-                    return
-
-                routing.rebuild_chain(client_ids)
-                self._routing_drop_orphan_sets(client_ids)
-
-                conf_text = domain_routing.build_dnsmasq_conf(
-                    base_domains=base_doms,
-                    domains_by_client=domains,
-                    client_ids=client_ids,
-                    set_user_prefix=config.ROUTING_SET_USER_PREFIX,
-                )
-                routing.write_dnsmasq_conf(conf_text)
+                    self._routing_stand_down()
+                elif not self.routing_lists_ready():
+                    self._routing_stand_down("списки не загружены — ждём загрузки")
+                else:
+                    self._routing_apply()
         except routing.RoutingError as e:
             log.warning("reconcile_routing: %s", e)
+
+    def _routing_stand_down(self, reason: str = "") -> None:
+        """Снять всё, что фича делает с трафиком.
+
+        Не «просто выйти»: выключатель обязан выключать уже размеченный трафик,
+        а не только запрещать новые включения. Состояние в БД при этом цело —
+        вернули условия, и следующая же реконсиляция всё восстановит.
+
+        Тот же путь используется, когда списки не загружены: при инверсии логики
+        пустые списки означают «на шлюз уходит ВСЁ», включая заблокированное,
+        которое с российского адреса не откроется. Отказ безопасный — трафик
+        идёт обычным путём, как при выключенной функции.
+        """
+        routing.sync_nat_exempt(())
+        routing.rebuild_chain(())
+        routing.set_marking_enabled(False)
+        if reason:
+            log.warning("routing: %s", reason)
+
+    def _routing_apply(self) -> None:
+        """Разложить состояние БД по наборам, цепочке и конфигу dnsmasq."""
+        addrs = self.db.routing_active_addresses(config.ADMIN_ID)
+        domains = self.db.routing_domains_by_client()
+        # Профили, которым нужны собственные наборы: с включёнными устройствами
+        # ИЛИ с личными доменами. Наборы должны существовать до того, как на них
+        # сошлётся правило или директива dnsmasq.
+        client_ids = sorted(set(addrs) | set(domains))
+        base_nets = self._routing_read_cache("subnets")
+
+        # плечо контейнера: выпустить трафик включённых устройств
+        # немаскараженным, иначе на хосте их не отличить от остальных
+        routing.sync_nat_exempt([a for lst in addrs.values() for a in lst])
+
+        for cid in client_ids:
+            # src-набор наш — перезаписываем целиком; набор назначений
+            # ДОПОЛНЯЕМ: туда же dnsmasq кладёт адреса по мере резолва доменов,
+            # и перезапись стёрла бы накопленное
+            routing.replace_members(routing.src_set(cid), "hash:ip", addrs.get(cid, ()))
+            routing.add_networks(routing.user_set(cid), base_nets)
+
+        routing.rebuild_chain(client_ids)
+        self._routing_drop_orphan_sets(client_ids)
+        routing.write_dnsmasq_conf(domain_routing.build_dnsmasq_conf(
+            base_domains=self._routing_read_cache("domains"),
+            domains_by_client=domains,
+            client_ids=client_ids,
+            set_user_prefix=config.ROUTING_SET_USER_PREFIX,
+        ))
 
     def _routing_drop_orphan_sets(self, live_ids) -> None:
         """Снести наборы удалённых клиентов.

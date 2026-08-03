@@ -38,8 +38,8 @@ router.callback_query.filter(RoleFilter("client"))
 async def _greeting(services, client):
     server_ok = await call(services.server_ok_cached)     # 0 exec: статус из state
     slots = await call(services.device_slots, client.id)
-    routing_ok = await call(services.routing_status_for_client, client)
-    routing_access = await call(services.routing_access_for_client, client)
+    routing_ok = await call(services.routing_health_for_client, client)
+    routing_access = await call(services.routing_toggle_for_client, client)
     return texts.greeting_client(client, server_ok, slots, routing_ok,
                                  routing_access), slots
 

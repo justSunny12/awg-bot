@@ -275,18 +275,6 @@ def sync_nat_exempt(addresses) -> None:
         _cont(["iptables", "-t", "nat", "-I", "POSTROUTING", "1", "-j", chain])
 
 
-def drop_nat_exempt() -> None:
-    """Снять исключения целиком (полное выключение фичи)."""
-    chain = config.ROUTING_NAT_CHAIN
-    _cont(["iptables", "-t", "nat", "-D", "POSTROUTING", "-j", chain], check=False)
-    _cont(["iptables", "-t", "nat", "-F", chain], check=False)
-    _cont(["iptables", "-t", "nat", "-X", chain], check=False)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Плечо ХОСТА: наборы
-# ─────────────────────────────────────────────────────────────────────────────
-
 def ensure_set(name: str, kind: str) -> None:
     """Создать набор, если его нет. Содержимое НЕ трогает.
 
@@ -297,8 +285,6 @@ def ensure_set(name: str, kind: str) -> None:
     """
     _host(["ipset", "create", name, kind, "-exist"])
 
-
-_ensure_set = ensure_set          # прежнее приватное имя (внутренние вызовы)
 
 
 def list_sets() -> list[str]:
@@ -314,9 +300,9 @@ def replace_members(name: str, kind: str, members) -> None:
     это означало бы моргание режима у пользователя на каждой реконсиляции.
     """
     tmp = f"{name}_tmp"
-    _ensure_set(name, kind)
+    ensure_set(name, kind)
     _host(["ipset", "destroy", tmp], check=False)
-    _ensure_set(tmp, kind)
+    ensure_set(tmp, kind)
     payload = "".join(f"add {tmp} {m}\n" for m in members)
     if payload:
         _host(["ipset", "restore", "-exist"], input_data=payload.encode())
@@ -370,22 +356,6 @@ def rebuild_chain(client_ids) -> None:
             "-s", config.ROUTING_CLIENT_SUBNET, "-j", chain]
     if not _host_ok(["iptables", *hook]):
         _mangle(["-I", "PREROUTING", "-s", config.ROUTING_CLIENT_SUBNET, "-j", chain])
-
-
-def drop_chain() -> None:
-    """Снять хук и цепочку целиком (полное выключение фичи)."""
-    chain = config.ROUTING_CHAIN
-    _mangle(["-D", "PREROUTING", "-s", config.ROUTING_CLIENT_SUBNET, "-j", chain],
-            check=False)
-    _mangle(["-F", chain], check=False)
-    _mangle(["-X", chain], check=False)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Плечо ХОСТА: политика маршрутизации (и рубильник деградации)
-# ─────────────────────────────────────────────────────────────────────────────
-
-_RULE = ["fwmark", str(config.ROUTING_FWMARK), "table", str(config.ROUTING_TABLE)]
 
 
 def _rule_present() -> bool:
@@ -481,15 +451,6 @@ def add_networks(name: str, members) -> int:
     return payload.count("\n")
 
 
-def set_size(name: str) -> int:
-    """Сколько записей в наборе (0 — в том числе если его нет)."""
-    proc = _host(["ipset", "list", name], check=False)
-    if proc.returncode != 0:
-        return 0
-    return sum(1 for l in proc.stdout.decode(errors="replace").splitlines()
-               if l[:1].isdigit())
-
-
 def write_dnsmasq_conf(text: str, path: str = None) -> bool:
     """Записать конфиг списков и применить. True — файл изменился (был рестарт).
 
@@ -529,9 +490,16 @@ def write_dnsmasq_conf(text: str, path: str = None) -> bool:
 
 __all__ = [
     "RoutingError", "RoutingUnavailable", "mutation_lock",
-    "self_check", "available", "user_set", "src_set",
-    "sync_nat_exempt", "drop_nat_exempt",
-    "ensure_set", "replace_members", "destroy_set", "list_sets",
-    "rebuild_chain", "drop_chain", "ensure_route", "set_marking_enabled",
-    "link_handshake_age", "write_dnsmasq_conf",
+    # самопроверка
+    "self_check", "available", "invalidate_self_check",
+    # имена наборов
+    "user_set", "src_set",
+    # плечо контейнера
+    "sync_nat_exempt",
+    # наборы
+    "ensure_set", "replace_members", "add_networks", "destroy_set", "list_sets",
+    # маркировка и политика
+    "rebuild_chain", "set_marking_enabled", "link_handshake_age",
+    # внешние списки и dnsmasq
+    "fetch", "write_dnsmasq_conf",
 ]

@@ -78,19 +78,6 @@ def normalize(raw: str) -> str:
     return s
 
 
-def zone_of(domain: str) -> str:
-    """Зона верхнего уровня (последняя метка)."""
-    return domain.rsplit(".", 1)[-1]
-
-
-def covered_by_base(domain: str, base_zones) -> bool:
-    """Оставлено для совместимости вызовов: с инверсией логики базовый набор
-    наполняется извне готовыми списками, и проверить принадлежность к нему по
-    имени домена нельзя — только по адресу, уже после резолва. Пользователю
-    добавление лишнего не вредит: правило матчит объединение наборов."""
-    return False
-
-
 def is_denied(domain: str, denylist) -> bool:
     """Домен запрещён к добавлению: он сам или его родитель есть в денай-листе.
 
@@ -112,7 +99,7 @@ def is_denied(domain: str, denylist) -> bool:
 # Разбор пользовательского ввода пачкой
 # ─────────────────────────────────────────────────────────────────────────────
 
-def parse_batch(text: str, *, base_zones=(), denylist=()) -> tuple[list[str], list[tuple[str, str]]]:
+def parse_batch(text: str, *, denylist=()) -> tuple[list[str], list[tuple[str, str]]]:
     """Разбирает многострочный/через-запятую ввод.
 
     Возвращает (принятые, отклонённые) — где отклонённые это (исходная_строка,
@@ -135,9 +122,6 @@ def parse_batch(text: str, *, base_zones=(), denylist=()) -> tuple[list[str], li
             continue
         if is_denied(dom, denylist):
             rejected.append((chunk, "этот домен добавлять нельзя"))
-            continue
-        if covered_by_base(dom, base_zones):
-            rejected.append((chunk, "уже покрыт базовым списком — добавлять не нужно"))
             continue
         seen.add(dom)
         accepted.append(dom)
@@ -264,7 +248,7 @@ def parse_domain_list(text: str) -> list[str]:
 
 
 __all__ = [
-    "DomainRejected", "normalize", "zone_of", "covered_by_base", "is_denied",
+    "DomainRejected", "normalize", "is_denied",
     "parse_batch", "build_dnsmasq_conf", "parse_networks", "parse_domain_list",
     "MAX_DOMAIN_LEN", "MAX_LABEL_LEN",
 ]

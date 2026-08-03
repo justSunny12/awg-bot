@@ -52,14 +52,7 @@ def test_normalize_rejects_too_long():
         routing.normalize("a" * 250 + ".ru")
 
 
-# ── покрытие базой и денай-лист ──────────────────────────────────────────────
-
-def test_covered_by_base_is_inert_after_inversion():
-    """Базовый набор наполняется извне и по имени домена не проверяется —
-    принадлежность видна только по адресу, уже после резолва."""
-    assert not routing.covered_by_base("sberbank.ru", ["ru"])
-    assert not routing.covered_by_base("example.com", [])
-
+# ── денай-лист ───────────────────────────────────────────────────────────────
 
 def test_is_denied_matches_suffix():
     """Запрет на домен закрывает и его поддомены — иначе mail.X проедет мимо."""
@@ -74,27 +67,27 @@ def test_is_denied_matches_suffix():
 
 def test_parse_batch_splits_and_reports_reasons():
     accepted, rejected = routing.parse_batch(
-        "https://bank.com\nnetflix.com, мусор_тут", base_zones=(), denylist=[])
+        "https://bank.com\nnetflix.com, мусор_тут", denylist=[])
     assert accepted == ["bank.com", "netflix.com"]
     assert "мусор_тут" in dict(rejected)
 
 
 def test_parse_batch_dedupes_within_one_paste():
     accepted, rejected = routing.parse_batch(
-        "bank.com www.bank.com https://bank.com/x", base_zones=[], denylist=[])
+        "bank.com www.bank.com https://bank.com/x", denylist=[])
     assert accepted == ["bank.com"]
     assert rejected == []
 
 
 def test_parse_batch_honors_denylist():
     accepted, rejected = routing.parse_batch(
-        "good.com bad.com", base_zones=[], denylist=["bad.com"])
+        "good.com bad.com", denylist=["bad.com"])
     assert accepted == ["good.com"]
     assert dict(rejected)["bad.com"] == "этот домен добавлять нельзя"
 
 
 def test_parse_batch_empty_input():
-    assert routing.parse_batch("", base_zones=[], denylist=[]) == ([], [])
+    assert routing.parse_batch("", denylist=[]) == ([], [])
 
 
 # ── build_dnsmasq_conf ───────────────────────────────────────────────────────

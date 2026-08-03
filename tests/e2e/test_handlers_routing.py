@@ -269,18 +269,18 @@ def test_infobox_line_appears_only_when_granted(services, make_active_client):
     показывает положение переключателя самого клиента."""
     from awgbot.bot import texts
     c = make_active_client(tg_id=95)
-    assert services.routing_access_for_client(c) is None      # не разрешено — строки нет
+    assert services.routing_toggle_for_client(c) is None      # не разрешено — строки нет
     assert "РФ-сервисам" not in texts.greeting_client(c, True, (1, 3), None, None)
 
     services.set_routing_allowed(c.id, True)
     c = services.db.get_client(c.id)
-    assert services.routing_access_for_client(c) is False      # разрешено, но выключено
+    assert services.routing_toggle_for_client(c) is False      # разрешено, но выключено
     out = texts.greeting_client(c, True, (1, 3), None, False)
     assert "Доступ к РФ-сервисам" in out and "🔴 выключен" in out
 
     services.set_routing_master(c.id, True)
     c = services.db.get_client(c.id)
-    assert services.routing_access_for_client(c) is True
+    assert services.routing_toggle_for_client(c) is True
     assert "🟢 включен" in texts.greeting_client(c, True, (1, 3), None, True)
 
 

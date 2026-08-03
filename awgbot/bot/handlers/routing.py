@@ -67,8 +67,6 @@ async def show_panel(cb: CallbackQuery, services, client, back_target: str = Non
         back_target=back_target or Menu(action="main").pack()))
 
 
-_show_panel = show_panel          # прежнее имя (внутренние вызовы)
-
 
 @router.callback_query(RoutingCB.filter(F.action == "panel"))
 async def routing_panel(cb: CallbackQuery, client, services, state: FSMContext):
@@ -76,7 +74,7 @@ async def routing_panel(cb: CallbackQuery, client, services, state: FSMContext):
     if not await _guard(cb, services, client):
         return
     await state.clear()
-    await _show_panel(cb, services, client)
+    await show_panel(cb, services, client)
     await cb.answer()
 
 
@@ -89,7 +87,7 @@ async def routing_master(cb: CallbackQuery, client, services):
     new_state = not client.routing_master
     await call(services.set_routing_master, client.id, new_state)
     client = await call(services.db.get_client, client.id)
-    await _show_panel(cb, services, client)
+    await show_panel(cb, services, client)
     await cb.answer("РФ-доступ включён" if new_state else "РФ-доступ выключен")
 
 
@@ -159,11 +157,11 @@ async def routing_delete(cb: CallbackQuery, callback_data: RoutingCB, client, se
     idx = callback_data.idx
     if not (0 <= idx < len(domains)):
         await cb.answer("Список изменился — открой заново", show_alert=True)
-        await _show_panel(cb, services, client)
+        await show_panel(cb, services, client)
         return
     removed = domains[idx]
     await call(services.routing_remove_domain, client.id, removed)
-    await _show_panel(cb, services, client)
+    await show_panel(cb, services, client)
     await cb.answer(f"Удалено: {removed}")
 
 
@@ -182,5 +180,5 @@ async def routing_clear_apply(cb: CallbackQuery, client, services):
     if not await _guard(cb, services, client):
         return
     n = await call(services.routing_clear_domains, client.id)
-    await _show_panel(cb, services, client)
+    await show_panel(cb, services, client)
     await cb.answer(f"Удалено адресов: {n}" if n else "Список и так был пуст")

@@ -142,9 +142,6 @@ def fake_routing(monkeypatch, tmp_path):
     state = types.SimpleNamespace(
         sets={}, chain=None, conf=None, conf_writes=0,
         marking=None, link_age=10, enabled=True, nat_exempt=None,
-        # базовый набор по умолчанию НЕ пуст: пустой — особое состояние, при
-        # котором маркировка не включается, и тесты про него включают его явно
-        base_size=100,
     )
 
     def replace_members(name, kind, members):
@@ -183,16 +180,13 @@ def fake_routing(monkeypatch, tmp_path):
     _set("available", lambda: state.enabled)
     _set("replace_members", replace_members)
     _set("ensure_set", ensure_set)
-    _set("set_size", lambda name: state.base_size)
     _set("invalidate_self_check", lambda: None)
     _set("add_networks", lambda name, members: state.sets.setdefault(name, []) or len(list(members)))
     _set("fetch", lambda url, timeout=15: None)
     _set("destroy_set", lambda name: state.sets.pop(name, None))
     _set("list_sets", lambda: sorted(state.sets))
     _set("rebuild_chain", lambda ids: setattr(state, "chain", sorted(ids)))
-    _set("drop_chain", lambda: setattr(state, "chain", None))
     _set("sync_nat_exempt", lambda addrs: setattr(state, "nat_exempt", sorted(addrs)))
-    _set("drop_nat_exempt", lambda: setattr(state, "nat_exempt", None))
     _set("ensure_route", lambda: None)
     _set("set_marking_enabled", lambda on: setattr(state, "marking", on))
     _set("link_handshake_age", lambda: state.link_age)
