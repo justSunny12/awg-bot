@@ -96,24 +96,13 @@ def _dev_emoji(d) -> str:
     return "📱"
 
 
-def routing_marker(dev, client) -> str:
-    """Метка «у этого устройства включён российский IP» для списков.
-
-    Считается по ЭФФЕКТИВНОМУ значению (все три слоя), а не по флагу устройства:
-    иначе при выключенном мастере метка обещала бы режим, которого нет."""
-    if client is None or not getattr(dev, "routing_enabled", 0):
-        return ""
-    return " 🇷🇺" if dev.routing_effective(client) else ""
-
-
-def client_devices(devices, client=None) -> InlineKeyboardMarkup:
+def client_devices(devices) -> InlineKeyboardMarkup:
     """Список своих устройств. Без кнопки добавления — она уже есть в главном
     меню, дублировать здесь избыточно."""
     kb = InlineKeyboardBuilder()
     for d in devices:
         marker = _blocks.blocked_marker_device(int(d.block_reason), for_admin=False)
-        kb.button(text=f"{marker}{_dev_emoji(d)} {d.name}{_btn_suffix(d)}"
-                       f"{routing_marker(d, client)}",
+        kb.button(text=f"{marker}{_dev_emoji(d)} {d.name}{_btn_suffix(d)}",
                   callback_data=DeviceCB(action="open", device_id=d.id))
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
     kb.adjust(1)
@@ -168,9 +157,7 @@ def routing_clear_confirm(client_id: int) -> InlineKeyboardMarkup:
 
 
 def device_actions(dev, *, is_admin: bool, back_target: str,
-                    reassign_label: str = None,
-                    routing_visible: bool = False,
-                    routing_on: bool = False) -> InlineKeyboardMarkup:
+                    reassign_label: str = None) -> InlineKeyboardMarkup:
     """Единая карточка устройства — для ЛЮБОГО пути входа (свои устройства,
     устройства конкретного клиента, устройства без клиента). back_target —
     куда ведёт «Назад» (packed callback_data, вычисляется вызывающим кодом из
@@ -220,13 +207,6 @@ def device_actions(dev, *, is_admin: bool, back_target: str,
     # 3) Лимит потребления
     kb.button(text="📊 Лимит потребления", callback_data=DeviceCB(action="edit_traffic", device_id=dev.id))
     rows += 1
-    # 3a) Российский IP — только у bot-устройств и только когда фича разрешена
-    # клиенту и включена мастером. Конфиг от тумблера не меняется, поэтому
-    # переключать можно в любой момент, ничего не перевыпуская.
-    if is_bot_device and routing_visible:
-        kb.button(text=f"{_chk(routing_on)} РФ-доступ",
-                  callback_data=RoutingCB(action="dev", ref=dev.id))
-        rows += 1
     # 4) Передать другу / перевыдать инвайт
     fstatus = dev.friend_status
     if is_bot_device and fstatus is None:
@@ -392,7 +372,9 @@ def pick_client_for_add_device(clients) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def admin_main(unassigned_count: int, self_has_devices: bool = False) -> InlineKeyboardMarkup:
+def admin_main(unassigned_count: int, self_has_devices: bool = False,
+               routing_visible: bool = False, routing_on: bool = False,
+               self_client_id: int = 0) -> InlineKeyboardMarkup:
     """Главное меню админа. Личный блок (он тоже пользователь VPN) сверху,
     затем управление клиентской базой. «Добавить устройство» ведёт в диалог
     выбора (себе/другому клиенту) — там же гейт по личному лимиту, а не тут:
@@ -404,6 +386,12 @@ def admin_main(unassigned_count: int, self_has_devices: bool = False) -> InlineK
     if self_has_devices:
         kb.button(text="📱 Мои устройства", callback_data=AdminSelfCB(action="devices"))
         pattern.append(1)
+        if routing_visible:
+            # админ — такой же пользователь VPN, и режим ему нужен там же, где
+            # остальным: рядом со своими устройствами, а не в админских разделах
+            kb.button(text=f"{_chk(routing_on)} Доступ к РФ-сервисам",
+                      callback_data=RoutingCB(action="panel", ref=self_client_id))
+            pattern.append(1)
         kb.button(text="🔗 Ссылка", callback_data=AdminSelfCB(action="gen_link"))
         kb.button(text="🔳 QR-код", callback_data=AdminSelfCB(action="gen_qr"))
         kb.button(text="📄 Файл", callback_data=AdminSelfCB(action="gen_file"))

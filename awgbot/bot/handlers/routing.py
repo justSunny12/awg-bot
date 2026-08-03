@@ -21,7 +21,8 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.callbacks import Menu, RoutingCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.handlers.common import call, ask_tracked, edit, own_device
+from awgbot.bot.handlers.common import (call, ask_tracked, cleanup_content,
+                                        edit, send_menu)
 from awgbot.bot.states import RoutingDomains
 
 router = Router(name="routing")
@@ -50,22 +51,31 @@ async def _guard(cb: CallbackQuery, services, client) -> bool:
     return False
 
 
-async def show_panel(cb: CallbackQuery, services, client, back_target: str = None):
-    """Раздел РФ-доступа: тумблер, охват по устройствам, личный список.
+async def panel_view(services, client, back_target: str = None):
+    """(text, markup) раздела РФ-доступа.
 
-    back_target параметризован, потому что вход в раздел бывает из двух мест: у
-    клиента — из главного меню, у админа — из карточки профиля, и возвращать его
-    в клиентское меню было бы некуда."""
+    Вынесено из show_panel, потому что вход бывает не только по колбэку: после
+    приёма адресов возвращаемся в тот же раздел НОВЫМ сообщением — редактировать
+    там нечего."""
     domains = await call(services.routing_domains, client.id)
-    on, total = await call(services.routing_client_summary, client)
+    devices = await call(services.routing_device_count, client.id)
     link_ok = await call(services.routing_link_ok)
     text = texts.routing_panel_text(
         master_on=bool(client.routing_master), domains=domains,
-        devices_on=on, devices_total=total, link_ok=link_ok)
-    await edit(cb, text, kb.routing_panel(
+        devices=devices, link_ok=link_ok)
+    return text, kb.routing_panel(
         client.id, master_on=bool(client.routing_master), domains=domains,
-        back_target=back_target or Menu(action="main").pack()))
+        back_target=back_target or Menu(action="main").pack())
 
+
+async def show_panel(cb: CallbackQuery, services, client, back_target: str = None):
+    """Раздел РФ-доступа: переключатель, охват, личный список.
+
+    back_target параметризован, потому что вход бывает из двух мест: у клиента —
+    из главного меню, у админа — из карточки профиля, и возвращать его в
+    клиентское меню было бы некуда."""
+    text, markup = await panel_view(services, client, back_target)
+    await edit(cb, text, markup)
 
 
 @router.callback_query(RoutingCB.filter(F.action == "panel"))
@@ -91,31 +101,6 @@ async def routing_master(cb: CallbackQuery, client, services):
     await cb.answer("РФ-доступ включён" if new_state else "РФ-доступ выключен")
 
 
-@router.callback_query(RoutingCB.filter(F.action == "dev"))
-async def routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
-                                client, services):
-    """Тумблер устройства. own_device — защита от чужого device_id в колбэке."""
-    client = await _own(services, client)
-    if not await _guard(cb, services, client):
-        return
-    dev = await call(own_device, services, client, callback_data.ref)
-    if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
-        return
-    new_state = not dev.routing_enabled
-    await call(services.set_device_routing, dev.id, new_state)
-    dev = await call(services.db.get_device, dev.id)
-
-    text = texts.device_card_text(dev, for_admin=False)
-    marker = texts.friend_marker(dev)
-    if marker:
-        text += f"\n\n{marker}"
-    await edit(cb, text, kb.device_actions(
-        dev, is_admin=False, back_target=Menu(action="devices").pack(),
-        routing_visible=True, routing_on=bool(dev.routing_enabled)))
-    await cb.answer("РФ-доступ включён" if new_state else "РФ-доступ выключен")
-
-
 # ── Личный список адресов ────────────────────────────────────────────────────
 
 @router.callback_query(RoutingCB.filter(F.action == "add"))
@@ -132,14 +117,23 @@ async def routing_add_start(cb: CallbackQuery, client, services, state: FSMConte
 @router.message(RoutingDomains.value)
 async def routing_add_apply(message: Message, client, services, state: FSMContext):
     """Приём пачки. Разбор показываем построчно: человек вставляет списком, и
-    молча взять половину — оставить его гадать, почему добавилось меньше."""
+    молча взять половину — оставить его гадать, почему добавилось меньше.
+
+    Отчёт печатаем НАД разделом и возвращаемся в него же: иначе диалог кончался
+    сообщением без единой кнопки, а приглашение «пришли адреса» так и висело в
+    чате."""
     client = await _own(services, client)
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     await state.clear()
     res = await call(services.routing_add_domains, client.id, message.text or "")
-    await message.answer(
-        texts.routing_add_report(res.added, res.rejected, res.over_limit, res.limit),
-        reply_markup=kb.reply_hide())
+    report = texts.routing_add_report(res.added, res.rejected, res.over_limit, res.limit)
+
+    # приглашение «пришли адреса» и вставленный список убираем — они отслужили
+    await cleanup_content(message.bot, services, message.chat.id)
+    await message.answer(report, reply_markup=kb.reply_hide())
+    client = await call(services.db.get_client, client.id)
+    text, markup = await panel_view(services, client)
+    await send_menu(message, services, text, markup)
 
 
 @router.callback_query(RoutingCB.filter(F.action == "del"))

@@ -1664,21 +1664,12 @@ class Services:
         она невидима: иначе каждый первый пойдёт спрашивать, что это за пункт."""
         return bool(self.routing_allowed_for(client) and self.routing_available())
 
-    def routing_client_summary(self, client) -> tuple[int, int]:
-        """(устройств с эффективно включённым режимом, всего bot-устройств).
+    def routing_device_count(self, client_id: int) -> int:
+        """Сколько устройств профиля попадёт под режим.
 
-        Считаем по эффективному значению: показывать «включено на 2 из 3», когда
-        мастер выключен и не работает ни одно, значило бы врать в интерфейсе.
-        """
-        if client is None:
-            return (0, 0)
-        devices = [d for d in self.db.list_devices(client.id)
-                   if d.is_managed and not d.is_admin]
-        # эффективность считаем через routing_allowed_for, а не Client.routing_on:
-        # у админа верхний слой подразумевается, и модель про ADMIN_ID не знает
-        upper = self.routing_allowed_for(client) and bool(client.routing_master)
-        on = sum(1 for d in devices if upper and d.routing_enabled)
-        return (on, len(devices))
+        Режим включается на весь профиль, поэтому счётчик «включено из всего»
+        потерял смысл — выбирать больше нечего."""
+        return len([d for d in self.db.list_devices(client_id) if d.is_managed])
 
     def routing_toggle_for_client(self, client) -> Optional[bool]:
         """Состояние РФ-доступа для инфобокса: None — не показывать строку.
@@ -1717,11 +1708,6 @@ class Services:
     def set_routing_master(self, client_id: int, on: bool) -> None:
         """Мастер-тумблер клиента — «выключить всё разом», не обходя устройства."""
         self.db.update_client_fields(client_id, routing_master=1 if on else 0)
-        self.reconcile_routing()
-
-    def set_device_routing(self, device_id: int, on: bool) -> None:
-        """Тумблер устройства — нижний слой."""
-        self.db.update_device_fields(device_id, routing_enabled=1 if on else 0)
         self.reconcile_routing()
 
     # ── Личный список доменов ────────────────────────────────────────────────

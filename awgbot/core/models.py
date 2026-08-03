@@ -75,9 +75,10 @@ class Client:
     activation_status: str
     invite_code: Optional[str]
     created_at: str
-    # Условная маршрутизация: два верхних слоя трёхслойного флага (нижний —
-    # Device.routing_enabled). Плоские int'ы, а не ленивый под-объект: у фичи нет
-    # процесса с жизненным циклом, только состояние вкл/выкл.
+    # Условная маршрутизация. Режим — свойство профиля, пер-девайсного флага
+    # нет: выбирать устройства по одному значило бы держать состояние, которое
+    # почти всегда «все» или «никто». Плоские int'ы, а не ленивый под-объект:
+    # у фичи нет процесса с жизненным циклом, только состояние вкл/выкл.
     routing_allowed: int = 0              # 0/1: админ разрешил фичу клиенту
     routing_master: int = 0               # 0/1: мастер-тумблер самого клиента
     subscription: Subscription = field(default_factory=Subscription)
@@ -127,9 +128,9 @@ class Client:
 
     @property
     def routing_on(self) -> bool:
-        """Оба клиентских слоя подняты — устройствам клиента режим доступен.
-        Нижний слой (флаг самого устройства) проверяется отдельно; вместе они
-        дают эффективное значение (см. Device.routing_effective)."""
+        """Режим действует: админ разрешил И пользователь включил. Для админа
+        разрешение подразумевается — это учитывает services.routing_allowed_for,
+        модель про ADMIN_ID не знает."""
         return bool(self.routing_allowed and self.routing_master)
 
 
@@ -168,18 +169,8 @@ class Device:
     block_reason: int
     created_at: str
     full_access_link: Optional[str] = None    # vpn:// полного доступа (admin-устройство)
-    routing_enabled: int = 0                  # 0/1: нижний слой флага условной маршрутизации
     traffic: DeviceTraffic = field(default_factory=DeviceTraffic)
     friend: Optional[Friend] = None
-
-    def routing_effective(self, client: "Client") -> bool:
-        """Эффективное значение режима = И трёх слоёв. Считается только вместе с
-        клиентом-владельцем: у устройства нет ссылки на него, а хранить копию
-        клиентских флагов в устройстве значило бы завести второй источник истины.
-
-        Заблокированное устройство отдельной проверки не требует: DROP по его
-        адресу стоит раньше стадии маркировки, до неё пакет не доходит."""
-        return bool(client.routing_on and self.routing_enabled)
 
     @property
     def is_admin(self) -> bool:

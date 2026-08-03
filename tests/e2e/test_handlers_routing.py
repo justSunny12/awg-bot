@@ -79,33 +79,6 @@ async def test_master_toggle_flips_and_persists(services, make_active_client, fa
     assert services.db.get_client(c.id).routing_master == 0
 
 
-async def test_device_toggle_applies_to_infrastructure(
-        services, make_active_client, fake_bot, fake_routing):
-    from awgbot.core import config
-    c = _allowed_client(services, make_active_client, 74)
-    services.set_routing_master(c.id, True)
-    c = services.db.get_client(c.id)
-    dc = services.add_device(c.id, "Телефон")
-
-    cb, _ = _cb(fake_bot, 74)
-    await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=dc.device_id),
-                                          c, services)
-    assert services.db.get_device(dc.device_id).routing_enabled == 1
-    assert fake_routing.sets[_srcset(c.id)] == [dc.address]
-
-
-async def test_device_toggle_rejects_foreign_device(
-        services, make_active_client, fake_bot):
-    c = _allowed_client(services, make_active_client, 75)
-    other = make_active_client(tg_id=76)
-    dc = services.add_device(other.id, "Чужой")
-    cb, _ = _cb(fake_bot, 75)
-    await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=dc.device_id),
-                                          c, services)
-    assert cb.answers[0][1] is True
-    assert services.db.get_device(dc.device_id).routing_enabled == 0
-
-
 # ── личный список ────────────────────────────────────────────────────────────
 
 async def test_add_domains_reports_each_line(services, make_active_client, fake_bot):
@@ -229,7 +202,6 @@ def test_admin_has_access_without_grant(services, make_active_client):
 
     dc = services.add_device(admin.id, "Телефон")
     services.set_routing_master(admin.id, True)
-    services.set_device_routing(dc.device_id, True)
     assert services.db.routing_active_addresses(config.ADMIN_ID) == {admin.id: [dc.address]}
 
 
@@ -246,11 +218,8 @@ async def test_admin_can_enable_feature_for_himself(services, make_active_client
     # client=None — ровно то, что придёт из middleware для админа
     cb, _ = _cb(fake_bot, config.ADMIN_ID)
     await routing_h.routing_master(cb, None, services)
-    cb2, _ = _cb(fake_bot, config.ADMIN_ID)
-    await admin_h.admin_routing_device(cb2, RoutingCB(action="dev", ref=dc.device_id), services)
 
     assert services.db.get_client(c.id).routing_master == 1
-    assert services.db.get_device(dc.device_id).routing_enabled == 1
     assert services.db.routing_active_addresses(config.ADMIN_ID) == {c.id: [dc.address]}
 
 
@@ -307,20 +276,6 @@ async def test_admin_master_refused_without_grant(services, make_active_client, 
     assert services.db.get_client(c.id).routing_master == 0
 
 
-async def test_admin_toggles_client_device(services, make_active_client, fake_bot,
-                                           fake_routing):
-    """И тумблер на УСТРОЙСТВЕ чужого профиля — тоже админу."""
-    from awgbot.core import config
-    c = _allowed_client(services, make_active_client, 98)
-    services.set_routing_master(c.id, True)
-    dc = services.add_device(c.id, "Чужой телефон")
-
-    cb, _ = _cb(fake_bot, 1)
-    await admin_h.admin_routing_device(cb, RoutingCB(action="dev", ref=dc.device_id), services)
-    assert services.db.get_device(dc.device_id).routing_enabled == 1
-    assert fake_routing.sets[_srcset(c.id)] == [dc.address]
-
-
 def test_client_menu_button_position_and_state(monkeypatch):
     """Кнопка «Доступ к РФ-сервисам» — сразу под «Управлять подпиской», с кружком."""
     from awgbot.bot import keyboards as kb
@@ -350,3 +305,55 @@ def test_admin_card_button_above_block(monkeypatch):
     blk = next(i for i, t in enumerate(labels) if "локировать" in t)
     assert rt < blk, labels
     assert labels[rt].startswith("🟢")
+
+
+# ── режим — свойство профиля, не устройства ──────────────────────────────────
+
+def test_device_card_has_no_routing_toggle(monkeypatch):
+    """Тумблера на устройстве больше нет: режим включается на весь профиль, и
+    выбор по одному устройству держал бы состояние, которое почти всегда «все»
+    или «никто»."""
+    from awgbot.core import config, models
+    from awgbot.bot import keyboards as kb
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    d = models.Device(id=1, client_id=7, name="Телефон", private_key="k",
+                      public_key="p", preshared_key="s", address="10.8.1.2",
+                      block_reason=0, created_at="2026-01-01")
+    labels = [b.text for row in kb.device_actions(
+        d, is_admin=False, back_target="m:devices").inline_keyboard for b in row]
+    assert not any("РФ" in t for t in labels), labels
+
+
+def test_admin_main_has_routing_under_devices(monkeypatch):
+    """У админа кнопка в главном меню — сразу под «Мои устройства»: он такой же
+    пользователь VPN, и режим ему нужен там же, где остальным."""
+    from awgbot.core import config
+    from awgbot.bot import keyboards as kb
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    labels = [b.text for row in kb.admin_main(
+        0, self_has_devices=True, routing_visible=True, routing_on=True,
+        self_client_id=2).inline_keyboard for b in row]
+    assert "🟢 Доступ к РФ-сервисам" in labels
+    assert labels.index("🟢 Доступ к РФ-сервисам") == labels.index("📱 Мои устройства") + 1
+
+    # не разрешена — кнопки нет вовсе
+    off = [b.text for row in kb.admin_main(0, self_has_devices=True).inline_keyboard
+           for b in row]
+    assert not any("РФ" in t for t in off)
+
+
+async def test_add_domains_returns_to_panel(services, make_active_client, fake_bot):
+    """После приёма адресов возвращаемся в раздел, а не оставляем тупик без
+    кнопок: раньше диалог кончался отчётом, и приглашение «пришли адреса» так и
+    висело в чате."""
+    c = _allowed_client(services, make_active_client, 99)
+    services.set_routing_master(c.id, True)
+    c = services.db.get_client(c.id)
+    msg = FakeMessage(text="bank.com", chat_id=99, user_id=99, bot=fake_bot)
+    await routing_h.routing_add_apply(msg, c, services, FakeState())
+
+    sent = [s for s in msg.sent if s[0] == "answer"]
+    assert any("bank.com" in str(s[1]) for s in sent), "нет отчёта"
+    # последнее сообщение — раздел с кнопками
+    assert any("РФ-сервисам" in str(s[1]) or "Исключения" in str(s[1])
+               or "исключения" in str(s[1]) for s in sent), sent

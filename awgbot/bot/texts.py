@@ -542,7 +542,8 @@ def settings_routing_text(enabled: bool, status: tuple) -> str:
         return head + "\nФункция выключена. Включи, чтобы выдавать доступ профилям."
     return (head + "\nОтметь профили, которым разрешён РФ-доступ. Включает и "
             "настраивает функцию у себя сам пользователь — ты только даёшь право.\n\n"
-            "<i>У тебя доступ есть всегда, отдельного разрешения не требуется.</i>")
+            "<i>У тебя такая возможность разрешена по умолчанию — нужно только "
+            "включить функцию.</i>")
 
 
 def routing_access_line(on: bool) -> str:
@@ -583,18 +584,22 @@ ROUTING_APPLY_HINT = (
 )
 
 
-def routing_panel_text(*, master_on: bool, domains: list, devices_on: int,
-                       devices_total: int, link_ok: bool) -> str:
-    """Раздел «Российский IP» в профиле: состояние, охват, личный список."""
+def routing_panel_text(*, master_on: bool, domains: list, devices: int,
+                       link_ok: bool) -> str:
+    """Раздел «Доступ к РФ-сервисам» в профиле.
+
+    Режим включается на весь профиль сразу — поэтому про устройства говорим
+    фактом («работает на всех»), а не счётчиком: выбирать больше нечего."""
     head = f"<b>🇷🇺 {ROUTING_NAME}</b>\n\n{routing_status_client(link_ok)}\n"
     if not master_on:
-        return (head + "\nРежим выключен.\n\n" + ROUTING_ABOUT)
+        return head + "\nРежим выключен.\n\n" + ROUTING_ABOUT
+
     lines = [head, ""]
-    if devices_total:
-        lines.append(f"Включён на устройствах: {devices_on} из {devices_total}.")
-    if devices_on == 0:
-        lines.append("Пока ни на одном устройстве не включён — "
-                     "включи в карточке нужного устройства.")
+    if devices:
+        lines.append(f"Работает на всех твоих устройствах "
+                     f"({devices} {plural_ru(devices, 'устройство', 'устройства', 'устройств')}).")
+    else:
+        lines.append("Устройств пока нет — добавь, и режим заработает сразу.")
     lines.append("")
     lines.append("Сайты открываются с российского адреса — кроме заблокированных, "
                  "они идут через VPN по общему списку.")

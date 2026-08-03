@@ -41,7 +41,13 @@ async def _main_menu_markup(services):
     n = await call(services.count_unassigned_app_devices)
     ac = await call(services.admin_client)
     has_dev = bool(ac and await call(services.db.count_devices, ac.id))
-    return kb.admin_main(n, self_has_devices=has_dev)
+    # админ — такой же пользователь VPN: режим ему нужен в главном меню, рядом
+    # со своими устройствами. Разрешение у него по умолчанию (routing_allowed_for)
+    rt_visible = bool(ac and await call(services.routing_client_visible, ac))
+    return kb.admin_main(n, self_has_devices=has_dev,
+                         routing_visible=rt_visible,
+                         routing_on=bool(ac and ac.routing_master),
+                         self_client_id=(ac.id if ac else 0))
 
 
 async def _delete_user_link(message) -> None:
@@ -168,17 +174,6 @@ async def admin_routing_master(cb: CallbackQuery, callback_data: RoutingCB, serv
     await _show_client_card(cb, services, client.id)
     await cb.answer("РФ-доступ включён" if new_state else "РФ-доступ выключен")
 
-
-@router.callback_query(RoutingCB.filter(F.action == "dev"))
-async def admin_routing_device(cb: CallbackQuery, callback_data: RoutingCB, services):
-    """Тумблер режима на устройстве со стороны админа (без own_device: админ
-    работает с любым устройством, в том числе при разборе проблемы клиента)."""
-    dev = await call(services.db.get_device, callback_data.ref)
-    if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
-        return
-    await call(services.set_device_routing, dev.id, not dev.routing_enabled)
-    await admin_device_open(cb, DeviceCB(action="open", device_id=dev.id), services)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -886,20 +881,8 @@ async def admin_device_open(cb: CallbackQuery, callback_data: DeviceCB, services
         await cb.answer("Устройство не найдено", show_alert=True)
         return
     back_target, reassign_label = await _device_back_target_and_label(services, dev)
-    # Тумблер режима доступен админу и здесь: клиентские экраны ему закрыты
-    # ролью (middleware отдаёт role=admin и client=None), поэтому иначе он не
-    # смог бы включить функцию ни себе, ни при разборе проблемы у клиента.
-    owner = await call(services.db.get_client, dev.client_id)
-    # routing_allowed_for, а не owner.routing_on: у админа верхний слой
-    # подразумевается, а модель про ADMIN_ID не знает
-    rt_visible = bool(owner is not None
-                      and await call(services.routing_allowed_for, owner)
-                      and owner.routing_master
-                      and await call(services.routing_available))
     markup = kb.device_actions(dev, is_admin=True, back_target=back_target,
-                               reassign_label=reassign_label,
-                               routing_visible=rt_visible,
-                               routing_on=bool(dev.routing_enabled))
+                               reassign_label=reassign_label)
     text = texts.device_card_text(dev, for_admin=True)
     marker = texts.friend_marker(dev)
     if marker:

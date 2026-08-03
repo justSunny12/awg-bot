@@ -95,7 +95,6 @@ def _device_from_row(row) -> Optional["models.Device"]:
         block_reason=int(row["block_reason"]),
         created_at=row["created_at"],
         full_access_link=(row["full_access_link"] if "full_access_link" in row.keys() else None),
-        routing_enabled=(int(row["routing_enabled"]) if "routing_enabled" in row.keys() else 0),
         traffic=models.DeviceTraffic(
             limit=int(row["traffic_limit"]),
             rx_month=int(row["traffic_rx_month"]), tx_month=int(row["traffic_tx_month"]),
@@ -156,9 +155,9 @@ CREATE TABLE IF NOT EXISTS clients (
     invite_code         TEXT,                         -- гасится (NULL) после активации
     is_service          INTEGER NOT NULL DEFAULT 0,   -- 1 = служебный «Устройства без клиента»
     created_at          TEXT    NOT NULL,
-    -- Условная маршрутизация (docs/conditional-routing.md). Два ВЕРХНИХ уровня
-    -- трёхслойного флага; нижний — devices.routing_enabled. Эффективное значение
-    -- = И всех трёх. Снятие верхнего гасит эффект, но нижние НЕ стирает: вернул
+    -- Условная маршрутизация (docs/conditional-routing.md). Режим — свойство
+    -- ПРОФИЛЯ: включён — под него попадают все его устройства. Снятие
+    -- разрешения гасит эффект, но routing_master НЕ стирает: вернул
     -- разрешение — настройка пользователя восстановилась сама.
     routing_allowed     INTEGER NOT NULL DEFAULT 0,   -- 0/1: админ разрешил фичу клиенту
     routing_master      INTEGER NOT NULL DEFAULT 0    -- 0/1: мастер-тумблер клиента
@@ -217,8 +216,6 @@ CREATE TABLE IF NOT EXISTS devices (
     full_access_link    TEXT,                            -- nullable: vpn:// полного доступа (admin-устройство), храним как есть
     block_reason        INTEGER NOT NULL DEFAULT 0,      -- маска DeviceBlock; 0 = не заблокирован
     created_at          TEXT    NOT NULL,
-    routing_enabled     INTEGER NOT NULL DEFAULT 0,      -- 0/1: нижний слой флага условной
-                                                         -- маршрутизации (см. clients.routing_*)
     FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
 );
 
@@ -518,7 +515,6 @@ class Database:
             "client_pause": [("resume_code", "TEXT")],
             "clients": [("routing_allowed", "INTEGER NOT NULL DEFAULT 0"),
                         ("routing_master", "INTEGER NOT NULL DEFAULT 0")],
-            "devices": [("routing_enabled", "INTEGER NOT NULL DEFAULT 0")],
         }
         con = self._connection()
         for table, cols in want.items():
@@ -952,7 +948,7 @@ class Database:
     _DEVICE_FIELD_TABLE = {
         "name": "devices", "private_key": "devices",
         "block_reason": "devices", "client_id": "devices",
-        "full_access_link": "devices", "routing_enabled": "devices",
+        "full_access_link": "devices",
         "traffic_limit": "device_traffic", "traffic_rx_month": "device_traffic",
         "traffic_tx_month": "device_traffic", "traffic_rx_period": "device_traffic",
         "traffic_tx_period": "device_traffic", "last_handshake": "device_traffic",
@@ -1362,21 +1358,24 @@ class Database:
         return out
 
     def routing_active_addresses(self, admin_tg_id: int = 0) -> dict[int, list[str]]:
-        """{client_id: [адреса]} устройств с ЭФФЕКТИВНО включённым режимом —
-        подняты все три слоя флага. Источник истины для src-наборов ipset.
+        """{client_id: [адреса]} устройств профилей с ВКЛЮЧЁННЫМ режимом.
+        Источник истины для src-наборов ipset.
 
-        Заблокированные устройства не отфильтровываем намеренно: DROP по адресу
-        стоит раньше стадии маркировки, до неё пакет не доходит. Убирать их из
-        набора значило бы дублировать инвариант блокировок вторым механизмом,
-        который может с ним разойтись.
+        Режим — свойство ПРОФИЛЯ: включён — под него попадают все его устройства.
+        Пер-девайсного флага нет намеренно: выбирать устройства по одному значило
+        бы держать состояние, которое почти всегда «все» или «никто».
+
+        Заблокированные устройства не отфильтровываем: DROP по адресу стоит
+        раньше стадии маркировки, до неё пакет не доходит. Убирать их из набора
+        значило бы дублировать инвариант блокировок вторым механизмом, который
+        может с ним разойтись.
         """
         out: dict[int, list[str]] = {}
         for r in self._connection().execute(
                 """SELECT d.client_id, d.address
                      FROM devices d
                      JOIN clients c ON c.id = d.client_id
-                    WHERE d.routing_enabled = 1
-                      AND c.routing_master = 1
+                    WHERE c.routing_master = 1
                       AND (c.routing_allowed = 1 OR c.tg_id = ?)
                     ORDER BY d.client_id, d.address""",
                 (admin_tg_id,)).fetchall():

@@ -180,7 +180,7 @@ async def menu_devices(cb: CallbackQuery, client, services):
     devices = await call(services.db.list_devices, client.id)
     slots = await call(services.device_slots, client.id)
     header = "<b>📱Твои устройства</b>\n\n" + texts.device_slots_line(*slots)
-    await edit(cb, header, kb.client_devices(devices, client))
+    await edit(cb, header, kb.client_devices(devices))
     await cb.answer()
 
 
@@ -228,12 +228,8 @@ async def device_open(cb: CallbackQuery, callback_data: DeviceCB, client, servic
     marker = texts.friend_marker(dev)
     if marker:
         text += f"\n\n{marker}"
-    # тумблер режима виден, только когда подняты оба клиентских слоя: предлагать
-    # переключить то, что всё равно не заработает, — обманывать
-    rt_visible = await call(services.routing_client_visible, client) and bool(client.routing_master)
     await edit(cb, text, kb.device_actions(
-        dev, is_admin=False, back_target=Menu(action="devices").pack(),
-        routing_visible=rt_visible, routing_on=bool(dev.routing_enabled)))
+        dev, is_admin=False, back_target=Menu(action="devices").pack()))
     await cb.answer()
 
 
@@ -613,7 +609,7 @@ async def device_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
     devices = await call(services.db.list_devices, client.id)
     slots = await call(services.device_slots, client.id)
     await edit(cb, "🗑 Устройство удалено.\n\n<b>📱Твои устройства</b>\n\n" + texts.device_slots_line(*slots),
-               kb.client_devices(devices, client))
+               kb.client_devices(devices))
     await cb.answer()
 
 

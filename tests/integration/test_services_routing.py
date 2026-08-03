@@ -25,15 +25,13 @@ def _device(services, client, name="Телефон"):
 
 # ── Трёхслойный флаг ─────────────────────────────────────────────────────────
 
-def test_all_three_layers_required(services, db, make_active_client, fake_routing):
-    """Адрес попадает в набор только когда подняты ВСЕ три слоя."""
+def test_both_layers_required(services, db, make_active_client, fake_routing):
+    """Адрес попадает в набор только когда подняты ОБА слоя: разрешение админа и
+    переключатель пользователя. Пер-девайсного слоя нет — режим на весь профиль."""
     c = make_active_client()
     dc = _device(services, c)
 
-    services.set_device_routing(dc.device_id, True)          # только нижний
-    assert not fake_routing.sets.get(_srcset(c.id))
-
-    services.set_routing_master(c.id, True)                  # + мастер клиента
+    services.set_routing_master(c.id, True)                  # только пользователь
     assert not fake_routing.sets.get(_srcset(c.id))
 
     services.set_routing_allowed(c.id, True)                 # + разрешение админа
@@ -48,10 +46,9 @@ def test_enabled_device_is_exempted_from_masquerade(
     dc = _device(services, c)
     services.set_routing_allowed(c.id, True)
     services.set_routing_master(c.id, True)
-    services.set_device_routing(dc.device_id, True)
     assert fake_routing.nat_exempt == [dc.address]
 
-    services.set_device_routing(dc.device_id, False)
+    services.set_routing_master(c.id, False)
     assert fake_routing.nat_exempt == []
 
 
@@ -63,13 +60,11 @@ def test_revoking_permission_kills_effect_but_keeps_flags(
     dc = _device(services, c)
     services.set_routing_allowed(c.id, True)
     services.set_routing_master(c.id, True)
-    services.set_device_routing(dc.device_id, True)
     assert fake_routing.sets[_srcset(c.id)] == [dc.address]
 
     services.set_routing_allowed(c.id, False)
     assert not fake_routing.sets.get(_srcset(c.id))
-    assert db.get_client(c.id).routing_master == 1            # нижние слои целы
-    assert db.get_device(dc.device_id).routing_enabled == 1
+    assert db.get_client(c.id).routing_master == 1            # выбор клиента цел
 
     services.set_routing_allowed(c.id, True)
     assert fake_routing.sets[_srcset(c.id)] == [dc.address]
@@ -77,12 +72,11 @@ def test_revoking_permission_kills_effect_but_keeps_flags(
 
 def test_master_toggle_switches_all_devices_at_once(
         services, make_active_client, fake_routing):
+    """Режим на уровне профиля — под него попадают ВСЕ его устройства сразу."""
     c = make_active_client()
     d1, d2 = _device(services, c, "A"), _device(services, c, "B")
     services.set_routing_allowed(c.id, True)
     services.set_routing_master(c.id, True)
-    services.set_device_routing(d1.device_id, True)
-    services.set_device_routing(d2.device_id, True)
     assert sorted(fake_routing.sets[_srcset(c.id)]) == sorted(
         [d1.address, d2.address])
 
@@ -98,7 +92,6 @@ def test_blocked_device_stays_in_set(services, make_active_client, fake_routing)
     dc = _device(services, c)
     services.set_routing_allowed(c.id, True)
     services.set_routing_master(c.id, True)
-    services.set_device_routing(dc.device_id, True)
 
     services._device_set_block(dc.device_id, DeviceBlock.USER)
     services.reconcile_routing()
@@ -308,10 +301,9 @@ def test_empty_base_set_disables_marking(services, make_active_client, fake_rout
     таком состоянии не включаем: отказ безопасный, трафик идёт обычным путём."""
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)    # кэши пусты
     c = make_active_client()
-    dc = _device(services, c)
+    _device(services, c)
     services.set_routing_allowed(c.id, True)
     services.set_routing_master(c.id, True)
-    services.set_device_routing(dc.device_id, True)
 
     assert fake_routing.chain == []          # цепочка пуста
     assert fake_routing.marking is False     # политика снята
