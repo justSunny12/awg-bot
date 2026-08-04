@@ -2049,6 +2049,9 @@ class Services:
         # выключенной фиче или незагруженных списках рубильник обязан стоять в
         # «выкл» независимо от того, что там со шлюзом.
         engaged = self.routing_engaged()
+        if engaged:
+            # Обвязку доводим ЗДЕСЬ, а не внутри зонда: зонд обязан только мерить.
+            routing.ensure_policy()
         verdict = self.routing_probe() if engaged else routing.PROBE_DOWN
 
         if verdict == routing.PROBE_OK:

@@ -271,3 +271,64 @@ def test_doctor_flags_missing_mss_clamp(monkeypatch):
     monkeypatch.setattr(routing, "set_count", lambda n: 219)
     text = " ".join(t + " " + d for _, t, d in doc._probe_layers())
     assert "страницы не грузятся" in text
+
+
+def test_probe_does_not_repair_what_it_measures(monkeypatch):
+    """Зонд обязан только мерить. Пока он сам доводил обвязку, диагностика
+    рапортовала «ip rule есть» ровно потому, что зонд его только что создал, —
+    отсутствие правила не обнаруживалось никогда."""
+    from awgbot.infra import routing
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
+    touched = []
+    monkeypatch.setattr(routing, "ensure_policy", lambda: touched.append(1))
+    monkeypatch.setattr(routing, "_tcp_probe", lambda h, p, t: True)
+    routing.probe_gateway("77.88.8.8")
+    assert not touched, "зонд починил обвязку вместо того, чтобы её измерить"
+
+
+def test_doctor_does_not_blame_the_gateway_for_a_missing_rule(monkeypatch):
+    """Без маршрута и правила зонд не доходит даже до шлюза — его вердикт не про
+    шлюз. Назвать это отказом шлюза значило бы отправить чинить не туда."""
+    from awgbot.runtime import routing_doctor as doc
+    from awgbot.infra import routing
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
+    monkeypatch.setattr(routing, "self_check", lambda force=False: (True, "ок"))
+    monkeypatch.setattr(routing, "link_handshake_age", lambda: 12)
+    monkeypatch.setattr(routing, "link_peer_address", lambda: "10.99.0.1")
+    monkeypatch.setattr(routing, "table_route", lambda: None)      # обвязки нет
+    monkeypatch.setattr(routing, "rule_present", lambda: False)
+    monkeypatch.setattr(routing, "mss_clamp_present", lambda: True)
+    monkeypatch.setattr(routing, "hook_present", lambda: True)
+    monkeypatch.setattr(routing, "probe_gateway", lambda t, *a, **k: routing.PROBE_DOWN)
+    monkeypatch.setattr(routing, "list_sets", lambda: [])
+    text = " ".join(t + " " + d for _, t, d in doc._probe_layers())
+    assert "не проверена" in text
+    assert "Чинить ЛИНК" not in text, "обвинили линк, хотя зонд до него не дошёл"
+
+
+def test_fwmark_rule_is_masked_like_the_mark_itself():
+    """Метим маскированно (--set-xmark 0x1/0x1) — сверять обязаны так же. Без
+    маски правило требует точного равенства, и чужой бит в fwmark (docker, tc)
+    увёл бы трафик мимо таблицы."""
+    from awgbot.infra import routing
+    assert "/" in routing._RULE[1], routing._RULE
+    assert routing._RULE[1] == routing._MARK
+
+
+def test_one_directive_per_domain_regardless_of_case():
+    """dnsmasq применяет для домена ТОЛЬКО ОДНУ директиву ipset=. Разойдись
+    регистр между базовым списком и личным — вышли бы две директивы на один
+    домен, и часть профилей молча потеряла бы его. Это ровно та поломка, ради
+    которой затеян пер-юзерный merge."""
+    from awgbot.domain.routing import build_dnsmasq_conf
+    conf = build_dnsmasq_conf(
+        base_domains=["example.com"],
+        domains_by_client={7: ["Example.COM", "example.com."]},   # регистр и точка
+        client_ids=[7],
+        set_user_prefix="vpn_u",
+    )
+    directives = [l for l in conf.splitlines() if l.startswith("ipset=")]
+    assert len(directives) == 1, directives
+    assert directives[0] == "ipset=/example.com/vpn_u7", directives

@@ -168,7 +168,14 @@ def build_dnsmasq_conf(
             per_domain.setdefault(dom, []).extend(_s(c) for c in live)
     for client_id, domains in sorted((domains_by_client or {}).items()):
         for dom in domains:
-            per_domain.setdefault(dom, []).append(_s(client_id))
+            # Нормализуем ТУТ ЖЕ, как и базовые: ключ словаря должен быть один и
+            # тот же для одного домена. Разойдись регистр между источниками —
+            # получились бы две директивы `ipset=` на один домен, а dnsmasq
+            # применяет только одну. Это ровно та поломка, ради которой затеян
+            # пер-юзерный merge, и она была бы молчаливой.
+            dom = (dom or "").strip().rstrip(".").lower()
+            if dom:
+                per_domain.setdefault(dom, []).append(_s(client_id))
 
     lines = [
         "# Сгенерировано awg-bot. Правки будут перезаписаны.",

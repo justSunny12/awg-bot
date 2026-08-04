@@ -357,3 +357,18 @@ async def test_add_domains_returns_to_panel(services, make_active_client, fake_b
     # последнее сообщение — раздел с кнопками
     assert any("РФ-сервисам" in str(s[1]) or "Исключения" in str(s[1])
                or "исключения" in str(s[1]) for s in sent), sent
+
+
+async def test_revoked_permission_blocks_the_pending_input(
+        services, make_active_client, fake_bot):
+    """Между «пришли адреса» и отправкой списка админ мог отозвать разрешение.
+    Состояние FSM про это не знает, поэтому проверять надо и здесь — иначе
+    список примется у того, кому фича больше не положена."""
+    c = _allowed_client(services, make_active_client, 91)
+    services.set_routing_allowed(c.id, False)          # отозвали, пока он печатал
+    c = services.db.get_client(c.id)
+
+    msg = FakeMessage(text="bank.com", chat_id=91, user_id=91, bot=fake_bot)
+    await routing_h.routing_add_apply(msg, c, services, FakeState())
+
+    assert services.routing_domains(c.id) == [], "домен принят после отзыва доступа"

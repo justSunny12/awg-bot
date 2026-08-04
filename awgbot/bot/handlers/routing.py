@@ -125,6 +125,14 @@ async def routing_add_apply(message: Message, client, services, state: FSMContex
     client = await _own(services, client)
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     await state.clear()
+    # Тот же гвард, что и на кнопках. Здесь его не было, и это была дыра: между
+    # «пришли адреса» и отправкой списка админ мог отозвать разрешение, а
+    # состояние FSM про это не знает — список принимался бы уже у того, кому
+    # фича больше не положена.
+    if not await call(services.routing_client_visible, client):
+        await cleanup_content(message.bot, services, message.chat.id)
+        await message.answer(texts.ROUTING_UNAVAILABLE, reply_markup=kb.reply_hide())
+        return
     res = await call(services.routing_add_domains, client.id, message.text or "")
     report = texts.routing_add_report(res.added, res.rejected, res.over_limit, res.limit)
 
