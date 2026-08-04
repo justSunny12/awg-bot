@@ -113,9 +113,14 @@ def _build_vpn_json(
         "subnet_address": f"{config.SUBNET_PREFIX}.0",
         "transport_proto": "udp",
     }
+    # APP_CONTAINER, а НЕ CONTAINER: это идентификатор протокола для приложения,
+    # а не имя docker-контейнера на сервере. Совпадают они исторически, и после
+    # переезда на хост docker-имя исчезнет — но зашитое в выданные ссылки
+    # значение обязано остаться прежним, иначе приложение перестанет опознавать
+    # профили у всех разом.
     return {
-        "containers": [{"awg": awg_block, "container": config.CONTAINER}],
-        "defaultContainer": config.CONTAINER,
+        "containers": [{"awg": awg_block, "container": config.APP_CONTAINER}],
+        "defaultContainer": config.APP_CONTAINER,
         "description": config.SERVER_NAME,
         "dns1": config.DNS1,
         "dns2": config.DNS2,

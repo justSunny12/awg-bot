@@ -1,8 +1,13 @@
 """
-awg.py — единственный слой взаимодействия с контейнером AmneziaWG.
+awg.py — единственный слой взаимодействия с сервером AmneziaWG.
 
-ВСЕ вызовы docker exec живут здесь и больше нигде. Каждая операция проверена
-руками на Этапе 1 (разведка). Модуль делится на:
+ВСЕ вызовы docker exec живут здесь и больше нигде. Более того, они собраны в
+одной функции `_exec`: способ доступа к awg — контейнер или прямо хост —
+переключается config.AWG_RUNTIME, а не разбросан по вызовам (docs/ROADMAP.md,
+шаг 2). Всё, что портировать ещё не успели, закрыто `_docker_only` и падает
+громко, а не деградирует молча.
+
+Каждая операция проверена руками на Этапе 1 (разведка). Модуль делится на:
   • чистые парсеры (parse_*) — без контейнера, тестируются против реальных выводов;
   • функции, дёргающие контейнер (read_*, add_peer, block_ip, show_dump, ...).
 
@@ -101,21 +106,58 @@ def _run(
     return proc
 
 
+def in_container() -> bool:
+    """Ходим ли мы в контейнер, или команды идут прямо на хосте.
+
+    Функция, а не константа модуля: значение замёрзло бы на импорте, и тест,
+    подменяющий config.AWG_RUNTIME, проверял бы не то, что выполняется в бою.
+    """
+    return config.AWG_RUNTIME == "docker"
+
+
+class HostModeUnsupported(RuntimeError):
+    """Операция ещё не портирована на host-режим (docs/ROADMAP.md, шаг 2).
+
+    НЕ наследник AwgError, и это намеренно. Половина вызывающих глотает AwgError
+    и продолжает с пустым результатом: container_pid → None, container_running →
+    False, host_ssh_targets → частичный список. Унаследуй заслон от AwgError — и
+    он утонул бы ровно в тех except'ах, ради которых поставлен, вернув ту самую
+    молчаливую деградацию. Для SSH-фильтра это была бы дыра без единого признака.
+    """
+
+
+def _docker_only(what: str) -> None:
+    """Заслон для того, что в host-режиме ещё не портировано."""
+    if not in_container():
+        raise HostModeUnsupported(
+            f"{what}: в host-режиме не поддерживается — перенос ещё не сделан "
+            f"(docs/ROADMAP.md, шаг 2)")
+
+
 def _exec(cont_args: list[str], **kw) -> subprocess.CompletedProcess:
-    """docker exec <container> <cont_args...>"""
-    return _run(["docker", "exec", config.CONTAINER, *cont_args], **kw)
+    """Команда на сервере awg: `docker exec <container> ...` или прямо на хосте.
+
+    Единственный вход внутрь — через неё ходят и блокировки, и правка конфига, и
+    условная маршрутизация (infra/routing.py::_cont). Поэтому переезд с
+    контейнера на хост здесь и переключается, а не в двух десятках мест.
+    """
+    if in_container():
+        return _run(["docker", "exec", config.CONTAINER, *cont_args], **kw)
+    return _run(list(cont_args), **kw)
 
 
 def _exec_i(cont_args: list[str], input_data: bytes, **kw) -> subprocess.CompletedProcess:
-    """docker exec -i <container> <cont_args...> — с подачей stdin."""
-    return _run(
-        ["docker", "exec", "-i", config.CONTAINER, *cont_args],
-        input_data=input_data, **kw,
-    )
+    """То же с подачей stdin."""
+    if in_container():
+        return _run(
+            ["docker", "exec", "-i", config.CONTAINER, *cont_args],
+            input_data=input_data, **kw,
+        )
+    return _run(list(cont_args), input_data=input_data, **kw)
 
 
 def _exec_sh(script: str, **kw) -> subprocess.CompletedProcess:
-    """docker exec <container> sh -c '<script>' — для пайпов/редиректов.
+    """`sh -c '<script>'` — для пайпов и редиректов.
     script собирается ТОЛЬКО из констант конфига и валидированных значений."""
     return _exec(["sh", "-c", script], **kw)
 
@@ -368,9 +410,12 @@ def detect_topology(container: str | None = None) -> dict:
     out: dict = {"listen_port": None, "subnet_prefix": None, "subnet_cidr": None}
     try:
         cont = container or config.CONTAINER
+        # Не через _exec: установщик зовёт это ДО финализации конфига и передаёт
+        # имя контейнера параметром, которого в config ещё нет.
+        argv = (["docker", "exec", cont, "cat", config.CONF_PATH]
+                if in_container() else ["cat", config.CONF_PATH])
         cp = subprocess.run(
-            ["docker", "exec", cont, "cat", config.CONF_PATH],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+            argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
         if cp.returncode != 0:
             return out
         conf = cp.stdout.decode(errors="replace")
@@ -584,6 +629,7 @@ def host_ssh_targets() -> list[str]:
     docker-сетей контейнера (bridge-стороны) + внешний egress-IP хоста (на случай
     hairpin: full-tunnel пир стучит по публичному IP → NAT → тот же хост). Их и
     гейтим. Хостовые команды (docker/ip) — через _run, не docker exec."""
+    _docker_only("host_ssh_targets")
     targets: list[str] = []
 
     def _add(v: str) -> None:
@@ -736,6 +782,7 @@ def show_dump() -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _inspect(fmt: str) -> str:
+    _docker_only("docker inspect")
     return _run(
         ["docker", "inspect", "-f", fmt, config.CONTAINER]
     ).stdout.decode().strip()
@@ -778,11 +825,13 @@ def awg_responding() -> bool:
 def restart_container() -> None:
     """docker restart <config.CONTAINER> (ТЗ 9.3 — перезапуск сервиса разрешён).
     ВНИМАНИЕ: после этого iptables-DROP'ы слетают → нужна реконсиляция блокировок."""
+    _docker_only("restart_container")
     _run(["docker", "restart", config.CONTAINER], timeout=60)
 
 
 __all__ = [
-    "AwgError", "ContainerDown", "writing", "is_writing", "last_self_write",
+    "AwgError", "ContainerDown", "in_container",
+    "writing", "is_writing", "last_self_write",
     "mutation_lock", "invalidate_server_params",
     "read_file", "write_file",
     "parse_interface_params", "parse_occupied_ips", "parse_dump",

@@ -154,6 +154,14 @@ def validate() -> None:
             "Не заданы обязательные параметры конфига: " + "; ".join(missing_conf) +
             ". Заполните их (обычно это делает установщик).")
 
+    # Опечатка в runtime не должна тихо возвращать docker-режим: сервер, который
+    # уже переехал на хост, начал бы ходить `docker exec` в несуществующий
+    # контейнер и слёг бы целиком, а причина выглядела бы как «awg не отвечает».
+    if AWG_RUNTIME not in ("docker", "host"):
+        raise RuntimeError(
+            f"Неизвестный docker.runtime={AWG_RUNTIME!r} в app.yaml. "
+            f"Допустимо: docker (через контейнер Amnezia) или host (напрямую).")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # app.yaml — инфраструктура
@@ -164,7 +172,31 @@ TZ_NAME = _app.get("timezone", "Europe/Moscow")
 TZ = ZoneInfo(TZ_NAME)
 
 _docker = _app.get("docker", {})
+
+# Как бот дотягивается до awg: "docker" — через `docker exec` в контейнер
+# Amnezia, "host" — командами прямо на хосте (docs/ROADMAP.md, шаг 2).
+#
+# Дефолт обязан быть "docker", то есть сегодняшним поведением: боевой app.yaml
+# при обновлении НЕ мигрирует (seed_conf копирует только отсутствующие файлы
+# целиком), поэтому отсутствие ключа означает «сервер, который обновился» — и
+# менять ему способ доступа к awg молча нельзя.
+AWG_RUNTIME = str(_docker.get("runtime") or "docker").strip().lower()
+
 CONTAINER = _docker.get("container", "amnezia-awg2")
+
+# Идентификатор протокола для приложения AmneziaVPN. Уезжает в vpn:// как
+# "container" и "defaultContainer" (domain/configgen.py) и разбирается на
+# телефоне пользователя.
+#
+# С docker-именем он совпадает исторически, но это РАЗНЫЕ сущности: одна умрёт
+# вместе с контейнером, вторая зашита во все выданные ссылки и обязана пережить
+# переезд без единого изменения. Пока они одно поле, любая «уборка» docker-имени
+# после переезда разом обесценит все выданные конфиги — молча, потому что
+# приложение просто не опознает профиль.
+#
+# Менять это значение нельзя НИКОГДА, кроме как одновременно с перевыпуском всех
+# ссылок (docs/ROADMAP.md, шаг 3).
+APP_CONTAINER = _docker.get("app_container") or CONTAINER
 AWG_INTERFACE = _docker.get("interface", "awg0")
 AWG_DIR = _docker.get("awg_dir", "/opt/amnezia/awg")
 CONF_PATH = f"{AWG_DIR}/{AWG_INTERFACE}.conf"
