@@ -1620,12 +1620,15 @@ class Services:
     # стоит одну запись и обратимо без последствий для выданных ссылок.
 
     _RT_LINK_KEY = "routing_link_ok"
-    _RT_STREAK_KEY = "routing_link_down_streak"
-    _RT_DOWN_STREAK = 2                   # промахов подряд до снятия маркировки
-    _RT_STALE_FLOOR = 240                 # сек; ниже — «мёртв» неотличим от «простаивает»
+    _RT_STREAK_KEY = "routing_link_up_streak"
+    _RT_UP_STREAK = 2                     # хороших замеров подряд до возврата
     _TXT_RT_GW_DOWN = ("🔴 Шлюз условной маршрутизации недоступен. Маркировка снята: "
                        "российские сервисы у пользователей временно открываются "
                        "с зарубежного адреса. Интернет при этом работает.")
+    _TXT_RT_GW_NO_PATH = ("🔴 Шлюз условной маршрутизации отвечает, но интернета за ним "
+                          "нет — проверь аплинк и NAT на самом шлюзе. Маркировка снята: "
+                          "российские сервисы временно открываются с зарубежного адреса, "
+                          "но связь у пользователей работает.")
     _TXT_RT_GW_UP = "🟢 Шлюз условной маршрутизации снова в строю."
 
     def routing_status(self) -> tuple[bool, str]:
@@ -1967,63 +1970,84 @@ class Services:
                     or self._routing_read_cache("domains"))
 
     def routing_link_ok(self) -> bool:
-        """Жив ли шлюз: хендшейк линка свежее порога.
+        """Проходит ли трафик через шлюз — по последнему замеру зонда.
 
-        Порог заведомо выше окна рекея WireGuard. `latest handshake` обновляется
-        не по таймеру, а при перевыработке ключей — раз в ~120 с под трафиком,
-        и сессия действительна до 180 с (REJECT_AFTER_TIME). Порог, равный 180,
-        стоял ровно в точке, где возраст хендшейка гуляет штатно: один поздний
-        замер — и мы объявляли живой шлюз мёртвым.
+        Читаем сохранённый результат, а не зондируем на месте: метод дёргают
+        экраны и preflight, а зонд — это пинги с таймаутами, им в отрисовке
+        интерфейса не место. Замер делает routing_liveness_tick.
         """
-        if not routing.available():
-            return False
-        age = routing.link_handshake_age()
-        stale = int(settings.get("app.routing.link_stale_seconds", 300))
-        if stale < self._RT_STALE_FLOOR:
-            # Не «мнение сильнее настройки», а предел измеримого: в пределах
-            # 180 с сессия WireGuard ещё действительна и хендшейк законно не
-            # обновлялся, так что «мёртв» и «простаивает» неразличимы. Досев
-            # conf существующий файл не правит, поэтому пол нужен в коде —
-            # иначе установки со старым 180 продолжали бы мигать.
-            log.warning("routing: link_stale_seconds=%d ниже предела %d — "
-                        "подняли (окно рекея WireGuard)", stale, self._RT_STALE_FLOOR)
-            stale = self._RT_STALE_FLOOR
-        return age is not None and age <= stale
+        return self.db.get_state(self._RT_LINK_KEY) != "0"
 
-    def routing_monitor(self) -> list[Notification]:
-        """Тик мониторинга: деградация при недоступном шлюзе + алерт админу.
+    def routing_engaged(self) -> bool:
+        """Должна ли маркировка быть включена в принципе — до вопроса о живости.
 
-        Об отвале сообщаем ТОЛЬКО админу — пользователю хватает статусной строки,
-        а чинить всё равно не ему.
+        Один предикат на всех, кто трогает рубильник. Реконсиляция и тик живости
+        уже однажды разошлись во мнениях и спорили за него: один снимал политику,
+        другой немедленно возвращал. Пока условие живёт в одном месте, разойтись
+        им негде. routing.available() — это здоровье ОБВЯЗА, а не выключатель
+        фичи; их легко перепутать, и тут они сведены явно.
+        """
+        return (routing.available()
+                and settings.get_bool("app.routing.enabled", False)
+                and self.routing_lists_ready())
+
+    def routing_probe(self) -> str:
+        """Замер прямо сейчас. Отдельно от routing_link_ok, чтобы было видно,
+        где реальные пинги, а где чтение кэша."""
+        target = str(settings.get("app.routing.probe_target", "77.88.8.8"))
+        return routing.probe_gateway(target)
+
+    def routing_liveness_tick(self) -> list[Notification]:
+        """Замер живости шлюза и деградация. Тикает часто (десятки секунд).
+
+        Раньше это жило в трёхминутном мониторе и решало по возрасту хендшейка.
+        Оба выбора были неверны. Частота: для пользователя с включённым режимом
+        шлюз — ОСНОВНОЙ путь (метится всё, чего нет в списке исключений), так
+        что его отказ это не «неправильный IP», а «нет интернета», и три минуты
+        такого — вечность. Метрика: возраст хендшейка говорит, поднят ли
+        туннель, а не ходит ли через него трафик.
+
+        Деградация НЕСИММЕТРИЧНА. Выключение безопасно (трафик идёт обычным
+        путём, у пользователя лишь зарубежный адрес), включение рискованно
+        (весь трафик уезжает в тоннель, и если он не пропускает — интернета
+        нет). Поэтому гасим по первому же плохому замеру, а возвращаем после
+        двух подряд хороших. Шум давится повторами внутри одного замера
+        (probe_gateway), а не растягиванием решения на минуты.
         """
         if not routing.available():
             return []
-        # И живость шлюза, И наличие списков: без второго маркировка отправила бы
-        # на шлюз ВСЁ. Раньше монитор смотрел только на шлюз и включал политику
-        # обратно сразу после того, как реконсиляция её сняла, — два места
-        # спорили за один рубильник, и состояние выходило противоречивым.
-        # Гистерезис на живость линка: гасим маркировку только после двух
-        # промахов подряд. Цена ошибки несимметрична — ложное «шлюз умер»
-        # уводит ВЕСЬ трафик на VPS, то есть ломает ровно то, ради чего фича
-        # включена, а лишние три минуты ожидания не стоят ничего.
-        # Готовность списков в гистерезисе не участвует: это детерминированное
-        # состояние конфигурации, оно не «мигает».
-        link = self.routing_link_ok()
-        streak = 0 if link else int(self.db.get_state(self._RT_STREAK_KEY) or 0) + 1
-        self.db.set_state(self._RT_STREAK_KEY, str(streak))
-        ok = self.routing_lists_ready() and (link or streak < self._RT_DOWN_STREAK)
+        # Зондируем, только если маркировка вообще должна быть включена: при
+        # выключенной фиче или незагруженных списках рубильник обязан стоять в
+        # «выкл» независимо от того, что там со шлюзом.
+        engaged = self.routing_engaged()
+        verdict = self.routing_probe() if engaged else routing.PROBE_DOWN
+
+        if verdict == routing.PROBE_OK:
+            good = int(self.db.get_state(self._RT_STREAK_KEY) or 0) + 1
+            self.db.set_state(self._RT_STREAK_KEY, str(good))
+            ok = good >= self._RT_UP_STREAK
+        else:
+            self.db.set_state(self._RT_STREAK_KEY, "0")
+            ok = False
+
         try:
             routing.set_marking_enabled(ok)
         except routing.RoutingError as e:
-            log.warning("routing_monitor: %s", e)
+            log.warning("routing_liveness_tick: %s", e)
             return []
+
         prev = self.db.get_state(self._RT_LINK_KEY)
         cur = "1" if ok else "0"
         self.db.set_state(self._RT_LINK_KEY, cur)
         if prev is None or prev == cur:
             return []
-        return [Notification(config.ADMIN_ID,
-                             self._TXT_RT_GW_UP if ok else self._TXT_RT_GW_DOWN)]
+        if ok:
+            return [Notification(config.ADMIN_ID, self._TXT_RT_GW_UP)]
+        # Разные причины — разный ремонт, поэтому и текст разный: «шлюз молчит»
+        # чинят на линке, «за шлюзом нет интернета» — на самом шлюзе.
+        text = (self._TXT_RT_GW_NO_PATH if verdict == routing.PROBE_NO_PATH
+                else self._TXT_RT_GW_DOWN)
+        return [Notification(config.ADMIN_ID, text)]
 
     # ── Обновления бота (self-update) ────────────────────────────────────────
 

@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import logging
 import os
+import ipaddress
 import socket
 import subprocess
 import threading
@@ -371,6 +372,85 @@ def ensure_route() -> None:
            "table", str(config.ROUTING_TABLE)])
 
 
+# ── Наблюдение за состоянием (только чтение; для диагностики) ────────────────
+
+def rule_present() -> bool:
+    """Стоит ли рубильник маркировки."""
+    return _rule_present()
+
+
+def table_route() -> Optional[str]:
+    """Маршрут по умолчанию в таблице фичи, как его показывает ядро."""
+    proc = _host(["ip", "route", "show", "default", "table",
+                  str(config.ROUTING_TABLE)], check=False)
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.decode(errors="replace").strip() or None
+
+
+def mss_clamp_present() -> bool:
+    if not config.ROUTING_GW_INTERFACE:
+        return False
+    return _host_ok(["iptables", "-t", "mangle", "-C", "FORWARD",
+                     "-o", config.ROUTING_GW_INTERFACE, "-p", "tcp",
+                     "--tcp-flags", "SYN,RST", "SYN",
+                     "-j", "TCPMSS", "--clamp-mss-to-pmtu"])
+
+
+def set_count(name: str) -> int:
+    """Сколько записей в наборе. Пустой набор — не «нет данных», а поломка:
+    правило метит всё, чего в наборе НЕТ, значит из пустого следует «на шлюз
+    уходит вообще всё», включая заблокированное."""
+    proc = _host(["ipset", "list", name, "-t"], check=False)
+    if proc.returncode != 0:
+        return 0
+    for line in proc.stdout.decode(errors="replace").splitlines():
+        if "Number of entries" in line:
+            try:
+                return int(line.split(":")[1].strip())
+            except (IndexError, ValueError):
+                return 0
+    return 0
+
+
+def ensure_mss_clamp() -> None:
+    """Подрезать MSS у соединений, уходящих на шлюз. Идемпотентно.
+
+    Путь на шлюз инкапсулирован ДВАЖДЫ: клиент → ВПС (AmneziaWG) и ВПС → шлюз
+    (второй туннель со своей обфускацией). Заголовков набегает заметно больше,
+    чем на обычном пути, а клиент об этом не знает — он согласовал MSS под MTU
+    своего туннеля. Крупные сегменты упираются в лимит уже за ВПС.
+
+    Само по себе это лечится PMTU Discovery, но он держится на ICMP «fragmentation
+    needed», который должен пройти обратно через оба туннеля и домашний
+    провайдер. На практике эти ICMP теряются, и получается худший вид поломки:
+    хендшейк и DNS проходят (пакеты мелкие), а страницы не открываются — со
+    стороны «интернет отвалился», хотя связь есть.
+
+    Поэтому не надеемся на ICMP, а подрезаем MSS в SYN. Правило висит в mangle
+    FORWARD, потому что TCPMSS в PREROUTING не действует, а маркировка живёт
+    именно там.
+    """
+    if not config.ROUTING_GW_INTERFACE:
+        return
+    rule = ["-o", config.ROUTING_GW_INTERFACE, "-p", "tcp",
+            "--tcp-flags", "SYN,RST", "SYN",
+            "-j", "TCPMSS", "--clamp-mss-to-pmtu"]
+    if not _host_ok(["iptables", "-t", "mangle", "-C", "FORWARD", *rule]):
+        _host(["iptables", "-t", "mangle", "-A", "FORWARD", *rule])
+        log.info("routing: включён MSS-кламп на %s", config.ROUTING_GW_INTERFACE)
+
+
+def drop_mss_clamp() -> None:
+    """Снять кламп (выключение фичи/откат). Молча, если его и не было."""
+    if not config.ROUTING_GW_INTERFACE:
+        return
+    _host(["iptables", "-t", "mangle", "-D", "FORWARD",
+           "-o", config.ROUTING_GW_INTERFACE, "-p", "tcp",
+           "--tcp-flags", "SYN,RST", "SYN",
+           "-j", "TCPMSS", "--clamp-mss-to-pmtu"], check=False)
+
+
 def set_marking_enabled(on: bool) -> None:
     """Главный рубильник: есть ли ip rule, отправляющий помеченное в таблицу.
 
@@ -382,6 +462,7 @@ def set_marking_enabled(on: bool) -> None:
     present = _rule_present()
     if on and not present:
         ensure_route()
+        ensure_mss_clamp()
         _host(["ip", "rule", "add", *_RULE])
         log.info("routing: политика включена")
     elif not on and present:
@@ -392,6 +473,67 @@ def set_marking_enabled(on: bool) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Живость линка до шлюза
 # ─────────────────────────────────────────────────────────────────────────────
+
+def link_peer_address() -> Optional[str]:
+    """Адрес шлюза в линке. Линк — /30, адресов ровно два, наш известен из
+    `ip addr`, значит второй вычисляется однозначно. Спрашивать конфиг не нужно:
+    ядро — более достоверный источник, чем файл, который могли и не применить.
+    """
+    proc = _host(["ip", "-4", "-o", "addr", "show", "dev",
+                  config.ROUTING_GW_INTERFACE], check=False)
+    if proc.returncode != 0:
+        return None
+    for tok in proc.stdout.decode(errors="replace").split():
+        if "/" not in tok or tok.count(".") != 3:
+            continue
+        try:
+            net = ipaddress.ip_interface(tok)
+        except ValueError:
+            continue
+        if net.network.prefixlen != 30:
+            return None
+        peers = [h for h in net.network.hosts() if h != net.ip]
+        return str(peers[0]) if peers else None
+    return None
+
+
+def _ping(dest: str, iface: str, timeout: int = 2) -> bool:
+    return _host(["ping", "-n", "-c", "1", "-W", str(timeout), "-I", iface, dest],
+                 check=False, timeout=timeout + 3).returncode == 0
+
+
+# Что показал зонд. Различать «линк лёг» и «шлюз есть, но интернета за ним нет»
+# нужно не ради красоты: во втором случае туннель отвечает на хендшейки, и любая
+# проверка по возрасту хендшейка считает шлюз живым — а трафик за ним умирает.
+PROBE_OK = "ok"          # через шлюз ходит трафик наружу
+PROBE_NO_PATH = "path"   # шлюз отвечает, но наружу через него не пройти
+PROBE_DOWN = "down"      # шлюз не отвечает вовсе
+
+
+def probe_gateway(target: str, attempts: int = 3) -> str:
+    """Проходит ли трафик НАРУЖУ через шлюз. Возвращает PROBE_*.
+
+    Меряем то, что важно, а не то, что легко померить. Возраст хендшейка
+    отвечает на вопрос «поднят ли туннель», а нас интересует «дойдёт ли пакет
+    до интернета» — и эти два условия расходятся ровно в худшем случае: у
+    шлюза упал аплинк или слетел форвардинг, хендшейки при этом идут как ни в
+    чём не бывало. Пользователь остаётся без интернета насовсем, а проверка по
+    хендшейку этого не видит в принципе.
+
+    Потери гасим повторами ВНУТРИ одного замера, а не растягиванием решения на
+    минуты: одиночный потерянный пакет — это шум, а не отвал.
+    """
+    iface = config.ROUTING_GW_INTERFACE
+    if not iface:
+        return PROBE_DOWN
+    for _ in range(max(1, attempts)):
+        if _ping(target, iface):
+            return PROBE_OK
+    peer = link_peer_address()
+    if peer and any(_ping(peer, iface) for _ in range(max(1, attempts))):
+        return PROBE_NO_PATH
+    return PROBE_DOWN
+
 
 def link_handshake_age() -> Optional[int]:
     """Возраст последнего хендшейка с шлюзом, сек. None — пира нет или интерфейс
@@ -525,6 +667,10 @@ __all__ = [
     "ensure_set", "replace_members", "add_networks", "destroy_set", "list_sets",
     # маркировка и политика
     "rebuild_chain", "set_marking_enabled", "link_handshake_age",
+    "probe_gateway", "link_peer_address", "resolve_a",
+    "PROBE_OK", "PROBE_NO_PATH", "PROBE_DOWN",
+    "ensure_mss_clamp", "drop_mss_clamp", "mss_clamp_present",
+    "rule_present", "table_route", "set_count",
     # внешние списки и dnsmasq
     "fetch", "write_dnsmasq_conf",
 ]

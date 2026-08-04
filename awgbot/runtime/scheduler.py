@@ -190,10 +190,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             from awgbot.runtime import hostmetrics
             snap = await asyncio.to_thread(hostmetrics.collect_and_store, db)
             alert_notes += services.check_resource_alerts(snap)
-            # (4) живость шлюза условной маршрутизации: деградация + алерт админу
-            #     на смену состояния. Пользователям не шлём — им хватает
-            #     статусной строки, а чинить всё равно не им.
-            alert_notes += await asyncio.to_thread(services.routing_monitor)
+            # (4) живость шлюза условной маршрутизации живёт в СВОЁМ задании,
+            #     job_routing_liveness: у пользователя с включённым режимом шлюз —
+            #     основной путь, и его отказ это «нет интернета», а не «не тот
+            #     адрес». Трёхминутного такта на такое не хватает.
             await send_notifications(bot, alert_notes)
         except Exception as e:                       # noqa: BLE001
             log.warning("monitor: %s", e)
@@ -222,6 +222,13 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
 
     def _trig_monitor():
         return IntervalTrigger(minutes=settings.get_int("app.scheduler.monitor_minutes", 3), timezone=_TZ)
+
+    def _trig_liveness():
+        # СЕКУНДЫ, а не минуты: у пользователя с включённым режимом шлюз —
+        # основной путь, его отказ это «нет интернета». Такт задаёт верхнюю
+        # границу такого провала, поэтому он мелкий.
+        return IntervalTrigger(
+            seconds=settings.get_int("app.routing.probe_seconds", 30), timezone=_TZ)
 
     def _trig_monthly():
         return CronTrigger(day=settings.get_int("app.scheduler.monthly_reset_day", 1),
@@ -265,6 +272,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         "app.scheduler.traffic_poll_minutes": ("poll", _trig_poll),
         "app.scheduler.expiry_check_minutes": ("expiry", _trig_expiry),
         "app.scheduler.monitor_minutes": ("monitor", _trig_monitor),
+        "app.routing.probe_seconds": ("routing_liveness", _trig_liveness),
         "app.scheduler.monthly_reset_day": ("monthly", _trig_monthly),
         "app.scheduler.monthly_reset_hour": ("monthly", _trig_monthly),
         "app.scheduler.backup_day": ("backup", _trig_backup),
@@ -306,9 +314,25 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         except Exception as e:                        # noqa: BLE001
             log.warning("email_resume poll: %s", e)
 
+    async def job_routing_liveness():
+        """Проверка проходимости шлюза и деградация. Своё задание, потому что
+        такт другой: остальной мониторинг тикает раз в минуты, а тут минуты —
+        это минуты без интернета у всех, кто включил режим."""
+        try:
+            notes = await asyncio.to_thread(services.routing_liveness_tick)
+            await send_notifications(bot, notes)
+        except Exception as e:                        # noqa: BLE001
+            log.warning("routing_liveness: %s", e)
+
     scheduler.add_job(job_monitor, _trig_monitor(),
                       id="monitor", max_instances=1, coalesce=True,
                       next_run_time=now, misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+    # живость шлюза — отдельным частым тиком, см. job_routing_liveness
+    if config.ROUTING_ENABLED:
+        scheduler.add_job(job_routing_liveness, _trig_liveness(),
+                          id="routing_liveness", max_instances=1, coalesce=True,
+                          next_run_time=now,
+                          misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
     # ежедневная очистка истории (батчами), в тихий ночной час
     scheduler.add_job(job_purge_history, _trig_purge(),
                       id="purge_history", max_instances=1,

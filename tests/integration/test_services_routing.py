@@ -199,63 +199,70 @@ def test_chain_lists_only_live_clients(services, make_active_client, fake_routin
     assert fake_routing.chain == [c.id]
 
 
-# ── Деградация при недоступном шлюзе ─────────────────────────────────────────
+# ── Деградация при непроходимом шлюзе ────────────────────────────────────────
 
-def test_link_down_disables_marking_and_alerts_admin_once(
+def _settle(services, fake_routing):
+    """Довести до включённого состояния: возврат требует двух хороших замеров."""
+    fake_routing.probe = "ok"
+    services.routing_liveness_tick()
+    services.routing_liveness_tick()
+
+
+def test_gateway_unreachable_disables_marking_and_alerts_admin_once(
         services, fake_routing):
-    """Шлюз лёг → маркировка снимается, трафик уходит обычным путём. Админа
-    уведомляем один раз на смену состояния, а не каждый тик."""
-    fake_routing.link_age = 10
-    services.routing_monitor()                       # первый тик: состояние ок
+    """Шлюз не пропускает → маркировка снимается, трафик уходит обычным путём.
+    Админа уведомляем один раз на смену состояния, а не каждый тик."""
+    _settle(services, fake_routing)
     assert fake_routing.marking is True
 
-    fake_routing.link_age = 99999                    # хендшейк протух
-    assert services.routing_monitor() == []          # первый промах — терпим
-    assert fake_routing.marking is True
-    notes = services.routing_monitor()               # второй подряд — реагируем
+    fake_routing.probe = "down"
+    notes = services.routing_liveness_tick()
     assert fake_routing.marking is False
     assert len(notes) == 1 and "недоступен" in notes[0].text
-    assert services.routing_monitor() == []          # повтор — молчим
+    assert services.routing_liveness_tick() == []       # повтор — молчим
 
-    fake_routing.link_age = 5                        # вернулся
-    notes = services.routing_monitor()
+    _settle(services, fake_routing)
     assert fake_routing.marking is True
-    assert len(notes) == 1 and "строю" in notes[0].text
 
 
-def test_no_handshake_at_all_counts_as_down(services, fake_routing):
-    fake_routing.link_age = None
-    services.routing_monitor()
-    services.routing_monitor()
+def test_degradation_is_immediate_but_recovery_is_not(services, fake_routing):
+    """Несимметрично намеренно. Выключение безопасно — у пользователя лишь
+    зарубежный адрес; включение рискованно — весь трафик уезжает в тоннель, и
+    если тот не пропускает, интернета нет вовсе. Поэтому гасим по первому
+    плохому замеру, а возвращаем после двух хороших подряд."""
+    _settle(services, fake_routing)
+
+    fake_routing.probe = "down"
+    services.routing_liveness_tick()
+    assert fake_routing.marking is False, "деградация должна быть немедленной"
+
+    fake_routing.probe = "ok"
+    services.routing_liveness_tick()
+    assert fake_routing.marking is False, "вернулись с одного замера"
+    services.routing_liveness_tick()
+    assert fake_routing.marking is True
+
+
+def test_tunnel_up_but_no_internet_behind_it_is_a_failure(services, fake_routing):
+    """Ровно тот отказ, который старая проверка не видела в принципе: туннель
+    поднят, хендшейки идут, а за шлюзом интернета нет."""
+    _settle(services, fake_routing)
+    fake_routing.probe = "path"
+    notes = services.routing_liveness_tick()
     assert fake_routing.marking is False
+    assert len(notes) == 1 and "интернета за ним нет" in notes[0].text
 
 
-def test_single_late_sample_does_not_flap_marking(services, fake_routing):
-    """Ровно тот отказ, который выглядел как «работает через раз»: одиночный
-    поздний замер снимал маркировку, и следующие три минуты ВЕСЬ трафик шёл
-    через VPS — ломалось ровно то, ради чего фича включена. Цена ошибки
-    несимметрична, поэтому одиночному промаху не верим."""
-    fake_routing.link_age = 10
-    services.routing_monitor()
-
-    for _ in range(5):                               # промах / норма / промах…
-        fake_routing.link_age = 99999
-        assert services.routing_monitor() == []
-        assert fake_routing.marking is True, "маркировка мигнула на одном замере"
-        fake_routing.link_age = 10
-        services.routing_monitor()
-
-
-def test_recovery_resets_the_streak(services, fake_routing):
-    """Промахи должны идти ПОДРЯД: успешный замер обнуляет счётчик, иначе
-    редкие одиночные промахи накопились бы и однажды сработали на ровном месте."""
-    fake_routing.link_age = 99999
-    services.routing_monitor()                       # промах №1
-    fake_routing.link_age = 10
-    services.routing_monitor()                       # ок — счётчик сброшен
-    fake_routing.link_age = 99999
-    assert services.routing_monitor() == []          # снова №1, не №2
-    assert fake_routing.marking is True
+def test_alert_names_the_place_to_fix(services, fake_routing):
+    """«Шлюз молчит» чинят на линке, «за шлюзом нет интернета» — на самом шлюзе.
+    Разный ремонт — разный текст, иначе админ идёт не туда."""
+    _settle(services, fake_routing)
+    fake_routing.probe = "down"
+    down = services.routing_liveness_tick()[0].text
+    _settle(services, fake_routing)
+    fake_routing.probe = "path"
+    path = services.routing_liveness_tick()[0].text
+    assert down != path
 
 
 def test_feature_disabled_is_a_no_op(services, make_active_client, fake_routing):
@@ -264,7 +271,7 @@ def test_feature_disabled_is_a_no_op(services, make_active_client, fake_routing)
     c = make_active_client()
     services.reconcile_routing()
     assert fake_routing.chain is None
-    assert services.routing_monitor() == []
+    assert services.routing_liveness_tick() == []
 
 
 # ── обновление базовых списков ───────────────────────────────────────────────
@@ -349,15 +356,17 @@ def test_monitor_does_not_enable_marking_without_lists(services, fake_routing,
     состояние выходило противоречивым — цепочка пуста, а ip rule жив."""
     from awgbot.core import config
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)      # кэши пусты
-    fake_routing.link_age = 5                              # шлюз жив
-    services.routing_monitor()
+    fake_routing.probe = "ok"                              # шлюз пропускает
+    services.routing_liveness_tick()
+    services.routing_liveness_tick()
     assert fake_routing.marking is False
 
 
 def test_monitor_enables_marking_when_ready(services, fake_routing):
-    """Списки на месте и шлюз жив — политика включается."""
-    fake_routing.link_age = 5
-    services.routing_monitor()
+    """Списки на месте и шлюз пропускает — политика включается."""
+    fake_routing.probe = "ok"
+    services.routing_liveness_tick()
+    services.routing_liveness_tick()
     assert fake_routing.marking is True
 
 
@@ -409,3 +418,22 @@ def test_failed_resolve_does_not_break_the_add(
         assert res.added == ["unresolvable.invalid"]
     finally:
         monkey.undo()
+
+
+def test_hot_switch_off_wins_over_a_healthy_gateway(services, fake_routing, monkeypatch):
+    """Реконсиляция и тик живости уже однажды разошлись во мнениях и спорили за
+    рубильник: один снимал политику, другой немедленно возвращал. Условие «фича
+    выключена» обязано перевешивать любой вердикт зонда."""
+    from awgbot.core import settings
+    fake_routing.probe = "ok"
+    services.routing_liveness_tick()
+    services.routing_liveness_tick()
+    assert fake_routing.marking is True
+
+    real = settings.get_bool
+    monkeypatch.setattr(settings, "get_bool",
+                        lambda k, d=None: False if k == "app.routing.enabled"
+                        else real(k, d))
+    services.routing_liveness_tick()
+    services.routing_liveness_tick()
+    assert fake_routing.marking is False, "зонд пересилил выключенную фичу"

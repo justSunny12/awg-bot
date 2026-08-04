@@ -600,6 +600,14 @@ cmd_post_uninstall() {
 }
 
 # ── status / logs ────────────────────────────────────────────────────────────
+cmd_routing_doctor() {
+    require_installed
+    # Диагностику гоняем ТЕМ ЖЕ интерпретатором и с тем же conf, что и бот:
+    # иначе она проверит не ту установку и соврёт.
+    AWGBOT_CONF_DIR="$CONF_DIR" "$INSTALL_DIR/venv/bin/python" \
+        -m awgbot.runtime.routing_doctor
+}
+
 cmd_status() {
     echo "Пути: код=$INSTALL_DIR conf=$CONF_DIR env=$ENV_FILE data=$DATA_DIR"
     systemctl status "$SERVICE" --no-pager -l 2>/dev/null | head -n 12 || warn "юнит $SERVICE не найден"
@@ -632,6 +640,7 @@ awg-bot — управление установленным ботом.
   awg-bot backup             снимок БД + конфига + секретов
   awg-bot restore [tgz]      восстановить из снимка (по умолч. — самый свежий)
   awg-bot logs               журнал сервиса (follow)
+  awg-bot routing-doctor     где рвётся условная маршрутизация (только чтение)
   awg-bot uninstall          удалить приложение (опционально: данные приложения)
 EOF
 }
@@ -649,6 +658,7 @@ case "$VERB" in
     stop)        cmd_stop ;;
     restart)     cmd_restart ;;
     logs)        cmd_logs ;;
+    routing-doctor) cmd_routing_doctor ;;
     -h|--help|help|"") usage ;;
     *) usage; die "неизвестная команда: $VERB" ;;
 esac

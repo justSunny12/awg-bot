@@ -121,7 +121,8 @@ def fake_routing(monkeypatch, tmp_path):
     """Замена слоя условной маршрутизации (ipset/iptables/ip/dnsmasq) на фейк.
 
     Возвращает состояние: .sets {имя: [члены]}, .chain (список client_id в
-    цепочке), .conf (текст dnsmasq), .conf_writes, .marking, .link_age.
+    цепочке), .conf (текст dnsmasq), .conf_writes, .marking, .probe (вердикт
+    зонда живости: 'ok' | 'path' | 'down').
     RoutingError оставляем настоящим — код его ловит.
     """
     import threading
@@ -141,7 +142,7 @@ def fake_routing(monkeypatch, tmp_path):
 
     state = types.SimpleNamespace(
         sets={}, chain=None, conf=None, conf_writes=0,
-        marking=None, link_age=10, enabled=True, nat_exempt=None,
+        marking=None, probe="ok", enabled=True, nat_exempt=None,
         dns={},                       # домен → IPv4, что «вернёт» резолвер
     )
 
@@ -199,7 +200,7 @@ def fake_routing(monkeypatch, tmp_path):
     _set("sync_nat_exempt", lambda addrs: setattr(state, "nat_exempt", sorted(addrs)))
     _set("ensure_route", lambda: None)
     _set("set_marking_enabled", lambda on: setattr(state, "marking", on))
-    _set("link_handshake_age", lambda: state.link_age)
+    _set("probe_gateway", lambda target, attempts=3: state.probe)
     _set("write_dnsmasq_conf", write_conf)
     return state
 

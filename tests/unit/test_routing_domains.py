@@ -154,34 +154,109 @@ def test_set_names_are_constants_not_yaml():
     assert config.ROUTING_NAT_CHAIN == "AWGBOT_RTNAT"
 
 
-# ── живость шлюза: измеритель не должен мигать ───────────────────────────────
+# ── живость шлюза меряется проходимостью, а не состоянием туннеля ────────────
 
-def _svc_with_age(monkeypatch, age, stale=None):
-    """Сервис с подставленным возрастом хендшейка."""
-    from awgbot.domain import services as S
-    monkeypatch.setattr(S.routing, "available", lambda: True)
-    monkeypatch.setattr(S.routing, "link_handshake_age", lambda: age)
-    if stale is not None:
-        from awgbot.core import settings
-        monkeypatch.setattr(settings, "get",
-                            lambda k, d=None: stale if "link_stale" in k else d)
-    return S
-
-
-def test_link_stale_floor_survives_wireguard_rekey(monkeypatch):
-    """Хендшейк обновляется при рекее (~120 с), а сессия действительна до 180 с,
-    поэтому возраст 170 с — норма, а не отвал. Старый порог 180 стоял ровно в
-    этой зоне и гасил маркировку у живого шлюза."""
-    from awgbot.domain.services import Services
-    S = _svc_with_age(monkeypatch, 170, stale=180)     # старое значение из conf
-    svc = Services.__new__(Services)
-    assert svc.routing_link_ok() is True, "живой шлюз объявлен мёртвым"
+def test_probe_reports_no_path_when_tunnel_is_up_but_internet_is_not(monkeypatch):
+    """Худший случай: шлюз отвечает, а интернета за ним нет. Проверка по
+    возрасту хендшейка считала бы такой шлюз живым и продолжала слать в него
+    трафик — пользователь оставался без интернета насовсем."""
+    from awgbot.infra import routing
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
+    monkeypatch.setattr(routing, "link_peer_address", lambda: "10.99.0.1")
+    monkeypatch.setattr(routing, "_ping",
+                        lambda dest, iface, timeout=2: dest == "10.99.0.1")
+    assert routing.probe_gateway("77.88.8.8") == routing.PROBE_NO_PATH
 
 
-def test_link_really_dead_is_still_detected(monkeypatch):
-    """Пол поднимает порог, но не отменяет детект: молчание сильно за окном
-    рекея по-прежнему считается отвалом."""
-    from awgbot.domain.services import Services
-    _svc_with_age(monkeypatch, 900, stale=180)
-    svc = Services.__new__(Services)
-    assert svc.routing_link_ok() is False
+def test_probe_reports_down_when_gateway_is_silent(monkeypatch):
+    from awgbot.infra import routing
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
+    monkeypatch.setattr(routing, "link_peer_address", lambda: "10.99.0.1")
+    monkeypatch.setattr(routing, "_ping", lambda dest, iface, timeout=2: False)
+    assert routing.probe_gateway("77.88.8.8") == routing.PROBE_DOWN
+
+
+def test_probe_retries_absorb_a_lost_packet(monkeypatch):
+    """Потери гасим повторами ВНУТРИ замера: одиночный потерянный пакет — шум,
+    а не отвал, и растягивать из-за него решение на минуты незачем."""
+    from awgbot.infra import routing
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
+    calls = []
+
+    def flaky(dest, iface, timeout=2):
+        calls.append(dest)
+        return len(calls) >= 2          # первый пакет потерян, второй дошёл
+
+    monkeypatch.setattr(routing, "_ping", flaky)
+    assert routing.probe_gateway("77.88.8.8") == routing.PROBE_OK
+
+
+# ── диагностика тракта ───────────────────────────────────────────────────────
+
+def test_doctor_names_the_machine_to_fix(monkeypatch):
+    """Отказы фичи выглядят одинаково, а чинятся в разных местах и на разных
+    машинах. Доктор обязан различать «линк не поднят» и «шлюз есть, интернета за
+    ним нет»: во втором случае идти на линк бесполезно."""
+    from awgbot.runtime import routing_doctor as doc
+    from awgbot.infra import routing
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
+    monkeypatch.setattr(routing, "self_check", lambda force=False: (True, "ок"))
+    monkeypatch.setattr(routing, "link_handshake_age", lambda: 12)
+    monkeypatch.setattr(routing, "link_peer_address", lambda: "10.99.0.1")
+    monkeypatch.setattr(routing, "table_route", lambda: "default dev awggw")
+    monkeypatch.setattr(routing, "rule_present", lambda: True)
+    monkeypatch.setattr(routing, "mss_clamp_present", lambda: True)
+    monkeypatch.setattr(routing, "list_sets", lambda: ["vpn_u2"])
+    monkeypatch.setattr(routing, "set_count", lambda n: 219)
+
+    monkeypatch.setattr(routing, "probe_gateway", lambda t, attempts=3: routing.PROBE_NO_PATH)
+    text = " ".join(t + " " + d for _, t, d in doc._probe_layers())
+    assert "НА ШЛЮЗЕ" in text and "интернета за ним нет" in text
+
+    monkeypatch.setattr(routing, "probe_gateway", lambda t, attempts=3: routing.PROBE_DOWN)
+    text = " ".join(t + " " + d for _, t, d in doc._probe_layers())
+    assert "ЛИНК" in text
+
+
+def test_doctor_flags_an_empty_set_as_a_failure(monkeypatch):
+    """Пустой набор — не «нет данных», а поломка: правило метит всё, чего в
+    наборе НЕТ, значит из пустого следует «на шлюз уходит вообще всё»."""
+    from awgbot.runtime import routing_doctor as doc
+    from awgbot.infra import routing
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
+    monkeypatch.setattr(routing, "self_check", lambda force=False: (True, "ок"))
+    monkeypatch.setattr(routing, "link_handshake_age", lambda: 12)
+    monkeypatch.setattr(routing, "link_peer_address", lambda: "10.99.0.1")
+    monkeypatch.setattr(routing, "probe_gateway", lambda t, attempts=3: routing.PROBE_OK)
+    monkeypatch.setattr(routing, "table_route", lambda: "default dev awggw")
+    monkeypatch.setattr(routing, "rule_present", lambda: True)
+    monkeypatch.setattr(routing, "mss_clamp_present", lambda: True)
+    monkeypatch.setattr(routing, "list_sets", lambda: ["vpn_u2"])
+    monkeypatch.setattr(routing, "set_count", lambda n: 0)
+    marks = [m for m, _, _ in doc._probe_layers()]
+    assert doc._BAD in marks
+
+
+def test_doctor_flags_missing_mss_clamp(monkeypatch):
+    """Без клампа отказ выглядит обманчиво: пинг и DNS ходят (пакеты мелкие), а
+    страницы не грузятся. Такое надо называть прямо, иначе ищут не там."""
+    from awgbot.runtime import routing_doctor as doc
+    from awgbot.infra import routing
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
+    monkeypatch.setattr(routing, "self_check", lambda force=False: (True, "ок"))
+    monkeypatch.setattr(routing, "link_handshake_age", lambda: 12)
+    monkeypatch.setattr(routing, "link_peer_address", lambda: "10.99.0.1")
+    monkeypatch.setattr(routing, "probe_gateway", lambda t, attempts=3: routing.PROBE_OK)
+    monkeypatch.setattr(routing, "table_route", lambda: "default dev awggw")
+    monkeypatch.setattr(routing, "rule_present", lambda: True)
+    monkeypatch.setattr(routing, "mss_clamp_present", lambda: False)
+    monkeypatch.setattr(routing, "list_sets", lambda: ["vpn_u2"])
+    monkeypatch.setattr(routing, "set_count", lambda n: 219)
+    text = " ".join(t + " " + d for _, t, d in doc._probe_layers())
+    assert "страницы не грузятся" in text
