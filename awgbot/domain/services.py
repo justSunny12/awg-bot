@@ -1965,12 +1965,20 @@ class Services:
                 if nets:
                     self._routing_write_cache("subnets", sorted(set(nets)))
 
-                if config.ROUTING_LISTS_DOMAINS_URL:
-                    body = routing.fetch(config.ROUTING_LISTS_DOMAINS_URL)
+                # Два источника доменов в ОДИН кэш. Списки блокировок и список
+                # геоблокировок описывают зеркальные случаи («блокирует Россия»
+                # и «блокируют Россию»), но для нас оба означают одно: этому
+                # домену нужен зарубежный адрес. Разделять их дальше незачем.
+                doms: list[str] = []
+                for url in (config.ROUTING_LISTS_DOMAINS_URL,
+                            config.ROUTING_LISTS_GEOBLOCK_URL):
+                    if not url:
+                        continue
+                    body = routing.fetch(url)
                     if body:
-                        doms = domain_routing.parse_domain_list(body)
-                        if doms:
-                            self._routing_write_cache("domains", doms)
+                        doms.extend(domain_routing.parse_domain_list(body))
+                if doms:
+                    self._routing_write_cache("domains", sorted(set(doms)))
                 size = len(self._routing_read_cache("subnets")) \
                     + len(self._routing_read_cache("domains"))
                 self.db.set_state(self._RT_LISTS_KEY, str(now))

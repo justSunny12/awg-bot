@@ -483,3 +483,34 @@ def test_disabling_does_not_resolve_anything(services, make_active_client, fake_
     fake_routing.dns["example.com"] = ["203.0.113.99"]     # появился ПОСЛЕ включения
     services.set_routing_master(c.id, False)
     assert "203.0.113.99" not in fake_routing.sets.get(routing.user_set(c.id), [])
+
+
+def test_both_domain_sources_land_in_one_cache(services, fake_routing, monkeypatch):
+    """Списки блокировок и геоблокировок описывают зеркальные случаи —
+    «блокирует Россия» и «блокируют Россию», — но для нас оба означают одно:
+    домену нужен зарубежный адрес. Значит и кэш один, и потерять второй источник
+    нельзя."""
+    from awgbot.core import config
+    from awgbot.infra import routing as _rt
+    bodies = {
+        config.ROUTING_LISTS_DOMAINS_URL: "ipset=/rutracker.org/vpn_domains\n",
+        config.ROUTING_LISTS_GEOBLOCK_URL: "example.com\n\nexample.com\n",
+    }
+    monkeypatch.setattr(_rt, "fetch", lambda url, timeout=15: bodies.get(url, ""))
+    services.routing_update_lists(force=True)
+    cached = services._routing_read_cache("domains")
+    assert "rutracker.org" in cached, "потерян список блокировок"
+    assert "example.com" in cached and "example.com" in cached, "потерян геоблок"
+
+
+def test_geoblock_source_failure_keeps_the_other(services, fake_routing, monkeypatch):
+    """Недоступность одного источника не должна ронять второй: устаревший или
+    неполный набор лучше пустого — при инверсии логики пустой отправляет на шлюз
+    вообще всё."""
+    from awgbot.core import config
+    from awgbot.infra import routing as _rt
+    monkeypatch.setattr(_rt, "fetch", lambda url, timeout=15:
+                        "ipset=/rutracker.org/vpn_domains\n"
+                        if url == config.ROUTING_LISTS_DOMAINS_URL else "")
+    services.routing_update_lists(force=True)
+    assert "rutracker.org" in services._routing_read_cache("domains")

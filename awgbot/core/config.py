@@ -238,8 +238,14 @@ _ITDOG = "https://raw.githubusercontent.com/itdoginfo/allow-domains/main"
 # они и ломаются: домен уходит через российский IP, то есть ровно через тот,
 # который ему закрыт. Отсюда отдельный встроенный список.
 #
-# Дописывается ключом routing.abroad_domains в conf/app.yaml — там ЗАМЕНА, а не
-# дополнение, так что копируй список целиком, если правишь.
+# Основной источник — сопровождаемый список ROUTING_LISTS_GEOBLOCK_URL. Константа
+# ниже идёт ДОПОЛНЕНИЕМ к нему: закрывает то, чего в нём нет, и служит запасом на
+# случай, когда список ещё не скачался (первый старт, сеть недоступна). Держать
+# её маленькой — намеренно: сопровождать перечень геоблокировок вручную нам не по
+# силам, этим занимается источник.
+#
+# Заменяется ключом routing.abroad_domains в conf/app.yaml — именно ЗАМЕНА, а не
+# дополнение, так что копируй целиком, если правишь.
 ROUTING_ABROAD_DOMAINS: tuple[str, ...] = tuple(_rt.get("abroad_domains") or (
     "example.com", "example.com",
     "openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com",
@@ -247,6 +253,12 @@ ROUTING_ABROAD_DOMAINS: tuple[str, ...] = tuple(_rt.get("abroad_domains") or (
     "cursor.com", "cursor.sh",
     "figma.com", "slack.com", "atlassian.com", "docker.com",
 ))
+
+# Сопровождаемый список сервисов, которые сами отказывают российским адресам.
+# Тот же репозиторий, что и списки блокировок, но отдельная категория: это
+# зеркальный случай, и в inside-* он попадает лишь частично.
+ROUTING_LISTS_GEOBLOCK_URL = _rt.get(
+    "lists_geoblock_url", f"{_ITDOG}/Categories/geoblock.lst")
 
 ROUTING_LISTS_DOMAINS_URL = _rt.get(
     "lists_domains_url", f"{_ITDOG}/Russia/inside-dnsmasq-ipset.lst")
