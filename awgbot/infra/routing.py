@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import logging
 import os
+import socket
 import subprocess
 import threading
 from typing import Optional
@@ -430,6 +431,30 @@ def fetch(url: str, timeout: int = 15) -> Optional[str]:
     except Exception as e:                                # noqa: BLE001
         log.warning("routing: не скачался %s (%s)", url, e)
         return None
+
+
+def resolve_a(domain: str, timeout: float = 3.0) -> list[str]:
+    """IPv4-адреса домена. Пустой список — не разрезолвилось; это не ошибка.
+
+    Нужно, чтобы набор не стоял пустым до первого DNS-запроса клиента. Домен
+    добавляют ровно тогда, когда сайт только что не открылся, — значит адрес
+    уже лежит в кэше браузера, клиент переспросит DNS не скоро, а до тех пор
+    пойдёт мимо набора. Резолвим сами и досеиваем.
+
+    Ответ системного резолвера может отличаться от того, что dnsmasq отдаст
+    клиенту (CDN крутит адреса). Это не мешает: адреса ДОПИСЫВАЮТСЯ, и запрос
+    клиента добавит свои. Лишний адрес в наборе означает лишь, что он поедет
+    за границу, — ровно то, чего пользователь и просил для этого домена.
+    """
+    try:
+        socket.setdefaulttimeout(timeout)
+        info = socket.getaddrinfo(domain, None, family=socket.AF_INET,
+                                  type=socket.SOCK_STREAM)
+    except (OSError, UnicodeError):
+        return []
+    finally:
+        socket.setdefaulttimeout(None)
+    return sorted({i[4][0] for i in info})
 
 
 def add_networks(name: str, members) -> int:

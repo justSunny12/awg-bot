@@ -142,10 +142,19 @@ def fake_routing(monkeypatch, tmp_path):
     state = types.SimpleNamespace(
         sets={}, chain=None, conf=None, conf_writes=0,
         marking=None, link_age=10, enabled=True, nat_exempt=None,
+        dns={},                       # домен → IPv4, что «вернёт» резолвер
     )
 
     def replace_members(name, kind, members):
         state.sets[name] = list(members)
+
+    def add_networks(name, members):
+        # ДОПИСАТЬ, как настоящий: в наборе уже лежат адреса, накопленные
+        # dnsmasq, и затирать их нельзя
+        have = state.sets.setdefault(name, [])
+        new = [m for m in members if m not in have]
+        have.extend(new)
+        return len(new)
 
     def ensure_set(name, kind):
         # создать, не трогая содержимое — так бот обращается с доменными
@@ -181,7 +190,8 @@ def fake_routing(monkeypatch, tmp_path):
     _set("replace_members", replace_members)
     _set("ensure_set", ensure_set)
     _set("invalidate_self_check", lambda: None)
-    _set("add_networks", lambda name, members: state.sets.setdefault(name, []) or len(list(members)))
+    _set("add_networks", add_networks)
+    _set("resolve_a", lambda dom, timeout=3.0: list(state.dns.get(dom, [])))
     _set("fetch", lambda url, timeout=15: None)
     _set("destroy_set", lambda name: state.sets.pop(name, None))
     _set("list_sets", lambda: sorted(state.sets))

@@ -124,7 +124,7 @@ def admin_client_device_list(devices, client_id: int) -> InlineKeyboardMarkup:
 
 def routing_panel(client_id: int, *, master_on: bool, domains: list,
                   back_target: str) -> InlineKeyboardMarkup:
-    """Раздел «Российский IP»: мастер-тумблер и личный список адресов.
+    """Раздел «Доступ к РФ-сервисам»: тумблер профиля и личный список адресов.
 
     Список адресов при выключенном мастере не показываем — он не действует, и
     предлагать редактировать неработающее значит путать."""

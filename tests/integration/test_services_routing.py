@@ -210,7 +210,9 @@ def test_link_down_disables_marking_and_alerts_admin_once(
     assert fake_routing.marking is True
 
     fake_routing.link_age = 99999                    # хендшейк протух
-    notes = services.routing_monitor()
+    assert services.routing_monitor() == []          # первый промах — терпим
+    assert fake_routing.marking is True
+    notes = services.routing_monitor()               # второй подряд — реагируем
     assert fake_routing.marking is False
     assert len(notes) == 1 and "недоступен" in notes[0].text
     assert services.routing_monitor() == []          # повтор — молчим
@@ -224,7 +226,36 @@ def test_link_down_disables_marking_and_alerts_admin_once(
 def test_no_handshake_at_all_counts_as_down(services, fake_routing):
     fake_routing.link_age = None
     services.routing_monitor()
+    services.routing_monitor()
     assert fake_routing.marking is False
+
+
+def test_single_late_sample_does_not_flap_marking(services, fake_routing):
+    """Ровно тот отказ, который выглядел как «работает через раз»: одиночный
+    поздний замер снимал маркировку, и следующие три минуты ВЕСЬ трафик шёл
+    через VPS — ломалось ровно то, ради чего фича включена. Цена ошибки
+    несимметрична, поэтому одиночному промаху не верим."""
+    fake_routing.link_age = 10
+    services.routing_monitor()
+
+    for _ in range(5):                               # промах / норма / промах…
+        fake_routing.link_age = 99999
+        assert services.routing_monitor() == []
+        assert fake_routing.marking is True, "маркировка мигнула на одном замере"
+        fake_routing.link_age = 10
+        services.routing_monitor()
+
+
+def test_recovery_resets_the_streak(services, fake_routing):
+    """Промахи должны идти ПОДРЯД: успешный замер обнуляет счётчик, иначе
+    редкие одиночные промахи накопились бы и однажды сработали на ровном месте."""
+    fake_routing.link_age = 99999
+    services.routing_monitor()                       # промах №1
+    fake_routing.link_age = 10
+    services.routing_monitor()                       # ок — счётчик сброшен
+    fake_routing.link_age = 99999
+    assert services.routing_monitor() == []          # снова №1, не №2
+    assert fake_routing.marking is True
 
 
 def test_feature_disabled_is_a_no_op(services, make_active_client, fake_routing):
@@ -328,3 +359,53 @@ def test_monitor_enables_marking_when_ready(services, fake_routing):
     fake_routing.link_age = 5
     services.routing_monitor()
     assert fake_routing.marking is True
+
+
+# ── Досев набора при добавлении домена ───────────────────────────────────────
+
+def test_added_domain_is_preseeded_into_the_set(
+        services, make_active_client, fake_routing):
+    """Домен добавляют ровно тогда, когда сайт только что не открылся, — адрес
+    уже в кэше браузера, и клиент переспросит DNS не скоро. Если ждать его
+    запроса, набор стоит пустым и сайт продолжает не открываться: «добавил, но
+    не работает; потом само заработало». Поэтому резолвим сами.
+    """
+    from awgbot.infra import routing
+    c = make_active_client()
+    fake_routing.dns["bank.com"] = ["203.0.113.7", "203.0.113.8"]
+    services.routing_add_domains(c.id, "bank.com")
+
+    members = fake_routing.sets[routing.user_set(c.id)]
+    assert "203.0.113.7" in members and "203.0.113.8" in members
+
+
+def test_preseed_keeps_what_dnsmasq_collected(
+        services, make_active_client, fake_routing):
+    """Досев ДОПИСЫВАЕТ: в наборе живут адреса, накопленные dnsmasq по запросам
+    клиента, и перезапись оставила бы маркировать нечем."""
+    from awgbot.infra import routing
+    c = make_active_client()
+    services.routing_add_domains(c.id, "first.com")
+    fake_routing.sets[routing.user_set(c.id)].append("198.51.100.1")   # «от dnsmasq»
+
+    fake_routing.dns["second.com"] = ["203.0.113.9"]
+    services.routing_add_domains(c.id, "second.com")
+    assert "198.51.100.1" in fake_routing.sets[routing.user_set(c.id)]
+
+
+def test_failed_resolve_does_not_break_the_add(
+        services, make_active_client, fake_routing):
+    """Резолв — не критичный путь: набор всё равно наполнится по запросам
+    клиента, поэтому неудача не должна ронять добавление."""
+    def boom(dom, timeout=3.0):
+        raise OSError("нет сети")
+    from awgbot.infra import routing
+    import pytest
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(routing, "resolve_a", lambda dom, timeout=3.0: [])
+    try:
+        c = make_active_client()
+        res = services.routing_add_domains(c.id, "unresolvable.invalid")
+        assert res.added == ["unresolvable.invalid"]
+    finally:
+        monkey.undo()

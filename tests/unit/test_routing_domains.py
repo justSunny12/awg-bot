@@ -152,3 +152,36 @@ def test_set_names_are_constants_not_yaml():
     assert config.ROUTING_SET_USER_PREFIX == "vpn_u"
     assert config.ROUTING_CHAIN == "AWGBOT_RT"
     assert config.ROUTING_NAT_CHAIN == "AWGBOT_RTNAT"
+
+
+# ── живость шлюза: измеритель не должен мигать ───────────────────────────────
+
+def _svc_with_age(monkeypatch, age, stale=None):
+    """Сервис с подставленным возрастом хендшейка."""
+    from awgbot.domain import services as S
+    monkeypatch.setattr(S.routing, "available", lambda: True)
+    monkeypatch.setattr(S.routing, "link_handshake_age", lambda: age)
+    if stale is not None:
+        from awgbot.core import settings
+        monkeypatch.setattr(settings, "get",
+                            lambda k, d=None: stale if "link_stale" in k else d)
+    return S
+
+
+def test_link_stale_floor_survives_wireguard_rekey(monkeypatch):
+    """Хендшейк обновляется при рекее (~120 с), а сессия действительна до 180 с,
+    поэтому возраст 170 с — норма, а не отвал. Старый порог 180 стоял ровно в
+    этой зоне и гасил маркировку у живого шлюза."""
+    from awgbot.domain.services import Services
+    S = _svc_with_age(monkeypatch, 170, stale=180)     # старое значение из conf
+    svc = Services.__new__(Services)
+    assert svc.routing_link_ok() is True, "живой шлюз объявлен мёртвым"
+
+
+def test_link_really_dead_is_still_detected(monkeypatch):
+    """Пол поднимает порог, но не отменяет детект: молчание сильно за окном
+    рекея по-прежнему считается отвалом."""
+    from awgbot.domain.services import Services
+    _svc_with_age(monkeypatch, 900, stale=180)
+    svc = Services.__new__(Services)
+    assert svc.routing_link_ok() is False

@@ -1620,6 +1620,9 @@ class Services:
     # стоит одну запись и обратимо без последствий для выданных ссылок.
 
     _RT_LINK_KEY = "routing_link_ok"
+    _RT_STREAK_KEY = "routing_link_down_streak"
+    _RT_DOWN_STREAK = 2                   # промахов подряд до снятия маркировки
+    _RT_STALE_FLOOR = 240                 # сек; ниже — «мёртв» неотличим от «простаивает»
     _TXT_RT_GW_DOWN = ("🔴 Шлюз условной маршрутизации недоступен. Маркировка снята: "
                        "российские сервисы у пользователей временно открываются "
                        "с зарубежного адреса. Интернет при этом работает.")
@@ -1740,8 +1743,33 @@ class Services:
                 added.append(dom)
         if added:
             self.reconcile_routing()
+            self._routing_preseed(client_id, added)
         return RoutingAddResult(added=added, rejected=rejected,
                                 over_limit=over, limit=limit)
+
+    _RT_PRESEED_MAX = 20                  # доменов за раз; дальше ждём резолва клиента
+
+    def _routing_preseed(self, client_id: int, domains: list[str]) -> None:
+        """Досеять набор адресами только что добавленных доменов.
+
+        Без этого набор для домена пуст до первого DNS-запроса клиента, а его
+        не будет, пока не истечёт кэш браузера, — со стороны выглядит как
+        «добавил, но не работает; потом само заработало».
+
+        Не критично: резолв может не удаться, набор всё равно наполнится по
+        запросам клиента. Поэтому все ошибки глотаем и работу не срываем.
+        """
+        if not routing.available():
+            return
+        addrs: list[str] = []
+        for dom in domains[:self._RT_PRESEED_MAX]:
+            addrs += routing.resolve_a(dom)
+        if not addrs:
+            return
+        try:
+            routing.add_networks(routing.user_set(client_id), addrs)
+        except routing.RoutingError as e:
+            log.warning("routing_preseed: %s", e)
 
     def routing_remove_domain(self, client_id: int, domain: str) -> bool:
         removed = self.db.remove_routing_domain(client_id, domain)
@@ -1939,11 +1967,27 @@ class Services:
                     or self._routing_read_cache("domains"))
 
     def routing_link_ok(self) -> bool:
-        """Жив ли шлюз: хендшейк линка свежее порога."""
+        """Жив ли шлюз: хендшейк линка свежее порога.
+
+        Порог заведомо выше окна рекея WireGuard. `latest handshake` обновляется
+        не по таймеру, а при перевыработке ключей — раз в ~120 с под трафиком,
+        и сессия действительна до 180 с (REJECT_AFTER_TIME). Порог, равный 180,
+        стоял ровно в точке, где возраст хендшейка гуляет штатно: один поздний
+        замер — и мы объявляли живой шлюз мёртвым.
+        """
         if not routing.available():
             return False
         age = routing.link_handshake_age()
-        stale = int(settings.get("app.routing.link_stale_seconds", 180))
+        stale = int(settings.get("app.routing.link_stale_seconds", 300))
+        if stale < self._RT_STALE_FLOOR:
+            # Не «мнение сильнее настройки», а предел измеримого: в пределах
+            # 180 с сессия WireGuard ещё действительна и хендшейк законно не
+            # обновлялся, так что «мёртв» и «простаивает» неразличимы. Досев
+            # conf существующий файл не правит, поэтому пол нужен в коде —
+            # иначе установки со старым 180 продолжали бы мигать.
+            log.warning("routing: link_stale_seconds=%d ниже предела %d — "
+                        "подняли (окно рекея WireGuard)", stale, self._RT_STALE_FLOOR)
+            stale = self._RT_STALE_FLOOR
         return age is not None and age <= stale
 
     def routing_monitor(self) -> list[Notification]:
@@ -1958,7 +2002,16 @@ class Services:
         # на шлюз ВСЁ. Раньше монитор смотрел только на шлюз и включал политику
         # обратно сразу после того, как реконсиляция её сняла, — два места
         # спорили за один рубильник, и состояние выходило противоречивым.
-        ok = self.routing_link_ok() and self.routing_lists_ready()
+        # Гистерезис на живость линка: гасим маркировку только после двух
+        # промахов подряд. Цена ошибки несимметрична — ложное «шлюз умер»
+        # уводит ВЕСЬ трафик на VPS, то есть ломает ровно то, ради чего фича
+        # включена, а лишние три минуты ожидания не стоят ничего.
+        # Готовность списков в гистерезисе не участвует: это детерминированное
+        # состояние конфигурации, оно не «мигает».
+        link = self.routing_link_ok()
+        streak = 0 if link else int(self.db.get_state(self._RT_STREAK_KEY) or 0) + 1
+        self.db.set_state(self._RT_STREAK_KEY, str(streak))
+        ok = self.routing_lists_ready() and (link or streak < self._RT_DOWN_STREAK)
         try:
             routing.set_marking_enabled(ok)
         except routing.RoutingError as e:
