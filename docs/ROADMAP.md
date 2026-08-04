@@ -103,13 +103,19 @@ v1.0.20210914` из контейнера — унаследованная баз
   `HostModeUnsupported` — намеренно НЕ наследника `AwgError`, иначе он утонул бы
   в `except AwgError` у самих этих функций и вернул бы молчаливую деградацию.
   Preflight не даёт стартовать в host-режиме, пока шаг ниже не сделан.
-- **Топология — ОСТАЛОСЬ.** Поднять `awg0` на хосте тем же конфигом, ключами и
-  портом; портировать `host_ssh_targets` (нет docker-сетей — брать адрес awg0 и
-  egress), статус сервиса (`container_running`/`_pid`/`_started_at` → состояние
-  интерфейса; вотчдогу больше не нужен `/proc/<PID>/root`), `restart_container` →
-  `awg-quick`; снести контейнерное плечо `routing.py`; поправить публикацию порта
-  в `harden_firewall.sh`. Переключить ключ, снять заслон в preflight. Откат —
-  вернуть ключ и стартовать контейнер.
+- **Топология — КОД ГОТОВ, НЕ ПРИМЕНЕНО.** Портированы: вотчдог (следит за
+  путём, а не за PID), метка старта (`service_started_at` — на хосте время
+  загрузки, потому что цепочки переживают `awg-quick down/up`),
+  `host_ssh_targets` (адрес awg0 вместо шлюзов docker-сетей),
+  `restart_server` (`awg-quick`). Контейнерное плечо `routing.py`
+  (`sync_nat_exempt`, сверка адреса контейнера) в host-режиме выключается.
+  `routing-host-setup.sh` и `harden_firewall.sh` читают режим из того же
+  `app.yaml`. Появился `install/awg-host-migrate.sh` — перенос сервера с
+  проверкой по факту и откатом.
+
+  **Осталось сделать руками на ВПС:** прогнать миграцию, переключить
+  `runtime: host`, снять заслон в preflight (`runtime/preflight.py`), проверить
+  доктором. Откат — `awg-host-migrate.sh --rollback` и `runtime` обратно.
 
 Затрагивает: `awg.py`, `infra/routing.py`, `routing-host-setup.sh`,
 `harden_firewall.sh`, `config.py`, preflight, доктора.

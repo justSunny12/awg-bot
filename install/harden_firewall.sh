@@ -69,31 +69,59 @@ read -r -p "Порт SSH [${_def_port}]: " SSH_PORT;   SSH_PORT="${SSH_PORT:-$_d
 [[ "$SSH_PORT" == "22" ]] && echo "[!] порт 22 — стандартный; смена на нестандартный рекомендуется."
 
 echo
-echo "SSH «через свой туннель»: в вайтлист попадёт BRIDGE-подсеть контейнера AWG —"
-echo "именно её (а НЕ 10.8.1.0/24) хост видит как источник туннельного трафика,"
-echo "потому что контейнер маскарадит пиров в свой bridge-адрес до прихода на хост."
-echo "Пер-пирный доступ (только устройства админа) накладывает уже сам бот внутри"
-echo "контейнера — здесь лишь грубый гейт «пускать туннель на SSH вообще»."
-# имя контейнера — из app.yaml (docker.container), дальше bridge-подсеть из docker.
+# Читаем режим из того же app.yaml, что и бот. Значение решает, ЧТО хост видит
+# как источник туннельного трафика — а от этого зависит, кого пускать на SSH.
+# Ошибиться здесь значит либо запереть себя, либо открыть SSH не тем.
+_cfg_found=""
 _ctr="amnezia-awg2"
+_runtime="docker"
 for _cfg in /etc/awg-bot/conf/app.yaml "$(dirname "$0")/../conf/app.yaml"; do
     if [[ -r "$_cfg" ]]; then
+        _cfg_found="$_cfg"
         _c="$(grep -oP '^\s*container:\s*"?\K[A-Za-z0-9._-]+' "$_cfg" 2>/dev/null | head -n1 || true)"
-        [[ -n "$_c" ]] && { _ctr="$_c"; break; }
+        [[ -n "$_c" ]] && _ctr="$_c"
+        _r="$(grep -oP '^\s*runtime:\s*"?\K[a-z]+' "$_cfg" 2>/dev/null | head -n1 || true)"
+        [[ -n "$_r" ]] && _runtime="$_r"
+        break
     fi
 done
-# bridge-подсеть: сеть контейнера, отличная от дефолтного 'bridge' → её CIDR.
+
 _def_net=""
-if command -v docker >/dev/null 2>&1; then
-    _net="$(docker inspect "$_ctr" -f '{{range $k,$v := .NetworkSettings.Networks}}{{if ne $k "bridge"}}{{$k}}{{"\n"}}{{end}}{{end}}' 2>/dev/null | head -n1 || true)"
-    [[ -n "$_net" ]] && _def_net="$(docker network inspect "$_net" -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null | head -n1 || true)"
+if [[ "$_runtime" == "host" ]]; then
+    echo "SSH «через свой туннель» (режим host): источник — КЛИЕНТСКАЯ подсеть."
+    echo "awg0 поднят на самом хосте, пиры доходят до него с настоящими адресами,"
+    echo "и никакого bridge-адреса между ними больше нет."
+    echo "Пер-пирный доступ (только устройства админа) накладывает сам бот —"
+    echo "здесь лишь грубый гейт «пускать туннель на SSH вообще»."
+    _def_net="$(grep -oP '^\s*subnet_cidr:\s*"?\K[0-9./]+' "${_cfg_found:-/dev/null}" 2>/dev/null | head -n1 || true)"
+    if [[ -z "$_def_net" ]]; then
+        _pfx="$(grep -oP '^\s*subnet_prefix:\s*"?\K[0-9.]+' "${_cfg_found:-/dev/null}" 2>/dev/null | head -n1 || true)"
+        [[ -n "$_pfx" ]] && _def_net="${_pfx}.0/24"
+    fi
+    if [[ -z "$_def_net" ]]; then
+        err "Не удалось определить клиентскую подсеть из app.yaml."
+        err "Туннельный источник в вайтлист не подставлю — задайте вручную или '-'."
+        _def_net="-"
+    fi
+    read -r -p "Клиентская подсеть (Enter — ${_def_net}; '-' — не добавлять): " VPN_NET
+else
+    echo "SSH «через свой туннель»: в вайтлист попадёт BRIDGE-подсеть контейнера AWG —"
+    echo "именно её (а НЕ 10.8.1.0/24) хост видит как источник туннельного трафика,"
+    echo "потому что контейнер маскарадит пиров в свой bridge-адрес до прихода на хост."
+    echo "Пер-пирный доступ (только устройства админа) накладывает уже сам бот внутри"
+    echo "контейнера — здесь лишь грубый гейт «пускать туннель на SSH вообще»."
+    # bridge-подсеть: сеть контейнера, отличная от дефолтного 'bridge' → её CIDR.
+    if command -v docker >/dev/null 2>&1; then
+        _net="$(docker inspect "$_ctr" -f '{{range $k,$v := .NetworkSettings.Networks}}{{if ne $k "bridge"}}{{$k}}{{"\n"}}{{end}}{{end}}' 2>/dev/null | head -n1 || true)"
+        [[ -n "$_net" ]] && _def_net="$(docker network inspect "$_net" -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null | head -n1 || true)"
+    fi
+    if [[ -z "$_def_net" ]]; then
+        err "Не удалось определить bridge-подсеть контейнера '$_ctr' из docker."
+        err "Туннельный источник в вайтлист не подставлю — задайте вручную или '-'."
+        _def_net="-"
+    fi
+    read -r -p "Bridge-подсеть контейнера (Enter — ${_def_net}; '-' — не добавлять): " VPN_NET
 fi
-if [[ -z "$_def_net" ]]; then
-    err "Не удалось определить bridge-подсеть контейнера '$_ctr' из docker."
-    err "Туннельный источник в вайтлист не подставлю — задайте вручную или '-'."
-    _def_net="-"
-fi
-read -r -p "Bridge-подсеть контейнера (Enter — ${_def_net}; '-' — не добавлять): " VPN_NET
 VPN_NET="${VPN_NET:-$_def_net}"
 
 # ── валидатор IP/CIDR (v4 и v6). Печатает 4|6, код 0; иначе код 1 ─────────────
