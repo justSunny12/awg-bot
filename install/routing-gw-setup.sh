@@ -76,11 +76,20 @@ run()  {
 }
 dexec() { docker exec "$CONTAINER" "$@"; }
 
+# Линк поднимаем ХОСТОВЫМИ утилитами, а не через контейнер. Причина не в
+# красоте: модуль ядра amneziawg живёт на хосте, и его протокол netlink обязан
+# совпадать с версией awg. Утилиты внутри образа Amnezia живут своей жизнью и
+# однажды разъезжаются с модулем — тогда `awg setconf` падает с Invalid
+# argument, и линк не поднимается ВОВСЕ (откатиться в userspace он уже не может,
+# раз модуль есть). Контейнер для линка не нужен: там были только бинарники.
+AWG_QUICK="$(command -v awg-quick || true)"
+AWG_BIN="$(command -v awg || true)"
 CONTAINER="$(detect_container)"
 [ -n "$CONTAINER" ] || { say "ОШИБКА: не нашёл контейнер с awg. Укажи: CONTAINER=имя $0 ..."; exit 1; }
 WAN_IF="$(detect_wan)"
 [ -n "$WAN_IF" ] || { say "ОШИБКА: не определил интерфейс выхода. Укажи: WAN_IF=eth0 $0 ..."; exit 1; }
-HOST_CONF_DIR="$(detect_conf_dir "$CONTAINER")"
+HOST_CONF_DIR="${HOST_CONF_DIR:-/etc/amnezia/amneziawg}"
+_legacy_dir="$(detect_conf_dir "$CONTAINER")"
 [ -n "$HOST_CONF_DIR" ] || { say "ОШИБКА: не нашёл каталог конфигов контейнера. Укажи: HOST_CONF_DIR=... $0 ..."; exit 1; }
 
 say "Параметры (определены автоматически, переопределяются переменными):"
@@ -95,6 +104,7 @@ say "  локальные сети    : будут ЗАКРЫТЫ для кли�
 if [ "$MODE" = "rollback" ]; then
     step "Снятие"
     run "systemctl disable --now awg-link-gw.service 2>/dev/null || true"
+    run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
     run "docker exec $CONTAINER awg-quick down $LINK_IF 2>/dev/null || true"
     while iptables -C FORWARD -i "$LINK_IF" -j "$FWD_CHAIN" 2>/dev/null; do
         run "iptables -D FORWARD -i $LINK_IF -j $FWD_CHAIN"
@@ -148,9 +158,27 @@ mkdir -p "$HOST_CONF_DIR"
 run "install -m 600 '$SRC_CONF' $HOST_CONF_DIR/$LINK_IF.conf"
 if ip link show "$LINK_IF" >/dev/null 2>&1; then
     say "  интерфейс уже поднят — перезапускаю, чтобы подхватить конфиг"
-    run "docker exec $CONTAINER awg-quick down $LINK_IF || true"
+    run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
+    # и в контейнере тоже: линк мог быть поднят прежней версией скрипта
+    run "docker exec $CONTAINER awg-quick down $LINK_IF 2>/dev/null || true"
 fi
-run "docker exec $CONTAINER awg-quick up $LINK_IF"
+[ -n "$AWG_QUICK" ] || { say "ОШИБКА: awg-quick не найден на ХОСТЕ."; \
+    say "  Собери amneziawg-tools той же версии, что и модуль ядра."; exit 1; }
+run "$AWG_QUICK up $LINK_IF"
+
+# Проверяем ДЕЛОМ, а не по коду возврата: при расхождении версий awg-quick
+# создаёт интерфейс, спотыкается на setconf и молча удаляет его обратно —
+# завершаясь успешно. Снаружи это выглядит как «скрипт отработал», а линка нет.
+if ! ip link show "$LINK_IF" >/dev/null 2>&1; then
+    say ""
+    say "ОШИБКА: интерфейс $LINK_IF не поднялся."
+    say "  Почти всегда это РАСХОЖДЕНИЕ ВЕРСИЙ: модуль ядра и amneziawg-tools"
+    say "  из разных поколений. Начиная с v3 параметры H1..H4 передаются как"
+    say "  64-битные диапазоны, утилиты v1 шлют 32 бита — netlink отвергает."
+    say "  Проверь:  awg --version   и   modinfo amneziawg | head -3"
+    exit 1
+fi
+say "  Интерфейс поднят: $($AWG_BIN show "$LINK_IF" 2>/dev/null | head -1)"
 
 # Подсеть линка берём У ЯДРА, а не из конфига: конфиг мог быть не применён, а
 # нам нужно то, что реально назначено. /30 ⇒ сеть считается из адреса.
@@ -231,7 +259,7 @@ run "systemctl daemon-reload"
 run "systemctl enable awg-link-gw.service"
 
 step "Проверка"
-say "  docker exec $CONTAINER awg show $LINK_IF     # есть ли хендшейк"
+say "  awg show $LINK_IF                            # есть ли хендшейк"
 say "  ip -br addr show $LINK_IF"
 say "  iptables -L $FWD_CHAIN -n --line-numbers     # DROP выше ACCEPT?"
 say ""
