@@ -15,7 +15,8 @@
 #      DNS=1.1.1.1 продолжали работать без перевыпуска ссылок;
 #   4) MASQUERADE клиентской подсети и разрешения FORWARD — трафик, выпущенный
 #      из контейнера немаскараженным, должен выйти наружу и вернуться;
-#   5) маршрут до клиентской подсети через контейнер — для обратного трафика.
+#   5) маршрут до клиентской подсети через контейнер — для обратного трафика
+#      (только при AWG_RUNTIME=docker; на хосте подсеть connected через awg0).
 #
 # ЧЕГО НЕ ДЕЛАЕТ: не поднимает линк-туннель до шлюза (отдельный шаг, требует
 # настройки на обеих сторонах) и не трогает контейнер Amnezia.
@@ -88,27 +89,43 @@ container_ip() {
         2>/dev/null | awk '{print $1}'
 }
 
-# Ретраи нужны для запуска из systemd на старте хоста: docker.service уже поднят,
-# а контейнер ещё стартует, и адреса у него пока нет. При ручном запуске первая
-# же попытка успешна и задержки не будет.
+# Режим: контейнер или хост. host — когда awg0 поднят прямо здесь; тогда
+# обратный маршрут не нужен вовсе (подсеть connected через awg-интерфейс), и
+# ждать контейнер незачем. См. docs/ROADMAP.md.
+#
+# Читаем из того же app.yaml, что и бот, а не просим задать переменную: два
+# источника истины разошлись бы ровно один раз — и обвяз молча собрался бы под
+# другой режим, чем работает бот.
+AWG_RUNTIME="${AWG_RUNTIME:-$(awk -F'"' '/^  runtime:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
+AWG_RUNTIME="${AWG_RUNTIME:-docker}"
+case "$AWG_RUNTIME" in
+    docker|host) ;;
+    *) say "ОШИБКА: AWG_RUNTIME=$AWG_RUNTIME (допустимо docker или host)."; exit 1 ;;
+esac
+
 CONT_IP=""
-_try=0
-while [ -z "$CONT_IP" ] && [ "$_try" -lt 15 ]; do
-    CONT_IP="$(container_ip || true)"
-    [ -n "$CONT_IP" ] && break
-    _try=$((_try + 1))
-    [ "$_try" = 1 ] && say "жду контейнер $CONTAINER..."
-    sleep 2
-done
-if [ -z "$CONT_IP" ]; then
-    say "ОШИБКА: не удалось узнать адрес контейнера $CONTAINER."
-    say "Проверь: docker inspect $CONTAINER"
-    exit 1
+if [ "$AWG_RUNTIME" = "docker" ]; then
+    # Ретраи нужны для запуска из systemd на старте хоста: docker.service уже
+    # поднят, а контейнер ещё стартует, и адреса у него пока нет.
+    _try=0
+    while [ -z "$CONT_IP" ] && [ "$_try" -lt 15 ]; do
+        CONT_IP="$(container_ip || true)"
+        [ -n "$CONT_IP" ] && break
+        _try=$((_try + 1))
+        [ "$_try" = 1 ] && say "жду контейнер $CONTAINER..."
+        sleep 2
+    done
+    if [ -z "$CONT_IP" ]; then
+        say "ОШИБКА: не удалось узнать адрес контейнера $CONTAINER."
+        say "Проверь: docker inspect $CONTAINER"
+        exit 1
+    fi
 fi
 
 say "Параметры:"
 say "  клиентская подсеть : $CLIENT_SUBNET"
-say "  адрес контейнера   : $CONT_IP"
+say "  режим awg          : $AWG_RUNTIME"
+say "  адрес контейнера   : ${CONT_IP:-— (host-режим)}"
 say "  dnsmasq            : $DNS_ADDR на $DNS_IF"
 say "  апстримы DNS       : $UPSTREAM1, $UPSTREAM2"
 [ "$MODE" = "plan" ] && { say ""; say "(режим показа: ничего не меняется, добавь --apply)"; }
@@ -117,6 +134,18 @@ say "  апстримы DNS       : $UPSTREAM1, $UPSTREAM2"
 if [ "$MODE" = "unit" ]; then
     SELF="$(readlink -f "$0")"
     UNIT=/etc/systemd/system/awg-bot-routing.service
+    # В docker-режиме адрес контейнера и маршрут к нему вычисляются из docker,
+    # поэтому без него стартовать бессмысленно. В host-режиме зависимость от
+    # docker.service держала бы обвяз заложником сервиса, который переезд как раз
+    # и убирает: юнит не поднялся бы после ребута, а фича молча не завелась бы.
+    if [ "$AWG_RUNTIME" = "host" ]; then
+        UNIT_DEPS="After=network-online.target
+Wants=network-online.target"
+    else
+        UNIT_DEPS="After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service"
+    fi
     step "Юнит автоприменения → $UNIT"
     say "  Правила iptables, адрес на dummy и sysctl эфемерны и ребут не переживают."
     say "  Вместо дублирования их в netfilter-persistent юнит просто зовёт ЭТОТ же"
@@ -124,15 +153,12 @@ if [ "$MODE" = "unit" ]; then
     cat > "$UNIT" <<UNITEOF
 [Unit]
 Description=awg-bot: обвяз условной маршрутизации (хост)
-# Требуется docker: адрес контейнера и маршрут к нему вычисляются из него же.
-After=network-online.target docker.service
-Wants=network-online.target
-Requires=docker.service
+$UNIT_DEPS
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=$SELF --apply
+ExecStart=/bin/sh -c 'AWG_RUNTIME=$AWG_RUNTIME $SELF --apply'
 # Контейнер может стартовать дольше docker.service — скрипт его ждёт сам,
 # но при совсем долгом старте даём повторить.
 Restart=on-failure
@@ -159,7 +185,12 @@ if [ "$MODE" = "rollback" ]; then
     drop_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
     drop_rule filter FORWARD -s "$CLIENT_SUBNET" -j ACCEPT
     drop_rule filter FORWARD -d "$CLIENT_SUBNET" -j ACCEPT
-    run "ip route del $CLIENT_SUBNET via $CONT_IP 2>/dev/null || true"
+    # Именно if, а не `[ -n ... ] && run`: при set -e несработавший тест в
+    # AND-списке сам по себе завершает скрипт, и откат в host-режиме (где
+    # CONT_IP пуст) обрывался бы здесь, не сняв всё остальное.
+    if [ -n "$CONT_IP" ]; then
+        run "ip route del $CLIENT_SUBNET via $CONT_IP 2>/dev/null || true"
+    fi
     run "rm -f $DNSMASQ_CONF"
     run "rm -rf /etc/systemd/system/${DNSMASQ_SERVICE}.service.d/ipset.conf"
     run "systemctl daemon-reload"
@@ -296,11 +327,17 @@ ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -p tcp --dport 853 \
             -j REJECT --reject-with tcp-reset
 
 # 5) обратный маршрут в контейнер
-step "5. Маршрут $CLIENT_SUBNET → $CONT_IP"
-if ip route show "$CLIENT_SUBNET" | grep -q "$CONT_IP"; then
-    say "  уже есть"
+if [ "$AWG_RUNTIME" = "host" ]; then
+    step "5. Маршрут $CLIENT_SUBNET — не нужен"
+    say "  awg0 поднят на этом же хосте: подсеть connected через интерфейс."
+    say "  Прописать сюда via-маршрут значило бы увести трафик в никуда."
 else
-    run "ip route replace $CLIENT_SUBNET via $CONT_IP"
+    step "5. Маршрут $CLIENT_SUBNET → $CONT_IP"
+    if ip route show "$CLIENT_SUBNET" | grep -q "$CONT_IP"; then
+        say "  уже есть"
+    else
+        run "ip route replace $CLIENT_SUBNET via $CONT_IP"
+    fi
 fi
 
 # 6) параметры ядра

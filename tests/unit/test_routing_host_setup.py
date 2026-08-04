@@ -115,3 +115,58 @@ def test_fill_hint_uses_a_domain_from_the_abroad_list(script):
         assert host in config.ROUTING_ABROAD_DOMAINS, (
             f"{host} нет в ROUTING_ABROAD_DOMAINS — в набор он не попадёт, "
             f"и подсказка будет врать")
+
+
+# ── режим awg: контейнер или хост ────────────────────────────────────────────
+
+def test_runtime_is_read_from_the_same_yaml_as_the_bot(script):
+    """Режим берётся из app.yaml, а не из переменной окружения.
+
+    Два источника истины разошлись бы ровно один раз — и обвяз собрался бы под
+    другой режим, чем работает бот: маршрут до клиентской подсети ушёл бы в
+    никуда, а отказ выглядел бы как «у включённых пропал интернет».
+    """
+    assert "/^  runtime:/" in script, "runtime не читается из app.yaml"
+    assert 'AWG_RUNTIME="${AWG_RUNTIME:-docker}"' in script, "дефолт обязан быть docker"
+
+
+def test_container_is_not_awaited_in_host_mode(script):
+    """Ожидание контейнера обёрнуто в проверку режима.
+
+    Без неё --apply на переехавшем сервере висел бы 30 секунд и падал с
+    «не удалось узнать адрес контейнера», хотя контейнера там уже быть не должно.
+    """
+    body = script[script.index("CONT_IP=\"\""):script.index("say \"Параметры:\"")]
+    assert 'if [ "$AWG_RUNTIME" = "docker" ]' in body
+
+
+def test_rollback_survives_empty_container_ip(script):
+    """При set -e несработавший тест в AND-списке завершает скрипт.
+
+    `[ -n "$CONT_IP" ] && run ...` в host-режиме оборвал бы откат на середине,
+    не сняв ни dnsmasq, ни правила, — и выглядело бы это как успешный откат.
+    """
+    rollback = script.split('if [ "$MODE" = "rollback" ]', 1)[1]
+    assert '[ -n "$CONT_IP" ] && run' not in rollback
+    assert 'if [ -n "$CONT_IP" ]; then' in rollback
+
+
+def test_unit_does_not_require_docker_in_host_mode(script):
+    """Юнит в host-режиме не должен зависеть от docker.service.
+
+    Иначе обвяз остался бы заложником сервиса, который переезд как раз убирает:
+    после ребута юнит не поднялся бы, а фича молча не завелась.
+    """
+    unit = script[script.index('if [ "$MODE" = "unit" ]'):script.index("UNITEOF")]
+    assert "UNIT_DEPS" in unit
+    assert 'if [ "$AWG_RUNTIME" = "host" ]' in unit
+
+
+def test_unit_carries_the_runtime_into_execstart(script):
+    """ExecStart обязан нести режим.
+
+    Юнит пишется один раз, а срабатывает после каждого ребута — без переменной
+    он применил бы docker-ветку и прописал маршрут через контейнер, которого
+    больше нет.
+    """
+    assert "AWG_RUNTIME=$AWG_RUNTIME" in script
