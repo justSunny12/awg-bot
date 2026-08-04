@@ -154,6 +154,8 @@ if [ "$MODE" = "rollback" ]; then
               -j DNAT --to-destination "$DNS_ADDR:53"
     drop_rule nat PREROUTING -s "$CLIENT_SUBNET" -p tcp --dport 53 \
               -j DNAT --to-destination "$DNS_ADDR:53"
+    drop_rule filter FORWARD -s "$CLIENT_SUBNET" -p tcp --dport 853 \
+              -j REJECT --reject-with tcp-reset
     drop_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
     drop_rule filter FORWARD -s "$CLIENT_SUBNET" -j ACCEPT
     drop_rule filter FORWARD -d "$CLIENT_SUBNET" -j ACCEPT
@@ -206,6 +208,24 @@ stop-dns-rebind
 # канареечный домен Firefox: NXDOMAIN отключает у него DoH, иначе он резолвит
 # мимо нас и наборы не наполняются
 address=/use-application-dns.net/
+# То же для остальных. Chrome и Edge делают auto-upgrade: увидев в настройках
+# известный публичный резолвер (а мы выдаём клиентам ровно такой, 1.1.1.1),
+# молча уходят на его DoH-эндпоинт мимо перехвата :53. Ловить это по адресам
+# бесполезно — эндпоинт живёт на CDN, а не на анкасте резолвера. Зато имя
+# эндпоинта клиент обязан отрезолвить обычным DNS, то есть у нас: NXDOMAIN здесь
+# и обрывает попытку в самом начале.
+#
+# Цена ошибки несимметрична. Логика инвертирована: чего нет в наборе — уходит на
+# шлюз. Клиент, ушедший в DoH, не наполняет набор ничем, поэтому через шлюз
+# поедет ВСЁ, включая заблокированное, и ни один счётчик об этом не скажет.
+address=/cloudflare-dns.com/
+address=/chrome.cloudflare-dns.com/
+address=/mozilla.cloudflare-dns.com/
+address=/one.one.one.one/
+address=/dns.google/
+address=/dns.quad9.net/
+address=/dns.adguard-dns.com/
+address=/doh.opendns.com/
 cache-size=10000
 CONF
     printf '  записан\n'
@@ -262,6 +282,18 @@ step "4. MASQUERADE и FORWARD для $CLIENT_SUBNET"
 ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
 ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -j ACCEPT
 ensure_rule filter FORWARD -d "$CLIENT_SUBNET" -j ACCEPT
+
+# 4a) DoT — режем на транспорте
+# ПОСЛЕ разрешающих правил, и это не косметика: ensure_rule вставляет через -I,
+# то есть каждое следующее правило встаёт ВЫШЕ предыдущего. Поставь этот блок
+# раньше — ACCEPT окажется над ним и REJECT не сработает никогда, молча.
+step "4a. DNS-over-TLS клиентов (853) — отказ"
+say "  NXDOMAIN'ом DoT не закрыть: Android Private DNS ходит на явно заданный"
+say "  адрес, имя резолвит заранее и нашего отказа не увидит."
+say "  REJECT, а не DROP: клиент получает отказ сразу и откатывается на :53,"
+say "  а с DROP он ждал бы таймаута на каждом запросе — резолв бы подвисал."
+ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -p tcp --dport 853 \
+            -j REJECT --reject-with tcp-reset
 
 # 5) обратный маршрут в контейнер
 step "5. Маршрут $CLIENT_SUBNET → $CONT_IP"

@@ -1,0 +1,117 @@
+"""
+Проверки routing-host-setup.sh — обвяза ВПС под условную маршрутизацию.
+
+Скрипт правит iptables и /etc, гонять его в CI негде. Но самые дорогие ошибки в
+нём текстовые: правило встаёт не в том порядке, откат не снимает то, что ставил
+apply, подсказка оператору называет несуществующий набор. Всё это ловится
+чтением исходника, а цена — выезд на боевой сервер.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+
+SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-host-setup.sh"
+
+
+@pytest.fixture(scope="module")
+def script() -> str:
+    return SCRIPT.read_text(encoding="utf-8")
+
+
+# ── обход перехвата DNS ──────────────────────────────────────────────────────
+
+# Имена, которые клиент обязан отрезолвить обычным DNS, прежде чем уйти в DoH.
+# Ловить DoH по адресам бесполезно: эндпоинты живут на CDN, а не на анкасте
+# резолвера, — поэтому единственная точка перехвата именно здесь.
+DOH_ENDPOINTS = [
+    "cloudflare-dns.com",
+    "chrome.cloudflare-dns.com",
+    "dns.google",
+    "dns.quad9.net",
+]
+
+
+@pytest.mark.parametrize("host", DOH_ENDPOINTS)
+def test_doh_endpoint_is_nxdomained(script, host):
+    """DoH-эндпоинты гасятся в dnsmasq.
+
+    Логика фичи инвертирована: чего нет в наборе — уходит на шлюз. Клиент,
+    ушедший в DoH, не наполняет набор ничем, поэтому через шлюз поедет ВСЁ,
+    включая заблокированное, и никакой счётчик об этом не сообщит. Отказ
+    молчаливый, поэтому закрываем его на входе.
+    """
+    assert f"address=/{host}/" in script
+
+
+def test_dot_is_rejected_not_dropped(script):
+    """DoT (853) режем REJECT'ом.
+
+    DROP заставил бы клиента ждать таймаута на каждом запросе — резолв подвисал
+    бы вместо того, чтобы откатиться на :53.
+    """
+    assert "--dport 853" in script
+    assert "-j REJECT --reject-with tcp-reset" in script
+    assert re.search(r"--dport 853[^\n]*\n?[^\n]*-j DROP", script) is None
+
+
+def test_dot_reject_is_inserted_after_the_accepts(script):
+    """Порядок в файле = порядок в цепочке, наоборот.
+
+    ensure_rule вставляет через -I, то есть КАЖДОЕ следующее правило встаёт выше
+    предыдущего. Значит блок с REJECT обязан идти в файле ПОЗЖЕ разрешающих
+    ACCEPT — иначе ACCEPT окажется в цепочке над ним и REJECT не сработает
+    никогда, молча и без единой ошибки.
+    """
+    # только часть apply: в откате порядок обратный и к цепочке отношения не имеет
+    body = script[script.index("# 4) выход наружу"):]
+    accept = body.index('ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -j ACCEPT')
+    reject = body.index("--dport 853")
+    assert reject > accept, (
+        "REJECT 853 стоит в файле раньше ACCEPT — из-за -I он окажется в цепочке "
+        "ниже разрешающего правила и не сработает")
+
+
+def test_rollback_removes_what_apply_installs(script):
+    """Откат снимает правило DoT.
+
+    Забытое в откате правило переживает rollback и продолжает резать 853 уже
+    после того, как фичу сняли, — отказ, который никто не свяжет с ботом.
+    """
+    rollback = script.split('if [ "$MODE" = "rollback" ]', 1)[1]
+    assert "--dport 853" in rollback
+
+
+# ── подсказки оператору ──────────────────────────────────────────────────────
+
+def test_hint_does_not_name_a_set_nobody_creates(script):
+    """В подсказках не должно быть ru_base/vpn_base.
+
+    Общего базового набора в схеме нет: база вливается в каждый vpn_u<N>.
+    Подсказка с несуществующим именем давала ноль на исправном хосте и
+    отправляла чинить CAP_NET_ADMIN, который в порядке.
+    """
+    assert "ru_base" not in script
+    assert "vpn_base" not in script
+
+
+def test_fill_hint_uses_a_domain_from_the_abroad_list(script):
+    """Домен в проверке наполнения обязан быть из ЗАРУБЕЖНОГО списка.
+
+    Логика инвертирована, и sberbank.ru в наборе не окажется никогда — проверка
+    по нему показывает ноль на здоровой системе.
+    """
+    from awgbot.core import config
+
+    hints = re.findall(r"""dig \+short @\$DNS_ADDR ([^\s"']+)""", script)
+    assert hints, "в скрипте нет подсказки с dig — проверка наполнения потерялась"
+    # example.com — проверка живости резолвера, она вне списков; остальные
+    # домены обязаны быть из зарубежного набора.
+    checked = [h for h in hints if h != "example.com"]
+    assert checked, "нет ни одной проверки наполнения набора"
+    for host in checked:
+        assert host in config.ROUTING_ABROAD_DOMAINS, (
+            f"{host} нет в ROUTING_ABROAD_DOMAINS — в набор он не попадёт, "
+            f"и подсказка будет врать")
