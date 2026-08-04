@@ -309,3 +309,60 @@ def test_static_plumbing_does_not_inspect_docker_on_host(monkeypatch):
 
     assert not any(a and a[0] == "docker" for a in seen), \
         "docker inspect в host-режиме не должен звучать вовсе"
+
+
+# ── fail-closed SSH: форма правила зависит от режима ─────────────────────────
+
+def test_ssh_failsafe_targets_the_gateway_in_container(monkeypatch):
+    monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
+    line = awg._ssh_failsafe_postup()
+    assert "/^default/" in line, "в контейнере дефолтный шлюз и есть хост"
+    assert "addrtype" not in line
+
+
+def test_ssh_failsafe_targets_local_addresses_on_host(monkeypatch):
+    """На хосте дефолтный шлюз — роутер провайдера, а не мы.
+
+    Контейнерная форма там встала бы, вернула ноль и выглядела бы на месте, не
+    закрыв ничего: fail-closed стал бы fail-open без единого признака. Поэтому
+    цель задаётся признаком «локальный адрес», а не вычисленным адресом.
+    """
+    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
+    line = awg._ssh_failsafe_postup()
+    assert "--dst-type LOCAL" in line
+    assert "/^default/" not in line, "шлюз на хосте — чужая машина"
+
+
+def test_ssh_failsafe_never_fails_the_bringup(monkeypatch):
+    """awg-quick прерывает подъём, если PostUp вернул не ноль.
+
+    Строка обязана всегда завершаться успехом — иначе отсутствие xt_addrtype или
+    iptables уронило бы весь сервер вместо потери одной защитной строки.
+    """
+    for mode in ("docker", "host"):
+        monkeypatch.setattr(config, "AWG_RUNTIME", mode)
+        assert awg._ssh_failsafe_postup().rstrip().endswith("; true"), mode
+
+
+def test_failsafe_is_rewritten_when_it_no_longer_matches(monkeypatch):
+    """Сверяем содержимое, а не наличие маркера.
+
+    Проверка «есть ли в header слово AWGBOT_SSH» молча консервировала старый
+    ssh_port после его смены и контейнерную форму правила после переезда. Оба
+    случая выглядели как исправная защита.
+    """
+    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
+    stale = ("[Interface]\nAddress = 10.8.1.0/24\n"
+             "PostUp = iptables -A AWGBOT_SSH -i awg0 -d 1.2.3.4 "
+             "-p tcp --dport 22 -j DROP; true\n")
+    written: dict = {}
+    monkeypatch.setattr(awg, "read_file", lambda p: stale + "\n[Peer]\nPublicKey = x\n")
+    monkeypatch.setattr(awg, "write_file",
+                        lambda p, c: written.update(conf=c))
+    monkeypatch.setattr(awg, "_backup_conf", lambda: None)
+
+    assert awg.ensure_ssh_failsafe() is True
+    conf = written["conf"]
+    assert conf.count("AWGBOT_SSH") >= 1
+    assert "--dst-type LOCAL" in conf, "должна встать актуальная форма"
+    assert "-d 1.2.3.4" not in conf, "устаревшая строка обязана исчезнуть, а не остаться рядом"

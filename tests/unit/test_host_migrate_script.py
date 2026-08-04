@@ -88,15 +88,26 @@ def test_awg_quick_gets_a_symlink_not_a_copy(migrate):
     assert "cp $CONF $LINK" not in migrate
 
 
-def test_container_hooks_are_disabled_not_carried_over(migrate):
-    """PostUp/PostDown писались под сеть контейнера.
+def test_our_own_failsafe_hook_is_left_alone(migrate):
+    """AWGBOT_SSH в PostUp — наш fail-closed страж, а не наследие Amnezia.
 
-    На хосте те же команды тронули бы боевой NAT сервера, а MASQUERADE и FORWARD
-    для клиентской подсети ставит routing-host-setup.sh. Комментируем, а не
-    удаляем — чтобы было видно, что было.
+    Закомментировать его значило бы снять защиту, и вдобавок бессмысленно: бот
+    возвращает строку на реассерте. Скрипт обязан его узнавать.
     """
-    assert "PostUp" in migrate and "PostDown" in migrate
-    assert "ПЕРЕЕЗД НА ХОСТ" in migrate
+    assert "AWGBOT_SSH" in migrate
+    assert "sed -i" not in migrate, "правка хуков вслепую снимает собственную защиту"
+
+
+def test_foreign_hooks_stop_the_migration(migrate):
+    """Чужие PostUp/PostDown не комментируются молча.
+
+    Что они сделают на хосте — неизвестно, и среди них может оказаться то, без
+    чего сервер не работает. Молча отключить их значит узнать об этом от
+    пользователей.
+    """
+    assert "FOREIGN" in migrate
+    body = migrate.split("FOREIGN=", 1)[1]
+    assert 'exit 1' in body, "при чужих хуках apply обязан остановиться"
 
 
 # ── firewall ─────────────────────────────────────────────────────────────────

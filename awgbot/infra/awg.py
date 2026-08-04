@@ -746,29 +746,57 @@ _SSH_FAILSAFE_MARK = _SSH_CHAIN            # наличие в header = стро
 def _ssh_failsafe_postup() -> str:
     i = config.AWG_INTERFACE
     p = str(config.SSH_PORT)
+    head = (f'iptables -N {_SSH_CHAIN} 2>/dev/null || true; '
+            f'iptables -C FORWARD -j {_SSH_CHAIN} 2>/dev/null || '
+            f'iptables -I FORWARD 1 -j {_SSH_CHAIN} 2>/dev/null || true; ')
+    if in_container():
+        # Внутри контейнера дефолтный шлюз — это адрес ХОСТА, каким контейнер
+        # его видит. Он и есть цель, которую надо закрыть.
+        return (
+            'PostUp = GW="$(ip route 2>/dev/null | awk \'/^default/{print $3; exit}\')"; '
+            + head +
+            f'[ -n "$GW" ] && {{ iptables -C {_SSH_CHAIN} -i {i} -d "$GW" -p tcp '
+            f'--dport {p} -j DROP 2>/dev/null || iptables -A {_SSH_CHAIN} -i {i} '
+            f'-d "$GW" -p tcp --dport {p} -j DROP 2>/dev/null; }}; true'
+        )
+    # На хосте дефолтный шлюз — вышестоящий роутер провайдера, а вовсе не мы.
+    # Тот же трюк здесь встал бы, вернул ноль, выглядел на месте — и не закрыл
+    # бы ничего: fail-closed стал бы fail-open без единого признака. Поэтому
+    # цель задаётся не адресом, а признаком: любой ЛОКАЛЬНЫЙ адрес этой машины.
+    # Так покрываются и адрес awg-интерфейса, и egress, и всё, что появится
+    # позже, — угадывать конкретный адрес не нужно.
+    rule = (f'-i {i} -m addrtype --dst-type LOCAL -p tcp --dport {p} -j DROP')
     return (
-        'PostUp = GW="$(ip route 2>/dev/null | awk \'/^default/{print $3; exit}\')"; '
-        f'iptables -N {_SSH_CHAIN} 2>/dev/null || true; '
-        f'iptables -C FORWARD -j {_SSH_CHAIN} 2>/dev/null || '
-        f'iptables -I FORWARD 1 -j {_SSH_CHAIN} 2>/dev/null || true; '
-        f'[ -n "$GW" ] && {{ iptables -C {_SSH_CHAIN} -i {i} -d "$GW" -p tcp '
-        f'--dport {p} -j DROP 2>/dev/null || iptables -A {_SSH_CHAIN} -i {i} '
-        f'-d "$GW" -p tcp --dport {p} -j DROP 2>/dev/null; }}; true'
+        'PostUp = ' + head +
+        f'iptables -C {_SSH_CHAIN} {rule} 2>/dev/null || '
+        f'iptables -A {_SSH_CHAIN} {rule} 2>/dev/null || true; true'
     )
 
 
 def ensure_ssh_failsafe() -> bool:
-    """Идемпотентно внедрить fail-closed PostUp в [Interface] awg0.conf.
-    Уже есть (маркер в header) → ничего не делает, False. Контейнер НЕ
-    перезапускаем: строка вступит в силу при следующем естественном старте.
-    Если Amnezia перегенерит конфиг и строку сотрёт — бот вернёт её на реассерте.
-    Возвращает True, если вставил."""
+    """Идемпотентно привести fail-closed PostUp в [Interface] awg0.conf к нужному
+    виду. Сервис НЕ перезапускаем: строка вступит в силу при следующем
+    естественном старте. Если Amnezia перегенерит конфиг и строку сотрёт — бот
+    вернёт её на реассерте. Возвращает True, если что-то изменил.
+
+    Сверяем СОДЕРЖИМОЕ, а не наличие маркера. Раньше проверялось только «есть ли
+    в header слово AWGBOT_SSH», и любая уже стоящая строка считалась годной. Это
+    молча консервировало две вещи: старый ssh_port после его смены в настройках
+    и контейнерную форму правила после переезда на хост, где она встаёт без
+    ошибки и не закрывает ничего. Оба случая выглядели как исправная защита.
+    """
+    want = _ssh_failsafe_postup()
     with mutation_lock:
         conf = read_file(config.CONF_PATH)
         header, peers = _split_conf(conf)
-        if _SSH_FAILSAFE_MARK in header:
+        lines = header.splitlines()
+        ours = [n for n, ln in enumerate(lines)
+                if ln.lstrip().startswith("PostUp") and _SSH_FAILSAFE_MARK in ln]
+        if ours and all(lines[n].strip() == want for n in ours) and len(ours) == 1:
             return False
-        header = header.rstrip() + "\n" + _ssh_failsafe_postup()
+        # выкидываем все свои прежние варианты и ставим один актуальный
+        kept = [ln for n, ln in enumerate(lines) if n not in set(ours)]
+        header = "\n".join(kept).rstrip() + "\n" + want
         new_conf = _build_conf(header, peers)
         with writing():
             _backup_conf()
