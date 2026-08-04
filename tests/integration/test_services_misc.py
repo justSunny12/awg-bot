@@ -164,7 +164,7 @@ def test_restart_service_reapplies_blocks(services, fake_awg, make_active_client
     client = make_active_client(tg_id=1121)
     dc = services.add_device(client.id, "d")
     services._device_set_block(dc.device_id, DeviceBlock.EXPIRY)
-    monkeypatch.setattr(awg, "restart_container", lambda: None, raising=False)
+    monkeypatch.setattr(awg, "restart_server", lambda: None, raising=False)
     fake_awg.blocked.discard(dc.address)
     services.restart_service()
     assert dc.address in fake_awg.blocked

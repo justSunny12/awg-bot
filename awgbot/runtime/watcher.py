@@ -68,7 +68,7 @@ class AwgWatcher:
         self._on_change = on_change
         self._debounce = debounce
         self._observer: Optional[Observer] = None
-        self._pid: Optional[int] = None
+        self._path: Optional[str] = None
         self._timer: Optional[threading.Timer] = None
         self._lock = threading.Lock()
         self._mtimes: dict[str, float] = {}
@@ -81,27 +81,32 @@ class AwgWatcher:
         return self._observer is not None and self._observer.is_alive()
 
     def ensure_watching(self) -> None:
-        """(Пере)подключает наблюдение к /proc/<PID>/root<AWG_DIR>. Идемпотентно:
-        если PID не изменился и наблюдатель жив — ничего не делает."""
-        pid = awg.container_pid()
-        if pid is None:
+        """(Пере)подключает наблюдение к каталогу файлов awg. Идемпотентно: если
+        путь не изменился и наблюдатель жив — ничего не делает.
+
+        Привязка именно к ПУТИ, а не к PID контейнера: на хосте PID'а нет вовсе,
+        а путь есть в обоих режимах. В docker-режиме он всё так же меняется при
+        рестарте контейнера (/proc/<PID>/root...), и условие срабатывает ровно
+        как раньше.
+        """
+        path = awg.watch_root()
+        if path is None:
             return
-        if (pid == self._pid and self._observer is not None
+        if (path == self._path and self._observer is not None
                 and self._observer.is_alive()):
             return
         self._stop_observer()
-        path = f"/proc/{pid}/root{config.AWG_DIR}"
         if not os.path.isdir(path):
             log.warning("Путь наблюдения недоступен: %s", path)
             return
-        self._pid = pid
-        self._snapshot_mtimes()                      # база для сетки под новый PID
+        self._path = path
+        self._snapshot_mtimes()                      # база для сетки под новый путь
         try:
             obs = Observer()
             obs.schedule(_Handler(self._trigger), path, recursive=False)
             obs.start()
             self._observer = obs
-            log.info("Вотчдог подключён к %s (pid=%s)", path, pid)
+            log.info("Вотчдог подключён к %s", path)
         except Exception as e:                       # noqa: BLE001
             log.warning("Не удалось запустить inotify (работает mtime-сетка): %s", e)
         if self._net_thread is None:
@@ -112,10 +117,9 @@ class AwgWatcher:
     # ── страховочная mtime-сетка ─────────────────────────────────────────────
 
     def _watched_paths(self) -> list[str]:
-        if self._pid is None:
+        if self._path is None:
             return []
-        base = f"/proc/{self._pid}/root{config.AWG_DIR}"
-        return [os.path.join(base, name) for name in _WATCHED_NAMES]
+        return [os.path.join(self._path, name) for name in _WATCHED_NAMES]
 
     def _snapshot_mtimes(self) -> None:
         for p in self._watched_paths():

@@ -104,21 +104,68 @@ def test_docker_exec_is_absent_from_the_rest_of_the_codebase():
 # ── непортированное падает громко ────────────────────────────────────────────
 
 @pytest.mark.parametrize("call", [
-    lambda: awg.host_ssh_targets(),
     lambda: awg.restart_container(),
     lambda: awg.container_pid(),
 ])
 def test_docker_only_helpers_refuse_host_mode(monkeypatch, calls, call):
-    """Молчаливая деградация здесь опаснее отказа.
+    """Что осталось docker-только — падает громко.
 
-    host_ssh_targets глотает AwgError и возвращает частичный список — в
-    host-режиме без заслона он вернул бы SSH-фильтр, сузившийся до одного
-    адреса, то есть дыру, о которой никто бы не узнал. Поэтому заслон бросает
-    HostModeUnsupported, не наследуясь от AwgError.
+    Заслон бросает HostModeUnsupported, а не AwgError: эти функции сами глотают
+    AwgError и вернули бы None/False, то есть «контейнер лежит». В host-режиме
+    это увело бы чинить несуществующее.
     """
     monkeypatch.setattr(config, "AWG_RUNTIME", "host")
     with pytest.raises(awg.HostModeUnsupported):
         call()
+
+
+# ── портированное работает в обоих режимах ───────────────────────────────────
+
+def test_ssh_targets_use_the_awg_interface_on_host(monkeypatch):
+    """На хосте адрес, по которому виден хост из туннеля, — это адрес awg0.
+
+    Молчаливо пропустить его нельзя: список сузился бы до egress-адреса, SSH
+    остался бы открыт с туннельного адреса хоста, и ни один признак поломки не
+    появился бы. Поэтому чтение адреса интерфейса идёт с check=True.
+    """
+    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
+    seen: list[list[str]] = []
+
+    def fake_run(args, input_data=None, timeout=15, check=True):
+        seen.append(list(args))
+        if args[:2] == ["ip", "-4"]:
+            return _cp(b"3: awg0    inet 10.8.1.0/24 brd 10.8.1.255 scope global awg0\\\n")
+        return _cp(b"1.1.1.1 via 10.0.0.1 dev eth0 src 203.0.113.7 uid 0\n")
+
+    monkeypatch.setattr(awg, "_run", fake_run)
+    targets = awg.host_ssh_targets()
+
+    assert "10.8.1.0" in targets, "адрес awg-интерфейса обязан попасть в цели"
+    assert "203.0.113.7" in targets, "egress нужен для hairpin через публичный IP"
+    assert not any("docker" in " ".join(a) for a in seen)
+
+
+def test_service_started_at_is_boot_time_on_host(monkeypatch):
+    """На хосте метка старта — время загрузки системы, а не подъёма интерфейса.
+
+    Наши цепочки живут в хостовых таблицах и переживают awg-quick down/up.
+    Возьми мы момент подъёма интерфейса — реконсиляция гонялась бы впустую при
+    каждом рестарте туннеля.
+    """
+    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
+    monkeypatch.setattr(awg, "_boot_time_iso", lambda: "2026-08-04T09:00:00Z")
+    assert awg.service_started_at() == "2026-08-04T09:00:00Z"
+
+    from awgbot.util import timeutil
+    assert timeutil.parse_docker_time(awg.service_started_at()) is not None, \
+        "формат обязан разбираться тем же парсером, что и StartedAt докера"
+
+
+def test_restart_server_uses_awg_quick_on_host(monkeypatch, calls):
+    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
+    awg.restart_server()
+    assert calls[0][:2] == ["awg-quick", "down"]
+    assert calls[1][:2] == ["awg-quick", "up"]
 
 
 def test_container_pid_does_not_swallow_the_guard(monkeypatch, calls):

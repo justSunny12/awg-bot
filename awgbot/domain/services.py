@@ -2203,9 +2203,14 @@ class Services:
             pending, config.INSTALLED_VERSION), reply_markup=kb.update_done_menu())
 
     def detect_and_handle_restart(self) -> bool:
-        """Сверяет StartedAt контейнера с сохранённым. Если изменился (был
-        рестарт) — реконсиляция блокировок. Возвращает True, если был рестарт."""
-        current = awg.container_started_at()
+        """Сверяет метку старта сервиса с сохранённой. Изменилась (был рестарт) —
+        реконсиляция блокировок. Возвращает True, если был рестарт.
+
+        Что считать меткой, решает awg.service_started_at: в контейнере это его
+        StartedAt, на хосте — время загрузки системы. Ключ в state исторически
+        зовётся container_started_at и переименованию не подлежит — иначе первая
+        же сверка после обновления не найдёт сохранённого значения."""
+        current = awg.service_started_at()
         if not current:
             return False
         stored = self.db.get_state("container_started_at")
@@ -2435,7 +2440,7 @@ class Services:
         как обычно (0 docker exec на показ)."""
         from awgbot.runtime import hostmetrics
         self.db.set_state("last_server_ok", "1" if self.server_ok() else "0")
-        started = awg.container_started_at()
+        started = awg.service_started_at()
         if started:
             self.db.set_state("container_started_at", started)
         hostmetrics.collect_and_store(self.db)
@@ -2444,7 +2449,7 @@ class Services:
         """Перезапуск контейнера (ТЗ 9.3). После — реконсиляция блокировок
         (DROP'ы слетели) через detect_and_handle_restart на следующем цикле,
         но сделаем и сразу."""
-        awg.restart_container()
+        awg.restart_server()
         # StartedAt изменится → сохранить и переналожить блокировки
         self.detect_and_handle_restart()
         self.reconcile_blocks()

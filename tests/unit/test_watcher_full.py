@@ -124,7 +124,7 @@ def test_ensure_watching_missing_path(monkeypatch):
 # ── mtime-сетка ──────────────────────────────────────────────────────────────
 def test_snapshot_mtimes(monkeypatch):
     w = AwgWatcher(on_change=lambda: None)
-    w._pid = 99
+    w._path = "/proc/99/root/opt/amnezia/awg"
     monkeypatch.setattr(os, "stat", lambda p: type("S", (), {"st_mtime": 123.0})())
     w._snapshot_mtimes()
     assert w._watched_paths() and all(v == 123.0 for v in w._mtimes.values())
@@ -133,3 +133,23 @@ def test_snapshot_mtimes(monkeypatch):
 def test_watched_paths_empty_without_pid():
     w = AwgWatcher(on_change=lambda: None)
     assert w._watched_paths() == []
+
+
+def test_ensure_watching_uses_plain_dir_in_host_mode(monkeypatch):
+    """На хосте наблюдаем AWG_DIR напрямую — PID'а нет и не будет.
+
+    Привязка вотчдога к PID сделала бы host-режим слепым: container_pid там
+    бросает заслон, а раньше его результат ещё и глотался в None — вотчдог молча
+    не подключился бы, и правки конфига мимо бота перестали бы замечаться.
+    """
+    from awgbot.core import config
+
+    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
+    monkeypatch.setattr(wmod, "Observer", FakeObserver)
+    monkeypatch.setattr(os.path, "isdir", lambda p: True)
+    monkeypatch.setattr(os, "stat", lambda p: type("S", (), {"st_mtime": 1.0})())
+    w = AwgWatcher(on_change=lambda: None, debounce=0.01)
+    w.ensure_watching()
+    assert w._path == config.AWG_DIR
+    assert all(p.startswith(config.AWG_DIR) for p in w._watched_paths())
+    w.stop()

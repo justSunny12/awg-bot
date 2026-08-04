@@ -629,7 +629,6 @@ def host_ssh_targets() -> list[str]:
     docker-сетей контейнера (bridge-стороны) + внешний egress-IP хоста (на случай
     hairpin: full-tunnel пир стучит по публичному IP → NAT → тот же хост). Их и
     гейтим. Хостовые команды (docker/ip) — через _run, не docker exec."""
-    _docker_only("host_ssh_targets")
     targets: list[str] = []
 
     def _add(v: str) -> None:
@@ -637,14 +636,24 @@ def host_ssh_targets() -> list[str]:
         if v and v not in targets and _is_ipv4(v):
             targets.append(v)
 
-    try:
-        out = _run(["docker", "inspect", config.CONTAINER, "-f",
-                    "{{range .NetworkSettings.Networks}}{{.Gateway}}\n{{end}}"]
+    if in_container():
+        try:
+            out = _run(["docker", "inspect", config.CONTAINER, "-f",
+                        "{{range .NetworkSettings.Networks}}{{.Gateway}}\n{{end}}"]
+                       ).stdout.decode(errors="replace")
+            for line in out.splitlines():
+                _add(line)
+        except AwgError:
+            pass
+    else:
+        # На хосте docker-сетей нет: из туннеля хост виден по адресу самого
+        # awg-интерфейса. Молчаливо пропустить его нельзя — список сузился бы до
+        # одного egress-адреса, и SSH оказался бы открыт с туннельного адреса
+        # хоста без единого признака поломки. Поэтому здесь check=True.
+        out = _run(["ip", "-4", "-o", "addr", "show", "dev", config.AWG_INTERFACE]
                    ).stdout.decode(errors="replace")
-        for line in out.splitlines():
-            _add(line)
-    except AwgError:
-        pass
+        for m in re.finditer(r"\binet\s+([0-9.]+)", out):
+            _add(m.group(1))
     try:
         out = _run(["ip", "route", "get", "1.1.1.1"]).stdout.decode(errors="replace")
         m = re.search(r"\bsrc\s+([0-9.]+)", out)
@@ -829,6 +838,69 @@ def restart_container() -> None:
     _run(["docker", "restart", config.CONTAINER], timeout=60)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# То же самое без оглядки на способ запуска
+# ─────────────────────────────────────────────────────────────────────────────
+
+def watch_root() -> Optional[str]:
+    """Каталог с файлами awg, каким его видит бот — для inotify.
+
+    В контейнере файлы лежат в чужом mount namespace, добраться до них можно
+    только через /proc/<PID>/root, и PID меняется при каждом рестарте. На хосте
+    это просто AWG_DIR, который никуда не переезжает, — поэтому и вотчдог
+    привязывается к ПУТИ, а не к PID: путь есть в обоих режимах, PID только в
+    одном.
+    """
+    if not in_container():
+        return config.AWG_DIR
+    pid = container_pid()
+    return f"/proc/{pid}/root{config.AWG_DIR}" if pid else None
+
+
+def _boot_time_iso() -> Optional[str]:
+    """Время загрузки системы в формате StartedAt (UTC, суффикс Z)."""
+    try:
+        with open("/proc/stat", "r", encoding="ascii", errors="replace") as fh:
+            for line in fh:
+                if line.startswith("btime "):
+                    ts = int(line.split()[1])
+                    return _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime(ts))
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def service_started_at() -> Optional[str]:
+    """Когда стартовало то, что держит наши правила iptables.
+
+    В контейнере это StartedAt: его рестарт обнуляет и DROP'ы блокировок, и
+    SSH-цепочку. На хосте — время загрузки системы, потому что наши цепочки
+    живут в хостовых таблицах и переживают всё, кроме перезагрузки: ни
+    `awg-quick down/up`, ни рестарт бота их не трогают.
+
+    Сигнал разный, смысл один: «состояние, которое мы поддерживаем, обнулилось —
+    переналожи». Взять на хосте момент подъёма интерфейса было бы неверно: он
+    меняется чаще, чем состояние теряется, и гонял бы реконсиляцию впустую.
+    """
+    return container_started_at() if in_container() else _boot_time_iso()
+
+
+def restart_server() -> None:
+    """Перезапуск сервиса AmneziaWG (ТЗ 9.3).
+
+    ВНИМАНИЕ: в docker-режиме после этого слетают iptables-правила внутри
+    контейнера → нужна реконсиляция блокировок. На хосте они не слетают, но
+    реконсиляция всё равно безвредна и делается в вызывающем.
+    """
+    if in_container():
+        _run(["docker", "restart", config.CONTAINER], timeout=60)
+        return
+    # down может честно не сработать, если интерфейса нет, — это не ошибка,
+    # ради которой стоит не поднимать его обратно.
+    _run(["awg-quick", "down", config.AWG_INTERFACE], check=False, timeout=60)
+    _run(["awg-quick", "up", config.AWG_INTERFACE], timeout=60)
+
+
 __all__ = [
     "AwgError", "ContainerDown", "in_container",
     "writing", "is_writing", "last_self_write",
@@ -843,4 +915,5 @@ __all__ = [
     "show_dump",
     "container_running", "container_pid", "container_started_at",
     "awg_responding", "restart_container",
+    "watch_root", "service_started_at", "restart_server",
 ]
