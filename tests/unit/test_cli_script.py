@@ -111,3 +111,21 @@ def test_shell_scripts_reference_only_defined_variables(path: Path):
     assert not dangling, (
         f"{path.name}: используются неприсвоенные переменные {dangling} — "
         f"в sh это молча подставит пустую строку")
+
+
+# ── проактивные сообщения админу должны убираться ────────────────────────────
+
+def test_startup_messages_to_admin_are_dismissible():
+    """Сообщения, которых админ не заказывал, обязаны иметь чем закрыться.
+
+    В проекте это соглашение: notifier подставляет «Скрыть» сам. Но
+    bot.send_message идёт мимо него — и предупреждения preflight приходили без
+    единой кнопки и висели в чате навсегда.
+    """
+    main = (SCRIPT.parent / "awgbot" / "runtime" / "main.py").read_text(encoding="utf-8")
+    calls = re.findall(r"bot\.send_message\((.*?)\)\n", main, re.S)
+    naked = [c for c in calls if "reply_markup" not in c]
+    assert not naked, (
+        "прямая отправка админу без клавиатуры — такое сообщение нечем убрать:\n"
+        + "\n".join(c.strip()[:90] for c in naked)
+        + "\nИспользуй notifier.notify_one — он подставит «Скрыть» сам.")

@@ -199,7 +199,12 @@ async def main() -> None:
     try:
         warns = await asyncio.to_thread(preflight.collect_warnings, services)
         if warns:
-            await bot.send_message(config.ADMIN_ID, preflight.format_warnings(warns))
+            # Через notifier, а не bot.send_message: он и тихие часы соблюдает,
+            # и подставляет «Скрыть». Это проактивное уведомление — админ его
+            # не заказывал, значит должен иметь возможность убрать. Мимо
+            # notifier'а такие сообщения приходят без кнопки и висят в чате.
+            from awgbot.bot.notifier import notify_one
+            await notify_one(bot, config.ADMIN_ID, preflight.format_warnings(warns))
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight warnings: %s", e)
 
