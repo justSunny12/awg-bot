@@ -231,6 +231,23 @@ ROUTING_DNSMASQ_SERVICE = _rt.get("dnsmasq_service", "dnsmasq")
 # это уже наступили с именами наборов. В yaml их можно переопределить, но
 # отсутствие ключа больше ничего не ломает.
 _ITDOG = "https://raw.githubusercontent.com/itdoginfo/allow-domains/main"
+# ЗЕРКАЛЬНЫЙ СЛУЧАЙ к спискам блокировок. Внешние списки описывают то, что
+# блокирует Россия. Но есть и обратное: сервисы, которые сами отказывают
+# российским адресам — их Россия не блокирует, поэтому ни в одном таком списке
+# их нет. При инверсии логики («всё, чего нет в наборе, идёт на шлюз») именно
+# они и ломаются: домен уходит через российский IP, то есть ровно через тот,
+# который ему закрыт. Отсюда отдельный встроенный список.
+#
+# Дописывается ключом routing.abroad_domains в conf/app.yaml — там ЗАМЕНА, а не
+# дополнение, так что копируй список целиком, если правишь.
+ROUTING_ABROAD_DOMAINS: tuple[str, ...] = tuple(_rt.get("abroad_domains") or (
+    "example.com", "example.com",
+    "openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com",
+    "perplexity.ai", "x.ai", "mistral.ai", "huggingface.co",
+    "cursor.com", "cursor.sh",
+    "figma.com", "slack.com", "atlassian.com", "docker.com",
+))
+
 ROUTING_LISTS_DOMAINS_URL = _rt.get(
     "lists_domains_url", f"{_ITDOG}/Russia/inside-dnsmasq-ipset.lst")
 ROUTING_LISTS_SUBNET_URLS = list(_rt.get("lists_subnet_urls") or [

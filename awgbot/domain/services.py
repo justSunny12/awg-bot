@@ -1677,6 +1677,16 @@ class Services:
         потерял смысл — выбирать больше нечего."""
         return len([d for d in self.db.list_devices(client_id) if d.is_managed])
 
+    def routing_preseed_abroad(self, client_id: int) -> None:
+        """Досеять набор клиента адресами встроенного «заграничного» списка.
+
+        Зовётся при ВКЛЮЧЕНИИ режима. Без этого первый заход на такой сайт идёт
+        по адресу из кэша браузера — мимо набора, то есть на шлюз и с
+        российского адреса, которому сервис как раз и откажет. Пользователь
+        видит «включил режим — отвалился этот сервис» и выключает обратно.
+        """
+        self._routing_preseed(client_id, list(config.ROUTING_ABROAD_DOMAINS))
+
     def routing_toggle_for_client(self, client) -> Optional[bool]:
         """Состояние РФ-доступа для инфобокса: None — не показывать строку.
 
@@ -1712,9 +1722,14 @@ class Services:
         self.reconcile_routing()
 
     def set_routing_master(self, client_id: int, on: bool) -> None:
-        """Мастер-тумблер клиента — «выключить всё разом», не обходя устройства."""
+        """Переключатель режима у клиента: действует на весь профиль."""
         self.db.update_client_fields(client_id, routing_master=1 if on else 0)
         self.reconcile_routing()
+        if on:
+            # Именно здесь, а не в реконсиляции: досев — это резолв, и гонять
+            # его при каждой сверке ради состояния, которое меняется дважды в
+            # год, незачем. А вот в момент включения он обязателен.
+            self.routing_preseed_abroad(client_id)
 
     # ── Личный список доменов ────────────────────────────────────────────────
 
@@ -1851,7 +1866,12 @@ class Services:
         routing.rebuild_chain(client_ids)
         self._routing_drop_orphan_sets(client_ids)
         routing.write_dnsmasq_conf(domain_routing.build_dnsmasq_conf(
-            base_domains=self._routing_read_cache("domains"),
+            # Встроенный список идёт наравне со скачанным: внешние списки знают
+            # только про блокировки СО СТОРОНЫ России, а есть и зеркальный
+            # случай — сервисы, отказывающие российским адресам. См.
+            # config.ROUTING_ABROAD_DOMAINS.
+            base_domains=(list(self._routing_read_cache("domains"))
+                          + list(config.ROUTING_ABROAD_DOMAINS)),
             domains_by_client=domains,
             client_ids=client_ids,
             set_user_prefix=config.ROUTING_SET_USER_PREFIX,

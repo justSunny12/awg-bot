@@ -437,3 +437,49 @@ def test_hot_switch_off_wins_over_a_healthy_gateway(services, fake_routing, monk
     services.routing_liveness_tick()
     services.routing_liveness_tick()
     assert fake_routing.marking is False, "зонд пересилил выключенную фичу"
+
+
+# ── зеркальный случай: сервисы, отказывающие российским адресам ──────────────
+
+def _allowed_client(services, make_active_client, tg_id):
+    """Клиент с устройством и выданным разрешением админа. Устройство важно:
+    без него профиль не попадает в набор адресов, и конфиг выходит пустым."""
+    c = make_active_client(tg_id=tg_id)
+    _device(services, c)
+    services.set_routing_allowed(c.id, True)
+    return services.db.get_client(c.id)
+
+
+def test_services_that_block_russia_go_abroad(services, make_active_client, fake_routing):
+    """Внешние списки знают только про блокировки СО СТОРОНЫ России. Обратный
+    случай — сервис сам отказывает российским адресам — в них не попадает, и при
+    инверсии логики такой домен уходит на шлюз, то есть ровно через тот адрес,
+    который ему закрыт. Встроенный список обязан идти наравне со скачанным."""
+    from awgbot.core import config
+    c = _allowed_client(services, make_active_client, 77)
+    services.set_routing_master(c.id, True)
+    conf = fake_routing.conf or ""
+    for dom in ("example.com", "example.com", "openai.com"):
+        assert f"/{dom}/" in conf, f"{dom} не попал в конфиг dnsmasq:\n{conf}"
+
+
+def test_enabling_the_mode_preseeds_the_abroad_list(
+        services, make_active_client, fake_routing):
+    """Досев в момент включения. Иначе первый заход идёт по адресу из кэша
+    браузера — мимо набора, на шлюз, и сервис отказывает. Пользователь видит
+    «включил режим — отвалился этот сервис» и выключает обратно."""
+    from awgbot.infra import routing
+    c = _allowed_client(services, make_active_client, 78)
+    fake_routing.dns["example.com"] = ["203.0.113.44"]
+    services.set_routing_master(c.id, True)
+    assert "203.0.113.44" in fake_routing.sets[routing.user_set(c.id)]
+
+
+def test_disabling_does_not_resolve_anything(services, make_active_client, fake_routing):
+    """Досев — это резолв; при выключении он бессмыслен."""
+    from awgbot.infra import routing
+    c = _allowed_client(services, make_active_client, 79)
+    services.set_routing_master(c.id, True)
+    fake_routing.dns["example.com"] = ["203.0.113.99"]     # появился ПОСЛЕ включения
+    services.set_routing_master(c.id, False)
+    assert "203.0.113.99" not in fake_routing.sets.get(routing.user_set(c.id), [])
