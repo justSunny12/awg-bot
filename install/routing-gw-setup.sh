@@ -107,7 +107,11 @@ if [ "$MODE" = "rollback" ]; then
           -j MASQUERADE 2>/dev/null; do
         run "iptables -t nat -D POSTROUTING -s $CLIENT_SUBNET -o $WAN_IF -j MASQUERADE"
     done
-    while iptables -t nat -C POSTROUTING -s "$LINK_CIDR" -o "$WAN_IF" \
+    LINK_CIDR="$(ip -4 -o addr show dev "$LINK_IF" 2>/dev/null \
+        | awk '{for(i=1;i<=NF;i++) if($i=="inet"){print $(i+1); exit}}')"
+    LINK_CIDR="$(printf '%s' "$LINK_CIDR" | awk -F'[./]' '$5==30{
+        printf "%d.%d.%d.%d/%d\n", $1, $2, $3, int($4/4)*4, $5 }')"
+    while [ -n "$LINK_CIDR" ] && iptables -t nat -C POSTROUTING -s "$LINK_CIDR" -o "$WAN_IF" \
           -j MASQUERADE 2>/dev/null; do
         run "iptables -t nat -D POSTROUTING -s $LINK_CIDR -o $WAN_IF -j MASQUERADE"
     done
@@ -147,6 +151,15 @@ if ip link show "$LINK_IF" >/dev/null 2>&1; then
     run "docker exec $CONTAINER awg-quick down $LINK_IF || true"
 fi
 run "docker exec $CONTAINER awg-quick up $LINK_IF"
+
+# Подсеть линка берём У ЯДРА, а не из конфига: конфиг мог быть не применён, а
+# нам нужно то, что реально назначено. /30 ⇒ сеть считается из адреса.
+LINK_CIDR="$(ip -4 -o addr show dev "$LINK_IF" 2>/dev/null \
+    | awk '{for(i=1;i<=NF;i++) if($i=="inet"){print $(i+1); exit}}')"
+LINK_CIDR="$(printf '%s' "$LINK_CIDR" | awk -F'[./]' '$5==30{
+    printf "%d.%d.%d.%d/%d\n", $1, $2, $3, int($4/4)*4, $5 }')"
+[ -n "$LINK_CIDR" ] || { say "ОШИБКА: не удалось определить подсеть $LINK_IF"; exit 1; }
+say "  Подсеть линка: $LINK_CIDR"
 
 # ── 2. MASQUERADE: ради этого всё и затевалось ───────────────────────────────
 step "2. MASQUERADE клиентов в $WAN_IF"

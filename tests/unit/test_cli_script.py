@@ -76,3 +76,38 @@ def test_routing_doctor_is_documented_in_usage(script):
     """Команду, о которой не написано в usage, никто не найдёт в момент отказа —
     а нужна она именно тогда."""
     assert "routing-doctor" in script.split("VERB=")[0], "нет в usage()"
+
+
+# ── shell-скрипты: ссылки на несуществующие переменные ───────────────────────
+
+_SHELL_ENV = {
+    # приходят из окружения/оболочки, а не присваиваются в скрипте
+    "PATH", "HOME", "PWD", "OLDPWD", "IFS", "LINENO", "SHELL", "USER", "TERM",
+    "EUID", "UID", "HOSTNAME", "BASH_SOURCE", "FUNCNAME", "PIPESTATUS", "RANDOM",
+    "LANG", "LC_ALL", "SUDO_USER", "TMPDIR", "EDITOR", "COLUMNS", "PS1",
+}
+_SCRIPTS = sorted((SCRIPT.parent / "install").glob("*.sh")) + [SCRIPT]
+
+
+@pytest.mark.parametrize("path", _SCRIPTS, ids=lambda p: p.name)
+def test_shell_scripts_reference_only_defined_variables(path: Path):
+    """Ссылка на неприсвоенную переменную в sh не падает, а подставляет пустую
+    строку: `iptables -s "" -o eth0` — это уже другая команда, и ломается она на
+    боевом сервере. Ровно так уехала правка MASQUERADE для линк-подсети.
+    """
+    text = path.read_text(encoding="utf-8")
+    # присваивание может стоять не в начале строки: `A=1; B=2` — обычный приём
+    # Имя целиком и хотя бы одна заглавная: иначе регулярка откусывает префикс
+    # от локальных вроде __verbose и «находит» переменную __.
+    name = r"[A-Z_]*[A-Z][A-Z0-9_]*"
+    tail = r"(?![A-Za-z0-9_])"
+    assigned = set(re.findall(rf"(?<![-\w$])({name})=", text))
+    assigned |= set(re.findall(rf"\bfor\s+({name})\s+in\b", text))
+    assigned |= set(re.findall(rf"\bread\s+(?:-r\s+)?(?:-a\s+)?({name})", text))
+    # ${VAR:-default} — осознанная необязательность, а не забытая переменная
+    used = {m.group(1) for m in re.finditer(rf"\$\{{({name})\}}", text)}
+    used |= set(re.findall(rf"\$({name}){tail}", text))
+    dangling = sorted(used - assigned - _SHELL_ENV)
+    assert not dangling, (
+        f"{path.name}: используются неприсвоенные переменные {dangling} — "
+        f"в sh это молча подставит пустую строку")
