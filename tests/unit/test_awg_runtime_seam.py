@@ -244,3 +244,68 @@ def test_preflight_refuses_unfinished_host_mode(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "нет.db")
     with pytest.raises(preflight.PreflightError, match="ROADMAP"):
         preflight.check_fatal()
+
+
+# ── контейнерное плечо условной маршрутизации ────────────────────────────────
+
+def test_nat_exempt_is_a_noop_on_host(monkeypatch):
+    """Исключения из MASQUERADE — плата за чужой netns, и только за него.
+
+    На хосте MASQUERADE один и наш; клиент доходит до маркировки с настоящим
+    адресом. Попытайся бот всё равно собрать цепочку — он полез бы `docker exec`
+    в несуществующий контейнер и уронил бы реконсиляцию целиком, а с ней и всю
+    условную маршрутизацию.
+    """
+    from awgbot.infra import routing
+
+    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
+    called: list = []
+    monkeypatch.setattr(routing, "_cont", lambda *a, **k: called.append(a))
+
+    routing.sync_nat_exempt(["10.8.1.5", "10.8.1.6"])
+    assert called == [], "на хосте в контейнер ходить незачем"
+
+
+def test_nat_exempt_still_builds_the_chain_in_docker_mode(monkeypatch):
+    from awgbot.infra import routing
+
+    monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
+    seen: list[list[str]] = []
+    monkeypatch.setattr(routing, "_cont",
+                        lambda args, **k: seen.append(list(args)) or _cp())
+    monkeypatch.setattr(routing, "_cont_ok", lambda args: True)
+
+    routing.sync_nat_exempt(["10.8.1.5"])
+    flat = [" ".join(a) for a in seen]
+    assert any("-A " + config.ROUTING_NAT_CHAIN in f or config.ROUTING_NAT_CHAIN in f
+               for f in flat), "цепочка исключений в docker-режиме обязана собираться"
+    assert any("10.8.1.5/32" in f for f in flat)
+
+
+def test_static_plumbing_does_not_inspect_docker_on_host(monkeypatch):
+    """Сверка маршрута с адресом контейнера на хосте бессмысленна.
+
+    Там маршрут до клиентской подсети connected через awg-интерфейс, переезжать
+    ему некуда. Оставь мы вызов `docker inspect` — он вернул бы ошибку, а код
+    трактует непустой вывод как «адрес контейнера», и фича могла бы погаснуть
+    из-за сравнения с мусором.
+    """
+    from awgbot.infra import routing
+
+    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
+    seen: list[list[str]] = []
+
+    def fake_host(args, check=True, input_data=None, timeout=20):
+        seen.append(list(args))
+        if args[:3] == ["ip", "route", "show"]:
+            return _cp(b"10.8.1.0/24 dev awg0 proto kernel scope link src 10.8.1.0\n")
+        if args[:2] == ["systemctl", "list-unit-files"]:
+            return _cp(f"{config.ROUTING_DNSMASQ_SERVICE}.service enabled".encode())
+        return _cp()
+
+    monkeypatch.setattr(routing, "_host", fake_host)
+    monkeypatch.setattr(routing, "_host_ok", lambda args: True)
+    routing._check_static_plumbing()
+
+    assert not any(a and a[0] == "docker" for a in seen), \
+        "docker inspect в host-режиме не должен звучать вовсе"

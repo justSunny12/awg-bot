@@ -4,12 +4,12 @@ routing.py — единственный слой команд условной �
 Отношение к domain/routing.py то же, что у awg.py к configgen.py: там чистые
 преобразования, здесь всё, что дёргает систему.
 
-ДВА ПЛЕЧА. Контейнер Amnezia работает в режиме bridge, то есть в собственном
-сетевом namespace, а ipset — сущность per-netns: набор, созданный внутри
-контейнера, для dnsmasq на хосте просто не существует и наполняться не будет.
-При этом различать клиентов можно только ДО MASQUERADE контейнера — за ним все
-пиры выглядят одним bridge-адресом (ровно поэтому там же живут блокировки, см.
-awg.block_ip). Отсюда разделение:
+ДВА ПЛЕЧА — И ТОЛЬКО В DOCKER-РЕЖИМЕ. Контейнер Amnezia работает в режиме
+bridge, то есть в собственном сетевом namespace, а ipset — сущность per-netns:
+набор, созданный внутри контейнера, для dnsmasq на хосте просто не существует и
+наполняться не будет. При этом различать клиентов можно только ДО MASQUERADE
+контейнера — за ним все пиры выглядят одним bridge-адресом (ровно поэтому там же
+живут блокировки, см. awg.block_ip). Отсюда разделение:
 
   • в КОНТЕЙНЕРЕ — только исключения из MASQUERADE: по одному правилу на
     включённое устройство. Ничего, кроме iptables, там не требуется;
@@ -18,6 +18,11 @@ awg.block_ip). Отсюда разделение:
 Работает это потому, что немаскараженный трафик приходит на хост с настоящим
 10.8.1.x, а весь остальной — с bridge-адреса контейнера. Различение достаётся
 даром, без передачи метки между namespace (она бы и не пережила переход).
+
+Весь этот механизм — плата за чужой netns, и в host-режиме (config.AWG_RUNTIME,
+docs/ROADMAP.md) он не нужен: MASQUERADE ровно один, наш, клиенты приходят на
+mangle PREROUTING с настоящими адресами, отменять нечего. Поэтому контейнерное
+плечо там выключается целиком, а не имитируется.
 
 СТАТИКА И ДИНАМИКА. Бот управляет только тем, что зависит от состояния: исключения,
 наборы, цепочку маркировки, ip rule. Базовый обвяз хоста — MASQUERADE для
@@ -181,20 +186,23 @@ def _check_static_plumbing() -> None:
     route = proc.stdout.decode(errors="replace") if proc.returncode == 0 else ""
     if not route.strip():
         raise RoutingUnavailable(
-            f"на хосте нет маршрута до {subnet} — обратный трафик не вернётся "
-            f"в контейнер")
-    # Маршрут может существовать, но вести на СТАРЫЙ адрес: контейнер пересоздали,
-    # docker выдал ему другой IP, а маршрут остался прежним. Снаружи это выглядит
-    # как «у включённых пропал интернет» без единой ошибки в логах.
-    insp = _host(["docker", "inspect", "-f",
-                  "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
-                  config.CONTAINER], check=False)
-    cont_ip = insp.stdout.decode(errors="replace").split()
-    if insp.returncode == 0 and cont_ip and cont_ip[0] not in route:
-        raise RoutingUnavailable(
-            f"маршрут до {subnet} ведёт не на текущий адрес контейнера "
-            f"({cont_ip[0]}) — контейнер пересоздавали? перезапустите "
-            f"awg-bot-routing.service")
+            f"на хосте нет маршрута до {subnet} — обратный трафик не дойдёт "
+            f"до клиентов")
+    if awg.in_container():
+        # Маршрут может существовать, но вести на СТАРЫЙ адрес: контейнер
+        # пересоздали, docker выдал ему другой IP, а маршрут остался прежним.
+        # Снаружи это выглядит как «у включённых пропал интернет» без единой
+        # ошибки в логах. На хосте отказа не существует: маршрут до клиентской
+        # подсети там connected через awg-интерфейс и переезжать ему некуда.
+        insp = _host(["docker", "inspect", "-f",
+                      "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
+                      config.CONTAINER], check=False)
+        cont_ip = insp.stdout.decode(errors="replace").split()
+        if insp.returncode == 0 and cont_ip and cont_ip[0] not in route:
+            raise RoutingUnavailable(
+                f"маршрут до {subnet} ведёт не на текущий адрес контейнера "
+                f"({cont_ip[0]}) — контейнер пересоздавали? перезапустите "
+                f"awg-bot-routing.service")
     if not _host_ok(["iptables", "-t", "nat", "-C", "POSTROUTING",
                      "-s", subnet, "-j", "MASQUERADE"]):
         raise RoutingUnavailable(
@@ -226,7 +234,10 @@ def self_check(force: bool = False) -> tuple[bool, str]:
             if not _host_ok(["ip", "link", "show", config.ROUTING_GW_INTERFACE]):
                 raise RoutingUnavailable(
                     f"интерфейс {config.ROUTING_GW_INTERFACE} не найден на хосте")
-            if not _cont_ok(["iptables", "-t", "nat", "-L", "-n"]):
+            # Только в docker-режиме: на хосте контейнерного плеча нет вовсе, и
+            # проверка «доступен ли iptables в контейнере» гасила бы фичу из-за
+            # отсутствия контейнера, которого там и не должно быть.
+            if awg.in_container() and not _cont_ok(["iptables", "-t", "nat", "-L", "-n"]):
                 raise RoutingUnavailable("iptables недоступен в контейнере")
             _check_static_plumbing()
             result = (True, "ок")
@@ -268,7 +279,13 @@ def sync_nat_exempt(addresses) -> None:
 
     Хук вставляется ПЕРВЫМ правилом POSTROUTING: любое правило перед ним могло бы
     замаскарадить пакет раньше, чем мы до него доберёмся.
+
+    В host-режиме — пусто. Не «нечего делать по случайности»: там MASQUERADE один
+    и наш, клиент приходит на маркировку с настоящим адресом, и отменять нечего.
+    Механизм исключений существовал ровно ради чужого MASQUERADE контейнера.
     """
+    if not awg.in_container():
+        return
     chain = config.ROUTING_NAT_CHAIN
     _cont(["iptables", "-t", "nat", "-N", chain], check=False)   # есть → код 1
     _cont(["iptables", "-t", "nat", "-F", chain])
