@@ -59,8 +59,14 @@ def _probe_layers() -> list[tuple[str, str, str]]:
     if verdict == routing.PROBE_OK:
         out.append((_OK, f"Через шлюз проходит наружу ({target})", ""))
     elif verdict == routing.PROBE_NO_PATH:
+        # Называем ИСТОЧНИК: чаще всего дело именно в нём — шлюз маскарадит
+        # клиентскую подсеть, а зонд идёт с адреса линка, и без маскарада для
+        # него пакеты уходят наружу с немаршрутизируемым адресом.
+        src = routing.probe_source() or "?"
         out.append((_BAD, "Шлюз отвечает, но интернета за ним нет",
-                    "Чинить НА ШЛЮЗЕ: аплинк, ip_forward, MASQUERADE."))
+                    f"Зонд идёт с адреса {src}. Проверь НА ШЛЮЗЕ, что он "
+                    f"маскарадится: iptables -t nat -L POSTROUTING -n. "
+                    f"Дальше — аплинк и ip_forward."))
     else:
         out.append((_BAD, "Шлюз не отвечает вовсе",
                     "Чинить ЛИНК: awg-quick, порт, endpoint, firewall."))

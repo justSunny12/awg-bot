@@ -569,6 +569,24 @@ def _tcp_probe(host: str, port: int, timeout: float) -> bool:
         sock.close()
 
 
+def probe_source() -> Optional[str]:
+    """С какого адреса уходит зонд — то есть и весь маркированный трафик.
+
+    Полезно ровно в разборе отказа: шлюз маскарадит клиентскую подсеть, а зонд
+    идёт с адреса линка, и если для него маскарада нет, пакеты уходят наружу с
+    немаршрутизируемым адресом. Снаружи это неотличимо от «у шлюза нет
+    интернета», поэтому адрес называем прямо.
+    """
+    proc = _host(["ip", "-4", "-o", "addr", "show", "dev",
+                  config.ROUTING_GW_INTERFACE], check=False)
+    if proc.returncode != 0:
+        return None
+    for tok in proc.stdout.decode(errors="replace").split():
+        if "/" in tok and tok.count(".") == 3:
+            return tok.split("/")[0]
+    return None
+
+
 def probe_gateway(target: str, port: int = 53, attempts: int = 2,
                   timeout: float = 4.0) -> str:
     """Проходит ли трафик НАРУЖУ через шлюз. Возвращает PROBE_*.
@@ -730,6 +748,7 @@ __all__ = [
     "PROBE_OK", "PROBE_NO_PATH", "PROBE_DOWN",
     "ensure_mss_clamp", "drop_mss_clamp", "mss_clamp_present",
     "rule_present", "table_route", "set_count", "hook_present", "ensure_policy",
+    "probe_source",
     # внешние списки и dnsmasq
     "fetch", "write_dnsmasq_conf",
 ]

@@ -212,13 +212,17 @@ def test_doctor_names_the_machine_to_fix(monkeypatch):
     monkeypatch.setattr(routing, "table_route", lambda: "default dev awggw")
     monkeypatch.setattr(routing, "rule_present", lambda: True)
     monkeypatch.setattr(routing, "hook_present", lambda: True)
+    monkeypatch.setattr(routing, "probe_source", lambda: "10.99.99.1")
     monkeypatch.setattr(routing, "mss_clamp_present", lambda: True)
     monkeypatch.setattr(routing, "list_sets", lambda: ["vpn_u2"])
     monkeypatch.setattr(routing, "set_count", lambda n: 219)
 
     monkeypatch.setattr(routing, "probe_gateway", lambda t, *a, **k: routing.PROBE_NO_PATH)
     text = " ".join(t + " " + d for _, t, d in doc._probe_layers())
-    assert "НА ШЛЮЗЕ" in text and "интернета за ним нет" in text
+    assert "интернета за ним нет" in text
+    # адрес источника обязан быть назван: чаще всего отказ именно в том, что
+    # шлюз его не маскарадит, а снаружи это неотличимо от «нет интернета»
+    assert "10.99.99.1" in text
 
     monkeypatch.setattr(routing, "probe_gateway", lambda t, *a, **k: routing.PROBE_DOWN)
     text = " ".join(t + " " + d for _, t, d in doc._probe_layers())
@@ -239,6 +243,7 @@ def test_doctor_flags_an_empty_set_as_a_failure(monkeypatch):
     monkeypatch.setattr(routing, "table_route", lambda: "default dev awggw")
     monkeypatch.setattr(routing, "rule_present", lambda: True)
     monkeypatch.setattr(routing, "hook_present", lambda: True)
+    monkeypatch.setattr(routing, "probe_source", lambda: "10.99.99.1")
     monkeypatch.setattr(routing, "mss_clamp_present", lambda: True)
     monkeypatch.setattr(routing, "list_sets", lambda: ["vpn_u2"])
     monkeypatch.setattr(routing, "set_count", lambda n: 0)
@@ -260,6 +265,7 @@ def test_doctor_flags_missing_mss_clamp(monkeypatch):
     monkeypatch.setattr(routing, "table_route", lambda: "default dev awggw")
     monkeypatch.setattr(routing, "rule_present", lambda: True)
     monkeypatch.setattr(routing, "hook_present", lambda: True)
+    monkeypatch.setattr(routing, "probe_source", lambda: "10.99.99.1")
     monkeypatch.setattr(routing, "mss_clamp_present", lambda: False)
     monkeypatch.setattr(routing, "list_sets", lambda: ["vpn_u2"])
     monkeypatch.setattr(routing, "set_count", lambda n: 219)
