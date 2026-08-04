@@ -208,6 +208,16 @@ def _settle(services, fake_routing):
     services.routing_liveness_tick()
 
 
+def _fail_until_announced(services, fake_routing, verdict="down"):
+    """Провалить зонд столько раз, сколько нужно для письма админу. Возвращает
+    уведомления последнего тика."""
+    fake_routing.probe = verdict
+    notes = []
+    for _ in range(services._RT_ANNOUNCE_AFTER):
+        notes = services.routing_liveness_tick()
+    return notes
+
+
 def test_gateway_unreachable_disables_marking_and_alerts_admin_once(
         services, fake_routing):
     """Шлюз не пропускает → маркировка снимается, трафик уходит обычным путём.
@@ -215,8 +225,7 @@ def test_gateway_unreachable_disables_marking_and_alerts_admin_once(
     _settle(services, fake_routing)
     assert fake_routing.marking is True
 
-    fake_routing.probe = "down"
-    notes = services.routing_liveness_tick()
+    notes = _fail_until_announced(services, fake_routing)
     assert fake_routing.marking is False
     assert len(notes) == 1 and "недоступен" in notes[0].text
     assert services.routing_liveness_tick() == []       # повтор — молчим
@@ -247,8 +256,7 @@ def test_tunnel_up_but_no_internet_behind_it_is_a_failure(services, fake_routing
     """Ровно тот отказ, который старая проверка не видела в принципе: туннель
     поднят, хендшейки идут, а за шлюзом интернета нет."""
     _settle(services, fake_routing)
-    fake_routing.probe = "path"
-    notes = services.routing_liveness_tick()
+    notes = _fail_until_announced(services, fake_routing, "path")
     assert fake_routing.marking is False
     assert len(notes) == 1 and "интернета за ним нет" in notes[0].text
 
@@ -257,11 +265,9 @@ def test_alert_names_the_place_to_fix(services, fake_routing):
     """«Шлюз молчит» чинят на линке, «за шлюзом нет интернета» — на самом шлюзе.
     Разный ремонт — разный текст, иначе админ идёт не туда."""
     _settle(services, fake_routing)
-    fake_routing.probe = "down"
-    down = services.routing_liveness_tick()[0].text
+    down = _fail_until_announced(services, fake_routing, "down")[0].text
     _settle(services, fake_routing)
-    fake_routing.probe = "path"
-    path = services.routing_liveness_tick()[0].text
+    path = _fail_until_announced(services, fake_routing, "path")[0].text
     assert down != path
 
 
@@ -514,3 +520,37 @@ def test_geoblock_source_failure_keeps_the_other(services, fake_routing, monkeyp
                         if url == config.ROUTING_LISTS_DOMAINS_URL else "")
     services.routing_update_lists(force=True)
     assert "rutracker.org" in services._routing_read_cache("domains")
+
+
+def test_short_blip_degrades_silently(services, fake_routing):
+    """Ровно тот спам, что пришёл админу: «отвалился» и «снова в строю» в одну
+    минуту. Короткий провал на домашнем аплинке — обычное дело, и такая пара не
+    несёт никакой информации, только приучает не читать уведомления.
+
+    Гасить при этом надо сразу: действие дёшево и безопасно, дорого именно
+    объявление. Поэтому пороги у них разные."""
+    _settle(services, fake_routing)
+
+    fake_routing.probe = "down"
+    assert services.routing_liveness_tick() == [], "написал админу с первого замера"
+    assert fake_routing.marking is False, "а гасить надо было сразу"
+
+    fake_routing.probe = "ok"
+    notes = []
+    for _ in range(3):
+        notes += services.routing_liveness_tick()
+    assert notes == [], "прислал «снова в строю» без предшествующего отвала"
+    assert fake_routing.marking is True
+
+
+def test_recovery_is_announced_only_after_a_real_alert(services, fake_routing):
+    """Зеркальное: если об отвале сообщили, о возврате обязаны сообщить тоже —
+    иначе админ останется думать, что всё ещё сломано."""
+    _settle(services, fake_routing)
+    assert len(_fail_until_announced(services, fake_routing)) == 1
+
+    fake_routing.probe = "ok"
+    notes = []
+    for _ in range(services._RT_UP_STREAK):
+        notes += services.routing_liveness_tick()
+    assert len(notes) == 1 and "в строю" in notes[0].text

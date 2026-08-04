@@ -590,7 +590,7 @@ def probe_source() -> Optional[str]:
     return None
 
 
-def probe_gateway(target: str, port: int = 53, attempts: int = 2,
+def probe_gateway(target, port: int = 53, attempts: int = 2,
                   timeout: float = 4.0) -> str:
     """Проходит ли трафик НАРУЖУ через шлюз. Возвращает PROBE_*.
 
@@ -610,9 +610,15 @@ def probe_gateway(target: str, port: int = 53, attempts: int = 2,
     # потому, что сама его только что создала, то есть отсутствие обвязки не
     # обнаруживалось бы никогда. Доводит её тот, кто управляет состоянием, —
     # routing_liveness_tick.
+    # НЕСКОЛЬКО целей, а не одна. Один внешний хост — сам по себе точка отказа:
+    # он может лечь, подтормаживать или резать частые коннекты, и тогда мы
+    # объявим отказом шлюза чужую проблему. Успех любой цели означает, что путь
+    # наружу есть, — а это ровно то, что мы и хотим знать.
+    targets = [target] if isinstance(target, str) else list(target)
     for _ in range(max(1, attempts)):
-        if _tcp_probe(target, port, timeout):
-            return PROBE_OK
+        for host in targets:
+            if _tcp_probe(host, port, timeout):
+                return PROBE_OK
     # Наружу не прошли. Различаем, где чинить, по состоянию туннеля — здесь это
     # уместно: решение о живости уже принято выше, хендшейк лишь уточняет адрес
     # ремонта. Свежий хендшейк ⇒ туннель жив, значит дело за шлюзом.

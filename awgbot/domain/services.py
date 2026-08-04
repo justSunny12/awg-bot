@@ -1622,6 +1622,9 @@ class Services:
     _RT_LINK_KEY = "routing_link_ok"
     _RT_STREAK_KEY = "routing_link_up_streak"
     _RT_UP_STREAK = 2                     # хороших замеров подряд до возврата
+    _RT_DOWN_KEY = "routing_link_down_streak"
+    _RT_ANNOUNCED_KEY = "routing_link_announced"
+    _RT_ANNOUNCE_AFTER = 3                # плохих замеров подряд до письма админу
     _TXT_RT_GW_DOWN = ("🔴 Шлюз условной маршрутизации недоступен. Маркировка снята: "
                        "российские сервисы у пользователей временно открываются "
                        "с зарубежного адреса. Интернет при этом работает.")
@@ -2022,9 +2025,15 @@ class Services:
     def routing_probe(self) -> str:
         """Замер прямо сейчас. Отдельно от routing_link_ok, чтобы было видно,
         где реальные пинги, а где чтение кэша."""
-        target = str(settings.get("app.routing.probe_target", "77.88.8.8"))
+        targets = settings.get("app.routing.probe_targets", None)
+        if not targets:
+            # Установки, знающие только probe_target, всё равно получают вторую
+            # цель: один внешний хост — сам по себе точка отказа, и его заминка
+            # выглядела бы как отвал шлюза.
+            targets = [str(settings.get("app.routing.probe_target", "77.88.8.8")),
+                       "8.8.8.8"]
         port = int(settings.get("app.routing.probe_port", 53))
-        return routing.probe_gateway(target, port)
+        return routing.probe_gateway(list(targets), port)
 
     def routing_liveness_tick(self) -> list[Notification]:
         """Замер живости шлюза и деградация. Тикает часто (десятки секунд).
@@ -2068,13 +2077,29 @@ class Services:
             log.warning("routing_liveness_tick: %s", e)
             return []
 
-        prev = self.db.get_state(self._RT_LINK_KEY)
-        cur = "1" if ok else "0"
-        self.db.set_state(self._RT_LINK_KEY, cur)
-        if prev is None or prev == cur:
-            return []
+        self.db.set_state(self._RT_LINK_KEY, "1" if ok else "0")
+
+        # ДЕЙСТВИЕ и ОБЪЯВЛЕНИЕ — разные пороги, и это не педантизм.
+        # Погасить режим дёшево и безопасно (у пользователя лишь зарубежный
+        # адрес), поэтому гасим сразу. А написать админу дорого: короткий провал
+        # на домашнем аплинке — обычное дело, и пара «отвалился/поднялся» в одну
+        # минуту не несёт ему никакой информации, только приучает не читать. Об
+        # отказе сообщаем, лишь когда он подтвердился несколькими замерами.
+        down = 0 if ok else int(self.db.get_state(self._RT_DOWN_KEY) or 0) + 1
+        self.db.set_state(self._RT_DOWN_KEY, str(down))
+        announced = self.db.get_state(self._RT_ANNOUNCED_KEY) == "1"
+
         if ok:
+            # «Снова в строю» — только если об отвале действительно сообщали.
+            # Иначе админ получал бы одинокое «всё хорошо» на ровном месте.
+            if not announced:
+                return []
+            self.db.set_state(self._RT_ANNOUNCED_KEY, "0")
             return [Notification(config.ADMIN_ID, self._TXT_RT_GW_UP)]
+
+        if announced or down < self._RT_ANNOUNCE_AFTER:
+            return []
+        self.db.set_state(self._RT_ANNOUNCED_KEY, "1")
         # Разные причины — разный ремонт, поэтому и текст разный: «шлюз молчит»
         # чинят на линке, «за шлюзом нет интернета» — на самом шлюзе.
         text = (self._TXT_RT_GW_NO_PATH if verdict == routing.PROBE_NO_PATH
