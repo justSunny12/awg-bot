@@ -602,10 +602,11 @@ cmd_post_uninstall() {
 # ── status / logs ────────────────────────────────────────────────────────────
 cmd_routing_doctor() {
     require_installed
-    # Диагностику гоняем ТЕМ ЖЕ интерпретатором и с тем же conf, что и бот:
-    # иначе она проверит не ту установку и соврёт.
-    AWGBOT_CONF_DIR="$CONF_DIR" "$INSTALL_DIR/venv/bin/python" \
-        -m awgbot.runtime.routing_doctor
+    # Тем же интерпретатором, из того же каталога и с тем же conf/data, что и
+    # сам бот, — иначе диагностика проверит не ту установку и соврёт. Каталог
+    # обязателен: пакет лежит в $INSTALL_DIR, а не в site-packages.
+    ( cd "$INSTALL_DIR" && AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
+      ./venv/bin/python -m awgbot.runtime.routing_doctor )
 }
 
 cmd_status() {
