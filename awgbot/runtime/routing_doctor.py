@@ -55,7 +55,7 @@ def _probe_layers() -> list[tuple[str, str, str]]:
     # быть жив туннель и лежать аплинк — тогда пункт 2 зелёный, а интернета у
     # пользователей нет.
     target = "77.88.8.8"
-    verdict = routing.probe_gateway(target)
+    verdict = routing.probe_gateway(target)   # TCP с меткой — путь клиентов
     if verdict == routing.PROBE_OK:
         out.append((_OK, f"Через шлюз проходит наружу ({target})", ""))
     elif verdict == routing.PROBE_NO_PATH:
@@ -69,11 +69,17 @@ def _probe_layers() -> list[tuple[str, str, str]]:
     tbl = routing.table_route() or "—"
     out.append((_OK if tbl != "—" else _BAD,
                 f"Маршрут в таблице {config.ROUTING_TABLE}: {tbl}", ""))
+    # ip rule и маршрут — ПОСТОЯННАЯ обвязка: сами по себе трафик никуда не
+    # уводят (метить некому), зато позволяют зонду проверять путь и в деградации.
     rule = routing.rule_present()
-    # Рубильник может стоять в «выкл» законно — так и выглядит деградация.
-    out.append((_OK if rule else _WARN,
-                f"ip rule (рубильник маркировки): {'есть' if rule else 'снят'}",
-                "" if rule else "Снят — значит бот считает шлюз непроходимым."))
+    out.append((_OK if rule else _BAD,
+                f"ip rule по метке (постоянная обвязка): {'есть' if rule else 'НЕТ'}",
+                "" if rule else "Без него зонд проверяет не тот путь."))
+    # А вот хук — рубильник, и снятым он бывает законно: так выглядит деградация.
+    hook = routing.hook_present()
+    out.append((_OK if hook else _WARN,
+                f"Рубильник маркировки (хук в PREROUTING): {'включён' if hook else 'снят'}",
+                "" if hook else "Снят — бот считает шлюз непроходимым."))
 
     # ── 5. MSS-кламп ──
     # Без него страницы не открываются, а пинг и DNS ходят: путь на шлюз

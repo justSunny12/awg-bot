@@ -163,9 +163,9 @@ def test_probe_reports_no_path_when_tunnel_is_up_but_internet_is_not(monkeypatch
     from awgbot.infra import routing
     from awgbot.core import config
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
-    monkeypatch.setattr(routing, "link_peer_address", lambda: "10.99.0.1")
-    monkeypatch.setattr(routing, "_ping",
-                        lambda dest, iface, timeout=2: dest == "10.99.0.1")
+    monkeypatch.setattr(routing, "ensure_policy", lambda: None)
+    monkeypatch.setattr(routing, "_tcp_probe", lambda h, p, t: False)
+    monkeypatch.setattr(routing, "link_handshake_age", lambda: 30)   # туннель жив
     assert routing.probe_gateway("77.88.8.8") == routing.PROBE_NO_PATH
 
 
@@ -173,8 +173,9 @@ def test_probe_reports_down_when_gateway_is_silent(monkeypatch):
     from awgbot.infra import routing
     from awgbot.core import config
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
-    monkeypatch.setattr(routing, "link_peer_address", lambda: "10.99.0.1")
-    monkeypatch.setattr(routing, "_ping", lambda dest, iface, timeout=2: False)
+    monkeypatch.setattr(routing, "ensure_policy", lambda: None)
+    monkeypatch.setattr(routing, "_tcp_probe", lambda h, p, t: False)
+    monkeypatch.setattr(routing, "link_handshake_age", lambda: None)  # туннеля нет
     assert routing.probe_gateway("77.88.8.8") == routing.PROBE_DOWN
 
 
@@ -184,13 +185,14 @@ def test_probe_retries_absorb_a_lost_packet(monkeypatch):
     from awgbot.infra import routing
     from awgbot.core import config
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
+    monkeypatch.setattr(routing, "ensure_policy", lambda: None)
     calls = []
 
-    def flaky(dest, iface, timeout=2):
-        calls.append(dest)
-        return len(calls) >= 2          # первый пакет потерян, второй дошёл
+    def flaky(host, port, timeout):
+        calls.append(host)
+        return len(calls) >= 2          # первая попытка потеряна, вторая дошла
 
-    monkeypatch.setattr(routing, "_ping", flaky)
+    monkeypatch.setattr(routing, "_tcp_probe", flaky)
     assert routing.probe_gateway("77.88.8.8") == routing.PROBE_OK
 
 
@@ -209,15 +211,16 @@ def test_doctor_names_the_machine_to_fix(monkeypatch):
     monkeypatch.setattr(routing, "link_peer_address", lambda: "10.99.0.1")
     monkeypatch.setattr(routing, "table_route", lambda: "default dev awggw")
     monkeypatch.setattr(routing, "rule_present", lambda: True)
+    monkeypatch.setattr(routing, "hook_present", lambda: True)
     monkeypatch.setattr(routing, "mss_clamp_present", lambda: True)
     monkeypatch.setattr(routing, "list_sets", lambda: ["vpn_u2"])
     monkeypatch.setattr(routing, "set_count", lambda n: 219)
 
-    monkeypatch.setattr(routing, "probe_gateway", lambda t, attempts=3: routing.PROBE_NO_PATH)
+    monkeypatch.setattr(routing, "probe_gateway", lambda t, *a, **k: routing.PROBE_NO_PATH)
     text = " ".join(t + " " + d for _, t, d in doc._probe_layers())
     assert "НА ШЛЮЗЕ" in text and "интернета за ним нет" in text
 
-    monkeypatch.setattr(routing, "probe_gateway", lambda t, attempts=3: routing.PROBE_DOWN)
+    monkeypatch.setattr(routing, "probe_gateway", lambda t, *a, **k: routing.PROBE_DOWN)
     text = " ".join(t + " " + d for _, t, d in doc._probe_layers())
     assert "ЛИНК" in text
 
@@ -232,9 +235,10 @@ def test_doctor_flags_an_empty_set_as_a_failure(monkeypatch):
     monkeypatch.setattr(routing, "self_check", lambda force=False: (True, "ок"))
     monkeypatch.setattr(routing, "link_handshake_age", lambda: 12)
     monkeypatch.setattr(routing, "link_peer_address", lambda: "10.99.0.1")
-    monkeypatch.setattr(routing, "probe_gateway", lambda t, attempts=3: routing.PROBE_OK)
+    monkeypatch.setattr(routing, "probe_gateway", lambda t, *a, **k: routing.PROBE_OK)
     monkeypatch.setattr(routing, "table_route", lambda: "default dev awggw")
     monkeypatch.setattr(routing, "rule_present", lambda: True)
+    monkeypatch.setattr(routing, "hook_present", lambda: True)
     monkeypatch.setattr(routing, "mss_clamp_present", lambda: True)
     monkeypatch.setattr(routing, "list_sets", lambda: ["vpn_u2"])
     monkeypatch.setattr(routing, "set_count", lambda n: 0)
@@ -252,9 +256,10 @@ def test_doctor_flags_missing_mss_clamp(monkeypatch):
     monkeypatch.setattr(routing, "self_check", lambda force=False: (True, "ок"))
     monkeypatch.setattr(routing, "link_handshake_age", lambda: 12)
     monkeypatch.setattr(routing, "link_peer_address", lambda: "10.99.0.1")
-    monkeypatch.setattr(routing, "probe_gateway", lambda t, attempts=3: routing.PROBE_OK)
+    monkeypatch.setattr(routing, "probe_gateway", lambda t, *a, **k: routing.PROBE_OK)
     monkeypatch.setattr(routing, "table_route", lambda: "default dev awggw")
     monkeypatch.setattr(routing, "rule_present", lambda: True)
+    monkeypatch.setattr(routing, "hook_present", lambda: True)
     monkeypatch.setattr(routing, "mss_clamp_present", lambda: False)
     monkeypatch.setattr(routing, "list_sets", lambda: ["vpn_u2"])
     monkeypatch.setattr(routing, "set_count", lambda n: 219)

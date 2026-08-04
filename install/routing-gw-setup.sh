@@ -107,6 +107,10 @@ if [ "$MODE" = "rollback" ]; then
           -j MASQUERADE 2>/dev/null; do
         run "iptables -t nat -D POSTROUTING -s $CLIENT_SUBNET -o $WAN_IF -j MASQUERADE"
     done
+    while iptables -t nat -C POSTROUTING -s "$LINK_CIDR" -o "$WAN_IF" \
+          -j MASQUERADE 2>/dev/null; do
+        run "iptables -t nat -D POSTROUTING -s $LINK_CIDR -o $WAN_IF -j MASQUERADE"
+    done
     run "iptables -F $FWD_CHAIN 2>/dev/null || true"
     run "iptables -X $FWD_CHAIN 2>/dev/null || true"
     run "rm -f $HOST_CONF_DIR/$LINK_IF.conf $UNIT"
@@ -152,6 +156,14 @@ if iptables -t nat -C POSTROUTING -s "$CLIENT_SUBNET" -o "$WAN_IF" -j MASQUERADE
     say "  уже есть"
 else
     run "iptables -t nat -A POSTROUTING -s $CLIENT_SUBNET -o $WAN_IF -j MASQUERADE"
+fi
+# Линк-подсеть маскарадим ТОЖЕ: с адреса линка ходит зонд живости с ВПС. Без
+# этого его пакеты уходили бы в интернет немаскараженными и не возвращались —
+# бот считал бы исправный шлюз непроходимым и держал режим выключенным.
+if iptables -t nat -C POSTROUTING -s "$LINK_CIDR" -o "$WAN_IF" -j MASQUERADE 2>/dev/null; then
+    say "  уже есть (линк)"
+else
+    run "iptables -t nat -A POSTROUTING -s $LINK_CIDR -o $WAN_IF -j MASQUERADE"
 fi
 
 # ── 3. закрыть домашнюю сеть ─────────────────────────────────────────────────

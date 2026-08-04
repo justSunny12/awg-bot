@@ -200,7 +200,9 @@ def fake_routing(monkeypatch, tmp_path):
     _set("sync_nat_exempt", lambda addrs: setattr(state, "nat_exempt", sorted(addrs)))
     _set("ensure_route", lambda: None)
     _set("set_marking_enabled", lambda on: setattr(state, "marking", on))
-    _set("probe_gateway", lambda target, attempts=3: state.probe)
+    _set("probe_gateway", lambda target, *a, **k: state.probe)
+    _set("ensure_policy", lambda: None)
+    _set("hook_present", lambda: bool(state.marking))
     _set("write_dnsmasq_conf", write_conf)
     return state
 

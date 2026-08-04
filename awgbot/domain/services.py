@@ -1995,7 +1995,8 @@ class Services:
         """Замер прямо сейчас. Отдельно от routing_link_ok, чтобы было видно,
         где реальные пинги, а где чтение кэша."""
         target = str(settings.get("app.routing.probe_target", "77.88.8.8"))
-        return routing.probe_gateway(target)
+        port = int(settings.get("app.routing.probe_port", 53))
+        return routing.probe_gateway(target, port)
 
     def routing_liveness_tick(self) -> list[Notification]:
         """Замер живости шлюза и деградация. Тикает часто (десятки секунд).

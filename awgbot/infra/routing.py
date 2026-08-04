@@ -351,13 +351,20 @@ def rebuild_chain(client_ids) -> None:
                  "-m", "set", "--match-set", src_set(cid), "src",
                  "-m", "set", "!", "--match-set", user_set(cid), "dst",
                  "-j", "MARK", "--set-xmark", _MARK])
-    # хук в PREROUTING — идемпотентно. Сужен клиентской подсетью: до цепочки
+    # ХУК В PREROUTING СТАВИТ НЕ ЭТА ФУНКЦИЯ, а set_marking_enabled: именно
+    # наличие хука и есть рубильник. Цепочка может быть собрана и лежать без
+    # дела — это нормальное состояние деградации.
+    # Историческая справка к комментарию ниже: хук сужен клиентской подсетью:
     # доходит только немаскараженный трафик включённых устройств, остальному в
     # ней делать нечего.
-    hook = ["-t", "mangle", "-C", "PREROUTING",
-            "-s", config.ROUTING_CLIENT_SUBNET, "-j", chain]
-    if not _host_ok(["iptables", *hook]):
-        _mangle(["-I", "PREROUTING", "-s", config.ROUTING_CLIENT_SUBNET, "-j", chain])
+
+
+_HOOK = ["-s", config.ROUTING_CLIENT_SUBNET, "-j", config.ROUTING_CHAIN]
+_RULE = ["fwmark", _MARK_HEX, "lookup", str(config.ROUTING_TABLE)]
+
+
+def _hook_present() -> bool:
+    return _host_ok(["iptables", "-t", "mangle", "-C", "PREROUTING", *_HOOK])
 
 
 def _rule_present() -> bool:
@@ -375,8 +382,13 @@ def ensure_route() -> None:
 # ── Наблюдение за состоянием (только чтение; для диагностики) ────────────────
 
 def rule_present() -> bool:
-    """Стоит ли рубильник маркировки."""
+    """Стоит ли ip rule — постоянная обвязка, не рубильник."""
     return _rule_present()
+
+
+def hook_present() -> bool:
+    """Стоит ли РУБИЛЬНИК: прыгает ли PREROUTING в цепочку маркировки."""
+    return _hook_present()
 
 
 def table_route() -> Optional[str]:
@@ -451,23 +463,47 @@ def drop_mss_clamp() -> None:
            "-j", "TCPMSS", "--clamp-mss-to-pmtu"], check=False)
 
 
-def set_marking_enabled(on: bool) -> None:
-    """Главный рубильник: есть ли ip rule, отправляющий помеченное в таблицу.
+def ensure_policy() -> None:
+    """Статическая часть политики: маршрут, ip rule и MSS-кламп. Идемпотентно.
 
-    Выключение — механизм ГРАЦИОЗНОЙ ДЕГРАДАЦИИ при недоступном шлюзе: маркировка
-    остаётся, но никуда не ведёт, и трафик уходит обычным путём с зарубежным
-    адресом. Пользователь видит «банк ругается на IP», а не «интернета нет».
-    Идемпотентно.
+    Раньше правило и маршрут ставились вместе с включением режима и снимались
+    вместе с ним. Из-за этого зонд живости не мог проверить путь в состоянии
+    деградации: маршрут в шлюз лежит в таблице фичи, а выбирает её как раз это
+    правило — снят рубильник, и проверять стало нечем, то есть вернуться из
+    деградации бот мог только вслепую.
+
+    Поэтому маршрут с правилом — постоянная обвязка (сами по себе они трафик
+    никуда не уводят: в цепочку никто не прыгает, метить некому), а рубильником
+    служит ХУК в PREROUTING.
     """
-    present = _rule_present()
-    if on and not present:
-        ensure_route()
-        ensure_mss_clamp()
+    if not config.ROUTING_GW_INTERFACE:
+        return
+    ensure_route()
+    ensure_mss_clamp()
+    if not _rule_present():
         _host(["ip", "rule", "add", *_RULE])
-        log.info("routing: политика включена")
+
+
+def set_marking_enabled(on: bool) -> None:
+    """Главный рубильник: прыгает ли PREROUTING в цепочку маркировки.
+
+    Выключение — механизм ГРАЦИОЗНОЙ ДЕГРАДАЦИИ при непроходимом шлюзе: метить
+    перестаём, трафик уходит обычным путём с зарубежным адресом. Пользователь
+    видит «банк ругается на IP», а не «интернета нет». Идемпотентно.
+    """
+    if not config.ROUTING_GW_INTERFACE:
+        return
+    present = _hook_present()
+    if on and not present:
+        ensure_policy()
+        _mangle(["-I", "PREROUTING", *_HOOK])
+        log.info("routing: маркировка включена")
     elif not on and present:
-        _host(["ip", "rule", "del", *_RULE], check=False)
-        log.info("routing: политика выключена (деградация)")
+        # Снимаем ВСЕ копии: дубли хука мог оставить прошлый запуск, и одного
+        # -D тогда мало — режим остался бы включённым при снятом рубильнике.
+        while _hook_present():
+            _mangle(["-D", "PREROUTING", *_HOOK], check=False)
+        log.info("routing: маркировка снята (деградация)")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -510,29 +546,52 @@ PROBE_NO_PATH = "path"   # шлюз отвечает, но наружу чере
 PROBE_DOWN = "down"      # шлюз не отвечает вовсе
 
 
-def probe_gateway(target: str, attempts: int = 3) -> str:
+def _tcp_probe(host: str, port: int, timeout: float) -> bool:
+    """TCP-коннект С МЕТКОЙ фичи — то есть ровно тем путём, которым ходит
+    клиентский трафик: ip rule по метке → таблица фичи → линк → шлюз → его NAT.
+
+    Именно TCP, а не ICMP. Предыдущая версия пинговала, и зонд падал на том,
+    чего от шлюза никто не требовал: наружу пинг уходил по main-таблице (где
+    маршрута в шлюз нет — он лежит в таблице фичи), а до самого шлюза не
+    доходил, потому что INPUT на нём ICMP не разрешает. Проверялся путь,
+    который никогда не был настроен, а настоящий — не проверялся вовсе.
+    """
+    so_mark = getattr(socket, "SO_MARK", 36)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, so_mark, config.ROUTING_FWMARK)
+        sock.settimeout(timeout)
+        sock.connect((host, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
+def probe_gateway(target: str, port: int = 53, attempts: int = 2,
+                  timeout: float = 4.0) -> str:
     """Проходит ли трафик НАРУЖУ через шлюз. Возвращает PROBE_*.
 
-    Меряем то, что важно, а не то, что легко померить. Возраст хендшейка
+    Меряем то, что важно, а не то, что легко померить: возраст хендшейка
     отвечает на вопрос «поднят ли туннель», а нас интересует «дойдёт ли пакет
-    до интернета» — и эти два условия расходятся ровно в худшем случае: у
-    шлюза упал аплинк или слетел форвардинг, хендшейки при этом идут как ни в
-    чём не бывало. Пользователь остаётся без интернета насовсем, а проверка по
-    хендшейку этого не видит в принципе.
+    до интернета». Эти условия расходятся ровно в худшем случае — у шлюза упал
+    аплинк или слетел форвардинг, а хендшейки идут как ни в чём не бывало.
 
-    Потери гасим повторами ВНУТРИ одного замера, а не растягиванием решения на
-    минуты: одиночный потерянный пакет — это шум, а не отвал.
+    Потери гасим повторами ВНУТРИ замера: одиночный потерянный пакет — шум, а
+    не отвал, и растягивать из-за него решение на минуты незачем.
     """
-    iface = config.ROUTING_GW_INTERFACE
-    if not iface:
+    if not config.ROUTING_GW_INTERFACE:
         return PROBE_DOWN
+    ensure_policy()          # без правила и маршрута зонд проверил бы не тот путь
     for _ in range(max(1, attempts)):
-        if _ping(target, iface):
+        if _tcp_probe(target, port, timeout):
             return PROBE_OK
-    peer = link_peer_address()
-    if peer and any(_ping(peer, iface) for _ in range(max(1, attempts))):
-        return PROBE_NO_PATH
-    return PROBE_DOWN
+    # Наружу не прошли. Различаем, где чинить, по состоянию туннеля — здесь это
+    # уместно: решение о живости уже принято выше, хендшейк лишь уточняет адрес
+    # ремонта. Свежий хендшейк ⇒ туннель жив, значит дело за шлюзом.
+    age = link_handshake_age()
+    return PROBE_NO_PATH if (age is not None and age <= 180) else PROBE_DOWN
 
 
 def link_handshake_age() -> Optional[int]:
@@ -670,7 +729,7 @@ __all__ = [
     "probe_gateway", "link_peer_address", "resolve_a",
     "PROBE_OK", "PROBE_NO_PATH", "PROBE_DOWN",
     "ensure_mss_clamp", "drop_mss_clamp", "mss_clamp_present",
-    "rule_present", "table_route", "set_count",
+    "rule_present", "table_route", "set_count", "hook_present", "ensure_policy",
     # внешние списки и dnsmasq
     "fetch", "write_dnsmasq_conf",
 ]
