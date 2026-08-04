@@ -37,6 +37,7 @@ import os
 import ipaddress
 import socket
 import subprocess
+import time
 import threading
 from typing import Optional
 
@@ -125,6 +126,8 @@ _MARK_HEX = f"0x{config.ROUTING_FWMARK:x}"
 
 
 _PROBE_SET = "awgbot_rt_probe"
+
+_last_probe_ms: Optional[int] = None
 
 
 def _check_host_tools() -> None:
@@ -559,17 +562,29 @@ def _tcp_probe(host: str, port: int, timeout: float) -> bool:
     доходил, потому что INPUT на нём ICMP не разрешает. Проверялся путь,
     который никогда не был настроен, а настоящий — не проверялся вовсе.
     """
+    global _last_probe_ms
     so_mark = getattr(socket, "SO_MARK", 36)
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    started = time.monotonic()
     try:
         sock.setsockopt(socket.SOL_SOCKET, so_mark, config.ROUTING_FWMARK)
         sock.settimeout(timeout)
         sock.connect((host, port))
+        _last_probe_ms = int((time.monotonic() - started) * 1000)
         return True
     except OSError:
+        _last_probe_ms = None
         return False
     finally:
         sock.close()
+
+
+def last_probe_latency_ms() -> Optional[int]:
+    """Сколько занял последний удавшийся коннект. Для диагностики: «медленно» и
+    «мёртво» снаружи неотличимы, а чинятся совершенно по-разному. Растущая
+    задержка на пути через шлюз — обычно признак того, что туннель на нём
+    считается в userspace, а не ядром."""
+    return _last_probe_ms
 
 
 def probe_source() -> Optional[str]:
@@ -762,7 +777,7 @@ __all__ = [
     "PROBE_OK", "PROBE_NO_PATH", "PROBE_DOWN",
     "ensure_mss_clamp", "drop_mss_clamp", "mss_clamp_present",
     "rule_present", "table_route", "set_count", "hook_present", "ensure_policy",
-    "probe_source",
+    "probe_source", "last_probe_latency_ms",
     # внешние списки и dnsmasq
     "fetch", "write_dnsmasq_conf",
 ]

@@ -332,3 +332,15 @@ def test_one_directive_per_domain_regardless_of_case():
     directives = [l for l in conf.splitlines() if l.startswith("ipset=")]
     assert len(directives) == 1, directives
     assert directives[0] == "ipset=/example.com/vpn_u7", directives
+
+
+def test_probe_timeout_stays_tight():
+    """Таймаут зонда — не место для компенсации медленного шлюза. Раздуть его
+    значит перестать замечать деградацию: путь через два туннеля к публичному
+    DNS обязан отвечать за доли секунды, а секунды на нём — уже симптом
+    (обычно туннель на шлюзе считается в userspace, а не ядром)."""
+    import inspect
+    from awgbot.infra import routing
+    default = inspect.signature(routing.probe_gateway).parameters["timeout"].default
+    assert default <= 5.0, (
+        f"таймаут {default} с маскирует медленный шлюз вместо того, чтобы его показать")

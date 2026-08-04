@@ -77,7 +77,16 @@ def _probe_layers() -> list[tuple[str, str, str]]:
     target = "77.88.8.8"
     verdict = routing.probe_gateway(target)   # TCP с меткой — путь клиентов
     if verdict == routing.PROBE_OK:
-        out.append((_OK, f"Через шлюз проходит наружу ({target})", ""))
+        # Задержку показываем всегда: «медленно» и «мёртво» снаружи неотличимы,
+        # а чинятся по-разному. Сотни миллисекунд на этом пути — обычно признак
+        # того, что туннель на шлюзе считается в userspace, а не ядром.
+        ms = routing.last_probe_latency_ms()
+        slow = ms is not None and ms > 800
+        out.append((_WARN if slow else _OK,
+                    f"Через шлюз проходит наружу ({target}), {ms} мс"
+                    if ms is not None else f"Через шлюз проходит наружу ({target})",
+                    "Медленно. На шлюзе туннель в userspace (amneziawg-go)? "
+                    "Модуль ядра убирает и задержку, и её скачки." if slow else ""))
     elif not (tbl and rule):
         # Обвязки нет — значит зонд не дошёл даже до шлюза, и его вердикт не про
         # шлюз. Назвать это отказом шлюза значило бы отправить чинить не туда.
