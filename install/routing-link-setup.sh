@@ -30,7 +30,11 @@
 set -e
 
 LINK_IF="${LINK_IF:-awglink}"
-LINK_PORT="${LINK_PORT:-51830}"
+# 443 ПО УМОЛЧАНИЮ, а не характерный для туннелей порт: UDP на 443 неотличим от
+# QUIC и теряется в общем потоке, тогда как 51830 сам себя объявляет VPN. Порт —
+# первое, что видит DPI, и менять его дороже, чем выбрать сразу. Занят чем-то
+# другим — переопредели: LINK_PORT=... routing-link-setup.sh --apply
+LINK_PORT="${LINK_PORT:-443}"
 LINK_VPS_ADDR="${LINK_VPS_ADDR:-10.99.99.1}"
 LINK_GW_ADDR="${LINK_GW_ADDR:-10.99.99.2}"
 LINK_CIDR="${LINK_CIDR:-10.99.99.0/30}"
