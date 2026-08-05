@@ -170,3 +170,37 @@ def test_unit_carries_the_runtime_into_execstart(script):
     больше нет.
     """
     assert "AWG_RUNTIME=$AWG_RUNTIME" in script
+
+
+# ── маршрут и DNS: два отказа переезда ───────────────────────────────────────
+
+def test_stale_route_is_removed_in_host_mode(script):
+    """Мало НЕ ставить свой маршрут — надо снять чужой.
+
+    Via-маршрут, оставшийся от контейнерной схемы, переживает переезд и
+    перекрывает connected: наружу всё уходит, а ответы клиентам отправляются в
+    мёртвую docker-сеть. Диагностика при этом зелёная — маршрут ведь есть.
+    """
+    body = script.split('step "5.', 1)[1].split("step ", 1)[0]
+    assert "ip route del" in body
+    assert "AWG_IF" in body, "чужой маршрут отличается от connected по интерфейсу"
+
+
+def test_dnatted_dns_is_allowed_into_input(script):
+    """После DNAT назначение — НАШ адрес, и пакет идёт в INPUT, а не в FORWARD.
+
+    При политике DROP он там умирает: клиент подключается, ходит по голым
+    адресам (телеграм работает), а всё, что требует резолва, мертво. В
+    docker-режиме не всплывало — контейнер маскарадил клиентов, и DNAT по
+    -s подсети до них не доставал.
+    """
+    assert 'ensure_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p udp --dport 53 -j ACCEPT' in script
+    dnat = script.index("3. Перехват DNS")
+    allow = script.index('step "3a.')
+    forward = script.index("# 4) выход наружу")
+    assert dnat < allow < forward, "разрешение в INPUT должно идти сразу за DNAT"
+
+
+def test_input_allow_is_rolled_back(script):
+    rollback = script.split('if [ "$MODE" = "rollback" ]', 1)[1].split("exit 0", 1)[0]
+    assert "filter INPUT" in rollback

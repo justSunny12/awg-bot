@@ -98,6 +98,9 @@ container_ip() {
 # другой режим, чем работает бот.
 AWG_RUNTIME="${AWG_RUNTIME:-$(awk -F'"' '/^  runtime:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
 AWG_RUNTIME="${AWG_RUNTIME:-docker}"
+# Имя awg-интерфейса нужно, чтобы отличить connected-маршрут от чужого.
+AWG_IF="${AWG_IF:-$(awk -F'"' '/^  interface:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
+AWG_IF="${AWG_IF:-awg0}"
 case "$AWG_RUNTIME" in
     docker|host) ;;
     *) say "ОШИБКА: AWG_RUNTIME=$AWG_RUNTIME (допустимо docker или host)."; exit 1 ;;
@@ -180,6 +183,8 @@ if [ "$MODE" = "rollback" ]; then
               -j DNAT --to-destination "$DNS_ADDR:53"
     drop_rule nat PREROUTING -s "$CLIENT_SUBNET" -p tcp --dport 53 \
               -j DNAT --to-destination "$DNS_ADDR:53"
+    drop_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p udp --dport 53 -j ACCEPT
+    drop_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p tcp --dport 53 -j ACCEPT
     drop_rule filter FORWARD -s "$CLIENT_SUBNET" -p tcp --dport 853 \
               -j REJECT --reject-with tcp-reset
     drop_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
@@ -308,6 +313,18 @@ ensure_rule nat PREROUTING -s "$CLIENT_SUBNET" -p udp --dport 53 \
 ensure_rule nat PREROUTING -s "$CLIENT_SUBNET" -p tcp --dport 53 \
             -j DNAT --to-destination "$DNS_ADDR:53"
 
+# 3a) DNAT ведёт на ЛОКАЛЬНЫЙ адрес — значит пакет попадает в INPUT
+# Это не тонкость, а отдельный отказ. После DNAT назначение становится нашим
+# собственным адресом, и пакет идёт в INPUT, а не в FORWARD. При политике DROP
+# (ufw и подобные) он там и умирает: клиент подключается, ходит по голым
+# адресам — телеграм работает, — а всё, что требует резолва, мертво.
+#
+# В docker-режиме это годами не всплывало: контейнер маскарадил клиентов, DNAT
+# по -s 10.8.1.0/24 до них не доставал, и DNS уходил к настоящему 1.1.1.1.
+step "3a. Пропустить DNS клиентов в INPUT"
+ensure_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p udp --dport 53 -j ACCEPT
+ensure_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p tcp --dport 53 -j ACCEPT
+
 # 4) выход наружу для немаскараженного трафика включённых устройств
 step "4. MASQUERADE и FORWARD для $CLIENT_SUBNET"
 ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
@@ -328,9 +345,21 @@ ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -p tcp --dport 853 \
 
 # 5) обратный маршрут в контейнер
 if [ "$AWG_RUNTIME" = "host" ]; then
-    step "5. Маршрут $CLIENT_SUBNET — не нужен"
+    step "5. Маршрут $CLIENT_SUBNET — снимаем чужой"
     say "  awg0 поднят на этом же хосте: подсеть connected через интерфейс."
     say "  Прописать сюда via-маршрут значило бы увести трафик в никуда."
+    # Мало НЕ ставить свой: via-маршрут, оставшийся от контейнерной схемы,
+    # переживает переезд и перекрывает connected. Наружу всё уходит, а ответы
+    # клиентам отправляются в мёртвую docker-сеть — и это выглядит как
+    # «подключается, но интернета нет» при полностью зелёной диагностике.
+    _stale="$(ip route show "$CLIENT_SUBNET" 2>/dev/null | grep -v " dev $AWG_IF" || true)"
+    if [ -n "$_stale" ]; then
+        say "  НАЙДЕН лишний маршрут мимо $AWG_IF:"
+        say "    $_stale"
+        run "ip route del $CLIENT_SUBNET 2>/dev/null || true"
+    else
+        say "  лишних маршрутов нет"
+    fi
 else
     step "5. Маршрут $CLIENT_SUBNET → $CONT_IP"
     if ip route show "$CLIENT_SUBNET" | grep -q "$CONT_IP"; then

@@ -203,3 +203,27 @@ def test_apply_asks_for_a_multiplexer(migrate):
     Прямой SSH тоже может моргнуть, а доделывать шаги некому.
     """
     assert "TMUX" in migrate and "STY" in migrate
+
+
+# ── то, что переставало работать после переезда ──────────────────────────────
+
+def test_client_port_is_opened_in_the_firewall(migrate):
+    """Пока порт публиковал docker, правил в файрволе не требовалось.
+
+    Публикация docker ставит DNAT и свои цепочки FORWARD, обходя INPUT и ufw
+    целиком. На хосте awg слушает напрямую, пакет идёт в INPUT — и при политике
+    DROP клиенты просто не подключаются, а причина ни на что не похожа.
+    """
+    assert "ListenPort" in migrate
+    assert "ufw allow" in migrate
+
+
+def test_stale_client_route_is_removed(migrate):
+    """Маршрут через контейнер переживает переезд и перекрывает connected.
+
+    Наружу всё уходит, ответы клиентам отправляются в мёртвую docker-сеть, а
+    диагностика зелёная — маршрут ведь существует.
+    """
+    body = migrate.split('step "6b.', 1)[1]
+    assert "ip route del" in body
+    assert "$AWG_IF" in body

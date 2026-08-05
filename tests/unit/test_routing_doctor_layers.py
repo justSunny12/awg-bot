@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 
 from awgbot.core import config
@@ -14,6 +16,11 @@ from awgbot.infra import routing
 from awgbot.runtime import routing_doctor as doc
 
 pytestmark = pytest.mark.unit
+
+
+def _cp(stdout=b"", returncode=0):
+    return subprocess.CompletedProcess(args=[], returncode=returncode,
+                                       stdout=stdout, stderr=b"")
 
 
 @pytest.fixture
@@ -61,3 +68,45 @@ def test_short_blip_does_not_redden_a_working_link(healthy, monkeypatch):
 def test_threshold_exceeds_wireguard_reject_time():
     """Порог обязан быть больше REJECT_AFTER_TIME, иначе ловил бы норму."""
     assert doc._STALE_HANDSHAKE > 180
+
+
+# ── маршрут может существовать и вести не туда ───────────────────────────────
+
+def test_route_pointing_away_from_awg_is_a_failure(monkeypatch):
+    """Проверять наличие маршрута мало.
+
+    После переезда на хост via-маршрут от контейнера пережил миграцию и
+    перекрыл connected. Наружу всё уходило, ответы клиентам отправлялись в
+    мёртвую docker-сеть — а доктор был полностью зелёным, потому что маршрут
+    «есть». Три часа разбора стоили ровно этой строки.
+    """
+    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
+
+    def fake_host(args, check=True, input_data=None, timeout=20):
+        if args[:3] == ["ip", "route", "show"]:
+            return _cp(b"10.8.1.0/24 via 172.29.172.2 dev amn0\n")
+        if args[:2] == ["systemctl", "list-unit-files"]:
+            return _cp(f"{config.ROUTING_DNSMASQ_SERVICE}.service enabled".encode())
+        return _cp()
+
+    monkeypatch.setattr(routing, "_host", fake_host)
+    monkeypatch.setattr(routing, "_host_ok", lambda args: True)
+    with pytest.raises(routing.RoutingUnavailable, match="мимо awg0"):
+        routing._check_static_plumbing()
+
+
+def test_connected_route_through_awg_passes(monkeypatch):
+    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
+
+    def fake_host(args, check=True, input_data=None, timeout=20):
+        if args[:3] == ["ip", "route", "show"]:
+            return _cp(b"10.8.1.0/24 dev awg0 proto kernel scope link src 10.8.1.0\n")
+        if args[:2] == ["systemctl", "list-unit-files"]:
+            return _cp(f"{config.ROUTING_DNSMASQ_SERVICE}.service enabled".encode())
+        return _cp()
+
+    monkeypatch.setattr(routing, "_host", fake_host)
+    monkeypatch.setattr(routing, "_host_ok", lambda args: True)
+    routing._check_static_plumbing()          # не бросает
