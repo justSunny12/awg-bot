@@ -100,20 +100,27 @@ def collect_warnings(services) -> list[str]:
     except OSError as e:
         log.warning("preflight: проверка диска не удалась: %s", e)
 
-    # контейнер AmneziaWG отвечает
+    # awg отвечает. Совет по ремонту — по режиму: на хосте докера нет вовсе, и
+    # «проверьте docker ps» отправило бы чинить не тот слой. Такая адресация уже
+    # стоила нам часов при переезде (docs/ROADMAP.md, шаг 2).
+    from awgbot.infra import awg
+    _in_cont = awg.in_container()
     try:
         if not services.server_ok():
-            warns.append("контейнер AmneziaWG не отвечает на старте — "
-                         "проверьте `docker ps` и журнал контейнера")
+            warns.append(
+                "контейнер AmneziaWG не отвечает на старте — "
+                "проверьте `docker ps` и журнал контейнера" if _in_cont else
+                f"awg не отвечает на старте — проверьте "
+                f"`ip link show {config.AWG_INTERFACE}` и `awg show`")
     except Exception as e:                               # noqa: BLE001
-        log.warning("preflight: проверка контейнера не удалась: %s", e)
+        log.warning("preflight: проверка awg не удалась: %s", e)
 
-    # серверный awg0.conf читается (единственная копия вне контейнера — в бэкапе)
+    # серверный awg0.conf читается (единственная копия вне сервера — в бэкапе)
     try:
-        from awgbot.infra import awg
         awg.read_file(config.CONF_PATH)
     except Exception as e:                               # noqa: BLE001
-        warns.append(f"не читается {config.CONF_PATH} в контейнере ({e}) — "
+        where = "в контейнере" if _in_cont else "на хосте"
+        warns.append(f"не читается {config.CONF_PATH} {where} ({e}) — "
                      "выдача конфигов/реконсиляция могут не работать")
 
     # условная маршрутизация: инструменты на месте и namespace сходится.
