@@ -218,6 +218,41 @@ else
         tcp dport $SSH_PORT drop"
 fi
 
+# ── порт клиентов: в host-режиме его должен кто-то пропустить ────────────────
+# Наша таблица тут не поможет: у неё policy accept, а accept в одной nft-таблице
+# не отменяет drop в другой — хуки отрабатывают оба. Запрет живёт там, где его
+# поставили (обычно ufw), туда и правим.
+#
+# Почему этого не было раньше: порт публиковал docker, а публикация docker
+# ставит DNAT и свои цепочки FORWARD, обходя INPUT целиком. Правила в файрволе
+# не требовалось. На хосте awg слушает напрямую — и пакет идёт в INPUT, где при
+# политике DROP его никто не ждёт. Снаружи это «клиенты не подключаются», и
+# причина ни на что не похожа.
+if [[ "$_runtime" == "host" ]]; then
+    echo
+    _awgdir="$(grep -oP '^\s*awg_dir:\s*"?\K[^"]+' "${_cfg_found:-/dev/null}" 2>/dev/null | head -n1 || true)"
+    _awgdir="${_awgdir:-/opt/amnezia/awg}"
+    _awgif="$(grep -oP '^\s*interface:\s*"?\K[A-Za-z0-9._-]+' "${_cfg_found:-/dev/null}" 2>/dev/null | head -n1 || true)"
+    _awgif="${_awgif:-awg0}"
+    _port="$(grep -oP '^\s*ListenPort\s*=\s*\K[0-9]+' "$_awgdir/$_awgif.conf" 2>/dev/null | head -n1 || true)"
+
+    if [[ -z "$_port" ]]; then
+        err "не удалось прочитать ListenPort из $_awgdir/$_awgif.conf."
+        err "Открой порт awg вручную, иначе клиенты не подключатся."
+    elif command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+        if ufw status | grep -q "^${_port}/udp"; then
+            log "ufw: ${_port}/udp уже разрешён"
+        else
+            log "ufw: открываю ${_port}/udp (порт клиентов awg)"
+            ufw allow "${_port}/udp" comment 'awg клиенты' >/dev/null
+        fi
+    else
+        err "ufw неактивен, а порт клиентов ${_port}/udp должен быть открыт."
+        err "Проверь сам: awg слушает его напрямую, и INPUT с политикой DROP"
+        err "оставит всех без связи."
+    fi
+fi
+
 # ── сгенерировать ruleset ────────────────────────────────────────────────────
 mkdir -p "$RULES_DIR"
 cat > "$RULES_FILE" <<EOF

@@ -227,3 +227,27 @@ def test_stale_client_route_is_removed(migrate):
     body = migrate.split('step "6b.', 1)[1]
     assert "ip route del" in body
     assert "$AWG_IF" in body
+
+
+# ── firewall: порт клиентов в host-режиме ────────────────────────────────────
+
+def test_firewall_opens_the_client_port_in_host_mode(firewall):
+    """Своя nft-таблица тут бессильна.
+
+    У неё policy accept, а accept в одной таблице не отменяет drop в другой —
+    хуки отрабатывают оба. Запрет живёт в ufw, туда и надо править.
+    """
+    block = firewall.split('"$_runtime" == "host"', 1)[-1]
+    assert "ListenPort" in block, "порт берётся из живого конфига, а не угадывается"
+    assert "ufw allow" in block
+
+
+def test_firewall_warns_when_it_cannot_open_the_port(firewall):
+    """Молчание тут неотличимо от «открыто».
+
+    Без предупреждения человек с другим файрволом узнает о закрытом порте от
+    пользователей, а не от скрипта.
+    """
+    block = firewall.split('"$_runtime" == "host"', 1)[-1]
+    assert "ufw неактивен" in block
+    assert "не удалось прочитать ListenPort" in block
