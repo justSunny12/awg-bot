@@ -554,3 +554,109 @@ def test_recovery_is_announced_only_after_a_real_alert(services, fake_routing):
     for _ in range(services._RT_UP_STREAK):
         notes += services.routing_liveness_tick()
     assert len(notes) == 1 and "в строю" in notes[0].text
+
+
+# ── подсети сервисов со СВОИМ адресным блоком ────────────────────────────────
+
+def test_example_block_is_in_the_base_set_without_any_dns(services, monkeypatch):
+    """Сервис в собственном блоке обязан попадать в набор по подсети, не по DNS.
+
+    Домен входит в набор только через резолв: dnsmasq видит запрос и кладёт
+    полученный адрес. Клиент, резолвящий мимо нас — DoH, DoT, свой резолвер,
+    просто закэшированный адрес, — соединится с адресом, которого в наборе нет.
+    При инверсии логики это «на шлюз», то есть российским адресом ровно туда,
+    где он и запрещён.
+
+    Пока сервис жил за Cloudflare, дыры не было: сети Cloudflare едут отдельным
+    списком подсетей. этот сервис ушёл в свой блок 203.0.113.0/21 — и остался
+    держаться на одном резолве. Симптом: «с выключенной маршрутизацией работает,
+    с включённой нет».
+    """
+    import ipaddress
+    from awgbot.core import config
+
+    nets = [ipaddress.ip_network(n) for n in config.ROUTING_ABROAD_NETS]
+    ip = ipaddress.ip_address("203.0.113.10")     # example.com / api.example.com
+    assert any(ip in n for n in nets), (
+        "адрес этот сервис не покрыт ROUTING_ABROAD_NETS — сервис снова держится "
+        "на одном лишь резолве")
+
+
+def test_builtin_nets_reach_the_user_set(services, make_active_client, monkeypatch):
+    """Встроенные подсети должны доехать до набора клиента, а не осесть в конфиге."""
+    from awgbot.core import config
+    from awgbot.infra import routing
+
+    added: list = []
+    monkeypatch.setattr(routing, "add_networks",
+                        lambda name, members: added.extend(members) or len(added))
+    monkeypatch.setattr(routing, "replace_members", lambda *a, **k: None)
+    monkeypatch.setattr(routing, "sync_nat_exempt", lambda *a, **k: None)
+    monkeypatch.setattr(routing, "rebuild_chain", lambda *a, **k: None)
+    monkeypatch.setattr(routing, "write_dnsmasq_conf", lambda *a, **k: None)
+    monkeypatch.setattr(routing, "ensure_set", lambda *a, **k: None)
+
+    c = _allowed_client(services, make_active_client, 4242)
+    services.set_routing_master(c.id, True)
+    services._routing_apply()
+
+    for n in config.ROUTING_ABROAD_NETS:
+        assert n in added, f"{n} не доехала до набора клиента"
+
+
+# ── источник списков замолчал ────────────────────────────────────────────────
+
+def test_stale_source_is_reported_once(services, monkeypatch):
+    """Источник, который раньше отдавал списки, а теперь молчит, — событие.
+
+    Кэш переживает недоступность источника намеренно: устаревшие списки лучше
+    пустых. Оборотная сторона — источник может умереть навсегда (переехал файл,
+    заброшен репозиторий), а списки застынут. routing_lists_ready смотрит на
+    непустоту, а не на свежесть, поэтому иначе об этом узнать неоткуда.
+    """
+    from awgbot.core import config
+    url = "https://example.invalid/list.lst"
+    # докладываем только про НАСТРОЕННЫЕ источники: убрали источник из конфига —
+    # молчание про него перестаёт быть новостью
+    monkeypatch.setattr(config, "ROUTING_LISTS_SUBNET_URLS", [url])
+    services._routing_note_source(url, 500)        # раньше отдавал
+    assert services.routing_source_alerts() == []  # пока всё хорошо — молчим
+
+    services._routing_note_source(url, 0)          # замолчал
+    notes = services.routing_source_alerts()
+    assert len(notes) == 1
+    assert url in notes[0].text and "500" in notes[0].text
+
+    assert services.routing_source_alerts() == [], "доклад обязан быть однократным"
+
+    services._routing_note_source(url, 500)        # ожил
+    services._routing_note_source(url, 0)          # и снова замолчал
+    assert len(services.routing_source_alerts()) == 1, "после оживления — снова докладываем"
+
+
+def test_source_that_never_worked_is_not_reported(services, monkeypatch):
+    """Пустой ответ от источника, который и раньше ничего не давал, — не новость.
+
+    Иначе первый же старт с недоступной сетью завалил бы админа докладами про
+    все восемь источников разом.
+    """
+    from awgbot.core import config
+    url = "https://example.invalid/never.lst"
+    monkeypatch.setattr(config, "ROUTING_LISTS_SUBNET_URLS", [url])
+    services._routing_note_source(url, 0)
+    assert services.routing_source_alerts() == []
+
+
+def test_dropped_source_stops_being_reported(services, monkeypatch):
+    """Источник убрали из конфига — доклады про него прекращаются.
+
+    Иначе метка в state пережила бы саму настройку и админ получал бы жалобы на
+    список, который сам же и отключил.
+    """
+    from awgbot.core import config
+    url = "https://example.invalid/dropped.lst"
+    monkeypatch.setattr(config, "ROUTING_LISTS_SUBNET_URLS", [url])
+    services._routing_note_source(url, 10)
+    services._routing_note_source(url, 0)
+    monkeypatch.setattr(config, "ROUTING_LISTS_SUBNET_URLS", [])
+    assert services.routing_source_alerts() == []

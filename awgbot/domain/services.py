@@ -136,6 +136,11 @@ _TXT_UNKNOWN_PEER = (
 # Пир исчез из конфига, а запись в БД осталась: сам бот так не удаляет —
 # он снимает пира и строку разом. Значит конфиг правили мимо бота.
 _TXT_PEER_GONE = ("Устройство «{name}» клиента «{client}» пропало из конфига сервера — бот его не удалял. Запись убрана, чтобы база сошлась с сервером.")
+_TXT_RT_SRC_STALE = (
+    "⚠️ Источник списков маршрутизации замолчал:\n<code>{url}</code>\n\n"
+    "Раньше он отдавал {n} записей, сейчас — ничего. Прежний список продолжает "
+    "работать, но обновляться перестал: новые заблокированные ресурсы в него уже "
+    "не попадут. Проверь, не переехал ли файл.")
 _TXT_FRIEND_DEVICE_GONE = ("Устройство, которым ты управлял, удалено владельцем — "
                            "доступ по нему больше не работает.")
 
@@ -1809,7 +1814,11 @@ class Services:
         # ИЛИ с личными доменами. Наборы должны существовать до того, как на них
         # сошлётся правило или директива dnsmasq.
         client_ids = sorted(set(addrs) | set(domains))
-        base_nets = self._routing_read_cache("subnets")
+        # Встроенные подсети идут наравне со скачанными: сервис в собственном
+        # адресном блоке иначе держится на одном резолве, а резолв клиент может
+        # и не отдать нам (DoH, свой резолвер, кэш). См. ROUTING_ABROAD_NETS.
+        base_nets = (list(self._routing_read_cache("subnets"))
+                     + list(config.ROUTING_ABROAD_NETS))
 
         # плечо контейнера: выпустить трафик включённых устройств
         # немаскараженным, иначе на хосте их не отличить от остальных
@@ -1881,6 +1890,51 @@ class Services:
         except OSError:
             return []
 
+    # ── источники списков: замечать, когда источник перестал отдавать ────────
+    # Кэш переживает недоступность источника намеренно — устаревшие списки лучше
+    # пустых. Но у этого есть оборотная сторона: источник может замолчать
+    # навсегда (переехал, переименовали файл, репозиторий забросили), а кэш
+    # останется прежним и никто не узнает. routing_lists_ready смотрит на
+    # непустоту, а не на свежесть, поэтому такой отказ не виден вообще ничем.
+    _RT_SRC_N = "rt_src_n:"          # последнее НЕнулевое число записей
+    _RT_SRC_BAD = "rt_src_bad:"      # источник молчит, и об этом уже сказали
+
+    @staticmethod
+    def _routing_src_key(url: str) -> str:
+        import hashlib
+        return hashlib.sha256(url.encode()).hexdigest()[:12]
+
+    def _routing_note_source(self, url: str, count: int) -> None:
+        """Запомнить, сколько записей отдал источник в этот раз."""
+        k = self._routing_src_key(url)
+        if count:
+            self.db.set_state(self._RT_SRC_N + k, str(count))
+            self.db.set_state(self._RT_SRC_BAD + k, "")
+        elif self.db.get_state(self._RT_SRC_N + k):
+            # раньше отдавал, сейчас пусто — отметить для доклада
+            self.db.set_state(self._RT_SRC_BAD + k, url)
+
+    def routing_source_alerts(self) -> list[Notification]:
+        """Источники, которые раньше отдавали списки, а теперь молчат.
+
+        Один доклад на источник: флаг снимается, когда источник снова отдал
+        данные. Молчащий источник не ломает маршрутизацию сегодня, но означает,
+        что списки застыли, — а узнать об этом иначе неоткуда.
+        """
+        notes: list[Notification] = []
+        for url in (list(config.ROUTING_LISTS_SUBNET_URLS)
+                    + [config.ROUTING_LISTS_DOMAINS_URL,
+                       config.ROUTING_LISTS_GEOBLOCK_URL]):
+            if not url:
+                continue
+            k = self._routing_src_key(url)
+            if self.db.get_state(self._RT_SRC_BAD + k) != url:
+                continue
+            self.db.set_state(self._RT_SRC_BAD + k, "announced")
+            notes.append(Notification(config.ADMIN_ID, _TXT_RT_SRC_STALE.format(
+                url=url, n=self.db.get_state(self._RT_SRC_N + k) or "?")))
+        return notes
+
     def routing_update_lists(self, force: bool = False) -> int:
         """Обновить базовый набор из внешних источников. Возвращает число записей.
 
@@ -1925,8 +1979,9 @@ class Services:
             nets: list[str] = []
             for url in config.ROUTING_LISTS_SUBNET_URLS:
                 body = routing.fetch(url)
-                if body:
-                    nets.extend(domain_routing.parse_networks(body))
+                got = domain_routing.parse_networks(body) if body else []
+                self._routing_note_source(url, len(got))
+                nets.extend(got)
 
             # Два источника доменов в ОДИН кэш. Списки блокировок и список
             # геоблокировок описывают зеркальные случаи («блокирует Россия»
@@ -1938,8 +1993,9 @@ class Services:
                 if not url:
                     continue
                 body = routing.fetch(url)
-                if body:
-                    doms.extend(domain_routing.parse_domain_list(body))
+                got = domain_routing.parse_domain_list(body) if body else []
+                self._routing_note_source(url, len(got))
+                doms.extend(got)
 
             with routing.mutation_lock:
                 if nets:

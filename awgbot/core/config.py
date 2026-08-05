@@ -277,11 +277,35 @@ _ITDOG = "https://raw.githubusercontent.com/itdoginfo/allow-domains/main"
 # Заменяется ключом routing.abroad_domains в conf/app.yaml — именно ЗАМЕНА, а не
 # дополнение, так что копируй целиком, если правишь.
 ROUTING_ABROAD_DOMAINS: tuple[str, ...] = tuple(_rt.get("abroad_domains") or (
-    "example.com", "example.com",
+    "example.com", "example.com", "example.net",
     "openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com",
     "perplexity.ai", "x.ai", "mistral.ai", "huggingface.co",
     "cursor.com", "cursor.sh",
     "figma.com", "slack.com", "atlassian.com", "docker.com",
+))
+
+# Подсети сервисов, которые держат СВОЙ адресный блок, а не прячутся за CDN.
+#
+# Зачем отдельно от доменов. Домен попадает в набор только через резолв: dnsmasq
+# видит запрос и кладёт полученный адрес. Значит любой клиент, который резолвит
+# мимо нас — DoH, DoT, свой резолвер, просто закэшированный адрес — соединяется
+# с адресом, которого в наборе нет. При инверсии логики это означает «на шлюз»,
+# то есть российским адресом ровно туда, где он и запрещён.
+#
+# Пока сервис живёт за Cloudflare, дыры не видно: сети Cloudflare едут отдельным
+# списком подсетей и покрывают его адреса без всякого DNS. Ушёл сервис в
+# собственный блок — и остался держаться на одном лишь резолве.
+#
+# Ровно это случилось с этот сервис: example.com/example.net/api.example.com
+# резолвятся в 203.0.113.10, а 203.0.113.0/21 (ARIN NET-203-0-113-0-1,
+# этот сервис PBC) не входит ни в один сопровождаемый список подсетей. Симптом —
+# «с выключённой маршрутизацией работает, с включённой нет».
+#
+# Сопровождаемого источника для таких блоков нет (в upstream есть Cloudflare,
+# Telegram, Meta, Twitter, Discord, Google — и всё), поэтому список встроенный и
+# намеренно короткий. Заменяется ключом routing.abroad_nets в conf/app.yaml.
+ROUTING_ABROAD_NETS: tuple[str, ...] = tuple(_rt.get("abroad_nets") or (
+    "203.0.113.0/21",                 # этот сервис PBC
 ))
 
 # Сопровождаемый список сервисов, которые сами отказывают российским адресам.

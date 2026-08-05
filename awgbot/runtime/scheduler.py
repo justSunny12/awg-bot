@@ -170,6 +170,12 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                 # немедленно, потому что пустой отправил бы на шлюз весь трафик
                 await asyncio.to_thread(services.routing_update_lists)
                 await asyncio.to_thread(services.reconcile_routing)
+                # источник замолчал — сказать. Кэш переживает недоступность
+                # намеренно, и потому источник может умереть навсегда, а списки
+                # застыть, без единого признака.
+                rt_src_notes = await asyncio.to_thread(services.routing_source_alerts)
+                if rt_src_notes:
+                    await send_notifications(bot, rt_src_notes)
             except Exception as e:                       # noqa: BLE001
                 log.warning("reconcile_routing: %s", e)
             # статус сервиса awg → уведомления админу (единый notifier-путь)
