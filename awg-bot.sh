@@ -538,7 +538,27 @@ cmd_restore() {
     confirm "Продолжить?" n || die "отменено"
     local tmp; tmp="$(mktemp -d)"; tar xzf "$tgz" -C "$tmp" || { rm -rf "$tmp"; die "не удалось распаковать снимок"; }
     log "останавливаю $SERVICE…"; systemctl stop "$SERVICE" 2>/dev/null || true
+    # Снимок ТЕКУЩЕГО состояния — до перезаписи, и только после успешной
+    # распаковки и остановки сервиса (иначе снимали бы БД под записью).
+    #
+    # Без него у восстановления нет отката, а запускают его ровно тогда, когда
+    # уже всё плохо: ошибиться снимком в такой момент проще всего, и старый
+    # снимок молча уносит всё, что появилось после него. Так и вышло однажды —
+    # три дня состояния исчезли без следа.
+    local pre; pre="$BACKUP_DIR/awg-bot-prerestore-$(date +%Y%m%d-%H%M%S).tgz"
+    mkdir -p "$BACKUP_DIR"; chmod 700 "$BACKUP_DIR"
+    local ptmp; ptmp="$(mktemp -d)"; mkdir -p "$ptmp/state"
+    [[ -d "$DATA_DIR" ]] && find "$DATA_DIR" -maxdepth 1 -name '*.db' -exec cp -a {} "$ptmp/state/" \; 2>/dev/null || true
+    [[ -d "$CONF_DIR" ]] && cp -a "$CONF_DIR" "$ptmp/state/conf" 2>/dev/null || true
+    [[ -f "$ENV_FILE" ]] && cp -a "$ENV_FILE" "$ptmp/state/env" 2>/dev/null || true
+    ( cd "$ptmp/state" && tar czf "$pre" . ); chmod 600 "$pre"; rm -rf "$ptmp"
+    ok "снимок ДО восстановления: $pre"
+    log "передумал — вернуться: awg-bot restore $pre"
     mkdir -p "$DATA_DIR" "$CONF_DIR"
+    # Журналы WAL/SHM принадлежат ЗАМЕНЯЕМОМУ файлу БД. Оставь их рядом с чужой
+    # базой — SQLite в лучшем случае отбросит их по несовпадению соли, в худшем
+    # доложит из них страницы в файл, которому они не родня.
+    rm -f "$DATA_DIR"/*.db-wal "$DATA_DIR"/*.db-shm 2>/dev/null || true
     find "$tmp" -maxdepth 2 -name '*.db' -exec cp -a {} "$DATA_DIR/" \; 2>/dev/null || true
     [[ -d "$tmp/conf" ]] && { rm -rf "$CONF_DIR"; cp -a "$tmp/conf" "$CONF_DIR"; }
     [[ -f "$tmp/env"  ]] && { cp -a "$tmp/env" "$ENV_FILE"; chmod 600 "$ENV_FILE"; }

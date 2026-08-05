@@ -170,3 +170,36 @@ def test_rollback_disables_the_autostart(migrate):
     """
     rollback = migrate.split('if [ "$MODE" = "rollback" ]', 1)[1]
     assert "disable awg-quick@" in rollback
+
+
+# ── админ не должен рубить сук, на котором сидит ─────────────────────────────
+
+def test_migration_refuses_when_ssh_comes_through_the_tunnel(migrate):
+    """Шаг 5 гасит контейнер — и оборвёт сессию, если она идёт через него.
+
+    Скрипт тогда умирает на середине: контейнер остановлен, awg0 ещё не поднят,
+    сервис лежит целиком. Именно так и случилось в бою.
+    """
+    assert "SSH_CLIENT" in migrate or "SSH_CONNECTION" in migrate
+    assert "TUNNEL_SRC" in migrate
+    guard = migrate.split("TUNNEL_SRC", 1)[1]
+    assert "exit 1" in guard, "при туннельной сессии скрипт обязан отказаться"
+
+
+def test_tunnel_guard_runs_before_anything_is_touched(migrate):
+    """Проверка до первого изменения, а не после.
+
+    Откажись скрипт после остановки бота — он оставил бы систему в состоянии
+    хуже исходного, ничего не перенеся.
+    """
+    guard = migrate.index("TUNNEL_SRC")
+    first_change = migrate.index("systemctl stop $BOT_SERVICE")
+    assert guard < first_change
+
+
+def test_apply_asks_for_a_multiplexer(migrate):
+    """Обрыв связи на шагах 5–6 оставляет сервис лежащим.
+
+    Прямой SSH тоже может моргнуть, а доделывать шаги некому.
+    """
+    assert "TMUX" in migrate and "STY" in migrate
