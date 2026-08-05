@@ -159,17 +159,26 @@ validate_config() {
     fi
 }
 install_unit() {
-    log "ставлю systemd-юнит $UNIT_PATH…"
+    log "ставлю systemd-юнит ${UNIT_PATH}…"
+    # Зависимость от docker ставим ТОЛЬКО в докерном режиме. В host-режиме бот к
+    # docker не обращается вовсе, а `Requires=docker.service` там вреден дважды:
+    # docker нельзя удалить (юнит перестанет стартовать), и падение докера
+    # утащило бы за собой бота, который от него не зависит. Юнит переписывается
+    # на каждом update — значит режим доедет сюда сам, править руками не нужно.
+    local docker_after="" docker_req=""
+    if [[ "$(yaml_get "$CONF_DIR/app.yaml" runtime)" != "host" ]]; then
+        docker_after=" docker.service"
+        docker_req=$'\nRequires=docker.service'
+    fi
     cat > "$UNIT_PATH" <<EOF
 [Unit]
 Description=AmneziaWG Telegram bot
-After=network-online.target docker.service
-Wants=network-online.target
-Requires=docker.service
+After=network-online.target${docker_after}
+Wants=network-online.target${docker_req}
 
 [Service]
 Type=simple
-# Бот работает от root: нужен docker exec + управление iptables в контейнере.
+# Бот работает от root: правит iptables и конфиг awg.
 User=root
 WorkingDirectory=$INSTALL_DIR
 EnvironmentFile=$ENV_FILE
@@ -449,7 +458,7 @@ cmd_reconfigure() {
         setup_secrets
         setup_email_resume
         validate_config
-        log "перезапускаю $SERVICE…"; systemctl restart "$SERVICE" 2>/dev/null || true
+        log "перезапускаю ${SERVICE}…"; systemctl restart "$SERVICE" 2>/dev/null || true
         systemctl is-active --quiet "$SERVICE" && ok "$SERVICE перезапущен." \
             || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
         ok "Переконфигурация завершена."
@@ -476,7 +485,7 @@ cmd_update() {
     fi
 
     ensure_python
-    log "останавливаю $SERVICE…"; systemctl stop "$SERVICE" 2>/dev/null || true
+    log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
 
     local tmp; tmp="$(mktemp -d)"
     log "распаковываю новый код…"
@@ -537,7 +546,7 @@ cmd_restore() {
     warn "восстановление ПЕРЕЗАПИШЕТ текущие БД/конфиг/секреты содержимым: $(basename "$tgz")"
     confirm "Продолжить?" n || die "отменено"
     local tmp; tmp="$(mktemp -d)"; tar xzf "$tgz" -C "$tmp" || { rm -rf "$tmp"; die "не удалось распаковать снимок"; }
-    log "останавливаю $SERVICE…"; systemctl stop "$SERVICE" 2>/dev/null || true
+    log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
     # Снимок ТЕКУЩЕГО состояния — до перезаписи, и только после успешной
     # распаковки и остановки сервиса (иначе снимали бы БД под записью).
     #

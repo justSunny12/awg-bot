@@ -87,11 +87,80 @@ def test_ssh_reconcile_skips_jump_if_present(monkeypatch):
 
     def fake_exec(args, **kw):
         calls.append(args)
-        return subprocess.CompletedProcess(args, 0, b"", b"")  # всё «есть»
+        rc = 1 if args[:3] == ["iptables", "-C", "INPUT"] else 0
+        return subprocess.CompletedProcess(args, rc, b"", b"")
 
     monkeypatch.setattr(awg, "_exec", fake_exec)
     awg.ssh_reconcile(["10.8.1.5"], ["172.29.172.1"])
     assert ["iptables", "-I", "FORWARD", "1", "-j", "AWGBOT_SSH"] not in calls
+
+
+# ── точка врезки цепочки: INPUT на хосте, FORWARD в контейнере ───────────────
+
+def _collect(monkeypatch, *, present=()):
+    """Прогон ssh_reconcile с фейковым iptables. present — цепочки, в которых
+    джамп якобы уже есть."""
+    calls = []
+
+    def fake_exec(args, **kw):
+        calls.append(args)
+        if args[:2] == ["iptables", "-C"]:
+            rc = 0 if args[2] in present else 1
+            return subprocess.CompletedProcess(args, rc, b"", b"")
+        return subprocess.CompletedProcess(args, 1, b"", b"")
+
+    monkeypatch.setattr(awg, "_exec", fake_exec)
+    awg.ssh_reconcile(["10.8.1.5"], ["10.8.1.0"])
+    return calls
+
+
+def test_ssh_chain_hooks_into_input_on_the_host(monkeypatch):
+    """На хосте цель фильтра — адрес самой машины, значит INPUT, а не FORWARD.
+
+    Пакет из туннеля на локальный адрес netfilter отдаёт в INPUT; через FORWARD
+    ходит только транзит. Пока врезка была захардкожена в FORWARD, на хосте
+    цепочка собиралась правильной и не срабатывала никогда — счётчики по всем
+    правилам оставались нулевыми, и выглядело это как исправная защита.
+    """
+    monkeypatch.setattr(cfg, "AWG_RUNTIME", "host")
+    calls = _collect(monkeypatch)
+    assert ["iptables", "-I", "INPUT", "1", "-j", "AWGBOT_SSH"] in calls
+    assert ["iptables", "-I", "FORWARD", "1", "-j", "AWGBOT_SSH"] not in calls
+
+
+def test_ssh_chain_hooks_into_forward_in_the_container(monkeypatch):
+    """В контейнере цель (шлюз docker-сети) чужая — пакет транзитный, FORWARD."""
+    monkeypatch.setattr(cfg, "AWG_RUNTIME", "docker")
+    calls = _collect(monkeypatch)
+    assert ["iptables", "-I", "FORWARD", "1", "-j", "AWGBOT_SSH"] in calls
+    assert ["iptables", "-I", "INPUT", "1", "-j", "AWGBOT_SSH"] not in calls
+
+
+def test_stale_jump_from_the_previous_mode_is_removed(monkeypatch):
+    """Переезд на хост оставлял джамп в FORWARD — его надо снимать.
+
+    Иначе рядом с рабочей врезкой висит вторая, ведущая в ту же цепочку из
+    чужого потока. Она безвредна, но показывает исправно выглядящее правило с
+    нулевыми счётчиками — ровно та картина, которая скрыла ошибку в прошлый раз.
+    """
+    monkeypatch.setattr(cfg, "AWG_RUNTIME", "host")
+    calls = _collect(monkeypatch, present=("FORWARD",))
+    assert ["iptables", "-D", "FORWARD", "-j", "AWGBOT_SSH"] in calls
+    assert ["iptables", "-I", "INPUT", "1", "-j", "AWGBOT_SSH"] in calls
+
+
+def test_failsafe_postup_hooks_where_the_bot_hooks(monkeypatch):
+    """Страж в PostUp и фильтр бота обязаны врезаться в ОДНУ цепочку.
+
+    Разойдись они — глухой DROP встанет в потоке, которого нет, и окно между
+    подъёмом awg0 и реассертом бота останется открытым.
+    """
+    for mode, hook in (("host", "INPUT"), ("docker", "FORWARD")):
+        monkeypatch.setattr(cfg, "AWG_RUNTIME", mode)
+        line = awg._ssh_failsafe_postup()
+        assert f"-I {hook} 1 -j AWGBOT_SSH" in line, mode
+        other = "FORWARD" if hook == "INPUT" else "INPUT"
+        assert f"-I {other} 1 -j AWGBOT_SSH" not in line, mode
 
 
 # ── врезки в поток (services) ────────────────────────────────────────────────
@@ -148,12 +217,15 @@ def test_ssh_reconcile_diff_skip(monkeypatch):
         if args[:2] == ["iptables", "-S"]:
             return subprocess.CompletedProcess(args, 0, desired_dump.encode(), b"")
         if args[:2] == ["iptables", "-C"]:
-            return subprocess.CompletedProcess(args, 0, b"", b"")   # джамп есть
+            # джамп есть ровно там, где ему положено быть в этом режиме,
+            # и НЕ висит в прежней точке врезки
+            rc = 0 if args[2] == "FORWARD" else 1
+            return subprocess.CompletedProcess(args, rc, b"", b"")
         return subprocess.CompletedProcess(args, 0, b"", b"")
 
     monkeypatch.setattr(awg, "_exec", fake_exec)
     awg.ssh_reconcile(["10.8.1.5"], ["172.29.172.1"])
-    mutating = [c for c in calls if c[1] in ("-F", "-A", "-I", "-N")]
+    mutating = [c for c in calls if c[1] in ("-F", "-A", "-I", "-N", "-D")]
     assert mutating == []                                 # только -S и -C
 
 

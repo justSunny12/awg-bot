@@ -1,3 +1,6 @@
+# Справочный образец ДЛЯ ДОКЕРНОГО режима. Боевой юнит генерит install_unit
+# в awg-bot.sh — при docker.runtime: host он выпускает его без строк про
+# docker, иначе бота нельзя было бы отвязать от ненужной ему службы.
 [Unit]
 Description=AmneziaWG Telegram bot
 After=network-online.target docker.service
@@ -6,7 +9,7 @@ Requires=docker.service
 
 [Service]
 Type=simple
-# Бот работает от root: нужен docker exec + управление iptables в контейнере.
+# Бот работает от root: правит iptables и конфиг awg.
 User=root
 WorkingDirectory=/opt/awg-bot
 # Точка входа — пакет: python -m awgbot (нужен cwd=WorkingDirectory, где лежит awgbot/).

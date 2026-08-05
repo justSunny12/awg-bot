@@ -129,3 +129,67 @@ def test_startup_messages_to_admin_are_dismissible():
         "прямая отправка админу без клавиатуры — такое сообщение нечем убрать:\n"
         + "\n".join(c.strip()[:90] for c in naked)
         + "\nИспользуй notifier.notify_one — он подставит «Скрыть» сам.")
+
+
+# ── systemd-юнит: зависимость от docker только там, где docker нужен ─────────
+
+def _extract_func(text: str, name: str) -> str:
+    """Тело bash-функции из скрипта: от `name() {` до `}` в первой колонке."""
+    m = re.search(rf"^{re.escape(name)}\(\) \{{.*?^\}}$", text, re.S | re.M)
+    assert m, f"в awg-bot.sh нет функции {name}()"
+    return m.group(0)
+
+
+def _render_unit(tmp_path, script: str, runtime: str) -> str:
+    """Прогоняет НАСТОЯЩУЮ install_unit из awg-bot.sh и возвращает юнит.
+
+    Не грепаем исходник, а рендерим: проверять надо то, что доедет до systemd,
+    вместе с подстановками и heredoc'ом.
+    """
+    import subprocess
+
+    conf = tmp_path / "conf"; conf.mkdir()
+    (conf / "app.yaml").write_text(f'docker:\n  runtime: "{runtime}"\n', encoding="utf-8")
+    unit = tmp_path / "awg-bot.service"
+
+    harness = "\n".join([
+        "set -euo pipefail",
+        f'CONF_DIR="{conf}"', f'UNIT_PATH="{unit}"',
+        'INSTALL_DIR="/opt/awg-bot"', 'ENV_FILE="/etc/awg-bot/env"',
+        'DATA_DIR="/var/lib/awg-bot"',
+        "log() { :; }", "systemctl() { :; }",
+        _extract_func(script, "yaml_get"),
+        _extract_func(script, "install_unit"),
+        "install_unit",
+    ])
+    r = subprocess.run(["bash", "-c", harness], capture_output=True,
+                       text=True, errors="replace")
+    assert r.returncode == 0, r.stderr
+    return unit.read_text(encoding="utf-8")
+
+
+def test_unit_keeps_docker_dependency_in_container_mode(tmp_path, script):
+    """Докерный режим: бот ходит в контейнер через docker exec — зависимость нужна."""
+    unit = _render_unit(tmp_path, script, "docker")
+    assert "Requires=docker.service" in unit
+    assert "After=network-online.target docker.service" in unit
+
+
+def test_unit_drops_docker_dependency_in_host_mode(tmp_path, script):
+    """Host-режим: docker не нужен, и жёсткая зависимость от него вредна.
+
+    `Requires=docker.service` означает две вещи разом: docker нельзя удалить
+    (юнит перестанет стартовать) и падение докера утащит за собой бота, который
+    к нему не обращается. Юнит переписывается на каждом update — значит правка
+    руками не живёт, чинить надо здесь.
+    """
+    unit = _render_unit(tmp_path, script, "host")
+    # именно по директивам: tmp_path в путях сам содержит слово docker
+    assert not [ln for ln in unit.splitlines()
+                if ln.startswith(("After=", "Wants=", "Requires=", "BindsTo="))
+                and "docker" in ln], unit
+    # остальное на месте — не сломали шаблон, вырезая строки
+    assert "After=network-online.target" in unit
+    assert "Wants=network-online.target" in unit
+    assert "ExecStart=/opt/awg-bot/venv/bin/python -m awgbot" in unit
+    assert "WantedBy=multi-user.target" in unit

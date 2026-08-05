@@ -75,7 +75,7 @@ log "создаю каталоги ($INSTALL_DIR, $ETC_DIR, $DATA_DIR)…"
 mkdir -p "$INSTALL_DIR" "$ETC_DIR" "$DATA_DIR"
 chmod 700 "$DATA_DIR"
 
-log "распаковываю код в $INSTALL_DIR…"
+log "распаковываю код в ${INSTALL_DIR}…"
 tar xzf "$TGZ" -C "$INSTALL_DIR"
 # архив может содержать один верхний каталог — нормализуем
 if [[ ! -f "$INSTALL_DIR/awgbot/__main__.py" ]]; then
