@@ -1688,7 +1688,7 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
     if not text:
         await message.answer(texts.BROADCAST_EMPTY)
         return
-    n = len(services.db.broadcast_recipients(config.ADMIN_ID))
+    n = len(await call(services.db.broadcast_recipients, config.ADMIN_ID))
     if n == 0:
         await state.clear()
         await message.answer("Некому отправлять — нет активных получателей.")

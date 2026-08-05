@@ -79,7 +79,11 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
             await call(services.mute_updates)
     else:
         cur = settings.get_bool(key, True)
-        await call(settings.set_value, key, not cur)
+        try:
+            await call(settings.set_value, key, not cur)
+        except settings.SettingsWriteError as e:
+            await cb.answer(str(e), show_alert=True)
+            return
         # выключатель условной маршрутизации меняет состояние системы, а не
         # только значение в yaml: применяем сразу, не дожидаясь тика монитора
         if key == "app.routing.enabled":
@@ -137,7 +141,12 @@ async def receive_value(message: Message, state: FSMContext, services):
     except ValueError:
         await message.answer(texts.settings_bad_value(key))
         return
-    await call(settings.set_value, key, val)
+    try:
+        await call(settings.set_value, key, val)
+    except settings.SettingsWriteError as e:
+        await state.clear()
+        await message.answer(str(e))
+        return
     await state.clear()
     text, markup = _screen(sec, services)
     await message.answer(text, reply_markup=markup)
@@ -148,7 +157,11 @@ async def receive_value(message: Message, state: FSMContext, services):
 async def pick(cb: CallbackQuery, callback_data: SetCB, services):
     if callback_data.sec == "upd" and callback_data.key == "sched":
         opt = callback_data.val
-        await call(settings.set_value, "updates.poll_schedule", opt)
+        try:
+            await call(settings.set_value, "updates.poll_schedule", opt)
+        except settings.SettingsWriteError as e:
+            await cb.answer(str(e), show_alert=True)
+            return
         if opt == "never":                      # никогда → авто-мьют уведомлений
             await call(services.mute_updates)
     await _render(cb, callback_data.sec, services)

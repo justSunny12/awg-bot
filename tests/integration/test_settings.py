@@ -148,3 +148,26 @@ def test_set_value_creates_missing_file(tmp_path):
     assert settings.get_bool("notifications.client_events.activation") is False
     from awgbot.core import config
     settings.init(config.CONF_DIR)
+
+
+def test_set_value_on_duplicated_key_says_so_instead_of_traceback(tmp_path):
+    """Дубль ключа верхнего уровня: запись обязана отказать ВНЯТНО.
+
+    Так и вышло в бою: секция routing попала в app.yaml дважды, ruamel падал
+    DuplicateKeyError на каждой попытке сохранить настройку, а PyYAML при
+    чтении молча брал последнюю копию. Асимметрия делала отказ невидимым —
+    бот работал на прежних значениях, кнопки настроек молча не срабатывали, и
+    причина жила только в трейсбеке.
+    """
+    (tmp_path / "app.yaml").write_text(
+        "routing:\n  enabled: true\nrouting:\n  enabled: false\n", encoding="utf-8")
+    settings.init(tmp_path)
+
+    with pytest.raises(settings.SettingsWriteError) as ei:
+        settings.set_value("app.routing.enabled", True)
+    msg = str(ei.value)
+    assert "app.yaml" in msg
+    assert len(msg) <= 200, "не влезет в alert Telegram (лимит 200)"
+
+    from awgbot.core import config
+    settings.init(config.CONF_DIR)
