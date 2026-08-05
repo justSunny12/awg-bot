@@ -674,3 +674,100 @@ def test_dropped_source_stops_being_reported(services, monkeypatch):
     services._routing_note_source(url, 0)
     monkeypatch.setattr(config, "ROUTING_LISTS_SUBNET_URLS", [])
     assert services.routing_source_alerts() == []
+
+
+# ── режим «за границу по умолчанию» ──────────────────────────────────────────
+
+def _mode(monkeypatch, value):
+    from awgbot.core import config
+    monkeypatch.setattr(config, "routing_default_route", lambda: value)
+
+
+def _capture_apply(monkeypatch):
+    """Прогон _routing_apply с фейковым слоем; отдаёт (наборы, домены, флаг)."""
+    from awgbot.infra import routing
+    box = {"nets": {}, "domains": None, "mark_in_set": None}
+    monkeypatch.setattr(routing, "add_networks",
+                        lambda name, members: box["nets"].setdefault(name, []).extend(members))
+    monkeypatch.setattr(routing, "replace_members", lambda *a, **k: None)
+    monkeypatch.setattr(routing, "sync_nat_exempt", lambda *a, **k: None)
+    monkeypatch.setattr(routing, "ensure_set", lambda *a, **k: None)
+    monkeypatch.setattr(routing, "rebuild_chain",
+                        lambda ids, *, mark_in_set=False: box.__setitem__("mark_in_set", mark_in_set))
+    monkeypatch.setattr(routing, "write_dnsmasq_conf", lambda text: None)
+    from awgbot.domain import routing as domain_routing
+    real = domain_routing.build_dnsmasq_conf
+    monkeypatch.setattr(domain_routing, "build_dnsmasq_conf",
+                        lambda **kw: box.__setitem__("domains", kw["base_domains"]) or real(**kw))
+    return box
+
+
+def test_abroad_mode_marks_what_is_in_the_set(services, make_active_client, monkeypatch):
+    """Разворот режима — это ровно одно отрицание в правиле маркировки.
+
+    В умолчании «домой» метится то, чего в наборе нет; в умолчании «за границу»
+    — то, что в нём есть. Перепутать их значит отправить на шлюз строго
+    противоположное множество, причём тихо: правила соберутся, счётчики пойдут.
+    """
+    box = _capture_apply(monkeypatch)
+    c = _allowed_client(services, make_active_client, 5150)
+    services.set_routing_master(c.id, True)
+
+    _mode(monkeypatch, "home")
+    box["mark_in_set"] = None
+    services._routing_apply()
+    assert box["mark_in_set"] is False
+
+    _mode(monkeypatch, "abroad")
+    services._routing_apply()
+    assert box["mark_in_set"] is True
+
+
+def test_abroad_mode_puts_russian_domains_in_the_set(services, make_active_client, monkeypatch):
+    """В режиме «за границу» набор наполняется ДОМАШНИМ списком, не заграничным."""
+    box = _capture_apply(monkeypatch)
+    services._routing_write_cache("domains", ["blocked.example"])
+    services._routing_write_cache("home_domains", ["ozon.ru", "gosuslugi.ru"])
+    c = _allowed_client(services, make_active_client, 5151)
+    services.set_routing_master(c.id, True)
+
+    _mode(monkeypatch, "abroad")
+    box["nets"].clear(); box["domains"] = None
+    services._routing_apply()
+    assert "ozon.ru" in box["domains"] and "gosuslugi.ru" in box["domains"]
+    assert "blocked.example" not in box["domains"], "заграничный список попал в домашний набор"
+
+
+def test_abroad_mode_sends_no_subnets_home(services, make_active_client, monkeypatch):
+    """Скачиваемые подсети — это CDN и хостеры, то есть заграница.
+
+    В режиме «за границу по умолчанию» набор означает «домой», и положить туда
+    диапазоны Cloudflare или Google значило бы отправить полинтернета через
+    домашний канал — ровно обратное задуманному.
+    """
+    box = _capture_apply(monkeypatch)
+    services._routing_write_cache("subnets", ["104.16.0.0/13"])
+    c = _allowed_client(services, make_active_client, 5152)
+    services.set_routing_master(c.id, True)
+
+    _mode(monkeypatch, "abroad")
+    box["nets"].clear()
+    services._routing_apply()
+    assert not any(box["nets"].values()), f"подсети уехали в домашний набор: {box['nets']}"
+
+
+def test_empty_lists_block_home_mode_but_not_abroad(services, monkeypatch):
+    """Цена пустого набора в режимах противоположная, значит и сторож разный.
+
+    «Домой» с пустым набором отправляет на шлюз ВЕСЬ трафик включённых — авария.
+    «За границу» с пустым набором не отправляет туда ничего, то есть равносилен
+    выключенной функции: ждать нечего, вредить нечему.
+    """
+    services._routing_write_cache("subnets", [])
+    services._routing_write_cache("domains", [])
+
+    _mode(monkeypatch, "home")
+    assert services.routing_lists_ready() is False
+
+    _mode(monkeypatch, "abroad")
+    assert services.routing_lists_ready() is True

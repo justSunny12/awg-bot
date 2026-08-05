@@ -316,6 +316,51 @@ ROUTING_LISTS_GEOBLOCK_URL = _rt.get(
 
 ROUTING_LISTS_DOMAINS_URL = _rt.get(
     "lists_domains_url", f"{_ITDOG}/Russia/inside-dnsmasq-ipset.lst")
+# ── режим по умолчанию: куда идёт то, о чём мы ничего не знаем ───────────────
+#
+# home   — умолчание «домой»: на шлюз уходит всё, чего нет в наборе. Набор
+#          перечисляет заграницу (блокировки + геоблок + подсети).
+# abroad — умолчание «за границу»: на шлюз уходит только то, что В наборе.
+#          Набор перечисляет российские сервисы, которым нужен российский адрес.
+#
+# Различие в правиле маркировки — ровно одно отрицание. Различие по смыслу —
+# принципиальное, и оно в том, ЧТО ломается при промахе списка:
+#   в home промах ломает заграничный сервис (уедет российским адресом туда, где
+#     он запрещён) — отказ немой, связать его с маршрутизацией почти нельзя;
+#   в abroad промах ломает российский сервис (увидит зарубежный адрес) — отказ
+#     громкий и понятный, «Озон ругается на адрес».
+#
+# Меняется и цена пустого набора: в home пустой набор отправляет на шлюз ВЕСЬ
+# трафик включённых, в abroad он равносилен выключенной фиче. Поэтому сторож
+# наполненности списков нужен только в home.
+#
+# Значение живёт в settings (app.routing.default_route) и переключается на
+# горячую; здесь только дефолт и разбор.
+ROUTING_DEFAULT_HOME = "home"
+ROUTING_DEFAULT_ABROAD = "abroad"
+
+
+def routing_default_route() -> str:
+    """Текущий режим. Читается ЧЕРЕЗ settings, а не как константа модуля:
+    переключатель горячий, а константа замёрзла бы на импорте."""
+    from awgbot.core import settings as _s
+    v = str(_s.get("app.routing.default_route", ROUTING_DEFAULT_HOME)).strip().lower()
+    return v if v in (ROUTING_DEFAULT_HOME, ROUTING_DEFAULT_ABROAD) else ROUTING_DEFAULT_HOME
+
+
+# Источники для режима abroad: российские сервисы, которым нужен российский
+# адрес. Два репозитория, потому что дополняют друг друга — пересечение всего
+# 9 доменов из 39, а вместе покрывают 638.
+#   • itdoginfo/allow-domains Russia/outside-* — та же половина того же
+#     репозитория, что мы уже качаем, и формат dnsmasq-ipset наш парсер уже
+#     читает. Короткий, но точный: госуслуги, налоговая, РЖД, почта, Mos.ru.
+#   • UnRKN/ru-blocklist — «РУ-сайты и приложения, не работающие с VPN».
+#     Крупнее: банки, маркетплейсы, VK, Яндекс, hh, 2GIS.
+ROUTING_LISTS_HOME_URLS = list(_rt.get("lists_home_urls") or [
+    f"{_ITDOG}/Russia/outside-dnsmasq-ipset.lst",
+    "https://raw.githubusercontent.com/UnRKN/ru-blocklist/main/ru-blocklist.txt",
+])
+
 ROUTING_LISTS_SUBNET_URLS = list(_rt.get("lists_subnet_urls") or [
     f"{_ITDOG}/Subnets/IPv4/telegram.lst",
     f"{_ITDOG}/Subnets/IPv4/meta.lst",
