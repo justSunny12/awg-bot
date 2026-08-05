@@ -193,3 +193,37 @@ def test_unit_drops_docker_dependency_in_host_mode(tmp_path, script):
     assert "Wants=network-online.target" in unit
     assert "ExecStart=/opt/awg-bot/venv/bin/python -m awgbot" in unit
     assert "WantedBy=multi-user.target" in unit
+
+
+# ── обновление: вторая половина обязана идти новым кодом ─────────────────────
+
+_POST_UPDATE_STEPS = ("build_venv", "install_unit", "seed_conf", "validate_config")
+
+
+def test_update_hands_off_to_the_new_script(script):
+    """Шаги, зависящие от версии, должны исполняться НОВЫМ скриптом.
+
+    Bash держит функции в памяти с момента разбора файла. cmd_update подменяет
+    awg-bot.sh на диске, но в своём процессе продолжает звать старые
+    install_unit/seed_conf — правка этих функций не может применить сама себя и
+    молчит ещё одно обновление. Так юнит остался с Requires=docker.service на
+    сервере, уже переехавшем на host-режим: фикс уехал, а файл не изменился.
+    """
+    upd = _extract_func(script, "cmd_update")
+    post = _extract_func(script, "cmd_post_update")
+
+    for step in _POST_UPDATE_STEPS:
+        assert re.search(rf"^\s*{step}\b", post, re.M), \
+            f"{step} должен вызываться в cmd_post_update"
+        assert not re.search(rf"^\s*{step}\b", upd, re.M), (
+            f"{step} вызывается в cmd_update — то есть СТАРОЙ версией. "
+            f"Перенеси после передачи управления новому скрипту.")
+
+    assert re.search(r'^\s*exec "\$INSTALL_DIR/awg-bot\.sh" __post_update', upd, re.M), \
+        "cmd_update обязан передать управление новому скрипту через exec"
+
+
+def test_post_update_verb_is_dispatched(script):
+    """Скрытый глагол без ветки в case → обновление обрывается на полпути:
+    код уже подменён, сервис остановлен, а вторая половина не выполнится."""
+    assert re.search(r"^\s*__post_update\)\s+cmd_post_update", script, re.M)

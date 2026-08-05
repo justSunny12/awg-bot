@@ -500,6 +500,26 @@ cmd_update() {
     rm -rf "$tmp"
     chmod +x "$INSTALL_DIR/awg-bot.sh" 2>/dev/null || true
 
+    # Дальше — руками НОВОГО скрипта, а не этого.
+    #
+    # Bash держит функции в памяти процесса с момента разбора файла. Мы только
+    # что подменили awg-bot.sh на диске, но install_unit/seed_conf/build_venv в
+    # этом процессе — по-прежнему из СТАРОЙ версии. То есть любая их правка не
+    # может применить сама себя: она доезжает до сервера и молчит ещё одно
+    # обновление. Ровно так юнит остался с Requires=docker.service на сервере,
+    # уже переехавшем на host-режим.
+    #
+    # exec, а не вызов: старому процессу после подмены кода делать нечего, а
+    # продолжать читать с диска файл, который сменился под ним, — отдельный
+    # способ получить мусор в разборе оставшегося хвоста.
+    exec "$INSTALL_DIR/awg-bot.sh" __post_update "$wipe"
+}
+
+cmd_post_update() {
+    # Вторая половина обновления, исполняется УЖЕ НОВЫМ скриптом (см. cmd_update).
+    require_root
+    local wipe="${1:-0}"
+    ensure_python
     build_venv
     install_unit
     seed_conf                              # досеять НОВЫЕ conf-файлы этой версии
@@ -682,6 +702,7 @@ case "$VERB" in
     backup)      cmd_backup ;;
     restore)     cmd_restore "${1:-}" ;;
     uninstall)   cmd_uninstall ;;
+    __post_update)    cmd_post_update "${1:-0}" ;;
     __post_uninstall) cmd_post_uninstall ;;
     status)      cmd_status ;;
     start)       cmd_start ;;
