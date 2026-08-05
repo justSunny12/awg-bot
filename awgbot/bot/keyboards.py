@@ -109,6 +109,17 @@ def client_devices(devices) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def admin_client_back(client_id: int) -> InlineKeyboardMarkup:
+    """Единственная кнопка — назад к карточке профиля.
+
+    Для экранов-отбивок, после которых человек должен вернуться туда, откуда
+    пришёл, и повторить действие (например, удаление не прошло).
+    """
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Назад", callback_data=ClientCB(action="open", client_id=client_id))
+    return kb.as_markup()
+
+
 def admin_client_device_list(devices, client_id: int) -> InlineKeyboardMarkup:
     """Список устройств КОНКРЕТНОГО клиента (админ смотрит из его карточки).
     Тап открывает карточку устройства (DeviceCB open) — не генерит ссылку сразу.

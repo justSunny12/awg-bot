@@ -542,18 +542,29 @@ async def client_delete_apply(cb: CallbackQuery, callback_data: ConfirmCB, servi
         await cb.answer("Профиль администратора нельзя удалить", show_alert=True)
         return
     # уведомление, что доступ прекращён (просто remove_device его терял).
-    _victim = await call(services.db.get_client, callback_data.ref)
-    _vname = _victim.name if _victim else "?"
+    _vname = target.name if target else "?"
     devices = await call(services.db.list_devices, callback_data.ref)
-    _dcount = len(devices)
+    failed: list[str] = []
     for d in devices:
         try:
             await remove_device_and_notify(cb.bot, services, d.id)
         except ServiceError:
-            pass
+            failed.append(d.name)
+    # Пир не снялся с сервера — профиль НЕ удаляем. Удалить запись, оставив пир
+    # живым, значит: доступ у человека продолжает работать, а запись, по которой
+    # его можно найти, исчезла. Из двух неполных состояний это строго худшее, и
+    # молчать о нём нельзя — соседний поток (удаление одного устройства) на том
+    # же отказе останавливается и показывает причину.
+    if failed:
+        await edit(cb, texts.CLIENT_DELETE_PARTIAL.format(
+            name=texts._e(_vname),
+            devices=texts._e(", ".join(failed))),
+            kb.admin_client_back(callback_data.ref))
+        await cb.answer("Сервер не ответил — ничего не удалено", show_alert=True)
+        return
     await call(services.db.delete_client, callback_data.ref)
     await edit_nav(cb, services,
-                   f"🗑 Профиль «{_vname}» удалён (устройств удалено: {_dcount}).",
+                   f"🗑 Профиль «{_vname}» удалён (устройств удалено: {len(devices)}).",
                    await _main_menu_markup(services))
     await cb.answer()
 

@@ -272,3 +272,30 @@ async def test_unassigned_list_and_choice(services, fake_bot):
     cb, nav = _acb(fake_bot)
     await ah.unassigned_list(cb, services)
     assert any(s[0] == "edit_text" for s in nav.sent)
+
+
+async def test_delete_client_keeps_profile_when_peer_stays_on_server(
+        services, fake_bot, make_active_client, monkeypatch):
+    """Пир не снялся — профиль обязан остаться, и об этом надо сказать.
+
+    Прежде отказ remove_peer глотался, запись клиента удалялась каскадом, а
+    админу докладывалось «удалено, устройств: N». Итог: VPN у человека
+    продолжает работать, а записи, по которой его можно найти, больше нет.
+    Соседний поток (удаление ОДНОГО устройства) на том же отказе
+    останавливается — расхождение и было ошибкой.
+    """
+    from awgbot.infra import awg
+
+    client = make_active_client(tg_id=6099)
+    dc = services.add_device(client.id, "телефон")
+    monkeypatch.setattr(awg, "remove_peer",
+                        lambda pub: (_ for _ in ()).throw(awg.AwgError("awg не отвечает")))
+
+    cb, nav = _acb(fake_bot)
+    await ah.client_delete_apply(
+        cb, ConfirmCB(action="del_client", ref=client.id, yes=True), services)
+
+    assert services.db.get_client(client.id) is not None, "профиль удалён вопреки отказу"
+    assert services.db.get_device(dc.device_id) is not None
+    said = " ".join(str(s) for s in nav.sent)
+    assert "НЕ удалён" in said and "телефон" in said
