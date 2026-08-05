@@ -173,7 +173,10 @@ def read_file(path: str) -> str:
 def write_file(path: str, content: str) -> None:
     """Пишет файл целиком через stdin (без heredoc → без риска инъекций).
     `cat > file` усекает существующий файл, сохраняя inode и права."""
-    _exec_i(["sh", "-c", f"cat > {path}"], input_data=content.encode())
+    # Путь в кавычках. Он приходит из констант конфига, но конфиг — это yaml,
+    # который правят руками: пробел или точка с запятой в awg_dir превратились бы
+    # в исполнение произвольной команды от root. Кавычки стоят ноль.
+    _exec_i(["sh", "-c", f'cat > "{path}"'], input_data=content.encode())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -371,9 +374,9 @@ def read_server_params(force: bool = False) -> dict:
             return dict(_params_cache)
 
     # Один exec на три файла (вместо трёх cat)
-    script = (f"cat {config.CONF_PATH}; printf '%s' '{_SEP}'; "
-              f"cat {config.SERVER_PUBKEY_PATH}; printf '%s' '{_SEP}'; "
-              f"cat {config.PSK_PATH}")
+    script = (f'cat "{config.CONF_PATH}"; printf \'%s\' \'{_SEP}\'; '
+              f'cat "{config.SERVER_PUBKEY_PATH}"; printf \'%s\' \'{_SEP}\'; '
+              f'cat "{config.PSK_PATH}"')
     out = _exec_sh(script).stdout.decode(errors="replace")
     parts = out.split(_SEP)
     if len(parts) != 3:
@@ -469,11 +472,21 @@ def pubkey_of(private_key: str) -> str:
 def apply_config() -> None:
     """awg syncconf awg0 <(awg-quick strip awg0.conf) — на живую.
     Через временный файл (не process substitution) → работает в любом shell.
-    Предупреждение 'world accessible' от strip идёт в stderr и безвредно."""
+    Предупреждение 'world accessible' от strip идёт в stderr и безвредно.
+
+    Файл кладём РЯДОМ С КОНФИГОМ и с маской 077, а не в /tmp с фиксированным
+    именем. В нём приватный ключ сервера, и редирект создал бы его с обычной
+    маской — читаемым всеми. Пока это был /tmp контейнера (свой mount namespace,
+    кроме root никого), риска не было; после переезда на хост тот же код стал
+    ронять ключ в общий /tmp на каждое добавление устройства. Предсказуемое имя
+    там же открывает подмену симлинком: редирект от root записал бы куда указано.
+    Каталог AWG_DIR — 700 и наш.
+    """
     script = (
-        f"awg-quick strip {config.CONF_PATH} > /tmp/awg_strip.conf 2>/dev/null && "
-        f"awg syncconf {config.AWG_INTERFACE} /tmp/awg_strip.conf; "
-        f"rc=$?; rm -f /tmp/awg_strip.conf; exit $rc"
+        f'umask 077; tmp=$(mktemp "{config.AWG_DIR}/.strip.XXXXXX") || exit 1; '
+        f'awg-quick strip "{config.CONF_PATH}" > "$tmp" 2>/dev/null && '
+        f'awg syncconf "{config.AWG_INTERFACE}" "$tmp"; '
+        'rc=$?; rm -f "$tmp"; exit $rc'
     )
     _exec_sh(script)
 

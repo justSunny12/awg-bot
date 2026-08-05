@@ -230,3 +230,37 @@ def test_read_server_params_caches_and_invalidates(monkeypatch):
     awg.read_server_params()
     assert calls["n"] == 3
     awg.invalidate_server_params()
+
+
+# ── приватный ключ сервера не должен светиться на диске ──────────────────────
+
+def test_apply_config_does_not_use_a_predictable_tmp_path(monkeypatch):
+    """В распакованном конфиге лежит ПРИВАТНЫЙ КЛЮЧ СЕРВЕРА.
+
+    Пока это был /tmp контейнера (свой mount namespace, кроме root никого),
+    риска не было. После переезда на хост тот же код стал ронять ключ в общий
+    /tmp — редирект создаёт файл с обычной маской, читаемой всеми, а
+    предсказуемое имя там же открывает подмену симлинком.
+    """
+    seen = {}
+    monkeypatch.setattr(awg, "_exec_sh", lambda s, **k: seen.setdefault("s", s))
+    awg.apply_config()
+    script = seen["s"]
+
+    assert "/tmp/" not in script, "временный файл с ключом не должен жить в /tmp"
+    assert "umask 077" in script, "без umask файл создастся читаемым всеми"
+    assert "mktemp" in script, "фиксированное имя открывает подмену симлинком"
+    assert "rm -f" in script, "файл обязан убираться в любом исходе"
+
+
+def test_shell_scripts_quote_config_paths(monkeypatch):
+    """Пути приходят из yaml, который правят руками.
+
+    Пробел или точка с запятой в awg_dir без кавычек превратились бы в
+    исполнение произвольной команды от root.
+    """
+    import pathlib
+    src = pathlib.Path(awg.__file__).read_text(encoding="utf-8")
+    for bad in ('cat > {path}', 'cat {config.CONF_PATH};',
+                'strip {config.CONF_PATH}'):
+        assert bad not in src, f"незакавыченный путь в shell-строке: {bad}"
