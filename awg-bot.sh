@@ -658,6 +658,17 @@ cmd_routing_doctor() {
       ./venv/bin/python -m awgbot.runtime.routing_doctor )
 }
 
+cmd_gw_bundle() {
+    # Делегируем скрипту линка: источник истины один, дублировать сборку бандла
+    # здесь значило бы завести второе место, которое разъедется при правке.
+    # Глагол существует только ради находимости: скрипты лежат в $INSTALL_DIR и
+    # в PATH их нет, а нужен бандл через полгода после установки.
+    require_root; require_installed
+    local sh_="$INSTALL_DIR/install/routing-link-setup.sh"
+    [[ -f "$sh_" ]] || die "не найден $sh_ — поставка неполная?"
+    exec sh "$sh_" --bundle
+}
+
 cmd_status() {
     echo "Пути: код=$INSTALL_DIR conf=$CONF_DIR env=$ENV_FILE data=$DATA_DIR"
     systemctl status "$SERVICE" --no-pager -l 2>/dev/null | head -n 12 || warn "юнит $SERVICE не найден"
@@ -691,6 +702,7 @@ awg-bot — управление установленным ботом.
   awg-bot restore [tgz]      восстановить из снимка (по умолч. — самый свежий)
   awg-bot logs               журнал сервиса (follow)
   awg-bot routing-doctor     где рвётся условная маршрутизация (только чтение)
+  awg-bot gw-bundle          пересобрать бандл для шлюза (ключи не меняются)
   awg-bot uninstall          удалить приложение (опционально: данные приложения)
 EOF
 }
@@ -710,6 +722,7 @@ case "$VERB" in
     restart)     cmd_restart ;;
     logs)        cmd_logs ;;
     routing-doctor) cmd_routing_doctor ;;
+    gw-bundle)   cmd_gw_bundle ;;
     -h|--help|help|"") usage ;;
     *) usage; die "неизвестная команда: $VERB" ;;
 esac

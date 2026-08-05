@@ -19,11 +19,13 @@
 #   2) поднимает интерфейс на ВПС и включает автозапуск;
 #   3) выводит трафик в линк из-под MASQUERADE (иначе шлюз увидел бы адрес ВПС
 #      вместо адреса клиента);
-#   4) печатает готовый конфиг для малинки.
+#   4) собирает БАНДЛ для шлюза: скрипт настройки и конфиг линка одним файлом,
+#      плюс печатает готовую строку scp и что запустить на той стороне.
 #
 # ЗАПУСК:
 #   sudo sh routing-link-setup.sh              # показать план
 #   sudo sh routing-link-setup.sh --apply      # поднять
+#   sudo sh routing-link-setup.sh --bundle     # пересобрать бандл (ключи те же)
 #   sudo sh routing-link-setup.sh --rollback   # снять
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -42,13 +44,24 @@ CLIENT_SUBNET="${CLIENT_SUBNET:-10.8.1.0/24}"
 CONF_DIR="${CONF_DIR:-/etc/amnezia/amneziawg}"
 CONF="$CONF_DIR/$LINK_IF.conf"
 GW_CONF_OUT="${GW_CONF_OUT:-/root/gw-$LINK_IF.conf}"
+GW_BUNDLE_OUT="${GW_BUNDLE_OUT:-/root/awg-gw-bundle.sh}"
 UNIT="/etc/systemd/system/awg-link.service"
+
+# Версия КОНТРАКТА ЛИНКА: формат конфига шлюза плюс набор обфускации, который
+# обе стороны обязаны понимать одинаково. Бампается, когда меняется генерация
+# конфига здесь, — тогда шлюз надо переприслать бандлом.
+#
+# Сверять её автоматически некому и не нужно: несовпадающие H1..H4/S1..S4/I1..I5
+# ломают хендшейк, линк не встаёт, и бот сообщает об этом сам своим тиком
+# живости. Штамп нужен человеку — чтобы на шлюзе было видно, чем его ставили.
+LINK_CONTRACT="1"
 
 MODE="plan"
 case "${1:-}" in
     --apply)    MODE="apply" ;;
     --reassert) MODE="reassert" ;;
     --rollback) MODE="rollback" ;;
+    --bundle)   MODE="bundle" ;;
     ""|--plan)  MODE="plan" ;;
     -h|--help)  sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
@@ -76,6 +89,85 @@ assert_nat_exempt() {
     fi
 }
 
+# ── бандл для шлюза: скрипт настройки + конфиг линка одним файлом ────────────
+# Оператор несёт на малинку ОДИН файл вместо двух. Два — это лишний способ
+# ошибиться: скопировал скрипт, забыл конфиг, и «почему-то не работает».
+emit_gw_bundle() {
+    _gwsrc="$(dirname "$(readlink -f "$0")")/routing-gw-setup.sh"
+    [ -f "$_gwsrc" ] || {
+        say "ОШИБКА: рядом нет routing-gw-setup.sh (искал $_gwsrc)"; exit 1; }
+    [ -f "$GW_CONF_OUT" ] || {
+        say "ОШИБКА: нет $GW_CONF_OUT — линк ещё не поднят. Сначала: $0 --apply"
+        exit 1; }
+
+    {
+        cat <<HDREOF
+#!/bin/sh
+# ─────────────────────────────────────────────────────────────────────────────
+# awg-gw-bundle.sh — сторона ШЛЮЗА условной маршрутизации, одним файлом.
+#
+# Собран на ВПС: $(date '+%Y-%m-%d %H:%M %z')
+# Контракт линка: $LINK_CONTRACT
+#
+# ВНУТРИ ПРИВАТНЫЙ КЛЮЧ И PSK. Файл секретный: права 600, после установки удалить.
+#
+# ЗАПУСК НА ШЛЮЗЕ:
+#   sudo sh awg-gw-bundle.sh              # применить
+#   sudo sh awg-gw-bundle.sh --rollback   # снять всё, что поставил
+# ─────────────────────────────────────────────────────────────────────────────
+HDREOF
+        cat <<'BODYEOF'
+set -e
+[ "$(id -u)" = "0" ] || { echo "нужен root: sudo sh $0"; exit 1; }
+
+# Раскладываем в ПОСТОЯННЫЙ каталог, а не во временный. Скрипт настройки
+# прописывает СЕБЯ в systemd-юнит по собственному пути: запущенный из /tmp, он
+# оставил бы юнит, указывающий на удалённый файл. Обнаружилось бы это только
+# после ребута и выглядело бы как «шлюз сам отвалился».
+DEST="/opt/awg-gw"
+mkdir -p "$DEST"
+
+sed -n '/^#__GW_SETUP_BELOW__$/,$p' "$0" | tail -n +2 > "$DEST/routing-gw-setup.sh"
+chmod 0755 "$DEST/routing-gw-setup.sh"
+
+BODYEOF
+        printf '%s\n' "cat > \"\$DEST/link.conf\" <<'__LINK_CONF_EOF__'"
+        printf '# awg-bot: контракт линка %s\n' "$LINK_CONTRACT"
+        cat "$GW_CONF_OUT"
+        printf '%s\n' "__LINK_CONF_EOF__"
+        cat <<'TAILEOF'
+chmod 0600 "$DEST/link.conf"
+
+exec "$DEST/routing-gw-setup.sh" "${1:---apply}" "$DEST/link.conf"
+TAILEOF
+        printf '#__GW_SETUP_BELOW__\n'
+        cat "$_gwsrc"
+    } > "$GW_BUNDLE_OUT"
+    chmod 600 "$GW_BUNDLE_OUT"
+}
+
+# Инструкция печатается и после --apply, и после --bundle: человек читает её в
+# момент, когда идёт к шлюзу, а не когда поднимал линк.
+print_gw_instructions() {
+    say ""
+    say "Бандл для шлюза: $GW_BUNDLE_OUT   (контракт линка: $LINK_CONTRACT)"
+    say ""
+    say "Скопировать на шлюз:"
+    say "    scp $GW_BUNDLE_OUT <юзер>@<адрес-шлюза>:~/"
+    say ""
+    say "И там:"
+    say "    sudo sh ~/awg-gw-bundle.sh"
+    say "    rm ~/awg-gw-bundle.sh          # внутри приватный ключ"
+    say ""
+    say "Пересобрать бандл позже (ключи НЕ меняются): $0 --bundle"
+}
+
+if [ "$MODE" = "bundle" ]; then
+    emit_gw_bundle
+    print_gw_instructions
+    exit 0
+fi
+
 if [ "$MODE" = "reassert" ]; then
     [ -f "$CONF" ] || { say "линк не настроен ($CONF нет) — нечего поднимать"; exit 0; }
     ip link show "$LINK_IF" >/dev/null 2>&1 || run "awg-quick up $LINK_IF"
@@ -88,7 +180,7 @@ if [ "$MODE" = "rollback" ]; then
     step "Снятие линка"
     run "systemctl disable --now awg-link.service 2>/dev/null || true"
     run "awg-quick down $LINK_IF 2>/dev/null || true"
-    run "rm -f $UNIT $CONF $GW_CONF_OUT"
+    run "rm -f $UNIT $CONF $GW_CONF_OUT $GW_BUNDLE_OUT"
     run "systemctl daemon-reload"
     while iptables -t nat -C POSTROUTING -s "$CLIENT_SUBNET" -o "$LINK_IF" \
           -j ACCEPT 2>/dev/null; do
@@ -123,6 +215,7 @@ if [ -f "$CONF" ] && [ "$MODE" = "apply" ]; then
         say "Интерфейс $LINK_IF поднят — делать нечего."
         say "Состояние:  awg show $LINK_IF"
         say "Конфиг для шлюза: $GW_CONF_OUT"
+        say "Пересобрать бандл:  $0 --bundle"
     else
         say "Интерфейс $LINK_IF НЕ поднят. Поднять из существующего конфига:"
         say "    awg-quick up $LINK_IF"
@@ -159,6 +252,7 @@ if [ "$MODE" = "plan" ]; then
     say "  3. iptables -t nat -I POSTROUTING -s $CLIENT_SUBNET -o $LINK_IF -j ACCEPT"
     say "  4. юнит awg-link.service + enable"
     say "  5. записать конфиг малинки в $GW_CONF_OUT"
+    say "  6. собрать бандл для шлюза в $GW_BUNDLE_OUT"
     exit 0
 fi
 
@@ -294,12 +388,11 @@ say "  записан (права 600 — внутри приватный клю
 step "Проверка"
 say "  awg show $LINK_IF"
 say "  ip -br addr show $LINK_IF"
-say ""
-say "Дальше на МАЛИНКЕ:"
-say "  1. скопировать $GW_CONF_OUT → /etc/amnezia/amneziawg/$LINK_IF.conf"
-say "  2. поднять интерфейс, включить автозапуск"
-say "  3. MASQUERADE из $LINK_IF в eth0 + FORWARD + DROP на RFC1918"
-say "     (последнее обязательно: иначе клиенты попадут в домашнюю сеть)"
+
+step "6. Бандл для шлюза"
+emit_gw_bundle
+say "  собран (права 600 — внутри приватный ключ и psk)"
+print_gw_instructions
 say ""
 say "Затем на ВПС в conf/app.yaml:  routing.gw_interface: \"$LINK_IF\""
 say "и перезапустить бота. До этого фича спит."
