@@ -363,28 +363,37 @@ def invalidate_server_params() -> None:
 
 def read_server_params(force: bool = False) -> dict:
     """Всё, что нужно генератору конфигов: обфускация + ListenPort (из awg0.conf),
-    серверный pubkey, общий psk. Читается ЖИВЫМ из контейнера, но кэшируется:
-    один docker exec на TTL/инвалидацию вместо трёх на каждую генерацию."""
+    серверный pubkey, общий psk. Читается ЖИВЫМ с сервера, но кэшируется:
+    один exec на TTL/инвалидацию вместо нескольких на каждую генерацию.
+
+    Публичный ключ ВЫВОДИТСЯ из приватного, а не читается из файла рядом.
+    Раньше его брали из wireguard_server_public_key.key — артефакта контейнера
+    Amnezia, который живёт своей жизнью. Файл и конфиг могут разойтись: смена
+    серверного ключа без правки файла разослала бы всем конфиги с ЧУЖИМ
+    публичным ключом, и заметили бы это только при первом переподключении.
+    Вывод из PrivateKey исключает расхождение по построению."""
     global _params_cache, _params_cached_at
     with _params_lock:
         if (not force and _params_cache is not None
                 and _time.time() - _params_cached_at < PARAMS_TTL_SECONDS):
             return dict(_params_cache)
 
-    # Один exec на три файла (вместо трёх cat)
+    # Один exec на оба файла (вместо двух cat)
     script = (f'cat "{config.CONF_PATH}"; printf \'%s\' \'{_SEP}\'; '
-              f'cat "{config.SERVER_PUBKEY_PATH}"; printf \'%s\' \'{_SEP}\'; '
               f'cat "{config.PSK_PATH}"')
     out = _exec_sh(script).stdout.decode(errors="replace")
     parts = out.split(_SEP)
-    if len(parts) != 3:
+    if len(parts) != 2:
         raise AwgError("Не удалось прочитать серверные параметры (формат ответа)")
-    conf, pubkey, psk = parts
+    conf, psk = parts
+    priv = _extract_param(conf, "PrivateKey")
+    if not priv:
+        raise AwgError(f"В {config.CONF_PATH} нет PrivateKey — публичный ключ не вывести")
     params = parse_interface_params(conf)
     result = {
         "obfuscation": {k: params.get(k, "") for k in _OBFUSCATION_KEYS},
         "listen_port": int(params.get("ListenPort", config.SERVER_PORT)),
-        "server_pubkey": pubkey.strip(),
+        "server_pubkey": pubkey_of(priv),
         "psk": psk.strip(),
     }
     with _params_lock:

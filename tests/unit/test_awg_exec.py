@@ -183,13 +183,15 @@ def test_remove_peer_idempotent(monkeypatch):
 # ── read_server_params (кэш/инвалидация) ─────────────────────────────────────
 def test_read_server_params_caches_and_invalidates(monkeypatch):
     sep = awg._SEP
-    payload = ("[Interface]\nListenPort = 51820\n" + sep + "SRVPUB==" + sep + "PSK==").encode()
+    payload = ("[Interface]\nListenPort = 51820\nPrivateKey = SRVPRIV==\n"
+               + sep + "PSK==").encode()
     calls = {"n": 0}
 
     def fake_sh(script, **k):
         calls["n"] += 1
         return _cp(payload)
     monkeypatch.setattr(awg, "_exec_sh", fake_sh)
+    monkeypatch.setattr(awg, "pubkey_of", lambda priv: "SRVPUB==")
     awg.invalidate_server_params()
     r1 = awg.read_server_params()
     assert r1["listen_port"] == 51820 and r1["server_pubkey"] == "SRVPUB=="
@@ -200,6 +202,35 @@ def test_read_server_params_caches_and_invalidates(monkeypatch):
     awg.invalidate_server_params()
     awg.read_server_params()
     assert calls["n"] == 3
+    awg.invalidate_server_params()
+
+
+def test_server_pubkey_is_derived_not_read_from_a_file(monkeypatch):
+    """Публичный ключ сервера обязан выводиться из PrivateKey живого конфига.
+
+    Пока его брали из wireguard_server_public_key.key (файла контейнера
+    Amnezia), файл и конфиг могли разойтись: смена серверного ключа без правки
+    файла разослала бы всем конфиги с ЧУЖИМ публичным ключом, и заметили бы это
+    только при первом переподключении.
+    """
+    sep = awg._SEP
+    monkeypatch.setattr(awg, "_exec_sh", lambda script, **k: _cp(
+        ("[Interface]\nPrivateKey = THEPRIV==\nListenPort = 443\n" + sep + "PSK==").encode()))
+    monkeypatch.setattr(awg, "pubkey_of",
+                        lambda priv: "DERIVED" if priv == "THEPRIV==" else "WRONG")
+    awg.invalidate_server_params()
+    assert awg.read_server_params()["server_pubkey"] == "DERIVED"
+    awg.invalidate_server_params()
+
+
+def test_server_params_refuse_conf_without_private_key(monkeypatch):
+    """Нет PrivateKey — отказ, а не пустой публичный ключ в конфигах клиентов."""
+    sep = awg._SEP
+    monkeypatch.setattr(awg, "_exec_sh", lambda script, **k: _cp(
+        ("[Interface]\nListenPort = 443\n" + sep + "PSK==").encode()))
+    awg.invalidate_server_params()
+    with pytest.raises(awg.AwgError, match="PrivateKey"):
+        awg.read_server_params()
     awg.invalidate_server_params()
 
 
