@@ -1,4 +1,6 @@
 """Unit: awgbot.domain.configgen — vpn:// кодек и генерация конфигов (чистая логика)."""
+import json
+
 import pytest
 
 from awgbot.core import config
@@ -50,11 +52,11 @@ def test_generate_vpn_is_parseable_and_roundtrips_keys():
     assert res["vpn"].startswith("vpn://")
     decoded = cg.decode_vpn(res["vpn"])
     assert decoded["containers"][0]["container"] == config.CONTAINER
-    parsed = cg.classify_vpn_link(res["vpn"])
-    assert parsed["kind"] == "client"
-    assert parsed["client_priv_key"] == "PRIVKEY"
-    assert parsed["client_pub_key"] == "PUBKEY"
-    assert parsed["client_ip"] == "10.8.1.4"
+    # приложение читает ключи именно из last_config — проверяем то, что оно увидит
+    lc = json.loads(decoded["containers"][0]["awg"]["last_config"])
+    assert lc["client_priv_key"] == "PRIVKEY"
+    assert lc["client_pub_key"] == "PUBKEY"
+    assert lc["client_ip"] == "10.8.1.4"
 
 
 def test_generate_embedded_conf_has_no_mtu():
@@ -62,11 +64,6 @@ def test_generate_embedded_conf_has_no_mtu():
     res = cg.generate("PRIVKEY", "PUBKEY", "10.8.1.4", _server_params())
     embedded = cg.decode_vpn(res["vpn"])["containers"][0]["awg"]["last_config"]
     assert "MTU = " not in embedded
-
-
-def test_classify_vpn_link_rejects_junk():
-    with pytest.raises(ValueError):
-        cg.classify_vpn_link("vpn://" + "A" * 8)               # валидный префикс, мусор внутри
 
 
 def test_traffic_limit_device_ask_enrichment():

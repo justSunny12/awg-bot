@@ -36,7 +36,7 @@ def reply_hide() -> ReplyKeyboardRemove:
     """Убрать reply-клавиатуру (когда открыто главное меню)."""
     return ReplyKeyboardRemove()
 
-from awgbot.bot.callbacks import (AdminLinkGate, FaHintCB, AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
+from awgbot.bot.callbacks import (AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
                        FriendCB, GraceCB, GuideCB, HelpCB, Menu, PauseCB,
                        PeriodCB, ReassignCB, RoutingCB, UpdateCB, SetCB, BroadcastCB)
 
@@ -77,23 +77,14 @@ def client_main(has_devices: bool = True, routing_visible: bool = False,
 
 
 def _btn_suffix(dev) -> str:
-    """Суффикс имени устройства для КНОПОК (HTML не рендерится): ФА → метка,
-    app → звёздочка, управляемое → пусто. Единый источник для всех списков."""
-    if getattr(dev, "is_admin", False):
-        return " [Доступ к серверу]"
-    if dev.is_app:
-        return " *"
-    return ""
+    """Суффикс имени устройства для КНОПОК (HTML не рендерится): звёздочка у
+    устройств, которые бот не создавал. Единый источник для всех списков."""
+    return "" if dev.is_managed else " *"
 
 
 def _dev_emoji(d) -> str:
-    """Иконка типа устройства: 🕹 полный доступ к серверу, 📲 передано другу,
-    📱 обычное. Приоритет — полный доступ выше признака друга."""
-    if d.is_admin:
-        return "🕹"
-    if d.friend is not None:
-        return "📲"
-    return "📱"
+    """Иконка типа устройства: 📲 передано другу, 📱 обычное."""
+    return "📲" if d.friend is not None else "📱"
 
 
 def client_devices(devices) -> InlineKeyboardMarkup:
@@ -176,42 +167,23 @@ def device_actions(dev, *, is_admin: bool, back_target: str,
     колбэков). reassign_label — текст кнопки привязки/перепривязки (только
     админ; None — кнопки нет, т.е. обычный клиент).
 
-    bot-устройства: ссылка/QR/файл. app-устройства (без приватного ключа) не
-    могут выдать ссылку — WireGuard держит приватный ключ только на самом
-    устройстве. Поэтому предлагаем «прописать строку» (реставрация) и клиенту,
-    и админу — иначе у клиента с app-устройством тупик.
+    Созданные ботом: ссылка/QR/файл. Пиры, подхваченные с сервера (без
+    приватного ключа), выдать ссылку не могут — WireGuard держит приватный ключ
+    только на самом устройстве, а бот его не видел. Такому устройству остаются
+    имя, лимит, блокировка и удаление.
 
     Удаление — ВСЕГДА через подтверждение (DelDeviceCB stage=ask), никогда не
     напрямую: последствия необратимы (ссылка глохнет, друг теряет доступ)."""
     kb = InlineKeyboardBuilder()
 
-    # Full-access устройство (несёт ссылку полного доступа к серверу): особый
-    # случай. Нельзя передавать/удалять/банить/менять лимит — это не пир бота, а
-    # хранимая root-ссылка. Только ОДНО из двух: если ссылка уже сохранена —
-    # выдать её (QR/ссылка/файл через гейт-предупреждение); если ещё нет —
-    # реставрация (принять ссылку). Плюс «Назад».
-    if getattr(dev, "is_admin", False):
-        kb.button(text="✏️ Имя", callback_data=DeviceCB(action="edit_name", device_id=dev.id))
-        kb.button(text="🔐 Получить ссылку доступа",
-                  callback_data=DeviceCB(action="connect_menu", device_id=dev.id))
-        kb.button(text="♻️ Изменить ссылку",
-                  callback_data=DeviceCB(action="restore", device_id=dev.id))
-        kb.button(text="↩️ Снять метку полного доступа",
-                  callback_data=DeviceCB(action="clear_fa", device_id=dev.id))
-        kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
-        kb.adjust(1, 1, 1, 1, 1)
-        return kb.as_markup()
-
     is_bot_device = dev.is_managed
     rows = 0
-    # 1) Данные для подключения (managed) / прописать строку (app)
+    # 1) Данные для подключения — только у созданных ботом: у остальных нет
+    # приватного ключа, выдавать нечего.
     if is_bot_device:
         kb.button(text="🔌 Данные для подключения",
                   callback_data=DeviceCB(action="connect_menu", device_id=dev.id))
-    else:
-        kb.button(text="🔑 Прописать строку подключения",
-                  callback_data=DeviceCB(action="restore", device_id=dev.id))
-    rows += 1
+        rows += 1
     # 2) Имя
     kb.button(text="✏️ Имя", callback_data=DeviceCB(action="edit_name", device_id=dev.id))
     rows += 1
@@ -258,71 +230,6 @@ def connect_method_choice(device_id: int, back_target: str) -> InlineKeyboardMar
 
 
 
-def fa_pick_devices(devices) -> InlineKeyboardMarkup:
-    """Выбор устройства для назначения полного доступа: имя + IP в [скобках].
-    Выбор ведёт в ПОДТВЕРЖДЕНИЕ назначения (с показом имени+IP)."""
-    kb = InlineKeyboardBuilder()
-    for d in devices:
-        kb.button(text=f"{d.name} [{d.address}]",
-                  callback_data=DeviceCB(action="fa_assign", device_id=d.id))
-    kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
-    kb.adjust(1)
-    return kb.as_markup()
-
-
-def fa_assign_confirm(device_id: int) -> InlineKeyboardMarkup:
-    """Подтверждение назначения ФА выбранному устройству → далее ввод ссылки."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="➡️ Продолжить",
-              callback_data=DeviceCB(action="fa_link", device_id=device_id))
-    kb.button(text="⬅️ Назад", callback_data=FaHintCB(action="choose"))
-    kb.adjust(1, 1)
-    return kb.as_markup()
-
-
-def admin_fa_hint() -> InlineKeyboardMarkup:
-    """Кнопки под стартовой подсветкой: выбрать устройство / игнорировать."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="📱 Выбрать устройство", callback_data=FaHintCB(action="choose"))
-    kb.button(text="🚫 Игнорировать", callback_data=FaHintCB(action="ignore"))
-    kb.adjust(1, 1)
-    return kb.as_markup()
-
-
-
-
-def confirm_clear_fa(device_id: int) -> InlineKeyboardMarkup:
-    """Подтверждение снятия метки полного доступа (ссылка утрачивается)."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="↩️ Да, снять метку",
-              callback_data=AdminLinkGate(device_id=device_id, method="clear", confirm=True))
-    kb.button(text="Отмена", callback_data=DeviceCB(action="open", device_id=device_id))
-    kb.adjust(1, 1)
-    return kb.as_markup()
-
-
-def confirm_change_fa_link(device_id: int) -> InlineKeyboardMarkup:
-    """Подтверждение замены ссылки полного доступа (прежняя утрачивается)."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="♻️ Да, заменить",
-              callback_data=AdminLinkGate(device_id=device_id, method="change", confirm=True))
-    kb.button(text="Отмена", callback_data=DeviceCB(action="open", device_id=device_id))
-    kb.adjust(1, 1)
-    return kb.as_markup()
-
-
-def admin_link_gate(device_id: int, method: str) -> InlineKeyboardMarkup:
-    """Диалог-предупреждение перед выдачей ссылки полного доступа: «Я понимаю,
-    отдай» (confirm=True) / «Убедил, отмена» (возврат к карточке устройства)."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="Я понимаю, отдай",
-              callback_data=AdminLinkGate(device_id=device_id, method=method, confirm=True))
-    kb.button(text="Убедил, отмена",
-              callback_data=DeviceCB(action="open", device_id=device_id))
-    kb.adjust(1, 1)
-    return kb.as_markup()
-
-
 def connect_method_choice_friend(device_id: int) -> InlineKeyboardMarkup:
     """То же самое, но для друга — колбэки FriendCB (свой namespace), назад —
     к карточке устройства друга."""
@@ -341,7 +248,7 @@ def connect_method_choice_friend(device_id: int) -> InlineKeyboardMarkup:
 
 def pick_device(devices, action: str, back_cb: str = None) -> InlineKeyboardMarkup:
     """action: gen_link | gen_file | gen_qr | connect_menu — выбор устройства.
-    Показываем и app-устройства (с суффиксом): клик по ним ведёт не в ошибку,
+    Показываем и устройства без ключа (с суффиксом): клик по ним ведёт не в ошибку,
     а в диалог «пришли ссылку или удали» (обрабатывается отдельно).
     back_cb — packed callback для «Назад» (по умолчанию главное меню; админ из
     карточки клиента передаёт возврат в карточку)."""
@@ -579,7 +486,7 @@ def unassigned_devices(devices) -> InlineKeyboardMarkup:
 
 
 def reassign_targets(device_id: int, clients) -> InlineKeyboardMarkup:
-    """Список клиентов, к которым можно привязать app-устройство."""
+    """Список клиентов, к которым можно привязать устройство без профиля."""
     kb = InlineKeyboardBuilder()
     for c in clients:
         kb.button(text=c.name,
@@ -783,11 +690,10 @@ def added_by_admin(device_id: int) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def app_device_dialog(device_id: int) -> InlineKeyboardMarkup:
-    """Диалог при клике на app-устройство в списке «получить ссылку»:
-    прислать строку / удалить / назад."""
+def unmanaged_device_dialog(device_id: int) -> InlineKeyboardMarkup:
+    """Диалог при клике на устройство без ключа в списке «получить ссылку»:
+    удалить / назад. Выдать нечего — предлагаем единственный выход."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="🔑 Отправить ссылку", callback_data=DeviceCB(action="restore", device_id=device_id))
     kb.button(text="🗑 Удалить устройство", callback_data=DelDeviceCB(device_id=device_id, stage="ask"))
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
     kb.adjust(1)

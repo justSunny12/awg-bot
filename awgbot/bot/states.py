@@ -51,10 +51,6 @@ class BlockPauseDays(StatesGroup):
     days = State()                # админ вводит длительность приостановки (0=бессрочно)
 
 
-class RestoreDevice(StatesGroup):
-    link = State()                # ждём vpn:// строку
-
-
 class AdminAddDevice(StatesGroup):
     name = State()                # админ вводит имя устройства для клиента
     traffic = State()             # лимит потребления устройства
@@ -66,7 +62,7 @@ class AdminSelfAddDevice(StatesGroup):
 
 
 __all__ = ["AddDevice", "AddDeviceGuide", "CreateClient", "EditName", "EditDeviceName", "EditPeriod", "PauseDays", "EditLimit",
-           "EditTrafficLimit", "BlockPauseDays", "RestoreDevice", "AdminAddDevice", "AdminSelfAddDevice"]
+           "EditTrafficLimit", "BlockPauseDays", "AdminAddDevice", "AdminSelfAddDevice"]
 
 
 class SettingsInput(StatesGroup):

@@ -3,7 +3,7 @@ handlers/admin.py — роутер администратора.
 
 Управление клиентами (создание с инвайтом, продление с остатком, редактирование,
 удаление), выдача конфигов, статус сервера, бэкап, перезапуск сервиса, работа с
-устройствами без клиента (привязка, реставрация).
+устройствами без клиента (привязка, удаление).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from awgbot.bot.callbacks import (AdminLinkGate, FaHintCB, AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
+from awgbot.bot.callbacks import (AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
                        Menu, PeriodCB, ReassignCB, RoutingCB, UpdateCB, BroadcastCB)
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message,
@@ -30,7 +30,7 @@ from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_
 from awgbot.bot.notifier import notify_one, send_notifications, broadcast
 from awgbot.domain.services import BYTES_PER_GB, SECONDS_PER_DAY, LimitReached, ServiceError
 from awgbot.bot.states import (AdminAddDevice, AdminSelfAddDevice, BlockPauseDays, Broadcast, CreateClient,
-                    EditLimit, EditName, EditDeviceName, EditPeriod, EditTrafficLimit, RestoreDevice)
+                    EditLimit, EditName, EditDeviceName, EditPeriod, EditTrafficLimit)
 
 router = Router(name="admin")
 router.message.filter(RoleFilter("admin"))
@@ -38,7 +38,7 @@ router.callback_query.filter(RoleFilter("admin"))
 
 
 async def _main_menu_markup(services):
-    n = await call(services.count_unassigned_app_devices)
+    n = await call(services.count_unassigned_devices)
     ac = await call(services.admin_client)
     has_dev = bool(ac and await call(services.db.count_devices, ac.id))
     # админ — такой же пользователь VPN: режим ему нужен в главном меню, рядом
@@ -48,17 +48,6 @@ async def _main_menu_markup(services):
                          routing_visible=rt_visible,
                          routing_on=bool(ac and ac.routing_master),
                          self_client_id=(ac.id if ac else 0))
-
-
-async def _delete_user_link(message) -> None:
-    """Удалить сообщение пользователя с присланной vpn:// ссылкой из чата.
-    Ссылка — секрет (root-доступ к серверу или приватный ключ устройства), в
-    истории Telegram ей не место. Тихо игнорируем, если удалить нельзя
-    (>48 ч, нет прав, уже удалено)."""
-    try:
-        await message.delete()
-    except Exception:                            # noqa: BLE001
-        pass
 
 
 async def _return_panel(message, services) -> None:
@@ -798,10 +787,6 @@ async def admin_dev_link(cb: CallbackQuery, callback_data: DeviceCB, services):
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    if getattr(dev, "is_admin", False):
-        await edit(cb, texts.ADMIN_LINK_WARNING, kb.admin_link_gate(dev.id, "link"))
-        await cb.answer()
-        return
     try:
         cfg = await call(services.generate_config, dev.id)
     except ServiceError as e:
@@ -819,10 +804,6 @@ async def admin_dev_qr(cb: CallbackQuery, callback_data: DeviceCB, services):
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    if getattr(dev, "is_admin", False):
-        await edit(cb, texts.ADMIN_LINK_WARNING, kb.admin_link_gate(dev.id, "qr"))
-        await cb.answer()
-        return
     try:
         cfg = await call(services.generate_config, dev.id)
     except ServiceError as e:
@@ -839,10 +820,6 @@ async def admin_dev_file(cb: CallbackQuery, callback_data: DeviceCB, services):
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
-        return
-    if getattr(dev, "is_admin", False):
-        await edit(cb, texts.ADMIN_LINK_WARNING, kb.admin_link_gate(dev.id, "file"))
-        await cb.answer()
         return
     try:
         cfg = await call(services.generate_config, dev.id)
@@ -910,16 +887,9 @@ async def admin_device_connect_menu(cb: CallbackQuery, callback_data: DeviceCB, 
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    if getattr(dev, "is_admin", False):
-        # ФА-устройство: не «конфиг для подключения», а выдача сохранённой
-        # ссылки полного доступа (QR/ссылка/файл) — каждый способ через гейт.
-        back = DeviceCB(action="open", device_id=dev.id).pack()
-        await edit(cb, texts.CONNECT_METHOD_ASK, kb.connect_method_choice(dev.id, back))
-        await cb.answer()
-        return
     if not dev.private_key:
-        # app-устройство: ссылки нет — диалог реставрации/удаления
-        await edit(cb, texts.APP_DEVICE_PICK_DIALOG, kb.app_device_dialog(dev.id))
+        # пир, подхваченный с сервера: ссылки нет и взять её неоткуда
+        await edit(cb, texts.UNMANAGED_DEVICE_DIALOG, kb.unmanaged_device_dialog(dev.id))
         await cb.answer()
         return
     back = DeviceCB(action="open", device_id=dev.id).pack()
@@ -996,41 +966,6 @@ async def _do_reassign(cb, services, device_id, client_id, *, add_slot: bool):
     await cb.answer()
 
 
-@router.callback_query(FaHintCB.filter(F.action == "ignore"))
-async def fa_hint_ignore(cb: CallbackQuery, services):
-    await call(services.dismiss_admin_fa_hint)
-    await edit(cb, "Ок, больше не напоминаю. Назначить доступ можно позже — "
-                   "через устройство без профиля.", None)
-    await cb.answer()
-
-
-@router.callback_query(FaHintCB.filter(F.action == "choose"))
-async def fa_hint_choose(cb: CallbackQuery, services):
-    """Показать устройства без профиля для назначения полного доступа: имя и
-    IP в квадратных скобках, чтобы админ уверенно опознал нужное устройство."""
-    service_id = await call(services.db.get_service_client_id)
-    devices = await call(services.db.list_devices, service_id)
-    if not devices:
-        await edit(cb, "Устройств без профиля нет — назначить нечего.", None)
-        await cb.answer()
-        return
-    await edit(cb, texts.ADMIN_FA_PICK, kb.fa_pick_devices(devices))
-    await cb.answer()
-
-
-@router.callback_query(DeviceCB.filter(F.action == "fa_assign"))
-async def fa_assign_confirm(cb: CallbackQuery, callback_data: DeviceCB, services):
-    """Шаг подтверждения перед назначением ФА: показываем имя и IP выбранного
-    устройства."""
-    dev = await call(services.db.get_device, callback_data.device_id)
-    if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
-        return
-    await edit(cb, texts.fa_assign_confirm(dev.name, dev.address),
-               kb.fa_assign_confirm(dev.id))
-    await cb.answer()
-
-
 @router.callback_query(DeviceCB.filter(F.action == "edit_name"))
 async def device_edit_name_start(cb: CallbackQuery, callback_data: DeviceCB, services, state: FSMContext):
     await state.set_state(EditDeviceName.value)
@@ -1061,151 +996,6 @@ async def device_edit_name_apply(message: Message, services, state: FSMContext):
     await _return_panel(message, services)
 
 
-@router.callback_query(DeviceCB.filter(F.action == "clear_fa"))
-async def fa_clear_start(cb: CallbackQuery, callback_data: DeviceCB):
-    await edit(cb, texts.ADMIN_FA_CLEAR_WARNING, kb.confirm_clear_fa(callback_data.device_id))
-    await cb.answer()
-
-
-@router.callback_query(AdminLinkGate.filter((F.method == "clear") & (F.confirm == True)))  # noqa: E712
-async def fa_clear_confirmed(cb: CallbackQuery, callback_data: AdminLinkGate, services):
-    """Подтверждено снятие метки → стираем ссылку, устройство → в общий пул."""
-    _dev = await call(services.db.get_device, callback_data.device_id)
-    _dname = _dev.name if _dev else "?"
-    try:
-        await call(services.clear_full_access, callback_data.device_id)
-    except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
-        return
-    await edit(cb, f"✅ Устройство «{_dname}»: метка полного доступа снята, ссылка "
-                   "удалена. Устройство вернулось в список без профиля.", None)
-    await cb.answer()
-
-
-@router.callback_query(DeviceCB.filter(F.action == "fa_link"))
-async def fa_link_ask(cb: CallbackQuery, callback_data: DeviceCB, state: FSMContext):
-    """Назначение ФА подтверждено → просим
-    ссылку полного доступа. mode=fa → attach_full_access."""
-    await state.set_state(RestoreDevice.link)
-    await state.update_data(device_id=callback_data.device_id, mode="fa")
-    await cb.message.answer(
-        "Пришли ссылку полного доступа (vpn://…) к серверу из приложения Amnezia.",
-        reply_markup=kb.reply_cancel())
-    await cb.answer()
-
-
-@router.callback_query(DeviceCB.filter(F.action == "restore"))
-async def device_restore_start(cb: CallbackQuery, callback_data: DeviceCB,
-                               state: FSMContext, services):
-    dev = await call(services.db.get_device, callback_data.device_id)
-    # Замена ссылки у уже назначенного full-access устройства: прежняя ссылка
-    # утрачивается безвозвратно — требуем явного подтверждения.
-    if dev is not None and getattr(dev, "is_admin", False):
-        await edit(cb, texts.ADMIN_FA_CHANGE_WARNING,
-                   kb.confirm_change_fa_link(dev.id))
-        await cb.answer()
-        return
-    # обычное app-устройство: клиентская реставрация
-    await state.set_state(RestoreDevice.link)
-    await state.update_data(device_id=callback_data.device_id, mode="client")
-    await cb.message.answer(
-        "Пришли строку подключения (vpn://…) этого устройства из приложения "
-        "Amnezia — включу полный доступ по нему.",
-        reply_markup=kb.reply_cancel())
-    await cb.answer()
-
-
-@router.callback_query(AdminLinkGate.filter((F.method == "change") & (F.confirm == True)))  # noqa: E712
-async def fa_change_confirmed(cb: CallbackQuery, callback_data: AdminLinkGate,
-                              state: FSMContext):
-    """Подтверждено «заменить ссылку» → просим новую ФА-ссылку (mode=fa)."""
-    await state.set_state(RestoreDevice.link)
-    await state.update_data(device_id=callback_data.device_id, mode="fa")
-    await cb.message.answer(
-        "Пришли НОВУЮ ссылку полного доступа (vpn://…) — прежняя будет заменена.",
-        reply_markup=kb.reply_cancel())
-    await cb.answer()
-
-
-@router.message(RestoreDevice.link)
-async def device_restore_apply(message: Message, services, state: FSMContext):
-    """Единый приём vpn:// для реставрации/ФА, ветвление под капотом.
-    mode: client — клиентская реставрация app-устройства; fa — прикрепление ФА;
-    fa_transfer — подтверждённый перенос ФА на другое устройство.
-    Если в mode=client пришла ФА-ссылка (юзер прислал не ту) — не отказываем,
-    а прозрачно перенаправляем в ФА-путь (единый вход, ветвление по типу)."""
-    link = (message.text or "").strip()
-    data = await state.get_data()
-    dev_id = data["device_id"]
-    mode = data.get("mode", "client")
-    await state.clear()
-
-    async def _attach(transfer: bool):
-        """ФА-путь: attach_full_access + обработка инвариантов. Возвращает True,
-        если диалог продолжается (перенос) — тогда наверху делать ничего."""
-        try:
-            await call(services.attach_full_access, dev_id, link, transfer=transfer)
-        except ValueError:
-            await message.answer(texts.RESTORE_BAD_LINK, reply_markup=kb.reply_hide())
-            await _return_panel(message, services); return False
-        except ServiceError as e:
-            es = str(e)
-            if es == "NEED_ENCRYPTION":
-                msg = texts.NEED_ENCRYPTION_GUIDE
-            elif es == "NOT_FULL_ACCESS":
-                msg = ("Это не ссылка полного доступа. Пришли именно ссылку полного "
-                       "доступа к серверу из приложения Amnezia.")
-            elif es == "NOT_ADMIN_DEVICE":
-                msg = ("Прикрепить полный доступ можно только к своему устройству или "
-                       "к устройству без профиля. К устройству другого пользователя — "
-                       "нельзя (иначе доступ к серверу окажется у него).")
-            elif es.startswith("EXISTS:"):
-                await state.set_state(RestoreDevice.link)
-                await state.update_data(device_id=dev_id, mode="fa_transfer")
-                await ask_tracked(message, services, texts.fa_transfer_warning(es.split(":", 1)[1]),
-                                  reply_markup=kb.reply_hide())
-                await ask_tracked(message, services,
-                                  "Отправь ссылку ещё раз, чтобы подтвердить перенос, "
-                                  "или нажми Отмена.", reply_markup=kb.reply_cancel())
-                return True                       # диалог продолжается
-            else:
-                msg = es
-            await message.answer(msg, reply_markup=kb.reply_hide())
-            await _return_panel(message, services); return False
-        await _delete_user_link(message)         # секрет из чата убираем
-        await message.answer(texts.RESTORE_FULL_ACCESS_SAVED, reply_markup=kb.reply_hide())
-        await _return_panel(message, services); return False
-
-    if mode in ("fa", "fa_transfer"):
-        await _attach(transfer=(mode == "fa_transfer"))
-        return
-
-    # клиентская реставрация; ФА-ссылку прозрачно уводим в ФА-путь
-    try:
-        await call(services.restore_app_device, dev_id, link)
-    except ValueError:
-        await message.answer(texts.RESTORE_BAD_LINK, reply_markup=kb.reply_hide())
-        await _return_panel(message, services); return
-    except ServiceError as e:
-        es = str(e)
-        if es == "IS_FULL_ACCESS":
-            await _attach(transfer=False)        # единый вход: ФА-ссылка → ФА-путь
-            return
-        msg = texts.RESTORE_WRONG_DEVICE if es == "WRONG_DEVICE" else es
-        await message.answer(msg, reply_markup=kb.reply_hide())
-        await _return_panel(message, services); return
-    await _delete_user_link(message)             # клиентская vpn:// несёт приватный ключ — убираем из чата
-    _rdev = await call(services.db.get_device, dev_id)
-    _rcl = await call(services.db.get_client, _rdev.client_id) if _rdev else None
-    if _rdev and _rcl:
-        _rtxt = (f"✅ Устройство «{_rdev.name}» (профиль «{_rcl.name}»): управление "
-                 "восстановлено, ключ подключения прописан.")
-    else:
-        _rtxt = "✅ Устройство восстановлено — ключ подключения прописан."
-    await message.answer(_rtxt, reply_markup=kb.reply_hide())
-    await _return_panel(message, services)
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Сервер: статус / бэкап / перезапуск
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1218,34 +1008,6 @@ async def refresh_status(cb: CallbackQuery, services):
     await cb.answer("Обновляю…")
     await call(services.refresh_status_now)
     await edit_nav(cb, services, await _panel_text(services), await _main_menu_markup(services))
-
-
-@router.callback_query(AdminLinkGate.filter(
-    (F.confirm == True) & (F.method.in_({"link", "qr", "file"}))))  # noqa: E712
-async def admin_link_deliver(cb: CallbackQuery, callback_data: AdminLinkGate, services):
-    """Подтверждено «Я понимаю, отдай» → отдаём СОХРАНЁННУЮ ссылку полного
-    доступа (как есть) выбранным способом. Ключей не генерим — приложение
-    Amnezia развернёт подключение само."""
-    dev = await call(services.db.get_device, callback_data.device_id)
-    if dev is None or not getattr(dev, "is_admin", False):
-        await cb.answer("Устройство не найдено", show_alert=True)
-        return
-    try:
-        link = await call(services.reveal_full_access_link, dev.id)
-    except ServiceError as e:
-        msg = ("Шифрование резервных копий выключено — не могу безопасно отдать ссылку."
-               if str(e) == "NEED_ENCRYPTION" else str(e))
-        await cb.answer(msg, show_alert=True)
-        return
-    method = callback_data.method
-    if method == "link":
-        await send_link(cb.message, link, services)
-    elif method == "qr":
-        await send_qr(cb.message, link, services)
-    else:  # file
-        await send_conf(cb.message, dev.name, link, services)
-    await content_finisher(cb.message, services, texts.finish_link(dev.name), "admin")
-    await cb.answer()
 
 
 # ── Обновления бота (self-update) ────────────────────────────────────────────

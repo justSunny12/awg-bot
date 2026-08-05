@@ -40,7 +40,7 @@ def test_is_only_device_and_count_unassigned(services, make_active_client):
     assert services.is_only_device(999999) is False
     svc = services.db.get_service_client_id()
     services.db.create_device(svc, "app", "PUBX", "PSK", "10.8.0.40")
-    assert services.count_unassigned_app_devices() == 1
+    assert services.count_unassigned_devices() == 1
 
 
 def test_client_is_online_by_handshake(services, make_active_client):
@@ -170,60 +170,6 @@ def test_restart_service_reapplies_blocks(services, fake_awg, make_active_client
     assert dc.address in fake_awg.blocked
 
 
-def test_restore_full_access_saves_encrypted_and_marks_admin(services, fake_awg, monkeypatch):
-    """Full-access: бот шифрует ссылку, вяжет к клиенту Администратор, метит admin."""
-    from awgbot.domain import configgen
-    from awgbot.core import config
-    # включаем шифрование (ключ из env, как в проде)
-    monkeypatch.setattr(config, "BACKUP_KEY", "")
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "test-pass-phrase")
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", True)
-    svc = services.db.get_service_client_id()
-    did = services.db.create_device(svc, "srv", "PUBADM", "PSK", "10.8.0.50")
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "full_access", "host": "h", "user": "root"})
-    kind = services.attach_full_access(did, "vpn://fullaccess")
-    assert kind == "full_access"
-    dev = services.db.get_device(did)
-    assert dev.is_admin is True
-    assert dev.full_access_link != "vpn://fullaccess"   # хранится ЗАШИФРОВАННО
-    # вяжется к клиенту Администратор, не к служебному
-    admin_cid = services.ensure_admin_client()
-    assert dev.client_id == admin_cid
-    # обратно расшифровывается в исходную ссылку
-    assert services.reveal_full_access_link(did) == "vpn://fullaccess"
-
-
-def test_restore_full_access_without_encryption_refused(services, fake_awg, monkeypatch):
-    """Без ключа шифрования сохранять root-ссылку нельзя."""
-    from awgbot.domain import configgen
-    from awgbot.core import config
-    from awgbot.domain.services import ServiceError
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", False)
-    svc = services.db.get_service_client_id()
-    did = services.db.create_device(svc, "srv", "PUBADM2", "PSK", "10.8.0.52")
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "full_access", "host": "h", "user": "root"})
-    with pytest.raises(ServiceError, match="NEED_ENCRYPTION"):
-        services.attach_full_access(did, "vpn://fullaccess")
-
-
-def test_restore_client_link_writes_key(services, fake_awg, monkeypatch):
-    """Клиентская ссылка: приватный ключ пишется, устройство → управляемое."""
-    from awgbot.domain import configgen
-    from awgbot.infra import awg
-    svc = services.db.get_service_client_id()
-    did = services.db.create_device(svc, "cli", "PUBCLI", "PSK", "10.8.0.51")
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "client", "client_priv_key": "PRIV",
-                                      "client_pub_key": "PUBCLI", "client_ip": "10.8.0.51"})
-    monkeypatch.setattr(awg, "pubkey_of", lambda priv: "PUBCLI")
-    kind = services.restore_app_device(did, "vpn://client")
-    assert kind == "client"
-    dev = services.db.get_device(did)
-    assert dev.is_managed and dev.private_key == "PRIV" and dev.is_admin is False
-
-
 def test_admin_client_cannot_be_blocked(services, fake_awg, make_active_client):
     """Клиент админа не блокируется (defense-in-depth в сервисе)."""
     from awgbot.core import config
@@ -247,143 +193,6 @@ def test_admin_client_keyboard_has_no_dangerous_buttons(make_active_client):
     for forbidden in ("Удалить", "Лимит", "Продлить", "лок"):   # блок/Блок/…
         assert forbidden not in labels, f"кнопка '{forbidden}' не должна быть у админ-клиента"
     assert "Имя" in labels and "Устройства" in labels
-
-
-def test_admin_fa_hint_lifecycle(services, fake_awg, monkeypatch):
-    """Подсветка нужна на пустом старте; гаснет после назначения ИЛИ игнора."""
-    from awgbot.core import config
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "p")
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", True)
-    # пусто → подсветка нужна
-    assert services.admin_fa_hint_needed() is True
-    # игнор → больше не нужна
-    services.dismiss_admin_fa_hint()
-    assert services.admin_fa_hint_needed() is False
-
-
-def test_admin_fa_hint_gone_after_assign(services, fake_awg, monkeypatch):
-    from awgbot.core import config
-    from awgbot.domain import configgen
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "p")
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", True)
-    assert services.admin_fa_hint_needed() is True
-    svc = services.db.get_service_client_id()
-    did = services.db.create_device(svc, "Admin [macOS]", "PUBFA", "PSK", "10.8.1.1")
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "full_access", "host": "h", "user": "root"})
-    services.attach_full_access(did, "vpn://fa")
-    # назначено → подсветка больше не нужна (без всякого игнора)
-    assert services.admin_fa_hint_needed() is False
-
-
-def test_change_fa_link_replaces(services, fake_awg, monkeypatch):
-    """Изменение ссылки full-access устройства перезаписывает blob."""
-    from awgbot.core import config
-    from awgbot.domain import configgen
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "p")
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", True)
-    svc = services.db.get_service_client_id()
-    did = services.db.create_device(svc, "Admin [x]", "PUBFA2", "PSK", "10.8.1.2")
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "full_access", "host": "h", "user": "u"})
-    services.attach_full_access(did, "vpn://first")
-    first = services.db.get_device(did).full_access_link
-    services.attach_full_access(did, "vpn://second")     # замена
-    second = services.db.get_device(did).full_access_link
-    assert first != second
-    assert services.reveal_full_access_link(did) == "vpn://second"
-
-
-def test_clear_full_access_exits_deadlock(services, fake_awg, monkeypatch):
-    """Снятие метки ФА: ссылка стёрта, устройство вернулось в служебный пул."""
-    from awgbot.core import config
-    from awgbot.domain import configgen
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "p")
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", True)
-    svc = services.db.get_service_client_id()
-    did = services.db.create_device(svc, "guest", "PUBWRONG", "PSK", "10.8.1.7")
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "full_access", "host": "h", "user": "u"})
-    services.attach_full_access(did, "vpn://fa")           # ошибочно назначили гостю
-    assert services.db.get_device(did).is_admin is True
-    services.clear_full_access(did)                        # снимаем метку
-    dev = services.db.get_device(did)
-    assert dev.is_admin is False and dev.full_access_link is None
-    assert dev.client_id == svc and dev.is_app    # снова app-пир без профиля
-
-
-def test_change_fa_rejects_client_link(services, fake_awg, monkeypatch):
-    """Замену ФА-ссылки нельзя сделать клиентской ссылкой (FA-only)."""
-    from awgbot.core import config
-    from awgbot.domain import configgen
-    from awgbot.domain.services import ServiceError
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "p")
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", True)
-    svc = services.db.get_service_client_id()
-    did = services.db.create_device(svc, "Admin [x]", "PUBFA9", "PSK", "10.8.1.9")
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "full_access", "host": "h", "user": "u"})
-    services.attach_full_access(did, "vpn://fa")           # стало ФА
-    # теперь пробуем заменить КЛИЕНТСКОЙ ссылкой → отказ
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "client", "client_priv_key": "P",
-                                      "client_pub_key": "PUBFA9", "client_ip": "10.8.1.9"})
-    with pytest.raises(ServiceError, match="NOT_FULL_ACCESS"):
-        services.attach_full_access(did, "vpn://client")
-
-
-def _enable_enc(monkeypatch):
-    from awgbot.core import config
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "p")
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", True)
-
-
-def test_attach_fa_no_key_but_admin(services, fake_awg, monkeypatch):
-    """После прикрепления ФА: ключа нет (не managed), но is_admin=True."""
-    _enable_enc(monkeypatch)
-    from awgbot.domain import configgen
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "full_access", "host": "h", "user": "u"})
-    svc = services.db.get_service_client_id()
-    did = services.db.create_device(svc, "Admin [x]", "PUBO", "PSK", "10.8.1.1")
-    services.attach_full_access(did, "vpn://fa")
-    dev = services.db.get_device(did)
-    assert dev.is_managed is False and dev.is_admin is True
-
-
-def test_fa_singleton_requires_transfer(services, fake_awg, monkeypatch):
-    """Второй ФА без transfer → EXISTS; с transfer → старый теряет метку."""
-    _enable_enc(monkeypatch)
-    from awgbot.domain import configgen
-    from awgbot.domain.services import ServiceError
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "full_access", "host": "h", "user": "u"})
-    acid = services.ensure_admin_client()
-    d1 = services.db.create_device(acid, "first", "PUB1", "PSK", "10.8.1.1")
-    d2 = services.db.create_device(acid, "second", "PUB2", "PSK", "10.8.1.2")
-    services.attach_full_access(d1, "vpn://fa1")
-    with pytest.raises(ServiceError, match="EXISTS:first"):
-        services.attach_full_access(d2, "vpn://fa2")
-    # с transfer — старый теряет метку, новый получает
-    services.attach_full_access(d2, "vpn://fa2", transfer=True)
-    old = services.db.get_device(d1)
-    assert old.is_admin is False and old.is_app is True   # спека: старый → bot, восстановить ссылкой
-    assert services.db.get_device(d2).is_admin is True
-    # инвариант: ФА ровно один
-    assert services.find_full_access_device().id == d2
-
-
-def test_attach_fa_rejects_non_admin_device(services, fake_awg, monkeypatch, make_active_client):
-    """ФА нельзя прикрепить к устройству чужого клиента (защита root-ключа)."""
-    _enable_enc(monkeypatch)
-    from awgbot.domain import configgen
-    from awgbot.domain.services import ServiceError
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "full_access", "host": "h", "user": "u"})
-    other = make_active_client(tg_id=555, name="Гость")
-    dc = services.add_device(other.id, "guestdev")
-    with pytest.raises(ServiceError, match="NOT_ADMIN_DEVICE"):
-        services.attach_full_access(dc.device_id, "vpn://fa")
 
 
 def test_rename_device_writes_db_only(services, fake_awg):

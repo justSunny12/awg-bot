@@ -1,51 +1,12 @@
-"""Integration: реставрация app-устройства, детект рестарта контейнера,
-переналожение блокировок, гистерезис алертов загрузки, чистка истории.
+"""Integration: детект рестарта сервиса, переналожение блокировок, гистерезис
+алертов загрузки, чистка истории.
 """
-import json
-
 import pytest
 
 from awgbot.core import settings
 from awgbot.core.blocks import DeviceBlock
-from awgbot.domain import configgen
-from awgbot.domain.services import ServiceError
-from awgbot.infra import awg
 
 pytestmark = pytest.mark.integration
-
-
-def _vpn_link(priv, pub, ip):
-    """Минимальный валидный vpn:// (ровно то, что читает classify_vpn_link)."""
-    obj = {"containers": [{"awg": {"last_config": json.dumps(
-        {"client_priv_key": priv, "client_pub_key": pub, "client_ip": ip})}}]}
-    return configgen.encode_vpn(obj)
-
-
-# ── restore_app_device ───────────────────────────────────────────────────────
-def test_restore_app_device_promotes_to_bot(services, fake_awg, make_active_client):
-    client = make_active_client(tg_id=900)
-    priv = "RESTPRIV"
-    derived = awg.pubkey_of(priv)                           # fake: 'derived-RESTPRIV'
-    did = services.db.create_device(client.id, "app-dev", derived, "PSK", "10.8.0.7", private_key=None)
-    services.restore_app_device(did, _vpn_link(priv, "ignored", "10.8.0.7"))
-    dev = services.db.get_device(did)
-    assert dev.is_managed
-    assert dev.private_key == priv                          # ключ записан → полный доступ
-
-
-def test_restore_app_device_wrong_device(services, fake_awg, make_active_client):
-    client = make_active_client(tg_id=901)
-    did = services.db.create_device(client.id, "app-dev", "SOMEOTHERPUB", "PSK", "10.8.0.8", private_key=None)
-    # ссылка валидна, но её priv деривит не в тот pubkey
-    with pytest.raises(ServiceError, match="WRONG_DEVICE"):
-        services.restore_app_device(did, _vpn_link("OTHERPRIV", "x", "10.8.0.8"))
-
-
-def test_restore_rejects_already_bot(services, fake_awg, make_active_client):
-    client = make_active_client(tg_id=902)
-    dc = services.add_device(client.id, "d")                # уже bot-устройство
-    with pytest.raises(ServiceError):
-        services.restore_app_device(dc.device_id, "vpn://irrelevant")
 
 
 # ── detect_and_handle_restart + reconcile_blocks ─────────────────────────────

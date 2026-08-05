@@ -71,7 +71,7 @@ def test_allocate_ip_first_free(db):
 def test_allocate_ip_skips_db_and_live(db):
     cid = db.create_client("A", 5, "s", "e", "Ce0000000000")
     db.create_device(cid, "P1", "PUBa", "PSK", "10.8.1.1")
-    # .2 занят «живым конфигом» (app-устройство, которого нет в БД)
+    # .2 занят «живым конфигом» (пир, которого нет в БД)
     ip = db.allocate_ip(subnet_prefix="10.8.1", occupied_extra={"10.8.1.2"},
                         start_host=1, end_host=254)
     assert ip == "10.8.1.3"

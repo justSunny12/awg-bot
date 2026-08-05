@@ -184,44 +184,6 @@ def generate(
     return {"conf": conf_standalone, "vpn": encode_vpn(vpn_obj)}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Разбор vpn:// для реставрации app-устройства (извлечение приватного ключа)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def classify_vpn_link(link: str) -> dict:
-    """Разбирает vpn:// и КЛАССИФИЦИРУЕТ его. Возвращает:
-      {"kind": "client", "client_priv_key", "client_pub_key", "client_ip"}
-        — обычная клиентская ссылка (в last_config есть приватный ключ);
-      {"kind": "full_access", "host", "user"}
-        — ссылка ПОЛНОГО ДОСТУПА к серверу (SSH-креды root@host, параметры
-        awg-туннеля, обфускация), приватного ключа клиента в ней НЕТ. Приложение
-        по ней заходит на хост по SSH и поднимает туннель, сам генерируя ключ.
-    Поднимает ValueError только на настоящем мусоре."""
-    obj = decode_vpn(link)
-    containers = obj.get("containers")
-    awg0 = containers[0].get("awg", {}) if isinstance(containers, list) and containers else {}
-
-    # клиентская: есть last_config с приватным ключом
-    if "last_config" in awg0:
-        try:
-            lc = json.loads(awg0["last_config"])
-            priv, pub, ip = lc["client_priv_key"], lc["client_pub_key"], lc["client_ip"]
-        except (KeyError, json.JSONDecodeError, TypeError) as e:
-            raise ValueError(f"vpn:// не содержит ожидаемых полей: {e}")
-        if not priv or not pub:
-            raise ValueError("В vpn:// нет приватного/публичного ключа")
-        return {"kind": "client", "client_priv_key": priv,
-                "client_pub_key": pub, "client_ip": ip}
-
-    # full-access: серверные креды + awg-параметры, но без ключа клиента
-    if any(k in obj for k in ("hostName", "userName", "password")):
-        return {"kind": "full_access",
-                "host": obj.get("hostName", ""), "user": obj.get("userName", "")}
-
-    raise ValueError("vpn:// не распознан: нет ни конфига устройства, ни доступа к серверу")
-
-
-
 __all__ = [
-    "encode_vpn", "decode_vpn", "generate", "classify_vpn_link",
+    "encode_vpn", "decode_vpn", "generate",
 ]

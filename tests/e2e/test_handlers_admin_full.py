@@ -1,5 +1,5 @@
 """E2E: роутер администратора (handlers/admin.py) — панель, создание/правка/
-удаление клиента, устройства клиента, перепривязка app-устройства, реставрация,
+удаление клиента, устройства клиента, перепривязка устройства без профиля,
 бэкап, перезапуск, личный VPN админа.
 
 Не дублирует уже покрытое в test_handlers_block / test_handlers_extend.
@@ -170,7 +170,7 @@ async def test_admin_device_open_and_connect(services, fake_bot, make_active_cli
     assert any(s[0] == "edit_text" for s in nav2.sent)
 
 
-# ── перепривязка app-устройства ──────────────────────────────────────────────
+# ── перепривязка устройства без профиля ──────────────────────────────────────
 async def test_reassign_flow_with_slot(services, fake_bot, make_active_client):
     a = make_active_client(tg_id=6011, device_limit=3)
     b = make_active_client(tg_id=6012, device_limit=3)

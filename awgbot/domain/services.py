@@ -9,7 +9,7 @@ services.py — бизнес-логика: склейка db + awg + configgen.
 Здесь живут потоки, спроектированные ранее: создание клиента с инвайтом,
 активация, добавление/удаление устройства с откатом, продление с остатком,
 опрос трафика, проверка сроков, реконсиляция состава пиров и блокировок,
-реставрация app-устройства.
+карантин чужих пиров.
 """
 
 from __future__ import annotations
@@ -133,7 +133,9 @@ _TXT_UNKNOWN_PEER = (
     "Пиры создаёт только бот — значит это ручная правка конфига или чужое "
     "вмешательство. Пир помещён в карантин («Устройства без профиля»): "
     "проверь и либо привяжи к профилю, либо удали.")
-_TXT_APP_DEVICE_GONE = "Устройство «{name}» клиента «{client}» удалено из приложения."
+# Пир исчез из конфига, а запись в БД осталась: сам бот так не удаляет —
+# он снимает пира и строку разом. Значит конфиг правили мимо бота.
+_TXT_PEER_GONE = ("Устройство «{name}» клиента «{client}» пропало из конфига сервера — бот его не удалял. Запись убрана, чтобы база сошлась с сервером.")
 _TXT_FRIEND_DEVICE_GONE = ("Устройство, которым ты управлял, удалено владельцем — "
                            "доступ по нему больше не работает.")
 
@@ -565,7 +567,7 @@ class Services:
         # мьютексом мутаций: закрывает гонку двух одновременных добавлений
         # (одинаковый IP / потерянный peer при конкурентной правке конфига).
         with awg.mutation_lock:
-            # аллокация: занятые из БД + из живого конфига (учёт app-устройств)
+            # аллокация: занятые из БД + из живого конфига (учёт чужих пиров)
             occupied_live = awg.read_occupied_ips()
             ip = self.db.allocate_ip(
                 subnet_prefix=config.SUBNET_PREFIX,
@@ -627,36 +629,18 @@ class Services:
         return friend_tg
 
     def generate_config(self, device_id: int) -> dict:
-        """Перевыпуск конфига устройства. Только для bot-устройств (у app нет
-        приватного ключа)."""
+        """Перевыпуск конфига устройства. Только для устройств, созданных ботом:
+        приватный ключ есть лишь у них."""
         dev = self.db.get_device(device_id)
         if dev is None:
             raise ServiceError("Устройство не найдено")
         if not dev.private_key:
             raise ServiceError(
-                "Устройство создано во внешнем приложении — перевыпуск ссылки недоступен. "
-                "Пропишите строку подключения, чтобы включить полный доступ."
+                "Это устройство создавал не бот — приватного ключа у него нет, "
+                "выдать ссылку не из чего. Удали его и добавь новое через бота."
             )
         server_params = awg.read_server_params()
         return configgen.generate(dev.private_key, dev.public_key, dev.address, server_params)
-
-    def restore_app_device(self, device_id: int, vpn_link: str) -> str:
-        """Реставрация app-устройства КЛИЕНТСКОЙ ссылкой: валидируем priv↔pub и
-        записываем приватный ключ. Full-access ссылку сюда НЕ принимаем — для неё
-        отдельный путь attach_full_access (иные инварианты). Возвращает "client"."""
-        dev = self.db.get_device(device_id)
-        if dev is None:
-            raise ServiceError("Устройство не найдено")
-        if dev.private_key:
-            raise ServiceError("Устройство уже под полным управлением")
-        info = configgen.classify_vpn_link(vpn_link)     # ValueError на мусоре
-        if info["kind"] == "full_access":
-            raise ServiceError("IS_FULL_ACCESS")         # ФА-ссылка → в attach_full_access
-        priv = info["client_priv_key"]
-        if awg.pubkey_of(priv) != dev.public_key:
-            raise ServiceError("WRONG_DEVICE")
-        self.db.update_device_fields(device_id, private_key=priv)
-        return "client"
 
     def rename_device(self, device_id: int, new_name: str) -> None:
         """Переименование устройства. Имя живёт только в нашей БД: сервер про
@@ -668,77 +652,6 @@ class Services:
             raise ServiceError("Устройство не найдено")
         self.db.update_device_fields(device_id, name=new_name)
 
-    def find_full_access_device(self):
-        """Текущее ФА-устройство (или None). ФА-устройство только одно."""
-        for d in self.db.list_all_devices():
-            if d.is_admin:
-                return d
-        return None
-
-    def attach_full_access(self, device_id: int, vpn_link: str,
-                           *, transfer: bool = False) -> str:
-        """Прикрепить ФА-ссылку к устройству. Инварианты:
-          • ссылка ИМЕННО full-access (иначе NOT_FULL_ACCESS);
-          • шифрование обязательно (NEED_ENCRYPTION), ключ из env;
-          • устройство принадлежит клиенту-администратору или ничейно (app в
-            служебном пуле) — иначе NOT_ADMIN_DEVICE (чтобы root-ключ не попал к
-            чужому tg_id);
-          • ФА-устройство ТОЛЬКО ОДНО: есть другое → нужен transfer=True
-            (автоперенос: со старого снимаем метку → обычное bot-устройство),
-            иначе EXISTS:<имя>.
-        Ключа у ФА нет (private_key NULL) — приложение генерит его само."""
-        info = configgen.classify_vpn_link(vpn_link)     # ValueError на мусоре
-        if info["kind"] != "full_access":
-            raise ServiceError("NOT_FULL_ACCESS")
-        if not config.BACKUP_ENCRYPTION_ENABLED:
-            raise ServiceError("NEED_ENCRYPTION")
-        dev = self.db.get_device(device_id)
-        if dev is None:
-            raise ServiceError("Устройство не найдено")
-        admin_cid = self.ensure_admin_client()
-        service_id = self.db.get_service_client_id()
-        if dev.client_id not in (admin_cid, service_id):
-            raise ServiceError("NOT_ADMIN_DEVICE")
-        existing = self.find_full_access_device()
-        if existing is not None and existing.id != device_id:
-            if not transfer:
-                raise ServiceError(f"EXISTS:{existing.name}")
-            self.db.update_device_fields(existing.id, full_access_link=None)
-        from awgbot.util import secrets_util
-        blob = secrets_util.encrypt(vpn_link.strip().encode(), **self._backup_enc_kwargs())
-        enc_b64 = secrets_util.b64e(blob)
-        self.db.update_device_fields(device_id, full_access_link=enc_b64,
-                                     client_id=admin_cid)
-        return "full_access"
-
-    def reveal_full_access_link(self, device_id: int) -> str:
-        """Расшифровать и вернуть сохранённую full-access ссылку (для выдачи
-        QR/файлом/строкой). Ключ — из env (как для бэкапов). Поднимает
-        ServiceError, если устройство не admin или ключ недоступен."""
-        dev = self.db.get_device(device_id)
-        if dev is None or not dev.full_access_link:
-            raise ServiceError("Устройство не найдено или без ссылки полного доступа")
-        if not config.BACKUP_ENCRYPTION_ENABLED:
-            raise ServiceError("NEED_ENCRYPTION")
-        from awgbot.util import secrets_util
-        blob = secrets_util.b64d(dev.full_access_link)
-        return secrets_util.decrypt(blob, **self._backup_enc_kwargs()).decode()
-
-    def clear_full_access(self, device_id: int) -> None:
-        """Снять метку полного доступа: стереть сохранённую ссылку. Устройство
-        перестаёт быть is_admin и возвращается к обычному поведению (гостевой
-        пир снова управляем, app-пир падает к служебному «без клиента»). Выход
-        из дедлока, когда админ назначил ФА не тому пиру. Ссылку восстановить
-        нельзя — она утрачивается."""
-        dev = self.db.get_device(device_id)
-        if dev is None or not dev.full_access_link:
-            raise ServiceError("Устройство не найдено или без ссылки полного доступа")
-        # Снятие метки: стираем ссылку, возвращаем в служебный пул. Ключа у
-        # бота нет — снова «чужой пир без профиля», реставрируемый/удаляемый.
-        service_id = self.db.get_service_client_id()
-        self.db.update_device_fields(device_id, full_access_link=None,
-                                     client_id=service_id)
-
     # ── Друзья (роль invited): приглашение на управление одним устройством ────
 
     def make_device_friendly(self, device_id: int) -> str:
@@ -749,7 +662,8 @@ class Services:
         if dev is None:
             raise ServiceError("Устройство не найдено")
         if not dev.private_key:
-            raise ServiceError("Устройство из приложения нельзя передать: у бота нет его ссылки")
+            raise ServiceError("Это устройство создавал не бот — передать его нельзя: "
+                               "у бота нет ссылки, которую можно было бы выдать другу")
         if dev.friend_status == FriendStatus.ACTIVE:
             raise ServiceError("Устройством уже управляет друг")
         code = self._gen_friend_code()
@@ -1588,7 +1502,7 @@ class Services:
                 if client and not client.is_service:
                     notifications.append(Notification(
                         config.ADMIN_ID,
-                        _TXT_APP_DEVICE_GONE.format(name=dev.name, client=client.name)))
+                        _TXT_PEER_GONE.format(name=dev.name, client=client.name)))
                 if friend_tg:
                     notifications.append(Notification(friend_tg, _TXT_FRIEND_DEVICE_GONE))
             else:
@@ -2277,28 +2191,9 @@ class Services:
 
     # ── Вьюхелперы для отображения ───────────────────────────────────────────
 
-    def count_unassigned_app_devices(self) -> int:
+    def count_unassigned_devices(self) -> int:
         service_id = self.db.get_service_client_id()
         return self.db.count_devices(service_id)
-
-    _FA_HINT_DISMISSED = "admin_fa_hint_dismissed"
-
-    def admin_has_full_access_device(self) -> bool:
-        """Есть ли назначенное ФА-устройство (оно всегда одно и на админ-клиенте)."""
-        return self.find_full_access_device() is not None
-
-
-    def admin_fa_hint_needed(self) -> bool:
-        """Показывать ли подсветку «назначь устройство полного доступа»: пока
-        админ её не проигнорировал И full-access устройство ещё не назначено.
-        Проверяется при КАЖДОМ старте (не теряется при перезапуске до решения)."""
-        if self.db.get_state(self._FA_HINT_DISMISSED) == "1":
-            return False
-        return not self.admin_has_full_access_device()
-
-    def dismiss_admin_fa_hint(self) -> None:
-        """«Игнорировать» — заглушить подсветку навсегда."""
-        self.db.set_state(self._FA_HINT_DISMISSED, "1")
 
     def profile_traffic_limit(self, client_id: int) -> int:
         """Лимит трафика профиля-владельца (байты, 0 = безлимит) — для подсказки

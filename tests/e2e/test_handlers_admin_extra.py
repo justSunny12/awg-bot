@@ -1,14 +1,12 @@
-"""E2E: добор веток роутера админа — понижение лимита с подтверждением, восстановление
-устройства (админ), продление, выдача файла, блок с приостановкой (FSM дней),
-личные qr/file, выбор устройства для добавления, подключение app-устройства.
+"""E2E: добор веток роутера админа — понижение лимита с подтверждением,
+продление, выдача файла, блок с приостановкой (FSM дней), личные qr/file,
+выбор устройства для добавления, карточка пира без приватного ключа.
 """
 import pytest
 
 from awgbot.bot.handlers import admin as ah
-from awgbot.bot.callbacks import (BlockCB, ClientCB, ConfirmCB, DeviceCB, Menu, PeriodCB)
+from awgbot.bot.callbacks import BlockCB, ClientCB, ConfirmCB, DeviceCB
 from awgbot.core import config
-from awgbot.domain import configgen
-from awgbot.infra import awg
 from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
@@ -49,28 +47,6 @@ async def test_edit_limit_lower_confirm_no(services, fake_bot, make_active_clien
     cb, nav = _acb(fake_bot)
     await ah.edit_limit_confirm(cb, ConfirmCB(action="lower_limit", ref=client.id, yes=False), services, st)
     assert services.db.get_client(client.id).device_limit == 5   # не изменён
-
-
-# ── восстановление app-устройства (админ) ────────────────────────────────────
-async def test_admin_restore_flow_ok_and_bad(services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=6302)
-    priv = "AP"
-    derived = awg.pubkey_of(priv)
-    did = services.db.create_device(client.id, "app", derived, "PSK", "10.8.0.80", private_key=None)
-    st = FakeState()
-    cb, nav = _acb(fake_bot)
-    await ah.device_restore_start(cb, DeviceCB(action="restore", device_id=did), st, services)
-    assert (await st.get_data())["device_id"] == did
-    link = configgen.encode_vpn({"containers": [{"awg": {"last_config":
-            '{"client_priv_key":"AP","client_pub_key":"x","client_ip":"10.8.0.80"}'}}]})
-    await ah.device_restore_apply(_amsg(fake_bot, link), services, st)
-    assert services.db.get_device(did).is_managed
-    # плохая ссылка
-    did2 = services.db.create_device(client.id, "app", "PB2", "PSK", "10.8.0.81", private_key=None)
-    st2 = FakeState()
-    await st2.update_data(device_id=did2)
-    await ah.device_restore_apply(_amsg(fake_bot, "vnp://bad"), services, st2)
-    assert services.db.get_device(did2).is_app
 
 
 # ── продление / файл ─────────────────────────────────────────────────────────
@@ -145,84 +121,42 @@ async def test_admin_menu_devices(services, fake_bot):
     assert any(s[0] == "edit_text" for s in nav.sent)
 
 
-# ── регресс: ФА-устройство в connect_menu идёт в ВЫДАЧУ ссылки, не в app-диалог ─
-async def test_fa_device_connect_menu_routes_to_delivery(services, fake_bot, monkeypatch):
-    """Баг: ФА уходил в диалог реставрации вместо выдачи ссылки."""
-    from awgbot.core import config
-    from awgbot.domain import configgen
-    from awgbot.bot.callbacks import DeviceCB
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "p")
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", True)
-    svc = services.db.get_service_client_id()
-    did = services.db.create_device(svc, "Admin [x]", "PUBFAX", "PSK", "10.8.1.3")
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "full_access", "host": "h", "user": "u"})
-    services.attach_full_access(did, "vpn://fa")
-    cb, nav = _acb(fake_bot)
-    await ah.admin_device_connect_menu(cb, DeviceCB(action="connect_menu", device_id=did), services)
-    # должно показать выбор способа выдачи (CONNECT_METHOD_ASK), НЕ app-диалог
-    from awgbot.bot import texts
-    shown = [r for r in fake_bot.records if r[0] in ("edit_text", "send_message")]
-    body = " ".join(str(r) for r in shown)
-    assert texts.APP_DEVICE_PICK_DIALOG not in body
+# ── регресс: у устройства без ключа не должно остаться тупиковых кнопок ───────
+async def test_unmanaged_device_offers_no_dead_restore_button(services, fake_bot):
+    """Пир, подхваченный с сервера: реставрации больше нет — и кнопок в неё тоже.
 
+    Обработчика action="restore" в боте не осталось. Кнопка, которая на него
+    ссылается, молча ничего не делает: нажатие уходит в пустоту, а человек
+    остаётся с ощущением сломанного бота. Проверяем оба экрана, где такое
+    устройство вообще показывается.
+    """
+    from awgbot.bot import keyboards as kb
 
-async def test_clear_fa_returns_device_to_pool(services, fake_bot, monkeypatch):
-    """Снятие метки → устройство снова app-без-клиента (управляемо)."""
-    from awgbot.core import config
-    from awgbot.domain import configgen
-    from awgbot.bot.callbacks import AdminLinkGate
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "p")
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", True)
     svc = services.db.get_service_client_id()
-    did = services.db.create_device(svc, "guest", "PUBG", "PSK", "10.8.1.7")
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "full_access", "host": "h", "user": "u"})
-    services.attach_full_access(did, "vpn://fa")
-    cb, nav = _acb(fake_bot)
-    await ah.fa_clear_confirmed(cb, AdminLinkGate(device_id=did, method="clear", confirm=True), services)
+    did = services.db.create_device(svc, "Неизвестный пир 10.8.1.9", "PUBQ", "PSK",
+                                    "10.8.1.9", private_key=None)
     dev = services.db.get_device(did)
-    assert dev.is_admin is False and dev.client_id == svc
+    assert not dev.is_managed
+
+    markups = [kb.device_actions(dev, is_admin=True, back_target="x",
+                                 reassign_label="🔀 Передать"),
+               kb.unmanaged_device_dialog(did)]
+    for m in markups:
+        for row in m.inline_keyboard:
+            for b in row:
+                assert "restore" not in (b.callback_data or ""), b.text
 
 
-async def test_client_mode_fa_link_redirects_to_attach(services, fake_bot, monkeypatch):
-    """Ревью-фикс: на app-устройстве (mode=client) прислали ФА-ссылку →
-    прозрачно уходит в attach, а не в ошибку про несуществующую кнопку."""
-    from awgbot.core import config
-    from awgbot.domain import configgen
-    from awgbot.bot.handlers import admin as ah
-    from awgbot.bot.states import RestoreDevice
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "p")
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", True)
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "full_access", "host": "h", "user": "u"})
+async def test_unmanaged_device_connect_menu_says_there_is_no_link(
+        services, fake_bot):
+    """Карточка «как подключить» для такого пира честно говорит: ссылки нет."""
+    from awgbot.bot import texts
+
     svc = services.db.get_service_client_id()
-    did = services.db.create_device(svc, "app", "PUBREDIR", "PSK", "10.8.1.4")
-    st = FakeState()
-    await st.set_state(RestoreDevice.link)
-    await st.update_data(device_id=did, mode="client")     # клиентский режим
-    await ah.device_restore_apply(_amsg(fake_bot, "vpn://fa"), services, st)
-    # ФА-ссылка прошла в attach: устройство стало admin
-    assert services.db.get_device(did).is_admin is True
-
-
-async def test_fa_save_deletes_link_message(services, fake_bot, monkeypatch):
-    """После сохранения ФА сообщение пользователя со ссылкой удаляется из чата."""
-    from awgbot.core import config
-    from awgbot.domain import configgen
-    from awgbot.bot.handlers import admin as ah
-    from awgbot.bot.states import RestoreDevice
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "p")
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", True)
-    monkeypatch.setattr(configgen, "classify_vpn_link",
-                        lambda link: {"kind": "full_access", "host": "h", "user": "u"})
-    svc = services.db.get_service_client_id()
-    did = services.db.create_device(svc, "Admin [x]", "PUBDEL", "PSK", "10.8.1.8")
-    st = FakeState()
-    await st.set_state(RestoreDevice.link)
-    await st.update_data(device_id=did, mode="fa")
-    msg = _amsg(fake_bot, "vpn://secret-root-link")
-    await ah.device_restore_apply(msg, services, st)
-    # сообщение со ссылкой удалено
-    assert any(r[0] == "delete" for r in fake_bot.records)
-    assert services.db.get_device(did).is_admin is True
+    did = services.db.create_device(svc, "чужой", "PUBQ2", "PSK", "10.8.1.10",
+                                    private_key=None)
+    cb, nav = _acb(fake_bot)
+    await ah.admin_device_connect_menu(cb, DeviceCB(action="connect_menu", device_id=did),
+                                       services)
+    shown = [r[1] for r in nav.sent if r[0] == "edit_text"]
+    assert texts.UNMANAGED_DEVICE_DIALOG in shown

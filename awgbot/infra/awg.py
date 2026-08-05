@@ -247,7 +247,7 @@ def parse_interface_params(conf_text: str) -> dict:
 
 def parse_occupied_ips(conf_text: str) -> set[str]:
     """Все AllowedIPs пиров из awg0.conf → множество адресов без маски.
-    Источник занятых IP для аллокатора (учитывает app-устройства из приложения)."""
+    Источник занятых IP для аллокатора (учитывает пиры, которых ещё нет в БД)."""
     ips: set[str] = set()
     for m in re.finditer(r"^\s*AllowedIPs\s*=\s*([\d.]+)/\d+", conf_text, re.MULTILINE):
         ips.add(m.group(1))
@@ -466,7 +466,7 @@ def gen_keypair() -> tuple[str, str]:
 
 
 def pubkey_of(private_key: str) -> str:
-    """priv → pub (для валидации при реставрации app-устройства)."""
+    """priv → pub."""
     return _exec_i(
         ["awg", "pubkey"], input_data=(private_key.strip() + "\n").encode()
     ).stdout.decode().strip()

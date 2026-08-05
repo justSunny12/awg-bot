@@ -3,7 +3,7 @@
 poll_traffic (накопление дельт + откат счётчика + онлайн-счётчик),
 reset_monthly_traffic (обнуление месяца, снятие трафик-причин, EXPIRY цел),
 check_pauses (авто-выход из срочных пауз, admin_open не трогаем),
-reconcile_peers (усыновление app-пиров + грациозное удаление пропавших).
+reconcile_peers (карантин чужих пиров + грациозное удаление пропавших).
 
 fake_awg НЕ стабит show_dump/read_file/read_clients_table — их мы патчим
 локально через monkeypatch (тот же объект awg, что видит services).
@@ -171,22 +171,6 @@ def test_check_pauses_ignores_admin_open(services, fake_awg, make_active_client)
 
 
 # ── reconcile_peers ──────────────────────────────────────────────────────────
-def test_reconcile_adopts_unknown_peer(services, fake_awg, monkeypatch):
-    """Чужой пир в конфиге подхватывается на служебный профиль и о нём говорят.
-
-    Имя больше не берётся из clientsTable — её нет: имена живут только в нашей
-    БД, а сервер про них не знает.
-    """
-    services.ensure_admin_client()
-    _set_live(monkeypatch, [("appPUB", "10.8.0.50")])
-    notes = services.reconcile_peers()
-    dev = next(d for d in services.db.list_all_devices() if d.public_key == "appPUB")
-    assert dev is not None
-    assert dev.is_app
-    assert "10.8.0.50" in dev.name
-    assert any(n.tg_id == config.ADMIN_ID for n in notes)
-
-
 def test_reconcile_removes_peer_after_threshold(services, fake_awg, make_active_client, monkeypatch):
     client = make_active_client(tg_id=730)
     dc = services.add_device(client.id, "d")
@@ -218,13 +202,13 @@ def test_reconcile_survives_address_reuse_by_the_app(
     получает освободившийся адрес, которым в БД ещё владеет уходящая запись.
     Прежний порядок проходов (сначала усыновление) падал на UNIQUE ДО прохода
     по пропавшим, поэтому держатель адреса не удалялся никогда: реконсиляция
-    ломалась насовсем, вместе с подхватом всех остальных app-устройств.
+    ломалась насовсем, вместе с подхватом всех остальных чужих пиров.
     """
     client = make_active_client(tg_id=732)
     dc = services.add_device(client.id, "d")
     addr = services.db.get_device(dc.device_id).address
 
-    # старого пира в конфиге больше нет, его адрес занял новый app-пир
+    # старого пира в конфиге больше нет, его адрес занял новый чужой пир
     _set_live(monkeypatch, [("appREUSE", addr)],
               table=[{"clientId": "appREUSE", "userData": {"clientName": "Phone"}}])
 

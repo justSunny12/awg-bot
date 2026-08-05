@@ -26,8 +26,8 @@ class ClientCB(CallbackData, prefix="c"):
 
 class DeviceCB(CallbackData, prefix="d"):
     """Действия над устройством. action: open|connect_menu|gen_link|gen_qr|
-    gen_file|gen_guide|restore|reassign|transfer|transfer_yes|reinvite|
-    edit_name|edit_traffic|fa_link|fa_assign|clear_fa|add|add_self|add_friend"""
+    gen_file|gen_guide|reassign|transfer|transfer_yes|reinvite|
+    edit_name|edit_traffic|add|add_self|add_friend"""
     action: str
     device_id: int = 0
 
@@ -91,19 +91,6 @@ class BlockCB(CallbackData, prefix="bl"):
     days: int = -1
 
 
-class FaHintCB(CallbackData, prefix="fah"):
-    """Подсветка «назначь устройство полного доступа»: action=choose|ignore."""
-    action: str
-
-
-class AdminLinkGate(CallbackData, prefix="alg"):
-    """Гейт выдачи ссылки полного доступа (admin-устройство). method:
-    link|qr|file — что отдать после подтверждения; confirm — нажата ли «отдай»."""
-    device_id: int
-    method: str
-    confirm: bool = False
-
-
 class ConfirmCB(CallbackData, prefix="y"):
     """Да/Нет диалог. action — что подтверждаем, ref — id объекта,
     yes — ответ."""
@@ -113,7 +100,7 @@ class ConfirmCB(CallbackData, prefix="y"):
 
 
 class ReassignCB(CallbackData, prefix="ra"):
-    """Привязка app-устройства к клиенту. device_id → client_id.
+    """Привязка устройства без профиля к клиенту. device_id → client_id.
     stage: go — привязать (проверив слот); slot_yes/slot_no — ответ на вопрос
     «добавить слот, раз лимит исчерпан?»."""
     device_id: int
@@ -158,7 +145,7 @@ class FriendCB(CallbackData, prefix="fr"):
     device_id: int = 0
 
 
-__all__ = ["Menu", "ClientCB", "DeviceCB", "PeriodCB", "ConfirmCB", "AdminLinkGate", "FaHintCB", "ReassignCB",
+__all__ = ["Menu", "ClientCB", "DeviceCB", "PeriodCB", "ConfirmCB", "ReassignCB",
            "HelpCB", "DelDeviceCB", "GuideCB", "AdminSelfCB", "FriendCB", "GraceCB",
            "BlockCB", "PauseCB"]
 

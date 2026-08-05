@@ -94,7 +94,6 @@ def _device_from_row(row) -> Optional["models.Device"]:
         address=row["address"],
         block_reason=int(row["block_reason"]),
         created_at=row["created_at"],
-        full_access_link=(row["full_access_link"] if "full_access_link" in row.keys() else None),
         traffic=models.DeviceTraffic(
             limit=int(row["traffic_limit"]),
             rx_month=int(row["traffic_rx_month"]), tx_month=int(row["traffic_tx_month"]),
@@ -102,7 +101,7 @@ def _device_from_row(row) -> Optional["models.Device"]:
             last_handshake=row["last_handshake"], missing_count=int(row["missing_count"])),
         friend=friend)
 
-# Имя служебного клиента, к которому цепляются app-устройства без владельца.
+# Имя служебного клиента, к которому цепляются пиры без владельца (карантин).
 SERVICE_CLIENT_NAME = "Устройства без клиента"
 
 # Реестр исторических таблиц для дженерик-очистки (слой 3c). У всех есть столбец
@@ -209,11 +208,10 @@ CREATE TABLE IF NOT EXISTS devices (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     client_id           INTEGER NOT NULL,
     name                TEXT    NOT NULL,
-    private_key         TEXT,                            -- nullable: NULL у app-устройств
+    private_key         TEXT,                            -- nullable: NULL у пиров, подхваченных с сервера (карантин)
     public_key          TEXT    NOT NULL UNIQUE,         -- = clientId в терминах awg
     preshared_key       TEXT    NOT NULL,
     address             TEXT    NOT NULL UNIQUE,         -- 10.8.1.X ; UNIQUE = аллокатор
-    full_access_link    TEXT,                            -- nullable: vpn:// полного доступа (admin-устройство), храним как есть
     block_reason        INTEGER NOT NULL DEFAULT 0,      -- маска DeviceBlock; 0 = не заблокирован
     created_at          TEXT    NOT NULL,
     FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
@@ -504,6 +502,7 @@ class Database:
         with self._tx() as cur:
             cur.executescript(SCHEMA)
         self._migrate_additive()
+        self._migrate_drop_full_access()
         self._ensure_service_client()
 
     def _migrate_additive(self) -> None:
@@ -524,10 +523,34 @@ class Database:
                     with self._tx() as cur:
                         cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
+    def _migrate_drop_full_access(self) -> None:
+        """Разовая зачистка: колонка devices.full_access_link осталась от
+        вырезанной фичи «устройство полного доступа».
+
+        В ней лежала зашифрованная vpn://-ссылка с root-доступом к хосту. Фичи
+        больше нет, а секрет — есть: он продолжал бы ездить в каждом бэкапе,
+        уходящем в Telegram. Поэтому сначала затираем значение, и только потом
+        пробуем убрать саму колонку. Порядок именно такой: DROP COLUMN появился
+        в SQLite 3.35 и может не пройти (старый sqlite, вьюха поверх таблицы) —
+        тогда секрет всё равно уже стёрт, а лишняя пустая колонка безвредна.
+        Идемпотентно: колонки нет → выходим сразу."""
+        con = self._connection()
+        have = {r["name"] for r in con.execute("PRAGMA table_info(devices)")}
+        if "full_access_link" not in have:
+            return
+        with self._tx() as cur:
+            cur.execute("UPDATE devices SET full_access_link = NULL "
+                        "WHERE full_access_link IS NOT NULL")
+        try:
+            with self._tx() as cur:
+                cur.execute("ALTER TABLE devices DROP COLUMN full_access_link")
+        except sqlite3.OperationalError:
+            pass                    # колонка осталась пустой — это безвредно
+
     def _ensure_service_client(self) -> None:
         """Служебный клиент «Устройства без клиента» — ровно один, создаётся один раз.
 
-        К нему цепляются app-устройства, пока админ не привяжет их к реальному
+        К нему цепляются подхваченные с сервера пиры, пока админ не привяжет их к реальному
         клиенту. У него нет tg_id/периода, is_service=1, и логика уведомлений/
         блокировок его игнорирует. Подписка/квота (1:1) создаются вместе с ним.
         """
@@ -849,7 +872,7 @@ class Database:
         private_key: Optional[str] = None,
         traffic_limit: int = 0,
     ) -> int:
-        """Создаёт устройство. Без private_key — «чужой» app-пир (ключа у нас нет).
+        """Создаёт устройство. Без private_key — чужой пир из конфига (ключа у нас нет).
         Заводит сопутствующую 1:1 строку счётчиков. Возвращает id устройства."""
         with self._tx() as cur:
             cur.execute(
@@ -905,8 +928,7 @@ class Database:
 
     def list_devices(self, client_id: int) -> list:
         return [_device_from_row(r) for r in self._connection().execute(
-            _DEVICE_SELECT + " WHERE d.client_id = ? "
-            "ORDER BY (d.full_access_link IS NOT NULL), d.created_at",
+            _DEVICE_SELECT + " WHERE d.client_id = ? ORDER BY d.created_at",
             (client_id,)).fetchall()]
 
     def list_all_devices(self) -> list:
@@ -948,7 +970,6 @@ class Database:
     _DEVICE_FIELD_TABLE = {
         "name": "devices", "private_key": "devices",
         "block_reason": "devices", "client_id": "devices",
-        "full_access_link": "devices",
         "traffic_limit": "device_traffic", "traffic_rx_month": "device_traffic",
         "traffic_tx_month": "device_traffic", "traffic_rx_period": "device_traffic",
         "traffic_tx_period": "device_traffic", "last_handshake": "device_traffic",
@@ -984,7 +1005,7 @@ class Database:
             cur.execute("DELETE FROM devices WHERE id = ?", (device_id,))
 
     def reassign_device(self, device_id: int, new_client_id: int) -> None:
-        """Привязка app-устройства к реальному клиенту."""
+        """Привязка устройства без профиля к реальному клиенту."""
         self.update_device_fields(device_id, client_id=new_client_id)
 
     # ── Трафик: накопление и сброс ───────────────────────────────────────────
@@ -1394,7 +1415,7 @@ class Database:
         """Возвращает первый свободный адрес вида {subnet_prefix}.N.
 
         Занятые адреса берём из БД И из occupied_extra (адреса из живого awg0.conf,
-        чтобы учесть app-устройства, которых может ещё не быть в БД). Это важно:
+        чтобы учесть пиры, которых может ещё не быть в БД). Это важно:
         приложение и бот делят один пул и одну логику «первый свободный», поэтому
         источником занятости должен быть реальный конфиг, а не только БД.
 

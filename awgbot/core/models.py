@@ -168,27 +168,18 @@ class Device:
     address: str
     block_reason: int
     created_at: str
-    full_access_link: Optional[str] = None    # vpn:// полного доступа (admin-устройство)
     traffic: DeviceTraffic = field(default_factory=DeviceTraffic)
     friend: Optional[Friend] = None
 
     @property
-    def is_admin(self) -> bool:
-        """Устройство несёт ссылку полного доступа к серверу (метка [Доступ к серверу])."""
-        return bool(self.full_access_link)
-
-    @property
     def is_managed(self) -> bool:
         """Бот управляет устройством напрямую — у него есть приватный ключ, значит
-        может выдавать ссылку/QR/файл, передавать другу и т.д."""
-        return bool(self.private_key)
+        может выдавать ссылку/QR/файл, передавать другу и т.д.
 
-    @property
-    def is_app(self) -> bool:
-        """«Чистое» устройство из приложения: у бота нет ни ключа, ни ФА-ссылки —
-        только подхваченный с сервера пир. Ему предлагаем «прописать строку»
-        (реставрацию) и метим суффиксом (APP)."""
-        return not self.private_key and not self.full_access_link
+        Обратное (ключа нет) означает ровно одно: пир появился в конфиге сервера
+        мимо бота и был подхвачен карантином. Восстановить ключ неоткуда — такое
+        устройство можно только переименовать, привязать к профилю или удалить."""
+        return bool(self.private_key)
 
     # ——— плоские property (аналогично Client) ———
     @property

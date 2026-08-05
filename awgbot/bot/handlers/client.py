@@ -27,7 +27,7 @@ from awgbot.bot.handlers.common import (call, cleanup_content, drop_message, edi
                              remove_device_and_notify, send_device_config, send_menu,
                              content_finisher)
 from awgbot.domain.services import BYTES_PER_GB, LimitReached, ServiceError
-from awgbot.bot.states import AddDevice, EditDeviceName, EditTrafficLimit, PauseDays, RestoreDevice
+from awgbot.bot.states import AddDevice, EditDeviceName, EditTrafficLimit, PauseDays
 from awgbot.core.enums import PauseMode, PeriodKind
 
 router = Router(name="client")
@@ -224,7 +224,7 @@ async def device_open(cb: CallbackQuery, callback_data: DeviceCB, client, servic
         return
     text = texts.device_card_text(dev, for_admin=False)
     if not dev.private_key:
-        text += texts.APP_DEVICE_EXPLAIN
+        text += texts.UNMANAGED_DEVICE_EXPLAIN
     marker = texts.friend_marker(dev)
     if marker:
         text += f"\n\n{marker}"
@@ -276,8 +276,8 @@ async def device_connect_menu(cb: CallbackQuery, callback_data: DeviceCB, client
         await cb.answer("Устройство не найдено", show_alert=True)
         return
     if not dev.private_key:
-        # app-устройство: ссылку выдать не можем — дружелюбный диалог
-        await edit(cb, texts.APP_DEVICE_PICK_DIALOG, kb.app_device_dialog(dev.id))
+        # ключа нет: ссылку выдать не можем — дружелюбный диалог
+        await edit(cb, texts.UNMANAGED_DEVICE_DIALOG, kb.unmanaged_device_dialog(dev.id))
         await cb.answer()
         return
     back = DeviceCB(action="open", device_id=dev.id).pack()
@@ -376,60 +376,15 @@ async def device_reinvite(cb: CallbackQuery, callback_data: DeviceCB, client, se
     await cb.answer()
 
 
-@router.callback_query(DeviceCB.filter(F.action == "restore"))
-async def device_restore_start(cb: CallbackQuery, callback_data: DeviceCB, client, services, state: FSMContext):
-    dev = await call(own_device, services, client, callback_data.device_id)
-    if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
-        return
-    await state.set_state(RestoreDevice.link)
-    await state.update_data(device_id=dev.id)
-    await cb.message.answer(
-        "Пришли строку подключения (vpn://…) этого устройства из приложения AmneziaVPN — "
-        "включу для него выдачу ссылки и файла через бота.", reply_markup=kb.reply_cancel())
-    await cb.answer()
-
-
-@router.message(RestoreDevice.link, RoleFilter("client"))
-async def device_restore_apply(message: Message, client, services, state: FSMContext):
-    link = (message.text or "").strip()
-    data = await state.get_data()
-    dev = await call(own_device, services, client, data.get("device_id", 0))
-    await state.clear()
-    if dev is None:
-        await message.answer("Устройство не найдено.", reply_markup=kb.reply_hide())
-        await _show_main(message, services, client)
-        return
-    try:
-        await call(services.restore_app_device, dev.id, link)
-    except ServiceError as e:
-        msg = texts.RESTORE_WRONG_DEVICE if str(e) == "WRONG_DEVICE" else str(e)
-        await message.answer(msg, reply_markup=kb.reply_hide())
-        await _show_main(message, services, client)
-        return
-    except ValueError:
-        await message.answer(texts.RESTORE_BAD_LINK, reply_markup=kb.reply_hide())
-        await _show_main(message, services, client)
-        return
-    try:
-        await message.delete()               # vpn:// несёт приватный ключ — убираем из чата
-    except Exception:                        # noqa: BLE001
-        pass
-    await message.answer(f"✅ Устройство «{dev.name}»: управление восстановлено — "
-                         "теперь ссылка/QR/файл доступны через бота.",
-                         reply_markup=kb.reply_hide())
-    await _show_main(message, services, client)
-
-
 async def _gen_from_menu(cb: CallbackQuery, callback_data, client, services, kind: str):
-    """Генерация из меню. Для app-устройства (нет приватного ключа) вместо
-    ошибки — дружелюбный диалог «пришли ссылку / удали / назад»."""
+    """Генерация из меню. Для устройства без приватного ключа (пир подхвачен с
+    сервера) вместо ошибки — дружелюбный диалог «удали / назад»."""
     dev = await call(own_device, services, client, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
     if not dev.private_key:
-        await edit(cb, texts.APP_DEVICE_PICK_DIALOG, kb.app_device_dialog(dev.id))
+        await edit(cb, texts.UNMANAGED_DEVICE_DIALOG, kb.unmanaged_device_dialog(dev.id))
         await cb.answer()
         return
     await drop_message(cb)                           # убрать старое меню (не висеть над ссылкой)

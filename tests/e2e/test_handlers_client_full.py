@@ -1,14 +1,13 @@
 """E2E: полный роутер клиента (handlers/client.py) — меню, устройства, выдача
-конфигов, добавление/удаление, восстановление app-устройства, самоблок,
+конфигов, добавление/удаление, карточка устройства без ключа, самоблок,
 приостановка подписки, отсрочка.
 """
 import pytest
 
+from awgbot.bot import texts
 from awgbot.bot.handlers import client as ch
-from awgbot.bot.callbacks import (BlockCB, DelDeviceCB, DeviceCB, GraceCB, Menu, PauseCB)
+from awgbot.bot.callbacks import BlockCB, DelDeviceCB, DeviceCB, GraceCB, PauseCB
 from awgbot.core.blocks import ClientBlock, DeviceBlock
-from awgbot.domain import configgen
-from awgbot.infra import awg
 from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
@@ -121,33 +120,28 @@ async def test_transfer_and_reinvite(services, fake_bot, make_active_client):
     assert cb2.answers
 
 
-async def test_restore_app_device_flow(services, fake_bot, make_active_client):
+async def test_client_card_of_unmanaged_device_explains_the_dead_end(
+        services, fake_bot, make_active_client):
+    """Клиенту досталось устройство, которое бот не создавал.
+
+    Так бывает после привязки карантинного пира к профилю. Реставрации больше
+    нет, значит карточка обязана честно сказать, что ссылки не будет, и не
+    предлагать кнопок, ведущих в никуда, — иначе клиент упрётся в тупик молча.
+    """
     client = make_active_client(tg_id=5008)
-    priv = "RP"
-    derived = awg.pubkey_of(priv)
-    did = services.db.create_device(client.id, "app", derived, "PSK", "10.8.0.63", private_key=None)
+    did = services.db.create_device(client.id, "чужой", "PBX", "PSK", "10.8.0.63",
+                                    private_key=None)
     cl = _fresh(services, client)
-    st = FakeState()
     cb, nav = _cb(fake_bot, 5008)
-    await ch.device_restore_start(cb, DeviceCB(action="restore", device_id=did), cl, services, st)
-    assert (await st.get_data())["device_id"] == did
-    obj = {"containers": [{"awg": {"last_config":
-           '{"client_priv_key":"RP","client_pub_key":"x","client_ip":"10.8.0.63"}'}}]}
-    link = configgen.encode_vpn(obj)
-    m = FakeMessage(text=link, chat_id=5008, user_id=5008, bot=fake_bot)
-    await ch.device_restore_apply(m, cl, services, st)
-    assert services.db.get_device(did).is_managed
+    await ch.device_open(cb, DeviceCB(action="open", device_id=did), cl, services)
 
-
-async def test_restore_bad_link(services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=5009)
-    did = services.db.create_device(client.id, "app", "PB", "PSK", "10.8.0.64", private_key=None)
-    cl = _fresh(services, client)
-    st = FakeState()
-    await st.update_data(device_id=did)
-    m = FakeMessage(text="vnp://garbage", chat_id=5009, user_id=5009, bot=fake_bot)
-    await ch.device_restore_apply(m, cl, services, st)
-    assert services.db.get_device(did).is_app
+    shown = [r for r in nav.sent if r[0] == "edit_text"]
+    assert shown, "карточка не отрисовалась"
+    text, markup = shown[-1][1], shown[-1][2]
+    assert texts.UNMANAGED_DEVICE_EXPLAIN in text
+    for row in markup.inline_keyboard:
+        for b in row:
+            assert "restore" not in (b.callback_data or ""), b.text
 
 
 async def test_add_device_self_full_flow(services, fake_bot, make_active_client):

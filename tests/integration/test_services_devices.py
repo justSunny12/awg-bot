@@ -98,9 +98,9 @@ def test_generate_config_bot_device(services, make_active_client):
     assert cfg["vpn"].startswith("vpn://") and "PrivateKey" in cfg["conf"]
 
 
-def test_generate_config_app_device_forbidden(services, make_active_client):
+def test_generate_config_without_key_forbidden(services, make_active_client):
     client = make_active_client()
-    # app-устройство: приватного ключа нет
+    # ключа у бота нет — выдавать нечего
     did = services.db.create_device(client.id, "app", "PUBapp", "PSK", "10.8.1.9", private_key=None)
     with pytest.raises(ServiceError):
         services.generate_config(did)

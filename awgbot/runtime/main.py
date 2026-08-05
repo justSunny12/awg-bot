@@ -227,16 +227,6 @@ async def main() -> None:
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight warnings: %s", e)
 
-    # Подсветка админу: не назначено устройство полного доступа (см. концепт).
-    # Шлём при каждом старте, пока не назначено ИЛИ не нажато «Игнорировать».
-    try:
-        if await asyncio.to_thread(services.admin_fa_hint_needed):
-            from awgbot.bot import texts, keyboards as kb
-            await bot.send_message(config.ADMIN_ID, texts.ADMIN_FA_HINT,
-                                   reply_markup=kb.admin_fa_hint())
-    except Exception as e:                       # noqa: BLE001
-        log.warning("fa-hint: %s", e)
-
     try:
         # long-poll 50 с вместо дефолтных 10: впятеро меньше холостых
         # getUpdates-запросов (TLS/CPU/сеть) на простаивающем боте; на задержку

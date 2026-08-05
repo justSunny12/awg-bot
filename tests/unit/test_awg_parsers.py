@@ -198,23 +198,3 @@ def test_detect_topology_docker_missing(monkeypatch):
     monkeypatch.setattr(_awg.subprocess, "run", _boom)
     assert awg.detect_topology("c") == {
         "listen_port": None, "subnet_prefix": None, "subnet_cidr": None}
-
-
-# ── classify_vpn_link: различает client / full_access ────────────────────────
-def test_classify_vpn_link_full_access(monkeypatch):
-    from awgbot.domain import configgen
-    fake = {"hostName": "1.2.3.4", "userName": "root",
-            "containers": [{"awg": {"port": "43125", "subnet_address": "10.8.1.0"}}]}
-    monkeypatch.setattr(configgen, "decode_vpn", lambda link: fake)
-    info = configgen.classify_vpn_link("vpn://whatever")
-    assert info["kind"] == "full_access" and info["host"] == "1.2.3.4"
-
-
-def test_classify_vpn_link_client(monkeypatch):
-    from awgbot.domain import configgen
-    import json as _j
-    lc = _j.dumps({"client_priv_key": "PRIV", "client_pub_key": "PUB", "client_ip": "10.8.1.7"})
-    fake = {"containers": [{"awg": {"last_config": lc}}]}
-    monkeypatch.setattr(configgen, "decode_vpn", lambda link: fake)
-    info = configgen.classify_vpn_link("vpn://whatever")
-    assert info["kind"] == "client" and info["client_priv_key"] == "PRIV"
