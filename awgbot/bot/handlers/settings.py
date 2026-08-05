@@ -25,8 +25,15 @@ router.callback_query.filter(RoleFilter("admin"))
 
 
 # ── рендер экранов ───────────────────────────────────────────────────────────
-def _screen(sec: str, services):
-    """(text, markup) для раздела sec."""
+async def _screen(sec: str, services):
+    """(text, markup) для раздела sec.
+
+    Корутина, а не обычная функция: разделы «upd» и «rt» ходят в БД и в
+    self_check (тот при холодном кэше запускает ip/ipset/iptables). Синхронный
+    вызов держал бы event loop на время рисования экрана — а рядом крутятся
+    тик живости и polling. Все остальные разделы чисто текстовые, им await
+    ничего не стоит.
+    """
     if sec == "notify":
         return texts.SETTINGS_NOTIFY, kb.settings_notify()
     if sec == "subs":
@@ -38,19 +45,19 @@ def _screen(sec: str, services):
     if sec == "svc":
         return texts.SETTINGS_SVC, kb.settings_svc()
     if sec == "upd":
-        return texts.SETTINGS_UPD, kb.settings_updates(services.updates_muted())
+        return texts.SETTINGS_UPD, kb.settings_updates(await call(services.updates_muted))
     if sec == "rt":
         on = settings.get_bool("app.routing.enabled", False)
         # список профилей нужен только при включённой функции — клавиатура его
         # всё равно не покажет, а лишний запрос к БД на каждый рендер ни к чему
-        clients = services.routing_grantable_clients() if on else []
-        return texts.settings_routing_text(on, services.routing_status()), \
-            kb.settings_routing(on, clients)
+        clients = await call(services.routing_grantable_clients) if on else []
+        status = await call(services.routing_status)
+        return texts.settings_routing_text(on, status), kb.settings_routing(on, clients)
     return texts.SETTINGS_ROOT, kb.settings_root()
 
 
 async def _render(cb: CallbackQuery, sec: str, services):
-    text, markup = _screen(sec, services)
+    text, markup = await _screen(sec, services)
     await edit(cb, text, markup)
 
 
@@ -72,7 +79,7 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
         if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
             await cb.answer("Сначала выбери расписание проверки (не «никогда»).", show_alert=True)
             return
-        muted = services.updates_muted()
+        muted = await call(services.updates_muted)
         if muted:
             await call(services.unmute_updates)
         else:
@@ -129,7 +136,7 @@ async def receive_value(message: Message, state: FSMContext, services):
     key, sec = data.get("key"), data.get("sec", "root")
     if key not in texts.SETTINGS_BOUNDS:      # рассинхрон state (не должен случаться)
         await state.clear()
-        text, markup = _screen(sec, services)
+        text, markup = await _screen(sec, services)
         await message.answer(text, reply_markup=markup)
         return
     lo, hi, _label, _unit = texts.SETTINGS_BOUNDS[key]
@@ -148,7 +155,7 @@ async def receive_value(message: Message, state: FSMContext, services):
         await message.answer(str(e))
         return
     await state.clear()
-    text, markup = _screen(sec, services)
+    text, markup = await _screen(sec, services)
     await message.answer(text, reply_markup=markup)
 
 
@@ -201,7 +208,7 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
         nxt = await call(services.update_next)
         if nxt is None:
             await edit(cb, texts.update_current_ok(config.INSTALLED_VERSION),
-                       kb.settings_updates(services.updates_muted()))
+                       kb.settings_updates(await call(services.updates_muted)))
         else:
             await edit(cb, texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body),
                        kb.update_admin_available())
