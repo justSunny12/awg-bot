@@ -1,0 +1,72 @@
+"""
+Проверки routing-gw-setup.sh — обвяза шлюза (малины).
+
+Шлюз стоит в чужом доме, за NAT, и попасть на него сложнее, чем на ВПС. Его
+отказы видны только со стороны сервера и выглядят одинаково — «интернета за
+шлюзом нет», — поэтому цена молчаливой поломки здесь особенно высока.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh"
+
+
+@pytest.fixture(scope="module")
+def script() -> str:
+    return SCRIPT.read_text(encoding="utf-8")
+
+
+def test_ip_forward_is_set_explicitly(script):
+    """Без форвардинга правила NAT стоят и не работают — без единой ошибки.
+
+    Раньше это держалось побочным эффектом docker: он выставляет ip_forward при
+    старте. То есть шлюз работал на удаче — не запустился docker или его убрали,
+    и он молча переставал быть шлюзом.
+    """
+    assert "net.ipv4.ip_forward" in script
+    assert "sysctl -w net.ipv4.ip_forward=1" in script
+
+
+def test_ip_forward_survives_reboot(script):
+    """Значение sysctl живёт до перезагрузки.
+
+    Вернувшийся из ребута шлюз выглядел бы исправным и не пропускал ни пакета.
+    """
+    assert "/etc/sysctl.d/" in script
+    apply_part = script.split('step "1a.', 1)[1]
+    assert "SYSCTL_CONF" in apply_part
+
+
+def test_rollback_removes_the_sysctl_drop_in(script):
+    rollback = script.split('MODE" = "rollback"', 1)[1].split("if [", 1)[0]
+    assert "SYSCTL_CONF" in rollback
+
+
+def test_unit_does_not_depend_on_docker(script):
+    """Линк поднимает хостовой awg-quick, а не утилиты из образа Amnezia.
+
+    С Requires=docker.service не стартовавший или снесённый docker уносил за
+    собой весь обвяз шлюза — молча, и обнаруживалось это со стороны ВПС как
+    «интернета за шлюзом нет».
+    """
+    unit = script.split("cat > \"$UNIT\"", 1)[1].split("UNITEOF", 2)[1]
+    # только директивы: в комментариях docker поминается намеренно — там
+    # объясняется, почему зависимости больше нет
+    directives = [ln for ln in unit.splitlines()
+                  if ln.strip() and not ln.lstrip().startswith("#")]
+    assert not any("docker" in ln for ln in directives), \
+        "юнит шлюза не должен зависеть от docker"
+    assert any("network-online.target" in ln for ln in directives)
+
+
+def test_link_subnet_is_masqueraded_too(script):
+    """Зонд живости идёт с адреса линка, а не клиента.
+
+    Без маскарада линк-подсети его пакеты уходят наружу немаскараженными и не
+    возвращаются — бот считает исправный шлюз непроходимым.
+    """
+    assert "LINK_CIDR" in script
+    assert '-s $LINK_CIDR -o $WAN_IF -j MASQUERADE' in script

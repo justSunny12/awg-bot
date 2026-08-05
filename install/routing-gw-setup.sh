@@ -36,6 +36,7 @@ LINK_IF="${LINK_IF:-awglink}"
 CLIENT_SUBNET="${CLIENT_SUBNET:-10.8.1.0/24}"
 FWD_CHAIN="AWGLINK_FWD"
 UNIT="/etc/systemd/system/awg-link-gw.service"
+SYSCTL_CONF="/etc/sysctl.d/99-awgbot-gw.conf"
 
 # Контейнер, интерфейс выхода и каталог конфигов ОПРЕДЕЛЯЮТСЯ, а не задаются
 # дефолтом: чужие имена в поставке — источник тихих ошибок «скрипт отработал, но
@@ -127,7 +128,7 @@ if [ "$MODE" = "rollback" ]; then
     done
     run "iptables -F $FWD_CHAIN 2>/dev/null || true"
     run "iptables -X $FWD_CHAIN 2>/dev/null || true"
-    run "rm -f $HOST_CONF_DIR/$LINK_IF.conf $UNIT"
+    run "rm -f $HOST_CONF_DIR/$LINK_IF.conf $UNIT $SYSCTL_CONF"
     run "systemctl daemon-reload"
     say ""
     say "Готово. Существующие интерфейсы и маршрутизация шлюза не тронуты."
@@ -189,6 +190,21 @@ LINK_CIDR="$(printf '%s' "$LINK_CIDR" | awk -F'[./]' '$5==30{
 [ -n "$LINK_CIDR" ] || { say "ОШИБКА: не удалось определить подсеть $LINK_IF"; exit 1; }
 say "  Подсеть линка: $LINK_CIDR"
 
+# ── 1a. форвардинг в ядре ────────────────────────────────────────────────────
+# Без него правила ниже стоят и не работают: пакет не выйдет из шлюза наружу, а
+# ошибки не будет ни одной. Раньше это держалось побочным эффектом docker (он
+# выставляет ip_forward при старте) — то есть на удаче: не запустился docker,
+# или его вовсе убрали, и шлюз молча перестаёт быть шлюзом.
+step "1a. net.ipv4.ip_forward"
+if [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null)" = "1" ]; then
+    say "  уже 1"
+else
+    run "sysctl -w net.ipv4.ip_forward=1"
+fi
+# Отдельным файлом — иначе значение живёт до перезагрузки, а вернувшийся из
+# ребута шлюз выглядит исправным и не пропускает ни пакета.
+run "printf 'net.ipv4.ip_forward = 1\\n' > $SYSCTL_CONF"
+
 # ── 2. MASQUERADE: ради этого всё и затевалось ───────────────────────────────
 step "2. MASQUERADE клиентов в $WAN_IF"
 say "  Трафик приходит из туннеля с адресом клиента (10.8.1.x) — подменяем его"
@@ -240,8 +256,12 @@ SELF="$(readlink -f "$0")"
 cat > "$UNIT" <<UNITEOF
 [Unit]
 Description=awg-bot: линк до ВПС и изоляция клиентов (шлюз)
-After=docker.service network-online.target
-Requires=docker.service
+# Зависимости от docker БОЛЬШЕ НЕТ, и это не уборка. Она осталась с тех пор,
+# когда линк поднимался утилитами из образа Amnezia; сейчас его поднимает
+# хостовой awg-quick. С Requires=docker.service не стартовавший (или снесённый)
+# docker уносил за собой весь обвяз шлюза — молча, и обнаруживалось это как
+# «интернета за шлюзом нет» уже со стороны ВПС.
+After=network-online.target
 Wants=network-online.target
 
 [Service]
