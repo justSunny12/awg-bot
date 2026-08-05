@@ -258,14 +258,12 @@ def connect_method_choice(device_id: int, back_target: str) -> InlineKeyboardMar
 
 
 
-def fa_pick_devices(devices, ct_names: dict) -> InlineKeyboardMarkup:
-    """Выбор устройства для назначения полного доступа. Показываем имя из
-    clientsTable (если есть) + IP в [скобках] — админ опознаёт admin-пир.
+def fa_pick_devices(devices) -> InlineKeyboardMarkup:
+    """Выбор устройства для назначения полного доступа: имя + IP в [скобках].
     Выбор ведёт в ПОДТВЕРЖДЕНИЕ назначения (с показом имени+IP)."""
     kb = InlineKeyboardBuilder()
     for d in devices:
-        ct = ct_names.get(d.public_key) or d.name
-        kb.button(text=f"{ct} [{d.address}]",
+        kb.button(text=f"{d.name} [{d.address}]",
                   callback_data=DeviceCB(action="fa_assign", device_id=d.id))
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
     kb.adjust(1)

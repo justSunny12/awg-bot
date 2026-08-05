@@ -171,27 +171,20 @@ def test_check_pauses_ignores_admin_open(services, fake_awg, make_active_client)
 
 
 # ── reconcile_peers ──────────────────────────────────────────────────────────
-def test_reconcile_adopts_new_app_peer(services, fake_awg, monkeypatch):
+def test_reconcile_adopts_unknown_peer(services, fake_awg, monkeypatch):
+    """Чужой пир в конфиге подхватывается на служебный профиль и о нём говорят.
+
+    Имя больше не берётся из clientsTable — её нет: имена живут только в нашей
+    БД, а сервер про них не знает.
+    """
     services.ensure_admin_client()
-    _set_live(monkeypatch, [("appPUB", "10.8.0.50")],
-              table=[{"clientId": "appPUB", "userData": {"clientName": "Phone"}}])
+    _set_live(monkeypatch, [("appPUB", "10.8.0.50")])
     notes = services.reconcile_peers()
     dev = next(d for d in services.db.list_all_devices() if d.public_key == "appPUB")
     assert dev is not None
     assert dev.is_app
-    assert dev.name == "Phone"                              # имя подхвачено из clientsTable
+    assert "10.8.0.50" in dev.name
     assert any(n.tg_id == config.ADMIN_ID for n in notes)
-
-
-def test_reconcile_picks_up_app_rename(services, fake_awg, monkeypatch):
-    services.ensure_admin_client()
-    _set_live(monkeypatch, [("appPUB", "10.8.0.51")],
-              table=[{"clientId": "appPUB", "userData": {"clientName": "Old"}}])
-    services.reconcile_peers()                              # усыновление
-    _set_live(monkeypatch, [("appPUB", "10.8.0.51")],
-              table=[{"clientId": "appPUB", "userData": {"clientName": "New"}}])
-    services.reconcile_peers()                              # переименование в приложении
-    assert next(d for d in services.db.list_all_devices() if d.public_key == "appPUB").name == "New"
 
 
 def test_reconcile_removes_peer_after_threshold(services, fake_awg, make_active_client, monkeypatch):

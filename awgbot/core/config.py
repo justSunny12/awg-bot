@@ -201,7 +201,6 @@ AWG_INTERFACE = _docker.get("interface", "awg0")
 AWG_DIR = _docker.get("awg_dir", "/opt/amnezia/awg")
 CONF_PATH = f"{AWG_DIR}/{AWG_INTERFACE}.conf"
 CONF_BAK_PATH = f"{AWG_DIR}/{AWG_INTERFACE}.conf.bak"
-CLIENTS_TABLE_PATH = f"{AWG_DIR}/clientsTable"
 SERVER_PUBKEY_PATH = f"{AWG_DIR}/wireguard_server_public_key.key"
 PSK_PATH = f"{AWG_DIR}/wireguard_psk.key"
 

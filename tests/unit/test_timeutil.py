@@ -120,11 +120,6 @@ def test_fmt_remaining_expired_and_small():
     assert t.fmt_remaining(_dt(2026, 1, 6, 15), ref=_dt(2026, 1, 1, 12)) == "5 дней 3 часа"
 
 
-# ── формат даты Amnezia (Qt::TextDate, день без паддинга) ────────────────────
-def test_amnezia_date_format():
-    assert t.amnezia_date(_dt(2026, 7, 5, 19, 8, 2)) == "Sun Jul 5 19:08:02 2026"
-
-
 # ── docker StartedAt ─────────────────────────────────────────────────────────
 def test_parse_docker_time_valid_and_tz():
     got = t.parse_docker_time("2026-07-05T10:39:22.158372221Z")   # 10:39 UTC = 13:39 UTC+3

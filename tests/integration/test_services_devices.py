@@ -65,8 +65,7 @@ def test_add_device_full_flow(services, fake_awg, make_active_client):
     assert dc.vpn.startswith("vpn://") and "[Interface]" in dc.conf
     dev = services.db.get_device(dc.device_id)
     assert dev.name == "Телефон" and dev.is_managed
-    assert dev.public_key in fake_awg.peers               # peer применён в «контейнере»
-    assert fake_awg.clientstable.get(dev.public_key) == "Телефон"
+    assert dev.public_key in fake_awg.peers               # peer применён на сервере
 
 
 def test_add_device_allocates_sequential_ips(services, make_active_client):

@@ -286,11 +286,9 @@ async def test_help_root_and_skip(services, fake_bot, make_active_client):
 
 
 async def test_client_renames_own_device(services, fake_bot, make_active_client, monkeypatch):
-    """Клиент переименовывает СВОЁ устройство → rename_device (обе базы)."""
+    """Клиент переименовывает СВОЁ устройство."""
     from awgbot.bot.handlers import client as ch
     from awgbot.bot.callbacks import DeviceCB
-    from awgbot.infra import awg
-    monkeypatch.setattr(awg, "clientstable_upsert", lambda pub, name: None)
     cl = make_active_client(tg_id=7001, name="Клиент")
     dc = services.add_device(cl.id, "Старое")
     cb, nav = _cb(fake_bot, cl.tg_id)

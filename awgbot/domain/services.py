@@ -547,7 +547,7 @@ class Services:
 
     def add_device(self, client_id: int, name: str, traffic_limit: int = 0) -> DeviceCreated:
         """Поток 2: генерация ключей → аллокация IP → БД → awg.add_peer →
-        clientsTable → конфиг. При сбое применения — откат БД."""
+        конфиг. При сбое применения — откат БД."""
         client = self.db.get_client(client_id)
         if client is None:
             raise ServiceError("Клиент не найден")
@@ -590,12 +590,6 @@ class Services:
         if not client.is_service and client.status == SubStatus.EXPIRED:
             self._device_set_block(device_id, DeviceBlock.EXPIRY)
 
-        # clientsTable — некритично (VPN работает и без неё)
-        try:
-            awg.clientstable_upsert(pub, name)
-        except Exception:
-            pass
-
         cfg = configgen.generate(priv, pub, ip, server_params)
         # новое устройство админа → сразу открыть ему SSH-к-хосту (не ждать цикла)
         if client.tg_id == config.ADMIN_ID:
@@ -603,8 +597,8 @@ class Services:
         return DeviceCreated(device_id=device_id, address=ip, vpn=cfg["vpn"], conf=cfg["conf"])
 
     def remove_device(self, device_id: int) -> Optional[int]:
-        """Удаление устройства: контейнер → clientsTable → БД (в таком порядке,
-        чтобы не осталось записи в БД без реального снятия пира).
+        """Удаление устройства: сервер → БД (в таком порядке, чтобы не осталось
+        записи в БД без реального снятия пира).
         Возвращает friend_tg_id, если у устройства был активный друг (для
         уведомления, что доступ прекращён), иначе None."""
         dev = self.db.get_device(device_id)
@@ -624,10 +618,6 @@ class Services:
                 awg.unblock_ip(dev.address)
             except awg.AwgError:
                 pass
-        try:
-            awg.clientstable_remove(dev.public_key)
-        except Exception:
-            pass
         self.db.delete_device(device_id)
         return friend_tg
 
@@ -664,22 +654,14 @@ class Services:
         return "client"
 
     def rename_device(self, device_id: int, new_name: str) -> None:
-        """Переименование устройства ботом (п.3): бот — источник истины, пишем
-        имя в ОБЕ базы — БД бота и clientsTable awg (чтобы приложение показывало
-        то же имя). clientsTable-запись некритична: если контейнер недоступен,
-        имя в БД всё равно обновим, а clientsTable подтянется при следующем
-        add/rename."""
+        """Переименование устройства. Имя живёт только в нашей БД: сервер про
+        имена не знает, в конфиге пира их нет."""
         new_name = new_name.strip()
         if not new_name:
             raise ServiceError("Имя не может быть пустым")
-        dev = self.db.get_device(device_id)
-        if dev is None:
+        if self.db.get_device(device_id) is None:
             raise ServiceError("Устройство не найдено")
         self.db.update_device_fields(device_id, name=new_name)
-        try:
-            awg.clientstable_upsert(dev.public_key, new_name)
-        except awg.AwgError:
-            pass                         # контейнер недоступен — БД уже обновлена
 
     def find_full_access_device(self):
         """Текущее ФА-устройство (или None). ФА-устройство только одно."""
@@ -1536,8 +1518,6 @@ class Services:
         """
         conf = awg.read_file(config.CONF_PATH)
         live = self._peers_with_ip(conf)                  # pub → ip
-        table = {e.get("clientId"): e.get("userData", {}).get("clientName", "")
-                 for e in awg.read_clients_table()}
         db_devices = {d.public_key: d for d in self.db.list_all_devices()}
         service_id = self.db.get_service_client_id()
         try:
@@ -1546,16 +1526,11 @@ class Services:
             psk = ""
         notifications: list[Notification] = []
 
-        # пропавшие пиры + обновление имён app-устройств из приложения
+        # пропавшие пиры
         for pub, dev in db_devices.items():
             if pub in live:
                 if dev.missing_count:
                     self.db.update_device_fields(dev.id, missing_count=0)
-                # переименование в приложении → подхватываем для ВСЕХ пиров
-                # (имя в clientsTable — источник истины приложения).
-                new_name = table.get(pub)
-                if new_name and new_name != dev.name:
-                    self.db.update_device_fields(dev.id, name=new_name)
                 continue
             mc = dev.missing_count + 1
             if mc >= config.MISSING_SWEEPS_THRESHOLD:
@@ -1583,7 +1558,7 @@ class Services:
         for pub, ip in live.items():
             if pub in db_devices:
                 continue
-            name = table.get(pub) or f"Устройство {ip}"
+            name = f"Устройство {ip}"
             try:
                 self.db.create_device(service_id, name, pub, psk, ip, private_key=None)
             except sqlite3.IntegrityError as e:
@@ -2289,12 +2264,6 @@ class Services:
         c = self.db.get_client(client_id)
         return int(c.traffic_limit) if c else 0
 
-    def clientstable_names(self) -> dict:
-        """pubkey → имя из clientsTable awg (там full-access значится как
-        «Admin [платформа]») — для подсказки админу при выборе устройства."""
-        return {e.get("clientId"): e.get("userData", {}).get("clientName", "")
-                for e in awg.read_clients_table()}
-
     def client_is_online(self, client_id: int) -> bool:
         for dev in self.db.list_devices(client_id):
             if timeutil.handshake_is_online(dev.last_handshake):
@@ -2323,8 +2292,8 @@ class Services:
     # ── Бэкап ────────────────────────────────────────────────────────────────
 
     def make_backup(self) -> list[str]:
-        """Складывает в BACKUP_DIR копию БД + серверный awg0.conf + clientsTable
-        (единственные копии этих файлов вне контейнера!). Возвращает пути.
+        """Складывает в BACKUP_DIR копию БД + серверный awg0.conf (единственная
+        копия этого файла вне сервера!). Возвращает пути.
 
         Если включено шифрование (config.BACKUP_ENCRYPTION_ENABLED) — каждый
         артефакт шифруется SecretBox и пишется как «*.enc»; открытые копии на
@@ -2344,11 +2313,6 @@ class Services:
         try:
             conf = awg.read_file(config.CONF_PATH)
             artifacts.append((f"awg0_{stamp}.conf", conf.encode("utf-8")))
-        except awg.AwgError:
-            pass
-        try:
-            table = awg.read_file(config.CLIENTS_TABLE_PATH)
-            artifacts.append((f"clientsTable_{stamp}.json", table.encode("utf-8")))
         except awg.AwgError:
             pass
 

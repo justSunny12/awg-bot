@@ -19,13 +19,6 @@ from awgbot.core import settings
 
 TZ = config.TZ
 
-# Английские сокращения для формата даты Amnezia (Qt Qt::TextDate, C-locale),
-# хардкодим, чтобы не зависеть от системной локали.
-_WDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]      # weekday(): Mon=0
-_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # «Сейчас», ISO-сериализация
 # ─────────────────────────────────────────────────────────────────────────────
@@ -228,21 +221,6 @@ def fmt_handshake(unix_ts: Optional[int]) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Формат даты Amnezia для clientsTable (Qt::TextDate, напр. «Sun Jul 5 19:08:02 2026»)
-# День — БЕЗ паддинга, локальное время UTC+3, английские сокращения.
-# ─────────────────────────────────────────────────────────────────────────────
-
-def amnezia_date(dt: Optional[datetime] = None) -> str:
-    """Дата в формате, которым приложение Amnezia пишет creationDate.
-    Пример: «Sun Jul 5 19:08:02 2026». Нужен для нативной записи в clientsTable."""
-    dt = (dt or now()).astimezone(TZ)
-    wday = _WDAYS[dt.weekday()]
-    month = _MONTHS[dt.month - 1]
-    day = str(dt.day)  # без нуля/пробела впереди
-    return f"{wday} {month} {day} {dt.strftime('%H:%M:%S')} {dt.year}"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Docker StartedAt (для аптайма) и длительности
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -283,6 +261,6 @@ __all__ = [
     "TZ", "now", "now_iso", "to_iso", "parse_iso",
     "add_period", "period_minutes", "remaining_seconds",
     "fmt_dt", "fmt_period", "fmt_remaining", "fmt_remaining_short",
-    "handshake_is_online", "fmt_handshake", "amnezia_date",
+    "handshake_is_online", "fmt_handshake",
     "parse_docker_time", "fmt_uptime",
 ]

@@ -63,7 +63,7 @@ def fake_awg(monkeypatch):
     awgbot.infra.awg — тот же объект, что видит services. AwgError оставляем
     настоящим, чтобы `except awg.AwgError` в коде работал.
 
-    Возвращает объект состояния: .blocked (set IP), .peers, .clientstable,
+    Возвращает объект состояния: .blocked (set IP), .peers,
     .occupied (живые IP из «конфига»), .responding, .started_at.
     """
     import threading
@@ -73,10 +73,10 @@ def fake_awg(monkeypatch):
     from awgbot.domain import configgen
 
     state = types.SimpleNamespace(
-        blocked=set(), peers={}, clientstable={}, occupied=set(),
+        blocked=set(), peers={}, occupied=set(),
         responding=True, started_at="2026-01-01T00:00:00+03:00",
         _n=0, privpub={},
-        ssh_targets=["172.29.172.1", "172.17.0.1", "88.218.78.157"],
+        ssh_targets=["172.29.172.1", "172.17.0.1", "203.0.113.10"],
         ssh_rules=None,
     )
     server_params = {
@@ -101,8 +101,6 @@ def fake_awg(monkeypatch):
                                         "obfuscation": dict(server_params["obfuscation"])})
     _set("add_peer", lambda pub, psk, ip: state.peers.__setitem__(pub, (psk, ip)))
     _set("remove_peer", lambda pub: state.peers.pop(pub, None))
-    _set("clientstable_upsert", lambda pub, name: state.clientstable.__setitem__(pub, name))
-    _set("clientstable_remove", lambda pub: state.clientstable.pop(pub, None))
     _set("block_ip", lambda addr: state.blocked.add(addr))
     _set("unblock_ip", lambda addr: state.blocked.discard(addr))
     _set("is_blocked", lambda addr: addr in state.blocked)

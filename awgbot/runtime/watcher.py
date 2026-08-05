@@ -1,5 +1,5 @@
 """
-watcher.py — inotify-вотчдог за файлами Amnezia (awg0.conf, clientsTable).
+watcher.py — inotify-вотчдог за конфигом сервера (awg0.conf).
 
 Файлы живут ВНУТРИ контейнера; наблюдаем их с хоста через /proc/<PID>/root/…
 (разведка показала: bind-mount'а нет, но /proc-путь стабилен в пределах жизни
@@ -7,7 +7,7 @@ watcher.py — inotify-вотчдог за файлами Amnezia (awg0.conf, cl
 из мониторинг-задачи планировщика).
 
 Три тонкости, подтверждённые разведкой:
-  • дебаунс (приложение пишет 2 файла с разбежкой в секунды) — ждём тишины;
+  • дебаунс (правка идёт не одним write) — ждём тишины;
   • игнор самозаписи — awg.is_writing() True, пока бот сам правит файлы;
   • ребайнд на новый PID после рестарта контейнера.
 
@@ -32,7 +32,7 @@ from awgbot.core import config
 
 log = logging.getLogger("awgbot.watcher")
 
-_WATCHED_NAMES = {"awg0.conf", "clientsTable"}
+_WATCHED_NAMES = {f"{config.AWG_INTERFACE}.conf"}
 
 
 class _Handler(FileSystemEventHandler):

@@ -18,7 +18,6 @@ awg.py — единственный слой взаимодействия с с�
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 import threading
@@ -27,7 +26,6 @@ from contextlib import contextmanager
 from typing import Optional
 
 from awgbot.core import config
-from awgbot.util import timeutil
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Подавление самозаписи: пока бот сам правит файлы Amnezia, вотчдог игнорирует
@@ -553,52 +551,6 @@ def remove_peer(public_key: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# clientsTable — нативная запись для приложения Amnezia (некритично для VPN)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def read_clients_table() -> list[dict]:
-    raw = read_file(config.CLIENTS_TABLE_PATH).strip()
-    if not raw:
-        return []
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return []
-
-
-def clientstable_upsert(public_key: str, name: str) -> None:
-    """Добавляет/обновляет запись устройства в clientsTable в формате приложения
-    (clientId=pubkey, clientName=name, creationDate в стиле Amnezia/UTC+3)."""
-    table = read_clients_table()
-    for entry in table:
-        if entry.get("clientId") == public_key:
-            entry.setdefault("userData", {})["clientName"] = name
-            break
-    else:
-        table.append({
-            "clientId": public_key,
-            "userData": {
-                "clientName": name,
-                "creationDate": timeutil.amnezia_date(),
-            },
-        })
-    _write_table(table)
-
-
-def _write_table(table: list) -> None:
-    with mutation_lock, writing():
-        write_file(config.CLIENTS_TABLE_PATH,
-                   json.dumps(table, indent=4, ensure_ascii=False) + "\n")
-
-
-def clientstable_remove(public_key: str) -> None:
-    table = read_clients_table()
-    new_table = [e for e in table if e.get("clientId") != public_key]
-    if len(new_table) != len(table):
-        _write_table(new_table)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Блокировка трафика пира (механика истечения) — iptables в контейнере
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -951,7 +903,6 @@ __all__ = [
     "read_server_params", "read_occupied_ips", "detect_topology",
     "gen_keypair", "pubkey_of",
     "apply_config", "add_peer", "remove_peer",
-    "read_clients_table", "clientstable_upsert", "clientstable_remove",
     "block_ip", "unblock_ip", "is_blocked",
     "show_dump",
     "container_running", "container_pid", "container_started_at",

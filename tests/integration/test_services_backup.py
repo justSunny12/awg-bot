@@ -29,7 +29,7 @@ def test_make_backup_plaintext(services, fake_awg, monkeypatch, tmp_path):
     _patch_sources(monkeypatch, tmp_path, db_bytes=b"DBDATA")
     monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", False)
     paths = services.make_backup()
-    assert len(paths) == 3
+    assert len(paths) == 2                 # БД + awg0.conf
     assert not any(p.endswith(".enc") for p in paths)
     db_file = next(p for p in paths if p.endswith(".db"))
     with open(db_file, "rb") as f:
@@ -54,7 +54,7 @@ def test_make_backup_skips_missing_db(services, fake_awg, monkeypatch, tmp_path)
     _patch_sources(monkeypatch, tmp_path, with_db=False)
     monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", False)
     paths = services.make_backup()
-    assert len(paths) == 2
+    assert len(paths) == 1                 # только awg0.conf
     assert not any(p.endswith(".db") for p in paths)
 
 

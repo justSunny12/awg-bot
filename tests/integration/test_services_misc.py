@@ -386,17 +386,12 @@ def test_attach_fa_rejects_non_admin_device(services, fake_awg, monkeypatch, mak
         services.attach_full_access(dc.device_id, "vpn://fa")
 
 
-def test_rename_device_writes_both_bases(services, fake_awg, monkeypatch):
-    """Бот переименовывает устройство → имя в БД И в clientsTable (бот-источник)."""
-    calls = {}
-    from awgbot.infra import awg
-    monkeypatch.setattr(awg, "clientstable_upsert",
-                        lambda pub, name: calls.update(pub=pub, name=name))
+def test_rename_device_writes_db_only(services, fake_awg):
+    """Имя живёт только в нашей БД: сервер про имена не знает."""
     svc = services.db.get_service_client_id()
     did = services.db.create_device(svc, "old", "PUBRN", "PSK", "10.8.1.5")
     services.rename_device(did, "Новое имя")
-    assert services.db.get_device(did).name == "Новое имя"   # БД
-    assert calls == {"pub": "PUBRN", "name": "Новое имя"}     # clientsTable
+    assert services.db.get_device(did).name == "Новое имя"
 
 
 def test_rename_device_empty_rejected(services, fake_awg):
@@ -407,16 +402,16 @@ def test_rename_device_empty_rejected(services, fake_awg):
         services.rename_device(did, "   ")
 
 
-def test_rename_device_survives_container_down(services, fake_awg, monkeypatch):
-    """Контейнер недоступен → имя в БД всё равно меняется (clientsTable позже)."""
+def test_rename_device_survives_server_down(services, fake_awg, monkeypatch):
+    """Сервер недоступен → имя в БД всё равно меняется: оно только наше."""
     from awgbot.infra import awg
-    def _boom(pub, name):
-        raise awg.AwgError("container down")
-    monkeypatch.setattr(awg, "clientstable_upsert", _boom)
+    def _boom(*a, **k):
+        raise awg.AwgError("awg down")
+    monkeypatch.setattr(awg, "apply_config", _boom, raising=False)
     svc = services.db.get_service_client_id()
     did = services.db.create_device(svc, "old", "PUBRN3", "PSK", "10.8.1.7")
-    services.rename_device(did, "БезКонтейнера")             # не падает
-    assert services.db.get_device(did).name == "БезКонтейнера"
+    services.rename_device(did, "БезСервера")                # не падает
+    assert services.db.get_device(did).name == "БезСервера"
 
 
 def test_is_only_device_false_for_service_pool(services, fake_awg):

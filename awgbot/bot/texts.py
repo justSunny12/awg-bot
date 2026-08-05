@@ -763,12 +763,8 @@ def fa_transfer_warning(current_name: str) -> str:
     )
 
 
-def fa_assign_confirm(name: str, address: str, looks_admin: bool) -> str:
-    head = (f"Назначаю полный доступ устройству:\n<b>{name}</b> [{address}]\n\n")
-    if not looks_admin:
-        head += ("⚠️ Обычно устройство полного доступа называется «Admin […]», а это — "
-                 f"«{name}». Убедись, что выбрал именно то устройство из приложения.\n\n")
-    return head.rstrip()
+def fa_assign_confirm(name: str, address: str) -> str:
+    return f"Назначаю полный доступ устройству:\n<b>{name}</b> [{address}]"
 
 ADMIN_FA_CHANGE_WARNING = (
     "⚠️ <b>Заменить ссылку полного доступа?</b>\n\n"

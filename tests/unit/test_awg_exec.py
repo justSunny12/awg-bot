@@ -39,15 +39,6 @@ def test_read_file_decodes(monkeypatch):
     assert "hello" in awg.read_file("/x")
 
 
-def test_read_clients_table_json_empty_bad(monkeypatch):
-    monkeypatch.setattr(awg, "read_file", lambda p: '[{"clientId":"p"}]')
-    assert awg.read_clients_table() == [{"clientId": "p"}]
-    monkeypatch.setattr(awg, "read_file", lambda p: "   ")
-    assert awg.read_clients_table() == []
-    monkeypatch.setattr(awg, "read_file", lambda p: "{not json")
-    assert awg.read_clients_table() == []
-
-
 # ── show_dump ────────────────────────────────────────────────────────────────
 def test_show_dump_parses(monkeypatch):
     dump = ("IFACE_PRIV\tIFACE_PUB\t43125\toff\n"
@@ -187,26 +178,6 @@ def test_remove_peer_idempotent(monkeypatch):
     _stub_conf_io(monkeypatch, holder)
     awg.remove_peer(_VALID_PUB)
     assert holder["conf"] == conf
-
-
-# ── clientsTable ─────────────────────────────────────────────────────────────
-def test_clientstable_upsert_add_and_update(monkeypatch):
-    store = {"table": []}
-    monkeypatch.setattr(awg, "read_clients_table", lambda: list(store["table"]))
-    monkeypatch.setattr(awg, "_write_table", lambda t: store.__setitem__("table", t))
-    awg.clientstable_upsert("pubA", "Phone")
-    assert store["table"][0]["userData"]["clientName"] == "Phone"
-    awg.clientstable_upsert("pubA", "Laptop")               # обновление того же clientId
-    names = [e["userData"]["clientName"] for e in store["table"]]
-    assert names == ["Laptop"] and len(store["table"]) == 1
-
-
-def test_clientstable_remove(monkeypatch):
-    store = {"table": [{"clientId": "pubA"}, {"clientId": "pubB"}]}
-    monkeypatch.setattr(awg, "read_clients_table", lambda: list(store["table"]))
-    monkeypatch.setattr(awg, "_write_table", lambda t: store.__setitem__("table", t))
-    awg.clientstable_remove("pubA")
-    assert [e["clientId"] for e in store["table"]] == ["pubB"]
 
 
 # ── read_server_params (кэш/инвалидация) ─────────────────────────────────────

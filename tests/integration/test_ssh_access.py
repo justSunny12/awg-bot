@@ -16,14 +16,14 @@ def test_host_ssh_targets_parses_gateways_and_egress(monkeypatch):
         if args[:2] == ["docker", "inspect"]:
             out = b"172.17.0.1\n172.29.172.1\n\n"          # + пустая строка
         elif args[:3] == ["ip", "route", "get"]:
-            out = b"1.1.1.1 via 88.218.78.1 dev eth0 src 88.218.78.157 uid 0\n"
+            out = b"1.1.1.1 via 203.0.113.1 dev eth0 src 203.0.113.10 uid 0\n"
         else:
             out = b""
         return subprocess.CompletedProcess(args, 0, stdout=out, stderr=b"")
 
     monkeypatch.setattr(awg, "_run", fake_run)
     targets = awg.host_ssh_targets()
-    assert targets == ["172.17.0.1", "172.29.172.1", "88.218.78.157"]
+    assert targets == ["172.17.0.1", "172.29.172.1", "203.0.113.10"]
 
 
 def test_host_ssh_targets_survives_docker_failure(monkeypatch):
@@ -32,9 +32,9 @@ def test_host_ssh_targets_survives_docker_failure(monkeypatch):
         if args[:2] == ["docker", "inspect"]:
             raise awg.AwgError("no docker")
         return subprocess.CompletedProcess(
-            args, 0, stdout=b"1.1.1.1 dev eth0 src 88.218.78.157\n", stderr=b"")
+            args, 0, stdout=b"1.1.1.1 dev eth0 src 203.0.113.10\n", stderr=b"")
     monkeypatch.setattr(awg, "_run", fake_run)
-    assert awg.host_ssh_targets() == ["88.218.78.157"]
+    assert awg.host_ssh_targets() == ["203.0.113.10"]
 
 
 # ── сборка правил в контейнере (ssh_reconcile) ───────────────────────────────
@@ -53,7 +53,7 @@ def test_ssh_reconcile_emits_expected_chain(monkeypatch):
     monkeypatch.setattr(awg, "_exec", fake_exec)
     monkeypatch.setattr(cfg, "SSH_PORT", 2222)
 
-    awg.ssh_reconcile(["10.8.1.5", "10.8.1.6"], ["172.29.172.1", "88.218.78.157"])
+    awg.ssh_reconcile(["10.8.1.5", "10.8.1.6"], ["172.29.172.1", "203.0.113.10"])
 
     # цепочка создаётся, джамп вставляется в начало FORWARD, затем flush
     assert ["iptables", "-N", "AWGBOT_SSH"] in calls

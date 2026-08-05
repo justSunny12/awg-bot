@@ -1006,8 +1006,7 @@ async def fa_hint_ignore(cb: CallbackQuery, services):
 
 @router.callback_query(FaHintCB.filter(F.action == "choose"))
 async def fa_hint_choose(cb: CallbackQuery, services):
-    """Показать устройства без профиля для назначения полного доступа. Имя берём
-    из clientsTable (там full-access значится как «Admin [платформа]»), рядом —
+    """Показать устройства без профиля для назначения полного доступа: имя и
     IP в квадратных скобках, чтобы админ уверенно опознал нужное устройство."""
     service_id = await call(services.db.get_service_client_id)
     devices = await call(services.db.list_devices, service_id)
@@ -1015,23 +1014,19 @@ async def fa_hint_choose(cb: CallbackQuery, services):
         await edit(cb, "Устройств без профиля нет — назначить нечего.", None)
         await cb.answer()
         return
-    names = await call(services.clientstable_names)
-    await edit(cb, texts.ADMIN_FA_PICK, kb.fa_pick_devices(devices, names))
+    await edit(cb, texts.ADMIN_FA_PICK, kb.fa_pick_devices(devices))
     await cb.answer()
 
 
 @router.callback_query(DeviceCB.filter(F.action == "fa_assign"))
 async def fa_assign_confirm(cb: CallbackQuery, callback_data: DeviceCB, services):
-    """Шаг подтверждения перед назначением ФА: показываем имя+IP выбранного устройства (было: пира)
-    пира и мягко предупреждаем, если имя не похоже на «Admin […]»."""
+    """Шаг подтверждения перед назначением ФА: показываем имя и IP выбранного
+    устройства."""
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    names = await call(services.clientstable_names)
-    ct = names.get(dev.public_key) or dev.name
-    looks_admin = ct.strip().startswith("Admin [")
-    await edit(cb, texts.fa_assign_confirm(ct, dev.address, looks_admin),
+    await edit(cb, texts.fa_assign_confirm(dev.name, dev.address),
                kb.fa_assign_confirm(dev.id))
     await cb.answer()
 
