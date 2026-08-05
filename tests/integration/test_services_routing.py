@@ -582,26 +582,40 @@ def test_example_block_is_in_the_base_set_without_any_dns(services, monkeypatch)
         "на одном лишь резолве")
 
 
-def test_builtin_nets_reach_the_user_set(services, make_active_client, monkeypatch):
-    """Встроенные подсети должны доехать до набора клиента, а не осесть в конфиге."""
+def test_builtin_nets_reach_every_user_set(services, make_active_client, monkeypatch):
+    """Встроенные подсети должны попасть в набор КАЖДОГО клиента с включённым
+    режимом, а не одного и не «базового».
+
+    Требование прямое: сервис обязан работать у всех пользователей во всех
+    режимах. Без маркировки он работает сам собой — трафик идёт через ВПС. С
+    маркировкой он работает ровно у тех, в чьём наборе лежит его подсеть, и
+    пропуск одного клиента выглядел бы как «у меня не открывается, а у него
+    открывается» — то есть как что угодно, кроме маршрутизации.
+    """
     from awgbot.core import config
     from awgbot.infra import routing
 
-    added: list = []
+    by_set: dict = {}
     monkeypatch.setattr(routing, "add_networks",
-                        lambda name, members: added.extend(members) or len(added))
+                        lambda name, members: by_set.setdefault(name, []).extend(members))
     monkeypatch.setattr(routing, "replace_members", lambda *a, **k: None)
     monkeypatch.setattr(routing, "sync_nat_exempt", lambda *a, **k: None)
     monkeypatch.setattr(routing, "rebuild_chain", lambda *a, **k: None)
     monkeypatch.setattr(routing, "write_dnsmasq_conf", lambda *a, **k: None)
     monkeypatch.setattr(routing, "ensure_set", lambda *a, **k: None)
 
-    c = _allowed_client(services, make_active_client, 4242)
-    services.set_routing_master(c.id, True)
+    ids = []
+    for tg in (4242, 4243, 4244):
+        c = _allowed_client(services, make_active_client, tg)
+        services.set_routing_master(c.id, True)
+        ids.append(c.id)
     services._routing_apply()
 
-    for n in config.ROUTING_ABROAD_NETS:
-        assert n in added, f"{n} не доехала до набора клиента"
+    assert len(by_set) >= len(ids), f"наборы созданы не всем: {sorted(by_set)}"
+    for cid in ids:
+        got = by_set.get(routing.user_set(cid), [])
+        for n in config.ROUTING_ABROAD_NETS:
+            assert n in got, f"{n} не доехала до набора клиента {cid}"
 
 
 # ── источник списков замолчал ────────────────────────────────────────────────
