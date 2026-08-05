@@ -231,19 +231,19 @@ def test_unknown_runtime_is_rejected(monkeypatch):
         config.validate()
 
 
-def test_preflight_refuses_unfinished_host_mode(monkeypatch, tmp_path):
-    """Пока перенос не доделан, host-режим не стартует.
+def test_preflight_allows_host_mode(monkeypatch, tmp_path):
+    """Перенос доделан — заслон снят.
 
-    Иначе функции отваливались бы поодиночке — статус сервиса, SSH-фильтр,
-    вотчдог, — и каждую пришлось бы диагностировать отдельно.
+    Он стоял, пока статус сервиса, вотчдог, SSH-цели и контейнерное плечо
+    маршрутизации не были портированы. Оставь его — бот не запустился бы ровно
+    после успешной миграции, когда контейнер уже погашен.
     """
     from awgbot.runtime import preflight
 
     monkeypatch.setattr(config, "AWG_RUNTIME", "host")
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "нет.db")
-    with pytest.raises(preflight.PreflightError, match="ROADMAP"):
-        preflight.check_fatal()
+    preflight.check_fatal()          # не бросает
 
 
 # ── контейнерное плечо условной маршрутизации ────────────────────────────────

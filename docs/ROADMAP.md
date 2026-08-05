@@ -113,9 +113,12 @@ v1.0.20210914` из контейнера — унаследованная баз
   `app.yaml`. Появился `install/awg-host-migrate.sh` — перенос сервера с
   проверкой по факту и откатом.
 
-  **Осталось сделать руками на ВПС:** прогнать миграцию, переключить
-  `runtime: host`, снять заслон в preflight (`runtime/preflight.py`), проверить
-  доктором. Откат — `awg-host-migrate.sh --rollback` и `runtime` обратно.
+  Заслон в preflight снят — иначе бот не запустился бы ровно после успешной
+  миграции, когда контейнер уже погашен.
+
+  **Осталось сделать руками на ВПС:** выкатить сборку бота, прогнать миграцию,
+  переключить `runtime: host`, пересобрать обвяз, проверить доктором. Откат —
+  `awg-host-migrate.sh --rollback` и `runtime` обратно в `docker`.
 
 Затрагивает: `awg.py`, `infra/routing.py`, `routing-host-setup.sh`,
 `harden_firewall.sh`, `config.py`, preflight, доктора.
