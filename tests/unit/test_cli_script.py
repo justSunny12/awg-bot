@@ -86,7 +86,8 @@ _SHELL_ENV = {
     "EUID", "UID", "HOSTNAME", "BASH_SOURCE", "FUNCNAME", "PIPESTATUS", "RANDOM",
     "LANG", "LC_ALL", "SUDO_USER", "TMPDIR", "EDITOR", "COLUMNS", "PS1",
 }
-_SCRIPTS = sorted((SCRIPT.parent / "install").glob("*.sh")) + [SCRIPT]
+_SCRIPTS = (sorted((SCRIPT.parent / "install").glob("*.sh"))
+            + [SCRIPT, SCRIPT.parent / "run.sh"])
 
 
 @pytest.mark.parametrize("path", _SCRIPTS, ids=lambda p: p.name)
@@ -227,3 +228,24 @@ def test_post_update_verb_is_dispatched(script):
     """Скрытый глагол без ветки в case → обновление обрывается на полпути:
     код уже подменён, сервис остановлен, а вторая половина не выполнится."""
     assert re.search(r"^\s*__post_update\)\s+cmd_post_update", script, re.M)
+
+
+# ── поставка: скрипты обязаны быть исполняемыми ──────────────────────────────
+
+@pytest.mark.parametrize("path", _SCRIPTS, ids=lambda p: p.name)
+def test_shell_scripts_are_executable(path: Path):
+    """Скрипт без бита исполнения доезжает до сервера и отвечает «command not
+    found» — в момент, когда его запускают.
+
+    Проверяем режим в ИНДЕКСЕ git, а не на диске: именно он определяет, что
+    получит человек после клона, и именно он разъехался у harden_firewall.sh
+    (100644 против 100755 у соседей).
+    """
+    import subprocess
+
+    rel = path.relative_to(SCRIPT.parent)
+    out = subprocess.run(["git", "ls-files", "-s", str(rel)],
+                         cwd=SCRIPT.parent, capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout.strip(), f"{rel} не в индексе git"
+    mode = out.stdout.split()[0]
+    assert mode == "100755", f"{rel}: режим {mode}, нужен 100755 (chmod +x и закоммить)"

@@ -50,10 +50,15 @@ build_bot() {
     # разворачивают. Ровно так awg-host-migrate.sh не доехал до сервера.
     for _f in "$ROOT"/install/*.sh; do
         [ "$(basename "$_f")" = "awg-bot-install.sh" ] && continue
-        cp "$_f" "$s/install/"
+        # install -m 0755, а не cp: cp тащит режим исходника, и скрипт с забытым
+        # битом исполнения уезжает в поставку нерабочим. Ровно так harden_firewall.sh
+        # доехал до сервера как -rw------- и отвечал «command not found» в момент,
+        # когда им закрывают SSH.
+        install -m 0755 "$_f" "$s/install/"
     done
-    cp "$ROOT/awg-bot.sh" "$s/"; chmod +x "$s/awg-bot.sh"           # единый инструмент — в корне
-    cp "$ROOT/awg-bot.service" "$ROOT/run.sh" "$ROOT/requirements.txt" "$ROOT/.env.example" "$s/"
+    install -m 0755 "$ROOT/awg-bot.sh" "$s/"                        # единый инструмент — в корне
+    install -m 0755 "$ROOT/run.sh" "$s/"                            # форграунд-запуск, документирован как ./run.sh
+    cp "$ROOT/awg-bot.service" "$ROOT/requirements.txt" "$ROOT/.env.example" "$s/"
     cp "$ROOT/docs/README-bot.md" "$s/README.md"
     _targz "$s" "$OUT/awg-bot.tgz"; rm -rf "$s"
     install -m 0755 "$ROOT/install/awg-bot-install.sh" "$OUT/awg-bot-install.sh"   # bootstrap РЯДОМ
