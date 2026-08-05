@@ -131,3 +131,42 @@ def test_firewall_uses_client_subnet_in_host_mode(firewall):
     host_branch = firewall.split('"$_runtime" == "host"', 1)[1].split("else", 1)[0]
     assert "subnet_cidr" in host_branch or "subnet_prefix" in host_branch
     assert "docker inspect" not in host_branch
+
+
+# ── режим показа обязан показывать правду ────────────────────────────────────
+
+def test_hooks_are_read_from_the_container_not_the_host_copy(migrate):
+    """В режиме показа копирования ещё не было — файла на хосте нет.
+
+    Читай скрипт хостовую копию, проверка хуков в режиме показа молча
+    докладывала бы «нечего переносить» — а ради неё этот режим и запускают.
+    Источник один и тот же, контейнер на этом шаге ещё жив в обоих режимах.
+    """
+    block = migrate.split('step "3. Хуки', 1)[1].split("step ", 1)[0]
+    assert "docker exec" in block, "хуки читаются мимо контейнера"
+    assert 'if [ -f "$CONF" ]' not in block
+
+
+# ── подъём после перезагрузки ────────────────────────────────────────────────
+
+def test_reboot_autostart_is_ensured(migrate):
+    """Контейнер поднимал docker; на хосте это делать больше некому.
+
+    Сервер, который работает до первой перезагрузки, кладёт всех клиентов разом
+    и без всякой связи с каким-либо действием — худший из возможных отказов.
+    """
+    assert "awg-quick@" in migrate
+    block = migrate.split('step "7.', 1)[1]
+    assert "systemctl enable awg-quick@$AWG_IF" in block
+    assert "list-unit-files" in block, "наличие шаблона надо проверять, а не полагать"
+    assert "ExecStart=/usr/bin/env awg-quick up %i" in block, \
+        "при отсутствии шаблона его надо поставить, а не только предупредить"
+
+
+def test_rollback_disables_the_autostart(migrate):
+    """Забытый enable поднял бы awg0 после ребута параллельно контейнеру.
+
+    Оба захотели бы один порт, и что именно поднимется — как повезёт.
+    """
+    rollback = migrate.split('if [ "$MODE" = "rollback" ]', 1)[1]
+    assert "disable awg-quick@" in rollback

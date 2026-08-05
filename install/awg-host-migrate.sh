@@ -65,6 +65,7 @@ LINK="$QUICK_DIR/$AWG_IF.conf"
 # ── откат ────────────────────────────────────────────────────────────────────
 if [ "$MODE" = "rollback" ]; then
     step "Откат: интерфейс с хоста снимаем, контейнер поднимаем"
+    run "systemctl disable awg-quick@$AWG_IF 2>/dev/null || true"
     run "awg-quick down $AWG_IF 2>/dev/null || true"
     run "rm -f $LINK"
     run "docker start $CONTAINER"
@@ -125,11 +126,12 @@ run "chmod 600 $CONF"
 
 # ── 3. PostUp/PostDown ───────────────────────────────────────────────────────
 step "3. Хуки PostUp/PostDown"
-if [ -f "$CONF" ]; then
-    HOOKS="$(grep -nE '^[[:space:]]*(PostUp|PostDown)[[:space:]]*=' "$CONF" || true)"
-else
-    HOOKS=""
-fi
+# Читаем из КОНТЕЙНЕРА, а не из хостовой копии. В режиме показа копирования ещё
+# не было, файла на хосте нет — и проверка, ради которой этот режим и
+# запускают, молча докладывала «нечего переносить». Источник один и тот же, а
+# контейнер на этом шаге ещё жив в обоих режимах.
+HOOKS="$(docker exec "$CONTAINER" grep -nE '^[[:space:]]*(PostUp|PostDown)[[:space:]]*=' \
+         "$CONF" 2>/dev/null || true)"
 OURS="$(printf '%s\n' "$HOOKS" | grep AWGBOT_SSH || true)"
 FOREIGN="$(printf '%s\n' "$HOOKS" | grep -v AWGBOT_SSH | grep -E '(PostUp|PostDown)' || true)"
 
@@ -197,6 +199,45 @@ if [ "$MODE" = "apply" ]; then
     fi
 fi
 
+# ── 7. подъём после перезагрузки ─────────────────────────────────────────────
+# Самый дорогой из возможных отказов: сервер переехал, работает, а после первой
+# же перезагрузки не поднимается — и ложатся ВСЕ клиенты разом, без связи с
+# каким-либо действием. Контейнер до сих пор поднимал сам docker; на хосте это
+# больше некому делать, поэтому юнит проверяем и при нужде ставим свой.
+step "7. Автоподъём $AWG_IF после перезагрузки"
+UNIT_TPL="$(systemctl list-unit-files 'awg-quick@*' 2>/dev/null | grep -c 'awg-quick@' || true)"
+AWGQ_UNIT="/etc/systemd/system/awg-quick@.service"
+if [ "$UNIT_TPL" != "0" ]; then
+    say "  Шаблон awg-quick@.service уже есть."
+else
+    say "  Шаблона awg-quick@.service нет — утилиты собраны без systemd-юнита."
+    say "  Без него awg0 не поднимется после ребута, и это ляжет на всех сразу."
+    if [ "$MODE" = "apply" ]; then
+        cat > "$AWGQ_UNIT" <<'UNITEOF'
+[Unit]
+Description=AmneziaWG via awg-quick(8) for %I
+After=network-online.target nss-lookup.target
+Wants=network-online.target nss-lookup.target
+PartOf=awg-quick.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/env awg-quick up %i
+ExecStop=/usr/bin/env awg-quick down %i
+Environment=WG_ENDPOINT_RESOLUTION_RETRIES=infinity
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+        say "  Поставлен $AWGQ_UNIT"
+        run "systemctl daemon-reload"
+    else
+        printf '  would: записать %s\n' "$AWGQ_UNIT"
+    fi
+fi
+run "systemctl enable awg-quick@$AWG_IF"
+
 # ── что дальше ───────────────────────────────────────────────────────────────
 step "Дальше — вручную"
 say ""
@@ -204,8 +245,7 @@ say "  1. Переключить бота:  $CONF_DIR/app.yaml → docker: runti
 say "  2. Пересобрать обвяз: sh install/routing-host-setup.sh --apply"
 say "     (в host-режиме он не ждёт контейнер и не ставит маршрут через него)"
 say "  3. Закрепить от ребута: sh install/routing-host-setup.sh --install-unit"
-say "  4. Поднять awg0 после ребута: systemctl enable awg-quick@$AWG_IF"
-say "  5. Запустить бота: systemctl start $BOT_SERVICE"
-say "  6. Проверить: awg-bot routing-doctor"
+say "  4. Запустить бота: systemctl start $BOT_SERVICE"
+say "  5. Проверить: awg-bot routing-doctor"
 say ""
 say "  Откат в любой момент: sh $0 --rollback (и runtime обратно в docker)"
