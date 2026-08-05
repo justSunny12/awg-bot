@@ -3,14 +3,13 @@
 # routing-gw-setup.sh — сторона ШЛЮЗА (малинки) для условной маршрутизации.
 # Запускается НА МАЛИНКЕ. См. docs/conditional-routing.md, §12.
 #
-# КОНТЕКСТ. Контейнер AmneziaWG на шлюзе работает с network_mode=host, поэтому
-# интерфейсы и правила, созданные внутри него, живут в хостовом namespace.
-# Инструменты awg есть только в контейнере, iptables — и там, и на хосте (это
-# одни и те же правила). Конфиги примонтированы read-only, значит файл кладём на
-# хост, а поднимаем через контейнер.
+# КОНТЕКСТ. Линк поднимается ХОСТОВЫМИ awg/awg-quick — модуль ядра amneziawg
+# живёт на хосте, и версия утилит обязана совпадать с ним. Контейнер Amnezia
+# шлюзу не нужен вовсе: в образе были только бинарники. Если он ещё жив, скрипт
+# лишь снимет линк, поднятый прежней схемой.
 #
-# Имя контейнера, интерфейс выхода и каталог конфигов ОПРЕДЕЛЯЮТСЯ сами —
-# переопределяются переменными CONTAINER / WAN_IF / HOST_CONF_DIR.
+# Интерфейс выхода и каталог конфигов ОПРЕДЕЛЯЮТСЯ сами — переопределяются
+# переменными WAN_IF / HOST_CONF_DIR (и CONTAINER, если автопоиск ошибся).
 #
 # ЧТО ДЕЛАЕТ:
 #   1) кладёт конфиг линка и поднимает интерфейс;
@@ -41,21 +40,27 @@ SYSCTL_CONF="/etc/sysctl.d/99-awgbot-gw.conf"
 # Контейнер, интерфейс выхода и каталог конфигов ОПРЕДЕЛЯЮТСЯ, а не задаются
 # дефолтом: чужие имена в поставке — источник тихих ошибок «скрипт отработал, но
 # не там». Любое можно переопределить переменной окружения.
+# Контейнер шлюзу БОЛЬШЕ НЕ НУЖЕН: линк поднимает хостовой awg-quick, а в образе
+# Amnezia были только бинарники. Ищем его исключительно чтобы подчистить линк,
+# поднятый прежней, контейнерной схемой. Не нашли — не беда.
+#
+# `return 0` в конце обязателен. Без него функция отдаёт статус последней команды
+# цикла, а это неудачный `docker exec` на последнем контейнере. Присваивание
+# CONTAINER="$(detect_container)" получает ненулевой статус, и при set -e скрипт
+# умирает МОЛЧА — не дойдя даже до строки с сообщением об ошибке. Ровно так он и
+# отработал «успешно», не поставив ни одного правила.
 detect_container() {
-    [ -n "${CONTAINER:-}" ] && { printf '%s' "$CONTAINER"; return; }
+    if [ -n "${CONTAINER:-}" ]; then printf '%s' "$CONTAINER"; return 0; fi
     for n in $(docker ps --format '{{.Names}}' 2>/dev/null); do
-        docker exec "$n" sh -c 'command -v awg' >/dev/null 2>&1 && { printf '%s' "$n"; return; }
+        if docker exec "$n" sh -c 'command -v awg' >/dev/null 2>&1; then
+            printf '%s' "$n"; return 0
+        fi
     done
+    return 0
 }
 detect_wan() {
     [ -n "${WAN_IF:-}" ] && { printf '%s' "$WAN_IF"; return; }
     ip route show default 2>/dev/null | awk '/^default/{print $5; exit}'
-}
-detect_conf_dir() {   # каталог, примонтированный в /etc/amnezia/amneziawg
-    [ -n "${HOST_CONF_DIR:-}" ] && { printf '%s' "$HOST_CONF_DIR"; return; }
-    docker inspect -f \
-      '{{range .Mounts}}{{if eq .Destination "/etc/amnezia/amneziawg"}}{{.Source}}{{end}}{{end}}' \
-      "$1" 2>/dev/null
 }
 
 MODE="plan"; SRC_CONF=""
@@ -75,7 +80,6 @@ run()  {
     if [ "$MODE" = "plan" ]; then printf '  would: %s\n' "$*"
     else printf '  $ %s\n' "$*"; sh -c "$*"; fi
 }
-dexec() { docker exec "$CONTAINER" "$@"; }
 
 # Линк поднимаем ХОСТОВЫМИ утилитами, а не через контейнер. Причина не в
 # красоте: модуль ядра amneziawg живёт на хосте, и его протокол netlink обязан
@@ -85,17 +89,15 @@ dexec() { docker exec "$CONTAINER" "$@"; }
 # раз модуль есть). Контейнер для линка не нужен: там были только бинарники.
 AWG_QUICK="$(command -v awg-quick || true)"
 AWG_BIN="$(command -v awg || true)"
+# Отсутствие контейнера — НЕ ошибка: он тут только для подчистки прежней схемы.
 CONTAINER="$(detect_container)"
-[ -n "$CONTAINER" ] || { say "ОШИБКА: не нашёл контейнер с awg. Укажи: CONTAINER=имя $0 ..."; exit 1; }
 WAN_IF="$(detect_wan)"
 [ -n "$WAN_IF" ] || { say "ОШИБКА: не определил интерфейс выхода. Укажи: WAN_IF=eth0 $0 ..."; exit 1; }
 HOST_CONF_DIR="${HOST_CONF_DIR:-/etc/amnezia/amneziawg}"
-_legacy_dir="$(detect_conf_dir "$CONTAINER")"
-[ -n "$HOST_CONF_DIR" ] || { say "ОШИБКА: не нашёл каталог конфигов контейнера. Укажи: HOST_CONF_DIR=... $0 ..."; exit 1; }
 
 say "Параметры (определены автоматически, переопределяются переменными):"
 say "  интерфейс линка   : $LINK_IF"
-say "  контейнер         : $CONTAINER"
+say "  контейнер         : ${CONTAINER:-нет (и не нужен)}"
 say "  конфиг на хосте   : $HOST_CONF_DIR/$LINK_IF.conf"
 say "  клиенты ВПС       : $CLIENT_SUBNET"
 say "  выход в интернет  : $WAN_IF"
@@ -106,7 +108,9 @@ if [ "$MODE" = "rollback" ]; then
     step "Снятие"
     run "systemctl disable --now awg-link-gw.service 2>/dev/null || true"
     run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
-    run "docker exec $CONTAINER awg-quick down $LINK_IF 2>/dev/null || true"
+    if [ -n "$CONTAINER" ]; then
+        run "docker exec $CONTAINER awg-quick down $LINK_IF 2>/dev/null || true"
+    fi
     while iptables -C FORWARD -i "$LINK_IF" -j "$FWD_CHAIN" 2>/dev/null; do
         run "iptables -D FORWARD -i $LINK_IF -j $FWD_CHAIN"
     done
@@ -140,7 +144,7 @@ if [ "$MODE" = "plan" ]; then
     say "(режим показа — добавь: --apply <файл-конфига-с-ВПС>)"
     say ""
     say "Будет сделано:"
-    say "  1. конфиг → $HOST_CONF_DIR/$LINK_IF.conf, awg-quick up через контейнер"
+    say "  1. конфиг → $HOST_CONF_DIR/$LINK_IF.conf, awg-quick up хостовыми утилитами"
     say "  2. iptables -t nat -A POSTROUTING -s $CLIENT_SUBNET -o $WAN_IF -j MASQUERADE"
     say "  3. цепочка $FWD_CHAIN: DROP во все приватные сети, затем ACCEPT"
     say "  4. юнит awg-link-gw.service"
@@ -156,12 +160,22 @@ fi
 
 step "1. Конфиг и подъём $LINK_IF"
 mkdir -p "$HOST_CONF_DIR"
-run "install -m 600 '$SRC_CONF' $HOST_CONF_DIR/$LINK_IF.conf"
+# Источник может СОВПАДАТЬ с назначением: так бывает при повторном прогоне
+# «поверх» уже установленного конфига. `install` в этом случае падает с «are the
+# same file», а при set -e уносит с собой весь остальной обвяз — который как раз
+# и надо доставить.
+if [ "$(readlink -f "$SRC_CONF")" = "$(readlink -f "$HOST_CONF_DIR/$LINK_IF.conf")" ]; then
+    say "  конфиг уже на месте — копировать не нужно"
+else
+    run "install -m 600 '$SRC_CONF' $HOST_CONF_DIR/$LINK_IF.conf"
+fi
 if ip link show "$LINK_IF" >/dev/null 2>&1; then
     say "  интерфейс уже поднят — перезапускаю, чтобы подхватить конфиг"
     run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
     # и в контейнере тоже: линк мог быть поднят прежней версией скрипта
-    run "docker exec $CONTAINER awg-quick down $LINK_IF 2>/dev/null || true"
+    if [ -n "$CONTAINER" ]; then
+        run "docker exec $CONTAINER awg-quick down $LINK_IF 2>/dev/null || true"
+    fi
 fi
 [ -n "$AWG_QUICK" ] || { say "ОШИБКА: awg-quick не найден на ХОСТЕ."; \
     say "  Собери amneziawg-tools той же версии, что и модуль ядра."; exit 1; }

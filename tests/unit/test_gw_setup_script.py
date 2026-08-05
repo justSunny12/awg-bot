@@ -41,7 +41,7 @@ def test_ip_forward_survives_reboot(script):
 
 
 def test_rollback_removes_the_sysctl_drop_in(script):
-    rollback = script.split('MODE" = "rollback"', 1)[1].split("if [", 1)[0]
+    rollback = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
     assert "SYSCTL_CONF" in rollback
 
 
@@ -70,3 +70,45 @@ def test_link_subnet_is_masqueraded_too(script):
     """
     assert "LINK_CIDR" in script
     assert '-s $LINK_CIDR -o $WAN_IF -j MASQUERADE' in script
+
+
+# ── скрипт не должен умирать молча ───────────────────────────────────────────
+
+def test_container_detection_always_returns_zero(script):
+    """Функция обязана завершаться успехом, даже не найдя контейнер.
+
+    Без явного `return 0` она отдаёт статус последней команды цикла — неудачного
+    `docker exec` на последнем контейнере. Присваивание из подстановки получает
+    ненулевой статус, и при set -e скрипт умирает МОЛЧА, не дойдя даже до
+    сообщения об ошибке. Ровно так он и «отработал», не поставив ни правила.
+    """
+    fn = script.split("detect_container() {", 1)[1].split("\n}", 1)[0]
+    assert fn.rstrip().endswith("return 0"), "detect_container может вернуть ненулевой статус"
+
+
+def test_missing_container_is_not_an_error(script):
+    """Контейнер шлюзу больше не нужен: линк поднимают хостовые утилиты.
+
+    Требование его наличия делало скрипт неработоспособным ровно там, куда мы и
+    идём — на шлюзе без Amnezia.
+    """
+    assert "не нашёл контейнер с awg" not in script
+
+
+def test_container_commands_are_guarded(script):
+    """`docker exec` зовётся только когда контейнер найден."""
+    for i, line in enumerate(script.splitlines()):
+        if "docker exec $CONTAINER" in line:
+            preceding = "\n".join(script.splitlines()[max(0, i - 3):i])
+            assert '[ -n "$CONTAINER" ]' in preceding, \
+                f"незащищённый docker exec в строке {i + 1}"
+
+
+def test_same_source_and_destination_do_not_abort(script):
+    """Повторный прогон «поверх» уже установленного конфига — обычное дело.
+
+    `install` с совпадающими путями падает с «are the same file» и при set -e
+    уносит весь остальной обвяз, который как раз и надо доставить.
+    """
+    assert "readlink -f" in script
+    assert "конфиг уже на месте" in script
