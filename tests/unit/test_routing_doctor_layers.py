@@ -110,3 +110,37 @@ def test_connected_route_through_awg_passes(monkeypatch):
     monkeypatch.setattr(routing, "_host", fake_host)
     monkeypatch.setattr(routing, "_host_ok", lambda args: True)
     routing._check_static_plumbing()          # не бросает
+
+
+# ── рубильник и пересборка цепочки ходят под одним замком ────────────────────
+
+def test_liveness_tick_toggles_marking_under_the_lock():
+    """Тик и реконсиляция трогают одну цепочку.
+
+    Без общего замка тик может включить маркировку в тот момент, когда
+    _routing_apply уже опустошил наборы под перезапись, а правила ещё старые.
+    Тогда `! --match-set` по пустому набору матчит ВСЁ, и трафик включённых
+    уезжает на шлюз вместе с заблокированным — отказ, ради которого в
+    реконсиляции и стоит сторож на пустые списки.
+    """
+    import inspect
+    from awgbot.domain import services
+
+    src = inspect.getsource(services.Services.routing_liveness_tick)
+    call = src.index("routing.set_marking_enabled")
+    lock = src.rindex("with routing.mutation_lock", 0, call)
+    assert lock < call, "рубильник дёргается вне замка"
+
+
+def test_probe_stays_outside_the_lock():
+    """Зонд длится секунды (сеть).
+
+    Держать на это время реконсиляцию значило бы менять один отказ на другой.
+    """
+    import inspect
+    from awgbot.domain import services
+
+    src = inspect.getsource(services.Services.routing_liveness_tick)
+    probe = src.index("self.routing_probe()")
+    lock = src.index("with routing.mutation_lock")
+    assert probe < lock, "зонд не должен держать замок"

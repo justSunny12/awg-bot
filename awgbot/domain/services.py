@@ -2061,6 +2061,8 @@ class Services:
         if engaged:
             # Обвязку доводим ЗДЕСЬ, а не внутри зонда: зонд обязан только мерить.
             routing.ensure_policy()
+        # Зонд СНАРУЖИ замка: он длится секунды (сеть), и держать на это время
+        # реконсиляцию значило бы менять один отказ на другой.
         verdict = self.routing_probe() if engaged else routing.PROBE_DOWN
 
         if verdict == routing.PROBE_OK:
@@ -2072,7 +2074,15 @@ class Services:
             ok = False
 
         try:
-            routing.set_marking_enabled(ok)
+            # ПОД ЗАМКОМ: реконсиляция под ним же пересобирает ту цепочку, чей
+            # рубильник мы дёргаем. Без замка тик может включить маркировку ровно
+            # в тот момент, когда _routing_apply уже опустошил наборы под
+            # перезапись, а правила в цепочке ещё старые. Тогда `! --match-set`
+            # по пустому набору матчит ВСЁ, и трафик включённых пользователей
+            # уезжает на шлюз вместе с заблокированным — то есть ровно тот отказ,
+            # ради которого в реконсиляции стоит сторож на пустые списки.
+            with routing.mutation_lock:
+                routing.set_marking_enabled(ok)
         except routing.RoutingError as e:
             log.warning("routing_liveness_tick: %s", e)
             return []
