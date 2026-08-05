@@ -236,3 +236,55 @@ def test_reconcile_survives_address_reuse_by_the_app(
     adopted = next(d for d in services.db.list_all_devices()
                    if d.public_key == "appREUSE")
     assert adopted.address == addr
+
+
+def test_unknown_peer_is_quarantined_with_an_alarm(services, fake_awg, monkeypatch):
+    """Пир, которого нет в базе, — событие безопасности, а не находка.
+
+    Приложение Amnezia с серверной стороны снято, создавать пиры больше некому,
+    кроме бота. Значит запись в конфиге, которой нет у нас, это ручная правка
+    или чужое вмешательство. Прежнее поведение — молча усыновить и прислать
+    информационную строчку — узаконивало бы чужой доступ.
+    """
+    services.ensure_admin_client()
+    _set_live(monkeypatch, [("strangerPUB", "10.8.0.77")])
+    notes = services.reconcile_peers()
+
+    dev = next(d for d in services.db.list_all_devices()
+               if d.public_key == "strangerPUB")
+    assert dev.client_id == services.db.get_service_client_id(), "карантин"
+
+    note = next(n for n in notes if n.tg_id == config.ADMIN_ID)
+    assert "10.8.0.77" in note.text
+    assert note.force_sound, "тревога обязана звучать и в тихие часы"
+
+
+def test_bootstrap_creates_admin_device_once(services, fake_awg):
+    """Без первого устройства админ не достучится до бота, а завести его
+    снаружи больше нельзя — карантин. Значит бот обязан выдать его сам.
+
+    Ровно один раз: повторный старт не плодит устройства, а сознательно
+    удалённое админом не возвращается.
+    """
+    created = services.bootstrap_admin_device()
+    assert created is not None
+    admin_cid = services.ensure_admin_client()
+    assert services.db.count_devices(admin_cid) == 1
+
+    assert services.bootstrap_admin_device() is None          # второй старт
+    assert services.db.count_devices(admin_cid) == 1
+
+    # админ удалил всё у себя — бот не возвращает
+    for d in services.db.list_devices(admin_cid):
+        services.remove_device(d.id)
+    assert services.bootstrap_admin_device() is None
+    assert services.db.count_devices(admin_cid) == 0
+
+
+def test_bootstrap_skips_when_admin_already_has_devices(services, fake_awg):
+    """Работающая установка: метки в state нет, а устройства есть — лишнего
+    не заводим."""
+    admin_cid = services.ensure_admin_client()
+    services.add_device(admin_cid, "уже есть")
+    assert services.bootstrap_admin_device() is None
+    assert services.db.count_devices(admin_cid) == 1

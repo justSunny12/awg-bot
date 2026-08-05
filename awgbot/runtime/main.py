@@ -128,7 +128,26 @@ async def main() -> None:
     except Exception:                                    # noqa: BLE001
         pass
 
-    await do_reconcile(services, bot)                    # подхватить app-устройства
+    # Первое устройство админа — до реконсиляции: без него он не достучится до
+    # бота, а завести его снаружи больше нельзя (неизвестные пиры уходят в
+    # карантин). Сбой не фатален — повторится на следующем старте.
+    try:
+        _boot_dev = await asyncio.to_thread(services.bootstrap_admin_device)
+        if _boot_dev is not None:
+            from awgbot.bot import texts as _texts
+            from awgbot.bot.notifier import notify_one as _notify
+            # Через notifier, а не bot.send_message: он подставляет «Скрыть», а
+            # ссылка — секрет, и висеть в чате вечно ей нельзя. force_sound:
+            # админ ждёт доступа, тихие часы тут не та цена.
+            await _notify(bot, config.ADMIN_ID,
+                          _texts.admin_bootstrap_device(_boot_dev.address),
+                          force_sound=True)
+            await _notify(bot, config.ADMIN_ID, f"<code>{_boot_dev.vpn}</code>",
+                          force_sound=True)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("bootstrap_admin_device: %s", e)
+
+    await do_reconcile(services, bot)                    # сверка состава пиров
     try:
         await asyncio.to_thread(services.reconcile_blocks)   # восстановить блокировки
     except Exception as e:                               # noqa: BLE001
