@@ -52,7 +52,9 @@ async def _screen(sec: str, services):
         # всё равно не покажет, а лишний запрос к БД на каждый рендер ни к чему
         clients = await call(services.routing_grantable_clients) if on else []
         status = await call(services.routing_status)
-        return texts.settings_routing_text(on, status), kb.settings_routing(on, clients)
+        mode = config.routing_default_route()
+        return (texts.settings_routing_text(on, status, mode),
+                kb.settings_routing(on, clients, mode))
     return texts.SETTINGS_ROOT, kb.settings_root()
 
 
@@ -103,6 +105,27 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
 async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
     """Разрешение профилю на РФ-доступ. Верхний слой флага: снимая его, гасим
     эффект, но настройки самого клиента не разрушаем."""
+    if callback_data.key == "mode":
+        want = callback_data.val or config.ROUTING_DEFAULT_HOME
+        if want not in (config.ROUTING_DEFAULT_HOME, config.ROUTING_DEFAULT_ABROAD):
+            await cb.answer("Неизвестный режим.", show_alert=True)
+            return
+        if want == config.routing_default_route():
+            await cb.answer("Этот режим уже выбран.")
+            return
+        try:
+            await call(settings.set_value, "app.routing.default_route", want)
+        except settings.SettingsWriteError as e:
+            await cb.answer(str(e), show_alert=True)
+            return
+        # Режим меняет СМЫСЛ наборов, а не только значение в yaml: применяем
+        # сразу, иначе до следующего тика правила описывали бы прежний режим,
+        # а экран — новый.
+        await call(services.reconcile_routing)
+        await _render(cb, "rt", services)
+        await cb.answer("Режим переключён. Списки исключений у режимов свои — "
+                        "прежний сохранён.", show_alert=True)
+        return
     if callback_data.key != "allow":
         await cb.answer("Действие недоступно.", show_alert=True)
         return

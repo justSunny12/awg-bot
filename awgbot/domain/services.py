@@ -1698,7 +1698,7 @@ class Services:
     # ── Личный список доменов ────────────────────────────────────────────────
 
     def routing_domains(self, client_id: int) -> list[str]:
-        return self.db.list_routing_domains(client_id)
+        return self.db.list_routing_domains(client_id, config.routing_default_route())
 
     def routing_add_domains(self, client_id: int, text: str) -> "RoutingAddResult":
         """Добавить домены пачкой. Возвращает разбор: что взято, что отброшено.
@@ -1710,7 +1710,7 @@ class Services:
         limit = int(settings.get("app.routing.user_domains_max", 100))
         accepted, rejected = domain_routing.parse_batch(
             text, denylist=config.routing_denylist())
-        existing = set(self.db.list_routing_domains(client_id))
+        existing = set(self.db.list_routing_domains(client_id, config.routing_default_route()))
         free = max(0, limit - len(existing))
         added: list[str] = []
         over = 0
@@ -1721,7 +1721,7 @@ class Services:
             if len(added) >= free:
                 over += 1
                 continue
-            if self.db.add_routing_domain(client_id, dom):
+            if self.db.add_routing_domain(client_id, dom, config.routing_default_route()):
                 added.append(dom)
         if added:
             self.reconcile_routing()
@@ -1754,13 +1754,13 @@ class Services:
             log.warning("routing_preseed: %s", e)
 
     def routing_remove_domain(self, client_id: int, domain: str) -> bool:
-        removed = self.db.remove_routing_domain(client_id, domain)
+        removed = self.db.remove_routing_domain(client_id, domain, config.routing_default_route())
         if removed:
             self.reconcile_routing()
         return removed
 
     def routing_clear_domains(self, client_id: int) -> int:
-        n = self.db.clear_routing_domains(client_id)
+        n = self.db.clear_routing_domains(client_id, config.routing_default_route())
         if n:
             self.reconcile_routing()
         return n
@@ -1809,7 +1809,7 @@ class Services:
     def _routing_apply(self) -> None:
         """Разложить состояние БД по наборам, цепочке и конфигу dnsmasq."""
         addrs = self.db.routing_active_addresses(config.ADMIN_ID)
-        domains = self.db.routing_domains_by_client()
+        domains = self.db.routing_domains_by_client(config.routing_default_route())
         # Профили, которым нужны собственные наборы: с включёнными устройствами
         # ИЛИ с личными доменами. Наборы должны существовать до того, как на них
         # сошлётся правило или директива dnsmasq.

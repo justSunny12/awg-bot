@@ -245,9 +245,13 @@ CREATE TABLE IF NOT EXISTS device_friend (
 -- PK (client_id, domain) даёт дедуп даром и он же — индекс выборки по клиенту.
 CREATE TABLE IF NOT EXISTS client_routing_domains (
     client_id           INTEGER NOT NULL,
+    mode                TEXT    NOT NULL DEFAULT 'home',  -- режим, в котором список действует
     domain              TEXT    NOT NULL,             -- нормализованный (нижний регистр, без схемы/www)
     added_at            TEXT    NOT NULL,
-    PRIMARY KEY (client_id, domain),
+    -- mode в КЛЮЧЕ, а не просто колонкой: списки у режимов свои, и один и тот же
+    -- домен может законно лежать в обоих — смысл у записи противоположный
+    -- («отправить за границу» против «отправить домой»), но запись самостоятельная.
+    PRIMARY KEY (client_id, mode, domain),
     FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
 );
 
@@ -503,6 +507,7 @@ class Database:
             cur.executescript(SCHEMA)
         self._migrate_additive()
         self._migrate_drop_full_access()
+        self._migrate_routing_domains_mode()
         self._ensure_service_client()
 
     def _migrate_additive(self) -> None:
@@ -522,6 +527,42 @@ class Database:
                 if col not in have:
                     with self._tx() as cur:
                         cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+
+    def _migrate_routing_domains_mode(self) -> None:
+        """Личные списки маршрутизации стали раздельными по режимам.
+
+        Колонку добавить ALTER'ом мало: `mode` обязан войти в PRIMARY KEY, иначе
+        один и тот же домен нельзя положить в оба списка — а это законно, смысл
+        у записей противоположный, но записи самостоятельные. Значит нужна
+        пересборка таблицы.
+
+        Существующие записи уезжают в режим `home`: до появления второго режима
+        других не было, и их смысл был именно такой — «дополнительно за границу»
+        при умолчании «домой».
+
+        Идемпотентно: `mode` уже в ключе → выходим сразу.
+        """
+        con = self._connection()
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(client_routing_domains)")}
+        if not cols or "mode" in cols:
+            return
+        with self._tx() as cur:
+            cur.execute("""
+                CREATE TABLE client_routing_domains_new (
+                    client_id INTEGER NOT NULL,
+                    mode      TEXT    NOT NULL DEFAULT 'home',
+                    domain    TEXT    NOT NULL,
+                    added_at  TEXT    NOT NULL,
+                    PRIMARY KEY (client_id, mode, domain),
+                    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+                )""")
+            cur.execute("INSERT INTO client_routing_domains_new "
+                        "(client_id, mode, domain, added_at) "
+                        "SELECT client_id, 'home', domain, added_at "
+                        "  FROM client_routing_domains")
+            cur.execute("DROP TABLE client_routing_domains")
+            cur.execute("ALTER TABLE client_routing_domains_new "
+                        "RENAME TO client_routing_domains")
 
     def _migrate_drop_full_access(self) -> None:
         """Разовая зачистка: колонка devices.full_access_link осталась от
@@ -1333,48 +1374,57 @@ class Database:
     # Базовая часть (национальные зоны) здесь не живёт: она статична и лежит в
     # conf — в БД хранится только то, что завёл пользователь.
 
-    def list_routing_domains(self, client_id: int) -> list[str]:
-        """Личный список клиента, в порядке добавления."""
+    # Все методы личных списков принимают РЕЖИМ. Списки у режимов раздельные:
+    # запись означает «исключение из умолчания», а умолчания противоположны, и
+    # перенос записи из одного списка в другой поменял бы её смысл на обратный.
+    # Пользователю режим не показывается — он видит свой список того режима,
+    # который выбрал админ, и знать про второй ему незачем.
+    def list_routing_domains(self, client_id: int, mode: str = "home") -> list[str]:
+        """Личный список клиента для режима, в порядке добавления."""
         return [r["domain"] for r in self._connection().execute(
-            "SELECT domain FROM client_routing_domains WHERE client_id = ? "
-            "ORDER BY added_at, domain", (client_id,)).fetchall()]
+            "SELECT domain FROM client_routing_domains "
+            "WHERE client_id = ? AND mode = ? ORDER BY added_at, domain",
+            (client_id, mode)).fetchall()]
 
-    def count_routing_domains(self, client_id: int) -> int:
+    def count_routing_domains(self, client_id: int, mode: str = "home") -> int:
         return self._connection().execute(
-            "SELECT COUNT(*) AS c FROM client_routing_domains WHERE client_id = ?",
-            (client_id,)).fetchone()["c"]
+            "SELECT COUNT(*) AS c FROM client_routing_domains "
+            "WHERE client_id = ? AND mode = ?", (client_id, mode)).fetchone()["c"]
 
-    def add_routing_domain(self, client_id: int, domain: str) -> bool:
+    def add_routing_domain(self, client_id: int, domain: str, mode: str = "home") -> bool:
         """True — добавлен, False — уже был. Дедуп даёт PK, отдельной проверки
         (с гонкой между SELECT и INSERT) не требуется."""
         with self._tx() as cur:
             cur.execute(
-                "INSERT OR IGNORE INTO client_routing_domains (client_id, domain, added_at) "
-                "VALUES (?, ?, ?)", (client_id, domain, _now_iso()))
+                "INSERT OR IGNORE INTO client_routing_domains "
+                "(client_id, mode, domain, added_at) VALUES (?, ?, ?, ?)",
+                (client_id, mode, domain, _now_iso()))
             return cur.rowcount > 0
 
-    def remove_routing_domain(self, client_id: int, domain: str) -> bool:
+    def remove_routing_domain(self, client_id: int, domain: str, mode: str = "home") -> bool:
         """True — удалён, False — такого и не было."""
         with self._tx() as cur:
             cur.execute(
-                "DELETE FROM client_routing_domains WHERE client_id = ? AND domain = ?",
-                (client_id, domain))
+                "DELETE FROM client_routing_domains "
+                "WHERE client_id = ? AND mode = ? AND domain = ?",
+                (client_id, mode, domain))
             return cur.rowcount > 0
 
-    def clear_routing_domains(self, client_id: int) -> int:
-        """Очистить список целиком. Возвращает число удалённых записей."""
+    def clear_routing_domains(self, client_id: int, mode: str = "home") -> int:
+        """Очистить список ЭТОГО режима. Возвращает число удалённых записей."""
         with self._tx() as cur:
-            cur.execute("DELETE FROM client_routing_domains WHERE client_id = ?",
-                        (client_id,))
+            cur.execute("DELETE FROM client_routing_domains "
+                        "WHERE client_id = ? AND mode = ?", (client_id, mode))
             return cur.rowcount
 
-    def routing_domains_by_client(self) -> dict[int, list[str]]:
+    def routing_domains_by_client(self, mode: str = "home") -> dict[int, list[str]]:
         """{client_id: [домены]} по ВСЕМ клиентам — для генерации dnsmasq-конфига.
-        Клиенты без личных доменов в результат не попадают."""
+        Клиенты без личных доменов в этом режиме в результат не попадают."""
         out: dict[int, list[str]] = {}
         for r in self._connection().execute(
                 "SELECT client_id, domain FROM client_routing_domains "
-                "ORDER BY client_id, added_at, domain").fetchall():
+                "WHERE mode = ? ORDER BY client_id, added_at, domain",
+                (mode,)).fetchall():
             out.setdefault(int(r["client_id"]), []).append(r["domain"])
         return out
 
