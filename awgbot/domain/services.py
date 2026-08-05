@@ -1523,7 +1523,17 @@ class Services:
     def reconcile_peers(self) -> list[Notification]:
         """Сверка живого конфига с БД. Новые пиры (созданные в приложении) →
         на служебного клиента + уведомление админу. Пропавшие → грациозный
-        детект удаления (MISSING_SWEEPS_THRESHOLD сверок подряд)."""
+        детект удаления (MISSING_SWEEPS_THRESHOLD сверок подряд).
+
+        ПОРЯДОК ПРОХОДОВ ЗНАЧИМ. Пропавшие разбираем ПЕРВЫМИ, новых усыновляем
+        после: devices.address UNIQUE, а приложение выдаёт «первый свободный»
+        адрес по тому же правилу, что и мы. Удалили пир в приложении, следом
+        завели новый — он получит освободившийся адрес, которым в нашей БД ещё
+        владеет уходящая запись. Усыновление в обратном порядке падало бы на
+        UNIQUE каждую сверку, а падало бы ДО прохода по пропавшим, то есть
+        запись-держатель адреса не удалялась бы никогда: сверка встаёт колом
+        насовсем, вместе с подхватом всех остальных app-устройств.
+        """
         conf = awg.read_file(config.CONF_PATH)
         live = self._peers_with_ip(conf)                  # pub → ip
         table = {e.get("clientId"): e.get("userData", {}).get("clientName", "")
@@ -1535,15 +1545,6 @@ class Services:
         except awg.AwgError:
             psk = ""
         notifications: list[Notification] = []
-
-        # новые пиры из приложения
-        for pub, ip in live.items():
-            if pub in db_devices:
-                continue
-            name = table.get(pub) or f"Устройство {ip}"
-            self.db.create_device(service_id, name, pub, psk, ip, private_key=None)
-            notifications.append(Notification(
-                config.ADMIN_ID, _TXT_NEW_APP_DEVICE.format(name=name, ip=ip)))
 
         # пропавшие пиры + обновление имён app-устройств из приложения
         for pub, dev in db_devices.items():
@@ -1577,6 +1578,23 @@ class Services:
                     notifications.append(Notification(friend_tg, _TXT_FRIEND_DEVICE_GONE))
             else:
                 self.db.update_device_fields(dev.id, missing_count=mc)
+
+        # новые пиры из приложения
+        for pub, ip in live.items():
+            if pub in db_devices:
+                continue
+            name = table.get(pub) or f"Устройство {ip}"
+            try:
+                self.db.create_device(service_id, name, pub, psk, ip, private_key=None)
+            except sqlite3.IntegrityError as e:
+                # Адрес ещё за уходящей записью (порог MISSING_SWEEPS_THRESHOLD
+                # не выбран). Пропускаем ЭТОТ пир, а не всю сверку: он усыновится
+                # на сверке, где прежний владелец адреса удалится.
+                log.warning("reconcile_peers: пир %s (%s) пока не усыновлён: %s",
+                            name, ip, e)
+                continue
+            notifications.append(Notification(
+                config.ADMIN_ID, _TXT_NEW_APP_DEVICE.format(name=name, ip=ip)))
         return notifications
 
     # ── Реконсиляция блокировок после рестарта контейнера ────────────────────
@@ -1959,27 +1977,35 @@ class Services:
             if last and now - int(last) < every and cached > 0:
                 return cached
         try:
+            # СКАЧИВАНИЕ — СНАРУЖИ ЗАМКА. Восемь источников по 15 с таймаута —
+            # это до двух минут, а под замком ждёт тик живости: он гасит
+            # маркировку по первому же плохому замеру и на это время потерял бы
+            # право сработать. Отвал шлюза во время обновления списков означал бы
+            # тогда не «зарубежный адрес», а отсутствие интернета у всех, кому
+            # режим включён, — ровно тот несимметричный отказ, ради которого тик
+            # и сделан частым. Замок берём только на запись результата.
+            nets: list[str] = []
+            for url in config.ROUTING_LISTS_SUBNET_URLS:
+                body = routing.fetch(url)
+                if body:
+                    nets.extend(domain_routing.parse_networks(body))
+
+            # Два источника доменов в ОДИН кэш. Списки блокировок и список
+            # геоблокировок описывают зеркальные случаи («блокирует Россия»
+            # и «блокируют Россию»), но для нас оба означают одно: этому
+            # домену нужен зарубежный адрес. Разделять их дальше незачем.
+            doms: list[str] = []
+            for url in (config.ROUTING_LISTS_DOMAINS_URL,
+                        config.ROUTING_LISTS_GEOBLOCK_URL):
+                if not url:
+                    continue
+                body = routing.fetch(url)
+                if body:
+                    doms.extend(domain_routing.parse_domain_list(body))
+
             with routing.mutation_lock:
-                nets: list[str] = []
-                for url in config.ROUTING_LISTS_SUBNET_URLS:
-                    body = routing.fetch(url)
-                    if body:
-                        nets.extend(domain_routing.parse_networks(body))
                 if nets:
                     self._routing_write_cache("subnets", sorted(set(nets)))
-
-                # Два источника доменов в ОДИН кэш. Списки блокировок и список
-                # геоблокировок описывают зеркальные случаи («блокирует Россия»
-                # и «блокируют Россию»), но для нас оба означают одно: этому
-                # домену нужен зарубежный адрес. Разделять их дальше незачем.
-                doms: list[str] = []
-                for url in (config.ROUTING_LISTS_DOMAINS_URL,
-                            config.ROUTING_LISTS_GEOBLOCK_URL):
-                    if not url:
-                        continue
-                    body = routing.fetch(url)
-                    if body:
-                        doms.extend(domain_routing.parse_domain_list(body))
                 if doms:
                     self._routing_write_cache("domains", sorted(set(doms)))
                 size = len(self._routing_read_cache("subnets")) \

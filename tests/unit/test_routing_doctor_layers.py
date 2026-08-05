@@ -144,3 +144,24 @@ def test_probe_stays_outside_the_lock():
     probe = src.index("self.routing_probe()")
     lock = src.index("with routing.mutation_lock")
     assert probe < lock, "зонд не должен держать замок"
+
+
+# ── замок не держат на время сети ────────────────────────────────────────────
+
+def test_list_download_happens_outside_the_mutation_lock():
+    """Восемь источников по 15 с таймаута — до двух минут под замком.
+
+    Тик живости берёт тот же замок, чтобы дёрнуть рубильник маркировки, и
+    работает раз в 30 с с max_instances=1. Держи скачивание под замком — отвал
+    шлюза во время обновления списков означал бы не «зарубежный адрес», а
+    отсутствие интернета у всех, кому режим включён: ровно тот несимметричный
+    отказ, ради которого тик и сделан частым.
+    """
+    import inspect
+    from awgbot.domain import services
+
+    src = inspect.getsource(services.Services.routing_update_lists)
+    lock = src.rindex("with routing.mutation_lock")
+    assert src.index("routing.fetch") < lock, "скачивание не должно держать замок"
+    # запись результата — наоборот, под замком
+    assert lock < src.index('_routing_write_cache("subnets"')

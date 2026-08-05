@@ -214,3 +214,32 @@ def test_reconcile_missing_count_resets_on_return(services, fake_awg, make_activ
     _set_live(monkeypatch, [(dev.public_key, dev.address)])  # вернулся до порога
     services.reconcile_peers()
     assert services.db.get_device(dc.device_id).missing_count == 0
+
+
+def test_reconcile_survives_address_reuse_by_the_app(
+        services, fake_awg, make_active_client, monkeypatch):
+    """Приложение переиспользует адрес удалённого пира — сверка не встаёт колом.
+
+    devices.address UNIQUE, а приложение выдаёт «первый свободный» по тому же
+    правилу, что и бот. Удалили пир в приложении, следом завели новый — он
+    получает освободившийся адрес, которым в БД ещё владеет уходящая запись.
+    Прежний порядок проходов (сначала усыновление) падал на UNIQUE ДО прохода
+    по пропавшим, поэтому держатель адреса не удалялся никогда: реконсиляция
+    ломалась насовсем, вместе с подхватом всех остальных app-устройств.
+    """
+    client = make_active_client(tg_id=732)
+    dc = services.add_device(client.id, "d")
+    addr = services.db.get_device(dc.device_id).address
+
+    # старого пира в конфиге больше нет, его адрес занял новый app-пир
+    _set_live(monkeypatch, [("appREUSE", addr)],
+              table=[{"clientId": "appREUSE", "userData": {"clientName": "Phone"}}])
+
+    services.reconcile_peers()                 # сверка 1: порог не выбран
+    assert services.db.get_device(dc.device_id).missing_count == 1
+
+    services.reconcile_peers()                 # сверка 2: удаление + усыновление
+    assert services.db.get_device(dc.device_id) is None
+    adopted = next(d for d in services.db.list_all_devices()
+                   if d.public_key == "appREUSE")
+    assert adopted.address == addr
