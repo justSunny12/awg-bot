@@ -344,3 +344,37 @@ def test_probe_timeout_stays_tight():
     default = inspect.signature(routing.probe_gateway).parameters["timeout"].default
     assert default <= 5.0, (
         f"таймаут {default} с маскирует медленный шлюз вместо того, чтобы его показать")
+
+
+def test_generated_conf_explains_the_current_model():
+    """Шапка сгенерированного файла читается человеком, полезшим в /etc/dnsmasq.d/.
+
+    То есть ровно тем, кого нельзя вводить в заблуждение. После разворота логики
+    там оставалось описание упразднённой модели: «домены, которым нужен
+    ЗАРУБЕЖНЫЙ адрес… чего в наборе нет — уходит на шлюз» — противоположное
+    правде.
+    """
+    from awgbot.domain.routing import build_dnsmasq_conf
+    conf = build_dnsmasq_conf(base_domains=["gosuslugi.ru"], domains_by_client={},
+                              client_ids=[2], set_user_prefix="vpn_u")
+    head = "\n".join(l for l in conf.splitlines() if l.startswith("#"))
+    assert "РОССИЙСКИЙ адрес" in head
+    assert "ЗАРУБЕЖНЫЙ" not in head, "описание упразднённой модели"
+    assert "Чего в наборе нет" not in head
+
+
+def test_subdomain_contract_holds_both_ways():
+    """Контракт для пользователя: дал корень — забрал всё под ним, дал поддомен —
+    забрал только его ветку.
+
+    Обеспечивает его dnsmasq (`--ipset`: «Domains and subdomains are matched in
+    the same way as --address», сопоставление по целым меткам), а наше дело —
+    не сломать его нормализацией: свернёшь `lk.bank.ru` до `bank.ru` — заберёшь
+    у человека лишнее, оставишь `www.` — отдашь ему один поддомен вместо сайта.
+    """
+    from awgbot.domain.routing import normalize
+    assert normalize("lk.bank.ru") == "lk.bank.ru"
+    assert normalize("https://online.sberbank.ru/CSAFront/index.do") == "online.sberbank.ru"
+    assert normalize("api.market.yandex.ru") == "api.market.yandex.ru"
+    # www — исторический алиас самого сайта, а не отдельный поддомен
+    assert normalize("https://www.ozon.ru/product/123") == "ozon.ru"
