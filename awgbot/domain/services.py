@@ -137,6 +137,12 @@ _TXT_UNKNOWN_PEER = (
 # Пир исчез из конфига, а запись в БД осталась: сам бот так не удаляет —
 # он снимает пира и строку разом. Значит конфиг правили мимо бота.
 _TXT_PEER_GONE = ("Устройство «{name}» клиента «{client}» пропало из конфига сервера — бот его не удалял. Запись убрана, чтобы база сошлась с сервером.")
+_TXT_RT_INFRA_BAD = (
+    "🚨 Условная маршрутизация не применяется:\n<code>{err}</code>\n\n"
+    "Если речь о dnsmasq — у клиентов сейчас нет DNS вообще, и выглядит это как "
+    "«интернет работает через раз»: уже отрезолвленное ходит, новое — нет. "
+    "Проверь <code>systemctl status dnsmasq</code> и "
+    "<code>/etc/dnsmasq.d/awgbot-routing.conf</code>.")
 _TXT_RT_SRC_STALE = (
     "⚠️ Источник списков маршрутизации замолчал:\n<code>{url}</code>\n\n"
     "Раньше он отдавал {n} записей, сейчас — ничего. Прежний список продолжает "
@@ -1812,7 +1818,15 @@ class Services:
                 else:
                     self._routing_apply()
         except routing.RoutingError as e:
+            # Не только в лог. Сюда прилетает и отказ рестарта dnsmasq, а это не
+            # «маршрутизация не применилась», а «резолвер лежит» — то есть у
+            # ВСЕХ клиентов нет DNS. Бот при этом продолжал бы работать, считая
+            # фичу живой, и сказать об этом было некому: журнал на сервере
+            # читают, когда уже пришли разбираться.
             log.warning("reconcile_routing: %s", e)
+            self.db.set_state(self._RT_INFRA_BAD, str(e)[:300])
+            return
+        self.db.set_state(self._RT_INFRA_BAD, "")
 
     def _routing_stand_down(self, reason: str = "") -> None:
         """Снять всё, что фича делает с трафиком.
@@ -1833,13 +1847,37 @@ class Services:
             log.warning("routing: %s", reason)
 
     def _routing_apply(self) -> None:
-        """Разложить состояние БД по наборам, цепочке и конфигу dnsmasq."""
+        """Разложить состояние БД по наборам, цепочке и конфигу dnsmasq.
+
+        ДВА СОСТАВА ПРОФИЛЕЙ, и это главное здесь.
+
+        `active` — чей трафик метить прямо сейчас. Меняется от каждого нажатия
+        тумблера пользователем, и всё, что от него зависит, обязано быть
+        дешёвым: членство в ipset и правила в своей цепочке.
+
+        `known` — у кого вообще есть свой набор: кому админ разрешил функцию,
+        плюс те, у кого есть личный список. Меняется только решением админа. На
+        нём держится конфиг dnsmasq — потому что его применение стоит РЕСТАРТА
+        РЕЗОЛВЕРА, а рестарт роняет кэш и на секунды лишает DNS всех клиентов
+        разом, включая тех, кто ничего не переключал.
+
+        Пока конфиг зависел от `active`, каждое нажатие тумблера любым
+        пользователем переписывало все ~600 строк и перезапускало dnsmasq всем.
+        Снаружи это выглядит как «включил режим — на минуту всё отвалилось», а
+        для того, кто в этот момент резолвил имя, — как отказ на ровном месте.
+
+        Работает разделение потому, что правило маркировки требует ОБОИХ
+        совпадений: источник в `rt_src_u<N>` И назначение в `vpn_u<N>`. У
+        выключенного профиля src-набор пуст, поэтому его набор назначений может
+        спокойно наполняться — метить всё равно нечего. Побочная выгода: к
+        моменту включения набор уже прогрет, и режим работает с первой секунды,
+        не дожидаясь, пока клиент переспросит DNS.
+        """
         addrs = self.db.routing_active_addresses(config.ADMIN_ID)
         domains = self.db.routing_domains_by_client()
-        # Профили, которым нужны собственные наборы: с включёнными устройствами
-        # ИЛИ с личными доменами. Наборы должны существовать до того, как на них
-        # сошлётся правило или директива dnsmasq.
-        client_ids = sorted(set(addrs) | set(domains))
+        active_ids = sorted(set(addrs) | set(domains))
+        known_ids = sorted(set(self.db.routing_allowed_client_ids(config.ADMIN_ID))
+                           | set(domains))
         # Набор означает ДОМОЙ и наполняется только доменами: все скачиваемые
         # списки подсетей были про заграницу (Cloudflare, Google, Telegram) и
         # ушли вместе с обратной моделью. Российских подсетей сопровождаемого
@@ -1850,19 +1888,20 @@ class Services:
         # немаскараженным, иначе на хосте их не отличить от остальных
         routing.sync_nat_exempt([a for lst in addrs.values() for a in lst])
 
-        for cid in client_ids:
-            # src-набор наш — перезаписываем целиком; набор назначений только
+        for cid in known_ids:
+            # src-набор наш — перезаписываем целиком (у выключенного профиля он
+            # станет пустым, и это ровно то, что нужно); набор назначений только
             # СОЗДАЁМ: наполняет его dnsmasq по мере резолва доменов, и любая
             # запись с нашей стороны стёрла бы накопленное
             routing.replace_members(routing.src_set(cid), "hash:ip", addrs.get(cid, ()))
             routing.ensure_set(routing.user_set(cid), "hash:net")
 
-        routing.rebuild_chain(client_ids)
-        self._routing_drop_orphan_sets(client_ids)
+        routing.rebuild_chain(active_ids)
+        self._routing_drop_orphan_sets(known_ids)
         routing.write_dnsmasq_conf(domain_routing.build_dnsmasq_conf(
             base_domains=base_domains,
             domains_by_client=domains,
-            client_ids=client_ids,
+            client_ids=known_ids,
             set_user_prefix=config.ROUTING_SET_USER_PREFIX,
         ))
 
@@ -1933,6 +1972,33 @@ class Services:
         elif self.db.get_state(self._RT_SRC_N + k):
             # раньше отдавал, сейчас пусто — отметить для доклада
             self.db.set_state(self._RT_SRC_BAD + k, url)
+
+    # Реконсиляция упала. Отдельный ключ, а не флаг рядом с источниками: там
+    # «списки застыли», здесь «примениться не удалось», и чинятся они в разных
+    # местах. Хранится текст ошибки — он же и есть половина диагноза.
+    _RT_INFRA_BAD = "rt_infra_bad"
+    _RT_INFRA_ANNOUNCED = "rt_infra_announced"
+
+    def routing_infra_alerts(self) -> list[Notification]:
+        """Реконсиляция маршрутизации падает — сказать админу. Один доклад.
+
+        Главный случай — не поднявшийся после правки конфига dnsmasq: у клиентов
+        при этом умирает DNS целиком, а внешне это «интернет работает через раз»,
+        потому что всё уже отрезолвленное продолжает ходить. Связать такое с
+        маршрутизацией без подсказки почти невозможно.
+        """
+        err = self.db.get_state(self._RT_INFRA_BAD) or ""
+        announced = self.db.get_state(self._RT_INFRA_ANNOUNCED) == "1"
+        if not err:
+            if not announced:
+                return []
+            self.db.set_state(self._RT_INFRA_ANNOUNCED, "0")
+            return [Notification(config.ADMIN_ID,
+                                 "🟢 Условная маршрутизация снова применяется.")]
+        if announced:
+            return []
+        self.db.set_state(self._RT_INFRA_ANNOUNCED, "1")
+        return [Notification(config.ADMIN_ID, _TXT_RT_INFRA_BAD.format(err=_e(err)))]
 
     def routing_source_alerts(self) -> list[Notification]:
         """Источники, которые раньше отдавали списки, а теперь молчат.

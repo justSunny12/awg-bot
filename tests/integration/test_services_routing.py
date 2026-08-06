@@ -117,10 +117,11 @@ def test_add_domain_twice_is_reported_not_duplicated(services, make_active_clien
     assert services.routing_domains(c.id) == ["bank.com"]
 
 
-def test_ru_domain_is_accepted_after_inversion(services, make_active_client):
-    """После инверсии логики .ru-домен в личном списке ОСМЫСЛЕН: список описывает
-    то, чему нужна заграница, и российский домен туда добавляют осознанно —
-    например, если сервис требует зарубежный адрес."""
+def test_ru_domain_is_accepted(services, make_active_client):
+    """.ru-домен в личном списке — основной случай, а не исключение.
+
+    Список описывает то, чему нужен РОССИЙСКИЙ адрес, и туда добавляют ровно то,
+    что не попало в базовый: региональный банк, магазин, госсервис."""
     c = make_active_client()
     res = services.routing_add_domains(c.id, "example.ru")
     assert res.added == ["example.ru"]
@@ -175,6 +176,52 @@ def test_dnsmasq_not_rewritten_when_nothing_changed(
     services.reconcile_routing()
     services.reconcile_routing()
     assert fake_routing.conf_writes == writes
+
+
+def test_user_toggle_does_not_restart_the_resolver(
+        services, make_active_client, fake_routing):
+    """Нажатие тумблера не должно трогать конфиг dnsmasq.
+
+    Его применение стоит РЕСТАРТА резолвера, а тот роняет кэш и на секунды
+    лишает DNS всех клиентов разом — включая тех, кто ничего не переключал.
+    Пока состав конфига зависел от того, у кого режим ВКЛЮЧЁН, каждое нажатие
+    любым пользователем переписывало все ~600 строк и перезапускало dnsmasq.
+    Снаружи это «включил режим — на минуту всё отвалилось», а для того, кто в
+    этот момент резолвил имя, — отказ на ровном месте.
+
+    Теперь конфиг держится на том, кому функция РАЗРЕШЕНА: это решение админа,
+    а не пользователя, и меняется оно редко.
+    """
+    c = make_active_client()
+    services.set_routing_allowed(c.id, True)
+    _device(services, c)
+    services.reconcile_routing()
+
+    writes = fake_routing.conf_writes
+    services.set_routing_master(c.id, True)
+    services.set_routing_master(c.id, False)
+    services.set_routing_master(c.id, True)
+    assert fake_routing.conf_writes == writes, "тумблер перезапустил резолвер"
+
+
+def test_allowed_but_switched_off_profile_marks_nothing(
+        services, make_active_client, fake_routing):
+    """Прогретый набор назначений безопасен при выключенном тумблере.
+
+    Разделение составов держится на том, что правило требует ОБОИХ совпадений:
+    источник в rt_src_u<N> И назначение в vpn_u<N>. У выключенного профиля
+    src-набор обязан быть пустым — иначе прогрев набора назначений начал бы
+    метить трафик тому, кто режим не включал.
+    """
+    c = make_active_client()
+    services.set_routing_allowed(c.id, True)
+    _device(services, c)
+    services.reconcile_routing()
+
+    assert f"{config.ROUTING_SET_USER_PREFIX}{c.id}" in fake_routing.sets, \
+        "набор назначений должен существовать и прогреваться заранее"
+    assert not fake_routing.sets.get(_srcset(c.id)), \
+        "у выключенного профиля src-набор обязан быть пуст"
 
 
 # ── Наборы и цепочка ─────────────────────────────────────────────────────────
@@ -620,3 +667,54 @@ def test_empty_lists_are_safe_not_fatal(services, fake_routing, monkeypatch, tmp
     # _routing_stand_down не трогает вовсе. Цепочка для этого не годится —
     # stand_down тоже её пересобирает, только пустой.
     assert fake_routing.conf is not None, "реконсиляция ушла в stand_down"
+
+
+# ── отказ применения не должен быть молчаливым ───────────────────────────────
+
+def test_failed_reconcile_reaches_the_admin_once(services, fake_routing, monkeypatch):
+    """Падение реконсиляции — это в первую очередь не поднявшийся dnsmasq.
+
+    Раньше оно уезжало в log.warning и больше никуда: бот продолжал работать,
+    считая фичу живой, при мёртвом резолвере у всех клиентов. Внешне это
+    «интернет через раз» — отрезолвленное ходит, новое нет, — и связать такое с
+    маршрутизацией без подсказки почти невозможно.
+    """
+    from awgbot.infra import routing as _rt
+
+    def boom(text, path=None):
+        raise _rt.RoutingError("Не перезапустить dnsmasq: job failed")
+
+    monkeypatch.setattr(_rt, "write_dnsmasq_conf", boom)
+    services.reconcile_routing()
+
+    notes = services.routing_infra_alerts()
+    assert len(notes) == 1
+    assert "dnsmasq" in notes[0].text
+    assert services.routing_infra_alerts() == [], "доклад обязан быть однократным"
+
+
+def test_recovered_reconcile_is_reported_too(services, fake_routing, monkeypatch):
+    """Отбой нужен ровно потому, что тревога была: иначе админ не знает,
+    чинилось ли оно само, и идёт проверять руками."""
+    from awgbot.infra import routing as _rt
+
+    # Отказ включается флагом, а не monkeypatch.undo(): undo снял бы и патчи
+    # фикстуры fake_routing, после чего routing.available() стал бы ложью и
+    # реконсиляция вышла бы сразу — тест «починился» бы, ничего не проверив.
+    broken = {"yes": True}
+    ok_write = _rt.write_dnsmasq_conf
+
+    def maybe_boom(text, path=None):
+        if broken["yes"]:
+            raise _rt.RoutingError("Не перезапустить dnsmasq: job failed")
+        return ok_write(text, path)
+
+    monkeypatch.setattr(_rt, "write_dnsmasq_conf", maybe_boom)
+    services.reconcile_routing()
+    assert len(services.routing_infra_alerts()) == 1
+
+    broken["yes"] = False
+    services.reconcile_routing()
+    notes = services.routing_infra_alerts()
+    assert len(notes) == 1 and "🟢" in notes[0].text
+    assert services.routing_infra_alerts() == []

@@ -1424,6 +1424,21 @@ class Database:
             out.setdefault(int(r["client_id"]), []).append(r["domain"])
         return out
 
+    def routing_allowed_client_ids(self, admin_tg_id: int = 0) -> list[int]:
+        """Профили, которым РФ-доступ РАЗРЕШЁН, независимо от их тумблера.
+
+        Отдельно от routing_active_addresses намеренно. Тот отвечает «чей трафик
+        метить прямо сейчас» и меняется от каждого нажатия пользователя. Этот —
+        «у кого вообще может быть свой набор», и меняется только решением админа.
+        На первом держится состав ipset-правил, на втором — конфиг dnsmasq,
+        который нельзя дёргать часто: его применение стоит рестарта резолвера.
+        """
+        rows = self._connection().execute(
+            "SELECT id FROM clients "
+            " WHERE is_service = 0 AND (routing_allowed = 1 OR tg_id = ?)",
+            (admin_tg_id,)).fetchall()
+        return sorted(int(r["id"]) for r in rows)
+
     def routing_active_addresses(self, admin_tg_id: int = 0) -> dict[int, list[str]]:
         """{client_id: [адреса]} устройств профилей с ВКЛЮЧЁННЫМ режимом.
         Источник истины для src-наборов ipset.

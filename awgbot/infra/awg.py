@@ -18,6 +18,7 @@ awg.py — единственный слой взаимодействия с с�
 
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
 import threading
@@ -26,6 +27,8 @@ from contextlib import contextmanager
 from typing import Optional
 
 from awgbot.core import config
+
+log = logging.getLogger("awgbot.awg")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Подавление самозаписи: пока бот сам правит файлы Amnezia, вотчдог игнорирует
@@ -668,8 +671,19 @@ def ssh_reconcile(admin_ips: list[str], targets: list[str]) -> None:
     «пустой цепочки» между flush и refill.
 
     Пустой targets → фильтр не накладываем (не смогли определить адреса хоста —
-    безопаснее ничего не трогать, чем повесить неверный DROP)."""
+    безопаснее ничего не трогать, чем повесить неверный DROP).
+
+    Пустой admin_ips → тоже не трогаем, и по той же причине, только цена выше.
+    Желаемое состояние выродилось бы в одни DROP-и: SSH-к-хосту из туннеля
+    закрыт всем, включая того, кто пришёл бы это чинить. Пустым список бывает
+    в переходных состояниях — админ ещё без устройств, БД читается в момент
+    пересоздания, — то есть ровно тогда, когда доступ нужнее всего. Охрана на
+    targets тут стояла с самого начала, а на admin_ips её не было."""
     if not targets:
+        return
+    if not admin_ips:
+        log.warning("ssh_reconcile: пустой список админских адресов — "
+                    "фильтр не трогаем, иначе закрыли бы SSH всем")
         return
     port = str(config.SSH_PORT)
     iface = config.AWG_INTERFACE

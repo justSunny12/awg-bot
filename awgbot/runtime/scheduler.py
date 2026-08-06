@@ -174,6 +174,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                 # намеренно, и потому источник может умереть навсегда, а списки
                 # застыть, без единого признака.
                 rt_src_notes = await asyncio.to_thread(services.routing_source_alerts)
+                # ...и отдельно — что реконсиляция вообще не применяется. Главный
+                # случай тут не «правила не встали», а не поднявшийся dnsmasq:
+                # у клиентов при этом нет DNS, а бот считает фичу живой.
+                rt_src_notes += await asyncio.to_thread(services.routing_infra_alerts)
                 if rt_src_notes:
                     await send_notifications(bot, rt_src_notes)
             except Exception as e:                       # noqa: BLE001

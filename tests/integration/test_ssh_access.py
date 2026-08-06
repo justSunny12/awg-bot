@@ -81,6 +81,23 @@ def test_ssh_reconcile_no_targets_is_noop(monkeypatch):
     assert calls == []
 
 
+def test_ssh_reconcile_no_admin_ips_is_noop(monkeypatch):
+    """Пустой admin_ips → тоже ни одной команды, и цена ошибки тут выше.
+
+    Без охраны желаемое состояние вырождается в одни DROP-и: SSH-к-хосту из
+    туннеля закрыт всем, включая того, кто пришёл бы это чинить. Пустым список
+    бывает в переходных состояниях — админ ещё без устройств, БД читается в
+    момент пересоздания, — то есть ровно тогда, когда доступ нужнее всего.
+    Симметричная охрана на targets стояла с самого начала, эта — нет.
+    """
+    calls = []
+    monkeypatch.setattr(awg, "_exec",
+                        lambda args, **kw: calls.append(args) or
+                        subprocess.CompletedProcess(args, 0, b"", b""))
+    awg.ssh_reconcile([], ["10.8.1.0"])
+    assert calls == [], "пустой вайтлист повесил бы DROP на всех"
+
+
 def test_ssh_reconcile_skips_jump_if_present(monkeypatch):
     """Если джамп уже есть (-C код 0) — повторно не вставляем."""
     calls = []
