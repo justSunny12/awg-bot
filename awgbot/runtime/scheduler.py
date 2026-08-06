@@ -166,8 +166,8 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             # (рестарт контейнера, ручная правка, переиспользование адреса).
             try:
                 # списки обновляются здесь же: метод сам решает, пора ли (по
-                # расписанию из conf) и не пуст ли набор — при пустом обновляет
-                # немедленно, потому что пустой отправил бы на шлюз весь трафик
+                # расписанию из conf) и не пуст ли кэш — при пустом обновляет
+                # немедленно, потому что без списков режим не действует вовсе
                 await asyncio.to_thread(services.routing_update_lists)
                 await asyncio.to_thread(services.reconcile_routing)
                 # источник замолчал — сказать. Кэш переживает недоступность
@@ -197,9 +197,11 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             snap = await asyncio.to_thread(hostmetrics.collect_and_store, db)
             alert_notes += services.check_resource_alerts(snap)
             # (4) живость шлюза условной маршрутизации живёт в СВОЁМ задании,
-            #     job_routing_liveness: у пользователя с включённым режимом шлюз —
-            #     основной путь, и его отказ это «нет интернета», а не «не тот
-            #     адрес». Трёхминутного такта на такое не хватает.
+            #     job_routing_liveness, с тактом в десятки секунд. Разделение
+            #     осталось от обратной модели, где отказ шлюза означал «нет
+            #     интернета» и трёх минут не хватало. Сейчас он означает «не тот
+            #     адрес», но замер дёшев, а быстрый возврат из деградации полезен
+            #     сам по себе — см. routing_liveness_tick.
             await send_notifications(bot, alert_notes)
         except Exception as e:                       # noqa: BLE001
             log.warning("monitor: %s", e)

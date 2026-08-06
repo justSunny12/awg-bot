@@ -352,4 +352,8 @@ BOT_DESCRIPTION = _bi.get("description", "")
 BOT_SHORT_DESCRIPTION = _bi.get("short_description", "")
 
 
-__all__ = [name for name in dir() if not name.startswith("_")]
+# Только собственные имена модуля: без фильтра сюда попадали os, Path, yaml и
+# ZoneInfo, и `from config import *` тащил чужие модули в чужое пространство имён.
+_REEXPORTED = {"os", "Path", "ZoneInfo", "yaml", "annotations"}
+__all__ = [name for name in dir()
+           if not name.startswith("_") and name not in _REEXPORTED]

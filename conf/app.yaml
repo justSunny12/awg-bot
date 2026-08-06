@@ -8,8 +8,10 @@ timezone: "Europe/Moscow"          # UTC+3, без переходов на ле�
 # Docker / AmneziaWG — deploy-параметры
 docker:
   # docker — команды идут через `docker exec` в контейнер Amnezia;
-  # host — прямо на хосте. Переезд ещё не доделан (docs/ROADMAP.md, шаг 2),
-  # host-режим бот пока не запускает.
+  # host — прямо на хосте (awg установлен на самой машине). Работают оба.
+  # Дефолт docker: боевой app.yaml при обновлении не мигрирует, и отсутствие
+  # ключа означает «сервер, который обновился», — менять ему способ доступа к
+  # awg молча нельзя. Переезд с docker на host — install/awg-host-migrate.sh.
   runtime: "docker"
   container: "amnezia-awg2"
   # Идентификатор протокола для приложения AmneziaVPN: уезжает в vpn:// и
