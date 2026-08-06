@@ -771,3 +771,26 @@ def test_empty_lists_block_home_mode_but_not_abroad(services, monkeypatch):
 
     _mode(monkeypatch, "abroad")
     assert services.routing_lists_ready() is True
+
+
+def test_gateway_alarm_names_the_right_consequence(services, monkeypatch):
+    """Одна и та же поломка стоит в режимах разного — текст обязан это отражать.
+
+    При умолчании «домой» через шлюз идёт основной объём трафика, и его отвал
+    ощущается как «пропал интернет». При умолчании «за границу» через шлюз идут
+    только российские сервисы, и тот же отвал — «Озон ругается на адрес».
+    Написать одно вместо другого значит либо поднять панику на ровном месте,
+    либо не поднять её тогда, когда надо.
+    """
+    _mode(monkeypatch, "home")
+    home = services._txt_rt_gw_down()
+    assert "основной объём" in home
+
+    _mode(monkeypatch, "abroad")
+    abroad = services._txt_rt_gw_down()
+    assert "и так шло мимо шлюза" in abroad
+    assert "основной объём" not in abroad
+
+    # подсказка про бандл нужна в обоих: причина отвала от режима не зависит
+    for t in (home, abroad):
+        assert "gw-bundle" in t
