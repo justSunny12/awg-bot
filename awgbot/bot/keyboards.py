@@ -970,6 +970,13 @@ def settings_root() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def settings_back() -> InlineKeyboardMarkup:
+    """Одна кнопка «Назад» — для экранов-отбивок внутри настроек."""
+    kb = InlineKeyboardBuilder()
+    kb.row(_back())
+    return kb.as_markup()
+
+
 def settings_routing(enabled: bool, clients=()) -> InlineKeyboardMarkup:
     """Раздел «Условная маршрутизация».
 

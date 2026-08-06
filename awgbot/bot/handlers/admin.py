@@ -64,7 +64,9 @@ async def _panel_text(services) -> str:
     st = await call(services.server_status_cached)
     tot = await call(services.db.get_total_month_traffic)
     st = {**st, "traffic_rx": tot["rx"], "traffic_tx": tot["tx"]}
-    return texts.admin_panel(st)
+    ac = await call(services.admin_client)
+    routing_ok = await call(services.routing_health_for_client, ac) if ac else None
+    return texts.admin_panel(st, routing_ok)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

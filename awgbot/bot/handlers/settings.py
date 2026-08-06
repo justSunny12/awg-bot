@@ -47,6 +47,11 @@ async def _screen(sec: str, services):
     if sec == "upd":
         return texts.SETTINGS_UPD, kb.settings_updates(await call(services.updates_muted))
     if sec == "rt":
+        if not config.ROUTING_ENABLED:
+            # Кнопку в этом случае не рисуем вовсе, но колбэк приходит и из
+            # старого сообщения в истории чата. Открыть раздел, которого нет,
+            # значит показать переключатели, ничего не делающие.
+            return texts.SETTINGS_ROUTING_ABSENT, kb.settings_back()
         on = settings.get_bool("app.routing.enabled", False)
         # список профилей нужен только при включённой функции — клавиатура его
         # всё равно не покажет, а лишний запрос к БД на каждый рендер ни к чему

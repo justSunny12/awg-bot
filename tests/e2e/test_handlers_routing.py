@@ -233,27 +233,27 @@ async def test_admin_panel_opens_without_client_in_context(services, make_active
     assert any(s[0] == "edit_text" for s in nav.sent)
 
 
-def test_infobox_line_appears_only_when_granted(services, make_active_client):
-    """Строка «Доступ к РФ-сервисам» появляется, как только админ разрешил, и
-    показывает положение переключателя самого клиента."""
+def test_status_line_appears_for_everyone_granted(services, make_active_client):
+    """Строка о РФ-шлюзе — в общем статусном блоке, рядом со статусом сервера.
+
+    Показывается всем, кому админ функцию разрешил, — в том числе когда режим у
+    человека выключен: она отвечает на вопрос «а работает ли оно вообще»,
+    который иначе задаётся заходом в раздел, и полезнее всего как раз перед
+    включением. Не разрешил — строки нет вовсе: рассказывать про механизм тому,
+    кому он недоступен, значит шуметь.
+    """
     from awgbot.bot import texts
     c = make_active_client(tg_id=95)
-    assert services.routing_toggle_for_client(c) is None      # не разрешено — строки нет
-    assert "РФ-сервисам" not in texts.greeting_client(c, True, (1, 3), None, None)
+    assert services.routing_health_for_client(c) is None
+    assert "РФ-доступ" not in texts.greeting_client(c, True, (1, 3), None)
 
     services.set_routing_allowed(c.id, True)
     c = services.db.get_client(c.id)
-    assert services.routing_toggle_for_client(c) is False      # разрешено, но выключено
-    out = texts.greeting_client(c, True, (1, 3), None, False)
-    assert "Доступ к РФ-сервисам" in out and "🔴 выключен" in out
+    ok = services.routing_health_for_client(c)
+    assert ok is not None, "разрешено — строка обязана быть, даже при выключенном режиме"
+    out = texts.greeting_client(c, True, (1, 3), ok)
+    assert "🇷🇺 РФ-доступ:" in out
 
-    services.set_routing_master(c.id, True)
-    c = services.db.get_client(c.id)
-    assert services.routing_toggle_for_client(c) is True
-    assert "🟢 включен" in texts.greeting_client(c, True, (1, 3), None, True)
-
-
-# ── админ управляет клиентскими настройками ──────────────────────────────────
 
 async def test_admin_toggles_client_master(services, make_active_client, fake_bot):
     """Админ переключает РФ-доступ ЧУЖОГО профиля: без этого разбор проблемы
@@ -355,8 +355,7 @@ async def test_add_domains_returns_to_panel(services, make_active_client, fake_b
     sent = [s for s in msg.sent if s[0] == "answer"]
     assert any("bank.com" in str(s[1]) for s in sent), "нет отчёта"
     # последнее сообщение — раздел с кнопками
-    assert any("РФ-сервисам" in str(s[1]) or "Исключения" in str(s[1])
-               or "исключения" in str(s[1]) for s in sent), sent
+    assert any("РФ-доступ" in str(s[1]) for s in sent), sent
 
 
 async def test_revoked_permission_blocks_the_pending_input(
@@ -380,3 +379,26 @@ def _acb(bot):
     from awgbot.core import config as _c
     nav = FakeMessage(chat_id=_c.ADMIN_ID, user_id=_c.ADMIN_ID, bot=bot)
     return FakeCallback(message=nav, user_id=_c.ADMIN_ID, bot=bot), nav
+
+
+async def test_settings_section_hidden_without_a_gateway(services, fake_bot, monkeypatch):
+    """Раздел настроек существует, только если РФ-шлюз сконфигурирован.
+
+    Кнопку при пустом gw_interface не рисуем, но колбэк приходит и из старого
+    сообщения в истории чата. Открыть раздел, которого нет, значит показать
+    переключатели, ничего не делающие.
+    """
+    from awgbot.bot import keyboards as kb, texts
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.core import config
+
+    monkeypatch.setattr(config, "ROUTING_ENABLED", False)
+    labels = [b.text for row in kb.settings_root().inline_keyboard for b in row]
+    assert not any("маршрутизация" in l for l in labels), labels
+
+    text, _ = await sh._screen("rt", services)
+    assert text == texts.SETTINGS_ROUTING_ABSENT
+
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    labels = [b.text for row in kb.settings_root().inline_keyboard for b in row]
+    assert any("маршрутизация" in l for l in labels), labels
