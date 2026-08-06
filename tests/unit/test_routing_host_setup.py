@@ -97,23 +97,25 @@ def test_hint_does_not_name_a_set_nobody_creates(script):
     assert "vpn_base" not in script
 
 
-def test_fill_hint_uses_a_domain_from_the_abroad_list(script):
-    """Домен в проверке наполнения обязан быть из ЗАРУБЕЖНОГО списка.
+def test_fill_hint_uses_a_domain_that_will_be_in_the_set(script):
+    """Домен в проверке наполнения обязан быть тем, что реально попадёт в набор.
 
-    Логика инвертирована, и sberbank.ru в наборе не окажется никогда — проверка
-    по нему показывает ноль на здоровой системе.
+    Набор перечисляет РОССИЙСКИЕ сервисы — то, что уходит на шлюз. Подсказка с
+    заграничным доменом показывала бы ноль на здоровой системе и толкала чинить
+    исправное. Раньше здесь стоял huggingface.co: он был верен для упразднённой
+    обратной модели, где набор означал «за границу».
+
+    Сверять со списком нельзя — он скачивается, а не зашит. Проверяем то, что
+    проверяемо: домен в российской зоне.
     """
-    from awgbot.core import config
-
     hints = re.findall(r"""dig \+short @\$DNS_ADDR ([^\s"']+)""", script)
     assert hints, "в скрипте нет подсказки с dig — проверка наполнения потерялась"
-    # example.com — проверка живости резолвера, она вне списков; остальные
-    # домены обязаны быть из зарубежного набора.
+    # example.com — проверка живости резолвера, она вне списков
     checked = [h for h in hints if h != "example.com"]
     assert checked, "нет ни одной проверки наполнения набора"
     for host in checked:
-        assert host in config.ROUTING_ABROAD_DOMAINS, (
-            f"{host} нет в ROUTING_ABROAD_DOMAINS — в набор он не попадёт, "
+        assert host.endswith((".ru", ".рф", ".su")), (
+            f"{host} не в российской зоне — в набор он не попадёт, "
             f"и подсказка будет врать")
 
 

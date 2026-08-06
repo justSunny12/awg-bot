@@ -149,7 +149,7 @@ def test_probe_stays_outside_the_lock():
 # ── замок не держат на время сети ────────────────────────────────────────────
 
 def test_list_download_happens_outside_the_mutation_lock():
-    """Восемь источников по 15 с таймаута — до двух минут под замком.
+    """Источники с таймаутом по 15 с — заметное время под замком.
 
     Тик живости берёт тот же замок, чтобы дёрнуть рубильник маркировки, и
     работает раз в 30 с с max_instances=1. Держи скачивание под замком — отвал
@@ -164,4 +164,4 @@ def test_list_download_happens_outside_the_mutation_lock():
     lock = src.rindex("with routing.mutation_lock")
     assert src.index("routing.fetch") < lock, "скачивание не должно держать замок"
     # запись результата — наоборот, под замком
-    assert lock < src.index('_routing_write_cache("subnets"')
+    assert lock < src.index('_routing_write_cache("home_domains"')

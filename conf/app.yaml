@@ -93,20 +93,12 @@ routing:
   # Источники базового набора. Бот обновляет его САМ — при старте и по
   # расписанию; руками ничего запускать не нужно. Подсети грузятся напрямую в
   # ipset (без DNS), домены — через отдельный файл dnsmasq.
-  # Куда идёт то, о чём мы ничего не знаем. Переключается в настройках бота.
-  #   home   — на шлюз всё, чего нет в наборе; набор перечисляет заграницу.
-  #   abroad — на шлюз только то, что в наборе; набор перечисляет РФ-сервисы.
-  # Списки исключений у режимов РАЗДЕЛЬНЫЕ и хранятся оба.
-  default_route: "home"
+  # Источники: российские сервисы, которым нужен российский адрес. Только они и
+  # уходят на шлюз — всё прочее выходит зарубежным адресом обычным путём.
+  lists_home_urls:
+    - "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Russia/outside-dnsmasq-ipset.lst"
+    - "https://raw.githubusercontent.com/UnRKN/ru-blocklist/main/ru-blocklist.txt"
   lists_refresh_hours: 6            # как часто обновлять
-  lists_domains_url: "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Russia/inside-dnsmasq-ipset.lst"
-  lists_subnet_urls:
-    - "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/telegram.lst"
-    - "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/meta.lst"
-    - "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/twitter.lst"
-    - "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/cloudflare.lst"
-    - "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/discord.lst"
-    - "https://www.gstatic.com/ipranges/goog.json"
   dnsmasq_conf: "/etc/dnsmasq.d/awgbot-routing.conf"   # генерится ботом ЦЕЛИКОМ
   dnsmasq_service: "dnsmasq"       # unit для restart (reload не применяет ipset=)
   user_domains_max: 100            # потолок личного списка на клиента
@@ -117,19 +109,6 @@ routing:
   # ЖИВОСТЬ ШЛЮЗА измеряется проходимостью, а не состоянием туннеля: бот пингует
   # probe_target ЧЕРЕЗ линк. Возраст хендшейка отвечал бы на другой вопрос —
   # «поднят ли туннель», — а у шлюза может быть поднят туннель и лежать аплинк.
-  # ЗЕРКАЛЬНЫЙ СЛУЧАЙ к спискам блокировок: сервисы, которые сами отказывают
-  # российским адресам. Россия их не блокирует, значит ни в один скачиваемый
-  # список они не попадают — а при инверсии логики ломаются первыми: домен
-  # уходит на шлюз и получает ровно тот адрес, который ему закрыт.
-  # Основной источник — сопровождаемая категория geoblock того же репозитория,
-  # что и списки блокировок (URL в config.ROUTING_LISTS_GEOBLOCK_URL, ключ
-  # lists_geoblock_url). Домены оттуда ложатся в тот же кэш, что и блокировки:
-  # для нас оба случая означают одно — этому домену нужен зарубежный адрес.
-  #
-  # config.ROUTING_ABROAD_DOMAINS — небольшое ДОПОЛНЕНИЕ к нему на то, чего в
-  # источнике нет, и запас на случай, когда список ещё не скачался. Ключ ниже
-  # его ЗАМЕНЯЕТ (не дополняет) — копируй целиком, если правишь.
-  # abroad_domains: ["example.com", "example.com", ...]
 
   # НЕСКОЛЬКО целей, а не одна: единственный внешний хост сам по себе точка
   # отказа — он может лечь или подтормаживать, и мы объявим отказом шлюза чужую

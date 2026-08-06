@@ -1601,13 +1601,6 @@ class Services:
     # H1..H4/S1..S4 у сторон, хендшейка не будет вовсе. Отказ громкий (вот эта
     # самая тревога), но причина со стороны ВПС не видна, и без строки ниже её
     # ищут в аплинке и NAT, где её нет.
-    # Тексты зависят от режима, и это не косметика: одна и та же поломка стоит
-    # в них разного. При умолчании «домой» через шлюз идёт основной объём
-    # трафика, и его отвал — это «у людей пропал интернет», пока маркировка не
-    # снята. При умолчании «за границу» через шлюз идут только российские
-    # сервисы, и тот же отвал — «Озон ругается на адрес». Написать одно вместо
-    # другого значит либо поднять панику на ровном месте, либо не поднять её
-    # тогда, когда надо.
     _TXT_RT_BUNDLE_HINT = (
         "\n\nЕсли началось сразу после обновления — пересобери бандл шлюза "
         "(<code>awg-bot gw-bundle</code>) и переустанови его на той стороне: "
@@ -1615,14 +1608,15 @@ class Services:
 
     @staticmethod
     def _rt_effect_line() -> str:
-        """Что именно почувствуют пользователи, пока маркировка снята."""
-        if config.routing_default_route() == config.ROUTING_DEFAULT_ABROAD:
-            return ("Маркировка снята: российские сервисы временно открываются "
-                    "с зарубежного адреса и могут ругаться. Всё остальное и так "
-                    "шло мимо шлюза — на него это не влияет.")
-        return ("Маркировка снята: через шлюз шёл основной объём трафика, теперь "
-                "он идёт напрямую. Связь у людей работает, но российские сервисы "
-                "видят зарубежный адрес.")
+        """Что именно почувствуют пользователи, пока маркировка снята.
+
+        Отказ мягкий: через шлюз идут только российские сервисы, всё прочее и так
+        шло мимо. Раньше, в упразднённой обратной модели, тот же отвал означал
+        «у людей пропал интернет» — и текст был другой.
+        """
+        return ("Маркировка снята: российские сервисы временно открываются "
+                "с зарубежного адреса и могут ругаться. Всё остальное и так "
+                "шло мимо шлюза — на него это не влияет.")
 
     def _txt_rt_gw_down(self) -> str:
         return ("🔴 Шлюз условной маршрутизации недоступен. "
@@ -1680,31 +1674,6 @@ class Services:
         потерял смысл — выбирать больше нечего."""
         return len([d for d in self.db.list_devices(client_id) if d.is_managed])
 
-    def routing_preseed_on_enable(self, client_id: int) -> None:
-        """Досев набора при ВКЛЮЧЕНИИ режима — только там, где без него ломается.
-
-        Умолчание «домой»: набор означает «за границу». Досеваем встроенный
-        заграничный список, потому что первый заход на такой сайт идёт по адресу
-        из кэша браузера — мимо набора, то есть на шлюз и с российского адреса,
-        которому сервис как раз и откажет. Пользователь видит «включил режим —
-        отвалился этот сервис» и выключает обратно.
-
-        Умолчание «за границу»: набор означает «ДОМОЙ», и досевать в него тот же
-        заграничный список — значит своими руками отправить такие сервисы
-        через российский адрес. Ровно это и случилось при первом включении
-        нового режима: симптом тот же, причина обратная.
-
-        Досевать вместо него домашний список не нужно и дорого. Не нужно —
-        потому что отказ здесь мягкий: российский сервис с закэшированным
-        адресом просто продолжит ходить как ходил, пока кэш не истечёт, то есть
-        режим не сломает его, а лишь не подействует. Дорого — потому что в
-        домашнем списке шестьсот с лишним доменов, и резолвить их по нажатию
-        тумблера значит подвесить обработчик на минуты.
-        """
-        if config.routing_default_route() == config.ROUTING_DEFAULT_ABROAD:
-            return
-        self._routing_preseed(client_id, list(config.ROUTING_ABROAD_DOMAINS))
-
     def routing_toggle_for_client(self, client) -> Optional[bool]:
         """Состояние РФ-доступа для инфобокса: None — не показывать строку.
 
@@ -1743,16 +1712,18 @@ class Services:
         """Переключатель режима у клиента: действует на весь профиль."""
         self.db.update_client_fields(client_id, routing_master=1 if on else 0)
         self.reconcile_routing()
-        if on:
-            # Именно здесь, а не в реконсиляции: досев — это резолв, и гонять
-            # его при каждой сверке ради состояния, которое меняется дважды в
-            # год, незачем. А вот в момент включения он обязателен.
-            self.routing_preseed_on_enable(client_id)
+        # Досева при включении здесь больше нет. Он существовал для обратной
+        # модели, где набор означал «за границу»: без него сервис с
+        # закэшированным у клиента адресом уезжал на шлюз и получал отказ. В
+        # нынешней модели набор означает «домой», и промах даёт мягкий эффект —
+        # российский сервис просто продолжит ходить как ходил, пока кэш не
+        # истечёт. Резолвить ради этого шестьсот доменов по нажатию тумблера
+        # значило бы подвесить обработчик на минуты.
 
     # ── Личный список доменов ────────────────────────────────────────────────
 
     def routing_domains(self, client_id: int) -> list[str]:
-        return self.db.list_routing_domains(client_id, config.routing_default_route())
+        return self.db.list_routing_domains(client_id)
 
     def routing_add_domains(self, client_id: int, text: str) -> "RoutingAddResult":
         """Добавить домены пачкой. Возвращает разбор: что взято, что отброшено.
@@ -1764,7 +1735,7 @@ class Services:
         limit = int(settings.get("app.routing.user_domains_max", 100))
         accepted, rejected = domain_routing.parse_batch(
             text, denylist=config.routing_denylist())
-        existing = set(self.db.list_routing_domains(client_id, config.routing_default_route()))
+        existing = set(self.db.list_routing_domains(client_id))
         free = max(0, limit - len(existing))
         added: list[str] = []
         over = 0
@@ -1775,7 +1746,7 @@ class Services:
             if len(added) >= free:
                 over += 1
                 continue
-            if self.db.add_routing_domain(client_id, dom, config.routing_default_route()):
+            if self.db.add_routing_domain(client_id, dom):
                 added.append(dom)
         if added:
             self.reconcile_routing()
@@ -1808,13 +1779,13 @@ class Services:
             log.warning("routing_preseed: %s", e)
 
     def routing_remove_domain(self, client_id: int, domain: str) -> bool:
-        removed = self.db.remove_routing_domain(client_id, domain, config.routing_default_route())
+        removed = self.db.remove_routing_domain(client_id, domain)
         if removed:
             self.reconcile_routing()
         return removed
 
     def routing_clear_domains(self, client_id: int) -> int:
-        n = self.db.clear_routing_domains(client_id, config.routing_default_route())
+        n = self.db.clear_routing_domains(client_id)
         if n:
             self.reconcile_routing()
         return n
@@ -1863,43 +1834,29 @@ class Services:
     def _routing_apply(self) -> None:
         """Разложить состояние БД по наборам, цепочке и конфигу dnsmasq."""
         addrs = self.db.routing_active_addresses(config.ADMIN_ID)
-        domains = self.db.routing_domains_by_client(config.routing_default_route())
+        domains = self.db.routing_domains_by_client()
         # Профили, которым нужны собственные наборы: с включёнными устройствами
         # ИЛИ с личными доменами. Наборы должны существовать до того, как на них
         # сошлётся правило или директива dnsmasq.
         client_ids = sorted(set(addrs) | set(domains))
-        mode = config.routing_default_route()
-        abroad_default = mode == config.ROUTING_DEFAULT_ABROAD
-
-        if abroad_default:
-            # Набор означает «домой». Подсетей тут нет и быть не должно: все
-            # скачиваемые списки подсетей — это CDN и хостеры (Cloudflare,
-            # Google, Telegram), то есть заграница. Отправить их домой значило
-            # бы сделать ровно обратное задуманному.
-            base_nets: list[str] = []
-            base_domains = list(self._routing_read_cache("home_domains"))
-        else:
-            # Набор означает «за границу». Встроенные подсети идут наравне со
-            # скачанными: сервис в собственном адресном блоке иначе держится на
-            # одном резолве, а резолв клиент может и не отдать нам (DoH, свой
-            # резолвер, кэш). См. ROUTING_ABROAD_NETS.
-            base_nets = (list(self._routing_read_cache("subnets"))
-                         + list(config.ROUTING_ABROAD_NETS))
-            base_domains = (list(self._routing_read_cache("domains"))
-                            + list(config.ROUTING_ABROAD_DOMAINS))
+        # Набор означает ДОМОЙ и наполняется только доменами: все скачиваемые
+        # списки подсетей были про заграницу (Cloudflare, Google, Telegram) и
+        # ушли вместе с обратной моделью. Российских подсетей сопровождаемого
+        # источника не существует, поэтому здесь их нет.
+        base_domains = list(self._routing_read_cache("home_domains"))
 
         # плечо контейнера: выпустить трафик включённых устройств
         # немаскараженным, иначе на хосте их не отличить от остальных
         routing.sync_nat_exempt([a for lst in addrs.values() for a in lst])
 
         for cid in client_ids:
-            # src-набор наш — перезаписываем целиком; набор назначений
-            # ДОПОЛНЯЕМ: туда же dnsmasq кладёт адреса по мере резолва доменов,
-            # и перезапись стёрла бы накопленное
+            # src-набор наш — перезаписываем целиком; набор назначений только
+            # СОЗДАЁМ: наполняет его dnsmasq по мере резолва доменов, и любая
+            # запись с нашей стороны стёрла бы накопленное
             routing.replace_members(routing.src_set(cid), "hash:ip", addrs.get(cid, ()))
-            routing.add_networks(routing.user_set(cid), base_nets)
+            routing.ensure_set(routing.user_set(cid), "hash:net")
 
-        routing.rebuild_chain(client_ids, mark_in_set=abroad_default)
+        routing.rebuild_chain(client_ids)
         self._routing_drop_orphan_sets(client_ids)
         routing.write_dnsmasq_conf(domain_routing.build_dnsmasq_conf(
             base_domains=base_domains,
@@ -1985,10 +1942,7 @@ class Services:
         что списки застыли, — а узнать об этом иначе неоткуда.
         """
         notes: list[Notification] = []
-        for url in (list(config.ROUTING_LISTS_SUBNET_URLS)
-                    + list(config.ROUTING_LISTS_HOME_URLS)
-                    + [config.ROUTING_LISTS_DOMAINS_URL,
-                       config.ROUTING_LISTS_GEOBLOCK_URL]):
+        for url in config.ROUTING_LISTS_HOME_URLS:
             if not url:
                 continue
             k = self._routing_src_key(url)
@@ -2024,58 +1978,20 @@ class Services:
         every = int(settings.get("app.routing.lists_refresh_hours", 6)) * 3600
         if not force:
             last = self.db.get_state(self._RT_LISTS_KEY)
-            # обновляем по расписанию ИЛИ немедленно, если набор пуст: пустой
-            # набор — состояние, при котором функцию включать нельзя
-            # Наполненность считаем по КАЖДОМУ кэшу, а не суммой. Сумма
-            # покрывала бы пустоту одного непустотой другого — и ровно так новый
-            # режим приехал мёртвым: старые кэши после обновления непустые,
-            # таймер свежий, значит ранний выход, и home_domains не качался до
-            # истечения шести часов. Заведём завтра третий кэш — правило
-            # сработает само.
-            groups = [
-                len(self._routing_read_cache("subnets"))
-                + len(self._routing_read_cache("domains")),
-                len(self._routing_read_cache("home_domains")),
-            ]
-            cached = sum(groups)
-            # по расписанию ИЛИ немедленно, если ЛЮБОЙ кэш пуст: без списков
-            # режим не работает, и ждать следующего окна незачем
-            if last and now - int(last) < every and all(g > 0 for g in groups):
+            cached = len(self._routing_read_cache("home_domains"))
+            # по расписанию ИЛИ немедленно, если кэш пуст: без списков режим не
+            # действует вовсе, и ждать следующего окна незачем — в том числе на
+            # старте бота, где эта же ветка и срабатывает
+            if last and now - int(last) < every and cached > 0:
                 return cached
         try:
-            # СКАЧИВАНИЕ — СНАРУЖИ ЗАМКА. Восемь источников по 15 с таймаута —
-            # это до двух минут, а под замком ждёт тик живости: он гасит
-            # маркировку по первому же плохому замеру и на это время потерял бы
-            # право сработать. Отвал шлюза во время обновления списков означал бы
-            # тогда не «зарубежный адрес», а отсутствие интернета у всех, кому
-            # режим включён, — ровно тот несимметричный отказ, ради которого тик
-            # и сделан частым. Замок берём только на запись результата.
-            nets: list[str] = []
-            for url in config.ROUTING_LISTS_SUBNET_URLS:
-                body = routing.fetch(url)
-                got = domain_routing.parse_networks(body) if body else []
-                self._routing_note_source(url, len(got))
-                nets.extend(got)
-
-            # Два источника доменов в ОДИН кэш. Списки блокировок и список
-            # геоблокировок описывают зеркальные случаи («блокирует Россия»
-            # и «блокируют Россию»), но для нас оба означают одно: этому
-            # домену нужен зарубежный адрес. Разделять их дальше незачем.
-            doms: list[str] = []
-            for url in (config.ROUTING_LISTS_DOMAINS_URL,
-                        config.ROUTING_LISTS_GEOBLOCK_URL):
-                if not url:
-                    continue
-                body = routing.fetch(url)
-                got = domain_routing.parse_domain_list(body) if body else []
-                self._routing_note_source(url, len(got))
-                doms.extend(got)
-
-            # Списки РЕЖИМА «за границу по умолчанию» — российские сервисы,
-            # которым нужен российский адрес. Качаем ВСЕГДА, независимо от
-            # текущего режима: файлы крошечные (единицы килобайт), а взамен
-            # переключение режима применяется мгновенно и не ждёт следующего
-            # окна обновления списков.
+            # СКАЧИВАНИЕ — СНАРУЖИ ЗАМКА. Источники с таймаутом по 15 с, а под
+            # замком ждёт тик живости: держать его на это время значило бы
+            # менять один отказ на другой. Замок берём только на запись.
+            # Российские сервисы, которым нужен российский адрес. Списки
+            # заграницы (блокировки, геоблок, подсети CDN) ушли вместе с
+            # обратной моделью: набор перечисляет то, что идёт на шлюз, а туда
+            # заграница не ходит по определению.
             home: list[str] = []
             for url in config.ROUTING_LISTS_HOME_URLS:
                 if not url:
@@ -2086,14 +2002,9 @@ class Services:
                 home.extend(got)
 
             with routing.mutation_lock:
-                if nets:
-                    self._routing_write_cache("subnets", sorted(set(nets)))
-                if doms:
-                    self._routing_write_cache("domains", sorted(set(doms)))
                 if home:
                     self._routing_write_cache("home_domains", sorted(set(home)))
-                size = len(self._routing_read_cache("subnets")) \
-                    + len(self._routing_read_cache("domains"))
+                size = len(self._routing_read_cache("home_domains"))
                 self.db.set_state(self._RT_LISTS_KEY, str(now))
                 # окружение изменилось нашими руками — прежний вердикт
                 # самопроверки протух
@@ -2102,27 +2013,17 @@ class Services:
                 return size
         except routing.RoutingError as e:
             log.warning("routing_update_lists: %s", e)
-            return len(self._routing_read_cache("subnets"))
+            return len(self._routing_read_cache("home_domains"))
 
     def routing_lists_ready(self) -> bool:
-        """Загружены ли списки настолько, чтобы маркировать было безопасно.
+        """Списки больше не сторожат запуск.
 
-        Ответ зависит от режима, и это не педантизм — цена пустого набора в них
-        противоположная.
-
-        Умолчание «домой»: набор перечисляет заграницу, и пустой означает «на
-        шлюз уходит ВСЁ», включая заблокированное. Это авария, поэтому без
-        списков не начинаем.
-
-        Умолчание «за границу»: набор перечисляет российские сервисы, и пустой
-        означает «на шлюз не уходит ничего» — то есть ровно то же, что
-        выключенная функция. Ждать тут нечего: без списков просто не будет
-        эффекта, а связь у людей не пострадает.
+        Раньше пустой набор означал «на шлюз уходит ВСЁ» и был аварией. Теперь
+        набор перечисляет то, что идёт на шлюз, и пустой означает «не идёт
+        ничего» — то есть ровно то же, что выключенная функция. Ждать нечего,
+        вредить нечему; метод остаётся ради вызывающих и всегда истинен.
         """
-        if config.routing_default_route() == config.ROUTING_DEFAULT_ABROAD:
-            return True
-        return bool(self._routing_read_cache("subnets")
-                    or self._routing_read_cache("domains"))
+        return True
 
     def routing_link_ok(self) -> bool:
         """Проходит ли трафик через шлюз — по последнему замеру зонда.

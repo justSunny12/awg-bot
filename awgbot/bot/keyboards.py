@@ -970,7 +970,7 @@ def settings_root() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def settings_routing(enabled: bool, clients=(), mode: str = "home") -> InlineKeyboardMarkup:
+def settings_routing(enabled: bool, clients=()) -> InlineKeyboardMarkup:
     """Раздел «Условная маршрутизация».
 
     Первой кнопкой — общий выключатель функции. Список профилей показываем
@@ -986,15 +986,6 @@ def settings_routing(enabled: bool, clients=(), mode: str = "home") -> InlineKey
               callback_data=SetCB(sec="rt", act="toggle", key="app.routing.enabled"))
     rows = [1]
     if enabled:
-        # Режим — ВЗАИМОИСКЛЮЧАЮЩИЙ выбор, поэтому две кнопки с отметкой у
-        # активной, а не тумблер: тумблер не сказал бы, что именно включится,
-        # а разница между режимами противоположная по смыслу.
-        for value, label in (("home", "🏠 По умолчанию домой"),
-                             ("abroad", "🌍 По умолчанию за границу")):
-            mark = "🔘" if mode == value else "⚪️"
-            kb.button(text=f"{mark} {label}",
-                      callback_data=SetCB(sec="rt", act="do", key="mode", val=value))
-            rows.append(1)
         for c in clients:
             kb.button(text=f"{_chk(c.routing_allowed)} {c.name}",
                       callback_data=SetCB(sec="rt", act="do", key="allow", val=str(c.id)))
