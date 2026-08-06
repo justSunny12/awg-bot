@@ -129,13 +129,13 @@ def fake_routing(monkeypatch, tmp_path):
     from awgbot.infra import routing
     from awgbot.core import config as _config
 
-    # По умолчанию списки СЧИТАЮТСЯ загруженными: пустые кэши — особое состояние,
-    # при котором маркировка не включается, и тесты про него подставляют пустой
-    # каталог сами.
+    # Кэш базового списка — имя ровно то, которое читает код (_routing_cache).
+    # Раньше здесь лежали routing-subnets.lst и routing-domains.lst от двух
+    # упразднённых источников: файлы никто не читал, и все тесты про
+    # маршрутизацию молча шли с пустым базовым списком.
     _cache = tmp_path / "routing-cache"
     _cache.mkdir()
-    (_cache / "routing-subnets.lst").write_text("1.2.3.0/24\n", encoding="utf-8")
-    (_cache / "routing-domains.lst").write_text("blocked.example\n", encoding="utf-8")
+    (_cache / "routing-home_domains.lst").write_text("gosuslugi.ru\n", encoding="utf-8")
     monkeypatch.setattr(_config, "DATA_DIR", _cache)
 
     state = types.SimpleNamespace(

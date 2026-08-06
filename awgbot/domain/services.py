@@ -1808,8 +1808,6 @@ class Services:
             with routing.mutation_lock:
                 if not settings.get_bool("app.routing.enabled", False):
                     self._routing_stand_down()
-                elif not self.routing_lists_ready():
-                    self._routing_stand_down("списки не загружены — ждём загрузки")
                 else:
                     self._routing_apply()
         except routing.RoutingError as e:
@@ -2017,16 +2015,6 @@ class Services:
             log.warning("routing_update_lists: %s", e)
             return len(self._routing_read_cache("home_domains"))
 
-    def routing_lists_ready(self) -> bool:
-        """Списки больше не сторожат запуск.
-
-        Раньше пустой набор означал «на шлюз уходит ВСЁ» и был аварией. Теперь
-        набор перечисляет то, что идёт на шлюз, и пустой означает «не идёт
-        ничего» — то есть ровно то же, что выключенная функция. Ждать нечего,
-        вредить нечему; метод остаётся ради вызывающих и всегда истинен.
-        """
-        return True
-
     def routing_link_ok(self) -> bool:
         """Проходит ли трафик через шлюз — по последнему замеру зонда.
 
@@ -2046,8 +2034,7 @@ class Services:
         фичи; их легко перепутать, и тут они сведены явно.
         """
         return (routing.available()
-                and settings.get_bool("app.routing.enabled", False)
-                and self.routing_lists_ready())
+                and settings.get_bool("app.routing.enabled", False))
 
     def routing_probe(self) -> str:
         """Замер прямо сейчас. Отдельно от routing_link_ok, чтобы было видно,

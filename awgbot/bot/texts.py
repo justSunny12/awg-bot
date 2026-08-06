@@ -58,12 +58,6 @@ def _limit_devices_str(limit: int) -> str:
     return "без ограничения" if not limit else str(limit)
 
 
-def _limit_traffic_line(limit_bytes: int) -> str:
-    """Строка о лимите потребления для отчётов о создании/изменении."""
-    return ("Потребление не ограничено" if not limit_bytes
-            else f"Лимит потребления: {gb_str(limit_bytes)}")
-
-
 def _dev_traffic_line(dev_limit_bytes: int, profile_limit_bytes: int) -> str:
     """Строка о лимите потребления устройства для отчёта о создании.
     Свой лимит устройства → показываем его; иначе потребление ограничено лишь

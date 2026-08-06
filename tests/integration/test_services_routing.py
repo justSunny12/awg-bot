@@ -607,7 +607,16 @@ def test_empty_lists_are_safe_not_fatal(services, fake_routing, monkeypatch, tmp
     существовал сторож, не дававший функции подняться без списков. Теперь набор
     перечисляет то, что идёт на шлюз, и пустой означает «не идёт ничего», то
     есть равносилен выключенной функции.
+
+    Проверяем ПОВЕДЕНИЕ, а не предикат: сторож был снят вырождением
+    routing_lists_ready в константу, и тест на константу переживал бы любое
+    возвращение сторожа другим путём.
     """
     from awgbot.core import config
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)      # кэши пусты
-    assert services.routing_lists_ready() is True
+    assert services.routing_engaged() is True
+    services.reconcile_routing()
+    # Различаем по конфигу dnsmasq: его пишет только _routing_apply, а
+    # _routing_stand_down не трогает вовсе. Цепочка для этого не годится —
+    # stand_down тоже её пересобирает, только пустой.
+    assert fake_routing.conf is not None, "реконсиляция ушла в stand_down"

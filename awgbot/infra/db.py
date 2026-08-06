@@ -1389,11 +1389,6 @@ class Database:
             "SELECT domain FROM client_routing_domains WHERE client_id = ? "
             "ORDER BY added_at, domain", (client_id,)).fetchall()]
 
-    def count_routing_domains(self, client_id: int) -> int:
-        return self._connection().execute(
-            "SELECT COUNT(*) AS c FROM client_routing_domains WHERE client_id = ?",
-            (client_id,)).fetchone()["c"]
-
     def add_routing_domain(self, client_id: int, domain: str) -> bool:
         """True — добавлен, False — уже был. Дедуп даёт PK, отдельной проверки
         (с гонкой между SELECT и INSERT) не требуется."""
