@@ -51,3 +51,62 @@ async def test_broadcast_pacing_and_order_preserved():
     ok, failed = await notifier.broadcast(Bot(), [5, 0, 7, None, 9], "x")
     assert seen == [5, 7, 9]          # 0/None пропущены
     assert ok == 3 and failed == 0
+
+
+# ── адресное объявление одному профилю ───────────────────────────────────────
+
+def test_client_recipients_include_owner_and_active_friends(services, make_active_client):
+    """Друзья входят потому, что устройство у них от ЭТОГО профиля.
+
+    Объявление вида «профиль ставится на паузу» касается их напрямую, а узнать
+    иначе им неоткуда: владелец пересказывать не обязан.
+    """
+    import awgbot.core.config as cfg
+    c = make_active_client(name="c1", tg_id=3001)
+    dc = services.add_device(c.id, "Телефон")
+    code = services.make_device_friendly(dc.device_id)
+    services.activate_friend(code, tg_id=3099)
+
+    ids = services.db.broadcast_recipients_for_client(c.id, exclude_tg_id=cfg.ADMIN_ID)
+    assert ids == [3001, 3099]
+
+
+def test_client_recipients_exclude_other_profiles(services, make_active_client):
+    """Изоляция — суть фичи: соседний профиль объявления видеть не должен."""
+    import awgbot.core.config as cfg
+    c1 = make_active_client(name="c1", tg_id=3001)
+    make_active_client(name="c2", tg_id=3002)
+
+    ids = services.db.broadcast_recipients_for_client(c1.id, exclude_tg_id=cfg.ADMIN_ID)
+    assert ids == [3001]
+
+
+def test_pending_friend_is_not_a_recipient(services, make_active_client):
+    """Приглашённый, но не подключившийся друг — не адресат: tg_id у него ещё
+    нет, а если бы и был, слать некуда."""
+    import awgbot.core.config as cfg
+    c = make_active_client(name="c1", tg_id=3001)
+    dc = services.add_device(c.id, "Телефон")
+    services.make_device_friendly(dc.device_id)          # код выдан, не активирован
+
+    ids = services.db.broadcast_recipients_for_client(c.id, exclude_tg_id=cfg.ADMIN_ID)
+    assert ids == [3001]
+
+
+def test_same_person_twice_gets_one_delivery(services, make_active_client):
+    """Тот же DISTINCT-инвариант, что у общей рассылки: один человек — одна
+    доставка, даже если он попал в выборку с двух сторон.
+
+    Пишем связь через db напрямую: activate_friend владельцу собственного
+    устройства откажет («already_user»), а проверяем мы здесь не его гейт, а
+    дедуп в UNION. Совпасть адреса могут и без этого пути — например, если
+    друг позже заведёт собственный профиль на тот же Telegram.
+    """
+    import awgbot.core.config as cfg
+    c = make_active_client(name="c1", tg_id=3001)
+    dc = services.add_device(c.id, "Телефон")
+    services.db.set_device_friend(dc.device_id, friend_tg_id=3001,
+                                  friend_status="active")
+
+    ids = services.db.broadcast_recipients_for_client(c.id, exclude_tg_id=cfg.ADMIN_ID)
+    assert ids == [3001], "один человек получил бы объявление дважды"

@@ -1001,6 +1001,30 @@ class Database:
         ids.discard(int(exclude_tg_id))
         return sorted(ids)
 
+    def broadcast_recipients_for_client(self, client_id: int,
+                                        exclude_tg_id: int) -> list[int]:
+        """Адресаты объявления ОДНОМУ профилю: владелец + активные друзья.
+
+        Друзья входят потому, что устройство у них от этого профиля: объявление
+        вида «профиль ставится на паузу» касается их напрямую, а узнать иначе им
+        неоткуда — владелец пересказывать не обязан.
+
+        Тот же DISTINCT-инвариант, что и в broadcast_recipients: владелец может
+        оказаться другом собственного устройства, и доставка должна быть одна.
+        """
+        rows = self._connection().execute(
+            "SELECT tg_id FROM clients "
+            " WHERE id = ? AND tg_id IS NOT NULL AND is_service = 0 "
+            "UNION "
+            "SELECT f.friend_tg_id AS tg_id FROM device_friend f "
+            "  JOIN devices d ON d.id = f.device_id "
+            " WHERE d.client_id = ? AND f.friend_tg_id IS NOT NULL "
+            "   AND f.friend_status = 'active'",
+            (client_id, client_id)).fetchall()
+        ids = {int(r["tg_id"]) for r in rows}
+        ids.discard(int(exclude_tg_id))
+        return sorted(ids)
+
     def admin_device_addresses(self, admin_tg_id: int) -> list[str]:
         """Адреса (10.8.1.X) всех устройств, чей владелец — админ (по tg_id).
         Источник вайтлиста для пер-пирного SSH-к-хосту (reconcile_ssh_access).

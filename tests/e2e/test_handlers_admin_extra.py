@@ -160,3 +160,85 @@ async def test_unmanaged_device_connect_menu_says_there_is_no_link(
                                        services)
     shown = [r[1] for r in nav.sent if r[0] == "edit_text"]
     assert texts.UNMANAGED_DEVICE_DIALOG in shown
+
+
+# ── адресное объявление из карточки профиля ──────────────────────────────────
+
+def _btn_texts(markup):
+    return [b.text for row in markup.inline_keyboard for b in row]
+
+
+def _btn_data(markup, needle):
+    for row in markup.inline_keyboard:
+        for b in row:
+            if needle in b.text:
+                return b.callback_data
+    return None
+
+
+def test_client_card_offers_a_targeted_announcement(services, make_active_client):
+    """Кнопка есть у обычного профиля и несёт его id.
+
+    Нулевой ref означал бы рассылку ВСЕМ из карточки одного человека — то есть
+    ровно ту ошибку, которую ни отменить, ни отозвать.
+    """
+    from awgbot.bot import keyboards as kb
+    c = make_active_client(name="c1", tg_id=4001)
+    client = services.db.get_client(c.id)
+
+    markup = kb.admin_client_actions(client)
+    data = _btn_data(markup, "Объявление пользователям")
+    assert data is not None, "кнопки нет в карточке профиля"
+    assert data.endswith(f":{c.id}"), f"адресат не тот: {data}"
+
+
+def test_announcement_button_sits_above_the_block_button(services, make_active_client):
+    """Порядок задан явно: предупредить — раньше, чем применить."""
+    from awgbot.bot import keyboards as kb
+    c = make_active_client(name="c1", tg_id=4001)
+    client = services.db.get_client(c.id)
+
+    labels = _btn_texts(kb.admin_client_actions(client))
+    say = next(i for i, t in enumerate(labels) if "Объявление" in t)
+    do = next(i for i, t in enumerate(labels) if "локирова" in t)
+    assert say < do
+
+
+def test_admin_own_profile_has_no_announcement_button(services, make_active_client):
+    """Адресаты объявления в админском профиле — сам админ, то есть отправитель.
+
+    Кнопка там предлагала бы написать самому себе."""
+    from awgbot.bot import keyboards as kb
+    import awgbot.core.config as cfg
+    c = make_active_client(name="admin", tg_id=cfg.ADMIN_ID)
+    client = services.db.get_client(c.id)
+
+    labels = _btn_texts(kb.admin_client_actions(client, is_admin_owner=True))
+    assert not any("Объявление" in t for t in labels)
+
+
+def test_broadcast_cancel_clears_the_input_state(services, make_active_client):
+    """Отмена обязана сбросить FSM, иначе следующее сообщение админа станет
+    черновиком объявления.
+
+    Прежде отмена вела прямо в главное меню, чей хендлер чистит состояние
+    попутно, — и на этом всё держалось. Адресная рассылка возвращает в карточку
+    профиля, где такой уборки нет, поэтому у отмены появился свой колбэк.
+    """
+    from awgbot.bot import keyboards as kb
+
+    c = make_active_client(name="c1", tg_id=4001)
+    for markup in (kb.broadcast_cancel(c.id), kb.broadcast_confirm(c.id)):
+        data = _btn_data(markup, "Отмена")
+        assert data is not None and data.startswith("bc:cancel:"), \
+            f"отмена ведёт мимо сбрасывающего хендлера: {data}"
+
+
+def test_broadcast_confirm_carries_the_target(services, make_active_client):
+    """Кнопка отправки несёт того же адресата, что и превью: разойдись они —
+    объявление уехало бы не тому, и отозвать его нечем."""
+    from awgbot.bot import keyboards as kb
+
+    c = make_active_client(name="c1", tg_id=4001)
+    data = _btn_data(kb.broadcast_confirm(c.id), "Отправить")
+    assert data == f"bc:send:{c.id}"

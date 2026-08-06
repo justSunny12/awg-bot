@@ -328,16 +328,39 @@ def admin_main(unassigned_count: int, self_has_devices: bool = False,
     return kb.as_markup()
 
 
-def broadcast_cancel() -> InlineKeyboardMarkup:
+def _broadcast_back(ref: int):
+    """«Отмена» на любом шаге рассылки — через СВОЙ колбэк, а не прямой навигацией.
+
+    Он сбрасывает FSM: иначе админ, передумавший на шаге ввода, остаётся в
+    состоянии Broadcast.text, и следующее же его сообщение боту молча становится
+    черновиком объявления. Прежде отмена вела в главное меню, чей хендлер чистит
+    состояние заодно, — и на этом держалось всё; адресная рассылка возвращает в
+    карточку профиля, где такой уборки нет."""
+    return BroadcastCB(action="cancel", ref=ref)
+
+
+def broadcast_cancel(ref: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="\u2b05\ufe0f Отмена", callback_data=Menu(action="main"))
+    kb.button(text="\u2b05\ufe0f Отмена", callback_data=_broadcast_back(ref))
     return kb.as_markup()
 
 
-def broadcast_confirm() -> InlineKeyboardMarkup:
+def broadcast_done(ref: int) -> InlineKeyboardMarkup:
+    """Отчёт об адресной рассылке: возврат в карточку профиля.
+
+    Отдельной кнопкой, а не вторым сообщением: в этом интерфейсе экран один и
+    правится на месте, а лишнее сообщение осталось бы висеть в чате навсегда.
+    """
     kb = InlineKeyboardBuilder()
-    kb.button(text="📢 Отправить", callback_data=BroadcastCB(action="send"))
-    kb.button(text="\u2b05\ufe0f Отмена", callback_data=Menu(action="main"))
+    kb.button(text="\u2b05\ufe0f К профилю",
+              callback_data=ClientCB(action="open", client_id=ref))
+    return kb.as_markup()
+
+
+def broadcast_confirm(ref: int = 0) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📢 Отправить", callback_data=BroadcastCB(action="send", ref=ref))
+    kb.button(text="\u2b05\ufe0f Отмена", callback_data=_broadcast_back(ref))
     kb.adjust(2)
     return kb.as_markup()
 
@@ -417,6 +440,13 @@ def admin_client_actions(client, *, has_devices: bool = True,
         kb.button(text=f"{_chk(client.routing_master)} Доступ к РФ-сервисам",
                   callback_data=RoutingCB(action="panel", ref=client.id))
         pattern.append(1)
+    # Объявление ЭТОМУ профилю — перед блокировкой и намеренно рядом с ней:
+    # блокировку и паузу обычно предваряют словами, и «сказать» должно быть под
+    # рукой в тот же момент, что и «сделать». В ветке is_admin_owner кнопки нет
+    # вовсе: адресаты там — сам админ, то есть отправитель.
+    kb.button(text="📢 Объявление пользователям",
+              callback_data=BroadcastCB(action="start", ref=client.id))
+    pattern.append(1)
     bt, bcb = _manual_block_button("cli", client.id, int(client.block_reason), for_admin=True)
     kb.button(text=bt, callback_data=bcb)
     pattern.append(1)
