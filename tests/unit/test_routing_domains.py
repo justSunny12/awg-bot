@@ -325,7 +325,7 @@ def test_one_directive_per_domain_regardless_of_case():
     from awgbot.domain.routing import build_dnsmasq_conf
     conf = build_dnsmasq_conf(
         base_domains=["example.com"],
-        domains_by_client={7: ["Example.COM", "example.com."]},   # регистр и точка
+        domains_by_client={7: ["Example.COM", "example.com."]},  # регистр и точка
         client_ids=[7],
         set_user_prefix="vpn_u",
     )
