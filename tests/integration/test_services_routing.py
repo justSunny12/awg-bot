@@ -202,10 +202,12 @@ def test_chain_lists_only_live_clients(services, make_active_client, fake_routin
 # ── Деградация при непроходимом шлюзе ────────────────────────────────────────
 
 def _settle(services, fake_routing):
-    """Довести до включённого состояния: возврат требует двух хороших замеров."""
+    """Довести до включённого состояния: возврат требует _RT_UP_STREAK хороших
+    замеров подряд. Тикаем по константе, а не по числу: порог уже меняли, и
+    захардкоженное число тихо разъезжается с боевым поведением."""
     fake_routing.probe = "ok"
-    services.routing_liveness_tick()
-    services.routing_liveness_tick()
+    for _ in range(services._RT_UP_STREAK):
+        services.routing_liveness_tick()
 
 
 def _fail_until_announced(services, fake_routing, verdict="down"):
@@ -237,8 +239,9 @@ def test_gateway_unreachable_disables_marking_and_alerts_admin_once(
 def test_degradation_is_immediate_but_recovery_is_not(services, fake_routing):
     """Несимметрично намеренно. Выключение безопасно — у пользователя лишь
     зарубежный адрес; включение рискованно — весь трафик уезжает в тоннель, и
-    если тот не пропускает, интернета нет вовсе. Поэтому гасим по первому
-    плохому замеру, а возвращаем после двух хороших подряд."""
+    если тот не пропускает, интернета нет вовсе. Поэтому в режиме
+    «домой» гасим по первому плохому замеру, а возвращаем только после серии
+    хороших."""
     _settle(services, fake_routing)
 
     fake_routing.probe = "down"
@@ -246,8 +249,9 @@ def test_degradation_is_immediate_but_recovery_is_not(services, fake_routing):
     assert fake_routing.marking is False, "деградация должна быть немедленной"
 
     fake_routing.probe = "ok"
-    services.routing_liveness_tick()
-    assert fake_routing.marking is False, "вернулись с одного замера"
+    for i in range(services._RT_UP_STREAK - 1):
+        services.routing_liveness_tick()
+        assert fake_routing.marking is False, f"вернулись с {i + 1} замеров"
     services.routing_liveness_tick()
     assert fake_routing.marking is True
 
@@ -363,16 +367,16 @@ def test_monitor_does_not_enable_marking_without_lists(services, fake_routing,
     from awgbot.core import config
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)      # кэши пусты
     fake_routing.probe = "ok"                              # шлюз пропускает
-    services.routing_liveness_tick()
-    services.routing_liveness_tick()
+    for _ in range(services._RT_UP_STREAK):
+        services.routing_liveness_tick()
     assert fake_routing.marking is False
 
 
 def test_monitor_enables_marking_when_ready(services, fake_routing):
     """Списки на месте и шлюз пропускает — политика включается."""
     fake_routing.probe = "ok"
-    services.routing_liveness_tick()
-    services.routing_liveness_tick()
+    for _ in range(services._RT_UP_STREAK):
+        services.routing_liveness_tick()
     assert fake_routing.marking is True
 
 
@@ -432,8 +436,8 @@ def test_hot_switch_off_wins_over_a_healthy_gateway(services, fake_routing, monk
     выключена» обязано перевешивать любой вердикт зонда."""
     from awgbot.core import settings
     fake_routing.probe = "ok"
-    services.routing_liveness_tick()
-    services.routing_liveness_tick()
+    for _ in range(services._RT_UP_STREAK):
+        services.routing_liveness_tick()
     assert fake_routing.marking is True
 
     real = settings.get_bool
@@ -794,3 +798,48 @@ def test_gateway_alarm_names_the_right_consequence(services, monkeypatch):
     # подсказка про бандл нужна в обоих: причина отвала от режима не зависит
     for t in (home, abroad):
         assert "gw-bundle" in t
+
+
+def test_down_threshold_depends_on_the_mode(services, fake_routing, monkeypatch):
+    """Сколько ждать до гашения — вопрос цены ожидания, а она в режимах разная.
+
+    При умолчании «домой» помечено почти всё: пока маркировка стоит, а шлюз
+    мёртв, весь этот трафик уходит в тоннель, который никуда не ведёт. Это не
+    «не тот адрес», а отсутствие связи, и каждый лишний такт стоит полминуты без
+    интернета у всех включённых. Поэтому там гасим сразу.
+
+    При умолчании «за границу» помечены только российские сервисы, и то же
+    ожидание стоит «Озон недоступен минуту» — дребезг дороже задержки.
+    """
+    _mode(monkeypatch, "home")
+    _settle(services, fake_routing)
+    fake_routing.probe = "down"
+    services.routing_liveness_tick()
+    assert fake_routing.marking is False, "в режиме «домой» гасим по первому замеру"
+
+    _mode(monkeypatch, "abroad")
+    _settle(services, fake_routing)
+    fake_routing.probe = "down"
+    for i in range(services._RT_DOWN_STREAK_ABROAD - 1):
+        services.routing_liveness_tick()
+        assert fake_routing.marking is True, f"погасили на {i + 1}-м замере из трёх"
+    services.routing_liveness_tick()
+    assert fake_routing.marking is False, "порог набран — маркировка обязана сняться"
+
+
+def test_a_single_blip_does_not_flap_the_mode_abroad(services, fake_routing, monkeypatch):
+    """Одиночный провал в режиме «за границу» не должен дёргать рубильник.
+
+    Ради этого порог и поднимали: короткий провал домашнего аплинка — обычное
+    дело, а каждое переключение маркировки перекладывает трафик всех включённых.
+    """
+    _mode(monkeypatch, "abroad")
+    _settle(services, fake_routing)
+
+    fake_routing.probe = "down"
+    services.routing_liveness_tick()
+    assert fake_routing.marking is True, "погасили от одного плохого замера"
+
+    fake_routing.probe = "ok"
+    services.routing_liveness_tick()
+    assert fake_routing.marking is True, "рубильник дёрнулся на ровном месте"
