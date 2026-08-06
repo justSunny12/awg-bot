@@ -876,3 +876,61 @@ def test_recovery_after_a_confirmed_failure_needs_the_full_streak(services, fake
         assert fake_routing.marking is False, f"вернулись с {i + 1} замеров"
     services.routing_liveness_tick()
     assert fake_routing.marking is True
+
+
+def test_enabling_abroad_mode_does_not_send_foreign_services_home(
+        services, make_active_client, fake_routing, monkeypatch):
+    """Досев при включении обязан зависеть от режима.
+
+    Набор в режиме «за границу» означает ДОМОЙ. Досеять в него встроенный
+    заграничный список — значит своими руками отправить такие сервисы через
+    российский адрес, которому они как раз и отказывают. Именно это и случилось
+    при первом включении нового режима на боевом: симптом «отвалился этот сервис» тот
+    же, что описан в докстринге досева, а причина обратная.
+    """
+    seeded: list = []
+    monkeypatch.setattr(services, "_routing_preseed",
+                        lambda cid, doms: seeded.extend(doms))
+    c = _allowed_client(services, make_active_client, 6100)
+
+    _mode(monkeypatch, "abroad")
+    services.set_routing_master(c.id, True)
+    assert not seeded, f"заграничные домены уехали в домашний набор: {seeded[:5]}"
+
+    services.set_routing_master(c.id, False)
+    _mode(monkeypatch, "home")
+    services.set_routing_master(c.id, True)
+    assert "example.com" in seeded, "в режиме «домой» досев обязан остаться"
+
+
+def test_empty_cache_of_any_kind_forces_a_refresh(services, monkeypatch):
+    """Наполненность считается по каждому кэшу, а не суммой.
+
+    Сумма покрывала бы пустоту одного непустотой другого — и ровно так новый
+    режим приехал мёртвым: старые кэши после обновления непустые, таймер свежий,
+    значит ранний выход, и списки нового режима не качались до истечения окна.
+    """
+    import time as _t
+    from awgbot.core import config, settings as st
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    monkeypatch.setattr(st, "get_bool", lambda k, d=False: True)
+
+    fetched: list = []
+    from awgbot.infra import routing as infra_rt
+    monkeypatch.setattr(infra_rt, "fetch", lambda url: fetched.append(url) or "")
+
+    # старые кэши полны, домашний пуст, таймер только что тикнул
+    services._routing_write_cache("subnets", ["1.2.3.0/24"])
+    services._routing_write_cache("domains", ["blocked.example"])
+    services._routing_write_cache("home_domains", [])
+    services.db.set_state(services._RT_LISTS_KEY, str(int(_t.time())))
+
+    services.routing_update_lists()
+    assert fetched, "ранний выход по расписанию при пустом домашнем кэше"
+
+    # все кэши полны — расписание снова в силе
+    fetched.clear()
+    services._routing_write_cache("home_domains", ["ozon.ru"])
+    services.db.set_state(services._RT_LISTS_KEY, str(int(_t.time())))
+    services.routing_update_lists()
+    assert fetched == [], "качаем вне расписания при полных кэшах"
