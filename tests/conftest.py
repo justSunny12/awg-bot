@@ -194,9 +194,10 @@ def fake_routing(monkeypatch, tmp_path):
     _set("fetch", lambda url, timeout=15: None)
     _set("destroy_set", lambda name: state.sets.pop(name, None))
     _set("list_sets", lambda: sorted(state.sets))
-    _set("rebuild_chain", lambda ids, *, mark_in_set=False: (
-        setattr(state, "chain", sorted(ids)),
-        setattr(state, "mark_in_set", mark_in_set)))
+    # Сигнатура ровно как у настоящей: был период двух моделей, и заглушка
+    # принимала лишний mark_in_set. Лишний параметр в двойнике опаснее, чем
+    # кажется, — он делает зелёным вызов, который в бою упал бы на TypeError.
+    _set("rebuild_chain", lambda ids: setattr(state, "chain", sorted(ids)))
     _set("sync_nat_exempt", lambda addrs: setattr(state, "nat_exempt", sorted(addrs)))
     _set("ensure_route", lambda: None)
     _set("set_marking_enabled", lambda on: setattr(state, "marking", on))

@@ -206,3 +206,20 @@ def test_dnatted_dns_is_allowed_into_input(script):
 def test_input_allow_is_rolled_back(script):
     rollback = script.split('if [ "$MODE" = "rollback" ]', 1)[1].split("exit 0", 1)[0]
     assert "filter INPUT" in rollback
+
+
+def test_verification_hint_names_a_domain_that_can_actually_appear(script):
+    """Подсказка проверки обязана называть РОССИЙСКИЙ домен.
+
+    Набор перечисляет то, чему нужен российский адрес, — значит наполнение
+    доказывается доменом из этого списка, и только им. Ровно здесь подсказка
+    однажды разошлась с моделью: скрипт предлагал резолвить gosuslugi.ru и тут
+    же писал, что домен обязан быть из ЗАРУБЕЖНОГО списка, а sberbank.ru в
+    наборе «не окажется никогда». Читается это на финальном шаге установки, то
+    есть ровно в момент решения «работает или нет», — и исправная установка
+    признавалась сломанной.
+    """
+    tail = script.split('step "Проверка"', 1)[1]
+    assert "gosuslugi.ru" in tail, "нужен пример домена из российского списка"
+    assert "ЗАРУБЕЖНОГО списка" not in tail
+    assert "Логика инвертирована" not in tail
