@@ -104,3 +104,44 @@ def test_pause_available_wording():
     """Приостановка показывает доступные (оставшиеся) дни, не использованные."""
     # 21 использовано из 28 → доступно 7
     assert settings.get_int("pause.pause_max_total_days", 28) - 21 == 7
+
+
+# ── пустые обфускейт-поля ────────────────────────────────────────────────────
+
+def _params_with_empty_i():
+    """Ровно то, что отдаёт боевой сервер: I1 заполнен, I2..I5 пусты."""
+    obf = {k: str(i) for i, k in enumerate(cg._OBF_ORDER)}
+    obf["I1"] = "<r 2><b 0xdeadbeef>"
+    for k in ("I2", "I3", "I4", "I5"):
+        obf[k] = ""
+    return {"obfuscation": obf, "listen_port": 43125,
+            "server_pubkey": "SRVPUB==", "psk": "PSK=="}
+
+
+def test_standalone_conf_omits_empty_obfuscation_fields():
+    """`awg setconf` падает на `I2 = ` с «Line unrecognized».
+
+    Эталон приложения содержит эти поля пустыми, и телефон их глотает. Но
+    выданный ботом .conf импортируют и на линуксе — шлюз, роутер, второй
+    сервер, — и там он не поднимал интерфейс вовсе. Отсутствие ключа и пустое
+    значение для awg равнозначны, поэтому пропуск ничего не меняет по смыслу.
+    """
+    import re
+    conf = cg.generate("PRIV==", "PUB==", "10.8.1.7", _params_with_empty_i())["conf"]
+    # Ключ с ПУСТЫМ значением, а не «строка кончается на =»: приватные ключи
+    # base64 тоже кончаются на «=», и наивная проверка ловила бы их.
+    empty = [l for l in conf.splitlines() if re.fullmatch(r"\S+\s*=\s*", l)]
+    assert empty == [], f"пустые поля вернулись: {empty}"
+    assert "I1 = <r 2><b 0xdeadbeef>" in conf, "непустое поле обязано остаться"
+    for k in ("I2", "I3", "I4", "I5"):
+        assert f"{k} =" not in conf
+
+
+def test_embedded_vpn_config_keeps_them():
+    """Во встроенном конфиге поля остаются: формат vpn:// заморожен и обязан
+    воспроизводить эталон приложения байт в байт — там их ждут."""
+    link = cg.generate("PRIV==", "PUB==", "10.8.1.7", _params_with_empty_i())["vpn"]
+    inner = cg.decode_vpn(link)
+    text = json.dumps(inner, ensure_ascii=False)
+    for k in ("I2", "I3", "I4", "I5"):
+        assert f"{k} = " in text, f"{k} пропал из встроенного конфига"
