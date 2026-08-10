@@ -151,8 +151,8 @@ def test_friends_clause_only_when_friends_exist(services, make_active_client):
     assert services.db.broadcast_has_friends([solo.id], cfg.ADMIN_ID) is False
 
     prompt = texts.broadcast_prompt(["Один"], False)
-    assert "Получит: <b>Один</b> — владельцу профиля." in prompt
-    assert "раздал" not in prompt
+    assert "Получит: <b>Один</b> — владелец профиля." in prompt
+    assert "поделил" not in prompt
 
     dc = services.add_device(solo.id, "Телефон")
     code = services.make_device_friendly(dc.device_id)
@@ -160,7 +160,7 @@ def test_friends_clause_only_when_friends_exist(services, make_active_client):
     assert services.db.broadcast_has_friends([solo.id], cfg.ADMIN_ID) is True
 
     prompt2 = texts.broadcast_prompt(["Один"], True)
-    assert "Получат: <b>Один</b> — владельцу профиля и тем, кому он раздал" in prompt2
+    assert "Получат: <b>Один</b> — владелец профиля и те, с кем он поделился" in prompt2
 
 
 def test_pending_friend_does_not_trigger_the_clause(services, make_active_client):
@@ -178,5 +178,5 @@ def test_audience_wording_matches_number_of_profiles():
     from awgbot.bot import texts
     one = texts.broadcast_prompt(["Ксюша"], False)
     many = texts.broadcast_prompt(["Ксюша", "Дима"], False)
-    assert "владельцу профиля" in one and "владельцам этих профилей" in many
+    assert "владелец профиля" in one and "владельцы этих профилей" in many
     assert "Получит:" in one and "Получат:" in many
