@@ -262,8 +262,12 @@ class FakeBot:
 
 class FakeMessage:
     def __init__(self, text=None, chat_id=1, user_id=1, bot=None, caption=None,
-                 username=None, message_id=None, photo=None):
+                 username=None, message_id=None, photo=None, html_text=None):
         self.text = text
+        # html_text — то, что отдаёт aiogram, собрав entities обратно в HTML.
+        # По умолчанию совпадает с text (сообщение без форматирования); тесты
+        # про разметку передают его явно.
+        self.html_text = html_text if html_text is not None else text
         self.caption = caption
         self.photo = photo       # None или список PhotoSize (в фейке — маркер truthy)
         self.message_id = message_id if message_id is not None else next(_msg_ids)

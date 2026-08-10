@@ -244,3 +244,45 @@ def test_broadcast_cancel_clears_the_input_state():
 def test_broadcast_confirm_leads_to_send():
     from awgbot.bot import keyboards as kb
     assert _btn_data(kb.broadcast_confirm(), "Отправить") == "bc:send:0"
+
+
+async def test_broadcast_keeps_telegram_formatting(services, make_active_client, fake_bot):
+    """Форматирование, сделанное средствами Telegram, обязано дожить до превью.
+
+    Жирный/курсив/ссылки живут не в тексте сообщения, а в entities. Пока
+    читали `message.text`, объявление уходило голым — и превью тоже, поэтому
+    заметить это до отправки было невозможно.
+    """
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    c = make_active_client(name="Ксюша", tg_id=7001)
+    state = FakeState()
+    await state.update_data(targets=[c.id])
+
+    msg = FakeMessage(text="Профилактика в ночь на 12-е",
+                      html_text="Профилактика <b>в ночь на 12-е</b>",
+                      chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await admin_h.broadcast_receive(msg, state, services)
+
+    preview = "".join(s[1] for s in msg.sent if s[0] == "answer")
+    assert "<b>в ночь на 12-е</b>" in preview, preview
+    assert (await state.get_data())["text"] == "Профилактика <b>в ночь на 12-е</b>"
+
+
+async def test_broadcast_rejects_blank_before_reading_markup(services, make_active_client,
+                                                             fake_bot):
+    """Пустое сообщение отбиваем по тексту, а не по разметке: у сообщения без
+    текста html_text брать неоткуда."""
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    c = make_active_client(name="Ксюша", tg_id=7002)
+    state = FakeState()
+    await state.update_data(targets=[c.id])
+
+    msg = FakeMessage(text="   ", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await admin_h.broadcast_receive(msg, state, services)
+    assert any("Пустой текст" in s[1] for s in msg.sent if s[0] == "answer")

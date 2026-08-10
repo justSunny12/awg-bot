@@ -405,9 +405,11 @@ def broadcast_cancel() -> InlineKeyboardMarkup:
 
 
 def broadcast_confirm() -> InlineKeyboardMarkup:
+    """Отмена слева, отправка справа — как и на выборе адресатов. Необратимое
+    действие не должно стоять там, куда палец идёт по инерции."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="📢 Отправить", callback_data=BroadcastCB(action="send"))
     kb.button(text="\u2b05\ufe0f Отмена", callback_data=BroadcastCB(action="cancel"))
+    kb.button(text="📢 Отправить", callback_data=BroadcastCB(action="send"))
     kb.adjust(2)
     return kb.as_markup()
 

@@ -1566,10 +1566,16 @@ async def broadcast_next(cb: CallbackQuery, state: FSMContext, services):
 
 @router.message(Broadcast.text)
 async def broadcast_receive(message: Message, state: FSMContext, services):
-    text = (message.text or "").strip()
-    if not text:
+    if not (message.text or "").strip():
         await message.answer(texts.BROADCAST_EMPTY)
         return
+    # html_text, а НЕ text. Форматирование, сделанное средствами Telegram
+    # (жирный, курсив, ссылки), живёт не в тексте, а в entities: `message.text`
+    # отдаёт голую строку, и объявление уходило без разметки — как и превью.
+    # html_text собирает entities обратно в HTML, а бот шлёт с parse_mode=HTML.
+    # Побочно это чинит и битую разметку: обычные «<» и «>» из текста
+    # экранируются, а не ломают разбор.
+    text = message.html_text.strip()
     sel = set((await state.get_data()).get("targets") or ())
     tg_ids = await call(services.db.broadcast_recipients_for_clients,
                         sel, config.ADMIN_ID)

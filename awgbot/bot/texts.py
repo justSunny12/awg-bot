@@ -1125,7 +1125,8 @@ def broadcast_prompt(names: list, with_friends: bool = False) -> str:
     """
     return (f"📢 <b>Объявление</b>\n\n"
             f"{_bc_audience(names, with_friends)}.\n\n"
-            "Пришли текст. Можно с разметкой (<b>жирный</b>, ссылки). "
+            "Пришли текст. Форматируй как обычно в Telegram — "
+            "<b>жирный</b>, <i>курсив</i>, ссылки сохранятся. "
             "Следующим сообщением покажу превью.")
 
 
