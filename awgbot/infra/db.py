@@ -1033,6 +1033,25 @@ class Database:
         ids.discard(int(exclude_tg_id))
         return sorted(ids)
 
+    def broadcast_has_friends(self, client_ids, exclude_tg_id: int) -> bool:
+        """Есть ли среди адресатов активные друзья.
+
+        Нужно только для формулировки: предупреждать про гостевой доступ, когда
+        его ни у кого нет, значит приучать пропускать это предложение мимо глаз
+        — и не заметить его в тот раз, когда оно важно.
+        """
+        ids_list = sorted({int(c) for c in (client_ids or ())})
+        if not ids_list:
+            return False
+        ph = ",".join("?" * len(ids_list))
+        row = self._connection().execute(
+            f"SELECT f.friend_tg_id AS tg_id FROM device_friend f "
+            f"  JOIN devices d ON d.id = f.device_id "
+            f" WHERE d.client_id IN ({ph}) AND f.friend_tg_id IS NOT NULL "
+            f"   AND f.friend_status = 'active' AND f.friend_tg_id != ? "
+            f" LIMIT 1", (*ids_list, exclude_tg_id)).fetchone()
+        return row is not None
+
     def broadcast_recipients_for_clients(self, client_ids,
                                          exclude_tg_id: int) -> list[int]:
         """Адресаты объявления по НАБОРУ профилей: владельцы + активные друзья.

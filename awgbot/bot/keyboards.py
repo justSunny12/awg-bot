@@ -382,8 +382,8 @@ def broadcast_targets(clients, selected) -> InlineKeyboardMarkup:
         kb.button(text=f"{mark} {c.name}",
                   callback_data=BroadcastCB(action="tgl", ref=c.id))
         rows.append(1)
-    kb.button(text="➡️ Далее", callback_data=BroadcastCB(action="next"))
     kb.button(text="\u2b05\ufe0f Отмена", callback_data=BroadcastCB(action="cancel"))
+    kb.button(text="➡️ Далее", callback_data=BroadcastCB(action="next"))
     kb.adjust(*rows, 2)
     return kb.as_markup()
 

@@ -34,11 +34,23 @@ async def test_clients_list_with_client(services, make_active_client, fake_bot):
     assert cb.answers
 
 
-async def test_clients_list_shows_admin_profile(services, fake_bot):
+async def test_clients_list_hides_admin_profile(services, fake_bot, make_active_client):
+    """Профиля админа в списке нет — он дублировал главную.
+
+    Весь его функционал (свои устройства, конфиги, РФ-доступ) всегда на главной,
+    а карточка была урезана до тех же кнопок: строка в списке только путала, кто
+    тут кем управляет. Единственный профиль-админ ⇒ список пуст.
+    """
     services.ensure_admin_client()
     cb, nav = _admin_cb(services, fake_bot)
-    await admin_h.clients_list(cb, services)          # админ-профиль теперь виден
-    assert any("Профили" in s[1] for s in nav.sent if s[0] == "edit_text")
+    await admin_h.clients_list(cb, services)
+    assert any("Профилей пока нет" in s[1] for s in nav.sent if s[0] == "edit_text")
+
+    make_active_client(name="Ксюша", tg_id=4242)
+    cb2, nav2 = _admin_cb(services, fake_bot)
+    await admin_h.clients_list(cb2, services)
+    shown = "".join(s[1] for s in nav2.sent if s[0] == "edit_text")
+    assert "Профили" in shown
 
 
 async def test_client_open_card(services, make_active_client, fake_bot):

@@ -93,7 +93,10 @@ async def admin_main_menu(cb: CallbackQuery, services, state: FSMContext):
 
 @router.callback_query(Menu.filter(F.action == "clients"))
 async def clients_list(cb: CallbackQuery, services):
-    clients = await call(services.db.list_clients, admin_first_tg=config.ADMIN_ID)  # админ первым, включая его профиль
+    # Профиль админа СКРЫТ: весь его функционал всегда есть на главной (свои
+    # устройства, конфиги, РФ-доступ), а карточка была урезана до тех же кнопок.
+    # Строка в списке дублировала главную и путала, кто тут кем управляет.
+    clients = await call(services.db.list_clients, exclude_tg=config.ADMIN_ID)
     if not clients:
         await edit_nav(cb, services, "Профилей пока нет.", await _main_menu_markup(services))
     else:
@@ -1539,8 +1542,9 @@ async def broadcast_next(cb: CallbackQuery, state: FSMContext, services):
         await cb.answer(texts.BROADCAST_NO_TARGETS, show_alert=True)
         return
     names = [c.name for c in await _bc_clients(services) if c.id in sel]
+    friends = await call(services.db.broadcast_has_friends, sel, config.ADMIN_ID)
     await state.set_state(Broadcast.text)
-    await edit(cb, texts.broadcast_prompt(names), kb.broadcast_cancel())
+    await edit(cb, texts.broadcast_prompt(names, friends), kb.broadcast_cancel())
     await cb.answer()
 
 
@@ -1558,12 +1562,13 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
         await message.answer("Некому отправлять — нет активных получателей.")
         return
     names = [c.name for c in await _bc_clients(services) if c.id in sel]
+    friends = await call(services.db.broadcast_has_friends, sel, config.ADMIN_ID)
     # текст держим в FSM-data до подтверждения; отправляем HTML как есть.
     # Битую разметку ловим здесь: если превью (обёрнутое в HTML) не отправилось —
     # тот же текст провалил бы и рассылку. Просим поправить, состояние держим.
     await state.update_data(text=text)
     try:
-        await message.answer(texts.broadcast_preview(text, len(tg_ids), names),
+        await message.answer(texts.broadcast_preview(text, len(tg_ids), names, friends),
                              reply_markup=kb.broadcast_confirm())
     except TelegramBadRequest:
         await message.answer(

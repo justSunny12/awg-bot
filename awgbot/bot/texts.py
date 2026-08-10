@@ -605,14 +605,21 @@ def routing_panel_text(*, master_on: bool, domains: list,
     главного меню, чтобы человек видел его сразу, а не заходя в раздел.
     """
     head = f"<b>🇷🇺 {ROUTING_NAME}</b>\n"
-    word = plural_ru(total, 'устройстве', 'устройствах', 'устройствах')
-
     if not master_on:
-        state = (f"\n❌ Выключено на всех {total} {word}.\n"
+        # «на всех устройствах» без числа: с числом получается «на всех 1
+        # устройстве», а согласовывать «всех» с единственным числом нечем.
+        state = ("\n❌ Выключено на всех устройствах.\n"
                  if total else "\n❌ Устройств пока нет — добавь, потом включишь.\n")
         return head + state + "\n" + ROUTING_ABOUT_OFF
 
-    state = f"\n✅ Включено на {enabled} из {total} {word}.\n"
+    if enabled == total:
+        # Симметрично выключенному состоянию и без «на 1 устройстве из 1».
+        state = "\n✅ Включено на всех устройствах.\n"
+    else:
+        # Склоняем по ВКЛЮЧЁННЫМ, а не по общему числу: «на 1 устройстве из 3»,
+        # «на 2 устройствах из 3». Форма «из N устройствах» была неграмотной.
+        word = plural_ru(enabled, 'устройстве', 'устройствах', 'устройствах')
+        state = f"\n✅ Включено на {enabled} {word} из {total}.\n"
 
     tail = "\nНиже ты можешь добавить сайты, которые тоже должны открываться " \
            "с российского адреса."
@@ -1088,24 +1095,39 @@ BROADCAST_TARGETS = (
 BROADCAST_NO_TARGETS = "Никого не отметил — выбери хотя бы один профиль."
 
 
-def broadcast_prompt(names: list) -> str:
+def _bc_audience(names: list, with_friends: bool) -> str:
+    """«Кто получит» одной фразой, согласованной по числу.
+
+    Про друзей упоминаем ТОЛЬКО когда они реально есть среди адресатов: иначе
+    предупреждение про гостевой доступ висит на каждом объявлении и перестаёт
+    читаться ровно к тому моменту, когда оно понадобится.
+    """
+    who = ", ".join(_e(n) for n in names)
+    if len(names) == 1:
+        tail = " и тем, кому он раздал устройства" if with_friends else ""
+        return f"<b>{who}</b> — владельцу профиля{tail}"
+    tail = " и тем, кому они раздали устройства" if with_friends else ""
+    return f"<b>{who}</b> — владельцам этих профилей{tail}"
+
+
+def broadcast_prompt(names: list, with_friends: bool = False) -> str:
     """Приглашение ввести текст. Адресатов называем поимённо.
 
     Не «выбрано 3 профиля», а именно список: между выбором и отправкой стоит
     ввод текста, и к моменту подтверждения легко забыть, кого отметил. Цена
     ошибки несимметрична — лишний адресат объявление уже прочитал.
     """
-    who = ", ".join(_e(n) for n in names)
-    return (f"📢 <b>Объявление</b>\n\nПолучат: <b>{who}</b> — владельцы этих "
-            "профилей и те, кому они раздали устройства.\n\n"
+    verb = "Получит" if len(names) == 1 and not with_friends else "Получат"
+    return (f"📢 <b>Объявление</b>\n\n{verb}: "
+            f"{_bc_audience(names, with_friends)}.\n\n"
             "Пришли текст. Можно с разметкой (<b>жирный</b>, ссылки). "
             "Следующим сообщением покажу превью.")
 
 
-def broadcast_preview(text: str, n: int, names: list = ()) -> str:
+def broadcast_preview(text: str, n: int, names: list = (),
+                      with_friends: bool = False) -> str:
     who = "человеку" if n == 1 else "людям"
-    scope = (f"\nПрофили: {', '.join(_e(x) for x in names)} — вместе с теми, "
-             f"кому они раздали устройства." if names else "")
+    scope = f"\nКому: {_bc_audience(list(names), with_friends)}." if names else ""
     return (f"📢 <b>Превью объявления</b> (так его увидят):\n\n{text}\n\n"
             f"— — —\nБудет отправлено <b>{n}</b> {who}.{scope}\nОтправляем?")
 
