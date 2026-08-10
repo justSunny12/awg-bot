@@ -136,11 +136,15 @@ def routing_devices(client_id: int, devices, *, back_target) -> InlineKeyboardMa
     которых всегда холостая, только занимают место.
     """
     kb = InlineKeyboardBuilder()
-    any_on = any(d.routing_on for d in devices)
+    # «Выключить все» показываем, только когда включены ВСЕ. При частичном
+    # включении полезнее «включить все»: доводить набор до полного — обычное
+    # действие, а сбрасывать сделанный выбор — редкое. Та же логика, что на
+    # выборе адресатов объявления.
+    all_on = bool(devices) and all(d.routing_on for d in devices)
     # Галочки, а не цветные кружки _chk: экран со списком и отметками — это
     # выбор, и он должен читаться так же, как выбор адресатов объявления.
     # Кружки оставлены там, где кнопка показывает СОСТОЯНИЕ чего-то одного.
-    kb.button(text="☑️ Выключить все" if any_on else "✅ Включить все",
+    kb.button(text="☑️ Выключить все" if all_on else "✅ Включить все",
               callback_data=RoutingCB(action="all", ref=client_id))
     rows = [1]
     for d in devices:

@@ -131,8 +131,9 @@ async def routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
 
 @router.callback_query(RoutingCB.filter(F.action == "all"))
 async def routing_all_toggle(cb: CallbackQuery, client, services):
-    """Массовое действие. Направление ВЫВОДИМ из состояния: пока включено хоть
-    что-то, осмысленно только выключить всё."""
+    """Массовое действие. Направление ВЫВОДИМ из состояния: выключить всё
+    осмысленно, только когда включено уже всё; в остальных случаях полезнее
+    довести набор до полного."""
     client = await _own(services, client)
     if not await _guard(cb, services, client):
         return
@@ -140,7 +141,10 @@ async def routing_all_toggle(cb: CallbackQuery, client, services):
     if not total:
         await cb.answer("Устройств пока нет", show_alert=True)
         return
-    turn_on = enabled == 0
+    # Не «включено ноль», а «включено не всё»: подпись кнопки гласит
+    # «включить все», пока хоть одно выключено, и действие обязано ей
+    # соответствовать.
+    turn_on = enabled < total
     await call(services.set_routing_all, client.id, turn_on)
     text, markup = await devices_view(services, client)
     await edit(cb, text, markup)

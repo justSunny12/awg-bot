@@ -145,8 +145,21 @@ async def admin_routing_panel(cb: CallbackQuery, callback_data: RoutingCB, servi
         return
     from awgbot.bot.handlers.routing import show_panel
     await show_panel(cb, services, client,
-                     back_target=ClientCB(action="open", client_id=client.id).pack())
+                     back_target=_rt_back_target(client))
     await cb.answer()
+
+
+def _rt_back_target(client) -> str:
+    """Куда ведёт «Назад» из раздела РФ-доступа.
+
+    У профиля АДМИНА отдельного экрана больше нет: из списка профилей он убран,
+    а вход в раздел — прямо с главной. Возвращать туда, откуда не приходили,
+    значит показать карточку, которой в текущей навигации не существует.
+    Чужой профиль — наоборот, открывается из своей карточки, в неё и вернём.
+    """
+    if client.tg_id == config.ADMIN_ID:
+        return Menu(action="main").pack()
+    return ClientCB(action="open", client_id=client.id).pack()
 
 
 async def _rt_client(cb: CallbackQuery, services, client_id: int):
@@ -199,8 +212,8 @@ async def admin_routing_device_toggle(cb: CallbackQuery, callback_data: RoutingC
 
 @router.callback_query(RoutingCB.filter(F.action == "all"))
 async def admin_routing_all(cb: CallbackQuery, callback_data: RoutingCB, services):
-    """Массовое действие по профилю. Направление выводим из состояния: пока
-    включено хоть что-то, осмысленно только выключить всё."""
+    """Массовое действие по профилю. Направление выводим из состояния:
+    выключить всё осмысленно, только когда включено уже всё."""
     client = await _rt_client(cb, services, callback_data.ref)
     if client is None:
         return
@@ -208,7 +221,10 @@ async def admin_routing_all(cb: CallbackQuery, callback_data: RoutingCB, service
     if not total:
         await cb.answer("Устройств пока нет", show_alert=True)
         return
-    turn_on = enabled == 0
+    # Не «включено ноль», а «включено не всё»: подпись кнопки гласит
+    # «включить все», пока хоть одно выключено, и действие обязано ей
+    # соответствовать.
+    turn_on = enabled < total
     await call(services.set_routing_all, client.id, turn_on)
     await _rt_show_devices(cb, services, client)
     await cb.answer("Включено на всех" if turn_on else "Выключено на всех")

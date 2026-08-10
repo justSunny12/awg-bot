@@ -480,8 +480,11 @@ async def test_device_toggle_rejects_foreign_device(
 
 
 def test_devices_screen_bulk_button_follows_state():
-    """Кнопка массового действия одна, и её смысл зависит от состояния: пока
-    включено хоть что-то, осмысленно только выключить всё."""
+    """Кнопка массового действия одна, и её смысл зависит от состояния.
+
+    «Выключить все» появляется, только когда включены ВСЕ. При частичном
+    включении полезнее «включить все»: доводить набор до полного — обычное
+    действие, сбрасывать сделанный выбор — редкое."""
     from awgbot.core import models
     from awgbot.bot import keyboards as kb
 
@@ -495,7 +498,10 @@ def test_devices_screen_bulk_button_follows_state():
     assert off.inline_keyboard[0][0].text.endswith("Включить все")
 
     mixed = kb.routing_devices(1, [_dev(1, 1), _dev(2, 0)], back_target="m:main")
-    assert mixed.inline_keyboard[0][0].text.endswith("Выключить все")
+    assert mixed.inline_keyboard[0][0].text.endswith("Включить все")
+
+    every = kb.routing_devices(1, [_dev(1, 1), _dev(2, 1)], back_target="m:main")
+    assert every.inline_keyboard[0][0].text.endswith("Выключить все")
 
 
 def test_devices_screen_uses_checkmarks_not_status_dots():
@@ -516,3 +522,50 @@ def test_devices_screen_uses_checkmarks_not_status_dots():
         for b in row]
     assert "✅ D1" in labels and "☑️ D2" in labels
     assert not any(x.startswith(("🟢", "🔴")) for x in labels), labels
+
+
+async def test_bulk_completes_partial_selection(services, make_active_client, fake_bot):
+    """При частичном включении массовое действие ДОВОДИТ до полного, а не гасит.
+
+    Иначе подпись и действие расходятся: кнопка говорит «включить все», а
+    нажатие выключало бы уже включённое.
+    """
+    c = _allowed_client(services, make_active_client, 130)
+    d1 = services.add_device(c.id, "Телефон")
+    d2 = services.add_device(c.id, "Ноутбук")
+    services.set_routing_device(d1.device_id, True)
+    assert services.routing_device_counts(c.id) == (1, 2)
+
+    cb, _ = _cb(fake_bot, 130)
+    await routing_h.routing_all_toggle(cb, c, services)
+    assert services.routing_device_counts(c.id) == (2, 2)
+
+    cb2, _ = _cb(fake_bot, 130)
+    await routing_h.routing_all_toggle(cb2, c, services)
+    assert services.routing_device_counts(c.id) == (0, 2)
+    assert d2 is not None
+
+
+async def test_admin_panel_back_goes_to_main_not_own_card(services, make_active_client,
+                                                          fake_bot, monkeypatch):
+    """Из раздела РФ-доступа админ возвращается на главную, а не в свою карточку.
+
+    Профиль админа убран из списка профилей, вход в раздел — прямо с главной;
+    карточки как экрана в текущей навигации попросту нет.
+    """
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    admin = make_active_client(tg_id=config.ADMIN_ID)
+    other = _allowed_client(services, make_active_client, 131)
+
+    cb, nav = _cb(fake_bot, config.ADMIN_ID)
+    await admin_h.admin_routing_panel(cb, RoutingCB(action="panel", ref=admin.id),
+                                      services)
+    back = nav.sent[-1][2].inline_keyboard[-1][0].callback_data
+    assert back == "m:main", back
+
+    cb2, nav2 = _cb(fake_bot, config.ADMIN_ID)
+    await admin_h.admin_routing_panel(cb2, RoutingCB(action="panel", ref=other.id),
+                                      services)
+    back2 = nav2.sent[-1][2].inline_keyboard[-1][0].callback_data
+    assert back2 == f"c:open:{other.id}", back2
