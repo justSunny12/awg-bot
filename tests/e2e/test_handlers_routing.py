@@ -60,23 +60,26 @@ async def test_revoked_permission_blocks_stale_button(
     services.set_routing_allowed(c.id, False)
     c = services.db.get_client(c.id)
     cb, _ = _cb(fake_bot, 72)
-    await routing_h.routing_master(cb, c, services)
+    await routing_h.routing_all_toggle(cb, c, services)
     assert cb.answers[0][1] is True
-    assert services.db.get_client(c.id).routing_master == 0
+    assert services.routing_profile_on(c.id) is False
 
 
 # ── тумблеры ─────────────────────────────────────────────────────────────────
 
-async def test_master_toggle_flips_and_persists(services, make_active_client, fake_bot):
+async def test_bulk_toggle_flips_and_persists(services, make_active_client, fake_bot):
+    """Массовое действие с экрана устройств. Направление выводится из состояния:
+    выключено — включаем всё, включено хоть что-то — выключаем всё."""
     c = _allowed_client(services, make_active_client, 73)
+    services.add_device(c.id, "Телефон")
     cb, _ = _cb(fake_bot, 73)
-    await routing_h.routing_master(cb, c, services)
-    assert services.db.get_client(c.id).routing_master == 1
+    await routing_h.routing_all_toggle(cb, c, services)
+    assert services.routing_profile_on(c.id) is True
 
     c = services.db.get_client(c.id)
     cb2, _ = _cb(fake_bot, 73)
-    await routing_h.routing_master(cb2, c, services)
-    assert services.db.get_client(c.id).routing_master == 0
+    await routing_h.routing_all_toggle(cb2, c, services)
+    assert services.routing_profile_on(c.id) is False
 
 
 # ── личный список ────────────────────────────────────────────────────────────
@@ -201,7 +204,7 @@ def test_admin_has_access_without_grant(services, make_active_client):
     assert admin.id not in [c.id for c in services.routing_grantable_clients()]
 
     dc = services.add_device(admin.id, "Телефон")
-    services.set_routing_master(admin.id, True)
+    services.set_routing_all(admin.id, True)
     assert services.db.routing_active_addresses(config.ADMIN_ID) == {admin.id: [dc.address]}
 
 
@@ -217,9 +220,9 @@ async def test_admin_can_enable_feature_for_himself(services, make_active_client
 
     # client=None — ровно то, что придёт из middleware для админа
     cb, _ = _cb(fake_bot, config.ADMIN_ID)
-    await routing_h.routing_master(cb, None, services)
+    await routing_h.routing_all_toggle(cb, None, services)
 
-    assert services.db.get_client(c.id).routing_master == 1
+    assert services.routing_profile_on(c.id) is True
     assert services.db.routing_active_addresses(config.ADMIN_ID) == {c.id: [dc.address]}
 
 
@@ -259,21 +262,22 @@ async def test_admin_toggles_client_master(services, make_active_client, fake_bo
     """Админ переключает РФ-доступ ЧУЖОГО профиля: без этого разбор проблемы
     упирался бы в «включи у себя и перезайди»."""
     c = _allowed_client(services, make_active_client, 96)
+    services.add_device(c.id, "Телефон")
     cb, _ = _cb(fake_bot, 1)
-    await admin_h.admin_routing_master(cb, RoutingCB(action="master", ref=c.id), services)
-    assert services.db.get_client(c.id).routing_master == 1
+    await admin_h.admin_routing_all(cb, RoutingCB(action="all", ref=c.id), services)
+    assert services.routing_profile_on(c.id) is True
 
     cb2, _ = _cb(fake_bot, 1)
-    await admin_h.admin_routing_master(cb2, RoutingCB(action="master", ref=c.id), services)
-    assert services.db.get_client(c.id).routing_master == 0
+    await admin_h.admin_routing_all(cb2, RoutingCB(action="all", ref=c.id), services)
+    assert services.routing_profile_on(c.id) is False
 
 
 async def test_admin_master_refused_without_grant(services, make_active_client, fake_bot):
     c = make_active_client(tg_id=97)                      # разрешения нет
     cb, _ = _cb(fake_bot, 1)
-    await admin_h.admin_routing_master(cb, RoutingCB(action="master", ref=c.id), services)
+    await routing_h.routing_all_toggle(cb, None, services)
     assert cb.answers[0][1] is True
-    assert services.db.get_client(c.id).routing_master == 0
+    assert services.routing_profile_on(c.id) is False
 
 
 def test_client_menu_button_position_and_state(monkeypatch):
@@ -298,21 +302,33 @@ def test_admin_card_button_above_block(monkeypatch):
     from awgbot.bot import keyboards as kb
     c = models.Client(id=7, tg_id=500, name="Клиент", device_limit=1, block_reason=0,
                       is_service=0, activation_status="active", invite_code=None,
-                      created_at="2026-01-01", routing_allowed=1, routing_master=1)
+                      created_at="2026-01-01", routing_allowed=1)
     labels = [b.text for row in kb.admin_client_actions(
-        c, has_devices=True, routing_visible=True).inline_keyboard for b in row]
+        c, has_devices=True, routing_visible=True,
+        routing_on=True).inline_keyboard for b in row]
     rt = next(i for i, t in enumerate(labels) if "РФ-сервисам" in t)
     blk = next(i for i, t in enumerate(labels) if "локировать" in t)
     assert rt < blk, labels
     assert labels[rt].startswith("🟢")
 
+    # Состояние ВЫВОДИТСЯ из устройств, поэтому клавиатура его получает
+    # параметром, а не читает из профиля: колонки под него больше нет.
+    off = [b.text for row in kb.admin_client_actions(
+        c, has_devices=True, routing_visible=True,
+        routing_on=False).inline_keyboard for b in row]
+    assert next(x for x in off if "РФ-сервисам" in x).startswith("🔴")
+
 
 # ── режим — свойство профиля, не устройства ──────────────────────────────────
 
 def test_device_card_has_no_routing_toggle(monkeypatch):
-    """Тумблера на устройстве больше нет: режим включается на весь профиль, и
-    выбор по одному устройству держал бы состояние, которое почти всегда «все»
-    или «никто»."""
+    """В КАРТОЧКЕ устройства тумблера нет — и это не значит, что режим не
+    пер-девайсный.
+
+    Переключатели живут на отдельном экране (RoutingCB action=devs): там всё
+    состояние профиля видно разом и рядом лежит массовое действие. В карточке
+    они терялись бы среди выдачи конфигов, лимитов и блокировок, а охват
+    профиля не был бы виден нигде."""
     from awgbot.core import config, models
     from awgbot.bot import keyboards as kb
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
@@ -347,7 +363,7 @@ async def test_add_domains_returns_to_panel(services, make_active_client, fake_b
     кнопок: раньше диалог кончался отчётом, и приглашение «пришли адреса» так и
     висело в чате."""
     c = _allowed_client(services, make_active_client, 99)
-    services.set_routing_master(c.id, True)
+    services.set_routing_all(c.id, True)
     c = services.db.get_client(c.id)
     msg = FakeMessage(text="bank.com", chat_id=99, user_id=99, bot=fake_bot)
     await routing_h.routing_add_apply(msg, c, services, FakeState())
@@ -402,3 +418,81 @@ async def test_settings_section_hidden_without_a_gateway(services, fake_bot, mon
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
     labels = [b.text for row in kb.settings_root().inline_keyboard for b in row]
     assert any("маршрутизация" in l for l in labels), labels
+
+
+# ── пер-девайсные переключатели ──────────────────────────────────────────────
+
+async def test_device_toggle_touches_only_that_device(
+        services, make_active_client, fake_bot, fake_routing):
+    """Переключатель одного устройства не задевает соседей.
+
+    Ради этого всё и затевалось: в один профиль попадают устройства с разными
+    требованиями — например, шлюз, которому маршрутизация противопоказана,
+    рядом с телефоном, которому она нужна.
+    """
+    c = _allowed_client(services, make_active_client, 120)
+    phone = services.add_device(c.id, "Телефон")
+    gw = services.add_device(c.id, "Шлюз")
+    services.set_routing_all(c.id, True)
+
+    cb, _ = _cb(fake_bot, 120)
+    await routing_h.routing_device_toggle(
+        cb, RoutingCB(action="dev", ref=gw.device_id), c, services)
+
+    assert services.db.get_device(gw.device_id).routing_on == 0
+    assert services.db.get_device(phone.device_id).routing_on == 1
+    assert fake_routing.sets[_srcset(c.id)] == [phone.address]
+    assert services.routing_device_counts(c.id) == (1, 2)
+
+
+async def test_new_device_stays_off_even_when_others_are_on(
+        services, make_active_client, fake_routing):
+    """Новое устройство приходит ВЫКЛЮЧЕННЫМ, даже если у профиля режим включён.
+
+    Наследовать «включено» опаснее: устройство, которому маршрутизация не нужна,
+    начало бы ходить через шлюз молча. Промах в обратную сторону виден — на
+    кнопке профиля стоит счётчик «включено N из M».
+    """
+    c = _allowed_client(services, make_active_client, 121)
+    old = services.add_device(c.id, "Телефон")
+    services.set_routing_all(c.id, True)
+
+    new = services.add_device(c.id, "Ноутбук")
+    assert services.db.get_device(new.device_id).routing_on == 0
+    assert services.routing_device_counts(c.id) == (1, 2)
+    assert fake_routing.sets[_srcset(c.id)] == [old.address]
+
+
+async def test_device_toggle_rejects_foreign_device(
+        services, make_active_client, fake_bot):
+    """Чужой device_id из старого сообщения не должен переключаться."""
+    a = _allowed_client(services, make_active_client, 122)
+    b = _allowed_client(services, make_active_client, 123)
+    victim = services.add_device(b.id, "Чужой")
+    services.set_routing_all(b.id, True)
+
+    cb, _ = _cb(fake_bot, 122)
+    await routing_h.routing_device_toggle(
+        cb, RoutingCB(action="dev", ref=victim.device_id), a, services)
+
+    assert cb.answers[0][1] is True
+    assert services.db.get_device(victim.device_id).routing_on == 1
+
+
+def test_devices_screen_bulk_button_follows_state():
+    """Кнопка массового действия одна, и её смысл зависит от состояния: пока
+    включено хоть что-то, осмысленно только выключить всё."""
+    from awgbot.core import models
+    from awgbot.bot import keyboards as kb
+
+    def _dev(i, on):
+        return models.Device(id=i, client_id=1, name=f"D{i}", private_key="k",
+                             public_key=f"p{i}", preshared_key="s",
+                             address=f"10.8.1.{i}", block_reason=0,
+                             routing_on=on, created_at="2026-01-01")
+
+    off = kb.routing_devices(1, [_dev(1, 0), _dev(2, 0)], back_target="m:main")
+    assert off.inline_keyboard[0][0].text.endswith("Включить все")
+
+    mixed = kb.routing_devices(1, [_dev(1, 1), _dev(2, 0)], back_target="m:main")
+    assert mixed.inline_keyboard[0][0].text.endswith("Выключить все")

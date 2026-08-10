@@ -1674,22 +1674,31 @@ class Services:
         она невидима: иначе каждый первый пойдёт спрашивать, что это за пункт."""
         return bool(self.routing_allowed_for(client) and self.routing_available())
 
-    def routing_device_count(self, client_id: int) -> int:
-        """Сколько устройств профиля попадёт под режим.
+    def routing_device_counts(self, client_id: int) -> tuple[int, int]:
+        """(включено, всего) — и заголовок кнопки, и состояние профиля разом."""
+        return self.db.routing_device_counts(client_id)
 
-        Режим включается на весь профиль, поэтому счётчик «включено из всего»
-        потерял смысл — выбирать больше нечего."""
-        return len([d for d in self.db.list_devices(client_id) if d.is_managed])
+    def routing_devices(self, client_id: int) -> list:
+        """Устройства профиля для экрана переключателей, в порядке показа."""
+        return self.db.list_devices(client_id)
+
+    def routing_profile_on(self, client_id: int) -> bool:
+        """Режим у профиля включён ⇔ включён хоть на одном устройстве.
+
+        ВЫВОДИМ, а не храним. Отдельная колонка на профиле существовала и была
+        убрана: она обязана была совпадать с флагами устройств, а свестись
+        обратно при расхождении ей было негде.
+        """
+        return self.db.routing_device_counts(client_id)[0] > 0
 
     def routing_toggle_for_client(self, client) -> Optional[bool]:
         """Состояние РФ-доступа для инфобокса: None — не показывать строку.
 
-        Строка появляется, как только функция клиенту разрешена, и показывает
-        положение ЕГО переключателя — чтобы он видел, включено сейчас или нет,
-        не заходя в раздел."""
+        Строка появляется, как только функция клиенту разрешена, и показывает,
+        работает ли режим хоть где-то, — чтобы он видел это, не заходя в раздел."""
         if not self.routing_client_visible(client):
             return None
-        return bool(client.routing_master)
+        return self.routing_profile_on(client.id)
 
     def routing_health_for_client(self, client) -> Optional[bool]:
         """Показывать ли клиенту статусную строку и что в ней.
@@ -1710,24 +1719,43 @@ class Services:
     def set_routing_allowed(self, client_id: int, allowed: bool) -> None:
         """Разрешение админа — верхний слой флага.
 
-        Нижние слои (мастер клиента, флаги устройств) НЕ трогаем: отзыв должен
-        гасить эффект, а не разрушать настройку. Вернул разрешение — у человека
-        всё как было, перенастраивать нечего.
+        Флаги устройств НЕ трогаем: отзыв должен гасить эффект, а не разрушать
+        настройку. Вернул разрешение — у человека всё как было, перенастраивать
+        нечего.
         """
         self.db.update_client_fields(client_id, routing_allowed=1 if allowed else 0)
         self.reconcile_routing()
 
-    def set_routing_master(self, client_id: int, on: bool) -> None:
-        """Переключатель режима у клиента: действует на весь профиль."""
-        self.db.update_client_fields(client_id, routing_master=1 if on else 0)
+    def set_routing_all(self, client_id: int, on: bool) -> int:
+        """Массовое включение/выключение по всему профилю. Возвращает, сколько
+        устройств изменилось.
+
+        Досева при включении здесь нет. Он существовал для обратной модели, где
+        набор означал «за границу»: без него сервис с закэшированным у клиента
+        адресом уезжал на шлюз и получал отказ. В нынешней модели набор означает
+        «домой», и промах даёт мягкий эффект — российский сервис просто
+        продолжит ходить как ходил, пока кэш не истечёт. Резолвить ради этого
+        шестьсот доменов по нажатию тумблера значило бы подвесить обработчик.
+        """
+        n = self.db.set_devices_routing(client_id, on)
+        if n:
+            self.reconcile_routing()
+        return n
+
+    def set_routing_device(self, device_id: int, on: bool) -> None:
+        """Переключатель одного устройства."""
+        self.db.update_device_fields(device_id, routing_on=1 if on else 0)
         self.reconcile_routing()
-        # Досева при включении здесь больше нет. Он существовал для обратной
-        # модели, где набор означал «за границу»: без него сервис с
-        # закэшированным у клиента адресом уезжал на шлюз и получал отказ. В
-        # нынешней модели набор означает «домой», и промах даёт мягкий эффект —
-        # российский сервис просто продолжит ходить как ходил, пока кэш не
-        # истечёт. Резолвить ради этого шестьсот доменов по нажатию тумблера
-        # значило бы подвесить обработчик на минуты.
+
+    def toggle_routing_device(self, device_id: int) -> Optional[bool]:
+        """Инвертировать флаг устройства. Возвращает новое состояние, None —
+        устройства нет (колбэк из старого сообщения в истории чата)."""
+        dev = self.db.get_device(device_id)
+        if dev is None:
+            return None
+        new_state = not bool(dev.routing_on)
+        self.set_routing_device(device_id, new_state)
+        return new_state
 
     # ── Личный список доменов ────────────────────────────────────────────────
 

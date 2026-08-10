@@ -58,13 +58,15 @@ async def panel_view(services, client, back_target: str = None):
     приёма адресов возвращаемся в тот же раздел НОВЫМ сообщением — редактировать
     там нечего."""
     domains = await call(services.routing_domains, client.id)
-    devices = await call(services.routing_device_count, client.id)
+    enabled, total = await call(services.routing_device_counts, client.id)
     link_ok = await call(services.routing_link_ok)
+    on = enabled > 0
     text = texts.routing_panel_text(
-        master_on=bool(client.routing_master), domains=domains,
-        devices=devices, link_ok=link_ok)
+        master_on=on, domains=domains,
+        enabled=enabled, total=total, link_ok=link_ok)
     return text, kb.routing_panel(
-        client.id, master_on=bool(client.routing_master), domains=domains,
+        client.id, master_on=on, domains=domains,
+        enabled=enabled, total=total,
         back_target=back_target or Menu(action="main").pack())
 
 
@@ -88,17 +90,61 @@ async def routing_panel(cb: CallbackQuery, client, services, state: FSMContext):
     await cb.answer()
 
 
-@router.callback_query(RoutingCB.filter(F.action == "master"))
-async def routing_master(cb: CallbackQuery, client, services):
-    """Мастер-тумблер: «выключить всё разом», не обходя каждое устройство."""
+async def devices_view(services, client):
+    """(text, markup) экрана устройств профиля."""
+    devices = await call(services.routing_devices, client.id)
+    enabled, total = await call(services.routing_device_counts, client.id)
+    return texts.routing_devices_text(enabled, total), kb.routing_devices(
+        client.id, devices,
+        back_target=RoutingCB(action="panel", ref=client.id).pack())
+
+
+@router.callback_query(RoutingCB.filter(F.action == "devs"))
+async def routing_devices_screen(cb: CallbackQuery, client, services):
+    """Экран устройств: переключатели по одному плюс массовое действие."""
     client = await _own(services, client)
     if not await _guard(cb, services, client):
         return
-    new_state = not client.routing_master
-    await call(services.set_routing_master, client.id, new_state)
-    client = await call(services.db.get_client, client.id)
-    await show_panel(cb, services, client)
-    await cb.answer("РФ-доступ включён" if new_state else "РФ-доступ выключен")
+    text, markup = await devices_view(services, client)
+    await edit(cb, text, markup)
+    await cb.answer()
+
+
+@router.callback_query(RoutingCB.filter(F.action == "dev"))
+async def routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
+                                client, services):
+    """Переключить режим на одном устройстве. Экран перерисовывается на месте."""
+    client = await _own(services, client)
+    if not await _guard(cb, services, client):
+        return
+    dev = await call(services.db.get_device, callback_data.ref)
+    # Чужое устройство — отказ молча по существу: колбэк мог прийти из старого
+    # сообщения, а подтверждать чужой id ответом «нет такого» незачем.
+    if dev is None or dev.client_id != client.id:
+        await cb.answer(texts.ROUTING_UNAVAILABLE, show_alert=True)
+        return
+    new_state = await call(services.toggle_routing_device, dev.id)
+    text, markup = await devices_view(services, client)
+    await edit(cb, text, markup)
+    await cb.answer("включено" if new_state else "выключено")
+
+
+@router.callback_query(RoutingCB.filter(F.action == "all"))
+async def routing_all_toggle(cb: CallbackQuery, client, services):
+    """Массовое действие. Направление ВЫВОДИМ из состояния: пока включено хоть
+    что-то, осмысленно только выключить всё."""
+    client = await _own(services, client)
+    if not await _guard(cb, services, client):
+        return
+    enabled, total = await call(services.routing_device_counts, client.id)
+    if not total:
+        await cb.answer("Устройств пока нет", show_alert=True)
+        return
+    turn_on = enabled == 0
+    await call(services.set_routing_all, client.id, turn_on)
+    text, markup = await devices_view(services, client)
+    await edit(cb, text, markup)
+    await cb.answer("Включено на всех" if turn_on else "Выключено на всех")
 
 
 # ── Личный список адресов ────────────────────────────────────────────────────

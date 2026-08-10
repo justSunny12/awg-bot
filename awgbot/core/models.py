@@ -75,12 +75,11 @@ class Client:
     activation_status: str
     invite_code: Optional[str]
     created_at: str
-    # Условная маршрутизация. Режим — свойство профиля, пер-девайсного флага
-    # нет: выбирать устройства по одному значило бы держать состояние, которое
-    # почти всегда «все» или «никто». Плоские int'ы, а не ленивый под-объект:
-    # у фичи нет процесса с жизненным циклом, только состояние вкл/выкл.
+    # Условная маршрутизация: РАЗРЕШЕНИЕ админа. Собственного «включено» у
+    # профиля нет — оно выводится из устройств (включено хоть на одном), см.
+    # db.routing_device_counts. Хранить его ещё и здесь значило бы завести
+    # второй источник истины, обязанный совпадать с первым.
     routing_allowed: int = 0              # 0/1: админ разрешил фичу клиенту
-    routing_master: int = 0               # 0/1: мастер-тумблер самого клиента
     subscription: Subscription = field(default_factory=Subscription)
     quota: TrafficQuota = field(default_factory=TrafficQuota)
     grace: Optional[GraceState] = None
@@ -126,13 +125,6 @@ class Client:
     def is_paused(self) -> bool:
         return self.pause is not None and self.pause.active_since is not None
 
-    @property
-    def routing_on(self) -> bool:
-        """Режим действует: админ разрешил И пользователь включил. Для админа
-        разрешение подразумевается — это учитывает services.routing_allowed_for,
-        модель про ADMIN_ID не знает."""
-        return bool(self.routing_allowed and self.routing_master)
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Под-объекты устройства
@@ -168,6 +160,10 @@ class Device:
     address: str
     block_reason: int
     created_at: str
+    # Условная маршрутизация НА ЭТОМ устройстве. Действует только поверх
+    # разрешения профиля (clients.routing_allowed) — отзыв разрешения гасит
+    # эффект, флаг устройства при этом сохраняется.
+    routing_on: int = 0
     traffic: DeviceTraffic = field(default_factory=DeviceTraffic)
     friend: Optional[Friend] = None
 

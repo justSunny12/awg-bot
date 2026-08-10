@@ -221,3 +221,45 @@ def test_additive_migration_resume_code(tmp_path):
     row = db._connection().execute(
         "SELECT pause_used_days FROM client_pause WHERE client_id=5").fetchone()
     assert row["pause_used_days"] == 3
+
+
+def test_routing_master_migrates_onto_devices(tmp_path):
+    """Мастер-тумблер профиля переехал на устройства — состояние обязано доехать.
+
+    У кого режим был включён, тот после обновления должен остаться с работающим
+    режимом, не заходя в бот. Ошибка здесь тихая: колонки нет, флагов нет,
+    маршрутизация просто перестала действовать, и никто не узнает.
+    """
+    import sqlite3
+    from awgbot.infra.db import Database
+
+    path = tmp_path / "old.db"
+    db = Database(str(path))
+    db.init_schema()
+
+    # воспроизводим боевую схему ДО перехода: колонка на профиле
+    con = db._connection()
+    con.execute("ALTER TABLE clients ADD COLUMN routing_master INTEGER NOT NULL DEFAULT 0")
+    con.commit()
+
+    on = db.create_client(name="Включён", device_limit=3, period_start="2026-01-01",
+                          period_end="2027-01-01", invite_code="A")
+    off = db.create_client(name="Выключен", device_limit=3, period_start="2026-01-01",
+                           period_end="2027-01-01", invite_code="B")
+    for cid, addr in ((on, "10.8.1.10"), (on, "10.8.1.11"), (off, "10.8.1.12")):
+        db.create_device(client_id=cid, name=f"d{addr}", private_key="k",
+                         public_key=f"p{addr}", preshared_key="s", address=addr)
+    con.execute("UPDATE clients SET routing_master = 1 WHERE id = ?", (on,))
+    con.commit()
+
+    db._migrate_routing_master_to_devices()
+
+    assert [d.routing_on for d in db.list_devices(on)] == [1, 1]
+    assert [d.routing_on for d in db.list_devices(off)] == [0]
+
+    # колонка убрана — второго источника истины больше нет
+    cols = {r["name"] for r in db._connection().execute("PRAGMA table_info(clients)")}
+    assert "routing_master" not in cols
+
+    # идемпотентность: повторный прогон не падает
+    db._migrate_routing_master_to_devices()

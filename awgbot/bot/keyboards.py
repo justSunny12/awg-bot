@@ -124,15 +124,44 @@ def admin_client_device_list(devices, client_id: int) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def routing_panel(client_id: int, *, master_on: bool, domains: list,
-                  back_target: str) -> InlineKeyboardMarkup:
-    """Раздел «Доступ к РФ-сервисам»: тумблер профиля и личный список адресов.
+def routing_devices(client_id: int, devices, *, back_target) -> InlineKeyboardMarkup:
+    """Экран устройств профиля: по кнопке на устройство, переключение на месте.
 
-    Список адресов при выключенном мастере не показываем — он не действует, и
+    Один вход вместо тумблеров, рассыпанных по карточкам устройств: всё
+    состояние профиля видно разом, а массовое действие лежит тут же первой
+    строкой. Карточку устройства не трогаем — она и без того плотная.
+
+    Первая кнопка одна, а не пара «включить»/«выключить»: пока включено хоть
+    что-то, осмысленное действие ровно одно — выключить всё. Две кнопки, одна из
+    которых всегда холостая, только занимают место.
+    """
+    kb = InlineKeyboardBuilder()
+    any_on = any(d.routing_on for d in devices)
+    kb.button(text="🔴 Выключить все" if any_on else "🟢 Включить все",
+              callback_data=RoutingCB(action="all", ref=client_id))
+    rows = [1]
+    for d in devices:
+        kb.button(text=f"{_chk(d.routing_on)} {d.name}{_btn_suffix(d)}",
+                  callback_data=RoutingCB(action="dev", ref=d.id))
+        rows.append(1)
+    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
+    kb.adjust(*rows, 1)
+    return kb.as_markup()
+
+
+def routing_panel(client_id: int, *, master_on: bool, domains: list,
+                  enabled: int = 0, total: int = 0,
+                  back_target: str) -> InlineKeyboardMarkup:
+    """Раздел «Доступ к РФ-сервисам»: вход в устройства и личный список адресов.
+
+    Первая кнопка не переключает, а ОТКРЫВАЕТ список устройств. Раньше она была
+    тумблером на весь профиль, и включить режим выборочно было негде.
+
+    Список адресов при выключенном режиме не показываем — он не действует, и
     предлагать редактировать неработающее значит путать."""
     kb = InlineKeyboardBuilder()
-    kb.button(text=f"{_chk(master_on)} РФ-доступ: {'включён' if master_on else 'выключен'}",
-              callback_data=RoutingCB(action="master", ref=client_id))
+    kb.button(text=f"{_chk(master_on)} Устройства: {enabled} из {total}",
+              callback_data=RoutingCB(action="devs", ref=client_id))
     rows = [1]
     if master_on:
         kb.button(text="➕ Добавить адреса", callback_data=RoutingCB(action="add", ref=client_id))
@@ -381,7 +410,8 @@ def admin_clients(clients) -> InlineKeyboardMarkup:
 
 def admin_client_actions(client, *, has_devices: bool = True,
                          is_admin_owner: bool = False,
-                         routing_visible: bool = False) -> InlineKeyboardMarkup:
+                         routing_visible: bool = False,
+                         routing_on: bool = False) -> InlineKeyboardMarkup:
     """has_devices=False скрывает «Выдать конфиг»/«Устройства» — клиенту
     нечего выдавать и нечего показывать в списке устройств.
 
@@ -417,7 +447,7 @@ def admin_client_actions(client, *, has_devices: bool = True,
         # РФ-доступ — ВОЗМОЖНОСТЬ, а не ограничение, поэтому в урезанную ветку
         # входит: иначе у админа не было бы точки входа к своему переключателю.
         if routing_visible:
-            kb.button(text=f"{_chk(client.routing_master)} Доступ к РФ-сервисам",
+            kb.button(text=f"{_chk(routing_on)} Доступ к РФ-сервисам",
                       callback_data=RoutingCB(action="panel", ref=client.id))
             pattern.append(1)
         kb.button(text="⬅️ Назад", callback_data=Menu(action="clients"))
@@ -437,7 +467,7 @@ def admin_client_actions(client, *, has_devices: bool = True,
     # значило бы делать поддержку невозможной. Над блокировкой намеренно:
     # это настройка, а не карательное действие.
     if routing_visible:
-        kb.button(text=f"{_chk(client.routing_master)} Доступ к РФ-сервисам",
+        kb.button(text=f"{_chk(routing_on)} Доступ к РФ-сервисам",
                   callback_data=RoutingCB(action="panel", ref=client.id))
         pattern.append(1)
     # Объявление ЭТОМУ профилю — перед блокировкой и намеренно рядом с ней:

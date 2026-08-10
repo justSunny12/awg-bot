@@ -50,7 +50,7 @@ async def _show_main(target, services, client, *, via_edit=None):
     routing_visible = await call(services.routing_client_visible, client)
     markup = kb.client_main(has_devices=used > 0, routing_visible=routing_visible,
                             client_id=client.id,
-                            routing_on=bool(client.routing_master))
+                            routing_on=await call(services.routing_profile_on, client.id))
     if via_edit is not None:
         await cleanup_content(via_edit.bot, services, via_edit.message.chat.id)
         await edit_nav(via_edit, services, text, markup)

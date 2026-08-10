@@ -162,9 +162,10 @@ class SetCB(CallbackData, prefix="set"):
 
 class RoutingCB(CallbackData, prefix="rt"):
     """Условная маршрутизация (docs/conditional-routing.md). action:
-      panel   — открыть раздел клиента (мастер-тумблер + список доменов);
-      master  — переключить мастер-тумблер клиента;
-      dev     — переключить режим устройства (ref = device_id);
+      panel   — открыть раздел клиента (список доменов + вход в устройства);
+      devs    — экран устройств профиля с переключателями (ref = client_id);
+      dev     — переключить режим ОДНОГО устройства (ref = device_id);
+      all     — включить/выключить все устройства профиля (ref = client_id);
       add     — начать ввод доменов;
       del     — удалить домен (idx — позиция в списке, ref = client_id);
       clear   — спросить подтверждение очистки; clear_yes — очистить;

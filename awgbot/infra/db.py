@@ -65,7 +65,6 @@ def _client_from_row(row) -> Optional["models.Client"]:
         invite_code=row["invite_code"],
         created_at=row["created_at"],
         routing_allowed=(int(row["routing_allowed"]) if "routing_allowed" in keys else 0),
-        routing_master=(int(row["routing_master"]) if "routing_master" in keys else 0),
         subscription=models.Subscription(
             period_start=row["period_start"], period_end=row["period_end"],
             period_kind=row["period_kind"], status=row["status"],
@@ -96,6 +95,7 @@ def _device_from_row(row) -> Optional["models.Device"]:
         preshared_key=row["preshared_key"],
         address=row["address"],
         block_reason=int(row["block_reason"]),
+        routing_on=(int(row["routing_on"]) if "routing_on" in row.keys() else 0),
         created_at=row["created_at"],
         traffic=models.DeviceTraffic(
             limit=int(row["traffic_limit"]),
@@ -157,12 +157,11 @@ CREATE TABLE IF NOT EXISTS clients (
     invite_code         TEXT,                         -- гасится (NULL) после активации
     is_service          INTEGER NOT NULL DEFAULT 0,   -- 1 = служебный «Устройства без клиента»
     created_at          TEXT    NOT NULL,
-    -- Условная маршрутизация (docs/conditional-routing.md). Режим — свойство
-    -- ПРОФИЛЯ: включён — под него попадают все его устройства. Снятие
-    -- разрешения гасит эффект, но routing_master НЕ стирает: вернул
-    -- разрешение — настройка пользователя восстановилась сама.
-    routing_allowed     INTEGER NOT NULL DEFAULT 0,   -- 0/1: админ разрешил фичу клиенту
-    routing_master      INTEGER NOT NULL DEFAULT 0    -- 0/1: мастер-тумблер клиента
+    -- Условная маршрутизация (docs/conditional-routing.md). Здесь только
+    -- РАЗРЕШЕНИЕ админа; само «включено» живёт пер-девайсно (devices.routing_on),
+    -- а состояние профиля выводится из него. Снятие разрешения гасит эффект, но
+    -- флаги устройств НЕ стирает: вернул разрешение — настройка восстановилась.
+    routing_allowed     INTEGER NOT NULL DEFAULT 0    -- 0/1: админ разрешил фичу клиенту
 );
 
 -- ── Подписка клиента (1:1, всегда есть) ─────────────────────────────────────
@@ -216,6 +215,7 @@ CREATE TABLE IF NOT EXISTS devices (
     preshared_key       TEXT    NOT NULL,
     address             TEXT    NOT NULL UNIQUE,         -- 10.8.1.X ; UNIQUE = аллокатор
     block_reason        INTEGER NOT NULL DEFAULT 0,      -- маска DeviceBlock; 0 = не заблокирован
+    routing_on          INTEGER NOT NULL DEFAULT 0,      -- 0/1: условная маршрутизация НА ЭТОМ устройстве
     created_at          TEXT    NOT NULL,
     FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
 );
@@ -506,6 +506,7 @@ class Database:
             cur.executescript(SCHEMA)
         self._migrate_additive()
         self._migrate_drop_full_access()
+        self._migrate_routing_master_to_devices()
         self._migrate_routing_domains_mode()
         self._ensure_service_client()
 
@@ -516,8 +517,8 @@ class Database:
         want = {
             "ui_state": [("content_msg_ids", "TEXT")],
             "client_pause": [("resume_code", "TEXT")],
-            "clients": [("routing_allowed", "INTEGER NOT NULL DEFAULT 0"),
-                        ("routing_master", "INTEGER NOT NULL DEFAULT 0")],
+            "clients": [("routing_allowed", "INTEGER NOT NULL DEFAULT 0")],
+            "devices": [("routing_on", "INTEGER NOT NULL DEFAULT 0")],
         }
         con = self._connection()
         for table, cols in want.items():
@@ -567,6 +568,37 @@ class Database:
         if dropped:
             log.warning("личные списки маршрутизации: отброшено %d записей "
                         "упразднённого режима (они означали «за границу»)", dropped)
+
+    def _migrate_routing_master_to_devices(self) -> None:
+        """Мастер-тумблер профиля переехал на устройства.
+
+        Раньше режим был свойством ПРОФИЛЯ (`clients.routing_master`), а
+        устройства следовали за ним скопом. Теперь флаг у каждого устройства
+        свой, а состояние профиля ВЫВОДИТСЯ: «включено» ⇔ включено хоть на
+        одном. Двух источников истины больше нет — а значит нет и возможности
+        им разойтись.
+
+        Переносим состояние, а не сбрасываем: у кого режим был включён, тот
+        обязан после обновления остаться с работающим режимом, не заходя в бот.
+
+        Идемпотентно: колонки нет → выходим сразу.
+        """
+        con = self._connection()
+        have = {r["name"] for r in con.execute("PRAGMA table_info(clients)")}
+        if "routing_master" not in have:
+            return
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE devices SET routing_on = 1 WHERE client_id IN "
+                "(SELECT id FROM clients WHERE routing_master = 1)")
+            moved = cur.rowcount
+        try:
+            with self._tx() as cur:
+                cur.execute("ALTER TABLE clients DROP COLUMN routing_master")
+        except sqlite3.OperationalError:
+            pass            # старый sqlite: колонка останется, читать её никто не будет
+        if moved:
+            log.info("маршрутизация: режим перенесён с профилей на %d устройств", moved)
 
     def _migrate_drop_full_access(self) -> None:
         """Разовая зачистка: колонка devices.full_access_link осталась от
@@ -763,7 +795,7 @@ class Database:
         # clients
         "name": "clients", "device_limit": "clients", "tg_id": "clients",
         "activation_status": "clients", "invite_code": "clients", "block_reason": "clients",
-        "routing_allowed": "clients", "routing_master": "clients",
+        "routing_allowed": "clients",
         # client_subscription
         "period_start": "client_subscription", "period_end": "client_subscription",
         "period_kind": "client_subscription", "status": "client_subscription",
@@ -1039,6 +1071,7 @@ class Database:
     _DEVICE_FIELD_TABLE = {
         "name": "devices", "private_key": "devices",
         "block_reason": "devices", "client_id": "devices",
+        "routing_on": "devices",
         "traffic_limit": "device_traffic", "traffic_rx_month": "device_traffic",
         "traffic_tx_month": "device_traffic", "traffic_rx_period": "device_traffic",
         "traffic_tx_period": "device_traffic", "last_handshake": "device_traffic",
@@ -1464,12 +1497,12 @@ class Database:
         return sorted(int(r["id"]) for r in rows)
 
     def routing_active_addresses(self, admin_tg_id: int = 0) -> dict[int, list[str]]:
-        """{client_id: [адреса]} устройств профилей с ВКЛЮЧЁННЫМ режимом.
+        """{client_id: [адреса]} устройств с ВКЛЮЧЁННЫМ режимом.
         Источник истины для src-наборов ipset.
 
-        Режим — свойство ПРОФИЛЯ: включён — под него попадают все его устройства.
-        Пер-девайсного флага нет намеренно: выбирать устройства по одному значило
-        бы держать состояние, которое почти всегда «все» или «никто».
+        Режим — свойство УСТРОЙСТВА, но только поверх разрешения админа: отзыв
+        разрешения гасит эффект, не трогая флаги устройств. Вернул разрешение —
+        у человека всё как было.
 
         Заблокированные устройства не отфильтровываем: DROP по адресу стоит
         раньше стадии маркировки, до неё пакет не доходит. Убирать их из набора
@@ -1481,12 +1514,35 @@ class Database:
                 """SELECT d.client_id, d.address
                      FROM devices d
                      JOIN clients c ON c.id = d.client_id
-                    WHERE c.routing_master = 1
+                    WHERE d.routing_on = 1
                       AND (c.routing_allowed = 1 OR c.tg_id = ?)
                     ORDER BY d.client_id, d.address""",
                 (admin_tg_id,)).fetchall():
             out.setdefault(int(r["client_id"]), []).append(r["address"])
         return out
+
+    def set_devices_routing(self, client_id: int, on: bool) -> int:
+        """Включить/выключить режим на ВСЕХ устройствах профиля. Возвращает
+        число изменённых строк — по нему видно, было ли действие холостым."""
+        with self._tx() as cur:
+            cur.execute("UPDATE devices SET routing_on = ? "
+                        " WHERE client_id = ? AND routing_on <> ?",
+                        (1 if on else 0, client_id, 1 if on else 0))
+            return cur.rowcount
+
+    def routing_device_counts(self, client_id: int) -> tuple[int, int]:
+        """(включено, всего) по устройствам профиля.
+
+        Состояние профиля ВЫВОДИТСЯ отсюда, отдельной колонки под него нет:
+        «профиль включён» ⇔ включено хоть одно устройство. Пока состояние
+        хранилось и на профиле, и на устройствах, эти двое могли разойтись —
+        а сойтись обратно им было негде.
+        """
+        row = self._connection().execute(
+            "SELECT COUNT(*) AS total, "
+            "       COALESCE(SUM(routing_on), 0) AS enabled "
+            "  FROM devices WHERE client_id = ?", (client_id,)).fetchone()
+        return int(row["enabled"]), int(row["total"])
 
     # ── Аллокация IP ─────────────────────────────────────────────────────────
 

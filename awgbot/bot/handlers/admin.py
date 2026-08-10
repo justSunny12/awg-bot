@@ -46,7 +46,7 @@ async def _main_menu_markup(services):
     rt_visible = bool(ac and await call(services.routing_client_visible, ac))
     return kb.admin_main(n, self_has_devices=has_dev,
                          routing_visible=rt_visible,
-                         routing_on=bool(ac and ac.routing_master),
+                         routing_on=bool(ac and await call(services.routing_profile_on, ac.id)),
                          self_client_id=(ac.id if ac else 0))
 
 
@@ -112,9 +112,10 @@ async def _show_client_card(cb: CallbackQuery, services, client_id: int):
     text = texts.client_card(client, devices, traffic, online, for_admin=True)
     is_admin_owner = client.tg_id == config.ADMIN_ID
     rt_visible = await call(services.routing_client_visible, client)
+    rt_on = await call(services.routing_profile_on, client_id) if rt_visible else False
     await edit(cb, text, kb.admin_client_actions(
         client, has_devices=bool(devices), is_admin_owner=is_admin_owner,
-        routing_visible=rt_visible))
+        routing_visible=rt_visible, routing_on=rt_on))
 
 
 @router.callback_query(ClientCB.filter(F.action == "open"))
@@ -145,25 +146,70 @@ async def admin_routing_panel(cb: CallbackQuery, callback_data: RoutingCB, servi
     await cb.answer()
 
 
-@router.callback_query(RoutingCB.filter(F.action == "master"))
-async def admin_routing_master(cb: CallbackQuery, callback_data: RoutingCB, services):
-    """Переключатель РФ-доступа профиля со стороны админа.
-
-    Нужен и для своего профиля (клиентское меню админу закрыто ролью), и для
-    чужих: без него разбор проблемы упирался бы в «включи у себя и перезайди»,
-    что делает поддержку невозможной."""
-    client = await call(services.db.get_client, callback_data.ref)
+async def _rt_client(cb: CallbackQuery, services, client_id: int):
+    """Профиль для админских действий с маршрутизацией, с обеими проверками.
+    None — уже ответили пользователю, вызывающему остаётся выйти."""
+    client = await call(services.db.get_client, client_id)
     if client is None:
         await cb.answer("Профиль не найден", show_alert=True)
-        return
+        return None
     if not await call(services.routing_client_visible, client):
         await cb.answer("Профилю не разрешён РФ-доступ — выдай в настройках",
                         show_alert=True)
+        return None
+    return client
+
+
+async def _rt_show_devices(cb: CallbackQuery, services, client) -> None:
+    from awgbot.bot.handlers.routing import devices_view
+    text, markup = await devices_view(services, client)
+    await edit(cb, text, markup)
+
+
+@router.callback_query(RoutingCB.filter(F.action == "devs"))
+async def admin_routing_devices(cb: CallbackQuery, callback_data: RoutingCB, services):
+    """Экран устройств ЛЮБОГО профиля. Зеркало клиентского: тот берёт профиль из
+    контекста, а у админа его нет — здесь он приходит в ref."""
+    client = await _rt_client(cb, services, callback_data.ref)
+    if client is None:
         return
-    new_state = not client.routing_master
-    await call(services.set_routing_master, client.id, new_state)
-    await _show_client_card(cb, services, client.id)
-    await cb.answer("РФ-доступ включён" if new_state else "РФ-доступ выключен")
+    await _rt_show_devices(cb, services, client)
+    await cb.answer()
+
+
+@router.callback_query(RoutingCB.filter(F.action == "dev"))
+async def admin_routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
+                                      services):
+    """Переключить одно устройство. В ref здесь device_id, а не client_id, —
+    профиль достаём через устройство."""
+    dev = await call(services.db.get_device, callback_data.ref)
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
+        return
+    client = await _rt_client(cb, services, dev.client_id)
+    if client is None:
+        return
+    new_state = await call(services.toggle_routing_device, dev.id)
+    await _rt_show_devices(cb, services, client)
+    await cb.answer("включено" if new_state else "выключено")
+
+
+@router.callback_query(RoutingCB.filter(F.action == "all"))
+async def admin_routing_all(cb: CallbackQuery, callback_data: RoutingCB, services):
+    """Массовое действие по профилю. Направление выводим из состояния: пока
+    включено хоть что-то, осмысленно только выключить всё."""
+    client = await _rt_client(cb, services, callback_data.ref)
+    if client is None:
+        return
+    enabled, total = await call(services.routing_device_counts, client.id)
+    if not total:
+        await cb.answer("Устройств пока нет", show_alert=True)
+        return
+    turn_on = enabled == 0
+    await call(services.set_routing_all, client.id, turn_on)
+    await _rt_show_devices(cb, services, client)
+    await cb.answer("Включено на всех" if turn_on else "Выключено на всех")
+
 
 
 
