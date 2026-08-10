@@ -286,3 +286,30 @@ async def test_broadcast_rejects_blank_before_reading_markup(services, make_acti
     msg = FakeMessage(text="   ", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await admin_h.broadcast_receive(msg, state, services)
     assert any("Пустой текст" in s[1] for s in msg.sent if s[0] == "answer")
+
+
+async def test_broadcast_draft_chain_is_cleaned_on_cancel(services, make_active_client,
+                                                          fake_bot):
+    """Отмена обязана стереть всю переписку с набором черновика.
+
+    Навигация при переходе на превью лишь СНИМАЕТ кнопки с прежнего экрана
+    (_dismiss_previous_nav), не удаляя его. Поэтому без явного трекинга после
+    отмены висели и приглашение «пришли объявление», и само сообщение админа с
+    текстом — то есть черновик оставался в чате.
+    """
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    c = make_active_client(name="Ксюша", tg_id=7010)
+    chat = cfg.ADMIN_ID
+    services.db.set_nav_message_id(chat, 555)          # «приглашение» — нав-экран
+
+    state = FakeState()
+    await state.update_data(targets=[c.id])
+    msg = FakeMessage(text="Профилактика", chat_id=chat, user_id=chat, bot=fake_bot)
+    await admin_h.broadcast_receive(msg, state, services)
+
+    tracked = services.db.pop_content_msg_ids(chat)
+    assert msg.message_id in tracked, "сообщение админа осталось бы висеть"
+    assert 555 in tracked, "экран-приглашение осталось бы висеть"

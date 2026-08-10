@@ -1566,8 +1566,11 @@ async def broadcast_next(cb: CallbackQuery, state: FSMContext, services):
 
 @router.message(Broadcast.text)
 async def broadcast_receive(message: Message, state: FSMContext, services):
+    # Своё сообщение админа — в уборку: иначе после отмены оно остаётся висеть,
+    # а вместе с ним и весь набранный черновик объявления.
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not (message.text or "").strip():
-        await message.answer(texts.BROADCAST_EMPTY)
+        await ask_tracked(message, services, texts.BROADCAST_EMPTY)
         return
     # html_text, а НЕ text. Форматирование, сделанное средствами Telegram
     # (жирный, курсив, ссылки), живёт не в тексте, а в entities: `message.text`
@@ -1589,13 +1592,20 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
     # Битую разметку ловим здесь: если превью (обёрнутое в HTML) не отправилось —
     # тот же текст провалил бы и рассылку. Просим поправить, состояние держим.
     await state.update_data(text=text)
+    # Экран-приглашение тоже в уборку. Сам он не исчезнет: при переходе на
+    # превью навигация лишь СНИМАЕТ с него кнопки (_dismiss_previous_nav), и
+    # текст «пришли объявление» остаётся висеть над перепиской.
+    nav = await call(services.db.get_nav_message_id, message.chat.id)
+    if nav:
+        await call(services.db.add_content_msg_id, message.chat.id, nav)
     try:
         await message.answer(texts.broadcast_preview(text, len(tg_ids), names, friends),
                              reply_markup=kb.broadcast_confirm())
     except TelegramBadRequest:
-        await message.answer(
-            "⚠️ Разметка бракованная (незакрытый тег?). Проверь HTML "
-            "(&lt;b&gt;…&lt;/b&gt;, ссылки) и пришли текст заново.")
+        await ask_tracked(
+            message, services,
+            "⚠️ Разметка бракованная (незакрытый тег?). Проверь текст и пришли "
+            "заново.")
 
 
 @router.callback_query(BroadcastCB.filter(F.action == "cancel"))
@@ -1629,6 +1639,9 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
         return
     _last_broadcast_at[sel] = now                # метку ставим ДО await'ов —
     await cb.answer("Рассылаю…")                 # второе нажатие уже отсечётся
+    # Переписку с набором черновика убираем и здесь, а не только при отмене:
+    # после отправки она тем более не нужна, а превью само станет отчётом.
+    await cleanup_content(cb.bot, services, cb.message.chat.id)
     await edit(cb, "📢 Рассылаю объявление…", None)   # и кнопки сняты (markup=None)
     tg_ids = await call(services.db.broadcast_recipients_for_clients,
                         sel, config.ADMIN_ID)
