@@ -53,7 +53,7 @@ async def test_broadcast_pacing_and_order_preserved():
     assert ok == 3 and failed == 0
 
 
-# ── адресное объявление одному профилю ───────────────────────────────────────
+# ── адресаты объявления по набору профилей ───────────────────────────────────────
 
 def test_client_recipients_include_owner_and_active_friends(services, make_active_client):
     """Друзья входят потому, что устройство у них от ЭТОГО профиля.
@@ -67,7 +67,7 @@ def test_client_recipients_include_owner_and_active_friends(services, make_activ
     code = services.make_device_friendly(dc.device_id)
     services.activate_friend(code, tg_id=3099)
 
-    ids = services.db.broadcast_recipients_for_client(c.id, exclude_tg_id=cfg.ADMIN_ID)
+    ids = services.db.broadcast_recipients_for_clients([c.id], exclude_tg_id=cfg.ADMIN_ID)
     assert ids == [3001, 3099]
 
 
@@ -77,7 +77,7 @@ def test_client_recipients_exclude_other_profiles(services, make_active_client):
     c1 = make_active_client(name="c1", tg_id=3001)
     make_active_client(name="c2", tg_id=3002)
 
-    ids = services.db.broadcast_recipients_for_client(c1.id, exclude_tg_id=cfg.ADMIN_ID)
+    ids = services.db.broadcast_recipients_for_clients([c1.id], exclude_tg_id=cfg.ADMIN_ID)
     assert ids == [3001]
 
 
@@ -89,7 +89,7 @@ def test_pending_friend_is_not_a_recipient(services, make_active_client):
     dc = services.add_device(c.id, "Телефон")
     services.make_device_friendly(dc.device_id)          # код выдан, не активирован
 
-    ids = services.db.broadcast_recipients_for_client(c.id, exclude_tg_id=cfg.ADMIN_ID)
+    ids = services.db.broadcast_recipients_for_clients([c.id], exclude_tg_id=cfg.ADMIN_ID)
     assert ids == [3001]
 
 
@@ -108,5 +108,31 @@ def test_same_person_twice_gets_one_delivery(services, make_active_client):
     services.db.set_device_friend(dc.device_id, friend_tg_id=3001,
                                   friend_status="active")
 
-    ids = services.db.broadcast_recipients_for_client(c.id, exclude_tg_id=cfg.ADMIN_ID)
+    ids = services.db.broadcast_recipients_for_clients([c.id], exclude_tg_id=cfg.ADMIN_ID)
     assert ids == [3001], "один человек получил бы объявление дважды"
+
+
+def test_recipients_union_over_several_profiles(services, make_active_client):
+    """Несколько отмеченных профилей — объединение без дублей.
+
+    Мультивыбор ради этого и сделан: один текст уходит нескольким профилям
+    разом, а не N раз прогоняется весь путь ввод-превью-отправка.
+    """
+    import awgbot.core.config as cfg
+    c1 = make_active_client(name="c1", tg_id=5001)
+    c2 = make_active_client(name="c2", tg_id=5002)
+    dc = services.add_device(c1.id, "Телефон")
+    code = services.make_device_friendly(dc.device_id)
+    services.activate_friend(code, tg_id=5099)
+
+    ids = services.db.broadcast_recipients_for_clients([c1.id, c2.id],
+                                                      exclude_tg_id=cfg.ADMIN_ID)
+    assert ids == [5001, 5002, 5099]
+
+
+def test_empty_selection_yields_nobody(services, make_active_client):
+    """Пустой выбор — пустой список, а не «все». Ошибка в другую сторону тут
+    необратима: разосланное объявление уже прочитано."""
+    import awgbot.core.config as cfg
+    make_active_client(name="c1", tg_id=5003)
+    assert services.db.broadcast_recipients_for_clients([], exclude_tg_id=cfg.ADMIN_ID) == []

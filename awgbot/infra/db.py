@@ -1033,26 +1033,32 @@ class Database:
         ids.discard(int(exclude_tg_id))
         return sorted(ids)
 
-    def broadcast_recipients_for_client(self, client_id: int,
-                                        exclude_tg_id: int) -> list[int]:
-        """Адресаты объявления ОДНОМУ профилю: владелец + активные друзья.
+    def broadcast_recipients_for_clients(self, client_ids,
+                                         exclude_tg_id: int) -> list[int]:
+        """Адресаты объявления по НАБОРУ профилей: владельцы + активные друзья.
 
-        Друзья входят потому, что устройство у них от этого профиля: объявление
+        Друзья входят потому, что устройство у них от этих профилей: объявление
         вида «профиль ставится на паузу» касается их напрямую, а узнать иначе им
-        неоткуда — владелец пересказывать не обязан.
+        неоткуда — владелец пересказывать не обязан. Админ выбирает профили, а
+        не людей, поэтому про друзей его предупреждают на экране выбора.
 
-        Тот же DISTINCT-инвариант, что и в broadcast_recipients: владелец может
-        оказаться другом собственного устройства, и доставка должна быть одна.
+        Тот же DISTINCT-инвариант, что и в broadcast_recipients: один человек
+        может оказаться и владельцем, и другом чужого устройства, а доставка
+        обязана быть одна.
         """
+        ids_list = sorted({int(c) for c in (client_ids or ())})
+        if not ids_list:
+            return []
+        ph = ",".join("?" * len(ids_list))
         rows = self._connection().execute(
-            "SELECT tg_id FROM clients "
-            " WHERE id = ? AND tg_id IS NOT NULL AND is_service = 0 "
-            "UNION "
-            "SELECT f.friend_tg_id AS tg_id FROM device_friend f "
-            "  JOIN devices d ON d.id = f.device_id "
-            " WHERE d.client_id = ? AND f.friend_tg_id IS NOT NULL "
-            "   AND f.friend_status = 'active'",
-            (client_id, client_id)).fetchall()
+            f"SELECT tg_id FROM clients "
+            f" WHERE id IN ({ph}) AND tg_id IS NOT NULL AND is_service = 0 "
+            f"UNION "
+            f"SELECT f.friend_tg_id AS tg_id FROM device_friend f "
+            f"  JOIN devices d ON d.id = f.device_id "
+            f" WHERE d.client_id IN ({ph}) AND f.friend_tg_id IS NOT NULL "
+            f"   AND f.friend_status = 'active'",
+            (*ids_list, *ids_list)).fetchall()
         ids = {int(r["tg_id"]) for r in rows}
         ids.discard(int(exclude_tg_id))
         return sorted(ids)

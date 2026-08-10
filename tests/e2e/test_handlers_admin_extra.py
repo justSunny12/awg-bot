@@ -162,7 +162,7 @@ async def test_unmanaged_device_connect_menu_says_there_is_no_link(
     assert texts.UNMANAGED_DEVICE_DIALOG in shown
 
 
-# ── адресное объявление из карточки профиля ──────────────────────────────────
+# ── объявление: вход только с главной админа ─────────────────────────────────
 
 def _btn_texts(markup):
     return [b.text for row in markup.inline_keyboard for b in row]
@@ -176,69 +176,71 @@ def _btn_data(markup, needle):
     return None
 
 
-def test_client_card_offers_a_targeted_announcement(services, make_active_client):
-    """Кнопка есть у обычного профиля и несёт его id.
+def test_client_card_has_no_announcement_button(services, make_active_client):
+    """В карточке профиля кнопки объявления быть не должно.
 
-    Нулевой ref означал бы рассылку ВСЕМ из карточки одного человека — то есть
-    ровно ту ошибку, которую ни отменить, ни отозвать.
+    Вход у рассылки ровно один — с главной админа, где следующим шагом
+    выбираются адресаты. Кнопка в карточке отвечала на тот же вопрос «кому», но
+    лезла в глаза там, где админ занят совсем другим.
     """
     from awgbot.bot import keyboards as kb
     c = make_active_client(name="c1", tg_id=4001)
     client = services.db.get_client(c.id)
 
-    markup = kb.admin_client_actions(client)
-    data = _btn_data(markup, "Объявление пользователям")
-    assert data is not None, "кнопки нет в карточке профиля"
-    assert data.endswith(f":{c.id}"), f"адресат не тот: {data}"
+    for owner in (True, False):
+        labels = _btn_texts(kb.admin_client_actions(client, is_admin_owner=owner))
+        assert not any("Объявление" in x for x in labels), owner
 
 
-def test_announcement_button_sits_above_the_block_button(services, make_active_client):
-    """Порядок задан явно: предупредить — раньше, чем применить."""
+def test_main_menu_entry_opens_target_picker():
+    """Кнопка с главной ведёт на выбор адресатов, а не сразу на ввод текста."""
     from awgbot.bot import keyboards as kb
-    c = make_active_client(name="c1", tg_id=4001)
-    client = services.db.get_client(c.id)
-
-    labels = _btn_texts(kb.admin_client_actions(client))
-    say = next(i for i, t in enumerate(labels) if "Объявление" in t)
-    do = next(i for i, t in enumerate(labels) if "локирова" in t)
-    assert say < do
+    data = _btn_data(kb.admin_main(0), "Объявление")
+    assert data == "bc:pick:0"
 
 
-def test_admin_own_profile_has_no_announcement_button(services, make_active_client):
-    """Адресаты объявления в админском профиле — сам админ, то есть отправитель.
-
-    Кнопка там предлагала бы написать самому себе."""
+def test_target_picker_marks_selection_and_offers_bulk():
+    """Отметки видны на самих кнопках, а массовое действие меняет смысл:
+    отмечено всё — осмысленно только снять."""
+    from awgbot.core import models
     from awgbot.bot import keyboards as kb
-    import awgbot.core.config as cfg
-    c = make_active_client(name="admin", tg_id=cfg.ADMIN_ID)
-    client = services.db.get_client(c.id)
 
-    labels = _btn_texts(kb.admin_client_actions(client, is_admin_owner=True))
-    assert not any("Объявление" in t for t in labels)
+    def _c(i):
+        return models.Client(id=i, tg_id=100 + i, name=f"К{i}", device_limit=1,
+                             block_reason=0, is_service=0, activation_status="active",
+                             invite_code=None, created_at="2026-01-01")
+
+    clients = [_c(1), _c(2)]
+    none = kb.broadcast_targets(clients, set())
+    labels_none = _btn_texts(none)
+    assert labels_none[0].endswith("Отметить все")
+    # проверяем строки профилей, а не кнопку массового действия — она сама
+    # начинается с галочки и под фильтр «отмечено» попала бы ложно
+    assert "☑️ К1" in labels_none and "☑️ К2" in labels_none
+    assert "✅ К1" not in labels_none
+
+    some = kb.broadcast_targets(clients, {1})
+    labels = _btn_texts(some)
+    assert "✅ К1" in labels and "☑️ К2" in labels
+    assert labels[0].endswith("Отметить все")        # отмечено не всё
+
+    every = kb.broadcast_targets(clients, {1, 2})
+    assert _btn_texts(every)[0].endswith("Снять все")
 
 
-def test_broadcast_cancel_clears_the_input_state(services, make_active_client):
+def test_broadcast_cancel_clears_the_input_state():
     """Отмена обязана сбросить FSM, иначе следующее сообщение админа станет
     черновиком объявления.
 
-    Прежде отмена вела прямо в главное меню, чей хендлер чистит состояние
-    попутно, — и на этом всё держалось. Адресная рассылка возвращает в карточку
-    профиля, где такой уборки нет, поэтому у отмены появился свой колбэк.
+    Раньше отмена вела прямо в главное меню, чей хендлер чистит состояние
+    попутно, — работало, но держалось на побочном эффекте соседа.
     """
     from awgbot.bot import keyboards as kb
-
-    c = make_active_client(name="c1", tg_id=4001)
-    for markup in (kb.broadcast_cancel(c.id), kb.broadcast_confirm(c.id)):
+    for markup in (kb.broadcast_cancel(), kb.broadcast_confirm()):
         data = _btn_data(markup, "Отмена")
-        assert data is not None and data.startswith("bc:cancel:"), \
-            f"отмена ведёт мимо сбрасывающего хендлера: {data}"
+        assert data == "bc:cancel:0", data
 
 
-def test_broadcast_confirm_carries_the_target(services, make_active_client):
-    """Кнопка отправки несёт того же адресата, что и превью: разойдись они —
-    объявление уехало бы не тому, и отозвать его нечем."""
+def test_broadcast_confirm_leads_to_send():
     from awgbot.bot import keyboards as kb
-
-    c = make_active_client(name="c1", tg_id=4001)
-    data = _btn_data(kb.broadcast_confirm(c.id), "Отправить")
-    assert data == f"bc:send:{c.id}"
+    assert _btn_data(kb.broadcast_confirm(), "Отправить") == "bc:send:0"

@@ -1475,45 +1475,72 @@ async def admin_block_cancel(cb: CallbackQuery, callback_data: BlockCB, services
 __all__ = ["router"]
 
 
-# ── Броадкаст объявлений: всем либо одному профилю ───────────────────────────
-# Один путь на оба случая. Различаются они ровно двумя вещами — списком
-# получателей и экраном возврата, — а ввод, превью, проверка разметки, кулдаун и
-# отчёт совпадают буквально. Адресат живёт в BroadcastCB.ref (0 = всем) и в
-# FSM-data рядом с текстом: между вводом и подтверждением стоит сообщение
-# пользователя, и восстановить цель из колбэка на том шаге неоткуда.
+# ── Броадкаст объявлений ─────────────────────────────────────────────────────
+# Вход РОВНО один — с главной админа. Кнопка в карточке профиля существовала и
+# убрана: она отвечала на вопрос «кому», который теперь задаётся явным шагом, и
+# при этом лезла в глаза там, где адмиn занимается совсем другим.
+#
+# Набор отмеченных профилей живёт в FSM-data: между выбором и подтверждением
+# стоит сообщение пользователя, и восстановить выбор из колбэка на том шаге
+# неоткуда. Плюс лимит Telegram — 64 байта на callback_data.
 _BROADCAST_COOLDOWN_SEC = 30          # анти-дабл-тап: не слать одно и то же чаще
-# Кулдаун ПОАДРЕСНЫЙ, а не общий. Общий запрещал бы объявить одно и то же двум
-# профилям подряд — а это не дабл-тап, а нормальная работа. Ключ 0 — рассылка
-# всем. Словарь ограничен числом профилей, чистить нечего.
-_last_broadcast_at: dict[int, float] = {}
+# Кулдаун ПО АУДИТОРИИ, а не общий. Общий запрещал бы объявить одно и то же
+# двум разным наборам подряд — а это не двойное нажатие, а обычная работа.
+_last_broadcast_at: dict[tuple, float] = {}
 
 
-async def _broadcast_target(services, ref: int):
-    """(имя профиля, список tg_id). Пустое имя — объявление всем.
-
-    Профиль админа отсекаем ЗДЕСЬ, а не только скрытием кнопки: колбэк приходит
-    и из старого сообщения в истории чата, а получателем там оказался бы сам
-    отправитель."""
-    if not ref:
-        return "", await call(services.db.broadcast_recipients, config.ADMIN_ID)
-    client = await call(services.db.get_client, ref)
-    if client is None or client.tg_id == config.ADMIN_ID:
-        return None, []
-    return client.name, await call(
-        services.db.broadcast_recipients_for_client, ref, config.ADMIN_ID)
+async def _bc_clients(services):
+    """Профили-кандидаты. Служебный и админский исключены: у первого нет
+    владельца, второй — сам отправитель."""
+    return await call(services.db.list_clients, exclude_tg=config.ADMIN_ID)
 
 
-@router.callback_query(BroadcastCB.filter(F.action == "start"))
-async def broadcast_start(cb: CallbackQuery, callback_data: BroadcastCB,
-                          state: FSMContext, services):
-    ref = callback_data.ref
-    name, _ = await _broadcast_target(services, ref)
-    if name is None:
-        await cb.answer("Этому профилю объявление не отправить.", show_alert=True)
+async def _bc_show_targets(cb: CallbackQuery, state: FSMContext, services):
+    clients = await _bc_clients(services)
+    selected = set((await state.get_data()).get("targets") or ())
+    await edit(cb, texts.BROADCAST_TARGETS, kb.broadcast_targets(clients, selected))
+
+
+@router.callback_query(BroadcastCB.filter(F.action == "pick"))
+async def broadcast_pick(cb: CallbackQuery, state: FSMContext, services):
+    """Единственный вход в рассылку — выбор адресатов."""
+    await state.set_state(Broadcast.targets)
+    await state.update_data(targets=[], text=None)
+    await _bc_show_targets(cb, state, services)
+    await cb.answer()
+
+
+@router.callback_query(BroadcastCB.filter(F.action == "tgl"))
+async def broadcast_toggle(cb: CallbackQuery, callback_data: BroadcastCB,
+                           state: FSMContext, services):
+    sel = set((await state.get_data()).get("targets") or ())
+    sel.symmetric_difference_update({callback_data.ref})
+    await state.update_data(targets=sorted(sel))
+    await _bc_show_targets(cb, state, services)
+    await cb.answer()
+
+
+@router.callback_query(BroadcastCB.filter(F.action == "all"))
+async def broadcast_toggle_all(cb: CallbackQuery, state: FSMContext, services):
+    """Отметить всех либо снять всех. Направление выводим из состояния: когда
+    отмечено уже всё, осмысленно только снять."""
+    clients = await _bc_clients(services)
+    ids = [c.id for c in clients]
+    sel = set((await state.get_data()).get("targets") or ())
+    await state.update_data(targets=[] if ids and sel.issuperset(ids) else ids)
+    await _bc_show_targets(cb, state, services)
+    await cb.answer()
+
+
+@router.callback_query(BroadcastCB.filter(F.action == "next"))
+async def broadcast_next(cb: CallbackQuery, state: FSMContext, services):
+    sel = set((await state.get_data()).get("targets") or ())
+    if not sel:
+        await cb.answer(texts.BROADCAST_NO_TARGETS, show_alert=True)
         return
+    names = [c.name for c in await _bc_clients(services) if c.id in sel]
     await state.set_state(Broadcast.text)
-    await state.update_data(ref=ref)
-    await edit(cb, texts.broadcast_prompt(name), kb.broadcast_cancel(ref))
+    await edit(cb, texts.broadcast_prompt(names), kb.broadcast_cancel())
     await cb.answer()
 
 
@@ -1523,19 +1550,21 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
     if not text:
         await message.answer(texts.BROADCAST_EMPTY)
         return
-    ref = int((await state.get_data()).get("ref") or 0)
-    name, tg_ids = await _broadcast_target(services, ref)
+    sel = set((await state.get_data()).get("targets") or ())
+    tg_ids = await call(services.db.broadcast_recipients_for_clients,
+                        sel, config.ADMIN_ID)
     if not tg_ids:
         await state.clear()
         await message.answer("Некому отправлять — нет активных получателей.")
         return
+    names = [c.name for c in await _bc_clients(services) if c.id in sel]
     # текст держим в FSM-data до подтверждения; отправляем HTML как есть.
     # Битую разметку ловим здесь: если превью (обёрнутое в HTML) не отправилось —
     # тот же текст провалил бы и рассылку. Просим поправить, состояние держим.
     await state.update_data(text=text)
     try:
-        await message.answer(texts.broadcast_preview(text, len(tg_ids), name or ""),
-                             reply_markup=kb.broadcast_confirm(ref))
+        await message.answer(texts.broadcast_preview(text, len(tg_ids), names),
+                             reply_markup=kb.broadcast_confirm())
     except TelegramBadRequest:
         await message.answer(
             "⚠️ Разметка бракованная (незакрытый тег?). Проверь HTML "
@@ -1543,20 +1572,15 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
 
 
 @router.callback_query(BroadcastCB.filter(F.action == "cancel"))
-async def broadcast_cancel_h(cb: CallbackQuery, callback_data: BroadcastCB,
-                             state: FSMContext, services):
-    """Отмена на любом шаге: сбросить состояние и вернуться, откуда пришли.
+async def broadcast_cancel_h(cb: CallbackQuery, state: FSMContext, services):
+    """Отмена на любом шаге: сбросить состояние и вернуться в главное меню.
 
-    Сброс здесь и есть смысл этого хендлера. Общая рассылка отменялась прямо в
-    главное меню, чей хендлер чистит FSM попутно; адресная возвращает в карточку
-    профиля, где такой уборки нет, — и без сброса следующее сообщение админа
-    молча стало бы черновиком объявления.
+    Сброс здесь и есть смысл этого хендлера. Раньше отмена вела прямо в меню,
+    чей хендлер чистит FSM попутно, — работало, но держалось на побочном эффекте
+    соседа. Без сброса передумавший на шаге ввода админ остался бы в состоянии
+    Broadcast.text, и следующее его сообщение стало бы черновиком объявления.
     """
     await state.clear()
-    if callback_data.ref:
-        await _show_client_card(cb, services, callback_data.ref)
-        await cb.answer()
-        return
     await cleanup_content(cb.bot, services, cb.message.chat.id)
     await edit_nav(cb, services, await _panel_text(services),
                    await _main_menu_markup(services))
@@ -1564,32 +1588,29 @@ async def broadcast_cancel_h(cb: CallbackQuery, callback_data: BroadcastCB,
 
 
 @router.callback_query(BroadcastCB.filter(F.action == "send"))
-async def broadcast_send(cb: CallbackQuery, callback_data: BroadcastCB,
-                         state: FSMContext, services):
+async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     data = await state.get_data()
     text = data.get("text")
-    # Цель берём из FSM, а не из колбэка: она попала туда на старте и пережила
-    # шаг ввода. Колбэк тут лишь дублирует её, и разойтись им негде.
-    ref = int(data.get("ref") or 0)
+    sel = tuple(sorted(data.get("targets") or ()))
     await state.clear()
-    if not text:
+    if not text or not sel:
         await cb.answer("Нечего отправлять.", show_alert=True)
         return
     now = time.monotonic()
-    if now - _last_broadcast_at.get(ref, 0.0) < _BROADCAST_COOLDOWN_SEC:
+    if now - _last_broadcast_at.get(sel, 0.0) < _BROADCAST_COOLDOWN_SEC:
         await cb.answer("Только что уже отправляли — подожди немного.", show_alert=True)
         return
-    _last_broadcast_at[ref] = now                # метку ставим ДО await'ов —
+    _last_broadcast_at[sel] = now                # метку ставим ДО await'ов —
     await cb.answer("Рассылаю…")                 # второе нажатие уже отсечётся
     await edit(cb, "📢 Рассылаю объявление…", None)   # и кнопки сняты (markup=None)
-    _, tg_ids = await _broadcast_target(services, ref)
+    tg_ids = await call(services.db.broadcast_recipients_for_clients,
+                        sel, config.ADMIN_ID)
     if not tg_ids:
         await edit(cb, "Некому отправлять — нет активных получателей.",
                    await _main_menu_markup(services))
         return
     ok, failed = await broadcast(cb.message.bot, tg_ids, text)
-    # Возврат туда, откуда пришли: после адресного объявления админ обычно тут же
-    # делает то, ради чего предупреждал, — и карточка профиля должна быть в один
-    # шаг, а не через список профилей.
-    markup = (kb.broadcast_done(ref) if ref else await _main_menu_markup(services))
-    await edit(cb, texts.broadcast_report(ok, failed), markup)
+    # Возврат в главное меню: вход у рассылки один, и возвращать админа в
+    # карточку профиля, откуда он не приходил, значило бы уводить его вбок.
+    await edit(cb, texts.broadcast_report(ok, failed),
+               await _main_menu_markup(services))
