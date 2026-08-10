@@ -496,3 +496,23 @@ def test_devices_screen_bulk_button_follows_state():
 
     mixed = kb.routing_devices(1, [_dev(1, 1), _dev(2, 0)], back_target="m:main")
     assert mixed.inline_keyboard[0][0].text.endswith("Выключить все")
+
+
+def test_devices_screen_uses_checkmarks_not_status_dots():
+    """Список с отметками — это выбор, и читаться должен как выбор адресатов
+    объявления. Кружки _chk остаются там, где кнопка показывает СОСТОЯНИЕ
+    чего-то одного, а не отмеченность в списке."""
+    from awgbot.core import models
+    from awgbot.bot import keyboards as kb
+
+    def _dev(i, on):
+        return models.Device(id=i, client_id=1, name=f"D{i}", private_key="k",
+                             public_key=f"p{i}", preshared_key="s",
+                             address=f"10.8.1.{i}", block_reason=0,
+                             routing_on=on, created_at="2026-01-01")
+
+    labels = [b.text for row in kb.routing_devices(
+        1, [_dev(1, 1), _dev(2, 0)], back_target="m:main").inline_keyboard
+        for b in row]
+    assert "✅ D1" in labels and "☑️ D2" in labels
+    assert not any(x.startswith(("🟢", "🔴")) for x in labels), labels

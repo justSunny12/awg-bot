@@ -137,11 +137,15 @@ def routing_devices(client_id: int, devices, *, back_target) -> InlineKeyboardMa
     """
     kb = InlineKeyboardBuilder()
     any_on = any(d.routing_on for d in devices)
-    kb.button(text="🔴 Выключить все" if any_on else "🟢 Включить все",
+    # Галочки, а не цветные кружки _chk: экран со списком и отметками — это
+    # выбор, и он должен читаться так же, как выбор адресатов объявления.
+    # Кружки оставлены там, где кнопка показывает СОСТОЯНИЕ чего-то одного.
+    kb.button(text="☑️ Выключить все" if any_on else "✅ Включить все",
               callback_data=RoutingCB(action="all", ref=client_id))
     rows = [1]
     for d in devices:
-        kb.button(text=f"{_chk(d.routing_on)} {d.name}{_btn_suffix(d)}",
+        mark = "✅" if d.routing_on else "☑️"
+        kb.button(text=f"{mark} {d.name}{_btn_suffix(d)}",
                   callback_data=RoutingCB(action="dev", ref=d.id))
         rows.append(1)
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
