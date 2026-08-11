@@ -313,3 +313,76 @@ async def test_broadcast_draft_chain_is_cleaned_on_cancel(services, make_active_
     tracked = services.db.pop_content_msg_ids(chat)
     assert msg.message_id in tracked, "сообщение админа осталось бы висеть"
     assert 555 in tracked, "экран-приглашение осталось бы висеть"
+
+
+def test_broadcast_report_wording_by_shape():
+    """Четыре формы отчёта. Число адресатов называем, только когда в рассылку
+    вошли друзья: без них оно равно числу профилей и уже видно из перечисления."""
+    from awgbot.bot import texts as T
+    txt = "Профилактика <b>в ночь</b>"
+
+    one = T.broadcast_report(["Наташа"], False, 1, 0, txt)
+    assert one.startswith("✅ Объявление доставлено владельцу профиля Наташа\n\n")
+    assert "адресат" not in one
+
+    one_fr = T.broadcast_report(["Наташа"], True, 2, 0, txt)
+    assert ("владельцу профиля Наташа и тем, с кем он поделился устройствами: "
+            "всего 2 адресата.") in one_fr
+
+    many = T.broadcast_report(["Наташа", "Ксюша"], False, 2, 0, txt)
+    assert many.startswith("✅ Объявление доставлено владельцам профилей Наташа, Ксюша\n\n")
+
+    many_fr = T.broadcast_report(["Наташа", "Ксюша"], True, 4, 0, txt)
+    assert ("владельцам профилей Наташа, Ксюша и тем, с кем они поделились "
+            "устройствами: всего 4 адресата.") in many_fr
+
+    for r in (one, one_fr, many, many_fr):
+        assert r.endswith(f"\n\nТекст объявления: {txt}")
+
+
+def test_broadcast_report_declines_recipient_word():
+    from awgbot.bot import texts as T
+    assert "всего 1 адресат." in T.broadcast_report(["А"], True, 1, 0, "x")
+    assert "всего 5 адресатов." in T.broadcast_report(["А"], True, 5, 0, "x")
+
+
+def test_broadcast_report_does_not_hide_failures():
+    """«Доставлено» при недоставленных было бы неправдой, а узнать об этом
+    больше неоткуда."""
+    from awgbot.bot import texts as T
+    r = T.broadcast_report(["А"], True, 3, 2, "x")
+    assert "⚠️ Не доставлено 2 адресатам" in r
+
+
+async def test_send_leaves_report_and_opens_panel_separately(
+        services, make_active_client, fake_bot):
+    """Отчёт остаётся в чате без кнопок, панель приходит СЛЕДУЮЩИМ сообщением.
+
+    Раньше отчёт нёс на себе клавиатуру главного меню: тогда он либо
+    переписывался при следующей навигации, либо оставлял в чате второе живое
+    меню — держать инвариант «одно активное» было нечем.
+    """
+    from tests.conftest import FakeCallback, FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    admin_h._last_broadcast_at.clear()
+    c = make_active_client(name="Наташа", tg_id=7100)
+    chat = cfg.ADMIN_ID
+
+    state = FakeState()
+    await state.update_data(targets=[c.id], text="Профилактика <b>в ночь</b>")
+    nav = FakeMessage(chat_id=chat, user_id=chat, bot=fake_bot)
+    cb = FakeCallback(message=nav, user_id=chat, bot=fake_bot)
+
+    await admin_h.broadcast_send(cb, state, services)
+
+    edits = [s for s in nav.sent if s[0] == "edit_text"]
+    report = edits[-1]
+    assert report[1].startswith("✅ Объявление доставлено владельцу профиля Наташа")
+    assert "Текст объявления: Профилактика <b>в ночь</b>" in report[1]
+    assert report[2] is None, "на отчёте не должно остаться кнопок"
+
+    answers = [s for s in nav.sent if s[0] == "answer"]
+    assert answers, "панель должна прийти отдельным сообщением"
+    assert answers[-1][2] is not None, "у панели должна быть клавиатура"

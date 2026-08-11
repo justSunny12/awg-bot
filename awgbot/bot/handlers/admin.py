@@ -1650,7 +1650,15 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
                    await _main_menu_markup(services))
         return
     ok, failed = await broadcast(cb.message.bot, tg_ids, text)
-    # Возврат в главное меню: вход у рассылки один, и возвращать админа в
-    # карточку профиля, откуда он не приходил, значило бы уводить его вбок.
-    await edit(cb, texts.broadcast_report(ok, failed),
-               await _main_menu_markup(services))
+    names = [c.name for c in await _bc_clients(services) if c.id in set(sel)]
+    friends = await call(services.db.broadcast_has_friends, sel, config.ADMIN_ID)
+    # Превью превращается в отчёт и ОСТАЁТСЯ в чате — кнопок на нём больше нет.
+    # Это единственный след разосланного: черновик уехал в уборку, а копии у
+    # отправителя нет, Telegram показывает ему только собственные реплики боту.
+    await edit(cb, texts.broadcast_report(names, friends, ok, failed, text), None)
+    # Панель — СЛЕДУЮЩИМ сообщением, со своим обычным текстом и статусами.
+    # Прежде отчёт нёс на себе клавиатуру главного меню: тогда он либо
+    # переписывался при следующей навигации, либо оставлял в чате второе живое
+    # меню — инвариант «одно активное» держать было нечем.
+    await send_menu(cb.message, services, await _panel_text(services),
+                    await _main_menu_markup(services))
