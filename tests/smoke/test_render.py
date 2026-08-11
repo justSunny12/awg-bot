@@ -32,6 +32,32 @@ def test_plural_ru_agrees():
     assert texts.plural_ru(5, "день", "дня", "дней").endswith("дней")
 
 
+def test_device_count_is_a_fraction_everywhere():
+    """Счётчик устройств читается одинаково у админа и у владельца профиля:
+    дробь m/n, безлимит — ∞. Расхождение форматов между двумя сообщениями об
+    одном и том же событии заставляет сверять их глазами."""
+    admin = texts.device_created_report("Pi4", client_name="Админ", device_count=6,
+                                        max_devices=0)
+    owner = texts.reassign_recipient_notice("Pi4", 6, 0, recipient_is_admin=True)
+    assert "Количество устройств: 6/∞" in admin
+    assert "Теперь у тебя 6/∞ подключённых устройств." in owner
+    # с лимитом — тот же вид, число вместо ∞
+    assert "Теперь у тебя 1/5 подключённых устройств." in \
+        texts.reassign_recipient_notice("Тел", 1, 5)
+    # после дроби слова не склоняем: «1/5 подключённое устройство» — брак
+    assert "подключённое" not in texts.reassign_donor_notice("Тел", 1, 5)
+
+
+def test_unlimited_consumption_says_it_in_one_phrase():
+    """Ни лимита устройства, ни лимита профиля — «Потребление не ограничено».
+    Прежняя оговорка про рамки лимита профиля намекала на лимит, которого нет."""
+    free = texts.device_created_report("П", client_name="В", device_count=1)
+    assert free.endswith("Потребление не ограничено.")
+    withprofile = texts.device_created_report("П", client_name="В", device_count=1,
+                                              profile_limit_bytes=100 * 1024 ** 3)
+    assert "в рамках лимита профиля не ограничено (100.00 ГБ/профиль)" in withprofile
+
+
 # ── клавиатуры без БД ────────────────────────────────────────────────────────
 def _is_markup(m):
     return isinstance(m, InlineKeyboardMarkup) and len(m.inline_keyboard) >= 1
@@ -47,6 +73,16 @@ def test_static_keyboards_build():
     assert _is_markup(kb.block_notify_choice("cli", 1, pause_days=0))
     assert _is_markup(kb.friend_help_menu())
     assert _is_markup(kb.friend_main(1, multi=True))
+
+
+def test_added_by_admin_offers_all_three_ways_and_hides():
+    """Уведомление о выданном устройстве: способы выдачи тройкой в один ряд (как
+    в главном меню) и «Скрыть» последней строкой — оно проактивное, человек его
+    не заказывал."""
+    rows = kb.added_by_admin(7).inline_keyboard
+    assert [b.text for b in rows[0]] == ["🔗 Ссылка", "🔳 QR-код", "📄 Файл"]
+    assert len(rows[-1]) == 1 and rows[-1][0].text == "Скрыть"
+    assert any("gen_qr" in b.callback_data for b in rows[0]), "QR не выдавался вовсе"
 
 
 def test_block_unblock_reasons_lists_active_bits():

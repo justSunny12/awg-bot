@@ -90,11 +90,13 @@ def test_device_created_report_variants():
     r2 = texts.device_created_report("Тел", client_name="Вася", device_count=3,
                                      max_devices=5, dev_limit_bytes=0, profile_limit_bytes=100*GB)
     assert "в рамках лимита профиля не ограничено (100.00 ГБ/профиль)" in r2
-    # без лимита устройства, профиль безлимит
+    # без лимита устройства, профиль безлимит: ограничивать нечему — говорим
+    # это одной фразой, без оговорки про лимит профиля, которого нет
     r3 = texts.device_created_report("П", client_name="Вася", device_count=1,
                                      max_devices=0, dev_limit_bytes=0, profile_limit_bytes=0)
-    assert "профиль без ограничений" in r3
-    assert "1/без ограничения" in r3
+    assert r3.endswith("Потребление не ограничено.")
+    assert "лимита профиля" not in r3
+    assert "1/∞" in r3
     # клиент/друг — без имени профиля
     r4 = texts.device_created_report("П", client_name=None, device_count=1, max_devices=3)
     assert "для профиля" not in r4

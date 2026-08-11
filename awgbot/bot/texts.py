@@ -55,19 +55,20 @@ def gb_str(num_bytes: int) -> str:
 
 
 def _limit_devices_str(limit: int) -> str:
-    return "без ограничения" if not limit else str(limit)
+    return "∞" if not limit else str(limit)
 
 
 def _dev_traffic_line(dev_limit_bytes: int, profile_limit_bytes: int) -> str:
     """Строка о лимите потребления устройства для отчёта о создании.
     Свой лимит устройства → показываем его; иначе потребление ограничено лишь
-    лимитом профиля (или ничем, если профиль безлимитный)."""
+    лимитом профиля. Когда не ограничивает ни то, ни другое — говорить не о чем,
+    и оговорка «в рамках лимита профиля» только сбивает: лимита нет вовсе."""
     if dev_limit_bytes:
         return f"Лимит потребления: {gb_str(dev_limit_bytes)}"
     if profile_limit_bytes:
         return (f"Потребление в рамках лимита профиля не ограничено "
                 f"({gb_str(profile_limit_bytes)}/профиль)")
-    return "Потребление в рамках лимита профиля не ограничено (профиль без ограничений)"
+    return "Потребление не ограничено"
 
 
 def device_created_report(dev_name: str, *, client_name: str = None,
@@ -79,7 +80,7 @@ def device_created_report(dev_name: str, *, client_name: str = None,
     if client_name:
         head += f" для профиля «{_e(client_name)}»"
     head += ".\n"
-    head += f"Количество устройств: {device_count}/{_limit_devices_str(max_devices)},\n"
+    head += f"Количество устройств: {device_count}/{_limit_devices_str(max_devices)}\n"
     head += _dev_traffic_line(dev_limit_bytes, profile_limit_bytes) + "."
     return head
 
@@ -762,19 +763,13 @@ def plural_ru(n: int, one: str, few: str, many: str) -> str:
     return timeutil._plural_ru(n, (one, few, many))
 
 
-def _devices_word(n: int) -> str:
-    return plural_ru(n, "устройство", "устройства", "устройств")
-
-
 def _slots_phrase(count: int, limit: int) -> str:
-    """«m подключённых устройств из n возможных» / «…без ограничения».
-    Склоняем и «устройство» по m, и «возможного/возможных» по n."""
-    word = _devices_word(count)
-    connected = plural_ru(count, "подключённое", "подключённых", "подключённых")
-    if limit == 0:
-        return f"Теперь у тебя {count} {connected} {word} (без ограничения)."
-    possible = plural_ru(limit, "возможного", "возможных", "возможных")
-    return f"Теперь у тебя {count} {connected} {word} из {limit} {possible}."
+    """«m/n подключённых устройств», n=∞ при безлимите — та же дробь, что в
+    отчёте админа о созданном устройстве. Слова после дроби не склоняем: она
+    читается целиком («6/10 подключённых устройств»), и согласование по
+    числителю дало бы «1/10 подключённое устройство»."""
+    return (f"Теперь у тебя {count}/{_limit_devices_str(limit)} "
+            "подключённых устройств.")
 
 
 def reassign_donor_notice(name: str, count: int, limit: int) -> str:

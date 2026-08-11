@@ -755,12 +755,15 @@ def pick_device_to_delete(devices) -> InlineKeyboardMarkup:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def added_by_admin(device_id: int) -> InlineKeyboardMarkup:
+    """Уведомление проактивное — «Скрыть» последней строкой по общему правилу
+    (см. HideCB). Способы выдачи — тройкой в один ряд, как в главном меню."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="🔗 Получить ссылку", callback_data=DeviceCB(action="gen_link", device_id=device_id))
-    kb.button(text="📄 Получить файл", callback_data=DeviceCB(action="gen_file", device_id=device_id))
+    kb.button(text="🔗 Ссылка", callback_data=DeviceCB(action="gen_link", device_id=device_id))
+    kb.button(text="🔳 QR-код", callback_data=DeviceCB(action="gen_qr", device_id=device_id))
+    kb.button(text="📄 Файл", callback_data=DeviceCB(action="gen_file", device_id=device_id))
     kb.button(text="❓ Помощь с настройкой", callback_data=HelpCB(platform="root"))
-    kb.adjust(2, 1)
-    return kb.as_markup()
+    kb.adjust(3, 1)                 # [ссылка|QR|файл] / помощь / Скрыть
+    return append_hide_row(kb)
 
 
 def unmanaged_device_dialog(device_id: int) -> InlineKeyboardMarkup:
