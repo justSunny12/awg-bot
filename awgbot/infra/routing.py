@@ -686,22 +686,33 @@ def link_handshake_age() -> Optional[int]:
 # Внешние списки и конфиг dnsmasq
 # ─────────────────────────────────────────────────────────────────────────────
 
-def fetch(url: str, timeout: int = 15) -> Optional[str]:
-    """Скачать текст. None при любой неудаче — вызывающий сам решит, что делать.
+def fetch(url: str, timeout: int = 15) -> tuple[Optional[str], str, int]:
+    """Скачать текст. Возвращает (тело, ошибка, код ответа).
 
-    Молчаливый None, а не исключение: недоступность апстрима не должна ронять
-    ни старт бота, ни цикл мониторинга. Прежний набор при этом остаётся в силе —
-    застывший список всё ещё покрывает большинство сервисов, а пустой не
-    покрывает ни одного.
+    Не исключение: недоступность апстрима не должна ронять ни старт бота, ни
+    цикл мониторинга. Прежний набор при этом остаётся в силе — застывший список
+    всё ещё покрывает большинство сервисов, а пустой не покрывает ни одного.
+
+    Но и не молчаливый None: «не достучались», «файла нет по адресу» и
+    «ответили пустым» лечатся в разных местах, а дальше все трое выглядят нулём
+    записей. Различить их можно только здесь, поэтому наружу идут и текст
+    ошибки, и код: 404 означает переехавший файл, 429 — наш собственный лимит,
+    и совет по ним прямо противоположный.
+
+    Код — 0, когда HTTP-ответа не было вовсе (DNS, TLS, таймаут).
     """
+    import urllib.error
     import urllib.request
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "awg-bot"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read().decode("utf-8", errors="replace")
+            return resp.read().decode("utf-8", errors="replace"), "", 200
+    except urllib.error.HTTPError as e:
+        log.warning("routing: не скачался %s (%s)", url, e)
+        return None, (str(e) or e.__class__.__name__)[:200], int(e.code)
     except Exception as e:                                # noqa: BLE001
         log.warning("routing: не скачался %s (%s)", url, e)
-        return None
+        return None, (str(e) or e.__class__.__name__)[:200], 0
 
 
 def resolve_a(domain: str, timeout: float = 3.0) -> list[str]:

@@ -191,7 +191,8 @@ def fake_routing(monkeypatch, tmp_path):
     _set("invalidate_self_check", lambda: None)
     _set("add_networks", add_networks)
     _set("resolve_a", lambda dom, timeout=3.0: list(state.dns.get(dom, [])))
-    _set("fetch", lambda url, timeout=15: None)
+    # контракт настоящей: (тело, ошибка) — ровно одно из двух непусто
+    _set("fetch", lambda url, timeout=15: (None, "заглушка: источник не настроен", 0))
     _set("destroy_set", lambda name: state.sets.pop(name, None))
     _set("list_sets", lambda: sorted(state.sets))
     # Сигнатура ровно как у настоящей: был период двух моделей, и заглушка

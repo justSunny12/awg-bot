@@ -145,9 +145,26 @@ _TXT_RT_INFRA_BAD = (
     "<code>/etc/dnsmasq.d/awgbot-routing.conf</code>.")
 _TXT_RT_SRC_STALE = (
     "⚠️ Источник списков маршрутизации замолчал:\n<code>{url}</code>\n\n"
-    "Раньше он отдавал {n} записей, сейчас — ничего. Прежний список продолжает "
-    "работать, но обновляться перестал: новые заблокированные ресурсы в него уже "
-    "не попадут. Проверь, не переехал ли файл.")
+    "Раньше он отдавал {n} записей, сейчас отвечает пустым. Прежний список "
+    "продолжает работать, но обновляться перестал: новые заблокированные ресурсы "
+    "в него уже не попадут. Проверь, не переехал ли файл.")
+_TXT_RT_SRC_DOWN = (
+    "⚠️ Источник списков маршрутизации не отвечает:\n<code>{url}</code>\n\n"
+    "<code>{err}</code>\n\n"
+    "Так ответили все {tries} попытки подряд. Файл может быть цел — до него не "
+    "дошли мы. Прежний список продолжает работать, но обновляться перестал: "
+    "новые заблокированные ресурсы в него уже не попадут. Лимит запросов и "
+    "таймаут обычно проходят сами; скажу, когда источник ответит снова.")
+_TXT_RT_SRC_GONE = (
+    "⚠️ Источника списков маршрутизации нет по адресу:\n<code>{url}</code>\n\n"
+    "<code>{err}</code>\n\n"
+    "Так ответили все {tries} попытки подряд — файл переехал или удалён, само "
+    "это не пройдёт. Прежний список продолжает работать, но обновляться "
+    "перестал: новые заблокированные ресурсы в него уже не попадут. Новый адрес "
+    "прописывается в <code>app.routing.lists_home_urls</code>.")
+_TXT_RT_SRC_OK = (
+    "🟢 Источник списков маршрутизации снова отдаёт данные:\n<code>{url}</code>\n\n"
+    "Записей в ответе: {n}. Списки опять обновляются.")
 _TXT_FRIEND_DEVICE_GONE = ("Устройство, которым ты управлял, удалено владельцем — "
                            "доступ по нему больше не работает.")
 
@@ -1985,21 +2002,78 @@ class Services:
     # останется прежним и никто не узнает. routing_lists_ready смотрит на
     # непустоту, а не на свежесть, поэтому такой отказ не виден вообще ничем.
     _RT_SRC_N = "rt_src_n:"          # последнее НЕнулевое число записей
-    _RT_SRC_BAD = "rt_src_bad:"      # источник молчит, и об этом уже сказали
+    _RT_SRC_BAD = "rt_src_bad2:"     # подтверждённая беда: "" | "down" | "gone" | "empty"
+    _RT_SRC_ERR = "rt_src_err:"      # текст ошибки — половина диагноза
+    _RT_SRC_FAILS = "rt_src_fails:"  # неудач подряд, для добора попыток
+    _RT_SRC_SAID = "rt_src_said:"    # о какой беде уже доложили
+    _RT_SRC_LEGACY = "rt_src_bad:"   # прежняя схема: url (ждёт доклада) / announced
+
+    # Тревога не по первой неудаче: сеть моргает, а GitHub отдаёт 429 на минуты.
+    # Доклад по одному промаху приучил бы не читать эти сообщения ровно к тому
+    # разу, когда источник умер по-настоящему.
+    _RT_SRC_TRIES = 4                # первая попытка и три добора
+    _RT_SRC_RETRY_SECS = 300         # пауза между ними
 
     @staticmethod
     def _routing_src_key(url: str) -> str:
         return hashlib.sha256(url.encode()).hexdigest()[:12]
 
-    def _routing_note_source(self, url: str, count: int) -> None:
-        """Запомнить, сколько записей отдал источник в этот раз."""
+    def _routing_note_source(self, url: str, count: int, err: str = "",
+                             code: int = 200) -> bool:
+        """Запомнить исход обращения к источнику. True — нужен скорый повтор.
+
+        Исходов четыре, и чинятся они в разных местах: отдал записи; не ответил
+        (наша связь, файл при этом может быть цел); ответил 404 (файл переехал
+        или удалён); ответил 200, но разбирать нечего (сменился формат). Прежде
+        все, кроме первого, приходили сюда одинаковым нулём, и доклад звал
+        искать переехавший файл там, где до файла попросту не дошли.
+
+        Пустой ответ добором попыток не проверяем: он не про связь, и следующая
+        попытка вернёт ровно то же самое.
+        """
         k = self._routing_src_key(url)
         if count:
             self.db.set_state(self._RT_SRC_N + k, str(count))
+            self.db.set_state(self._RT_SRC_FAILS + k, "0")
             self.db.set_state(self._RT_SRC_BAD + k, "")
-        elif self.db.get_state(self._RT_SRC_N + k):
-            # раньше отдавал, сейчас пусто — отметить для доклада
-            self.db.set_state(self._RT_SRC_BAD + k, url)
+            return False
+        if not self.db.get_state(self._RT_SRC_N + k):
+            return False              # ни разу не отдавал — сравнивать не с чем
+        if not err:
+            self.db.set_state(self._RT_SRC_BAD + k, "empty")
+            return False
+        fails = int(self.db.get_state(self._RT_SRC_FAILS + k) or 0) + 1
+        self.db.set_state(self._RT_SRC_FAILS + k, str(fails))
+        self.db.set_state(self._RT_SRC_ERR + k, err)
+        if fails < self._RT_SRC_TRIES:
+            return True               # рано тревожить — добираем попытки
+        # 404/410 добором не лечится, но и он его проходит: правило одно на все
+        # не-двухсотые, а разделяем их только в докладе.
+        self.db.set_state(self._RT_SRC_BAD + k, "gone" if code in (404, 410) else "down")
+        return False
+
+    def _routing_src_legacy(self, k: str) -> str:
+        """Как прежняя схема отвечала бы на оба вопроса — «что сейчас» и «о чём
+        сказали». Там один ключ значил и то, и другое: url — доклад ждёт,
+        «announced» — доклад ушёл.
+
+        Оба вопроса ОБЯЗАНЫ разрешаться одинаково, иначе висящая с прошлой
+        версии тревога прочиталась бы как выздоровление и бот доложил бы о нём,
+        пока источник всё ещё лежит. Какой именно была беда, та схема не
+        различала — берём «не отвечает»; на текст восстановления это не влияет.
+        """
+        return "down" if self.db.get_state(self._RT_SRC_LEGACY + k) == "announced" else ""
+
+    def _routing_src_state(self, k: str) -> str:
+        """Что с источником сейчас. Пока доборы не исчерпаны — прежнее значение:
+        неподтверждённая неудача не считается ни бедой, ни выздоровлением."""
+        state = self.db.get_state(self._RT_SRC_BAD + k)
+        return state if state is not None else self._routing_src_legacy(k)
+
+    def _routing_src_said(self, k: str) -> str:
+        """О чём по этому источнику уже доложено."""
+        said = self.db.get_state(self._RT_SRC_SAID + k)
+        return said if said is not None else self._routing_src_legacy(k)
 
     # Реконсиляция упала. Отдельный ключ, а не флаг рядом с источниками: там
     # «списки застыли», здесь «примениться не удалось», и чинятся они в разных
@@ -2029,22 +2103,40 @@ class Services:
         return [Notification(config.ADMIN_ID, _TXT_RT_INFRA_BAD.format(err=_e(err)))]
 
     def routing_source_alerts(self) -> list[Notification]:
-        """Источники, которые раньше отдавали списки, а теперь молчат.
+        """Смена состояния источника — доклад. Один на смену, не на тик.
 
-        Один доклад на источник: флаг снимается, когда источник снова отдал
-        данные. Молчащий источник не ломает маршрутизацию сегодня, но означает,
-        что списки застыли, — а узнать об этом иначе неоткуда.
+        Докладываем и о восстановлении: молчащий источник не ломает
+        маршрутизацию сегодня, поэтому увидеть своими глазами, что списки снова
+        обновляются, неоткуда — как и понять, чинить ли ещё. Пока в боте были
+        одни тревоги, разошедшийся сам собой лимит запросов оставался бы висеть
+        нерешённым делом.
+
+        Переход down→empty (или обратно) тоже доклад: диагноз сменился, а с ним
+        и место, куда идти чинить.
         """
         notes: list[Notification] = []
         for url in config.ROUTING_LISTS_HOME_URLS:
             if not url:
                 continue
             k = self._routing_src_key(url)
-            if self.db.get_state(self._RT_SRC_BAD + k) != url:
+            state = self._routing_src_state(k)
+            if state == self._routing_src_said(k):
                 continue
-            self.db.set_state(self._RT_SRC_BAD + k, "announced")
-            notes.append(Notification(config.ADMIN_ID, _TXT_RT_SRC_STALE.format(
-                url=url, n=self.db.get_state(self._RT_SRC_N + k) or "?")))
+            self.db.set_state(self._RT_SRC_SAID + k, state)
+            self.db.set_state(self._RT_SRC_LEGACY + k, "")   # наследство погашено
+            n = self.db.get_state(self._RT_SRC_N + k) or "?"
+            err = _e(self.db.get_state(self._RT_SRC_ERR + k) or "?")
+            if not state:
+                text = _TXT_RT_SRC_OK.format(url=_e(url), n=n)
+            elif state == "down":
+                text = _TXT_RT_SRC_DOWN.format(url=_e(url), err=err,
+                                               tries=self._RT_SRC_TRIES)
+            elif state == "gone":
+                text = _TXT_RT_SRC_GONE.format(url=_e(url), err=err,
+                                               tries=self._RT_SRC_TRIES)
+            else:
+                text = _TXT_RT_SRC_STALE.format(url=_e(url), n=n)
+            notes.append(Notification(config.ADMIN_ID, text))
         return notes
 
     def routing_update_lists(self, force: bool = False) -> int:
@@ -2088,19 +2180,25 @@ class Services:
             # обратной моделью: набор перечисляет то, что идёт на шлюз, а туда
             # заграница не ходит по определению.
             home: list[str] = []
+            retry = False
             for url in config.ROUTING_LISTS_HOME_URLS:
                 if not url:
                     continue
-                body = routing.fetch(url)
+                body, err, code = routing.fetch(url)
                 got = domain_routing.parse_domain_list(body) if body else []
-                self._routing_note_source(url, len(got))
+                retry |= self._routing_note_source(url, len(got), err, code)
                 home.extend(got)
 
             with routing.mutation_lock:
                 if home:
                     self._routing_write_cache("home_domains", sorted(set(home)))
                 size = len(self._routing_read_cache("home_domains"))
-                self.db.set_state(self._RT_LISTS_KEY, str(now))
+                # Неудача не должна съедать окно целиком: 429 живёт минуты, а
+                # окно — часы, и следующая попытка пришлась бы на давно
+                # разошедшийся лимит. Пока доборы не исчерпаны, метку сдвигаем
+                # так, чтобы гейт открылся через паузу добора.
+                self.db.set_state(self._RT_LISTS_KEY, str(
+                    now - every + min(every, self._RT_SRC_RETRY_SECS) if retry else now))
                 # окружение изменилось нашими руками — прежний вердикт
                 # самопроверки протух
                 routing.invalidate_self_check()
