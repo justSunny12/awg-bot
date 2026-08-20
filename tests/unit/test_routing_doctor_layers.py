@@ -181,3 +181,82 @@ def test_marking_rule_has_no_negation():
     body = src.split('"""', 2)[-1]              # без докстринга
     assert '"--match-set"' in body
     assert '"!"' not in body, "вернулась инверсия: набор снова означал бы заграницу"
+
+
+# ── кэш самопроверки: «не работает» обязан перепроверяться ────────────────────
+
+@pytest.fixture()
+def selfcheck_env(monkeypatch):
+    """Управляемое окружение самопроверки: state['up'] — есть ли интерфейс.
+
+    Считаем ЗАХОДЫ в проверку: суть теста в том, сколько раз вердикт сверяется
+    с железом, а не какой он.
+    """
+    import types
+    state = types.SimpleNamespace(up=True, calls=0)
+
+    def host_ok(args):
+        if args[:3] == ["ip", "link", "show"]:
+            state.calls += 1
+            return state.up
+        return True
+
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
+    monkeypatch.setattr(routing, "_check_host_tools", lambda: None)
+    monkeypatch.setattr(routing, "_check_static_plumbing", lambda: None)
+    monkeypatch.setattr(routing, "_host_ok", host_ok)
+    from awgbot.infra import awg as _awg
+    monkeypatch.setattr(_awg, "in_container", lambda: False)
+    routing.invalidate_self_check()
+    yield state
+    routing.invalidate_self_check()
+
+
+def test_negative_verdict_rechecks_itself(selfcheck_env, monkeypatch):
+    """Окружение чинится СНАРУЖИ — обновлением ядра, перезапуском линка, правкой
+    руками, — и бот обязан это заметить сам.
+
+    Прежде кэш сбрасывался только там, где окружение менял сам бот, поэтому
+    вердикт «интерфейса нет», вынесенный на минуту простоя, держался до
+    перезапуска бота или до ближайшего обновления списков — до шести часов
+    после того, как причина устранена. Всё это время маршрутизация выключена
+    у ВСЕХ пользователей.
+    """
+    selfcheck_env.up = False
+    assert routing.self_check()[0] is False
+    was = selfcheck_env.calls
+
+    routing.self_check()                       # в пределах TTL к железу не ходим
+    assert selfcheck_env.calls == was
+
+    selfcheck_env.up = True
+    monkeypatch.setattr(routing, "_selfcheck_at",
+                        routing._selfcheck_at - routing._SELFCHECK_BAD_TTL - 1)
+    ok, why = routing.self_check()
+    assert ok is True and why == "ок"
+    assert selfcheck_env.calls > was, "вердикт не перепроверился с железом"
+
+
+def test_positive_verdict_is_not_rechecked(selfcheck_env, monkeypatch):
+    """«Ок» держим бессрочно: проверка ходит в подпроцессы, а available() зовут
+    ещё и при отрисовке экранов. Ложное «ок» ловится зондом живости, ложное
+    «не работает» не ловится ничем."""
+    assert routing.self_check()[0] is True
+    was = selfcheck_env.calls
+
+    monkeypatch.setattr(routing, "_selfcheck_at",
+                        routing._selfcheck_at - routing._SELFCHECK_BAD_TTL * 10)
+    for _ in range(5):
+        routing.self_check()
+    assert selfcheck_env.calls == was, "положительный вердикт перепроверяется зря"
+
+
+def test_force_still_bypasses_the_cache(selfcheck_env):
+    """force=True остаётся способом спросить железо немедленно — на нём держится
+    сброс после того, как бот сам поменял окружение."""
+    assert routing.self_check()[0] is True
+    was = selfcheck_env.calls
+    selfcheck_env.up = False
+    assert routing.self_check(force=True)[0] is False
+    assert selfcheck_env.calls > was

@@ -206,6 +206,9 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
     if key == "bot":                                   # рестарт бота
         await cb.answer("Перезапускаю бота…")
         await edit(cb, "🔄 Бот перезапускается — вернётся через несколько секунд.", None)
+        # Запоминаем ДО рестарта: обещание вернуться исполняет новый процесс,
+        # подменяя это же сообщение панелью.
+        await call(services.set_restart_wait, cb.message.chat.id, cb.message.message_id)
         await call(services.restart_bot)
         return
     if key == "check":                                 # проверить обновление сейчас

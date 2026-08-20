@@ -38,7 +38,7 @@ _API = "https://api.github.com"
 _TIMEOUT = 20
 # vMAJOR.MINOR.PATCH (ведущее «v» необязательно). Пре-релизные суффиксы не
 # поддерживаем сознательно — релизы строго числовые.
-_SEMVER_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
+_SEMVER_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?$")
 
 
 class UpdateError(Exception):
@@ -55,9 +55,18 @@ class Release:
 
 
 def parse_version(tag: str) -> Optional[tuple]:
-    """'v1.2.0'|'1.2.0' → (1,2,0); иначе None (нерелизный тег игнорируем)."""
+    """'v1.2.0'|'1.2.0' → (1,2,0); 'v1.2.0.3' → (1,2,0,3); иначе None.
+
+    Четвёртая цифра — хотфикс поверх выпущенной версии. Кортежи разной длины
+    Python сравнивает как надо: (1,2,0) < (1,2,0,3) < (1,2,1), — дополнять
+    нулём нельзя, иначе 1.2.0 и 1.2.0.0 стали бы одним и тем же, и бот на
+    хотфиксе считал бы себя базовой версией.
+    """
     m = _SEMVER_RE.match(tag.strip())
-    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+    if not m:
+        return None
+    head = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    return head + (int(m.group(4)),) if m.group(4) else head
 
 
 def _request(url: str, accept: str) -> bytes:

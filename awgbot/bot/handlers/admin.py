@@ -26,7 +26,7 @@ from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message,
                              remove_device_and_notify, send_conf, cleanup_content,
                              send_link, send_qr, send_menu, content_finisher,
-                             show_main_menu)
+                             show_main_menu, _dismiss_previous_nav)
 from awgbot.bot.notifier import notify_one, send_notifications, broadcast
 from awgbot.domain.services import BYTES_PER_GB, SECONDS_PER_DAY, LimitReached, ServiceError
 from awgbot.bot.states import (AdminAddDevice, AdminSelfAddDevice, BlockPauseDays, Broadcast, CreateClient,
@@ -57,6 +57,34 @@ async def _return_panel(message, services) -> None:
     await cleanup_content(message.bot, services, message.chat.id)
     await send_menu(message, services, await _panel_text(services),
                     await _main_menu_markup(services))
+
+
+async def restore_panel_after_restart(bot, services) -> None:
+    """Исполнить обещание «вернётся через несколько секунд». Зовётся новым
+    процессом на старте.
+
+    Обещание давал уходящий процесс, а исполнить его было некому: после старта в
+    чат никто не пишет, и админ оставался с мёртвым сообщением без кнопок, пока
+    сам не отправлял /start.
+
+    Обещание подменяется отчётом на том же месте и ОСТАЁТСЯ в чате — это
+    единственный след того, что перезапуск состоялся, а не завис. Панель идёт
+    следующим сообщением: неси она свои кнопки на отчёте, в чате оказалось бы
+    два живых меню, и инвариант «одно активное» держать было бы нечем.
+    """
+    waiting = await call(services.pop_restart_wait)
+    if waiting is None:
+        return
+    chat_id, mid = waiting
+    try:
+        await bot.edit_message_text(texts.BOT_RESTARTED, chat_id=chat_id,
+                                    message_id=mid, reply_markup=None)
+    except Exception:                                  # noqa: BLE001
+        pass          # сообщение удалили — отчёт потерян, панель важнее
+    await _dismiss_previous_nav(bot, services, chat_id)
+    sent = await bot.send_message(chat_id, await _panel_text(services),
+                                  reply_markup=await _main_menu_markup(services))
+    await call(services.db.set_nav_message_id, chat_id, sent.message_id)
 
 
 async def _panel_text(services) -> str:

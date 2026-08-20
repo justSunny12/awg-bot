@@ -232,3 +232,27 @@ def test_update_to_notify_respects_never_schedule(services, monkeypatch, tmp_pat
     finally:
         from awgbot.core import config
         st.init(config.CONF_DIR)
+
+
+def test_hotfix_version_has_a_fourth_digit():
+    """Четвёртая цифра — заплатка поверх выпущенной версии.
+
+    Прежде такой тег не разбирался вовсе, и последствий было два, оба тихих:
+    тег выпадал из списка релизов (обновление никому не предлагалось), а бот,
+    на который эту версию поставили руками, не находил себя среди тегов и
+    выключал обновления навсегда — по правилу «нас нет в списке → не трогаем».
+    """
+    assert updates.parse_version("v2.2.3.1") == (2, 2, 3, 1)
+    assert updates.parse_version("2.2.3.10") == (2, 2, 3, 10)
+    assert updates.parse_version("v2.2.3.1.4") is None      # пятая — уже не версия
+
+
+def test_hotfix_sorts_between_its_base_and_the_next_release():
+    """Порядок держится на сравнении кортежей разной длины, поэтому дополнять
+    короткий нулём НЕЛЬЗЯ: 2.2.3 и 2.2.3.0 стали бы одним значением, и бот на
+    заплатке считал бы себя базовой версией — то есть предложил бы «обновиться»
+    на то, что у него уже стоит."""
+    p = updates.parse_version
+    assert p("2.2.3") < p("2.2.3.1") < p("2.2.4")
+    assert p("2.2.3") != p("2.2.3.0")
+    assert p("2.2.3.9") < p("2.3.0")

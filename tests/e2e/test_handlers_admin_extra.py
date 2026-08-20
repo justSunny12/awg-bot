@@ -386,3 +386,58 @@ async def test_send_leaves_report_and_opens_panel_separately(
     answers = [s for s in nav.sent if s[0] == "answer"]
     assert answers, "панель должна прийти отдельным сообщением"
     assert answers[-1][2] is not None, "у панели должна быть клавиатура"
+
+
+# ── обещание вернуться после перезапуска ─────────────────────────────────────
+
+async def test_restart_promise_is_kept_by_the_new_process(services, fake_bot):
+    """«Вернётся через несколько секунд» обещает уходящий процесс, а исполняет
+    новый: обещание подменяется отчётом, следом приходит панель.
+
+    Прежде не исполнял никто — после старта в чат никто не пишет, и админ
+    оставался с мёртвым сообщением без кнопок, пока сам не слал /start.
+    """
+    from awgbot.bot import texts
+    services.set_restart_wait(ADMIN, 4242)
+    await ah.restore_panel_after_restart(fake_bot, services)
+
+    edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
+    assert len(edits) == 1 and edits[0][1] == ADMIN
+    assert edits[0][2] == texts.BOT_RESTARTED, "обещание не сменилось отчётом"
+
+    sent = [r for r in fake_bot.records if r[0] == "send_message"]
+    assert len(sent) == 1, "панель не пришла отдельным сообщением"
+    assert services.db.get_nav_message_id(ADMIN) != 4242, \
+        "активным меню осталось отчётное сообщение — два живых меню в чате"
+
+
+async def test_restart_promise_is_one_shot(services, fake_bot):
+    """Флаг одноразовый: иначе каждый следующий старт переписывал бы давно
+    отработавшее сообщение — в том числе спустя недели."""
+    services.set_restart_wait(ADMIN, 4242)
+    await ah.restore_panel_after_restart(fake_bot, services)
+    fake_bot.records.clear()
+    await ah.restore_panel_after_restart(fake_bot, services)
+    assert fake_bot.records == []
+
+
+async def test_ordinary_start_says_nothing(services, fake_bot):
+    """Перезапуск не из чата (ребут хоста, падение, systemctl руками) — молчим.
+    Панель без спроса была бы шумом, которого админ не заказывал."""
+    await ah.restore_panel_after_restart(fake_bot, services)
+    assert fake_bot.records == []
+
+
+async def test_restart_panel_survives_an_unavailable_message(services, fake_bot, monkeypatch):
+    """Сообщение удалили или оно старше суток — отчёт потерян, но панель обязана
+    прийти всё равно: остаться без навигации админ не должен."""
+    async def boom(*a, **k):
+        raise RuntimeError("message to edit not found")
+    monkeypatch.setattr(fake_bot, "edit_message_text", boom)
+
+    services.set_restart_wait(ADMIN, 4242)
+    await ah.restore_panel_after_restart(fake_bot, services)
+
+    sent = [r for r in fake_bot.records if r[0] == "send_message"]
+    assert len(sent) == 1 and sent[0][1] == ADMIN
+    assert services.db.get_nav_message_id(ADMIN) != 4242, "нав указывает на мёртвое сообщение"

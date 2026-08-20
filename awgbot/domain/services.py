@@ -2404,6 +2404,26 @@ class Services:
         удалит его перед итоговым сообщением."""
         self.db.set_state("update_wait", f"{chat_id}:{message_id}")
 
+    def set_restart_wait(self, chat_id: int, message_id: int) -> None:
+        """Запомнить сообщение «бот перезапускается»: новый процесс подменит его
+        панелью. Без этого обещание «вернётся через несколько секунд» исполнить
+        было некому — в чат после старта никто не пишет, и админ оставался с
+        мёртвым сообщением до тех пор, пока сам не отправлял /start."""
+        self.db.set_state("restart_wait", f"{chat_id}:{message_id}")
+
+    def pop_restart_wait(self):
+        """(chat_id, message_id) обещания или None. Одноразово: повторный старт
+        не должен переписывать давно отработавшее сообщение."""
+        raw = self.db.get_state("restart_wait")
+        if not raw:
+            return None
+        self.db.set_state("restart_wait", "")
+        try:
+            chat_s, msg_s = raw.split(":", 1)
+            return int(chat_s), int(msg_s)
+        except ValueError:
+            return None
+
     def pop_update_wait(self):
         """(chat_id, message_id) «дождись»-сообщения или None. Одноразово."""
         raw = self.db.get_state("update_wait")

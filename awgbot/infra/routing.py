@@ -126,6 +126,14 @@ def src_set(client_id: int) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _selfcheck_cache: Optional[tuple[bool, str]] = None
+_selfcheck_at: float = 0.0
+
+# Отрицательный вердикт живёт минуту, положительный — бессрочно. Асимметрия
+# намеренная: цена ошибок разная. Ложное «не работает» молча выключает
+# маршрутизацию ВСЕМ до перезапуска бота, а ложное «ок» ловится зондом живости
+# в пределах его такта. Минута — компромисс с ценой самой проверки: она ходит в
+# подпроцессы, а available() зовётся ещё и при отрисовке экранов.
+_SELFCHECK_BAD_TTL = 60.0
 
 _MARK_HEX = f"0x{config.ROUTING_FWMARK:x}"
 
@@ -228,11 +236,20 @@ def _check_static_plumbing() -> None:
 
 
 def self_check(force: bool = False) -> tuple[bool, str]:
-    """(работоспособна ли фича, причина). Кэшируется: зовётся из preflight и из
-    каждого тика планировщика, а меняется только при переустановке окружения."""
-    global _selfcheck_cache
+    """(работоспособна ли фича, причина). Зовётся из preflight, из каждого тика
+    планировщика и при отрисовке экранов, поэтому кэшируется.
+
+    Отрицательный вердикт перепроверяется сам. Прежде кэш сбрасывался только
+    там, где окружение менял САМ бот, — а меняется оно и снаружи: обновление
+    ядра, перезапуск линка, ручная правка на хосте. Вердикт «интерфейс не
+    найден», вынесенный на минуту простоя, держался до перезапуска бота или до
+    ближайшего обновления списков, то есть до шести часов после того, как
+    причина устранена.
+    """
+    global _selfcheck_cache, _selfcheck_at
     if _selfcheck_cache is not None and not force:
-        return _selfcheck_cache
+        if _selfcheck_cache[0] or time.time() - _selfcheck_at < _SELFCHECK_BAD_TTL:
+            return _selfcheck_cache
 
     result: tuple[bool, str]
     if not config.ROUTING_ENABLED:
@@ -255,9 +272,17 @@ def self_check(force: bool = False) -> tuple[bool, str]:
         except RoutingError as e:
             result = (False, f"проверка не удалась: {e}")
 
-    _selfcheck_cache = result
-    if not result[0]:
-        log.warning("routing: фича неактивна — %s", result[1])
+    prev, _selfcheck_cache = _selfcheck_cache, result
+    _selfcheck_at = time.time()
+    # Логируем СМЕНУ вердикта, а не каждую проверку: пока отказ держится, он
+    # переспрашивается раз в минуту, и «неактивна» сыпалось бы в журнал вечно,
+    # хороня под собой ту единственную строку, где отказ начался. Возврат к «ок»
+    # тоже строка — иначе в журнале отказ никогда не заканчивается.
+    if prev != result:
+        if not result[0]:
+            log.warning("routing: фича неактивна — %s", result[1])
+        elif prev is not None:
+            log.info("routing: фича снова активна")
     return result
 
 
@@ -271,8 +296,9 @@ def invalidate_self_check() -> None:
     Нужен после того, как окружение изменилось по нашей же инициативе (залили
     списки, доставили обвяз): иначе закэшированное «недоступна» держалось бы до
     перезапуска бота, хотя причина уже устранена."""
-    global _selfcheck_cache
+    global _selfcheck_cache, _selfcheck_at
     _selfcheck_cache = None
+    _selfcheck_at = 0.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────

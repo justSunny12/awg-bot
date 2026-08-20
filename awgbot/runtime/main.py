@@ -182,6 +182,16 @@ async def main() -> None:
     except Exception as e:                               # noqa: BLE001
         log.warning("confirm_applied_update: %s", e)
 
+    # Тот же принцип для обычного рестарта из настроек: обещание «вернётся через
+    # несколько секунд» исполняет новый процесс. Отдельно от блока выше — там
+    # итог обновления, который обязан остаться в истории, здесь же сообщение
+    # служебное и подменяется панелью.
+    try:
+        from awgbot.bot.handlers.admin import restore_panel_after_restart
+        await restore_panel_after_restart(bot, services)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("restore_panel_after_restart: %s", e)
+
     # Публичное имя/описания бота — из conf/bot_identity.yaml (маскирующие
     # формулировки, ничего не должно выдавать назначение бота стороннему
     # наблюдателю профиля). Правки, вбитые вручную в BotFather, переживут
