@@ -114,3 +114,13 @@ def test_bundle_is_marked_secret(bundle):
     что с ним делать после установки."""
     assert "ПРИВАТНЫЙ КЛЮЧ" in bundle
     assert "chmod 0600" in bundle
+
+
+def test_link_setup_unit_points_at_a_permanent_path():
+    """Третья копия той же дыры — юнит линка на стороне ВПС."""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[2] / "install"
+           / "routing-link-setup.sh").read_text(encoding="utf-8")
+    assert 'SELF="$(install_self)"' in src
+    assert 'SELF="$(readlink -f "$0")"' not in src
+    assert "/usr/local/sbin" in src

@@ -112,3 +112,29 @@ def test_same_source_and_destination_do_not_abort(script):
     """
     assert "readlink -f" in script
     assert "конфиг уже на месте" in script
+
+
+def test_unit_points_at_a_permanent_path(script):
+    """ExecStart обязан ссылаться на постоянный путь, а не на «откуда запустили».
+
+    Бандл шлюза распаковывается во временный каталог, а systemd-tmpfiles
+    вычищает его через десять дней. Пока в юнит уходил `readlink -f "$0"`,
+    автозапуск линка умирал молча: интерфейс уже стоял, RemainAfterExit держал
+    юнит «активным», и отказ всплывал только при первой перезагрузке — как «за
+    шлюзом нет интернета», без связи с каким-либо действием. Шлюз стоит в чужом
+    доме за NAT, и разбираться с этим приходится вслепую.
+    """
+    assert 'SELF="$(install_self)"' in script
+    assert 'SELF="$(readlink -f "$0")"' not in script, "вернулся путь запуска"
+    assert "/usr/local/sbin" in script
+
+
+def test_install_self_is_idempotent_and_quiet_in_place(script):
+    """Запуск уже из постоянного места не копирует сам в себя: `install a a`
+    затёр бы файл, который в этот момент исполняется. И путь обязан уходить в
+    stdout ОДИН — его подхватывает подстановка, любая лишняя строка уехала бы
+    в ExecStart."""
+    body = script.split("install_self() {", 1)[1].split("\n}", 1)[0]
+    assert '[ "$_src" != "$_dst" ]' in body, "нет защиты от копирования в себя"
+    assert body.count("printf '%s' \"$_dst\"") == 1
+    assert ">&2" in body, "сообщение об установке уйдёт в stdout вместе с путём"

@@ -224,3 +224,12 @@ def test_verification_hint_names_a_domain_that_can_actually_appear(script):
     assert "gosuslugi.ru" in tail, "нужен пример домена из российского списка"
     assert "ЗАРУБЕЖНОГО списка" not in tail
     assert "Логика инвертирована" not in tail
+
+
+def test_unit_points_at_a_permanent_path(script):
+    """Та же дыра, что нашлась на шлюзе, была и здесь: юнит ссылался на каталог,
+    откуда запустили скрипт. На ВПС это не выстрелило только потому, что его
+    запускали из постоянного места, — но ничто этого не гарантировало."""
+    assert 'SELF="$(install_self)"' in script
+    assert 'SELF="$(readlink -f "$0")"' not in script
+    assert "/usr/local/sbin" in script
