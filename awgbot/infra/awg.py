@@ -352,22 +352,52 @@ _SEP = "\n---AWGBOT-SEP---\n"          # разделитель для паке�
 # (меняются только при переустановке сервера). TTL — предохранитель, основная
 # инвалидация — от вотчдога при внешнем изменении awg0.conf.
 _params_lock = threading.Lock()
-_params_cache: Optional[dict] = None
-_params_cached_at: float = 0.0
+# Кэш серверных параметров — ПО ИНТЕРФЕЙСУ. Одиночного кэша хватало, пока
+# интерфейс был один; на время переезда их два, и общий кэш отдавал бы параметры
+# старого сервера для конфигов нового: чужой порт, чужой pubkey, чужая
+# обфускация. Отказ при этом молчаливый — превью выглядит нормально, а не
+# подключается никто.
+_params_cache: dict[str, dict] = {}
+_params_cached_at: dict[str, float] = {}
 PARAMS_TTL_SECONDS = 600
 
 
-def invalidate_server_params() -> None:
-    """Сброс кэша (зовёт вотчдог при внешнем изменении файлов)."""
-    global _params_cache
+def iface_of(iface: Optional[str] = None) -> str:
+    """Имя интерфейса: пустое/None — интерфейс по умолчанию. Единая точка
+    разрешения для всего кода, чтобы конвенция «пустое = дефолт» жила в одном
+    месте, а не размножалась по вызовам."""
+    return iface or config.AWG_INTERFACE
+
+
+def conf_path(iface: Optional[str] = None) -> str:
+    """Путь к conf интерфейса. Дефолтный берём из config.CONF_PATH — он может
+    быть переопределён иначе, чем по шаблону."""
+    name = iface_of(iface)
+    return config.CONF_PATH if name == config.AWG_INTERFACE \
+        else f"{config.AWG_DIR}/{name}.conf"
+
+
+def invalidate_server_params(iface: Optional[str] = None) -> None:
+    """Сброс кэша (зовёт вотчдог при внешнем изменении файлов). Без аргумента —
+    все интерфейсы: вотчдог знает, что файл менялся, но не всегда какой."""
     with _params_lock:
-        _params_cache = None
+        if iface is None:
+            _params_cache.clear()
+            _params_cached_at.clear()
+        else:
+            name = iface_of(iface)
+            _params_cache.pop(name, None)
+            _params_cached_at.pop(name, None)
 
 
-def read_server_params(force: bool = False) -> dict:
-    """Всё, что нужно генератору конфигов: обфускация + ListenPort (из awg0.conf),
-    серверный pubkey, общий psk. Читается ЖИВЫМ с сервера, но кэшируется:
+def read_server_params(force: bool = False, iface: Optional[str] = None) -> dict:
+    """Всё, что нужно генератору конфигов: обфускация + ListenPort, серверный
+    pubkey, общий psk. Читается ЖИВЫМ с сервера, но кэшируется ПО ИНТЕРФЕЙСУ:
     один exec на TTL/инвалидацию вместо нескольких на каждую генерацию.
+
+    Интерфейс обязателен по смыслу, хоть и необязателен по сигнатуре: параметры
+    у каждого свои, и выдать конфиг нового пира со старым портом и старым
+    серверным ключом — значит выдать нерабочий конфиг, который выглядит рабочим.
 
     Публичный ключ ВЫВОДИТСЯ из приватного, а не читается из файла рядом.
     Раньше его брали из wireguard_server_public_key.key — артефакта контейнера
@@ -375,14 +405,17 @@ def read_server_params(force: bool = False) -> dict:
     серверного ключа без правки файла разослала бы всем конфиги с ЧУЖИМ
     публичным ключом, и заметили бы это только при первом переподключении.
     Вывод из PrivateKey исключает расхождение по построению."""
-    global _params_cache, _params_cached_at
+    name = iface_of(iface)
+    path = conf_path(name)
     with _params_lock:
-        if (not force and _params_cache is not None
-                and _time.time() - _params_cached_at < PARAMS_TTL_SECONDS):
-            return dict(_params_cache)
+        cached = _params_cache.get(name)
+        if (not force and cached is not None
+                and _time.time() - _params_cached_at.get(name, 0.0) < PARAMS_TTL_SECONDS):
+            return dict(cached)
 
-    # Один exec на оба файла (вместо двух cat)
-    script = (f'cat "{config.CONF_PATH}"; printf \'%s\' \'{_SEP}\'; '
+    # Один exec на оба файла (вместо двух cat). PSK общий на сервер, а не на
+    # интерфейс: пиры создаёт бот, и ключ у них один.
+    script = (f'cat "{path}"; printf \'%s\' \'{_SEP}\'; '
               f'cat "{config.PSK_PATH}"')
     out = _exec_sh(script).stdout.decode(errors="replace")
     parts = out.split(_SEP)
@@ -391,7 +424,7 @@ def read_server_params(force: bool = False) -> dict:
     conf, psk = parts
     priv = _extract_param(conf, "PrivateKey")
     if not priv:
-        raise AwgError(f"В {config.CONF_PATH} нет PrivateKey — публичный ключ не вывести")
+        raise AwgError(f"В {path} нет PrivateKey — публичный ключ не вывести")
     params = parse_interface_params(conf)
     result = {
         "obfuscation": {k: params.get(k, "") for k in _OBFUSCATION_KEYS},
@@ -400,14 +433,15 @@ def read_server_params(force: bool = False) -> dict:
         "psk": psk.strip(),
     }
     with _params_lock:
-        _params_cache = dict(result)
-        _params_cached_at = _time.time()
+        _params_cache[name] = dict(result)
+        _params_cached_at[name] = _time.time()
     return result
 
 
-def read_occupied_ips() -> set[str]:
-    """Занятые IP из живого awg0.conf (для аллокатора)."""
-    return parse_occupied_ips(read_file(config.CONF_PATH))
+def read_occupied_ips(iface: Optional[str] = None) -> set[str]:
+    """Занятые IP из живого conf (для аллокатора). У каждого интерфейса своя
+    подсеть, поэтому и занятость своя."""
+    return parse_occupied_ips(read_file(conf_path(iface)))
 
 
 def detect_topology(container: str | None = None) -> dict:
@@ -479,8 +513,8 @@ def pubkey_of(private_key: str) -> str:
 # Применение конфига (syncconf, без рестарта — не рвёт активных)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def apply_config() -> None:
-    """awg syncconf awg0 <(awg-quick strip awg0.conf) — на живую.
+def apply_config(iface: Optional[str] = None) -> None:
+    """awg syncconf <if> <(awg-quick strip <if>.conf) — на живую.
     Через временный файл (не process substitution) → работает в любом shell.
     Предупреждение 'world accessible' от strip идёт в stderr и безвредно.
 
@@ -492,37 +526,41 @@ def apply_config() -> None:
     там же открывает подмену симлинком: редирект от root записал бы куда указано.
     Каталог AWG_DIR — 700 и наш.
     """
+    name = iface_of(iface)
     script = (
         f'umask 077; tmp=$(mktemp "{config.AWG_DIR}/.strip.XXXXXX") || exit 1; '
-        f'awg-quick strip "{config.CONF_PATH}" > "$tmp" 2>/dev/null && '
-        f'awg syncconf "{config.AWG_INTERFACE}" "$tmp"; '
+        f'awg-quick strip "{conf_path(name)}" > "$tmp" 2>/dev/null && '
+        f'awg syncconf "{name}" "$tmp"; '
         'rc=$?; rm -f "$tmp"; exit $rc'
     )
     _exec_sh(script)
 
 
-def _backup_conf() -> None:
-    _exec(["cp", config.CONF_PATH, config.CONF_BAK_PATH])
+def _backup_conf(iface: Optional[str] = None) -> None:
+    path = conf_path(iface)
+    _exec(["cp", path, path + ".bak"])
 
 
-def _restore_conf() -> None:
-    _exec(["cp", config.CONF_BAK_PATH, config.CONF_PATH])
+def _restore_conf(iface: Optional[str] = None) -> None:
+    path = conf_path(iface)
+    _exec(["cp", path + ".bak", path])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Добавление / удаление пира (awg0.conf + syncconf, с откатом на .bak)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def add_peer(public_key: str, psk: str, ip: str) -> None:
-    """Добавляет [Peer] в awg0.conf и применяет. Идемпотентно (если pubkey уже
-    есть — не дублирует). При ошибке применения восстанавливает .bak и поднимает
-    AwgError — контейнер остаётся консистентным, откат БД делает services."""
+def add_peer(public_key: str, psk: str, ip: str, iface: Optional[str] = None) -> None:
+    """Добавляет [Peer] в conf интерфейса и применяет. Идемпотентно (если pubkey
+    уже есть — не дублирует). При ошибке применения восстанавливает .bak и
+    поднимает AwgError — сервер остаётся консистентным, откат БД делает services."""
     _validate_key(public_key)
     _validate_key(psk)
     _validate_ip(ip)
+    path = conf_path(iface)
 
     with mutation_lock:
-        conf = read_file(config.CONF_PATH)
+        conf = read_file(path)
         header, peers = _split_conf(conf)
         if any(p["pubkey"] == public_key for p in peers):
             return                                # уже есть — нечего делать
@@ -530,21 +568,27 @@ def add_peer(public_key: str, psk: str, ip: str) -> None:
         new_conf = _build_conf(header, peers)
 
         with writing():
-            _backup_conf()
-            write_file(config.CONF_PATH, new_conf)
+            _backup_conf(iface)
+            write_file(path, new_conf)
             try:
-                apply_config()
+                apply_config(iface)
             except AwgError:
-                _restore_conf()
-                apply_config()                    # вернуть демон к прежнему состоянию
+                _restore_conf(iface)
+                apply_config(iface)               # вернуть демон к прежнему состоянию
                 raise
 
 
-def remove_peer(public_key: str) -> None:
-    """Убирает [Peer] с данным pubkey и применяет. Идемпотентно. Откат как в add_peer."""
+def remove_peer(public_key: str, iface: Optional[str] = None) -> None:
+    """Убирает [Peer] с данным pubkey и применяет. Идемпотентно. Откат как в
+    add_peer.
+
+    Интерфейс здесь не формальность: во время переезда старый пир живёт в conf
+    СТАРОГО интерфейса, и удаление по дефолтному пути оставило бы его работать —
+    призрачный доступ у устройства, которое человек считает удалённым."""
     _validate_key(public_key)
+    path = conf_path(iface)
     with mutation_lock:
-        conf = read_file(config.CONF_PATH)
+        conf = read_file(path)
         header, peers = _split_conf(conf)
         new_peers = [p for p in peers if p["pubkey"] != public_key]
         if len(new_peers) == len(peers):
@@ -552,13 +596,13 @@ def remove_peer(public_key: str) -> None:
         new_conf = _build_conf(header, new_peers)
 
         with writing():
-            _backup_conf()
-            write_file(config.CONF_PATH, new_conf)
+            _backup_conf(iface)
+            write_file(path, new_conf)
             try:
-                apply_config()
+                apply_config(iface)
             except AwgError:
-                _restore_conf()
-                apply_config()
+                _restore_conf(iface)
+                apply_config(iface)
                 raise
 
 
@@ -826,9 +870,12 @@ def ensure_ssh_failsafe() -> bool:
 # Статистика
 # ─────────────────────────────────────────────────────────────────────────────
 
-def show_dump() -> list[dict]:
-    """awg show awg0 dump → распарсенный список пиров."""
-    out = _exec(["awg", "show", config.AWG_INTERFACE, "dump"]).stdout.decode(errors="replace")
+def show_dump(iface: Optional[str] = None) -> list[dict]:
+    """awg show <if> dump → распарсенный список пиров.
+
+    Единственное место, где интерфейс нужен по существу: счётчики и хендшейки
+    живут в ядре по интерфейсам, и опрос одного не увидит пиров другого."""
+    out = _exec(["awg", "show", iface_of(iface), "dump"]).stdout.decode(errors="replace")
     return parse_dump(out)
 
 
@@ -951,6 +998,7 @@ __all__ = [
     "AwgError", "ContainerDown", "in_container",
     "writing", "is_writing", "last_self_write",
     "mutation_lock", "invalidate_server_params",
+    "iface_of", "conf_path",
     "read_file", "write_file",
     "parse_interface_params", "parse_occupied_ips", "parse_dump",
     "read_server_params", "read_occupied_ips", "detect_topology",

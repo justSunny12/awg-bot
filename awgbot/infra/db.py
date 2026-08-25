@@ -96,6 +96,9 @@ def _device_from_row(row) -> Optional["models.Device"]:
         address=row["address"],
         block_reason=int(row["block_reason"]),
         routing_on=(int(row["routing_on"]) if "routing_on" in row.keys() else 0),
+        iface=(row["iface"] if "iface" in row.keys() else "") or "",
+        twin_of=(int(row["twin_of"]) if "twin_of" in row.keys()
+                 and row["twin_of"] is not None else None),
         created_at=row["created_at"],
         traffic=models.DeviceTraffic(
             limit=int(row["traffic_limit"]),
@@ -216,6 +219,14 @@ CREATE TABLE IF NOT EXISTS devices (
     address             TEXT    NOT NULL UNIQUE,         -- 10.8.1.X ; UNIQUE = аллокатор
     block_reason        INTEGER NOT NULL DEFAULT 0,      -- маска DeviceBlock; 0 = не заблокирован
     routing_on          INTEGER NOT NULL DEFAULT 0,      -- 0/1: условная маршрутизация НА ЭТОМ устройстве
+    -- Интерфейс, на котором живёт пир. ПУСТАЯ строка = интерфейс по умолчанию
+    -- (config.AWG_INTERFACE), а не «неизвестно»: так миграция БД обходится без
+    -- бэкфилла, а после переезда значение нормализуется обратно в пустое.
+    iface               TEXT    NOT NULL DEFAULT '',
+    -- id старой строки у двойника, рождённого переездом. NULL = обычное
+    -- устройство. По имени пару не собрать: name не уникален и его правят
+    -- прямо в окне переезда.
+    twin_of             INTEGER,
     created_at          TEXT    NOT NULL,
     FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
 );
@@ -518,7 +529,9 @@ class Database:
             "ui_state": [("content_msg_ids", "TEXT")],
             "client_pause": [("resume_code", "TEXT")],
             "clients": [("routing_allowed", "INTEGER NOT NULL DEFAULT 0")],
-            "devices": [("routing_on", "INTEGER NOT NULL DEFAULT 0")],
+            "devices": [("routing_on", "INTEGER NOT NULL DEFAULT 0"),
+                        ("iface", "TEXT NOT NULL DEFAULT ''"),
+                        ("twin_of", "INTEGER")],
         }
         con = self._connection()
         for table, cols in want.items():

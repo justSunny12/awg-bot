@@ -144,8 +144,11 @@ def test_pubkey_of(monkeypatch):
 def _stub_conf_io(monkeypatch, conf_holder):
     monkeypatch.setattr(awg, "read_file", lambda p: conf_holder["conf"])
     monkeypatch.setattr(awg, "write_file", lambda p, c: conf_holder.__setitem__("conf", c))
-    monkeypatch.setattr(awg, "_backup_conf", lambda: None)
-    monkeypatch.setattr(awg, "apply_config", lambda: None)
+    # Сигнатуры ровно как у настоящих: интерфейс необязателен, но принимается.
+    # Двойник без него молча разошёлся бы с боевым кодом ровно на той правке,
+    # ради которой интерфейс и появился.
+    monkeypatch.setattr(awg, "_backup_conf", lambda iface=None: None)
+    monkeypatch.setattr(awg, "apply_config", lambda iface=None: None)
 
 
 def test_add_peer_appends_and_applies(monkeypatch):
@@ -266,3 +269,100 @@ def test_shell_scripts_quote_config_paths(monkeypatch):
     for bad in ('cat > {path}', 'cat {config.CONF_PATH};',
                 'strip {config.CONF_PATH}'):
         assert bad not in src, f"незакавыченный путь в shell-строке: {bad}"
+
+
+# ── адресация по интерфейсу (переезд профилей) ───────────────────────────────
+
+def test_iface_of_resolves_empty_to_default():
+    """Пустое значение — это «интерфейс по умолчанию», а не «неизвестно».
+
+    На конвенции держится миграция БД без бэкфилла: старые строки хранят пустую
+    строку и продолжают работать. Разрешать её обязана одна функция, иначе
+    трактовка расползётся по вызовам и однажды разойдётся.
+    """
+    from awgbot.core import config
+    assert awg.iface_of(None) == config.AWG_INTERFACE
+    assert awg.iface_of("") == config.AWG_INTERFACE
+    assert awg.iface_of("awg1") == "awg1"
+
+
+def test_conf_path_keeps_default_override(monkeypatch):
+    """У дефолтного интерфейса путь берётся из config.CONF_PATH, а не собирается
+    по шаблону: боевой конфиг может лежать не там, где подсказывает имя, и
+    сборка «по шаблону» увела бы бота от живого файла."""
+    from awgbot.core import config
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(config, "AWG_DIR", "/opt/awg")
+    monkeypatch.setattr(config, "CONF_PATH", "/etc/elsewhere/awg0.conf")
+    assert awg.conf_path() == "/etc/elsewhere/awg0.conf"
+    assert awg.conf_path("awg0") == "/etc/elsewhere/awg0.conf"
+    assert awg.conf_path("awg1") == "/opt/awg/awg1.conf"
+
+
+def test_server_params_are_cached_per_interface(monkeypatch):
+    """Кэш параметров — ПО интерфейсу.
+
+    Общий кэш отдавал бы параметры старого сервера для конфигов нового: чужой
+    порт, чужой серверный ключ, чужая обфускация. Отказ молчаливый — превью
+    выглядит нормально, а не подключается никто. Это опаснее всех прочих мест,
+    где интерфейс имеет значение.
+    """
+    from awgbot.core import config
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(config, "AWG_DIR", "/opt/awg")
+    monkeypatch.setattr(config, "CONF_PATH", "/opt/awg/awg0.conf")
+    monkeypatch.setattr(config, "PSK_PATH", "/opt/awg/psk")
+    monkeypatch.setattr(awg, "pubkey_of", lambda priv: f"pub-of-{priv}")
+
+    confs = {
+        "/opt/awg/awg0.conf": "[Interface]\nPrivateKey = OLD\nListenPort = 42755\nJc = 4\n",
+        "/opt/awg/awg1.conf": "[Interface]\nPrivateKey = NEW\nListenPort = 443\nJc = 9\n",
+    }
+
+    def fake_exec_sh(script, **kw):
+        path = [p for p in confs if p in script][0]
+        import types
+        return types.SimpleNamespace(
+            stdout=(confs[path] + awg._SEP + "PSK==").encode())
+
+    monkeypatch.setattr(awg, "_exec_sh", fake_exec_sh)
+    awg.invalidate_server_params()
+
+    old = awg.read_server_params()
+    new = awg.read_server_params(iface="awg1")
+    assert old["listen_port"] == 42755 and new["listen_port"] == 443
+    assert old["server_pubkey"] != new["server_pubkey"], "серверный ключ взят от чужого интерфейса"
+    assert old["obfuscation"]["Jc"] == "4" and new["obfuscation"]["Jc"] == "9"
+
+    # повторный вызов идёт из кэша своего интерфейса, не подменяя соседний
+    assert awg.read_server_params()["listen_port"] == 42755
+    awg.invalidate_server_params("awg1")
+    assert awg.read_server_params()["listen_port"] == 42755, "сброс соседа затронул чужой кэш"
+    awg.invalidate_server_params()
+
+
+def test_remove_peer_touches_the_named_interface(monkeypatch):
+    """Удаление идёт по conf УКАЗАННОГО интерфейса.
+
+    Во время переезда старый пир живёт в конфиге старого интерфейса. Удаление по
+    дефолтному пути оставило бы его работать: человек видит устройство удалённым,
+    а доступ у него остался.
+    """
+    from awgbot.core import config
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(config, "AWG_DIR", "/opt/awg")
+    monkeypatch.setattr(config, "CONF_PATH", "/opt/awg/awg0.conf")
+    files = {
+        "/opt/awg/awg0.conf": f"[Interface]\nPrivateKey = X\n\n[Peer]\nPublicKey = {_VALID_PUB}\nAllowedIPs = 10.8.1.5/32\n",
+        "/opt/awg/awg1.conf": f"[Interface]\nPrivateKey = Y\n\n[Peer]\nPublicKey = {_VALID_PUB}\nAllowedIPs = 10.9.1.5/32\n",
+    }
+    applied: list = []
+    monkeypatch.setattr(awg, "read_file", lambda p: files[p])
+    monkeypatch.setattr(awg, "write_file", lambda p, c: files.__setitem__(p, c))
+    monkeypatch.setattr(awg, "_backup_conf", lambda iface=None: None)
+    monkeypatch.setattr(awg, "apply_config", lambda iface=None: applied.append(iface))
+
+    awg.remove_peer(_VALID_PUB, iface="awg1")
+    assert _VALID_PUB not in files["/opt/awg/awg1.conf"]
+    assert _VALID_PUB in files["/opt/awg/awg0.conf"], "снесли пира на чужом интерфейсе"
+    assert applied == ["awg1"], "применили конфиг не того интерфейса"
