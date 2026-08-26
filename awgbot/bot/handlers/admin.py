@@ -94,7 +94,9 @@ async def _panel_text(services) -> str:
     st = {**st, "traffic_rx": tot["rx"], "traffic_tx": tot["tx"]}
     ac = await call(services.admin_client)
     routing_ok = await call(services.routing_health_for_client, ac) if ac else None
-    return texts.admin_panel(st, routing_ok)
+    mig = (await call(services.migration_progress)
+           if await call(services.migration_running) else None)
+    return texts.admin_panel(st, routing_ok, migration=mig)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -141,6 +143,13 @@ async def _show_client_card(cb: CallbackQuery, services, client_id: int):
     traffic = await call(services.db.get_client_traffic, client_id)
     online = await call(services.client_is_online, client_id)
     text = texts.client_card(client, devices, traffic, online, for_admin=True)
+    # Прогресс переезда — последней строкой и ТОЛЬКО админу: клиенту знать про
+    # внутреннюю кухню незачем, а карточку он видит в своём варианте.
+    if await call(services.migration_running):
+        done, live, total = await call(services.migration_client_progress, client_id)
+        line = texts.migration_profile_line(done, live, total)
+        if line:
+            text += "\n\n" + line
     is_admin_owner = client.tg_id == config.ADMIN_ID
     rt_visible = await call(services.routing_client_visible, client)
     rt_on = await call(services.routing_profile_on, client_id) if rt_visible else False

@@ -163,6 +163,7 @@ class MigrationMixin:
                 res.failed.append(dev.name)
 
         self.db.set_state(_STATE_KEY, STATE_RUNNING)
+        self.db.set_state(self._READY_ANNOUNCED, "")   # следующий переезд доложит сам
         # Админ переезжает первым и проверяет собой всю затею — SSH-фильтр
         # обязан знать его новый адрес ДО того, как он переимпортирует конфиг.
         self.reconcile_ssh_access()
@@ -306,6 +307,35 @@ class MigrationMixin:
         total = sum(1 for d in devices if d.twin_of is not None)
         return done, len(live_ids), total
 
+    # ── уведомление о готовности ─────────────────────────────────────────────
+
+    _READY_ANNOUNCED = "migration_ready_announced"
+
+    def migration_ready_alerts(self) -> list:
+        """Все живые пиры переехали — сказать один раз.
+
+        Та же дисциплина, что у докладов об источниках списков: доклад на СМЕНУ
+        состояния, не на тик. Иначе «готово» приходило бы каждые три минуты, а
+        флаг сбрасывается при следующем включении рычага — следующий переезд
+        сообщит о своей готовности сам.
+
+        Уведомление ничего не завершает: снести старый интерфейс и переключить
+        дефолт — решение админа, и принимать его за него нельзя.
+        """
+        from awgbot.domain.services import Notification
+        from awgbot.bot import texts
+        if not self.migration_running():
+            if self.db.get_state(self._READY_ANNOUNCED):
+                self.db.set_state(self._READY_ANNOUNCED, "")
+            return []
+        p = self.migration_progress()
+        if p.clients_total == 0 or not p.complete:
+            return []
+        if self.db.get_state(self._READY_ANNOUNCED) == "1":
+            return []
+        self.db.set_state(self._READY_ANNOUNCED, "1")
+        return [Notification(config.ADMIN_ID, texts.migration_ready(p))]
+
     # ── выходы ───────────────────────────────────────────────────────────────
 
     def migration_cancel(self) -> int:
@@ -326,6 +356,41 @@ class MigrationMixin:
         self.db.set_state(_STATE_KEY, STATE_OFF)
         self.db.cohort_clear()
         return moved
+
+    def migration_moved_devices(self) -> list:
+        """Двойники, на которых уже был хендшейк, — переехавшие. Без оглядки на
+        состояние рычага: подтверждение отмены обязано знать их число, а
+        orphan-список отвечает на другой вопрос и только после отмены."""
+        return [d for d in self.db.list_all_devices()
+                if d.twin_of is not None and d.last_handshake]
+
+    def migration_finish_preview(self) -> tuple[int, list[str]]:
+        """Что будет при завершении: (сколько пар закроется, кого уронит).
+
+        Отдельно от самого завершения, потому что подтверждение обязано
+        называть уронённых ДО нажатия, а не после: между решением и нажатием
+        легко забыть, о ком речь, а отказ необратим.
+        """
+        pairs, dropped = self._finish_plan()
+        return len(pairs), dropped
+
+    def _finish_plan(self) -> tuple[list[tuple], list[str]]:
+        """Пары к закрытию и имена тех, кто ещё не переехал. Общий расчёт для
+        предпросмотра и самого завершения — чтобы подтверждение не могло
+        разойтись с тем, что произойдёт."""
+        twins = self.db.twins_by_origin()
+        by_id = {d.id: d for d in self.db.list_all_devices()}
+        pairs: list[tuple] = []
+        dropped: list[str] = []
+        for old_id, twin_id in twins.items():
+            old, twin = by_id.get(old_id), by_id.get(twin_id)
+            if old is None or twin is None:
+                continue
+            pairs.append((old, twin))
+            if not twin.last_handshake:
+                client = self.db.get_client(old.client_id)
+                dropped.append(f"{client.name if client else '?'} — {old.name}")
+        return pairs, dropped
 
     def migration_orphan_twins(self) -> list:
         """Двойники, пережившие отмену, — те, на которых успели подключиться.
@@ -351,19 +416,10 @@ class MigrationMixin:
         Строки уходят в архив с явной причиной, а не удаляются тихо: иначе потом
         не восстановить, кто отвалился и почему.
         """
-        twins = self.db.twins_by_origin()
-        by_id = {d.id: d for d in self.db.list_all_devices()}
-        dropped: list[str] = []
+        pairs, dropped = self._finish_plan()
         removed = 0
 
-        for old_id, twin_id in twins.items():
-            old = by_id.get(old_id)
-            twin = by_id.get(twin_id)
-            if old is None or twin is None:
-                continue
-            if not twin.last_handshake:
-                client = self.db.get_client(old.client_id)
-                dropped.append(f"{client.name if client else '?'} — {old.name}")
+        for old, twin in pairs:
             # Историю сливаем ДО удаления: после него складывать будет нечего.
             self.db.merge_traffic(old.id, twin.id)
             try:

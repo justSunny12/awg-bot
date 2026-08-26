@@ -1327,7 +1327,9 @@ class Services(MigrationMixin):
         for client in self.db.list_clients(include_service=False):
             if client.activation_status != ActivationStatus.ACTIVE:
                 continue
-            devices = self.db.list_devices(client.id)
+            # ОБЕ строки пары: в окне переезда потребление размазано по ним, и
+            # лимит по одной дал бы человеку двойную квоту.
+            devices = self.db.list_devices(client.id, all_rows=True)
             sent = self.db.get_traffic_notified(client.id)
 
             # ── лимиты устройств (независимо от клиентского) ──

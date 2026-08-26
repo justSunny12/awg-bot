@@ -428,3 +428,95 @@ def test_block_covers_both_peers(services, mig, make_active_client):
     services._device_clear_block(dc.device_id, DeviceBlock.USER)
     assert not ({old.address, twin.address} & mig.blocked), "DROP снят не со всех"
     assert int(services.db.get_device(twin.id).block_reason) == 0
+
+
+# ── видимость и уведомление ──────────────────────────────────────────────────
+
+def test_user_sees_one_row_per_device(services, mig, make_active_client):
+    """В окне у устройства две строки, а человек обязан видеть одну.
+
+    Показать обе значит показать шесть устройств вместо трёх, а выдать конфиг
+    не той — вручить пира уходящего интерфейса. Правило живёт в одном месте:
+    пропусти вызывающего — и он покажет лишнее или выдаст не то.
+    """
+    c = make_active_client(name="c", tg_id=7030)
+    a = services.add_device(c.id, "A")
+    b = services.add_device(c.id, "B")
+    services.migration_start()
+
+    visible = services.db.list_devices(c.id)
+    assert len(visible) == 2, "видно обе строки пары"
+    assert all(d.iface == "awg1" for d in visible), "показан уходящий интерфейс"
+    assert len(services.db.list_devices(c.id, all_rows=True)) == 4
+    assert services.db.count_devices(c.id) == 2, "лимит упрётся вдвое раньше срока"
+
+
+def test_after_cancel_the_old_rows_come_back(services, mig, make_active_client):
+    """Отмена возвращает людей на старые пиры — значит и в списке снова старые.
+    Двойники при этом живы, но человеку их видеть незачем."""
+    c = make_active_client(name="c", tg_id=7031)
+    services.add_device(c.id, "A")
+    services.migration_start()
+    assert services.db.list_devices(c.id)[0].iface == "awg1"
+
+    services.migration_cancel()
+    visible = services.db.list_devices(c.id)
+    assert len(visible) == 1 and visible[0].iface == ""
+    assert len(services.db.list_devices(c.id, all_rows=True)) == 2, "двойник снесён"
+
+
+def test_after_finish_only_the_new_row_remains(services, mig, make_active_client):
+    """После завершения пар нет вовсе, и правило видимости вырождается."""
+    c = make_active_client(name="c", tg_id=7032)
+    dc = services.add_device(c.id, "A")
+    _seen(services, dc.device_id, ago_days=1)
+    services.migration_start()
+    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
+    services.migration_finish()
+
+    visible = services.db.list_devices(c.id)
+    assert len(visible) == 1 and visible[0].iface == "awg1"
+    assert visible[0].twin_of is None
+
+
+def test_traffic_limit_sums_the_pair(services, mig, make_active_client):
+    """Потребление в окне размазано по паре: лимит по одной строке дал бы
+    человеку двойную квоту, а в интерфейсе показал бы обнулившийся расход."""
+    c = make_active_client(name="c", tg_id=7033)
+    dc = services.add_device(c.id, "A")
+    services.migration_start()
+    twin = _twin(services, dc.device_id)
+    services.db.add_traffic(dc.device_id, 600, 0)
+    services.db.add_traffic(twin.id, 400, 0)
+
+    rows = services.db.list_devices(c.id, all_rows=True)
+    assert sum(d.traffic_rx_month for d in rows) == 1000
+
+
+def test_ready_is_announced_once_per_migration(services, mig, make_active_client):
+    """Доклад на СМЕНУ состояния, не на тик: иначе «готово» приходило бы каждые
+    три минуты. А следующий переезд обязан доложить о своей готовности сам."""
+    c = make_active_client(name="c", tg_id=7034)
+    dc = services.add_device(c.id, "A")
+    _seen(services, dc.device_id, ago_days=1)
+    services.migration_start()
+    assert services.migration_ready_alerts() == [], "доложили до переезда"
+
+    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
+    notes = services.migration_ready_alerts()
+    assert len(notes) == 1 and "переехали" in notes[0].text
+    assert services.migration_ready_alerts() == [], "доклад повторился"
+
+    services.migration_cancel()
+    services.migration_start()
+    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
+    assert len(services.migration_ready_alerts()) == 1, "следующий переезд промолчал"
+
+
+def test_empty_cohort_does_not_announce(services, mig, make_active_client):
+    """Живых пиров не было вовсе — переезжать некому, и «все переехали» было бы
+    сообщением ни о чём."""
+    c = make_active_client(name="c", tg_id=7035)
+    services.add_device(c.id, "Мёртвое")
+    services.migration_start()
+    assert services.migration_ready_alerts() == []

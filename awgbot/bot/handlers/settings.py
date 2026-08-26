@@ -43,7 +43,12 @@ async def _screen(sec: str, services):
     if sec == "backup":
         return texts.SETTINGS_BACKUP, kb.settings_backup()
     if sec == "svc":
-        return texts.SETTINGS_SVC, kb.settings_svc()
+        state = await call(services.migration_state)
+        avail = await call(services.migration_available)
+        progress = await call(services.migration_progress) if state else None
+        orphans = 0 if state else len(await call(services.migration_orphan_twins))
+        return (texts.settings_svc_text(state, progress),
+                kb.settings_svc(state, available=avail, orphans=orphans))
     if sec == "upd":
         return texts.SETTINGS_UPD, kb.settings_updates(await call(services.updates_muted))
     if sec == "rt":
@@ -221,3 +226,67 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
             await edit(cb, texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body),
                        kb.update_admin_available())
         return
+
+
+# ── переезд профилей (docs/ROADMAP.md, п.3) ──────────────────────────────────
+@router.callback_query(SetCB.filter((F.sec == "mig") & (F.act == "do")))
+async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
+    """Рычаг переезда и оба выхода.
+
+    Ключ с восклицательным знаком — подтверждённое действие. Разделение
+    намеренное: и завершение, и отмена необратимы по-разному, и оба обязаны
+    показать последствия ДО нажатия, а не после.
+    """
+    key = callback_data.key
+    if not await call(services.migration_available):
+        await cb.answer("Переезд не настроен: пустые ключи в app.yaml.", show_alert=True)
+        return
+
+    if key == "start":
+        await cb.answer("Рождаю двойников…")
+        res = await call(services.migration_start)
+        await edit(cb, texts.migration_started(res), kb.settings_back())
+        return
+
+    if key == "pending":
+        rows = await call(services.migration_pending)
+        await edit(cb, texts.migration_pending_text(rows), kb.settings_back())
+        await cb.answer()
+        return
+
+    if key == "orphans":
+        rows = [(  (await call(services.db.get_client, d.client_id)).name
+                   if await call(services.db.get_client, d.client_id) else "?", d.name)
+                for d in await call(services.migration_orphan_twins)]
+        await edit(cb, texts.migration_orphans_text(rows), kb.settings_back())
+        await cb.answer()
+        return
+
+    if key == "finish":
+        _, dropped = await call(services.migration_finish_preview)
+        await edit(cb, texts.migration_finish_confirm(dropped),
+                   kb.migration_confirm("finish"))
+        await cb.answer()
+        return
+
+    if key == "cancel":
+        moved = len(await call(services.migration_moved_devices))
+        await edit(cb, texts.migration_cancel_confirm(moved),
+                   kb.migration_confirm("cancel"))
+        await cb.answer()
+        return
+
+    if key == "finish!":
+        await cb.answer("Завершаю…")
+        removed, dropped = await call(services.migration_finish)
+        await edit(cb, texts.migration_finished(removed, dropped), kb.settings_back())
+        return
+
+    if key == "cancel!":
+        await cb.answer("Отменяю…")
+        moved = await call(services.migration_cancel)
+        await edit(cb, texts.migration_cancelled(moved), kb.settings_back())
+        return
+
+    await cb.answer("Действие недоступно.", show_alert=True)
+

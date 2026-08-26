@@ -1161,12 +1161,45 @@ def settings_backup() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def settings_svc() -> InlineKeyboardMarkup:
+def settings_svc(migration: str = "", available: bool = False,
+                 orphans: int = 0) -> InlineKeyboardMarkup:
+    """Обслуживание. Рычаг переезда показывается, только когда он настроен
+    (available) — пустые ключи в app.yaml означают, что фичи нет вовсе, и
+    показывать кнопку, которой некуда нажать, незачем.
+
+    Идёт переезд — вместо «начать» два выхода. Оба через подтверждение:
+    завершение роняет непереехавших, отмена возвращает всех на старые конфиги.
+    """
     kb = InlineKeyboardBuilder()
     kb.button(text="🔄 Перезапустить AWG", callback_data=SetCB(sec="svc", act="do", key="awg"))
     kb.button(text="🔄 Перезапустить бота", callback_data=SetCB(sec="svc", act="do", key="bot"))
+    if available:
+        if migration:
+            kb.button(text="👥 Кто не переехал",
+                      callback_data=SetCB(sec="mig", act="do", key="pending"))
+            kb.button(text="✅ Завершить переезд",
+                      callback_data=SetCB(sec="mig", act="do", key="finish"))
+            kb.button(text="↩️ Отменить переезд",
+                      callback_data=SetCB(sec="mig", act="do", key="cancel"))
+        else:
+            kb.button(text="🚚 Начать переезд профилей",
+                      callback_data=SetCB(sec="mig", act="do", key="start"))
+            if orphans:
+                kb.button(text=f"⚠️ Переехавшие после отмены: {orphans}",
+                          callback_data=SetCB(sec="mig", act="do", key="orphans"))
     kb.adjust(1)
     kb.row(_back())
+    return kb.as_markup()
+
+
+def migration_confirm(key: str) -> InlineKeyboardMarkup:
+    """Подтверждение выхода из переезда. Отмена первой: необратимое действие не
+    должно стоять там, куда палец идёт по инерции."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Не надо", callback_data=SetCB(sec="svc", act="open"))
+    kb.button(text=("✅ Завершить" if key == "finish" else "↩️ Отменить"),
+              callback_data=SetCB(sec="mig", act="do", key=f"{key}!"))
+    kb.adjust(2)
     return kb.as_markup()
 
 

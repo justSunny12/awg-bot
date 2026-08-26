@@ -1039,9 +1039,31 @@ class Database:
                     "friend_status=excluded.friend_status",
                     (device_id, friend_tg_id, friend_code, friend_status))
 
-    def list_devices(self, client_id: int) -> list:
+    def list_devices(self, client_id: int, all_rows: bool = False) -> list:
+        """Устройства профиля — ПО ОДНОЙ строке на устройство.
+
+        В окне переезда каждое устройство представлено парой строк на двух
+        интерфейсах. Показывать обе значит показать человеку шесть устройств
+        вместо трёх, а выдать конфиг не той — вручить пира уходящего интерфейса.
+        Поэтому видимость решается здесь, а не у двенадцати вызывающих: пропусти
+        одного — и он покажет лишнее или выдаст не то.
+
+        Идёт переезд → видна НОВАЯ строка пары. Не идёт → СТАРАЯ: так выглядит
+        состояние после отмены, где двойники живы, но выдаются старые конфиги.
+        После завершения пар нет вовсе (twin_of обнулён), и правило вырождается.
+
+        all_rows=True — для тех, кому нужны обе: потребление в окне размазано по
+        паре, и лимит, посчитанный по одной строке, дал бы двойную квоту.
+        """
+        if all_rows:
+            where = "WHERE d.client_id = ?"
+        elif (self.get_state("migration_state") or "") == "running":
+            where = ("WHERE d.client_id = ? AND d.id NOT IN "
+                     "(SELECT twin_of FROM devices WHERE twin_of IS NOT NULL)")
+        else:
+            where = "WHERE d.client_id = ? AND d.twin_of IS NULL"
         return [_device_from_row(r) for r in self._connection().execute(
-            _DEVICE_SELECT + " WHERE d.client_id = ? ORDER BY d.created_at",
+            _DEVICE_SELECT + f" {where} ORDER BY d.created_at",
             (client_id,)).fetchall()]
 
     def list_all_devices(self) -> list:
@@ -1083,6 +1105,11 @@ class Database:
             "SELECT DISTINCT iface FROM devices ORDER BY iface").fetchall()]
 
     def count_devices(self, client_id: int) -> int:
+        """Столько устройств у человека с его точки зрения — по видимым строкам.
+        Считать пары значило бы упереться в лимит вдвое раньше, чем следует."""
+        return len(self.list_devices(client_id))
+
+    def _count_devices_raw(self, client_id: int) -> int:
         return self._connection().execute(
             "SELECT COUNT(*) AS c FROM devices WHERE client_id = ?", (client_id,)
         ).fetchone()["c"]
