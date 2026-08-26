@@ -673,6 +673,25 @@ def _ssh_hook_chain() -> str:
     return "FORWARD" if in_container() else "INPUT"
 
 
+def _jump_state(hook: str) -> tuple[bool, bool]:
+    """(джамп в AWGBOT_SSH есть, джамп стоит ПЕРВЫМ) в цепочке hook.
+
+    Позицию проверяем наравне с наличием, и это не педантизм. Джамп вставляется
+    первой строкой намеренно — фильтр обязан отработать раньше любого широкого
+    ACCEPT/DROP, — но всякая чужая вставка в начало (ufw, руками, чужой скрипт)
+    сдвигает его вниз. Пакет тогда снимается выше, до нашей цепочки, а сама она
+    выглядит безупречно: правила на месте, счётчики нулевые. Проверка «есть ли
+    джамп» это состояние принимает за здоровое.
+    """
+    proc = _exec(["iptables", "-S", hook], check=False)
+    if proc.returncode != 0:
+        return False, False
+    lines = [ln.strip() for ln in proc.stdout.decode(errors="replace").splitlines()
+             if ln.startswith(f"-A {hook} ")]
+    want = f"-A {hook} -j {_SSH_CHAIN}"
+    return want in lines, bool(lines) and lines[0] == want
+
+
 def gated_ifaces() -> list[str]:
     """Интерфейсы, через которые до хоста дотягивается трафик из туннеля.
 
@@ -808,17 +827,20 @@ def ssh_reconcile(admin_ips: list[str], targets: list[str]) -> None:
 
     hook = _ssh_hook_chain()
     stale = "FORWARD" if hook == "INPUT" else "INPUT"
-    jump_ok = _exec(["iptables", "-C", hook, "-j", _SSH_CHAIN],
-                    check=False).returncode == 0
+    jump_present, jump_first = _jump_state(hook)
     stale_jump = _exec(["iptables", "-C", stale, "-j", _SSH_CHAIN],
                        check=False).returncode == 0
-    if current == desired and jump_ok and not stale_jump:
+    if current == desired and jump_first and not stale_jump:
         return                                       # состояние уже целевое
 
     # цепочка (может уже существовать — код 1, игнорируем)
     _exec(["iptables", "-N", _SSH_CHAIN], check=False)
-    # джамп из начала hook-цепочки (перед широким ACCEPT подсети), если ещё нет
-    if not jump_ok:
+    # джамп — ПЕРВОЙ строкой hook-цепочки (перед широким ACCEPT подсети). Съехал
+    # вниз от чужой вставки — снимаем и ставим заново: остаться на месте значит
+    # пропускать вперёд правила, которые снимут пакет до нас.
+    if not jump_first:
+        if jump_present:
+            _exec(["iptables", "-D", hook, "-j", _SSH_CHAIN], check=False)
         _exec(["iptables", "-I", hook, "1", "-j", _SSH_CHAIN])
     # джамп из ПРЕЖНЕЙ точки врезки убираем: после смены режима он остаётся
     # висеть и показывает исправно выглядящую цепочку с нулевыми счётчиками —

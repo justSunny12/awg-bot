@@ -183,18 +183,52 @@ def test_ssh_reconcile_no_admin_ips_is_noop(monkeypatch):
     assert calls == [], "пустой вайтлист повесил бы DROP на всех"
 
 
-def test_ssh_reconcile_skips_jump_if_present(monkeypatch):
-    """Если джамп уже есть (-C код 0) — повторно не вставляем."""
+def test_ssh_reconcile_skips_jump_if_first(monkeypatch):
+    """Джамп уже стоит первой строкой — не трогаем его вовсе."""
     calls = []
 
     def fake_exec(args, **kw):
         calls.append(args)
+        if args[:3] == ["iptables", "-S", "FORWARD"]:
+            return subprocess.CompletedProcess(
+                args, 0, b"-A FORWARD -j AWGBOT_SSH\n", b"")
         rc = 1 if args[:3] == ["iptables", "-C", "INPUT"] else 0
         return subprocess.CompletedProcess(args, rc, b"", b"")
 
     monkeypatch.setattr(awg, "_exec", fake_exec)
     awg.ssh_reconcile(["10.8.1.5"], ["172.29.172.1"])
     assert ["iptables", "-I", "FORWARD", "1", "-j", "AWGBOT_SSH"] not in calls
+    assert ["iptables", "-D", "FORWARD", "-j", "AWGBOT_SSH"] not in calls
+
+
+def test_ssh_reconcile_moves_the_jump_back_to_the_top(monkeypatch):
+    """Джамп есть, но съехал вниз — снимаем и ставим первым.
+
+    Позиция важна не меньше наличия: вставка чего угодно в начало цепочки
+    (ufw, руками, чужой скрипт) отправляет наш джамп вниз, и пакет снимается
+    ДО фильтра. Снаружи это выглядит здоровым — правила на месте, содержимое
+    цепочки верное, — и только счётчики не двигаются никогда. Проверка «есть ли
+    джамп» такое состояние принимала за целевое.
+    """
+    calls = []
+
+    def fake_exec(args, **kw):
+        calls.append(args)
+        if args[:3] == ["iptables", "-S", "FORWARD"]:
+            return subprocess.CompletedProcess(
+                args, 0,
+                b"-A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n"
+                b"-A FORWARD -j AWGBOT_SSH\n", b"")
+        rc = 1 if args[:3] == ["iptables", "-C", "INPUT"] else 0
+        return subprocess.CompletedProcess(args, rc, b"", b"")
+
+    monkeypatch.setattr(awg, "_exec", fake_exec)
+    awg.ssh_reconcile(["10.8.1.5"], ["172.29.172.1"])
+
+    drop = ["iptables", "-D", "FORWARD", "-j", "AWGBOT_SSH"]
+    ins = ["iptables", "-I", "FORWARD", "1", "-j", "AWGBOT_SSH"]
+    assert drop in calls and ins in calls, "джамп не поднят наверх"
+    assert calls.index(drop) < calls.index(ins), "вставили раньше, чем сняли — их станет два"
 
 
 # ── точка врезки цепочки: INPUT на хосте, FORWARD в контейнере ───────────────
@@ -316,13 +350,14 @@ def test_ssh_reconcile_diff_skip(monkeypatch):
 
     def fake_exec(args, **kw):
         calls.append(args)
-        if args[:2] == ["iptables", "-S"]:
+        if args[:3] == ["iptables", "-S", "AWGBOT_SSH"]:
             return subprocess.CompletedProcess(args, 0, desired_dump.encode(), b"")
+        if args[:3] == ["iptables", "-S", "FORWARD"]:
+            # джамп стоит первым ровно там, где ему положено в этом режиме
+            return subprocess.CompletedProcess(
+                args, 0, b"-A FORWARD -j AWGBOT_SSH\n", b"")
         if args[:2] == ["iptables", "-C"]:
-            # джамп есть ровно там, где ему положено быть в этом режиме,
-            # и НЕ висит в прежней точке врезки
-            rc = 0 if args[2] == "FORWARD" else 1
-            return subprocess.CompletedProcess(args, rc, b"", b"")
+            return subprocess.CompletedProcess(args, 1, b"", b"")   # в прежней точке не висит
         return subprocess.CompletedProcess(args, 0, b"", b"")
 
     monkeypatch.setattr(awg, "_exec", fake_exec)
