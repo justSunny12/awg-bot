@@ -777,3 +777,78 @@ async def test_stale_finish_button_is_refused(services, mig, make_active_client,
     assert services.db.get_device(dc.device_id) is not None, \
         "устаревшая кнопка выполнила завершение"
     assert twin.public_key in mig.peers_by_iface["awg1"]
+
+
+def test_marking_hook_covers_every_client_subnet(monkeypatch):
+    """Хук маркировки ставится на КАЖДУЮ клиентскую подсеть.
+
+    Сужённый одной, он оставлял переехавших вообще без маркировки — и отказ был
+    молчаливым и обманчивым: туннель работает, DNS отвечает, интернет есть, а
+    российские сервисы видят зарубежный адрес. То есть ровно то, ради чего
+    функция существует, не работает, и связать это с переездом неоткуда.
+    """
+    from awgbot.infra import routing as rt
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
+    monkeypatch.setattr(config, "ROUTING_CLIENT_SUBNET", "10.8.1.0/24")
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(config, "MIGRATION_INTERFACE", "awg1")
+    monkeypatch.setattr(config, "MIGRATION_SUBNET_PREFIX", "10.9.1")
+
+    present: set = set()
+    added: list = []
+
+    def host_ok(args):
+        if args[:2] == ["iptables", "-t"] and "-C" in args:
+            return " ".join(args) in present
+        return True
+
+    def mangle(args, check=True):
+        line = " ".join(["iptables", "-t", "mangle", "-C"] + args[1:])
+        if args[0] == "-I":
+            present.add(line); added.append(args)
+        elif args[0] == "-D":
+            present.discard(line)
+
+    monkeypatch.setattr(rt, "_host_ok", host_ok)
+    monkeypatch.setattr(rt, "_mangle", mangle)
+    monkeypatch.setattr(rt, "ensure_policy", lambda: None)
+
+    rt.set_marking_enabled(True)
+    subnets = {a[a.index("-s") + 1] for a in added}
+    assert subnets == {"10.8.1.0/24", "10.9.1.0/24"}, \
+        "переехавшие остались без маркировки"
+    assert rt._hook_present() is True
+
+    rt.set_marking_enabled(False)
+    assert rt._hook_present() is False
+    assert not present, "часть хуков осталась висеть после снятия рубильника"
+
+
+def test_partial_hook_set_counts_as_absent(monkeypatch):
+    """Один хук стоит, второй нет — это «не включено», а не «включено».
+
+    Иначе рубильник показывал бы рабочее состояние, пока половина людей идёт
+    мимо маркировки.
+    """
+    from awgbot.infra import routing as rt
+    monkeypatch.setattr(config, "ROUTING_CLIENT_SUBNET", "10.8.1.0/24")
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(config, "MIGRATION_INTERFACE", "awg1")
+    monkeypatch.setattr(config, "MIGRATION_SUBNET_PREFIX", "10.9.1")
+    monkeypatch.setattr(rt, "_host_ok",
+                        lambda args: "10.8.1.0/24" in " ".join(args))
+    assert rt._hook_present() is False
+
+
+def test_device_counter_shows_visible_rows(services, mig, make_active_client):
+    """«Включено на N из M» считается по видимым строкам: в окне переезда у
+    каждого устройства их две, и сырой счёт показывал человеку удвоенное."""
+    c = make_active_client(name="c", tg_id=7060)
+    a = services.add_device(c.id, "A")
+    services.add_device(c.id, "B")
+    services.set_routing_allowed(c.id, True)
+    services.set_routing_device(a.device_id, True)
+    services.migration_start()
+
+    assert services.routing_device_counts(c.id) == (1, 2)
+    assert len(services.routing_devices(c.id)) == 2

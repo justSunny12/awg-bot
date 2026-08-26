@@ -1729,12 +1729,14 @@ class Database:
         «профиль включён» ⇔ включено хоть одно устройство. Пока состояние
         хранилось и на профиле, и на устройствах, эти двое могли разойтись —
         а сойтись обратно им было негде.
+
+        Считаем по ВИДИМЫМ строкам: в окне переезда у каждого устройства их две,
+        и сырой COUNT показывал бы человеку «включено на 6 из 12» при шести
+        устройствах. Флаг у пары синхронный (сеттер парный), поэтому счёт по
+        видимой половине точен.
         """
-        row = self._connection().execute(
-            "SELECT COUNT(*) AS total, "
-            "       COALESCE(SUM(routing_on), 0) AS enabled "
-            "  FROM devices WHERE client_id = ?", (client_id,)).fetchone()
-        return int(row["enabled"]), int(row["total"])
+        devices = self.list_devices(client_id)
+        return sum(1 for d in devices if d.routing_on), len(devices)
 
     # ── Аллокация IP ─────────────────────────────────────────────────────────
 

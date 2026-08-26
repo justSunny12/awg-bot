@@ -428,7 +428,20 @@ def rebuild_chain(client_ids) -> None:
     # устройств, остальному в ней делать нечего.
 
 
-_HOOK = ["-s", config.ROUTING_CLIENT_SUBNET, "-j", config.ROUTING_CHAIN]
+def _hooks() -> list[list[str]]:
+    """Хуки в PREROUTING — ПО ОДНОМУ НА КЛИЕНТСКУЮ ПОДСЕТЬ.
+
+    Функция, а не константа: на время переезда профилей подсетей две, и хук,
+    суженный одной, оставлял бы вторую вообще без маркировки. Отказ при этом
+    молчаливый и обманчивый — туннель работает, DNS отвечает, интернет есть,
+    а российские сервисы видят зарубежный адрес. Ровно то, ради чего функция и
+    существует, не работает, и связать это с переездом неоткуда.
+
+    Константа тут была бы вычислена на импорте, до того как конфиг переезда
+    прочитан, — поэтому именно функция.
+    """
+    return [["-s", subnet, "-j", config.ROUTING_CHAIN]
+            for subnet, _iface in config.routing_client_subnets()]
 # С МАСКОЙ, как и сама маркировка. Без маски правило требует точного равенства
 # метки, и любой чужой бит в fwmark (docker, tc, сторонний firewall) увёл бы
 # трафик мимо таблицы. Метим мы маскированно (--set-xmark 0x1/0x1) — сверять
@@ -437,7 +450,10 @@ _RULE = ["fwmark", _MARK, "lookup", str(config.ROUTING_TABLE)]
 
 
 def _hook_present() -> bool:
-    return _host_ok(["iptables", "-t", "mangle", "-C", "PREROUTING", *_HOOK])
+    """Все ли хуки на месте. Частично поставленный набор — это «не поставлен»:
+    подсеть без хука не метится, а рубильник показывал бы включённое состояние."""
+    return all(_host_ok(["iptables", "-t", "mangle", "-C", "PREROUTING", *hook])
+               for hook in _hooks())
 
 
 def _rule_present() -> bool:
@@ -569,16 +585,24 @@ def set_marking_enabled(on: bool) -> None:
     """
     if not config.ROUTING_GW_INTERFACE:
         return
-    present = _hook_present()
-    if on and not present:
-        ensure_policy()
-        _mangle(["-I", "PREROUTING", *_HOOK])
-        log.info("routing: маркировка включена")
-    elif not on and present:
+    hooks = _hooks()
+    if on:
+        missing = [h for h in hooks
+                   if not _host_ok(["iptables", "-t", "mangle", "-C", "PREROUTING", *h])]
+        if missing:
+            ensure_policy()
+            for hook in missing:
+                _mangle(["-I", "PREROUTING", *hook])
+            log.info("routing: маркировка включена (%d подсет.)", len(hooks))
+        return
+    removed = False
+    for hook in hooks:
         # Снимаем ВСЕ копии: дубли хука мог оставить прошлый запуск, и одного
         # -D тогда мало — режим остался бы включённым при снятом рубильнике.
-        while _hook_present():
-            _mangle(["-D", "PREROUTING", *_HOOK], check=False)
+        while _host_ok(["iptables", "-t", "mangle", "-C", "PREROUTING", *hook]):
+            _mangle(["-D", "PREROUTING", *hook], check=False)
+            removed = True
+    if removed:
         log.info("routing: маркировка снята (деградация)")
 
 
