@@ -153,6 +153,12 @@ def _build_last_config(
     return json.dumps(lc, indent=4, ensure_ascii=False)
 
 
+def _subnet_of(address: str) -> str:
+    """«10.9.1.2» → «10.9.1.0». Сервер держит нулевой адрес (квирк докерной
+    Amnezia), так что это и есть его адрес в сети устройства."""
+    return address.rsplit(".", 1)[0] + ".0"
+
+
 def _build_vpn_json(
     private_key: str, public_key: str, address: str,
     obf: dict, server_pubkey: str, psk: str, host: str, port: int,
@@ -170,7 +176,12 @@ def _build_vpn_json(
         "last_config": last_config,
         "port": str(port),
         "protocol_version": "2",
-        "subnet_address": f"{config.SUBNET_PREFIX}.0",
+        # Подсеть берётся ИЗ АДРЕСА устройства, а не из глобальной настройки:
+        # интерфейсов может быть два, и у второго своя подсеть. Глобальное
+        # значение назвало бы переехавшему устройству чужую сеть — и назвало бы
+        # навсегда, поле вморожено в выданную ссылку. Для старой подсети выдача
+        # при этом побайтово прежняя: адрес оттуда даёт ровно её.
+        "subnet_address": _subnet_of(address),
         "transport_proto": "udp",
     }
     # APP_CONTAINER, а НЕ CONTAINER: это идентификатор протокола для приложения,

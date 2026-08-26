@@ -59,6 +59,22 @@ def test_generate_vpn_is_parseable_and_roundtrips_keys():
     assert lc["client_ip"] == "10.8.1.4"
 
 
+def test_vpn_names_the_subnet_of_the_device_not_the_global_one(monkeypatch):
+    """Переехавшему устройству ссылка называет ЕГО подсеть.
+
+    Поле вморожено в выданную ссылку, а интерфейсов в окне переезда два, и у
+    второго своя сеть. Глобальная настройка назвала бы двойнику из 10.9.1.0/24
+    чужую 10.8.1.0 — и назвала бы навсегда.
+    """
+    monkeypatch.setattr(config, "SUBNET_PREFIX", "10.8.1")
+    twin = cg.decode_vpn(cg.generate("P", "U", "10.9.1.2", _server_params())["vpn"])
+    assert twin["containers"][0]["awg"]["subnet_address"] == "10.9.1.0"
+
+    # для старой подсети выдача остаётся ровно прежней — правка инертна
+    old = cg.decode_vpn(cg.generate("P", "U", "10.8.1.4", _server_params())["vpn"])
+    assert old["containers"][0]["awg"]["subnet_address"] == "10.8.1.0"
+
+
 def test_generate_embedded_conf_has_no_mtu():
     # встроенный в vpn:// конфиг воспроизводит эталон приложения — без строки MTU
     res = cg.generate("PRIVKEY", "PUBKEY", "10.8.1.4", _server_params())
