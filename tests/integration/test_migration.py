@@ -856,76 +856,87 @@ def test_device_counter_shows_visible_rows(services, mig, make_active_client):
 
 # ── поздравление пользователю ────────────────────────────────────────────────
 
-def test_user_is_greeted_once_after_the_device_connects(services, mig,
-                                                        make_active_client):
-    """Поздравление уходит по первому хендшейку двойника и ровно один раз.
+def _connect(services, monkeypatch, device, ago_days=0):
+    """Провести хендшейк ЧЕРЕЗ ОПРОС — так, как это происходит в бою.
 
-    Проверка тика — каждые три минуты, и без отметки человек получал бы это
-    сообщение до конца переезда.
+    Не через прямую запись в БД: поздравление рождается на переходе «хендшейка
+    не было → есть», который видит именно опрос. Подмени запись напрямую — и
+    проверять будет нечего.
+    """
+    from awgbot.util import timeutil
+    ts = int(timeutil.now().timestamp()) - int(ago_days * 86400)
+    dev = services.db.get_device(device if isinstance(device, int) else device.id)
+    monkeypatch.setattr(
+        infra_awg, "show_dump",
+        lambda iface=None: ([{"public_key": dev.public_key, "rx": 1, "tx": 1,
+                              "last_handshake": ts}]
+                            if iface == dev.iface or (iface == "awg0" and not dev.iface)
+                            else []))
+    return services.poll_traffic()
+
+
+def test_user_is_greeted_the_moment_the_device_connects(services, mig, monkeypatch,
+                                                        make_active_client):
+    """Поздравление рождается в момент, когда опрос увидел первый хендшейк.
+
+    Не по расписанию обхода: тот и опаздывал бы, и перепроверял бы всех впустую
+    до конца переезда. Переход «было пусто → стало значение» случается один раз
+    по определению, поэтому и хранить отметки не нужно.
     """
     c = make_active_client(name="c", tg_id=7070)
     dc = services.add_device(c.id, "Ноут")
     services.migration_start()
-    assert services.migration_hello_alerts() == [], "поздравили до подключения"
-
     twin = _twin(services, dc.device_id)
-    _seen(services, twin.id, ago_days=0)
 
-    notes = services.migration_hello_alerts()
-    assert len(notes) == 1
-    assert notes[0].tg_id == 7070
+    notes = _connect(services, monkeypatch, twin)
+    assert len(notes) == 1 and notes[0].tg_id == 7070
     assert "Ноут" in notes[0].text and "Всё получилось" in notes[0].text
-    assert services.migration_hello_alerts() == [], "поздравление повторилось"
+
+    assert _connect(services, monkeypatch, twin) == [], "поздравление повторилось"
 
 
-def test_greeting_is_silent_in_quiet_hours(services, mig, make_active_client):
+def test_greeting_is_silent_in_quiet_hours(services, mig, monkeypatch,
+                                           make_active_client):
     """Не помечено громким — значит в тихие часы уйдёт беззвучно. Событие
     приятное, но реакции не требует: будить ради него незачем."""
     c = make_active_client(name="c", tg_id=7071)
     dc = services.add_device(c.id, "Тел")
     services.migration_start()
-    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
-    assert services.migration_hello_alerts()[0].force_sound is False
+    notes = _connect(services, monkeypatch, _twin(services, dc.device_id))
+    assert notes[0].force_sound is False
 
 
-def test_greeting_goes_to_the_friend_not_the_owner(services, mig,
+def test_greeting_goes_to_the_friend_not_the_owner(services, mig, monkeypatch,
                                                    make_active_client):
     """Для расшаренного устройства адресат — ДРУГ: конфиг в приложении у него,
-    и просьба удалить старый профиль осмысленна только для него. Владелец
-    устройство отдал и в приложении его не держит."""
+    и просьба удалить старый профиль осмысленна только для него."""
     c = make_active_client(name="Хозяин", tg_id=7072)
     dc = services.add_device(c.id, "Общее")
     code = services.make_device_friendly(dc.device_id)
     services.activate_friend(code, tg_id=7099)
     services.migration_start()
-    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
 
-    notes = services.migration_hello_alerts()
+    notes = _connect(services, monkeypatch, _twin(services, dc.device_id))
     assert len(notes) == 1 and notes[0].tg_id == 7099, "поздравили не того"
 
 
-def test_greetings_reset_between_migrations(services, mig, make_active_client):
-    """Отметки живут одно окно: следующий переезд поздравляет заново."""
+def test_old_device_connecting_is_not_greeted(services, mig, monkeypatch,
+                                              make_active_client):
+    """Подключение на СТАРОМ пире — не переезд. Человек просто пользуется тем,
+    что у него было, и поздравлять его не с чем."""
     c = make_active_client(name="c", tg_id=7073)
     dc = services.add_device(c.id, "Тел")
     services.migration_start()
-    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
-    assert len(services.migration_hello_alerts()) == 1
-
-    services.migration_cancel()
-    assert services.db.greeted_ids() == set()
-    services.migration_start()
-    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
-    assert len(services.migration_hello_alerts()) == 1
+    assert _connect(services, monkeypatch, dc.device_id) == []
 
 
-def test_no_greeting_when_migration_is_not_running(services, mig,
+def test_no_greeting_when_migration_is_not_running(services, mig, monkeypatch,
                                                    make_active_client):
-    """Отмена прошла — поздравлять не с чем: выдаются снова старые конфиги."""
+    """Отмена прошла — поздравлять не с чем: выдаются снова старые конфиги, и
+    двойник, на котором кто-то подключился позже, это не переезд."""
     c = make_active_client(name="c", tg_id=7074)
     dc = services.add_device(c.id, "Тел")
     services.migration_start()
     twin = _twin(services, dc.device_id)
     services.migration_cancel()
-    _seen(services, twin.id, ago_days=0)
-    assert services.migration_hello_alerts() == []
+    assert _connect(services, monkeypatch, twin) == []

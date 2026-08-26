@@ -286,14 +286,6 @@ CREATE TABLE IF NOT EXISTS migration_cohort (
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
 );
 
--- Кому уже сказали «всё получилось» после переезда устройства. Отдельная
--- таблица, а не флаг на устройстве: запись живёт ровно одно окно переезда и
--- уходит вместе с ним, а FK-каскад снимает её при удалении устройства.
-CREATE TABLE IF NOT EXISTS migration_greeted (
-    device_id           INTEGER PRIMARY KEY,             -- id ДВОЙНИКА
-    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
-);
-
 CREATE TABLE IF NOT EXISTS traffic_samples (
     device_id           INTEGER PRIMARY KEY,
     last_rx             INTEGER NOT NULL,
@@ -548,6 +540,7 @@ class Database:
         self._migrate_drop_full_access()
         self._migrate_routing_master_to_devices()
         self._migrate_routing_domains_mode()
+        self._migrate_drop_greeted()
         self._ensure_service_client()
 
     def _migrate_additive(self) -> None:
@@ -569,6 +562,18 @@ class Database:
                 if col not in have:
                     with self._tx() as cur:
                         cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+
+    def _migrate_drop_greeted(self) -> None:
+        """Снять таблицу отметок «поздравлен» (жила в 2.3.2).
+
+        Она существовала, чтобы периодический обход не поздравлял повторно. С
+        переходом на момент опроса обход исчез, а вместе с ним и повод хранить
+        отметки: переход «хендшейка не было → есть» случается один раз сам по
+        себе. Оставить пустую таблицу значило бы оставить вопрос «а это зачем?»
+        тому, кто откроет схему через полгода.
+        """
+        with self._tx() as cur:
+            cur.execute("DROP TABLE IF EXISTS migration_greeted")
 
     def _migrate_routing_domains_mode(self) -> None:
         """Схлопнуть личные списки обратно в один — режимов больше нет.
@@ -1135,19 +1140,6 @@ class Database:
     def cohort_clear(self) -> None:
         with self._tx() as cur:
             cur.execute("DELETE FROM migration_cohort")
-
-    def greeted_ids(self) -> set[int]:
-        return {int(r["device_id"]) for r in
-                self._connection().execute("SELECT device_id FROM migration_greeted")}
-
-    def greeted_add(self, device_id: int) -> None:
-        with self._tx() as cur:
-            cur.execute("INSERT OR IGNORE INTO migration_greeted (device_id) "
-                        "VALUES (?)", (int(device_id),))
-
-    def greeted_clear(self) -> None:
-        with self._tx() as cur:
-            cur.execute("DELETE FROM migration_greeted")
 
     def twins_by_origin(self) -> dict[int, int]:
         """twin_of → id двойника. Одним запросом вместо обхода: пара нужна и

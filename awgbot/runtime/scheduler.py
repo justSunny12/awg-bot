@@ -67,7 +67,9 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     # ── опрос трафика ────────────────────────────────────────────────────────
     async def job_poll():
         try:
-            await asyncio.to_thread(services.poll_traffic)
+            # poll_traffic возвращает поздравления тем, чьё устройство только
+            # что подключилось на новых настройках: момент виден только здесь.
+            await send_notifications(bot, await asyncio.to_thread(services.poll_traffic))
             notifs = await asyncio.to_thread(services.check_traffic_limits)
             await send_notifications(bot, notifs)
         except Exception as e:                       # noqa: BLE001
@@ -181,9 +183,6 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                 # ...и готовность переезда: один доклад на смену состояния, как
                 # и всё остальное в этом блоке.
                 rt_src_notes += await asyncio.to_thread(services.migration_ready_alerts)
-                # ...и поздравление тем, чьё устройство только что подключилось
-                # по новым настройкам. Адресат — пользователь, не админ.
-                rt_src_notes += await asyncio.to_thread(services.migration_hello_alerts)
                 if rt_src_notes:
                     await send_notifications(bot, rt_src_notes)
             except Exception as e:                       # noqa: BLE001

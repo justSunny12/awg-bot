@@ -179,7 +179,6 @@ class MigrationMixin:
 
         self.db.set_state(_STATE_KEY, STATE_RUNNING)
         self.db.set_state(self._READY_ANNOUNCED, "")   # следующий переезд доложит сам
-        self.db.greeted_clear()                        # и поздравит заново
         # Админ переезжает первым и проверяет собой всю затею — SSH-фильтр
         # обязан знать его новый адрес ДО того, как он переимпортирует конфиг.
         self.reconcile_ssh_access()
@@ -327,40 +326,36 @@ class MigrationMixin:
 
     # ── поздравление пользователю ────────────────────────────────────────────
 
-    def migration_hello_alerts(self) -> list:
-        """Устройство впервые подключилось по новым настройкам — сказать тому,
-        кто им пользуется. Один раз на устройство.
+    def migration_greeting(self, dev):
+        """Notification «всё получилось» по устройству, если она уместна.
+
+        Зовётся из poll_traffic РОВНО в момент, когда у двойника впервые
+        появился хендшейк. Отдельного хранилища отметок для этого не нужно:
+        переход «было пусто → стало значение» случается по определению один раз,
+        и опрос сам его и обнаруживает. Периодическая перепроверка всех устройств
+        существовала только затем, чтобы этот момент не пропустить, — а он не
+        пропускается.
 
         Адресат — тот, у кого конфиг НА РУКАХ: для расшаренного устройства это
         друг, а не владелец. Владелец его отдал, в приложении оно у друга, и
         просьба удалить старый профиль осмысленна только для него.
-
-        Отметку ставим ДО отправки: потерянное сообщение лучше повторяющегося,
-        а повторяться оно будет на каждом тике монитора.
 
         Громким не помечаем — в тихие часы уйдёт беззвучно, как и всё, что не
         требует немедленной реакции.
         """
         from awgbot.domain.services import Notification
         from awgbot.bot import texts
-        if not self.migration_running():
-            return []
-        greeted = self.db.greeted_ids()
-        notes: list = []
-        for dev in self.db.list_all_devices():
-            if dev.twin_of is None or not dev.last_handshake or dev.id in greeted:
-                continue
-            self.db.greeted_add(dev.id)
-            target = (dev.friend_tg_id
-                      if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id
-                      else None)
-            if target is None:
-                client = self.db.get_client(dev.client_id)
-                target = client.tg_id if client else None
-            if not target:
-                continue                       # профиль без Telegram — некому
-            notes.append(Notification(target, texts.migration_hello(dev.name)))
-        return notes
+        if dev.twin_of is None or not self.migration_running():
+            return None
+        target = (dev.friend_tg_id
+                  if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id
+                  else None)
+        if target is None:
+            client = self.db.get_client(dev.client_id)
+            target = client.tg_id if client else None
+        if not target:
+            return None                       # профиль без Telegram — некому
+        return Notification(target, texts.migration_hello(dev.name))
 
     # ── уведомление о готовности ─────────────────────────────────────────────
 
@@ -424,7 +419,6 @@ class MigrationMixin:
                 self.db.set_device_friend(d.id)
         self.db.set_state(_STATE_KEY, STATE_OFF)
         self.db.cohort_clear()
-        self.db.greeted_clear()
         return moved
 
     def migration_moved_devices(self) -> list:
@@ -530,7 +524,6 @@ class MigrationMixin:
         if not failed:
             self.db.set_state(_STATE_KEY, STATE_OFF)
             self.db.cohort_clear()
-            self.db.greeted_clear()
         self.reconcile_ssh_access()
         return removed, dropped, failed
 
