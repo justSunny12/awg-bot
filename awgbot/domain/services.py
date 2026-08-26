@@ -1287,9 +1287,10 @@ class Services(MigrationMixin):
         срабатывать, а недоучтённое потерялось бы вместе со старым интерфейсом.
         Нечитаемый интерфейс просто пропускаем — его пиры подождут следующего
         такта, а состав пиров всё равно забота сверки."""
-        # Поздравления собираем прямо здесь: переход «хендшейка не было → есть»
-        # виден ровно тут и ровно один раз. Ловить его периодическим обходом
-        # всех устройств значило бы и опаздывать, и перепроверять впустую.
+        # Поздравления собираем и здесь: обычно первый хендшейк ловит частый тик
+        # migration_watch, но опрос всё равно ходит по ВСЕМ интерфейсам, а тот —
+        # только по интерфейсу переезда. Страховка на случай, когда двойник
+        # почему-то оказался не там, куда мы смотрим часто.
         greetings: list["Notification"] = []
         migrating = self.migration_running()
         peers: dict[str, dict] = {}
@@ -1327,12 +1328,15 @@ class Services(MigrationMixin):
                 if p["last_handshake"] and p["last_handshake"] != dev.last_handshake:
                     # пишем только при изменении: оффлайн-устройство не должно
                     # генерить UPDATE тем же значением каждые 5 минут
-                    first_ever = not dev.last_handshake
-                    self.db.update_device_fields(dev.id, last_handshake=p["last_handshake"])
-                    if first_ever and migrating:
-                        note = self.migration_greeting(dev)
-                        if note is not None:
-                            greetings.append(note)
+                    if not dev.last_handshake and migrating:
+                        # первый хендшейк в окне переезда — за него тянет жребий
+                        # и частый тик migration_watch, поздравить должен один
+                        if self.db.claim_first_handshake(dev.id, p["last_handshake"]):
+                            note = self.migration_greeting(dev)
+                            if note is not None:
+                                greetings.append(note)
+                    else:
+                        self.db.update_device_fields(dev.id, last_handshake=p["last_handshake"])
         return greetings
 
     # ── Лимиты потребления (ТЗ 7-8) ──────────────────────────────────────────

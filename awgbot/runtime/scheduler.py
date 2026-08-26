@@ -68,7 +68,8 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     async def job_poll():
         try:
             # poll_traffic возвращает поздравления тем, чьё устройство только
-            # что подключилось на новых настройках: момент виден только здесь.
+            # что подключилось на новых настройках (обычно их ловит более
+            # частый job_migration_watch, см. миграцию).
             await send_notifications(bot, await asyncio.to_thread(services.poll_traffic))
             notifs = await asyncio.to_thread(services.check_traffic_limits)
             await send_notifications(bot, notifs)
@@ -247,6 +248,13 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         return IntervalTrigger(
             seconds=settings.get_int("app.routing.probe_seconds", 30), timezone=_TZ)
 
+    def _trig_migration_watch():
+        # СЕКУНДЫ: такт задаёт верхнюю границу задержки поздравления, а оно
+        # ценно ровно тем, что приходит в момент, когда человек смотрит на
+        # только что заработавшее подключение.
+        return IntervalTrigger(
+            seconds=settings.get_int("app.scheduler.migration_watch_seconds", 20), timezone=_TZ)
+
     def _trig_monthly():
         return CronTrigger(day=settings.get_int("app.scheduler.monthly_reset_day", 1),
                            hour=settings.get_int("app.scheduler.monthly_reset_hour", 0),
@@ -290,6 +298,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         "app.scheduler.expiry_check_minutes": ("expiry", _trig_expiry),
         "app.scheduler.monitor_minutes": ("monitor", _trig_monitor),
         "app.routing.probe_seconds": ("routing_liveness", _trig_liveness),
+        "app.scheduler.migration_watch_seconds": ("migration_watch", _trig_migration_watch),
         "app.scheduler.monthly_reset_day": ("monthly", _trig_monthly),
         "app.scheduler.monthly_reset_hour": ("monthly", _trig_monthly),
         "app.scheduler.backup_day": ("backup", _trig_backup),
@@ -341,6 +350,23 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         except Exception as e:                        # noqa: BLE001
             log.warning("routing_liveness: %s", e)
 
+    async def job_migration_watch():
+        """Частый тик окна переезда: поздравить того, кто ТОЛЬКО ЧТО подключился.
+
+        Отдельным заданием по той же причине, что и живость шлюза: другой такт.
+        Опрос трафика ходит раз в пять минут, и «всё получилось» приходило бы
+        человеку, который уже пять минут как в интернете. Уведомить о событии
+        сильно позже события — почти то же, что не уведомить.
+
+        Вне окна переезда задание выходит на первой строке (читает одно
+        состояние), а внутри — не делает ни одного exec, когда ждать больше
+        некого. Поэтому висит всегда, без флага и без перерегистрации.
+        """
+        try:
+            await send_notifications(bot, await asyncio.to_thread(services.migration_watch))
+        except Exception as e:                       # noqa: BLE001
+            log.warning("migration_watch: %s", e)
+
     scheduler.add_job(job_monitor, _trig_monitor(),
                       id="monitor", max_instances=1, coalesce=True,
                       next_run_time=now, misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
@@ -350,6 +376,11 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                           id="routing_liveness", max_instances=1, coalesce=True,
                           next_run_time=now,
                           misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+    # окно переезда — частым тиком, см. job_migration_watch
+    scheduler.add_job(job_migration_watch, _trig_migration_watch(),
+                      id="migration_watch", max_instances=1, coalesce=True,
+                      next_run_time=now,
+                      misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
     # ежедневная очистка истории (батчами), в тихий ночной час
     scheduler.add_job(job_purge_history, _trig_purge(),
                       id="purge_history", max_instances=1,

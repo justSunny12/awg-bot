@@ -1284,6 +1284,24 @@ class Database:
                 values = list(cols.values()) + [device_id]
                 cur.execute(f"UPDATE {table} SET {assignments} WHERE {key} = ?", values)
 
+    def claim_first_handshake(self, device_id: int, value: str) -> bool:
+        """Записать ПЕРВЫЙ хендшейк устройства; True — только тому, кто записал.
+
+        За этой строкой следят два такта — частый тик переезда и пятиминутный
+        опрос трафика, — а «увидел впервые» обязано достаться ровно одному:
+        иначе человек получит два одинаковых поздравления. Соединения у потоков
+        РАЗНЫЕ (threading.local), так что гонка настоящая, а не теоретическая.
+
+        Условие живёт в самом UPDATE, а не в проверке перед ним: между «прочитал
+        пусто» и «записал» второй поток успевает сделать то же самое.
+        """
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE device_traffic SET last_handshake = ? WHERE device_id = ? "
+                "AND (last_handshake IS NULL OR last_handshake = '')",
+                (value, device_id))
+            return cur.rowcount == 1
+
     def delete_device(self, device_id: int, archive_reason: str = "deleted") -> None:
         """Удаляет устройство. Перед удалением — снимок в историю + закрытие
         friend-эпизода, если archive_reason задан (None у технических откатов)."""
