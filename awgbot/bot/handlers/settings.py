@@ -186,51 +186,6 @@ async def pick(cb: CallbackQuery, callback_data: SetCB, services):
 
 
 # ── действия (бэкап сейчас, рестарты, проверка обновлений) ────────────────────
-@router.callback_query(SetCB.filter(F.act == "do"))
-async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
-    key = callback_data.key
-    if key == "now":                                   # бэкап сейчас
-        await cb.answer("Готовлю бэкап…")
-        paths = await call(services.make_backup)
-        for p in paths:
-            try:
-                await cb.message.answer_document(FSInputFile(p))
-            except Exception:                          # noqa: BLE001
-                pass
-        await _render(cb, "backup", services)
-        return
-    if key == "awg":                                   # рестарт AWG
-        await cb.answer("Перезапускаю AWG…")
-        try:
-            await call(services.restart_service)
-            # клавиатура — полным рендером раздела: голый settings_svc() терял
-            # бы кнопки переезда до следующего захода в раздел
-            await edit(cb, "✅ AmneziaWG перезапущен, блокировки восстановлены.",
-                       (await _screen("svc", services))[1])
-        except Exception as e:                         # noqa: BLE001
-            await edit(cb, f"⚠️ Ошибка перезапуска AWG: {e}",
-                       (await _screen("svc", services))[1])
-        return
-    if key == "bot":                                   # рестарт бота
-        await cb.answer("Перезапускаю бота…")
-        await edit(cb, "🔄 Бот перезапускается — вернётся через несколько секунд.", None)
-        # Запоминаем ДО рестарта: обещание вернуться исполняет новый процесс,
-        # подменяя это же сообщение панелью.
-        await call(services.set_restart_wait, cb.message.chat.id, cb.message.message_id)
-        await call(services.restart_bot)
-        return
-    if key == "check":                                 # проверить обновление сейчас
-        await cb.answer("Проверяю…")
-        nxt = await call(services.update_next)
-        if nxt is None:
-            await edit(cb, texts.update_current_ok(config.INSTALLED_VERSION),
-                       kb.settings_updates(await call(services.updates_muted)))
-        else:
-            await edit(cb, texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body),
-                       kb.update_admin_available())
-        return
-
-
 # ── переезд профилей (docs/ROADMAP.md, п.3) ──────────────────────────────────
 @router.callback_query(SetCB.filter((F.sec == "mig") & (F.act == "do")))
 async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
@@ -306,3 +261,51 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
 
     await cb.answer("Действие недоступно.", show_alert=True)
 
+# ВЫШЕ do_action НАМЕРЕННО. Фильтры проверяются в порядке регистрации, а у
+# do_action он широкий (F.act == "do") и перехватил бы sec="mig" целиком:
+# ключ не подошёл бы ни к одной его ветке, функция закончилась бы молча —
+# без ответа на колбэк, то есть с вечным спиннером на кнопке. По той же
+# причине выше стоит и routing_action.
+@router.callback_query(SetCB.filter(F.act == "do"))
+async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
+    key = callback_data.key
+    if key == "now":                                   # бэкап сейчас
+        await cb.answer("Готовлю бэкап…")
+        paths = await call(services.make_backup)
+        for p in paths:
+            try:
+                await cb.message.answer_document(FSInputFile(p))
+            except Exception:                          # noqa: BLE001
+                pass
+        await _render(cb, "backup", services)
+        return
+    if key == "awg":                                   # рестарт AWG
+        await cb.answer("Перезапускаю AWG…")
+        try:
+            await call(services.restart_service)
+            # клавиатура — полным рендером раздела: голый settings_svc() терял
+            # бы кнопки переезда до следующего захода в раздел
+            await edit(cb, "✅ AmneziaWG перезапущен, блокировки восстановлены.",
+                       (await _screen("svc", services))[1])
+        except Exception as e:                         # noqa: BLE001
+            await edit(cb, f"⚠️ Ошибка перезапуска AWG: {e}",
+                       (await _screen("svc", services))[1])
+        return
+    if key == "bot":                                   # рестарт бота
+        await cb.answer("Перезапускаю бота…")
+        await edit(cb, "🔄 Бот перезапускается — вернётся через несколько секунд.", None)
+        # Запоминаем ДО рестарта: обещание вернуться исполняет новый процесс,
+        # подменяя это же сообщение панелью.
+        await call(services.set_restart_wait, cb.message.chat.id, cb.message.message_id)
+        await call(services.restart_bot)
+        return
+    if key == "check":                                 # проверить обновление сейчас
+        await cb.answer("Проверяю…")
+        nxt = await call(services.update_next)
+        if nxt is None:
+            await edit(cb, texts.update_current_ok(config.INSTALLED_VERSION),
+                       kb.settings_updates(await call(services.updates_muted)))
+        else:
+            await edit(cb, texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body),
+                       kb.update_admin_available())
+        return

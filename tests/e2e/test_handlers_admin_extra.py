@@ -441,3 +441,27 @@ async def test_restart_panel_survives_an_unavailable_message(services, fake_bot,
     sent = [r for r in fake_bot.records if r[0] == "send_message"]
     assert len(sent) == 1 and sent[0][1] == ADMIN
     assert services.db.get_nav_message_id(ADMIN) != 4242, "нав указывает на мёртвое сообщение"
+
+
+# ── порядок фильтров в роутере настроек ──────────────────────────────────────
+
+def test_specific_settings_handlers_are_registered_before_the_generic_one():
+    """Специфичные обработчики раздела обязаны стоять ВЫШЕ общего do_action.
+
+    Фильтры проверяются в порядке регистрации, а у do_action он широкий
+    (`F.act == "do"`). Окажись он первым — он перехватил бы и sec="mig", и
+    sec="rt": ключ не подошёл бы ни к одной его ветке, функция закончилась бы
+    молча, колбэк остался бы без ответа, а на кнопке — вечный спиннер.
+
+    Ровно это и случилось на боевом сервере: рычаг переезда нажимался, хендлер
+    отрабатывал за две миллисекунды и не делал ничего. Прямой вызов функции в
+    тестах этого поймать не мог — маршрутизация там не участвует.
+    """
+    from awgbot.bot.handlers import settings as sh
+
+    order = [h.callback.__name__ for h in sh.router.callback_query.handlers]
+    generic = order.index("do_action")
+    for specific in ("routing_action", "migration_action"):
+        assert order.index(specific) < generic, (
+            f"{specific} зарегистрирован после do_action — тот перехватит его "
+            f"колбэки, и кнопка будет крутиться без ответа")
