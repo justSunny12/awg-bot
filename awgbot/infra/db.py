@@ -265,6 +265,19 @@ CREATE TABLE IF NOT EXISTS client_routing_domains (
     FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
 );
 
+-- ── Когорта переезда профилей (docs/ROADMAP.md, п.3) ────────────────────────
+-- Живые устройства НА МОМЕНТ включения рычага. Замораживается намеренно: считай
+-- по живому правилу постоянно — и знаменатель гуляет, а «миграция завершена»
+-- становится состоянием, которое умеет расзавершаться (молчавший три недели пир
+-- проснулся, и 12/12 превратилось в 12/13).
+--
+-- Хранится СТРОКАМИ, а не пересчитывается: пересчёт после рестарта бота собрал
+-- бы когорту заново по свежим хендшейкам, и заморозка была бы фиктивной.
+CREATE TABLE IF NOT EXISTS migration_cohort (
+    device_id           INTEGER PRIMARY KEY,             -- id СТАРОГО устройства
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS traffic_samples (
     device_id           INTEGER PRIMARY KEY,
     last_rx             INTEGER NOT NULL,
@@ -1035,6 +1048,33 @@ class Database:
         return [_device_from_row(r) for r in
                 self._connection().execute(_DEVICE_SELECT).fetchall()]
 
+    # ── Когорта переезда ─────────────────────────────────────────────────────
+
+    def cohort_set(self, device_ids) -> None:
+        """Заморозить когорту. Идемпотентно: повторное включение рычага после
+        сбоя на середине не задваивает и не теряет."""
+        with self._tx() as cur:
+            cur.execute("DELETE FROM migration_cohort")
+            cur.executemany("INSERT INTO migration_cohort (device_id) VALUES (?)",
+                            [(int(d),) for d in device_ids])
+
+    def cohort_ids(self) -> set[int]:
+        """id старых устройств когорты. Удалённые выпадают сами — ON DELETE
+        CASCADE: устройство, снесённое в окне, не должно вечно держать
+        знаменатель и делать завершение недостижимым."""
+        return {int(r["device_id"]) for r in
+                self._connection().execute("SELECT device_id FROM migration_cohort")}
+
+    def cohort_clear(self) -> None:
+        with self._tx() as cur:
+            cur.execute("DELETE FROM migration_cohort")
+
+    def twins_by_origin(self) -> dict[int, int]:
+        """twin_of → id двойника. Одним запросом вместо обхода: пара нужна и
+        прогрессу, и слиянию истории, и парным операциям."""
+        return {int(r["twin_of"]): int(r["id"]) for r in self._connection().execute(
+            "SELECT id, twin_of FROM devices WHERE twin_of IS NOT NULL")}
+
     def distinct_ifaces(self) -> list[str]:
         """Сырые значения devices.iface, встречающиеся в базе. Пустая строка в
         выдаче остаётся пустой: разрешать её в имя — дело awg.iface_of, здесь мы
@@ -1180,6 +1220,24 @@ class Database:
                      traffic_tx_period = traffic_tx_period + ?
                    WHERE device_id = ?""",
                 (d_rx, d_tx, d_rx, d_tx, device_id),
+            )
+
+    def merge_traffic(self, src_device_id: int, dst_device_id: int) -> None:
+        """Сложить счётчики src в dst. Нужен на завершении переезда: потребление
+        человека в окне размазано по паре строк, и удаление старой без слияния
+        унесло бы половину месяца — молча и в пользу нарушителя лимита.
+
+        Складываем, а не переносим: у двойника уже есть свой накопленный трафик.
+        """
+        with self._tx() as cur:
+            cur.execute(
+                """UPDATE device_traffic SET
+                     traffic_rx_month  = traffic_rx_month  + COALESCE((SELECT traffic_rx_month  FROM device_traffic WHERE device_id = ?), 0),
+                     traffic_tx_month  = traffic_tx_month  + COALESCE((SELECT traffic_tx_month  FROM device_traffic WHERE device_id = ?), 0),
+                     traffic_rx_period = traffic_rx_period + COALESCE((SELECT traffic_rx_period FROM device_traffic WHERE device_id = ?), 0),
+                     traffic_tx_period = traffic_tx_period + COALESCE((SELECT traffic_tx_period FROM device_traffic WHERE device_id = ?), 0)
+                   WHERE device_id = ?""",
+                (src_device_id, src_device_id, src_device_id, src_device_id, dst_device_id),
             )
 
     def reset_month_traffic_all(self) -> None:

@@ -33,6 +33,7 @@ from awgbot.infra import routing
 from awgbot.infra import updates
 from awgbot.domain import configgen
 from awgbot.domain import routing as domain_routing
+from awgbot.domain.migration import MigrationMixin
 from awgbot.core.blocks import DeviceBlock, ClientBlock, DEVICE_TRAFFIC_ANY
 from awgbot.core import models
 from awgbot.core.enums import SubStatus, ActivationStatus, PauseMode, PeriodKind, FriendStatus
@@ -296,7 +297,7 @@ def _admin_self_over_text() -> str:
 # Services
 # ─────────────────────────────────────────────────────────────────────────────
 
-class Services:
+class Services(MigrationMixin):
     def __init__(self, db):
         self.db = db
 
@@ -304,6 +305,27 @@ class Services:
     # is_blocked как отдельного поля нет: заблокирован ⇔ block_reason != 0.
     # IP физически режем/снимаем по ИТОГОВОМУ состоянию маски: DROP ставим, когда
     # появляется хоть один бит; снимаем — только когда сброшены ВСЕ.
+
+    def _device_pair(self, dev) -> list:
+        """Устройство и его двойник по переезду — в порядке [сам, второй].
+
+        Вне окна переезда список из одного элемента, и все операции ведут себя
+        ровно как прежде. Внутри окна у устройства ДВА пира на двух интерфейсах,
+        и мутации обязаны быть парными: заблокировать один, сняв другой,
+        значит подарить доступ; удалить один — оставить призрачный.
+        """
+        pair = [dev]
+        if dev.twin_of:
+            other = self.db.get_device(dev.twin_of)
+            if other is not None:
+                pair.append(other)
+            return pair
+        twin_id = self.db.twins_by_origin().get(dev.id)
+        if twin_id:
+            other = self.db.get_device(twin_id)
+            if other is not None:
+                pair.append(other)
+        return pair
 
     def _device_set_block(self, device_id: int, bit: DeviceBlock) -> None:
         """Установить причину блокировки устройства (бит) и наложить DROP."""
@@ -313,11 +335,12 @@ class Services:
         new_mask = int(dev.block_reason) | int(bit)
         if new_mask == int(dev.block_reason):
             return
-        self.db.update_device_fields(device_id, block_reason=new_mask)
-        try:
-            awg.block_ip(dev.address)           # идемпотентно
-        except awg.AwgError:
-            pass
+        for peer in self._device_pair(dev):
+            self.db.update_device_fields(peer.id, block_reason=new_mask)
+            try:
+                awg.block_ip(peer.address)      # идемпотентно
+            except awg.AwgError:
+                pass
 
     def _device_clear_block(self, device_id: int, bit: DeviceBlock) -> None:
         """Снять причину (бит). Если не осталось причин — снять DROP."""
@@ -327,12 +350,13 @@ class Services:
         new_mask = int(dev.block_reason) & ~int(bit)
         if new_mask == int(dev.block_reason):
             return
-        self.db.update_device_fields(device_id, block_reason=new_mask)
-        if new_mask == 0:
-            try:
-                awg.unblock_ip(dev.address)     # идемпотентно
-            except awg.AwgError:
-                pass
+        for peer in self._device_pair(dev):
+            self.db.update_device_fields(peer.id, block_reason=new_mask)
+            if new_mask == 0:
+                try:
+                    awg.unblock_ip(peer.address)   # идемпотентно
+                except awg.AwgError:
+                    pass
 
     def _client_set_block(self, client_id: int, bit: ClientBlock) -> None:
         """Установить причину блокировки клиента (только маска клиента; физически
@@ -626,6 +650,24 @@ class Services:
         if not client.is_service and client.status == SubStatus.EXPIRED:
             self._device_set_block(device_id, DeviceBlock.EXPIRY)
 
+        # В окне переезда устройство заводится ПАРОЙ, как все остальные, и
+        # человеку выдаётся новый конфиг. Пара нужна не для красоты: до
+        # завершения переезд можно отменить, а отмена возвращает людей на старые
+        # пиры. Роди мы только новый — отменять для этого человека было бы нечем,
+        # и он остался бы единственным, кого откат выбрасывает.
+        if self.migration_running():
+            try:
+                twin_id = self._birth_twin(self.db.get_device(device_id))
+            except Exception as e:                        # noqa: BLE001
+                log.warning("add_device: двойник для %s не создан: %s", name, e)
+            else:
+                if client.tg_id == config.ADMIN_ID:
+                    self.reconcile_ssh_access()
+                twin = self.db.get_device(twin_id)
+                cfg = self.generate_config(twin_id)
+                return DeviceCreated(device_id=twin_id, address=twin.address,
+                                     vpn=cfg["vpn"], conf=cfg["conf"])
+
         cfg = configgen.generate(priv, pub, ip, server_params)
         # новое устройство админа → сразу открыть ему SSH-к-хосту (не ждать цикла)
         if client.tg_id == config.ADMIN_ID:
@@ -641,19 +683,28 @@ class Services:
         if dev is None:
             return None
         friend_tg = dev.friend_tg_id if dev.friend_status == FriendStatus.ACTIVE else None
-        try:
-            awg.remove_peer(dev.public_key)
-        except awg.AwgError as e:
-            raise ServiceError(f"Не удалось снять устройство на сервере: {e}")
+        # Снятие ПАРНОЕ. В окне переезда у устройства два пира на двух
+        # интерфейсах; снять только видимый значит оставить второй работать —
+        # призрачный доступ у того, кого человек считает удалённым. Ровно тот
+        # класс, ради которого сверка перестала усыновлять неизвестных.
+        for peer in self._device_pair(dev):
+            try:
+                awg.remove_peer(peer.public_key, iface=awg.iface_of(peer.iface))
+            except awg.AwgError as e:
+                raise ServiceError(f"Не удалось снять устройство на сервере: {e}")
         # DROP снимаем ПОСЛЕ успешного снятия пира: если remove_peer упал,
         # устройство осталось в конфиге и должно остаться заблокированным.
         # Снять обязательно — иначе осиротевшее правило заблокирует будущего
         # владельца этого IP (аллокатор переиспользует освободившиеся адреса).
         if int(dev.block_reason) != 0:
-            try:
-                awg.unblock_ip(dev.address)
-            except awg.AwgError:
-                pass
+            for peer in self._device_pair(dev):
+                try:
+                    awg.unblock_ip(peer.address)
+                except awg.AwgError:
+                    pass
+        for peer in self._device_pair(dev):
+            if peer.id != device_id:
+                self.db.delete_device(peer.id, archive_reason=None)
         self.db.delete_device(device_id)
         return friend_tg
 
@@ -668,7 +719,10 @@ class Services:
                 "Это устройство создавал не бот — приватного ключа у него нет, "
                 "выдать ссылку не из чего. Удали его и добавь новое через бота."
             )
-        server_params = awg.read_server_params()
+        # Параметры берём у ТОГО интерфейса, где живёт пир. Общие отдали бы
+        # конфигу двойника старый порт, старый серверный ключ и старую
+        # обфускацию: превью выглядит нормально, а не подключается никто.
+        server_params = awg.read_server_params(iface=awg.iface_of(dev.iface))
         return configgen.generate(dev.private_key, dev.public_key, dev.address, server_params)
 
     def rename_device(self, device_id: int, new_name: str) -> None:

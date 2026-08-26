@@ -94,13 +94,13 @@ def fake_awg(monkeypatch):
         monkeypatch.setattr(awg, name, fn, raising=False)
 
     monkeypatch.setattr(awg, "mutation_lock", threading.Lock(), raising=False)
-    _set("read_occupied_ips", lambda: set(state.occupied))
+    _set("read_occupied_ips", lambda iface=None: set(state.occupied))
     _set("gen_keypair", gen_keypair)
     _set("pubkey_of", lambda priv: state.privpub.get(priv, f"derived-{priv}"))
-    _set("read_server_params", lambda: {**server_params,
-                                        "obfuscation": dict(server_params["obfuscation"])})
-    _set("add_peer", lambda pub, psk, ip: state.peers.__setitem__(pub, (psk, ip)))
-    _set("remove_peer", lambda pub: state.peers.pop(pub, None))
+    _set("read_server_params", lambda force=False, iface=None: {
+        **server_params, "obfuscation": dict(server_params["obfuscation"])})
+    _set("add_peer", lambda pub, psk, ip, iface=None: state.peers.__setitem__(pub, (psk, ip)))
+    _set("remove_peer", lambda pub, iface=None: state.peers.pop(pub, None))
     _set("block_ip", lambda addr: state.blocked.add(addr))
     _set("unblock_ip", lambda addr: state.blocked.discard(addr))
     _set("is_blocked", lambda addr: addr in state.blocked)
@@ -191,6 +191,9 @@ def fake_routing(monkeypatch, tmp_path):
     _set("invalidate_self_check", lambda: None)
     _set("add_networks", add_networks)
     _set("resolve_a", lambda dom, timeout=3.0: list(state.dns.get(dom, [])))
+    # Сигнатуры двойников повторяют настоящие ВКЛЮЧАЯ iface: интерфейсов на
+    # время переезда два, и двойник без этого параметра молча разошёлся бы с
+    # боевым кодом ровно на той правке, ради которой параметр и появился.
     # контракт настоящей: (тело, ошибка) — ровно одно из двух непусто
     _set("fetch", lambda url, timeout=15: (None, "заглушка: источник не настроен", 0))
     _set("destroy_set", lambda name: state.sets.pop(name, None))

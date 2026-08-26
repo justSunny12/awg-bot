@@ -90,7 +90,7 @@ def test_remove_device_peer_failure_raises(services, fake_awg, make_active_clien
     client = make_active_client(tg_id=1109)
     dc = services.add_device(client.id, "d")
 
-    def boom(pub):
+    def boom(pub, iface=None):
         raise awg.AwgError("нет связи")
     monkeypatch.setattr(awg, "remove_peer", boom, raising=False)
     with pytest.raises(ServiceError):

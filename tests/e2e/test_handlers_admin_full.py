@@ -289,7 +289,7 @@ async def test_delete_client_keeps_profile_when_peer_stays_on_server(
     client = make_active_client(tg_id=6099)
     dc = services.add_device(client.id, "телефон")
     monkeypatch.setattr(awg, "remove_peer",
-                        lambda pub: (_ for _ in ()).throw(awg.AwgError("awg не отвечает")))
+                        lambda pub, iface=None: (_ for _ in ()).throw(awg.AwgError("awg не отвечает")))
 
     cb, nav = _acb(fake_bot)
     await ah.client_delete_apply(
