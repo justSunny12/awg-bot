@@ -24,7 +24,15 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from awgbot.util.timeutil import now_iso as _now_iso  # единый источник времени (UTC+3)
+from awgbot.core import config
 from awgbot.core import models
+
+# Состояние переезда профилей. Константы живут ЗДЕСЬ, а domain/migration.py их
+# импортирует: фильтру видимости устройств состояние нужно прямо в запросе, а
+# infra не может тянуть domain. Дублирование строк уже успело разъехаться
+# однажды — потому и константы.
+MIGRATION_STATE_KEY = "migration_state"
+MIGRATION_RUNNING = "running"
 
 log = logging.getLogger(__name__)
 
@@ -1009,18 +1017,29 @@ class Database:
         return _device_from_row(self._connection().execute(
             _DEVICE_SELECT + " WHERE f.friend_code = ?", (code,)).fetchone())
 
+    def _friend_visible_where(self) -> str:
+        """Гостевые выборки живут по ТОМУ ЖЕ правилу видимости, что и список
+        владельца: активная связь при рождении двойника копируется на обе
+        строки, и без фильтра друг видел бы устройство дважды — и мог бы
+        вытащить конфиг уходящего интерфейса."""
+        if self.migration_visibility_running():
+            return ("d.id NOT IN "
+                    "(SELECT twin_of FROM devices WHERE twin_of IS NOT NULL)")
+        return self._TWIN_DANGLING_OK
+
     def get_device_by_friend_tg(self, tg_id: int):
         """Активное гостевое устройство, которым управляет этот Telegram-друг."""
         return _device_from_row(self._connection().execute(
-            _DEVICE_SELECT + " WHERE f.friend_tg_id = ? AND f.friend_status = 'active'",
+            _DEVICE_SELECT + " WHERE f.friend_tg_id = ? AND f.friend_status = 'active'"
+            f" AND {self._friend_visible_where()}",
             (tg_id,)).fetchone())
 
     def get_devices_by_friend_tg(self, tg_id: int) -> list:
         """ВСЕ активные гостевые устройства этого друга (мультидружба: один tg_id
         может управлять несколькими устройствами разных клиентов)."""
         return [_device_from_row(r) for r in self._connection().execute(
-            _DEVICE_SELECT + " WHERE f.friend_tg_id = ? AND f.friend_status = 'active' "
-            "ORDER BY d.id", (tg_id,)).fetchall()]
+            _DEVICE_SELECT + " WHERE f.friend_tg_id = ? AND f.friend_status = 'active'"
+            f" AND {self._friend_visible_where()} ORDER BY d.id", (tg_id,)).fetchall()]
 
     def set_device_friend(self, device_id: int, *, friend_tg_id=None,
                           friend_code=None, friend_status=None) -> None:
@@ -1038,6 +1057,24 @@ class Database:
                     "friend_tg_id=excluded.friend_tg_id, friend_code=excluded.friend_code, "
                     "friend_status=excluded.friend_status",
                     (device_id, friend_tg_id, friend_code, friend_status))
+
+    def migration_visibility_running(self) -> bool:
+        """Каким комплектом пары жить экранам и выдаче — новым или старым.
+
+        Условие ОБЯЗАНО совпадать с services.migration_running: и состояние, и
+        оба конфиг-ключа. Пока фильтр читал сырое состояние, очистка ключей в
+        app.yaml (аварийный рубильник) выключала механику, но НЕ видимость —
+        людям продолжали показываться двойники, чьи конфиги больше не выдаются.
+        """
+        return bool(config.MIGRATION_INTERFACE and config.MIGRATION_SUBNET_PREFIX
+                    and (self.get_state(MIGRATION_STATE_KEY) or "") == MIGRATION_RUNNING)
+
+    # Висячий twin_of (старую строку пары удалила сверка) читается как «пары
+    # нет»: иначе после завершения переезда двойник с битой ссылкой пропадал бы
+    # из ВСЕХ списков навсегда — пир работает, человек подключён, а устройства
+    # нет ни у него, ни у админа.
+    _TWIN_DANGLING_OK = ("(d.twin_of IS NULL OR NOT EXISTS "
+                         "(SELECT 1 FROM devices o WHERE o.id = d.twin_of))")
 
     def list_devices(self, client_id: int, all_rows: bool = False) -> list:
         """Устройства профиля — ПО ОДНОЙ строке на устройство.
@@ -1057,11 +1094,11 @@ class Database:
         """
         if all_rows:
             where = "WHERE d.client_id = ?"
-        elif (self.get_state("migration_state") or "") == "running":
+        elif self.migration_visibility_running():
             where = ("WHERE d.client_id = ? AND d.id NOT IN "
                      "(SELECT twin_of FROM devices WHERE twin_of IS NOT NULL)")
         else:
-            where = "WHERE d.client_id = ? AND d.twin_of IS NULL"
+            where = f"WHERE d.client_id = ? AND {self._TWIN_DANGLING_OK}"
         return [_device_from_row(r) for r in self._connection().execute(
             _DEVICE_SELECT + f" {where} ORDER BY d.created_at",
             (client_id,)).fetchall()]
@@ -1096,6 +1133,19 @@ class Database:
         прогрессу, и слиянию истории, и парным операциям."""
         return {int(r["twin_of"]): int(r["id"]) for r in self._connection().execute(
             "SELECT id, twin_of FROM devices WHERE twin_of IS NOT NULL")}
+
+    def normalize_default_iface(self, default: str) -> int:
+        """Схлопнуть явное значение iface, равное дефолтному, в пустую строку.
+
+        Эндшпиль переезда: админ переключает docker.interface на новый и
+        перезапускает бота — с этого момента явное 'awg1' и пустое '' значат
+        одно и то же, а две записи одного смысла это тот класс расхождения,
+        который здесь уже стрелял. Зовётся на старте; вне эндшпиля — ноль строк,
+        холостой UPDATE.
+        """
+        with self._tx() as cur:
+            cur.execute("UPDATE devices SET iface = '' WHERE iface = ?", (default,))
+            return cur.rowcount
 
     def distinct_ifaces(self) -> list[str]:
         """Сырые значения devices.iface, встречающиеся в базе. Пустая строка в

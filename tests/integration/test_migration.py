@@ -338,8 +338,8 @@ def test_finish_drops_the_stragglers_and_merges_history(services, mig,
     _seen(services, twin.id, ago_days=0)
     services.db.add_traffic(twin.id, 100, 50)
 
-    removed, dropped = services.migration_finish()
-    assert removed == 2
+    removed, dropped, failed = services.migration_finish()
+    assert removed == 2 and failed == []
     assert dropped == ["Ксюша — Отстал"], "уронённые названы не поимённо"
     assert services.db.get_device(moved_dev.device_id) is None
     assert services.db.get_device(twin.id).traffic_rx_month == 800, "история потеряна"
@@ -520,3 +520,260 @@ def test_empty_cohort_does_not_announce(services, mig, make_active_client):
     services.add_device(c.id, "Мёртвое")
     services.migration_start()
     assert services.migration_ready_alerts() == []
+
+
+# ── исправления по тотальному ревью ──────────────────────────────────────────
+
+def test_dangling_twin_survives_finish_visible(services, mig, make_active_client):
+    """Старую строку пары удалила сверка ещё в окне — двойник с висячей ссылкой
+    обязан пережить завершение видимым.
+
+    Раньше _finish_plan такие пары пропускал, twin_of не обнулялся, а фильтр
+    «twin_of IS NULL» после выключения рычага прятал устройство из ВСЕХ списков
+    навсегда: пир работает, человек подключён, а устройства нет ни у кого.
+    """
+    c = make_active_client(name="c", tg_id=7040)
+    dc = services.add_device(c.id, "Тел")
+    _seen(services, dc.device_id, ago_days=1)
+    services.migration_start()
+    twin = _twin(services, dc.device_id)
+    _seen(services, twin.id, ago_days=0)
+    services.db.delete_device(dc.device_id, archive_reason=None)  # «сверка удалила»
+
+    services.migration_finish()
+    visible = services.db.list_devices(c.id)
+    assert [d.id for d in visible] == [twin.id], "двойник пропал из списка"
+    assert services.db.get_device(twin.id).twin_of is None, "висячая ссылка осталась"
+
+
+def test_dangling_twin_visible_even_without_finish(services, mig, make_active_client):
+    """Тот же случай, но рычаг выключен отменой: битая ссылка читается как
+    «пары нет», а не как «прятать вечно»."""
+    c = make_active_client(name="c", tg_id=7041)
+    dc = services.add_device(c.id, "Тел")
+    services.migration_start()
+    twin = _twin(services, dc.device_id)
+    services.db.delete_device(dc.device_id, archive_reason=None)
+    services.migration_cancel()
+
+    assert [d.id for d in services.db.list_devices(c.id)] == [twin.id]
+
+
+def test_device_limit_counts_the_pair_as_one(services, mig, make_active_client):
+    """Лимит устройства в окне — СУММА по паре против лимита пары.
+
+    Проверка каждой строки против её собственного лимита давала двойную квоту,
+    у которой ни одна половина не дотягивает до порога: 30+30 при лимите 50
+    не блокировали никого.
+    """
+    from awgbot.core.blocks import DeviceBlock as DB_
+    GB = 1024 ** 3
+    c = make_active_client(name="c", tg_id=7042)
+    dc = services.add_device(c.id, "Тел", traffic_limit=50 * GB)
+    services.migration_start()
+    twin = _twin(services, dc.device_id)
+    services.db.add_traffic(dc.device_id, 30 * GB, 0)
+    services.db.add_traffic(twin.id, 30 * GB, 0)
+
+    services.check_traffic_limits()
+    assert int(services.db.get_device(twin.id).block_reason) & int(DB_.TRAFFIC_USER), \
+        "пара выпила 60 из 50 и не заблокирована"
+    assert int(services.db.get_device(dc.device_id).block_reason) & int(DB_.TRAFFIC_USER), \
+        "блокировка не парная"
+
+
+def test_routing_toggle_is_pairwise(services, mig, make_active_client, fake_routing):
+    """Человек щёлкает видимого двойника, а его реальный трафик до переимпорта
+    идёт со СТАРОГО адреса. Непарный тумблер не делал ничего: выключение не
+    выключало, включение не включало — молча."""
+    c = make_active_client(name="c", tg_id=7043)
+    dc = services.add_device(c.id, "Тел")
+    services.set_routing_allowed(c.id, True)
+    services.set_routing_device(dc.device_id, True)
+    services.migration_start()
+    twin = _twin(services, dc.device_id)
+
+    services.set_routing_device(twin.id, False)          # щёлкнули видимого
+    assert services.db.get_device(dc.device_id).routing_on == 0, \
+        "старая строка осталась включённой — реальный трафик всё ещё метится"
+
+    services.set_routing_device(dc.device_id, True)      # и в обратную сторону
+    assert services.db.get_device(twin.id).routing_on == 1
+
+
+def test_friend_sees_the_device_once(services, mig, make_active_client):
+    """Активная связь копируется на обе строки пары, и без фильтра друг видел
+    устройство дважды — и мог вытащить конфиг уходящего интерфейса."""
+    c = make_active_client(name="c", tg_id=7044)
+    dc = services.add_device(c.id, "Общее")
+    code = services.make_device_friendly(dc.device_id)
+    services.activate_friend(code, tg_id=7099)
+    services.migration_start()
+
+    rows = services.db.get_devices_by_friend_tg(7099)
+    assert len(rows) == 1, "друг видит устройство дважды"
+    assert rows[0].iface == "awg1", "другу показан уходящий интерфейс"
+
+    services.migration_cancel()
+    rows = services.db.get_devices_by_friend_tg(7099)
+    assert len(rows) == 1 and rows[0].iface == "", "после отмены друг не вернулся на старую"
+
+
+def test_reassign_moves_the_pair(services, mig, make_active_client):
+    """Перенос одной строки разрывал пару между профилями: старый пир оставался
+    у донора, а завершение слило бы трафик и заархивировало устройство не тому."""
+    c1 = make_active_client(name="Донор", tg_id=7045)
+    c2 = make_active_client(name="Получатель", tg_id=7046, device_limit=5)
+    dc = services.add_device(c1.id, "Тел")
+    services.migration_start()
+    twin = _twin(services, dc.device_id)
+
+    services.reassign_device(twin.id, c2.id)
+    assert services.db.get_device(dc.device_id).client_id == c2.id, \
+        "старая строка пары осталась у донора"
+    assert services.db.get_device(twin.id).client_id == c2.id
+
+
+def test_finish_keeps_running_when_server_refuses(services, mig, make_active_client,
+                                                  monkeypatch):
+    """Снятие пира не удалось — пару не трогаем ВОВСЕ и рычаг не гасим.
+
+    Прежний порядок сливал историю и удалял строку до снятия: пир оставался в
+    конфиге без строки в БД (следующая сверка — карантин с тревогой), а
+    повторное завершение слило бы трафик дважды.
+    """
+    from awgbot.infra import awg as infra_awg
+    c = make_active_client(name="c", tg_id=7047)
+    dc = services.add_device(c.id, "Тел")
+    _seen(services, dc.device_id, ago_days=1)
+    services.db.add_traffic(dc.device_id, 700, 0)
+    services.migration_start()
+    twin = _twin(services, dc.device_id)
+    _seen(services, twin.id, ago_days=0)
+
+    def refuse(pub, iface=None):
+        raise infra_awg.AwgError("нет связи")
+    monkeypatch.setattr(infra_awg, "remove_peer", refuse)
+
+    removed, dropped, failed = services.migration_finish()
+    assert removed == 0 and failed == ["Тел"]
+    assert services.migration_running(), "рычаг погашен при живых старых пирах"
+    assert services.db.get_device(dc.device_id) is not None, "строка удалена без снятия пира"
+    assert services.db.get_device(twin.id).traffic_rx_month == 0, "история слита до снятия"
+
+    monkeypatch.setattr(infra_awg, "remove_peer",
+                        lambda pub, iface=None: mig.removed.append((pub, iface)))
+    removed, _, failed = services.migration_finish()
+    assert removed == 1 and failed == []
+    assert services.db.get_device(twin.id).traffic_rx_month == 700, \
+        "история слита не один раз либо потеряна"
+    assert not services.migration_running()
+
+
+def test_start_aborts_when_nothing_is_born(services, mig, make_active_client,
+                                           monkeypatch):
+    """awg1 ещё не поднят: ни один двойник не родился — рычаг НЕ включается.
+
+    Включиться в этом состоянии значило бы молча фоллбэчить всю выдачу на
+    старые конфиги при формально идущем переезде.
+    """
+    from awgbot.infra import awg as infra_awg
+    c = make_active_client(name="c", tg_id=7048)
+    dc = services.add_device(c.id, "Тел")
+    _seen(services, dc.device_id, ago_days=1)
+
+    def down(pub, psk, ip, iface=None):
+        raise infra_awg.AwgError("интерфейс не поднят")
+    monkeypatch.setattr(infra_awg, "add_peer", down)
+
+    res = services.migration_start()
+    assert res.started is False and res.failed == ["Тел"]
+    assert not services.migration_running(), "рычаг включился без единого двойника"
+    assert services.db.cohort_ids() == set(), "когорта осталась замороженной"
+
+
+def test_cancel_returns_pending_invite_to_the_old_row(services, mig,
+                                                      make_active_client):
+    """Код при рождении переносили на двойника — отмена обязана перенести его
+    обратно: двойник прячется, и активация присланной ссылки включила бы
+    невидимую строку."""
+    c = make_active_client(name="c", tg_id=7049)
+    dc = services.add_device(c.id, "Тел")
+    code = services.make_device_friendly(dc.device_id)
+    services.migration_start()
+    assert services.db.get_device(dc.device_id).friend_code is None  # переносился
+
+    services.migration_cancel()
+    assert services.db.get_device(dc.device_id).friend_code == code
+    assert services.db.get_device_by_friend_code(code).id == dc.device_id
+
+
+def test_rename_is_pairwise(services, mig, make_active_client):
+    """Иначе отмена вернула бы старую строку со старым именем — переименование
+    молча откатилось бы."""
+    c = make_active_client(name="c", tg_id=7050)
+    dc = services.add_device(c.id, "Старое имя")
+    services.migration_start()
+    twin = _twin(services, dc.device_id)
+    services.rename_device(twin.id, "Новое имя")
+
+    services.migration_cancel()
+    assert services.db.list_devices(c.id)[0].name == "Новое имя"
+
+
+def test_visibility_honours_the_config_kill_switch(services, mig, make_active_client,
+                                                   monkeypatch):
+    """Очистка ключей в app.yaml — аварийный рубильник. Пока фильтр читал сырое
+    состояние, механика выключалась, а видимость нет: людям показывались
+    двойники, чьи конфиги больше не выдаются."""
+    c = make_active_client(name="c", tg_id=7051)
+    services.add_device(c.id, "Тел")
+    services.migration_start()
+    assert services.db.list_devices(c.id)[0].iface == "awg1"
+
+    monkeypatch.setattr(config, "MIGRATION_INTERFACE", "")
+    monkeypatch.setattr(config, "MIGRATION_SUBNET_PREFIX", "")
+    assert services.db.list_devices(c.id)[0].iface == "", \
+        "рубильник выключил механику, но не видимость"
+
+
+def test_iface_normalizes_after_the_default_flip(services, mig, make_active_client,
+                                                 monkeypatch):
+    """Эндшпиль: админ переключил дефолт на новый интерфейс — явные метки
+    схлопываются в пустую строку. Две записи одного смысла — класс расхождения,
+    который уже стрелял."""
+    c = make_active_client(name="c", tg_id=7052)
+    dc = services.add_device(c.id, "Тел")
+    _seen(services, dc.device_id, ago_days=1)
+    services.migration_start()
+    twin = _twin(services, dc.device_id)
+    _seen(services, twin.id, ago_days=0)
+    services.migration_finish()
+
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg1")   # «переключил app.yaml»
+    n = services.db.normalize_default_iface(config.AWG_INTERFACE)
+    assert n == 1
+    assert services.db.get_device(twin.id).iface == ""
+
+
+async def test_stale_finish_button_is_refused(services, mig, make_active_client,
+                                              fake_bot):
+    """«finish!» из старого сообщения в истории чата, нажатый после отмены, снёс
+    бы старые пиры орфанов и заархивировал ровно то, что отмена сохранила."""
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from tests.conftest import FakeCallback, FakeMessage
+
+    c = make_active_client(name="c", tg_id=7053)
+    dc = services.add_device(c.id, "Тел")
+    services.migration_start()
+    twin = _twin(services, dc.device_id)
+    _seen(services, twin.id, ago_days=0)
+    services.migration_cancel()                          # орфан остался жить
+
+    cb = FakeCallback(message=FakeMessage(chat_id=1, user_id=1, bot=fake_bot),
+                      user_id=1, bot=fake_bot)
+    await sh.migration_action(cb, SetCB(sec="mig", act="do", key="finish!"), services)
+    assert services.db.get_device(dc.device_id) is not None, \
+        "устаревшая кнопка выполнила завершение"
+    assert twin.public_key in mig.peers_by_iface["awg1"]

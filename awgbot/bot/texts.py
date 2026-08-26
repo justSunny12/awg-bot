@@ -445,6 +445,13 @@ def migration_pending_text(rows) -> str:
 
 def migration_started(res) -> str:
     """Итог включения рычага."""
+    if not res.started:
+        return ("⚠️ <b>Переезд НЕ начат:</b> не удалось создать ни одного "
+                "двойника ({}).\n\nПохоже, новый интерфейс ещё не поднят на "
+                "сервере. Рычаг остался выключенным, выдача идёт по-старому — "
+                "подними интерфейс и включи снова.".format(
+                    ", ".join(_e(n) for n in res.failed[:5])
+                    + ("…" if len(res.failed) > 5 else "")))
     lines = [f"🚚 <b>Переезд начат.</b>",
              f"Двойников создано: {res.born}"]
     if res.already:
@@ -519,9 +526,15 @@ def migration_cancelled(moved: int) -> str:
             f"обслуживании.")
 
 
-def migration_finished(removed: int, dropped) -> str:
+def migration_finished(removed: int, dropped, failed=()) -> str:
     """Итог завершения + что делать руками. Без этого «миграция завершена»
     повисает фактом без следствия."""
+    if failed:
+        return (f"⚠️ <b>Завершено не до конца.</b> Снято пиров: {removed}, но "
+                f"{len(failed)} пар не закрыто — сервер не дал снять пира: "
+                + ", ".join(_e(n) for n in failed)
+                + ".\n\nРычаг оставлен включённым. Повтори завершение — "
+                  "доберутся только они, закрытые не пострадают.")
     head = f"✅ <b>Переезд завершён.</b>\nСтарых пиров снято: {removed}."
     if dropped:
         head += (f"\n⚠️ Потеряли связь ({len(dropped)}): "
@@ -534,7 +547,8 @@ def migration_finished(removed: int, dropped) -> str:
         "3. переключить <code>docker.interface</code> в <code>app.yaml</code> на "
         "новый и перезапустить бота.\n\n"
         "Третий пункт обязателен: без него вотчдог смотрит на мёртвый конфиг, "
-        "а preflight проверяет снесённый интерфейс.")
+        "а preflight проверяет снесённый интерфейс. Явные метки интерфейса на "
+        "устройствах после перезапуска схлопнутся в дефолт сами.")
 
 
 def admin_panel(st: dict, routing_ok: bool = None, migration=None) -> str:

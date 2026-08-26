@@ -122,6 +122,17 @@ async def main() -> None:
     # seed детекта рестарта (сохранит текущий StartedAt, реконсиляции не будет —
     # первый запуск); seed статуса сервера, чтобы monitor не слал ложный алерт.
     await asyncio.to_thread(services.detect_and_handle_restart)
+    # Эндшпиль переезда профилей: после переключения дефолтного интерфейса
+    # явные метки iface, равные ему, схлопываются в пустую строку — две записи
+    # одного смысла это класс расхождения, который здесь уже стрелял. Вне
+    # эндшпиля UPDATE холостой.
+    try:
+        n = await asyncio.to_thread(services.db.normalize_default_iface,
+                                    config.AWG_INTERFACE)
+        if n:
+            log.info("миграция: нормализовано устройств: %d (iface → дефолт)", n)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("normalize_default_iface: %s", e)
     try:
         ok = await asyncio.to_thread(services.server_ok)
         db.set_state("last_server_ok", "1" if ok else "0")

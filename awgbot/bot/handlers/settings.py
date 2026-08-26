@@ -203,10 +203,13 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
         await cb.answer("Перезапускаю AWG…")
         try:
             await call(services.restart_service)
+            # клавиатура — полным рендером раздела: голый settings_svc() терял
+            # бы кнопки переезда до следующего захода в раздел
             await edit(cb, "✅ AmneziaWG перезапущен, блокировки восстановлены.",
-                       kb.settings_svc())
+                       (await _screen("svc", services))[1])
         except Exception as e:                         # noqa: BLE001
-            await edit(cb, f"⚠️ Ошибка перезапуска AWG: {e}", kb.settings_svc())
+            await edit(cb, f"⚠️ Ошибка перезапуска AWG: {e}",
+                       (await _screen("svc", services))[1])
         return
     if key == "bot":                                   # рестарт бота
         await cb.answer("Перезапускаю бота…")
@@ -241,6 +244,14 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
     if not await call(services.migration_available):
         await cb.answer("Переезд не настроен: пустые ключи в app.yaml.", show_alert=True)
         return
+    # Сторож состояния. Колбэк приходит и из СТАРОГО сообщения в истории чата
+    # (тот же класс, что у раздела маршрутизации): «finish!» с прошлогоднего
+    # подтверждения, нажатый после отмены, снёс бы старые пиры орфанов и
+    # заархивировал ровно то, что отмена сохранила.
+    running = await call(services.migration_running)
+    if key in ("pending", "finish", "cancel", "finish!", "cancel!") and not running:
+        await cb.answer("Переезд сейчас не идёт — экран устарел.", show_alert=True)
+        return
 
     if key == "start":
         await cb.answer("Рождаю двойников…")
@@ -255,9 +266,13 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         return
 
     if key == "orphans":
-        rows = [(  (await call(services.db.get_client, d.client_id)).name
-                   if await call(services.db.get_client, d.client_id) else "?", d.name)
-                for d in await call(services.migration_orphan_twins)]
+        names: dict[int, str] = {}
+        rows = []
+        for d in await call(services.migration_orphan_twins):
+            if d.client_id not in names:
+                c = await call(services.db.get_client, d.client_id)
+                names[d.client_id] = c.name if c else "?"
+            rows.append((names[d.client_id], d.name))
         await edit(cb, texts.migration_orphans_text(rows), kb.settings_back())
         await cb.answer()
         return
@@ -278,8 +293,9 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
 
     if key == "finish!":
         await cb.answer("Завершаю…")
-        removed, dropped = await call(services.migration_finish)
-        await edit(cb, texts.migration_finished(removed, dropped), kb.settings_back())
+        removed, dropped, failed = await call(services.migration_finish)
+        await edit(cb, texts.migration_finished(removed, dropped, failed),
+                   kb.settings_back())
         return
 
     if key == "cancel!":

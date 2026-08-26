@@ -492,7 +492,13 @@ class Services(MigrationMixin):
         if prev is not None and int(prev.traffic_limit) != int(limit_bytes):
             # аудит: снимок старого лимита перед изменением
             self.db.archive_device_quota(device_id, "limit_changed")
-        self.db.update_device_fields(device_id, traffic_limit=limit_bytes)
+        if prev is not None:
+            # Парно: проверка лимита считает СУММУ по паре против лимита пары,
+            # и разъехавшиеся лимиты строк сделали бы её бессмысленной.
+            for peer in self._device_pair(prev):
+                self.db.update_device_fields(peer.id, traffic_limit=limit_bytes)
+        else:
+            self.db.update_device_fields(device_id, traffic_limit=limit_bytes)
         dev = self.db.get_device(device_id)
         if dev is None:
             return
@@ -731,9 +737,13 @@ class Services(MigrationMixin):
         new_name = new_name.strip()
         if not new_name:
             raise ServiceError("Имя не может быть пустым")
-        if self.db.get_device(device_id) is None:
+        dev = self.db.get_device(device_id)
+        if dev is None:
             raise ServiceError("Устройство не найдено")
-        self.db.update_device_fields(device_id, name=new_name)
+        # Парно: иначе отмена переезда вернула бы старую строку со старым
+        # именем, молча откатив переименование.
+        for peer in self._device_pair(dev):
+            self.db.update_device_fields(peer.id, name=new_name)
 
     # ── Друзья (роль invited): приглашение на управление одним устройством ────
 
@@ -822,7 +832,11 @@ class Services(MigrationMixin):
                 if new_limit != 0 and self.db.count_devices(new_client_id) >= new_limit:
                     raise LimitReached(
                         "У клиента нет свободного слота — привязка отклонена")
-            self.db.reassign_device(device_id, new_client_id)
+            # Парно: перенеси одну строку — и пара разорвётся между профилями,
+            # старый пир останется у донора, а завершение переезда сольёт
+            # трафик и заархивирует устройство не тому человеку.
+            for peer in self._device_pair(dev):
+                self.db.reassign_device(peer.id, new_client_id)
         # счётчики ПОСЛЕ перепривязки (живой COUNT — уже актуальны)
         donor_count = self.db.count_devices(donor.id) if donor else 0
         recip_count = self.db.count_devices(new_client_id)
@@ -1331,13 +1345,26 @@ class Services(MigrationMixin):
             # лимит по одной дал бы человеку двойную квоту.
             devices = self.db.list_devices(client.id, all_rows=True)
             sent = self.db.get_traffic_notified(client.id)
+            by_id = {d.id: d for d in devices}
+            # id старых строк, у которых есть двойник, — их расход учитывается
+            # в проходе по двойнику, отдельно не судим
+            paired_old = {d.twin_of for d in devices if d.twin_of is not None}
 
             # ── лимиты устройств (независимо от клиентского) ──
             for dev in devices:
+                if dev.id in paired_old:
+                    continue                  # учтён суммой у своего двойника
                 dlim = dev.traffic_limit
                 if dlim == 0:
                     continue
                 used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
+                mate = by_id.get(dev.twin_of) if dev.twin_of else None
+                if mate is not None:
+                    # СУММА по паре против лимита пары (лимиты строк равны —
+                    # сеттер парный). Считай каждую строку отдельно — и человек
+                    # получает двойную квоту, у которой ни одна половина не
+                    # дотягивает до порога.
+                    used += int(mate.traffic_rx_month) + int(mate.traffic_tx_month)
                 over_marker = f"dev_over:{dev.id}"
                 warn_marker = f"dev80:{dev.id}"
                 if used >= dlim:
@@ -1877,8 +1904,15 @@ class Services(MigrationMixin):
         return n
 
     def set_routing_device(self, device_id: int, on: bool) -> None:
-        """Переключатель одного устройства."""
-        self.db.update_device_fields(device_id, routing_on=1 if on else 0)
+        """Переключатель одного устройства. ПАРНЫЙ: в окне переезда человек
+        видит и щёлкает двойника, а его реальный трафик до переимпорта идёт со
+        СТАРОГО адреса. Тронь одну строку — и тумблер перестаёт делать что-либо:
+        выключение не выключает, включение не включает, оба молча."""
+        dev = self.db.get_device(device_id)
+        if dev is None:
+            return
+        for peer in self._device_pair(dev):
+            self.db.update_device_fields(peer.id, routing_on=1 if on else 0)
         self.reconcile_routing()
 
     def toggle_routing_device(self, device_id: int) -> Optional[bool]:

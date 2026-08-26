@@ -36,9 +36,11 @@ log = logging.getLogger("awgbot.migration")
 
 # Состояние живёт в server_state одним ключом. Значения намеренно строковые и
 # читаемые: в базу заглядывают руками, и «running» понятнее единицы.
-_STATE_KEY = "migration_state"
+# Константы — в infra/db.py: фильтру видимости устройств состояние нужно прямо
+# в запросе, а infra не может тянуть domain.
+from awgbot.infra.db import MIGRATION_STATE_KEY as _STATE_KEY  # noqa: E402
+from awgbot.infra.db import MIGRATION_RUNNING as STATE_RUNNING  # noqa: E402
 STATE_OFF = ""
-STATE_RUNNING = "running"
 
 # Живым считается устройство, чей хендшейк не старше этого срока. Одно правило
 # вместо пяти: неактивированные, бесустройственные и никогда не подключавшиеся
@@ -54,6 +56,11 @@ class MigrationStart:
     cohort_devices: int = 0
     cohort_clients: int = 0
     failed: list[str] = field(default_factory=list)
+    # Рычаг реально включился? False — ни одного двойника не существует и ни
+    # один не родился: типично «awg1 ещё не поднят». Включаться в этом состоянии
+    # значило бы молча фоллбэчить всю выдачу на старые конфиги при включённом
+    # рычаге.
+    started: bool = True
 
 
 @dataclass
@@ -161,6 +168,14 @@ class MigrationMixin:
                 log.warning("migration: двойник для %s (id=%s) не создан: %s",
                             dev.name, dev.id, e)
                 res.failed.append(dev.name)
+
+        if res.born == 0 and res.already == 0 and res.failed:
+            # Не родился НИ ОДИН, и опереться не на что — рычаг не включаем.
+            # Когорту размораживаем: она заморожена этим же заходом, а к
+            # следующей попытке состав живых мог измениться.
+            self.db.cohort_clear()
+            res.started = False
+            return res
 
         self.db.set_state(_STATE_KEY, STATE_RUNNING)
         self.db.set_state(self._READY_ANNOUNCED, "")   # следующий переезд доложит сам
@@ -304,7 +319,9 @@ class MigrationMixin:
             twin_id = twins.get(old_id)
             twin = by_id.get(twin_id) if twin_id else None
             done += int(bool(twin and twin.last_handshake))
-        total = sum(1 for d in devices if d.twin_of is not None)
+        # «Всего» — по ВИДИМЫМ строкам, а не по парам: непарная старая строка
+        # (рождение двойника упало) видна человеку и обязана попасть в счёт.
+        total = len(self.db.list_devices(client_id))
         return done, len(live_ids), total
 
     # ── уведомление о готовности ─────────────────────────────────────────────
@@ -351,8 +368,22 @@ class MigrationMixin:
         затеи, и он же страховка первого включения, когда админ проверяет
         переезд на себе.
         """
-        moved = sum(1 for d in self.db.list_all_devices()
-                    if d.twin_of is not None and d.last_handshake)
+        devices = {d.id: d for d in self.db.list_all_devices()}
+        moved = 0
+        for d in devices.values():
+            if d.twin_of is None:
+                continue
+            if d.last_handshake:
+                moved += 1
+            # Невыбранный инвайт-код при рождении ПЕРЕНОСИЛИ на двойника — при
+            # отмене переносим обратно: двойник прячется, и активация ссылки
+            # включила бы невидимую строку, а владелец видел бы устройство
+            # не-гостевым.
+            if d.friend_code and d.friend_status != FriendStatus.ACTIVE \
+                    and d.twin_of in devices:
+                self.db.set_device_friend(d.twin_of, friend_code=d.friend_code,
+                                          friend_status=d.friend_status)
+                self.db.set_device_friend(d.id)
         self.db.set_state(_STATE_KEY, STATE_OFF)
         self.db.cohort_clear()
         return moved
@@ -404,29 +435,42 @@ class MigrationMixin:
         return [d for d in self.db.list_all_devices()
                 if d.twin_of is not None and d.last_handshake]
 
-    def migration_finish(self) -> tuple[int, list[str]]:
+    def migration_finish(self) -> tuple[int, list[str], list[str]]:
         """Завершить переезд: снять старые пиры, слить историю, погасить рычаг.
 
-        Возвращает (сколько старых снято, имена уронённых непереехавших).
+        Возвращает (снято, уронены поимённо, НЕ закрыты из-за сервера).
 
         Непереехавшие теряют коннект — это цена завершения, и подтверждение
         обязано называть их поимённо ДО нажатия. Но потеря не навсегда: двойники
         у них живы, вернуть человека значит выдать ему конфиг.
+
+        Порядок в паре — СЕРВЕР → БД, как у remove_device: снятие пира не
+        удалось — пару не трогаем вовсе. Иначе пир остаётся в конфиге без строки
+        в БД, и следующая сверка тащит его в карантин с тревогой. Слияние
+        истории — только ПОСЛЕ успешного снятия: сделай его до, и повторное
+        завершение сложило бы трафик дважды.
+
+        Остались незакрытые пары — рычаг НЕ гасим: повторное завершение доберёт
+        только их (закрытые уже без twin_of), а «завершено» при живых старых
+        пирах было бы неправдой.
 
         Строки уходят в архив с явной причиной, а не удаляются тихо: иначе потом
         не восстановить, кто отвалился и почему.
         """
         pairs, dropped = self._finish_plan()
         removed = 0
+        failed: list[str] = []
 
         for old, twin in pairs:
-            # Историю сливаем ДО удаления: после него складывать будет нечего.
-            self.db.merge_traffic(old.id, twin.id)
             try:
                 awg.remove_peer(old.public_key, iface=awg.iface_of(old.iface))
-                removed += 1
             except awg.AwgError as e:
-                log.warning("migration_finish: пир %s не снят: %s", old.name, e)
+                log.warning("migration_finish: пир %s не снят, пара оставлена: %s",
+                            old.name, e)
+                failed.append(old.name)
+                continue
+            removed += 1
+            self.db.merge_traffic(old.id, twin.id)
             if int(old.block_reason) != 0:
                 try:
                     awg.unblock_ip(old.address)           # осиротевший DROP снять
@@ -435,10 +479,20 @@ class MigrationMixin:
             self.db.delete_device(old.id, archive_reason="миграция")
             self.db.update_device_fields(twin.id, twin_of=None)
 
-        self.db.set_state(_STATE_KEY, STATE_OFF)
-        self.db.cohort_clear()
+        # Висячие ссылки расцепляем ЗДЕСЬ же: старую строку пары могла удалить
+        # сверка ещё в окне, и _finish_plan такую пару не видит. Оставь twin_of —
+        # и после выключения рычага фильтр видимости спрячет двойника из всех
+        # списков навсегда: пир работает, а устройства нет ни у кого.
+        by_id = {d.id for d in self.db.list_all_devices()}
+        for d in self.db.list_all_devices():
+            if d.twin_of is not None and d.twin_of not in by_id:
+                self.db.update_device_fields(d.id, twin_of=None)
+
+        if not failed:
+            self.db.set_state(_STATE_KEY, STATE_OFF)
+            self.db.cohort_clear()
         self.reconcile_ssh_access()
-        return removed, dropped
+        return removed, dropped, failed
 
 
 class ServiceErrorMigration(Exception):
