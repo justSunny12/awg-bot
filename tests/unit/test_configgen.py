@@ -195,14 +195,37 @@ def test_symmetric_keys_reach_both_forms_of_the_config():
     assert awg_block["HeaderProtectionKey"] == "HPK=="
 
 
-def test_disable_cookies_never_reaches_the_client():
-    """Односторонний ключ: живёт только на сервере. Попади он в конфиг — стал бы
-    мусором на руках у людей, который потом не отозвать без перевыпуска."""
-    res = cg.generate("PRIV", "PUB", "10.8.1.5", _params(DisableCookies="on"))
+def test_key_set_matches_the_application_sources():
+    """Набор и порядок ключей взяты из исходников приложения 5.0.1.5
+    (configKeys.h, awgProtocolKeys), а не из одного образца конфига: образец
+    показывает один случай, список в коде — все.
+
+    Проверяем ПОРЯДОК, потому что формат vpn:// обязан воспроизводить эталон, а
+    порядок в нём значим. И полноту: не прочитать ключ, который сервер задал,
+    значит выдать конфиг, который молча не подключается.
+    """
+    assert cg._OBF_ORDER == [
+        "Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4",
+        "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5",
+        "HeaderProtectionKey", "ContentPaddingAddition",
+        "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime",
+        "KeepaliveTimeout", "MaxHandshakeAttempts",
+        "RandomTrailers", "DisableCookies",
+    ]
+
+
+def test_optional_keys_appear_only_when_the_server_sets_them():
+    """Приложение печатает эти ключи только непустыми — `if (!x.isEmpty())` на
+    каждом в AwgClientConfig::toJson. Делаем так же, иначе конфиг разошёлся бы
+    с эталоном на пустых значениях."""
+    res = cg.generate("PRIV", "PUB", "10.8.1.5", _params(RejectAfterTime="180"))
     awg_block = cg.decode_vpn(res["vpn"])["containers"][0]["awg"]
-    assert "DisableCookies" not in res["conf"]
-    assert "DisableCookies" not in awg_block
-    assert "DisableCookies" not in awg_block["last_config"]
+    assert "RejectAfterTime = 180" in res["conf"]
+    assert awg_block["RejectAfterTime"] == "180"
+    # соседи по списку остались невидимыми
+    for absent in ("RekeyAfterTime", "KeepaliveTimeout", "DisableCookies"):
+        assert absent not in res["conf"]
+        assert absent not in awg_block
 
 
 def test_reader_and_writer_know_the_same_keys():
