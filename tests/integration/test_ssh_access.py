@@ -71,6 +71,91 @@ def test_ssh_reconcile_emits_expected_chain(monkeypatch):
     assert calls.index(accepts[-1]) < calls.index(drops[0])
 
 
+def test_ssh_rules_cover_the_migration_interface(monkeypatch):
+    """Правила ставятся на КАЖДЫЙ интерфейс, а не только на дефолтный.
+
+    Админское устройство переезжает первым — оно и есть проверка всей затеи.
+    Пакет с нового интерфейса не подходил ни под один ACCEPT и ни под один DROP,
+    проваливался сквозь цепочку и упирался в общий фильтр хоста: админ терял SSH
+    ровно после собственного переезда. Цепочка при этом выглядит исправной, у
+    правил нулевые счётчики, и связать отказ с переездом неоткуда — тот же
+    класс, что был у маркировки условной маршрутизации.
+    """
+    calls = []
+    monkeypatch.setattr(awg, "_exec", lambda args, **kw: (
+        calls.append(args),
+        subprocess.CompletedProcess(
+            args, 1 if args[:2] == ["iptables", "-C"] else 0, stdout=b"", stderr=b"")
+    )[1])
+    monkeypatch.setattr(cfg, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(cfg, "MIGRATION_INTERFACE", "awg1")
+
+    awg.ssh_reconcile(["10.8.1.5", "10.9.1.2"], ["203.0.113.10"])
+
+    rules = [c for c in calls if "-A" in c and c[1] == "-A"]
+    for iface in ("awg0", "awg1"):
+        got = [c for c in rules if iface in c]
+        assert any("ACCEPT" in c and "10.9.1.2/32" in c for c in got), \
+            f"нет разрешения переехавшему на {iface}"
+        assert any("DROP" in c for c in got), f"нет глухого DROP на {iface}"
+
+    # DROP-и идут ПОСЛЕ всех ACCEPT-ов: DROP первого интерфейса, попав между,
+    # накрыл бы разрешения второго — и порядок интерфейсов молча решал бы, кому
+    # можно ходить по SSH.
+    accepts = [n for n, c in enumerate(rules) if "ACCEPT" in c]
+    drops = [n for n, c in enumerate(rules) if "DROP" in c]
+    assert max(accepts) < min(drops)
+
+
+def test_ssh_failsafe_is_placed_on_every_interface(monkeypatch):
+    """Страж fail-closed ставится в conf КАЖДОГО интерфейса.
+
+    Он закрывает промежуток между подъёмом интерфейса и реассертом бота — а
+    промежуток этот у каждого интерфейса свой. С одним лишь дефолтным новый
+    интерфейс поднимался бы с открытым SSH-к-хосту до ближайшего тика.
+    """
+    monkeypatch.setattr(cfg, "AWG_RUNTIME", "host")
+    monkeypatch.setattr(cfg, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(cfg, "MIGRATION_INTERFACE", "awg1")
+    written: dict = {}
+    monkeypatch.setattr(awg, "read_file",
+                        lambda p: "[Interface]\nAddress = 10.8.1.0/24\n\n[Peer]\nPublicKey = x\n")
+    monkeypatch.setattr(awg, "write_file", lambda p, c: written.__setitem__(p, c))
+    monkeypatch.setattr(awg, "_backup_conf", lambda iface=None: None)
+    monkeypatch.setattr(awg, "_exec",
+                        lambda args, **kw: subprocess.CompletedProcess(args, 0, b"", b""))
+
+    assert awg.ensure_ssh_failsafe() is True
+    assert len(written) == 2, f"страж поставлен не везде: {list(written)}"
+    for path, body in written.items():
+        iface = "awg1" if "awg1" in path else "awg0"
+        assert f"-i {iface}" in body, f"в {path} правило чужого интерфейса"
+
+
+def test_ssh_failsafe_survives_absent_migration_conf(monkeypatch):
+    """Интерфейса переезда может ещё не быть — его conf не создан. Это не отказ:
+    дефолтный обслуживается, отсутствующий пропускается. Молчание ДЕФОЛТНОГО,
+    напротив, скрывать нельзя — там это настоящая поломка."""
+    monkeypatch.setattr(cfg, "AWG_RUNTIME", "host")
+    monkeypatch.setattr(cfg, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(cfg, "MIGRATION_INTERFACE", "awg1")
+
+    def read(path):
+        if "awg1" in path:
+            raise awg.AwgError("нет такого файла")
+        return "[Interface]\nAddress = 10.8.1.0/24\n\n[Peer]\nPublicKey = x\n"
+
+    written: dict = {}
+    monkeypatch.setattr(awg, "read_file", read)
+    monkeypatch.setattr(awg, "write_file", lambda p, c: written.__setitem__(p, c))
+    monkeypatch.setattr(awg, "_backup_conf", lambda iface=None: None)
+    monkeypatch.setattr(awg, "_exec",
+                        lambda args, **kw: subprocess.CompletedProcess(args, 0, b"", b""))
+
+    assert awg.ensure_ssh_failsafe() is True
+    assert len(written) == 1 and "awg0" in next(iter(written))
+
+
 def test_ssh_reconcile_no_targets_is_noop(monkeypatch):
     """Пустой targets → ни одной команды (безопаснее не трогать, чем криво)."""
     calls = []
@@ -268,7 +353,7 @@ def test_ssh_failsafe_injects_postup_idempotent(monkeypatch):
                      "[Peer]\nPublicKey = abc\nAllowedIPs = 10.8.1.2/32\n"}
     monkeypatch.setattr(awgmod, "read_file", lambda p: store["conf"])
     monkeypatch.setattr(awgmod, "write_file", lambda p, t: store.__setitem__("conf", t))
-    monkeypatch.setattr(awgmod, "_backup_conf", lambda: None)
+    monkeypatch.setattr(awgmod, "_backup_conf", lambda iface=None: None)
     import contextlib
     monkeypatch.setattr(awgmod, "writing", contextlib.nullcontext)
 

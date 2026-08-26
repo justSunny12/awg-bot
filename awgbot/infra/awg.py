@@ -673,6 +673,21 @@ def _ssh_hook_chain() -> str:
     return "FORWARD" if in_container() else "INPUT"
 
 
+def gated_ifaces() -> list[str]:
+    """Интерфейсы, через которые до хоста дотягивается трафик из туннеля.
+
+    Их два в окне переезда, и оба обязаны фигурировать ВЕЗДЕ, где строится
+    SSH-фильтр: и в целях, и в самих правилах. Разойдись эти два списка — и
+    получается ровно то, что уже случалось с маркировкой: половина механизма
+    знает про переезд, половина нет, а отказ выглядит необъяснимо («у меня
+    просто перестал работать SSH»).
+    """
+    names = [config.AWG_INTERFACE]
+    if config.MIGRATION_INTERFACE and config.MIGRATION_INTERFACE not in names:
+        names.append(config.MIGRATION_INTERFACE)
+    return names
+
+
 def host_ssh_targets() -> list[str]:
     """Адреса ХОСТА, по которым до него дотягивается трафик из туннеля: шлюзы всех
     docker-сетей контейнера (bridge-стороны) + внешний egress-IP хоста (на случай
@@ -706,9 +721,7 @@ def host_ssh_targets() -> list[str]:
         # не пустила бы админа ровно после его собственного переезда, то есть в
         # момент, когда чинить это стало бы неоткуда. Второй интерфейс может
         # отсутствовать — тогда он просто не даёт адресов.
-        names = [config.AWG_INTERFACE]
-        if config.MIGRATION_INTERFACE and config.MIGRATION_INTERFACE not in names:
-            names.append(config.MIGRATION_INTERFACE)
+        names = gated_ifaces()
         for i, name in enumerate(names):
             try:
                 out = _run(["ip", "-4", "-o", "addr", "show", "dev", name]
@@ -755,7 +768,13 @@ def ssh_reconcile(admin_ips: list[str], targets: list[str]) -> None:
                     "фильтр не трогаем, иначе закрыли бы SSH всем")
         return
     port = str(config.SSH_PORT)
-    iface = config.AWG_INTERFACE
+    # По ПРАВИЛУ НА ИНТЕРФЕЙС. Прежде здесь стоял один config.AWG_INTERFACE, и
+    # цепочка не знала про переезд, хотя список целей его уже учитывал. Пакет с
+    # нового интерфейса не подходил ни под ACCEPT, ни под DROP, проваливался
+    # сквозь цепочку — и упирался в общий фильтр хоста. То есть админ терял SSH
+    # ровно после собственного переезда, а выглядело это как отказ на пустом
+    # месте: цепочка на вид исправна, правила на месте, счётчики нулевые.
+    ifaces = gated_ifaces()
     valid_ips = []
     for ip in admin_ips:
         try:
@@ -768,13 +787,18 @@ def ssh_reconcile(admin_ips: list[str], targets: list[str]) -> None:
     # желаемое содержимое цепочки — в нотации `iptables -S` (как её печатает
     # iptables-nft: -s/-d с /32, протокол и до, и после -d)
     desired: list[str] = []
-    for tgt in valid_targets:
-        for ip in valid_ips:
-            desired.append(f"-A {_SSH_CHAIN} -s {ip}/32 -d {tgt}/32 -i {iface} "
-                           f"-p tcp -m tcp --dport {port} -j ACCEPT")
-    for tgt in valid_targets:
-        desired.append(f"-A {_SSH_CHAIN} -d {tgt}/32 -i {iface} "
-                       f"-p tcp -m tcp --dport {port} -j DROP")
+    for iface in ifaces:
+        for tgt in valid_targets:
+            for ip in valid_ips:
+                desired.append(f"-A {_SSH_CHAIN} -s {ip}/32 -d {tgt}/32 -i {iface} "
+                               f"-p tcp -m tcp --dport {port} -j ACCEPT")
+    # DROP-и — ПОСЛЕ всех ACCEPT-ов, а не после своих: иначе глухой DROP первого
+    # интерфейса накрыл бы разрешения второго, и порядок интерфейсов молча решал
+    # бы, кому можно.
+    for iface in ifaces:
+        for tgt in valid_targets:
+            desired.append(f"-A {_SSH_CHAIN} -d {tgt}/32 -i {iface} "
+                           f"-p tcp -m tcp --dport {port} -j DROP")
 
     # текущее состояние: -S <chain> (код ≠ 0 = цепочки нет)
     cur_proc = _exec(["iptables", "-S", _SSH_CHAIN], check=False)
@@ -803,13 +827,15 @@ def ssh_reconcile(admin_ips: list[str], targets: list[str]) -> None:
         _exec(["iptables", "-D", stale, "-j", _SSH_CHAIN], check=False)
     # пересобрать содержимое: ACCEPT-и админам, затем DROP-и всем
     _exec(["iptables", "-F", _SSH_CHAIN])
-    for tgt in valid_targets:
-        for ip in valid_ips:
-            _exec(["iptables", "-A", _SSH_CHAIN, "-i", iface, "-s", f"{ip}/32",
-                   "-d", tgt, "-p", "tcp", "--dport", port, "-j", "ACCEPT"])
-    for tgt in valid_targets:
-        _exec(["iptables", "-A", _SSH_CHAIN, "-i", iface,
-               "-d", tgt, "-p", "tcp", "--dport", port, "-j", "DROP"])
+    for iface in ifaces:
+        for tgt in valid_targets:
+            for ip in valid_ips:
+                _exec(["iptables", "-A", _SSH_CHAIN, "-i", iface, "-s", f"{ip}/32",
+                       "-d", tgt, "-p", "tcp", "--dport", port, "-j", "ACCEPT"])
+    for iface in ifaces:
+        for tgt in valid_targets:
+            _exec(["iptables", "-A", _SSH_CHAIN, "-i", iface,
+                   "-d", tgt, "-p", "tcp", "--dport", port, "-j", "DROP"])
 
 
 # Fail-closed: пер-пирный фильтр держит бот, но между подъёмом awg0 и реассертом
@@ -829,8 +855,8 @@ def ssh_reconcile(admin_ips: list[str], targets: list[str]) -> None:
 _SSH_FAILSAFE_MARK = _SSH_CHAIN            # наличие в header = строка уже вставлена
 
 
-def _ssh_failsafe_postup() -> str:
-    i = config.AWG_INTERFACE
+def _ssh_failsafe_postup(iface: Optional[str] = None) -> str:
+    i = iface_of(iface)
     p = str(config.SSH_PORT)
     hook = _ssh_hook_chain()
     head = (f'iptables -N {_SSH_CHAIN} 2>/dev/null || true; '
@@ -872,9 +898,27 @@ def ensure_ssh_failsafe() -> bool:
     и контейнерную форму правила после переезда на хост, где она встаёт без
     ошибки и не закрывает ничего. Оба случая выглядели как исправная защита.
     """
-    want = _ssh_failsafe_postup()
+    changed = False
+    for name in gated_ifaces():
+        try:
+            changed |= _ensure_ssh_failsafe_one(name)
+        except AwgError as e:
+            # Интерфейс переезда может быть ещё не поднят, а его conf — не
+            # создан. Дефолтный обязан быть, и его молчание скрывать нельзя.
+            if name == config.AWG_INTERFACE:
+                raise
+            log.debug("ssh failsafe: %s пропущен: %s", name, e)
+    return changed
+
+
+def _ensure_ssh_failsafe_one(iface: str) -> bool:
+    """Та же работа для ОДНОГО интерфейса. Их два в окне переезда, и страж
+    нужен на каждом: он закрывает промежуток между подъёмом интерфейса и
+    реассертом бота, а промежуток этот у каждого интерфейса свой."""
+    want = _ssh_failsafe_postup(iface)
+    path = conf_path(iface)
     with mutation_lock:
-        conf = read_file(config.CONF_PATH)
+        conf = read_file(path)
         header, peers = _split_conf(conf)
         lines = header.splitlines()
         ours = [n for n, ln in enumerate(lines)
@@ -886,8 +930,8 @@ def ensure_ssh_failsafe() -> bool:
         header = "\n".join(kept).rstrip() + "\n" + want
         new_conf = _build_conf(header, peers)
         with writing():
-            _backup_conf()
-            write_file(config.CONF_PATH, new_conf)
+            _backup_conf(iface)
+            write_file(path, new_conf)
     return True
 
 

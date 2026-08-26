@@ -359,7 +359,7 @@ def test_failsafe_is_rewritten_when_it_no_longer_matches(monkeypatch):
     monkeypatch.setattr(awg, "read_file", lambda p: stale + "\n[Peer]\nPublicKey = x\n")
     monkeypatch.setattr(awg, "write_file",
                         lambda p, c: written.update(conf=c))
-    monkeypatch.setattr(awg, "_backup_conf", lambda: None)
+    monkeypatch.setattr(awg, "_backup_conf", lambda iface=None: None)
 
     assert awg.ensure_ssh_failsafe() is True
     conf = written["conf"]
