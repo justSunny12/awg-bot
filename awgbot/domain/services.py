@@ -1211,8 +1211,21 @@ class Services:
 
         ВСЯ обработка — одна транзакция: (а) целостность — упади бот между
         накоплением и записью базы дельт, при раздельных коммитах дельта
-        посчиталась бы дважды; (б) один fsync вместо 3-4 на устройство."""
-        peers = {p["public_key"]: p for p in awg.show_dump()}
+        посчиталась бы дважды; (б) один fsync вместо 3-4 на устройство.
+
+        Опрашиваем ВСЕ задействованные интерфейсы. Счётчики и хендшейки живут в
+        ядре по интерфейсам, и опрос одного не увидит пиров другого: во время
+        переезда у непереехавших замерло бы потребление, лимиты перестали бы
+        срабатывать, а недоучтённое потерялось бы вместе со старым интерфейсом.
+        Нечитаемый интерфейс просто пропускаем — его пиры подождут следующего
+        такта, а состав пиров всё равно забота сверки."""
+        peers: dict[str, dict] = {}
+        for raw in self._migration_ifaces():
+            try:
+                for p in awg.show_dump(awg.iface_of(raw)):
+                    peers[p["public_key"]] = p
+            except awg.AwgError as e:
+                log.warning("poll_traffic: %s не опрошен: %s", awg.iface_of(raw), e)
         # бесплатный побочный продукт: онлайн-счётчик для статусного блока
         # (dump уже в руках — не тратим отдельный exec в мониторе)
         online = sum(1 for p in peers.values()
@@ -1464,9 +1477,30 @@ class Services:
 
     # ── Реконсиляция состава пиров (вотчдог) ─────────────────────────────────
 
+    def _migration_ifaces(self) -> list[str]:
+        """Интерфейсы, которые бот обязан обходить: те, на которых реально живут
+        устройства, плюс заданный конфигом интерфейс переезда.
+
+        Второй нужен отдельно: между поднятием интерфейса и рождением первого
+        двойника устройств на нём ещё нет, а карантин на нём уже должен
+        работать — иначе чужой пир, заведённый руками в этом окне, останется
+        незамеченным.
+
+        Возвращаем СЫРЫЕ значения (пустая строка = дефолт), разрешает их
+        awg.iface_of: дефолтный интерфейс может смениться, и держать в списке
+        одновременно '' и 'awg0' значило бы обойти один конфиг дважды.
+        """
+        raw = set(self.db.distinct_ifaces())
+        raw.add("")                                   # дефолтный обходим всегда
+        if config.MIGRATION_INTERFACE:
+            names = {awg.iface_of(x) for x in raw}
+            if config.MIGRATION_INTERFACE not in names:
+                raw.add(config.MIGRATION_INTERFACE)
+        return sorted(raw)
+
     @staticmethod
     def _peers_with_ip(conf_text: str) -> dict[str, str]:
-        """pubkey → ip из живого awg0.conf."""
+        """pubkey → ip из живого conf интерфейса."""
         header, peers = awg._split_conf(conf_text)
         result: dict[str, str] = {}
         for p in peers:
@@ -1498,19 +1532,45 @@ class Services:
         БД ещё владеет уходящая запись. В обратном порядке заведение падало бы
         на UNIQUE ДО прохода по пропавшим, то есть запись-держатель адреса не
         удалялась бы никогда: сверка встаёт колом насовсем.
+
+        СВЕРКА ИДЁТ ПО СВОЕМУ ИНТЕРФЕЙСУ У КАЖДОГО УСТРОЙСТВА. Пока интерфейс
+        был один, хватало одного конфига; с двумя одиночное чтение объявило бы
+        «пропавшими» ВСЕХ, кто живёт на соседнем, и через MISSING_SWEEPS_THRESHOLD
+        сверок бот удалил бы их сам — молча и необратимо.
+
+        Нечитаемый конфиг (интерфейс задан, но лежит; файл ещё не создан)
+        пропускаем ЦЕЛИКОМ, не трогая missing_count: отсутствие конфига — это
+        «не знаю», а не «пиров нет», и накапливать по нему пропажи значит
+        готовить то же самое удаление, только медленнее.
         """
-        conf = awg.read_file(config.CONF_PATH)
-        live = self._peers_with_ip(conf)                  # pub → ip
         db_devices = {d.public_key: d for d in self.db.list_all_devices()}
         service_id = self.db.get_service_client_id()
+        notifications: list[Notification] = []
+
+        # conf каждого задействованного интерфейса + тех, что заданы конфигом.
+        # Интерфейс запоминаем ВМЕСТЕ с пиром: карантинная запись обязана знать,
+        # где её пир живёт, иначе снимать его пойдут не с того конфига.
+        live: dict[str, tuple[str, str]] = {}             # pub → (ip, iface)
+        readable: set[str] = set()                        # интерфейсы, чей conf прочли
+        for raw in self._migration_ifaces():
+            name = awg.iface_of(raw)
+            try:
+                conf = awg.read_file(awg.conf_path(name))
+            except awg.AwgError as e:
+                log.warning("reconcile_peers: конфиг %s не прочитан, пропускаю: %s", name, e)
+                continue
+            readable.add(name)
+            for pub, ip in self._peers_with_ip(conf).items():
+                live[pub] = (ip, name)
         try:
             psk = awg.read_server_params()["psk"]
         except awg.AwgError:
             psk = ""
-        notifications: list[Notification] = []
 
         # пропавшие пиры
         for pub, dev in db_devices.items():
+            if awg.iface_of(dev.iface) not in readable:
+                continue                                  # конфиг не прочли — не судим
             if pub in live:
                 if dev.missing_count:
                     self.db.update_device_fields(dev.id, missing_count=0)
@@ -1538,12 +1598,13 @@ class Services:
                 self.db.update_device_fields(dev.id, missing_count=mc)
 
         # неизвестные пиры → карантин + тревога
-        for pub, ip in live.items():
+        for pub, (ip, iface) in live.items():
             if pub in db_devices:
                 continue
             name = f"Неизвестный пир {ip}"
             try:
-                self.db.create_device(service_id, name, pub, psk, ip, private_key=None)
+                self.db.create_device(service_id, name, pub, psk, ip, private_key=None,
+                                      iface=iface)
             except sqlite3.IntegrityError as e:
                 # Адрес ещё за уходящей записью (порог MISSING_SWEEPS_THRESHOLD
                 # не выбран). Пропускаем ЭТОТ пир, а не всю сверку: он попадёт в

@@ -690,10 +690,26 @@ def host_ssh_targets() -> list[str]:
         # awg-интерфейса. Молчаливо пропустить его нельзя — список сузился бы до
         # одного egress-адреса, и SSH оказался бы открыт с туннельного адреса
         # хоста без единого признака поломки. Поэтому здесь check=True.
-        out = _run(["ip", "-4", "-o", "addr", "show", "dev", config.AWG_INTERFACE]
-                   ).stdout.decode(errors="replace")
-        for m in re.finditer(r"\binet\s+([0-9.]+)", out):
-            _add(m.group(1))
+        #
+        # Интерфейсов может быть два: на время переезда профилей рядом со старым
+        # живёт новый, и админское устройство переезжает ПЕРВЫМ — оно и есть
+        # проверка всей затеи. С адресами одного интерфейса цепочка AWGBOT_SSH
+        # не пустила бы админа ровно после его собственного переезда, то есть в
+        # момент, когда чинить это стало бы неоткуда. Второй интерфейс может
+        # отсутствовать — тогда он просто не даёт адресов.
+        names = [config.AWG_INTERFACE]
+        if config.MIGRATION_INTERFACE and config.MIGRATION_INTERFACE not in names:
+            names.append(config.MIGRATION_INTERFACE)
+        for i, name in enumerate(names):
+            try:
+                out = _run(["ip", "-4", "-o", "addr", "show", "dev", name]
+                           ).stdout.decode(errors="replace")
+            except AwgError:
+                if i == 0:
+                    raise            # дефолтный обязан быть, его молчание — поломка
+                continue             # интерфейс переезда ещё не поднят — не беда
+            for m in re.finditer(r"\binet\s+([0-9.]+)", out):
+                _add(m.group(1))
     try:
         out = _run(["ip", "route", "get", "1.1.1.1"]).stdout.decode(errors="replace")
         m = re.search(r"\bsrc\s+([0-9.]+)", out)

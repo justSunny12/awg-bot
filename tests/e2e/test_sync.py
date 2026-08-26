@@ -28,7 +28,9 @@ def _dump_entry(pub, ip, rx, tx, hs=None):
 
 
 def _set_dump(monkeypatch, entries):
-    monkeypatch.setattr(awg, "show_dump", lambda: list(entries), raising=False)
+    # Сигнатура как у настоящей: опрос идёт по интерфейсам, и двойник без
+    # аргумента разошёлся бы с боевым кодом на той самой правке.
+    monkeypatch.setattr(awg, "show_dump", lambda iface=None: list(entries), raising=False)
 
 
 def _conf_with(peers):

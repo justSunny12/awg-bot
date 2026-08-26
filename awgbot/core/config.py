@@ -203,6 +203,20 @@ CONF_PATH = f"{AWG_DIR}/{AWG_INTERFACE}.conf"
 CONF_BAK_PATH = f"{AWG_DIR}/{AWG_INTERFACE}.conf.bak"
 PSK_PATH = f"{AWG_DIR}/wireguard_psk.key"
 
+# ── Переезд профилей (docs/ROADMAP.md, п.3) ─────────────────────────────────
+# Второй интерфейс с новыми параметрами, поднятый рядом со старым на время
+# переезда. ПУСТОЕ значение ⇒ переезда нет вовсе: рычаг не показывается, строки
+# прогресса нет, всё идёт по-старому. Ровно как routing.gw_interface — там та же
+# конвенция и тот же аварийный рубильник: очистил ключ, перезапустил бота.
+#
+# Само наличие ключа переезд НЕ начинает: он лишь делает рычаг доступным.
+MIGRATION_INTERFACE: str = _docker.get("migration_interface", "")
+MIGRATION_AVAILABLE: bool = bool(MIGRATION_INTERFACE)
+# Своя подсеть у второго интерфейса — не украшение: комплекты пиров тогда не
+# пересекаются, аллокатор нового конфига видит только свои адреса, и забота
+# «двойной комплект должен помещаться в /24» исчезает вовсе.
+MIGRATION_SUBNET_PREFIX: str = _docker.get("migration_subnet_prefix", "")
+
 _net = _app.get("network", {})
 SUBNET_PREFIX = _net.get("subnet_prefix", "10.8.1")
 # subnet_cidr из app.yaml Python-кодом не потребляется — информационное поле.
@@ -239,6 +253,22 @@ _rt = _app.get("routing", {})
 ROUTING_GW_INTERFACE: str = _rt.get("gw_interface", "")
 ROUTING_ENABLED: bool = bool(ROUTING_GW_INTERFACE)
 ROUTING_CLIENT_SUBNET = _rt.get("client_subnet", f"{SUBNET_PREFIX}.0/24")
+
+
+def routing_client_subnets() -> list[tuple[str, str]]:
+    """Клиентские подсети и их интерфейсы: [(подсеть, интерфейс), ...].
+
+    Функция, а не константа: на время переезда профилей подсетей две, и обе
+    нуждаются в маршруте и MASQUERADE. Проверять только старую значило бы
+    молчать ровно про тех, кто уже переехал.
+
+    Вторая появляется, только когда заданы ОБА ключа переезда: интерфейс без
+    подсети проверять нечем, подсеть без интерфейса не к чему привязать.
+    """
+    pairs = [(ROUTING_CLIENT_SUBNET, AWG_INTERFACE)]
+    if MIGRATION_INTERFACE and MIGRATION_SUBNET_PREFIX:
+        pairs.append((f"{MIGRATION_SUBNET_PREFIX}.0/24", MIGRATION_INTERFACE))
+    return pairs
 ROUTING_TABLE = int(_rt.get("table", 100))
 ROUTING_FWMARK = int(_rt.get("fwmark", 1))
 

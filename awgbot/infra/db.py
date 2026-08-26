@@ -961,17 +961,27 @@ class Database:
         address: str,
         private_key: Optional[str] = None,
         traffic_limit: int = 0,
+        iface: str = "",
+        twin_of: Optional[int] = None,
+        block_reason: int = 0,
     ) -> int:
         """Создаёт устройство. Без private_key — чужой пир из конфига (ключа у нас нет).
-        Заводит сопутствующую 1:1 строку счётчиков. Возвращает id устройства."""
+        Заводит сопутствующую 1:1 строку счётчиков. Возвращает id устройства.
+
+        block_reason параметром, а не всегда нулём: двойник заблокированного
+        устройства обязан родиться заблокированным. Ждать ближайшего
+        reconcile_blocks значило бы дарить окно в минуты, за которое переезд
+        оказывается амнистией.
+        """
         with self._tx() as cur:
             cur.execute(
                 """INSERT INTO devices
                    (client_id, name, private_key, public_key,
-                    preshared_key, address, block_reason, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 0, ?)""",
+                    preshared_key, address, block_reason, iface, twin_of, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (client_id, name, private_key, public_key,
-                 preshared_key, address, _now_iso()))
+                 preshared_key, address, int(block_reason), iface or "", twin_of,
+                 _now_iso()))
             did = cur.lastrowid
             cur.execute(
                 "INSERT INTO device_traffic (device_id, traffic_limit) VALUES (?, ?)",
@@ -1024,6 +1034,13 @@ class Database:
     def list_all_devices(self) -> list:
         return [_device_from_row(r) for r in
                 self._connection().execute(_DEVICE_SELECT).fetchall()]
+
+    def distinct_ifaces(self) -> list[str]:
+        """Сырые значения devices.iface, встречающиеся в базе. Пустая строка в
+        выдаче остаётся пустой: разрешать её в имя — дело awg.iface_of, здесь мы
+        не знаем и не должны знать, какой интерфейс сейчас дефолтный."""
+        return [r["iface"] for r in self._connection().execute(
+            "SELECT DISTINCT iface FROM devices ORDER BY iface").fetchall()]
 
     def count_devices(self, client_id: int) -> int:
         return self._connection().execute(
@@ -1110,6 +1127,8 @@ class Database:
         "name": "devices", "private_key": "devices",
         "block_reason": "devices", "client_id": "devices",
         "routing_on": "devices",
+        "iface": "devices", "twin_of": "devices",
+        "public_key": "devices", "preshared_key": "devices", "address": "devices",
         "traffic_limit": "device_traffic", "traffic_rx_month": "device_traffic",
         "traffic_tx_month": "device_traffic", "traffic_rx_period": "device_traffic",
         "traffic_tx_period": "device_traffic", "last_handshake": "device_traffic",

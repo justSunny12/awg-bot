@@ -69,7 +69,7 @@ async def test_job_backup_first_run_records_then_noop(services, fake_bot):
 
 # ── job_poll: композиция + проглатывание ошибок ──────────────────────────────
 async def test_job_poll_happy_sets_online_count(services, fake_bot, monkeypatch):
-    monkeypatch.setattr(awg, "show_dump", lambda: [], raising=False)
+    monkeypatch.setattr(awg, "show_dump", lambda iface=None: [], raising=False)
     await _jobs(services, fake_bot)["poll"]()
     assert services.db.get_state("online_count") == "0"
 

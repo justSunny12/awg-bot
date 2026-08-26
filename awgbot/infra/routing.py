@@ -186,7 +186,27 @@ def _check_static_plumbing() -> None:
     включили режим» — то есть худший из возможных отказов, поэтому проверяем
     явно и до того, как кого-то включат.
     """
-    subnet = config.ROUTING_CLIENT_SUBNET
+    for subnet, iface in config.routing_client_subnets():
+        _check_subnet_plumbing(subnet, iface)
+    # Именно СЕРВИС, а не бинарь: пакет dnsmasq-base кладёт /usr/sbin/dnsmasq без
+    # systemd-юнита, и `systemctl restart` при каждой правке списка падал бы.
+    svc = config.ROUTING_DNSMASQ_SERVICE
+    units = _host(["systemctl", "list-unit-files", f"{svc}.service"], check=False)
+    if f"{svc}.service" not in units.stdout.decode(errors="replace"):
+        raise RoutingUnavailable(
+            f"нет юнита {svc}.service (установлен только dnsmasq-base?) — "
+            f"применить списки доменов будет нечем")
+
+
+def _check_subnet_plumbing(subnet: str, iface: str) -> None:
+    """Маршрут и MASQUERADE для ОДНОЙ клиентской подсети.
+
+    Вынесено из _check_static_plumbing, потому что подсетей стало две: на время
+    переезда профилей рядом со старым интерфейсом живёт новый со своей подсетью.
+    Проверять только старую значило бы молчать ровно про тех, кто уже переехал, —
+    а отказ у них тот же самый и такой же необъяснимый: «включили режим, пропал
+    интернет».
+    """
     # именно `route show <подсеть>`, а не `route get <адрес>`: get вернёт код 0
     # практически всегда, потому что подойдёт маршрут по умолчанию, — проверка
     # была бы ложноположительной. Нужен ЯВНЫЙ маршрут для этой подсети.
@@ -212,12 +232,12 @@ def _check_static_plumbing() -> None:
                 f"маршрут до {subnet} ведёт не на текущий адрес контейнера "
                 f"({cont_ip[0]}) — контейнер пересоздавали? перезапустите "
                 f"awg-bot-routing.service")
-    elif f"dev {config.AWG_INTERFACE}" not in route:
-        # На хосте подсеть обязана быть connected через awg-интерфейс. Любой
+    elif f"dev {iface}" not in route:
+        # На хосте подсеть обязана быть connected через свой awg-интерфейс. Любой
         # via-маршрут поверх connected перехватывает обратный трафик: наружу всё
         # уходит, ответы возвращаются и отправляются в никуда.
         raise RoutingUnavailable(
-            f"маршрут до {subnet} ведёт мимо {config.AWG_INTERFACE} "
+            f"маршрут до {subnet} ведёт мимо {iface} "
             f"({' '.join(route.split())[:80]}) — ответы клиентам уйдут не туда. "
             f"Снять лишний: ip route del {subnet}")
     if not _host_ok(["iptables", "-t", "nat", "-C", "POSTROUTING",
@@ -225,14 +245,6 @@ def _check_static_plumbing() -> None:
         raise RoutingUnavailable(
             f"на хосте нет MASQUERADE для {subnet} — трафик включённых устройств "
             f"не выйдет наружу")
-    # Именно СЕРВИС, а не бинарь: пакет dnsmasq-base кладёт /usr/sbin/dnsmasq без
-    # systemd-юнита, и `systemctl restart` при каждой правке списка падал бы.
-    svc = config.ROUTING_DNSMASQ_SERVICE
-    units = _host(["systemctl", "list-unit-files", f"{svc}.service"], check=False)
-    if f"{svc}.service" not in units.stdout.decode(errors="replace"):
-        raise RoutingUnavailable(
-            f"нет юнита {svc}.service (установлен только dnsmasq-base?) — "
-            f"применить списки доменов будет нечем")
 
 
 def self_check(force: bool = False) -> tuple[bool, str]:

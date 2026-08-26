@@ -366,3 +366,87 @@ def test_failsafe_is_rewritten_when_it_no_longer_matches(monkeypatch):
     assert conf.count("AWGBOT_SSH") >= 1
     assert "--dst-type LOCAL" in conf, "должна встать актуальная форма"
     assert "-d 1.2.3.4" not in conf, "устаревшая строка обязана исчезнуть, а не остаться рядом"
+
+
+# ── SSH-цели во время переезда профилей ──────────────────────────────────────
+
+def test_ssh_targets_cover_both_interfaces(monkeypatch):
+    """Цепочка AWGBOT_SSH пускает на хост только по этим адресам, а админское
+    устройство переезжает ПЕРВЫМ — оно и есть проверка всей затеи.
+
+    С адресами одного интерфейса админ терял бы SSH-в-туннель ровно после
+    собственного переезда, то есть в момент, когда чинить это стало бы неоткуда.
+    Обходной путь «админ переезжает последним» негоден по той же причине.
+    """
+    from awgbot.core import config
+    from awgbot.infra import awg
+    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(config, "MIGRATION_INTERFACE", "awg1")
+
+    def fake_run(args, **kw):
+        if args[:3] == ["ip", "-4", "-o"]:
+            dev = args[-1]
+            addr = {"awg0": "10.8.1.0", "awg1": "10.9.1.0"}[dev]
+            return _cp(f"1: {dev}    inet {addr}/24 scope global {dev}\n".encode())
+        if args[:3] == ["ip", "route", "get"]:
+            return _cp(b"1.1.1.1 via 10.0.0.1 dev eth0 src 203.0.113.10\n")
+        return _cp()
+
+    monkeypatch.setattr(awg, "_run", fake_run)
+    targets = awg.host_ssh_targets()
+    assert "10.8.1.0" in targets and "10.9.1.0" in targets
+
+
+def test_missing_migration_interface_is_not_a_failure(monkeypatch):
+    """Интерфейс переезда задан, но ещё не поднят — не отказ: список просто без
+    его адресов. А молчание ДЕФОЛТНОГО интерфейса это поломка, и она обязана
+    быть громкой: список сузился бы до одного egress-адреса, и SSH оказался бы
+    открыт с туннельного адреса хоста без единого признака."""
+    from awgbot.core import config
+    from awgbot.infra import awg
+    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(config, "MIGRATION_INTERFACE", "awg1")
+
+    def fake_run(args, **kw):
+        if args[:3] == ["ip", "-4", "-o"]:
+            if args[-1] == "awg1":
+                raise awg.AwgError("Device does not exist")
+            return _cp(b"1: awg0    inet 10.8.1.0/24 scope global awg0\n")
+        if args[:3] == ["ip", "route", "get"]:
+            return _cp(b"1.1.1.1 via 10.0.0.1 dev eth0 src 203.0.113.10\n")
+        return _cp()
+
+    monkeypatch.setattr(awg, "_run", fake_run)
+    assert "10.8.1.0" in awg.host_ssh_targets()
+
+    def no_default(args, **kw):
+        if args[:3] == ["ip", "-4", "-o"]:
+            raise awg.AwgError("Device does not exist")
+        return _cp()
+
+    monkeypatch.setattr(awg, "_run", no_default)
+    with pytest.raises(awg.AwgError):
+        awg.host_ssh_targets()
+
+
+def test_client_subnets_pair_with_their_interfaces(monkeypatch):
+    """Подсетей на время переезда две, и каждая обязана иметь маршрут и
+    MASQUERADE. Проверять только старую значило бы молчать ровно про тех, кто
+    уже переехал."""
+    from awgbot.core import config
+    monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(config, "ROUTING_CLIENT_SUBNET", "10.8.1.0/24")
+    monkeypatch.setattr(config, "MIGRATION_INTERFACE", "")
+    monkeypatch.setattr(config, "MIGRATION_SUBNET_PREFIX", "")
+    assert config.routing_client_subnets() == [("10.8.1.0/24", "awg0")]
+
+    monkeypatch.setattr(config, "MIGRATION_INTERFACE", "awg1")
+    monkeypatch.setattr(config, "MIGRATION_SUBNET_PREFIX", "10.9.1")
+    assert config.routing_client_subnets() == [("10.8.1.0/24", "awg0"),
+                                               ("10.9.1.0/24", "awg1")]
+
+    # половина ключей — не конфигурация, а недоразумение: пары не будет
+    monkeypatch.setattr(config, "MIGRATION_SUBNET_PREFIX", "")
+    assert config.routing_client_subnets() == [("10.8.1.0/24", "awg0")]
