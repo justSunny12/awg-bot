@@ -286,6 +286,14 @@ CREATE TABLE IF NOT EXISTS migration_cohort (
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
 );
 
+-- Кому уже сказали «всё получилось» после переезда устройства. Отдельная
+-- таблица, а не флаг на устройстве: запись живёт ровно одно окно переезда и
+-- уходит вместе с ним, а FK-каскад снимает её при удалении устройства.
+CREATE TABLE IF NOT EXISTS migration_greeted (
+    device_id           INTEGER PRIMARY KEY,             -- id ДВОЙНИКА
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS traffic_samples (
     device_id           INTEGER PRIMARY KEY,
     last_rx             INTEGER NOT NULL,
@@ -1127,6 +1135,19 @@ class Database:
     def cohort_clear(self) -> None:
         with self._tx() as cur:
             cur.execute("DELETE FROM migration_cohort")
+
+    def greeted_ids(self) -> set[int]:
+        return {int(r["device_id"]) for r in
+                self._connection().execute("SELECT device_id FROM migration_greeted")}
+
+    def greeted_add(self, device_id: int) -> None:
+        with self._tx() as cur:
+            cur.execute("INSERT OR IGNORE INTO migration_greeted (device_id) "
+                        "VALUES (?)", (int(device_id),))
+
+    def greeted_clear(self) -> None:
+        with self._tx() as cur:
+            cur.execute("DELETE FROM migration_greeted")
 
     def twins_by_origin(self) -> dict[int, int]:
         """twin_of → id двойника. Одним запросом вместо обхода: пара нужна и

@@ -852,3 +852,80 @@ def test_device_counter_shows_visible_rows(services, mig, make_active_client):
 
     assert services.routing_device_counts(c.id) == (1, 2)
     assert len(services.routing_devices(c.id)) == 2
+
+
+# ── поздравление пользователю ────────────────────────────────────────────────
+
+def test_user_is_greeted_once_after_the_device_connects(services, mig,
+                                                        make_active_client):
+    """Поздравление уходит по первому хендшейку двойника и ровно один раз.
+
+    Проверка тика — каждые три минуты, и без отметки человек получал бы это
+    сообщение до конца переезда.
+    """
+    c = make_active_client(name="c", tg_id=7070)
+    dc = services.add_device(c.id, "Ноут")
+    services.migration_start()
+    assert services.migration_hello_alerts() == [], "поздравили до подключения"
+
+    twin = _twin(services, dc.device_id)
+    _seen(services, twin.id, ago_days=0)
+
+    notes = services.migration_hello_alerts()
+    assert len(notes) == 1
+    assert notes[0].tg_id == 7070
+    assert "Ноут" in notes[0].text and "Всё получилось" in notes[0].text
+    assert services.migration_hello_alerts() == [], "поздравление повторилось"
+
+
+def test_greeting_is_silent_in_quiet_hours(services, mig, make_active_client):
+    """Не помечено громким — значит в тихие часы уйдёт беззвучно. Событие
+    приятное, но реакции не требует: будить ради него незачем."""
+    c = make_active_client(name="c", tg_id=7071)
+    dc = services.add_device(c.id, "Тел")
+    services.migration_start()
+    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
+    assert services.migration_hello_alerts()[0].force_sound is False
+
+
+def test_greeting_goes_to_the_friend_not_the_owner(services, mig,
+                                                   make_active_client):
+    """Для расшаренного устройства адресат — ДРУГ: конфиг в приложении у него,
+    и просьба удалить старый профиль осмысленна только для него. Владелец
+    устройство отдал и в приложении его не держит."""
+    c = make_active_client(name="Хозяин", tg_id=7072)
+    dc = services.add_device(c.id, "Общее")
+    code = services.make_device_friendly(dc.device_id)
+    services.activate_friend(code, tg_id=7099)
+    services.migration_start()
+    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
+
+    notes = services.migration_hello_alerts()
+    assert len(notes) == 1 and notes[0].tg_id == 7099, "поздравили не того"
+
+
+def test_greetings_reset_between_migrations(services, mig, make_active_client):
+    """Отметки живут одно окно: следующий переезд поздравляет заново."""
+    c = make_active_client(name="c", tg_id=7073)
+    dc = services.add_device(c.id, "Тел")
+    services.migration_start()
+    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
+    assert len(services.migration_hello_alerts()) == 1
+
+    services.migration_cancel()
+    assert services.db.greeted_ids() == set()
+    services.migration_start()
+    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
+    assert len(services.migration_hello_alerts()) == 1
+
+
+def test_no_greeting_when_migration_is_not_running(services, mig,
+                                                   make_active_client):
+    """Отмена прошла — поздравлять не с чем: выдаются снова старые конфиги."""
+    c = make_active_client(name="c", tg_id=7074)
+    dc = services.add_device(c.id, "Тел")
+    services.migration_start()
+    twin = _twin(services, dc.device_id)
+    services.migration_cancel()
+    _seen(services, twin.id, ago_days=0)
+    assert services.migration_hello_alerts() == []
