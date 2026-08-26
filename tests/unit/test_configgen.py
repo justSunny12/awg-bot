@@ -147,3 +147,68 @@ def test_embedded_vpn_config_keeps_them():
     text = json.dumps(inner, ensure_ascii=False)
     for k in ("I2", "I3", "I4", "I5"):
         assert f"{k} = " in text, f"{k} пропал из встроенного конфига"
+
+
+# ── ключи поколения 3.1 (предусловие переезда) ───────────────────────────────
+
+def _params(**extra):
+    obf = {k: str(i + 1) for i, k in enumerate(
+        ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1"])}
+    obf.update({k: "" for k in ("I2", "I3", "I4", "I5")})
+    obf.update(extra)
+    return {"obfuscation": obf, "listen_port": 42755,
+            "server_pubkey": "SRVPUB==", "psk": "PSK=="}
+
+
+def test_new_keys_are_inert_until_the_server_sets_them():
+    """Пока сервер не задаёт ключи 3.1, выдача побайтово прежняя.
+
+    Это и делает правку безопасной для выкатки до переезда: формат vpn://
+    заморожен и обязан воспроизводить эталон приложения, а лишняя пара
+    `"RandomTrailers": ""` изменила бы ссылку у ВСЕХ, ничего не дав взамен.
+    """
+    res = cg.generate("PRIV", "PUB", "10.8.1.5", _params())
+    awg_block = cg.decode_vpn(res["vpn"])["containers"][0]["awg"]
+    for key in ("RandomTrailers", "HeaderProtectionKey"):
+        assert key not in res["conf"]
+        assert key not in awg_block
+        assert f'"{key}"' not in awg_block["last_config"]
+    # пустые I2–I5 эталон печатает — их поведение трогать было нельзя
+    assert '"I2": ""' in awg_block["last_config"]
+
+
+def test_symmetric_keys_reach_both_forms_of_the_config():
+    """RandomTrailers и HeaderProtectionKey СИММЕТРИЧНЫ: приёмник берёт пакет
+    длиннее ожидаемого, только если фича включена у него самого.
+
+    Значит обе формы обязаны нести их одинаково. Половина людей импортирует
+    ссылкой, половина файлом, и разный набор ключей означал бы, что половина
+    просто не подключится.
+    """
+    res = cg.generate("PRIV", "PUB", "10.8.1.5",
+                      _params(RandomTrailers="on", HeaderProtectionKey="HPK=="))
+    awg_block = cg.decode_vpn(res["vpn"])["containers"][0]["awg"]
+    assert "RandomTrailers = on" in res["conf"]
+    assert "HeaderProtectionKey = HPK==" in res["conf"]
+    assert "RandomTrailers = on" in awg_block["last_config"]
+    assert awg_block["RandomTrailers"] == "on"
+    assert awg_block["HeaderProtectionKey"] == "HPK=="
+
+
+def test_disable_cookies_never_reaches_the_client():
+    """Односторонний ключ: живёт только на сервере. Попади он в конфиг — стал бы
+    мусором на руках у людей, который потом не отозвать без перевыпуска."""
+    res = cg.generate("PRIV", "PUB", "10.8.1.5", _params(DisableCookies="on"))
+    awg_block = cg.decode_vpn(res["vpn"])["containers"][0]["awg"]
+    assert "DisableCookies" not in res["conf"]
+    assert "DisableCookies" not in awg_block
+    assert "DisableCookies" not in awg_block["last_config"]
+
+
+def test_reader_and_writer_know_the_same_keys():
+    """Множества ключей у читателя (awg) и писателя (configgen) обязаны
+    совпадать: прочитанный, но не записанный ключ теряется молча, а записанный
+    без чтения всегда пуст. Общего источника нет намеренно — там важен ПОРЯДОК,
+    здесь множество, — поэтому расхождение ловим тестом."""
+    from awgbot.infra import awg
+    assert set(awg._OBFUSCATION_KEYS) == set(cg._OBF_ORDER)

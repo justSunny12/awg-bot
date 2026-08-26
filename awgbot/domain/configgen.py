@@ -24,7 +24,22 @@ from awgbot.core import config
 # правке синхронизировать оба (общего источника нет намеренно: здесь важен ПОРЯДОК
 # вывода в конфиг, там — множество извлекаемых из сервера ключей).
 _OBF_ORDER = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4",
-              "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5"]
+              "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5",
+              "HeaderProtectionKey", "RandomTrailers"]
+
+# Ключи поколения 3.1, которых у прежнего сервера нет вовсе. Пустое значение
+# означает «сервер их не задаёт», и тогда строка НЕ печатается ни в отдельный
+# .conf, ни во встроенный конфиг — в отличие от I2–I5, которые эталон приложения
+# держит пустыми и печатает.
+#
+# Благодаря этому правка инертна: пока в серверном конфиге нет RandomTrailers,
+# выдача побайтово та же, что была. Появится — поедет обеим формам сразу.
+# Разъехаться им нельзя: половина людей импортирует ссылкой, половина файлом, и
+# разный набор ключей означал бы, что половина не подключится.
+#
+# DisableCookies сюда НЕ входит намеренно: он односторонний, живёт только на
+# сервере, и в клиентском конфиге ему делать нечего.
+_OBF_OPTIONAL = {"HeaderProtectionKey", "RandomTrailers"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -67,7 +82,8 @@ def _conf_text(
         lines.append(f"MTU = {config.MTU}")
     for k in _OBF_ORDER:
         v = obf.get(k, "")
-        if include_mtu and not str(v).strip():
+        empty = not str(v).strip()
+        if empty and (include_mtu or k in _OBF_OPTIONAL):
             continue
         lines.append(f"{k} = {v}")
     lines += [
@@ -87,13 +103,25 @@ def _conf_text(
 # Построение JSON и кодирование vpn://
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _obf_fields(obf: dict) -> dict:
+    """Обфускейт-поля для JSON-структуры vpn://.
+
+    Ключи 3.1 с пустым значением ПРОПУСКАЕМ. Структура заморожена и обязана
+    воспроизводить эталон приложения: пока сервер их не задаёт, лишняя пара
+    `"RandomTrailers": ""` меняла бы ссылку у всех, ничего при этом не давая.
+    Прочие пустые (I2–I5) эталон печатает, и их мы печатаем тоже.
+    """
+    return {k: obf.get(k, "") for k in _OBF_ORDER
+            if not (k in _OBF_OPTIONAL and not str(obf.get(k, "")).strip())}
+
+
 def _build_last_config(
     private_key: str, public_key: str, address: str,
     obf: dict, server_pubkey: str, psk: str, host: str, port: int,
     embedded_conf: str,
 ) -> str:
     lc = {
-        **{k: obf.get(k, "") for k in _OBF_ORDER},
+        **_obf_fields(obf),
         "allowed_ips": ["0.0.0.0/0", "::/0"],
         "clientId": public_key,
         "client_ip": address,
@@ -123,7 +151,7 @@ def _build_vpn_json(
         host, port, embedded_conf,
     )
     awg_block = {
-        **{k: obf.get(k, "") for k in _OBF_ORDER},
+        **_obf_fields(obf),
         "last_config": last_config,
         "port": str(port),
         "protocol_version": "2",
