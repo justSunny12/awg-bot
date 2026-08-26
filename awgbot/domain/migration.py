@@ -127,6 +127,22 @@ class MigrationMixin:
 
     # ── включение рычага ─────────────────────────────────────────────────────
 
+    def migration_start_preview(self) -> tuple[int, int, int]:
+        """Что произойдёт при включении: (профилей, устройств в когорте,
+        сколько профилей предстоит создать). НИЧЕГО не меняет.
+
+        Когорта считается ровно так же, как её заморозит старт, — иначе
+        подтверждение обещало бы один знаменатель, а прогресс показывал другой.
+        Уже замороженную (повтор после сбоя) берём как есть, не пересобирая.
+        """
+        origins = self._migratable()
+        frozen = self.db.cohort_ids()
+        live = ([d for d in origins if d.id in frozen] if frozen
+                else [d for d in origins if self._is_live(d)])
+        existing = self.db.twins_by_origin()
+        to_birth = sum(1 for d in origins if d.id not in existing)
+        return len({d.client_id for d in live}), len(live), to_birth
+
     def migration_start(self) -> MigrationStart:
         """Включить рычаг: заморозить когорту и родить двойников.
 

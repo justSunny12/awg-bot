@@ -17,7 +17,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import SettingsInput
-from awgbot.bot.handlers.common import call, edit
+from awgbot.bot.handlers.common import call, edit, send_menu
 
 router = Router(name="settings")
 router.message.filter(RoleFilter("admin"))
@@ -69,6 +69,22 @@ async def _screen(sec: str, services):
 async def _render(cb: CallbackQuery, sec: str, services):
     text, markup = await _screen(sec, services)
     await edit(cb, text, markup)
+
+
+async def _record(cb: CallbackQuery, text: str, services):
+    """Оставить в чате СЛЕД события и вернуть раздел следующим сообщением.
+
+    Начало, отмена и завершение переезда — из тех событий, о которых потом
+    спрашивают «когда это было и чем кончилось». Ветка настроек живёт до
+    следующей навигации и унесла бы ответ с собой: экран переписывается, и от
+    итога не остаётся ничего.
+
+    Кнопок на записи нет намеренно — иначе в чате оказалось бы два живых меню,
+    и инвариант «одно активное» держать было бы нечем. Раздел приходит следом
+    новым сообщением, как отчёт о рассылке.
+    """
+    await edit(cb, text, None)
+    await send_menu(cb.message, services, *await _screen("svc", services))
 
 
 # ── открытие раздела ─────────────────────────────────────────────────────────
@@ -191,9 +207,14 @@ async def pick(cb: CallbackQuery, callback_data: SetCB, services):
 async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
     """Рычаг переезда и оба выхода.
 
-    Ключ с восклицательным знаком — подтверждённое действие. Разделение
-    намеренное: и завершение, и отмена необратимы по-разному, и оба обязаны
-    показать последствия ДО нажатия, а не после.
+    Ключ с восклицательным знаком — подтверждённое действие. Через
+    подтверждение проходят все три: завершение и отмена необратимы по-разному,
+    а старт меняет то, что получит КАЖДЫЙ следующий попросивший конфиг. Все
+    трое обязаны показать последствия до нажатия, а не после.
+
+    Итог каждого из трёх остаётся в чате отдельным сообщением (_record): экран
+    настроек переписывается следующей навигацией, а «когда начали» и «чем
+    кончилось» спрашивают потом.
     """
     key = callback_data.key
     if not await call(services.migration_available):
@@ -207,11 +228,23 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
     if key in ("pending", "finish", "cancel", "finish!", "cancel!") and not running:
         await cb.answer("Переезд сейчас не идёт — экран устарел.", show_alert=True)
         return
+    if key in ("start", "start!") and running:
+        # зеркальная половина сторожа: «start!» со старого подтверждения,
+        # нажатый уже во время переезда, пересобрал бы выдачу вслепую
+        await cb.answer("Переезд уже идёт — экран устарел.", show_alert=True)
+        return
 
     if key == "start":
-        await cb.answer("Рождаю двойников…")
+        clients, devices, to_birth = await call(services.migration_start_preview)
+        await edit(cb, texts.migration_start_confirm(clients, devices, to_birth),
+                   kb.migration_confirm("start"))
+        await cb.answer()
+        return
+
+    if key == "start!":
+        await cb.answer("Создаю новые профили…")
         res = await call(services.migration_start)
-        await edit(cb, texts.migration_started(res), kb.settings_back())
+        await _record(cb, texts.migration_started(res), services)
         return
 
     if key == "pending":
@@ -249,14 +282,13 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
     if key == "finish!":
         await cb.answer("Завершаю…")
         removed, dropped, failed = await call(services.migration_finish)
-        await edit(cb, texts.migration_finished(removed, dropped, failed),
-                   kb.settings_back())
+        await _record(cb, texts.migration_finished(removed, dropped, failed), services)
         return
 
     if key == "cancel!":
         await cb.answer("Отменяю…")
         moved = await call(services.migration_cancel)
-        await edit(cb, texts.migration_cancelled(moved), kb.settings_back())
+        await _record(cb, texts.migration_cancelled(moved), services)
         return
 
     await cb.answer("Действие недоступно.", show_alert=True)

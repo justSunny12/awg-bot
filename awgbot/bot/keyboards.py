@@ -1192,12 +1192,16 @@ def settings_svc(migration: str = "", available: bool = False,
     return kb.as_markup()
 
 
+_MIG_CONFIRM_LABEL = {"start": "🚚 Начать", "finish": "✅ Завершить",
+                      "cancel": "↩️ Отменить"}
+
+
 def migration_confirm(key: str) -> InlineKeyboardMarkup:
-    """Подтверждение выхода из переезда. Отмена первой: необратимое действие не
-    должно стоять там, куда палец идёт по инерции."""
+    """Подтверждение входа в переезд и обоих выходов. «Не надо» первой: действие
+    с последствиями не должно стоять там, куда палец идёт по инерции."""
     kb = InlineKeyboardBuilder()
     kb.button(text="⬅️ Не надо", callback_data=SetCB(sec="svc", act="open"))
-    kb.button(text=("✅ Завершить" if key == "finish" else "↩️ Отменить"),
+    kb.button(text=_MIG_CONFIRM_LABEL[key],
               callback_data=SetCB(sec="mig", act="do", key=f"{key}!"))
     kb.adjust(2)
     return kb.as_markup()
