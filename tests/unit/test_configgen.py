@@ -235,3 +235,25 @@ def test_reader_and_writer_know_the_same_keys():
     здесь множество, — поэтому расхождение ловим тестом."""
     from awgbot.infra import awg
     assert set(awg._OBFUSCATION_KEYS) == set(cg._OBF_ORDER)
+
+
+def test_keepalive_passes_through_as_written():
+    """PersistentKeepalive уходит в конфиг тем, чем задан, — числом или
+    диапазоном.
+
+    Диапазон здесь не украшение: фиксированные 25 секунд это метроном
+    ванильного WireGuard, видимый на простаивающем туннеле без расшифровки.
+    Прочие таймеры джиттерит сервер, а этот приходит из конфига бота — и,
+    оставшись числом, обнулял бы всю ломку ритма самым заметным сигналом.
+    """
+    from awgbot.core import config
+    import json as _json
+
+    for value in ("25-35", 25):
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(config, "KEEPALIVE_SECONDS", value)
+            res = cg.generate("PRIV", "PUB", "10.8.1.5", _params())
+            assert f"PersistentKeepalive = {value}" in res["conf"]
+            lc = _json.loads(
+                cg.decode_vpn(res["vpn"])["containers"][0]["awg"]["last_config"])
+            assert lc["persistent_keep_alive"] == str(value)
