@@ -27,7 +27,8 @@ from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_
                              remove_device_and_notify, send_conf, cleanup_content,
                              send_link, send_qr, send_menu, content_finisher,
                              show_main_menu, _dismiss_previous_nav)
-from awgbot.bot.notifier import notify_one, send_notifications, broadcast
+from awgbot.bot.notifier import (notify_one, send_notifications, broadcast,
+                                 send_announcement)
 from awgbot.domain.services import BYTES_PER_GB, SECONDS_PER_DAY, LimitReached, ServiceError
 from awgbot.bot.states import (AdminAddDevice, AdminSelfAddDevice, BlockPauseDays, Broadcast, CreateClient,
                     EditLimit, EditName, EditDeviceName, EditPeriod, EditTrafficLimit)
@@ -1606,8 +1607,38 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
     # Своё сообщение админа — в уборку: иначе после отмены оно остаётся висеть,
     # а вместе с ним и весь набранный черновик объявления.
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not (message.text or "").strip():
+    data = await state.get_data()
+    photos: list = list(data.get("photos") or ())
+
+    # Картинка — не текст объявления, а вложение к нему: копим и ждём текст.
+    # Альбом Telegram доставляет НЕСКОЛЬКИМИ сообщениями (по одному на снимок),
+    # общего для них апдейта не существует — поэтому просто складываем в том
+    # порядке, в каком пришли, и собираем альбом сами при отправке.
+    if message.photo:
+        if len(photos) >= config.TG_ALBUM_MAX:
+            await ask_tracked(message, services, texts.broadcast_too_many_photos())
+            return
+        # последний размер — оригинал: Telegram отдаёт лесенку превью
+        photos.append(message.photo[-1].file_id)
+        await state.update_data(photos=photos)
+        if not (message.caption or "").strip():
+            await ask_tracked(message, services, texts.broadcast_photo_added(len(photos)))
+            return
+
+    body = message.html_text if message.text else (message.caption and message.html_caption)
+    plain = (message.text or message.caption or "")
+    if not (plain or "").strip():
         await ask_tracked(message, services, texts.BROADCAST_EMPTY)
+        return
+
+    # Лимит зависит от наличия картинок: с ними текст едет подписью, а у неё
+    # потолок вчетверо ниже. Считаем ВИДИМЫЕ символы, а не длину HTML: разметка
+    # живёт в entities и в счёт Telegram не идёт, иначе жирный шрифт съедал бы
+    # лимит.
+    limit = config.TG_CAPTION_MAX if photos else config.TG_TEXT_MAX
+    if len(plain) > limit:
+        await ask_tracked(message, services,
+                          texts.broadcast_too_long(len(plain), limit, bool(photos)))
         return
     # html_text, а НЕ text. Форматирование, сделанное средствами Telegram
     # (жирный, курсив, ссылки), живёт не в тексте, а в entities: `message.text`
@@ -1615,8 +1646,8 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
     # html_text собирает entities обратно в HTML, а бот шлёт с parse_mode=HTML.
     # Побочно это чинит и битую разметку: обычные «<» и «>» из текста
     # экранируются, а не ломают разбор.
-    text = message.html_text.strip()
-    sel = set((await state.get_data()).get("targets") or ())
+    text = body.strip()
+    sel = set(data.get("targets") or ())
     tg_ids = await call(services.db.broadcast_recipients_for_clients,
                         sel, config.ADMIN_ID)
     if not tg_ids:
@@ -1636,8 +1667,23 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
     if nav:
         await call(services.db.add_content_msg_id, message.chat.id, nav)
     try:
-        await message.answer(texts.broadcast_preview(text, len(tg_ids), names, friends),
-                             reply_markup=kb.broadcast_confirm())
+        if photos:
+            # С картинками превью — САМО объявление, отправленное админу ровно в
+            # том виде, в каком уйдёт людям. Пересказать альбом текстом нельзя:
+            # «приложено 3 фото» не показывает ни порядка, ни того, как подпись
+            # села под картинками. Блок подтверждения идёт следом отдельным
+            # сообщением — reply_markup у альбома не бывает.
+            sent = await send_announcement(message.bot, message.chat.id, text, photos)
+            ids = [m.message_id for m in sent] if isinstance(sent, (list, tuple)) \
+                else [sent.message_id]
+            await state.update_data(preview_ids=ids)
+            await message.answer(
+                texts.broadcast_preview_photos(len(tg_ids), names, friends),
+                reply_markup=kb.broadcast_confirm())
+        else:
+            await message.answer(
+                texts.broadcast_preview(text, len(tg_ids), names, friends),
+                reply_markup=kb.broadcast_confirm())
     except TelegramBadRequest:
         await ask_tracked(
             message, services,
@@ -1649,11 +1695,20 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
 async def broadcast_cancel_h(cb: CallbackQuery, state: FSMContext, services):
     """Отмена на любом шаге: сбросить состояние и вернуться в главное меню.
 
+    Альбом-превью удаляем явно, а не через уборку контента: он не «служебное
+    сообщение», а точная копия объявления, и оставить его после отмены значит
+    оставить в чате запись, неотличимую от разосланной.
+
     Сброс здесь и есть смысл этого хендлера. Раньше отмена вела прямо в меню,
     чей хендлер чистит FSM попутно, — работало, но держалось на побочном эффекте
     соседа. Без сброса передумавший на шаге ввода админ остался бы в состоянии
     Broadcast.text, и следующее его сообщение стало бы черновиком объявления.
     """
+    for mid in (await state.get_data()).get("preview_ids") or ():
+        try:
+            await cb.bot.delete_message(cb.message.chat.id, mid)
+        except Exception:                              # noqa: BLE001
+            pass                                       # уже удалено/устарело
     await state.clear()
     await cleanup_content(cb.bot, services, cb.message.chat.id)
     await edit_nav(cb, services, await _panel_text(services),
@@ -1665,6 +1720,7 @@ async def broadcast_cancel_h(cb: CallbackQuery, state: FSMContext, services):
 async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     data = await state.get_data()
     text = data.get("text")
+    photos = tuple(data.get("photos") or ())
     sel = tuple(sorted(data.get("targets") or ()))
     await state.clear()
     if not text or not sel:
@@ -1686,13 +1742,14 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
         await edit(cb, "Некому отправлять — нет активных получателей.",
                    await _main_menu_markup(services))
         return
-    ok, failed = await broadcast(cb.message.bot, tg_ids, text)
+    ok, failed = await broadcast(cb.message.bot, tg_ids, text, photos)
     names = [c.name for c in await _bc_clients(services) if c.id in set(sel)]
     friends = await call(services.db.broadcast_has_friends, sel, config.ADMIN_ID)
     # Превью превращается в отчёт и ОСТАЁТСЯ в чате — кнопок на нём больше нет.
     # Это единственный след разосланного: черновик уехал в уборку, а копии у
     # отправителя нет, Telegram показывает ему только собственные реплики боту.
-    await edit(cb, texts.broadcast_report(names, friends, ok, failed, text), None)
+    await edit(cb, texts.broadcast_report(names, friends, ok, failed, text,
+                                         len(photos)), None)
     # Панель — СЛЕДУЮЩИМ сообщением, со своим обычным текстом и статусами.
     # Прежде отчёт нёс на себе клавиатуру главного меню: тогда он либо
     # переписывался при следующей навигации, либо оставлял в чате второе живое

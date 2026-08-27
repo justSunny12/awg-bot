@@ -259,6 +259,17 @@ class FakeBot:
     async def edit_message_text(self, text, chat_id=None, message_id=None, **kw):
         self.records.append(("edit_message_text", chat_id, text))
 
+    async def send_photo(self, chat_id, photo, caption=None, reply_markup=None, **kw):
+        self.records.append(("send_photo", chat_id, caption, photo))
+        return FakeMessage(caption=caption, chat_id=chat_id, bot=self, photo=[photo])
+
+    async def send_media_group(self, chat_id, media, **kw):
+        self.records.append(("send_media_group", chat_id, media))
+        return [FakeMessage(chat_id=chat_id, bot=self) for _ in media]
+
+    async def delete_message(self, chat_id, message_id, **kw):
+        self.records.append(("delete_message", chat_id, message_id))
+
     async def me(self):
         import types as _t
         return _t.SimpleNamespace(username="test_bot", id=999, is_bot=True, first_name="Bot")
@@ -266,13 +277,16 @@ class FakeBot:
 
 class FakeMessage:
     def __init__(self, text=None, chat_id=1, user_id=1, bot=None, caption=None,
-                 username=None, message_id=None, photo=None, html_text=None):
+                 username=None, message_id=None, photo=None, html_text=None,
+                 html_caption=None):
         self.text = text
         # html_text — то, что отдаёт aiogram, собрав entities обратно в HTML.
         # По умолчанию совпадает с text (сообщение без форматирования); тесты
         # про разметку передают его явно.
         self.html_text = html_text if html_text is not None else text
         self.caption = caption
+        # как у настоящего Message: разметка подписи, собранная из entities
+        self.html_caption = html_caption if html_caption is not None else caption
         self.photo = photo       # None или список PhotoSize (в фейке — маркер truthy)
         self.message_id = message_id if message_id is not None else next(_msg_ids)
         self.chat = FakeChat(chat_id)

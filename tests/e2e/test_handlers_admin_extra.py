@@ -274,7 +274,7 @@ async def test_broadcast_keeps_telegram_formatting(services, make_active_client,
 async def test_broadcast_rejects_blank_before_reading_markup(services, make_active_client,
                                                              fake_bot):
     """Пустое сообщение отбиваем по тексту, а не по разметке: у сообщения без
-    текста html_text брать неоткуда."""
+    текста html_text брать неоткуда."""  # формулировку см. texts.BROADCAST_EMPTY
     from tests.conftest import FakeMessage, FakeState
     from awgbot.bot.handlers import admin as admin_h
     import awgbot.core.config as cfg
@@ -285,7 +285,120 @@ async def test_broadcast_rejects_blank_before_reading_markup(services, make_acti
 
     msg = FakeMessage(text="   ", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await admin_h.broadcast_receive(msg, state, services)
-    assert any("Пустой текст" in s[1] for s in msg.sent if s[0] == "answer")
+    assert any("жду текст объявления или картинку" in s[1]
+               for s in msg.sent if s[0] == "answer")
+
+
+def _photo(file_id):
+    """PhotoSize-лесенка, как её отдаёт Telegram: последний размер — оригинал."""
+    import types
+    return [types.SimpleNamespace(file_id=f"{file_id}_small"),
+            types.SimpleNamespace(file_id=file_id)]
+
+
+async def test_broadcast_collects_photos_and_waits_for_text(services, make_active_client,
+                                                            fake_bot):
+    """Картинки копятся, объявление не уходит, пока нет текста.
+
+    Альбом Telegram доставляет НЕСКОЛЬКИМИ сообщениями, по одному на снимок, —
+    общего апдейта на альбом не существует. Поэтому складываем в порядке
+    прихода и собираем альбом сами при отправке.
+    """
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    c = make_active_client(name="Ксюша", tg_id=7010)
+    state = FakeState()
+    await state.update_data(targets=[c.id])
+
+    for n in (1, 2):
+        msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
+                          photo=_photo(f"FILE{n}"))
+        await admin_h.broadcast_receive(msg, state, services)
+        assert any(f"<b>{n}</b> из 10" in t for _, t, _ in msg.sent), msg.sent
+
+    assert (await state.get_data())["photos"] == ["FILE1", "FILE2"]
+    assert "text" not in (await state.get_data()), "объявление ушло без текста"
+
+
+async def test_broadcast_refuses_caption_over_limit_and_keeps_the_draft(
+        services, make_active_client, fake_bot):
+    """С картинками лимит 1024: текст едет подписью, а длинная подпись — это
+    привилегия Premium-аккаунта, которым бот быть не может.
+
+    Отказ обязан сохранять черновик: заставить пересылать десять картинок
+    заново из-за одного лишнего абзаца — худший из возможных ответов.
+    """
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    c = make_active_client(name="Ксюша", tg_id=7011)
+    state = FakeState()
+    await state.update_data(targets=[c.id], photos=["FILE1"])
+
+    long_text = "я" * (cfg.TG_CAPTION_MAX + 1)
+    msg = FakeMessage(text=long_text, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID,
+                      bot=fake_bot)
+    await admin_h.broadcast_receive(msg, state, services)
+
+    said = " ".join(t for _, t, _ in msg.sent)
+    assert str(cfg.TG_CAPTION_MAX) in said and str(cfg.TG_CAPTION_MAX + 1) in said, \
+        "не названы ни лимит, ни фактическая длина"
+    assert "text" not in (await state.get_data()), "объявление принято сверх лимита"
+    assert (await state.get_data())["photos"] == ["FILE1"], "черновик потерян"
+
+    # тот же текст БЕЗ картинок в лимит укладывается — лимита два, и они разные
+    state2 = FakeState()
+    await state2.update_data(targets=[c.id])
+    msg2 = FakeMessage(text=long_text, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID,
+                       bot=fake_bot)
+    await admin_h.broadcast_receive(msg2, state2, services)
+    assert (await state2.get_data()).get("text") == long_text
+
+
+async def test_broadcast_stops_at_the_album_limit(services, make_active_client, fake_bot):
+    """Одиннадцатая картинка не принимается: Telegram не берёт в альбом больше
+    десяти. Отбиваем на приёме, а не на отправке — иначе объявление упало бы
+    целиком, после набранного текста."""
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    c = make_active_client(name="Ксюша", tg_id=7012)
+    state = FakeState()
+    await state.update_data(targets=[c.id],
+                            photos=[f"F{i}" for i in range(cfg.TG_ALBUM_MAX)])
+
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
+                      photo=_photo("EXTRA"))
+    await admin_h.broadcast_receive(msg, state, services)
+    assert any(str(cfg.TG_ALBUM_MAX) in t for _, t, _ in msg.sent)
+    assert "EXTRA" not in (await state.get_data())["photos"]
+
+
+async def test_announcement_is_one_message_with_caption_on_the_first_photo(fake_bot):
+    """Объявление с картинками — ОДНО сообщение: альбом, подпись на первом
+    вложении. Подпись на втором Telegram показал бы отдельным блоком, а текст
+    отдельным сообщением дал бы в чате две записи вместо одной."""
+    from awgbot.bot.notifier import send_announcement
+
+    await send_announcement(fake_bot, 555, "текст объявления", ["A", "B", "C"])
+    kind, chat, media = [r for r in fake_bot.records if r[0] == "send_media_group"][0]
+    assert chat == 555 and len(media) == 3
+    assert media[0].caption == "текст объявления"
+    assert [m.caption for m in media[1:]] == [None, None], "подпись не только на первом"
+
+
+async def test_announcement_with_one_photo_is_not_an_album(fake_bot):
+    """Альбом из одного вложения Telegram не принимает — шлём обычное фото."""
+    from awgbot.bot.notifier import send_announcement
+
+    await send_announcement(fake_bot, 555, "текст", ["ONLY"])
+    assert not [r for r in fake_bot.records if r[0] == "send_media_group"]
+    kind, chat, caption, photo = [r for r in fake_bot.records if r[0] == "send_photo"][0]
+    assert caption == "текст" and photo == "ONLY"
 
 
 async def test_broadcast_draft_chain_is_cleaned_on_cancel(services, make_active_client,

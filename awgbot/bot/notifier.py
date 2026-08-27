@@ -17,6 +17,7 @@ import asyncio
 import logging
 
 from aiogram.exceptions import TelegramRetryAfter
+from aiogram.types import InputMediaPhoto
 
 from awgbot.core import settings
 from awgbot.util import timeutil
@@ -82,7 +83,28 @@ async def notify_one(bot, tg_id, text, *, reply_markup=None, force_sound=False) 
 __all__ = ["send_notifications", "notify_one"]
 
 
-async def broadcast(bot, tg_ids, text) -> tuple[int, int]:
+async def send_announcement(bot, tg_id, text: str, photos=()):
+    """Объявление ОДНИМ сообщением: картинки и текст под ними.
+
+    Текст с картинками едет ПОДПИСЬЮ к первому вложению — так Telegram и
+    склеивает альбом с текстом в один пост. Отдельным сообщением было бы две
+    записи в чате вместо одной.
+
+    Кнопка «Скрыть» есть только там, где Telegram её позволяет: у альбома
+    reply_markup не бывает вовсе. Одинокую картинку можно было бы снабдить
+    кнопкой, но тогда одно и то же объявление выглядело бы по-разному в
+    зависимости от числа вложений — а разницы этой человек не заказывал.
+    """
+    if not photos:
+        return await bot.send_message(tg_id, text, reply_markup=kb.hide_only())
+    if len(photos) == 1:
+        return await bot.send_photo(tg_id, photos[0], caption=text)
+    media = [InputMediaPhoto(media=p, caption=text if i == 0 else None)
+             for i, p in enumerate(photos)]
+    return await bot.send_media_group(tg_id, media=media)
+
+
+async def broadcast(bot, tg_ids, text, photos=()) -> tuple[int, int]:
     """Массовая рассылка объявления по списку tg_id. Возвращает (доставлено,
     не удалось). Ошибки отправки (заблокировали бота, удалён аккаунт) считаем в
     «не удалось» и продолжаем. Пейсинг между сообщениями — как в общей рассылке
@@ -98,12 +120,12 @@ async def broadcast(bot, tg_ids, text) -> tuple[int, int]:
             await asyncio.sleep(_BATCH_PACING_SECONDS)
         first = False
         try:
-            await bot.send_message(tg_id, text, reply_markup=kb.hide_only())
+            await send_announcement(bot, tg_id, text, photos)
             ok += 1
         except TelegramRetryAfter as e:
             await asyncio.sleep(e.retry_after)
             try:
-                await bot.send_message(tg_id, text, reply_markup=kb.hide_only())
+                await send_announcement(bot, tg_id, text, photos)
                 ok += 1
             except Exception as e2:                  # noqa: BLE001
                 log.warning("broadcast: не доставлено %s (после retry): %s", tg_id, e2)
