@@ -1609,16 +1609,12 @@ async def broadcast_next(cb: CallbackQuery, state: FSMContext, services):
 # пауза перед превью, чтобы дождаться хвоста пачки и отрендерить ОДИН раз, а не
 # десять. Подпись, набранная в окне вложений, приезжает на одном из сообщений
 # альбома — черновик подхватывает её с любого.
-# ДВЕ паузы перед превью, и выбор между ними — по наличию текста. Сигнала
-# «отправка админа закончилась» у Bot API нет: альбом приезжает отдельными
-# апдейтами по мере аплоада, счёт группы неизвестен. Но есть надёжный прокси —
-# подпись. Пока в черновике одни картинки, спешить некуда: скорее всего где-то
-# ещё едет снимок с подписью (или админ печатает текст следом), и раннее превью
-# «Текста в нём нет» — это враньё с последующим перечёркиванием. Есть текст —
-# ждать нечего, только зазор между уже загруженными снимками. Каждый новый
-# апдейт перезапускает отсчёт, а опоздавшее всё равно вливается пересборкой.
-_BC_SETTLE_SECONDS = 3.0
-_BC_NO_TEXT_SETTLE_SECONDS = 25.0
+# Пауза покрывает только рассинхрон ДОСТАВКИ уже отправленного альбома: клиент
+# шлёт его одним запросом после загрузки всех файлов, и апдейты приезжают боту
+# пачкой сразу — «конца отправки» как растянутого процесса не существует, ждать
+# больше нечего. (Долгие паузы здесь были костылём вокруг чужой ошибки: падал
+# разбор подписи, терялся её апдейт, и казалось, что альбом «доезжает».)
+_BC_SETTLE_SECONDS = 1.5
 _bc_locks: dict[int, asyncio.Lock] = {}
 _bc_render_tasks: dict[int, asyncio.Task] = {}
 
@@ -1629,9 +1625,8 @@ def _bc_cancel_render(chat_id: int) -> None:
         task.cancel()
 
 
-async def _bc_render_later(message: Message, state: FSMContext, services,
-                           delay: float):
-    await asyncio.sleep(delay)
+async def _bc_render_later(message: Message, state: FSMContext, services):
+    await asyncio.sleep(_BC_SETTLE_SECONDS)
     await _bc_preview(message, state, services)
 
 
@@ -1659,12 +1654,15 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
                 draft["photos"] = photos
         plain = (message.text or message.caption or "").strip()
         if plain:
-            # html_text/html_caption, а НЕ text: форматирование живёт в entities,
-            # голая строка уронила бы разметку. Новый текст ЗАМЕНЯЕТ прежний —
-            # так «не влезло, пришли заново» и правка опечатки работают сами.
-            # Длину меряем по видимым символам: HTML-теги в счёт Telegram не идут,
-            # иначе жирный шрифт съедал бы лимит.
-            body = message.html_text if message.text else message.html_caption
+            # html_text, а НЕ text: форматирование живёт в entities, голая
+            # строка уронила бы разметку. Для ПОДПИСИ работает то же поле:
+            # html_text сам берёт text or caption (никакого html_caption у
+            # aiogram НЕ существует — обращение к нему роняло хендлер на каждом
+            # сообщении с подписью, и апдейт терялся целиком, снимок вместе с
+            # текстом). Новый текст ЗАМЕНЯЕТ прежний — так «не влезло, пришли
+            # заново» и правка опечатки работают сами. Длину меряем по видимым
+            # символам: HTML-теги в счёт Telegram не идут.
+            body = message.html_text
             draft["text"], draft["text_len"] = body.strip(), len(plain)
         if draft:
             await state.update_data(**draft)
@@ -1672,14 +1670,11 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
             await ask_tracked(message, services, texts.BROADCAST_EMPTY,
                               reply_markup=kb.broadcast_cancel())
             return
-        has_text = bool(draft.get("text") or data.get("text"))
-    # Превью: после картинки — с паузой (может ехать хвост альбома; без текста
-    # пауза ДЛИННАЯ — см. константы), после голого текста — сразу, ему пачка
-    # не свойственна.
+    # Превью: после картинки — с паузой (пачка альбома доезжает не одним
+    # тиком), после голого текста — сразу, ему пачка не свойственна.
     if message.photo:
-        delay = _BC_SETTLE_SECONDS if has_text else _BC_NO_TEXT_SETTLE_SECONDS
         _bc_render_tasks[chat_id] = asyncio.create_task(
-            _bc_render_later(message, state, services, delay))
+            _bc_render_later(message, state, services))
     else:
         await _bc_preview(message, state, services)
 

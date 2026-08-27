@@ -108,7 +108,11 @@ def test_migrated_read_is_hot(conf, monkeypatch):
     значения в кэше видна СРАЗУ, без рестарта. Проверяем сквозь notifier
     (_silent_now читает quiet_hours.* через settings.get)."""
     from awgbot.bot import notifier
-    # окно тихих часов 0..24 → всегда тихо, если включено
+    from awgbot.util import timeutil
+    # час фиксируем: окно 0..23 не покрывает 23-й час, и тест, читающий
+    # НАСТОЯЩЕЕ время, падал ровно при запуске в 23:xx по TZ бота
+    fixed = timeutil.now().replace(hour=12)
+    monkeypatch.setattr(timeutil, "now", lambda: fixed)
     settings.set_value("quiet_hours.quiet_hours_enabled", True)
     settings.set_value("quiet_hours.quiet_hours_start", 0)
     settings.set_value("quiet_hours.quiet_hours_end", 23)
