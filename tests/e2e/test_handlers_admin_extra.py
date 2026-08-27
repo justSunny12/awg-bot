@@ -305,12 +305,14 @@ async def _settled(admin_h, chat_id):
         await task
 
 
-async def test_broadcast_collects_photos_and_answers_the_batch_once(
+async def test_photos_without_text_get_a_real_preview_not_a_demand(
         services, make_active_client, fake_bot, monkeypatch):
-    """Пачка картинок — ОДНА отбивка, по итоговому счёту.
+    """Картинки без текста — это уже превью, а не требование «пришли текст».
 
-    Альбом приезжает разом, отдельными апдейтами; отвечать на каждый — шум из
-    десяти «принята» подряд. Рендер ждёт хвост пачки и говорит один раз.
+    Подпись едет на одном из апдейтов альбома, и медленный аплоад растягивает
+    их на десятки секунд: требовать текст в этом зазоре — значит требовать то,
+    что админ уже отправил. Превью строится сразу, блок подтверждения прямо
+    говорит про пустой текст, и отправить можно как есть.
     """
     from tests.conftest import FakeMessage, FakeState
     from awgbot.bot.handlers import admin as admin_h
@@ -327,11 +329,106 @@ async def test_broadcast_collects_photos_and_answers_the_batch_once(
         await admin_h.broadcast_receive(m, state, services)
     await _settled(admin_h, cfg.ADMIN_ID)
 
+    albums = [r for r in fake_bot.records if r[0] == "send_media_group"]
+    assert len(albums) == 1, "превью-альбом не построен без текста"
+    assert [m.media for m in albums[0][2]] == ["FILE1", "FILE2"]
     said = [t for m in msgs for kind, t, _ in m.sent if kind == "answer"]
-    counters = [t for t in said if "из 10" in t]
-    assert len(counters) == 1 and "2 картинки из 10" in counters[0], counters
-    assert (await state.get_data())["photos"] == ["FILE1", "FILE2"]
-    assert "text" not in (await state.get_data()), "объявление ушло без текста"
+    confirm = [t for t in said if "Отправляем?" in t]
+    assert len(confirm) == 1, said
+    assert "Текста в нём нет" in confirm[0], "блок молчит про пустой текст"
+    assert not any("Пришли текст" in t for t in said), \
+        "второй шаг вернулся: бот требует текст, который мог ещё не доехать"
+
+
+async def test_late_caption_joins_the_preview(services, make_active_client,
+                                              fake_bot, monkeypatch):
+    """Подпись, доехавшая с опоздавшим снимком, вливается в превью сама.
+
+    Ровно сценарий медленного аплоада: первый снимок уже показан превью «без
+    текста», затем доезжает снимок, на котором ехала подпись, — и превью
+    пересобирается уже полным, без единого действия админа.
+    """
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
+    c = make_active_client(name="Ксюша", tg_id=7017)
+    state = FakeState()
+    await state.update_data(targets=[c.id])
+
+    first = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
+                        photo=_photo("SLOW1"))
+    await admin_h.broadcast_receive(first, state, services)
+    await _settled(admin_h, cfg.ADMIN_ID)
+    old_ids = (await state.get_data())["preview_ids"]
+    assert old_ids, "превью без текста не показано"
+
+    late = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
+                       photo=_photo("SLOW2"), caption="Важно! Обновление")
+    await admin_h.broadcast_receive(late, state, services)
+    await _settled(admin_h, cfg.ADMIN_ID)
+
+    deleted = [r[2] for r in fake_bot.records if r[0] == "delete_message"]
+    assert set(old_ids) <= set(deleted), "старое превью-огрызок остался в чате"
+    albums = [r for r in fake_bot.records if r[0] == "send_media_group"]
+    media = albums[-1][2]
+    assert [m.media for m in media] == ["SLOW1", "SLOW2"]
+    assert media[0].caption == "Важно! Обновление"
+    data = await state.get_data()
+    assert data["text"] == "Важно! Обновление"
+
+
+async def test_broadcast_sends_photos_without_text(services, make_active_client,
+                                                   fake_bot):
+    """Объявление из одних картинок отправляется: превью прямо спрашивало про
+    пустой текст, и «Отправить» — легитимный ответ на этот вопрос."""
+    from tests.conftest import FakeCallback, FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    c = make_active_client(name="Ксюша", tg_id=7018)
+    state = FakeState()
+    await state.update_data(targets=[c.id], photos=["A", "B"])
+
+    cb = FakeCallback(message=FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID,
+                                          bot=fake_bot),
+                      user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await admin_h.broadcast_send(cb, state, services)
+
+    albums = [r for r in fake_bot.records if r[0] == "send_media_group"]
+    assert albums and albums[-1][1] == 7018, "объявление без текста не ушло"
+    assert albums[-1][2][0].caption is None, "пустая строка уехала подписью"
+
+
+async def test_every_draft_prompt_offers_a_way_out(services, make_active_client,
+                                                   fake_bot):
+    """Из любой отбивки черновика есть выход кнопкой — тупиков не бывает.
+
+    «Отмена» текстом бот понять не обязан (и не пытается: слово ушло бы в
+    рассылку), значит кнопка обязана быть на каждом сообщении, где диалог
+    чего-то ждёт: и на отказе по длине, и на «жду текст или картинку».
+    """
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    c = make_active_client(name="Ксюша", tg_id=7019)
+    state = FakeState()
+    await state.update_data(targets=[c.id], photos=["A"])
+
+    long_text = "я" * (cfg.TG_CAPTION_MAX + 1)
+    over = FakeMessage(text=long_text, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID,
+                       bot=fake_bot)
+    await admin_h.broadcast_receive(over, state, services)
+    markups = [mk for kind, t, mk in over.sent if kind == "answer"]
+    assert markups and markups[-1] is not None, "отказ по длине — тупик без кнопки"
+
+    empty = FakeMessage(text="   ", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID,
+                        bot=fake_bot)
+    await admin_h.broadcast_receive(empty, state, services)
+    markups = [mk for kind, t, mk in empty.sent if kind == "answer"]
+    assert markups and markups[-1] is not None, "пустое сообщение — тупик без кнопки"
 
 
 async def test_broadcast_album_with_caption_is_one_action(

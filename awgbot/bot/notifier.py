@@ -98,8 +98,8 @@ async def send_announcement(bot, tg_id, text: str, photos=()):
     if not photos:
         return await bot.send_message(tg_id, text, reply_markup=kb.hide_only())
     if len(photos) == 1:
-        return await bot.send_photo(tg_id, photos[0], caption=text)
-    media = [InputMediaPhoto(media=p, caption=text if i == 0 else None)
+        return await bot.send_photo(tg_id, photos[0], caption=text or None)
+    media = [InputMediaPhoto(media=p, caption=(text or None) if i == 0 else None)
              for i, p in enumerate(photos)]
     return await bot.send_media_group(tg_id, media=media)
 

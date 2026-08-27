@@ -1609,7 +1609,11 @@ async def broadcast_next(cb: CallbackQuery, state: FSMContext, services):
 # пауза перед превью, чтобы дождаться хвоста пачки и отрендерить ОДИН раз, а не
 # десять. Подпись, набранная в окне вложений, приезжает на одном из сообщений
 # альбома — черновик подхватывает её с любого.
-_BC_SETTLE_SECONDS = 1.5
+# 3 секунды, а не 1.5: пауза покрывает только ЗАЗОР между апдейтами уже
+# загруженных снимков. Медленный аплоад она не покроет никогда (и не должна) —
+# для него работает пересборка превью по мере доезда, а отбивка «жду текст»
+# прямо говорит подождать.
+_BC_SETTLE_SECONDS = 3.0
 _bc_locks: dict[int, asyncio.Lock] = {}
 _bc_render_tasks: dict[int, asyncio.Task] = {}
 
@@ -1659,7 +1663,8 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
         if draft:
             await state.update_data(**draft)
         elif not message.photo:
-            await ask_tracked(message, services, texts.BROADCAST_EMPTY)
+            await ask_tracked(message, services, texts.BROADCAST_EMPTY,
+                              reply_markup=kb.broadcast_cancel())
             return
     # Превью: после картинки — с паузой (может ехать хвост альбома), после
     # голого текста — сразу, ему пачка не свойственна.
@@ -1694,23 +1699,24 @@ async def _bc_preview(message: Message, state: FSMContext, services):
         if data.get("photos_dropped"):
             await state.update_data(photos_dropped=0)
             notes.append(texts.broadcast_too_many_photos())
-        text = data.get("text")
-        if not text:
-            notes.append(texts.broadcast_photos_pending(len(photos)))
-            await ask_tracked(message, services, "\n\n".join(notes))
-            return
+        text = data.get("text") or ""
+        if not text and not photos:
+            return                # нечему собираться (страховка, receive отбил)
         # Лимит зависит от наличия картинок: с ними текст едет подписью, а у неё
         # потолок вчетверо ниже. Проверка живёт ЗДЕСЬ, на итоговом черновике:
         # картинка, добавленная после законного длинного текста, меняет лимит
         # задним числом, и проверка только на приёме текста это пропустила бы.
+        # Отбивка отказа — с кнопкой отмены и в preview_ids: выход в один тап
+        # из любого состояния, и никакого накопления при пересборках.
         limit = config.TG_CAPTION_MAX if photos else config.TG_TEXT_MAX
-        length = int(data.get("text_len") or len(text))
+        length = int(data.get("text_len") or len(text)) if text else 0
         if length > limit:
             notes.append(texts.broadcast_too_long(length, limit, bool(photos)))
-            await ask_tracked(message, services, "\n\n".join(notes))
+            note = await message.answer("\n\n".join(notes),
+                                        reply_markup=kb.broadcast_cancel())
+            await call(services.db.add_content_msg_id, chat_id, note.message_id)
+            await state.update_data(preview_ids=[note.message_id])
             return
-        if notes:
-            await ask_tracked(message, services, notes[0])
         sel = set(data.get("targets") or ())
         tg_ids = await call(services.db.broadcast_recipients_for_clients,
                             sel, config.ADMIN_ID)
@@ -1735,17 +1741,28 @@ async def _bc_preview(message: Message, state: FSMContext, services):
                 # текстом нельзя: «приложено 3 фото» не показывает ни порядка,
                 # ни того, как подпись села под картинками. Блок подтверждения
                 # идёт следом — reply_markup у альбома не бывает.
+                #
+                # БЕЗ текста превью строится ТОЧНО ТАК ЖЕ, а не превращается в
+                # переспрос: подпись могла ещё не доехать (она едет на одном из
+                # апдейтов альбома, и медленный аплоад растягивает их на десятки
+                # секунд) — доедет, и превью пересоберётся само. Блок при этом
+                # прямо спрашивает про пустой текст, отправить можно как есть.
                 sent = await send_announcement(message.bot, chat_id, text, photos)
                 ids = [m.message_id for m in sent] if isinstance(sent, (list, tuple)) \
                     else [sent.message_id]
-                confirm = await message.answer(
-                    texts.broadcast_preview_photos(len(tg_ids), names, friends),
-                    reply_markup=kb.broadcast_confirm())
+                confirm_text = texts.broadcast_preview_photos(
+                    len(tg_ids), names, friends, has_text=bool(text))
+                if notes:
+                    confirm_text = notes[0] + "\n\n" + confirm_text
+                confirm = await message.answer(confirm_text,
+                                               reply_markup=kb.broadcast_confirm())
                 await state.update_data(preview_ids=[*ids, confirm.message_id])
             else:
-                confirm = await message.answer(
-                    texts.broadcast_preview(text, len(tg_ids), names, friends),
-                    reply_markup=kb.broadcast_confirm())
+                confirm_text = texts.broadcast_preview(text, len(tg_ids), names, friends)
+                if notes:
+                    confirm_text = notes[0] + "\n\n" + confirm_text
+                confirm = await message.answer(confirm_text,
+                                               reply_markup=kb.broadcast_confirm())
                 await state.update_data(preview_ids=[confirm.message_id])
         except TelegramBadRequest:
             await ask_tracked(
@@ -1786,11 +1803,13 @@ async def broadcast_cancel_h(cb: CallbackQuery, state: FSMContext, services):
 async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     _bc_cancel_render(cb.message.chat.id)
     data = await state.get_data()
-    text = data.get("text")
+    text = data.get("text") or ""
     photos = tuple(data.get("photos") or ())
     sel = tuple(sorted(data.get("targets") or ()))
     await state.clear()
-    if not text or not sel:
+    # Текст опционален, когда есть картинки: объявление из одних снимков
+    # легально, превью прямо спрашивало про пустую подпись.
+    if not sel or (not text and not photos):
         await cb.answer("Нечего отправлять.", show_alert=True)
         return
     # Страховка от устаревшей кнопки: превью пересобирается при каждом изменении
@@ -1799,7 +1818,7 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     # в Telegram — каждый получатель вернул бы Bad Request, и отчёт записал бы
     # их в «заблокировали бота».
     limit = config.TG_CAPTION_MAX if photos else config.TG_TEXT_MAX
-    length = int(data.get("text_len") or len(text))
+    length = int(data.get("text_len") or len(text)) if text else 0
     if length > limit:
         await cb.answer(f"Не отправлено: {length} символов при лимите {limit} "
                         "(с картинками текст едет подписью). Сократи и пришли "
