@@ -1609,11 +1609,16 @@ async def broadcast_next(cb: CallbackQuery, state: FSMContext, services):
 # пауза перед превью, чтобы дождаться хвоста пачки и отрендерить ОДИН раз, а не
 # десять. Подпись, набранная в окне вложений, приезжает на одном из сообщений
 # альбома — черновик подхватывает её с любого.
-# 3 секунды, а не 1.5: пауза покрывает только ЗАЗОР между апдейтами уже
-# загруженных снимков. Медленный аплоад она не покроет никогда (и не должна) —
-# для него работает пересборка превью по мере доезда, а отбивка «жду текст»
-# прямо говорит подождать.
+# ДВЕ паузы перед превью, и выбор между ними — по наличию текста. Сигнала
+# «отправка админа закончилась» у Bot API нет: альбом приезжает отдельными
+# апдейтами по мере аплоада, счёт группы неизвестен. Но есть надёжный прокси —
+# подпись. Пока в черновике одни картинки, спешить некуда: скорее всего где-то
+# ещё едет снимок с подписью (или админ печатает текст следом), и раннее превью
+# «Текста в нём нет» — это враньё с последующим перечёркиванием. Есть текст —
+# ждать нечего, только зазор между уже загруженными снимками. Каждый новый
+# апдейт перезапускает отсчёт, а опоздавшее всё равно вливается пересборкой.
 _BC_SETTLE_SECONDS = 3.0
+_BC_NO_TEXT_SETTLE_SECONDS = 25.0
 _bc_locks: dict[int, asyncio.Lock] = {}
 _bc_render_tasks: dict[int, asyncio.Task] = {}
 
@@ -1624,8 +1629,9 @@ def _bc_cancel_render(chat_id: int) -> None:
         task.cancel()
 
 
-async def _bc_render_later(message: Message, state: FSMContext, services):
-    await asyncio.sleep(_BC_SETTLE_SECONDS)
+async def _bc_render_later(message: Message, state: FSMContext, services,
+                           delay: float):
+    await asyncio.sleep(delay)
     await _bc_preview(message, state, services)
 
 
@@ -1666,11 +1672,14 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
             await ask_tracked(message, services, texts.BROADCAST_EMPTY,
                               reply_markup=kb.broadcast_cancel())
             return
-    # Превью: после картинки — с паузой (может ехать хвост альбома), после
-    # голого текста — сразу, ему пачка не свойственна.
+        has_text = bool(draft.get("text") or data.get("text"))
+    # Превью: после картинки — с паузой (может ехать хвост альбома; без текста
+    # пауза ДЛИННАЯ — см. константы), после голого текста — сразу, ему пачка
+    # не свойственна.
     if message.photo:
+        delay = _BC_SETTLE_SECONDS if has_text else _BC_NO_TEXT_SETTLE_SECONDS
         _bc_render_tasks[chat_id] = asyncio.create_task(
-            _bc_render_later(message, state, services))
+            _bc_render_later(message, state, services, delay))
     else:
         await _bc_preview(message, state, services)
 

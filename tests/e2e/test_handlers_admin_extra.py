@@ -319,6 +319,7 @@ async def test_photos_without_text_get_a_real_preview_not_a_demand(
     import awgbot.core.config as cfg
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
+    monkeypatch.setattr(admin_h, "_BC_NO_TEXT_SETTLE_SECONDS", 0)
     c = make_active_client(name="Ксюша", tg_id=7010)
     state = FakeState()
     await state.update_data(targets=[c.id])
@@ -340,6 +341,53 @@ async def test_photos_without_text_get_a_real_preview_not_a_demand(
         "второй шаг вернулся: бот требует текст, который мог ещё не доехать"
 
 
+async def test_preview_waits_much_longer_while_there_is_no_text(
+        services, make_active_client, fake_bot, monkeypatch):
+    """Пауза перед превью выбирается по наличию текста в черновике.
+
+    Сигнала «отправка админа закончилась» у Bot API нет — но есть надёжный
+    прокси: подпись. Пока в черновике одни картинки, где-то, скорее всего, ещё
+    едет снимок с подписью, и раннее превью «Текста в нём нет» — враньё с
+    последующим перечёркиванием (дважды поймано на живой рассылке). Есть
+    текст — ждать нечего, только зазор между загруженными снимками.
+    """
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    delays = []
+
+    def spy_render(message, state, services_, delay):
+        delays.append(delay)          # синхронно, при вызове: таска может не успеть
+
+        async def _noop():
+            pass
+        return _noop()
+
+    monkeypatch.setattr(admin_h, "_bc_render_later", spy_render)
+    c = make_active_client(name="Ксюша", tg_id=7020)
+    state = FakeState()
+    await state.update_data(targets=[c.id])
+
+    plain = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
+                        photo=_photo("P1"))
+    await admin_h.broadcast_receive(plain, state, services)
+    assert delays[-1] == admin_h._BC_NO_TEXT_SETTLE_SECONDS, \
+        "без текста превью не ждёт возможную подпись"
+
+    captioned = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
+                            photo=_photo("P2"), caption="текст доехал")
+    await admin_h.broadcast_receive(captioned, state, services)
+    assert delays[-1] == admin_h._BC_SETTLE_SECONDS, \
+        "текст в руках, а превью всё ещё тянет длинную паузу"
+
+    trailing = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
+                           photo=_photo("P3"))
+    await admin_h.broadcast_receive(trailing, state, services)
+    assert delays[-1] == admin_h._BC_SETTLE_SECONDS, \
+        "текст уже в черновике, хвост альбома не должен ждать длинно"
+
+
 async def test_late_caption_joins_the_preview(services, make_active_client,
                                               fake_bot, monkeypatch):
     """Подпись, доехавшая с опоздавшим снимком, вливается в превью сама.
@@ -353,6 +401,7 @@ async def test_late_caption_joins_the_preview(services, make_active_client,
     import awgbot.core.config as cfg
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
+    monkeypatch.setattr(admin_h, "_BC_NO_TEXT_SETTLE_SECONDS", 0)
     c = make_active_client(name="Ксюша", tg_id=7017)
     state = FakeState()
     await state.update_data(targets=[c.id])
@@ -441,6 +490,7 @@ async def test_broadcast_album_with_caption_is_one_action(
     import awgbot.core.config as cfg
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
+    monkeypatch.setattr(admin_h, "_BC_NO_TEXT_SETTLE_SECONDS", 0)
     c = make_active_client(name="Ксюша", tg_id=7013)
     state = FakeState()
     await state.update_data(targets=[c.id])
@@ -477,6 +527,7 @@ async def test_broadcast_photos_after_text_rebuild_the_preview(
     import awgbot.core.config as cfg
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
+    monkeypatch.setattr(admin_h, "_BC_NO_TEXT_SETTLE_SECONDS", 0)
     c = make_active_client(name="Ксюша", tg_id=7014)
     state = FakeState()
     await state.update_data(targets=[c.id])
@@ -512,6 +563,7 @@ async def test_broadcast_refuses_caption_over_limit_and_keeps_the_draft(
     import awgbot.core.config as cfg
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
+    monkeypatch.setattr(admin_h, "_BC_NO_TEXT_SETTLE_SECONDS", 0)
     c = make_active_client(name="Ксюша", tg_id=7011)
     state = FakeState()
     await state.update_data(targets=[c.id], photos=["FILE1"])
@@ -592,6 +644,7 @@ async def test_broadcast_concurrent_album_updates_lose_nothing(
         return fn(*a, **k)          # без to_thread: детерминированный интерливинг
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
+    monkeypatch.setattr(admin_h, "_BC_NO_TEXT_SETTLE_SECONDS", 0)
     monkeypatch.setattr(admin_h, "call", direct_call)
     c = make_active_client(name="Ксюша", tg_id=7016)
     state = NetworkishState()
@@ -616,6 +669,7 @@ async def test_broadcast_stops_at_the_album_limit(services, make_active_client,
     import awgbot.core.config as cfg
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
+    monkeypatch.setattr(admin_h, "_BC_NO_TEXT_SETTLE_SECONDS", 0)
     c = make_active_client(name="Ксюша", tg_id=7012)
     state = FakeState()
     await state.update_data(targets=[c.id],
