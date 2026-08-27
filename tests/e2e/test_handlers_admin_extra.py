@@ -2,6 +2,8 @@
 продление, выдача файла, блок с приостановкой (FSM дней), личные qr/file,
 выбор устройства для добавления, карточка пира без приватного ключа.
 """
+import asyncio
+
 import pytest
 
 from awgbot.bot.handlers import admin as ah
@@ -296,34 +298,112 @@ def _photo(file_id):
             types.SimpleNamespace(file_id=file_id)]
 
 
-async def test_broadcast_collects_photos_and_waits_for_text(services, make_active_client,
-                                                            fake_bot):
-    """Картинки копятся, объявление не уходит, пока нет текста.
+async def _settled(admin_h, chat_id):
+    """Дождаться отложенного рендера превью (пауза на хвост альбома)."""
+    task = admin_h._bc_render_tasks.get(chat_id)
+    if task:
+        await task
 
-    Альбом Telegram доставляет НЕСКОЛЬКИМИ сообщениями, по одному на снимок, —
-    общего апдейта на альбом не существует. Поэтому складываем в порядке
-    прихода и собираем альбом сами при отправке.
+
+async def test_broadcast_collects_photos_and_answers_the_batch_once(
+        services, make_active_client, fake_bot, monkeypatch):
+    """Пачка картинок — ОДНА отбивка, по итоговому счёту.
+
+    Альбом приезжает разом, отдельными апдейтами; отвечать на каждый — шум из
+    десяти «принята» подряд. Рендер ждёт хвост пачки и говорит один раз.
     """
     from tests.conftest import FakeMessage, FakeState
     from awgbot.bot.handlers import admin as admin_h
     import awgbot.core.config as cfg
 
+    monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
     c = make_active_client(name="Ксюша", tg_id=7010)
     state = FakeState()
     await state.update_data(targets=[c.id])
 
-    for n in (1, 2):
-        msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
-                          photo=_photo(f"FILE{n}"))
-        await admin_h.broadcast_receive(msg, state, services)
-        assert any(f"<b>{n}</b> из 10" in t for _, t, _ in msg.sent), msg.sent
+    msgs = [FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
+                        photo=_photo(f"FILE{n}")) for n in (1, 2)]
+    for m in msgs:
+        await admin_h.broadcast_receive(m, state, services)
+    await _settled(admin_h, cfg.ADMIN_ID)
 
+    said = [t for m in msgs for kind, t, _ in m.sent if kind == "answer"]
+    counters = [t for t in said if "из 10" in t]
+    assert len(counters) == 1 and "2 картинки из 10" in counters[0], counters
     assert (await state.get_data())["photos"] == ["FILE1", "FILE2"]
     assert "text" not in (await state.get_data()), "объявление ушло без текста"
 
 
+async def test_broadcast_album_with_caption_is_one_action(
+        services, make_active_client, fake_bot, monkeypatch):
+    """Снимки + текст, набранный в окне вложений, — готовое превью без
+    дополнительных шагов. Подпись приезжает на ОДНОМ из сообщений альбома, и
+    черновик обязан подхватить её с любого."""
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
+    c = make_active_client(name="Ксюша", tg_id=7013)
+    state = FakeState()
+    await state.update_data(targets=[c.id])
+
+    first = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
+                        photo=_photo("A"), caption="Переезд начался")
+    second = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
+                         photo=_photo("B"))
+    await admin_h.broadcast_receive(first, state, services)
+    await admin_h.broadcast_receive(second, state, services)
+    await _settled(admin_h, cfg.ADMIN_ID)
+
+    albums = [r for r in fake_bot.records if r[0] == "send_media_group"]
+    assert len(albums) == 1, "превью-альбом не отправлен или отправлен дважды"
+    media = albums[0][2]
+    assert [m.media for m in media] == ["A", "B"]
+    assert media[0].caption == "Переезд начался"
+    confirms = [t for m in (first, second) for kind, t, mk in m.sent
+                if kind == "answer" and mk is not None]
+    assert confirms and "Отправляем?" in confirms[-1], "нет блока подтверждения"
+    ids = (await state.get_data())["preview_ids"]
+    assert len(ids) == 3, "в preview_ids не альбом плюс блок подтверждения"
+
+
+async def test_broadcast_photos_after_text_rebuild_the_preview(
+        services, make_active_client, fake_bot, monkeypatch):
+    """Обратный порядок — текст, потом картинки — тоже одно объявление.
+
+    Прежнее превью при этом убирается: иначе в чате остались бы два живых блока
+    подтверждения и запись, неотличимая от разосланной.
+    """
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
+    c = make_active_client(name="Ксюша", tg_id=7014)
+    state = FakeState()
+    await state.update_data(targets=[c.id])
+
+    txt = FakeMessage(text="Переезд начался", chat_id=cfg.ADMIN_ID,
+                      user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await admin_h.broadcast_receive(txt, state, services)
+    old_ids = (await state.get_data())["preview_ids"]
+    assert old_ids, "текстовое превью не показано"
+
+    pic = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
+                      photo=_photo("A"))
+    await admin_h.broadcast_receive(pic, state, services)
+    await _settled(admin_h, cfg.ADMIN_ID)
+
+    deleted = [r[2] for r in fake_bot.records if r[0] == "delete_message"]
+    assert set(old_ids) <= set(deleted), "старое превью осталось в чате"
+    albums = [r for r in fake_bot.records if r[0] == "send_media_group"]
+    photos_sent = [r for r in fake_bot.records if r[0] == "send_photo"]
+    assert albums or photos_sent, "превью не пересобрано с картинкой"
+
+
 async def test_broadcast_refuses_caption_over_limit_and_keeps_the_draft(
-        services, make_active_client, fake_bot):
+        services, make_active_client, fake_bot, monkeypatch):
     """С картинками лимит 1024: текст едет подписью, а длинная подпись — это
     привилегия Premium-аккаунта, которым бот быть не может.
 
@@ -334,6 +414,7 @@ async def test_broadcast_refuses_caption_over_limit_and_keeps_the_draft(
     from awgbot.bot.handlers import admin as admin_h
     import awgbot.core.config as cfg
 
+    monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
     c = make_active_client(name="Ксюша", tg_id=7011)
     state = FakeState()
     await state.update_data(targets=[c.id], photos=["FILE1"])
@@ -346,7 +427,7 @@ async def test_broadcast_refuses_caption_over_limit_and_keeps_the_draft(
     said = " ".join(t for _, t, _ in msg.sent)
     assert str(cfg.TG_CAPTION_MAX) in said and str(cfg.TG_CAPTION_MAX + 1) in said, \
         "не названы ни лимит, ни фактическая длина"
-    assert "text" not in (await state.get_data()), "объявление принято сверх лимита"
+    assert "Отправляем?" not in said, "показано превью сверх лимита"
     assert (await state.get_data())["photos"] == ["FILE1"], "черновик потерян"
 
     # тот же текст БЕЗ картинок в лимит укладывается — лимита два, и они разные
@@ -355,10 +436,81 @@ async def test_broadcast_refuses_caption_over_limit_and_keeps_the_draft(
     msg2 = FakeMessage(text=long_text, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID,
                        bot=fake_bot)
     await admin_h.broadcast_receive(msg2, state2, services)
-    assert (await state2.get_data()).get("text") == long_text
+    assert any("Отправляем?" in t for _, t, _ in msg2.sent)
 
 
-async def test_broadcast_stops_at_the_album_limit(services, make_active_client, fake_bot):
+async def test_broadcast_send_revalidates_the_limit(services, make_active_client,
+                                                    fake_bot):
+    """Кнопка «Отправить» перепроверяет лимит по итоговому черновику.
+
+    Картинка, добавленная после законного длинного текста, меняет лимит задним
+    числом. Уйди такое в Telegram — каждый получатель вернул бы Bad Request, а
+    отчёт записал бы всех в «заблокировали бота».
+    """
+    from tests.conftest import FakeCallback, FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    c = make_active_client(name="Ксюша", tg_id=7015)
+    state = FakeState()
+    long_text = "я" * (cfg.TG_CAPTION_MAX + 1)
+    await state.update_data(targets=[c.id], photos=["FILE1"],
+                            text=long_text, text_len=len(long_text))
+
+    cb = FakeCallback(message=FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID,
+                                          bot=fake_bot),
+                      user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await admin_h.broadcast_send(cb, state, services)
+    assert cb.answers and cb.answers[-1][1] is True, "отправка не остановлена"
+    assert not [r for r in fake_bot.records if r[0] == "send_media_group"], \
+        "объявление ушло сверх лимита"
+
+
+async def test_broadcast_concurrent_album_updates_lose_nothing(
+        services, make_active_client, fake_bot, monkeypatch):
+    """Апдейты альбома aiogram обрабатывает ПАРАЛЛЕЛЬНО (handle_as_tasks).
+
+    Без замка два конкурентных read-modify-write по FSM читают одинаковый
+    список, и один снимок молча затирает другой — альбом уходит неполным.
+
+    Хранилище здесь НАРОЧНО уступает петлю на каждом вызове, как это делает
+    любое сетевое (Redis). На MemoryStorage чтение и запись стоят вплотную без
+    точки переключения, и гонка не складывается СЛУЧАЙНО — замок делает
+    целостность свойством кода, а не удачным свойством хранилища.
+    """
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    class NetworkishState(FakeState):
+        async def get_data(self):
+            await asyncio.sleep(0)
+            return await super().get_data()
+
+        async def update_data(self, **kw):
+            await asyncio.sleep(0)
+            await super().update_data(**kw)
+
+    async def direct_call(fn, *a, **k):
+        return fn(*a, **k)          # без to_thread: детерминированный интерливинг
+
+    monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
+    monkeypatch.setattr(admin_h, "call", direct_call)
+    c = make_active_client(name="Ксюша", tg_id=7016)
+    state = NetworkishState()
+    await state.update_data(targets=[c.id])
+
+    msgs = [FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
+                        photo=_photo(f"F{n}")) for n in range(4)]
+    await asyncio.gather(*(admin_h.broadcast_receive(m, state, services)
+                           for m in msgs))
+    await _settled(admin_h, cfg.ADMIN_ID)
+    assert sorted((await state.get_data())["photos"]) == ["F0", "F1", "F2", "F3"], \
+        "конкурентные апдейты потеряли снимок"
+
+
+async def test_broadcast_stops_at_the_album_limit(services, make_active_client,
+                                                  fake_bot, monkeypatch):
     """Одиннадцатая картинка не принимается: Telegram не берёт в альбом больше
     десяти. Отбиваем на приёме, а не на отправке — иначе объявление упало бы
     целиком, после набранного текста."""
@@ -366,6 +518,7 @@ async def test_broadcast_stops_at_the_album_limit(services, make_active_client, 
     from awgbot.bot.handlers import admin as admin_h
     import awgbot.core.config as cfg
 
+    monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
     c = make_active_client(name="Ксюша", tg_id=7012)
     state = FakeState()
     await state.update_data(targets=[c.id],
@@ -374,7 +527,8 @@ async def test_broadcast_stops_at_the_album_limit(services, make_active_client, 
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
                       photo=_photo("EXTRA"))
     await admin_h.broadcast_receive(msg, state, services)
-    assert any(str(cfg.TG_ALBUM_MAX) in t for _, t, _ in msg.sent)
+    await _settled(admin_h, cfg.ADMIN_ID)
+    assert any("лишние не приняты" in t for _, t, _ in msg.sent), msg.sent
     assert "EXTRA" not in (await state.get_data())["photos"]
 
 

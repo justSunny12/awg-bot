@@ -8,6 +8,7 @@ handlers/admin.py — роутер администратора.
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 from awgbot.core import config
@@ -1602,93 +1603,155 @@ async def broadcast_next(cb: CallbackQuery, state: FSMContext, services):
     await cb.answer()
 
 
+# Альбом Telegram доставляет НЕСКОЛЬКИМИ апдейтами, по одному на снимок, и
+# aiogram обрабатывает их ПАРАЛЛЕЛЬНО (handle_as_tasks по умолчанию). Отсюда
+# двое: замок — иначе конкурентные read-modify-write по FSM теряют снимки, — и
+# пауза перед превью, чтобы дождаться хвоста пачки и отрендерить ОДИН раз, а не
+# десять. Подпись, набранная в окне вложений, приезжает на одном из сообщений
+# альбома — черновик подхватывает её с любого.
+_BC_SETTLE_SECONDS = 1.5
+_bc_locks: dict[int, asyncio.Lock] = {}
+_bc_render_tasks: dict[int, asyncio.Task] = {}
+
+
+def _bc_cancel_render(chat_id: int) -> None:
+    task = _bc_render_tasks.pop(chat_id, None)
+    if task:
+        task.cancel()
+
+
+async def _bc_render_later(message: Message, state: FSMContext, services):
+    await asyncio.sleep(_BC_SETTLE_SECONDS)
+    await _bc_preview(message, state, services)
+
+
 @router.message(Broadcast.text)
 async def broadcast_receive(message: Message, state: FSMContext, services):
+    chat_id = message.chat.id
+    # Ожидающий рендер отменяем ПЕРВЫМ ДЕЛОМ, до первого await: пришёл новый
+    # кусок черновика — прежнее превью уже неактуально, и дать ему дорисоваться
+    # в зазоре между апдейтами значит показать (и тут же перечеркнуть) промежуток.
+    _bc_cancel_render(chat_id)
     # Своё сообщение админа — в уборку: иначе после отмены оно остаётся висеть,
     # а вместе с ним и весь набранный черновик объявления.
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    data = await state.get_data()
-    photos: list = list(data.get("photos") or ())
-
-    # Картинка — не текст объявления, а вложение к нему: копим и ждём текст.
-    # Альбом Telegram доставляет НЕСКОЛЬКИМИ сообщениями (по одному на снимок),
-    # общего для них апдейта не существует — поэтому просто складываем в том
-    # порядке, в каком пришли, и собираем альбом сами при отправке.
+    lock = _bc_locks.setdefault(chat_id, asyncio.Lock())
+    async with lock:
+        data = await state.get_data()
+        photos: list = list(data.get("photos") or ())
+        draft: dict = {}
+        if message.photo:
+            if len(photos) >= config.TG_ALBUM_MAX:
+                draft["photos_dropped"] = int(data.get("photos_dropped") or 0) + 1
+            else:
+                # последний размер — оригинал: Telegram отдаёт лесенку превью
+                photos.append(message.photo[-1].file_id)
+                draft["photos"] = photos
+        plain = (message.text or message.caption or "").strip()
+        if plain:
+            # html_text/html_caption, а НЕ text: форматирование живёт в entities,
+            # голая строка уронила бы разметку. Новый текст ЗАМЕНЯЕТ прежний —
+            # так «не влезло, пришли заново» и правка опечатки работают сами.
+            # Длину меряем по видимым символам: HTML-теги в счёт Telegram не идут,
+            # иначе жирный шрифт съедал бы лимит.
+            body = message.html_text if message.text else message.html_caption
+            draft["text"], draft["text_len"] = body.strip(), len(plain)
+        if draft:
+            await state.update_data(**draft)
+        elif not message.photo:
+            await ask_tracked(message, services, texts.BROADCAST_EMPTY)
+            return
+    # Превью: после картинки — с паузой (может ехать хвост альбома), после
+    # голого текста — сразу, ему пачка не свойственна.
     if message.photo:
-        if len(photos) >= config.TG_ALBUM_MAX:
-            await ask_tracked(message, services, texts.broadcast_too_many_photos())
-            return
-        # последний размер — оригинал: Telegram отдаёт лесенку превью
-        photos.append(message.photo[-1].file_id)
-        await state.update_data(photos=photos)
-        if not (message.caption or "").strip():
-            await ask_tracked(message, services, texts.broadcast_photo_added(len(photos)))
-            return
+        _bc_render_tasks[chat_id] = asyncio.create_task(
+            _bc_render_later(message, state, services))
+    else:
+        await _bc_preview(message, state, services)
 
-    body = message.html_text if message.text else (message.caption and message.html_caption)
-    plain = (message.text or message.caption or "")
-    if not (plain or "").strip():
-        await ask_tracked(message, services, texts.BROADCAST_EMPTY)
-        return
 
-    # Лимит зависит от наличия картинок: с ними текст едет подписью, а у неё
-    # потолок вчетверо ниже. Считаем ВИДИМЫЕ символы, а не длину HTML: разметка
-    # живёт в entities и в счёт Telegram не идёт, иначе жирный шрифт съедал бы
-    # лимит.
-    limit = config.TG_CAPTION_MAX if photos else config.TG_TEXT_MAX
-    if len(plain) > limit:
-        await ask_tracked(message, services,
-                          texts.broadcast_too_long(len(plain), limit, bool(photos)))
-        return
-    # html_text, а НЕ text. Форматирование, сделанное средствами Telegram
-    # (жирный, курсив, ссылки), живёт не в тексте, а в entities: `message.text`
-    # отдаёт голую строку, и объявление уходило без разметки — как и превью.
-    # html_text собирает entities обратно в HTML, а бот шлёт с parse_mode=HTML.
-    # Побочно это чинит и битую разметку: обычные «<» и «>» из текста
-    # экранируются, а не ломают разбор.
-    text = body.strip()
-    sel = set(data.get("targets") or ())
-    tg_ids = await call(services.db.broadcast_recipients_for_clients,
-                        sel, config.ADMIN_ID)
-    if not tg_ids:
-        await state.clear()
-        await message.answer("Некому отправлять — нет активных получателей.")
-        return
-    names = [c.name for c in await _bc_clients(services) if c.id in sel]
-    friends = await call(services.db.broadcast_has_friends, sel, config.ADMIN_ID)
-    # текст держим в FSM-data до подтверждения; отправляем HTML как есть.
-    # Битую разметку ловим здесь: если превью (обёрнутое в HTML) не отправилось —
-    # тот же текст провалил бы и рассылку. Просим поправить, состояние держим.
-    await state.update_data(text=text)
-    # Экран-приглашение тоже в уборку. Сам он не исчезнет: при переходе на
-    # превью навигация лишь СНИМАЕТ с него кнопки (_dismiss_previous_nav), и
-    # текст «пришли объявление» остаётся висеть над перепиской.
-    nav = await call(services.db.get_nav_message_id, message.chat.id)
-    if nav:
-        await call(services.db.add_content_msg_id, message.chat.id, nav)
-    try:
-        if photos:
-            # С картинками превью — САМО объявление, отправленное админу ровно в
-            # том виде, в каком уйдёт людям. Пересказать альбом текстом нельзя:
-            # «приложено 3 фото» не показывает ни порядка, ни того, как подпись
-            # села под картинками. Блок подтверждения идёт следом отдельным
-            # сообщением — reply_markup у альбома не бывает.
-            sent = await send_announcement(message.bot, message.chat.id, text, photos)
-            ids = [m.message_id for m in sent] if isinstance(sent, (list, tuple)) \
-                else [sent.message_id]
-            await state.update_data(preview_ids=ids)
-            await message.answer(
-                texts.broadcast_preview_photos(len(tg_ids), names, friends),
-                reply_markup=kb.broadcast_confirm())
-        else:
-            await message.answer(
-                texts.broadcast_preview(text, len(tg_ids), names, friends),
-                reply_markup=kb.broadcast_confirm())
-    except TelegramBadRequest:
-        await ask_tracked(
-            message, services,
-            "⚠️ Разметка бракованная (незакрытый тег?). Проверь текст и пришли "
-            "заново.")
+async def _bc_preview(message: Message, state: FSMContext, services):
+    """Единая точка превью: собрать черновик, проверить, показать.
+
+    Превью ПЕРЕСОБИРАЕТСЯ на каждом изменении черновика: прежнее удаляется,
+    новое встаёт следом. Иначе в чате копились бы альбомы, неотличимые от
+    разосланного, и по два живых блока подтверждения.
+    """
+    chat_id = message.chat.id
+    lock = _bc_locks.setdefault(chat_id, asyncio.Lock())
+    async with lock:
+        data = await state.get_data()
+        if not data.get("targets"):
+            return          # отменили или отправили, пока превью ждало пачку
+        photos = list(data.get("photos") or ())
+        for mid in data.get("preview_ids") or ():
+            try:
+                await message.bot.delete_message(chat_id, mid)
+            except Exception:                          # noqa: BLE001
+                pass                                   # уже удалено/устарело
+        await state.update_data(preview_ids=[])
+        notes: list[str] = []
+        if data.get("photos_dropped"):
+            await state.update_data(photos_dropped=0)
+            notes.append(texts.broadcast_too_many_photos())
+        text = data.get("text")
+        if not text:
+            notes.append(texts.broadcast_photos_pending(len(photos)))
+            await ask_tracked(message, services, "\n\n".join(notes))
+            return
+        # Лимит зависит от наличия картинок: с ними текст едет подписью, а у неё
+        # потолок вчетверо ниже. Проверка живёт ЗДЕСЬ, на итоговом черновике:
+        # картинка, добавленная после законного длинного текста, меняет лимит
+        # задним числом, и проверка только на приёме текста это пропустила бы.
+        limit = config.TG_CAPTION_MAX if photos else config.TG_TEXT_MAX
+        length = int(data.get("text_len") or len(text))
+        if length > limit:
+            notes.append(texts.broadcast_too_long(length, limit, bool(photos)))
+            await ask_tracked(message, services, "\n\n".join(notes))
+            return
+        if notes:
+            await ask_tracked(message, services, notes[0])
+        sel = set(data.get("targets") or ())
+        tg_ids = await call(services.db.broadcast_recipients_for_clients,
+                            sel, config.ADMIN_ID)
+        if not tg_ids:
+            await state.clear()
+            await message.answer("Некому отправлять — нет активных получателей.")
+            return
+        names = [c.name for c in await _bc_clients(services) if c.id in sel]
+        friends = await call(services.db.broadcast_has_friends, sel, config.ADMIN_ID)
+        # Экран-приглашение тоже в уборку. Сам он не исчезнет: при переходе на
+        # превью навигация лишь СНИМАЕТ с него кнопки (_dismiss_previous_nav), и
+        # текст «пришли объявление» остаётся висеть над перепиской.
+        nav = await call(services.db.get_nav_message_id, chat_id)
+        if nav:
+            await call(services.db.add_content_msg_id, chat_id, nav)
+        # Битую разметку ловим здесь: если превью (обёрнутое в HTML) не
+        # отправилось — тот же текст провалил бы и рассылку.
+        try:
+            if photos:
+                # С картинками превью — САМО объявление, отправленное админу
+                # ровно в том виде, в каком уйдёт людям. Пересказать альбом
+                # текстом нельзя: «приложено 3 фото» не показывает ни порядка,
+                # ни того, как подпись села под картинками. Блок подтверждения
+                # идёт следом — reply_markup у альбома не бывает.
+                sent = await send_announcement(message.bot, chat_id, text, photos)
+                ids = [m.message_id for m in sent] if isinstance(sent, (list, tuple)) \
+                    else [sent.message_id]
+                confirm = await message.answer(
+                    texts.broadcast_preview_photos(len(tg_ids), names, friends),
+                    reply_markup=kb.broadcast_confirm())
+                await state.update_data(preview_ids=[*ids, confirm.message_id])
+            else:
+                confirm = await message.answer(
+                    texts.broadcast_preview(text, len(tg_ids), names, friends),
+                    reply_markup=kb.broadcast_confirm())
+                await state.update_data(preview_ids=[confirm.message_id])
+        except TelegramBadRequest:
+            await ask_tracked(
+                message, services,
+                "⚠️ Разметка бракованная (незакрытый тег?). Проверь текст и пришли "
+                "заново.")
 
 
 @router.callback_query(BroadcastCB.filter(F.action == "cancel"))
@@ -1704,7 +1767,10 @@ async def broadcast_cancel_h(cb: CallbackQuery, state: FSMContext, services):
     соседа. Без сброса передумавший на шаге ввода админ остался бы в состоянии
     Broadcast.text, и следующее его сообщение стало бы черновиком объявления.
     """
+    _bc_cancel_render(cb.message.chat.id)
     for mid in (await state.get_data()).get("preview_ids") or ():
+        if mid == cb.message.message_id:
+            continue          # его редактируем в панель, удалять нельзя
         try:
             await cb.bot.delete_message(cb.message.chat.id, mid)
         except Exception:                              # noqa: BLE001
@@ -1718,6 +1784,7 @@ async def broadcast_cancel_h(cb: CallbackQuery, state: FSMContext, services):
 
 @router.callback_query(BroadcastCB.filter(F.action == "send"))
 async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
+    _bc_cancel_render(cb.message.chat.id)
     data = await state.get_data()
     text = data.get("text")
     photos = tuple(data.get("photos") or ())
@@ -1725,6 +1792,18 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     await state.clear()
     if not text or not sel:
         await cb.answer("Нечего отправлять.", show_alert=True)
+        return
+    # Страховка от устаревшей кнопки: превью пересобирается при каждом изменении
+    # черновика, но кнопка «Отправить» могла пережить его в истории чата, а
+    # картинка, добавленная после текста, меняет лимит задним числом. Уйди это
+    # в Telegram — каждый получатель вернул бы Bad Request, и отчёт записал бы
+    # их в «заблокировали бота».
+    limit = config.TG_CAPTION_MAX if photos else config.TG_TEXT_MAX
+    length = int(data.get("text_len") or len(text))
+    if length > limit:
+        await cb.answer(f"Не отправлено: {length} символов при лимите {limit} "
+                        "(с картинками текст едет подписью). Сократи и пришли "
+                        "заново.", show_alert=True)
         return
     now = time.monotonic()
     if now - _last_broadcast_at.get(sel, 0.0) < _BROADCAST_COOLDOWN_SEC:
