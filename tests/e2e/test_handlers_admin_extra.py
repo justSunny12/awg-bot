@@ -340,6 +340,46 @@ async def test_photos_without_text_get_a_real_preview_not_a_demand(
         "второй шаг вернулся: бот требует текст, который мог ещё не доехать"
 
 
+async def test_one_batch_renders_the_preview_exactly_once(
+        services, make_active_client, fake_bot, monkeypatch):
+    """Пачка апдейтов одного альбома — РОВНО ОДИН рендер превью.
+
+    Ранняя отмена ожидающего рендера (в начале обработки апдейта) с
+    конкурентной пачкой не справляется: второй апдейт выполняет её раньше, чем
+    первый создал таску, — отменять нечего, выживают обе, и превью видимо
+    пересоздаётся по разу на апдейт. Единственность живой таски обязана давать
+    атомарная пара cancel+create в конце обработки: в каком бы порядке ни
+    финишировали апдейты, остаётся таска последнего.
+    """
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.bot.handlers import admin as admin_h
+    import awgbot.core.config as cfg
+
+    monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0.2)
+    renders = []
+    real_preview = admin_h._bc_preview
+
+    async def counting_preview(message, state, services_):
+        renders.append(1)
+        await real_preview(message, state, services_)
+
+    monkeypatch.setattr(admin_h, "_bc_preview", counting_preview)
+    c = make_active_client(name="Ксюша", tg_id=7021)
+    state = FakeState()
+    await state.update_data(targets=[c.id])
+
+    msgs = [FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot,
+                        photo=_photo(f"B{n}"), caption="текст" if n == 0 else None)
+            for n in range(3)]
+    await asyncio.gather(*(admin_h.broadcast_receive(m, state, services)
+                           for m in msgs))
+    await asyncio.sleep(0.5)          # дать пережившим таскам отработать
+
+    assert len(renders) == 1, f"превью рендерилось {len(renders)} раз(а) на одну пачку"
+    albums = [r for r in fake_bot.records if r[0] == "send_media_group"]
+    assert len(albums) == 1, "альбом-превью пересоздавался"
+
+
 async def test_late_caption_joins_the_preview(services, make_active_client,
                                               fake_bot, monkeypatch):
     """Подпись со снимка, пришедшего после превью, вливается пересборкой.
