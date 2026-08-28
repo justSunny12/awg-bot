@@ -36,18 +36,19 @@ def _silent_now(force_sound: bool) -> bool:
     return timeutil.in_quiet_hours(settings.get_int("quiet_hours.quiet_hours_start", 20), settings.get_int("quiet_hours.quiet_hours_end", 7))
 
 
-async def _send(bot, tg_id, text, markup, silent) -> None:
+async def _send(bot, tg_id, text, markup, silent):
     """Одна отправка: RetryAfter → подождать и повторить один раз; прочие
-    ошибки — залогировать и продолжить рассылку."""
+    ошибки — залогировать и продолжить рассылку. Возвращает отправленное
+    сообщение либо None."""
     try:
-        await bot.send_message(tg_id, text, reply_markup=markup,
-                               disable_notification=silent)
+        return await bot.send_message(tg_id, text, reply_markup=markup,
+                                      disable_notification=silent)
     except TelegramRetryAfter as e:
         log.warning("flood-контроль: жду %s с и повторяю для %s", e.retry_after, tg_id)
         await asyncio.sleep(e.retry_after)
         try:
-            await bot.send_message(tg_id, text, reply_markup=markup,
-                                   disable_notification=silent)
+            return await bot.send_message(tg_id, text, reply_markup=markup,
+                                          disable_notification=silent)
         except Exception as e2:                      # noqa: BLE001
             log.warning("Не удалось отправить уведомление %s (после retry): %s", tg_id, e2)
     except Exception as e:                           # noqa: BLE001
@@ -72,12 +73,14 @@ async def notify_one(bot, tg_id, text, *, reply_markup=None, force_sound=False) 
     часами и кнопкой «Скрыть» (по умолчанию, если reply_markup не передан).
     Для ответа самому инициатору на его же действие это НЕ нужно: там
     используем обычный message.answer (глушить эхо себе бессмысленно).
-    Ошибку отправки глотаем, как и в пакетной рассылке."""
+    Ошибку отправки глотаем, как и в пакетной рассылке. Возвращает отправленное
+    сообщение (None при неудаче) — финишеру self-update нужен его id, чтобы
+    снять кнопку при следующей ступени."""
     if not tg_id:
-        return
+        return None
     silent = _silent_now(force_sound)
     markup = reply_markup or kb.hide_only()
-    await _send(bot, tg_id, text, markup, silent)
+    return await _send(bot, tg_id, text, markup, silent)
 
 
 __all__ = ["send_notifications", "notify_one"]

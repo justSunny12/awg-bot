@@ -869,3 +869,37 @@ def test_specific_settings_handlers_are_registered_before_the_generic_one():
         assert order.index(specific) < generic, (
             f"{specific} зарегистрирован после do_action — тот перехватит его "
             f"колбэки, и кнопка будет крутиться без ответа")
+
+
+async def test_only_the_last_update_finisher_keeps_its_menu_button(
+        services, fake_bot, monkeypatch):
+    """Цепочка ступеней self-update — живая кнопка «В меню» только у последнего
+    финишера. У прежнего она снимается при отправке следующего; текст его при
+    этом не трогается — история «какая ступень чем закончилась» остаётся.
+    """
+    from awgbot.runtime.main import report_update_result
+    from awgbot.domain.services import Notification
+    from awgbot.bot import keyboards as kb
+    import awgbot.core.config as cfg
+
+    step = {"n": 0}
+
+    def fake_confirm():
+        step["n"] += 1
+        return Notification(cfg.ADMIN_ID, f"обновлён, ступень {step['n']}",
+                            reply_markup=kb.update_done_menu())
+
+    monkeypatch.setattr(services, "confirm_applied_update", fake_confirm)
+    monkeypatch.setattr(services, "pop_update_wait", lambda: None)
+
+    await report_update_result(fake_bot, services)       # ступень 1
+    await report_update_result(fake_bot, services)       # ступень 2 (рестарт)
+
+    stripped = [(chat, mid) for kind, chat, mid in fake_bot.records
+                if kind == "edit_markup"]
+    sent = [r for r in fake_bot.records if r[0] == "send_message"]
+    assert len(sent) == 2, "финишеры не отправлены"
+    assert len(stripped) == 1, "кнопка прежнего финишера не снята (или снята лишняя)"
+    # снята именно у ПЕРВОГО финишера, а состояние указывает на последний
+    first_id = int(services.db.get_state("update_report_msg").split(":")[1])
+    assert stripped[0][1] != first_id, "кнопку сняли у последнего, а не у прежнего"

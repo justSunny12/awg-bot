@@ -27,7 +27,7 @@ from awgbot.infra import awg
 from awgbot.infra.db import Database
 from awgbot.domain.services import Services
 from awgbot.bot.middleware import AccessMiddleware
-from awgbot.bot.notifier import send_notifications
+from awgbot.bot.notifier import notify_one, send_notifications
 from awgbot.runtime.scheduler import setup_scheduler
 from awgbot.runtime.watcher import AwgWatcher
 from awgbot.runtime.conf_watcher import ConfWatcher
@@ -56,6 +56,40 @@ async def do_reconcile(services: Services, bot: Bot) -> None:
         await send_notifications(bot, notifs)
     except Exception as e:                               # noqa: BLE001
         log.warning("reconcile_peers: %s", e)
+
+
+async def report_update_result(bot, services) -> None:
+    """Финишер self-update: убрать «дождись», отчитаться, ЕДИНСТВЕННАЯ живая
+    кнопка «В меню».
+
+    Обновление через несколько ступеней даёт цепочку рестартов, и финишер
+    приходит после каждого. Кнопку прежнего снимаем при отправке следующего:
+    остаться она должна только на последнем — иначе в чате столько же живых
+    «В меню», сколько было ступеней, и все ведут в одно место. Тексты при этом
+    не трогаем: сама история «какая ступень чем закончилась» ценна.
+    """
+    wait = await asyncio.to_thread(services.pop_update_wait)
+    note = await asyncio.to_thread(services.confirm_applied_update)
+    if wait is not None:                                 # прибрать «дождись» всегда
+        try:
+            await bot.delete_message(chat_id=wait[0], message_id=wait[1])
+        except Exception:                               # noqa: BLE001
+            pass
+    if note is None:
+        return
+    prev = await asyncio.to_thread(services.db.get_state, "update_report_msg")
+    if prev:
+        try:
+            pc, pm = prev.split(":", 1)
+            await bot.edit_message_reply_markup(chat_id=int(pc), message_id=int(pm),
+                                                reply_markup=None)
+        except Exception:                               # noqa: BLE001
+            pass                                        # нажали/удалили — не беда
+    sent = await notify_one(bot, note.tg_id, note.text,
+                            reply_markup=note.reply_markup)
+    if sent is not None:
+        await asyncio.to_thread(services.db.set_state, "update_report_msg",
+                                f"{sent.chat.id}:{sent.message_id}")
 
 
 async def main() -> None:
