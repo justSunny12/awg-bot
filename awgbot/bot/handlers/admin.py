@@ -1857,11 +1857,18 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     ok, failed = await broadcast(cb.message.bot, tg_ids, text, photos)
     names = [c.name for c in await _bc_clients(services) if c.id in set(sel)]
     friends = await call(services.db.broadcast_has_friends, sel, config.ADMIN_ID)
-    # Превью превращается в отчёт и ОСТАЁТСЯ в чате — кнопок на нём больше нет.
-    # Это единственный след разосланного: черновик уехал в уборку, а копии у
-    # отправителя нет, Telegram показывает ему только собственные реплики боту.
-    await edit(cb, texts.broadcast_report(names, friends, ok, failed, text,
-                                         len(photos)), None)
+    # Отчёт — ТОЛЬКО факт доставки; само объявление остаётся в чате строкой
+    # выше как след разосланного (копии у отправителя нет — Telegram показывает
+    # ему лишь собственные реплики боту, а не то, что бот разослал другим).
+    # С картинками след — альбом-превью, а cb.message — блок подтверждения под
+    # ним: он и редактируется в отчёт. Без картинок cb.message — само превью с
+    # текстом и хвостом «Отправляем?»: хвост срезаем (остаётся чистый текст
+    # объявления), отчёт приходит следом.
+    if photos:
+        await edit(cb, texts.broadcast_report(names, friends, ok, failed), None)
+    else:
+        await edit(cb, text, None)
+        await cb.message.answer(texts.broadcast_report(names, friends, ok, failed))
     # Панель — СЛЕДУЮЩИМ сообщением, со своим обычным текстом и статусами.
     # Прежде отчёт нёс на себе клавиатуру главного меню: тогда он либо
     # переписывался при следующей навигации, либо оставлял в чате второе живое
