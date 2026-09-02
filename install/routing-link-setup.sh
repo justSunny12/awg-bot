@@ -117,12 +117,28 @@ assert_nat_exempt() {
 # Оператор несёт на малинку ОДИН файл вместо двух. Два — это лишний способ
 # ошибиться: скопировал скрипт, забыл конфиг, и «почему-то не работает».
 emit_gw_bundle() {
+    # Соседа ищем рядом, затем в поставке: юниты зовут КОПИЮ этого скрипта из
+    # /usr/local/sbin, где gw-скрипт не живёт, — без фолбэка запуск --bundle
+    # оттуда падал, хотя поставка лежит на месте.
     _gwsrc="$(dirname "$(readlink -f "$0")")/routing-gw-setup.sh"
+    [ -f "$_gwsrc" ] || _gwsrc="/opt/awg-bot/install/routing-gw-setup.sh"
     [ -f "$_gwsrc" ] || {
-        say "ОШИБКА: рядом нет routing-gw-setup.sh (искал $_gwsrc)"; exit 1; }
+        say "ОШИБКА: routing-gw-setup.sh не найден ни рядом, ни в /opt/awg-bot/install"
+        exit 1; }
     [ -f "$GW_CONF_OUT" ] || {
         say "ОШИБКА: нет $GW_CONF_OUT — линк ещё не поднят. Сначала: $0 --apply"
         exit 1; }
+    # Endpoint в конфиге шлюза ЗАМЕРЗАЕТ при генерации, а порт линка — факт из
+    # живого $CONF. Разошлись — бандл увёз бы шлюз в закрытый порт, и линк умер
+    # бы до ручной правки (наступили: перенос 443 → 47231). Правим источник до
+    # упаковки; сам конфиг линка не трогаем.
+    if [ -f "$CONF" ]; then
+        _live_port="$(awk '/^ListenPort/{print $3; exit}' "$CONF" 2>/dev/null || true)"
+        if [ -n "$_live_port" ] && ! grep -q ":$_live_port\$" "$GW_CONF_OUT"; then
+            say "Endpoint в $GW_CONF_OUT отстал от ListenPort=$_live_port — правлю"
+            sed -i "s/^\(Endpoint = .*\):[0-9][0-9]*\$/\1:$_live_port/" "$GW_CONF_OUT"
+        fi
+    fi
 
     {
         cat <<HDREOF

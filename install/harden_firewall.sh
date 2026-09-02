@@ -31,6 +31,11 @@
 # из разрешённой сети. Established-соединения не рвутся, но новый вход с
 # невайтлистенного адреса будет отклонён.
 
+# Скрипт — bash (массивы, pipefail), а «sh script.sh» игнорирует шебанг и на
+# Ubuntu означает dash: падение на первом же bash-изме с невнятным «Illegal
+# option». Перезапускаем себя правильным интерпретатором молча.
+if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
+
 set -euo pipefail
 
 RULES_DIR="/etc/nftables.d"

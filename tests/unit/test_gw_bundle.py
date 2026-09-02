@@ -41,12 +41,16 @@ def bundle(tmp_path_factory) -> str:
     (inst / "routing-gw-setup.sh").write_text(GW.read_text(encoding="utf-8"),
                                               encoding="utf-8")
     conf = d / "gw.conf"; conf.write_text(_CONF, encoding="utf-8")
+    # живой конфиг линка ВПС: порт УЖЕ сменён (Endpoint в gw.conf отстал)
+    confdir = d / "linkconf"; confdir.mkdir()
+    (confdir / "awglink.conf").write_text(
+        "[Interface]\nListenPort = 47231\nPrivateKey = X==\n", encoding="utf-8")
     out = d / "awg-gw-bundle.sh"
 
     r = subprocess.run(
         ["sh", str(inst / "routing-link-setup.sh"), "--bundle"],
         cwd=d, capture_output=True, text=True, errors="replace",
-        env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "CONF_DIR": str(confdir),
              "GW_CONF_OUT": str(conf), "GW_BUNDLE_OUT": str(out)})
     assert r.returncode == 0, r.stderr
     assert out.exists(), r.stdout
@@ -74,9 +78,22 @@ def test_bundle_pins_the_client_subnet(bundle):
 
 
 def test_bundle_carries_the_link_config_verbatim(bundle):
-    """Конфиг должен доехать байт в байт: это ключи, а не текст."""
+    """Конфиг должен доехать байт в байт — кроме порта в Endpoint: его сборка
+    бандла СИНХРОНИЗИРУЕТ с живым ListenPort линка (иначе шлюз уезжает в
+    закрытый порт, см. test_bundle_syncs_endpoint...)."""
     for line in _CONF.strip().splitlines():
+        if line.startswith("Endpoint"):
+            continue
         assert line in bundle, line
+
+
+def test_bundle_syncs_endpoint_port_with_the_live_link(bundle):
+    """Endpoint в конфиге шлюза замерзает при генерации, а порт линка — факт из
+    живого конфига ВПС. Бандл обязан увезти ЖИВОЙ порт: рассинхрон означает
+    линк, стучащийся в закрытую дверь, — и обнаруживается это уже на шлюзе,
+    куда ещё надо дойти. Наступили при переносе 443 → 47231."""
+    assert "Endpoint = 203.0.113.10:47231" in bundle, "порт не синхронизирован"
+    assert ":443" not in bundle, "старый порт уехал в бандл"
 
 
 def test_bundle_embeds_the_gw_script_byte_for_byte(bundle, tmp_path):
