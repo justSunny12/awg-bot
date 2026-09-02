@@ -136,7 +136,10 @@ emit_gw_bundle() {
         _live_port="$(awk '/^ListenPort/{print $3; exit}' "$CONF" 2>/dev/null || true)"
         if [ -n "$_live_port" ] && ! grep -q ":$_live_port\$" "$GW_CONF_OUT"; then
             say "Endpoint в $GW_CONF_OUT отстал от ListenPort=$_live_port — правлю"
-            sed -i "s/^\(Endpoint = .*\):[0-9][0-9]*\$/\1:$_live_port/" "$GW_CONF_OUT"
+            # sed -i без суффикса — GNU-изм; скрипт POSIX, BSD sed съедает
+            # выражение как суффикс. Временный файл переносим везде.
+            sed "s/^\(Endpoint = .*\):[0-9][0-9]*\$/\1:$_live_port/" "$GW_CONF_OUT" > "$GW_CONF_OUT.tmp" \
+                && mv "$GW_CONF_OUT.tmp" "$GW_CONF_OUT"
         fi
     fi
 
