@@ -32,6 +32,9 @@
 set -e
 
 LINK_IF="${LINK_IF:-awglink}"
+# Боевое значение приезжает из БАНДЛА (export перед запуском) и закрепляется в
+# юните строкой Environment: на шлюзе нет app.yaml, и после ребута юнит обязан
+# реассертить ту подсеть, с которой бандл собирали, а не хардкод-дефолт.
 CLIENT_SUBNET="${CLIENT_SUBNET:-10.8.1.0/24}"
 FWD_CHAIN="AWGLINK_FWD"
 UNIT="/etc/systemd/system/awg-link-gw.service"
@@ -300,6 +303,9 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# Подсеть вшита: app.yaml на шлюзе нет, смена подсети = новый бандл с ВПС.
+Environment=CLIENT_SUBNET=$CLIENT_SUBNET
+Environment=LINK_IF=$LINK_IF
 # Зовём этот же скрипт: он идемпотентен, источник истины один.
 ExecStart=$SELF --apply $HOST_CONF_DIR/$LINK_IF.conf
 Restart=on-failure

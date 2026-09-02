@@ -32,10 +32,27 @@
 
 set -e
 
-# ── параметры (сверить с conf/app.yaml → routing:) ───────────────────────────
-CLIENT_SUBNET="${CLIENT_SUBNET:-10.8.1.0/24}"
+# ── параметры ────────────────────────────────────────────────────────────────
+# Клиентская подсеть и фасадный DNS-адрес читаются ИЗ КОНФИГА БОТА, а не из
+# хардкода. Юнит автоприменения зовёт этот скрипт без переменных окружения, и
+# после смены клиентской подсети (переезд профилей) реассерт по ребуту обязан
+# ставить правила для новой: захардкоженный дефолт вернул бы старую, а новую
+# оставил бы без DNS и NAT — молча, до первого ребута незаметно.
+_APP_YAML="${_APP_YAML:-/etc/awg-bot/conf/app.yaml}"
+_cfg_subnet="$(awk -F'"' '/^  subnet_cidr:/{print $2; exit}' "$_APP_YAML" 2>/dev/null)"
+CLIENT_SUBNET="${CLIENT_SUBNET:-${_cfg_subnet:-10.8.1.0/24}}"
 DNS_IF="${DNS_IF:-awgdns0}"          # dummy-интерфейс под dnsmasq
 DNS_ADDR="${DNS_ADDR:-10.255.53.1}"  # адрес на нём; DNAT ведёт сюда
+# Фасадный резолвер — адрес, который клиентские конфиги называют в поле DNS
+# НАПРЯМУЮ (client_config.dns1). Публичный (1.1.1.1) обслуживается перехватом
+# DNAT и фасада не требует; приватный обязан существовать на этом хосте и
+# слушаться dnsmasq — иначе конфиги указывают на адрес, где никто не отвечает.
+_cfg_dns1="$(awk -F'"' '/^  dns1:/{print $2; exit}' "$_APP_YAML" 2>/dev/null)"
+CLIENT_DNS_ADDR="${CLIENT_DNS_ADDR:-$_cfg_dns1}"
+CLIENT_DNS_FACADE=""
+case "${CLIENT_DNS_ADDR:-}" in
+    10.*) [ "$CLIENT_DNS_ADDR" != "$DNS_ADDR" ] && CLIENT_DNS_FACADE=1 ;;
+esac
 DNSMASQ_CONF="/etc/dnsmasq.d/awgbot-base.conf"
 DNSMASQ_SERVICE="${DNSMASQ_SERVICE:-dnsmasq}"
 UPSTREAM1="${UPSTREAM1:-1.1.1.1}"
@@ -204,6 +221,10 @@ if [ "$MODE" = "rollback" ]; then
               -j DNAT --to-destination "$DNS_ADDR:53"
     drop_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p udp --dport 53 -j ACCEPT
     drop_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p tcp --dport 53 -j ACCEPT
+    if [ -n "$CLIENT_DNS_FACADE" ]; then
+        drop_rule filter INPUT -s "$CLIENT_SUBNET" -d "$CLIENT_DNS_ADDR" -p udp --dport 53 -j ACCEPT
+        drop_rule filter INPUT -s "$CLIENT_SUBNET" -d "$CLIENT_DNS_ADDR" -p tcp --dport 53 -j ACCEPT
+    fi
     drop_rule filter FORWARD -s "$CLIENT_SUBNET" -p tcp --dport 853 \
               -j REJECT --reject-with tcp-reset
     drop_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
@@ -240,6 +261,15 @@ if ip addr show "$DNS_IF" 2>/dev/null | grep -q "$DNS_ADDR"; then
 else
     run "ip addr add $DNS_ADDR/32 dev $DNS_IF"
 fi
+if [ -n "$CLIENT_DNS_FACADE" ]; then
+    # Без этого адреса dnsmasq с bind-interfaces не забиндится и не стартует —
+    # DNS умрёт у ВСЕХ клиентов, включая ходящих через DNAT.
+    if ip addr show "$DNS_IF" 2>/dev/null | grep -q "$CLIENT_DNS_ADDR"; then
+        say "  фасадный адрес уже назначен"
+    else
+        run "ip addr add $CLIENT_DNS_ADDR/32 dev $DNS_IF"
+    fi
+fi
 run "ip link set $DNS_IF up"
 
 # 2) конфиг dnsmasq
@@ -253,7 +283,7 @@ if [ "$MODE" = "apply" ]; then
 # Сгенерировано routing-host-setup.sh. Базовая часть; списки доменов бот пишет
 # отдельным файлом (см. conf/app.yaml → routing.dnsmasq_conf).
 bind-interfaces
-listen-address=$DNS_ADDR
+listen-address=$DNS_ADDR$( [ -n "$CLIENT_DNS_FACADE" ] && printf '\nlisten-address=%s' "$CLIENT_DNS_ADDR" )
 no-resolv
 server=$UPSTREAM1
 server=$UPSTREAM2
@@ -344,6 +374,11 @@ ensure_rule nat PREROUTING -s "$CLIENT_SUBNET" -p tcp --dport 53 \
 step "3a. Пропустить DNS клиентов в INPUT"
 ensure_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p udp --dport 53 -j ACCEPT
 ensure_rule filter INPUT -s "$CLIENT_SUBNET" -d "$DNS_ADDR" -p tcp --dport 53 -j ACCEPT
+if [ -n "$CLIENT_DNS_FACADE" ]; then
+    say "  фасад $CLIENT_DNS_ADDR: конфиги называют его напрямую, DNAT не участвует"
+    ensure_rule filter INPUT -s "$CLIENT_SUBNET" -d "$CLIENT_DNS_ADDR" -p udp --dport 53 -j ACCEPT
+    ensure_rule filter INPUT -s "$CLIENT_SUBNET" -d "$CLIENT_DNS_ADDR" -p tcp --dport 53 -j ACCEPT
+fi
 
 # 4) выход наружу для немаскараженного трафика включённых устройств
 step "4. MASQUERADE и FORWARD для $CLIENT_SUBNET"

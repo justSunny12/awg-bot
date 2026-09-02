@@ -40,7 +40,12 @@ LINK_PORT="${LINK_PORT:-443}"
 LINK_VPS_ADDR="${LINK_VPS_ADDR:-10.99.99.1}"
 LINK_GW_ADDR="${LINK_GW_ADDR:-10.99.99.2}"
 LINK_CIDR="${LINK_CIDR:-10.99.99.0/30}"
-CLIENT_SUBNET="${CLIENT_SUBNET:-10.8.1.0/24}"
+# Из конфига бота, не из хардкода: юнит зовёт --reassert без окружения, и после
+# смены клиентской подсети исключение из MASQUERADE обязано реассертиться для
+# новой — иначе шлюз после ребута видит клиентов чужим адресом.
+_APP_YAML="${_APP_YAML:-/etc/awg-bot/conf/app.yaml}"
+_cfg_subnet="$(awk -F'"' '/^  subnet_cidr:/{print $2; exit}' "$_APP_YAML" 2>/dev/null)"
+CLIENT_SUBNET="${CLIENT_SUBNET:-${_cfg_subnet:-10.8.1.0/24}}"
 CONF_DIR="${CONF_DIR:-/etc/amnezia/amneziawg}"
 CONF="$CONF_DIR/$LINK_IF.conf"
 GW_CONF_OUT="${GW_CONF_OUT:-/root/gw-$LINK_IF.conf}"
@@ -135,6 +140,9 @@ emit_gw_bundle() {
 #   sudo sh awg-gw-bundle.sh --rollback   # снять всё, что поставил
 # ─────────────────────────────────────────────────────────────────────────────
 HDREOF
+        # Подсеть ВШИВАЕТСЯ в бандл: на шлюзе нет app.yaml, взять её там неоткуда,
+        # а env-дефолт скрипта вернул бы после ребута правила для чужой подсети.
+        printf 'CLIENT_SUBNET="${CLIENT_SUBNET:-%s}"\nexport CLIENT_SUBNET\n' "$CLIENT_SUBNET"
         cat <<'BODYEOF'
 set -e
 [ "$(id -u)" = "0" ] || { echo "нужен root: sudo sh $0"; exit 1; }
