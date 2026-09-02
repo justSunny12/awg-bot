@@ -39,7 +39,7 @@ set -e
 # ставить правила для новой: захардкоженный дефолт вернул бы старую, а новую
 # оставил бы без DNS и NAT — молча, до первого ребута незаметно.
 _APP_YAML="${_APP_YAML:-/etc/awg-bot/conf/app.yaml}"
-_cfg_subnet="$(awk -F'"' '/^  subnet_cidr:/{print $2; exit}' "$_APP_YAML" 2>/dev/null)"
+_cfg_subnet="$(awk -F'"' '/^  subnet_cidr:/{print $2; exit}' "$_APP_YAML" 2>/dev/null || true)"
 CLIENT_SUBNET="${CLIENT_SUBNET:-${_cfg_subnet:-10.8.1.0/24}}"
 DNS_IF="${DNS_IF:-awgdns0}"          # dummy-интерфейс под dnsmasq
 DNS_ADDR="${DNS_ADDR:-10.255.53.1}"  # адрес на нём; DNAT ведёт сюда
@@ -47,7 +47,7 @@ DNS_ADDR="${DNS_ADDR:-10.255.53.1}"  # адрес на нём; DNAT ведёт �
 # НАПРЯМУЮ (client_config.dns1). Публичный (1.1.1.1) обслуживается перехватом
 # DNAT и фасада не требует; приватный обязан существовать на этом хосте и
 # слушаться dnsmasq — иначе конфиги указывают на адрес, где никто не отвечает.
-_cfg_dns1="$(awk -F'"' '/^  dns1:/{print $2; exit}' "$_APP_YAML" 2>/dev/null)"
+_cfg_dns1="$(awk -F'"' '/^  dns1:/{print $2; exit}' "$_APP_YAML" 2>/dev/null || true)"
 CLIENT_DNS_ADDR="${CLIENT_DNS_ADDR:-$_cfg_dns1}"
 CLIENT_DNS_FACADE=""
 case "${CLIENT_DNS_ADDR:-}" in

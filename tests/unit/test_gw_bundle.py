@@ -59,6 +59,20 @@ def test_bundle_is_valid_shell(bundle, tmp_path):
     assert r.returncode == 0, r.stderr
 
 
+def test_bundle_pins_the_client_subnet(bundle):
+    """Бандл ВШИВАЕТ клиентскую подсеть и экспортирует её до запуска gw-скрипта.
+
+    На шлюзе нет app.yaml — взять подсеть там неоткуда, а env-дефолт скрипта
+    после смены подсети (переезд профилей) реассертил бы по ребуту правила для
+    чужой. Подсеть — контракт между сторонами: сменилась — новый бандл.
+    """
+    assert re.search(r'^CLIENT_SUBNET="\$\{CLIENT_SUBNET:-\d+\.\d+\.\d+\.\d+/\d+\}"$',
+                     bundle, re.M), "подсеть не вшита"
+    assert "\nexport CLIENT_SUBNET\n" in bundle
+    # экспорт обязан стоять ДО передачи управления gw-скрипту
+    assert bundle.index("export CLIENT_SUBNET") < bundle.index('exec "$DEST/routing-gw-setup.sh"')
+
+
 def test_bundle_carries_the_link_config_verbatim(bundle):
     """Конфиг должен доехать байт в байт: это ключи, а не текст."""
     for line in _CONF.strip().splitlines():

@@ -44,7 +44,7 @@ LINK_CIDR="${LINK_CIDR:-10.99.99.0/30}"
 # смены клиентской подсети исключение из MASQUERADE обязано реассертиться для
 # новой — иначе шлюз после ребута видит клиентов чужим адресом.
 _APP_YAML="${_APP_YAML:-/etc/awg-bot/conf/app.yaml}"
-_cfg_subnet="$(awk -F'"' '/^  subnet_cidr:/{print $2; exit}' "$_APP_YAML" 2>/dev/null)"
+_cfg_subnet="$(awk -F'"' '/^  subnet_cidr:/{print $2; exit}' "$_APP_YAML" 2>/dev/null || true)"
 CLIENT_SUBNET="${CLIENT_SUBNET:-${_cfg_subnet:-10.8.1.0/24}}"
 CONF_DIR="${CONF_DIR:-/etc/amnezia/amneziawg}"
 CONF="$CONF_DIR/$LINK_IF.conf"
