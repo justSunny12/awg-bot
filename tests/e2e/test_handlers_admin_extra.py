@@ -1019,3 +1019,37 @@ async def test_menu_button_dismisses_every_other_update_window(services, fake_bo
     stripped = sorted(r[2] for r in fake_bot.records if r[0] == "edit_markup")
     assert stripped == [501, 502, 503]
     assert services.pop_update_reports() == [], "история не очищена"
+
+
+def test_routing_section_is_four_buttons():
+    """Раздел маршрутизации: выключатель и три подраздела при включённой
+    функции; при выключенной — только выключатель. Переключатели профилей и
+    пикер периода в корне не живут — они в своих подразделах."""
+    from awgbot.bot import keyboards as kb
+    on = [b.text for row in kb.settings_routing(True).inline_keyboard for b in row]
+    assert on[:4] == ["🟢 Условная маршрутизация", "⚙️ Конфигурация шлюза",
+                      "📋 Списки маршрутизации", "👥 Доступность пользователям"], on
+    assert not any("шифр" in t for t in on), "приписки про шифрование — не для UI"
+    off = [b.text for row in kb.settings_routing(False).inline_keyboard for b in row]
+    assert len(off) == 2 and "Условная маршрутизация" in off[0]      # выключатель + назад
+
+    lists = [b.text for row in kb.settings_routing_lists(6).inline_keyboard for b in row]
+    assert "🔘 6 ч" in lists and any("Обновить" in t for t in lists)
+
+
+async def test_routing_subsections_render_and_are_empty_when_off(services, monkeypatch):
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.core import settings, config
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    monkeypatch.setattr(settings, "get_bool", lambda k, d=False: True)
+    monkeypatch.setattr(services, "routing_lists_info",
+                        lambda: {"count": 3, "updated_at": None, "age_seconds": None,
+                                 "every_hours": 12, "sources": 2})
+    monkeypatch.setattr(services, "routing_grantable_clients", lambda: [])
+    text, markup = await sh._screen("rt_lists", services)
+    assert "3 записей" in text and "12 ч" in text
+    text, markup = await sh._screen("rt_users", services)
+    assert "Доступность" in text
+    monkeypatch.setattr(settings, "get_bool", lambda k, d=False: False)
+    text, markup = await sh._screen("rt_lists", services)
+    assert "выключена" in text

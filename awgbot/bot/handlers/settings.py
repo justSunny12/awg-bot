@@ -59,13 +59,18 @@ async def _screen(sec: str, services):
             # значит показать переключатели, ничего не делающие.
             return texts.SETTINGS_ROUTING_ABSENT, kb.settings_back()
         on = settings.get_bool("app.routing.enabled", False)
-        # список профилей нужен только при включённой функции — клавиатура его
-        # всё равно не покажет, а лишний запрос к БД на каждый рендер ни к чему
-        clients = await call(services.routing_grantable_clients) if on else []
         status = await call(services.routing_status)
-        lists = await call(services.routing_lists_info) if on else None
-        return (texts.settings_routing_text(on, status, lists),
-                kb.settings_routing(on, clients, lists["every_hours"] if lists else 6))
+        return texts.settings_routing_text(on, status), kb.settings_routing(on)
+    if sec in ("rt_lists", "rt_users"):
+        # Подразделы существуют только при включённой функции. Колбэк приходит
+        # и из старого сообщения — тогда честно говорим, что раздел пуст.
+        if not config.ROUTING_ENABLED or not settings.get_bool("app.routing.enabled", False):
+            return texts.SETTINGS_ROUTING_SUBOFF, kb.settings_back()
+        if sec == "rt_lists":
+            info = await call(services.routing_lists_info)
+            return texts.routing_lists_text(info), kb.settings_routing_lists(info["every_hours"])
+        clients = await call(services.routing_grantable_clients)
+        return texts.routing_users_text(), kb.settings_routing_users(clients)
     return texts.SETTINGS_ROOT, kb.settings_root()
 
 
@@ -148,8 +153,8 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
             pass
         await cb.message.answer_document(
             BufferedInputFile(blob, filename=name),
-            caption="📦 Бандл шлюза, зашифрован ключом линка. Перешли его боту "
-                    "шлюза — он проверит и применит сам.",
+            caption="⚙️ Конфигурация шлюза. Перешли файл боту шлюза — он проверит "
+                    "и применит сам.",
             reply_markup=kb.bundle_menu_kb())
         return
     if callback_data.key == "lists_refresh":
@@ -157,7 +162,7 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         # Обновление занимает секунды, спиннер на кнопке их покрывает; итог —
         # числом в ответе, а свежесть видна в перерисованном блоке «Списки».
         n = await call(services.routing_update_lists, True)
-        await _render(cb, "rt", services)
+        await _render(cb, "rt_lists", services)
         await cb.answer(f"В базовом наборе {n} записей.")
         return
     if callback_data.key == "bundle_menu":
@@ -179,7 +184,7 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         return
     new_state = not client.routing_allowed
     await call(services.set_routing_allowed, client.id, new_state)
-    await _render(cb, "rt", services)
+    await _render(cb, "rt_users", services)
     await cb.answer(f"{client.name}: РФ-доступ "
                     + ("разрешён" if new_state else "запрещён"))
 
@@ -239,6 +244,9 @@ async def pick(cb: CallbackQuery, callback_data: SetCB, services):
         except settings.SettingsWriteError as e:
             await cb.answer(str(e), show_alert=True)
             return
+        await _render(cb, "rt_lists", services)
+        await cb.answer()
+        return
     if callback_data.sec == "upd" and callback_data.key == "sched":
         opt = callback_data.val
         try:

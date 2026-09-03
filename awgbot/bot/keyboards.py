@@ -1053,45 +1053,54 @@ def settings_back() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def settings_routing(enabled: bool, clients=(), lists_every: int = 6) -> InlineKeyboardMarkup:
-    """Раздел «Условная маршрутизация».
+def settings_routing(enabled: bool) -> InlineKeyboardMarkup:
+    """Раздел «Условная маршрутизация»: выключатель и три подраздела.
 
-    Первой кнопкой — общий выключатель функции. Список профилей показываем
-    ТОЛЬКО когда она включена: раздавать разрешения на выключённое — приглашение
-    к недоумению «почему у клиента не работает, я же разрешил».
-
-    Разрешение живёт здесь, а не в карточке профиля, потому что это настройка
-    сервиса, а не свойство клиента: так все, кому выдан доступ, видны одним
-    списком, а не собираются обходом карточек.
+    Подразделы показываем ТОЛЬКО при включённой функции: раздавать разрешения
+    или обновлять списки для выключенного — приглашение к недоумению «почему у
+    клиента не работает, я же разрешил».
     """
     kb = InlineKeyboardBuilder()
     kb.button(text=f"{_chk(enabled)} Условная маршрутизация",
               callback_data=SetCB(sec="rt", act="toggle", key="app.routing.enabled"))
-    rows = [1]
     if enabled:
-        for c in clients:
-            kb.button(text=f"{_chk(c.routing_allowed)} {c.name}",
-                      callback_data=SetCB(sec="rt", act="do", key="allow", val=str(c.id)))
-            rows.append(1)
-        # Бандл — шифрованным файлом в чат: его пересылают агенту шлюза, и тот
-        # применяет сам. Ни scp, ни паролей: ключ шифрования выводится из ключа
-        # линка, который через чат не ходил никогда.
-        kb.button(text="📦 Бандл для шлюза (шифрованный)",
+        kb.button(text="⚙️ Конфигурация шлюза",
                   callback_data=SetCB(sec="rt", act="do", key="bundle"))
-        rows.append(1)
-        # Списки: период — пикером (горячий ключ), плюс принудительное
-        # обновление: ждать до шести часов, когда источник только что починили,
-        # незачем.
-        for h in (3, 6, 12, 24):
-            mark = "🔘 " if h == lists_every else ""
-            kb.button(text=f"{mark}{h} ч",
-                      callback_data=SetCB(sec="rt", act="pick", key="lists", val=str(h)))
-        rows.append(4)
-        kb.button(text="🔄 Обновить списки сейчас",
-                  callback_data=SetCB(sec="rt", act="do", key="lists_refresh"))
-        rows.append(1)
+        kb.button(text="📋 Списки маршрутизации",
+                  callback_data=SetCB(sec="rt_lists", act="open"))
+        kb.button(text="👥 Доступность пользователям",
+                  callback_data=SetCB(sec="rt_users", act="open"))
     kb.row(_back())
-    kb.adjust(*rows)
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def settings_routing_lists(lists_every: int) -> InlineKeyboardMarkup:
+    """Подраздел «Списки»: период — пикером (горячий ключ), плюс принудительное
+    обновление: ждать до шести часов, когда источник только что починили,
+    незачем."""
+    kb = InlineKeyboardBuilder()
+    for h in (3, 6, 12, 24):
+        mark = "🔘 " if h == lists_every else ""
+        kb.button(text=f"{mark}{h} ч",
+                  callback_data=SetCB(sec="rt", act="pick", key="lists", val=str(h)))
+    kb.button(text="🔄 Обновить сейчас",
+              callback_data=SetCB(sec="rt", act="do", key="lists_refresh"))
+    kb.adjust(4, 1)
+    kb.row(_back("rt"))
+    return kb.as_markup()
+
+
+def settings_routing_users(clients=()) -> InlineKeyboardMarkup:
+    """Подраздел «Доступность пользователям». Разрешение живёт здесь, а не в
+    карточке профиля: это настройка сервиса, а не свойство клиента — все, кому
+    выдан доступ, видны одним списком."""
+    kb = InlineKeyboardBuilder()
+    for c in clients:
+        kb.button(text=f"{_chk(c.routing_allowed)} {c.name}",
+                  callback_data=SetCB(sec="rt", act="do", key="allow", val=str(c.id)))
+    kb.adjust(1)
+    kb.row(_back("rt"))
     return kb.as_markup()
 
 

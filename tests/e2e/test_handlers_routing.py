@@ -165,15 +165,18 @@ def test_settings_screen_lists_clients_only_when_enabled():
                              routing_allowed=i % 2)
                for i in (1, 2)]
 
-    off = [b.text for row in kb.settings_routing(False, clients).inline_keyboard
-           for b in row]
-    assert not any("К1" in t or "К2" in t for t in off)
+    # корень раздела: при выключенной функции — ни подразделов, ни профилей
+    off = [b.text for row in kb.settings_routing(False).inline_keyboard for b in row]
+    assert not any("Доступность" in t for t in off)
     assert any("🔴" in t and "Условная маршрутизация" in t for t in off)
 
-    on = [b.text for row in kb.settings_routing(True, clients).inline_keyboard
-          for b in row]
-    assert "🟢 К1" in on and "🔴 К2" in on          # кружок = состояние разрешения
-    assert any("🟢" in t and "Условная маршрутизация" in t for t in on)
+    # при включённой — подраздел «Доступность пользователям», профили в НЁМ
+    on = [b.text for row in kb.settings_routing(True).inline_keyboard for b in row]
+    assert any("Доступность пользователям" in t for t in on)
+    assert not any("К1" in t or "К2" in t for t in on), "профили не в корне"
+    users = [b.text for row in kb.settings_routing_users(clients).inline_keyboard
+             for b in row]
+    assert "🟢 К1" in users and "🔴 К2" in users    # кружок = состояние разрешения
 
 
 async def test_grant_from_settings_screen(services, make_active_client, fake_bot):
