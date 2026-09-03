@@ -258,3 +258,25 @@ def test_tg_mark_ensure_adds_only_missing(svc, monkeypatch):
     monkeypatch.setattr(gw, "_run", run)
     assert svc.tg_mark_ensure() == len(svc.TG_RANGES) - 1
     assert "149.154.160.0/20" not in added
+
+
+# ── этап 3: самообновление — тот же механизм, что у клиентской роли ──────────
+
+def test_gateway_confirms_applied_update_like_the_client_role(svc, monkeypatch):
+    """Механизм общий (SelfUpdateMixin): после рестарта агент сверяет
+    установленную версию с ожидаемой и отчитывается ровно один раз."""
+    from awgbot.infra import updates
+    monkeypatch.setattr(config, "INSTALLED_VERSION", "2.4.2")
+    monkeypatch.setattr(updates, "release_body", lambda tag: "заметки")
+    svc.db.set_state("update_pending", "v2.4.2")
+    note = svc.confirm_applied_update()
+    assert note is not None and "2.4.2" in note.text
+    assert note.reply_markup is not None, "нет кнопки «В меню»"
+    assert svc.confirm_applied_update() is None, "отчитался дважды"
+
+
+def test_gateway_reports_update_that_did_not_apply(svc, monkeypatch):
+    monkeypatch.setattr(config, "INSTALLED_VERSION", "2.4.1")
+    svc.db.set_state("update_pending", "v2.4.2")
+    note = svc.confirm_applied_update()
+    assert note is not None and "2.4.1" in note.text and "2.4.2" in note.text

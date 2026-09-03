@@ -156,6 +156,13 @@ async def run_gateway() -> None:
     except Exception as e:                               # noqa: BLE001
         log.warning("gateway preflight warnings: %s", e)
 
+    # Итог self-update — тем же путём, что у клиентской роли: убрать «дождись»,
+    # отчитаться, единственная живая кнопка «В меню».
+    try:
+        await report_update_result(bot, services)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("gateway confirm_applied_update: %s", e)
+
     log.info("Агент шлюза запущен (роль gateway)")
     try:
         await dp.start_polling(bot, polling_timeout=50,

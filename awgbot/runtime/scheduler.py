@@ -460,6 +460,23 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
 __all__ = ["setup_scheduler"]
 
 
+def update_check_trigger():
+    """Триггер проверки обновлений по updates.poll_schedule (day|week|month|never),
+    never → None. Модульная копия фабрики из setup_scheduler для роли gateway:
+    та — замыкание внутри клиентской сборки, вытаскивать её наружу значило бы
+    трогать горячий reschedule клиентской роли ради одной функции."""
+    sch = str(settings.get("updates.poll_schedule", "day")).lower()
+    h = settings.get_int("updates.poll_hour", 10)
+    m = settings.get_int("updates.poll_minute", 0)
+    if sch == "never":
+        return None
+    if sch == "week":
+        return CronTrigger(day_of_week=0, hour=h, minute=m, timezone=config.TZ)
+    if sch == "month":
+        return CronTrigger(day=1, hour=h, minute=m, timezone=config.TZ)
+    return CronTrigger(hour=h, minute=m, timezone=config.TZ)
+
+
 def setup_gateway_scheduler(services, bot):
     """Планировщик роли gateway: ОДИН тик монитора.
 
@@ -485,5 +502,29 @@ def setup_gateway_scheduler(services, bot):
         id="gw_monitor", max_instances=1, coalesce=True,
         next_run_time=timeutil.now(),
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
+    async def job_update_check():
+        try:
+            nxt = await asyncio.to_thread(services.update_to_notify)
+            if nxt is not None:
+                from awgbot.bot import texts
+                from awgbot.bot import keyboards as kb
+                from awgbot.domain.services import Notification
+                await send_notifications(bot, [Notification(
+                    config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body),
+                    reply_markup=kb.update_notify())])
+        except Exception as e:                        # noqa: BLE001
+            log.warning("gw update_check: %s", e)
+
+    trig = update_check_trigger()
+    scheduler.add_job(job_update_check,
+                      trig or CronTrigger(hour=10, minute=0, timezone=config.TZ),
+                      id="update_check", max_instances=1, coalesce=True,
+                      misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
+    if trig is None:
+        scheduler.pause_job("update_check")
+    scheduler.add_job(job_update_check, "date", run_date=timeutil.now(),
+                      id="update_check_startup", max_instances=1,
+                      misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
     scheduler.start()
     return scheduler

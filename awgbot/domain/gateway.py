@@ -29,6 +29,7 @@ log = logging.getLogger("awgbot.gateway")
 
 # Notification переиспользуем клиентский: notifier один на обе роли.
 from awgbot.domain.services import Notification  # noqa: E402
+from awgbot.domain.selfupdate import SelfUpdateMixin  # noqa: E402
 
 
 def _run(argv: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
@@ -66,7 +67,7 @@ class GwStatus:
     ext_ip: str = ""
 
 
-class GatewayServices:
+class GatewayServices(SelfUpdateMixin):
     """Механика агента. db — обычная Database: нужен только state (гистерезис,
     снимки); клиентские таблицы просто пустуют, и городить отдельную схему ради
     их отсутствия — усложнение без выгоды."""

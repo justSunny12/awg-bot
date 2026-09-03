@@ -98,3 +98,19 @@ async def test_oversized_document_is_not_downloaded(svc):
     msg.document = _Doc(50 * 1024 * 1024)
     await gh.gw_bundle_document(msg, svc, FakeState())
     assert "не принят" in msg.sent[-1][1]
+
+
+async def test_gateway_update_install_runs_the_shared_updater(svc, fake_bot, monkeypatch):
+    """«Обновить» у агента: следующая ступень → «дождись» → apply_update. Та же
+    механика, что у клиентской роли, — sha256 и запуск вне cgroup внутри."""
+    import types
+    from awgbot.bot.callbacks import UpdateCB
+    nxt = types.SimpleNamespace(tag="v9.9.9", body="")
+    applied = []
+    monkeypatch.setattr(svc, "update_next", lambda: nxt)
+    monkeypatch.setattr(svc, "apply_update", lambda r: applied.append(r.tag))
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_update_install(cb, svc)
+    assert applied == ["v9.9.9"]
+    assert svc.db.get_state("update_wait"), "«дождись» не запомнено для нового процесса"

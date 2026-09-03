@@ -17,9 +17,9 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
-from awgbot.bot.callbacks import GwCB
+from awgbot.bot.callbacks import GwCB, UpdateCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.handlers.common import call, edit
+from awgbot.bot.handlers.common import call, edit, cleanup_content
 from awgbot.util import bundlecrypt
 
 router = Router(name="gateway")
@@ -121,3 +121,58 @@ async def gw_bundle_drop(cb: CallbackQuery, services, state: FSMContext):
     await state.clear()
     await _panel(cb.message, services, cb)
     await cb.answer("Бандл отброшен")
+
+
+# ── самообновление агента (этап 3) — та же механика, что у клиентской роли ────
+
+@router.callback_query(UpdateCB.filter(F.action == "install"))
+async def gw_update_install(cb: CallbackQuery, services):
+    """Скачать следующую ступень, сверить sha256, запустить апдейтер вне cgroup.
+    Итог пришлёт уже новый процесс (report_update_result на старте)."""
+    nxt = await call(services.update_next)
+    if nxt is None:
+        await cb.answer("Обновлять не на что — версия актуальна.", show_alert=True)
+        return
+    await cb.answer("Запускаю обновление…")
+    chat_id = cb.message.chat.id
+    await cleanup_content(cb.bot, services, chat_id)
+    try:
+        await cb.message.delete()
+    except Exception:                                 # noqa: BLE001
+        pass
+    wait = await cb.bot.send_message(chat_id, texts.update_wait(nxt.tag))
+    await call(services.set_update_wait, chat_id, wait.message_id)
+    try:
+        await call(services.apply_update, nxt)
+    except Exception as e:                            # noqa: BLE001
+        await call(services.pop_update_wait)
+        await call(services.db.set_state, "update_pending", "")
+        try:
+            await wait.delete()
+        except Exception:                             # noqa: BLE001
+            pass
+        await cb.bot.send_message(chat_id, texts.update_failed(str(e)),
+                                  reply_markup=kb.update_done_menu())
+
+
+@router.callback_query(UpdateCB.filter(F.action == "menu"))
+async def gw_update_menu(cb: CallbackQuery, services, state: FSMContext):
+    """«В меню» на итоге обновления: текст остаётся, кнопка снимается, панель —
+    новым сообщением."""
+    await state.clear()
+    try:
+        await cb.message.edit_reply_markup(reply_markup=None)
+    except Exception:                                 # noqa: BLE001
+        pass
+    await _panel(cb.message, services)
+    await cb.answer()
+
+
+@router.callback_query(UpdateCB.filter(F.action == "mute"))
+async def gw_update_mute(cb: CallbackQuery, services):
+    await call(services.mute_updates)
+    await cb.answer("Уведомления об обновлениях выключены.")
+    try:
+        await cb.message.delete()
+    except Exception:                                 # noqa: BLE001
+        pass
