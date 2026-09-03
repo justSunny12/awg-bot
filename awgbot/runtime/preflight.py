@@ -85,6 +85,28 @@ def check_fatal() -> None:
 
 
 # ── WARNING ──────────────────────────────────────────────────────────────────
+def collect_warnings_gateway() -> list[str]:
+    """Warnings роли gateway: свои у каждой роли, потому что чинится разное.
+    Клиентские проверки (awg-сервер, docker) шлюзу не о чем сказать — у него
+    нет ни того, ни другого."""
+    import os
+    from awgbot.core import config as _c
+    warns: list[str] = []
+    if not os.path.exists(_c.GW_LINK_CONF):
+        warns.append(f"нет конфига линка {_c.GW_LINK_CONF} — линк не поднимется; "
+                     f"шлюз ставится бандлом с ВПС (routing-link-setup.sh --bundle)")
+    import subprocess
+    rc = subprocess.run(["systemctl", "is-enabled", _c.GW_UNIT],
+                        capture_output=True).returncode
+    if rc != 0:
+        warns.append(f"юнит {_c.GW_UNIT} не включён — после ребута обвязка "
+                     f"шлюза не восстановится")
+    if not _c.GW_CLIENT_SUBNET:
+        warns.append("gateway.client_subnet не задан — проверка MASQUERADE "
+                     "выключена (агент не увидит его пропажу)")
+    return warns
+
+
 def collect_warnings(services) -> list[str]:
     """Не-блокирующие замечания. Возвращает список строк для отправки админу.
     Каждая проверка изолирована: её собственный сбой не роняет остальные и не

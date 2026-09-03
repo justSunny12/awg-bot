@@ -1236,3 +1236,11 @@ def settings_cancel(sec: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="\u2b05\ufe0f Отмена", callback_data=SetCB(sec=sec))
     return kb.as_markup()
+
+
+def gateway_panel_kb() -> InlineKeyboardMarkup:
+    """Панель шлюза: этап 1 — только перечитать. Операции (доктор с действиями,
+    рестарт линка, бандл) приходят этапом 2 — кнопки появятся вместе с ними."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔄 Обновить", callback_data=Menu(action="gw_refresh"))
+    return kb.as_markup()

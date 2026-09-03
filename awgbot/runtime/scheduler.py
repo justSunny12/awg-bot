@@ -458,3 +458,32 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
 
 
 __all__ = ["setup_scheduler"]
+
+
+def setup_gateway_scheduler(services, bot):
+    """Планировщик роли gateway: ОДИН тик монитора.
+
+    Нарочно не переиспользует setup_scheduler: из его тринадцати задач шлюзу не
+    нужна ни одна, а «фабрика с тринадцатью ветками по роли» хуже двух честных
+    функций. Self-update агента приедет этапом 3 — сюда же отдельной задачей.
+    """
+    from awgbot.bot.notifier import send_notifications
+
+    scheduler = AsyncIOScheduler(timezone=config.TZ)
+
+    async def job_gw_monitor():
+        try:
+            notes = await asyncio.to_thread(services.monitor_tick)
+            await send_notifications(bot, notes)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("gw_monitor: %s", e)
+
+    scheduler.add_job(
+        job_gw_monitor,
+        IntervalTrigger(minutes=settings.get_int("app.gateway.monitor_minutes", 3),
+                        timezone=config.TZ),
+        id="gw_monitor", max_instances=1, coalesce=True,
+        next_run_time=timeutil.now(),
+        misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+    scheduler.start()
+    return scheduler

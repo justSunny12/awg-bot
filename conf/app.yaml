@@ -40,6 +40,22 @@ docker:
   migration_interface: ""          # напр. "awg1"
   migration_subnet_prefix: ""      # напр. "10.9.1" → подсеть 10.9.1.0/24
 
+# ── Роль установки (docs/ROADMAP.md, п.7) ───────────────────────────────────
+# client  — бот при awg-сервере (умолчание, всё как всегда);
+# gateway — агент на шлюзе условной маршрутизации: свой Telegram-токен,
+#           наблюдаемость линка/обвязки/железа, никакой клиентской механики.
+# role: "gateway"
+# gateway:
+#   link_interface: "awglink"      # линк до ВПС
+#   conf_dir: "/etc/amnezia/amneziawg"
+#   unit: "awg-link-gw.service"    # юнит реассерта обвязки
+#   client_subnet: ""              # клиентская подсеть ВПС (для проверки MASQUERADE)
+#   wan_interface: ""              # пусто — автодетект по default-маршруту
+#   monitor_minutes: 3             # тик монитора
+#   handshake_max_age: 300         # сек; старше — линк считается мёртвым
+#   link_alert_streak: 2           # тиков подряд до алерта по линку
+#   temp_alert_c: 75               # порог температуры SoC
+
 # Сеть: сервер занимает .0, клиенты идут с .1 (квирк докерной Amnezia)
 network:
   subnet_prefix: "10.8.1"

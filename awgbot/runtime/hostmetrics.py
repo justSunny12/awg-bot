@@ -12,6 +12,7 @@ hostmetrics.py — локальные метрики железа co-located х�
 from __future__ import annotations
 
 import json
+import pathlib
 import logging
 import os
 import time
@@ -88,6 +89,44 @@ def read_disk_percent(path: str = "/") -> float | None:
     return round(100.0 * used / st.f_blocks, 1)
 
 
+# Биты get_throttled, значимые для живучести шлюза (официальная карта Raspberry
+# Pi). Нижние — «прямо сейчас», верхние — «случалось с загрузки»: для алерта
+# важны текущие, для панели — и история тоже.
+_THROTTLE_BITS_NOW = {0: "недонапряжение", 1: "частота ограничена", 2: "троттлинг"}
+_THROTTLE_BITS_EVER = {16: "недонапряжение случалось", 17: "частота ограничивалась",
+                       18: "троттлинг случался"}
+
+
+def read_pi_throttled() -> dict | None:
+    """Состояние питания/троттлинга Raspberry Pi через vcgencmd.
+
+    None — не Pi или vcgencmd недоступен: отличать «всё хорошо» от «нечем
+    посмотреть» обязателен именно вызывающий, поэтому наружу не 0, а None.
+    Недонапряжение — классическая тихая смерть Pi: внешне работает, под
+    нагрузкой виснет, и связать это с блоком питания неоткуда.
+    """
+    import subprocess
+    try:
+        out = subprocess.run(["vcgencmd", "get_throttled"], capture_output=True,
+                             timeout=5).stdout.decode(errors="replace")
+        raw = int(out.split("=")[1].strip(), 16)
+    except Exception:                                  # noqa: BLE001
+        return None
+    now = [t for bit, t in _THROTTLE_BITS_NOW.items() if raw & (1 << bit)]
+    ever = [t for bit, t in _THROTTLE_BITS_EVER.items() if raw & (1 << bit)]
+    return {"raw": raw, "now": now, "ever": ever}
+
+
+def read_soc_temp() -> float | None:
+    """Температура SoC, °C. Через sysfs, а не vcgencmd: файл есть на любом
+    линуксе с thermal-зоной, и агент остаётся полезным не только на Pi."""
+    try:
+        raw = pathlib.Path("/sys/class/thermal/thermal_zone0/temp").read_text()
+        return int(raw.strip()) / 1000.0
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
 def collect() -> dict:
     """Снимок {cpu, ram, disk} (float % или None по каждому ресурсу).
     Блокирующий (CPU-замер) — через asyncio.to_thread."""
@@ -121,4 +160,5 @@ def get_host_metrics(db) -> dict | None:
 
 
 __all__ = ["collect", "collect_and_store", "get_host_metrics", "STATE_METRICS",
+           "read_pi_throttled", "read_soc_temp",
            "read_cpu_percent", "read_ram_percent", "read_disk_percent"]

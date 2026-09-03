@@ -92,11 +92,76 @@ async def report_update_result(bot, services) -> None:
                                 f"{sent.chat.id}:{sent.message_id}")
 
 
+async def run_gateway() -> None:
+    """Сборка и запуск роли gateway: панель + монитор, больше ничего.
+
+    Дублирование пары строк с клиентской сборкой (Bot, Dispatcher, middleware)
+    осознанное: общий «конструктор с ветками» связал бы роли ровно там, где им
+    положено не знать друг о друге.
+    """
+    from awgbot.domain.gateway import GatewayServices
+    from awgbot.bot.handlers import gateway as gateway_handlers
+    from awgbot.runtime.scheduler import setup_gateway_scheduler
+    from awgbot.runtime import preflight
+
+    db = Database(config.DB_PATH)
+    db.init_schema()
+    services = GatewayServices(db)
+
+    bot = Bot(config.BOT_TOKEN,
+              default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    try:
+        await bot.get_me()
+    except TelegramUnauthorizedError as e:
+        raise preflight.PreflightError(
+            f"Bot API отверг токен (getMe: {e}). Проверьте BOT_TOKEN в "
+            f"/etc/awg-bot/env и перезапустите.") from e
+    except Exception as e:                               # noqa: BLE001
+        log.warning("getMe на старте не прошёл (сеть ещё не готова?): %s — "
+                    "продолжаю, polling дождётся сети", e)
+
+    dp = Dispatcher(storage=MemoryStorage())
+    dp["services"] = services
+    access = AccessMiddleware(db)          # клиентов в БД нет: пускает админа,
+    dp.message.outer_middleware(access)    # остальных молча роняет — ровно то,
+    dp.callback_query.outer_middleware(access)  # что шлюзу и нужно
+    dp.include_router(gateway_handlers.router)
+
+    conf_watcher = ConfWatcher(config.CONF_DIR)
+    conf_watcher.start()
+    scheduler = setup_gateway_scheduler(services, bot)
+
+    try:
+        warns = preflight.collect_warnings_gateway()
+        if warns:
+            from awgbot.bot.notifier import notify_one
+            await notify_one(bot, config.ADMIN_ID, preflight.format_warnings(warns))
+    except Exception as e:                               # noqa: BLE001
+        log.warning("gateway preflight warnings: %s", e)
+
+    log.info("Агент шлюза запущен (роль gateway)")
+    try:
+        await dp.start_polling(bot, polling_timeout=50,
+                               allowed_updates=dp.resolve_used_update_types())
+    finally:
+        scheduler.shutdown(wait=False)
+        conf_watcher.stop()
+        log.info("Останавливаюсь…")
+
+
 async def main() -> None:
     config.validate()
     from awgbot.runtime import preflight
     preflight.check_fatal()                 # стоп-факторы: data-dir, целостность БД
     settings.init(config.CONF_DIR)          # горячий кэш conf/*.yaml (до чтений)
+
+    if config.ROLE == "gateway":
+        # Роль агента шлюза — свой мир целиком (docs/ROADMAP.md, п.7): ни
+        # клиентов, ни awg-сервера, ни вотчдога конфига. Ветвимся РАНО, а не
+        # флажками по всему клиентскому пути: пропущенный флажок здесь
+        # означал бы «агент полез в docker за awg» — молча и не туда.
+        await run_gateway()
+        return
 
     db = Database(config.DB_PATH)
     db.init_schema()

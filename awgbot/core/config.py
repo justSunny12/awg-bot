@@ -143,7 +143,17 @@ def validate() -> None:
             "Не заданы обязательные секреты: " + ", ".join(missing_secrets) +
             ". Задайте их в /etc/awg-bot/env (или .env).")
 
-    # Топология — обязательные ключи yaml. (param, значение, "файл: ключ")
+    if ROLE not in ("client", "gateway"):
+        raise RuntimeError(
+            f"Неизвестная role={ROLE!r} в app.yaml. Допустимо: client (бот при "
+            f"awg-сервере) или gateway (агент на шлюзе маршрутизации).")
+
+    # Топология — обязательные ключи yaml, СВОИ у каждой роли: шлюзу не нужен
+    # ни server_host, ни порт — он не выдаёт конфигов. Требовать их у агента
+    # значило бы заставлять установщика выдумывать значения, которые никто
+    # никогда не прочтёт.
+    if ROLE == "gateway":
+        return
     checks = [
         ("server_host", SERVER_HOST, "app.yaml: network.server_host"),
         ("server_port", SERVER_PORT, "app.yaml: network.server_port"),
@@ -170,6 +180,30 @@ _app = _load_yaml("app")
 
 TZ_NAME = _app.get("timezone", "Europe/Moscow")
 TZ = ZoneInfo(TZ_NAME)
+
+# ── Роль установки (docs/ROADMAP.md, п.7) ────────────────────────────────────
+# "client"  — обычный бот при awg-сервере (всё, что было всегда);
+# "gateway" — агент на шлюзе условной маршрутизации: наблюдаемость линка и
+#             железа, свой Telegram-токен, никакой клиентской механики.
+# Дефолт — client: боевой app.yaml при обновлении не мигрирует, и отсутствие
+# ключа обязано означать «сервер, который обновился».
+ROLE = str(_app.get("role") or "client").strip().lower()
+
+_gw = _app.get("gateway", {})
+# Интерфейс линка до ВПС и каталог его конфига — те же, что у скриптов обвязки.
+GW_LINK_IF = _gw.get("link_interface", "awglink")
+GW_CONF_DIR = _gw.get("conf_dir", "/etc/amnezia/amneziawg")
+GW_LINK_CONF = f"{GW_CONF_DIR}/{GW_LINK_IF}.conf"
+# Юнит, реассертящий обвязку шлюза (ставит routing-gw-setup.sh).
+GW_UNIT = _gw.get("unit", "awg-link-gw.service")
+# Клиентская подсеть ВПС — для проверки MASQUERADE. Пустая строка выключает
+# ровно эту проверку (агент честно скажет об этом в докторе), остальным она не
+# нужна: подсеть живёт в юните шлюза, а дублировать её сюда руками — ещё одно
+# место, где она замерзает. Задавать стоит, когда установщик научится сам.
+GW_CLIENT_SUBNET = _gw.get("client_subnet", "")
+# Интерфейс выхода в интернет (MASQUERADE смотрит в него). Пусто — автодетект
+# по дефолтному маршруту на каждом тике: у домашней машины он может меняться.
+GW_WAN_IF = _gw.get("wan_interface", "")
 
 _docker = _app.get("docker", {})
 

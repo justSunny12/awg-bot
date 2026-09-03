@@ -1463,3 +1463,58 @@ def routing_devices_text(enabled: int, total: int) -> str:
             "нём. Изменения применяются сразу.\n\n"
             "<i>Российские сайты будут открываться с российского адреса только "
             "на отмеченных устройствах. Остальные работают как обычно.</i>")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Роль gateway (docs/ROADMAP.md, п.7)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def gateway_panel(st) -> str:
+    """Панель агента шлюза: всё существенное одним экраном.
+
+    Порядок — по цене отказа: линк (ради него шлюз существует), обвязка, ядра,
+    железо. Возраст хендшейка называем числом: «жив» без числа не отличает
+    свежие 10 секунд от подозрительных четырёх минут.
+    """
+    if not st.link_up:
+        link = "🔴 интерфейс лежит"
+    elif st.handshake_age is None:
+        link = "🟡 поднят, хендшейка не было"
+    elif st.handshake_age < 180:
+        link = f"🟢 хендшейк {st.handshake_age:.0f} с назад"
+    else:
+        link = f"🟡 хендшейк {st.handshake_age/60:.0f} мин назад"
+    lines = [f"🛰 <b>Шлюз</b>", "",
+             f"Линк до ВПС: {link}",
+             f"Трафик линка: ↓{human_bytes(st.rx)} ↑{human_bytes(st.tx)}"]
+    broken = [c for c in st.checks if c.ok is False]
+    unknown = [c for c in st.checks if c.ok is None]
+    if not broken and not unknown:
+        lines.append("Обвязка: ✅ все проверки в порядке")
+    else:
+        for c in broken:
+            lines.append(f"Обвязка: 🔴 {c.name} — {c.detail}")
+        for c in unknown:
+            lines.append(f"Обвязка: ⚪ {c.name} — {c.detail}")
+    if st.kernels_missing:
+        lines.append(f"Ядра: 🔴 без модуля awg: {', '.join(st.kernels_missing)}")
+    else:
+        lines.append(f"Ядра: ✅ покрыты модулем все {st.kernels_total}")
+    hw = []
+    if st.temp is not None:
+        hw.append(f"{st.temp:.0f}°C")
+    if st.throttled is not None:
+        hw.append("питание ⚠️ " + "; ".join(st.throttled["now"])
+                  if st.throttled["now"] else "питание ок")
+        if not st.throttled["now"] and st.throttled["ever"]:
+            hw.append("(были: " + "; ".join(st.throttled["ever"]) + ")")
+    if st.disk is not None:
+        hw.append(f"карта {st.disk:.0f}%")
+    if hw:
+        lines.append("Железо: " + ", ".join(hw))
+    ver = st.module_version or "?"
+    src = f" ({st.srcversion[:8]}…)" if st.srcversion else ""
+    lines.append(f"Модуль awg: {ver}{src}")
+    if st.ext_ip:
+        lines.append(f"Внешний IP: <code>{st.ext_ip}</code>")
+    return "\n".join(lines)
