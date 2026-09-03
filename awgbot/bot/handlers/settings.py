@@ -18,6 +18,7 @@ from awgbot.bot.callbacks import SetCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import SettingsInput
 from awgbot.bot.handlers.common import call, edit, send_menu
+from awgbot.domain.services import ServiceError
 
 router = Router(name="settings")
 router.message.filter(RoleFilter("admin"))
@@ -129,6 +130,19 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
 async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
     """Разрешение профилю на РФ-доступ. Верхний слой флага: снимая его, гасим
     эффект, но настройки самого клиента не разрушаем."""
+    if callback_data.key == "bundle":
+        await cb.answer("Собираю и шифрую…")
+        try:
+            blob, name = await call(services.gw_bundle_encrypted)
+        except (ServiceError, OSError) as e:
+            await cb.answer(f"Не удалось: {e}", show_alert=True)
+            return
+        from aiogram.types import BufferedInputFile
+        await cb.message.answer_document(
+            BufferedInputFile(blob, filename=name),
+            caption="📦 Бандл шлюза, зашифрован ключом линка. Перешли его боту "
+                    "шлюза — он проверит и применит сам.")
+        return
     if callback_data.key != "allow":
         await cb.answer("Действие недоступно.", show_alert=True)
         return

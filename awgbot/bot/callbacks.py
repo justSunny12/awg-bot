@@ -196,3 +196,9 @@ class BroadcastCB(CallbackData, prefix="bc"):
     """
     action: str
     ref: int = 0
+
+
+class GwCB(CallbackData, prefix="gw"):
+    """Кнопки агента шлюза (роль gateway). action: panel|doctor|restart|reassert
+    (показ подтверждения), restart!|reassert! (исполнение), apply!|drop (бандл)."""
+    action: str

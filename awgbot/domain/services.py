@@ -1789,6 +1789,28 @@ class Services(MigrationMixin):
         "(<code>awg-bot gw-bundle</code>) и переустанови его на той стороне: "
         "набор обфускации линка обязан совпадать, иначе хендшейк не проходит.")
 
+    def gw_bundle_encrypted(self) -> tuple[bytes, str]:
+        """Собрать бандл шлюза скриптом линка и зашифровать для доставки чатом.
+
+        Ключ — из приватного ключа ШЛЮЗА, который лежит в конфиге шлюза на ВПС
+        (тот же, что хранит сам шлюз в своём awglink.conf): общий секрет обеих
+        сторон, никогда не ездивший через Telegram. Открытый бандл на диске ВПС
+        остаётся, как и раньше, — под 600.
+        """
+        import subprocess
+        from awgbot.util import bundlecrypt
+        script = str(config.BASE_DIR / "install" / "routing-link-setup.sh")
+        proc = subprocess.run(["sh", script, "--bundle"], capture_output=True, timeout=60)
+        if proc.returncode != 0:
+            raise ServiceError("сборка бандла не удалась: "
+                               + proc.stderr.decode(errors="replace").strip()[-200:])
+        link_if = config.ROUTING_GW_INTERFACE or "awglink"
+        with open(f"/root/gw-{link_if}.conf", encoding="utf-8") as f:
+            priv = bundlecrypt.read_privkey(f.read())
+        with open("/root/awg-gw-bundle.sh", "rb") as f:
+            plain = f.read()
+        return bundlecrypt.encrypt(plain, priv), "awg-gw-bundle.enc"
+
     @staticmethod
     def _rt_effect_line() -> str:
         """Что именно почувствуют пользователи, пока маркировка снята.

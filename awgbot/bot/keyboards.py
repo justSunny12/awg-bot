@@ -13,7 +13,7 @@ from awgbot.core import settings
 from awgbot.bot import texts
 from awgbot.core import blocks as _blocks
 from awgbot.core.enums import SubStatus, ActivationStatus
-from awgbot.bot.callbacks import HideCB
+from awgbot.bot.callbacks import GwCB, HideCB
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Reply-клавиатура (глобальные команды у поля ввода): «Меню» и «Отмена».
@@ -1073,6 +1073,12 @@ def settings_routing(enabled: bool, clients=()) -> InlineKeyboardMarkup:
             kb.button(text=f"{_chk(c.routing_allowed)} {c.name}",
                       callback_data=SetCB(sec="rt", act="do", key="allow", val=str(c.id)))
             rows.append(1)
+        # Бандл — шифрованным файлом в чат: его пересылают агенту шлюза, и тот
+        # применяет сам. Ни scp, ни паролей: ключ шифрования выводится из ключа
+        # линка, который через чат не ходил никогда.
+        kb.button(text="📦 Бандл для шлюза (шифрованный)",
+                  callback_data=SetCB(sec="rt", act="do", key="bundle"))
+        rows.append(1)
     kb.row(_back())
     kb.adjust(*rows)
     return kb.as_markup()
@@ -1239,8 +1245,36 @@ def settings_cancel(sec: str) -> InlineKeyboardMarkup:
 
 
 def gateway_panel_kb() -> InlineKeyboardMarkup:
-    """Панель шлюза: этап 1 — только перечитать. Операции (доктор с действиями,
-    рестарт линка, бандл) приходят этапом 2 — кнопки появятся вместе с ними."""
+    """Панель шлюза. Действия с последствиями (рестарт линка, реассерт) ведут на
+    подтверждение — обрыв RF у всех, пусть и на секунды, не должен случаться от
+    промаха пальцем. Бандл кнопки не имеет: он приходит файлом в чат."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="🔄 Обновить", callback_data=Menu(action="gw_refresh"))
+    kb.button(text="🔄 Обновить", callback_data=GwCB(action="panel"))
+    kb.button(text="🩺 Доктор", callback_data=GwCB(action="doctor"))
+    kb.button(text="🔁 Рестарт линка", callback_data=GwCB(action="restart"))
+    kb.button(text="🛠 Реассерт обвязки", callback_data=GwCB(action="reassert"))
+    kb.adjust(2, 2)
+    return kb.as_markup()
+
+
+def gateway_confirm_kb(action: str) -> InlineKeyboardMarkup:
+    """«Не надо» первой — необратимое не там, куда палец идёт по инерции."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Не надо", callback_data=GwCB(action="panel"))
+    kb.button(text="✅ Выполнить", callback_data=GwCB(action=f"{action}!"))
+    kb.adjust(2)
+    return kb.as_markup()
+
+
+def gateway_bundle_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Отмена", callback_data=GwCB(action="drop"))
+    kb.button(text="📦 Применить бандл", callback_data=GwCB(action="apply!"))
+    kb.adjust(2)
+    return kb.as_markup()
+
+
+def gateway_back_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ К панели", callback_data=GwCB(action="panel"))
     return kb.as_markup()

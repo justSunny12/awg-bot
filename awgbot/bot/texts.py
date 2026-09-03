@@ -1518,3 +1518,34 @@ def gateway_panel(st) -> str:
     if st.ext_ip:
         lines.append(f"Внешний IP: <code>{st.ext_ip}</code>")
     return "\n".join(lines)
+
+
+def gateway_doctor(checks) -> str:
+    """Доктор шлюза — по строкам: чинить будут по ним, а не по вердикту."""
+    lines = ["🩺 <b>Доктор шлюза</b>", ""]
+    for c in checks:
+        mark = "✅" if c.ok else ("⚪" if c.ok is None else "🔴")
+        lines.append(f"{mark} {c.name}" + (f" — {c.detail}" if c.detail else ""))
+    bad = sum(1 for c in checks if c.ok is False)
+    lines += ["", "Всё в порядке." if not bad else
+              f"Проблем: {bad}. «Реассерт обвязки» переставит правила и переподнимет линк."]
+    return "\n".join(lines)
+
+
+GW_CONFIRM_RESTART = ("🔁 <b>Перезапустить линк?</b>\n\nИнтерфейс опустится и поднимется "
+                      "заново. РФ-доступ у всех клиентов оборвётся на несколько секунд; "
+                      "обвязка не трогается.")
+GW_CONFIRM_REASSERT = ("🛠 <b>Реассерт обвязки?</b>\n\nЮнит шлюза переставит правила "
+                       "(MASQUERADE, изоляция, маркировка) и переподнимет линк. "
+                       "Обрыв РФ-доступа на несколько секунд.")
+GW_BUNDLE_RECEIVED = ("📦 <b>Получен бандл шлюза.</b>\n\nВнутри — конфиг линка и скрипт "
+                      "обвязки с ВПС, зашифрованные ключом текущего линка. Применение "
+                      "перепишет конфиг линка, переподнимет его и переставит правила. "
+                      "Несколько секунд без РФ-доступа.")
+GW_BUNDLE_NOT_OURS = ("Это не шифрованный бандл шлюза — файл не принят. Бандл делается "
+                      "на ВПС кнопкой «Бандл для шлюза» в условной маршрутизации.")
+
+
+def gateway_op_result(title: str, ok: bool, detail: str) -> str:
+    head = f"{'✅' if ok else '🔴'} <b>{title}: {'готово' if ok else 'не удалось'}</b>"
+    return head + (f"\n<code>{_e(detail)}</code>" if detail else "")

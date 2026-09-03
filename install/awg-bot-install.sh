@@ -14,6 +14,7 @@
 # Использование:
 #   sudo ./awg-bot-install.sh            (архив awg-bot.tgz рядом со скриптом)
 #   sudo ./awg-bot-install.sh <path.tgz>
+#   sudo ./awg-bot-install.sh --role gateway [<path.tgz>]   # агент на шлюзе
 #
 set -euo pipefail
 
@@ -30,6 +31,10 @@ die() { printf '%s[install:ОШИБКА]%s %s\n' "$c_err" "$c_off" "$*" >&2; exi
 
 SELF_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 SELF_DIR="$(dirname "$SELF_PATH")"
+
+# ── роль: --role gateway или AWG_BOT_ROLE=gateway ─────────────────────────────
+ROLE="${AWG_BOT_ROLE:-client}"
+if [[ "${1:-}" == "--role" ]]; then ROLE="${2:-client}"; shift 2; fi
 
 # ── найти архив: аргумент → рядом со скриптом → CWD ──────────────────────────
 TGZ=""
@@ -91,4 +96,4 @@ ln -sf "$INSTALL_DIR/awg-bot.sh" "$SELF_LINK"
 
 # ── передать управление внутреннему инструменту (он настроит и подчистит нас) ─
 log "запускаю мастер настройки…"
-exec "$INSTALL_DIR/awg-bot.sh" reconfigure --first-run --cleanup "$SELF_PATH" "$TGZ"
+exec "$INSTALL_DIR/awg-bot.sh" reconfigure --first-run --role "$ROLE" --cleanup "$SELF_PATH" "$TGZ"

@@ -284,6 +284,11 @@ class GatewayServices:
             f"💽 Карта заполнена на {st.disk:.0f}%." if st.disk is not None else "",
             "✅ Место на карте снова в норме.")
 
+        try:
+            self.tg_mark_ensure()
+        except Exception as e:                          # noqa: BLE001
+            log.warning("gateway: tg_mark_ensure: %s", e)
+
         ip = self.fetch_external_ip()
         if ip:
             prev = self.db.get_state(self._EXT_IP_KEY) or ""
@@ -304,6 +309,103 @@ class GatewayServices:
             "ext_ip": st.ext_ip or (self.db.get_state(self._EXT_IP_KEY) or ""),
         }))
         return [n for n in notes if n.text]
+
+    # ── путь к Telegram: маркировка диапазонов (этап 2) ──────────────────────
+
+    # Диапазоны Telegram (AS62014/62041/59930/44907) — стабильны годами. Трафик
+    # к ним метится 0x1 и уходит в туннель до ВПС по уже существующей политике
+    # шлюза (fwmark 0x1 → table 100 → awg0): без этого агент нем — Telegram в
+    # юрисдикции шлюза заблокирован. Персист — в PostUp клиентского конфига
+    # шлюза; агент лишь реассертит недостающее: правило идемпотентно, и
+    # автоматика здесь хуже не сделает.
+    TG_RANGES = ("91.108.4.0/22", "91.108.8.0/22", "91.108.12.0/22",
+                 "91.108.16.0/22", "91.108.20.0/22", "91.108.56.0/22",
+                 "149.154.160.0/20", "185.76.151.0/24")
+
+    def tg_mark_missing(self) -> list[str]:
+        return [n for n in self.TG_RANGES
+                if _run(["iptables", "-t", "mangle", "-C", "OUTPUT", "-d", n,
+                         "-j", "MARK", "--set-mark", "0x1"]).returncode != 0]
+
+    def tg_mark_ensure(self) -> int:
+        """Доставить недостающие правила. Возвращает число поставленных."""
+        n = 0
+        for net in self.tg_mark_missing():
+            if _run(["iptables", "-t", "mangle", "-A", "OUTPUT", "-d", net,
+                     "-j", "MARK", "--set-mark", "0x1"]).returncode == 0:
+                n += 1
+        if n:
+            log.warning("gateway: маркировка Telegram доставлена: %d правил", n)
+        return n
+
+    # ── операции с кнопки (этап 2) ───────────────────────────────────────────
+
+    def restart_link(self) -> tuple[bool, str]:
+        """Мягкий рестарт линка: down/up интерфейса без пересборки обвязки.
+        Секунды обрыва RF у всех — поэтому только с подтверждения."""
+        down = _run(["awg-quick", "down", config.GW_LINK_IF], timeout=30)
+        up = _run(["awg-quick", "up", config.GW_LINK_IF], timeout=30)
+        ok = up.returncode == 0
+        tail = (_out(up) + up.stderr.decode(errors="replace")).strip().splitlines()[-3:]
+        return ok, "\n".join(tail) if tail else ("поднят" if ok else "не поднялся")
+
+    def reassert(self) -> tuple[bool, str]:
+        """Полный реассерт: рестарт юнита шлюза — тот зовёт gw-скрипт, который
+        идемпотентно переставляет правила и переподнимает линк."""
+        proc = _run(["systemctl", "restart", config.GW_UNIT], timeout=90)
+        ok = proc.returncode == 0
+        return ok, "" if ok else proc.stderr.decode(errors="replace").strip()[-300:]
+
+    def apply_bundle(self, blob: bytes) -> tuple[bool, str]:
+        """Принять шифрованный бандл из чата: расшифровать ключом, производным от
+        ТЕКУЩЕГО приватного ключа линка, проверить, что это наш бандл, применить.
+
+        Порядок проверок важен: сначала шифр (не наш файл / не тот ключ), потом
+        структура (маркеры контракта) — и только затем запуск. Бандл исполняется
+        тем же путём, что и руками: sh bundle --apply; он сам перепишет
+        линк-конфиг, переподнимет линк и юнит.
+        """
+        import os, tempfile
+        from awgbot.util import bundlecrypt
+        try:
+            priv = bundlecrypt.read_privkey(pathlib_read(config.GW_LINK_CONF))
+            plain = bundlecrypt.decrypt(blob, priv)
+        except (OSError, ValueError) as e:
+            return False, f"бандл не принят: {e}"
+        text = plain.decode(errors="replace")
+        if "#__GW_SETUP_BELOW__" not in text or "__LINK_CONF_EOF__" not in text:
+            return False, "бандл не принят: внутри нет маркеров контракта линка"
+        fd, path = tempfile.mkstemp(prefix="awg-gw-bundle-", suffix=".sh", dir="/root")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(plain)
+            proc = _run(["sh", path, "--apply"], timeout=180)
+            out = (_out(proc) + proc.stderr.decode(errors="replace")).strip()
+            tail = "\n".join(out.splitlines()[-6:])
+            return proc.returncode == 0, tail
+        finally:
+            try:
+                os.unlink(path)               # внутри приватный ключ — не оставляем
+            except OSError:
+                pass
+
+    def doctor(self) -> list[GwCheck]:
+        """Доктор: все проверки панели плюс путь к Telegram и линк — как список,
+        а не как вердикт: чинить будут по строкам."""
+        checks = list(self.plumbing_checks())
+        missing = self.tg_mark_missing()
+        checks.append(GwCheck("маршрут к Telegram", not missing,
+                              "" if not missing else
+                              f"нет маркировки для {len(missing)} диапазонов — "
+                              f"реассерт поставит"))
+        up, age, _, _ = self.link_status()
+        checks.append(GwCheck("линк", up and age is not None,
+                              "" if up and age is not None else
+                              ("интерфейс лежит" if not up else "хендшейка не было")))
+        km, kt = self.kernel_coverage()
+        checks.append(GwCheck("ядра", not km,
+                              "" if not km else "без модуля: " + ", ".join(km)))
+        return checks
 
     # ── сводка для панели ────────────────────────────────────────────────────
 

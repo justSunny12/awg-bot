@@ -12,7 +12,7 @@
 # и первичная настройка (reconfigure --first-run из bootstrap), и обновление.
 #
 # Глаголы:
-#   reconfigure [--first-run] [--cleanup <inst> <tgz>]
+#   reconfigure [--first-run] [--role client|gateway] [--cleanup <inst> <tgz>]
 #                          мастер конфигурации (топология + секреты). --first-run —
 #                          первичный прогон из установщика (собрать venv, юнит,
 #                          enable+start, напечатать карту, подчистить установщик).
@@ -418,17 +418,58 @@ print_map() {  # print_map "active"|"failed"
 }
 
 # ── reconfigure ──────────────────────────────────────────────────────────────
+# ── роль gateway: агент на шлюзе (docs/ROADMAP.md, п.7) ──────────────────────
+configure_gateway() {
+    # Раскомментировать блок роли из шаблона (yaml_set правит только существующие
+    # ключи, а в шаблоне они закомментированы намеренно — свежая установка
+    # клиентской роли не должна получить чужую секцию).
+    local app="$CONF_DIR/app.yaml"
+    [[ -f "$app" ]] || die "нет $app — сначала seed_conf"
+    sed -i -E 's/^# (role: "gateway")/\1/; s/^# (gateway:)/\1/' "$app"
+    sed -i -E 's/^#   ((link_interface|conf_dir|unit|client_subnet|wan_interface|monitor_minutes|handshake_max_age|link_alert_streak|temp_alert_c|ipv4_only):)/  \1/' "$app"
+    yaml_set "$app" runtime '"host"'
+    echo; log "─── Шлюз ───"
+    local cur subnet
+    cur="$(yaml_get "$app" client_subnet)"
+    ask subnet "Клиентская подсеть ВПС (для проверки MASQUERADE; Enter — пропустить)" "${cur:-}"
+    yaml_set "$app" client_subnet "\"${subnet}\""
+    ok "роль gateway записана в $app"
+}
+
 cmd_reconfigure() {
-    local first_run=0 cleanup_inst="" cleanup_tgz=""
+    local first_run=0 cleanup_inst="" cleanup_tgz="" role="client"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --first-run) first_run=1; shift ;;
+            --role)      role="${2:-}"; shift 2 ;;
             --cleanup)   cleanup_inst="${2:-}"; cleanup_tgz="${3:-}"; shift 3 ;;
             *) die "reconfigure: неизвестный аргумент '$1'" ;;
         esac
     done
     require_root
     [[ -f "$INSTALL_DIR/awgbot/__main__.py" ]] || die "код не распакован в $INSTALL_DIR (запусти внешний установщик)"
+    [[ "$role" == "client" || "$role" == "gateway" ]] || die "role: client или gateway"
+
+    if [[ "$role" == "gateway" ]]; then
+        # Свой путь целиком: ни визарда топологии (шлюз не выдаёт конфигов),
+        # ни email-выхода. Общее с клиентской ролью — python, venv, секреты,
+        # юнит — то же самое, теми же функциями.
+        ensure_python
+        build_venv
+        mkdir -p "$DATA_DIR"; chmod 700 "$DATA_DIR"
+        seed_conf
+        configure_gateway
+        setup_secrets
+        validate_config
+        install_unit
+        systemctl enable --now "$SERVICE" 2>/dev/null || systemctl restart "$SERVICE"; sleep 1
+        systemctl is-active --quiet "$SERVICE" && ok "$SERVICE (агент шлюза) запущен." \
+            || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+        [[ -n "$cleanup_inst" && -f "$cleanup_inst" ]] && rm -f "$cleanup_inst"
+        [[ -n "$cleanup_tgz"  && -f "$cleanup_tgz"  ]] && rm -f "$cleanup_tgz"
+        ok "Готово: напиши /start боту шлюза."
+        return
+    fi
 
     if [[ "$first_run" -eq 1 ]]; then
         ensure_python

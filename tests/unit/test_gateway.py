@@ -203,3 +203,58 @@ def test_panel_renders_on_a_dead_gateway():
     from awgbot.bot import texts
     out = texts.gateway_panel(GwStatus())
     assert "лежит" in out
+
+
+# ── этап 2: операции ─────────────────────────────────────────────────────────
+
+def test_apply_bundle_rejects_wrong_key_and_foreign_content(svc, monkeypatch, tmp_path):
+    import base64, os
+    from awgbot.util import bundlecrypt as bc
+    mine = base64.b64encode(os.urandom(32)).decode()
+    theirs = base64.b64encode(os.urandom(32)).decode()
+    conf = tmp_path / "awglink.conf"
+    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
+    ran = []
+    monkeypatch.setattr(gw, "_run", lambda a, timeout=10: ran.append(a) or _cp(0, "ok"))
+
+    ok, msg = svc.apply_bundle(bc.encrypt(b"#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__", theirs))
+    assert not ok and "ключ" in msg and ran == [], "чужой бандл дошёл до запуска"
+
+    ok, msg = svc.apply_bundle(bc.encrypt(b"#!/bin/sh\nrm -rf /\n", mine))
+    assert not ok and "маркер" in msg and ran == [], "файл без контракта дошёл до запуска"
+
+
+def test_apply_bundle_runs_our_bundle_and_removes_the_file(svc, monkeypatch, tmp_path):
+    import base64, os
+    from awgbot.util import bundlecrypt as bc
+    mine = base64.b64encode(os.urandom(32)).decode()
+    conf = tmp_path / "awglink.conf"
+    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
+    monkeypatch.setattr(gw.tempfile if hasattr(gw, "tempfile") else __import__("tempfile"),
+                        "mkstemp", lambda **kw: (os.open(str(tmp_path / "b.sh"), os.O_RDWR | os.O_CREAT),
+                                                 str(tmp_path / "b.sh")))
+    ran = []
+    monkeypatch.setattr(gw, "_run", lambda a, timeout=10: ran.append(a) or _cp(0, "Готово"))
+    body = b"#!/bin/sh\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n"
+    ok, msg = svc.apply_bundle(bc.encrypt(body, mine))
+    assert ok and "Готово" in msg
+    assert ran and ran[0][:1] == ["sh"] and ran[0][2] == "--apply"
+    assert not (tmp_path / "b.sh").exists(), "бандл с приватным ключом остался на диске"
+
+
+def test_tg_mark_ensure_adds_only_missing(svc, monkeypatch):
+    present = {"149.154.160.0/20"}
+    added = []
+
+    def run(argv, timeout=10):
+        if "-C" in argv:
+            return _cp(0) if argv[argv.index("-d") + 1] in present else _cp(1)
+        if "-A" in argv:
+            added.append(argv[argv.index("-d") + 1]); return _cp(0)
+        return _cp(0)
+
+    monkeypatch.setattr(gw, "_run", run)
+    assert svc.tg_mark_ensure() == len(svc.TG_RANGES) - 1
+    assert "149.154.160.0/20" not in added
