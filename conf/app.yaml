@@ -55,6 +55,7 @@ docker:
 #   handshake_max_age: 300         # сек; старше — линк считается мёртвым
 #   link_alert_streak: 2           # тиков подряд до алерта по линку
 #   temp_alert_c: 75               # порог температуры SoC
+#   ipv4_only: true                # Telegram через v4-туннель: v6-адрес API — в никуда
 
 # Сеть: сервер занимает .0, клиенты идут с .1 (квирк докерной Amnezia)
 network:

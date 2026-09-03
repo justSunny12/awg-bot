@@ -108,7 +108,24 @@ async def run_gateway() -> None:
     db.init_schema()
     services = GatewayServices(db)
 
-    bot = Bot(config.BOT_TOKEN,
+    # Шлюз стоит в юрисдикции, где Telegram заблокирован, и ходит к нему через
+    # туннель до ВПС — по метке, как всё помеченное на этой машине. Туннель
+    # только IPv4, а резолвер отдаёт api.telegram.org сначала AAAA-адресом:
+    # aiohttp полез бы по v6 в никуда и утонул в таймауте ещё до v4-попытки.
+    # Прибиваем сессию к IPv4. _connector_init — приватное поле aiogram, но
+    # это единственная точка, куда доезжают параметры TCPConnector; отказ его
+    # заполнить не фатален — тогда просто работаем как обычно.
+    session = None
+    if settings.get_bool("app.gateway.ipv4_only", True):
+        try:
+            import socket
+            from aiogram.client.session.aiohttp import AiohttpSession
+            session = AiohttpSession()
+            session._connector_init["family"] = socket.AF_INET   # noqa: SLF001
+        except Exception as e:                           # noqa: BLE001
+            log.warning("gateway: не смог ограничить сессию IPv4: %s", e)
+            session = None
+    bot = Bot(config.BOT_TOKEN, session=session,
               default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     try:
         await bot.get_me()
