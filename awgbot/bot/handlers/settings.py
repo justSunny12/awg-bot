@@ -61,11 +61,14 @@ async def _screen(sec: str, services):
         on = settings.get_bool("app.routing.enabled", False)
         status = await call(services.routing_status)
         return texts.settings_routing_text(on, status), kb.settings_routing(on)
-    if sec in ("rt_lists", "rt_users"):
+    if sec in ("rt_lists", "rt_users", "rt_bundle"):
         # Подразделы существуют только при включённой функции. Колбэк приходит
         # и из старого сообщения — тогда честно говорим, что раздел пуст.
         if not config.ROUTING_ENABLED or not settings.get_bool("app.routing.enabled", False):
             return texts.SETTINGS_ROUTING_SUBOFF, kb.settings_back()
+        if sec == "rt_bundle":
+            # Промежуточный экран: файл уносит ключ линка, выпуск — осознанно.
+            return texts.ROUTING_BUNDLE_INTRO, kb.settings_routing_bundle()
         if sec == "rt_lists":
             info = await call(services.routing_lists_info)
             return texts.routing_lists_text(info), kb.settings_routing_lists(info["every_hours"])

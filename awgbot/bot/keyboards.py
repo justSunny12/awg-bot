@@ -1065,12 +1065,23 @@ def settings_routing(enabled: bool) -> InlineKeyboardMarkup:
               callback_data=SetCB(sec="rt", act="toggle", key="app.routing.enabled"))
     if enabled:
         kb.button(text="⚙️ Конфигурация шлюза",
-                  callback_data=SetCB(sec="rt", act="do", key="bundle"))
+                  callback_data=SetCB(sec="rt_bundle", act="open"))
         kb.button(text="📋 Списки маршрутизации",
                   callback_data=SetCB(sec="rt_lists", act="open"))
         kb.button(text="👥 Доступность пользователям",
                   callback_data=SetCB(sec="rt_users", act="open"))
     kb.row(_back())
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def settings_routing_bundle() -> InlineKeyboardMarkup:
+    """Экран перед выпуском конфигурации шлюза: одно действие и отмена.
+    Файл уходит в чат с ключом линка внутри — выпуск должен быть осознанным."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📤 Выпустить файл",
+              callback_data=SetCB(sec="rt", act="do", key="bundle"))
+    kb.button(text="✖️ Отмена", callback_data=SetCB(sec="rt").pack())
     kb.adjust(1)
     return kb.as_markup()
 

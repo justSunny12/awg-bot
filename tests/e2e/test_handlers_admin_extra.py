@@ -1053,3 +1053,23 @@ async def test_routing_subsections_render_and_are_empty_when_off(services, monke
     monkeypatch.setattr(settings, "get_bool", lambda k, d=False: False)
     text, markup = await sh._screen("rt_lists", services)
     assert "выключена" in text
+
+
+async def test_bundle_button_opens_intro_screen_before_issuing(services, fake_bot, monkeypatch):
+    """«Конфигурация шлюза» не выпускает файл сразу: сначала экран «что
+    произойдёт» с «Выпустить файл» и «Отмена» (назад в раздел)."""
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from awgbot.bot import keyboards as kb
+    from awgbot.core import settings as st
+    import awgbot.core.config as cfg
+    monkeypatch.setattr(cfg, "ROUTING_ENABLED", True)
+    monkeypatch.setattr(st, "get_bool", lambda key, default=False: True)
+    markup = kb.settings_routing(True)
+    btn = [b for row in markup.inline_keyboard for b in row if "Конфигурация" in b.text][0]
+    assert btn.callback_data == SetCB(sec="rt_bundle", act="open").pack()
+    text, markup = await sh._screen("rt_bundle", services)
+    assert "Что произойдёт" in text
+    datas = [b.callback_data for row in markup.inline_keyboard for b in row]
+    assert SetCB(sec="rt", act="do", key="bundle").pack() in datas, "нет «Выпустить»"
+    assert SetCB(sec="rt").pack() in datas, "нет «Отмена» назад в раздел"
