@@ -996,6 +996,8 @@ async def test_routing_lists_info_and_controls(services, fake_bot, monkeypatch):
     await sh.pick(cb, SetCB(sec="rt", act="pick", key="lists", val="12"), services)
     assert written["app.routing.lists_refresh_hours"] == 12
 
+    cb.answers.clear()
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="lists_refresh"), services)
     assert forced == [True], "«обновить сейчас» не форсирует обновление"
-    assert any("7 записей" in (a[0] or "") for a in cb.answers)
+    # ровно один ответ на колбэк: второй Telegram не показывает
+    assert len(cb.answers) == 1 and "7 записей" in (cb.answers[0][0] or "")

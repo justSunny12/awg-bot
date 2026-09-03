@@ -153,7 +153,9 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
             reply_markup=kb.bundle_menu_kb())
         return
     if callback_data.key == "lists_refresh":
-        await cb.answer("Обновляю списки…")
+        # Колбэк отвечается ОДИН раз — второй ответ Telegram молча роняет.
+        # Обновление занимает секунды, спиннер на кнопке их покрывает; итог —
+        # числом в ответе, а свежесть видна в перерисованном блоке «Списки».
         n = await call(services.routing_update_lists, True)
         await _render(cb, "rt", services)
         await cb.answer(f"В базовом наборе {n} записей.")
