@@ -138,10 +138,17 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
             await cb.answer(f"Не удалось: {e}", show_alert=True)
             return
         from aiogram.types import BufferedInputFile
+        # Экран настроек гаснет: живым должно остаться одно меню, и это —
+        # кнопка «В меню» на самом бандле. Нажатие снимет её и вернёт панель.
+        try:
+            await cb.message.edit_reply_markup(reply_markup=None)
+        except Exception:                                  # noqa: BLE001
+            pass
         await cb.message.answer_document(
             BufferedInputFile(blob, filename=name),
             caption="📦 Бандл шлюза, зашифрован ключом линка. Перешли его боту "
-                    "шлюза — он проверит и применит сам.")
+                    "шлюза — он проверит и применит сам.",
+            reply_markup=kb.update_done_menu())
         return
     if callback_data.key != "allow":
         await cb.answer("Действие недоступно.", show_alert=True)

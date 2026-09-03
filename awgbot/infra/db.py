@@ -711,6 +711,29 @@ class Database:
                 (chat_id, message_id),
             )
 
+    # ── история меню: все нав-сообщения чата, а не только последнее ─────────
+    # nav_message_id знает одно активное меню; /start обязан убрать ВСЕ прошлые,
+    # включая те, с которых кнопки уже сняты, — иначе после нескольких сессий
+    # чат превращается в стопку мёртвых панелей. Cap на 30: старше Telegram всё
+    # равно не даст удалить, а хранить бесконечно незачем.
+    _NAV_HISTORY_CAP = 30
+
+    def push_nav_history(self, chat_id: int, message_id: int) -> None:
+        import json
+        key = f"nav_history:{chat_id}"
+        ids = json.loads(self.get_state(key) or "[]")
+        if message_id in ids:
+            return
+        ids = (ids + [message_id])[-self._NAV_HISTORY_CAP:]
+        self.set_state(key, json.dumps(ids))
+
+    def pop_nav_history(self, chat_id: int) -> list:
+        import json
+        key = f"nav_history:{chat_id}"
+        ids = json.loads(self.get_state(key) or "[]")
+        self.set_state(key, "[]")
+        return ids
+
     def add_content_msg_id(self, chat_id: int, message_id: int) -> None:
         """Запомнить id выданного контент-сообщения (ссылка/QR/файл/инструкция),
         чтобы удалить его при возврате в меню."""

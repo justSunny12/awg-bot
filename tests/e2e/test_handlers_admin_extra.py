@@ -909,3 +909,39 @@ async def test_only_the_last_update_finisher_keeps_its_menu_button(
     # снята именно у ПЕРВОГО финишера, а состояние указывает на последний
     first_id = int(services.db.get_state("update_report_msg").split(":")[1])
     assert stripped[0][1] != first_id, "кнопку сняли у последнего, а не у прежнего"
+
+
+async def test_admin_start_purges_menu_history(services, fake_bot):
+    """/start админа удаляет все прошлые меню чата (история ведётся send_menu/edit_nav)."""
+    from awgbot.bot.handlers import admin as admin_h
+    from tests.conftest import FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    chat = cfg.ADMIN_ID
+    for mid in (101, 102, 103):
+        services.db.push_nav_history(chat, mid)
+    msg = FakeMessage(chat_id=chat, user_id=chat, bot=fake_bot)
+    await admin_h.admin_start(msg, services, FakeState())
+    deleted = sorted(r[2] for r in fake_bot.records if r[0] == "delete_message")
+    assert deleted == [101, 102, 103]
+    assert services.db.pop_nav_history(chat) != [101, 102, 103], "история не очищена"
+
+
+async def test_bundle_document_carries_menu_button_and_dims_settings(
+        services, make_active_client, fake_bot, monkeypatch):
+    """Бандл уходит с кнопкой «В меню», а экран настроек гаснет: живым остаётся
+    одно меню — на самом бандле."""
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from tests.conftest import FakeCallback, FakeMessage
+    import awgbot.core.config as cfg
+    monkeypatch.setattr(services, "gw_bundle_encrypted", lambda: (b"AWGGWB1\nxx", "b.enc"))
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    sent_docs = []
+
+    async def answer_document(doc, caption=None, reply_markup=None, **kw):
+        sent_docs.append((caption, reply_markup)); return msg
+    msg.answer_document = answer_document
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle"), services)
+    assert sent_docs and sent_docs[0][1] is not None, "у бандла нет кнопки «В меню»"
+    assert any(r[0] == "edit_reply_markup" for r in fake_bot.records), "экран настроек не погашен"

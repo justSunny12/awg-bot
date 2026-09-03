@@ -23,7 +23,7 @@ from awgbot.bot import texts
 from awgbot.bot.callbacks import BlockCB, DelDeviceCB, DeviceCB, GraceCB, HelpCB, Menu, PauseCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.notifier import notify_one, send_notifications
-from awgbot.bot.handlers.common import (call, cleanup_content, drop_message, edit, edit_nav, ask_tracked, own_device,
+from awgbot.bot.handlers.common import (call, cleanup_content, drop_message, edit, edit_nav, ask_tracked, own_device, purge_menus,
                              remove_device_and_notify, send_device_config, send_menu,
                              content_finisher)
 from awgbot.domain.services import BYTES_PER_GB, LimitReached, ServiceError
@@ -136,6 +136,7 @@ async def _activate_friend(message: Message, services, code: str):
 @router.message(CommandStart(), RoleFilter("client"))
 async def start_client(message: Message, client, services, state: FSMContext):
     await state.clear()
+    await purge_menus(message.bot, services, message.chat.id)   # /start = заново
     await _show_main(message, services, client)
 
 

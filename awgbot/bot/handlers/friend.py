@@ -20,7 +20,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.callbacks import FriendCB, HelpCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.handlers.common import (call, drop_message, edit, edit_nav, send_device_config,
+from awgbot.bot.handlers.common import (call, drop_message, edit, edit_nav, send_device_config, purge_menus,
                              send_menu, send_qr, content_finisher, cleanup_content)
 
 router = Router(name="friend")
@@ -59,6 +59,7 @@ async def show_friend_panel(target: Message, services, tg_id: int, *, fresh: boo
 
 @router.message(CommandStart())
 async def friend_start(message: Message, services):
+    await purge_menus(message.bot, services, message.chat.id)   # /start = заново
     await show_friend_panel(message, services, message.from_user.id)
 
 

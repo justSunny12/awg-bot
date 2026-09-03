@@ -53,7 +53,7 @@ async def test_restart_needs_confirmation(svc, fake_bot):
     """Кнопка «Рестарт линка» сама ничего не рвёт — только показывает цену."""
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_confirm(cb, GwCB(action="restart"))
+    await gh.gw_confirm(cb, GwCB(action="restart"), svc)
     assert svc.restarted == 0
     assert any("оборвётся" in t for kind, t, _ in msg.sent if kind == "edit_text")
 
@@ -114,3 +114,18 @@ async def test_gateway_update_install_runs_the_shared_updater(svc, fake_bot, mon
     await gh.gw_update_install(cb, svc)
     assert applied == ["v9.9.9"]
     assert svc.db.get_state("update_wait"), "«дождись» не запомнено для нового процесса"
+
+
+async def test_start_removes_all_previous_menus(svc, fake_bot):
+    """Повторный /start убирает ВСЕ прошлые меню, а не только снимает кнопки с
+    последнего: /start — «начать заново», и стопка мёртвых панелей над живой
+    заставляла бы листать историю."""
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_start(msg, svc, FakeState())
+    await gh.gw_start(msg, svc, FakeState())
+    first_ids = [m for k, chat, m in
+                 [(r[0], r[1], r[2]) for r in fake_bot.records if r[0] == "delete_message"]]
+    assert first_ids, "прошлое меню не удалено при повторном /start"
+    await gh.gw_start(msg, svc, FakeState())
+    deleted = [r[2] for r in fake_bot.records if r[0] == "delete_message"]
+    assert len(deleted) >= 2, "удаляется не всё прошлое"

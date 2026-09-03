@@ -24,7 +24,7 @@ from aiogram.types import CallbackQuery, Message
 from awgbot.bot.callbacks import (AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
                        Menu, PeriodCB, ReassignCB, RoutingCB, UpdateCB, BroadcastCB)
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message,
+from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message, purge_menus,
                              remove_device_and_notify, send_conf, cleanup_content,
                              send_link, send_qr, send_menu, content_finisher,
                              show_main_menu, _dismiss_previous_nav)
@@ -108,6 +108,8 @@ async def _panel_text(services) -> str:
 @router.message(CommandStart())
 async def admin_start(message: Message, services, state: FSMContext):
     await state.clear()
+    # /start — «начать заново»: все прошлые меню из чата долой, не только кнопки
+    await purge_menus(message.bot, services, message.chat.id)
     await _return_panel(message, services)
 
 

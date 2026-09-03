@@ -55,6 +55,24 @@ async def send_menu(message: Message, services, text, markup) -> None:
     await _dismiss_previous_nav(message.bot, services, chat_id)
     sent = await message.answer(text, reply_markup=markup)
     await call(services.db.set_nav_message_id, chat_id, sent.message_id)
+    await call(services.db.push_nav_history, chat_id, sent.message_id)
+
+
+async def purge_menus(bot, services, chat_id: int) -> None:
+    """Убрать ВСЕ прошлые меню чата — для повторного /start.
+
+    /start — это «начать заново», и оставлять над новой панелью стопку прежних
+    (пусть и без кнопок) значит заставлять листать историю ради одного живого
+    экрана. Удаляем всё, что помним; что Telegram удалить не даст (старше 48 ч),
+    молча пропускаем — оно и так мёртвое.
+    """
+    ids = await call(services.db.pop_nav_history, chat_id)
+    for mid in ids:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=mid)
+        except Exception:                                  # noqa: BLE001
+            pass
+    await call(services.db.set_nav_message_id, chat_id, None)
 
 
 async def _track_content(services, sent) -> None:
@@ -110,6 +128,7 @@ async def edit_nav(cb: CallbackQuery, services, text, markup) -> None:
     await _dismiss_previous_nav(cb.message.bot, services, chat_id, keep_id=cur_id)
     await edit(cb, text, markup)
     await call(services.db.set_nav_message_id, chat_id, cur_id)
+    await call(services.db.push_nav_history, chat_id, cur_id)
 
 
 async def show_main_menu(message: Message, services, role: str, client=None) -> None:
@@ -229,5 +248,5 @@ async def drop_message(cb: CallbackQuery) -> None:
             pass
 
 
-__all__ = ["call", "edit", "drop_message", "send_link", "send_conf", "cleanup_content", "ask_tracked",
+__all__ = ["call", "edit", "drop_message", "send_link", "send_conf", "cleanup_content", "ask_tracked", "purge_menus",
            "own_device", "send_device_config"]

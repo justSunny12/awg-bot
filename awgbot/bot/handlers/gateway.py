@@ -19,7 +19,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.callbacks import GwCB, UpdateCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.handlers.common import call, edit, cleanup_content
+from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, purge_menus
 from awgbot.util import bundlecrypt
 
 router = Router(name="gateway")
@@ -32,16 +32,19 @@ _BUNDLE_MAX_BYTES = 512 * 1024
 
 
 async def _panel(target, services, cb: CallbackQuery | None = None):
+    """Панель — через нав-хелперы: одно живое меню в чате, прошлое гаснет,
+    история ведётся для /start."""
     st = await call(services.status)
     if cb is not None:
-        await edit(cb, texts.gateway_panel(st), kb.gateway_panel_kb())
+        await edit_nav(cb, services, texts.gateway_panel(st), kb.gateway_panel_kb())
     else:
-        await target.answer(texts.gateway_panel(st), reply_markup=kb.gateway_panel_kb())
+        await send_menu(target, services, texts.gateway_panel(st), kb.gateway_panel_kb())
 
 
 @router.message(CommandStart())
 async def gw_start(message: Message, services, state: FSMContext):
     await state.clear()
+    await purge_menus(message.bot, services, message.chat.id)
     await _panel(message, services)
 
 
@@ -55,15 +58,15 @@ async def gw_panel(cb: CallbackQuery, services, state: FSMContext):
 @router.callback_query(GwCB.filter(F.action == "doctor"))
 async def gw_doctor(cb: CallbackQuery, services):
     checks = await call(services.doctor)
-    await edit(cb, texts.gateway_doctor(checks), kb.gateway_back_kb())
+    await edit_nav(cb, services, texts.gateway_doctor(checks), kb.gateway_back_kb())
     await cb.answer()
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"restart", "reassert"})))
-async def gw_confirm(cb: CallbackQuery, callback_data: GwCB):
+async def gw_confirm(cb: CallbackQuery, callback_data: GwCB, services):
     text = (texts.GW_CONFIRM_RESTART if callback_data.action == "restart"
             else texts.GW_CONFIRM_REASSERT)
-    await edit(cb, text, kb.gateway_confirm_kb(callback_data.action))
+    await edit_nav(cb, services, text, kb.gateway_confirm_kb(callback_data.action))
     await cb.answer()
 
 
@@ -79,7 +82,7 @@ async def gw_execute(cb: CallbackQuery, callback_data: GwCB, services):
         title = "Реассерт обвязки"
     # Итог остаётся в чате отдельным сообщением: «когда и чем кончилось»
     # спрашивают потом, а панель переписывается следующей навигацией.
-    await edit(cb, texts.gateway_op_result(title, ok, detail), None)
+    await edit_nav(cb, services, texts.gateway_op_result(title, ok, detail), None)
     await _panel(cb.message, services)
 
 
@@ -112,7 +115,7 @@ async def gw_bundle_apply(cb: CallbackQuery, services, state: FSMContext):
         return
     await cb.answer("Применяю…")
     ok, detail = await call(services.apply_bundle, base64.b64decode(raw))
-    await edit(cb, texts.gateway_op_result("Бандл", ok, detail), None)
+    await edit_nav(cb, services, texts.gateway_op_result("Бандл", ok, detail), None)
     await _panel(cb.message, services)
 
 
