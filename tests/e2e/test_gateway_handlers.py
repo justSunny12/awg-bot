@@ -129,3 +129,27 @@ async def test_start_removes_all_previous_menus(svc, fake_bot):
     await gh.gw_start(msg, svc, FakeState())
     deleted = [r[2] for r in fake_bot.records if r[0] == "delete_message"]
     assert len(deleted) >= 2, "удаляется не всё прошлое"
+
+
+async def test_gateway_updates_screen_and_manual_check(svc, fake_bot, monkeypatch):
+    """У агента есть ручная точка входа в обновления: экран с версией и
+    «Проверить сейчас», который при наличии ступени даёт кнопку «Обновить»."""
+    import types
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_updates_screen(cb, svc)
+    shown = [t for k, t, _ in msg.sent if k == "edit_text"]
+    assert shown and cfg.INSTALLED_VERSION in shown[-1]
+
+    monkeypatch.setattr(svc, "update_next", lambda: None)
+    await gh.gw_updates_check(cb, svc)
+    assert "актуальн" in [t for k, t, _ in msg.sent if k == "edit_text"][-1].lower()
+
+    monkeypatch.setattr(svc, "update_next",
+                        lambda: types.SimpleNamespace(tag="v9.9.9", body="заметки"))
+    await gh.gw_updates_check(cb, svc)
+    kind, text, markup = [x for x in msg.sent if x[0] == "edit_text"][-1]
+    assert "v9.9.9" in text and markup is not None, "нет кнопки «Обновить»"
+    datas = [b.callback_data for row in markup.inline_keyboard for b in row]
+    assert any(d.startswith("upd:install") for d in datas)
+    assert not any(d.startswith("hide") for d in datas), "мёртвая «Скрыть» у агента"

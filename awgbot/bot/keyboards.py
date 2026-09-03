@@ -1253,7 +1253,21 @@ def gateway_panel_kb() -> InlineKeyboardMarkup:
     kb.button(text="🩺 Доктор", callback_data=GwCB(action="doctor"))
     kb.button(text="🔁 Рестарт линка", callback_data=GwCB(action="restart"))
     kb.button(text="🛠 Реассерт обвязки", callback_data=GwCB(action="reassert"))
-    kb.adjust(2, 2)
+    kb.button(text="⬆️ Обновление агента", callback_data=GwCB(action="updates"))
+    kb.adjust(2, 2, 1)
+    return kb.as_markup()
+
+
+def gateway_updates_kb(muted: bool) -> InlineKeyboardMarkup:
+    """Раздел обновлений агента: ручная проверка и тумблер уведомлений.
+    Расписание — в conf (app.yaml → updates), пикер сюда не тащим: у агента
+    настроек и так на один экран."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text=f"{_chk(not muted)} Уведомлять об обновлениях",
+              callback_data=GwCB(action="upd_toggle"))
+    kb.button(text="🔍 Проверить сейчас", callback_data=GwCB(action="upd_check"))
+    kb.button(text="⬅️ К панели", callback_data=GwCB(action="panel"))
+    kb.adjust(1, 1, 1)
     return kb.as_markup()
 
 
@@ -1286,4 +1300,14 @@ def bundle_menu_kb() -> InlineKeyboardMarkup:
     должен ИСЧЕЗНУТЬ из чата: это файл с приватным ключом линка."""
     kb = InlineKeyboardBuilder()
     kb.button(text="\u2b05\ufe0f В меню", callback_data=SetCB(sec="rt", act="do", key="bundle_menu"))
+    return kb.as_markup()
+
+
+def gateway_update_available_kb() -> InlineKeyboardMarkup:
+    """«Есть ступень» у агента: Обновить + к панели. Не update_notify(): та несёт
+    «Скрыть» через HideCB, чей хендлер у агента не подключён, — мёртвая кнопка."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬆️ Обновить", callback_data=UpdateCB(action="install"))
+    kb.button(text="⬅️ К панели", callback_data=GwCB(action="panel"))
+    kb.adjust(1, 1)
     return kb.as_markup()

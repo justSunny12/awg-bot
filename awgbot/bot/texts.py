@@ -1549,3 +1549,11 @@ GW_BUNDLE_NOT_OURS = ("Это не шифрованный бандл шлюза 
 def gateway_op_result(title: str, ok: bool, detail: str) -> str:
     head = f"{'✅' if ok else '🔴'} <b>{title}: {'готово' if ok else 'не удалось'}</b>"
     return head + (f"\n<code>{_e(detail)}</code>" if detail else "")
+
+
+def gateway_updates(installed: str, muted: bool, schedule: str) -> str:
+    return (f"⬆️ <b>Обновление агента</b>\n\n"
+            f"Установлено: <b>{_e(installed)}</b>\n"
+            f"Проверка: {_e(schedule)}, уведомления {'выключены' if muted else 'включены'}.\n\n"
+            "Обновление — тем же механизмом, что у основного бота: следующая "
+            "ступень из релизов, sha256, перезапуск, отчёт.")

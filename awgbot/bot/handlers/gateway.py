@@ -179,3 +179,50 @@ async def gw_update_mute(cb: CallbackQuery, services):
         await cb.message.delete()
     except Exception:                                 # noqa: BLE001
         pass
+
+
+# ── раздел обновлений: ручная точка входа (уведомление могло прийти до тебя) ──
+
+_SCHED_RU = {"day": "каждый день", "week": "раз в неделю", "month": "раз в месяц",
+             "never": "никогда"}
+
+
+async def _updates_screen(cb: CallbackQuery, services):
+    from awgbot.core import config, settings
+    muted = await call(services.updates_muted)
+    sched = _SCHED_RU.get(str(settings.get("updates.poll_schedule", "day")).lower(), "?")
+    await edit_nav(cb, services,
+                   texts.gateway_updates(config.INSTALLED_VERSION, muted, sched),
+                   kb.gateway_updates_kb(muted))
+
+
+@router.callback_query(GwCB.filter(F.action == "updates"))
+async def gw_updates_screen(cb: CallbackQuery, services):
+    await _updates_screen(cb, services)
+    await cb.answer()
+
+
+@router.callback_query(GwCB.filter(F.action == "upd_toggle"))
+async def gw_updates_toggle(cb: CallbackQuery, services):
+    if await call(services.updates_muted):
+        await call(services.unmute_updates)
+    else:
+        await call(services.mute_updates)
+    await _updates_screen(cb, services)
+    await cb.answer()
+
+
+@router.callback_query(GwCB.filter(F.action == "upd_check"))
+async def gw_updates_check(cb: CallbackQuery, services):
+    """Проверить сейчас: есть ступень — показать с кнопкой «Обновить» (тот же
+    UpdateCB, что и в уведомлении); нет — сказать, что версия актуальна."""
+    from awgbot.core import config
+    await cb.answer("Проверяю…")
+    nxt = await call(services.update_next)
+    if nxt is None:
+        await edit_nav(cb, services, texts.update_current_ok(config.INSTALLED_VERSION),
+                       kb.gateway_updates_kb(await call(services.updates_muted)))
+        return
+    await edit_nav(cb, services,
+                   texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body),
+                   kb.gateway_update_available_kb())
