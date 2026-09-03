@@ -1259,15 +1259,23 @@ def gateway_panel_kb() -> InlineKeyboardMarkup:
 
 
 def gateway_updates_kb(muted: bool) -> InlineKeyboardMarkup:
-    """Раздел обновлений агента: ручная проверка и тумблер уведомлений.
-    Расписание — в conf (app.yaml → updates), пикер сюда не тащим: у агента
-    настроек и так на один экран."""
+    """Раздел обновлений агента — один в один с основным ботом: тумблер
+    уведомлений (при расписании «никогда» принудительно выключен), пикер
+    расписания с отметкой текущего, ручная проверка."""
+    sched = str(settings.get("updates.poll_schedule", "day")).lower()
+    never = sched == "never"
+    notify_on = (not muted) and not never
+    lbl = "Уведомлять об обновлениях" + (" (выкл: расписание «никогда»)" if never else "")
     kb = InlineKeyboardBuilder()
-    kb.button(text=f"{_chk(not muted)} Уведомлять об обновлениях",
-              callback_data=GwCB(action="upd_toggle"))
+    kb.button(text=f"{_chk(notify_on)} {lbl}", callback_data=GwCB(action="upd_toggle"))
+    labels = {"day": "Каждый день", "week": "Раз в неделю",
+              "month": "Раз в месяц", "never": "Никогда"}
+    for opt, text in labels.items():
+        mark = "🔘 " if opt == sched else ""
+        kb.button(text=f"{mark}{text}", callback_data=GwCB(action="upd_sched", val=opt))
     kb.button(text="🔍 Проверить сейчас", callback_data=GwCB(action="upd_check"))
     kb.button(text="⬅️ К панели", callback_data=GwCB(action="panel"))
-    kb.adjust(1, 1, 1)
+    kb.adjust(1, 2, 2, 1, 1)
     return kb.as_markup()
 
 

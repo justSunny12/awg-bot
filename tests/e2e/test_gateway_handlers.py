@@ -153,3 +153,47 @@ async def test_gateway_updates_screen_and_manual_check(svc, fake_bot, monkeypatc
     datas = [b.callback_data for row in markup.inline_keyboard for b in row]
     assert any(d.startswith("upd:install") for d in datas)
     assert not any(d.startswith("hide") for d in datas), "мёртвая «Скрыть» у агента"
+
+
+async def test_gateway_schedule_picker_mirrors_the_main_bot(svc, fake_bot, monkeypatch):
+    """Пикер расписания у агента: значение пишется в conf, «никогда» глушит
+    уведомления и блокирует тумблер — ровно как у основного бота."""
+    from awgbot.core import settings
+    written = {}
+    monkeypatch.setattr(settings, "set_value", lambda k, v: written.__setitem__(k, v) or [])
+    store = {"updates.poll_schedule": "day"}
+    monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+
+    await gh.gw_updates_sched(cb, GwCB(action="upd_sched", val="week"), svc)
+    assert written["updates.poll_schedule"] == "week"
+    assert not svc.updates_muted()
+
+    await gh.gw_updates_sched(cb, GwCB(action="upd_sched", val="never"), svc)
+    assert svc.updates_muted(), "«никогда» не заглушило уведомления"
+
+    store["updates.poll_schedule"] = "never"
+    cb.answers.clear()
+    await gh.gw_updates_toggle(cb, svc)
+    assert cb.answers and cb.answers[-1][1] is True, "тумблер при «никогда» не заблокирован"
+    assert svc.updates_muted()
+
+
+def test_gateway_update_check_hook_pauses_on_never_and_reschedules_otherwise(monkeypatch):
+    from awgbot.core import settings
+    from awgbot.runtime import scheduler as sch
+    calls = []
+
+    class FakeSched:
+        def pause_job(self, jid): calls.append(("pause", jid))
+        def reschedule_job(self, jid, trigger=None): calls.append(("resched", jid, type(trigger).__name__))
+
+    hook = sch.gateway_update_check_hook(FakeSched())
+    store = {"updates.poll_schedule": "never"}
+    monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
+    hook("updates.poll_schedule", "never")
+    assert calls[-1] == ("pause", "update_check")
+    store["updates.poll_schedule"] = "week"
+    hook("updates.poll_schedule", "week")
+    assert calls[-1][0] == "resched" and calls[-1][2] == "CronTrigger"

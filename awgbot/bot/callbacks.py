@@ -200,5 +200,7 @@ class BroadcastCB(CallbackData, prefix="bc"):
 
 class GwCB(CallbackData, prefix="gw"):
     """Кнопки агента шлюза (роль gateway). action: panel|doctor|restart|reassert
-    (показ подтверждения), restart!|reassert! (исполнение), apply!|drop (бандл)."""
+    (показ подтверждения), restart!|reassert! (исполнение), apply!|drop (бандл),
+    updates|upd_toggle|upd_check|upd_sched (val — вариант расписания)."""
     action: str
+    val: str = ""

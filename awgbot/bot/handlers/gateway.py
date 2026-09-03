@@ -204,9 +204,36 @@ async def gw_updates_screen(cb: CallbackQuery, services):
 
 @router.callback_query(GwCB.filter(F.action == "upd_toggle"))
 async def gw_updates_toggle(cb: CallbackQuery, services):
+    from awgbot.core import settings
+    # как у основного: при расписании «никогда» включить уведомления нельзя —
+    # проверять нечему, и тумблер «вкл» обещал бы то, чего не будет
+    if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
+        await cb.answer("Сначала выбери расписание проверки (не «никогда»).",
+                        show_alert=True)
+        return
     if await call(services.updates_muted):
         await call(services.unmute_updates)
     else:
+        await call(services.mute_updates)
+    await _updates_screen(cb, services)
+    await cb.answer()
+
+
+@router.callback_query(GwCB.filter(F.action == "upd_sched"))
+async def gw_updates_sched(cb: CallbackQuery, callback_data: GwCB, services):
+    """Пикер расписания: пишется в conf горячо, задача перевешивается хуком
+    settings.on_change в скедулере агента; «никогда» — авто-мьют уведомлений."""
+    from awgbot.core import settings
+    opt = callback_data.val
+    if opt not in ("day", "week", "month", "never"):
+        await cb.answer("Нет такого варианта.", show_alert=True)
+        return
+    try:
+        await call(settings.set_value, "updates.poll_schedule", opt)
+    except settings.SettingsWriteError as e:
+        await cb.answer(str(e), show_alert=True)
+        return
+    if opt == "never":
         await call(services.mute_updates)
     await _updates_screen(cb, services)
     await cb.answer()

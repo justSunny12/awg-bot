@@ -477,6 +477,22 @@ def update_check_trigger():
     return CronTrigger(hour=h, minute=m, timezone=config.TZ)
 
 
+def gateway_update_check_hook(scheduler):
+    """Хук settings.on_change для задачи update_check агента: «никогда» —
+    пауза, иначе перевесить на новый триггер. Модульная функция, а не
+    замыкание, чтобы её можно было проверить фейковым планировщиком."""
+    def _hook(_key, _value):
+        try:
+            trig = update_check_trigger()
+            if trig is None:
+                scheduler.pause_job("update_check")
+            else:
+                scheduler.reschedule_job("update_check", trigger=trig)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gw update_check reschedule: %s", e)
+    return _hook
+
+
 def setup_gateway_scheduler(services, bot):
     """Планировщик роли gateway: ОДИН тик монитора.
 
@@ -526,5 +542,9 @@ def setup_gateway_scheduler(services, bot):
     scheduler.add_job(job_update_check, "date", run_date=timeutil.now(),
                       id="update_check_startup", max_instances=1,
                       misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
+    # смена расписания из чата или руками в conf — применяется без рестарта
+    hook = gateway_update_check_hook(scheduler)
+    for key in ("updates.poll_schedule", "updates.poll_hour", "updates.poll_minute"):
+        settings.on_change(key, hook)
     scheduler.start()
     return scheduler
