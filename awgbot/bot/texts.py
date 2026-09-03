@@ -734,7 +734,25 @@ SETTINGS_ROUTING_ABSENT = (
 )
 
 
-def settings_routing_text(enabled: bool, status: tuple) -> str:
+def routing_lists_block(info: dict) -> str:
+    """Строка о списках: записей, возраст, период. Возраст числом, а не
+    «недавно»: разница между «час назад» и «шесть дней назад» — это разница
+    между живыми источниками и застывшим кэшем."""
+    age = info.get("age_seconds")
+    if age is None:
+        when = "ещё не обновлялись"
+    elif age < 3600:
+        when = f"обновлены {age // 60} мин назад"
+    elif age < 86400:
+        when = f"обновлены {age // 3600} ч назад"
+    else:
+        when = f"обновлены {age // 86400} дн назад"
+    return (f"\n📋 Списки: {info.get('count', 0)} записей из "
+            f"{info.get('sources', 0)} источников, {when}; "
+            f"период {info.get('every_hours', 6)} ч.")
+
+
+def settings_routing_text(enabled: bool, status: tuple, lists: dict | None = None) -> str:
     """Экран «Условная маршрутизация» в настройках.
 
     Показывает и состояние выключателя, и работоспособность инфраструктуры —
@@ -749,6 +767,8 @@ def settings_routing_text(enabled: bool, status: tuple) -> str:
         head += f"\n⚠️ Не работает: {_e(reason)}\n"
     if not enabled:
         return head + "\nФункция выключена. Включи, чтобы выдавать доступ профилям."
+    if lists:
+        head += routing_lists_block(lists)
     return (head +
             "\nОтметь профили, которым разрешён доступ к функции. Включает и "
             "настраивает функцию пользователь самостоятельно у себя в профиле.\n\n"

@@ -1053,7 +1053,7 @@ def settings_back() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def settings_routing(enabled: bool, clients=()) -> InlineKeyboardMarkup:
+def settings_routing(enabled: bool, clients=(), lists_every: int = 6) -> InlineKeyboardMarkup:
     """Раздел «Условная маршрутизация».
 
     Первой кнопкой — общий выключатель функции. Список профилей показываем
@@ -1078,6 +1078,17 @@ def settings_routing(enabled: bool, clients=()) -> InlineKeyboardMarkup:
         # линка, который через чат не ходил никогда.
         kb.button(text="📦 Бандл для шлюза (шифрованный)",
                   callback_data=SetCB(sec="rt", act="do", key="bundle"))
+        rows.append(1)
+        # Списки: период — пикером (горячий ключ), плюс принудительное
+        # обновление: ждать до шести часов, когда источник только что починили,
+        # незачем.
+        for h in (3, 6, 12, 24):
+            mark = "🔘 " if h == lists_every else ""
+            kb.button(text=f"{mark}{h} ч",
+                      callback_data=SetCB(sec="rt", act="pick", key="lists", val=str(h)))
+        rows.append(4)
+        kb.button(text="🔄 Обновить списки сейчас",
+                  callback_data=SetCB(sec="rt", act="do", key="lists_refresh"))
         rows.append(1)
     kb.row(_back())
     kb.adjust(*rows)

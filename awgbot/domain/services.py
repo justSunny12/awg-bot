@@ -2397,6 +2397,21 @@ class Services(SelfUpdateMixin, MigrationMixin):
             log.warning("routing_update_lists: %s", e)
             return len(self._routing_read_cache("home_domains"))
 
+    def routing_lists_info(self) -> dict:
+        """Состояние списков для чата: сколько записей, когда обновлялись,
+        период. Обновление — молчаливый процесс на тике монитора, и без этой
+        сводки админ не отличит «списки свежие» от «источники умерли полгода
+        назад, кэш застыл»."""
+        raw = self.db.get_state(self._RT_LISTS_KEY)
+        updated_at = int(raw) if raw and raw.isdigit() else None
+        return {
+            "count": len(self._routing_read_cache("home_domains")),
+            "updated_at": updated_at,
+            "age_seconds": (int(time.time()) - updated_at) if updated_at else None,
+            "every_hours": int(settings.get("app.routing.lists_refresh_hours", 6)),
+            "sources": len([u for u in config.ROUTING_LISTS_HOME_URLS if u]),
+        }
+
     def routing_link_ok(self) -> bool:
         """Проходит ли трафик через шлюз — по последнему замеру зонда.
 

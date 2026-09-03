@@ -63,7 +63,9 @@ async def _screen(sec: str, services):
         # всё равно не покажет, а лишний запрос к БД на каждый рендер ни к чему
         clients = await call(services.routing_grantable_clients) if on else []
         status = await call(services.routing_status)
-        return texts.settings_routing_text(on, status), kb.settings_routing(on, clients)
+        lists = await call(services.routing_lists_info) if on else None
+        return (texts.settings_routing_text(on, status, lists),
+                kb.settings_routing(on, clients, lists["every_hours"] if lists else 6))
     return texts.SETTINGS_ROOT, kb.settings_root()
 
 
@@ -150,6 +152,12 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
                     "шлюза — он проверит и применит сам.",
             reply_markup=kb.bundle_menu_kb())
         return
+    if callback_data.key == "lists_refresh":
+        await cb.answer("Обновляю списки…")
+        n = await call(services.routing_update_lists, True)
+        await _render(cb, "rt", services)
+        await cb.answer(f"В базовом наборе {n} записей.")
+        return
     if callback_data.key == "bundle_menu":
         # Файл с бандлом уходит из чата целиком — после возврата он не нужен,
         # а внутри ключ линка. Панель — новым сообщением.
@@ -219,6 +227,16 @@ async def receive_value(message: Message, state: FSMContext, services):
 # ── выбор enum (расписание обновлений) ───────────────────────────────────────
 @router.callback_query(SetCB.filter(F.act == "pick"))
 async def pick(cb: CallbackQuery, callback_data: SetCB, services):
+    if callback_data.sec == "rt" and callback_data.key == "lists":
+        hours = callback_data.val
+        if hours not in ("3", "6", "12", "24"):
+            await cb.answer("Нет такого варианта.", show_alert=True)
+            return
+        try:
+            await call(settings.set_value, "app.routing.lists_refresh_hours", int(hours))
+        except settings.SettingsWriteError as e:
+            await cb.answer(str(e), show_alert=True)
+            return
     if callback_data.sec == "upd" and callback_data.key == "sched":
         opt = callback_data.val
         try:

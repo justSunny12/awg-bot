@@ -959,3 +959,43 @@ async def test_bundle_menu_button_deletes_the_file_message(services, fake_bot, m
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle_menu"), services)
     assert any(r[0] == "delete" for r in fake_bot.records), "сообщение с бандлом не удалено"
     assert any(r[0] == "answer" for r in fake_bot.records), "меню не показано"
+
+
+def test_routing_lists_info_reports_count_age_and_period(services, monkeypatch):
+    """Сводка по спискам: записи, возраст обновления, период — то, чего в чате
+    не было вовсе, пока списки обновлялись молча."""
+    import time
+    from awgbot.core import settings
+    monkeypatch.setattr(services, "_routing_read_cache", lambda name: ["a.ru", "b.ru"])
+    monkeypatch.setattr(settings, "get", lambda k, d=None: 12 if k.endswith("lists_refresh_hours") else d)
+    services.db.set_state(services._RT_LISTS_KEY, str(int(time.time()) - 7200))
+    info = services.routing_lists_info()
+    assert info["count"] == 2 and info["every_hours"] == 12
+    assert 7000 <= info["age_seconds"] <= 7300
+    from awgbot.bot import texts
+    line = texts.routing_lists_block(info)
+    assert "2 записей" in line and "2 ч назад" in line and "период 12 ч" in line
+
+
+async def test_routing_lists_info_and_controls(services, fake_bot, monkeypatch):
+    """Пикер периода пишет горячий ключ; «обновить сейчас» зовёт обновление с force."""
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from awgbot.core import settings
+    from tests.conftest import FakeCallback, FakeMessage
+    import awgbot.core.config as cfg
+    written = {}
+    monkeypatch.setattr(settings, "set_value", lambda k, v: written.__setitem__(k, v) or [])
+    forced = []
+    monkeypatch.setattr(services, "routing_update_lists", lambda force=False: forced.append(force) or 7)
+    async def noop_render(cb, sec, services_): pass
+    monkeypatch.setattr(sh, "_render", noop_render)
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+
+    await sh.pick(cb, SetCB(sec="rt", act="pick", key="lists", val="12"), services)
+    assert written["app.routing.lists_refresh_hours"] == 12
+
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="lists_refresh"), services)
+    assert forced == [True], "«обновить сейчас» не форсирует обновление"
+    assert any("7 записей" in (a[0] or "") for a in cb.answers)
