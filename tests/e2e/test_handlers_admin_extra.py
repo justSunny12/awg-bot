@@ -945,3 +945,17 @@ async def test_bundle_document_carries_menu_button_and_dims_settings(
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle"), services)
     assert sent_docs and sent_docs[0][1] is not None, "у бандла нет кнопки «В меню»"
     assert any(r[0] == "edit_reply_markup" for r in fake_bot.records), "экран настроек не погашен"
+
+
+async def test_bundle_menu_button_deletes_the_file_message(services, fake_bot, monkeypatch):
+    """«В меню» на бандле удаляет само сообщение с файлом (внутри ключ линка),
+    а не снимает клавиатуру, как общая кнопка обновлений."""
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from tests.conftest import FakeCallback, FakeMessage
+    import awgbot.core.config as cfg
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle_menu"), services)
+    assert any(r[0] == "delete" for r in fake_bot.records), "сообщение с бандлом не удалено"
+    assert any(r[0] == "answer" for r in fake_bot.records), "меню не показано"

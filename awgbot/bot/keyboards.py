@@ -1278,3 +1278,12 @@ def gateway_back_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="⬅️ К панели", callback_data=GwCB(action="panel"))
     return kb.as_markup()
+
+
+def bundle_menu_kb() -> InlineKeyboardMarkup:
+    """«В меню» на сообщении с бандлом. Своя кнопка, а не общая с обновлениями:
+    та снимает клавиатуру, оставляя текст следом, — а бандл после возврата
+    должен ИСЧЕЗНУТЬ из чата: это файл с приватным ключом линка."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="\u2b05\ufe0f В меню", callback_data=SetCB(sec="rt", act="do", key="bundle_menu"))
+    return kb.as_markup()

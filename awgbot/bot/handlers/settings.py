@@ -17,7 +17,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import SettingsInput
-from awgbot.bot.handlers.common import call, edit, send_menu
+from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu
 from awgbot.domain.services import ServiceError
 
 router = Router(name="settings")
@@ -148,7 +148,17 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
             BufferedInputFile(blob, filename=name),
             caption="📦 Бандл шлюза, зашифрован ключом линка. Перешли его боту "
                     "шлюза — он проверит и применит сам.",
-            reply_markup=kb.update_done_menu())
+            reply_markup=kb.bundle_menu_kb())
+        return
+    if callback_data.key == "bundle_menu":
+        # Файл с бандлом уходит из чата целиком — после возврата он не нужен,
+        # а внутри ключ линка. Панель — новым сообщением.
+        try:
+            await cb.message.delete()
+        except Exception:                                  # noqa: BLE001
+            pass
+        await show_main_menu(cb.message, services, "admin")
+        await cb.answer()
         return
     if callback_data.key != "allow":
         await cb.answer("Действие недоступно.", show_alert=True)
