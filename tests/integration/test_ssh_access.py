@@ -12,6 +12,7 @@ import awgbot.core.config as cfg
 def test_host_ssh_targets_parses_gateways_and_egress(monkeypatch):
     """Шлюзы docker-сетей контейнера + egress-IP из `ip route get`, без дублей и
     мусора; порядок сохранён, невалидное отсеяно."""
+    import awgbot.core.config as _cfg_rt; monkeypatch.setattr(_cfg_rt, "AWG_RUNTIME", "docker")
     def fake_run(args, **kw):
         if args[:2] == ["docker", "inspect"]:
             out = b"172.17.0.1\n172.29.172.1\n\n"          # + пустая строка
@@ -42,6 +43,7 @@ def test_host_ssh_targets_survives_docker_failure(monkeypatch):
 def test_ssh_reconcile_emits_expected_chain(monkeypatch):
     """Проверяем последовательность iptables: цепочка → джамп → flush →
     ACCEPT (admin×target) → DROP (target). Порт берётся из config.SSH_PORT."""
+    import awgbot.core.config as _cfg_rt; monkeypatch.setattr(_cfg_rt, "AWG_RUNTIME", "docker")
     calls = []
 
     def fake_exec(args, **kw):
@@ -185,6 +187,7 @@ def test_ssh_reconcile_no_admin_ips_is_noop(monkeypatch):
 
 def test_ssh_reconcile_skips_jump_if_first(monkeypatch):
     """Джамп уже стоит первой строкой — не трогаем его вовсе."""
+    import awgbot.core.config as _cfg_rt; monkeypatch.setattr(_cfg_rt, "AWG_RUNTIME", "docker")
     calls = []
 
     def fake_exec(args, **kw):
@@ -210,6 +213,7 @@ def test_ssh_reconcile_moves_the_jump_back_to_the_top(monkeypatch):
     цепочки верное, — и только счётчики не двигаются никогда. Проверка «есть ли
     джамп» такое состояние принимала за целевое.
     """
+    import awgbot.core.config as _cfg_rt; monkeypatch.setattr(_cfg_rt, "AWG_RUNTIME", "docker")
     calls = []
 
     def fake_exec(args, **kw):
@@ -338,6 +342,7 @@ def test_reconcile_ssh_access_collects_only_admin_addresses(
 def test_ssh_reconcile_diff_skip(monkeypatch):
     """Если текущее содержимое цепочки уже совпадает с желаемым (и джамп есть) —
     ни одного мутирующего вызова (флаша/добавлений)."""
+    import awgbot.core.config as _cfg_rt; monkeypatch.setattr(_cfg_rt, "AWG_RUNTIME", "docker")
     import awgbot.core.config as cfg
     monkeypatch.setattr(cfg, "SSH_PORT", 22)
     desired_dump = (

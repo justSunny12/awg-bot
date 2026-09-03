@@ -116,6 +116,7 @@ def test_awg_responding(monkeypatch):
 
 
 def test_restart_container_runs_docker(monkeypatch):
+    import awgbot.core.config as _cfg_rt; monkeypatch.setattr(_cfg_rt, "AWG_RUNTIME", "docker")
     calls = []
     monkeypatch.setattr(awg, "_run", lambda args, **k: calls.append(args) or _cp())
     awg.restart_container()

@@ -51,6 +51,7 @@ def test_fatal_on_unwritable_datadir(tmp_path, monkeypatch):
 
 
 def test_warnings_low_disk_and_container(tmp_path, monkeypatch):
+    import awgbot.core.config as _cfg_rt; monkeypatch.setattr(_cfg_rt, "AWG_RUNTIME", "docker")
     from awgbot.core import config
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
 

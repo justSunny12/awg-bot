@@ -10,13 +10,15 @@ pytestmark = pytest.mark.integration
 
 
 # ── detect_and_handle_restart + reconcile_blocks ─────────────────────────────
-def test_first_start_records_but_no_reconcile(services, fake_awg):
+def test_first_start_records_but_no_reconcile(services, fake_awg, monkeypatch):
+    import awgbot.core.config as _cfg_rt; monkeypatch.setattr(_cfg_rt, "AWG_RUNTIME", "docker")
     # первый запуск: stored=None → фиксируем started_at, рестартом не считаем
     assert services.detect_and_handle_restart() is False
     assert services.db.get_state("container_started_at") == fake_awg.started_at
 
 
-def test_restart_detected_reapplies_blocks(services, fake_awg, make_active_client):
+def test_restart_detected_reapplies_blocks(services, fake_awg, make_active_client, monkeypatch):
+    import awgbot.core.config as _cfg_rt; monkeypatch.setattr(_cfg_rt, "AWG_RUNTIME", "docker")
     client = make_active_client(tg_id=903)
     dc = services.add_device(client.id, "d")
     services._device_set_block(dc.device_id, DeviceBlock.EXPIRY)
