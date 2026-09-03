@@ -19,7 +19,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.callbacks import GwCB, UpdateCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, purge_menus
+from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, purge_menus, dismiss_update_reports
 from awgbot.util import bundlecrypt
 
 router = Router(name="gateway")
@@ -154,8 +154,9 @@ async def gw_update_install(cb: CallbackQuery, services):
             await wait.delete()
         except Exception:                             # noqa: BLE001
             pass
-        await cb.bot.send_message(chat_id, texts.update_failed(str(e)),
-                                  reply_markup=kb.update_done_menu())
+        failed_msg = await cb.bot.send_message(chat_id, texts.update_failed(str(e)),
+                                               reply_markup=kb.update_done_menu())
+        await call(services.remember_update_report, chat_id, failed_msg.message_id)
 
 
 @router.callback_query(UpdateCB.filter(F.action == "menu"))
@@ -167,6 +168,8 @@ async def gw_update_menu(cb: CallbackQuery, services, state: FSMContext):
         await cb.message.edit_reply_markup(reply_markup=None)
     except Exception:                                 # noqa: BLE001
         pass
+    # и у всех прочих окон обновления тоже — живой должна быть одна кнопка
+    await dismiss_update_reports(cb.bot, services)
     await _panel(cb.message, services)
     await cb.answer()
 

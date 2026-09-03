@@ -24,7 +24,7 @@ from aiogram.types import CallbackQuery, Message
 from awgbot.bot.callbacks import (AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
                        Menu, PeriodCB, ReassignCB, RoutingCB, UpdateCB, BroadcastCB)
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message, purge_menus,
+from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message, purge_menus, dismiss_update_reports,
                              remove_device_and_notify, send_conf, cleanup_content,
                              send_link, send_qr, send_menu, content_finisher,
                              show_main_menu, _dismiss_previous_nav)
@@ -1154,8 +1154,9 @@ async def update_install(cb: CallbackQuery, services):
             await wait.delete()
         except Exception:                             # noqa: BLE001
             pass
-        await cb.bot.send_message(chat_id, texts.update_failed(str(e)),
-                                  reply_markup=kb.update_done_menu())
+        failed_msg = await cb.bot.send_message(chat_id, texts.update_failed(str(e)),
+                                               reply_markup=kb.update_done_menu())
+        await call(services.remember_update_report, chat_id, failed_msg.message_id)
 
 
 @router.callback_query(UpdateCB.filter(F.action == "menu"))
@@ -1167,6 +1168,8 @@ async def update_menu(cb: CallbackQuery, services, state: FSMContext):
         await cb.message.edit_reply_markup(reply_markup=None)
     except Exception:                                 # noqa: BLE001
         pass
+    # и у всех прочих окон обновления тоже — живой должна быть одна кнопка
+    await dismiss_update_reports(cb.bot, services)
     await show_main_menu(cb.message, services, "admin")
     await cb.answer()
 

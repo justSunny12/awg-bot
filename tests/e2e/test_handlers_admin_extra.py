@@ -900,15 +900,15 @@ async def test_only_the_last_update_finisher_keeps_its_menu_button(
 
     await report_update_result(fake_bot, services)       # ступень 1
     await report_update_result(fake_bot, services)       # ступень 2 (рестарт)
+    await report_update_result(fake_bot, services)       # ступень 3
 
-    stripped = [(chat, mid) for kind, chat, mid in fake_bot.records
-                if kind == "edit_markup"]
+    stripped = [mid for kind, chat, mid in fake_bot.records if kind == "edit_markup"]
     sent = [r for r in fake_bot.records if r[0] == "send_message"]
-    assert len(sent) == 2, "финишеры не отправлены"
-    assert len(stripped) == 1, "кнопка прежнего финишера не снята (или снята лишняя)"
-    # снята именно у ПЕРВОГО финишера, а состояние указывает на последний
-    first_id = int(services.db.get_state("update_report_msg").split(":")[1])
-    assert stripped[0][1] != first_id, "кнопку сняли у последнего, а не у прежнего"
+    assert len(sent) == 3, "финишеры не отправлены"
+    # у двух прошлых кнопки сняты, у последнего — нет; история знает только его
+    assert len(stripped) == 2, "снято не у всех прошлых (или у лишнего)"
+    remaining = services.pop_update_reports()
+    assert len(remaining) == 1 and remaining[0][1] not in stripped
 
 
 async def test_admin_start_purges_menu_history(services, fake_bot):
@@ -1001,3 +1001,21 @@ async def test_routing_lists_info_and_controls(services, fake_bot, monkeypatch):
     assert forced == [True], "«обновить сейчас» не форсирует обновление"
     # ровно один ответ на колбэк: второй Telegram не показывает
     assert len(cb.answers) == 1 and "7 записей" in (cb.answers[0][0] or "")
+
+
+async def test_menu_button_dismisses_every_other_update_window(services, fake_bot):
+    """«В меню» на любом окне обновления снимает кнопки и у всех остальных —
+    в цепочке ступеней живой должна остаться одна."""
+    from awgbot.bot.handlers import admin as admin_h
+    from tests.conftest import FakeCallback, FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    chat = cfg.ADMIN_ID
+    for mid in (501, 502, 503):
+        services.remember_update_report(chat, mid)
+    msg = FakeMessage(chat_id=chat, user_id=chat, bot=fake_bot, message_id=503)
+    cb = FakeCallback(message=msg, user_id=chat, bot=fake_bot)
+    await admin_h.update_menu(cb, services, FakeState())
+    # фильтр ДО распаковки: у записей фейка разная длина
+    stripped = sorted(r[2] for r in fake_bot.records if r[0] == "edit_markup")
+    assert stripped == [501, 502, 503]
+    assert services.pop_update_reports() == [], "история не очищена"

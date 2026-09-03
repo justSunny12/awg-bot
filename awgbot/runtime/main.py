@@ -77,19 +77,15 @@ async def report_update_result(bot, services) -> None:
             pass
     if note is None:
         return
-    prev = await asyncio.to_thread(services.db.get_state, "update_report_msg")
-    if prev:
-        try:
-            pc, pm = prev.split(":", 1)
-            await bot.edit_message_reply_markup(chat_id=int(pc), message_id=int(pm),
-                                                reply_markup=None)
-        except Exception:                               # noqa: BLE001
-            pass                                        # нажали/удалили — не беда
+    # кнопки у ВСЕХ прошлых окон обновления — долой (история, не один id:
+    # между финишерами бывают «не применилось» и «не удалось» с той же кнопкой)
+    from awgbot.bot.handlers.common import dismiss_update_reports
+    await dismiss_update_reports(bot, services)
     sent = await notify_one(bot, note.tg_id, note.text,
                             reply_markup=note.reply_markup)
     if sent is not None:
-        await asyncio.to_thread(services.db.set_state, "update_report_msg",
-                                f"{sent.chat.id}:{sent.message_id}")
+        await asyncio.to_thread(services.remember_update_report,
+                                sent.chat.id, sent.message_id)
 
 
 async def run_gateway() -> None:

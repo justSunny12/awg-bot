@@ -75,6 +75,20 @@ async def purge_menus(bot, services, chat_id: int) -> None:
     await call(services.db.set_nav_message_id, chat_id, None)
 
 
+async def dismiss_update_reports(bot, services, keep=None) -> None:
+    """Снять кнопку «В меню» у всех прошлых окон обновления (тексты остаются —
+    история «какая ступень чем закончилась» ценна). keep — (chat, msg), которое
+    трогать не надо: оно и есть текущее."""
+    for chat_id, mid in await call(services.pop_update_reports):
+        if keep and (chat_id, mid) == tuple(keep):
+            continue
+        try:
+            await bot.edit_message_reply_markup(chat_id=chat_id, message_id=mid,
+                                                reply_markup=None)
+        except Exception:                                  # noqa: BLE001
+            pass
+
+
 async def _track_content(services, sent) -> None:
     """Запомнить id контент-сообщения (ссылка/QR/файл) для удаления при возврате."""
     if services is None or sent is None:
@@ -248,5 +262,5 @@ async def drop_message(cb: CallbackQuery) -> None:
             pass
 
 
-__all__ = ["call", "edit", "drop_message", "send_link", "send_conf", "cleanup_content", "ask_tracked", "purge_menus",
+__all__ = ["call", "edit", "drop_message", "send_link", "send_conf", "cleanup_content", "ask_tracked", "purge_menus", "dismiss_update_reports",
            "own_device", "send_device_config"]
