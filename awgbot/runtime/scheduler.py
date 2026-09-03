@@ -403,11 +403,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         try:
             nxt = await asyncio.to_thread(services.update_to_notify)
             if nxt is not None:
-                from awgbot.bot import texts
-                from awgbot.bot import keyboards as kb
-                await send_notifications(bot, [Notification(
-                    config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body),
-                    reply_markup=kb.update_notify())])
+                await notify_update_available(bot, services, nxt)
         except Exception as e:                        # noqa: BLE001
             log.warning("update_check: %s", e)
 
@@ -458,6 +454,24 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
 
 
 __all__ = ["setup_scheduler"]
+
+
+async def notify_update_available(bot, services, nxt) -> None:
+    """Уведомление «доступна следующая версия» — общее для обеих ролей.
+
+    Перед отправкой снимаем «В меню» у всех прошлых окон обновления: после
+    ступени в чате висит финишер «обновлён до…» с живой кнопкой, а следующее
+    сообщение — это уведомление; две живые кнопки в двух соседних окнах ведут
+    в одно место. Тексты финишеров не трогаем."""
+    from awgbot.bot import texts
+    from awgbot.bot import keyboards as kb
+    from awgbot.bot.notifier import send_notifications
+    from awgbot.bot.handlers.common import dismiss_update_reports
+    from awgbot.domain.services import Notification
+    await dismiss_update_reports(bot, services)
+    await send_notifications(bot, [Notification(
+        config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body),
+        reply_markup=kb.update_notify())])
 
 
 def update_check_trigger():
@@ -523,12 +537,7 @@ def setup_gateway_scheduler(services, bot):
         try:
             nxt = await asyncio.to_thread(services.update_to_notify)
             if nxt is not None:
-                from awgbot.bot import texts
-                from awgbot.bot import keyboards as kb
-                from awgbot.domain.services import Notification
-                await send_notifications(bot, [Notification(
-                    config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body),
-                    reply_markup=kb.update_notify())])
+                await notify_update_available(bot, services, nxt)
         except Exception as e:                        # noqa: BLE001
             log.warning("gw update_check: %s", e)
 

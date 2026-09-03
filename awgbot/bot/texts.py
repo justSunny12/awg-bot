@@ -1229,21 +1229,31 @@ def _changelog_block(body: str, header: str) -> str:
     return f"<blockquote expandable>{inner}</blockquote>"
 
 
-def update_available(tag: str, body: str) -> str:
+def _ver(v: str) -> str:
+    """Версия с буквой v: голое «2.4.2.8» Telegram принимает за IP-адрес и
+    рисует ссылкой. Теги релизов уже с буквой — не удваиваем."""
+    v = str(v or "").strip()
+    return v if v.startswith("v") else f"v{v}"
+
+
+def update_available(tag: str, body: str, installed: str | None = None) -> str:
     """Уведомление о доступной новой версии (следующей ступени)."""
-    header = f"Доступна новая версия бота: {_e(tag)}\nСписок изменений:\n"
+    from awgbot.core import config
+    cur = _ver(installed if installed is not None else config.INSTALLED_VERSION)
+    header = (f"Текущая версия бота {_e(cur)}.\n"
+              f"Доступна новая версия: {_e(_ver(tag))}\nСписок изменений:\n")
     return header + _changelog_block(body, header)
 
 
 def update_current_ok(installed: str) -> str:
     """Админ-проверка: обновляться не на что."""
-    return f"Текущая версия бота ({_e(installed)}) актуальна"
+    return f"Текущая версия бота ({_e(_ver(installed))}) актуальна"
 
 
 def update_admin_available(installed: str, tag: str, body: str) -> str:
     """Админ-проверка: доступна следующая версия."""
-    header = (f"Текущая версия бота {_e(installed)}.\n"
-              f"Доступно обновление до {_e(tag)}\nСписок изменений:\n")
+    header = (f"Текущая версия бота {_e(_ver(installed))}.\n"
+              f"Доступно обновление до {_e(_ver(tag))}\nСписок изменений:\n")
     return header + _changelog_block(body, header)
 
 
