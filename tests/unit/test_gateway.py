@@ -280,3 +280,28 @@ def test_gateway_reports_update_that_did_not_apply(svc, monkeypatch):
     svc.db.set_state("update_pending", "v2.4.2")
     note = svc.confirm_applied_update()
     assert note is not None and "2.4.1" in note.text and "2.4.2" in note.text
+
+
+def test_status_caches_static_probes(svc, monkeypatch):
+    """modinfo и обход /lib/modules — по кэшу с TTL: два подряд status() дают
+    один modinfo; по истечении TTL — снова живьём."""
+    calls = []
+
+    def fake_run(argv, timeout=10):
+        calls.append(argv[0])
+        if argv[0] == "modinfo":
+            return _cp(0, "version: 1.0\nsrcversion: ABC\n")
+        return _cp(1, "")
+
+    monkeypatch.setattr(gw, "_run", fake_run)
+    monkeypatch.setattr(gw.hostmetrics if hasattr(gw, "hostmetrics") else
+                        __import__("awgbot.runtime.hostmetrics", fromlist=["x"]),
+                        "read_pi_throttled", lambda: None)
+    clock = [1000.0]
+    monkeypatch.setattr(gw.time, "monotonic", lambda: clock[0])
+    st1 = svc.status(); st2 = svc.status()
+    assert st1.srcversion == st2.srcversion == "ABC"
+    assert calls.count("modinfo") == 1
+    clock[0] += GatewayServices._STATIC_TTL_SECONDS + 1
+    svc.status()
+    assert calls.count("modinfo") == 2

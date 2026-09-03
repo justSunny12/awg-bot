@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import subprocess
+import time
 import urllib.request
 from dataclasses import dataclass, field
 
@@ -72,8 +73,15 @@ class GatewayServices(SelfUpdateMixin):
     снимки); клиентские таблицы просто пустуют, и городить отдельную схему ради
     их отсутствия — усложнение без выгоды."""
 
+    # Статические пробы панели (modinfo, обход /lib/modules) стоят на Pi
+    # заметную долю секунды и меняются только руками — при обновлении модуля
+    # или ядра. Кэш на инстансе: панель по кнопке рисуется из него, доктор и
+    # монитор ходят живьём.
+    _STATIC_TTL_SECONDS = 600
+
     def __init__(self, db):
         self.db = db
+        self._static_cache: tuple[float, tuple[str, str], tuple[list[str], int]] | None = None
 
     # ── линк ─────────────────────────────────────────────────────────────────
 
@@ -165,11 +173,18 @@ class GatewayServices(SelfUpdateMixin):
     def kernel_coverage(self, modules_root: str = "/lib/modules") -> tuple[list[str], int]:
         """Ядра без модуля amneziawg. Дыра, найденная руками: dkms молча
         пропускает ядро без headers, и загрузка в него оставляет шлюз без awg."""
+        # БЕЗ рекурсии по дереву модулей: `**` обходил тысячи файлов на каждое
+        # ядро, и панель на Pi рисовалась секунды. Модуль лежит в двух известных
+        # местах: DKMS кладёт в updates/dkms, пакетная сборка — по
+        # DEST_MODULE_LOCATION (kernel/net).
         missing: list[str] = []
         kernels = sorted(
             d for d in glob.glob(os.path.join(modules_root, "*")) if os.path.isdir(d))
         for kdir in kernels:
-            if not glob.glob(os.path.join(kdir, "**", "amneziawg.ko*"), recursive=True):
+            found = (glob.glob(os.path.join(kdir, "updates", "dkms", "amneziawg.ko*"))
+                     or glob.glob(os.path.join(kdir, "kernel", "net", "amneziawg.ko*"))
+                     or glob.glob(os.path.join(kdir, "extra", "amneziawg.ko*")))
+            if not found:
                 missing.append(os.path.basename(kdir))
         return missing, len(kernels)
 
@@ -418,10 +433,19 @@ class GatewayServices(SelfUpdateMixin):
         st.temp = hostmetrics.read_soc_temp()
         st.throttled = hostmetrics.read_pi_throttled()
         st.disk = hostmetrics.read_disk_percent()
-        st.module_version, st.srcversion = self.versions()
-        st.kernels_missing, st.kernels_total = self.kernel_coverage()
+        (st.module_version, st.srcversion), (st.kernels_missing, st.kernels_total) = \
+            self._static_probes()
         st.ext_ip = self.db.get_state(self._EXT_IP_KEY) or ""
         return st
+
+    def _static_probes(self) -> tuple[tuple[str, str], tuple[list[str], int]]:
+        now = time.monotonic()
+        c = self._static_cache
+        if c is not None and now - c[0] < self._STATIC_TTL_SECONDS:
+            return c[1], c[2]
+        ver, cov = self.versions(), self.kernel_coverage()
+        self._static_cache = (now, ver, cov)
+        return ver, cov
 
 
 def pathlib_read(path: str) -> str:

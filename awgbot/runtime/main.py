@@ -142,7 +142,6 @@ async def run_gateway() -> None:
 
     conf_watcher = ConfWatcher(config.CONF_DIR)
     conf_watcher.start()
-    scheduler = setup_gateway_scheduler(services, bot)
 
     try:
         warns = preflight.collect_warnings_gateway()
@@ -158,6 +157,12 @@ async def run_gateway() -> None:
         await report_update_result(bot, services)
     except Exception as e:                               # noqa: BLE001
         log.warning("gateway confirm_applied_update: %s", e)
+
+    # Планировщик — СТРОГО после финишера, как у клиентской роли. Его стартовая
+    # проверка обновлений укладывается в секунду, и, запущенная раньше, она
+    # ставила «доступна следующая» ВЫШЕ «обновлён до…»: последним в чате висел
+    # отчёт, а уведомление о следующей ступени терялось над ним.
+    scheduler = setup_gateway_scheduler(services, bot)
 
     log.info("Агент шлюза запущен (роль gateway)")
     try:
