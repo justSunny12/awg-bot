@@ -1534,7 +1534,7 @@ def gateway_panel(st) -> str:
     if st.kernels_missing:
         lines.append(f"Ядра: 🔴 без модуля awg: {', '.join(st.kernels_missing)}")
     else:
-        lines.append(f"Ядра: ✅ покрыты модулем все {st.kernels_total}")
+        lines.append(f"Ядра: ✅ модуль есть (загружаемых ядер: {st.kernels_total})")
     hw = []
     if st.temp is not None:
         hw.append(f"{st.temp:.0f}°C")

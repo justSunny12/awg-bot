@@ -57,16 +57,29 @@ def test_unknown_role_fails_loudly(monkeypatch):
 
 def test_kernel_coverage_reports_kernels_without_module(svc, tmp_path):
     """Дыра, найденная руками: dkms молча пропускает ядро без headers, и ребут
-    в него оставляет шлюз без awg. Агент обязан видеть это заранее."""
-    for k, with_mod in (("6.18.39-v8", True), ("6.18.34-2712", False),
-                        ("6.18.39-2712", True)):
+    в него оставляет шлюз без awg. Агент обязан видеть это заранее — но только
+    для ядер, в которые машина реально загрузится: тот же вариант платы и не
+    старее запущенного. Чужие платы (-2712 на Pi 4) и старые ядра — не шум."""
+    for k, with_mod in (("6.18.39+rpt-rpi-v8", True),      # запущенное
+                        ("6.18.44+rpt-rpi-v8", False),     # новое из apt — ДЫРА
+                        ("6.18.34+rpt-rpi-v8", False),     # старое — назад не идём
+                        ("6.18.44+rpt-rpi-2712", False),   # другая плата — никогда
+                        ("6.18.39+rpt-rpi-v7l", False)):
         d = tmp_path / k / "updates" / "dkms"
         d.mkdir(parents=True)
         if with_mod:
             (d / "amneziawg.ko.xz").write_bytes(b"x")
-    missing, total = svc.kernel_coverage(modules_root=str(tmp_path))
-    assert total == 3
-    assert missing == ["6.18.34-2712"]
+    missing, total = svc.kernel_coverage(modules_root=str(tmp_path),
+                                         running="6.18.39+rpt-rpi-v8")
+    assert total == 2
+    assert missing == ["6.18.44+rpt-rpi-v8"]
+
+
+def test_kernel_coverage_running_without_module_is_reported(svc, tmp_path):
+    (tmp_path / "6.18.39+rpt-rpi-v8").mkdir()
+    missing, total = svc.kernel_coverage(modules_root=str(tmp_path),
+                                         running="6.18.39+rpt-rpi-v8")
+    assert (missing, total) == (["6.18.39+rpt-rpi-v8"], 1)
 
 
 # ── гистерезис ───────────────────────────────────────────────────────────────

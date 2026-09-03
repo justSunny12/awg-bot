@@ -170,23 +170,43 @@ class GatewayServices(SelfUpdateMixin):
 
     # ── ядро/версии ──────────────────────────────────────────────────────────
 
-    def kernel_coverage(self, modules_root: str = "/lib/modules") -> tuple[list[str], int]:
-        """Ядра без модуля amneziawg. Дыра, найденная руками: dkms молча
-        пропускает ядро без headers, и загрузка в него оставляет шлюз без awg."""
-        # БЕЗ рекурсии по дереву модулей: `**` обходил тысячи файлов на каждое
-        # ядро, и панель на Pi рисовалась секунды. Модуль лежит в двух известных
-        # местах: DKMS кладёт в updates/dkms, пакетная сборка — по
-        # DEST_MODULE_LOCATION (kernel/net).
+    _KVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)(.*)$")
+
+    def kernel_coverage(self, modules_root: str = "/lib/modules",
+                        running: str | None = None) -> tuple[list[str], int]:
+        """Ядра без модуля amneziawg среди ТЕХ, в которые эта машина может
+        загрузиться: тот же вариант, что запущенное (суффикс после версии —
+        Raspberry Pi OS кладёт в один пакет ядра всех плат: -v8, -2712, -v7l,
+        и чужие здесь не загрузятся никогда), и не старше запущенного (назад
+        не откатываемся). Смысл проверки — НОВОЕ ядро из apt до ребута: dkms
+        молча пропускает ядро без headers, и ребут в него оставил бы шлюз без
+        awg. Возвращает (без модуля, сколько ядер рассмотрено)."""
+        running = running or os.uname().release
+        m = self._KVER_RE.match(running)
+        run_ver = tuple(int(x) for x in m.groups()[:3]) if m else None
+        run_flavor = m.group(4) if m else ""
         missing: list[str] = []
+        considered = 0
         kernels = sorted(
             d for d in glob.glob(os.path.join(modules_root, "*")) if os.path.isdir(d))
         for kdir in kernels:
+            name = os.path.basename(kdir)
+            km = self._KVER_RE.match(name)
+            if run_ver is not None:
+                if not km or km.group(4) != run_flavor:
+                    continue                     # ядро другой платы/варианта
+                if tuple(int(x) for x in km.groups()[:3]) < run_ver:
+                    continue                     # старее запущенного — назад не идём
+            considered += 1
+            # БЕЗ рекурсии по дереву модулей: `**` обходил тысячи файлов на
+            # каждое ядро, и панель на Pi рисовалась секунды. Модуль лежит в
+            # известных местах: DKMS — updates/dkms, пакетная сборка — kernel/net.
             found = (glob.glob(os.path.join(kdir, "updates", "dkms", "amneziawg.ko*"))
                      or glob.glob(os.path.join(kdir, "kernel", "net", "amneziawg.ko*"))
                      or glob.glob(os.path.join(kdir, "extra", "amneziawg.ko*")))
             if not found:
-                missing.append(os.path.basename(kdir))
-        return missing, len(kernels)
+                missing.append(name)
+        return missing, considered
 
     def versions(self) -> tuple[str, str]:
         """(version, srcversion) модуля. version у сборок AWG ВРЁТ (тег 0828 нёс
