@@ -51,7 +51,7 @@ async def _screen(sec: str, services):
         return (texts.settings_svc_text(state, progress),
                 kb.settings_svc(state, available=avail, orphans=orphans))
     if sec == "upd":
-        return texts.SETTINGS_UPD, kb.settings_updates(await call(services.updates_muted))
+        return texts.settings_upd_text(), kb.settings_updates(await call(services.updates_muted))
     if sec == "rt":
         if not config.ROUTING_ENABLED:
             # Кнопку в этом случае не рисуем вовсе, но колбэк приходит и из

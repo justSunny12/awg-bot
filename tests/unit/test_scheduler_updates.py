@@ -35,3 +35,8 @@ async def test_notify_update_available_dismisses_previous_finisher(monkeypatch):
     nxt = types.SimpleNamespace(tag="v2.4.2.9", body="- x")
     await sched.notify_update_available(object(), object(), nxt)
     assert calls == ["dismiss", ("send", "Доступна новая версия: v2.4.2.9")]
+
+
+def test_updates_sections_show_current_version_with_v():
+    assert texts.settings_upd_text("2.4.2.12").endswith("Текущая версия бота: <b>v2.4.2.12</b>")
+    assert "Установлено: <b>v2.4.2.12</b>" in texts.gateway_updates("2.4.2.12", False, "каждый день")

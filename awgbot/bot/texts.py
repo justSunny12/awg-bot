@@ -1303,6 +1303,14 @@ def settings_svc_text(state: str, progress=None) -> str:
 SETTINGS_UPD = ("⬆️ <b>Обновления бота</b>\n\nАвтоуведомления, периодичность проверки "
                 "и ручная проверка новой версии.")
 
+
+def settings_upd_text(installed: str | None = None) -> str:
+    """Раздел обновлений основного бота — с текущей версией последней строкой:
+    до этого её было не увидеть, не запросив проверку."""
+    from awgbot.core import config
+    cur = _ver(installed if installed is not None else config.INSTALLED_VERSION)
+    return SETTINGS_UPD + f"\n\nТекущая версия бота: <b>{_e(cur)}</b>"
+
 # границы валидации ввода: dotted-ключ → (мин, макс, подпись, единица)
 SETTINGS_BOUNDS = {
     "quiet_hours.quiet_hours_start": (0, 23, "Начало тихих часов", "час (0–23)"),
@@ -1598,7 +1606,7 @@ def gateway_op_result(title: str, ok: bool, detail: str) -> str:
 
 def gateway_updates(installed: str, muted: bool, schedule: str) -> str:
     return (f"⬆️ <b>Обновление агента</b>\n\n"
-            f"Установлено: <b>{_e(installed)}</b>\n"
+            f"Установлено: <b>{_e(_ver(installed))}</b>\n"
             f"Проверка: {_e(schedule)}, уведомления {'выключены' if muted else 'включены'}.\n\n"
             "Обновление — тем же механизмом, что у основного бота: следующая "
             "ступень из релизов, sha256, перезапуск, отчёт.")
