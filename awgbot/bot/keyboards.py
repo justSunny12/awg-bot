@@ -1276,23 +1276,40 @@ def settings_cancel(sec: str) -> InlineKeyboardMarkup:
 
 
 def gateway_panel_kb() -> InlineKeyboardMarkup:
-    """Панель шлюза. Действия с последствиями (рестарт линка, реассерт) ведут на
-    подтверждение — обрыв RF у всех, пусть и на секунды, не должен случаться от
-    промаха пальцем. Бандл кнопки не имеет: он приходит файлом в чат."""
+    """Панель шлюза: обновить | монитор здоровья / мастер восстановления /
+    настройки. Мастер — на подтверждение: обрыв РФ у всех, пусть на секунды,
+    не должен случаться от промаха пальцем. Перезапуски — в настройках."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="🔄 Обновить", callback_data=GwCB(action="panel"))
-    kb.button(text="🩺 Доктор", callback_data=GwCB(action="doctor"))
-    kb.button(text="🔁 Рестарт линка", callback_data=GwCB(action="restart"))
-    kb.button(text="🛠 Реассерт обвязки", callback_data=GwCB(action="reassert"))
-    kb.button(text="⬆️ Обновление агента", callback_data=GwCB(action="updates"))
-    kb.adjust(2, 2, 1)
+    kb.button(text="🔄 Обновить", callback_data=GwCB(action="refresh"))
+    kb.button(text="🌡 Монитор здоровья", callback_data=GwCB(action="health"))
+    kb.button(text="🔧 Мастер восстановления", callback_data=GwCB(action="reassert"))
+    kb.button(text="⚙️ Настройки", callback_data=GwCB(action="settings"))
+    kb.adjust(2, 1, 1)
+    return kb.as_markup()
+
+
+def gateway_settings_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🛠 Обслуживание", callback_data=GwCB(action="maint"))
+    kb.button(text="⬆️ Обновления бота", callback_data=GwCB(action="updates"))
+    kb.button(text="⬅️ К панели", callback_data=GwCB(action="panel"))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def gateway_maint_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔁 Перезапустить AWG", callback_data=GwCB(action="restart"))
+    kb.button(text="🔁 Перезапустить бота", callback_data=GwCB(action="botrestart"))
+    kb.button(text="⬅️ Назад", callback_data=GwCB(action="settings"))
+    kb.adjust(1)
     return kb.as_markup()
 
 
 def gateway_updates_kb(muted: bool) -> InlineKeyboardMarkup:
     """Раздел обновлений агента — один в один с основным ботом: тумблер
     уведомлений (при расписании «никогда» принудительно выключен), пикер
-    расписания с отметкой текущего, ручная проверка."""
+    расписания с отметкой текущего, ручная проверка. Назад — в настройки."""
     sched = str(settings.get("updates.poll_schedule", "day")).lower()
     never = sched == "never"
     notify_on = (not muted) and not never
@@ -1305,15 +1322,17 @@ def gateway_updates_kb(muted: bool) -> InlineKeyboardMarkup:
         mark = "🔘 " if opt == sched else ""
         kb.button(text=f"{mark}{text}", callback_data=GwCB(action="upd_sched", val=opt))
     kb.button(text="🔍 Проверить сейчас", callback_data=GwCB(action="upd_check"))
-    kb.button(text="⬅️ К панели", callback_data=GwCB(action="panel"))
+    kb.button(text="⬅️ Назад", callback_data=GwCB(action="settings"))
     kb.adjust(1, 2, 2, 1, 1)
     return kb.as_markup()
 
 
-def gateway_confirm_kb(action: str) -> InlineKeyboardMarkup:
-    """«Не надо» первой — необратимое не там, куда палец идёт по инерции."""
+def gateway_confirm_kb(action: str, back: str = "panel") -> InlineKeyboardMarkup:
+    """«Не надо» первой — необратимое не там, куда палец идёт по инерции.
+    back — куда возвращает отказ: мастер живёт на панели, перезапуски — в
+    обслуживании."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ Не надо", callback_data=GwCB(action="panel"))
+    kb.button(text="⬅️ Не надо", callback_data=GwCB(action=back))
     kb.button(text="✅ Выполнить", callback_data=GwCB(action=f"{action}!"))
     kb.adjust(2)
     return kb.as_markup()
@@ -1347,6 +1366,6 @@ def gateway_update_available_kb() -> InlineKeyboardMarkup:
     «Скрыть» через HideCB, чей хендлер у агента не подключён, — мёртвая кнопка."""
     kb = InlineKeyboardBuilder()
     kb.button(text="⬆️ Обновить", callback_data=UpdateCB(action="install"))
-    kb.button(text="⬅️ К панели", callback_data=GwCB(action="panel"))
+    kb.button(text="⬅️ Назад", callback_data=GwCB(action="updates"))
     kb.adjust(1, 1)
     return kb.as_markup()

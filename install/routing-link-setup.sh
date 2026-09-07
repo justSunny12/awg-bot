@@ -162,6 +162,8 @@ HDREOF
         # Подсеть ВШИВАЕТСЯ в бандл: на шлюзе нет app.yaml, взять её там неоткуда,
         # а env-дефолт скрипта вернул бы после ребута правила для чужой подсети.
         printf 'CLIENT_SUBNET="${CLIENT_SUBNET:-%s}"\nexport CLIENT_SUBNET\n' "$CLIENT_SUBNET"
+        # Имя ВПС — для панели агента («Линк до …»): на шлюзе взять его неоткуда.
+        printf 'SERVER_NAME="%s"\n' "$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9._-' | cut -c1-64)"
         cat <<'BODYEOF'
 set -e
 [ "$(id -u)" = "0" ] || { echo "нужен root: sudo sh $0"; exit 1; }

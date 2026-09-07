@@ -77,6 +77,90 @@ def read_ram_percent() -> float | None:
     return round(100.0 * (1 - avail / total), 1)
 
 
+def read_ram() -> tuple[float, int] | None:
+    """(занято %, свободно МБ) по MemAvailable — БЕЗ свопа: своп на SD-карте
+    Pi — это не «свободная память», а способ убить карту."""
+    total = avail = None
+    try:
+        with open("/proc/meminfo", encoding="ascii") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    total = int(line.split()[1])
+                elif line.startswith("MemAvailable:"):
+                    avail = int(line.split()[1])
+                if total is not None and avail is not None:
+                    break
+    except OSError:
+        return None
+    if not total or avail is None:
+        return None
+    return round(100.0 * (1 - avail / total), 1), avail // 1024
+
+
+def read_disk(path: str = "/") -> tuple[float, float] | None:
+    """(занято %, свободно ГБ) корневой ФС: свободно — f_bavail, то есть
+    доступное НЕ-root пользователю; резерв ext4 в «свободно» не входит."""
+    try:
+        st = os.statvfs(path)
+    except OSError:
+        return None
+    if st.f_blocks <= 0:
+        return None
+    used = st.f_blocks - st.f_bfree
+    return (round(100.0 * used / st.f_blocks, 1),
+            round(st.f_bavail * st.f_frsize / 1024 ** 3, 1))
+
+
+def read_uptime_seconds() -> int | None:
+    try:
+        with open("/proc/uptime", encoding="ascii") as f:
+            return int(float(f.read().split()[0]))
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def root_block_device(mounts: str = "/proc/mounts") -> str:
+    """Блочное устройство, на котором смонтирован корень: /dev/sda2 → /dev/sda,
+    /dev/mmcblk0p2 → /dev/mmcblk0, /dev/nvme0n1p2 → /dev/nvme0n1. Пусто — не
+    нашли (overlay, zram, что угодно)."""
+    import re
+    try:
+        with open(mounts, encoding="utf-8") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == "/" and parts[0].startswith("/dev/"):
+                    dev = parts[0]
+                    m = re.match(r"^(/dev/(?:mmcblk\d+|nvme\d+n\d+))p\d+$", dev)
+                    if m:
+                        return m.group(1)
+                    return re.sub(r"\d+$", "", dev)
+    except OSError:
+        pass
+    return ""
+
+
+def read_smart_health(dev: str | None = None) -> str | None:
+    """Вердикт SMART корневого диска: "OK" / "FAIL" / None (нечем или не о чем:
+    SD-карты SMART не отдают, smartctl может не стоять). None — не «всё
+    хорошо», а «не смотрели», и панель такую строку не рисует."""
+    import shutil
+    import subprocess
+    dev = dev or root_block_device()
+    if not dev or dev.startswith("/dev/mmcblk") or not shutil.which("smartctl"):
+        return None
+    try:
+        proc = subprocess.run(["smartctl", "-H", dev], capture_output=True, timeout=15)
+        out = proc.stdout.decode(errors="replace")
+    except Exception:                                  # noqa: BLE001
+        return None
+    low = out.lower()
+    if "passed" in low or "smart health status: ok" in low:
+        return "OK"
+    if "failed" in low:
+        return "FAIL"
+    return None
+
+
 def read_disk_percent(path: str = "/") -> float | None:
     """Занятость диска, % (корневая ФС): statvfs, доля занятых блоков."""
     try:
@@ -160,5 +244,6 @@ def get_host_metrics(db) -> dict | None:
 
 
 __all__ = ["collect", "collect_and_store", "get_host_metrics", "STATE_METRICS",
-           "read_pi_throttled", "read_soc_temp",
+           "read_pi_throttled", "read_soc_temp", "read_ram", "read_disk",
+           "read_uptime_seconds", "root_block_device", "read_smart_health",
            "read_cpu_percent", "read_ram_percent", "read_disk_percent"]

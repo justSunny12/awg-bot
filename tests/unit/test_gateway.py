@@ -176,23 +176,7 @@ def _quiet_status(**kw):
     return st
 
 
-def test_external_ip_change_alerts_loudly_but_first_sighting_is_silent(
-        svc, monkeypatch):
-    """Смена внешнего IP — громкий алерт (эндпоинт линка на ВПС смотрит на
-    DDNS), но ПЕРВОЕ знакомство с адресом — не смена, алерта нет."""
-    monkeypatch.setattr(svc, "status", lambda: _quiet_status())
-    monkeypatch.setattr(svc, "fetch_external_ip", lambda: "1.1.1.1")
-    assert [n for n in svc.monitor_tick() if "IP" in n.text] == []
-    monkeypatch.setattr(svc, "fetch_external_ip", lambda: "2.2.2.2")
-    notes = [n for n in svc.monitor_tick() if "IP" in n.text]
-    assert len(notes) == 1 and notes[0].force_sound is True
-    assert "1.1.1.1" in notes[0].text and "2.2.2.2" in notes[0].text
-    assert [n for n in svc.monitor_tick() if "IP" in n.text] == [], \
-        "тот же адрес алертит повторно"
-
-
 def test_dead_link_alerts_after_two_ticks(svc, monkeypatch):
-    monkeypatch.setattr(svc, "fetch_external_ip", lambda: "")
     monkeypatch.setattr(svc, "status", lambda: _quiet_status(handshake_age=9999.0))
     assert svc.monitor_tick() == []
     notes = svc.monitor_tick()
@@ -200,12 +184,12 @@ def test_dead_link_alerts_after_two_ticks(svc, monkeypatch):
 
 
 def test_quiet_gateway_produces_no_notes_and_stores_snapshot(svc, monkeypatch):
-    monkeypatch.setattr(svc, "fetch_external_ip", lambda: "")
     monkeypatch.setattr(svc, "status", lambda: _quiet_status())
     assert svc.monitor_tick() == []
-    import json
-    snap = json.loads(svc.db.get_state("gw_status"))
-    assert snap["link_up"] is True and snap["handshake_age"] == 10.0
+    snap = svc.cached_status(60)
+    assert snap is not None and snap.link_up is True and snap.handshake_age == 10.0
+    assert snap.checks and snap.checks[0].name == "MASQUERADE", "проверки не пережили снимок"
+    assert svc.cached_status(-1) is None, "устаревший снимок должен отвергаться"
 
 
 # ── панель ───────────────────────────────────────────────────────────────────
@@ -215,7 +199,7 @@ def test_panel_renders_on_a_dead_gateway():
     нужнее всего."""
     from awgbot.bot import texts
     out = texts.gateway_panel(GwStatus())
-    assert "лежит" in out
+    assert "лежит" in out and "Потребление за месяц" in out
 
 
 # ── этап 2: операции ─────────────────────────────────────────────────────────

@@ -31,14 +31,53 @@ router.callback_query.filter(RoleFilter("admin"))
 _BUNDLE_MAX_BYTES = 512 * 1024
 
 
-async def _panel(target, services, cb: CallbackQuery | None = None):
+def _snapshot_max_age() -> float:
+    """Снимок тика годится для панели, пока не старше двух тиков: пропущенный
+    тик — уже повод сходить живьём, а не показывать позавчерашнее."""
+    from awgbot.core import settings
+    return 2 * 60 * settings.get_int("app.gateway.monitor_minutes", 3)
+
+
+async def _status(services, fresh: bool):
+    """fresh — живой снимок (и он же сохраняется для следующих показов);
+    иначе снимок последнего тика, если свежий, а нет — живой."""
+    if not fresh:
+        st = await call(services.cached_status, _snapshot_max_age())
+        if st is not None:
+            return st
+    return await call(services.snapshot)
+
+
+async def _panel(target, services, cb: CallbackQuery | None = None, fresh: bool = False):
     """Панель — через нав-хелперы: одно живое меню в чате, прошлое гаснет,
     история ведётся для /start."""
-    st = await call(services.status)
+    st = await _status(services, fresh)
     if cb is not None:
         await edit_nav(cb, services, texts.gateway_panel(st), kb.gateway_panel_kb())
     else:
         await send_menu(target, services, texts.gateway_panel(st), kb.gateway_panel_kb())
+
+
+async def restore_panel_after_restart(bot, services) -> None:
+    """Исполнить обещание «вернётся через несколько секунд» — как у основного:
+    обещание подменяется отчётом и остаётся в чате, панель — следующим
+    сообщением. Зовётся новым процессом на старте."""
+    waiting = await call(services.pop_restart_wait)
+    if waiting is None:
+        return
+    chat_id, mid = waiting
+    try:
+        await bot.edit_message_text(texts.BOT_RESTARTED, chat_id=chat_id,
+                                    message_id=mid, reply_markup=None)
+    except Exception:                                  # noqa: BLE001
+        pass
+    from awgbot.bot.handlers.common import _dismiss_previous_nav
+    await _dismiss_previous_nav(bot, services, chat_id)
+    st = await _status(services, fresh=False)
+    sent = await bot.send_message(chat_id, texts.gateway_panel(st),
+                                  reply_markup=kb.gateway_panel_kb())
+    await call(services.db.set_nav_message_id, chat_id, sent.message_id)
+    await call(services.db.push_nav_history, chat_id, sent.message_id)
 
 
 @router.message(CommandStart())
@@ -55,35 +94,72 @@ async def gw_panel(cb: CallbackQuery, services, state: FSMContext):
     await cb.answer()
 
 
-@router.callback_query(GwCB.filter(F.action == "doctor"))
-async def gw_doctor(cb: CallbackQuery, services):
-    checks = await call(services.doctor)
-    await edit_nav(cb, services, texts.gateway_doctor(checks), kb.gateway_back_kb())
+@router.callback_query(GwCB.filter(F.action == "refresh"))
+async def gw_refresh(cb: CallbackQuery, services, state: FSMContext):
+    """«Обновить» — единственная кнопка, которая всегда ходит по пробам живьём."""
+    await state.clear()
+    await cb.answer("Снимаю показания…")
+    await _panel(cb.message, services, cb, fresh=True)
+
+
+@router.callback_query(GwCB.filter(F.action == "health"))
+async def gw_health(cb: CallbackQuery, services):
+    await cb.answer("Проверяю…")
+    st = await call(services.status)
+    await edit_nav(cb, services, texts.gateway_health(st), kb.gateway_back_kb())
+
+
+@router.callback_query(GwCB.filter(F.action == "settings"))
+async def gw_settings(cb: CallbackQuery, services, state: FSMContext):
+    await state.clear()
+    await edit_nav(cb, services, texts.GW_SETTINGS, kb.gateway_settings_kb())
     await cb.answer()
 
 
-@router.callback_query(GwCB.filter(F.action.in_({"restart", "reassert"})))
+@router.callback_query(GwCB.filter(F.action == "maint"))
+async def gw_maint(cb: CallbackQuery, services):
+    await edit_nav(cb, services, texts.GW_MAINT, kb.gateway_maint_kb())
+    await cb.answer()
+
+
+_CONFIRM = {
+    "restart": (lambda: texts.GW_CONFIRM_RESTART, "maint"),
+    "botrestart": (lambda: texts.GW_CONFIRM_BOT_RESTART, "maint"),
+    "reassert": (lambda: texts.GW_CONFIRM_REASSERT, "panel"),
+}
+
+
+@router.callback_query(GwCB.filter(F.action.in_(set(_CONFIRM))))
 async def gw_confirm(cb: CallbackQuery, callback_data: GwCB, services):
-    text = (texts.GW_CONFIRM_RESTART if callback_data.action == "restart"
-            else texts.GW_CONFIRM_REASSERT)
-    await edit_nav(cb, services, text, kb.gateway_confirm_kb(callback_data.action))
+    text_fn, back = _CONFIRM[callback_data.action]
+    await edit_nav(cb, services, text_fn(), kb.gateway_confirm_kb(callback_data.action, back))
     await cb.answer()
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"restart!", "reassert!"})))
 async def gw_execute(cb: CallbackQuery, callback_data: GwCB, services):
     if callback_data.action == "restart!":
-        await cb.answer("Перезапускаю линк…")
+        await cb.answer("Перезапускаю AWG…")
         ok, detail = await call(services.restart_link)
-        title = "Рестарт линка"
+        title = "Перезапуск AWG"
     else:
-        await cb.answer("Реассерт…")
+        await cb.answer("Восстанавливаю…")
         ok, detail = await call(services.reassert)
-        title = "Реассерт обвязки"
+        title = "Мастер восстановления"
     # Итог остаётся в чате отдельным сообщением: «когда и чем кончилось»
     # спрашивают потом, а панель переписывается следующей навигацией.
     await edit_nav(cb, services, texts.gateway_op_result(title, ok, detail), None)
-    await _panel(cb.message, services)
+    await _panel(cb.message, services, fresh=True)
+
+
+@router.callback_query(GwCB.filter(F.action == "botrestart!"))
+async def gw_bot_restart(cb: CallbackQuery, services):
+    """Как у основного: обещание на месте меню, исполняет его новый процесс
+    (restore_panel_after_restart). Рестарт — вне нашего cgroup."""
+    await cb.answer()
+    await edit_nav(cb, services, texts.GW_BOT_RESTARTING, None)
+    await call(services.set_restart_wait, cb.message.chat.id, cb.message.message_id)
+    await call(services.restart_bot)
 
 
 # ── бандл файлом ─────────────────────────────────────────────────────────────
@@ -111,19 +187,19 @@ async def gw_bundle_apply(cb: CallbackQuery, services, state: FSMContext):
     raw = (await state.get_data()).get("bundle")
     await state.clear()
     if not raw:
-        await cb.answer("Бандла в памяти нет — пришли файл заново.", show_alert=True)
+        await cb.answer("Файла в памяти нет — пришли его заново.", show_alert=True)
         return
     await cb.answer("Применяю…")
     ok, detail = await call(services.apply_bundle, base64.b64decode(raw))
-    await edit_nav(cb, services, texts.gateway_op_result("Бандл", ok, detail), None)
-    await _panel(cb.message, services)
+    await edit_nav(cb, services, texts.gateway_op_result("Конфигурация шлюза", ok, detail), None)
+    await _panel(cb.message, services, fresh=True)
 
 
 @router.callback_query(GwCB.filter(F.action == "drop"))
 async def gw_bundle_drop(cb: CallbackQuery, services, state: FSMContext):
     await state.clear()
     await _panel(cb.message, services, cb)
-    await cb.answer("Бандл отброшен")
+    await cb.answer("Файл отброшен")
 
 
 # ── самообновление агента (этап 3) — та же механика, что у клиентской роли ────

@@ -9,6 +9,8 @@ selfupdate.py — самообновление бота из GitHub-релизо
 """
 from __future__ import annotations
 
+import time
+
 from awgbot.core import config
 from awgbot.infra import updates
 
@@ -128,6 +130,47 @@ class SelfUpdateMixin:
         return _notification(config.ADMIN_ID, texts.update_not_applied(
             pending, config.INSTALLED_VERSION), reply_markup=kb.update_done_menu())
 
+    # ── перезапуск бота: обещание «вернётся через несколько секунд» и его
+    # исполнение новым процессом — одинаково у обеих ролей ──────────────
+
+    def set_restart_wait(self, chat_id: int, message_id: int) -> None:
+        """Запомнить сообщение «бот перезапускается»: новый процесс подменит его
+        панелью. Без этого обещание «вернётся через несколько секунд» исполнить
+        было некому — в чат после старта никто не пишет, и админ оставался с
+        мёртвым сообщением до тех пор, пока сам не отправлял /start."""
+        self.db.set_state("restart_wait", f"{chat_id}:{message_id}")
+
+    def pop_restart_wait(self):
+        """(chat_id, message_id) обещания или None. Одноразово: повторный старт
+        не должен переписывать давно отработавшее сообщение."""
+        raw = self.db.get_state("restart_wait")
+        if not raw:
+            return None
+        self.db.set_state("restart_wait", "")
+        try:
+            chat_s, msg_s = raw.split(":", 1)
+            return int(chat_s), int(msg_s)
+        except ValueError:
+            return None
+
+    def restart_bot(self) -> None:
+        """Перезапустить сам сервис бота. Как и self-update, запускаем рестарт
+        ОТДЕЛЬНО от нашего процесса (systemd-run вне cgroup), иначе `systemctl
+        restart` убьёт нас на середине команды. Без systemd-run — падаем в
+        обычный рестарт через выход (systemd поднимет по Restart=always)."""
+        import shutil
+        import subprocess
+        if shutil.which("systemd-run"):
+            subprocess.Popen(
+                ["systemd-run", "--collect", "--quiet",
+                 f"--unit=awg-bot-restart-{int(time.time())}",
+                 "systemctl", "restart", "awg-bot"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, close_fds=True)
+        else:
+            subprocess.Popen(["systemctl", "restart", "awg-bot"],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
 
 
 def _notification(*args, **kwargs):

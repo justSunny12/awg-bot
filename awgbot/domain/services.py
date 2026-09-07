@@ -2546,27 +2546,7 @@ class Services(SelfUpdateMixin, MigrationMixin):
                 else self._txt_rt_gw_down())
         return [Notification(config.ADMIN_ID, text)]
 
-    # ── Обновления бота (self-update) ────────────────────────────────────────
-
-    def set_restart_wait(self, chat_id: int, message_id: int) -> None:
-        """Запомнить сообщение «бот перезапускается»: новый процесс подменит его
-        панелью. Без этого обещание «вернётся через несколько секунд» исполнить
-        было некому — в чат после старта никто не пишет, и админ оставался с
-        мёртвым сообщением до тех пор, пока сам не отправлял /start."""
-        self.db.set_state("restart_wait", f"{chat_id}:{message_id}")
-
-    def pop_restart_wait(self):
-        """(chat_id, message_id) обещания или None. Одноразово: повторный старт
-        не должен переписывать давно отработавшее сообщение."""
-        raw = self.db.get_state("restart_wait")
-        if not raw:
-            return None
-        self.db.set_state("restart_wait", "")
-        try:
-            chat_s, msg_s = raw.split(":", 1)
-            return int(chat_s), int(msg_s)
-        except ValueError:
-            return None
+    # ── Детект рестарта сервиса ──────────────────────────────────────────────
 
     def detect_and_handle_restart(self) -> bool:
         """Сверяет метку старта сервиса с сохранённой. Изменилась (был рестарт) —
@@ -2789,25 +2769,6 @@ class Services(SelfUpdateMixin, MigrationMixin):
         # StartedAt изменится → сохранить и переналожить блокировки
         self.detect_and_handle_restart()
         self.reconcile_blocks()
-
-    def restart_bot(self) -> None:
-        """Перезапустить сам сервис бота. Как и self-update, запускаем рестарт
-        ОТДЕЛЬНО от нашего процесса (systemd-run вне cgroup), иначе `systemctl
-        restart` убьёт нас на середине команды. Без systemd-run — падаем в
-        обычный рестарт через выход (systemd поднимет по Restart=always)."""
-        import shutil
-        import subprocess
-        if shutil.which("systemd-run"):
-            subprocess.Popen(
-                ["systemd-run", "--collect", "--quiet",
-                 f"--unit=awg-bot-restart-{int(time.time())}",
-                 "systemctl", "restart", "awg-bot"],
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, close_fds=True)
-        else:
-            subprocess.Popen(["systemctl", "restart", "awg-bot"],
-                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
 
 
 __all__ = [

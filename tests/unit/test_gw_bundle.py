@@ -155,3 +155,11 @@ def test_link_setup_unit_points_at_a_permanent_path():
     assert 'SELF="$(install_self)"' in src
     assert 'SELF="$(readlink -f "$0")"' not in src
     assert "/usr/local/sbin" in src
+
+
+def test_bundle_carries_the_vps_hostname(bundle):
+    """Имя ВПС едет в бандле: панель агента пишет «Линк до <имя>», а на шлюзе
+    взять его больше неоткуда."""
+    import re
+    assert re.search(r'^SERVER_NAME="[A-Za-z0-9._-]{1,64}"$', bundle, re.M), \
+        "в бандле нет SERVER_NAME"

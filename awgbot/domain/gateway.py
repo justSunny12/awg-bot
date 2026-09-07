@@ -17,10 +17,10 @@ import json
 import logging
 import os
 import re
+import socket
 import subprocess
 import time
-import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 
 from awgbot.core import config
 from awgbot.core import settings
@@ -53,19 +53,46 @@ class GwCheck:
 
 @dataclass
 class GwStatus:
+    """Снимок шлюза для панели. Сериализуется в state (gw_status) целиком:
+    панель по /start рисуется из снимка последнего тика, а не гоняет пробы."""
     link_up: bool = False
     handshake_age: float | None = None      # секунд; None — хендшейка нет
-    rx: int = 0
+    rx: int = 0                             # счётчики линка с момента подъёма
     tx: int = 0
-    checks: list[GwCheck] = field(default_factory=list)
+    checks: list[GwCheck] = field(default_factory=list)   # монитор здоровья
     temp: float | None = None
     throttled: dict | None = None
+    cpu: float | None = None
+    ram: float | None = None
+    ram_free_mb: int | None = None
     disk: float | None = None
+    disk_free_gb: float | None = None
+    smart: str | None = None                # "OK" / "FAIL" / None — не смотрели
+    uptime_seconds: int | None = None
+    hostname: str = ""
+    server_name: str = ""                   # имя ВПС для «Линк до …»
     module_version: str = ""
     srcversion: str = ""
     kernels_missing: list[str] = field(default_factory=list)
     kernels_total: int = 0
-    ext_ip: str = ""
+    month_rx: int = 0                       # потребление линка за календарный месяц
+    month_tx: int = 0
+    ts: str = ""                            # когда снят (ISO); пусто — живой
+
+    def to_json(self) -> str:
+        return json.dumps(asdict(self))
+
+    @classmethod
+    def from_json(cls, raw: str) -> "GwStatus":
+        d = json.loads(raw)
+        d["checks"] = [GwCheck(**c) for c in d.get("checks", [])]
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in d.items() if k in known})
+
+    def age_seconds(self) -> float | None:
+        if not self.ts:
+            return None
+        return max(0.0, (timeutil.now() - timeutil.parse_iso(self.ts)).total_seconds())
 
 
 class GatewayServices(SelfUpdateMixin):
@@ -220,23 +247,6 @@ class GatewayServices(SelfUpdateMixin):
                 src = line.split(":", 1)[1].strip()
         return ver, src
 
-    # ── внешний IP ───────────────────────────────────────────────────────────
-
-    _EXT_IP_KEY = "gw_ext_ip"
-
-    def fetch_external_ip(self) -> str:
-        """Текущий внешний IP (пустая строка — не удалось). Два независимых
-        сервиса: один недоступный не должен выглядеть сменой адреса."""
-        for url in ("https://api.ipify.org", "https://ifconfig.me/ip"):
-            try:
-                with urllib.request.urlopen(url, timeout=5) as r:
-                    ip = r.read().decode(errors="replace").strip()
-                if re.fullmatch(r"[0-9.]{7,15}", ip):
-                    return ip
-            except Exception:                            # noqa: BLE001
-                continue
-        return ""
-
     # ── гистерезис ───────────────────────────────────────────────────────────
 
     def _streak_alert(self, key: str, bad: bool | None, streak: int,
@@ -273,8 +283,7 @@ class GatewayServices(SelfUpdateMixin):
         и час тишины здесь равен часу неработающего РФ-доступа у всех. Остальное
         — обычные уведомления с обычными стриками.
         """
-        from awgbot.runtime import hostmetrics
-        st = self.status()
+        st = self.snapshot()
         notes: list[Notification] = []
         streak = settings.get_int("app.monitoring.alert_streak", 5)
 
@@ -325,25 +334,6 @@ class GatewayServices(SelfUpdateMixin):
         except Exception as e:                          # noqa: BLE001
             log.warning("gateway: tg_mark_ensure: %s", e)
 
-        ip = self.fetch_external_ip()
-        if ip:
-            prev = self.db.get_state(self._EXT_IP_KEY) or ""
-            if prev and prev != ip:
-                notes.append(Notification(
-                    config.ADMIN_ID,
-                    f"🌍 Внешний IP шлюза сменился: {prev} → {ip}. Эндпоинт "
-                    f"линка на ВПС смотрит на DDNS — проверь, что тот догнал.",
-                    force_sound=True))
-            if prev != ip:
-                self.db.set_state(self._EXT_IP_KEY, ip)
-            st.ext_ip = ip
-
-        self.db.set_state("gw_status", json.dumps({
-            "ts": timeutil.to_iso(timeutil.now()),
-            "link_up": st.link_up, "handshake_age": st.handshake_age,
-            "rx": st.rx, "tx": st.tx, "temp": st.temp, "disk": st.disk,
-            "ext_ip": st.ext_ip or (self.db.get_state(self._EXT_IP_KEY) or ""),
-        }))
         return [n for n in notes if n.text]
 
     # ── путь к Telegram: маркировка диапазонов (этап 2) ──────────────────────
@@ -411,6 +401,9 @@ class GatewayServices(SelfUpdateMixin):
         text = plain.decode(errors="replace")
         if "#__GW_SETUP_BELOW__" not in text or "__LINK_CONF_EOF__" not in text:
             return False, "бандл не принят: внутри нет маркеров контракта линка"
+        m = re.search(r'^SERVER_NAME="([^"\n]{1,64})"', text, re.M)
+        if m:
+            self.db.set_state(self._SERVER_NAME_KEY, m.group(1))
         fd, path = tempfile.mkstemp(prefix="awg-gw-bundle-", suffix=".sh", dir="/root")
         try:
             with os.fdopen(fd, "wb") as f:
@@ -426,36 +419,108 @@ class GatewayServices(SelfUpdateMixin):
                 pass
 
     def doctor(self) -> list[GwCheck]:
-        """Доктор: все проверки панели плюс путь к Telegram и линк — как список,
-        а не как вердикт: чинить будут по строкам."""
+        """Все проверки — живьём. Список, а не вердикт: чинить будут по строкам."""
+        return self.status().checks
+
+    # ── имя ВПС ──────────────────────────────────────────────────────────────
+
+    _SERVER_NAME_KEY = "gw_server_name"
+
+    def server_name(self) -> str:
+        """Имя ВПС для «Линк до …»: явная настройка → имя из бандла → «ВПС»."""
+        return (str(settings.get("app.gateway.server_name", "") or "").strip()
+                or (self.db.get_state(self._SERVER_NAME_KEY) or "").strip()
+                or "ВПС")
+
+    # ── потребление за месяц ─────────────────────────────────────────────────
+
+    _TRAFFIC_KEY = "gw_traffic"
+
+    def _account_traffic(self, rx: int, tx: int) -> tuple[int, int]:
+        """Счётчики линка живут от подъёма интерфейса и обнуляются каждым
+        рестартом. Копим дельты в месячный итог: счётчик меньше прошлого —
+        значит, обнулился, и дельта — весь текущий. Новый календарный месяц
+        начинает итог заново."""
+        month = timeutil.now().strftime("%Y-%m")
+        try:
+            acc = json.loads(self.db.get_state(self._TRAFFIC_KEY) or "{}")
+        except (json.JSONDecodeError, ValueError):
+            acc = {}
+        if acc.get("month") != month:
+            acc = {"month": month, "rx": 0, "tx": 0,
+                   "last_rx": acc.get("last_rx", 0), "last_tx": acc.get("last_tx", 0)}
+        last_rx, last_tx = int(acc.get("last_rx", 0)), int(acc.get("last_tx", 0))
+        d_rx = rx - last_rx if rx >= last_rx else rx
+        d_tx = tx - last_tx if tx >= last_tx else tx
+        acc["rx"] = int(acc.get("rx", 0)) + max(0, d_rx)
+        acc["tx"] = int(acc.get("tx", 0)) + max(0, d_tx)
+        acc["last_rx"], acc["last_tx"] = rx, tx
+        self.db.set_state(self._TRAFFIC_KEY, json.dumps(acc))
+        return acc["rx"], acc["tx"]
+
+    # ── сводка ───────────────────────────────────────────────────────────────
+
+    def status(self) -> GwStatus:
+        """Живой снимок: линк, монитор здоровья, железо. Одна прогулка по всем
+        пробам — секунда на Pi; панель по /start берёт снимок тика (cached_status),
+        живьём ходят «Обновить», «Монитор здоровья» и сам тик."""
+        from awgbot.runtime import hostmetrics
+        st = GwStatus()
+        st.link_up, st.handshake_age, st.rx, st.tx = self.link_status()
         checks = list(self.plumbing_checks())
         missing = self.tg_mark_missing()
         checks.append(GwCheck("маршрут к Telegram", not missing,
                               "" if not missing else
                               f"нет маркировки для {len(missing)} диапазонов — "
-                              f"реассерт поставит"))
-        up, age, _, _ = self.link_status()
-        checks.append(GwCheck("линк", up and age is not None,
-                              "" if up and age is not None else
-                              ("интерфейс лежит" if not up else "хендшейка не было")))
-        km, kt = self.kernel_coverage()
-        checks.append(GwCheck("ядра", not km,
-                              "" if not km else "без модуля: " + ", ".join(km)))
-        return checks
-
-    # ── сводка для панели ────────────────────────────────────────────────────
-
-    def status(self) -> GwStatus:
-        from awgbot.runtime import hostmetrics
-        st = GwStatus()
-        st.link_up, st.handshake_age, st.rx, st.tx = self.link_status()
-        st.checks = self.plumbing_checks()
-        st.temp = hostmetrics.read_soc_temp()
-        st.throttled = hostmetrics.read_pi_throttled()
-        st.disk = hostmetrics.read_disk_percent()
+                              f"мастер восстановления поставит"))
+        ok_link = st.link_up and st.handshake_age is not None
+        checks.append(GwCheck("линк", ok_link, "" if ok_link else
+                              ("интерфейс лежит" if not st.link_up else "хендшейка не было")))
         (st.module_version, st.srcversion), (st.kernels_missing, st.kernels_total) = \
             self._static_probes()
-        st.ext_ip = self.db.get_state(self._EXT_IP_KEY) or ""
+        checks.append(GwCheck("ядра", not st.kernels_missing,
+                              "" if not st.kernels_missing else
+                              "без модуля awg: " + ", ".join(st.kernels_missing)))
+        st.checks = checks
+        st.temp = hostmetrics.read_soc_temp()
+        st.throttled = hostmetrics.read_pi_throttled()
+        st.cpu = hostmetrics.read_cpu_percent()
+        ram = hostmetrics.read_ram()
+        if ram is not None:
+            st.ram, st.ram_free_mb = ram
+        disk = hostmetrics.read_disk()
+        if disk is not None:
+            st.disk, st.disk_free_gb = disk
+        st.smart = hostmetrics.read_smart_health()
+        st.uptime_seconds = hostmetrics.read_uptime_seconds()
+        st.hostname = socket.gethostname()
+        st.server_name = self.server_name()
+        return st
+
+    _SNAPSHOT_KEY = "gw_status"
+
+    def snapshot(self) -> GwStatus:
+        """Живой статус + учёт трафика + сохранить как снимок для панели."""
+        st = self.status()
+        st.month_rx, st.month_tx = self._account_traffic(st.rx, st.tx)
+        st.ts = timeutil.to_iso(timeutil.now())
+        self.db.set_state(self._SNAPSHOT_KEY, st.to_json())
+        return st
+
+    def cached_status(self, max_age_seconds: float) -> GwStatus | None:
+        """Снимок последнего тика, если он не старше max_age; иначе None —
+        вызывающий снимет живьём. Панель из снимка стоит ноль проб и рисуется
+        мгновенно; свежесть видна строкой «Обновлено …»."""
+        raw = self.db.get_state(self._SNAPSHOT_KEY)
+        if not raw:
+            return None
+        try:
+            st = GwStatus.from_json(raw)
+        except (json.JSONDecodeError, ValueError, TypeError):
+            return None
+        age = st.age_seconds()
+        if age is None or age > max_age_seconds:
+            return None
         return st
 
     def _static_probes(self) -> tuple[tuple[str, str], tuple[list[str], int]]:

@@ -60,7 +60,7 @@ async def test_restart_needs_confirmation(svc, fake_bot):
     await gh.gw_execute(cb, GwCB(action="restart!"), svc)
     assert svc.restarted == 1
     edits = [t for kind, t, _ in msg.sent if kind == "edit_text"]
-    assert "Рестарт линка: готово" in edits[-1]
+    assert "Перезапуск AWG: готово" in edits[-1]
 
 
 async def test_foreign_document_is_refused_before_anything(svc):

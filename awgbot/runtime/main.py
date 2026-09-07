@@ -158,6 +158,13 @@ async def run_gateway() -> None:
     except Exception as e:                               # noqa: BLE001
         log.warning("gateway confirm_applied_update: %s", e)
 
+    # Обещание «вернётся через несколько секунд» после «Перезапустить бота» —
+    # исполняет новый процесс, как у основной роли.
+    try:
+        await gateway_handlers.restore_panel_after_restart(bot, services)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("gateway restore_panel_after_restart: %s", e)
+
     # Планировщик — СТРОГО после финишера, как у клиентской роли. Его стартовая
     # проверка обновлений укладывается в секунду, и, запущенная раньше, она
     # ставила «доступна следующая» ВЫШЕ «обновлён до…»: последним в чате висел

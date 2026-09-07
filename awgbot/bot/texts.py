@@ -1534,81 +1534,104 @@ def routing_devices_text(enabled: int, total: int) -> str:
 # Роль gateway (docs/ROADMAP.md, п.7)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def gateway_panel(st) -> str:
-    """Панель агента шлюза: всё существенное одним экраном.
-
-    Порядок — по цене отказа: линк (ради него шлюз существует), обвязка, ядра,
-    железо. Возраст хендшейка называем числом: «жив» без числа не отличает
-    свежие 10 секунд от подозрительных четырёх минут.
-    """
+def _gw_link_line(st) -> str:
     if not st.link_up:
-        link = "🔴 интерфейс лежит"
-    elif st.handshake_age is None:
-        link = "🟡 поднят, хендшейка не было"
-    elif st.handshake_age < 180:
-        link = f"🟢 хендшейк {st.handshake_age:.0f} с назад"
-    else:
-        link = f"🟡 хендшейк {st.handshake_age/60:.0f} мин назад"
-    lines = [f"🛰 <b>Шлюз</b>", "",
-             f"Линк до ВПС: {link}",
-             f"Трафик линка: ↓{human_bytes(st.rx)} ↑{human_bytes(st.tx)}"]
-    broken = [c for c in st.checks if c.ok is False]
-    unknown = [c for c in st.checks if c.ok is None]
-    if not broken and not unknown:
-        lines.append("Обвязка: ✅ все проверки в порядке")
-    else:
-        for c in broken:
-            lines.append(f"Обвязка: 🔴 {c.name} — {c.detail}")
-        for c in unknown:
-            lines.append(f"Обвязка: ⚪ {c.name} — {c.detail}")
-    if st.kernels_missing:
-        lines.append(f"Ядра: 🔴 без модуля awg: {', '.join(st.kernels_missing)}")
-    else:
-        lines.append(f"Ядра: ✅ модуль есть (загружаемых ядер: {st.kernels_total})")
-    hw = []
+        return "🔴 интерфейс лежит"
+    if st.handshake_age is None:
+        return "🟡 поднят, хендшейка не было"
+    if st.handshake_age < 180:
+        return f"🟢 хендшейк {st.handshake_age:.0f} с назад"
+    return f"🟡 хендшейк {st.handshake_age/60:.0f} мин назад"
+
+
+def _gw_health_summary(checks) -> str:
+    broken = [c for c in checks if c.ok is False]
+    unknown = [c for c in checks if c.ok is None]
+    if broken:
+        return f"🔴 проблем: {len(broken)} — " + ", ".join(c.name for c in broken[:4])
+    if unknown:
+        return "⚪ не проверено: " + ", ".join(c.name for c in unknown[:4])
+    return "✅ проблем не выявлено"
+
+
+def gateway_panel(st) -> str:
+    """Панель агента — зеркало панели основного бота: сервер, линк, железо,
+    монитор здоровья, потребление. Всё из снимка; свежесть — строкой «Обновлено».
+    Без свопа в RAM (MemAvailable), без внешнего IP (ВПС к шлюзу не ходит)."""
+    from awgbot.util import timeutil
+    host = f" ({_e(st.hostname)})" if st.hostname else ""
+    server = "🟢 работает" if st.link_up else "🔴 интерфейс линка лежит"
+    parts = [f"🛰 <b>РФ-шлюз{host}</b>", ""]
+    head = [f"🖥 Сервер: {server}"]
+    if st.uptime_seconds is not None:
+        head.append(f"⬆️ Аптайм: {timeutil.fmt_remaining_short(int(st.uptime_seconds))}")
+    parts += head + ["", f"📡 Линк до {_e(st.server_name or 'ВПС')}: {_gw_link_line(st)}", ""]
+
+    pad = " " * 7
+    cpu = f"{st.cpu:.0f}%" if st.cpu is not None else "?"
     if st.temp is not None:
-        hw.append(f"{st.temp:.0f}°C")
-    if st.throttled is not None:
-        hw.append("питание ⚠️ " + "; ".join(st.throttled["now"])
-                  if st.throttled["now"] else "питание ок")
-        if not st.throttled["now"] and st.throttled["ever"]:
-            hw.append("(были: " + "; ".join(st.throttled["ever"]) + ")")
+        cpu += f", {st.temp:.0f}°C"
+    hw = [f"📈 CPU: {cpu}"]
+    if st.ram is not None:
+        free = f", свободно {st.ram_free_mb} МБ" if st.ram_free_mb is not None else ""
+        hw.append(f"{pad}RAM: {st.ram:.0f}%{free}")
     if st.disk is not None:
-        hw.append(f"карта {st.disk:.0f}%")
-    if hw:
-        lines.append("Железо: " + ", ".join(hw))
-    ver = st.module_version or "?"
-    src = f" ({st.srcversion[:8]}…)" if st.srcversion else ""
-    lines.append(f"Модуль awg: {ver}{src}")
-    if st.ext_ip:
-        lines.append(f"Внешний IP: <code>{st.ext_ip}</code>")
-    return "\n".join(lines)
+        free = f", свободно {st.disk_free_gb:.0f} ГБ" if st.disk_free_gb is not None else ""
+        smart = f", SMART: {st.smart}" if st.smart else ""
+        hw.append(f"{pad}Диск: {st.disk:.0f}%{free}{smart}")
+    if st.throttled is not None:
+        power = ("⚠️ " + "; ".join(st.throttled["now"])) if st.throttled.get("now") else "ОК"
+        hw.append(f"{pad}Питание: {power}")
+    age = st.age_seconds()
+    hw.append(f"{pad}Обновлено " + (_fmt_age(age) if age is not None and age >= 1 else "только что"))
+    parts += hw + ["", f"🌡 Монитор здоровья: {_gw_health_summary(st.checks)}", ""]
+    parts.append(f"📊 Потребление за месяц: {human_bytes(st.month_rx + st.month_tx)} "
+                 f"(↑ {human_bytes(st.month_rx)} | ↓ {human_bytes(st.month_tx)})")
+    return "\n".join(parts)
 
 
-def gateway_doctor(checks) -> str:
-    """Доктор шлюза — по строкам: чинить будут по ним, а не по вердикту."""
-    lines = ["🩺 <b>Доктор шлюза</b>", ""]
-    for c in checks:
+def gateway_health(st) -> str:
+    """Монитор здоровья — по строкам: чинить будут по ним, а не по вердикту.
+    Сюда же переехали модуль awg и ядра: в панели они были шумом, здесь —
+    справка рядом с проверкой «ядра»."""
+    lines = ["🌡 <b>Монитор здоровья</b>", ""]
+    for c in st.checks:
         mark = "✅" if c.ok else ("⚪" if c.ok is None else "🔴")
         lines.append(f"{mark} {c.name}" + (f" — {c.detail}" if c.detail else ""))
-    bad = sum(1 for c in checks if c.ok is False)
-    lines += ["", "Всё в порядке." if not bad else
-              f"Проблем: {bad}. «Реассерт обвязки» переставит правила и переподнимет линк."]
+    lines.append("")
+    ver = st.module_version or "?"
+    src = f", srcversion {st.srcversion[:8]}…" if st.srcversion else ""
+    lines.append(f"Модуль awg: {_e(ver)}{_e(src)}; загружаемых ядер: {st.kernels_total}")
+    if st.throttled is not None:
+        now = st.throttled.get("now") or []
+        ever = st.throttled.get("ever") or []
+        power = ("⚠️ " + "; ".join(now)) if now else "ОК"
+        if not now and ever:
+            power += " (с загрузки: " + "; ".join(ever) + ")"
+        lines.append(f"Питание: {power}")
+    bad = sum(1 for c in st.checks if c.ok is False)
+    lines += ["", "Проблем не выявлено." if not bad else
+              f"Проблем: {bad}. «Мастер восстановления» переставит правила и переподнимет линк."]
     return "\n".join(lines)
 
 
-GW_CONFIRM_RESTART = ("🔁 <b>Перезапустить линк?</b>\n\nИнтерфейс опустится и поднимется "
+GW_SETTINGS = "⚙️ <b>Настройки</b>\n\nОбслуживание линка и бота; обновления бота."
+GW_MAINT = ("🛠 <b>Обслуживание</b>\n\n«Перезапустить AWG» — опустить и поднять линк "
+            "до ВПС. «Перезапустить бота» — перезапустить агент; линк не трогается.")
+GW_CONFIRM_RESTART = ("🔁 <b>Перезапустить AWG?</b>\n\nИнтерфейс линка опустится и поднимется "
                       "заново. РФ-доступ у всех клиентов оборвётся на несколько секунд; "
                       "обвязка не трогается.")
-GW_CONFIRM_REASSERT = ("🛠 <b>Реассерт обвязки?</b>\n\nЮнит шлюза переставит правила "
+GW_CONFIRM_REASSERT = ("🔧 <b>Мастер восстановления?</b>\n\nЮнит шлюза переставит правила "
                        "(MASQUERADE, изоляция, маркировка) и переподнимет линк. "
                        "Обрыв РФ-доступа на несколько секунд.")
-GW_BUNDLE_RECEIVED = ("📦 <b>Получен бандл шлюза.</b>\n\nВнутри — конфиг линка и скрипт "
-                      "обвязки с ВПС, зашифрованные ключом текущего линка. Применение "
-                      "перепишет конфиг линка, переподнимет его и переставит правила. "
-                      "Несколько секунд без РФ-доступа.")
-GW_BUNDLE_NOT_OURS = ("Это не шифрованный бандл шлюза — файл не принят. Бандл делается "
-                      "на ВПС кнопкой «Бандл для шлюза» в условной маршрутизации.")
+GW_CONFIRM_BOT_RESTART = ("🔁 <b>Перезапустить бота?</b>\n\nАгент перезапустится и вернётся "
+                          "через несколько секунд. Линк и обвязка не трогаются.")
+GW_BOT_RESTARTING = "🔄 Бот перезапускается — вернётся через несколько секунд."
+GW_BUNDLE_RECEIVED = ("📦 <b>Получена конфигурация шлюза.</b>\n\nВнутри — конфиг линка и скрипт "
+                      "обвязки с ВПС. Применение перепишет конфиг линка, переподнимет его "
+                      "и переставит правила. Несколько секунд без РФ-доступа.")
+GW_BUNDLE_NOT_OURS = ("Это не конфигурация шлюза — файл не принят. Её выпускает основной "
+                      "бот: «Условная маршрутизация» → «Конфигурация шлюза».")
 
 
 def gateway_op_result(title: str, ok: bool, detail: str) -> str:
@@ -1617,7 +1640,7 @@ def gateway_op_result(title: str, ok: bool, detail: str) -> str:
 
 
 def gateway_updates(installed: str, muted: bool, schedule: str) -> str:
-    return (f"⬆️ <b>Обновление агента</b>\n\n"
+    return (f"⬆️ <b>Обновления бота</b>\n\n"
             f"Установлено: <b>{_e(_ver(installed))}</b>\n"
             f"Проверка: {_e(schedule)}, уведомления {'выключены' if muted else 'включены'}.\n\n"
             "Обновление — тем же механизмом, что у основного бота: следующая "
