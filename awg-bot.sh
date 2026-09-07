@@ -462,7 +462,12 @@ cmd_reconfigure() {
         setup_secrets
         validate_config
         install_unit
-        systemctl enable --now "$SERVICE" 2>/dev/null || systemctl restart "$SERVICE"; sleep 1
+        # Включение — ОТДЕЛЬНО от запуска. Слитое `enable --now || restart`
+        # при упавшем первом старте (Telegram через туннель ещё недоступен)
+        # уходило в запасную ветку, и автозагрузка терялась молча: ребут
+        # малины оставил её без агента.
+        systemctl enable "$SERVICE" >/dev/null 2>&1 || warn "не удалось включить $SERVICE на автозагрузку"
+        systemctl restart "$SERVICE"; sleep 1
         systemctl is-active --quiet "$SERVICE" && ok "$SERVICE (агент шлюза) запущен." \
             || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
         [[ -n "$cleanup_inst" && -f "$cleanup_inst" ]] && rm -f "$cleanup_inst"
@@ -558,10 +563,18 @@ cmd_update() {
 
 # ── host-режим: интерфейс на автозагрузке, мусор прежних версий — долой ───────
 ensure_host_autostart() {
+    # Сам юнит бота — на автозагрузке, обе роли. Ребут малины показал, что
+    # установка могла оставить его disabled; проверяем на каждом обновлении.
+    if [[ "$(systemctl is-enabled "$SERVICE" 2>/dev/null)" != "enabled" ]]; then
+        systemctl enable "$SERVICE" >/dev/null 2>&1 \
+            && ok "$SERVICE включён на автозагрузку." \
+            || warn "не удалось включить $SERVICE на автозагрузку — после ребута бот не поднимется."
+    fi
     # Дыра, найденная ребутом ВПС: в докерном режиме интерфейс поднимал
     # контейнер, в host-режиме его поднимает awg-quick@<iface> — и его никто не
     # включал. Ребут оставлял хост без туннелей. Включаем на каждом обновлении:
     # idempotent, и режим доезжает сюда сам, как и в install_unit.
+    [[ "$(yaml_get "$CONF_DIR/app.yaml" role)" != "gateway" ]] || return 0
     [[ "$(yaml_get "$CONF_DIR/app.yaml" runtime)" == "host" ]] || return 0
     local iface; iface="$(yaml_get "$CONF_DIR/app.yaml" interface)"
     if [[ -n "$iface" ]] && systemctl list-unit-files 'awg-quick@.service' 2>/dev/null | grep -q awg-quick; then

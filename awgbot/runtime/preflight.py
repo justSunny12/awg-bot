@@ -92,6 +92,7 @@ def collect_warnings_gateway() -> list[str]:
     import os
     from awgbot.core import config as _c
     warns: list[str] = []
+    warns += _service_autostart_warning()
     if not os.path.exists(_c.GW_LINK_CONF):
         warns.append(f"нет конфига линка {_c.GW_LINK_CONF} — линк не поднимется; "
                      f"шлюз ставится бандлом с ВПС (routing-link-setup.sh --bundle)")
@@ -227,10 +228,20 @@ def _unit_enabled(unit: str) -> str:
         return ""
 
 
+def _service_autostart_warning() -> list[str]:
+    """Сам юнит бота не включён — после ребута бот не поднимется. Ребут малины:
+    установка агента оставила юнит disabled, и узнать об этом было неоткуда."""
+    state = _unit_enabled("awg-bot")
+    if state and state != "enabled":
+        return [f"awg-bot не включён на автозагрузку ({state}) — после ребута бот "
+                f"не поднимется. Исправить: systemctl enable awg-bot"]
+    return []
+
+
 def _host_autostart_warnings() -> list[str]:
+    warns: list[str] = list(_service_autostart_warning())
     if config.AWG_RUNTIME != "host":
-        return []
-    warns: list[str] = []
+        return warns
     unit = f"awg-quick@{config.AWG_INTERFACE}"
     state = _unit_enabled(unit)
     if state and state != "enabled":

@@ -6,6 +6,7 @@ from awgbot.runtime import preflight
 
 
 def _fake_units(states):
+    states = {"awg-bot": "enabled", **states}
     return lambda unit: states.get(unit, "not-found")
 
 
@@ -38,3 +39,11 @@ def test_docker_runtime_is_out_of_scope(monkeypatch):
     monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
     monkeypatch.setattr(preflight, "_unit_enabled", _fake_units({"awg-quick@awg0": "disabled"}))
     assert preflight._host_autostart_warnings() == []
+
+
+def test_disabled_bot_unit_is_reported_for_both_roles(monkeypatch):
+    monkeypatch.setattr(preflight, "_unit_enabled",
+                        lambda unit: "disabled" if unit == "awg-bot" else "enabled")
+    assert any("systemctl enable awg-bot" in w for w in preflight._service_autostart_warning())
+    monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
+    assert any("awg-bot" in w for w in preflight._host_autostart_warnings())
