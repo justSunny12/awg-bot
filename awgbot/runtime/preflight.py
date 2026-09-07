@@ -113,6 +113,16 @@ def collect_warnings(services) -> list[str]:
     роняет бота — в худшем случае конкретная проверка молча пропускается."""
     warns: list[str] = []
 
+    # Автозагрузка awg-интерфейса в host-режиме. Дыра, найденная ребутом ВПС:
+    # в докерном режиме интерфейс поднимал контейнер, после переезда на хост
+    # его должен поднимать awg-quick@<iface>, и если юнит не включён — после
+    # ребута туннели не поднимутся, а узнать об этом можно только по ребуту.
+    # Проверяем при каждом старте, пока это не исправлено.
+    try:
+        warns += _host_autostart_warnings()
+    except Exception as e:                       # noqa: BLE001
+        log.warning("preflight: проверка автозагрузки: %s", e)
+
     # свободное место под data-dir
     try:
         free_mb = shutil.disk_usage(config.DATA_DIR).free // (1024 * 1024)
@@ -202,6 +212,40 @@ def collect_warnings(services) -> list[str]:
                          f"({config.EMAIL_IMAP_HOST}:{config.EMAIL_IMAP_PORT}): {e} — "
                          "аварийный выход из приостановки письмом не сработает")
 
+    return warns
+
+
+def _unit_enabled(unit: str) -> str:
+    """Вывод `systemctl is-enabled` (enabled/disabled/not-found/…), пусто —
+    systemctl недоступен."""
+    import subprocess
+    try:
+        proc = subprocess.run(["systemctl", "is-enabled", unit],
+                              capture_output=True, timeout=5)
+        return proc.stdout.decode(errors="replace").strip()
+    except Exception:                            # noqa: BLE001
+        return ""
+
+
+def _host_autostart_warnings() -> list[str]:
+    if config.AWG_RUNTIME != "host":
+        return []
+    warns: list[str] = []
+    unit = f"awg-quick@{config.AWG_INTERFACE}"
+    state = _unit_enabled(unit)
+    if state and state != "enabled":
+        warns.append(f"интерфейс {config.AWG_INTERFACE} не включён на автозагрузку "
+                     f"({unit}: {state}) — после ребута туннели не поднимутся. "
+                     f"Исправить: systemctl enable {unit}")
+    # Остаток прежних версий: списки теперь обновляет сам бот, а юнит с
+    # таймером указывает на удалённый скрипт и падает при каждой загрузке.
+    stale = [u for u in ("awg-bot-lists.timer", "awg-bot-lists.service")
+             if _unit_enabled(u) in ("enabled", "static", "failed", "linked")]
+    if stale:
+        warns.append("остались юниты старых версий: " + ", ".join(stale) +
+                     " — списки обновляет сам бот. Убрать: "
+                     "systemctl disable --now awg-bot-lists.timer awg-bot-lists.service; "
+                     "rm -f /etc/systemd/system/awg-bot-lists.*; systemctl daemon-reload")
     return warns
 
 

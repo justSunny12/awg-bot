@@ -556,6 +556,33 @@ cmd_update() {
     exec "$INSTALL_DIR/awg-bot.sh" __post_update "$wipe"
 }
 
+# ── host-режим: интерфейс на автозагрузке, мусор прежних версий — долой ───────
+ensure_host_autostart() {
+    # Дыра, найденная ребутом ВПС: в докерном режиме интерфейс поднимал
+    # контейнер, в host-режиме его поднимает awg-quick@<iface> — и его никто не
+    # включал. Ребут оставлял хост без туннелей. Включаем на каждом обновлении:
+    # idempotent, и режим доезжает сюда сам, как и в install_unit.
+    [[ "$(yaml_get "$CONF_DIR/app.yaml" runtime)" == "host" ]] || return 0
+    local iface; iface="$(yaml_get "$CONF_DIR/app.yaml" interface)"
+    if [[ -n "$iface" ]] && systemctl list-unit-files 'awg-quick@.service' 2>/dev/null | grep -q awg-quick; then
+        if [[ "$(systemctl is-enabled "awg-quick@$iface" 2>/dev/null)" != "enabled" ]]; then
+            systemctl enable "awg-quick@$iface" >/dev/null 2>&1 \
+                && ok "awg-quick@$iface включён на автозагрузку." \
+                || warn "не удалось включить awg-quick@$iface — после ребута туннели не поднимутся."
+        fi
+    fi
+    # Юнит и таймер списков из прежних версий: скрипт удалён, списки обновляет
+    # сам бот; остаток падал при каждой загрузке.
+    local stale=0 u
+    for u in awg-bot-lists.timer awg-bot-lists.service; do
+        [[ -e "/etc/systemd/system/$u" ]] || continue
+        systemctl disable --now "$u" >/dev/null 2>&1 || true
+        rm -f "/etc/systemd/system/$u"; stale=1
+    done
+    [[ "$stale" -eq 1 ]] && { systemctl daemon-reload; ok "юниты awg-bot-lists прежних версий убраны."; }
+    return 0
+}
+
 cmd_post_update() {
     # Вторая половина обновления, исполняется УЖЕ НОВЫМ скриптом (см. cmd_update).
     require_root
@@ -563,6 +590,7 @@ cmd_post_update() {
     ensure_python
     build_venv
     install_unit
+    ensure_host_autostart
     seed_conf                              # досеять НОВЫЕ conf-файлы этой версии
                                            # (существующие не трогаем — idempotent)
     validate_config
