@@ -40,8 +40,8 @@ def _labels(markup):
 def test_main_menu_layout():
     assert _labels(kb.gateway_panel_kb()) == [["🔄 Обновить", "🌡 Монитор здоровья"],
                                               ["🔧 Мастер восстановления"], ["⚙️ Настройки"]]
-    assert _labels(kb.gateway_settings_kb()) == [["🛠 Обслуживание"], ["⬆️ Обновления бота"],
-                                                 ["⬅️ К панели"]]
+    assert _labels(kb.gateway_settings_kb()) == [["🔄 Обслуживание"], ["⬆️ Обновления бота"],
+                                                 ["⬅️ В меню"]]
     assert _labels(kb.gateway_maint_kb()) == [["🔁 Перезапустить AWG"], ["🔁 Перезапустить бота"],
                                               ["⬅️ Назад"]]
 
@@ -54,7 +54,7 @@ def test_updates_back_leads_to_settings(monkeypatch):
 
 
 async def test_start_uses_the_tick_snapshot_and_refresh_probes_live(svc, fake_bot):
-    """/start и «К панели» рисуются из снимка тика (ноль проб), «Обновить» —
+    """/start и «В меню» рисуются из снимка тика (ноль проб), «Обновить» —
     живьём и обновляет снимок."""
     svc.snapshot()                                   # тик уже был
     assert svc.probes == 1

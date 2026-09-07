@@ -1290,9 +1290,9 @@ def gateway_panel_kb() -> InlineKeyboardMarkup:
 
 def gateway_settings_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="🛠 Обслуживание", callback_data=GwCB(action="maint"))
+    kb.button(text="🔄 Обслуживание", callback_data=GwCB(action="maint"))
     kb.button(text="⬆️ Обновления бота", callback_data=GwCB(action="updates"))
-    kb.button(text="⬅️ К панели", callback_data=GwCB(action="panel"))
+    kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
     kb.adjust(1)
     return kb.as_markup()
 
@@ -1332,7 +1332,7 @@ def gateway_confirm_kb(action: str, back: str = "panel") -> InlineKeyboardMarkup
     back — куда возвращает отказ: мастер живёт на панели, перезапуски — в
     обслуживании."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ Не надо", callback_data=GwCB(action=back))
+    kb.button(text="⬅️ Отмена", callback_data=GwCB(action=back))
     kb.button(text="✅ Выполнить", callback_data=GwCB(action=f"{action}!"))
     kb.adjust(2)
     return kb.as_markup()
@@ -1348,7 +1348,7 @@ def gateway_bundle_kb() -> InlineKeyboardMarkup:
 
 def gateway_back_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ К панели", callback_data=GwCB(action="panel"))
+    kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
     return kb.as_markup()
 
 

@@ -1601,7 +1601,8 @@ def gateway_health(st) -> str:
     lines.append("")
     ver = st.module_version or "?"
     src = f", srcversion {st.srcversion[:8]}…" if st.srcversion else ""
-    lines.append(f"Модуль awg: {_e(ver)}{_e(src)}; загружаемых ядер: {st.kernels_total}")
+    lines.append(f"Модуль awg: {_e(ver)}{_e(src)}")
+    lines.append(f"Загружаемых ядер: {st.kernels_total}")
     if st.throttled is not None:
         now = st.throttled.get("now") or []
         ever = st.throttled.get("ever") or []
@@ -1616,8 +1617,7 @@ def gateway_health(st) -> str:
 
 
 GW_SETTINGS = "⚙️ <b>Настройки</b>\n\nОбслуживание линка и бота; обновления бота."
-GW_MAINT = ("🛠 <b>Обслуживание</b>\n\n«Перезапустить AWG» — опустить и поднять линк "
-            "до ВПС. «Перезапустить бота» — перезапустить агент; линк не трогается.")
+GW_MAINT = SETTINGS_SVC                      # зеркально основному боту
 GW_CONFIRM_RESTART = ("🔁 <b>Перезапустить AWG?</b>\n\nИнтерфейс линка опустится и поднимется "
                       "заново. РФ-доступ у всех клиентов оборвётся на несколько секунд; "
                       "обвязка не трогается.")
@@ -1640,8 +1640,6 @@ def gateway_op_result(title: str, ok: bool, detail: str) -> str:
 
 
 def gateway_updates(installed: str, muted: bool, schedule: str) -> str:
-    return (f"⬆️ <b>Обновления бота</b>\n\n"
-            f"Установлено: <b>{_e(_ver(installed))}</b>\n"
-            f"Проверка: {_e(schedule)}, уведомления {'выключены' if muted else 'включены'}.\n\n"
-            "Обновление — тем же механизмом, что у основного бота: следующая "
-            "ступень из релизов, sha256, перезапуск, отчёт.")
+    """Зеркально основному: тот же текст раздела с текущей версией последней
+    строкой. Расписание и тумблер видны на кнопках."""
+    return settings_upd_text(installed)
