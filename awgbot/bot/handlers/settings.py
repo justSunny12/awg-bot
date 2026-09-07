@@ -373,7 +373,12 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
                 pass
         await _render(cb, "backup", services)
         return
-    if key == "awg":                                   # рестарт AWG
+    if key in ("awg", "bot"):                          # сначала — цена действия
+        await edit(cb, texts.SVC_CONFIRM_AWG if key == "awg" else texts.SVC_CONFIRM_BOT,
+                   kb.svc_confirm(key))
+        await cb.answer()
+        return
+    if key == "awg!":                                  # рестарт AWG
         await cb.answer("Перезапускаю AWG…")
         try:
             await call(services.restart_service)
@@ -385,7 +390,7 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
             await edit(cb, f"⚠️ Ошибка перезапуска AWG: {e}",
                        (await _screen("svc", services))[1])
         return
-    if key == "bot":                                   # рестарт бота
+    if key == "bot!":                                  # рестарт бота
         await cb.answer("Перезапускаю бота…")
         await edit(cb, "🔄 Бот перезапускается — вернётся через несколько секунд.", None)
         # Запоминаем ДО рестарта: обещание вернуться исполняет новый процесс,

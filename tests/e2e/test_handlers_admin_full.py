@@ -222,10 +222,29 @@ async def test_backup_now_sends_files(services, fake_bot, monkeypatch, tmp_path)
 async def test_restart_awg_from_settings(services, fake_bot, monkeypatch):
     from awgbot.bot.handlers import settings as sh
     from awgbot.bot.callbacks import SetCB
-    monkeypatch.setattr(services, "restart_service", lambda: None)
+    restarted = []
+    monkeypatch.setattr(services, "restart_service", lambda: restarted.append(1))
     cb, nav = _acb(fake_bot)
+    # кнопка сама ничего не рвёт — сначала подтверждение с ценой
     await sh.do_action(cb, SetCB(sec="svc", act="do", key="awg"), services)
-    assert any(s[0] == "edit_text" for s in nav.sent)
+    assert restarted == []
+    assert any(s[0] == "edit_text" and "Перезапустить AWG?" in s[1] for s in nav.sent)
+    await sh.do_action(cb, SetCB(sec="svc", act="do", key="awg!"), services)
+    assert restarted == [1]
+    assert any(s[0] == "edit_text" and "перезапущен" in s[1] for s in nav.sent)
+
+
+async def test_restart_bot_from_settings_needs_confirmation(services, fake_bot, monkeypatch):
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    restarted = []
+    monkeypatch.setattr(services, "restart_bot", lambda: restarted.append(1))
+    cb, nav = _acb(fake_bot)
+    await sh.do_action(cb, SetCB(sec="svc", act="do", key="bot"), services)
+    assert restarted == [] and services.db.get_state("restart_wait") in (None, "")
+    assert any(s[0] == "edit_text" and "Перезапустить бота?" in s[1] for s in nav.sent)
+    await sh.do_action(cb, SetCB(sec="svc", act="do", key="bot!"), services)
+    assert restarted == [1] and services.db.get_state("restart_wait")
 
 
 # ── личный VPN админа ────────────────────────────────────────────────────────

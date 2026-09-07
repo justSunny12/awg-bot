@@ -1233,6 +1233,16 @@ _MIG_CONFIRM_LABEL = {"start": "🚚 Начать", "finish": "✅ Заверш�
                       "cancel": "↩️ Отменить"}
 
 
+def svc_confirm(key: str) -> InlineKeyboardMarkup:
+    """Подтверждение перезапуска AWG / бота — как у агента: «Отмена» первой,
+    действие с последствиями не должно стоять там, куда палец идёт по инерции."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Отмена", callback_data=SetCB(sec="svc", act="open"))
+    kb.button(text="✅ Выполнить", callback_data=SetCB(sec="svc", act="do", key=f"{key}!"))
+    kb.adjust(2)
+    return kb.as_markup()
+
+
 def migration_confirm(key: str) -> InlineKeyboardMarkup:
     """Подтверждение входа в переезд и обоих выходов. «Не надо» первой: действие
     с последствиями не должно стоять там, куда палец идёт по инерции."""
