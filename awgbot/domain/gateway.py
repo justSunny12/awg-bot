@@ -100,15 +100,8 @@ class GatewayServices(SelfUpdateMixin):
     снимки); клиентские таблицы просто пустуют, и городить отдельную схему ради
     их отсутствия — усложнение без выгоды."""
 
-    # Статические пробы панели (modinfo, обход /lib/modules) стоят на Pi
-    # заметную долю секунды и меняются только руками — при обновлении модуля
-    # или ядра. Кэш на инстансе: панель по кнопке рисуется из него, доктор и
-    # монитор ходят живьём.
-    _STATIC_TTL_SECONDS = 600
-
     def __init__(self, db):
         self.db = db
-        self._static_cache: tuple[float, tuple[str, str], tuple[list[str], int]] | None = None
 
     # ── линк ─────────────────────────────────────────────────────────────────
 
@@ -462,8 +455,8 @@ class GatewayServices(SelfUpdateMixin):
 
     def status(self) -> GwStatus:
         """Живой снимок: линк, монитор здоровья, железо. Одна прогулка по всем
-        пробам — секунда на Pi; панель по /start берёт снимок тика (cached_status),
-        живьём ходят «Обновить», «Монитор здоровья» и сам тик."""
+        пробам — доли секунды на Pi; панель по /start берёт снимок тика
+        (cached_status), живьём ходят «Обновить», «Монитор здоровья» и сам тик."""
         from awgbot.runtime import hostmetrics
         st = GwStatus()
         st.link_up, st.handshake_age, st.rx, st.tx = self.link_status()
@@ -476,8 +469,10 @@ class GatewayServices(SelfUpdateMixin):
         ok_link = st.link_up and st.handshake_age is not None
         checks.append(GwCheck("линк", ok_link, "" if ok_link else
                               ("интерфейс лежит" if not st.link_up else "хендшейка не было")))
-        (st.module_version, st.srcversion), (st.kernels_missing, st.kernels_total) = \
-            self._static_probes()
+        # Живьём, без кэша: кэш на 10 минут показывал «модуль: ?» и «ядро без
+        # модуля» всё время после обновления модуля — снимок середины операции.
+        st.module_version, st.srcversion = self.versions()
+        st.kernels_missing, st.kernels_total = self.kernel_coverage()
         checks.append(GwCheck("ядра", not st.kernels_missing,
                               "" if not st.kernels_missing else
                               "без модуля awg: " + ", ".join(st.kernels_missing)))
@@ -522,15 +517,6 @@ class GatewayServices(SelfUpdateMixin):
         if age is None or age > max_age_seconds:
             return None
         return st
-
-    def _static_probes(self) -> tuple[tuple[str, str], tuple[list[str], int]]:
-        now = time.monotonic()
-        c = self._static_cache
-        if c is not None and now - c[0] < self._STATIC_TTL_SECONDS:
-            return c[1], c[2]
-        ver, cov = self.versions(), self.kernel_coverage()
-        self._static_cache = (now, ver, cov)
-        return ver, cov
 
 
 def pathlib_read(path: str) -> str:
