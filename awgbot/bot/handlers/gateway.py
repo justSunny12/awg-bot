@@ -17,7 +17,7 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
-from awgbot.bot.callbacks import GwCB, UpdateCB
+from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, purge_menus, dismiss_update_reports
 from awgbot.util import bundlecrypt
@@ -160,6 +160,19 @@ async def gw_bot_restart(cb: CallbackQuery, services):
     await edit_nav(cb, services, texts.GW_BOT_RESTARTING, None)
     await call(services.set_restart_wait, cb.message.chat.id, cb.message.message_id)
     await call(services.restart_bot)
+
+
+@router.callback_query(HideCB.filter())
+async def gw_hide(cb: CallbackQuery):
+    """«Скрыть» — последняя кнопка на любом проактивном уведомлении (алерты
+    монитора, предупреждения при старте, «доступна новая версия»). У агента
+    её обработчика не было: каждое нажатие уходило в «not handled», и
+    уведомления было не убрать. Удаляет само сообщение, как у основного."""
+    try:
+        await cb.message.delete()
+    except Exception:                                 # noqa: BLE001
+        pass
+    await cb.answer()
 
 
 # ── бандл файлом ─────────────────────────────────────────────────────────────

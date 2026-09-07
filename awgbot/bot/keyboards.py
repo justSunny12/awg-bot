@@ -1372,8 +1372,8 @@ def bundle_menu_kb() -> InlineKeyboardMarkup:
 
 
 def gateway_update_available_kb() -> InlineKeyboardMarkup:
-    """«Есть ступень» у агента: Обновить + к панели. Не update_notify(): та несёт
-    «Скрыть» через HideCB, чей хендлер у агента не подключён, — мёртвая кнопка."""
+    """«Есть ступень» у агента: Обновить + назад в раздел. Не update_notify():
+    это ответ на ручную проверку, ему «Скрыть» и «Не уведомлять» не нужны."""
     kb = InlineKeyboardBuilder()
     kb.button(text="⬆️ Обновить", callback_data=UpdateCB(action="install"))
     kb.button(text="⬅️ Назад", callback_data=GwCB(action="updates"))

@@ -98,3 +98,12 @@ async def test_health_screen_is_live(svc, fake_bot):
     await gh.gw_health(cb, svc)
     assert svc.probes == 1
     assert any("Монитор здоровья" in t for kind, t, _ in msg.sent if kind == "edit_text")
+
+
+async def test_hide_button_deletes_the_notification(svc, fake_bot):
+    """«Скрыть» на уведомлениях агента: раньше обработчика не было, кнопка
+    молчала («not handled»)."""
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_hide(cb)
+    assert any(r[0] == "delete" for r in fake_bot.records), "уведомление не удалено"
