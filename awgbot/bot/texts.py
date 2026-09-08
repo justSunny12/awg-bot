@@ -625,7 +625,7 @@ def _traffic_triplet(rx: int, tx: int) -> str:
 def traffic_profiles_text(rows, bot_username: str = "") -> str:
     """Потребление за месяц по профилям; имя профиля — deep-link на разбивку по
     его устройствам."""
-    head = "📊 <b>Потребление трафика за текущий месяц</b>"
+    head = "📊 <b>Потребление трафика за текущий месяц:</b>"
     if not rows:
         return head + _LIST_SEP + "Профилей нет."
     return head + _LIST_SEP + _LIST_SEP.join(
