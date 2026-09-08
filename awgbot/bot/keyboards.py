@@ -1331,11 +1331,91 @@ def gateway_panel_kb() -> InlineKeyboardMarkup:
 
 
 def gateway_settings_kb() -> InlineKeyboardMarkup:
+    """Тот же порядок, что у основного бота; чего у шлюза нет (подписки,
+    маршрутизация) — нет и здесь."""
     kb = InlineKeyboardBuilder()
+    kb.button(text="🔔 Уведомления", callback_data=GwCB(action="notify"))
+    kb.button(text="📊 Мониторинг", callback_data=GwCB(action="mon"))
+    kb.button(text="💾 Резервное копирование", callback_data=GwCB(action="backup"))
     kb.button(text="🔄 Обслуживание", callback_data=GwCB(action="maint"))
     kb.button(text="⬆️ Обновления бота", callback_data=GwCB(action="updates"))
     kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
     kb.adjust(1)
+    return kb.as_markup()
+
+
+def _gw_back(sec: str = "settings") -> InlineKeyboardButton:
+    return InlineKeyboardButton(text="\u2b05\ufe0f Назад", callback_data=GwCB(action=sec).pack())
+
+
+def gateway_notify_kb() -> InlineKeyboardMarkup:
+    """Как у основного, без событий клиентов: CPU и RAM в одной строке, ниже —
+    диск и температура."""
+    s = settings
+    kb = InlineKeyboardBuilder()
+    qh = s.get_bool("quiet_hours.quiet_hours_enabled", True)
+    kb.button(text=f"{_chk(qh)} Тихие часы",
+              callback_data=GwCB(action="tgl", val="quiet_hours.quiet_hours_enabled"))
+    rows = [1]
+    if qh:
+        kb.button(text=f"Начало: {s.get_int('quiet_hours.quiet_hours_start', 20)}:00 МСК",
+                  callback_data=GwCB(action="edit", val="quiet_hours.quiet_hours_start"))
+        kb.button(text=f"Конец: {s.get_int('quiet_hours.quiet_hours_end', 7)}:00 МСК",
+                  callback_data=GwCB(action="edit", val="quiet_hours.quiet_hours_end"))
+        rows.append(2)
+    ra = s.get_bool("resource_alerts.enabled", True)
+    kb.button(text=f"{_chk(ra)} Алерты хоста (CPU/RAM/диск/температура)",
+              callback_data=GwCB(action="tgl", val="resource_alerts.enabled"))
+    rows.append(1)
+    if ra:
+        kb.button(text=f"CPU: {s.get_int('resource_alerts.thresholds_percent.cpu', 80)}%",
+                  callback_data=GwCB(action="edit", val="resource_alerts.thresholds_percent.cpu"))
+        kb.button(text=f"RAM: {s.get_int('resource_alerts.thresholds_percent.ram', 80)}%",
+                  callback_data=GwCB(action="edit", val="resource_alerts.thresholds_percent.ram"))
+        kb.button(text=f"Диск: {s.get_int('resource_alerts.thresholds_percent.disk', 80)}%",
+                  callback_data=GwCB(action="edit", val="resource_alerts.thresholds_percent.disk"))
+        kb.button(text=f"Temp: {s.get_int('app.gateway.temp_alert_c', 75)} °C",
+                  callback_data=GwCB(action="edit", val="app.gateway.temp_alert_c"))
+        rows += [2, 2]
+    kb.adjust(*rows)
+    kb.row(_gw_back())
+    return kb.as_markup()
+
+
+def gateway_mon_kb() -> InlineKeyboardMarkup:
+    """«Мониторинг» основного бота как есть, на ключах шлюза."""
+    s = settings
+    kb = InlineKeyboardBuilder()
+    kb.button(text=f"Частота опроса: {s.get_int('app.gateway.monitor_minutes', 3)} мин",
+              callback_data=GwCB(action="edit", val="app.gateway.monitor_minutes"))
+    kb.button(text=f"Отсчётов до сработки алерта: {s.get_int('app.monitoring.alert_streak', 5)}",
+              callback_data=GwCB(action="edit", val="app.monitoring.alert_streak"))
+    loud = s.get_bool("app.gateway.link_alert_loud", True)
+    kb.button(text=f"{_chk(loud)} Алерт простоя линка со звуком 24/7",
+              callback_data=GwCB(action="tgl", val="app.gateway.link_alert_loud"))
+    kb.button(text=f"Порог простоя линка: {s.get_int('app.gateway.handshake_max_age', 300)} сек",
+              callback_data=GwCB(action="edit", val="app.gateway.handshake_max_age"))
+    kb.adjust(1)
+    kb.row(_gw_back())
+    return kb.as_markup()
+
+
+def gateway_backup_kb() -> InlineKeyboardMarkup:
+    s = settings
+    kb = InlineKeyboardBuilder()
+    kb.button(text=f"📆 День месяца для автобэкапа: {s.get_int('app.scheduler.backup_day', 1)}",
+              callback_data=GwCB(action="edit", val="app.scheduler.backup_day"))
+    kb.button(text=f"🕘 Время запуска автобэкапа: {s.get_int('app.scheduler.backup_hour', 12)}:00",
+              callback_data=GwCB(action="edit", val="app.scheduler.backup_hour"))
+    kb.button(text="💾 Создать резервную копию", callback_data=GwCB(action="backup!"))
+    kb.adjust(1)
+    kb.row(_gw_back())
+    return kb.as_markup()
+
+
+def gateway_cancel_kb(sec: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="\u2b05\ufe0f Отмена", callback_data=GwCB(action=sec))
     return kb.as_markup()
 
 

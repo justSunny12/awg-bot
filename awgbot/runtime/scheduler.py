@@ -239,14 +239,18 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         return IntervalTrigger(minutes=settings.get_int("app.scheduler.expiry_check_minutes", 60), timezone=_TZ)
 
     def _trig_monitor():
-        return IntervalTrigger(minutes=settings.get_int("app.scheduler.monitor_minutes", 3), timezone=_TZ)
+        # внутри тика — обновление списков из сети по расписанию; джиттер, чтобы
+        # и оно не ложилось на ровные минуты
+        mins = settings.get_int("app.scheduler.monitor_minutes", 3)
+        return IntervalTrigger(minutes=mins, jitter=max(1, int(mins * 60 * 0.2)), timezone=_TZ)
 
     def _trig_liveness():
         # СЕКУНДЫ, а не минуты: у пользователя с включённым режимом шлюз —
         # основной путь, его отказ это «нет интернета». Такт задаёт верхнюю
-        # границу такого провала, поэтому он мелкий.
-        return IntervalTrigger(
-            seconds=settings.get_int("app.routing.probe_seconds", 30), timezone=_TZ)
+        # границу такого провала, поэтому он мелкий. Джиттер — чтобы зонд не
+        # был строго периодическим маячком.
+        secs = settings.get_int("app.routing.probe_seconds", 30)
+        return IntervalTrigger(seconds=secs, jitter=max(1, int(secs * 0.3)), timezone=_TZ)
 
     def _trig_migration_watch():
         # СЕКУНДЫ: такт задаёт верхнюю границу задержки поздравления, а оно
@@ -474,6 +478,9 @@ async def notify_update_available(bot, services, nxt) -> None:
         reply_markup=kb.update_notify())])
 
 
+_UPDATE_JITTER = 1800          # ±полчаса к проверке обновлений: не ровно в 10:00
+
+
 def update_check_trigger():
     """Триггер проверки обновлений по updates.poll_schedule (day|week|month|never),
     never → None. Модульная копия фабрики из setup_scheduler для роли gateway:
@@ -485,10 +492,10 @@ def update_check_trigger():
     if sch == "never":
         return None
     if sch == "week":
-        return CronTrigger(day_of_week=0, hour=h, minute=m, timezone=config.TZ)
+        return CronTrigger(day_of_week=0, hour=h, minute=m, jitter=_UPDATE_JITTER, timezone=config.TZ)
     if sch == "month":
-        return CronTrigger(day=1, hour=h, minute=m, timezone=config.TZ)
-    return CronTrigger(hour=h, minute=m, timezone=config.TZ)
+        return CronTrigger(day=1, hour=h, minute=m, jitter=_UPDATE_JITTER, timezone=config.TZ)
+    return CronTrigger(hour=h, minute=m, jitter=_UPDATE_JITTER, timezone=config.TZ)
 
 
 def gateway_update_check_hook(scheduler):
@@ -525,13 +532,63 @@ def setup_gateway_scheduler(services, bot):
         except Exception as e:                           # noqa: BLE001
             log.warning("gw_monitor: %s", e)
 
+    def _trig_gw_monitor():
+        # тик ходит в сеть (проба наружу) — джиттер, чтобы не быть маячком
+        mins = settings.get_int("app.gateway.monitor_minutes", 3)
+        return IntervalTrigger(minutes=mins, jitter=max(1, int(mins * 60 * 0.4)),
+                               timezone=config.TZ)
+
     scheduler.add_job(
-        job_gw_monitor,
-        IntervalTrigger(minutes=settings.get_int("app.gateway.monitor_minutes", 3),
-                        timezone=config.TZ),
+        job_gw_monitor, _trig_gw_monitor(),
         id="gw_monitor", max_instances=1, coalesce=True,
         next_run_time=timeutil.now(),
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
+    def _gw_monitor_hook(_key=None, _val=None):
+        try:
+            scheduler.reschedule_job("gw_monitor", trigger=_trig_gw_monitor())
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gw_monitor reschedule: %s", e)
+    settings.on_change("app.gateway.monitor_minutes", _gw_monitor_hook)
+
+    async def job_gw_backup():
+        """Автобэкап агента — раз в месяц в заданный день и час, как у основного:
+        файлы шифрованные, уходят админу в чат."""
+        from aiogram.types import FSInputFile
+        db = services.db
+        ym = timeutil.now().strftime("%Y-%m")
+        last = db.get_state("last_backup")
+        if last == ym:
+            return
+        if last is None:
+            db.set_state("last_backup", ym)
+            return
+        try:
+            paths = await asyncio.to_thread(services.make_backup)
+            for p in paths:
+                try:
+                    await bot.send_document(config.ADMIN_ID, FSInputFile(p))
+                except Exception as e:                    # noqa: BLE001
+                    log.warning("gw backup send %s: %s", p, e)
+            db.set_state("last_backup", ym)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gw backup: %s", e)
+
+    def _trig_gw_backup():
+        return CronTrigger(day=settings.get_int("app.scheduler.backup_day", 1),
+                           hour=settings.get_int("app.scheduler.backup_hour", 12),
+                           minute=0, timezone=config.TZ)
+
+    scheduler.add_job(job_gw_backup, _trig_gw_backup(), id="gw_backup", max_instances=1,
+                      coalesce=True, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
+
+    def _gw_backup_hook(_key=None, _val=None):
+        try:
+            scheduler.reschedule_job("gw_backup", trigger=_trig_gw_backup())
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gw_backup reschedule: %s", e)
+    for key in ("app.scheduler.backup_day", "app.scheduler.backup_hour"):
+        settings.on_change(key, _gw_backup_hook)
 
     async def job_update_check():
         try:

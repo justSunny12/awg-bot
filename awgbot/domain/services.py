@@ -2517,6 +2517,15 @@ class Services(SelfUpdateMixin, MigrationMixin):
         port = int(settings.get("app.routing.probe_port", 53))
         return routing.probe_gateway(list(targets), port)
 
+    _RT_AVAIL_KEY = "rt_link_avail"
+
+    def routing_link_availability(self) -> float | None:
+        """Доступность линка до шлюза за сутки, % замеров тика живости."""
+        from awgbot.util import availability
+        if not self.routing_engaged():
+            return None
+        return availability.percent(self.db, self._RT_AVAIL_KEY)
+
     def routing_liveness_tick(self) -> list[Notification]:
         """Замер живости шлюза и деградация. Тикает часто (десятки секунд).
 
@@ -2590,6 +2599,10 @@ class Services(SelfUpdateMixin, MigrationMixin):
             return []
 
         self.db.set_state(self._RT_LINK_KEY, "1" if ok else "0")
+        if engaged:
+            # доступность линка за сутки — по сырым замерам, без гистерезиса
+            from awgbot.util import availability
+            availability.record(self.db, self._RT_AVAIL_KEY, verdict == routing.PROBE_OK)
 
         # ДЕЙСТВИЕ и ОБЪЯВЛЕНИЕ — разные пороги, и это не педантизм. Написать
         # админу дорого: короткий провал на домашнем аплинке — обычное дело, и

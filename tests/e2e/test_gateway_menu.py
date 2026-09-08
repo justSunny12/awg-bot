@@ -40,8 +40,9 @@ def _labels(markup):
 def test_main_menu_layout():
     assert _labels(kb.gateway_panel_kb()) == [["🔄 Обновить", "🌡 Монитор здоровья"],
                                               ["🔧 Мастер восстановления"], ["⚙️ Настройки"]]
-    assert _labels(kb.gateway_settings_kb()) == [["🔄 Обслуживание"], ["⬆️ Обновления бота"],
-                                                 ["⬅️ В меню"]]
+    assert _labels(kb.gateway_settings_kb()) == [["🔔 Уведомления"], ["📊 Мониторинг"],
+                                                 ["💾 Резервное копирование"], ["🔄 Обслуживание"],
+                                                 ["⬆️ Обновления бота"], ["⬅️ В меню"]]
     assert _labels(kb.gateway_maint_kb()) == [["🔁 Перезапустить AWG"], ["🔁 Перезапустить бота"],
                                               ["⬅️ Назад"]]
 
@@ -107,3 +108,54 @@ async def test_hide_button_deletes_the_notification(svc, fake_bot):
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_hide(cb)
     assert any(r[0] == "delete" for r in fake_bot.records), "уведомление не удалено"
+
+
+def test_notify_section_layout_cpu_ram_then_disk_temp(monkeypatch):
+    from awgbot.core import settings
+    monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
+    monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
+    rows = _labels(kb.gateway_notify_kb())
+    assert rows[0] == ["🟢 Тихие часы"]
+    assert rows[1] == ["Начало: 20:00 МСК", "Конец: 7:00 МСК"]
+    assert rows[3] == ["CPU: 80%", "RAM: 80%"]
+    assert rows[4] == ["Диск: 80%", "Temp: 75 °C"]
+    assert rows[-1] == ["⬅️ Назад"]
+    assert not any("клиент" in b.lower() for row in rows for b in row), "события клиентов у шлюза лишние"
+
+
+def test_mon_section_mirrors_main(monkeypatch):
+    from awgbot.core import settings
+    monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
+    monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
+    rows = _labels(kb.gateway_mon_kb())
+    assert rows[:4] == [["Частота опроса: 3 мин"], ["Отсчётов до сработки алерта: 5"],
+                        ["🟢 Алерт простоя линка со звуком 24/7"], ["Порог простоя линка: 300 сек"]]
+
+
+async def test_edit_flow_writes_value_and_returns_to_section(svc, fake_bot, monkeypatch):
+    from awgbot.core import settings
+    written = {}
+    monkeypatch.setattr(settings, "set_value", lambda key, val: written.__setitem__(key, val))
+    monkeypatch.setattr(settings, "get_int", lambda key, default=0: written.get(key, default))
+    monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    state = FakeState()
+    await gh.gw_edit(cb, GwCB(action="edit", val="app.gateway.monitor_minutes"), svc, state)
+    assert any("Частота опроса" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    bad = FakeMessage(text="0", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_receive_value(bad, state, svc)
+    assert written == {} and any("диапазоне" in t for kind, t, _ in bad.sent)
+    good = FakeMessage(text="5", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_receive_value(good, state, svc)
+    assert written == {"app.gateway.monitor_minutes": 5}
+    assert any("Мониторинг" in t for kind, t, _ in good.sent if kind == "answer")
+
+
+async def test_backup_without_key_explains_instead_of_leaking(svc, fake_bot, monkeypatch):
+    monkeypatch.setattr(cfg, "BACKUP_ENCRYPTION_ENABLED", False)
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_backup_now(cb, GatewayServices(svc.db))
+    assert any("BACKUP_KEY" in t for kind, t, _ in msg.sent if kind == "answer")
+    assert not any(kind == "answer_document" for kind, *_ in msg.sent)

@@ -693,6 +693,8 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     head = [f"🖥 Сервер: {dot}"]
     if st.get("uptime"):
         head.append(f"⬆️ Аптайм: {st['uptime']}")
+    if st.get("link_avail") is not None:
+        head.append(f"📡 Доступность линка за сутки: {st['link_avail']:.0f}%")
     if st.get("cpu") is not None or st.get("ram") is not None or st.get("disk") is not None:
         def _p(v):
             return f"{v:.0f}%" if v is not None else "?"
@@ -1432,6 +1434,10 @@ SETTINGS_BOUNDS = {
     "app.monitoring.service_failure_alert_minutes": (1, 1440, "Порог простоя", "мин (1–1440)"),
     "app.scheduler.backup_day": (1, 28, "День автобэкапа", "число месяца (1–28)"),
     "app.scheduler.backup_hour": (0, 23, "Час автобэкапа", "час (0–23)"),
+    # агент шлюза
+    "app.gateway.monitor_minutes": (1, 1440, "Частота опроса", "мин (1–1440)"),
+    "app.gateway.handshake_max_age": (60, 86400, "Порог простоя линка", "сек (60–86400)"),
+    "app.gateway.temp_alert_c": (40, 100, "Порог температуры", "°C (40–100)"),
 }
 
 
@@ -1659,6 +1665,8 @@ def gateway_panel(st) -> str:
     head = [f"🖥 Сервер: {server}"]
     if st.uptime_seconds is not None:
         head.append(f"⬆️ Аптайм: {timeutil.fmt_remaining_short(int(st.uptime_seconds))}")
+    if st.link_avail is not None:
+        head.append(f"📡 Доступность линка за сутки: {st.link_avail:.0f}%")
     parts += head + ["", f"📡 Линк до {_e(st.server_name or 'ВПС')}: {_gw_link_line(st)}", ""]
 
     pad = " " * 7
@@ -1710,7 +1718,20 @@ def gateway_health(st) -> str:
     return "\n".join(lines)
 
 
-GW_SETTINGS = "⚙️ <b>Настройки</b>\n\nОбслуживание линка и бота; обновления бота."
+GW_SETTINGS = ("⚙️ <b>Настройки</b>\n\nУведомления, мониторинг, резервное копирование, "
+               "обслуживание и обновления бота.")
+GW_SETTINGS_NOTIFY = ("🔔 <b>Уведомления</b>\n\nТихие часы (ночью без звука) и алерты "
+                      "о загрузке и температуре шлюза.")
+GW_SETTINGS_MON = ("📊 <b>Мониторинг</b>\n\nЧастота опроса, чувствительность алертов "
+                   "и поведение при простое линка.")
+GW_BACKUP_NO_KEY = ("💾 Резервная копия шлюза — только шифрованная: внутри приватные ключи "
+                    "линка. Задай BACKUP_KEY или BACKUP_PASSPHRASE в /etc/awg-bot/env "
+                    "и перезапусти агента.")
+
+
+def host_rebooted(hostname: str, who: str) -> str:
+    """«Хост перезагружен» — после всех проверок старта; who — «бота»/«агента»."""
+    return f"⚠️ Хост {_e(hostname)} был перезагружен.\n✅ Запуск {_e(who)} успешен"
 GW_MAINT = SETTINGS_SVC                      # зеркально основному боту
 GW_CONFIRM_RESTART = ("🔁 <b>Перезапустить AWG?</b>\n\nИнтерфейс линка опустится и поднимется "
                       "заново. РФ-доступ у всех клиентов оборвётся на несколько секунд; "

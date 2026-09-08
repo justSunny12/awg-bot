@@ -19,6 +19,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
 from awgbot.bot.filters import RoleFilter
+from awgbot.bot.states import SettingsInput
 from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, purge_menus, dismiss_update_reports
 from awgbot.util import bundlecrypt
 
@@ -120,6 +121,102 @@ async def gw_settings(cb: CallbackQuery, services, state: FSMContext):
 async def gw_maint(cb: CallbackQuery, services):
     await edit_nav(cb, services, texts.GW_MAINT, kb.gateway_maint_kb())
     await cb.answer()
+
+
+# ── разделы настроек: уведомления / мониторинг / резервное копирование ───────
+
+_SECTIONS = {
+    "notify": lambda: (texts.GW_SETTINGS_NOTIFY, kb.gateway_notify_kb()),
+    "mon": lambda: (texts.GW_SETTINGS_MON, kb.gateway_mon_kb()),
+    "backup": lambda: (texts.SETTINGS_BACKUP, kb.gateway_backup_kb()),
+}
+
+
+@router.callback_query(GwCB.filter(F.action.in_(set(_SECTIONS))))
+async def gw_section(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
+    await state.clear()
+    await edit_nav(cb, services, *_SECTIONS[callback_data.action]())
+    await cb.answer()
+
+
+def _section_of(key: str) -> str:
+    if key.startswith("quiet_hours.") or key.startswith("resource_alerts.") or key == "app.gateway.temp_alert_c":
+        return "notify"
+    if key.startswith("app.scheduler.backup_"):
+        return "backup"
+    return "mon"
+
+
+@router.callback_query(GwCB.filter(F.action == "tgl"))
+async def gw_toggle(cb: CallbackQuery, callback_data: GwCB, services):
+    """Тумблер bool в conf — та же механика, что у основного бота."""
+    from awgbot.core import settings
+    key = callback_data.val
+    cur = settings.get_bool(key, True)
+    try:
+        await call(settings.set_value, key, not cur)
+    except settings.SettingsWriteError as e:
+        await cb.answer(str(e), show_alert=True)
+        return
+    await edit_nav(cb, services, *_SECTIONS[_section_of(key)]())
+    await cb.answer()
+
+
+@router.callback_query(GwCB.filter(F.action == "edit"))
+async def gw_edit(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
+    key = callback_data.val
+    if key not in texts.SETTINGS_BOUNDS:
+        await cb.answer("Эта настройка недоступна.", show_alert=True)
+        return
+    sec = _section_of(key)
+    await state.set_state(SettingsInput.value)
+    await state.update_data(key=key, sec=sec)
+    await edit_nav(cb, services, texts.settings_prompt(key), kb.gateway_cancel_kb(sec))
+    await cb.answer()
+
+
+@router.message(SettingsInput.value)
+async def gw_receive_value(message: Message, state: FSMContext, services):
+    from awgbot.core import settings
+    data = await state.get_data()
+    key, sec = data.get("key"), data.get("sec", "mon")
+    if key not in texts.SETTINGS_BOUNDS:
+        await state.clear()
+        await send_menu(message, services, *_SECTIONS[sec]())
+        return
+    lo, hi, _label, _unit = texts.SETTINGS_BOUNDS[key]
+    try:
+        val = int((message.text or "").strip())
+        if not (lo <= val <= hi):
+            raise ValueError
+    except ValueError:
+        await message.answer(texts.settings_bad_value(key))
+        return
+    try:
+        await call(settings.set_value, key, val)
+    except settings.SettingsWriteError as e:
+        await state.clear()
+        await message.answer(str(e))
+        return
+    await state.clear()
+    await send_menu(message, services, *_SECTIONS[sec]())
+
+
+@router.callback_query(GwCB.filter(F.action == "backup!"))
+async def gw_backup_now(cb: CallbackQuery, services):
+    from aiogram.types import FSInputFile
+    await cb.answer("Готовлю резервную копию…")
+    try:
+        paths = await call(services.make_backup)
+    except Exception as e:                            # noqa: BLE001
+        await cb.message.answer(texts.GW_BACKUP_NO_KEY if "шифрован" in str(e) else f"⚠️ {e}")
+        return
+    for p in paths:
+        try:
+            await cb.message.answer_document(FSInputFile(p))
+        except Exception:                             # noqa: BLE001
+            pass
+    await edit_nav(cb, services, *_SECTIONS["backup"]())
 
 
 _CONFIRM = {

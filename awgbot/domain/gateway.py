@@ -29,7 +29,7 @@ from awgbot.util import timeutil
 log = logging.getLogger("awgbot.gateway")
 
 # Notification переиспользуем клиентский: notifier один на обе роли.
-from awgbot.domain.services import Notification  # noqa: E402
+from awgbot.domain.services import Notification, ServiceError  # noqa: E402
 from awgbot.domain.selfupdate import SelfUpdateMixin  # noqa: E402
 
 
@@ -77,6 +77,8 @@ class GwStatus:
     kernels_total: int = 0
     month_rx: int = 0                       # потребление линка за календарный месяц
     month_tx: int = 0
+    egress_ms: float | None = None          # выход наружу через домашний канал, мс
+    link_avail: float | None = None         # доступность линка за сутки, %
     ts: str = ""                            # когда снят (ISO); пусто — живой
 
     def to_json(self) -> str:
@@ -243,7 +245,7 @@ class GatewayServices(SelfUpdateMixin):
     # ── гистерезис ───────────────────────────────────────────────────────────
 
     def _streak_alert(self, key: str, bad: bool | None, streak: int,
-                      on_text: str, off_text: str) -> list[Notification]:
+                      on_text: str, off_text: str, loud: bool = True) -> list[Notification]:
         """Обобщение паттерна ресурс-алертов: алерт после N плохих замеров
         ПОДРЯД, отбой после N хороших. None не двигает счётчики: «не смог
         посмотреть» — не норма и не отказ."""
@@ -257,7 +259,7 @@ class GatewayServices(SelfUpdateMixin):
             hi, lo = hi + 1, 0
             if hi >= streak and not armed:
                 self.db.set_state(f"gwst_armed_{key}", "1")
-                notes.append(Notification(config.ADMIN_ID, on_text, force_sound=True))
+                notes.append(Notification(config.ADMIN_ID, on_text, force_sound=loud))
         else:
             lo, hi = lo + 1, 0
             if lo >= streak and armed:
@@ -280,13 +282,19 @@ class GatewayServices(SelfUpdateMixin):
         notes: list[Notification] = []
         streak = settings.get_int("app.monitoring.alert_streak", 5)
 
-        hs_bad = (not st.link_up) or st.handshake_age is None or \
-            st.handshake_age > settings.get_int("app.gateway.handshake_max_age", 300)
+        hs_bad = not self.link_ok(st)
         notes += self._streak_alert(
             "link", hs_bad, settings.get_int("app.gateway.link_alert_streak", 2),
             "🚨 Линк до ВПС мёртв: хендшейка нет дольше допустимого. РФ-доступ "
             "у клиентов не работает.",
-            "✅ Линк до ВПС ожил, хендшейк свежий.")
+            "✅ Линк до ВПС ожил, хендшейк свежий.",
+            loud=settings.get_bool("app.gateway.link_alert_loud", True))
+
+        notes += self._streak_alert(
+            "egress", st.egress_ms is None, streak,
+            "⚠️ Шлюз не выходит наружу: домашний канал не отвечает. РФ-доступ "
+            "через шлюз не работает.",
+            "✅ Домашний канал шлюза снова отвечает.")
 
         broken = [c for c in st.checks if c.ok is False]
         notes += self._streak_alert(
@@ -315,12 +323,16 @@ class GatewayServices(SelfUpdateMixin):
             f"🌡 SoC {st.temp:.0f}°C — перегрев." if st.temp is not None else "",
             "✅ Температура SoC в норме.")
 
-        disk_bad = None if st.disk is None else \
-            st.disk >= settings.get_int("resource_alerts.thresholds_percent.disk", 80)
-        notes += self._streak_alert(
-            "disk", disk_bad, streak,
-            f"💽 Карта заполнена на {st.disk:.0f}%." if st.disk is not None else "",
-            "✅ Место на карте снова в норме.")
+        # алерты хоста — общим тумблером и порогами с основным ботом
+        if settings.get_bool("resource_alerts.enabled", True):
+            for name, val, label, unit in (("cpu", st.cpu, "CPU", "%"), ("ram", st.ram, "RAM", "%"),
+                                           ("disk", st.disk, "Диск", "%")):
+                bad = None if val is None else \
+                    val >= settings.get_int(f"resource_alerts.thresholds_percent.{name}", 80)
+                notes += self._streak_alert(
+                    name, bad, streak,
+                    f"📈 {label} шлюза: {val:.0f}{unit} — выше порога." if val is not None else "",
+                    f"✅ {label} шлюза снова в норме.")
 
         try:
             self.tg_mark_ensure()
@@ -415,6 +427,64 @@ class GatewayServices(SelfUpdateMixin):
         """Все проверки — живьём. Список, а не вердикт: чинить будут по строкам."""
         return self.status().checks
 
+    # ── выход наружу через домашний канал ────────────────────────────────────
+
+    def egress_probe(self) -> float | None:
+        """TCP-коннект к российскому и к зарубежному адресу через default-маршрут
+        (домашний канал, не туннель). Возвращает время первого удачного, мс;
+        None — никто не ответил. Две цели: один внешний хост сам по себе точка
+        отказа, и его заминка выглядела бы как отвал канала."""
+        targets = settings.get("app.gateway.egress_targets", None) or ["77.88.8.8", "8.8.8.8"]
+        port = int(settings.get("app.gateway.egress_port", 53))
+        for host in targets:
+            t0 = time.monotonic()
+            try:
+                with socket.create_connection((str(host), port), timeout=3.0):
+                    return round((time.monotonic() - t0) * 1000, 1)
+            except OSError:
+                continue
+        return None
+
+    # ── резервная копия ──────────────────────────────────────────────────────
+
+    def make_backup(self) -> list[str]:
+        """БД агента, conf/*.yaml и ВСЕ конфиги awg-интерфейсов шлюза (в них
+        приватные ключи линка и туннеля — единственная копия вне этой машины).
+        Только шифрованно: без BACKUP_KEY/BACKUP_PASSPHRASE отказ, открытые
+        ключи в чат не уезжают."""
+        from awgbot.util import secrets_util
+        if not config.BACKUP_ENCRYPTION_ENABLED:
+            raise ServiceError("резервная копия шлюза только шифрованная: задай BACKUP_KEY "
+                               "или BACKUP_PASSPHRASE в /etc/awg-bot/env и перезапусти агента")
+        enc_kwargs = ({"passphrase": config.BACKUP_PASSPHRASE} if config.BACKUP_PASSPHRASE
+                      else {"key": secrets_util.b64d(config.BACKUP_KEY)})
+        config.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = timeutil.now().strftime("%Y%m%d_%H%M%S")
+        artifacts: list[tuple[str, bytes]] = []
+        try:
+            artifacts.append((f"gw_bot_{stamp}.db", config.DB_PATH.read_bytes()))
+        except OSError:
+            pass
+        for p in sorted(glob.glob(os.path.join(str(config.CONF_DIR), "*.yaml"))):
+            try:
+                artifacts.append((f"conf_{os.path.basename(p)}_{stamp}", open(p, "rb").read()))
+            except OSError:
+                pass
+        for p in sorted(glob.glob(os.path.join(config.GW_CONF_DIR, "*.conf"))):
+            try:
+                artifacts.append((f"{os.path.basename(p)}_{stamp}", open(p, "rb").read()))
+            except OSError:
+                pass
+        paths: list[str] = []
+        for name, raw in artifacts:
+            try:
+                dst = config.BACKUP_DIR / f"{name}.enc"
+                dst.write_bytes(secrets_util.encrypt(raw, **enc_kwargs))
+                paths.append(str(dst))
+            except Exception:                            # noqa: BLE001
+                continue
+        return paths
+
     # ── имя ВПС ──────────────────────────────────────────────────────────────
 
     _SERVER_NAME_KEY = "gw_server_name"
@@ -476,6 +546,10 @@ class GatewayServices(SelfUpdateMixin):
         checks.append(GwCheck("ядра", not st.kernels_missing,
                               "" if not st.kernels_missing else
                               "без модуля awg: " + ", ".join(st.kernels_missing)))
+        st.egress_ms = self.egress_probe()
+        checks.append(GwCheck("выход наружу", st.egress_ms is not None,
+                              f"{st.egress_ms:.0f} мс" if st.egress_ms is not None else
+                              "домашний канал не отвечает — РФ-доступ через шлюз не работает"))
         st.checks = checks
         st.temp = hostmetrics.read_soc_temp()
         st.throttled = hostmetrics.read_pi_throttled()
@@ -494,10 +568,20 @@ class GatewayServices(SelfUpdateMixin):
 
     _SNAPSHOT_KEY = "gw_status"
 
+    _LINK_AVAIL_KEY = "gw_link_avail"
+
+    def link_ok(self, st: GwStatus) -> bool:
+        return bool(st.link_up and st.handshake_age is not None and
+                    st.handshake_age <= settings.get_int("app.gateway.handshake_max_age", 300))
+
     def snapshot(self) -> GwStatus:
-        """Живой статус + учёт трафика + сохранить как снимок для панели."""
+        """Живой статус + учёт трафика + доступность линка + сохранить как
+        снимок для панели."""
+        from awgbot.util import availability
         st = self.status()
         st.month_rx, st.month_tx = self._account_traffic(st.rx, st.tx)
+        availability.record(self.db, self._LINK_AVAIL_KEY, self.link_ok(st))
+        st.link_avail = availability.percent(self.db, self._LINK_AVAIL_KEY)
         st.ts = timeutil.to_iso(timeutil.now())
         self.db.set_state(self._SNAPSHOT_KEY, st.to_json())
         return st

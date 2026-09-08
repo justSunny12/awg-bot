@@ -88,6 +88,22 @@ async def report_update_result(bot, services) -> None:
                                 sent.chat.id, sent.message_id)
 
 
+async def _announce_reboot(bot, db, who: str) -> None:
+    """«Хост перезагружен, запуск успешен» — после всех проверок старта. Только
+    когда хост действительно перезагружался (boot_id сменился), не на каждый
+    рестарт сервиса."""
+    from awgbot.runtime import hostboot
+    try:
+        if not await asyncio.to_thread(hostboot.reboot_detected, db):
+            return
+        import socket
+        from awgbot.bot.notifier import notify_one
+        from awgbot.bot import texts
+        await notify_one(bot, config.ADMIN_ID, texts.host_rebooted(socket.gethostname(), who))
+    except Exception as e:                               # noqa: BLE001
+        log.warning("announce_reboot: %s", e)
+
+
 async def run_gateway() -> None:
     """Сборка и запуск роли gateway: панель + монитор, больше ничего.
 
@@ -164,6 +180,8 @@ async def run_gateway() -> None:
         await gateway_handlers.restore_panel_after_restart(bot, services)
     except Exception as e:                               # noqa: BLE001
         log.warning("gateway restore_panel_after_restart: %s", e)
+
+    await _announce_reboot(bot, services.db, "агента")
 
     # Планировщик — СТРОГО после финишера, как у клиентской роли. Его стартовая
     # проверка обновлений укладывается в секунду, и, запущенная раньше, она
@@ -379,6 +397,8 @@ async def main() -> None:
             await notify_one(bot, config.ADMIN_ID, preflight.format_warnings(warns))
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight warnings: %s", e)
+
+    await _announce_reboot(bot, db, "бота")
 
     try:
         # long-poll 50 с вместо дефолтных 10: впятеро меньше холостых

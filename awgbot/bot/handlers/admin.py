@@ -95,7 +95,8 @@ async def _panel_text(services) -> str:
     """Шапка панели: статус из кэша (0 docker exec, мгновенно)."""
     st = await call(services.server_status_cached)
     tot = await call(services.db.get_total_month_traffic)
-    st = {**st, "traffic_rx": tot["rx"], "traffic_tx": tot["tx"]}
+    st = {**st, "traffic_rx": tot["rx"], "traffic_tx": tot["tx"],
+          "link_avail": await call(services.routing_link_availability)}
     ac = await call(services.admin_client)
     routing_ok = await call(services.routing_health_for_client, ac) if ac else None
     mig = (await call(services.migration_progress)
