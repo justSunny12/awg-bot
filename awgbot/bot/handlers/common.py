@@ -11,7 +11,11 @@ import asyncio
 
 from aiogram.exceptions import TelegramBadRequest
 
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, LinkPreviewOptions, Message
+
+# Меню и нав-экраны несут deep-link'и на самого бота (t.me/…): Telegram рисует
+# им превью-вложение, которое в меню не нужно никогда.
+NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
 
 from awgbot.bot import keyboards as kb
 from awgbot.bot.notifier import notify_one
@@ -53,7 +57,7 @@ async def send_menu(message: Message, services, text, markup) -> None:
     Единая точка показа — держит инвариант «одно живое меню в чате»."""
     chat_id = message.chat.id
     await _dismiss_previous_nav(message.bot, services, chat_id)
-    sent = await message.answer(text, reply_markup=markup)
+    sent = await message.answer(text, reply_markup=markup, link_preview_options=NO_PREVIEW)
     await call(services.db.set_nav_message_id, chat_id, sent.message_id)
     await call(services.db.push_nav_history, chat_id, sent.message_id)
 
@@ -180,11 +184,11 @@ async def edit(cb: CallbackQuery, text: str, kb=None) -> None:
       • прочее (сообщение слишком старое/удалено и т.п.) — шлём новое.
     """
     try:
-        await cb.message.edit_text(text, reply_markup=kb)
+        await cb.message.edit_text(text, reply_markup=kb, link_preview_options=NO_PREVIEW)
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
             return
-        await cb.message.answer(text, reply_markup=kb)
+        await cb.message.answer(text, reply_markup=kb, link_preview_options=NO_PREVIEW)
 
 
 async def send_link(target: Message, vpn: str, services=None) -> None:

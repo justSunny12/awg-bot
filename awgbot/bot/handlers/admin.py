@@ -84,8 +84,10 @@ async def restore_panel_after_restart(bot, services) -> None:
     except Exception:                                  # noqa: BLE001
         pass          # сообщение удалили — отчёт потерян, панель важнее
     await _dismiss_previous_nav(bot, services, chat_id)
+    from awgbot.bot.handlers.common import NO_PREVIEW
     sent = await bot.send_message(chat_id, await _panel_text(services),
-                                  reply_markup=await _main_menu_markup(services))
+                                  reply_markup=await _main_menu_markup(services),
+                                  link_preview_options=NO_PREVIEW)
     await call(services.db.set_nav_message_id, chat_id, sent.message_id)
 
 
