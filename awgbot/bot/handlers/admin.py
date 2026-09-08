@@ -100,8 +100,31 @@ async def _panel_text(services) -> str:
     routing_ok = await call(services.routing_health_for_client, ac) if ac else None
     mig = (await call(services.migration_progress)
            if await call(services.migration_running) else None)
+    expiring = len(await call(services.expiring_subscriptions))
     return texts.admin_panel(st, routing_ok, migration=mig,
-                             bot_username=getattr(services, "bot_username", ""))
+                             bot_username=getattr(services, "bot_username", ""),
+                             expiring=expiring)
+
+
+async def _expiring_screen(services):
+    rows = await call(services.expiring_subscriptions)
+    return (texts.expiring_text(rows, getattr(services, "bot_username", "")),
+            kb.expiring_kb())
+
+
+async def _extend_picker(services, client_id: int, cancel_to: str | None = None):
+    """Экран «На какой срок продлить?» — общий для карточки и списка истекающих."""
+    client = await call(services.db.get_client, client_id)
+    if client is None:
+        return None
+    cut_days = int(client.grace_pending_cut) // SECONDS_PER_DAY
+    text = "На какой срок продлить?"
+    if cut_days > 0:
+        text = (f"⚠️ Профиль брал отсрочку на {cut_days} дн. — она вычтется из "
+                f"нового периода. Доступны только периоды длиннее {cut_days} дн.\n\n"
+                "На какой срок продлить?")
+    return text, kb.period_choices("extend", ref=client_id, min_days=cut_days,
+                                   cancel_to=cancel_to)
 
 
 # ── потребление за месяц: по профилям → по устройствам ───────────────────────
@@ -128,12 +151,22 @@ async def _online_screen(services):
     return texts.online_devices_text(devs), kb.online_devices_kb()
 
 
-async def _traffic_deep_link(message: Message, services, payload: str) -> bool:
-    """«/start traffic», «/start traffic-<id>», «/start online» — переходы по
-    ссылкам из панели. Команду, которую отправил клик, убираем из чата: она
-    служебная."""
+async def _traffic_deep_link(message: Message, services, payload: str,
+                             state: FSMContext | None = None) -> bool:
+    """«/start traffic», «/start traffic-<id>», «/start online», «/start
+    expiring», «/start extend-<id>» — переходы по ссылкам из панели и её
+    экранов. Команду, которую отправил клик, убираем из чата: она служебная."""
     if payload == "online":
         screen = await _online_screen(services)
+    elif payload == "expiring":
+        screen = await _expiring_screen(services)
+    elif payload.startswith("extend-") and payload[len("extend-"):].isdigit():
+        # «Продлить?» из списка истекающих: после продления или отмены —
+        # обратно в список (если он не опустел), иначе в меню
+        if state is not None:
+            await state.update_data(return_to="expiring")
+        screen = await _extend_picker(services, int(payload[len("extend-"):]),
+                                      cancel_to=Menu(action="expiring").pack())
     elif payload == _TRAFFIC_PAYLOAD:
         screen = await _traffic_profiles_screen(services)
     elif payload.startswith(_TRAFFIC_PAYLOAD + "-") and payload[len(_TRAFFIC_PAYLOAD) + 1:].isdigit():
@@ -170,11 +203,19 @@ async def admin_start(message: Message, services, state: FSMContext,
                       command: CommandObject | None = None):
     await state.clear()
     payload = ((command.args if command is not None else "") or "").strip()
-    if payload and await _traffic_deep_link(message, services, payload):
+    if payload and await _traffic_deep_link(message, services, payload, state):
         return
     # /start — «начать заново»: все прошлые меню из чата долой, не только кнопки
     await purge_menus(message.bot, services, message.chat.id)
     await _return_panel(message, services)
+
+
+@router.callback_query(Menu.filter(F.action == "expiring"))
+async def admin_expiring(cb: CallbackQuery, services, state: FSMContext):
+    """Список истекающих: «Отмена» из продления и повторный вход."""
+    await state.clear()
+    await edit_nav(cb, services, *await _expiring_screen(services))
+    await cb.answer()
 
 
 @router.callback_query(Menu.filter(F.action == "traffic"))
@@ -743,18 +784,11 @@ async def client_delete_apply(cb: CallbackQuery, callback_data: ConfirmCB, servi
 
 @router.callback_query(ClientCB.filter(F.action == "extend"))
 async def extend_start(cb: CallbackQuery, callback_data: ClientCB, services):
-    client = await call(services.db.get_client, callback_data.client_id)
-    if client is None:
+    screen = await _extend_picker(services, callback_data.client_id)
+    if screen is None:
         await cb.answer("Профиль не найден", show_alert=True)
         return
-    cut_days = int(client.grace_pending_cut) // SECONDS_PER_DAY
-    text = "На какой срок продлить?"
-    if cut_days > 0:
-        text = (f"⚠️ Профиль брал отсрочку на {cut_days} дн. — она вычтется из "
-                f"нового периода. Доступны только периоды длиннее {cut_days} дн.\n\n"
-                "На какой срок продлить?")
-    await edit(cb, text, kb.period_choices("extend", ref=callback_data.client_id,
-                                            min_days=cut_days))
+    await edit(cb, *screen)
     await cb.answer()
 
 
@@ -770,7 +804,10 @@ async def extend_period_chosen(cb: CallbackQuery, callback_data: PeriodCB, servi
             remainder=timeutil.fmt_remaining_short(remainder)),
             kb.yes_no("keep", ref=client_id))
     else:
-        await _do_extend(cb, services, client_id, callback_data.kind, keep=False)
+        return_to = (await state.get_data()).get("return_to")
+        await state.clear()
+        await _do_extend(cb, services, client_id, callback_data.kind, keep=False,
+                         return_to=return_to)
     await cb.answer()
 
 
@@ -779,15 +816,20 @@ async def extend_keep_answer(cb: CallbackQuery, callback_data: ConfirmCB, servic
     data = await state.get_data()
     kind = data.get("extend_kind")
     client_id = data.get("extend_client") or callback_data.ref
+    return_to = data.get("return_to")
     await state.clear()
     if not kind:
         await cb.answer("Диалог прерван, начни заново", show_alert=True)
         return
-    await _do_extend(cb, services, client_id, kind, keep=callback_data.yes)
+    await _do_extend(cb, services, client_id, kind, keep=callback_data.yes, return_to=return_to)
     await cb.answer()
 
 
-async def _do_extend(cb, services, client_id, kind, keep: bool):
+async def _do_extend(cb, services, client_id, kind, keep: bool, return_to: str | None = None):
+    """Итог продления — ИНФОСООБЩЕНИЕМ на месте диалога (остаётся в чате), меню
+    следом со своим обычным текстом: раньше текст итога садился в само меню и
+    дублировал уведомление. return_to="expiring" — назад в список истекающих,
+    пока он не пуст; опустел — в меню."""
     try:
         result = await call(services.extend_period, client_id, kind, keep)
     except ServiceError as e:
@@ -796,7 +838,12 @@ async def _do_extend(cb, services, client_id, kind, keep: bool):
     await send_notifications(cb.bot, result.notifications)
     done = ("✅ Подписка теперь бессрочная." if result.new_end is None
             else f"✅ Подписка продлена до {timeutil.fmt_dt(result.new_end)}.")
-    await edit_nav(cb, services, done, await _main_menu_markup(services))
+    await edit(cb, done, None)
+    if return_to == "expiring" and await call(services.expiring_subscriptions):
+        await send_menu(cb.message, services, *await _expiring_screen(services))
+        return
+    await send_menu(cb.message, services, await _panel_text(services),
+                    await _main_menu_markup(services))
 
 
 # ── Изменить период вручную (лечит дедлок бессрочной подписки) ────────────────

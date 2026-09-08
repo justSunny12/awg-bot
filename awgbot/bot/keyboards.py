@@ -510,7 +510,8 @@ def admin_client_actions(client, *, has_devices: bool = True,
 # Выбор периода (создание/продление)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def period_choices(ctx: str, ref: int = 0, min_days: int = 0) -> InlineKeyboardMarkup:
+def period_choices(ctx: str, ref: int = 0, min_days: int = 0,
+                   cancel_to: str | None = None) -> InlineKeyboardMarkup:
     """ctx: create | extend. ref: id клиента при продлении.
     min_days: скрыть периоды короче/равные (после вычета отсрочки остался бы ноль
     или минус). «never» не отсекается никогда — вычитать из безлимита нечего.
@@ -527,7 +528,9 @@ def period_choices(ctx: str, ref: int = 0, min_days: int = 0) -> InlineKeyboardM
         n += 1
     # Кнопка выхода: при продлении — назад к карточке клиента; при создании —
     # отмена в главное меню. Без неё диалог выбора срока — тупик (был баг).
-    if ctx == "extend" and ref:
+    if cancel_to:                                   # пришли не из карточки
+        kb.button(text="⬅️ Отмена", callback_data=cancel_to)
+    elif ctx == "extend" and ref:
         kb.button(text="⬅️ Отмена", callback_data=ClientCB(action="open", client_id=ref))
     else:
         kb.button(text="⬅️ Отмена", callback_data=Menu(action="main"))
@@ -1037,6 +1040,12 @@ def _chk(on: bool) -> str:
 
 
 def traffic_profiles_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="\u2b05\ufe0f В меню", callback_data=Menu(action="main"))
+    return kb.as_markup()
+
+
+def expiring_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="\u2b05\ufe0f В меню", callback_data=Menu(action="main"))
     return kb.as_markup()

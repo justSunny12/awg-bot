@@ -662,8 +662,26 @@ def traffic_devices_text(client_name: str, rows) -> str:
         f"{device_label(d, for_admin=True)}: {_traffic_triplet(rx, tx)}" for d, rx, tx in rows)
 
 
+def expiring_text(rows, bot_username: str = "") -> str:
+    """Истекающие подписки: остаток, период, «Продлить?» — deep-link в
+    стандартный маршрут продления с возвратом сюда."""
+    from awgbot.util import timeutil
+    head = "⏳ <b>Истекающие подписки:</b>"
+    if not rows:
+        return head + _LIST_SEP + "Истекающих подписок нет."
+    items = []
+    for c, secs in rows:
+        end = timeutil.parse_iso(c.period_end)
+        start = timeutil.parse_iso(c.period_start) if c.period_start else None
+        period = (f"{timeutil.fmt_dt(start)} → " if start else "… → ") + timeutil.fmt_dt(end)
+        items.append(f"👤 {_e(c.name)} — осталось {timeutil.fmt_remaining(end)}\n"
+                     f"Период подписки: {period}\n"
+                     f"{_deep_link(bot_username, f'extend-{c.id}', 'Продлить?')}")
+    return head + _LIST_SEP + _LIST_SEP.join(items)
+
+
 def admin_panel(st: dict, routing_ok: bool = None, migration=None,
-                bot_username: str = "") -> str:
+                bot_username: str = "", expiring: int = 0) -> str:
     """Шапка админ-меню: компактный статус из кэша (ноль docker exec).
     st — из services.server_status_cached(); метрики железа (CPU/RAM/диск хоста)
     бот снимает локально (/proc, statvfs); показываем с возрастом. None-поля — «…»."""
@@ -707,6 +725,9 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     mig = migration_panel_line(migration)
     if mig:
         groups.append(mig)
+    if expiring:
+        label = _deep_link(bot_username, "expiring", "⏳ Истекающие подписки")
+        groups.append(f"{label}: {expiring}")
     import socket
     host = socket.gethostname()
     title = "🛠 <b>Панель администратора" + (f" ({_e(host)})" if host else "") + "</b>"

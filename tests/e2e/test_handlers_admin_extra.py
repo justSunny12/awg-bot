@@ -1221,3 +1221,53 @@ def test_list_screens_separate_entries_with_a_blank_line(services, make_active_c
     a = make_active_client("А", tg_id=1101); b = make_active_client("Б", tg_id=1102)
     out = texts.traffic_profiles_text([(a, 1, 1), (b, 2, 2)], "bot")
     assert "\n\n👤 " in out and out.count("\n\n") == 2
+
+
+# ── истекающие подписки: панель, экран, продление с возвратом ────────────────
+
+async def test_expiring_line_is_conditional_and_linked(services, make_active_client, fake_bot):
+    from awgbot.bot import texts
+    assert "Истекающие" not in texts.admin_panel({"ok": True}, bot_username="b", expiring=0)
+    out = texts.admin_panel({"ok": True}, bot_username="b", expiring=2)
+    assert out.endswith('<a href="https://t.me/b?start=expiring">⏳ Истекающие подписки</a>: 2')
+
+
+async def test_expiring_screen_and_extend_returns_to_it_or_menu(services, make_active_client, fake_bot):
+    import datetime as dt
+    from awgbot.bot import texts
+    from awgbot.bot.handlers import admin as ah
+    from awgbot.bot.callbacks import PeriodCB, Menu
+    from awgbot.util import timeutil
+    from tests.conftest import FakeCallback, FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    services.bot_username = "b"
+    now = timeutil.now()
+    c = make_active_client("Скоро", tg_id=3001)
+    services.db.update_client_fields(c.id, period_start=timeutil.to_iso(now - dt.timedelta(days=20)),
+                                     period_end=timeutil.to_iso(now + dt.timedelta(days=3)), period_kind="month")
+    msg = FakeMessage(text="/start expiring", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    state = FakeState()
+    await ah.admin_start(msg, services, state, command=_cmd("expiring"))
+    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
+    assert sent and "⏳ <b>Истекающие подписки:</b>" in sent[-1]
+    assert "👤 Скоро — осталось 2 дня 23 часа" in sent[-1] and "Период подписки: " in sent[-1]
+    assert f'?start=extend-{c.id}">Продлить?</a>' in sent[-1]
+    # «Продлить?» → выбор срока с отменой обратно в список (активное меню
+    # сбрасываем, чтобы экран ушёл ответом, а не правкой — так видна клавиатура)
+    services.db.set_nav_message_id(cfg.ADMIN_ID, None)
+    await ah.admin_start(msg, services, state, command=_cmd(f"extend-{c.id}"))
+    sent = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
+    assert "На какой срок продлить?" in sent[-1][0]
+    cancel = [b for row in sent[-1][1].inline_keyboard for b in row if "Отмена" in b.text][0]
+    assert cancel.callback_data == Menu(action="expiring").pack()
+    assert (await state.get_data())["return_to"] == "expiring"
+    # продление на год: остатка нет вопроса? остаток есть → вопрос; отвечаем «нет»
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await ah.extend_period_chosen(cb, PeriodCB(kind="year", ctx="extend", ref=c.id), services, state)
+    from awgbot.bot.callbacks import ConfirmCB
+    await ah.extend_keep_answer(cb, ConfirmCB(action="keep", ref=c.id, yes=False), services, state)
+    edits = [t for kind, t, _ in msg.sent if kind == "edit_text"]
+    assert any(t.startswith("✅ Подписка продлена до") for t in edits), "итог не остался инфосообщением"
+    answers = [t for kind, t, _ in msg.sent if kind == "answer"]
+    assert "Панель администратора" in answers[-1], "после продления не вернулись в меню (список опустел)"
+    assert "Подписка продлена" not in answers[-1], "меню дублирует инфосообщение"

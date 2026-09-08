@@ -123,6 +123,7 @@ class ExtendResult:
 
 
 # Тексты уведомлений (сухие, без слов про оплату — ТЗ 6.5).
+_MONTH_CUT_MINUTES = 30 * 24 * 60             # порог, который месяцу не показываем
 _TXT_EXTENDED = "Подписка продлена до {end}"
 _TXT_EXTENDED_FOREVER = "Подписка теперь бессрочная 🎉"
 _TXT_EXPIRED_CLIENT = "Срок действия подписки истёк. Доступ приостановлен."
@@ -1513,6 +1514,37 @@ class Services(SelfUpdateMixin, MigrationMixin):
                              _friend_blocked_text(dev.name)))
         return notes
 
+    # ── истекающие подписки (панель админа) ──────────────────────────────────
+
+    @staticmethod
+    def expiring_limit_days(length_days: int) -> int | None:
+        """Порог «истекает» по длине периода L (дней): L < 12 — всегда в списке
+        (None); иначе остаток ≤ max(⌊L/12⌋, 7) дней. Год → 30, месяц → 7."""
+        if length_days < 12:
+            return None
+        return max(length_days // 12, 7)
+
+    def expiring_subscriptions(self) -> list[tuple]:
+        """[(client, секунд до конца)] — активные с конечным периодом, попавшие
+        под порог; ближайшие сверху. Это НЕ пороги уведомлений: у панели своё
+        правило, у уведомлений своё."""
+        now = timeutil.now()
+        out = []
+        for client in self.db.list_clients(include_service=False):
+            if client.activation_status != ActivationStatus.ACTIVE or not client.period_end:
+                continue
+            end = timeutil.parse_iso(client.period_end)
+            start = timeutil.parse_iso(client.period_start) if client.period_start else None
+            secs = timeutil.remaining_seconds(end, now)
+            if secs <= 0:
+                continue
+            length_days = int((end - start).total_seconds() // 86400) if start else 0
+            limit = self.expiring_limit_days(length_days)
+            if limit is None or secs <= limit * 86400:
+                out.append((client, secs))
+        out.sort(key=lambda t: t[1])
+        return out
+
     def check_expiry(self) -> list[Notification]:
         now = timeutil.now()
         notifications: list[Notification] = []
@@ -1542,9 +1574,12 @@ class Services(SelfUpdateMixin, MigrationMixin):
             # иначе клиент получит простыню «30 дней»+«14»+«7»+«1» разом.
             already = self.db.get_notified(client.id)
             mins_left = secs // 60
+            # Месяцу порог «30 дней» не показываем никогда: 31-дневный месяц
+            # получал «истекает через 30 дней» назавтра после активации.
             crossed = [
                 (th_min, label) for th_min, label in config.NOTIFY_THRESHOLDS_MINUTES
                 if th_min < period_len_min and mins_left <= th_min and th_min not in already
+                and not (client.period_kind == "month" and th_min >= _MONTH_CUT_MINUTES)
             ]
             if crossed:
                 # самый строгий = наименьший порог по времени
