@@ -1203,7 +1203,7 @@ async def test_online_link_opens_the_list_of_online_devices(services, make_activ
     sent = [t for kind, t, _ in msg.sent if kind == "answer"]
     assert sent and "📶 <b>Устройства онлайн (1):</b>" in sent[-1]
     assert f"📱 iPhone 16 Pro — {texts.plain_ip(on.address)}" in sent[-1] and "Старый ноут" not in sent[-1]
-    assert on.address not in sent[-1], "адрес ушёл голым — Telegram сделает из него ссылку"
+    assert f"<code>{on.address}</code>" in sent[-1], "адрес ушёл голым — Telegram сделает из него ссылку"
 
 
 def test_device_line_format_and_plain_ip(services, make_active_client):
@@ -1213,4 +1213,4 @@ def test_device_line_format_and_plain_ip(services, make_active_client):
     dev = services.db.list_devices(c.id)[0]
     line = texts.device_line(dev)
     assert line.startswith(f"🔴 iPhone 16 Pro ({texts.plain_ip(dev.address)}), последний коннект: ")
-    assert texts.plain_ip("10.9.1.2") == "10.\u20609.\u20601.\u20602"
+    assert texts.plain_ip("10.9.1.2") == "<code>10.9.1.2</code>"
