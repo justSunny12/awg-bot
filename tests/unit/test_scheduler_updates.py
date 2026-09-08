@@ -40,3 +40,10 @@ async def test_notify_update_available_dismisses_previous_finisher(monkeypatch):
 def test_updates_sections_show_current_version_with_v():
     assert texts.settings_upd_text("2.4.2.12").endswith("Текущая версия бота: <b>v2.4.2.12</b>")
     assert texts.gateway_updates("2.4.2.12", False, "каждый день").endswith("Текущая версия бота: <b>v2.4.2.12</b>")
+
+
+def test_admin_panel_title_carries_hostname(monkeypatch):
+    import socket
+    monkeypatch.setattr(socket, "gethostname", lambda: "vps-1")
+    out = texts.admin_panel({"ok": True})
+    assert out.startswith("🛠 <b>Панель администратора (vps-1)</b>")

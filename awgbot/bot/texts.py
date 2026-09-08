@@ -642,7 +642,10 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None) -> str:
     mig = migration_panel_line(migration)
     if mig:
         groups.append(mig)
-    return "🛠 <b>Панель администратора</b>\n\n" + "\n\n".join(groups)
+    import socket
+    host = socket.gethostname()
+    title = "🛠 <b>Панель администратора" + (f" ({_e(host)})" if host else "") + "</b>"
+    return title + "\n\n" + "\n\n".join(groups)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
