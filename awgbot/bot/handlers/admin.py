@@ -136,10 +136,20 @@ async def _traffic_deep_link(message: Message, services, payload: str) -> bool:
         await message.delete()
     except Exception:                                 # noqa: BLE001
         pass
-    if screen is None:
-        await send_menu(message, services, "Профиль не найден.", kb.traffic_profiles_kb())
-        return True
-    await send_menu(message, services, *screen)
+    text, markup = screen if screen is not None else ("Профиль не найден.", kb.traffic_profiles_kb())
+    # Экран — НА МЕСТЕ активного меню, как переход по кнопке: панель исчезает,
+    # «В меню» возвращает её туда же. Новым сообщением — только если активного
+    # меню нет или его уже не отредактировать.
+    from awgbot.bot.handlers.common import NO_PREVIEW
+    nav_id = await call(services.db.get_nav_message_id, message.chat.id)
+    if nav_id is not None:
+        try:
+            await message.bot.edit_message_text(text, chat_id=message.chat.id, message_id=nav_id,
+                                                reply_markup=markup, link_preview_options=NO_PREVIEW)
+            return True
+        except Exception:                             # noqa: BLE001
+            pass
+    await send_menu(message, services, text, markup)
     return True
 
 

@@ -317,7 +317,7 @@ class Services(SelfUpdateMixin, MigrationMixin):
     def traffic_by_device(self, client_id: int) -> list[tuple]:
         """[(device, rx, tx)] за месяц по устройствам профиля — по одной строке
         на устройство (list_devices сам решает, какую из пары показать)."""
-        return [(d, int(d.rx_month), int(d.tx_month))
+        return [(d, int(d.traffic.rx_month), int(d.traffic.tx_month))
                 for d in self.db.list_devices(client_id)]
 
     def __init__(self, db):

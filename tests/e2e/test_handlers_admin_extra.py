@@ -1105,6 +1105,19 @@ async def test_start_traffic_opens_profiles_and_removes_the_command(
     assert f'?start=traffic-{c.id}">Профиль А</a>' in sent[-1]
 
 
+async def test_start_traffic_replaces_the_active_menu_in_place(services, make_active_client, fake_bot):
+    """Экран потребления встаёт НА МЕСТО панели (редактированием), а не под ней."""
+    from awgbot.bot.handlers import admin as ah
+    from tests.conftest import FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    services.db.set_nav_message_id(cfg.ADMIN_ID, 777)
+    msg = FakeMessage(text="/start traffic", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic"))
+    edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
+    assert edits and "разбивкой по профилям" in edits[-1][2]
+    assert not any(kind == "answer" for kind, _, _ in msg.sent), "экран ушёл новым сообщением"
+
+
 async def test_start_traffic_client_opens_devices_and_back_leads_to_profiles(
         services, make_active_client, fake_bot):
     from awgbot.bot.handlers import admin as ah
@@ -1130,3 +1143,19 @@ async def test_plain_start_still_purges_and_shows_panel(services, fake_bot):
     msg = FakeMessage(text="/start", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await ah.admin_start(msg, services, FakeState(), command=_cmd(None))
     assert any("Панель администратора" in t for kind, t, _ in msg.sent if kind == "answer")
+
+
+async def test_devices_breakdown_lists_real_devices_with_traffic(services, make_active_client, fake_bot):
+    """Регресс: с реальными устройствами экран падал на поле трафика (в бою —
+    AttributeError, в тесте профиль был без устройств)."""
+    from awgbot.bot.handlers import admin as ah
+    from tests.conftest import FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    c = make_active_client("Профиль В")
+    services.add_device(c.id, "Телефон")
+    dev = services.db.list_devices(c.id)[0]
+    services.db.add_traffic(dev.id, 3 * 1024 ** 2, 5 * 1024 ** 2)
+    msg = FakeMessage(text=f"/start traffic-{c.id}", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await ah.admin_start(msg, services, FakeState(), command=_cmd(f"traffic-{c.id}"))
+    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
+    assert sent and "Телефон: 8.0 МБ (↑ 3.0 МБ | ↓ 5.0 МБ)" in sent[-1]
