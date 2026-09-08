@@ -693,8 +693,6 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     head = [f"🖥 Сервер: {dot}"]
     if st.get("uptime"):
         head.append(f"⬆️ Аптайм: {st['uptime']}")
-    if st.get("link_avail") is not None:
-        head.append(f"📡 Доступность линка за сутки: {st['link_avail']:.0f}%")
     if st.get("cpu") is not None or st.get("ram") is not None or st.get("disk") is not None:
         def _p(v):
             return f"{v:.0f}%" if v is not None else "?"
@@ -1665,8 +1663,6 @@ def gateway_panel(st) -> str:
     head = [f"🖥 Сервер: {server}"]
     if st.uptime_seconds is not None:
         head.append(f"⬆️ Аптайм: {timeutil.fmt_remaining_short(int(st.uptime_seconds))}")
-    if st.link_avail is not None:
-        head.append(f"📡 Доступность линка за сутки: {st.link_avail:.0f}%")
     parts += head + ["", f"📡 Линк до {_e(st.server_name or 'ВПС')}: {_gw_link_line(st)}", ""]
 
     pad = " " * 7

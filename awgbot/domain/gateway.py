@@ -78,7 +78,6 @@ class GwStatus:
     month_rx: int = 0                       # потребление линка за календарный месяц
     month_tx: int = 0
     egress_ms: float | None = None          # выход наружу через домашний канал, мс
-    link_avail: float | None = None         # доступность линка за сутки, %
     ts: str = ""                            # когда снят (ISO); пусто — живой
 
     def to_json(self) -> str:
@@ -568,20 +567,14 @@ class GatewayServices(SelfUpdateMixin):
 
     _SNAPSHOT_KEY = "gw_status"
 
-    _LINK_AVAIL_KEY = "gw_link_avail"
-
     def link_ok(self, st: GwStatus) -> bool:
         return bool(st.link_up and st.handshake_age is not None and
                     st.handshake_age <= settings.get_int("app.gateway.handshake_max_age", 300))
 
     def snapshot(self) -> GwStatus:
-        """Живой статус + учёт трафика + доступность линка + сохранить как
-        снимок для панели."""
-        from awgbot.util import availability
+        """Живой статус + учёт трафика + сохранить как снимок для панели."""
         st = self.status()
         st.month_rx, st.month_tx = self._account_traffic(st.rx, st.tx)
-        availability.record(self.db, self._LINK_AVAIL_KEY, self.link_ok(st))
-        st.link_avail = availability.percent(self.db, self._LINK_AVAIL_KEY)
         st.ts = timeutil.to_iso(timeutil.now())
         self.db.set_state(self._SNAPSHOT_KEY, st.to_json())
         return st
