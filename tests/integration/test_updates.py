@@ -256,3 +256,48 @@ def test_hotfix_sorts_between_its_base_and_the_next_release():
     assert p("2.2.3") < p("2.2.3.1") < p("2.2.4")
     assert p("2.2.3") != p("2.2.3.0")
     assert p("2.2.3.9") < p("2.3.0")
+
+
+# ── адресаты релиза: #main_bot / #gw_bot / #all_bots ─────────────────────────
+
+def test_release_audience_parsing():
+    r = updates.Release("v1", (1,), "#gw_bot\n- x", None, None)
+    assert r.audience() == {"gw_bot"} and r.applies_to("gateway") and not r.applies_to("client")
+    both = updates.Release("v1", (1,), "#all_bots", None, None)
+    assert both.applies_to("gateway") and both.applies_to("client")
+    legacy = updates.Release("v1", (1,), "без хэштегов", None, None)
+    assert legacy.applies_to("gateway") and legacy.applies_to("client")
+
+
+def test_gateway_skips_main_only_releases_to_its_own(monkeypatch):
+    """Агент на 1.1.0: 1.2.0 (#main_bot) — не его, 1.3.0 (#gw_bot) — его."""
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "1.1.0")
+    _patch_releases(monkeypatch, [
+        _release_json("v1.1.0", body="#all_bots", digest_hex="a" * 64),
+        _release_json("v1.2.0", body="#main_bot\n- только основной", digest_hex="b" * 64),
+        _release_json("v1.3.0", body="#gw_bot\n- агент", digest_hex="c" * 64),
+        _release_json("v1.4.0", body="#all_bots", digest_hex="d" * 64),
+    ])
+    assert updates.next_release("gateway").tag == "v1.3.0"
+    assert updates.next_release("client").tag == "v1.2.0"
+
+
+def test_role_with_nothing_addressed_is_up_to_date(monkeypatch):
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "1.1.0")
+    _patch_releases(monkeypatch, [
+        _release_json("v1.1.0", body="#all_bots", digest_hex="a" * 64),
+        _release_json("v1.2.0", body="#main_bot", digest_hex="b" * 64),
+    ])
+    assert updates.next_release("gateway") is None
+    assert updates.next_release("client").tag == "v1.2.0"
+
+
+def test_default_role_comes_from_config(monkeypatch):
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "1.1.0")
+    monkeypatch.setattr(cfg, "ROLE", "gateway")
+    _patch_releases(monkeypatch, [
+        _release_json("v1.1.0", body="#all_bots", digest_hex="a" * 64),
+        _release_json("v1.2.0", body="#main_bot", digest_hex="b" * 64),
+        _release_json("v1.2.1", body="#gw_bot", digest_hex="c" * 64),
+    ])
+    assert updates.next_release().tag == "v1.2.1"

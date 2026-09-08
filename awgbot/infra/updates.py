@@ -45,6 +45,15 @@ class UpdateError(Exception):
     """Сетевая/протокольная ошибка обновления (гасится вызывающим)."""
 
 
+# Адресаты релиза — хэштегами в теле (обычно первой строкой): #main_bot —
+# основной бот, #gw_bot — агент шлюза, #all_bots — оба. Релиз без хэштегов
+# (старые) считается общим. Каждая роль обновляется до БЛИЖАЙШЕЙ новее
+# установленной версии со своим хэштегом, пропуская чужие: у ролей разные
+# установленные версии — это норма, поставка едет целиком.
+_AUDIENCE_RE = re.compile(r"#(main_bot|gw_bot|all_bots)\b")
+_ROLE_TAG = {"gateway": "gw_bot"}          # любая другая роль — основной бот
+
+
 @dataclass(frozen=True)
 class Release:
     tag: str                    # как в GitHub, напр. "v1.2.0"
@@ -52,6 +61,16 @@ class Release:
     body: str                   # тело релиза (changelog этой версии, без заголовка)
     asset_url: Optional[str]    # API-URL ассета-поставки (для octet-stream)
     sha256: Optional[str]       # эталонный sha256 из assets[].digest (hex)
+
+    def audience(self) -> frozenset:
+        """Хэштеги адресатов из тела; пусто — релиз общий."""
+        return frozenset(_AUDIENCE_RE.findall(self.body or ""))
+
+    def applies_to(self, role: str) -> bool:
+        tags = self.audience()
+        if not tags:
+            return True
+        return "all_bots" in tags or _ROLE_TAG.get(role, "main_bot") in tags
 
 
 def parse_version(tag: str) -> Optional[tuple]:
@@ -118,24 +137,30 @@ def list_releases() -> list[Release]:
     return out
 
 
-def next_release() -> Optional[Release]:
-    """Следующая ступень за установленной версией, или None.
+def next_release(role: Optional[str] = None) -> Optional[Release]:
+    """Следующая ступень за установленной версией ДЛЯ ЭТОЙ РОЛИ, или None.
+
+    Среди релизов новее установленного — ближайший, адресованный роли (хэштег
+    роли или #all_bots); чужие пропускаются: агент шлюза на 2.4.5 при релизах
+    2.4.6 (#main_bot) и 2.4.7 (#gw_bot) идёт сразу на 2.4.7.
 
     None означает «обновлять не на что / не от чего»:
       • установленная версия НЕ найдена среди тегов релизов → молчим навсегда
         (нерелизная сборка);
-      • установленная — самая свежая → актуальны;
-      • нет релиза строго больше установленной.
+      • нет релиза новее установленной, адресованного этой роли.
     """
     installed = parse_version(config.INSTALLED_VERSION)
     if installed is None:
         return None
+    role = (role if role is not None else config.ROLE) or ""
     releases = list_releases()
     tags = {r.version for r in releases}
     if installed not in tags:            # нас нет в списке релизов → не трогаем
         return None
-    higher = [r for r in releases if r.version > installed]
-    return higher[0] if higher else None      # минимальный больший = следующий
+    for r in releases:                   # отсортированы по возрастанию
+        if r.version > installed and r.applies_to(role):
+            return r
+    return None
 
 
 def download_asset(release: Release) -> bytes:
