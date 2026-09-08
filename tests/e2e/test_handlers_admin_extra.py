@@ -1197,12 +1197,12 @@ async def test_online_link_opens_the_list_of_online_devices(services, make_activ
     on, off = services.db.list_devices(c.id)
     monkeypatch.setattr(timeutil, "handshake_is_online", lambda hs: hs == "on")
     monkeypatch.setattr(services, "online_devices",
-                        lambda: [d for d in services.db.list_devices(c.id) if d.id == on.id])
+                        lambda: [(d, "Профиль Д") for d in services.db.list_devices(c.id) if d.id == on.id])
     msg = FakeMessage(text="/start online", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await ah.admin_start(msg, services, FakeState(), command=_cmd("online"))
     sent = [t for kind, t, _ in msg.sent if kind == "answer"]
     assert sent and "📶 <b>Устройства онлайн (1):</b>" in sent[-1]
-    assert f"📱 iPhone 16 Pro — {texts.plain_ip(on.address)}" in sent[-1] and "Старый ноут" not in sent[-1]
+    assert f"📱 iPhone 16 Pro (Профиль Д) — {texts.plain_ip(on.address)}" in sent[-1] and "Старый ноут" not in sent[-1]
     assert f"<code>{on.address}</code>" in sent[-1], "адрес ушёл голым — Telegram сделает из него ссылку"
 
 
@@ -1214,3 +1214,10 @@ def test_device_line_format_and_plain_ip(services, make_active_client):
     line = texts.device_line(dev)
     assert line.startswith(f"🔴 iPhone 16 Pro ({texts.plain_ip(dev.address)}), последний коннект: ")
     assert texts.plain_ip("10.9.1.2") == "<code>10.9.1.2</code>"
+
+
+def test_list_screens_separate_entries_with_a_blank_line(services, make_active_client):
+    from awgbot.bot import texts
+    a = make_active_client("А", tg_id=1101); b = make_active_client("Б", tg_id=1102)
+    out = texts.traffic_profiles_text([(a, 1, 1), (b, 2, 2)], "bot")
+    assert "\n\n👤 " in out and out.count("\n\n") == 2

@@ -625,13 +625,12 @@ def _traffic_triplet(rx: int, tx: int) -> str:
 def traffic_profiles_text(rows, bot_username: str = "") -> str:
     """Потребление за месяц по профилям; имя профиля — deep-link на разбивку по
     его устройствам."""
-    lines = ["📊 <b>Потребление трафика за текущий месяц</b>", ""]
+    head = "📊 <b>Потребление трафика за текущий месяц</b>"
     if not rows:
-        lines.append("Профилей нет.")
-    for c, rx, tx in rows:
-        lines.append(f"👤 {_deep_link(bot_username, f'traffic-{c.id}', c.name)}: "
-                     f"{_traffic_triplet(rx, tx)}")
-    return "\n".join(lines)
+        return head + _LIST_SEP + "Профилей нет."
+    return head + _LIST_SEP + _LIST_SEP.join(
+        f"👤 {_deep_link(bot_username, f'traffic-{c.id}', c.name)}: {_traffic_triplet(rx, tx)}"
+        for c, rx, tx in rows)
 
 
 def device_emoji(d) -> str:
@@ -639,23 +638,28 @@ def device_emoji(d) -> str:
     return "📲" if d.friend is not None else "📱"
 
 
-def online_devices_text(devs) -> str:
-    lines = [f"📶 <b>Устройства онлайн ({len(devs)}):</b>", ""]
-    if not devs:
-        lines.append("Сейчас никто не подключён.")
-    for d in devs:
-        lines.append(f"{device_emoji(d)} {_e(d.name)} — {plain_ip(d.address)}")
-    return "\n".join(lines)
+# Списки с эмодзи в начале строк: подряд строки визуально налезают друг на
+# друга, а межстрочный интервал Telegram не настраивает. Единственный рычаг —
+# пустая строка между записями.
+_LIST_SEP = "\n\n"
+
+
+def online_devices_text(rows) -> str:
+    head = f"📶 <b>Устройства онлайн ({len(rows)}):</b>"
+    if not rows:
+        return head + _LIST_SEP + "Сейчас никто не подключён."
+    return head + _LIST_SEP + _LIST_SEP.join(
+        f"{device_emoji(d)} {_e(d.name)} ({_e(client_name)}) — {plain_ip(d.address)}"
+        for d, client_name in rows)
 
 
 def traffic_devices_text(client_name: str, rows) -> str:
-    lines = [f"📊 <b>Потребление профиля {_e(client_name)} за текущий месяц:</b>", ""]
+    head = f"📊 <b>Потребление профиля {_e(client_name)} за текущий месяц:</b>"
     if not rows:
-        lines.append("Устройств нет.")
-    for d, rx, tx in rows:
-        # та же метка, что в списке устройств у админа: онлайн, блок, «не ботом»
-        lines.append(f"{device_label(d, for_admin=True)}: {_traffic_triplet(rx, tx)}")
-    return "\n".join(lines)
+        return head + _LIST_SEP + "Устройств нет."
+    # та же метка, что в списке устройств у админа: онлайн, блок, «не ботом»
+    return head + _LIST_SEP + _LIST_SEP.join(
+        f"{device_label(d, for_admin=True)}: {_traffic_triplet(rx, tx)}" for d, rx, tx in rows)
 
 
 def admin_panel(st: dict, routing_ok: bool = None, migration=None,

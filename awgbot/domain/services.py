@@ -307,18 +307,18 @@ class Services(SelfUpdateMixin, MigrationMixin):
 
     # ── онлайн: кто подключён прямо сейчас ───────────────────────────────────
 
-    def online_devices(self) -> list:
-        """Устройства с живым хендшейком — по ВСЕМ профилям, включая админа.
-        Порядок: по имени профиля, внутри — по имени устройства."""
+    def online_devices(self) -> list[tuple]:
+        """[(устройство, имя профиля)] с живым хендшейком — по ВСЕМ профилям,
+        включая админа. Порядок: по имени профиля, внутри — по имени устройства."""
         devs = [d for d in self.db.list_all_devices()
                 if timeutil.handshake_is_online(d.traffic.last_handshake)]
         names = {c.id: c.name for c in self.db.list_clients(include_service=True)}
         devs.sort(key=lambda d: (names.get(d.client_id, "").lower(), d.name.lower()))
-        return devs
+        return [(d, names.get(d.client_id, "")) for d in devs]
 
     def online_client_ids(self) -> set[int]:
         """Профили, у которых онлайн хотя бы одно устройство."""
-        return {d.client_id for d in self.online_devices()}
+        return {d.client_id for d, _ in self.online_devices()}
 
     def traffic_by_profile(self) -> list[tuple]:
         """[(client, rx, tx)] за календарный месяц. Админ первым, остальные по
