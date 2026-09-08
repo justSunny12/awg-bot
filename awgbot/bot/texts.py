@@ -676,7 +676,7 @@ def expiring_text(rows, bot_username: str = "") -> str:
         period = (f"{timeutil.fmt_dt(start)} → " if start else "… → ") + timeutil.fmt_dt(end)
         items.append(f"👤 {_e(c.name)} — осталось {timeutil.fmt_remaining(end)}\n"
                      f"Период подписки: {period}\n"
-                     f"{_deep_link(bot_username, f'extend-{c.id}', 'Продлить?')}")
+                     f"<b>{_deep_link(bot_username, f'extend-{c.id}', 'Продлить?')}</b>")
     return head + _LIST_SEP + _LIST_SEP.join(items)
 
 
