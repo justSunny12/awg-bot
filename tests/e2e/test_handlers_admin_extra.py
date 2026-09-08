@@ -1229,7 +1229,7 @@ async def test_expiring_line_is_conditional_and_linked(services, make_active_cli
     from awgbot.bot import texts
     assert "Истекающие" not in texts.admin_panel({"ok": True}, bot_username="b", expiring=0)
     out = texts.admin_panel({"ok": True}, bot_username="b", expiring=2)
-    assert out.endswith('<a href="https://t.me/b?start=expiring">⏳ Истекающие подписки</a>: 2')
+    assert out.endswith('<b><a href="https://t.me/b?start=expiring">⏳ Истекающие подписки</a>: 2</b>')
 
 
 async def test_expiring_screen_and_extend_returns_to_it_or_menu(services, make_active_client, fake_bot):

@@ -727,7 +727,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         groups.append(mig)
     if expiring:
         label = _deep_link(bot_username, "expiring", "⏳ Истекающие подписки")
-        groups.append(f"{label}: {expiring}")
+        groups.append(f"<b>{label}: {expiring}</b>")
     import socket
     host = socket.gethostname()
     title = "🛠 <b>Панель администратора" + (f" ({_e(host)})" if host else "") + "</b>"
