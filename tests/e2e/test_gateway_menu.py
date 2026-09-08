@@ -159,3 +159,14 @@ async def test_backup_without_key_explains_instead_of_leaking(svc, fake_bot, mon
     await gh.gw_backup_now(cb, GatewayServices(svc.db))
     assert any("BACKUP_KEY" in t for kind, t, _ in msg.sent if kind == "answer")
     assert not any(kind == "answer_document" for kind, *_ in msg.sent)
+
+
+def test_backup_switch_hides_the_rest_in_both_bots(monkeypatch):
+    from awgbot.core import settings
+    monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
+    monkeypatch.setattr(settings, "get_bool", lambda key, default=True: False)
+    assert _labels(kb.gateway_backup_kb()) == [["🔴 Резервное копирование"], ["⬅️ Назад"]]
+    assert _labels(kb.settings_backup())[0] == ["🔴 Резервное копирование"] and len(kb.settings_backup().inline_keyboard) == 2
+    monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
+    rows = _labels(kb.gateway_backup_kb())
+    assert rows[0] == ["🟢 Резервное копирование"] and ["💾 Создать резервную копию"] in rows

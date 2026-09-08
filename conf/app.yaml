@@ -207,6 +207,7 @@ scheduler:
   monitor_minutes: 3               # мониторинг статуса контейнера/сервиса
   monthly_reset_day: 1             # сброс месячного трафика
   monthly_reset_hour: 0            # 00:00 UTC+3
+  backup_enabled: true             # автобэкап; выкл — раздел сворачивается до рубильника
   backup_day: 1                    # автобэкап
   backup_hour: 12                  # 12:00 UTC+3
   watcher_debounce_seconds: 2      # дебаунс inotify на пачку записей приложения

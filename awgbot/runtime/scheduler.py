@@ -117,6 +117,8 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
 
     # ── автобэкап (та же catch-up-схема) ─────────────────────────────────────
     async def job_backup():
+        if not settings.get_bool("app.scheduler.backup_enabled", True):
+            return
         ym = timeutil.now().strftime("%Y-%m")
         last = db.get_state("last_backup")
         if last == ym:
@@ -555,6 +557,8 @@ def setup_gateway_scheduler(services, bot):
         """Автобэкап агента — раз в месяц в заданный день и час, как у основного:
         файлы шифрованные, уходят админу в чат."""
         from aiogram.types import FSInputFile
+        if not settings.get_bool("app.scheduler.backup_enabled", True):
+            return
         db = services.db
         ym = timeutil.now().strftime("%Y-%m")
         last = db.get_state("last_backup")

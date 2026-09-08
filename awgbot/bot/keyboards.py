@@ -1218,13 +1218,19 @@ def settings_mon() -> InlineKeyboardMarkup:
 
 
 def settings_backup() -> InlineKeyboardMarkup:
+    """Рубильник первым; выключен — остальных кнопок нет, как в условной
+    маршрутизации: настраивать выключенное — приглашение к недоумению."""
     s = settings
     kb = InlineKeyboardBuilder()
-    kb.button(text=f"📆 День месяца для автобэкапа: {s.get_int('app.scheduler.backup_day', 1)}",
-              callback_data=SetCB(sec="backup", act="edit", key="app.scheduler.backup_day"))
-    kb.button(text=f"🕘 Время запуска автобэкапа: {s.get_int('app.scheduler.backup_hour', 12)}:00",
-              callback_data=SetCB(sec="backup", act="edit", key="app.scheduler.backup_hour"))
-    kb.button(text="💾 Создать резервную копию", callback_data=SetCB(sec="backup", act="do", key="now"))
+    on = s.get_bool("app.scheduler.backup_enabled", True)
+    kb.button(text=f"{_chk(on)} Резервное копирование",
+              callback_data=SetCB(sec="backup", act="toggle", key="app.scheduler.backup_enabled"))
+    if on:
+        kb.button(text=f"📆 День месяца для автобэкапа: {s.get_int('app.scheduler.backup_day', 1)}",
+                  callback_data=SetCB(sec="backup", act="edit", key="app.scheduler.backup_day"))
+        kb.button(text=f"🕘 Время запуска автобэкапа: {s.get_int('app.scheduler.backup_hour', 12)}:00",
+                  callback_data=SetCB(sec="backup", act="edit", key="app.scheduler.backup_hour"))
+        kb.button(text="💾 Создать резервную копию", callback_data=SetCB(sec="backup", act="do", key="now"))
     kb.adjust(1)
     kb.row(_back())
     return kb.as_markup()
@@ -1403,11 +1409,15 @@ def gateway_mon_kb() -> InlineKeyboardMarkup:
 def gateway_backup_kb() -> InlineKeyboardMarkup:
     s = settings
     kb = InlineKeyboardBuilder()
-    kb.button(text=f"📆 День месяца для автобэкапа: {s.get_int('app.scheduler.backup_day', 1)}",
-              callback_data=GwCB(action="edit", val="app.scheduler.backup_day"))
-    kb.button(text=f"🕘 Время запуска автобэкапа: {s.get_int('app.scheduler.backup_hour', 12)}:00",
-              callback_data=GwCB(action="edit", val="app.scheduler.backup_hour"))
-    kb.button(text="💾 Создать резервную копию", callback_data=GwCB(action="backup!"))
+    on = s.get_bool("app.scheduler.backup_enabled", True)
+    kb.button(text=f"{_chk(on)} Резервное копирование",
+              callback_data=GwCB(action="tgl", val="app.scheduler.backup_enabled"))
+    if on:
+        kb.button(text=f"📆 День месяца для автобэкапа: {s.get_int('app.scheduler.backup_day', 1)}",
+                  callback_data=GwCB(action="edit", val="app.scheduler.backup_day"))
+        kb.button(text=f"🕘 Время запуска автобэкапа: {s.get_int('app.scheduler.backup_hour', 12)}:00",
+                  callback_data=GwCB(action="edit", val="app.scheduler.backup_hour"))
+        kb.button(text="💾 Создать резервную копию", callback_data=GwCB(action="backup!"))
     kb.adjust(1)
     kb.row(_gw_back())
     return kb.as_markup()
