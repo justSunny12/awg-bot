@@ -227,9 +227,11 @@ def device_actions(dev, *, is_admin: bool, back_target: str,
     # 3) Лимит потребления
     kb.button(text="📊 Лимит потребления", callback_data=DeviceCB(action="edit_traffic", device_id=dev.id))
     rows += 1
-    # 4) Передать другу / перевыдать инвайт
+    # 4) Передать другу / перевыдать инвайт. «Передать другу» — ТОЛЬКО владельцу:
+    # у админа на карточке её место занимает «Передать в другой профиль», две
+    # передачи рядом путали, какая куда.
     fstatus = dev.friend_status
-    if is_bot_device and fstatus is None:
+    if is_bot_device and fstatus is None and not is_admin:
         kb.button(text="👤 Передать другу", callback_data=DeviceCB(action="transfer", device_id=dev.id))
         rows += 1
     elif fstatus == "pending":

@@ -618,22 +618,22 @@ def _traffic_triplet(rx: int, tx: int) -> str:
 def traffic_profiles_text(rows, bot_username: str = "") -> str:
     """Потребление за месяц по профилям; имя профиля — deep-link на разбивку по
     его устройствам."""
-    lines = ["📊 <b>Потребление трафика за месяц с разбивкой по профилям:</b>", ""]
+    lines = ["📊 <b>Потребление трафика за текущий месяц</b>", ""]
     if not rows:
         lines.append("Профилей нет.")
     for c, rx, tx in rows:
-        lines.append(f"{_deep_link(bot_username, f'traffic-{c.id}', c.name)}: "
+        lines.append(f"👤 {_deep_link(bot_username, f'traffic-{c.id}', c.name)}: "
                      f"{_traffic_triplet(rx, tx)}")
     return "\n".join(lines)
 
 
 def traffic_devices_text(client_name: str, rows) -> str:
-    lines = [f"📊 <b>Потребление трафика профиля {_e(client_name)} за месяц "
-             f"с разбивкой по устройствам:</b>", ""]
+    lines = [f"📊 <b>Потребление трафика профиля {_e(client_name)} за текущий месяц:</b>", ""]
     if not rows:
         lines.append("Устройств нет.")
     for d, rx, tx in rows:
-        lines.append(f"{_e(d.name)}: {_traffic_triplet(rx, tx)}")
+        # та же метка, что в списке устройств у админа: онлайн, блок, «не ботом»
+        lines.append(f"{device_label(d, for_admin=True)}: {_traffic_triplet(rx, tx)}")
     return "\n".join(lines)
 
 

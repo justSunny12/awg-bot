@@ -1101,8 +1101,8 @@ async def test_start_traffic_opens_profiles_and_removes_the_command(
     await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic"))
     assert any(r[0] == "delete" for r in fake_bot.records), "команда /start traffic не удалена"
     sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and "разбивкой по профилям" in sent[-1]
-    assert f'?start=traffic-{c.id}">Профиль А</a>' in sent[-1]
+    assert sent and "Потребление трафика за текущий месяц" in sent[-1]
+    assert f'👤 <a href="https://t.me/awg_test_bot?start=traffic-{c.id}">Профиль А</a>' in sent[-1]
 
 
 async def test_start_traffic_replaces_the_active_menu_in_place(services, make_active_client, fake_bot):
@@ -1114,7 +1114,7 @@ async def test_start_traffic_replaces_the_active_menu_in_place(services, make_ac
     msg = FakeMessage(text="/start traffic", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic"))
     edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
-    assert edits and "разбивкой по профилям" in edits[-1][2]
+    assert edits and "Потребление трафика за текущий месяц" in edits[-1][2]
     assert not any(kind == "answer" for kind, _, _ in msg.sent), "экран ушёл новым сообщением"
 
 
@@ -1128,12 +1128,12 @@ async def test_start_traffic_client_opens_devices_and_back_leads_to_profiles(
     msg = FakeMessage(text=f"/start traffic-{c.id}", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await ah.admin_start(msg, services, FakeState(), command=_cmd(f"traffic-{c.id}"))
     sent = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
-    assert sent and "профиля Профиль Б за месяц с разбивкой по устройствам" in sent[-1][0]
+    assert sent and "Потребление трафика профиля Профиль Б за текущий месяц:" in sent[-1][0]
     back = [b for row in sent[-1][1].inline_keyboard for b in row]
     assert back and back[0].callback_data == Menu(action="traffic").pack()
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await ah.admin_traffic_profiles(cb, services)
-    assert any("разбивкой по профилям" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    assert any("Потребление трафика за текущий месяц" in t for kind, t, _ in msg.sent if kind == "edit_text")
 
 
 async def test_plain_start_still_purges_and_shows_panel(services, fake_bot):
@@ -1158,4 +1158,17 @@ async def test_devices_breakdown_lists_real_devices_with_traffic(services, make_
     msg = FakeMessage(text=f"/start traffic-{c.id}", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await ah.admin_start(msg, services, FakeState(), command=_cmd(f"traffic-{c.id}"))
     sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and "Телефон: 8.0 МБ (↑ 3.0 МБ | ↓ 5.0 МБ)" in sent[-1]
+    assert sent and "🔴 Телефон: 8.0 МБ (↑ 3.0 МБ | ↓ 5.0 МБ)" in sent[-1]
+
+
+def test_transfer_buttons_are_split_by_role(services, make_active_client):
+    """Владелец: «Передать другу», без «в другой профиль». Админ: наоборот."""
+    from awgbot.bot import keyboards as kbs
+    c = make_active_client("Профиль Г")
+    services.add_device(c.id, "Ноут")
+    dev = services.db.list_devices(c.id)[0]
+    owner = [b.text for row in kbs.device_actions(dev, is_admin=False, back_target="x").inline_keyboard for b in row]
+    admin = [b.text for row in kbs.device_actions(dev, is_admin=True, back_target="x",
+                                                  reassign_label="🔀 Передать в другой профиль").inline_keyboard for b in row]
+    assert "👤 Передать другу" in owner and "🔀 Передать в другой профиль" not in owner
+    assert "🔀 Передать в другой профиль" in admin and "👤 Передать другу" not in admin
