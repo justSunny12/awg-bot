@@ -628,7 +628,7 @@ def traffic_profiles_text(rows, bot_username: str = "") -> str:
 
 
 def traffic_devices_text(client_name: str, rows) -> str:
-    lines = [f"📊 <b>Потребление трафика профиля {_e(client_name)} за текущий месяц:</b>", ""]
+    lines = [f"📊 <b>Потребление профиля {_e(client_name)} за текущий месяц:</b>", ""]
     if not rows:
         lines.append("Устройств нет.")
     for d, rx, tx in rows:

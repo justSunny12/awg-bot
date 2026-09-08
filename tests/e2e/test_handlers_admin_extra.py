@@ -1128,7 +1128,7 @@ async def test_start_traffic_client_opens_devices_and_back_leads_to_profiles(
     msg = FakeMessage(text=f"/start traffic-{c.id}", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await ah.admin_start(msg, services, FakeState(), command=_cmd(f"traffic-{c.id}"))
     sent = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
-    assert sent and "Потребление трафика профиля Профиль Б за текущий месяц:" in sent[-1][0]
+    assert sent and "Потребление профиля Профиль Б за текущий месяц:" in sent[-1][0]
     back = [b for row in sent[-1][1].inline_keyboard for b in row]
     assert back and back[0].callback_data == Menu(action="traffic").pack()
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
