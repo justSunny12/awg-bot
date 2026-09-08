@@ -836,8 +836,15 @@ async def _do_extend(cb, services, client_id, kind, keep: bool, return_to: str |
         await cb.answer(str(e), show_alert=True)
         return
     await send_notifications(cb.bot, result.notifications)
-    done = ("✅ Подписка теперь бессрочная." if result.new_end is None
-            else f"✅ Подписка продлена до {timeutil.fmt_dt(result.new_end)}.")
+    fresh = await call(services.db.get_client, client_id)
+    name = fresh.name if fresh else "?"
+    head = f"✅ Период подписки профиля {name} успешно изменён.\n"
+    if result.new_end is None:
+        done = head + "<b>Подписка теперь бессрочная.</b>"
+    else:
+        start = timeutil.parse_iso(fresh.period_start) if fresh and fresh.period_start else None
+        done = head + (f"Новый период: {timeutil.fmt_dt_sec(start) if start else '—'} - "
+                       f"{timeutil.fmt_dt_sec(result.new_end)}")
     await edit(cb, done, None)
     if return_to == "expiring" and await call(services.expiring_subscriptions):
         await send_menu(cb.message, services, *await _expiring_screen(services))
@@ -944,7 +951,7 @@ async def edit_period_end_apply(message: Message, services, state: FSMContext):
     await send_notifications(message.bot, notes)
     end_txt = timeutil.fmt_dt_sec(e) if e else "бессрочно"
     await message.answer(
-        f"Период подписки профиля {client.name} успешно изменён.\n"
+        f"✅ Период подписки профиля {client.name} успешно изменён.\n"
         f"Новый период: {timeutil.fmt_dt_sec(s)} - {end_txt}",
         reply_markup=kb.reply_hide())
     await _return_panel(message, services)
