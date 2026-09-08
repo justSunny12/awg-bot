@@ -210,7 +210,8 @@ async def main() -> None:
     # фатальны: polling ниже ретраится сам, а fatal-цикл здесь исчерпал бы
     # systemd StartLimit и уложил бота там, где надо было подождать 30 секунд.
     try:
-        await bot.get_me()
+        me = await bot.get_me()
+        services.bot_username = me.username or ""
     except TelegramUnauthorizedError as e:
         raise preflight.PreflightError(
             f"Bot API отверг токен (getMe: {e}). Проверьте BOT_TOKEN в "

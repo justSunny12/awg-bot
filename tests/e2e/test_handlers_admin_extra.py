@@ -1073,3 +1073,60 @@ async def test_bundle_button_opens_intro_screen_before_issuing(services, fake_bo
     datas = [b.callback_data for row in markup.inline_keyboard for b in row]
     assert SetCB(sec="rt", act="do", key="bundle").pack() in datas, "нет «Выпустить»"
     assert SetCB(sec="rt").pack() in datas, "нет «Отмена» назад в раздел"
+
+
+# ── потребление за месяц: ссылки из панели ───────────────────────────────────
+
+def _cmd(args):
+    from aiogram.filters import CommandObject
+    return CommandObject(prefix="/", command="start", args=args)
+
+
+async def test_panel_traffic_line_is_a_deep_link(services, fake_bot):
+    from awgbot.bot import texts
+    out = texts.admin_panel({"ok": True, "traffic_rx": 1, "traffic_tx": 2},
+                            bot_username="awg_test_bot")
+    assert 'href="https://t.me/awg_test_bot?start=traffic">📊 Потребление за месяц (все)</a>' in out
+    assert "Потребление за месяц (все)</a>: 3 Б" in out
+
+
+async def test_start_traffic_opens_profiles_and_removes_the_command(
+        services, make_active_client, fake_bot):
+    from awgbot.bot.handlers import admin as ah
+    from tests.conftest import FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    services.bot_username = "awg_test_bot"
+    c = make_active_client("Профиль А")
+    msg = FakeMessage(text="/start traffic", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic"))
+    assert any(r[0] == "delete" for r in fake_bot.records), "команда /start traffic не удалена"
+    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
+    assert sent and "разбивкой по профилям" in sent[-1]
+    assert f'?start=traffic-{c.id}">Профиль А</a>' in sent[-1]
+
+
+async def test_start_traffic_client_opens_devices_and_back_leads_to_profiles(
+        services, make_active_client, fake_bot):
+    from awgbot.bot.handlers import admin as ah
+    from awgbot.bot.callbacks import Menu
+    from tests.conftest import FakeCallback, FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    c = make_active_client("Профиль Б")
+    msg = FakeMessage(text=f"/start traffic-{c.id}", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await ah.admin_start(msg, services, FakeState(), command=_cmd(f"traffic-{c.id}"))
+    sent = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
+    assert sent and "профиля Профиль Б за месяц с разбивкой по устройствам" in sent[-1][0]
+    back = [b for row in sent[-1][1].inline_keyboard for b in row]
+    assert back and back[0].callback_data == Menu(action="traffic").pack()
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await ah.admin_traffic_profiles(cb, services)
+    assert any("разбивкой по профилям" in t for kind, t, _ in msg.sent if kind == "edit_text")
+
+
+async def test_plain_start_still_purges_and_shows_panel(services, fake_bot):
+    from awgbot.bot.handlers import admin as ah
+    from tests.conftest import FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    msg = FakeMessage(text="/start", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await ah.admin_start(msg, services, FakeState(), command=_cmd(None))
+    assert any("Панель администратора" in t for kind, t, _ in msg.sent if kind == "answer")

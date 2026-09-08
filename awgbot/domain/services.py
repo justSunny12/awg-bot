@@ -299,6 +299,27 @@ def _admin_self_over_text() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class Services(SelfUpdateMixin, MigrationMixin):
+    # username бота — для deep-link'ов в текстах (t.me/<bot>?start=…); main
+    # кладёт его после getMe. Пусто — ссылки не рисуются, текст остаётся текстом.
+    bot_username: str = ""
+
+    # ── потребление за месяц: по профилям и по устройствам ───────────────────
+
+    def traffic_by_profile(self) -> list[tuple]:
+        """[(client, rx, tx)] за календарный месяц. Админ первым, остальные по
+        имени — тот же порядок, что в списке клиентов."""
+        out = []
+        for c in self.db.list_clients(admin_first_tg=config.ADMIN_ID):
+            t = self.db.get_client_traffic(c.id)
+            out.append((c, int(t["rx_month"]), int(t["tx_month"])))
+        return out
+
+    def traffic_by_device(self, client_id: int) -> list[tuple]:
+        """[(device, rx, tx)] за месяц по устройствам профиля — по одной строке
+        на устройство (list_devices сам решает, какую из пары показать)."""
+        return [(d, int(d.rx_month), int(d.tx_month))
+                for d in self.db.list_devices(client_id)]
+
     def __init__(self, db):
         self.db = db
 

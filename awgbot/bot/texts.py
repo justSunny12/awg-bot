@@ -602,7 +602,43 @@ def migration_finished(removed: int, dropped, failed=()) -> str:
         "сервисы перестанут открываться, всё остальное будет работать.")
 
 
-def admin_panel(st: dict, routing_ok: bool = None, migration=None) -> str:
+def _deep_link(bot_username: str, payload: str, label: str) -> str:
+    """Кликабельный текст в сообщении бота — только ссылка. Deep-link на самого
+    себя: нажатие шлёт «/start <payload>», бот команду удаляет и открывает экран.
+    Без username — просто текст."""
+    if not bot_username:
+        return _e(label)
+    return f'<a href="https://t.me/{bot_username}?start={payload}">{_e(label)}</a>'
+
+
+def _traffic_triplet(rx: int, tx: int) -> str:
+    return f"{human_bytes(rx + tx)} (↑ {human_bytes(rx)} | ↓ {human_bytes(tx)})"
+
+
+def traffic_profiles_text(rows, bot_username: str = "") -> str:
+    """Потребление за месяц по профилям; имя профиля — deep-link на разбивку по
+    его устройствам."""
+    lines = ["📊 <b>Потребление трафика за месяц с разбивкой по профилям:</b>", ""]
+    if not rows:
+        lines.append("Профилей нет.")
+    for c, rx, tx in rows:
+        lines.append(f"{_deep_link(bot_username, f'traffic-{c.id}', c.name)}: "
+                     f"{_traffic_triplet(rx, tx)}")
+    return "\n".join(lines)
+
+
+def traffic_devices_text(client_name: str, rows) -> str:
+    lines = [f"📊 <b>Потребление трафика профиля {_e(client_name)} за месяц "
+             f"с разбивкой по устройствам:</b>", ""]
+    if not rows:
+        lines.append("Устройств нет.")
+    for d, rx, tx in rows:
+        lines.append(f"{_e(d.name)}: {_traffic_triplet(rx, tx)}")
+    return "\n".join(lines)
+
+
+def admin_panel(st: dict, routing_ok: bool = None, migration=None,
+                bot_username: str = "") -> str:
     """Шапка админ-меню: компактный статус из кэша (ноль docker exec).
     st — из services.server_status_cached(); метрики железа (CPU/RAM/диск хоста)
     бот снимает локально (/proc, statvfs); показываем с возрастом. None-поля — «…»."""
@@ -637,7 +673,10 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None) -> str:
         groups.append(f"📶 Устройств онлайн: {st['online_count']}")
     if st.get("traffic_rx") is not None:
         rx, tx = int(st["traffic_rx"]), int(st["traffic_tx"])
-        groups.append(f"📊 Потребление за месяц (все): {human_bytes(rx + tx)} "
+        # Подпись — deep-link в разбивку по профилям: единственный способ сделать
+        # текст кликабельным, кнопка под панелью загромождала бы меню.
+        label = _deep_link(bot_username, "traffic", "📊 Потребление за месяц (все)")
+        groups.append(f"{label}: {human_bytes(rx + tx)} "
                       f"(↑ {human_bytes(rx)} | ↓ {human_bytes(tx)})")
     mig = migration_panel_line(migration)
     if mig:

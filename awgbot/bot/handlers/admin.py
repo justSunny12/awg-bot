@@ -17,7 +17,7 @@ from awgbot.bot import texts
 from awgbot.util import timeutil
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -98,7 +98,47 @@ async def _panel_text(services) -> str:
     routing_ok = await call(services.routing_health_for_client, ac) if ac else None
     mig = (await call(services.migration_progress)
            if await call(services.migration_running) else None)
-    return texts.admin_panel(st, routing_ok, migration=mig)
+    return texts.admin_panel(st, routing_ok, migration=mig,
+                             bot_username=getattr(services, "bot_username", ""))
+
+
+# ── потребление за месяц: по профилям → по устройствам ───────────────────────
+
+_TRAFFIC_PAYLOAD = "traffic"
+
+
+async def _traffic_profiles_screen(services):
+    rows = await call(services.traffic_by_profile)
+    return (texts.traffic_profiles_text(rows, getattr(services, "bot_username", "")),
+            kb.traffic_profiles_kb())
+
+
+async def _traffic_devices_screen(services, client_id: int):
+    client = await call(services.db.get_client, client_id)
+    if client is None:
+        return None
+    rows = await call(services.traffic_by_device, client_id)
+    return texts.traffic_devices_text(client.name, rows), kb.traffic_devices_kb()
+
+
+async def _traffic_deep_link(message: Message, services, payload: str) -> bool:
+    """«/start traffic» и «/start traffic-<id>» — переходы по ссылкам из панели.
+    Команду, которую отправил клик, убираем из чата: она служебная."""
+    if payload == _TRAFFIC_PAYLOAD:
+        screen = await _traffic_profiles_screen(services)
+    elif payload.startswith(_TRAFFIC_PAYLOAD + "-") and payload[len(_TRAFFIC_PAYLOAD) + 1:].isdigit():
+        screen = await _traffic_devices_screen(services, int(payload[len(_TRAFFIC_PAYLOAD) + 1:]))
+    else:
+        return False
+    try:
+        await message.delete()
+    except Exception:                                 # noqa: BLE001
+        pass
+    if screen is None:
+        await send_menu(message, services, "Профиль не найден.", kb.traffic_profiles_kb())
+        return True
+    await send_menu(message, services, *screen)
+    return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -106,11 +146,22 @@ async def _panel_text(services) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.message(CommandStart())
-async def admin_start(message: Message, services, state: FSMContext):
+async def admin_start(message: Message, services, state: FSMContext,
+                      command: CommandObject | None = None):
     await state.clear()
+    payload = ((command.args if command is not None else "") or "").strip()
+    if payload and await _traffic_deep_link(message, services, payload):
+        return
     # /start — «начать заново»: все прошлые меню из чата долой, не только кнопки
     await purge_menus(message.bot, services, message.chat.id)
     await _return_panel(message, services)
+
+
+@router.callback_query(Menu.filter(F.action == "traffic"))
+async def admin_traffic_profiles(cb: CallbackQuery, services):
+    """«Назад» из разбивки по устройствам — в разбивку по профилям."""
+    await edit_nav(cb, services, *await _traffic_profiles_screen(services))
+    await cb.answer()
 
 
 @router.callback_query(Menu.filter(F.action == "main"))

@@ -1031,6 +1031,18 @@ def _chk(on: bool) -> str:
     return "🟢" if on else "🔴"
 
 
+def traffic_profiles_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="\u2b05\ufe0f В меню", callback_data=Menu(action="main"))
+    return kb.as_markup()
+
+
+def traffic_devices_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="\u2b05\ufe0f Назад", callback_data=Menu(action="traffic"))
+    return kb.as_markup()
+
+
 def settings_root() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="🔔 Уведомления", callback_data=SetCB(sec="notify"))
