@@ -149,10 +149,17 @@ def device_label(dev, *, for_admin: bool = False) -> str:
     return f"{marker}{dot} {name}"
 
 
+def plain_ip(addr: str) -> str:
+    """Адрес как ТЕКСТ, а не автоссылка: Telegram линкует всё, похожее на
+    IP. Невидимый соединитель (U+2060) после точек ломает распознавание, а на
+    глаз строка та же."""
+    return _e(str(addr or "")).replace(".", ".\u2060")
+
+
 def device_line(dev) -> str:
-    """Строка устройства для списка: индикатор, имя, IP, последний коннект."""
+    """Строка устройства для списка: индикатор, имя (IP), последний коннект."""
     last = timeutil.fmt_handshake(dev.last_handshake)
-    return f"{device_label(dev)} — {dev.address}, последний коннект: {last}"
+    return f"{device_label(dev)} ({plain_ip(dev.address)}), последний коннект: {last}"
 
 
 def device_card_text(dev, *, for_admin: bool) -> str:
@@ -627,6 +634,20 @@ def traffic_profiles_text(rows, bot_username: str = "") -> str:
     return "\n".join(lines)
 
 
+def device_emoji(d) -> str:
+    """Иконка типа устройства — та же, что в списках: 📲 передано другу, 📱 своё."""
+    return "📲" if d.friend is not None else "📱"
+
+
+def online_devices_text(devs) -> str:
+    lines = [f"📶 <b>Устройства онлайн ({len(devs)}):</b>", ""]
+    if not devs:
+        lines.append("Сейчас никто не подключён.")
+    for d in devs:
+        lines.append(f"{device_emoji(d)} {_e(d.name)} — {plain_ip(d.address)}")
+    return "\n".join(lines)
+
+
 def traffic_devices_text(client_name: str, rows) -> str:
     lines = [f"📊 <b>Потребление профиля {_e(client_name)} за текущий месяц:</b>", ""]
     if not rows:
@@ -670,7 +691,8 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     if routing_ok is not None:
         groups.append(routing_status_line(routing_ok))
     if st.get("online_count") is not None:
-        groups.append(f"📶 Устройств онлайн: {st['online_count']}")
+        label = _deep_link(bot_username, "online", "📶 Устройств онлайн")
+        groups.append(f"{label}: {st['online_count']}")
     if st.get("traffic_rx") is not None:
         rx, tx = int(st["traffic_rx"]), int(st["traffic_tx"])
         # Подпись — deep-link в разбивку по профилям: единственный способ сделать

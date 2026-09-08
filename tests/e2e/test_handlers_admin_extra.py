@@ -218,12 +218,12 @@ def test_target_picker_marks_selection_and_offers_bulk():
     assert labels_none[0].endswith("Отметить все")
     # проверяем строки профилей, а не кнопку массового действия — она сама
     # начинается с галочки и под фильтр «отмечено» попала бы ложно
-    assert "☑️ К1" in labels_none and "☑️ К2" in labels_none
-    assert "✅ К1" not in labels_none
+    assert "☑️ К1 🔴" in labels_none and "☑️ К2 🔴" in labels_none
+    assert not any(l.startswith("✅ К1") for l in labels_none)
 
     some = kb.broadcast_targets(clients, {1})
     labels = _btn_texts(some)
-    assert "✅ К1" in labels and "☑️ К2" in labels
+    assert "✅ К1 🔴" in labels and "☑️ К2 🔴" in labels
     assert labels[0].endswith("Отметить все")        # отмечено не всё
 
     every = kb.broadcast_targets(clients, {1, 2})
@@ -1172,3 +1172,45 @@ def test_transfer_buttons_are_split_by_role(services, make_active_client):
                                                   reassign_label="🔀 Передать в другой профиль").inline_keyboard for b in row]
     assert "👤 Передать другу" in owner and "🔀 Передать в другой профиль" not in owner
     assert "🔀 Передать в другой профиль" in admin and "👤 Передать другу" not in admin
+
+
+# ── онлайн: статус в списке получателей и экран устройств онлайн ─────────────
+
+def test_broadcast_targets_show_status_and_put_online_first(services, make_active_client):
+    from awgbot.bot import keyboards as kbs
+    a = make_active_client("Анна", tg_id=1001); b = make_active_client("Борис", tg_id=1002)
+    labels = [btn.text for row in kbs.broadcast_targets([a, b], set(), {b.id}).inline_keyboard
+              for btn in row if btn.text.startswith(("✅", "☑️")) and "все" not in btn.text]
+    assert labels == ["☑️ Борис 🟢", "☑️ Анна 🔴"]
+
+
+async def test_online_link_opens_the_list_of_online_devices(services, make_active_client, fake_bot, monkeypatch):
+    from awgbot.bot import texts
+    from awgbot.bot.handlers import admin as ah
+    from tests.conftest import FakeMessage, FakeState
+    from awgbot.util import timeutil
+    import awgbot.core.config as cfg
+    out = texts.admin_panel({"ok": True, "online_count": 2}, bot_username="awg_test_bot")
+    assert 'href="https://t.me/awg_test_bot?start=online">📶 Устройств онлайн</a>: 2' in out
+    c = make_active_client("Профиль Д")
+    services.add_device(c.id, "iPhone 16 Pro"); services.add_device(c.id, "Старый ноут")
+    on, off = services.db.list_devices(c.id)
+    monkeypatch.setattr(timeutil, "handshake_is_online", lambda hs: hs == "on")
+    monkeypatch.setattr(services, "online_devices",
+                        lambda: [d for d in services.db.list_devices(c.id) if d.id == on.id])
+    msg = FakeMessage(text="/start online", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await ah.admin_start(msg, services, FakeState(), command=_cmd("online"))
+    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
+    assert sent and "📶 <b>Устройства онлайн (1):</b>" in sent[-1]
+    assert f"📱 iPhone 16 Pro — {texts.plain_ip(on.address)}" in sent[-1] and "Старый ноут" not in sent[-1]
+    assert on.address not in sent[-1], "адрес ушёл голым — Telegram сделает из него ссылку"
+
+
+def test_device_line_format_and_plain_ip(services, make_active_client):
+    from awgbot.bot import texts
+    c = make_active_client("Профиль Е")
+    services.add_device(c.id, "iPhone 16 Pro")
+    dev = services.db.list_devices(c.id)[0]
+    line = texts.device_line(dev)
+    assert line.startswith(f"🔴 iPhone 16 Pro ({texts.plain_ip(dev.address)}), последний коннект: ")
+    assert texts.plain_ip("10.9.1.2") == "10.\u20609.\u20601.\u20602"

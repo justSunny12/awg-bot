@@ -367,7 +367,7 @@ def admin_main(unassigned_count: int, self_has_devices: bool = False,
     return kb.as_markup()
 
 
-def broadcast_targets(clients, selected) -> InlineKeyboardMarkup:
+def broadcast_targets(clients, selected, online_ids=frozenset()) -> InlineKeyboardMarkup:
     """Выбор адресатов: отметки на профилях, «отметить все», «Далее», «Отмена».
 
     Мультивыбор, а не по одному профилю за раз: объявление обычно касается
@@ -383,9 +383,12 @@ def broadcast_targets(clients, selected) -> InlineKeyboardMarkup:
     kb.button(text="☑️ Снять все" if all_on else "✅ Отметить все",
               callback_data=BroadcastCB(action="all"))
     rows = [1]
-    for c in clients:
+    # Онлайн-профили сверху: объявление чаще адресовано тем, кто сейчас на
+    # связи. Статус — справа от имени. Внутри групп порядок исходный.
+    for c in sorted(clients, key=lambda c: c.id not in online_ids):
         mark = "✅" if c.id in selected else "☑️"
-        kb.button(text=f"{mark} {c.name}",
+        dot = "🟢" if c.id in online_ids else "🔴"
+        kb.button(text=f"{mark} {c.name} {dot}",
                   callback_data=BroadcastCB(action="tgl", ref=c.id))
         rows.append(1)
     kb.button(text="\u2b05\ufe0f Отмена", callback_data=BroadcastCB(action="cancel"))
@@ -1034,6 +1037,12 @@ def _chk(on: bool) -> str:
 
 
 def traffic_profiles_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="\u2b05\ufe0f В меню", callback_data=Menu(action="main"))
+    return kb.as_markup()
+
+
+def online_devices_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="\u2b05\ufe0f В меню", callback_data=Menu(action="main"))
     return kb.as_markup()

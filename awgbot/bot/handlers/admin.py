@@ -123,10 +123,18 @@ async def _traffic_devices_screen(services, client_id: int):
     return texts.traffic_devices_text(client.name, rows), kb.traffic_devices_kb()
 
 
+async def _online_screen(services):
+    devs = await call(services.online_devices)
+    return texts.online_devices_text(devs), kb.online_devices_kb()
+
+
 async def _traffic_deep_link(message: Message, services, payload: str) -> bool:
-    """«/start traffic» и «/start traffic-<id>» — переходы по ссылкам из панели.
-    Команду, которую отправил клик, убираем из чата: она служебная."""
-    if payload == _TRAFFIC_PAYLOAD:
+    """«/start traffic», «/start traffic-<id>», «/start online» — переходы по
+    ссылкам из панели. Команду, которую отправил клик, убираем из чата: она
+    служебная."""
+    if payload == "online":
+        screen = await _online_screen(services)
+    elif payload == _TRAFFIC_PAYLOAD:
         screen = await _traffic_profiles_screen(services)
     elif payload.startswith(_TRAFFIC_PAYLOAD + "-") and payload[len(_TRAFFIC_PAYLOAD) + 1:].isdigit():
         screen = await _traffic_devices_screen(services, int(payload[len(_TRAFFIC_PAYLOAD) + 1:]))
@@ -1624,7 +1632,8 @@ async def _bc_clients(services):
 async def _bc_show_targets(cb: CallbackQuery, state: FSMContext, services):
     clients = await _bc_clients(services)
     selected = set((await state.get_data()).get("targets") or ())
-    await edit(cb, texts.BROADCAST_TARGETS, kb.broadcast_targets(clients, selected))
+    online = await call(services.online_client_ids)
+    await edit(cb, texts.BROADCAST_TARGETS, kb.broadcast_targets(clients, selected, online))
 
 
 @router.callback_query(BroadcastCB.filter(F.action == "pick"))
