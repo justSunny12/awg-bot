@@ -1267,8 +1267,8 @@ async def test_expiring_screen_and_extend_returns_to_it_or_menu(services, make_a
     from awgbot.bot.callbacks import ConfirmCB
     await ah.extend_keep_answer(cb, ConfirmCB(action="keep", ref=c.id, yes=False), services, state)
     edits = [t for kind, t, _ in msg.sent if kind == "edit_text"]
-    assert any(t.startswith("✅ Период подписки профиля Скоро успешно изменён.\nНовый период: ")
+    assert any(t.startswith("✅ Подписка профиля Скоро продлена на 1 год, до ")
                for t in edits), "итог не остался инфосообщением"
     answers = [t for kind, t, _ in msg.sent if kind == "answer"]
     assert "Панель администратора" in answers[-1], "после продления не вернулись в меню (список опустел)"
-    assert "успешно изменён" not in answers[-1], "меню дублирует инфосообщение"
+    assert "продлена на" not in answers[-1], "меню дублирует инфосообщение"

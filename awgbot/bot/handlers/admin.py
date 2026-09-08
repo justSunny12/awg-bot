@@ -825,6 +825,9 @@ async def extend_keep_answer(cb: CallbackQuery, callback_data: ConfirmCB, servic
     await cb.answer()
 
 
+_PERIOD_ACC = {"day": "день", "week": "неделю", "month": "месяц", "year": "год"}
+
+
 async def _do_extend(cb, services, client_id, kind, keep: bool, return_to: str | None = None):
     """Итог продления — ИНФОСООБЩЕНИЕМ на месте диалога (остаётся в чате), меню
     следом со своим обычным текстом: раньше текст итога садился в само меню и
@@ -838,13 +841,12 @@ async def _do_extend(cb, services, client_id, kind, keep: bool, return_to: str |
     await send_notifications(cb.bot, result.notifications)
     fresh = await call(services.db.get_client, client_id)
     name = fresh.name if fresh else "?"
-    head = f"✅ Период подписки профиля {name} успешно изменён.\n"
     if result.new_end is None:
-        done = head + "<b>Подписка теперь бессрочная.</b>"
+        done = (f"✅ Период подписки профиля {name} успешно изменён.\n"
+                "<b>Подписка теперь бессрочная.</b>")
     else:
-        start = timeutil.parse_iso(fresh.period_start) if fresh and fresh.period_start else None
-        done = head + (f"Новый период: {timeutil.fmt_dt_sec(start) if start else '—'} - "
-                       f"{timeutil.fmt_dt_sec(result.new_end)}")
+        done = (f"✅ Подписка профиля {name} продлена на 1 {_PERIOD_ACC.get(kind, kind)}, "
+                f"до {timeutil.fmt_dt(result.new_end)}")
     await edit(cb, done, None)
     if return_to == "expiring" and await call(services.expiring_subscriptions):
         await send_menu(cb.message, services, *await _expiring_screen(services))
