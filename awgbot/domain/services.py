@@ -14,6 +14,8 @@ services.py — бизнес-логика: склейка db + awg + configgen.
 
 from __future__ import annotations
 
+import re
+
 import datetime
 import hashlib
 import logging
@@ -1888,24 +1890,35 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         plain = self._bundle_with_mail(plain)
         return bundlecrypt.encrypt(plain, priv), "awg-gw-bundle.enc"
 
-    _MAIL_MARK = b"#__GW_SETUP_BELOW__"
+    # Маркер контракта как ОТДЕЛЬНАЯ СТРОКА. Тот же текст встречается в бандле и
+    # внутри sed-выражения, которым он вырезает скрипт обвязки; вставка туда
+    # ломала sed, и на шлюз ложился пустой скрипт (наступили: 09.09.2026).
+    _MAIL_MARK_LINE = re.compile(rb"^#__GW_SETUP_BELOW__$", re.M)
 
     def _bundle_with_mail(self, plain: bytes) -> bytes:
-        """Настройки почты — в бандл, чтобы не вводить их дважды: одной строкой
-        MAIL_B64 (JSON в base64) перед маркером контракта. Бандл шифрован ключом
-        линка, пароль внутри защищён так же, как ключ линка. Почты нет — строка
-        не добавляется, агент оставляет свои настройки как есть."""
-        acc = self.email_account()
-        if acc is None or self._MAIL_MARK not in plain:
+        """Настройки почты и парольная фраза бэкапов — в бандл, чтобы не вводить
+        их дважды: строки MAIL_B64 / BACKUP_B64 (JSON в base64) перед строкой
+        маркера контракта. Бандл шифрован ключом линка. Чего нет на ВПС — не
+        добавляется, агент оставляет своё как есть."""
+        m = self._MAIL_MARK_LINE.search(plain)
+        if m is None:
             return plain
         import base64
         import json
-        payload = json.dumps({"login": acc.login, "password": acc.password,
-                              "imap_host": acc.imap_host, "imap_port": acc.imap_port,
-                              "smtp_host": acc.smtp_host, "smtp_port": acc.smtp_port},
-                             ensure_ascii=False).encode()
-        line = b'MAIL_B64="' + base64.b64encode(payload) + b'"\n'
-        return plain.replace(self._MAIL_MARK, line + self._MAIL_MARK, 1)
+        lines = b""
+        acc = self.email_account()
+        if acc is not None:
+            payload = json.dumps({"login": acc.login, "password": acc.password,
+                                  "imap_host": acc.imap_host, "imap_port": acc.imap_port,
+                                  "smtp_host": acc.smtp_host, "smtp_port": acc.smtp_port},
+                                 ensure_ascii=False).encode()
+            lines += b'MAIL_B64="' + base64.b64encode(payload) + b'"\n'
+        if self.backup_encryption_mode() == "passphrase":
+            phrase = self.db.get_state(self._BK_PASSPHRASE_KEY) or ""
+            lines += b'BACKUP_B64="' + base64.b64encode(json.dumps({"passphrase": phrase}).encode()) + b'"\n'
+        if not lines:
+            return plain
+        return plain[:m.start()] + lines + plain[m.start():]
 
     @staticmethod
     def _rt_effect_line() -> str:

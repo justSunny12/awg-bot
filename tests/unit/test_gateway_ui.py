@@ -117,3 +117,29 @@ def test_root_block_device_strips_partition(tmp_path):
 def test_smart_is_not_asked_on_sd_cards(monkeypatch):
     monkeypatch.setattr(hostmetrics, "root_block_device", lambda: "/dev/mmcblk0")
     assert hostmetrics.read_smart_health() is None
+
+
+def test_bundle_passphrase_is_applied_only_when_allowed(svc, monkeypatch, tmp_path):
+    """Фраза из бандла: без своей — ставится; со своей другой — только по
+    подтверждению (overwrite_passphrase)."""
+    import base64, json, os, tempfile
+    from awgbot.util import bundlecrypt as bc
+    from awgbot.core import config
+    priv = "cOJ+yJKfw9Yq9HLm2Dq5PZv2xU0a5s5D3q1t0m2Xn1A="
+    conf = tmp_path / "awg0.conf"; conf.write_text(f"[Interface]\nPrivateKey = {priv}\n")
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
+    b64 = base64.b64encode(json.dumps({"passphrase": "phrase-from-vps"}).encode()).decode()
+    plain = (f"#!/bin/sh\nBACKUP_B64=\"{b64}\"\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n").encode()
+    blob = bc.encrypt(plain, bc.read_privkey(conf.read_text()))
+    monkeypatch.setattr(gw, "_run", lambda argv, timeout=10: type("P", (), {"returncode": 0, "stdout": b"ok", "stderr": b""})())
+    monkeypatch.setattr(tempfile, "mkstemp", lambda **kw: (
+        os.open(str(tmp_path / "b.sh"), os.O_RDWR | os.O_CREAT), str(tmp_path / "b.sh")))
+    info = svc.inspect_bundle(blob)
+    assert info["ok"] and info["passphrase"] and not info["passphrase_differs"]
+    assert svc.apply_bundle(blob)[0] and svc.backup_enc_kwargs() == {"passphrase": "phrase-from-vps"}
+    svc.backup_set_passphrase("my-own-phrase")
+    assert svc.inspect_bundle(blob)["passphrase_differs"]
+    svc.apply_bundle(blob, overwrite_passphrase=False)
+    assert svc.backup_enc_kwargs() == {"passphrase": "my-own-phrase"}
+    svc.apply_bundle(blob, overwrite_passphrase=True)
+    assert svc.backup_enc_kwargs() == {"passphrase": "phrase-from-vps"}

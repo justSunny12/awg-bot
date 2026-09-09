@@ -28,7 +28,7 @@ class _Svc(GatewayServices):
         self.restarted += 1
         return True, "поднят"
 
-    def apply_bundle(self, blob):
+    def apply_bundle(self, blob, overwrite_passphrase=False):
         self.applied.append(blob)
         return True, "Готово"
 
@@ -85,7 +85,7 @@ async def test_our_bundle_waits_for_confirmation_then_applies(svc):
     assert msg.sent[-1][2] is not None, "нет кнопок подтверждения"
 
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
-    await gh.gw_bundle_apply(cb, svc, state)
+    await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)
     assert svc.applied == [blob]
     assert (await state.get_data()) == {}, "бандл остался в памяти после применения"
 

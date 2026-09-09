@@ -1065,8 +1065,8 @@ def traffic_devices_kb() -> InlineKeyboardMarkup:
 
 def settings_root() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="🔔 Уведомления", callback_data=SetCB(sec="notify"))
     kb.button(text="✉️ E-mail", callback_data=SetCB(sec="email"))
+    kb.button(text="🔔 Уведомления", callback_data=SetCB(sec="notify"))
     kb.button(text="💳 Параметры подписок", callback_data=SetCB(sec="subs"))
     if config.ROUTING_ENABLED:
         kb.button(text="🇷🇺 Условная маршрутизация", callback_data=SetCB(sec="rt"))
@@ -1414,8 +1414,8 @@ def gateway_settings_kb() -> InlineKeyboardMarkup:
     """Тот же порядок, что у основного бота; чего у шлюза нет (подписки,
     маршрутизация) — нет и здесь."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="🔔 Уведомления", callback_data=GwCB(action="notify"))
     kb.button(text="✉️ E-mail", callback_data=GwCB(action="email"))
+    kb.button(text="🔔 Уведомления", callback_data=GwCB(action="notify"))
     kb.button(text="📊 Мониторинг", callback_data=GwCB(action="mon"))
     kb.button(text="💾 Резервное копирование", callback_data=GwCB(action="backup"))
     kb.button(text="🔄 Обслуживание", callback_data=GwCB(action="maint"))
@@ -1601,6 +1601,14 @@ def gateway_bundle_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="⬅️ Отмена", callback_data=GwCB(action="drop"))
     kb.button(text="📦 Применить бандл", callback_data=GwCB(action="apply!"))
+    kb.adjust(2)
+    return kb.as_markup()
+
+
+def gateway_bundle_passphrase_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="Оставить свою", callback_data=GwCB(action="apply_keep!"))
+    kb.button(text="🔐 Перезаписать", callback_data=GwCB(action="apply_ow!"))
     kb.adjust(2)
     return kb.as_markup()
 

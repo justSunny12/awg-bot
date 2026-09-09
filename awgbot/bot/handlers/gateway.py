@@ -454,15 +454,27 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
     await message.answer(texts.GW_BUNDLE_RECEIVED, reply_markup=kb.gateway_bundle_kb())
 
 
-@router.callback_query(GwCB.filter(F.action == "apply!"))
-async def gw_bundle_apply(cb: CallbackQuery, services, state: FSMContext):
+@router.callback_query(GwCB.filter(F.action.in_({"apply!", "apply_ow!", "apply_keep!"})))
+async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
+    """apply! — первый шаг: если в файле фраза бэкапов, отличная от местной,
+    сначала вопрос; apply_ow!/apply_keep! — ответ на него. Файл до решения
+    остаётся в памяти диалога."""
     raw = (await state.get_data()).get("bundle")
-    await state.clear()
     if not raw:
+        await state.clear()
         await cb.answer("Файла в памяти нет — пришли его заново.", show_alert=True)
         return
+    blob = base64.b64decode(raw)
+    if callback_data.action == "apply!":
+        info = await call(services.inspect_bundle, blob)
+        if info.get("ok") and info.get("passphrase_differs"):
+            await edit_nav(cb, services, texts.GW_BUNDLE_PASSPHRASE_QUESTION,
+                           kb.gateway_bundle_passphrase_kb())
+            await cb.answer()
+            return
+    await state.clear()
     await cb.answer("Применяю…")
-    ok, detail = await call(services.apply_bundle, base64.b64decode(raw))
+    ok, detail = await call(services.apply_bundle, blob, callback_data.action == "apply_ow!")
     await edit_nav(cb, services, texts.gateway_op_result("Конфигурация шлюза", ok, detail), None)
     await _panel(cb.message, services, fresh=True)
 

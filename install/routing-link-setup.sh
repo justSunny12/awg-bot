@@ -176,6 +176,9 @@ DEST="/opt/awg-gw"
 mkdir -p "$DEST"
 
 sed -n '/^#__GW_SETUP_BELOW__$/,$p' "$0" | tail -n +2 > "$DEST/routing-gw-setup.sh"
+# Конвейер прячет отказ sed за кодом tail: пустой скрипт обвязки затем
+# исполнился бы «успешно», а юнит реассерта остался бы с пустым файлом.
+[ -s "$DEST/routing-gw-setup.sh" ] || { echo "бандл повреждён: скрипт обвязки не извлёкся"; exit 1; }
 chmod 0755 "$DEST/routing-gw-setup.sh"
 
 BODYEOF

@@ -163,3 +163,27 @@ def test_bundle_carries_the_vps_hostname(bundle):
     import re
     assert re.search(r'^SERVER_NAME="[A-Za-z0-9._-]{1,64}"$', bundle, re.M), \
         "в бандле нет SERVER_NAME"
+
+
+def test_mail_line_lands_before_the_marker_line_not_inside_sed(bundle, services, monkeypatch, tmp_path):
+    """Регресс 09.09.2026: вставка попадала в sed-выражение с тем же маркером,
+    sed ломался, на шлюз ложился пустой скрипт обвязки."""
+    import re, subprocess
+    from awgbot.core import settings
+    store = {}
+    monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v))
+    monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
+    monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
+    monkeypatch.setattr(settings, "get_bool", lambda k, d=True: bool(store.get(k, d)))
+    services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
+    services.backup_set_passphrase("correct horse battery")
+    out = services._bundle_with_mail(bundle.encode())
+    text = out.decode()
+    assert "sed -n '/^#__GW_SETUP_BELOW__$/,$p'" in text, "sed-выражение повреждено"
+    m = re.search(r"^MAIL_B64=.*\n^BACKUP_B64=.*\n#__GW_SETUP_BELOW__$", text, re.M)
+    assert m, "строки почты и фразы должны стоять прямо перед строкой-маркером"
+    f = tmp_path / "b.sh"; f.write_text(text)
+    extracted = subprocess.run(["sh", "-c", f"sed -n '/^#__GW_SETUP_BELOW__$/,$p' {f} | tail -n +2"],
+                               capture_output=True, text=True).stdout
+    assert extracted.strip() and "MAIL_B64" not in extracted, "скрипт обвязки извлекается целиком и без наших строк"
+    assert '[ -s "$DEST/routing-gw-setup.sh" ]' in text, "бандл обязан отказать на пустом скрипте"

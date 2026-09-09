@@ -40,7 +40,7 @@ def _labels(markup):
 def test_main_menu_layout():
     assert _labels(kb.gateway_panel_kb()) == [["🔄 Обновить", "🌡 Монитор здоровья"],
                                               ["🔧 Мастер восстановления"], ["⚙️ Настройки"]]
-    assert _labels(kb.gateway_settings_kb()) == [["🔔 Уведомления"], ["✉️ E-mail"], ["📊 Мониторинг"],
+    assert _labels(kb.gateway_settings_kb()) == [["✉️ E-mail"], ["🔔 Уведомления"], ["📊 Мониторинг"],
                                                  ["💾 Резервное копирование"], ["🔄 Обслуживание"],
                                                  ["⬆️ Обновления бота"], ["⬅️ В меню"]]
     assert _labels(kb.gateway_maint_kb()) == [["🔁 Перезапустить AWG"], ["🔁 Перезапустить бота"],

@@ -390,7 +390,37 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         ok = proc.returncode == 0
         return ok, "" if ok else proc.stderr.decode(errors="replace").strip()[-300:]
 
-    def apply_bundle(self, blob: bytes) -> tuple[bool, str]:
+    _BACKUP_B64_RE = re.compile(r'^BACKUP_B64="([A-Za-z0-9+/=]+)"', re.M)
+
+    def _bundle_plain(self, blob: bytes) -> str:
+        from awgbot.util import bundlecrypt
+        priv = bundlecrypt.read_privkey(pathlib_read(config.GW_LINK_CONF))
+        return bundlecrypt.decrypt(blob, priv).decode(errors="replace")
+
+    def _bundle_passphrase(self, text: str) -> str:
+        m = self._BACKUP_B64_RE.search(text)
+        if not m:
+            return ""
+        import base64
+        try:
+            return str(json.loads(base64.b64decode(m.group(1)).decode()).get("passphrase") or "")
+        except Exception:                                 # noqa: BLE001
+            return ""
+
+    def inspect_bundle(self, blob: bytes) -> dict:
+        """Что везёт бандл, до применения: почту, фразу бэкапов, и отличается ли
+        фраза от той, что уже задана здесь (тогда перезапись — с вопроса)."""
+        try:
+            text = self._bundle_plain(blob)
+        except (OSError, ValueError) as e:
+            return {"ok": False, "error": str(e)}
+        phrase = self._bundle_passphrase(text)
+        mine = self.db.get_state(self._BK_PASSPHRASE_KEY) or ""
+        return {"ok": True, "mail": bool(re.search(r'^MAIL_B64="', text, re.M)),
+                "passphrase": bool(phrase),
+                "passphrase_differs": bool(phrase and mine and phrase != mine)}
+
+    def apply_bundle(self, blob: bytes, overwrite_passphrase: bool = False) -> tuple[bool, str]:
         """Принять шифрованный бандл из чата: расшифровать ключом, производным от
         ТЕКУЩЕГО приватного ключа линка, проверить, что это наш бандл, применить.
 
@@ -413,6 +443,12 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         if m:
             self.db.set_state(self._SERVER_NAME_KEY, m.group(1))
         self._apply_bundle_mail(text)
+        phrase = self._bundle_passphrase(text)
+        if phrase and (overwrite_passphrase or not self.backup_encryption_enabled()):
+            try:
+                self.backup_set_passphrase(phrase)
+            except ValueError as e:
+                log.warning("gateway: фраза из бандла не принята: %s", e)
         fd, path = tempfile.mkstemp(prefix="awg-gw-bundle-", suffix=".sh", dir="/root")
         try:
             with os.fdopen(fd, "wb") as f:
