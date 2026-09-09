@@ -167,4 +167,4 @@ def test_gateway_backup_is_one_encrypted_archive_with_all_confs(svc, monkeypatch
     raw = secrets_util.decrypt(open(paths[0], "rb").read(), passphrase="correct horse battery")
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
         names = sorted(m.name for m in tar.getmembers() if m.isfile())
-    assert names == ["awg/awg0.conf", "awg/awglink.conf", "state/conf/app.yaml"]
+    assert names == ["awg/awg0.conf", "awg/awglink.conf", "state/backup-meta.json", "state/conf/app.yaml"]

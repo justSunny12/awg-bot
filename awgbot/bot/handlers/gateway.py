@@ -439,6 +439,10 @@ async def gw_hide(cb: CallbackQuery):
 @router.message(F.document)
 async def gw_bundle_document(message: Message, services, state: FSMContext):
     doc = message.document
+    from awgbot.bot.handlers import restore as rs
+    if rs.looks_like_backup(doc):                     # резервная копия, не конфигурация
+        await rs.offer_restore(message, services, state, gateway=True)
+        return
     if doc.file_size and doc.file_size > _BUNDLE_MAX_BYTES:
         await message.answer(texts.GW_BUNDLE_NOT_OURS)
         return
@@ -477,6 +481,15 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
     ok, detail = await call(services.apply_bundle, blob, callback_data.action == "apply_ow!")
     await edit_nav(cb, services, texts.gateway_op_result("Конфигурация шлюза", ok, detail), None)
     await _panel(cb.message, services, fresh=True)
+
+
+@router.callback_query(GwCB.filter(F.action.in_({"restore!", "restore_drop"})))
+async def gw_restore_action(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
+    from awgbot.bot.handlers import restore as rs
+    if callback_data.action == "restore!":
+        await rs.run_restore(cb, services, state)
+    else:
+        await rs.drop_restore(cb, state)
 
 
 @router.callback_query(GwCB.filter(F.action == "drop"))

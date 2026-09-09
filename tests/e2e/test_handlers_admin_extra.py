@@ -1456,3 +1456,60 @@ async def test_backup_passphrase_flow_deletes_messages_and_requires_match(servic
     assert len(deletes) >= 4, "сообщения с фразой должны удаляться"
     assert not any("correct horse" in t for kind, t, _ in ok.sent), "фраза не должна печататься обратно"
     assert [[b.text for b in r] for r in kbs.settings_backup(True).inline_keyboard][1] == ["🔐 Шифрование: ✅ включено"]
+
+
+# ── ♻️ восстановление из файла в чате ────────────────────────────────────────
+
+async def test_backup_file_in_chat_offers_restore_and_confirm_launches(services, fake_bot, monkeypatch, tmp_path):
+    import io, json, tarfile
+    from awgbot.bot.handlers import admin as ah, settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from tests.conftest import FakeBot, FakeCallback, FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    monkeypatch.setattr(cfg, "ROLE", "client")
+    monkeypatch.setattr(cfg, "BACKUP_DIR", tmp_path)
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        raw = json.dumps({"role": "main", "created_at": "2026-09-09T10:30:00+03:00"}).encode()
+        ti = tarfile.TarInfo("state/backup-meta.json"); ti.size = len(raw); tar.addfile(ti, io.BytesIO(raw))
+    blob = buf.getvalue()
+
+    class DlBot(FakeBot):
+        async def download(self, doc, destination=None):
+            destination.write(blob)
+    bot = DlBot()
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
+    msg.document = type("D", (), {"file_name": "awg-bot-backup-main-x.tgz", "file_size": len(blob), "file_id": "F"})()
+    state = FakeState()
+    await ah.admin_document(msg, services, state)
+    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
+    assert sent and "бэкап настроек бота и сервиса от 09.09.2026 10:30" in sent[-1] and "Важно!" in sent[-1]
+    launched = []
+    monkeypatch.setattr(services, "launch_restore", lambda path: launched.append(path))
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
+    await sh.backup_restore_action(cb, SetCB(sec="backup", act="do", key="restore!"), services, state)
+    assert launched and launched[0].endswith("restore-pending.tgz")
+    assert (tmp_path / "restore-pending.tgz").read_bytes() == blob
+    assert any("Восстанавливаю" in t for kind, t, _ in msg.sent if kind == "answer")
+    assert await state.get_data() == {}
+
+
+async def test_foreign_role_backup_is_rejected_in_chat(services, fake_bot, monkeypatch):
+    import io, json, tarfile
+    from awgbot.bot.handlers import admin as ah
+    from tests.conftest import FakeBot, FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    monkeypatch.setattr(cfg, "ROLE", "client")
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        raw = json.dumps({"role": "gw", "created_at": "2026-09-09T10:30:00+03:00"}).encode()
+        ti = tarfile.TarInfo("state/backup-meta.json"); ti.size = len(raw); tar.addfile(ti, io.BytesIO(raw))
+    blob = buf.getvalue()
+
+    class DlBot(FakeBot):
+        async def download(self, doc, destination=None):
+            destination.write(blob)
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=DlBot())
+    msg.document = type("D", (), {"file_name": "b.tgz", "file_size": len(blob), "file_id": "F"})()
+    await ah.admin_document(msg, services, FakeState())
+    assert any("копия агента шлюза" in t for kind, t, _ in msg.sent if kind == "answer")

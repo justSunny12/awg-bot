@@ -419,6 +419,16 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
 
     await cb.answer("Действие недоступно.", show_alert=True)
 
+# ── ♻️ Восстановление из файла в чате ────────────────────────────────────────
+@router.callback_query(SetCB.filter((F.sec == "backup") & (F.act == "do") & (F.key.in_({"restore!", "restore_drop"}))))
+async def backup_restore_action(cb: CallbackQuery, callback_data: SetCB, services, state: FSMContext):
+    from awgbot.bot.handlers import restore as rs
+    if callback_data.key == "restore!":
+        await rs.run_restore(cb, services, state)
+    else:
+        await rs.drop_restore(cb, state)
+
+
 # ── 🔐 Шифрование бэкапов: фраза дважды, сообщения удаляются ─────────────────
 @router.callback_query(SetCB.filter((F.sec == "backup") & (F.act == "do") & (F.key == "enc_set")))
 async def backup_passphrase_start(cb: CallbackQuery, state: FSMContext):

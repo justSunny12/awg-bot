@@ -43,3 +43,46 @@ def test_make_backup_encrypts_only_with_secret(services, monkeypatch, tmp_path):
     services.backup_set_passphrase("correct horse battery")
     paths = services.make_backup()
     assert paths and paths[0].endswith(".enc")
+
+
+def _archive_with_meta(role, created="2026-09-09T10:00:00+03:00"):
+    import io, json, tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        raw = json.dumps({"role": role, "created_at": created}).encode()
+        ti = tarfile.TarInfo("state/backup-meta.json"); ti.size = len(raw)
+        tar.addfile(ti, io.BytesIO(raw))
+    return buf.getvalue()
+
+
+def test_backup_meta_is_inside_the_archive_and_restore_is_role_bound(services, monkeypatch, tmp_path):
+    import io, json, tarfile
+    monkeypatch.setattr(cfg, "BACKUP_DIR", tmp_path)
+    monkeypatch.setattr(cfg, "DB_PATH", tmp_path / "nope.db")
+    monkeypatch.setattr(cfg, "ENV_PATH", None)
+    monkeypatch.setattr(cfg, "CONF_DIR", tmp_path / "noconf")
+    monkeypatch.setattr(cfg, "ROLE", "client")
+    raw = services.build_backup_archive()
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
+        meta = json.loads(tar.extractfile("state/backup-meta.json").read())
+    assert meta["role"] == "main" and meta["created_at"]
+    info = services.inspect_backup(raw, "x.tgz")
+    assert info["ok"] and info["role"] == "main" and info["created_at"] == meta["created_at"]
+    # копия агента на основном — отказ; и наоборот
+    assert not services.inspect_backup(_archive_with_meta("gw"), "b.tgz")["ok"]
+    monkeypatch.setattr(cfg, "ROLE", "gateway")
+    assert services.inspect_backup(_archive_with_meta("gw"), "b.tgz")["ok"]
+    assert "основного бота" in services.inspect_backup(_archive_with_meta("main"), "b.tgz")["error"]
+
+
+def test_inspect_backup_encrypted_needs_the_right_phrase(services, monkeypatch, tmp_path):
+    from awgbot.util import secrets_util
+    monkeypatch.setattr(cfg, "ROLE", "client")
+    blob = secrets_util.encrypt(_archive_with_meta("main"), passphrase="right-phrase")
+    assert "не задана" in services.inspect_backup(blob, "b.tgz.enc")["error"]
+    services.backup_set_passphrase("wrong-phrase!")
+    assert "не та" in services.inspect_backup(blob, "b.tgz.enc")["error"]
+    services.backup_set_passphrase("right-phrase")
+    info = services.inspect_backup(blob, "b.tgz.enc")
+    assert info["ok"] and info["created_at"].startswith("2026-09-09")
+    assert not services.inspect_backup(b"garbage", "b.tgz")["ok"]

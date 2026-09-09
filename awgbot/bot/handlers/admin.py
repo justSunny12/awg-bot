@@ -17,7 +17,7 @@ from awgbot.bot import texts
 from awgbot.util import timeutil
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.filters import CommandObject, CommandStart
+from aiogram.filters import CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -208,6 +208,15 @@ async def admin_start(message: Message, services, state: FSMContext,
     # /start — «начать заново»: все прошлые меню из чата долой, не только кнопки
     await purge_menus(message.bot, services, message.chat.id)
     await _return_panel(message, services)
+
+
+@router.message(F.document, StateFilter(None))
+async def admin_document(message: Message, services, state: FSMContext):
+    """Файл в чате без активного диалога: резервная копия → предложить
+    восстановление. Прочие файлы молча не трогаем."""
+    from awgbot.bot.handlers import restore as rs
+    if rs.looks_like_backup(message.document):
+        await rs.offer_restore(message, services, state, gateway=False)
 
 
 @router.callback_query(Menu.filter(F.action == "expiring"))

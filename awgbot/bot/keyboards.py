@@ -1301,6 +1301,20 @@ def backup_encryption_kb(has_secret: bool) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def restore_confirm(gateway: bool = False) -> InlineKeyboardMarkup:
+    """«Отмена» первой: восстановление необратимо, промах пальцем не должен
+    возвращать всех на неделю назад."""
+    kb = InlineKeyboardBuilder()
+    if gateway:
+        kb.button(text="⬅️ Отмена", callback_data=GwCB(action="restore_drop"))
+        kb.button(text="♻️ Восстановить", callback_data=GwCB(action="restore!"))
+    else:
+        kb.button(text="⬅️ Отмена", callback_data=SetCB(sec="backup", act="do", key="restore_drop"))
+        kb.button(text="♻️ Восстановить", callback_data=SetCB(sec="backup", act="do", key="restore!"))
+    kb.adjust(2)
+    return kb.as_markup()
+
+
 def email_setup_offer(back_sec: str) -> InlineKeyboardMarkup:
     """«Почта не настроена» — настроить сейчас или вернуться в раздел."""
     kb = InlineKeyboardBuilder()

@@ -193,6 +193,11 @@ async def run_gateway() -> None:
         log.warning("gateway restore_panel_after_restart: %s", e)
 
     await _announce_reboot(bot, services.db, "агента")
+    try:
+        from awgbot.bot.handlers.restore import report_restore_result
+        await report_restore_result(bot, services)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("report_restore_result: %s", e)
 
     # Планировщик — СТРОГО после финишера, как у клиентской роли. Его стартовая
     # проверка обновлений укладывается в секунду, и, запущенная раньше, она
@@ -425,6 +430,11 @@ async def main() -> None:
         log.warning("preflight warnings: %s", e)
 
     await _announce_reboot(bot, db, "бота")
+    try:
+        from awgbot.bot.handlers.restore import report_restore_result
+        await report_restore_result(bot, services)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("report_restore_result: %s", e)
 
     try:
         # long-poll 50 с вместо дефолтных 10: впятеро меньше холостых

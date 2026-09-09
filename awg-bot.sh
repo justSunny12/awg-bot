@@ -577,6 +577,9 @@ cmd_backup() {
     if compgen -G "$awgdir/*.conf" >/dev/null; then
         mkdir -p "$tmp/awg"; cp -a "$awgdir"/*.conf "$tmp/awg/" 2>/dev/null || true
     fi
+    # метка внутри архива — та же, что у копии из чата: роль и время снятия
+    local role="main"; [[ "$(yaml_get "$CONF_DIR/app.yaml" role)" == "gateway" ]] && role="gw"
+    printf '{"role": "%s", "created_at": "%s", "hostname": "%s"}\n' "$role" "$(date -Iseconds)" "$(hostname)" > "$tmp/state/backup-meta.json"
     ( cd "$tmp" && tar czf "$out" . ); chmod 600 "$out"; rm -rf "$tmp"
     ok "снимок состояния: $out"
     log "в нём БД, конфиг, секреты и конфиги awg-интерфейсов — храни как чувствительный."
@@ -590,6 +593,10 @@ awg_conf_dir() {
 }
 cmd_restore() {
     require_root
+    # --yes: без вопросов (из чата: бот уже спросил админа); конфиги интерфейсов
+    # кладутся и интерфейсы переподнимаются сами, итог — маркером для бота.
+    local yes=0
+    if [[ "${1:-}" == "--yes" ]]; then yes=1; shift; fi
     local tgz
     if [[ -n "${1:-}" ]]; then tgz="$1"; [[ -f "$tgz" ]] || die "не найден: $tgz"
     else
@@ -598,7 +605,7 @@ cmd_restore() {
         [[ -n "$tgz" ]] || die "снимков не найдено в $BACKUP_DIR — укажи путь: awg-bot restore <tgz>"
     fi
     warn "восстановление ПЕРЕЗАПИШЕТ текущие БД/конфиг/секреты содержимым: $(basename "$tgz")"
-    confirm "Продолжить?" n || die "отменено"
+    [[ "$yes" -eq 1 ]] || confirm "Продолжить?" n || die "отменено"
     local tmp; tmp="$(mktemp -d)"
     # Копия из чата/почты — шифрованный архив (*.enc): расшифровать парольной
     # фразой (спросит) во временный файл, дальше — как обычный снимок.
@@ -611,6 +618,14 @@ cmd_restore() {
     tar xzf "$tgz" -C "$tmp" || { rm -rf "$tmp"; die "не удалось распаковать снимок"; }
     # раскладка копии из чата — с каталогом state/, старого снимка — без него
     local src="$tmp"; [[ -d "$tmp/state" ]] && src="$tmp/state"
+    # чужую копию не разворачиваем: метка роли внутри архива против роли здесь
+    local meta="$src/backup-meta.json" bk_role="" bk_at="" my_role="main"
+    [[ "$(yaml_get "$CONF_DIR/app.yaml" role)" == "gateway" ]] && my_role="gw"
+    if [[ -f "$meta" ]]; then
+        bk_role="$(grep -o '"role": *"[a-z]*"' "$meta" | sed 's/.*"\([a-z]*\)"$/\1/')"
+        bk_at="$(grep -o '"created_at": *"[^"]*"' "$meta" | sed 's/.*"\([^"]*\)"$/\1/')"
+        [[ -z "$bk_role" || "$bk_role" == "$my_role" ]] || { rm -rf "$tmp"; die "это копия роли «$bk_role», а здесь «$my_role» — не разворачиваю"; }
+    fi
     log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
     # Снимок ТЕКУЩЕГО состояния — до перезаписи, и только после успешной
     # распаковки и остановки сервиса (иначе снимали бы БД под записью).
@@ -641,13 +656,28 @@ cmd_restore() {
     if compgen -G "$tmp/awg/*.conf" >/dev/null; then
         local awgdir; awgdir="$(awg_conf_dir)"
         warn "в копии конфиги awg-интерфейсов: $(ls "$tmp/awg" | tr '\n' ' ')"
-        if confirm "Положить их в $awgdir (существующие будут перезаписаны)?" n; then
+        if [[ "$yes" -eq 1 ]] || confirm "Положить их в $awgdir (существующие будут перезаписаны)?" n; then
             mkdir -p "$awgdir"; cp -a "$tmp/awg"/*.conf "$awgdir/"; chmod 600 "$awgdir"/*.conf
-            ok "конфиги интерфейсов восстановлены; поднять: awg-quick up <iface>"
+            if [[ "$yes" -eq 1 ]]; then
+                # из чата: интерфейсы переподнять здесь же — руками некому
+                local c i
+                for c in "$tmp/awg"/*.conf; do
+                    i="$(basename "$c" .conf)"
+                    if [[ -d "/sys/class/net/$i" ]]; then
+                        awg-quick down "$i" >/dev/null 2>&1 || true
+                        awg-quick up "$i" >/dev/null 2>&1 || warn "$i не поднялся"
+                    fi
+                done
+                ok "конфиги интерфейсов восстановлены, интерфейсы переподняты."
+            else
+                ok "конфиги интерфейсов восстановлены; поднять: awg-quick up <iface>"
+            fi
         else
             log "конфиги интерфейсов оставлены как есть."
         fi
     fi
+    # маркер для бота: новый процесс доложит админу, из какой копии восстановились
+    printf '{"created_at": "%s", "source": "%s"}\n' "$bk_at" "$(basename "$tgz")" > "$DATA_DIR/restore-done.json"
     rm -rf "$tmp"
     systemctl start "$SERVICE" 2>/dev/null || true; sleep 1
     systemctl is-active --quiet "$SERVICE" && ok "восстановлено, $SERVICE запущен." || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
@@ -769,7 +799,7 @@ case "$VERB" in
     reconfigure) cmd_reconfigure "$@" ;;
     update)      cmd_update "${1:-}" ;;
     backup)      cmd_backup ;;
-    restore)     cmd_restore "${1:-}" ;;
+    restore)     cmd_restore "$@" ;;
     uninstall)   cmd_uninstall ;;
     __post_update)    cmd_post_update "${1:-0}" ;;
     __post_uninstall) cmd_post_uninstall ;;
