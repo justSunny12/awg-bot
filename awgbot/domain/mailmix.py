@@ -131,7 +131,8 @@ class MailMixin:
             with open(p, "rb") as f:
                 att.append((os.path.basename(p), f.read()))
         stamp = timeutil.now().strftime("%d.%m.%Y %H:%M")
-        mail.send_mail(acc, acc.login, f"awg-bot: резервная копия {stamp}",
+        tag = "gw" if config.ROLE == "gateway" else "main"
+        mail.send_mail(acc, acc.login, f"awg-bot-{tag}: резервная копия {stamp}",
                        "Файлы резервной копии во вложении. Расшифровка — restore_backup.py "
                        "с BACKUP_KEY/BACKUP_PASSPHRASE.", attachments=att)
 

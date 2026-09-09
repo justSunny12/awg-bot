@@ -1507,10 +1507,8 @@ BACKUP_PASSPHRASE_MISMATCH = "⚠️ Фразы не совпали. Начнё�
 BACKUP_PASSPHRASE_SET = "✅ Парольная фраза задана. Следующие копии уйдут шифрованными."
 
 
-def backup_mailed(address: str, n: int) -> str:
-    from awgbot.util.timeutil import _plural_ru
-    files = f"{n} {_plural_ru(n, ('файл', 'файла', 'файлов'))}"
-    return f"📨 Резервная копия ({files}) отправлена на ящик <code>{_e(address)}</code>"
+def backup_mailed(address: str, n: int = 1) -> str:
+    return f"📨 Резервная копия отправлена на ящик <code>{_e(address)}</code>"
 SETTINGS_SVC = "🔄 <b>Обслуживание</b>\n\nПерезапуск AmneziaWG и самого бота."
 SVC_CONFIRM_AWG = ("🔄 <b>Перезапустить AWG?</b>\n\nСервер AmneziaWG перезапустится: все "
                    "коннекты оборвутся на несколько секунд и поднимутся сами; блокировки "

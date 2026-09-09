@@ -86,8 +86,18 @@ def test_mail_settings_travel_in_the_bundle(services, monkeypatch, tmp_path):
     assert acc and acc.login == "box@icloud.com" and acc.password == "p@ss\"word" and acc.smtp_host == "smtp.mail.me.com"
 
 
-def test_backup_mailed_plural():
+def test_backup_mailed_text_and_subject(services, monkeypatch):
     from awgbot.bot import texts
-    assert texts.backup_mailed("a@b.co", 1).startswith("📨 Резервная копия (1 файл) отправлена")
-    assert "(2 файла)" in texts.backup_mailed("a@b.co", 2)
-    assert "(5 файлов)" in texts.backup_mailed("a@b.co", 5) and not texts.backup_mailed("a@b.co", 5).endswith(".")
+    from awgbot.util import timeutil
+    assert texts.backup_mailed("a@b.co") == "📨 Резервная копия отправлена на ящик <code>a@b.co</code>"
+    sent = []
+    monkeypatch.setattr(mail, "send_mail", lambda acc, to, subject, body, **kw: sent.append(subject))
+    services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
+    services.backup_set_passphrase("correct horse battery")
+    monkeypatch.setattr(cfg, "ROLE", "gateway")
+    services.email_send_backup([])
+    monkeypatch.setattr(cfg, "ROLE", "client")
+    services.email_send_backup([])
+    stamp = timeutil.now().strftime("%d.%m.%Y %H:%M")
+    assert sent[0].startswith("awg-bot-gw: резервная копия ") and sent[1].startswith("awg-bot-main: резервная копия ")
+    assert stamp[:10] in sent[0]

@@ -1,11 +1,11 @@
 # Почтовый канал бота. Настраивается из чата: ⚙️ Настройки → ✉️ E-mail.
 # Логин и пароль ящика хранятся в БД, здесь — серверы и параметры функций.
-imap_host: ""
+imap_host: "imap.mail.me.com"
 imap_port: 993
-smtp_host: ""
+smtp_host: "smtp.mail.me.com"
 smtp_port: 587
 # Аварийный выход из приостановки по коду в письме (§6a README).
 resume_enabled: true
-resume_address: ""        # куда клиенты шлют код; пусто — сам ящик
+resume_address: "box@icloud.com" # куда клиенты шлют код; пусто — сам ящик
 poll_interval_sec: 60     # опрос IMAP, не менее 60
 resume_code_len: 8
