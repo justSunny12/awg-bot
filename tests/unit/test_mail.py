@@ -54,3 +54,11 @@ def test_email_check_records_result(services, monkeypatch):
     monkeypatch.setattr(mail, "check_smtp", lambda a, timeout=15.0: None)
     ok, _ = services.email_check(acc)
     assert ok and services.email_last_check()[0] == "ok"
+
+
+def test_password_hints_cover_all_known_providers():
+    for dom in mail.PROVIDERS:
+        assert dom in mail.PASSWORD_HINTS
+        assert "парол" in mail.PASSWORD_HINTS[dom] or "password" in mail.PASSWORD_HINTS[dom].lower()
+    assert "Mail Space" in mail.PASSWORD_HINTS["mail.ru"]
+    assert "Яндекс 360" in mail.PASSWORD_HINTS["yandex.ru"]

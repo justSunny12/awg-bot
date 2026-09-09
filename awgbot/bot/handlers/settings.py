@@ -200,14 +200,17 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
 
 # ── ввод числового значения (FSM) ────────────────────────────────────────────
 @router.callback_query(SetCB.filter(F.act == "edit"))
-async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext):
+async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext, services):
     key = callback_data.key
     if key not in texts.SETTINGS_BOUNDS and key not in texts.SETTINGS_TEXT:   # старая/битая клавиатура
         await cb.answer("Эта настройка недоступна.", show_alert=True)
         return
     await state.set_state(SettingsInput.value)
     await state.update_data(key=key, sec=callback_data.sec)
-    prompt = texts.settings_text_prompt(key) if key in texts.SETTINGS_TEXT else texts.settings_prompt(key)
+    if key == "email.resume_address":
+        prompt = texts.email_ask_resume_address(await call(services.email_resume_address))
+    else:
+        prompt = texts.settings_prompt(key)
     await edit(cb, prompt, kb.settings_cancel(callback_data.sec))
     await cb.answer()
 
@@ -219,6 +222,8 @@ async def receive_value(message: Message, state: FSMContext, services):
     if key in texts.SETTINGS_TEXT:
         from awgbot.infra import mail
         raw = (message.text or "").strip()
+        if raw == "-":                                # «вернуть сам ящик»
+            raw = ""
         if raw and not mail.is_address(raw):
             await message.answer(texts.EMAIL_BAD_ADDRESS)
             return
@@ -387,7 +392,9 @@ async def email_action(cb: CallbackQuery, callback_data: SetCB, services, state:
     if key == "setup":
         await state.clear()
         await state.set_state(EmailSetup.address)
-        await edit(cb, texts.EMAIL_ASK_ADDRESS, kb.settings_cancel("email"))
+        acc = await call(services.email_account)
+        prompt = texts.email_ask_address_change(acc.login) if acc else texts.EMAIL_ASK_ADDRESS
+        await edit(cb, prompt, kb.settings_cancel("email"))
         await cb.answer()
         return
     if key == "check":
@@ -404,7 +411,9 @@ async def email_action(cb: CallbackQuery, callback_data: SetCB, services, state:
         except mail.MailError as e:
             await cb.message.answer(f"🔴 {e}")
             return
-        await cb.message.answer(texts.EMAIL_TEST_SENT)
+        acc = await call(services.email_account)
+        await cb.message.answer(texts.email_test_sent(acc.login if acc else ""),
+                                reply_markup=kb.hide_only())
         return
     if key == "forget":
         await edit(cb, texts.EMAIL_FORGET_CONFIRM, kb.email_forget_confirm())

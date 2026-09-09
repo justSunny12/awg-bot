@@ -1396,7 +1396,8 @@ def settings_email_text(acc, last_check: tuple, resume_on: bool, resume_addr: st
                      "бот сам ходит на почтовый сервер.")
         return "\n".join(lines)
     lines.append(f"Ящик: <code>{_e(acc.login)}</code>")
-    lines.append(f"IMAP: {_e(acc.imap_host)}:{acc.imap_port}, SMTP: {_e(acc.smtp_host)}:{acc.smtp_port}")
+    lines.append(f"IMAP: <code>{_e(acc.imap_host)}:{acc.imap_port}</code>, "
+                 f"SMTP: <code>{_e(acc.smtp_host)}:{acc.smtp_port}</code>")
     state, iso, detail = last_check
     if state == "ok":
         when = _fmt_age((timeutil.now() - timeutil.parse_iso(iso)).total_seconds()) if iso else ""
@@ -1423,7 +1424,21 @@ EMAIL_BAD_HOST = "⚠️ Нужно имя сервера, например imap
 EMAIL_FORGET_CONFIRM = ("🗑 <b>Отключить почту?</b>\n\nЛогин, пароль и серверы будут стёрты. "
                         "Аварийный выход из приостановки перестанет работать.")
 EMAIL_FORGOTTEN = "✅ Почта отключена."
-EMAIL_TEST_SENT = "📨 Тестовое письмо отправлено на сам ящик — проверь входящие."
+def email_test_sent(address: str) -> str:
+    return f"📨 Тестовое письмо отправлено на ящик <code>{_e(address)}</code> — проверь входящие."
+
+
+def email_ask_address_change(current: str) -> str:
+    return (f"✏️ <b>Смена ящика</b>\n\nСейчас подключён <code>{_e(current)}</code>. Пришли адрес "
+            f"нового ящика — после проверки входа он заменит текущий; пока проверка не "
+            f"пройдена, старый продолжает работать.")
+
+
+def email_ask_resume_address(current: str) -> str:
+    return (f"✉️ <b>Адрес для писем с кодом</b>\n\nНа этот адрес клиент, заперевшийся в "
+            f"приостановке, шлёт письмо с кодом аварийного выхода. Обычно это сам ящик; "
+            f"если у ящика есть алиас, можно указать его — бот читает один и тот же ящик.\n\n"
+            f"Сейчас: <code>{_e(current)}</code>\n\nПришли новый адрес, или «-», чтобы вернуть сам ящик.")
 
 
 def email_provider_line(address: str, provider) -> str:
@@ -1510,11 +1525,6 @@ SETTINGS_BOUNDS = {
 SETTINGS_TEXT = {
     "email.resume_address": ("Адрес для писем с кодом", "адрес почты; пусто — сам ящик"),
 }
-
-
-def settings_text_prompt(key: str) -> str:
-    label, hint = SETTINGS_TEXT[key]
-    return f"Введи новое значение: <b>{_e(label)}</b>\n{_e(hint)}."
 
 
 def settings_prompt(key: str) -> str:
