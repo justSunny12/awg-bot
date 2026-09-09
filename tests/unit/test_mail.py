@@ -11,7 +11,7 @@ def test_provider_detection_and_address_check():
     assert mail.detect_provider("a@gmail.com") == ("imap.gmail.com", 993, "smtp.gmail.com", 587)
     assert mail.detect_provider("A@ICLOUD.COM")[0] == "imap.mail.me.com"
     assert mail.detect_provider("a@yandex.ru")[2] == "smtp.yandex.ru"
-    assert mail.detect_provider("a@mail.ru")[0] == "imap.mail.ru"
+    assert mail.detect_provider("a@mail.ru") is None, "mail.ru — только руками: IMAP по подписке"
     assert mail.detect_provider("a@example.org") is None
     assert mail.is_address("box@example.com") and not mail.is_address("box@") and not mail.is_address("нет")
 
@@ -60,5 +60,4 @@ def test_password_hints_cover_all_known_providers():
     for dom in mail.PROVIDERS:
         assert dom in mail.PASSWORD_HINTS
         assert "парол" in mail.PASSWORD_HINTS[dom] or "password" in mail.PASSWORD_HINTS[dom].lower()
-    assert "Mail Space" in mail.PASSWORD_HINTS["mail.ru"]
     assert "Яндекс 360" in mail.PASSWORD_HINTS["yandex.ru"]
