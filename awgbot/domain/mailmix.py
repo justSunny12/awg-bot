@@ -122,9 +122,9 @@ class MailMixin:
         acc = self.email_account()
         if acc is None:
             raise mail.MailError("ящик не настроен")
-        if not config.BACKUP_ENCRYPTION_ENABLED:
+        if not self.backup_encryption_enabled():
             raise mail.MailError("бэкап без шифрования по почте не отправляется — "
-                                 "задай BACKUP_KEY или BACKUP_PASSPHRASE в /etc/awg-bot/env")
+                                 "задай парольную фразу в 💾 Резервное копирование → 🔐 Шифрование")
         import os
         att = []
         for p in paths:

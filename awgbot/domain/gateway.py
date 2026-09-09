@@ -31,6 +31,7 @@ log = logging.getLogger("awgbot.gateway")
 # Notification переиспользуем клиентский: notifier один на обе роли.
 from awgbot.domain.services import Notification, ServiceError  # noqa: E402
 from awgbot.domain.selfupdate import SelfUpdateMixin  # noqa: E402
+from awgbot.domain.backupcrypto import BackupCryptoMixin  # noqa: E402
 
 
 def _run(argv: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
@@ -96,7 +97,7 @@ class GwStatus:
         return max(0.0, (timeutil.now() - timeutil.parse_iso(self.ts)).total_seconds())
 
 
-class GatewayServices(SelfUpdateMixin):
+class GatewayServices(SelfUpdateMixin, BackupCryptoMixin):
     """Механика агента. db — обычная Database: нужен только state (гистерезис,
     снимки); клиентские таблицы просто пустуют, и городить отдельную схему ради
     их отсутствия — усложнение без выгоды."""
@@ -452,11 +453,10 @@ class GatewayServices(SelfUpdateMixin):
         Только шифрованно: без BACKUP_KEY/BACKUP_PASSPHRASE отказ, открытые
         ключи в чат не уезжают."""
         from awgbot.util import secrets_util
-        if not config.BACKUP_ENCRYPTION_ENABLED:
-            raise ServiceError("резервная копия шлюза только шифрованная: задай BACKUP_KEY "
-                               "или BACKUP_PASSPHRASE в /etc/awg-bot/env и перезапусти агента")
-        enc_kwargs = ({"passphrase": config.BACKUP_PASSPHRASE} if config.BACKUP_PASSPHRASE
-                      else {"key": secrets_util.b64d(config.BACKUP_KEY)})
+        enc_kwargs = self.backup_enc_kwargs()
+        if enc_kwargs is None:
+            raise ServiceError("резервная копия шлюза только шифрованная: задай парольную "
+                               "фразу в ⚙️ Настройки → 💾 Резервное копирование → 🔐 Шифрование")
         config.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         stamp = timeutil.now().strftime("%Y%m%d_%H%M%S")
         artifacts: list[tuple[str, bytes]] = []

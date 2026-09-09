@@ -36,6 +36,7 @@ from awgbot.domain import routing as domain_routing
 from awgbot.domain.migration import MigrationMixin
 from awgbot.domain.selfupdate import SelfUpdateMixin
 from awgbot.domain.mailmix import MailMixin
+from awgbot.domain.backupcrypto import BackupCryptoMixin
 from awgbot.core.blocks import DeviceBlock, ClientBlock, DEVICE_TRAFFIC_ANY
 from awgbot.core import models
 from awgbot.core.enums import SubStatus, ActivationStatus, PauseMode, PeriodKind, FriendStatus
@@ -302,7 +303,7 @@ def _admin_self_over_text() -> str:
 # Services
 # ─────────────────────────────────────────────────────────────────────────────
 
-class Services(SelfUpdateMixin, MailMixin, MigrationMixin):
+class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
     # username бота — для deep-link'ов в текстах (t.me/<bot>?start=…); main
     # кладёт его после getMe. Пусто — ссылки не рисуются, текст остаётся текстом.
     bot_username: str = ""
@@ -2707,8 +2708,8 @@ class Services(SelfUpdateMixin, MailMixin, MigrationMixin):
             pass
 
         paths: list[str] = []
-        encrypt = config.BACKUP_ENCRYPTION_ENABLED
-        enc_kwargs = self._backup_enc_kwargs() if encrypt else None
+        enc_kwargs = self.backup_enc_kwargs()
+        encrypt = enc_kwargs is not None
         for name, raw in artifacts:
             try:
                 if encrypt:
@@ -2724,15 +2725,6 @@ class Services(SelfUpdateMixin, MailMixin, MigrationMixin):
                 # один сбойный артефакт не должен ронять остальной бэкап
                 continue
         return paths
-
-    @staticmethod
-    def _backup_enc_kwargs() -> dict:
-        """kwargs для secrets_util.encrypt из конфига (passphrase важнее key,
-        если по недосмотру заданы оба — детерминированнее для восстановления)."""
-        from awgbot.util import secrets_util
-        if config.BACKUP_PASSPHRASE:
-            return {"passphrase": config.BACKUP_PASSPHRASE}
-        return {"key": secrets_util.b64d(config.BACKUP_KEY)}
 
     # ── Статус сервера (мониторинг) ──────────────────────────────────────────
 

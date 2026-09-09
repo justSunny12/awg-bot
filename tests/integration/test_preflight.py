@@ -97,6 +97,7 @@ def test_mail_warning_when_configured_and_check_fails():
         def email_resume_enabled(self): return True
         def email_check(self): return False, "IMAP отверг логин/пароль"
         def email_env_leftover(self): return False
+        def backup_env_leftover(self): return False
     warns = preflight.collect_warnings(Svc())
     assert any("почта: IMAP отверг" in w and "E-mail" in w for w in warns)
 
@@ -109,6 +110,8 @@ def test_mail_skipped_when_not_configured_and_env_leftover_reminded():
         def email_resume_enabled(self): return False
         def email_check(self): checked.append(1); return True, ""
         def email_env_leftover(self): return True
+        def backup_env_leftover(self): return True
     warns = preflight.collect_warnings(Svc())
+    assert any("BACKUP_KEY" in w for w in warns)
     assert checked == []
     assert any("EMAIL_RESUME_LOGIN" in w for w in warns)

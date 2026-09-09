@@ -19,7 +19,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.states import SettingsInput
+from awgbot.bot.states import BackupPassphrase, SettingsInput
 from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, purge_menus, dismiss_update_reports
 from awgbot.util import bundlecrypt
 
@@ -126,17 +126,77 @@ async def gw_maint(cb: CallbackQuery, services):
 # ── разделы настроек: уведомления / мониторинг / резервное копирование ───────
 
 _SECTIONS = {
-    "notify": lambda: (texts.GW_SETTINGS_NOTIFY, kb.gateway_notify_kb()),
-    "mon": lambda: (texts.GW_SETTINGS_MON, kb.gateway_mon_kb()),
-    "backup": lambda: (texts.SETTINGS_BACKUP, kb.gateway_backup_kb()),
+    "notify": lambda services: (texts.GW_SETTINGS_NOTIFY, kb.gateway_notify_kb()),
+    "mon": lambda services: (texts.GW_SETTINGS_MON, kb.gateway_mon_kb()),
+    "backup": lambda services: (texts.SETTINGS_BACKUP,
+                                kb.gateway_backup_kb(services.backup_encryption_enabled())),
 }
+
+
+async def _section(services, sec: str):
+    return await call(_SECTIONS[sec], services)
 
 
 @router.callback_query(GwCB.filter(F.action.in_(set(_SECTIONS))))
 async def gw_section(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
     await state.clear()
-    await edit_nav(cb, services, *_SECTIONS[callback_data.action]())
+    await edit_nav(cb, services, *await _section(services, callback_data.action))
     await cb.answer()
+
+
+@router.callback_query(GwCB.filter(F.action == "enc"))
+async def gw_encryption(cb: CallbackQuery, services, state: FSMContext):
+    await state.clear()
+    mode = await call(services.backup_encryption_mode)
+    await edit_nav(cb, services, texts.backup_encryption_text(mode), kb.gateway_encryption_kb(bool(mode)))
+    await cb.answer()
+
+
+@router.callback_query(GwCB.filter(F.action == "enc_set"))
+async def gw_encryption_set(cb: CallbackQuery, services, state: FSMContext):
+    from awgbot.bot.states import BackupPassphrase
+    await state.clear()
+    await state.set_state(BackupPassphrase.first)
+    await edit_nav(cb, services, texts.BACKUP_ASK_PASSPHRASE, kb.gateway_cancel_kb("backup"))
+    await cb.answer()
+
+
+async def _gw_take_secret(message: Message) -> str:
+    text = (message.text or "").strip()
+    try:
+        await message.delete()
+    except Exception:                                 # noqa: BLE001
+        pass
+    return text
+
+
+@router.message(BackupPassphrase.first)
+async def gw_passphrase_first(message: Message, state: FSMContext):
+    from awgbot.bot.states import BackupPassphrase
+    from awgbot.domain.backupcrypto import MIN_PASSPHRASE_LEN
+    phrase = await _gw_take_secret(message)
+    if len(phrase) < MIN_PASSPHRASE_LEN:
+        await message.answer(f"⚠️ Фраза короче {MIN_PASSPHRASE_LEN} символов. Пришли другую.")
+        return
+    await state.update_data(passphrase=phrase)
+    await state.set_state(BackupPassphrase.second)
+    await message.answer(texts.BACKUP_ASK_PASSPHRASE_AGAIN, reply_markup=kb.gateway_cancel_kb("backup"))
+
+
+@router.message(BackupPassphrase.second)
+async def gw_passphrase_second(message: Message, state: FSMContext, services):
+    from awgbot.bot.states import BackupPassphrase
+    phrase = await _gw_take_secret(message)
+    first = (await state.get_data()).get("passphrase", "")
+    if phrase != first:
+        await state.set_state(BackupPassphrase.first)
+        await state.update_data(passphrase="")
+        await message.answer(texts.BACKUP_PASSPHRASE_MISMATCH, reply_markup=kb.gateway_cancel_kb("backup"))
+        return
+    await state.clear()
+    await call(services.backup_set_passphrase, phrase)
+    await message.answer(texts.BACKUP_PASSPHRASE_SET)
+    await send_menu(message, services, *await _section(services, "backup"))
 
 
 def _section_of(key: str) -> str:
@@ -158,7 +218,7 @@ async def gw_toggle(cb: CallbackQuery, callback_data: GwCB, services):
     except settings.SettingsWriteError as e:
         await cb.answer(str(e), show_alert=True)
         return
-    await edit_nav(cb, services, *_SECTIONS[_section_of(key)]())
+    await edit_nav(cb, services, *await _section(services, _section_of(key)))
     await cb.answer()
 
 
@@ -182,7 +242,7 @@ async def gw_receive_value(message: Message, state: FSMContext, services):
     key, sec = data.get("key"), data.get("sec", "mon")
     if key not in texts.SETTINGS_BOUNDS:
         await state.clear()
-        await send_menu(message, services, *_SECTIONS[sec]())
+        await send_menu(message, services, *await _section(services, sec))
         return
     lo, hi, _label, _unit = texts.SETTINGS_BOUNDS[key]
     try:
@@ -199,7 +259,7 @@ async def gw_receive_value(message: Message, state: FSMContext, services):
         await message.answer(str(e))
         return
     await state.clear()
-    await send_menu(message, services, *_SECTIONS[sec]())
+    await send_menu(message, services, *await _section(services, sec))
 
 
 @router.callback_query(GwCB.filter(F.action == "backup!"))
@@ -216,7 +276,7 @@ async def gw_backup_now(cb: CallbackQuery, services):
             await cb.message.answer_document(FSInputFile(p))
         except Exception:                             # noqa: BLE001
             pass
-    await edit_nav(cb, services, *_SECTIONS["backup"]())
+    await edit_nav(cb, services, *await _section(services, "backup"))
 
 
 _CONFIRM = {

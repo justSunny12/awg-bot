@@ -16,7 +16,7 @@ from awgbot.bot import texts
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.states import EmailSetup, SettingsInput
+from awgbot.bot.states import BackupPassphrase, EmailSetup, SettingsInput
 from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu
 from awgbot.domain.services import ServiceError
 
@@ -48,7 +48,7 @@ async def _screen(sec: str, services):
     if sec == "mon":
         return texts.SETTINGS_MON, kb.settings_mon()
     if sec == "backup":
-        return texts.SETTINGS_BACKUP, kb.settings_backup()
+        return texts.SETTINGS_BACKUP, kb.settings_backup(await call(services.backup_encryption_enabled))
     if sec == "svc":
         state = await call(services.migration_state)
         avail = await call(services.migration_available)
@@ -299,7 +299,7 @@ async def pick(cb: CallbackQuery, callback_data: SetCB, services):
                 await edit(cb, texts.EMAIL_NOT_CONFIGURED, kb.email_setup_offer("backup"))
                 await cb.answer()
                 return
-            if not config.BACKUP_ENCRYPTION_ENABLED:
+            if not await call(services.backup_encryption_enabled):
                 await cb.answer(texts.BACKUP_NEEDS_ENCRYPTION, show_alert=True)
                 return
         try:
@@ -414,6 +414,55 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         return
 
     await cb.answer("Действие недоступно.", show_alert=True)
+
+# ── 🔐 Шифрование бэкапов: фраза дважды, сообщения удаляются ─────────────────
+@router.callback_query(SetCB.filter((F.sec == "backup") & (F.act == "do") & (F.key == "enc_set")))
+async def backup_passphrase_start(cb: CallbackQuery, state: FSMContext):
+    from awgbot.bot.states import BackupPassphrase
+    await state.clear()
+    await state.set_state(BackupPassphrase.first)
+    await edit(cb, texts.BACKUP_ASK_PASSPHRASE, kb.settings_cancel("backup"))
+    await cb.answer()
+
+
+async def _take_secret_message(message: Message) -> str:
+    text = (message.text or "").strip()
+    try:
+        await message.delete()
+    except Exception:                                  # noqa: BLE001
+        pass
+    return text
+
+
+@router.message(BackupPassphrase.first)
+async def backup_passphrase_first(message: Message, state: FSMContext):
+    from awgbot.bot.states import BackupPassphrase
+    from awgbot.domain.backupcrypto import MIN_PASSPHRASE_LEN
+    phrase = await _take_secret_message(message)
+    if len(phrase) < MIN_PASSPHRASE_LEN:
+        await message.answer(f"⚠️ Фраза короче {MIN_PASSPHRASE_LEN} символов. Пришли другую.")
+        return
+    await state.update_data(passphrase=phrase)
+    await state.set_state(BackupPassphrase.second)
+    await message.answer(texts.BACKUP_ASK_PASSPHRASE_AGAIN, reply_markup=kb.settings_cancel("backup"))
+
+
+@router.message(BackupPassphrase.second)
+async def backup_passphrase_second(message: Message, state: FSMContext, services):
+    from awgbot.bot.states import BackupPassphrase
+    phrase = await _take_secret_message(message)
+    first = (await state.get_data()).get("passphrase", "")
+    if phrase != first:
+        await state.set_state(BackupPassphrase.first)
+        await state.update_data(passphrase="")
+        await message.answer(texts.BACKUP_PASSPHRASE_MISMATCH, reply_markup=kb.settings_cancel("backup"))
+        return
+    await state.clear()
+    await call(services.backup_set_passphrase, phrase)
+    await message.answer(texts.BACKUP_PASSPHRASE_SET)
+    text, markup = await _screen("backup", services)
+    await message.answer(text, reply_markup=markup)
+
 
 # ── ✉️ E-mail: мастер подключения, проверка, отключение ─────────────────────
 @router.callback_query(SetCB.filter((F.sec == "email") & (F.act == "do")))
@@ -580,6 +629,11 @@ async def email_password(message: Message, state: FSMContext, services):
 @router.callback_query(SetCB.filter(F.act == "do"))
 async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
     key = callback_data.key
+    if key == "enc":                                   # экран шифрования
+        mode = await call(services.backup_encryption_mode)
+        await edit(cb, texts.backup_encryption_text(mode), kb.backup_encryption_kb(bool(mode)))
+        await cb.answer()
+        return
     if key == "now":                                   # бэкап сейчас
         await cb.answer("Готовлю бэкап…")
         paths = await call(services.make_backup)

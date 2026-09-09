@@ -1260,9 +1260,14 @@ def settings_mon() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def settings_backup() -> InlineKeyboardMarkup:
+def _enc_label(enabled: bool) -> str:
+    return "🔐 Шифрование: " + ("✅ включено" if enabled else "🔴 выключено")
+
+
+def settings_backup(encryption: bool = False) -> InlineKeyboardMarkup:
     """Рубильник первым; выключен — остальных кнопок нет, как в условной
-    маршрутизации: настраивать выключенное — приглашение к недоумению."""
+    маршрутизации: настраивать выключенное — приглашение к недоумению.
+    «Шифрование» — сразу под рубильником."""
     s = settings
     kb = InlineKeyboardBuilder()
     on = s.get_bool("app.scheduler.backup_enabled", True)
@@ -1270,6 +1275,8 @@ def settings_backup() -> InlineKeyboardMarkup:
               callback_data=SetCB(sec="backup", act="toggle", key="app.scheduler.backup_enabled"))
     rows = [1]
     if on:
+        kb.button(text=_enc_label(encryption), callback_data=SetCB(sec="backup", act="do", key="enc"))
+        rows.append(1)
         ch = str(s.get("app.scheduler.backup_channel", "telegram") or "telegram").lower()
         for val, label in (("telegram", "Telegram"), ("email", "E-mail")):
             kb.button(text=f"{'✅' if ch == val else '☑️'} {label}",
@@ -1282,6 +1289,15 @@ def settings_backup() -> InlineKeyboardMarkup:
         rows += [2, 1, 1, 1]
     kb.adjust(*rows)
     kb.row(_back())
+    return kb.as_markup()
+
+
+def backup_encryption_kb(has_secret: bool) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✏️ Сменить фразу" if has_secret else "🔑 Задать фразу",
+              callback_data=SetCB(sec="backup", act="do", key="enc_set"))
+    kb.button(text="\u2b05\ufe0f Назад", callback_data=SetCB(sec="backup"))
+    kb.adjust(1)
     return kb.as_markup()
 
 
@@ -1464,13 +1480,14 @@ def gateway_mon_kb() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def gateway_backup_kb() -> InlineKeyboardMarkup:
+def gateway_backup_kb(encryption: bool = False) -> InlineKeyboardMarkup:
     s = settings
     kb = InlineKeyboardBuilder()
     on = s.get_bool("app.scheduler.backup_enabled", True)
     kb.button(text=f"{_chk(on)} Резервное копирование",
               callback_data=GwCB(action="tgl", val="app.scheduler.backup_enabled"))
     if on:
+        kb.button(text=_enc_label(encryption), callback_data=GwCB(action="enc"))
         kb.button(text=f"📆 День месяца для автобэкапа: {s.get_int('app.scheduler.backup_day', 1)}",
                   callback_data=GwCB(action="edit", val="app.scheduler.backup_day"))
         kb.button(text=f"🕘 Время запуска автобэкапа: {s.get_int('app.scheduler.backup_hour', 12)}:00",
@@ -1478,6 +1495,15 @@ def gateway_backup_kb() -> InlineKeyboardMarkup:
         kb.button(text="💾 Создать резервную копию", callback_data=GwCB(action="backup!"))
     kb.adjust(1)
     kb.row(_gw_back())
+    return kb.as_markup()
+
+
+def gateway_encryption_kb(has_secret: bool) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✏️ Сменить фразу" if has_secret else "🔑 Задать фразу",
+              callback_data=GwCB(action="enc_set"))
+    kb.button(text="\u2b05\ufe0f Назад", callback_data=GwCB(action="backup"))
+    kb.adjust(1)
     return kb.as_markup()
 
 

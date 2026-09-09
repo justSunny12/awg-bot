@@ -96,3 +96,9 @@ class EmailSetup(StatesGroup):
     smtp_host = State()
     smtp_port = State()
     password = State()            # сообщение с паролем удаляется после приёма
+
+
+class BackupPassphrase(StatesGroup):
+    """Парольная фраза шифрования бэкапов — дважды, сообщения удаляются."""
+    first = State()
+    second = State()

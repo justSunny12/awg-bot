@@ -38,9 +38,7 @@ def test_make_backup_plaintext(services, fake_awg, monkeypatch, tmp_path):
 
 def test_make_backup_encrypted_roundtrips(services, fake_awg, monkeypatch, tmp_path):
     _patch_sources(monkeypatch, tmp_path, db_bytes=b"SECRET-DB")
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", True)
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "correct horse")
-    monkeypatch.setattr(config, "BACKUP_KEY", "")
+    services.backup_set_passphrase("correct horse")
     paths = services.make_backup()
     assert paths and all(p.endswith(".enc") for p in paths)
     db_enc = next(p for p in paths if ".db.enc" in p)
@@ -58,13 +56,18 @@ def test_make_backup_skips_missing_db(services, fake_awg, monkeypatch, tmp_path)
     assert not any(p.endswith(".db") for p in paths)
 
 
-def test_backup_enc_kwargs_prefers_passphrase(monkeypatch):
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "phrase")
-    monkeypatch.setattr(config, "BACKUP_KEY", secrets_util.b64e(bytes(32)))
-    assert Services._backup_enc_kwargs() == {"passphrase": "phrase"}
-
-
-def test_backup_enc_kwargs_key_when_no_passphrase(monkeypatch):
+def test_backup_enc_kwargs_prefers_passphrase(services, monkeypatch):
+    """Фраза важнее ключа: ключ из env переехал, потом задали фразу — действует фраза."""
     monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "")
-    monkeypatch.setattr(config, "BACKUP_KEY", secrets_util.b64e(b"k" * 32))
-    assert Services._backup_enc_kwargs() == {"key": b"k" * 32}
+    monkeypatch.setattr(config, "BACKUP_KEY", secrets_util.b64e(bytes(32)))
+    assert services.backup_import_env_once() is True
+    assert services.backup_enc_kwargs() == {"key": bytes(32)}
+    services.backup_set_passphrase("phrase-of-eight")
+    assert services.backup_enc_kwargs() == {"passphrase": "phrase-of-eight"}
+
+
+def test_backup_enc_kwargs_none_without_secret(services, monkeypatch):
+    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "")
+    monkeypatch.setattr(config, "BACKUP_KEY", "")
+    assert services.backup_import_env_once() is False
+    assert services.backup_enc_kwargs() is None and not services.backup_encryption_enabled()

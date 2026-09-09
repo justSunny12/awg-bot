@@ -1368,10 +1368,9 @@ async def test_backup_channel_email_requires_mailbox_and_encryption(services, fa
     assert any("Почта не настроена" in t for kind, t, _ in msg.sent if kind == "edit_text")
     assert "app.scheduler.backup_channel" not in store
     services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
-    monkeypatch.setattr(cfg, "BACKUP_ENCRYPTION_ENABLED", False)
     await sh.pick(cb, SetCB(sec="backup", act="pick", key="channel", val="email"), services)
     assert "app.scheduler.backup_channel" not in store, "без шифрования почтовый канал не включается"
-    monkeypatch.setattr(cfg, "BACKUP_ENCRYPTION_ENABLED", True)
+    services.backup_set_passphrase("correct horse battery")
     await sh.pick(cb, SetCB(sec="backup", act="pick", key="channel", val="email"), services)
     assert store["app.scheduler.backup_channel"] == "email"
     # «создать сейчас» уходит письмом
@@ -1423,3 +1422,35 @@ async def test_critical_alert_goes_to_email_when_telegram_is_down(monkeypatch):
     finally:
         notifier.set_email_fallback(None)
     assert mailed == ["🚨 сервис лежит"], "на почту — только критичное и только админу"
+
+
+# ── 🔐 шифрование бэкапов из чата ────────────────────────────────────────────
+
+async def test_backup_passphrase_flow_deletes_messages_and_requires_match(services, fake_bot, monkeypatch):
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from awgbot.bot import keyboards as kbs
+    from tests.conftest import FakeCallback, FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    _email_store(monkeypatch)
+    rows = [[b.text for b in r] for r in kbs.settings_backup(False).inline_keyboard]
+    assert rows[1] == ["🔐 Шифрование: 🔴 выключено"], rows
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await sh.do_action(cb, SetCB(sec="backup", act="do", key="enc"), services)
+    assert any("Шифрование резервных копий" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    state = FakeState()
+    await sh.backup_passphrase_start(cb, state)
+    m = lambda t: FakeMessage(text=t, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    short = m("abc"); await sh.backup_passphrase_first(short, state)
+    assert any("короче" in t for kind, t, _ in short.sent)
+    await sh.backup_passphrase_first(m("correct horse battery"), state)
+    wrong = m("correct horse batery"); await sh.backup_passphrase_second(wrong, state, services)
+    assert any("не совпали" in t for kind, t, _ in wrong.sent) and not services.backup_encryption_enabled()
+    await sh.backup_passphrase_first(m("correct horse battery"), state)
+    ok = m("correct horse battery"); await sh.backup_passphrase_second(ok, state, services)
+    assert services.backup_enc_kwargs() == {"passphrase": "correct horse battery"}
+    deletes = [r for r in fake_bot.records if r[0] == "delete"]
+    assert len(deletes) >= 4, "сообщения с фразой должны удаляться"
+    assert not any("correct horse" in t for kind, t, _ in ok.sent), "фраза не должна печататься обратно"
+    assert [[b.text for b in r] for r in kbs.settings_backup(True).inline_keyboard][1] == ["🔐 Шифрование: ✅ включено"]

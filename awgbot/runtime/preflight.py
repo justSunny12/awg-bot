@@ -85,7 +85,7 @@ def check_fatal() -> None:
 
 
 # ── WARNING ──────────────────────────────────────────────────────────────────
-def collect_warnings_gateway() -> list[str]:
+def collect_warnings_gateway(services=None) -> list[str]:
     """Warnings роли gateway: свои у каждой роли, потому что чинится разное.
     Клиентские проверки (awg-сервер, docker) шлюзу не о чем сказать — у него
     нет ни того, ни другого."""
@@ -93,6 +93,10 @@ def collect_warnings_gateway() -> list[str]:
     from awgbot.core import config as _c
     warns: list[str] = []
     warns += _service_autostart_warning()
+    if services is not None and services.backup_env_leftover():
+        warns.append("в /etc/awg-bot/env остались BACKUP_KEY/BACKUP_PASSPHRASE — секрет "
+                     "перенесён в БД, шифрование настраивается из чата (💾 Резервное "
+                     "копирование → 🔐 Шифрование); строки из env можно удалить")
     if not os.path.exists(_c.GW_LINK_CONF):
         warns.append(f"нет конфига линка {_c.GW_LINK_CONF} — линк не поднимется; "
                      f"шлюз ставится бандлом с ВПС (routing-link-setup.sh --bundle)")
@@ -196,6 +200,10 @@ def collect_warnings(services) -> list[str]:
             if not ok:
                 warns.append(f"почта: {detail} — аварийный email-выход из паузы не "
                              f"работает. Проверь ящик в «⚙️ Настройки → ✉️ E-mail»")
+        if services.backup_env_leftover():
+            warns.append("в /etc/awg-bot/env остались BACKUP_KEY/BACKUP_PASSPHRASE — секрет "
+                         "перенесён в БД, шифрование настраивается из чата (💾 Резервное "
+                         "копирование → 🔐 Шифрование); строки из env можно удалить")
         if services.email_env_leftover():
             warns.append("в /etc/awg-bot/env остались EMAIL_RESUME_LOGIN/PASSWORD — "
                          "почта теперь настраивается из чата (⚙️ Настройки → ✉️ E-mail), "

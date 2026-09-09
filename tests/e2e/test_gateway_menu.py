@@ -153,11 +153,10 @@ async def test_edit_flow_writes_value_and_returns_to_section(svc, fake_bot, monk
 
 
 async def test_backup_without_key_explains_instead_of_leaking(svc, fake_bot, monkeypatch):
-    monkeypatch.setattr(cfg, "BACKUP_ENCRYPTION_ENABLED", False)
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_backup_now(cb, GatewayServices(svc.db))
-    assert any("BACKUP_KEY" in t for kind, t, _ in msg.sent if kind == "answer")
+    assert any("парольную фразу" in t for kind, t, _ in msg.sent if kind == "answer")
     assert not any(kind == "answer_document" for kind, *_ in msg.sent)
 
 
@@ -165,8 +164,23 @@ def test_backup_switch_hides_the_rest_in_both_bots(monkeypatch):
     from awgbot.core import settings
     monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: False)
-    assert _labels(kb.gateway_backup_kb()) == [["🔴 Резервное копирование"], ["⬅️ Назад"]]
+    assert _labels(kb.gateway_backup_kb(False)) == [["🔴 Резервное копирование"], ["⬅️ Назад"]]
     assert _labels(kb.settings_backup())[0] == ["🔴 Резервное копирование"] and len(kb.settings_backup().inline_keyboard) == 2
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
-    rows = _labels(kb.gateway_backup_kb())
-    assert rows[0] == ["🟢 Резервное копирование"] and ["💾 Создать резервную копию"] in rows
+    rows = _labels(kb.gateway_backup_kb(True))
+    assert rows[0] == ["🟢 Резервное копирование"] and rows[1] == ["🔐 Шифрование: ✅ включено"]
+    assert ["💾 Создать резервную копию"] in rows
+
+
+async def test_gateway_passphrase_flow(svc, fake_bot):
+    from awgbot.bot.states import BackupPassphrase
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    state = FakeState()
+    await gh.gw_encryption(cb, svc, state)
+    assert any("Шифрование резервных копий" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    await gh.gw_encryption_set(cb, svc, state)
+    m = lambda t: FakeMessage(text=t, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_passphrase_first(m("correct horse battery"), state)
+    await gh.gw_passphrase_second(m("correct horse battery"), state, svc)
+    assert svc.backup_enc_kwargs() == {"passphrase": "correct horse battery"}
