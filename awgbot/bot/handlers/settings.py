@@ -112,6 +112,9 @@ async def open_section(cb: CallbackQuery, callback_data: SetCB, services, state:
     await cb.answer()
 
 
+_TOGGLE_DEFAULTS = {"notifications.email_fallback": False}
+
+
 # ── тумблеры (bool в YAML или mute обновлений в БД) ───────────────────────────
 @router.callback_query(SetCB.filter(F.act == "toggle"))
 async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
@@ -127,8 +130,16 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
             await call(services.unmute_updates)
         else:
             await call(services.mute_updates)
+    elif key == "notifications.email_fallback" and not settings.get_bool(key, False) \
+            and not await call(services.email_configured):
+        # включить нельзя без ящика — предложить настроить, не молча отказать
+        await edit(cb, texts.EMAIL_NOT_CONFIGURED, kb.email_setup_offer("notify"))
+        await cb.answer()
+        return
     else:
-        cur = settings.get_bool(key, True)
+        # дефолт тумблера — по ключу: у большинства «включено», но у ключей с
+        # дефолтом «выключено» первое нажатие иначе записало бы «выкл»
+        cur = settings.get_bool(key, _TOGGLE_DEFAULTS.get(key, True))
         try:
             await call(settings.set_value, key, not cur)
         except settings.SettingsWriteError as e:
@@ -276,6 +287,27 @@ async def pick(cb: CallbackQuery, callback_data: SetCB, services):
             await cb.answer(str(e), show_alert=True)
             return
         await _render(cb, "rt_lists", services)
+        await cb.answer()
+        return
+    if callback_data.sec == "backup" and callback_data.key == "channel":
+        val = callback_data.val
+        if val not in ("telegram", "email"):
+            await cb.answer("Нет такого варианта.", show_alert=True)
+            return
+        if val == "email":
+            if not await call(services.email_configured):
+                await edit(cb, texts.EMAIL_NOT_CONFIGURED, kb.email_setup_offer("backup"))
+                await cb.answer()
+                return
+            if not config.BACKUP_ENCRYPTION_ENABLED:
+                await cb.answer(texts.BACKUP_NEEDS_ENCRYPTION, show_alert=True)
+                return
+        try:
+            await call(settings.set_value, "app.scheduler.backup_channel", val)
+        except settings.SettingsWriteError as e:
+            await cb.answer(str(e), show_alert=True)
+            return
+        await _render(cb, "backup", services)
         await cb.answer()
         return
     if callback_data.sec == "upd" and callback_data.key == "sched":
@@ -551,6 +583,17 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
     if key == "now":                                   # бэкап сейчас
         await cb.answer("Готовлю бэкап…")
         paths = await call(services.make_backup)
+        if await call(services.backup_channel) == "email":
+            from awgbot.infra import mail
+            try:
+                await call(services.email_send_backup, paths)
+                acc = await call(services.email_account)
+                await cb.message.answer(texts.backup_mailed(acc.login if acc else "", len(paths)),
+                                        reply_markup=kb.hide_only())
+            except mail.MailError as e:
+                await cb.message.answer(f"🔴 {e}")
+            await _render(cb, "backup", services)
+            return
         for p in paths:
             try:
                 await cb.message.answer_document(FSInputFile(p))

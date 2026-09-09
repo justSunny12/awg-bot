@@ -27,6 +27,33 @@ log = logging.getLogger("awgbot.notifier")
 
 _BATCH_PACING_SECONDS = 0.05         # ~20 msg/с — с запасом под лимит Telegram
 
+# Запасной канал для КРИТИЧНЫХ алертов админу, когда Telegram не отвечает
+# (сеть/блокировка): main.py вешает сюда корутину, которая шлёт текст письмом.
+# Только критичные (Notification.critical) и только админу: рядовые
+# уведомления и чужие адресаты по почте не ездят.
+_email_fallback = None
+
+
+def set_email_fallback(fn) -> None:
+    global _email_fallback
+    _email_fallback = fn
+
+
+def _network_failure(e: Exception) -> bool:
+    from aiogram.exceptions import TelegramNetworkError
+    return isinstance(e, (TelegramNetworkError, asyncio.TimeoutError, OSError))
+
+
+async def _fallback(critical: bool, tg_id, text: str) -> None:
+    from awgbot.core import config
+    if not critical or _email_fallback is None or tg_id != config.ADMIN_ID:
+        return
+    try:
+        await _email_fallback(text)
+        log.warning("критичный алерт ушёл на почту: Telegram недоступен")
+    except Exception as e2:                          # noqa: BLE001
+        log.warning("запасной канал (почта) не сработал: %s", e2)
+
 
 def _silent_now(force_sound: bool) -> bool:
     """Слать ли БЕЗ звука: тихие часы включены, сейчас тихое окно и уведомление
@@ -36,9 +63,10 @@ def _silent_now(force_sound: bool) -> bool:
     return timeutil.in_quiet_hours(settings.get_int("quiet_hours.quiet_hours_start", 20), settings.get_int("quiet_hours.quiet_hours_end", 7))
 
 
-async def _send(bot, tg_id, text, markup, silent):
+async def _send(bot, tg_id, text, markup, silent, critical: bool = False):
     """Одна отправка: RetryAfter → подождать и повторить один раз; прочие
-    ошибки — залогировать и продолжить рассылку. Возвращает отправленное
+    ошибки — залогировать и продолжить рассылку. Сетевой отказ на критичном
+    алерте админу — запасной канал (почта). Возвращает отправленное
     сообщение либо None."""
     try:
         return await bot.send_message(tg_id, text, reply_markup=markup,
@@ -51,8 +79,12 @@ async def _send(bot, tg_id, text, markup, silent):
                                           disable_notification=silent)
         except Exception as e2:                      # noqa: BLE001
             log.warning("Не удалось отправить уведомление %s (после retry): %s", tg_id, e2)
+            if _network_failure(e2):
+                await _fallback(critical, tg_id, text)
     except Exception as e:                           # noqa: BLE001
         log.warning("Не удалось отправить уведомление %s: %s", tg_id, e)
+        if _network_failure(e):
+            await _fallback(critical, tg_id, text)
 
 
 async def send_notifications(bot, notifications) -> None:
@@ -65,7 +97,8 @@ async def send_notifications(bot, notifications) -> None:
         first = False
         silent = _silent_now(getattr(n, "force_sound", False))
         markup = getattr(n, "reply_markup", None) or kb.hide_only()
-        await _send(bot, n.tg_id, n.text, markup, silent)
+        await _send(bot, n.tg_id, n.text, markup, silent,
+                    critical=bool(getattr(n, "critical", False)))
 
 
 async def notify_one(bot, tg_id, text, *, reply_markup=None, force_sound=False) -> None:

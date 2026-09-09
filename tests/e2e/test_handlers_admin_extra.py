@@ -1352,3 +1352,74 @@ async def test_email_forget_needs_confirmation_and_toggle_resume(services, fake_
     await sh.email_action(cb, SetCB(sec="email", act="do", key="forget!"), services, FakeState())
     assert services.email_account() is None
     assert any("Почта отключена" in t for kind, t, _ in msg.sent if kind == "answer")
+
+
+# ── бэкап на почту и запасной канал для критичных алертов ────────────────────
+
+async def test_backup_channel_email_requires_mailbox_and_encryption(services, fake_bot, monkeypatch):
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from tests.conftest import FakeCallback, FakeMessage
+    import awgbot.core.config as cfg
+    store = _email_store(monkeypatch)
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await sh.pick(cb, SetCB(sec="backup", act="pick", key="channel", val="email"), services)
+    assert any("Почта не настроена" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    assert "app.scheduler.backup_channel" not in store
+    services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
+    monkeypatch.setattr(cfg, "BACKUP_ENCRYPTION_ENABLED", False)
+    await sh.pick(cb, SetCB(sec="backup", act="pick", key="channel", val="email"), services)
+    assert "app.scheduler.backup_channel" not in store, "без шифрования почтовый канал не включается"
+    monkeypatch.setattr(cfg, "BACKUP_ENCRYPTION_ENABLED", True)
+    await sh.pick(cb, SetCB(sec="backup", act="pick", key="channel", val="email"), services)
+    assert store["app.scheduler.backup_channel"] == "email"
+    # «создать сейчас» уходит письмом
+    mailed = []
+    monkeypatch.setattr(services, "make_backup", lambda: ["/tmp/a.enc", "/tmp/b.enc"])
+    monkeypatch.setattr(services, "email_send_backup", lambda paths: mailed.append(paths))
+    await sh.do_action(cb, SetCB(sec="backup", act="do", key="now"), services)
+    assert mailed == [["/tmp/a.enc", "/tmp/b.enc"]]
+    assert any("отправлена на ящик" in t and "box@icloud.com" in t for kind, t, _ in msg.sent if kind == "answer")
+
+
+async def test_email_fallback_toggle_offers_setup_without_mailbox(services, fake_bot, monkeypatch):
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from tests.conftest import FakeCallback, FakeMessage
+    import awgbot.core.config as cfg
+    store = _email_store(monkeypatch)
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await sh.toggle(cb, SetCB(sec="notify", act="toggle", key="notifications.email_fallback"), services)
+    assert any("Почта не настроена" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    assert "notifications.email_fallback" not in store
+    services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
+    await sh.toggle(cb, SetCB(sec="notify", act="toggle", key="notifications.email_fallback"), services)
+    assert store["notifications.email_fallback"] is True
+
+
+async def test_critical_alert_goes_to_email_when_telegram_is_down(monkeypatch):
+    from aiogram.exceptions import TelegramNetworkError
+    from awgbot.bot import notifier
+    from awgbot.domain.services import Notification
+    import awgbot.core.config as cfg
+
+    class DeadBot:
+        async def send_message(self, *a, **k):
+            raise TelegramNetworkError(method=None, message="network down")
+
+    mailed = []
+
+    async def fb(text):
+        mailed.append(text)
+    notifier.set_email_fallback(fb)
+    try:
+        await notifier.send_notifications(DeadBot(), [
+            Notification(cfg.ADMIN_ID, "обычное", critical=False),
+            Notification(cfg.ADMIN_ID, "🚨 сервис лежит", critical=True),
+            Notification(12345, "🚨 чужой критичный", critical=True),
+        ])
+    finally:
+        notifier.set_email_fallback(None)
+    assert mailed == ["🚨 сервис лежит"], "на почту — только критичное и только админу"

@@ -110,12 +110,15 @@ def check_smtp(acc: MailAccount, timeout: float = 15.0) -> None:
 
 
 def send_mail(acc: MailAccount, to_addr: str, subject: str, body: str,
-              timeout: float = 20.0) -> None:
+              timeout: float = 20.0, attachments=None) -> None:
+    """attachments — [(имя файла, байты)], уходят как application/octet-stream."""
     msg = EmailMessage()
     msg["From"] = acc.login
     msg["To"] = to_addr
     msg["Subject"] = subject
     msg.set_content(body)
+    for name, raw in (attachments or []):
+        msg.add_attachment(raw, maintype="application", subtype="octet-stream", filename=name)
     try:
         with smtplib.SMTP(acc.smtp_host, acc.smtp_port, timeout=timeout) as s:
             s.starttls(context=_ctx())

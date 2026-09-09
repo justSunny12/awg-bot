@@ -72,6 +72,8 @@ class Notification:
     reply_markup: object = None        # опциональная inline-клавиатура
     grace_offer_client_id: int = 0     # >0 → прикрепить кнопку отсрочки (делает scheduler)
     force_sound: bool = False          # True → слать со звуком даже в тихие часы
+    critical: bool = False             # влияет на всех клиентов → при недоступном
+                                       # Telegram уходит админу на почту (если включено)
 
 
 @dataclass
@@ -2361,7 +2363,7 @@ class Services(SelfUpdateMixin, MailMixin, MigrationMixin):
         if announced:
             return []
         self.db.set_state(self._RT_INFRA_ANNOUNCED, "1")
-        return [Notification(config.ADMIN_ID, _TXT_RT_INFRA_BAD.format(err=_e(err)))]
+        return [Notification(config.ADMIN_ID, _TXT_RT_INFRA_BAD.format(err=_e(err)), critical=True)]
 
     def routing_source_alerts(self) -> list[Notification]:
         """Смена состояния источника — доклад. Один на смену, не на тик.
@@ -2616,7 +2618,7 @@ class Services(SelfUpdateMixin, MailMixin, MigrationMixin):
         # чинят на линке, «за шлюзом нет интернета» — на самом шлюзе.
         text = (self._txt_rt_gw_no_path() if verdict == routing.PROBE_NO_PATH
                 else self._txt_rt_gw_down())
-        return [Notification(config.ADMIN_ID, text)]
+        return [Notification(config.ADMIN_ID, text, critical=True)]
 
     # ── Детект рестарта сервиса ──────────────────────────────────────────────
 
@@ -2773,7 +2775,8 @@ class Services(SelfUpdateMixin, MailMixin, MigrationMixin):
                     notes.append(Notification(
                         config.ADMIN_ID,
                         f"⚠️ {icon} Высокая загрузка: {label} {value:.0f}% "
-                        f"(порог {threshold}%, держится ≥{streak_n} замеров)."))
+                        f"(порог {threshold}%, держится ≥{streak_n} замеров).",
+                        critical=True))
             else:
                 lo, hi = lo + 1, 0
                 if lo >= streak_n and armed:

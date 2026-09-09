@@ -109,6 +109,46 @@ class MailMixin:
         alias = str(settings.get("email.resume_address", "") or "").strip()
         return alias or (self.db.get_state(self._MAIL_LOGIN_KEY) or "")
 
+    # ── функции на канале: бэкап и запасной канал для алертов ───────────────
+
+    def backup_channel(self) -> str:
+        """telegram | email; email — только при настроенной почте, иначе Telegram."""
+        ch = str(settings.get("app.scheduler.backup_channel", "telegram") or "telegram").lower()
+        return "email" if ch == "email" and self.email_account() is not None else "telegram"
+
+    def email_send_backup(self, paths) -> None:
+        """Файлы бэкапа — вложениями на сам ящик. Только шифрованные: в БД
+        приватные ключи, открытыми по почте они не ездят."""
+        acc = self.email_account()
+        if acc is None:
+            raise mail.MailError("ящик не настроен")
+        if not config.BACKUP_ENCRYPTION_ENABLED:
+            raise mail.MailError("бэкап без шифрования по почте не отправляется — "
+                                 "задай BACKUP_KEY или BACKUP_PASSPHRASE в /etc/awg-bot/env")
+        import os
+        att = []
+        for p in paths:
+            with open(p, "rb") as f:
+                att.append((os.path.basename(p), f.read()))
+        stamp = timeutil.now().strftime("%d.%m.%Y %H:%M")
+        mail.send_mail(acc, acc.login, f"awg-bot: резервная копия {stamp}",
+                       "Файлы резервной копии во вложении. Расшифровка — restore_backup.py "
+                       "с BACKUP_KEY/BACKUP_PASSPHRASE.", attachments=att)
+
+    def email_alert_fallback_enabled(self) -> bool:
+        return (settings.get_bool("notifications.email_fallback", False)
+                and self.email_account() is not None)
+
+    def email_send_alert(self, text: str) -> None:
+        """Критичный алерт админу письмом — когда Telegram не отвечает."""
+        acc = self.email_account()
+        if acc is None:
+            raise mail.MailError("ящик не настроен")
+        import re
+        plain = re.sub(r"<[^>]+>", "", text)
+        mail.send_mail(acc, acc.login, "awg-bot: критичный алерт (Telegram недоступен)",
+                       plain + f"\n\n{timeutil.now_iso()}")
+
     # ── переезд из env ───────────────────────────────────────────────────────
 
     def email_import_env_once(self) -> bool:

@@ -268,6 +268,14 @@ async def main() -> None:
     conf_watcher.start()
     scheduler = setup_scheduler(services, bot, db, watcher)
 
+    # запасной канал для критичных алертов: почта, когда Telegram не отвечает
+    from awgbot.bot import notifier as _notifier
+
+    async def _mail_fallback(text: str) -> None:
+        if await asyncio.to_thread(services.email_alert_fallback_enabled):
+            await asyncio.to_thread(services.email_send_alert, text)
+    _notifier.set_email_fallback(_mail_fallback)
+
     # почта: креды прежней схемы (env) — в БД, один раз
     try:
         await asyncio.to_thread(services.email_import_env_once)

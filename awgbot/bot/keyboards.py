@@ -1173,6 +1173,9 @@ def settings_notify() -> InlineKeyboardMarkup:
                   callback_data=SetCB(sec="notify", act="edit", key="resource_alerts.thresholds_percent.ram"))
         kb.button(text=f"Диск: {s.get_int('resource_alerts.thresholds_percent.disk', 80)}%",
                   callback_data=SetCB(sec="notify", act="edit", key="resource_alerts.thresholds_percent.disk"))
+    ef = s.get_bool("notifications.email_fallback", False)
+    kb.button(text=f"{_chk(ef)} E-mail при недоступности Telegram",
+              callback_data=SetCB(sec="notify", act="toggle", key="notifications.email_fallback"))
     ce = "notifications.client_events"
     for k, label in (("activation", "Активация клиента"), ("grace", "Активация грейс-периода"),
                      ("over_limit", "Превышение лимита потребления"), ("bonus", "Выдача бонусного объёма")):
@@ -1180,8 +1183,8 @@ def settings_notify() -> InlineKeyboardMarkup:
         kb.button(text=f"{_chk(on)} {label}",
                   callback_data=SetCB(sec="notify", act="toggle", key=f"{ce}.{k}"))
     # раскладка: тихие часы (1) [+ начало/конец (2)] + алерты (1) [+ 3 порога в ряд] +
-    # 4 события клиентов — по одной кнопке в ряд для читаемости
-    rows = [1] + ([2] if qh else []) + [1] + ([3] if ra else []) + [1, 1, 1, 1]
+    # e-mail при недоступности (1) + 4 события клиентов — по одной кнопке в ряд
+    rows = [1] + ([2] if qh else []) + [1] + ([3] if ra else []) + [1] + [1, 1, 1, 1]
     kb.adjust(*rows)
     kb.row(_back())
     return kb.as_markup()
@@ -1265,14 +1268,29 @@ def settings_backup() -> InlineKeyboardMarkup:
     on = s.get_bool("app.scheduler.backup_enabled", True)
     kb.button(text=f"{_chk(on)} Резервное копирование",
               callback_data=SetCB(sec="backup", act="toggle", key="app.scheduler.backup_enabled"))
+    rows = [1]
     if on:
+        ch = str(s.get("app.scheduler.backup_channel", "telegram") or "telegram").lower()
+        for val, label in (("telegram", "Telegram"), ("email", "E-mail")):
+            kb.button(text=f"{'✅' if ch == val else '☑️'} {label}",
+                      callback_data=SetCB(sec="backup", act="pick", key="channel", val=val))
         kb.button(text=f"📆 День месяца для автобэкапа: {s.get_int('app.scheduler.backup_day', 1)}",
                   callback_data=SetCB(sec="backup", act="edit", key="app.scheduler.backup_day"))
         kb.button(text=f"🕘 Время запуска автобэкапа: {s.get_int('app.scheduler.backup_hour', 12)}:00",
                   callback_data=SetCB(sec="backup", act="edit", key="app.scheduler.backup_hour"))
         kb.button(text="💾 Создать резервную копию", callback_data=SetCB(sec="backup", act="do", key="now"))
-    kb.adjust(1)
+        rows += [2, 1, 1, 1]
+    kb.adjust(*rows)
     kb.row(_back())
+    return kb.as_markup()
+
+
+def email_setup_offer(back_sec: str) -> InlineKeyboardMarkup:
+    """«Почта не настроена» — настроить сейчас или вернуться в раздел."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Назад", callback_data=SetCB(sec=back_sec))
+    kb.button(text="✉️ Настроить почту", callback_data=SetCB(sec="email", act="do", key="setup"))
+    kb.adjust(2)
     return kb.as_markup()
 
 

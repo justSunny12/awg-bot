@@ -56,7 +56,7 @@ def _service_failure_alerts(db, ok: bool) -> list:
                 config.ADMIN_ID,
                 f"🚨 VPN-сервис не поднимается уже более {mins} мин. "
                 "Требуется вмешательство.",
-                force_sound=True)]
+                force_sound=True, critical=True)]
     return []
 
 
@@ -128,11 +128,19 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             return
         try:
             paths = await asyncio.to_thread(services.make_backup)
-            for p in paths:
+            sent_by_mail = False
+            if services.backup_channel() == "email":
                 try:
-                    await bot.send_document(config.ADMIN_ID, FSInputFile(p))
+                    await asyncio.to_thread(services.email_send_backup, paths)
+                    sent_by_mail = True
                 except Exception as e:               # noqa: BLE001
-                    log.warning("Отправка бэкапа %s: %s", p, e)
+                    log.warning("бэкап на почту не ушёл, шлю в Telegram: %s", e)
+            if not sent_by_mail:
+                for p in paths:
+                    try:
+                        await bot.send_document(config.ADMIN_ID, FSInputFile(p))
+                    except Exception as e:               # noqa: BLE001
+                        log.warning("Отправка бэкапа %s: %s", p, e)
             db.set_state("last_backup", ym)
         except Exception as e:                       # noqa: BLE001
             log.warning("backup: %s", e)
