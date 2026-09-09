@@ -184,7 +184,38 @@ class BackupCryptoMixin:
         if role != self.backup_role():
             who = "агента шлюза" if role == "gw" else "основного бота"
             return {"ok": False, "error": f"это копия {who}, а здесь {'агент шлюза' if self.backup_role() == 'gw' else 'основной бот'}"}
-        return {"ok": True, "role": role, "created_at": created, "plain": plain}
+        return {"ok": True, "role": role, "created_at": created, "plain": plain,
+                "ifaces_changed": self._ifaces_changed(plain)}
+
+    @staticmethod
+    def iface_conf_dir() -> str:
+        return config.GW_CONF_DIR if config.ROLE == "gateway" else config.AWG_DIR
+
+    def _ifaces_changed(self, plain: bytes) -> list[str]:
+        """Имена интерфейсов, чьи конфиги в копии отличаются от текущих: только
+        их восстановление перезапишет и переподнимет. Не трогаем то, что не
+        менялось с момента копии."""
+        import io
+        import os
+        import tarfile
+        out: list[str] = []
+        try:
+            with tarfile.open(fileobj=io.BytesIO(plain), mode="r:gz") as tar:
+                for m in tar.getmembers():
+                    if not (m.isfile() and m.name.startswith("awg/") and m.name.endswith(".conf")):
+                        continue
+                    raw = tar.extractfile(m).read()
+                    cur = None
+                    try:
+                        with open(os.path.join(self.iface_conf_dir(), os.path.basename(m.name)), "rb") as f:
+                            cur = f.read()
+                    except OSError:
+                        pass
+                    if cur is None or cur.strip() != raw.strip():
+                        out.append(os.path.basename(m.name)[:-len(".conf")])
+        except Exception:                              # noqa: BLE001
+            return out
+        return out
 
     def prepare_restore(self, plain: bytes) -> str:
         """Расшифрованный архив — на диск, откуда его возьмёт awg-bot restore."""

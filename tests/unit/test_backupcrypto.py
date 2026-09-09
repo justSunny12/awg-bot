@@ -86,3 +86,25 @@ def test_inspect_backup_encrypted_needs_the_right_phrase(services, monkeypatch, 
     info = services.inspect_backup(blob, "b.tgz.enc")
     assert info["ok"] and info["created_at"].startswith("2026-09-09")
     assert not services.inspect_backup(b"garbage", "b.tgz")["ok"]
+
+
+def test_restore_reports_only_changed_interfaces(services, monkeypatch, tmp_path):
+    import io, json, tarfile
+    from awgbot.bot import texts
+    monkeypatch.setattr(cfg, "ROLE", "client")
+    d = tmp_path / "awg"; d.mkdir(); (d / "awg1.conf").write_bytes(b"[Interface]\nA\n")
+    monkeypatch.setattr(cfg, "AWG_DIR", str(d))
+    def arc(conf):
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            for name, raw in (("state/backup-meta.json", json.dumps({"role": "main", "created_at": "2026-09-09T10:00:00+03:00"}).encode()),
+                              ("awg/awg1.conf", conf)):
+                ti = tarfile.TarInfo(name); ti.size = len(raw); tar.addfile(ti, io.BytesIO(raw))
+        return buf.getvalue()
+    assert services.inspect_backup(arc(b"[Interface]\nA\n"), "b.tgz")["ifaces_changed"] == []
+    assert services.inspect_backup(arc(b"[Interface]\nB\n"), "b.tgz")["ifaces_changed"] == ["awg1"]
+    warn = texts.awg_restart_warning_body(False)
+    assert warn.startswith("Сервер AmneziaWG перезапустится")
+    assert texts.restore_offer("2026-09-09T10:00:00+03:00", warn).endswith(warn)
+    assert warn not in texts.restore_offer("2026-09-09T10:00:00+03:00")
+    assert texts.awg_restart_warning_body(True).startswith("Интерфейс линка опустится")

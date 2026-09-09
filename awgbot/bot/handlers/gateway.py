@@ -455,7 +455,13 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
         await message.answer(texts.GW_BUNDLE_NOT_OURS)
         return
     await state.update_data(bundle=base64.b64encode(blob).decode())
-    await message.answer(texts.GW_BUNDLE_RECEIVED, reply_markup=kb.gateway_bundle_kb())
+    # осмотр до вопроса: изменится ли конфиг линка — от этого зависит, будет
+    # ли обрыв и нужно ли о нём предупреждать. Не расшифровался — скажем при
+    # применении, там текст ошибки полный.
+    info = await call(services.inspect_bundle, blob)
+    link_changed = bool(info.get("link_changed", True)) if info.get("ok") else True
+    await message.answer(texts.gateway_bundle_received(link_changed),
+                         reply_markup=kb.gateway_bundle_kb())
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"apply!", "apply_ow!", "apply_keep!"})))

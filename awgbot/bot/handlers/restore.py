@@ -38,7 +38,8 @@ async def offer_restore(message: Message, services, state, *, gateway: bool) -> 
         return True
     await state.update_data(restore_plain=base64.b64encode(info["plain"]).decode(),
                             restore_at=info["created_at"])
-    await message.answer(texts.restore_offer(info["created_at"]),
+    warning = texts.awg_restart_warning_body(gateway) if info.get("ifaces_changed") else ""
+    await message.answer(texts.restore_offer(info["created_at"], warning),
                          reply_markup=kb.restore_confirm(gateway=gateway))
     return True
 

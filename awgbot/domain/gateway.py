@@ -418,7 +418,20 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         mine = self.db.get_state(self._BK_PASSPHRASE_KEY) or ""
         return {"ok": True, "mail": bool(re.search(r'^MAIL_B64="', text, re.M)),
                 "passphrase": bool(phrase),
-                "passphrase_differs": bool(phrase and mine and phrase != mine)}
+                "passphrase_differs": bool(phrase and mine and phrase != mine),
+                "link_changed": self._bundle_link_changed(text)}
+
+    def _bundle_link_changed(self, text: str) -> bool:
+        """Конфиг линка в бандле отличается от установленного? Тот же — скрипт
+        обвязки линк не переподнимет, и предупреждать об обрыве не о чем."""
+        m = re.search(r"<<'__LINK_CONF_EOF__'\n(.*?)\n__LINK_CONF_EOF__", text, re.S)
+        if not m:
+            return True
+        try:
+            current = pathlib_read(config.GW_LINK_CONF)
+        except OSError:
+            return True
+        return m.group(1).strip() != current.strip()
 
     def apply_bundle(self, blob: bytes, overwrite_passphrase: bool = False) -> tuple[bool, str]:
         """Принять шифрованный бандл из чата: расшифровать ключом, производным от

@@ -168,3 +168,22 @@ def test_gateway_backup_is_one_encrypted_archive_with_all_confs(svc, monkeypatch
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
         names = sorted(m.name for m in tar.getmembers() if m.isfile())
     assert names == ["awg/awg0.conf", "awg/awglink.conf", "state/backup-meta.json", "state/conf/app.yaml"]
+
+
+def test_bundle_link_change_detection_and_received_text(svc, monkeypatch, tmp_path):
+    from awgbot.bot import texts
+    from awgbot.util import bundlecrypt as bc
+    from awgbot.core import config
+    priv = "cOJ+yJKfw9Yq9HLm2Dq5PZv2xU0a5s5D3q1t0m2Xn1A="
+    conf = tmp_path / "awglink.conf"
+    link = f"[Interface]\nPrivateKey = {priv}\nAddress = 10.99.99.2/30\n"
+    conf.write_text(link)
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
+    def bundle(body):
+        plain = ("#!/bin/sh\ncat > \"$DEST/link.conf\" <<'__LINK_CONF_EOF__'\n" + body +
+                 "\n__LINK_CONF_EOF__\n#__GW_SETUP_BELOW__\n").encode()
+        return bc.encrypt(plain, bc.read_privkey(conf.read_text()))
+    assert svc.inspect_bundle(bundle(link))["link_changed"] is False
+    assert svc.inspect_bundle(bundle(link + "MTU = 1300\n"))["link_changed"] is True
+    assert "не перезапустится" in texts.gateway_bundle_received(False)
+    assert "Интерфейс линка опустится" in texts.gateway_bundle_received(True)

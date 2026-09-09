@@ -649,31 +649,47 @@ cmd_restore() {
     # доложит из них страницы в файл, которому они не родня.
     rm -f "$DATA_DIR"/*.db-wal "$DATA_DIR"/*.db-shm 2>/dev/null || true
     find "$src" -maxdepth 1 -name '*.db' -exec cp -a {} "$DATA_DIR/" \; 2>/dev/null || true
-    [[ -d "$src/conf" ]] && { rm -rf "$CONF_DIR"; cp -a "$src/conf" "$CONF_DIR"; }
-    [[ -f "$src/env"  ]] && { cp -a "$src/env" "$ENV_FILE"; chmod 600 "$ENV_FILE"; }
+    # Настройки и env — только то, что отличается: не трогаем неизменившееся
+    if [[ -d "$src/conf" ]]; then
+        mkdir -p "$CONF_DIR"
+        local f
+        for f in "$src/conf"/*; do
+            [[ -f "$f" ]] || continue
+            cmp -s "$f" "$CONF_DIR/$(basename "$f")" 2>/dev/null || cp -a "$f" "$CONF_DIR/"
+        done
+    fi
+    if [[ -f "$src/env" ]] && ! cmp -s "$src/env" "$ENV_FILE" 2>/dev/null; then
+        cp -a "$src/env" "$ENV_FILE"; chmod 600 "$ENV_FILE"
+    fi
     # Конфиги awg-интерфейсов — отдельным вопросом: они с приватными ключами,
     # и на живом хосте их подмена рвёт коннекты. Поднимать — руками после.
     if compgen -G "$tmp/awg/*.conf" >/dev/null; then
         local awgdir; awgdir="$(awg_conf_dir)"
-        warn "в копии конфиги awg-интерфейсов: $(ls "$tmp/awg" | tr '\n' ' ')"
-        if [[ "$yes" -eq 1 ]] || confirm "Положить их в $awgdir (существующие будут перезаписаны)?" n; then
-            mkdir -p "$awgdir"; cp -a "$tmp/awg"/*.conf "$awgdir/"; chmod 600 "$awgdir"/*.conf
-            if [[ "$yes" -eq 1 ]]; then
-                # из чата: интерфейсы переподнять здесь же — руками некому
-                local c i
-                for c in "$tmp/awg"/*.conf; do
-                    i="$(basename "$c" .conf)"
-                    if [[ -d "/sys/class/net/$i" ]]; then
+        # только ИЗМЕНИВШИЕСЯ конфиги: тот же файл — интерфейс не трогаем
+        local c i changed=""
+        for c in "$tmp/awg"/*.conf; do
+            i="$(basename "$c" .conf)"
+            cmp -s "$c" "$awgdir/$i.conf" 2>/dev/null || changed="$changed $i"
+        done
+        if [[ -z "$changed" ]]; then
+            log "конфиги awg-интерфейсов не изменились с момента копии — не трогаю."
+        else
+            warn "в копии изменившиеся конфиги awg-интерфейсов:$changed"
+            if [[ "$yes" -eq 1 ]] || confirm "Положить их в $awgdir (существующие будут перезаписаны)?" n; then
+                mkdir -p "$awgdir"
+                for i in $changed; do
+                    cp -a "$tmp/awg/$i.conf" "$awgdir/$i.conf"; chmod 600 "$awgdir/$i.conf"
+                    if [[ "$yes" -eq 1 && -d "/sys/class/net/$i" ]]; then
+                        # из чата: переподнять здесь же — руками некому
                         awg-quick down "$i" >/dev/null 2>&1 || true
                         awg-quick up "$i" >/dev/null 2>&1 || warn "$i не поднялся"
                     fi
                 done
-                ok "конфиги интерфейсов восстановлены, интерфейсы переподняты."
+                [[ "$yes" -eq 1 ]] && ok "изменившиеся интерфейсы восстановлены и переподняты:$changed" \
+                    || ok "конфиги восстановлены:$changed; поднять: awg-quick up <iface>"
             else
-                ok "конфиги интерфейсов восстановлены; поднять: awg-quick up <iface>"
+                log "конфиги интерфейсов оставлены как есть."
             fi
-        else
-            log "конфиги интерфейсов оставлены как есть."
         fi
     fi
     # маркер для бота: новый процесс доложит админу, из какой копии восстановились

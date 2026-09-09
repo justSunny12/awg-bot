@@ -186,22 +186,34 @@ mkdir -p "$HOST_CONF_DIR"
 # «поверх» уже установленного конфига. `install` в этом случае падает с «are the
 # same file», а при set -e уносит с собой весь остальной обвяз — который как раз
 # и надо доставить.
+# Конфиг не изменился и линк поднят — НЕ трогаем: рестарт линка рвёт РФ-доступ
+# у всех, а ради того же самого конфига рвать нечего (правила ниже идемпотентны).
+LINK_SAME=0
+if [ -f "$HOST_CONF_DIR/$LINK_IF.conf" ] && cmp -s "$SRC_CONF" "$HOST_CONF_DIR/$LINK_IF.conf"; then
+    LINK_SAME=1
+fi
 if [ "$(readlink -f "$SRC_CONF")" = "$(readlink -f "$HOST_CONF_DIR/$LINK_IF.conf")" ]; then
     say "  конфиг уже на месте — копировать не нужно"
+elif [ "$LINK_SAME" = "1" ]; then
+    say "  конфиг не изменился — копировать не нужно"
 else
     run "install -m 600 '$SRC_CONF' $HOST_CONF_DIR/$LINK_IF.conf"
 fi
-if ip link show "$LINK_IF" >/dev/null 2>&1; then
-    say "  интерфейс уже поднят — перезапускаю, чтобы подхватить конфиг"
-    run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
-    # и в контейнере тоже: линк мог быть поднят прежней версией скрипта
-    if [ -n "$CONTAINER" ]; then
-        run "docker exec $CONTAINER awg-quick down $LINK_IF 2>/dev/null || true"
-    fi
-fi
 [ -n "$AWG_QUICK" ] || { say "ОШИБКА: awg-quick не найден на ХОСТЕ."; \
     say "  Собери amneziawg-tools той же версии, что и модуль ядра."; exit 1; }
-run "$AWG_QUICK up $LINK_IF"
+if ip link show "$LINK_IF" >/dev/null 2>&1 && [ "$LINK_SAME" = "1" ]; then
+    say "  интерфейс поднят, конфиг тот же — линк не перезапускаю"
+else
+    if ip link show "$LINK_IF" >/dev/null 2>&1; then
+        say "  интерфейс уже поднят — перезапускаю, чтобы подхватить конфиг"
+        run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
+        # и в контейнере тоже: линк мог быть поднят прежней версией скрипта
+        if [ -n "$CONTAINER" ]; then
+            run "docker exec $CONTAINER awg-quick down $LINK_IF 2>/dev/null || true"
+        fi
+    fi
+    run "$AWG_QUICK up $LINK_IF"
+fi
 
 # Проверяем ДЕЛОМ, а не по коду возврата: при расхождении версий awg-quick
 # создаёт интерфейс, спотыкается на setconf и молча удаляет его обратно —

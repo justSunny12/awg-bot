@@ -1481,14 +1481,33 @@ SETTINGS_BACKUP = ("💾 <b>Резервное копирование</b>\n\nР�
                   "даты (формат файла - tgz.enc)</b>")
 
 
-def restore_offer(created_at_iso: str) -> str:
+def restore_offer(created_at_iso: str, iface_warning: str = "") -> str:
+    """iface_warning — тело предупреждения экрана «Перезапустить AWG» своей
+    роли; добавляется, только если восстановление затронет интерфейсы."""
     from awgbot.util import timeutil
     when = timeutil.fmt_dt(timeutil.parse_iso(created_at_iso)) if created_at_iso else "?"
-    return (f"Приложенный тобой файл - бэкап настроек бота и сервиса от {when}.\n"
+    text = (f"Приложенный тобой файл - бэкап настроек бота и сервиса от {when}.\n"
             "Восстановить из него?\n"
             "<b>Важно!</b> Все изменения, внесенные в настройки бота и сервиса (в т.ч. "
             "добавленные профили и устройства, измененные подписки, ключи шифрования) будут "
             "возвращены к состоянию на момент снятия резервной копии!")
+    return text + (f"\n\n{iface_warning}" if iface_warning else "")
+
+
+def awg_restart_warning_body(gateway: bool) -> str:
+    """Слово в слово предупреждение экрана «Перезапустить AWG» — у ролей оно разное."""
+    src = GW_CONFIRM_RESTART if gateway else SVC_CONFIRM_AWG
+    return src.split("\n\n", 1)[1]
+
+
+def gateway_bundle_received(link_changed: bool) -> str:
+    base = ("📦 <b>Получена конфигурация шлюза.</b>\n\nВнутри — конфиг линка и скрипт "
+            "обвязки с ВПС. Применение перепишет конфиг линка и переставит правила."
+            if link_changed else
+            "📦 <b>Получена конфигурация шлюза.</b>\n\nВнутри — конфиг линка и скрипт "
+            "обвязки с ВПС. Конфиг линка не изменился — линк не перезапустится, "
+            "правила будут переставлены.")
+    return base + (f"\n\n{awg_restart_warning_body(True)}" if link_changed else "")
 
 
 def restore_rejected(error: str) -> str:
