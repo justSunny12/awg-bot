@@ -1415,6 +1415,7 @@ def gateway_settings_kb() -> InlineKeyboardMarkup:
     маршрутизация) — нет и здесь."""
     kb = InlineKeyboardBuilder()
     kb.button(text="🔔 Уведомления", callback_data=GwCB(action="notify"))
+    kb.button(text="✉️ E-mail", callback_data=GwCB(action="email"))
     kb.button(text="📊 Мониторинг", callback_data=GwCB(action="mon"))
     kb.button(text="💾 Резервное копирование", callback_data=GwCB(action="backup"))
     kb.button(text="🔄 Обслуживание", callback_data=GwCB(action="maint"))
@@ -1457,6 +1458,10 @@ def gateway_notify_kb() -> InlineKeyboardMarkup:
         kb.button(text=f"Temp: {s.get_int('app.gateway.temp_alert_c', 75)} °C",
                   callback_data=GwCB(action="edit", val="app.gateway.temp_alert_c"))
         rows += [2, 2]
+    ef = s.get_bool("notifications.email_fallback", False)
+    kb.button(text=f"{_chk(ef)} E-mail при недоступности Telegram",
+              callback_data=GwCB(action="tgl", val="notifications.email_fallback"))
+    rows.append(1)
     kb.adjust(*rows)
     kb.row(_gw_back())
     return kb.as_markup()
@@ -1486,15 +1491,53 @@ def gateway_backup_kb(encryption: bool = False) -> InlineKeyboardMarkup:
     on = s.get_bool("app.scheduler.backup_enabled", True)
     kb.button(text=f"{_chk(on)} Резервное копирование",
               callback_data=GwCB(action="tgl", val="app.scheduler.backup_enabled"))
+    rows = [1]
     if on:
         kb.button(text=_enc_label(encryption), callback_data=GwCB(action="enc"))
+        ch = str(s.get("app.scheduler.backup_channel", "telegram") or "telegram").lower()
+        for val, label in (("telegram", "Telegram"), ("email", "E-mail")):
+            kb.button(text=f"{'✅' if ch == val else '☑️'} {label}",
+                      callback_data=GwCB(action="bk_ch", val=val))
         kb.button(text=f"📆 День месяца для автобэкапа: {s.get_int('app.scheduler.backup_day', 1)}",
                   callback_data=GwCB(action="edit", val="app.scheduler.backup_day"))
         kb.button(text=f"🕘 Время запуска автобэкапа: {s.get_int('app.scheduler.backup_hour', 12)}:00",
                   callback_data=GwCB(action="edit", val="app.scheduler.backup_hour"))
         kb.button(text="💾 Создать резервную копию", callback_data=GwCB(action="backup!"))
-    kb.adjust(1)
+        rows += [1, 2, 1, 1, 1]
+    kb.adjust(*rows)
     kb.row(_gw_back())
+    return kb.as_markup()
+
+
+def gateway_email_kb(configured: bool) -> InlineKeyboardMarkup:
+    """Почта у агента: те же кнопки, что у основного, без аварийного выхода."""
+    kb = InlineKeyboardBuilder()
+    if not configured:
+        kb.button(text="✉️ Подключить ящик", callback_data=GwCB(action="em_setup"))
+        kb.adjust(1)
+    else:
+        kb.button(text="🔍 Проверить соединение", callback_data=GwCB(action="em_check"))
+        kb.button(text="📨 Тестовое письмо", callback_data=GwCB(action="em_test"))
+        kb.button(text="✏️ Сменить ящик", callback_data=GwCB(action="em_setup"))
+        kb.button(text="🗑 Отключить", callback_data=GwCB(action="em_forget"))
+        kb.adjust(2, 2)
+    kb.row(_gw_back())
+    return kb.as_markup()
+
+
+def gateway_email_forget_confirm() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Отмена", callback_data=GwCB(action="email"))
+    kb.button(text="✅ Отключить", callback_data=GwCB(action="em_forget!"))
+    kb.adjust(2)
+    return kb.as_markup()
+
+
+def gateway_email_offer(back: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Назад", callback_data=GwCB(action=back))
+    kb.button(text="✉️ Настроить почту", callback_data=GwCB(action="em_setup"))
+    kb.adjust(2)
     return kb.as_markup()
 
 

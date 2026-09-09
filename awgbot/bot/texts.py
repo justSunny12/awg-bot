@@ -1390,14 +1390,18 @@ SETTINGS_NOTIFY = ("🔔 <b>Уведомления</b>\n\nТихие часы (�
 SETTINGS_SUBS = "💳 <b>Параметры подписок</b>\n\nЛимиты и сроки, общие для всех клиентов."
 
 
-def settings_email_text(acc, last_check: tuple, resume_on: bool, resume_addr: str) -> str:
-    """Экран почтового канала: ящик, серверы, состояние, функции на канале."""
+def settings_email_text(acc, last_check: tuple, resume_on=None, resume_addr: str = "") -> str:
+    """Экран почтового канала: ящик, серверы, состояние, функции на канале.
+    resume_on=None — у агента шлюза аварийного выхода нет, блок не рисуется."""
     from awgbot.util import timeutil
     lines = ["✉️ <b>E-mail</b>", ""]
     if acc is None:
-        lines.append("Ящик не подключён. Почта нужна для аварийного выхода из "
-                     "приостановки по коду в письме; портов на хосте не открывается — "
-                     "бот сам ходит на почтовый сервер.")
+        what = ("для аварийного выхода из приостановки по коду в письме, бэкапов и "
+                "критичных алертов" if resume_on is not None
+                else "для бэкапов и критичных алертов, когда Telegram недоступен; "
+                     "настройки почты приезжают в конфигурации шлюза с ВПС")
+        lines.append(f"Ящик не подключён. Почта нужна {what}; портов на хосте не "
+                     "открывается — бот сам ходит на почтовый сервер.")
         return "\n".join(lines)
     lines.append(f"Ящик: <code>{_e(acc.login)}</code>")
     lines.append(f"IMAP: <code>{_e(acc.imap_host)}:{acc.imap_port}</code>, "
@@ -1410,9 +1414,10 @@ def settings_email_text(acc, last_check: tuple, resume_on: bool, resume_addr: st
         lines.append(f"Состояние: 🔴 {_e(detail)}")
     else:
         lines.append("Состояние: ⚪ ещё не проверялось")
-    lines += ["", "🆘 Аварийный выход из приостановки: " + ("включён" if resume_on else "выключен")]
-    if resume_on:
-        lines.append(f"Адрес для писем с кодом: <code>{_e(resume_addr)}</code>")
+    if resume_on is not None:
+        lines += ["", "🆘 Аварийный выход из приостановки: " + ("включён" if resume_on else "выключен")]
+        if resume_on:
+            lines.append(f"Адрес для писем с кодом: <code>{_e(resume_addr)}</code>")
     return "\n".join(lines)
 
 
@@ -1503,7 +1508,9 @@ BACKUP_PASSPHRASE_SET = "✅ Парольная фраза задана. Сле�
 
 
 def backup_mailed(address: str, n: int) -> str:
-    return f"📨 Резервная копия ({n} файл.) отправлена на ящик <code>{_e(address)}</code>."
+    from awgbot.util.timeutil import _plural_ru
+    files = f"{n} {_plural_ru(n, ('файл', 'файла', 'файлов'))}"
+    return f"📨 Резервная копия ({files}) отправлена на ящик <code>{_e(address)}</code>"
 SETTINGS_SVC = "🔄 <b>Обслуживание</b>\n\nПерезапуск AmneziaWG и самого бота."
 SVC_CONFIRM_AWG = ("🔄 <b>Перезапустить AWG?</b>\n\nСервер AmneziaWG перезапустится: все "
                    "коннекты оборвутся на несколько секунд и поднимутся сами; блокировки "
@@ -1842,7 +1849,11 @@ def gateway_health(st) -> str:
 GW_SETTINGS = ("⚙️ <b>Настройки</b>\n\nУведомления, мониторинг, резервное копирование, "
                "обслуживание и обновления бота.")
 GW_SETTINGS_NOTIFY = ("🔔 <b>Уведомления</b>\n\nТихие часы (ночью без звука) и алерты "
-                      "о загрузке и температуре шлюза.")
+                      "о загрузке и температуре шлюза.\n\n"
+                      "«E-mail при недоступности Telegram»: если Telegram не отвечает, на ящик "
+                      "уходят <b>только критичные</b> алерты — мёртвый линк, нет выхода наружу, "
+                      "сломанная обвязка, питание, перегрев, перегруз. Остальное по почте не "
+                      "дублируется.")
 GW_SETTINGS_MON = ("📊 <b>Мониторинг</b>\n\nЧастота опроса, чувствительность алертов "
                    "и поведение при простое линка.")
 GW_BACKUP_NO_KEY = ("💾 Резервная копия шлюза — только шифрованная: внутри приватные ключи "

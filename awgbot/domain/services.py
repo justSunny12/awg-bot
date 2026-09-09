@@ -1885,7 +1885,27 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             priv = bundlecrypt.read_privkey(f.read())
         with open("/root/awg-gw-bundle.sh", "rb") as f:
             plain = f.read()
+        plain = self._bundle_with_mail(plain)
         return bundlecrypt.encrypt(plain, priv), "awg-gw-bundle.enc"
+
+    _MAIL_MARK = b"#__GW_SETUP_BELOW__"
+
+    def _bundle_with_mail(self, plain: bytes) -> bytes:
+        """Настройки почты — в бандл, чтобы не вводить их дважды: одной строкой
+        MAIL_B64 (JSON в base64) перед маркером контракта. Бандл шифрован ключом
+        линка, пароль внутри защищён так же, как ключ линка. Почты нет — строка
+        не добавляется, агент оставляет свои настройки как есть."""
+        acc = self.email_account()
+        if acc is None or self._MAIL_MARK not in plain:
+            return plain
+        import base64
+        import json
+        payload = json.dumps({"login": acc.login, "password": acc.password,
+                              "imap_host": acc.imap_host, "imap_port": acc.imap_port,
+                              "smtp_host": acc.smtp_host, "smtp_port": acc.smtp_port},
+                             ensure_ascii=False).encode()
+        line = b'MAIL_B64="' + base64.b64encode(payload) + b'"\n'
+        return plain.replace(self._MAIL_MARK, line + self._MAIL_MARK, 1)
 
     @staticmethod
     def _rt_effect_line() -> str:

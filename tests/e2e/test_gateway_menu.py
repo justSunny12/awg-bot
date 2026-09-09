@@ -40,7 +40,7 @@ def _labels(markup):
 def test_main_menu_layout():
     assert _labels(kb.gateway_panel_kb()) == [["🔄 Обновить", "🌡 Монитор здоровья"],
                                               ["🔧 Мастер восстановления"], ["⚙️ Настройки"]]
-    assert _labels(kb.gateway_settings_kb()) == [["🔔 Уведомления"], ["📊 Мониторинг"],
+    assert _labels(kb.gateway_settings_kb()) == [["🔔 Уведомления"], ["✉️ E-mail"], ["📊 Мониторинг"],
                                                  ["💾 Резервное копирование"], ["🔄 Обслуживание"],
                                                  ["⬆️ Обновления бота"], ["⬅️ В меню"]]
     assert _labels(kb.gateway_maint_kb()) == [["🔁 Перезапустить AWG"], ["🔁 Перезапустить бота"],
@@ -119,7 +119,7 @@ def test_notify_section_layout_cpu_ram_then_disk_temp(monkeypatch):
     assert rows[1] == ["Начало: 20:00 МСК", "Конец: 7:00 МСК"]
     assert rows[3] == ["CPU: 80%", "RAM: 80%"]
     assert rows[4] == ["Диск: 80%", "Temp: 75 °C"]
-    assert rows[-1] == ["⬅️ Назад"]
+    assert rows[-2] == ["🟢 E-mail при недоступности Telegram"] and rows[-1] == ["⬅️ Назад"]
     assert not any("клиент" in b.lower() for row in rows for b in row), "события клиентов у шлюза лишние"
 
 
@@ -169,7 +169,7 @@ def test_backup_switch_hides_the_rest_in_both_bots(monkeypatch):
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
     rows = _labels(kb.gateway_backup_kb(True))
     assert rows[0] == ["🟢 Резервное копирование"] and rows[1] == ["🔐 Шифрование: ✅ включено"]
-    assert ["💾 Создать резервную копию"] in rows
+    assert rows[2] == ["✅ Telegram", "☑️ E-mail"] and ["💾 Создать резервную копию"] in rows
 
 
 async def test_gateway_passphrase_flow(svc, fake_bot):
@@ -184,3 +184,27 @@ async def test_gateway_passphrase_flow(svc, fake_bot):
     await gh.gw_passphrase_first(m("correct horse battery"), state)
     await gh.gw_passphrase_second(m("correct horse battery"), state, svc)
     assert svc.backup_enc_kwargs() == {"passphrase": "correct horse battery"}
+
+
+async def test_gateway_email_section_and_channel_offer(svc, fake_bot, monkeypatch):
+    from awgbot.core import settings
+    store = {}
+    monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v))
+    monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
+    monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
+    monkeypatch.setattr(settings, "get_bool", lambda k, d=True: bool(store.get(k, d)))
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_section(cb, GwCB(action="email"), svc, FakeState())
+    txt = [t for kind, t, _ in msg.sent if kind == "edit_text"][-1]
+    assert "Ящик не подключён" in txt and "конфигурации шлюза" in txt and "приостановки" not in txt
+    await gh.gw_backup_channel(cb, GwCB(action="bk_ch", val="email"), svc)
+    assert any("Почта не настроена" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    await gh.gw_toggle(cb, GwCB(action="tgl", val="notifications.email_fallback"), svc)
+    assert "notifications.email_fallback" not in store
+    svc.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
+    svc.backup_set_passphrase("correct horse battery")
+    await gh.gw_backup_channel(cb, GwCB(action="bk_ch", val="email"), svc)
+    assert store["app.scheduler.backup_channel"] == "email"
+    await gh.gw_toggle(cb, GwCB(action="tgl", val="notifications.email_fallback"), svc)
+    assert store["notifications.email_fallback"] is True

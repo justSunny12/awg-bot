@@ -20,6 +20,7 @@ from awgbot.bot import texts
 from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import BackupPassphrase, SettingsInput
+from awgbot.bot.handlers import mailwizard
 from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, purge_menus, dismiss_update_reports
 from awgbot.util import bundlecrypt
 
@@ -125,8 +126,15 @@ async def gw_maint(cb: CallbackQuery, services):
 
 # ── разделы настроек: уведомления / мониторинг / резервное копирование ───────
 
+def _email_section(services):
+    acc = services.email_account()
+    return (texts.settings_email_text(acc, services.email_last_check()),
+            kb.gateway_email_kb(acc is not None))
+
+
 _SECTIONS = {
     "notify": lambda services: (texts.GW_SETTINGS_NOTIFY, kb.gateway_notify_kb()),
+    "email": _email_section,
     "mon": lambda services: (texts.GW_SETTINGS_MON, kb.gateway_mon_kb()),
     "backup": lambda services: (texts.SETTINGS_BACKUP,
                                 kb.gateway_backup_kb(services.backup_encryption_enabled())),
@@ -200,7 +208,8 @@ async def gw_passphrase_second(message: Message, state: FSMContext, services):
 
 
 def _section_of(key: str) -> str:
-    if key.startswith("quiet_hours.") or key.startswith("resource_alerts.") or key == "app.gateway.temp_alert_c":
+    if (key.startswith("quiet_hours.") or key.startswith("resource_alerts.")
+            or key.startswith("notifications.") or key == "app.gateway.temp_alert_c"):
         return "notify"
     if key.startswith("app.scheduler.backup_"):
         return "backup"
@@ -212,7 +221,12 @@ async def gw_toggle(cb: CallbackQuery, callback_data: GwCB, services):
     """Тумблер bool в conf — та же механика, что у основного бота."""
     from awgbot.core import settings
     key = callback_data.val
-    cur = settings.get_bool(key, True)
+    if key == "notifications.email_fallback" and not settings.get_bool(key, False) \
+            and not await call(services.email_configured):
+        await edit_nav(cb, services, texts.EMAIL_NOT_CONFIGURED, kb.gateway_email_offer("notify"))
+        await cb.answer()
+        return
+    cur = settings.get_bool(key, {"notifications.email_fallback": False}.get(key, True))
     try:
         await call(settings.set_value, key, not cur)
     except settings.SettingsWriteError as e:
@@ -265,11 +279,22 @@ async def gw_receive_value(message: Message, state: FSMContext, services):
 @router.callback_query(GwCB.filter(F.action == "backup!"))
 async def gw_backup_now(cb: CallbackQuery, services):
     from aiogram.types import FSInputFile
+    from awgbot.infra import mail
     await cb.answer("Готовлю резервную копию…")
     try:
         paths = await call(services.make_backup)
     except Exception as e:                            # noqa: BLE001
         await cb.message.answer(texts.GW_BACKUP_NO_KEY if "шифрован" in str(e) else f"⚠️ {e}")
+        return
+    if await call(services.backup_channel) == "email":
+        try:
+            await call(services.email_send_backup, paths)
+            acc = await call(services.email_account)
+            await cb.message.answer(texts.backup_mailed(acc.login if acc else "", len(paths)),
+                                    reply_markup=kb.hide_only())
+        except mail.MailError as e:
+            await cb.message.answer(f"🔴 {e}")
+        await edit_nav(cb, services, *await _section(services, "backup"))
         return
     for p in paths:
         try:
@@ -277,6 +302,83 @@ async def gw_backup_now(cb: CallbackQuery, services):
         except Exception:                             # noqa: BLE001
             pass
     await edit_nav(cb, services, *await _section(services, "backup"))
+
+
+@router.callback_query(GwCB.filter(F.action == "bk_ch"))
+async def gw_backup_channel(cb: CallbackQuery, callback_data: GwCB, services):
+    from awgbot.core import settings
+    val = callback_data.val
+    if val not in ("telegram", "email"):
+        await cb.answer("Нет такого варианта.", show_alert=True)
+        return
+    if val == "email":
+        if not await call(services.email_configured):
+            await edit_nav(cb, services, texts.EMAIL_NOT_CONFIGURED, kb.gateway_email_offer("backup"))
+            await cb.answer()
+            return
+        if not await call(services.backup_encryption_enabled):
+            await cb.answer(texts.BACKUP_NEEDS_ENCRYPTION, show_alert=True)
+            return
+    try:
+        await call(settings.set_value, "app.scheduler.backup_channel", val)
+    except settings.SettingsWriteError as e:
+        await cb.answer(str(e), show_alert=True)
+        return
+    await edit_nav(cb, services, *await _section(services, "backup"))
+    await cb.answer()
+
+
+# ── ✉️ E-mail у агента: ящик из бандла или руками, проверка, отключение ─────
+
+@router.callback_query(GwCB.filter(F.action == "em_setup"))
+async def gw_email_setup(cb: CallbackQuery, services, state: FSMContext):
+    from awgbot.bot.states import EmailSetup
+    await state.clear()
+    await state.set_state(EmailSetup.address)
+    acc = await call(services.email_account)
+    prompt = texts.email_ask_address_change(acc.login) if acc else texts.EMAIL_ASK_ADDRESS
+    await edit_nav(cb, services, prompt, kb.gateway_cancel_kb("email"))
+    await cb.answer()
+
+
+@router.callback_query(GwCB.filter(F.action == "em_check"))
+async def gw_email_check(cb: CallbackQuery, services):
+    await cb.answer("Проверяю…")
+    ok, detail = await call(services.email_check)
+    await edit_nav(cb, services, *await _section(services, "email"))
+    if not ok:
+        await cb.message.answer(texts.email_check_failed(detail))
+
+
+@router.callback_query(GwCB.filter(F.action == "em_test"))
+async def gw_email_test(cb: CallbackQuery, services):
+    from awgbot.infra import mail
+    await cb.answer("Отправляю…")
+    try:
+        await call(services.email_send_test)
+    except mail.MailError as e:
+        await cb.message.answer(f"🔴 {e}")
+        return
+    acc = await call(services.email_account)
+    await cb.message.answer(texts.email_test_sent(acc.login if acc else ""), reply_markup=kb.hide_only())
+
+
+@router.callback_query(GwCB.filter(F.action == "em_forget"))
+async def gw_email_forget(cb: CallbackQuery, services):
+    await edit_nav(cb, services, texts.EMAIL_FORGET_CONFIRM, kb.gateway_email_forget_confirm())
+    await cb.answer()
+
+
+@router.callback_query(GwCB.filter(F.action == "em_forget!"))
+async def gw_email_forget_do(cb: CallbackQuery, services):
+    await call(services.email_forget)
+    await cb.message.answer(texts.EMAIL_FORGOTTEN)
+    await edit_nav(cb, services, *await _section(services, "email"))
+    await cb.answer()
+
+
+_mw = mailwizard.register(router, cancel_kb=lambda: kb.gateway_cancel_kb("email"),
+                          done_screen=lambda services: _section(services, "email"))
 
 
 _CONFIRM = {

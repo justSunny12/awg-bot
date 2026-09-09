@@ -17,6 +17,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import BackupPassphrase, EmailSetup, SettingsInput
+from awgbot.bot.handlers import mailwizard
 from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu
 from awgbot.domain.services import ServiceError
 
@@ -509,116 +510,11 @@ async def email_action(cb: CallbackQuery, callback_data: SetCB, services, state:
     await cb.answer("Действие недоступно.", show_alert=True)
 
 
-async def _email_finish(message: Message, state: FSMContext, services, password: str):
-    """Проверить вход и сохранить. Пароль дальше state не уходит: ошибка —
-    ничего не сохранено, мастер закрыт."""
-    from awgbot.infra import mail
-    data = await state.get_data()
-    await state.clear()
-    acc = mail.MailAccount(login=data["email_address"], password=password,
-                           imap_host=data["imap_host"], imap_port=int(data["imap_port"]),
-                           smtp_host=data["smtp_host"], smtp_port=int(data["smtp_port"]))
-    ok, detail = await call(services.email_check, acc)
-    if not ok:
-        await message.answer(texts.email_check_failed(detail))
-        text, markup = await _screen("email", services)
-        await message.answer(text, reply_markup=markup)
-        return
-    await call(services.email_save, acc.login, acc.password, acc.imap_host, acc.imap_port,
-               acc.smtp_host, acc.smtp_port)
-    await call(services.email_check)                  # запомнить «проверено сейчас»
-    await message.answer(texts.email_saved(acc.login, detail))
-    text, markup = await _screen("email", services)
-    await message.answer(text, reply_markup=markup)
-
-
-@router.message(EmailSetup.address)
-async def email_address(message: Message, state: FSMContext, services):
-    from awgbot.bot.states import EmailSetup
-    from awgbot.infra import mail
-    addr = (message.text or "").strip()
-    if not mail.is_address(addr):
-        await message.answer(texts.EMAIL_BAD_ADDRESS)
-        return
-    await state.update_data(email_address=addr)
-    provider = mail.detect_provider(addr)
-    if provider:
-        imap, ip, smtp, sp = provider
-        await state.update_data(imap_host=imap, imap_port=ip, smtp_host=smtp, smtp_port=sp)
-        await state.set_state(EmailSetup.password)
-        await message.answer(texts.email_provider_line(addr, provider) + "\n\n"
-                             + texts.email_ask_password(addr), reply_markup=kb.settings_cancel("email"))
-        return
-    await state.set_state(EmailSetup.imap_host)
-    await message.answer(texts.EMAIL_ASK_IMAP_HOST, reply_markup=kb.settings_cancel("email"))
-
-
-def _host_ok(v: str) -> bool:
-    v = v.strip()
-    return bool(v) and " " not in v and "." in v
-
-
-def _port_ok(v: str) -> bool:
-    return v.strip().isdigit() and 1 <= int(v.strip()) <= 65535
-
-
-@router.message(EmailSetup.imap_host)
-async def email_imap_host(message: Message, state: FSMContext):
-    from awgbot.bot.states import EmailSetup
-    v = (message.text or "").strip()
-    if not _host_ok(v):
-        await message.answer(texts.EMAIL_BAD_HOST); return
-    await state.update_data(imap_host=v)
-    await state.set_state(EmailSetup.imap_port)
-    await message.answer(texts.EMAIL_ASK_IMAP_PORT, reply_markup=kb.settings_cancel("email"))
-
-
-@router.message(EmailSetup.imap_port)
-async def email_imap_port(message: Message, state: FSMContext):
-    from awgbot.bot.states import EmailSetup
-    v = (message.text or "").strip()
-    if not _port_ok(v):
-        await message.answer(texts.EMAIL_BAD_PORT); return
-    await state.update_data(imap_port=int(v))
-    await state.set_state(EmailSetup.smtp_host)
-    await message.answer(texts.EMAIL_ASK_SMTP_HOST, reply_markup=kb.settings_cancel("email"))
-
-
-@router.message(EmailSetup.smtp_host)
-async def email_smtp_host(message: Message, state: FSMContext):
-    from awgbot.bot.states import EmailSetup
-    v = (message.text or "").strip()
-    if not _host_ok(v):
-        await message.answer(texts.EMAIL_BAD_HOST); return
-    await state.update_data(smtp_host=v)
-    await state.set_state(EmailSetup.smtp_port)
-    await message.answer(texts.EMAIL_ASK_SMTP_PORT, reply_markup=kb.settings_cancel("email"))
-
-
-@router.message(EmailSetup.smtp_port)
-async def email_smtp_port(message: Message, state: FSMContext):
-    from awgbot.bot.states import EmailSetup
-    v = (message.text or "").strip()
-    if not _port_ok(v):
-        await message.answer(texts.EMAIL_BAD_PORT); return
-    await state.update_data(smtp_port=int(v))
-    await state.set_state(EmailSetup.password)
-    addr = (await state.get_data()).get("email_address", "")
-    await message.answer(texts.email_ask_password(addr), reply_markup=kb.settings_cancel("email"))
-
-
-@router.message(EmailSetup.password)
-async def email_password(message: Message, state: FSMContext, services):
-    password = (message.text or "").strip()
-    # пароль в чате не оставляем: удаляем сообщение сразу, до любой проверки
-    try:
-        await message.delete()
-    except Exception:                                  # noqa: BLE001
-        pass
-    if not password:
-        await message.answer("⚠️ Пароль пустой. Пришли пароль ещё раз.")
-        return
-    await _email_finish(message, state, services, password)
+# Мастер подключения ящика — общий модуль: те же шаги у агента шлюза.
+_mw = mailwizard.register(router, cancel_kb=lambda: kb.settings_cancel("email"),
+                          done_screen=lambda services: _screen("email", services))
+email_address, email_imap_host, email_imap_port = _mw["address"], _mw["imap_host"], _mw["imap_port"]
+email_smtp_host, email_smtp_port, email_password = _mw["smtp_host"], _mw["smtp_port"], _mw["password"]
 
 
 # ВЫШЕ do_action НАМЕРЕННО. Фильтры проверяются в порядке регистрации, а у

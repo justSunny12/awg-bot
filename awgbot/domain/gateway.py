@@ -32,6 +32,7 @@ log = logging.getLogger("awgbot.gateway")
 from awgbot.domain.services import Notification, ServiceError  # noqa: E402
 from awgbot.domain.selfupdate import SelfUpdateMixin  # noqa: E402
 from awgbot.domain.backupcrypto import BackupCryptoMixin  # noqa: E402
+from awgbot.domain.mailmix import MailMixin  # noqa: E402
 
 
 def _run(argv: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
@@ -97,7 +98,7 @@ class GwStatus:
         return max(0.0, (timeutil.now() - timeutil.parse_iso(self.ts)).total_seconds())
 
 
-class GatewayServices(SelfUpdateMixin, BackupCryptoMixin):
+class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
     """Механика агента. db — обычная Database: нужен только state (гистерезис,
     снимки); клиентские таблицы просто пустуют, и городить отдельную схему ради
     их отсутствия — усложнение без выгоды."""
@@ -245,7 +246,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin):
     # ── гистерезис ───────────────────────────────────────────────────────────
 
     def _streak_alert(self, key: str, bad: bool | None, streak: int,
-                      on_text: str, off_text: str, loud: bool = True) -> list[Notification]:
+                      on_text: str, off_text: str, loud: bool = True,
+                      critical: bool = True) -> list[Notification]:
         """Обобщение паттерна ресурс-алертов: алерт после N плохих замеров
         ПОДРЯД, отбой после N хороших. None не двигает счётчики: «не смог
         посмотреть» — не норма и не отказ."""
@@ -259,7 +261,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin):
             hi, lo = hi + 1, 0
             if hi >= streak and not armed:
                 self.db.set_state(f"gwst_armed_{key}", "1")
-                notes.append(Notification(config.ADMIN_ID, on_text, force_sound=loud))
+                notes.append(Notification(config.ADMIN_ID, on_text, force_sound=loud,
+                                          critical=critical))
         else:
             lo, hi = lo + 1, 0
             if lo >= streak and armed:
@@ -303,11 +306,11 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin):
             + "; ".join(f"{c.name} — {c.detail}" for c in broken[:3]),
             "✅ Обвязка шлюза снова в порядке.")
 
-        notes += self._streak_alert(
+        notes += self._streak_alert(              # не критично: стреляет только на ребуте
             "kernels", bool(st.kernels_missing), streak,
             "⚠️ Ядра без модуля awg: " + ", ".join(st.kernels_missing[:4]) +
             ". Ребут в такое ядро оставит шлюз без туннелей.",
-            "✅ Все установленные ядра покрыты модулем awg.")
+            "✅ Все установленные ядра покрыты модулем awg.", critical=False)
 
         under_now = bool(st.throttled and st.throttled.get("now"))
         notes += self._streak_alert(
@@ -409,6 +412,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin):
         m = re.search(r'^SERVER_NAME="([^"\n]{1,64})"', text, re.M)
         if m:
             self.db.set_state(self._SERVER_NAME_KEY, m.group(1))
+        self._apply_bundle_mail(text)
         fd, path = tempfile.mkstemp(prefix="awg-gw-bundle-", suffix=".sh", dir="/root")
         try:
             with os.fdopen(fd, "wb") as f:
@@ -483,6 +487,22 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin):
             except Exception:                            # noqa: BLE001
                 continue
         return paths
+
+    def _apply_bundle_mail(self, text: str) -> bool:
+        """MAIL_B64 из бандла → настройки почты агента (креды в БД, серверы в
+        conf). Нет строки — свои настройки не трогаем."""
+        m = re.search(r'^MAIL_B64="([A-Za-z0-9+/=]+)"', text, re.M)
+        if not m:
+            return False
+        import base64
+        try:
+            d = json.loads(base64.b64decode(m.group(1)).decode())
+            self.email_save(d["login"], d["password"], d["imap_host"], int(d["imap_port"]),
+                            d["smtp_host"], int(d["smtp_port"]))
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gateway: почта из бандла не принята: %s", e)
+            return False
+        return True
 
     # ── имя ВПС ──────────────────────────────────────────────────────────────
 

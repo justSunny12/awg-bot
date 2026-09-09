@@ -589,11 +589,19 @@ def setup_gateway_scheduler(services, bot):
             return
         try:
             paths = await asyncio.to_thread(services.make_backup)
-            for p in paths:
+            sent_by_mail = False
+            if services.backup_channel() == "email":
                 try:
-                    await bot.send_document(config.ADMIN_ID, FSInputFile(p))
+                    await asyncio.to_thread(services.email_send_backup, paths)
+                    sent_by_mail = True
                 except Exception as e:                    # noqa: BLE001
-                    log.warning("gw backup send %s: %s", p, e)
+                    log.warning("gw бэкап на почту не ушёл, шлю в Telegram: %s", e)
+            if not sent_by_mail:
+                for p in paths:
+                    try:
+                        await bot.send_document(config.ADMIN_ID, FSInputFile(p))
+                    except Exception as e:                # noqa: BLE001
+                        log.warning("gw backup send %s: %s", p, e)
             db.set_state("last_backup", ym)
         except Exception as e:                            # noqa: BLE001
             log.warning("gw backup: %s", e)

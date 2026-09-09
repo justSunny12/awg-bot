@@ -163,6 +163,13 @@ async def run_gateway() -> None:
     except Exception as e:                               # noqa: BLE001
         log.warning("backup_import_env_once: %s", e)
 
+    from awgbot.bot import notifier as _notifier
+
+    async def _mail_fallback(text: str) -> None:
+        if await asyncio.to_thread(services.email_alert_fallback_enabled):
+            await asyncio.to_thread(services.email_send_alert, text)
+    _notifier.set_email_fallback(_mail_fallback)
+
     try:
         warns = preflight.collect_warnings_gateway(services)
         if warns:
