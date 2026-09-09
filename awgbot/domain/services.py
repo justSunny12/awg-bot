@@ -2716,48 +2716,18 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
     # ── Бэкап ────────────────────────────────────────────────────────────────
 
     def make_backup(self) -> list[str]:
-        """Складывает в BACKUP_DIR копию БД + серверный awg0.conf (единственная
-        копия этого файла вне сервера!). Возвращает пути.
-
-        Если включено шифрование (config.BACKUP_ENCRYPTION_ENABLED) — каждый
-        артефакт шифруется SecretBox и пишется как «*.enc»; открытые копии на
-        диск НЕ ложатся (в БД приватные ключи bot-устройств — их нельзя оставлять
-        в открытом виде ни на диске бот-хоста, ни при доставке в чат).
-        Расшифровка — restore_backup.py на awg-хосте."""
-        config.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-        stamp = timeutil.now().strftime("%Y%m%d_%H%M%S")
-
-        # (имя_без_расширения, расширение, сырые байты) — собираем всё, потом
-        # единообразно пишем: открытыми или зашифрованными.
-        artifacts: list[tuple[str, bytes]] = []
-        try:
-            artifacts.append((f"bot_{stamp}.db", config.DB_PATH.read_bytes()))
-        except OSError:
-            pass
+        """Одна резервная копия — один архив: БД, все conf/*.yaml, env и
+        серверный конфиг awg-интерфейса (единственная копия этого файла вне
+        сервера). Задан секрет — файл шифруется целиком (*.tgz.enc), иначе
+        уходит открытым (в разделе это видно красным). Разворачивается
+        `awg-bot restore <файл>` на любом хосте."""
+        extra: list[tuple[str, bytes]] = []
         try:
             conf = awg.read_file(config.CONF_PATH)
-            artifacts.append((f"awg0_{stamp}.conf", conf.encode("utf-8")))
+            extra.append((f"awg/{config.AWG_INTERFACE}.conf", conf.encode("utf-8")))
         except awg.AwgError:
             pass
-
-        paths: list[str] = []
-        enc_kwargs = self.backup_enc_kwargs()
-        encrypt = enc_kwargs is not None
-        for name, raw in artifacts:
-            try:
-                if encrypt:
-                    from awgbot.util import secrets_util
-                    blob = secrets_util.encrypt(raw, **enc_kwargs)
-                    dst = config.BACKUP_DIR / f"{name}.enc"
-                    dst.write_bytes(blob)
-                else:
-                    dst = config.BACKUP_DIR / name
-                    dst.write_bytes(raw)
-                paths.append(str(dst))
-            except Exception:                            # noqa: BLE001
-                # один сбойный артефакт не должен ронять остальной бэкап
-                continue
-        return paths
+        return self.write_backup_archive("main", extra)
 
     # ── Статус сервера (мониторинг) ──────────────────────────────────────────
 

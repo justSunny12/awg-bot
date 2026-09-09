@@ -73,9 +73,11 @@ def _load_env_file(path: Path) -> None:
 # окружении). Здесь — запасной путь для ручного запуска: грузим первый найденный
 # из AWG_BOT_ENV / /etc/awg-bot/env / ./.env (реальное окружение приоритетнее —
 # _load_env_file использует setdefault).
+ENV_PATH: Path | None = None            # какой env-файл загружен (для бэкапа)
 for _env_path in (os.environ.get("AWG_BOT_ENV"), "/etc/awg-bot/env", str(BASE_DIR / ".env")):
     if _env_path and Path(_env_path).exists():
         _load_env_file(Path(_env_path))
+        ENV_PATH = Path(_env_path)
         break
 
 BOT_TOKEN: str = os.environ.get("BOT_TOKEN", "")

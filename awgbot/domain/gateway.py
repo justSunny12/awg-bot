@@ -488,41 +488,20 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
     # ── резервная копия ──────────────────────────────────────────────────────
 
     def make_backup(self) -> list[str]:
-        """БД агента, conf/*.yaml и ВСЕ конфиги awg-интерфейсов шлюза (в них
-        приватные ключи линка и туннеля — единственная копия вне этой машины).
-        Только шифрованно: без BACKUP_KEY/BACKUP_PASSPHRASE отказ, открытые
-        ключи в чат не уезжают."""
-        from awgbot.util import secrets_util
-        enc_kwargs = self.backup_enc_kwargs()
-        if enc_kwargs is None:
+        """Один архив: БД агента, все conf/*.yaml, env и ВСЕ конфиги
+        awg-интерфейсов шлюза (в них приватные ключи линка и туннеля —
+        единственная копия вне этой машины). Только шифрованно: без парольной
+        фразы отказ, открытые ключи в чат и на почту не уезжают."""
+        if not self.backup_encryption_enabled():
             raise ServiceError("резервная копия шлюза только шифрованная: задай парольную "
                                "фразу в ⚙️ Настройки → 💾 Резервное копирование → 🔐 Шифрование")
-        config.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-        stamp = timeutil.now().strftime("%Y%m%d_%H%M%S")
-        artifacts: list[tuple[str, bytes]] = []
-        try:
-            artifacts.append((f"gw_bot_{stamp}.db", config.DB_PATH.read_bytes()))
-        except OSError:
-            pass
-        for p in sorted(glob.glob(os.path.join(str(config.CONF_DIR), "*.yaml"))):
-            try:
-                artifacts.append((f"conf_{os.path.basename(p)}_{stamp}", open(p, "rb").read()))
-            except OSError:
-                pass
+        extra: list[tuple[str, bytes]] = []
         for p in sorted(glob.glob(os.path.join(config.GW_CONF_DIR, "*.conf"))):
             try:
-                artifacts.append((f"{os.path.basename(p)}_{stamp}", open(p, "rb").read()))
+                extra.append((f"awg/{os.path.basename(p)}", open(p, "rb").read()))
             except OSError:
                 pass
-        paths: list[str] = []
-        for name, raw in artifacts:
-            try:
-                dst = config.BACKUP_DIR / f"{name}.enc"
-                dst.write_bytes(secrets_util.encrypt(raw, **enc_kwargs))
-                paths.append(str(dst))
-            except Exception:                            # noqa: BLE001
-                continue
-        return paths
+        return self.write_backup_archive("gw", extra, require_encryption=True)
 
     def _apply_bundle_mail(self, text: str) -> bool:
         """MAIL_B64 из бандла → настройки почты агента (креды в БД, серверы в

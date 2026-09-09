@@ -25,35 +25,43 @@ def _patch_sources(monkeypatch, tmp_path, *, db_bytes=b"SQLITE-DATA", with_db=Tr
     monkeypatch.setattr(awg, "read_file", fake_read, raising=False)
 
 
-def test_make_backup_plaintext(services, fake_awg, monkeypatch, tmp_path):
+def _names(tgz_bytes):
+    import io, tarfile
+    with tarfile.open(fileobj=io.BytesIO(tgz_bytes), mode="r:gz") as tar:
+        return {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile()}
+
+
+def test_make_backup_is_one_archive_with_everything(services, fake_awg, monkeypatch, tmp_path):
     _patch_sources(monkeypatch, tmp_path, db_bytes=b"DBDATA")
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", False)
+    confd = tmp_path / "conf"; confd.mkdir()
+    (confd / "app.yaml").write_text("a: 1\n"); (confd / "email.yaml").write_text("b: 2\n")
+    monkeypatch.setattr(config, "CONF_DIR", confd)
+    envf = tmp_path / "env"; envf.write_text("BOT_TOKEN=t\n")
+    monkeypatch.setattr(config, "ENV_PATH", envf)
     paths = services.make_backup()
-    assert len(paths) == 2                 # БД + awg0.conf
-    assert not any(p.endswith(".enc") for p in paths)
-    db_file = next(p for p in paths if p.endswith(".db"))
-    with open(db_file, "rb") as f:
-        assert f.read() == b"DBDATA"
+    assert len(paths) == 1 and paths[0].endswith(".tgz")             # без секрета — открытый
+    files = _names(open(paths[0], "rb").read())
+    assert files["state/bot.db"] == b"DBDATA"
+    assert files["state/conf/app.yaml"] == b"a: 1\n" and "state/conf/email.yaml" in files
+    assert files["state/env"] == b"BOT_TOKEN=t\n"
+    assert files[f"awg/{config.AWG_INTERFACE}.conf"].startswith(b"[Interface]")
 
 
 def test_make_backup_encrypted_roundtrips(services, fake_awg, monkeypatch, tmp_path):
     _patch_sources(monkeypatch, tmp_path, db_bytes=b"SECRET-DB")
     services.backup_set_passphrase("correct horse")
     paths = services.make_backup()
-    assert paths and all(p.endswith(".enc") for p in paths)
-    db_enc = next(p for p in paths if ".db.enc" in p)
-    with open(db_enc, "rb") as f:
-        blob = f.read()
+    assert len(paths) == 1 and paths[0].endswith(".tgz.enc")
+    blob = open(paths[0], "rb").read()
     assert secrets_util.inspect_mode(blob) == "passphrase"
-    assert secrets_util.decrypt(blob, passphrase="correct horse") == b"SECRET-DB"
+    files = _names(secrets_util.decrypt(blob, passphrase="correct horse"))
+    assert files["state/bot.db"] == b"SECRET-DB"
 
 
-def test_make_backup_skips_missing_db(services, fake_awg, monkeypatch, tmp_path):
+def test_make_backup_without_db_still_packs_the_rest(services, fake_awg, monkeypatch, tmp_path):
     _patch_sources(monkeypatch, tmp_path, with_db=False)
-    monkeypatch.setattr(config, "BACKUP_ENCRYPTION_ENABLED", False)
-    paths = services.make_backup()
-    assert len(paths) == 1                 # только awg0.conf
-    assert not any(p.endswith(".db") for p in paths)
+    files = _names(open(services.make_backup()[0], "rb").read())
+    assert "state/bot.db" not in files and any(n.startswith("awg/") for n in files)
 
 
 def test_backup_enc_kwargs_prefers_passphrase(services, monkeypatch):

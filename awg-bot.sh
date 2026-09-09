@@ -572,9 +572,21 @@ cmd_backup() {
     [[ -d "$DATA_DIR" ]] && find "$DATA_DIR" -maxdepth 1 -name '*.db' -exec cp -a {} "$tmp/state/" \; 2>/dev/null || true
     [[ -d "$CONF_DIR" ]] && cp -a "$CONF_DIR" "$tmp/state/conf" 2>/dev/null || true
     [[ -f "$ENV_FILE" ]] && cp -a "$ENV_FILE" "$tmp/state/env" 2>/dev/null || true
-    ( cd "$tmp/state" && tar czf "$out" . ); chmod 600 "$out"; rm -rf "$tmp"
+    # конфиги awg-интерфейсов — та же раскладка, что у копии из чата (awg/)
+    local awgdir; awgdir="$(awg_conf_dir)"
+    if compgen -G "$awgdir/*.conf" >/dev/null; then
+        mkdir -p "$tmp/awg"; cp -a "$awgdir"/*.conf "$tmp/awg/" 2>/dev/null || true
+    fi
+    ( cd "$tmp" && tar czf "$out" . ); chmod 600 "$out"; rm -rf "$tmp"
     ok "снимок состояния: $out"
-    log "в нём БД, конфиг и секреты — храни как чувствительный (внутри приватные ключи устройств)."
+    log "в нём БД, конфиг, секреты и конфиги awg-интерфейсов — храни как чувствительный."
+}
+
+awg_conf_dir() {
+    # где лежат конфиги awg-интерфейсов: у шлюза — gateway.conf_dir, у хоста —
+    # /etc/amnezia/amneziawg (awg_dir в app.yaml — докерный рудимент)
+    local d; d="$(yaml_get "$CONF_DIR/app.yaml" conf_dir)"
+    printf '%s' "${d:-/etc/amnezia/amneziawg}"
 }
 cmd_restore() {
     require_root
@@ -582,12 +594,23 @@ cmd_restore() {
     if [[ -n "${1:-}" ]]; then tgz="$1"; [[ -f "$tgz" ]] || die "не найден: $tgz"
     else
         [[ -d "$BACKUP_DIR" ]] || die "нет каталога снимков $BACKUP_DIR — укажи путь: awg-bot restore <tgz>"
-        tgz="$(ls -1t "$BACKUP_DIR"/awg-bot-state-*.tgz 2>/dev/null | head -n1 || true)"
+        tgz="$(ls -1t "$BACKUP_DIR"/awg-bot-state-*.tgz "$BACKUP_DIR"/awg-bot-backup-*.tgz* 2>/dev/null | head -n1 || true)"
         [[ -n "$tgz" ]] || die "снимков не найдено в $BACKUP_DIR — укажи путь: awg-bot restore <tgz>"
     fi
     warn "восстановление ПЕРЕЗАПИШЕТ текущие БД/конфиг/секреты содержимым: $(basename "$tgz")"
     confirm "Продолжить?" n || die "отменено"
-    local tmp; tmp="$(mktemp -d)"; tar xzf "$tgz" -C "$tmp" || { rm -rf "$tmp"; die "не удалось распаковать снимок"; }
+    local tmp; tmp="$(mktemp -d)"
+    # Копия из чата/почты — шифрованный архив (*.enc): расшифровать парольной
+    # фразой (спросит) во временный файл, дальше — как обычный снимок.
+    if [[ "$tgz" == *.enc ]]; then
+        log "шифрованная копия — нужна парольная фраза"
+        ( cd "$INSTALL_DIR" && ./venv/bin/python -m tools.restore_backup --out "$tmp/snapshot.tgz" "$tgz" ) \
+            || { rm -rf "$tmp"; die "не расшифровалось — фраза не та или файл повреждён"; }
+        tgz="$tmp/snapshot.tgz"
+    fi
+    tar xzf "$tgz" -C "$tmp" || { rm -rf "$tmp"; die "не удалось распаковать снимок"; }
+    # раскладка копии из чата — с каталогом state/, старого снимка — без него
+    local src="$tmp"; [[ -d "$tmp/state" ]] && src="$tmp/state"
     log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
     # Снимок ТЕКУЩЕГО состояния — до перезаписи, и только после успешной
     # распаковки и остановки сервиса (иначе снимали бы БД под записью).
@@ -610,9 +633,21 @@ cmd_restore() {
     # базой — SQLite в лучшем случае отбросит их по несовпадению соли, в худшем
     # доложит из них страницы в файл, которому они не родня.
     rm -f "$DATA_DIR"/*.db-wal "$DATA_DIR"/*.db-shm 2>/dev/null || true
-    find "$tmp" -maxdepth 2 -name '*.db' -exec cp -a {} "$DATA_DIR/" \; 2>/dev/null || true
-    [[ -d "$tmp/conf" ]] && { rm -rf "$CONF_DIR"; cp -a "$tmp/conf" "$CONF_DIR"; }
-    [[ -f "$tmp/env"  ]] && { cp -a "$tmp/env" "$ENV_FILE"; chmod 600 "$ENV_FILE"; }
+    find "$src" -maxdepth 1 -name '*.db' -exec cp -a {} "$DATA_DIR/" \; 2>/dev/null || true
+    [[ -d "$src/conf" ]] && { rm -rf "$CONF_DIR"; cp -a "$src/conf" "$CONF_DIR"; }
+    [[ -f "$src/env"  ]] && { cp -a "$src/env" "$ENV_FILE"; chmod 600 "$ENV_FILE"; }
+    # Конфиги awg-интерфейсов — отдельным вопросом: они с приватными ключами,
+    # и на живом хосте их подмена рвёт коннекты. Поднимать — руками после.
+    if compgen -G "$tmp/awg/*.conf" >/dev/null; then
+        local awgdir; awgdir="$(awg_conf_dir)"
+        warn "в копии конфиги awg-интерфейсов: $(ls "$tmp/awg" | tr '\n' ' ')"
+        if confirm "Положить их в $awgdir (существующие будут перезаписаны)?" n; then
+            mkdir -p "$awgdir"; cp -a "$tmp/awg"/*.conf "$awgdir/"; chmod 600 "$awgdir"/*.conf
+            ok "конфиги интерфейсов восстановлены; поднять: awg-quick up <iface>"
+        else
+            log "конфиги интерфейсов оставлены как есть."
+        fi
+    fi
     rm -rf "$tmp"
     systemctl start "$SERVICE" 2>/dev/null || true; sleep 1
     systemctl is-active --quiet "$SERVICE" && ok "восстановлено, $SERVICE запущен." || warn "$SERVICE не активен — journalctl -u $SERVICE -e"

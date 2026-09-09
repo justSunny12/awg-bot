@@ -143,3 +143,28 @@ def test_bundle_passphrase_is_applied_only_when_allowed(svc, monkeypatch, tmp_pa
     assert svc.backup_enc_kwargs() == {"passphrase": "my-own-phrase"}
     svc.apply_bundle(blob, overwrite_passphrase=True)
     assert svc.backup_enc_kwargs() == {"passphrase": "phrase-from-vps"}
+
+
+def test_gateway_backup_is_one_encrypted_archive_with_all_confs(svc, monkeypatch, tmp_path):
+    import io, tarfile
+    from awgbot.core import config
+    from awgbot.util import secrets_util
+    gwd = tmp_path / "awg"; gwd.mkdir()
+    (gwd / "awg0.conf").write_text("[Interface]\nPrivateKey = A\n")
+    (gwd / "awglink.conf").write_text("[Interface]\nPrivateKey = B\n")
+    (gwd / "awg0.conf.pre-migration").write_text("old")
+    confd = tmp_path / "conf"; confd.mkdir(); (confd / "app.yaml").write_text("x: 1\n")
+    monkeypatch.setattr(config, "GW_CONF_DIR", str(gwd))
+    monkeypatch.setattr(config, "CONF_DIR", confd)
+    monkeypatch.setattr(config, "BACKUP_DIR", tmp_path / "bk")
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "nope.db")
+    monkeypatch.setattr(config, "ENV_PATH", None)
+    with pytest.raises(Exception):
+        svc.make_backup()                                  # без фразы — отказ
+    svc.backup_set_passphrase("correct horse battery")
+    paths = svc.make_backup()
+    assert len(paths) == 1 and paths[0].endswith(".tgz.enc")
+    raw = secrets_util.decrypt(open(paths[0], "rb").read(), passphrase="correct horse battery")
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
+        names = sorted(m.name for m in tar.getmembers() if m.isfile())
+    assert names == ["awg/awg0.conf", "awg/awglink.conf", "state/conf/app.yaml"]
