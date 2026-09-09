@@ -166,12 +166,15 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
             await cb.answer(f"Не удалось: {e}", show_alert=True)
             return
         from aiogram.types import BufferedInputFile
-        # Экран настроек гаснет: живым должно остаться одно меню, и это —
-        # кнопка «В меню» на самом бандле. Нажатие снимет её и вернёт панель.
+        # Экран-инструкция гаснет: живым должно остаться одно меню, и это —
+        # кнопка «В меню» на самом файле. Инструкцию помечаем как контент:
+        # возврат в меню (show_main_menu → cleanup_content) удалит и её —
+        # после ухода файла ей в чате делать нечего.
         try:
             await cb.message.edit_reply_markup(reply_markup=None)
         except Exception:                                  # noqa: BLE001
             pass
+        await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
         await cb.message.answer_document(
             BufferedInputFile(blob, filename=name),
             caption="⚙️ Конфигурация шлюза. Перешли файл боту шлюза — он проверит "

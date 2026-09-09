@@ -945,6 +945,8 @@ async def test_bundle_document_carries_menu_button_and_dims_settings(
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle"), services)
     assert sent_docs and sent_docs[0][1] is not None, "у бандла нет кнопки «В меню»"
     assert any(r[0] == "edit_reply_markup" for r in fake_bot.records), "экран настроек не погашен"
+    assert msg.message_id in services.db.pop_content_msg_ids(cfg.ADMIN_ID), \
+        "инструкция не помечена как контент — «В меню» её не удалит"
 
 
 async def test_bundle_menu_button_deletes_the_file_message(services, fake_bot, monkeypatch):
