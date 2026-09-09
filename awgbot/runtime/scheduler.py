@@ -340,7 +340,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
 
         _pending_notes: list = []
         try:
-            await asyncio.to_thread(email_resume.poll_once, on_code)
+            if not await asyncio.to_thread(services.email_resume_enabled):
+                return
+            acc = await asyncio.to_thread(services.email_account)
+            await asyncio.to_thread(email_resume.poll_once, acc, on_code)
             if _pending_notes:
                 await send_notifications(bot, _pending_notes)
         except Exception as e:                        # noqa: BLE001
@@ -392,15 +395,24 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                       id="purge_history", max_instances=1,
                       misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
 
-    # опрос почты для email-выхода — только если фича включена (заданы креды).
-    # Интервал из конфига (минимум 60 сек); max_instances=1 — один опрос за раз.
-    if config.EMAIL_RESUME_ENABLED:
-        scheduler.add_job(job_email_resume,
-                          IntervalTrigger(seconds=config.EMAIL_POLL_INTERVAL_SEC, timezone=config.TZ),
-                          id="email_resume", max_instances=1, coalesce=True,
-                          misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
-        log.info("Email-выход из приостановки включён (опрос каждые %d сек)",
-                 config.EMAIL_POLL_INTERVAL_SEC)
+    # Опрос почты для email-выхода — задача висит ВСЕГДА, включена ли функция,
+    # решает сама на каждом тике (ящик настраивается из чата, горячо). Интервал
+    # из conf, минимум 60 сек, с джиттером: строго периодический IMAP-логин —
+    # маячок; max_instances=1 — один опрос за раз.
+    def _trig_email():
+        secs = max(60, settings.get_int("email.poll_interval_sec", 60))
+        return IntervalTrigger(seconds=secs, jitter=max(5, int(secs * 0.3)), timezone=config.TZ)
+
+    scheduler.add_job(job_email_resume, _trig_email(),
+                      id="email_resume", max_instances=1, coalesce=True,
+                      misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
+    def _email_hook(_key=None, _val=None):
+        try:
+            scheduler.reschedule_job("email_resume", trigger=_trig_email())
+        except Exception as e:                            # noqa: BLE001
+            log.warning("email_resume reschedule: %s", e)
+    settings.on_change("email.poll_interval_sec", _email_hook)
 
     # проверка обновлений бота: раз в сутки (по умолчанию 10:00 МСК) + разово на
     # старте (сразу после апдейта увидим следующую ступень, не дожидаясь утра).

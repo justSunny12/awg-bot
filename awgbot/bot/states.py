@@ -86,3 +86,13 @@ class Broadcast(StatesGroup):
     Готовый текст держим там же до подтверждения отправки."""
     targets = State()
     text = State()
+
+
+class EmailSetup(StatesGroup):
+    """Мастер подключения ящика (⚙️ Настройки → ✉️ E-mail)."""
+    address = State()             # адрес ящика
+    imap_host = State()           # только для незнакомого провайдера
+    imap_port = State()
+    smtp_host = State()
+    smtp_port = State()
+    password = State()            # сообщение с паролем удаляется после приёма

@@ -1066,6 +1066,7 @@ def traffic_devices_kb() -> InlineKeyboardMarkup:
 def settings_root() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="🔔 Уведомления", callback_data=SetCB(sec="notify"))
+    kb.button(text="✉️ E-mail", callback_data=SetCB(sec="email"))
     kb.button(text="💳 Параметры подписок", callback_data=SetCB(sec="subs"))
     if config.ROUTING_ENABLED:
         kb.button(text="🇷🇺 Условная маршрутизация", callback_data=SetCB(sec="rt"))
@@ -1183,6 +1184,45 @@ def settings_notify() -> InlineKeyboardMarkup:
     rows = [1] + ([2] if qh else []) + [1] + ([3] if ra else []) + [1, 1, 1, 1]
     kb.adjust(*rows)
     kb.row(_back())
+    return kb.as_markup()
+
+
+def settings_email(configured: bool) -> InlineKeyboardMarkup:
+    """Почтовый канал: подключение/проверка/отключение и функции на нём."""
+    s = settings
+    kb = InlineKeyboardBuilder()
+    rows: list[int] = []
+    if not configured:
+        kb.button(text="✉️ Подключить ящик", callback_data=SetCB(sec="email", act="do", key="setup"))
+        rows.append(1)
+    else:
+        kb.button(text="🔍 Проверить соединение", callback_data=SetCB(sec="email", act="do", key="check"))
+        kb.button(text="📨 Тестовое письмо", callback_data=SetCB(sec="email", act="do", key="test"))
+        kb.button(text="✏️ Сменить ящик", callback_data=SetCB(sec="email", act="do", key="setup"))
+        kb.button(text="🗑 Отключить", callback_data=SetCB(sec="email", act="do", key="forget"))
+        rows += [2, 2]
+        on = s.get_bool("email.resume_enabled", True)
+        kb.button(text=f"{_chk(on)} Аварийный выход из приостановки",
+                  callback_data=SetCB(sec="email", act="toggle", key="email.resume_enabled"))
+        rows.append(1)
+        if on:
+            kb.button(text="Адрес для писем с кодом",
+                      callback_data=SetCB(sec="email", act="edit", key="email.resume_address"))
+            kb.button(text=f"Интервал опроса: {max(60, s.get_int('email.poll_interval_sec', 60))} сек",
+                      callback_data=SetCB(sec="email", act="edit", key="email.poll_interval_sec"))
+            kb.button(text=f"Длина кода: {s.get_int('email.resume_code_len', 8)}",
+                      callback_data=SetCB(sec="email", act="edit", key="email.resume_code_len"))
+            rows += [1, 2]
+    kb.adjust(*rows)
+    kb.row(_back())
+    return kb.as_markup()
+
+
+def email_forget_confirm() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Отмена", callback_data=SetCB(sec="email"))
+    kb.button(text="✅ Отключить", callback_data=SetCB(sec="email", act="do", key="forget!"))
+    kb.adjust(2)
     return kb.as_markup()
 
 

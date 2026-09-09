@@ -90,32 +90,25 @@ def test_format_warnings_escapes_html():
     assert "<b>" in msg                          # своя разметка осталась
 
 
-def test_imap_warning_when_enabled_and_unreachable(monkeypatch):
-    """Фича email-выхода активна, IMAP недоступен → warning с адресом."""
-    from awgbot.core import config
-    monkeypatch.setattr(config, "EMAIL_RESUME_ENABLED", True)
-    monkeypatch.setattr(config, "EMAIL_IMAP_HOST", "127.0.0.1")
-    monkeypatch.setattr(config, "EMAIL_IMAP_PORT", 1)      # закрытый порт
-    monkeypatch.setattr(config, "EMAIL_RESUME_LOGIN", "x@y")
-    monkeypatch.setattr(config, "EMAIL_RESUME_PASSWORD", "p")
-
+def test_mail_warning_when_configured_and_check_fails():
+    """Ящик настроен, вход не проходит → warning с указанием на раздел."""
     class Svc:
-        def server_ok(self):
-            return True
+        def server_ok(self): return True
+        def email_resume_enabled(self): return True
+        def email_check(self): return False, "IMAP отверг логин/пароль"
+        def email_env_leftover(self): return False
     warns = preflight.collect_warnings(Svc())
-    assert any("IMAP" in w for w in warns)
+    assert any("почта: IMAP отверг" in w and "E-mail" in w for w in warns)
 
 
-def test_imap_skipped_when_disabled(monkeypatch):
-    """Фича спит (не сконфижена) → IMAP не трогаем вовсе."""
-    from awgbot.core import config
-    monkeypatch.setattr(config, "EMAIL_RESUME_ENABLED", False)
-    called = []
-    import imaplib
-    monkeypatch.setattr(imaplib, "IMAP4_SSL",
-                        lambda *a, **k: called.append(1))
+def test_mail_skipped_when_not_configured_and_env_leftover_reminded():
+    checked = []
+
     class Svc:
-        def server_ok(self):
-            return True
-    preflight.collect_warnings(Svc())
-    assert called == []
+        def server_ok(self): return True
+        def email_resume_enabled(self): return False
+        def email_check(self): checked.append(1); return True, ""
+        def email_env_leftover(self): return True
+    warns = preflight.collect_warnings(Svc())
+    assert checked == []
+    assert any("EMAIL_RESUME_LOGIN" in w for w in warns)

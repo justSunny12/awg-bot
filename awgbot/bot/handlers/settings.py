@@ -16,7 +16,7 @@ from awgbot.bot import texts
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.states import SettingsInput
+from awgbot.bot.states import EmailSetup, SettingsInput
 from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu
 from awgbot.domain.services import ServiceError
 
@@ -37,6 +37,12 @@ async def _screen(sec: str, services):
     """
     if sec == "notify":
         return texts.SETTINGS_NOTIFY, kb.settings_notify()
+    if sec == "email":
+        acc = await call(services.email_account)
+        return (texts.settings_email_text(acc, await call(services.email_last_check),
+                                          settings.get_bool("email.resume_enabled", True),
+                                          await call(services.email_resume_address)),
+                kb.settings_email(acc is not None))
     if sec == "subs":
         return texts.SETTINGS_SUBS, kb.settings_subs()
     if sec == "mon":
@@ -196,12 +202,13 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
 @router.callback_query(SetCB.filter(F.act == "edit"))
 async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext):
     key = callback_data.key
-    if key not in texts.SETTINGS_BOUNDS:      # старая/битая клавиатура
+    if key not in texts.SETTINGS_BOUNDS and key not in texts.SETTINGS_TEXT:   # старая/битая клавиатура
         await cb.answer("Эта настройка недоступна.", show_alert=True)
         return
     await state.set_state(SettingsInput.value)
     await state.update_data(key=key, sec=callback_data.sec)
-    await edit(cb, texts.settings_prompt(key), kb.settings_cancel(callback_data.sec))
+    prompt = texts.settings_text_prompt(key) if key in texts.SETTINGS_TEXT else texts.settings_prompt(key)
+    await edit(cb, prompt, kb.settings_cancel(callback_data.sec))
     await cb.answer()
 
 
@@ -209,6 +216,22 @@ async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext)
 async def receive_value(message: Message, state: FSMContext, services):
     data = await state.get_data()
     key, sec = data.get("key"), data.get("sec", "root")
+    if key in texts.SETTINGS_TEXT:
+        from awgbot.infra import mail
+        raw = (message.text or "").strip()
+        if raw and not mail.is_address(raw):
+            await message.answer(texts.EMAIL_BAD_ADDRESS)
+            return
+        try:
+            await call(settings.set_value, key, raw)
+        except settings.SettingsWriteError as e:
+            await state.clear()
+            await message.answer(str(e))
+            return
+        await state.clear()
+        text, markup = await _screen(sec, services)
+        await message.answer(text, reply_markup=markup)
+        return
     if key not in texts.SETTINGS_BOUNDS:      # рассинхрон state (не должен случаться)
         await state.clear()
         text, markup = await _screen(sec, services)
@@ -354,6 +377,159 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         return
 
     await cb.answer("Действие недоступно.", show_alert=True)
+
+# ── ✉️ E-mail: мастер подключения, проверка, отключение ─────────────────────
+@router.callback_query(SetCB.filter((F.sec == "email") & (F.act == "do")))
+async def email_action(cb: CallbackQuery, callback_data: SetCB, services, state: FSMContext):
+    from awgbot.bot.states import EmailSetup
+    from awgbot.infra import mail
+    key = callback_data.key
+    if key == "setup":
+        await state.clear()
+        await state.set_state(EmailSetup.address)
+        await edit(cb, texts.EMAIL_ASK_ADDRESS, kb.settings_cancel("email"))
+        await cb.answer()
+        return
+    if key == "check":
+        await cb.answer("Проверяю…")
+        ok, detail = await call(services.email_check)
+        await _render(cb, "email", services)
+        if not ok:
+            await cb.message.answer(texts.email_check_failed(detail))
+        return
+    if key == "test":
+        await cb.answer("Отправляю…")
+        try:
+            await call(services.email_send_test)
+        except mail.MailError as e:
+            await cb.message.answer(f"🔴 {e}")
+            return
+        await cb.message.answer(texts.EMAIL_TEST_SENT)
+        return
+    if key == "forget":
+        await edit(cb, texts.EMAIL_FORGET_CONFIRM, kb.email_forget_confirm())
+        await cb.answer()
+        return
+    if key == "forget!":
+        await call(services.email_forget)
+        await cb.message.answer(texts.EMAIL_FORGOTTEN)
+        await _render(cb, "email", services)
+        await cb.answer()
+        return
+    await cb.answer("Действие недоступно.", show_alert=True)
+
+
+async def _email_finish(message: Message, state: FSMContext, services, password: str):
+    """Проверить вход и сохранить. Пароль дальше state не уходит: ошибка —
+    ничего не сохранено, мастер закрыт."""
+    from awgbot.infra import mail
+    data = await state.get_data()
+    await state.clear()
+    acc = mail.MailAccount(login=data["email_address"], password=password,
+                           imap_host=data["imap_host"], imap_port=int(data["imap_port"]),
+                           smtp_host=data["smtp_host"], smtp_port=int(data["smtp_port"]))
+    ok, detail = await call(services.email_check, acc)
+    if not ok:
+        await message.answer(texts.email_check_failed(detail))
+        text, markup = await _screen("email", services)
+        await message.answer(text, reply_markup=markup)
+        return
+    await call(services.email_save, acc.login, acc.password, acc.imap_host, acc.imap_port,
+               acc.smtp_host, acc.smtp_port)
+    await call(services.email_check)                  # запомнить «проверено сейчас»
+    await message.answer(texts.email_saved(acc.login, detail))
+    text, markup = await _screen("email", services)
+    await message.answer(text, reply_markup=markup)
+
+
+@router.message(EmailSetup.address)
+async def email_address(message: Message, state: FSMContext, services):
+    from awgbot.bot.states import EmailSetup
+    from awgbot.infra import mail
+    addr = (message.text or "").strip()
+    if not mail.is_address(addr):
+        await message.answer(texts.EMAIL_BAD_ADDRESS)
+        return
+    await state.update_data(email_address=addr)
+    provider = mail.detect_provider(addr)
+    if provider:
+        imap, ip, smtp, sp = provider
+        await state.update_data(imap_host=imap, imap_port=ip, smtp_host=smtp, smtp_port=sp)
+        await state.set_state(EmailSetup.password)
+        await message.answer(texts.email_provider_line(addr, provider) + "\n\n"
+                             + texts.email_ask_password(addr), reply_markup=kb.settings_cancel("email"))
+        return
+    await state.set_state(EmailSetup.imap_host)
+    await message.answer(texts.EMAIL_ASK_IMAP_HOST, reply_markup=kb.settings_cancel("email"))
+
+
+def _host_ok(v: str) -> bool:
+    v = v.strip()
+    return bool(v) and " " not in v and "." in v
+
+
+def _port_ok(v: str) -> bool:
+    return v.strip().isdigit() and 1 <= int(v.strip()) <= 65535
+
+
+@router.message(EmailSetup.imap_host)
+async def email_imap_host(message: Message, state: FSMContext):
+    from awgbot.bot.states import EmailSetup
+    v = (message.text or "").strip()
+    if not _host_ok(v):
+        await message.answer(texts.EMAIL_BAD_HOST); return
+    await state.update_data(imap_host=v)
+    await state.set_state(EmailSetup.imap_port)
+    await message.answer(texts.EMAIL_ASK_IMAP_PORT, reply_markup=kb.settings_cancel("email"))
+
+
+@router.message(EmailSetup.imap_port)
+async def email_imap_port(message: Message, state: FSMContext):
+    from awgbot.bot.states import EmailSetup
+    v = (message.text or "").strip()
+    if not _port_ok(v):
+        await message.answer(texts.EMAIL_BAD_PORT); return
+    await state.update_data(imap_port=int(v))
+    await state.set_state(EmailSetup.smtp_host)
+    await message.answer(texts.EMAIL_ASK_SMTP_HOST, reply_markup=kb.settings_cancel("email"))
+
+
+@router.message(EmailSetup.smtp_host)
+async def email_smtp_host(message: Message, state: FSMContext):
+    from awgbot.bot.states import EmailSetup
+    v = (message.text or "").strip()
+    if not _host_ok(v):
+        await message.answer(texts.EMAIL_BAD_HOST); return
+    await state.update_data(smtp_host=v)
+    await state.set_state(EmailSetup.smtp_port)
+    await message.answer(texts.EMAIL_ASK_SMTP_PORT, reply_markup=kb.settings_cancel("email"))
+
+
+@router.message(EmailSetup.smtp_port)
+async def email_smtp_port(message: Message, state: FSMContext):
+    from awgbot.bot.states import EmailSetup
+    v = (message.text or "").strip()
+    if not _port_ok(v):
+        await message.answer(texts.EMAIL_BAD_PORT); return
+    await state.update_data(smtp_port=int(v))
+    await state.set_state(EmailSetup.password)
+    addr = (await state.get_data()).get("email_address", "")
+    await message.answer(texts.email_ask_password(addr), reply_markup=kb.settings_cancel("email"))
+
+
+@router.message(EmailSetup.password)
+async def email_password(message: Message, state: FSMContext, services):
+    password = (message.text or "").strip()
+    # пароль в чате не оставляем: удаляем сообщение сразу, до любой проверки
+    try:
+        await message.delete()
+    except Exception:                                  # noqa: BLE001
+        pass
+    if not password:
+        await message.answer("⚠️ Пароль пустой. Пришли пароль ещё раз.")
+        return
+    await _email_finish(message, state, services, password)
+
 
 # ВЫШЕ do_action НАМЕРЕННО. Фильтры проверяются в порядке регистрации, а у
 # do_action он широкий (F.act == "do") и перехватил бы sec="mig" целиком:

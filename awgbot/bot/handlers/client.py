@@ -739,12 +739,12 @@ async def pause_confirm(cb: CallbackQuery, callback_data: PauseCB, client, servi
         timeutil.parse_iso(fresh.pause_active_since)
         + datetime.timedelta(days=int(fresh.pause_reserved_days)))
     summary = texts.pause_entered_summary(until)
-    if config.EMAIL_RESUME_ENABLED and code:
+    if code and await call(services.email_resume_enabled):
         # итог — без кнопки (остаётся в чате как запись); кнопка «В меню» — на
         # аварийном сообщении ниже (оно последнее и становится нав-сообщением).
         await edit(cb, summary, None)
         sent = await cb.message.answer(
-            texts.pause_emergency_code(code, config.EMAIL_RESUME_ADDRESS),
+            texts.pause_emergency_code(code, await call(services.email_resume_address)),
             reply_markup=kb.to_menu())
         await call(services.db.set_nav_message_id, sent.chat.id, sent.message_id)
     else:

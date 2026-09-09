@@ -188,30 +188,20 @@ def collect_warnings(services) -> list[str]:
     # email-выход из приостановки: IMAP доступен и пускает по кредам. Проверяем
     # ТОЛЬКО если фича активна (заданы креды и хосты) — иначе она спит и мешать
     # не должна. Таймаут короткий: глухой хост не должен задерживать старт.
-    if config.EMAIL_RESUME_ENABLED:
-        try:
-            import imaplib
-            import socket
-            import ssl
-            ctx = ssl.create_default_context()
-            old_timeout = socket.getdefaulttimeout()
-            socket.setdefaulttimeout(10)
-            try:
-                conn = imaplib.IMAP4_SSL(config.EMAIL_IMAP_HOST,
-                                         config.EMAIL_IMAP_PORT, ssl_context=ctx)
-                try:
-                    conn.login(config.EMAIL_RESUME_LOGIN, config.EMAIL_RESUME_PASSWORD)
-                finally:
-                    try:
-                        conn.logout()
-                    except Exception:                    # noqa: BLE001
-                        pass
-            finally:
-                socket.setdefaulttimeout(old_timeout)
-        except Exception as e:                           # noqa: BLE001
-            warns.append(f"IMAP для email-выхода недоступен "
-                         f"({config.EMAIL_IMAP_HOST}:{config.EMAIL_IMAP_PORT}): {e} — "
-                         "аварийный выход из приостановки письмом не сработает")
+    # почта: ящик настроен — вход по IMAP должен проходить; иначе email-выход
+    # из паузы молча не работает, и человек, заперевшийся в паузе, не выйдет
+    try:
+        if services.email_resume_enabled():
+            ok, detail = services.email_check()
+            if not ok:
+                warns.append(f"почта: {detail} — аварийный email-выход из паузы не "
+                             f"работает. Проверь ящик в «⚙️ Настройки → ✉️ E-mail»")
+        if services.email_env_leftover():
+            warns.append("в /etc/awg-bot/env остались EMAIL_RESUME_LOGIN/PASSWORD — "
+                         "почта теперь настраивается из чата (⚙️ Настройки → ✉️ E-mail), "
+                         "строки из env можно удалить")
+    except Exception as e:                       # noqa: BLE001
+        log.warning("preflight: проверка почты: %s", e)
 
     return warns
 

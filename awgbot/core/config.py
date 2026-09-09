@@ -90,31 +90,14 @@ BACKUP_KEY: str = os.environ.get("BACKUP_KEY", "")
 BACKUP_PASSPHRASE: str = os.environ.get("BACKUP_PASSPHRASE", "")
 BACKUP_ENCRYPTION_ENABLED: bool = bool(BACKUP_KEY or BACKUP_PASSPHRASE)
 
-# ── Email-выход из приостановки (фича «backfromvacation») ─────────────────────
-# Клиент, заперевшийся в паузе (Telegram только через этот VPN), присылает
-# одноразовый resume-код письмом — бот опрашивает IMAP-ящик исходяще (портов не
-# открываем) и снимает паузу. Логин/пароль (app-specific password iCloud) —
-# ТОЛЬКО из окружения/.env, не в git. Пусто → email-выход выключен.
+# ── Почта ─────────────────────────────────────────────────────────────────────
+# Прежняя схема держала логин/пароль ящика в env: их читал только старт, любая
+# правка требовала SSH и рестарта. Теперь креды живут в БД (server_state), а
+# серверы и параметры — в conf/email.yaml через settings; настраивается из чата.
+# Переменные ниже читаются ТОЛЬКО ради одноразового переезда в БД при старте
+# (MailMixin.email_import_env_once); preflight напоминает убрать их из env.
 EMAIL_RESUME_LOGIN: str = os.environ.get("EMAIL_RESUME_LOGIN", "")
 EMAIL_RESUME_PASSWORD: str = os.environ.get("EMAIL_RESUME_PASSWORD", "")
-_email = _load_yaml("email")
-# Хост/порт IMAP/SMTP, алиас — БЕЗ дефолтов: заполняет визард установки/
-# реконфигурации (setup_email_resume в awg-bot.sh). Пусто → фича спит.
-EMAIL_IMAP_HOST: str = _email.get("imap_host", "")
-EMAIL_IMAP_PORT: int = int(_email.get("imap_port", 993))
-EMAIL_SMTP_HOST: str = _email.get("smtp_host", "")
-EMAIL_SMTP_PORT: int = int(_email.get("smtp_port", 587))
-# Адрес-алиас, на который клиент шлёт код (показывается в варнинге).
-EMAIL_RESUME_ADDRESS: str = _email.get("resume_address", "")
-# Интервал опроса IMAP, сек. Минимум 60 (чаще незачем): <60 → откат к 60.
-_poll = int(_email.get("poll_interval_sec", 60))
-EMAIL_POLL_INTERVAL_SEC: int = _poll if _poll >= 60 else 60
-# Длина одноразового кода (символы из безопасного алфавита, без 0/O/1/l).
-EMAIL_RESUME_CODE_LEN: int = int(_email.get("resume_code_len", 8))
-# Email-выход активен, только если заданы креды И хосты (иначе фича спит).
-EMAIL_RESUME_ENABLED: bool = bool(
-    EMAIL_RESUME_LOGIN and EMAIL_RESUME_PASSWORD
-    and EMAIL_IMAP_HOST and EMAIL_SMTP_HOST and EMAIL_RESUME_ADDRESS)
 
 # ── Обновления бота (self-update из ПУБЛИЧНОГО GitHub-репо) ───────────────────
 # Бот раз в сутки (и на старте) смотрит релизы репо, находит СЛЕДУЮЩУЮ версию за
@@ -372,7 +355,8 @@ def routing_denylist() -> list[str]:
     заполняет визард уже после первого импорта config.
     """
     out = {d.strip().lower().lstrip(".") for d in (_rt.get("denylist") or []) if d}
-    for host in (SERVER_HOST, EMAIL_IMAP_HOST, EMAIL_SMTP_HOST):
+    from awgbot.core import settings as _settings
+    for host in (SERVER_HOST, _settings.get("email.imap_host", ""), _settings.get("email.smtp_host", "")):
         host = (host or "").strip().lower()
         # только домены: IP в списке бессмысленен (принимаем лишь доменные имена)
         if host and not host.replace(".", "").isdigit():

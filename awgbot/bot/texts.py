@@ -1384,6 +1384,70 @@ SETTINGS_ROOT = "⚙️ <b>Настройки</b>\n\nВыбери раздел. 
 SETTINGS_NOTIFY = ("🔔 <b>Уведомления</b>\n\nТихие часы (ночью без звука), алерты "
                    "о загрузке хоста и уведомления админу о событиях клиентов.")
 SETTINGS_SUBS = "💳 <b>Параметры подписок</b>\n\nЛимиты и сроки, общие для всех клиентов."
+
+
+def settings_email_text(acc, last_check: tuple, resume_on: bool, resume_addr: str) -> str:
+    """Экран почтового канала: ящик, серверы, состояние, функции на канале."""
+    from awgbot.util import timeutil
+    lines = ["✉️ <b>E-mail</b>", ""]
+    if acc is None:
+        lines.append("Ящик не подключён. Почта нужна для аварийного выхода из "
+                     "приостановки по коду в письме; портов на хосте не открывается — "
+                     "бот сам ходит на почтовый сервер.")
+        return "\n".join(lines)
+    lines.append(f"Ящик: <code>{_e(acc.login)}</code>")
+    lines.append(f"IMAP: {_e(acc.imap_host)}:{acc.imap_port}, SMTP: {_e(acc.smtp_host)}:{acc.smtp_port}")
+    state, iso, detail = last_check
+    if state == "ok":
+        when = _fmt_age((timeutil.now() - timeutil.parse_iso(iso)).total_seconds()) if iso else ""
+        lines.append(f"Состояние: ✅ проверено {when}".rstrip())
+    elif state == "fail":
+        lines.append(f"Состояние: 🔴 {_e(detail)}")
+    else:
+        lines.append("Состояние: ⚪ ещё не проверялось")
+    lines += ["", "🆘 Аварийный выход из приостановки: " + ("включён" if resume_on else "выключен")]
+    if resume_on:
+        lines.append(f"Адрес для писем с кодом: <code>{_e(resume_addr)}</code>")
+    return "\n".join(lines)
+
+
+EMAIL_ASK_ADDRESS = ("✉️ <b>Подключение ящика</b>\n\nПришли адрес ящика, от имени которого "
+                     "бот будет читать и слать почту, например <code>box@icloud.com</code>.")
+EMAIL_ASK_IMAP_HOST = "Домен незнакомый — укажи серверы руками.\n\nIMAP-сервер (приём):"
+EMAIL_ASK_IMAP_PORT = "Порт IMAP (SSL/TLS), обычно 993:"
+EMAIL_ASK_SMTP_HOST = "SMTP-сервер (отправка):"
+EMAIL_ASK_SMTP_PORT = "Порт SMTP (STARTTLS), обычно 587:"
+EMAIL_BAD_ADDRESS = "⚠️ Это не похоже на адрес почты. Пришли адрес вида box@example.com."
+EMAIL_BAD_PORT = "⚠️ Нужен номер порта от 1 до 65535."
+EMAIL_BAD_HOST = "⚠️ Нужно имя сервера, например imap.example.com."
+EMAIL_FORGET_CONFIRM = ("🗑 <b>Отключить почту?</b>\n\nЛогин, пароль и серверы будут стёрты. "
+                        "Аварийный выход из приостановки перестанет работать.")
+EMAIL_FORGOTTEN = "✅ Почта отключена."
+EMAIL_TEST_SENT = "📨 Тестовое письмо отправлено на сам ящик — проверь входящие."
+
+
+def email_provider_line(address: str, provider) -> str:
+    from awgbot.infra import mail
+    if provider:
+        imap, ip, smtp, sp = provider
+        return (f"Провайдер распознан: IMAP {_e(imap)}:{ip}, SMTP {_e(smtp)}:{sp}.")
+    return ""
+
+
+def email_ask_password(address: str) -> str:
+    from awgbot.infra import mail
+    hint = mail.PASSWORD_HINTS.get(mail.domain_of(address), "")
+    tail = f"\n\n⚠️ {_e(hint)}." if hint else ""
+    return ("Пароль ящика. Сообщение с ним бот удалит сразу после приёма; проверка входа "
+            "по IMAP и SMTP пройдёт до сохранения." + tail)
+
+
+def email_saved(address: str, detail: str) -> str:
+    return f"✅ Ящик <code>{_e(address)}</code> подключён.\n{_e(detail)}"
+
+
+def email_check_failed(detail: str) -> str:
+    return f"🔴 Не подключено: {_e(detail)}\n\nНичего не сохранено. Попробуй ещё раз."
 SETTINGS_MON = ("📊 <b>Мониторинг</b>\n\nЧастота опроса, чувствительность алертов "
                 "и поведение при простое AWG.")
 SETTINGS_BACKUP = ("💾 <b>Резервное копирование</b>\n\nРасписание автоматического "
@@ -1430,6 +1494,8 @@ SETTINGS_BOUNDS = {
     "app.scheduler.monitor_minutes": (1, 1440, "Частота опроса", "мин (1–1440)"),
     "app.monitoring.alert_streak": (1, 100, "Порог стрика", "замеров (1–100)"),
     "app.monitoring.service_failure_alert_minutes": (1, 1440, "Порог простоя", "мин (1–1440)"),
+    "email.poll_interval_sec": (60, 3600, "Интервал опроса почты", "сек (60–3600)"),
+    "email.resume_code_len": (6, 16, "Длина кода", "символов (6–16)"),
     "app.scheduler.backup_day": (1, 28, "День автобэкапа", "число месяца (1–28)"),
     "app.scheduler.backup_hour": (0, 23, "Час автобэкапа", "час (0–23)"),
     # агент шлюза
@@ -1437,6 +1503,18 @@ SETTINGS_BOUNDS = {
     "app.gateway.handshake_max_age": (60, 86400, "Порог простоя линка", "сек (60–86400)"),
     "app.gateway.temp_alert_c": (40, 100, "Порог температуры", "°C (40–100)"),
 }
+
+
+# Текстовые настройки (не числа): ключ → (подпись, подсказка). Ввод проверяется
+# валидатором в обработчике.
+SETTINGS_TEXT = {
+    "email.resume_address": ("Адрес для писем с кодом", "адрес почты; пусто — сам ящик"),
+}
+
+
+def settings_text_prompt(key: str) -> str:
+    label, hint = SETTINGS_TEXT[key]
+    return f"Введи новое значение: <b>{_e(label)}</b>\n{_e(hint)}."
 
 
 def settings_prompt(key: str) -> str:

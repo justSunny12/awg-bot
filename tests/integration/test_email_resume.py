@@ -29,8 +29,8 @@ def test_poll_once_disabled_returns_zero(monkeypatch):
     """Фича выключена (нет кредов) → poll_once ничего не делает."""
     from awgbot.infra import email_resume
     import awgbot.core.config as cfg
-    monkeypatch.setattr(cfg, "EMAIL_RESUME_ENABLED", False)
-    assert email_resume.poll_once(lambda code: True) == 0
+    pass
+    assert email_resume.poll_once(None, lambda code: True) == 0
 
 
 def test_decode_subject_plain_and_mime():
@@ -53,9 +53,8 @@ def test_poll_once_matches_code_and_marks_seen(monkeypatch):
     помечено \\Seen, при успехе шлётся ответ."""
     from awgbot.infra import email_resume as er
     import awgbot.core.config as cfg
-    monkeypatch.setattr(cfg, "EMAIL_RESUME_ENABLED", True)
-    monkeypatch.setattr(cfg, "EMAIL_RESUME_LOGIN", "box@icloud.com")
-    monkeypatch.setattr(cfg, "EMAIL_RESUME_PASSWORD", "app-pass")
+    from awgbot.infra.mail import MailAccount
+    acc = MailAccount("box@icloud.com", "app-pass", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
 
     stored, replied = [], []
 
@@ -80,14 +79,14 @@ def test_poll_once_matches_code_and_marks_seen(monkeypatch):
         def logout(self): pass
 
     monkeypatch.setattr(er.imaplib, "IMAP4_SSL", FakeIMAP)
-    monkeypatch.setattr(er, "send_success_reply", lambda to: replied.append(to))
+    monkeypatch.setattr(er, "send_success_reply", lambda acc, to: replied.append(to))
 
     seen_codes = []
     def on_code(code):
         seen_codes.append(code)
         return code == "AbCd2345"
 
-    accepted = er.poll_once(on_code)
+    accepted = er.poll_once(acc, on_code)
     assert accepted == 1
     assert seen_codes == ["AbCd2345"]
     assert stored and stored[0][1] == "\\Seen"        # помечено прочитанным
@@ -95,14 +94,15 @@ def test_poll_once_matches_code_and_marks_seen(monkeypatch):
 
 
 def test_poll_once_finds_code_in_spam(monkeypatch):
+    from awgbot.infra.mail import MailAccount
+    acc = MailAccount("box@icloud.com", "app-pass", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
     """Письмо с кодом попало в «спам» (не INBOX) — poll_once его всё равно
     находит и обрабатывает. Несуществующие папки молча пропускаются."""
     from awgbot.infra import email_resume as er
     import awgbot.core.config as cfg
     import imaplib
-    monkeypatch.setattr(cfg, "EMAIL_RESUME_ENABLED", True)
-    monkeypatch.setattr(cfg, "EMAIL_RESUME_LOGIN", "box@icloud.com")
-    monkeypatch.setattr(cfg, "EMAIL_RESUME_PASSWORD", "app-pass")
+    from awgbot.infra.mail import MailAccount
+    acc = MailAccount("box@icloud.com", "app-pass", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
 
     class FakeIMAP:
         # INBOX пуст; письмо в «Junk»; часть кандидатов-папок не существует
@@ -126,7 +126,7 @@ def test_poll_once_finds_code_in_spam(monkeypatch):
         def logout(self): pass
 
     monkeypatch.setattr(er.imaplib, "IMAP4_SSL", FakeIMAP)
-    monkeypatch.setattr(er, "send_success_reply", lambda to: None)
+    monkeypatch.setattr(er, "send_success_reply", lambda acc, to: None)
 
-    accepted = er.poll_once(lambda code: code == "AbCd2345")
+    accepted = er.poll_once(acc, lambda code: code == "AbCd2345")
     assert accepted == 1                              # найдено в «спам»

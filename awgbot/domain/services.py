@@ -35,6 +35,7 @@ from awgbot.domain import configgen
 from awgbot.domain import routing as domain_routing
 from awgbot.domain.migration import MigrationMixin
 from awgbot.domain.selfupdate import SelfUpdateMixin
+from awgbot.domain.mailmix import MailMixin
 from awgbot.core.blocks import DeviceBlock, ClientBlock, DEVICE_TRAFFIC_ANY
 from awgbot.core import models
 from awgbot.core.enums import SubStatus, ActivationStatus, PauseMode, PeriodKind, FriendStatus
@@ -299,7 +300,7 @@ def _admin_self_over_text() -> str:
 # Services
 # ─────────────────────────────────────────────────────────────────────────────
 
-class Services(SelfUpdateMixin, MigrationMixin):
+class Services(SelfUpdateMixin, MailMixin, MigrationMixin):
     # username бота — для deep-link'ов в текстах (t.me/<bot>?start=…); main
     # кладёт его после getMe. Пусто — ссылки не рисуются, текст остаётся текстом.
     bot_username: str = ""

@@ -324,64 +324,6 @@ setup_secrets() {
     fi
 }
 
-setup_email_resume() {
-    # Аварийный email-выход из приостановки. Клиент, заперевшийся в паузе
-    # (Telegram только через этот VPN), шлёт одноразовый код письмом — бот
-    # опрашивает IMAP исходяще (портов не открываем) и снимает паузу.
-    # Всё опционально; выключение стирает настройки (фича засыпает).
-    local app="$CONF_DIR/email.yaml"
-    local cur_login imap smtp imap_port smtp_port alias login pass poll domain
-    cur_login="$(env_get EMAIL_RESUME_LOGIN)"
-    echo
-    if [[ -n "$cur_login" ]]; then
-        log "Email-выход уже настроен (ящик: $cur_login)."
-        if confirm "Отключить email-выход и стереть настройки?" n; then
-            env_set EMAIL_RESUME_LOGIN ""; env_set EMAIL_RESUME_PASSWORD ""
-            yaml_set "$app" imap_host "\"\""; yaml_set "$app" smtp_host "\"\""
-            yaml_set "$app" resume_address "\"\""
-            ok "email-выход отключён."
-            return
-        fi
-        confirm "Изменить параметры email-выхода?" n || return
-    else
-        confirm "Настроить аварийный email-выход из приостановки?" n || return
-    fi
-
-    while :; do ask login "Адрес ящика (напр. box@icloud.com)"; [[ "$login" == *@*.* ]] && break; warn "нужен корректный e-mail"; done
-    # IMAP/SMTP выводим из домена для известных провайдеров; иначе спросим вручную.
-    domain="${login##*@}"
-    imap=""; smtp=""; imap_port=993; smtp_port=587
-    case "$domain" in
-        icloud.com) imap="imap.mail.me.com"; smtp="smtp.mail.me.com" ;;
-    esac
-    if [[ -n "$imap" ]]; then
-        log "Провайдер распознан ($domain): IMAP $imap:$imap_port, SMTP $smtp:$smtp_port."
-    else
-        log "Домен $domain незнаком — укажи серверы вручную."
-        while :; do ask imap "IMAP-сервер (приём)"; [[ -n "$imap" ]] && break; warn "пусто"; done
-        ask imap_port "Порт IMAP (SSL/TLS)" "993"
-        while :; do ask smtp "SMTP-сервер (ответ об успехе)"; [[ -n "$smtp" ]] && break; warn "пусто"; done
-        ask smtp_port "Порт SMTP (STARTTLS)" "587"
-    fi
-    log "Пароль ящика: для iCloud это app-specific password (account.apple.com → App-Specific Passwords)."
-    while :; do ask_masked pass "Пароль ящика"; [[ -n "$pass" ]] && break; warn "пусто"; done
-    # Алиас опционален: если у ящика есть алиас-адрес для писем от клиентов —
-    # укажи его; пусто (Enter) → клиенты шлют на сам адрес ящика ($login).
-    ask alias "Адрес-алиас для писем от клиентов (Enter — сам адрес ящика)" ""
-    [[ -z "$alias" ]] && alias="$login"
-    ask poll "Интервал опроса, сек (не менее 60)" "60"
-    [[ "$poll" =~ ^[0-9]+$ ]] && (( poll >= 60 )) || { warn "интервал <60 или не число — ставлю 60"; poll=60; }
-
-    yaml_set "$app" imap_host "\"$imap\""
-    yaml_set "$app" imap_port "$imap_port"
-    yaml_set "$app" smtp_host "\"$smtp\""
-    yaml_set "$app" smtp_port "$smtp_port"
-    yaml_set "$app" resume_address "\"$alias\""
-    yaml_set "$app" poll_interval_sec "$poll"
-    env_set EMAIL_RESUME_LOGIN "$login"
-    env_set EMAIL_RESUME_PASSWORD "$pass"
-    ok "email-выход настроен (ящик $login, письма на $alias, опрос ${poll}с)."
-}
 optional_steps() {
     echo; log "─── Опционально ───"
     if [[ -f "$INSTALL_DIR/install/harden_firewall.sh" ]] \
@@ -483,7 +425,6 @@ cmd_reconfigure() {
         seed_conf
         configure_topology                 # свежая установка — визард обязателен
         setup_secrets
-        setup_email_resume
         validate_config
         install_unit
         log "включаю и запускаю сервис…"
@@ -502,7 +443,6 @@ cmd_reconfigure() {
         seed_conf                          # доложить недостающие шаблоны, существующие не трогать
         configure_topology                 # перенастройка поверх существующего
         setup_secrets
-        setup_email_resume
         validate_config
         log "перезапускаю ${SERVICE}…"; systemctl restart "$SERVICE" 2>/dev/null || true
         systemctl is-active --quiet "$SERVICE" && ok "$SERVICE перезапущен." \

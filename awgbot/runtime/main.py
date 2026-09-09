@@ -268,6 +268,12 @@ async def main() -> None:
     conf_watcher.start()
     scheduler = setup_scheduler(services, bot, db, watcher)
 
+    # почта: креды прежней схемы (env) — в БД, один раз
+    try:
+        await asyncio.to_thread(services.email_import_env_once)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("email_import_env_once: %s", e)
+
     # ── стартовые задачи ─────────────────────────────────────────────────────
     # seed детекта рестарта (сохранит текущий StartedAt, реконсиляции не будет —
     # первый запуск); seed статуса сервера, чтобы monitor не слал ложный алерт.

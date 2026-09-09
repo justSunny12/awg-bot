@@ -1272,3 +1272,83 @@ async def test_expiring_screen_and_extend_returns_to_it_or_menu(services, make_a
     answers = [t for kind, t, _ in msg.sent if kind == "answer"]
     assert "Панель администратора" in answers[-1], "после продления не вернулись в меню (список опустел)"
     assert "продлена на" not in answers[-1], "меню дублирует инфосообщение"
+
+
+# ── ✉️ E-mail: мастер подключения из чата ────────────────────────────────────
+
+def _email_store(monkeypatch):
+    from awgbot.core import settings
+    store = {}
+    monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v))
+    monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
+    monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
+    monkeypatch.setattr(settings, "get_bool", lambda k, d=True: bool(store.get(k, d)))
+    return store
+
+
+async def test_email_wizard_known_provider_saves_after_live_check(services, fake_bot, monkeypatch):
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from tests.conftest import FakeCallback, FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    store = _email_store(monkeypatch)
+    checked = []
+    monkeypatch.setattr(services, "email_check", lambda acc=None: (checked.append(acc), (True, "ок"))[1])
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    state = FakeState()
+    await sh.email_action(cb, SetCB(sec="email", act="do", key="setup"), services, state)
+    assert any("Подключение ящика" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    addr = FakeMessage(text="box@icloud.com", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await sh.email_address(addr, state, services)
+    assert any("Провайдер распознан" in t and "app-specific" in t for kind, t, _ in addr.sent)
+    pw = FakeMessage(text="s3cret", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await sh.email_password(pw, state, services)
+    assert any(r[0] == "delete" for r in fake_bot.records), "сообщение с паролем не удалено"
+    assert checked and checked[0].password == "s3cret" and checked[0].imap_host == "imap.mail.me.com"
+    assert services.db.get_state("email_login") == "box@icloud.com"
+    assert store["email.smtp_host"] == "smtp.mail.me.com"
+    assert any("подключён" in t for kind, t, _ in pw.sent)
+    assert await state.get_data() == {}
+
+
+async def test_email_wizard_unknown_domain_asks_servers_and_failed_check_saves_nothing(
+        services, fake_bot, monkeypatch):
+    from awgbot.bot.handlers import settings as sh
+    from tests.conftest import FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    _email_store(monkeypatch)
+    monkeypatch.setattr(services, "email_check", lambda acc=None: (False, "IMAP отверг логин/пароль"))
+    state = FakeState(); await state.set_state("x")
+    m = lambda t: FakeMessage(text=t, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    a = m("box@corp.example"); await sh.email_address(a, state, services)
+    assert any("IMAP-сервер" in t for kind, t, _ in a.sent)
+    await sh.email_imap_host(m("imap.corp.example"), state)
+    bad = m("99999"); await sh.email_imap_port(bad, state)
+    assert any("порта" in t for kind, t, _ in bad.sent)
+    await sh.email_imap_port(m("993"), state)
+    await sh.email_smtp_host(m("smtp.corp.example"), state)
+    await sh.email_smtp_port(m("587"), state)
+    pw = m("pw"); await sh.email_password(pw, state, services)
+    assert any("Не подключено" in t and "IMAP отверг" in t for kind, t, _ in pw.sent)
+    assert not services.db.get_state("email_login")
+
+
+async def test_email_forget_needs_confirmation_and_toggle_resume(services, fake_bot, monkeypatch):
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from tests.conftest import FakeCallback, FakeMessage
+    import awgbot.core.config as cfg
+    store = _email_store(monkeypatch)
+    services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    from tests.conftest import FakeState
+    await sh.email_action(cb, SetCB(sec="email", act="do", key="forget"), services, FakeState())
+    assert services.email_account() is not None
+    assert any("Отключить почту?" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    await sh.toggle(cb, SetCB(sec="email", act="toggle", key="email.resume_enabled"), services)
+    assert store["email.resume_enabled"] is False
+    await sh.email_action(cb, SetCB(sec="email", act="do", key="forget!"), services, FakeState())
+    assert services.email_account() is None
+    assert any("Почта отключена" in t for kind, t, _ in msg.sent if kind == "answer")

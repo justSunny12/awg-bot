@@ -21,13 +21,11 @@ from __future__ import annotations
 import email
 import imaplib
 import secrets
-import smtplib
 import ssl
-from email.message import EmailMessage
 from email.header import decode_header
 from typing import Callable
 
-from awgbot.core import config
+from awgbot.infra.mail import MailAccount, send_mail
 
 # Безопасный алфавит: без 0/O, 1/l/I — чтобы код нельзя было перепутать при
 # ручном наборе с телефона.
@@ -36,8 +34,10 @@ _ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz"
 
 def generate_code(length: int = None) -> str:
     """Одноразовый resume-код из безопасного алфавита."""
-    n = length or config.EMAIL_RESUME_CODE_LEN
-    return "".join(secrets.choice(_ALPHABET) for _ in range(n))
+    if not length:
+        from awgbot.core import settings
+        length = settings.get_int("email.resume_code_len", 8)
+    return "".join(secrets.choice(_ALPHABET) for _ in range(int(length)))
 
 
 def _decode_subject(raw: str) -> str:
@@ -61,7 +61,7 @@ _MAILBOXES = ("INBOX", "Junk", "Spam", "Junk E-mail", "INBOX.Junk",
               "INBOX.Spam", "[Gmail]/Spam")
 
 
-def poll_once(on_code: Callable[[str], bool]) -> int:
+def poll_once(acc: MailAccount, on_code: Callable[[str], bool]) -> int:
     """Один цикл опроса ящика. Для каждого НЕпрочитанного письма извлекает код
     из темы и передаёт в on_code(code)->bool: True = код принят (пауза снята),
     False = нет. Письмо в любом случае помечается \\Seen (обработано). При
@@ -74,14 +74,13 @@ def poll_once(on_code: Callable[[str], bool]) -> int:
     Возвращает число принятых кодов. Сетевые/протокольные ошибки пробрасывает —
     их гасит и логирует poller (чтобы один сбой не ронял фоновую задачу).
     """
-    if not config.EMAIL_RESUME_ENABLED:
+    if acc is None or not acc.complete():
         return 0
     accepted = 0
     ctx = ssl.create_default_context()
-    conn = imaplib.IMAP4_SSL(config.EMAIL_IMAP_HOST, config.EMAIL_IMAP_PORT,
-                             ssl_context=ctx)
+    conn = imaplib.IMAP4_SSL(acc.imap_host, acc.imap_port, ssl_context=ctx)
     try:
-        conn.login(config.EMAIL_RESUME_LOGIN, config.EMAIL_RESUME_PASSWORD)
+        conn.login(acc.login, acc.password)
         for mbox in _MAILBOXES:
             try:
                 typ, _ = conn.select(mbox)
@@ -89,7 +88,7 @@ def poll_once(on_code: Callable[[str], bool]) -> int:
                 continue                              # папки нет — пропускаем
             if typ != "OK":
                 continue
-            accepted += _scan_selected(conn, on_code)
+            accepted += _scan_selected(conn, acc, on_code)
     finally:
         try:
             conn.logout()
@@ -98,7 +97,7 @@ def poll_once(on_code: Callable[[str], bool]) -> int:
     return accepted
 
 
-def _scan_selected(conn, on_code: Callable[[str], bool]) -> int:
+def _scan_selected(conn, acc: MailAccount, on_code: Callable[[str], bool]) -> int:
     """Обработать все непрочитанные письма в УЖЕ выбранной папке."""
     accepted = 0
     typ, data = conn.search(None, "UNSEEN")
@@ -125,23 +124,14 @@ def _scan_selected(conn, on_code: Callable[[str], bool]) -> int:
             accepted += 1
             if sender:
                 try:
-                    send_success_reply(sender)
+                    send_success_reply(acc, sender)
                 except Exception:                     # noqa: BLE001
                     pass                              # ответ — не критично
     return accepted
 
 
-def send_success_reply(to_addr: str) -> None:
+def send_success_reply(acc: MailAccount, to_addr: str) -> None:
     """Ответ об успехе (только при принятом коде). Невалидным — не отвечаем."""
-    if not config.EMAIL_RESUME_ENABLED or not to_addr:
+    if acc is None or not acc.complete() or not to_addr:
         return
-    msg = EmailMessage()
-    msg["From"] = config.EMAIL_RESUME_LOGIN
-    msg["To"] = to_addr
-    msg["Subject"] = "Доступ восстановлен"
-    msg.set_content("Код принят, доступ восстановлен.")
-    ctx = ssl.create_default_context()
-    with smtplib.SMTP(config.EMAIL_SMTP_HOST, config.EMAIL_SMTP_PORT) as s:
-        s.starttls(context=ctx)
-        s.login(config.EMAIL_RESUME_LOGIN, config.EMAIL_RESUME_PASSWORD)
-        s.send_message(msg)
+    send_mail(acc, to_addr, "Доступ восстановлен", "Код принят, доступ восстановлен.")
