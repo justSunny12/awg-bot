@@ -1513,3 +1513,17 @@ async def test_foreign_role_backup_is_rejected_in_chat(services, fake_bot, monke
     msg.document = type("D", (), {"file_name": "b.tgz", "file_size": len(blob), "file_id": "F"})()
     await ah.admin_document(msg, services, FakeState())
     assert any("копия агента шлюза" in t for kind, t, _ in msg.sent if kind == "answer")
+
+
+def test_notify_section_layout_and_profiles_submenu(monkeypatch):
+    from awgbot.bot import keyboards as kbs
+    from awgbot.core import settings
+    monkeypatch.setattr(settings, "get_bool", lambda k, d=True: d)
+    monkeypatch.setattr(settings, "get_int", lambda k, d=0: d)
+    rows = [[b.text for b in r] for r in kbs.settings_notify().inline_keyboard]
+    assert rows[0] == ["🔴 E-mail при недоступности Telegram"]
+    assert rows[1] == ["🟢 Тихие часы"]
+    assert rows[-2] == ["👥 События профилей"] and rows[-1][0].endswith("Назад")
+    assert not any("Активация" in b for r in rows for b in r), "события профилей ушли в подменю"
+    sub = [[b.text for b in r] for r in kbs.settings_notify_clients().inline_keyboard]
+    assert sub[0] == ["🟢 Активация профиля"] and len(sub) == 5

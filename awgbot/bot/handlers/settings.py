@@ -38,6 +38,8 @@ async def _screen(sec: str, services):
     """
     if sec == "notify":
         return texts.SETTINGS_NOTIFY, kb.settings_notify()
+    if sec == "ncl":
+        return texts.SETTINGS_NOTIFY_CLIENTS, kb.settings_notify_clients()
     if sec == "email":
         acc = await call(services.email_account)
         return (texts.settings_email_text(acc, await call(services.email_last_check),

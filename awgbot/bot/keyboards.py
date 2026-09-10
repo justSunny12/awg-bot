@@ -1153,19 +1153,28 @@ def _back(sec_to: str = "root") -> InlineKeyboardButton:
 
 
 def settings_notify() -> InlineKeyboardMarkup:
+    """Сверху — запасной канал (когда Telegram недоступен, это главное), затем
+    тихие часы и алерты хоста; события профилей — в подменю."""
     s = settings
     kb = InlineKeyboardBuilder()
+    ef = s.get_bool("notifications.email_fallback", False)
+    kb.button(text=f"{_chk(ef)} E-mail при недоступности Telegram",
+              callback_data=SetCB(sec="notify", act="toggle", key="notifications.email_fallback"))
+    rows = [1]
     qh = s.get_bool("quiet_hours.quiet_hours_enabled", True)
     kb.button(text=f"{_chk(qh)} Тихие часы",
               callback_data=SetCB(sec="notify", act="toggle", key="quiet_hours.quiet_hours_enabled"))
+    rows.append(1)
     if qh:
         kb.button(text=f"Начало: {s.get_int('quiet_hours.quiet_hours_start', 20)}:00 МСК",
                   callback_data=SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_start"))
         kb.button(text=f"Конец: {s.get_int('quiet_hours.quiet_hours_end', 7)}:00 МСК",
                   callback_data=SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_end"))
+        rows.append(2)
     ra = s.get_bool("resource_alerts.enabled", True)
     kb.button(text=f"{_chk(ra)} Алерты хоста (CPU/RAM/диск)",
               callback_data=SetCB(sec="notify", act="toggle", key="resource_alerts.enabled"))
+    rows.append(1)
     if ra:
         kb.button(text=f"CPU: {s.get_int('resource_alerts.thresholds_percent.cpu', 80)}%",
                   callback_data=SetCB(sec="notify", act="edit", key="resource_alerts.thresholds_percent.cpu"))
@@ -1173,20 +1182,28 @@ def settings_notify() -> InlineKeyboardMarkup:
                   callback_data=SetCB(sec="notify", act="edit", key="resource_alerts.thresholds_percent.ram"))
         kb.button(text=f"Диск: {s.get_int('resource_alerts.thresholds_percent.disk', 80)}%",
                   callback_data=SetCB(sec="notify", act="edit", key="resource_alerts.thresholds_percent.disk"))
-    ef = s.get_bool("notifications.email_fallback", False)
-    kb.button(text=f"{_chk(ef)} E-mail при недоступности Telegram",
-              callback_data=SetCB(sec="notify", act="toggle", key="notifications.email_fallback"))
-    ce = "notifications.client_events"
-    for k, label in (("activation", "Активация клиента"), ("grace", "Активация грейс-периода"),
-                     ("over_limit", "Превышение лимита потребления"), ("bonus", "Выдача бонусного объёма")):
-        on = s.get_bool(f"{ce}.{k}", True)
-        kb.button(text=f"{_chk(on)} {label}",
-                  callback_data=SetCB(sec="notify", act="toggle", key=f"{ce}.{k}"))
-    # раскладка: тихие часы (1) [+ начало/конец (2)] + алерты (1) [+ 3 порога в ряд] +
-    # e-mail при недоступности (1) + 4 события клиентов — по одной кнопке в ряд
-    rows = [1] + ([2] if qh else []) + [1] + ([3] if ra else []) + [1] + [1, 1, 1, 1]
+        rows.append(3)
+    kb.button(text="👥 События профилей", callback_data=SetCB(sec="ncl", act="open"))
+    rows.append(1)
     kb.adjust(*rows)
     kb.row(_back())
+    return kb.as_markup()
+
+
+CLIENT_EVENT_LABELS = (("activation", "Активация профиля"), ("grace", "Активация грейс-периода"),
+                       ("over_limit", "Превышение лимита потребления"), ("bonus", "Выдача бонусного объёма"))
+
+
+def settings_notify_clients() -> InlineKeyboardMarkup:
+    s = settings
+    kb = InlineKeyboardBuilder()
+    for key, label in CLIENT_EVENT_LABELS:
+        on = s.get_bool(f"notifications.client_events.{key}", True)
+        kb.button(text=f"{_chk(on)} {label}",
+                  callback_data=SetCB(sec="ncl", act="toggle",
+                                      key=f"notifications.client_events.{key}"))
+    kb.adjust(1)
+    kb.row(_back("notify"))
     return kb.as_markup()
 
 
