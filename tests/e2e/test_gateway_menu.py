@@ -115,11 +115,12 @@ def test_notify_section_layout_cpu_ram_then_disk_temp(monkeypatch):
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
     monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
     rows = _labels(kb.gateway_notify_kb())
-    assert rows[0] == ["🟢 Тихие часы"]
-    assert rows[1] == ["Начало: 20:00 МСК", "Конец: 7:00 МСК"]
-    assert rows[3] == ["CPU: 80%", "RAM: 80%"]
-    assert rows[4] == ["Диск: 80%", "Temp: 75 °C"]
-    assert rows[-2] == ["🟢 E-mail при недоступности Telegram"] and rows[-1] == ["⬅️ Назад"]
+    assert rows[0] == ["🟢 E-mail при недоступности Telegram"]
+    assert rows[1] == ["🟢 Тихие часы"]
+    assert rows[2] == ["Начало: 20:00 МСК", "Конец: 7:00 МСК"]
+    assert rows[4] == ["CPU: 80%", "RAM: 80%"]
+    assert rows[5] == ["Диск: 80%", "Temp: 75 °C"]
+    assert rows[-1] == ["⬅️ Назад"]
     assert not any("клиент" in b.lower() for row in rows for b in row), "события клиентов у шлюза лишние"
 
 

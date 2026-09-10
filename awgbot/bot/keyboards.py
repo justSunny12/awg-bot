@@ -1465,10 +1465,13 @@ def gateway_notify_kb() -> InlineKeyboardMarkup:
     диск и температура."""
     s = settings
     kb = InlineKeyboardBuilder()
+    ef = s.get_bool("notifications.email_fallback", False)
+    kb.button(text=f"{_chk(ef)} E-mail при недоступности Telegram",
+              callback_data=GwCB(action="tgl", val="notifications.email_fallback"))
     qh = s.get_bool("quiet_hours.quiet_hours_enabled", True)
     kb.button(text=f"{_chk(qh)} Тихие часы",
               callback_data=GwCB(action="tgl", val="quiet_hours.quiet_hours_enabled"))
-    rows = [1]
+    rows = [1, 1]
     if qh:
         kb.button(text=f"Начало: {s.get_int('quiet_hours.quiet_hours_start', 20)}:00 МСК",
                   callback_data=GwCB(action="edit", val="quiet_hours.quiet_hours_start"))
@@ -1489,10 +1492,6 @@ def gateway_notify_kb() -> InlineKeyboardMarkup:
         kb.button(text=f"Temp: {s.get_int('app.gateway.temp_alert_c', 75)} °C",
                   callback_data=GwCB(action="edit", val="app.gateway.temp_alert_c"))
         rows += [2, 2]
-    ef = s.get_bool("notifications.email_fallback", False)
-    kb.button(text=f"{_chk(ef)} E-mail при недоступности Telegram",
-              callback_data=GwCB(action="tgl", val="notifications.email_fallback"))
-    rows.append(1)
     kb.adjust(*rows)
     kb.row(_gw_back())
     return kb.as_markup()
