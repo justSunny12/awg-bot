@@ -1858,7 +1858,8 @@ def gateway_panel(st) -> str:
         power = ("⚠️ " + "; ".join(st.throttled["now"])) if st.throttled.get("now") else "ОК"
         hw.append(f"{pad}Питание: {power}")
     age = st.age_seconds()
-    hw.append(f"{pad}Обновлено " + (_fmt_age(age) if age is not None and age >= 1 else "только что"))
+    fresh = _fmt_age(age) if age is not None and age >= 1 else "только что"
+    hw.append(f"{pad}<i>(обновлено {fresh})</i>")
     parts += hw + ["", f"🌡 Монитор здоровья: {_gw_health_summary(st.checks)}", ""]
     parts.append(f"📊 Потребление за месяц: {human_bytes(st.month_rx + st.month_tx)} "
                  f"(↑ {human_bytes(st.month_rx)} | ↓ {human_bytes(st.month_tx)})")

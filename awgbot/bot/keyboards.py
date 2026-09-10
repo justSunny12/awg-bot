@@ -1433,7 +1433,7 @@ def gateway_panel_kb() -> InlineKeyboardMarkup:
     настройки. Мастер — на подтверждение: обрыв РФ у всех, пусть на секунды,
     не должен случаться от промаха пальцем. Перезапуски — в настройках."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="🔄 Обновить", callback_data=GwCB(action="refresh"))
+    kb.button(text="🔄 Статус", callback_data=GwCB(action="refresh"))
     kb.button(text="🌡 Монитор здоровья", callback_data=GwCB(action="health"))
     kb.button(text="🔧 Мастер восстановления", callback_data=GwCB(action="reassert"))
     kb.button(text="⚙️ Настройки", callback_data=GwCB(action="settings"))
