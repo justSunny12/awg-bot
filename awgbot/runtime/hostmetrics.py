@@ -42,16 +42,25 @@ def _read_proc_stat() -> tuple[int, int] | None:
     return total - idle, total
 
 
+_last_cpu_stat: tuple[int, int] | None = None
+
+
 def read_cpu_percent() -> float | None:
-    """Загрузка CPU, %: дельта busy/total между двумя чтениями /proc/stat.
-    Блокирует поток на _CPU_SAMPLE_SECONDS — вызывать через asyncio.to_thread."""
-    a = _read_proc_stat()
+    """Загрузка CPU, %: дельта busy/total к ПРЕДЫДУЩЕМУ чтению /proc/stat —
+    среднее за интервал между вызовами (у тика это 3 минуты), без sleep.
+    Раньше замер спал 0.25 с и показывал, что попало в эти четверть секунды.
+    Первый вызов после старта — короткая проба с паузой, базы ещё нет."""
+    global _last_cpu_stat
+    a = _last_cpu_stat
     if a is None:
-        return None
-    time.sleep(_CPU_SAMPLE_SECONDS)
+        a = _read_proc_stat()
+        if a is None:
+            return None
+        time.sleep(_CPU_SAMPLE_SECONDS)
     b = _read_proc_stat()
     if b is None:
         return None
+    _last_cpu_stat = b
     dbusy, dtotal = b[0] - a[0], b[1] - a[1]
     if dtotal <= 0:
         return None

@@ -121,10 +121,9 @@ def test_link_status_reads_freshest_handshake(svc, monkeypatch):
     def run(argv, timeout=10):
         if argv[:3] == ["ip", "link", "show"]:
             return _cp(0)
-        if "latest-handshakes" in argv:
-            return _cp(0, f"PUB1\t{int(now-40)}\n")
-        if "transfer" in argv:
-            return _cp(0, f"PUB1\t1000\t2000\n")
+        if "dump" in argv:                          # один вызов вместо двух
+            return _cp(0, "PRIV\tPUB0\t0\toff\n"
+                          f"PUB1\t(none)\t1.2.3.4:1\t10.9.1.0/24\t{int(now-40)}\t1000\t2000\t25\n")
         return _cp(1)
 
     monkeypatch.setattr(gw, "_run", run)
@@ -246,6 +245,9 @@ def test_tg_mark_ensure_adds_only_missing(svc, monkeypatch):
     added = []
 
     def run(argv, timeout=10):
+        if "-S" in argv:                            # одна проба вместо восьми -C
+            return _cp(0, "-P OUTPUT ACCEPT\n" + "".join(
+                f"-A OUTPUT -d {n} -j MARK --set-xmark 0x1/0xffffffff\n" for n in present))
         if "-C" in argv:
             return _cp(0) if argv[argv.index("-d") + 1] in present else _cp(1)
         if "-A" in argv:
@@ -253,6 +255,7 @@ def test_tg_mark_ensure_adds_only_missing(svc, monkeypatch):
         return _cp(0)
 
     monkeypatch.setattr(gw, "_run", run)
+    assert svc.tg_mark_missing() == [n for n in svc.TG_RANGES if n not in present]
     assert svc.tg_mark_ensure() == len(svc.TG_RANGES) - 1
     assert "149.154.160.0/20" not in added
 

@@ -47,6 +47,8 @@ async def _status(services, fresh: bool):
         st = await call(services.cached_status, _snapshot_max_age())
         if st is not None:
             return st
+        return await call(services.snapshot)
+    await call(services.invalidate_static)               # «Статус»: и статику живьём
     return await call(services.snapshot)
 
 
@@ -107,6 +109,7 @@ async def gw_refresh(cb: CallbackQuery, services, state: FSMContext):
 @router.callback_query(GwCB.filter(F.action == "health"))
 async def gw_health(cb: CallbackQuery, services):
     await cb.answer("Проверяю…")
+    await call(services.invalidate_static)               # монитор здоровья — всё живьём
     st = await call(services.status)
     await edit_nav(cb, services, texts.gateway_health(st), kb.gateway_back_kb())
 

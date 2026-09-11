@@ -80,6 +80,7 @@ class GwStatus:
     month_rx: int = 0                       # потребление линка за календарный месяц
     month_tx: int = 0
     egress_ms: float | None = None          # выход наружу через домашний канал, мс
+    tg_missing: list[str] = field(default_factory=list)   # диапазоны Telegram без маркировки
     ts: str = ""                            # когда снят (ISO); пусто — живой
 
     def to_json(self) -> str:
@@ -109,27 +110,23 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
     # ── линк ─────────────────────────────────────────────────────────────────
 
     def link_status(self) -> tuple[bool, float | None, int, int]:
-        """(интерфейс поднят, возраст хендшейка в сек | None, rx, tx)."""
+        """(интерфейс поднят, возраст хендшейка в сек | None, rx, tx) — одним
+        `awg show <if> dump`: хендшейк и счётчики в нём же, два вызова были лишними."""
         up = _run(["ip", "link", "show", config.GW_LINK_IF]).returncode == 0
         if not up:
             return False, None, 0, 0
         age = None
-        try:
-            out = _out(_run(["awg", "show", config.GW_LINK_IF, "latest-handshakes"]))
-            ts = max((int(l.split()[-1]) for l in out.splitlines() if l.split()), default=0)
-            if ts:
-                age = max(0.0, timeutil.now().timestamp() - ts)
-        except Exception as e:                          # noqa: BLE001
-            log.warning("gateway: latest-handshakes: %s", e)
         rx = tx = 0
         try:
-            out = _out(_run(["awg", "show", config.GW_LINK_IF, "transfer"]))
-            for line in out.splitlines():
-                parts = line.split()
-                if len(parts) >= 3:
-                    rx += int(parts[1]); tx += int(parts[2])
+            from awgbot.infra.awg import parse_dump
+            peers = parse_dump(_out(_run(["awg", "show", config.GW_LINK_IF, "dump"])))
+            ts = max((int(p["last_handshake"] or 0) for p in peers), default=0)
+            if ts:
+                age = max(0.0, timeutil.now().timestamp() - ts)
+            rx = sum(int(p.get("rx") or 0) for p in peers)
+            tx = sum(int(p.get("tx") or 0) for p in peers)
         except Exception as e:                          # noqa: BLE001
-            log.warning("gateway: transfer: %s", e)
+            log.warning("gateway: awg show dump: %s", e)
         return True, age, rx, tx
 
     # ── обвязка ──────────────────────────────────────────────────────────────
@@ -338,7 +335,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                     f"✅ {label} шлюза снова в норме.")
 
         try:
-            self.tg_mark_ensure()
+            self.tg_mark_ensure(st.tg_missing)          # без повторной пробы
         except Exception as e:                          # noqa: BLE001
             log.warning("gateway: tg_mark_ensure: %s", e)
 
@@ -357,14 +354,27 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                  "149.154.160.0/20", "185.76.151.0/24")
 
     def tg_mark_missing(self) -> list[str]:
-        return [n for n in self.TG_RANGES
-                if _run(["iptables", "-t", "mangle", "-C", "OUTPUT", "-d", n,
-                         "-j", "MARK", "--set-mark", "0x1"]).returncode != 0]
+        """Диапазоны без правила — одним `iptables -t mangle -S OUTPUT` вместо
+        восьми `-C` (и раньше это делалось дважды за тик)."""
+        proc = _run(["iptables", "-t", "mangle", "-S", "OUTPUT"])
+        if proc.returncode != 0:
+            return list(self.TG_RANGES)
+        present: set[str] = set()
+        for line in _out(proc).splitlines():
+            parts = line.split()
+            if "-d" in parts and "MARK" in parts and "0x1" in " ".join(parts):
+                present.add(parts[parts.index("-d") + 1])
+        return [n for n in self.TG_RANGES if n not in present]
 
-    def tg_mark_ensure(self) -> int:
-        """Доставить недостающие правила. Возвращает число поставленных."""
+    def tg_mark_ensure(self, missing: list[str] | None = None) -> int:
+        """Доставить недостающие правила. missing — уже снятый в status()
+        список; без него снимаем сами. Перед -A всегда -C: разбор -S может
+        ошибиться, дубль правила — нет. Возвращает число поставленных."""
         n = 0
-        for net in self.tg_mark_missing():
+        for net in (missing if missing is not None else self.tg_mark_missing()):
+            if _run(["iptables", "-t", "mangle", "-C", "OUTPUT", "-d", net,
+                     "-j", "MARK", "--set-mark", "0x1"]).returncode == 0:
+                continue
             if _run(["iptables", "-t", "mangle", "-A", "OUTPUT", "-d", net,
                      "-j", "MARK", "--set-mark", "0x1"]).returncode == 0:
                 n += 1
@@ -570,15 +580,36 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
 
     # ── сводка ───────────────────────────────────────────────────────────────
 
+    # Статические пробы — modinfo, обход ядер, SMART — меняются руками и редко;
+    # по тику берём из кэша, а «Статус»/«Монитор здоровья»/старт снимают
+    # живьём (fresh_static). Прежний кэш убирали за то, что после обновления
+    # модуля он врал 10 минут; теперь у него есть сброс по кнопке.
+    _STATIC_TTL = 45 * 60
+
+    def invalidate_static(self) -> None:
+        """Сбросить кэш статических проб: «Статус», «Монитор здоровья», старт."""
+        self.__dict__.pop("_static_cache", None)
+
+    def _static(self) -> tuple[tuple[str, str], tuple[list[str], int], str | None]:
+        from awgbot.runtime import hostmetrics
+        c = self.__dict__.get("_static_cache")
+        if c and time.monotonic() - c[0] < self._STATIC_TTL:
+            return c[1], c[2], c[3]
+        ver, cov, smart = self.versions(), self.kernel_coverage(), hostmetrics.read_smart_health()
+        self.__dict__["_static_cache"] = (time.monotonic(), ver, cov, smart)
+        return ver, cov, smart
+
     def status(self) -> GwStatus:
-        """Живой снимок: линк, монитор здоровья, железо. Одна прогулка по всем
-        пробам — доли секунды на Pi; панель по /start берёт снимок тика
-        (cached_status), живьём ходят «Обновить», «Монитор здоровья» и сам тик."""
+        """Живой снимок: линк, монитор здоровья, железо. Панель по /start берёт
+        снимок тика (cached_status), живьём ходят «Статус», «Монитор здоровья»
+        и сам тик; редко меняющееся (модуль, ядра, SMART) — из кэша, который
+        кнопки сбрасывают через invalidate_static()."""
         from awgbot.runtime import hostmetrics
         st = GwStatus()
         st.link_up, st.handshake_age, st.rx, st.tx = self.link_status()
         checks = list(self.plumbing_checks())
         missing = self.tg_mark_missing()
+        st.tg_missing = list(missing)
         checks.append(GwCheck("маршрут к Telegram", not missing,
                               "" if not missing else
                               f"нет маркировки для {len(missing)} диапазонов — "
@@ -588,8 +619,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                               ("интерфейс лежит" if not st.link_up else "хендшейка не было")))
         # Живьём, без кэша: кэш на 10 минут показывал «модуль: ?» и «ядро без
         # модуля» всё время после обновления модуля — снимок середины операции.
-        st.module_version, st.srcversion = self.versions()
-        st.kernels_missing, st.kernels_total = self.kernel_coverage()
+        (st.module_version, st.srcversion), (st.kernels_missing, st.kernels_total), smart = \
+            self._static()
         checks.append(GwCheck("ядра", not st.kernels_missing,
                               "" if not st.kernels_missing else
                               "без модуля awg: " + ", ".join(st.kernels_missing)))
@@ -607,7 +638,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         disk = hostmetrics.read_disk()
         if disk is not None:
             st.disk, st.disk_free_gb = disk
-        st.smart = hostmetrics.read_smart_health()
+        st.smart = smart
         st.uptime_seconds = hostmetrics.read_uptime_seconds()
         st.hostname = socket.gethostname()
         st.server_name = self.server_name()
