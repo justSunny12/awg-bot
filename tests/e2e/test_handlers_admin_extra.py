@@ -1019,7 +1019,8 @@ async def test_menu_button_dismisses_every_other_update_window(services, fake_bo
     await admin_h.update_menu(cb, services, FakeState())
     # фильтр ДО распаковки: у записей фейка разная длина
     stripped = sorted(r[2] for r in fake_bot.records if r[0] == "edit_markup")
-    assert stripped == [501, 502, 503]
+    assert stripped == [501, 502], "остальные окна — через бота, по одному разу"
+    assert ("edit_reply_markup", chat) in fake_bot.records, "текущее — своим методом"
     assert services.pop_update_reports() == [], "история не очищена"
 
 

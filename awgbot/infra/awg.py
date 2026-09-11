@@ -773,6 +773,11 @@ def host_ssh_targets() -> list[str]:
     return targets
 
 
+def _rules_equal(current: list[str], desired: list[str]) -> bool:
+    """Правила `iptables -S` равны, если у каждой пары совпадает набор токенов."""
+    return [frozenset(r.split()) for r in current] == [frozenset(r.split()) for r in desired]
+
+
 def ssh_reconcile(admin_ips: list[str], targets: list[str]) -> None:
     """Идемпотентно привести пер-пирный SSH-фильтр (цепочка AWGBOT_SSH) к
     желаемому виду: для каждого target — ACCEPT с адресов админских устройств на
@@ -836,6 +841,11 @@ def ssh_reconcile(admin_ips: list[str], targets: list[str]) -> None:
     current = [ln.strip() for ln in
                cur_proc.stdout.decode(errors="replace").splitlines()
                if ln.startswith("-A ")] if cur_proc.returncode == 0 else None
+    # Сравниваем СТРУКТУРНО (токены каждого правила как множество, порядок
+    # правил — важен), а не строкой: iptables-nft печатает опции в своём
+    # порядке, и текстовое несовпадение пересобирало бы цепочку каждый тик.
+    if current is not None and _rules_equal(current, desired):
+        current = desired
 
     hook = _ssh_hook_chain()
     stale = "FORWARD" if hook == "INPUT" else "INPUT"

@@ -39,17 +39,30 @@ router.message.filter(RoleFilter("admin"))
 router.callback_query.filter(RoleFilter("admin"))
 
 
-async def _main_menu_markup(services):
-    n = await call(services.count_unassigned_devices)
-    ac = await call(services.admin_client)
-    has_dev = bool(ac and await call(services.db.count_devices, ac.id))
+def _menu_markup_from(snap: dict):
+    ac = snap["ac"]
     # админ — такой же пользователь VPN: режим ему нужен в главном меню, рядом
     # со своими устройствами. Разрешение у него по умолчанию (routing_allowed_for)
-    rt_visible = bool(ac and await call(services.routing_client_visible, ac))
-    return kb.admin_main(n, self_has_devices=has_dev,
-                         routing_visible=rt_visible,
-                         routing_on=bool(ac and await call(services.routing_profile_on, ac.id)),
+    return kb.admin_main(snap["unassigned"], self_has_devices=snap["has_dev"],
+                         routing_visible=snap["rt_visible"], routing_on=snap["rt_on"],
                          self_client_id=(ac.id if ac else 0))
+
+
+def _panel_text_from(services, snap: dict) -> str:
+    return texts.admin_panel(snap["st"], snap["routing_ok"], migration=snap["mig"],
+                             bot_username=getattr(services, "bot_username", ""),
+                             expiring=snap["expiring"])
+
+
+async def _panel_parts(services):
+    """(текст, клавиатура) панели — из ОДНОГО снимка в одном потоке.
+    Раньше — 12–15 хопов и ~20 запросов на каждое нажатие «В меню»."""
+    snap = await call(services.admin_panel_snapshot)
+    return _panel_text_from(services, snap), _menu_markup_from(snap)
+
+
+async def _main_menu_markup(services):
+    return _menu_markup_from(await call(services.admin_panel_snapshot))
 
 
 async def _return_panel(message, services) -> None:
@@ -57,8 +70,7 @@ async def _return_panel(message, services) -> None:
     чтобы юзер не оставался без навигации. Гасит прежнее активное меню и стирает
     промежуточные служебные сообщения диалога (вопросы, ввод, ссылки)."""
     await cleanup_content(message.bot, services, message.chat.id)
-    await send_menu(message, services, await _panel_text(services),
-                    await _main_menu_markup(services))
+    await send_menu(message, services, *await _panel_parts(services))
 
 
 async def restore_panel_after_restart(bot, services) -> None:
@@ -85,25 +97,15 @@ async def restore_panel_after_restart(bot, services) -> None:
         pass          # сообщение удалили — отчёт потерян, панель важнее
     await _dismiss_previous_nav(bot, services, chat_id)
     from awgbot.bot.handlers.common import NO_PREVIEW
-    sent = await bot.send_message(chat_id, await _panel_text(services),
-                                  reply_markup=await _main_menu_markup(services),
+    text, markup = await _panel_parts(services)
+    sent = await bot.send_message(chat_id, text, reply_markup=markup,
                                   link_preview_options=NO_PREVIEW)
-    await call(services.db.set_nav_message_id, chat_id, sent.message_id)
+    await call(services.db.nav_touch, chat_id, sent.message_id)
 
 
 async def _panel_text(services) -> str:
     """Шапка панели: статус из кэша (0 docker exec, мгновенно)."""
-    st = await call(services.server_status_cached)
-    tot = await call(services.db.get_total_month_traffic)
-    st = {**st, "traffic_rx": tot["rx"], "traffic_tx": tot["tx"]}
-    ac = await call(services.admin_client)
-    routing_ok = await call(services.routing_health_for_client, ac) if ac else None
-    mig = (await call(services.migration_progress)
-           if await call(services.migration_running) else None)
-    expiring = len(await call(services.expiring_subscriptions))
-    return texts.admin_panel(st, routing_ok, migration=mig,
-                             bot_username=getattr(services, "bot_username", ""),
-                             expiring=expiring)
+    return _panel_text_from(services, await call(services.admin_panel_snapshot))
 
 
 async def _expiring_screen(services):
@@ -236,10 +238,10 @@ async def admin_traffic_profiles(cb: CallbackQuery, services):
 
 @router.callback_query(Menu.filter(F.action == "main"))
 async def admin_main_menu(cb: CallbackQuery, services, state: FSMContext):
+    await cb.answer()                                  # спиннер гаснет сразу
     await state.clear()
     await cleanup_content(cb.bot, services, cb.message.chat.id)
-    await edit_nav(cb, services, await _panel_text(services), await _main_menu_markup(services))
-    await cb.answer()
+    await edit_nav(cb, services, *await _panel_parts(services))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -251,42 +253,36 @@ async def clients_list(cb: CallbackQuery, services):
     # Профиль админа СКРЫТ: весь его функционал всегда есть на главной (свои
     # устройства, конфиги, РФ-доступ), а карточка была урезана до тех же кнопок.
     # Строка в списке дублировала главную и путала, кто тут кем управляет.
+    await cb.answer()
     clients = await call(services.db.list_clients, exclude_tg=config.ADMIN_ID)
     if not clients:
         await edit_nav(cb, services, "Профилей пока нет.", await _main_menu_markup(services))
     else:
         await edit(cb, "👥 Профили:", kb.admin_clients(clients))
-    await cb.answer()
 
 
 async def _show_client_card(cb: CallbackQuery, services, client_id: int):
-    client = await call(services.db.get_client, client_id)
-    if client is None:
+    d = await call(services.client_card_data, client_id)     # один хоп вместо восьми
+    if d is None:
         await cb.answer("Профиль не найден", show_alert=True)
         return
-    devices = await call(services.db.list_devices, client_id)
-    traffic = await call(services.db.get_client_traffic, client_id)
-    online = await call(services.client_is_online, client_id)
-    text = texts.client_card(client, devices, traffic, online, for_admin=True)
+    client, devices = d["client"], d["devices"]
+    text = texts.client_card(client, devices, d["traffic"], d["online"], for_admin=True)
     # Прогресс переезда — последней строкой и ТОЛЬКО админу: клиенту знать про
     # внутреннюю кухню незачем, а карточку он видит в своём варианте.
-    if await call(services.migration_running):
-        done, live, total = await call(services.migration_client_progress, client_id)
-        line = texts.migration_profile_line(done, live, total)
+    if d["progress"] is not None:
+        line = texts.migration_profile_line(*d["progress"])
         if line:
             text += "\n\n" + line
-    is_admin_owner = client.tg_id == config.ADMIN_ID
-    rt_visible = await call(services.routing_client_visible, client)
-    rt_on = await call(services.routing_profile_on, client_id) if rt_visible else False
     await edit(cb, text, kb.admin_client_actions(
-        client, has_devices=bool(devices), is_admin_owner=is_admin_owner,
-        routing_visible=rt_visible, routing_on=rt_on))
+        client, has_devices=bool(devices), is_admin_owner=client.tg_id == config.ADMIN_ID,
+        routing_visible=d["rt_visible"], routing_on=d["rt_on"]))
 
 
 @router.callback_query(ClientCB.filter(F.action == "open"))
 async def client_open(cb: CallbackQuery, callback_data: ClientCB, services):
-    await _show_client_card(cb, services, callback_data.client_id)
     await cb.answer()
+    await _show_client_card(cb, services, callback_data.client_id)
 
 
 @router.callback_query(RoutingCB.filter(F.action == "panel"))
@@ -857,11 +853,11 @@ async def _do_extend(cb, services, client_id, kind, keep: bool, return_to: str |
         done = (f"✅ Подписка профиля {name} продлена на 1 {_PERIOD_ACC.get(kind, kind)}, "
                 f"до {timeutil.fmt_dt(result.new_end)}")
     await edit(cb, done, None)
+    keep = cb.message.message_id
     if return_to == "expiring" and await call(services.expiring_subscriptions):
-        await send_menu(cb.message, services, *await _expiring_screen(services))
+        await send_menu(cb.message, services, *await _expiring_screen(services), keep_id=keep)
         return
-    await send_menu(cb.message, services, await _panel_text(services),
-                    await _main_menu_markup(services))
+    await send_menu(cb.message, services, *await _panel_parts(services), keep_id=keep)
 
 
 # ── Изменить период вручную (лечит дедлок бессрочной подписки) ────────────────
@@ -1251,7 +1247,7 @@ async def refresh_status(cb: CallbackQuery, services):
     затем перерисовывает панель из свежего state."""
     await cb.answer("Обновляю…")
     await call(services.refresh_status_now)
-    await edit_nav(cb, services, await _panel_text(services), await _main_menu_markup(services))
+    await edit_nav(cb, services, *await _panel_parts(services))
 
 
 # ── Обновления бота (self-update) ────────────────────────────────────────────
@@ -1299,15 +1295,17 @@ async def update_install(cb: CallbackQuery, services):
 async def update_menu(cb: CallbackQuery, services, state: FSMContext):
     """«В меню» на итоговом сообщении self-update: текст остаётся в истории,
     снимаем только клавиатуру; меню — новым сообщением."""
+    await cb.answer()
     await state.clear()
     try:
         await cb.message.edit_reply_markup(reply_markup=None)
     except Exception:                                 # noqa: BLE001
         pass
-    # и у всех прочих окон обновления тоже — живой должна быть одна кнопка
-    await dismiss_update_reports(cb.bot, services)
+    # и у всех прочих окон обновления тоже — живой должна быть одна кнопка;
+    # текущее уже погашено выше — второй раз не трогаем
+    await dismiss_update_reports(cb.bot, services,
+                                 keep=(cb.message.chat.id, cb.message.message_id))
     await show_main_menu(cb.message, services, "admin")
-    await cb.answer()
 
 
 @router.callback_query(UpdateCB.filter(F.action == "mute"))
@@ -1695,17 +1693,32 @@ async def _bc_clients(services):
 
 
 async def _bc_show_targets(cb: CallbackQuery, state: FSMContext, services):
-    clients = await _bc_clients(services)
-    selected = set((await state.get_data()).get("targets") or ())
-    online = await call(services.online_client_ids)
-    await edit(cb, texts.BROADCAST_TARGETS, kb.broadcast_targets(clients, selected, online))
+    """Список профилей и их онлайн — в FSM на время экрана: перечитывать всё
+    на каждый тап по чекбоксу незачем (статусы обновятся при повторном входе)."""
+    from types import SimpleNamespace
+    data = await state.get_data()
+    if "bc_clients" not in data:
+        clients = await _bc_clients(services)
+        online = await call(services.online_client_ids)
+        data["bc_clients"] = [(c.id, c.name) for c in clients]
+        data["bc_online"] = sorted(online)
+        await state.update_data(bc_clients=data["bc_clients"], bc_online=data["bc_online"])
+    clients = [SimpleNamespace(id=i, name=n) for i, n in data["bc_clients"]]
+    selected = set(data.get("targets") or ())
+    await edit(cb, texts.BROADCAST_TARGETS,
+               kb.broadcast_targets(clients, selected, set(data["bc_online"])))
 
 
 @router.callback_query(BroadcastCB.filter(F.action == "pick"))
 async def broadcast_pick(cb: CallbackQuery, state: FSMContext, services):
     """Единственный вход в рассылку — выбор адресатов."""
     await state.set_state(Broadcast.targets)
-    await state.update_data(targets=[], text=None)
+    # список адресатов и онлайн кэшируются в FSM на время экрана — на новом
+    # входе перечитываем: за это время могли появиться профили
+    await state.update_data(targets=[], text=None, bc_clients=None, bc_online=None)
+    data = await state.get_data()
+    data.pop("bc_clients", None)
+    await state.set_data({k: v for k, v in data.items() if k not in ("bc_clients", "bc_online")})
     await _bc_show_targets(cb, state, services)
     await cb.answer()
 
@@ -1950,8 +1963,7 @@ async def broadcast_cancel_h(cb: CallbackQuery, state: FSMContext, services):
             pass                                       # уже удалено/устарело
     await state.clear()
     await cleanup_content(cb.bot, services, cb.message.chat.id)
-    await edit_nav(cb, services, await _panel_text(services),
-                   await _main_menu_markup(services))
+    await edit_nav(cb, services, *await _panel_parts(services))
     await cb.answer()
 
 
@@ -2015,5 +2027,5 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     # Прежде отчёт нёс на себе клавиатуру главного меню: тогда он либо
     # переписывался при следующей навигации, либо оставлял в чате второе живое
     # меню — инвариант «одно активное» держать было нечем.
-    await send_menu(cb.message, services, await _panel_text(services),
-                    await _main_menu_markup(services))
+    await send_menu(cb.message, services, *await _panel_parts(services),
+                    keep_id=cb.message.message_id)

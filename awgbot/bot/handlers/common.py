@@ -52,14 +52,34 @@ async def _dismiss_previous_nav(bot, services, chat_id: int, keep_id=None) -> No
         pass
 
 
-async def send_menu(message: Message, services, text, markup) -> None:
+async def send_menu(message: Message, services, text, markup, keep_id=None) -> None:
     """Показать меню/нав-экран НОВЫМ сообщением, погасив предыдущее активное.
-    Единая точка показа — держит инвариант «одно живое меню в чате»."""
+    Единая точка показа — держит инвариант «одно живое меню в чате».
+    keep_id — активное сообщение, у которого кнопки уже сняты вызывающим
+    (итог операции): гасить его повторно — гарантированный «not modified»."""
     chat_id = message.chat.id
-    await _dismiss_previous_nav(message.bot, services, chat_id)
+    await _dismiss_previous_nav(message.bot, services, chat_id, keep_id=keep_id)
     sent = await message.answer(text, reply_markup=markup, link_preview_options=NO_PREVIEW)
-    await call(services.db.set_nav_message_id, chat_id, sent.message_id)
-    await call(services.db.push_nav_history, chat_id, sent.message_id)
+    await call(services.db.nav_touch, chat_id, sent.message_id)
+
+
+async def delete_many(bot, chat_id: int, ids: list) -> None:
+    """Удалить пачку сообщений одним запросом (deleteMessages, до 100 id);
+    батч роняет один недоступный id — тогда поштучно. /start у админа удалял
+    до 30 старых меню по одному round-trip — до 10 секунд."""
+    ids = [int(i) for i in ids if i]
+    for i in range(0, len(ids), 100):
+        chunk = ids[i:i + 100]
+        try:
+            await bot.delete_messages(chat_id=chat_id, message_ids=chunk)
+            continue
+        except Exception:                                  # noqa: BLE001
+            pass
+        for mid in chunk:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=mid)
+            except Exception:                              # noqa: BLE001
+                pass
 
 
 async def purge_menus(bot, services, chat_id: int) -> None:
@@ -71,11 +91,7 @@ async def purge_menus(bot, services, chat_id: int) -> None:
     молча пропускаем — оно и так мёртвое.
     """
     ids = await call(services.db.pop_nav_history, chat_id)
-    for mid in ids:
-        try:
-            await bot.delete_message(chat_id=chat_id, message_id=mid)
-        except Exception:                                  # noqa: BLE001
-            pass
+    await delete_many(bot, chat_id, ids)
     await call(services.db.set_nav_message_id, chat_id, None)
 
 
@@ -113,11 +129,7 @@ async def cleanup_content(bot, services, chat_id: int) -> None:
     """Удалить ранее выданные контент-сообщения (ссылка/QR/файл + инструкции) —
     вызывается при возврате в меню, чтобы чат не захламлялся секретами."""
     ids = await call(services.db.pop_content_msg_ids, chat_id)
-    for mid in ids:
-        try:
-            await bot.delete_message(chat_id=chat_id, message_id=mid)
-        except Exception:                    # noqa: BLE001 — сообщение могло уйти/устареть
-            pass
+    await delete_many(bot, chat_id, ids)
 
 
 async def content_finisher(message: Message, services, text: str, role: str) -> None:
@@ -143,10 +155,15 @@ async def edit_nav(cb: CallbackQuery, services, text, markup) -> None:
     нав-сообщением (гасим прежнее, если это было другое)."""
     chat_id = cb.message.chat.id
     cur_id = cb.message.message_id
-    await _dismiss_previous_nav(cb.message.bot, services, chat_id, keep_id=cur_id)
+    # один хоп: прежнее активное + запись нового + история в одной транзакции
+    prev = await call(services.db.nav_touch, chat_id, cur_id)
+    if prev is not None and prev != cur_id:
+        try:
+            await cb.message.bot.edit_message_reply_markup(chat_id=chat_id, message_id=prev,
+                                                           reply_markup=None)
+        except Exception:                                  # noqa: BLE001
+            pass
     await edit(cb, text, markup)
-    await call(services.db.set_nav_message_id, chat_id, cur_id)
-    await call(services.db.push_nav_history, chat_id, cur_id)
 
 
 async def show_main_menu(message: Message, services, role: str, client=None) -> None:
@@ -154,9 +171,8 @@ async def show_main_menu(message: Message, services, role: str, client=None) -> 
     гасит прежнее активное). Ленивый импорт ролевых рендереров — общий модуль
     не тянет хендлеры на уровне модуля."""
     if role == "admin":
-        from awgbot.bot.handlers.admin import _panel_text, _main_menu_markup
-        text = await _panel_text(services)
-        markup = await _main_menu_markup(services)
+        from awgbot.bot.handlers.admin import _panel_parts
+        text, markup = await _panel_parts(services)
     elif role == "client":
         from awgbot.bot.handlers.client import _greeting
         text, (used, _) = await _greeting(services, client)

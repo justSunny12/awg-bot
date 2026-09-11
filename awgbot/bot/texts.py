@@ -255,9 +255,10 @@ def subscription_block(client, *, for_admin: bool = False, show_pause: bool = Tr
         used = int(client.pause_used_days)
         if paused and mode == "user":
             used += int(client.pause_reserved_days)
-        avail = max(0, settings.get_int("pause.pause_max_total_days", 28) - used)
+        max_days = settings.get_int("pause.pause_max_total_days", 28)
+        avail = max(0, max_days - used)
         until = f" до {timeutil.fmt_dt(end)}" if end else ""
-        lines.append(f"Приостановка: доступно {avail}/{settings.get_int("pause.pause_max_total_days", 28)} дн.{until}")
+        lines.append(f"Приостановка: доступно {avail}/{max_days} дн.{until}")
     return "\n".join(lines)
 
 
@@ -680,6 +681,18 @@ def expiring_text(rows, bot_username: str = "") -> str:
     return head + _LIST_SEP + _LIST_SEP.join(items)
 
 
+_HOSTNAME: str | None = None
+
+
+def _hostname() -> str:
+    """Имя хоста — один syscall за жизнь процесса, а не на каждый рендер панели."""
+    global _HOSTNAME
+    if _HOSTNAME is None:
+        import socket
+        _HOSTNAME = socket.gethostname()
+    return _HOSTNAME
+
+
 def admin_panel(st: dict, routing_ok: bool = None, migration=None,
                 bot_username: str = "", expiring: int = 0) -> str:
     """Шапка админ-меню: компактный статус из кэша (ноль docker exec).
@@ -728,8 +741,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     if expiring:
         label = _deep_link(bot_username, "expiring", "⏳ Истекающие подписки")
         groups.append(f"<b>{label}: {expiring}</b>")
-    import socket
-    host = socket.gethostname()
+    host = _hostname()
     title = "🛠 <b>Панель администратора" + (f" ({_e(host)})" if host else "") + "</b>"
     return title + "\n\n" + "\n\n".join(groups)
 

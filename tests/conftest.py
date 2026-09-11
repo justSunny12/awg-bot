@@ -270,6 +270,12 @@ class FakeBot:
     async def delete_message(self, chat_id, message_id, **kw):
         self.records.append(("delete_message", chat_id, message_id))
 
+    async def delete_messages(self, chat_id, message_ids, **kw):
+        # пакетное удаление — для тестов раскладываем в те же записи, что и поштучное
+        self.records.append(("delete_messages", chat_id, list(message_ids)))
+        for mid in message_ids:
+            self.records.append(("delete_message", chat_id, mid))
+
     async def me(self):
         import types as _t
         return _t.SimpleNamespace(username="test_bot", id=999, is_bot=True, first_name="Bot")

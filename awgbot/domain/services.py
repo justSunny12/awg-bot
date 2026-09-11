@@ -312,6 +312,68 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
 
     # ── потребление за месяц: по профилям и по устройствам ───────────────────
 
+    # ── снимки экранов: всё, что экрану нужно, одним вызовом из одного потока ─
+    # Панель админа собиралась 12–15 отдельными хопами в поток и ~20 SQL, с
+    # дублями (admin_client дважды, видимость маршрутизации дважды).
+
+    def admin_panel_snapshot(self) -> dict:
+        st = self.server_status_cached()
+        tot = self.db.get_total_month_traffic()
+        st = {**st, "traffic_rx": tot["rx"], "traffic_tx": tot["tx"]}
+        ac = self.admin_client()
+        rt_visible = bool(ac and self.routing_client_visible(ac))
+        routing_ok = self.routing_health_for_client(ac) if (ac and rt_visible) else None
+        mig = self.migration_progress() if self.migration_running() else None
+        return {
+            "st": st, "ac": ac, "routing_ok": routing_ok, "mig": mig,
+            "expiring": len(self.expiring_subscriptions()),
+            "unassigned": self.count_unassigned_devices(),
+            "has_dev": bool(ac and self.db.count_devices(ac.id)),
+            "rt_visible": rt_visible,
+            "rt_on": bool(ac and rt_visible and self.routing_profile_on(ac.id)),
+        }
+
+    def _devices_online(self, devices) -> bool:
+        thr = settings.get_int("app.online_handshake_seconds", 300)
+        return any(timeutil.handshake_is_online(d.traffic.last_handshake, thr) for d in devices)
+
+    def client_card_data(self, client_id: int) -> Optional[dict]:
+        """Карточка профиля у админа: 8 хопов и тройной list_devices → одно."""
+        client = self.db.get_client(client_id)
+        if client is None:
+            return None
+        devices = self.db.list_devices(client_id)
+        progress = self.migration_client_progress(client_id) if self.migration_running() else None
+        rt_visible = self.routing_client_visible(client)
+        return {
+            "client": client, "devices": devices,
+            "traffic": self.db.get_client_traffic(client_id),
+            "online": self._devices_online(devices),
+            "progress": progress, "rt_visible": rt_visible,
+            "rt_on": self.routing_profile_on(client_id) if rt_visible else False,
+        }
+
+    def client_info_data(self, client_id: int) -> Optional[dict]:
+        """«Управлять подпиской» у клиента — то же одним вызовом."""
+        client = self.db.get_client(client_id)
+        if client is None:
+            return None
+        devices = self.db.list_devices(client_id)
+        return {"client": client, "devices": devices,
+                "traffic": self.db.get_client_traffic(client_id),
+                "online": self._devices_online(devices)}
+
+    def svc_screen_data(self) -> dict:
+        state = self.migration_state()
+        return {"state": state, "available": self.migration_available(),
+                "progress": self.migration_progress() if state else None,
+                "orphans": 0 if state else len(self.migration_orphan_twins())}
+
+    def migration_orphan_rows(self) -> list[tuple[str, str]]:
+        """[(имя профиля, имя устройства)] — имена одним проходом, не по одному."""
+        names = {c.id: c.name for c in self.db.list_clients(include_service=True)}
+        return [(names.get(d.client_id, "?"), d.name) for d in self.migration_orphan_twins()]
+
     # ── онлайн: кто подключён прямо сейчас ───────────────────────────────────
 
     def online_devices(self) -> list[tuple]:

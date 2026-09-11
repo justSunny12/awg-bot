@@ -17,7 +17,7 @@ from typing import Any, Awaitable, Callable
 from aiogram import BaseMiddleware
 from aiogram.types import Message, TelegramObject, User
 
-from awgbot.core import config
+from awgbot.core import access_cache, config
 from awgbot.core.enums import ActivationStatus
 
 
@@ -43,24 +43,38 @@ class AccessMiddleware(BaseMiddleware):
             data["client"] = None
             return await handler(event, data)
 
-        # 2) Активный клиент из БД (быстрый индексный read, безопасно из loop)
+        # 2) Кэш «кто это»: TTL короткий, любая запись в БД сбрасывает его.
+        #    Без кэша каждый апдейт стоил 1–3 запроса синхронно в event loop.
+        hit = access_cache.get(uid)
+        if hit is not None:
+            role, client, device = hit
+            data["role"] = role
+            data["client"] = client
+            if device is not None:
+                data["device"] = device
+            return await handler(event, data)
+
+        # 3) Активный клиент из БД
         client = self.db.get_client_by_tg(uid)
         if (client is not None and not client.is_service
                 and client.activation_status == ActivationStatus.ACTIVE):
+            access_cache.put(uid, "client", client)
             data["role"] = "client"
             data["client"] = client
             return await handler(event, data)
 
-        # 3) Друг (invited): управляет ОДНИМ гостевым устройством. Кладём в data
+        # 4) Друг (invited): управляет ОДНИМ гостевым устройством. Кладём в data
         #    и устройство, и клиента-хозяина (для показа его подписки).
         fdev = self.db.get_device_by_friend_tg(uid)
         if fdev is not None:
+            owner = self.db.get_client(fdev.client_id)
+            access_cache.put(uid, "invited", owner, fdev)
             data["role"] = "invited"
-            data["client"] = self.db.get_client(fdev.client_id)  # хозяин
+            data["client"] = owner
             data["device"] = fdev
             return await handler(event, data)
 
-        # 4) Незнакомец: пропускаем только команды активации — /start (холодный
+        # 5) Незнакомец: пропускаем только команды активации — /start (холодный
         #    вход или deep-link с кодом) и /code {код}. Любой другой текст —
         #    молчание (не реагируем на случайные сообщения посторонних).
         if isinstance(event, Message) and event.text:

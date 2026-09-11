@@ -52,14 +52,16 @@ async def _status(services, fresh: bool):
     return await call(services.snapshot)
 
 
-async def _panel(target, services, cb: CallbackQuery | None = None, fresh: bool = False):
+async def _panel(target, services, cb: CallbackQuery | None = None, fresh: bool = False,
+                 keep_id=None):
     """Панель — через нав-хелперы: одно живое меню в чате, прошлое гаснет,
     история ведётся для /start."""
     st = await _status(services, fresh)
     if cb is not None:
         await edit_nav(cb, services, texts.gateway_panel(st), kb.gateway_panel_kb())
     else:
-        await send_menu(target, services, texts.gateway_panel(st), kb.gateway_panel_kb())
+        await send_menu(target, services, texts.gateway_panel(st), kb.gateway_panel_kb(),
+                        keep_id=keep_id)
 
 
 async def restore_panel_after_restart(bot, services) -> None:
@@ -80,8 +82,7 @@ async def restore_panel_after_restart(bot, services) -> None:
     st = await _status(services, fresh=False)
     sent = await bot.send_message(chat_id, texts.gateway_panel(st),
                                   reply_markup=kb.gateway_panel_kb())
-    await call(services.db.set_nav_message_id, chat_id, sent.message_id)
-    await call(services.db.push_nav_history, chat_id, sent.message_id)
+    await call(services.db.nav_touch, chat_id, sent.message_id)
 
 
 @router.message(CommandStart())
@@ -93,9 +94,9 @@ async def gw_start(message: Message, services, state: FSMContext):
 
 @router.callback_query(GwCB.filter(F.action == "panel"))
 async def gw_panel(cb: CallbackQuery, services, state: FSMContext):
+    await cb.answer()
     await state.clear()
     await _panel(cb.message, services, cb)
-    await cb.answer()
 
 
 @router.callback_query(GwCB.filter(F.action == "refresh"))
@@ -411,7 +412,7 @@ async def gw_execute(cb: CallbackQuery, callback_data: GwCB, services):
     # Итог остаётся в чате отдельным сообщением: «когда и чем кончилось»
     # спрашивают потом, а панель переписывается следующей навигацией.
     await edit_nav(cb, services, texts.gateway_op_result(title, ok, detail), None)
-    await _panel(cb.message, services, fresh=True)
+    await _panel(cb.message, services, fresh=True, keep_id=cb.message.message_id)
 
 
 @router.callback_query(GwCB.filter(F.action == "botrestart!"))
@@ -489,7 +490,7 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
     await cb.answer("Применяю…")
     ok, detail = await call(services.apply_bundle, blob, callback_data.action == "apply_ow!")
     await edit_nav(cb, services, texts.gateway_op_result("Конфигурация шлюза", ok, detail), None)
-    await _panel(cb.message, services, fresh=True)
+    await _panel(cb.message, services, fresh=True, keep_id=cb.message.message_id)
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"restore!", "restore_drop"})))
@@ -545,15 +546,16 @@ async def gw_update_install(cb: CallbackQuery, services):
 async def gw_update_menu(cb: CallbackQuery, services, state: FSMContext):
     """«В меню» на итоге обновления: текст остаётся, кнопка снимается, панель —
     новым сообщением."""
+    await cb.answer()
     await state.clear()
     try:
         await cb.message.edit_reply_markup(reply_markup=None)
     except Exception:                                 # noqa: BLE001
         pass
     # и у всех прочих окон обновления тоже — живой должна быть одна кнопка
-    await dismiss_update_reports(cb.bot, services)
-    await _panel(cb.message, services)
-    await cb.answer()
+    await dismiss_update_reports(cb.bot, services,
+                                 keep=(cb.message.chat.id, cb.message.message_id))
+    await _panel(cb.message, services, keep_id=cb.message.message_id)
 
 
 @router.callback_query(UpdateCB.filter(F.action == "mute"))

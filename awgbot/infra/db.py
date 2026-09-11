@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from awgbot.util.timeutil import now_iso as _now_iso  # единый источник времени (UTC+3)
+from awgbot.core import access_cache as _access_cache
 from awgbot.core import config
 from awgbot.core import models
 
@@ -514,6 +515,7 @@ class Database:
             yield cur
             if depth == 0:
                 conn.commit()
+                _access_cache.invalidate_all()      # любая запись → middleware перечитает
         except Exception:
             if depth == 0:
                 conn.rollback()
@@ -725,6 +727,30 @@ class Database:
             "SELECT nav_message_id FROM ui_state WHERE chat_id = ?", (chat_id,)
         ).fetchone()
         return row["nav_message_id"] if row else None
+
+    def nav_touch(self, chat_id: int, message_id: int) -> Optional[int]:
+        """Сделать message_id активным меню и дописать его в историю ОДНОЙ
+        транзакцией; вернуть прежний активный id (для гашения его кнопок).
+        Раньше это были три хопа в поток и четыре запроса на каждый переход."""
+        import json
+        with self._tx() as cur:
+            row = cur.execute("SELECT nav_message_id FROM ui_state WHERE chat_id = ?",
+                              (chat_id,)).fetchone()
+            prev = row["nav_message_id"] if row else None
+            if prev != message_id:
+                cur.execute(
+                    "INSERT INTO ui_state (chat_id, nav_message_id) VALUES (?, ?) "
+                    "ON CONFLICT(chat_id) DO UPDATE SET nav_message_id = excluded.nav_message_id",
+                    (chat_id, message_id))
+            key = f"nav_history:{chat_id}"
+            hrow = cur.execute("SELECT value FROM server_state WHERE key = ?", (key,)).fetchone()
+            ids = json.loads(hrow["value"]) if hrow and hrow["value"] else []
+            if message_id not in ids:
+                ids = (ids + [message_id])[-self._NAV_HISTORY_CAP:]
+                cur.execute("INSERT INTO server_state (key, value) VALUES (?, ?) "
+                            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                            (key, json.dumps(ids)))
+        return prev
 
     def set_nav_message_id(self, chat_id: int, message_id) -> None:
         with self._tx() as cur:

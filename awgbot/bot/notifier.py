@@ -87,18 +87,38 @@ async def _send(bot, tg_id, text, markup, silent, critical: bool = False):
             await _fallback(critical, tg_id, text)
 
 
-async def send_notifications(bot, notifications) -> None:
-    first = True
-    for n in notifications or []:
-        if not n.tg_id:
-            continue
-        if not first:
+_PARALLEL = 6                          # окно одновременно летящих отправок
+
+
+async def _paced(items, fn) -> list:
+    """Параллельно с окном _PARALLEL и пейсингом на слот: лимит Telegram
+    ограничивает ТЕМП, а не число одновременных запросов. Последовательная
+    рассылка на 50 адресатов занимала 15–25 с, теперь — в разы меньше."""
+    sem = asyncio.Semaphore(_PARALLEL)
+
+    async def one(item):
+        async with sem:
             await asyncio.sleep(_BATCH_PACING_SECONDS)
-        first = False
-        silent = _silent_now(getattr(n, "force_sound", False))
+            return await fn(item)
+    return await asyncio.gather(*(one(i) for i in items), return_exceptions=True)
+
+
+async def send_notifications(bot, notifications) -> None:
+    items = [n for n in (notifications or []) if n.tg_id]
+    if not items:
+        return
+    # тихие часы — один расчёт на батч, а не три чтения настроек на письмо
+    quiet_silent = _silent_now(False)
+
+    async def one(n):
+        silent = False if getattr(n, "force_sound", False) else quiet_silent
         markup = getattr(n, "reply_markup", None) or kb.hide_only()
         await _send(bot, n.tg_id, n.text, markup, silent,
                     critical=bool(getattr(n, "critical", False)))
+    if len(items) == 1:
+        await one(items[0])
+        return
+    await _paced(items, one)
 
 
 async def notify_one(bot, tg_id, text, *, reply_markup=None, force_sound=False) -> None:
@@ -147,26 +167,21 @@ async def broadcast(bot, tg_ids, text, photos=()) -> tuple[int, int]:
     (флуд-контроль Telegram); RetryAfter внутри _send пережидается один раз.
     parse_mode берётся дефолтный (бот сконфигурирован с HTML). Тихие часы к
     объявлениям НЕ применяем — это осознанная явная отправка админом."""
-    ok = failed = 0
-    first = True
-    for tg_id in tg_ids:
-        if not tg_id:
-            continue
-        if not first:
-            await asyncio.sleep(_BATCH_PACING_SECONDS)
-        first = False
+    async def one(tg_id) -> bool:
         try:
             await send_announcement(bot, tg_id, text, photos)
-            ok += 1
+            return True
         except TelegramRetryAfter as e:
             await asyncio.sleep(e.retry_after)
             try:
                 await send_announcement(bot, tg_id, text, photos)
-                ok += 1
+                return True
             except Exception as e2:                  # noqa: BLE001
                 log.warning("broadcast: не доставлено %s (после retry): %s", tg_id, e2)
-                failed += 1
+                return False
         except Exception as e:                       # noqa: BLE001
             log.warning("broadcast: не доставлено %s: %s", tg_id, e)
-            failed += 1
-    return ok, failed
+            return False
+    results = await _paced([t for t in tg_ids if t], one)
+    ok = sum(1 for r in results if r is True)
+    return ok, len(results) - ok

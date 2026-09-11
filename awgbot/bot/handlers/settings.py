@@ -53,12 +53,9 @@ async def _screen(sec: str, services):
     if sec == "backup":
         return texts.SETTINGS_BACKUP, kb.settings_backup(await call(services.backup_encryption_enabled))
     if sec == "svc":
-        state = await call(services.migration_state)
-        avail = await call(services.migration_available)
-        progress = await call(services.migration_progress) if state else None
-        orphans = 0 if state else len(await call(services.migration_orphan_twins))
-        return (texts.settings_svc_text(state, progress),
-                kb.settings_svc(state, available=avail, orphans=orphans))
+        d = await call(services.svc_screen_data)          # один хоп вместо четырёх
+        return (texts.settings_svc_text(d["state"], d["progress"]),
+                kb.settings_svc(d["state"], available=d["available"], orphans=d["orphans"]))
     if sec == "upd":
         return texts.settings_upd_text(), kb.settings_updates(await call(services.updates_muted))
     if sec == "rt":
@@ -104,7 +101,8 @@ async def _record(cb: CallbackQuery, text: str, services):
     новым сообщением, как отчёт о рассылке.
     """
     await edit(cb, text, None)
-    await send_menu(cb.message, services, *await _screen("svc", services))
+    await send_menu(cb.message, services, *await _screen("svc", services),
+                    keep_id=cb.message.message_id)
 
 
 # ── открытие раздела ─────────────────────────────────────────────────────────
@@ -382,13 +380,7 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         return
 
     if key == "orphans":
-        names: dict[int, str] = {}
-        rows = []
-        for d in await call(services.migration_orphan_twins):
-            if d.client_id not in names:
-                c = await call(services.db.get_client, d.client_id)
-                names[d.client_id] = c.name if c else "?"
-            rows.append((names[d.client_id], d.name))
+        rows = await call(services.migration_orphan_rows)    # имена одним проходом
         await edit(cb, texts.migration_orphans_text(rows), kb.settings_back())
         await cb.answer()
         return

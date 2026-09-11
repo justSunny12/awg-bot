@@ -144,9 +144,8 @@ async def start_client(message: Message, client, services, state: FSMContext):
 
 @router.callback_query(Menu.filter(F.action == "main"))
 async def menu_main(cb: CallbackQuery, client, services):
-    await cleanup_content(cb.bot, services, cb.message.chat.id)
-    await _show_main(None, services, client, via_edit=cb)
     await cb.answer()
+    await _show_main(None, services, client, via_edit=cb)   # cleanup_content — внутри
 
 
 def _pause_flags(client) -> tuple[bool, bool]:
@@ -589,7 +588,8 @@ async def grace_take(cb: CallbackQuery, callback_data: GraceCB, client, services
     if callback_data.ref != client.id:
         await cb.answer(texts.GRACE_STALE, show_alert=True)
         return
-    ok, new_end = await call(services.activate_grace, client.id, settings.get_int("grace.grace_days", 14))
+    grace_days = settings.get_int("grace.grace_days", 14)
+    ok, new_end = await call(services.activate_grace, client.id, grace_days)
     if not ok:
         await cb.answer(texts.GRACE_STALE, show_alert=True)
         try:
@@ -603,10 +603,10 @@ async def grace_take(cb: CallbackQuery, callback_data: GraceCB, client, services
     except Exception:
         pass
     await cb.message.answer(
-        texts.grace_activated_client(settings.get_int("grace.grace_days", 14), timeutil.fmt_dt(new_end)))
+        texts.grace_activated_client(grace_days, timeutil.fmt_dt(new_end)))
     if settings.get_bool("notifications.client_events.grace", True):
         await notify_one(cb.message.bot, config.ADMIN_ID,
-                         texts.grace_activated_admin(client.name, settings.get_int("grace.grace_days", 14)))
+                         texts.grace_activated_admin(client.name, grace_days))
     await cb.answer("Продлено")
 
 # ── Ручная блокировка своего устройства (клиент) ─────────────────────────────
@@ -659,12 +659,13 @@ async def client_unblock_device(cb: CallbackQuery, callback_data: BlockCB, clien
 
 async def _show_info(cb, client, services):
     """Перерисовать «Управлять подпиской» (после входа/выхода из паузы)."""
-    client = await call(services.db.get_client, client.id)
-    devices = await call(services.db.list_devices, client.id)
-    traffic = await call(services.db.get_client_traffic, client.id)
-    online = await call(services.client_is_online, client.id)
+    d = await call(services.client_info_data, client.id)      # один хоп вместо пяти
+    if d is None:
+        return
+    client = d["client"]
     paused_user, can_pause = _pause_flags(client)
-    await edit(cb, texts.subscription_manage_text(client, traffic, online, len(devices)),
+    await edit(cb, texts.subscription_manage_text(client, d["traffic"], d["online"],
+                                                  len(d["devices"])),
                kb.client_info_actions(client, paused=paused_user, can_pause=can_pause))
 
 
