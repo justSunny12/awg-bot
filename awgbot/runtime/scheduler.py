@@ -39,8 +39,10 @@ def _service_failure_alerts(db, ok: bool) -> list:
     если за этот эпизод громкий алерт уже отправлен. Мигнул вверх → сброс.
     Возвращает список Notification (0 или 1)."""
     if ok:
-        db.set_state("service_down_since", "")
-        db.set_state("service_alert_sent", "")
+        if db.get_state("service_down_since"):
+            db.set_state("service_down_since", "")
+        if db.get_state("service_alert_sent"):
+            db.set_state("service_alert_sent", "")
         return []
     since = db.get_state("service_down_since")
     if not since:
@@ -101,15 +103,15 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     # нечего сбрасывать, просто фиксирует текущий месяц.
     async def job_monthly():
         ym = timeutil.now().strftime("%Y-%m")
-        last = db.get_state("last_monthly_reset")
+        last = await asyncio.to_thread(db.get_state, "last_monthly_reset")
         if last == ym:
             return
         if last is None:
-            db.set_state("last_monthly_reset", ym)       # первый запуск — только фиксация
+            await asyncio.to_thread(db.set_state, "last_monthly_reset", ym)   # первый запуск — только фиксация
             return
         try:
             reset_notes = await asyncio.to_thread(services.reset_monthly_traffic)
-            db.set_state("last_monthly_reset", ym)
+            await asyncio.to_thread(db.set_state, "last_monthly_reset", ym)
             await send_notifications(bot, reset_notes)
             log.info("Месячный трафик сброшен (catch-up или cron) за %s", ym)
         except Exception as e:                       # noqa: BLE001
@@ -120,11 +122,11 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         if not settings.get_bool("app.scheduler.backup_enabled", True):
             return
         ym = timeutil.now().strftime("%Y-%m")
-        last = db.get_state("last_backup")
+        last = await asyncio.to_thread(db.get_state, "last_backup")
         if last == ym:
             return
         if last is None:
-            db.set_state("last_backup", ym)              # первый запуск — только фиксация
+            await asyncio.to_thread(db.set_state, "last_backup", ym)   # первый запуск — только фиксация
             return
         try:
             paths = await asyncio.to_thread(services.make_backup)
@@ -198,24 +200,34 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                     await send_notifications(bot, rt_src_notes)
             except Exception as e:                       # noqa: BLE001
                 log.warning("reconcile_routing: %s", e)
-            # статус сервиса awg → уведомления админу (единый notifier-путь)
+            # статус сервиса awg → уведомления админу (единый notifier-путь).
+            # Вся работа с БД этого блока — в одном потоке и одной транзакции:
+            # раньше часть шла синхронно в event loop и могла встать на
+            # busy_timeout, пока рабочий поток держал запись.
             ok = await asyncio.to_thread(services.server_ok)
-            prev = db.get_state("last_server_ok")
-            cur = "1" if ok else "0"
-            alert_notes = []
-            # (1) скачок статуса 🔴/🟢 — обычное уведомление (тихое ночью)
-            if prev is not None and prev != cur:
+
+            def _monitor_state() -> list:
                 from awgbot.bot import texts
-                alert_notes.append(Notification(
-                    config.ADMIN_ID, texts.HB_SERVER_UP if ok else texts.HB_SERVER_DOWN))
-            db.set_state("last_server_ok", cur)
-            # (2) устойчивый простой сервиса ≥ N минут → ГРОМКИЙ алерт (один раз)
-            alert_notes += _service_failure_alerts(db, ok)
-            # (3) метрики железа: co-located — читаем локально (/proc, statvfs),
-            #     снимок в state (инфобокс) + гистерезис ресурс-алертов
-            from awgbot.runtime import hostmetrics
-            snap = await asyncio.to_thread(hostmetrics.collect_and_store, db)
-            alert_notes += services.check_resource_alerts(snap)
+                from awgbot.runtime import hostmetrics
+                notes = []
+                with db.transaction():
+                    prev = db.get_state("last_server_ok")
+                    cur = "1" if ok else "0"
+                    # (1) скачок статуса 🔴/🟢 — обычное уведомление (тихое ночью)
+                    if prev is not None and prev != cur:
+                        notes.append(Notification(
+                            config.ADMIN_ID, texts.HB_SERVER_UP if ok else texts.HB_SERVER_DOWN))
+                    if prev != cur:
+                        db.set_state("last_server_ok", cur)
+                    # (2) устойчивый простой сервиса ≥ N минут → ГРОМКИЙ алерт (один раз)
+                    notes += _service_failure_alerts(db, ok)
+                    # (3) метрики железа: co-located — читаем локально (/proc, statvfs),
+                    #     снимок в state (инфобокс) + гистерезис ресурс-алертов
+                    snap = hostmetrics.collect_and_store(db)
+                    notes += services.check_resource_alerts(snap)
+                return notes
+
+            alert_notes = await asyncio.to_thread(_monitor_state)
             # (4) живость шлюза условной маршрутизации живёт в СВОЁМ задании,
             #     job_routing_liveness, с тактом в десятки секунд. Разделение
             #     осталось от обратной модели, где отказ шлюза означал «нет
@@ -266,8 +278,8 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         # СЕКУНДЫ: такт задаёт верхнюю границу задержки поздравления, а оно
         # ценно ровно тем, что приходит в момент, когда человек смотрит на
         # только что заработавшее подключение.
-        return IntervalTrigger(
-            seconds=settings.get_int("app.scheduler.migration_watch_seconds", 20), timezone=_TZ)
+        secs = settings.get_int("app.scheduler.migration_watch_seconds", 20)
+        return IntervalTrigger(seconds=secs, jitter=max(1, int(secs * 0.3)), timezone=_TZ)
 
     def _trig_monthly():
         return CronTrigger(day=settings.get_int("app.scheduler.monthly_reset_day", 1),
@@ -349,6 +361,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         _pending_notes: list = []
         try:
             if not await asyncio.to_thread(services.email_resume_enabled):
+                return
+            # Пока ни у кого нет активной паузы с кодом — читать письма незачем:
+            # TLS + LOGIN + семь папок каждую минуту ради пустоты.
+            if not await asyncio.to_thread(services.db.any_active_resume_code):
                 return
             acc = await asyncio.to_thread(services.email_account)
             await asyncio.to_thread(email_resume.poll_once, acc, on_code)
@@ -581,11 +597,11 @@ def setup_gateway_scheduler(services, bot):
             return
         db = services.db
         ym = timeutil.now().strftime("%Y-%m")
-        last = db.get_state("last_backup")
+        last = await asyncio.to_thread(db.get_state, "last_backup")
         if last == ym:
             return
         if last is None:
-            db.set_state("last_backup", ym)
+            await asyncio.to_thread(db.set_state, "last_backup", ym)
             return
         try:
             paths = await asyncio.to_thread(services.make_backup)

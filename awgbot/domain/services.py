@@ -350,7 +350,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
     # IP физически режем/снимаем по ИТОГОВОМУ состоянию маски: DROP ставим, когда
     # появляется хоть один бит; снимаем — только когда сброшены ВСЕ.
 
-    def _device_pair(self, dev) -> list:
+    def _device_pair(self, dev, twins: Optional[dict] = None) -> list:
         """Устройство и его двойник по переезду — в порядке [сам, второй].
 
         Вне окна переезда список из одного элемента, и все операции ведут себя
@@ -364,29 +364,31 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             if other is not None:
                 pair.append(other)
             return pair
-        twin_id = self.db.twins_by_origin().get(dev.id)
+        twin_id = (twins if twins is not None else self.db.twins_by_origin()).get(dev.id)
         if twin_id:
             other = self.db.get_device(twin_id)
             if other is not None:
                 pair.append(other)
         return pair
 
-    def _device_set_block(self, device_id: int, bit: DeviceBlock) -> None:
-        """Установить причину блокировки устройства (бит) и наложить DROP."""
+    def _device_set_block(self, device_id: int, bit: DeviceBlock, twins: Optional[dict] = None) -> None:
+        """Установить причину блокировки устройства (бит) и наложить DROP.
+        twins — заранее снятая карта пар: в циклах избавляет от скана devices
+        на каждое устройство."""
         dev = self.db.get_device(device_id)
         if dev is None:
             return
         new_mask = int(dev.block_reason) | int(bit)
         if new_mask == int(dev.block_reason):
             return
-        for peer in self._device_pair(dev):
+        for peer in self._device_pair(dev, twins):
             self.db.update_device_fields(peer.id, block_reason=new_mask)
             try:
                 awg.block_ip(peer.address)      # идемпотентно
             except awg.AwgError:
                 pass
 
-    def _device_clear_block(self, device_id: int, bit: DeviceBlock) -> None:
+    def _device_clear_block(self, device_id: int, bit: DeviceBlock, twins: Optional[dict] = None) -> None:
         """Снять причину (бит). Если не осталось причин — снять DROP."""
         dev = self.db.get_device(device_id)
         if dev is None:
@@ -394,7 +396,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         new_mask = int(dev.block_reason) & ~int(bit)
         if new_mask == int(dev.block_reason):
             return
-        for peer in self._device_pair(dev):
+        for peer in self._device_pair(dev, twins):
             self.db.update_device_fields(peer.id, block_reason=new_mask)
             if new_mask == 0:
                 try:
@@ -1292,7 +1294,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         их снимает только админ."""
         notes: list[Notification] = []
         now = timeutil.now()
-        for client in self.db.list_clients(include_service=False):
+        for client in self.db.list_clients(include_service=False, paused_only=True):
             if not client.pause_active_since:
                 continue
             mode = client.pause_mode or PauseMode.USER
@@ -1351,24 +1353,31 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         with self.db.transaction():
             if self.db.get_state("online_count") != str(online):
                 self.db.set_state("online_count", str(online))   # только при изменении
+            # Все сэмплы одним запросом, дельты и новые базы — двумя executemany:
+            # 3M+1 операторов на тик превращаются в четыре. Строку сэмпла
+            # переписываем только при изменении счётчиков — оффлайн-устройство
+            # не должно генерить UPDATE каждые пять минут.
+            samples = self.db.get_samples_all()
+            deltas: list[tuple[int, int, int]] = []
+            bases: list[tuple[int, int, int]] = []
             for dev in self.db.list_all_devices():
                 p = peers.get(dev.public_key)
                 if p is None:
                     continue                          # состав пиров — забота reconcile
                 rx_now, tx_now = p["rx"], p["tx"]
-                sample = self.db.get_sample(dev.id)
+                sample = samples.get(dev.id)
                 if sample is None:
-                    self.db.set_sample(dev.id, rx_now, tx_now)   # первая база
+                    bases.append((dev.id, rx_now, tx_now))       # первая база
                 else:
-                    drx = rx_now - sample["last_rx"]
-                    dtx = tx_now - sample["last_tx"]
+                    drx = rx_now - sample[0]
+                    dtx = tx_now - sample[1]
                     if drx < 0:                       # счётчик упал (рестарт awg)
                         drx = rx_now
                     if dtx < 0:
                         dtx = tx_now
                     if drx or dtx:
-                        self.db.add_traffic(dev.id, drx, dtx)
-                    self.db.set_sample(dev.id, rx_now, tx_now)
+                        deltas.append((dev.id, drx, dtx))
+                        bases.append((dev.id, rx_now, tx_now))
                 if p["last_handshake"] and p["last_handshake"] != dev.last_handshake:
                     # пишем только при изменении: оффлайн-устройство не должно
                     # генерить UPDATE тем же значением каждые 5 минут
@@ -1381,6 +1390,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
                                 greetings.append(note)
                     else:
                         self.db.update_device_fields(dev.id, last_handshake=p["last_handshake"])
+            self.db.add_traffic_bulk(deltas)
+            self.db.set_samples(bases)
         return greetings
 
     # ── Лимиты потребления (ТЗ 7-8) ──────────────────────────────────────────
@@ -1396,112 +1407,114 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         warn_pct = settings.get_int("limits.traffic_warn_percent", 80)
         until = timeutil.first_of_next_month_str()
         admin_id = config.ADMIN_ID
+        twins = self.db.twins_by_origin()             # один раз на проход, не на устройство
 
-        for client in self.db.list_clients(include_service=False):
-            if client.activation_status != ActivationStatus.ACTIVE:
-                continue
-            # ОБЕ строки пары: в окне переезда потребление размазано по ним, и
-            # лимит по одной дал бы человеку двойную квоту.
-            devices = self.db.list_devices(client.id, all_rows=True)
-            sent = self.db.get_traffic_notified(client.id)
-            by_id = {d.id: d for d in devices}
-            # id старых строк, у которых есть двойник, — их расход учитывается
-            # в проходе по двойнику, отдельно не судим
-            paired_old = {d.twin_of for d in devices if d.twin_of is not None}
+        with self.db.transaction():                   # один коммит вместо десятков
+          for client in self.db.list_clients(include_service=False):
+              if client.activation_status != ActivationStatus.ACTIVE:
+                  continue
+              # ОБЕ строки пары: в окне переезда потребление размазано по ним, и
+              # лимит по одной дал бы человеку двойную квоту.
+              devices = self.db.list_devices(client.id, all_rows=True)
+              sent = self.db.get_traffic_notified(client.id)
+              by_id = {d.id: d for d in devices}
+              # id старых строк, у которых есть двойник, — их расход учитывается
+              # в проходе по двойнику, отдельно не судим
+              paired_old = {d.twin_of for d in devices if d.twin_of is not None}
 
-            # ── лимиты устройств (независимо от клиентского) ──
-            for dev in devices:
-                if dev.id in paired_old:
-                    continue                  # учтён суммой у своего двойника
-                dlim = dev.traffic_limit
-                if dlim == 0:
-                    continue
-                used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
-                mate = by_id.get(dev.twin_of) if dev.twin_of else None
-                if mate is not None:
-                    # СУММА по паре против лимита пары (лимиты строк равны —
-                    # сеттер парный). Считай каждую строку отдельно — и человек
-                    # получает двойную квоту, у которой ни одна половина не
-                    # дотягивает до порога.
-                    used += int(mate.traffic_rx_month) + int(mate.traffic_tx_month)
-                over_marker = f"dev_over:{dev.id}"
-                warn_marker = f"dev80:{dev.id}"
-                if used >= dlim:
-                    if not (int(dev.block_reason) & int(DeviceBlock.TRAFFIC_USER)):
-                        self._device_set_block(dev.id, DeviceBlock.TRAFFIC_USER)
-                    if over_marker not in sent:
-                        is_friend_dev = (dev.friend_status == FriendStatus.ACTIVE
-                                         and dev.friend_tg_id)
-                        # хозяину: спец-текст с пометкой «друг», если устройство
-                        # передано; другу — обычный текст про его устройство
-                        host_text = (_friend_dev_over_host_text(dev.name, until)
-                                     if is_friend_dev else _dev_over_text(dev.name, until))
-                        notes.append(Notification(client.tg_id, host_text))
-                        if is_friend_dev:
-                            notes.append(Notification(
-                                dev.friend_tg_id, _dev_over_text(dev.name, until)))
-                        self.db.add_traffic_notified(client.id, over_marker)
-                elif used >= dlim * warn_pct // 100:
-                    if warn_marker not in sent:
-                        notes.append(Notification(
-                            client.tg_id, _dev_warn_text(dev.name, warn_pct)))
-                        if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
-                            notes.append(Notification(
-                                dev.friend_tg_id, _dev_warn_text(dev.name, warn_pct)))
-                        self.db.add_traffic_notified(client.id, warn_marker)
+              # ── лимиты устройств (независимо от клиентского) ──
+              for dev in devices:
+                  if dev.id in paired_old:
+                      continue                  # учтён суммой у своего двойника
+                  dlim = dev.traffic_limit
+                  if dlim == 0:
+                      continue
+                  used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
+                  mate = by_id.get(dev.twin_of) if dev.twin_of else None
+                  if mate is not None:
+                      # СУММА по паре против лимита пары (лимиты строк равны —
+                      # сеттер парный). Считай каждую строку отдельно — и человек
+                      # получает двойную квоту, у которой ни одна половина не
+                      # дотягивает до порога.
+                      used += int(mate.traffic_rx_month) + int(mate.traffic_tx_month)
+                  over_marker = f"dev_over:{dev.id}"
+                  warn_marker = f"dev80:{dev.id}"
+                  if used >= dlim:
+                      if not (int(dev.block_reason) & int(DeviceBlock.TRAFFIC_USER)):
+                          self._device_set_block(dev.id, DeviceBlock.TRAFFIC_USER, twins)
+                      if over_marker not in sent:
+                          is_friend_dev = (dev.friend_status == FriendStatus.ACTIVE
+                                           and dev.friend_tg_id)
+                          # хозяину: спец-текст с пометкой «друг», если устройство
+                          # передано; другу — обычный текст про его устройство
+                          host_text = (_friend_dev_over_host_text(dev.name, until)
+                                       if is_friend_dev else _dev_over_text(dev.name, until))
+                          notes.append(Notification(client.tg_id, host_text))
+                          if is_friend_dev:
+                              notes.append(Notification(
+                                  dev.friend_tg_id, _dev_over_text(dev.name, until)))
+                          self.db.add_traffic_notified(client.id, over_marker)
+                  elif used >= dlim * warn_pct // 100:
+                      if warn_marker not in sent:
+                          notes.append(Notification(
+                              client.tg_id, _dev_warn_text(dev.name, warn_pct)))
+                          if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
+                              notes.append(Notification(
+                                  dev.friend_tg_id, _dev_warn_text(dev.name, warn_pct)))
+                          self.db.add_traffic_notified(client.id, warn_marker)
 
-            # ── тотал клиента ──
-            climit = client.traffic_limit
-            if climit == 0:
-                continue
-            total = sum(int(d.traffic_rx_month) + int(d.traffic_tx_month)
-                        for d in devices)
-            effective = climit + int(client.bonus_bytes)
-            is_admin_client = (client.tg_id == admin_id)
+              # ── тотал клиента ──
+              climit = client.traffic_limit
+              if climit == 0:
+                  continue
+              total = sum(int(d.traffic_rx_month) + int(d.traffic_tx_month)
+                          for d in devices)
+              effective = climit + int(client.bonus_bytes)
+              is_admin_client = (client.tg_id == admin_id)
 
-            if total >= effective:
-                # исчерпан текущий потолок (базовый или уже с доп.квотой)
-                if is_admin_client:
-                    if "cli_over" not in sent:
-                        notes.append(Notification(admin_id, _admin_self_over_text()))
-                        self.db.add_traffic_notified(client.id, "cli_over")
-                    continue
-                if not client.bonus_granted_month:
-                    # первая доп.квота этого месяца
-                    bonus = settings.get_int("limits.traffic_bonus_gb", 100) * BYTES_PER_GB
-                    # аудит: снимок квоты до выдачи разовой доп.квоты
-                    self.db.archive_quota(client.id, "bonus_granted")
-                    self.db.update_client_fields(
-                        client.id,
-                        bonus_bytes=int(client.bonus_bytes) + bonus,
-                        bonus_granted_month=1)
-                    notes.append(Notification(
-                        client.tg_id,
-                        _cli_bonus_text(settings.get_int("limits.traffic_bonus_gb", 100), until)))
-                    if settings.get_bool("notifications.client_events.bonus", True):
-                        notes.append(Notification(
-                            admin_id, _cli_bonus_admin_text(client.name, settings.get_int("limits.traffic_bonus_gb", 100))))
-                    self.db.add_traffic_notified(client.id, "bonus")
-                else:
-                    # доп.квота уже выдавалась и тоже исчерпана → блок всех устройств
-                    # КАСКАДНЫМ битом (TRAFFIC_CLIENT), не собственным TRAFFIC:
-                    # так поднятие лимита устройства не снимет блок «по клиенту».
-                    if "cli_over" not in sent:
-                        self._client_set_block(client.id, ClientBlock.TRAFFIC_CLIENT)
-                        for dev in devices:
-                            self._device_set_block(dev.id, DeviceBlock.TRAFFIC_CLIENT)
-                            if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
-                                notes.append(Notification(
-                                    dev.friend_tg_id, _dev_over_text(dev.name, until)))
-                        notes.append(Notification(client.tg_id, _cli_over_text(until)))
-                        if settings.get_bool("notifications.client_events.over_limit", True):
-                            notes.append(Notification(
-                                admin_id, _cli_over_admin_text(client.name)))
-                        self.db.add_traffic_notified(client.id, "cli_over")
-            elif total >= effective * warn_pct // 100:
-                if "cli80" not in sent and not is_admin_client:
-                    notes.append(Notification(client.tg_id, _cli_warn_text(warn_pct)))
-                    self.db.add_traffic_notified(client.id, "cli80")
+              if total >= effective:
+                  # исчерпан текущий потолок (базовый или уже с доп.квотой)
+                  if is_admin_client:
+                      if "cli_over" not in sent:
+                          notes.append(Notification(admin_id, _admin_self_over_text()))
+                          self.db.add_traffic_notified(client.id, "cli_over")
+                      continue
+                  if not client.bonus_granted_month:
+                      # первая доп.квота этого месяца
+                      bonus = settings.get_int("limits.traffic_bonus_gb", 100) * BYTES_PER_GB
+                      # аудит: снимок квоты до выдачи разовой доп.квоты
+                      self.db.archive_quota(client.id, "bonus_granted")
+                      self.db.update_client_fields(
+                          client.id,
+                          bonus_bytes=int(client.bonus_bytes) + bonus,
+                          bonus_granted_month=1)
+                      notes.append(Notification(
+                          client.tg_id,
+                          _cli_bonus_text(settings.get_int("limits.traffic_bonus_gb", 100), until)))
+                      if settings.get_bool("notifications.client_events.bonus", True):
+                          notes.append(Notification(
+                              admin_id, _cli_bonus_admin_text(client.name, settings.get_int("limits.traffic_bonus_gb", 100))))
+                      self.db.add_traffic_notified(client.id, "bonus")
+                  else:
+                      # доп.квота уже выдавалась и тоже исчерпана → блок всех устройств
+                      # КАСКАДНЫМ битом (TRAFFIC_CLIENT), не собственным TRAFFIC:
+                      # так поднятие лимита устройства не снимет блок «по клиенту».
+                      if "cli_over" not in sent:
+                          self._client_set_block(client.id, ClientBlock.TRAFFIC_CLIENT)
+                          for dev in devices:
+                              self._device_set_block(dev.id, DeviceBlock.TRAFFIC_CLIENT, twins)
+                              if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
+                                  notes.append(Notification(
+                                      dev.friend_tg_id, _dev_over_text(dev.name, until)))
+                          notes.append(Notification(client.tg_id, _cli_over_text(until)))
+                          if settings.get_bool("notifications.client_events.over_limit", True):
+                              notes.append(Notification(
+                                  admin_id, _cli_over_admin_text(client.name)))
+                          self.db.add_traffic_notified(client.id, "cli_over")
+              elif total >= effective * warn_pct // 100:
+                  if "cli80" not in sent and not is_admin_client:
+                      notes.append(Notification(client.tg_id, _cli_warn_text(warn_pct)))
+                      self.db.add_traffic_notified(client.id, "cli80")
 
         return notes
 
@@ -1513,8 +1526,9 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         устройств — доступ приостановлен."""
         notes: list[Notification] = []
         self._client_set_block(client.id, ClientBlock.EXPIRY)
+        twins = self.db.twins_by_origin()
         for dev in self.db.list_devices(client.id):
-            self._device_set_block(dev.id, DeviceBlock.EXPIRY)
+            self._device_set_block(dev.id, DeviceBlock.EXPIRY, twins)
             if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
                 notes.append(Notification(dev.friend_tg_id,
                              _friend_blocked_text(dev.name)))
@@ -1554,56 +1568,57 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
     def check_expiry(self) -> list[Notification]:
         now = timeutil.now()
         notifications: list[Notification] = []
-        for client in self.db.list_clients(include_service=False):
-            if client.activation_status != ActivationStatus.ACTIVE or not client.period_end:
-                continue
-            end = timeutil.parse_iso(client.period_end)
-            start = timeutil.parse_iso(client.period_start)
-            secs = timeutil.remaining_seconds(end, now)
-            period_len_min = timeutil.period_minutes(start, end)
+        with self.db.transaction():
+          for client in self.db.list_clients(include_service=False):
+              if client.activation_status != ActivationStatus.ACTIVE or not client.period_end:
+                  continue
+              end = timeutil.parse_iso(client.period_end)
+              start = timeutil.parse_iso(client.period_start)
+              secs = timeutil.remaining_seconds(end, now)
+              period_len_min = timeutil.period_minutes(start, end)
 
-            # истёк
-            if secs <= 0:
-                if client.status != SubStatus.EXPIRED:
-                    friend_notes = self._block_client(client)
-                    self.db.update_client_fields(client.id, status=SubStatus.EXPIRED)
-                    if client.tg_id:
-                        notifications.append(Notification(client.tg_id, _TXT_EXPIRED_CLIENT))
-                    notifications.append(Notification(
-                        config.ADMIN_ID, _TXT_EXPIRED_ADMIN.format(name=client.name)))
-                    notifications.extend(friend_notes)   # друзьям — доступ приостановлен
-                continue
+              # истёк
+              if secs <= 0:
+                  if client.status != SubStatus.EXPIRED:
+                      friend_notes = self._block_client(client)
+                      self.db.update_client_fields(client.id, status=SubStatus.EXPIRED)
+                      if client.tg_id:
+                          notifications.append(Notification(client.tg_id, _TXT_EXPIRED_CLIENT))
+                      notifications.append(Notification(
+                          config.ADMIN_ID, _TXT_EXPIRED_ADMIN.format(name=client.name)))
+                      notifications.extend(friend_notes)   # друзьям — доступ приостановлен
+                  continue
 
-            # пороги приближения (строго меньше длительности периода).
-            # Если бот «проспал» несколько порогов, шлём ТОЛЬКО самый строгий
-            # (ближайший к концу) из пересечённых, остальные молча помечаем —
-            # иначе клиент получит простыню «30 дней»+«14»+«7»+«1» разом.
-            already = self.db.get_notified(client.id)
-            mins_left = secs // 60
-            # Месяцу порог «30 дней» не показываем никогда: 31-дневный месяц
-            # получал «истекает через 30 дней» назавтра после активации.
-            crossed = [
-                (th_min, label) for th_min, label in config.NOTIFY_THRESHOLDS_MINUTES
-                if th_min < period_len_min and mins_left <= th_min and th_min not in already
-                and not (client.period_kind == "month" and th_min >= _MONTH_CUT_MINUTES)
-            ]
-            if crossed:
-                # самый строгий = наименьший порог по времени
-                tightest_min, tightest_label = min(crossed, key=lambda x: x[0])
-                if client.tg_id:
-                    # кнопка отсрочки: только КЛИЕНТУ (не другу — друзья идут иным
-                    # путём), только на ГОДОВОМ периоде и один раз за период.
-                    grace_offer = (client.period_kind == PeriodKind.YEAR
-                                   and not client.grace_used)
-                    notifications.append(Notification(
-                        client.tg_id, _TXT_EXPIRING_CLIENT.format(label=tightest_label),
-                        grace_offer_client_id=client.id if grace_offer else 0))
-                notifications.append(Notification(
-                    config.ADMIN_ID,
-                    _TXT_EXPIRING_ADMIN.format(name=client.name, label=tightest_label)))
-                # помечаем ВСЕ пересечённые отправленными (включая пропущенные крупные)
-                for th_min, _ in crossed:
-                    self.db.add_notified(client.id, th_min)
+              # пороги приближения (строго меньше длительности периода).
+              # Если бот «проспал» несколько порогов, шлём ТОЛЬКО самый строгий
+              # (ближайший к концу) из пересечённых, остальные молча помечаем —
+              # иначе клиент получит простыню «30 дней»+«14»+«7»+«1» разом.
+              already = self.db.get_notified(client.id)
+              mins_left = secs // 60
+              # Месяцу порог «30 дней» не показываем никогда: 31-дневный месяц
+              # получал «истекает через 30 дней» назавтра после активации.
+              crossed = [
+                  (th_min, label) for th_min, label in config.NOTIFY_THRESHOLDS_MINUTES
+                  if th_min < period_len_min and mins_left <= th_min and th_min not in already
+                  and not (client.period_kind == "month" and th_min >= _MONTH_CUT_MINUTES)
+              ]
+              if crossed:
+                  # самый строгий = наименьший порог по времени
+                  tightest_min, tightest_label = min(crossed, key=lambda x: x[0])
+                  if client.tg_id:
+                      # кнопка отсрочки: только КЛИЕНТУ (не другу — друзья идут иным
+                      # путём), только на ГОДОВОМ периоде и один раз за период.
+                      grace_offer = (client.period_kind == PeriodKind.YEAR
+                                     and not client.grace_used)
+                      notifications.append(Notification(
+                          client.tg_id, _TXT_EXPIRING_CLIENT.format(label=tightest_label),
+                          grace_offer_client_id=client.id if grace_offer else 0))
+                  notifications.append(Notification(
+                      config.ADMIN_ID,
+                      _TXT_EXPIRING_ADMIN.format(name=client.name, label=tightest_label)))
+                  # помечаем ВСЕ пересечённые отправленными (включая пропущенные крупные)
+                  for th_min, _ in crossed:
+                      self.db.add_notified(client.id, th_min)
         return notifications
 
     # ── Сбросы ───────────────────────────────────────────────────────────────
@@ -1618,11 +1633,15 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         # Метка месяца — предыдущий календарный (сброс идёт 1-го числа за прошлый).
         _now = timeutil.now()
         _prev_month = (_now.replace(day=1) - datetime.timedelta(days=1)).strftime("%Y-%m")
-        self.db.snapshot_monthly_traffic(_prev_month)
-        self.db.reset_month_traffic_all()
         notes: list[Notification] = []
         friend_devs: dict[int, list] = {}     # friend_tg → [device rows] для их уведомлений
-        for client in self.db.list_clients(include_service=False):
+        # Одной транзакцией: и один fsync вместо ~5N+4NM, и атомарность —
+        # падение посередине не оставит половину клиентов сброшенной.
+        with self.db.transaction():
+          self.db.snapshot_monthly_traffic(_prev_month)
+          self.db.reset_month_traffic_all()
+          twins = self.db.twins_by_origin()
+          for client in self.db.list_clients(include_service=False):
             self.db.update_client_fields(
                 client.id, bonus_bytes=0, bonus_granted_month=0)
             self.db.reset_traffic_notified(client.id)
@@ -1633,7 +1652,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
                 # месячный сброс снимает ОБЕ трафик-причины (свою и каскад клиента)
                 for _tbit in (DeviceBlock.TRAFFIC_USER, DeviceBlock.TRAFFIC_CLIENT):
                     if int(dev.block_reason) & int(_tbit):
-                        self._device_clear_block(dev.id, _tbit)
+                        self._device_clear_block(dev.id, _tbit, twins)
                 lim = int(dev.traffic_limit)
                 if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
                     if lim > 0:               # друг увидит в своём уведомлении
@@ -1798,14 +1817,19 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
 
     def reconcile_blocks(self) -> None:
         """iptables-DROP'ы эфемерны — после рестарта переналагаем их на всех,
-        у кого block_reason != 0 в БД (любая причина блокировки)."""
-        for dev in self.db.list_all_devices():
-            if int(dev.block_reason) != 0:
-                try:
-                    if not awg.is_blocked(dev.address):
-                        awg.block_ip(dev.address)
-                except awg.AwgError:
-                    pass
+        у кого block_reason != 0 в БД (любая причина блокировки). Один
+        `iptables -S` вместо -C на каждое устройство; block_ip сам идемпотентен."""
+        try:
+            present = awg.blocked_ips()
+        except awg.AwgError:
+            present = set()
+        for address in self.db.blocked_addresses():
+            if address in present:
+                continue
+            try:
+                awg.block_ip(address)
+            except awg.AwgError:
+                pass
 
     def reconcile_ssh_access(self) -> None:
         """Пер-пирный SSH-к-хосту для устройств админа. Пересобирает фильтр в
@@ -2284,13 +2308,23 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             log.warning("routing: не записать кэш %s (%s)", kind, e)
 
     def _routing_read_cache(self, kind: str) -> list[str]:
-        """Пусто — значит списки ещё не качали."""
+        """Пусто — значит списки ещё не качали. Файл перечитывается только при
+        смене mtime: раньше ~600 строк читались с диска каждый тик."""
+        path = self._routing_cache(kind)
         try:
-            return [l.strip() for l in
-                    self._routing_cache(kind).read_text(encoding="utf-8").splitlines()
-                    if l.strip()]
+            mtime = path.stat().st_mtime
         except OSError:
             return []
+        mem = self.__dict__.setdefault("_routing_cache_mem", {})   # на экземпляр
+        hit = mem.get(str(path))
+        if hit and hit[0] == mtime:
+            return list(hit[1])
+        try:
+            items = [l.strip() for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        except OSError:
+            return []
+        mem[str(path)] = (mtime, items)
+        return list(items)
 
     # ── источники списков: замечать, когда источник перестал отдавать ────────
     # Кэш переживает недоступность источника намеренно — устаревшие списки лучше
@@ -2578,12 +2612,18 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         # выключенной фиче рубильник обязан стоять в «выкл» независимо от того,
         # что там со шлюзом.
         engaged = self.routing_engaged()
-        if engaged:
-            # Обвязку доводим ЗДЕСЬ, а не внутри зонда: зонд обязан только мерить.
-            routing.ensure_policy()
         # Зонд СНАРУЖИ замка: он длится секунды (сеть), и держать на это время
         # реконсиляцию значило бы менять один отказ на другой.
         verdict = self.routing_probe() if engaged else routing.PROBE_DOWN
+        # Тик только МЕРИТ. Обвязку утверждаем по событию — смена вердикта,
+        # первый тик после старта — и страховочно каждый 10-й тик (5 мин):
+        # утверждать маршрут и правила каждые 30 с значило ~14 000 exec/сутки
+        # ради состояния, которое меняется раз в неделю.
+        self._rt_tick = getattr(self, "_rt_tick", -1) + 1
+        last_verdict = getattr(self, "_rt_last_verdict", None)
+        if engaged and (verdict != last_verdict or self._rt_tick % 10 == 0):
+            routing.ensure_policy()
+        self._rt_last_verdict = verdict
 
         # ГИСТЕРЕЗИС, а не пересчёт с нуля каждый тик. Пока порог гашения был
         # равен единице, пересчёт совпадал с гистерезисом и разницы не было. С
@@ -2689,10 +2729,9 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         return int(c.traffic_limit) if c else 0
 
     def client_is_online(self, client_id: int) -> bool:
-        for dev in self.db.list_devices(client_id):
-            if timeutil.handshake_is_online(dev.last_handshake):
-                return True
-        return False
+        """Онлайн ли хоть одно устройство профиля — одним индексным запросом."""
+        return self.db.client_has_online_device(
+            client_id, settings.get_int("app.online_handshake_seconds", 300))
 
     def device_slots(self, client_id: int) -> tuple[int, int]:
         """(добавлено, лимит) — для подсветки «M из N»."""

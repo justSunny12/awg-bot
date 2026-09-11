@@ -635,6 +635,18 @@ def unblock_ip(ip: str) -> None:
     _exec(["iptables", "-D", "FORWARD", "-s", f"{ip}/32", "-j", "DROP"])
 
 
+def blocked_ips() -> set[str]:
+    """Все адреса с DROP в FORWARD — одним `iptables -S`, а не -C на каждый."""
+    proc = _exec(["iptables", "-S", "FORWARD"], check=False)
+    out: set[str] = set()
+    for line in (proc.stdout or b"").decode(errors="replace").splitlines():
+        parts = line.split()
+        if "-s" in parts and "DROP" in parts:
+            src = parts[parts.index("-s") + 1]
+            out.add(src.split("/")[0])
+    return out
+
+
 def is_blocked(ip: str) -> bool:
     """iptables -C FORWARD ... — код 0 = правило есть."""
     _validate_ip(ip)

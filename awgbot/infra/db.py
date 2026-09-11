@@ -290,7 +290,7 @@ CREATE TABLE IF NOT EXISTS traffic_samples (
     device_id           INTEGER PRIMARY KEY,
     last_rx             INTEGER NOT NULL,
     last_tx             INTEGER NOT NULL,
-    sampled_at          TEXT    NOT NULL,
+    last_update         TEXT    NOT NULL,             -- когда счётчики последний раз менялись
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
 );
 
@@ -306,9 +306,13 @@ CREATE TABLE IF NOT EXISTS ui_state (
 );
 
 CREATE INDEX IF NOT EXISTS idx_devices_client   ON devices(client_id);
-CREATE INDEX IF NOT EXISTS idx_devices_pubkey   ON devices(public_key);
+-- public_key и tg_id уже UNIQUE — у них есть автоиндекс, отдельные дублировали бы его
 CREATE INDEX IF NOT EXISTS idx_clients_invite   ON clients(invite_code);
-CREATE INDEX IF NOT EXISTS idx_clients_tg       ON clients(tg_id);
+-- пары переезда: twins_by_origin и подзапрос видимости ходят по twin_of;
+-- частичный индекс пуст вне окна переезда
+CREATE INDEX IF NOT EXISTS idx_devices_twin     ON devices(twin_of) WHERE twin_of IS NOT NULL;
+-- истечение: предфильтр «активные с конечным периодом до границы»
+CREATE INDEX IF NOT EXISTS idx_sub_end          ON client_subscription(status, period_end);
 CREATE INDEX IF NOT EXISTS idx_friend_tg        ON device_friend(friend_tg_id);
 CREATE INDEX IF NOT EXISTS idx_friend_code      ON device_friend(friend_code);
 
@@ -537,11 +541,30 @@ class Database:
         with self._tx() as cur:
             cur.executescript(SCHEMA)
         self._migrate_additive()
+        self._migrate_samples_last_update()
+        self._migrate_drop_duplicate_indexes()
         self._migrate_drop_full_access()
         self._migrate_routing_master_to_devices()
         self._migrate_routing_domains_mode()
         self._migrate_drop_greeted()
         self._ensure_service_client()
+
+    def _migrate_samples_last_update(self) -> None:
+        """traffic_samples.sampled_at → last_update: колонка теперь означает
+        «когда счётчики менялись», а не «когда опрашивали» (опрос перестал
+        переписывать неизменные строки)."""
+        con = self._connection()
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(traffic_samples)")}
+        if "sampled_at" in cols and "last_update" not in cols:
+            with self._tx() as cur:
+                cur.execute("ALTER TABLE traffic_samples RENAME COLUMN sampled_at TO last_update")
+
+    def _migrate_drop_duplicate_indexes(self) -> None:
+        """Индексы, дублировавшие UNIQUE-автоиндексы: два лишних B-дерева на
+        каждую запись в devices/clients."""
+        with self._tx() as cur:
+            cur.execute("DROP INDEX IF EXISTS idx_devices_pubkey")
+            cur.execute("DROP INDEX IF EXISTS idx_clients_tg")
 
     def _migrate_additive(self) -> None:
         """Аддитивные миграции для существующей (боевой) БД: CREATE IF NOT EXISTS
@@ -764,13 +787,18 @@ class Database:
                             (chat_id,))
         return ids
 
+    _service_client_id: Optional[int] = None      # за жизнь процесса не меняется
+
     def get_service_client_id(self) -> int:
+        if self._service_client_id is not None:
+            return self._service_client_id
         row = self._connection().execute(
             "SELECT id FROM clients WHERE is_service = 1 LIMIT 1"
         ).fetchone()
         if row is None:
             raise RuntimeError("Служебный клиент не инициализирован — вызовите init_schema()")
-        return row["id"]
+        self._service_client_id = int(row["id"])
+        return self._service_client_id
 
     def find_client_by_resume_code(self, code: str) -> "Optional[int]":
         """id клиента с активной паузой и данным resume-кодом (или None).
@@ -832,11 +860,14 @@ class Database:
 
     def list_clients(self, include_service: bool = False,
                      exclude_tg: Optional[int] = None,
-                     admin_first_tg: Optional[int] = None) -> list:
+                     admin_first_tg: Optional[int] = None,
+                     paused_only: bool = False) -> list:
         q = _CLIENT_SELECT + " WHERE 1=1"
         params: list = []
         if not include_service:
             q += " AND c.is_service = 0"
+        if paused_only:
+            q += " AND p.pause_active_since IS NOT NULL"
         if exclude_tg is not None:
             q += " AND (c.tg_id IS NULL OR c.tg_id != ?)"
             params.append(exclude_tg)
@@ -967,10 +998,12 @@ class Database:
         остальной код не знал про сериализацию. Если однажды заменим на отдельную
         таблицу — меняются только get_notified/add_notified/reset_notified.
         """
-        row = self.get_client(client_id)
-        if not row or not row.notified_thresholds:
+        row = self._connection().execute(
+            "SELECT notified_thresholds FROM client_subscription WHERE client_id = ?",
+            (client_id,)).fetchone()
+        if not row or not row["notified_thresholds"]:
             return set()
-        return {int(x) for x in row.notified_thresholds.split(",") if x.strip()}
+        return {int(x) for x in row["notified_thresholds"].split(",") if x.strip()}
 
     def add_notified(self, client_id: int, threshold: int) -> None:
         """Добавляет порог в множество отправленных (идемпотентно)."""
@@ -990,10 +1023,12 @@ class Database:
         """Множество уже отправленных трафик-уведомлений (строковые метки:
         'cli80','cli_over','bonus','dev80:{id}','dev_over:{id}'). Сбрасывается
         1-го числа вместе с накоплением. CSV внутри — set[str] наружу."""
-        row = self.get_client(client_id)
-        if not row or not row.traffic_notified:
+        row = self._connection().execute(
+            "SELECT traffic_notified FROM client_quota WHERE client_id = ?",
+            (client_id,)).fetchone()
+        if not row or not row["traffic_notified"]:
             return set()
-        return {x for x in row.traffic_notified.split(",") if x.strip()}
+        return {x for x in row["traffic_notified"].split(",") if x.strip()}
 
     def add_traffic_notified(self, client_id: int, marker: str) -> None:
         """Помечает трафик-уведомление отправленным (идемпотентно)."""
@@ -1030,6 +1065,7 @@ class Database:
         reconcile_blocks значило бы дарить окно в минуты, за которое переезд
         оказывается амнистией.
         """
+        self.__dict__.pop("_ifaces_cache", None)
         with self._tx() as cur:
             cur.execute(
                 """INSERT INTO devices
@@ -1187,13 +1223,61 @@ class Database:
         """Сырые значения devices.iface, встречающиеся в базе. Пустая строка в
         выдаче остаётся пустой: разрешать её в имя — дело awg.iface_of, здесь мы
         не знаем и не должны знать, какой интерфейс сейчас дефолтный."""
-        return [r["iface"] for r in self._connection().execute(
+        import time as _t
+        cached = getattr(self, "_ifaces_cache", None)
+        if cached and _t.monotonic() - cached[0] < 60:
+            return list(cached[1])
+        out = [r["iface"] for r in self._connection().execute(
             "SELECT DISTINCT iface FROM devices ORDER BY iface").fetchall()]
+        self._ifaces_cache = (_t.monotonic(), out)
+        return list(out)
+
+    def _visible_where(self, all_rows: bool = False) -> str:
+        """Предикат видимости строк устройства — тот же, что в list_devices."""
+        if all_rows:
+            return "WHERE d.client_id = ?"
+        if self.migration_visibility_running():
+            return ("WHERE d.client_id = ? AND d.id NOT IN "
+                    "(SELECT twin_of FROM devices WHERE twin_of IS NOT NULL)")
+        return f"WHERE d.client_id = ? AND {self._TWIN_DANGLING_OK}"
 
     def count_devices(self, client_id: int) -> int:
         """Столько устройств у человека с его точки зрения — по видимым строкам.
-        Считать пары значило бы упереться в лимит вдвое раньше, чем следует."""
-        return len(self.list_devices(client_id))
+        Считать пары значило бы упереться в лимит вдвое раньше, чем следует.
+        COUNT, а не len(list_devices): без JOIN и без сборки моделей."""
+        row = self._connection().execute(
+            f"SELECT COUNT(*) AS n FROM devices d {self._visible_where()}", (client_id,)).fetchone()
+        return int(row["n"])
+
+    def client_has_online_device(self, client_id: int, threshold_seconds: int) -> bool:
+        """Есть ли у профиля устройство с хендшейком свежее порога — одним
+        индексным запросом, без выборки всех устройств."""
+        import time as _t
+        floor = int(_t.time()) - int(threshold_seconds)
+        row = self._connection().execute(
+            "SELECT 1 FROM devices d JOIN device_traffic t ON t.device_id = d.id "
+            "WHERE d.client_id = ? AND t.last_handshake IS NOT NULL AND t.last_handshake >= ? LIMIT 1",
+            (client_id, floor)).fetchone()
+        return row is not None
+
+    def blocked_addresses(self) -> list[str]:
+        """Адреса устройств с любой причиной блокировки — для реконсиляции DROP."""
+        return [r["address"] for r in self._connection().execute(
+            "SELECT address FROM devices WHERE block_reason != 0")]
+
+    def pending_twins(self) -> list:
+        """Двойники переезда без единого хендшейка — те, кого ждёт окно."""
+        return [_device_from_row(r) for r in self._connection().execute(
+            _DEVICE_SELECT + " WHERE d.twin_of IS NOT NULL "
+            "AND (t.last_handshake IS NULL OR t.last_handshake = 0)").fetchall()]
+
+    def any_active_resume_code(self) -> bool:
+        """Есть ли кому присылать код: активная пауза с resume_code. Пока нет —
+        опрашивать почту незачем."""
+        row = self._connection().execute(
+            "SELECT 1 FROM client_pause WHERE pause_active_since IS NOT NULL "
+            "AND resume_code IS NOT NULL AND resume_code != '' LIMIT 1").fetchone()
+        return row is not None
 
     def _count_devices_raw(self, client_id: int) -> int:
         return self._connection().execute(
@@ -1290,6 +1374,8 @@ class Database:
     _DEVICE_KEY = {"devices": "id", "device_traffic": "device_id"}
 
     def update_device_fields(self, device_id: int, **fields) -> None:
+        if "iface" in fields:
+            self.__dict__.pop("_ifaces_cache", None)
         """Точечное обновление полей устройства с маршрутизацией: identity/crypto →
         devices, счётчики/лимит → device_traffic. Одна транзакция."""
         by_table: dict[str, dict] = {}
@@ -1647,28 +1733,70 @@ class Database:
             "SELECT * FROM traffic_samples WHERE device_id = ?", (device_id,)
         ).fetchone()
 
+    def get_samples_all(self) -> dict[int, tuple[int, int]]:
+        """device_id → (last_rx, last_tx) одним запросом — для опроса трафика."""
+        return {int(r["device_id"]): (int(r["last_rx"]), int(r["last_tx"])) for r in
+                self._connection().execute("SELECT device_id, last_rx, last_tx FROM traffic_samples")}
+
     def set_sample(self, device_id: int, last_rx: int, last_tx: int) -> None:
         """Запоминает последнее сырое значение rx/tx как базу для следующей дельты."""
+        self.set_samples([(device_id, last_rx, last_tx)])
+
+    def set_samples(self, rows: list[tuple[int, int, int]]) -> None:
+        """Батч: [(device_id, last_rx, last_tx)] одним executemany."""
+        if not rows:
+            return
+        now = _now_iso()
         with self._tx() as cur:
-            cur.execute(
-                """INSERT INTO traffic_samples (device_id, last_rx, last_tx, sampled_at)
+            cur.executemany(
+                """INSERT INTO traffic_samples (device_id, last_rx, last_tx, last_update)
                    VALUES (?, ?, ?, ?)
                    ON CONFLICT(device_id) DO UPDATE SET
                      last_rx = excluded.last_rx,
                      last_tx = excluded.last_tx,
-                     sampled_at = excluded.sampled_at""",
-                (device_id, last_rx, last_tx, _now_iso()),
+                     last_update = excluded.last_update""",
+                [(d, rx, tx, now) for d, rx, tx in rows],
+            )
+
+    def add_traffic_bulk(self, rows: list[tuple[int, int, int]]) -> None:
+        """Батч дельт: [(device_id, d_rx, d_tx)] одним executemany."""
+        if not rows:
+            return
+        with self._tx() as cur:
+            cur.executemany(
+                """UPDATE device_traffic
+                   SET traffic_rx_month = traffic_rx_month + ?, traffic_tx_month = traffic_tx_month + ?,
+                       traffic_rx_period = traffic_rx_period + ?, traffic_tx_period = traffic_tx_period + ?
+                   WHERE device_id = ?""",
+                [(rx, tx, rx, tx, d) for d, rx, tx in rows],
             )
 
     # ── server_state: key-value ──────────────────────────────────────────────
 
+    # Состояние переезда читает каждый list_devices/count_devices (видимость пар):
+    # держим в памяти, инвалидация — в set_state. Ключи-«горячие» перечислены явно.
+    _HOT_STATE_KEYS = (MIGRATION_STATE_KEY,)
+
+    @property
+    def _hot_state(self) -> dict:
+        d = self.__dict__.get("_hot_state_map")
+        if d is None:
+            d = self.__dict__["_hot_state_map"] = {}
+        return d
+
     def get_state(self, key: str) -> Optional[str]:
+        if key in self._HOT_STATE_KEYS and key in self._hot_state:
+            return self._hot_state[key]
         row = self._connection().execute(
             "SELECT value FROM server_state WHERE key = ?", (key,)
         ).fetchone()
+        if key in self._HOT_STATE_KEYS:
+            self._hot_state[key] = row["value"] if row else None
         return row["value"] if row else None
 
     def set_state(self, key: str, value: str) -> None:
+        if key in self._HOT_STATE_KEYS:
+            self._hot_state.pop(key, None)
         with self._tx() as cur:
             cur.execute(
                 """INSERT INTO server_state (key, value) VALUES (?, ?)
@@ -1789,8 +1917,10 @@ class Database:
         устройствах. Флаг у пары синхронный (сеттер парный), поэтому счёт по
         видимой половине точен.
         """
-        devices = self.list_devices(client_id)
-        return sum(1 for d in devices if d.routing_on), len(devices)
+        row = self._connection().execute(
+            f"SELECT COALESCE(SUM(d.routing_on), 0) AS on_, COUNT(*) AS n FROM devices d "
+            f"{self._visible_where()}", (client_id,)).fetchone()
+        return int(row["on_"]), int(row["n"])
 
     # ── Аллокация IP ─────────────────────────────────────────────────────────
 

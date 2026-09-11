@@ -392,8 +392,7 @@ class MigrationMixin:
         """
         if not self.migration_running() or not config.MIGRATION_INTERFACE:
             return []
-        pending = [d for d in self.db.list_all_devices()
-                   if d.twin_of is not None and not d.last_handshake]
+        pending = self.db.pending_twins()             # фильтр в SQL, не в Python
         if not pending:
             return []
         iface = awg.iface_of(config.MIGRATION_INTERFACE)
