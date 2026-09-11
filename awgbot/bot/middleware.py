@@ -46,16 +46,21 @@ class AccessMiddleware(BaseMiddleware):
         # 2) Кэш «кто это»: TTL короткий, любая запись в БД сбрасывает его.
         #    Без кэша каждый апдейт стоил 1–3 запроса синхронно в event loop.
         hit = access_cache.get(uid)
-        if hit is not None:
+        if hit is not None and hit[0] != "stranger":
             role, client, device = hit
             data["role"] = role
             data["client"] = client
             if device is not None:
                 data["device"] = device
             return await handler(event, data)
+        if hit is None:
+            cached_stranger = False
+        else:
+            cached_stranger = True                      # отрицательный кэш: флуд
+            client = fdev = None                        # посторонних — 0 SQL
 
         # 3) Активный клиент из БД
-        client = self.db.get_client_by_tg(uid)
+        client = None if cached_stranger else self.db.get_client_by_tg(uid)
         if (client is not None and not client.is_service
                 and client.activation_status == ActivationStatus.ACTIVE):
             access_cache.put(uid, "client", client)
@@ -65,7 +70,7 @@ class AccessMiddleware(BaseMiddleware):
 
         # 4) Друг (invited): управляет ОДНИМ гостевым устройством. Кладём в data
         #    и устройство, и клиента-хозяина (для показа его подписки).
-        fdev = self.db.get_device_by_friend_tg(uid)
+        fdev = None if cached_stranger else self.db.get_device_by_friend_tg(uid)
         if fdev is not None:
             owner = self.db.get_client(fdev.client_id)
             access_cache.put(uid, "invited", owner, fdev)
@@ -73,6 +78,9 @@ class AccessMiddleware(BaseMiddleware):
             data["client"] = owner
             data["device"] = fdev
             return await handler(event, data)
+
+        if not cached_stranger:
+            access_cache.put(uid, "stranger", None)     # активация запишет в БД и сбросит
 
         # 5) Незнакомец: пропускаем только команды активации — /start (холодный
         #    вход или deep-link с кодом) и /code {код}. Любой другой текст —

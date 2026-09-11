@@ -1612,9 +1612,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         правило, у уведомлений своё."""
         now = timeutil.now()
         out = []
-        for client in self.db.list_clients(include_service=False):
-            if client.activation_status != ActivationStatus.ACTIVE or not client.period_end:
-                continue
+        for client in self.db.list_clients(include_service=False, active_finite_only=True):
             end = timeutil.parse_iso(client.period_end)
             start = timeutil.parse_iso(client.period_start) if client.period_start else None
             secs = timeutil.remaining_seconds(end, now)
@@ -1631,9 +1629,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         now = timeutil.now()
         notifications: list[Notification] = []
         with self.db.transaction():
-          for client in self.db.list_clients(include_service=False):
-              if client.activation_status != ActivationStatus.ACTIVE or not client.period_end:
-                  continue
+          for client in self.db.list_clients(include_service=False, active_finite_only=True):
               end = timeutil.parse_iso(client.period_end)
               start = timeutil.parse_iso(client.period_start)
               secs = timeutil.remaining_seconds(end, now)

@@ -72,6 +72,31 @@ async def test_middleware_uses_cache_for_client(services, monkeypatch):
     assert calls == [555], "второй апдейт — из кэша, без БД"
 
 
+async def test_middleware_negative_cache_for_strangers(services, monkeypatch):
+    """Посторонний: второе сообщение подряд — без единого запроса в БД, а
+    /start по-прежнему проходит к активации."""
+    from awgbot.bot.middleware import AccessMiddleware
+    from tests.conftest import FakeMessage
+    access_cache.invalidate_all()
+    mw = AccessMiddleware(services.db)
+    calls = []
+    for name in ("get_client_by_tg", "get_device_by_friend_tg"):
+        orig = getattr(services.db, name)
+        monkeypatch.setattr(services.db, name, lambda uid, _o=orig, _n=name: (calls.append(_n), _o(uid))[1])
+    seen = []
+
+    async def handler(event, data):
+        seen.append(data["role"])
+    from aiogram.types import Chat, Message, User
+    user = User.model_construct(id=9001, is_bot=False, first_name="U")
+    for text in ("привет", "ещё", "/start"):
+        msg = Message.model_construct(message_id=1, text=text,
+                                      chat=Chat.model_construct(id=9001, type="private"))
+        await mw(handler, msg, {"event_from_user": user})
+    assert seen == ["activation"], "чужой текст — молчание, /start — активация"
+    assert calls == ["get_client_by_tg", "get_device_by_friend_tg"], "БД — один раз на TTL"
+
+
 # ── пакетное удаление с откатом на поштучное ─────────────────────────────────
 
 async def test_delete_many_batches_and_falls_back(fake_bot):

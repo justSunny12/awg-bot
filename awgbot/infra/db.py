@@ -887,13 +887,18 @@ class Database:
     def list_clients(self, include_service: bool = False,
                      exclude_tg: Optional[int] = None,
                      admin_first_tg: Optional[int] = None,
-                     paused_only: bool = False) -> list:
+                     paused_only: bool = False,
+                     active_finite_only: bool = False) -> list:
         q = _CLIENT_SELECT + " WHERE 1=1"
         params: list = []
         if not include_service:
             q += " AND c.is_service = 0"
         if paused_only:
             q += " AND p.pause_active_since IS NOT NULL"
+        if active_finite_only:
+            # активированные с конечным периодом — кандидаты проверки сроков;
+            # бессрочные и неактивированные в Python отсеивались после полного JOIN
+            q += " AND c.activation_status = 'active' AND s.period_end IS NOT NULL"
         if exclude_tg is not None:
             q += " AND (c.tg_id IS NULL OR c.tg_id != ?)"
             params.append(exclude_tg)
