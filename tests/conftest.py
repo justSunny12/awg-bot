@@ -76,8 +76,8 @@ def fake_awg(monkeypatch):
         blocked=set(), peers={}, occupied=set(),
         responding=True, started_at="2026-01-01T00:00:00+03:00",
         _n=0, privpub={},
-        ssh_targets=["172.29.172.1", "172.17.0.1", "203.0.113.10"],
-        ssh_rules=None,
+        fw_admin_ips=None,          # чем бот кормил nftguard.reconcile (None — не звал)
+        fw_calls=0,
     )
     server_params = {
         "obfuscation": {k: str(i) for i, k in enumerate(configgen._OBF_ORDER)},
@@ -106,11 +106,17 @@ def fake_awg(monkeypatch):
     _set("is_blocked", lambda addr: addr in state.blocked)
     _set("container_started_at", lambda: state.started_at)
     _set("awg_responding", lambda: state.responding)
-    _set("host_ssh_targets", lambda: list(state.ssh_targets))
-    _set("ssh_reconcile",
-         lambda admin_ips, targets: setattr(state, "ssh_rules",
-                                            (sorted(admin_ips), list(targets))))
-    _set("ensure_ssh_failsafe", lambda: False)
+    _set("remove_legacy_ssh_gate", lambda: False)
+    # файервол: единственная точка — nftguard; в тестах «включён» и записывает,
+    # с какими адресами админа его сверяли
+    from awgbot.infra import nftguard
+
+    def _fw_reconcile(admin_ips):
+        state.fw_admin_ips = sorted(admin_ips)
+        state.fw_calls += 1
+        return "ok"
+    monkeypatch.setattr(nftguard, "enabled", lambda: True)
+    monkeypatch.setattr(nftguard, "reconcile", _fw_reconcile)
     return state
 
 

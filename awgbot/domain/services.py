@@ -1890,25 +1890,42 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
                 pass
 
     def reconcile_ssh_access(self) -> None:
-        """Пер-пирный SSH-к-хосту для устройств админа. Пересобирает фильтр в
-        контейнере (цепочка AWGBOT_SSH): ACCEPT SSH только с адресов админских
-        устройств на адреса хоста, DROP остальным. Идемпотентно и эфемерно, как
-        блокировки, поэтому реассертится в тех же точках (старт, рестарт
-        контейнера, монитор-цикл) плюс сразу при создании админского устройства.
+        """SSH-к-хосту из туннеля — только устройствам админа. Единственная
+        точка: nft-таблица awg_bot_guard (infra/nftguard). Бот держит в ней set
+        адресов админских устройств и сверяет его с желаемым в тех же точках,
+        что и блокировки (старт, рестарт, тик монитора) плюс сразу при
+        создании/удалении админского устройства: удаление устройства или
+        переиспользование его IP другим профилем закрывается в пределах тика.
 
-        Пер-тик реассерт закрывает и удаление админского устройства, и
-        переиспользование его IP другим (не-админским) — иначе осиротевший ACCEPT
-        стал бы дырой."""
+        Пока firewall.enabled=false (таблицу ещё не включали через
+        `awg-bot firewall setup`), ничего не трогаем — включение файервола
+        делается человеком с таймером отката, не ботом."""
+        from awgbot.infra import nftguard
+        if not nftguard.enabled():
+            return
         try:
-            targets = awg.host_ssh_targets()
             admin_ips = self.db.admin_device_addresses(config.ADMIN_ID)
-            awg.ssh_reconcile(admin_ips, targets)
-            # fail-closed на контейнере: DROP-по-умолчанию при подъёме awg0 (до
-            # бота), чтобы окно «контейнер взлетел, бот ещё не реассертил» не
-            # пускало никого на SSH-к-хосту. Идемпотентно.
-            awg.ensure_ssh_failsafe()
-        except awg.AwgError:
-            pass
+            res = nftguard.reconcile(admin_ips)
+        except nftguard.GuardError as e:
+            log.warning("firewall: %s", e)
+            return
+        if res != "ok":
+            log.info("firewall: таблица awg_bot_guard — %s", res)
+
+    def retire_legacy_ssh_gate(self) -> None:
+        """Разово снять прежние ворота (цепочка AWGBOT_SSH + PostUp-страж) —
+        но ТОЛЬКО когда новая таблица уже держит SSH. Иначе снятие открыло бы
+        SSH из туннеля всем пирам до включения файервола."""
+        from awgbot.infra import nftguard
+        if not nftguard.enabled() or self.db.get_state("legacy_ssh_gate_removed"):
+            return
+        try:
+            if awg.remove_legacy_ssh_gate():
+                log.info("firewall: старые ворота SSH (AWGBOT_SSH, PostUp) сняты")
+        except awg.AwgError as e:
+            log.warning("firewall: старые ворота не сняты: %s", e)
+            return
+        self.db.set_state("legacy_ssh_gate_removed", "1")
 
     # ── Условная маршрутизация (docs/conditional-routing.md) ─────────────────
     # Российский IP для российских сервисов. Конфиги устройств не меняются:

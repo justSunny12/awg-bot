@@ -326,9 +326,8 @@ setup_secrets() {
 
 optional_steps() {
     echo; log "─── Опционально ───"
-    if [[ -f "$INSTALL_DIR/install/harden_firewall.sh" ]] \
-       && confirm "Настроить firewall хоста бота (harden_firewall.sh)?" n; then
-        bash "$INSTALL_DIR/install/harden_firewall.sh" || warn "harden_firewall.sh прерван."
+    if confirm "Настроить файервол хоста (awg-bot firewall setup: SSH только с ваших IP)?" n; then
+        cmd_firewall setup || warn "мастер файервола прерван — позже: awg-bot firewall setup"
     fi
 }
 
@@ -752,6 +751,13 @@ cmd_post_uninstall() {
 }
 
 # ── status / logs ────────────────────────────────────────────────────────────
+cmd_firewall() {
+    require_root
+    ( cd "$INSTALL_DIR" \
+        && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
+        && exec ./venv/bin/python -m tools.firewall "$@" )
+}
+
 cmd_routing_doctor() {
     require_installed
     # Тем же интерпретатором, из того же каталога и с тем же conf/data, что и
@@ -804,6 +810,9 @@ awg-bot — управление установленным ботом.
   awg-bot backup             снимок БД + конфига + секретов
   awg-bot restore [tgz]      восстановить из снимка (по умолч. — самый свежий)
   awg-bot logs               журнал сервиса (follow)
+  awg-bot firewall <cmd>     файервол хоста (единственная точка — таблица awg_bot_guard):
+                             status | setup | confirm [--disable-ufw] | apply | allow <ip…> |
+                             deny <ip…> | off | rollback
   awg-bot routing-doctor     где рвётся условная маршрутизация (только чтение)
   awg-bot gw-bundle          пересобрать бандл для шлюза (ключи не меняются)
   awg-bot uninstall          удалить приложение (опционально: данные приложения)
@@ -824,6 +833,7 @@ case "$VERB" in
     stop)        cmd_stop ;;
     restart)     cmd_restart ;;
     logs)        cmd_logs ;;
+    firewall)    cmd_firewall "$@" ;;
     routing-doctor) cmd_routing_doctor ;;
     gw-bundle)   cmd_gw_bundle ;;
     -h|--help|help|"") usage ;;

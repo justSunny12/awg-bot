@@ -112,6 +112,33 @@ def collect_warnings_gateway(services=None) -> list[str]:
     return warns
 
 
+def _firewall_warnings(services) -> list[str]:
+    from awgbot.infra import nftguard
+    if not nftguard.enabled():
+        return ["файервол хоста не под управлением бота (firewall.enabled=false): "
+                "SSH из туннеля не фильтруется по устройствам админа — "
+                "выполните `awg-bot firewall setup`"]
+    out: list[str] = []
+    spec = nftguard.build_spec(services.db.admin_device_addresses(config.ADMIN_ID))
+    if spec.ssh_open:
+        out.append("firewall.ssh_allow пуст — SSH хоста открыт для всех адресов; "
+                   "добавьте свои IP: `awg-bot firewall allow <ip>`")
+    if spec.unresolved:
+        out.append("firewall.ssh_allow: не резолвятся " + ", ".join(spec.unresolved))
+    if not spec.udp_ports and not awg_in_container():
+        out.append("файервол: не найден ListenPort ни в одном conf интерфейса — "
+                   "порт клиентов awg может быть закрыт")
+    if nftguard.ufw_active():
+        out.append("ufw активен рядом с таблицей awg_bot_guard — два владельца "
+                   "правил; после проверки входа: `awg-bot firewall confirm --disable-ufw`")
+    return out
+
+
+def awg_in_container() -> bool:
+    from awgbot.infra import awg
+    return awg.in_container()
+
+
 def collect_warnings(services) -> list[str]:
     """Не-блокирующие замечания. Возвращает список строк для отправки админу.
     Каждая проверка изолирована: её собственный сбой не роняет остальные и не
@@ -127,6 +154,12 @@ def collect_warnings(services) -> list[str]:
         warns += _host_autostart_warnings()
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight: проверка автозагрузки: %s", e)
+
+    # файервол хоста: единственная точка — таблица awg_bot_guard под ботом
+    try:
+        warns += _firewall_warnings(services)
+    except Exception as e:                       # noqa: BLE001
+        log.warning("preflight: проверка файервола: %s", e)
 
     # свободное место под data-dir
     try:

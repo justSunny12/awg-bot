@@ -477,6 +477,16 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
 
     # update_check — особый: poll_schedule=never → триггер None → job на паузу;
     # иначе reschedule (сам снимет паузу, если была). Три ключа ведут сюда.
+    def _hook_firewall(key, value):
+        # правка firewall.* или network.ssh_port в conf (руками или через
+        # awg-bot firewall …) — таблица пересобирается сразу, без рестарта
+        try:
+            services.reconcile_ssh_access()
+        except Exception as e:                            # noqa: BLE001
+            log.warning("firewall on_change(%s): %s", key, e)
+    settings.on_change("app.firewall", _hook_firewall)
+    settings.on_change("app.network.ssh_port", _hook_firewall)
+
     def _hook_update_check(key, value):
         try:
             trig = _trig_update_check()

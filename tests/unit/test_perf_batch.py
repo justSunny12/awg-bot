@@ -7,7 +7,6 @@ import asyncio
 import pytest
 
 from awgbot.core import access_cache
-from awgbot.infra import awg
 
 
 # ── nav_touch: одна транзакция вместо трёх хопов ─────────────────────────────
@@ -117,47 +116,6 @@ async def test_delete_many_empty_is_noop(fake_bot):
     from awgbot.bot.handlers.common import delete_many
     await delete_many(fake_bot, 1, [])
     assert fake_bot.records == []
-
-
-# ── ssh_reconcile: правила равны структурно, а не строкой ────────────────────
-
-def test_rules_equal_ignores_option_order_but_not_rule_order():
-    cur = ["-A AWG_SSH -s 1.2.3.4/32 -p tcp -m tcp --dport 22 -j ACCEPT",
-           "-A AWG_SSH -p tcp -m tcp --dport 22 -j DROP"]
-    des = ["-A AWG_SSH -p tcp -m tcp -s 1.2.3.4/32 --dport 22 -j ACCEPT",
-           "-A AWG_SSH -p tcp -m tcp --dport 22 -j DROP"]
-    assert awg._rules_equal(cur, des)
-    assert not awg._rules_equal(list(reversed(cur)), des)
-    assert not awg._rules_equal(cur[:1], des)
-
-
-def test_ssh_reconcile_skips_rebuild_when_only_option_order_differs(monkeypatch):
-    """iptables-nft печатает опции в своём порядке — цепочку не пересобираем."""
-    from awgbot.core import config
-    calls = []
-
-    class P:
-        def __init__(self, rc, out=b""):
-            self.returncode, self.stdout = rc, out
-
-    iface, port, chain = config.AWG_INTERFACE, config.SSH_PORT, awg._SSH_CHAIN
-    # реальный вывод `iptables -S`: -p tcp ДО -d и -i, как печатает iptables-nft
-    listed = [f"-A {chain} -s 10.0.0.2/32 -d 10.0.0.1/32 -p tcp -i {iface} -m tcp --dport {port} -j ACCEPT",
-              f"-A {chain} -d 10.0.0.1/32 -p tcp -i {iface} -m tcp --dport {port} -j DROP"]
-
-    def fake_exec(args, check=True, **kw):
-        calls.append(args)
-        if args[:2] == ["iptables", "-S"] and args[2] == chain:
-            return P(0, ("-N " + chain + "\n" + "\n".join(listed) + "\n").encode())
-        if args[:2] == ["iptables", "-S"]:                      # hook-цепочка: джамп первым
-            return P(0, f"-A {args[2]} -j {chain}\n".encode())
-        return P(1)                                              # -C stale → нет
-    monkeypatch.setattr(awg, "_exec", fake_exec)
-    monkeypatch.setattr(awg, "gated_ifaces", lambda: [iface])
-    monkeypatch.setattr(config, "MIGRATION_INTERFACE", "", raising=False)
-    awg.ssh_reconcile(["10.0.0.2"], ["10.0.0.1"])
-    mutating = [a for a in calls if any(f in a for f in ("-F", "-A", "-I", "-N", "-D"))]
-    assert mutating == [], mutating
 
 
 # ── рассылка: параллельно, с окном и пейсингом ──────────────────────────────

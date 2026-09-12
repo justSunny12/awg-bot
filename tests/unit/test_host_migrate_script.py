@@ -110,30 +110,25 @@ def test_foreign_hooks_stop_the_migration(migrate):
     assert 'exit 1' in body, "при чужих хуках apply обязан остановиться"
 
 
-# ── firewall ─────────────────────────────────────────────────────────────────
+# ── firewall: обёртка над единственной точкой ───────────────────────────────
 
-def test_firewall_reads_runtime_from_the_same_yaml(firewall):
-    """Режим решает, что хост видит как источник туннельного трафика.
-
-    Ошибка здесь либо запирает админа снаружи, либо открывает SSH не тем.
-    """
-    assert "runtime:" in firewall
-    assert '"$_runtime" == "host"' in firewall
-
-
-def test_firewall_uses_client_subnet_in_host_mode(firewall):
-    """В host-режиме bridge-адреса между пиром и хостом больше нет.
-
-    Оставь мы поиск docker-сети — она бы не нашлась, вайтлист остался бы без
-    туннельного источника, и SSH через собственный VPN перестал бы работать
-    ровно тогда, когда другого пути может не быть.
-    """
-    host_branch = firewall.split('"$_runtime" == "host"', 1)[1].split("else", 1)[0]
-    assert "subnet_cidr" in host_branch or "subnet_prefix" in host_branch
-    assert "docker inspect" not in host_branch
+def test_firewall_script_delegates_to_the_bot(firewall):
+    """Файервол теперь ведёт бот (nftguard + tools/firewall.py); скрипт лишь
+    запускает мастер. Второго генератора таблицы быть не должно — иначе два
+    владельца одного файла."""
+    assert "tools.firewall" in firewall and "setup" in firewall
+    assert "nft -f" not in firewall and "table $TABLE" not in firewall
+    assert "ufw allow" not in firewall
 
 
-# ── режим показа обязан показывать правду ────────────────────────────────────
+def test_firewall_script_reexecs_under_bash(firewall):
+    assert 'exec bash "$0"' in firewall
+
+
+def test_firewall_script_passes_conf_dirs(firewall):
+    for var in ("AWG_BOT_CONF_DIR", "AWG_BOT_DATA_DIR", "AWG_BOT_ENV"):
+        assert var in firewall
+
 
 def test_hooks_are_read_from_the_container_not_the_host_copy(migrate):
     """В режиме показа копирования ещё не было — файла на хосте нет.
@@ -229,25 +224,3 @@ def test_stale_client_route_is_removed(migrate):
     assert "$AWG_IF" in body
 
 
-# ── firewall: порт клиентов в host-режиме ────────────────────────────────────
-
-def test_firewall_opens_the_client_port_in_host_mode(firewall):
-    """Своя nft-таблица тут бессильна.
-
-    У неё policy accept, а accept в одной таблице не отменяет drop в другой —
-    хуки отрабатывают оба. Запрет живёт в ufw, туда и надо править.
-    """
-    block = firewall.split('"$_runtime" == "host"', 1)[-1]
-    assert "ListenPort" in block, "порт берётся из живого конфига, а не угадывается"
-    assert "ufw allow" in block
-
-
-def test_firewall_warns_when_it_cannot_open_the_port(firewall):
-    """Молчание тут неотличимо от «открыто».
-
-    Без предупреждения человек с другим файрволом узнает о закрытом порте от
-    пользователей, а не от скрипта.
-    """
-    block = firewall.split('"$_runtime" == "host"', 1)[-1]
-    assert "ufw неактивен" in block
-    assert "не удалось прочитать ListenPort" in block

@@ -656,52 +656,12 @@ def is_blocked(ip: str) -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Пер-пирный SSH-доступ к хосту (только для админских пиров) — iptables.
-#
-# В контейнере хост за MASQUERADE видит всех пиров одним bridge-IP и различать их
-# не может; единственное место, где исходный 10.8.1.x ещё настоящий, — FORWARD
-# контейнера (до маскарадинга). На хосте маскарадинга между пиром и sshd нет, но
-# меняется другое: цель становится локальным адресом, а такие пакеты идут в
-# INPUT. Точку врезки поэтому выбирает _ssh_hook_chain, а не константа.
-#
-# Правила держим в отдельной цепочке AWGBOT_SSH: реассертится в тех же точках,
-# что блокировки (старт/тик/рестарт), с дифф-скипом — пересборка только при
-# фактическом изменении набора правил.
+# SSH-к-хосту из туннеля — теперь ЕДИНСТВЕННАЯ точка: nft-таблица awg_bot_guard
+# (awgbot/infra/nftguard.py). Здесь осталось только снятие старых ворот: цепочки
+# iptables AWGBOT_SSH с джампами и PostUp-стража в conf интерфейсов. Оба
+# слоя дублировали то, что таблица держит с загрузки, и мешали разбору отказов.
 # ─────────────────────────────────────────────────────────────────────────────
-_SSH_CHAIN = "AWGBOT_SSH"
-
-
-def _ssh_hook_chain() -> str:
-    """Встроенная цепочка, из которой прыгаем в AWGBOT_SSH.
-
-    Точка врезки определяется НЕ вкусом, а маршрутом пакета. SSH-к-хосту из
-    туннеля — это пакет на адрес самой машины, и netfilter отдаёт такие в INPUT;
-    в FORWARD ходит только транзит. Внутри контейнера цель (шлюз docker-сети) для
-    него чужая, пакет действительно транзитный — там FORWARD и нужен.
-
-    Пока это было захардкожено в FORWARD, на хосте фильтр стоял целиком мимо
-    потока: цепочка собиралась, выглядела правильной, счётчики не двигались
-    никогда. Ни одного признака поломки — просто SSH-гейт, которого нет."""
-    return "FORWARD" if in_container() else "INPUT"
-
-
-def _jump_state(hook: str) -> tuple[bool, bool]:
-    """(джамп в AWGBOT_SSH есть, джамп стоит ПЕРВЫМ) в цепочке hook.
-
-    Позицию проверяем наравне с наличием, и это не педантизм. Джамп вставляется
-    первой строкой намеренно — фильтр обязан отработать раньше любого широкого
-    ACCEPT/DROP, — но всякая чужая вставка в начало (ufw, руками, чужой скрипт)
-    сдвигает его вниз. Пакет тогда снимается выше, до нашей цепочки, а сама она
-    выглядит безупречно: правила на месте, счётчики нулевые. Проверка «есть ли
-    джамп» это состояние принимает за здоровое.
-    """
-    proc = _exec(["iptables", "-S", hook], check=False)
-    if proc.returncode != 0:
-        return False, False
-    lines = [ln.strip() for ln in proc.stdout.decode(errors="replace").splitlines()
-             if ln.startswith(f"-A {hook} ")]
-    want = f"-A {hook} -j {_SSH_CHAIN}"
-    return want in lines, bool(lines) and lines[0] == want
+_LEGACY_SSH_CHAIN = "AWGBOT_SSH"
 
 
 def gated_ifaces() -> list[str]:
@@ -719,264 +679,34 @@ def gated_ifaces() -> list[str]:
     return names
 
 
-def host_ssh_targets() -> list[str]:
-    """Адреса ХОСТА, по которым до него дотягивается трафик из туннеля: шлюзы всех
-    docker-сетей контейнера (bridge-стороны) + внешний egress-IP хоста (на случай
-    hairpin: full-tunnel пир стучит по публичному IP → NAT → тот же хост). Их и
-    гейтим. Хостовые команды (docker/ip) — через _run, не docker exec."""
-    targets: list[str] = []
-
-    def _add(v: str) -> None:
-        v = v.strip()
-        if v and v not in targets and _is_ipv4(v):
-            targets.append(v)
-
-    if in_container():
-        try:
-            out = _run(["docker", "inspect", config.CONTAINER, "-f",
-                        "{{range .NetworkSettings.Networks}}{{.Gateway}}\n{{end}}"]
-                       ).stdout.decode(errors="replace")
-            for line in out.splitlines():
-                _add(line)
-        except AwgError:
-            pass
-    else:
-        # На хосте docker-сетей нет: из туннеля хост виден по адресу самого
-        # awg-интерфейса. Молчаливо пропустить его нельзя — список сузился бы до
-        # одного egress-адреса, и SSH оказался бы открыт с туннельного адреса
-        # хоста без единого признака поломки. Поэтому здесь check=True.
-        #
-        # Интерфейсов может быть два: на время переезда профилей рядом со старым
-        # живёт новый, и админское устройство переезжает ПЕРВЫМ — оно и есть
-        # проверка всей затеи. С адресами одного интерфейса цепочка AWGBOT_SSH
-        # не пустила бы админа ровно после его собственного переезда, то есть в
-        # момент, когда чинить это стало бы неоткуда. Второй интерфейс может
-        # отсутствовать — тогда он просто не даёт адресов.
-        names = gated_ifaces()
-        for i, name in enumerate(names):
-            try:
-                out = _run(["ip", "-4", "-o", "addr", "show", "dev", name]
-                           ).stdout.decode(errors="replace")
-            except AwgError:
-                if i == 0:
-                    raise            # дефолтный обязан быть, его молчание — поломка
-                continue             # интерфейс переезда ещё не поднят — не беда
-            for m in re.finditer(r"\binet\s+([0-9.]+)", out):
-                _add(m.group(1))
-    try:
-        out = _run(["ip", "route", "get", "1.1.1.1"]).stdout.decode(errors="replace")
-        m = re.search(r"\bsrc\s+([0-9.]+)", out)
-        if m:
-            _add(m.group(1))
-    except AwgError:
-        pass
-    return targets
 
 
-def _rules_equal(current: list[str], desired: list[str]) -> bool:
-    """Правила `iptables -S` равны, если у каждой пары совпадает набор токенов."""
-    return [frozenset(r.split()) for r in current] == [frozenset(r.split()) for r in desired]
-
-
-def ssh_reconcile(admin_ips: list[str], targets: list[str]) -> None:
-    """Идемпотентно привести пер-пирный SSH-фильтр (цепочка AWGBOT_SSH) к
-    желаемому виду: для каждого target — ACCEPT с адресов админских устройств на
-    SSH-порт, затем DROP всем остальным. Прочий трафик проходит цепочку насквозь.
-
-    Дифф-скип: желаемый набор правил сравнивается с текущим (`iptables -S`), и
-    если совпадает — ничего не трогаем. Реассерт идёт каждый монитор-тик
-    (3 мин), пересобирать цепочку вслепую — шум из docker exec и лишнее окно
-    «пустой цепочки» между flush и refill.
-
-    Пустой targets → фильтр не накладываем (не смогли определить адреса хоста —
-    безопаснее ничего не трогать, чем повесить неверный DROP).
-
-    Пустой admin_ips → тоже не трогаем, и по той же причине, только цена выше.
-    Желаемое состояние выродилось бы в одни DROP-и: SSH-к-хосту из туннеля
-    закрыт всем, включая того, кто пришёл бы это чинить. Пустым список бывает
-    в переходных состояниях — админ ещё без устройств, БД читается в момент
-    пересоздания, — то есть ровно тогда, когда доступ нужнее всего. Охрана на
-    targets тут стояла с самого начала, а на admin_ips её не было."""
-    if not targets:
-        return
-    if not admin_ips:
-        log.warning("ssh_reconcile: пустой список админских адресов — "
-                    "фильтр не трогаем, иначе закрыли бы SSH всем")
-        return
-    port = str(config.SSH_PORT)
-    # По ПРАВИЛУ НА ИНТЕРФЕЙС. Прежде здесь стоял один config.AWG_INTERFACE, и
-    # цепочка не знала про переезд, хотя список целей его уже учитывал. Пакет с
-    # нового интерфейса не подходил ни под ACCEPT, ни под DROP, проваливался
-    # сквозь цепочку — и упирался в общий фильтр хоста. То есть админ терял SSH
-    # ровно после собственного переезда, а выглядело это как отказ на пустом
-    # месте: цепочка на вид исправна, правила на месте, счётчики нулевые.
-    ifaces = gated_ifaces()
-    valid_ips = []
-    for ip in admin_ips:
-        try:
-            _validate_ip(ip)
-            valid_ips.append(ip)
-        except AwgError:
-            continue
-    valid_targets = [t for t in targets if _is_ipv4(t)]
-
-    # желаемое содержимое цепочки — в нотации `iptables -S` (как её печатает
-    # iptables-nft: -s/-d с /32, протокол и до, и после -d)
-    desired: list[str] = []
-    for iface in ifaces:
-        for tgt in valid_targets:
-            for ip in valid_ips:
-                desired.append(f"-A {_SSH_CHAIN} -s {ip}/32 -d {tgt}/32 -i {iface} "
-                               f"-p tcp -m tcp --dport {port} -j ACCEPT")
-    # DROP-и — ПОСЛЕ всех ACCEPT-ов, а не после своих: иначе глухой DROP первого
-    # интерфейса накрыл бы разрешения второго, и порядок интерфейсов молча решал
-    # бы, кому можно.
-    for iface in ifaces:
-        for tgt in valid_targets:
-            desired.append(f"-A {_SSH_CHAIN} -d {tgt}/32 -i {iface} "
-                           f"-p tcp -m tcp --dport {port} -j DROP")
-
-    # текущее состояние: -S <chain> (код ≠ 0 = цепочки нет)
-    cur_proc = _exec(["iptables", "-S", _SSH_CHAIN], check=False)
-    current = [ln.strip() for ln in
-               cur_proc.stdout.decode(errors="replace").splitlines()
-               if ln.startswith("-A ")] if cur_proc.returncode == 0 else None
-    # Сравниваем СТРУКТУРНО (токены каждого правила как множество, порядок
-    # правил — важен), а не строкой: iptables-nft печатает опции в своём
-    # порядке, и текстовое несовпадение пересобирало бы цепочку каждый тик.
-    if current is not None and _rules_equal(current, desired):
-        current = desired
-
-    hook = _ssh_hook_chain()
-    stale = "FORWARD" if hook == "INPUT" else "INPUT"
-    jump_present, jump_first = _jump_state(hook)
-    stale_jump = _exec(["iptables", "-C", stale, "-j", _SSH_CHAIN],
-                       check=False).returncode == 0
-    if current == desired and jump_first and not stale_jump:
-        return                                       # состояние уже целевое
-
-    # цепочка (может уже существовать — код 1, игнорируем)
-    _exec(["iptables", "-N", _SSH_CHAIN], check=False)
-    # джамп — ПЕРВОЙ строкой hook-цепочки (перед широким ACCEPT подсети). Съехал
-    # вниз от чужой вставки — снимаем и ставим заново: остаться на месте значит
-    # пропускать вперёд правила, которые снимут пакет до нас.
-    if not jump_first:
-        if jump_present:
-            _exec(["iptables", "-D", hook, "-j", _SSH_CHAIN], check=False)
-        _exec(["iptables", "-I", hook, "1", "-j", _SSH_CHAIN])
-    # джамп из ПРЕЖНЕЙ точки врезки убираем: после смены режима он остаётся
-    # висеть и показывает исправно выглядящую цепочку с нулевыми счётчиками —
-    # ровно та картина, которая скрыла эту ошибку в прошлый раз.
-    if stale_jump:
-        _exec(["iptables", "-D", stale, "-j", _SSH_CHAIN], check=False)
-    # пересобрать содержимое: ACCEPT-и админам, затем DROP-и всем
-    _exec(["iptables", "-F", _SSH_CHAIN])
-    for iface in ifaces:
-        for tgt in valid_targets:
-            for ip in valid_ips:
-                _exec(["iptables", "-A", _SSH_CHAIN, "-i", iface, "-s", f"{ip}/32",
-                       "-d", tgt, "-p", "tcp", "--dport", port, "-j", "ACCEPT"])
-    for iface in ifaces:
-        for tgt in valid_targets:
-            _exec(["iptables", "-A", _SSH_CHAIN, "-i", iface,
-                   "-d", tgt, "-p", "tcp", "--dport", port, "-j", "DROP"])
-
-
-# Fail-closed: пер-пирный фильтр держит бот, но между подъёмом awg0 и реассертом
-# бота (до тика/если бот лежит) интерфейс уже принимает пиров, а цепочки ещё
-# нет → широкий ACCEPT пускает всех на :22. Закрываем это на самом awg0:
-# отдельная PostUp-строка ставит ГЛУХОЙ DROP на SSH-к-хосту в момент подъёма
-# интерфейса (до бота). Врезка — в ту же цепочку, что и у бота (_ssh_hook_chain):
-# разойдись они, страж стоял бы не там, где фильтр. ACCEPT'ы админам добавит бот на реассерте — то есть по
-# умолчанию закрыто, открывается только для админских пиров.
-#
-# Почему это безопасно для подъёма интерфейса: awg-quick прерывает bringup, если
-# команда PostUp вернула ненулевой код. Поэтому строка сконструирована так, что
-# ВСЕГДА завершается 0 (все iptables — под `|| true`, финал — `; true`), а нет
-# `ip`/`awk` → GW пустой → DROP просто не ставится, без ошибки. И `apply_config`
-# (awg syncconf через `awg-quick strip`) PostUp вырезает — на правках пиров эта
-# строка не исполняется, только при старте контейнера.
-_SSH_FAILSAFE_MARK = _SSH_CHAIN            # наличие в header = строка уже вставлена
-
-
-def _ssh_failsafe_postup(iface: Optional[str] = None) -> str:
-    i = iface_of(iface)
-    p = str(config.SSH_PORT)
-    hook = _ssh_hook_chain()
-    head = (f'iptables -N {_SSH_CHAIN} 2>/dev/null || true; '
-            f'iptables -C {hook} -j {_SSH_CHAIN} 2>/dev/null || '
-            f'iptables -I {hook} 1 -j {_SSH_CHAIN} 2>/dev/null || true; ')
-    if in_container():
-        # Внутри контейнера дефолтный шлюз — это адрес ХОСТА, каким контейнер
-        # его видит. Он и есть цель, которую надо закрыть.
-        return (
-            'PostUp = GW="$(ip route 2>/dev/null | awk \'/^default/{print $3; exit}\')"; '
-            + head +
-            f'[ -n "$GW" ] && {{ iptables -C {_SSH_CHAIN} -i {i} -d "$GW" -p tcp '
-            f'--dport {p} -j DROP 2>/dev/null || iptables -A {_SSH_CHAIN} -i {i} '
-            f'-d "$GW" -p tcp --dport {p} -j DROP 2>/dev/null; }}; true'
-        )
-    # На хосте дефолтный шлюз — вышестоящий роутер провайдера, а вовсе не мы.
-    # Тот же трюк здесь встал бы, вернул ноль, выглядел на месте — и не закрыл
-    # бы ничего: fail-closed стал бы fail-open без единого признака. Поэтому
-    # цель задаётся не адресом, а признаком: любой ЛОКАЛЬНЫЙ адрес этой машины.
-    # Так покрываются и адрес awg-интерфейса, и egress, и всё, что появится
-    # позже, — угадывать конкретный адрес не нужно.
-    rule = (f'-i {i} -m addrtype --dst-type LOCAL -p tcp --dport {p} -j DROP')
-    return (
-        'PostUp = ' + head +
-        f'iptables -C {_SSH_CHAIN} {rule} 2>/dev/null || '
-        f'iptables -A {_SSH_CHAIN} {rule} 2>/dev/null || true; true'
-    )
-
-
-def ensure_ssh_failsafe() -> bool:
-    """Идемпотентно привести fail-closed PostUp в [Interface] awg0.conf к нужному
-    виду. Сервис НЕ перезапускаем: строка вступит в силу при следующем
-    естественном старте. Если Amnezia перегенерит конфиг и строку сотрёт — бот
-    вернёт её на реассерте. Возвращает True, если что-то изменил.
-
-    Сверяем СОДЕРЖИМОЕ, а не наличие маркера. Раньше проверялось только «есть ли
-    в header слово AWGBOT_SSH», и любая уже стоящая строка считалась годной. Это
-    молча консервировало две вещи: старый ssh_port после его смены в настройках
-    и контейнерную форму правила после переезда на хост, где она встаёт без
-    ошибки и не закрывает ничего. Оба случая выглядели как исправная защита.
-    """
+def remove_legacy_ssh_gate() -> bool:
+    """Снести прежний пер-пирный фильтр: PostUp-строки с AWGBOT_SSH в conf
+    каждого интерфейса и цепочку AWGBOT_SSH с её джампами из INPUT/FORWARD.
+    Идемпотентно; True — что-то действительно снято."""
     changed = False
-    for name in gated_ifaces():
+    for iface in gated_ifaces():
+        path = f"{config.AWG_DIR}/{iface}.conf"
         try:
-            changed |= _ensure_ssh_failsafe_one(name)
-        except AwgError as e:
-            # Интерфейс переезда может быть ещё не поднят, а его conf — не
-            # создан. Дефолтный обязан быть, и его молчание скрывать нельзя.
-            if name == config.AWG_INTERFACE:
-                raise
-            log.debug("ssh failsafe: %s пропущен: %s", name, e)
+            conf = read_file(path)
+        except AwgError:
+            continue                              # интерфейса переезда может не быть
+        kept = [ln for ln in conf.splitlines(keepends=True)
+                if not (ln.lstrip().startswith("PostUp") and _LEGACY_SSH_CHAIN in ln)]
+        if len(kept) != len(conf.splitlines()):
+            with writing():
+                _backup_conf(iface)
+                write_file(path, "".join(kept))
+            changed = True
+    for hook in ("INPUT", "FORWARD"):
+        while _exec(["iptables", "-D", hook, "-j", _LEGACY_SSH_CHAIN],
+                    check=False).returncode == 0:
+            changed = True
+    if _exec(["iptables", "-F", _LEGACY_SSH_CHAIN], check=False).returncode == 0:
+        _exec(["iptables", "-X", _LEGACY_SSH_CHAIN], check=False)
+        changed = True
     return changed
-
-
-def _ensure_ssh_failsafe_one(iface: str) -> bool:
-    """Та же работа для ОДНОГО интерфейса. Их два в окне переезда, и страж
-    нужен на каждом: он закрывает промежуток между подъёмом интерфейса и
-    реассертом бота, а промежуток этот у каждого интерфейса свой."""
-    want = _ssh_failsafe_postup(iface)
-    path = conf_path(iface)
-    with mutation_lock:
-        conf = read_file(path)
-        header, peers = _split_conf(conf)
-        lines = header.splitlines()
-        ours = [n for n, ln in enumerate(lines)
-                if ln.lstrip().startswith("PostUp") and _SSH_FAILSAFE_MARK in ln]
-        if ours and all(lines[n].strip() == want for n in ours) and len(ours) == 1:
-            return False
-        # выкидываем все свои прежние варианты и ставим один актуальный
-        kept = [ln for n, ln in enumerate(lines) if n not in set(ours)]
-        header = "\n".join(kept).rstrip() + "\n" + want
-        new_conf = _build_conf(header, peers)
-        with writing():
-            _backup_conf(iface)
-            write_file(path, new_conf)
-    return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────

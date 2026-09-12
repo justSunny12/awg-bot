@@ -345,7 +345,8 @@ async def main() -> None:
     except Exception as e:                               # noqa: BLE001
         log.warning("reconcile_blocks на старте: %s", e)
     try:
-        await asyncio.to_thread(services.reconcile_ssh_access)  # пер-пирный SSH-к-хосту
+        await asyncio.to_thread(services.reconcile_ssh_access)  # SSH из туннеля: set устройств админа
+        await asyncio.to_thread(services.retire_legacy_ssh_gate)
     except Exception as e:                               # noqa: BLE001
         log.warning("reconcile_ssh_access на старте: %s", e)
     try:
