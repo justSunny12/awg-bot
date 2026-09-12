@@ -137,6 +137,9 @@ AWG_RUNTIME="${AWG_RUNTIME:-docker}"
 # Имя awg-интерфейса нужно, чтобы отличить connected-маршрут от чужого.
 AWG_IF="${AWG_IF:-$(awk -F'"' '/^  interface:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
 AWG_IF="${AWG_IF:-awg0}"
+# Линк до шлюза и интерфейс переезда — чтобы НЕ маскарадить трафик в них (ниже).
+LINK_IF="${LINK_IF:-$(awk -F'"' '/^  gw_interface:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
+MIGRATION_IF="${MIGRATION_IF:-$(awk -F'"' '/^  migration_interface:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
 case "$AWG_RUNTIME" in
     docker|host) ;;
     *) say "ОШИБКА: AWG_RUNTIME=$AWG_RUNTIME (допустимо docker или host)."; exit 1 ;;
@@ -388,6 +391,13 @@ ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
 # файервол шлюза различает пиров по настоящему адресу. ensure_rule вставляет
 # через -I, поэтому исключение встаёт ВЫШЕ MASQUERADE.
 ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "$AWG_IF" -j ACCEPT
+# То же для линка до шлюза: файервол шлюза пускает в домашнюю сеть только
+# устройства админа по настоящему адресу. Исключение ставил скрипт линка, но
+# наш MASQUERADE при реассерте вставал ВЫШЕ него (-I) — потому ставим и здесь,
+# после маскарада. Для условной маршрутизации порядок был безразличен: шлюз
+# маскарадит и подсеть линка.
+[ -n "$LINK_IF" ] && ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "$LINK_IF" -j ACCEPT
+[ -n "$MIGRATION_IF" ] && ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "$MIGRATION_IF" -j ACCEPT
 ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -j ACCEPT
 ensure_rule filter FORWARD -d "$CLIENT_SUBNET" -j ACCEPT
 

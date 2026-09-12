@@ -242,3 +242,13 @@ def test_peer_to_peer_traffic_is_not_masqueraded(script):
     ставит его выше)."""
     assert 'ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "$AWG_IF" -j ACCEPT' in script
     assert script.index('-s "$CLIENT_SUBNET" -j MASQUERADE') < script.index('-o "$AWG_IF" -j ACCEPT')
+
+
+def test_link_and_migration_traffic_is_not_masqueraded_either(script):
+    """Исключение для линка обязано стоять выше нашего MASQUERADE независимо от
+    порядка юнитов: ставим его сами, после маскарада (ensure_rule -I)."""
+    assert "gw_interface:" in script and "migration_interface:" in script
+    for var in ("LINK_IF", "MIGRATION_IF"):
+        line = f'ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "${var}" -j ACCEPT'
+        assert line in script, var
+        assert script.index('-s "$CLIENT_SUBNET" -j MASQUERADE') < script.index(line)
