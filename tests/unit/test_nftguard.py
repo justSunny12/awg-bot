@@ -275,3 +275,13 @@ def test_cli_unknown_command_prints_help(capsys):
     from tools import firewall as fw
     assert fw.main(["bogus"]) == 2
     assert "setup" in capsys.readouterr().out
+
+
+def test_cli_setup_offers_to_install_nftables_when_missing(monkeypatch, capsys):
+    """Чистый хост без nft: мастер предлагает apt, а не падает; отказ — понятный выход."""
+    import shutil
+    from tools import firewall as fw
+    monkeypatch.setattr(shutil, "which", lambda n: "/usr/bin/apt-get" if n == "apt-get" else None)
+    monkeypatch.setattr(fw, "_yes", lambda prompt: False)
+    assert fw.cmd_setup([]) == 1
+    assert "apt install nftables" in capsys.readouterr().out

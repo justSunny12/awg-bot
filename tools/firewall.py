@@ -120,8 +120,27 @@ def cmd_status(_args) -> int:
     return 0
 
 
+def _ensure_nft() -> bool:
+    """На чистом хосте nftables может не быть — предложить поставить, как
+    делал прежний harden_firewall.sh. Без nft мастеру делать нечего."""
+    import shutil
+    if shutil.which("nft"):
+        return True
+    print("nft (пакет nftables) не найден — без него файервол не собрать.")
+    if not shutil.which("apt-get") or not _yes("Установить nftables через apt сейчас?"):
+        print("поставьте вручную: apt install nftables — и повторите setup")
+        return False
+    rc = subprocess.run(["apt-get", "install", "-y", "nftables"]).returncode
+    if rc != 0 or not shutil.which("nft"):
+        print("[ОШИБКА] nftables так и не появился")
+        return False
+    return True
+
+
 def cmd_setup(_args) -> int:
     print("═══ Файервол хоста: единственная точка — таблица awg_bot_guard ═══\n")
+    if not _ensure_nft():
+        return 1
     cur = settings.get("app.firewall.ssh_allow", []) or []
     print("ВАШИ адреса для SSH (IP, CIDR или имя DynDNS; через запятую/пробел).")
     print("Из туннеля SSH открыт устройствам админа всегда — этот список про вход")
