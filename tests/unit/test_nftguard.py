@@ -20,6 +20,7 @@ def host_mode(monkeypatch):
     monkeypatch.setattr(config, "SERVER_PORT", 42755)
     monkeypatch.setattr(config, "SSH_PORT", 2222)
     monkeypatch.setattr(nftguard, "listen_ports", lambda: [42755, 443])
+    monkeypatch.setattr(nftguard, "_tunnel_ifs", lambda: ["awg1"])
     monkeypatch.setattr(nftguard, "_resolve", lambda h: {"home.example.org": ["203.0.113.9"]}.get(h, []))
 
 
@@ -96,7 +97,7 @@ def test_render_whitelist_mode_drops_ssh_before_auth(host_mode, monkeypatch):
     assert "ip saddr @tunnel_nets4 udp dport 53 accept" in lines
     # SSH: устройства админа из туннеля → accept, остальной туннель → drop,
     # вайтлист → accept, все прочие → drop (до TCP-рукопожатия, не до auth)
-    i_adm = lines.index("tcp dport 2222 ip saddr @ssh_tunnel4 accept")
+    i_adm = lines.index("tcp dport 2222 ip saddr @admin4 accept")
     i_tun = lines.index("tcp dport 2222 ip saddr @tunnel_nets4 drop")
     i_wl = lines.index("tcp dport 2222 ip saddr @ssh_allow4 accept")
     i_drop = lines.index("tcp dport 2222 drop")
@@ -105,7 +106,12 @@ def test_render_whitelist_mode_drops_ssh_before_auth(host_mode, monkeypatch):
     assert "elements = { 203.0.113.7/32 }" in lines
     assert "elements = { 10.9.1.5 }" in lines
     assert "type filter hook forward priority filter; policy drop;" in lines
-    assert "ip saddr @tunnel_nets4 accept" in lines and "ip daddr @tunnel_nets4 accept" in lines
+    # пир → пир: устройствам админа можно, остальным клиентам друг до друга нет
+    i_padm = lines.index('iifname { "awg1" } oifname { "awg1" } ip saddr @admin4 accept')
+    i_pdrop = lines.index('iifname { "awg1" } oifname { "awg1" } drop')
+    i_any = lines.index("ip saddr @tunnel_nets4 accept")
+    assert i_padm < i_pdrop < i_any
+    assert "ip daddr @tunnel_nets4 accept" in lines
 
 
 def test_render_open_mode_when_whitelist_is_empty(host_mode, monkeypatch):
@@ -113,7 +119,7 @@ def test_render_open_mode_when_whitelist_is_empty(host_mode, monkeypatch):
     text = nftguard.render(nftguard.build_spec([]))
     assert "tcp dport 2222 accept" in text and "tcp dport 2222 drop\n" not in text
     assert "tcp dport 2222 ip saddr @tunnel_nets4 drop" in text, "туннель без админских устройств закрыт"
-    assert "elements" not in text.split("set ssh_tunnel4")[1].split("}")[0]
+    assert "elements" not in text.split("set admin4")[1].split("}")[0]
 
 
 def test_render_docker_mode_has_no_per_peer_and_no_forward(monkeypatch):
@@ -126,7 +132,7 @@ def test_render_docker_mode_has_no_per_peer_and_no_forward(monkeypatch):
     assert not spec.per_peer and not spec.own_forward and spec.tunnel_admin4 == []
     text = nftguard.render(spec)
     assert "tcp dport 2222 ip saddr @tunnel_nets4 accept" in text
-    assert "hook forward" not in text and "@ssh_tunnel4" not in text
+    assert "hook forward" not in text and "@admin4" not in text and "iifname {" not in text
 
 
 def test_render_is_deterministic_and_has_no_timestamps(host_mode, monkeypatch):
@@ -156,7 +162,7 @@ def _nft_stub(monkeypatch, *, table=True, live=("10.9.1.5",), calls=None):
             if not table:
                 return subprocess.CompletedProcess(args, 1, b"", b"no such table")
             doc = {"nftables": [{"metainfo": {}},
-                                {"set": {"name": "ssh_tunnel4", "elem": list(live)}}]}
+                                {"set": {"name": "admin4", "elem": list(live)}}]}
             return subprocess.CompletedProcess(args, 0, json.dumps(doc).encode(), b"")
         return subprocess.CompletedProcess(args, 0, b"", b"")
     monkeypatch.setattr(nftguard, "_nft", fake)
@@ -171,7 +177,7 @@ def test_reconcile_is_cheap_when_nothing_changed(host_mode, monkeypatch, tmp_pat
     (tmp_path / "g.nft").write_text(nftguard.render(spec), encoding="utf-8")
     calls = _nft_stub(monkeypatch)
     assert nftguard.reconcile(["10.9.1.5"]) == "ok"
-    assert calls == [["-j", "list", "set", "inet", "awg_bot_guard", "ssh_tunnel4"]], \
+    assert calls == [["-j", "list", "set", "inet", "awg_bot_guard", "admin4"]], \
         "один exec на тик: только чтение set"
 
 

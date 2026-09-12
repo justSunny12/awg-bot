@@ -157,21 +157,29 @@ def test_plumbing_is_one_nft_table(script):
 
 def test_gateway_itself_is_closed_to_tunnel_clients(script):
     """Изоляция в FORWARD не защищала саму машину: пакет клиента на адрес шлюза
-    идёт в INPUT. С адресов туннеля на шлюз пускаем только ВПС по линку и
-    вайтлист (устройства админа из бандла), остальное drop."""
+    идёт в INPUT. С адресов туннеля на шлюз пускаем ВПС по линку (SSH) и
+    устройства админа (всё), остальное drop."""
     body = script.split("GUARDEOF", 1)[1]
     assert "ip saddr @tunnel_nets4 jump tunnel_in" in body
     tin = body.split("chain tunnel_in", 1)[1].split("}", 1)[0]
+    assert "ip saddr @admin4 accept" in tin
     assert "ip saddr $LINK_PEER tcp dport $SSH_PORT accept" in tin
-    assert "ip saddr @ssh_allow4 tcp dport $SSH_PORT accept" in tin
     assert tin.strip().endswith("drop")
     assert "policy accept" in body.split("chain input", 1)[1].split("}", 1)[0], "домашняя сеть не запирается"
 
 
-def test_ssh_allow_comes_from_bundle_and_local_env(script):
-    assert 'Environment="SSH_ALLOW=$SSH_ALLOW"' in script
+def test_admin_devices_reach_the_home_lan_others_do_not(script):
+    """Устройствам админа с туннеля открыта домашняя сеть, прочим — изоляция:
+    исключение стоит ВЫШЕ drop по приватным диапазонам."""
+    fwd = script.split("chain forward", 1)[1].split("}", 1)[0]
+    assert fwd.index('ip saddr @admin4 accept') < fwd.index("@private4 drop")
+
+
+def test_admin_ips_come_from_bundle_and_local_env(script):
+    assert 'Environment="ADMIN_IPS=$ADMIN_IPS"' in script
     assert "EnvironmentFile=-$FW_ENV" in script
-    assert "ipv4_list $SSH_ALLOW $SSH_ALLOW_EXTRA" in script
+    assert "ipv4_list $ADMIN_IPS $ADMIN_IPS_EXTRA" in script
+    assert 'ADMIN_IPS="${ADMIN_IPS:-${SSH_ALLOW:-}}"' in script, "бандл прежнего выпуска принимается"
     # чужие символы в файл nft не попадают
     assert '*[!0-9./]*|"") ;;' in script
 

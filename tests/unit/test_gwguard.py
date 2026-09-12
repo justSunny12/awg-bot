@@ -18,13 +18,13 @@ def test_table_info_parses_sets_and_chains(monkeypatch):
         {"metainfo": {}},
         {"set": {"name": "tunnel_nets4", "elem": [{"prefix": {"addr": "10.9.1.0", "len": 24}},
                                                    {"prefix": {"addr": "10.99.99.0", "len": 30}}]}},
-        {"set": {"name": "ssh_allow4", "elem": ["10.9.1.2", {"elem": {"val": "10.9.1.3"}}]}},
+        {"set": {"name": "admin4", "elem": ["10.9.1.2", {"elem": {"val": "10.9.1.3"}}]}},
         {"chain": {"name": "input"}}, {"chain": {"name": "forward"}},
     ]}
     monkeypatch.setattr(gwguard, "_nft", lambda a, timeout=10: _cp(0, json.dumps(doc)))
     info = gwguard.table_info()
     assert info["sets"]["tunnel_nets4"] == {"10.9.1.0/24", "10.99.99.0/30"}
-    assert info["sets"]["ssh_allow4"] == {"10.9.1.2", "10.9.1.3"}
+    assert info["sets"]["admin4"] == {"10.9.1.2", "10.9.1.3"}
     assert info["chains"] == {"input", "forward"}
 
 
@@ -39,22 +39,22 @@ def test_extra_roundtrip_and_validation(tmp_path, monkeypatch):
     gwguard.write_extra(["10.9.1.7", "192.168.68.0/24"])
     assert gwguard.read_extra() == ["10.9.1.7", "192.168.68.0/24"]
     text = (tmp_path / "firewall.env").read_text(encoding="utf-8")
-    assert 'SSH_ALLOW_EXTRA="10.9.1.7 192.168.68.0/24"' in text, "формат sh-переменной для юнита"
+    assert 'ADMIN_IPS_EXTRA="10.9.1.7 192.168.68.0/24"' in text, "формат sh-переменной для юнита"
     import pytest
     with pytest.raises(ValueError):
         gwguard.write_extra(["not-an-ip"])
 
 
-def test_unit_ssh_allow_reads_the_bundle_value(tmp_path, monkeypatch):
+def test_unit_admin_ips_reads_the_bundle_value(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "GW_UNIT", "awg-link-gw.service")
     unit = tmp_path / "awg-link-gw.service"
-    unit.write_text('[Service]\nEnvironment=LINK_IF=awglink\nEnvironment="SSH_ALLOW=10.9.1.2 10.9.1.3"\n',
+    unit.write_text('[Service]\nEnvironment=LINK_IF=awglink\nEnvironment="ADMIN_IPS=10.9.1.2 10.9.1.3"\n',
                     encoding="utf-8")
     import pathlib
     real = pathlib.Path.read_text
     monkeypatch.setattr(pathlib.Path, "read_text",
                         lambda self, *a, **k: real(unit, *a, **k) if str(self).endswith("awg-link-gw.service") else real(self, *a, **k))
-    assert gwguard.unit_ssh_allow() == ["10.9.1.2", "10.9.1.3"]
+    assert gwguard.unit_admin_ips() == ["10.9.1.2", "10.9.1.3"]
 
 
 def test_forward_policy_from_foreign_chain(monkeypatch):

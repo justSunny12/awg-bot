@@ -468,6 +468,21 @@ def ensure_route() -> None:
            "table", str(config.ROUTING_TABLE)])
 
 
+def ensure_home_routes() -> None:
+    """Домашние подсети за шлюзом — в линк, в ОСНОВНОЙ таблице: без маршрута
+    пакет устройства админа на 192.168.x.x ушёл бы в интернет ВПС и умер.
+    Кому туда можно, решает файервол шлюза (устройствам админа), здесь только
+    путь. Убранная из conf подсеть остаётся в ядре до ребута — осознанно."""
+    import ipaddress
+    for net in config.ROUTING_HOME_SUBNETS:
+        try:
+            ipaddress.ip_network(net, strict=False)
+        except ValueError:
+            log.warning("routing.home_subnets: %r не похоже на подсеть — пропущено", net)
+            continue
+        _host(["ip", "route", "replace", net, "dev", config.ROUTING_GW_INTERFACE])
+
+
 # ── Наблюдение за состоянием (только чтение; для диагностики) ────────────────
 
 def rule_present() -> bool:
@@ -571,6 +586,7 @@ def ensure_policy() -> None:
     if not config.ROUTING_GW_INTERFACE:
         return
     ensure_route()
+    ensure_home_routes()
     ensure_mss_clamp()
     if not _rule_present():
         _host(["ip", "rule", "add", *_RULE])

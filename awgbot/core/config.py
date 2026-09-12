@@ -299,6 +299,9 @@ def routing_client_subnets() -> list[tuple[str, str]]:
     if MIGRATION_INTERFACE and MIGRATION_SUBNET_PREFIX:
         pairs.append((f"{MIGRATION_SUBNET_PREFIX}.0/24", MIGRATION_INTERFACE))
     return pairs
+# Домашние подсети за шлюзом: маршрут в линк держит бот (ensure_policy),
+# доступ туда с туннеля решает файервол шлюза — только устройствам админа.
+ROUTING_HOME_SUBNETS: list[str] = [str(n).strip() for n in (_rt.get("home_subnets") or []) if str(n).strip()]
 ROUTING_TABLE = int(_rt.get("table", 100))
 ROUTING_FWMARK = int(_rt.get("fwmark", 1))
 

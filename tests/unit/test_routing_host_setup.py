@@ -233,3 +233,12 @@ def test_unit_points_at_a_permanent_path(script):
     assert 'SELF="$(install_self)"' in script
     assert 'SELF="$(readlink -f "$0")"' not in script
     assert "/usr/local/sbin" in script
+
+
+def test_peer_to_peer_traffic_is_not_masqueraded(script):
+    """Пир → пир в тот же awg-интерфейс без MASQUERADE: иначе устройство админа
+    приходит к шлюзу с адресом сервера, а файервол шлюза различает пиров по
+    настоящему адресу. Исключение вставляется ПОСЛЕ маскарада (ensure_rule -I
+    ставит его выше)."""
+    assert 'ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "$AWG_IF" -j ACCEPT' in script
+    assert script.index('-s "$CLIENT_SUBNET" -j MASQUERADE') < script.index('-o "$AWG_IF" -j ACCEPT')

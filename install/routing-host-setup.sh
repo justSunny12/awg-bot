@@ -383,6 +383,11 @@ fi
 # 4) выход наружу для немаскараженного трафика включённых устройств
 step "4. MASQUERADE и FORWARD для $CLIENT_SUBNET"
 ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
+# Пир → пир (в тот же awg-интерфейс) НЕ маскарадим. Иначе устройство админа
+# приходило бы к шлюзу и к другим пирам с адресом сервера (10.x.x.0), а
+# файервол шлюза различает пиров по настоящему адресу. ensure_rule вставляет
+# через -I, поэтому исключение встаёт ВЫШЕ MASQUERADE.
+ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "$AWG_IF" -j ACCEPT
 ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -j ACCEPT
 ensure_rule filter FORWARD -d "$CLIENT_SUBNET" -j ACCEPT
 

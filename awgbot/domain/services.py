@@ -1978,10 +1978,10 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         import subprocess
         from awgbot.util import bundlecrypt
         script = str(config.BASE_DIR / "install" / "routing-link-setup.sh")
-        # устройства админа → SSH_ALLOW бандла: им открыт SSH на шлюз через
-        # туннель; состав запоминаем, чтобы напомнить о перевыпуске при смене
+        # устройства админа → ADMIN_IPS бандла: им с туннеля открыт шлюз и
+        # домашняя сеть за ним; состав запоминаем, чтобы напомнить о перевыпуске
         admin_ips = self._gw_ssh_allow()
-        env = {**os.environ, "SSH_ALLOW": " ".join(admin_ips)}
+        env = {**os.environ, "ADMIN_IPS": " ".join(admin_ips)}
         proc = subprocess.run(["sh", script, "--bundle"], capture_output=True, timeout=60, env=env)
         if proc.returncode != 0:
             raise ServiceError("сборка бандла не удалась: "
@@ -2017,8 +2017,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         self.db.set_state(self._GW_BUNDLE_SSH_NOTIFIED_KEY, cur)
         return [Notification(config.ADMIN_ID,
                              "🛰 Состав устройств админа изменился, а на шлюз уехал прежний: "
-                             "SSH на шлюз через туннель открыт по старому списку. Перевыпусти "
-                             "конфигурацию шлюза (🛰 Шлюз → Конфигурация шлюза).")]
+                             "доступ к шлюзу и домашней сети через туннель — по старому списку. "
+                             "Перевыпусти конфигурацию шлюза (🛰 Шлюз → Конфигурация шлюза).")]
 
     # Маркер контракта как ОТДЕЛЬНАЯ СТРОКА. Тот же текст встречается в бандле и
     # внутри sed-выражения, которым он вырезает скрипт обвязки; вставка туда

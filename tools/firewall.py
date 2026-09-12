@@ -292,8 +292,8 @@ COMMANDS = {
 
 GW_DOC = """awg-bot firewall (шлюз) — таблица awg_gw_guard ставится бандлом с ВПС.
 
-  status                 таблица, кому открыт SSH через туннель, политика FORWARD
-  allow <ip|cidr> …      добавить адреса SSH через туннель сверх бандла и применить
+  status                 таблица, устройства админа (полный доступ с туннеля), политика FORWARD
+  allow <ip|cidr> …      доверенные адреса сверх бандла (доступ к шлюзу и домашней сети) и применить
   deny  <ip|cidr> …      убрать из локальных добавок и применить
   apply                  перевыставить таблицу (systemctl restart awg-link-gw)
 """
@@ -306,12 +306,12 @@ def gw_status(_args) -> int:
     if info:
         sets = info["sets"]
         print(f"  подсети туннеля  : {', '.join(sorted(sets.get('tunnel_nets4', ()))) or '—'}")
-        print(f"  SSH через туннель: ВПС по линку + {', '.join(sorted(sets.get('ssh_allow4', ()))) or '—'}")
+        print(f"  доступ с туннеля : ВПС по линку (SSH) + полный: {', '.join(sorted(sets.get('admin4', ()))) or '—'}")
         print(f"  диапазоны Telegram: {len(sets.get('tg_nets4', ()))}")
         missing = [c for c in gwguard.CHAINS if c not in info['chains']]
         print(f"  цепочки          : {'все' if not missing else 'нет ' + ', '.join(missing)}")
-    print(f"из бандла (SSH_ALLOW): {', '.join(gwguard.unit_ssh_allow()) or '—'}")
-    print(f"локально (SSH_ALLOW_EXTRA): {', '.join(gwguard.read_extra()) or '—'}")
+    print(f"из бандла (ADMIN_IPS): {', '.join(gwguard.unit_admin_ips()) or '—'}")
+    print(f"локально (ADMIN_IPS_EXTRA): {', '.join(gwguard.read_extra()) or '—'}")
     pol = gwguard.iptables_forward_policy()
     print(f"политика ip filter FORWARD: {pol or 'цепочки нет'}"
           + ("" if pol in (None, "accept") else "  ← drop перекроет транзит клиентов"))

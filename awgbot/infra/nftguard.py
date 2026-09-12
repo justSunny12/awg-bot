@@ -10,7 +10,9 @@ Match Address) плюс ufw рядом, и отказ на любых выгля
   • статика (порт SSH, внешний вайтлист, порты интерфейсов, подсети туннеля,
     политика INPUT/FORWARD) — из conf/app.yaml (`firewall.*`, `network.*`);
   • динамика (адреса устройств админа, которым открыт SSH из туннеля) — set
-    `ssh_tunnel4`, бот правит его по событию и сверяет каждый тик;
+    `admin4`, бот правит его по событию и сверяет каждый тик; им же открыт
+    путь к другим пирам туннеля (шлюз, устройства друг друга) — прочим пирам
+    друг до друга пути нет;
   • всё вместе лежит в /etc/nftables.d/awg-bot-guard.nft, который грузит
     nftables.service ДО подъёма интерфейсов — fail-closed с загрузки, без
     PostUp-строк и без окна «интерфейс поднялся, бот ещё не реассертил».
@@ -56,7 +58,7 @@ ROLLBACK_SECONDS = 180
 SET_ALLOW4 = "ssh_allow4"
 SET_ALLOW6 = "ssh_allow6"
 SET_TUNNEL_NETS = "tunnel_nets4"
-SET_TUNNEL_ADMIN = "ssh_tunnel4"
+SET_TUNNEL_ADMIN = "admin4"
 
 
 class GuardError(RuntimeError):
@@ -73,6 +75,7 @@ class GuardSpec:
     ssh_open: bool = False            # вайтлист пуст → SSH открыт всем (осознанно)
     tunnel_nets4: list[str] = field(default_factory=list)  # подсети туннеля (host) / bridge (docker)
     tunnel_admin4: list[str] = field(default_factory=list) # устройства админа (host)
+    tunnel_ifs: list[str] = field(default_factory=list)    # awg-интерфейсы клиентов (host)
     per_peer: bool = True             # host: SSH из туннеля только устройствам админа
     udp_ports: list[int] = field(default_factory=list)     # порты интерфейсов awg
     open_tcp: list[int] = field(default_factory=list)      # прочие порты хоста
@@ -229,11 +232,21 @@ def build_spec(admin_ips) -> GuardSpec:
         ssh_port=int(settings.get_int("app.network.ssh_port", config.SSH_PORT)),
         ssh_allow4=v4, ssh_allow6=v6, ssh_open=ssh_open,
         tunnel_nets4=tunnel_nets(), tunnel_admin4=admin if host_mode else [],
+        tunnel_ifs=_tunnel_ifs() if host_mode else [],
         per_peer=host_mode, udp_ports=listen_ports(),
         open_tcp=_ports_from_conf(settings.get("app.firewall.open_tcp", [])),
         open_udp=_ports_from_conf(settings.get("app.firewall.open_udp", [])),
         own_forward=host_mode, unresolved=bad,
     )
+
+
+def _tunnel_ifs() -> list[str]:
+    from awgbot.infra.awg import gated_ifaces
+    return [i for i in gated_ifaces() if i]
+
+
+def _ifs(names: list[str]) -> str:
+    return "{ " + ", ".join(f'"{n}"' for n in names) + " }"
 
 
 def _is_v4(a) -> bool:
@@ -316,6 +329,12 @@ def render(spec: GuardSpec) -> str:
             "        ct state established,related accept",
             "        ct state invalid drop",
         ]
+        if spec.tunnel_ifs:
+            # пир → пир: только устройствам админа (шлюз, свои устройства);
+            # остальным клиентам друг до друга пути нет
+            ifs = _ifs(spec.tunnel_ifs)
+            out.append(f"        iifname {ifs} oifname {ifs} ip saddr @{SET_TUNNEL_ADMIN} accept")
+            out.append(f"        iifname {ifs} oifname {ifs} drop")
         if spec.tunnel_nets4:
             out.append(f"        ip saddr @{SET_TUNNEL_NETS} accept")
             out.append(f"        ip daddr @{SET_TUNNEL_NETS} accept")

@@ -18,9 +18,10 @@
 #      сервисы увидят домашний адрес); изоляцию клиентов от домашней сети
 #      (нужны НОВЫЕ соединения из туннеля, а это открывает путь к NAS, роутеру,
 #      торрент-клиенту — закрываем); метки Telegram для самого агента; и защиту
-#      САМОЙ МАШИНЫ от туннеля: на неё с адресов туннеля пускается только ВПС
-#      по линку (SSH, ICMP) и адреса из SSH_ALLOW (устройства админа, приезжают
-#      в бандле) — всё прочее на порты шлюза дропается;
+#      САМОЙ МАШИНЫ от туннеля: с адресов туннеля на неё пускается только ВПС
+#      по линку (SSH, ICMP), всё прочее дропается. Исключение — УСТРОЙСТВА
+#      АДМИНА (ADMIN_IPS, приезжают в бандле): им открыто всё, и машина, и
+#      домашняя сеть через неё;
 #   3) снимает прежнюю обвязку в iptables (AWGLINK_FWD, MASQUERADE, метки);
 #   4) автозапуск: юнит зовёт этот же скрипт, таблица ставится ДО подъёма линка.
 #
@@ -28,9 +29,9 @@
 # маршрутизации и чужие правила iptables (docker и т.п.) — они работают как
 # работали. Политика INPUT для домашней сети остаётся accept.
 #
-# ОКРУЖЕНИЕ (из юнита/бандла): CLIENT_SUBNET, LINK_IF, SSH_ALLOW (адреса, кому
-# открыт SSH на шлюз через туннель), SSH_ALLOW_EXTRA (то же, добавленное на
-# самом шлюзе: /etc/awg-gw/firewall.env), SSH_PORT (22), TG_MARK (0x1).
+# ОКРУЖЕНИЕ (из юнита/бандла): CLIENT_SUBNET, LINK_IF, ADMIN_IPS (устройства
+# админа — полный доступ с туннеля), ADMIN_IPS_EXTRA (добавленное на самом
+# шлюзе: /etc/awg-gw/firewall.env), SSH_PORT (22), TG_MARK (0x1).
 #
 # ЗАПУСК:
 #   sudo sh routing-gw-setup.sh                    # показать план
@@ -50,7 +51,7 @@ UNIT="/etc/systemd/system/awg-link-gw.service"
 SYSCTL_CONF="/etc/sysctl.d/99-awgbot-gw.conf"
 GW_ETC="/etc/awg-gw"
 GUARD_FILE="$GW_ETC/guard.nft"           # таблица — источник для nft -f при каждом старте
-FW_ENV="$GW_ETC/firewall.env"            # SSH_ALLOW_EXTRA, правится на шлюзе (awg-bot firewall)
+FW_ENV="$GW_ETC/firewall.env"            # ADMIN_IPS_EXTRA, правится на шлюзе (awg-bot firewall)
 GUARD_TABLE="inet awg_gw_guard"
 SSH_PORT="${SSH_PORT:-22}"
 TG_MARK="${TG_MARK:-0x1}"
@@ -58,8 +59,11 @@ TG_MARK="${TG_MARK:-0x1}"
 # список знает агент (domain/gateway.py TG_RANGES) и сверяет с таблицей.
 TG_NETS="91.108.4.0/22 91.108.8.0/22 91.108.12.0/22 91.108.16.0/22 91.108.20.0/22 91.108.56.0/22 149.154.160.0/20 185.76.151.0/24"
 PRIVATE_NETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10"
-SSH_ALLOW="${SSH_ALLOW:-}"
-SSH_ALLOW_EXTRA="${SSH_ALLOW_EXTRA:-}"
+# Устройства админа (из бандла с ВПС) — им с туннеля открыто ВСЁ: сама машина и
+# домашняя сеть через неё. Прочим клиентам — изоляция и drop. Старое имя
+# переменной (SSH_ALLOW) принимается для бандлов прежнего выпуска.
+ADMIN_IPS="${ADMIN_IPS:-${SSH_ALLOW:-}}"
+ADMIN_IPS_EXTRA="${ADMIN_IPS_EXTRA:-}"
 [ -f "$FW_ENV" ] && . "$FW_ENV"
 
 # Прежняя обвязка в iptables: снимаем идемпотентно и при --apply (переезд на
@@ -235,7 +239,7 @@ if [ "$MODE" = "plan" ]; then
     say "  1. конфиг → $HOST_CONF_DIR/$LINK_IF.conf, awg-quick up хостовыми утилитами"
     say "  2. таблица nft $GUARD_TABLE: MASQUERADE $CLIENT_SUBNET → $WAN_IF, изоляция"
     say "     клиентов от приватных сетей, метки Telegram, защита шлюза от туннеля"
-    say "     (SSH через туннель: ВПС по линку + SSH_ALLOW=${SSH_ALLOW:-—})"
+    say "     (с туннеля на шлюз: ВПС по линку; полный доступ — ADMIN_IPS=${ADMIN_IPS:-—})"
     say "  3. снятие прежних правил iptables ($FWD_CHAIN, MASQUERADE, метки)"
     say "  4. юнит awg-link-gw.service"
     exit 0
@@ -326,11 +330,12 @@ say "  домашний адрес; с адреса линка ходит зон
 say "  Изоляция: клиентам из туннеля закрыты все приватные сети (NAS, роутер,"
 say "  docker, link-local), остальное — транзит наружу."
 say "  Защита шлюза: с адресов туннеля на саму машину пускаем только ВПС по"
-say "  линку ($LINK_PEER: SSH, ICMP) и SSH с адресов SSH_ALLOW; прочее дропается."
+say "  линку ($LINK_PEER: SSH, ICMP); устройствам админа открыто всё, включая"
+say "  домашнюю сеть; прочее дропается."
 say "  Метки Telegram ($TG_MARK): агенту нужен Telegram через ВПС."
 command -v nft >/dev/null 2>&1 || { say "ОШИБКА: нет nft — apt install nftables"; exit 1; }
-SSH_ELEMS="$(ipv4_list $SSH_ALLOW $SSH_ALLOW_EXTRA)"
-say "  SSH через туннель разрешён: $LINK_PEER${SSH_ELEMS:+, $SSH_ELEMS}"
+ADMIN_ELEMS="$(ipv4_list $ADMIN_IPS $ADMIN_IPS_EXTRA)"
+say "  Устройства админа: ${ADMIN_ELEMS:-— (никому, кроме ВПС по линку)}"
 if [ "$MODE" = "plan" ]; then
     say "  would: записать $GUARD_FILE и применить: nft -f $GUARD_FILE"
 else
@@ -340,8 +345,8 @@ cat <<GUARDEOF
 #!/usr/sbin/nft -f
 # awg-bot (шлюз): обвязка условной маршрутизации и защита машины от туннеля.
 # Генерирует routing-gw-setup.sh при каждом старте юнита awg-link-gw.service —
-# правки руками перезапишутся. SSH через туннель: SSH_ALLOW из бандла с ВПС
-# плюс SSH_ALLOW_EXTRA из $FW_ENV (awg-bot firewall allow/deny).
+# правки руками перезапишутся. Устройства админа (полный доступ с туннеля):
+# ADMIN_IPS из бандла с ВПС плюс ADMIN_IPS_EXTRA из $FW_ENV (awg-bot firewall).
 table $GUARD_TABLE
 delete table $GUARD_TABLE
 table $GUARD_TABLE {
@@ -360,11 +365,11 @@ table $GUARD_TABLE {
         flags interval
         elements = { $(ipv4_list $TG_NETS) }
     }
-    set ssh_allow4 {
+    set admin4 {
         type ipv4_addr
         flags interval
 GUARDEOF
-[ -n "$SSH_ELEMS" ] && printf '        elements = { %s }\n' "$SSH_ELEMS"
+[ -n "$ADMIN_ELEMS" ] && printf '        elements = { %s }\n' "$ADMIN_ELEMS"
 cat <<GUARDEOF
     }
 
@@ -376,14 +381,15 @@ cat <<GUARDEOF
     chain tunnel_in {
         ct state established,related accept
         ip protocol icmp accept
+        ip saddr @admin4 accept
         ip saddr $LINK_PEER tcp dport $SSH_PORT accept
-        ip saddr @ssh_allow4 tcp dport $SSH_PORT accept
         drop
     }
 
     chain forward {
         type filter hook forward priority filter; policy accept;
         oifname "$LINK_IF" ct state established,related accept
+        iifname "$LINK_IF" ip saddr @admin4 accept
         iifname "$LINK_IF" ip daddr @private4 drop
         iifname "$LINK_IF" accept
     }
@@ -431,9 +437,9 @@ RemainAfterExit=yes
 # Подсеть вшита: app.yaml на шлюзе нет, смена подсети = новый бандл с ВПС.
 Environment=CLIENT_SUBNET=$CLIENT_SUBNET
 Environment=LINK_IF=$LINK_IF
-# Кому открыт SSH на шлюз через туннель: устройства админа, из бандла с ВПС.
-# Добавленное на самом шлюзе (awg-bot firewall allow) — в $FW_ENV.
-Environment="SSH_ALLOW=$SSH_ALLOW"
+# Устройства админа (полный доступ с туннеля) — из бандла с ВПС. Добавленное
+# на самом шлюзе (awg-bot firewall allow) — в $FW_ENV.
+Environment="ADMIN_IPS=$ADMIN_IPS"
 EnvironmentFile=-$FW_ENV
 # Зовём этот же скрипт: он идемпотентен, источник истины один.
 ExecStart=$SELF --apply $HOST_CONF_DIR/$LINK_IF.conf

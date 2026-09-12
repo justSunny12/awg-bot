@@ -378,3 +378,17 @@ def test_subdomain_contract_holds_both_ways():
     assert normalize("api.market.yandex.ru") == "api.market.yandex.ru"
     # www — исторический алиас самого сайта, а не отдельный поддомен
     assert normalize("https://www.ozon.ru/product/123") == "ozon.ru"
+
+
+def test_home_subnets_are_routed_into_the_link(monkeypatch):
+    """Домашние подсети за шлюзом — маршрут в линк в основной таблице; мусор в
+    conf пропускается, а не роняет обвязку."""
+    from awgbot.core import config
+    from awgbot.infra import routing
+    calls = []
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
+    monkeypatch.setattr(config, "ROUTING_HOME_SUBNETS", ["192.168.68.0/24", "junk", "10.20.0.0/16"])
+    monkeypatch.setattr(routing, "_host", lambda a, **k: calls.append(a))
+    routing.ensure_home_routes()
+    assert calls == [["ip", "route", "replace", "192.168.68.0/24", "dev", "awglink"],
+                     ["ip", "route", "replace", "10.20.0.0/16", "dev", "awglink"]]

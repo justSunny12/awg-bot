@@ -5,8 +5,9 @@ routing-gw-setup.sh (юнит awg-link-gw.service), и локальные доб
 Генератор таблицы — ОДИН, скрипт: он же реассертит её при загрузке и по
 `systemctl restart awg-link-gw.service`. Агент таблицу не пишет — только
 читает (проверки, панель) и просит перевыставить. Единственное, что живёт на
-самом шлюзе, — SSH_ALLOW_EXTRA в /etc/awg-gw/firewall.env: адреса, добавленные
-командой `awg-bot firewall allow` сверх приехавших в бандле устройств админа.
+самом шлюзе, — ADMIN_IPS_EXTRA в /etc/awg-gw/firewall.env: адреса, добавленные
+командой `awg-bot firewall allow` сверх приехавших в бандле устройств админа
+(им с туннеля открыто всё: сама машина и домашняя сеть за ней).
 """
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ TABLE = f"{TABLE_FAMILY} {TABLE_NAME}"
 GUARD_FILE = "/etc/awg-gw/guard.nft"
 FW_ENV = "/etc/awg-gw/firewall.env"
 CHAINS = ("input", "tunnel_in", "forward", "postrouting", "output")
-SETS = ("tunnel_nets4", "private4", "tg_nets4", "ssh_allow4")
+SETS = ("tunnel_nets4", "private4", "tg_nets4", "admin4")
 
 
 class GwGuardError(RuntimeError):
@@ -91,14 +92,14 @@ def iptables_forward_policy() -> Optional[str]:
     return None
 
 
-# ── локальные добавки: SSH_ALLOW_EXTRA ───────────────────────────────────────
+# ── локальные добавки: ADMIN_IPS_EXTRA ───────────────────────────────────────
 
 def read_extra() -> list[str]:
     try:
         text = Path(FW_ENV).read_text(encoding="utf-8")
     except OSError:
         return []
-    m = re.search(r'^SSH_ALLOW_EXTRA="([^"\n]*)"', text, re.M)
+    m = re.search(r'^ADMIN_IPS_EXTRA="([^"\n]*)"', text, re.M)
     return [t for t in (m.group(1).split() if m else []) if t]
 
 
@@ -107,21 +108,22 @@ def write_extra(entries: list[str]) -> None:
         ipaddress.ip_network(e, strict=False)          # ValueError наружу
     p = Path(FW_ENV)
     p.parent.mkdir(parents=True, exist_ok=True)
-    body = ("# awg-bot (шлюз): SSH через туннель сверх устройств админа из бандла.\n"
-            "# Правится командой awg-bot firewall allow/deny; читает юнит awg-link-gw.\n"
-            f'SSH_ALLOW_EXTRA="{" ".join(entries)}"\n')
+    body = ("# awg-bot (шлюз): доверенные адреса сверх устройств админа из бандла —\n"
+            "# им с туннеля открыт шлюз и домашняя сеть. Правится командой\n"
+            "# awg-bot firewall allow/deny; читает юнит awg-link-gw.\n"
+            f'ADMIN_IPS_EXTRA="{" ".join(entries)}"\n')
     tmp = p.with_suffix(".env.tmp")
     tmp.write_text(body, encoding="utf-8")
     tmp.replace(p)
 
 
-def unit_ssh_allow() -> list[str]:
-    """SSH_ALLOW из юнита — что приехало в бандле (устройства админа)."""
+def unit_admin_ips() -> list[str]:
+    """ADMIN_IPS из юнита — что приехало в бандле (устройства админа)."""
     try:
         text = Path(f"/etc/systemd/system/{config.GW_UNIT}").read_text(encoding="utf-8")
     except OSError:
         return []
-    m = re.search(r'^Environment="?SSH_ALLOW=([^"\n]*)"?', text, re.M)
+    m = re.search(r'^Environment="?ADMIN_IPS=([^"\n]*)"?', text, re.M)
     return [t for t in (m.group(1).split() if m else []) if t]
 
 

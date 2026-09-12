@@ -52,7 +52,7 @@ def bundle(tmp_path_factory) -> str:
         cwd=d, capture_output=True, text=True, errors="replace",
         env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "CONF_DIR": str(confdir),
              "GW_CONF_OUT": str(conf), "GW_BUNDLE_OUT": str(out),
-             "SSH_ALLOW": "10.8.1.2 10.8.1.3; rm -rf /"})   # мусор обязан отсеяться
+             "ADMIN_IPS": "10.8.1.2 10.8.1.3; rm -rf /"})   # мусор обязан отсеяться
     assert r.returncode == 0, r.stderr
     assert out.exists(), r.stdout
     return out.read_text(encoding="utf-8")
@@ -194,8 +194,8 @@ def test_bundle_carries_the_admin_devices_for_ssh(bundle):
     """SSH на шлюз через туннель — устройствам админа: список знает только бот
     ВПС, бандл вшивает его и экспортирует до gw-скрипта; чужие символы из
     окружения в бандл не попадают."""
-    m = re.search(r'^SSH_ALLOW="\$\{SSH_ALLOW:-([^}]*)\}"$', bundle, re.M)
-    assert m, "SSH_ALLOW не вшит"
+    m = re.search(r'^ADMIN_IPS="\$\{ADMIN_IPS:-([^}]*)\}"$', bundle, re.M)
+    assert m, "ADMIN_IPS не вшит"
     assert m.group(1).split() == ["10.8.1.2", "10.8.1.3", "/"], "остались только цифры, точки, слеши"
-    assert "\nexport SSH_ALLOW\n" in bundle
-    assert bundle.index("export SSH_ALLOW") < bundle.index('exec "$DEST/routing-gw-setup.sh"')
+    assert "\nexport ADMIN_IPS\n" in bundle
+    assert bundle.index("export ADMIN_IPS") < bundle.index('exec "$DEST/routing-gw-setup.sh"')
