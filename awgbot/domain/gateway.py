@@ -150,38 +150,41 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         except Exception:                                # noqa: BLE001
             checks.append(GwCheck("ip_forward", None, "не прочитался"))
 
-        wan = self._wan_if()
-        if config.GW_CLIENT_SUBNET and wan:
-            rc = _run(["iptables", "-t", "nat", "-C", "POSTROUTING",
-                       "-s", config.GW_CLIENT_SUBNET, "-o", wan,
-                       "-j", "MASQUERADE"]).returncode
-            checks.append(GwCheck(
-                "MASQUERADE", rc == 0,
-                "" if rc == 0 else
-                f"нет -s {config.GW_CLIENT_SUBNET} -o {wan} — российские сервисы "
-                f"увидят туннельный адрес и не ответят"))
+        # Вся обвязка — одна nft-таблица (gwguard): MASQUERADE, изоляция,
+        # метки Telegram, защита машины от туннеля. Одним `nft -j list table`.
+        from awgbot.infra import gwguard
+        try:
+            info = gwguard.table_info()
+        except gwguard.GwGuardError as e:
+            info = None
+            checks.append(GwCheck("таблица awg_gw_guard", None, str(e)))
         else:
-            checks.append(GwCheck(
-                "MASQUERADE", None,
-                "gateway.client_subnet не задан — проверка выключена"
-                if not config.GW_CLIENT_SUBNET else "нет default-маршрута"))
-
-        proc = _run(["iptables", "-S", "AWGLINK_FWD"])
-        if proc.returncode != 0:
-            checks.append(GwCheck("изоляция LAN", False,
-                                  "цепочки AWGLINK_FWD нет — клиентам открыта домашняя сеть"))
-        else:
-            rules = [l for l in _out(proc).splitlines() if l.startswith("-A ")]
-            drops = [i for i, r in enumerate(rules) if " -j DROP" in r]
-            accepts = [i for i, r in enumerate(rules) if r.endswith("-j ACCEPT")]
-            ok = bool(drops) and bool(accepts) and max(drops) < min(accepts)
-            checks.append(GwCheck("изоляция LAN", ok,
-                                  "" if ok else "DROP-правила не выше ACCEPT — порядок нарушен"))
-            hook = _run(["iptables", "-C", "FORWARD", "-i", config.GW_LINK_IF,
-                         "-j", "AWGLINK_FWD"]).returncode == 0
-            checks.append(GwCheck("хук изоляции", hook,
-                                  "" if hook else "FORWARD не заходит в AWGLINK_FWD"))
-
+            if info is None:
+                checks.append(GwCheck(
+                    "таблица awg_gw_guard", False,
+                    "нет — обвязка старого образца или снята; перевыпусти "
+                    "конфигурацию шлюза с ВПС"))
+        self._guard_info = info
+        if info is not None:
+            nets = info["sets"].get("tunnel_nets4", set())
+            if config.GW_CLIENT_SUBNET:
+                ok = config.GW_CLIENT_SUBNET in nets
+                checks.append(GwCheck(
+                    "MASQUERADE/изоляция", ok,
+                    "" if ok else f"{config.GW_CLIENT_SUBNET} нет в tunnel_nets4 — "
+                    "бандл собран под другую подсеть"))
+            else:
+                checks.append(GwCheck("MASQUERADE/изоляция", None,
+                                      "gateway.client_subnet не задан — проверка выключена"))
+            missing_chains = [c for c in gwguard.CHAINS if c not in info["chains"]]
+            checks.append(GwCheck("цепочки таблицы", not missing_chains,
+                                  "" if not missing_chains else
+                                  "нет: " + ", ".join(missing_chains)))
+            pol = gwguard.iptables_forward_policy()
+            checks.append(GwCheck("политика FORWARD", pol in (None, "accept"),
+                                  "" if pol in (None, "accept") else
+                                  f"ip filter FORWARD: {pol} — drop чужой таблицы "
+                                  "перекрывает транзит клиентов"))
         rc = _run(["systemctl", "is-enabled", config.GW_UNIT]).returncode
         checks.append(GwCheck("юнит реассерта", rc == 0,
                               "" if rc == 0 else
@@ -353,34 +356,43 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                  "91.108.16.0/22", "91.108.20.0/22", "91.108.56.0/22",
                  "149.154.160.0/20", "185.76.151.0/24")
 
-    def tg_mark_missing(self) -> list[str]:
-        """Диапазоны без правила — одним `iptables -t mangle -S OUTPUT` вместо
-        восьми `-C` (и раньше это делалось дважды за тик)."""
-        proc = _run(["iptables", "-t", "mangle", "-S", "OUTPUT"])
-        if proc.returncode != 0:
+    _guard_info: dict | None = None
+    _REASSERT_MIN_INTERVAL = 10 * 60
+    _last_reassert = 0.0
+
+    def tg_mark_missing(self, info: dict | None = None) -> list[str]:
+        """Диапазоны Telegram, которых нет в set tg_nets4 таблицы. Таблица —
+        одно целое: пропали диапазоны — значит пропала (или устарела) вся она."""
+        if info is None:
+            from awgbot.infra import gwguard
+            try:
+                info = gwguard.table_info()
+            except gwguard.GwGuardError:
+                info = None
+        if info is None:
             return list(self.TG_RANGES)
-        present: set[str] = set()
-        for line in _out(proc).splitlines():
-            parts = line.split()
-            if "-d" in parts and "MARK" in parts and "0x1" in " ".join(parts):
-                present.add(parts[parts.index("-d") + 1])
+        present = info["sets"].get("tg_nets4", set())
         return [n for n in self.TG_RANGES if n not in present]
 
     def tg_mark_ensure(self, missing: list[str] | None = None) -> int:
-        """Доставить недостающие правила. missing — уже снятый в status()
-        список; без него снимаем сами. Перед -A всегда -C: разбор -S может
-        ошибиться, дубль правила — нет. Возвращает число поставленных."""
-        n = 0
-        for net in (missing if missing is not None else self.tg_mark_missing()):
-            if _run(["iptables", "-t", "mangle", "-C", "OUTPUT", "-d", net,
-                     "-j", "MARK", "--set-mark", "0x1"]).returncode == 0:
-                continue
-            if _run(["iptables", "-t", "mangle", "-A", "OUTPUT", "-d", net,
-                     "-j", "MARK", "--set-mark", "0x1"]).returncode == 0:
-                n += 1
-        if n:
-            log.warning("gateway: маркировка Telegram доставлена: %d правил", n)
-        return n
+        """Таблицу правит только скрипт: недостающее восстанавливаем рестартом
+        юнита (скрипт идемпотентен, линк без нужды не трогает). Не чаще раза в
+        10 минут — иначе устаревший бандл дёргал бы юнит каждый тик."""
+        if missing is None:
+            missing = self.tg_mark_missing()
+        if not missing:
+            return 0
+        if time.monotonic() - self._last_reassert < self._REASSERT_MIN_INTERVAL:
+            return 0
+        self._last_reassert = time.monotonic()
+        from awgbot.infra import gwguard
+        ok, err = gwguard.reassert()
+        if ok:
+            log.warning("gateway: таблица awg_gw_guard перевыставлена (не хватало %d диапазонов Telegram)",
+                        len(missing))
+            return len(missing)
+        log.warning("gateway: реассерт таблицы не удался: %s", err)
+        return 0
 
     # ── операции с кнопки (этап 2) ───────────────────────────────────────────
 
@@ -608,12 +620,12 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         st = GwStatus()
         st.link_up, st.handshake_age, st.rx, st.tx = self.link_status()
         checks = list(self.plumbing_checks())
-        missing = self.tg_mark_missing()
+        missing = self.tg_mark_missing(self._guard_info)      # без второго nft
         st.tg_missing = list(missing)
         checks.append(GwCheck("маршрут к Telegram", not missing,
                               "" if not missing else
-                              f"нет маркировки для {len(missing)} диапазонов — "
-                              f"мастер восстановления поставит"))
+                              f"нет в таблице {len(missing)} диапазонов — "
+                              f"агент перевыставит таблицу"))
         ok_link = st.link_up and st.handshake_age is not None
         checks.append(GwCheck("линк", ok_link, "" if ok_link else
                               ("интерфейс лежит" if not st.link_up else "хендшейка не было")))

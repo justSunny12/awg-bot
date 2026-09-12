@@ -196,6 +196,8 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                 # ...и готовность переезда: один доклад на смену состояния, как
                 # и всё остальное в этом блоке.
                 rt_src_notes += await asyncio.to_thread(services.migration_ready_alerts)
+                # устройства админа сменились после сборки бандла шлюза → напомнить
+                rt_src_notes += await asyncio.to_thread(services.gw_bundle_drift_notes)
                 if rt_src_notes:
                     await send_notifications(bot, rt_src_notes)
             except Exception as e:                       # noqa: BLE001

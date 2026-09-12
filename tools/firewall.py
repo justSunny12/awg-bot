@@ -285,8 +285,97 @@ COMMANDS = {
 }
 
 
+# ── роль gateway: таблица awg_gw_guard под скриптом обвязки ──────────────────
+# Здесь бот таблицу не пишет: её ставит routing-gw-setup.sh из бандла (юнит
+# awg-link-gw). Локально можно только добавить/убрать адреса SSH через туннель
+# (SSH_ALLOW_EXTRA) и перевыставить таблицу.
+
+GW_DOC = """awg-bot firewall (шлюз) — таблица awg_gw_guard ставится бандлом с ВПС.
+
+  status                 таблица, кому открыт SSH через туннель, политика FORWARD
+  allow <ip|cidr> …      добавить адреса SSH через туннель сверх бандла и применить
+  deny  <ip|cidr> …      убрать из локальных добавок и применить
+  apply                  перевыставить таблицу (systemctl restart awg-link-gw)
+"""
+
+
+def gw_status(_args) -> int:
+    from awgbot.infra import gwguard
+    info = gwguard.table_info()
+    print(f"таблица {gwguard.TABLE}: {'есть' if info else 'НЕТ — обвязка старого образца, перевыпусти конфигурацию шлюза'}")
+    if info:
+        sets = info["sets"]
+        print(f"  подсети туннеля  : {', '.join(sorted(sets.get('tunnel_nets4', ()))) or '—'}")
+        print(f"  SSH через туннель: ВПС по линку + {', '.join(sorted(sets.get('ssh_allow4', ()))) or '—'}")
+        print(f"  диапазоны Telegram: {len(sets.get('tg_nets4', ()))}")
+        missing = [c for c in gwguard.CHAINS if c not in info['chains']]
+        print(f"  цепочки          : {'все' if not missing else 'нет ' + ', '.join(missing)}")
+    print(f"из бандла (SSH_ALLOW): {', '.join(gwguard.unit_ssh_allow()) or '—'}")
+    print(f"локально (SSH_ALLOW_EXTRA): {', '.join(gwguard.read_extra()) or '—'}")
+    pol = gwguard.iptables_forward_policy()
+    print(f"политика ip filter FORWARD: {pol or 'цепочки нет'}"
+          + ("" if pol in (None, "accept") else "  ← drop перекроет транзит клиентов"))
+    rc = subprocess.run(["systemctl", "is-enabled", config.GW_UNIT], capture_output=True).returncode
+    print(f"юнит {config.GW_UNIT}: {'включён' if rc == 0 else 'НЕ включён'}")
+    return 0
+
+
+def _gw_edit(add: list[str], remove: list[str]) -> int:
+    from awgbot.infra import gwguard
+    cur = gwguard.read_extra()
+    for v in add:
+        if v not in cur:
+            cur.append(v)
+    cur = [v for v in cur if v not in remove]
+    try:
+        gwguard.write_extra(cur)
+    except ValueError as e:
+        print(f"[ОШИБКА] {e}"); return 1
+    print(f"локальные добавки: {', '.join(cur) or '—'}")
+    ok, err = gwguard.reassert()
+    print("✓ таблица перевыставлена" if ok else f"[ОШИБКА] реассерт: {err}")
+    return 0 if ok else 1
+
+
+def gw_allow(args) -> int:
+    try:
+        entries = _parse_entries(" ".join(args))
+    except ValueError as e:
+        print(f"[ОШИБКА] {e}"); return 1
+    if not entries or any(not e[0].isdigit() for e in entries):
+        print("укажите IP или CIDR (имена на шлюзе не резолвятся)"); return 1
+    return _gw_edit(entries, [])
+
+
+def gw_deny(args) -> int:
+    try:
+        entries = _parse_entries(" ".join(args))
+    except ValueError as e:
+        print(f"[ОШИБКА] {e}"); return 1
+    return _gw_edit([], entries)
+
+
+def gw_apply(_args) -> int:
+    from awgbot.infra import gwguard
+    ok, err = gwguard.reassert()
+    print("✓ таблица перевыставлена" if ok else f"[ОШИБКА] реассерт: {err}")
+    return 0 if ok else 1
+
+
+GW_COMMANDS = {"status": gw_status, "allow": gw_allow, "deny": gw_deny, "apply": gw_apply}
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if config.ROLE == "gateway":
+        if not argv or argv[0] not in GW_COMMANDS:
+            print(GW_DOC.strip())
+            return 2
+        try:
+            return GW_COMMANDS[argv[0]](argv[1:])
+        except Exception as e:                        # noqa: BLE001
+            print(f"[ОШИБКА] {e}")
+            return 1
     if not argv or argv[0] not in COMMANDS:
         print(__doc__.strip())
         return 2

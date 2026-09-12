@@ -109,6 +109,14 @@ def collect_warnings_gateway(services=None) -> list[str]:
     if not _c.GW_CLIENT_SUBNET:
         warns.append("gateway.client_subnet не задан — проверка MASQUERADE "
                      "выключена (агент не увидит его пропажу)")
+    try:
+        from awgbot.infra import gwguard
+        if gwguard.table_info() is None:
+            warns.append("таблицы awg_gw_guard нет — обвязка старого образца (iptables): "
+                         "шлюз открыт клиентам туннеля; перевыпусти конфигурацию "
+                         "шлюза с ВПС и примени её здесь")
+    except Exception as e:                       # noqa: BLE001
+        log.warning("preflight(gw): таблица: %s", e)
     return warns
 
 

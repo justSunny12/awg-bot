@@ -13,15 +13,24 @@
 #
 # ЧТО ДЕЛАЕТ:
 #   1) кладёт конфиг линка и поднимает интерфейс;
-#   2) MASQUERADE трафика клиентов в eth0 — ради этого всё и затевалось:
-#      российские сервисы увидят домашний адрес;
-#   3) ЗАКРЫВАЕТ клиентам доступ в домашнюю сеть. Обязательный шаг: чтобы фича
-#      заработала, нужно разрешить НОВЫЕ соединения из туннеля, а это открывает
-#      и путь к NAS, роутеру и торрент-клиенту;
-#   4) автозапуск.
+#   2) ставит ОДНУ nft-таблицу inet awg_gw_guard — всю обвязку разом:
+#      MASQUERADE клиентов в eth0 (ради этого всё и затевалось: российские
+#      сервисы увидят домашний адрес); изоляцию клиентов от домашней сети
+#      (нужны НОВЫЕ соединения из туннеля, а это открывает путь к NAS, роутеру,
+#      торрент-клиенту — закрываем); метки Telegram для самого агента; и защиту
+#      САМОЙ МАШИНЫ от туннеля: на неё с адресов туннеля пускается только ВПС
+#      по линку (SSH, ICMP) и адреса из SSH_ALLOW (устройства админа, приезжают
+#      в бандле) — всё прочее на порты шлюза дропается;
+#   3) снимает прежнюю обвязку в iptables (AWGLINK_FWD, MASQUERADE, метки);
+#   4) автозапуск: юнит зовёт этот же скрипт, таблица ставится ДО подъёма линка.
 #
-# ЧЕГО НЕ ДЕЛАЕТ: не трогает существующие интерфейсы и уже настроенную на шлюзе
-# маршрутизацию — они продолжают работать как работали.
+# ЧЕГО НЕ ДЕЛАЕТ: не трогает существующие интерфейсы, домашнюю схему
+# маршрутизации и чужие правила iptables (docker и т.п.) — они работают как
+# работали. Политика INPUT для домашней сети остаётся accept.
+#
+# ОКРУЖЕНИЕ (из юнита/бандла): CLIENT_SUBNET, LINK_IF, SSH_ALLOW (адреса, кому
+# открыт SSH на шлюз через туннель), SSH_ALLOW_EXTRA (то же, добавленное на
+# самом шлюзе: /etc/awg-gw/firewall.env), SSH_PORT (22), TG_MARK (0x1).
 #
 # ЗАПУСК:
 #   sudo sh routing-gw-setup.sh                    # показать план
@@ -36,9 +45,79 @@ LINK_IF="${LINK_IF:-awglink}"
 # юните строкой Environment: на шлюзе нет app.yaml, и после ребута юнит обязан
 # реассертить ту подсеть, с которой бандл собирали, а не хардкод-дефолт.
 CLIENT_SUBNET="${CLIENT_SUBNET:-10.8.1.0/24}"
-FWD_CHAIN="AWGLINK_FWD"
+FWD_CHAIN="AWGLINK_FWD"                  # прежняя цепочка iptables — только снятие
 UNIT="/etc/systemd/system/awg-link-gw.service"
 SYSCTL_CONF="/etc/sysctl.d/99-awgbot-gw.conf"
+GW_ETC="/etc/awg-gw"
+GUARD_FILE="$GW_ETC/guard.nft"           # таблица — источник для nft -f при каждом старте
+FW_ENV="$GW_ETC/firewall.env"            # SSH_ALLOW_EXTRA, правится на шлюзе (awg-bot firewall)
+GUARD_TABLE="inet awg_gw_guard"
+SSH_PORT="${SSH_PORT:-22}"
+TG_MARK="${TG_MARK:-0x1}"
+# Диапазоны Telegram (AS62014/62041/59930/44907) — стабильны годами; тот же
+# список знает агент (domain/gateway.py TG_RANGES) и сверяет с таблицей.
+TG_NETS="91.108.4.0/22 91.108.8.0/22 91.108.12.0/22 91.108.16.0/22 91.108.20.0/22 91.108.56.0/22 149.154.160.0/20 185.76.151.0/24"
+PRIVATE_NETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10"
+SSH_ALLOW="${SSH_ALLOW:-}"
+SSH_ALLOW_EXTRA="${SSH_ALLOW_EXTRA:-}"
+[ -f "$FW_ENV" ] && . "$FW_ENV"
+
+# Прежняя обвязка в iptables: снимаем идемпотентно и при --apply (переезд на
+# таблицу), и при --rollback. Чужих правил (docker, домашняя схема) не касаемся.
+legacy_cleanup() {
+    # в режиме показа циклы «пока правило есть — снимай» не сходятся: -D не
+    # исполняется. Показ — одной строкой.
+    if [ "$MODE" = "plan" ]; then
+        printf '  would: снять прежние правила iptables (%s, MASQUERADE, метки Telegram), если есть\n' "$FWD_CHAIN"
+        return 0
+    fi
+    while iptables -C FORWARD -i "$LINK_IF" -j "$FWD_CHAIN" 2>/dev/null; do
+        run "iptables -D FORWARD -i $LINK_IF -j $FWD_CHAIN"
+    done
+    while iptables -C FORWARD -o "$LINK_IF" -m state --state RELATED,ESTABLISHED \
+          -j ACCEPT 2>/dev/null; do
+        run "iptables -D FORWARD -o $LINK_IF -m state --state RELATED,ESTABLISHED -j ACCEPT"
+    done
+    while iptables -t nat -C POSTROUTING -s "$CLIENT_SUBNET" -o "$WAN_IF" \
+          -j MASQUERADE 2>/dev/null; do
+        run "iptables -t nat -D POSTROUTING -s $CLIENT_SUBNET -o $WAN_IF -j MASQUERADE"
+    done
+    while [ -n "${LINK_CIDR:-}" ] && iptables -t nat -C POSTROUTING -s "$LINK_CIDR" -o "$WAN_IF" \
+          -j MASQUERADE 2>/dev/null; do
+        run "iptables -t nat -D POSTROUTING -s $LINK_CIDR -o $WAN_IF -j MASQUERADE"
+    done
+    if iptables -S "$FWD_CHAIN" >/dev/null 2>&1; then
+        run "iptables -F $FWD_CHAIN && iptables -X $FWD_CHAIN"
+    fi
+    for n in $TG_NETS; do
+        while iptables -t mangle -C OUTPUT -d "$n" -j MARK --set-mark "$TG_MARK" 2>/dev/null; do
+            run "iptables -t mangle -D OUTPUT -d $n -j MARK --set-mark $TG_MARK"
+        done
+    done
+}
+
+# Подсеть линка — У ЯДРА (/30 ⇒ сеть считается из адреса), сосед по /30 — ВПС.
+link_cidr_of() {
+    ip -4 -o addr show dev "$1" 2>/dev/null \
+        | awk '{for(i=1;i<=NF;i++) if($i=="inet"){print $(i+1); exit}}' \
+        | awk -F'[./]' '$5==30{ printf "%d.%d.%d.%d/%d\n", $1, $2, $3, int($4/4)*4, $5 }'
+}
+link_peer_of() {
+    ip -4 -o addr show dev "$1" 2>/dev/null \
+        | awk '{for(i=1;i<=NF;i++) if($i=="inet"){print $(i+1); exit}}' \
+        | awk -F'[./]' '$5==30{ b=int($4/4)*4; p=(($4-b)==1)?b+2:b+1; printf "%d.%d.%d.%d\n", $1, $2, $3, p }'
+}
+
+# Элементы set из строки: только адреса и CIDR IPv4 — чужое в файл nft не
+# попадает (значение приезжает из бандла и env, доверять форме нельзя).
+ipv4_list() {
+    for t in "$@"; do
+        case "$t" in
+            *[!0-9./]*|"") ;;
+            *) printf '%s\n' "$t" ;;
+        esac
+    done | awk '!seen[$0]++' | paste -sd, - | sed 's/,/, /g'
+}
 
 # Контейнер, интерфейс выхода и каталог конфигов ОПРЕДЕЛЯЮТСЯ, а не задаются
 # дефолтом: чужие имена в поставке — источник тихих ошибок «скрипт отработал, но
@@ -128,32 +207,19 @@ say "  локальные сети    : будут ЗАКРЫТЫ для кли�
 # ── откат ────────────────────────────────────────────────────────────────────
 if [ "$MODE" = "rollback" ]; then
     step "Снятие"
+    LINK_CIDR_PRE="$(link_cidr_of "$LINK_IF")"
     run "systemctl disable --now awg-link-gw.service 2>/dev/null || true"
     run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
     if [ -n "$CONTAINER" ]; then
         run "docker exec $CONTAINER awg-quick down $LINK_IF 2>/dev/null || true"
     fi
-    while iptables -C FORWARD -i "$LINK_IF" -j "$FWD_CHAIN" 2>/dev/null; do
-        run "iptables -D FORWARD -i $LINK_IF -j $FWD_CHAIN"
-    done
-    while iptables -C FORWARD -o "$LINK_IF" -m state --state RELATED,ESTABLISHED \
-          -j ACCEPT 2>/dev/null; do
-        run "iptables -D FORWARD -o $LINK_IF -m state --state RELATED,ESTABLISHED -j ACCEPT"
-    done
-    while iptables -t nat -C POSTROUTING -s "$CLIENT_SUBNET" -o "$WAN_IF" \
-          -j MASQUERADE 2>/dev/null; do
-        run "iptables -t nat -D POSTROUTING -s $CLIENT_SUBNET -o $WAN_IF -j MASQUERADE"
-    done
-    LINK_CIDR="$(ip -4 -o addr show dev "$LINK_IF" 2>/dev/null \
-        | awk '{for(i=1;i<=NF;i++) if($i=="inet"){print $(i+1); exit}}')"
-    LINK_CIDR="$(printf '%s' "$LINK_CIDR" | awk -F'[./]' '$5==30{
-        printf "%d.%d.%d.%d/%d\n", $1, $2, $3, int($4/4)*4, $5 }')"
-    while [ -n "$LINK_CIDR" ] && iptables -t nat -C POSTROUTING -s "$LINK_CIDR" -o "$WAN_IF" \
-          -j MASQUERADE 2>/dev/null; do
-        run "iptables -t nat -D POSTROUTING -s $LINK_CIDR -o $WAN_IF -j MASQUERADE"
-    done
-    run "iptables -F $FWD_CHAIN 2>/dev/null || true"
-    run "iptables -X $FWD_CHAIN 2>/dev/null || true"
+    # подсеть линка — пока интерфейс ещё жив (до down он выше уже снят, но
+    # адрес мог остаться в старом iptables-правиле — снимаем по нему)
+    LINK_CIDR="${LINK_CIDR_PRE:-$(link_cidr_of "$LINK_IF")}"
+    legacy_cleanup
+    run "nft delete table $GUARD_TABLE 2>/dev/null || true"
+    run "rm -f $GUARD_FILE $FW_ENV"
+    run "rmdir $GW_ETC 2>/dev/null || true"
     run "rm -f $HOST_CONF_DIR/$LINK_IF.conf $UNIT $SYSCTL_CONF"
     run "systemctl daemon-reload"
     say ""
@@ -167,8 +233,10 @@ if [ "$MODE" = "plan" ]; then
     say ""
     say "Будет сделано:"
     say "  1. конфиг → $HOST_CONF_DIR/$LINK_IF.conf, awg-quick up хостовыми утилитами"
-    say "  2. iptables -t nat -A POSTROUTING -s $CLIENT_SUBNET -o $WAN_IF -j MASQUERADE"
-    say "  3. цепочка $FWD_CHAIN: DROP во все приватные сети, затем ACCEPT"
+    say "  2. таблица nft $GUARD_TABLE: MASQUERADE $CLIENT_SUBNET → $WAN_IF, изоляция"
+    say "     клиентов от приватных сетей, метки Telegram, защита шлюза от туннеля"
+    say "     (SSH через туннель: ВПС по линку + SSH_ALLOW=${SSH_ALLOW:-—})"
+    say "  3. снятие прежних правил iptables ($FWD_CHAIN, MASQUERADE, метки)"
     say "  4. юнит awg-link-gw.service"
     exit 0
 fi
@@ -231,12 +299,10 @@ say "  Интерфейс поднят: $($AWG_BIN show "$LINK_IF" 2>/dev/null |
 
 # Подсеть линка берём У ЯДРА, а не из конфига: конфиг мог быть не применён, а
 # нам нужно то, что реально назначено. /30 ⇒ сеть считается из адреса.
-LINK_CIDR="$(ip -4 -o addr show dev "$LINK_IF" 2>/dev/null \
-    | awk '{for(i=1;i<=NF;i++) if($i=="inet"){print $(i+1); exit}}')"
-LINK_CIDR="$(printf '%s' "$LINK_CIDR" | awk -F'[./]' '$5==30{
-    printf "%d.%d.%d.%d/%d\n", $1, $2, $3, int($4/4)*4, $5 }')"
-[ -n "$LINK_CIDR" ] || { say "ОШИБКА: не удалось определить подсеть $LINK_IF"; exit 1; }
-say "  Подсеть линка: $LINK_CIDR"
+LINK_CIDR="$(link_cidr_of "$LINK_IF")"
+LINK_PEER="$(link_peer_of "$LINK_IF")"
+[ -n "$LINK_CIDR" ] && [ -n "$LINK_PEER" ] || { say "ОШИБКА: не удалось определить подсеть $LINK_IF"; exit 1; }
+say "  Подсеть линка: $LINK_CIDR, ВПС на линке: $LINK_PEER"
 
 # ── 1a. форвардинг в ядре ────────────────────────────────────────────────────
 # Без него правила ниже стоят и не работают: пакет не выйдет из шлюза наружу, а
@@ -253,50 +319,97 @@ fi
 # ребута шлюз выглядит исправным и не пропускает ни пакета.
 run "printf 'net.ipv4.ip_forward = 1\\n' > $SYSCTL_CONF"
 
-# ── 2. MASQUERADE: ради этого всё и затевалось ───────────────────────────────
-step "2. MASQUERADE клиентов в $WAN_IF"
-say "  Трафик приходит из туннеля с адресом клиента (10.8.1.x) — подменяем его"
-say "  домашним, чтобы российские сервисы увидели российский адрес."
-if iptables -t nat -C POSTROUTING -s "$CLIENT_SUBNET" -o "$WAN_IF" -j MASQUERADE 2>/dev/null; then
-    say "  уже есть"
+# ── 2. таблица nft — вся обвязка одним атомарным файлом ──────────────────────
+step "2. Таблица $GUARD_TABLE"
+say "  MASQUERADE $CLIENT_SUBNET и $LINK_CIDR → $WAN_IF: российские сервисы увидят"
+say "  домашний адрес; с адреса линка ходит зонд живости с ВПС."
+say "  Изоляция: клиентам из туннеля закрыты все приватные сети (NAS, роутер,"
+say "  docker, link-local), остальное — транзит наружу."
+say "  Защита шлюза: с адресов туннеля на саму машину пускаем только ВПС по"
+say "  линку ($LINK_PEER: SSH, ICMP) и SSH с адресов SSH_ALLOW; прочее дропается."
+say "  Метки Telegram ($TG_MARK): агенту нужен Telegram через ВПС."
+command -v nft >/dev/null 2>&1 || { say "ОШИБКА: нет nft — apt install nftables"; exit 1; }
+SSH_ELEMS="$(ipv4_list $SSH_ALLOW $SSH_ALLOW_EXTRA)"
+say "  SSH через туннель разрешён: $LINK_PEER${SSH_ELEMS:+, $SSH_ELEMS}"
+if [ "$MODE" = "plan" ]; then
+    say "  would: записать $GUARD_FILE и применить: nft -f $GUARD_FILE"
 else
-    run "iptables -t nat -A POSTROUTING -s $CLIENT_SUBNET -o $WAN_IF -j MASQUERADE"
-fi
-# Линк-подсеть маскарадим ТОЖЕ: с адреса линка ходит зонд живости с ВПС. Без
-# этого его пакеты уходили бы в интернет немаскараженными и не возвращались —
-# бот считал бы исправный шлюз непроходимым и держал режим выключенным.
-if iptables -t nat -C POSTROUTING -s "$LINK_CIDR" -o "$WAN_IF" -j MASQUERADE 2>/dev/null; then
-    say "  уже есть (линк)"
-else
-    run "iptables -t nat -A POSTROUTING -s $LINK_CIDR -o $WAN_IF -j MASQUERADE"
+mkdir -p "$GW_ETC"
+{
+cat <<GUARDEOF
+#!/usr/sbin/nft -f
+# awg-bot (шлюз): обвязка условной маршрутизации и защита машины от туннеля.
+# Генерирует routing-gw-setup.sh при каждом старте юнита awg-link-gw.service —
+# правки руками перезапишутся. SSH через туннель: SSH_ALLOW из бандла с ВПС
+# плюс SSH_ALLOW_EXTRA из $FW_ENV (awg-bot firewall allow/deny).
+table $GUARD_TABLE
+delete table $GUARD_TABLE
+table $GUARD_TABLE {
+    set tunnel_nets4 {
+        type ipv4_addr
+        flags interval
+        elements = { $CLIENT_SUBNET, $LINK_CIDR }
+    }
+    set private4 {
+        type ipv4_addr
+        flags interval
+        elements = { $(ipv4_list $PRIVATE_NETS) }
+    }
+    set tg_nets4 {
+        type ipv4_addr
+        flags interval
+        elements = { $(ipv4_list $TG_NETS) }
+    }
+    set ssh_allow4 {
+        type ipv4_addr
+        flags interval
+GUARDEOF
+[ -n "$SSH_ELEMS" ] && printf '        elements = { %s }\n' "$SSH_ELEMS"
+cat <<GUARDEOF
+    }
+
+    chain input {
+        type filter hook input priority filter; policy accept;
+        iifname "lo" accept
+        ip saddr @tunnel_nets4 jump tunnel_in
+    }
+    chain tunnel_in {
+        ct state established,related accept
+        ip protocol icmp accept
+        ip saddr $LINK_PEER tcp dport $SSH_PORT accept
+        ip saddr @ssh_allow4 tcp dport $SSH_PORT accept
+        drop
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy accept;
+        oifname "$LINK_IF" ct state established,related accept
+        iifname "$LINK_IF" ip daddr @private4 drop
+        iifname "$LINK_IF" accept
+    }
+
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        ip saddr @tunnel_nets4 oifname "$WAN_IF" masquerade
+    }
+
+    chain output {
+        type route hook output priority mangle; policy accept;
+        ip daddr @tg_nets4 meta mark set $TG_MARK
+    }
+}
+GUARDEOF
+} > "$GUARD_FILE.tmp"
+chmod 0644 "$GUARD_FILE.tmp"
+nft -c -f "$GUARD_FILE.tmp" || { say "ОШИБКА: nft отклонил таблицу — $GUARD_FILE.tmp"; exit 1; }
+mv "$GUARD_FILE.tmp" "$GUARD_FILE"
+run "nft -f $GUARD_FILE"
 fi
 
-# ── 3. закрыть домашнюю сеть ─────────────────────────────────────────────────
-step "3. Изоляция клиентов от домашней сети"
-say "  ОБЯЗАТЕЛЬНО. Чтобы фича работала, из туннеля должны проходить НОВЫЕ"
-say "  соединения (сейчас правила пускают только RELATED,ESTABLISHED). Это же"
-say "  открывает путь во все локальные сети шлюза — закрываем."
-say "  Отдельная цепочка, а не вставки в FORWARD: она пересобирается целиком,"
-say "  и порядок DROP-перед-ACCEPT не зависит от того, что уже лежит в FORWARD."
-run "iptables -N $FWD_CHAIN 2>/dev/null || true"
-run "iptables -F $FWD_CHAIN"
-# Перечислены ВСЕ приватные диапазоны, а не конкретная домашняя подсеть: так
-# скрипт не несёт в себе чужую топологию и закрывает заодно докеровские сети и
-# link-local, о которых легко забыть.
-for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10; do
-    run "iptables -A $FWD_CHAIN -d $net -j DROP"
-done
-run "iptables -A $FWD_CHAIN -j ACCEPT"
-if iptables -C FORWARD -i "$LINK_IF" -j "$FWD_CHAIN" 2>/dev/null; then
-    say "  хук уже есть"
-else
-    run "iptables -I FORWARD -i $LINK_IF -j $FWD_CHAIN"
-fi
-if iptables -C FORWARD -o "$LINK_IF" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null; then
-    say "  обратный путь уже разрешён"
-else
-    run "iptables -I FORWARD -o $LINK_IF -m state --state RELATED,ESTABLISHED -j ACCEPT"
-fi
+# ── 3. прежняя обвязка в iptables — снять ────────────────────────────────────
+step "3. Снятие прежних правил iptables"
+say "  Таблица держит то же самое; два владельца одних правил не нужны."
+legacy_cleanup
 
 # ── 4. автозапуск ────────────────────────────────────────────────────────────
 step "4. Автозапуск"
@@ -318,6 +431,10 @@ RemainAfterExit=yes
 # Подсеть вшита: app.yaml на шлюзе нет, смена подсети = новый бандл с ВПС.
 Environment=CLIENT_SUBNET=$CLIENT_SUBNET
 Environment=LINK_IF=$LINK_IF
+# Кому открыт SSH на шлюз через туннель: устройства админа, из бандла с ВПС.
+# Добавленное на самом шлюзе (awg-bot firewall allow) — в $FW_ENV.
+Environment="SSH_ALLOW=$SSH_ALLOW"
+EnvironmentFile=-$FW_ENV
 # Зовём этот же скрипт: он идемпотентен, источник истины один.
 ExecStart=$SELF --apply $HOST_CONF_DIR/$LINK_IF.conf
 Restart=on-failure
@@ -332,7 +449,7 @@ run "systemctl enable awg-link-gw.service"
 step "Проверка"
 say "  awg show $LINK_IF                            # есть ли хендшейк"
 say "  ip -br addr show $LINK_IF"
-say "  iptables -L $FWD_CHAIN -n --line-numbers     # DROP выше ACCEPT?"
+say "  nft list table $GUARD_TABLE                  # вся обвязка одним взглядом"
 say ""
 say "Хендшейка не будет, пока на ВПС не поднят ответный конец."
 say ""

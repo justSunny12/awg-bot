@@ -131,36 +131,99 @@ def test_link_status_reads_freshest_handshake(svc, monkeypatch):
     assert up and 35 <= age <= 60 and rx == 1000 and tx == 2000
 
 
-def test_plumbing_isolation_requires_drop_before_accept(svc, monkeypatch):
-    """DROP-правила изоляции обязаны стоять выше ACCEPT: обратный порядок
-    открывает клиентам домашнюю сеть, оставаясь внешне «настроенной цепочкой»."""
-    def run(argv, timeout=10):
-        if argv[:2] == ["iptables", "-S"]:
-            return _cp(0, "-N AWGLINK_FWD\n-A AWGLINK_FWD -j ACCEPT\n"
-                          "-A AWGLINK_FWD -d 10.0.0.0/8 -j DROP\n")
-        if argv[:2] == ["iptables", "-C"]:
+_ALL_CHAINS = ("input", "tunnel_in", "forward", "postrouting", "output")
+
+
+def _guard_json(sets: dict, chains=None):
+    chains = _ALL_CHAINS if chains is None else chains
+    import json
+    items = [{"metainfo": {}}]
+    for name, elems in sets.items():
+        items.append({"set": {"family": "inet", "name": name, "table": "awg_gw_guard",
+                              "elem": list(elems)}})
+    for c in chains:
+        items.append({"chain": {"family": "inet", "table": "awg_gw_guard", "name": c}})
+    return json.dumps({"nftables": items})
+
+
+def _guard_run(sets, chains=None, fwd_policy="accept"):
+    """_run/subprocess-стаб: таблица awg_gw_guard в JSON, чужой FORWARD с политикой."""
+    import json
+
+    def run(argv, timeout=10, **kw):
+        a = list(argv)
+        if a[:1] == ["nft"]:
+            a = a[1:]
+        if a[:3] == ["-j", "list", "table"]:
+            return _cp(0, _guard_json(sets, chains))
+        if a[:3] == ["-j", "list", "chain"]:
+            return _cp(0, json.dumps({"nftables": [{"chain": {"name": "FORWARD", "policy": fwd_policy}}]}))
+        if a[:2] == ["systemctl", "is-enabled"]:
             return _cp(0)
-        if argv[:2] == ["systemctl", "is-enabled"]:
-            return _cp(0)
-        if argv[:3] == ["ip", "route", "show"]:
+        if a[:3] == ["ip", "route", "show"]:
             return _cp(0, "default via 1.2.3.4 dev eth0\n")
         return _cp(0)
+    return run
 
+
+def test_plumbing_reads_the_guard_table(svc, monkeypatch):
+    """Обвязка — одна nft-таблица; проверки читают её одним `nft -j list table`."""
+    import subprocess as sp
+    monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
+    run = _guard_run({"tunnel_nets4": ["10.9.1.0/24", "10.99.99.0/30"],
+                      "tg_nets4": list(GatewayServices.TG_RANGES)})
     monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
     monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
     checks = {c.name: c for c in svc.plumbing_checks()}
-    assert checks["изоляция LAN"].ok is False
+    assert checks["MASQUERADE/изоляция"].ok is True
+    assert checks["цепочки таблицы"].ok is True
+    assert checks["политика FORWARD"].ok is True
     assert checks["ip_forward"].ok is True
+    assert "таблица awg_gw_guard" not in checks
+    assert svc.tg_mark_missing(svc._guard_info) == []
+
+
+def test_plumbing_flags_foreign_subnet_and_missing_table(svc, monkeypatch):
+    import subprocess as sp
+    monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
+    run = _guard_run({"tunnel_nets4": ["10.8.1.0/24"], "tg_nets4": []}, chains=("input",))
+    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
+    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    checks = {c.name: c for c in svc.plumbing_checks()}
+    assert checks["MASQUERADE/изоляция"].ok is False, "бандл под другую подсеть"
+    assert checks["цепочки таблицы"].ok is False
+    # таблицы нет вовсе
+    monkeypatch.setattr(sp, "run", lambda argv, **kw: _cp(1))
+    checks = {c.name: c for c in svc.plumbing_checks()}
+    assert checks["таблица awg_gw_guard"].ok is False
+    assert svc.tg_mark_missing(None) == list(GatewayServices.TG_RANGES)
 
 
 def test_masquerade_check_disabled_without_subnet_is_unknown_not_ok(svc, monkeypatch):
-    """Без gateway.client_subnet проверка MASQUERADE выключена — и это ⚪
-    «нечем проверить», а не ✅: спутать их значит прозевать пропажу NAT."""
+    """Без gateway.client_subnet проверка выключена — ⚪ «нечем проверить», а не ✅."""
+    import subprocess as sp
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "")
-    monkeypatch.setattr(gw, "_run", lambda a, timeout=10: _cp(0, "default dev eth0\n"))
+    run = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []})
+    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
     monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
     checks = {c.name: c for c in svc.plumbing_checks()}
-    assert checks["MASQUERADE"].ok is None
+    assert checks["MASQUERADE/изоляция"].ok is None
+
+
+def test_docker_drop_policy_on_forward_is_reported(svc, monkeypatch):
+    """accept в нашей таблице не отменяет drop в чужой: docker-овский DROP на
+    FORWARD молча перекрыл бы транзит клиентов."""
+    import subprocess as sp
+    monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
+    run = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []}, fwd_policy="drop")
+    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
+    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    checks = {c.name: c for c in svc.plumbing_checks()}
+    assert checks["политика FORWARD"].ok is False
 
 
 # ── тик монитора ─────────────────────────────────────────────────────────────
@@ -240,24 +303,17 @@ def test_apply_bundle_runs_our_bundle_and_removes_the_file(svc, monkeypatch, tmp
     assert not (tmp_path / "b.sh").exists(), "бандл с приватным ключом остался на диске"
 
 
-def test_tg_mark_ensure_adds_only_missing(svc, monkeypatch):
-    present = {"149.154.160.0/20"}
-    added = []
-
-    def run(argv, timeout=10):
-        if "-S" in argv:                            # одна проба вместо восьми -C
-            return _cp(0, "-P OUTPUT ACCEPT\n" + "".join(
-                f"-A OUTPUT -d {n} -j MARK --set-xmark 0x1/0xffffffff\n" for n in present))
-        if "-C" in argv:
-            return _cp(0) if argv[argv.index("-d") + 1] in present else _cp(1)
-        if "-A" in argv:
-            added.append(argv[argv.index("-d") + 1]); return _cp(0)
-        return _cp(0)
-
-    monkeypatch.setattr(gw, "_run", run)
-    assert svc.tg_mark_missing() == [n for n in svc.TG_RANGES if n not in present]
-    assert svc.tg_mark_ensure() == len(svc.TG_RANGES) - 1
-    assert "149.154.160.0/20" not in added
+def test_tg_mark_ensure_reasserts_the_table_once_per_interval(svc, monkeypatch):
+    """Таблицу правит только скрипт: недостающие диапазоны → рестарт юнита,
+    и не чаще раза в интервал — устаревший бандл не должен дёргать юнит каждый тик."""
+    from awgbot.infra import gwguard
+    calls = []
+    monkeypatch.setattr(gwguard, "reassert", lambda: (calls.append(1), (True, ""))[1])
+    svc._last_reassert = 0.0
+    assert svc.tg_mark_ensure(["149.154.160.0/20"]) == 1
+    assert svc.tg_mark_ensure(["149.154.160.0/20"]) == 0, "второй раз подряд — ждём интервал"
+    assert calls == [1]
+    assert svc.tg_mark_ensure([]) == 0, "нечего чинить — юнит не трогаем"
 
 
 # ── этап 3: самообновление — тот же механизм, что у клиентской роли ──────────

@@ -69,7 +69,8 @@ def test_link_subnet_is_masqueraded_too(script):
     возвращаются — бот считает исправный шлюз непроходимым.
     """
     assert "LINK_CIDR" in script
-    assert '-s $LINK_CIDR -o $WAN_IF -j MASQUERADE' in script
+    assert "elements = { $CLIENT_SUBNET, $LINK_CIDR }" in script
+    assert 'ip saddr @tunnel_nets4 oifname "$WAN_IF" masquerade' in script
 
 
 # ── скрипт не должен умирать молча ───────────────────────────────────────────
@@ -138,3 +139,50 @@ def test_install_self_is_idempotent_and_quiet_in_place(script):
     assert '[ "$_src" != "$_dst" ]' in body, "нет защиты от копирования в себя"
     assert body.count("printf '%s' \"$_dst\"") == 1
     assert ">&2" in body, "сообщение об установке уйдёт в stdout вместе с путём"
+
+
+# ── единственная точка: nft-таблица вместо россыпи iptables ──────────────────
+
+def test_plumbing_is_one_nft_table(script):
+    """MASQUERADE, изоляция, метки Telegram и защита машины — в одной таблице,
+    атомарно (объявить → удалить → создать), с проверкой синтаксиса до записи."""
+    assert "table $GUARD_TABLE\ndelete table $GUARD_TABLE\ntable $GUARD_TABLE {" in script
+    assert "nft -c -f" in script and 'run "nft -f $GUARD_FILE"' in script
+    body = script.split("GUARDEOF", 1)[1]
+    assert 'iifname "$LINK_IF" ip daddr @private4 drop' in body
+    assert 'iifname "$LINK_IF" accept' in body
+    assert body.index("@private4 drop") < body.index('iifname "$LINK_IF" accept'), "DROP выше ACCEPT"
+    assert "ip daddr @tg_nets4 meta mark set $TG_MARK" in body
+
+
+def test_gateway_itself_is_closed_to_tunnel_clients(script):
+    """Изоляция в FORWARD не защищала саму машину: пакет клиента на адрес шлюза
+    идёт в INPUT. С адресов туннеля на шлюз пускаем только ВПС по линку и
+    вайтлист (устройства админа из бандла), остальное drop."""
+    body = script.split("GUARDEOF", 1)[1]
+    assert "ip saddr @tunnel_nets4 jump tunnel_in" in body
+    tin = body.split("chain tunnel_in", 1)[1].split("}", 1)[0]
+    assert "ip saddr $LINK_PEER tcp dport $SSH_PORT accept" in tin
+    assert "ip saddr @ssh_allow4 tcp dport $SSH_PORT accept" in tin
+    assert tin.strip().endswith("drop")
+    assert "policy accept" in body.split("chain input", 1)[1].split("}", 1)[0], "домашняя сеть не запирается"
+
+
+def test_ssh_allow_comes_from_bundle_and_local_env(script):
+    assert 'Environment="SSH_ALLOW=$SSH_ALLOW"' in script
+    assert "EnvironmentFile=-$FW_ENV" in script
+    assert "ipv4_list $SSH_ALLOW $SSH_ALLOW_EXTRA" in script
+    # чужие символы в файл nft не попадают
+    assert '*[!0-9./]*|"") ;;' in script
+
+
+def test_legacy_iptables_is_removed_on_apply_and_rollback(script):
+    apply_part = script.split('step "3. Снятие прежних правил iptables"', 1)[1]
+    assert "legacy_cleanup" in apply_part
+    rb = script.split('step "Снятие"', 1)[1].split("exit 0", 1)[0]
+    assert "legacy_cleanup" in rb and "nft delete table $GUARD_TABLE" in rb
+    cleanup = script.split("legacy_cleanup() {", 1)[1].split("\n}\n", 1)[0]
+    for frag in ("-D FORWARD -i $LINK_IF -j $FWD_CHAIN", "-t nat -D POSTROUTING -s $CLIENT_SUBNET",
+                 "iptables -X $FWD_CHAIN", "-t mangle -D OUTPUT -d $n -j MARK"):
+        assert frag in cleanup, frag
+    assert 'if [ "$MODE" = "plan" ]' in cleanup, "в режиме показа циклы -C/-D не сходятся"

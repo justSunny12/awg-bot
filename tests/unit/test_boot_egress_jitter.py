@@ -35,7 +35,7 @@ def test_egress_check_in_snapshot(db, monkeypatch):
     from awgbot.domain import gateway as gw
     monkeypatch.setattr(svc, "link_status", lambda: (True, 5.0, 0, 0))
     monkeypatch.setattr(svc, "plumbing_checks", lambda: [])
-    monkeypatch.setattr(svc, "tg_mark_missing", lambda: [])
+    monkeypatch.setattr(svc, "tg_mark_missing", lambda info=None: [])
     monkeypatch.setattr(svc, "versions", lambda: ("v", "s"))
     monkeypatch.setattr(svc, "kernel_coverage", lambda: ([], 1))
     monkeypatch.setattr(svc, "egress_probe", lambda: 42.0)

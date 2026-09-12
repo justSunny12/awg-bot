@@ -19,6 +19,7 @@ import re
 import datetime
 import hashlib
 import logging
+import os
 import time
 import secrets
 import string
@@ -1977,7 +1978,11 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         import subprocess
         from awgbot.util import bundlecrypt
         script = str(config.BASE_DIR / "install" / "routing-link-setup.sh")
-        proc = subprocess.run(["sh", script, "--bundle"], capture_output=True, timeout=60)
+        # устройства админа → SSH_ALLOW бандла: им открыт SSH на шлюз через
+        # туннель; состав запоминаем, чтобы напомнить о перевыпуске при смене
+        admin_ips = self._gw_ssh_allow()
+        env = {**os.environ, "SSH_ALLOW": " ".join(admin_ips)}
+        proc = subprocess.run(["sh", script, "--bundle"], capture_output=True, timeout=60, env=env)
         if proc.returncode != 0:
             raise ServiceError("сборка бандла не удалась: "
                                + proc.stderr.decode(errors="replace").strip()[-200:])
@@ -1987,7 +1992,33 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         with open("/root/awg-gw-bundle.sh", "rb") as f:
             plain = f.read()
         plain = self._bundle_with_mail(plain)
+        self.db.set_state(self._GW_BUNDLE_SSH_KEY, " ".join(admin_ips))
+        self.db.set_state(self._GW_BUNDLE_SSH_NOTIFIED_KEY, "")
         return bundlecrypt.encrypt(plain, priv), "awg-gw-bundle.enc"
+
+    _GW_BUNDLE_SSH_KEY = "gw_bundle_ssh_allow"
+    _GW_BUNDLE_SSH_NOTIFIED_KEY = "gw_bundle_ssh_allow_notified"
+
+    def _gw_ssh_allow(self) -> list[str]:
+        return sorted(set(self.db.admin_device_addresses(config.ADMIN_ID)))
+
+    def gw_bundle_drift_notes(self) -> list[Notification]:
+        """Состав устройств админа разошёлся с тем, что уехало в бандл шлюза:
+        напомнить один раз на каждое новое расхождение. Пока бандл не собирали
+        — молчим: напоминать не о чем."""
+        if not config.ROUTING_ENABLED:
+            return []
+        sent = self.db.get_state(self._GW_BUNDLE_SSH_KEY)
+        if sent is None:
+            return []
+        cur = " ".join(self._gw_ssh_allow())
+        if cur == sent or self.db.get_state(self._GW_BUNDLE_SSH_NOTIFIED_KEY) == cur:
+            return []
+        self.db.set_state(self._GW_BUNDLE_SSH_NOTIFIED_KEY, cur)
+        return [Notification(config.ADMIN_ID,
+                             "🛰 Состав устройств админа изменился, а на шлюз уехал прежний: "
+                             "SSH на шлюз через туннель открыт по старому списку. Перевыпусти "
+                             "конфигурацию шлюза (🛰 Шлюз → Конфигурация шлюза).")]
 
     # Маркер контракта как ОТДЕЛЬНАЯ СТРОКА. Тот же текст встречается в бандле и
     # внутри sed-выражения, которым он вырезает скрипт обвязки; вставка туда

@@ -51,7 +51,8 @@ def bundle(tmp_path_factory) -> str:
         ["sh", str(inst / "routing-link-setup.sh"), "--bundle"],
         cwd=d, capture_output=True, text=True, errors="replace",
         env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "CONF_DIR": str(confdir),
-             "GW_CONF_OUT": str(conf), "GW_BUNDLE_OUT": str(out)})
+             "GW_CONF_OUT": str(conf), "GW_BUNDLE_OUT": str(out),
+             "SSH_ALLOW": "10.8.1.2 10.8.1.3; rm -rf /"})   # мусор обязан отсеяться
     assert r.returncode == 0, r.stderr
     assert out.exists(), r.stdout
     return out.read_text(encoding="utf-8")
@@ -187,3 +188,14 @@ def test_mail_line_lands_before_the_marker_line_not_inside_sed(bundle, services,
                                capture_output=True, text=True).stdout
     assert extracted.strip() and "MAIL_B64" not in extracted, "скрипт обвязки извлекается целиком и без наших строк"
     assert '[ -s "$DEST/routing-gw-setup.sh" ]' in text, "бандл обязан отказать на пустом скрипте"
+
+
+def test_bundle_carries_the_admin_devices_for_ssh(bundle):
+    """SSH на шлюз через туннель — устройствам админа: список знает только бот
+    ВПС, бандл вшивает его и экспортирует до gw-скрипта; чужие символы из
+    окружения в бандл не попадают."""
+    m = re.search(r'^SSH_ALLOW="\$\{SSH_ALLOW:-([^}]*)\}"$', bundle, re.M)
+    assert m, "SSH_ALLOW не вшит"
+    assert m.group(1).split() == ["10.8.1.2", "10.8.1.3", "/"], "остались только цифры, точки, слеши"
+    assert "\nexport SSH_ALLOW\n" in bundle
+    assert bundle.index("export SSH_ALLOW") < bundle.index('exec "$DEST/routing-gw-setup.sh"')
