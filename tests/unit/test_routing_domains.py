@@ -387,8 +387,8 @@ def test_home_subnets_are_routed_into_the_link(monkeypatch):
     from awgbot.infra import routing
     calls = []
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
-    monkeypatch.setattr(config, "ROUTING_HOME_SUBNETS", ["192.168.68.0/24", "junk", "10.20.0.0/16"])
+    monkeypatch.setattr(config, "ROUTING_HOME_SUBNETS", ["192.168.1.0/24", "junk", "10.20.0.0/16"])
     monkeypatch.setattr(routing, "_host", lambda a, **k: calls.append(a))
     routing.ensure_home_routes()
-    assert calls == [["ip", "route", "replace", "192.168.68.0/24", "dev", "awglink"],
+    assert calls == [["ip", "route", "replace", "192.168.1.0/24", "dev", "awglink"],
                      ["ip", "route", "replace", "10.20.0.0/16", "dev", "awglink"]]

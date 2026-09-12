@@ -36,10 +36,10 @@ def test_table_info_none_when_absent(monkeypatch):
 def test_extra_roundtrip_and_validation(tmp_path, monkeypatch):
     monkeypatch.setattr(gwguard, "FW_ENV", str(tmp_path / "firewall.env"))
     assert gwguard.read_extra() == []
-    gwguard.write_extra(["10.9.1.7", "192.168.68.0/24"])
-    assert gwguard.read_extra() == ["10.9.1.7", "192.168.68.0/24"]
+    gwguard.write_extra(["10.9.1.7", "192.168.1.0/24"])
+    assert gwguard.read_extra() == ["10.9.1.7", "192.168.1.0/24"]
     text = (tmp_path / "firewall.env").read_text(encoding="utf-8")
-    assert 'ADMIN_IPS_EXTRA="10.9.1.7 192.168.68.0/24"' in text, "формат sh-переменной для юнита"
+    assert 'ADMIN_IPS_EXTRA="10.9.1.7 192.168.1.0/24"' in text, "формат sh-переменной для юнита"
     import pytest
     with pytest.raises(ValueError):
         gwguard.write_extra(["not-an-ip"])
