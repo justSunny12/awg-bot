@@ -2360,16 +2360,26 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         # немаскараженным, иначе на хосте их не отличить от остальных
         routing.sync_nat_exempt([a for lst in addrs.values() for a in lst])
 
+        # ДИФФ ПЕРЕД ЗАПИСЬЮ. Реконсиляция идёт каждый тик монитора, и раньше
+        # она каждый раз пересобирала все наборы (6 exec на профиль) и цепочку
+        # (флаш + правило на профиль) — ~24 000 exec в сутки ради состояния,
+        # которое меняется нажатием тумблера. Один `ipset save` даёт состав
+        # всех наборов; пишем только те, что разошлись. Не удалось прочитать —
+        # пересобираем всё, как прежде.
+        live = routing.snapshot_sets()
         for cid in known_ids:
             # src-набор наш — перезаписываем целиком (у выключенного профиля он
             # станет пустым, и это ровно то, что нужно); набор назначений только
             # СОЗДАЁМ: наполняет его dnsmasq по мере резолва доменов, и любая
             # запись с нашей стороны стёрла бы накопленное
-            routing.replace_members(routing.src_set(cid), "hash:ip", addrs.get(cid, ()))
-            routing.ensure_set(routing.user_set(cid), "hash:net")
+            src = routing.src_set(cid)
+            routing.replace_members(src, "hash:ip", addrs.get(cid, ()),
+                                    current=None if live is None else live.get(src))
+            usr = routing.user_set(cid)
+            routing.ensure_set(usr, "hash:net", exists=live is not None and usr in live)
 
         routing.rebuild_chain(active_ids)
-        self._routing_drop_orphan_sets(known_ids)
+        self._routing_drop_orphan_sets(known_ids, names=None if live is None else list(live))
         routing.write_dnsmasq_conf(domain_routing.build_dnsmasq_conf(
             base_domains=base_domains,
             domains_by_client=domains,
@@ -2377,7 +2387,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             set_user_prefix=config.ROUTING_SET_USER_PREFIX,
         ))
 
-    def _routing_drop_orphan_sets(self, live_ids) -> None:
+    def _routing_drop_orphan_sets(self, live_ids, names=None) -> None:
         """Снести наборы удалённых клиентов.
 
         Осиротевший набор сам по себе безвреден (правила на него уже нет), но
@@ -2387,7 +2397,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         """
         live = {int(c) for c in live_ids}
         prefixes = (config.ROUTING_SET_USER_PREFIX, config.ROUTING_SET_SRC_PREFIX)
-        for name in routing.list_sets():
+        for name in (routing.list_sets() if names is None else names):
             for pref in prefixes:
                 if not name.startswith(pref) or name.endswith("_tmp"):
                     continue
@@ -2739,7 +2749,12 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         # обязано меняться только на пересечении порогов, а не выводиться из
         # текущей серии.
         was_on = self.db.get_state(self._RT_LINK_KEY) == "1"
-        if not engaged:
+        # Стрики с потолком на пороге (сравнения только «>= порога» / «< порога»)
+        # и одной транзакцией: в установившемся состоянии тик каждые 30 с не
+        # пишет на диск вовсе — раньше это было 3 коммита × 2880 в сутки.
+        down_cap = max(self._RT_DOWN_STREAK, self._RT_ANNOUNCE_AFTER)
+        with self.db.transaction():
+          if not engaged:
             # РЕШЕНИЕ, а не измерение. Гистерезис сглаживает дребезг сети, но
             # выключение фичи админом — не дребезг, и ждать три такта тут значит
             # не выполнить прямое указание. Раньше разницы не было: «выключено»
@@ -2748,17 +2763,17 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             self.db.set_state(self._RT_STREAK_KEY, "0")
             down = 0
             ok = False
-        elif verdict == routing.PROBE_OK:
-            good = int(self.db.get_state(self._RT_STREAK_KEY) or 0) + 1
+          elif verdict == routing.PROBE_OK:
+            good = min(int(self.db.get_state(self._RT_STREAK_KEY) or 0) + 1, self._RT_UP_STREAK)
             self.db.set_state(self._RT_STREAK_KEY, str(good))
             down = 0
             ok = True if was_on else good >= self._RT_UP_STREAK
-        else:
+          else:
             self.db.set_state(self._RT_STREAK_KEY, "0")
-            down = int(self.db.get_state(self._RT_DOWN_KEY) or 0) + 1
+            down = min(int(self.db.get_state(self._RT_DOWN_KEY) or 0) + 1, down_cap)
             # держим маркировку, пока порог гашения не набран
             ok = was_on and down < self._RT_DOWN_STREAK
-        self.db.set_state(self._RT_DOWN_KEY, str(down))
+          self.db.set_state(self._RT_DOWN_KEY, str(down))
 
         try:
             # ПОД ЗАМКОМ: реконсиляция под ним же пересобирает ту цепочку, чей
@@ -2898,7 +2913,12 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             "disk": (settings.get_int("resource_alerts.thresholds_percent.disk", 80), "Диск", "💽"),
         }
         notes: list[Notification] = []
-        for key, (threshold, label, icon) in thresholds.items():
+        # Одна транзакция на тик и счётчики с ПОТОЛКОМ: стрик выше порога
+        # ничего не решает (сравнения только «>= порога»), а без потолка
+        # счётчик нормы рос бы вечно и каждый тик был бы записью на диск.
+        # В спокойном состоянии (норма, стрик набран) тик не пишет ничего.
+        with self.db.transaction():
+          for key, (threshold, label, icon) in thresholds.items():
             value = metrics.get(key)
             if value is None:
                 continue                       # нет данных — счётчики не трогаем
@@ -2909,7 +2929,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             lo = int(self.db.get_state(lo_key) or 0)
             armed = self.db.get_state(armed_key) == "1"
             if value >= threshold:
-                hi, lo = hi + 1, 0
+                hi, lo = min(hi + 1, streak_n), 0
                 if hi >= streak_n and not armed:
                     self.db.set_state(armed_key, "1")
                     notes.append(Notification(
@@ -2918,7 +2938,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
                         f"(порог {threshold}%, держится ≥{streak_n} замеров).",
                         critical=True))
             else:
-                lo, hi = lo + 1, 0
+                lo, hi = min(lo + 1, streak_n), 0
                 if lo >= streak_n and armed:
                     self.db.set_state(armed_key, "0")
                     notes.append(Notification(

@@ -150,7 +150,7 @@ def fake_routing(monkeypatch, tmp_path):
         dns={},                       # домен → IPv4, что «вернёт» резолвер
     )
 
-    def replace_members(name, kind, members):
+    def replace_members(name, kind, members, current=None):
         state.sets[name] = list(members)
 
     def add_networks(name, members):
@@ -161,7 +161,7 @@ def fake_routing(monkeypatch, tmp_path):
         have.extend(new)
         return len(new)
 
-    def ensure_set(name, kind):
+    def ensure_set(name, kind, exists=False):
         # создать, не трогая содержимое — так бот обращается с доменными
         # наборами, которые наполняет не он
         state.sets.setdefault(name, [])
@@ -204,6 +204,7 @@ def fake_routing(monkeypatch, tmp_path):
     _set("fetch", lambda url, timeout=15: (None, "заглушка: источник не настроен", 0))
     _set("destroy_set", lambda name: state.sets.pop(name, None))
     _set("list_sets", lambda: sorted(state.sets))
+    _set("snapshot_sets", lambda: {k: set(v) for k, v in state.sets.items()})
     # Сигнатура ровно как у настоящей: был период двух моделей, и заглушка
     # принимала лишний mark_in_set. Лишний параметр в двойнике опаснее, чем
     # кажется, — он делает зелёным вызов, который в бою упал бы на TypeError.

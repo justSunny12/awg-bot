@@ -257,14 +257,16 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         lo = int(self.db.get_state(f"gwst_lo_{key}") or 0)
         armed = self.db.get_state(f"gwst_armed_{key}") == "1"
         notes: list[Notification] = []
+        # Потолок на пороге: выше него счётчик ничего не решает, а без потолка
+        # каждый спокойный тик был бы записью на SD-карту.
         if bad:
-            hi, lo = hi + 1, 0
+            hi, lo = min(hi + 1, streak), 0
             if hi >= streak and not armed:
                 self.db.set_state(f"gwst_armed_{key}", "1")
                 notes.append(Notification(config.ADMIN_ID, on_text, force_sound=loud,
                                           critical=critical))
         else:
-            lo, hi = lo + 1, 0
+            lo, hi = min(lo + 1, streak), 0
             if lo >= streak and armed:
                 self.db.set_state(f"gwst_armed_{key}", "0")
                 notes.append(Notification(config.ADMIN_ID, off_text))
@@ -285,6 +287,21 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         notes: list[Notification] = []
         streak = settings.get_int("app.monitoring.alert_streak", 5)
 
+        # все стрики тика — одной транзакцией: было до 20 коммитов за тик на
+        # флеш малины, в спокойном состоянии теперь ноль (set_state не пишет
+        # неизменившееся, счётчики упираются в потолок)
+        with self.db.transaction():
+          notes += self._tick_alerts(st, streak)
+
+        try:
+            self.tg_mark_ensure(st.tg_missing)          # без повторной пробы
+        except Exception as e:                          # noqa: BLE001
+            log.warning("gateway: tg_mark_ensure: %s", e)
+
+        return [n for n in notes if n.text]
+
+    def _tick_alerts(self, st: GwStatus, streak: int) -> list[Notification]:
+        notes: list[Notification] = []
         hs_bad = not self.link_ok(st)
         notes += self._streak_alert(
             "link", hs_bad, settings.get_int("app.gateway.link_alert_streak", 2),
@@ -337,12 +354,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                     f"📈 {label} шлюза: {val:.0f}{unit} — выше порога." if val is not None else "",
                     f"✅ {label} шлюза снова в норме.")
 
-        try:
-            self.tg_mark_ensure(st.tg_missing)          # без повторной пробы
-        except Exception as e:                          # noqa: BLE001
-            log.warning("gateway: tg_mark_ensure: %s", e)
-
-        return [n for n in notes if n.text]
+        return notes
 
     # ── путь к Telegram: маркировка диапазонов (этап 2) ──────────────────────
 

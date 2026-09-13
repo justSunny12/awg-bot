@@ -334,25 +334,77 @@ def sync_nat_exempt(addresses) -> None:
     if not awg.in_container():
         return
     chain = config.ROUTING_NAT_CHAIN
-    _cont(["iptables", "-t", "nat", "-N", chain], check=False)   # есть → код 1
-    _cont(["iptables", "-t", "nat", "-F", chain])
+    want = set()
     for addr in addresses:
         awg._validate_ip(addr)
-        _cont(["iptables", "-t", "nat", "-A", chain,
-               "-s", f"{addr}/32", "-j", "ACCEPT"])
+        want.add(addr)
+    # дифф перед записью: один `-S` вместо флаша и правила на устройство
+    have = nat_exempt_addresses()
+    if have != want:
+        _cont(["iptables", "-t", "nat", "-N", chain], check=False)   # есть → код 1
+        _cont(["iptables", "-t", "nat", "-F", chain])
+        for addr in sorted(want):
+            _cont(["iptables", "-t", "nat", "-A", chain,
+                   "-s", f"{addr}/32", "-j", "ACCEPT"])
     if not _cont_ok(["iptables", "-t", "nat", "-C", "POSTROUTING", "-j", chain]):
         _cont(["iptables", "-t", "nat", "-I", "POSTROUTING", "1", "-j", chain])
 
 
-def ensure_set(name: str, kind: str) -> None:
+def parse_nat_exempt(text: str, chain: str) -> Optional[set[str]]:
+    """Адреса из `iptables -t nat -S <chain>`; None — цепочки нет или в ней
+    правило чужой формы (тогда безопаснее пересобрать)."""
+    out: set[str] = set()
+    for line in text.splitlines():
+        parts = line.split()
+        if not parts or parts[0] in ("-N", "-P"):
+            continue
+        if parts[:2] != ["-A", chain] or "-s" not in parts or parts[-2:] != ["-j", "ACCEPT"]:
+            return None
+        out.add(parts[parts.index("-s") + 1].split("/")[0])
+    return out
+
+
+def nat_exempt_addresses() -> Optional[set[str]]:
+    proc = _cont(["iptables", "-t", "nat", "-S", config.ROUTING_NAT_CHAIN], check=False)
+    if proc.returncode != 0:
+        return None
+    return parse_nat_exempt(proc.stdout.decode(errors="replace"), config.ROUTING_NAT_CHAIN)
+
+
+def ensure_set(name: str, kind: str, exists: bool = False) -> None:
     """Создать набор, если его нет. Содержимое НЕ трогает.
 
     Для доменных наборов это единственная допустимая операция со стороны бота:
     наполняет их dnsmasq по мере резолва, и любая перезапись стирала бы всё
     накопленное. Бот отвечает лишь за то, чтобы набор существовал к моменту,
     когда на него сошлётся правило или директива ipset=.
+    exists=True — вызывающий уже видел набор в снимке `ipset save`: exec не нужен.
     """
+    if exists:
+        return
     _host(["ipset", "create", name, kind, "-exist"])
+
+
+def parse_ipset_save(text: str) -> dict[str, set[str]]:
+    """`ipset save` → {набор: множество членов}. Пустой набор — пустое
+    множество: строка `create` есть, строк `add` нет."""
+    sets: dict[str, set[str]] = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] == "create":
+            sets.setdefault(parts[1], set())
+        elif len(parts) >= 3 and parts[0] == "add":
+            sets.setdefault(parts[1], set()).add(parts[2])
+    return sets
+
+
+def snapshot_sets() -> Optional[dict[str, set[str]]]:
+    """Состав всех наборов одним exec; None — не смогли прочитать (тогда
+    вызывающий пересобирает всё безусловно, как раньше)."""
+    proc = _host(["ipset", "save"], check=False)
+    if proc.returncode != 0:
+        return None
+    return parse_ipset_save(proc.stdout.decode(errors="replace"))
 
 
 
@@ -361,15 +413,21 @@ def list_sets() -> list[str]:
     return [l.strip() for l in proc.stdout.decode(errors="replace").splitlines() if l.strip()]
 
 
-def replace_members(name: str, kind: str, members) -> None:
+def replace_members(name: str, kind: str, members, current=None) -> None:
     """Атомарно заменить содержимое набора.
 
     Через временный набор и `ipset swap`, а не flush+add: flush оставляет окно, в
     котором набор пуст, и в это окно трафик уходит мимо маршрута. Для src-набора
     это означало бы моргание режима у пользователя на каждой реконсиляции.
+
+    current — состав набора из снимка `ipset save` (None — снимка нет или
+    набора в нём нет). Совпадает с желаемым — шесть exec не нужны.
     """
+    members = list(members)
+    if current is not None and set(members) == set(current):
+        return
     tmp = f"{name}_tmp"
-    ensure_set(name, kind)
+    ensure_set(name, kind, exists=current is not None)
     _host(["ipset", "destroy", tmp], check=False)
     ensure_set(tmp, kind)
     payload = "".join(f"add {tmp} {m}\n" for m in members)
@@ -414,18 +472,64 @@ def rebuild_chain(client_ids) -> None:
     пустой набор безопасен — он равносилен выключенной функции, а не аварии.
     """
     chain = config.ROUTING_CHAIN
+    desired = [(src_set(cid), user_set(cid)) for cid in sorted(client_ids)]
+    # дифф перед записью: один `-S` вместо флаша и правила на профиль. Если
+    # цепочка уже ровно такая — не трогаем: флаш оставлял окно без маркировки
+    # 480 раз в сутки ради того же самого набора правил.
+    if chain_rules() == desired:
+        return
     _mangle(["-N", chain], check=False)          # уже есть → код 1, это норма
     _mangle(["-F", chain])
-    for cid in sorted(client_ids):
+    for src, dst in desired:
         _mangle(["-A", chain,
-                 "-m", "set", "--match-set", src_set(cid), "src",
-                 "-m", "set", "--match-set", user_set(cid), "dst",
+                 "-m", "set", "--match-set", src, "src",
+                 "-m", "set", "--match-set", dst, "dst",
                  "-j", "MARK", "--set-xmark", _MARK])
     # Хук в PREROUTING ставит НЕ эта функция, а set_marking_enabled: именно
     # наличие хука и есть рубильник, и цепочка вполне может быть собрана и
     # лежать без дела — так выглядит деградация. Сам хук сужен клиентской
     # подсетью: до цепочки доходит только немаскараженный трафик включённых
     # устройств, остальному в ней делать нечего.
+
+
+def parse_chain_rules(text: str, chain: str) -> Optional[list[tuple[str, str]]]:
+    """Правила цепочки маркировки из `iptables -t mangle -S <chain>` как
+    [(src-набор, dst-набор)] в порядке цепочки. Разбираем СТРУКТУРНО: пары
+    `--match-set <имя> <src|dst>` и цель MARK с нашей меткой, а не текст —
+    iptables-nft печатает опции в своём порядке. Любое правило чужой формы →
+    None: тогда цепочку пересобираем, это безопаснее, чем счесть её верной."""
+    rules: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        parts = line.split()
+        if not parts or parts[0] in ("-N", "-P"):
+            continue
+        if parts[:2] != ["-A", chain]:
+            return None
+        src = dst = None
+        i = 0
+        while i < len(parts):
+            if parts[i] == "--match-set" and i + 2 < len(parts):
+                if parts[i + 2] == "src":
+                    src = parts[i + 1]
+                elif parts[i + 2] == "dst":
+                    dst = parts[i + 1]
+                i += 3
+                continue
+            i += 1
+        if "MARK" not in parts or "--set-xmark" not in parts:
+            return None
+        mark = parts[parts.index("--set-xmark") + 1]
+        if mark.lower() != _MARK.lower() or src is None or dst is None:
+            return None
+        rules.append((src, dst))
+    return rules
+
+
+def chain_rules() -> Optional[list[tuple[str, str]]]:
+    proc = _mangle(["-S", config.ROUTING_CHAIN], check=False)
+    if proc.returncode != 0:
+        return None                                   # цепочки нет
+    return parse_chain_rules(proc.stdout.decode(errors="replace"), config.ROUTING_CHAIN)
 
 
 def _hooks() -> list[list[str]]:

@@ -513,8 +513,11 @@ class Database:
         cur = conn.cursor()
         try:
             yield cur
-            if depth == 0:
+            # Коммитим только если что-то писали: пустая транзакция (тик без
+            # изменений) не должна стоить ни fsync, ни сброса кэша доступа.
+            if depth == 0 and conn.in_transaction:
                 conn.commit()
+                self.__dict__["_commits"] = self.__dict__.get("_commits", 0) + 1
                 _access_cache.invalidate_all()      # любая запись → middleware перечитает
         except Exception:
             if depth == 0:
@@ -1825,7 +1828,23 @@ class Database:
             self._hot_state[key] = row["value"] if row else None
         return row["value"] if row else None
 
-    def set_state(self, key: str, value: str) -> None:
+    @property
+    def commits(self) -> int:
+        """Сколько транзакций закоммичено этим экземпляром (для тестов и
+        самопроверки: тик без изменений обязан стоить ноль коммитов)."""
+        return self.__dict__.get("_commits", 0)
+
+    def set_state(self, key: str, value: str) -> bool:
+        """Записать ключ состояния; то же значение — НЕ пишется и не
+        коммитится. Стрики, флаги и метки живости пишутся каждый тик, и до
+        этого каждый вызов был транзакцией с fsync — ~10 000 записей в сутки на
+        хост впустую, на малине это ресурс SD-карты. Возвращает, была ли запись."""
+        row = self._connection().execute(
+            "SELECT value FROM server_state WHERE key = ?", (key,)).fetchone()
+        if row is not None and row["value"] == value:
+            if key in self._HOT_STATE_KEYS:
+                self._hot_state[key] = value
+            return False
         if key in self._HOT_STATE_KEYS:
             self._hot_state.pop(key, None)
         with self._tx() as cur:
@@ -1834,6 +1853,16 @@ class Database:
                    ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
                 (key, value),
             )
+        return True
+
+    def set_states(self, values: dict) -> int:
+        """Несколько ключей одной транзакцией, неизменившиеся пропускаются.
+        Возвращает число записанных."""
+        n = 0
+        with self._tx():
+            for k, v in values.items():
+                n += self.set_state(k, v)
+        return n
 
     # ── Условная маршрутизация ───────────────────────────────────────────────
     # Личные списки доменов и выборка адресов для реконсиляции наборов ipset.
