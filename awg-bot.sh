@@ -369,11 +369,8 @@ configure_gateway() {
     sed -i -E 's/^# (role: "gateway")/\1/; s/^# (gateway:)/\1/' "$app"
     sed -i -E 's/^#   ((link_interface|conf_dir|unit|client_subnet|wan_interface|monitor_minutes|handshake_max_age|link_alert_streak|temp_alert_c|ipv4_only):)/  \1/' "$app"
     yaml_set "$app" runtime '"host"'
-    echo; log "─── Шлюз ───"
-    local cur subnet
-    cur="$(yaml_get "$app" client_subnet)"
-    ask subnet "Клиентская подсеть ВПС (для проверки MASQUERADE; Enter — пропустить)" "${cur:-}"
-    yaml_set "$app" client_subnet "\"${subnet}\""
+    # подсеть клиентов не спрашиваем: она приезжает в конфигурации с ВПС и
+    # закрепляется в юните обвязки, агент читает её оттуда
     ok "роль gateway записана в $app"
 }
 

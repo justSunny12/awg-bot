@@ -1024,15 +1024,19 @@ async def test_menu_button_dismisses_every_other_update_window(services, fake_bo
     assert services.pop_update_reports() == [], "история не очищена"
 
 
-def test_routing_section_is_four_buttons():
-    """Раздел маршрутизации: выключатель и три подраздела при включённой
-    функции; при выключенной — только выключатель. Переключатели профилей и
-    пикер периода в корне не живут — они в своих подразделах."""
+def test_routing_section_buttons_depend_on_gateway():
+    """Раздел маршрутизации: выключатель, действия со шлюзом и два подраздела
+    при включённой функции; без шлюза — «Назначить шлюз» вместо конфигурации,
+    смены и снятия; при выключенной — только выключатель. Переключатели
+    профилей и пикер периода в корне не живут — они в своих подразделах."""
     from awgbot.bot import keyboards as kb
-    on = [b.text for row in kb.settings_routing(True).inline_keyboard for b in row]
-    assert on[:4] == ["🟢 Условная маршрутизация", "⚙️ Конфигурация шлюза",
-                      "📋 Списки маршрутизации", "👥 Доступность пользователям"], on
+    on = [b.text for row in kb.settings_routing(True, has_gateway=True).inline_keyboard for b in row]
+    assert on[:6] == ["🟢 Условная маршрутизация", "⚙️ Конфигурация шлюза", "🔁 Сменить шлюз",
+                      "🛑 Убрать шлюз", "📋 Списки маршрутизации", "👥 Доступность пользователям"], on
     assert not any("шифр" in t for t in on), "приписки про шифрование — не для UI"
+    no_gw = [b.text for row in kb.settings_routing(True, has_gateway=False).inline_keyboard for b in row]
+    assert no_gw[:4] == ["🟢 Условная маршрутизация", "🛰 Назначить шлюз",
+                         "📋 Списки маршрутизации", "👥 Доступность пользователям"], no_gw
     off = [b.text for row in kb.settings_routing(False).inline_keyboard for b in row]
     assert len(off) == 2 and "Условная маршрутизация" in off[0]      # выключатель + назад
 

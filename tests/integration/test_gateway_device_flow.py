@@ -22,6 +22,8 @@ def gw(services, fake_awg, make_active_client, monkeypatch):
     phone = services.add_device(admin.id, "phone")
     pi = services.add_device(admin.id, "NASPi")
     monkeypatch.setattr(services, "_link_privkey", lambda: PRIV)
+    services.modes = []
+    monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: services.modes.append(mode))
     return admin, phone, pi
 
 
@@ -50,19 +52,56 @@ def test_claim_marks_only_admin_device_and_only_once(gw, services, make_active_c
         _claim(services, "NOSUCHKEY=")
 
 
-def test_replace_needs_confirmation_and_keeps_one_gateway(gw, services):
+def test_claim_refuses_when_another_gateway_is_assigned(gw, services):
+    """Токен — запасной путь; смена шлюза только через настройки, и она
+    меняет ключи, а не просит подтверждений и release."""
     admin, phone, pi = gw
     d_pi = services.db.get_device(pi.device_id); d_ph = services.db.get_device(phone.device_id)
     _claim(services, d_pi.public_key)
-    res = _claim(services, d_ph.public_key)
-    assert res["status"] == "replace_needed" and res["previous"].id == d_pi.id
-    assert services.db.gateway_device().id == d_pi.id, "без подтверждения ничего не меняется"
-    res = services.gateway_replace(d_ph.id)
-    assert res["previous"].id == d_pi.id and services.db.gateway_device().id == d_ph.id
-    assert services.db.get_device(d_pi.id).is_gateway == 0
-    # release-сообщение старому подписано и адресовано его ключу
-    tok = services.gateway_release_message(res["previous"])
-    assert gwsign.verify(PRIV, tok) | {} and gwsign.verify(PRIV, tok)["pub"] == d_pi.public_key
+    with pytest.raises(ServiceError, match="Сменить шлюз"):
+        _claim(services, d_ph.public_key)
+    assert services.db.gateway_device().id == d_pi.id
+
+
+def test_setup_existing_device_rekeys_only_when_asked(gw, services):
+    admin, phone, pi = gw
+    res = services.gateway_setup(pi.device_id)
+    assert res["previous"] is None and not res["created"] and not res["rekeyed"]
+    assert services.modes == [], "тот же ключ линка — скрипт не трогаем"
+    res = services.gateway_setup(phone.device_id, rekey=True)
+    assert res["previous"].id == pi.device_id and res["rekeyed"]
+    assert services.db.gateway_device().id == phone.device_id
+    assert services.db.get_device(pi.device_id).is_gateway == 0
+    assert services.modes == ["--rekey"]
+    assert services.gateway_setup(phone.device_id, rekey=True)["previous"] is None, "то же устройство — prev нет"
+    with pytest.raises(ServiceError):
+        services.gateway_setup(999999)
+
+
+def test_setup_new_machine_creates_device_and_rekeys(gw, services):
+    admin, phone, pi = gw
+    before = {d.id for d in services.db.list_devices(admin.id)}
+    res = services.gateway_setup(None)
+    dev = res["device"]
+    assert res["created"] and res["rekeyed"] and dev.name == "Шлюз" and dev.id not in before
+    assert dev.is_gateway == 1 and services.db.gateway_device().id == dev.id
+    assert services.modes == ["--rekey"]
+    assert dev.id not in [d.id for d in services.gateway_candidates()]
+
+
+def test_gateway_state_reflects_bundle_and_link(gw, services, monkeypatch):
+    admin, phone, pi = gw
+    from awgbot.bot import texts
+    assert services.gateway_state()["device"] is None
+    assert "не назначен" in texts.settings_routing_gateway_line(services.gateway_state())
+    services.db.set_gateway(pi.device_id)
+    monkeypatch.setattr(services, "routing_link_ok", lambda: False)
+    st = services.gateway_state()
+    assert st["device"].id == pi.device_id and not st["link_ok"]
+    line = texts.settings_routing_gateway_line(st)
+    assert "NASPi" in line and ("жду" in line or "не отвечает" in line)
+    monkeypatch.setattr(services, "routing_link_ok", lambda: True)
+    assert "работает" in texts.settings_routing_gateway_line(services.gateway_state())
 
 
 def test_unique_index_forbids_two_gateways(gw, services):
@@ -122,15 +161,16 @@ def test_gateway_is_outside_limits_and_first_in_lists(gw, services, monkeypatch)
     assert "🛰" in texts.device_label(services.db.get_device(pi.device_id))
 
 
-def test_release_unmarks_and_disables_routing(gw, services, monkeypatch):
+def test_remove_unmarks_rekeys_and_disables_routing(gw, services, monkeypatch):
     admin, phone, pi = gw
     services.db.set_gateway(pi.device_id)
     store = {}
     monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v) or [k])
-    prev = services.gateway_release()
+    prev = services.gateway_remove()
     assert prev.id == pi.device_id and services.db.gateway_device() is None
     assert store.get("app.routing.enabled") is False
-    assert services.gateway_release() is None
+    assert services.modes == ["--rekey"], "прежняя машина теряет линк сама"
+    assert services.gateway_remove() is None and services.modes == ["--rekey"]
 
 
 def test_bundle_env_carries_gateway_key_and_uplink_conf(gw, services, monkeypatch, tmp_path):
@@ -145,7 +185,7 @@ def test_bundle_env_carries_gateway_key_and_uplink_conf(gw, services, monkeypatc
     monkeypatch.setattr(builtins, "open", lambda p, *a, **k: real_open(
         tmp_path / _os.path.basename(str(p)) if str(p).startswith("/root/") else p, *a, **k))
     seen = {}
-    monkeypatch.setattr(_sp, "run", lambda *a, **k: (seen.update(k.get("env", {})), _sp.CompletedProcess(a, 0, b"", b""))[1])
+    monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: seen.update(env or {}))
     services.gw_bundle_encrypted()
     assert seen["GATEWAY_PUBKEY"] == dev.public_key and seen["GATEWAY_PREV_PUBKEY"] == ""
     conf = base64.b64decode(seen["UPLINK_B64"]).decode()

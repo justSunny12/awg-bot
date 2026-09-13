@@ -199,8 +199,9 @@ class BroadcastCB(CallbackData, prefix="bc"):
 
 
 class GwMarkCB(CallbackData, prefix="gwm"):
-    """Пометка шлюза у основного бота: replace_yes|replace_no (замена шлюза
-    после пересланного claim), release_ask|release_yes («🛑 Не шлюз?»)."""
+    """Шлюз у основного бота: pick_list|pick|mark_yes (из моих устройств),
+    new_ask|new_yes (новая машина), remove_ask|remove_yes («🛑 Убрать шлюз» /
+    «🛑 Не шлюз?»)."""
     action: str
     device_id: int = 0
 

@@ -1135,6 +1135,8 @@ def has_gw_token(text) -> bool:
 
 @router.message(F.text.func(has_gw_token), StateFilter(None))
 async def gateway_claim_message(message: Message, services):
+    """Запасной путь: пересланный от агента токен. Основной — «Назначить шлюз»
+    в настройках. Назначен другой шлюз — отказ, менять его через настройки."""
     try:
         res = await call(services.gateway_claim, message.text or "")
     except (ServiceError, ValueError) as e:
@@ -1142,64 +1144,10 @@ async def gateway_claim_message(message: Message, services):
         return
     if res["status"] == "already":
         await message.answer(texts.gateway_claim_already(res["device"]))
-    elif res["status"] == "marked":
-        await message.answer(texts.gateway_claim_marked(res["device"]))
-        from awgbot.bot.handlers.settings import send_gw_bundle
-        await send_gw_bundle(message, services)          # без отдельного нажатия
-    else:
-        await message.answer(texts.gateway_replace_ask(res["device"], res["previous"]),
-                             reply_markup=kb.gateway_replace_confirm(res["device"].id))
-
-
-async def _send_release_for(message: Message, services, dev) -> None:
-    try:
-        token = await call(services.gateway_release_message, dev)
-    except ServiceError as e:
-        await message.answer(f"⚠️ Сообщение для бота шлюза не собрано: {texts._e(str(e))}")
         return
-    await message.answer(texts.gateway_release_forward_text(token), reply_markup=kb.hide_only())
-
-
-@router.callback_query(GwMarkCB.filter(F.action == "replace_yes"))
-async def gateway_replace_yes(cb: CallbackQuery, callback_data: GwMarkCB, services):
-    try:
-        res = await call(services.gateway_replace, callback_data.device_id)
-    except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
-        return
-    await cb.answer()
-    await edit(cb, texts.gateway_replaced(res["device"], res["previous"]), None)
-    if res["previous"] is not None:
-        await _send_release_for(cb.message, services, res["previous"])
+    await message.answer(texts.gateway_claim_marked(res["device"]))
     from awgbot.bot.handlers.settings import send_gw_bundle
-    await send_gw_bundle(cb.message, services)
-
-
-@router.callback_query(GwMarkCB.filter(F.action == "replace_no"))
-async def gateway_replace_no(cb: CallbackQuery, services):
-    await cb.answer()
-    await edit(cb, "Шлюз не менял.", None)
-
-
-@router.callback_query(GwMarkCB.filter(F.action == "release_ask"))
-async def gateway_release_ask(cb: CallbackQuery, callback_data: GwMarkCB, services):
-    dev = await call(services.db.get_device, callback_data.device_id)
-    if dev is None or not dev.is_gateway:
-        await cb.answer("Это устройство не шлюз", show_alert=True)
-        return
-    await cb.answer()
-    await edit(cb, texts.gateway_release_ask(dev), kb.gateway_release_confirm(dev.id))
-
-
-@router.callback_query(GwMarkCB.filter(F.action == "release_yes"))
-async def gateway_release_yes(cb: CallbackQuery, callback_data: GwMarkCB, services):
-    prev = await call(services.gateway_release)
-    if prev is None:
-        await cb.answer("Шлюза и так нет", show_alert=True)
-        return
-    await cb.answer()
-    await edit_nav(cb, services, texts.gateway_released(prev), await _main_menu_markup(services))
-    await _send_release_for(cb.message, services, prev)
+    await send_gw_bundle(message, services)              # без отдельного нажатия
 
 
 @router.callback_query(DeviceCB.filter(F.action == "connect_menu"))

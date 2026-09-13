@@ -1989,24 +1989,24 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         "(<code>awg-bot gw-bundle</code>) и переустанови его на той стороне: "
         "набор обфускации линка обязан совпадать, иначе хендшейк не проходит.")
 
-    def gw_bundle_encrypted(self) -> tuple[bytes, str]:
-        """Собрать бандл шлюза скриптом линка и зашифровать для доставки чатом.
+    _GW_BUNDLE_ISSUED_KEY = "gw_bundle_issued_at"
 
-        Ключ — из приватного ключа ШЛЮЗА, который лежит в конфиге шлюза на ВПС
-        (тот же, что хранит сам шлюз в своём awglink.conf): общий секрет обеих
-        сторон, никогда не ездивший через Telegram. Открытый бандл на диске ВПС
-        остаётся, как и раньше, — под 600.
-        """
+    def _link_script(self) -> str:
+        return str(config.BASE_DIR / "install" / "routing-link-setup.sh")
+
+    def _run_link_script(self, mode: str, env: dict | None = None) -> None:
         import subprocess
-        from awgbot.util import bundlecrypt
-        script = str(config.BASE_DIR / "install" / "routing-link-setup.sh")
-        # устройства админа → ADMIN_IPS бандла: им с туннеля открыт шлюз и
-        # домашняя сеть за ним; состав запоминаем, чтобы напомнить о перевыпуске
+        proc = subprocess.run(["sh", self._link_script(), mode], capture_output=True,
+                              timeout=120, env={**os.environ, **(env or {})})
+        if proc.returncode != 0:
+            raise ServiceError(f"скрипт линка ({mode}) не отработал: "
+                               + proc.stderr.decode(errors="replace").strip()[-200:])
+
+    def _gw_bundle_env(self) -> tuple[dict, list[str]]:
+        """Окружение сборки бандла: устройства админа, ключ и конфиг аплинка
+        назначенного шлюза (в окне переезда — двойника, старый ключ отдельно)."""
         admin_ips = self._gw_ssh_allow()
-        env = {**os.environ, "ADMIN_IPS": " ".join(admin_ips)}
-        # Помеченный шлюз: его ключ (в окне переезда — ключ двойника, старый
-        # ключ отдельно) и конфиг аплинка. Агент по ключу поймёт, он ли шлюз,
-        # скрипт обвязки поставит аплинк только машине с тем же ключом.
+        env = {"ADMIN_IPS": " ".join(admin_ips)}
         gw = self.db.gateway_device()
         if gw is not None:
             import base64
@@ -2018,10 +2018,14 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
                 env["UPLINK_B64"] = base64.b64encode(self.gateway_uplink_conf(target).encode()).decode()
             except ServiceError as e:
                 log.warning("bundle: конфиг аплинка шлюза не собран: %s", e)
-        proc = subprocess.run(["sh", script, "--bundle"], capture_output=True, timeout=60, env=env)
-        if proc.returncode != 0:
-            raise ServiceError("сборка бандла не удалась: "
-                               + proc.stderr.decode(errors="replace").strip()[-200:])
+        return env, admin_ips
+
+    def _gw_bundle_build(self) -> tuple[bytes, str]:
+        """Собрать бандл скриптом линка (ключи не меняются) и дополнить почтой,
+        фразой бэкапов. Возвращает (открытый текст, приватный ключ шлюза)."""
+        from awgbot.util import bundlecrypt
+        env, admin_ips = self._gw_bundle_env()
+        self._run_link_script("--bundle", env)
         link_if = config.ROUTING_GW_INTERFACE or "awglink"
         with open(f"/root/gw-{link_if}.conf", encoding="utf-8") as f:
             priv = bundlecrypt.read_privkey(f.read())
@@ -2030,7 +2034,22 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         plain = self._bundle_with_mail(plain)
         self.db.set_state(self._GW_BUNDLE_SSH_KEY, " ".join(admin_ips))
         self.db.set_state(self._GW_BUNDLE_SSH_NOTIFIED_KEY, "")
+        self.db.set_state(self._GW_BUNDLE_ISSUED_KEY, timeutil.to_iso(timeutil.now()))
+        return plain, priv
+
+    def gw_bundle_encrypted(self) -> tuple[bytes, str]:
+        """Бандл для доставки чатом: шифрован ключом линка, который есть только
+        у уже настроенного шлюза. Открытый бандл на диске ВПС остаётся под 600."""
+        from awgbot.util import bundlecrypt
+        plain, priv = self._gw_bundle_build()
         return bundlecrypt.encrypt(plain, priv), "awg-gw-bundle.enc"
+
+    def gw_bundle_plain(self) -> tuple[bytes, str]:
+        """Открытый бандл — для ПЕРВОГО применения на машине, у которой ключа
+        линка ещё нет (новая машина или новые ключи). Внутри приватные ключи:
+        тот же уровень доверия, что у ссылок vpn:// с ключами устройств."""
+        plain, _ = self._gw_bundle_build()
+        return plain, "awg-gw-bundle.sh"
 
     # ── шлюз условной маршрутизации: пометка устройства ──────────────────────
     _GW_NONCES_KEY = "gw_claim_nonces"
@@ -2073,7 +2092,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             return {"status": "already", "device": dev, "previous": None}
         prev = self.db.gateway_device()
         if prev is not None:
-            return {"status": "replace_needed", "device": dev, "previous": prev}
+            raise ServiceError(f"шлюз уже назначен: «{prev.name}». Сменить его можно в "
+                               "настройках условной маршрутизации («🔁 Сменить шлюз»)")
         self.db.set_gateway(dev.id)
         return {"status": "marked", "device": self.db.get_device(dev.id), "previous": None}
 
@@ -2084,37 +2104,47 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             return []
         return [d for d in self.db.list_devices(admin.id) if d.private_key and not d.is_gateway]
 
-    def gateway_mark(self, device_id: int) -> dict:
-        """Назначить шлюз кнопкой: устройство админа, выпущенное ботом.
-        Возвращает {'device', 'previous'}."""
+    _GW_NEW_NAME = "Шлюз"
+
+    def gateway_setup(self, device_id: Optional[int] = None, *, rekey: bool = False) -> dict:
+        """Назначить шлюз. device_id — существующее устройство админа; None —
+        создать новое устройство «Шлюз» в профиле админа (новая машина).
+        rekey — новые ключи линка: прежняя машина теряет линк по построению,
+        а первый бандл для новой едет открытым (ключа у неё ещё нет).
+        Возвращает {'device', 'previous', 'created', 'rekeyed'}."""
+        admin = self.admin_client()
+        if admin is None:
+            raise ServiceError("профиль админа ещё не создан")
+        created = False
+        if device_id is None:
+            dc = self.add_device(admin.id, self._GW_NEW_NAME)
+            device_id = dc.device_id
+            created = True
+            rekey = True                       # новая машина без ключа линка
         dev = self.db.get_device(device_id)
         if dev is None:
             raise ServiceError("Устройство не найдено")
-        admin = self.admin_client()
-        if admin is None or dev.client_id != admin.id:
+        if dev.client_id != admin.id:
             raise ServiceError("шлюзом может быть только устройство профиля админа")
         if not dev.private_key:
             raise ServiceError("это устройство создавал не бот — его конфиг в бандл не собрать")
-        if dev.is_gateway:
-            return {"device": dev, "previous": None}
         prev = self.db.gateway_device()
+        if prev is not None and prev.id == dev.id:
+            prev = None
         self.db.set_gateway(dev.id)
-        return {"device": self.db.get_device(dev.id), "previous": prev}
+        if rekey:
+            self._run_link_script("--rekey")
+            routing.invalidate_self_check()
+        return {"device": self.db.get_device(dev.id), "previous": prev,
+                "created": created, "rekeyed": rekey}
 
-    def gateway_replace(self, device_id: int) -> dict:
-        """Подтверждённая замена: флаг переставляется на новое устройство.
-        Возвращает {'device', 'previous'}; previous нужен для release-сообщения
-        старому агенту."""
-        dev = self.db.get_device(device_id)
-        if dev is None:
-            raise ServiceError("Устройство не найдено")
-        prev = self.db.gateway_device()
-        self.db.set_gateway(dev.id)
-        return {"device": self.db.get_device(dev.id), "previous": prev}
+    def gateway_mark(self, device_id: int) -> dict:
+        """Совместимость: назначение существующего устройства без смены ключей."""
+        return self.gateway_setup(device_id)
 
-    def gateway_release(self) -> Optional[object]:
-        """«Не шлюз?»: снять флаг и выключить условную маршрутизацию — без
-        шлюза ей ходить некуда. Возвращает бывший шлюз (для release-сообщения)."""
+    def gateway_remove(self) -> Optional[object]:
+        """Убрать шлюз: флаг снять, ключи линка сменить (прежняя машина теряет
+        линк), условную маршрутизацию выключить. Возвращает бывший шлюз."""
         prev = self.db.gateway_device()
         if prev is None:
             return None
@@ -2122,18 +2152,34 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         try:
             settings.set_value("app.routing.enabled", False)
         except Exception as e:                            # noqa: BLE001
-            log.warning("gateway_release: маршрутизация не выключена: %s", e)
+            log.warning("gateway_remove: маршрутизация не выключена: %s", e)
+        try:
+            self._run_link_script("--rekey")
+            routing.invalidate_self_check()
+        except ServiceError as e:
+            log.warning("gateway_remove: ключи линка не сменены: %s", e)
         try:
             self.reconcile_routing()
         except Exception as e:                            # noqa: BLE001
-            log.warning("gateway_release: реконсиляция: %s", e)
+            log.warning("gateway_remove: реконсиляция: %s", e)
         return prev
 
-    def gateway_release_message(self, dev) -> str:
-        """Подписанное сообщение агенту бывшего шлюза: перешлёт админ."""
-        from awgbot.util import gwsign
-        return gwsign.sign(self._link_privkey(), "release", dev.public_key, dev.address,
-                           host=dev.name)
+    def gateway_release(self) -> Optional[object]:
+        return self.gateway_remove()
+
+    def gateway_state(self) -> dict:
+        """Одно состояние для экрана: устройство, когда выпущен бандл, жив ли
+        линк по последнему замеру и возраст хендшейка."""
+        gw = self.db.gateway_device()
+        issued = self.db.get_state(self._GW_BUNDLE_ISSUED_KEY) or ""
+        age = None
+        if gw is not None and config.ROUTING_GW_INTERFACE:
+            try:
+                age = routing.link_handshake_age()
+            except Exception:                             # noqa: BLE001
+                age = None
+        return {"device": gw, "issued_at": issued, "link_ok": self.routing_link_ok(),
+                "handshake_age": age}
 
     def gateway_uplink_conf(self, dev) -> str:
         """Конфиг аплинка шлюза для бандла: обычный клиентский .conf устройства

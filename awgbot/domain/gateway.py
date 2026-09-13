@@ -168,15 +168,16 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         self._guard_info = info
         if info is not None:
             nets = info["sets"].get("tunnel_nets4", set())
-            if config.GW_CLIENT_SUBNET:
-                ok = config.GW_CLIENT_SUBNET in nets
+            client_subnet = gwguard.client_subnet()   # conf агента или юнит обвязки
+            if client_subnet:
+                ok = client_subnet in nets
                 checks.append(GwCheck(
                     "MASQUERADE/изоляция", ok,
-                    "" if ok else f"{config.GW_CLIENT_SUBNET} нет в tunnel_nets4 — "
+                    "" if ok else f"{client_subnet} нет в tunnel_nets4 — "
                     "бандл собран под другую подсеть"))
             else:
                 checks.append(GwCheck("MASQUERADE/изоляция", None,
-                                      "gateway.client_subnet не задан — проверка выключена"))
+                                      "подсеть клиентов неизвестна (нет бандла) — проверка выключена"))
             missing_chains = [c for c in gwguard.CHAINS if c not in info["chains"]]
             checks.append(GwCheck("цепочки таблицы", not missing_chains,
                                   "" if not missing_chains else
@@ -537,31 +538,11 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         priv = bundlecrypt.read_privkey(pathlib_read(config.GW_LINK_CONF))
         return gwsign.sign(priv, "claim", pubkey, "", host=socket.gethostname())
 
-    def gateway_accept_release(self, text: str) -> tuple[bool, str]:
-        """Пересланное от основного бота «ты больше не шлюз»: проверить подпись
-        и адресата (наш ключ аплинка), опустить линк, выключить юнит."""
-        from awgbot.util import bundlecrypt, gwsign
-        try:
-            priv = bundlecrypt.read_privkey(pathlib_read(config.GW_LINK_CONF))
-            data = gwsign.verify(priv, text)
-        except (OSError, ValueError) as e:
-            return False, str(e)
-        if data["act"] == "claim":
-            return False, "это сообщение для основного бота, а не для шлюза"
-        _, mine = self.uplink_pubkey_cached()
-        if mine and data["pub"] != mine:
-            return False, "сообщение адресовано другому шлюзу (ключ аплинка не совпадает)"
-        _run(["awg-quick", "down", config.GW_LINK_IF], timeout=30)
-        _run(["systemctl", "disable", "--now", config.GW_UNIT], timeout=30)
-        self.db.set_state(self._GW_MARK_KEY, "released")
-        self._mark_status_cache = None
-        return True, "линк опущен, автозапуск обвязки выключен"
-
-    _mark_status_cache = None
-
-    def uplink_pubkey_cached(self) -> tuple[str, str]:
+    def gateway_apply_report(self) -> str:
+        """Человеческий отчёт после применения — из статуса скрипта."""
         from awgbot.infra import gwguard
-        return gwguard.uplink_pubkey()
+        from awgbot.bot import texts
+        return texts.gateway_apply_report(gwguard.script_status())
 
     def gateway_mark_status(self) -> str:
         return self.db.get_state(self._GW_MARK_KEY) or "?"

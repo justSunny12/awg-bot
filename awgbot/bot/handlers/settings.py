@@ -67,17 +67,15 @@ async def _screen(sec: str, services):
         on = settings.get_bool("app.routing.enabled", False)
         status = await call(services.routing_status)
         text = texts.settings_routing_text(on, status)
-        gw = await call(services.db.gateway_device) if on else None
+        gw_state = await call(services.gateway_state) if on else {"device": None}
         if on:
-            text += texts.settings_routing_gateway_line(gw)
-        return text, kb.settings_routing(on, has_gateway=gw is not None)
+            text += texts.settings_routing_gateway_line(gw_state)
+        return text, kb.settings_routing(on, has_gateway=gw_state["device"] is not None)
     if sec == "rt_gw":
         if not config.ROUTING_ENABLED or not settings.get_bool("app.routing.enabled", False):
             return texts.SETTINGS_ROUTING_SUBOFF, kb.settings_back()
         cands = await call(services.gateway_candidates)
-        if not cands:
-            return texts.GATEWAY_PICK_EMPTY, kb.settings_back()
-        return texts.GATEWAY_PICK_INTRO, kb.gateway_pick(cands)
+        return texts.GATEWAY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands))
     if sec in ("rt_lists", "rt_users", "rt_bundle"):
         # Подразделы существуют только при включённой функции. Колбэк приходит
         # и из старого сообщения — тогда честно говорим, что раздел пуст.
@@ -133,6 +131,37 @@ async def send_gw_bundle(message: Message, services) -> bool:
     return True
 
 
+async def _deliver_bundle(cb: CallbackQuery, services, res: dict, headline: str) -> None:
+    """Итог назначения: текст и сразу файл. Новые ключи → открытый файл для
+    первого применения руками; ключи те же → шифрованный, для чата агента."""
+    await edit(cb, headline, None)
+    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
+    if res.get("rekeyed"):
+        try:
+            blob, name = await call(services.gw_bundle_plain)
+        except (ServiceError, OSError) as e:
+            await cb.message.answer(f"⚠️ Файл первого применения не собран: {texts._e(str(e))}")
+            return
+        from aiogram.types import BufferedInputFile
+        await cb.message.answer_document(
+            BufferedInputFile(blob, filename=name),
+            caption="🛰 Файл первого применения: на машине-шлюзе `sudo sh awg-gw-bundle.sh`. "
+                    "Внутри ключи — после применения удали.",
+            reply_markup=kb.bundle_menu_kb())
+    else:
+        await send_gw_bundle(cb.message, services)
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "pick_list"))
+async def gateway_pick_list(cb: CallbackQuery, services):
+    cands = await call(services.gateway_candidates)
+    await cb.answer()
+    if not cands:
+        await edit(cb, texts.GATEWAY_PICK_EMPTY, kb.gateway_choose_kind(False))
+        return
+    await edit(cb, texts.GATEWAY_PICK_INTRO, kb.gateway_pick(cands))
+
+
 @router.callback_query(GwMarkCB.filter(F.action == "pick"))
 async def gateway_pick(cb: CallbackQuery, callback_data: GwMarkCB, services):
     dev = await call(services.db.get_device, callback_data.device_id)
@@ -146,23 +175,54 @@ async def gateway_pick(cb: CallbackQuery, callback_data: GwMarkCB, services):
 
 @router.callback_query(GwMarkCB.filter(F.action == "mark_yes"))
 async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services):
+    """Существующее устройство. Шлюз уже был и это другая машина — ключи
+    линка меняются, чтобы прежняя потеряла линк сама."""
+    prev = await call(services.db.gateway_device)
+    rekey = prev is not None and prev.id != callback_data.device_id
+    await cb.answer("Назначаю…")
     try:
-        res = await call(services.gateway_mark, callback_data.device_id)
+        res = await call(services.gateway_setup, callback_data.device_id, rekey=rekey)
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.message.answer(f"⚠️ {texts._e(str(e))}")
+        return
+    await _deliver_bundle(cb, services, res, texts.gateway_marked(res["device"], res["rekeyed"]))
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "new_ask"))
+async def gateway_new_ask(cb: CallbackQuery, services):
+    await cb.answer()
+    await edit(cb, texts.GATEWAY_NEW_ASK, kb.gateway_new_confirm())
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "new_yes"))
+async def gateway_new_yes(cb: CallbackQuery, services):
+    await cb.answer("Создаю устройство и ключи…")
+    try:
+        res = await call(services.gateway_setup, None)
+    except ServiceError as e:
+        await cb.message.answer(f"⚠️ {texts._e(str(e))}")
+        return
+    await _deliver_bundle(cb, services, res, texts.gateway_marked(res["device"], True))
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "remove_ask"))
+async def gateway_remove_ask(cb: CallbackQuery, services):
+    dev = await call(services.db.gateway_device)
+    if dev is None:
+        await cb.answer("Шлюз не назначен", show_alert=True)
         return
     await cb.answer()
-    if res["previous"] is not None:
-        await edit(cb, texts.gateway_replaced(res["device"], res["previous"]), None)
-        try:
-            token = await call(services.gateway_release_message, res["previous"])
-            await cb.message.answer(texts.gateway_release_forward_text(token), reply_markup=kb.hide_only())
-        except ServiceError as e:
-            await cb.message.answer(f"⚠️ Сообщение для бота старого шлюза не собрано: {texts._e(str(e))}")
-    else:
-        await edit(cb, texts.gateway_marked(res["device"]), None)
-    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
-    await send_gw_bundle(cb.message, services)
+    await edit(cb, texts.gateway_remove_ask(dev), kb.gateway_remove_confirm())
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "remove_yes"))
+async def gateway_remove_yes(cb: CallbackQuery, services):
+    await cb.answer("Убираю…")
+    prev = await call(services.gateway_remove)
+    if prev is None:
+        await edit(cb, "Шлюз и так не назначен.", kb.settings_back())
+        return
+    await edit(cb, texts.gateway_removed(prev), kb.settings_back())
 
 
 # ── открытие раздела ─────────────────────────────────────────────────────────
@@ -453,6 +513,9 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         await cb.answer("Завершаю…")
         removed, dropped, failed = await call(services.migration_finish)
         await _record(cb, texts.migration_finished(removed, dropped, failed), services)
+        if not failed and await call(services.db.gateway_device) is not None:
+            # шлюз получил двойника с новыми ключами — файл сразу, без напоминаний
+            await send_gw_bundle(cb.message, services)
         return
 
     if key == "cancel!":

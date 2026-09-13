@@ -261,9 +261,20 @@ def gateway_device_actions(dev, back_target: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="✏️ Имя", callback_data=DeviceCB(action="edit_name", device_id=dev.id))
     kb.button(text="⚙️ Конфигурация шлюза", callback_data=SetCB(sec="rt_bundle", act="open"))
-    kb.button(text="🛑 Не шлюз?", callback_data=GwMarkCB(action="release_ask", device_id=dev.id))
+    kb.button(text="🛑 Не шлюз?", callback_data=GwMarkCB(action="remove_ask", device_id=dev.id))
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
     kb.adjust(1, 1, 1, 1)
+    return kb.as_markup()
+
+
+def gateway_choose_kind(has_candidates: bool) -> InlineKeyboardMarkup:
+    """Назначить/сменить шлюз: существующее устройство админа или новая машина."""
+    kb = InlineKeyboardBuilder()
+    if has_candidates:
+        kb.button(text="📱 Из моих устройств", callback_data=GwMarkCB(action="pick_list"))
+    kb.button(text="➕ Новая машина", callback_data=GwMarkCB(action="new_ask"))
+    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=SetCB(sec="rt", act="open").pack()))
+    kb.adjust(1)
     return kb.as_markup()
 
 
@@ -273,7 +284,7 @@ def gateway_pick(devices) -> InlineKeyboardMarkup:
     for d in devices:
         kb.button(text=f"📱 {d.name} ({d.address})",
                   callback_data=GwMarkCB(action="pick", device_id=d.id))
-    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=SetCB(sec="rt", act="open").pack()))
+    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=SetCB(sec="rt_gw", act="open").pack()))
     kb.adjust(*([1] * len(devices)), 1)
     return kb.as_markup()
 
@@ -286,18 +297,18 @@ def gateway_mark_confirm(device_id: int) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def gateway_release_confirm(device_id: int) -> InlineKeyboardMarkup:
+def gateway_new_confirm() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="🛑 Да, больше не шлюз", callback_data=GwMarkCB(action="release_yes", device_id=device_id))
-    kb.button(text="Отмена", callback_data=DeviceCB(action="open", device_id=device_id))
+    kb.button(text="➕ Да, новая машина", callback_data=GwMarkCB(action="new_yes"))
+    kb.button(text="Отмена", callback_data=SetCB(sec="rt_gw", act="open"))
     kb.adjust(1)
     return kb.as_markup()
 
 
-def gateway_replace_confirm(device_id: int) -> InlineKeyboardMarkup:
+def gateway_remove_confirm() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="🛰 Да, сменить шлюз", callback_data=GwMarkCB(action="replace_yes", device_id=device_id))
-    kb.button(text="Отмена", callback_data=GwMarkCB(action="replace_no", device_id=device_id))
+    kb.button(text="🛑 Да, убрать шлюз", callback_data=GwMarkCB(action="remove_yes"))
+    kb.button(text="Отмена", callback_data=SetCB(sec="rt", act="open"))
     kb.adjust(1)
     return kb.as_markup()
 
@@ -1149,6 +1160,10 @@ def settings_routing(enabled: bool, has_gateway: bool = True) -> InlineKeyboardM
         if has_gateway:
             kb.button(text="⚙️ Конфигурация шлюза",
                       callback_data=SetCB(sec="rt_bundle", act="open"))
+            kb.button(text="🔁 Сменить шлюз",
+                      callback_data=SetCB(sec="rt_gw", act="open"))
+            kb.button(text="🛑 Убрать шлюз",
+                      callback_data=GwMarkCB(action="remove_ask"))
         else:
             kb.button(text="🛰 Назначить шлюз",
                       callback_data=SetCB(sec="rt_gw", act="open"))

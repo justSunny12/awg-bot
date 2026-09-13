@@ -72,6 +72,7 @@ GATEWAY_PUBKEY="${GATEWAY_PUBKEY:-}"
 GATEWAY_PREV_PUBKEY="${GATEWAY_PREV_PUBKEY:-}"
 UPLINK_B64="${UPLINK_B64:-}"
 UPLINK_TABLE="${UPLINK_TABLE:-100}"          # таблица политики «метка → аплинк»
+UPLINK_IF_DEFAULT="${UPLINK_IF:-awg0}"        # имя аплинка на чистой машине
 GW_FOREIGN=0                                  # 1 = помечен другой шлюз, линк не поднимаем
 GW_STATUS_FILE="$GW_ETC/gateway.status"       # что решил скрипт — читает агент
 
@@ -274,16 +275,26 @@ fi
 # её не пометит, — она попросит переслать сообщение и линк не поднимет.
 step "0. Шлюзовое устройство"
 mkdir -p "$GW_ETC"
+UPLINK_STATE="none"
 if [ -z "$GATEWAY_PUBKEY" ]; then
-    say "  в основном боте шлюз не помечен — после применения агент попросит переслать сообщение"
+    say "  в основном боте шлюз не назначен — после применения агент попросит переслать сообщение"
     GW_STATUS="unmarked"
 else
     UPLINK_IF="$(iface_by_pubkey "$GATEWAY_PUBKEY")"
     [ -z "$UPLINK_IF" ] && [ -n "$GATEWAY_PREV_PUBKEY" ] && UPLINK_IF="$(iface_by_pubkey "$GATEWAY_PREV_PUBKEY")"
+    # ЧИСТАЯ машина: аплинка нет вовсе. Бандл выпущен основным ботом под это
+    # устройство и несёт его ключи — кто применил бандл, тот и шлюз. Ставим
+    # аплинк под именем UPLINK_IF (по умолчанию awg0). Машина с ЧУЖИМ аплинком
+    # шлюзом не становится — это ветка «foreign» ниже.
+    _others="$("$AWG_BIN" show interfaces 2>/dev/null | tr ' ' '\n' | grep -vx "$LINK_IF" | grep -vx '' || true)"
+    if [ -z "$UPLINK_IF" ] && [ -z "$_others" ] && [ -n "$UPLINK_B64" ] \
+       && [ ! -f "$HOST_CONF_DIR/${UPLINK_IF_DEFAULT}.conf" ]; then
+        UPLINK_IF="$UPLINK_IF_DEFAULT"
+        say "  чистая машина: аплинк $UPLINK_IF ставится из бандла"
+    fi
     if [ -n "$UPLINK_IF" ]; then
         say "  это помеченный шлюз: аплинк $UPLINK_IF"
         GW_STATUS="confirmed"
-        [ "$MODE" = "plan" ] || printf 'GW_STATUS=%s\nGATEWAY_PUBKEY=%s\n' "$GW_STATUS" "$GATEWAY_PUBKEY" > "$GW_STATUS_FILE"
         if [ -n "$UPLINK_B64" ]; then
             # временный каталог тут ни к чему: файл живёт рядом с
             # прочим состоянием шлюза и сразу удаляется
@@ -303,7 +314,9 @@ else
                 _dst="$HOST_CONF_DIR/$UPLINK_IF.conf"
                 if [ -f "$_dst" ] && cmp -s "$_tmp.conf" "$_dst"; then
                     say "  конфиг аплинка не изменился"
+                    UPLINK_STATE="unchanged"
                 else
+                    UPLINK_STATE="installed"
                     say "  конфиг аплинка обновлён из бандла (Table = off, политика по метке $TG_MARK → таблица $UPLINK_TABLE)"
                     _bak=""
                     if [ -f "$_dst" ]; then
@@ -340,7 +353,12 @@ else
         GW_STATUS="foreign"
     fi
 fi
-[ "$MODE" = "plan" ] || printf 'GW_STATUS=%s\nGATEWAY_PUBKEY=%s\n' "$GW_STATUS" "$GATEWAY_PUBKEY" > "$GW_STATUS_FILE"
+write_status() {   # $1 = состояние линка
+    [ "$MODE" = "plan" ] && return 0
+    printf 'GW_STATUS=%s\nGATEWAY_PUBKEY=%s\nUPLINK=%s\nUPLINK_IF=%s\nLINK=%s\n' \
+        "$GW_STATUS" "$GATEWAY_PUBKEY" "$UPLINK_STATE" "${UPLINK_IF:-}" "$1" > "$GW_STATUS_FILE"
+}
+write_status "pending"
 
 # ── 1. конфиг и подъём ───────────────────────────────────────────────────────
 [ -n "$SRC_CONF" ] && [ -f "$SRC_CONF" ] || {
@@ -374,6 +392,7 @@ if [ "$GW_FOREIGN" = "1" ]; then
     say "  линк не поднимаю (помечен другой шлюз); если был поднят — опускаю"
     run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
     run "systemctl disable awg-link-gw.service 2>/dev/null || true"
+    write_status "foreign"
     say ""
     say "Готово частично: конфиг и скрипт на месте, линк лежит до пометки этой машины шлюзом."
     exit 0
@@ -560,12 +579,10 @@ UNITEOF
 run "systemctl daemon-reload"
 run "systemctl enable awg-link-gw.service"
 
+write_status "up"
 step "Проверка"
 say "  awg show $LINK_IF                            # есть ли хендшейк"
 say "  ip -br addr show $LINK_IF"
 say "  nft list table $GUARD_TABLE                  # вся обвязка одним взглядом"
 say ""
-say "Хендшейка не будет, пока на ВПС не поднят ответный конец."
-say ""
-say "Затем на ВПС в conf/app.yaml:  routing.gw_interface: \"$LINK_IF\""
-say "и перезапустить бота."
+say "Хендшейк появится, когда ВПС ответит; статус — в панели агента."

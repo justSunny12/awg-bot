@@ -26,6 +26,7 @@
 #   sudo sh routing-link-setup.sh              # показать план
 #   sudo sh routing-link-setup.sh --apply      # поднять
 #   sudo sh routing-link-setup.sh --bundle     # пересобрать бандл (ключи те же)
+#   sudo sh routing-link-setup.sh --rekey      # новые ключи линка (смена/снятие шлюза)
 #   sudo sh routing-link-setup.sh --rollback   # снять
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -62,8 +63,12 @@ UNIT="/etc/systemd/system/awg-link.service"
 LINK_CONTRACT="1"
 
 MODE="plan"
+REKEY=0
 case "${1:-}" in
     --apply)    MODE="apply" ;;
+    # Новые ключи линка при живом линке: смена или снятие шлюза. Прежняя
+    # машина теряет линк по построению — ей ничего не нужно сообщать.
+    --rekey)    MODE="apply"; REKEY=1 ;;
     --reassert) MODE="reassert" ;;
     --rollback) MODE="rollback" ;;
     --bundle)   MODE="bundle" ;;
@@ -270,6 +275,12 @@ done
 # Порядок проверок важен: свой же поднятый линк держит порт, и проверка порта
 # первой сообщала бы «порт занят» вместо «уже настроено» — диагноз, уводящий в
 # сторону ровно после успешного запуска.
+if [ "$REKEY" = "1" ] && [ -f "$CONF" ]; then
+    step "0. Смена ключей линка"
+    say "  прежний конфиг линка снимается, ключи генерируются заново"
+    run "awg-quick down $LINK_IF 2>/dev/null || true"
+    run "rm -f $CONF"
+fi
 if [ -f "$CONF" ] && [ "$MODE" = "apply" ]; then
     say ""
     say "Линк уже настроен: $CONF существует."

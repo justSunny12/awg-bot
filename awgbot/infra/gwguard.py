@@ -194,3 +194,16 @@ def script_status() -> dict:
     except OSError:
         pass
     return out
+
+
+def client_subnet() -> str:
+    """Подсеть клиентов ВПС: из conf агента, иначе из юнита обвязки, куда её
+    вшил бандл. Установщику спрашивать её незачем."""
+    if config.GW_CLIENT_SUBNET:
+        return config.GW_CLIENT_SUBNET
+    try:
+        text = Path(f"/etc/systemd/system/{config.GW_UNIT}").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    m = re.search(r'^Environment="?CLIENT_SUBNET=([0-9./]+)"?', text, re.M)
+    return m.group(1) if m else ""

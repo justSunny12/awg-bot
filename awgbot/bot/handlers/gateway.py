@@ -489,6 +489,9 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
     await state.clear()
     await cb.answer("Применяю…")
     ok, detail = await call(services.apply_bundle, blob, callback_data.action == "apply_ow!")
+    if ok:
+        # человеческий итог из статуса скрипта; хвост вывода — только при отказе
+        detail = await call(services.gateway_apply_report) or detail
     await edit_nav(cb, services, texts.gateway_op_result("Конфигурация шлюза", ok, detail), None)
     if ok:
         # он ли помеченный шлюз: не помечен или помечен другой → сообщение для
@@ -498,21 +501,6 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
             await cb.message.answer(texts.gateway_claim_forward_text(outcome["claim"], outcome["status"]),
                                     reply_markup=kb.hide_only())
     await _panel(cb.message, services, fresh=True, keep_id=cb.message.message_id)
-
-
-def has_gw_token(text) -> bool:
-    """Токен ищется в любом месте текста: пересланное сообщение несёт и
-    пояснение, регэксп «с начала строки» его не находил."""
-    from awgbot.util import gwsign
-    return gwsign.find_token(text or "") is not None
-
-
-@router.message(F.text.func(has_gw_token))
-async def gw_release_message(message: Message, services, state: FSMContext):
-    """Пересланное от основного бота «ты больше не шлюз»."""
-    await state.clear()
-    ok, detail = await call(services.gateway_accept_release, message.text or "")
-    await message.answer(texts.gateway_release_result(ok, detail))
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"restore!", "restore_drop"})))

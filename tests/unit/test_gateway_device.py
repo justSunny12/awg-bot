@@ -82,7 +82,7 @@ def test_script_status_parse(tmp_path, monkeypatch):
     assert gwguard.script_status() == {}
 
 
-def test_gateway_mark_outcome_and_release(tmp_path, monkeypatch):
+def test_gateway_mark_outcome(tmp_path, monkeypatch):
     from awgbot.domain import gateway as gw
     from awgbot.domain.gateway import GatewayServices
     from awgbot.infra.db import Database
@@ -90,7 +90,7 @@ def test_gateway_mark_outcome_and_release(tmp_path, monkeypatch):
     svc = GatewayServices(db)
     monkeypatch.setattr(gw, "pathlib_read", lambda p: "[Interface]\nPrivateKey = " + PRIV + "\n")
     monkeypatch.setattr(gwguard, "uplink_pubkey", lambda: ("awg0", PUB))
-    # не помечен → claim; помечен другой → claim; свой → тишина
+    # не помечен → claim (запасной путь); помечен другой → claim; свой → тишина
     for status, expect in (("unmarked", True), ("foreign", True), ("confirmed", False)):
         monkeypatch.setattr(gwguard, "script_status", lambda s=status: {"GW_STATUS": s})
         out = svc.gateway_mark_outcome()
@@ -98,19 +98,60 @@ def test_gateway_mark_outcome_and_release(tmp_path, monkeypatch):
         assert svc.gateway_mark_status() == status
         if out["claim"]:
             assert gwsign.verify(PRIV, out["claim"])["pub"] == PUB
-    # release: чужой ключ → отказ, claim вместо release → отказ, свой → линк вниз
-    calls = []
-    monkeypatch.setattr(gw, "_run", lambda argv, timeout=10: (calls.append(list(argv)), subprocess.CompletedProcess(argv, 0, b"", b""))[1])
-    other = base64.b64encode(os.urandom(32)).decode()
-    ok, why = svc.gateway_accept_release(gwsign.sign(PRIV, "release", other))
-    assert not ok and "другому" in why and calls == []
-    ok, why = svc.gateway_accept_release(gwsign.sign(PRIV, "claim", PUB))
-    assert not ok and calls == []
-    ok, _ = svc.gateway_accept_release("текст " + gwsign.sign(PRIV, "release", PUB))
-    assert ok
-    assert ["awg-quick", "down", config.GW_LINK_IF] in calls
-    assert any(c[:2] == ["systemctl", "disable"] for c in calls)
-    assert svc.gateway_mark_status() == "released"
+    assert not hasattr(svc, "gateway_accept_release"), "release-токенов больше нет"
+
+
+def test_gateway_apply_report_is_human_text(tmp_path, monkeypatch):
+    from awgbot.bot import texts
+    from awgbot.domain.gateway import GatewayServices
+    from awgbot.infra.db import Database
+    db = Database(tmp_path / "gw.db"); db.init_schema()
+    svc = GatewayServices(db)
+    cases = {
+        ("confirmed", "installed", "up"): "Аплинк обновлён и поднят, линк поднят, шлюз подтверждён.",
+        ("confirmed", "unchanged", "up"): "Аплинк без изменений, линк поднят, шлюз подтверждён.",
+        ("foreign", "", "foreign"): "Линк лежит: в основном боте назначен другой шлюз.",
+        ("unmarked", "", ""): "Шлюз в основном боте не назначен.",
+    }
+    for (gs, up, link), expect in cases.items():
+        st = {k: v for k, v in (("GW_STATUS", gs), ("UPLINK", up), ("LINK", link)) if v}
+        assert texts.gateway_apply_report(st) == expect, st
+        monkeypatch.setattr(gwguard, "script_status", lambda s=st: s)
+        assert svc.gateway_apply_report() == expect
+    assert texts.gateway_apply_report({}) == "", "нет статуса — нет отчёта, останется хвост"
+
+
+def test_client_subnet_from_conf_or_unit(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.8.1.0/24")
+    assert gwguard.client_subnet() == "10.8.1.0/24"
+    monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "")
+    monkeypatch.setattr(config, "GW_UNIT", "awg-link-gw.service")
+    real = Path.read_text
+
+    def fake_read(self, *a, **k):
+        if str(self) == "/etc/systemd/system/awg-link-gw.service":
+            return "[Service]\nEnvironment=LINK_IF=awglink\nEnvironment=CLIENT_SUBNET=10.8.1.0/24\n"
+        return real(self, *a, **k)
+    monkeypatch.setattr(Path, "read_text", fake_read)
+    assert gwguard.client_subnet() == "10.8.1.0/24", "подсеть приезжает в юните из бандла"
+    monkeypatch.setattr(Path, "read_text", lambda self, *a, **k: (_ for _ in ()).throw(OSError()))
+    assert gwguard.client_subnet() == ""
+
+
+def test_link_script_rekey_mode_regenerates_keys():
+    text = (ROOT / "install" / "routing-link-setup.sh").read_text(encoding="utf-8")
+    assert re.search(r"--rekey\)\s+MODE=\"apply\"; REKEY=1", text)
+    block = text.split('if [ "$REKEY" = "1" ] && [ -f "$CONF" ]; then', 1)[1].split("fi", 1)[0]
+    assert "awg-quick down $LINK_IF" in block and "rm -f $CONF" in block
+    assert text.index('if [ "$REKEY" = "1" ]') < text.index('if [ -f "$CONF" ] && [ "$MODE" = "apply" ]'), \
+        "снятие конфига — раньше проверки «уже настроено», иначе rekey выходит ни с чем"
+
+
+def test_installer_gateway_role_does_not_ask_client_subnet():
+    text = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    body = text.split("configure_gateway()", 1)[1].split("\n}\n", 1)[0]
+    assert "ask subnet" not in body and "Клиентская подсеть" not in body
+    assert "yaml_set \"$app\" client_subnet" not in body, "подсеть приезжает в юните из бандла"
 
 
 # ── скрипт обвязки и шапка бандла ────────────────────────────────────────────
@@ -181,3 +222,15 @@ def test_uplink_postup_lands_inside_interface_section(tmp_path):
     assert out.index("PostUp = ip rule list") < out.index("[Peer]")
     assert "PostUp = ip route replace default dev %i table 100" in out
     assert "PostDown = ip route del default dev %i table 100" in out
+
+
+def test_script_installs_uplink_on_a_fresh_machine(script):
+    """Новая машина: аплинков нет — ставим из бандла под именем по умолчанию;
+    машина с чужим аплинком в эту ветку не попадает."""
+    step0 = script.split('step "0. Шлюзовое устройство"', 1)[1].split('# ── 1. конфиг и подъём', 1)[0]
+    fresh = step0.split("чистая машина", 1)[0].rsplit("if ", 1)[1]
+    assert '[ -z "$UPLINK_IF" ]' in fresh and '[ -z "$_others" ]' in fresh and '[ -n "$UPLINK_B64" ]' in fresh
+    assert '! -f "$HOST_CONF_DIR/${UPLINK_IF_DEFAULT}.conf"' in fresh
+    assert 'UPLINK_IF="$UPLINK_IF_DEFAULT"' in step0
+    assert 'grep -vx "$LINK_IF"' in step0, "свой линк не считается чужим аплинком"
+    assert re.search(r'^UPLINK_IF_DEFAULT="?\$\{UPLINK_IF_DEFAULT:-awg0\}"?|UPLINK_IF_DEFAULT=.*awg0', script, re.M)
