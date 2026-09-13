@@ -161,3 +161,43 @@ def test_gateway_mark_rules(services, gwsetup, make_active_client):
     res = services.gateway_mark(phone.id)
     assert res["previous"].id == pi.id and services.db.gateway_device().id == phone.id
     assert [d.id for d in services.gateway_candidates()] == [pi.id], "текущий шлюз в кандидатах не нужен"
+
+
+def test_token_filters_match_anywhere_in_forwarded_text():
+    """Регресс: пересланное сообщение несёт пояснение перед токеном, фильтр
+    «с начала строки» его не ловил, и агент молчал на release."""
+    from awgbot.bot.handlers import gateway as gh
+    token = gwsign.sign(PRIV, "release", "K=")
+    text = "🛰 Перешли это сообщение боту шлюза как есть.\n\n" + token
+    assert gh.has_gw_token(text) and ah.has_gw_token(text)
+    assert not gh.has_gw_token("GW1: не токен") and not ah.has_gw_token(None)
+
+
+async def test_claim_and_release_are_single_messages_with_hide(services, fake_bot, gwsetup, monkeypatch):
+    from awgbot.bot.handlers import gateway as gh
+    from awgbot.bot.callbacks import GwCB
+    from awgbot.domain import gateway as gw
+    from awgbot.infra import gwguard
+    _, phone, pi = gwsetup
+    services.db.set_gateway(pi.id)
+    cb, nav = _acb(fake_bot)
+    await ah.gateway_release_yes(cb, GwMarkCB(action="release_yes", device_id=pi.id), services)
+    rel = [s for s in nav.sent if s[0] == "answer" and "GW1:" in s[1]]
+    assert len(rel) == 1 and rel[0][2] is not None, "одно сообщение с токеном и кнопкой"
+    assert "Перешли" in rel[0][1]
+    # агент: claim после применения — одно сообщение с кнопкой
+    monkeypatch.setattr(gwguard, "script_status", lambda: {"GW_STATUS": "unmarked"})
+    monkeypatch.setattr(gwguard, "uplink_pubkey", lambda: ("awg0", "K="))
+    monkeypatch.setattr(gw, "pathlib_read", lambda p: "[Interface]\nPrivateKey = " + PRIV + "\n")
+    from awgbot.domain.gateway import GatewayServices
+    from awgbot.infra.db import Database
+    import tempfile, pathlib as _pl
+    db = Database(_pl.Path(tempfile.mkdtemp()) / "gw.db"); db.init_schema()
+    svc = GatewayServices(db)
+    monkeypatch.setattr(svc, "apply_bundle", lambda blob, ow=False: (True, "готово"))
+    monkeypatch.setattr(svc, "status", lambda: __import__("awgbot.domain.gateway", fromlist=["GwStatus"]).GwStatus())
+    cb2, nav2 = _acb(fake_bot)
+    st = FakeState(); await st.update_data(bundle=base64.b64encode(b"x").decode())
+    await gh.gw_bundle_apply(cb2, GwCB(action="apply"), svc, st)
+    claims = [s for s in nav2.sent if s[0] == "answer" and "GW1:" in s[1]]
+    assert len(claims) == 1 and claims[0][2] is not None and "Перешли" in claims[0][1]

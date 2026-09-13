@@ -495,12 +495,19 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
         # пересылки основному боту отдельным сообщением, чтобы пересылалось как есть
         outcome = await call(services.gateway_mark_outcome)
         if outcome.get("claim"):
-            await cb.message.answer(texts.gateway_claim_forward_text(outcome["claim"], outcome["status"]))
-            await cb.message.answer(texts.gateway_claim_token_text(outcome["claim"]))
+            await cb.message.answer(texts.gateway_claim_forward_text(outcome["claim"], outcome["status"]),
+                                    reply_markup=kb.hide_only())
     await _panel(cb.message, services, fresh=True, keep_id=cb.message.message_id)
 
 
-@router.message(F.text.regexp(r"GW1:[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"))
+def has_gw_token(text) -> bool:
+    """Токен ищется в любом месте текста: пересланное сообщение несёт и
+    пояснение, регэксп «с начала строки» его не находил."""
+    from awgbot.util import gwsign
+    return gwsign.find_token(text or "") is not None
+
+
+@router.message(F.text.func(has_gw_token))
 async def gw_release_message(message: Message, services, state: FSMContext):
     """Пересланное от основного бота «ты больше не шлюз»."""
     await state.clear()

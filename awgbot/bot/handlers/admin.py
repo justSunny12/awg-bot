@@ -1128,7 +1128,12 @@ async def admin_device_open(cb: CallbackQuery, callback_data: DeviceCB, services
 # Агент шлюза после применения конфигурации присылает подписанное сообщение;
 # админ пересылает его сюда. Подпись — ключом линка (общий секрет сторон).
 
-@router.message(F.text.regexp(r"GW1:[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"), StateFilter(None))
+def has_gw_token(text) -> bool:
+    from awgbot.util import gwsign
+    return gwsign.find_token(text or "") is not None
+
+
+@router.message(F.text.func(has_gw_token), StateFilter(None))
 async def gateway_claim_message(message: Message, services):
     try:
         res = await call(services.gateway_claim, message.text or "")
@@ -1152,7 +1157,7 @@ async def _send_release_for(message: Message, services, dev) -> None:
     except ServiceError as e:
         await message.answer(f"⚠️ Сообщение для бота шлюза не собрано: {texts._e(str(e))}")
         return
-    await message.answer(texts.gateway_release_forward_text(token))
+    await message.answer(texts.gateway_release_forward_text(token), reply_markup=kb.hide_only())
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "replace_yes"))

@@ -156,7 +156,7 @@ async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services)
         await edit(cb, texts.gateway_replaced(res["device"], res["previous"]), None)
         try:
             token = await call(services.gateway_release_message, res["previous"])
-            await cb.message.answer(texts.gateway_release_forward_text(token))
+            await cb.message.answer(texts.gateway_release_forward_text(token), reply_markup=kb.hide_only())
         except ServiceError as e:
             await cb.message.answer(f"⚠️ Сообщение для бота старого шлюза не собрано: {texts._e(str(e))}")
     else:
