@@ -2077,6 +2077,30 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         self.db.set_gateway(dev.id)
         return {"status": "marked", "device": self.db.get_device(dev.id), "previous": None}
 
+    def gateway_candidates(self) -> list:
+        """Устройства админа, выпущенные ботом, кроме текущего шлюза."""
+        admin = self.admin_client()
+        if admin is None:
+            return []
+        return [d for d in self.db.list_devices(admin.id) if d.private_key and not d.is_gateway]
+
+    def gateway_mark(self, device_id: int) -> dict:
+        """Назначить шлюз кнопкой: устройство админа, выпущенное ботом.
+        Возвращает {'device', 'previous'}."""
+        dev = self.db.get_device(device_id)
+        if dev is None:
+            raise ServiceError("Устройство не найдено")
+        admin = self.admin_client()
+        if admin is None or dev.client_id != admin.id:
+            raise ServiceError("шлюзом может быть только устройство профиля админа")
+        if not dev.private_key:
+            raise ServiceError("это устройство создавал не бот — его конфиг в бандл не собрать")
+        if dev.is_gateway:
+            return {"device": dev, "previous": None}
+        prev = self.db.gateway_device()
+        self.db.set_gateway(dev.id)
+        return {"device": self.db.get_device(dev.id), "previous": prev}
+
     def gateway_replace(self, device_id: int) -> dict:
         """Подтверждённая замена: флаг переставляется на новое устройство.
         Возвращает {'device', 'previous'}; previous нужен для release-сообщения

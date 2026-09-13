@@ -1139,6 +1139,8 @@ async def gateway_claim_message(message: Message, services):
         await message.answer(texts.gateway_claim_already(res["device"]))
     elif res["status"] == "marked":
         await message.answer(texts.gateway_claim_marked(res["device"]))
+        from awgbot.bot.handlers.settings import send_gw_bundle
+        await send_gw_bundle(message, services)          # без отдельного нажатия
     else:
         await message.answer(texts.gateway_replace_ask(res["device"], res["previous"]),
                              reply_markup=kb.gateway_replace_confirm(res["device"].id))
@@ -1164,6 +1166,8 @@ async def gateway_replace_yes(cb: CallbackQuery, callback_data: GwMarkCB, servic
     await edit(cb, texts.gateway_replaced(res["device"], res["previous"]), None)
     if res["previous"] is not None:
         await _send_release_for(cb.message, services, res["previous"])
+    from awgbot.bot.handlers.settings import send_gw_bundle
+    await send_gw_bundle(cb.message, services)
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "replace_no"))

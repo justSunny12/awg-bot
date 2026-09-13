@@ -267,6 +267,25 @@ def gateway_device_actions(dev, back_target: str) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def gateway_pick(devices) -> InlineKeyboardMarkup:
+    """Выбор шлюзового устройства из устройств админа."""
+    kb = InlineKeyboardBuilder()
+    for d in devices:
+        kb.button(text=f"📱 {d.name} ({d.address})",
+                  callback_data=GwMarkCB(action="pick", device_id=d.id))
+    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=SetCB(sec="rt", act="open").pack()))
+    kb.adjust(*([1] * len(devices)), 1)
+    return kb.as_markup()
+
+
+def gateway_mark_confirm(device_id: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🛰 Да, это шлюз", callback_data=GwMarkCB(action="mark_yes", device_id=device_id))
+    kb.button(text="Отмена", callback_data=SetCB(sec="rt_gw", act="open"))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
 def gateway_release_confirm(device_id: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="🛑 Да, больше не шлюз", callback_data=GwMarkCB(action="release_yes", device_id=device_id))
@@ -1115,19 +1134,24 @@ def settings_back() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def settings_routing(enabled: bool) -> InlineKeyboardMarkup:
+def settings_routing(enabled: bool, has_gateway: bool = True) -> InlineKeyboardMarkup:
     """Раздел «Условная маршрутизация»: выключатель и три подраздела.
 
     Подразделы показываем ТОЛЬКО при включённой функции: раздавать разрешения
     или обновлять списки для выключенного — приглашение к недоумению «почему у
-    клиента не работает, я же разрешил».
+    клиента не работает, я же разрешил». Без назначенного шлюза вместо
+    конфигурации — назначение: конфигурация без шлюза уедет пустой по сути.
     """
     kb = InlineKeyboardBuilder()
     kb.button(text=f"{_chk(enabled)} Условная маршрутизация",
               callback_data=SetCB(sec="rt", act="toggle", key="app.routing.enabled"))
     if enabled:
-        kb.button(text="⚙️ Конфигурация шлюза",
-                  callback_data=SetCB(sec="rt_bundle", act="open"))
+        if has_gateway:
+            kb.button(text="⚙️ Конфигурация шлюза",
+                      callback_data=SetCB(sec="rt_bundle", act="open"))
+        else:
+            kb.button(text="🛰 Назначить шлюз",
+                      callback_data=SetCB(sec="rt_gw", act="open"))
         kb.button(text="📋 Списки маршрутизации",
                   callback_data=SetCB(sec="rt_lists", act="open"))
         kb.button(text="👥 Доступность пользователям",

@@ -14,7 +14,7 @@ from awgbot.core import config
 from awgbot.core import settings
 from awgbot.bot import texts
 from awgbot.bot import keyboards as kb
-from awgbot.bot.callbacks import SetCB
+from awgbot.bot.callbacks import GwMarkCB, SetCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import BackupPassphrase, EmailSetup, SettingsInput
 from awgbot.bot.handlers import mailwizard
@@ -67,9 +67,17 @@ async def _screen(sec: str, services):
         on = settings.get_bool("app.routing.enabled", False)
         status = await call(services.routing_status)
         text = texts.settings_routing_text(on, status)
+        gw = await call(services.db.gateway_device) if on else None
         if on:
-            text += texts.settings_routing_gateway_line(await call(services.db.gateway_device))
-        return text, kb.settings_routing(on)
+            text += texts.settings_routing_gateway_line(gw)
+        return text, kb.settings_routing(on, has_gateway=gw is not None)
+    if sec == "rt_gw":
+        if not config.ROUTING_ENABLED or not settings.get_bool("app.routing.enabled", False):
+            return texts.SETTINGS_ROUTING_SUBOFF, kb.settings_back()
+        cands = await call(services.gateway_candidates)
+        if not cands:
+            return texts.GATEWAY_PICK_EMPTY, kb.settings_back()
+        return texts.GATEWAY_PICK_INTRO, kb.gateway_pick(cands)
     if sec in ("rt_lists", "rt_users", "rt_bundle"):
         # Подразделы существуют только при включённой функции. Колбэк приходит
         # и из старого сообщения — тогда честно говорим, что раздел пуст.
@@ -106,6 +114,55 @@ async def _record(cb: CallbackQuery, text: str, services):
     await edit(cb, text, None)
     await send_menu(cb.message, services, *await _screen("svc", services),
                     keep_id=cb.message.message_id)
+
+
+async def send_gw_bundle(message: Message, services) -> bool:
+    """Собрать, зашифровать и отдать конфигурацию шлюза файлом с кнопкой
+    «В меню». Одна точка для настроек, назначения шлюза и приёма токена."""
+    try:
+        blob, name = await call(services.gw_bundle_encrypted)
+    except (ServiceError, OSError) as e:
+        await message.answer(f"⚠️ Конфигурация шлюза не собрана: {texts._e(str(e))}")
+        return False
+    from aiogram.types import BufferedInputFile
+    await message.answer_document(
+        BufferedInputFile(blob, filename=name),
+        caption="⚙️ Конфигурация шлюза. Перешли файл боту шлюза — он проверит "
+                "и применит сам.",
+        reply_markup=kb.bundle_menu_kb())
+    return True
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "pick"))
+async def gateway_pick(cb: CallbackQuery, callback_data: GwMarkCB, services):
+    dev = await call(services.db.get_device, callback_data.device_id)
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
+        return
+    await cb.answer()
+    prev = await call(services.db.gateway_device)
+    await edit(cb, texts.gateway_mark_ask(dev, prev), kb.gateway_mark_confirm(dev.id))
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "mark_yes"))
+async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services):
+    try:
+        res = await call(services.gateway_mark, callback_data.device_id)
+    except ServiceError as e:
+        await cb.answer(str(e), show_alert=True)
+        return
+    await cb.answer()
+    if res["previous"] is not None:
+        await edit(cb, texts.gateway_replaced(res["device"], res["previous"]), None)
+        try:
+            token = await call(services.gateway_release_message, res["previous"])
+            await cb.message.answer(texts.gateway_release_forward_text(token))
+        except ServiceError as e:
+            await cb.message.answer(f"⚠️ Сообщение для бота старого шлюза не собрано: {texts._e(str(e))}")
+    else:
+        await edit(cb, texts.gateway_marked(res["device"]), None)
+    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
+    await send_gw_bundle(cb.message, services)
 
 
 # ── открытие раздела ─────────────────────────────────────────────────────────
@@ -163,12 +220,6 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
     эффект, но настройки самого клиента не разрушаем."""
     if callback_data.key == "bundle":
         await cb.answer("Собираю и шифрую…")
-        try:
-            blob, name = await call(services.gw_bundle_encrypted)
-        except (ServiceError, OSError) as e:
-            await cb.answer(f"Не удалось: {e}", show_alert=True)
-            return
-        from aiogram.types import BufferedInputFile
         # Экран-инструкция гаснет: живым должно остаться одно меню, и это —
         # кнопка «В меню» на самом файле. Инструкцию помечаем как контент:
         # возврат в меню (show_main_menu → cleanup_content) удалит и её —
@@ -178,11 +229,7 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         except Exception:                                  # noqa: BLE001
             pass
         await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
-        await cb.message.answer_document(
-            BufferedInputFile(blob, filename=name),
-            caption="⚙️ Конфигурация шлюза. Перешли файл боту шлюза — он проверит "
-                    "и применит сам.",
-            reply_markup=kb.bundle_menu_kb())
+        await send_gw_bundle(cb.message, services)
         return
     if callback_data.key == "lists_refresh":
         # Колбэк отвечается ОДИН раз — второй ответ Telegram молча роняет.

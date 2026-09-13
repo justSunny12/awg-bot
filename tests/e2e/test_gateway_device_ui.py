@@ -108,3 +108,56 @@ async def test_agent_accepts_release_and_sends_claim_after_bundle(tmp_path, fake
     monkeypatch.setattr(gwguard, "script_status", lambda: {"GW_STATUS": "unmarked"})
     out = svc.gateway_mark_outcome()
     assert out["claim"] and gwsign.verify(PRIV, out["claim"])["pub"] == pub
+
+
+async def test_settings_offers_assign_when_no_gateway_and_marks_with_bundle(services, fake_bot, gwsetup, monkeypatch):
+    """Без шлюза раздел предлагает «Назначить шлюз»; выбор → подтверждение →
+    пометка → конфигурация файлом сразу. С шлюзом — «Конфигурация шлюза»."""
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    _, phone, pi = gwsetup
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    monkeypatch.setattr(settings, "get_bool", lambda k, d=False: True if k == "app.routing.enabled" else d)
+    monkeypatch.setattr(services, "routing_status", lambda: (True, "ок"))
+    monkeypatch.setattr(services, "gw_bundle_encrypted", lambda: (b"BUNDLE", "awg-gw-bundle.enc"))
+    text, markup = await sh._screen("rt", services)
+    labels = [b.text for row in markup.inline_keyboard for b in row]
+    assert "🛰 Назначить шлюз" in labels and "⚙️ Конфигурация шлюза" not in labels
+    assert "не назначен" in text
+    text, markup = await sh._screen("rt_gw", services)
+    labels = [b.text for row in markup.inline_keyboard for b in row]
+    assert any("NASPi" in l for l in labels) and any("phone" in l for l in labels)
+    cb, nav = _acb(fake_bot)
+    await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=pi.id), services)
+    assert any("станет шлюзом" in s[1] for s in nav.sent if s[0] == "edit_text")
+    cb, nav = _acb(fake_bot)
+    await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi.id), services)
+    assert services.db.gateway_device().id == pi.id
+    assert any(s[0] == "document" for s in nav.sent), "конфигурация выдана сразу"
+    text, markup = await sh._screen("rt", services)
+    labels = [b.text for row in markup.inline_keyboard for b in row]
+    assert "⚙️ Конфигурация шлюза" in labels and "🛰 Назначить шлюз" not in labels
+    assert "NASPi" in text
+
+
+async def test_forwarded_claim_sends_bundle_right_away(services, fake_bot, gwsetup, monkeypatch):
+    _, phone, pi = gwsetup
+    monkeypatch.setattr(services, "gw_bundle_encrypted", lambda: (b"BUNDLE", "awg-gw-bundle.enc"))
+    msg = _amsg(fake_bot, gwsign.sign(PRIV, "claim", pi.public_key))
+    await ah.gateway_claim_message(msg, services)
+    assert any(s[0] == "document" for s in msg.sent), "после пометки конфигурация выдаётся сразу"
+
+
+def test_gateway_mark_rules(services, gwsetup, make_active_client):
+    from awgbot.domain.services import ServiceError as SE
+    _, phone, pi = gwsetup
+    client = make_active_client(name="Клиент", tg_id=779)
+    foreign = services.add_device(client.id, "x")
+    with pytest.raises(SE):
+        services.gateway_mark(foreign.device_id)
+    res = services.gateway_mark(pi.id)
+    assert res["previous"] is None and services.db.gateway_device().id == pi.id
+    assert services.gateway_mark(pi.id)["previous"] is None, "повтор — без изменений"
+    res = services.gateway_mark(phone.id)
+    assert res["previous"].id == pi.id and services.db.gateway_device().id == phone.id
+    assert [d.id for d in services.gateway_candidates()] == [pi.id], "текущий шлюз в кандидатах не нужен"
