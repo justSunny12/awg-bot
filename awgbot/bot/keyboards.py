@@ -38,7 +38,7 @@ def reply_hide() -> ReplyKeyboardRemove:
 
 from awgbot.bot.callbacks import (AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
                        FriendCB, GraceCB, GuideCB, HelpCB, Menu, PauseCB,
-                       PeriodCB, ReassignCB, RoutingCB, UpdateCB, SetCB, BroadcastCB)
+                       PeriodCB, ReassignCB, RoutingCB, UpdateCB, SetCB, BroadcastCB, GwMarkCB)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -251,6 +251,35 @@ def device_actions(dev, *, is_admin: bool, back_target: str,
     # 8) Назад
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
     kb.adjust(*([1] * rows), 1)
+    return kb.as_markup()
+
+
+def gateway_device_actions(dev, back_target: str) -> InlineKeyboardMarkup:
+    """Карточка ШЛЮЗА: имя, та же кнопка выпуска конфигурации, что в настройках,
+    и выход из роли. Ссылок, лимита, блокировки, передачи и удаления нет:
+    всё это у шлюза запрещено сервисами, кнопки бы только обещали лишнее."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✏️ Имя", callback_data=DeviceCB(action="edit_name", device_id=dev.id))
+    kb.button(text="⚙️ Конфигурация шлюза", callback_data=SetCB(sec="rt_bundle", act="open"))
+    kb.button(text="🛑 Не шлюз?", callback_data=GwMarkCB(action="release_ask", device_id=dev.id))
+    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
+    kb.adjust(1, 1, 1, 1)
+    return kb.as_markup()
+
+
+def gateway_release_confirm(device_id: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🛑 Да, больше не шлюз", callback_data=GwMarkCB(action="release_yes", device_id=device_id))
+    kb.button(text="Отмена", callback_data=DeviceCB(action="open", device_id=device_id))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def gateway_replace_confirm(device_id: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🛰 Да, сменить шлюз", callback_data=GwMarkCB(action="replace_yes", device_id=device_id))
+    kb.button(text="Отмена", callback_data=GwMarkCB(action="replace_no", device_id=device_id))
+    kb.adjust(1)
     return kb.as_markup()
 
 

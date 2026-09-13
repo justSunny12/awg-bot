@@ -565,6 +565,12 @@ class MigrationMixin:
                     awg.unblock_ip(old.address)           # осиротевший DROP снять
                 except awg.AwgError:
                     pass
+            # флаг шлюза живёт на исходной строке (уникальный индекс не даст
+            # двух); на финале он переезжает к двойнику вместе с остальным
+            _real = self.db.get_device(old.id)
+            if _real is not None and self.db.gateway_device() is not None \
+                    and self.db.gateway_device().id == old.id:
+                self.db.set_gateway(twin.id)
             self.db.delete_device(old.id, archive_reason="миграция")
             self.db.update_device_fields(twin.id, twin_of=None)
 

@@ -198,6 +198,13 @@ class BroadcastCB(CallbackData, prefix="bc"):
     ref: int = 0
 
 
+class GwMarkCB(CallbackData, prefix="gwm"):
+    """Пометка шлюза у основного бота: replace_yes|replace_no (замена шлюза
+    после пересланного claim), release_ask|release_yes («🛑 Не шлюз?»)."""
+    action: str
+    device_id: int = 0
+
+
 class GwCB(CallbackData, prefix="gw"):
     """Кнопки агента шлюза (роль gateway). action: panel|doctor|restart|reassert
     (показ подтверждения), restart!|reassert! (исполнение), apply!|drop (бандл),

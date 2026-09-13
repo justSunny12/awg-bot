@@ -167,6 +167,12 @@ HDREOF
         # сборке, бандл вшивает, юнит на шлюзе закрепляет. Сменился состав —
         # новый бандл (бот сам напомнит).
         printf 'ADMIN_IPS="${ADMIN_IPS:-%s}"\nexport ADMIN_IPS\n' "$(printf '%s' "${ADMIN_IPS:-}" | tr -cd '0-9./ ')"
+        # Помеченный шлюз: ключ его аплинка (в окне переезда — ключ двойника и
+        # старый ключ отдельно) и конфиг аплинка в base64. По ключу агент поймёт,
+        # он ли шлюз; конфиг ставится только машине с тем же ключом.
+        printf 'GATEWAY_PUBKEY="%s"\nexport GATEWAY_PUBKEY\n' "$(printf '%s' "${GATEWAY_PUBKEY:-}" | tr -cd 'A-Za-z0-9+/=')"
+        printf 'GATEWAY_PREV_PUBKEY="%s"\nexport GATEWAY_PREV_PUBKEY\n' "$(printf '%s' "${GATEWAY_PREV_PUBKEY:-}" | tr -cd 'A-Za-z0-9+/=')"
+        printf 'UPLINK_B64="%s"\nexport UPLINK_B64\n' "$(printf '%s' "${UPLINK_B64:-}" | tr -cd 'A-Za-z0-9+/=')"
         # Имя ВПС — для панели агента («Линк до …»): на шлюзе взять его неоткуда.
         printf 'SERVER_NAME="%s"\n' "$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9._-' | cut -c1-64)"
         cat <<'BODYEOF'

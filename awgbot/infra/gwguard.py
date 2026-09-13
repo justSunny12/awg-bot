@@ -134,3 +134,63 @@ def reassert() -> tuple[bool, str]:
                           capture_output=True, timeout=90)
     ok = proc.returncode == 0
     return ok, "" if ok else proc.stderr.decode(errors="replace").strip()[-300:]
+
+
+# ── шлюзовое устройство: аплинк этой машины и решение скрипта ────────────────
+STATUS_FILE = "/etc/awg-gw/gateway.status"
+
+
+def _awg(args: list[str]) -> str:
+    try:
+        proc = subprocess.run(["awg", *args], capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return proc.stdout.decode(errors="replace").strip() if proc.returncode == 0 else ""
+
+
+def _endpoint_host(iface: str) -> str:
+    """Хост Endpoint первого пира интерфейса (`awg show <if> endpoints`)."""
+    out = _awg(["show", iface, "endpoints"])
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] != "(none)":
+            return parts[1].rsplit(":", 1)[0].strip("[]")
+    return ""
+
+
+def uplink_interface() -> str:
+    """Клиентский туннель к ВПС. Задан в conf — он; иначе не-линк интерфейс с
+    тем же хостом Endpoint, что у линка (тот же ВПС), иначе единственный
+    не-линк интерфейс."""
+    if config.GW_UPLINK_IF:
+        return config.GW_UPLINK_IF
+    names = [n for n in _awg(["show", "interfaces"]).split() if n != config.GW_LINK_IF]
+    link_host = _endpoint_host(config.GW_LINK_IF)
+    same = [n for n in names if link_host and _endpoint_host(n) == link_host]
+    if len(same) == 1:
+        return same[0]
+    if len(names) == 1:
+        return names[0]
+    return ""
+
+
+def uplink_pubkey() -> tuple[str, str]:
+    """(интерфейс, публичный ключ) аплинка; пусто — не нашли."""
+    iface = uplink_interface()
+    if not iface:
+        return "", ""
+    return iface, _awg(["show", iface, "public-key"])
+
+
+def script_status() -> dict:
+    """Что решил скрипт обвязки при последнем применении: GW_STATUS
+    unmarked|confirmed|foreign и ключ помеченного шлюза."""
+    out = {}
+    try:
+        for line in Path(STATUS_FILE).read_text(encoding="utf-8").splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return out

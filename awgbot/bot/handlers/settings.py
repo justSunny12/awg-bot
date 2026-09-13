@@ -66,7 +66,10 @@ async def _screen(sec: str, services):
             return texts.SETTINGS_ROUTING_ABSENT, kb.settings_back()
         on = settings.get_bool("app.routing.enabled", False)
         status = await call(services.routing_status)
-        return texts.settings_routing_text(on, status), kb.settings_routing(on)
+        text = texts.settings_routing_text(on, status)
+        if on:
+            text += texts.settings_routing_gateway_line(await call(services.db.gateway_device))
+        return text, kb.settings_routing(on)
     if sec in ("rt_lists", "rt_users", "rt_bundle"):
         # Подразделы существуют только при включённой функции. Колбэк приходит
         # и из старого сообщения — тогда честно говорим, что раздел пуст.

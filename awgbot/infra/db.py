@@ -108,6 +108,8 @@ def _device_from_row(row) -> Optional["models.Device"]:
         iface=(row["iface"] if "iface" in row.keys() else "") or "",
         twin_of=(int(row["twin_of"]) if "twin_of" in row.keys()
                  and row["twin_of"] is not None else None),
+        is_gateway=(int(row["is_gateway_eff"]) if "is_gateway_eff" in row.keys()
+                    else int(row["is_gateway"]) if "is_gateway" in row.keys() else 0),
         created_at=row["created_at"],
         traffic=models.DeviceTraffic(
             limit=int(row["traffic_limit"]),
@@ -145,7 +147,9 @@ LEFT JOIN client_pause p   ON p.client_id = c.id
 """
 
 _DEVICE_SELECT = """
-SELECT d.*, t.traffic_limit, t.traffic_rx_month, t.traffic_tx_month,
+SELECT d.*,
+       (d.is_gateway OR EXISTS (SELECT 1 FROM devices o WHERE o.id = d.twin_of AND o.is_gateway = 1)) AS is_gateway_eff,
+       t.traffic_limit, t.traffic_rx_month, t.traffic_tx_month,
        t.traffic_rx_period, t.traffic_tx_period, t.last_handshake, t.missing_count,
        f.friend_tg_id, f.friend_code, f.friend_status
 FROM devices d
@@ -232,6 +236,7 @@ CREATE TABLE IF NOT EXISTS devices (
     -- (config.AWG_INTERFACE), а не «неизвестно»: так миграция БД обходится без
     -- бэкфилла, а после переезда значение нормализуется обратно в пустое.
     iface               TEXT    NOT NULL DEFAULT '',
+    is_gateway          INTEGER NOT NULL DEFAULT 0,      -- 0/1: шлюз условной маршрутизации (не более одного)
     -- id старой строки у двойника, рождённого переездом. NULL = обычное
     -- устройство. По имени пару не собрать: name не уникален и его правят
     -- прямо в окне переезда.
@@ -552,7 +557,19 @@ class Database:
         self._migrate_routing_master_to_devices()
         self._migrate_routing_domains_mode()
         self._migrate_drop_greeted()
+        self._migrate_gateway_flag()
         self._ensure_service_client()
+
+    def _migrate_gateway_flag(self) -> None:
+        """devices.is_gateway + частичный уникальный индекс: шлюз один, и это
+        гарантирует БД, а не дисциплина в коде."""
+        con = self._connection()
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(devices)")}
+        with self._tx() as cur:
+            if "is_gateway" not in cols:
+                cur.execute("ALTER TABLE devices ADD COLUMN is_gateway INTEGER NOT NULL DEFAULT 0")
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_gateway "
+                        "ON devices(is_gateway) WHERE is_gateway = 1")
 
     def _migrate_samples_last_update(self) -> None:
         """traffic_samples.sampled_at → last_update: колонка теперь означает
@@ -1206,7 +1223,7 @@ class Database:
         else:
             where = f"WHERE d.client_id = ? AND {self._TWIN_DANGLING_OK}"
         return [_device_from_row(r) for r in self._connection().execute(
-            _DEVICE_SELECT + f" {where} ORDER BY d.created_at",
+            _DEVICE_SELECT + f" {where} ORDER BY is_gateway_eff DESC, d.created_at",
             (client_id,)).fetchall()]
 
     def list_all_devices(self) -> list:
@@ -1280,7 +1297,10 @@ class Database:
         Считать пары значило бы упереться в лимит вдвое раньше, чем следует.
         COUNT, а не len(list_devices): без JOIN и без сборки моделей."""
         row = self._connection().execute(
-            f"SELECT COUNT(*) AS n FROM devices d {self._visible_where()}", (client_id,)).fetchone()
+            f"SELECT COUNT(*) AS n FROM devices d {self._visible_where()} "
+            "AND d.is_gateway = 0 AND NOT EXISTS "
+            "(SELECT 1 FROM devices o WHERE o.id = d.twin_of AND o.is_gateway = 1)",
+            (client_id,)).fetchone()
         return int(row["n"])
 
     def client_has_online_device(self, client_id: int, threshold_seconds: int) -> bool:
@@ -1398,7 +1418,7 @@ class Database:
         "name": "devices", "private_key": "devices",
         "block_reason": "devices", "client_id": "devices",
         "routing_on": "devices",
-        "iface": "devices", "twin_of": "devices",
+        "iface": "devices", "twin_of": "devices", "is_gateway": "devices",
         "public_key": "devices", "preshared_key": "devices", "address": "devices",
         "traffic_limit": "device_traffic", "traffic_rx_month": "device_traffic",
         "traffic_tx_month": "device_traffic", "traffic_rx_period": "device_traffic",
@@ -1444,6 +1464,30 @@ class Database:
                 "AND (last_handshake IS NULL OR last_handshake = '')",
                 (value, device_id))
             return cur.rowcount == 1
+
+    # ── шлюз условной маршрутизации ──────────────────────────────────────────
+
+    def gateway_device(self):
+        """Устройство с настоящим флагом (в окне переезда — исходная строка пары)."""
+        return _device_from_row(self._connection().execute(
+            _DEVICE_SELECT + " WHERE d.is_gateway = 1").fetchone())
+
+    def twin_of_device(self, device_id: int):
+        """Двойник устройства в окне переезда, если есть."""
+        return _device_from_row(self._connection().execute(
+            _DEVICE_SELECT + " WHERE d.twin_of = ?", (device_id,)).fetchone())
+
+    def get_device_by_pubkey(self, public_key: str):
+        return _device_from_row(self._connection().execute(
+            _DEVICE_SELECT + " WHERE d.public_key = ?", (public_key,)).fetchone())
+
+    def set_gateway(self, device_id) -> None:
+        """Снять флаг со всех и поставить одному (None — только снять), одной
+        транзакцией: уникальный индекс не даст двух шлюзов даже на миг."""
+        with self._tx() as cur:
+            cur.execute("UPDATE devices SET is_gateway = 0 WHERE is_gateway = 1")
+            if device_id is not None:
+                cur.execute("UPDATE devices SET is_gateway = 1 WHERE id = ?", (int(device_id),))
 
     def delete_device(self, device_id: int, archive_reason: str = "deleted") -> None:
         """Удаляет устройство. Перед удалением — снимок в историю + закрытие
@@ -1517,7 +1561,8 @@ class Database:
                  COALESCE(SUM(t.traffic_rx_period), 0) AS rx_period,
                  COALESCE(SUM(t.traffic_tx_period), 0) AS tx_period
                FROM device_traffic t JOIN devices d ON d.id = t.device_id
-               WHERE d.client_id = ?""",
+               WHERE d.client_id = ? AND d.is_gateway = 0 AND NOT EXISTS
+                 (SELECT 1 FROM devices o WHERE o.id = d.twin_of AND o.is_gateway = 1)""",
             (client_id,),
         ).fetchone()
         return dict(row)

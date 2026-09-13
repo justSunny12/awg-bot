@@ -21,7 +21,7 @@ from aiogram.filters import CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from awgbot.bot.callbacks import (AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
+from awgbot.bot.callbacks import (AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB, GwMarkCB,
                        Menu, PeriodCB, ReassignCB, RoutingCB, UpdateCB, BroadcastCB)
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message, purge_menus, dismiss_update_reports,
@@ -1109,6 +1109,11 @@ async def admin_device_open(cb: CallbackQuery, callback_data: DeviceCB, services
         await cb.answer("Устройство не найдено", show_alert=True)
         return
     back_target, reassign_label = await _device_back_target_and_label(services, dev)
+    if dev.is_gateway:
+        await edit(cb, texts.gateway_device_card(dev),
+                   kb.gateway_device_actions(dev, back_target=back_target))
+        await cb.answer()
+        return
     markup = kb.device_actions(dev, is_admin=True, back_target=back_target,
                                reassign_label=reassign_label)
     text = texts.device_card_text(dev, for_admin=True)
@@ -1117,6 +1122,75 @@ async def admin_device_open(cb: CallbackQuery, callback_data: DeviceCB, services
         text += f"\n\n{marker}"
     await edit(cb, text, markup)
     await cb.answer()
+
+
+# ── шлюз условной маршрутизации: пометка по пересланному сообщению ──────────
+# Агент шлюза после применения конфигурации присылает подписанное сообщение;
+# админ пересылает его сюда. Подпись — ключом линка (общий секрет сторон).
+
+@router.message(F.text.regexp(r"GW1:[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"), StateFilter(None))
+async def gateway_claim_message(message: Message, services):
+    try:
+        res = await call(services.gateway_claim, message.text or "")
+    except (ServiceError, ValueError) as e:
+        await message.answer(f"🛰 Сообщение шлюза не принято: {texts._e(str(e))}")
+        return
+    if res["status"] == "already":
+        await message.answer(texts.gateway_claim_already(res["device"]))
+    elif res["status"] == "marked":
+        await message.answer(texts.gateway_claim_marked(res["device"]))
+    else:
+        await message.answer(texts.gateway_replace_ask(res["device"], res["previous"]),
+                             reply_markup=kb.gateway_replace_confirm(res["device"].id))
+
+
+async def _send_release_for(message: Message, services, dev) -> None:
+    try:
+        token = await call(services.gateway_release_message, dev)
+    except ServiceError as e:
+        await message.answer(f"⚠️ Сообщение для бота шлюза не собрано: {texts._e(str(e))}")
+        return
+    await message.answer(texts.gateway_release_forward_text(token))
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "replace_yes"))
+async def gateway_replace_yes(cb: CallbackQuery, callback_data: GwMarkCB, services):
+    try:
+        res = await call(services.gateway_replace, callback_data.device_id)
+    except ServiceError as e:
+        await cb.answer(str(e), show_alert=True)
+        return
+    await cb.answer()
+    await edit(cb, texts.gateway_replaced(res["device"], res["previous"]), None)
+    if res["previous"] is not None:
+        await _send_release_for(cb.message, services, res["previous"])
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "replace_no"))
+async def gateway_replace_no(cb: CallbackQuery, services):
+    await cb.answer()
+    await edit(cb, "Шлюз не менял.", None)
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "release_ask"))
+async def gateway_release_ask(cb: CallbackQuery, callback_data: GwMarkCB, services):
+    dev = await call(services.db.get_device, callback_data.device_id)
+    if dev is None or not dev.is_gateway:
+        await cb.answer("Это устройство не шлюз", show_alert=True)
+        return
+    await cb.answer()
+    await edit(cb, texts.gateway_release_ask(dev), kb.gateway_release_confirm(dev.id))
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "release_yes"))
+async def gateway_release_yes(cb: CallbackQuery, callback_data: GwMarkCB, services):
+    prev = await call(services.gateway_release)
+    if prev is None:
+        await cb.answer("Шлюза и так нет", show_alert=True)
+        return
+    await cb.answer()
+    await edit_nav(cb, services, texts.gateway_released(prev), await _main_menu_markup(services))
+    await _send_release_for(cb.message, services, prev)
 
 
 @router.callback_query(DeviceCB.filter(F.action == "connect_menu"))

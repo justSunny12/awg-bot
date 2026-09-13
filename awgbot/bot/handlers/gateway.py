@@ -490,7 +490,22 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
     await cb.answer("Применяю…")
     ok, detail = await call(services.apply_bundle, blob, callback_data.action == "apply_ow!")
     await edit_nav(cb, services, texts.gateway_op_result("Конфигурация шлюза", ok, detail), None)
+    if ok:
+        # он ли помеченный шлюз: не помечен или помечен другой → сообщение для
+        # пересылки основному боту отдельным сообщением, чтобы пересылалось как есть
+        outcome = await call(services.gateway_mark_outcome)
+        if outcome.get("claim"):
+            await cb.message.answer(texts.gateway_claim_forward_text(outcome["claim"], outcome["status"]))
+            await cb.message.answer(texts.gateway_claim_token_text(outcome["claim"]))
     await _panel(cb.message, services, fresh=True, keep_id=cb.message.message_id)
+
+
+@router.message(F.text.regexp(r"GW1:[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"))
+async def gw_release_message(message: Message, services, state: FSMContext):
+    """Пересланное от основного бота «ты больше не шлюз»."""
+    await state.clear()
+    ok, detail = await call(services.gateway_accept_release, message.text or "")
+    await message.answer(texts.gateway_release_result(ok, detail))
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"restore!", "restore_drop"})))

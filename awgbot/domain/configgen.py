@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import zlib
 
 from awgbot.core import config
@@ -255,6 +256,21 @@ def generate(
     return {"conf": conf_standalone, "vpn": encode_vpn(vpn_obj)}
 
 
+def gateway_uplink_conf(conf: str) -> str:
+    """Клиентский .conf устройства → форма для аплинка шлюза: без DNS (иначе
+    resolvconf уведёт DNS всей машины в туннель) и с Table = off — маршрутами
+    на шлюзе управляет политика по метке, а не awg-quick. PostUp с правилом и
+    маршрутом дописывает скрипт обвязки: метка и таблица известны ему."""
+    out = []
+    for line in conf.splitlines():
+        if re.match(r"^\s*DNS\s*=", line):
+            continue
+        out.append(line)
+        if line.strip() == "[Interface]":
+            out.append("Table = off")
+    return "\n".join(out) + ("\n" if conf.endswith("\n") else "")
+
+
 __all__ = [
-    "encode_vpn", "decode_vpn", "generate",
+    "encode_vpn", "decode_vpn", "generate", "gateway_uplink_conf",
 ]

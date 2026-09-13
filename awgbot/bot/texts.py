@@ -146,6 +146,8 @@ def device_label(dev, *, for_admin: bool = False) -> str:
     if not dev.is_managed:
         name = f"{name} <b>*</b>"
     marker = blocks.blocked_marker_device(int(dev.block_reason), for_admin=for_admin)
+    if getattr(dev, "is_gateway", 0):
+        return f"{dot} 🛰 {name}"
     return f"{marker}{dot} {name}"
 
 
@@ -349,6 +351,62 @@ def friend_invite_message(device_name: str, code: str, bot_username: str) -> str
             "Перешли другу — он активирует и получит управление этим устройством:\n\n"
             f"{link}\n\n"
             f"Или пусть отправит боту: <code>/code {code}</code>")
+
+
+# ── шлюз условной маршрутизации ──────────────────────────────────────────────
+
+def gateway_device_card(dev) -> str:
+    last = timeutil.fmt_handshake(dev.last_handshake)
+    online = timeutil.handshake_is_online(dev.last_handshake)
+    dot = "🟢" if online else "🔴"
+    rx, tx = int(dev.traffic_rx_month), int(dev.traffic_tx_month)
+    return (f"{dot} 🛰 {_e(dev.name)} ({plain_ip(dev.address)}), последний коннект: {last}\n"
+            f"Потребление: {gb_str(rx + tx)} ГБ (↑ {gb_str(tx)} ГБ | ↓ {gb_str(rx)} ГБ)\n\n"
+            "<b>Это устройство — шлюз условной маршрутизации, через него идёт "
+            "трафик на РФ-домены.</b>")
+
+
+def gateway_claim_marked(dev) -> str:
+    return (f"🛰 Устройство «{_e(dev.name)}» ({plain_ip(dev.address)}) помечено как шлюз "
+            "условной маршрутизации.\n\nТеперь перевыпусти конфигурацию шлюза "
+            "(⚙️ Конфигурация шлюза в карточке устройства или в настройках) и примени "
+            "её у бота шлюза: без этого он себя шлюзом не считает.")
+
+
+def gateway_claim_already(dev) -> str:
+    return f"🛰 «{_e(dev.name)}» уже шлюз, ничего не менял."
+
+
+def gateway_replace_ask(new_dev, old_dev) -> str:
+    return (f"🛰 Бот шлюза на устройстве «{_e(new_dev.name)}» ({plain_ip(new_dev.address)}) "
+            f"просит пометить его шлюзом, а шлюз уже есть: «{_e(old_dev.name)}» "
+            f"({plain_ip(old_dev.address)}).\n\nДва шлюза вместе не работают. Сменить? "
+            f"«{_e(old_dev.name)}» станет обычным устройством, а бот на нём об этом не "
+            "узнает — после смены я дам сообщение, которое нужно ему переслать.")
+
+
+def gateway_replaced(new_dev, old_dev) -> str:
+    return (f"🛰 Шлюз теперь «{_e(new_dev.name)}» ({plain_ip(new_dev.address)}); "
+            f"«{_e(old_dev.name)}» — обычное устройство.\n\nПорядок дальше:\n"
+            "1. Перешли следующее сообщение боту СТАРОГО шлюза — он опустит линк.\n"
+            "2. Перевыпусти конфигурацию шлюза и примени её у бота НОВОГО — до "
+            "этого он линк не поднимет.")
+
+
+def gateway_release_ask(dev) -> str:
+    return (f"🛑 «{_e(dev.name)}» перестанет быть шлюзом.\n\nУсловная маршрутизация "
+            "выключится и не заработает до настройки нового шлюзового устройства. "
+            "Само устройство станет обычным: лимиты, блокировки, ссылки — как у всех.")
+
+
+def gateway_released(dev) -> str:
+    return (f"🛑 «{_e(dev.name)}» больше не шлюз, условная маршрутизация выключена.\n\n"
+            "Перешли следующее сообщение боту этого шлюза — он опустит линк.")
+
+
+def gateway_release_forward_text(token: str) -> str:
+    return ("🛰 Сообщение для бота шлюза — перешли его туда как есть:\n\n"
+            f"<code>{_e(token)}</code>")
 
 
 def friend_marker(dev) -> str:
@@ -635,7 +693,10 @@ def traffic_profiles_text(rows, bot_username: str = "") -> str:
 
 
 def device_emoji(d) -> str:
-    """Иконка типа устройства — та же, что в списках: 📲 передано другу, 📱 своё."""
+    """Иконка типа устройства — та же, что в списках: 🛰 шлюз, 📲 передано
+    другу, 📱 своё."""
+    if getattr(d, "is_gateway", 0):
+        return "🛰"
     return "📲" if d.friend is not None else "📱"
 
 
@@ -646,7 +707,9 @@ _LIST_SEP = "\n\n"
 
 
 def online_devices_text(rows) -> str:
-    head = f"📶 <b>Устройства онлайн ({len(rows)}):</b>"
+    # шлюз в списке первым, но в счёте его нет: он в сети всегда, это не «кто подключён»
+    n = sum(1 for d, _ in rows if not getattr(d, "is_gateway", 0))
+    head = f"📶 <b>Устройства онлайн ({n}):</b>"
     if not rows:
         return head + _LIST_SEP + "Сейчас никто не подключён."
     return head + _LIST_SEP + _LIST_SEP.join(
@@ -883,6 +946,13 @@ def settings_routing_text(enabled: bool, status: tuple) -> str:
     return head + ("\nКонфигурация шлюза — файлом для бота шлюза; списки — что "
                    "именно идёт через российский адрес; доступность — кому из "
                    "профилей функция разрешена.")
+
+
+def settings_routing_gateway_line(dev) -> str:
+    if dev is None:
+        return ("\n⚠️ Шлюзовое устройство не помечено: бот шлюза после применения "
+                "конфигурации пришлёт сообщение для пересылки сюда.")
+    return f"\n🛰 Шлюз: «{_e(dev.name)}» ({plain_ip(dev.address)})."
 
 
 SETTINGS_ROUTING_SUBOFF = ("<b>🇷🇺 Условная маршрутизация</b>\n\nФункция выключена — "
@@ -1852,7 +1922,13 @@ def gateway_panel(st) -> str:
     head = [f"🖥 Сервер: {server}"]
     if st.uptime_seconds is not None:
         head.append(f"⬆️ Аптайм: {timeutil.fmt_remaining_short(int(st.uptime_seconds))}")
-    parts += head + ["", f"📡 Линк до {_e(st.server_name or 'ВПС')}: {_gw_link_line(st)}", ""]
+    parts += head + ["", f"📡 Линк до {_e(st.server_name or 'ВПС')}: {_gw_link_line(st)}"]
+    mark = getattr(st, "mark_status", "") or ""
+    if mark and mark != "confirmed":
+        parts.append({"unmarked": "🛰 Шлюз в основном боте не помечен — перешли ему сообщение из отчёта",
+                      "foreign": "⚠️ В основном боте помечен другой шлюз — линк лежит до пометки",
+                      "released": "🛑 Устройство больше не шлюз — линк опущен"}.get(mark, f"🛰 Пометка: {_e(mark)}"))
+    parts.append("")
 
     pad = " " * 7
     cpu = f"{st.cpu:.0f}%" if st.cpu is not None else "?"
@@ -1943,6 +2019,25 @@ GW_BUNDLE_PASSPHRASE_QUESTION = (
     "от заданной на шлюзе.</b>\n\nПерезаписать фразу шлюза фразой с ВПС? Прежние "
     "копии шлюза останутся открываемыми только старой фразой. Если оставить свою — "
     "всё остальное из файла применится как обычно.")
+
+
+def gateway_claim_forward_text(token: str, status: str) -> str:
+    head = ("🛰 <b>Шлюз в основном боте не помечен.</b>" if status == "unmarked" else
+            "⚠️ <b>В основном боте помечен другой шлюз.</b> Два шлюза вместе не "
+            "работают: линк на этой машине лежит, пока основной бот не пометит её. "
+            "Прежний шлюз станет обычным устройством.")
+    return (head + "\n\nПерешли следующее сообщение основному боту как есть — он найдёт "
+            "это устройство по ключу и пометит его шлюзом. После пометки перевыпусти "
+            "конфигурацию шлюза и примени её здесь ещё раз.")
+
+
+def gateway_claim_token_text(token: str) -> str:
+    return f"<code>{_e(token)}</code>"
+
+
+def gateway_release_result(ok: bool, detail: str) -> str:
+    return ("🛑 <b>Устройство больше не шлюз.</b> " + _e(detail) if ok else
+            f"🛰 Сообщение не принято: {_e(detail)}")
 
 
 def gateway_op_result(title: str, ok: bool, detail: str) -> str:

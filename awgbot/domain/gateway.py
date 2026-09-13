@@ -81,6 +81,7 @@ class GwStatus:
     month_tx: int = 0
     egress_ms: float | None = None          # выход наружу через домашний канал, мс
     tg_missing: list[str] = field(default_factory=list)   # диапазоны Telegram без маркировки
+    mark_status: str = ""                   # шлюзовое устройство: confirmed|unmarked|foreign|released
     ts: str = ""                            # когда снят (ISO); пусто — живой
 
     def to_json(self) -> str:
@@ -510,6 +511,61 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
             except OSError:
                 pass
 
+    # ── шлюзовое устройство: пометка в основном боте ─────────────────────────
+    _GW_MARK_KEY = "gw_mark_status"           # unmarked | confirmed | foreign | released | ?
+
+    def gateway_mark_outcome(self) -> dict:
+        """После применения бандла: он ли помеченный шлюз. Решение принял
+        скрипт обвязки (файл статуса), здесь — перевод в действие: unmarked и
+        foreign означают «переслать claim основному боту»."""
+        from awgbot.infra import gwguard
+        st = gwguard.script_status()
+        status = st.get("GW_STATUS", "?")
+        iface, pub = gwguard.uplink_pubkey()
+        self.db.set_state(self._GW_MARK_KEY, status)
+        out = {"status": status, "uplink": iface, "pubkey": pub, "claim": None}
+        if status in ("unmarked", "foreign") and pub:
+            try:
+                out["claim"] = self.gateway_claim_message(pub)
+            except (OSError, ValueError) as e:
+                log.warning("gateway: claim не собран: %s", e)
+        return out
+
+    def gateway_claim_message(self, pubkey: str) -> str:
+        """Подписанный ключом линка токен «я шлюз с таким аплинком»."""
+        from awgbot.util import bundlecrypt, gwsign
+        priv = bundlecrypt.read_privkey(pathlib_read(config.GW_LINK_CONF))
+        return gwsign.sign(priv, "claim", pubkey, "", host=socket.gethostname())
+
+    def gateway_accept_release(self, text: str) -> tuple[bool, str]:
+        """Пересланное от основного бота «ты больше не шлюз»: проверить подпись
+        и адресата (наш ключ аплинка), опустить линк, выключить юнит."""
+        from awgbot.util import bundlecrypt, gwsign
+        try:
+            priv = bundlecrypt.read_privkey(pathlib_read(config.GW_LINK_CONF))
+            data = gwsign.verify(priv, text)
+        except (OSError, ValueError) as e:
+            return False, str(e)
+        if data["act"] == "claim":
+            return False, "это сообщение для основного бота, а не для шлюза"
+        _, mine = self.uplink_pubkey_cached()
+        if mine and data["pub"] != mine:
+            return False, "сообщение адресовано другому шлюзу (ключ аплинка не совпадает)"
+        _run(["awg-quick", "down", config.GW_LINK_IF], timeout=30)
+        _run(["systemctl", "disable", "--now", config.GW_UNIT], timeout=30)
+        self.db.set_state(self._GW_MARK_KEY, "released")
+        self._mark_status_cache = None
+        return True, "линк опущен, автозапуск обвязки выключен"
+
+    _mark_status_cache = None
+
+    def uplink_pubkey_cached(self) -> tuple[str, str]:
+        from awgbot.infra import gwguard
+        return gwguard.uplink_pubkey()
+
+    def gateway_mark_status(self) -> str:
+        return self.db.get_state(self._GW_MARK_KEY) or "?"
+
     def doctor(self) -> list[GwCheck]:
         """Все проверки — живьём. Список, а не вердикт: чинить будут по строкам."""
         return self.status().checks
@@ -666,6 +722,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         st.uptime_seconds = hostmetrics.read_uptime_seconds()
         st.hostname = socket.gethostname()
         st.server_name = self.server_name()
+        st.mark_status = self.gateway_mark_status()
         return st
 
     _SNAPSHOT_KEY = "gw_status"

@@ -383,7 +383,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         devs = [d for d in self.db.list_all_devices()
                 if timeutil.handshake_is_online(d.traffic.last_handshake)]
         names = {c.id: c.name for c in self.db.list_clients(include_service=True)}
-        devs.sort(key=lambda d: (names.get(d.client_id, "").lower(), d.name.lower()))
+        devs.sort(key=lambda d: (0 if d.is_gateway else 1,
+                                 names.get(d.client_id, "").lower(), d.name.lower()))
         return [(d, names.get(d.client_id, "")) for d in devs]
 
     def online_client_ids(self) -> set[int]:
@@ -439,8 +440,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         twins — заранее снятая карта пар: в циклах избавляет от скана devices
         на каждое устройство."""
         dev = self.db.get_device(device_id)
-        if dev is None:
-            return
+        if dev is None or dev.is_gateway:
+            return                                # шлюз не блокируется ни одной причиной
         new_mask = int(dev.block_reason) | int(bit)
         if new_mask == int(dev.block_reason):
             return
@@ -489,6 +490,14 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
 
     # ── Ручные блокировки (админ / клиент) ───────────────────────────────────
 
+    _TXT_GATEWAY_LOCKED = ("Это устройство — шлюз условной маршрутизации: его нельзя "
+                           "заблокировать, удалить, передать или выдать ему ссылку. "
+                           "Сначала «🛑 Не шлюз?» в карточке устройства.")
+
+    def _refuse_if_gateway(self, dev) -> None:
+        if dev is not None and dev.is_gateway:
+            raise ServiceError(self._TXT_GATEWAY_LOCKED)
+
     def block_device_manual(self, device_id: int, bit: DeviceBlock,
                             notify: bool) -> list["Notification"]:
         """Ручной блок устройства заданным битом (ADMIN_SILENT/NOTIFIED/USER).
@@ -497,6 +506,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         dev = self.db.get_device(device_id)
         if dev is None:
             return []
+        self._refuse_if_gateway(dev)
         self._device_set_block(device_id, bit)
         notes: list[Notification] = []
         if notify:
@@ -797,6 +807,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         dev = self.db.get_device(device_id)
         if dev is None:
             return None
+        self._refuse_if_gateway(dev)
         friend_tg = dev.friend_tg_id if dev.friend_status == FriendStatus.ACTIVE else None
         # Снятие ПАРНОЕ. В окне переезда у устройства два пира на двух
         # интерфейсах; снять только видимый значит оставить второй работать —
@@ -823,12 +834,15 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         self.db.delete_device(device_id)
         return friend_tg
 
-    def generate_config(self, device_id: int) -> dict:
+    def generate_config(self, device_id: int, *, for_bundle: bool = False) -> dict:
         """Перевыпуск конфига устройства. Только для устройств, созданных ботом:
-        приватный ключ есть лишь у них."""
+        приватный ключ есть лишь у них. Шлюзу ссылку не выдаём: его конфиг едет
+        только внутри конфигурации шлюза (for_bundle)."""
         dev = self.db.get_device(device_id)
         if dev is None:
             raise ServiceError("Устройство не найдено")
+        if not for_bundle:
+            self._refuse_if_gateway(dev)
         if not dev.private_key:
             raise ServiceError(
                 "Это устройство создавал не бот — приватного ключа у него нет, "
@@ -863,6 +877,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         dev = self.db.get_device(device_id)
         if dev is None:
             raise ServiceError("Устройство не найдено")
+        self._refuse_if_gateway(dev)
         if not dev.private_key:
             raise ServiceError("Это устройство создавал не бот — передать его нельзя: "
                                "у бота нет ссылки, которую можно было бы выдать другу")
@@ -922,6 +937,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         dev = self.db.get_device(device_id)
         if dev is None:
             raise ServiceError("Устройство не найдено")
+        self._refuse_if_gateway(dev)
         client = self.db.get_client(new_client_id)
         if client is None:
             raise ServiceError("Клиент не найден")
@@ -1485,6 +1501,12 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
               # в проходе по двойнику, отдельно не судим
               paired_old = {d.twin_of for d in devices if d.twin_of is not None}
 
+              # шлюз условной маршрутизации в лимитах не участвует: ни своим,
+              # ни в сумме профиля (его трафик — весь РФ-трафик клиентов)
+              devices = [d for d in devices if not d.is_gateway]
+              by_id = {d.id: d for d in devices}
+              paired_old = {d.twin_of for d in devices if d.twin_of is not None}
+
               # ── лимиты устройств (независимо от клиентского) ──
               for dev in devices:
                   if dev.id in paired_old:
@@ -1982,6 +2004,20 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         # домашняя сеть за ним; состав запоминаем, чтобы напомнить о перевыпуске
         admin_ips = self._gw_ssh_allow()
         env = {**os.environ, "ADMIN_IPS": " ".join(admin_ips)}
+        # Помеченный шлюз: его ключ (в окне переезда — ключ двойника, старый
+        # ключ отдельно) и конфиг аплинка. Агент по ключу поймёт, он ли шлюз,
+        # скрипт обвязки поставит аплинк только машине с тем же ключом.
+        gw = self.db.gateway_device()
+        if gw is not None:
+            import base64
+            twin = self.db.twin_of_device(gw.id)
+            target = twin or gw
+            env["GATEWAY_PUBKEY"] = target.public_key
+            env["GATEWAY_PREV_PUBKEY"] = gw.public_key if twin else ""
+            try:
+                env["UPLINK_B64"] = base64.b64encode(self.gateway_uplink_conf(target).encode()).decode()
+            except ServiceError as e:
+                log.warning("bundle: конфиг аплинка шлюза не собран: %s", e)
         proc = subprocess.run(["sh", script, "--bundle"], capture_output=True, timeout=60, env=env)
         if proc.returncode != 0:
             raise ServiceError("сборка бандла не удалась: "
@@ -1995,6 +2031,91 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         self.db.set_state(self._GW_BUNDLE_SSH_KEY, " ".join(admin_ips))
         self.db.set_state(self._GW_BUNDLE_SSH_NOTIFIED_KEY, "")
         return bundlecrypt.encrypt(plain, priv), "awg-gw-bundle.enc"
+
+    # ── шлюз условной маршрутизации: пометка устройства ──────────────────────
+    _GW_NONCES_KEY = "gw_claim_nonces"
+
+    def _link_privkey(self) -> str:
+        from awgbot.util import bundlecrypt
+        link_if = config.ROUTING_GW_INTERFACE or "awglink"
+        try:
+            with open(f"/root/gw-{link_if}.conf", encoding="utf-8") as f:
+                return bundlecrypt.read_privkey(f.read())
+        except (OSError, ValueError) as e:
+            raise ServiceError(f"ключ линка не прочитан: {e}")
+
+    def _gw_nonce_seen(self, nonce: str) -> bool:
+        seen = (self.db.get_state(self._GW_NONCES_KEY) or "").split()
+        if nonce in seen:
+            return True
+        self.db.set_state(self._GW_NONCES_KEY, " ".join((seen + [nonce])[-50:]))
+        return False
+
+    def gateway_claim(self, text: str) -> dict:
+        """Пересланное от агента сообщение с токеном `claim`. Проверка подписи
+        ключом линка, поиск устройства по ключу аплинка, единственность.
+        Возвращает {'status': 'marked'|'already'|'replace_needed', 'device',
+        'previous'}; replace_needed — ничего не меняет, ждёт подтверждения."""
+        from awgbot.util import gwsign
+        data = gwsign.verify(self._link_privkey(), text)
+        if data["act"] != "claim":
+            raise ServiceError("это сообщение не о пометке шлюза")
+        if self._gw_nonce_seen(data["nonce"]):
+            raise ServiceError("это сообщение уже принимали — пусть шлюз выдаст новое")
+        dev = self.db.get_device_by_pubkey(data["pub"])
+        if dev is None:
+            raise ServiceError("устройства с таким ключом нет: аплинк шлюза должен быть "
+                               "устройством админа, выпущенным этим ботом")
+        admin = self.admin_client()
+        if admin is None or dev.client_id != admin.id:
+            raise ServiceError("шлюзом может быть только устройство профиля админа")
+        if dev.is_gateway:
+            return {"status": "already", "device": dev, "previous": None}
+        prev = self.db.gateway_device()
+        if prev is not None:
+            return {"status": "replace_needed", "device": dev, "previous": prev}
+        self.db.set_gateway(dev.id)
+        return {"status": "marked", "device": self.db.get_device(dev.id), "previous": None}
+
+    def gateway_replace(self, device_id: int) -> dict:
+        """Подтверждённая замена: флаг переставляется на новое устройство.
+        Возвращает {'device', 'previous'}; previous нужен для release-сообщения
+        старому агенту."""
+        dev = self.db.get_device(device_id)
+        if dev is None:
+            raise ServiceError("Устройство не найдено")
+        prev = self.db.gateway_device()
+        self.db.set_gateway(dev.id)
+        return {"device": self.db.get_device(dev.id), "previous": prev}
+
+    def gateway_release(self) -> Optional[object]:
+        """«Не шлюз?»: снять флаг и выключить условную маршрутизацию — без
+        шлюза ей ходить некуда. Возвращает бывший шлюз (для release-сообщения)."""
+        prev = self.db.gateway_device()
+        if prev is None:
+            return None
+        self.db.set_gateway(None)
+        try:
+            settings.set_value("app.routing.enabled", False)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gateway_release: маршрутизация не выключена: %s", e)
+        try:
+            self.reconcile_routing()
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gateway_release: реконсиляция: %s", e)
+        return prev
+
+    def gateway_release_message(self, dev) -> str:
+        """Подписанное сообщение агенту бывшего шлюза: перешлёт админ."""
+        from awgbot.util import gwsign
+        return gwsign.sign(self._link_privkey(), "release", dev.public_key, dev.address,
+                           host=dev.name)
+
+    def gateway_uplink_conf(self, dev) -> str:
+        """Конфиг аплинка шлюза для бандла: обычный клиентский .conf устройства
+        в форме для машины-шлюза (без DNS, Table = off)."""
+        cfg = self.generate_config(dev.id, for_bundle=True)
+        return configgen.gateway_uplink_conf(cfg["conf"])
 
     _GW_BUNDLE_SSH_KEY = "gw_bundle_ssh_allow"
     _GW_BUNDLE_SSH_NOTIFIED_KEY = "gw_bundle_ssh_allow_notified"

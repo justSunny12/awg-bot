@@ -65,6 +65,26 @@ PRIVATE_NETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/
 ADMIN_IPS="${ADMIN_IPS:-${SSH_ALLOW:-}}"
 ADMIN_IPS_EXTRA="${ADMIN_IPS_EXTRA:-}"
 [ -f "$FW_ENV" ] && . "$FW_ENV"
+# Шлюзовое устройство (пометка в основном боте): ключ аплинка помеченного
+# шлюза, старый ключ в окне переезда, конфиг аплинка в base64. Пусто — шлюз
+# в основном боте не помечен.
+GATEWAY_PUBKEY="${GATEWAY_PUBKEY:-}"
+GATEWAY_PREV_PUBKEY="${GATEWAY_PREV_PUBKEY:-}"
+UPLINK_B64="${UPLINK_B64:-}"
+UPLINK_TABLE="${UPLINK_TABLE:-100}"          # таблица политики «метка → аплинк»
+GW_FOREIGN=0                                  # 1 = помечен другой шлюз, линк не поднимаем
+GW_STATUS_FILE="$GW_ETC/gateway.status"       # что решил скрипт — читает агент
+
+# Публичный ключ интерфейса и его имя по ключу: `awg show <if> public-key`.
+iface_pubkey() { "$AWG_BIN" show "$1" public-key 2>/dev/null || true; }
+iface_by_pubkey() {            # $1 = ключ; печатает имя интерфейса или ничего
+    [ -n "$1" ] || return 0
+    for _i in $("$AWG_BIN" show interfaces 2>/dev/null); do
+        [ "$_i" = "$LINK_IF" ] && continue
+        [ "$(iface_pubkey "$_i")" = "$1" ] && { printf '%s' "$_i"; return 0; }
+    done
+    return 0
+}
 
 # Прежняя обвязка в iptables: снимаем идемпотентно и при --apply (переезд на
 # таблицу), и при --rollback. Чужих правил (docker, домашняя схема) не касаемся.
@@ -222,7 +242,7 @@ if [ "$MODE" = "rollback" ]; then
     LINK_CIDR="${LINK_CIDR_PRE:-$(link_cidr_of "$LINK_IF")}"
     legacy_cleanup
     run "nft delete table $GUARD_TABLE 2>/dev/null || true"
-    run "rm -f $GUARD_FILE $FW_ENV"
+    run "rm -f $GUARD_FILE $FW_ENV $GW_STATUS_FILE"
     run "rmdir $GW_ETC 2>/dev/null || true"
     run "rm -f $HOST_CONF_DIR/$LINK_IF.conf $UNIT $SYSCTL_CONF"
     run "systemctl daemon-reload"
@@ -241,9 +261,66 @@ if [ "$MODE" = "plan" ]; then
     say "     клиентов от приватных сетей, метки Telegram, защита шлюза от туннеля"
     say "     (с туннеля на шлюз: ВПС по линку; полный доступ — ADMIN_IPS=${ADMIN_IPS:-—})"
     say "  3. снятие прежних правил iptables ($FWD_CHAIN, MASQUERADE, метки)"
+    say "  0. шлюзовое устройство: ${GATEWAY_PUBKEY:+помечен, конфиг аплинка ставится машине с тем же ключом}${GATEWAY_PUBKEY:-не помечен}"
     say "  4. юнит awg-link-gw.service"
     exit 0
 fi
+
+# ── 0. шлюзовое устройство: аплинк и чей это шлюз ───────────────────────────
+# Аплинк — клиентский туннель этой машины к ВПС, которым она является
+# устройством админа. Помеченный шлюз приезжает в бандле ключом аплинка и его
+# конфигом. Конфиг ставим ТОЛЬКО машине с тем же ключом (или со старым ключом
+# пары в окне переезда): чужая машина шлюзом не становится, пока основной бот
+# её не пометит, — она попросит переслать сообщение и линк не поднимет.
+step "0. Шлюзовое устройство"
+mkdir -p "$GW_ETC"
+if [ -z "$GATEWAY_PUBKEY" ]; then
+    say "  в основном боте шлюз не помечен — после применения агент попросит переслать сообщение"
+    GW_STATUS="unmarked"
+else
+    UPLINK_IF="$(iface_by_pubkey "$GATEWAY_PUBKEY")"
+    [ -z "$UPLINK_IF" ] && [ -n "$GATEWAY_PREV_PUBKEY" ] && UPLINK_IF="$(iface_by_pubkey "$GATEWAY_PREV_PUBKEY")"
+    if [ -n "$UPLINK_IF" ]; then
+        say "  это помеченный шлюз: аплинк $UPLINK_IF"
+        GW_STATUS="confirmed"
+        if [ -n "$UPLINK_B64" ]; then
+            # временный каталог тут ни к чему: файл живёт рядом с
+            # прочим состоянием шлюза и сразу удаляется
+            _tmp="$GW_ETC/uplink.new"
+            printf '%s' "$UPLINK_B64" | base64 -d > "$_tmp" 2>/dev/null || : > "$_tmp"
+            if grep -q '^PrivateKey' "$_tmp"; then
+                {
+                    cat "$_tmp"
+                    printf 'PostUp = ip rule list | grep -q "fwmark %s lookup %s" || ip rule add fwmark %s lookup %s\n' "$TG_MARK" "$UPLINK_TABLE" "$TG_MARK" "$UPLINK_TABLE"
+                    printf 'PostUp = ip route replace default dev %%i table %s\n' "$UPLINK_TABLE"
+                    printf 'PostDown = ip route del default dev %%i table %s 2>/dev/null || true\n' "$UPLINK_TABLE"
+                } > "$_tmp.conf"
+                _dst="$HOST_CONF_DIR/$UPLINK_IF.conf"
+                if [ -f "$_dst" ] && cmp -s "$_tmp.conf" "$_dst"; then
+                    say "  конфиг аплинка не изменился"
+                else
+                    say "  конфиг аплинка обновлён из бандла (Table = off, политика по метке $TG_MARK → таблица $UPLINK_TABLE)"
+                    [ -f "$_dst" ] && run "cp -p $_dst $_dst.bak-$(date +%Y%m%d%H%M%S)"
+                    run "install -m 600 $_tmp.conf $_dst"
+                    run "$AWG_QUICK down $UPLINK_IF 2>/dev/null || true"
+                    run "$AWG_QUICK up $UPLINK_IF"
+                    run "systemctl enable awg-quick@$UPLINK_IF 2>/dev/null || true"
+                fi
+            else
+                say "  конфиг аплинка в бандле не разобрался — не трогаю"
+            fi
+            rm -f "$_tmp" "$_tmp.conf"
+        fi
+    else
+        say "  ВНИМАНИЕ: в основном боте помечен ДРУГОЙ шлюз (ключ ${GATEWAY_PUBKEY%%????????????????????????????????}…)."
+        say "  Два шлюза вместе не работают: линк на этой машине НЕ поднимаю."
+        say "  Агент попросит переслать сообщение основному боту; после пометки"
+        say "  перевыпусти конфигурацию и примени её ещё раз."
+        GW_FOREIGN=1
+        GW_STATUS="foreign"
+    fi
+fi
+[ "$MODE" = "plan" ] || printf 'GW_STATUS=%s\nGATEWAY_PUBKEY=%s\n' "$GW_STATUS" "$GATEWAY_PUBKEY" > "$GW_STATUS_FILE"
 
 # ── 1. конфиг и подъём ───────────────────────────────────────────────────────
 [ -n "$SRC_CONF" ] && [ -f "$SRC_CONF" ] || {
@@ -273,6 +350,14 @@ else
 fi
 [ -n "$AWG_QUICK" ] || { say "ОШИБКА: awg-quick не найден на ХОСТЕ."; \
     say "  Собери amneziawg-tools той же версии, что и модуль ядра."; exit 1; }
+if [ "$GW_FOREIGN" = "1" ]; then
+    say "  линк не поднимаю (помечен другой шлюз); если был поднят — опускаю"
+    run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
+    run "systemctl disable awg-link-gw.service 2>/dev/null || true"
+    say ""
+    say "Готово частично: конфиг и скрипт на месте, линк лежит до пометки этой машины шлюзом."
+    exit 0
+fi
 if ip link show "$LINK_IF" >/dev/null 2>&1 && [ "$LINK_SAME" = "1" ]; then
     say "  интерфейс поднят, конфиг тот же — линк не перезапускаю"
 else
@@ -440,6 +525,9 @@ Environment=LINK_IF=$LINK_IF
 # Устройства админа (полный доступ с туннеля) — из бандла с ВПС. Добавленное
 # на самом шлюзе (awg-bot firewall allow) — в $FW_ENV.
 Environment="ADMIN_IPS=$ADMIN_IPS"
+Environment=GATEWAY_PUBKEY=$GATEWAY_PUBKEY
+Environment=GATEWAY_PREV_PUBKEY=$GATEWAY_PREV_PUBKEY
+Environment=UPLINK_B64=$UPLINK_B64
 EnvironmentFile=-$FW_ENV
 # Зовём этот же скрипт: он идемпотентен, источник истины один.
 ExecStart=$SELF --apply $HOST_CONF_DIR/$LINK_IF.conf

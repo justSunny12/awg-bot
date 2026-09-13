@@ -171,6 +171,9 @@ class Device:
     # id старой строки у двойника, рождённого переездом; None — обычное
     # устройство. Пара нужна прогрессу, слиянию истории и парным операциям.
     twin_of: Optional[int] = None
+    # Шлюз условной маршрутизации (единственный на сервере): не считается в
+    # лимитах, не блокируется, не передаётся, не удаляется, ссылку не выдаёт.
+    is_gateway: int = 0
     traffic: DeviceTraffic = field(default_factory=DeviceTraffic)
     friend: Optional[Friend] = None
 
