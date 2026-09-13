@@ -283,27 +283,47 @@ else
     if [ -n "$UPLINK_IF" ]; then
         say "  это помеченный шлюз: аплинк $UPLINK_IF"
         GW_STATUS="confirmed"
+        [ "$MODE" = "plan" ] || printf 'GW_STATUS=%s\nGATEWAY_PUBKEY=%s\n' "$GW_STATUS" "$GATEWAY_PUBKEY" > "$GW_STATUS_FILE"
         if [ -n "$UPLINK_B64" ]; then
             # временный каталог тут ни к чему: файл живёт рядом с
             # прочим состоянием шлюза и сразу удаляется
             _tmp="$GW_ETC/uplink.new"
             printf '%s' "$UPLINK_B64" | base64 -d > "$_tmp" 2>/dev/null || : > "$_tmp"
             if grep -q '^PrivateKey' "$_tmp"; then
-                {
-                    cat "$_tmp"
-                    printf 'PostUp = ip rule list | grep -q "fwmark %s lookup %s" || ip rule add fwmark %s lookup %s\n' "$TG_MARK" "$UPLINK_TABLE" "$TG_MARK" "$UPLINK_TABLE"
-                    printf 'PostUp = ip route replace default dev %%i table %s\n' "$UPLINK_TABLE"
-                    printf 'PostDown = ip route del default dev %%i table %s 2>/dev/null || true\n' "$UPLINK_TABLE"
-                } > "$_tmp.conf"
+                # PostUp/PostDown — ВНУТРИ [Interface], сразу за Table = off:
+                # awg-quick вырезает их только из этой секции, в [Peer] они
+                # уходят в setconf и роняют подъём («Line unrecognized»)
+                awk -v mark="$TG_MARK" -v tbl="$UPLINK_TABLE" '
+                    { print }
+                    /^Table = off$/ {
+                        printf "PostUp = ip rule list | grep -q \"fwmark %s lookup %s\" || ip rule add fwmark %s lookup %s\n", mark, tbl, mark, tbl
+                        printf "PostUp = ip route replace default dev %%i table %s\n", tbl
+                        printf "PostDown = ip route del default dev %%i table %s 2>/dev/null || true\n", tbl
+                    }' "$_tmp" > "$_tmp.conf"
                 _dst="$HOST_CONF_DIR/$UPLINK_IF.conf"
                 if [ -f "$_dst" ] && cmp -s "$_tmp.conf" "$_dst"; then
                     say "  конфиг аплинка не изменился"
                 else
                     say "  конфиг аплинка обновлён из бандла (Table = off, политика по метке $TG_MARK → таблица $UPLINK_TABLE)"
-                    [ -f "$_dst" ] && run "cp -p $_dst $_dst.bak-$(date +%Y%m%d%H%M%S)"
+                    _bak=""
+                    if [ -f "$_dst" ]; then
+                        _bak="$_dst.bak-$(date +%Y%m%d%H%M%S)"
+                        run "cp -p $_dst $_bak"
+                    fi
                     run "install -m 600 $_tmp.conf $_dst"
                     run "$AWG_QUICK down $UPLINK_IF 2>/dev/null || true"
-                    run "$AWG_QUICK up $UPLINK_IF"
+                    # Аплинк — связь самого агента с Telegram. Не поднялся —
+                    # немедленно назад на прежний конфиг, иначе шлюз режет себе
+                    # связь и чинить его придётся руками.
+                    if ! "$AWG_QUICK" up "$UPLINK_IF"; then
+                        say "  ОШИБКА: аплинк с новым конфигом не поднялся — откатываю на прежний"
+                        if [ -n "$_bak" ]; then
+                            run "cp -p $_bak $_dst"
+                            run "$AWG_QUICK up $UPLINK_IF || true"
+                        fi
+                        rm -f "$_tmp" "$_tmp.conf"
+                        exit 1
+                    fi
                     run "systemctl enable awg-quick@$UPLINK_IF 2>/dev/null || true"
                 fi
             else

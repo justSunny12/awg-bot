@@ -125,7 +125,9 @@ def test_script_installs_uplink_only_to_the_machine_with_that_key(script):
     assert 'iface_by_pubkey "$GATEWAY_PUBKEY"' in step0 and 'iface_by_pubkey "$GATEWAY_PREV_PUBKEY"' in step0
     assert "GW_FOREIGN=1" in step0, "чужой шлюз → линк не поднимаем"
     assert "Table = off" not in step0 or True   # Table = off приходит в конфиге из бандла
-    assert 'PostUp = ip rule list | grep -q "fwmark' in step0 and "ip route replace default dev %%i table" in step0
+    assert '/^Table = off$/ {' in step0, "PostUp вставляется в [Interface], а не в конец файла"
+    assert "ip route replace default dev %%i table" in step0
+    assert 'if ! "$AWG_QUICK" up "$UPLINK_IF"' in step0 and "откатываю на прежний" in step0
     assert "cmp -s" in step0, "неизменившийся конфиг аплинка не переподнимаем"
     assert 'printf \'GW_STATUS=%s' in step0, "решение пишется для агента"
 
@@ -166,3 +168,16 @@ def test_bundle_header_carries_gateway_fields(tmp_path):
     assert 'GATEWAY_PREV_PUBKEY=""' in text and f'UPLINK_B64="{up}"' in text
     for var in ("GATEWAY_PUBKEY", "UPLINK_B64"):
         assert text.index(f"export {var}") < text.index('exec "$DEST/routing-gw-setup.sh"')
+
+
+def test_uplink_postup_lands_inside_interface_section(tmp_path):
+    """Прогоняем сам awk из скрипта: PostUp обязан стоять до [Peer]."""
+    import subprocess as sp
+    src = (ROOT / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8")
+    awk = src.split("awk -v mark=\"$TG_MARK\" -v tbl=\"$UPLINK_TABLE\" '", 1)[1].split("' \"$_tmp\"", 1)[0]
+    conf = tmp_path / "u.conf"
+    conf.write_text("[Interface]\nTable = off\nAddress = 10.9.1.15/32\nPrivateKey = K==\n\n[Peer]\nPublicKey = S==\n", encoding="utf-8")
+    out = sp.run(["awk", "-v", "mark=0x1", "-v", "tbl=100", awk, str(conf)], capture_output=True, text=True).stdout
+    assert out.index("PostUp = ip rule list") < out.index("[Peer]")
+    assert "PostUp = ip route replace default dev %i table 100" in out
+    assert "PostDown = ip route del default dev %i table 100" in out
