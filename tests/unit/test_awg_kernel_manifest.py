@@ -376,6 +376,7 @@ def _run_bot_func(tmp_path, name, *, lock_gen="2", applied="", target="",
     import os
     import subprocess
     script = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    tmp_path.mkdir(parents=True, exist_ok=True)
     inst = tmp_path / "install"; inst.mkdir(exist_ok=True)
     journal = tmp_path / "journal"
     (inst / "awg-server-init.sh").write_text(
@@ -430,16 +431,23 @@ network:
 """
 
 
-def test_missing_state_file_adopts_the_delivery_generation(tmp_path):
-    """Первая поставка с манифестом усыновляет текущее поколение, а не объявляет
-    переезд: обновления идут по одной ступени, значит ввод файла случается
-    раньше любой смены поколения."""
+def test_missing_state_file_means_the_floor_generation(tmp_path):
+    """Обновление без файла состояния приехало с домантифестной версии — хост
+    на первом поколении. Поставка того же поколения: файл заведён, переезда нет;
+    поставка нового поколения: заведён и переезд объявлен — усыновить её
+    поколение значило бы записать хост переехавшим, не переезжая."""
     proc, state, app, journal = _run_bot_func(tmp_path, "ensure_awg_generation",
-                                              lock_gen="2", app_yaml=_APP_YAML)
+                                              lock_gen="1", app_yaml=_APP_YAML)
     assert proc.returncode == 0 and "ДОШЛИ" in proc.stdout, proc.stdout + proc.stderr
-    assert "AWG_GENERATION_APPLIED=2" in state
+    assert "AWG_GENERATION_APPLIED=1" in state
     assert "AWG_GENERATION_TARGET" not in state and "INIT" not in journal
     assert 'migration_interface: ""' in app
+
+    proc, state, app, journal = _run_bot_func(tmp_path / "gen2", "ensure_awg_generation",
+                                              lock_gen="2", app_yaml=_APP_YAML)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "AWG_GENERATION_APPLIED=1" in state and "AWG_GENERATION_TARGET=2" in state
+    assert "INIT awg1" in journal and 'migration_interface: "awg1"' in app
 
 
 def test_generation_bump_raises_a_second_interface_that_does_not_collide(tmp_path):

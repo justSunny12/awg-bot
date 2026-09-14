@@ -1043,6 +1043,8 @@ ADMIN_ID. Основной бот спрашивает токен шлюза о�
   (v2.2.x), `_migrate_routing_master_to_devices` (v2.2.0), `_migrate_gateway_flag`
   (v2.8.0), `retire_legacy_ssh_gate` (v2.6.0; до включения файервола гоняет
   iptables на каждом старте), `email/backup_import_env_once` (v2.5.x),
-  `_routing_src_legacy` (v2.2.2), `poll_schedule hour→day` (v1.2.1). Снимать —
-  после решения, с какой минимальной версии поддерживаем обновление;
-  `_migrate_drop_full_access` (стирание секрета) остаётся при любом решении.
+  `_routing_src_legacy` (v2.2.2), `poll_schedule hour→day` (v1.2.1).
+  **Решено 14.09.2026 (v2.18.0):** минимальная поддерживаемая версия —
+  v2.10.0, обновления идут одним прыжком с обязательной ступенью
+  (`#requires_<роль>_X`). Всё из списка моложе минимума — снимается следующим
+  релизом; `_migrate_drop_full_access` (стирание секрета) остаётся.

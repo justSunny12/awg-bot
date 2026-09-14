@@ -1,10 +1,19 @@
 """Self-update из ПУБЛИЧНОГО GitHub-репо — на стандартной библиотеке.
 
-Модель (сознательно простая, «по одной ступени вверх»):
+Модель — «последний, с обязательными ступенями»:
   • тянем СПИСОК релизов (`/releases`), не `/latest`;
   • парсим теги как semver, находим установленную версию (__version__) среди них;
-  • «следующая» = минимальный тег, строго больший установленной. Не последняя —
-    ровно одна ступень, чтобы каждый changelog был показан один раз;
+  • цель = ПОСЛЕДНИЙ релиз новее установленного, адресованный этой роли. Одна
+    сборка ядра и один переезд профилей вместо цепочки: ядро прибито к поставке,
+    миграции БД идемпотентны, conf досеивается — промежуточные ступени ничего
+    не добавляют;
+  • адресат и обязательная ступень — одной строкой на роль: `#requires_main_X.Y.Z`
+    (основной бот), `#requires_gw_X.Y.Z` (агент шлюза). Есть строка — релиз
+    роли адресован; X.Y.Z — минимум, с которого на него можно прыгнуть напрямую.
+    Хост ниже сначала едет на X.Y.Z (ближайший релиз для роли не ниже него), и
+    только потом дальше. Так снимаются шимы совместимости: всё, что старше
+    объявленного минимума, проходит через него и получает миграции там;
+  • пропущенные ступени едут в уведомление списком — changelog не теряется;
   • если установленной версии НЕТ среди тегов релизов (локальная/кастомная
     сборка) — обновления полностью выключены (next_release() → None).
 
@@ -45,20 +54,22 @@ class UpdateError(Exception):
     """Сетевая/протокольная ошибка обновления (гасится вызывающим)."""
 
 
-# Адресаты релиза — хэштегами в теле (обычно первой строкой): #main_bot —
-# основной бот, #gw_bot — агент шлюза, #all_bots — оба. Релиз без хэштегов
-# (старые) считается общим. Каждая роль обновляется до БЛИЖАЙШЕЙ новее
-# установленной версии со своим хэштегом, пропуская чужие: у ролей разные
-# установленные версии — это норма, поставка едет целиком.
+# Адресаты релиза — хэштегами в теле, по строке на роль: «#requires_main_2.10.0»
+# (основной бот), «#requires_gw_2.10.0» (агент шлюза); версия в нём — минимум,
+# с которого на релиз прыгают напрямую. Прежний формат (#main_bot / #gw_bot /
+# #all_bots, без минимума) читается ради старых релизов; релиз без хэштегов
+# вовсе считается общим. У ролей разные установленные версии — это норма,
+# поставка едет целиком.
+_REQUIRES_RE = re.compile(r"#requires_(main|gw)_(v?\d+\.\d+\.\d+(?:\.\d+)?)\b")
 _AUDIENCE_RE = re.compile(r"#(main_bot|gw_bot|all_bots)\b")
-_ROLE_TAG = {"gateway": "gw_bot"}          # любая другая роль — основной бот
+_ROLE_KEY = {"gateway": "gw"}              # любая другая роль — основной бот
+_ROLE_TAG = {"gateway": "gw_bot"}
 
 # Поколение AmneziaWG в поставке — тоже хэштегом в теле: «#awg_gen2». Его надо
 # знать ДО скачивания (обновление на поколение дальше цели идущего переезда
 # запрещено), а в ассете оно лежит внутри архива. Нет хэштега — поколение то
 # же, что у установленного: до v2.11.0 поколениями никто не управлял.
 _GENERATION_RE = re.compile(r"#awg_gen(\d+)\b")
-
 
 @dataclass(frozen=True)
 class Release:
@@ -67,14 +78,30 @@ class Release:
     body: str                   # тело релиза (changelog этой версии, без заголовка)
     asset_url: Optional[str]    # API-URL ассета-поставки (для octet-stream)
     sha256: Optional[str]       # эталонный sha256 из assets[].digest (hex)
+    title: str = ""             # заголовок релиза без тега — для списка пропущенных
+    skipped: tuple = ()         # ступени между установленной и этой (Release, по возрастанию)
 
     def awg_generation(self) -> int:
         """Поколение AmneziaWG этой поставки; 0 — не объявлено."""
         m = _GENERATION_RE.search(self.body or "")
         return int(m.group(1)) if m else 0
 
+    def requirements(self) -> dict:
+        """{'main': (2,10,0), 'gw': (2,10,0)} — роли, которым релиз адресован,
+        с минимумом для прямого прыжка. Пусто — хэштегов нового формата нет."""
+        return {k: parse_version(v) for k, v in _REQUIRES_RE.findall(self.body or "")}
+
+    def requires(self, role: str = "") -> Optional[tuple]:
+        """Минимальная версия, с которой ЭТА роль прыгает на релиз напрямую;
+        None — ограничения нет (в т.ч. релизы прежнего формата)."""
+        return self.requirements().get(_ROLE_KEY.get(role, "main"))
+
     def audience(self) -> frozenset:
-        """Хэштеги адресатов из тела; пусто — релиз общий."""
+        """Адресаты в терминах прежних хэштегов (main_bot / gw_bot / all_bots);
+        пусто — релиз общий."""
+        req = self.requirements()
+        if req:
+            return frozenset({"main_bot" if k == "main" else "gw_bot" for k in req})
         return frozenset(_AUDIENCE_RE.findall(self.body or ""))
 
     def applies_to(self, role: str) -> bool:
@@ -143,22 +170,39 @@ def list_releases() -> list[Release]:
                 break
         out.append(Release(tag=r["tag_name"], version=ver,
                            body=(r.get("body") or "").strip(),
-                           asset_url=asset_url, sha256=sha256))
+                           asset_url=asset_url, sha256=sha256,
+                           title=_strip_tag(r.get("name") or "", r["tag_name"])))
     out.sort(key=lambda x: x.version)
     return out
 
 
-def next_release(role: Optional[str] = None) -> Optional[Release]:
-    """Следующая ступень за установленной версией ДЛЯ ЭТОЙ РОЛИ, или None.
+def _strip_tag(name: str, tag: str) -> str:
+    """«v2.17.2 — ядро опознаётся по тегу» → «ядро опознаётся по тегу»."""
+    name = name.strip()
+    if name.startswith(tag):
+        name = name[len(tag):].lstrip(" —–-:")
+    return name
 
-    Среди релизов новее установленного — ближайший, адресованный роли (хэштег
-    роли или #all_bots); чужие пропускаются: агент шлюза на 2.4.5 при релизах
-    2.4.6 (#main_bot) и 2.4.7 (#gw_bot) идёт сразу на 2.4.7.
+
+def next_release(role: Optional[str] = None,
+                 max_generation: Optional[int] = None) -> Optional[Release]:
+    """Цель обновления для ЭТОЙ РОЛИ, или None.
+
+    Цель — последний релиз новее установленного, адресованный роли (хэштег
+    роли); чужие не в счёт: агент шлюза на 2.4.5 при релизах 2.4.6 (только
+    main) и 2.4.7 (gw) идёт на 2.4.7. Минимум роли (`#requires_<роль>_X`) у
+    любого из пропускаемых релизов, которого установленная версия не достигла,
+    опускает цель до ближайшего релиза роли не ниже него; у той ступени может
+    быть свой минимум — цепочка. В `skipped` — всё, что перепрыгнули.
+
+    max_generation — потолок поколения AmneziaWG (идёт переезд: поставка дальше
+    его цели недопустима, профили на трёх интерфейсах мигрировать нечем); релизы
+    выше потолка не рассматриваются вовсе.
 
     None означает «обновлять не на что / не от чего»:
       • установленная версия НЕ найдена среди тегов релизов → молчим навсегда
         (нерелизная сборка);
-      • нет релиза новее установленной, адресованного этой роли.
+      • нет релиза новее установленной, адресованного этой роли (и под потолком).
     """
     installed = parse_version(config.INSTALLED_VERSION)
     if installed is None:
@@ -168,10 +212,30 @@ def next_release(role: Optional[str] = None) -> Optional[Release]:
     tags = {r.version for r in releases}
     if installed not in tags:            # нас нет в списке релизов → не трогаем
         return None
-    for r in releases:                   # отсортированы по возрастанию
-        if r.version > installed and r.applies_to(role):
-            return r
-    return None
+    return pick_target(installed, releases, role, max_generation)
+
+
+def pick_target(installed: tuple, releases: list, role: str,
+                max_generation: Optional[int] = None) -> Optional[Release]:
+    """Чистый выбор цели по списку (см. next_release). releases — по возрастанию."""
+    newer = [r for r in releases if r.version > installed and r.applies_to(role)]
+    if max_generation is not None:
+        newer = [r for r in newer if r.awg_generation() <= max_generation]
+    if not newer:
+        return None
+    target = newer[-1]
+    while True:
+        chain = [r for r in newer if r.version <= target.version]
+        required = max((r.requires(role) for r in chain if r.requires(role)), default=None)
+        if required is None or installed >= required:
+            break
+        lowered = next((r for r in chain if r.version >= required), None)
+        if lowered is None or lowered.version == target.version:
+            break
+        target = lowered
+    import dataclasses
+    skipped = tuple(r for r in newer if r.version < target.version)
+    return dataclasses.replace(target, skipped=skipped)
 
 
 def download_asset(release: Release) -> bytes:

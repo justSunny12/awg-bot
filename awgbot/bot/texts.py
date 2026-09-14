@@ -1559,12 +1559,38 @@ def _ver(v: str) -> str:
     return v if v.startswith("v") else f"v{v}"
 
 
-def update_available(tag: str, body: str, installed: str | None = None) -> str:
-    """Уведомление о доступной новой версии (следующей ступени)."""
+def _skipped_block(installed: str, tag: str, skipped) -> str:
+    """Пропущенные ступени между установленной и целью: по строке на релиз —
+    тег и заголовок ссылкой на его страницу (changelog) на GitHub, плюс ссылка
+    на полную разницу. Пусто — ступеней нет. Строк не больше десятка: длинный
+    хвост уезжает в ссылку на разницу."""
+    from awgbot.core import config
+    skipped = list(skipped or ())
+    if not skipped:
+        return ""
+    repo = f"https://github.com/{config.UPDATES_REPO}"
+    shown = skipped[-10:]
+    lines = []
+    for r in shown:
+        label = _ver(r.tag) + (f" — {r.title}" if r.title else "")
+        lines.append(f"• <a href=\"{_e(f'{repo}/releases/tag/{r.tag}')}\">{_e(label)}</a>")
+    if len(skipped) > len(shown):
+        lines.insert(0, f"• … ещё {len(skipped) - len(shown)}")
+    diff = f"{repo}/compare/{_ver(installed)}...{_ver(tag)}"
+    return ("Вместе с ней встанут пропущенные версии:\n" + "\n".join(lines)
+            + f"\n<a href=\"{_e(diff)}\">Все изменения одним списком</a>\n")
+
+
+def update_available(tag: str, body: str, installed: str | None = None,
+                     skipped=()) -> str:
+    """Уведомление о доступной новой версии — цели обновления. Тело — её
+    changelog; пропущенные ступени между ней и установленной — списком."""
     from awgbot.core import config
     cur = _ver(installed if installed is not None else config.INSTALLED_VERSION)
     header = (f"Текущая версия бота {_e(cur)}.\n"
-              f"Доступна новая версия: {_e(_ver(tag))}\nСписок изменений:\n")
+              f"Доступна новая версия: {_e(_ver(tag))}\n"
+              + _skipped_block(cur, tag, skipped)
+              + "Список изменений:\n")
     return header + _changelog_block(body, header)
 
 
@@ -1573,10 +1599,12 @@ def update_current_ok(installed: str) -> str:
     return f"Текущая версия бота ({_e(_ver(installed))}) актуальна"
 
 
-def update_admin_available(installed: str, tag: str, body: str) -> str:
-    """Админ-проверка: доступна следующая версия."""
+def update_admin_available(installed: str, tag: str, body: str, skipped=()) -> str:
+    """Админ-проверка: доступно обновление до цели (с пропущенными ступенями)."""
     header = (f"Текущая версия бота {_e(_ver(installed))}.\n"
-              f"Доступно обновление до {_e(_ver(tag))}\nСписок изменений:\n")
+              f"Доступно обновление до {_e(_ver(tag))}\n"
+              + _skipped_block(installed, tag, skipped)
+              + "Список изменений:\n")
     return header + _changelog_block(body, header)
 
 

@@ -642,5 +642,5 @@ async def gw_updates_check(cb: CallbackQuery, services):
                        kb.gateway_updates_kb(await call(services.updates_muted)))
         return
     await edit_nav(cb, services,
-                   texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body),
+                   texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body, nxt.skipped),
                    kb.gateway_update_available_kb())

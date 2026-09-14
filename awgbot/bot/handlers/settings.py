@@ -1008,6 +1008,6 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
             await edit(cb, texts.update_blocked(nxt.tag, blocked),
                        kb.settings_updates(await call(services.updates_muted)))
         else:
-            await edit(cb, texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body),
+            await edit(cb, texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body, nxt.skipped),
                        kb.update_admin_available())
         return

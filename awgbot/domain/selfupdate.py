@@ -2,7 +2,7 @@
 selfupdate.py — самообновление бота из GitHub-релизов, общее для обеих ролей.
 
 Вынесено из Services без изменения поведения: агенту шлюза (роль gateway) нужен
-ровно тот же механизм — следующая ступень, скачать, сверить sha256, запустить
+ровно тот же механизм — выбрать цель, скачать, сверить sha256, запустить
 апдейтер вне своего cgroup, отчитаться после рестарта, — и держать его в
 клиентском классе значило бы тащить в агент две с половиной тысячи строк
 чужой механики ради десяти методов. Примесь опирается только на self.db.
@@ -51,11 +51,22 @@ class SelfUpdateMixin:
         """Включить автоуведомления об обновлениях обратно."""
         self.db.set_state(self._MUTE_KEY, "0")
 
-    def update_next(self):
-        """Следующая доступная версия (updates.Release) или None. Сетевые ошибки
-        гасим в None — фоновая задача/кнопка от них не падают."""
+    def _generation_ceiling(self):
+        """Потолок поколения для цели обновления: идёт переезд — не дальше его
+        цели; иначе потолка нет. Роль без переезда — потолка нет."""
+        from awgbot.infra import awglock
         try:
-            return updates.next_release()
+            running = bool(self.migration_running())
+        except Exception:                                 # noqa: BLE001
+            return None                                   # роль без переезда
+        return awglock.target_generation() if running else None
+
+    def update_next(self):
+        """Цель обновления (updates.Release) или None: последний релиз для роли
+        с учётом обязательных ступеней и потолка поколения при идущем переезде.
+        Сетевые ошибки гасим в None — фоновая задача/кнопка от них не падают."""
+        try:
+            return updates.next_release(max_generation=self._generation_ceiling())
         except updates.UpdateError:
             return None
 
@@ -92,9 +103,19 @@ class SelfUpdateMixin:
         Единственная причина: переезд ИДЁТ, а поставка привезла поколение
         AmneziaWG дальше его цели. Разреши — и профили размажутся по трём
         интерфейсам, а мигрировать такое нечем. Поколение поставки читается из
-        тела релиза (#awg_genN), то есть ДО скачивания."""
+        тела релиза (#awg_genN), то есть ДО скачивания.
+
+        Без аргумента — про экран «Обновления»: цель под потолком есть → ничего
+        не блокировано (она и предлагается); нет — но выше потолка что-то лежит
+        → причина, почему до него не дотянуться."""
         from awgbot.infra import awglock
-        release = release if release is not None else self.update_next()
+        if release is None:
+            if self.update_next() is not None:
+                return ""
+            try:
+                release = updates.next_release()          # без потолка
+            except updates.UpdateError:
+                return ""
         if release is None:
             return ""
         running = False

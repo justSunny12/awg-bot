@@ -27,12 +27,14 @@ def lockdir(tmp_path, monkeypatch):
 
 # ── манифест и состояние ─────────────────────────────────────────────────────
 
-def test_missing_state_adopts_the_delivery_generation(lockdir):
-    """Файла состояния ещё нет — хост считается стоящим на поколении поставки.
-    Верно по построению: обновления идут по одной ступени, значит поставка,
-    вводящая файл, приезжает раньше той, что меняет поколение."""
+def test_missing_state_means_the_floor_generation_not_the_deliverys(lockdir):
+    """Файла состояния нет — хост на первом поколении, а не на поколении
+    поставки: обновления прыгают через ступени, и хост с домантифестной версии
+    на gen-2 поставке иначе считался бы переехавшим, не переезжая. Лучше лишний
+    раз объявить переезд, чем молча его пропустить."""
     assert awglock.generation() == 2
-    assert awglock.applied_generation() == 2 and not awglock.needs_migration()
+    assert awglock.applied_generation() == awglock.GENERATION_FLOOR == 1
+    assert awglock.needs_migration()
 
 
 def test_needs_migration_when_delivery_moves_ahead(lockdir):
@@ -101,6 +103,39 @@ def test_service_refuses_to_apply_a_blocked_update(tmp_path, monkeypatch):
     ok = updates.Release(tag="v2.9.9", version=(2, 9, 9), body="#awg_gen2",
                          asset_url="u", sha256="x")
     assert svc.update_block_reason(ok) == "", "поставка на цель переезда не блокируется"
+
+
+def test_during_a_migration_the_target_stops_at_the_ceiling_and_the_screen_explains(
+        tmp_path, monkeypatch):
+    """Идёт переезд на поколение 2: цель обновления — последний релиз не выше
+    поколения 2 (он и предлагается, причины блокировки нет). Под потолком
+    ничего — экран объясняет, чего ждём."""
+    from awgbot.domain.selfupdate import SelfUpdateMixin
+
+    class Svc(SelfUpdateMixin):
+        def __init__(self):
+            self.db = None
+        def migration_running(self):
+            return True
+
+    monkeypatch.setattr(awglock, "LOCK_PATH", tmp_path / "awg.lock")
+    monkeypatch.setattr(awglock, "STATE_PATH", tmp_path / "awg.state")
+    awglock.write_state(applied=1, target=2)
+    monkeypatch.setattr(config, "INSTALLED_VERSION", "2.0.0")
+
+    def rel(tag, gen):
+        return updates.Release(tag=tag, version=updates.parse_version(tag),
+                               body=f"#requires_main_2.0.0\n#awg_gen{gen}", asset_url="u", sha256="x")
+    releases = [rel("v2.0.0", 1), rel("v2.1.0", 2), rel("v2.2.0", 2), rel("v3.0.0", 3)]
+    monkeypatch.setattr(updates, "list_releases", lambda: releases)
+    svc = Svc()
+    assert svc.update_next().tag == "v2.2.0"
+    assert svc.update_block_reason() == ""
+
+    releases[:] = [rel("v2.0.0", 1), rel("v3.0.0", 3)]
+    assert svc.update_next() is None
+    reason = svc.update_block_reason()
+    assert "переезд" in reason and "v3.0.0" in reason
 
 
 # ── протокол по интерфейсу ───────────────────────────────────────────────────

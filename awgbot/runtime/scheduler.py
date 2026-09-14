@@ -526,7 +526,7 @@ async def notify_update_available(bot, services, nxt) -> None:
     from awgbot.domain.services import Notification
     await dismiss_update_reports(bot, services)
     await send_notifications(bot, [Notification(
-        config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body),
+        config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body, skipped=nxt.skipped),
         reply_markup=kb.update_notify())])
 
 

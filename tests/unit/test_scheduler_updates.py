@@ -30,7 +30,7 @@ async def test_notify_update_available_dismisses_previous_finisher(monkeypatch):
 
     monkeypatch.setattr("awgbot.bot.handlers.common.dismiss_update_reports", dismiss)
     monkeypatch.setattr("awgbot.bot.notifier.send_notifications", send)
-    nxt = types.SimpleNamespace(tag="v2.4.2.9", body="- x")
+    nxt = types.SimpleNamespace(tag="v2.4.2.9", body="- x", skipped=())
     await sched.notify_update_available(object(), object(), nxt)
     assert calls == ["dismiss", ("send", "Доступна новая версия: v2.4.2.9")]
 

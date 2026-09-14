@@ -161,7 +161,8 @@ async def run_gateway() -> None:
             log.warning("gateway: не смог ограничить сессию IPv4: %s", e)
             session = None
     bot = Bot(config.BOT_TOKEN, session=session,
-              default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+              default=DefaultBotProperties(parse_mode=ParseMode.HTML,
+                                           link_preview_is_disabled=True))
     try:
         await bot.get_me()
     except TelegramUnauthorizedError as e:
@@ -259,7 +260,10 @@ async def main() -> None:
 
     bot = Bot(
         config.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        # Превью ссылок выключены для всех сообщений: уведомление об обновлении
+        # несёт список ссылок на релизы, и карточка первой из них — шум.
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML,
+                                     link_preview_is_disabled=True),
     )
     # Токен: getMe ловит протухший/отозванный токен сразу (внятное сообщение
     # вместо «молчаливого» бота). ВАЖНО: fatal — ТОЛЬКО явный отказ Bot API

@@ -104,7 +104,7 @@ async def test_gateway_update_install_runs_the_shared_updater(svc, fake_bot, mon
     """«Обновить» у агента: следующая ступень → «дождись» → apply_update. Та же
     механика, что у клиентской роли, — sha256 и запуск вне cgroup внутри."""
     import types
-    nxt = types.SimpleNamespace(tag="v9.9.9", body="")
+    nxt = types.SimpleNamespace(tag="v9.9.9", body="", skipped=())
     applied = []
     monkeypatch.setattr(svc, "update_next", lambda: nxt)
     monkeypatch.setattr(svc, "apply_update", lambda r: applied.append(r.tag))
@@ -145,7 +145,7 @@ async def test_gateway_updates_screen_and_manual_check(svc, fake_bot, monkeypatc
     assert "актуальн" in [t for k, t, _ in msg.sent if k == "edit_text"][-1].lower()
 
     monkeypatch.setattr(svc, "update_next",
-                        lambda: types.SimpleNamespace(tag="v9.9.9", body="заметки"))
+                        lambda: types.SimpleNamespace(tag="v9.9.9", body="заметки", skipped=()))
     await gh.gw_updates_check(cb, svc)
     kind, text, markup = [x for x in msg.sent if x[0] == "edit_text"][-1]
     assert "v9.9.9" in text and markup is not None, "нет кнопки «Обновить»"
