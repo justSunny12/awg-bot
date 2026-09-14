@@ -16,9 +16,18 @@
 # перебором ВСЕХ установленных ядер: `dkms install` без -k ставит только под
 # текущее, и загрузка в другое ядро оставила бы хост без awg.
 #
-# ИДЕМПОТЕНТНО. Сверяет версии установленного (modinfo, awg --version) с
-# манифестом и ничего не трогает, если они совпадают, — хосты, где эта же
-# версия стояла до появления манифеста, пересборки не получают.
+# ТОЖДЕСТВО ВЕДЁТСЯ ПО ТЕГУ. Апстрим не бампает version.h: теги v3.1.20260812,
+# …0827, …0828, …0906 все рапортуют «3.1.20260812». Сверять установленное по
+# `modinfo -F version` значит не отличать их совсем — и молча пропускать смену
+# тега в манифесте, ради которой всё и затевалось. Поэтому собранный тег
+# пишется в состояние хоста (/etc/awg-bot/awg.state) и сверяется с манифестом,
+# а строка версии остаётся для показа.
+#
+# «Работает ли то, что собрано» — по srcversion: это хеш исходников, и у него
+# разные значения там, где строка версии одинакова. Сравнивается загруженный
+# (/sys/module/amneziawg/srcversion) с лежащим на диске (modinfo -F srcversion).
+#
+# ИДЕМПОТЕНТНО: тег совпал с манифестом — ничего не трогаем.
 #
 # Использование (root):
 #   awg-kernel-install.sh status      что стоит, что в манифесте; код 3 — расходятся
@@ -59,22 +68,52 @@ run() {  # run CMD… — в plan только печатает
 # Значения приезжают из awg.lock; объявляем их пустыми заранее, чтобы опечатка
 # в манифесте давала внятный отказ ниже, а не пустую строку в середине сборки.
 AWG_GENERATION=""; AWG_PROTOCOL_ID=""
-AWG_MODULE_VERSION=""; AWG_MODULE_URL=""; AWG_MODULE_SHA256=""
-AWG_TOOLS_VERSION=""; AWG_TOOLS_URL=""; AWG_TOOLS_SHA256=""
+AWG_MODULE_TAG=""; AWG_MODULE_VERSION=""; AWG_MODULE_URL=""; AWG_MODULE_SHA256=""
+AWG_TOOLS_TAG=""; AWG_TOOLS_VERSION=""; AWG_TOOLS_URL=""; AWG_TOOLS_SHA256=""
 [[ -f "$AWG_LOCK" ]] || die "нет манифеста $AWG_LOCK"
 # shellcheck disable=SC1090
 . "$AWG_LOCK"
-for v in AWG_GENERATION AWG_MODULE_VERSION AWG_MODULE_URL AWG_MODULE_SHA256 \
-         AWG_TOOLS_VERSION AWG_TOOLS_URL AWG_TOOLS_SHA256; do
+for v in AWG_GENERATION AWG_MODULE_TAG AWG_MODULE_VERSION AWG_MODULE_URL \
+         AWG_MODULE_SHA256 AWG_TOOLS_TAG AWG_TOOLS_VERSION AWG_TOOLS_URL \
+         AWG_TOOLS_SHA256; do
     [[ -n "${!v:-}" ]] || die "в манифесте нет $v"
 done
 
 # ── что стоит ────────────────────────────────────────────────────────────────
+AWG_STATE="${AWG_STATE:-/etc/awg-bot/awg.state}"
+_KEY_MODULE_TAG="AWG_MODULE_TAG_BUILT"
+_KEY_TOOLS_TAG="AWG_TOOLS_TAG_BUILT"
+
+state_get() {  # state_get KEY → значение или пусто
+    [[ -f "$AWG_STATE" ]] || return 0
+    sed -nE "s/^$1=(.*)$/\1/p" "$AWG_STATE" | head -n1
+}
+state_set() {  # state_set KEY VALUE
+    mkdir -p "$(dirname "$AWG_STATE")"
+    [[ -f "$AWG_STATE" ]] || printf '%s\n%s\n' \
+        "# awg-bot: состояние ядра AmneziaWG на этом хосте. Файл ведут установщик" \
+        "# и финал переезда профилей; руками править незачем." > "$AWG_STATE"
+    if grep -qE "^$1=" "$AWG_STATE"; then
+        sed -i -E "s|^$1=.*|$1=$2|" "$AWG_STATE"
+    else
+        printf '%s=%s\n' "$1" "$2" >> "$AWG_STATE"
+    fi
+}
+
 installed_module() {   # версия модуля, доступного ТЕКУЩЕМУ ядру (на диске)
     modinfo -F version "$MODULE" 2>/dev/null | head -n1 || true
 }
 loaded_module() {      # версия работающего модуля (пусто — не загружен)
     cat "/sys/module/$MODULE/version" 2>/dev/null || true
+}
+installed_src() {      # srcversion модуля на диске — хеш ИСХОДНИКОВ
+    modinfo -F srcversion "$MODULE" 2>/dev/null | head -n1 || true
+}
+loaded_src() {         # srcversion работающего модуля
+    cat "/sys/module/$MODULE/srcversion" 2>/dev/null || true
+}
+built_tag() {          # тег, из которого собран модуль на этом хосте
+    state_get "$_KEY_MODULE_TAG"
 }
 installed_tools() {    # "amneziawg-tools v3.1.20260812 - …" → 3.1.20260812
     command -v awg >/dev/null 2>&1 || { printf ''; return 0; }
@@ -88,20 +127,33 @@ kernels_with_headers() {  # все установленные ядра, у ко�
 }
 
 cur_mod="$(installed_module)"; cur_loaded="$(loaded_module)"; cur_tools="$(installed_tools)"
+cur_tag="$(built_tag)"; cur_tools_tag="$(state_get "$_KEY_TOOLS_TAG")"
 need_mod=0; need_tools=0
-[[ "$cur_mod"   == "$AWG_MODULE_VERSION" ]] || need_mod=1
-[[ "$cur_tools" == "$AWG_TOOLS_VERSION"  ]] || need_tools=1
+# Модуль: сверяем ТЕГ. Нет записи о собранном теге (хост собирали руками или до
+# появления состояния) — считаем, что стоит не то, и пересобираем: другого
+# способа узнать правду нет, а version.h у всех тегов одинаков.
+[[ -n "$cur_mod" && "$cur_tag" == "$AWG_MODULE_TAG" ]] || need_mod=1
+# Тулзы печатают свою версию честно, но тег записываем тем же образом.
+if [[ -n "$cur_tools_tag" ]]; then
+    [[ "$cur_tools_tag" == "$AWG_TOOLS_TAG" ]] || need_tools=1
+else
+    [[ "$cur_tools" == "$AWG_TOOLS_VERSION" ]] || need_tools=1
+fi
 
 if [[ "$MODE" == "status" ]]; then
     printf 'манифест          : модуль %s, тулзы %s, поколение %s\n' \
-        "$AWG_MODULE_VERSION" "$AWG_TOOLS_VERSION" "$AWG_GENERATION"
-    printf 'модуль на диске   : %s\n' "${cur_mod:-нет}"
-    printf 'модуль загружен   : %s\n' "${cur_loaded:-нет}"
+        "$AWG_MODULE_TAG" "$AWG_TOOLS_TAG" "$AWG_GENERATION"
+    printf 'собран из тега    : %s\n' "${cur_tag:-неизвестно (собирали не мы)}"
+    printf 'модуль на диске   : %s (srcversion %s)\n' "${cur_mod:-нет}" "$(installed_src)"
+    printf 'модуль загружен   : %s (srcversion %s)\n' "${cur_loaded:-нет}" "$(loaded_src)"
     printf 'amneziawg-tools   : %s\n' "${cur_tools:-нет}"
     printf 'ядра с заголовками: %s\n' "$(kernels_with_headers | tr '\n' ' ')"
+    printf 'примечание        : апстрим не бампает version.h — строка версии у разных тегов одна\n'
     if [[ "$need_mod" -eq 0 && "$need_tools" -eq 0 ]]; then
-        if [[ -n "$cur_loaded" && "$cur_loaded" != "$cur_mod" ]]; then
-            printf 'итог              : установлено по манифесту, но работает %s — нужен reload или перезагрузка\n' "$cur_loaded"
+        # Работает ли то, что собрано, — по srcversion: строки версий совпали
+        # бы и у разных исходников.
+        if [[ -n "$(loaded_src)" && "$(loaded_src)" != "$(installed_src)" ]]; then
+            printf 'итог              : собрано по манифесту, но работает модуль других исходников — нужен reload или перезагрузка\n'
             exit 3
         fi
         printf 'итог              : совпадает с манифестом\n'; exit 0
@@ -115,9 +167,9 @@ fi
 
 # ── reload: подменить работающий модуль установленным ────────────────────────
 if [[ "$MODE" == "reload" ]]; then
-    [[ "$need_mod" -eq 0 ]] || die "на диске не версия манифеста ($cur_mod) — сначала install"
-    if [[ -n "$cur_loaded" && "$cur_loaded" == "$cur_mod" ]]; then
-        ok "работает уже $cur_loaded — reload не нужен"; exit 0
+    [[ "$need_mod" -eq 0 ]] || die "на диске не тег манифеста (собран из ${cur_tag:-неизвестного}) — сначала install"
+    if [[ -n "$(loaded_src)" && "$(loaded_src)" == "$(installed_src)" ]]; then
+        ok "работают те же исходники (srcversion $(loaded_src)) — reload не нужен"; exit 0
     fi
     ifaces="$(awg show interfaces 2>/dev/null | tr ' ' '\n' | grep -v '^$' || true)"
     # Все интерфейсы вниз — иначе rmmod откажет. Порядок подъёма — тот же, что
@@ -132,13 +184,13 @@ fi
 
 # ── install / plan ───────────────────────────────────────────────────────────
 if [[ "$need_mod" -eq 0 && "$need_tools" -eq 0 ]]; then
-    ok "AmneziaWG $AWG_MODULE_VERSION уже стоит — ничего не делаю"
-    if [[ -n "$cur_loaded" && "$cur_loaded" != "$cur_mod" ]]; then
-        warn "работает $cur_loaded: применить — awg-bot awg reload (интерфейсы лягут на секунды) или перезагрузка"
+    ok "AmneziaWG $AWG_MODULE_TAG уже собран — ничего не делаю"
+    if [[ -n "$(loaded_src)" && "$(loaded_src)" != "$(installed_src)" ]]; then
+        warn "работает модуль других исходников: применить — awg-bot awg reload (интерфейсы лягут на секунды) или перезагрузка"
     fi
     exit 0
 fi
-log "манифест: модуль $AWG_MODULE_VERSION, тулзы $AWG_TOOLS_VERSION; стоит: модуль ${cur_mod:-нет}, тулзы ${cur_tools:-нет}"
+log "манифест: модуль $AWG_MODULE_TAG, тулзы $AWG_TOOLS_TAG; собрано из: ${cur_tag:-неизвестно}"
 
 # 1) зависимости сборки — только apt-семейство; на другом дистрибутиве
 #    честный отказ со списком, а не полусобранное состояние
@@ -184,8 +236,8 @@ fetch() {   # fetch NAME URL SHA → путь к файлу
 # 3) amneziawg-tools: make из src, установка в /usr (awg, awg-quick, юнит awg-quick@)
 step_tools() {
     local f d
-    f="$(fetch "amneziawg-tools-$AWG_TOOLS_VERSION" "$AWG_TOOLS_URL" "$AWG_TOOLS_SHA256")"
-    d="$SRC_CACHE/amneziawg-tools-$AWG_TOOLS_VERSION"
+    f="$(fetch "amneziawg-tools-${AWG_TOOLS_TAG#v}" "$AWG_TOOLS_URL" "$AWG_TOOLS_SHA256")"
+    d="$SRC_CACHE/amneziawg-tools-${AWG_TOOLS_TAG#v}"
     run rm -rf "$d"; run mkdir -p "$d"
     run tar xzf "$f" -C "$d" --strip-components=1
     run make -C "$d/src" -j"$(nproc)"
@@ -193,14 +245,18 @@ step_tools() {
     [[ "$PLAN" -eq 1 ]] || hash -r
     [[ "$PLAN" -eq 1 ]] || [[ "$(installed_tools)" == "$AWG_TOOLS_VERSION" ]] \
         || die "после установки awg --version даёт '$(installed_tools)', ждали $AWG_TOOLS_VERSION"
+    [[ "$PLAN" -eq 1 ]] || state_set "$_KEY_TOOLS_TAG" "$AWG_TOOLS_TAG"
     run systemctl daemon-reload
 }
 
 # 4) модуль: DKMS-дерево под версией, сборка под каждое ядро
 step_module() {
-    local f tmp tree="$DKMS_SRC_ROOT/$MODULE-$AWG_MODULE_VERSION" k
-    f="$(fetch "amneziawg-linux-kernel-module-$AWG_MODULE_VERSION" "$AWG_MODULE_URL" "$AWG_MODULE_SHA256")"
-    tmp="$SRC_CACHE/module-$AWG_MODULE_VERSION.unpack"
+    # Каталог дерева — по ТЕГУ: у разных тегов одинаковый version.h, и дерево
+    # «по версии» они делили бы между собой, затирая друг друга.
+    local mtag="${AWG_MODULE_TAG#v}"
+    local f tmp tree="$DKMS_SRC_ROOT/$MODULE-$mtag" k
+    f="$(fetch "amneziawg-linux-kernel-module-$mtag" "$AWG_MODULE_URL" "$AWG_MODULE_SHA256")"
+    tmp="$SRC_CACHE/module-$mtag.unpack"
     run rm -rf "$tmp"; run mkdir -p "$tmp"
     run tar xzf "$f" -C "$tmp" --strip-components=1
     # Дерево DKMS — апстримной целью (кладёт только исходники, без тестов),
@@ -208,12 +264,12 @@ step_module() {
     run rm -rf "$tree"
     run make -C "$tmp/src" dkms-install DKMSDIR="$tree"
     if [[ "$PLAN" -eq 0 ]]; then
-        sed -i -E "s|^PACKAGE_VERSION=.*|PACKAGE_VERSION=\"$AWG_MODULE_VERSION\"|" "$tree/dkms.conf"
-        grep -q "^PACKAGE_VERSION=\"$AWG_MODULE_VERSION\"" "$tree/dkms.conf" || die "dkms.conf: версия не выставлена"
+        sed -i -E "s|^PACKAGE_VERSION=.*|PACKAGE_VERSION=\"$mtag\"|" "$tree/dkms.conf"
+        grep -q "^PACKAGE_VERSION=\"$mtag\"" "$tree/dkms.conf" || die "dkms.conf: версия не выставлена"
     fi
     run rm -rf "$tmp"
-    if ! dkms status -m "$MODULE" -v "$AWG_MODULE_VERSION" 2>/dev/null | grep -q .; then
-        run dkms add -m "$MODULE" -v "$AWG_MODULE_VERSION"
+    if ! dkms status -m "$MODULE" -v "$mtag" 2>/dev/null | grep -q .; then
+        run dkms add -m "$MODULE" -v "$mtag"
     fi
     local built=0
     for k in $(kernels_with_headers); do
@@ -221,17 +277,19 @@ step_module() {
         # дерево остаётся для отката), иначе два .ko претендуют на одно место.
         local old
         for old in $(dkms status -m "$MODULE" -k "$k" 2>/dev/null | sed -nE "s/^$MODULE[/, ]+([^,: ]+).*installed.*/\1/p"); do
-            [[ "$old" == "$AWG_MODULE_VERSION" ]] && continue
+            [[ "$old" == "$mtag" ]] && continue
             run dkms uninstall -m "$MODULE" -v "$old" -k "$k" || warn "$old под $k не снят"
         done
-        run dkms build -m "$MODULE" -v "$AWG_MODULE_VERSION" -k "$k" || die "сборка модуля под ядро $k не прошла — смотри /var/lib/dkms/$MODULE/$AWG_MODULE_VERSION/build/make.log"
-        run dkms install -m "$MODULE" -v "$AWG_MODULE_VERSION" -k "$k" --force || die "установка модуля под ядро $k не прошла"
+        run dkms build -m "$MODULE" -v "$mtag" -k "$k" || die "сборка модуля под ядро $k не прошла — смотри /var/lib/dkms/$MODULE/$mtag/build/make.log"
+        run dkms install -m "$MODULE" -v "$mtag" -k "$k" --force || die "установка модуля под ядро $k не прошла"
         built=$((built + 1))
     done
     [[ "$built" -gt 0 || "$PLAN" -eq 1 ]] || die "ни одного ядра с заголовками — собирать не под что"
     run depmod -a
-    [[ "$PLAN" -eq 1 ]] || [[ "$(installed_module)" == "$AWG_MODULE_VERSION" ]] \
-        || die "после установки modinfo даёт '$(installed_module)', ждали $AWG_MODULE_VERSION"
+    [[ "$PLAN" -eq 1 ]] || [[ -n "$(installed_module)" ]] \
+        || die "после установки modinfo не видит модуль вовсе"
+    # Тег собранного — наш единственный честный след: version.h у тегов общий.
+    [[ "$PLAN" -eq 1 ]] || state_set "$_KEY_MODULE_TAG" "$AWG_MODULE_TAG"
 }
 
 step_deps
@@ -243,10 +301,10 @@ cur_loaded="$(loaded_module)"
 if [[ -z "$cur_loaded" ]]; then
     # ничего не работает (чистый хост) — проверяем, что модуль вообще грузится
     modprobe "$MODULE" || die "modprobe $MODULE не прошёл после сборки"
-    ok "AmneziaWG $AWG_MODULE_VERSION установлен и загружен; тулзы $AWG_TOOLS_VERSION"
-elif [[ "$cur_loaded" != "$AWG_MODULE_VERSION" ]]; then
-    ok "AmneziaWG $AWG_MODULE_VERSION установлен; работает пока $cur_loaded"
+    ok "AmneziaWG $AWG_MODULE_TAG установлен и загружен; тулзы $AWG_TOOLS_TAG"
+elif [[ "$(loaded_src)" != "$(installed_src)" ]]; then
+    ok "AmneziaWG $AWG_MODULE_TAG установлен; работает пока модуль прежних исходников"
     warn "применить: awg-bot awg reload (все awg-интерфейсы лягут на секунды) или перезагрузка"
 else
-    ok "AmneziaWG $AWG_MODULE_VERSION установлен; работает эта же версия"
+    ok "AmneziaWG $AWG_MODULE_TAG установлен; он же и работает"
 fi

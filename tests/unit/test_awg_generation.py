@@ -19,7 +19,7 @@ def lockdir(tmp_path, monkeypatch):
     """Манифест поставки и файл состояния хоста — во временном каталоге."""
     lock = tmp_path / "awg.lock"
     lock.write_text("AWG_GENERATION=2\nAWG_PROTOCOL_ID=amnezia-awg3\n"
-                    "AWG_MODULE_VERSION=9.9.1\n", encoding="utf-8")
+                    "AWG_MODULE_TAG=v9.9.1\nAWG_MODULE_VERSION=9.9.1\n", encoding="utf-8")
     monkeypatch.setattr(awglock, "LOCK_PATH", lock)
     monkeypatch.setattr(awglock, "STATE_PATH", tmp_path / "awg.state")
     return tmp_path
@@ -168,6 +168,8 @@ def test_real_manifest_is_readable_by_the_bot():
     assert al.LOCK_PATH.exists(), "install/awg.lock пропал из репозитория"
     assert al.generation() >= 1 and al.protocol_id()
     assert al.lock()["AWG_MODULE_VERSION"]
+    # Тождество ведётся по тегу: version.h у апстримных тегов один и тот же.
+    assert al.module_tag().startswith("v")
 
 
 def test_blocked_release_is_not_marked_as_notified(tmp_path, monkeypatch):
@@ -201,3 +203,11 @@ def test_blocked_release_is_not_marked_as_notified(tmp_path, monkeypatch):
     svc = Svc()
     assert svc.update_to_notify() is None
     assert state.get(svc._NOTIFIED_KEY, "") == "", "версия помечена уведомлённой зря"
+
+
+def test_built_tag_is_the_only_honest_record(lockdir):
+    """Строка версии у v3.1.20260812…0906 одна и та же — «что собрано» знает
+    только состояние хоста, куда это записал установщик."""
+    assert awglock.built_module_tag() == "", "пустое состояние не должно выдумывать тег"
+    (lockdir / "awg.state").write_text("AWG_MODULE_TAG_BUILT=v3.1.20260906\n", encoding="utf-8")
+    assert awglock.built_module_tag() == "v3.1.20260906"

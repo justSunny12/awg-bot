@@ -797,12 +797,16 @@ ensure_awg_module_loaded() {
     # Собранный модуль начинает работать только после подмены работающего:
     # rmmod требует, чтобы ни один интерфейс не был поднят. Делаем это здесь,
     # пока сервис ещё не запущен, — простой туннелей измеряется секундами.
+    #
+    # Сверяем srcversion (хеш ИСХОДНИКОВ), а не строку версии: апстрим не
+    # бампает version.h, и у разных тегов она одинакова — сравнение версий не
+    # заметило бы подмены вовсе.
     [[ -f "$AWG_LOCK_FILE" ]] || return 0
     local want have
-    want="$(lock_get AWG_MODULE_VERSION)"; [[ -n "$want" ]] || return 0
-    have="$(cat /sys/module/amneziawg/version 2>/dev/null || true)"
-    [[ -n "$have" && "$have" != "$want" ]] || return 0
-    log "ядро AmneziaWG: работает $have, в поставке $want — подменяю (интерфейсы лягут на секунды)…"
+    want="$(modinfo -F srcversion amneziawg 2>/dev/null | head -n1 || true)"
+    have="$(cat /sys/module/amneziawg/srcversion 2>/dev/null || true)"
+    [[ -n "$want" && -n "$have" && "$have" != "$want" ]] || return 0
+    log "ядро AmneziaWG: работает модуль прежних исходников — подменяю (интерфейсы лягут на секунды)…"
     AWG_LOCK="$AWG_LOCK_FILE" bash "$INSTALL_DIR/install/awg-kernel-install.sh" reload \
         || warn "модуль не подменён — применится после перезагрузки; awg-bot awg reload"
 }

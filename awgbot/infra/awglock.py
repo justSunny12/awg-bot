@@ -76,6 +76,18 @@ def generation() -> int:
     return _int(lock().get("AWG_GENERATION"))
 
 
+def module_tag() -> str:
+    """Тег модуля из манифеста. Именно ТЕГ — тождество ведётся по нему:
+    апстрим не бампает version.h, и у v3.1.20260812…0906 строка версии одна."""
+    return lock().get("AWG_MODULE_TAG", "")
+
+
+def built_module_tag() -> str:
+    """Тег, из которого собран модуль на этом хосте (пишет установщик). Пусто —
+    собирали не мы, и правды о теге неоткуда взять."""
+    return _read_kv(STATE_PATH).get("AWG_MODULE_TAG_BUILT", "")
+
+
 def protocol_id() -> str:
     """Идентификатор протокола для приложения из манифеста поставки. Уезжает в
     vpn:// и заморожен на поколение."""

@@ -1961,6 +1961,11 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             kernel = cp.stdout.decode(errors="replace").strip() if cp.returncode == 0 else ""
         except (OSError, subprocess.SubprocessError):
             kernel = ""
+        tag = awglock.built_module_tag() or awglock.module_tag()
+        if tag:
+            # Строка версии у разных тегов апстрима одинакова, поэтому в UI
+            # показываем тег: только он отвечает на вопрос «что собрано».
+            kernel = f"{tag} ({kernel})" if kernel else tag
         dns1 = g("app.client_config.dns1", config.DNS1)
         dns2 = g("app.client_config.dns2", config.DNS2)
         return {
