@@ -58,8 +58,11 @@ async def _notify_migration_needed(bot: Bot, services: Services) -> None:
     if await asyncio.to_thread(services.migration_running):
         return
     if not await asyncio.to_thread(services.migration_available):
-        log.warning("нужен переезд на поколение %s, но второй интерфейс не настроен "
-                    "— проверь awg-bot awg status и app.yaml", awglock.generation())
+        # Рычага нет: второй интерфейс не поднят (установщик его не поднимал,
+        # например пока шёл другой переезд). Предлагаем поднять кнопкой — иначе
+        # тупик: интерфейс заводит только обновление, а оно уже прошло.
+        await notify_one(bot, config.ADMIN_ID, texts.migration_generation_pending(),
+                         reply_markup=kb.migration_generation_pending())
         return
     await notify_one(bot, config.ADMIN_ID,
                      texts.migration_needed(awglock.generation(), awglock.applied_generation()),

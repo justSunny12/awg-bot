@@ -33,15 +33,18 @@ async def test_server_screen_shows_what_goes_into_new_links(services, fake_bot, 
     monkeypatch.setattr(services, "server_screen", lambda: {
         "host": "vpn.example.org", "name": "Сервер 1", "dns": "10.8.1.1", "mtu": 1376,
         "keepalive": "25-35", "iface": "awg0", "port": 51820, "port_conf": 51820,
-        "subnet": "10.8.1.0/24", "kernel": "3.1.20260812", "generation": 1})
+        "subnet": "10.8.1.0/24", "kernel": "3.1.20260812", "generation": 1,
+        "migration_blocked": ""})
     text, markup = await sh._screen("srv", services)
     assert "vpn.example.org" in text and "Сервер 1" in text and "3.1.20260812" in text
     assert "поколение 1" in text
-    assert "новым" in text and "перевыпуск профилей" in text, "цена правки названа"
+    assert "новым" in text and "переездом профилей" in text, "цена правки названа"
     labels = _labels(markup)
     assert "✏️ Доменное имя" in labels and "✏️ DNS клиентов" in labels and "✏️ MTU" in labels
     assert "✏️ Имя сервера" in labels
-    assert not any("порт" in l.lower() for l in labels), "порт кнопкой не меняется"
+    assert "🚚 Сменить порт или подсеть" in labels
+    assert not any(l.startswith("✏️") and "порт" in l.lower() for l in labels), \
+        "порт не правится как обычная настройка"
 
 
 async def test_server_screen_says_when_there_is_no_domain(services, fake_bot, monkeypatch):
@@ -50,7 +53,7 @@ async def test_server_screen_says_when_there_is_no_domain(services, fake_bot, mo
     monkeypatch.setattr(services, "server_screen", lambda: {
         "host": "203.0.113.10", "name": "Сервер 1", "dns": "10.8.1.1", "mtu": 1376,
         "keepalive": "25-35", "iface": "awg0", "port": 45871, "port_conf": 45871,
-        "subnet": "10.8.1.0/24", "kernel": "", "generation": 1})
+        "subnet": "10.8.1.0/24", "kernel": "", "generation": 1, "migration_blocked": ""})
     text, _ = await sh._screen("srv", services)
     assert "Доменное имя: не задано" in text and "203.0.113.10" in text
 
@@ -60,7 +63,7 @@ async def test_server_screen_flags_a_port_mismatch(services, fake_bot, monkeypat
     monkeypatch.setattr(services, "server_screen", lambda: {
         "host": "vpn.example.org", "name": "X", "dns": "10.8.1.1", "mtu": 1376,
         "keepalive": "25", "iface": "awg0", "port": 45871, "port_conf": 51820,
-        "subnet": "10.8.1.0/24", "kernel": "", "generation": 1})
+        "subnet": "10.8.1.0/24", "kernel": "", "generation": 1, "migration_blocked": ""})
     text, _ = await sh._screen("srv", services)
     assert "⚠️" in text and "45871" in text and "51820" in text
 
@@ -310,3 +313,59 @@ def test_routing_domain_list_uses_minus_and_a_bin_for_the_whole_list():
     assert "➖ ozon.ru" in labels and "➖ mail.ru" in labels
     assert "🗑 Очистить список" in labels
     assert not any(l.startswith("🧹") for l in labels), "метла осталась"
+
+
+# ── переезд из раздела «Сервер AWG» ─────────────────────────────────────────
+
+async def test_server_screen_hides_the_migration_button_while_one_runs(services, fake_bot, monkeypatch):
+    """Запрет симметричный: пока идёт переезд по поколению, своего затевать
+    нельзя — и раздел обязан объяснить почему, а не просто спрятать кнопку."""
+    monkeypatch.setattr(services, "server_screen", lambda: {
+        "host": "vpn.example.org", "name": "X", "dns": "1.1.1.1", "mtu": 1376,
+        "keepalive": "25", "iface": "awg0", "port": 45871, "port_conf": 45871,
+        "subnet": "10.8.1.0/24", "kernel": "", "generation": 1,
+        "migration_blocked": "идёт переезд на поколение 2: он начат сменой ядра"})
+    text, markup = await sh._screen("srv", services)
+    assert "нельзя" in text and "поколение 2" in text
+    labels = _labels(markup)
+    assert not any("Сменить порт" in l for l in labels)
+
+
+async def test_prepare_screen_names_the_cohort_and_the_cost(services, fake_bot, monkeypatch):
+    monkeypatch.setattr(services, "migration_prepare_data", lambda want_port=0: {
+        "iface": "awg0", "port": 45871, "subnet": "10.8.1.0/24",
+        "clients": 3, "devices": 7, "want_port": want_port, "blocked": ""})
+    text, markup = await sh._screen("mig_prep", services)
+    assert "45871" in text and "10.8.1.0/24" in text
+    assert "7" in text and "3" in text, "размер когорты не назван"
+    assert "отмена безопасна" in text.lower() and "финал" in text.lower()
+    labels = _labels(markup)
+    assert "🚚 Поднять второй интерфейс" in labels and "✏️ Задать порт" in labels
+
+
+async def test_prepare_runs_and_restarts(services, fake_bot, monkeypatch):
+    calls: list = []
+    monkeypatch.setattr(services, "migration_prepare",
+                        lambda port=None: calls.append(port) or
+                        {"iface": "awg1", "subnet": "10.9.1.0/24", "port": "443"})
+    monkeypatch.setattr(services, "set_restart_wait", lambda c, m: calls.append("wait"))
+    monkeypatch.setattr(services, "restart_bot", lambda: calls.append("restart"))
+    cb, nav = _acb(fake_bot)
+    await sh.do_action(cb, SetCB(sec="mig_prep", act="do", key="go", val="443"), services)
+    assert calls == [443, "wait", "restart"]
+    said = [s[1] for s in nav.sent if s[0] == "answer"]
+    assert said and "awg1" in said[-1] and "Начать переезд" in said[-1]
+
+
+async def test_prepare_failure_does_not_restart(services, fake_bot, monkeypatch):
+    calls: list = []
+
+    def boom(port=None):
+        raise RuntimeError("порт 443 занят")
+    monkeypatch.setattr(services, "migration_prepare", boom)
+    monkeypatch.setattr(services, "restart_bot", lambda: calls.append("restart"))
+    cb, nav = _acb(fake_bot)
+    await sh.do_action(cb, SetCB(sec="mig_prep", act="do", key="go"), services)
+    assert calls == []
+    said = [s[1] for s in nav.sent if s[0] == "answer"]
+    assert said and "занят" in said[-1] and "не тронут" in said[-1]

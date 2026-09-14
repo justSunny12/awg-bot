@@ -1984,7 +1984,22 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             "subnet": g("app.network.subnet_cidr", f"{config.SUBNET_PREFIX}.0/24"),
             "kernel": kernel,
             "generation": awglock.applied_generation(),
+            # Почему смена порта/подсети сейчас невозможна — или пусто
+            "migration_blocked": self.migration_blocked_reason(),
         }
+
+    def migration_prepare_data(self, want_port: int = 0) -> dict:
+        """Что показать на экране подготовки переезда: текущая топология и
+        размер когорты. Когорта считается ровно так же, как её заморозит старт."""
+        clients, devices, _to_birth = self.migration_start_preview()
+        return {"iface": config.AWG_INTERFACE,
+                "port": self._live_listen_port() or settings.get("app.network.server_port",
+                                                                 config.SERVER_PORT),
+                "subnet": settings.get("app.network.subnet_cidr",
+                                       f"{config.SUBNET_PREFIX}.0/24"),
+                "clients": clients, "devices": devices,
+                "want_port": want_port,
+                "blocked": self.migration_blocked_reason()}
 
     # ── файервол из чата (README §6b) ────────────────────────────────────────
     # Раньше единственным интерфейсом был CLI, и «подтверди вход» требовало

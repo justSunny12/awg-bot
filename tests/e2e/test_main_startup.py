@@ -68,11 +68,14 @@ async def test_silent_while_the_migration_is_already_running(gen, sent):
     assert sent == [], "просьба переехать во время переезда"
 
 
-async def test_warns_in_the_log_when_the_second_interface_is_missing(gen, sent, caplog):
-    """Поколение выросло, а рычага нет: просить некуда, но и молчать нельзя —
-    иначе хост остаётся на ядре, которое скоро перестанет обслуживать клиентов."""
+async def test_offers_to_prepare_when_the_second_interface_is_missing(gen, sent):
+    """Поколение выросло, а рычага нет: второй интерфейс не поднят (установщик
+    его не трогал, пока шёл другой переезд). Молчать здесь — тупик: интерфейс
+    заводит только обновление, а оно уже прошло. Предлагаем поднять кнопкой."""
     awglock.write_state(applied=1)
-    with caplog.at_level("WARNING"):
-        await rt._notify_migration_needed(None, _Svc(available=False))
-    assert sent == []
-    assert any("переезд" in r.message.lower() for r in caplog.records)
+    await rt._notify_migration_needed(None, _Svc(available=False))
+    assert len(sent) == 1
+    _tg, text, markup = sent[0]
+    assert "ядро нового поколения" in text.lower()
+    labels = [b.text for row in markup.inline_keyboard for b in row]
+    assert any("Подготовить переезд" in l for l in labels)

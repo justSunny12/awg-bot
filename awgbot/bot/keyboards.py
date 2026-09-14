@@ -1219,7 +1219,7 @@ def routing_provision() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def settings_server() -> InlineKeyboardMarkup:
+def settings_server(blocked: str = "") -> InlineKeyboardMarkup:
     """Раздел «Сервер»: то, что уезжает в НОВЫЕ ссылки. Порт, подсеть и версия
     ядра только показываются: их смена — это перевыпуск профилей всем, и живёт
     она в переезде, а не в кнопке."""
@@ -1228,8 +1228,34 @@ def settings_server() -> InlineKeyboardMarkup:
     kb.button(text="✏️ Имя сервера", callback_data=SetCB(sec="srv", act="edit", key="app.client_config.server_name"))
     kb.button(text="✏️ DNS клиентов", callback_data=SetCB(sec="srv", act="edit", key="app.client_config.dns1"))
     kb.button(text="✏️ MTU", callback_data=SetCB(sec="srv", act="edit", key="app.client_config.mtu"))
+    if not blocked:
+        # Порт и подсеть правятся не здесь, а переездом: они вморожены в каждую
+        # выданную ссылку. Кнопка ведёт на экран, который называет цену.
+        kb.button(text="🚚 Сменить порт или подсеть",
+                  callback_data=SetCB(sec="mig_prep", act="open"))
     kb.adjust(1)
     kb.row(_back())
+    return kb.as_markup()
+
+
+def migration_prepare_confirm(want_port: int = 0) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🚚 Поднять второй интерфейс",
+              callback_data=SetCB(sec="mig_prep", act="do", key="go",
+                                  val=str(want_port or "")))
+    kb.button(text="✏️ Задать порт", callback_data=SetCB(sec="mig_prep", act="edit", key="port"))
+    kb.button(text="✖️ Отмена", callback_data=SetCB(sec="srv", act="open"))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def migration_generation_pending() -> InlineKeyboardMarkup:
+    """Кнопка на сообщении «ядро нового поколения ждёт переезда»."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🚚 Подготовить переезд",
+              callback_data=SetCB(sec="mig_prep", act="do", key="go"))
+    kb.button(text="Скрыть", callback_data=HideCB())
+    kb.adjust(1)
     return kb.as_markup()
 
 

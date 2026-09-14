@@ -19,7 +19,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import GwMarkCB, SetCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import (BackupPassphrase, EmailSetup, GatewayToken,
-                                SettingsInput)
+                                MigrationPort, SettingsInput)
 from awgbot.bot.handlers import mailwizard
 from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu
 from awgbot.domain.services import ServiceError
@@ -54,7 +54,14 @@ async def _screen(sec: str, services):
     if sec == "subs":
         return texts.SETTINGS_SUBS, kb.settings_subs()
     if sec == "srv":
-        return texts.settings_server_text(await call(services.server_screen)), kb.settings_server()
+        d = await call(services.server_screen)
+        return texts.settings_server_text(d), kb.settings_server(d.get("migration_blocked", ""))
+    if sec == "mig_prep":
+        d = await call(services.migration_prepare_data)
+        if d["blocked"]:
+            return (texts.settings_server_text(await call(services.server_screen)),
+                    kb.settings_server(d["blocked"]))
+        return texts.migration_prepare_intro(d), kb.migration_prepare_confirm()
     if sec == "fw":
         st = await call(services.firewall_screen)
         return texts.settings_firewall_text(st), kb.settings_firewall(st)
@@ -429,6 +436,46 @@ async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext,
     await cb.answer()
 
 
+async def _migration_prepare(cb: CallbackQuery, services, want_port: str = "") -> None:
+    """Поднять второй интерфейс под переезд и перезапустить бота: имя
+    интерфейса читается при старте, без рестарта рычаг не появится."""
+    await cb.answer("Поднимаю интерфейс…")
+    await edit(cb, "🚚 Поднимаю второй интерфейс: ключи, порт, обфускация, "
+                   "автозагрузка. Это несколько секунд.", None)
+    try:
+        res = await call(services.migration_prepare,
+                         int(want_port) if str(want_port).isdigit() else None)
+    except Exception as e:                                # noqa: BLE001
+        await cb.message.answer(texts.migration_prepare_failed(str(e)))
+        return
+    sent = await cb.message.answer(texts.migration_prepared(res))
+    await call(services.set_restart_wait, sent.chat.id, sent.message_id)
+    try:
+        await call(services.restart_bot)
+    except OSError as e:
+        log.warning("после подготовки переезда не удалось перезапустить бота: %s", e)
+        await cb.message.answer(texts.migration_promote_restart_failed())
+
+
+@router.callback_query(SetCB.filter((F.sec == "mig_prep") & (F.act == "edit")))
+async def migration_port_ask(cb: CallbackQuery, state: FSMContext, services):
+    await state.set_state(MigrationPort.value)
+    await edit(cb, texts.MIGRATION_ASK_PORT, kb.settings_cancel("mig_prep"))
+    await cb.answer()
+
+
+@router.message(MigrationPort.value)
+async def migration_port_received(message: Message, state: FSMContext, services):
+    raw = (message.text or "").strip()
+    if not raw.isdigit() or not 1 <= int(raw) <= 65535:
+        await message.answer("⚠️ Порт — число от 1 до 65535. Попробуй ещё раз.")
+        return
+    await state.clear()
+    d = await call(services.migration_prepare_data, int(raw))
+    await message.answer(texts.migration_prepare_intro(d),
+                         reply_markup=kb.migration_prepare_confirm(int(raw)))
+
+
 async def _routing_provision(cb: CallbackQuery, services) -> None:
     """Развернуть обвязку условной маршрутизации. Долго (до минуты) и меняет
     состояние хоста, поэтому: сразу сказать, что идём, и показать итог."""
@@ -738,6 +785,13 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         if not failed and await call(services.db.gateway_device) is not None:
             # шлюз получил двойника с новыми ключами — файл сразу, без напоминаний
             await send_gw_bundle(cb.message, services)
+        # Смена поколения могла ждать финала этого переезда (установщик её не
+        # начинал, чтобы не подменить цель). Теперь очередь дошла.
+        if not failed:
+            from awgbot.infra import awglock
+            if awglock.needs_migration() and not await call(services.migration_available):
+                await cb.message.answer(texts.migration_generation_pending(),
+                                        reply_markup=kb.migration_generation_pending())
         promoted = await call(services.pop_promoted_iface)
         if promoted:
             # Новый интерфейс стал основным. Деплой-значения читаются при старте,
@@ -883,6 +937,9 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
         return
     if callback_data.sec == "rt" and key == "provision":
         await _routing_provision(cb, services)
+        return
+    if callback_data.sec == "mig_prep" and key == "go":
+        await _migration_prepare(cb, services, callback_data.val)
         return
     if key == "enc":                                   # экран шифрования
         mode = await call(services.backup_encryption_mode)

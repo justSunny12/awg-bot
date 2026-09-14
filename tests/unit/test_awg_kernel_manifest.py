@@ -420,3 +420,14 @@ def test_installer_writes_topology_even_for_a_pre_existing_server(bot_sh):
         "запись топологии снова спрятана под created"
     # первый клиентский адрес — следующий за адресом сервера, а не константа
     assert "BASH_REMATCH[1]} + 1" in body and "ip_host_start" in body
+
+
+def test_installer_never_retargets_a_running_migration(bot_sh):
+    """Обратный запрет: идущий переезд нельзя объявить целью смены поколения.
+    Двойники на нём рождены под прежнее ядро, и финал записал бы хост
+    перешедшим на поколение, которого он не видел."""
+    body = bot_sh.split("ensure_awg_generation() {", 1)[1].split("\n}\n", 1)[0]
+    branch = body.split('if [[ -n "$mig_if" ]]; then', 1)[1].split("fi", 1)[0]
+    assert "awg_state_set" not in branch, "цель переезда всё-таки переписывается"
+    assert "warn" in branch and "завершиться первым" in branch
+    assert "return 0" in branch
