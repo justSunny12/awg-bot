@@ -41,6 +41,9 @@ UNIT_PATH="/etc/systemd/system/awg-bot.service"
 SERVICE="awg-bot"
 SELF_LINK="/usr/local/bin/awg-bot"
 
+AWG_STATE="$ETC_DIR/awg.state"          # поколение AmneziaWG на этом хосте
+AWG_LOCK_FILE="$INSTALL_DIR/install/awg.lock"   # манифест версии из поставки
+
 # Реальный путь к этому скрипту (для update-по-умолчанию и uninstall self-removal).
 SELF_PATH="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)/$(basename "$(readlink -f "${BASH_SOURCE[0]}")")"
 SELF_DIR="$(dirname "$SELF_PATH")"
@@ -495,6 +498,21 @@ cmd_update() {
     [[ -n "$main" ]] || { rm -rf "$tmp"; die "в архиве нет awgbot/ — не та поставка?"; }
     local src; src="$(dirname "$(dirname "$main")")"
 
+    # ЯДРО — ДО подмены кода. Версия AmneziaWG прибита к поставке, значит её
+    # надо собрать; а собирать надо ПЕРВЫМ делом, пока на диске рабочая
+    # установка: не собралось (нет заголовков, апстрим переименовал цель) —
+    # откатываемся целиком, поднимаем сервис и сообщаем причину. Иначе хост
+    # остался бы с новым кодом и старым ядром, то есть в состоянии, которого
+    # мы нигде не проверяем.
+    if [[ -f "$src/install/awg.lock" ]]; then
+        log "AmneziaWG: версия из поставки — собираю до подмены кода…"
+        if ! AWG_LOCK="$src/install/awg.lock" bash "$src/install/awg-kernel-install.sh" install; then
+            rm -rf "$tmp"
+            systemctl start "$SERVICE" 2>/dev/null || true
+            die "ядро AmneziaWG из поставки не собралось — код НЕ подменён, версия прежняя, сервис поднят обратно"
+        fi
+    fi
+
     # заменить код, сохранив venv (данные/конфиг живут в /etc и /var — их не касаемся)
     find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name venv -exec rm -rf {} +
     cp -a "$src"/. "$INSTALL_DIR"/
@@ -551,6 +569,95 @@ ensure_host_autostart() {
     return 0
 }
 
+awg_state_get() {  # awg_state_get KEY → значение из /etc/awg-bot/awg.state
+    [[ -f "$AWG_STATE" ]] || return 0
+    sed -nE "s/^$1=(.*)$/\1/p" "$AWG_STATE" | head -n1
+}
+awg_state_set() {  # awg_state_set KEY VALUE (создаёт файл, сохраняет прочие строки)
+    mkdir -p "$(dirname "$AWG_STATE")"
+    [[ -f "$AWG_STATE" ]] || printf '%s\n%s\n' \
+        "# awg-bot: поколение AmneziaWG на этом хосте. Файл ведут установщик" \
+        "# и финал переезда профилей; руками править незачем." > "$AWG_STATE"
+    if grep -qE "^$1=" "$AWG_STATE"; then
+        sed -i -E "s|^$1=.*|$1=$2|" "$AWG_STATE"
+    else
+        printf '%s=%s\n' "$1" "$2" >> "$AWG_STATE"
+    fi
+}
+lock_get() { [[ -f "$AWG_LOCK_FILE" ]] && sed -nE "s/^$1=(.*)$/\1/p" "$AWG_LOCK_FILE" | head -n1 || true; }
+
+ensure_awg_module_loaded() {
+    # Собранный модуль начинает работать только после подмены работающего:
+    # rmmod требует, чтобы ни один интерфейс не был поднят. Делаем это здесь,
+    # пока сервис ещё не запущен, — простой туннелей измеряется секундами.
+    [[ -f "$AWG_LOCK_FILE" ]] || return 0
+    local want have
+    want="$(lock_get AWG_MODULE_VERSION)"; [[ -n "$want" ]] || return 0
+    have="$(cat /sys/module/amneziawg/version 2>/dev/null || true)"
+    [[ -n "$have" && "$have" != "$want" ]] || return 0
+    log "ядро AmneziaWG: работает $have, в поставке $want — подменяю (интерфейсы лягут на секунды)…"
+    AWG_LOCK="$AWG_LOCK_FILE" bash "$INSTALL_DIR/install/awg-kernel-install.sh" reload \
+        || warn "модуль не подменён — применится после перезагрузки; awg-bot awg reload"
+}
+
+ensure_awg_generation() {
+    # Поколение — класс совместимости протокола. Растёт только тогда, когда
+    # новое ядро не обслужит клиентов прежнего; тогда рядом со старым
+    # интерфейсом поднимается второй, на новых параметрах, и бот просит
+    # админа начать переезд профилей. Сам переезд — в UI, не здесь.
+    local app="$CONF_DIR/app.yaml"
+    [[ -f "$AWG_LOCK_FILE" && -f "$app" ]] || return 0
+    [[ "$(yaml_get "$app" role)" != "gateway" ]] || return 0     # у шлюза клиентов нет
+    local want applied
+    want="$(lock_get AWG_GENERATION)"; [[ "$want" =~ ^[0-9]+$ ]] || return 0
+    applied="$(awg_state_get AWG_GENERATION_APPLIED)"
+    if [[ -z "$applied" ]]; then
+        # Файла состояния ещё нет — усыновляем поколение поставки. Это верно по
+        # построению: обновления идут по одной ступени, значит поставка, которая
+        # ВВОДИТ файл, приезжает раньше любой, которая меняет поколение.
+        awg_state_set AWG_GENERATION_APPLIED "$want"
+        return 0
+    fi
+    [[ "$want" -gt "$applied" ]] || return 0
+
+    local mig_if; mig_if="$(yaml_get "$app" migration_interface)"
+    if [[ -n "$mig_if" ]]; then
+        log "поколение $want: второй интерфейс $mig_if уже поднят — переезд ждёт админа"
+        awg_state_set AWG_GENERATION_TARGET "$want"
+        return 0
+    fi
+
+    # Имя и подсеть второго интерфейса выбираем сами: админу тут нечего решать,
+    # а ошибиться есть где — занятое имя или пересечение подсетей.
+    local base_if base_prefix new_if="" new_prefix="" i
+    base_if="$(yaml_get "$app" interface)"; base_if="${base_if:-awg0}"
+    base_prefix="$(yaml_get "$app" subnet_prefix)"; base_prefix="${base_prefix:-10.8.1}"
+    local conf_dir; conf_dir="$(yaml_get "$app" awg_dir)"; conf_dir="${conf_dir:-/etc/amnezia/amneziawg}"
+    for i in 1 2 3 4 5 6 7 8 9; do
+        [[ -e "$conf_dir/awg$i.conf" || "awg$i" == "$base_if" ]] && continue
+        new_if="awg$i"; break
+    done
+    local o1 o2 o3; IFS=. read -r o1 o2 o3 <<<"$base_prefix"
+    for i in 1 2 3 4 5 6 7 8 9; do
+        local cand="$o1.$(( o2 + i )).$o3"
+        grep -rqs "$cand\." "$conf_dir" 2>/dev/null && continue
+        new_prefix="$cand"; break
+    done
+    [[ -n "$new_if" && -n "$new_prefix" ]] || { warn "поколение $want: не подобрать имя/подсеть второго интерфейса — переезд придётся настроить вручную"; return 0; }
+
+    log "ядро поколения $want не обслужит клиентов поколения $applied — поднимаю второй интерфейс $new_if ($new_prefix.0/24) под переезд профилей"
+    AWG_IF="$new_if" SUBNET_PREFIX="$new_prefix" AWG_QUICK_DIR="$conf_dir" \
+        bash "$INSTALL_DIR/install/awg-server-init.sh" >/dev/null \
+        || { warn "второй интерфейс не поднят — переезд пока невозможен; см. journalctl -u awg-quick@$new_if"; return 0; }
+    # Пул адресов начинается с .2: у созданного нами интерфейса .1 занимает сам
+    # сервер, и двойник, выданный на .1, конфликтовал бы с ним.
+    [[ "$(yaml_get "$app" ip_host_start)" == "1" ]] && yaml_set "$app" ip_host_start 2
+    yaml_set "$app" migration_interface "\"$new_if\""
+    yaml_set "$app" migration_subnet_prefix "\"$new_prefix\""
+    awg_state_set AWG_GENERATION_TARGET "$want"
+    ok "второй интерфейс $new_if готов: бот попросит начать переезд профилей при старте"
+}
+
 cmd_post_update() {
     # Вторая половина обновления, исполняется УЖЕ НОВЫМ скриптом (см. cmd_update).
     require_root
@@ -559,6 +666,8 @@ cmd_post_update() {
     build_venv
     install_unit
     ensure_host_autostart
+    ensure_awg_module_loaded
+    ensure_awg_generation
     seed_conf                              # досеять НОВЫЕ conf-файлы этой версии
                                            # (существующие не трогаем — idempotent)
     validate_config
@@ -803,6 +912,7 @@ ensure_awg_server() {  # клиентская роль, чистый хост: �
         yaml_set "$app" ip_host_start 2
         [[ -n "$port" ]]   && yaml_set "$app" server_port "$port"
         [[ -n "$prefix" ]] && { yaml_set "$app" subnet_prefix "\"$prefix\""; yaml_set "$app" subnet_cidr "\"${prefix}.0/24\""; }
+        awg_state_set AWG_GENERATION_APPLIED "$(lock_get AWG_GENERATION)"
         ok "сервер AmneziaWG создан: awg0, порт $port, подсеть ${prefix}.0/24 (сервер .1, клиенты с .2)"
     fi
 }

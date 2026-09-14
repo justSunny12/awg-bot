@@ -46,6 +46,26 @@ logging.basicConfig(
 log = logging.getLogger("awgbot.main")
 
 
+async def _notify_migration_needed(bot: Bot, services: Services) -> None:
+    """Сообщить админу, что нужен переезд профилей. Условия: манифест поставки
+    новее применённого поколения, рычаг переезда настроен (второй интерфейс
+    поднят установщиком) и переезд ещё не идёт."""
+    from awgbot.bot import keyboards as kb
+    from awgbot.bot import texts
+    from awgbot.infra import awglock
+    if not awglock.needs_migration():
+        return
+    if await asyncio.to_thread(services.migration_running):
+        return
+    if not await asyncio.to_thread(services.migration_available):
+        log.warning("нужен переезд на поколение %s, но второй интерфейс не настроен "
+                    "— проверь awg-bot awg status и app.yaml", awglock.generation())
+        return
+    await notify_one(bot, config.ADMIN_ID,
+                     texts.migration_needed(awglock.generation(), awglock.applied_generation()),
+                     reply_markup=kb.migration_needed())
+
+
 async def do_reconcile(services: Services, bot: Bot) -> None:
     """Реконсиляция состава пиров + рассылка уведомлений (вызов из вотчдога и старта).
     Внешнее изменение файлов могло затронуть и [Interface] — сбрасываем кэш
@@ -374,6 +394,15 @@ async def main() -> None:
             await send_notifications(bot, [note])
     except Exception as e:                               # noqa: BLE001
         log.warning("confirm_applied_update: %s", e)
+
+    # Поставка привезла ядро нового поколения — переезд профилей обязателен, и
+    # сказать об этом надо при КАЖДОМ старте, пока он не начат: пропустить такое
+    # сообщение один раз значит остаться на ядре, которое скоро перестанет
+    # обслуживать клиентов, и не понять почему.
+    try:
+        await _notify_migration_needed(bot, services)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("migration_needed: %s", e)
 
     # Тот же принцип для обычного рестарта из настроек: обещание «вернётся через
     # несколько секунд» исполняет новый процесс. Отдельно от блока выше — там

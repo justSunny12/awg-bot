@@ -1294,6 +1294,10 @@ async def update_install(cb: CallbackQuery, services):
     if nxt is None:
         await cb.answer("Обновлять не на что — версия актуальна.", show_alert=True)
         return
+    blocked = await call(services.update_block_reason, nxt)
+    if blocked:
+        await cb.answer(f"Нельзя: {blocked}", show_alert=True)
+        return
     await cb.answer("Запускаю обновление…")
     chat_id = cb.message.chat.id
     await cleanup_content(cb.bot, services, chat_id)

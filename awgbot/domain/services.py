@@ -793,7 +793,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
                 return DeviceCreated(device_id=twin_id, address=twin.address,
                                      vpn=cfg["vpn"], conf=cfg["conf"])
 
-        cfg = configgen.generate(priv, pub, ip, server_params)
+        cfg = configgen.generate(priv, pub, ip, server_params, iface=config.AWG_INTERFACE)
         # новое устройство админа → сразу открыть ему SSH-к-хосту (не ждать цикла)
         if client.tg_id == config.ADMIN_ID:
             self.reconcile_ssh_access()
@@ -851,8 +851,10 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         # Параметры берём у ТОГО интерфейса, где живёт пир. Общие отдали бы
         # конфигу двойника старый порт, старый серверный ключ и старую
         # обфускацию: превью выглядит нормально, а не подключается никто.
-        server_params = awg.read_server_params(iface=awg.iface_of(dev.iface))
-        return configgen.generate(dev.private_key, dev.public_key, dev.address, server_params)
+        iface = awg.iface_of(dev.iface)
+        server_params = awg.read_server_params(iface=iface)
+        return configgen.generate(dev.private_key, dev.public_key, dev.address,
+                                  server_params, iface=iface)
 
     def rename_device(self, device_id: int, new_name: str) -> None:
         """Переименование устройства. Имя живёт только в нашей БД: сервер про

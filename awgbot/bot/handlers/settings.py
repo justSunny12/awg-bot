@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+import logging
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, FSInputFile
@@ -20,6 +22,8 @@ from awgbot.bot.states import BackupPassphrase, EmailSetup, SettingsInput
 from awgbot.bot.handlers import mailwizard
 from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu
 from awgbot.domain.services import ServiceError
+
+log = logging.getLogger("awgbot.settings")
 
 router = Router(name="settings")
 router.message.filter(RoleFilter("admin"))
@@ -516,6 +520,18 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         if not failed and await call(services.db.gateway_device) is not None:
             # шлюз получил двойника с новыми ключами — файл сразу, без напоминаний
             await send_gw_bundle(cb.message, services)
+        promoted = await call(services.pop_promoted_iface)
+        if promoted:
+            # Новый интерфейс стал основным. Деплой-значения читаются при старте,
+            # поэтому рестарт здесь не косметика: без него бот продолжит считать
+            # основным погашенный интерфейс и родит следующее устройство на нём.
+            sent = await cb.message.answer(texts.migration_promoted(promoted))
+            await call(services.set_restart_wait, sent.chat.id, sent.message_id)
+            try:
+                await call(services.restart_bot)
+            except OSError as e:                       # systemd недоступен
+                log.warning("после переезда не удалось перезапустить бота: %s", e)
+                await cb.message.answer(texts.migration_promote_restart_failed())
         return
 
     if key == "cancel!":
@@ -699,8 +715,13 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
     if key == "check":                                 # проверить обновление сейчас
         await cb.answer("Проверяю…")
         nxt = await call(services.update_next)
+        blocked = await call(services.update_block_reason, nxt) if nxt is not None else ""
         if nxt is None:
             await edit(cb, texts.update_current_ok(config.INSTALLED_VERSION),
+                       kb.settings_updates(await call(services.updates_muted)))
+        elif blocked:
+            # Кнопку «Обновить» не показываем: она бы вела в отказ.
+            await edit(cb, texts.update_blocked(nxt.tag, blocked),
                        kb.settings_updates(await call(services.updates_muted)))
         else:
             await edit(cb, texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body),

@@ -155,14 +155,31 @@ def _build_last_config(
 
 
 def _subnet_of(address: str) -> str:
-    """«10.9.1.2» → «10.9.1.0». Сервер держит нулевой адрес (квирк докерной
-    Amnezia), так что это и есть его адрес в сети устройства."""
+    """«10.9.1.2» → «10.9.1.0» — адрес СЕТИ устройства (не сервера: у новых
+    установок сервер занимает .1, у докерных занимал .0)."""
     return address.rsplit(".", 1)[0] + ".0"
+
+
+def app_container_for(iface: str = "") -> str:
+    """Идентификатор протокола для приложения — по ИНТЕРФЕЙСУ, на котором
+    живёт пир.
+
+    В окне смены поколения интерфейсов два, и у них разные протоколы: старые
+    ссылки обязаны остаться со старым идентификатором (иначе приложение
+    перестанет опознавать уже импортированные профили), новые — получить
+    новый. Значение вморожено в каждую выданную ссылку навсегда, поэтому
+    «просто взять из манифеста» для всех нельзя.
+    """
+    if iface and config.MIGRATION_INTERFACE and iface == config.MIGRATION_INTERFACE:
+        from awgbot.infra import awglock
+        return awglock.protocol_id() or config.APP_CONTAINER
+    return config.APP_CONTAINER
 
 
 def _build_vpn_json(
     private_key: str, public_key: str, address: str,
     obf: dict, server_pubkey: str, psk: str, host: str, port: int,
+    iface: str = "",
 ) -> dict:
     embedded_conf = _conf_text(
         private_key, address, obf, server_pubkey, psk, host, port,
@@ -189,10 +206,11 @@ def _build_vpn_json(
     # а не имя docker-контейнера на сервере. Совпадают они исторически, и после
     # переезда на хост docker-имя исчезнет — но зашитое в выданные ссылки
     # значение обязано остаться прежним, иначе приложение перестанет опознавать
-    # профили у всех разом.
+    # профили у всех разом. В окне смены поколения у второго интерфейса он свой.
+    app_container = app_container_for(iface)
     return {
-        "containers": [{"awg": awg_block, "container": config.APP_CONTAINER}],
-        "defaultContainer": config.APP_CONTAINER,
+        "containers": [{"awg": awg_block, "container": app_container}],
+        "defaultContainer": app_container,
         "description": config.SERVER_NAME,
         "dns1": config.DNS1,
         "dns2": config.DNS2,
@@ -232,10 +250,13 @@ def generate(
     public_key: str,
     address: str,
     server_params: dict,
+    iface: str = "",
 ) -> dict:
     """Собирает клиентский конфиг устройства.
 
     address — IP без маски (например «10.8.1.4»).
+    iface — интерфейс пира: от него зависит идентификатор протокола в vpn://
+    (в окне смены поколения интерфейсов два, и протокол у них разный).
     server_params — из awg.read_server_params():
         {obfuscation: {...}, listen_port: int, server_pubkey: str, psk: str}
 
@@ -251,7 +272,7 @@ def generate(
         private_key, address, obf, spub, psk, host, port, include_mtu=True,
     )
     vpn_obj = _build_vpn_json(
-        private_key, public_key, address, obf, spub, psk, host, port,
+        private_key, public_key, address, obf, spub, psk, host, port, iface,
     )
     return {"conf": conf_standalone, "vpn": encode_vpn(vpn_obj)}
 

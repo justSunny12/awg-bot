@@ -34,7 +34,22 @@ import pytest  # noqa: E402
 # дефолты вместо репозиторных значений и часть тестов разъедется.
 from awgbot.core import config as _config          # noqa: E402
 from awgbot.core import settings as _settings       # noqa: E402
-_settings.init(_config.CONF_DIR)
+
+# КОПИЯ conf, а не сам каталог репозитория: settings.set_value пишет в файл, и
+# тест, дошедший до записи (финал переезда переставляет основной интерфейс),
+# молча правил бы conf/app.yaml в рабочем дереве. Один раз это уже случилось.
+import pathlib                                      # noqa: E402
+import shutil as _shutil                            # noqa: E402
+import tempfile as _tempfile                        # noqa: E402
+_CONF_COPY = pathlib.Path(_tempfile.mkdtemp(prefix="awg-bot-conf-"))
+for _f in pathlib.Path(_config.CONF_DIR).glob("*.yaml"):
+    _shutil.copy2(_f, _CONF_COPY / _f.name)
+_settings.init(_CONF_COPY)
+
+# Состояние поколения AmneziaWG тоже пишется файлом рядом с conf — уводим его
+# в ту же копию, чтобы прогон не оставлял awg.state в корне проекта.
+from awgbot.infra import awglock as _awglock        # noqa: E402
+_awglock.STATE_PATH = _CONF_COPY / "awg.state"
 
 
 @pytest.fixture()

@@ -77,8 +77,37 @@ class SelfUpdateMixin:
             return None
         if self.db.get_state(self._NOTIFIED_KEY) == nxt.tag:
             return None
+        if self.update_block_reason(nxt):
+            # Поставка ждёт конца переезда. Молчим и НЕ помечаем уведомлённой:
+            # иначе единственное уведомление о ней сгорело бы на кнопке, которая
+            # сейчас ведёт в отказ, и после финала переезда о нём никто не
+            # напомнил бы. Экран «Обновления» причину показывает.
+            return None
         self.db.set_state(self._NOTIFIED_KEY, nxt.tag)
         return nxt
+
+    def update_block_reason(self, release=None) -> str:
+        """Почему обновляться нельзя прямо сейчас, или пустая строка.
+
+        Единственная причина: переезд ИДЁТ, а поставка привезла поколение
+        AmneziaWG дальше его цели. Разреши — и профили размажутся по трём
+        интерфейсам, а мигрировать такое нечем. Поколение поставки читается из
+        тела релиза (#awg_genN), то есть ДО скачивания."""
+        from awgbot.infra import awglock
+        release = release if release is not None else self.update_next()
+        if release is None:
+            return ""
+        running = False
+        try:
+            running = bool(self.migration_running())
+        except Exception:                                 # noqa: BLE001
+            running = False                               # роль без переезда
+        if not awglock.blocks_update(release.awg_generation(), running):
+            return ""
+        return ("идёт переезд профилей на поколение "
+                f"{awglock.target_generation()}, а {release.tag} несёт ядро поколения "
+                f"{release.awg_generation()}. Заверши переезд — и обновление станет "
+                "доступно: профили на трёх интерфейсах мигрировать нечем.")
 
     def apply_update(self, release) -> None:
         """Скачать ассет следующей версии, сверить sha256 и запустить апдейтер
@@ -87,6 +116,9 @@ class SelfUpdateMixin:
 
         Перед запуском пишем update_pending=tag: на следующем старте
         confirm_applied_update() сверит фактическую версию и отчитается админу."""
+        reason = self.update_block_reason(release)
+        if reason:
+            raise updates.UpdateError(reason)
         blob = updates.download_asset(release)
         self.db.set_state("update_pending", release.tag)
         updates.apply(blob)

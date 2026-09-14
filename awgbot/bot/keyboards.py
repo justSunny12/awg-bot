@@ -726,6 +726,18 @@ def update_admin_available() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def migration_needed() -> InlineKeyboardMarkup:
+    """Инфобокс «нужен переезд»: сразу к подтверждению старта и «Скрыть».
+    Скрыть — не «отложить навсегда»: сообщение приходит при каждом старте,
+    пока переезд не начат."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🚚 Начать переезд профилей",
+              callback_data=SetCB(sec="mig", act="do", key="start"))
+    kb.button(text="Скрыть", callback_data=HideCB())
+    kb.adjust(1)
+    return kb.as_markup()
+
+
 def update_done_menu() -> InlineKeyboardMarkup:
     """«В меню» на итоговом сообщении self-update. Свой колбэк (upd:menu), а не
     Menu(main): стандартный обработчик РЕДАКТИРУЕТ сообщение в панель, а итог

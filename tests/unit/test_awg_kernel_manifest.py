@@ -169,3 +169,64 @@ def test_server_refuses_without_the_kernel(server):
     установку ядра, а не оставлять полуфабрикат."""
     assert "awg-bot awg install" in server
     assert "modprobe amneziawg" in server
+
+
+# ── апдейтер: фазы и поколения ───────────────────────────────────────────────
+
+@pytest.fixture(scope="module")
+def bot_sh() -> str:
+    return (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+
+
+def test_update_builds_the_kernel_before_swapping_code(bot_sh):
+    """Сборка — ПЕРВЫМ делом, пока на диске рабочая установка. Не собралось —
+    код не подменён, версия прежняя, сервис поднят обратно. Иначе хост остался
+    бы с новым кодом и старым ядром: состояние, которого никто не проверяет."""
+    body = bot_sh.split("cmd_update() {", 1)[1].split("\n}\n", 1)[0]
+    i_build = body.index("awg-kernel-install.sh")
+    i_swap = body.index("find \"$INSTALL_DIR\" -mindepth 1")
+    assert i_build < i_swap, "ядро собирается после подмены кода"
+    fail = body[i_build:i_swap]
+    assert "systemctl start" in fail and "die" in fail, "при отказе сервис не поднимается обратно"
+    assert 'AWG_LOCK="$src/install/awg.lock"' in body, "манифест берётся из НОВОЙ поставки"
+
+
+def test_module_is_reloaded_only_when_the_running_one_differs(bot_sh):
+    """Подмена работающего модуля гасит все интерфейсы — делать её на каждом
+    обновлении незачем: тег тот же, значит и подменять нечего."""
+    body = bot_sh.split("ensure_awg_module_loaded() {", 1)[1].split("\n}\n", 1)[0]
+    assert "/sys/module/amneziawg/version" in body
+    assert '[[ -n "$have" && "$have" != "$want" ]] || return 0' in body
+    assert "reload" in body and "warn" in body, "неудачная подмена не должна ронять обновление"
+
+
+def test_generation_bump_raises_a_second_interface(bot_sh):
+    """Растёт поколение — рядом со старым интерфейсом поднимается второй, на
+    новых параметрах, и переезд ждёт админа в UI."""
+    body = bot_sh.split("ensure_awg_generation() {", 1)[1].split("\n}\n", 1)[0]
+    assert 'yaml_get "$app" role' in body and "gateway" in body, "у шлюза клиентов нет"
+    assert '[[ "$want" -gt "$applied" ]] || return 0' in body
+    assert "awg-server-init.sh" in body
+    assert 'yaml_set "$app" migration_interface' in body
+    assert 'yaml_set "$app" migration_subnet_prefix' in body
+    assert "awg_state_set AWG_GENERATION_TARGET" in body
+    # пул адресов: .1 у нового интерфейса занимает сервер
+    assert 'yaml_set "$app" ip_host_start 2' in body
+
+
+def test_missing_state_file_adopts_the_delivery_generation(bot_sh):
+    """Первая поставка с манифестом усыновляет текущее поколение, а не объявляет
+    переезд: обновления идут по одной ступени, значит ввод файла случается
+    раньше любой смены поколения."""
+    body = bot_sh.split("ensure_awg_generation() {", 1)[1].split("\n}\n", 1)[0]
+    adopt = body.split('if [[ -z "$applied" ]]; then', 1)[1].split("fi", 1)[0]
+    assert "awg_state_set AWG_GENERATION_APPLIED" in adopt and "return 0" in adopt
+
+
+def test_second_interface_name_and_subnet_do_not_collide(bot_sh):
+    """Имя и подсеть подбираются сами: занятое имя или пересечение подсетей —
+    ровно то, где админ ошибётся, а отказ вылезет у клиентов."""
+    body = bot_sh.split("ensure_awg_generation() {", 1)[1].split("\n}\n", 1)[0]
+    assert '[[ -e "$conf_dir/awg$i.conf" || "awg$i" == "$base_if" ]] && continue' in body
+    assert 'grep -rqs "$cand\\." "$conf_dir"' in body
+    assert "не подобрать имя/подсеть" in body, "без свободных имён — предупреждение, а не тишина"

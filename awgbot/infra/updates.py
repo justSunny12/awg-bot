@@ -53,6 +53,12 @@ class UpdateError(Exception):
 _AUDIENCE_RE = re.compile(r"#(main_bot|gw_bot|all_bots)\b")
 _ROLE_TAG = {"gateway": "gw_bot"}          # любая другая роль — основной бот
 
+# Поколение AmneziaWG в поставке — тоже хэштегом в теле: «#awg_gen2». Его надо
+# знать ДО скачивания (обновление на поколение дальше цели идущего переезда
+# запрещено), а в ассете оно лежит внутри архива. Нет хэштега — поколение то
+# же, что у установленного: до v2.11.0 поколениями никто не управлял.
+_GENERATION_RE = re.compile(r"#awg_gen(\d+)\b")
+
 
 @dataclass(frozen=True)
 class Release:
@@ -61,6 +67,11 @@ class Release:
     body: str                   # тело релиза (changelog этой версии, без заголовка)
     asset_url: Optional[str]    # API-URL ассета-поставки (для octet-stream)
     sha256: Optional[str]       # эталонный sha256 из assets[].digest (hex)
+
+    def awg_generation(self) -> int:
+        """Поколение AmneziaWG этой поставки; 0 — не объявлено."""
+        m = _GENERATION_RE.search(self.body or "")
+        return int(m.group(1)) if m else 0
 
     def audience(self) -> frozenset:
         """Хэштеги адресатов из тела; пусто — релиз общий."""

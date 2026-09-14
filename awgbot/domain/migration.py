@@ -586,8 +586,85 @@ class MigrationMixin:
         if not failed:
             self.db.set_state(_STATE_KEY, STATE_OFF)
             self.db.cohort_clear()
+            self._promote_migration_interface()
         self.reconcile_ssh_access()
         return removed, dropped, failed
+
+    _PROMOTED_KEY = "awg_promoted_iface"
+
+    def _promote_migration_interface(self) -> str:
+        """Второй интерфейс становится ОСНОВНЫМ: все устройства уже на нём.
+
+        Без этого шага переезд заканчивался наполовину: пиры жили на новом
+        интерфейсе, а бот по-прежнему считал основным старый — и каждое НОВОЕ
+        устройство рождалось там, то есть на параметрах, ради ухода от которых
+        всё и затевалось. При смене поколения это хуже вдвойне: новое
+        устройство получало бы ядро, которое вот-вот перестанет обслуживаться.
+
+        Переписываем деплой-значения в app.yaml (интерфейс, подсеть, порт,
+        идентификатор протокола нового поколения), гасим старый интерфейс и
+        поднимаем применённое поколение до цели переезда. Константы config
+        читаются при старте, поэтому вызывающий обязан перезапустить бота —
+        имя интерфейса возвращается именно для этого.
+        """
+        from awgbot.core import settings
+        from awgbot.infra import awglock
+        old_if, new_if = config.AWG_INTERFACE, config.MIGRATION_INTERFACE
+        new_prefix = config.MIGRATION_SUBNET_PREFIX
+        if not new_if or not new_prefix or new_if == old_if:
+            return ""
+        try:
+            port = int(awg.read_server_params(iface=new_if)["listen_port"])
+        except (awg.AwgError, KeyError, TypeError, ValueError) as e:
+            log.warning("promote: порт %s не прочитан, основной интерфейс не меняю: %s",
+                        new_if, e)
+            return ""
+        target, applied = awglock.target_generation(), awglock.applied_generation()
+        try:
+            settings.set_value("app.docker.interface", new_if)
+            settings.set_value("app.network.subnet_prefix", new_prefix)
+            settings.set_value("app.network.subnet_cidr", f"{new_prefix}.0/24")
+            settings.set_value("app.network.server_port", port)
+            # Идентификатор протокола вморожен в каждую выданную ссылку. Меняем
+            # только вместе с поколением: у двойников он уже новый, и теперь
+            # таким же должны рождаться все следующие устройства.
+            if target > applied and awglock.protocol_id():
+                settings.set_value("app.docker.app_container", awglock.protocol_id())
+            settings.set_value("app.docker.migration_interface", "")
+            settings.set_value("app.docker.migration_subnet_prefix", "")
+        except Exception as e:                            # noqa: BLE001
+            log.warning("promote: app.yaml не переписан: %s", e)
+            return ""
+        if target > applied:
+            awglock.write_state(applied=target, target=0)
+        else:
+            awglock.write_state(target=0)
+        self._retire_interface(old_if)
+        self.db.set_state(self._PROMOTED_KEY, new_if)
+        log.info("переезд: основным интерфейсом стал %s (поколение %s)", new_if, target)
+        return new_if
+
+    @staticmethod
+    def _retire_interface(name: str) -> None:
+        """Опустить и снять с автозагрузки интерфейс, на котором не осталось
+        пиров. Конфиг НЕ удаляем: он единственный след прежних параметров, и
+        стоит копейки, а понадобиться может при разборе."""
+        import subprocess
+        for argv in (["awg-quick", "down", name],
+                     ["systemctl", "disable", f"awg-quick@{name}"]):
+            try:
+                subprocess.run(argv, capture_output=True, timeout=30)
+            except (OSError, subprocess.SubprocessError) as e:
+                log.warning("promote: %s не выполнено: %s", " ".join(argv), e)
+
+    def pop_promoted_iface(self) -> str:
+        """Имя интерфейса, ставшего основным на финале переезда, — один раз.
+        Вызывающий показывает это админу и перезапускает бота: деплой-значения
+        читаются при старте."""
+        name = self.db.get_state(self._PROMOTED_KEY) or ""
+        if name:
+            self.db.set_state(self._PROMOTED_KEY, "")
+        return name
 
 
 class ServiceErrorMigration(Exception):

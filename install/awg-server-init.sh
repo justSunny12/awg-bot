@@ -22,16 +22,16 @@
 #
 # Использование (root):
 #   awg-server-init.sh [--plan]           # создать, если нет; печатает KEY=VALUE
-# Окружение: AWG_IF (awg0), AWG_CONF_DIR (/etc/amnezia/amneziawg),
+# Окружение: AWG_IF (awg0), AWG_QUICK_DIR (каталог awg-quick, /etc/amnezia/amneziawg),
 #            SUBNET_PREFIX (10.8.1), LISTEN_PORT (случайный 20000-60000).
 set -euo pipefail
 
 AWG_IF="${AWG_IF:-awg0}"
-AWG_CONF_DIR="${AWG_CONF_DIR:-/etc/amnezia/amneziawg}"
+AWG_QUICK_DIR="${AWG_QUICK_DIR:-/etc/amnezia/amneziawg}"
 SUBNET_PREFIX="${SUBNET_PREFIX:-10.8.1}"
 LISTEN_PORT="${LISTEN_PORT:-}"
-CONF="$AWG_CONF_DIR/$AWG_IF.conf"
-PSK_FILE="$AWG_CONF_DIR/wireguard_psk.key"
+CONF="$AWG_QUICK_DIR/$AWG_IF.conf"
+PSK_FILE="$AWG_QUICK_DIR/wireguard_psk.key"
 SYSCTL_FILE="/etc/sysctl.d/99-awg-bot.conf"
 
 PLAN=0; [[ "${1:-}" == "--plan" ]] && PLAN=1
@@ -98,7 +98,7 @@ if [[ "$PLAN" -eq 1 ]]; then
 fi
 
 umask 077
-mkdir -p "$AWG_CONF_DIR"; chmod 700 "$AWG_CONF_DIR"
+mkdir -p "$AWG_QUICK_DIR"; chmod 700 "$AWG_QUICK_DIR"
 priv="$(awg genkey)"
 [[ -f "$PSK_FILE" ]] || awg genpsk > "$PSK_FILE"
 chmod 600 "$PSK_FILE"
