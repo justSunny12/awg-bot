@@ -369,3 +369,20 @@ async def test_prepare_failure_does_not_restart(services, fake_bot, monkeypatch)
     assert calls == []
     said = [s[1] for s in nav.sent if s[0] == "answer"]
     assert said and "занят" in said[-1] and "не тронут" in said[-1]
+
+
+async def test_maintenance_mentions_migration_only_with_its_button(services, fake_bot, monkeypatch):
+    """Без кнопки разговор о переезде — это рассказ о механизме, которого в
+    этом экране не видно."""
+    monkeypatch.setattr(services, "svc_screen_data",
+                        lambda: {"state": "", "available": False, "progress": None, "orphans": 0})
+    text, markup = await sh._screen("svc", services)
+    assert "Переезд" not in text
+    assert not any("переезд" in b.text.lower()
+                   for row in markup.inline_keyboard for b in row)
+
+    monkeypatch.setattr(services, "svc_screen_data",
+                        lambda: {"state": "", "available": True, "progress": None, "orphans": 0})
+    text, markup = await sh._screen("svc", services)
+    assert "Переезд профилей" in text
+    assert any("переезд" in b.text.lower() for row in markup.inline_keyboard for b in row)

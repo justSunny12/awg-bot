@@ -71,7 +71,7 @@ async def _screen(sec: str, services):
         return texts.SETTINGS_BACKUP, kb.settings_backup(await call(services.backup_encryption_enabled))
     if sec == "svc":
         d = await call(services.svc_screen_data)          # один хоп вместо четырёх
-        return (texts.settings_svc_text(d["state"], d["progress"]),
+        return (texts.settings_svc_text(d["state"], d["progress"], d["available"]),
                 kb.settings_svc(d["state"], available=d["available"], orphans=d["orphans"]))
     if sec == "upd":
         return texts.settings_upd_text(), kb.settings_updates(await call(services.updates_muted))
