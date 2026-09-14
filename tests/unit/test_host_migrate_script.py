@@ -202,15 +202,23 @@ def test_apply_asks_for_a_multiplexer(migrate):
 
 # ── то, что переставало работать после переезда ──────────────────────────────
 
-def test_client_port_is_opened_in_the_firewall(migrate):
+def test_client_port_ends_up_open_after_the_move(migrate):
     """Пока порт публиковал docker, правил в файрволе не требовалось.
 
-    Публикация docker ставит DNAT и свои цепочки FORWARD, обходя INPUT и ufw
-    целиком. На хосте awg слушает напрямую, пакет идёт в INPUT — и при политике
-    DROP клиенты просто не подключаются, а причина ни на что не похожа.
+    Публикация docker ставит DNAT и свои цепочки FORWARD, обходя INPUT целиком.
+    На хосте awg слушает напрямую, пакет идёт в INPUT — и при политике DROP
+    клиенты просто не подключаются, а причина ни на что не похожа.
+
+    Владелец правил теперь один — таблица awg_bot_guard: порт клиентов она
+    открывает сама, сканируя ListenPort в конфигах интерфейсов. Скрипт переезда
+    обязан лишь оставить конфиг там, где его найдёт этот скан.
     """
-    assert "ListenPort" in migrate
-    assert "ufw allow" in migrate
+    import inspect
+    from awgbot.infra import nftguard
+    assert "ListenPort" in migrate, "порт не переносится вовсе"
+    assert "udp_ports=listen_ports()" in inspect.getsource(nftguard.build_spec), \
+        "порт клиентов больше никто не открывает"
+    assert "ufw allow" not in migrate, "второй владелец правил вернулся"
 
 
 def test_stale_client_route_is_removed(migrate):

@@ -325,3 +325,31 @@ def test_client_created_report_variants():
                                      period_kind="never", period_end=None)
     assert "количество устройств не ограничено" in r2
     assert "потребление не ограничено" in r2 and "бессрочная подписка" in r2
+
+
+def test_server_screen_reads_live_settings_not_startup_constants(services, monkeypatch):
+    """Экран «Сервер AWG» обязан показывать то, что уедет в СЛЕДУЮЩУЮ ссылку.
+    Читай он константы старта — показывал бы одно, а выданная через минуту
+    ссылка несла другое, и заметил бы это только тот, у кого не подключается."""
+    from awgbot.core import config, settings
+    live = {
+        "app.network.server_host": "vpn.example.org",
+        "app.client_config.server_name": "Новое имя",
+        "app.client_config.dns1": "10.8.1.1",
+        "app.client_config.dns2": "10.8.1.1",
+        "app.client_config.mtu": 1380,
+        "app.network.server_port": 51820,
+        "app.network.subnet_cidr": "10.8.1.0/24",
+    }
+    monkeypatch.setattr(settings, "get", lambda k, d=None: live.get(k, d))
+    monkeypatch.setattr(config, "SERVER_HOST", "старое-значение")
+    monkeypatch.setattr(config, "SERVER_NAME", "Старое имя")
+    d = services.server_screen()
+    assert d["host"] == "vpn.example.org" and d["name"] == "Новое имя"
+    assert d["dns"] == "10.8.1.1", "одинаковые dns1/dns2 показываются одной строкой"
+    assert d["mtu"] == 1380 and d["port"] == 51820
+    assert d["iface"] == config.AWG_INTERFACE
+    assert isinstance(d["generation"], int), "поколение берётся из манифеста"
+    # разные dns — обе строки видны
+    live["app.client_config.dns2"] = "1.1.1.1"
+    assert services.server_screen()["dns"] == "10.8.1.1, 1.1.1.1"

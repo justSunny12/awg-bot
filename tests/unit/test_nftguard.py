@@ -357,3 +357,128 @@ def test_nat_covers_asks_the_live_table(host_mode, monkeypatch):
     monkeypatch.setattr(nftguard, "_nft",
                         lambda a, timeout=10, check=True: subprocess.CompletedProcess(a, 1, b"", b""))
     assert not nftguard.nat_covers("10.9.1.0/24"), "нет таблицы — нет NAT"
+
+
+# ── таймер отката: единственная страховка от самозапирания ───────────────────
+
+def test_arm_rollback_builds_a_systemd_timer_and_clears_the_previous(monkeypatch):
+    """Форма команды — то, от чего зависит, случится ли откат вообще. Сломай
+    её, и «правила применены с таймером» станет неправдой: узнать об этом
+    можно, только заперев себе SSH."""
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **kw):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    nftguard.arm_rollback(300, ["-p", "WorkingDirectory=/opt/awg-bot", "python", "-m",
+                                "tools.firewall", "rollback"],
+                          {"AWG_BOT_CONF_DIR": "/etc/awg-bot/conf"})
+    # прежний таймер снимается ДО постановки нового, иначе их станет два
+    stops = [c for c in calls if c[:2] == ["systemctl", "stop"]]
+    assert stops, "прежний таймер не снят"
+    arm = calls[-1]
+    assert arm[0] == "systemd-run"
+    assert f"--unit={nftguard.ROLLBACK_UNIT}" in arm
+    assert "--on-active=300s" in arm and "--collect" in arm
+    assert "--setenv=AWG_BOT_CONF_DIR=/etc/awg-bot/conf" in arm, \
+        "окружение не доедет — откат сбросит флаг не в том конфиге"
+    assert arm[-5:] == ["WorkingDirectory=/opt/awg-bot", "python", "-m", "tools.firewall", "rollback"]
+    assert calls.index(stops[0]) < calls.index(arm)
+
+
+def test_arm_rollback_reports_a_failed_timer(monkeypatch):
+    """Не поставился таймер — это отказ, а не мелочь: правила уже применены."""
+    def fake_run(argv, **kw):
+        if argv and argv[0] == "systemd-run":
+            return subprocess.CompletedProcess(argv, 1, b"", b"unit exists")
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(nftguard.GuardError):
+        nftguard.arm_rollback(60, ["true"], {})
+
+
+def test_rollback_armed_and_disarm_talk_to_the_timer_unit(monkeypatch):
+    seen: list[list[str]] = []
+
+    def fake_run(argv, **kw):
+        seen.append(list(argv))
+        rc = 0 if argv[:3] == ["systemctl", "is-active", "--quiet"] else 0
+        return subprocess.CompletedProcess(argv, rc, b"", b"")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert nftguard.rollback_armed() is True
+    assert seen[-1] == ["systemctl", "is-active", "--quiet", f"{nftguard.ROLLBACK_UNIT}.timer"]
+    seen.clear()
+    assert nftguard.disarm_rollback() is True
+    units = {c[2] for c in seen if c[:2] == ["systemctl", "stop"]}
+    assert units == {f"{nftguard.ROLLBACK_UNIT}.timer", f"{nftguard.ROLLBACK_UNIT}.service"}
+    assert any(c[:2] == ["systemctl", "reset-failed"] for c in seen), \
+        "упавший юнит останется в failed и помешает поставить таймер снова"
+
+
+# ── персистентность: правила обязаны пережить перезагрузку ───────────────────
+
+def test_ensure_persistence_adds_the_include_once(monkeypatch, tmp_path):
+    main = tmp_path / "nftables.conf"
+    monkeypatch.setattr(nftguard, "MAIN_CONF", str(main))
+    monkeypatch.setattr(nftguard, "RULES_DIR", str(tmp_path / "nftables.d"))
+    monkeypatch.setattr(subprocess, "run",
+                        lambda argv, **kw: subprocess.CompletedProcess(argv, 0, b"", b""))
+    done = nftguard.ensure_persistence()
+    text = main.read_text(encoding="utf-8")
+    assert text.startswith("#!/usr/sbin/nft -f"), "пустой файл без шапки nft не исполнит"
+    assert f'include "{tmp_path / "nftables.d"}/*.nft"' in text
+    assert any("include" in d for d in done) and any("nftables.service" in d for d in done)
+    # второй вызов ничего не дублирует
+    nftguard.ensure_persistence()
+    assert text.count("include") == main.read_text(encoding="utf-8").count("include")
+
+
+def test_ensure_persistence_warns_instead_of_failing_when_enable_is_refused(monkeypatch, tmp_path):
+    """Юнит не включился — говорим об этом, но не роняем применение: таблица
+    уже в ядре, и падение здесь оставило бы вызывающего без ответа."""
+    main = tmp_path / "nftables.conf"
+    main.write_text('include "/etc/nftables.d/*.nft"\n', encoding="utf-8")
+    monkeypatch.setattr(nftguard, "MAIN_CONF", str(main))
+    monkeypatch.setattr(nftguard, "RULES_DIR", "/etc/nftables.d")
+    monkeypatch.setattr(subprocess, "run",
+                        lambda argv, **kw: subprocess.CompletedProcess(argv, 1, b"", b"no unit"))
+    done = nftguard.ensure_persistence()
+    assert done and "ВНИМАНИЕ" in done[-1]
+
+
+def test_ensure_persistence_raises_when_the_main_conf_is_unwritable(monkeypatch, tmp_path):
+    monkeypatch.setattr(nftguard, "MAIN_CONF", str(tmp_path / "нет-каталога" / "nftables.conf"))
+    monkeypatch.setattr(nftguard, "RULES_DIR", "/etc/nftables.d")
+    with pytest.raises(nftguard.GuardError):
+        nftguard.ensure_persistence()
+
+
+# ── статус: словарь, которым живут и CLI, и экран ───────────────────────────
+
+def test_status_reports_table_file_and_timer(host_mode, monkeypatch, tmp_path):
+    _conf(monkeypatch, **{"app.firewall.ssh_allow": ["203.0.113.7"]})
+    monkeypatch.setattr(nftguard, "RULES_FILE", str(tmp_path / "g.nft"))
+    monkeypatch.setattr(nftguard, "RULES_DIR", str(tmp_path))
+    (tmp_path / "g.nft").write_text(nftguard.render(nftguard.build_spec(["10.9.1.5"])),
+                                    encoding="utf-8")
+    _nft_stub(monkeypatch, live=("10.9.1.5",))
+    monkeypatch.setattr(nftguard, "rollback_armed", lambda: True)
+    monkeypatch.setattr(nftguard, "ufw_active", lambda: False)
+    st = nftguard.status(["10.9.1.5"])
+    assert st["enabled"] and st["present"] and st["file"] is True
+    assert st["live_admin"] == {"10.9.1.5"} and st["rollback"] is True
+    assert st["spec"].ssh_allow4 == ["203.0.113.7/32"] and st["ufw"] is False
+    # файл разошёлся с желаемым — это видно
+    (tmp_path / "g.nft").write_text("другое", encoding="utf-8")
+    assert nftguard.status(["10.9.1.5"])["file"] is False
+
+
+def test_nat_only_form_needs_no_chains_without_tunnel_nets(host_mode, monkeypatch):
+    """Подсетей туннеля нет (конфиг ещё не заполнен) — маскарадить нечего, и
+    таблица не должна содержать цепочку, которая пропускает всё подряд."""
+    _conf(monkeypatch, **{"app.firewall.enabled": False})
+    monkeypatch.setattr(nftguard, "tunnel_nets", lambda: [])
+    text = nftguard.render(nftguard.build_spec([]))
+    assert "masquerade" not in text and "hook postrouting" not in text
+    assert "hook input" not in text

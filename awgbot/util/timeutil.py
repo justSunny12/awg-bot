@@ -199,13 +199,22 @@ def fmt_remaining_short(seconds: int) -> str:
 # Handshake (unix) → онлайн/оффлайн и «последний коннект»
 # ─────────────────────────────────────────────────────────────────────────────
 
-def handshake_is_online(unix_ts: Optional[int], ref: Optional[datetime] = None) -> bool:
-    """Онлайн, если последний handshake свежее порога ONLINE_HANDSHAKE_SECONDS."""
+def handshake_is_online(unix_ts: Optional[int], ref: Optional[datetime] = None,
+                        *, threshold: Optional[int] = None) -> bool:
+    """Онлайн, если последний handshake свежее порога ONLINE_HANDSHAKE_SECONDS.
+
+    threshold — порог в секундах, ТОЛЬКО именованным аргументом. Так его
+    передаёт код, который считает онлайн для пачки устройств и не хочет читать
+    настройку на каждое. Позиционно там оказывался ref, и вместо даты в него
+    прилетало число: карточка профиля падала на ровном месте.
+    """
     if not unix_ts:
         return False
     ref = ref or now()
     age = ref.timestamp() - unix_ts
-    return 0 <= age <= settings.get_int("app.online_handshake_seconds", 300)
+    limit = (threshold if threshold is not None
+             else settings.get_int("app.online_handshake_seconds", 300))
+    return 0 <= age <= limit
 
 
 def fmt_handshake(unix_ts: Optional[int]) -> str:

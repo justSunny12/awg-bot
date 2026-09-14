@@ -252,21 +252,25 @@ fi
 
 # ── 6a. порт клиентов в файрволе ─────────────────────────────────────────────
 # Пока порт публиковал docker, правила в файрволе не требовалось: публикация
-# docker ставит DNAT и свои цепочки FORWARD, обходя INPUT и ufw целиком. На
-# хосте awg слушает напрямую, и пакет идёт в INPUT — где при политике DROP его
-# никто не ждёт. Клиенты просто не подключаются, а причина ни на что не похожа.
+# docker ставит DNAT и свои цепочки FORWARD, обходя INPUT целиком. На хосте awg
+# слушает напрямую, и пакет идёт в INPUT — где при политике DROP его никто не
+# ждёт. Клиенты просто не подключаются, а причина ни на что не похожа.
+#
+# САМИ ПОРТ НЕ ОТКРЫВАЕМ: владелец правил один — таблица awg_bot_guard, которую
+# ведёт бот. Она сканирует ListenPort во всех конфигах интерфейсов и открывает
+# его сама на ближайшем тике. Открывать тот же порт вторым слоем (ufw) значило
+# бы завести второго владельца ровно там, где от него ушли.
 step "6a. Порт клиентов в файрволе"
 LISTEN_PORT="$(awk -F'[ =]+' '/^[[:space:]]*ListenPort/{print $2; exit}' "$CONF" 2>/dev/null)"
 if [ -z "$LISTEN_PORT" ]; then
-    say "  ВНИМАНИЕ: не удалось прочитать ListenPort из $CONF — открой порт сам."
-elif command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
-    if ufw status | grep -q "^${LISTEN_PORT}/udp"; then
-        say "  ufw: ${LISTEN_PORT}/udp уже разрешён"
-    else
-        run "ufw allow ${LISTEN_PORT}/udp comment 'awg клиенты'"
-    fi
+    say "  ВНИМАНИЕ: не удалось прочитать ListenPort из $CONF — проверь порт сам."
 else
-    say "  ufw неактивен — проверь, что ${LISTEN_PORT}/udp открыт в твоём файрволе."
+    say "  порт клиентов: ${LISTEN_PORT}/udp — его откроет таблица awg_bot_guard"
+    say "  (бот сканирует ListenPort в конфигах; проверить: awg-bot firewall status)"
+    if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+        say "  ВНИМАНИЕ: ufw активен — это второй владелец правил рядом с таблицей бота."
+        say "  После проверки входа его стоит выключить: awg-bot firewall confirm --disable-ufw"
+    fi
 fi
 
 # ── 6b. чужой маршрут до клиентской подсети ──────────────────────────────────

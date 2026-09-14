@@ -158,3 +158,28 @@ def test_raise_device_limit_clears_traffic_user_block(services, fake_awg, make_a
     services.set_device_traffic_limit(dc.device_id, 0)    # безлимит → снять бит
     assert not (int(services.db.get_device(dc.device_id).block_reason) & int(DeviceBlock.TRAFFIC_USER))
     assert dc.address not in fake_awg.blocked
+
+
+def test_client_card_renders_when_a_device_has_a_handshake(services, make_active_client):
+    """Регресс: карточка профиля считает онлайн пачкой устройств и передавала
+    порог позиционно — на месте опорного времени. Любое устройство с
+    хендшейком роняло и карточку профиля, и «Управлять подпиской», и список
+    профилей у админа: экран просто не открывался."""
+    from awgbot.bot import texts
+    from awgbot.util import timeutil
+    client = make_active_client(name="Клиент", tg_id=4242, device_limit=3)
+    dc = services.add_device(client.id, "Ноутбук")
+    services.db.update_device_fields(dc.device_id,
+                                     last_handshake=int(timeutil.now().timestamp()))
+
+    card = services.client_card_data(client.id)
+    assert card is not None and card["online"] is True
+    assert texts.client_card(card["client"], card["devices"], card["traffic"],
+                             card["online"], for_admin=True)
+
+    info = services.client_info_data(client.id)
+    assert info is not None and info["online"] is True
+
+    rows = services.online_devices()
+    assert [d.id for d, _ in rows] == [dc.device_id]
+    assert "онлайн (1)" in texts.online_devices_text(rows)

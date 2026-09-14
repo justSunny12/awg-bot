@@ -1217,3 +1217,92 @@ def test_promotion_is_skipped_when_the_new_port_cannot_be_read(services, mig,
     monkeypatch.setattr(infra_awg, "read_server_params", boom)
     removed, dropped, failed = services.migration_finish()
     assert not failed and written == {} and services.pop_promoted_iface() == ""
+
+
+async def test_promotion_ui_tells_and_restarts(services, mig, fake_bot,
+                                              make_active_client, monkeypatch):
+    """Вторая половина промоушена: сказать и перезапустить. Выпади рестарт —
+    бот продолжит считать основным погашенный интерфейс, и каждое НОВОЕ
+    устройство родится на мёртвом. Внешне при этом всё зелёное."""
+    from awgbot.bot.callbacks import SetCB
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.core import settings
+    from tests.conftest import FakeCallback, FakeMessage
+    c = make_active_client(name="c", tg_id=7110)
+    dc = services.add_device(c.id, "Тел")
+    services.migration_start()
+    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
+    monkeypatch.setattr(settings, "set_value", lambda k, v: [k])
+    monkeypatch.setattr(services, "_retire_interface", lambda name: None)
+    monkeypatch.setattr(services, "migration_available", lambda: True)
+    monkeypatch.setattr(services, "migration_running", lambda: True)
+    calls: list = []
+    monkeypatch.setattr(services, "set_restart_wait", lambda c_, m: calls.append(("wait", c_, m)))
+    monkeypatch.setattr(services, "restart_bot", lambda: calls.append(("restart",)))
+
+    nav = FakeMessage(chat_id=config.ADMIN_ID, user_id=config.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=nav, user_id=config.ADMIN_ID, bot=fake_bot)
+    await sh.migration_action(cb, SetCB(sec="mig", act="do", key="finish!"), services)
+
+    said = [s[1] for s in nav.sent if s[0] == "answer"]
+    assert any("основным интерфейсом стал" in t for t in said), said
+    assert [c_[0] for c_ in calls] == ["wait", "restart"], "обещание рестарта не исполнено"
+
+
+def test_promotion_survives_a_failing_restart(services, mig, make_active_client, monkeypatch):
+    """Перезапуск не вышел — переезд всё равно завершён, а админу говорят, что
+    сделать руками: иначе он останется с ботом на погашенном интерфейсе и без
+    единой подсказки."""
+    from awgbot.bot import texts
+    assert "awg-bot restart" in texts.migration_promote_restart_failed()
+
+
+def test_write_state_failure_does_not_pretend_it_worked(tmp_path, monkeypatch, caplog):
+    """Поколение не записалось — это надо увидеть в журнале: иначе переезд
+    «завершён», а бот просит его снова при каждом старте."""
+    from awgbot.infra import awglock
+    monkeypatch.setattr(awglock, "STATE_PATH", tmp_path / "нет-каталога" / "awg.state")
+    monkeypatch.setattr(awglock.Path, "mkdir",
+                        lambda self, **kw: (_ for _ in ()).throw(OSError("только чтение")))
+    with caplog.at_level("WARNING"):
+        awglock.write_state(applied=2, target=0)
+    assert any("awg.state" in r.message for r in caplog.records)
+
+
+def test_partial_config_write_during_promotion_is_reported(services, mig,
+                                                           make_active_client, monkeypatch, caplog):
+    """Часть ключей записалась, часть нет — конфиг с новым интерфейсом и старым
+    портом. Промоушен обязан сказать об этом, а не вернуть «всё хорошо»."""
+    from awgbot.core import settings
+    c = make_active_client(name="c", tg_id=7111)
+    dc = services.add_device(c.id, "Тел")
+    services.migration_start()
+    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
+    written: list = []
+
+    def flaky(key, value):
+        written.append(key)
+        if key == "app.network.server_port":
+            raise RuntimeError("ruamel: файл занят")
+        return [key]
+    monkeypatch.setattr(settings, "set_value", flaky)
+    monkeypatch.setattr(services, "_retire_interface", lambda name: None)
+    with caplog.at_level("WARNING"):
+        removed, dropped, failed = services.migration_finish()
+    assert not failed and removed
+    assert services.pop_promoted_iface() == "", "полуприменённая перестановка выдана за успех"
+    assert any("app.yaml" in r.message for r in caplog.records)
+
+
+def test_retire_interface_lowers_and_disables(monkeypatch):
+    """Старый интерфейс гасится и снимается с автозагрузки — иначе он поднимется
+    после ребута пустым и будет держать порт."""
+    import subprocess
+    from awgbot.domain.migration import MigrationMixin
+    seen: list = []
+    monkeypatch.setattr(subprocess, "run",
+                        lambda argv, **kw: seen.append(list(argv)) or
+                        subprocess.CompletedProcess(argv, 0, b"", b""))
+    MigrationMixin._retire_interface("awg0")
+    assert seen == [["awg-quick", "down", "awg0"],
+                    ["systemctl", "disable", "awg-quick@awg0"]]

@@ -40,11 +40,16 @@ def _labels(markup):
 def test_main_menu_layout():
     assert _labels(kb.gateway_panel_kb()) == [["🔄 Статус", "🌡 Монитор здоровья"],
                                               ["🔧 Мастер восстановления"], ["⚙️ Настройки"]]
-    assert _labels(kb.gateway_settings_kb()) == [["✉️ E-mail"], ["🔔 Уведомления"], ["📊 Мониторинг"],
-                                                 ["💾 Резервное копирование"], ["🔄 Обслуживание"],
+    # Зеркало основного бота: мониторинг и бэкапы — внутри «Обслуживания».
+    assert _labels(kb.gateway_settings_kb()) == [["✉️ E-mail"], ["🔔 Уведомления"],
+                                                 ["🔄 Обслуживание"],
                                                  ["⬆️ Обновления бота"], ["⬅️ В меню"]]
-    assert _labels(kb.gateway_maint_kb()) == [["🔁 Перезапустить AWG"], ["🔁 Перезапустить бота"],
+    assert _labels(kb.gateway_maint_kb()) == [["📊 Мониторинг"], ["💾 Резервное копирование"],
+                                              ["🔁 Перезапустить AWG"], ["🔁 Перезапустить бота"],
                                               ["⬅️ Назад"]]
+    # Выход из перенесённых разделов ведёт туда, откуда в них вошли
+    for markup in (kb.gateway_mon_kb(), kb.gateway_backup_kb()):
+        assert markup.inline_keyboard[-1][0].callback_data == GwCB(action="maint").pack()
 
 
 def test_updates_back_leads_to_settings(monkeypatch):

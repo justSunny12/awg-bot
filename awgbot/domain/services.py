@@ -336,7 +336,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
 
     def _devices_online(self, devices) -> bool:
         thr = settings.get_int("app.online_handshake_seconds", 300)
-        return any(timeutil.handshake_is_online(d.traffic.last_handshake, thr) for d in devices)
+        return any(timeutil.handshake_is_online(d.traffic.last_handshake, threshold=thr)
+                   for d in devices)
 
     def client_card_data(self, client_id: int) -> Optional[dict]:
         """Карточка профиля у админа: 8 хопов и тройной list_devices → одно."""

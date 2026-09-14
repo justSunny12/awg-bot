@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import pathlib
 import re
 from pathlib import Path
 
@@ -147,23 +148,7 @@ def test_first_device_file_is_root_only():
 
 # ── применение правил файервола: подтверждение в чате, а не в SSH ────────────
 
-def test_arming_the_timer_sends_buttons_to_the_chat():
-    """Правила могли отрезать именно этот SSH — «выполни confirm» отправляет
-    человека туда, куда он уже не попадёт. Кнопка приходит в чат сама."""
-    src = (ROOT / "tools" / "firewall.py").read_text(encoding="utf-8")
-    arm = src.split("def _arm(", 1)[1].split("\ndef ", 1)[0]
-    assert "tgsend.send" in arm and "_fw_cb(\"confirm\")" in arm and "_fw_cb(\"rollback\")" in arm
-    assert "awg-bot firewall confirm" in arm, "запасной путь через CLI остаётся"
-    assert arm.index("tgsend.send") < arm.index("awg-bot firewall confirm")
-
-
-def test_rollback_tells_the_admin_it_happened():
-    """Молчаливый откат — худший исход: человек уверен, что файервол включён,
-    а он выключен. Вывод транзиентного юнита никто не читает."""
-    src = (ROOT / "tools" / "firewall.py").read_text(encoding="utf-8")
-    body = src.split("def cmd_rollback(", 1)[1].split("\ndef ", 1)[0]
-    assert "tgsend.send" in body and "откат" in body.lower()
-
+# Поведение таймера и отката проверяется вызовами — tests/unit/test_firewall_cli.py.
 
 def test_chat_buttons_match_what_the_bot_handles():
     """Кнопка из другого процесса обязана попасть в тот же обработчик, что и
@@ -173,6 +158,58 @@ def test_chat_buttons_match_what_the_bot_handles():
     st = {"rollback": True}
     drawn = [b.callback_data for row in kb.settings_firewall(st).inline_keyboard for b in row]
     assert _fw_cb("confirm") in drawn and _fw_cb("rollback") in drawn
+
+
+def test_tgsend_sends_html_with_one_button_per_row(monkeypatch):
+    """Сломайся сериализация кнопок — сообщение про откат придёт БЕЗ них, когда
+    SSH уже отрезан, и подтверждать будет нечем."""
+    import json
+    import urllib.parse
+    import urllib.request
+    from awgbot.core import config
+    from awgbot.infra import tgsend
+    seen: dict = {}
+
+    class Resp:
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def read(self):
+            return b'{"ok": true, "result": {}}'
+
+    def fake_urlopen(req, timeout=None):
+        seen["url"] = req.full_url
+        seen["params"] = dict(urllib.parse.parse_qsl(req.data.decode()))
+        return Resp()
+
+    monkeypatch.setattr(config, "BOT_TOKEN", "123:abc")
+    monkeypatch.setattr(config, "ADMIN_ID", 777)
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert tgsend.send("<b>тест</b>", buttons=[("Да", "set:fw:do:confirm:"),
+                                               ("Нет", "set:fw:do:rollback:")]) is True
+    assert seen["url"].endswith("/bot123:abc/sendMessage")
+    p = seen["params"]
+    assert p["chat_id"] == "777" and p["parse_mode"] == "HTML" and p["text"] == "<b>тест</b>"
+    rows = json.loads(p["reply_markup"])["inline_keyboard"]
+    assert rows == [[{"text": "Да", "callback_data": "set:fw:do:confirm:"}],
+                    [{"text": "Нет", "callback_data": "set:fw:do:rollback:"}]]
+
+
+def test_tgsend_swallows_network_errors(monkeypatch):
+    """Отправка из установщика не должна ронять установку."""
+    import urllib.error
+    import urllib.request
+    from awgbot.core import config
+    from awgbot.infra import tgsend
+
+    def boom(req, timeout=None):
+        raise urllib.error.URLError("нет сети")
+
+    monkeypatch.setattr(config, "BOT_TOKEN", "123:abc")
+    monkeypatch.setattr(config, "ADMIN_ID", 777)
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    assert tgsend.send("что-то") is False
 
 
 def test_tgsend_never_raises_without_a_token(monkeypatch):
@@ -218,16 +255,59 @@ def test_archive_integrity_is_checked_but_never_blocks_on_network(bootstrap):
     assert "releases/tags/v$ver" in body, "сверяем с релизом ИМЕННО этой версии"
 
 
-def test_temp_directory_is_removed_but_a_home_directory_is_not(bootstrap):
-    """rm -rf в установщике — только по временным каталогам. Человек мог
-    распаковать поставку и к себе домой; удалять её там мы не вправе."""
-    assert "/tmp/*|/var/tmp/*|/private/tmp/*" in bootstrap
+def _run_cleanup(tmp_path, what, tgz=""):
+    """Прогоняет cleanup_delivery настоящим bash: это rm -rf, и проверять его
+    сверкой подстрок — ровно тот случай, когда тест зелёный, а каталог снесён."""
+    import subprocess
     script = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
     body = script.split("cleanup_delivery() {", 1)[1].split("\n}\n", 1)[0]
-    assert "/tmp/*|/var/tmp/*|/private/tmp/*" in body, "вторая проверка перед rm -rf"
-    assert "не временный" in body
-    assert body.index('case "$what" in') < body.index('rm -rf "$what"'), \
-        "rm -rf стоит раньше проверки пути"
+    prog = (
+        'log(){ printf "[log] %s\\n" "$*"; }\n'
+        'cleanup_delivery() {' + body + '\n}\n'
+        f'cleanup_delivery "{what}" "{tgz}"\n'
+    )
+    return subprocess.run(["bash", "-c", prog], capture_output=True, text=True)
+
+
+def test_temp_directory_is_removed(tmp_path):
+    """Поставка распакована во временный каталог — после установки от неё не
+    должно остаться ничего: внутри и код, и установщик, и архив с ключами."""
+    d = pathlib.Path("/tmp") / f"awg-bot-install.{tmp_path.name}"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "awgbot").mkdir(exist_ok=True)
+    tgz = d / "awg-bot.tgz"
+    tgz.write_text("архив", encoding="utf-8")
+    res = _run_cleanup(tmp_path, str(d), str(tgz))
+    assert res.returncode == 0, res.stderr
+    assert not d.exists(), "временный каталог остался"
+
+
+def test_a_home_directory_is_never_removed(tmp_path):
+    """Человек мог распаковать поставку и к себе домой — удалять её там мы не
+    вправе, и молчать об этом тоже нельзя."""
+    d = tmp_path / "awg-bot-delivery"
+    (d / "awgbot").mkdir(parents=True)
+    res = _run_cleanup(tmp_path, str(d))
+    assert res.returncode == 0, res.stderr
+    assert d.exists(), "снесли каталог вне /tmp"
+    assert "не временный" in res.stdout
+
+
+def test_cleanup_removes_the_installer_file_and_the_archive(tmp_path):
+    """Старый путь: рядом лежат скачанный установщик и архив."""
+    inst = tmp_path / "awg-bot-install.sh"
+    inst.write_text("#!/bin/sh\n", encoding="utf-8")
+    tgz = tmp_path / "awg-bot.tgz"
+    tgz.write_text("архив", encoding="utf-8")
+    res = _run_cleanup(tmp_path, str(inst), str(tgz))
+    assert res.returncode == 0 and not inst.exists() and not tgz.exists()
+
+
+def test_cleanup_never_fails_the_installation(tmp_path):
+    """Уборка идёт последним шагом уже успешной установки: её отказ не должен
+    ронять результат под `set -e`."""
+    res = _run_cleanup(tmp_path, str(tmp_path / "которого-нет"), str(tmp_path / "тоже-нет"))
+    assert res.returncode == 0, res.stderr
 
 
 # ── установка одной командой ─────────────────────────────────────────────────

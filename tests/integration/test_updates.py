@@ -9,13 +9,13 @@ from awgbot.bot import texts
 import awgbot.core.config as cfg
 
 
-def _release_json(tag, body="", asset=True, digest_hex=None, name=None):
+def _release_json(tag, body="", asset=True, digest_hex=None, name=None, draft=False):
     a = []
     if asset:
         a.append({"name": name or cfg.UPDATES_ASSET_NAME,
                   "url": f"https://api/assets/{tag}",
                   "digest": f"sha256:{digest_hex}" if digest_hex else None})
-    return {"tag_name": tag, "body": body, "draft": False, "assets": a}
+    return {"tag_name": tag, "body": body, "draft": draft, "assets": a}
 
 
 def _patch_releases(monkeypatch, releases_json):
@@ -301,3 +301,49 @@ def test_default_role_comes_from_config(monkeypatch):
         _release_json("v1.2.1", body="#gw_bot", digest_hex="c" * 64),
     ])
     assert updates.next_release().tag == "v1.2.1"
+
+
+# ── что считается релизом ────────────────────────────────────────────────────
+
+def test_draft_releases_are_ignored(monkeypatch):
+    """Черновик — это версия, которой ещё нет: у неё не собран ассет. Предложи
+    мы обновиться на неё, отказ пришёл бы уже после слов «обновляюсь»."""
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "1.0.0")
+    _patch_releases(monkeypatch, [
+        _release_json("v1.0.0"),
+        _release_json("v1.1.0", draft=True),
+        _release_json("v1.2.0"),
+    ])
+    nxt = updates.next_release()
+    assert nxt is not None and nxt.tag == "v1.2.0", "черновик просочился в ступени"
+
+
+def test_release_without_our_asset_has_no_download_url(monkeypatch):
+    """Ассета нет или он с чужим именем — скачивать нечего, и это должно быть
+    видно ДО попытки: download_asset отказывается с внятной причиной."""
+    import pytest as _pytest
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "1.0.0")
+    _patch_releases(monkeypatch, [
+        _release_json("v1.0.0"),
+        _release_json("v1.1.0", asset=False),
+        _release_json("v1.2.0", name="совсем-другой.tgz"),
+    ])
+    rels = {r.tag: r for r in updates.list_releases()}
+    assert rels["v1.1.0"].asset_url is None and rels["v1.2.0"].asset_url is None
+    with _pytest.raises(updates.UpdateError, match="нет ассета"):
+        updates.download_asset(rels["v1.1.0"])
+
+
+def test_release_applies_to_the_role_it_names(monkeypatch):
+    """Роли обновляются по своим хэштегам: агент шлюза не должен ставить
+    поставку, адресованную только основному боту."""
+    main = updates.Release(tag="v1.1.0", version=(1, 1, 0), body="#main_bot",
+                           asset_url="u", sha256="x")
+    gw = updates.Release(tag="v1.2.0", version=(1, 2, 0), body="#gw_bot", asset_url="u", sha256="x")
+    both = updates.Release(tag="v1.3.0", version=(1, 3, 0), body="#all_bots", asset_url="u", sha256="x")
+    plain = updates.Release(tag="v1.4.0", version=(1, 4, 0), body="без хэштегов",
+                            asset_url="u", sha256="x")
+    assert main.applies_to("client") and not main.applies_to("gateway")
+    assert gw.applies_to("gateway") and not gw.applies_to("client")
+    assert both.applies_to("client") and both.applies_to("gateway")
+    assert plain.applies_to("client") and plain.applies_to("gateway"), "старые релизы общие"

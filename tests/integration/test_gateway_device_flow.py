@@ -224,8 +224,9 @@ def test_new_gateway_machine_ignores_the_admin_device_limit(gw, services):
     ставится строкой позже, и админ с выбранным лимитом не мог завести себе
     шлюз вовсе: отказ приходил раньше, чем устройство успевало им стать."""
     admin, phone, pi = gw
+    from awgbot.domain.services import LimitReached
     services.db.update_client_fields(admin.id, device_limit=2)
-    with pytest.raises(Exception):
+    with pytest.raises(LimitReached):
         services.add_device(admin.id, "третье")            # лимит работает как работал
     res = services.gateway_setup(None)
     assert res["created"] and services.db.gateway_device().id == res["device"].id
@@ -253,3 +254,30 @@ def test_agent_token_travels_inside_the_first_run_bundle(gw, services, monkeypat
     assert text.index("exec ") < text.index("AGENT_BOT_TOKEN"), \
         "строки попали в исполняемую часть бандла"
     assert text.index("AGENT_BOT_TOKEN") < text.index("#__GW_SETUP_BELOW__")
+
+
+def test_agent_token_write_keeps_the_other_secrets(gw, services, monkeypatch, tmp_path):
+    """Файл секретов переписывается целиком. Пропади из него BOT_TOKEN или
+    ADMIN_ID — бот не поднимется после ближайшего рестарта, и связь с ним
+    останется только через SSH."""
+    env = tmp_path / "env"
+    env.write_text("BOT_TOKEN=111:aaa\n# комментарий\nADMIN_ID=42\n", encoding="utf-8")
+    monkeypatch.setenv("AWG_BOT_ENV", str(env))
+    services.set_gw_bot_token("123456789:AA-token-value-long-enough-here")
+    lines = env.read_text(encoding="utf-8").splitlines()
+    assert "BOT_TOKEN=111:aaa" in lines and "ADMIN_ID=42" in lines
+    assert "# комментарий" in lines
+    assert sum(1 for l in lines if l.startswith("GW_BOT_TOKEN=")) == 1
+    # повторная запись не плодит дублей
+    services.set_gw_bot_token("987654321:BB-another-token-value-here")
+    lines = env.read_text(encoding="utf-8").splitlines()
+    assert sum(1 for l in lines if l.startswith("GW_BOT_TOKEN=")) == 1
+    assert "BOT_TOKEN=111:aaa" in lines
+
+
+def test_bundle_without_a_token_stays_as_it_was(gw, services, monkeypatch, tmp_path):
+    """Токена нет — файл первого применения собирается без него, и установка на
+    шлюзе честно вернётся к вопросам, а не получит пустой токен."""
+    monkeypatch.setenv("AWG_BOT_ENV", str(tmp_path / "пусто"))
+    plain = b"#!/bin/sh\nexec x\n#__GW_SETUP_BELOW__\n"
+    assert services._bundle_with_agent(plain) == plain

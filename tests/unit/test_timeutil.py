@@ -143,3 +143,19 @@ def test_fmt_handshake_never_and_old():
 def test_fmt_handshake_online_now():
     fresh = int(t.now().timestamp()) - 10      # в пределах порога онлайна (300с)
     assert t.fmt_handshake(fresh) == "только что"
+
+
+def test_online_threshold_is_keyword_only():
+    """Порог передаётся ТОЛЬКО именем. Позиционно вторым идёт опорное время, и
+    число, прилетевшее туда, роняло проверку с AttributeError — а через неё
+    ходят карточка профиля и экран «Управлять подпиской»."""
+    import pytest as _pytest
+    from awgbot.util import timeutil as tu
+    now_ts = int(tu.now().timestamp())
+    assert tu.handshake_is_online(now_ts - 10, threshold=300)
+    assert not tu.handshake_is_online(now_ts - 10, threshold=5)
+    assert not tu.handshake_is_online(0, threshold=300)
+    with _pytest.raises(TypeError):
+        tu.handshake_is_online(now_ts, 300, 300)      # третьего позиционного нет
+    # и опорное время по-прежнему работает как опорное время
+    assert tu.handshake_is_online(now_ts - 10, tu.now())

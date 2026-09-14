@@ -1135,19 +1135,26 @@ def traffic_devices_kb() -> InlineKeyboardMarkup:
 
 
 def settings_root() -> InlineKeyboardMarkup:
+    """Порядок — от того, что трогают при настройке сервера, к тому, что
+    трогают раз в полгода. Сверху три раздела про сам сервер (сеть, доступ,
+    маршрутизация), потом про людей и уведомления, внизу обслуживание и
+    обновления.
+
+    Мониторинг и резервное копирование живут в «Обслуживании»: корень распух до
+    десяти строк, а это как раз то, что открывают не ради настройки, а когда
+    что-то чинят.
+    """
     kb = InlineKeyboardBuilder()
-    kb.button(text="✉️ E-mail", callback_data=SetCB(sec="email"))
-    kb.button(text="🔔 Уведомления", callback_data=SetCB(sec="notify"))
-    kb.button(text="💳 Параметры подписок", callback_data=SetCB(sec="subs"))
+    kb.button(text="🖥 Сервер AWG", callback_data=SetCB(sec="srv"))
+    kb.button(text="🛡 Доступ по SSH", callback_data=SetCB(sec="fw"))
     # Раздел показываем ВСЕГДА: пока обвязка не развёрнута, он и есть место,
     # где её разворачивают. Прежде кнопка появлялась только после правки
     # app.yaml руками — то есть ровно после того, как человек уже сделал всё
     # сам в SSH.
     kb.button(text="🇷🇺 Условная маршрутизация", callback_data=SetCB(sec="rt"))
-    kb.button(text="🖥 Сервер", callback_data=SetCB(sec="srv"))
-    kb.button(text="🛡 Файервол", callback_data=SetCB(sec="fw"))
-    kb.button(text="📊 Мониторинг", callback_data=SetCB(sec="mon"))
-    kb.button(text="💾 Резервное копирование", callback_data=SetCB(sec="backup"))
+    kb.button(text="✉️ E-mail", callback_data=SetCB(sec="email"))
+    kb.button(text="🔔 Уведомления", callback_data=SetCB(sec="notify"))
+    kb.button(text="💳 Параметры подписок", callback_data=SetCB(sec="subs"))
     kb.button(text="🔄 Обслуживание", callback_data=SetCB(sec="svc"))
     kb.button(text="⬆️ Обновления бота", callback_data=SetCB(sec="upd"))
     kb.button(text="\u2b05\ufe0f В меню", callback_data=Menu(action="main"))
@@ -1409,7 +1416,7 @@ def settings_mon() -> InlineKeyboardMarkup:
     kb.button(text=f"Порог простоя: {s.get_int('app.monitoring.service_failure_alert_minutes', 5)} мин",
               callback_data=SetCB(sec="mon", act="edit", key="app.monitoring.service_failure_alert_minutes"))
     kb.adjust(1)
-    kb.row(_back())
+    kb.row(_back("svc"))
     return kb.as_markup()
 
 
@@ -1441,7 +1448,7 @@ def settings_backup(encryption: bool = False) -> InlineKeyboardMarkup:
         kb.button(text="💾 Создать резервную копию", callback_data=SetCB(sec="backup", act="do", key="now"))
         rows += [2, 1, 1, 1]
     kb.adjust(*rows)
-    kb.row(_back())
+    kb.row(_back("svc"))
     return kb.as_markup()
 
 
@@ -1487,6 +1494,8 @@ def settings_svc(migration: str = "", available: bool = False,
     завершение роняет непереехавших, отмена возвращает всех на старые конфиги.
     """
     kb = InlineKeyboardBuilder()
+    kb.button(text="📊 Мониторинг", callback_data=SetCB(sec="mon"))
+    kb.button(text="💾 Резервное копирование", callback_data=SetCB(sec="backup"))
     kb.button(text="🔄 Перезапустить AWG", callback_data=SetCB(sec="svc", act="do", key="awg"))
     kb.button(text="🔄 Перезапустить бота", callback_data=SetCB(sec="svc", act="do", key="bot"))
     if available:
@@ -1578,13 +1587,12 @@ def gateway_panel_kb() -> InlineKeyboardMarkup:
 
 
 def gateway_settings_kb() -> InlineKeyboardMarkup:
-    """Тот же порядок, что у основного бота; чего у шлюза нет (подписки,
-    маршрутизация) — нет и здесь."""
+    """Тот же порядок, что у основного бота; чего у шлюза нет (сервер, доступ
+    по SSH, маршрутизация, подписки) — нет и здесь. Мониторинг и резервное
+    копирование, как и там, живут в «Обслуживании»."""
     kb = InlineKeyboardBuilder()
     kb.button(text="✉️ E-mail", callback_data=GwCB(action="email"))
     kb.button(text="🔔 Уведомления", callback_data=GwCB(action="notify"))
-    kb.button(text="📊 Мониторинг", callback_data=GwCB(action="mon"))
-    kb.button(text="💾 Резервное копирование", callback_data=GwCB(action="backup"))
     kb.button(text="🔄 Обслуживание", callback_data=GwCB(action="maint"))
     kb.button(text="⬆️ Обновления бота", callback_data=GwCB(action="updates"))
     kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
@@ -1647,7 +1655,7 @@ def gateway_mon_kb() -> InlineKeyboardMarkup:
     kb.button(text=f"Порог простоя линка: {s.get_int('app.gateway.handshake_max_age', 300)} сек",
               callback_data=GwCB(action="edit", val="app.gateway.handshake_max_age"))
     kb.adjust(1)
-    kb.row(_gw_back())
+    kb.row(_gw_back("maint"))
     return kb.as_markup()
 
 
@@ -1671,7 +1679,7 @@ def gateway_backup_kb(encryption: bool = False) -> InlineKeyboardMarkup:
         kb.button(text="💾 Создать резервную копию", callback_data=GwCB(action="backup!"))
         rows += [1, 2, 1, 1, 1]
     kb.adjust(*rows)
-    kb.row(_gw_back())
+    kb.row(_gw_back("maint"))
     return kb.as_markup()
 
 
@@ -1723,7 +1731,10 @@ def gateway_cancel_kb(sec: str) -> InlineKeyboardMarkup:
 
 
 def gateway_maint_kb() -> InlineKeyboardMarkup:
+    """Порядок тот же, что в «Обслуживании» основного бота."""
     kb = InlineKeyboardBuilder()
+    kb.button(text="📊 Мониторинг", callback_data=GwCB(action="mon"))
+    kb.button(text="💾 Резервное копирование", callback_data=GwCB(action="backup"))
     kb.button(text="🔁 Перезапустить AWG", callback_data=GwCB(action="restart"))
     kb.button(text="🔁 Перезапустить бота", callback_data=GwCB(action="botrestart"))
     kb.button(text="⬅️ Назад", callback_data=GwCB(action="settings"))

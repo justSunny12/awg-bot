@@ -149,3 +149,99 @@ async def test_adding_a_bad_address_is_refused_without_writing(services, fake_bo
     assert seen == ["мусор"]
     assert any("не адрес" in s[1] for s in msg.sent if s[0] == "answer")
     assert await st.get_data(), "ввод остаётся открытым — можно поправить, не начиная заново"
+
+
+# ── раскладка корня настроек ─────────────────────────────────────────────────
+
+def test_settings_root_order_and_names():
+    """Порядок — от того, что трогают при настройке сервера, к тому, что
+    трогают раз в полгода. Мониторинг и бэкапы уехали в «Обслуживание»: корень
+    распух до десяти строк, а открывают их не ради настройки, а когда чинят."""
+    from awgbot.bot import keyboards as kb
+    rows = [b.text for row in kb.settings_root().inline_keyboard for b in row]
+    assert rows == ["🖥 Сервер AWG", "🛡 Доступ по SSH", "🇷🇺 Условная маршрутизация",
+                    "✉️ E-mail", "🔔 Уведомления", "💳 Параметры подписок",
+                    "🔄 Обслуживание", "⬆️ Обновления бота", "⬅️ В меню"]
+
+
+def test_maintenance_holds_monitoring_and_backups_first():
+    from awgbot.bot import keyboards as kb
+    rows = [b.text for row in kb.settings_svc().inline_keyboard for b in row]
+    assert rows[:4] == ["📊 Мониторинг", "💾 Резервное копирование",
+                        "🔄 Перезапустить AWG", "🔄 Перезапустить бота"]
+
+
+def test_moved_sections_return_to_maintenance():
+    """Выход из раздела обязан вести туда, откуда в него вошли, — иначе
+    «Назад» выбрасывает в корень, и человек ищет, где он был."""
+    from awgbot.bot import keyboards as kb
+    from awgbot.bot.callbacks import SetCB
+    for markup in (kb.settings_mon(), kb.settings_backup()):
+        assert markup.inline_keyboard[-1][0].callback_data == SetCB(sec="svc").pack()
+
+
+# ── остальные ветки действий файервола ───────────────────────────────────────
+
+async def test_removing_an_address_by_its_number(services, fake_bot, monkeypatch):
+    """В кнопке номер записи, а не адрес: двоеточие IPv6 ломало упаковку. Номер
+    обязан разрешаться в тот же адрес, что показан в списке."""
+    removed: list = []
+    monkeypatch.setattr(services, "firewall_screen",
+                        lambda: _fw(raw_allow=["203.0.113.7", "2001:db8::1"]))
+    monkeypatch.setattr(services, "firewall_allow_remove", lambda e: removed.append(e))
+    cb, nav = _acb(fake_bot)
+    await sh.do_action(cb, SetCB(sec="fw", act="do", key="del", val="1"), services)
+    assert removed == ["2001:db8::1"]
+
+
+async def test_stale_list_does_not_remove_a_neighbour(services, fake_bot, monkeypatch):
+    """Список изменился с момента отрисовки — номер указывает уже на другого.
+    Удалить соседа молча хуже, чем отказаться."""
+    removed: list = []
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw(raw_allow=["203.0.113.7"]))
+    monkeypatch.setattr(services, "firewall_allow_remove", lambda e: removed.append(e))
+    cb, nav = _acb(fake_bot)
+    await sh.do_action(cb, SetCB(sec="fw", act="do", key="del", val="5"), services)
+    assert removed == []
+    assert any("изменился" in (a[0] or "") for a in cb.answers)
+
+
+async def test_unknown_action_is_refused_and_screen_survives(services, fake_bot, monkeypatch):
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw())
+    cb, nav = _acb(fake_bot)
+    await sh.do_action(cb, SetCB(sec="fw", act="do", key="чего-то-нет"), services)
+    assert any("недоступно" in (a[0] or "") for a in cb.answers)
+
+
+async def test_failure_inside_an_action_is_shown_not_swallowed(services, fake_bot, monkeypatch):
+    """Отказ nft — это то, что человек обязан увидеть: правила не применились."""
+    def boom():
+        raise RuntimeError("nft: Operation not permitted")
+    monkeypatch.setattr(services, "firewall_enable", boom)
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw())
+    cb, nav = _acb(fake_bot)
+    await sh.do_action(cb, SetCB(sec="fw", act="do", key="on"), services)
+    assert any("Не вышло" in (a[0] or "") for a in cb.answers)
+    assert any(s[0] == "edit_text" for s in nav.sent), "экран не перерисован после отказа"
+
+
+def test_every_edit_button_points_at_a_known_setting():
+    """Опечатка в ключе кнопки превращает её в «Эта настройка недоступна», и
+    раздел становится мёртвым. Сверяем ключи клавиатур со словарями текстов."""
+    from awgbot.bot import keyboards as kb, texts
+    from awgbot.bot.callbacks import SetCB
+    known = set(texts.SETTINGS_TEXT) | set(texts.SETTINGS_BOUNDS)
+    markups = [kb.settings_server(), kb.settings_firewall({"raw_allow": ["1.2.3.4"]}),
+               kb.settings_mon(), kb.settings_subs(), kb.settings_notify()]
+    checked = 0
+    for m in markups:
+        for row in m.inline_keyboard:
+            for b in row:
+                if not b.callback_data.startswith("set:"):
+                    continue
+                cb = SetCB.unpack(b.callback_data)
+                if cb.act != "edit":
+                    continue
+                checked += 1
+                assert cb.key in known, f"кнопка «{b.text}» ведёт в несуществующий ключ {cb.key}"
+    assert checked >= 8, "проверять оказалось нечего — тест устарел"

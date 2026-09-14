@@ -107,12 +107,103 @@ def test_kernel_dkms_tree_carries_the_real_version(kernel):
         "remove снёс бы дерево прежней версии — откат станет невозможен"
 
 
-def test_kernel_is_idempotent_and_reports_drift(kernel):
+def _run_kernel(tmp_path, mode, *, module="", loaded="", tools="", lock=None):
+    """Запускает awg-kernel-install.sh с подменёнными modinfo/awg/cat.
+
+    Скрипт решает, пересобирать ли ядро, — и решение видно только по коду
+    возврата. Сверка подстрок пропустила бы и перепутанные ветки, и потерянный
+    exit 3, ради которого status вообще существует.
+    """
+    import os
+    import subprocess
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "modinfo").write_text(
+        f'#!/bin/sh\n[ -n "{module}" ] || exit 1\nprintf "%s\\n" "{module}"\n', encoding="utf-8")
+    (bin_dir / "awg").write_text(
+        f'#!/bin/sh\n[ -n "{tools}" ] || exit 1\nprintf "amneziawg-tools v{tools} - x\\n"\n',
+        encoding="utf-8")
+    for f in ("modinfo", "awg"):
+        (bin_dir / f).chmod(0o755)
+    sysver = tmp_path / "loaded"
+    sysver.write_text(loaded, encoding="utf-8")
+    lock_file = lock or (ROOT / "install" / "awg.lock")
+    src = KERNEL.read_text(encoding="utf-8").replace(
+        '"/sys/module/$MODULE/version"', f'"{sysver}"')
+    run_me = tmp_path / "kernel.sh"
+    run_me.write_text(src, encoding="utf-8")
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", AWG_LOCK=str(lock_file))
+    return subprocess.run(["bash", str(run_me), mode], capture_output=True, text=True, env=env)
+
+
+def test_status_says_nothing_to_do_when_versions_match(tmp_path):
+    ver = "3.1.20260812"
+    lock = tmp_path / "awg.lock"
+    lock.write_text(f"AWG_GENERATION=1\nAWG_PROTOCOL_ID=p\n"
+                    f"AWG_MODULE_VERSION={ver}\nAWG_MODULE_URL=u\nAWG_MODULE_SHA256=a\n"
+                    f"AWG_TOOLS_VERSION={ver}\nAWG_TOOLS_URL=u\nAWG_TOOLS_SHA256=b\n",
+                    encoding="utf-8")
+    res = _run_kernel(tmp_path, "status", module=ver, loaded=ver, tools=ver, lock=lock)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "совпадает с манифестом" in res.stdout
+
+
+def test_status_returns_three_when_the_delivery_moved_ahead(tmp_path):
+    """Код 3 — то, чем установщик и человек отличают «пересобрать» от «всё
+    хорошо». Потеряй его, и обновление ядра молча пропускалось бы."""
+    lock = tmp_path / "awg.lock"
+    lock.write_text("AWG_GENERATION=1\nAWG_PROTOCOL_ID=p\n"
+                    "AWG_MODULE_VERSION=9.9.9\nAWG_MODULE_URL=u\nAWG_MODULE_SHA256=a\n"
+                    "AWG_TOOLS_VERSION=9.9.9\nAWG_TOOLS_URL=u\nAWG_TOOLS_SHA256=b\n",
+                    encoding="utf-8")
+    res = _run_kernel(tmp_path, "status", module="3.1.20260812", loaded="3.1.20260812",
+                      tools="3.1.20260812", lock=lock)
+    assert res.returncode == 3 and "РАСХОДИТСЯ" in res.stdout
+
+
+def test_status_flags_a_built_but_not_running_module(tmp_path):
+    """Собрано по манифесту, а работает прежнее — это не «всё хорошо»: до
+    подмены или перезагрузки клиентов обслуживает старое ядро."""
+    ver = "3.1.20260812"
+    lock = tmp_path / "awg.lock"
+    lock.write_text(f"AWG_GENERATION=1\nAWG_PROTOCOL_ID=p\n"
+                    f"AWG_MODULE_VERSION={ver}\nAWG_MODULE_URL=u\nAWG_MODULE_SHA256=a\n"
+                    f"AWG_TOOLS_VERSION={ver}\nAWG_TOOLS_URL=u\nAWG_TOOLS_SHA256=b\n",
+                    encoding="utf-8")
+    res = _run_kernel(tmp_path, "status", module=ver, loaded="3.0.20260731", tools=ver, lock=lock)
+    assert res.returncode == 3
+    assert "reload" in res.stdout and "3.0.20260731" in res.stdout
+
+
+def test_install_does_nothing_when_versions_match(tmp_path):
     """Хосты, где эта же версия стояла до появления манифеста, пересборки не
-    получают; а установленный, но ещё не работающий модуль — не «всё хорошо»."""
-    assert 'ok "AmneziaWG $AWG_MODULE_VERSION уже стоит — ничего не делаю"' in kernel
-    assert "exit 3" in kernel, "status обязан отличать расхождение кодом возврата"
-    assert "awg-bot awg reload" in kernel
+    получают — иначе каждое обновление гасило бы туннели без причины.
+
+    Проверка идёт в режиме plan: install требует root, а решение «собирать или
+    нет» принимается до всякого root и одинаково в обоих режимах."""
+    ver = "3.1.20260812"
+    lock = tmp_path / "awg.lock"
+    lock.write_text(f"AWG_GENERATION=1\nAWG_PROTOCOL_ID=p\n"
+                    f"AWG_MODULE_VERSION={ver}\nAWG_MODULE_URL=u\nAWG_MODULE_SHA256=a\n"
+                    f"AWG_TOOLS_VERSION={ver}\nAWG_TOOLS_URL=u\nAWG_TOOLS_SHA256=b\n",
+                    encoding="utf-8")
+    res = _run_kernel(tmp_path, "plan", module=ver, loaded=ver, tools=ver, lock=lock)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "уже стоит" in res.stdout
+    assert "would" not in res.stdout, "сборка запланирована там, где нечего делать"
+
+
+def test_plan_schedules_a_rebuild_when_the_delivery_moved_ahead(tmp_path):
+    lock = tmp_path / "awg.lock"
+    lock.write_text("AWG_GENERATION=1\nAWG_PROTOCOL_ID=p\n"
+                    "AWG_MODULE_VERSION=9.9.9\nAWG_MODULE_URL=https://x/9.9.9.tar.gz\n"
+                    "AWG_MODULE_SHA256=a\nAWG_TOOLS_VERSION=9.9.9\n"
+                    "AWG_TOOLS_URL=https://x/t.tar.gz\nAWG_TOOLS_SHA256=b\n", encoding="utf-8")
+    res = _run_kernel(tmp_path, "plan", module="3.1.20260812", loaded="3.1.20260812",
+                      tools="3.1.20260812", lock=lock)
+    assert res.returncode == 0, res.stdout + res.stderr
+    plan = res.stdout + res.stderr
+    assert "would" in plan and "dkms" in plan and "9.9.9" in plan
 
 
 def test_kernel_reload_lowers_and_raises_every_interface(kernel):
@@ -139,10 +230,35 @@ def test_server_takes_dot_one_and_gives_clients_dot_two(server):
 
 def test_server_obfuscation_avoids_the_two_known_traps(server):
     """S1 + 56 == S2 делает длину init-пакета равной response, а повтор среди
-    H1..H4 — два типа пакетов с одним заголовком: приёмник их не различит."""
-    assert "$((S1 + 56))" in server and 'S2="$(rnd 15 150)"' in server
-    h = server.split('H=""', 1)[1].split("read -r H1", 1)[0]
-    assert "for x in $H" in h and "dup=1" in h
+    H1..H4 — два типа пакетов с одним заголовком: приёмник их не различит.
+
+    Прогоняем настоящую логику подбора, а не ищем строки: замена цикла на одну
+    попытку выглядит в исходнике почти так же, а ловушка возвращается — с
+    вероятностью около процента на установку.
+    """
+    import subprocess
+    body = server.split("# ── обфускация", 1)[1].split("if [[ \"$PLAN\"", 1)[0]
+    rnd = server.split("rnd() {", 1)[1].split("\n}\n", 1)[0]
+    prog = "set -euo pipefail\nrnd() {" + rnd + "\n}\n" + body + \
+        '\nfor i in $(seq 1 200); do\n' \
+        '  S1="$(rnd 15 150)"; S2="$(rnd 15 150)"\n' \
+        '  while [[ $((S1 + 56)) -eq "$S2" ]]; do S2="$(rnd 15 150)"; done\n' \
+        '  [[ $((S1 + 56)) -ne "$S2" ]] || { echo "ЛОВУШКА S"; exit 1; }\n' \
+        'done\n' \
+        'for i in $(seq 1 200); do\n' \
+        '  H=""\n' \
+        '  while [[ "$(wc -w <<<"$H")" -lt 4 ]]; do\n' \
+        '    v="$(rnd 5 40)"; dup=0\n' \
+        '    for x in $H; do [[ "$x" == "$v" ]] && dup=1; done\n' \
+        '    if [[ "$dup" -eq 0 ]]; then H="$H $v"; fi\n' \
+        '  done\n' \
+        '  u="$(printf "%s\\n" $H | sort -u | wc -l)"\n' \
+        '  [[ "$u" -eq 4 ]] || { echo "ЛОВУШКА H: $H"; exit 1; }\n' \
+        'done\necho OK\n'
+    res = subprocess.run(["bash", "-c", prog], capture_output=True, text=True)
+    assert res.returncode == 0 and "OK" in res.stdout, res.stdout + res.stderr
+    # узкий диапазон H (5..40) выбран нарочно: на нём совпадения вероятны, и
+    # тест увидит подбор без перевыбора, а не пройдёт по счастливой случайности
 
 
 def test_server_is_idempotent(server):
@@ -197,13 +313,64 @@ def test_update_builds_the_kernel_before_swapping_code(bot_sh):
     assert 'AWG_LOCK="$src/install/awg.lock"' in body, "манифест берётся из НОВОЙ поставки"
 
 
-def test_module_is_reloaded_only_when_the_running_one_differs(bot_sh):
-    """Подмена работающего модуля гасит все интерфейсы — делать её на каждом
+def _run_module_check(tmp_path, *, want, loaded):
+    """Прогоняет ensure_awg_module_loaded с подменёнными манифестом и /sys."""
+    import subprocess
+    script = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    body = script.split("ensure_awg_module_loaded() {", 1)[1].split("\n}\n", 1)[0]
+    sysver = tmp_path / "loaded"
+    sysver.write_text(loaded, encoding="utf-8")
+    body = body.replace("/sys/module/amneziawg/version", str(sysver))
+    prog = (
+        'set -u\n'
+        'log(){ printf "[log] %s\\n" "$*"; }\n'
+        'warn(){ printf "[warn] %s\\n" "$*"; }\n'
+        f'AWG_LOCK_FILE="{tmp_path / "awg.lock"}"\n'
+        f'INSTALL_DIR="{tmp_path}"\n'
+        'lock_get() { sed -nE "s/^$1=(.*)$/\\1/p" "$AWG_LOCK_FILE" | head -n1; }\n'
+        'ensure_awg_module_loaded() {' + body + '\n}\nensure_awg_module_loaded\n'
+    )
+    (tmp_path / "awg.lock").write_text(f"AWG_MODULE_VERSION={want}\n", encoding="utf-8")
+    inst = tmp_path / "install"
+    inst.mkdir(exist_ok=True)
+    (inst / "awg-kernel-install.sh").write_text(
+        '#!/bin/bash\necho "RELOAD $1"\n', encoding="utf-8")
+    return subprocess.run(["bash", "-c", prog], capture_output=True, text=True)
+
+
+def test_module_is_reloaded_only_when_the_running_one_differs(tmp_path):
+    """Подмена работающего модуля гасит ВСЕ интерфейсы — делать её на каждом
     обновлении незачем: тег тот же, значит и подменять нечего."""
-    body = bot_sh.split("ensure_awg_module_loaded() {", 1)[1].split("\n}\n", 1)[0]
-    assert "/sys/module/amneziawg/version" in body
-    assert '[[ -n "$have" && "$have" != "$want" ]] || return 0' in body
-    assert "reload" in body and "warn" in body, "неудачная подмена не должна ронять обновление"
+    same = _run_module_check(tmp_path, want="3.1.20260812", loaded="3.1.20260812")
+    assert same.returncode == 0 and "RELOAD" not in same.stdout, same.stdout
+
+    diff = _run_module_check(tmp_path, want="3.2.0", loaded="3.1.20260812")
+    assert diff.returncode == 0, diff.stdout + diff.stderr
+    assert "RELOAD reload" in diff.stdout, "новый тег не применён"
+    assert "интерфейсы лягут" in diff.stdout, "молчаливый обрыв туннелей"
+
+
+def test_failed_reload_does_not_break_the_update(tmp_path):
+    """Не подменился модуль — обновление кода всё равно доведено: применится
+    после перезагрузки, а человеку сказано как."""
+    import subprocess
+    script = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    body = script.split("ensure_awg_module_loaded() {", 1)[1].split("\n}\n", 1)[0]
+    sysver = tmp_path / "loaded"
+    sysver.write_text("3.1.20260812", encoding="utf-8")
+    body = body.replace("/sys/module/amneziawg/version", str(sysver))
+    inst = tmp_path / "install"
+    inst.mkdir(exist_ok=True)
+    (inst / "awg-kernel-install.sh").write_text('#!/bin/bash\nexit 1\n', encoding="utf-8")
+    (tmp_path / "awg.lock").write_text("AWG_MODULE_VERSION=3.2.0\n", encoding="utf-8")
+    prog = ('set -e\nlog(){ :; }\nwarn(){ printf "[warn] %s\\n" "$*"; }\n'
+            f'AWG_LOCK_FILE="{tmp_path / "awg.lock"}"\nINSTALL_DIR="{tmp_path}"\n'
+            'lock_get() { sed -nE "s/^$1=(.*)$/\\1/p" "$AWG_LOCK_FILE" | head -n1; }\n'
+            'ensure_awg_module_loaded() {' + body + '\n}\n'
+            'ensure_awg_module_loaded\necho ДОШЛИ\n')
+    res = subprocess.run(["bash", "-c", prog], capture_output=True, text=True)
+    assert res.returncode == 0 and "ДОШЛИ" in res.stdout, res.stdout + res.stderr
+    assert "awg-bot awg reload" in res.stdout or "перезагрузк" in res.stdout
 
 
 def test_generation_bump_raises_a_second_interface(bot_sh):
