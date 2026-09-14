@@ -23,10 +23,8 @@ from awgbot.core import config
 TABLE_FAMILY = "inet"
 TABLE_NAME = "awg_gw_guard"
 TABLE = f"{TABLE_FAMILY} {TABLE_NAME}"
-GUARD_FILE = "/etc/awg-gw/guard.nft"
 FW_ENV = "/etc/awg-gw/firewall.env"
 CHAINS = ("input", "tunnel_in", "forward", "postrouting", "output")
-SETS = ("tunnel_nets4", "private4", "tg_nets4", "admin4")
 
 
 class GwGuardError(RuntimeError):

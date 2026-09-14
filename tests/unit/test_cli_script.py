@@ -21,11 +21,6 @@ def script() -> str:
     return SCRIPT.read_text(encoding="utf-8")
 
 
-def _python_invocations(text: str) -> list[str]:
-    """Строки, запускающие интерпретатор из venv."""
-    return [ln.strip() for ln in text.splitlines() if "venv/bin/python" in ln]
-
-
 def test_python_is_run_from_the_install_dir(script):
     """Пакет awgbot лежит в $INSTALL_DIR, а не в site-packages, поэтому запуск
     из чужого каталога даёт ModuleNotFoundError уже на боевом сервере. Каждый
@@ -72,10 +67,15 @@ def test_every_dispatched_verb_has_a_handler(script):
         assert f"{fn}()" in script, f"глагол {verb!r} зовёт несуществующую {fn}()"
 
 
-def test_routing_doctor_is_documented_in_usage(script):
+def test_every_public_verb_is_documented_in_usage(script):
     """Команду, о которой не написано в usage, никто не найдёт в момент отказа —
-    а нужна она именно тогда."""
-    assert "routing-doctor" in script.split("VERB=")[0], "нет в usage()"
+    а нужна она именно тогда. Служебные глаголы (__post_*) — исключение: их
+    зовёт сам скрипт."""
+    verbs = {v for v, _ in re.findall(r"^\s{4}([a-z][a-z-]*)\)\s+(cmd_[a-z_]+)", script, re.M)}
+    usage = _extract_func(script, "usage")
+    documented = set(re.findall(r"^\s+awg-bot ([a-z][a-z-]*)", usage, re.M))
+    assert verbs, "не разобрали case-блок — тест устарел"
+    assert verbs <= documented, f"нет в usage(): {sorted(verbs - documented)}"
 
 
 # ── shell-скрипты: ссылки на несуществующие переменные ───────────────────────

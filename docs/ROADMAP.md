@@ -1029,4 +1029,20 @@ ADMIN_ID. Основной бот спрашивает токен шлюза о�
   машину, SSH через туннель — устройствам админа из бандла с напоминанием о
   перевыпуске при смене состава.
 - **«Проглотить серверку» на ВПС** — в уме (§7, «Связанное»).
-
+- **Периодные счётчики трафика (`device_traffic.traffic_rx_period/tx_period`) —
+  write-only.** Пишутся на каждом опросе (`add_traffic_bulk`, `merge_traffic`),
+  обнуляются (`reset_period_traffic`), суммируются в `get_client_traffic` и
+  попадают в модель (`DeviceTraffic.rx_period/tx_period`), но ни экран, ни
+  логика их не читают — тексты берут только месячные. Нашлось ревью 14.09.2026.
+  Либо появится «лимит за период подписки» и они станут нужны, либо колонки
+  снимаются миграцией `DROP COLUMN` (по образцу `_migrate_drop_full_access`).
+  Решение отложено.
+- **Миграции схемы и разовые починки старых установок** — ревью 14.09.2026
+  нашло восемь, все живые: `_migrate_additive` (колонки v1.x–v2.3),
+  `_migrate_samples_last_update` (~v2.4), `_migrate_routing_domains_mode`
+  (v2.2.x), `_migrate_routing_master_to_devices` (v2.2.0), `_migrate_gateway_flag`
+  (v2.8.0), `retire_legacy_ssh_gate` (v2.6.0; до включения файервола гоняет
+  iptables на каждом старте), `email/backup_import_env_once` (v2.5.x),
+  `_routing_src_legacy` (v2.2.2), `poll_schedule hour→day` (v1.2.1). Снимать —
+  после решения, с какой минимальной версии поддерживаем обновление;
+  `_migrate_drop_full_access` (стирание секрета) остаётся при любом решении.

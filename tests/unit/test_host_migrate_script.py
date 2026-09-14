@@ -1,5 +1,5 @@
 """
-Проверки awg-host-migrate.sh и host-ветки harden_firewall.sh.
+Проверки awg-host-migrate.sh.
 
 Скрипт переезда запускается ровно один раз, на боевом сервере, с живыми
 пользователями, и в середине останавливает контейнер. Ошибка в нём стоит
@@ -8,23 +8,30 @@
 """
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
+
+def _sh(prog: str, *, stdin: str = "", path: str = "/usr/bin:/bin") -> subprocess.CompletedProcess:
+    return subprocess.run(["sh", "-c", prog], input=stdin, capture_output=True, text=True,
+                          env={"PATH": path})
+
+
+def _block(text: str, start: str, end: str) -> str:
+    """Фрагмент скрипта от строки start до строки end включительно."""
+    a = text.index(start)
+    b = text.index(end, a) + len(end)
+    return text[a:b]
+
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATE = ROOT / "install" / "awg-host-migrate.sh"
-FIREWALL = ROOT / "install" / "harden_firewall.sh"
 
 
 @pytest.fixture(scope="module")
 def migrate() -> str:
     return MIGRATE.read_text(encoding="utf-8")
-
-
-@pytest.fixture(scope="module")
-def firewall() -> str:
-    return FIREWALL.read_text(encoding="utf-8")
 
 
 # ── порядок операций ─────────────────────────────────────────────────────────
@@ -60,14 +67,22 @@ def test_interface_is_verified_by_deed(migrate):
         "при неудаче скрипт обязан назвать команду отката"
 
 
-def test_empty_peer_list_is_reported(migrate):
+@pytest.mark.parametrize("peers, warned", [("", True), ("PUB1\nPUB2\n", False)])
+def test_empty_peer_list_is_reported(migrate, tmp_path, peers, warned):
     """Интерфейс может подняться пустым: конфиг не применился.
 
     Снаружи «поднят» и «поднят без пиров» неотличимы, а второе означает, что
-    ни один клиент не подключится.
+    ни один клиент не подключится — скрипт обязан сказать это и назвать откат.
     """
-    assert "peers" in migrate
-    assert 'PEERS' in migrate
+    block = _block(migrate, 'PEERS="$(awg show', "    fi\n")
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir()
+    (bin_dir / "awg").write_text(f'#!/bin/sh\nprintf "%s" "{peers}"\n', encoding="utf-8")
+    (bin_dir / "awg").chmod(0o755)
+    r = _sh('say(){ printf "%s\\n" "$*"; }\nAWG_IF=awg0\n' + block,
+            path=f"{bin_dir}:/usr/bin:/bin")
+    assert r.returncode == 0, r.stderr
+    assert ("ни одного пира" in r.stdout) is warned
+    assert ("--rollback" in r.stdout) is warned
 
 
 def test_rollback_restores_the_container(migrate):
@@ -108,26 +123,6 @@ def test_foreign_hooks_stop_the_migration(migrate):
     assert "FOREIGN" in migrate
     body = migrate.split("FOREIGN=", 1)[1]
     assert 'exit 1' in body, "при чужих хуках apply обязан остановиться"
-
-
-# ── firewall: обёртка над единственной точкой ───────────────────────────────
-
-def test_firewall_script_delegates_to_the_bot(firewall):
-    """Файервол теперь ведёт бот (nftguard + tools/firewall.py); скрипт лишь
-    запускает мастер. Второго генератора таблицы быть не должно — иначе два
-    владельца одного файла."""
-    assert "tools.firewall" in firewall and "setup" in firewall
-    assert "nft -f" not in firewall and "table $TABLE" not in firewall
-    assert "ufw allow" not in firewall
-
-
-def test_firewall_script_reexecs_under_bash(firewall):
-    assert 'exec bash "$0"' in firewall
-
-
-def test_firewall_script_passes_conf_dirs(firewall):
-    for var in ("AWG_BOT_CONF_DIR", "AWG_BOT_DATA_DIR", "AWG_BOT_ENV"):
-        assert var in firewall
 
 
 def test_hooks_are_read_from_the_container_not_the_host_copy(migrate):
@@ -192,12 +187,23 @@ def test_tunnel_guard_runs_before_anything_is_touched(migrate):
     assert guard < first_change
 
 
-def test_apply_asks_for_a_multiplexer(migrate):
+@pytest.mark.parametrize("env_line, answer, goes_on", [
+    ("", "n", False),                 # голый SSH, отказ — стоп
+    ("", "y", True),                  # голый SSH, «всё равно» — продолжаем
+    ("TMUX=1", "", True),             # под tmux вопроса нет
+    ("STY=1", "", True),              # под screen тоже
+])
+def test_apply_asks_for_a_multiplexer(migrate, env_line, answer, goes_on):
     """Обрыв связи на шагах 5–6 оставляет сервис лежащим.
 
-    Прямой SSH тоже может моргнуть, а доделывать шаги некому.
+    Прямой SSH тоже может моргнуть, а доделывать шаги некому — без tmux/screen
+    скрипт спрашивает и без «да» не идёт дальше.
     """
-    assert "TMUX" in migrate and "STY" in migrate
+    block = _block(migrate, 'if [ "$MODE" = "apply" ] && [ -z "${TMUX:-}" ]', "esac\nfi\n")
+    r = _sh('say(){ printf "%s\\n" "$*"; }\nMODE=apply\n' + env_line + "\n" + block + "\necho ДАЛЬШЕ",
+            stdin=answer + "\n")
+    assert ("ДАЛЬШЕ" in r.stdout) is goes_on, r.stdout
+    assert ("tmux/screen" in r.stdout) is (not env_line)
 
 
 # ── то, что переставало работать после переезда ──────────────────────────────
@@ -210,14 +216,11 @@ def test_client_port_ends_up_open_after_the_move(migrate):
     клиенты просто не подключаются, а причина ни на что не похожа.
 
     Владелец правил теперь один — таблица awg_bot_guard: порт клиентов она
-    открывает сама, сканируя ListenPort в конфигах интерфейсов. Скрипт переезда
-    обязан лишь оставить конфиг там, где его найдёт этот скан.
+    открывает сама, сканируя ListenPort в конфигах интерфейсов
+    (tests/unit/test_nftguard.py). Скрипт переезда обязан лишь оставить конфиг
+    там, где его найдёт этот скан, и не заводить второго владельца правил.
     """
-    import inspect
-    from awgbot.infra import nftguard
     assert "ListenPort" in migrate, "порт не переносится вовсе"
-    assert "udp_ports=listen_ports()" in inspect.getsource(nftguard.build_spec), \
-        "порт клиентов больше никто не открывает"
     assert "ufw allow" not in migrate, "второй владелец правил вернулся"
 
 

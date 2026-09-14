@@ -8,7 +8,7 @@ from awgbot.bot import texts
 from awgbot.bot.handlers import client as ch
 from awgbot.bot.callbacks import BlockCB, DelDeviceCB, DeviceCB, GraceCB, PauseCB
 from awgbot.core.blocks import ClientBlock, DeviceBlock
-from tests.conftest import FakeCallback, FakeMessage, FakeState
+from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
 pytestmark = pytest.mark.e2e
 
@@ -26,9 +26,14 @@ async def test_menu_main_and_info_and_devices(services, fake_bot, make_active_cl
     client = make_active_client(tg_id=5000, period_kind="year")
     services.add_device(client.id, "d")
     cl = _fresh(services, client)
-    for handler in (ch.menu_main, ch.menu_info, ch.menu_devices):
+    expect = {ch.menu_main: ("Привет", "Мои устройства"),
+              ch.menu_info: ("Статус подписки", "Приостановить"),
+              ch.menu_devices: ("Устройств добавлено: 1", "d")}
+    for handler, (in_text, in_button) in expect.items():
         cb, nav = _cb(fake_bot, 5000)
         await handler(cb, cl, services)
+        text, labels = last_screen(nav)
+        assert in_text in text and any(in_button in l for l in labels), handler.__name__
         assert cb.answers
 
 
@@ -37,7 +42,8 @@ async def test_menu_gen_empty_vs_present(services, fake_bot, make_active_client)
     cl = _fresh(services, client)
     cb, nav = _cb(fake_bot, 5001)
     await ch.menu_gen_link(cb, cl, services)
-    assert cb.answers[-1][1] is True
+    assert cb.answers[-1][1] is True                     # нет устройств → алерт
+    assert not any(s[0] == "edit_text" for s in nav.sent)
     services.add_device(client.id, "d")
     cb2, nav2 = _cb(fake_bot, 5001)
     await ch.menu_gen_link(cb2, cl, services)
@@ -51,9 +57,13 @@ async def test_device_open_own_foreign_app(services, fake_bot, make_active_clien
     cb, nav = _cb(fake_bot, 5002)
     await ch.device_open(cb, DeviceCB(action="open", device_id=dc.device_id), cl, services)
     assert any(s[0] == "edit_text" for s in nav.sent)
-    cb2, nav2 = _cb(fake_bot, 5002)
-    await ch.device_open(cb2, DeviceCB(action="open", device_id=999999), cl, services)
-    assert cb2.answers[-1][1] is True
+    other = make_active_client(tg_id=5003)
+    foreign = services.add_device(other.id, "чужое")
+    for bad_id in (999999, foreign.device_id):           # несуществующее и чужое
+        cb2, nav2 = _cb(fake_bot, 5002)
+        await ch.device_open(cb2, DeviceCB(action="open", device_id=bad_id), cl, services)
+        assert cb2.answers[-1][1] is True, "show_alert «не найдено»"
+        assert not any(s[0] == "edit_text" for s in nav2.sent)
     app_id = services.db.create_device(client.id, "app", "PUBZ", "PSK", "10.8.0.60", private_key=None)
     cb3, nav3 = _cb(fake_bot, 5002)
     await ch.device_open(cb3, DeviceCB(action="open", device_id=app_id), cl, services)
@@ -67,10 +77,14 @@ async def test_device_connect_menu_bot_vs_app(services, fake_bot, make_active_cl
     cl = _fresh(services, client)
     cb, nav = _cb(fake_bot, 5003)
     await ch.device_connect_menu(cb, DeviceCB(action="connect_menu", device_id=dc.device_id), cl, services)
-    assert any(s[0] == "edit_text" for s in nav.sent)
+    _, labels = last_screen(nav)
+    assert any("ссылку" in l for l in labels) and any("QR" in l for l in labels) \
+        and any("файл" in l for l in labels)
     cb2, nav2 = _cb(fake_bot, 5003)
     await ch.device_connect_menu(cb2, DeviceCB(action="connect_menu", device_id=app_id), cl, services)
-    assert any(s[0] == "edit_text" for s in nav2.sent)
+    text2, labels2 = last_screen(nav2)
+    assert "мимо бота" in text2 and any("Удалить" in l for l in labels2), \
+        "у пира без ключа выдать нечего — только объяснение и удаление"
 
 
 async def test_gen_from_menu_bot_sends_config(services, fake_bot, make_active_client):
@@ -88,7 +102,9 @@ async def test_gen_from_menu_app_shows_dialog(services, fake_bot, make_active_cl
     cl = _fresh(services, client)
     cb, nav = _cb(fake_bot, 5005)
     await ch.device_gen_qr(cb, DeviceCB(action="gen_qr", device_id=app_id), cl, services)
-    assert any(s[0] == "edit_text" for s in nav.sent)
+    text, labels = last_screen(nav)
+    assert "мимо бота" in text and any("Удалить" in l for l in labels)
+    assert not any(s[0] in ("answer_photo", "answer_animation") for s in nav.sent), "QR для пира без ключа"
 
 
 async def test_edit_device_traffic_flow(services, fake_bot, make_active_client):
@@ -144,29 +160,6 @@ async def test_client_card_of_unmanaged_device_explains_the_dead_end(
             assert "restore" not in (b.callback_data or ""), b.text
 
 
-async def test_add_device_self_full_flow(services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=5010, device_limit=3)
-    cl = _fresh(services, client)
-    st = FakeState()
-    cb, nav = _cb(fake_bot, 5010)
-    await ch.device_add_self(cb, cl, services, st)
-    m_name = FakeMessage(text="Мой ноут", chat_id=5010, user_id=5010, bot=fake_bot)
-    await ch.device_add_name(m_name, cl, services, st)
-    m_tr = FakeMessage(text="0", chat_id=5010, user_id=5010, bot=fake_bot)
-    await ch.device_add_traffic(m_tr, cl, services, st)
-    assert any(d.name == "Мой ноут" for d in services.db.list_devices(client.id))
-
-
-async def test_add_device_name_empty_rejected(services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=5011)
-    cl = _fresh(services, client)
-    st = FakeState()
-    await st.update_data(for_friend=False)
-    m = FakeMessage(text="   ", chat_id=5011, user_id=5011, bot=fake_bot)
-    await ch.device_add_name(m, cl, services, st)
-    assert any(s[0] == "answer" for s in m.sent)
-
-
 async def test_add_device_start_when_full_shows_delete(services, fake_bot, make_active_client):
     client = make_active_client(tg_id=5012, device_limit=1)
     services.add_device(client.id, "occupied")
@@ -174,7 +167,9 @@ async def test_add_device_start_when_full_shows_delete(services, fake_bot, make_
     st = FakeState()
     cb, nav = _cb(fake_bot, 5012)
     await ch.device_add_start(cb, cl, services, st)
-    assert any(s[0] == "edit_text" for s in nav.sent)
+    text, labels = last_screen(nav)
+    assert "Лимит исчерпан" in text and any("occupied" in l for l in labels), \
+        "при полном лимите предлагается удалить существующее, а не имя нового"
 
 
 async def test_add_device_for_friend_flow(services, fake_bot, make_active_client):
@@ -273,10 +268,12 @@ async def test_help_root_and_skip(services, fake_bot, make_active_client):
     cl = _fresh(services, client)
     cb, nav = _cb(fake_bot, 5021)
     await ch.help_root(cb)
-    assert any(s[0] == "edit_text" for s in nav.sent)
+    _, labels = last_screen(nav)
+    assert sum(any(p in l for p in ("iPhone", "Android", "Windows", "Mac")) for l in labels) == 4
     cb2, nav2 = _cb(fake_bot, 5021)
     await ch.help_skip(cb2, cl, services)
     assert cb2.answers
+    assert "Привет" in last_screen(nav2)[0], "«пропустить» возвращает в главное меню"
 
 
 async def test_client_renames_own_device(services, fake_bot, make_active_client, monkeypatch):

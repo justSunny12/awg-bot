@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-restore_backup.py — расшифровка бэкапов awg-bot (*.enc).
+restore_backup.py — расшифровка резервной копии awg-bot (awg-bot_*.tgz.enc).
 
-Запускается ГДЕ УГОДНО, где есть Python + PyNaCl (обычно на awg-хосте, куда вы
-принесли зашифрованный бэкап из чата). Определяет режим по заголовку файла:
+Резервная копия — один архив: БД, conf/*.yaml, env и конфиг интерфейса awg.
+Если задан секрет шифрования, архив уезжает в чат и на почту как *.tgz.enc;
+этот скрипт снимает шифрование. Запускается где угодно, где есть Python +
+PyNaCl. Режим определяет по заголовку файла:
 
   • пассфраза — спросит фразу (соль внутри файла, ключ выведется сам);
   • случайный ключ — возьмёт BACKUP_KEY из окружения, из --key или спросит.
 
-Расшифрованный файл кладётся рядом, без «.enc» (или в путь из --out).
-Ничего никуда сам не «накатывает» — только расшифровывает. Как вернуть данные
-на место, печатается подсказкой в конце (docker cp для awg0.conf/clientsTable,
-подмена data/bot.db у остановленного бота).
+Расшифрованный файл кладётся рядом, без «.enc» (или в путь из --out). Ничего
+никуда сам не «накатывает» — только расшифровывает. Разложить содержимое по
+местам умеет `awg-bot restore <tgz>` — он зовёт этот скрипт сам.
 
 Примеры:
-    python restore_backup.py awg0_20260801_120000.conf.enc
-    BACKUP_KEY=... python restore_backup.py bot_*.db.enc
-    python restore_backup.py --key <base64> clientsTable_*.json.enc
+    python restore_backup.py awg-bot_20260801_120000.tgz.enc
+    BACKUP_KEY=... python restore_backup.py --out /tmp/snapshot.tgz awg-bot_*.tgz.enc
 """
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def _decrypt_one(path: Path, *, key_b64: str | None, out_arg: str | None) -> Pat
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Расшифровка бэкапов awg-bot (*.enc)")
+    ap = argparse.ArgumentParser(description="Расшифровка резервной копии awg-bot (*.tgz.enc)")
     ap.add_argument("files", nargs="+", help="зашифрованные файлы *.enc")
     ap.add_argument("--key", help="BACKUP_KEY (base64) для файлов со случайным ключом")
     ap.add_argument("--out", help="путь результата (только при одном входном файле)")
@@ -84,12 +84,7 @@ def main() -> None:
 
     if not done:
         sys.exit(1)
-
-    print("\nЧто дальше (в зависимости от файла):")
-    print("  • awg0.conf      → docker cp awg0.conf amnezia-awg2:/opt/amnezia/awg/awg0.conf")
-    print("                     затем внутри контейнера: awg-quick strip | awg syncconf")
-    print("  • clientsTable   → docker cp clientsTable amnezia-awg2:/opt/amnezia/awg/clientsTable")
-    print("  • bot.db         → остановите бота и подмените data/bot.db, затем запустите")
+    print("\nРазложить по местам: sudo awg-bot restore <архив> (бот остановится сам).")
 
 
 if __name__ == "__main__":

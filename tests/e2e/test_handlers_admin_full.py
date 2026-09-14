@@ -7,11 +7,9 @@
 import pytest
 
 from awgbot.bot.handlers import admin as ah
-from awgbot.bot.callbacks import (AdminSelfCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
-                                  Menu, PeriodCB, ReassignCB)
+from awgbot.bot.callbacks import ClientCB, ConfirmCB, DelDeviceCB, DeviceCB, ReassignCB
 from awgbot.core import config
-from awgbot.util import secrets_util
-from tests.conftest import FakeCallback, FakeMessage, FakeState
+from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
 pytestmark = pytest.mark.e2e
 
@@ -27,54 +25,18 @@ def _amsg(bot, text=""):
     return FakeMessage(text=text, chat_id=ADMIN, user_id=ADMIN, bot=bot)
 
 
-# ── панель и список клиентов ─────────────────────────────────────────────────
-async def test_panel_and_clients_list(services, fake_bot, make_active_client):
-    make_active_client(tg_id=6000, name="Клиент")
-    st = FakeState()
-    cb, nav = _acb(fake_bot)
-    await ah.admin_main_menu(cb, services, st)
-    assert any(s[0] == "edit_text" for s in nav.sent)
-    cb2, nav2 = _acb(fake_bot)
-    await ah.clients_list(cb2, services)
-    assert any(s[0] == "edit_text" for s in nav2.sent)
-
-
-async def test_client_open_card(services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=6001)
-    cb, nav = _acb(fake_bot)
-    await ah.client_open(cb, ClientCB(action="open", client_id=client.id), services)
-    assert any(s[0] == "edit_text" for s in nav.sent)
-
-
 # ── создание клиента (FSM) ───────────────────────────────────────────────────
-async def test_create_client_full_flow(services, fake_bot):
-    services.ensure_admin_client()
-    st = FakeState()
-    await ah.add_client_name(_amsg(fake_bot, "Вася"), services, st)
-    await ah.add_client_limit(_amsg(fake_bot, "3"), services, st)
-    await ah.add_client_traffic(_amsg(fake_bot, "100"), services, st)
-    cb, nav = _acb(fake_bot)
-    before = len(services.db.list_clients())
-    await ah.add_client_period(cb, PeriodCB(kind="year", ctx="create"), services, st)
-    assert len(services.db.list_clients()) == before + 1
-
-
 async def test_create_client_bad_inputs(services, fake_bot):
     st = FakeState()
     m = _amsg(fake_bot, "   ")
     await ah.add_client_name(m, services, st)
-    assert any(s[0] == "answer" for s in m.sent)             # пустое имя отклонено
+    assert "name" not in await st.get_data()                 # пустое имя не принято
+    assert any(s[0] == "answer" for s in m.sent)
     await st.update_data(name="X")
     m2 = _amsg(fake_bot, "abc")
     await ah.add_client_limit(m2, services, st)
-    assert any(s[0] == "answer" for s in m2.sent)            # нечисловой лимит отклонён
-
-
-async def test_create_client_stale_dialog(services, fake_bot):
-    st = FakeState()                                         # пустой FSM
-    cb, nav = _acb(fake_bot)
-    await ah.add_client_period(cb, PeriodCB(kind="year", ctx="create"), services, st)
-    assert cb.answers[-1][1] is True                        # «диалог устарел»
+    assert "limit" not in await st.get_data()                # нечисловой лимит не принят
+    assert any("число" in s[1].lower() for s in m2.sent)
 
 
 # ── добавление устройства клиенту (FSM) ──────────────────────────────────────
@@ -117,23 +79,15 @@ async def test_edit_limit_raise(services, fake_bot, make_active_client):
 
 
 # ── инвайт / удаление ────────────────────────────────────────────────────────
-async def test_regen_invite(services, fake_bot):
-    services.ensure_admin_client()
-    created = services.create_client("Пендинг", 3, "year", 0)   # pending, инвайт можно перевыпустить
-    old = created.invite_code
-    cb, nav = _acb(fake_bot)
-    await ah.regen_invite(cb, ClientCB(action="regen_invite", client_id=created.client_id), services)
-    assert services.db.get_client(created.client_id).invite_code != old
-
-
-async def test_delete_client_flow(services, fake_bot, make_active_client):
+async def test_delete_client_asks_before_deleting(services, fake_bot, make_active_client):
+    """Кнопка «Удалить» открывает подтверждение и ничего не удаляет сама;
+    само удаление — в test_handlers_admin.py."""
     client = make_active_client(tg_id=6007)
     cb, nav = _acb(fake_bot)
     await ah.client_delete_confirm(cb, ClientCB(action="delete", client_id=client.id), services)
-    assert any(s[0] == "edit_text" for s in nav.sent)
-    cb2, nav2 = _acb(fake_bot)
-    await ah.client_delete_apply(cb2, ConfirmCB(action="del_client", ref=client.id, yes=True), services)
-    assert services.db.get_client(client.id) is None
+    shown = [s for s in nav.sent if s[0] == "edit_text"]
+    assert shown and shown[-1][2] is not None, "подтверждение без кнопок — тупик"
+    assert services.db.get_client(client.id) is not None
 
 
 # ── выдача конфигов клиенту / устройству ─────────────────────────────────────
@@ -142,10 +96,12 @@ async def test_admin_gen_for_and_client_devices(services, fake_bot, make_active_
     services.add_device(client.id, "d")
     cb, nav = _acb(fake_bot)
     await ah.admin_gen_for(cb, ClientCB(action="gen_for", client_id=client.id), services)
-    assert any(s[0] == "edit_text" for s in nav.sent)
+    _, labels = last_screen(nav)
+    assert any("d" in l for l in labels), "устройство не предложено к выдаче"
     cb2, nav2 = _acb(fake_bot)
     await ah.admin_client_devices(cb2, ClientCB(action="devices", client_id=client.id), services)
-    assert any(s[0] == "edit_text" for s in nav2.sent)
+    _, labels2 = last_screen(nav2)
+    assert any("d" in l for l in labels2), "устройства профиля не показаны"
 
 
 async def test_admin_dev_link_and_qr(services, fake_bot, make_active_client):
@@ -164,10 +120,12 @@ async def test_admin_device_open_and_connect(services, fake_bot, make_active_cli
     dc = services.add_device(client.id, "d")
     cb, nav = _acb(fake_bot)
     await ah.admin_device_open(cb, DeviceCB(action="open", device_id=dc.device_id), services)
-    assert any(s[0] == "edit_text" for s in nav.sent)
+    text, labels = last_screen(nav)
+    assert "d" in text and any("Данные для подключения" in l for l in labels)
     cb2, nav2 = _acb(fake_bot)
     await ah.admin_device_connect_menu(cb2, DeviceCB(action="connect_menu", device_id=dc.device_id), services)
-    assert any(s[0] == "edit_text" for s in nav2.sent)
+    _, labels2 = last_screen(nav2)
+    assert any("сылк" in l for l in labels2) and any("QR" in l for l in labels2)
 
 
 # ── перепривязка устройства без профиля ──────────────────────────────────────
@@ -279,9 +237,11 @@ async def test_admin_delete_device(services, fake_bot, make_active_client):
     cb, nav = _acb(fake_bot)
     await ah.admin_del_ask(cb, DelDeviceCB(device_id=d2.device_id, stage="ask"), services)
     assert any(s[0] == "edit_text" for s in nav.sent)
+    assert services.db.get_device(d2.device_id) is not None, "вопрос ещё ничего не удаляет"
     cb2, nav2 = _acb(fake_bot)
     await ah.admin_del_confirm(cb2, DelDeviceCB(device_id=d2.device_id, stage="confirm"), services)
     assert services.db.get_device(d2.device_id) is None
+    assert services.db.get_device(d1.device_id) is not None, "соседнее устройство цело"
 
 
 # ── unassigned / add-device choice ───────────────────────────────────────────
@@ -290,7 +250,8 @@ async def test_unassigned_list_and_choice(services, fake_bot):
     services.db.create_device(svc, "app", "PUBU", "PSK", "10.8.0.70")
     cb, nav = _acb(fake_bot)
     await ah.unassigned_list(cb, services)
-    assert any(s[0] == "edit_text" for s in nav.sent)
+    _, labels = last_screen(nav)
+    assert any("app" in l for l in labels), "устройство без профиля не показано"
 
 
 async def test_delete_client_keeps_profile_when_peer_stays_on_server(

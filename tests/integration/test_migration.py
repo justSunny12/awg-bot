@@ -9,7 +9,6 @@ import pytest
 from awgbot.core import config
 from awgbot.core.blocks import DeviceBlock
 from awgbot.core.enums import FriendStatus
-from awgbot.domain import migration
 from awgbot.infra import awg as infra_awg
 
 pytestmark = pytest.mark.integration
@@ -73,6 +72,7 @@ def test_twins_are_born_for_everyone_including_the_dead(services, mig, make_acti
     res = services.migration_start()
     assert res.born == 2, "мёртвому двойник не достался"
     assert res.cohort_devices == 1, "мёртвое попало в когорту готовности"
+    assert services.db.get_device(dead.device_id).twin_of is None, "мёртвому двойник не выдан"
 
     twin = _twin(services, live.device_id)
     assert twin.iface == "awg1"
@@ -203,12 +203,12 @@ def test_twin_starts_with_clean_counters(services, mig, make_active_client):
     c = make_active_client(name="c", tg_id=7006)
     dc = services.add_device(c.id, "Тел")
     services.db.update_device_fields(dc.device_id, missing_count=2)
-    services.db.set_sample(dc.device_id, 10 ** 9, 10 ** 9)
+    services.db.set_samples([(dc.device_id, 10 ** 9, 10 ** 9)])
 
     services.migration_start()
     twin = _twin(services, dc.device_id)
     assert twin.missing_count == 0
-    assert services.db.get_sample(twin.id) is None
+    assert twin.id not in services.db.get_samples_all()
 
 
 def test_active_friend_is_copied_pending_code_is_moved(services, mig, make_active_client):
@@ -331,12 +331,12 @@ def test_finish_drops_the_stragglers_and_merges_history(services, mig,
     stuck = services.add_device(c.id, "Отстал")
     _seen(services, moved_dev.device_id, ago_days=1)
     _seen(services, stuck.device_id, ago_days=1)
-    services.db.add_traffic(moved_dev.device_id, 700, 300)
+    services.db.add_traffic_bulk([(moved_dev.device_id, 700, 300)])
     services.migration_start()
 
     twin = _twin(services, moved_dev.device_id)
     _seen(services, twin.id, ago_days=0)
-    services.db.add_traffic(twin.id, 100, 50)
+    services.db.add_traffic_bulk([(twin.id, 100, 50)])
 
     removed, dropped, failed = services.migration_finish()
     assert removed == 2 and failed == []
@@ -440,8 +440,8 @@ def test_user_sees_one_row_per_device(services, mig, make_active_client):
     пропусти вызывающего — и он покажет лишнее или выдаст не то.
     """
     c = make_active_client(name="c", tg_id=7030)
-    a = services.add_device(c.id, "A")
-    b = services.add_device(c.id, "B")
+    services.add_device(c.id, "A")
+    services.add_device(c.id, "B")
     services.migration_start()
 
     visible = services.db.list_devices(c.id)
@@ -486,8 +486,8 @@ def test_traffic_limit_sums_the_pair(services, mig, make_active_client):
     dc = services.add_device(c.id, "A")
     services.migration_start()
     twin = _twin(services, dc.device_id)
-    services.db.add_traffic(dc.device_id, 600, 0)
-    services.db.add_traffic(twin.id, 400, 0)
+    services.db.add_traffic_bulk([(dc.device_id, 600, 0)])
+    services.db.add_traffic_bulk([(twin.id, 400, 0)])
 
     rows = services.db.list_devices(c.id, all_rows=True)
     assert sum(d.traffic_rx_month for d in rows) == 1000
@@ -522,7 +522,7 @@ def test_empty_cohort_does_not_announce(services, mig, make_active_client):
     assert services.migration_ready_alerts() == []
 
 
-# ── исправления по тотальному ревью ──────────────────────────────────────────
+# ── пары в окне: видимость, лимиты, тумблеры ─────────────────────────────────
 
 def test_dangling_twin_survives_finish_visible(services, mig, make_active_client):
     """Старую строку пары удалила сверка ещё в окне — двойник с висячей ссылкой
@@ -572,8 +572,8 @@ def test_device_limit_counts_the_pair_as_one(services, mig, make_active_client):
     dc = services.add_device(c.id, "Тел", traffic_limit=50 * GB)
     services.migration_start()
     twin = _twin(services, dc.device_id)
-    services.db.add_traffic(dc.device_id, 30 * GB, 0)
-    services.db.add_traffic(twin.id, 30 * GB, 0)
+    services.db.add_traffic_bulk([(dc.device_id, 30 * GB, 0)])
+    services.db.add_traffic_bulk([(twin.id, 30 * GB, 0)])
 
     services.check_traffic_limits()
     assert int(services.db.get_device(twin.id).block_reason) & int(DB_.TRAFFIC_USER), \
@@ -646,7 +646,7 @@ def test_finish_keeps_running_when_server_refuses(services, mig, make_active_cli
     c = make_active_client(name="c", tg_id=7047)
     dc = services.add_device(c.id, "Тел")
     _seen(services, dc.device_id, ago_days=1)
-    services.db.add_traffic(dc.device_id, 700, 0)
+    services.db.add_traffic_bulk([(dc.device_id, 700, 0)])
     services.migration_start()
     twin = _twin(services, dc.device_id)
     _seen(services, twin.id, ago_days=0)

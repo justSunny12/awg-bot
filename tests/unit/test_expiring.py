@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import datetime as dt
 
-import pytest
 
 import awgbot.core.config as cfg
 from awgbot.domain.services import Services

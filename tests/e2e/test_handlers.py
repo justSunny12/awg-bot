@@ -8,7 +8,7 @@ import pytest
 
 from awgbot.bot.handlers import client as client_h
 from awgbot.core import config
-from tests.conftest import FakeBot, FakeCallback, FakeMessage, FakeState
+from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
 
@@ -63,15 +63,3 @@ async def test_menu_devices_lists_devices(services, make_active_client, fake_bot
     # сообщение отредактировано заголовком «Твои устройства»; callback подтверждён
     assert any(s[0] == "edit_text" and "устройства" in s[1].lower() for s in nav.sent)
     assert cb.answers                                    # cb.answer() вызван
-
-
-async def test_menu_gen_link_without_devices_alerts(services, make_active_client, fake_bot):
-    client = make_active_client(tg_id=52)
-    nav = FakeMessage(chat_id=52, user_id=52, bot=fake_bot)
-    cb = FakeCallback(data="gen_link", message=nav, user_id=52, bot=fake_bot)
-    await client_h.menu_gen_link(cb, client, services)
-    # нет устройств → алерт, редактирования нет
-    assert cb.answers and cb.answers[0][1] is True       # show_alert=True
-    assert not any(s[0] == "edit_text" for s in nav.sent)
-
-

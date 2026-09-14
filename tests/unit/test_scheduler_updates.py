@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import types
 
-import pytest
 
 from awgbot.bot import texts
 from awgbot.runtime import scheduler as sched
@@ -20,7 +19,6 @@ def test_versions_carry_v_prefix():
     assert "vv" not in texts.update_admin_available("v2.4.2.8", "v2.4.2.9", "")
 
 
-@pytest.mark.asyncio
 async def test_notify_update_available_dismisses_previous_finisher(monkeypatch):
     calls = []
 
@@ -39,7 +37,6 @@ async def test_notify_update_available_dismisses_previous_finisher(monkeypatch):
 
 def test_updates_sections_show_current_version_with_v():
     assert texts.settings_upd_text("2.4.2.12").endswith("Текущая версия бота: <b>v2.4.2.12</b>")
-    assert texts.gateway_updates("2.4.2.12", False, "каждый день").endswith("Текущая версия бота: <b>v2.4.2.12</b>")
 
 
 def test_admin_panel_title_carries_hostname(monkeypatch):

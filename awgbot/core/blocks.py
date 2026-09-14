@@ -67,9 +67,6 @@ class ClientBlock(IntFlag):
 # пересчётом периода), а не обычной кнопкой «разблокировать».
 DEVICE_MANUAL = DeviceBlock.ADMIN_SILENT | DeviceBlock.ADMIN_NOTIFIED | DeviceBlock.USER
 CLIENT_MANUAL = ClientBlock.ADMIN_SILENT | ClientBlock.ADMIN_NOTIFIED
-# Админские биты (каскадируются с клиента на устройства, снимает только админ).
-DEVICE_ADMIN = DeviceBlock.ADMIN_SILENT | DeviceBlock.ADMIN_NOTIFIED
-CLIENT_ADMIN = ClientBlock.ADMIN_SILENT | ClientBlock.ADMIN_NOTIFIED
 # Любая трафик-причина устройства: своя ИЛИ каскад клиента — для проверок
 # «заблокировано по трафику» в UI и логике (там, где неважно, чей именно лимит).
 DEVICE_TRAFFIC_ANY = DeviceBlock.TRAFFIC_USER | DeviceBlock.TRAFFIC_CLIENT
@@ -147,7 +144,7 @@ def blocked_marker_client(mask: int, *, for_admin: bool) -> str:
 
 
 __all__ = ["DeviceBlock", "ClientBlock", "DEVICE_MANUAL", "CLIENT_MANUAL",
-           "DEVICE_ADMIN", "CLIENT_ADMIN", "DEVICE_TRAFFIC_ANY", "has", "add", "clear",
+           "DEVICE_TRAFFIC_ANY", "has", "add", "clear",
            "visible_to_user_device", "visible_to_user_client",
            "device_reasons_ru", "client_reasons_ru",
            "blocked_marker_device", "blocked_marker_client"]

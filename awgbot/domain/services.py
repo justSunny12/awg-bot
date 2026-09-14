@@ -2233,12 +2233,10 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
     def gateway_claim(self, text: str) -> dict:
         """Пересланное от агента сообщение с токеном `claim`. Проверка подписи
         ключом линка, поиск устройства по ключу аплинка, единственность.
-        Возвращает {'status': 'marked'|'already'|'replace_needed', 'device',
-        'previous'}; replace_needed — ничего не меняет, ждёт подтверждения."""
+        Возвращает {'status': 'marked'|'already', 'device'}; занятый другим
+        устройством шлюз — ServiceError, менять его — через настройки."""
         from awgbot.util import gwsign
         data = gwsign.verify(self._link_privkey(), text)
-        if data["act"] != "claim":
-            raise ServiceError("это сообщение не о пометке шлюза")
         if self._gw_nonce_seen(data["nonce"]):
             raise ServiceError("это сообщение уже принимали — пусть шлюз выдаст новое")
         dev = self.db.get_device_by_pubkey(data["pub"])
@@ -2249,13 +2247,13 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         if admin is None or dev.client_id != admin.id:
             raise ServiceError("шлюзом может быть только устройство профиля админа")
         if dev.is_gateway:
-            return {"status": "already", "device": dev, "previous": None}
+            return {"status": "already", "device": dev}
         prev = self.db.gateway_device()
         if prev is not None:
             raise ServiceError(f"шлюз уже назначен: «{prev.name}». Сменить его можно в "
                                "настройках условной маршрутизации («🔁 Сменить шлюз»)")
         self.db.set_gateway(dev.id)
-        return {"status": "marked", "device": self.db.get_device(dev.id), "previous": None}
+        return {"status": "marked", "device": self.db.get_device(dev.id)}
 
     def gateway_candidates(self) -> list:
         """Устройства админа, выпущенные ботом, кроме текущего шлюза."""
@@ -2761,23 +2759,20 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             return
         self.db.set_state(self._RT_INFRA_BAD, "")
 
-    def _routing_stand_down(self, reason: str = "") -> None:
+    def _routing_stand_down(self) -> None:
         """Снять всё, что фича делает с трафиком.
 
         Не «просто выйти»: выключатель обязан выключать уже размеченный трафик,
         а не только запрещать новые включения. Состояние в БД при этом цело —
         вернули условия, и следующая же реконсиляция всё восстановит.
 
-        Единственный повод сюда попасть — выключение функции админом. Раньше
-        отсюда же обрабатывались незагруженные списки: в обратной модели пустой
-        набор означал «на шлюз уходит ВСЁ». Теперь пустой набор равносилен
-        выключенной функции сам по себе, и гасить ради него нечего.
+        Единственный повод сюда попасть — выключение функции админом: пустой
+        набор профилей равносилен выключенной функции сам по себе, и гасить
+        ради него нечего.
         """
         routing.sync_nat_exempt(())
         routing.rebuild_chain(())
         routing.set_marking_enabled(False)
-        if reason:
-            log.warning("routing: %s", reason)
 
     def _routing_apply(self) -> None:
         """Разложить состояние БД по наборам, цепочке и конфигу dnsmasq.
@@ -3458,11 +3453,12 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         hostmetrics.collect_and_store(self.db)
 
     def restart_service(self) -> None:
-        """Перезапуск контейнера (ТЗ 9.3). После — реконсиляция блокировок
-        (DROP'ы слетели) через detect_and_handle_restart на следующем цикле,
-        но сделаем и сразу."""
+        """Перезапуск AmneziaWG по кнопке админа. На хосте это awg-quick
+        down/up — метка старта не меняется, блокировки не слетают, и
+        reconcile_blocks ниже лишь подтверждает картину. В docker-режиме
+        меняется StartedAt контейнера, и detect_and_handle_restart переналагает
+        и блокировки, и SSH-фильтр."""
         awg.restart_server()
-        # StartedAt изменится → сохранить и переналожить блокировки
         self.detect_and_handle_restart()
         self.reconcile_blocks()
 

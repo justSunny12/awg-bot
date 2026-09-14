@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import pytest
 
-from awgbot.bot import texts
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot.handlers import settings as sh
 from awgbot.core import config

@@ -580,16 +580,10 @@ async def gw_update_mute(cb: CallbackQuery, services):
 
 # ── раздел обновлений: ручная точка входа (уведомление могло прийти до тебя) ──
 
-_SCHED_RU = {"day": "каждый день", "week": "раз в неделю", "month": "раз в месяц",
-             "never": "никогда"}
-
-
 async def _updates_screen(cb: CallbackQuery, services):
-    from awgbot.core import config, settings
+    from awgbot.core import config
     muted = await call(services.updates_muted)
-    sched = _SCHED_RU.get(str(settings.get("updates.poll_schedule", "day")).lower(), "?")
-    await edit_nav(cb, services,
-                   texts.gateway_updates(config.INSTALLED_VERSION, muted, sched),
+    await edit_nav(cb, services, texts.settings_upd_text(config.INSTALLED_VERSION),
                    kb.gateway_updates_kb(muted))
 
 

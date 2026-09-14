@@ -1,4 +1,6 @@
 def test_email_resume_flow(services, fake_awg):
+    """Код выдаётся на входе в паузу, ищется по нему профиль, снимает паузу,
+    одноразовый; неизвестный код — молчок."""
     from awgbot.util import timeutil
     from awgbot.core.blocks import ClientBlock
     from datetime import datetime, timedelta
@@ -12,6 +14,8 @@ def test_email_resume_flow(services, fake_awg):
     c = services.db.get_client(cid)
     assert int(c.block_reason) & int(ClientBlock.PAUSED)
     assert c.pause.resume_code == code
+    assert services.db.find_client_by_resume_code(code) == cid
+    assert services.db.find_client_by_resume_code("WRONGXXX") is None
     # выход по коду
     ok2, notes2 = services.resume_by_email_code(code)
     assert ok2
@@ -20,16 +24,15 @@ def test_email_resume_flow(services, fake_awg):
     # код одноразовый — повторно не сработает
     ok3, _ = services.resume_by_email_code(code)
     assert not ok3
-    # неизвестный код — молчок
-    ok4, _ = services.resume_by_email_code("ZZZZZZZZ")
-    assert not ok4
+    assert services.db.find_client_by_resume_code(code) is None   # replay-защита
+    # неизвестный код — молчок, без уведомлений
+    ok4, notes4 = services.resume_by_email_code("ZZZZZZZZ")
+    assert ok4 is False and notes4 == []
 
 
-def test_poll_once_disabled_returns_zero(monkeypatch):
+def test_poll_once_disabled_returns_zero():
     """Фича выключена (нет кредов) → poll_once ничего не делает."""
     from awgbot.infra import email_resume
-    import awgbot.core.config as cfg
-    pass
     assert email_resume.poll_once(None, lambda code: True) == 0
 
 
@@ -52,7 +55,6 @@ def test_poll_once_matches_code_and_marks_seen(monkeypatch):
     """poll_once: непрочитанное письмо с кодом в теме → on_code вызван, письмо
     помечено \\Seen, при успехе шлётся ответ."""
     from awgbot.infra import email_resume as er
-    import awgbot.core.config as cfg
     from awgbot.infra.mail import MailAccount
     acc = MailAccount("box@icloud.com", "app-pass", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
 
@@ -99,7 +101,6 @@ def test_poll_once_finds_code_in_spam(monkeypatch):
     """Письмо с кодом попало в «спам» (не INBOX) — poll_once его всё равно
     находит и обрабатывает. Несуществующие папки молча пропускаются."""
     from awgbot.infra import email_resume as er
-    import awgbot.core.config as cfg
     import imaplib
     from awgbot.infra.mail import MailAccount
     acc = MailAccount("box@icloud.com", "app-pass", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)

@@ -104,7 +104,6 @@ async def test_gateway_update_install_runs_the_shared_updater(svc, fake_bot, mon
     """«Обновить» у агента: следующая ступень → «дождись» → apply_update. Та же
     механика, что у клиентской роли, — sha256 и запуск вне cgroup внутри."""
     import types
-    from awgbot.bot.callbacks import UpdateCB
     nxt = types.SimpleNamespace(tag="v9.9.9", body="")
     applied = []
     monkeypatch.setattr(svc, "update_next", lambda: nxt)

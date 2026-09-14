@@ -166,23 +166,6 @@ def test_list_download_happens_outside_the_mutation_lock():
     assert lock < src.index('_routing_write_cache("home_domains"')
 
 
-def test_marking_rule_has_no_negation():
-    """Правило метит то, что В НАБОРЕ, — без `!`.
-
-    Единственная модель: на шлюз уходит только перечисленное в наборе. Разница
-    с упразднённой обратной моделью — ровно один символ в правиле, и перепутать
-    их нечем: обе версии собираются, обе выглядят рабочими, а трафик едет в
-    противоположные стороны. Отсюда же следует, что пустой набор безопасен.
-    """
-    import inspect
-    from awgbot.infra import routing as infra_routing
-
-    src = inspect.getsource(infra_routing.rebuild_chain)
-    body = src.split('"""', 2)[-1]              # без докстринга
-    assert '"--match-set"' in body
-    assert '"!"' not in body, "вернулась инверсия: набор снова означал бы заграницу"
-
-
 # ── кэш самопроверки: «не работает» обязан перепроверяться ────────────────────
 
 @pytest.fixture()

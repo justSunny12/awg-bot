@@ -52,13 +52,6 @@ from awgbot.infra import awglock as _awglock        # noqa: E402
 _awglock.STATE_PATH = _CONF_COPY / "awg.state"
 
 
-@pytest.fixture()
-def tz():
-    """Часовой пояс проекта (UTC+3) — для конструирования aware-datetime в тестах."""
-    from awgbot.util import timeutil
-    return timeutil.TZ
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Интеграционные фикстуры: временная БД, фейковый awg-слой, Services
 # ─────────────────────────────────────────────────────────────────────────────
@@ -397,6 +390,16 @@ class FakeState:
 
     async def get_data(self):
         return dict(self._data)
+
+
+def last_screen(nav: "FakeMessage") -> tuple[str, list[str]]:
+    """Последний экран, нарисованный поверх nav (edit_text): текст и подписи
+    кнопок. Для e2e-тестов «что показали», а не «показали ли что-то»."""
+    shown = [s for s in nav.sent if s[0] == "edit_text"]
+    assert shown, "экран не отрисован (edit_text не было)"
+    _, text, markup = shown[-1]
+    labels = [b.text for row in markup.inline_keyboard for b in row] if markup else []
+    return text or "", labels
 
 
 @pytest.fixture()

@@ -22,7 +22,7 @@ def test_friend_device_over_limit_notifies_host_and_friend(services, fake_awg, m
     owner = make_active_client(tg_id=1200)
     dc = _befriend(services, owner.id, friend_tg=91200)
     services.set_device_traffic_limit(dc.device_id, 100)
-    services.db.add_traffic(dc.device_id, 70, 60)
+    services.db.add_traffic_bulk([(dc.device_id, 70, 60)])
     notes = services.check_traffic_limits()
     targets = {n.tg_id for n in notes}
     assert 1200 in targets and 91200 in targets
@@ -43,7 +43,7 @@ def test_client_warn_threshold_notice(services, fake_awg, make_active_client):
     services.set_client_traffic_limit(client.id, 100 * BYTES_PER_GB)
     warn = settings.get_int("limits.traffic_warn_percent", 80)
     used = (warn + 5) * BYTES_PER_GB
-    services.db.add_traffic(dc.device_id, used, 0)
+    services.db.add_traffic_bulk([(dc.device_id, used, 0)])
     notes = services.check_traffic_limits()
     assert any(n.tg_id == 1201 for n in notes)
     fresh = services.db.get_client(client.id)

@@ -1,7 +1,6 @@
 """Почтовый канал: провайдеры, адреса, хранение кредов в БД, переезд из env."""
 from __future__ import annotations
 
-import pytest
 
 import awgbot.core.config as cfg
 from awgbot.infra import mail

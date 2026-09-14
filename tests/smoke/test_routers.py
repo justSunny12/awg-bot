@@ -9,13 +9,13 @@ from aiogram import Dispatcher, Router
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from awgbot.bot.handlers import (admin, client, friend, guide,
-                                 reply_commands, routing)
+                                 reply_commands, routing, settings)
 
 pytestmark = pytest.mark.smoke
 
 # Порядок включения — как в awgbot.runtime.main (reply_commands первым; routing
 # ДО client, иначе FSM ввода адресов перехватит общий message-хендлер клиента).
-_HANDLER_MODULES = [reply_commands, admin, guide, friend, routing, client]
+_HANDLER_MODULES = [reply_commands, admin, settings, guide, friend, routing, client]
 
 
 @pytest.mark.parametrize("mod", _HANDLER_MODULES, ids=lambda m: m.__name__.split(".")[-1])
@@ -35,12 +35,3 @@ def test_real_routers_assemble_into_dispatcher():
     for mod in _HANDLER_MODULES:
         dp.include_router(mod.router)
     assert len(list(dp.sub_routers)) == len(_HANDLER_MODULES)
-
-
-def test_dispatcher_rejects_double_include_of_same_router():
-    # инвариант aiogram (на свежем роутере, чтобы не трогать боевые синглтоны)
-    dp = Dispatcher(storage=MemoryStorage())
-    throwaway = Router(name="throwaway")
-    dp.include_router(throwaway)
-    with pytest.raises(RuntimeError):
-        dp.include_router(throwaway)

@@ -675,16 +675,6 @@ def ensure_mss_clamp() -> None:
         log.info("routing: включён MSS-кламп на %s", config.ROUTING_GW_INTERFACE)
 
 
-def drop_mss_clamp() -> None:
-    """Снять кламп (выключение фичи/откат). Молча, если его и не было."""
-    if not config.ROUTING_GW_INTERFACE:
-        return
-    _host(["iptables", "-t", "mangle", "-D", "FORWARD",
-           "-o", config.ROUTING_GW_INTERFACE, "-p", "tcp",
-           "--tcp-flags", "SYN,RST", "SYN",
-           "-j", "TCPMSS", "--clamp-mss-to-pmtu"], check=False)
-
-
 def ensure_policy() -> None:
     """Статическая часть политики: маршрут, ip rule и MSS-кламп. Идемпотентно.
 
@@ -1007,7 +997,7 @@ __all__ = [
     "rebuild_chain", "set_marking_enabled", "link_handshake_age",
     "probe_gateway", "link_peer_address", "resolve_a",
     "PROBE_OK", "PROBE_NO_PATH", "PROBE_DOWN",
-    "ensure_mss_clamp", "drop_mss_clamp", "mss_clamp_present",
+    "ensure_mss_clamp", "mss_clamp_present",
     "rule_present", "table_route", "set_count", "hook_present", "ensure_policy",
     "probe_source", "last_probe_latency_ms",
     # внешние списки и dnsmasq

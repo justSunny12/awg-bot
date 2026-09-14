@@ -21,7 +21,7 @@ def _befriend(services, owner_id, friend_tg, name="d"):
 
 async def test_panel_payload_single_device_is_card(services, make_active_client):
     owner = make_active_client(tg_id=8100)
-    dc = _befriend(services, owner.id, friend_tg=98100, name="Ноут")
+    _befriend(services, owner.id, friend_tg=98100, name="Ноут")
     text, markup = await friend_h.friend_panel_payload(services, 98100)
     assert markup is not None
     assert "Ноут" in text                                   # карточка конкретного устройства

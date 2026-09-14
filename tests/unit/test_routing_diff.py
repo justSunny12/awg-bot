@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import subprocess
 
-import pytest
 
 from awgbot.core import config
 from awgbot.infra import routing
@@ -153,6 +152,11 @@ def test_rebuild_chain_rebuilds_on_difference_missing_chain_or_foreign_rule(monk
         assert ["-F", "AWGBOT_RT"] in calls, listing
         adds = [c for c in calls if c[:1] == ["-A"]]
         assert len(adds) == 1 and "rt_src_u3" in adds[0] and "vpn_u3" in adds[0]
+        # Правило метит то, что В НАБОРЕ, — без `!`. Разница с упразднённой
+        # обратной моделью — ровно один символ, обе версии собираются и выглядят
+        # рабочими, а трафик едет в противоположные стороны.
+        assert "--match-set" in adds[0] and "!" not in adds[0], \
+            "вернулась инверсия: набор снова означал бы заграницу"
         # порядок: чтение → создать → флаш → правила
         assert calls.index(["-F", "AWGBOT_RT"]) < calls.index(adds[0])
 

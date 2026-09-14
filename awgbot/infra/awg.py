@@ -1,18 +1,18 @@
 """
 awg.py — единственный слой взаимодействия с сервером AmneziaWG.
 
-ВСЕ вызовы docker exec живут здесь и больше нигде. Более того, они собраны в
-одной функции `_exec`: способ доступа к awg — контейнер или прямо хост —
-переключается config.AWG_RUNTIME, а не разбросан по вызовам (docs/ROADMAP.md,
-шаг 2). Всё, что портировать ещё не успели, закрыто `_docker_only` и падает
-громко, а не деградирует молча.
+Способ доступа к awg — прямо хост (дефолт) или контейнер Amnezia прежней
+схемы — переключается config.AWG_RUNTIME в одной функции `_exec`, а не
+разбросан по вызовам. ВСЕ вызовы docker exec живут здесь и больше нигде.
+То, что имеет смысл только у контейнера (docker inspect), закрыто
+`_docker_only` и в host-режиме падает громко, а не деградирует молча.
 
-Каждая операция проверена руками на Этапе 1 (разведка). Модуль делится на:
-  • чистые парсеры (parse_*) — без контейнера, тестируются против реальных выводов;
-  • функции, дёргающие контейнер (read_*, add_peer, block_ip, show_dump, ...).
+Модуль делится на:
+  • чистые парсеры (parse_*) — без сервера, тестируются против реальных выводов;
+  • функции, дёргающие сервер (read_*, add_peer, block_ip, show_dump, ...).
 
 Крипто-материал (обфускация, серверный pubkey, psk, ListenPort) читается ЖИВЫМ
-из файлов контейнера — не хардкодится, чтобы переустановка сервера не ломала
+из файлов интерфейса — не хардкодится, чтобы переустановка сервера не ломала
 конфиги молча.
 """
 
@@ -71,10 +71,6 @@ def last_self_write() -> float:
 
 class AwgError(Exception):
     """Общая ошибка взаимодействия с контейнером."""
-
-
-class ContainerDown(AwgError):
-    """Контейнер не запущен или недоступен."""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -201,15 +197,6 @@ def _validate_ip(ip: str) -> str:
     if any(not (0 <= int(o) <= 255) for o in octets):
         raise AwgError(f"Некорректный IP: {ip!r}")
     return ip
-
-
-def _is_ipv4(ip: str) -> bool:
-    """Не-бросающая проверка IPv4 (для отсеивания мусора из docker/ip-вывода)."""
-    try:
-        _validate_ip(ip)
-        return True
-    except AwgError:
-        return False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -733,13 +720,6 @@ def _inspect(fmt: str) -> str:
     ).stdout.decode().strip()
 
 
-def container_running() -> bool:
-    try:
-        return _inspect("{{.State.Running}}") == "true"
-    except AwgError:
-        return False
-
-
 def container_pid() -> Optional[int]:
     """PID главного процесса контейнера на хосте (для inotify через /proc/<PID>/root).
     Меняется при рестарте контейнера."""
@@ -765,13 +745,6 @@ def awg_responding() -> bool:
         return True
     except AwgError:
         return False
-
-
-def restart_container() -> None:
-    """docker restart <config.CONTAINER> (ТЗ 9.3 — перезапуск сервиса разрешён).
-    ВНИМАНИЕ: после этого iptables-DROP'ы слетают → нужна реконсиляция блокировок."""
-    _docker_only("restart_container")
-    _run(["docker", "restart", config.CONTAINER], timeout=60)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -838,7 +811,7 @@ def restart_server() -> None:
 
 
 __all__ = [
-    "AwgError", "ContainerDown", "in_container",
+    "AwgError", "in_container",
     "writing", "is_writing", "last_self_write",
     "mutation_lock", "invalidate_server_params",
     "iface_of", "conf_path",
@@ -849,7 +822,7 @@ __all__ = [
     "apply_config", "add_peer", "remove_peer",
     "block_ip", "unblock_ip", "is_blocked",
     "show_dump",
-    "container_running", "container_pid", "container_started_at",
-    "awg_responding", "restart_container",
+    "container_pid", "container_started_at",
+    "awg_responding",
     "watch_root", "service_started_at", "restart_server",
 ]

@@ -475,6 +475,8 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         return hook
 
     for _key, (_job_id, _factory) in _CLASS2.items():
+        if _job_id == "routing_liveness" and not config.ROUTING_ENABLED:
+            continue                        # job не зарегистрирован — перевешивать нечего
         settings.on_change(_key, _make_reschedule(_job_id, _factory))
 
     # update_check — особый: poll_schedule=never → триггер None → job на паузу;

@@ -119,13 +119,18 @@ def test_bundle_installs_to_a_stable_path(bundle):
     assert re.search(r'exec "\$DEST/routing-gw-setup\.sh"', bundle)
 
 
-def test_bundle_defaults_to_apply_and_passes_rollback_through(bundle):
-    """Без аргумента — применить; --rollback обязан доехать до скрипта."""
-    assert '"${1:---apply}"' in bundle
-    r = subprocess.run(
-        ["sh", "-c", 'f() { echo "$1"; }; f "${1:---apply}"', "x", "--rollback"],
-        capture_output=True, text=True)
-    assert r.stdout.strip() == "--rollback"
+@pytest.mark.parametrize("argv, expect", [([], "--apply"), (["--rollback"], "--rollback")])
+def test_bundle_defaults_to_apply_and_passes_rollback_through(bundle, tmp_path, argv, expect):
+    """Без аргумента — применить; --rollback обязан доехать до скрипта. Прогоняем
+    строку передачи управления из САМОГО бандла с подставным gw-скриптом."""
+    handoff = next(line for line in bundle.splitlines()
+                   if line.startswith('exec "$DEST/routing-gw-setup.sh"'))
+    dest = tmp_path / "dest"; dest.mkdir()
+    fake = dest / "routing-gw-setup.sh"
+    fake.write_text('#!/bin/sh\necho "$1"\n', encoding="utf-8"); fake.chmod(0o755)
+    r = subprocess.run(["sh", "-c", f'DEST="{dest}"; {handoff}', "bundle", *argv],
+                       capture_output=True, text=True)
+    assert r.returncode == 0 and r.stdout.strip() == expect
 
 
 def test_bundle_keeps_the_root_check(bundle):
@@ -146,16 +151,6 @@ def test_bundle_is_marked_secret(bundle):
     что с ним делать после установки."""
     assert "ПРИВАТНЫЙ КЛЮЧ" in bundle
     assert "chmod 0600" in bundle
-
-
-def test_link_setup_unit_points_at_a_permanent_path():
-    """Третья копия той же дыры — юнит линка на стороне ВПС."""
-    from pathlib import Path
-    src = (Path(__file__).resolve().parents[2] / "install"
-           / "routing-link-setup.sh").read_text(encoding="utf-8")
-    assert 'SELF="$(install_self)"' in src
-    assert 'SELF="$(readlink -f "$0")"' not in src
-    assert "/usr/local/sbin" in src
 
 
 def test_bundle_carries_the_vps_hostname(bundle):

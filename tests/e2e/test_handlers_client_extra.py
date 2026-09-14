@@ -8,7 +8,7 @@ import pytest
 
 from awgbot.bot.handlers import client as ch
 from awgbot.bot.callbacks import DeviceCB, PauseCB
-from tests.conftest import FakeCallback, FakeMessage, FakeState
+from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
 pytestmark = pytest.mark.e2e
 
@@ -49,7 +49,10 @@ async def test_device_transfer_ask(services, fake_bot, make_active_client):
     cl = _fresh(services, client)
     cb, nav = _cb(fake_bot, 5102)
     await ch.device_transfer_ask(cb, DeviceCB(action="transfer_ask", device_id=dc.device_id), cl, services)
-    assert any(s[0] == "edit_text" for s in nav.sent)
+    text, labels = last_screen(nav)
+    assert "«d» другу" in text and any("Да, передать" in l for l in labels) \
+        and any("Отмена" in l for l in labels)
+    assert services.db.get_device(dc.device_id).friend_status is None, "вопрос ничего не передаёт"
 
 
 async def test_device_add_friend_starts_fsm(services, fake_bot, make_active_client):

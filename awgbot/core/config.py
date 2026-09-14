@@ -2,13 +2,15 @@
 config.py — фасад конфигурации AWG-бота.
 
 Значения вынесены в conf/*.yaml по разделам (app, subscription, limits, grace,
-pause, quiet_hours, monitoring). Этот модуль их грузит и раскладывает в те же
-модульного уровня имена (config.GRACE_DAYS и т.д.), которыми пользуется весь код,
-— чтобы разбиение хранилища не потребовало правок в модулях-потребителях.
+pause, quiet_hours, monitoring). Этот модуль грузит «холодную» часть — то, что
+меняется только с рестартом (топология, пути, режим запуска) — в имена
+модульного уровня. «Горячие» ключи (сроки, лимиты, тихие часы, расписания) код
+читает через awgbot.core.settings и подхватывает без рестарта; список — в конце
+файла.
 
-Секреты (BOT_TOKEN, ADMIN_ID) — только из окружения/.env, НЕ из yaml (yaml в git).
+Секреты (BOT_TOKEN, ADMIN_ID) — только из окружения/env, НЕ из yaml (yaml в git).
 Крипто-материал сервера (обфускация, ключи, psk, порт) — не тут, его читает live
-из контейнера awg.py (единый источник истины).
+из конфига интерфейса awg.py (единый источник истины).
 """
 from __future__ import annotations
 
@@ -83,14 +85,12 @@ for _env_path in (os.environ.get("AWG_BOT_ENV"), "/etc/awg-bot/env", str(BASE_DI
 BOT_TOKEN: str = os.environ.get("BOT_TOKEN", "")
 ADMIN_ID: int = int(os.environ["ADMIN_ID"]) if os.environ.get("ADMIN_ID") else 0
 
-# Секреты шифрования бэкапов — ТОЛЬКО из окружения/.env (в git не коммитятся).
-# Ровно один режим: BACKUP_KEY (base64 32-байтного случайного ключа) ИЛИ
-# BACKUP_PASSPHRASE (человеко-запоминаемая фраза, ключ выводится argon2id).
-# Оба пустые → бэкапы не шифруются (старое поведение). Заполняются скриптом
-# manage_secrets.py. Восстановление — restore_backup.py (на awg-хосте).
+# Секреты шифрования бэкапов из env — ПРЕЖНЯЯ схема: теперь их держит БД, а
+# задают с экрана бота (Настройки → Резервное копирование). Эти два ключа
+# читаются ради разового переноса в БД на старте (backup_import_env_once) и
+# предупреждения «строки из env можно удалить». Восстановление — restore_backup.py.
 BACKUP_KEY: str = os.environ.get("BACKUP_KEY", "")
 BACKUP_PASSPHRASE: str = os.environ.get("BACKUP_PASSPHRASE", "")
-BACKUP_ENCRYPTION_ENABLED: bool = bool(BACKUP_KEY or BACKUP_PASSPHRASE)
 
 # ── Почта ─────────────────────────────────────────────────────────────────────
 # Прежняя схема держала логин/пароль ящика в env: их читал только старт, любая
@@ -190,9 +190,6 @@ GW_CLIENT_SUBNET = _gw.get("client_subnet", "")
 # админа в основном боте и по его ключу помечается как шлюз. Пусто —
 # автоопределение: не-линк awg-интерфейс с тем же хостом Endpoint, что у линка.
 GW_UPLINK_IF: str = _gw.get("uplink_interface", "") or ""
-# Интерфейс выхода в интернет (MASQUERADE смотрит в него). Пусто — автодетект
-# по дефолтному маршруту на каждом тике: у домашней машины он может меняться.
-GW_WAN_IF = _gw.get("wan_interface", "")
 
 _docker = _app.get("docker", {})
 
@@ -227,7 +224,6 @@ AWG_INTERFACE = _docker.get("interface", "awg0")
 # «докерная установка», а «ключ не задан».
 AWG_DIR = _docker.get("awg_dir", "/etc/amnezia/amneziawg")
 CONF_PATH = f"{AWG_DIR}/{AWG_INTERFACE}.conf"
-CONF_BAK_PATH = f"{AWG_DIR}/{AWG_INTERFACE}.conf.bak"
 PSK_PATH = f"{AWG_DIR}/wireguard_psk.key"
 
 # ── Переезд профилей (docs/ROADMAP.md, п.3) ─────────────────────────────────
@@ -238,7 +234,6 @@ PSK_PATH = f"{AWG_DIR}/wireguard_psk.key"
 #
 # Само наличие ключа переезд НЕ начинает: он лишь делает рычаг доступным.
 MIGRATION_INTERFACE: str = _docker.get("migration_interface", "")
-MIGRATION_AVAILABLE: bool = bool(MIGRATION_INTERFACE)
 # Своя подсеть у второго интерфейса — не украшение: комплекты пиров тогда не
 # пересекаются, аллокатор нового конфига видит только свои адреса, и забота
 # «двойной комплект должен помещаться в /24» исчезает вовсе.
@@ -256,20 +251,17 @@ TG_ALBUM_MAX = 10
 
 _net = _app.get("network", {})
 SUBNET_PREFIX = _net.get("subnet_prefix", "10.8.1")
-# subnet_cidr из app.yaml Python-кодом не потребляется — информационное поле.
-# install/harden_firewall.sh теперь выводит источник SSH-вайтлиста (bridge-подсеть
-# контейнера) динамически из docker, а не из subnet_cidr (тот адрес не доезжает
-# до хоста из-за MASQUERADE — см. reconcile_ssh_access).
+# subnet_cidr здесь не загружается: экран сервера и переезд читают его через
+# settings, скрипты обвязки — из app.yaml напрямую.
 # .2 — первый клиентский адрес новой раскладки (.1 занимает сам сервер).
 # Дефолт 1 достался от докерной схемы с сервером на .0 и отдал бы первому
 # клиенту адрес сервера.
 IP_HOST_START = _net.get("ip_host_start", 2)
 IP_HOST_END = _net.get("ip_host_end", 254)
 
-# Порт SSH хоста. Общий источник истины для двух слоёв фильтра доступа к SSH:
-# (1) хостовый вайтлист в harden_firewall.sh и (2) пер-пирный фильтр в контейнере
-# (reconcile_ssh_access). Если развести — при нестандартном порте фильтр молча
-# перестанет совпадать. Меняешь порт sshd — правь и здесь.
+# Порт SSH хоста — дефолт для таблицы файервола (nftguard) и пер-пирного
+# фильтра из туннеля (reconcile_ssh_access). Оба читают его горячо через
+# settings; здесь — запасное значение. Меняешь порт sshd — правь app.yaml.
 SSH_PORT = int(_net.get("ssh_port", 22))
 
 

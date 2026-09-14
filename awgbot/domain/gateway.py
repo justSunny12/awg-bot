@@ -132,16 +132,6 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
 
     # ── обвязка ──────────────────────────────────────────────────────────────
 
-    def _wan_if(self) -> str:
-        """Интерфейс выхода: из конфига либо автодетект по default-маршруту.
-        Автодетект на каждом вызове: у домашней машины дефолт может переезжать
-        (Ethernet ↔ Wi-Fi), и замороженное значение алертило бы на ровном месте."""
-        if config.GW_WAN_IF:
-            return config.GW_WAN_IF
-        out = _out(_run(["ip", "route", "show", "default"]))
-        m = re.search(r"\bdev\s+(\S+)", out)
-        return m.group(1) if m else ""
-
     def plumbing_checks(self) -> list[GwCheck]:
         checks: list[GwCheck] = []
         try:
@@ -538,7 +528,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         """Подписанный ключом линка токен «я шлюз с таким аплинком»."""
         from awgbot.util import bundlecrypt, gwsign
         priv = bundlecrypt.read_privkey(pathlib_read(config.GW_LINK_CONF))
-        return gwsign.sign(priv, "claim", pubkey, "", host=socket.gethostname())
+        return gwsign.sign(priv, "claim", pubkey, host=socket.gethostname())
 
     def gateway_apply_report(self) -> str:
         """Человеческий отчёт после применения — из статуса скрипта."""
@@ -548,10 +538,6 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
 
     def gateway_mark_status(self) -> str:
         return self.db.get_state(self._GW_MARK_KEY) or "?"
-
-    def doctor(self) -> list[GwCheck]:
-        """Все проверки — живьём. Список, а не вердикт: чинить будут по строкам."""
-        return self.status().checks
 
     # ── выход наружу через домашний канал ────────────────────────────────────
 

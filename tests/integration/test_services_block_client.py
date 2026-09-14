@@ -32,7 +32,7 @@ def test_block_client_cascades_bit_to_devices(services, fake_awg, make_active_cl
 
 def test_block_client_notify_reaches_client_and_friend(services, fake_awg, make_active_client):
     client = make_active_client(tg_id=1001)
-    dc = _friended_device(services, client.id, friend_tg=91001)
+    _friended_device(services, client.id, friend_tg=91001)
     notes = services.block_client_manual(client.id, ClientBlock.ADMIN_NOTIFIED, notify=True)
     targets = {n.tg_id for n in notes}
     assert 1001 in targets and 91001 in targets
@@ -46,7 +46,7 @@ def test_block_client_silent_sends_nothing(services, fake_awg, make_active_clien
 
 
 def test_block_client_is_service_noop(services, fake_awg):
-    service_id = services.ensure_admin_client()  # админ-клиент существует, но нам нужен служебный
+    services.ensure_admin_client()               # админ-клиент существует, но нам нужен служебный
     svc = services.db.get_service_client_id()
     notes = services.block_client_manual(svc, ClientBlock.ADMIN_NOTIFIED, notify=True)
     assert notes == []
@@ -98,7 +98,8 @@ def test_unblock_client_closes_open_pause_and_restores_period(services, fake_awg
     fresh = services.db.get_client(client.id)
     assert not fresh.is_paused
     assert int(fresh.block_reason) == 0                      # и админ-бит, и PAUSED сняты
-    assert fresh.period_end is not None                      # период восстановлен из snapshot
+    # период восстановлен из snapshot; время в паузе добавлено к сроку
+    assert fresh.period_end is not None and fresh.period_end >= original_end
 
 
 def test_unblock_client_partial_keeps_other_reason(services, fake_awg, make_active_client):

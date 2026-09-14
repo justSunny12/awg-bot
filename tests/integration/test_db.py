@@ -87,8 +87,8 @@ def test_allocate_ip_pool_exhausted(db):
 def test_add_traffic_accumulates(db):
     cid = db.create_client("A", 3, "s", "e", "Cf0000000000")
     did = db.create_device(cid, "P", "PUB", "PSK", "10.8.1.7")
-    db.add_traffic(did, 100, 200)
-    db.add_traffic(did, 50, 25)
+    db.add_traffic_bulk([(did, 100, 200)])
+    db.add_traffic_bulk([(did, 50, 25)])
     d = db.get_device(did)
     assert d.traffic_rx_month == 150 and d.traffic_tx_month == 225
     tot = db.get_client_traffic(cid)
@@ -230,7 +230,6 @@ def test_routing_master_migrates_onto_devices(tmp_path):
     режимом, не заходя в бот. Ошибка здесь тихая: колонки нет, флагов нет,
     маршрутизация просто перестала действовать, и никто не узнает.
     """
-    import sqlite3
     from awgbot.infra.db import Database
 
     path = tmp_path / "old.db"

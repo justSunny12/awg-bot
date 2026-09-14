@@ -999,7 +999,7 @@ sha256 и запускает `awg-bot update` отдельным транзие�
 | Симптом | Причина / что делать |
 |---------|----------------------|
 | При старте: `Не заданы обязательные параметры конфига: …` | Впишите указанные ключи в `/etc/awg-bot/conf` (это и есть адрес ошибки) и перезапустите. |
-| При старте: `Не заданы обязательные секреты: …` | Заполните `/etc/awg-bot/env` (или запустите `manage_secrets.py`). |
+| При старте: `Не заданы обязательные секреты: …` | Заполните `/etc/awg-bot/env` (`BOT_TOKEN`, `ADMIN_ID`). |
 | Сервис не активен | `journalctl -u awg-bot -e` — смотрите трейс. Частое: недоступен docker/контейнер, неверный `BOT_TOKEN`. |
 | В логах нет «Вотчдог подключён…» | inotify не пробил namespace контейнера; страховочная mtime-сетка (~10 сек) всё равно подхватит изменения. |
 | Клиент не «онлайн» сразу | «Онлайн» определяется по свежести handshake (`online_handshake_seconds`), значение может отставать до интервала опроса. |
@@ -1082,7 +1082,6 @@ mkdir -p /etc/awg-bot/conf /var/lib/awg-bot
 cp conf/*.yaml /etc/awg-bot/conf/          # вписать network.server_host и
                                            # network.server_port (app.yaml)
 printf 'BOT_TOKEN=…\nADMIN_ID=…\n' > /etc/awg-bot/env && chmod 600 /etc/awg-bot/env
-./venv/bin/python -m tools.manage_secrets  # шифрование резервных копий
 ./venv/bin/python -m awgbot                # проверить форграундом (или ./run.sh)
 cp awg-bot.service /etc/systemd/system/ && systemctl daemon-reload
 systemctl enable --now awg-bot

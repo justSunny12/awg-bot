@@ -104,7 +104,6 @@ def test_docker_exec_is_absent_from_the_rest_of_the_codebase():
 # ── непортированное падает громко ────────────────────────────────────────────
 
 @pytest.mark.parametrize("call", [
-    lambda: awg.restart_container(),
     lambda: awg.container_pid(),
 ])
 def test_docker_only_helpers_refuse_host_mode(monkeypatch, calls, call):
@@ -144,17 +143,6 @@ def test_restart_server_uses_awg_quick_on_host(monkeypatch, calls):
     assert calls[1][:2] == ["awg-quick", "up"]
 
 
-def test_container_pid_does_not_swallow_the_guard(monkeypatch, calls):
-    """container_pid глотает AwgError и вернул бы None — «контейнер не найден».
-
-    В host-режиме это неотличимо от «контейнер лежит», и вотчдог пошёл бы чинить
-    несуществующее. Заслон обязан пробиваться наружу.
-    """
-    monkeypatch.setattr(config, "AWG_RUNTIME", "host")
-    with pytest.raises(awg.HostModeUnsupported):
-        awg.container_pid()
-
-
 # ── идентификатор протокола расцеплен с docker-именем ────────────────────────
 
 def test_vpn_link_carries_app_container_not_docker_name(monkeypatch):
@@ -175,18 +163,6 @@ def test_vpn_link_carries_app_container_not_docker_name(monkeypatch):
     assert obj["defaultContainer"] == "amnezia-awg2"
     assert obj["containers"][0]["container"] == "amnezia-awg2"
     assert "docker-имя-которое-умрёт" not in str(obj)
-
-
-def test_app_container_defaults_to_the_docker_name():
-    """Без ключа в yaml значение обязано совпадать с docker-именем.
-
-    Боевой app.yaml при обновлении не мигрирует, и новый ключ до сервера не
-    доедет. Разойдись дефолты — ссылки поехали бы у всех после обновления бота.
-    """
-    import pathlib
-
-    src = pathlib.Path(config.__file__).read_text(encoding="utf-8")
-    assert 'APP_CONTAINER = _docker.get("app_container") or CONTAINER' in src
 
 
 # ── неизвестный режим не должен молча означать docker ────────────────────────

@@ -285,12 +285,11 @@ awgbot/
              hostmetrics  локальные метрики железа (/proc + statvfs)
   assets/    guides/      скриншоты пошаговых гайдов (смена региона App Store)
 
-tools/       manage_secrets  шифрование бэкапов; restore_backup  расшифровка (*.enc)
+tools/       restore_backup  расшифровка архива резервной копии на любой машине
 install/     awg-bot-install.sh      установщик (он же качает поставку из трубы)
              awg.lock                версия AmneziaWG, прибитая к поставке
              awg-kernel-install.sh   сборка ядра и тулз по манифесту
              awg-server-init.sh      сервер awg с нуля на чистом хосте
-             harden_firewall.sh      обёртка над `awg-bot firewall setup`
              awg-host-migrate.sh     переезд с контейнера на хост
              routing-host-setup.sh   обвяз ВПС под маршрутизацию
              routing-link-setup.sh   линк до шлюза + бандл для второй стороны

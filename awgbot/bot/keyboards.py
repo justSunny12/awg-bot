@@ -12,7 +12,7 @@ from awgbot.core import config
 from awgbot.core import settings
 from awgbot.bot import texts
 from awgbot.core import blocks as _blocks
-from awgbot.core.enums import SubStatus, ActivationStatus
+from awgbot.core.enums import ActivationStatus
 from awgbot.bot.callbacks import GwCB, HideCB
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -242,16 +242,18 @@ def device_actions(dev, *, is_admin: bool, back_target: str,
     # 3) Лимит потребления
     kb.button(text="📊 Лимит потребления", callback_data=DeviceCB(action="edit_traffic", device_id=dev.id))
     rows += 1
-    # 4) Передать другу / перевыдать инвайт. «Передать другу» — ТОЛЬКО владельцу:
-    # у админа на карточке её место занимает «Передать в другой профиль», две
-    # передачи рядом путали, какая куда.
+    # 4) Передать другу / перевыдать инвайт — ТОЛЬКО владельцу. У админа на
+    # карточке место передачи занимает «Передать в другой профиль» (две передачи
+    # рядом путали, какая куда), а инвайт другу — дело владельца: ссылка уходит
+    # в его чат, и хендлер живёт в роутере клиента.
     fstatus = dev.friend_status
-    if is_bot_device and fstatus is None and not is_admin:
-        kb.button(text="👤 Передать другу", callback_data=DeviceCB(action="transfer", device_id=dev.id))
-        rows += 1
-    elif fstatus == "pending":
-        kb.button(text="🔁 Перевыдать инвайт", callback_data=DeviceCB(action="reinvite", device_id=dev.id))
-        rows += 1
+    if not is_admin:
+        if is_bot_device and fstatus is None:
+            kb.button(text="👤 Передать другу", callback_data=DeviceCB(action="transfer", device_id=dev.id))
+            rows += 1
+        elif fstatus == "pending":
+            kb.button(text="🔁 Перевыдать инвайт", callback_data=DeviceCB(action="reinvite", device_id=dev.id))
+            rows += 1
     # 5) Передать в другой профиль (только админ)
     if reassign_label:
         kb.button(text=reassign_label, callback_data=DeviceCB(action="reassign", device_id=dev.id))
@@ -360,7 +362,7 @@ def connect_method_choice_friend(device_id: int) -> InlineKeyboardMarkup:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def pick_device(devices, action: str, back_cb: str = None) -> InlineKeyboardMarkup:
-    """action: gen_link | gen_file | gen_qr | connect_menu — выбор устройства.
+    """action: gen_link | gen_file | gen_qr — выбор устройства.
     Показываем и устройства без ключа (с суффиксом): клик по ним ведёт не в ошибку,
     а в диалог «пришли ссылку или удали» (обрабатывается отдельно).
     back_cb — packed callback для «Назад» (по умолчанию главное меню; админ из
@@ -954,13 +956,6 @@ def guide_connect_devices(devices, slots, last: int, guide: str = "connect") -> 
     kb.button(text="🏠 В меню", callback_data=Menu(action="main"))
     kb.adjust(1)
     return kb.as_markup()
-
-
-__all__ = [
-    "client_main", "client_devices", "device_actions", "pick_device",
-    "admin_main", "admin_clients", "admin_client_actions", "period_choices",
-    "yes_no", "unassigned_devices", "reassign_targets",
-]
 
 
 def append_hide_row(kb: InlineKeyboardBuilder) -> InlineKeyboardMarkup:

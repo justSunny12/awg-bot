@@ -179,7 +179,6 @@ def test_backup_switch_hides_the_rest_in_both_bots(monkeypatch):
 
 
 async def test_gateway_passphrase_flow(svc, fake_bot):
-    from awgbot.bot.states import BackupPassphrase
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     state = FakeState()

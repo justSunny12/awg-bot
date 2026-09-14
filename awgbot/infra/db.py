@@ -2,16 +2,19 @@
 db.py — слой доступа к SQLite для AWG-бота.
 
 Принципы:
-- БД — единственный источник истины. Контейнер (awg0.conf + iptables) — её проекция.
-- Никакой бизнес-логики здесь: только чтение/запись. Склейка с контейнером — в services.py.
-- Все даты хранятся строками ISO-8601 в UTC+3 (TZ проекта). Конвертацию в/из
-  datetime делает вызывающий код через helpers из time-утилит (пока — прямые ISO-строки).
+- БД — единственный источник истины. Сервер (awg0.conf + правила блокировок) —
+  её проекция.
+- Никакой бизнес-логики здесь: только чтение/запись. Склейка с сервером — в
+  domain/services.py.
+- Все даты хранятся строками ISO-8601 в TZ проекта. Конвертацию в/из datetime
+  делает вызывающий код через helpers из timeutil.
 
-Таблицы:
+Основные таблицы (полная схема — SCHEMA ниже):
   clients          — биллинговая сущность (клиент, срок, лимит, инвайт)
   devices          — устройство = AWG peer (ключи, IP, трафик, блокировка)
   traffic_samples  — последнее сырое значение rx/tx для вычисления дельт
-  server_state     — key-value: детект рестарта контейнера, флаги сбросов/бэкапов
+  server_state     — key-value: метка старта сервера, флаги сбросов/бэкапов,
+                     горячие счётчики
 """
 
 from __future__ import annotations
@@ -86,13 +89,14 @@ def _client_from_row(row) -> Optional["models.Client"]:
 
 
 def _device_from_row(row) -> Optional["models.Device"]:
-    """Объединённая строка (devices + traffic, LEFT JOIN friend) → Device.
-    friend материализуется только у гостевых устройств (строка device_friend есть
-    ⇔ friend_status не NULL)."""
+    """Строка _DEVICE_SELECT (devices + traffic, LEFT JOIN friend) → Device.
+    Все выборки устройств идут через этот SELECT, поэтому колонки здесь читаются
+    без оглядки на их наличие. friend материализуется только у гостевых устройств
+    (строка device_friend есть ⇔ friend_status не NULL)."""
     if row is None:
         return None
     friend = None
-    if "friend_status" in row.keys() and row["friend_status"]:
+    if row["friend_status"]:
         friend = models.Friend(tg_id=row["friend_tg_id"], code=row["friend_code"],
                                status=row["friend_status"])
     return models.Device(
@@ -104,12 +108,10 @@ def _device_from_row(row) -> Optional["models.Device"]:
         preshared_key=row["preshared_key"],
         address=row["address"],
         block_reason=int(row["block_reason"]),
-        routing_on=(int(row["routing_on"]) if "routing_on" in row.keys() else 0),
-        iface=(row["iface"] if "iface" in row.keys() else "") or "",
-        twin_of=(int(row["twin_of"]) if "twin_of" in row.keys()
-                 and row["twin_of"] is not None else None),
-        is_gateway=(int(row["is_gateway_eff"]) if "is_gateway_eff" in row.keys()
-                    else int(row["is_gateway"]) if "is_gateway" in row.keys() else 0),
+        routing_on=int(row["routing_on"]),
+        iface=row["iface"] or "",
+        twin_of=(int(row["twin_of"]) if row["twin_of"] is not None else None),
+        is_gateway=int(row["is_gateway_eff"]),
         created_at=row["created_at"],
         traffic=models.DeviceTraffic(
             limit=int(row["traffic_limit"]),
@@ -787,15 +789,6 @@ class Database:
     # равно не даст удалить, а хранить бесконечно незачем.
     _NAV_HISTORY_CAP = 30
 
-    def push_nav_history(self, chat_id: int, message_id: int) -> None:
-        import json
-        key = f"nav_history:{chat_id}"
-        ids = json.loads(self.get_state(key) or "[]")
-        if message_id in ids:
-            return
-        ids = (ids + [message_id])[-self._NAV_HISTORY_CAP:]
-        self.set_state(key, json.dumps(ids))
-
     def pop_nav_history(self, chat_id: int) -> list:
         import json
         key = f"nav_history:{chat_id}"
@@ -1337,27 +1330,6 @@ class Database:
             "AND resume_code IS NOT NULL AND resume_code != '' LIMIT 1").fetchone()
         return row is not None
 
-    def _count_devices_raw(self, client_id: int) -> int:
-        return self._connection().execute(
-            "SELECT COUNT(*) AS c FROM devices WHERE client_id = ?", (client_id,)
-        ).fetchone()["c"]
-
-    def broadcast_recipients(self, exclude_tg_id: int) -> list[int]:
-        """Уникальные tg_id для броадкаста: активированные клиенты (tg_id
-        задан, не служебный) + активные друзья. Админ (exclude_tg_id) исключён.
-        Один человек может быть и клиентом, и другом, и иметь несколько
-        устройств — DISTINCT + set гарантируют одну доставку на человека."""
-        rows = self._connection().execute(
-            "SELECT tg_id FROM clients "
-            "WHERE tg_id IS NOT NULL AND is_service = 0 "
-            "UNION "
-            "SELECT friend_tg_id AS tg_id FROM device_friend "
-            "WHERE friend_tg_id IS NOT NULL AND friend_status = 'active'"
-        ).fetchall()
-        ids = {int(r["tg_id"]) for r in rows}
-        ids.discard(int(exclude_tg_id))
-        return sorted(ids)
-
     def broadcast_has_friends(self, client_ids, exclude_tg_id: int) -> bool:
         """Есть ли среди адресатов активные друзья.
 
@@ -1386,7 +1358,7 @@ class Database:
         неоткуда — владелец пересказывать не обязан. Админ выбирает профили, а
         не людей, поэтому про друзей его предупреждают на экране выбора.
 
-        Тот же DISTINCT-инвариант, что и в broadcast_recipients: один человек
+        DISTINCT-инвариант: один человек
         может оказаться и владельцем, и другом чужого устройства, а доставка
         обязана быть одна.
         """
@@ -1507,19 +1479,6 @@ class Database:
         self.update_device_fields(device_id, client_id=new_client_id)
 
     # ── Трафик: накопление и сброс ───────────────────────────────────────────
-
-    def add_traffic(self, device_id: int, d_rx: int, d_tx: int) -> None:
-        """Прибавляет дельту к обоим счётчикам (месяц + период) сразу."""
-        with self._tx() as cur:
-            cur.execute(
-                """UPDATE device_traffic SET
-                     traffic_rx_month  = traffic_rx_month  + ?,
-                     traffic_tx_month  = traffic_tx_month  + ?,
-                     traffic_rx_period = traffic_rx_period + ?,
-                     traffic_tx_period = traffic_tx_period + ?
-                   WHERE device_id = ?""",
-                (d_rx, d_tx, d_rx, d_tx, device_id),
-            )
 
     def merge_traffic(self, src_device_id: int, dst_device_id: int) -> None:
         """Сложить счётчики src в dst. Нужен на завершении переезда: потребление
@@ -1811,19 +1770,10 @@ class Database:
 
     # ── traffic_samples: база для дельт ──────────────────────────────────────
 
-    def get_sample(self, device_id: int) -> Optional[sqlite3.Row]:
-        return self._connection().execute(
-            "SELECT * FROM traffic_samples WHERE device_id = ?", (device_id,)
-        ).fetchone()
-
     def get_samples_all(self) -> dict[int, tuple[int, int]]:
         """device_id → (last_rx, last_tx) одним запросом — для опроса трафика."""
         return {int(r["device_id"]): (int(r["last_rx"]), int(r["last_tx"])) for r in
                 self._connection().execute("SELECT device_id, last_rx, last_tx FROM traffic_samples")}
-
-    def set_sample(self, device_id: int, last_rx: int, last_tx: int) -> None:
-        """Запоминает последнее сырое значение rx/tx как базу для следующей дельты."""
-        self.set_samples([(device_id, last_rx, last_tx)])
 
     def set_samples(self, rows: list[tuple[int, int, int]]) -> None:
         """Батч: [(device_id, last_rx, last_tx)] одним executemany."""
@@ -1903,15 +1853,6 @@ class Database:
                 (key, value),
             )
         return True
-
-    def set_states(self, values: dict) -> int:
-        """Несколько ключей одной транзакцией, неизменившиеся пропускаются.
-        Возвращает число записанных."""
-        n = 0
-        with self._tx():
-            for k, v in values.items():
-                n += self.set_state(k, v)
-        return n
 
     # ── Условная маршрутизация ───────────────────────────────────────────────
     # Личные списки доменов и выборка адресов для реконсиляции наборов ipset.

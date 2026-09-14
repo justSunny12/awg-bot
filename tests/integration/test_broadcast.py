@@ -1,6 +1,5 @@
 """Броадкаст: адресаты (дедуп клиент+друг, исключение админа, только активные
 друзья), отчёт доставки, счётчик успех/провал."""
-import pytest
 
 from awgbot.bot import notifier
 
@@ -11,12 +10,12 @@ def test_recipients_dedup_and_exclude_admin(services, make_active_client):
     make_active_client(name="admin", tg_id=cfg.ADMIN_ID)
     make_active_client(name="c2", tg_id=2002)
     make_active_client(name="c3", tg_id=2003)
-    ids = services.db.broadcast_recipients(exclude_tg_id=cfg.ADMIN_ID)
+    everyone = [c.id for c in services.db.list_clients()]
+    ids = services.db.broadcast_recipients_for_clients(everyone, exclude_tg_id=cfg.ADMIN_ID)
     assert cfg.ADMIN_ID not in ids            # админ исключён
     assert set(ids) == {2002, 2003}           # только реальные клиенты, без служебного
 
 
-@pytest.mark.asyncio
 async def test_broadcast_counts_ok_and_failed():
     sent = []
 
@@ -31,7 +30,6 @@ async def test_broadcast_counts_ok_and_failed():
     assert sent == [1, 2, 3]
 
 
-@pytest.mark.asyncio
 async def test_broadcast_empty_list():
     class Bot:
         async def send_message(self, *a, **k): raise AssertionError("не должно зваться")
@@ -39,7 +37,6 @@ async def test_broadcast_empty_list():
     assert ok == 0 and failed == 0
 
 
-@pytest.mark.asyncio
 async def test_broadcast_pacing_and_order_preserved():
     """Порядок доставки сохранён, все не-нулевые адресаты обойдены."""
     seen = []
@@ -81,9 +78,11 @@ def test_client_recipients_exclude_other_profiles(services, make_active_client):
     assert ids == [3001]
 
 
-def test_pending_friend_is_not_a_recipient(services, make_active_client):
+def test_pending_friend_is_neither_a_recipient_nor_a_reason_for_the_clause(
+        services, make_active_client):
     """Приглашённый, но не подключившийся друг — не адресат: tg_id у него ещё
-    нет, а если бы и был, слать некуда."""
+    нет, а если бы и был, слать некуда. И оговорку «и те, с кем поделился» на
+    экране выбора он не включает."""
     import awgbot.core.config as cfg
     c = make_active_client(name="c1", tg_id=3001)
     dc = services.add_device(c.id, "Телефон")
@@ -91,6 +90,7 @@ def test_pending_friend_is_not_a_recipient(services, make_active_client):
 
     ids = services.db.broadcast_recipients_for_clients([c.id], exclude_tg_id=cfg.ADMIN_ID)
     assert ids == [3001]
+    assert services.db.broadcast_has_friends([c.id], cfg.ADMIN_ID) is False
 
 
 def test_same_person_twice_gets_one_delivery(services, make_active_client):
@@ -161,16 +161,6 @@ def test_friends_clause_only_when_friends_exist(services, make_active_client):
 
     prompt2 = texts.broadcast_prompt(["Один"], True)
     assert "Получат: <b>Один</b> — владелец профиля и те, с кем он поделился" in prompt2
-
-
-def test_pending_friend_does_not_trigger_the_clause(services, make_active_client):
-    """Приглашённый, но не подключившийся другом не считается — он и объявления
-    не получит."""
-    import awgbot.core.config as cfg
-    c = make_active_client(name="c", tg_id=6002)
-    dc = services.add_device(c.id, "Телефон")
-    services.make_device_friendly(dc.device_id)      # код выдан, не активирован
-    assert services.db.broadcast_has_friends([c.id], cfg.ADMIN_ID) is False
 
 
 def test_audience_wording_matches_number_of_profiles():

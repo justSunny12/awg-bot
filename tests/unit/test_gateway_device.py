@@ -24,15 +24,35 @@ PUB = base64.b64encode(os.urandom(32)).decode()
 # ── подпись ──────────────────────────────────────────────────────────────────
 
 def test_sign_verify_roundtrip_inside_surrounding_text():
-    token = gwsign.sign(PRIV, "claim", PUB, "10.9.1.15", host="NASPi")
+    token = gwsign.sign(PRIV, "claim", PUB, host="NASPi")
     text = f"Перешли это основному боту:\n\n{token}\n\nспасибо"
     data = gwsign.verify(PRIV, text)
-    assert data["act"] == "claim" and data["pub"] == PUB and data["addr"] == "10.9.1.15"
+    assert data["act"] == "claim" and data["pub"] == PUB and data["host"] == "NASPi"
     assert gwsign.find_token(text) == token
 
 
+def test_verify_tolerates_extra_fields_from_older_agents():
+    """Прежние агенты подписывали ещё и "addr": подпись покрывает весь payload,
+    лишний ключ проверке не мешает — шлюз на старом агенте помечается."""
+    import json
+    payload = json.dumps({"act": "claim", "pub": PUB, "addr": "10.9.1.15",
+                          "ts": int(time.time()), "nonce": "ab" * 8, "host": "NASPi"},
+                         separators=(",", ":")).encode()
+    import hashlib, hmac
+    mac = hmac.new(gwsign._key(PRIV), payload, hashlib.sha256).digest()[:20]
+    token = gwsign.PREFIX + gwsign._b64u(payload) + "." + gwsign._b64u(mac)
+    assert gwsign.verify(PRIV, token)["pub"] == PUB
+
+
+def test_verify_accepts_only_claim():
+    """Действие одно — claim; release-токены сняты вместе со сценарием замены,
+    и подписанный «release» больше ничего не значит."""
+    with pytest.raises(ValueError):
+        gwsign.verify(PRIV, gwsign.sign(PRIV, "release", PUB))
+
+
 def test_verify_rejects_wrong_key_tampering_and_expiry():
-    token = gwsign.sign(PRIV, "release", PUB)
+    token = gwsign.sign(PRIV, "claim", PUB)
     other = base64.b64encode(os.urandom(32)).decode()
     with pytest.raises(ValueError):
         gwsign.verify(other, token)
@@ -98,7 +118,6 @@ def test_gateway_mark_outcome(tmp_path, monkeypatch):
         assert svc.gateway_mark_status() == status
         if out["claim"]:
             assert gwsign.verify(PRIV, out["claim"])["pub"] == PUB
-    assert not hasattr(svc, "gateway_accept_release"), "release-токенов больше нет"
 
 
 def test_gateway_apply_report_is_human_text(tmp_path, monkeypatch):
@@ -147,11 +166,34 @@ def test_link_script_rekey_mode_regenerates_keys():
         "снятие конфига — раньше проверки «уже настроено», иначе rekey выходит ни с чем"
 
 
-def test_installer_gateway_role_does_not_ask_client_subnet():
+def test_installer_gateway_role_rewrites_the_template_without_questions(tmp_path):
+    """configure_gateway на шаблоне conf/app.yaml: роль и секция gateway
+    раскомментированы, runtime — host, клиентскую подсеть не спрашивает и не
+    пишет (она приезжает в юните обвязки из бандла). Вопросов нет вовсе:
+    stdin закрыт, любой read упал бы."""
     text = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
-    body = text.split("configure_gateway()", 1)[1].split("\n}\n", 1)[0]
-    assert "ask subnet" not in body and "Клиентская подсеть" not in body
-    assert "yaml_set \"$app\" client_subnet" not in body, "подсеть приезжает в юните из бандла"
+    fn = lambda name: re.search(rf"^{name}\(\) \{{.*?^\}}$", text, re.S | re.M).group(0)
+    conf = tmp_path / "conf"; conf.mkdir()
+    app = conf / "app.yaml"
+    app.write_text((ROOT / "conf" / "app.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir()
+    (bin_dir / "sed").write_text(          # BSD sed не понимает `-i -E`, как пишет скрипт под GNU
+        '#!/bin/sh\nif /usr/bin/sed --version >/dev/null 2>&1; then exec /usr/bin/sed "$@"; fi\n'
+        'if [ "$1" = "-i" ] && [ "$2" = "-E" ]; then shift 2; exec /usr/bin/sed -i "" -E "$@"; fi\n'
+        'exec /usr/bin/sed "$@"\n', encoding="utf-8")
+    (bin_dir / "sed").chmod(0o755)
+    prog = "\n".join([
+        "set -e", 'ok(){ :; }', 'die(){ echo "$*" >&2; exit 1; }',
+        f'CONF_DIR="{conf}"', fn("yaml_set"), fn("configure_gateway"), "configure_gateway",
+    ])
+    r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                       env={"PATH": f"{bin_dir}:/usr/bin:/bin"})
+    assert r.returncode == 0, r.stderr
+    out = app.read_text(encoding="utf-8")
+    assert re.search(r'^role: "gateway"$', out, re.M)
+    assert re.search(r'^gateway:$', out, re.M) and re.search(r'^  link_interface: "awglink"', out, re.M)
+    assert re.search(r'^  client_subnet: ""', out, re.M), "подсеть приезжает в юните из бандла"
+    assert re.search(r'^  runtime: "host"', out, re.M)
 
 
 # ── скрипт обвязки и шапка бандла ────────────────────────────────────────────
@@ -165,7 +207,6 @@ def test_script_installs_uplink_only_to_the_machine_with_that_key(script):
     step0 = script.split('step "0. Шлюзовое устройство"', 1)[1].split('# ── 1. конфиг и подъём', 1)[0]
     assert 'iface_by_pubkey "$GATEWAY_PUBKEY"' in step0 and 'iface_by_pubkey "$GATEWAY_PREV_PUBKEY"' in step0
     assert "GW_FOREIGN=1" in step0, "чужой шлюз → линк не поднимаем"
-    assert "Table = off" not in step0 or True   # Table = off приходит в конфиге из бандла
     assert '/^Table = off$/ {' in step0, "PostUp вставляется в [Interface], а не в конец файла"
     assert "ip route replace default dev %%i table" in step0
     assert 'if ! "$AWG_QUICK" up "$UPLINK_IF"' in step0 and "откатываю на прежний" in step0

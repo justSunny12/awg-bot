@@ -417,16 +417,6 @@ async def device_gen_qr(cb: CallbackQuery, callback_data: DeviceCB, client, serv
 
 # ── добавление устройства (FSM: имя) ─────────────────────────────────────────
 
-@router.callback_query(DeviceCB.filter(F.action == "del_menu"))
-async def device_del_menu(cb: CallbackQuery, client, services):
-    devices = await call(services.db.list_devices, client.id)
-    if not devices:
-        await cb.answer("Нет устройств", show_alert=True)
-        return
-    await edit(cb, "Выбери устройство для удаления:", kb.pick_device_to_delete(devices))
-    await cb.answer()
-
-
 @router.callback_query(DeviceCB.filter(F.action == "add"))
 async def device_add_start(cb: CallbackQuery, client, services, state: FSMContext):
     used, limit = await call(services.device_slots, client.id)

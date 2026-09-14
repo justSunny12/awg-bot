@@ -1015,7 +1015,7 @@ def migration_prepare_intro(d: dict) -> str:
         "новый, каждому устройству рождается двойник на новых параметрах.", "",
         f"Сейчас: интерфейс <code>{_e(d['iface'])}</code>, порт {d['port']}, "
         f"подсеть <code>{_e(d['subnet'])}</code>.",
-        f"Станет: новый интерфейс, "
+        "Станет: новый интерфейс, "
         + (f"порт {d['want_port']}" if d.get("want_port") else "случайный высокий порт")
         + ", свободная подсеть.", "",
         f"В когорту попадут {plural_ru(d['devices'], 'устройство', 'устройства', 'устройств')} "
@@ -2341,7 +2341,3 @@ def gateway_op_result(title: str, ok: bool, detail: str) -> str:
     return head + (f"\n<code>{_e(detail)}</code>" if detail else "")
 
 
-def gateway_updates(installed: str, muted: bool, schedule: str) -> str:
-    """Зеркально основному: тот же текст раздела с текущей версией последней
-    строкой. Расписание и тумблер видны на кнопках."""
-    return settings_upd_text(installed)

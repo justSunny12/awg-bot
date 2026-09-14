@@ -305,14 +305,17 @@ def test_admin_switch_off_is_immediate_unlike_a_gateway_blip(services, fake_rout
 
 
 def test_recovery_takes_the_full_streak(services, fake_routing):
-    """Возврат — только после серии хороших: включение рискованно, весь трафик
-    уезжает в тоннель, и если тот не пропускает, интернета нет вовсе."""
+    """Подтверждённый отказ гасит маркировку; возврат — только после серии
+    хороших: включение рискованно, весь трафик уезжает в тоннель, и если тот
+    не пропускает, интернета нет вовсе. Гистерезис: состояние меняется на
+    пересечении порогов, а не пересчётом серии — пересчёт снимал маркировку
+    ровно в тот такт, когда шлюз оживал (плохой замер обнулял счётчик хороших)."""
     _settle(services, fake_routing)
 
     fake_routing.probe = "down"
     for _ in range(services._RT_DOWN_STREAK):
         services.routing_liveness_tick()
-    assert fake_routing.marking is False
+    assert fake_routing.marking is False, "порог набран, а маркировка стоит"
 
     fake_routing.probe = "ok"
     for i in range(services._RT_UP_STREAK - 1):
@@ -345,6 +348,8 @@ def test_feature_disabled_is_a_no_op(services, make_active_client, fake_routing)
     """Фича выключена в конфиге — реконсиляция ничего не трогает и не падает."""
     fake_routing.enabled = False
     c = make_active_client()
+    _device(services, c)
+    services.set_routing_allowed(c.id, True)             # есть кому маркировать — и всё равно ничего
     services.reconcile_routing()
     assert fake_routing.chain is None
     assert services.routing_liveness_tick() == []
@@ -464,39 +469,29 @@ def test_hot_switch_off_wins_over_a_healthy_gateway(services, fake_routing, monk
     assert fake_routing.marking is False, "зонд пересилил выключенную фичу"
 
 
-# ── зеркальный случай: сервисы, отказывающие российским адресам ──────────────
-
-def _allowed_client(services, make_active_client, tg_id):
-    """Клиент с устройством и выданным разрешением админа. Устройство важно:
-    без него профиль не попадает в набор адресов, и конфиг выходит пустым."""
-    c = make_active_client(tg_id=tg_id)
-    _device(services, c)
-    services.set_routing_allowed(c.id, True)
-    return services.db.get_client(c.id)
-
-
-
-
+# ── пороги зонда: короткий провал не дёргает ни режим, ни админа ─────────────
 
 def test_short_blip_degrades_silently(services, fake_routing):
     """Ровно тот спам, что пришёл админу: «отвалился» и «снова в строю» в одну
     минуту. Короткий провал на домашнем аплинке — обычное дело, и такая пара не
     несёт никакой информации, только приучает не читать уведомления.
 
-    Теперь такой провал не доходит и до действия: порог гашения поднят до трёх
-    тактов ровно за этим — чтобы мелкие флуктуации не дёргали режим."""
+    Такой провал не доходит и до действия: каждое переключение перекладывает
+    трафик всех включённых, и на коротком провале это дороже самого провала —
+    порог гашения в несколько тактов ровно за этим."""
     _settle(services, fake_routing)
 
     fake_routing.probe = "down"
-    assert services.routing_liveness_tick() == [], "написал админу с первого замера"
-    assert fake_routing.marking is True, "погасил от одного плохого замера"
+    for i in range(services._RT_DOWN_STREAK - 1):
+        assert services.routing_liveness_tick() == [], "написал админу до порога"
+        assert fake_routing.marking is True, f"погасили на {i + 1}-м замере из порога"
 
     fake_routing.probe = "ok"
     notes = []
     for _ in range(3):
         notes += services.routing_liveness_tick()
     assert notes == [], "прислал «снова в строю» без предшествующего отвала"
-    assert fake_routing.marking is True
+    assert fake_routing.marking is True, "рубильник дёрнулся на ровном месте"
 
 
 def test_recovery_is_announced_only_after_a_real_alert(services, fake_routing):
@@ -512,7 +507,7 @@ def test_recovery_is_announced_only_after_a_real_alert(services, fake_routing):
     assert len(notes) == 1 and "в строю" in notes[0].text
 
 
-# ── подсети сервисов со СВОИМ адресным блоком ────────────────────────────────
+# ── источники базовых списков: как и когда о них докладывают ─────────────────
 
 
 
@@ -787,53 +782,6 @@ def test_dropped_source_stops_being_reported(services, monkeypatch):
     services._routing_note_source(url, 0)
     monkeypatch.setattr(config, "ROUTING_LISTS_HOME_URLS", [])
     assert services.routing_source_alerts() == []
-
-
-# ── пороги зонда ─────────────────────────────────────────────────────────────
-
-def test_marking_survives_short_blips(services, fake_routing):
-    """Мелкие сетевые флуктуации не должны дёргать режим: каждое переключение
-    перекладывает трафик всех включённых, и на коротком провале это дороже
-    самого провала."""
-    _settle(services, fake_routing)
-    assert fake_routing.marking is True
-
-    fake_routing.probe = "down"
-    for i in range(services._RT_DOWN_STREAK - 1):
-        services.routing_liveness_tick()
-        assert fake_routing.marking is True, f"погасили на {i + 1}-м из трёх"
-
-    fake_routing.probe = "ok"
-    services.routing_liveness_tick()
-    assert fake_routing.marking is True, "рубильник дёрнулся на ровном месте"
-
-
-def test_confirmed_failure_disables_marking(services, fake_routing):
-    """Порог подняли не ради того, чтобы перестать реагировать вовсе."""
-    _settle(services, fake_routing)
-    fake_routing.probe = "down"
-    for _ in range(services._RT_DOWN_STREAK):
-        services.routing_liveness_tick()
-    assert fake_routing.marking is False, "порог набран, а маркировка стоит"
-
-
-def test_recovery_needs_the_full_streak(services, fake_routing):
-    """Гистерезис: состояние меняется на пересечении порогов, а не пересчётом
-    серии. Пересчёт снимал маркировку ровно в тот такт, когда шлюз оживал —
-    плохой замер обнулял счётчик хороших, и первый же хороший давал good=1
-    меньше порога возврата."""
-    _settle(services, fake_routing)
-    fake_routing.probe = "down"
-    for _ in range(services._RT_DOWN_STREAK):
-        services.routing_liveness_tick()
-    assert fake_routing.marking is False
-
-    fake_routing.probe = "ok"
-    for i in range(services._RT_UP_STREAK - 1):
-        services.routing_liveness_tick()
-        assert fake_routing.marking is False, f"вернулись с {i + 1} замеров"
-    services.routing_liveness_tick()
-    assert fake_routing.marking is True
 
 
 def test_empty_home_cache_forces_a_refresh(services, monkeypatch):

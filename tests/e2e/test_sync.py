@@ -103,7 +103,7 @@ def test_poll_updates_online_count(services, fake_awg, make_active_client, monke
 def test_monthly_reset_zeroes_counters_and_traffic_blocks(services, fake_awg, make_active_client):
     client = make_active_client(tg_id=710)
     dc = services.add_device(client.id, "d")
-    services.db.add_traffic(dc.device_id, 500, 400)
+    services.db.add_traffic_bulk([(dc.device_id, 500, 400)])
     # смешанные причины: трафик (должен уйти) + EXPIRY (должен остаться)
     services._device_set_block(dc.device_id, DeviceBlock.TRAFFIC_USER)
     services._device_set_block(dc.device_id, DeviceBlock.EXPIRY)

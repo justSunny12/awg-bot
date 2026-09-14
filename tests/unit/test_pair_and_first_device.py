@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import re
 import urllib.error
 
 from tools import first_device as fd
@@ -43,6 +44,9 @@ def test_first_sender_of_the_code_becomes_admin(monkeypatch, capsys):
     assert out == ["ADMIN_ID=777"], "в stdout должен уйти РОВНО id — его читает установщик"
     methods = [m for m, _ in api.calls]
     assert "sendMessage" in methods, "человеку не подтвердили, что код принят"
+    # getUpdates при живом вебхуке всегда отвечает 409 — у повторной установки
+    # это выглядело бы как «Telegram не отвечает»
+    assert methods.index("deleteWebhook") < methods.index("getUpdates")
     # offset продвигается и КОММИТИТСЯ: иначе тот же код прилетит уже
     # запущенному боту, и первым в чате будет ответ на установочный код
     offsets = [p.get("offset") for m, p in api.calls if m == "getUpdates"]
@@ -74,9 +78,41 @@ def test_rejected_token_gives_up_at_once(monkeypatch):
     assert pair.main([]) == 1, "с неверным токеном ждать бессмысленно"
 
 
-def test_no_token_is_refused(monkeypatch):
+def test_network_blip_is_waited_out(monkeypatch, capsys):
+    """Сеть моргнула — ждём дальше (с паузой), а не сдаёмся как на 401."""
+    state = {"n": 0}
+    good = _Api([[_msg(1, "ABCD-1234")]])
+
+    def flaky(token, method, params=None, timeout=35):
+        if method == "getUpdates" and state["n"] == 0:
+            state["n"] += 1
+            raise urllib.error.URLError("temporary failure")
+        return good(token, method, params, timeout)
+
+    naps = []
+    monkeypatch.setenv("BOT_TOKEN", "123:abc")
+    monkeypatch.setattr(pair, "api", flaky)
+    monkeypatch.setattr(pair.time, "sleep", naps.append)
+    assert pair.main(["--code", "ABCD-1234"]) == 0
+    assert naps == [3], "после сбоя сети — пауза, а не немедленный повтор"
+    assert "ADMIN_ID=555" in capsys.readouterr().out
+
+
+def test_code_alphabet_has_no_lookalikes():
+    assert not (set("01OIL") & set(pair.ALPHABET)), "0/O и 1/I/L в коде, который диктуют вслух"
+    code = pair.make_code()
+    assert re.fullmatch(r"[A-Z2-9]{4}-[A-Z2-9]{4}", code)
+    assert pair.normalize(" ab-cd 12 ") == "ABCD12", "код сверяется без пробелов и дефисов"
+    assert pair.make_code() != pair.make_code(), "код обязан быть случайным"
+
+
+def test_token_comes_only_from_the_environment(monkeypatch):
+    """Токен в аргументах виден в `ps` любому пользователю хоста — из argv он
+    не читается, без переменной окружения — отказ."""
     monkeypatch.delenv("BOT_TOKEN", raising=False)
+    monkeypatch.setattr(pair, "api", lambda *a, **k: (_ for _ in ()).throw(AssertionError("вызов API без токена")))
     assert pair.main([]) == 1
+    assert pair.main(["--token", "123:abc", "123:abc"]) == 1
 
 
 # ── первое устройство в терминале ────────────────────────────────────────────
@@ -124,3 +160,7 @@ def test_first_device_prints_the_link_and_saves_the_conf(monkeypatch, tmp_path, 
     printed = capsys.readouterr().out
     assert "vpn://AAAA" in printed and "Админ" in printed and "10.8.1.2" in printed
     assert "в боте" in printed, "не сказано, что то же самое есть в чате"
+    # файл с ключами — только root, и человеку сказано его убрать
+    assert out_file.exists() and (out_file.stat().st_mode & 0o777) == 0o600
+    assert "удали после импорта" in printed
+    # ничего не создаётся: у подставных сервисов нет add_device, и вызов упал бы

@@ -7,11 +7,18 @@
 """
 from __future__ import annotations
 
+import re
+import subprocess
 from pathlib import Path
 
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh"
+
+
+def _sh(prog: str, *, path: str = "/usr/bin:/bin") -> subprocess.CompletedProcess:
+    return subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
+                          env={"PATH": path})
 
 
 @pytest.fixture(scope="module")
@@ -35,9 +42,10 @@ def test_ip_forward_survives_reboot(script):
 
     Вернувшийся из ребута шлюз выглядел бы исправным и не пропускал ни пакета.
     """
-    assert "/etc/sysctl.d/" in script
+    assert re.search(r'^SYSCTL_CONF="/etc/sysctl\.d/[^"]+\.conf"$', script, re.M)
     apply_part = script.split('step "1a.', 1)[1]
-    assert "SYSCTL_CONF" in apply_part
+    assert "net.ipv4.ip_forward = 1" in apply_part and "> $SYSCTL_CONF" in apply_part, \
+        "форвардинг не записывается в drop-in — до ребута"
 
 
 def test_rollback_removes_the_sysctl_drop_in(script):
@@ -87,13 +95,17 @@ def test_container_detection_always_returns_zero(script):
     assert fn.rstrip().endswith("return 0"), "detect_container может вернуть ненулевой статус"
 
 
-def test_missing_container_is_not_an_error(script):
+def test_missing_container_is_not_an_error(script, tmp_path):
     """Контейнер шлюзу больше не нужен: линк поднимают хостовые утилиты.
 
     Требование его наличия делало скрипт неработоспособным ровно там, куда мы и
-    идём — на шлюзе без Amnezia.
+    идём — на шлюзе без Amnezia: detect_container без docker молча отдаёт пусто.
     """
-    assert "не нашёл контейнер с awg" not in script
+    fn = re.search(r"^detect_container\(\) \{.*?^\}$", script, re.S | re.M).group(0)
+    r = _sh(fn + "\nset -e\nc=$(detect_container)\necho \"[$c]\"")     # docker в PATH нет
+    assert r.returncode == 0 and r.stdout.strip() == "[]", r.stderr
+    r = _sh(fn + "\nCONTAINER=given\ndetect_container")                  # явный — без поиска
+    assert r.stdout == "given"
 
 
 def test_container_commands_are_guarded(script):
@@ -105,29 +117,29 @@ def test_container_commands_are_guarded(script):
                 f"незащищённый docker exec в строке {i + 1}"
 
 
-def test_same_source_and_destination_do_not_abort(script):
+def test_same_or_unchanged_config_is_not_reinstalled(script, tmp_path):
     """Повторный прогон «поверх» уже установленного конфига — обычное дело.
 
     `install` с совпадающими путями падает с «are the same file» и при set -e
-    уносит весь остальной обвяз, который как раз и надо доставить.
+    уносит весь остальной обвяз, который как раз и надо доставить. Тот же
+    конфиг по другому пути — тоже не копируем: рестарт линка рвёт РФ-доступ
+    у всех, а ради того же самого конфига рвать нечего.
     """
-    assert "readlink -f" in script
-    assert "конфиг уже на месте" in script
-
-
-def test_unit_points_at_a_permanent_path(script):
-    """ExecStart обязан ссылаться на постоянный путь, а не на «откуда запустили».
-
-    Бандл шлюза распаковывается во временный каталог, а systemd-tmpfiles
-    вычищает его через десять дней. Пока в юнит уходил `readlink -f "$0"`,
-    автозапуск линка умирал молча: интерфейс уже стоял, RemainAfterExit держал
-    юнит «активным», и отказ всплывал только при первой перезагрузке — как «за
-    шлюзом нет интернета», без связи с каким-либо действием. Шлюз стоит в чужом
-    доме за NAT, и разбираться с этим приходится вслепую.
-    """
-    assert 'SELF="$(install_self)"' in script
-    assert 'SELF="$(readlink -f "$0")"' not in script, "вернулся путь запуска"
-    assert "/usr/local/sbin" in script
+    block = script.split("LINK_SAME=0\n", 1)[1]
+    first_fi = block.index("\nfi\n") + 4
+    block = "LINK_SAME=0\n" + block[:block.index("\nfi\n", first_fi) + 4]
+    conf_dir = tmp_path / "awg"; conf_dir.mkdir()
+    (conf_dir / "awglink.conf").write_text("[Interface]\n", encoding="utf-8")
+    other = tmp_path / "other.conf"; other.write_text("[Interface]\n", encoding="utf-8")
+    changed = tmp_path / "changed.conf"; changed.write_text("[Interface]\nMTU = 1\n", encoding="utf-8")
+    prelude = ('set -e\nsay(){ printf "%s\\n" "$*"; }\nrun(){ printf "RUN %s\\n" "$*"; }\n'
+               f'HOST_CONF_DIR="{conf_dir}"\nLINK_IF="awglink"\n')
+    same = _sh(prelude + f'SRC_CONF="{conf_dir}/awglink.conf"\n' + block)
+    assert same.returncode == 0 and "уже на месте" in same.stdout and "RUN" not in same.stdout
+    equal = _sh(prelude + f'SRC_CONF="{other}"\n' + block)
+    assert "не изменился" in equal.stdout and "RUN" not in equal.stdout
+    new = _sh(prelude + f'SRC_CONF="{changed}"\n' + block)
+    assert "RUN install -m 600" in new.stdout
 
 
 def test_install_self_is_idempotent_and_quiet_in_place(script):

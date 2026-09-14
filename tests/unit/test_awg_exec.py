@@ -87,20 +87,17 @@ def test_block_ip_rejects_bad_ip(monkeypatch):
 
 
 # ── контейнер (docker inspect / restart) ─────────────────────────────────────
-def test_container_running_and_started(monkeypatch):
-    monkeypatch.setattr(awg, "_inspect", lambda fmt: "true")
-    assert awg.container_running() is True
+def test_container_started_and_pid(monkeypatch):
     monkeypatch.setattr(awg, "_inspect", lambda fmt: "2026-01-01T00:00:00Z")
     assert awg.container_started_at() == "2026-01-01T00:00:00Z"
     monkeypatch.setattr(awg, "_inspect", lambda fmt: "12345")
     assert awg.container_pid() == 12345
 
 
-def test_container_running_swallows_error(monkeypatch):
+def test_container_inspect_swallows_error(monkeypatch):
     def boom(fmt):
         raise awg.AwgError("down")
     monkeypatch.setattr(awg, "_inspect", boom)
-    assert awg.container_running() is False
     assert awg.container_started_at() is None
     assert awg.container_pid() is None
 
@@ -113,14 +110,6 @@ def test_awg_responding(monkeypatch):
         raise awg.AwgError("no daemon")
     monkeypatch.setattr(awg, "_exec", boom)
     assert awg.awg_responding() is False
-
-
-def test_restart_container_runs_docker(monkeypatch):
-    import awgbot.core.config as _cfg_rt; monkeypatch.setattr(_cfg_rt, "AWG_RUNTIME", "docker")
-    calls = []
-    monkeypatch.setattr(awg, "_run", lambda args, **k: calls.append(args) or _cp())
-    awg.restart_container()
-    assert calls[0][:2] == ["docker", "restart"]
 
 
 # ── ключи ────────────────────────────────────────────────────────────────────

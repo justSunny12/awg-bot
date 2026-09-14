@@ -26,7 +26,6 @@ def test_import_every_awgbot_module(modname):
 
 def test_import_entrypoint_and_tools():
     importlib.import_module("awgbot.__main__")
-    importlib.import_module("tools.manage_secrets")
     importlib.import_module("tools.restore_backup")
 
 

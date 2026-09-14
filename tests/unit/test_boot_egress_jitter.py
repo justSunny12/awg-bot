@@ -1,14 +1,11 @@
 """Детект перезагрузки хоста, проба наружу в статусе шлюза, джиттер сетевых задач."""
 from __future__ import annotations
 
-import datetime as dt
-
 import pytest
 
-from awgbot.domain.gateway import GatewayServices, GwStatus
+from awgbot.domain.gateway import GatewayServices
 from awgbot.infra.db import Database
 from awgbot.runtime import hostboot
-from awgbot.util import timeutil
 
 
 @pytest.fixture()
@@ -32,7 +29,6 @@ def test_host_rebooted_text():
 
 def test_egress_check_in_snapshot(db, monkeypatch):
     svc = GatewayServices(db)
-    from awgbot.domain import gateway as gw
     monkeypatch.setattr(svc, "link_status", lambda: (True, 5.0, 0, 0))
     monkeypatch.setattr(svc, "plumbing_checks", lambda: [])
     monkeypatch.setattr(svc, "tg_mark_missing", lambda info=None: [])

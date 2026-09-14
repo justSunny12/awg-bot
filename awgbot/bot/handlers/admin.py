@@ -103,11 +103,6 @@ async def restore_panel_after_restart(bot, services) -> None:
     await call(services.db.nav_touch, chat_id, sent.message_id)
 
 
-async def _panel_text(services) -> str:
-    """Шапка панели: статус из кэша (0 docker exec, мгновенно)."""
-    return _panel_text_from(services, await call(services.admin_panel_snapshot))
-
-
 async def _expiring_screen(services):
     rows = await call(services.expiring_subscriptions)
     return (texts.expiring_text(rows, getattr(services, "bot_username", "")),

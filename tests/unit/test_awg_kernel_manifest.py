@@ -132,7 +132,6 @@ def test_prune_refuses_until_the_new_module_actually_runs(tmp_path):
 def test_prune_removes_every_other_dkms_version(tmp_path):
     """Сюда попадает и апстримное «1.0.0» с хостов, собранных руками."""
     import os
-    import subprocess
     ver = "3.1.20260812"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
@@ -359,22 +358,156 @@ def test_generation_bump_raises_a_second_interface(bot_sh):
     assert 'yaml_set "$app"' not in body, "жёсткий yaml_set внутри обновления"
 
 
-def test_missing_state_file_adopts_the_delivery_generation(bot_sh):
+_BOT_HELPERS = ("awg_state_get", "awg_state_set", "yaml_get", "yaml_set_soft",
+                "yaml_set", "lock_get")
+
+
+def _bot_func(script: str, name: str) -> str:
+    m = re.search(rf"^{re.escape(name)}\(\) \{{.*?^\}}$", script, re.S | re.M)
+    assert m, f"в awg-bot.sh нет функции {name}()"
+    return m.group(0)
+
+
+def _run_bot_func(tmp_path, name, *, lock_gen="2", applied="", target="",
+                  app_yaml="", confs=(), init_rc=0, prune_rc=0):
+    """Прогоняет функцию awg-bot.sh с настоящими хелперами (yaml_*/awg_state_*)
+    и подставными скриптами install/: серверный init и уборка ядра лишь
+    отмечаются в журнале. Возвращает (proc, state_text, app_yaml_text, log)."""
+    import os
+    import subprocess
+    script = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    inst = tmp_path / "install"; inst.mkdir(exist_ok=True)
+    journal = tmp_path / "journal"
+    (inst / "awg-server-init.sh").write_text(
+        f'#!/bin/bash\necho "INIT $AWG_IF $SUBNET_PREFIX $AWG_QUICK_DIR" >> "{journal}"\nexit {init_rc}\n',
+        encoding="utf-8")
+    (inst / "awg-kernel-install.sh").write_text(
+        f'#!/bin/bash\necho "KERNEL $1" >> "{journal}"\nexit {prune_rc}\n', encoding="utf-8")
+    conf = tmp_path / "conf"; conf.mkdir(exist_ok=True)
+    conf_dir = tmp_path / "awg"; conf_dir.mkdir(exist_ok=True)
+    for name_ in confs:
+        (conf_dir / name_).write_text("[Interface]\nAddress = 10.9.1.1/24\n", encoding="utf-8")
+    app = conf / "app.yaml"
+    app.write_text(app_yaml.replace("__AWG_DIR__", str(conf_dir)), encoding="utf-8")
+    lock = tmp_path / "awg.lock"; lock.write_text(f"AWG_GENERATION={lock_gen}\n", encoding="utf-8")
+    state = tmp_path / "awg.state"
+    lines = [f"AWG_GENERATION_APPLIED={applied}"] if applied else []
+    if target:
+        lines.append(f"AWG_GENERATION_TARGET={target}")
+    if lines:
+        state.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # BSD sed не понимает `-i -E` в том виде, как пишет скрипт под GNU
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "sed").write_text(
+        '#!/bin/sh\nif /usr/bin/sed --version >/dev/null 2>&1; then exec /usr/bin/sed "$@"; fi\n'
+        'if [ "$1" = "-i" ] && [ "$2" = "-E" ]; then shift 2; exec /usr/bin/sed -i "" -E "$@"; fi\n'
+        'exec /usr/bin/sed "$@"\n', encoding="utf-8")
+    (bin_dir / "sed").chmod(0o755)
+    prog = "\n".join([
+        "set -e",
+        'log(){ printf "[log] %s\\n" "$*"; }', 'warn(){ printf "[warn] %s\\n" "$*"; }',
+        'ok(){ printf "[ok] %s\\n" "$*"; }', 'die(){ printf "[die] %s\\n" "$*"; exit 1; }',
+        f'AWG_LOCK_FILE="{lock}"', f'AWG_STATE="{state}"', f'CONF_DIR="{conf}"',
+        f'INSTALL_DIR="{tmp_path}"',
+        *(_bot_func(script, h) for h in _BOT_HELPERS),
+        _bot_func(script, name), name, "echo ДОШЛИ",
+    ])
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
+    proc = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, env=env)
+    read = lambda p: p.read_text(encoding="utf-8") if p.exists() else ""
+    return proc, read(state), read(app), read(journal)
+
+
+_APP_YAML = """docker:
+  runtime: "host"
+  interface: "awg0"
+  awg_dir: "__AWG_DIR__"
+  migration_interface: ""
+  migration_subnet_prefix: ""
+network:
+  subnet_prefix: "10.8.1"
+  ip_host_start: 1
+"""
+
+
+def test_missing_state_file_adopts_the_delivery_generation(tmp_path):
     """Первая поставка с манифестом усыновляет текущее поколение, а не объявляет
     переезд: обновления идут по одной ступени, значит ввод файла случается
     раньше любой смены поколения."""
-    body = bot_sh.split("ensure_awg_generation() {", 1)[1].split("\n}\n", 1)[0]
-    adopt = body.split('if [[ -z "$applied" ]]; then', 1)[1].split("fi", 1)[0]
-    assert "awg_state_set AWG_GENERATION_APPLIED" in adopt and "return 0" in adopt
+    proc, state, app, journal = _run_bot_func(tmp_path, "ensure_awg_generation",
+                                              lock_gen="2", app_yaml=_APP_YAML)
+    assert proc.returncode == 0 and "ДОШЛИ" in proc.stdout, proc.stdout + proc.stderr
+    assert "AWG_GENERATION_APPLIED=2" in state
+    assert "AWG_GENERATION_TARGET" not in state and "INIT" not in journal
+    assert 'migration_interface: ""' in app
 
 
-def test_second_interface_name_and_subnet_do_not_collide(bot_sh):
-    """Имя и подсеть подбираются сами: занятое имя или пересечение подсетей —
-    ровно то, где админ ошибётся, а отказ вылезет у клиентов."""
-    body = bot_sh.split("ensure_awg_generation() {", 1)[1].split("\n}\n", 1)[0]
-    assert '[[ -e "$conf_dir/awg$i.conf" || "awg$i" == "$base_if" ]] && continue' in body
-    assert 'grep -rqs "$cand\\." "$conf_dir"' in body
-    assert "не подобрать имя/подсеть" in body, "без свободных имён — предупреждение, а не тишина"
+def test_generation_bump_raises_a_second_interface_that_does_not_collide(tmp_path):
+    """Смена поколения: второй интерфейс поднимается сам, имя и подсеть
+    подбираются мимо занятых — ровно то, где админ ошибётся, а отказ вылезет у
+    клиентов. Пул адресов начинается с .2, цель поколения — в состоянии."""
+    proc, state, app, journal = _run_bot_func(
+        tmp_path, "ensure_awg_generation", lock_gen="3", applied="2",
+        app_yaml=_APP_YAML, confs=("awg1.conf",))     # awg1 и 10.9.1.x заняты
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "INIT awg2 10.10.1 " in journal, journal
+    assert 'migration_interface: "awg2"' in app and 'migration_subnet_prefix: "10.10.1"' in app
+    assert "ip_host_start: 2" in app
+    assert "AWG_GENERATION_TARGET=3" in state and "AWG_GENERATION_APPLIED=2" in state
+
+
+def test_generation_bump_without_free_names_warns_instead_of_dying(tmp_path):
+    proc, state, app, journal = _run_bot_func(
+        tmp_path, "ensure_awg_generation", lock_gen="3", applied="2",
+        app_yaml=_APP_YAML, confs=tuple(f"awg{i}.conf" for i in range(1, 10)))
+    assert proc.returncode == 0 and "ДОШЛИ" in proc.stdout
+    assert "не подобрать имя/подсеть" in proc.stdout and "INIT" not in journal
+    assert "AWG_GENERATION_TARGET" not in state
+
+
+def test_failed_interface_init_leaves_no_half_state(tmp_path):
+    proc, state, app, journal = _run_bot_func(
+        tmp_path, "ensure_awg_generation", lock_gen="3", applied="2",
+        app_yaml=_APP_YAML, init_rc=1)
+    assert proc.returncode == 0 and "INIT awg1" in journal
+    assert 'migration_interface: ""' in app and "AWG_GENERATION_TARGET" not in state
+
+
+def test_installer_never_retargets_a_running_migration(tmp_path):
+    """Обратный запрет: идущий переезд нельзя объявить целью смены поколения.
+    Двойники на нём рождены под прежнее ядро, и финал записал бы хост
+    перешедшим на поколение, которого он не видел."""
+    running = _APP_YAML.replace('migration_interface: ""', 'migration_interface: "awg1"') \
+                       .replace('migration_subnet_prefix: ""', 'migration_subnet_prefix: "10.9.1"')
+    proc, state, app, journal = _run_bot_func(
+        tmp_path, "ensure_awg_generation", lock_gen="3", applied="2", app_yaml=running)
+    assert proc.returncode == 0 and "ДОШЛИ" in proc.stdout
+    assert "завершиться первым" in proc.stdout
+    assert "AWG_GENERATION_TARGET" not in state and "INIT" not in journal
+    assert 'migration_interface: "awg1"' in app, "идущий переезд не тронут"
+
+
+@pytest.mark.parametrize("applied, target, lock_gen, pruned", [
+    ("2", "", "2", True),      # совместимая смена тега — убираем после старта
+    ("2", "3", "3", False),    # переезд объявлен — старое ядро ждёт финала
+    ("2", "", "3", False),     # поколение выросло, цели ещё нет — тоже ждём
+])
+def test_old_builds_are_pruned_only_when_no_generation_change_is_pending(
+        tmp_path, applied, target, lock_gen, pruned):
+    """Смена поколения: старый интерфейс ещё обслуживает людей, и путь назад
+    к прежнему ядру должен оставаться до финала переезда. Совместимая смена —
+    прежняя сборка убирается сразу после успешного старта на новом модуле."""
+    proc, state, app, journal = _run_bot_func(
+        tmp_path, "prune_old_kernel_builds", lock_gen=lock_gen, applied=applied,
+        target=target, app_yaml=_APP_YAML)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert ("KERNEL prune" in journal) is pruned, journal + proc.stdout
+
+
+def test_prune_runs_after_a_successful_start(bot_sh):
+    post = bot_sh.split("cmd_post_update() {", 1)[1].split("\n}\n", 1)[0]
+    assert post.index('systemctl is-active --quiet "$SERVICE"') < post.index("prune_old_kernel_builds"), \
+        "уборка раньше успешного старта"
 
 
 def test_installer_writes_topology_even_for_a_pre_existing_server(bot_sh):
@@ -390,25 +523,3 @@ def test_installer_writes_topology_even_for_a_pre_existing_server(bot_sh):
     assert "BASH_REMATCH[1]} + 1" in body and "ip_host_start" in body
 
 
-def test_installer_never_retargets_a_running_migration(bot_sh):
-    """Обратный запрет: идущий переезд нельзя объявить целью смены поколения.
-    Двойники на нём рождены под прежнее ядро, и финал записал бы хост
-    перешедшим на поколение, которого он не видел."""
-    body = bot_sh.split("ensure_awg_generation() {", 1)[1].split("\n}\n", 1)[0]
-    branch = body.split('if [[ -n "$mig_if" ]]; then', 1)[1].split("fi", 1)[0]
-    assert "awg_state_set" not in branch, "цель переезда всё-таки переписывается"
-    assert "warn" in branch and "завершиться первым" in branch
-    assert "return 0" in branch
-
-
-def test_old_builds_are_kept_until_the_generation_migration_finishes(bot_sh):
-    """Смена поколения: старый интерфейс ещё обслуживает людей, и путь назад
-    к прежнему ядру должен оставаться до финала переезда. Совместимая смена —
-    прежняя сборка убирается сразу после успешного старта на новом модуле."""
-    body = bot_sh.split("prune_old_kernel_builds() {", 1)[1].split("\n}\n", 1)[0]
-    assert "AWG_GENERATION_TARGET" in body and '"$want" -gt "$applied"' in body
-    assert "до финала переезда" in body
-    assert "awg-kernel-install.sh\" prune" in body
-    post = bot_sh.split("cmd_post_update() {", 1)[1].split("\n}\n", 1)[0]
-    assert post.index('systemctl is-active --quiet "$SERVICE"') < post.index("prune_old_kernel_builds"), \
-        "уборка раньше успешного старта"

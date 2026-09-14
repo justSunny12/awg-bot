@@ -2,7 +2,6 @@
 один коммит на тик. Меряем коммитами: спокойный тик обязан стоить ноль."""
 from __future__ import annotations
 
-import types
 
 from awgbot.core import settings
 
@@ -24,15 +23,6 @@ def test_set_state_hot_key_stays_correct(services):
     db.set_state(key, "a"); assert db.get_state(key) == "a"
     db.set_state(key, "a"); assert db.get_state(key) == "a"
     db.set_state(key, "b"); assert db.get_state(key) == "b"
-
-
-def test_set_states_is_one_commit_and_skips_unchanged(services):
-    db = services.db
-    db.set_state("a", "1")
-    n0 = db.commits
-    written = db.set_states({"a": "1", "b": "2", "c": "3"})
-    assert written == 2 and db.commits == n0 + 1
-    assert db.set_states({"a": "1", "b": "2", "c": "3"}) == 0
 
 
 def test_resource_alerts_quiet_state_costs_no_commits(services, fake_awg):

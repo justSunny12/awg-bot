@@ -152,7 +152,7 @@ def test_raise_device_limit_clears_traffic_user_block(services, fake_awg, make_a
     client = make_active_client()
     dc = services.add_device(client.id, "d")
     services.set_device_traffic_limit(dc.device_id, 100)
-    services.db.add_traffic(dc.device_id, 60, 60)         # 120 > 100 → над лимитом
+    services.db.add_traffic_bulk([(dc.device_id, 60, 60)])         # 120 > 100 → над лимитом
     services._device_set_block(dc.device_id, DeviceBlock.TRAFFIC_USER)
     assert dc.address in fake_awg.blocked
     services.set_device_traffic_limit(dc.device_id, 0)    # безлимит → снять бит

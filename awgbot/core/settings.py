@@ -124,14 +124,6 @@ def get_bool(key: str, default: bool = False) -> bool:
     return bool(v) if isinstance(v, bool) else str(v).strip().lower() in ("1", "true", "yes", "on")
 
 
-def get_float(key: str, default: float = 0.0) -> float:
-    v = get(key, default)
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return default
-
-
 # ── diff (для точечного применения) ──────────────────────────────────────────
 def _flatten(d: Any, prefix: str) -> dict[str, Any]:
     out: dict[str, Any] = {}

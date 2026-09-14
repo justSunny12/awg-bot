@@ -11,15 +11,16 @@ from aiogram.filters.callback_data import CallbackData
 
 
 class Menu(CallbackData, prefix="m"):
-    """Навигация по меню. action: main|info|devices|gen_link|gen_qr|gen_file|
-    backup|clients|add_client|add_device_choice|add_device_pick|unassigned|
-    restart|noop"""
+    """Навигация по меню. action: main|info|refresh|devices|gen_link|gen_qr|
+    gen_file|clients|add_client|add_device_choice|add_device_pick|unassigned|
+    expiring|traffic"""
     action: str
 
 
 class ClientCB(CallbackData, prefix="c"):
-    """Действия над клиентом (админ). action: open|edit_name|edit_limit|
-    extend|delete|regen_invite|gen_for"""
+    """Действия над клиентом (админ). action: open|devices|add_device|
+    edit_name|edit_limit|edit_traffic|edit_period|extend|resume_pause|delete|
+    regen_invite|gen_for"""
     action: str
     client_id: int = 0
 
@@ -59,7 +60,8 @@ class UpdateCB(CallbackData, prefix="upd"):
     """Обновления бота. action:
       install — скачать следующую версию, сверить sha256 и применить;
       mute    — выключить автоуведомления/стартовую проверку об обновлениях;
-      check   — админ-проверка «Обновление бота» (показать следующую или «актуально»).
+      menu    — «В меню» с финишного сообщения об обновлении.
+    Ручная проверка — не здесь: SetCB(sec="upd", act="do", key="check").
     Тег в data не носим: «следующая ступень» детерминирована от установленной
     версии, обработчик пересчитывает next_release() сам (нет протухания)."""
     action: str
@@ -67,10 +69,10 @@ class UpdateCB(CallbackData, prefix="upd"):
 
 class PauseCB(CallbackData, prefix="pz"):
     """Приостановка подписки клиентом. action: ask (показать инфо+выбор дней) |
-    pick (выбран пресет дней) | other (ввод своего числа) | warn (показать
-    предупреждение перед подтверждением) | confirm (войти в паузу) |
-    resume (выйти досрочно) | cancel (закрыть диалог). ref — id клиента,
-    days — выбранное число дней (для pick/warn/confirm)."""
+    pick (выбран пресет дней) | other (ввод своего числа) | confirm (войти в
+    паузу) | resume_ask (спросить про досрочный выход) | resume (выйти
+    досрочно) | cancel (закрыть диалог). ref — id клиента, days — выбранное
+    число дней (для pick/confirm)."""
     action: str
     ref: int = 0
     days: int = 0
@@ -109,7 +111,7 @@ class ReassignCB(CallbackData, prefix="ra"):
 
 
 class HelpCB(CallbackData, prefix="h"):
-    """Меню помощи с настройкой. platform: apple|android|windows|mac|skip|menu"""
+    """Меню помощи с настройкой. platform: apple|android|windows|mac|skip|root"""
     platform: str
 
 
@@ -121,7 +123,8 @@ class DelDeviceCB(CallbackData, prefix="dd"):
 
 
 class GuideCB(CallbackData, prefix="g"):
-    """Навигация по визарду-гайду. guide: apple|android|windows|mac|connect|toggle.
+    """Навигация по визарду-гайду. guide: apple|android|windows|mac|connect|
+    connect_apple|toggle.
     step — номер шага (с 0). Состояние в callback, не в FSM — переживает рестарт.
     Для шага подключения (connect): dev — id выбранного устройства, kind — способ
     выдачи (link|qr|file); пусто вне этого шага."""
@@ -133,25 +136,21 @@ class GuideCB(CallbackData, prefix="g"):
 
 class AdminSelfCB(CallbackData, prefix="as"):
     """Личные VPN-действия админа над своей клиентской записью.
-    action: add | devices | gen_link | gen_file."""
+    action: add | devices | gen_link | gen_qr | gen_file."""
     action: str
 
 
 class FriendCB(CallbackData, prefix="fr"):
     """Действия в гостевом меню друга (invited).
-    action: gen_link | gen_file | help | refresh | open | list.
+    action: gen_link | gen_qr | gen_file | connect_menu | help | refresh | open | list.
     device_id — целевое устройство (мультидружба: у друга их может быть >1)."""
     action: str
     device_id: int = 0
 
 
-__all__ = ["Menu", "ClientCB", "DeviceCB", "PeriodCB", "ConfirmCB", "ReassignCB",
-           "HelpCB", "DelDeviceCB", "GuideCB", "AdminSelfCB", "FriendCB", "GraceCB",
-           "BlockCB", "PauseCB"]
-
-
 class SetCB(CallbackData, prefix="set"):
-    """Экран настроек. sec — раздел (root/notify/subs/mon/backup/svc/upd);
+    """Экран настроек. sec — раздел: root/notify/srv/fw/rt (+ rt_gw/rt_lists/
+    rt_users/rt_bundle)/email/subs/svc/mon/backup/upd/mig/mig_prep/ncl;
     act — действие (open/toggle/edit/pick/do); key — dotted-ключ настройки или
     id действия; val — необязательное значение (для pick-выбора enum)."""
     sec: str
@@ -168,8 +167,9 @@ class RoutingCB(CallbackData, prefix="rt"):
       all     — включить/выключить все устройства профиля (ref = client_id);
       add     — начать ввод доменов;
       del     — удалить домен (idx — позиция в списке, ref = client_id);
-      clear   — спросить подтверждение очистки; clear_yes — очистить;
-      allow   — админский тумблер разрешения (ref = client_id).
+      clear   — спросить подтверждение очистки; clear_yes — очистить.
+    Админское разрешение профилю — не здесь: SetCB(sec="rt", act="do",
+    key="allow") в настройках.
 
     Домен в callback_data не носим: лимит Telegram — 64 байта на всю строку, а
     имена бывают длиннее. Позиция берётся из того же порядка, что показан
@@ -178,7 +178,6 @@ class RoutingCB(CallbackData, prefix="rt"):
     action: str
     ref: int = 0
     idx: int = -1
-    page: int = 0
 
 
 class BroadcastCB(CallbackData, prefix="bc"):
@@ -207,8 +206,13 @@ class GwMarkCB(CallbackData, prefix="gwm"):
 
 
 class GwCB(CallbackData, prefix="gw"):
-    """Кнопки агента шлюза (роль gateway). action: panel|doctor|restart|reassert
-    (показ подтверждения), restart!|reassert! (исполнение), apply!|drop (бандл),
-    updates|upd_toggle|upd_check|upd_sched (val — вариант расписания)."""
+    """Кнопки агента шлюза (роль gateway). action:
+      panel|refresh|health — панель и её обновление, проверки живьём;
+      settings и разделы notify|email|mon|backup|maint|updates;
+      tgl|edit|enc|enc_set|bk_ch (val — ключ/вариант) — правки настроек;
+      restart|reassert|botrestart — показ подтверждения, с «!» — исполнение;
+      backup!, restore!|restore_drop, em_setup|em_check|em_test|em_forget(!);
+      apply!|apply_ow!|apply_keep!|drop — принять/отклонить бандл;
+      upd_toggle|upd_check|upd_sched (val — вариант расписания)."""
     action: str
     val: str = ""

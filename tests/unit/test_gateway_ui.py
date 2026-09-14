@@ -1,7 +1,6 @@
 """Панель агента v2.4.3: снимок, потребление за месяц, имя ВПС, метрики."""
 from __future__ import annotations
 
-import json
 
 import pytest
 
@@ -159,7 +158,8 @@ def test_gateway_backup_is_one_encrypted_archive_with_all_confs(svc, monkeypatch
     monkeypatch.setattr(config, "BACKUP_DIR", tmp_path / "bk")
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "nope.db")
     monkeypatch.setattr(config, "ENV_PATH", None)
-    with pytest.raises(Exception):
+    from awgbot.domain.services import ServiceError
+    with pytest.raises(ServiceError, match="шифрованная"):
         svc.make_backup()                                  # без фразы — отказ
     svc.backup_set_passphrase("correct horse battery")
     paths = svc.make_backup()

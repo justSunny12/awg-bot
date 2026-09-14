@@ -5,7 +5,7 @@ import pytest
 
 from awgbot.bot.handlers import friend as fh
 from awgbot.bot.callbacks import FriendCB, HelpCB
-from tests.conftest import FakeCallback, FakeMessage
+from tests.conftest import FakeCallback, FakeMessage, last_screen
 
 pytestmark = pytest.mark.e2e
 
@@ -21,20 +21,13 @@ def _befriend(services, owner_id, friend_tg, name="d"):
     return dc
 
 
-async def test_friend_list_single_multi_none(services, fake_bot, make_active_client):
-    a = make_active_client(tg_id=6100)
-    _befriend(services, a.id, 96100, "One")
-    cb, nav = _fcb(fake_bot, 96100)
-    await fh.friend_list(cb, services)                       # одно → карточка
-    assert any(s[0] == "edit_text" for s in nav.sent)
-    b = make_active_client(tg_id=6101)
-    _befriend(services, b.id, 96100, "Two")
-    cb2, nav2 = _fcb(fake_bot, 96100)
-    await fh.friend_list(cb2, services)                      # несколько → список
-    assert any(s[0] == "edit_text" for s in nav2.sent)
-    cb3, nav3 = _fcb(fake_bot, 96199)
-    await fh.friend_list(cb3, services)                      # ни одного → alert
-    assert cb3.answers[-1][1] is True
+async def test_friend_list_without_devices_alerts(services, fake_bot):
+    """Кнопка «Мои устройства» у того, кому больше ничего не выдано, — алерт, а
+    не пустой экран. Карточка/список — test_handlers_friend.py (payload)."""
+    cb, nav = _fcb(fake_bot, 96199)
+    await fh.friend_list(cb, services)
+    assert cb.answers[-1][1] is True
+    assert not any(s[0] == "edit_text" for s in nav.sent)
 
 
 async def test_friend_refresh_variants(services, fake_bot, make_active_client):
@@ -81,7 +74,9 @@ async def test_friend_help_and_platform(services, fake_bot, make_active_client):
     _befriend(services, a.id, 96107)
     cb, nav = _fcb(fake_bot, 96107)
     await fh.friend_help(cb)
-    assert any(s[0] == "edit_text" for s in nav.sent)
+    _, labels = last_screen(nav)
+    assert sum(any(p in l for p in ("iPhone", "Android", "Windows", "Mac")) for l in labels) == 4
     cb2, nav2 = _fcb(fake_bot, 96107)
     await fh.friend_help_platform(cb2, HelpCB(platform="android"))
-    assert any(s[0] == "edit_text" for s in nav2.sent)
+    text2, labels2 = last_screen(nav2)
+    assert "Android" in text2 and any("Назад" in l for l in labels2)

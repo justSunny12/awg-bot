@@ -22,39 +22,23 @@ INSTALL = ROOT / "install"
 BOOTSTRAP = "awg-bot-install.sh"
 
 
-def test_packaging_is_not_a_whitelist():
-    """Скрипты берутся маской по каталогу, а не перечислением.
-
-    Перечисление молча пропускает новый файл, и узнаёшь об этом на сервере.
-    """
-    src = BUILD.read_text(encoding="utf-8")
-    assert '"$ROOT"/install/*.sh' in src, "install-скрипты должны браться целиком"
-    assert '"$ROOT"/install/routing-*.sh' not in src, "перечисление по маскам вернулось"
-
-
-def test_delivery_is_a_single_artifact():
-    """Один архив вместо «скачай два файла и не перепутай версии». Установщик
-    внутри: им поставку и разворачивают, а рядом с архивом класть больше
-    нечего."""
-    src = BUILD.read_text(encoding="utf-8")
-    assert 'install -m 0755 "$ROOT/install/awg-bot-install.sh" "$OUT/' not in src, \
-        "бутстрап снова кладётся рядом с архивом"
-    assert 'continue' not in src.split("for _f in \"$ROOT\"/install/*.sh; do", 1)[1].split("done", 1)[0], \
-        "из архива снова что-то исключается"
-
-
 @pytest.mark.smoke
 def test_built_package_contains_every_install_script(tmp_path):
-    """Сборка целиком: в архиве есть каждый install/*.sh, кроме бутстрапа."""
+    """Сборка целиком, во временный каталог: поставка — один архив, и в нём
+    есть каждый install/*.sh вместе с бутстрапом и манифестом ядра. Скрипты
+    берутся маской по каталогу: перечисление молча пропускало бы новый файл."""
     if not BUILD.exists():
         pytest.skip("build_release.sh отсутствует")
-    proc = subprocess.run(["bash", str(BUILD)], cwd=ROOT,
+    out = tmp_path / "dist"
+    proc = subprocess.run(["bash", str(BUILD), str(out)], cwd=ROOT,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     assert proc.returncode == 0, proc.stdout.decode(errors="replace")[-2000:]
 
-    tgz = ROOT / "dist" / "awg-bot.tgz"
-    with tarfile.open(tgz) as tf:
-        shipped = {Path(n).name for n in tf.getnames() if "/install/" in n}
+    assert (out / "awg-bot.tgz").exists(), "продукт — один архив awg-bot.tgz"
+    with tarfile.open(out / "awg-bot.tgz") as tf:
+        names = tf.getnames()
+    shipped = {Path(n).name for n in names if "/install/" in n}
+    assert not any("/tests/" in n for n in names), "тесты в продуктовую поставку не едут"
 
     expected = {p.name for p in INSTALL.glob("*.sh")} | {BOOTSTRAP}
     expected |= {"awg.lock"}          # версия awg прибита к поставке (ROADMAP п.8)

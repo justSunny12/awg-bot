@@ -1,19 +1,16 @@
 """Unit: awgbot.util.secrets_util — argon2id, SecretBox (крипто бэкапов)."""
 import pytest
+from nacl.exceptions import CryptoError
 
 from awgbot.util import secrets_util as su
 
 pytestmark = pytest.mark.unit
 
 
-# ── отпечаток / идентификатор ключа ──────────────────────────────────────────
-
-
-
-
+# ── шифрование бэкапов: случайный ключ ───────────────────────────────────────
 def test_decrypt_random_wrong_key_fails():
     blob = su.encrypt(b"x", key=su.gen_random_key())
-    with pytest.raises(Exception):
+    with pytest.raises(CryptoError):
         su.decrypt(blob, key=su.gen_random_key())
 
 
@@ -26,7 +23,7 @@ def test_encrypt_decrypt_passphrase():
 
 def test_decrypt_passphrase_wrong_fails():
     blob = su.encrypt(b"x", passphrase="right-pass")
-    with pytest.raises(Exception):
+    with pytest.raises(CryptoError):
         su.decrypt(blob, passphrase="wrong-pass")
 
 

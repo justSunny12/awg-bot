@@ -126,7 +126,7 @@ def test_peer_block_shape():
     blk = awg._peer_block(PUB1, "PSKX", "10.8.1.9")
     assert blk["pubkey"] == PUB1
     assert blk["lines"][0] == "[Peer]"
-    assert f"AllowedIPs = 10.8.1.9/32" in blk["lines"]
+    assert "AllowedIPs = 10.8.1.9/32" in blk["lines"]
 
 
 # ── валидаторы ───────────────────────────────────────────────────────────────

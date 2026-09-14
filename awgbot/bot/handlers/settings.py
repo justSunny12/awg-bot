@@ -419,6 +419,17 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
                     + ("разрешён" if new_state else "запрещён"))
 
 
+# ── ввод порта для переезда ──────────────────────────────────────────────────
+# Регистрируется РАНЬШЕ общего edit_value: тот ловит любой act == "edit", а
+# ключ "port" в SETTINGS_BOUNDS не значится — кнопка «Задать порт» упиралась бы
+# в «Эта настройка недоступна».
+@router.callback_query(SetCB.filter((F.sec == "mig_prep") & (F.act == "edit")))
+async def migration_port_ask(cb: CallbackQuery, state: FSMContext, services):
+    await state.set_state(MigrationPort.value)
+    await edit(cb, texts.MIGRATION_ASK_PORT, kb.settings_cancel("mig_prep"))
+    await cb.answer()
+
+
 # ── ввод числового значения (FSM) ────────────────────────────────────────────
 @router.callback_query(SetCB.filter(F.act == "edit"))
 async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext, services):
@@ -455,13 +466,6 @@ async def _migration_prepare(cb: CallbackQuery, services, want_port: str = "") -
     except OSError as e:
         log.warning("после подготовки переезда не удалось перезапустить бота: %s", e)
         await cb.message.answer(texts.migration_promote_restart_failed())
-
-
-@router.callback_query(SetCB.filter((F.sec == "mig_prep") & (F.act == "edit")))
-async def migration_port_ask(cb: CallbackQuery, state: FSMContext, services):
-    await state.set_state(MigrationPort.value)
-    await edit(cb, texts.MIGRATION_ASK_PORT, kb.settings_cancel("mig_prep"))
-    await cb.answer()
 
 
 @router.message(MigrationPort.value)

@@ -134,34 +134,33 @@ def test_gateway_is_locked_against_everything(gw, services, make_active_client):
     assert services.db.get_device(phone.device_id).block_reason != 0
 
 
-def test_gateway_is_outside_limits_and_first_in_lists(gw, services, monkeypatch):
+def test_gateway_traffic_is_not_the_profiles_but_the_device_is_listed_first(
+        gw, services):
+    """Трафик шлюза — это трафик ЧУЖИХ клиентов, идущий через него; в
+    потреблении профиля админа и в его лимите ему не место. При этом само
+    устройство — обычное: в списках первым, со своим значком. Счётчики —
+    test_counters_agree_with_the_lists_they_head."""
     admin, phone, pi = gw
     services.db.set_gateway(pi.device_id)
-    services.db.add_traffic(pi.device_id, 10 ** 12, 10 ** 12)         # «весь РФ-трафик»
-    services.db.add_traffic(phone.device_id, 5, 5)
+    services.db.add_traffic_bulk([(pi.device_id, 10 ** 12, 10 ** 12),          # «весь РФ-трафик»
+                                  (phone.device_id, 5, 5)])
     t = services.db.get_client_traffic(admin.id)
-    # Трафик шлюза — это трафик ЧУЖИХ клиентов, идущий через него; в
-    # потреблении профиля админа ему не место.
     assert t["rx_month"] == 5 and t["tx_month"] == 5, "трафик шлюза в профиле не считается"
-    # А вот в счётчике устройств он есть: счёт обязан совпадать со списком.
-    assert services.db.count_devices(admin.id) == 2, "шлюз должен считаться устройством"
-    devs = services.db.list_devices(admin.id)
-    assert [d.name for d in devs] == ["NASPi", "phone"], "шлюз первым"
     # лимит профиля не срабатывает от шлюза
     services.db.update_client_fields(admin.id, traffic_limit=1024)
     notes = services.check_traffic_limits()
     assert not any("NASPi" in n.text for n in notes)
     assert services.db.get_device(pi.device_id).block_reason == 0
-    # онлайн: шлюз первым, в счёте его нет
+
+    devs = services.db.list_devices(admin.id)
+    assert [d.name for d in devs] == ["NASPi", "phone"], "шлюз первым"
     import time as _t
     now = int(_t.time())
     services.db.update_device_fields(pi.device_id, last_handshake=now)
     services.db.update_device_fields(phone.device_id, last_handshake=now)
     rows = services.online_devices()
-    assert rows[0][0].name == "NASPi", "шлюз первой строкой"
+    assert rows[0][0].name == "NASPi", "шлюз первой строкой и среди онлайн"
     from awgbot.bot import texts
-    assert "онлайн (2)" in texts.online_devices_text(rows), \
-        "счёт в заголовке обязан совпадать с длиной списка под ним"
     assert "🛰" in texts.device_label(services.db.get_device(pi.device_id))
 
 
@@ -178,7 +177,7 @@ def test_remove_unmarks_rekeys_and_disables_routing(gw, services, monkeypatch):
 
 
 def test_bundle_env_carries_gateway_key_and_uplink_conf(gw, services, monkeypatch, tmp_path):
-    import builtins, os as _os, subprocess as _sp
+    import builtins, os as _os
     admin, phone, pi = gw
     services.db.set_gateway(pi.device_id)
     dev = services.db.get_device(pi.device_id)

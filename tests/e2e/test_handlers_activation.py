@@ -42,7 +42,7 @@ async def test_activate_friend_code_invalid(services, fake_bot):
 
 async def test_activate_friend_code_already_user(services, fake_bot, make_active_client):
     owner = make_active_client(tg_id=8202)
-    other = make_active_client(tg_id=98202)                 # уже клиент
+    make_active_client(tg_id=98202)                         # уже клиент
     _, code = _friendly_device(services, owner.id)
     msg = FakeMessage(chat_id=98202, user_id=98202, bot=fake_bot)
     await client_h._try_activate(msg, services, code)

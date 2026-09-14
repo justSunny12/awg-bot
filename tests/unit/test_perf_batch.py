@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 from awgbot.core import access_cache
+from tests.conftest import FakeMessage
 
 
 # ── nav_touch: одна транзакция вместо трёх хопов ─────────────────────────────
@@ -51,7 +50,6 @@ def test_access_cache_expires(monkeypatch):
 
 async def test_middleware_uses_cache_for_client(services, monkeypatch):
     from awgbot.bot.middleware import AccessMiddleware
-    from tests.conftest import FakeMessage
     access_cache.invalidate_all()
     created = services.create_client("Кэш", 3, "month")
     services.activate_client(created.invite_code, 555)
@@ -75,7 +73,6 @@ async def test_middleware_negative_cache_for_strangers(services, monkeypatch):
     """Посторонний: второе сообщение подряд — без единого запроса в БД, а
     /start по-прежнему проходит к активации."""
     from awgbot.bot.middleware import AccessMiddleware
-    from tests.conftest import FakeMessage
     access_cache.invalidate_all()
     mw = AccessMiddleware(services.db)
     calls = []

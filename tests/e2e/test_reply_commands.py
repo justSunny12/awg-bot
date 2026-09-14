@@ -2,7 +2,6 @@
 import pytest
 
 from awgbot.bot.handlers import reply_commands as rc
-from awgbot.bot.callbacks import HideCB
 from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e

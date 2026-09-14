@@ -61,39 +61,6 @@ def test_pause_not_capped_by_subscription_remainder(services, fake_awg):
     assert ok and reserved == settings.get_int("pause.pause_max_total_days", 28)
 
 
-def test_email_resume_code_cycle(services, fake_awg):
-    """Email-выход: код генерится при входе, снимает паузу, обнуляется (replay)."""
-    from awgbot.core.blocks import ClientBlock
-    from awgbot.util import timeutil
-    from datetime import datetime, timedelta
-    end = timeutil.to_iso(datetime.now(timeutil.TZ) + timedelta(days=200))
-    cid = services.db.create_client("Vac", 1, timeutil.now_iso(), end, "c", period_kind="year")
-    services.db.activate_client("c", 5)
-    ok, reserved, notes, code = services.enter_pause(cid, 7)
-    assert ok and code and len(code) == 8
-    assert services.db.find_client_by_resume_code(code) == cid
-    assert services.db.find_client_by_resume_code("WRONGXXX") is None
-    ok2, notes2 = services.resume_by_email_code(code)
-    assert ok2
-    c = services.db.get_client(cid)
-    assert not (int(c.block_reason) & int(ClientBlock.PAUSED))
-    assert services.db.find_client_by_resume_code(code) is None   # replay-защита
-
-
-def test_email_resume_wrong_code_noop(services, fake_awg):
-    """Неизвестный код — no-op (ok=False), паузу не трогает."""
-    ok, notes = services.resume_by_email_code("NEVERSET")
-    assert ok is False and notes == []
-
-
-def test_resume_code_safe_alphabet():
-    """Код без похожих символов (0/O, 1/l/I)."""
-    from awgbot.infra import email_resume
-    for _ in range(50):
-        c = email_resume.generate_code()
-        assert not (set(c) & set("0O1lI"))
-
-
 def test_friend_panel_hides_pause_counter(services, fake_awg):
     """Друг не видит счётчик приостановки — он ей не управляет."""
     from awgbot.bot import texts

@@ -410,14 +410,9 @@ setup_secrets() {
     fi
     env_set ADMIN_ID "$admin"
     ok "секреты записаны в $ENV_FILE (600)."
-    # Шифрование бэкапов — экран в боте (Настройки → Резервное копирование).
-    # В визарде оно было лишним вопросом ровно там, где человек ещё не знает,
-    # что такое бэкап этого бота.
-    if [[ "$ADVANCED" == "1" ]] && confirm "Настроить шифрование резервных копий?" y; then
-        ( cd "$INSTALL_DIR" \
-            && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
-            && ./venv/bin/python -m tools.manage_secrets ) || warn "manage_secrets прерван — можно запустить позже."
-    fi
+    # Шифрование бэкапов — экран в боте (Настройки → Резервное копирование):
+    # в визарде это был бы вопрос ровно там, где человек ещё не знает, что
+    # такое бэкап этого бота.
 }
 
 optional_steps() {
@@ -520,7 +515,7 @@ configure_gateway() {
     local app="$CONF_DIR/app.yaml"
     [[ -f "$app" ]] || die "нет $app — сначала seed_conf"
     sed -i -E 's/^# (role: "gateway")/\1/; s/^# (gateway:)/\1/' "$app"
-    sed -i -E 's/^#   ((link_interface|conf_dir|unit|client_subnet|wan_interface|monitor_minutes|handshake_max_age|link_alert_streak|temp_alert_c|ipv4_only):)/  \1/' "$app"
+    sed -i -E 's/^#   ((link_interface|conf_dir|unit|client_subnet|monitor_minutes|handshake_max_age|link_alert_streak|temp_alert_c|ipv4_only):)/  \1/' "$app"
     yaml_set "$app" runtime '"host"'
     # подсеть клиентов не спрашиваем: она приезжает в конфигурации с ВПС и
     # закрепляется в юните обвязки, агент читает её оттуда
@@ -1108,7 +1103,7 @@ cmd_post_uninstall() {
     warn "ДАННЫЕ: в $DATA_DIR — БД с приватными ключами устройств; в $ETC_DIR — секреты."
     confirm "Удалить $ETC_DIR (секреты + конфиг)?" n && { rm -rf "$ETC_DIR"; ok "удалён $ETC_DIR"; }
     confirm "Удалить $DATA_DIR (БД + бэкапы — НЕОБРАТИМО)?" n && { rm -rf "$DATA_DIR"; ok "удалён $DATA_DIR"; }
-    # Firewall: снимаем ТОЛЬКО свою таблицу/файл (harden_firewall.sh их создал).
+    # Firewall: снимаем ТОЛЬКО свою таблицу/файл (их создал awg-bot firewall setup).
     # Снятие адресных drop'ов делает SSH снова открытым для всех — доступ к хосту
     # при этом НЕ теряется (мы только убираем ограничение, а не рвём established).
     local fw_rules="/etc/nftables.d/awg-bot-guard.nft"

@@ -27,7 +27,7 @@ def _jobs(services, bot):
 async def test_job_monthly_first_run_only_records(services, fake_bot, make_active_client):
     client = make_active_client(tg_id=9000)
     dc = services.add_device(client.id, "d")
-    services.db.add_traffic(dc.device_id, 100, 100)
+    services.db.add_traffic_bulk([(dc.device_id, 100, 100)])
     ym = timeutil.now().strftime("%Y-%m")
     await _jobs(services, fake_bot)["monthly"]()             # state пуст → только фиксация
     assert services.db.get_state("last_monthly_reset") == ym
@@ -40,7 +40,7 @@ async def test_job_monthly_same_month_is_noop(services, fake_bot, make_active_cl
     dc = services.add_device(client.id, "d")
     ym = timeutil.now().strftime("%Y-%m")
     services.db.set_state("last_monthly_reset", ym)          # уже сбрасывали в этом месяце
-    services.db.add_traffic(dc.device_id, 50, 50)
+    services.db.add_traffic_bulk([(dc.device_id, 50, 50)])
     await _jobs(services, fake_bot)["monthly"]()
     assert services.db.get_device(dc.device_id).traffic_rx_month == 50   # не тронуто
 
@@ -49,7 +49,7 @@ async def test_job_monthly_catch_up_resets_after_downtime(services, fake_bot, ma
     client = make_active_client(tg_id=9002)
     dc = services.add_device(client.id, "d")
     services.db.set_state("last_monthly_reset", "2020-01")   # «проспали» границу месяца
-    services.db.add_traffic(dc.device_id, 70, 30)
+    services.db.add_traffic_bulk([(dc.device_id, 70, 30)])
     await _jobs(services, fake_bot)["monthly"]()
     dev = services.db.get_device(dc.device_id)
     assert dev.traffic_rx_month == 0 and dev.traffic_tx_month == 0   # навёрстан сброс

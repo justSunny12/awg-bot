@@ -1,5 +1,6 @@
-"""Экран настроек: тумблеры пишут в YAML, гейты клиентских событий, инвариант
-«расписание never → авто-мьют», взаимоблокировка тумблера уведомлений."""
+"""Клавиатура раздела обновлений: инвариант «расписание never → тумблер
+уведомлений показан выключенным», отметка текущего расписания. Запись
+настроек в YAML и кэш — tests/integration/test_settings.py."""
 import textwrap
 
 import pytest
@@ -25,24 +26,6 @@ def conf(tmp_path):
     settings._on_change.clear()
     from awgbot.core import config
     settings.init(config.CONF_DIR)
-
-
-def test_toggle_writes_yaml_and_hot(conf):
-    assert settings.get_bool("notifications.client_events.bonus") is True
-    settings.set_value("notifications.client_events.bonus", False)
-    assert settings.get_bool("notifications.client_events.bonus") is False
-    # запись реальна и с сохранением структуры
-    assert "bonus: false" in (conf / "notifications.yaml").read_text(encoding="utf-8")
-
-
-def test_client_event_gate_blocks_admin_note(services, monkeypatch, conf):
-    """over_limit=false → админ не получает уведомление о превышении, клиент —
-    получает (гейт только на админской ветке)."""
-    # прямая проверка гейта на уровне settings (сама рассылка покрыта shape-тестами):
-    settings.set_value("notifications.client_events.over_limit", False)
-    assert settings.get_bool("notifications.client_events.over_limit", True) is False
-    settings.set_value("notifications.client_events.over_limit", True)
-    assert settings.get_bool("notifications.client_events.over_limit", True) is True
 
 
 def test_quiet_hours_bounds_are_defined():

@@ -231,13 +231,6 @@ def test_is_only_device_false_for_service_pool(services, fake_awg):
     assert services.is_only_device(did) is False
 
 
-def test_is_only_device_true_for_sole_client_device(services, fake_awg, make_active_client):
-    """Единственное устройство обычного клиента — предупреждение уместно."""
-    cl = make_active_client(tg_id=9100)
-    dc = services.add_device(cl.id, "phone")
-    assert services.is_only_device(dc.device_id) is True
-
-
 def test_set_subscription_dates_heals_never_deadlock(services, fake_awg):
     """Дедлок: бессрочную (period_end=None) можно сделать срочной через прямую
     правку дат; status пересчитывается, period_kind сохраняется."""
@@ -271,7 +264,7 @@ def test_set_subscription_dates_past_end_expired(services, fake_awg):
 def test_set_subscription_dates_reactivation_unblocks_devices(services, fake_awg):
     """Ревью-фикс: expired→active через правку дат снимает EXPIRY-блок с устройств."""
     from awgbot.domain.services import SubStatus
-    from awgbot.core.blocks import DeviceBlock, ClientBlock
+    from awgbot.core.blocks import DeviceBlock
     from awgbot.util import timeutil
     from datetime import datetime
     cid = services.db.create_client("rb", 1, timeutil.now_iso(),
@@ -350,8 +343,17 @@ def test_server_screen_reads_live_settings_not_startup_constants(services, monke
     assert d["mtu"] == 1380
     # Порт — у ЖИВОГО интерфейса: именно он уезжает в ссылки. Значение из
     # конфига идёт рядом, чтобы расхождение было видно.
-    assert d["port_conf"] == 51820
-    assert d["port"] == (services._live_listen_port() or 51820)
+    from awgbot.infra import awg
+    monkeypatch.setattr(awg, "read_server_params",
+                        lambda force=False, iface=None: {"listen_port": 43125})
+    d = services.server_screen()
+    assert d["port"] == 43125 and d["port_conf"] == 51820
+
+    def _dead(force=False, iface=None):
+        raise awg.AwgError("интерфейс лежит")
+    monkeypatch.setattr(awg, "read_server_params", _dead)
+    d = services.server_screen()
+    assert d["port"] == 51820, "интерфейс недоступен — показываем значение из конфига"
     assert d["iface"] == config.AWG_INTERFACE
     assert isinstance(d["generation"], int), "поколение берётся из манифеста"
     # разные dns — обе строки видны

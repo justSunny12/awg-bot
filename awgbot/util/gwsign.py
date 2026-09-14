@@ -10,8 +10,11 @@ HMAC, отличный от ключа шифрования бандла.
 
 Формат одной строкой, чтобы пережить пересылку и копирование:
     GW1:<base64url(JSON)>.<base64url(HMAC-SHA256[:20])>
-JSON: {"act": "claim"|"release", "pub": <ключ аплинка>, "addr": <адрес>,
-       "ts": <unix>, "nonce": <hex>, "host": <имя машины>}
+JSON: {"act": "claim", "pub": <ключ аплинка>, "ts": <unix>, "nonce": <hex>,
+       "host": <имя машины>}
+Единственное действие — claim: агент просит пометить своё устройство шлюзом.
+Лишние поля в JSON (прежние агенты подписывали ещё и "addr") проверке не
+мешают — подпись покрывает весь payload, а читаются только нужные ключи.
 """
 from __future__ import annotations
 
@@ -42,8 +45,8 @@ def _unb64u(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
-def sign(link_privkey_b64: str, act: str, pub: str, addr: str = "", host: str = "") -> str:
-    payload = json.dumps({"act": act, "pub": pub, "addr": addr, "ts": int(time.time()),
+def sign(link_privkey_b64: str, act: str, pub: str, host: str = "") -> str:
+    payload = json.dumps({"act": act, "pub": pub, "ts": int(time.time()),
                           "nonce": os.urandom(8).hex(), "host": host[:64]},
                          separators=(",", ":"), ensure_ascii=False).encode()
     mac = hmac.new(_key(link_privkey_b64), payload, hashlib.sha256).digest()[:20]
@@ -73,7 +76,7 @@ def verify(link_privkey_b64: str, text: str, now: float | None = None) -> dict:
         data = json.loads(payload.decode())
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         raise ValueError("токен повреждён") from e
-    if data.get("act") not in ("claim", "release") or not data.get("pub") or not data.get("nonce"):
+    if data.get("act") != "claim" or not data.get("pub") or not data.get("nonce"):
         raise ValueError("токен неполный")
     ts = int(data.get("ts") or 0)
     now = time.time() if now is None else now

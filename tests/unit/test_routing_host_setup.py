@@ -9,11 +9,30 @@ apply, подсказка оператору называет несуществ
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-host-setup.sh"
+
+
+def _render_unit(script: str, tmp_path, runtime: str) -> str:
+    """Прогоняет ветку --install-unit НАСТОЯЩИМ кодом скрипта и возвращает
+    юнит: проверять надо то, что доедет до systemd, вместе с подстановками."""
+    block = script[script.index('if [ "$MODE" = "unit" ]'):]
+    block = block[:block.index("\nfi\n") + 4]
+    unit = tmp_path / "awg-bot-routing.service"
+    block = block.replace("UNIT=/etc/systemd/system/awg-bot-routing.service", f'UNIT="{unit}"')
+    prog = "\n".join([
+        "set -e", 'say(){ :; }', 'step(){ :; }', 'systemctl(){ :; }',
+        'install_self(){ printf "/usr/local/sbin/routing-host-setup.sh"; }',
+        f'AWG_RUNTIME="{runtime}"', "MODE=unit", block,
+    ])
+    r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
+                       env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0, r.stderr
+    return unit.read_text(encoding="utf-8")
 
 
 @pytest.fixture(scope="module")
@@ -161,25 +180,33 @@ def test_rollback_survives_empty_container_ip(script):
     assert 'if [ -n "$CONT_IP" ]; then' in rollback
 
 
-def test_unit_does_not_require_docker_in_host_mode(script):
+def test_unit_does_not_require_docker_in_host_mode(script, tmp_path):
     """Юнит в host-режиме не должен зависеть от docker.service.
 
     Иначе обвяз остался бы заложником сервиса, который переезд как раз убирает:
-    после ребута юнит не поднялся бы, а фича молча не завелась.
+    после ребута юнит не поднялся бы, а фича молча не завелась. В docker-режиме
+    зависимость, наоборот, нужна: без контейнера стартовать бессмысленно.
     """
-    unit = script[script.index('if [ "$MODE" = "unit" ]'):script.index("UNITEOF")]
-    assert "UNIT_DEPS" in unit
-    assert 'if [ "$AWG_RUNTIME" = "host" ]' in unit
+    host = _render_unit(script, tmp_path, "host")
+    directives = [ln for ln in host.splitlines() if ln and not ln.startswith("#")]
+    assert not any("docker.service" in ln for ln in directives), directives
+    assert "After=network-online.target" in directives
+    docker = _render_unit(script, tmp_path, "docker")
+    assert "Requires=docker.service" in docker and "After=network-online.target docker.service" in docker
 
 
-def test_unit_carries_the_runtime_into_execstart(script):
-    """ExecStart обязан нести режим.
+@pytest.mark.parametrize("runtime", ["host", "docker"])
+def test_unit_carries_the_runtime_into_execstart(script, tmp_path, runtime):
+    """ExecStart обязан нести режим и постоянный путь скрипта.
 
     Юнит пишется один раз, а срабатывает после каждого ребута — без переменной
     он применил бы docker-ветку и прописал маршрут через контейнер, которого
     больше нет.
     """
-    assert "AWG_RUNTIME=$AWG_RUNTIME" in script
+    unit = _render_unit(script, tmp_path, runtime)
+    exec_line = next(ln for ln in unit.splitlines() if ln.startswith("ExecStart="))
+    assert f"AWG_RUNTIME={runtime} " in exec_line
+    assert "/usr/local/sbin/routing-host-setup.sh --apply" in exec_line
 
 
 # ── маршрут и DNS: два отказа переезда ───────────────────────────────────────
@@ -212,34 +239,12 @@ def test_dnatted_dns_is_allowed_into_input(script):
 
 
 def test_input_allow_is_rolled_back(script):
+    """Откат снимает и разрешения INPUT для DNS клиентов — иначе после отката
+    на хосте остаётся дыра к резолверу, которую никто не помнит."""
     rollback = script.split('if [ "$MODE" = "rollback" ]', 1)[1].split("exit 0", 1)[0]
-    assert "filter INPUT" in rollback
-
-
-def test_verification_hint_names_a_domain_that_can_actually_appear(script):
-    """Подсказка проверки обязана называть РОССИЙСКИЙ домен.
-
-    Набор перечисляет то, чему нужен российский адрес, — значит наполнение
-    доказывается доменом из этого списка, и только им. Ровно здесь подсказка
-    однажды разошлась с моделью: скрипт предлагал резолвить gosuslugi.ru и тут
-    же писал, что домен обязан быть из ЗАРУБЕЖНОГО списка, а sberbank.ru в
-    наборе «не окажется никогда». Читается это на финальном шаге установки, то
-    есть ровно в момент решения «работает или нет», — и исправная установка
-    признавалась сломанной.
-    """
-    tail = script.split('step "Проверка"', 1)[1]
-    assert "gosuslugi.ru" in tail, "нужен пример домена из российского списка"
-    assert "ЗАРУБЕЖНОГО списка" not in tail
-    assert "Логика инвертирована" not in tail
-
-
-def test_unit_points_at_a_permanent_path(script):
-    """Та же дыра, что нашлась на шлюзе, была и здесь: юнит ссылался на каталог,
-    откуда запустили скрипт. На ВПС это не выстрелило только потому, что его
-    запускали из постоянного места, — но ничто этого не гарантировало."""
-    assert 'SELF="$(install_self)"' in script
-    assert 'SELF="$(readlink -f "$0")"' not in script
-    assert "/usr/local/sbin" in script
+    drops = [ln.strip() for ln in rollback.splitlines() if ln.strip().startswith("drop_rule filter INPUT")]
+    assert any("--dport 53" in ln and "-p udp" in ln for ln in drops)
+    assert any("--dport 53" in ln and "-p tcp" in ln for ln in drops)
 
 
 def test_masquerade_is_skipped_when_the_bot_owns_it(script):

@@ -3,7 +3,7 @@ drop_message с фолбэком, завершитель по ролям, выд
 import pytest
 
 from awgbot.bot.handlers import common as cm
-from tests.conftest import FakeBot, FakeCallback, FakeMessage
+from tests.conftest import FakeCallback, FakeMessage
 
 pytestmark = pytest.mark.e2e
 
@@ -31,7 +31,7 @@ async def test_drop_message_falls_back_to_unmark(fake_bot):
 
 
 async def test_content_finisher_roles(services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=7300)
+    make_active_client(tg_id=7300)
     nav = FakeMessage(chat_id=7300, user_id=7300, bot=fake_bot)
     await cm.content_finisher(nav, services, "готово", "client")
     assert any(s[0] == "answer" for s in nav.sent)

@@ -28,7 +28,6 @@ def test_make_friendly_sets_pending_and_returns_code(services, make_active_clien
 def test_make_friendly_rejects_device_without_key(services, make_active_client):
     # ключа у бота нет → передать другу нечего
     client = make_active_client(tg_id=801)
-    service_id = services.db.get_service_client_id()
     did = services.db.create_device(client.id, "app-dev", "APPPUB", "PSK", "10.8.0.9", private_key=None)
     with pytest.raises(ServiceError):
         services.make_device_friendly(did)

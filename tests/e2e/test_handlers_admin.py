@@ -1,10 +1,11 @@
-"""E2E: admin-хендлеры (прямой вызов с фейками) — панель, клиенты, создание, удаление."""
+"""E2E: admin-хендлеры (прямой вызов с фейками) — панель, клиенты, создание,
+удаление, обещание после перезапуска, окна и финишеры обновления."""
 import pytest
 
 from awgbot.bot.handlers import admin as admin_h
 from awgbot.bot.callbacks import ClientCB, ConfirmCB, PeriodCB
 from awgbot.core import config
-from tests.conftest import FakeCallback, FakeMessage, FakeState
+from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
 pytestmark = pytest.mark.e2e
 
@@ -17,12 +18,20 @@ def _admin_cb(services, bot, data=""):
 
 
 # ── панель ───────────────────────────────────────────────────────────────────
-async def test_admin_start_shows_panel(services, fake_bot):
+async def test_admin_start_shows_panel_and_menu_opens_it_again(services, fake_bot,
+                                                              make_active_client):
+    """/start рисует панель и запоминает её как активное меню; кнопка «В меню»
+    с любого экрана рисует ту же панель поверх текущего сообщения."""
     services.ensure_admin_client()
+    make_active_client(tg_id=6000, name="Клиент")
     msg = FakeMessage(text="/start", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await admin_h.admin_start(msg, services, FakeState())
     assert any(s[0] == "answer" for s in msg.sent)
     assert services.db.get_nav_message_id(ADMIN) is not None
+
+    cb, nav = _admin_cb(services, fake_bot)
+    await admin_h.admin_main_menu(cb, services, FakeState())
+    assert any(s[0] == "edit_text" and s[2] is not None for s in nav.sent)
 
 
 # ── список / карточка клиента ────────────────────────────────────────────────
@@ -30,7 +39,10 @@ async def test_clients_list_with_client(services, make_active_client, fake_bot):
     make_active_client(name="Ося", tg_id=7000)
     cb, nav = _admin_cb(services, fake_bot)
     await admin_h.clients_list(cb, services)
-    assert any(s[0] == "edit_text" and "Профили" in s[1] for s in nav.sent)
+    shown = [s for s in nav.sent if s[0] == "edit_text"]
+    assert shown and "Профили" in shown[-1][1]
+    labels = [b.text for row in shown[-1][2].inline_keyboard for b in row]
+    assert any("Ося" in t for t in labels), "профиль должен быть кнопкой в списке"
     assert cb.answers
 
 
@@ -57,7 +69,9 @@ async def test_client_open_card(services, make_active_client, fake_bot):
     client = make_active_client(name="Ким", tg_id=7001)
     cb, nav = _admin_cb(services, fake_bot)
     await admin_h.client_open(cb, ClientCB(action="open", client_id=client.id), services)
-    assert any(s[0] == "edit_text" for s in nav.sent)
+    text, labels = last_screen(nav)
+    assert "Ким" in text, "карточка без имени профиля"
+    assert any("Удалить" in l for l in labels) and any("Продлить" in l for l in labels)
 
 
 # ── создание клиента (FSM: имя → лимит → трафик → период) ─────────────────────
@@ -80,15 +94,6 @@ async def test_create_client_full_fsm(services, fake_bot):
     assert "Новичок" in names
     # выданы приветствие + шаблон приглашения со ссылкой на бота
     assert any("t.me/test_bot" in s[1] for s in nav.sent if s[0] == "answer")
-
-
-async def test_create_client_bad_limit_reprompts(services, fake_bot):
-    state = FakeState()
-    await state.update_data(name="X")
-    msg = FakeMessage(text="не число", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
-    await admin_h.add_client_limit(msg, services, state)
-    assert "limit" not in await state.get_data()      # не принято
-    assert any("число" in s[1].lower() for s in msg.sent)
 
 
 async def test_create_client_period_stale_dialog(services, fake_bot):
@@ -140,3 +145,124 @@ def test_period_choices_has_cancel_both_contexts():
     ext_cb = [b.callback_data for r in kb.period_choices("extend", ref=7).inline_keyboard
               for b in r if "Отмена" in b.text][0]
     assert ext_cb == "c:open:7"
+
+
+# ── обещание вернуться после перезапуска ─────────────────────────────────────
+
+async def test_restart_promise_is_kept_by_the_new_process(services, fake_bot):
+    """«Вернётся через несколько секунд» обещает уходящий процесс, а исполняет
+    новый: обещание подменяется отчётом, следом приходит панель.
+
+    Прежде не исполнял никто — после старта в чат никто не пишет, и админ
+    оставался с мёртвым сообщением без кнопок, пока сам не слал /start.
+    """
+    from awgbot.bot import texts
+    services.set_restart_wait(ADMIN, 4242)
+    await admin_h.restore_panel_after_restart(fake_bot, services)
+
+    edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
+    assert len(edits) == 1 and edits[0][1] == ADMIN
+    assert edits[0][2] == texts.BOT_RESTARTED, "обещание не сменилось отчётом"
+
+    sent = [r for r in fake_bot.records if r[0] == "send_message"]
+    assert len(sent) == 1, "панель не пришла отдельным сообщением"
+    assert services.db.get_nav_message_id(ADMIN) != 4242, \
+        "активным меню осталось отчётное сообщение — два живых меню в чате"
+
+
+async def test_restart_promise_is_one_shot(services, fake_bot):
+    """Флаг одноразовый: иначе каждый следующий старт переписывал бы давно
+    отработавшее сообщение — в том числе спустя недели."""
+    services.set_restart_wait(ADMIN, 4242)
+    await admin_h.restore_panel_after_restart(fake_bot, services)
+    fake_bot.records.clear()
+    await admin_h.restore_panel_after_restart(fake_bot, services)
+    assert fake_bot.records == []
+
+
+async def test_ordinary_start_says_nothing(services, fake_bot):
+    """Перезапуск не из чата (ребут хоста, падение, systemctl руками) — молчим.
+    Панель без спроса была бы шумом, которого админ не заказывал."""
+    await admin_h.restore_panel_after_restart(fake_bot, services)
+    assert fake_bot.records == []
+
+
+async def test_restart_panel_survives_an_unavailable_message(services, fake_bot, monkeypatch):
+    """Сообщение удалили или оно старше суток — отчёт потерян, но панель обязана
+    прийти всё равно: остаться без навигации админ не должен."""
+    async def boom(*a, **k):
+        raise RuntimeError("message to edit not found")
+    monkeypatch.setattr(fake_bot, "edit_message_text", boom)
+
+    services.set_restart_wait(ADMIN, 4242)
+    await admin_h.restore_panel_after_restart(fake_bot, services)
+
+    sent = [r for r in fake_bot.records if r[0] == "send_message"]
+    assert len(sent) == 1 and sent[0][1] == ADMIN
+    assert services.db.get_nav_message_id(ADMIN) != 4242, "нав указывает на мёртвое сообщение"
+
+async def test_only_the_last_update_finisher_keeps_its_menu_button(
+        services, fake_bot, monkeypatch):
+    """Цепочка ступеней self-update — живая кнопка «В меню» только у последнего
+    финишера. У прежнего она снимается при отправке следующего; текст его при
+    этом не трогается — история «какая ступень чем закончилась» остаётся.
+    """
+    from awgbot.runtime.main import report_update_result
+    from awgbot.domain.services import Notification
+    from awgbot.bot import keyboards as kb
+    import awgbot.core.config as cfg
+
+    step = {"n": 0}
+
+    def fake_confirm():
+        step["n"] += 1
+        return Notification(cfg.ADMIN_ID, f"обновлён, ступень {step['n']}",
+                            reply_markup=kb.update_done_menu())
+
+    monkeypatch.setattr(services, "confirm_applied_update", fake_confirm)
+    monkeypatch.setattr(services, "pop_update_wait", lambda: None)
+
+    await report_update_result(fake_bot, services)       # ступень 1
+    await report_update_result(fake_bot, services)       # ступень 2 (рестарт)
+    await report_update_result(fake_bot, services)       # ступень 3
+
+    stripped = [mid for kind, chat, mid in fake_bot.records if kind == "edit_markup"]
+    sent = [r for r in fake_bot.records if r[0] == "send_message"]
+    assert len(sent) == 3, "финишеры не отправлены"
+    # у двух прошлых кнопки сняты, у последнего — нет; история знает только его
+    assert len(stripped) == 2, "снято не у всех прошлых (или у лишнего)"
+    remaining = services.pop_update_reports()
+    assert len(remaining) == 1 and remaining[0][1] not in stripped
+
+
+async def test_admin_start_purges_menu_history(services, fake_bot):
+    """/start админа удаляет все прошлые меню чата (история ведётся send_menu/edit_nav)."""
+    from awgbot.bot.handlers import admin as admin_h
+    from tests.conftest import FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    chat = cfg.ADMIN_ID
+    for mid in (101, 102, 103):
+        services.db.nav_touch(chat, mid)
+    msg = FakeMessage(chat_id=chat, user_id=chat, bot=fake_bot)
+    await admin_h.admin_start(msg, services, FakeState())
+    deleted = sorted(r[2] for r in fake_bot.records if r[0] == "delete_message")
+    assert deleted == [101, 102, 103]
+    assert services.db.pop_nav_history(chat) != [101, 102, 103], "история не очищена"
+
+async def test_menu_button_dismisses_every_other_update_window(services, fake_bot):
+    """«В меню» на любом окне обновления снимает кнопки и у всех остальных —
+    в цепочке ступеней живой должна остаться одна."""
+    from awgbot.bot.handlers import admin as admin_h
+    from tests.conftest import FakeCallback, FakeMessage, FakeState
+    import awgbot.core.config as cfg
+    chat = cfg.ADMIN_ID
+    for mid in (501, 502, 503):
+        services.remember_update_report(chat, mid)
+    msg = FakeMessage(chat_id=chat, user_id=chat, bot=fake_bot, message_id=503)
+    cb = FakeCallback(message=msg, user_id=chat, bot=fake_bot)
+    await admin_h.update_menu(cb, services, FakeState())
+    # фильтр ДО распаковки: у записей фейка разная длина
+    stripped = sorted(r[2] for r in fake_bot.records if r[0] == "edit_markup")
+    assert stripped == [501, 502], "остальные окна — через бота, по одному разу"
+    assert ("edit_reply_markup", chat) in fake_bot.records, "текущее — своим методом"
+    assert services.pop_update_reports() == [], "история не очищена"

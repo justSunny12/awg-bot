@@ -208,31 +208,6 @@ def build_dnsmasq_conf(
 # Разбор внешних списков
 # ─────────────────────────────────────────────────────────────────────────────
 
-_RE_CIDR = re.compile(r"^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$")
-
-
-def parse_networks(text: str) -> list[str]:
-    """Вытащить IPv4-подсети из произвольного текста списка.
-
-    Форматы у источников разные — простые построчные списки, JSON Google, — но
-    подсеть везде выглядит одинаково, поэтому вытаскиваем регуляркой, а не
-    парсим каждый формат отдельно. Мусор отсеивается проверкой октетов и маски:
-    один битый CIDR в `ipset restore` роняет всю пачку.
-    """
-    out: list[str] = []
-    seen: set[str] = set()
-    for m in re.finditer(r"\d{1,3}(?:\.\d{1,3}){3}/\d{1,2}", text or ""):
-        cidr = m.group(0)
-        if cidr in seen:
-            continue
-        addr, mask = cidr.split("/")
-        if int(mask) > 32 or any(int(o) > 255 for o in addr.split(".")):
-            continue
-        seen.add(cidr)
-        out.append(cidr)
-    return out
-
-
 def parse_domain_list(text: str) -> list[str]:
     """Вытащить домены из внешнего списка.
 
@@ -265,6 +240,6 @@ def parse_domain_list(text: str) -> list[str]:
 
 __all__ = [
     "DomainRejected", "normalize", "is_denied",
-    "parse_batch", "build_dnsmasq_conf", "parse_networks", "parse_domain_list",
+    "parse_batch", "build_dnsmasq_conf", "parse_domain_list",
     "MAX_DOMAIN_LEN", "MAX_LABEL_LEN",
 ]

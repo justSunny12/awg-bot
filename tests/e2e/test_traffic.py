@@ -12,7 +12,7 @@ def test_device_limit_exceeded_blocks_device(services, fake_awg, make_active_cli
     client = make_active_client(tg_id=600)
     dc = services.add_device(client.id, "d")
     services.set_device_traffic_limit(dc.device_id, 100)
-    services.db.add_traffic(dc.device_id, 60, 60)          # 120 > 100
+    services.db.add_traffic_bulk([(dc.device_id, 60, 60)])          # 120 > 100
     notes = services.check_traffic_limits()
     dev = services.db.get_device(dc.device_id)
     assert int(dev.block_reason) & int(DeviceBlock.TRAFFIC_USER)
@@ -24,7 +24,7 @@ def test_device_warn_at_80_percent(services, make_active_client):
     client = make_active_client(tg_id=601)
     dc = services.add_device(client.id, "d")
     services.set_device_traffic_limit(dc.device_id, 100)
-    services.db.add_traffic(dc.device_id, 50, 35)          # 85 → ≥80%, но <100
+    services.db.add_traffic_bulk([(dc.device_id, 50, 35)])          # 85 → ≥80%, но <100
     notes = services.check_traffic_limits()
     dev = services.db.get_device(dc.device_id)
     assert int(dev.block_reason) & int(DeviceBlock.TRAFFIC_USER) == 0   # ещё не заблокирован
@@ -35,7 +35,7 @@ def test_client_total_first_over_grants_bonus(services, make_active_client):
     client = make_active_client(tg_id=602)
     dc = services.add_device(client.id, "d")
     services.set_client_traffic_limit(client.id, 100)
-    services.db.add_traffic(dc.device_id, 70, 60)          # 130 > 100, доп.квоты ещё не было
+    services.db.add_traffic_bulk([(dc.device_id, 70, 60)])          # 130 > 100, доп.квоты ещё не было
     services.check_traffic_limits()
     fresh = services.db.get_client(client.id)
     assert fresh.bonus_granted_month == 1                  # выдана разовая доп.квота
@@ -49,7 +49,7 @@ def test_client_cascade_block_after_bonus_exhausted(services, fake_awg, make_act
     services.set_client_traffic_limit(client.id, 100)
     # эмулируем «доп.квота уже выдана и исчерпана»
     services.db.update_client_fields(client.id, bonus_granted_month=1, bonus_bytes=0)
-    services.db.add_traffic(dc.device_id, 70, 60)          # 130 > 100
+    services.db.add_traffic_bulk([(dc.device_id, 70, 60)])          # 130 > 100
     services.check_traffic_limits()
     fresh = services.db.get_client(client.id)
     dev = services.db.get_device(dc.device_id)

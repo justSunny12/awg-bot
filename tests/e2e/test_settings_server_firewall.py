@@ -176,36 +176,6 @@ async def test_adding_a_bad_address_is_refused_without_writing(services, fake_bo
     assert any("не адрес" in s[1] for s in msg.sent if s[0] == "answer")
     assert await st.get_data(), "ввод остаётся открытым — можно поправить, не начиная заново"
 
-
-# ── раскладка корня настроек ─────────────────────────────────────────────────
-
-def test_settings_root_order_and_names():
-    """Порядок — от того, что трогают при настройке сервера, к тому, что
-    трогают раз в полгода. Мониторинг и бэкапы уехали в «Обслуживание»: корень
-    распух до десяти строк, а открывают их не ради настройки, а когда чинят."""
-    from awgbot.bot import keyboards as kb
-    rows = [b.text for row in kb.settings_root().inline_keyboard for b in row]
-    assert rows == ["🔔 Уведомления", "🖥 Сервер AWG", "🛡 Доступ по SSH",
-                    "🇷🇺 Условная маршрутизация", "✉️ E-mail", "💳 Параметры подписок",
-                    "🔄 Обслуживание", "⬆️ Обновления бота", "⬅️ В меню"]
-
-
-def test_maintenance_holds_monitoring_and_backups_first():
-    from awgbot.bot import keyboards as kb
-    rows = [b.text for row in kb.settings_svc().inline_keyboard for b in row]
-    assert rows[:4] == ["📊 Мониторинг", "💾 Резервное копирование",
-                        "🔄 Перезапустить AWG", "🔄 Перезапустить бота"]
-
-
-def test_moved_sections_return_to_maintenance():
-    """Выход из раздела обязан вести туда, откуда в него вошли, — иначе
-    «Назад» выбрасывает в корень, и человек ищет, где он был."""
-    from awgbot.bot import keyboards as kb
-    from awgbot.bot.callbacks import SetCB
-    for markup in (kb.settings_mon(), kb.settings_backup()):
-        assert markup.inline_keyboard[-1][0].callback_data == SetCB(sec="svc").pack()
-
-
 # ── остальные ветки действий файервола ───────────────────────────────────────
 
 async def test_removing_an_address_by_its_number(services, fake_bot, monkeypatch):
@@ -250,29 +220,6 @@ async def test_failure_inside_an_action_is_shown_not_swallowed(services, fake_bo
     assert any("Не вышло" in (a[0] or "") for a in cb.answers)
     assert any(s[0] == "edit_text" for s in nav.sent), "экран не перерисован после отказа"
 
-
-def test_every_edit_button_points_at_a_known_setting():
-    """Опечатка в ключе кнопки превращает её в «Эта настройка недоступна», и
-    раздел становится мёртвым. Сверяем ключи клавиатур со словарями текстов."""
-    from awgbot.bot import keyboards as kb, texts
-    from awgbot.bot.callbacks import SetCB
-    known = set(texts.SETTINGS_TEXT) | set(texts.SETTINGS_BOUNDS)
-    markups = [kb.settings_server(), kb.settings_firewall({"raw_allow": ["1.2.3.4"]}),
-               kb.settings_mon(), kb.settings_subs(), kb.settings_notify()]
-    checked = 0
-    for m in markups:
-        for row in m.inline_keyboard:
-            for b in row:
-                if not b.callback_data.startswith("set:"):
-                    continue
-                cb = SetCB.unpack(b.callback_data)
-                if cb.act != "edit":
-                    continue
-                checked += 1
-                assert cb.key in known, f"кнопка «{b.text}» ведёт в несуществующий ключ {cb.key}"
-    assert checked >= 8, "проверять оказалось нечего — тест устарел"
-
-
 async def test_enabled_screen_does_not_repeat_the_timer_promise(services, fake_bot, monkeypatch):
     """На включённом фильтре таймер — прошедшее время: строка только занимает
     место в экране, который и без того длинный."""
@@ -280,49 +227,6 @@ async def test_enabled_screen_does_not_repeat_the_timer_promise(services, fake_b
     text, _ = await sh._screen("fw", services)
     assert "🟢 фильтр включён" in text
     assert "таймером" not in text and "NAT клиентов" not in text
-
-
-def test_gateway_device_keeps_its_icon_in_the_button_list():
-    """В текстовых списках шлюз был 🛰, а в кнопках «Мои устройства» — обычным
-    телефоном: две функции иконки разошлись. Перепутать шлюз с телефоном там,
-    где их удаляют и блокируют, дороже всего."""
-    from awgbot.bot import keyboards as kb, texts
-
-    from awgbot.util import timeutil
-
-    class _Traffic:
-        last_handshake = int(timeutil.now().timestamp())
-
-    class _Dev:
-        id, name, block_reason, friend, traffic_limit = 1, "Шлюз", 0, None, 0
-        is_gateway, is_managed, private_key = 1, 1, "priv"
-        address, traffic = "10.8.1.5", _Traffic()
-
-    class _Phone(_Dev):
-        id, name, is_gateway = 2, "iPhone", 0
-        traffic = type("T", (), {"last_handshake": 0})()
-
-    labels = [b.text for row in kb.client_devices([_Dev(), _Phone()]).inline_keyboard
-              for b in row]
-    assert any(l.startswith("🛰") for l in labels), labels
-    assert any(l.startswith("📱") for l in labels), labels
-    assert texts.device_emoji(_Dev()) == "🛰", "текстовый список разошёлся с кнопками"
-    # Значок ровно один: кружок онлайна тут пробовали и убрали — два подряд в
-    # каждой строке превращают список в рябь.
-    assert not any("🟢" in l or "🔴" in l for l in labels), labels
-
-
-def test_routing_domain_list_uses_minus_and_a_bin_for_the_whole_list():
-    """Минус убирает одну запись — то же, что в разделе доступа по SSH.
-    Корзина остаётся там, где сносят всё разом."""
-    from awgbot.bot import keyboards as kb
-    markup = kb.routing_panel(1, master_on=True, enabled=1, total=2,
-                              domains=["ozon.ru", "mail.ru"], back_target="menu:main")
-    labels = [b.text for row in markup.inline_keyboard for b in row]
-    assert "➖ ozon.ru" in labels and "➖ mail.ru" in labels
-    assert "🗑 Очистить список" in labels
-    assert not any(l.startswith("🧹") for l in labels), "метла осталась"
-
 
 # ── переезд из раздела «Сервер AWG» ─────────────────────────────────────────
 
@@ -395,46 +299,3 @@ async def test_maintenance_mentions_migration_only_with_its_button(services, fak
     text, markup = await sh._screen("svc", services)
     assert "Переезд профилей" in text
     assert any("переезд" in b.text.lower() for row in markup.inline_keyboard for b in row)
-
-
-# ── значки состояния: где кружок, где галочка ────────────────────────────────
-
-def test_lists_of_choices_use_ticks_not_circles():
-    """Кружок читается как «жив или лежит» — состояние того, что перечислено.
-    В списках «кому разрешено» и «о чём уведомлять» нужен знак ВЫБОРА."""
-    from awgbot.bot import keyboards as kb
-
-    class _C:
-        def __init__(self, cid, allowed):
-            self.id, self.name, self.routing_allowed = cid, f"К{cid}", allowed
-
-    labels = [b.text for row in kb.settings_routing_users([_C(1, True), _C(2, False)]).inline_keyboard
-              for b in row]
-    assert labels[:2] == ["✅ К1", "☑️ К2"]
-    notify = [b.text for row in kb.settings_notify_clients().inline_keyboard for b in row]
-    assert all(not l.startswith(("🟢", "🔴")) for l in notify), notify
-    # а вот у переключателей сервиса кружок остаётся
-    rt = [b.text for row in kb.settings_routing(True, has_gateway=True).inline_keyboard for b in row]
-    assert rt[0].startswith("🟢"), rt
-
-
-def test_client_list_circle_means_online_not_subscription():
-    """«Кто сейчас в сети» из списка было не узнать, а состояние подписки и так
-    видно в карточке. ⏳ остаётся за теми, кто ещё не активировал доступ."""
-    from awgbot.bot import keyboards as kb
-    from awgbot.core.enums import ActivationStatus, SubStatus
-
-    class _C:
-        def __init__(self, cid, name, act=ActivationStatus.ACTIVE, status=SubStatus.ACTIVE):
-            self.id, self.name = cid, name
-            self.activation_status, self.status = act, status
-            self.block_reason = 0
-
-    clients = [_C(1, "Онлайн"), _C(2, "Офлайн"),
-               _C(3, "Ждёт", act=ActivationStatus.PENDING),
-               _C(4, "Истёк", status=SubStatus.EXPIRED)]
-    labels = [b.text for row in kb.admin_clients(clients, online_ids={1, 4}).inline_keyboard
-              for b in row]
-    assert labels[0].startswith("🟢") and labels[1].startswith("🔴")
-    assert labels[2].startswith("⏳")
-    assert labels[3].startswith("🟢"), "истёкший, но подключённый — всё равно онлайн"

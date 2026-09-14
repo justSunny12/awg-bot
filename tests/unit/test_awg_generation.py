@@ -151,9 +151,10 @@ def test_state_file_and_keys_match_the_installer():
     assert 'ETC_DIR="/etc/awg-bot"' in script
     # путь бота: рядом с conf, то есть /etc/awg-bot/awg.state
     import awgbot.infra.awglock as al
-    from awgbot.core import config
-    assert al.STATE_PATH.name == "awg.state"
-    assert str(_P(config.CONF_DIR).parent / "awg.state").endswith("/awg.state")
+    # conftest подменяет STATE_PATH на временный — сверяем формулу по исходнику
+    import inspect
+    assert 'STATE_PATH = Path(config.CONF_DIR).parent / "awg.state"' in inspect.getsource(al), \
+        "бот читает состояние рядом с conf — там же, где ETC_DIR установщика"
     for key in (al._KEY_APPLIED, al._KEY_TARGET):
         assert f"awg_state_set {key}" in script or f"awg_state_get {key}" in script, \
             f"{key} не встречается в awg-bot.sh"

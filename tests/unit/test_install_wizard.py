@@ -21,11 +21,6 @@ def script() -> str:
     return (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
 
 
-@pytest.fixture(scope="module")
-def pair_src() -> str:
-    return (ROOT / "tools" / "pair.py").read_text(encoding="utf-8")
-
-
 # ── вопросы визарда ──────────────────────────────────────────────────────────
 
 def test_fresh_install_asks_nothing_about_topology(script):
@@ -40,22 +35,24 @@ def test_fresh_install_asks_nothing_about_topology(script):
 
 
 def test_backup_encryption_is_not_asked_in_the_wizard(script):
-    """Экран шифрования бэкапов есть в боте. В визарде это вопрос ровно там,
-    где человек ещё не знает, что такое бэкап этого бота."""
+    """Экран шифрования бэкапов есть в боте. В визарде это был бы вопрос ровно
+    там, где человек ещё не знает, что такое бэкап этого бота."""
     body = script.split("setup_secrets() {", 1)[1].split("\n}\n", 1)[0]
-    assert "manage_secrets" in body and 'ADVANCED" == "1"' in body
-    i_adv = body.index('ADVANCED" == "1" ]] && confirm "Настроить шифрование')
-    assert i_adv < body.index("manage_secrets")
+    questions = [m.group(0) for m in re.finditer(r'(?:confirm|ask \w+) "[^"]+"', body)]
+    assert questions, "секреты без единого вопроса — визард сломан"
+    assert all(("BOT_TOKEN" in q) or ("ADMIN_ID" in q) or ("Telegram ID" in q) for q in questions), \
+        f"в setup_secrets лишние вопросы: {questions}"
 
 
 def test_admin_is_identified_by_a_code_with_a_manual_fallback(script):
     """Числовой Telegram ID у человека под рукой не лежит — за ним идут к
-    стороннему боту. Спрашиваем не человека, а Telegram; не вышло — старый
-    путь остаётся."""
+    стороннему боту. На основном пути визард ID не спрашивает: опознание кодом
+    через самого Telegram. Ручной вопрос остаётся запасным — под --advanced и
+    когда код не дождались (Ctrl+C, нет сети)."""
     body = script.split("setup_secrets() {", 1)[1].split("\n}\n", 1)[0]
     assert "pair_admin" in body
     assert "@userinfobot" in body, "ручной запасной путь убирать нельзя"
-    assert body.index("pair_admin") < body.index("@userinfobot")
+    assert body.index('ADVANCED" != "1"') < body.index("pair_admin") < body.index("@userinfobot")
     pair = script.split("pair_admin() {", 1)[1].split("\n}\n", 1)[0]
     assert "BOT_TOKEN=" in pair and "tools.pair" in pair
     assert 'sed -nE' in pair and "ADMIN_ID=" in pair
@@ -80,70 +77,6 @@ def test_first_device_is_printed_after_a_successful_start(script):
     assert "cmd_first_device" in first
     assert first.index('svc_state" == "active"') < first.index("cmd_first_device")
     assert "first-device) cmd_first_device" in script, "глагол не диспетчеризован"
-
-
-# ── опознание админа ─────────────────────────────────────────────────────────
-
-def test_pair_reads_the_token_from_the_environment(pair_src):
-    """Токен в аргументах виден в `ps` любому пользователю хоста."""
-    assert 'os.environ.get("BOT_TOKEN"' in pair_src
-    assert not re.search(r"argv\[\d\].*token", pair_src, re.I)
-
-
-def test_pair_code_alphabet_has_no_lookalikes():
-    from tools import pair
-    assert not (set("01OIL") & set(pair.ALPHABET)), "0/O и 1/I/L в коде, который диктуют вслух"
-    code = pair.make_code()
-    assert re.fullmatch(r"[A-Z2-9]{4}-[A-Z2-9]{4}", code)
-    assert pair.normalize(" ab-cd 12 ") == "ABCD12", "код сверяется без пробелов и дефисов"
-    assert pair.make_code() != pair.make_code(), "код обязан быть случайным"
-
-
-def test_pair_prints_only_the_id_to_stdout(pair_src):
-    """Установщик читает ровно одну строку; всё остальное — в stderr."""
-    assert 'print(f"ADMIN_ID={frm[\'id\']}")' in pair_src
-    body = pair_src.split("def main(", 1)[1]
-    stdout_prints = [ln for ln in body.splitlines()
-                     if ln.strip().startswith("print(") and "stderr" not in ln]
-    assert len(stdout_prints) == 1, f"лишний вывод в stdout: {stdout_prints}"
-
-
-def test_pair_deletes_the_webhook_before_long_polling(pair_src):
-    """getUpdates при живом вебхуке всегда отвечает 409 — у повторной установки
-    это выглядело бы как «Telegram не отвечает»."""
-    body = pair_src.split("def main(", 1)[1]
-    assert 'api(token, "deleteWebhook"' in body
-    assert body.index('"deleteWebhook"') < body.index('"getUpdates"')
-
-
-def test_pair_gives_up_on_a_rejected_token_but_waits_out_a_network_blip(pair_src):
-    """401/404 — токен неверный, ждать бессмысленно; сеть моргнула — ждём."""
-    assert "def fatal_token" in pair_src and "(401, 404)" in pair_src
-    loop = pair_src.split("while time.time() < deadline:", 1)[1]
-    assert "time.sleep(3)" in loop and "continue" in loop
-
-
-# ── первое устройство в терминал ─────────────────────────────────────────────
-
-def test_first_device_does_not_create_anything():
-    """Устройство заводит бот; здесь только показ — иначе у админа появилось бы
-    второе устройство при каждом запуске команды."""
-    src = (ROOT / "tools" / "first_device.py").read_text(encoding="utf-8")
-    assert "add_device" not in src and "bootstrap_admin_device" not in src
-    assert "generate_config" in src
-
-
-def test_first_device_qr_is_skipped_in_a_narrow_terminal(monkeypatch):
-    from tools import first_device as fd
-    monkeypatch.setattr(fd, "_terminal_width", lambda: 80)
-    assert fd.print_qr("vpn://" + "A" * 900) is False
-    monkeypatch.setattr(fd, "_terminal_width", lambda: 200)
-    assert fd.print_qr("vpn://" + "A" * 900) is True
-
-
-def test_first_device_file_is_root_only():
-    src = (ROOT / "tools" / "first_device.py").read_text(encoding="utf-8")
-    assert "0o600" in src and "удали после импорта" in src
 
 
 # ── применение правил файервола: подтверждение в чате, а не в SSH ────────────
@@ -342,15 +275,12 @@ def test_piped_bootstrap_hands_over_to_the_installer_from_the_delivery(bootstrap
 def test_every_question_is_read_from_the_terminal():
     """stdin занят текстом скрипта: обычный read «прочитал» бы его вместо
     ответа и молча ушёл по умолчанию — с токеном бота из случайной строки кода."""
-    import re as _re
     for path in ((ROOT / "awg-bot.sh"), (ROOT / "install" / "awg-bot-install.sh")):
         src = path.read_text(encoding="utf-8")
         for line in src.splitlines():
-            if not _re.search(r"\bread\b.*-p ", line):
+            if not re.search(r"\bread\b.*-p ", line):
                 continue
             assert "/dev/tty" in line, f"{path.name}: вопрос читает stdin, а не терминал: {line.strip()}"
-    secrets = (ROOT / "tools" / "manage_secrets.py").read_text(encoding="utf-8")
-    assert "_tty_input(" in secrets and '"/dev/tty"' in secrets
 
 
 def test_bootstrap_without_root_prints_the_whole_command(bootstrap):

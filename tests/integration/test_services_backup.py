@@ -2,7 +2,6 @@
 import pytest
 
 from awgbot.core import config
-from awgbot.domain.services import Services
 from awgbot.util import secrets_util
 
 pytestmark = pytest.mark.integration
