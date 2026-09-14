@@ -1944,6 +1944,15 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         if res != "ok":
             log.info("firewall: таблица awg_bot_guard — %s", res)
 
+    def _live_listen_port(self) -> int:
+        """ListenPort основного интерфейса, как его видит сервер. 0 — не
+        прочитали (интерфейс лежит, конфиг недоступен)."""
+        try:
+            return int(awg.read_server_params(iface=config.AWG_INTERFACE)["listen_port"])
+        except Exception as e:                            # noqa: BLE001
+            log.debug("server_screen: порт интерфейса не прочитан: %s", e)
+            return 0
+
     def server_screen(self) -> dict:
         """Значения раздела «Сервер». Живые (settings), а не константы старта:
         экран обязан показывать то, что уедет в следующую выданную ссылку."""
@@ -1966,7 +1975,12 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             "mtu": g("app.client_config.mtu", config.MTU),
             "keepalive": g("app.client_config.keepalive_seconds", config.KEEPALIVE_SECONDS),
             "iface": config.AWG_INTERFACE,
-            "port": g("app.network.server_port", config.SERVER_PORT),
+            # Порт берём У ЖИВОГО интерфейса — именно он уезжает в ссылки
+            # (configgen читает listen_port оттуда же). Значение из конфига
+            # показываем только при расхождении: экран, говорящий одно, пока
+            # ссылки несут другое, хуже отсутствующего экрана.
+            "port": self._live_listen_port() or g("app.network.server_port", config.SERVER_PORT),
+            "port_conf": g("app.network.server_port", config.SERVER_PORT),
             "subnet": g("app.network.subnet_cidr", f"{config.SUBNET_PREFIX}.0/24"),
             "kernel": kernel,
             "generation": awglock.applied_generation(),

@@ -83,7 +83,14 @@ def _btn_suffix(dev) -> str:
 
 
 def _dev_emoji(d) -> str:
-    """Иконка типа устройства: 📲 передано другу, 📱 обычное."""
+    """Иконка типа устройства: 🛰 шлюз, 📲 передано другу, 📱 обычное.
+
+    Та же, что в текстовых списках (texts.device_emoji): в кнопках она про
+    шлюз не знала, и в «Мои устройства» он выглядел обычным устройством —
+    ровно там, где важно не перепутать его с телефоном.
+    """
+    if getattr(d, "is_gateway", 0):
+        return "🛰"
     return "📲" if d.friend is not None else "📱"
 
 
@@ -174,12 +181,15 @@ def routing_panel(client_id: int, *, master_on: bool, domains: list,
     if master_on:
         kb.button(text="➕ Добавить адреса", callback_data=RoutingCB(action="add", ref=client_id))
         rows.append(1)
+        # Минус, а не корзина: строка убирает ОДНУ запись из списка — то же
+        # действие, что «➖» в разделе доступа по SSH. Корзина остаётся там,
+        # где сносят всё разом, ниже.
         for i, dom in enumerate(domains):
-            kb.button(text=f"🗑 {dom}",
+            kb.button(text=f"➖ {dom}",
                       callback_data=RoutingCB(action="del", ref=client_id, idx=i))
             rows.append(1)
         if domains:
-            kb.button(text="🧹 Очистить список",
+            kb.button(text="🗑 Очистить список",
                       callback_data=RoutingCB(action="clear", ref=client_id))
             rows.append(1)
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
@@ -189,7 +199,7 @@ def routing_panel(client_id: int, *, master_on: bool, domains: list,
 
 def routing_clear_confirm(client_id: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="🧹 Да, очистить", callback_data=RoutingCB(action="clear_yes", ref=client_id))
+    kb.button(text="🗑 Да, очистить", callback_data=RoutingCB(action="clear_yes", ref=client_id))
     kb.button(text="⬅️ Отмена", callback_data=RoutingCB(action="panel", ref=client_id))
     kb.adjust(1, 1)
     return kb.as_markup()
@@ -1145,6 +1155,7 @@ def settings_root() -> InlineKeyboardMarkup:
     что-то чинят.
     """
     kb = InlineKeyboardBuilder()
+    kb.button(text="🔔 Уведомления", callback_data=SetCB(sec="notify"))
     kb.button(text="🖥 Сервер AWG", callback_data=SetCB(sec="srv"))
     kb.button(text="🛡 Доступ по SSH", callback_data=SetCB(sec="fw"))
     # Раздел показываем ВСЕГДА: пока обвязка не развёрнута, он и есть место,
@@ -1153,7 +1164,6 @@ def settings_root() -> InlineKeyboardMarkup:
     # сам в SSH.
     kb.button(text="🇷🇺 Условная маршрутизация", callback_data=SetCB(sec="rt"))
     kb.button(text="✉️ E-mail", callback_data=SetCB(sec="email"))
-    kb.button(text="🔔 Уведомления", callback_data=SetCB(sec="notify"))
     kb.button(text="💳 Параметры подписок", callback_data=SetCB(sec="subs"))
     kb.button(text="🔄 Обслуживание", callback_data=SetCB(sec="svc"))
     kb.button(text="⬆️ Обновления бота", callback_data=SetCB(sec="upd"))
@@ -1214,8 +1224,8 @@ def settings_server() -> InlineKeyboardMarkup:
     ядра только показываются: их смена — это перевыпуск профилей всем, и живёт
     она в переезде, а не в кнопке."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="✏️ Адрес сервера", callback_data=SetCB(sec="srv", act="edit", key="app.network.server_host"))
-    kb.button(text="✏️ Имя в ссылках", callback_data=SetCB(sec="srv", act="edit", key="app.client_config.server_name"))
+    kb.button(text="✏️ Доменное имя", callback_data=SetCB(sec="srv", act="edit", key="app.network.server_host"))
+    kb.button(text="✏️ Имя сервера", callback_data=SetCB(sec="srv", act="edit", key="app.client_config.server_name"))
     kb.button(text="✏️ DNS клиентов", callback_data=SetCB(sec="srv", act="edit", key="app.client_config.dns1"))
     kb.button(text="✏️ MTU", callback_data=SetCB(sec="srv", act="edit", key="app.client_config.mtu"))
     kb.adjust(1)
@@ -1591,8 +1601,8 @@ def gateway_settings_kb() -> InlineKeyboardMarkup:
     по SSH, маршрутизация, подписки) — нет и здесь. Мониторинг и резервное
     копирование, как и там, живут в «Обслуживании»."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="✉️ E-mail", callback_data=GwCB(action="email"))
     kb.button(text="🔔 Уведомления", callback_data=GwCB(action="notify"))
+    kb.button(text="✉️ E-mail", callback_data=GwCB(action="email"))
     kb.button(text="🔄 Обслуживание", callback_data=GwCB(action="maint"))
     kb.button(text="⬆️ Обновления бота", callback_data=GwCB(action="updates"))
     kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))

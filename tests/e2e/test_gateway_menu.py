@@ -41,7 +41,7 @@ def test_main_menu_layout():
     assert _labels(kb.gateway_panel_kb()) == [["🔄 Статус", "🌡 Монитор здоровья"],
                                               ["🔧 Мастер восстановления"], ["⚙️ Настройки"]]
     # Зеркало основного бота: мониторинг и бэкапы — внутри «Обслуживания».
-    assert _labels(kb.gateway_settings_kb()) == [["✉️ E-mail"], ["🔔 Уведомления"],
+    assert _labels(kb.gateway_settings_kb()) == [["🔔 Уведомления"], ["✉️ E-mail"],
                                                  ["🔄 Обслуживание"],
                                                  ["⬆️ Обновления бота"], ["⬅️ В меню"]]
     assert _labels(kb.gateway_maint_kb()) == [["📊 Мониторинг"], ["💾 Резервное копирование"],

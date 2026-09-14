@@ -31,16 +31,38 @@ def _labels(markup):
 
 async def test_server_screen_shows_what_goes_into_new_links(services, fake_bot, monkeypatch):
     monkeypatch.setattr(services, "server_screen", lambda: {
-        "host": "203.0.113.10", "name": "Сервер 1", "dns": "10.8.1.1", "mtu": 1376,
-        "keepalive": "25-35", "iface": "awg0", "port": 51820,
+        "host": "vpn.example.org", "name": "Сервер 1", "dns": "10.8.1.1", "mtu": 1376,
+        "keepalive": "25-35", "iface": "awg0", "port": 51820, "port_conf": 51820,
         "subnet": "10.8.1.0/24", "kernel": "3.1.20260812", "generation": 1})
     text, markup = await sh._screen("srv", services)
-    assert "203.0.113.10" in text and "Сервер 1" in text and "3.1.20260812" in text
+    assert "vpn.example.org" in text and "Сервер 1" in text and "3.1.20260812" in text
     assert "поколение 1" in text
     assert "новым" in text and "перевыпуск профилей" in text, "цена правки названа"
     labels = _labels(markup)
-    assert "✏️ Адрес сервера" in labels and "✏️ DNS клиентов" in labels and "✏️ MTU" in labels
+    assert "✏️ Доменное имя" in labels and "✏️ DNS клиентов" in labels and "✏️ MTU" in labels
+    assert "✏️ Имя сервера" in labels
     assert not any("порт" in l.lower() for l in labels), "порт кнопкой не меняется"
+
+
+async def test_server_screen_says_when_there_is_no_domain(services, fake_bot, monkeypatch):
+    """Доменного имени может не быть вовсе — в ссылки тогда уезжает IP. Пустая
+    строка выглядела бы как потерянное значение."""
+    monkeypatch.setattr(services, "server_screen", lambda: {
+        "host": "203.0.113.10", "name": "Сервер 1", "dns": "10.8.1.1", "mtu": 1376,
+        "keepalive": "25-35", "iface": "awg0", "port": 45871, "port_conf": 45871,
+        "subnet": "10.8.1.0/24", "kernel": "", "generation": 1})
+    text, _ = await sh._screen("srv", services)
+    assert "Доменное имя: не задано" in text and "203.0.113.10" in text
+
+
+async def test_server_screen_flags_a_port_mismatch(services, fake_bot, monkeypatch):
+    """Экран, говорящий одно, пока ссылки несут другое, хуже отсутствующего."""
+    monkeypatch.setattr(services, "server_screen", lambda: {
+        "host": "vpn.example.org", "name": "X", "dns": "10.8.1.1", "mtu": 1376,
+        "keepalive": "25", "iface": "awg0", "port": 45871, "port_conf": 51820,
+        "subnet": "10.8.1.0/24", "kernel": "", "generation": 1})
+    text, _ = await sh._screen("srv", services)
+    assert "⚠️" in text and "45871" in text and "51820" in text
 
 
 @pytest.mark.parametrize("raw, ok", [
@@ -92,7 +114,8 @@ async def test_firewall_screen_offers_enable_and_lists_addresses(services, fake_
                         lambda: _fw(raw_allow=["203.0.113.7", "home.example.org"]))
     text, markup = await sh._screen("fw", services)
     assert "🔴 фильтр выключен" in text and "203.0.113.7" in text
-    assert "NAT клиентов" in text, "выключение фильтра не обещает потерю интернета"
+    assert "Доступ по SSH" in text, "заголовок раздела не обновлён"
+    assert "таймером" in text, "перед включением про таймер сказать надо"
     labels = _labels(markup)
     assert "🟢 Включить фильтр" in labels and "➕ Добавить адрес" in labels
     assert "➖ 203.0.113.7" in labels and "➖ home.example.org" in labels
@@ -159,8 +182,8 @@ def test_settings_root_order_and_names():
     распух до десяти строк, а открывают их не ради настройки, а когда чинят."""
     from awgbot.bot import keyboards as kb
     rows = [b.text for row in kb.settings_root().inline_keyboard for b in row]
-    assert rows == ["🖥 Сервер AWG", "🛡 Доступ по SSH", "🇷🇺 Условная маршрутизация",
-                    "✉️ E-mail", "🔔 Уведомления", "💳 Параметры подписок",
+    assert rows == ["🔔 Уведомления", "🖥 Сервер AWG", "🛡 Доступ по SSH",
+                    "🇷🇺 Условная маршрутизация", "✉️ E-mail", "💳 Параметры подписок",
                     "🔄 Обслуживание", "⬆️ Обновления бота", "⬅️ В меню"]
 
 
@@ -245,3 +268,45 @@ def test_every_edit_button_points_at_a_known_setting():
                 checked += 1
                 assert cb.key in known, f"кнопка «{b.text}» ведёт в несуществующий ключ {cb.key}"
     assert checked >= 8, "проверять оказалось нечего — тест устарел"
+
+
+async def test_enabled_screen_does_not_repeat_the_timer_promise(services, fake_bot, monkeypatch):
+    """На включённом фильтре таймер — прошедшее время: строка только занимает
+    место в экране, который и без того длинный."""
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw(enabled=True))
+    text, _ = await sh._screen("fw", services)
+    assert "🟢 фильтр включён" in text
+    assert "таймером" not in text and "NAT клиентов" not in text
+
+
+def test_gateway_device_keeps_its_icon_in_the_button_list():
+    """В текстовых списках шлюз был 🛰, а в кнопках «Мои устройства» — обычным
+    телефоном: две функции иконки разошлись. Перепутать шлюз с телефоном там,
+    где их удаляют и блокируют, дороже всего."""
+    from awgbot.bot import keyboards as kb, texts
+
+    class _Dev:
+        id, name, block_reason, friend, traffic_limit = 1, "Шлюз", 0, None, 0
+        is_gateway, is_managed, private_key = 1, 1, "priv"
+        address = "10.8.1.5"
+
+    class _Phone(_Dev):
+        id, name, is_gateway = 2, "iPhone", 0
+
+    labels = [b.text for row in kb.client_devices([_Dev(), _Phone()]).inline_keyboard
+              for b in row]
+    assert any(l.startswith("🛰") for l in labels), labels
+    assert any(l.startswith("📱") for l in labels), labels
+    assert texts.device_emoji(_Dev()) == "🛰", "текстовый список разошёлся с кнопками"
+
+
+def test_routing_domain_list_uses_minus_and_a_bin_for_the_whole_list():
+    """Минус убирает одну запись — то же, что в разделе доступа по SSH.
+    Корзина остаётся там, где сносят всё разом."""
+    from awgbot.bot import keyboards as kb
+    markup = kb.routing_panel(1, master_on=True, enabled=1, total=2,
+                              domains=["ozon.ru", "mail.ru"], back_target="menu:main")
+    labels = [b.text for row in markup.inline_keyboard for b in row]
+    assert "➖ ozon.ru" in labels and "➖ mail.ru" in labels
+    assert "🗑 Очистить список" in labels
+    assert not any(l.startswith("🧹") for l in labels), "метла осталась"

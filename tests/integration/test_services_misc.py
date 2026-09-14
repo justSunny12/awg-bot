@@ -347,7 +347,11 @@ def test_server_screen_reads_live_settings_not_startup_constants(services, monke
     d = services.server_screen()
     assert d["host"] == "vpn.example.org" and d["name"] == "Новое имя"
     assert d["dns"] == "10.8.1.1", "одинаковые dns1/dns2 показываются одной строкой"
-    assert d["mtu"] == 1380 and d["port"] == 51820
+    assert d["mtu"] == 1380
+    # Порт — у ЖИВОГО интерфейса: именно он уезжает в ссылки. Значение из
+    # конфига идёт рядом, чтобы расхождение было видно.
+    assert d["port_conf"] == 51820
+    assert d["port"] == (services._live_listen_port() or 51820)
     assert d["iface"] == config.AWG_INTERFACE
     assert isinstance(d["generation"], int), "поколение берётся из манифеста"
     # разные dns — обе строки видны
