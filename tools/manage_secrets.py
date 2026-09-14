@@ -77,12 +77,25 @@ def write_env(path: Path, updates: dict[str, str]) -> None:
 # Диалог
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _tty_input(prompt: str) -> str:
+    """Ответ читаем из терминала, а не из stdin: установку запускают одной
+    командой через трубу (`curl … | sudo bash`), и там stdin занят текстом
+    скрипта — обычный input() прочитал бы его вместо ответа человека."""
+    try:
+        with open("/dev/tty", "r+", encoding="utf-8") as tty:
+            tty.write(prompt)
+            tty.flush()
+            return tty.readline().rstrip("\n")
+    except OSError:
+        return input(prompt)                     # терминала нет (CI) — как раньше
+
+
 def ask_choice(prompt: str, options: dict[str, str], default: str) -> str:
     print("\n" + prompt)
     for k, label in options.items():
         print(f"  {k}) {label}" + (" (по умолчанию)" if k == default else ""))
     while True:
-        ans = input("Выбор: ").strip().lower() or default
+        ans = _tty_input("Выбор: ").strip().lower() or default
         if ans in options:
             return ans
         print("Нет такого варианта.")

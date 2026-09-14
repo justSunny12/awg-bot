@@ -125,13 +125,10 @@ MASQUERADE. Перенос — `install/awg-host-migrate.sh`, с проверк�
 
 ## Установка
 
-Поставка — один архив, установщик внутри. На чистом хосте:
+Поставка — один архив, установщик внутри. На чистом хосте — одна команда:
 
 ```bash
-cd "$(mktemp -d)" \
-  && curl -fsSLO https://github.com/<repo>/releases/latest/download/awg-bot.tgz \
-  && tar xzf awg-bot.tgz \
-  && sudo bash install/awg-bot-install.sh
+curl -fsSL https://raw.githubusercontent.com/<repo>/main/install/awg-bot-install.sh | sudo bash
 ```
 
 Вопрос ровно один — токен бота; кто админ, установщик выясняет одноразовым

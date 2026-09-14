@@ -12,12 +12,26 @@
 # exec awg-bot.sh reconfigure --first-run, передав на самоочистку всё
 # временное: архив и каталог распаковки.
 #
-# ОСНОВНОЙ СПОСОБ — одной командой, поставка едет целиком одним архивом:
-#   cd "$(mktemp -d)" \
-#     && curl -fsSLO https://github.com/<repo>/releases/latest/download/awg-bot.tgz \
-#     && tar xzf awg-bot.tgz && sudo bash install/awg-bot-install.sh
+# ОСНОВНОЙ СПОСОБ — ОДНА КОМАНДА. По ссылке едет не архив, а этот же скрипт:
+# curl отдаёт его в sudo bash, он качает поставку, распаковывает во временный
+# каталог и ПЕРЕДАЁТ УПРАВЛЕНИЕ установщику ИЗ АРХИВА.
 #
-# Использование:
+#   curl -fsSL https://raw.githubusercontent.com/<repo>/main/install/awg-bot-install.sh | sudo bash
+#
+# Передача управления — не формальность. Логика установки принадлежит ПОСТАВКЕ
+# и обязана ехать вместе с ней: иначе на хосте выполнялся бы установщик из
+# ветки main, а код ставился бы из релиза, и эти двое разъезжались бы молча.
+# В режиме трубы этот файл делает ровно три вещи: качает, проверяет sha256 и
+# запускает установщик из распакованного архива.
+#
+# Аргументы после `-s --`:
+#   … | sudo bash -s -- --role gateway
+#
+# ВАЖНОЕ СЛЕДСТВИЕ: при запуске из трубы stdin занят самим скриптом, поэтому
+# ВСЕ вопросы задаются в /dev/tty (здесь и дальше, в awg-bot.sh). Иначе визард
+# «прочитал» бы собственный текст вместо ответа и молча ушёл по умолчаниям.
+#
+# Прочие способы (когда архив уже скачан):
 #   sudo bash install/awg-bot-install.sh   (из распакованной поставки)
 #   sudo ./awg-bot-install.sh              (архив awg-bot.tgz рядом со скриптом)
 #   sudo ./awg-bot-install.sh <path.tgz>
@@ -28,6 +42,9 @@
 #   sudo ./awg-bot-install.sh --skip-verify   # своя сборка: не сверять sha256 с релизом
 #
 set -euo pipefail
+
+REPO="${AWG_BOT_REPO:-justSunny12/awg-bot}"       # откуда качать поставку
+TGZ_URL="${AWG_BOT_TGZ_URL:-https://github.com/$REPO/releases/latest/download/awg-bot.tgz}"
 
 INSTALL_DIR="/opt/awg-bot"
 ETC_DIR="/etc/awg-bot"
@@ -61,14 +78,28 @@ verify_archive() {  # verify_archive TGZ SRC_ROOT — сверить sha256 с �
     log "целостность: sha256 совпал с релизом v$ver"
 }
 
-[[ "${EUID:-$(id -u)}" -eq 0 ]] || die "нужен root: sudo $0 $*"
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+    # Из трубы «$0» — это «bash», и совет «sudo bash» выглядел бы издевательством.
+    if [[ -f "${BASH_SOURCE[0]:-}" ]]; then
+        die "нужен root: sudo $0 $*"
+    fi
+    die "нужен root. Повтори команду целиком:
+  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install/awg-bot-install.sh | sudo bash"
+fi
 
-SELF_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
-SELF_DIR="$(dirname "$SELF_PATH")"
+# Из трубы (`curl … | sudo bash`) файла у нас нет: BASH_SOURCE указывает на
+# «bash», а не на скрипт. Тогда путь к себе не вычисляем и поставку качаем.
+SELF_PATH=""; SELF_DIR=""; PIPED=1
+if [[ -f "${BASH_SOURCE[0]:-}" ]]; then
+    SELF_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+    SELF_DIR="$(dirname "$SELF_PATH")"
+    PIPED=0
+fi
 
 # ── ключи: --role gateway (или AWG_BOT_ROLE=gateway), --port N, --subnet X.Y.Z ──
 ROLE="${AWG_BOT_ROLE:-client}"
 SKIP_VERIFY=0                  # своя сборка: sha256 с релизом сверять не с чем
+ORIG_ARGS=("$@")               # что передать установщику из поставки как есть
 EXTRA=()                       # что уходит дальше в reconfigure --first-run
 while [[ "${1:-}" == --* ]]; do
     case "$1" in
@@ -87,8 +118,43 @@ done
 # нечего. Архив рядом остаётся для случая, когда скрипт вытащили отдельно.
 TGZ=""
 SRC_ROOT=""
-UNPACK_ROOT="$(cd "$SELF_DIR/.." && pwd)"
-if [[ -z "${1:-}" && -f "$UNPACK_ROOT/awgbot/__main__.py" && -f "$UNPACK_ROOT/awg-bot.sh" ]]; then
+UNPACK_ROOT=""
+[[ -n "$SELF_DIR" ]] && UNPACK_ROOT="$(cd "$SELF_DIR/.." && pwd)"
+if [[ "$PIPED" -eq 1 && -z "${1:-}" ]]; then
+    # Скрипт пришёл из трубы — качаем поставку сами, во временный каталог,
+    # который сами же и уберём. Это и есть «установка одной командой»: снаружи
+    # ничего не остаётся, ни архива, ни распакованного дерева.
+    command -v curl >/dev/null 2>&1 || die "нужен curl"
+    command -v tar  >/dev/null 2>&1 || die "нужен tar"
+    SRC_ROOT="$(mktemp -d /tmp/awg-bot-install.XXXXXX)"
+    log "качаю поставку: $TGZ_URL"
+    curl -fsSL --retry 3 -o "$SRC_ROOT/awg-bot.tgz" "$TGZ_URL" \
+        || { rm -rf "$SRC_ROOT"; die "не скачалась поставка ($TGZ_URL)"; }
+    tar xzf "$SRC_ROOT/awg-bot.tgz" -C "$SRC_ROOT" \
+        || { rm -rf "$SRC_ROOT"; die "архив не распаковался — скачан не тот файл?"; }
+    [[ -f "$SRC_ROOT/awgbot/__main__.py" && -f "$SRC_ROOT/awg-bot.sh" ]] \
+        || { rm -rf "$SRC_ROOT"; die "в архиве нет ожидаемого дерева — не та поставка?"; }
+    TGZ="$SRC_ROOT/awg-bot.tgz"
+    verify_archive "$TGZ" "$SRC_ROOT"
+    [[ -f "$SRC_ROOT/install/awg-bot-install.sh" ]] \
+        || { rm -rf "$SRC_ROOT"; die "в поставке нет install/awg-bot-install.sh — не та поставка?"; }
+    log "передаю управление установщику из поставки"
+    # Дочерним процессом, а не exec: каталог создали здесь — здесь и убираем,
+    # если установка сорвалась. Через exec ловушку не унести, а отказ бывает
+    # ДО того, как установщик успеет что-то о себе понять (не root, не та
+    # система) — и тогда временный каталог оставался бы на диске навсегда.
+    # --skip-verify: sha256 уже сверен здесь, второй запрос к API ни к чему.
+    set +e
+    bash "$SRC_ROOT/install/awg-bot-install.sh" --skip-verify ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}
+    __rc=$?
+    set -e
+    if [[ "$__rc" -ne 0 ]]; then
+        case "$SRC_ROOT" in
+            /tmp/awg-bot-install.*) rm -rf "$SRC_ROOT" && log "убрал временный каталог: $SRC_ROOT" ;;
+        esac
+    fi
+    exit "$__rc"
+elif [[ -z "${1:-}" && -n "$UNPACK_ROOT" && -f "$UNPACK_ROOT/awgbot/__main__.py" && -f "$UNPACK_ROOT/awg-bot.sh" ]]; then
     SRC_ROOT="$UNPACK_ROOT"
     log "поставка распакована здесь: $SRC_ROOT"
     # Архив, если он остался рядом (скачали файлом, а не потоком) — уберём в конце
@@ -118,7 +184,7 @@ if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
     printf '  2) Восстановить из резервной копии (awg-bot restore)\n' >&2
     printf '  3) Удалить бота полностью (awg-bot uninstall)\n' >&2
     printf '  4) Ничего, выйти\n' >&2
-    read -r -p "Выбор [1-4]: " __ch
+    read -r -p "Выбор [1-4]: " __ch < /dev/tty
     case "${__ch:-4}" in
         1) [[ -n "$TGZ" ]] || die "рядом нет awg-bot.tgz для обновления — положи архив рядом и повтори, либо: sudo awg-bot update <путь>"
            log "→ обновление из $TGZ"; exec "$BOT" update "$TGZ" ;;
@@ -131,7 +197,7 @@ fi
 # Не тупикуем: предлагаем дочистить и продолжить с нуля.
 if [[ -e "$INSTALL_DIR" ]]; then
     printf '[install:!] найден остаток прошлой установки в %s (без рабочего venv).\n' "$INSTALL_DIR" >&2
-    read -r -p "Удалить его и установить с нуля? [Y/n]: " __a; __a="${__a:-y}"
+    read -r -p "Удалить его и установить с нуля? [Y/n]: " __a < /dev/tty; __a="${__a:-y}"
     [[ "${__a,,}" == "y" ]] || die "прервано — уберите $INSTALL_DIR вручную и повторите"
     rm -rf "$INSTALL_DIR"; rm -f "$SELF_LINK"
 fi
@@ -140,6 +206,10 @@ mkdir -p "$INSTALL_DIR" "$ETC_DIR" "$DATA_DIR"
 chmod 700 "$DATA_DIR"
 
 if [[ -n "$SRC_ROOT" ]]; then
+    # Сорвалась установка на полпути (нет root, не та система, отказ визарда) —
+    # временный каталог, скачанный трубой, за собой всё равно убираем. Снимаем
+    # ловушку перед передачей управления awg-bot.sh: дальше уборка его.
+    trap '[[ $? -eq 0 ]] || case "$SRC_ROOT" in /tmp/awg-bot-install.*) rm -rf "$SRC_ROOT" ;; esac' EXIT
     verify_archive "$TGZ" "$SRC_ROOT"
     log "раскладываю код в ${INSTALL_DIR}…"
     ( shopt -s dotglob; cp -a "$SRC_ROOT"/. "$INSTALL_DIR"/ )
@@ -171,5 +241,6 @@ CLEANUP_DIR=""
 case "${SRC_ROOT:-}" in
     /tmp/*|/var/tmp/*|/private/tmp/*) CLEANUP_DIR="$SRC_ROOT" ;;
 esac
+trap - EXIT
 exec "$INSTALL_DIR/awg-bot.sh" reconfigure --first-run --role "$ROLE" ${EXTRA[@]+"${EXTRA[@]}"} \
      --cleanup "${CLEANUP_DIR:-$SELF_PATH}" "$TGZ"

@@ -228,3 +228,53 @@ def test_temp_directory_is_removed_but_a_home_directory_is_not(bootstrap):
     assert "не временный" in body
     assert body.index('case "$what" in') < body.index('rm -rf "$what"'), \
         "rm -rf стоит раньше проверки пути"
+
+
+# ── установка одной командой ─────────────────────────────────────────────────
+
+def test_bootstrap_downloads_the_delivery_when_piped(bootstrap):
+    """По ссылке едет не архив, а этот скрипт: curl отдаёт его в sudo bash, а
+    поставку он качает себе сам. Иначе «одна команда» превращается в четыре."""
+    assert "PIPED=1" in bootstrap and '-f "${BASH_SOURCE[0]:-}"' in bootstrap
+    piped = bootstrap.split('if [[ "$PIPED" -eq 1', 1)[1].split("\nelif", 1)[0]
+    assert "mktemp -d /tmp/awg-bot-install." in piped
+    assert "curl -fsSL" in piped and "tar xzf" in piped
+    assert piped.count('rm -rf "$SRC_ROOT"') >= 3, "на каждом отказе временное убирается"
+    assert "releases/latest/download/awg-bot.tgz" in bootstrap
+
+
+def test_piped_bootstrap_hands_over_to_the_installer_from_the_delivery(bootstrap):
+    """Логика установки принадлежит ПОСТАВКЕ и едет вместе с ней. Выполняйся
+    на хосте установщик из ветки main, а код ставься из релиза — эти двое
+    разъезжались бы молча, и отладка начиналась бы с вопроса «а чей это код?»."""
+    piped = bootstrap.split('if [[ "$PIPED" -eq 1', 1)[1].split("\nelif", 1)[0]
+    assert 'bash "$SRC_ROOT/install/awg-bot-install.sh"' in piped
+    assert "--skip-verify" in piped, "второй запрос к API ни к чему: sha256 уже сверен"
+    assert piped.index('verify_archive "$TGZ"') < piped.index('bash "$SRC_ROOT'), \
+        "код из архива запускается до сверки целостности"
+    assert 'ORIG_ARGS[@]' in piped, "аргументы (--role gateway и прочее) обязаны доехать"
+    # каталог создали мы — мы и убираем, если установка сорвалась; через exec
+    # ловушку не унести, а отказ бывает до того, как установщик что-то поймёт
+    assert "exec bash" not in piped and "__rc" in piped
+    assert piped.index("__rc=$?") < piped.index('rm -rf "$SRC_ROOT" && log')
+
+
+def test_every_question_is_read_from_the_terminal():
+    """stdin занят текстом скрипта: обычный read «прочитал» бы его вместо
+    ответа и молча ушёл по умолчанию — с токеном бота из случайной строки кода."""
+    import re as _re
+    for path in ((ROOT / "awg-bot.sh"), (ROOT / "install" / "awg-bot-install.sh")):
+        src = path.read_text(encoding="utf-8")
+        for line in src.splitlines():
+            if not _re.search(r"\bread\b.*-p ", line):
+                continue
+            assert "/dev/tty" in line, f"{path.name}: вопрос читает stdin, а не терминал: {line.strip()}"
+    secrets = (ROOT / "tools" / "manage_secrets.py").read_text(encoding="utf-8")
+    assert "_tty_input(" in secrets and '"/dev/tty"' in secrets
+
+
+def test_bootstrap_without_root_prints_the_whole_command(bootstrap):
+    """Из трубы «$0» — это «bash», и совет «sudo bash» выглядел бы издевательством."""
+    body = bootstrap.split('if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then', 1)[1].split("\nfi\n", 1)[0]
+    assert "curl -fsSL" in body and "| sudo bash" in body
+    assert 'die "нужен root: sudo $0 $*"' in body, "для файла остаётся короткий совет"

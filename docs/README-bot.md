@@ -41,28 +41,38 @@ Telegram Bot API (плюс, если включён email-выход, исход
 
 ## 3. Быстрый старт
 
-Поставка — **один архив** `awg-bot.tgz`: внутри и код, и установщик. Установка
-одной командой, на чистом хосте, от root:
+Поставка — **один архив** `awg-bot.tgz`: внутри и код, и установщик.
+Установка — **одна команда** на чистом хосте:
 
 ```bash
-cd "$(mktemp -d)" \
-  && curl -fsSLO https://github.com/<repo>/releases/latest/download/awg-bot.tgz \
-  && tar xzf awg-bot.tgz \
-  && sudo bash install/awg-bot-install.sh
+curl -fsSL https://raw.githubusercontent.com/<repo>/main/install/awg-bot-install.sh | sudo bash
 ```
 
-Временный каталог и архив установщик уберёт за собой сам. Ключи те же:
+Аргументы передаются после `-s --`:
 
 ```bash
-sudo bash install/awg-bot-install.sh --port 51820 --subnet 10.8.1   # порт/подсеть
-sudo bash install/awg-bot-install.sh --advanced       # спросить всё, как раньше
-sudo bash install/awg-bot-install.sh --role gateway   # агент на шлюзе
-sudo bash install/awg-bot-install.sh --skip-verify    # своя сборка, а не релиз
+curl -fsSL …/awg-bot-install.sh | sudo bash -s -- --role gateway   # агент на шлюзе
+curl -fsSL …/awg-bot-install.sh | sudo bash -s -- --port 51820     # порт awg
+curl -fsSL …/awg-bot-install.sh | sudo bash -s -- --advanced       # все вопросы
 ```
 
-Скачанный архив сверяется по sha256 с релизом GitHub. Сервис не ответил —
-установка идёт дальше (загрузку и так прикрывает TLS) и говорит об этом
-строкой; сверка не совпала — установка отказывается начинаться.
+**Что при этом происходит.** По ссылке едет не архив, а сам установщик. Из
+трубы он видит, что запущен без файла, качает поставку во временный каталог,
+сверяет её sha256 с релизом GitHub и **передаёт управление установщику из
+архива**. Это не формальность: логика установки принадлежит поставке и обязана
+ехать вместе с ней, иначе на хосте выполнялся бы код из ветки `main`, а
+ставился бы релиз, и разъезжались бы они молча. Сорвалась установка — временный
+каталог убирается тем, кто его создал.
+
+Сверка целостности необязательна по последствиям: GitHub не ответил — ставим
+дальше и говорим строкой (загрузку и так прикрывает TLS); не совпало —
+отказываемся начинать. Для своей сборки есть `--skip-verify`.
+
+Если архив уже скачан, работает и прежний путь:
+
+```bash
+tar xzf awg-bot.tgz && sudo bash install/awg-bot-install.sh
+```
 
 Без `--port` порт awg случайный (высокий), подсеть `10.8.1.0/24`. Оба ключа
 относятся только к СОЗДАВАЕМОМУ серверу: на хосте, где awg уже настроен, они
@@ -83,7 +93,7 @@ sudo bash install/awg-bot-install.sh --skip-verify    # своя сборка, �
 | Preflight | Проверяет `root`, ищет Python 3.12+ (при отсутствии предлагает поставить через `apt`/deadsnakes PPA). |
 | AmneziaWG | Ставит ядро версии, **прибитой к поставке** (`install/awg.lock`): модуль через DKMS под все установленные ядра и `amneziawg-tools`, из исходников. Уже стоит та же версия — пропускает. |
 | Сервер | На чистом хосте создаёт `awg0.conf` сам: ключи, случайный высокий порт, обфускация, адрес `.1/24` (клиенты с `.2`), `ip_forward`, автозагрузка `awg-quick@awg0`. Сервер уже есть — не трогает и берёт топологию из него. |
-| Код | Bootstrap раскладывает распакованную поставку в `/opt/awg-bot`, симлинкует команду `awg-bot`, передаёт управление `awg-bot reconfigure --first-run`. |
+| Код | Из трубы: качает архив во временный каталог, сверяет sha256 и передаёт управление установщику ИЗ архива. Дальше тот раскладывает поставку в `/opt/awg-bot`, симлинкует команду `awg-bot` и передаёт управление `awg-bot reconfigure --first-run`. |
 | Уборка | В конце удаляет архив и временный каталог распаковки. Каталог — только если он в `/tmp` или `/var/tmp`: поставку могли распаковать и в домашний каталог. |
 | venv | Создаёт `venv`, ставит `requirements.txt`. |
 | Каталоги FHS | `/etc/awg-bot/conf` (конфиг), `/etc/awg-bot/env` (секреты, `600`), `/var/lib/awg-bot` (БД+бэкапы, `700`). |
@@ -560,11 +570,8 @@ root-ключ домашней машины никогда не лежит на 
 ### Установка
 
 ```bash
-# на шлюзе, под root; токен второго бота — от @BotFather, ADMIN_ID тот же
-cd "$(mktemp -d)" \
-  && curl -fsSLO https://github.com/<repo>/releases/latest/download/awg-bot.tgz \
-  && tar xzf awg-bot.tgz \
-  && sudo bash install/awg-bot-install.sh --role gateway
+# на шлюзе; токен второго бота — от @BotFather, ADMIN_ID тот же
+curl -fsSL https://raw.githubusercontent.com/<repo>/main/install/awg-bot-install.sh | sudo bash -s -- --role gateway
 ```
 
 Установщик не задаёт клиентских вопросов (шлюз не выдаёт конфигов): спросит

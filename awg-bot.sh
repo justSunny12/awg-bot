@@ -58,10 +58,14 @@ ok()   { printf '%s[awg-bot]%s %s\n' "$c_ok"   "$c_off" "$*"; }
 warn() { printf '%s[awg-bot:!]%s %s\n' "$c_warn" "$c_off" "$*" >&2; }
 die()  { printf '%s[awg-bot:ОШИБКА]%s %s\n' "$c_err" "$c_off" "$*" >&2; exit 1; }
 
+# ВСЕ вопросы читаются из /dev/tty, а не из stdin. Установка запускается одной
+# командой через трубу (`curl … | sudo bash`), и там stdin занят текстом
+# скрипта: обычный `read` «прочитал» бы его вместо ответа человека и молча
+# ушёл по умолчаниям — с токеном бота из случайной строки кода.
 ask() {  # ask VAR "prompt" "default"  — пустой ввод (Enter) берёт default
     local __v="$1" __p="$2" __d="${3:-}" __a
-    if [[ -n "$__d" ]]; then read -r -p "$__p [$__d]: " __a; __a="${__a:-$__d}"
-    else read -r -p "$__p: " __a; fi
+    if [[ -n "$__d" ]]; then read -r -p "$__p [$__d]: " __a < /dev/tty; __a="${__a:-$__d}"
+    else read -r -p "$__p: " __a < /dev/tty; fi
     printf -v "$__v" '%s' "$__a"
 }
 ask_masked() {  # ask_masked VAR "prompt" — ввод с маской: видно ДЛИНУ (****), не символы.
@@ -84,7 +88,7 @@ ask_masked() {  # ask_masked VAR "prompt" — ввод с маской: видн
 confirm() {  # confirm "prompt" "default(y/n)" → 0/1  (Enter = default)
     local p="$1" d="${2:-n}" a hint="[y/N]"
     [[ "$d" == "y" ]] && hint="[Y/n]"
-    read -r -p "$p $hint: " a; a="${a:-$d}"
+    read -r -p "$p $hint: " a < /dev/tty; a="${a:-$d}"
     [[ "${a,,}" == "y" ]]
 }
 require_root() { [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "нужен root: sudo awg-bot ${VERB:-}"; }
