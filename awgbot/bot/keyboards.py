@@ -1139,8 +1139,11 @@ def settings_root() -> InlineKeyboardMarkup:
     kb.button(text="✉️ E-mail", callback_data=SetCB(sec="email"))
     kb.button(text="🔔 Уведомления", callback_data=SetCB(sec="notify"))
     kb.button(text="💳 Параметры подписок", callback_data=SetCB(sec="subs"))
-    if config.ROUTING_ENABLED:
-        kb.button(text="🇷🇺 Условная маршрутизация", callback_data=SetCB(sec="rt"))
+    # Раздел показываем ВСЕГДА: пока обвязка не развёрнута, он и есть место,
+    # где её разворачивают. Прежде кнопка появлялась только после правки
+    # app.yaml руками — то есть ровно после того, как человек уже сделал всё
+    # сам в SSH.
+    kb.button(text="🇷🇺 Условная маршрутизация", callback_data=SetCB(sec="rt"))
     kb.button(text="🖥 Сервер", callback_data=SetCB(sec="srv"))
     kb.button(text="🛡 Файервол", callback_data=SetCB(sec="fw"))
     kb.button(text="📊 Мониторинг", callback_data=SetCB(sec="mon"))
@@ -1187,6 +1190,15 @@ def settings_routing(enabled: bool, has_gateway: bool = True) -> InlineKeyboardM
                   callback_data=SetCB(sec="rt_users", act="open"))
     kb.row(_back())
     kb.adjust(1)
+    return kb.as_markup()
+
+
+def routing_provision() -> InlineKeyboardMarkup:
+    """Экран «функция не развёрнута»: одно действие и назад."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🚀 Развернуть", callback_data=SetCB(sec="rt", act="do", key="provision"))
+    kb.adjust(1)
+    kb.row(_back())
     return kb.as_markup()
 
 

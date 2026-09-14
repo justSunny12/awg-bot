@@ -40,6 +40,7 @@
 #                                                            # awg-сервера (иначе порт случайный)
 #   sudo ./awg-bot-install.sh --advanced      # спросить всё, как в прежних версиях
 #   sudo ./awg-bot-install.sh --skip-verify   # своя сборка: не сверять sha256 с релизом
+#   … --role gateway [--bundle <файл>]        # агент шлюза; файл ищется сам в /root
 #
 set -euo pipefail
 
@@ -108,6 +109,7 @@ while [[ "${1:-}" == --* ]]; do
         --subnet) [[ "${2:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "--subnet: три октета вида 10.8.1"; EXTRA+=(--subnet "$2"); shift 2 ;;
         --advanced) EXTRA+=(--advanced); shift ;;
         --skip-verify) SKIP_VERIFY=1; shift ;;
+        --bundle) [[ -n "${2:-}" ]] || die "--bundle: нужен путь к файлу"; EXTRA+=(--bundle "$2"); shift 2 ;;
         *) die "неизвестный ключ: $1" ;;
     esac
 done

@@ -217,3 +217,39 @@ def test_migration_hands_the_flag_to_the_twin(services, fake_awg, make_active_cl
     services.migration_finish()
     assert services.db.get_device(pi.device_id) is None
     assert services.db.gateway_device().id == twin_id, "флаг переехал к двойнику"
+
+
+def test_new_gateway_machine_ignores_the_admin_device_limit(gw, services):
+    """Шлюз из лимита исключён по смыслу — через него идёт трафик всех. Но флаг
+    ставится строкой позже, и админ с выбранным лимитом не мог завести себе
+    шлюз вовсе: отказ приходил раньше, чем устройство успевало им стать."""
+    admin, phone, pi = gw
+    services.db.update_client_fields(admin.id, device_limit=2)
+    with pytest.raises(Exception):
+        services.add_device(admin.id, "третье")            # лимит работает как работал
+    res = services.gateway_setup(None)
+    assert res["created"] and services.db.gateway_device().id == res["device"].id
+
+
+def test_agent_token_travels_inside_the_first_run_bundle(gw, services, monkeypatch, tmp_path):
+    """Токен агента и ADMIN_ID уезжают в файл первого применения — ради этого
+    установка на шлюзе и не задаёт вопросов. Строки лежат ПОСЛЕ exec: при
+    запуске бандла они данные, а не команды."""
+    admin, phone, pi = gw
+    env = tmp_path / "env"
+    monkeypatch.setenv("AWG_BOT_ENV", str(env))
+    assert services.gw_bot_token() == ""
+    with pytest.raises(ServiceError):
+        services.set_gw_bot_token("не токен")
+    services.set_gw_bot_token("123456789:AA-token-value-long-enough-here")
+    assert services.gw_bot_token().startswith("123456789:")
+    assert oct(env.stat().st_mode)[-3:] == "600", "в файле токен — права 600"
+
+    plain = b"#!/bin/sh\nexec /opt/awg-gw/routing-gw-setup.sh\n#__GW_SETUP_BELOW__\n# script\n"
+    out = services._bundle_with_agent(plain)
+    text = out.decode()
+    assert 'AGENT_BOT_TOKEN="123456789:AA-token-value-long-enough-here"' in text
+    assert f'AGENT_ADMIN_ID="{config.ADMIN_ID}"' in text
+    assert text.index("exec ") < text.index("AGENT_BOT_TOKEN"), \
+        "строки попали в исполняемую часть бандла"
+    assert text.index("AGENT_BOT_TOKEN") < text.index("#__GW_SETUP_BELOW__")

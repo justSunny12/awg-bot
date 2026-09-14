@@ -278,3 +278,48 @@ def test_bootstrap_without_root_prints_the_whole_command(bootstrap):
     body = bootstrap.split('if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then', 1)[1].split("\nfi\n", 1)[0]
     assert "curl -fsSL" in body and "| sudo bash" in body
     assert 'die "нужен root: sudo $0 $*"' in body, "для файла остаётся короткий совет"
+
+
+# ── шлюз: установка без единого вопроса ──────────────────────────────────────
+
+def test_gateway_install_takes_secrets_from_the_bundle(script):
+    """Файл первого применения несёт всё: ключи линка, конфиг аплинка, список
+    устройств админа, токен агента и ADMIN_ID. Значит спрашивать на шлюзе
+    нечего — есть файл или его нет."""
+    body = script.split('if [[ "$role" == "gateway" ]]; then', 1)[1].split("\n    fi\n", 1)[0]
+    assert "find_gw_bundle" in body and "gw_bundle_secrets" in body
+    assert "apply_gw_bundle" in body
+    assert '[[ "$from_bundle" -eq 1 ]] || setup_secrets' in body, \
+        "с файлом вопросы про секреты не задаются"
+    assert body.index("ensure_awg_kernel") < body.index("apply_gw_bundle"), \
+        "бандл применяется до ядра — awg-quick ещё нет"
+    assert body.index("apply_gw_bundle") < body.index("build_venv"), \
+        "агенту нужен уже поднятый аплинк: без него Telegram недоступен"
+
+
+def test_gateway_install_without_a_bundle_says_exactly_what_to_do(script):
+    """Тупик «нет файла» обязан кончаться двумя командами, а не советом
+    почитать документацию."""
+    body = script.split('if [[ "$role" == "gateway" ]]; then', 1)[1].split("\n    fi\n", 1)[0]
+    stop = body.split('elif [[ -z "$(env_get BOT_TOKEN)" ]]; then', 1)[1].split("fi", 1)[0]
+    assert "scp awg-gw-bundle.sh" in stop and "--role gateway" in stop
+    assert "Назначить шлюз" in stop
+
+
+def test_bundle_secrets_are_read_as_data_not_executed(script):
+    """Строки лежат в бандле после exec: их читают sed'ом, а не исполняют."""
+    body = script.split("gw_bundle_secrets() {", 1)[1].split("\n}\n", 1)[0]
+    assert "sed -nE" in body and "AGENT_BOT_TOKEN" in body and "AGENT_ADMIN_ID" in body
+    assert "source" not in body and ". \"$f\"" not in body
+    assert "env_set BOT_TOKEN" in body and "env_set ADMIN_ID" in body
+
+
+def test_bundle_is_searched_where_scp_puts_it(script):
+    body = script.split("find_gw_bundle() {", 1)[1].split("\n}\n", 1)[0]
+    assert "/root/awg-gw-bundle.sh" in body, "инструкция бота кладёт файл именно туда"
+    assert "SUDO_USER" in body and '$PWD/awg-gw-bundle.sh' in body
+    assert '[[ -n "$GW_BUNDLE" ]]' in body, "явный --bundle важнее поиска"
+
+
+def test_bundle_flag_travels_through_the_bootstrap(bootstrap):
+    assert "--bundle) " in bootstrap and "EXTRA+=(--bundle" in bootstrap

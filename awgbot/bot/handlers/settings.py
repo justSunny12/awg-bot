@@ -18,7 +18,8 @@ from awgbot.bot import texts
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import GwMarkCB, SetCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.states import BackupPassphrase, EmailSetup, SettingsInput
+from awgbot.bot.states import (BackupPassphrase, EmailSetup, GatewayToken,
+                                SettingsInput)
 from awgbot.bot.handlers import mailwizard
 from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu
 from awgbot.domain.services import ServiceError
@@ -68,6 +69,9 @@ async def _screen(sec: str, services):
     if sec == "upd":
         return texts.settings_upd_text(), kb.settings_updates(await call(services.updates_muted))
     if sec == "rt":
+        if not config.ROUTING_ENABLED and not await call(services.routing_provisioned):
+            # Обвязки ещё нет — раздел и есть место, где её разворачивают.
+            return texts.ROUTING_PROVISION_INTRO, kb.routing_provision()
         if not config.ROUTING_ENABLED:
             # Кнопку в этом случае не рисуем вовсе, но колбэк приходит и из
             # старого сообщения в истории чата. Открыть раздел, которого нет,
@@ -204,14 +208,56 @@ async def gateway_new_ask(cb: CallbackQuery, services):
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "new_yes"))
-async def gateway_new_yes(cb: CallbackQuery, services):
+async def gateway_new_yes(cb: CallbackQuery, services, state: FSMContext):
+    """Новая машина. Токен её бота спрашиваем ЗДЕСЬ и один раз: он уедет внутрь
+    файла первого применения, и установка на шлюзе не задаст ни одного
+    вопроса. Токен уже есть — идём сразу к выпуску."""
+    if not await call(services.gw_bot_token):
+        await cb.answer()
+        await state.set_state(GatewayToken.value)
+        await edit(cb, texts.GATEWAY_ASK_TOKEN, kb.settings_cancel("rt_gw"))
+        return
     await cb.answer("Создаю устройство и ключи…")
+    await _gateway_new_go(cb.message, services)
+
+
+@router.message(GatewayToken.value)
+async def gateway_token_received(message: Message, state: FSMContext, services):
+    try:
+        await call(services.set_gw_bot_token, (message.text or "").strip())
+    except ServiceError as e:
+        await message.answer(f"⚠️ {texts._e(str(e))}")
+        return
+    await state.clear()
+    try:
+        await message.delete()          # токен в истории чата не держим
+    except Exception:                   # noqa: BLE001
+        pass
+    await _gateway_new_go(message, services)
+
+
+async def _gateway_new_go(message: Message, services) -> None:
+    """Создать устройство «Шлюз», выпустить файл первого применения и объяснить
+    две команды на машине-шлюзе."""
     try:
         res = await call(services.gateway_setup, None)
     except ServiceError as e:
-        await cb.message.answer(f"⚠️ {texts._e(str(e))}")
+        await message.answer(f"⚠️ {texts._e(str(e))}")
         return
-    await _deliver_bundle(cb, services, res, texts.gateway_marked(res["device"], True))
+    await message.answer(texts.gateway_install_instructions(res["device"]))
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
+    try:
+        blob, name = await call(services.gw_bundle_plain)
+    except (ServiceError, OSError) as e:
+        await message.answer(f"⚠️ Файл первого применения не собран: {texts._e(str(e))}")
+        return
+    from aiogram.types import BufferedInputFile
+    await message.answer_document(
+        BufferedInputFile(blob, filename=name),
+        caption="🛰 Файл первого применения. Скопируй его на машину-шлюз в /root/ — "
+                "установщик найдёт его сам. Внутри ключи и токен агента: после "
+                "установки удали.",
+        reply_markup=kb.bundle_menu_kb())
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "remove_ask"))
@@ -347,6 +393,27 @@ async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext,
         prompt = texts.settings_prompt(key)
     await edit(cb, prompt, kb.settings_cancel(callback_data.sec))
     await cb.answer()
+
+
+async def _routing_provision(cb: CallbackQuery, services) -> None:
+    """Развернуть обвязку условной маршрутизации. Долго (до минуты) и меняет
+    состояние хоста, поэтому: сразу сказать, что идём, и показать итог."""
+    await cb.answer("Разворачиваю…")
+    await edit(cb, "🚀 Разворачиваю обвязку: dnsmasq, NAT, маршруты, линк. "
+                   "Это до минуты — не нажимай ничего.", None)
+    try:
+        tail = await call(services.routing_provision)
+    except ServiceError as e:
+        await cb.message.answer(texts.routing_provision_failed(str(e)))
+        return
+    sent = await cb.message.answer(texts.routing_provisioned(tail))
+    # Интерфейс линка читается при старте: без рестарта функция останется
+    # спящей, а раздел — тем же экраном «не развёрнута».
+    await call(services.set_restart_wait, sent.chat.id, sent.message_id)
+    try:
+        await call(services.restart_bot)
+    except OSError as e:
+        log.warning("после развёртывания не удалось перезапустить бота: %s", e)
 
 
 async def _firewall_action(cb: CallbackQuery, callback_data: SetCB, services) -> None:
@@ -769,6 +836,9 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
     key = callback_data.key
     if callback_data.sec == "fw":
         await _firewall_action(cb, callback_data, services)
+        return
+    if callback_data.sec == "rt" and key == "provision":
+        await _routing_provision(cb, services)
         return
     if key == "enc":                                   # экран шифрования
         mode = await call(services.backup_encryption_mode)

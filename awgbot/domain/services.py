@@ -731,13 +731,20 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
 
     # ── Устройства ───────────────────────────────────────────────────────────
 
-    def add_device(self, client_id: int, name: str, traffic_limit: int = 0) -> DeviceCreated:
+    def add_device(self, client_id: int, name: str, traffic_limit: int = 0,
+                   ignore_limit: bool = False) -> DeviceCreated:
         """Поток 2: генерация ключей → аллокация IP → БД → awg.add_peer →
-        конфиг. При сбое применения — откат БД."""
+        конфиг. При сбое применения — откат БД.
+
+        ignore_limit — только для устройства-ШЛЮЗА. Оно из лимита исключено по
+        смыслу (через него идёт трафик всех), но флаг ставится строкой позже, и
+        админ с выбранным лимитом не мог завести себе шлюз вовсе: отказ
+        приходил раньше, чем устройство успевало стать шлюзом.
+        """
         client = self.db.get_client(client_id)
         if client is None:
             raise ServiceError("Клиент не найден")
-        if not client.is_service:
+        if not client.is_service and not ignore_limit:
             limit = client.device_limit
             if limit != 0 and self.db.count_devices(client_id) >= limit:  # 0 = безлимит
                 raise LimitReached("Достигнут лимит устройств")
@@ -2155,6 +2162,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         with open("/root/awg-gw-bundle.sh", "rb") as f:
             plain = f.read()
         plain = self._bundle_with_mail(plain)
+        plain = self._bundle_with_agent(plain)
         self.db.set_state(self._GW_BUNDLE_SSH_KEY, " ".join(admin_ips))
         self.db.set_state(self._GW_BUNDLE_SSH_NOTIFIED_KEY, "")
         self.db.set_state(self._GW_BUNDLE_ISSUED_KEY, timeutil.to_iso(timeutil.now()))
@@ -2240,7 +2248,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             raise ServiceError("профиль админа ещё не создан")
         created = False
         if device_id is None:
-            dc = self.add_device(admin.id, self._GW_NEW_NAME)
+            dc = self.add_device(admin.id, self._GW_NEW_NAME, ignore_limit=True)
             device_id = dc.device_id
             created = True
             rekey = True                       # новая машина без ключа линка
@@ -2339,6 +2347,66 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
     # ломала sed, и на шлюз ложился пустой скрипт (наступили: 09.09.2026).
     _MAIL_MARK_LINE = re.compile(rb"^#__GW_SETUP_BELOW__$", re.M)
 
+    # ── токен бота-агента: спрашиваем один раз, храним рядом со своим ────────
+    _GW_TOKEN_ENV = "GW_BOT_TOKEN"
+
+    @staticmethod
+    def _env_path() -> str:
+        return os.environ.get("AWG_BOT_ENV", "/etc/awg-bot/env")
+
+    def gw_bot_token(self) -> str:
+        """Токен бота шлюза из env. Пусто — ещё не спрашивали."""
+        try:
+            with open(self._env_path(), encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith(self._GW_TOKEN_ENV + "="):
+                        return line.split("=", 1)[1].strip()
+        except OSError:
+            pass
+        return ""
+
+    def set_gw_bot_token(self, token: str) -> None:
+        """Запомнить токен агента. Хранение осознанное: без него перевыпуск
+        файла первого применения (переустановили машину-шлюз, сменили её)
+        снова требовал бы идти в BotFather. Уровень доверия тот же, что у
+        приватных ключей, которые в этом файле и так лежат."""
+        token = str(token).strip()
+        if not re.fullmatch(r"\d{5,}:[A-Za-z0-9_-]{20,}", token):
+            raise ServiceError("это не похоже на токен бота — жду строку вида 123456789:AA…")
+        path = self._env_path()
+        try:
+            lines = []
+            try:
+                with open(path, encoding="utf-8") as f:
+                    lines = [ln for ln in f.read().splitlines()
+                             if not ln.startswith(self._GW_TOKEN_ENV + "=")]
+            except FileNotFoundError:
+                pass
+            lines.append(f"{self._GW_TOKEN_ENV}={token}")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+            os.chmod(path, 0o600)
+        except OSError as e:
+            raise ServiceError(f"не записать {path}: {e}")
+
+    def _bundle_with_agent(self, plain: bytes) -> bytes:
+        """Токен агента и ADMIN_ID — в файл первого применения, чтобы установка
+        на шлюзе не задавала ВООБЩЕ ни одного вопроса.
+
+        Строки кладутся ПОСЛЕ `exec` в теле бандла (перед маркером скрипта
+        обвязки), то есть при запуске бандла не исполняются — это данные для
+        установщика, а не команды.
+        """
+        token = self.gw_bot_token()
+        if not token:
+            return plain
+        m = self._MAIL_MARK_LINE.search(plain)
+        if m is None:
+            return plain
+        lines = (f'AGENT_BOT_TOKEN="{token}"\n'
+                 f'AGENT_ADMIN_ID="{config.ADMIN_ID}"\n').encode()
+        return plain[:m.start()] + lines + plain[m.start():]
+
     def _bundle_with_mail(self, plain: bytes) -> bytes:
         """Настройки почты и парольная фраза бэкапов — в бандл, чтобы не вводить
         их дважды: строки MAIL_B64 / BACKUP_B64 (JSON в base64) перед строкой
@@ -2385,6 +2453,56 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
                 "— проверь аплинк и NAT на самом шлюзе. " + self._rt_effect_line())
 
     _TXT_RT_GW_UP = "🟢 Шлюз условной маршрутизации снова в строю."
+
+    _RT_LINK_IF = "awglink"
+
+    def routing_provisioned(self) -> bool:
+        """Обвязка развёрнута? Признак — заданный интерфейс линка в конфиге."""
+        return bool(settings.get("app.routing.gw_interface", config.ROUTING_GW_INTERFACE))
+
+    def routing_provision(self) -> str:
+        """Развернуть обвязку условной маршрутизации на ВПС и поднять линк.
+
+        Раньше это были три команды в SSH из README: поставить dnsmasq,
+        прогнать routing-host-setup.sh, прогнать routing-link-setup.sh, потом
+        руками вписать интерфейс в app.yaml. Каждая — с ключами, которые легко
+        перепутать, и ни одна не проверяла, что предыдущая отработала.
+
+        Возвращает хвост вывода для показа админу. Бросает ServiceError, если
+        какой-то шаг не отработал: полуразвёрнутая обвязка хуже отсутствующей —
+        она выглядит рабочей.
+        """
+        import subprocess
+        base = config.BASE_DIR / "install"
+        out: list[str] = []
+
+        def run(argv: list[str], what: str, timeout: int = 600) -> None:
+            try:
+                proc = subprocess.run(argv, capture_output=True, timeout=timeout)
+            except (OSError, subprocess.SubprocessError) as e:
+                raise ServiceError(f"{what}: не запустилось ({e})")
+            text = (proc.stdout + proc.stderr).decode(errors="replace").strip()
+            out.append(text)
+            if proc.returncode != 0:
+                tail = "\n".join(text.splitlines()[-6:])
+                raise ServiceError(f"{what} не отработал:\n{tail}")
+
+        # dnsmasq: пакет dnsmasq-base даёт только бинарь (его тянут libvirt и
+        # соседи), а обвязке нужен ЮНИТ — иначе routing-host-setup.sh честно
+        # остановится на полпути.
+        has_unit = subprocess.run(["systemctl", "list-unit-files", "dnsmasq.service"],
+                                  capture_output=True)
+        if has_unit.returncode != 0 or b"dnsmasq.service" not in has_unit.stdout:
+            run(["apt-get", "install", "-y", "--no-install-recommends", "dnsmasq"],
+                "установка dnsmasq")
+        run(["sh", str(base / "routing-host-setup.sh"), "--apply"], "обвязка хоста")
+        run(["sh", str(base / "routing-host-setup.sh"), "--install-unit"],
+            "закрепление обвязки от ребута")
+        run(["sh", str(base / "routing-link-setup.sh"), "--apply"], "линк до шлюза")
+        settings.set_value("app.routing.gw_interface", self._RT_LINK_IF)
+        routing.invalidate_self_check()
+        log.info("условная маршрутизация: обвязка развёрнута, линк %s", self._RT_LINK_IF)
+        return "\n".join(out[-1:])[-1500:]
 
     def routing_status(self) -> tuple[bool, str]:
         """(работоспособна ли фича, причина) — для preflight и админ-UI."""

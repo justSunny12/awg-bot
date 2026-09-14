@@ -403,24 +403,28 @@ def _acb(bot):
 async def test_settings_section_hidden_without_a_gateway(services, fake_bot, monkeypatch):
     """Раздел настроек существует, только если РФ-шлюз сконфигурирован.
 
-    Кнопку при пустом gw_interface не рисуем, но колбэк приходит и из старого
-    сообщения в истории чата. Открыть раздел, которого нет, значит показать
-    переключатели, ничего не делающие.
+    Раздел показывается ВСЕГДА: пока обвязка не развёрнута, он и есть место,
+    где её разворачивают. А вот содержимое разное — экран развёртывания, экран
+    «интерфейс задан, но линка нет» или обычные переключатели.
     """
     from awgbot.bot import keyboards as kb, texts
     from awgbot.bot.handlers import settings as sh
     from awgbot.core import config
 
-    monkeypatch.setattr(config, "ROUTING_ENABLED", False)
-    labels = [b.text for row in kb.settings_root().inline_keyboard for b in row]
-    assert not any("маршрутизация" in l for l in labels), labels
-
-    text, _ = await sh._screen("rt", services)
-    assert text == texts.SETTINGS_ROUTING_ABSENT
-
-    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
     labels = [b.text for row in kb.settings_root().inline_keyboard for b in row]
     assert any("маршрутизация" in l for l in labels), labels
+
+    monkeypatch.setattr(config, "ROUTING_ENABLED", False)
+    monkeypatch.setattr(services, "routing_provisioned", lambda: False)
+    text, markup = await sh._screen("rt", services)
+    assert text == texts.ROUTING_PROVISION_INTRO
+    assert any("Развернуть" in b.text for row in markup.inline_keyboard for b in row)
+
+    # Интерфейс уже вписан, но процесс ещё не перезапускался — честно говорим,
+    # что функция спит, а не предлагаем развернуть ещё раз поверх готового.
+    monkeypatch.setattr(services, "routing_provisioned", lambda: True)
+    text, _ = await sh._screen("rt", services)
+    assert text == texts.SETTINGS_ROUTING_ABSENT
 
 
 # ── пер-девайсные переключатели ──────────────────────────────────────────────

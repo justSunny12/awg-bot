@@ -71,6 +71,12 @@ class SettingsInput(StatesGroup):
     value = State()
 
 
+class GatewayToken(StatesGroup):
+    """Токен бота-агента для новой машины-шлюза: спрашиваем один раз, дальше
+    он живёт в env и уезжает в файл первого применения."""
+    value = State()
+
+
 class RoutingDomains(StatesGroup):
     """Ввод доменов в личный список условной маршрутизации. Принимаем пачкой —
     человек вставляет списком, а не по одному."""

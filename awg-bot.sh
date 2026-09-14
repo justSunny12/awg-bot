@@ -44,6 +44,7 @@ SERVICE="awg-bot"
 SELF_LINK="/usr/local/bin/awg-bot"
 
 ADVANCED="${AWG_BOT_ADVANCED:-0}"       # 1 — спрашивать всё, как раньше
+GW_BUNDLE="${AWG_BOT_GW_BUNDLE:-}"      # файл первого применения для роли gateway
 AWG_STATE="$ETC_DIR/awg.state"          # поколение AmneziaWG на этом хосте
 AWG_LOCK_FILE="$INSTALL_DIR/install/awg.lock"   # манифест версии из поставки
 
@@ -445,6 +446,40 @@ print_map() {  # print_map "active"|"failed"
 }
 
 # ── reconfigure ──────────────────────────────────────────────────────────────
+# ── роль gateway: файл первого применения ────────────────────────────────────
+find_gw_bundle() {  # печатает путь к бандлу или пусто
+    local c
+    if [[ -n "$GW_BUNDLE" ]]; then
+        [[ -f "$GW_BUNDLE" ]] || die "файла нет: $GW_BUNDLE"
+        printf '%s' "$GW_BUNDLE"; return 0
+    fi
+    # Порядок не случаен: /root — то, куда кладёт scp из инструкции бота;
+    # каталог вызвавшего — для тех, кто копировал под своим пользователем.
+    for c in /root/awg-gw-bundle.sh "$PWD/awg-gw-bundle.sh"              "${SUDO_USER:+/home/$SUDO_USER/awg-gw-bundle.sh}"              /tmp/awg-gw-bundle.sh; do
+        [[ -n "$c" && -f "$c" ]] && { printf '%s' "$c"; return 0; }
+    done
+    return 0
+}
+
+gw_bundle_secrets() {  # gw_bundle_secrets FILE — вытащить токен агента и ADMIN_ID
+    # Строки положены в бандл ботом ВПС и лежат ПОСЛЕ exec — при запуске бандла
+    # они не исполняются, это данные для установщика.
+    local f="$1" token admin
+    token="$(sed -nE 's/^AGENT_BOT_TOKEN="([^"]+)"$/\1/p' "$f" | head -n1)"
+    admin="$(sed -nE 's/^AGENT_ADMIN_ID="([0-9]+)"$/\1/p' "$f" | head -n1)"
+    [[ -n "$token" && -n "$admin" ]] || return 1
+    mkdir -p "$ETC_DIR"; touch "$ENV_FILE"; chmod 600 "$ENV_FILE"
+    env_set BOT_TOKEN "$token"; env_set ADMIN_ID "$admin"
+    ok "токен агента и ADMIN_ID взяты из файла первого применения — вопросов не будет"
+}
+
+apply_gw_bundle() {  # применить бандл: аплинк, линк, обвязка, файервол шлюза
+    local f="$1"
+    echo; log "─── Конфигурация с ВПС: $f ───"
+    sh "$f" || die "файл первого применения не применился — смотри вывод выше; исправь причину и повтори установку"
+    ok "аплинк, линк и обвязка шлюза подняты"
+}
+
 # ── роль gateway: агент на шлюзе (docs/ROADMAP.md, п.7) ──────────────────────
 configure_gateway() {
     # Раскомментировать блок роли из шаблона (yaml_set правит только существующие
@@ -485,6 +520,7 @@ cmd_reconfigure() {
         case "$1" in
             --first-run) first_run=1; shift ;;
             --advanced)  ADVANCED=1; shift ;;
+            --bundle)    GW_BUNDLE="${2:-}"; shift 2 ;;
             --role)      role="${2:-}"; shift 2 ;;
             --port)      # порт awg для СОЗДАВАЕМОГО сервера — без advanced-режима
                          [[ "${2:-}" =~ ^[0-9]+$ && "$2" -ge 1 && "$2" -le 65535 ]] || die "--port: число 1..65535"
@@ -506,12 +542,32 @@ cmd_reconfigure() {
         # юнит — то же самое, теми же функциями. Ядро awg — по манифесту
         # поставки, обеим ролям одинаково.
         ensure_awg_kernel
+        # Файл первого применения приезжает с ВПС и несёт всё: ключи линка,
+        # конфиг аплинка, список устройств админа, токен агента и ADMIN_ID.
+        # Поэтому у роли gateway вопросов нет вовсе — есть файл или его нет.
+        local bundle; bundle="$(find_gw_bundle)"
+        local from_bundle=0
+        if [[ -n "$bundle" ]]; then
+            log "нашёл конфигурацию шлюза: $bundle"
+            if gw_bundle_secrets "$bundle"; then
+                from_bundle=1
+            else
+                warn "в файле нет токена агента — спрошу секреты вручную"
+            fi
+            apply_gw_bundle "$bundle"
+        elif [[ -z "$(env_get BOT_TOKEN)" ]]; then
+            die "нет файла первого применения. Выпусти его в основном боте
+  (Настройки → Условная маршрутизация → Назначить шлюз → Новая машина),
+  скопируй сюда и повтори:
+    scp awg-gw-bundle.sh root@ЭТОТ_ХОСТ:/root/
+    curl -fsSL https://raw.githubusercontent.com/justSunny12/awg-bot/main/install/awg-bot-install.sh | sudo bash -s -- --role gateway"
+        fi
         ensure_python
         build_venv
         mkdir -p "$DATA_DIR"; chmod 700 "$DATA_DIR"
         seed_conf
         configure_gateway
-        setup_secrets
+        [[ "$from_bundle" -eq 1 ]] || setup_secrets
         validate_config
         install_unit
         # Включение — ОТДЕЛЬНО от запуска. Слитое `enable --now || restart`

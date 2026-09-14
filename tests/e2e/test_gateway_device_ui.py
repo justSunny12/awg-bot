@@ -110,18 +110,41 @@ async def test_settings_change_gateway_rekeys_and_gives_plain_first_run_file(ser
     assert any("руками" in s[1] for s in nav.sent if s[0] == "edit_text")
 
 
-async def test_settings_new_machine_creates_device_and_rekeys(services, fake_bot, gwsetup):
+async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake_bot, gwsetup, monkeypatch):
+    """Токен бота-агента спрашивается ЗДЕСЬ и один раз: он уедет внутрь файла
+    первого применения, и установка на шлюзе не задаст ни одного вопроса."""
     _, phone, pi = gwsetup
+    stored: dict = {}
+    monkeypatch.setattr(services, "gw_bot_token", lambda: stored.get("t", ""))
+    monkeypatch.setattr(services, "set_gw_bot_token",
+                        lambda t: stored.__setitem__("t", t))
     cb, nav = _acb(fake_bot)
     await sh.gateway_new_ask(cb, services)
     assert any("Новая машина" in s[1] for s in nav.sent if s[0] == "edit_text")
+
+    st = FakeState()
     cb, nav = _acb(fake_bot)
-    await sh.gateway_new_yes(cb, services)
+    await sh.gateway_new_yes(cb, services, st)
+    assert any("Токен бота шлюза" in s[1] for s in nav.sent if s[0] == "edit_text")
+    assert services.db.gateway_device() is None, "без токена ничего не создаём"
+
+    msg = _amsg(fake_bot, "123456789:AA-token-value-long-enough-here")
+    await sh.gateway_token_received(msg, st, services)
     gw = services.db.gateway_device()
     assert gw is not None and gw.name == "Шлюз" and gw.id not in (phone.id, pi.id)
     assert services.modes == ["--rekey"]
-    docs = _docs(nav)
+    assert stored["t"].startswith("123456789:")
+    docs = _docs(msg)
     assert len(docs) == 1 and "первого применения" in docs[0][1]
+    assert any("--role gateway" in s[1] for s in msg.sent if s[0] == "answer"), \
+        "инструкция с двумя командами не показана"
+
+    # Токен уже есть — второй раз не спрашиваем
+    services.db.set_gateway(None)
+    cb, nav = _acb(fake_bot)
+    await sh.gateway_new_yes(cb, services, FakeState())
+    assert not any("Токен бота шлюза" in s[1] for s in nav.sent if s[0] == "edit_text")
+    assert services.db.gateway_device() is not None, nav.sent
 
 
 async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup):
