@@ -258,7 +258,8 @@ async def clients_list(cb: CallbackQuery, services):
     if not clients:
         await edit_nav(cb, services, "Профилей пока нет.", await _main_menu_markup(services))
     else:
-        await edit(cb, "👥 Профили:", kb.admin_clients(clients))
+        online = await call(services.online_client_ids)
+        await edit(cb, "👥 Профили:", kb.admin_clients(clients, online))
 
 
 async def _show_client_card(cb: CallbackQuery, services, client_id: int):

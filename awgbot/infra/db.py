@@ -1295,11 +1295,15 @@ class Database:
     def count_devices(self, client_id: int) -> int:
         """Столько устройств у человека с его точки зрения — по видимым строкам.
         Считать пары значило бы упереться в лимит вдвое раньше, чем следует.
-        COUNT, а не len(list_devices): без JOIN и без сборки моделей."""
+        COUNT, а не len(list_devices): без JOIN и без сборки моделей.
+
+        ШЛЮЗ СЧИТАЕТСЯ. Прежде он вычитался, и счётчик расходился со списком:
+        «устройств добавлено 5», а в списке шесть строк. Шлюзом может быть
+        только устройство админа, а его профиль безлимитный — прятать одну
+        строку ради лимита, которого нет, незачем.
+        """
         row = self._connection().execute(
-            f"SELECT COUNT(*) AS n FROM devices d {self._visible_where()} "
-            "AND d.is_gateway = 0 AND NOT EXISTS "
-            "(SELECT 1 FROM devices o WHERE o.id = d.twin_of AND o.is_gateway = 1)",
+            f"SELECT COUNT(*) AS n FROM devices d {self._visible_where()}",
             (client_id,)).fetchone()
         return int(row["n"])
 

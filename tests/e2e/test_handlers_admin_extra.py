@@ -1531,4 +1531,4 @@ def test_notify_section_layout_and_profiles_submenu(monkeypatch):
     assert rows[-2] == ["👥 События профилей"] and rows[-1][0].endswith("Назад")
     assert not any("Активация" in b for r in rows for b in r), "события профилей ушли в подменю"
     sub = [[b.text for b in r] for r in kbs.settings_notify_clients().inline_keyboard]
-    assert sub[0] == ["🟢 Активация профиля"] and len(sub) == 5
+    assert sub[0] == ["✅ Активация профиля"] and len(sub) == 5

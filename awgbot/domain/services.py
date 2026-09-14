@@ -731,20 +731,15 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
 
     # ── Устройства ───────────────────────────────────────────────────────────
 
-    def add_device(self, client_id: int, name: str, traffic_limit: int = 0,
-                   ignore_limit: bool = False) -> DeviceCreated:
+    def add_device(self, client_id: int, name: str, traffic_limit: int = 0) -> DeviceCreated:
         """Поток 2: генерация ключей → аллокация IP → БД → awg.add_peer →
         конфиг. При сбое применения — откат БД.
 
-        ignore_limit — только для устройства-ШЛЮЗА. Оно из лимита исключено по
-        смыслу (через него идёт трафик всех), но флаг ставится строкой позже, и
-        админ с выбранным лимитом не мог завести себе шлюз вовсе: отказ
-        приходил раньше, чем устройство успевало стать шлюзом.
         """
         client = self.db.get_client(client_id)
         if client is None:
             raise ServiceError("Клиент не найден")
-        if not client.is_service and not ignore_limit:
+        if not client.is_service:
             limit = client.device_limit
             if limit != 0 and self.db.count_devices(client_id) >= limit:  # 0 = безлимит
                 raise LimitReached("Достигнут лимит устройств")
@@ -2277,7 +2272,9 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             raise ServiceError("профиль админа ещё не создан")
         created = False
         if device_id is None:
-            dc = self.add_device(admin.id, self._GW_NEW_NAME, ignore_limit=True)
+            # Лимит шлюзу не делают исключением: профиль админа безлимитный по
+            # построению, а счётчик, который врёт на одну строку, хуже лимита.
+            dc = self.add_device(admin.id, self._GW_NEW_NAME)
             device_id = dc.device_id
             created = True
             rekey = True                       # новая машина без ключа линка

@@ -176,7 +176,7 @@ def test_settings_screen_lists_clients_only_when_enabled():
     assert not any("К1" in t or "К2" in t for t in on), "профили не в корне"
     users = [b.text for row in kb.settings_routing_users(clients).inline_keyboard
              for b in row]
-    assert "🟢 К1" in users and "🔴 К2" in users    # кружок = состояние разрешения
+    assert "✅ К1" in users and "☑️ К2" in users    # кружок = состояние разрешения
 
 
 async def test_grant_from_settings_screen(services, make_active_client, fake_bot):

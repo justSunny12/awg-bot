@@ -37,7 +37,9 @@ def _labels(markup):
 def gwsetup(services, fake_awg, make_active_client, monkeypatch):
     """Админ с двумя устройствами; ключ линка подменён; скрипт линка не
     запускается — режимы копятся в списке; бандлы — заглушки."""
-    admin = make_active_client(name="Админ", tg_id=ADMIN)
+    # Профиль админа безлимитный, как в жизни: шлюз считается устройством и
+    # занимает слот, поэтому фиксированный лимит фикстуры мешал бы его завести.
+    admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     phone = services.add_device(admin.id, "phone")
     pi = services.add_device(admin.id, "NASPi")
     modes = []

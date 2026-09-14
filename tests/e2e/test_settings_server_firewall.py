@@ -288,19 +288,28 @@ def test_gateway_device_keeps_its_icon_in_the_button_list():
     где их удаляют и блокируют, дороже всего."""
     from awgbot.bot import keyboards as kb, texts
 
+    from awgbot.util import timeutil
+
+    class _Traffic:
+        last_handshake = int(timeutil.now().timestamp())
+
     class _Dev:
         id, name, block_reason, friend, traffic_limit = 1, "Шлюз", 0, None, 0
         is_gateway, is_managed, private_key = 1, 1, "priv"
-        address = "10.8.1.5"
+        address, traffic = "10.8.1.5", _Traffic()
 
     class _Phone(_Dev):
         id, name, is_gateway = 2, "iPhone", 0
+        traffic = type("T", (), {"last_handshake": 0})()
 
     labels = [b.text for row in kb.client_devices([_Dev(), _Phone()]).inline_keyboard
               for b in row]
     assert any(l.startswith("🛰") for l in labels), labels
     assert any(l.startswith("📱") for l in labels), labels
     assert texts.device_emoji(_Dev()) == "🛰", "текстовый список разошёлся с кнопками"
+    # второй значок — онлайн: шлюз с хендшейком зелёный, телефон без — красный
+    assert any(l.startswith("🛰🟢") for l in labels), labels
+    assert any(l.startswith("📱🔴") for l in labels), labels
 
 
 def test_routing_domain_list_uses_minus_and_a_bin_for_the_whole_list():
@@ -386,3 +395,46 @@ async def test_maintenance_mentions_migration_only_with_its_button(services, fak
     text, markup = await sh._screen("svc", services)
     assert "Переезд профилей" in text
     assert any("переезд" in b.text.lower() for row in markup.inline_keyboard for b in row)
+
+
+# ── значки состояния: где кружок, где галочка ────────────────────────────────
+
+def test_lists_of_choices_use_ticks_not_circles():
+    """Кружок читается как «жив или лежит» — состояние того, что перечислено.
+    В списках «кому разрешено» и «о чём уведомлять» нужен знак ВЫБОРА."""
+    from awgbot.bot import keyboards as kb
+
+    class _C:
+        def __init__(self, cid, allowed):
+            self.id, self.name, self.routing_allowed = cid, f"К{cid}", allowed
+
+    labels = [b.text for row in kb.settings_routing_users([_C(1, True), _C(2, False)]).inline_keyboard
+              for b in row]
+    assert labels[:2] == ["✅ К1", "☑️ К2"]
+    notify = [b.text for row in kb.settings_notify_clients().inline_keyboard for b in row]
+    assert all(not l.startswith(("🟢", "🔴")) for l in notify), notify
+    # а вот у переключателей сервиса кружок остаётся
+    rt = [b.text for row in kb.settings_routing(True, has_gateway=True).inline_keyboard for b in row]
+    assert rt[0].startswith("🟢"), rt
+
+
+def test_client_list_circle_means_online_not_subscription():
+    """«Кто сейчас в сети» из списка было не узнать, а состояние подписки и так
+    видно в карточке. ⏳ остаётся за теми, кто ещё не активировал доступ."""
+    from awgbot.bot import keyboards as kb
+    from awgbot.core.enums import ActivationStatus, SubStatus
+
+    class _C:
+        def __init__(self, cid, name, act=ActivationStatus.ACTIVE, status=SubStatus.ACTIVE):
+            self.id, self.name = cid, name
+            self.activation_status, self.status = act, status
+            self.block_reason = 0
+
+    clients = [_C(1, "Онлайн"), _C(2, "Офлайн"),
+               _C(3, "Ждёт", act=ActivationStatus.PENDING),
+               _C(4, "Истёк", status=SubStatus.EXPIRED)]
+    labels = [b.text for row in kb.admin_clients(clients, online_ids={1, 4}).inline_keyboard
+              for b in row]
+    assert labels[0].startswith("🟢") and labels[1].startswith("🔴")
+    assert labels[2].startswith("⏳")
+    assert labels[3].startswith("🟢"), "истёкший, но подключённый — всё равно онлайн"

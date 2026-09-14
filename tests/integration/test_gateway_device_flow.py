@@ -140,8 +140,11 @@ def test_gateway_is_outside_limits_and_first_in_lists(gw, services, monkeypatch)
     services.db.add_traffic(pi.device_id, 10 ** 12, 10 ** 12)         # «весь РФ-трафик»
     services.db.add_traffic(phone.device_id, 5, 5)
     t = services.db.get_client_traffic(admin.id)
+    # Трафик шлюза — это трафик ЧУЖИХ клиентов, идущий через него; в
+    # потреблении профиля админа ему не место.
     assert t["rx_month"] == 5 and t["tx_month"] == 5, "трафик шлюза в профиле не считается"
-    assert services.db.count_devices(admin.id) == 1, "шлюз не занимает слот"
+    # А вот в счётчике устройств он есть: счёт обязан совпадать со списком.
+    assert services.db.count_devices(admin.id) == 2, "шлюз должен считаться устройством"
     devs = services.db.list_devices(admin.id)
     assert [d.name for d in devs] == ["NASPi", "phone"], "шлюз первым"
     # лимит профиля не срабатывает от шлюза
@@ -155,9 +158,10 @@ def test_gateway_is_outside_limits_and_first_in_lists(gw, services, monkeypatch)
     services.db.update_device_fields(pi.device_id, last_handshake=now)
     services.db.update_device_fields(phone.device_id, last_handshake=now)
     rows = services.online_devices()
-    assert rows[0][0].name == "NASPi"
+    assert rows[0][0].name == "NASPi", "шлюз первой строкой"
     from awgbot.bot import texts
-    assert "онлайн (1)" in texts.online_devices_text(rows)
+    assert "онлайн (2)" in texts.online_devices_text(rows), \
+        "счёт в заголовке обязан совпадать с длиной списка под ним"
     assert "🛰" in texts.device_label(services.db.get_device(pi.device_id))
 
 
@@ -212,24 +216,27 @@ def test_migration_hands_the_flag_to_the_twin(services, fake_awg, make_active_cl
     assert twin.is_gateway == 1, "двойник виден шлюзом уже в окне переезда"
     assert services.db.gateway_device().id == pi.device_id, "настоящий флаг — на исходной строке"
     assert services.db.twin_of_device(pi.device_id).id == twin_id
-    assert services.db.count_devices(admin.id) == 0, "пара шлюза не занимает слот"
+    assert services.db.count_devices(admin.id) == 1, \
+        "пара шлюза — одна видимая строка, и она считается"
     services.db.update_device_fields(twin_id, last_handshake=int(_t.time()))
     services.migration_finish()
     assert services.db.get_device(pi.device_id) is None
     assert services.db.gateway_device().id == twin_id, "флаг переехал к двойнику"
 
 
-def test_new_gateway_machine_ignores_the_admin_device_limit(gw, services):
-    """Шлюз из лимита исключён по смыслу — через него идёт трафик всех. Но флаг
-    ставится строкой позже, и админ с выбранным лимитом не мог завести себе
-    шлюз вовсе: отказ приходил раньше, чем устройство успевало им стать."""
+def test_new_gateway_machine_counts_against_the_limit(gw, services):
+    """Шлюз считается обычным устройством: и в счётчике, и в лимите. Профиль
+    админа безлимитный по построению, так что тупика это не создаёт, а
+    счётчик, который врёт на одну строку, создавал."""
     admin, phone, pi = gw
     from awgbot.domain.services import LimitReached
     services.db.update_client_fields(admin.id, device_limit=2)
     with pytest.raises(LimitReached):
-        services.add_device(admin.id, "третье")            # лимит работает как работал
+        services.gateway_setup(None)                      # лимит исчерпан — отказ
+    services.db.update_client_fields(admin.id, device_limit=0)   # безлимит, как у админа
     res = services.gateway_setup(None)
     assert res["created"] and services.db.gateway_device().id == res["device"].id
+    assert services.db.count_devices(admin.id) == 3, "шлюз в счётчике"
 
 
 def test_agent_token_travels_inside_the_first_run_bundle(gw, services, monkeypatch, tmp_path):
@@ -281,3 +288,25 @@ def test_bundle_without_a_token_stays_as_it_was(gw, services, monkeypatch, tmp_p
     monkeypatch.setenv("AWG_BOT_ENV", str(tmp_path / "пусто"))
     plain = b"#!/bin/sh\nexec x\n#__GW_SETUP_BELOW__\n"
     assert services._bundle_with_agent(plain) == plain
+
+
+def test_counters_agree_with_the_lists_they_head(gw, services):
+    """Регресс, найденный глазами: «устройств добавлено 5» при шести строках в
+    списке и «онлайн 5» при четырёх. Заголовок обязан совпадать с тем, что под
+    ним, иначе это просто ложь."""
+    from awgbot.bot import texts
+    from awgbot.util import timeutil
+    admin, phone, pi = gw
+    services.db.set_gateway(pi.device_id)
+    now = int(timeutil.now().timestamp())
+    for dev_id in (phone.device_id, pi.device_id):
+        services.db.update_device_fields(dev_id, last_handshake=now)
+
+    devices = services.db.list_devices(admin.id)
+    used, _limit = services.device_slots(admin.id)
+    assert used == len(devices), "счётчик слотов разошёлся со списком устройств"
+
+    rows = services.online_devices()
+    head = texts.online_devices_text(rows)
+    assert f"онлайн ({len(rows)})" in head
+    assert len([d for d, _ in rows]) == 2

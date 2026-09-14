@@ -96,11 +96,18 @@ def _dev_emoji(d) -> str:
 
 def client_devices(devices) -> InlineKeyboardMarkup:
     """Список своих устройств. Без кнопки добавления — она уже есть в главном
-    меню, дублировать здесь избыточно."""
+    меню, дублировать здесь избыточно.
+
+    Два значка подряд: тип устройства и онлайн. Тип отвечает «что это»,
+    кружок — «в сети ли оно сейчас»; раньше второго ответа в списке не было
+    вовсе, и за ним приходилось открывать каждую карточку.
+    """
+    from awgbot.util import timeutil
     kb = InlineKeyboardBuilder()
     for d in devices:
         marker = _blocks.blocked_marker_device(int(d.block_reason), for_admin=False)
-        kb.button(text=f"{marker}{_dev_emoji(d)} {d.name}{_btn_suffix(d)}",
+        online = "🟢" if timeutil.handshake_is_online(d.traffic.last_handshake) else "🔴"
+        kb.button(text=f"{marker}{_dev_emoji(d)}{online} {d.name}{_btn_suffix(d)}",
                   callback_data=DeviceCB(action="open", device_id=d.id))
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
     kb.adjust(1)
@@ -488,11 +495,18 @@ def broadcast_confirm() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def admin_clients(clients) -> InlineKeyboardMarkup:
+def admin_clients(clients, online_ids=()) -> InlineKeyboardMarkup:
+    """Список профилей. Кружок — про ОНЛАЙН: зелёный, если подключён хотя бы
+    один пир, иначе красный; ⏳ — профиль ещё не активировал доступ.
+
+    Прежде кружок показывал состояние подписки, но оно и так видно в карточке
+    (срок, блокировки), а вот «кто сейчас в сети» из списка узнать было негде.
+    """
+    online = set(online_ids or ())
     kb = InlineKeyboardBuilder()
     for c in clients:
         mark = "⏳" if c.activation_status == ActivationStatus.PENDING else (
-            "🟢" if c.status == SubStatus.ACTIVE else "🔴")
+            "🟢" if c.id in online else "🔴")
         # админ видит все блокировки (включая тихие)
         blk = _blocks.blocked_marker_client(int(c.block_reason), for_admin=True)
         kb.button(text=f"{blk}{mark} {c.name}",
@@ -1120,6 +1134,17 @@ def _chk(on: bool) -> str:
     return "🟢" if on else "🔴"
 
 
+def _tick(on: bool) -> str:
+    """Галочка для СПИСКОВ-перечислений: кому разрешено, о чём уведомлять.
+
+    Кружок оставлен переключателям состояния сервиса («функция включена»), а в
+    перечислениях он читался как «профиль жив / профиль лежит» — то есть как
+    состояние того, что перечислено, а не как отметка выбора. Галочка та же,
+    что в списке устройств маршрутизации и в выборе адресатов рассылки.
+    """
+    return "✅" if on else "☑️"
+
+
 def traffic_profiles_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="\u2b05\ufe0f В меню", callback_data=Menu(action="main"))
@@ -1320,7 +1345,7 @@ def settings_routing_users(clients=()) -> InlineKeyboardMarkup:
     выдан доступ, видны одним списком."""
     kb = InlineKeyboardBuilder()
     for c in clients:
-        kb.button(text=f"{_chk(c.routing_allowed)} {c.name}",
+        kb.button(text=f"{_tick(c.routing_allowed)} {c.name}",
                   callback_data=SetCB(sec="rt", act="do", key="allow", val=str(c.id)))
     kb.adjust(1)
     kb.row(_back("rt"))
@@ -1378,7 +1403,7 @@ def settings_notify_clients() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for key, label in CLIENT_EVENT_LABELS:
         on = s.get_bool(f"notifications.client_events.{key}", True)
-        kb.button(text=f"{_chk(on)} {label}",
+        kb.button(text=f"{_tick(on)} {label}",
                   callback_data=SetCB(sec="ncl", act="toggle",
                                       key=f"notifications.client_events.{key}"))
     kb.adjust(1)
