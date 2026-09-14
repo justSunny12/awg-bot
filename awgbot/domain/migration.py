@@ -740,9 +740,31 @@ class MigrationMixin:
         else:
             awglock.write_state(target=0)
         self._retire_interface(old_if)
+        if target > applied:
+            # Смена поколения: прежнюю сборку ядра держали до этого момента —
+            # пока старый интерфейс обслуживал людей, путь назад был нужен.
+            # Теперь она мусор в /usr/src и в DKMS.
+            self._prune_old_kernel_builds()
         self.db.set_state(self._PROMOTED_KEY, new_if)
         log.info("переезд: основным интерфейсом стал %s (поколение %s)", new_if, target)
         return new_if
+
+    @staticmethod
+    def _prune_old_kernel_builds() -> None:
+        import subprocess
+        script = config.BASE_DIR / "install" / "awg-kernel-install.sh"
+        lock = config.BASE_DIR / "install" / "awg.lock"
+        try:
+            proc = subprocess.run(["bash", str(script), "prune"], capture_output=True,
+                                  timeout=120, env={**os.environ, "AWG_LOCK": str(lock)})
+        except (OSError, subprocess.SubprocessError) as e:
+            log.warning("prune: не запустилось: %s", e)
+            return
+        if proc.returncode != 0:
+            log.warning("prune: прежние сборки не убраны: %s",
+                        proc.stderr.decode(errors="replace").strip()[-200:])
+        else:
+            log.info("prune: %s", proc.stdout.decode(errors="replace").strip().splitlines()[-1:])
 
     @staticmethod
     def _retire_interface(name: str) -> None:

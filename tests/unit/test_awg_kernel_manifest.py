@@ -110,8 +110,60 @@ def test_kernel_dkms_tree_carries_the_real_version(kernel):
     assert 'tree="$DKMS_SRC_ROOT/$MODULE-$mtag"' in kernel, "дерево снова по версии"
     assert 'make -C "$tmp/src" dkms-install DKMSDIR="$tree"' in kernel
     assert 'PACKAGE_VERSION=\\"$mtag\\"' in kernel
-    assert "dkms uninstall" in kernel and "dkms remove" not in kernel, \
-        "remove снёс бы дерево прежней версии — откат станет невозможен"
+    # В сборке — только uninstall: дерево прежнего тега остаётся для отката.
+    # remove живёт в отдельном режиме prune и зовётся, когда откат уже не нужен.
+    build = kernel.split("step_module() {", 1)[1].split("\n}\n", 1)[0]
+    assert "dkms uninstall" in build and "dkms remove" not in build, \
+        "remove в сборке снёс бы дерево прежней версии — откат станет невозможен"
+
+
+def test_prune_refuses_until_the_new_module_actually_runs(tmp_path):
+    """Убирать прежнюю сборку можно, только когда откат к ней уже не нужен —
+    то есть когда работает именно то, что собрано. Иначе снесём единственный
+    путь назад ровно перед тем, как он понадобится."""
+    ver = "3.1.20260812"
+    res = _run_kernel(tmp_path, "prune", module=ver, loaded=ver, tools=ver,
+                      built_tag="v3.1.20260906", tools_built="v3.1.20260812",
+                      src_disk="НОВЫЙ", src_loaded="СТАРЫЙ", as_root=True)
+    assert res.returncode != 0
+    assert "reload" in res.stderr
+
+
+def test_prune_removes_every_other_dkms_version(tmp_path):
+    """Сюда попадает и апстримное «1.0.0» с хостов, собранных руками."""
+    import os
+    import subprocess
+    ver = "3.1.20260812"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    calls = tmp_path / "calls.log"
+    (bin_dir / "dkms").write_text(
+        '#!/bin/sh\n'
+        f'echo "dkms $*" >> "{calls}"\n'
+        'if [ "$1" = status ]; then printf "amneziawg/1.0.0, 5.15.0, x86_64: installed\\n'
+        'amneziawg/3.1.20260906, 5.15.0, x86_64: installed\\n"; fi\n', encoding="utf-8")
+    (bin_dir / "depmod").write_text('#!/bin/sh\necho "depmod $*" >> "' + str(calls) + '"\n',
+                                    encoding="utf-8")
+    for f in ("dkms", "depmod"):
+        (bin_dir / f).chmod(0o755)
+    src_root = tmp_path / "usr_src"
+    (src_root / "amneziawg-1.0.0").mkdir(parents=True)
+    (src_root / "amneziawg-3.1.20260906").mkdir(parents=True)
+    old_path = os.environ["PATH"]
+    os.environ["PATH"] = f"{bin_dir}:{old_path}"
+    os.environ["DKMS_SRC_ROOT"] = str(src_root)
+    try:
+        res = _run_kernel(tmp_path, "prune", module=ver, loaded=ver, tools=ver,
+                          built_tag="v3.1.20260906", tools_built="v3.1.20260812", as_root=True)
+    finally:
+        os.environ["PATH"] = old_path
+        del os.environ["DKMS_SRC_ROOT"]
+    assert res.returncode == 0, res.stdout + res.stderr
+    log = calls.read_text(encoding="utf-8")
+    assert "dkms remove -m amneziawg -v 1.0.0 --all" in log
+    assert "dkms remove -m amneziawg -v 3.1.20260906" not in log, "снесли текущую сборку"
+    assert not (src_root / "amneziawg-1.0.0").exists()
+    assert (src_root / "amneziawg-3.1.20260906").exists()
 
 
 def _lock_file(tmp_path, *, mod_tag="v3.1.20260906", tools_tag="v3.1.20260812",
@@ -127,7 +179,8 @@ def _lock_file(tmp_path, *, mod_tag="v3.1.20260906", tools_tag="v3.1.20260812",
 
 
 def _run_kernel(tmp_path, mode, *, module="", loaded="", tools="", lock=None,
-                built_tag="", tools_built="", src_disk="AAA", src_loaded=None):
+                built_tag="", tools_built="", src_disk="AAA", src_loaded=None,
+                as_root=False):
     """Запускает awg-kernel-install.sh с подменёнными modinfo/awg и состоянием.
 
     Скрипт решает, пересобирать ли ядро, — и решение видно только по коду
@@ -167,6 +220,10 @@ def _run_kernel(tmp_path, mode, *, module="", loaded="", tools="", lock=None,
     src = (KERNEL.read_text(encoding="utf-8")
            .replace('"/sys/module/$MODULE/version"', f'"{sysver}"')
            .replace('"/sys/module/$MODULE/srcversion"', f'"{syssrc}"'))
+    if as_root:
+        # prune/reload требуют root; в тесте подменяем проверку, а не права
+        src = src.replace('[[ "$PLAN" -eq 1 || "${EUID:-$(id -u)}" -eq 0 ]] || die "нужен root"',
+                          ': # root check disabled in test')
     run_me = tmp_path / "kernel.sh"
     run_me.write_text(src, encoding="utf-8")
     env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}",
@@ -342,3 +399,16 @@ def test_installer_never_retargets_a_running_migration(bot_sh):
     assert "awg_state_set" not in branch, "цель переезда всё-таки переписывается"
     assert "warn" in branch and "завершиться первым" in branch
     assert "return 0" in branch
+
+
+def test_old_builds_are_kept_until_the_generation_migration_finishes(bot_sh):
+    """Смена поколения: старый интерфейс ещё обслуживает людей, и путь назад
+    к прежнему ядру должен оставаться до финала переезда. Совместимая смена —
+    прежняя сборка убирается сразу после успешного старта на новом модуле."""
+    body = bot_sh.split("prune_old_kernel_builds() {", 1)[1].split("\n}\n", 1)[0]
+    assert "AWG_GENERATION_TARGET" in body and '"$want" -gt "$applied"' in body
+    assert "до финала переезда" in body
+    assert "awg-kernel-install.sh\" prune" in body
+    post = bot_sh.split("cmd_post_update() {", 1)[1].split("\n}\n", 1)[0]
+    assert post.index('systemctl is-active --quiet "$SERVICE"') < post.index("prune_old_kernel_builds"), \
+        "уборка раньше успешного старта"

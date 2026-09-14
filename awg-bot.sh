@@ -171,9 +171,12 @@ build_venv() {
     if [[ ! -x "$INSTALL_DIR/venv/bin/python" ]]; then
         log "создаю venv ($PYBIN)…"; "$PYBIN" -m venv "$INSTALL_DIR/venv"
     fi
-    log "ставлю зависимости (pip install -r requirements.txt)…"
+    log "ставлю зависимости (pip install --upgrade -r requirements.txt)…"
     "$INSTALL_DIR/venv/bin/pip" install --quiet --no-cache-dir --upgrade pip
-    "$INSTALL_DIR/venv/bin/pip" install --quiet --no-cache-dir -r "$INSTALL_DIR/requirements.txt"
+    # --upgrade: без него pip оставляет то, что стояло при первой установке, и
+    # venv на хосте застывает во времени — данные таймзон, исправления в
+    # библиотеках. Верхние границы в requirements.txt держат мажоры на месте.
+    "$INSTALL_DIR/venv/bin/pip" install --quiet --no-cache-dir --upgrade -r "$INSTALL_DIR/requirements.txt"
 }
 validate_config() {
     log "проверяю конфигурацию (config.validate)…"
@@ -919,10 +922,32 @@ cmd_post_update() {
     fi
 
     systemctl start "$SERVICE"; sleep 1
-    systemctl is-active --quiet "$SERVICE" && ok "$SERVICE перезапущен." \
-        || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+    if systemctl is-active --quiet "$SERVICE"; then
+        ok "$SERVICE перезапущен."
+        prune_old_kernel_builds
+    else
+        warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+    fi
     trap - EXIT
     ok "Обновление завершено."
+}
+
+prune_old_kernel_builds() {
+    # Прежние сборки ядра — долой, но ровно тогда, когда откат уже не нужен:
+    #  • совместимая смена тега — после успешного старта на новом модуле, то
+    #    есть здесь;
+    #  • смена поколения — только на финале переезда профилей: до него старый
+    #    интерфейс ещё обслуживает людей, и путь назад должен оставаться.
+    [[ -f "$AWG_LOCK_FILE" ]] || return 0
+    local want applied target
+    want="$(lock_get AWG_GENERATION)"; applied="$(awg_state_get AWG_GENERATION_APPLIED)"
+    target="$(awg_state_get AWG_GENERATION_TARGET)"
+    if [[ -n "$target" || ( -n "$want" && -n "$applied" && "$want" -gt "$applied" ) ]]; then
+        log "прежняя сборка ядра оставлена до финала переезда профилей"
+        return 0
+    fi
+    AWG_LOCK="$AWG_LOCK_FILE" bash "$INSTALL_DIR/install/awg-kernel-install.sh" prune \
+        || log "прежние сборки ядра не убраны — позже: awg-bot awg prune"
 }
 
 # ── backup / restore (снимок состояния: БД + conf + env) ─────────────────────
@@ -1230,7 +1255,7 @@ awg-bot — управление установленным ботом.
   awg-bot routing-doctor     где рвётся условная маршрутизация (только чтение)
   awg-bot gw-bundle          пересобрать бандл для шлюза (ключи не меняются)
   awg-bot awg <cmd>          ядро AmneziaWG по манифесту поставки (install/awg.lock):
-                             status | install | reload | plan
+                             status | install | reload | prune | plan
   awg-bot first-device       конфигурация первого устройства админа в терминал
                              (ссылка, QR и файл — когда Telegram недоступен)
   awg-bot uninstall          удалить приложение (опционально: данные приложения)

@@ -1397,3 +1397,33 @@ def test_failed_interface_leaves_the_config_untouched(services, monkeypatch, tmp
     with pytest.raises(ServiceErrorMigration, match="не поднят"):
         services.migration_prepare()
     assert written == {}
+
+
+def test_finish_prunes_old_kernel_builds_only_after_a_generation_change(services, mig,
+                                                                        make_active_client, monkeypatch):
+    """Прежняя сборка ядра держится до финала переезда по поколению — и
+    убирается ровно на нём. Ручной переезд (то же поколение) сборки не трогает:
+    там и убирать нечего."""
+    from awgbot.core import settings
+    from awgbot.infra import awglock
+    pruned: list = []
+    monkeypatch.setattr(settings, "set_value", lambda k, v: [k])
+    monkeypatch.setattr(services, "_retire_interface", lambda name: None)
+    monkeypatch.setattr(services, "_prune_old_kernel_builds", lambda: pruned.append(1))
+
+    c = make_active_client(name="c", tg_id=7130)
+    dc = services.add_device(c.id, "Тел")
+    services.migration_start()
+    _seen(services, _twin(services, dc.device_id).id, ago_days=0)
+    awglock.write_state(applied=1, target=2)
+    services.migration_finish()
+    assert pruned == [1], "на финале смены поколения прежняя сборка должна уйти"
+
+    pruned.clear()
+    c2 = make_active_client(name="c2", tg_id=7131)
+    dc2 = services.add_device(c2.id, "Тел")
+    services.migration_start()
+    _seen(services, _twin(services, dc2.device_id).id, ago_days=0)
+    awglock.write_state(applied=2, target=2)
+    services.migration_finish()
+    assert pruned == [], "ручной переезд сборки ядра не касается"

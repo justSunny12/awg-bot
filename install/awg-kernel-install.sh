@@ -34,6 +34,8 @@
 #   awg-kernel-install.sh install     довести до манифеста (ставит зависимости apt)
 #   awg-kernel-install.sh reload      загрузить установленный модуль вместо
 #                                     работающего: ВСЕ awg-интерфейсы вниз и вверх
+#   awg-kernel-install.sh prune       убрать сборки ПРЕЖНИХ тегов из DKMS и /usr/src;
+#                                     отказывается, пока работает не то, что собрано
 #   awg-kernel-install.sh plan        показать, что сделал бы install
 #
 # Окружение: AWG_LOCK — путь к манифесту (по умолчанию рядом со скриптом).
@@ -53,9 +55,9 @@ die()  { printf '%s[awg:ОШИБКА]%s %s\n' "$c_err" "$c_off" "$*" >&2; exit 1
 
 MODE="${1:-status}"
 case "$MODE" in
-    status|install|reload|plan) ;;
-    -h|--help|help) sed -n '2,32p' "$0"; exit 0 ;;
-    *) die "неизвестная команда: $MODE (status | install | reload | plan)" ;;
+    status|install|reload|plan|prune) ;;
+    -h|--help|help) sed -n '2,34p' "$0"; exit 0 ;;
+    *) die "неизвестная команда: $MODE (status | install | reload | prune | plan)" ;;
 esac
 PLAN=0; [[ "$MODE" == "plan" ]] && PLAN=1
 run() {  # run CMD… — в plan только печатает
@@ -179,6 +181,43 @@ if [[ "$MODE" == "reload" ]]; then
     run modprobe "$MODULE" || die "modprobe $MODULE не прошёл"
     for i in $ifaces; do run awg-quick up "$i" || warn "$i: не поднят — awg-quick up $i"; done
     ok "работает $(loaded_module); интерфейсы: ${ifaces:-нет}"
+    exit 0
+fi
+
+# ── prune: прежние сборки долой ──────────────────────────────────────────────
+# Дерево прежнего тега держим ровно до тех пор, пока оно нужно для отката: пока
+# новый модуль не заработал (совместимая смена) или пока не завершён переезд
+# профилей (смена поколения). Дальше это мусор в /usr/src и в DKMS, который
+# ещё и пересобирается при каждом обновлении ядра системы.
+if [[ "$MODE" == "prune" ]]; then
+    [[ -n "$cur_tag" ]] || die "неизвестно, что собрано (нет записи о теге) — сначала install"
+    [[ "$need_mod" -eq 0 ]] || die "на диске не тег манифеста — сначала install"
+    if [[ -n "$(loaded_src)" && "$(loaded_src)" != "$(installed_src)" ]]; then
+        die "работает модуль прежних исходников — сначала reload (или перезагрузка), потом prune"
+    fi
+    keep="${AWG_MODULE_TAG#v}"
+    removed=0
+    # Версии DKMS: все, кроме текущего тега. Сюда попадает и апстримное
+    # «1.0.0» с хостов, которые собирали руками.
+    for v in $(dkms status -m "$MODULE" 2>/dev/null | sed -nE "s/^$MODULE[/, ]+([^,: ]+).*/\1/p" | sort -u); do
+        [[ "$v" == "$keep" ]] && continue
+        run dkms remove -m "$MODULE" -v "$v" --all || warn "dkms remove $v не прошёл"
+        removed=$((removed + 1))
+    done
+    for d in "$DKMS_SRC_ROOT/$MODULE"-*; do
+        [[ -d "$d" ]] || continue
+        [[ "$d" == "$DKMS_SRC_ROOT/$MODULE-$keep" ]] && continue
+        run rm -rf "$d"
+        removed=$((removed + 1))
+    done
+    # Кэш тарболов прежних тегов — тоже
+    for f in "$SRC_CACHE"/amneziawg-linux-kernel-module-*.tar.gz; do
+        [[ -f "$f" ]] || continue
+        [[ "$f" == *"-$keep.tar.gz" ]] && continue
+        run rm -f "$f"
+    done
+    [[ "$removed" -gt 0 ]] && run depmod -a
+    ok "прежних сборок убрано: $removed; остаётся $AWG_MODULE_TAG"
     exit 0
 fi
 
