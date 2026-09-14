@@ -63,18 +63,14 @@ def test_make_backup_without_db_still_packs_the_rest(services, fake_awg, monkeyp
     assert "state/bot.db" not in files and any(n.startswith("awg/") for n in files)
 
 
-def test_backup_enc_kwargs_prefers_passphrase(services, monkeypatch):
-    """Фраза важнее ключа: ключ из env переехал, потом задали фразу — действует фраза."""
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "")
-    monkeypatch.setattr(config, "BACKUP_KEY", secrets_util.b64e(bytes(32)))
-    assert services.backup_import_env_once() is True
+def test_backup_enc_kwargs_prefers_passphrase(services):
+    """Фраза важнее ключа: случайный ключ прежней схемы лежит в БД, потом задали
+    фразу — действует фраза."""
+    services.db.set_state(services._BK_KEY_KEY, secrets_util.b64e(bytes(32)))
     assert services.backup_enc_kwargs() == {"key": bytes(32)}
     services.backup_set_passphrase("phrase-of-eight")
     assert services.backup_enc_kwargs() == {"passphrase": "phrase-of-eight"}
 
 
-def test_backup_enc_kwargs_none_without_secret(services, monkeypatch):
-    monkeypatch.setattr(config, "BACKUP_PASSPHRASE", "")
-    monkeypatch.setattr(config, "BACKUP_KEY", "")
-    assert services.backup_import_env_once() is False
+def test_backup_enc_kwargs_none_without_secret(services):
     assert services.backup_enc_kwargs() is None and not services.backup_encryption_enabled()

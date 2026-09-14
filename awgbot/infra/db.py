@@ -319,6 +319,8 @@ CREATE INDEX IF NOT EXISTS idx_clients_invite   ON clients(invite_code);
 -- пары переезда: twins_by_origin и подзапрос видимости ходят по twin_of;
 -- частичный индекс пуст вне окна переезда
 CREATE INDEX IF NOT EXISTS idx_devices_twin     ON devices(twin_of) WHERE twin_of IS NOT NULL;
+-- шлюз один, и это гарантирует БД, а не дисциплина в коде
+CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_gateway ON devices(is_gateway) WHERE is_gateway = 1;
 -- истечение: предфильтр «активные с конечным периодом до границы»
 CREATE INDEX IF NOT EXISTS idx_sub_end          ON client_subscription(status, period_end);
 CREATE INDEX IF NOT EXISTS idx_friend_tg        ON device_friend(friend_tg_id);
@@ -547,152 +549,17 @@ class Database:
         """Создаёт таблицы (идемпотентно) и гарантирует служебного клиента.
 
         Схема нормализована (identity/подписка/квота/grace/pause разведены по
-        таблицам). Для БОЕВОЙ БД (не пересоздаём!) — секция аддитивных миграций:
-        новые колонки доводятся ALTER'ом идемпотентно, данные не трогаются.
+        таблицам). Для БОЕВОЙ БД (не пересоздаём!) миграции идут после SCHEMA
+        и идемпотентны. Их одна: минимальная поддерживаемая версия — v2.10.0
+        (README-bot §9a), а её схема уже полная; всё, что доводило БД версий
+        старше (колонки маршрутизации и переезда, переименование sampled_at,
+        флаг шлюза, схлопывание режимов личных списков…), снято — хост старше
+        проходит через v2.10.0 и получает это там.
         """
         with self._tx() as cur:
             cur.executescript(SCHEMA)
-        self._migrate_additive()
-        self._migrate_samples_last_update()
-        self._migrate_drop_duplicate_indexes()
         self._migrate_drop_full_access()
-        self._migrate_routing_master_to_devices()
-        self._migrate_routing_domains_mode()
-        self._migrate_drop_greeted()
-        self._migrate_gateway_flag()
         self._ensure_service_client()
-
-    def _migrate_gateway_flag(self) -> None:
-        """devices.is_gateway + частичный уникальный индекс: шлюз один, и это
-        гарантирует БД, а не дисциплина в коде."""
-        con = self._connection()
-        cols = {r["name"] for r in con.execute("PRAGMA table_info(devices)")}
-        with self._tx() as cur:
-            if "is_gateway" not in cols:
-                cur.execute("ALTER TABLE devices ADD COLUMN is_gateway INTEGER NOT NULL DEFAULT 0")
-            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_gateway "
-                        "ON devices(is_gateway) WHERE is_gateway = 1")
-
-    def _migrate_samples_last_update(self) -> None:
-        """traffic_samples.sampled_at → last_update: колонка теперь означает
-        «когда счётчики менялись», а не «когда опрашивали» (опрос перестал
-        переписывать неизменные строки)."""
-        con = self._connection()
-        cols = {r["name"] for r in con.execute("PRAGMA table_info(traffic_samples)")}
-        if "sampled_at" in cols and "last_update" not in cols:
-            with self._tx() as cur:
-                cur.execute("ALTER TABLE traffic_samples RENAME COLUMN sampled_at TO last_update")
-
-    def _migrate_drop_duplicate_indexes(self) -> None:
-        """Индексы, дублировавшие UNIQUE-автоиндексы: два лишних B-дерева на
-        каждую запись в devices/clients."""
-        with self._tx() as cur:
-            cur.execute("DROP INDEX IF EXISTS idx_devices_pubkey")
-            cur.execute("DROP INDEX IF EXISTS idx_clients_tg")
-
-    def _migrate_additive(self) -> None:
-        """Аддитивные миграции для существующей (боевой) БД: CREATE IF NOT EXISTS
-        не добавляет колонок в уже существующие таблицы — доводим ALTER'ом.
-        Идемпотентно: колонка уже есть → пропускаем. Данные не трогаем."""
-        want = {
-            "ui_state": [("content_msg_ids", "TEXT")],
-            "client_pause": [("resume_code", "TEXT")],
-            "clients": [("routing_allowed", "INTEGER NOT NULL DEFAULT 0")],
-            "devices": [("routing_on", "INTEGER NOT NULL DEFAULT 0"),
-                        ("iface", "TEXT NOT NULL DEFAULT ''"),
-                        ("twin_of", "INTEGER")],
-        }
-        con = self._connection()
-        for table, cols in want.items():
-            have = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
-            for col, decl in cols:
-                if col not in have:
-                    with self._tx() as cur:
-                        cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
-
-    def _migrate_drop_greeted(self) -> None:
-        """Снять таблицу отметок «поздравлен» (жила в 2.3.2).
-
-        Она существовала, чтобы периодический обход не поздравлял повторно. С
-        переходом на момент опроса обход исчез, а вместе с ним и повод хранить
-        отметки: переход «хендшейка не было → есть» случается один раз сам по
-        себе. Оставить пустую таблицу значило бы оставить вопрос «а это зачем?»
-        тому, кто откроет схему через полгода.
-        """
-        with self._tx() as cur:
-            cur.execute("DROP TABLE IF EXISTS migration_greeted")
-
-    def _migrate_routing_domains_mode(self) -> None:
-        """Схлопнуть личные списки обратно в один — режимов больше нет.
-
-        Недолго существовала обратная модель маршрутизации («на шлюз всё, чего
-        нет в наборе»), и списки были раздельными: одна и та же запись означала
-        в них противоположное. Модель упразднена, осталась одна.
-
-        Записи выжившего режима (`abroad` — «отправить домой») переносим,
-        записи упразднённого отбрасываем: там они значили «отправить за
-        границу», и сохранить их — значит перевернуть человеку смысл его
-        собственного списка. Промолчать об этом нельзя, поэтому пишем в лог,
-        сколько отброшено.
-
-        Идемпотентно: колонки нет → выходим сразу.
-        """
-        con = self._connection()
-        cols = {r["name"] for r in con.execute("PRAGMA table_info(client_routing_domains)")}
-        if not cols or "mode" not in cols:
-            return
-        dropped = con.execute("SELECT COUNT(*) AS c FROM client_routing_domains "
-                              "WHERE mode <> 'abroad'").fetchone()["c"]
-        with self._tx() as cur:
-            cur.execute("""
-                CREATE TABLE client_routing_domains_new (
-                    client_id INTEGER NOT NULL,
-                    domain    TEXT    NOT NULL,
-                    added_at  TEXT    NOT NULL,
-                    PRIMARY KEY (client_id, domain),
-                    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
-                )""")
-            cur.execute("INSERT OR IGNORE INTO client_routing_domains_new "
-                        "(client_id, domain, added_at) "
-                        "SELECT client_id, domain, added_at "
-                        "  FROM client_routing_domains WHERE mode = 'abroad'")
-            cur.execute("DROP TABLE client_routing_domains")
-            cur.execute("ALTER TABLE client_routing_domains_new "
-                        "RENAME TO client_routing_domains")
-        if dropped:
-            log.warning("личные списки маршрутизации: отброшено %d записей "
-                        "упразднённого режима (они означали «за границу»)", dropped)
-
-    def _migrate_routing_master_to_devices(self) -> None:
-        """Мастер-тумблер профиля переехал на устройства.
-
-        Раньше режим был свойством ПРОФИЛЯ (`clients.routing_master`), а
-        устройства следовали за ним скопом. Теперь флаг у каждого устройства
-        свой, а состояние профиля ВЫВОДИТСЯ: «включено» ⇔ включено хоть на
-        одном. Двух источников истины больше нет — а значит нет и возможности
-        им разойтись.
-
-        Переносим состояние, а не сбрасываем: у кого режим был включён, тот
-        обязан после обновления остаться с работающим режимом, не заходя в бот.
-
-        Идемпотентно: колонки нет → выходим сразу.
-        """
-        con = self._connection()
-        have = {r["name"] for r in con.execute("PRAGMA table_info(clients)")}
-        if "routing_master" not in have:
-            return
-        with self._tx() as cur:
-            cur.execute(
-                "UPDATE devices SET routing_on = 1 WHERE client_id IN "
-                "(SELECT id FROM clients WHERE routing_master = 1)")
-            moved = cur.rowcount
-        try:
-            with self._tx() as cur:
-                cur.execute("ALTER TABLE clients DROP COLUMN routing_master")
-        except sqlite3.OperationalError:
-            pass            # старый sqlite: колонка останется, читать её никто не будет
-        if moved:
-            log.info("маршрутизация: режим перенесён с профилей на %d устройств", moved)
 
     def _migrate_drop_full_access(self) -> None:
         """Разовая зачистка: колонка devices.full_access_link осталась от

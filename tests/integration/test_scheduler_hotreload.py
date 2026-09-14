@@ -100,9 +100,10 @@ def test_update_schedule_variants_and_never_pause(sched_conf, services, db, monk
     assert paused == ["update_check"]               # never — пауза, не reschedule
 
 
-def test_legacy_hour_schedule_migrates_to_day(tmp_path, services, db, monkeypatch):
-    """Снятый вариант poll_schedule=hour при построении расписания трактуется
-    как day и однократно переписывается в YAML (чистая миграция)."""
+def test_unknown_poll_schedule_behaves_as_day_without_rewriting_yaml(tmp_path, services, db):
+    """Неизвестное значение poll_schedule (руками вписали «hour») — расписание
+    строится как day, конфиг не переписывается: правка чужого файла втихую —
+    не дело планировщика."""
     (tmp_path / "app.yaml").write_text(
         "timezone: \"Europe/Moscow\"\nscheduler:\n  monitor_minutes: 3\nhistory:\n  purge_hour: 3\n",
         encoding="utf-8")
@@ -110,9 +111,10 @@ def test_legacy_hour_schedule_migrates_to_day(tmp_path, services, db, monkeypatc
         'poll_schedule: "hour"\npoll_hour: 10\npoll_minute: 0\n', encoding="utf-8")
     settings.init(tmp_path)
     try:
-        _build_scheduler(services, db)                 # регистрация зовёт _trig_update_check
-        assert settings.get("updates.poll_schedule") == "day"      # мигрировано
-        assert 'poll_schedule: "day"' in (tmp_path / "updates.yaml").read_text(encoding="utf-8")
+        sched = _build_scheduler(services, db)
+        job = sched.get_job("update_check")
+        assert job is not None and job.trigger is not None, "неизвестное расписание ≠ never"
+        assert 'poll_schedule: "hour"' in (tmp_path / "updates.yaml").read_text(encoding="utf-8")
     finally:
         settings._on_change.clear()
         from awgbot.core import config

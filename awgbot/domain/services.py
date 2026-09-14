@@ -2909,7 +2909,6 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
     _RT_SRC_ERR = "rt_src_err:"      # текст ошибки — половина диагноза
     _RT_SRC_FAILS = "rt_src_fails:"  # неудач подряд, для добора попыток
     _RT_SRC_SAID = "rt_src_said:"    # о какой беде уже доложили
-    _RT_SRC_LEGACY = "rt_src_bad:"   # прежняя схема: url (ждёт доклада) / announced
 
     # Тревога не по первой неудаче: сеть моргает, а GitHub отдаёт 429 на минуты.
     # Доклад по одному промаху приучил бы не читать эти сообщения ровно к тому
@@ -2955,28 +2954,14 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         self.db.set_state(self._RT_SRC_BAD + k, "gone" if code in (404, 410) else "down")
         return False
 
-    def _routing_src_legacy(self, k: str) -> str:
-        """Как прежняя схема отвечала бы на оба вопроса — «что сейчас» и «о чём
-        сказали». Там один ключ значил и то, и другое: url — доклад ждёт,
-        «announced» — доклад ушёл.
-
-        Оба вопроса ОБЯЗАНЫ разрешаться одинаково, иначе висящая с прошлой
-        версии тревога прочиталась бы как выздоровление и бот доложил бы о нём,
-        пока источник всё ещё лежит. Какой именно была беда, та схема не
-        различала — берём «не отвечает»; на текст восстановления это не влияет.
-        """
-        return "down" if self.db.get_state(self._RT_SRC_LEGACY + k) == "announced" else ""
-
     def _routing_src_state(self, k: str) -> str:
         """Что с источником сейчас. Пока доборы не исчерпаны — прежнее значение:
         неподтверждённая неудача не считается ни бедой, ни выздоровлением."""
-        state = self.db.get_state(self._RT_SRC_BAD + k)
-        return state if state is not None else self._routing_src_legacy(k)
+        return self.db.get_state(self._RT_SRC_BAD + k) or ""
 
     def _routing_src_said(self, k: str) -> str:
         """О чём по этому источнику уже доложено."""
-        said = self.db.get_state(self._RT_SRC_SAID + k)
-        return said if said is not None else self._routing_src_legacy(k)
+        return self.db.get_state(self._RT_SRC_SAID + k) or ""
 
     # Реконсиляция упала. Отдельный ключ, а не флаг рядом с источниками: там
     # «списки застыли», здесь «примениться не удалось», и чинятся они в разных
@@ -3026,7 +3011,6 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             if state == self._routing_src_said(k):
                 continue
             self.db.set_state(self._RT_SRC_SAID + k, state)
-            self.db.set_state(self._RT_SRC_LEGACY + k, "")   # наследство погашено
             n = self.db.get_state(self._RT_SRC_N + k) or "?"
             err = _e(self.db.get_state(self._RT_SRC_ERR + k) or "?")
             if not state:

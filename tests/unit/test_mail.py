@@ -35,15 +35,6 @@ def test_account_saved_in_db_and_settings(services, monkeypatch):
     assert services.email_account() is None and services.db.get_state("email_login") == ""
 
 
-def test_env_credentials_migrate_once(services, monkeypatch):
-    monkeypatch.setattr(cfg, "EMAIL_RESUME_LOGIN", "old@icloud.com")
-    monkeypatch.setattr(cfg, "EMAIL_RESUME_PASSWORD", "oldpw")
-    assert services.email_import_env_once() is True
-    assert services.db.get_state("email_login") == "old@icloud.com"
-    assert services.email_import_env_once() is False           # уже есть — не трогаем
-    assert services.email_env_leftover() is True
-
-
 def test_email_check_records_result(services, monkeypatch):
     acc = mail.MailAccount("a@b.co", "p", "imap.b.co", 993, "smtp.b.co", 587)
     monkeypatch.setattr(mail, "check_imap", lambda a, timeout=15.0: None)

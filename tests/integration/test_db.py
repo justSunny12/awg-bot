@@ -158,24 +158,33 @@ def test_list_clients_admin_first(db):
     assert names[1:] == ["Анна", "Борис"]
 
 
-def test_additive_migration_on_existing_prod_db(tmp_path):
-    """ПРОД-КРИТИЧНО: init_schema поверх существующей БД (без content_msg_ids)
-    доводит колонку ALTER'ом, не трогая данные. CREATE IF NOT EXISTS сам по
-    себе колонок в существующие таблицы не добавляет."""
+def test_fresh_schema_is_complete_and_idempotent(tmp_path):
+    """Минимальная поддерживаемая версия — v2.10.0, её схема полная: SCHEMA
+    создаёт всё, что читает код, без доводящих миграций; повторный init_schema
+    ничего не ломает. Единственность шлюза держит индекс в схеме, а не код.
+    Прыжок с реальных данных v2.10.0 — tests/integration/test_update_jump.py."""
     import sqlite3
     from awgbot.infra.db import Database
-    path = str(tmp_path / "prod.db")
-    con = sqlite3.connect(path)
-    con.execute("CREATE TABLE ui_state (chat_id INTEGER PRIMARY KEY, nav_message_id INTEGER)")
-    con.execute("INSERT INTO ui_state VALUES (100, 555)")
-    con.commit(); con.close()
-    db = Database(path); db.init_schema()
-    row = db._connection().execute(
-        "SELECT nav_message_id, content_msg_ids FROM ui_state WHERE chat_id=100").fetchone()
-    assert row["nav_message_id"] == 555          # данные целы
-    db.add_content_msg_id(100, 777)              # фича работает
-    assert db.pop_content_msg_ids(100) == [777]
-    db.init_schema()                             # идемпотентно
+    db = Database(str(tmp_path / "fresh.db"))
+    db.init_schema(); db.init_schema()
+    con = db._connection()
+    cols = lambda t: {r["name"] for r in con.execute(f"PRAGMA table_info({t})")}
+    assert {"content_msg_ids"} <= cols("ui_state")
+    assert {"resume_code"} <= cols("client_pause")
+    assert {"routing_allowed"} <= cols("clients") and "routing_master" not in cols("clients")
+    assert {"routing_on", "iface", "twin_of", "is_gateway"} <= cols("devices")
+    assert "full_access_link" not in cols("devices")
+    assert {"last_update"} <= cols("traffic_samples") and "sampled_at" not in cols("traffic_samples")
+    assert "mode" not in cols("client_routing_domains")
+
+    cid = db.create_client(name="c", device_limit=3, period_start="2026-01-01",
+                           period_end="2027-01-01", invite_code="A")
+    a = db.create_device(cid, "a", "PA", "S", "10.8.1.2", private_key="k")
+    b = db.create_device(cid, "b", "PB", "S", "10.8.1.3", private_key="k")
+    db.set_gateway(a)
+    with pytest.raises(sqlite3.IntegrityError):
+        con.execute("UPDATE devices SET is_gateway = 1 WHERE id = ?", (b,))
+    db.close()
 
 
 def test_content_cleanup_dedup(db):
@@ -186,79 +195,3 @@ def test_content_cleanup_dedup(db):
     assert db.pop_content_msg_ids(200) == [50, 51]
 
 
-def test_resume_code_migration_idempotent(tmp_path):
-    """ПРОД-КРИТИЧНО: resume_code присутствует, повторная миграция идемпотентна
-    (не падает и колонку не дублирует). Имя уникально: раньше тест затенялся
-    одноимённым соседом и НЕ ВЫПОЛНЯЛСЯ вовсе."""
-    from awgbot.infra.db import Database
-    path = str(tmp_path / "prod2.db")
-    db = Database(path); db.init_schema()
-    have = {r["name"] for r in db._connection().execute("PRAGMA table_info(client_pause)")}
-    assert "resume_code" in have
-    db._migrate_additive()                     # повторный прогон
-    cols = [r["name"] for r in db._connection().execute("PRAGMA table_info(client_pause)")]
-    assert cols.count("resume_code") == 1      # есть и ровно одна
-
-
-def test_additive_migration_resume_code(tmp_path):
-    """ПРОД: resume_code доводится ALTER'ом на существующей client_pause."""
-    import sqlite3
-    from awgbot.infra.db import Database
-    path = str(tmp_path / "prod2.db")
-    con = sqlite3.connect(path)
-    # старая client_pause без resume_code
-    con.execute("""CREATE TABLE client_pause (
-        client_id INTEGER PRIMARY KEY, pause_active_since TEXT,
-        pause_reserved_days INTEGER NOT NULL DEFAULT 0,
-        pause_used_days INTEGER NOT NULL DEFAULT 0,
-        pause_mode TEXT, pause_saved_end TEXT)""")
-    con.execute("INSERT INTO client_pause (client_id, pause_used_days) VALUES (5, 3)")
-    con.commit(); con.close()
-    db = Database(path); db.init_schema()
-    cols = {r["name"] for r in db._connection().execute("PRAGMA table_info(client_pause)")}
-    assert "resume_code" in cols
-    # данные целы
-    row = db._connection().execute(
-        "SELECT pause_used_days FROM client_pause WHERE client_id=5").fetchone()
-    assert row["pause_used_days"] == 3
-
-
-def test_routing_master_migrates_onto_devices(tmp_path):
-    """Мастер-тумблер профиля переехал на устройства — состояние обязано доехать.
-
-    У кого режим был включён, тот после обновления должен остаться с работающим
-    режимом, не заходя в бот. Ошибка здесь тихая: колонки нет, флагов нет,
-    маршрутизация просто перестала действовать, и никто не узнает.
-    """
-    from awgbot.infra.db import Database
-
-    path = tmp_path / "old.db"
-    db = Database(str(path))
-    db.init_schema()
-
-    # воспроизводим боевую схему ДО перехода: колонка на профиле
-    con = db._connection()
-    con.execute("ALTER TABLE clients ADD COLUMN routing_master INTEGER NOT NULL DEFAULT 0")
-    con.commit()
-
-    on = db.create_client(name="Включён", device_limit=3, period_start="2026-01-01",
-                          period_end="2027-01-01", invite_code="A")
-    off = db.create_client(name="Выключен", device_limit=3, period_start="2026-01-01",
-                           period_end="2027-01-01", invite_code="B")
-    for cid, addr in ((on, "10.8.1.10"), (on, "10.8.1.11"), (off, "10.8.1.12")):
-        db.create_device(client_id=cid, name=f"d{addr}", private_key="k",
-                         public_key=f"p{addr}", preshared_key="s", address=addr)
-    con.execute("UPDATE clients SET routing_master = 1 WHERE id = ?", (on,))
-    con.commit()
-
-    db._migrate_routing_master_to_devices()
-
-    assert [d.routing_on for d in db.list_devices(on)] == [1, 1]
-    assert [d.routing_on for d in db.list_devices(off)] == [0]
-
-    # колонка убрана — второго источника истины больше нет
-    cols = {r["name"] for r in db._connection().execute("PRAGMA table_info(clients)")}
-    assert "routing_master" not in cols
-
-    # идемпотентность: повторный прогон не падает
-    db._migrate_routing_master_to_devices()

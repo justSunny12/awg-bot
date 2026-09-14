@@ -299,17 +299,8 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     def _trig_update_check():
         """Триггер проверки обновлений по poll_schedule (day|week|month|never).
         never → None (job снимается/не тикает). Время — poll_hour:minute.
-
-        Легаси-миграция: снятый вариант "hour" трактуется как "day" и однократно
-        переписывается в YAML (значение станет честным; повтор не сработает —
-        diff пуст)."""
+        Неизвестное значение — как day."""
         sch = str(settings.get("updates.poll_schedule", "day")).lower()
-        if sch == "hour":                         # снятый вариант → day
-            try:
-                settings.set_value("updates.poll_schedule", "day")
-            except Exception:                     # noqa: BLE001
-                pass
-            sch = "day"
         h = settings.get_int("updates.poll_hour", 10)
         m = settings.get_int("updates.poll_minute", 0)
         if sch == "never":

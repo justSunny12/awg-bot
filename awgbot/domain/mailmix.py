@@ -7,7 +7,7 @@ mailmix.py — почтовый канал как часть сервисов: �
 conf/email.yaml через settings (горячо, с комментариями).
 
 Раньше креды жили в /etc/awg-bot/env: их читал только старт, и любая правка
-требовала SSH и рестарта. Переезд — email_import_env_once() при старте.
+требовала SSH и рестарта.
 """
 from __future__ import annotations
 
@@ -150,22 +150,3 @@ class MailMixin:
         mail.send_mail(acc, acc.login, "awg-bot: критичный алерт (Telegram недоступен)",
                        plain + f"\n\n{timeutil.now_iso()}")
 
-    # ── переезд из env ───────────────────────────────────────────────────────
-
-    def email_import_env_once(self) -> bool:
-        """Креды из /etc/awg-bot/env (прежняя схема) → БД, один раз: только если
-        в БД пусто. Возвращает True, если перенесли."""
-        if self.db.get_state(self._MAIL_LOGIN_KEY):
-            return False
-        login, password = config.EMAIL_RESUME_LOGIN, config.EMAIL_RESUME_PASSWORD
-        if not (login and password):
-            return False
-        self.db.set_state(self._MAIL_LOGIN_KEY, login)
-        self.db.set_state(self._MAIL_PASSWORD_KEY, password)
-        log.info("почта: креды перенесены из env в БД")
-        return True
-
-    @staticmethod
-    def email_env_leftover() -> bool:
-        """В env всё ещё лежат EMAIL_RESUME_* — напомнить убрать."""
-        return bool(config.EMAIL_RESUME_LOGIN or config.EMAIL_RESUME_PASSWORD)

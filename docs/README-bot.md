@@ -834,8 +834,9 @@ SMART, если корень не на SD-карте, питание Pi), стр
   вовсе. Восстановление на другом хосте — `restore_backup.py` с той же фразой;
 - **почта** — **✉️ E-mail** (§6a).
 
-Старые `BACKUP_KEY`/`BACKUP_PASSPHRASE` и `EMAIL_RESUME_LOGIN`/`EMAIL_RESUME_PASSWORD`
-бот один раз переносит в БД при старте и напоминает удалить строки из env.
+`BACKUP_KEY`/`BACKUP_PASSPHRASE` и `EMAIL_RESUME_LOGIN`/`EMAIL_RESUME_PASSWORD`
+в env бот больше не читает (их переносили в БД до v2.10.0 — минимальной
+поддерживаемой версии); если строки остались — просто удалите.
 
 
 ---

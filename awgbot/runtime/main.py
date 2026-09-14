@@ -182,10 +182,6 @@ async def run_gateway() -> None:
 
     conf_watcher = ConfWatcher(config.CONF_DIR)
     conf_watcher.start()
-    try:
-        await asyncio.to_thread(services.backup_import_env_once)
-    except Exception as e:                               # noqa: BLE001
-        log.warning("backup_import_env_once: %s", e)
 
     from awgbot.bot import notifier as _notifier
 
@@ -318,13 +314,6 @@ async def main() -> None:
         if await asyncio.to_thread(services.email_alert_fallback_enabled):
             await asyncio.to_thread(services.email_send_alert, text)
     _notifier.set_email_fallback(_mail_fallback)
-
-    # почта и шифрование бэкапов: секреты прежней схемы (env) — в БД, один раз
-    try:
-        await asyncio.to_thread(services.email_import_env_once)
-        await asyncio.to_thread(services.backup_import_env_once)
-    except Exception as e:                               # noqa: BLE001
-        log.warning("import_env_once: %s", e)
 
     # ── стартовые задачи ─────────────────────────────────────────────────────
     # seed детекта рестарта (сохранит текущий StartedAt, реконсиляции не будет —

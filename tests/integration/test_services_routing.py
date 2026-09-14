@@ -723,39 +723,6 @@ def test_flap_between_ticks_is_not_a_second_alarm(services, monkeypatch):
     assert services.routing_source_alerts() == []
 
 
-def test_legacy_announced_flag_does_not_repeat_itself(services, monkeypatch):
-    """Обновление посреди висящей тревоги: доклад по прежней схеме уже ушёл,
-    повторять его не надо, а вот о восстановлении сказать — надо, и ровно раз."""
-    from awgbot.core import config
-    url = "https://example.invalid/list.lst"
-    monkeypatch.setattr(config, "ROUTING_LISTS_HOME_URLS", [url])
-    k = services._routing_src_key(url)
-    services.db.set_state(services._RT_SRC_N + k, "39")
-    services.db.set_state(services._RT_SRC_LEGACY + k, "announced")
-
-    _fail_all_tries(services, url, "HTTP Error 429: Too Many Requests", 429)
-    assert services.routing_source_alerts() == [], "сказанное до обновления не повторяем"
-
-    services._routing_note_source(url, 39)
-    ok = services.routing_source_alerts()
-    assert len(ok) == 1 and ok[0].text.startswith("🟢")
-    assert services.routing_source_alerts() == [], "наследство погашено, а не читается вечно"
-
-
-def test_legacy_pending_flag_still_gets_its_alert(services, monkeypatch):
-    """А вот доклад, который прежняя схема только собиралась отправить, обязан
-    уйти: иначе обновление проглотило бы единственное сообщение о беде."""
-    from awgbot.core import config
-    url = "https://example.invalid/list.lst"
-    monkeypatch.setattr(config, "ROUTING_LISTS_HOME_URLS", [url])
-    k = services._routing_src_key(url)
-    services.db.set_state(services._RT_SRC_N + k, "39")
-    services.db.set_state(services._RT_SRC_LEGACY + k, url)   # ждал отправки
-
-    _fail_all_tries(services, url, "timed out")
-    assert len(services.routing_source_alerts()) == 1
-
-
 def test_source_that_never_worked_is_not_reported(services, monkeypatch):
     """Пустой ответ от источника, который и раньше ничего не давал, — не новость.
 

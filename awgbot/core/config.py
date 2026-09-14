@@ -85,21 +85,10 @@ for _env_path in (os.environ.get("AWG_BOT_ENV"), "/etc/awg-bot/env", str(BASE_DI
 BOT_TOKEN: str = os.environ.get("BOT_TOKEN", "")
 ADMIN_ID: int = int(os.environ["ADMIN_ID"]) if os.environ.get("ADMIN_ID") else 0
 
-# Секреты шифрования бэкапов из env — ПРЕЖНЯЯ схема: теперь их держит БД, а
-# задают с экрана бота (Настройки → Резервное копирование). Эти два ключа
-# читаются ради разового переноса в БД на старте (backup_import_env_once) и
-# предупреждения «строки из env можно удалить». Восстановление — restore_backup.py.
-BACKUP_KEY: str = os.environ.get("BACKUP_KEY", "")
-BACKUP_PASSPHRASE: str = os.environ.get("BACKUP_PASSPHRASE", "")
-
-# ── Почта ─────────────────────────────────────────────────────────────────────
-# Прежняя схема держала логин/пароль ящика в env: их читал только старт, любая
-# правка требовала SSH и рестарта. Теперь креды живут в БД (server_state), а
-# серверы и параметры — в conf/email.yaml через settings; настраивается из чата.
-# Переменные ниже читаются ТОЛЬКО ради одноразового переезда в БД при старте
-# (MailMixin.email_import_env_once); preflight напоминает убрать их из env.
-EMAIL_RESUME_LOGIN: str = os.environ.get("EMAIL_RESUME_LOGIN", "")
-EMAIL_RESUME_PASSWORD: str = os.environ.get("EMAIL_RESUME_PASSWORD", "")
+# Секреты шифрования бэкапов и креды почты в env не живут: их держит БД, а
+# задают с экранов бота (Резервное копирование → Шифрование; E-mail). Прежняя
+# схема с BACKUP_KEY/BACKUP_PASSPHRASE и EMAIL_RESUME_* в env переносилась в БД
+# до v2.10.0 — минимальной поддерживаемой версии; переноса больше нет.
 
 # ── Обновления бота (self-update из ПУБЛИЧНОГО GitHub-репо) ───────────────────
 # Бот раз в сутки (и на старте) смотрит релизы репо, находит СЛЕДУЮЩУЮ версию за
