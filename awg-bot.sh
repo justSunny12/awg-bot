@@ -456,6 +456,25 @@ configure_gateway() {
     ok "роль gateway записана в $app"
 }
 
+cleanup_delivery() {  # cleanup_delivery <каталог-или-файл> <архив>
+    # Поставка едет одним архивом и распаковывается во временный каталог —
+    # после установки от неё на диске остаться не должно ничего: внутри и код,
+    # и установщик. Каталог сносим только временный: проверку «это /tmp» делает
+    # вызывающий (bootstrap), здесь — ещё одна, потому что rm -rf.
+    local what="${1:-}" tgz="${2:-}"
+    if [[ -n "$what" && -d "$what" ]]; then
+        case "$what" in
+            /tmp/*|/var/tmp/*|/private/tmp/*)
+                rm -rf "$what" && log "убрал каталог распаковки: $what" ;;
+            *) log "каталог поставки оставлен (он не временный): $what" ;;
+        esac
+    elif [[ -n "$what" && -f "$what" ]]; then
+        rm -f "$what" && log "удалён установщик: $what"
+    fi
+    [[ -n "$tgz" && -f "$tgz" ]] && { rm -f "$tgz" && log "удалён архив: $tgz"; }
+    return 0
+}
+
 cmd_reconfigure() {
     local first_run=0 cleanup_inst="" cleanup_tgz="" role="client"
     while [[ $# -gt 0 ]]; do
@@ -499,8 +518,7 @@ cmd_reconfigure() {
         systemctl restart "$SERVICE"; sleep 1
         systemctl is-active --quiet "$SERVICE" && ok "$SERVICE (агент шлюза) запущен." \
             || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
-        [[ -n "$cleanup_inst" && -f "$cleanup_inst" ]] && rm -f "$cleanup_inst"
-        [[ -n "$cleanup_tgz"  && -f "$cleanup_tgz"  ]] && rm -f "$cleanup_tgz"
+        cleanup_delivery "$cleanup_inst" "$cleanup_tgz"
         ok "Готово: напиши /start боту шлюза."
         return
     fi
@@ -534,10 +552,9 @@ cmd_reconfigure() {
             sleep 3                        # боту нужен тик, чтобы завести устройство
             cmd_first_device || log "конфигурация первого устройства будет в чате бота"
         fi
-        # подчистить внешний установщик и архив (переданы двумя явными путями).
-        # Мы — уже exec'нутый процесс, файл установщика никем не держится → безопасно.
-        [[ -n "$cleanup_inst" && -f "$cleanup_inst" ]] && { rm -f "$cleanup_inst" && log "удалён установщик: $cleanup_inst"; }
-        [[ -n "$cleanup_tgz"  && -f "$cleanup_tgz"  ]] && { rm -f "$cleanup_tgz"  && log "удалён архив: $cleanup_tgz"; }
+        # подчистить временное: каталог распаковки (или файл установщика) и
+        # архив. Мы — уже exec'нутый процесс, эти файлы никем не держатся.
+        cleanup_delivery "$cleanup_inst" "$cleanup_tgz"
     else
         require_installed
         seed_conf                          # доложить недостающие шаблоны, существующие не трогать

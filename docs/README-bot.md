@@ -41,14 +41,28 @@ Telegram Bot API (плюс, если включён email-выход, исход
 
 ## 3. Быстрый старт
 
-Поставка — два файла рядом: `awg-bot.tgz` (код) и `awg-bot-install.sh`
-(установщик). Архив вручную распаковывать не нужно — установщик сделает всё сам:
+Поставка — **один архив** `awg-bot.tgz`: внутри и код, и установщик. Установка
+одной командой, на чистом хосте, от root:
 
 ```bash
-sudo bash awg-bot-install.sh         # интерактивная установка «в одно окно»
-sudo bash awg-bot-install.sh --port 51820 --subnet 10.8.1   # задать порт/подсеть
-sudo bash awg-bot-install.sh --advanced                     # спросить всё, как раньше
+cd "$(mktemp -d)" \
+  && curl -fsSLO https://github.com/<repo>/releases/latest/download/awg-bot.tgz \
+  && tar xzf awg-bot.tgz \
+  && sudo bash install/awg-bot-install.sh
 ```
+
+Временный каталог и архив установщик уберёт за собой сам. Ключи те же:
+
+```bash
+sudo bash install/awg-bot-install.sh --port 51820 --subnet 10.8.1   # порт/подсеть
+sudo bash install/awg-bot-install.sh --advanced       # спросить всё, как раньше
+sudo bash install/awg-bot-install.sh --role gateway   # агент на шлюзе
+sudo bash install/awg-bot-install.sh --skip-verify    # своя сборка, а не релиз
+```
+
+Скачанный архив сверяется по sha256 с релизом GitHub. Сервис не ответил —
+установка идёт дальше (загрузку и так прикрывает TLS) и говорит об этом
+строкой; сверка не совпала — установка отказывается начинаться.
 
 Без `--port` порт awg случайный (высокий), подсеть `10.8.1.0/24`. Оба ключа
 относятся только к СОЗДАВАЕМОМУ серверу: на хосте, где awg уже настроен, они
@@ -69,7 +83,8 @@ sudo bash awg-bot-install.sh --advanced                     # спросить �
 | Preflight | Проверяет `root`, ищет Python 3.12+ (при отсутствии предлагает поставить через `apt`/deadsnakes PPA). |
 | AmneziaWG | Ставит ядро версии, **прибитой к поставке** (`install/awg.lock`): модуль через DKMS под все установленные ядра и `amneziawg-tools`, из исходников. Уже стоит та же версия — пропускает. |
 | Сервер | На чистом хосте создаёт `awg0.conf` сам: ключи, случайный высокий порт, обфускация, адрес `.1/24` (клиенты с `.2`), `ip_forward`, автозагрузка `awg-quick@awg0`. Сервер уже есть — не трогает и берёт топологию из него. |
-| Код | Bootstrap распаковывает `awg-bot.tgz` в `/opt/awg-bot`, симлинкует команду `awg-bot`, передаёт управление `awg-bot reconfigure --first-run`. |
+| Код | Bootstrap раскладывает распакованную поставку в `/opt/awg-bot`, симлинкует команду `awg-bot`, передаёт управление `awg-bot reconfigure --first-run`. |
+| Уборка | В конце удаляет архив и временный каталог распаковки. Каталог — только если он в `/tmp` или `/var/tmp`: поставку могли распаковать и в домашний каталог. |
 | venv | Создаёт `venv`, ставит `requirements.txt`. |
 | Каталоги FHS | `/etc/awg-bot/conf` (конфиг), `/etc/awg-bot/env` (секреты, `600`), `/var/lib/awg-bot` (БД+бэкапы, `700`). |
 | Конфиг | Копирует шаблоны `conf/*.yaml` (только отсутствующие) и **пишет валидные значения** из ответов (топология). |
@@ -546,9 +561,10 @@ root-ключ домашней машины никогда не лежит на 
 
 ```bash
 # на шлюзе, под root; токен второго бота — от @BotFather, ADMIN_ID тот же
-curl -fsSL -o awg-bot.tgz https://github.com/<repo>/releases/latest/download/awg-bot.tgz
-curl -fsSL -o awg-bot-install.sh https://github.com/<repo>/releases/latest/download/awg-bot-install.sh
-sudo bash ./awg-bot-install.sh --role gateway
+cd "$(mktemp -d)" \
+  && curl -fsSLO https://github.com/<repo>/releases/latest/download/awg-bot.tgz \
+  && tar xzf awg-bot.tgz \
+  && sudo bash install/awg-bot-install.sh --role gateway
 ```
 
 Установщик не задаёт клиентских вопросов (шлюз не выдаёт конфигов): спросит

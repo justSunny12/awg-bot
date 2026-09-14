@@ -184,3 +184,47 @@ def test_tgsend_never_raises_without_a_token(monkeypatch):
     monkeypatch.setattr(config, "BOT_TOKEN", "x:y")
     monkeypatch.setattr(config, "ADMIN_ID", 0)
     assert tgsend.send("что-то") is False
+
+
+# ── поставка одним архивом ───────────────────────────────────────────────────
+
+@pytest.fixture(scope="module")
+def bootstrap() -> str:
+    return (ROOT / "install" / "awg-bot-install.sh").read_text(encoding="utf-8")
+
+
+def test_bootstrap_runs_from_an_unpacked_delivery(bootstrap):
+    """Основной путь: архив распакован во временный каталог, установщик лежит
+    внутри него. Распаковывать ещё раз нечего — код берём вокруг себя."""
+    assert 'UNPACK_ROOT="$(cd "$SELF_DIR/.." && pwd)"' in bootstrap
+    assert '-f "$UNPACK_ROOT/awgbot/__main__.py"' in bootstrap
+    assert 'cp -a "$SRC_ROOT"/. "$INSTALL_DIR"/' in bootstrap
+    assert 'rm -f "$INSTALL_DIR/install/awg-bot-install.sh"' in bootstrap, \
+        "установщик в /opt не нужен: там уже awg-bot.sh"
+
+
+def test_bootstrap_still_accepts_a_plain_archive(bootstrap):
+    """Скрипт могли вытащить отдельно — прежний путь обязан работать."""
+    assert "tar xzf \"$TGZ\" -C \"$INSTALL_DIR\"" in bootstrap
+    assert "не та поставка?" in bootstrap
+
+
+def test_archive_integrity_is_checked_but_never_blocks_on_network(bootstrap):
+    """GitHub не ответил — ставим и говорим об этом: целостность загрузки и так
+    держит TLS. Не совпало — отказываемся, но подсказываем свой путь."""
+    body = bootstrap.split("verify_archive() {", 1)[1].split("\n}\n", 1)[0]
+    assert "GitHub не ответил" in body and "return 0" in body
+    assert "die" in body and "--skip-verify" in body
+    assert "releases/tags/v$ver" in body, "сверяем с релизом ИМЕННО этой версии"
+
+
+def test_temp_directory_is_removed_but_a_home_directory_is_not(bootstrap):
+    """rm -rf в установщике — только по временным каталогам. Человек мог
+    распаковать поставку и к себе домой; удалять её там мы не вправе."""
+    assert "/tmp/*|/var/tmp/*|/private/tmp/*" in bootstrap
+    script = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    body = script.split("cleanup_delivery() {", 1)[1].split("\n}\n", 1)[0]
+    assert "/tmp/*|/var/tmp/*|/private/tmp/*" in body, "вторая проверка перед rm -rf"
+    assert "не временный" in body
+    assert body.index('case "$what" in') < body.index('rm -rf "$what"'), \
+        "rm -rf стоит раньше проверки пути"

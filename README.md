@@ -125,15 +125,21 @@ MASQUERADE. Перенос — `install/awg-host-migrate.sh`, с проверк�
 
 ## Установка
 
-Два файла рядом (`awg-bot.tgz` + `awg-bot-install.sh`), затем:
+Поставка — один архив, установщик внутри. На чистом хосте:
 
 ```bash
-sudo bash awg-bot-install.sh          # интерактивная установка «в одно окно»
+cd "$(mktemp -d)" \
+  && curl -fsSLO https://github.com/<repo>/releases/latest/download/awg-bot.tgz \
+  && tar xzf awg-bot.tgz \
+  && sudo bash install/awg-bot-install.sh
 ```
 
-Установщик greenfield-only: разворачивает код в `/opt/awg-bot`, создаёт venv,
-пишет конфиг/секреты, ставит systemd-сервис. Дальше управление — командой
-`awg-bot`:
+Вопрос ровно один — токен бота; кто админ, установщик выясняет одноразовым
+кодом в чате. Всё остальное он делает сам: ставит AmneziaWG версии, прибитой к
+поставке, создаёт сервер с нуля, разворачивает код в `/opt/awg-bot`, venv,
+конфиг, секреты, systemd-сервис, спрашивает одной строкой про файервол и
+печатает конфигурацию первого устройства в терминал. За собой убирает архив и
+временный каталог. Дальше управление — командой `awg-bot`:
 
 ```
 reconfigure  update  backup  restore  uninstall

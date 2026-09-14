@@ -4,11 +4,12 @@
 # НЕ входит.
 #
 # Формат — tar.gz (нативно для Linux, распаковка без доп. софта: tar+gzip есть
-# на любом образе; unzip — нет). На продукт — ДВА артефакта: payload-архив +
-# внешний bootstrap-установщик РЯДОМ с ним (сам установщик в архив не входит).
+# на любом образе; unzip — нет). На продукт — ОДИН артефакт: внутри и код, и
+# установщик. Два файла рядом означали «скачай оба и не перепутай версии»;
+# теперь поставка неделима, и установка — одна команда.
 #
 # Артефакты (в ./dist по умолчанию):
-#   awg-bot.tgz          + awg-bot-install.sh     продукт (co-located хост awg+бот)
+#   awg-bot.tgz          продукт целиком: код, установщик, скрипты обвязки
 #   awg-bot-project.tgz  полный проект для разработки (с тестами)
 #
 # Запуск:  ./build_release.sh [OUT_DIR]
@@ -39,17 +40,17 @@ _targz() {  # _targz STAGE_DIR OUT_TGZ — собрать во временно�
 }
 _count() { tar tzf "$1" | grep -vc '/$'; }
 
-# ── продукт: бот (payload awg-bot.tgz + bootstrap awg-bot-install.sh рядом) ───
+# ── продукт: бот (единственный артефакт awg-bot.tgz, установщик внутри) ──────
 build_bot() {
     local s; s="$(mktemp -d)"
     for p in awgbot tools conf; do _stage_copy "$p" "$s"; done
     mkdir -p "$s/install"
-    # ВСЕ скрипты install, кроме бутстрапа (он едет рядом с архивом, а не внутри).
-    # Именно все, а не перечисление по маскам: перечисление молча пропускает
-    # новый скрипт, и админ получает код фичи без половины, которой её
-    # разворачивают. Ровно так awg-host-migrate.sh не доехал до сервера.
+    # ВСЕ скрипты install, включая бутстрап: поставка — ОДИН архив, установщик
+    # едет внутри него (docs/ROADMAP.md, п.8). Именно все, а не перечисление по
+    # маскам: перечисление молча пропускает новый скрипт, и админ получает код
+    # фичи без половины, которой её разворачивают. Ровно так
+    # awg-host-migrate.sh не доехал до сервера.
     for _f in "$ROOT"/install/*.sh; do
-        [ "$(basename "$_f")" = "awg-bot-install.sh" ] && continue
         # install -m 0755, а не cp: cp тащит режим исходника, и скрипт с забытым
         # битом исполнения уезжает в поставку нерабочим. Ровно так harden_firewall.sh
         # доехал до сервера как -rw------- и отвечал «command not found» в момент,
@@ -64,8 +65,7 @@ build_bot() {
     cp "$ROOT/awg-bot.service" "$ROOT/requirements.txt" "$ROOT/.env.example" "$s/"
     cp "$ROOT/docs/README-bot.md" "$s/README.md"
     _targz "$s" "$OUT/awg-bot.tgz"; rm -rf "$s"
-    install -m 0755 "$ROOT/install/awg-bot-install.sh" "$OUT/awg-bot-install.sh"   # bootstrap РЯДОМ
-    log "awg-bot.tgz: $(_count "$OUT/awg-bot.tgz") файлов  (+ awg-bot-install.sh рядом)"
+    log "awg-bot.tgz: $(_count "$OUT/awg-bot.tgz") файлов (установщик внутри: install/awg-bot-install.sh)"
 }
 
 # ── полный проект (dev) ──────────────────────────────────────────────────────

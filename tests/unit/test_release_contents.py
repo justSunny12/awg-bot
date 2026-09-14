@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BUILD = ROOT / "build_release.sh"
 INSTALL = ROOT / "install"
 
-# Бутстрап едет РЯДОМ с архивом, а не внутри: им архив и разворачивают.
+# Бутстрап едет ВНУТРИ архива: поставка — один артефакт (ROADMAP п.8).
 BOOTSTRAP = "awg-bot-install.sh"
 
 
@@ -30,6 +30,17 @@ def test_packaging_is_not_a_whitelist():
     src = BUILD.read_text(encoding="utf-8")
     assert '"$ROOT"/install/*.sh' in src, "install-скрипты должны браться целиком"
     assert '"$ROOT"/install/routing-*.sh' not in src, "перечисление по маскам вернулось"
+
+
+def test_delivery_is_a_single_artifact():
+    """Один архив вместо «скачай два файла и не перепутай версии». Установщик
+    внутри: им поставку и разворачивают, а рядом с архивом класть больше
+    нечего."""
+    src = BUILD.read_text(encoding="utf-8")
+    assert 'install -m 0755 "$ROOT/install/awg-bot-install.sh" "$OUT/' not in src, \
+        "бутстрап снова кладётся рядом с архивом"
+    assert 'continue' not in src.split("for _f in \"$ROOT\"/install/*.sh; do", 1)[1].split("done", 1)[0], \
+        "из архива снова что-то исключается"
 
 
 @pytest.mark.smoke
@@ -45,7 +56,7 @@ def test_built_package_contains_every_install_script(tmp_path):
     with tarfile.open(tgz) as tf:
         shipped = {Path(n).name for n in tf.getnames() if "/install/" in n}
 
-    expected = {p.name for p in INSTALL.glob("*.sh")} - {BOOTSTRAP}
+    expected = {p.name for p in INSTALL.glob("*.sh")} | {BOOTSTRAP}
     expected |= {"awg.lock"}          # версия awg прибита к поставке (ROADMAP п.8)
     missing = expected - shipped
     assert not missing, f"не доехали до поставки: {sorted(missing)}"
