@@ -98,16 +98,14 @@ def client_devices(devices) -> InlineKeyboardMarkup:
     """Список своих устройств. Без кнопки добавления — она уже есть в главном
     меню, дублировать здесь избыточно.
 
-    Два значка подряд: тип устройства и онлайн. Тип отвечает «что это»,
-    кружок — «в сети ли оно сейчас»; раньше второго ответа в списке не было
-    вовсе, и за ним приходилось открывать каждую карточку.
+    Значок один — тип устройства. Второй, про онлайн, пробовали и убрали: два
+    кружка подряд в каждой строке превращают список в рябь, а ответ «кто в
+    сети» есть отдельным экраном.
     """
-    from awgbot.util import timeutil
     kb = InlineKeyboardBuilder()
     for d in devices:
         marker = _blocks.blocked_marker_device(int(d.block_reason), for_admin=False)
-        online = "🟢" if timeutil.handshake_is_online(d.traffic.last_handshake) else "🔴"
-        kb.button(text=f"{marker}{_dev_emoji(d)}{online} {d.name}{_btn_suffix(d)}",
+        kb.button(text=f"{marker}{_dev_emoji(d)} {d.name}{_btn_suffix(d)}",
                   callback_data=DeviceCB(action="open", device_id=d.id))
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
     kb.adjust(1)

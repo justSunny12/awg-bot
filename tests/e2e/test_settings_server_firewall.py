@@ -307,9 +307,9 @@ def test_gateway_device_keeps_its_icon_in_the_button_list():
     assert any(l.startswith("🛰") for l in labels), labels
     assert any(l.startswith("📱") for l in labels), labels
     assert texts.device_emoji(_Dev()) == "🛰", "текстовый список разошёлся с кнопками"
-    # второй значок — онлайн: шлюз с хендшейком зелёный, телефон без — красный
-    assert any(l.startswith("🛰🟢") for l in labels), labels
-    assert any(l.startswith("📱🔴") for l in labels), labels
+    # Значок ровно один: кружок онлайна тут пробовали и убрали — два подряд в
+    # каждой строке превращают список в рябь.
+    assert not any("🟢" in l or "🔴" in l for l in labels), labels
 
 
 def test_routing_domain_list_uses_minus_and_a_bin_for_the_whole_list():
