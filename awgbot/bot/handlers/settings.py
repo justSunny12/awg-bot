@@ -52,6 +52,11 @@ async def _screen(sec: str, services):
                 kb.settings_email(acc is not None))
     if sec == "subs":
         return texts.SETTINGS_SUBS, kb.settings_subs()
+    if sec == "srv":
+        return texts.settings_server_text(await call(services.server_screen)), kb.settings_server()
+    if sec == "fw":
+        st = await call(services.firewall_screen)
+        return texts.settings_firewall_text(st), kb.settings_firewall(st)
     if sec == "mon":
         return texts.SETTINGS_MON, kb.settings_mon()
     if sec == "backup":
@@ -344,18 +349,119 @@ async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext,
     await cb.answer()
 
 
+async def _firewall_action(cb: CallbackQuery, callback_data: SetCB, services) -> None:
+    """Действия раздела «Файервол». Включение и удаление адреса могут запереть
+    вход, поэтому идут с таймером отката; подтверждает его человек ЗДЕСЬ, а не
+    вторым SSH-сеансом: чат работает независимо от того, сломался SSH или нет."""
+    key, val = callback_data.key, callback_data.val
+    try:
+        if key == "on":
+            seconds = await call(services.firewall_enable)
+            await cb.answer()
+            await cb.message.answer(texts.firewall_armed(seconds))
+        elif key == "off":
+            await call(services.firewall_disable)
+            await cb.answer("Фильтр снят")
+        elif key == "confirm":
+            await call(services.firewall_confirm)
+            await cb.answer()
+            await cb.message.answer(texts.firewall_confirmed())
+        elif key == "rollback":
+            await call(services.firewall_confirm)
+            await call(services.firewall_disable)
+            await cb.answer()
+            await cb.message.answer(texts.firewall_rolled_back())
+        elif key == "del":
+            await call(services.firewall_allow_remove, val)
+            await cb.answer(f"{val} убран")
+        else:
+            await cb.answer("Действие недоступно", show_alert=True)
+            return
+    except ServiceError as e:
+        await cb.answer(str(e)[:180], show_alert=True)
+    except Exception as e:                                # noqa: BLE001
+        log.warning("firewall %s: %s", key, e)
+        await cb.answer(f"Не вышло: {e}"[:180], show_alert=True)
+    text, markup = await _screen("fw", services)
+    await edit(cb, text, markup)
+
+
+def _validate_server_value(key: str, raw: str) -> tuple[bool, str]:
+    """Проверки для правок раздела «Сервер». Пускать сюда что угодно нельзя:
+    значение уезжает в КАЖДУЮ следующую ссылку, а сломанную ссылку человек
+    увидит только при импорте — и без единого сообщения об ошибке."""
+    import ipaddress
+    import re as _re
+    if not raw:
+        return False, "пусто — значение обязательно"
+    if key == "app.network.server_host":
+        try:
+            ipaddress.ip_address(raw)
+            return True, ""
+        except ValueError:
+            pass
+        if _re.fullmatch(r"[0-9.]+", raw):
+            # «10.8.1.300» — это опечатка в адресе, а не доменное имя: цифры и
+            # точки проходят проверку имени, и ссылка уехала бы в никуда.
+            return False, "похоже на IP с опечаткой — проверь октеты"
+        if _re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?"
+                         r"(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+", raw):
+            return True, ""
+        return False, "нужен IP или доменное имя"
+    if key == "app.client_config.server_name":
+        return (True, "") if len(raw) <= 64 else (False, "длинновато: не больше 64 символов")
+    if key == "app.client_config.dns1":
+        parts = [p for p in raw.replace(",", " ").split() if p]
+        if not 1 <= len(parts) <= 2:
+            return False, "один или два адреса"
+        for p in parts:
+            try:
+                ipaddress.ip_address(p)
+            except ValueError:
+                return False, f"«{p}» не IP-адрес"
+        return True, ""
+    return True, ""
+
+
 @router.message(SettingsInput.value)
 async def receive_value(message: Message, state: FSMContext, services):
     data = await state.get_data()
     key, sec = data.get("key"), data.get("sec", "root")
     if key in texts.SETTINGS_TEXT:
-        from awgbot.infra import mail
         raw = (message.text or "").strip()
-        if raw == "-":                                # «вернуть сам ящик»
-            raw = ""
-        if raw and not mail.is_address(raw):
-            await message.answer(texts.EMAIL_BAD_ADDRESS)
+        if key == "email.resume_address":
+            from awgbot.infra import mail
+            if raw == "-":                            # «вернуть сам ящик»
+                raw = ""
+            if raw and not mail.is_address(raw):
+                await message.answer(texts.EMAIL_BAD_ADDRESS)
+                return
+        elif key == "app.firewall.ssh_allow":
+            # Вайтлист не «значение настройки», а список: пишет его сервис —
+            # он же проверяет каждый адрес и перевыставляет таблицу.
+            try:
+                await call(services.firewall_allow_add, raw)
+            except ServiceError as e:
+                await message.answer(f"⚠️ {texts._e(str(e))}")
+                return
+            await state.clear()
+            text, markup = await _screen(sec, services)
+            await message.answer(text, reply_markup=markup)
             return
+        else:
+            ok, err = _validate_server_value(key, raw)
+            if not ok:
+                await message.answer(f"⚠️ {texts._e(err)}")
+                return
+            if key == "app.client_config.dns1":
+                # В конфиге два поля, в UI одна строка. Второй адрес обязан
+                # быть тем же, если назван один: стеки опрашивают список не
+                # строго по порядку, и «публичный вторым номером» вернул бы
+                # утечку резолва мимо нашего dnsmasq.
+                parts = [x for x in raw.replace(",", " ").split() if x]
+                await call(settings.set_value, "app.client_config.dns2",
+                           parts[1] if len(parts) > 1 else parts[0])
+                raw = parts[0]
         try:
             await call(settings.set_value, key, raw)
         except settings.SettingsWriteError as e:
@@ -661,6 +767,9 @@ email_smtp_host, email_smtp_port, email_password = _mw["smtp_host"], _mw["smtp_p
 @router.callback_query(SetCB.filter(F.act == "do"))
 async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
     key = callback_data.key
+    if callback_data.sec == "fw":
+        await _firewall_action(cb, callback_data, services)
+        return
     if key == "enc":                                   # экран шифрования
         mode = await call(services.backup_encryption_mode)
         await edit(cb, texts.backup_encryption_text(mode), kb.backup_encryption_kb(bool(mode)))

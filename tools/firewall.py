@@ -80,6 +80,16 @@ def _print_spec(spec: nftguard.GuardSpec) -> None:
     print(f"  прочие tcp/udp   : {spec.open_tcp or '—'} / {spec.open_udp or '—'}")
 
 
+def _flag(args: list[str], name: str) -> str | None:
+    """Значение флага `--name X` или None. Пустая строка — флаг без значения."""
+    for i, a in enumerate(args):
+        if a == name:
+            return args[i + 1] if i + 1 < len(args) else ""
+        if a.startswith(name + "="):
+            return a.split("=", 1)[1]
+    return None
+
+
 def _arm(seconds: int = nftguard.ROLLBACK_SECONDS) -> None:
     env = {k: v for k, v in os.environ.items()
            if k in ("AWG_BOT_CONF_DIR", "AWG_BOT_DATA_DIR", "AWG_BOT_ENV")}
@@ -90,7 +100,7 @@ def _arm(seconds: int = nftguard.ROLLBACK_SECONDS) -> None:
           f"Иначе таблица снимется сама и firewall.enabled вернётся в false.")
 
 
-def _apply(with_rollback: bool) -> None:
+def _apply(with_rollback: bool, rollback_seconds: int = nftguard.ROLLBACK_SECONDS) -> None:
     spec = nftguard.build_spec(_admin_ips())
     text = nftguard.render(spec)
     for line in nftguard.ensure_persistence():
@@ -98,7 +108,7 @@ def _apply(with_rollback: bool) -> None:
     nftguard.apply_text(text)
     print(f"✓ таблица {nftguard.TABLE} применена, файл {nftguard.RULES_FILE}")
     if with_rollback:
-        _arm()
+        _arm(rollback_seconds)
 
 
 # ── команды ──────────────────────────────────────────────────────────────────
@@ -138,9 +148,36 @@ def _ensure_nft() -> bool:
 
 
 def cmd_setup(_args) -> int:
+    """Мастер. Неинтерактивный вызов из установщика — `--allow "<список>" --yes`
+    (пустой список означает осознанно открытый SSH), `--rollback-seconds N`
+    задаёт время на проверку входа: при установке человек ещё занят и трёх
+    минут ему мало."""
+    args = list(_args or [])
+    allow_flag = _flag(args, "--allow")
+    assume_yes = "--yes" in args
+    try:
+        rb_seconds = int(_flag(args, "--rollback-seconds") or nftguard.ROLLBACK_SECONDS)
+    except ValueError:
+        print("[ОШИБКА] --rollback-seconds: число секунд"); return 1
     print("═══ Файервол хоста: единственная точка — таблица awg_bot_guard ═══\n")
     if not _ensure_nft():
         return 1
+    if allow_flag is not None:
+        try:
+            allow = _parse_entries(allow_flag)
+        except ValueError as e:
+            print(f"[ОШИБКА] {e}"); return 1
+        settings.set_value("app.firewall.ssh_allow", allow)
+        settings.set_value("app.firewall.enabled", True)
+        spec = nftguard.build_spec(_admin_ips())
+        _print_spec(spec)
+        if spec.unresolved:
+            print(f"[!] не резолвятся: {', '.join(spec.unresolved)} — в таблицу не попадут")
+        if not assume_yes and not _yes("Применить с таймером отката?"):
+            settings.set_value("app.firewall.enabled", False)
+            return 1
+        _apply(with_rollback=True, rollback_seconds=rb_seconds)
+        return 0
     cur = settings.get("app.firewall.ssh_allow", []) or []
     print("ВАШИ адреса для SSH (IP, CIDR или имя DynDNS; через запятую/пробел).")
     print("Из туннеля SSH открыт устройствам админа всегда — этот список про вход")

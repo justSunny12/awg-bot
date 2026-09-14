@@ -17,6 +17,7 @@
 #   sudo ./awg-bot-install.sh --role gateway [<path.tgz>]   # агент на шлюзе
 #   sudo ./awg-bot-install.sh --port 51820 [--subnet 10.8.1]  # порт/подсеть создаваемого
 #                                                            # awg-сервера (иначе порт случайный)
+#   sudo ./awg-bot-install.sh --advanced      # спросить всё, как в прежних версиях
 #
 set -euo pipefail
 
@@ -42,6 +43,7 @@ while [[ "${1:-}" == --* ]]; do
         --role)   ROLE="${2:-client}"; shift 2 ;;
         --port)   [[ "${2:-}" =~ ^[0-9]+$ ]] || die "--port: число"; EXTRA+=(--port "$2"); shift 2 ;;
         --subnet) [[ "${2:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "--subnet: три октета вида 10.8.1"; EXTRA+=(--subnet "$2"); shift 2 ;;
+        --advanced) EXTRA+=(--advanced); shift ;;
         *) die "неизвестный ключ: $1" ;;
     esac
 done

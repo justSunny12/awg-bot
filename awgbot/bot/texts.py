@@ -1739,6 +1739,9 @@ SETTINGS_BOUNDS = {
     "app.gateway.monitor_minutes": (1, 1440, "Частота опроса", "мин (1–1440)"),
     "app.gateway.handshake_max_age": (60, 86400, "Порог простоя линка", "сек (60–86400)"),
     "app.gateway.temp_alert_c": (40, 100, "Порог температуры", "°C (40–100)"),
+    # MTU — в новые ссылки. 1280 — минимум IPv6, 1500 — Ethernet без запаса на
+    # заголовки туннеля; выше него пакеты начинают фрагментироваться.
+    "app.client_config.mtu": (1280, 1500, "MTU клиентов", "байт (1280–1500)"),
 }
 
 
@@ -1746,10 +1749,82 @@ SETTINGS_BOUNDS = {
 # валидатором в обработчике.
 SETTINGS_TEXT = {
     "email.resume_address": ("Адрес для писем с кодом", "адрес почты; пусто — сам ящик"),
+    "app.network.server_host": ("Адрес сервера", "IP или доменное имя — попадёт в НОВЫЕ ссылки"),
+    "app.client_config.server_name": ("Имя сервера в ссылках", "видно клиенту в приложении"),
+    "app.client_config.dns1": ("DNS клиентов", "один или два адреса через запятую"),
+    "app.firewall.ssh_allow": ("Адреса для SSH", "IP, подсеть или имя DynDNS; можно несколько"),
 }
 
 
+def settings_server_text(d: dict) -> str:
+    """Раздел «Сервер»: что уезжает в новые ссылки и что менять нельзя."""
+    lines = [
+        "<b>🖥 Сервер</b>", "",
+        f"Адрес: <code>{_e(d['host'])}</code>",
+        f"Имя в ссылках: {_e(d['name'])}",
+        f"DNS клиентов: <code>{_e(d['dns'])}</code>",
+        f"MTU: {d['mtu']} · keepalive: {_e(str(d['keepalive']))}",
+        "",
+        f"Интерфейс: <code>{_e(d['iface'])}</code> · порт {d['port']} · "
+        f"подсеть <code>{_e(d['subnet'])}</code>",
+        f"Ядро AmneziaWG: {_e(d['kernel'] or 'не определено')}"
+        + (f" · поколение {d['generation']}" if d.get("generation") else ""),
+        "",
+        "Правки применяются к <b>новым</b> ссылкам: уже выданные конфиги несут то, "
+        "с чем их выдали. Порт и подсеть здесь не меняются — их смена означает "
+        "перевыпуск профилей всем и живёт в переезде (Обслуживание).",
+    ]
+    return "\n".join(lines)
+
+
+def settings_firewall_text(st: dict) -> str:
+    """Раздел «Файервол»: состояние и что будет при включении."""
+    if st.get("rollback"):
+        return ("<b>🛡 Файервол</b>\n\n⏱ <b>Идёт проверка входа.</b>\n\n"
+                "Правила уже применены. Открой <b>новое</b> SSH-подключение к серверу "
+                "и, если оно проходит, подтверди здесь. Не подтвердишь — правила "
+                "снимутся сами, доступ вернётся всем адресам.\n\n"
+                "Это и есть страховка: заперев себе SSH, ты не сможешь ничего "
+                "исправить в терминале, зато этот чат работает независимо.")
+    head = "🟢 фильтр включён" if st.get("enabled") else "🔴 фильтр выключен"
+    allow = st.get("raw_allow") or []
+    lines = [
+        "<b>🛡 Файервол</b>", "",
+        f"{head} · порт SSH {st.get('ssh_port')}",
+        ("Адреса для входа снаружи: " + ", ".join(f"<code>{_e(a)}</code>" for a in allow))
+        if allow else "Адреса не заданы — SSH открыт всем (только по ключам).",
+    ]
+    if st.get("unresolved"):
+        lines.append("⚠️ не резолвятся: " + ", ".join(_e(x) for x in st["unresolved"]))
+    if st.get("admin_ips"):
+        lines.append(f"Из туннеля SSH открыт устройствам админа ({len(st['admin_ips'])}) — всегда.")
+    if st.get("ufw"):
+        lines.append("⚠️ ufw активен: второй владелец правил, лучше выключить (<code>ufw disable</code>).")
+    lines += ["", "NAT клиентов эта же таблица держит всегда — выключение фильтра "
+                  "не оставит людей без интернета.",
+              "Включение применяет правила с таймером: если вход по SSH сломается, "
+              "они снимутся сами."]
+    return "\n".join(lines)
+
+
+def firewall_armed(seconds: int) -> str:
+    return (f"⏱ Правила применены. Проверь вход <b>новым</b> SSH-подключением и "
+            f"подтверди в течение {seconds // 60} мин — иначе они снимутся сами.")
+
+
+def firewall_confirmed() -> str:
+    return "✅ Таймер снят, фильтр остаётся включённым."
+
+
+def firewall_rolled_back() -> str:
+    return ("↩️ Правила сняты, SSH снова открыт всем адресам. "
+            "NAT клиентов на месте.")
+
+
 def settings_prompt(key: str) -> str:
+    if key in SETTINGS_TEXT:
+        label, hint = SETTINGS_TEXT[key]
+        return f"Введи новое значение: <b>{_e(label)}</b>\n{_e(hint)}."
     lo, hi, label, unit = SETTINGS_BOUNDS[key]
     return f"Введи новое значение: <b>{_e(label)}</b>\nЕдиница: {_e(unit)}\nДиапазон: {lo}–{hi}."
 

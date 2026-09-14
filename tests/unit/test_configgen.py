@@ -262,14 +262,22 @@ def test_keepalive_passes_through_as_written():
     Прочие таймеры джиттерит сервер, а этот приходит из конфига бота — и,
     оставшись числом, обнулял бы всю ломку ритма самым заметным сигналом.
     """
-    from awgbot.core import config
+    from awgbot.core import config, settings
     import json as _json
 
     for value in ("25-35", 25):
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(config, "KEEPALIVE_SECONDS", value)
+            # Значение живое: правка из чата применяется к СЛЕДУЮЩЕЙ выданной
+            # ссылке, а не после рестарта. Константа config — лишь дефолт.
+            mp.setattr(settings, "get", lambda k, d=None, _v=value:
+                       _v if k == "app.client_config.keepalive_seconds" else d)
             res = cg.generate("PRIV", "PUB", "10.8.1.5", _params())
             assert f"PersistentKeepalive = {value}" in res["conf"]
             lc = _json.loads(
                 cg.decode_vpn(res["vpn"])["containers"][0]["awg"]["last_config"])
             assert lc["persistent_keep_alive"] == str(value)
+    with pytest.MonkeyPatch.context() as mp:           # ключа нет — берём константу
+        mp.setattr(settings, "get", lambda k, d=None: d)
+        mp.setattr(config, "KEEPALIVE_SECONDS", "40-50")
+        assert "PersistentKeepalive = 40-50" in cg.generate(
+            "PRIV", "PUB", "10.8.1.5", _params())["conf"]

@@ -91,11 +91,12 @@ def _conf_text(
     lines = [
         "[Interface]",
         f"Address = {address}/32",
-        f"DNS = {config.DNS1}, {config.DNS2}",
+        f'DNS = {_live("app.client_config.dns1", config.DNS1)}, '
+        f'{_live("app.client_config.dns2", config.DNS2)}',
         f"PrivateKey = {private_key}",
     ]
     if include_mtu:
-        lines.append(f"MTU = {config.MTU}")
+        lines.append(f'MTU = {_live("app.client_config.mtu", config.MTU)}')
     for k in _OBF_ORDER:
         v = obf.get(k, "")
         empty = not str(v).strip()
@@ -109,7 +110,7 @@ def _conf_text(
         f"PresharedKey = {psk}",
         f"AllowedIPs = {config.CLIENT_ALLOWED_IPS}",
         f"Endpoint = {host}:{port}",
-        f"PersistentKeepalive = {config.KEEPALIVE_SECONDS}",
+        f'PersistentKeepalive = {_live("app.client_config.keepalive_seconds", config.KEEPALIVE_SECONDS)}',
         "",
     ]
     return "\n".join(lines)
@@ -145,13 +146,27 @@ def _build_last_config(
         "client_pub_key": public_key,
         "config": embedded_conf,
         "hostName": host,
-        "mtu": str(config.MTU),
-        "persistent_keep_alive": str(config.KEEPALIVE_SECONDS),
+        "mtu": str(_live("app.client_config.mtu", config.MTU)),
+        "persistent_keep_alive": str(_live("app.client_config.keepalive_seconds", config.KEEPALIVE_SECONDS)),
         "port": port,                       # int (как в эталоне)
         "psk_key": psk,
         "server_pub_key": server_pubkey,
     }
     return json.dumps(lc, indent=4, ensure_ascii=False)
+
+
+def _live(key: str, default):
+    """Деплой-значение, читаемое В МОМЕНТ выдачи, а не при старте процесса.
+
+    Адрес сервера, имя в ссылках, DNS и MTU правятся из чата (⚙️ Настройки →
+    🖥 Сервер). Читай мы их из констант config, правка применялась бы только
+    после рестарта — то есть экран показывал бы одно, а выданная через минуту
+    ссылка несла другое. Константа остаётся значением по умолчанию: settings
+    её же и прочитал при старте.
+    """
+    from awgbot.core import settings
+    val = settings.get(key, None)
+    return default if val in (None, "") else val
 
 
 def _subnet_of(address: str) -> str:
@@ -211,9 +226,9 @@ def _build_vpn_json(
     return {
         "containers": [{"awg": awg_block, "container": app_container}],
         "defaultContainer": app_container,
-        "description": config.SERVER_NAME,
-        "dns1": config.DNS1,
-        "dns2": config.DNS2,
+        "description": _live("app.client_config.server_name", config.SERVER_NAME),
+        "dns1": _live("app.client_config.dns1", config.DNS1),
+        "dns2": _live("app.client_config.dns2", config.DNS2),
         "hostName": host,
     }
 
@@ -266,7 +281,7 @@ def generate(
     port = server_params["listen_port"]
     spub = server_params["server_pubkey"]
     psk = server_params["psk"]
-    host = config.SERVER_HOST
+    host = _live("app.network.server_host", config.SERVER_HOST)
 
     conf_standalone = _conf_text(
         private_key, address, obf, spub, psk, host, port, include_mtu=True,

@@ -19,6 +19,8 @@
 #                          сервер с нуля, venv, юнит, enable+start, карта, уборка).
 #                          --port/--subnet задают порт и подсеть СОЗДАВАЕМОГО
 #                          сервера; без них порт случайный, подсеть 10.8.1.
+#                          --advanced возвращает ВСЕ вопросы визарда (адрес, имя
+#                          сервера, порт, подсеть, шифрование бэкапов).
 #   update [<tgz>]         обновить код/зависимости/юнит из архива (по умолчанию —
 #                          awg-bot-update.tgz рядом; conf/env/данные не трогаются,
 #                          если явно не согласиться на их удаление).
@@ -41,6 +43,7 @@ UNIT_PATH="/etc/systemd/system/awg-bot.service"
 SERVICE="awg-bot"
 SELF_LINK="/usr/local/bin/awg-bot"
 
+ADVANCED="${AWG_BOT_ADVANCED:-0}"       # 1 — спрашивать всё, как раньше
 AWG_STATE="$ETC_DIR/awg.state"          # поколение AmneziaWG на этом хосте
 AWG_LOCK_FILE="$INSTALL_DIR/install/awg.lock"   # манифест версии из поставки
 
@@ -222,6 +225,28 @@ _detect_awg_container() {  # печатает имена, ВНУТРИ кото�
     done
 }
 
+configure_topology_auto() {
+    # Свежая установка без вопросов: адрес хоста определяем сами, имя сервера
+    # берём дефолтное, порт с подсетью уже записал ensure_awg_server. Всё это
+    # правится потом в боте (Настройки → Сервер) и командой reconfigure —
+    # спрашивать об этом в первую минуту знакомства незачем.
+    local app="$CONF_DIR/app.yaml" host name
+    host="$(yaml_get "$app" server_host)"
+    if [[ -z "$host" ]]; then
+        host="$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K[0-9.]+' || true)"
+        [[ -n "$host" ]] || host="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+        [[ -n "$host" ]] || { warn "внешний адрес не определился — спрошу"; configure_topology; return; }
+        yaml_set "$app" server_host "\"$host\""
+    fi
+    name="$(yaml_get "$app" server_name)"
+    [[ -n "$name" ]] || yaml_set "$app" server_name "\"Сервер 1\""
+    # Таймзона хоста: от неё зависят тихие часы и расписания, а спрашивать её
+    # бессмысленно — система уже знает ответ.
+    local tz; tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
+    [[ -n "$tz" && "$tz" != "$(yaml_get "$app" timezone)" ]] && yaml_set "$app" timezone "\"$tz\""
+    ok "адрес сервера: $host (правится в боте: Настройки → Сервер)"
+}
+
 configure_topology() {
     local app="$CONF_DIR/app.yaml"
     [[ -f "$app" ]] || die "нет $app — сначала seed_conf"
@@ -318,17 +343,44 @@ print('%s|%s|%s' % (t['listen_port'] or '', t['subnet_prefix'] or '', t['subnet_
     ok "конфиг записан (порт $port, подсеть ${prefix}.0/24)."
 }
 
+pair_admin() {  # pair_admin TOKEN → печатает id админа или пусто
+    # Числового Telegram ID у человека под рукой нет: за ним идут к стороннему
+    # боту и переписывают цифры. Спрашиваем не человека, а Telegram — кто
+    # пришлёт код в чат, тот и админ.
+    local out id
+    out="$( cd "$INSTALL_DIR" && BOT_TOKEN="$1" ./venv/bin/python -m tools.pair --timeout 600 )" || return 1
+    id="$(sed -nE 's/^ADMIN_ID=([0-9]+)$/\1/p' <<<"$out" | head -n1)"
+    [[ -n "$id" ]] || return 1
+    printf '%s' "$id"
+}
+
 setup_secrets() {
     local cur_token cur_admin token admin
     mkdir -p "$ETC_DIR"; touch "$ENV_FILE"; chmod 600 "$ENV_FILE"
     cur_token="$(env_get BOT_TOKEN)"; cur_admin="$(env_get ADMIN_ID)"
     if [[ -n "$cur_token" ]] && ! confirm "BOT_TOKEN уже задан — заменить?" n; then token="$cur_token"
     else while :; do ask_masked token "Токен бота (от @BotFather)"; [[ -n "$token" ]] && break; warn "пусто"; done; fi
-    if [[ -n "$cur_admin" ]] && ! confirm "ADMIN_ID уже задан ($cur_admin) — заменить?" n; then admin="$cur_admin"
-    else while :; do ask admin "Telegram ID администратора (число, у @userinfobot)"; [[ "$admin" =~ ^[0-9]+$ ]] && break; warn "должно быть числом"; done; fi
-    env_set BOT_TOKEN "$token"; env_set ADMIN_ID "$admin"
+    env_set BOT_TOKEN "$token"
+
+    if [[ -n "$cur_admin" ]] && ! confirm "ADMIN_ID уже задан ($cur_admin) — заменить?" n; then
+        admin="$cur_admin"
+    else
+        admin=""
+        if [[ "$ADVANCED" != "1" ]]; then
+            admin="$(pair_admin "$token" || true)"
+            [[ -n "$admin" ]] || warn "по коду опознать не вышло — спрошу ID вручную."
+        fi
+        while [[ -z "$admin" ]]; do
+            ask admin "Telegram ID администратора (число, у @userinfobot)"
+            [[ "$admin" =~ ^[0-9]+$ ]] || { warn "должно быть числом"; admin=""; }
+        done
+    fi
+    env_set ADMIN_ID "$admin"
     ok "секреты записаны в $ENV_FILE (600)."
-    if confirm "Настроить шифрование резервных копий (рекомендуется)?" y; then
+    # Шифрование бэкапов — экран в боте (Настройки → Резервное копирование).
+    # В визарде оно было лишним вопросом ровно там, где человек ещё не знает,
+    # что такое бэкап этого бота.
+    if [[ "$ADVANCED" == "1" ]] && confirm "Настроить шифрование резервных копий?" y; then
         ( cd "$INSTALL_DIR" \
             && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
             && ./venv/bin/python -m tools.manage_secrets ) || warn "manage_secrets прерван — можно запустить позже."
@@ -336,10 +388,26 @@ setup_secrets() {
 }
 
 optional_steps() {
-    echo; log "─── Опционально ───"
-    if confirm "Настроить файервол хоста (awg-bot firewall setup: SSH только с ваших IP)?" n; then
-        cmd_firewall setup || warn "мастер файервола прерван — позже: awg-bot firewall setup"
-    fi
+    echo; log "─── Файервол ───"
+    # Один вопрос вместо мастера, и ответ на него уже подставлен: адрес, с
+    # которого человек сейчас подключён, система знает сама. Третий вариант —
+    # свой список: у кого-то вход с нескольких адресов или по DynDNS-имени.
+    local here="" ans allow
+    here="$(awk '{print $1}' <<<"${SSH_CONNECTION:-}")"
+    local prompt="Ограничить доступ по SSH"
+    [[ -n "$here" ]] && prompt="$prompt адресом, с которого вы сейчас подключены ($here)"
+    read -r -p "$(printf '%s [y / свой список адресов / N]: ' "$prompt")" ans < /dev/tty || ans=""
+    case "${ans,,}" in
+        y|yes|д|да)
+            [[ -n "$here" ]] || { warn "адрес подключения не определился (не SSH-сессия?) — пропускаю"; return 0; }
+            allow="$here" ;;
+        ""|n|no|н|нет) log "файервол не трогаю: включить позже — в боте (Настройки → Файервол) или awg-bot firewall setup"; return 0 ;;
+        *) allow="$ans" ;;
+    esac
+    # Таймер отката длиннее штатного: человек ещё в середине установки, и трёх
+    # минут на «проверь вход новым подключением» ему мало.
+    cmd_firewall setup --allow "$allow" --yes --rollback-seconds 900 \
+        || warn "файервол не включён — позже: awg-bot firewall setup"
 }
 
 print_map() {  # print_map "active"|"failed"
@@ -367,6 +435,7 @@ print_map() {  # print_map "active"|"failed"
     echo "     awg-bot restore [tgz]       восстановить из снимка"
     echo "     awg-bot uninstall           снять сервис"
     echo "     awg-bot awg status          версия AmneziaWG против манифеста поставки"
+    echo "     awg-bot first-device        конфигурация первого устройства в терминал"
     ok "══════════════════════════════════════════════════════════════════"
 }
 
@@ -391,6 +460,7 @@ cmd_reconfigure() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --first-run) first_run=1; shift ;;
+            --advanced)  ADVANCED=1; shift ;;
             --role)      role="${2:-}"; shift 2 ;;
             --port)      # порт awg для СОЗДАВАЕМОГО сервера — без advanced-режима
                          [[ "${2:-}" =~ ^[0-9]+$ && "$2" -ge 1 && "$2" -le 65535 ]] || die "--port: число 1..65535"
@@ -441,7 +511,11 @@ cmd_reconfigure() {
         mkdir -p "$DATA_DIR"; chmod 700 "$DATA_DIR"
         seed_conf
         ensure_awg_server                  # чистый хост: сервер с нуля; есть — не трогаем
-        configure_topology                 # свежая установка — визард обязателен
+        if [[ "$ADVANCED" == "1" ]]; then
+            configure_topology             # --advanced: все вопросы, как раньше
+        else
+            configure_topology_auto        # обычный путь: ни одного вопроса
+        fi
         setup_secrets
         validate_config
         install_unit
@@ -452,6 +526,13 @@ cmd_reconfigure() {
             || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
         optional_steps
         print_map "$svc_state"
+        # Конфигурация первого устройства — в терминал: у человека прямо сейчас
+        # может не открываться Telegram, он ровно за этим ставит VPN. Бот то же
+        # самое уже прислал в чат, и там же оно останется.
+        if [[ "$svc_state" == "active" ]]; then
+            sleep 3                        # боту нужен тик, чтобы завести устройство
+            cmd_first_device || log "конфигурация первого устройства будет в чате бота"
+        fi
         # подчистить внешний установщик и архив (переданы двумя явными путями).
         # Мы — уже exec'нутый процесс, файл установщика никем не держится → безопасно.
         [[ -n "$cleanup_inst" && -f "$cleanup_inst" ]] && { rm -f "$cleanup_inst" && log "удалён установщик: $cleanup_inst"; }
@@ -883,6 +964,13 @@ cmd_firewall() {
         && exec ./venv/bin/python -m tools.firewall "$@" )
 }
 
+cmd_first_device() {  # показать конфигурацию первого устройства админа в терминале
+    require_installed
+    ( cd "$INSTALL_DIR" \
+        && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
+        && ./venv/bin/python -m tools.first_device "$@" )
+}
+
 cmd_awg() {  # awg status | install | reload | plan — ядро по манифесту поставки
     local sub="${1:-status}"
     [[ "$sub" == "status" || "$sub" == "plan" ]] || require_root
@@ -976,6 +1064,8 @@ awg-bot — управление установленным ботом.
   awg-bot gw-bundle          пересобрать бандл для шлюза (ключи не меняются)
   awg-bot awg <cmd>          ядро AmneziaWG по манифесту поставки (install/awg.lock):
                              status | install | reload | plan
+  awg-bot first-device       конфигурация первого устройства админа в терминал
+                             (ссылка, QR и файл — когда Telegram недоступен)
   awg-bot uninstall          удалить приложение (опционально: данные приложения)
 EOF
 }
@@ -998,6 +1088,7 @@ case "$VERB" in
     routing-doctor) cmd_routing_doctor ;;
     gw-bundle)   cmd_gw_bundle ;;
     awg)         cmd_awg "$@" ;;
+    first-device) cmd_first_device "$@" ;;
     -h|--help|help|"") usage ;;
     *) usage; die "неизвестная команда: $VERB" ;;
 esac

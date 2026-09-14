@@ -1141,6 +1141,8 @@ def settings_root() -> InlineKeyboardMarkup:
     kb.button(text="💳 Параметры подписок", callback_data=SetCB(sec="subs"))
     if config.ROUTING_ENABLED:
         kb.button(text="🇷🇺 Условная маршрутизация", callback_data=SetCB(sec="rt"))
+    kb.button(text="🖥 Сервер", callback_data=SetCB(sec="srv"))
+    kb.button(text="🛡 Файервол", callback_data=SetCB(sec="fw"))
     kb.button(text="📊 Мониторинг", callback_data=SetCB(sec="mon"))
     kb.button(text="💾 Резервное копирование", callback_data=SetCB(sec="backup"))
     kb.button(text="🔄 Обслуживание", callback_data=SetCB(sec="svc"))
@@ -1185,6 +1187,44 @@ def settings_routing(enabled: bool, has_gateway: bool = True) -> InlineKeyboardM
                   callback_data=SetCB(sec="rt_users", act="open"))
     kb.row(_back())
     kb.adjust(1)
+    return kb.as_markup()
+
+
+def settings_server() -> InlineKeyboardMarkup:
+    """Раздел «Сервер»: то, что уезжает в НОВЫЕ ссылки. Порт, подсеть и версия
+    ядра только показываются: их смена — это перевыпуск профилей всем, и живёт
+    она в переезде, а не в кнопке."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✏️ Адрес сервера", callback_data=SetCB(sec="srv", act="edit", key="app.network.server_host"))
+    kb.button(text="✏️ Имя в ссылках", callback_data=SetCB(sec="srv", act="edit", key="app.client_config.server_name"))
+    kb.button(text="✏️ DNS клиентов", callback_data=SetCB(sec="srv", act="edit", key="app.client_config.dns1"))
+    kb.button(text="✏️ MTU", callback_data=SetCB(sec="srv", act="edit", key="app.client_config.mtu"))
+    kb.adjust(1)
+    kb.row(_back())
+    return kb.as_markup()
+
+
+def settings_firewall(st: dict) -> InlineKeyboardMarkup:
+    """Раздел «Файервол». Пока армирован таймер отката — только два действия:
+    подтвердить или откатить сейчас. Всё остальное в этот момент — способ
+    забыть, что на часах идёт обратный отсчёт."""
+    kb = InlineKeyboardBuilder()
+    if st.get("rollback"):
+        kb.button(text="✅ Вход работает, подтверждаю",
+                  callback_data=SetCB(sec="fw", act="do", key="confirm"))
+        kb.button(text="↩️ Откатить сейчас", callback_data=SetCB(sec="fw", act="do", key="rollback"))
+        kb.adjust(1)
+        kb.row(_back())
+        return kb.as_markup()
+    kb.button(text="➕ Добавить адрес", callback_data=SetCB(sec="fw", act="edit", key="app.firewall.ssh_allow"))
+    for entry in st.get("raw_allow", [])[:8]:
+        kb.button(text=f"➖ {entry}", callback_data=SetCB(sec="fw", act="do", key="del", val=entry))
+    if st.get("enabled"):
+        kb.button(text="🔴 Выключить фильтр", callback_data=SetCB(sec="fw", act="do", key="off"))
+    else:
+        kb.button(text="🟢 Включить фильтр", callback_data=SetCB(sec="fw", act="do", key="on"))
+    kb.adjust(1)
+    kb.row(_back())
     return kb.as_markup()
 
 
