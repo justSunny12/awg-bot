@@ -106,9 +106,17 @@ def collect_warnings_gateway(services=None) -> list[str]:
     if rc != 0:
         warns.append(f"юнит {_c.GW_UNIT} не включён — после ребута обвязка "
                      f"шлюза не восстановится")
-    if not _c.GW_CLIENT_SUBNET:
-        warns.append("gateway.client_subnet не задан — проверка MASQUERADE "
-                     "выключена (агент не увидит его пропажу)")
+    # Спрашиваем gwguard, а не конфиг: подсеть клиентов приезжает в бандле и
+    # закрепляется в юните обвязки, а в conf агента её сознательно не просят.
+    # Проверка «пуст ли ключ» жаловалась на то, что исправно работает, — и это
+    # было ПЕРВЫМ сообщением агента новому админу.
+    try:
+        from awgbot.infra import gwguard as _gwg
+        if not _gwg.client_subnet():
+            warns.append("подсеть клиентов неизвестна (нет конфигурации с ВПС?) — "
+                         "проверка MASQUERADE выключена")
+    except Exception as e:                       # noqa: BLE001
+        log.warning("preflight(gw): подсеть клиентов: %s", e)
     try:
         from awgbot.infra import gwguard
         if gwguard.table_info() is None:
@@ -120,17 +128,30 @@ def collect_warnings_gateway(services=None) -> list[str]:
     return warns
 
 
+def _gateway_assigned(services) -> bool:
+    """Шлюз назначен? Без него зондировать нечего: обвязка только что
+    развёрнута, устройство ещё не выбрано — и «шлюз не отвечает» приходило бы
+    первым сообщением сразу после успешного «✅ Обвязка развёрнута»."""
+    try:
+        return services.db.gateway_device() is not None
+    except Exception as e:                               # noqa: BLE001
+        log.warning("preflight: шлюз не проверен: %s", e)
+        return False
+
+
 def _firewall_warnings(services) -> list[str]:
     from awgbot.infra import nftguard
     if not nftguard.enabled():
-        return ["файервол хоста не под управлением бота (firewall.enabled=false): "
-                "SSH из туннеля не фильтруется по устройствам админа — "
-                "выполните `awg-bot firewall setup`"]
+        return ["файервол хоста не под управлением бота: SSH из туннеля не "
+                "фильтруется по устройствам админа. Включить — ⚙️ Настройки → "
+                "🛡 Файервол (правила применяются с таймером отката, "
+                "подтверждение придёт сюда же)"]
     out: list[str] = []
     spec = nftguard.build_spec(services.db.admin_device_addresses(config.ADMIN_ID))
     if spec.ssh_open:
-        out.append("firewall.ssh_allow пуст — SSH хоста открыт для всех адресов; "
-                   "добавьте свои IP: `awg-bot firewall allow <ip>`")
+        out.append("список адресов для SSH пуст — хост открыт для всех адресов "
+                   "(вход только по ключам). Добавить свои — ⚙️ Настройки → "
+                   "🛡 Файервол → «➕ Добавить адрес»")
     if spec.unresolved:
         out.append("firewall.ssh_allow: не резолвятся " + ", ".join(spec.unresolved))
     if not spec.udp_ports and not awg_in_container():
@@ -205,7 +226,7 @@ def collect_warnings(services) -> list[str]:
     # Проверяем ТОЛЬКО если фича включена в конфиге — иначе она спит и мешать не
     # должна. Провал не блокирует старт: фича сама себя выключает (UI её прячет,
     # планировщик пропускает), VPN при этом работает как обычно.
-    if config.ROUTING_ENABLED:
+    if config.ROUTING_ENABLED and _gateway_assigned(services):
         try:
             ok, reason = services.routing_status()
             if not ok:

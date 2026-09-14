@@ -81,7 +81,7 @@ class GwStatus:
     month_tx: int = 0
     egress_ms: float | None = None          # выход наружу через домашний канал, мс
     tg_missing: list[str] = field(default_factory=list)   # диапазоны Telegram без маркировки
-    mark_status: str = ""                   # шлюзовое устройство: confirmed|unmarked|foreign|released
+    mark_status: str = ""                   # шлюзовое устройство: confirmed|unmarked|foreign
     ts: str = ""                            # когда снят (ISO); пусто — живой
 
     def to_json(self) -> str:
@@ -515,7 +515,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                 pass
 
     # ── шлюзовое устройство: пометка в основном боте ─────────────────────────
-    _GW_MARK_KEY = "gw_mark_status"           # unmarked | confirmed | foreign | released | ?
+    _GW_MARK_KEY = "gw_mark_status"           # unmarked | confirmed | foreign | ?
 
     def gateway_mark_outcome(self) -> dict:
         """После применения бандла: он ли помеченный шлюз. Решение принял

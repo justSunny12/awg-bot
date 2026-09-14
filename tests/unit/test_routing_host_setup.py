@@ -130,7 +130,14 @@ def test_runtime_is_read_from_the_same_yaml_as_the_bot(script):
     никуда, а отказ выглядел бы как «у включённых пропал интернет».
     """
     assert "/^  runtime:/" in script, "runtime не читается из app.yaml"
-    assert 'AWG_RUNTIME="${AWG_RUNTIME:-docker}"' in script, "дефолт обязан быть docker"
+    # Дефолт обязан совпадать с дефолтом бота: конфиг не прочитался — оба
+    # должны решить одинаково, иначе обвяз соберётся под чужой режим.
+    from awgbot.core import config
+    import re as _re
+    src = (Path(config.__file__)).read_text(encoding="utf-8")
+    bot_default = _re.search(r'_docker\.get\("runtime"\)\s*or\s*"(\w+)"', src)
+    assert bot_default and bot_default.group(1) == "host"
+    assert 'AWG_RUNTIME="${AWG_RUNTIME:-host}"' in script, "дефолт разошёлся с ботом"
 
 
 def test_container_is_not_awaited_in_host_mode(script):

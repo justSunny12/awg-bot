@@ -109,3 +109,35 @@ def test_provision_installs_dnsmasq_when_only_the_binary_is_present(services, mo
     monkeypatch.setattr(sh.settings, "set_value", lambda k, v: [k])
     services.routing_provision()
     assert any(c.startswith("apt-get install -y --no-install-recommends dnsmasq") for c in seen)
+
+
+def test_provisioning_writes_the_interface_and_enables_the_feature(services, monkeypatch):
+    """Финальный эффект развёртывания: интерфейс линка в конфиге и включённая
+    функция. Выпади запись — скрипты отработали, хост настроен, а раздел снова
+    показывает «обвязка не развёрнута», и кнопки «Назначить шлюз», на которую
+    отправляет итоговое сообщение, в нём нет."""
+    import subprocess
+    from awgbot.infra import routing as infra_routing
+    written: dict = {}
+    invalidated = []
+
+    class CP:
+        def __init__(self, rc=0, out=b"dnsmasq.service enabled"):
+            self.returncode, self.stdout, self.stderr = rc, out, b""
+
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: CP())
+    monkeypatch.setattr(sh.settings, "set_value", lambda k, v: written.__setitem__(k, v) or [k])
+    monkeypatch.setattr(infra_routing, "invalidate_self_check",
+                        lambda *a, **k: invalidated.append(1))
+    services.routing_provision()
+    assert written["app.routing.gw_interface"] == services._RT_LINK_IF
+    assert written["app.routing.enabled"] is True
+    assert invalidated, "кэш вердикта не сброшен — функция считалась бы спящей ещё минуту"
+
+
+def test_provisioned_flag_reads_the_config(services, monkeypatch):
+    monkeypatch.setattr(sh.settings, "get", lambda k, d=None: "" if k.endswith("gw_interface") else d)
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "")
+    assert services.routing_provisioned() is False
+    monkeypatch.setattr(sh.settings, "get", lambda k, d=None: "awglink" if k.endswith("gw_interface") else d)
+    assert services.routing_provisioned() is True

@@ -134,6 +134,14 @@ def main(argv: list[str]) -> int:
                 })
             except (urllib.error.HTTPError, urllib.error.URLError, OSError):
                 pass                            # опознали — а ответ не главное
+            # Подтверждаем обработку апдейта: offset коммитится следующим
+            # запросом. Без него Telegram отдаст это же сообщение уже
+            # ЗАПУЩЕННОМУ боту, и первым, что админ увидит в чате, будет
+            # реакция на собственный установочный код.
+            try:
+                api(token, "getUpdates", {"offset": offset, "timeout": 0}, timeout=10)
+            except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError):
+                pass
             say(f"[pair] код принял {who} (id {frm['id']})")
             print(f"ADMIN_ID={frm['id']}")
             return 0

@@ -1229,8 +1229,12 @@ def settings_firewall(st: dict) -> InlineKeyboardMarkup:
         kb.row(_back())
         return kb.as_markup()
     kb.button(text="➕ Добавить адрес", callback_data=SetCB(sec="fw", act="edit", key="app.firewall.ssh_allow"))
-    for entry in st.get("raw_allow", [])[:8]:
-        kb.button(text=f"➖ {entry}", callback_data=SetCB(sec="fw", act="do", key="del", val=entry))
+    # В callback_data уезжает НОМЕР записи, а не сам адрес: разделитель полей —
+    # двоеточие, и любой IPv6 («2001:db8::1») ломал упаковку с ValueError. Адрес
+    # при этом уже записан в конфиг, то есть раздел переставал открываться
+    # навсегда, и убрать запись из чата было нечем.
+    for i, entry in enumerate(st.get("raw_allow", [])[:8]):
+        kb.button(text=f"➖ {entry}", callback_data=SetCB(sec="fw", act="do", key="del", val=str(i)))
     if st.get("enabled"):
         kb.button(text="🔴 Выключить фильтр", callback_data=SetCB(sec="fw", act="do", key="off"))
     else:

@@ -222,7 +222,10 @@ CONTAINER = _docker.get("container", "amnezia-awg2")
 # ссылок (docs/ROADMAP.md, шаг 3).
 APP_CONTAINER = _docker.get("app_container") or CONTAINER
 AWG_INTERFACE = _docker.get("interface", "awg0")
-AWG_DIR = _docker.get("awg_dir", "/opt/amnezia/awg")
+# Дефолт — каталог awg-quick на хосте, как в шаблоне conf/app.yaml. Прежний
+# /opt/amnezia/awg — путь докерной Amnezia, и конфиг без ключа означает не
+# «докерная установка», а «ключ не задан».
+AWG_DIR = _docker.get("awg_dir", "/etc/amnezia/amneziawg")
 CONF_PATH = f"{AWG_DIR}/{AWG_INTERFACE}.conf"
 CONF_BAK_PATH = f"{AWG_DIR}/{AWG_INTERFACE}.conf.bak"
 PSK_PATH = f"{AWG_DIR}/wireguard_psk.key"
@@ -257,7 +260,10 @@ SUBNET_PREFIX = _net.get("subnet_prefix", "10.8.1")
 # install/harden_firewall.sh теперь выводит источник SSH-вайтлиста (bridge-подсеть
 # контейнера) динамически из docker, а не из subnet_cidr (тот адрес не доезжает
 # до хоста из-за MASQUERADE — см. reconcile_ssh_access).
-IP_HOST_START = _net.get("ip_host_start", 1)
+# .2 — первый клиентский адрес новой раскладки (.1 занимает сам сервер).
+# Дефолт 1 достался от докерной схемы с сервером на .0 и отдал бы первому
+# клиенту адрес сервера.
+IP_HOST_START = _net.get("ip_host_start", 2)
 IP_HOST_END = _net.get("ip_host_end", 254)
 
 # Порт SSH хоста. Общий источник истины для двух слоёв фильтра доступа к SSH:
@@ -376,7 +382,9 @@ _cc = _app.get("client_config", {})
 DNS1 = _cc.get("dns1", "1.1.1.1")
 DNS2 = _cc.get("dns2", "1.0.0.1")
 MTU = _cc.get("mtu", 1376)
-KEEPALIVE_SECONDS = _cc.get("keepalive_seconds", 25)
+# Диапазон, а не число: фиксированные 25 секунд — метроном, видный без
+# расшифровки (см. conf/app.yaml). Дефолт обязан быть таким же, как шаблон.
+KEEPALIVE_SECONDS = _cc.get("keepalive_seconds", "25-35")
 CLIENT_ALLOWED_IPS = _cc.get("allowed_ips", "0.0.0.0/0, ::/0")
 SERVER_NAME = _cc.get("server_name", "Сервер 1")
 

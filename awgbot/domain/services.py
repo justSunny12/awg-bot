@@ -2268,10 +2268,6 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         return {"device": self.db.get_device(dev.id), "previous": prev,
                 "created": created, "rekeyed": rekey}
 
-    def gateway_mark(self, device_id: int) -> dict:
-        """Совместимость: назначение существующего устройства без смены ключей."""
-        return self.gateway_setup(device_id)
-
     def gateway_remove(self) -> Optional[object]:
         """Убрать шлюз: флаг снять, ключи линка сменить (прежняя машина теряет
         линк), условную маршрутизацию выключить. Возвращает бывший шлюз."""
@@ -2293,9 +2289,6 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         except Exception as e:                            # noqa: BLE001
             log.warning("gateway_remove: реконсиляция: %s", e)
         return prev
-
-    def gateway_release(self) -> Optional[object]:
-        return self.gateway_remove()
 
     def gateway_state(self) -> dict:
         """Одно состояние для экрана: устройство, когда выпущен бандл, жив ли
@@ -2499,6 +2492,11 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             "закрепление обвязки от ребута")
         run(["sh", str(base / "routing-link-setup.sh"), "--apply"], "линк до шлюза")
         settings.set_value("app.routing.gw_interface", self._RT_LINK_IF)
+        # Включаем и саму функцию: разворачивать обвязку и оставить тумблер
+        # выключенным значило бы спрятать «🛰 Назначить шлюз» — кнопку, на
+        # которую отправляет итоговое сообщение. До назначения шлюза включённая
+        # функция ничего не меняет: маркировать трафик некуда.
+        settings.set_value("app.routing.enabled", True)
         routing.invalidate_self_check()
         log.info("условная маршрутизация: обвязка развёрнута, линк %s", self._RT_LINK_IF)
         return "\n".join(out[-1:])[-1500:]

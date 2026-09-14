@@ -50,6 +50,10 @@ def gwsetup(services, fake_awg, make_active_client, monkeypatch):
     monkeypatch.setattr(services, "gw_bundle_encrypted", lambda: _issued(b"ENC", "awg-gw-bundle.enc"))
     monkeypatch.setattr(services, "gw_bundle_plain", lambda: _issued(b"PLAIN", "awg-gw-bundle.sh"))
     monkeypatch.setattr(settings, "set_value", lambda k, v: [k])
+    # Токен агента живёт в /etc/awg-bot/env — в тестах держим его в памяти.
+    token = {"v": ""}
+    monkeypatch.setattr(services, "gw_bot_token", lambda: token["v"])
+    monkeypatch.setattr(services, "set_gw_bot_token", lambda t: token.__setitem__("v", t))
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
     monkeypatch.setattr(settings, "get_bool", lambda k, d=False: True if k == "app.routing.enabled" else d)
     monkeypatch.setattr(services, "routing_status", lambda: (True, "ок"))
@@ -80,7 +84,8 @@ async def test_settings_assign_existing_device_no_rekey(services, fake_bot, gwse
     await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=pi.id), services)
     assert any("станет шлюзом" in s[1] for s in nav.sent if s[0] == "edit_text")
     cb, nav = _acb(fake_bot)
-    await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi.id), services)
+    await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi.id),
+                              services, FakeState())
     assert services.db.gateway_device().id == pi.id
     assert services.modes == [], "тот же ключ линка: машина уже его знает"
     docs = _docs(nav)
@@ -99,15 +104,26 @@ async def test_settings_change_gateway_rekeys_and_gives_plain_first_run_file(ser
     cb, nav = _acb(fake_bot)
     await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=phone.id), services)
     assert any("Сейчас шлюз — «NASPi»" in s[1] for s in nav.sent if s[0] == "edit_text")
+    # Со сменой ключей файл едет открытым и ставится с нуля — значит нужен
+    # токен агента, как и для новой машины.
+    st = FakeState()
     cb, nav = _acb(fake_bot)
-    await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=phone.id), services)
+    await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=phone.id), services, st)
+    assert any("Токен бота шлюза" in s[1] for s in nav.sent if s[0] == "edit_text")
+    assert services.db.gateway_device().id == pi.id, "до токена шлюз прежний"
+    msg = _amsg(fake_bot, "123456789:AA-token-value-long-enough-here")
+    await sh.gateway_token_received(msg, st, services)
+    nav = msg
     assert services.db.gateway_device().id == phone.id
     assert services.db.get_device(pi.id).is_gateway == 0
     assert services.modes == ["--rekey"]
     docs = _docs(nav)
     assert len(docs) == 1 and "первого применения" in docs[0][1]
     assert not any("GW1:" in (s[1] or "") for s in nav.sent), "токенов в новой схеме нет"
-    assert any("руками" in s[1] for s in nav.sent if s[0] == "edit_text")
+    # Машина ставится с нуля — значит и здесь показывается та же инструкция,
+    # что для новой машины: одна команда со своей машины.
+    assert any("--role gateway" in s[1] and "scp" in s[1]
+               for s in nav.sent if s[0] == "answer")
 
 
 async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake_bot, gwsetup, monkeypatch):
@@ -210,11 +226,11 @@ def test_gateway_mark_rules(services, gwsetup, make_active_client):
     client = make_active_client(name="Клиент", tg_id=779)
     foreign = services.add_device(client.id, "x")
     with pytest.raises(SE):
-        services.gateway_mark(foreign.device_id)
-    res = services.gateway_mark(pi.id)
+        services.gateway_setup(foreign.device_id)
+    res = services.gateway_setup(pi.id)
     assert res["previous"] is None and services.db.gateway_device().id == pi.id
-    assert services.gateway_mark(pi.id)["previous"] is None, "повтор — без изменений"
-    res = services.gateway_mark(phone.id)
+    assert services.gateway_setup(pi.id)["previous"] is None, "повтор — без изменений"
+    res = services.gateway_setup(phone.id)
     assert res["previous"].id == pi.id and services.db.gateway_device().id == phone.id
     assert [d.id for d in services.gateway_candidates()] == [pi.id], "текущий шлюз в кандидатах не нужен"
 

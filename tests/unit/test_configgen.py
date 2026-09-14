@@ -281,3 +281,30 @@ def test_keepalive_passes_through_as_written():
         mp.setattr(config, "KEEPALIVE_SECONDS", "40-50")
         assert "PersistentKeepalive = 40-50" in cg.generate(
             "PRIV", "PUB", "10.8.1.5", _params())["conf"]
+
+
+# ── живые деплой-значения ────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("key, value, where", [
+    ("app.network.server_host", "vpn.example.org", "hostName"),
+    ("app.client_config.server_name", "Мой сервер", "description"),
+    ("app.client_config.dns1", "10.8.1.1", "dns1"),
+    ("app.client_config.dns2", "10.8.1.1", "dns2"),
+])
+def test_server_settings_are_read_at_issue_time_not_at_start(key, value, where, monkeypatch):
+    """Раздел «🖥 Сервер» правится из чата и обязан применяться к СЛЕДУЮЩЕЙ
+    выданной ссылке. Читай мы константы config, экран показывал бы одно, а
+    ссылка, выданная через минуту, несла другое — и заметил бы это только
+    человек, у которого не подключается."""
+    from awgbot.core import settings
+    monkeypatch.setattr(settings, "get", lambda k, d=None, _k=key, _v=value: _v if k == _k else d)
+    doc = cg.decode_vpn(cg.generate("PRIV", "PUB", "10.8.1.5", _params())["vpn"])
+    assert doc[where] == value
+
+
+def test_mtu_is_read_at_issue_time(monkeypatch):
+    from awgbot.core import settings
+    monkeypatch.setattr(settings, "get",
+                        lambda k, d=None: 1280 if k == "app.client_config.mtu" else d)
+    res = cg.generate("PRIV", "PUB", "10.8.1.5", _params())
+    assert "MTU = 1280" in res["conf"]

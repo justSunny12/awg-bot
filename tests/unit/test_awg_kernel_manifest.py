@@ -131,7 +131,10 @@ def test_server_takes_dot_one_and_gives_clients_dot_two(server):
     dnsmasq условной маршрутизации — приватный резолвер получает адрес, на
     котором кто-то отвечает."""
     assert "Address = ${SUBNET_PREFIX}.1/24" in server
-    assert "SERVER_ADDR=%s.1" in server
+    assert 'SERVER_HOST_OCTET="1"' in server
+    # У доставшегося от докерной Amnezia сервера адрес .0 — отдаём его как есть,
+    # иначе первый клиент получил бы адрес самого сервера.
+    assert 'SERVER_HOST_OCTET="${addr##*.}"' in server
 
 
 def test_server_obfuscation_avoids_the_two_known_traps(server):
@@ -145,9 +148,12 @@ def test_server_obfuscation_avoids_the_two_known_traps(server):
 def test_server_is_idempotent(server):
     """Повторный запуск на живом сервере обязан быть безвредным: конфиг есть —
     читаем из него топологию и выходим, ключи не перегенерируем."""
-    head = server.split('if [[ -f "$CONF" ]]; then', 1)[1].split("fi", 1)[0]
+    head = server.split('if [[ -f "$CONF" ]]; then', 1)[1].split("\nfi\n", 1)[0]
     assert "не трогаю" in head and "exit 0" in head
     assert head.index("ListenPort") < head.index("exit 0")
+    # Порт и подсеть живого сервера обязаны уехать наружу: установщик пишет их
+    # в app.yaml, и без них бот падает на валидации «не задан server_port».
+    assert "emit" in head and head.index("SUBNET_PREFIX=") < head.index("emit")
 
 
 def test_server_rolls_back_a_config_that_does_not_come_up(server):
@@ -207,11 +213,15 @@ def test_generation_bump_raises_a_second_interface(bot_sh):
     assert 'yaml_get "$app" role' in body and "gateway" in body, "у шлюза клиентов нет"
     assert '[[ "$want" -gt "$applied" ]] || return 0' in body
     assert "awg-server-init.sh" in body
-    assert 'yaml_set "$app" migration_interface' in body
-    assert 'yaml_set "$app" migration_subnet_prefix' in body
+    assert 'yaml_set_soft "$app" migration_interface' in body
+    assert 'yaml_set_soft "$app" migration_subnet_prefix' in body
     assert "awg_state_set AWG_GENERATION_TARGET" in body
     # пул адресов: .1 у нового интерфейса занимает сервер
-    assert 'yaml_set "$app" ip_host_start 2' in body
+    assert 'yaml_set_soft "$app" ip_host_start 2' in body
+    # Мягкий вариант не случаен: правка идёт ВНУТРИ обновления, и ключ,
+    # появившийся в шаблоне позже, у боевого конфига просто отсутствует.
+    # Смерть здесь означала бы подменённый код и неподнятый сервис.
+    assert 'yaml_set "$app"' not in body, "жёсткий yaml_set внутри обновления"
 
 
 def test_missing_state_file_adopts_the_delivery_generation(bot_sh):
@@ -230,3 +240,16 @@ def test_second_interface_name_and_subnet_do_not_collide(bot_sh):
     assert '[[ -e "$conf_dir/awg$i.conf" || "awg$i" == "$base_if" ]] && continue' in body
     assert 'grep -rqs "$cand\\." "$conf_dir"' in body
     assert "не подобрать имя/подсеть" in body, "без свободных имён — предупреждение, а не тишина"
+
+
+def test_installer_writes_topology_even_for_a_pre_existing_server(bot_sh):
+    """Установка на хост с готовым awg0.conf (переустановка, образ с уже
+    поднятой AmneziaWG) прежде умирала на валидации «не задан server_port» —
+    топология писалась только для сервера, созданного нами."""
+    body = bot_sh.split("ensure_awg_server() {", 1)[1].split("\n}\n", 1)[0]
+    for key in ("server_port", "subnet_prefix", "subnet_cidr", "interface", "runtime"):
+        assert f'yaml_set "$app" {key}' in body, f"{key} не пишется"
+    assert body.index('yaml_set "$app" server_port') < body.index('if [[ "$created" == "1" ]]'), \
+        "запись топологии снова спрятана под created"
+    # первый клиентский адрес — следующий за адресом сервера, а не константа
+    assert "BASH_REMATCH[1]} + 1" in body and "ip_host_start" in body

@@ -96,6 +96,18 @@ require_root() { [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "нужен root: sudo a
 require_installed() { [[ -x "$INSTALL_DIR/venv/bin/python" ]] || die "awg-bot не установлен в $INSTALL_DIR (сначала внешний установщик)"; }
 
 # Заменить значение КОНКРЕТНОГО ключа yaml, сохранив отступ и комментарии.
+yaml_set_soft() {  # как yaml_set, но отсутствие ключа — предупреждение, а не смерть
+    # Нужно там, где правка идёт ВНУТРИ обновления: конфиг боевого сервера не
+    # мигрирует, и ключ, появившийся в шаблоне позже, у него просто
+    # отсутствует. Смерть здесь означала бы прерванный post_update — код уже
+    # подменён, сервис ещё не поднят.
+    local file="$1" key="$2" val="$3"
+    if ! grep -qE "^[[:space:]]*${key}:" "$file"; then
+        warn "в $file нет ключа '$key' — пропускаю (конфиг старше поставки; задай вручную)"
+        return 0
+    fi
+    yaml_set "$file" "$key" "$val"
+}
 yaml_set() {  # yaml_set FILE KEY VALUE
     local file="$1" key="$2" val="$3"
     grep -qE "^[[:space:]]*${key}:" "$file" || die "в $file нет ключа '$key' — шаблон конфига не тот?"
@@ -239,6 +251,19 @@ configure_topology_auto() {
     host="$(yaml_get "$app" server_host)"
     if [[ -z "$host" ]]; then
         host="$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K[0-9.]+' || true)"
+        # За 1:1 NAT (AWS, GCP, Oracle, Azure) локальный адрес приватный, а в
+        # ссылку нужен публичный. Молча вписав приватный, мы выдали бы первому
+        # же устройству нерабочий Endpoint — и ровно тому, кто ставит VPN,
+        # потому что не может открыть Telegram.
+        case "$host" in
+            10.*|192.168.*|127.*|169.254.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*)
+                local _pub
+                _pub="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+                if [[ -n "$_pub" && "$_pub" != "$host" ]]; then
+                    log "локальный адрес $host приватный (хост за NAT) — беру внешний $_pub"
+                    host="$_pub"
+                fi ;;
+        esac
         [[ -n "$host" ]] || host="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
         [[ -n "$host" ]] || { warn "внешний адрес не определился — спрошу"; configure_topology; return; }
         yaml_set "$app" server_host "\"$host\""
@@ -398,7 +423,12 @@ optional_steps() {
     # которого человек сейчас подключён, система знает сама. Третий вариант —
     # свой список: у кого-то вход с нескольких адресов или по DynDNS-имени.
     local here="" ans allow
+    # SSH_CONNECTION под sudo не переживает env_reset (его нет в env_keep ни в
+    # Debian, ни в Ubuntu), а установка документирована как `curl | sudo bash`.
+    # Поэтому второй источник — utmp: `who am i` печатает адрес в скобках.
     here="$(awk '{print $1}' <<<"${SSH_CONNECTION:-}")"
+    [[ -n "$here" ]] || here="$(who am i 2>/dev/null | sed -nE 's/.*\(([0-9a-fA-F.:]+)\).*/\1/p' | head -n1)"
+    [[ -n "$here" ]] || here="$(awk '{print $1}' <<<"${SSH_CLIENT:-}")"
     local prompt="Ограничить доступ по SSH"
     [[ -n "$here" ]] && prompt="$prompt адресом, с которого вы сейчас подключены ($here)"
     read -r -p "$(printf '%s [y / свой список адресов / N]: ' "$prompt")" ans < /dev/tty || ans=""
@@ -412,8 +442,7 @@ optional_steps() {
     # Таймер отката длиннее штатного: человек ещё в середине установки, и трёх
     # минут на «проверь вход новым подключением» ему мало.
     cmd_firewall setup --allow "$allow" --yes --rollback-seconds 900 \
-        || warn "файервол не включён — позже: awg-bot firewall setup"
-    log "подтвердить правила можно кнопкой в чате бота — заходить в SSH для этого не нужно"
+        || warn "файервол не включён — позже: в боте, ⚙️ Настройки → 🛡 Файервол"
 }
 
 print_map() {  # print_map "active"|"failed"
@@ -630,10 +659,17 @@ cmd_reconfigure() {
 
 # ── update ───────────────────────────────────────────────────────────────────
 locate_tgz() {  # locate_tgz DEFAULT_NAME EXPLICIT → печатает путь или пусто
-    local name="$1" explicit="${2:-}"
+    # Имён два: awg-bot-update.tgz — как называл архив самообновлятор прежних
+    # версий, awg-bot.tgz — как называется АССЕТ РЕЛИЗА. Человек, скачавший
+    # поставку руками, получает второе, и `awg-bot update` без аргумента
+    # отвечал ему «не найден awg-bot-update.tgz», хотя архив лежит рядом.
+    local name="$1" explicit="${2:-}" n d
     if [[ -n "$explicit" ]]; then [[ -f "$explicit" ]] && { echo "$explicit"; return; }; die "архив не найден: $explicit"; fi
-    [[ -f "./$name"          ]] && { echo "$(pwd)/$name"; return; }   # рядом с оператором (CWD)
-    [[ -f "$SELF_DIR/$name"  ]] && { echo "$SELF_DIR/$name"; return; } # рядом со скриптом
+    for n in "$name" "awg-bot.tgz"; do
+        for d in "$(pwd)" "$SELF_DIR"; do
+            [[ -f "$d/$n" ]] && { echo "$d/$n"; return; }
+        done
+    done
     return 0
 }
 cmd_update() {
@@ -715,6 +751,18 @@ ensure_host_autostart() {
                 && ok "awg-quick@$iface включён на автозагрузку." \
                 || warn "не удалось включить awg-quick@$iface — после ребута туннели не поднимутся."
         fi
+    fi
+    # Копия routing-host-setup.sh в /usr/local/sbin — это то, что юнит
+    # awg-bot-routing.service выполняет ПРИ КАЖДОЙ ЗАГРУЗКЕ. Её кладут один раз,
+    # при развёртывании обвязки, и обновления её не трогали: исправление,
+    # приехавшее в поставке, применялось руками из /opt, а после ребута хост
+    # поднимался по версии времён установки.
+    local _rhs="/usr/local/sbin/routing-host-setup.sh"
+    if [[ -f "$_rhs" && -f "$INSTALL_DIR/install/routing-host-setup.sh" ]] \
+       && ! cmp -s "$INSTALL_DIR/install/routing-host-setup.sh" "$_rhs"; then
+        install -m 0755 "$INSTALL_DIR/install/routing-host-setup.sh" "$_rhs" \
+            && ok "обновлена копия обвязки в $_rhs (её выполняет юнит при загрузке)" \
+            || warn "не удалось обновить $_rhs — после ребута обвязка встанет по старой версии"
     fi
     # Юнит и таймер списков из прежних версий: скрипт удалён, списки обновляет
     # сам бот; остаток падал при каждой загрузке.
@@ -810,16 +858,38 @@ ensure_awg_generation() {
         || { warn "второй интерфейс не поднят — переезд пока невозможен; см. journalctl -u awg-quick@$new_if"; return 0; }
     # Пул адресов начинается с .2: у созданного нами интерфейса .1 занимает сам
     # сервер, и двойник, выданный на .1, конфликтовал бы с ним.
-    [[ "$(yaml_get "$app" ip_host_start)" == "1" ]] && yaml_set "$app" ip_host_start 2
-    yaml_set "$app" migration_interface "\"$new_if\""
-    yaml_set "$app" migration_subnet_prefix "\"$new_prefix\""
+    [[ "$(yaml_get "$app" ip_host_start)" == "1" ]] && yaml_set_soft "$app" ip_host_start 2
+    yaml_set_soft "$app" migration_interface "\"$new_if\""
+    yaml_set_soft "$app" migration_subnet_prefix "\"$new_prefix\""
     awg_state_set AWG_GENERATION_TARGET "$want"
     ok "второй интерфейс $new_if готов: бот попросит начать переезд профилей при старте"
+}
+
+post_update_rescue() {  # ловушка второй половины обновления
+    # cmd_update остановил сервис и передал управление сюда через exec. Любой
+    # отказ ниже (нет сети для pip, битый конфиг, systemd) оставлял бы НОВЫЙ код
+    # на диске и ОСТАНОВЛЕННЫЙ сервис, причём молча: апдейтер запущен из
+    # systemd-run с выводом в /dev/null. Поэтому: поднять сервис на том, что
+    # есть, и сказать админу в чат.
+    local rc=$?
+    [[ "$rc" -eq 0 ]] && return 0
+    warn "обновление прервалось (код $rc) — поднимаю сервис на прежнем состоянии"
+    systemctl start "$SERVICE" 2>/dev/null || true
+    ( cd "$INSTALL_DIR" 2>/dev/null \
+        && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
+        && ./venv/bin/python -c "
+from awgbot.infra import tgsend
+tgsend.send('⚠️ <b>Обновление прервалось.</b>\n\nКод уже подменён, '
+            'но довести установку не удалось. Сервис поднят на том, что есть.\n\n'
+            'Посмотреть причину: <code>journalctl -u awg-bot -e</code>, '
+            'повторить: <code>sudo awg-bot update &lt;архив&gt;</code>.')
+" >/dev/null 2>&1 ) || true
 }
 
 cmd_post_update() {
     # Вторая половина обновления, исполняется УЖЕ НОВЫМ скриптом (см. cmd_update).
     require_root
+    trap post_update_rescue EXIT
     local wipe="${1:-0}"
     ensure_python
     build_venv
@@ -843,6 +913,7 @@ cmd_post_update() {
     systemctl start "$SERVICE"; sleep 1
     systemctl is-active --quiet "$SERVICE" && ok "$SERVICE перезапущен." \
         || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+    trap - EXIT
     ok "Обновление завершено."
 }
 
@@ -1061,25 +1132,35 @@ ensure_awg_kernel() {  # первичная установка обеих рол
         || die "AmneziaWG не установлен — без ядра бот бесполезен; исправь причину выше и повтори установку"
 }
 
-ensure_awg_server() {  # клиентская роль, чистый хост: сервер с нуля, топология в app.yaml
+ensure_awg_server() {  # клиентская роль: сервер с нуля или топология уже живого
     local app="$CONF_DIR/app.yaml" out
     out="$(bash "$INSTALL_DIR/install/awg-server-init.sh")" || die "сервер AmneziaWG не создан"
-    local created port prefix
+    local created port prefix srv_addr iface
     created="$(sed -nE 's/^CREATED=(.*)$/\1/p' <<<"$out")"
     port="$(sed -nE 's/^LISTEN_PORT=(.*)$/\1/p' <<<"$out")"
     prefix="$(sed -nE 's/^SUBNET_PREFIX=(.*)$/\1/p' <<<"$out")"
+    srv_addr="$(sed -nE 's/^SERVER_ADDR=(.*)$/\1/p' <<<"$out")"
+    iface="$(sed -nE 's/^AWG_IF=(.*)$/\1/p' <<<"$out")"
+
+    # Топология пишется В ОБОИХ случаях — и когда сервер создали мы, и когда он
+    # уже стоял. Прежде её писали только для созданного, и установка на хост с
+    # готовым awg0.conf (переустановка, образ с AmneziaWG) умирала на валидации
+    # «не задан network.server_port» — уже после ввода токена и сопряжения.
+    yaml_set "$app" runtime "\"host\""
+    yaml_set "$app" awg_dir "\"/etc/amnezia/amneziawg\""
+    [[ -n "$iface" ]] && yaml_set "$app" interface "\"$iface\""
+    # Первый клиентский адрес — следующий за адресом сервера: у нашего сервера
+    # это .1 → клиенты с .2, у доставшегося от докерной Amnezia .0 → с .1.
+    if [[ "$srv_addr" =~ \.([0-9]+)$ ]]; then
+        yaml_set "$app" ip_host_start "$(( ${BASH_REMATCH[1]} + 1 ))"
+    fi
+    [[ -n "$port" ]]   && yaml_set "$app" server_port "$port"
+    [[ -n "$prefix" ]] && { yaml_set "$app" subnet_prefix "\"$prefix\""; yaml_set "$app" subnet_cidr "\"${prefix}.0/24\""; }
+    awg_state_set AWG_GENERATION_APPLIED "$(lock_get AWG_GENERATION)"
     if [[ "$created" == "1" ]]; then
-        # Свежий сервер: бот ходит на хост, конфиг в /etc/amnezia/amneziawg,
-        # сервер занимает .1 — клиентам с .2. Топологию пишем сразу, чтобы
-        # визард увидел её как «уже настроено» и не спрашивал.
-        yaml_set "$app" runtime "\"host\""
-        yaml_set "$app" awg_dir "\"/etc/amnezia/amneziawg\""
-        yaml_set "$app" interface "\"awg0\""
-        yaml_set "$app" ip_host_start 2
-        [[ -n "$port" ]]   && yaml_set "$app" server_port "$port"
-        [[ -n "$prefix" ]] && { yaml_set "$app" subnet_prefix "\"$prefix\""; yaml_set "$app" subnet_cidr "\"${prefix}.0/24\""; }
-        awg_state_set AWG_GENERATION_APPLIED "$(lock_get AWG_GENERATION)"
-        ok "сервер AmneziaWG создан: awg0, порт $port, подсеть ${prefix}.0/24 (сервер .1, клиенты с .2)"
+        ok "сервер AmneziaWG создан: $iface, порт $port, подсеть ${prefix}.0/24 (сервер $srv_addr)"
+    else
+        ok "сервер AmneziaWG уже был: $iface, порт $port, подсеть ${prefix}.0/24 (сервер $srv_addr)"
     fi
 }
 

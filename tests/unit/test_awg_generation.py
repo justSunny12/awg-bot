@@ -135,3 +135,69 @@ def test_vpn_link_carries_the_interface_protocol(lockdir, monkeypatch):
     old = configgen.decode_vpn(
         configgen.generate("PRIV=", "PUB=", "10.8.1.5", params, iface="awg0")["vpn"])
     assert old["defaultContainer"] == "amnezia-awg2"
+
+
+# ── согласование с установщиком ──────────────────────────────────────────────
+
+def test_state_file_and_keys_match_the_installer():
+    """Файл состояния пишет установщик (shell), читает бот (python). Разойдись
+    путь или имя ключа — установщик пишет в одно место, бот читает пустоту,
+    `applied_generation` усыновляет поколение поставки, и переезд не будет
+    объявлен НИКОГДА. Тихо, без единой ошибки."""
+    import re
+    from pathlib import Path as _P
+    script = (_P(__file__).resolve().parents[2] / "awg-bot.sh").read_text(encoding="utf-8")
+    assert 'AWG_STATE="$ETC_DIR/awg.state"' in script
+    assert 'ETC_DIR="/etc/awg-bot"' in script
+    # путь бота: рядом с conf, то есть /etc/awg-bot/awg.state
+    import awgbot.infra.awglock as al
+    from awgbot.core import config
+    assert al.STATE_PATH.name == "awg.state"
+    assert str(_P(config.CONF_DIR).parent / "awg.state").endswith("/awg.state")
+    for key in (al._KEY_APPLIED, al._KEY_TARGET):
+        assert f"awg_state_set {key}" in script or f"awg_state_get {key}" in script, \
+            f"{key} не встречается в awg-bot.sh"
+    # и наоборот: shell не пишет ключей, которых бот не знает
+    written = set(re.findall(r"awg_state_set (AWG_[A-Z_]+)", script))
+    assert written <= {al._KEY_APPLIED, al._KEY_TARGET}, written
+
+
+def test_real_manifest_is_readable_by_the_bot():
+    """Манифест поставки и его читатель не должны разъезжаться по формату."""
+    import awgbot.infra.awglock as al
+    assert al.LOCK_PATH.exists(), "install/awg.lock пропал из репозитория"
+    assert al.generation() >= 1 and al.protocol_id()
+    assert al.lock()["AWG_MODULE_VERSION"]
+
+
+def test_blocked_release_is_not_marked_as_notified(tmp_path, monkeypatch):
+    """Иначе единственное уведомление о версии сгорит во время переезда, и
+    после его завершения о ней никто не напомнит."""
+    from awgbot.domain.selfupdate import SelfUpdateMixin
+
+    state: dict = {}
+
+    class DB:
+        def get_state(self, k):
+            return state.get(k, "")
+        def set_state(self, k, v):
+            state[k] = v
+
+    rel = updates.Release(tag="v9.0.0", version=(9, 0, 0), body="#awg_gen3",
+                          asset_url="u", sha256="x")
+
+    class Svc(SelfUpdateMixin):
+        def __init__(self):
+            self.db = DB()
+        def migration_running(self):
+            return True
+        def update_next(self):
+            return rel
+
+    monkeypatch.setattr(awglock, "LOCK_PATH", tmp_path / "awg.lock")
+    monkeypatch.setattr(awglock, "STATE_PATH", tmp_path / "awg.state")
+    awglock.write_state(applied=1, target=2)
+    monkeypatch.setattr("awgbot.core.settings.get", lambda k, d=None: d)
+    svc = Svc()
+    assert svc.update_to_notify() is None
+    assert state.get(svc._NOTIFIED_KEY, "") == "", "версия помечена уведомлённой зря"

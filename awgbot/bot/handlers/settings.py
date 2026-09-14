@@ -187,11 +187,22 @@ async def gateway_pick(cb: CallbackQuery, callback_data: GwMarkCB, services):
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "mark_yes"))
-async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services):
+async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services,
+                           state: FSMContext):
     """Существующее устройство. Шлюз уже был и это другая машина — ключи
-    линка меняются, чтобы прежняя потеряла линк сама."""
+    линка меняются, чтобы прежняя потеряла линк сама.
+
+    Со сменой ключей файл первого применения едет открытым и ставится на
+    машине с нуля — значит ему нужен токен агента ровно так же, как новой
+    машине. Без него установка на шлюзе снова начинала задавать вопросы."""
     prev = await call(services.db.gateway_device)
     rekey = prev is not None and prev.id != callback_data.device_id
+    if rekey and not await call(services.gw_bot_token):
+        await cb.answer()
+        await state.set_state(GatewayToken.value)
+        await state.update_data(gw_device_id=callback_data.device_id)
+        await edit(cb, texts.GATEWAY_ASK_TOKEN, kb.settings_cancel("rt_gw"))
+        return
     await cb.answer("Назначаю…")
     try:
         res = await call(services.gateway_setup, callback_data.device_id, rekey=rekey)
@@ -228,12 +239,31 @@ async def gateway_token_received(message: Message, state: FSMContext, services):
     except ServiceError as e:
         await message.answer(f"⚠️ {texts._e(str(e))}")
         return
+    data = await state.get_data()
     await state.clear()
     try:
         await message.delete()          # токен в истории чата не держим
     except Exception:                   # noqa: BLE001
         pass
+    # Токен спрашивают из двух мест: «новая машина» и смена шлюза со сменой
+    # ключей. Куда возвращаться, помнит state.
+    device_id = data.get("gw_device_id")
+    if device_id:
+        await _gateway_mark_go(message, services, int(device_id))
+        return
     await _gateway_new_go(message, services)
+
+
+async def _gateway_mark_go(message: Message, services, device_id: int) -> None:
+    """Назначить шлюзом существующее устройство со сменой ключей и отдать файл
+    первого применения с инструкцией."""
+    try:
+        res = await call(services.gateway_setup, device_id, rekey=True)
+    except ServiceError as e:
+        await message.answer(f"⚠️ {texts._e(str(e))}")
+        return
+    await message.answer(texts.gateway_install_instructions(res["device"]))
+    await _send_plain_bundle(message, services)
 
 
 async def _gateway_new_go(message: Message, services) -> None:
@@ -245,7 +275,11 @@ async def _gateway_new_go(message: Message, services) -> None:
         await message.answer(f"⚠️ {texts._e(str(e))}")
         return
     await message.answer(texts.gateway_install_instructions(res["device"]))
-    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
+    await _send_plain_bundle(message, services)
+
+
+async def _send_plain_bundle(message: Message, services) -> None:
+    """Открытый файл первого применения: внутри ключи и токен агента."""
     try:
         blob, name = await call(services.gw_bundle_plain)
     except (ServiceError, OSError) as e:
@@ -439,8 +473,19 @@ async def _firewall_action(cb: CallbackQuery, callback_data: SetCB, services) ->
             await cb.answer()
             await cb.message.answer(texts.firewall_rolled_back())
         elif key == "del":
-            await call(services.firewall_allow_remove, val)
-            await cb.answer(f"{val} убран")
+            # val — номер записи в списке (см. keyboards.settings_firewall).
+            # Список мог измениться с момента отрисовки: тогда честно скажем,
+            # а не удалим соседа по сдвинувшемуся номеру.
+            allow = (await call(services.firewall_screen)).get("raw_allow", [])
+            idx = int(val) if val.isdigit() else -1
+            if not 0 <= idx < len(allow):
+                await cb.answer("Список изменился — открой раздел заново", show_alert=True)
+                text, markup = await _screen("fw", services)
+                await edit(cb, text, markup)
+                return
+            entry = allow[idx]
+            await call(services.firewall_allow_remove, entry)
+            await cb.answer(f"{entry} убран")
         else:
             await cb.answer("Действие недоступно", show_alert=True)
             return

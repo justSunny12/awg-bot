@@ -53,9 +53,23 @@ def _parse_entries(raw: str) -> list[str]:
     return out
 
 
+def _tty_input(prompt: str) -> str:
+    """Ответ — из терминала, а не из stdin: установщик зовёт этот модуль из
+    трубы (`curl … | sudo bash`), где stdin занят текстом скрипта. Обычный
+    input() ловил там EOF, молча возвращал «нет», и «поставить nftables?»
+    отвечало отказом за человека, сказавшего «да»."""
+    try:
+        with open("/dev/tty", "r+", encoding="utf-8") as tty:
+            tty.write(prompt)
+            tty.flush()
+            return tty.readline().rstrip("\n")
+    except OSError:
+        return input(prompt)
+
+
 def _ask(prompt: str, default: str = "") -> str:
     try:
-        v = input(f"{prompt}{f' [{default}]' if default else ''}: ").strip()
+        v = _tty_input(f"{prompt}{f' [{default}]' if default else ''}: ").strip()
     except EOFError:
         v = ""
     return v or default

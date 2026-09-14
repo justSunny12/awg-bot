@@ -41,16 +41,24 @@ say() { printf '[awg-server] %s\n' "$*" >&2; }
 [[ "$PLAN" -eq 1 || "${EUID:-$(id -u)}" -eq 0 ]] || die "нужен root"
 [[ "$SUBNET_PREFIX" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "SUBNET_PREFIX вида X.Y.Z, получено '$SUBNET_PREFIX'"
 
+SERVER_HOST_OCTET="1"      # адрес сервера в подсети; у докерных установок .0
+
 emit() {  # KEY=VALUE для установщика — на stdout, всё прочее на stderr
-    printf 'AWG_IF=%s\nCONF=%s\nLISTEN_PORT=%s\nSUBNET_PREFIX=%s\nSUBNET_CIDR=%s.0/24\nSERVER_ADDR=%s.1\nCREATED=%s\n' \
-        "$AWG_IF" "$CONF" "$1" "$SUBNET_PREFIX" "$SUBNET_PREFIX" "$SUBNET_PREFIX" "$2"
+    printf 'AWG_IF=%s\nCONF=%s\nLISTEN_PORT=%s\nSUBNET_PREFIX=%s\nSUBNET_CIDR=%s.0/24\nSERVER_ADDR=%s.%s\nCREATED=%s\n' \
+        "$AWG_IF" "$CONF" "$1" "$SUBNET_PREFIX" "$SUBNET_PREFIX" \
+        "$SUBNET_PREFIX" "$SERVER_HOST_OCTET" "$2"
 }
 
 if [[ -f "$CONF" ]]; then
     port="$(sed -nE 's/^ListenPort *= *([0-9]+).*/\1/p' "$CONF" | head -n1)"
     addr="$(sed -nE 's/^Address *= *([0-9.]+)\/.*/\1/p' "$CONF" | head -n1)"
-    [[ -n "$addr" ]] && SUBNET_PREFIX="${addr%.*}"
-    say "сервер уже есть: $CONF (порт ${port:-?}, подсеть ${SUBNET_PREFIX}.0/24) — не трогаю"
+    if [[ -n "$addr" ]]; then
+        SUBNET_PREFIX="${addr%.*}"
+        # Адрес сервера берём КАК ЕСТЬ: у докерной Amnezia он .0, и объявить
+        # его .1 значило бы отдать первому клиенту адрес самого сервера.
+        SERVER_HOST_OCTET="${addr##*.}"
+    fi
+    say "сервер уже есть: $CONF (порт ${port:-?}, адрес ${addr:-?}) — не трогаю"
     emit "${port:-}" 0
     exit 0
 fi
