@@ -61,7 +61,7 @@ def test_regenerate_invite_only_pending(services, make_active_client):
 def test_add_device_full_flow(services, fake_awg, make_active_client):
     client = make_active_client(device_limit=3)
     dc = services.add_device(client.id, "Телефон")
-    assert dc.address == "10.8.1.1"                       # первый свободный из пула
+    assert dc.address == "10.8.1.2"                       # первый свободный: .1 занял сервер
     assert dc.vpn.startswith("vpn://") and "[Interface]" in dc.conf
     dev = services.db.get_device(dc.device_id)
     assert dev.name == "Телефон" and dev.is_managed
@@ -69,10 +69,12 @@ def test_add_device_full_flow(services, fake_awg, make_active_client):
 
 
 def test_add_device_allocates_sequential_ips(services, make_active_client):
+    """Пул начинается с .2: адрес .1 держит сам сервер (раскладка новых
+    установок; у старых докерных сервер на .0, и ip_host_start там 1)."""
     client = make_active_client(device_limit=5)
     a = services.add_device(client.id, "d1")
     b = services.add_device(client.id, "d2")
-    assert (a.address, b.address) == ("10.8.1.1", "10.8.1.2")
+    assert (a.address, b.address) == ("10.8.1.2", "10.8.1.3")
 
 
 def test_add_device_respects_limit(services, make_active_client):

@@ -13,8 +13,9 @@
 #      systemd-resolved и сломал резолвинг самого сервера);
 #   3) DNAT :53 клиентской подсети на dnsmasq — чтобы выданные конфиги с
 #      DNS=1.1.1.1 продолжали работать без перевыпуска ссылок;
-#   4) MASQUERADE клиентской подсети и разрешения FORWARD — трафик, выпущенный
-#      из контейнера немаскараженным, должен выйти наружу и вернуться;
+#   4) разрешения FORWARD для клиентской подсети; MASQUERADE — только если его
+#      не ведёт бот (nft-таблица awg_bot_guard, см. README §6b): на новых
+#      установках NAT клиентов живёт там, здесь остаётся для прежней схемы;
 #   5) маршрут до клиентской подсети через контейнер — для обратного трафика
 #      (только при AWG_RUNTIME=docker; на хосте подсеть connected через awg0).
 #
@@ -385,6 +386,16 @@ fi
 
 # 4) выход наружу для немаскараженного трафика включённых устройств
 step "4. MASQUERADE и FORWARD для $CLIENT_SUBNET"
+# NAT клиентов теперь ведёт БОТ — одной nft-таблицей awg_bot_guard, которая
+# существует и при выключенном файерволе (форма NAT-only). Свои правила
+# ставим только там, где её нет: на установках прежней схемы. Два маскарада
+# рядом не ломают трафик, но «единственная точка» обязана быть единственной.
+guard_masquerades() {
+    nft -j list table inet awg_bot_guard 2>/dev/null | grep -q '"masquerade"'
+}
+if guard_masquerades; then
+    say "  MASQUERADE ведёт бот (таблица awg_bot_guard) — свои правила не ставлю"
+else
 ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
 # Пир → пир (в тот же awg-интерфейс) НЕ маскарадим. Иначе устройство админа
 # приходило бы к шлюзу и к другим пирам с адресом сервера (10.x.x.0), а
@@ -398,6 +409,7 @@ ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "$AWG_IF" -j ACCEPT
 # маскарадит и подсеть линка.
 [ -n "$LINK_IF" ] && ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "$LINK_IF" -j ACCEPT
 [ -n "$MIGRATION_IF" ] && ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "$MIGRATION_IF" -j ACCEPT
+fi
 ensure_rule filter FORWARD -s "$CLIENT_SUBNET" -j ACCEPT
 ensure_rule filter FORWARD -d "$CLIENT_SUBNET" -j ACCEPT
 

@@ -104,7 +104,10 @@ def test_shell_scripts_reference_only_defined_variables(path: Path):
     tail = r"(?![A-Za-z0-9_])"
     assigned = set(re.findall(rf"(?<![-\w$])({name})=", text))
     assigned |= set(re.findall(rf"\bfor\s+({name})\s+in\b", text))
-    assigned |= set(re.findall(rf"\bread\s+(?:-r\s+)?(?:-a\s+)?({name})", text))
+    # read -r A B C присваивает ВСЕ перечисленные имена, а не только первое:
+    # разбор «одного имени» объявлял бы неприсвоенными вполне живые переменные
+    for rd in re.findall(r"\bread\b((?:\s+-\w+)*(?:\s+[A-Za-z_][A-Za-z0-9_]*)+)", text):
+        assigned |= {w for w in rd.split() if not w.startswith("-") and re.fullmatch(name, w)}
     # ${VAR:-default} — осознанная необязательность, а не забытая переменная
     used = {m.group(1) for m in re.finditer(rf"\$\{{({name})\}}", text)}
     used |= set(re.findall(rf"\$({name}){tail}", text))

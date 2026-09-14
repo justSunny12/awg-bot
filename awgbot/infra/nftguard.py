@@ -17,6 +17,14 @@ Match Address) плюс ufw рядом, и отказ на любых выгля
     nftables.service ДО подъёма интерфейсов — fail-closed с загрузки, без
     PostUp-строк и без окна «интерфейс поднялся, бот ещё не реассертил».
 
+NAT клиентов — тоже здесь (host-режим): цепочка postrouting маскарадит
+подсети туннеля во всё, что не awg-интерфейс. Раньше его давал контейнер
+Amnezia или обвяз условной маршрутизации, и чистый хост без него оставался
+без интернета для клиентов. Поэтому таблица в host-режиме существует ВСЕГДА:
+при firewall.enabled=false — в «NAT-only» форме (наборы и postrouting, без
+фильтрующих цепочек), при включённом файерволе — целиком. «Выключить
+файервол» снимает фильтр, но не NAT.
+
 Применение — всегда атомарная замена таблицы (`table X; delete table X;
 table X {…}` одним `nft -f`): нет момента с полупустой цепочкой. Сверка по
 тику дешёвая: текст желаемой таблицы сравнивается с файлом (без exec), живой
@@ -82,6 +90,9 @@ class GuardSpec:
     open_udp: list[int] = field(default_factory=list)
     own_forward: bool = True          # host: своя цепочка FORWARD (policy drop)
     unresolved: list[str] = field(default_factory=list)    # имена, которые не резолвятся
+    nat: bool = True                  # host: MASQUERADE подсетей туннеля наружу
+    nat_exclude_ifs: list[str] = field(default_factory=list)  # куда НЕ маскарадить: awg-интерфейсы, линк
+    filter: bool = True               # False — NAT-only форма (файервол выключен)
 
 
 def enabled() -> bool:
@@ -237,12 +248,24 @@ def build_spec(admin_ips) -> GuardSpec:
         open_tcp=_ports_from_conf(settings.get("app.firewall.open_tcp", [])),
         open_udp=_ports_from_conf(settings.get("app.firewall.open_udp", [])),
         own_forward=host_mode, unresolved=bad,
+        nat=host_mode, nat_exclude_ifs=_nat_exclude_ifs() if host_mode else [],
+        filter=enabled(),
     )
 
 
 def _tunnel_ifs() -> list[str]:
     from awgbot.infra.awg import gated_ifaces
     return [i for i in gated_ifaces() if i]
+
+
+def _nat_exclude_ifs() -> list[str]:
+    """Интерфейсы, в которые трафик клиентов уходит БЕЗ маскарада: клиентские
+    awg (пир → пир), линк до шлюза (шлюз маскарадит сам и должен видеть
+    настоящий адрес клиента для исключений). Наружу (WAN) — всё остальное."""
+    out = list(_tunnel_ifs())
+    if config.ROUTING_GW_INTERFACE and config.ROUTING_GW_INTERFACE not in out:
+        out.append(config.ROUTING_GW_INTERFACE)
+    return out
 
 
 def _ifs(names: list[str]) -> str:
@@ -276,12 +299,37 @@ def render(spec: GuardSpec) -> str:
     """Полный текст файла таблицы. Без времени и прочего шума: текст равен
     тексту ⇔ состояние равно состоянию, этим и живёт дешёвая сверка."""
     p = spec.ssh_port
-    out: list[str] = [
+    head: list[str] = [
         "#!/usr/sbin/nft -f",
         "# awg-bot: единственная точка файервола хоста (таблица awg_bot_guard).",
         "# Файл генерирует бот — правки руками перезапишутся. Управление:",
         "#   awg-bot firewall status | setup | allow <ip> | deny <ip> | apply | off",
         "# Вайтлист и порты — conf/app.yaml (firewall.*), устройства админа — из БД.",
+    ]
+    nat_chain: list[str] = []
+    if spec.nat and spec.tunnel_nets4:
+        nat_chain = [
+            "",
+            "    chain postrouting {",
+            "        type nat hook postrouting priority srcnat; policy accept;",
+        ]
+        rule = f"ip saddr @{SET_TUNNEL_NETS} masquerade"
+        if spec.nat_exclude_ifs:
+            rule = f"oifname != {_ifs(spec.nat_exclude_ifs)} " + rule
+        nat_chain.append("        " + rule)
+        nat_chain.append("    }")
+    if not spec.filter:
+        # NAT-only: файервол выключен, но клиентам нужен выход наружу.
+        # Фильтрующих цепочек нет вовсе — политика хоста остаётся его.
+        out = head + [
+            "# Форма NAT-only: firewall.enabled=false, фильтра нет, только NAT клиентов.",
+            f"table {TABLE}",
+            f"delete table {TABLE}",
+            f"table {TABLE} {{",
+            _set_block(SET_TUNNEL_NETS, "ipv4_addr", spec.tunnel_nets4, True),
+        ] + nat_chain + ["}"]
+        return "\n".join(out) + "\n"
+    out: list[str] = head + [
         f"table {TABLE}",
         f"delete table {TABLE}",
         f"table {TABLE} {{",
@@ -339,6 +387,7 @@ def render(spec: GuardSpec) -> str:
             out.append(f"        ip saddr @{SET_TUNNEL_NETS} accept")
             out.append(f"        ip daddr @{SET_TUNNEL_NETS} accept")
         out.append("    }")
+    out += nat_chain
     out.append("}")
     return "\n".join(out) + "\n"
 
@@ -404,6 +453,28 @@ def apply_text(text: str) -> None:
     _nft(["-f", RULES_FILE])
 
 
+def nat_covers(subnet: str) -> bool:
+    """Живая таблица маскарадит эту подсеть? Проверка для доктора условной
+    маршрутизации: NAT переехал сюда из iptables, и «нет правила iptables»
+    больше не означает «клиенты не выйдут наружу»."""
+    from awgbot.infra.awg import in_container
+    if in_container():
+        return False                      # в докере NAT делает контейнер
+    proc = _nft(["-j", "list", "table", TABLE_FAMILY, TABLE_NAME], check=False)
+    if proc.returncode != 0:
+        return False
+    try:
+        doc = json.loads(proc.stdout.decode(errors="replace"))
+    except (ValueError, UnicodeDecodeError):
+        return False
+    has_masq = any("masquerade" in json.dumps(x.get("rule", {}))
+                   for x in doc.get("nftables", []) if "rule" in x)
+    if not has_masq:
+        return False
+    live = live_set(SET_TUNNEL_NETS)
+    return live is not None and subnet in live
+
+
 def table_present() -> bool:
     return _nft(["list", "table", TABLE_FAMILY, TABLE_NAME], check=False).returncode == 0
 
@@ -446,8 +517,23 @@ def reconcile(admin_ips) -> str:
     """Привести таблицу к желаемой. Возвращает, что сделано:
     'disabled' | 'ok' | 'applied' (текст изменился) | 'restored' (таблицу
     снесли) | 'resynced' (set устройств разошёлся с файлом)."""
+    from awgbot.infra.awg import in_container
     if not enabled():
-        return "disabled"
+        if in_container():
+            return "disabled"           # docker: NAT — дело контейнера
+        # host: NAT-only форма, без фильтра. Файл ещё не существовал — первое
+        # появление таблицы на хосте: закрепить загрузку с ребута.
+        text = render(build_spec([]))
+        first = not read_file()
+        if text != read_file() or not table_present():
+            apply_text(text)
+            if first:
+                try:
+                    ensure_persistence()
+                except GuardError as e:
+                    log.warning("nat: персистентность не закреплена: %s", e)
+            return "nat"
+        return "ok"
     spec = build_spec(admin_ips)
     text = render(spec)
     if text != read_file():
@@ -518,8 +604,20 @@ def disarm_rollback() -> bool:
 
 
 def remove() -> list[str]:
-    """Снять таблицу и файл; SSH становится открыт всем (доступ не теряется)."""
+    """Снять фильтр; SSH становится открыт всем (доступ не теряется). В
+    host-режиме таблица остаётся в NAT-only форме: без маскарада клиенты
+    потеряли бы интернет — «выключить файервол» этого не обещает."""
+    from awgbot.infra.awg import in_container
     done: list[str] = []
+    if not in_container():
+        spec = build_spec([])
+        spec.filter = False
+        try:
+            apply_text(render(spec))
+            done.append("фильтр снят, NAT клиентов оставлен (таблица в форме NAT-only)")
+        except GuardError as e:
+            done.append(f"NAT-only форма не применена: {e}")
+        return done
     if _nft(["delete", "table", TABLE_FAMILY, TABLE_NAME], check=False).returncode == 0:
         done.append("таблица снята")
     p = Path(RULES_FILE)

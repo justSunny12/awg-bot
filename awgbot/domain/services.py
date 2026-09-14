@@ -1921,11 +1921,10 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
         переиспользование его IP другим профилем закрывается в пределах тика.
 
         Пока firewall.enabled=false (таблицу ещё не включали через
-        `awg-bot firewall setup`), ничего не трогаем — включение файервола
-        делается человеком с таймером отката, не ботом."""
+        `awg-bot firewall setup`), фильтр не ставим — включение файервола
+        делается человеком с таймером отката, не ботом. Но NAT клиентов в
+        host-режиме таблица держит всегда (nftguard: форма NAT-only)."""
         from awgbot.infra import nftguard
-        if not nftguard.enabled():
-            return
         try:
             admin_ips = self.db.admin_device_addresses(config.ADMIN_ID)
             res = nftguard.reconcile(admin_ips)

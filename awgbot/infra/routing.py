@@ -240,11 +240,22 @@ def _check_subnet_plumbing(subnet: str, iface: str) -> None:
             f"маршрут до {subnet} ведёт мимо {iface} "
             f"({' '.join(route.split())[:80]}) — ответы клиентам уйдут не туда. "
             f"Снять лишний: ip route del {subnet}")
-    if not _host_ok(["iptables", "-t", "nat", "-C", "POSTROUTING",
-                     "-s", subnet, "-j", "MASQUERADE"]):
+    # NAT клиентов живёт в таблице бота (nftguard), а у установок, переживших
+    # прежнюю схему, — ещё и правилом iptables. Годится любое: спрашиваем не
+    # «есть ли конкретное правило», а «выйдет ли трафик наружу».
+    from awgbot.infra import nftguard
+    nat_ok = False
+    try:
+        nat_ok = nftguard.nat_covers(subnet)
+    except Exception as e:                                  # noqa: BLE001
+        log.debug("nat_covers(%s): %s", subnet, e)
+    if not nat_ok:
+        nat_ok = _host_ok(["iptables", "-t", "nat", "-C", "POSTROUTING",
+                           "-s", subnet, "-j", "MASQUERADE"])
+    if not nat_ok:
         raise RoutingUnavailable(
             f"на хосте нет MASQUERADE для {subnet} — трафик включённых устройств "
-            f"не выйдет наружу")
+            f"не выйдет наружу (таблица awg_bot_guard: awg-bot firewall status)")
 
 
 def self_check(force: bool = False) -> tuple[bool, str]:

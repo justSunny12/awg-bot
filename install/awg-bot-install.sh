@@ -15,6 +15,8 @@
 #   sudo ./awg-bot-install.sh            (архив awg-bot.tgz рядом со скриптом)
 #   sudo ./awg-bot-install.sh <path.tgz>
 #   sudo ./awg-bot-install.sh --role gateway [<path.tgz>]   # агент на шлюзе
+#   sudo ./awg-bot-install.sh --port 51820 [--subnet 10.8.1]  # порт/подсеть создаваемого
+#                                                            # awg-сервера (иначе порт случайный)
 #
 set -euo pipefail
 
@@ -32,9 +34,17 @@ die() { printf '%s[install:ОШИБКА]%s %s\n' "$c_err" "$c_off" "$*" >&2; exi
 SELF_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 SELF_DIR="$(dirname "$SELF_PATH")"
 
-# ── роль: --role gateway или AWG_BOT_ROLE=gateway ─────────────────────────────
+# ── ключи: --role gateway (или AWG_BOT_ROLE=gateway), --port N, --subnet X.Y.Z ──
 ROLE="${AWG_BOT_ROLE:-client}"
-if [[ "${1:-}" == "--role" ]]; then ROLE="${2:-client}"; shift 2; fi
+EXTRA=()                       # что уходит дальше в reconfigure --first-run
+while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+        --role)   ROLE="${2:-client}"; shift 2 ;;
+        --port)   [[ "${2:-}" =~ ^[0-9]+$ ]] || die "--port: число"; EXTRA+=(--port "$2"); shift 2 ;;
+        --subnet) [[ "${2:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "--subnet: три октета вида 10.8.1"; EXTRA+=(--subnet "$2"); shift 2 ;;
+        *) die "неизвестный ключ: $1" ;;
+    esac
+done
 
 # ── найти архив: аргумент → рядом со скриптом → CWD ──────────────────────────
 TGZ=""
@@ -96,4 +106,4 @@ ln -sf "$INSTALL_DIR/awg-bot.sh" "$SELF_LINK"
 
 # ── передать управление внутреннему инструменту (он настроит и подчистит нас) ─
 log "запускаю мастер настройки…"
-exec "$INSTALL_DIR/awg-bot.sh" reconfigure --first-run --role "$ROLE" --cleanup "$SELF_PATH" "$TGZ"
+exec "$INSTALL_DIR/awg-bot.sh" reconfigure --first-run --role "$ROLE" ${EXTRA[@]+"${EXTRA[@]}"} --cleanup "$SELF_PATH" "$TGZ"

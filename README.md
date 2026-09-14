@@ -140,6 +140,7 @@ reconfigure  update  backup  restore  uninstall
 status  start  stop  restart  logs
 routing-doctor          диагностика условной маршрутизации по слоям
 gw-bundle               пересобрать бандл для шлюза, не меняя ключей
+awg status|install|reload|plan   ядро AmneziaWG версии, прибитой к поставке
 ```
 
 Топология подхватывается автоматически: внешний IP определяется сам

@@ -1,0 +1,23 @@
+# awg.lock — версия AmneziaWG, ПРИБИТАЯ к этой поставке (docs/ROADMAP.md, п.8).
+#
+# Установщик ставит ровно её: модуль ядра и amneziawg-tools собираются из
+# исходников на теге, PPA не подключается никогда — иначе apt однажды поднимет
+# ядро мимо нас. Обновление бота приносит новый lock и пересобирает ядро само.
+#
+# ПОКОЛЕНИЕ — класс совместимости протокола. Меняется только тогда, когда
+# новое ядро не понимает клиентов прежнего поколения: тогда обновление
+# поднимает второй интерфейс и требует переезда профилей (README §9,
+# ROADMAP п.8). Пока поколение то же — ядро подменяется на месте.
+# Идентификатор протокола уезжает в vpn:// и заморожен на поколение.
+#
+# Формат KEY=VALUE, читается и sh, и python.
+AWG_GENERATION=1
+AWG_PROTOCOL_ID=amnezia-awg2
+
+AWG_MODULE_VERSION=3.1.20260812
+AWG_MODULE_URL=https://github.com/amnezia-vpn/amneziawg-linux-kernel-module/archive/refs/tags/v3.1.20260812.tar.gz
+AWG_MODULE_SHA256=a85817876676d5933385712657bd5525a0a2939baaf057f68e3629c7b4553c82
+
+AWG_TOOLS_VERSION=3.1.20260812
+AWG_TOOLS_URL=https://github.com/amnezia-vpn/amneziawg-tools/archive/refs/tags/v3.1.20260812.tar.gz
+AWG_TOOLS_SHA256=dbd8ce0748d835d18f30bb76720246b7bfc80bd09cd17c379b1c59f683a18493

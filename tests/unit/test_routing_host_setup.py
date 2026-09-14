@@ -235,6 +235,19 @@ def test_unit_points_at_a_permanent_path(script):
     assert "/usr/local/sbin" in script
 
 
+def test_masquerade_is_skipped_when_the_bot_owns_it(script):
+    """NAT клиентов переехал в таблицу бота (awg_bot_guard), которая живёт и
+    при выключенном файерволе. Два маскарада рядом трафик не ломают, но
+    «единственная точка» перестаёт быть единственной — поэтому свои правила
+    только там, где таблицы бота нет: на установках прежней схемы."""
+    assert "guard_masquerades()" in script
+    assert "nft -j list table inet awg_bot_guard" in script
+    assert script.index("guard_masquerades()") < \
+        script.index('ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE')
+    # откат по-прежнему снимает СВОИ правила — иначе прежняя схема не убирается
+    assert 'drop_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE' in script
+
+
 def test_peer_to_peer_traffic_is_not_masqueraded(script):
     """Пир → пир в тот же awg-интерфейс без MASQUERADE: иначе устройство админа
     приходит к шлюзу с адресом сервера, а файервол шлюза различает пиров по

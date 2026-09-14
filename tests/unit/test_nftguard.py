@@ -122,6 +122,33 @@ def test_render_open_mode_when_whitelist_is_empty(host_mode, monkeypatch):
     assert "elements" not in text.split("set admin4")[1].split("}")[0]
 
 
+def test_render_masquerades_clients_but_not_into_tunnels(host_mode, monkeypatch):
+    """NAT клиентов живёт в этой же таблице. Исключения — awg-интерфейсы (пир
+    к пиру) и линк до шлюза: шлюз маскарадит сам и должен видеть настоящий
+    адрес клиента, иначе исключения из MASQUERADE на нём ни к чему применить."""
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
+    _conf(monkeypatch, **{"app.firewall.ssh_allow": ["203.0.113.7"]})
+    spec = nftguard.build_spec(["10.9.1.5"])
+    assert spec.nat and spec.nat_exclude_ifs == ["awg1", "awglink"]
+    lines = [ln.strip() for ln in nftguard.render(spec).splitlines()]
+    assert "type nat hook postrouting priority srcnat; policy accept;" in lines
+    assert 'oifname != { "awg1", "awglink" } ip saddr @tunnel_nets4 masquerade' in lines
+    assert lines.index("type filter hook input priority filter; policy drop;") < \
+        lines.index("type nat hook postrouting priority srcnat; policy accept;")
+
+
+def test_remove_keeps_nat_on_host(host_mode, monkeypatch, tmp_path):
+    """`firewall off` снимает фильтр, но не выход наружу для клиентов."""
+    _conf(monkeypatch)
+    monkeypatch.setattr(nftguard, "RULES_FILE", str(tmp_path / "g.nft"))
+    monkeypatch.setattr(nftguard, "RULES_DIR", str(tmp_path))
+    _nft_stub(monkeypatch)
+    done = nftguard.remove()
+    text = (tmp_path / "g.nft").read_text(encoding="utf-8")
+    assert "masquerade" in text and "hook input" not in text
+    assert any("NAT" in ln for ln in done)
+
+
 def test_render_docker_mode_has_no_per_peer_and_no_forward(monkeypatch):
     monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
     monkeypatch.setattr(config, "SERVER_PORT", 0)
@@ -133,6 +160,7 @@ def test_render_docker_mode_has_no_per_peer_and_no_forward(monkeypatch):
     text = nftguard.render(spec)
     assert "tcp dport 2222 ip saddr @tunnel_nets4 accept" in text
     assert "hook forward" not in text and "@admin4" not in text and "iifname {" not in text
+    assert "masquerade" not in text, "в докере NAT делает контейнер"
 
 
 def test_render_is_deterministic_and_has_no_timestamps(host_mode, monkeypatch):
@@ -210,10 +238,29 @@ def test_reconcile_resyncs_when_live_set_drifted(host_mode, monkeypatch, tmp_pat
     assert nftguard.reconcile(["10.9.1.5"]) == "resynced"
 
 
-def test_reconcile_does_nothing_when_disabled(monkeypatch):
+def test_reconcile_does_nothing_when_disabled_in_docker(monkeypatch):
+    """Докерный режим: NAT клиентов — дело контейнера, таблицы нет вовсе."""
+    monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
     _conf(monkeypatch, **{"app.firewall.enabled": False})
     calls = _nft_stub(monkeypatch)
     assert nftguard.reconcile(["10.9.1.5"]) == "disabled" and calls == []
+
+
+def test_reconcile_keeps_nat_when_firewall_is_off_on_host(host_mode, monkeypatch, tmp_path):
+    """Выключенный файервол не означает «клиенты без интернета»: на хосте
+    таблица остаётся в форме NAT-only. Раньше MASQUERADE давал контейнер или
+    обвяз маршрутизации, и чистый хост оставался без выхода наружу."""
+    _conf(monkeypatch, **{"app.firewall.enabled": False})
+    monkeypatch.setattr(nftguard, "RULES_FILE", str(tmp_path / "g.nft"))
+    monkeypatch.setattr(nftguard, "RULES_DIR", str(tmp_path))
+    monkeypatch.setattr(nftguard, "ensure_persistence", lambda: [])
+    _nft_stub(monkeypatch)
+    assert nftguard.reconcile(["10.9.1.5"]) == "nat"
+    text = (tmp_path / "g.nft").read_text(encoding="utf-8")
+    assert "type nat hook postrouting priority srcnat" in text
+    assert "ip saddr @tunnel_nets4 masquerade" in text
+    assert "hook input" not in text and "@admin4" not in text, "фильтра без включения нет"
+    assert nftguard.reconcile(["10.9.1.5"]) == "ok", "повтор ничего не переписывает"
 
 
 def test_live_set_parses_prefix_elements(monkeypatch):
@@ -291,3 +338,22 @@ def test_cli_setup_offers_to_install_nftables_when_missing(monkeypatch, capsys):
     monkeypatch.setattr(fw, "_yes", lambda prompt: False)
     assert fw.cmd_setup([]) == 1
     assert "apt install nftables" in capsys.readouterr().out
+
+
+def test_nat_covers_asks_the_live_table(host_mode, monkeypatch):
+    """Доктор маршрутизации спрашивает «выйдет ли трафик наружу», а не «есть ли
+    правило iptables»: NAT переехал в таблицу бота."""
+    _conf(monkeypatch)
+    table = {"nftables": [{"rule": {"expr": [{"masquerade": None}]}}]}
+    sets = {"nftables": [{"set": {"name": "tunnel_nets4", "elem": [
+        {"prefix": {"addr": "10.9.1.0", "len": 24}}]}}]}
+
+    def fake(args, timeout=10, check=True):
+        doc = table if args[:3] == ["-j", "list", "table"] else sets
+        return subprocess.CompletedProcess(args, 0, json.dumps(doc).encode(), b"")
+    monkeypatch.setattr(nftguard, "_nft", fake)
+    assert nftguard.nat_covers("10.9.1.0/24")
+    assert not nftguard.nat_covers("10.250.0.0/24"), "чужая подсеть не покрыта"
+    monkeypatch.setattr(nftguard, "_nft",
+                        lambda a, timeout=10, check=True: subprocess.CompletedProcess(a, 1, b"", b""))
+    assert not nftguard.nat_covers("10.9.1.0/24"), "нет таблицы — нет NAT"

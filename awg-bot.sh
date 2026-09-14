@@ -12,10 +12,13 @@
 # и первичная настройка (reconfigure --first-run из bootstrap), и обновление.
 #
 # Глаголы:
-#   reconfigure [--first-run] [--role client|gateway] [--cleanup <inst> <tgz>]
+#   reconfigure [--first-run] [--role client|gateway] [--port N] [--subnet X.Y.Z]
+#               [--cleanup <inst> <tgz>]
 #                          мастер конфигурации (топология + секреты). --first-run —
-#                          первичный прогон из установщика (собрать venv, юнит,
-#                          enable+start, напечатать карту, подчистить установщик).
+#                          первичный прогон из установщика (ядро awg по манифесту,
+#                          сервер с нуля, venv, юнит, enable+start, карта, уборка).
+#                          --port/--subnet задают порт и подсеть СОЗДАВАЕМОГО
+#                          сервера; без них порт случайный, подсеть 10.8.1.
 #   update [<tgz>]         обновить код/зависимости/юнит из архива (по умолчанию —
 #                          awg-bot-update.tgz рядом; conf/env/данные не трогаются,
 #                          если явно не согласиться на их удаление).
@@ -258,7 +261,12 @@ configure_topology() {
     local cont det="" cur_port cur_prefix d_port="" d_prefix="" d_cidr=""
     cur_port="$(yaml_get "$app" server_port)"
     cur_prefix="$(yaml_get "$app" subnet_prefix)"
-    cont="$(_detect_awg_container | head -n1)"
+    # Контейнер ищем только в докерном режиме: на хосте сервер создаём мы сами
+    # (ensure_awg_server), и «живого контейнера не найдено» было бы не
+    # предупреждением, а недоумением на ровном месте.
+    if [[ "$(yaml_get "$app" runtime)" == "docker" ]]; then
+        cont="$(_detect_awg_container | head -n1)"
+    fi
     if [[ -n "$cont" ]]; then
         det="$(cd "$INSTALL_DIR" && AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
             ./venv/bin/python -c "
@@ -268,8 +276,8 @@ print('%s|%s|%s' % (t['listen_port'] or '', t['subnet_prefix'] or '', t['subnet_
 " 2>/dev/null || true)"
         d_port="${det%%|*}"; local d_rest="${det#*|}"
         d_prefix="${d_rest%%|*}"; d_cidr="${d_rest#*|}"
-    else
-        warn "живой awg-контейнер не найден — бот ставится до awg? Укажу порт/подсеть вручную."
+    elif [[ -z "$cur_port" || -z "$cur_prefix" ]]; then
+        warn "порт/подсеть awg не определены — спрошу их ниже."
     fi
 
     # ── Порт ──────────────────────────────────────────────────────────────────
@@ -355,6 +363,7 @@ print_map() {  # print_map "active"|"failed"
     echo "     awg-bot backup              снимок БД + конфига + секретов"
     echo "     awg-bot restore [tgz]       восстановить из снимка"
     echo "     awg-bot uninstall           снять сервис"
+    echo "     awg-bot awg status          версия AmneziaWG против манифеста поставки"
     ok "══════════════════════════════════════════════════════════════════"
 }
 
@@ -380,6 +389,12 @@ cmd_reconfigure() {
         case "$1" in
             --first-run) first_run=1; shift ;;
             --role)      role="${2:-}"; shift 2 ;;
+            --port)      # порт awg для СОЗДАВАЕМОГО сервера — без advanced-режима
+                         [[ "${2:-}" =~ ^[0-9]+$ && "$2" -ge 1 && "$2" -le 65535 ]] || die "--port: число 1..65535"
+                         export LISTEN_PORT="$2"; shift 2 ;;
+            --subnet)    # подсеть создаваемого сервера, первые три октета (X.Y.Z)
+                         [[ "${2:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "--subnet: три октета вида 10.8.1"
+                         export SUBNET_PREFIX="$2"; shift 2 ;;
             --cleanup)   cleanup_inst="${2:-}"; cleanup_tgz="${3:-}"; shift 3 ;;
             *) die "reconfigure: неизвестный аргумент '$1'" ;;
         esac
@@ -391,7 +406,9 @@ cmd_reconfigure() {
     if [[ "$role" == "gateway" ]]; then
         # Свой путь целиком: ни визарда топологии (шлюз не выдаёт конфигов),
         # ни email-выхода. Общее с клиентской ролью — python, venv, секреты,
-        # юнит — то же самое, теми же функциями.
+        # юнит — то же самое, теми же функциями. Ядро awg — по манифесту
+        # поставки, обеим ролям одинаково.
+        ensure_awg_kernel
         ensure_python
         build_venv
         mkdir -p "$DATA_DIR"; chmod 700 "$DATA_DIR"
@@ -415,10 +432,12 @@ cmd_reconfigure() {
     fi
 
     if [[ "$first_run" -eq 1 ]]; then
+        ensure_awg_kernel
         ensure_python
         build_venv
         mkdir -p "$DATA_DIR"; chmod 700 "$DATA_DIR"
         seed_conf
+        ensure_awg_server                  # чистый хост: сервер с нуля; есть — не трогаем
         configure_topology                 # свежая установка — визард обязателен
         setup_secrets
         validate_config
@@ -755,6 +774,39 @@ cmd_firewall() {
         && exec ./venv/bin/python -m tools.firewall "$@" )
 }
 
+cmd_awg() {  # awg status | install | reload | plan — ядро по манифесту поставки
+    local sub="${1:-status}"
+    [[ "$sub" == "status" || "$sub" == "plan" ]] || require_root
+    AWG_LOCK="$INSTALL_DIR/install/awg.lock" exec bash "$INSTALL_DIR/install/awg-kernel-install.sh" "$sub"
+}
+
+ensure_awg_kernel() {  # первичная установка обеих ролей: AmneziaWG версии манифеста
+    echo; log "─── AmneziaWG (версия прибита к поставке: install/awg.lock) ───"
+    AWG_LOCK="$INSTALL_DIR/install/awg.lock" bash "$INSTALL_DIR/install/awg-kernel-install.sh" install \
+        || die "AmneziaWG не установлен — без ядра бот бесполезен; исправь причину выше и повтори установку"
+}
+
+ensure_awg_server() {  # клиентская роль, чистый хост: сервер с нуля, топология в app.yaml
+    local app="$CONF_DIR/app.yaml" out
+    out="$(bash "$INSTALL_DIR/install/awg-server-init.sh")" || die "сервер AmneziaWG не создан"
+    local created port prefix
+    created="$(sed -nE 's/^CREATED=(.*)$/\1/p' <<<"$out")"
+    port="$(sed -nE 's/^LISTEN_PORT=(.*)$/\1/p' <<<"$out")"
+    prefix="$(sed -nE 's/^SUBNET_PREFIX=(.*)$/\1/p' <<<"$out")"
+    if [[ "$created" == "1" ]]; then
+        # Свежий сервер: бот ходит на хост, конфиг в /etc/amnezia/amneziawg,
+        # сервер занимает .1 — клиентам с .2. Топологию пишем сразу, чтобы
+        # визард увидел её как «уже настроено» и не спрашивал.
+        yaml_set "$app" runtime "\"host\""
+        yaml_set "$app" awg_dir "\"/etc/amnezia/amneziawg\""
+        yaml_set "$app" interface "\"awg0\""
+        yaml_set "$app" ip_host_start 2
+        [[ -n "$port" ]]   && yaml_set "$app" server_port "$port"
+        [[ -n "$prefix" ]] && { yaml_set "$app" subnet_prefix "\"$prefix\""; yaml_set "$app" subnet_cidr "\"${prefix}.0/24\""; }
+        ok "сервер AmneziaWG создан: awg0, порт $port, подсеть ${prefix}.0/24 (сервер .1, клиенты с .2)"
+    fi
+}
+
 cmd_routing_doctor() {
     require_installed
     # Тем же интерпретатором, из того же каталога и с тем же conf/data, что и
@@ -812,6 +864,8 @@ awg-bot — управление установленным ботом.
                              deny <ip…> | off | rollback
   awg-bot routing-doctor     где рвётся условная маршрутизация (только чтение)
   awg-bot gw-bundle          пересобрать бандл для шлюза (ключи не меняются)
+  awg-bot awg <cmd>          ядро AmneziaWG по манифесту поставки (install/awg.lock):
+                             status | install | reload | plan
   awg-bot uninstall          удалить приложение (опционально: данные приложения)
 EOF
 }
@@ -833,6 +887,7 @@ case "$VERB" in
     firewall)    cmd_firewall "$@" ;;
     routing-doctor) cmd_routing_doctor ;;
     gw-bundle)   cmd_gw_bundle ;;
+    awg)         cmd_awg "$@" ;;
     -h|--help|help|"") usage ;;
     *) usage; die "неизвестная команда: $VERB" ;;
 esac
