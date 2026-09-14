@@ -21,7 +21,7 @@ from aiogram.filters import CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from awgbot.bot.callbacks import (AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB, GwMarkCB,
+from awgbot.bot.callbacks import (AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
                        Menu, PeriodCB, ReassignCB, RoutingCB, UpdateCB, BroadcastCB)
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message, purge_menus, dismiss_update_reports,

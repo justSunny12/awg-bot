@@ -486,13 +486,16 @@ Address` в sshd_config уберите руками — адресную фил�
    шлюза (второй бот от @BotFather — домашняя машина не должна знать токен
    этого) и запомнит его. Дальше он создаёт устройство «Шлюз», меняет ключи
    линка и выдаёт **файл первого применения**.
-3. **Две команды на машине-шлюзе:**
+3. **Одна команда со своей машины** — копирует файл и сразу ставит агента:
 
 ```bash
-scp awg-gw-bundle.sh root@ШЛЮЗ:/root/
-# на шлюзе:
-curl -fsSL https://raw.githubusercontent.com/<repo>/main/install/awg-bot-install.sh | sudo bash -s -- --role gateway
+scp awg-gw-bundle.sh root@ШЛЮЗ:/root/ && \
+  ssh -t root@ШЛЮЗ 'curl -fsSL https://raw.githubusercontent.com/<repo>/main/install/awg-bot-install.sh | \
+  sudo bash -s -- --role gateway --bundle /root/awg-gw-bundle.sh'
 ```
+
+Установка на шлюзе вопросов не задаёт, поэтому её незачем отделять от
+копирования. `ssh -t` нужен для пароля sudo; под root пароль не спросят вовсе.
 
 Установка агента **не задаёт ни одного вопроса**: токен агента и `ADMIN_ID`
 лежат внутри файла, установщик находит его в `/root` сам (или берёт путь из

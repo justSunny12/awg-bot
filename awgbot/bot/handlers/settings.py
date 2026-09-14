@@ -777,7 +777,6 @@ async def backup_passphrase_second(message: Message, state: FSMContext, services
 # ── ✉️ E-mail: мастер подключения, проверка, отключение ─────────────────────
 @router.callback_query(SetCB.filter((F.sec == "email") & (F.act == "do")))
 async def email_action(cb: CallbackQuery, callback_data: SetCB, services, state: FSMContext):
-    from awgbot.bot.states import EmailSetup
     from awgbot.infra import mail
     key = callback_data.key
     if key == "setup":

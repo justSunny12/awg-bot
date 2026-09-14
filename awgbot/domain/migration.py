@@ -25,7 +25,6 @@ from __future__ import annotations
 import logging
 import sqlite3
 from dataclasses import dataclass, field
-from typing import Optional
 
 from awgbot.core import config
 from awgbot.core.enums import FriendStatus

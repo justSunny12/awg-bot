@@ -413,7 +413,9 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
     def restart_link(self) -> tuple[bool, str]:
         """Мягкий рестарт линка: down/up интерфейса без пересборки обвязки.
         Секунды обрыва RF у всех — поэтому только с подтверждения."""
-        down = _run(["awg-quick", "down", config.GW_LINK_IF], timeout=30)
+        # Результат down намеренно не проверяем: интерфейс мог быть уже опущен,
+        # и это не отказ — важно только, поднялся ли он обратно.
+        _run(["awg-quick", "down", config.GW_LINK_IF], timeout=30)
         up = _run(["awg-quick", "up", config.GW_LINK_IF], timeout=30)
         ok = up.returncode == 0
         tail = (_out(up) + up.stderr.decode(errors="replace")).strip().splitlines()[-3:]

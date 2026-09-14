@@ -505,7 +505,7 @@ def migration_started(res) -> str:
                 "подними интерфейс и включи снова.".format(
                     ", ".join(_e(n) for n in res.failed[:5])
                     + ("…" if len(res.failed) > 5 else "")))
-    lines = [f"🚚 <b>Переезд начат.</b>",
+    lines = ["🚚 <b>Переезд начат.</b>",
              f"Новых профилей создано: {res.born}"]
     if res.already:
         lines.append(f"Уже существовало: {res.already}")
@@ -857,11 +857,11 @@ ROUTING_NAME = "РФ-доступ"
 
 SETTINGS_ROUTING_ABSENT = (
     "<b>🇷🇺 Условная маршрутизация</b>\n\n"
-    "Раздел недоступен: российский шлюз не настроен.\n\n"
-    "Функции нужен второй хост с российским адресом и туннель до него. "
-    "Разворачивается скриптами из <code>install/</code>, порядок — в "
-    "<code>docs/README-bot.md</code>. Пока в <code>app.yaml</code> пуст ключ "
-    "<code>routing.gw_interface</code>, раздел не показывается."
+    "Обвязка развёрнута, но функция ещё спит: имя интерфейса линка читается "
+    "при старте, а бот с тех пор не перезапускался.\n\n"
+    "Перезапусти его — ⚙️ Настройки → 🔄 Обслуживание → «Перезапустить бота» "
+    "— и раздел откроется целиком: назначение шлюза, списки, доступность "
+    "профилям."
 )
 
 
@@ -1010,19 +1010,27 @@ GATEWAY_ASK_TOKEN = (
     "выпустится заново без похода в BotFather.")
 
 
+GW_INSTALL_URL = ("https://raw.githubusercontent.com/justSunny12/awg-bot/main/"
+                  "install/awg-bot-install.sh")
+
+
 def gateway_install_instructions(dev) -> str:
-    """Что делать с файлом первого применения — две команды, обе обязательны."""
+    """Что делать с файлом первого применения — ОДНА строка со своей машины.
+
+    Копирование и установка склеены намеренно: установка на шлюзе не задаёт
+    вопросов, значит её незачем отделять от копирования и незачем заходить на
+    шлюз отдельным сеансом. `ssh -t` — чтобы у sudo был терминал для пароля.
+    """
     return (f"🛰 Шлюзом назначен «{_e(dev.name)}» ({plain_ip(dev.address)}).\n\n"
-            "<b>Два шага на машине-шлюзе.</b>\n\n"
-            "1. Скопируй туда файл ниже (он же в этом сообщении):\n"
-            "<code>scp awg-gw-bundle.sh root@ШЛЮЗ:/root/</code>\n\n"
-            "2. Поставь агента одной командой — он сам найдёт файл, поднимет "
-            "аплинк, линк и обвязку:\n"
-            "<code>curl -fsSL https://raw.githubusercontent.com/justSunny12/awg-bot/main/install/awg-bot-install.sh "
-            "| sudo bash -s -- --role gateway</code>\n\n"
+            "Сохрани файл ниже и выполни <b>со своей машины</b> одну команду — "
+            "она скопирует его на шлюз и сразу поставит агента:\n\n"
+            "<code>scp awg-gw-bundle.sh root@ШЛЮЗ:/root/ &amp;&amp; \\\n"
+            "  ssh -t root@ШЛЮЗ 'curl -fsSL " + GW_INSTALL_URL + " | \\\n"
+            "  sudo bash -s -- --role gateway --bundle /root/awg-gw-bundle.sh'</code>\n\n"
             "Вопросов установка не задаст: токен агента и твой Telegram ID уже "
-            "внутри файла. Когда агент поднимется, он напишет тебе сам — у него "
-            "свой чат.")
+            "внутри файла. Он поднимет аплинк, линк и обвязку, потом поставит "
+            "агента. Когда агент запустится, он напишет тебе сам — у него свой "
+            "чат.\n\nПосле установки удали файл на шлюзе: внутри ключи.")
 
 
 SETTINGS_ROUTING_SUBOFF = ("<b>🇷🇺 Условная маршрутизация</b>\n\nФункция выключена — "
@@ -1635,10 +1643,9 @@ def email_ask_resume_address(current: str) -> str:
 
 
 def email_provider_line(address: str, provider) -> str:
-    from awgbot.infra import mail
     if provider:
         imap, ip, smtp, sp = provider
-        return (f"Провайдер распознан: IMAP {_e(imap)}:{ip}, SMTP {_e(smtp)}:{sp}.")
+        return f"Провайдер распознан: IMAP {_e(imap)}:{ip}, SMTP {_e(smtp)}:{sp}."
     return ""
 
 

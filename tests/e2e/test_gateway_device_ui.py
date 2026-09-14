@@ -136,8 +136,15 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
     assert stored["t"].startswith("123456789:")
     docs = _docs(msg)
     assert len(docs) == 1 and "первого применения" in docs[0][1]
-    assert any("--role gateway" in s[1] for s in msg.sent if s[0] == "answer"), \
-        "инструкция с двумя командами не показана"
+    instr = [s[1] for s in msg.sent if s[0] == "answer" and "--role gateway" in s[1]]
+    assert instr, "инструкция не показана"
+    # Копирование и установка склеены: установка на шлюзе вопросов не задаёт,
+    # значит отделять её от scp и заходить на шлюз вторым сеансом незачем.
+    one = instr[0]
+    assert "scp awg-gw-bundle.sh" in one and "ssh -t" in one
+    assert "&amp;&amp;" in one, "команды не склеены в одну"
+    assert "--bundle /root/awg-gw-bundle.sh" in one, "путь к только что скопированному файлу"
+    assert one.index("scp") < one.index("ssh -t") < one.index("--role gateway")
 
     # Токен уже есть — второй раз не спрашиваем
     services.db.set_gateway(None)

@@ -34,7 +34,6 @@ from awgbot.util import timeutil
 from awgbot.infra import awg
 from awgbot.infra import email_resume
 from awgbot.infra import routing
-from awgbot.infra import updates
 from awgbot.domain import configgen
 from awgbot.domain import routing as domain_routing
 from awgbot.domain.migration import MigrationMixin
