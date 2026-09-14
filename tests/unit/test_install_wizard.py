@@ -143,3 +143,44 @@ def test_first_device_qr_is_skipped_in_a_narrow_terminal(monkeypatch):
 def test_first_device_file_is_root_only():
     src = (ROOT / "tools" / "first_device.py").read_text(encoding="utf-8")
     assert "0o600" in src and "удали после импорта" in src
+
+
+# ── применение правил файервола: подтверждение в чате, а не в SSH ────────────
+
+def test_arming_the_timer_sends_buttons_to_the_chat():
+    """Правила могли отрезать именно этот SSH — «выполни confirm» отправляет
+    человека туда, куда он уже не попадёт. Кнопка приходит в чат сама."""
+    src = (ROOT / "tools" / "firewall.py").read_text(encoding="utf-8")
+    arm = src.split("def _arm(", 1)[1].split("\ndef ", 1)[0]
+    assert "tgsend.send" in arm and "_fw_cb(\"confirm\")" in arm and "_fw_cb(\"rollback\")" in arm
+    assert "awg-bot firewall confirm" in arm, "запасной путь через CLI остаётся"
+    assert arm.index("tgsend.send") < arm.index("awg-bot firewall confirm")
+
+
+def test_rollback_tells_the_admin_it_happened():
+    """Молчаливый откат — худший исход: человек уверен, что файервол включён,
+    а он выключен. Вывод транзиентного юнита никто не читает."""
+    src = (ROOT / "tools" / "firewall.py").read_text(encoding="utf-8")
+    body = src.split("def cmd_rollback(", 1)[1].split("\ndef ", 1)[0]
+    assert "tgsend.send" in body and "откат" in body.lower()
+
+
+def test_chat_buttons_match_what_the_bot_handles():
+    """Кнопка из другого процесса обязана попасть в тот же обработчик, что и
+    кнопка, нарисованная ботом: разойдись формат — нажатие уходит в никуда."""
+    from awgbot.bot import keyboards as kb
+    from tools.firewall import _fw_cb
+    st = {"rollback": True}
+    drawn = [b.callback_data for row in kb.settings_firewall(st).inline_keyboard for b in row]
+    assert _fw_cb("confirm") in drawn and _fw_cb("rollback") in drawn
+
+
+def test_tgsend_never_raises_without_a_token(monkeypatch):
+    """Отправка из установщика не должна ронять установку."""
+    from awgbot.core import config
+    from awgbot.infra import tgsend
+    monkeypatch.setattr(config, "BOT_TOKEN", "")
+    assert tgsend.send("что-то") is False
+    monkeypatch.setattr(config, "BOT_TOKEN", "x:y")
+    monkeypatch.setattr(config, "ADMIN_ID", 0)
+    assert tgsend.send("что-то") is False

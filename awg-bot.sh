@@ -408,6 +408,7 @@ optional_steps() {
     # минут на «проверь вход новым подключением» ему мало.
     cmd_firewall setup --allow "$allow" --yes --rollback-seconds 900 \
         || warn "файервол не включён — позже: awg-bot firewall setup"
+    log "подтвердить правила можно кнопкой в чате бота — заходить в SSH для этого не нужно"
 }
 
 print_map() {  # print_map "active"|"failed"

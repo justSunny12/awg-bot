@@ -90,14 +90,39 @@ def _flag(args: list[str], name: str) -> str | None:
     return None
 
 
+def _fw_cb(key: str) -> str:
+    """callback_data кнопки раздела «Файервол» — той же формы, что рисует бот."""
+    from awgbot.bot.callbacks import SetCB
+    return SetCB(sec="fw", act="do", key=key).pack()
+
+
 def _arm(seconds: int = nftguard.ROLLBACK_SECONDS) -> None:
     env = {k: v for k, v in os.environ.items()
            if k in ("AWG_BOT_CONF_DIR", "AWG_BOT_DATA_DIR", "AWG_BOT_ENV")}
     cmd = ["-p", f"WorkingDirectory={ROOT}", sys.executable, "-m", "tools.firewall", "rollback"]
     nftguard.arm_rollback(seconds, cmd, env)
-    print(f"\n⏱ Таймер отката: {seconds} с. Проверь вход НОВЫМ подключением и выполни\n"
-          f"   awg-bot firewall confirm\n"
-          f"Иначе таблица снимется сама и firewall.enabled вернётся в false.")
+    # Подтверждать — В ЧАТЕ. Правила могли отрезать именно этот SSH, и тогда
+    # команда «выполни confirm» отправляет человека туда, куда он уже не
+    # попадёт. Telegram от состояния SSH не зависит, поэтому кнопка приходит
+    # сразу и сама, а не ждёт, пока админ откроет раздел настроек.
+    from awgbot.infra import tgsend
+    minutes = max(1, seconds // 60)
+    sent = tgsend.send(
+        f"⏱ <b>Файервол: правила применены, идёт проверка входа.</b>\n\n"
+        f"Открой <b>новое</b> SSH-подключение к серверу. Проходит — подтверди здесь. "
+        f"Не подтвердишь за {minutes} мин — правила снимутся сами, доступ вернётся "
+        f"всем адресам.\n\nЭто и есть страховка: если вход сломался, исправлять "
+        f"в терминале уже нечем, а этот чат работает.",
+        buttons=[("✅ Вход работает, подтверждаю", _fw_cb("confirm")),
+                 ("↩️ Откатить сейчас", _fw_cb("rollback"))])
+    print(f"\n⏱ Таймер отката: {seconds} с ({minutes} мин). Проверь вход НОВЫМ подключением.")
+    if sent:
+        print("   Подтвердить — кнопкой в чате бота (сообщение уже там).")
+        print("   Или здесь:  awg-bot firewall confirm")
+    else:
+        print("   Подтвердить:  awg-bot firewall confirm")
+        print("   (сообщение в чат не ушло — бот ещё не отвечает?)")
+    print("Иначе таблица снимется сама и firewall.enabled вернётся в false.")
 
 
 def _apply(with_rollback: bool, rollback_seconds: int = nftguard.ROLLBACK_SECONDS) -> None:
@@ -312,6 +337,14 @@ def cmd_rollback(_args) -> int:
         print(f"  {line}")
     settings.set_value("app.firewall.enabled", False)
     print("ОТКАТ: таблица снята, firewall.enabled: false")
+    # Молчаливый откат — худший исход: человек уверен, что файервол включён, а
+    # он выключен. Таймер срабатывает в транзиентном юните, чей вывод никто не
+    # читает, поэтому говорим в чат.
+    from awgbot.infra import tgsend
+    tgsend.send("↩️ <b>Файервол: откат.</b>\n\nПодтверждения не было, правила сняты — "
+                "SSH снова открыт всем адресам. NAT клиентов на месте.\n\n"
+                "Похоже, новый вход по SSH не прошёл: проверь список адресов "
+                "(⚙️ Настройки → 🛡 Файервол) и включи фильтр заново.")
     return 0
 
 
