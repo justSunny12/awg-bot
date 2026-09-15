@@ -115,6 +115,34 @@ async def test_gateway_update_install_runs_the_shared_updater(svc, fake_bot, mon
     assert svc.db.get_state("update_wait"), "«дождись» не запомнено для нового процесса"
 
 
+async def test_update_failure_message_can_be_hidden(svc, fake_bot, monkeypatch):
+    """«Не удалось обновить: GitHub HTTP 500» — на нём «В меню» и «Скрыть»:
+    отказ не итог ступени, держать его в истории незачем."""
+    import types
+    from awgbot.bot import keyboards as kb
+    nxt = types.SimpleNamespace(tag="v9.9.9", body="", skipped=())
+    monkeypatch.setattr(svc, "update_next", lambda: nxt)
+
+    def boom(r):
+        raise RuntimeError("GitHub HTTP 500: Internal Server Error")
+    monkeypatch.setattr(svc, "apply_update", boom)
+    sent = []
+    real = fake_bot.send_message
+
+    async def send_message(chat_id, text, reply_markup=None, **kw):
+        sent.append((text, reply_markup))
+        return await real(chat_id, text, reply_markup=reply_markup, **kw)
+    monkeypatch.setattr(fake_bot, "send_message", send_message)
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_update_install(cb, svc)
+    text, markup = [x for x in sent if "Не удалось обновить" in x[0]][0]
+    labels = [b.text for row in markup.inline_keyboard for b in row]
+    assert labels == ["⬅️ В меню", "Скрыть"]
+    assert markup.inline_keyboard[0][1].callback_data == kb.HideCB().pack()
+    assert not svc.db.get_state("update_pending")
+
+
 async def test_start_removes_all_previous_menus(svc, fake_bot):
     """Повторный /start убирает ВСЕ прошлые меню, а не только снимает кнопки с
     последнего: /start — «начать заново», и стопка мёртвых панелей над живой

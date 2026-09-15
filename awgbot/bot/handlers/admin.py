@@ -1202,7 +1202,7 @@ async def update_install(cb: CallbackQuery, services):
         except Exception:                             # noqa: BLE001
             pass
         failed_msg = await cb.bot.send_message(chat_id, texts.update_failed(str(e)),
-                                               reply_markup=kb.update_done_menu())
+                                               reply_markup=kb.update_failed_kb())
         await call(services.remember_update_report, chat_id, failed_msg.message_id)
 
 

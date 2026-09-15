@@ -772,6 +772,17 @@ def migration_needed() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def update_failed_kb() -> InlineKeyboardMarkup:
+    """«Не удалось обновить»: «В меню» + «Скрыть». Отказ — не итог ступени,
+    хранить его в истории незачем: сетевая ошибка GitHub повторится или нет,
+    и сообщение можно просто убрать."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="\u2b05\ufe0f В меню", callback_data=UpdateCB(action="menu"))
+    kb.button(text="Скрыть", callback_data=HideCB())
+    kb.adjust(2)
+    return kb.as_markup()
+
+
 def update_done_menu() -> InlineKeyboardMarkup:
     """«В меню» на итоговом сообщении self-update. Свой колбэк (upd:menu), а не
     Menu(main): стандартный обработчик РЕДАКТИРУЕТ сообщение в панель, а итог
