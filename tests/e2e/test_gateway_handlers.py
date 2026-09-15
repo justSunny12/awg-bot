@@ -116,8 +116,9 @@ async def test_gateway_update_install_runs_the_shared_updater(svc, fake_bot, mon
 
 
 async def test_update_failure_message_can_be_hidden(svc, fake_bot, monkeypatch):
-    """«Не удалось обновить: GitHub HTTP 500» — на нём «В меню» и «Скрыть»:
-    отказ не итог ступени, держать его в истории незачем."""
+    """«Не удалось обновить: GitHub HTTP 500» — финишер со «Скрыть», панель
+    следом: отказ не итог ступени, держать его в истории незачем, а меню под
+    кнопкой уже удалено."""
     import types
     from awgbot.bot import keyboards as kb
     nxt = types.SimpleNamespace(tag="v9.9.9", body="", skipped=())
@@ -138,9 +139,11 @@ async def test_update_failure_message_can_be_hidden(svc, fake_bot, monkeypatch):
     await gh.gw_update_install(cb, svc)
     text, markup = [x for x in sent if "Не удалось обновить" in x[0]][0]
     labels = [b.text for row in markup.inline_keyboard for b in row]
-    assert labels == ["⬅️ В меню", "Скрыть"]
-    assert markup.inline_keyboard[0][1].callback_data == kb.HideCB().pack()
+    assert labels == ["Скрыть"]
+    assert markup.inline_keyboard[0][0].callback_data == kb.HideCB().pack()
     assert not svc.db.get_state("update_pending")
+    panel = [s for s in msg.sent if s[0] == "answer" and s[2] is not None]
+    assert panel and "Шлюз" in panel[-1][1] or svc.db.get_nav_message_id(cfg.ADMIN_ID), "панель не пришла"
 
 
 async def test_start_removes_all_previous_menus(svc, fake_bot):

@@ -394,9 +394,11 @@ async def gw_update_install(cb: CallbackQuery, services):
             await wait.delete()
         except Exception:                             # noqa: BLE001
             pass
-        failed_msg = await cb.bot.send_message(chat_id, texts.update_failed(str(e)),
-                                               reply_markup=kb.update_failed_kb())
-        await call(services.remember_update_report, chat_id, failed_msg.message_id)
+        # отказ — финишер со «Скрыть», панель следом: меню под кнопкой уже
+        # удалено, оставить человека без него нельзя
+        await cb.bot.send_message(chat_id, texts.update_failed(str(e)),
+                                  reply_markup=kb.hide_only())
+        await _panel(cb.message, services)
 
 
 @router.callback_query(UpdateCB.filter(F.action == "menu"))
