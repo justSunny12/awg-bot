@@ -45,3 +45,40 @@ def test_main_only_releases_are_not_addressed_to_the_gateway():
     for tag, lines in _entries():
         if tag in ("v2.19.0", "v2.19.0.2", "v2.19.0.3"):
             assert not any(ln.startswith("#requires_gw_") for ln in lines), tag
+
+
+def _audience_by_version() -> dict[str, set[str]]:
+    """Версия → роли, которым релиз был адресован (оба формата хэштегов)."""
+    out: dict[str, set[str]] = {}
+    for tag, lines in _entries():
+        roles: set[str] = set()
+        for ln in lines:
+            if ln == "#all_bots":
+                roles |= {"main", "gw"}
+            elif ln == "#main_bot":
+                roles.add("main")
+            elif ln == "#gw_bot":
+                roles.add("gw")
+            m = re.fullmatch(r"#requires_(main|gw)_.*", ln)
+            if m:
+                roles.add(m.group(1))
+        if not any(ln.startswith("#") for ln in lines):
+            roles = {"main", "gw"}            # релизы до хэштегов — общие
+        out[tag[1:]] = roles
+    return out
+
+
+def test_required_floor_is_a_release_that_role_actually_received():
+    """Не каждый патч едет в каждую роль: минимум в `#requires_gw_X` обязан
+    быть релизом, адресованным шлюзу, иначе шлюз никогда на нём не стоял и
+    «ступень» ведёт в версию, которой у роли не было."""
+    audience = _audience_by_version()
+    for tag, lines in _entries():
+        for ln in lines:
+            m = re.fullmatch(r"#requires_(main|gw)_v?(\d+\.\d+\.\d+(?:\.\d+)?)", ln)
+            if not m:
+                continue
+            role, floor = m.groups()
+            assert floor in audience, f"{tag}: минимум {floor} — нет такого релиза в журнале"
+            assert role in audience[floor], \
+                f"{tag}: минимум {floor} для роли {role} — тот релиз роли не адресовался"
