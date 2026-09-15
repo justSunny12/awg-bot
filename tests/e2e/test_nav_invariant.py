@@ -48,7 +48,23 @@ async def test_settings_input_moves_nav_and_cleans_prompt(services, fake_bot, mo
     await sh.receive_value(typed, st, services)
     assert services.db.get_nav_message_id(ADMIN) != prompt.message_id
     assert typed.message_id in _deleted(fake_bot), "ввод человека остался в чате"
-    assert ("edit_markup", ADMIN, prompt.message_id) in fake_bot.records, "у приглашения живая «Отмена»"
+    assert prompt.message_id in _deleted(fake_bot), "вопрос остался в чате"
+    answers = [s for s in typed.sent if s[0] == "answer"]
+    assert "«Частота опроса» успешно изменена" in answers[0][1] and "→ <b>5</b> мин" in answers[0][1]
+    assert answers[0][2] is None and answers[-1][2] is not None, "финишер без кнопок, раздел с кнопками"
+
+
+async def test_settings_text_value_finisher_shows_old_and_new(services, fake_bot, monkeypatch):
+    from awgbot.core import settings
+    real = settings.get
+    monkeypatch.setattr(settings, "get", lambda k, d=None: {"app.client_config.dns1": "1.1.1.1",
+                                                            "app.client_config.dns2": "1.0.0.1"}.get(k, real(k, d)))
+    monkeypatch.setattr(settings, "set_value", lambda k, v: [k])
+    st = FakeState(); await st.update_data(key="app.client_config.dns1", sec="srv")
+    typed = _msg(fake_bot, ADMIN, "10.9.1.1")
+    await sh.receive_value(typed, st, services)
+    fin = [s for s in typed.sent if s[0] == "answer"][0][1]
+    assert "«DNS клиентов» успешно изменена: 1.1.1.1, 1.0.0.1 → <b>10.9.1.1</b>." in fin
 
 
 async def test_settings_bad_input_is_tracked_reask(services, fake_bot):

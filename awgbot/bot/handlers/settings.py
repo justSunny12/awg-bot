@@ -129,8 +129,9 @@ async def _after_input(message: Message, services, sec: str) -> None:
 
     Голый message.answer оставлял в чате два живых экрана: приглашение «введи
     значение» с кнопкой «Отмена» и новый раздел, а нав-указатель так и стоял на
-    приглашении — следующий переход гасил не то. Заодно убираем служебное:
-    само приглашение, ввод человека, переспросы (всё это трекается)."""
+    приглашении — следующий переход гасил не то. Служебное убираем: само
+    приглашение, ввод человека, переспросы (всё это трекается); в чате
+    остаются финишер «изменено: было → стало» и раздел."""
     await cleanup_content(message.bot, services, message.chat.id)
     await send_menu(message, services, *await _screen(sec, services))
 
@@ -477,8 +478,15 @@ async def private_dns_action(cb: CallbackQuery, callback_data: SetCB, services, 
 @router.callback_query(SetCB.filter((F.sec == "mig_prep") & (F.act == "edit")))
 async def migration_port_ask(cb: CallbackQuery, state: FSMContext, services):
     await state.set_state(MigrationPort.value)
-    await edit(cb, texts.MIGRATION_ASK_PORT, kb.settings_cancel("mig_prep"))
+    await _ask(cb, services, texts.MIGRATION_ASK_PORT, kb.settings_cancel("mig_prep"))
     await cb.answer()
+
+
+async def _ask(cb: CallbackQuery, services, prompt: str, markup) -> None:
+    """Приглашение к вводу — на месте экрана и в служебные: после ответа оно
+    отслужило и убирается вместе с вводом (см. _after_input)."""
+    await edit(cb, prompt, markup)
+    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
 
 
 # ── ввод числового значения (FSM) ────────────────────────────────────────────
@@ -494,7 +502,7 @@ async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext,
         prompt = texts.email_ask_resume_address(await call(services.email_resume_address))
     else:
         prompt = texts.settings_prompt(key)
-    await edit(cb, prompt, kb.settings_cancel(callback_data.sec))
+    await _ask(cb, services, prompt, kb.settings_cancel(callback_data.sec))
     await cb.answer()
 
 
@@ -656,12 +664,15 @@ async def receive_value(message: Message, state: FSMContext, services):
         elif key == "app.firewall.ssh_allow":
             # Вайтлист не «значение настройки», а список: пишет его сервис —
             # он же проверяет каждый адрес и перевыставляет таблицу.
+            before = list(settings.get("app.firewall.ssh_allow", []) or [])
             try:
-                await call(services.firewall_allow_add, raw)
+                after = await call(services.firewall_allow_add, raw)
             except ServiceError as e:
                 await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
                 return
             await state.clear()
+            await message.answer(texts.settings_ssh_allow_added(
+                [x for x in after if x not in before] or [raw]))
             await _after_input(message, services, sec)
             return
         else:
@@ -669,15 +680,23 @@ async def receive_value(message: Message, state: FSMContext, services):
             if not ok:
                 await ask_tracked(message, services, f"⚠️ {texts._e(err)}")
                 return
-            if key == "app.client_config.dns1":
-                # В конфиге два поля, в UI одна строка. Второй адрес обязан
-                # быть тем же, если назван один: стеки опрашивают список не
-                # строго по порядку, и «публичный вторым номером» вернул бы
-                # утечку резолва мимо нашего dnsmasq.
-                parts = [x for x in raw.replace(",", " ").split() if x]
-                await call(settings.set_value, "app.client_config.dns2",
-                           parts[1] if len(parts) > 1 else parts[0])
-                raw = parts[0]
+        old = str(settings.get(key, "") or "")
+        shown_new = raw
+        if key == "app.client_config.dns1":
+            # В конфиге два поля, в UI одна строка. Второй адрес обязан
+            # быть тем же, если назван один: стеки опрашивают список не
+            # строго по порядку, и «публичный вторым номером» вернул бы
+            # утечку резолва мимо нашего dnsmasq.
+            parts = [x for x in raw.replace(",", " ").split() if x]
+            old2 = str(settings.get("app.client_config.dns2", "") or "")
+            old = f"{old}, {old2}" if old2 and old2 != old else old
+            await call(settings.set_value, "app.client_config.dns2",
+                       parts[1] if len(parts) > 1 else parts[0])
+            raw = parts[0]
+            shown_new = ", ".join(parts)
+        elif key == "email.resume_address":
+            old = old or "сам ящик"
+            shown_new = raw or "сам ящик"
         try:
             await call(settings.set_value, key, raw)
         except settings.SettingsWriteError as e:
@@ -686,6 +705,7 @@ async def receive_value(message: Message, state: FSMContext, services):
             await _after_input(message, services, sec)
             return
         await state.clear()
+        await message.answer(texts.settings_changed(key, old, shown_new))
         await _after_input(message, services, sec)
         return
     if key not in texts.SETTINGS_BOUNDS:      # рассинхрон state (не должен случаться)
@@ -701,6 +721,7 @@ async def receive_value(message: Message, state: FSMContext, services):
     except ValueError:
         await ask_tracked(message, services, texts.settings_bad_value(key))
         return
+    old = settings.get(key, None)
     try:
         await call(settings.set_value, key, val)
     except settings.SettingsWriteError as e:
@@ -709,6 +730,7 @@ async def receive_value(message: Message, state: FSMContext, services):
         await _after_input(message, services, sec)
         return
     await state.clear()
+    await message.answer(texts.settings_changed(key, old, val))
     await _after_input(message, services, sec)
 
 
@@ -884,11 +906,11 @@ async def backup_restore_action(cb: CallbackQuery, callback_data: SetCB, service
 
 # ── 🔐 Шифрование бэкапов: фраза дважды, сообщения удаляются ─────────────────
 @router.callback_query(SetCB.filter((F.sec == "backup") & (F.act == "do") & (F.key == "enc_set")))
-async def backup_passphrase_start(cb: CallbackQuery, state: FSMContext):
+async def backup_passphrase_start(cb: CallbackQuery, state: FSMContext, services):
     from awgbot.bot.states import BackupPassphrase
     await state.clear()
     await state.set_state(BackupPassphrase.first)
-    await edit(cb, texts.BACKUP_ASK_PASSPHRASE, kb.settings_cancel("backup"))
+    await _ask(cb, services, texts.BACKUP_ASK_PASSPHRASE, kb.settings_cancel("backup"))
     await cb.answer()
 
 

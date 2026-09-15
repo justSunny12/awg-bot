@@ -92,7 +92,8 @@ async def test_add_domains_reports_each_line(services, make_active_client, fake_
                       chat_id=77, user_id=77, bot=fake_bot)
     await routing_h.routing_add_apply(msg, c, services, FakeState())
     out = "".join(s[1] for s in msg.sent if s[0] == "answer")
-    assert "bank.com" in out and "netflix.com" in out
+    assert "<b>bank.com</b>, <b>netflix.com</b> добавлены в список сайтов" in out
+    assert "ругается на VPN" in out
     assert "Не добавлено" in out                    # мусорная строка объяснена
     assert set(services.routing_domains(c.id)) == {"bank.com", "netflix.com"}
 
@@ -108,6 +109,19 @@ async def test_delete_by_stale_index_does_not_remove_wrong_domain(
                                    c, services)
     assert services.routing_domains(c.id) == ["a.com", "b.com"]
     assert cb.answers[0][1] is True
+
+
+async def test_delete_leaves_a_notice_and_panel_follows(services, make_active_client, fake_bot):
+    c = _allowed_client(services, make_active_client, 78)
+    services.set_routing_all(c.id, True)
+    services.routing_add_domains(c.id, "megafon.ru")
+    c = services.db.get_client(c.id)
+    cb, nav = _cb(fake_bot, 78)
+    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=c.id, idx=0), c, services)
+    edits = [s for s in nav.sent if s[0] == "edit_text"]
+    assert "<b>megafon.ru</b> удалён из списка сайтов" in edits[-1][1] and edits[-1][2] is None
+    answers = [s for s in nav.sent if s[0] == "answer"]
+    assert answers and "РФ-доступ" in answers[-1][1] and answers[-1][2] is not None
 
 
 async def test_delete_removes_selected_domain(services, make_active_client, fake_bot):

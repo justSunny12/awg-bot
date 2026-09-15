@@ -236,8 +236,11 @@ async def routing_delete(cb: CallbackQuery, callback_data: RoutingCB, client, se
         return
     removed = domains[idx]
     await call(services.routing_remove_domain, profile.id, removed)
-    await show_panel(cb, services, profile, client)
     await cb.answer(f"Удалено: {removed}")
+    # итог — на месте панели и остаётся в чате, панель следом (как у добавления)
+    await edit(cb, texts.routing_domain_removed(removed), None)
+    text, markup = await panel_view(services, profile, _back_target(profile, client))
+    await send_menu(cb.message, services, text, markup, keep_id=cb.message.message_id)
 
 
 @router.callback_query(RoutingCB.filter(F.action == "clear"))

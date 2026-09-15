@@ -176,7 +176,7 @@ async def test_backup_passphrase_flow_deletes_messages_and_requires_match(servic
     await sh.do_action(cb, SetCB(sec="backup", act="do", key="enc"), services)
     assert any("Шифрование резервных копий" in t for kind, t, _ in msg.sent if kind == "edit_text")
     state = FakeState()
-    await sh.backup_passphrase_start(cb, state)
+    await sh.backup_passphrase_start(cb, state, services)
     m = lambda t: FakeMessage(text=t, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     short = m("abc"); await sh.backup_passphrase_first(short, state, services)
     assert any("короче" in t for kind, t, _ in short.sent)

@@ -1158,6 +1158,18 @@ ROUTING_APPLY_HINT = (
     "\n\n<i>Изменения применяются в течение минуты. Если сайт всё ещё "
     "открывается по-старому — переподключись.</i>"
 )
+ROUTING_ADDED_HINT = (
+    "\n\n<i>Изменения применятся в течение минуты. Если сайт всё ещё ругается "
+    "на VPN или не работает — переподключись.</i>"
+)
+_ROUTING_LIST_INTO = "список сайтов, открываемых с российского адреса"     # в …
+_ROUTING_LIST_FROM = "списка сайтов, открываемых с российского адреса"     # из …
+
+
+def routing_domain_removed(domain: str) -> str:
+    """Итог удаления одного адреса — остаётся в чате, панель приходит следом."""
+    return (f"🗑 <b>{_e(domain)}</b> удалён из {_ROUTING_LIST_FROM}."
+            + ROUTING_APPLY_HINT)
 
 
 def routing_panel_text(*, master_on: bool, domains: list,
@@ -1200,7 +1212,9 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int)
     гадать, почему добавилось меньше, чем он прислал."""
     parts = []
     if added:
-        parts.append("✅ Добавлено:\n" + "\n".join(f"• {_e(d)}" for d in added))
+        names = ", ".join(f"<b>{_e(d)}</b>" for d in added)
+        verb = "добавлен" if len(added) == 1 else "добавлены"
+        parts.append(f"✅ {names} {verb} в {_ROUTING_LIST_INTO}.")
     if rejected:
         parts.append("⚠️ Не добавлено:\n" + "\n".join(
             f"• {_e(raw)} — {_e(reason)}" for raw, reason in rejected))
@@ -1211,7 +1225,7 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int)
     if not parts:
         return "Ничего не добавлено — не нашёл в сообщении ни одного адреса."
     text = "\n\n".join(parts)
-    return text + (ROUTING_APPLY_HINT if added else "")
+    return text + (ROUTING_ADDED_HINT if added else "")
 
 
 ROUTING_CLEAR_CONFIRM = (
@@ -2074,6 +2088,24 @@ def settings_prompt(key: str) -> str:
         return f"Введи новое значение: <b>{_e(label)}</b>\n{_e(hint)}."
     lo, hi, label, unit = SETTINGS_BOUNDS[key]
     return f"Введи новое значение: <b>{_e(label)}</b>\nЕдиница: {_e(unit)}\nДиапазон: {lo}–{hi}."
+
+
+def settings_changed(key: str, old, new) -> str:
+    """Финишер после ввода значения — остаётся в чате, раздел приходит следом.
+    Единица — из таблицы границ, без диапазона в скобках."""
+    if key in SETTINGS_TEXT:
+        label, unit = SETTINGS_TEXT[key][0], ""
+    else:
+        _lo, _hi, label, unit = SETTINGS_BOUNDS[key]
+        unit = " " + unit.split(" (")[0]
+    old_s = _e(str(old)) if old not in (None, "", []) else "—"
+    return (f"✅ Настройка «{_e(label)}» успешно изменена: "
+            f"{old_s} → <b>{_e(str(new))}</b>{_e(unit)}.")
+
+
+def settings_ssh_allow_added(entries: list) -> str:
+    return ("✅ Настройка «Адреса для SSH»: добавлено "
+            + ", ".join(f"<b>{_e(x)}</b>" for x in entries) + ".")
 
 
 def settings_bad_value(key: str) -> str:
