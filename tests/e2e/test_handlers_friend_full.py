@@ -51,13 +51,13 @@ async def test_friend_connect_menu_and_gen(services, fake_bot, make_active_clien
     await fh.friend_connect_menu(cb, FriendCB(action="connect_menu", device_id=dc.device_id), services)
     assert any(s[0] == "edit_text" for s in nav.sent)
     cb2, nav2 = _fcb(fake_bot, 96104)
-    await fh.friend_gen_link(cb2, FriendCB(action="gen_link", device_id=dc.device_id), services)
+    await fh.friend_gen(cb2, FriendCB(action="gen_link", device_id=dc.device_id), services)
     assert any(s[0] == "answer" for s in nav2.sent)
     cb3, nav3 = _fcb(fake_bot, 96104)
-    await fh.friend_gen_qr(cb3, FriendCB(action="gen_qr", device_id=dc.device_id), services)
+    await fh.friend_gen(cb3, FriendCB(action="gen_qr", device_id=dc.device_id), services)
     assert any(s[0] == "animation" for s in nav3.sent)
     cb4, nav4 = _fcb(fake_bot, 96104)
-    await fh.friend_gen_file(cb4, FriendCB(action="gen_file", device_id=dc.device_id), services)
+    await fh.friend_gen(cb4, FriendCB(action="gen_file", device_id=dc.device_id), services)
     assert any(s[0] == "document" for s in nav4.sent)
 
 
@@ -65,7 +65,7 @@ async def test_friend_gen_foreign_guarded(services, fake_bot, make_active_client
     a = make_active_client(tg_id=6105)
     dc = _befriend(services, a.id, 96105)
     cb, nav = _fcb(fake_bot, 96106)                          # чужой tg
-    await fh.friend_gen_link(cb, FriendCB(action="gen_link", device_id=dc.device_id), services)
+    await fh.friend_gen(cb, FriendCB(action="gen_link", device_id=dc.device_id), services)
     assert cb.answers[-1][1] is True
 
 

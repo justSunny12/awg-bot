@@ -22,11 +22,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import (AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB,
-                       Menu, PeriodCB, ReassignCB, RoutingCB, UpdateCB, BroadcastCB)
+                       Menu, PeriodCB, ReassignCB, UpdateCB, BroadcastCB)
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message, purge_menus, dismiss_update_reports,
-                             remove_device_and_notify, send_conf, cleanup_content,
-                             send_link, send_qr, send_menu, content_finisher,
+from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message, purge_menus, dismiss_update_reports, park_screen,
+                             remove_device_and_notify, cleanup_content, send_device_config,
+                             send_menu, content_finisher,
                              show_main_menu, _dismiss_previous_nav)
 from awgbot.bot.notifier import (notify_one, send_notifications, broadcast,
                                  send_announcement)
@@ -65,12 +65,13 @@ async def _main_menu_markup(services):
     return _menu_markup_from(await call(services.admin_panel_snapshot))
 
 
-async def _return_panel(message, services) -> None:
+async def _return_panel(message, services, keep_id=None) -> None:
     """Показать админ-панель новым сообщением — единый «выход» из любого диалога,
     чтобы юзер не оставался без навигации. Гасит прежнее активное меню и стирает
-    промежуточные служебные сообщения диалога (вопросы, ввод, ссылки)."""
+    промежуточные служебные сообщения диалога (вопросы, ввод, ссылки). keep_id —
+    итог, у которого кнопки уже сняты вызывающим."""
     await cleanup_content(message.bot, services, message.chat.id)
-    await send_menu(message, services, *await _panel_parts(services))
+    await send_menu(message, services, *await _panel_parts(services), keep_id=keep_id)
 
 
 async def restore_panel_after_restart(bot, services) -> None:
@@ -257,11 +258,11 @@ async def clients_list(cb: CallbackQuery, services):
         await edit(cb, "👥 Профили:", kb.admin_clients(clients, online))
 
 
-async def _show_client_card(cb: CallbackQuery, services, client_id: int):
+async def _client_card_parts(services, client_id: int):
+    """(текст, клавиатура) карточки профиля или None — профиля нет."""
     d = await call(services.client_card_data, client_id)     # один хоп вместо восьми
     if d is None:
-        await cb.answer("Профиль не найден", show_alert=True)
-        return
+        return None
     client, devices = d["client"], d["devices"]
     text = texts.client_card(client, devices, d["traffic"], d["online"], for_admin=True)
     # Прогресс переезда — последней строкой и ТОЛЬКО админу: клиенту знать про
@@ -270,120 +271,23 @@ async def _show_client_card(cb: CallbackQuery, services, client_id: int):
         line = texts.migration_profile_line(*d["progress"])
         if line:
             text += "\n\n" + line
-    await edit(cb, text, kb.admin_client_actions(
+    return text, kb.admin_client_actions(
         client, has_devices=bool(devices), is_admin_owner=client.tg_id == config.ADMIN_ID,
-        routing_visible=d["rt_visible"], routing_on=d["rt_on"]))
+        routing_visible=d["rt_visible"], routing_on=d["rt_on"])
+
+
+async def _show_client_card(cb: CallbackQuery, services, client_id: int):
+    parts = await _client_card_parts(services, client_id)
+    if parts is None:
+        await cb.answer("Профиль не найден", show_alert=True)
+        return
+    await edit(cb, *parts)
 
 
 @router.callback_query(ClientCB.filter(F.action == "open"))
 async def client_open(cb: CallbackQuery, callback_data: ClientCB, services):
     await cb.answer()
     await _show_client_card(cb, services, callback_data.client_id)
-
-
-@router.callback_query(RoutingCB.filter(F.action == "panel"))
-async def admin_routing_panel(cb: CallbackQuery, callback_data: RoutingCB, services):
-    """Раздел РФ-доступа ЛЮБОГО профиля со стороны админа.
-
-    Отдельный хендлер, потому что клиентский берёт профиль из контекста, а у
-    админа его нет (middleware отдаёт client=None). Здесь профиль приходит в
-    ref — так админ попадает и в свой раздел, и в чужой при разборе проблемы.
-    """
-    client = await call(services.db.get_client, callback_data.ref)
-    if client is None:
-        await cb.answer("Профиль не найден", show_alert=True)
-        return
-    if not await call(services.routing_client_visible, client):
-        await cb.answer("Профилю не разрешён РФ-доступ — выдай в настройках",
-                        show_alert=True)
-        return
-    from awgbot.bot.handlers.routing import show_panel
-    await show_panel(cb, services, client,
-                     back_target=_rt_back_target(client))
-    await cb.answer()
-
-
-def _rt_back_target(client) -> str:
-    """Куда ведёт «Назад» из раздела РФ-доступа.
-
-    У профиля АДМИНА отдельного экрана больше нет: из списка профилей он убран,
-    а вход в раздел — прямо с главной. Возвращать туда, откуда не приходили,
-    значит показать карточку, которой в текущей навигации не существует.
-    Чужой профиль — наоборот, открывается из своей карточки, в неё и вернём.
-    """
-    if client.tg_id == config.ADMIN_ID:
-        return Menu(action="main").pack()
-    return ClientCB(action="open", client_id=client.id).pack()
-
-
-async def _rt_client(cb: CallbackQuery, services, client_id: int):
-    """Профиль для админских действий с маршрутизацией, с обеими проверками.
-    None — уже ответили пользователю, вызывающему остаётся выйти."""
-    client = await call(services.db.get_client, client_id)
-    if client is None:
-        await cb.answer("Профиль не найден", show_alert=True)
-        return None
-    if not await call(services.routing_client_visible, client):
-        await cb.answer("Профилю не разрешён РФ-доступ — выдай в настройках",
-                        show_alert=True)
-        return None
-    return client
-
-
-async def _rt_show_devices(cb: CallbackQuery, services, client) -> None:
-    from awgbot.bot.handlers.routing import devices_view
-    text, markup = await devices_view(services, client)
-    await edit(cb, text, markup)
-
-
-@router.callback_query(RoutingCB.filter(F.action == "devs"))
-async def admin_routing_devices(cb: CallbackQuery, callback_data: RoutingCB, services):
-    """Экран устройств ЛЮБОГО профиля. Зеркало клиентского: тот берёт профиль из
-    контекста, а у админа его нет — здесь он приходит в ref."""
-    client = await _rt_client(cb, services, callback_data.ref)
-    if client is None:
-        return
-    await _rt_show_devices(cb, services, client)
-    await cb.answer()
-
-
-@router.callback_query(RoutingCB.filter(F.action == "dev"))
-async def admin_routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
-                                      services):
-    """Переключить одно устройство. В ref здесь device_id, а не client_id, —
-    профиль достаём через устройство."""
-    dev = await call(services.db.get_device, callback_data.ref)
-    if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
-        return
-    client = await _rt_client(cb, services, dev.client_id)
-    if client is None:
-        return
-    new_state = await call(services.toggle_routing_device, dev.id)
-    await _rt_show_devices(cb, services, client)
-    await cb.answer("включено" if new_state else "выключено")
-
-
-@router.callback_query(RoutingCB.filter(F.action == "all"))
-async def admin_routing_all(cb: CallbackQuery, callback_data: RoutingCB, services):
-    """Массовое действие по профилю. Направление выводим из состояния:
-    выключить всё осмысленно, только когда включено уже всё."""
-    client = await _rt_client(cb, services, callback_data.ref)
-    if client is None:
-        return
-    enabled, total = await call(services.routing_device_counts, client.id)
-    if not total:
-        await cb.answer("Устройств пока нет", show_alert=True)
-        return
-    # Не «включено ноль», а «включено не всё»: подпись кнопки гласит
-    # «включить все», пока хоть одно выключено, и действие обязано ей
-    # соответствовать.
-    turn_on = enabled < total
-    await call(services.set_routing_all, client.id, turn_on)
-    await _rt_show_devices(cb, services, client)
-    await cb.answer("Включено на всех" if turn_on else "Выключено на всех")
-
-
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -538,13 +442,14 @@ async def admin_add_device_traffic(message: Message, services, state: FSMContext
                                     max_devices=client.device_limit if client else 0,
                                     dev_limit_bytes=tlimit, profile_limit_bytes=plimit),
         reply_markup=kb.reply_hide())
-    # уведомляем клиента — тем же принципом, что при переназначении устройства
-    if client and client.tg_id:
+    # уведомляем клиента — тем же принципом, что при переназначении устройства.
+    # Себе админ устройство добавляет другим путём (AdminSelfCB), уведомлять
+    # его о собственном действии незачем.
+    if client and client.tg_id and client.tg_id != config.ADMIN_ID:
         used, limit = await call(services.device_slots, client_id)
         await notify_one(
             message.bot, client.tg_id,
-            texts.reassign_recipient_notice(name, used, limit,
-                                           recipient_is_admin=(client.tg_id == config.ADMIN_ID)),
+            texts.reassign_recipient_notice(name, used, limit),
             reply_markup=kb.added_by_admin(created.device_id))
     await _return_panel(message, services)
 
@@ -619,18 +524,25 @@ async def edit_limit_apply(message: Message, services, state: FSMContext):
     await _apply_limit(message, services, client, new_limit)
 
 
-async def _apply_limit(message, services, client, new_limit: int):
+async def _apply_limit(message, services, client, new_limit: int, *, via_edit=None):
+    """Применить лимит и отчитаться. Итог — на месте вопроса (via_edit — колбэк
+    подтверждения) либо новым сообщением; панель следом. Раньше подтверждение
+    переписывалось в «Готово.» с кнопками меню уже ПОСЛЕ присланной панели, и
+    та оставалась в чате мёртвой — живое меню висело над ней."""
     old_limit = client.device_limit
     await call(services.db.update_client_fields, client.id, device_limit=new_limit)
     old_s = "без ограничения" if not old_limit else str(old_limit)
     new_s = "без ограничения" if not new_limit else str(new_limit)
-    await message.answer(
-        f"✅ Профиль «{client.name}»: лимит устройств изменён {old_s} → {new_s}.",
-        reply_markup=kb.reply_hide())
+    done = f"✅ Лимит устройств профиля «{texts._e(client.name)}» изменён: {old_s} → {new_s}."
+    if via_edit is not None:
+        await edit(via_edit, done, None)
+    else:
+        await message.answer(done, reply_markup=kb.reply_hide())
     if client.tg_id and old_limit != new_limit:
         await notify_one(message.bot, client.tg_id,
                          texts.limit_changed_notice(old_limit, new_limit))
-    await _return_panel(message, services)
+    await _return_panel(message, services,
+                        keep_id=via_edit.message.message_id if via_edit is not None else None)
 
 
 @router.callback_query(ConfirmCB.filter(F.action == "lower_limit"))
@@ -647,9 +559,8 @@ async def edit_limit_confirm(cb: CallbackQuery, callback_data: ConfirmCB, servic
     if client is None or new_limit is None:
         await cb.answer("Диалог устарел, начни заново", show_alert=True)
         return
-    await _apply_limit(cb.message, services, client, new_limit)
-    await edit_nav(cb, services, "Готово.", await _main_menu_markup(services))
     await cb.answer()
+    await _apply_limit(cb.message, services, client, new_limit, via_edit=cb)
 
 
 # ── Редактирование лимита потребления (админ: клиент-тотал и устройство) ──────
@@ -979,12 +890,14 @@ async def admin_resume_pause(cb: CallbackQuery, callback_data: ClientCB, service
         return
     await send_notifications(cb.bot, notes)
     end_txt = timeutil.fmt_dt(new_end) if new_end else "бессрочно"
-    await cb.message.answer(
-        f"▶️ Профиль «{client.name}» выведен из приостановки.\n"
-        f"Списано дней: {actual}. Новый срок: {end_txt}.",
-        reply_markup=kb.reply_hide())
     await cb.answer("Возобновлено")
-    await _show_client_card(cb, services, client.id)
+    # итог — на месте карточки и остаётся в чате, карточка — следом (как у
+    # продления и переезда: живое меню всегда последним сообщением)
+    await edit(cb, f"▶️ Профиль «{texts._e(client.name)}» выведен из приостановки.\n"
+                   f"Списано дней: {actual}. Новый срок: {end_txt}.", None)
+    parts = await _client_card_parts(services, client.id)
+    if parts is not None:
+        await send_menu(cb.message, services, *parts, keep_id=cb.message.message_id)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1017,54 +930,22 @@ async def admin_client_devices(cb: CallbackQuery, callback_data: ClientCB, servi
 
 
 # админ генерирует ссылку/QR/файл для любого устройства (без проверки владения)
-@router.callback_query(DeviceCB.filter(F.action == "gen_link"))
-async def admin_dev_link(cb: CallbackQuery, callback_data: DeviceCB, services):
+@router.callback_query(DeviceCB.filter(F.action.in_(kb.GEN_ACTIONS)))
+async def admin_dev_gen(cb: CallbackQuery, callback_data: DeviceCB, services):
+    """Один обработчик на три вида выдачи: раньше их было три одинаковых."""
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
+    kind = kb.gen_kind(callback_data.action)
+    await drop_message(cb)                           # убрать «Как подключить» — не висеть над ссылкой
     try:
-        cfg = await call(services.generate_config, dev.id)
+        await send_device_config(cb.message, services, dev, kind)
     except ServiceError as e:
         await cb.answer(str(e), show_alert=True)
+        await _return_panel(cb.message, services)
         return
-    await drop_message(cb)                           # убрать «Как подключить» — не висеть над ссылкой
-    await send_link(cb.message, cfg["vpn"], services)
-    await content_finisher(cb.message, services, texts.finish_link(dev.name), "admin")
-    await cb.answer()
-
-
-@router.callback_query(DeviceCB.filter(F.action == "gen_qr"))
-async def admin_dev_qr(cb: CallbackQuery, callback_data: DeviceCB, services):
-    dev = await call(services.db.get_device, callback_data.device_id)
-    if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
-        return
-    try:
-        cfg = await call(services.generate_config, dev.id)
-    except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
-        return
-    await drop_message(cb)                           # убрать «Как подключить» — не висеть над ссылкой
-    await send_qr(cb.message, cfg["vpn"], services)
-    await content_finisher(cb.message, services, texts.finish_qr(dev.name), "admin")
-    await cb.answer()
-
-
-@router.callback_query(DeviceCB.filter(F.action == "gen_file"))
-async def admin_dev_file(cb: CallbackQuery, callback_data: DeviceCB, services):
-    dev = await call(services.db.get_device, callback_data.device_id)
-    if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
-        return
-    try:
-        cfg = await call(services.generate_config, dev.id)
-    except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
-        return
-    await drop_message(cb)                           # убрать «Как подключить» — не висеть над ссылкой
-    await send_conf(cb.message, dev.name, cfg["conf"], services)
-    await content_finisher(cb.message, services, texts.finish_file(dev.name), "admin")
+    await content_finisher(cb.message, services, texts.finish_config(kind, dev.name), "admin")
     await cb.answer()
 
 
@@ -1104,20 +985,23 @@ async def admin_device_open(cb: CallbackQuery, callback_data: DeviceCB, services
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
+    await edit(cb, *await _device_card_parts(services, dev))
+    await cb.answer()
+
+
+async def _device_card_parts(services, dev):
+    """(текст, клавиатура) карточки устройства для админа; «Назад» и подпись
+    привязки — из принадлежности устройства. Шлюз — своя карточка."""
     back_target, reassign_label = await _device_back_target_and_label(services, dev)
     if dev.is_gateway:
-        await edit(cb, texts.gateway_device_card(dev),
-                   kb.gateway_device_actions(dev, back_target=back_target))
-        await cb.answer()
-        return
-    markup = kb.device_actions(dev, is_admin=True, back_target=back_target,
-                               reassign_label=reassign_label)
+        return (texts.gateway_device_card(dev),
+                kb.gateway_device_actions(dev, back_target=back_target))
     text = texts.device_card_text(dev, for_admin=True)
     marker = texts.friend_marker(dev)
     if marker:
         text += f"\n\n{marker}"
-    await edit(cb, text, markup)
-    await cb.answer()
+    return text, kb.device_actions(dev, is_admin=True, back_target=back_target,
+                                   reassign_label=reassign_label)
 
 
 # ── шлюз условной маршрутизации: пометка по пересланному сообщению ──────────
@@ -1376,36 +1260,16 @@ async def self_devices(cb: CallbackQuery, services):
     await cb.answer()
 
 
-@router.callback_query(AdminSelfCB.filter(F.action == "gen_link"))
-async def self_gen_link(cb: CallbackQuery, services):
+@router.callback_query(AdminSelfCB.filter(F.action.in_(kb.GEN_ACTIONS)))
+async def self_gen_pick(cb: CallbackQuery, callback_data: AdminSelfCB, services):
+    """Выбор своего устройства под ссылку/QR/файл — одним обработчиком."""
     ac = await _self(services)
     devices = await call(services.db.list_devices, ac.id)
     if not devices:
         await cb.answer("Сначала добавь устройство", show_alert=True)
         return
-    await edit(cb, "Для какого устройства нужна ссылка?", kb.pick_device(devices, "gen_link"))
-    await cb.answer()
-
-
-@router.callback_query(AdminSelfCB.filter(F.action == "gen_qr"))
-async def self_gen_qr(cb: CallbackQuery, services):
-    ac = await _self(services)
-    devices = await call(services.db.list_devices, ac.id)
-    if not devices:
-        await cb.answer("Сначала добавь устройство", show_alert=True)
-        return
-    await edit(cb, "Для какого устройства нужен QR-код?", kb.pick_device(devices, "gen_qr"))
-    await cb.answer()
-
-
-@router.callback_query(AdminSelfCB.filter(F.action == "gen_file"))
-async def self_gen_file(cb: CallbackQuery, services):
-    ac = await _self(services)
-    devices = await call(services.db.list_devices, ac.id)
-    if not devices:
-        await cb.answer("Сначала добавь устройство", show_alert=True)
-        return
-    await edit(cb, "Для какого устройства нужен файл?", kb.pick_device(devices, "gen_file"))
+    await edit(cb, kb.PICK_DEVICE_PROMPT[callback_data.action],
+               kb.pick_device(devices, callback_data.action))
     await cb.answer()
 
 
@@ -1525,13 +1389,6 @@ async def admin_del_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, servi
     await cb.answer()
 
 
-@router.callback_query(DeviceCB.filter(F.action == "add"))
-async def admin_dev_add_alias(cb: CallbackQuery, services, state: FSMContext):
-    """Алиас: протухшая кнопка DeviceCB(add) из старых сообщений админа →
-    ведём в его личное добавление (актуальные клавиатуры шлют AdminSelfCB)."""
-    await self_add_start(cb, services, state)
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Ручные блокировки (админ): устройство и клиент
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1551,13 +1408,7 @@ async def _rerender_after_block(cb, services, target: str, ref: int):
     else:
         dev = await call(services.db.get_device, ref)
         if dev:
-            text = texts.device_card_text(dev, for_admin=True)
-            marker = texts.friend_marker(dev)
-            if marker:
-                text += f"\n\n{marker}"
-            back_target, reassign_label = await _device_back_target_and_label(services, dev)
-            await edit(cb, text, kb.device_actions(dev, is_admin=True, back_target=back_target,
-                                                    reassign_label=reassign_label))
+            await edit(cb, *await _device_card_parts(services, dev))
 
 
 @router.callback_query(BlockCB.filter(F.action == "menu_block"))
@@ -1582,13 +1433,15 @@ async def admin_block_pause_no(cb: CallbackQuery, callback_data: BlockCB):
 
 
 @router.callback_query(BlockCB.filter(F.action == "pause_yes"))
-async def admin_block_pause_yes(cb: CallbackQuery, callback_data: BlockCB, state: FSMContext):
+async def admin_block_pause_yes(cb: CallbackQuery, callback_data: BlockCB, state: FSMContext,
+                                services):
     """Блок клиента с приостановкой → ввод длительности (0 = бессрочно)."""
     await state.set_state(BlockPauseDays.days)
     await state.update_data(block_client=callback_data.ref)
-    await cb.message.answer(
-        "На сколько дней приостановить подписку? Введи число (0 — бессрочно, "
-        "до снятия блокировки).", reply_markup=kb.reply_cancel())
+    await park_screen(cb, services)
+    await ask_tracked(cb.message, services,
+                      "На сколько дней приостановить подписку? Введи число (0 — бессрочно, "
+                      "до снятия блокировки).", reply_markup=kb.reply_cancel())
     await cb.answer()
 
 
@@ -1597,7 +1450,7 @@ async def admin_block_pause_days(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not raw.isdigit():
-        await message.answer("Введи целое число дней (0 — бессрочно):")
+        await ask_tracked(message, services, "Введи целое число дней (0 — бессрочно):")
         return
     data = await state.get_data()
     client_id = data.get("block_client")
@@ -1605,10 +1458,11 @@ async def admin_block_pause_days(message: Message, services, state: FSMContext):
     days = int(raw)
     _acc = await message.answer("Принято.", reply_markup=kb.reply_hide())
     await call(services.db.add_content_msg_id, _acc.chat.id, _acc.message_id)
-    await message.answer(
-        f"Приостановка: {'бессрочно' if days == 0 else f'{days} дн.'}. "
-        "Как заблокировать профиль?",
-        reply_markup=kb.block_notify_choice("cli", client_id, pause_days=days))
+    # экран с кнопками — через send_menu: он живой, прежний гаснет
+    await send_menu(message, services,
+                    f"Приостановка: {'бессрочно' if days == 0 else f'{days} дн.'}. "
+                    "Как заблокировать профиль?",
+                    kb.block_notify_choice("cli", client_id, pause_days=days))
 
 
 @router.callback_query(BlockCB.filter(F.action == "menu_unblock"))
@@ -1700,9 +1554,6 @@ async def admin_block_cancel(cb: CallbackQuery, callback_data: BlockCB, services
     await cb.answer()
 
 
-__all__ = ["router"]
-
-
 # ── Броадкаст объявлений ─────────────────────────────────────────────────────
 # Вход РОВНО один — с главной админа. Кнопка в карточке профиля существовала и
 # убрана: она отвечала на вопрос «кому», который теперь задаётся явным шагом, и
@@ -1744,12 +1595,9 @@ async def _bc_show_targets(cb: CallbackQuery, state: FSMContext, services):
 async def broadcast_pick(cb: CallbackQuery, state: FSMContext, services):
     """Единственный вход в рассылку — выбор адресатов."""
     await state.set_state(Broadcast.targets)
-    # список адресатов и онлайн кэшируются в FSM на время экрана — на новом
-    # входе перечитываем: за это время могли появиться профили
-    await state.update_data(targets=[], text=None, bc_clients=None, bc_online=None)
-    data = await state.get_data()
-    data.pop("bc_clients", None)
-    await state.set_data({k: v for k, v in data.items() if k not in ("bc_clients", "bc_online")})
+    # Черновик — с чистого листа. Список адресатов и онлайн кэшируются в FSM на
+    # время экрана, на новом входе перечитываются: могли появиться профили.
+    await state.set_data({"targets": []})
     await _bc_show_targets(cb, state, services)
     await cb.answer()
 
@@ -2060,3 +1908,6 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     # меню — инвариант «одно активное» держать было нечем.
     await send_menu(cb.message, services, *await _panel_parts(services),
                     keep_id=cb.message.message_id)
+
+
+__all__ = ["router"]

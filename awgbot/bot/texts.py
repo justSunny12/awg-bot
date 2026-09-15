@@ -321,6 +321,11 @@ def finish_file(name: str) -> str:
             "Импортируй его в приложение AmneziaVPN.")
 
 
+def finish_config(kind: str, name: str) -> str:
+    """Завершитель под выданным конфигом по виду выдачи: link | qr | file."""
+    return {"link": finish_link, "qr": finish_qr, "file": finish_file}[kind](name)
+
+
 CONNECT_METHOD_ASK = "Как планируешь подключить устройство?"
 FINISH_CLIENT_INVITE = (
     "☝️ Выше — ссылка-приглашение. Перешли её человеку, чтобы он активировал доступ.\n\n"

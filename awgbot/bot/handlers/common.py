@@ -125,6 +125,17 @@ async def ask_tracked(message, services, text: str, **kw):
     return sent
 
 
+async def park_screen(cb: CallbackQuery, services) -> None:
+    """Экран под кнопкой отслужил, дальше — текстовый ввод: снять с него кнопки
+    и записать в служебные (уборка при возврате в меню). Иначе пока человек
+    печатает, в чате два живых экрана: этот и приглашение к вводу."""
+    try:
+        await cb.message.edit_reply_markup(reply_markup=None)
+    except Exception:                                  # noqa: BLE001
+        pass
+    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
+
+
 async def cleanup_content(bot, services, chat_id: int) -> None:
     """Удалить ранее выданные контент-сообщения (ссылка/QR/файл + инструкции) —
     вызывается при возврате в меню, чтобы чат не захламлялся секретами."""
@@ -282,5 +293,5 @@ async def drop_message(cb: CallbackQuery) -> None:
             pass
 
 
-__all__ = ["call", "edit", "drop_message", "send_link", "send_conf", "cleanup_content", "ask_tracked", "purge_menus", "dismiss_update_reports",
-           "own_device", "send_device_config"]
+__all__ = ["call", "edit", "drop_message", "send_link", "send_conf", "cleanup_content", "ask_tracked",
+           "park_screen", "purge_menus", "dismiss_update_reports", "own_device", "send_device_config"]

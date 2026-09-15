@@ -7,7 +7,7 @@
 import pytest
 
 from awgbot.bot.handlers import admin as ah
-from awgbot.bot.callbacks import ClientCB, ConfirmCB, DelDeviceCB, DeviceCB, ReassignCB
+from awgbot.bot.callbacks import AdminSelfCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB, ReassignCB
 from awgbot.core import config
 from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
@@ -108,10 +108,10 @@ async def test_admin_dev_link_and_qr(services, fake_bot, make_active_client):
     client = make_active_client(tg_id=6009)
     dc = services.add_device(client.id, "d")
     cb, nav = _acb(fake_bot)
-    await ah.admin_dev_link(cb, DeviceCB(action="gen_link", device_id=dc.device_id), services)
+    await ah.admin_dev_gen(cb, DeviceCB(action="gen_link", device_id=dc.device_id), services)
     assert any(s[0] == "answer" for s in nav.sent)
     cb2, nav2 = _acb(fake_bot)
-    await ah.admin_dev_qr(cb2, DeviceCB(action="gen_qr", device_id=dc.device_id), services)
+    await ah.admin_dev_gen(cb2, DeviceCB(action="gen_qr", device_id=dc.device_id), services)
     assert any(s[0] == "animation" for s in nav2.sent)
 
 
@@ -225,7 +225,7 @@ async def test_admin_self_gen_link(services, fake_bot):
     ac = services.admin_client()
     services.add_device(ac.id, "d")
     cb, nav = _acb(fake_bot)
-    await ah.self_gen_link(cb, services)
+    await ah.self_gen_pick(cb, AdminSelfCB(action="gen_link"), services)
     assert any(s[0] == "edit_text" for s in nav.sent)       # пикер устройства, не прямая ссылка
 
 

@@ -21,7 +21,8 @@ from awgbot.bot import texts
 from awgbot.bot.callbacks import FriendCB, HelpCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, drop_message, edit, edit_nav, send_device_config, purge_menus,
-                             send_menu, send_qr, content_finisher, cleanup_content)
+                             send_menu, content_finisher, cleanup_content)
+from awgbot.domain.services import ServiceError
 
 router = Router(name="friend")
 # Роль фильтруется НА УРОВНЕ РОУТЕРА (как у client/admin) — новый хендлер
@@ -49,7 +50,7 @@ async def friend_panel_payload(services, tg_id: int):
     return "<b>📱Твои устройства</b>\n\nВыбери, каким управлять:", kb.friend_device_list(devs)
 
 
-async def show_friend_panel(target: Message, services, tg_id: int, *, fresh: bool = False):
+async def show_friend_panel(target: Message, services, tg_id: int):
     """Отрисовать стартовый экран друга (свежим сообщением)."""
     text, markup = await friend_panel_payload(services, tg_id)
     if markup is None:
@@ -123,49 +124,21 @@ async def friend_connect_menu(cb: CallbackQuery, callback_data: FriendCB, servic
     await cb.answer()
 
 
-@router.callback_query(FriendCB.filter(F.action == "gen_link"))
-async def friend_gen_link(cb: CallbackQuery, callback_data: FriendCB, services):
+@router.callback_query(FriendCB.filter(F.action.in_(kb.GEN_ACTIONS)))
+async def friend_gen(cb: CallbackQuery, callback_data: FriendCB, services):
+    """Ссылка/QR/файл другу — один обработчик на три вида (QR раньше шёл своим
+    путём мимо send_device_config)."""
     dev = await call(services.friend_device_by_id, cb.from_user.id, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
+    kind = kb.gen_kind(callback_data.action)
     await drop_message(cb)
     try:
-        await send_device_config(cb.message, services, dev, "link")
-    except Exception as e:                                # noqa: BLE001
-        await cb.message.answer(f"Не удалось выдать ссылку: {e}")
-    await content_finisher(cb.message, services, texts.finish_link(dev.name), "invited")
-    await cb.answer()
-
-
-@router.callback_query(FriendCB.filter(F.action == "gen_qr"))
-async def friend_gen_qr(cb: CallbackQuery, callback_data: FriendCB, services):
-    dev = await call(services.friend_device_by_id, cb.from_user.id, callback_data.device_id)
-    if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
-        return
-    await drop_message(cb)
-    try:
-        cfg = await call(services.generate_config, dev.id)
-        await send_qr(cb.message, cfg["vpn"], services)
-    except Exception as e:                                # noqa: BLE001
-        await cb.message.answer(f"Не удалось выдать QR-код: {e}")
-    await content_finisher(cb.message, services, texts.finish_qr(dev.name), "invited")
-    await cb.answer()
-
-
-@router.callback_query(FriendCB.filter(F.action == "gen_file"))
-async def friend_gen_file(cb: CallbackQuery, callback_data: FriendCB, services):
-    dev = await call(services.friend_device_by_id, cb.from_user.id, callback_data.device_id)
-    if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
-        return
-    await drop_message(cb)
-    try:
-        await send_device_config(cb.message, services, dev, "file")
-    except Exception as e:                                # noqa: BLE001
-        await cb.message.answer(f"Не удалось выдать файл: {e}")
-    await content_finisher(cb.message, services, texts.finish_file(dev.name), "invited")
+        await send_device_config(cb.message, services, dev, kind)
+    except ServiceError as e:
+        await cb.message.answer(f"Не удалось выдать конфиг: {texts._e(str(e))}")
+    await content_finisher(cb.message, services, texts.finish_config(kind, dev.name), "invited")
     await cb.answer()
 
 

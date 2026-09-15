@@ -361,6 +361,17 @@ def connect_method_choice_friend(device_id: int) -> InlineKeyboardMarkup:
 # Выбор устройства для генерации (клиент/админ жмёт «получить ссылку/файл»)
 # ─────────────────────────────────────────────────────────────────────────────
 
+PICK_DEVICE_PROMPT = {"gen_link": "Для какого устройства нужна ссылка?",
+                      "gen_qr": "Для какого устройства нужен QR-код?",
+                      "gen_file": "Для какого устройства нужен файл?"}
+GEN_ACTIONS = frozenset(PICK_DEVICE_PROMPT)       # DeviceCB/FriendCB: три вида выдачи
+
+
+def gen_kind(action: str) -> str:
+    """«gen_link» → «link»: вид выдачи для send_device_config/finish_config."""
+    return action[len("gen_"):]
+
+
 def pick_device(devices, action: str, back_cb: str = None) -> InlineKeyboardMarkup:
     """action: gen_link | gen_file | gen_qr — выбор устройства.
     Показываем и устройства без ключа (с суффиксом): клик по ним ведёт не в ошибку,
@@ -941,7 +952,7 @@ def guide_connect_done(guide: str, device_id: int, *, apple_end: bool) -> Inline
     return kb.as_markup()
 
 
-def guide_connect_devices(devices, slots, last: int, guide: str = "connect") -> InlineKeyboardMarkup:
+def guide_connect_devices(devices, slots, guide: str = "connect") -> InlineKeyboardMarkup:
     """Шаг 0 подключения: «Добавить устройство» + существующие устройства.
     Кнопки устройств/добавления сами ведут дальше (выдают ссылку+файл и переводят
     на шаг настройки) — отдельной «Далее» нет. guide сохраняет вариант."""

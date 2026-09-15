@@ -7,7 +7,7 @@ import types
 import pytest
 
 from awgbot.bot.handlers import client as ch
-from awgbot.bot.callbacks import DeviceCB, PauseCB
+from awgbot.bot.callbacks import DeviceCB, Menu, PauseCB
 from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
 pytestmark = pytest.mark.e2e
@@ -27,10 +27,10 @@ async def test_menu_gen_qr_and_file(services, fake_bot, make_active_client):
     services.add_device(client.id, "d")
     cl = _fresh(services, client)
     cb, nav = _cb(fake_bot, 5100)
-    await ch.menu_gen_qr(cb, cl, services)
+    await ch.menu_gen_pick(cb, Menu(action="gen_qr"), cl, services)
     assert any(s[0] == "edit_text" for s in nav.sent)       # пикер устройства
     cb2, nav2 = _cb(fake_bot, 5100)
-    await ch.menu_gen_file(cb2, cl, services)
+    await ch.menu_gen_pick(cb2, Menu(action="gen_file"), cl, services)
     assert any(s[0] == "edit_text" for s in nav2.sent)
 
 
@@ -39,7 +39,7 @@ async def test_device_gen_file_sends_conf(services, fake_bot, make_active_client
     dc = services.add_device(client.id, "d")
     cl = _fresh(services, client)
     cb, nav = _cb(fake_bot, 5101)
-    await ch.device_gen_file(cb, DeviceCB(action="gen_file", device_id=dc.device_id), cl, services)
+    await ch.device_gen(cb, DeviceCB(action="gen_file", device_id=dc.device_id), cl, services)
     assert any(s[0] == "document" for s in nav.sent)
 
 

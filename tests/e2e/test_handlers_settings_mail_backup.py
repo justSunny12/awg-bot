@@ -178,12 +178,12 @@ async def test_backup_passphrase_flow_deletes_messages_and_requires_match(servic
     state = FakeState()
     await sh.backup_passphrase_start(cb, state)
     m = lambda t: FakeMessage(text=t, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    short = m("abc"); await sh.backup_passphrase_first(short, state)
+    short = m("abc"); await sh.backup_passphrase_first(short, state, services)
     assert any("короче" in t for kind, t, _ in short.sent)
-    await sh.backup_passphrase_first(m("correct horse battery"), state)
+    await sh.backup_passphrase_first(m("correct horse battery"), state, services)
     wrong = m("correct horse batery"); await sh.backup_passphrase_second(wrong, state, services)
     assert any("не совпали" in t for kind, t, _ in wrong.sent) and not services.backup_encryption_enabled()
-    await sh.backup_passphrase_first(m("correct horse battery"), state)
+    await sh.backup_passphrase_first(m("correct horse battery"), state, services)
     ok = m("correct horse battery"); await sh.backup_passphrase_second(ok, state, services)
     assert services.backup_enc_kwargs() == {"passphrase": "correct horse battery"}
     deletes = [r for r in fake_bot.records if r[0] == "delete"]

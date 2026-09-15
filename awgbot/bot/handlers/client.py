@@ -23,7 +23,7 @@ from awgbot.bot import texts
 from awgbot.bot.callbacks import BlockCB, DelDeviceCB, DeviceCB, GraceCB, HelpCB, Menu, PauseCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.notifier import notify_one, send_notifications
-from awgbot.bot.handlers.common import (call, cleanup_content, drop_message, edit, edit_nav, ask_tracked, own_device, purge_menus,
+from awgbot.bot.handlers.common import (call, cleanup_content, drop_message, edit, edit_nav, ask_tracked, own_device, purge_menus, park_screen,
                              remove_device_and_notify, send_device_config, send_menu,
                              content_finisher)
 from awgbot.domain.services import BYTES_PER_GB, LimitReached, ServiceError
@@ -122,7 +122,7 @@ async def _activate_friend(message: Message, services, code: str):
     await message.answer(texts.friend_activated(res.device_name))
     # показать гостевую панель сразу
     from awgbot.bot.handlers.friend import show_friend_panel
-    await show_friend_panel(message, services, message.from_user.id, fresh=True)
+    await show_friend_panel(message, services, message.from_user.id)
     # уведомить хозяина, что друг активировал устройство
     dev = await call(services.db.get_device, res.device_id)
     host = await call(services.db.get_client, dev.client_id)
@@ -182,33 +182,15 @@ async def menu_devices(cb: CallbackQuery, client, services):
     await cb.answer()
 
 
-@router.callback_query(Menu.filter(F.action == "gen_link"))
-async def menu_gen_link(cb: CallbackQuery, client, services):
+@router.callback_query(Menu.filter(F.action.in_(kb.GEN_ACTIONS)))
+async def menu_gen_pick(cb: CallbackQuery, callback_data: Menu, client, services):
+    """Выбор устройства под ссылку/QR/файл — одним обработчиком на три кнопки."""
     devices = await call(services.db.list_devices, client.id)
     if not devices:
         await cb.answer("Сначала добавь устройство", show_alert=True)
         return
-    await edit(cb, "Для какого устройства нужна ссылка?", kb.pick_device(devices, "gen_link"))
-    await cb.answer()
-
-
-@router.callback_query(Menu.filter(F.action == "gen_file"))
-async def menu_gen_file(cb: CallbackQuery, client, services):
-    devices = await call(services.db.list_devices, client.id)
-    if not devices:
-        await cb.answer("Сначала добавь устройство", show_alert=True)
-        return
-    await edit(cb, "Для какого устройства нужен файл?", kb.pick_device(devices, "gen_file"))
-    await cb.answer()
-
-
-@router.callback_query(Menu.filter(F.action == "gen_qr"))
-async def menu_gen_qr(cb: CallbackQuery, client, services):
-    devices = await call(services.db.list_devices, client.id)
-    if not devices:
-        await cb.answer("Сначала добавь устройство", show_alert=True)
-        return
-    await edit(cb, "Для какого устройства нужен QR-код?", kb.pick_device(devices, "gen_qr"))
+    await edit(cb, kb.PICK_DEVICE_PROMPT[callback_data.action],
+               kb.pick_device(devices, callback_data.action))
     await cb.answer()
 
 
@@ -258,11 +240,20 @@ async def client_device_edit_name_apply(message: Message, client, services, stat
     dev = await call(own_device, services, client, data["device_id"])
     if dev is None:                     # перепроверка владения на применении
         await message.answer("Устройство не найдено.", reply_markup=kb.reply_hide())
+        await _show_main(message, services, client)
         return
     old_name = dev.name
-    await call(services.rename_device, dev.id, name)
+    try:
+        await call(services.rename_device, dev.id, name)
+    except ServiceError as e:
+        await message.answer(str(e), reply_markup=kb.reply_hide())
+        await _show_main(message, services, client)
+        return
+    # как у админа: итог и меню следом — раньше диалог кончался отчётом без
+    # единой кнопки
     await message.answer(f"✅ Устройство переименовано: «{old_name}» → «{name}».",
                          reply_markup=kb.reply_hide())
+    await _show_main(message, services, client)
 
 
 @router.callback_query(DeviceCB.filter(F.action == "connect_menu"))
@@ -374,9 +365,11 @@ async def device_reinvite(cb: CallbackQuery, callback_data: DeviceCB, client, se
     await cb.answer()
 
 
-async def _gen_from_menu(cb: CallbackQuery, callback_data, client, services, kind: str):
-    """Генерация из меню. Для устройства без приватного ключа (пир подхвачен с
-    сервера) вместо ошибки — дружелюбный диалог «удали / назад»."""
+@router.callback_query(DeviceCB.filter(F.action.in_(kb.GEN_ACTIONS)))
+async def device_gen(cb: CallbackQuery, callback_data: DeviceCB, client, services):
+    """Выдача по устройству — один обработчик на три вида. Для устройства без
+    приватного ключа (пир подхвачен с сервера) вместо ошибки — дружелюбный
+    диалог «удали / назад»."""
     dev = await call(own_device, services, client, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
@@ -385,6 +378,7 @@ async def _gen_from_menu(cb: CallbackQuery, callback_data, client, services, kin
         await edit(cb, texts.UNMANAGED_DEVICE_DIALOG, kb.unmanaged_device_dialog(dev.id))
         await cb.answer()
         return
+    kind = kb.gen_kind(callback_data.action)
     await drop_message(cb)                           # убрать старое меню (не висеть над ссылкой)
     try:
         await send_device_config(cb.message, services, dev, kind)
@@ -393,26 +387,8 @@ async def _gen_from_menu(cb: CallbackQuery, callback_data, client, services, kin
         await _show_main(cb.message, services, client)
         await cb.answer()
         return
-    fin = (texts.finish_link(dev.name) if kind == "link"
-           else texts.finish_file(dev.name) if kind == "file"
-           else texts.finish_qr(dev.name))
-    await content_finisher(cb.message, services, fin, "client")
+    await content_finisher(cb.message, services, texts.finish_config(kind, dev.name), "client")
     await cb.answer()
-
-
-@router.callback_query(DeviceCB.filter(F.action == "gen_link"))
-async def device_gen_link(cb: CallbackQuery, callback_data: DeviceCB, client, services):
-    await _gen_from_menu(cb, callback_data, client, services, "link")
-
-
-@router.callback_query(DeviceCB.filter(F.action == "gen_file"))
-async def device_gen_file(cb: CallbackQuery, callback_data: DeviceCB, client, services):
-    await _gen_from_menu(cb, callback_data, client, services, "file")
-
-
-@router.callback_query(DeviceCB.filter(F.action == "gen_qr"))
-async def device_gen_qr(cb: CallbackQuery, callback_data: DeviceCB, client, services):
-    await _gen_from_menu(cb, callback_data, client, services, "qr")
 
 
 # ── добавление устройства (FSM: имя) ─────────────────────────────────────────
@@ -435,9 +411,10 @@ async def device_add_self(cb: CallbackQuery, client, services, state: FSMContext
     used, limit = await call(services.device_slots, client.id)
     await state.set_state(AddDevice.name)
     await state.update_data(for_friend=False)
-    await cb.message.answer(
-        f"{texts.device_slots_line(used, limit)}\n\nВведи имя нового устройства:",
-        reply_markup=kb.reply_cancel())
+    await park_screen(cb, services)
+    await ask_tracked(cb.message, services,
+                      f"{texts.device_slots_line(used, limit)}\n\nВведи имя нового устройства:",
+                      reply_markup=kb.reply_cancel())
     await cb.answer()
 
 
@@ -446,9 +423,13 @@ async def device_add_friend(cb: CallbackQuery, client, services, state: FSMConte
     used, limit = await call(services.device_slots, client.id)
     await state.set_state(AddDevice.name)
     await state.update_data(for_friend=True)
-    await cb.message.answer(
-        "Создаём устройство для друга. Введи имя устройства "
-        "(его будет видеть друг):", reply_markup=kb.reply_cancel())
+    await park_screen(cb, services)
+    # слоты показываем и здесь: устройство друга занимает слот профиля, и
+    # видеть «2 из 3» перед тем, как отдавать его, полезно
+    await ask_tracked(cb.message, services,
+                      f"{texts.device_slots_line(used, limit)}\n\n"
+                      "Создаём устройство для друга. Введи имя устройства "
+                      "(его будет видеть друг):", reply_markup=kb.reply_cancel())
     await cb.answer()
 
 
@@ -647,16 +628,23 @@ async def client_unblock_device(cb: CallbackQuery, callback_data: BlockCB, clien
 
 # ── Приостановка подписки («в отпуск») ───────────────────────────────────────
 
-async def _show_info(cb, client, services):
-    """Перерисовать «Управлять подпиской» (после входа/выхода из паузы)."""
-    d = await call(services.client_info_data, client.id)      # один хоп вместо пяти
+async def _info_parts(services, client_id: int):
+    """(текст, клавиатура) экрана «Управлять подпиской» или None."""
+    d = await call(services.client_info_data, client_id)      # один хоп вместо пяти
     if d is None:
-        return
+        return None
     client = d["client"]
     paused_user, can_pause = _pause_flags(client)
-    await edit(cb, texts.subscription_manage_text(client, d["traffic"], d["online"],
-                                                  len(d["devices"])),
-               kb.client_info_actions(client, paused=paused_user, can_pause=can_pause))
+    return (texts.subscription_manage_text(client, d["traffic"], d["online"],
+                                           len(d["devices"])),
+            kb.client_info_actions(client, paused=paused_user, can_pause=can_pause))
+
+
+async def _show_info(cb, client, services):
+    """Перерисовать «Управлять подпиской» (после входа/выхода из паузы)."""
+    parts = await _info_parts(services, client.id)
+    if parts is not None:
+        await edit(cb, *parts)
 
 
 @router.callback_query(PauseCB.filter(F.action == "ask"))
@@ -692,6 +680,7 @@ async def pause_other(cb: CallbackQuery, callback_data: PauseCB, client, service
     avail = await call(services.pause_available_days, client.id)
     await state.set_state(PauseDays.value)
     await state.update_data(client_id=client.id)
+    await park_screen(cb, services)
     await ask_tracked(cb.message, services,
                       f"Введи число дней приостановки (от 1 до {avail}):",
                       reply_markup=kb.reply_cancel())
@@ -710,7 +699,12 @@ async def pause_other_apply(message: Message, client, services, state: FSMContex
         return
     days = int(raw)
     await state.clear()
-    await message.answer(texts.pause_warning(days), reply_markup=kb.pause_confirm(client.id, days))
+    # снять reply-«Отмена» (ввод окончен) — как в остальных диалогах; экран
+    # подтверждения — через send_menu: прежний (выбор дней) гаснет
+    _acc = await message.answer("Принято.", reply_markup=kb.reply_hide())
+    await call(services.db.add_content_msg_id, _acc.chat.id, _acc.message_id)
+    await send_menu(message, services, texts.pause_warning(days),
+                    kb.pause_confirm(client.id, days))
 
 
 @router.callback_query(PauseCB.filter(F.action == "confirm"))
@@ -787,10 +781,12 @@ async def pause_resume(cb: CallbackQuery, callback_data: PauseCB, client, servic
         await _show_info(cb, client, services)
         return
     await send_notifications(cb.bot, notes)     # друзьям — о снятии
-    await cb.message.answer(texts.pause_resumed_self(actual, new_end),
-                            reply_markup=kb.hide_only())
     await cb.answer("Возобновлено")
-    await _show_info(cb, client, services)
+    # итог — на месте вопроса, остаётся в чате; экран подписки — следом
+    await edit(cb, texts.pause_resumed_self(actual, new_end), None)
+    parts = await _info_parts(services, client.id)
+    if parts is not None:
+        await send_menu(cb.message, services, *parts, keep_id=cb.message.message_id)
 
 
 @router.callback_query(PauseCB.filter(F.action == "cancel"))

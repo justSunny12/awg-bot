@@ -10,7 +10,7 @@ test_handlers_settings_mail_backup.py; раскладка настроек — t
 import pytest
 
 from awgbot.bot.handlers import admin as ah
-from awgbot.bot.callbacks import BlockCB, ClientCB, ConfirmCB, DeviceCB
+from awgbot.bot.callbacks import AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DeviceCB
 from awgbot.core import config
 from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
@@ -68,7 +68,7 @@ async def test_admin_dev_file(services, fake_bot, make_active_client):
     client = make_active_client(tg_id=6304)
     dc = services.add_device(client.id, "d")
     cb, nav = _acb(fake_bot)
-    await ah.admin_dev_file(cb, DeviceCB(action="gen_file", device_id=dc.device_id), services)
+    await ah.admin_dev_gen(cb, DeviceCB(action="gen_file", device_id=dc.device_id), services)
     assert any(s[0] == "document" for s in nav.sent)
 
 
@@ -80,7 +80,7 @@ async def test_block_client_pause_flow(services, fake_bot, make_active_client):
     assert any(s[0] == "edit_text" for s in nav.sent)      # спросили про приостановку
     st = FakeState()
     cb2, nav2 = _acb(fake_bot)
-    await ah.admin_block_pause_yes(cb2, BlockCB(target="cli", action="pause_yes", ref=client.id), st)
+    await ah.admin_block_pause_yes(cb2, BlockCB(target="cli", action="pause_yes", ref=client.id), st, services)
     assert (await st.get_data())["block_client"] == client.id
     m_days = _amsg(fake_bot, "7")
     await ah.admin_block_pause_days(m_days, services, st)
@@ -108,9 +108,9 @@ async def test_self_gen_qr_file_pickers(services, fake_bot):
     services.ensure_admin_client()
     ac = services.admin_client()
     services.add_device(ac.id, "d")
-    for handler in (ah.self_gen_qr, ah.self_gen_file):
+    for action in ("gen_qr", "gen_file"):
         cb, nav = _acb(fake_bot)
-        await handler(cb, services)
+        await ah.self_gen_pick(cb, AdminSelfCB(action=action), services)
         _, labels = last_screen(nav)
         assert any("d" == l.strip("🖥📱💻 ") or l.endswith(" d") or l == "d" for l in labels) \
             or any("d" in l for l in labels), "устройство не предложено к выбору"

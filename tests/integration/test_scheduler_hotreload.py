@@ -114,6 +114,8 @@ def test_unknown_poll_schedule_behaves_as_day_without_rewriting_yaml(tmp_path, s
         sched = _build_scheduler(services, db)
         job = sched.get_job("update_check")
         assert job is not None and job.trigger is not None, "неизвестное расписание ≠ never"
+        # проверка ходит в сеть — с джиттером, как у агента (та же фабрика)
+        assert job.trigger.jitter == 1800
         assert 'poll_schedule: "hour"' in (tmp_path / "updates.yaml").read_text(encoding="utf-8")
     finally:
         settings._on_change.clear()

@@ -21,7 +21,8 @@ from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import (BackupPassphrase, EmailSetup, GatewayToken,
                                 MigrationPort, SettingsInput)
 from awgbot.bot.handlers import mailwizard
-from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu
+from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu,
+                                        ask_tracked, cleanup_content)
 from awgbot.domain.services import ServiceError
 
 log = logging.getLogger("awgbot.settings")
@@ -121,6 +122,17 @@ async def _screen(sec: str, services):
 async def _render(cb: CallbackQuery, sec: str, services):
     text, markup = await _screen(sec, services)
     await edit(cb, text, markup)
+
+
+async def _after_input(message: Message, services, sec: str) -> None:
+    """Раздел после ТЕКСТОВОГО ввода — новым сообщением через send_menu.
+
+    Голый message.answer оставлял в чате два живых экрана: приглашение «введи
+    значение» с кнопкой «Отмена» и новый раздел, а нав-указатель так и стоял на
+    приглашении — следующий переход гасил не то. Заодно убираем служебное:
+    само приглашение, ввод человека, переспросы (всё это трекается)."""
+    await cleanup_content(message.bot, services, message.chat.id)
+    await send_menu(message, services, *await _screen(sec, services))
 
 
 async def _record(cb: CallbackQuery, text: str, services):
@@ -247,17 +259,18 @@ async def gateway_new_yes(cb: CallbackQuery, services, state: FSMContext):
 
 @router.message(GatewayToken.value)
 async def gateway_token_received(message: Message, state: FSMContext, services):
+    token = (message.text or "").strip()
     try:
-        await call(services.set_gw_bot_token, (message.text or "").strip())
+        await message.delete()          # токен в истории чата не держим — и
+    except Exception:                   # noqa: BLE001
+        pass                            # непринятый тоже: секрет есть секрет
+    try:
+        await call(services.set_gw_bot_token, token)
     except ServiceError as e:
         await message.answer(f"⚠️ {texts._e(str(e))}")
         return
     data = await state.get_data()
     await state.clear()
-    try:
-        await message.delete()          # токен в истории чата не держим
-    except Exception:                   # noqa: BLE001
-        pass
     # Токен спрашивают из двух мест: «новая машина» и смена шлюза со сменой
     # ключей. Куда возвращаться, помнит state.
     device_id = data.get("gw_device_id")
@@ -509,13 +522,15 @@ async def _migration_prepare(cb: CallbackQuery, services, want_port: str = "") -
 @router.message(MigrationPort.value)
 async def migration_port_received(message: Message, state: FSMContext, services):
     raw = (message.text or "").strip()
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not raw.isdigit() or not 1 <= int(raw) <= 65535:
-        await message.answer("⚠️ Порт — число от 1 до 65535. Попробуй ещё раз.")
+        await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535. Попробуй ещё раз.")
         return
     await state.clear()
     d = await call(services.migration_prepare_data, int(raw))
-    await message.answer(texts.migration_prepare_intro(d),
-                         reply_markup=kb.migration_prepare_confirm(int(raw)))
+    await cleanup_content(message.bot, services, message.chat.id)
+    await send_menu(message, services, texts.migration_prepare_intro(d),
+                    kb.migration_prepare_confirm(int(raw)))
 
 
 async def _routing_provision(cb: CallbackQuery, services) -> None:
@@ -628,6 +643,7 @@ def _validate_server_value(key: str, raw: str) -> tuple[bool, str]:
 async def receive_value(message: Message, state: FSMContext, services):
     data = await state.get_data()
     key, sec = data.get("key"), data.get("sec", "root")
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if key in texts.SETTINGS_TEXT:
         raw = (message.text or "").strip()
         if key == "email.resume_address":
@@ -635,7 +651,7 @@ async def receive_value(message: Message, state: FSMContext, services):
             if raw == "-":                            # «вернуть сам ящик»
                 raw = ""
             if raw and not mail.is_address(raw):
-                await message.answer(texts.EMAIL_BAD_ADDRESS)
+                await ask_tracked(message, services, texts.EMAIL_BAD_ADDRESS)
                 return
         elif key == "app.firewall.ssh_allow":
             # Вайтлист не «значение настройки», а список: пишет его сервис —
@@ -643,16 +659,15 @@ async def receive_value(message: Message, state: FSMContext, services):
             try:
                 await call(services.firewall_allow_add, raw)
             except ServiceError as e:
-                await message.answer(f"⚠️ {texts._e(str(e))}")
+                await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
                 return
             await state.clear()
-            text, markup = await _screen(sec, services)
-            await message.answer(text, reply_markup=markup)
+            await _after_input(message, services, sec)
             return
         else:
             ok, err = _validate_server_value(key, raw)
             if not ok:
-                await message.answer(f"⚠️ {texts._e(err)}")
+                await ask_tracked(message, services, f"⚠️ {texts._e(err)}")
                 return
             if key == "app.client_config.dns1":
                 # В конфиге два поля, в UI одна строка. Второй адрес обязан
@@ -668,15 +683,14 @@ async def receive_value(message: Message, state: FSMContext, services):
         except settings.SettingsWriteError as e:
             await state.clear()
             await message.answer(str(e))
+            await _after_input(message, services, sec)
             return
         await state.clear()
-        text, markup = await _screen(sec, services)
-        await message.answer(text, reply_markup=markup)
+        await _after_input(message, services, sec)
         return
     if key not in texts.SETTINGS_BOUNDS:      # рассинхрон state (не должен случаться)
         await state.clear()
-        text, markup = await _screen(sec, services)
-        await message.answer(text, reply_markup=markup)
+        await _after_input(message, services, sec)
         return
     lo, hi, _label, _unit = texts.SETTINGS_BOUNDS[key]
     raw = (message.text or "").strip()
@@ -685,17 +699,17 @@ async def receive_value(message: Message, state: FSMContext, services):
         if not (lo <= val <= hi):
             raise ValueError
     except ValueError:
-        await message.answer(texts.settings_bad_value(key))
+        await ask_tracked(message, services, texts.settings_bad_value(key))
         return
     try:
         await call(settings.set_value, key, val)
     except settings.SettingsWriteError as e:
         await state.clear()
         await message.answer(str(e))
+        await _after_input(message, services, sec)
         return
     await state.clear()
-    text, markup = await _screen(sec, services)
-    await message.answer(text, reply_markup=markup)
+    await _after_input(message, services, sec)
 
 
 # ── выбор enum (расписание обновлений) ───────────────────────────────────────
@@ -888,16 +902,18 @@ async def _take_secret_message(message: Message) -> str:
 
 
 @router.message(BackupPassphrase.first)
-async def backup_passphrase_first(message: Message, state: FSMContext):
+async def backup_passphrase_first(message: Message, state: FSMContext, services):
     from awgbot.bot.states import BackupPassphrase
     from awgbot.domain.backupcrypto import MIN_PASSPHRASE_LEN
     phrase = await _take_secret_message(message)
     if len(phrase) < MIN_PASSPHRASE_LEN:
-        await message.answer(f"⚠️ Фраза короче {MIN_PASSPHRASE_LEN} символов. Пришли другую.")
+        await ask_tracked(message, services,
+                          f"⚠️ Фраза короче {MIN_PASSPHRASE_LEN} символов. Пришли другую.")
         return
     await state.update_data(passphrase=phrase)
     await state.set_state(BackupPassphrase.second)
-    await message.answer(texts.BACKUP_ASK_PASSPHRASE_AGAIN, reply_markup=kb.settings_cancel("backup"))
+    await ask_tracked(message, services, texts.BACKUP_ASK_PASSPHRASE_AGAIN,
+                      reply_markup=kb.settings_cancel("backup"))
 
 
 @router.message(BackupPassphrase.second)
@@ -908,13 +924,13 @@ async def backup_passphrase_second(message: Message, state: FSMContext, services
     if phrase != first:
         await state.set_state(BackupPassphrase.first)
         await state.update_data(passphrase="")
-        await message.answer(texts.BACKUP_PASSPHRASE_MISMATCH, reply_markup=kb.settings_cancel("backup"))
+        await ask_tracked(message, services, texts.BACKUP_PASSPHRASE_MISMATCH,
+                          reply_markup=kb.settings_cancel("backup"))
         return
     await state.clear()
     await call(services.backup_set_passphrase, phrase)
     await message.answer(texts.BACKUP_PASSPHRASE_SET)
-    text, markup = await _screen("backup", services)
-    await message.answer(text, reply_markup=markup)
+    await _after_input(message, services, "backup")
 
 
 # ── ✉️ E-mail: мастер подключения, проверка, отключение ─────────────────────

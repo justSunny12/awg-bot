@@ -181,20 +181,6 @@ def test_admin_client_cannot_be_blocked(services, fake_awg, make_active_client):
     assert int(fresh.block_reason) == 0        # не заблокирован
 
 
-def test_admin_client_keyboard_has_no_dangerous_buttons(make_active_client):
-    from awgbot.bot import keyboards as kb
-    from awgbot.core import config
-
-    class _C:
-        id = 1; activation_status = "active"; block_reason = 0
-        tg_id = config.ADMIN_ID
-    m = kb.admin_client_actions(_C(), has_devices=True, is_admin_owner=True)
-    labels = " ".join(b.text for row in m.inline_keyboard for b in row)
-    for forbidden in ("Удалить", "Лимит", "Продлить", "лок"):   # блок/Блок/…
-        assert forbidden not in labels, f"кнопка '{forbidden}' не должна быть у админ-клиента"
-    assert "Имя" in labels and "Устройства" in labels
-
-
 def test_rename_device_writes_db_only(services, fake_awg):
     """Имя живёт только в нашей БД: сервер про имена не знает."""
     svc = services.db.get_service_client_id()

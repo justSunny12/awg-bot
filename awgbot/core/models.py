@@ -98,7 +98,11 @@ class Client:
     @property
     def status(self): return self.subscription.status
     @property
-    def notified_thresholds(self): return self.subscription.notified_thresholds
+    def notified_thresholds(self) -> set[int]:
+        """Пороги истечения, о которых клиенту уже сказано (минуты до конца).
+        В БД — CSV; наружу множество, как из db.get_notified, только без
+        второго запроса: колонку уже привёз list_clients."""
+        return {int(x) for x in self.subscription.notified_thresholds.split(",") if x.strip()}
     @property
     def traffic_limit(self): return self.quota.limit
     @property
@@ -106,7 +110,10 @@ class Client:
     @property
     def bonus_granted_month(self): return self.quota.bonus_granted_month
     @property
-    def traffic_notified(self): return self.quota.traffic_notified
+    def traffic_notified(self) -> set[str]:
+        """Метки отправленных трафик-уведомлений ('cli80', 'dev_over:{id}'…);
+        сбрасываются 1-го числа. То же, что db.get_traffic_notified, из объекта."""
+        return {x for x in self.quota.traffic_notified.split(",") if x.strip()}
     @property
     def grace_used(self): return self.grace.used if self.grace else 0
     @property

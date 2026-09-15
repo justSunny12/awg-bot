@@ -304,21 +304,6 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     def _trig_purge():
         return CronTrigger(hour=settings.get_int("app.history.purge_hour", 3), minute=0, timezone=_TZ)
 
-    def _trig_update_check():
-        """Триггер проверки обновлений по poll_schedule (day|week|month|never).
-        never → None (job снимается/не тикает). Время — poll_hour:minute.
-        Неизвестное значение — как day."""
-        sch = str(settings.get("updates.poll_schedule", "day")).lower()
-        h = settings.get_int("updates.poll_hour", 10)
-        m = settings.get_int("updates.poll_minute", 0)
-        if sch == "never":
-            return None
-        if sch == "week":
-            return CronTrigger(day_of_week=0, hour=h, minute=m, timezone=_TZ)
-        if sch == "month":
-            return CronTrigger(day=1, hour=h, minute=m, timezone=_TZ)
-        return CronTrigger(hour=h, minute=m, timezone=_TZ)     # day (дефолт)
-
     # ключ настройки → (job_id, фабрика триггера) для горячего reschedule
     _CLASS2 = {
         "app.scheduler.traffic_poll_minutes": ("poll", _trig_poll),
@@ -450,7 +435,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         except Exception as e:                        # noqa: BLE001
             log.warning("update_check: %s", e)
 
-    _uc_trig = _trig_update_check()
+    _uc_trig = update_check_trigger()
     scheduler.add_job(job_update_check,
                       _uc_trig or CronTrigger(hour=10, minute=0, timezone=_TZ),
                       id="update_check", max_instances=1, coalesce=True,
@@ -492,7 +477,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
 
     def _hook_update_check(key, value):
         try:
-            trig = _trig_update_check()
+            trig = update_check_trigger()
             if trig is None:
                 scheduler.pause_job("update_check")
                 log.info("проверка обновлений выключена (never)")
@@ -534,9 +519,9 @@ _UPDATE_JITTER = 1800          # ±полчаса к проверке обнов
 
 def update_check_trigger():
     """Триггер проверки обновлений по updates.poll_schedule (day|week|month|never),
-    never → None. Модульная копия фабрики из setup_scheduler для роли gateway:
-    та — замыкание внутри клиентской сборки, вытаскивать её наружу значило бы
-    трогать горячий reschedule клиентской роли ради одной функции."""
+    never → None. Время — poll_hour:minute, неизвестное расписание — как day.
+    Одна фабрика на обе роли: у основного бота была своя копия без джиттера, и
+    он ходил на GitHub ровно в назначенную секунду — маячок по расписанию."""
     sch = str(settings.get("updates.poll_schedule", "day")).lower()
     h = settings.get_int("updates.poll_hour", 10)
     m = settings.get_int("updates.poll_minute", 0)

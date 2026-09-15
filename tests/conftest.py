@@ -72,7 +72,7 @@ def fake_awg(monkeypatch):
     настоящим, чтобы `except awg.AwgError` в коде работал.
 
     Возвращает объект состояния: .blocked (set IP), .peers,
-    .occupied (живые IP из «конфига»), .responding, .started_at.
+    .occupied (живые IP из «конфига»), .started_at.
     """
     import threading
     import types
@@ -82,7 +82,7 @@ def fake_awg(monkeypatch):
 
     state = types.SimpleNamespace(
         blocked=set(), peers={}, occupied=set(),
-        responding=True, started_at="2026-01-01T00:00:00+03:00",
+        started_at="2026-01-01T00:00:00+03:00",
         _n=0, privpub={},
         fw_admin_ips=None,          # чем бот кормил nftguard.reconcile (None — не звал)
         fw_calls=0,
@@ -113,7 +113,9 @@ def fake_awg(monkeypatch):
     _set("unblock_ip", lambda addr: state.blocked.discard(addr))
     _set("is_blocked", lambda addr: addr in state.blocked)
     _set("container_started_at", lambda: state.started_at)
-    _set("awg_responding", lambda: state.responding)
+    # «сервер лежит» тесты изображают подменой services.server_ok — свой рычаг
+    # здесь не нужен
+    _set("awg_responding", lambda: True)
     _set("remove_legacy_ssh_gate", lambda: False)
     # файервол: единственная точка — nftguard; в тестах «включён» и записывает,
     # с какими адресами админа его сверяли
@@ -390,6 +392,9 @@ class FakeState:
 
     async def get_data(self):
         return dict(self._data)
+
+    async def set_data(self, data):
+        self._data = dict(data)
 
 
 def last_screen(nav: "FakeMessage") -> tuple[str, list[str]]:

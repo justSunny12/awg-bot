@@ -51,7 +51,7 @@ async def _render(cb: CallbackQuery, services, client, guide: str, step: int):
         devices = await call(services.db.list_devices, client.id)
         slots = await call(services.device_slots, client.id)
         await _render_screen(cb, services, text, None,
-                             kb.guide_connect_devices(devices, slots, last, guide=guide))
+                             kb.guide_connect_devices(devices, slots, guide=guide))
         return
 
     next_guide = guides.NEXT_GUIDE.get(guide) if step == last else None

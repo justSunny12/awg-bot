@@ -1501,7 +1501,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
               # ОБЕ строки пары: в окне переезда потребление размазано по ним, и
               # лимит по одной дал бы человеку двойную квоту.
               devices = self.db.list_devices(client.id, all_rows=True)
-              sent = self.db.get_traffic_notified(client.id)
+              sent = client.traffic_notified          # уже в объекте — без запроса
               by_id = {d.id: d for d in devices}
               # id старых строк, у которых есть двойник, — их расход учитывается
               # в проходе по двойнику, отдельно не судим
@@ -1680,7 +1680,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
               # Если бот «проспал» несколько порогов, шлём ТОЛЬКО самый строгий
               # (ближайший к концу) из пересечённых, остальные молча помечаем —
               # иначе клиент получит простыню «30 дней»+«14»+«7»+«1» разом.
-              already = self.db.get_notified(client.id)
+              already = client.notified_thresholds  # уже в объекте — без запроса
               mins_left = secs // 60
               # Месяцу порог «30 дней» не показываем никогда: 31-дневный месяц
               # получал «истекает через 30 дней» назавтра после активации.
@@ -1690,8 +1690,9 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
                   and not (client.period_kind == "month" and th_min >= _MONTH_CUT_MINUTES)
               ]
               if crossed:
-                  # самый строгий = наименьший порог по времени
-                  tightest_min, tightest_label = min(crossed, key=lambda x: x[0])
+                  # самый строгий = наименьший порог по времени (сам порог
+                  # дальше не нужен — только его подпись)
+                  _, tightest_label = min(crossed, key=lambda x: x[0])
                   if client.tg_id:
                       # кнопка отсрочки: только КЛИЕНТУ (не другу — друзья идут иным
                       # путём), только на ГОДОВОМ периоде и один раз за период.
@@ -2590,15 +2591,6 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         """
         return self.db.routing_device_counts(client_id)[0] > 0
 
-    def routing_toggle_for_client(self, client) -> Optional[bool]:
-        """Состояние РФ-доступа для инфобокса: None — не показывать строку.
-
-        Строка появляется, как только функция клиенту разрешена, и показывает,
-        работает ли режим хоть где-то, — чтобы он видел это, не заходя в раздел."""
-        if not self.routing_client_visible(client):
-            return None
-        return self.routing_profile_on(client.id)
-
     def routing_health_for_client(self, client) -> Optional[bool]:
         """Показывать ли клиенту статусную строку и что в ней.
 
@@ -3137,13 +3129,9 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
     def routing_probe(self) -> str:
         """Замер прямо сейчас. Отдельно от routing_link_ok, чтобы было видно,
         где реальные пинги, а где чтение кэша."""
-        targets = settings.get("app.routing.probe_targets", None)
-        if not targets:
-            # Установки, знающие только probe_target, всё равно получают вторую
-            # цель: один внешний хост — сам по себе точка отказа, и его заминка
-            # выглядела бы как отвал шлюза.
-            targets = [str(settings.get("app.routing.probe_target", "77.88.8.8")),
-                       "8.8.8.8"]
+        # Две цели по умолчанию: один внешний хост — сам по себе точка отказа,
+        # и его заминка выглядела бы как отвал шлюза.
+        targets = settings.get("app.routing.probe_targets", None) or ["77.88.8.8", "8.8.8.8"]
         port = int(settings.get("app.routing.probe_port", 53))
         return routing.probe_gateway(list(targets), port)
 

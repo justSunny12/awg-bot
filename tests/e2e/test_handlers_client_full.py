@@ -6,7 +6,7 @@ import pytest
 
 from awgbot.bot import texts
 from awgbot.bot.handlers import client as ch
-from awgbot.bot.callbacks import BlockCB, DelDeviceCB, DeviceCB, GraceCB, PauseCB
+from awgbot.bot.callbacks import BlockCB, DelDeviceCB, DeviceCB, GraceCB, Menu, PauseCB
 from awgbot.core.blocks import ClientBlock, DeviceBlock
 from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
@@ -41,12 +41,12 @@ async def test_menu_gen_empty_vs_present(services, fake_bot, make_active_client)
     client = make_active_client(tg_id=5001)
     cl = _fresh(services, client)
     cb, nav = _cb(fake_bot, 5001)
-    await ch.menu_gen_link(cb, cl, services)
+    await ch.menu_gen_pick(cb, Menu(action="gen_link"), cl, services)
     assert cb.answers[-1][1] is True                     # нет устройств → алерт
     assert not any(s[0] == "edit_text" for s in nav.sent)
     services.add_device(client.id, "d")
     cb2, nav2 = _cb(fake_bot, 5001)
-    await ch.menu_gen_link(cb2, cl, services)
+    await ch.menu_gen_pick(cb2, Menu(action="gen_link"), cl, services)
     assert any(s[0] == "edit_text" for s in nav2.sent)
 
 
@@ -92,7 +92,7 @@ async def test_gen_from_menu_bot_sends_config(services, fake_bot, make_active_cl
     dc = services.add_device(client.id, "d")
     cl = _fresh(services, client)
     cb, nav = _cb(fake_bot, 5004)
-    await ch.device_gen_link(cb, DeviceCB(action="gen_link", device_id=dc.device_id), cl, services)
+    await ch.device_gen(cb, DeviceCB(action="gen_link", device_id=dc.device_id), cl, services)
     assert any(s[0] == "answer" for s in nav.sent)
 
 
@@ -101,7 +101,7 @@ async def test_gen_from_menu_app_shows_dialog(services, fake_bot, make_active_cl
     app_id = services.db.create_device(client.id, "app", "PUBW", "PSK", "10.8.0.62", private_key=None)
     cl = _fresh(services, client)
     cb, nav = _cb(fake_bot, 5005)
-    await ch.device_gen_qr(cb, DeviceCB(action="gen_qr", device_id=app_id), cl, services)
+    await ch.device_gen(cb, DeviceCB(action="gen_qr", device_id=app_id), cl, services)
     text, labels = last_screen(nav)
     assert "мимо бота" in text and any("Удалить" in l for l in labels)
     assert not any(s[0] in ("answer_photo", "answer_animation") for s in nav.sent), "QR для пира без ключа"

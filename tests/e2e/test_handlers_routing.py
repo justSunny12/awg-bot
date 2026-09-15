@@ -6,7 +6,6 @@
 """
 import pytest
 
-from awgbot.bot.handlers import admin as admin_h
 from awgbot.bot.handlers import routing as routing_h
 from awgbot.bot.callbacks import RoutingCB
 from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
@@ -40,7 +39,7 @@ async def test_panel_hidden_without_permission(services, make_active_client, fak
     спрашивать, что это за пункт и почему не работает."""
     c = make_active_client(tg_id=70)
     cb, nav = _cb(fake_bot, 70)
-    await routing_h.routing_panel(cb, c, services, FakeState())
+    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=c.id), c, services, FakeState())
     assert cb.answers and cb.answers[0][1] is True         # show_alert «недоступно»
     assert not any(s[0] == "edit_text" for s in nav.sent)
 
@@ -49,7 +48,7 @@ async def test_panel_opens_when_allowed(services, make_active_client, fake_bot):
     c = _allowed_client(services, make_active_client, 71)
     services.add_device(c.id, "Телефон")
     cb, nav = _cb(fake_bot, 71)
-    await routing_h.routing_panel(cb, c, services, FakeState())
+    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=c.id), c, services, FakeState())
     text, labels = last_screen(nav)
     assert "РФ-доступ" in text
     assert any("Устройства: 0 из 1" in l for l in labels), "счётчик устройств режима не показан"
@@ -63,7 +62,7 @@ async def test_revoked_permission_blocks_stale_button(
     services.set_routing_allowed(c.id, False)
     c = services.db.get_client(c.id)
     cb, _ = _cb(fake_bot, 72)
-    await routing_h.routing_all_toggle(cb, c, services)
+    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), c, services)
     assert cb.answers[0][1] is True
     assert services.routing_profile_on(c.id) is False
 
@@ -76,12 +75,12 @@ async def test_bulk_toggle_flips_and_persists(services, make_active_client, fake
     c = _allowed_client(services, make_active_client, 73)
     services.add_device(c.id, "Телефон")
     cb, _ = _cb(fake_bot, 73)
-    await routing_h.routing_all_toggle(cb, c, services)
+    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), c, services)
     assert services.routing_profile_on(c.id) is True
 
     c = services.db.get_client(c.id)
     cb2, _ = _cb(fake_bot, 73)
-    await routing_h.routing_all_toggle(cb2, c, services)
+    await routing_h.routing_all_toggle(cb2, RoutingCB(action="all", ref=c.id), c, services)
     assert services.routing_profile_on(c.id) is False
 
 
@@ -124,12 +123,12 @@ async def test_clear_confirm_then_apply(services, make_active_client, fake_bot):
     c = _allowed_client(services, make_active_client, 80)
     services.routing_add_domains(c.id, "a.com b.com")
     cb, nav = _cb(fake_bot, 80)
-    await routing_h.routing_clear_ask(cb, c, services)
+    await routing_h.routing_clear_ask(cb, RoutingCB(action="clear", ref=c.id), c, services)
     assert any("Удалить" in str(s[1]) for s in nav.sent if s[0] == "edit_text")
     assert services.routing_domains(c.id) == ["a.com", "b.com"]   # ещё не тронуто
 
     cb2, _ = _cb(fake_bot, 80)
-    await routing_h.routing_clear_apply(cb2, c, services)
+    await routing_h.routing_clear_apply(cb2, RoutingCB(action="clear_yes", ref=c.id), c, services)
     assert services.routing_domains(c.id) == []
 
 
@@ -224,7 +223,7 @@ async def test_admin_can_enable_feature_for_himself(services, make_active_client
 
     # client=None — ровно то, что придёт из middleware для админа
     cb, _ = _cb(fake_bot, config.ADMIN_ID)
-    await routing_h.routing_all_toggle(cb, None, services)
+    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=0), None, services)
 
     assert services.routing_profile_on(c.id) is True
     assert services.db.routing_active_addresses(config.ADMIN_ID) == {c.id: [dc.address]}
@@ -236,7 +235,7 @@ async def test_admin_panel_opens_without_client_in_context(services, make_active
     from awgbot.core import config
     make_active_client(tg_id=config.ADMIN_ID)
     cb, nav = _cb(fake_bot, config.ADMIN_ID)
-    await routing_h.routing_panel(cb, None, services, FakeState())
+    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=0), None, services, FakeState())
     text, labels = last_screen(nav)
     assert "РФ-доступ" in text and any("Устройства" in l for l in labels)
 
@@ -269,18 +268,18 @@ async def test_admin_toggles_client_master(services, make_active_client, fake_bo
     c = _allowed_client(services, make_active_client, 96)
     services.add_device(c.id, "Телефон")
     cb, _ = _cb(fake_bot, 1)
-    await admin_h.admin_routing_all(cb, RoutingCB(action="all", ref=c.id), services)
+    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), None, services)
     assert services.routing_profile_on(c.id) is True
 
     cb2, _ = _cb(fake_bot, 1)
-    await admin_h.admin_routing_all(cb2, RoutingCB(action="all", ref=c.id), services)
+    await routing_h.routing_all_toggle(cb2, RoutingCB(action="all", ref=c.id), None, services)
     assert services.routing_profile_on(c.id) is False
 
 
 async def test_admin_master_refused_without_grant(services, make_active_client, fake_bot):
     c = make_active_client(tg_id=97)                      # разрешения нет
     cb, _ = _cb(fake_bot, 1)
-    await routing_h.routing_all_toggle(cb, None, services)
+    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=0), None, services)
     assert cb.answers[0][1] is True
     assert services.routing_profile_on(c.id) is False
 
@@ -540,11 +539,11 @@ async def test_bulk_completes_partial_selection(services, make_active_client, fa
     assert services.routing_device_counts(c.id) == (1, 2)
 
     cb, _ = _cb(fake_bot, 130)
-    await routing_h.routing_all_toggle(cb, c, services)
+    await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), c, services)
     assert services.routing_device_counts(c.id) == (2, 2)
 
     cb2, _ = _cb(fake_bot, 130)
-    await routing_h.routing_all_toggle(cb2, c, services)
+    await routing_h.routing_all_toggle(cb2, RoutingCB(action="all", ref=c.id), c, services)
     assert services.routing_device_counts(c.id) == (0, 2)
     assert d2 is not None
 
@@ -562,14 +561,14 @@ async def test_admin_panel_back_goes_to_main_not_own_card(services, make_active_
     other = _allowed_client(services, make_active_client, 131)
 
     cb, nav = _cb(fake_bot, config.ADMIN_ID)
-    await admin_h.admin_routing_panel(cb, RoutingCB(action="panel", ref=admin.id),
-                                      services)
+    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=admin.id),
+                                  None, services, FakeState())
     back = nav.sent[-1][2].inline_keyboard[-1][0].callback_data
     assert back == "m:main", back
 
     cb2, nav2 = _cb(fake_bot, config.ADMIN_ID)
-    await admin_h.admin_routing_panel(cb2, RoutingCB(action="panel", ref=other.id),
-                                      services)
+    await routing_h.routing_panel(cb2, RoutingCB(action="panel", ref=other.id),
+                                  None, services, FakeState())
     back2 = nav2.sent[-1][2].inline_keyboard[-1][0].callback_data
     assert back2 == f"c:open:{other.id}", back2
 
@@ -710,3 +709,145 @@ async def test_bundle_button_opens_intro_screen_before_issuing(services, fake_bo
     datas = [b.callback_data for row in markup.inline_keyboard for b in row]
     assert SetCB(sec="rt", act="do", key="bundle").pack() in datas, "нет «Выпустить»"
     assert SetCB(sec="rt").pack() in datas, "нет «Отмена» назад в раздел"
+
+
+# ── админ в ЧУЖОМ разделе: правки уходят тому профилю, чья панель открыта ────
+
+def _admin_cb(bot):
+    from awgbot.core import config
+    return _cb(bot, config.ADMIN_ID)
+
+
+async def _foreign_setup(services, make_active_client, monkeypatch, tg=140):
+    """Админ со своим профилем и чужой профиль с разрешением, режимом и парой
+    адресов. Возвращает (admin, other)."""
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    admin = make_active_client(tg_id=config.ADMIN_ID)
+    services.add_device(admin.id, "Мой")
+    other = _allowed_client(services, make_active_client, tg)
+    services.add_device(other.id, "Чужой")
+    services.set_routing_all(other.id, True)
+    services.routing_add_domains(other.id, "a.ru\nb.ru")
+    return admin, other
+
+
+async def test_admin_edits_foreign_list_not_his_own(services, make_active_client,
+                                                    fake_bot, monkeypatch):
+    """Из панели чужого профиля «➕ / ➖ / 🗑» правят ЧУЖОЙ список. Раньше все
+    четыре действия брали профиль «чей чат» — то есть самого админа: адреса
+    клиента уходили админу, а «удалить a.ru» стирало его собственный."""
+    admin, other = await _foreign_setup(services, make_active_client, monkeypatch)
+
+    cb, _ = _admin_cb(fake_bot)
+    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=other.id, idx=0),
+                                   None, services)
+    assert services.routing_domains(other.id) == ["b.ru"]
+    assert services.routing_domains(admin.id) == []
+
+    st = FakeState()
+    cb, _ = _admin_cb(fake_bot)
+    await routing_h.routing_add_start(cb, RoutingCB(action="add", ref=other.id),
+                                      None, services, st)
+    msg = FakeMessage(text="z.ru", chat_id=admin.tg_id, user_id=admin.tg_id, bot=fake_bot)
+    await routing_h.routing_add_apply(msg, None, services, st)
+    assert set(services.routing_domains(other.id)) == {"b.ru", "z.ru"}
+    assert services.routing_domains(admin.id) == []
+    # раздел после приёма — чужой, с «Назад» в карточку профиля
+    panel = [s for s in msg.sent if s[0] == "answer" and s[2] is not None][-1]
+    assert panel[2].inline_keyboard[-1][0].callback_data == f"c:open:{other.id}"
+
+    cb, _ = _admin_cb(fake_bot)
+    await routing_h.routing_clear_apply(cb, RoutingCB(action="clear_yes", ref=other.id),
+                                        None, services)
+    assert services.routing_domains(other.id) == []
+
+
+async def test_admin_own_list_without_ref_and_client_cannot_reach_foreign(
+        services, make_active_client, fake_bot, monkeypatch):
+    """Без ref админ правит свой список (вход с главной). Клиент с чужим ref в
+    кнопке всё равно правит только свой: чужой id для него не существует."""
+    admin, other = await _foreign_setup(services, make_active_client, monkeypatch, tg=141)
+    services.set_routing_all(admin.id, True)
+    st = FakeState()
+    cb, _ = _admin_cb(fake_bot)
+    await routing_h.routing_add_start(cb, RoutingCB(action="add", ref=0), None, services, st)
+    msg = FakeMessage(text="mine.ru", chat_id=admin.tg_id, user_id=admin.tg_id, bot=fake_bot)
+    await routing_h.routing_add_apply(msg, None, services, st)
+    assert services.routing_domains(admin.id) == ["mine.ru"]
+
+    other = services.db.get_client(other.id)
+    cb, _ = _cb(fake_bot, other.tg_id)
+    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=admin.id, idx=0),
+                                   other, services)
+    assert services.routing_domains(admin.id) == ["mine.ru"], "клиент удалил у админа"
+    assert services.routing_domains(other.id) == ["b.ru"]
+
+
+async def test_device_switches_consistent_for_admin_and_client(
+        services, make_active_client, fake_bot, monkeypatch):
+    """Экран устройств одного профиля одинаков для клиента и админа, и
+    переключения любого из них видны обоим — состояние одно, в БД."""
+    admin, other = await _foreign_setup(services, make_active_client, monkeypatch, tg=142)
+    d2 = services.add_device(other.id, "Второй")          # новое — выключено
+    other = services.db.get_client(other.id)
+
+    def labels(nav):
+        return [b.text for row in nav.sent[-1][2].inline_keyboard for b in row]
+
+    cb_a, nav_a = _admin_cb(fake_bot)
+    await routing_h.routing_devices_screen(cb_a, RoutingCB(action="devs", ref=other.id),
+                                           None, services)
+    cb_c, nav_c = _cb(fake_bot, other.tg_id)
+    await routing_h.routing_devices_screen(cb_c, RoutingCB(action="devs", ref=other.id),
+                                           other, services)
+    assert labels(nav_a) == labels(nav_c)
+    assert any(l.startswith("✅ Чужой") for l in labels(nav_a))
+    assert any(l.startswith("☑️ Второй") for l in labels(nav_a))
+
+    # админ включил второе — клиент видит; клиент выключил первое — админ видит
+    cb, _ = _admin_cb(fake_bot)
+    await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=d2.device_id),
+                                          None, services)
+    cb_c, nav_c = _cb(fake_bot, other.tg_id)
+    await routing_h.routing_devices_screen(cb_c, RoutingCB(action="devs", ref=other.id),
+                                           other, services)
+    assert all(l.startswith("✅") for l in labels(nav_c) if "Чужой" in l or "Второй" in l)
+
+    first = [d for d in services.db.list_devices(other.id) if d.name == "Чужой"][0]
+    cb, _ = _cb(fake_bot, other.tg_id)
+    await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=first.id),
+                                          other, services)
+    cb_a, nav_a = _admin_cb(fake_bot)
+    await routing_h.routing_devices_screen(cb_a, RoutingCB(action="devs", ref=other.id),
+                                           None, services)
+    assert any(l.startswith("☑️ Чужой") for l in labels(nav_a))
+    assert services.routing_device_counts(other.id) == (1, 2)
+
+
+async def test_feature_toggle_blocks_both_editors_and_keeps_device_flags(
+        services, make_active_client, fake_bot, monkeypatch):
+    """Разрешение отозвано — раздел закрыт и клиенту, и админу в его панели;
+    вернули — флаги устройств и список адресов как были."""
+    admin, other = await _foreign_setup(services, make_active_client, monkeypatch, tg=143)
+    before = services.routing_device_counts(other.id)
+    services.set_routing_allowed(other.id, False)
+    other = services.db.get_client(other.id)
+
+    cb, nav = _cb(fake_bot, other.tg_id)
+    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=0), other, services,
+                                  FakeState())
+    assert cb.answers and cb.answers[0][1] is True
+    cb, nav = _admin_cb(fake_bot)
+    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=other.id, idx=0),
+                                   None, services)
+    assert cb.answers and cb.answers[0][1] is True
+    assert services.routing_domains(other.id) == ["a.ru", "b.ru"]
+
+    services.set_routing_allowed(other.id, True)
+    assert services.routing_device_counts(other.id) == before
+    cb, nav = _admin_cb(fake_bot)
+    await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=other.id), None,
+                                  services, FakeState())
+    text, labels = last_screen(nav)
+    assert "a.ru" in "".join(labels) and "b.ru" in "".join(labels)
