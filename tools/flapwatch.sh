@@ -26,7 +26,8 @@
 #   51  маршрутизация: цепочка AWGBOT_RT пересобрана (счётчики сброшены)
 #   52  маршрутизация: ip rule по метке ИСЧЕЗ (был на старте)
 #   53  маршрутизация: устройство ВЫПАЛО из своего rt_src-набора (было)
-#   60  устройство: шторм новых соединений (реконнекты) — ≥ NEWSTORM (60) за окно
+#   60  устройство: шторм новых соединений (реконнекты) — ≥ NEWSTORM (300) за окно;
+#       браузер за раз открывает десятки, порог намеренно высокий
 #   61  устройство: ≥ MISS_EXIT новых адресов мимо набора за шаг (0 = только
 #       писать в журнал: заграница и должна идти мимо, это не отклонение;
 #       смотри строки «мимо набора» и проверяй, российские ли там адреса)
@@ -43,7 +44,7 @@ LINK_PEER="${LINK_PEER:-10.99.99.2}"
 USER_SET="${USER_SET:-vpn_u2}"
 LOG="${LOG:-/var/log/flapwatch.log}"
 EXITF="${EXITF:-/var/log/flapwatch.exit}"
-NEWSTORM="${NEWSTORM:-60}"
+NEWSTORM="${NEWSTORM:-300}"
 MISS_EXIT="${MISS_EXIT:-0}"
 
 ts()  { date '+%F %T'; }
@@ -58,7 +59,9 @@ snapshot() {   # полный снимок в журнал — в момент �
         echo "· ip -s link $CLIENT_IF"; ip -s link show "$CLIENT_IF" 2>&1 | sed 's/^/    /'
         echo "· conntrack"; sysctl -n net.netfilter.nf_conntrack_count net.netfilter.nf_conntrack_max 2>&1 | tr '\n' ' '; echo
         echo "· соединения устройства (dst, счёт, в наборе?)"
-        conntrack -L -s "$ME" 2>/dev/null | grep -oE 'dst=[0-9.]+' | cut -d= -f2 | sort | uniq -c | sort -rn | head -20 \
+        # только исходный кортеж (первый dst=): во втором у маскарадных потоков
+        # стоит публичный адрес самого ВПС, и он считался бы «соединениями с ВПС»
+        conntrack -L -s "$ME" 2>/dev/null | grep -oE 'dst=[0-9.]+' | awk 'NR%2==1' | cut -d= -f2 | sort | uniq -c | sort -rn | head -20 \
             | while read -r n ip; do
                 inset=мимо; ipset test "$USER_SET" "$ip" >/dev/null 2>&1 && inset=В_НАБОРЕ
                 printf '    %5s  %-16s %s\n' "$n" "$ip" "$inset"
@@ -98,7 +101,7 @@ in_srcset()      { local s; for s in $(ipset list -n 2>/dev/null | grep '^rt_src
 kmsgs()          { journalctl -k --since "-$((INTERVAL + 2))sec" --no-pager 2>/dev/null | grep -ciE 'amnezia|awg|conntrack|link (is )?(up|down)' ; }
 botmsgs()        { journalctl -u awg-bot --since "-$((INTERVAL + 2))sec" --no-pager 2>/dev/null | grep -iE 'restart|syncconf|awg_bot_guard — (applied|restored|resynced)|переезд|rebuild' | head -3; }
 load_hi()        { local l n; l="$(cut -d' ' -f1 /proc/loadavg)"; n="$(nproc)"; awk -v l="$l" -v n="$n" 'BEGIN{exit !(l > 2*n)}'; }
-new_flows()      { timeout "$INTERVAL" conntrack -E -e NEW -s "$ME" 2>/dev/null | grep -oE 'dst=[0-9.]+' | cut -d= -f2; }
+new_flows()      { timeout "$INTERVAL" conntrack -E -e NEW -s "$ME" 2>/dev/null | grep -oE 'dst=[0-9.]+' | awk 'NR%2==1' | cut -d= -f2; }
 is_private()     { [[ "$1" =~ ^10\. || "$1" =~ ^192\.168\. || "$1" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. || "$1" =~ ^127\. ]]; }
 
 PUB="$(dev_pub)"
