@@ -779,6 +779,15 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         if not client.is_service and client.status == SubStatus.EXPIRED:
             self._device_set_block(device_id, DeviceBlock.EXPIRY)
 
+        # Профилю разрешён РФ-доступ — новое устройство сразу в режиме: человеку
+        # обещано «включено для всех твоих устройств», и новое — не исключение
+        # (решение 16.09.2026; до этого приходило выключенным, чтобы не ходить
+        # через шлюз молча — но выключить одно устройство проще, чем каждый раз
+        # включать). Двойник переезда наследует флаг при рождении.
+        if not client.is_service and client.routing_allowed:
+            self.db.update_device_fields(device_id, routing_on=1)
+            self.reconcile_routing()
+
         # В окне переезда устройство заводится ПАРОЙ, как все остальные, и
         # человеку выдаётся новый конфиг. Пара нужна не для красоты: до
         # завершения переезд можно отменить, а отмена возвращает людей на старые

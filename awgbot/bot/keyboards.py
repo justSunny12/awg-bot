@@ -1207,6 +1207,16 @@ def settings_back(sec_to: str = "root") -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def routing_disable_confirm() -> InlineKeyboardMarkup:
+    """Выключить фичу целиком — с подтверждением; «Отмена» первой, как у
+    остальных действий с последствиями."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Отмена", callback_data=SetCB(sec="rt", act="open"))
+    kb.button(text="🔴 Да, выключить", callback_data=SetCB(sec="rt", act="do", key="off!"))
+    kb.adjust(2)
+    return kb.as_markup()
+
+
 def settings_routing(enabled: bool, has_gateway: bool = True) -> InlineKeyboardMarkup:
     """Раздел «Условная маршрутизация»: выключатель и три подраздела.
 

@@ -195,6 +195,7 @@ def test_user_toggle_does_not_restart_the_resolver(
     c = make_active_client()
     services.set_routing_allowed(c.id, True)
     _device(services, c)
+    services.set_routing_all(c.id, False)                 # выключил сам
     services.reconcile_routing()
 
     writes = fake_routing.conf_writes
@@ -216,6 +217,7 @@ def test_allowed_but_switched_off_profile_marks_nothing(
     c = make_active_client()
     services.set_routing_allowed(c.id, True)
     _device(services, c)
+    services.set_routing_all(c.id, False)                 # выключил сам
     services.reconcile_routing()
 
     assert f"{config.ROUTING_SET_USER_PREFIX}{c.id}" in fake_routing.sets, \

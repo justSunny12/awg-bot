@@ -374,6 +374,12 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
         await edit(cb, texts.EMAIL_NOT_CONFIGURED, kb.email_setup_offer("notify"))
         await cb.answer()
         return
+    elif key == "app.routing.enabled" and settings.get_bool(key, False):
+        # Выключение бьёт по всем, кому фича разрешена, — только через
+        # подтверждение; включение — сразу.
+        await edit(cb, texts.ROUTING_DISABLE_CONFIRM, kb.routing_disable_confirm())
+        await cb.answer()
+        return
     else:
         # дефолт тумблера — по ключу: у большинства «включено», но у ключей с
         # дефолтом «выключено» первое нажатие иначе записало бы «выкл»
@@ -415,6 +421,17 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         n = await call(services.routing_update_lists, True)
         await _render(cb, "rt_lists", services)
         await cb.answer(f"В базовом наборе {n} записей.")
+        return
+    if callback_data.key == "off!":
+        # подтверждённое выключение фичи целиком (см. toggle)
+        try:
+            await call(settings.set_value, "app.routing.enabled", False)
+        except settings.SettingsWriteError as e:
+            await cb.answer(str(e), show_alert=True)
+            return
+        await call(services.reconcile_routing)
+        await _render(cb, "rt", services)
+        await cb.answer("Условная маршрутизация выключена")
         return
     if callback_data.key == "bundle_menu":
         # Файл с бандлом уходит из чата целиком — после возврата он не нужен,

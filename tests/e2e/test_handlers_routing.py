@@ -46,12 +46,12 @@ async def test_panel_hidden_without_permission(services, make_active_client, fak
 
 async def test_panel_opens_when_allowed(services, make_active_client, fake_bot):
     c = _allowed_client(services, make_active_client, 71)
-    services.add_device(c.id, "Телефон")
+    services.add_device(c.id, "Телефон")                  # у разрешённого — сразу в режиме
     cb, nav = _cb(fake_bot, 71)
     await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=c.id), c, services, FakeState())
     text, labels = last_screen(nav)
     assert "РФ-доступ" in text
-    assert any("Устройства: 0 из 1" in l for l in labels), "счётчик устройств режима не показан"
+    assert any("Устройства: 1 из 1" in l for l in labels), "счётчик устройств режима не показан"
 
 
 async def test_revoked_permission_blocks_stale_button(
@@ -73,15 +73,15 @@ async def test_bulk_toggle_flips_and_persists(services, make_active_client, fake
     """Массовое действие с экрана устройств. Направление выводится из состояния:
     выключено — включаем всё, включено хоть что-то — выключаем всё."""
     c = _allowed_client(services, make_active_client, 73)
-    services.add_device(c.id, "Телефон")
+    services.add_device(c.id, "Телефон")                  # включено с рождения
     cb, _ = _cb(fake_bot, 73)
     await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), c, services)
-    assert services.routing_profile_on(c.id) is True
+    assert services.routing_profile_on(c.id) is False
 
     c = services.db.get_client(c.id)
     cb2, _ = _cb(fake_bot, 73)
     await routing_h.routing_all_toggle(cb2, RoutingCB(action="all", ref=c.id), c, services)
-    assert services.routing_profile_on(c.id) is False
+    assert services.routing_profile_on(c.id) is True
 
 
 # ── личный список ────────────────────────────────────────────────────────────
@@ -280,14 +280,14 @@ async def test_admin_toggles_client_master(services, make_active_client, fake_bo
     """Админ переключает РФ-доступ ЧУЖОГО профиля: без этого разбор проблемы
     упирался бы в «включи у себя и перезайди»."""
     c = _allowed_client(services, make_active_client, 96)
-    services.add_device(c.id, "Телефон")
+    services.add_device(c.id, "Телефон")                  # включено с рождения
     cb, _ = _cb(fake_bot, 1)
     await routing_h.routing_all_toggle(cb, RoutingCB(action="all", ref=c.id), None, services)
-    assert services.routing_profile_on(c.id) is True
+    assert services.routing_profile_on(c.id) is False
 
     cb2, _ = _cb(fake_bot, 1)
     await routing_h.routing_all_toggle(cb2, RoutingCB(action="all", ref=c.id), None, services)
-    assert services.routing_profile_on(c.id) is False
+    assert services.routing_profile_on(c.id) is True
 
 
 async def test_admin_master_refused_without_grant(services, make_active_client, fake_bot):
@@ -461,24 +461,20 @@ async def test_device_toggle_touches_only_that_device(
     assert services.routing_device_counts(c.id) == (1, 2)
 
 
-async def test_new_device_stays_off_even_when_others_are_on(
+async def test_new_device_of_a_granted_profile_comes_on(
         services, make_active_client, fake_routing):
-    """Новое устройство приходит ВЫКЛЮЧЕННЫМ, даже если у профиля режим включён.
-
-    Наследовать «включено» опаснее: устройство, которому маршрутизация не нужна,
-    начало бы ходить через шлюз молча. Промах в обратную сторону виден — на
-    кнопке профиля стоит счётчик «включено N из M».
-    """
+    """Профилю разрешён РФ-доступ — новое устройство сразу в режиме: обещано
+    «включено для всех твоих устройств». Без разрешения — выключено."""
     c = _allowed_client(services, make_active_client, 121)
     old = services.add_device(c.id, "Телефон")
-    services.set_routing_all(c.id, True)
-
     new = services.add_device(c.id, "Ноутбук")
-    assert services.db.get_device(new.device_id).routing_on == 0
-    assert services.routing_device_counts(c.id) == (1, 2)
-    assert fake_routing.sets[_srcset(c.id)] == [old.address]
+    assert services.db.get_device(new.device_id).routing_on == 1
+    assert services.routing_device_counts(c.id) == (2, 2)
+    assert set(fake_routing.sets[_srcset(c.id)]) == {old.address, new.address}
 
-
+    plain = make_active_client(tg_id=122)                 # разрешения нет
+    d = services.add_device(plain.id, "Тел")
+    assert services.db.get_device(d.device_id).routing_on == 0
 async def test_device_toggle_rejects_foreign_device(
         services, make_active_client, fake_bot):
     """Чужой device_id из старого сообщения не должен переключаться."""
@@ -547,9 +543,9 @@ async def test_bulk_completes_partial_selection(services, make_active_client, fa
     нажатие выключало бы уже включённое.
     """
     c = _allowed_client(services, make_active_client, 130)
-    d1 = services.add_device(c.id, "Телефон")
+    services.add_device(c.id, "Телефон")
     d2 = services.add_device(c.id, "Ноутбук")
-    services.set_routing_device(d1.device_id, True)
+    services.set_routing_device(d2.device_id, False)      # одно выключили руками
     assert services.routing_device_counts(c.id) == (1, 2)
 
     cb, _ = _cb(fake_bot, 130)
@@ -803,7 +799,8 @@ async def test_device_switches_consistent_for_admin_and_client(
     """Экран устройств одного профиля одинаков для клиента и админа, и
     переключения любого из них видны обоим — состояние одно, в БД."""
     admin, other = await _foreign_setup(services, make_active_client, monkeypatch, tg=142)
-    d2 = services.add_device(other.id, "Второй")          # новое — выключено
+    d2 = services.add_device(other.id, "Второй")
+    services.set_routing_device(d2.device_id, False)      # выключили руками
     other = services.db.get_client(other.id)
 
     def labels(nav):
@@ -913,3 +910,39 @@ def test_pending_friend_device_has_hourglass_icon(services, make_active_client):
     assert texts.device_emoji(devs["Другу"]) == "⏳"
     labels = [b.text for row in kb.client_devices(devs.values()).inline_keyboard for b in row]
     assert any(l.startswith("⏳ Другу") for l in labels) and any(l.startswith("📱 Своё") for l in labels)
+
+
+# ── общий выключатель фичи: выключение через подтверждение ──────────────────
+
+async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
+        services, fake_bot, monkeypatch):
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from awgbot.core import config, settings
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    state = {"app.routing.enabled": True}
+    real_bool = settings.get_bool
+    monkeypatch.setattr(settings, "get_bool",
+                        lambda k, d=False: state.get(k, real_bool(k, d)))
+    monkeypatch.setattr(settings, "set_value",
+                        lambda k, v: state.__setitem__(k, v) or [k])
+    monkeypatch.setattr(services, "reconcile_routing", lambda: None)
+
+    # включено → нажатие показывает вопрос, значение не тронуто
+    cb, nav = _cb(fake_bot, config.ADMIN_ID)
+    await sh.toggle(cb, SetCB(sec="rt", act="toggle", key="app.routing.enabled"), services)
+    text, labels = last_screen(nav)
+    assert "Выключить условную маршрутизацию для всех?" in text
+    assert "🔴 Да, выключить" in labels and "⬅️ Отмена" in labels
+    assert state["app.routing.enabled"] is True
+
+    # подтверждение — выключено, раздел перерисован
+    cb, nav = _cb(fake_bot, config.ADMIN_ID)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="off!"), services)
+    assert state["app.routing.enabled"] is False
+    assert cb.answers and "выключена" in cb.answers[0][0]
+
+    # выключено → нажатие включает сразу, без вопроса
+    cb, nav = _cb(fake_bot, config.ADMIN_ID)
+    await sh.toggle(cb, SetCB(sec="rt", act="toggle", key="app.routing.enabled"), services)
+    assert state["app.routing.enabled"] is True
