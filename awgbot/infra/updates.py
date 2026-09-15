@@ -209,10 +209,22 @@ def next_release(role: Optional[str] = None,
         return None
     role = (role if role is not None else config.ROLE) or ""
     releases = list_releases()
-    tags = {r.version for r in releases}
-    if installed not in tags:            # нас нет в списке релизов → не трогаем
-        return None
+    if not _is_release_build(installed, releases):
+        return None                      # нерелизная сборка → не трогаем
     return pick_target(installed, releases, role, max_generation)
+
+
+def _is_release_build(installed: tuple, releases: list) -> bool:
+    """Установленная версия — из релизов? Точное совпадение тега либо та же
+    база X.Y.Z у любого хотфикса X.Y.Z.N: снятый с GitHub релиз (так убрали
+    v2.19.0 с битым усыновлением резолвера) не должен глушить обновления у
+    тех, кто его успел поставить, — иначе они застревают на нём навсегда,
+    а именно им хотфикс и нужен. Кастомная сборка с чужим номером по-прежнему
+    молчит."""
+    if any(r.version == installed for r in releases):
+        return True
+    base = installed[:3]
+    return any(r.version[:3] == base and r.version != installed for r in releases)
 
 
 def pick_target(installed: tuple, releases: list, role: str,

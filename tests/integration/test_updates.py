@@ -153,6 +153,23 @@ def test_installed_not_in_releases_returns_none(monkeypatch):
     assert updates.next_release() is None
 
 
+def test_a_withdrawn_release_still_updates_to_its_hotfixes(monkeypatch):
+    """Релиз сняли с GitHub (битый), хост успел его поставить: тега 1.2.0 нет,
+    но хотфиксы 1.2.0.N той же базы есть — обновления не глушим, иначе хост
+    застрянет ровно на том, что чинит хотфикс."""
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "1.2.0")
+    _patch_releases(monkeypatch, [
+        _release_json("v1.1.0", digest_hex="a" * 64),
+        _release_json("v1.2.0.2", digest_hex="b" * 64),
+        _release_json("v1.2.0.3", digest_hex="c" * 64),
+    ])
+    assert updates.next_release().tag == "v1.2.0.3"
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "1.2.0.1")   # снятый хотфикс той же базы
+    assert updates.next_release().tag == "v1.2.0.3"
+    monkeypatch.setattr(cfg, "INSTALLED_VERSION", "1.3.0")     # чужая база — молчим
+    assert updates.next_release() is None
+
+
 def test_non_semver_tags_ignored(monkeypatch):
     monkeypatch.setattr(cfg, "INSTALLED_VERSION", "1.1.0")
     _patch_releases(monkeypatch, [
