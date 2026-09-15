@@ -16,10 +16,14 @@
 # при наличии этого файла пишет в свой awgbot-base.conf только собственный
 # адрес перехвата; списки доменов бот пишет отдельным файлом.
 #
-# bind-dynamic, а не bind-interfaces: адрес интерфейса awg появляется вместе с
-# ним, и при старте dnsmasq раньше awg-quick его ещё нет — с bind-interfaces
-# демон не поднялся бы вовсе, а с bind-dynamic подхватит адрес, когда тот
-# появится.
+# ОДНОКРАТНЫЕ КЛЮЧИ. dnsmasq принимает bind-interfaces и cache-size один раз
+# на ВСЕ файлы конфигурации (/etc/dnsmasq.conf + conf-dir), иначе «illegal
+# repeated keyword» и демон не стартует. Ubuntu кладёт bind-interfaces в
+# /etc/dnsmasq.d/ubuntu-fan (файл дистрибутива, без .conf — но он читается),
+# а bind-dynamic с ним несовместим вовсе. Поэтому: bind-interfaces и cache-size
+# пишем только если их нет в других файлах; из конфига обвязки (наш) — снимаем.
+# Адрес интерфейса awg появляется позже старта dnsmasq — юнит перезапускается
+# сам без лимита попыток, пока не поднимется.
 #
 # РЕЖИМЫ:
 #   install ADDR   поставить dnsmasq (если нет юнита), добавить ADDR, включить
@@ -39,9 +43,11 @@ DNSMASQ_SERVICE="${DNSMASQ_SERVICE:-dnsmasq}"
 UPSTREAMS="${UPSTREAMS:-1.1.1.1 1.0.0.1}"
 DROPIN_DIR="${DROPIN_DIR:-/etc/systemd/system/${DNSMASQ_SERVICE}.service.d}"
 DROPIN="$DROPIN_DIR/awgbot-resolver.conf"
-# Прежний конфиг обвязки: bind-interfaces в нём несовместим с bind-dynamic —
-# при усыновлении строку снимаем, остальное (адрес перехвата) не трогаем.
+# Прежний конфиг обвязки: однократные ключи и наши адреса из него уходят при
+# усыновлении, остальное (адрес перехвата) не трогаем.
 ROUTING_BASE_CONF="${ROUTING_BASE_CONF:-/etc/dnsmasq.d/awgbot-base.conf}"
+DNSMASQ_MAIN_CONF="${DNSMASQ_MAIN_CONF:-/etc/dnsmasq.conf}"
+DNSMASQ_CONF_DIR="${DNSMASQ_CONF_DIR:-/etc/dnsmasq.d}"
 
 MODE="${1:-}"; ADDR="${2:-}"
 log()  { printf '[resolver] %s\n' "$*"; }
@@ -54,6 +60,17 @@ valid_addr() { [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; }
 listen_addrs() {  # адреса из конфига, через пробел (bash 3.2: без mapfile)
     [[ -f "$RESOLVER_CONF" ]] || return 0
     sed -nE 's/^listen-address=([0-9.]+)$/\1/p' "$RESOLVER_CONF" | tr '\n' ' '
+}
+
+set_elsewhere() {  # set_elsewhere REGEX — ключ уже задан в ДРУГОМ файле dnsmasq?
+    # Наш файл и конфиг обвязки не в счёт: их мы переписываем сами.
+    local f
+    for f in "$DNSMASQ_MAIN_CONF" "$DNSMASQ_CONF_DIR"/*; do
+        [[ -f "$f" ]] || continue
+        [[ "$f" == "$RESOLVER_CONF" || "$f" == "$ROUTING_BASE_CONF" ]] && continue
+        grep -qE "$1" "$f" && return 0
+    done
+    return 1
 }
 
 has_addr() {  # has_addr ADDR LIST…
@@ -69,7 +86,10 @@ write_conf() {  # write_conf ADDR… — переписать конфиг с э
     {
         echo "# Сгенерировано awg-resolver-setup.sh — резолвер клиентов awg-bot."
         echo "# Руками не править: файл переписывается при переезде профилей."
-        echo "bind-dynamic"
+        # без bind-interfaces dnsmasq сел бы на 0.0.0.0 и перекрыл 127.0.0.53
+        # systemd-resolved; ключ однократный — пишем, только если его нет в
+        # других файлах (Ubuntu: /etc/dnsmasq.d/ubuntu-fan)
+        set_elsewhere '^bind-interfaces$' || echo "bind-interfaces"
         for a in "$@"; do echo "listen-address=$a"; done
         echo "no-resolv"
         for a in $UPSTREAMS; do echo "server=$a"; done
@@ -91,24 +111,45 @@ address=/dns.google/
 address=/dns.quad9.net/
 address=/dns.adguard-dns.com/
 address=/doh.opendns.com/
-cache-size=10000
 EOF
+        set_elsewhere '^cache-size=' || echo "cache-size=10000"
     } > "$tmp"
     if [[ "$PLAN" -eq 1 ]]; then
         printf '  would: записать %s (listen: %s)\n' "$RESOLVER_CONF" "$*"; rm -f "$tmp"
     else
         mkdir -p "$(dirname "$RESOLVER_CONF")"
+        # прежний файл — в сторону: не поднялся демон — вернём его, а не оставим
+        # клиентов без DNS с нашим же битым конфигом
+        PREV_CONF=""
+        if [[ -f "$RESOLVER_CONF" ]]; then
+            PREV_CONF="$(mktemp)"; cp "$RESOLVER_CONF" "$PREV_CONF"
+        fi
         install -m 0644 "$tmp" "$RESOLVER_CONF"; rm -f "$tmp"
     fi
 }
 
+rollback_conf() {  # вернуть прежний конфиг (или снять новый) и поднять демон
+    if [[ -n "${PREV_CONF:-}" && -f "$PREV_CONF" ]]; then
+        cp "$PREV_CONF" "$RESOLVER_CONF"; rm -f "$PREV_CONF"
+        log "конфиг резолвера возвращён к прежнему"
+    else
+        rm -f "$RESOLVER_CONF"
+        log "новый конфиг резолвера снят"
+    fi
+    systemctl restart "$DNSMASQ_SERVICE" 2>/dev/null || true
+}
+
 adopt_routing_conf() {  # adopt_routing_conf ADDR… — конфиг обвязки под наш режим
-    # bind-interfaces обвязки несовместим с bind-dynamic; адреса, которые
-    # слушаем мы, из её файла уходят — один адрес в одном файле.
+    # Однократные ключи (bind-interfaces, cache-size) из файла обвязки уходят:
+    # их место решает set_elsewhere при записи нашего; адреса, которые слушаем
+    # мы, из её файла тоже уходят — один адрес в одном файле.
     [[ -f "$ROUTING_BASE_CONF" ]] || return 0
     local a changed=""
     if grep -q '^bind-interfaces$' "$ROUTING_BASE_CONF"; then
         run "sed -i '/^bind-interfaces$/d' '$ROUTING_BASE_CONF'"; changed=1
+    fi
+    if grep -q '^cache-size=' "$ROUTING_BASE_CONF"; then
+        run "sed -i '/^cache-size=/d' '$ROUTING_BASE_CONF'"; changed=1
     fi
     for a in "$@"; do
         if grep -qx "listen-address=$a" "$ROUTING_BASE_CONF"; then
@@ -137,7 +178,11 @@ write_dropin() {
     cat > "$DROPIN" <<'EOF'
 # Поставлено awg-resolver-setup.sh. Резолвер клиентов — единственный DNS у
 # всех, кто получил конфиг с приватным адресом: упал — люди без DNS. Поэтому
-# поднимаем сам и не ждём ручного вмешательства.
+# поднимаем сам и не ждём ручного вмешательства. Без лимита попыток: адрес
+# интерфейса awg появляется позже старта dnsmasq, и с bind-interfaces первые
+# запуски после ребута честно падают, пока awg-quick не поднял интерфейс.
+[Unit]
+StartLimitIntervalSec=0
 [Service]
 Restart=on-failure
 RestartSec=5
@@ -145,15 +190,30 @@ EOF
 }
 
 restart_service() {
+    # Синтаксис — ДО рестарта: dnsmasq падает на любом повторе однократного
+    # ключа между файлами, а упавший демон = все клиенты без DNS.
+    if [[ "$PLAN" -eq 0 ]] && command -v dnsmasq >/dev/null 2>&1 \
+            && ! out="$(dnsmasq --test 2>&1)"; then
+        log "конфиг dnsmasq не прошёл проверку: $out"
+        rollback_conf
+        die "конфиг резолвера отклонён dnsmasq — см. выше; прежний возвращён"
+    fi
     run "systemctl daemon-reload"
     run "systemctl enable --now ${DNSMASQ_SERVICE} >/dev/null 2>&1 || true"
-    run "systemctl restart ${DNSMASQ_SERVICE}" \
-        || die "dnsmasq не перезапустился — journalctl -u ${DNSMASQ_SERVICE} -e"
+    if ! run "systemctl restart ${DNSMASQ_SERVICE}"; then
+        rollback_conf
+        die "dnsmasq не перезапустился — journalctl -u ${DNSMASQ_SERVICE} -e; прежний конфиг возвращён"
+    fi
+    if [[ "$PLAN" -eq 0 ]] && ! systemctl is-active --quiet "$DNSMASQ_SERVICE"; then
+        rollback_conf
+        die "dnsmasq не активен после запуска — journalctl -u ${DNSMASQ_SERVICE} -e; прежний конфиг возвращён"
+    fi
+    [[ -n "${PREV_CONF:-}" ]] && rm -f "$PREV_CONF"
+    return 0
 }
 
-verify() {  # verify ADDR — демон жив и отвечает на адресе (если есть чем спросить)
+verify() {  # verify ADDR — отвечает ли адрес (если есть чем спросить)
     [[ "$PLAN" -eq 1 ]] && return 0
-    systemctl is-active --quiet "$DNSMASQ_SERVICE" || die "dnsmasq не активен после запуска"
     if command -v dig >/dev/null 2>&1; then
         dig +time=3 +tries=1 +short "@$1" example.com >/dev/null 2>&1 \
             || log "предупреждение: dig @$1 не ответил — адрес ещё не поднят или апстрим недоступен"

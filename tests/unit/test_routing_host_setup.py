@@ -289,7 +289,7 @@ def _params(script: str, tmp_path, *, dns1: str, dns2: str, resolver_addrs=()) -
                    f'  dns1: "{dns1}"\n  dns2: "{dns2}"\n', encoding="utf-8")
     rconf = tmp_path / "resolver.conf"
     if resolver_addrs:
-        rconf.write_text("bind-dynamic\n" + "".join(f"listen-address={a}\n" for a in resolver_addrs),
+        rconf.write_text("bind-interfaces\n" + "".join(f"listen-address={a}\n" for a in resolver_addrs),
                          encoding="utf-8")
     block = script[script.index("# ── параметры"):script.index("MODE=\"plan\"")]
     prog = (f'_APP_YAML="{app}"\nRESOLVER_CONF="{rconf}"\n' + block

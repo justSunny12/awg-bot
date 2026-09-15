@@ -33,10 +33,13 @@ def host(tmp_path):
         encoding="utf-8")
     for f in bin_dir.iterdir():
         f.chmod(0o755)
+    confd = tmp_path / "dnsmasq.d"; confd.mkdir()
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "JOURNAL": str(journal),
            "UNITS": str(tmp_path / "units"), "ACTIVE": str(tmp_path / "active"),
-           "RESOLVER_CONF": str(tmp_path / "resolver.conf"),
-           "ROUTING_BASE_CONF": str(tmp_path / "base.conf"),
+           "RESOLVER_CONF": str(confd / "awgbot-resolver.conf"),
+           "ROUTING_BASE_CONF": str(confd / "awgbot-base.conf"),
+           "DNSMASQ_MAIN_CONF": str(tmp_path / "dnsmasq.conf"),
+           "DNSMASQ_CONF_DIR": str(confd),
            "DROPIN_DIR": str(tmp_path / "dropin"),
            "EUID": "0"}
     (tmp_path / "active").write_text("")            # демон «жив»
@@ -46,14 +49,14 @@ def host(tmp_path):
                               text=True, env=env)
 
     def conf():
-        p = tmp_path / "resolver.conf"
+        p = confd / "awgbot-resolver.conf"
         return p.read_text(encoding="utf-8") if p.exists() else ""
 
     def log():
         return journal.read_text(encoding="utf-8") if journal.exists() else ""
 
     return type("H", (), {"run": staticmethod(run), "conf": staticmethod(conf),
-                          "log": staticmethod(log), "dir": tmp_path})
+                          "log": staticmethod(log), "dir": tmp_path, "confd": confd})
 
 
 def _listen(text):
@@ -65,8 +68,9 @@ def test_install_writes_the_config_installs_the_package_and_restarts(host):
     assert r.returncode == 0, r.stdout + r.stderr
     text = host.conf()
     assert _listen(text) == ["10.8.1.1"]
-    assert "bind-dynamic" in text and "bind-interfaces" not in text, \
-        "адрес интерфейса появляется вместе с ним — bind-interfaces не поднялся бы"
+    assert "bind-interfaces" in text and "cache-size=10000" in text, \
+        "других файлов нет — однократные ключи наши"
+    assert "bind-dynamic" not in text, "несовместим с bind-interfaces дистрибутива"
     assert "no-resolv" in text and "server=1.1.1.1" in text and "server=1.0.0.1" in text
     assert "stop-dns-rebind" in text
     assert "address=/cloudflare-dns.com/" in text and "address=/use-application-dns.net/" in text
@@ -76,6 +80,20 @@ def test_install_writes_the_config_installs_the_package_and_restarts(host):
     assert "systemctl restart dnsmasq" in log and "systemctl daemon-reload" in log
     dropin = (host.dir / "dropin" / "awgbot-resolver.conf").read_text(encoding="utf-8")
     assert "Restart=on-failure" in dropin, "упавший резолвер = люди без DNS; поднимаем сами"
+    assert "StartLimitIntervalSec=0" in dropin, "адрес .1 появляется позже старта — пробуем без лимита"
+
+
+def test_one_time_keywords_are_not_repeated_across_dnsmasq_files(host):
+    """dnsmasq принимает bind-interfaces и cache-size один раз на ВСЕ файлы:
+    Ubuntu держит bind-interfaces в /etc/dnsmasq.d/ubuntu-fan (без .conf, но
+    читается), а повтор — «illegal repeated keyword» и демон не стартует.
+    Ровно так лёг боевой сервер."""
+    (host.confd / "ubuntu-fan").write_text("# Ubuntu FAN\nbind-interfaces\n", encoding="utf-8")
+    (host.dir / "dnsmasq.conf").write_text("#bind-interfaces\ncache-size=150\n", encoding="utf-8")
+    assert host.run("install", "10.8.1.1").returncode == 0
+    text = host.conf()
+    assert "bind-interfaces" not in text and "cache-size" not in text
+    assert _listen(text) == ["10.8.1.1"] and "stop-dns-rebind" in text
 
 
 def test_install_is_idempotent_and_skips_apt_when_the_unit_exists(host):
@@ -118,30 +136,62 @@ def test_status_reports_addresses_and_liveness(host):
     assert r.returncode == 1 and "ACTIVE=0" in r.stdout
 
 
-def test_install_fails_loudly_when_the_daemon_does_not_come_up(host):
+def test_install_fails_loudly_and_rolls_back_when_the_daemon_does_not_come_up(host):
+    """Битый конфиг с нашим именем нельзя оставлять: демон в рестарт-цикле —
+    все клиенты без DNS. Первая установка — файл снимается."""
     (host.dir / "active").unlink()
     r = host.run("install", "10.8.1.1")
-    assert r.returncode == 1 and "не активен" in r.stderr
+    assert r.returncode == 1 and "не активен" in r.stderr and "возвращён" in r.stderr
+    assert host.conf() == "", "новый конфиг снят"
+
+
+def test_add_rolls_back_to_the_previous_config_when_the_daemon_fails(host):
+    assert host.run("install", "10.8.1.1").returncode == 0
+    before = host.conf()
+    (host.dir / "active").unlink()
+    r = host.run("add", "10.9.1.1")
+    assert r.returncode == 1 and host.conf() == before, "прежний конфиг возвращён"
+
+
+def test_syntax_is_checked_before_restart_and_a_bad_config_is_rolled_back(host):
+    """dnsmasq --test до рестарта: повтор однократного ключа между файлами
+    (ровно так упал боевой сервер на cache-size) ловится без единого рестарта."""
+    assert host.run("install", "10.8.1.1").returncode == 0
+    before = host.conf()
+    dnsmasq = host.dir / "bin" / "dnsmasq"
+    dnsmasq.write_text('#!/bin/sh\necho "illegal repeated keyword at line 25" >&2; exit 1\n',
+                       encoding="utf-8"); dnsmasq.chmod(0o755)
+    r = host.run("add", "10.9.1.1")
+    assert r.returncode == 1 and "illegal repeated keyword" in r.stdout + r.stderr
+    assert host.conf() == before
+    # рестартов два: установка и подъём на прежнем конфиге после отката; с
+    # битым конфигом до daemon-reload/restart дело не дошло
+    assert host.log().count("systemctl daemon-reload") == 1
 
 
 def test_adopting_the_routing_config_drops_bind_interfaces(host):
-    """Прежний конфиг обвязки держал bind-interfaces — с bind-dynamic резолвера
-    они несовместимы, dnsmasq не стартовал бы. Строку снимаем, адрес
-    перехвата обвязки оставляем."""
-    base = host.dir / "base.conf"
-    base.write_text("bind-interfaces\nlisten-address=10.255.53.1\nlisten-address=10.9.1.1\nno-resolv\n",
-                    encoding="utf-8")
+    """Прежний конфиг обвязки держал bind-interfaces и cache-size — однократные
+    ключи переезжают в наш файл (обвязка своё больше не пишет), адрес перехвата
+    обвязки остаётся у неё, наши адреса из её файла уходят."""
+    base = host.confd / "awgbot-base.conf"
+    base.write_text("bind-interfaces\nlisten-address=10.255.53.1\nlisten-address=10.9.1.1\n"
+                    "no-resolv\ncache-size=10000\n", encoding="utf-8")
     assert host.run("install", "10.9.1.1").returncode == 0
     text = base.read_text(encoding="utf-8")
     assert "bind-interfaces" not in text and "listen-address=10.255.53.1" in text
     assert "listen-address=10.9.1.1" not in text, "один адрес — в одном файле"
+    assert "cache-size" not in text, "cache-size dnsmasq принимает один раз на все файлы"
+    ours = host.conf()
+    assert "bind-interfaces" in ours and "cache-size=10000" in ours, "ключи переехали к нам"
     assert host.run("add", "10.255.53.1").returncode == 0
     assert "listen-address=10.255.53.1" not in base.read_text(encoding="utf-8")
 
 
 def test_plan_changes_nothing_and_needs_no_root(host):
     r = subprocess.run(["bash", str(SCRIPT), "plan", "10.8.1.1"], capture_output=True, text=True,
-                       env={"PATH": "/usr/bin:/bin", "RESOLVER_CONF": str(host.dir / "r.conf")})
+                       env={"PATH": "/usr/bin:/bin", "RESOLVER_CONF": str(host.dir / "r.conf"),
+                            "DNSMASQ_MAIN_CONF": str(host.dir / "none.conf"),
+                            "DNSMASQ_CONF_DIR": str(host.dir / "none.d")})
     assert r.returncode == 0 and "would:" in r.stdout
     assert not (host.dir / "r.conf").exists()
 

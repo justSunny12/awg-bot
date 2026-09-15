@@ -263,8 +263,12 @@ DNS напрямую — §4c.
 **Что это.** dnsmasq на сервере, слушающий собственный адрес интерфейса в
 туннеле (`<подсеть>.1`); в конфигах клиентов **оба** поля DNS указывают на него.
 Ведёт `install/awg-resolver-setup.sh` (`/etc/dnsmasq.d/awgbot-resolver.conf`:
-`bind-dynamic`, апстримы `1.1.1.1`/`1.0.0.1`, `stop-dns-rebind`, NXDOMAIN на
-DoH-эндпоинты и канарейку Firefox, кэш; override юнита с `Restart=on-failure`).
+`bind-interfaces` и `cache-size` — только если их нет в других файлах dnsmasq,
+они однократные на всю конфигурацию; апстримы `1.1.1.1`/`1.0.0.1`,
+`stop-dns-rebind`, NXDOMAIN на DoH-эндпоинты и канарейку Firefox; override
+юнита с `Restart=on-failure` без лимита попыток — адрес интерфейса появляется
+позже старта демона). Конфиг проверяется `dnsmasq --test` до рестарта; не
+прошёл или демон не поднялся — свой файл откатывается.
 CLI: `awg-bot resolver status | install [addr] | add <addr> | remove <addr>`.
 
 **Зачем.** Публичный адрес в поле DNS — это Chrome/Edge, которые молча уходят

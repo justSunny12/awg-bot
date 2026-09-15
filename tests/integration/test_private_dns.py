@@ -33,7 +33,7 @@ def fake_resolver(monkeypatch, tmp_path):
             addrs.append(addr)
         if mode == "remove":
             addrs = [a for a in addrs if a != addr]
-        conf.write_text("bind-dynamic\n" + "".join(f"listen-address={a}\n" for a in addrs),
+        conf.write_text("bind-interfaces\n" + "".join(f"listen-address={a}\n" for a in addrs),
                         encoding="utf-8")
         return ""
 
@@ -145,7 +145,7 @@ def test_finish_switches_dns_fields_and_drops_the_old_address(
     """Финал: оба поля — адрес двойников, старый адрес снят с резолвера,
     решение стёрто (оно исполнено)."""
     _set_dns(monkeypatch, "10.8.1.1", "10.8.1.1")
-    fake_resolver.conf.write_text("bind-dynamic\nlisten-address=10.8.1.1\n", encoding="utf-8")
+    fake_resolver.conf.write_text("bind-interfaces\nlisten-address=10.8.1.1\n", encoding="utf-8")
     written: dict = {}
 
     def set_value(k, v):

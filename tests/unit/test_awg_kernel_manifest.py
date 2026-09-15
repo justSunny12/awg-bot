@@ -550,7 +550,7 @@ def _run_resolver_func(tmp_path, name, *, app_yaml, script_rc=0, resolver_conf_e
     app = conf / "app.yaml"; app.write_text(app_yaml, encoding="utf-8")
     rconf = tmp_path / "resolver.conf"
     if resolver_conf_exists:
-        rconf.write_text("bind-dynamic\nlisten-address=10.8.1.1\n", encoding="utf-8")
+        rconf.write_text("bind-interfaces\nlisten-address=10.8.1.1\n", encoding="utf-8")
     bin_dir = tmp_path / "bin"; bin_dir.mkdir(exist_ok=True)
     (bin_dir / "sed").write_text(
         '#!/bin/sh\nif /usr/bin/sed --version >/dev/null 2>&1; then exec /usr/bin/sed "$@"; fi\n'
