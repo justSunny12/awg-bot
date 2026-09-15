@@ -1,6 +1,8 @@
 """Секрет шифрования бэкапов: в БД, фраза важнее ключа, переезд из env."""
 from __future__ import annotations
 
+import base64
+
 import pytest
 
 import awgbot.core.config as cfg
@@ -21,7 +23,7 @@ def test_random_key_of_the_old_scheme_yields_to_passphrase(services):
     пока не задана фраза."""
     from awgbot.util import secrets_util
     key = secrets_util.gen_random_key()
-    services.db.set_state(services._BK_KEY_KEY, secrets_util.b64e(key))
+    services.db.set_state(services._BK_KEY_KEY, base64.b64encode(key).decode())
     assert services.backup_encryption_mode() == "key" and services.backup_enc_kwargs() == {"key": key}
     services.backup_set_passphrase("correct horse battery")
     assert services.backup_encryption_mode() == "passphrase"

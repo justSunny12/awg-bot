@@ -18,7 +18,6 @@ AEAD). Ключ либо случайный, либо выведен из пас
 from __future__ import annotations
 
 import base64
-import hashlib
 
 from nacl import pwhash, secret, utils
 
@@ -36,33 +35,9 @@ _MEM = pwhash.argon2id.MEMLIMIT_MODERATE
 
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Общие хелперы
-# ─────────────────────────────────────────────────────────────────────────────
-
-def b64e(raw: bytes) -> str:
-    return base64.b64encode(raw).decode("ascii")
-
-
 def b64d(text: str) -> bytes:
+    """base64 → байты ключа (так хранится случайный ключ в state «backup_key»)."""
     return base64.b64decode(text.strip().encode("ascii"))
-
-
-def fingerprint(material: str | bytes) -> str:
-    """Короткий отпечаток секрета для показа человеку (сверить, не раскрывая).
-    Первые 8 hex sha256 — достаточно, чтобы отличить «тот же/не тот» токен/ключ."""
-    if isinstance(material, str):
-        material = material.encode("utf-8")
-    return hashlib.sha256(material).hexdigest()[:8]
-
-
-# Ключи наружу — base64(32 байта): priv = seed SigningKey, pub = VerifyKey.
-# key_id — короткий отпечаток pub (какой ключ подписал: важно для ротации).
-
-
-
-
-
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -70,7 +45,9 @@ def fingerprint(material: str | bytes) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def gen_random_key() -> bytes:
-    """Случайный 32-байтный ключ SecretBox."""
+    """Случайный 32-байтный ключ SecretBox. Из интерфейса режим 'R' больше не
+    заводится (только фраза), но ключ, записанный прежней схемой, в БД старых
+    установок остаётся — тест расшифровки таким ключом держим."""
     return utils.random(KEY_SIZE)
 
 
@@ -139,7 +116,7 @@ def decrypt(blob: bytes, *, key: bytes | None = None,
 
 __all__ = [
     "MAGIC", "KEY_SIZE",
-    "b64e", "b64d", "fingerprint",
+    "b64d",
     "gen_random_key", "derive_key",
     "encrypt", "decrypt", "inspect_mode",
 ]

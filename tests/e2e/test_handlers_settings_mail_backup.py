@@ -46,6 +46,13 @@ async def test_email_wizard_known_provider_saves_after_live_check(services, fake
     assert store["email.smtp_host"] == "smtp.mail.me.com"
     assert any("подключён" in t for kind, t, _ in pw.sent)
     assert await state.get_data() == {}
+    # Раздел после мастера — через send_menu: живое меню сместилось с вопроса,
+    # приглашение и адрес человека убраны (раньше раздел уходил голым answer)
+    assert services.db.get_nav_message_id(cfg.ADMIN_ID) != msg.message_id
+    deleted = {r[2] for r in fake_bot.records if r[0] == "delete_message"}
+    assert msg.message_id in deleted and addr.message_id in deleted
+    section = [x for x in pw.sent if x[0] == "answer"][-1]
+    assert section[2] is not None and "подключён" not in section[1]
 
 
 async def test_email_wizard_unknown_domain_asks_servers_and_failed_check_saves_nothing(
@@ -59,12 +66,12 @@ async def test_email_wizard_unknown_domain_asks_servers_and_failed_check_saves_n
     m = lambda t: FakeMessage(text=t, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     a = m("box@corp.example"); await sh.email_address(a, state, services)
     assert any("IMAP-сервер" in t for kind, t, _ in a.sent)
-    await sh.email_imap_host(m("imap.corp.example"), state)
-    bad = m("99999"); await sh.email_imap_port(bad, state)
+    await sh.email_imap_host(m("imap.corp.example"), state, services)
+    bad = m("99999"); await sh.email_imap_port(bad, state, services)
     assert any("порта" in t for kind, t, _ in bad.sent)
-    await sh.email_imap_port(m("993"), state)
-    await sh.email_smtp_host(m("smtp.corp.example"), state)
-    await sh.email_smtp_port(m("587"), state)
+    await sh.email_imap_port(m("993"), state, services)
+    await sh.email_smtp_host(m("smtp.corp.example"), state, services)
+    await sh.email_smtp_port(m("587"), state, services)
     pw = m("pw"); await sh.email_password(pw, state, services)
     assert any("Не подключено" in t and "IMAP отверг" in t for kind, t, _ in pw.sent)
     assert not services.db.get_state("email_login")

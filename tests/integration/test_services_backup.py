@@ -1,3 +1,4 @@
+import base64
 """Integration: создание бэкапа (make_backup) и выбор параметров шифрования."""
 import pytest
 
@@ -66,7 +67,7 @@ def test_make_backup_without_db_still_packs_the_rest(services, fake_awg, monkeyp
 def test_backup_enc_kwargs_prefers_passphrase(services):
     """Фраза важнее ключа: случайный ключ прежней схемы лежит в БД, потом задали
     фразу — действует фраза."""
-    services.db.set_state(services._BK_KEY_KEY, secrets_util.b64e(bytes(32)))
+    services.db.set_state(services._BK_KEY_KEY, base64.b64encode(bytes(32)).decode())
     assert services.backup_enc_kwargs() == {"key": bytes(32)}
     services.backup_set_passphrase("phrase-of-eight")
     assert services.backup_enc_kwargs() == {"passphrase": "phrase-of-eight"}

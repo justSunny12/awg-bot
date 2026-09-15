@@ -3,8 +3,10 @@ mailwizard.py — мастер подключения почтового ящи�
 
 Шаги: адрес → (серверы, если провайдер незнаком) → пароль → живая проверка →
 сохранение. Регистрируется на роутер роли с двумя точками привязки: клавиатура
-«Отмена» и экран раздела после завершения. Сообщение с паролем удаляется до
-любой проверки — в чате он не остаётся.
+«Отмена» и done(message, services) — показать раздел после завершения (через
+send_menu роли, чтобы прежний экран погас). Сообщение с паролем удаляется до
+любой проверки — в чате он не остаётся; вопросы и ответы человека трекаются и
+убираются при показе раздела, остаётся только итог.
 """
 from __future__ import annotations
 
@@ -12,7 +14,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from awgbot.bot import texts
-from awgbot.bot.handlers.common import call
+from awgbot.bot.handlers.common import call, ask_tracked
 from awgbot.bot.states import EmailSetup
 from awgbot.infra import mail
 
@@ -26,9 +28,13 @@ def _port_ok(v: str) -> bool:
     return v.strip().isdigit() and 1 <= int(v.strip()) <= 65535
 
 
-def register(router, *, cancel_kb, done_screen) -> dict:
-    """cancel_kb() → InlineKeyboardMarkup; done_screen(services) → (text, markup)
-    (корутина). Возвращает обработчики по именам — для тестов."""
+def register(router, *, cancel_kb, done) -> dict:
+    """cancel_kb() → InlineKeyboardMarkup; done(message, services) — корутина,
+    показывающая раздел после завершения. Возвращает обработчики по именам —
+    для тестов."""
+
+    async def _track(message: Message, services):
+        await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
 
     async def _finish(message: Message, state: FSMContext, services, password: str):
         data = await state.get_data()
@@ -39,21 +45,20 @@ def register(router, *, cancel_kb, done_screen) -> dict:
         ok, detail = await call(services.email_check, acc)
         if not ok:
             await message.answer(texts.email_check_failed(detail))
-            text, markup = await done_screen(services)
-            await message.answer(text, reply_markup=markup)
+            await done(message, services)
             return
         await call(services.email_save, acc.login, acc.password, acc.imap_host, acc.imap_port,
                    acc.smtp_host, acc.smtp_port)
         await call(services.email_check)                  # запомнить «проверено сейчас»
         await message.answer(texts.email_saved(acc.login, detail))
-        text, markup = await done_screen(services)
-        await message.answer(text, reply_markup=markup)
+        await done(message, services)
 
     @router.message(EmailSetup.address)
     async def address(message: Message, state: FSMContext, services):
+        await _track(message, services)
         addr = (message.text or "").strip()
         if not mail.is_address(addr):
-            await message.answer(texts.EMAIL_BAD_ADDRESS)
+            await ask_tracked(message, services, texts.EMAIL_BAD_ADDRESS)
             return
         await state.update_data(email_address=addr)
         provider = mail.detect_provider(addr)
@@ -61,48 +66,54 @@ def register(router, *, cancel_kb, done_screen) -> dict:
             imap, ip, smtp, sp = provider
             await state.update_data(imap_host=imap, imap_port=ip, smtp_host=smtp, smtp_port=sp)
             await state.set_state(EmailSetup.password)
-            await message.answer(texts.email_provider_line(addr, provider) + "\n\n"
-                                 + texts.email_ask_password(addr), reply_markup=cancel_kb())
+            await ask_tracked(message, services,
+                              texts.email_provider_line(addr, provider) + "\n\n"
+                              + texts.email_ask_password(addr), reply_markup=cancel_kb())
             return
         await state.set_state(EmailSetup.imap_host)
-        await message.answer(texts.EMAIL_ASK_IMAP_HOST, reply_markup=cancel_kb())
+        await ask_tracked(message, services, texts.EMAIL_ASK_IMAP_HOST, reply_markup=cancel_kb())
 
     @router.message(EmailSetup.imap_host)
-    async def imap_host(message: Message, state: FSMContext):
+    async def imap_host(message: Message, state: FSMContext, services):
+        await _track(message, services)
         v = (message.text or "").strip()
         if not _host_ok(v):
-            await message.answer(texts.EMAIL_BAD_HOST); return
+            await ask_tracked(message, services, texts.EMAIL_BAD_HOST); return
         await state.update_data(imap_host=v)
         await state.set_state(EmailSetup.imap_port)
-        await message.answer(texts.EMAIL_ASK_IMAP_PORT, reply_markup=cancel_kb())
+        await ask_tracked(message, services, texts.EMAIL_ASK_IMAP_PORT, reply_markup=cancel_kb())
 
     @router.message(EmailSetup.imap_port)
-    async def imap_port(message: Message, state: FSMContext):
+    async def imap_port(message: Message, state: FSMContext, services):
+        await _track(message, services)
         v = (message.text or "").strip()
         if not _port_ok(v):
-            await message.answer(texts.EMAIL_BAD_PORT); return
+            await ask_tracked(message, services, texts.EMAIL_BAD_PORT); return
         await state.update_data(imap_port=int(v))
         await state.set_state(EmailSetup.smtp_host)
-        await message.answer(texts.EMAIL_ASK_SMTP_HOST, reply_markup=cancel_kb())
+        await ask_tracked(message, services, texts.EMAIL_ASK_SMTP_HOST, reply_markup=cancel_kb())
 
     @router.message(EmailSetup.smtp_host)
-    async def smtp_host(message: Message, state: FSMContext):
+    async def smtp_host(message: Message, state: FSMContext, services):
+        await _track(message, services)
         v = (message.text or "").strip()
         if not _host_ok(v):
-            await message.answer(texts.EMAIL_BAD_HOST); return
+            await ask_tracked(message, services, texts.EMAIL_BAD_HOST); return
         await state.update_data(smtp_host=v)
         await state.set_state(EmailSetup.smtp_port)
-        await message.answer(texts.EMAIL_ASK_SMTP_PORT, reply_markup=cancel_kb())
+        await ask_tracked(message, services, texts.EMAIL_ASK_SMTP_PORT, reply_markup=cancel_kb())
 
     @router.message(EmailSetup.smtp_port)
-    async def smtp_port(message: Message, state: FSMContext):
+    async def smtp_port(message: Message, state: FSMContext, services):
+        await _track(message, services)
         v = (message.text or "").strip()
         if not _port_ok(v):
-            await message.answer(texts.EMAIL_BAD_PORT); return
+            await ask_tracked(message, services, texts.EMAIL_BAD_PORT); return
         await state.update_data(smtp_port=int(v))
         await state.set_state(EmailSetup.password)
         addr = (await state.get_data()).get("email_address", "")
-        await message.answer(texts.email_ask_password(addr), reply_markup=cancel_kb())
+        await ask_tracked(message, services, texts.email_ask_password(addr),
+                          reply_markup=cancel_kb())
 
     @router.message(EmailSetup.password)
     async def password(message: Message, state: FSMContext, services):
@@ -112,7 +123,7 @@ def register(router, *, cancel_kb, done_screen) -> dict:
         except Exception:                                # noqa: BLE001
             pass
         if not pw:
-            await message.answer("⚠️ Пароль пустой. Пришли пароль ещё раз.")
+            await ask_tracked(message, services, "⚠️ Пароль пустой. Пришли пароль ещё раз.")
             return
         await _finish(message, state, services, pw)
 

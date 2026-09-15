@@ -10,7 +10,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, FSInputFile
+from aiogram.types import CallbackQuery, Message
 
 from awgbot.core import config
 from awgbot.core import settings
@@ -18,9 +18,8 @@ from awgbot.bot import texts
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import GwMarkCB, SetCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.states import (BackupPassphrase, EmailSetup, GatewayToken,
-                                MigrationPort, SettingsInput)
-from awgbot.bot.handlers import mailwizard
+from awgbot.bot.states import GatewayToken, MigrationPort
+from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.notifier import send_notifications
 from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu,
                                         ask_tracked, cleanup_content)
@@ -125,16 +124,16 @@ async def _render(cb: CallbackQuery, sec: str, services):
     await edit(cb, text, markup)
 
 
-async def _after_input(message: Message, services, sec: str) -> None:
-    """Раздел после ТЕКСТОВОГО ввода — новым сообщением через send_menu.
-
-    Голый message.answer оставлял в чате два живых экрана: приглашение «введи
-    значение» с кнопкой «Отмена» и новый раздел, а нав-указатель так и стоял на
-    приглашении — следующий переход гасил не то. Служебное убираем: само
-    приглашение, ввод человека, переспросы (всё это трекается); в чате
-    остаются финишер «изменено: было → стало» и раздел."""
-    await cleanup_content(message.bot, services, message.chat.id)
-    await send_menu(message, services, *await _screen(sec, services))
+# Общая механика диалогов настроек (ввод, фраза, бэкап, почта, тумблер) — в
+# settingscore; здесь только то, чем основной бот отличается: колбэки и
+# клавиатуры.
+HOOKS = core.Hooks(
+    cancel_kb=kb.settings_cancel,
+    email_offer_kb=kb.email_setup_offer,
+    email_forget_kb=kb.email_forget_confirm,
+    render=lambda cb, services, sec: _render(cb, sec, services),
+    screen=lambda services, sec: _screen(sec, services),
+)
 
 
 async def _record(cb: CallbackQuery, text: str, services):
@@ -350,9 +349,6 @@ async def open_section(cb: CallbackQuery, callback_data: SetCB, services, state:
     await cb.answer()
 
 
-_TOGGLE_DEFAULTS = {"notifications.email_fallback": False}
-
-
 # ── тумблеры (bool в YAML или mute обновлений в БД) ───────────────────────────
 @router.callback_query(SetCB.filter(F.act == "toggle"))
 async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
@@ -368,33 +364,22 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
             await call(services.unmute_updates)
         else:
             await call(services.mute_updates)
-    elif key == "notifications.email_fallback" and not settings.get_bool(key, False) \
-            and not await call(services.email_configured):
-        # включить нельзя без ящика — предложить настроить, не молча отказать
-        await edit(cb, texts.EMAIL_NOT_CONFIGURED, kb.email_setup_offer("notify"))
+        await _render(cb, callback_data.sec, services)
         await cb.answer()
         return
-    elif key == "app.routing.enabled" and settings.get_bool(key, False):
+    if key == "app.routing.enabled" and settings.get_bool(key, False):
         # Выключение бьёт по всем, кому фича разрешена, — только через
         # подтверждение; включение — сразу.
         await edit(cb, texts.ROUTING_DISABLE_CONFIRM, kb.routing_disable_confirm())
         await cb.answer()
         return
-    else:
-        # дефолт тумблера — по ключу: у большинства «включено», но у ключей с
-        # дефолтом «выключено» первое нажатие иначе записало бы «выкл»
-        cur = settings.get_bool(key, _TOGGLE_DEFAULTS.get(key, True))
-        try:
-            await call(settings.set_value, key, not cur)
-        except settings.SettingsWriteError as e:
-            await cb.answer(str(e), show_alert=True)
-            return
+
+    async def _after_set(k):
         # выключатель условной маршрутизации меняет состояние системы, а не
         # только значение в yaml: применяем сразу, не дожидаясь тика монитора
-        if key == "app.routing.enabled":
+        if k == "app.routing.enabled":
             await call(services.reconcile_routing)
-    await _render(cb, callback_data.sec, services)
-    await cb.answer()
+    await core.toggle_bool(cb, services, HOOKS, key, callback_data.sec, after_set=_after_set)
 
 
 @router.callback_query(SetCB.filter((F.sec == "rt") & (F.act == "do")))
@@ -497,32 +482,14 @@ async def private_dns_action(cb: CallbackQuery, callback_data: SetCB, services, 
 @router.callback_query(SetCB.filter((F.sec == "mig_prep") & (F.act == "edit")))
 async def migration_port_ask(cb: CallbackQuery, state: FSMContext, services):
     await state.set_state(MigrationPort.value)
-    await _ask(cb, services, texts.MIGRATION_ASK_PORT, kb.settings_cancel("mig_prep"))
+    await core.ask(cb, services, texts.MIGRATION_ASK_PORT, kb.settings_cancel("mig_prep"))
     await cb.answer()
 
 
-async def _ask(cb: CallbackQuery, services, prompt: str, markup) -> None:
-    """Приглашение к вводу — на месте экрана и в служебные: после ответа оно
-    отслужило и убирается вместе с вводом (см. _after_input)."""
-    await edit(cb, prompt, markup)
-    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
-
-
-# ── ввод числового значения (FSM) ────────────────────────────────────────────
+# ── ввод значения (FSM) ──────────────────────────────────────────────────────
 @router.callback_query(SetCB.filter(F.act == "edit"))
 async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext, services):
-    key = callback_data.key
-    if key not in texts.SETTINGS_BOUNDS and key not in texts.SETTINGS_TEXT:   # старая/битая клавиатура
-        await cb.answer("Эта настройка недоступна.", show_alert=True)
-        return
-    await state.set_state(SettingsInput.value)
-    await state.update_data(key=key, sec=callback_data.sec)
-    if key == "email.resume_address":
-        prompt = texts.email_ask_resume_address(await call(services.email_resume_address))
-    else:
-        prompt = texts.settings_prompt(key)
-    await _ask(cb, services, prompt, kb.settings_cancel(callback_data.sec))
-    await cb.answer()
+    await core.start_edit(cb, services, HOOKS, state, callback_data.key, callback_data.sec)
 
 
 async def _migration_prepare(cb: CallbackQuery, services, want_port: str = "") -> None:
@@ -629,130 +596,6 @@ async def _firewall_action(cb: CallbackQuery, callback_data: SetCB, services) ->
     await edit(cb, text, markup)
 
 
-def _validate_server_value(key: str, raw: str) -> tuple[bool, str]:
-    """Проверки для правок раздела «Сервер». Пускать сюда что угодно нельзя:
-    значение уезжает в КАЖДУЮ следующую ссылку, а сломанную ссылку человек
-    увидит только при импорте — и без единого сообщения об ошибке."""
-    import ipaddress
-    import re as _re
-    if not raw:
-        return False, "пусто — значение обязательно"
-    if key == "app.network.server_host":
-        try:
-            ipaddress.ip_address(raw)
-            return True, ""
-        except ValueError:
-            pass
-        if _re.fullmatch(r"[0-9.]+", raw):
-            # «10.8.1.300» — это опечатка в адресе, а не доменное имя: цифры и
-            # точки проходят проверку имени, и ссылка уехала бы в никуда.
-            return False, "похоже на IP с опечаткой — проверь октеты"
-        if _re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?"
-                         r"(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+", raw):
-            return True, ""
-        return False, "нужен IP или доменное имя"
-    if key == "app.client_config.server_name":
-        return (True, "") if len(raw) <= 64 else (False, "длинновато: не больше 64 символов")
-    if key == "app.client_config.dns1":
-        parts = [p for p in raw.replace(",", " ").split() if p]
-        if not 1 <= len(parts) <= 2:
-            return False, "один или два адреса"
-        for p in parts:
-            try:
-                ipaddress.ip_address(p)
-            except ValueError:
-                return False, f"«{p}» не IP-адрес"
-        return True, ""
-    return True, ""
-
-
-@router.message(SettingsInput.value)
-async def receive_value(message: Message, state: FSMContext, services):
-    data = await state.get_data()
-    key, sec = data.get("key"), data.get("sec", "root")
-    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if key in texts.SETTINGS_TEXT:
-        raw = (message.text or "").strip()
-        if key == "email.resume_address":
-            from awgbot.infra import mail
-            if raw == "-":                            # «вернуть сам ящик»
-                raw = ""
-            if raw and not mail.is_address(raw):
-                await ask_tracked(message, services, texts.EMAIL_BAD_ADDRESS)
-                return
-        elif key == "app.firewall.ssh_allow":
-            # Вайтлист не «значение настройки», а список: пишет его сервис —
-            # он же проверяет каждый адрес и перевыставляет таблицу.
-            before = list(settings.get("app.firewall.ssh_allow", []) or [])
-            try:
-                after = await call(services.firewall_allow_add, raw)
-            except ServiceError as e:
-                await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
-                return
-            await state.clear()
-            await message.answer(texts.settings_ssh_allow_added(
-                [x for x in after if x not in before] or [raw]))
-            await _after_input(message, services, sec)
-            return
-        else:
-            ok, err = _validate_server_value(key, raw)
-            if not ok:
-                await ask_tracked(message, services, f"⚠️ {texts._e(err)}")
-                return
-        old = str(settings.get(key, "") or "")
-        shown_new = raw
-        if key == "app.client_config.dns1":
-            # В конфиге два поля, в UI одна строка. Второй адрес обязан
-            # быть тем же, если назван один: стеки опрашивают список не
-            # строго по порядку, и «публичный вторым номером» вернул бы
-            # утечку резолва мимо нашего dnsmasq.
-            parts = [x for x in raw.replace(",", " ").split() if x]
-            old2 = str(settings.get("app.client_config.dns2", "") or "")
-            old = f"{old}, {old2}" if old2 and old2 != old else old
-            await call(settings.set_value, "app.client_config.dns2",
-                       parts[1] if len(parts) > 1 else parts[0])
-            raw = parts[0]
-            shown_new = ", ".join(parts)
-        elif key == "email.resume_address":
-            old = old or "сам ящик"
-            shown_new = raw or "сам ящик"
-        try:
-            await call(settings.set_value, key, raw)
-        except settings.SettingsWriteError as e:
-            await state.clear()
-            await message.answer(str(e))
-            await _after_input(message, services, sec)
-            return
-        await state.clear()
-        await message.answer(texts.settings_changed(key, old, shown_new))
-        await _after_input(message, services, sec)
-        return
-    if key not in texts.SETTINGS_BOUNDS:      # рассинхрон state (не должен случаться)
-        await state.clear()
-        await _after_input(message, services, sec)
-        return
-    lo, hi, _label, _unit = texts.SETTINGS_BOUNDS[key]
-    raw = (message.text or "").strip()
-    try:
-        val = int(raw)
-        if not (lo <= val <= hi):
-            raise ValueError
-    except ValueError:
-        await ask_tracked(message, services, texts.settings_bad_value(key))
-        return
-    old = settings.get(key, None)
-    try:
-        await call(settings.set_value, key, val)
-    except settings.SettingsWriteError as e:
-        await state.clear()
-        await message.answer(str(e))
-        await _after_input(message, services, sec)
-        return
-    await state.clear()
-    await message.answer(texts.settings_changed(key, old, val))
-    await _after_input(message, services, sec)
-
-
 # ── выбор enum (расписание обновлений) ───────────────────────────────────────
 @router.callback_query(SetCB.filter(F.act == "pick"))
 async def pick(cb: CallbackQuery, callback_data: SetCB, services):
@@ -770,25 +613,7 @@ async def pick(cb: CallbackQuery, callback_data: SetCB, services):
         await cb.answer()
         return
     if callback_data.sec == "backup" and callback_data.key == "channel":
-        val = callback_data.val
-        if val not in ("telegram", "email"):
-            await cb.answer("Нет такого варианта.", show_alert=True)
-            return
-        if val == "email":
-            if not await call(services.email_configured):
-                await edit(cb, texts.EMAIL_NOT_CONFIGURED, kb.email_setup_offer("backup"))
-                await cb.answer()
-                return
-            if not await call(services.backup_encryption_enabled):
-                await cb.answer(texts.BACKUP_NEEDS_ENCRYPTION, show_alert=True)
-                return
-        try:
-            await call(settings.set_value, "app.scheduler.backup_channel", val)
-        except settings.SettingsWriteError as e:
-            await cb.answer(str(e), show_alert=True)
-            return
-        await _render(cb, "backup", services)
-        await cb.answer()
+        await core.set_backup_channel(cb, services, HOOKS, callback_data.val)
         return
     if callback_data.sec == "upd" and callback_data.key == "sched":
         opt = callback_data.val
@@ -923,106 +748,25 @@ async def backup_restore_action(cb: CallbackQuery, callback_data: SetCB, service
         await rs.drop_restore(cb, state)
 
 
-# ── 🔐 Шифрование бэкапов: фраза дважды, сообщения удаляются ─────────────────
+# ── 🔐 Шифрование бэкапов: фраза дважды (шаги — в settingscore) ─────────────
 @router.callback_query(SetCB.filter((F.sec == "backup") & (F.act == "do") & (F.key == "enc_set")))
 async def backup_passphrase_start(cb: CallbackQuery, state: FSMContext, services):
-    from awgbot.bot.states import BackupPassphrase
-    await state.clear()
-    await state.set_state(BackupPassphrase.first)
-    await _ask(cb, services, texts.BACKUP_ASK_PASSPHRASE, kb.settings_cancel("backup"))
-    await cb.answer()
-
-
-async def _take_secret_message(message: Message) -> str:
-    text = (message.text or "").strip()
-    try:
-        await message.delete()
-    except Exception:                                  # noqa: BLE001
-        pass
-    return text
-
-
-@router.message(BackupPassphrase.first)
-async def backup_passphrase_first(message: Message, state: FSMContext, services):
-    from awgbot.bot.states import BackupPassphrase
-    from awgbot.domain.backupcrypto import MIN_PASSPHRASE_LEN
-    phrase = await _take_secret_message(message)
-    if len(phrase) < MIN_PASSPHRASE_LEN:
-        await ask_tracked(message, services,
-                          f"⚠️ Фраза короче {MIN_PASSPHRASE_LEN} символов. Пришли другую.")
-        return
-    await state.update_data(passphrase=phrase)
-    await state.set_state(BackupPassphrase.second)
-    await ask_tracked(message, services, texts.BACKUP_ASK_PASSPHRASE_AGAIN,
-                      reply_markup=kb.settings_cancel("backup"))
-
-
-@router.message(BackupPassphrase.second)
-async def backup_passphrase_second(message: Message, state: FSMContext, services):
-    from awgbot.bot.states import BackupPassphrase
-    phrase = await _take_secret_message(message)
-    first = (await state.get_data()).get("passphrase", "")
-    if phrase != first:
-        await state.set_state(BackupPassphrase.first)
-        await state.update_data(passphrase="")
-        await ask_tracked(message, services, texts.BACKUP_PASSPHRASE_MISMATCH,
-                          reply_markup=kb.settings_cancel("backup"))
-        return
-    await state.clear()
-    await call(services.backup_set_passphrase, phrase)
-    await message.answer(texts.BACKUP_PASSPHRASE_SET)
-    await _after_input(message, services, "backup")
+    await core.passphrase_start(cb, services, HOOKS, state)
 
 
 # ── ✉️ E-mail: мастер подключения, проверка, отключение ─────────────────────
 @router.callback_query(SetCB.filter((F.sec == "email") & (F.act == "do")))
 async def email_action(cb: CallbackQuery, callback_data: SetCB, services, state: FSMContext):
-    from awgbot.infra import mail
-    key = callback_data.key
-    if key == "setup":
-        await state.clear()
-        await state.set_state(EmailSetup.address)
-        acc = await call(services.email_account)
-        prompt = texts.email_ask_address_change(acc.login) if acc else texts.EMAIL_ASK_ADDRESS
-        await edit(cb, prompt, kb.settings_cancel("email"))
-        await cb.answer()
-        return
-    if key == "check":
-        await cb.answer("Проверяю…")
-        ok, detail = await call(services.email_check)
-        await _render(cb, "email", services)
-        if not ok:
-            await cb.message.answer(texts.email_check_failed(detail))
-        return
-    if key == "test":
-        await cb.answer("Отправляю…")
-        try:
-            await call(services.email_send_test)
-        except mail.MailError as e:
-            await cb.message.answer(f"🔴 {e}")
-            return
-        acc = await call(services.email_account)
-        await cb.message.answer(texts.email_test_sent(acc.login if acc else ""),
-                                reply_markup=kb.hide_only())
-        return
-    if key == "forget":
-        await edit(cb, texts.EMAIL_FORGET_CONFIRM, kb.email_forget_confirm())
-        await cb.answer()
-        return
-    if key == "forget!":
-        await call(services.email_forget)
-        await cb.message.answer(texts.EMAIL_FORGOTTEN)
-        await _render(cb, "email", services)
-        await cb.answer()
-        return
-    await cb.answer("Действие недоступно.", show_alert=True)
+    if not await core.email_action(cb, services, HOOKS, state, callback_data.key):
+        await cb.answer("Действие недоступно.", show_alert=True)
 
 
-# Мастер подключения ящика — общий модуль: те же шаги у агента шлюза.
-_mw = mailwizard.register(router, cancel_kb=lambda: kb.settings_cancel("email"),
-                          done_screen=lambda services: _screen("email", services))
-email_address, email_imap_host, email_imap_port = _mw["address"], _mw["imap_host"], _mw["imap_port"]
-email_smtp_host, email_smtp_port, email_password = _mw["smtp_host"], _mw["smtp_port"], _mw["password"]
+# Ввод значения, парольная фраза и мастер почты — общие обработчики сообщений.
+_core = core.register(router, HOOKS, default_sec="root")
+receive_value, backup_passphrase_first, backup_passphrase_second = (
+    _core["receive_value"], _core["passphrase_first"], _core["passphrase_second"])
+email_address, email_imap_host, email_imap_port = _core["address"], _core["imap_host"], _core["imap_port"]
+email_smtp_host, email_smtp_port, email_password = _core["smtp_host"], _core["smtp_port"], _core["password"]
 
 
 # ВЫШЕ do_action НАМЕРЕННО. Фильтры проверяются в порядке регистрации, а у
@@ -1048,25 +792,7 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
         await cb.answer()
         return
     if key == "now":                                   # бэкап сейчас
-        await cb.answer("Готовлю бэкап…")
-        paths = await call(services.make_backup)
-        if await call(services.backup_channel) == "email":
-            from awgbot.infra import mail
-            try:
-                await call(services.email_send_backup, paths)
-                acc = await call(services.email_account)
-                await cb.message.answer(texts.backup_mailed(acc.login if acc else "", len(paths)),
-                                        reply_markup=kb.hide_only())
-            except mail.MailError as e:
-                await cb.message.answer(f"🔴 {e}")
-            await _render(cb, "backup", services)
-            return
-        for p in paths:
-            try:
-                await cb.message.answer_document(FSInputFile(p))
-            except Exception:                          # noqa: BLE001
-                pass
-        await _render(cb, "backup", services)
+        await core.backup_now(cb, services, HOOKS)
         return
     if key in ("awg", "bot"):                          # сначала — цена действия
         await edit(cb, texts.SVC_CONFIRM_AWG if key == "awg" else texts.SVC_CONFIRM_BOT,

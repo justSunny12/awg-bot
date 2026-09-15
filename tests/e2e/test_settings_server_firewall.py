@@ -11,6 +11,7 @@ import pytest
 
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot.handlers import settings as sh
+from awgbot.bot.handlers import settingscore as core
 from awgbot.core import config, settings
 from tests.conftest import FakeCallback, FakeMessage, FakeState
 
@@ -73,13 +74,13 @@ async def test_server_screen_flags_a_port_mismatch(services, fake_bot, monkeypat
     ("не адрес", False), ("", False), ("10.8.1.300", False),
 ])
 def test_server_host_is_validated_before_it_reaches_a_link(raw, ok):
-    valid, err = sh._validate_server_value("app.network.server_host", raw)
+    valid, err = core._validate_server_value("app.network.server_host", raw)
     assert valid is ok
     assert valid or err
 
 
 def test_dns_accepts_one_or_two_addresses():
-    v = sh._validate_server_value
+    v = core._validate_server_value
     assert v("app.client_config.dns1", "10.8.1.1")[0]
     assert v("app.client_config.dns1", "10.8.1.1, 1.1.1.1")[0]
     assert not v("app.client_config.dns1", "1.1.1.1 1.0.0.1 8.8.8.8")[0]

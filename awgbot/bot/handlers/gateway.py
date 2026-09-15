@@ -19,8 +19,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.states import BackupPassphrase, SettingsInput
-from awgbot.bot.handlers import mailwizard
+from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, purge_menus, dismiss_update_reports
 from awgbot.util import bundlecrypt
 
@@ -149,6 +148,21 @@ async def _section(services, sec: str):
     return await call(_SECTIONS[sec], services)
 
 
+async def _render(cb: CallbackQuery, services, sec: str) -> None:
+    await edit_nav(cb, services, *await _section(services, sec))
+
+
+# Общая механика диалогов настроек — в settingscore; здесь только колбэки и
+# клавиатуры агента.
+HOOKS = core.Hooks(
+    cancel_kb=kb.gateway_cancel_kb,
+    email_offer_kb=kb.gateway_email_offer,
+    email_forget_kb=kb.gateway_email_forget_confirm,
+    render=_render,
+    screen=_section,
+)
+
+
 @router.callback_query(GwCB.filter(F.action.in_(set(_SECTIONS))))
 async def gw_section(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
     await state.clear()
@@ -166,49 +180,7 @@ async def gw_encryption(cb: CallbackQuery, services, state: FSMContext):
 
 @router.callback_query(GwCB.filter(F.action == "enc_set"))
 async def gw_encryption_set(cb: CallbackQuery, services, state: FSMContext):
-    from awgbot.bot.states import BackupPassphrase
-    await state.clear()
-    await state.set_state(BackupPassphrase.first)
-    await edit_nav(cb, services, texts.BACKUP_ASK_PASSPHRASE, kb.gateway_cancel_kb("backup"))
-    await cb.answer()
-
-
-async def _gw_take_secret(message: Message) -> str:
-    text = (message.text or "").strip()
-    try:
-        await message.delete()
-    except Exception:                                 # noqa: BLE001
-        pass
-    return text
-
-
-@router.message(BackupPassphrase.first)
-async def gw_passphrase_first(message: Message, state: FSMContext):
-    from awgbot.bot.states import BackupPassphrase
-    from awgbot.domain.backupcrypto import MIN_PASSPHRASE_LEN
-    phrase = await _gw_take_secret(message)
-    if len(phrase) < MIN_PASSPHRASE_LEN:
-        await message.answer(f"⚠️ Фраза короче {MIN_PASSPHRASE_LEN} символов. Пришли другую.")
-        return
-    await state.update_data(passphrase=phrase)
-    await state.set_state(BackupPassphrase.second)
-    await message.answer(texts.BACKUP_ASK_PASSPHRASE_AGAIN, reply_markup=kb.gateway_cancel_kb("backup"))
-
-
-@router.message(BackupPassphrase.second)
-async def gw_passphrase_second(message: Message, state: FSMContext, services):
-    from awgbot.bot.states import BackupPassphrase
-    phrase = await _gw_take_secret(message)
-    first = (await state.get_data()).get("passphrase", "")
-    if phrase != first:
-        await state.set_state(BackupPassphrase.first)
-        await state.update_data(passphrase="")
-        await message.answer(texts.BACKUP_PASSPHRASE_MISMATCH, reply_markup=kb.gateway_cancel_kb("backup"))
-        return
-    await state.clear()
-    await call(services.backup_set_passphrase, phrase)
-    await message.answer(texts.BACKUP_PASSPHRASE_SET)
-    await send_menu(message, services, *await _section(services, "backup"))
+    await core.passphrase_start(cb, services, HOOKS, state)
 
 
 def _section_of(key: str) -> str:
@@ -223,166 +195,41 @@ def _section_of(key: str) -> str:
 @router.callback_query(GwCB.filter(F.action == "tgl"))
 async def gw_toggle(cb: CallbackQuery, callback_data: GwCB, services):
     """Тумблер bool в conf — та же механика, что у основного бота."""
-    from awgbot.core import settings
     key = callback_data.val
-    if key == "notifications.email_fallback" and not settings.get_bool(key, False) \
-            and not await call(services.email_configured):
-        await edit_nav(cb, services, texts.EMAIL_NOT_CONFIGURED, kb.gateway_email_offer("notify"))
-        await cb.answer()
-        return
-    cur = settings.get_bool(key, {"notifications.email_fallback": False}.get(key, True))
-    try:
-        await call(settings.set_value, key, not cur)
-    except settings.SettingsWriteError as e:
-        await cb.answer(str(e), show_alert=True)
-        return
-    await edit_nav(cb, services, *await _section(services, _section_of(key)))
-    await cb.answer()
+    await core.toggle_bool(cb, services, HOOKS, key, _section_of(key))
 
 
 @router.callback_query(GwCB.filter(F.action == "edit"))
 async def gw_edit(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
     key = callback_data.val
-    if key not in texts.SETTINGS_BOUNDS:
-        await cb.answer("Эта настройка недоступна.", show_alert=True)
-        return
-    sec = _section_of(key)
-    await state.set_state(SettingsInput.value)
-    await state.update_data(key=key, sec=sec)
-    await edit_nav(cb, services, texts.settings_prompt(key), kb.gateway_cancel_kb(sec))
-    await cb.answer()
-
-
-@router.message(SettingsInput.value)
-async def gw_receive_value(message: Message, state: FSMContext, services):
-    from awgbot.core import settings
-    data = await state.get_data()
-    key, sec = data.get("key"), data.get("sec", "mon")
-    if key not in texts.SETTINGS_BOUNDS:
-        await state.clear()
-        await send_menu(message, services, *await _section(services, sec))
-        return
-    lo, hi, _label, _unit = texts.SETTINGS_BOUNDS[key]
-    try:
-        val = int((message.text or "").strip())
-        if not (lo <= val <= hi):
-            raise ValueError
-    except ValueError:
-        await message.answer(texts.settings_bad_value(key))
-        return
-    try:
-        await call(settings.set_value, key, val)
-    except settings.SettingsWriteError as e:
-        await state.clear()
-        await message.answer(str(e))
-        return
-    await state.clear()
-    await send_menu(message, services, *await _section(services, sec))
+    await core.start_edit(cb, services, HOOKS, state, key, _section_of(key))
 
 
 @router.callback_query(GwCB.filter(F.action == "backup!"))
 async def gw_backup_now(cb: CallbackQuery, services):
-    from aiogram.types import FSInputFile
-    from awgbot.infra import mail
-    await cb.answer("Готовлю резервную копию…")
-    try:
-        paths = await call(services.make_backup)
-    except Exception as e:                            # noqa: BLE001
-        await cb.message.answer(texts.GW_BACKUP_NO_KEY if "шифрован" in str(e) else f"⚠️ {e}")
-        return
-    if await call(services.backup_channel) == "email":
-        try:
-            await call(services.email_send_backup, paths)
-            acc = await call(services.email_account)
-            await cb.message.answer(texts.backup_mailed(acc.login if acc else "", len(paths)),
-                                    reply_markup=kb.hide_only())
-        except mail.MailError as e:
-            await cb.message.answer(f"🔴 {e}")
-        await edit_nav(cb, services, *await _section(services, "backup"))
-        return
-    for p in paths:
-        try:
-            await cb.message.answer_document(FSInputFile(p))
-        except Exception:                             # noqa: BLE001
-            pass
-    await edit_nav(cb, services, *await _section(services, "backup"))
+    await core.backup_now(cb, services, HOOKS)
 
 
 @router.callback_query(GwCB.filter(F.action == "bk_ch"))
 async def gw_backup_channel(cb: CallbackQuery, callback_data: GwCB, services):
-    from awgbot.core import settings
-    val = callback_data.val
-    if val not in ("telegram", "email"):
-        await cb.answer("Нет такого варианта.", show_alert=True)
-        return
-    if val == "email":
-        if not await call(services.email_configured):
-            await edit_nav(cb, services, texts.EMAIL_NOT_CONFIGURED, kb.gateway_email_offer("backup"))
-            await cb.answer()
-            return
-        if not await call(services.backup_encryption_enabled):
-            await cb.answer(texts.BACKUP_NEEDS_ENCRYPTION, show_alert=True)
-            return
-    try:
-        await call(settings.set_value, "app.scheduler.backup_channel", val)
-    except settings.SettingsWriteError as e:
-        await cb.answer(str(e), show_alert=True)
-        return
-    await edit_nav(cb, services, *await _section(services, "backup"))
-    await cb.answer()
+    await core.set_backup_channel(cb, services, HOOKS, callback_data.val)
 
 
 # ── ✉️ E-mail у агента: ящик из бандла или руками, проверка, отключение ─────
 
-@router.callback_query(GwCB.filter(F.action == "em_setup"))
-async def gw_email_setup(cb: CallbackQuery, services, state: FSMContext):
-    from awgbot.bot.states import EmailSetup
-    await state.clear()
-    await state.set_state(EmailSetup.address)
-    acc = await call(services.email_account)
-    prompt = texts.email_ask_address_change(acc.login) if acc else texts.EMAIL_ASK_ADDRESS
-    await edit_nav(cb, services, prompt, kb.gateway_cancel_kb("email"))
-    await cb.answer()
+_EMAIL_KEYS = {"em_setup": "setup", "em_check": "check", "em_test": "test",
+               "em_forget": "forget", "em_forget!": "forget!"}
 
 
-@router.callback_query(GwCB.filter(F.action == "em_check"))
-async def gw_email_check(cb: CallbackQuery, services):
-    await cb.answer("Проверяю…")
-    ok, detail = await call(services.email_check)
-    await edit_nav(cb, services, *await _section(services, "email"))
-    if not ok:
-        await cb.message.answer(texts.email_check_failed(detail))
+@router.callback_query(GwCB.filter(F.action.in_(set(_EMAIL_KEYS))))
+async def gw_email_action(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
+    await core.email_action(cb, services, HOOKS, state, _EMAIL_KEYS[callback_data.action])
 
 
-@router.callback_query(GwCB.filter(F.action == "em_test"))
-async def gw_email_test(cb: CallbackQuery, services):
-    from awgbot.infra import mail
-    await cb.answer("Отправляю…")
-    try:
-        await call(services.email_send_test)
-    except mail.MailError as e:
-        await cb.message.answer(f"🔴 {e}")
-        return
-    acc = await call(services.email_account)
-    await cb.message.answer(texts.email_test_sent(acc.login if acc else ""), reply_markup=kb.hide_only())
-
-
-@router.callback_query(GwCB.filter(F.action == "em_forget"))
-async def gw_email_forget(cb: CallbackQuery, services):
-    await edit_nav(cb, services, texts.EMAIL_FORGET_CONFIRM, kb.gateway_email_forget_confirm())
-    await cb.answer()
-
-
-@router.callback_query(GwCB.filter(F.action == "em_forget!"))
-async def gw_email_forget_do(cb: CallbackQuery, services):
-    await call(services.email_forget)
-    await cb.message.answer(texts.EMAIL_FORGOTTEN)
-    await edit_nav(cb, services, *await _section(services, "email"))
-    await cb.answer()
-
-
-_mw = mailwizard.register(router, cancel_kb=lambda: kb.gateway_cancel_kb("email"),
-                          done_screen=lambda services: _section(services, "email"))
+# Ввод значения, парольная фраза и мастер почты — общие обработчики сообщений.
+_core = core.register(router, HOOKS, default_sec="mon")
+gw_receive_value, gw_passphrase_first, gw_passphrase_second = (
+    _core["receive_value"], _core["passphrase_first"], _core["passphrase_second"])
 
 
 _CONFIRM = {

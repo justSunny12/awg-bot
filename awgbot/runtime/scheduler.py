@@ -117,35 +117,9 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         except Exception as e:                       # noqa: BLE001
             log.warning("monthly_reset: %s", e)
 
-    # ── автобэкап (та же catch-up-схема) ─────────────────────────────────────
+    # ── автобэкап (та же catch-up-схема; тело общее с агентом) ───────────────
     async def job_backup():
-        if not settings.get_bool("app.scheduler.backup_enabled", True):
-            return
-        ym = timeutil.now().strftime("%Y-%m")
-        last = await asyncio.to_thread(db.get_state, "last_backup")
-        if last == ym:
-            return
-        if last is None:
-            await asyncio.to_thread(db.set_state, "last_backup", ym)   # первый запуск — только фиксация
-            return
-        try:
-            paths = await asyncio.to_thread(services.make_backup)
-            sent_by_mail = False
-            if services.backup_channel() == "email":
-                try:
-                    await asyncio.to_thread(services.email_send_backup, paths)
-                    sent_by_mail = True
-                except Exception as e:               # noqa: BLE001
-                    log.warning("бэкап на почту не ушёл, шлю в Telegram: %s", e)
-            if not sent_by_mail:
-                for p in paths:
-                    try:
-                        await bot.send_document(config.ADMIN_ID, FSInputFile(p))
-                    except Exception as e:               # noqa: BLE001
-                        log.warning("Отправка бэкапа %s: %s", p, e)
-            db.set_state("last_backup", ym)
-        except Exception as e:                       # noqa: BLE001
-            log.warning("backup: %s", e)
+        await monthly_backup(services, bot, "backup")
 
     async def job_purge_history():
         """Ежедневно: удалить историю старше ретеншна (батчами). Идемпотентно —
@@ -514,6 +488,42 @@ async def notify_update_available(bot, services, nxt) -> None:
         reply_markup=kb.update_notify())])
 
 
+async def monthly_backup(services, bot, log_tag: str) -> None:
+    """Автобэкап раз в месяц — одно тело на обе роли. Guard по «году-месяцу»:
+    защита от двойного запуска и catch-up после даунтайма через границу месяца
+    (задача дополнительно прогоняется на старте). Первый запуск (state пуст)
+    только фиксирует месяц. Канал — почта, если задан и ушло; иначе файлами
+    админу в чат. Вся синхронщина — в потоке, event loop не ждёт ни БД, ни SMTP."""
+    if not settings.get_bool("app.scheduler.backup_enabled", True):
+        return
+    db = services.db
+    ym = timeutil.now().strftime("%Y-%m")
+    last = await asyncio.to_thread(db.get_state, "last_backup")
+    if last == ym:
+        return
+    if last is None:
+        await asyncio.to_thread(db.set_state, "last_backup", ym)   # первый запуск — только фиксация
+        return
+    try:
+        paths = await asyncio.to_thread(services.make_backup)
+        sent_by_mail = False
+        if await asyncio.to_thread(services.backup_channel) == "email":
+            try:
+                await asyncio.to_thread(services.email_send_backup, paths)
+                sent_by_mail = True
+            except Exception as e:               # noqa: BLE001
+                log.warning("%s: на почту не ушёл, шлю в Telegram: %s", log_tag, e)
+        if not sent_by_mail:
+            for p in paths:
+                try:
+                    await bot.send_document(config.ADMIN_ID, FSInputFile(p))
+                except Exception as e:               # noqa: BLE001
+                    log.warning("%s: отправка %s: %s", log_tag, p, e)
+        await asyncio.to_thread(db.set_state, "last_backup", ym)
+    except Exception as e:                       # noqa: BLE001
+        log.warning("%s: %s", log_tag, e)
+
+
 _UPDATE_JITTER = 1800          # ±полчаса к проверке обновлений: не ровно в 10:00
 
 
@@ -588,37 +598,7 @@ def setup_gateway_scheduler(services, bot):
     settings.on_change("app.gateway.monitor_minutes", _gw_monitor_hook)
 
     async def job_gw_backup():
-        """Автобэкап агента — раз в месяц в заданный день и час, как у основного:
-        файлы шифрованные, уходят админу в чат."""
-        from aiogram.types import FSInputFile
-        if not settings.get_bool("app.scheduler.backup_enabled", True):
-            return
-        db = services.db
-        ym = timeutil.now().strftime("%Y-%m")
-        last = await asyncio.to_thread(db.get_state, "last_backup")
-        if last == ym:
-            return
-        if last is None:
-            await asyncio.to_thread(db.set_state, "last_backup", ym)
-            return
-        try:
-            paths = await asyncio.to_thread(services.make_backup)
-            sent_by_mail = False
-            if services.backup_channel() == "email":
-                try:
-                    await asyncio.to_thread(services.email_send_backup, paths)
-                    sent_by_mail = True
-                except Exception as e:                    # noqa: BLE001
-                    log.warning("gw бэкап на почту не ушёл, шлю в Telegram: %s", e)
-            if not sent_by_mail:
-                for p in paths:
-                    try:
-                        await bot.send_document(config.ADMIN_ID, FSInputFile(p))
-                    except Exception as e:                # noqa: BLE001
-                        log.warning("gw backup send %s: %s", p, e)
-            db.set_state("last_backup", ym)
-        except Exception as e:                            # noqa: BLE001
-            log.warning("gw backup: %s", e)
+        await monthly_backup(services, bot, "gw backup")
 
     def _trig_gw_backup():
         return CronTrigger(day=settings.get_int("app.scheduler.backup_day", 1),

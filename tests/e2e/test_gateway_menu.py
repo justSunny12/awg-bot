@@ -186,7 +186,7 @@ async def test_gateway_passphrase_flow(svc, fake_bot):
     assert any("Шифрование резервных копий" in t for kind, t, _ in msg.sent if kind == "edit_text")
     await gh.gw_encryption_set(cb, svc, state)
     m = lambda t: FakeMessage(text=t, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_passphrase_first(m("correct horse battery"), state)
+    await gh.gw_passphrase_first(m("correct horse battery"), state, svc)
     await gh.gw_passphrase_second(m("correct horse battery"), state, svc)
     assert svc.backup_enc_kwargs() == {"passphrase": "correct horse battery"}
 
