@@ -55,7 +55,13 @@ async def _screen(sec: str, services):
         return texts.SETTINGS_SUBS, kb.settings_subs()
     if sec == "srv":
         d = await call(services.server_screen)
-        return texts.settings_server_text(d), kb.settings_server(d.get("migration_blocked", ""))
+        offer = (d.get("private_dns") or {}).get("mode") == "public"
+        return (texts.settings_server_text(d),
+                kb.settings_server(d.get("migration_blocked", ""), private_dns_offer=offer))
+    if sec == "dns":
+        info = await call(services.private_dns_info)
+        blocked = bool(await call(services.migration_blocked_reason))
+        return texts.private_dns_offer(info["target"]), kb.private_dns_choices(blocked)
     if sec == "mig_prep":
         d = await call(services.migration_prepare_data)
         if d["blocked"]:
@@ -417,6 +423,38 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
     await _render(cb, "rt_users", services)
     await cb.answer(f"{client.name}: РФ-доступ "
                     + ("разрешён" if new_state else "запрещён"))
+
+
+# ── свой DNS-резолвер: три решения ───────────────────────────────────────────
+# Выше do_action по той же причине, что и остальные специфичные обработчики:
+# его фильтр F.act == "do" перехватил бы sec="dns" и промолчал.
+@router.callback_query(SetCB.filter((F.sec == "dns") & (F.act == "do")))
+async def private_dns_action(cb: CallbackQuery, callback_data: SetCB, services, state: FSMContext):
+    key = callback_data.key
+    if key == "now":
+        # Решение записано, дальше — обычная подготовка переезда: она читает
+        # его и говорит, что DNS клиентов станет своим.
+        await call(services.set_private_dns_decision, "pending")
+        blocked = await call(services.migration_blocked_reason)
+        if blocked:
+            await cb.answer(f"Сейчас переезд невозможен: {blocked}", show_alert=True)
+            await _render(cb, "srv", services)
+            return
+        await state.clear()
+        await _render(cb, "mig_prep", services)
+        await cb.answer("Записал: следующий переезд — со своим резолвером")
+        return
+    if key == "later":
+        await call(services.set_private_dns_decision, "pending")
+        await edit(cb, texts.PRIVATE_DNS_LATER, kb.settings_back("srv"))
+        await cb.answer()
+        return
+    if key == "never":
+        await call(services.set_private_dns_decision, "dismissed")
+        await edit(cb, texts.PRIVATE_DNS_DISMISSED, kb.settings_back("srv"))
+        await cb.answer()
+        return
+    await cb.answer("Действие недоступно.", show_alert=True)
 
 
 # ── ввод порта для переезда ──────────────────────────────────────────────────
@@ -801,7 +839,9 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
             # Новый интерфейс стал основным. Деплой-значения читаются при старте,
             # поэтому рестарт здесь не косметика: без него бот продолжит считать
             # основным погашенный интерфейс и родит следующее устройство на нём.
-            sent = await cb.message.answer(texts.migration_promoted(promoted))
+            dns = (await call(services.private_dns_info))
+            sent = await cb.message.answer(texts.migration_promoted(
+                promoted, dns["dns1"] if dns["mode"] == "private" else ""))
             await call(services.set_restart_wait, sent.chat.id, sent.message_id)
             try:
                 await call(services.restart_bot)

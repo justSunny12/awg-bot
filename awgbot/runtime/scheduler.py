@@ -202,6 +202,14 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                     await send_notifications(bot, rt_src_notes)
             except Exception as e:                       # noqa: BLE001
                 log.warning("reconcile_routing: %s", e)
+            # свой резолвер клиентов: у людей с приватным DNS в конфиге это
+            # единственный DNS — упал, значит интернета нет ни у кого
+            try:
+                dns_notes = await asyncio.to_thread(services.resolver_health_tick)
+                if dns_notes:
+                    await send_notifications(bot, dns_notes)
+            except Exception as e:                       # noqa: BLE001
+                log.warning("resolver_health_tick: %s", e)
             # статус сервиса awg → уведомления админу (единый notifier-путь).
             # Вся работа с БД этого блока — в одном потоке и одной транзакции:
             # раньше часть шла синхронно в event loop и могла встать на

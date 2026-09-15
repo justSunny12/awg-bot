@@ -299,3 +299,91 @@ async def test_maintenance_mentions_migration_only_with_its_button(services, fak
     text, markup = await sh._screen("svc", services)
     assert "Переезд профилей" in text
     assert any("переезд" in b.text.lower() for row in markup.inline_keyboard for b in row)
+
+
+# ── свой DNS-резолвер из раздела «Сервер AWG» ────────────────────────────────
+
+def _srv(private_dns: dict, blocked: str = "") -> dict:
+    return {"host": "vpn.example.org", "name": "Сервер 1", "dns": "1.1.1.1, 1.0.0.1",
+            "mtu": 1376, "keepalive": "25-35", "iface": "awg0", "port": 51820,
+            "port_conf": 51820, "subnet": "10.8.1.0/24", "kernel": "v3.1.20260906",
+            "generation": 1, "migration_blocked": blocked, "private_dns": private_dns}
+
+
+async def test_public_dns_is_named_and_the_resolver_is_offered(services, monkeypatch):
+    monkeypatch.setattr(services, "server_screen", lambda: _srv(
+        {"mode": "public", "dns1": "1.1.1.1", "dns2": "1.0.0.1", "target": "10.8.1.1", "decision": ""}))
+    text, markup = await sh._screen("srv", services)
+    assert "публичный" in text and "🔒 Свой DNS-резолвер" in _labels(markup)
+
+    monkeypatch.setattr(services, "server_screen", lambda: _srv(
+        {"mode": "public", "dns1": "1.1.1.1", "dns2": "1.0.0.1", "target": "10.8.1.1",
+         "decision": "pending"}))
+    text, _ = await sh._screen("srv", services)
+    assert "при следующем переезде станет свой" in text
+
+
+async def test_private_dns_is_named_and_nothing_is_offered(services, monkeypatch):
+    monkeypatch.setattr(services, "server_screen", lambda: _srv(
+        {"mode": "private", "dns1": "10.8.1.1", "dns2": "10.8.1.1", "target": "10.8.1.1",
+         "decision": ""}))
+    text, markup = await sh._screen("srv", services)
+    assert "свой резолвер на сервере" in text and "🔒 Свой DNS-резолвер" not in _labels(markup)
+
+
+async def test_dns_screen_explains_and_offers_three_ways(services, monkeypatch):
+    monkeypatch.setattr(services, "private_dns_info", lambda: {
+        "target": "10.8.1.1", "mode": "public", "decision": "", "dns1": "1.1.1.1", "dns2": "1.0.0.1"})
+    monkeypatch.setattr(services, "migration_blocked_reason", lambda: "")
+    text, markup = await sh._screen("dns", services)
+    assert "10.8.1.1" in text and "DoH" in text and "переезд" in text.lower()
+    labels = _labels(markup)
+    assert "🚚 Переехать сейчас" in labels and "⏳ При следующем переезде" in labels \
+        and "Не нужно" in labels and "⬅️ Назад" in labels
+
+    monkeypatch.setattr(services, "migration_blocked_reason", lambda: "идёт переезд")
+    _, markup = await sh._screen("dns", services)
+    assert "🚚 Переехать сейчас" not in _labels(markup), "переезд сейчас невозможен — кнопки нет"
+
+
+@pytest.mark.parametrize("key, decision, expect", [
+    ("later", "pending", "следующий переезд"),
+    ("never", "dismissed", "публичный DNS"),
+])
+async def test_later_and_never_record_the_decision(services, fake_bot, monkeypatch, key, decision, expect):
+    cb, nav = _acb(fake_bot)
+    await sh.private_dns_action(cb, SetCB(sec="dns", act="do", key=key), services, FakeState())
+    assert services.private_dns_decision() == decision
+    shown = [s for s in nav.sent if s[0] == "edit_text"]
+    assert shown and expect in shown[-1][1]
+    assert any("Назад" in b.text for row in shown[-1][2].inline_keyboard for b in row)
+
+
+async def test_now_records_pending_and_opens_the_migration_preparation(services, fake_bot, monkeypatch):
+    monkeypatch.setattr(services, "migration_blocked_reason", lambda: "")
+    monkeypatch.setattr(services, "migration_prepare_data", lambda want_port=0: {
+        "iface": "awg0", "port": 45871, "subnet": "10.8.1.0/24", "clients": 1, "devices": 2,
+        "want_port": want_port, "private_dns": True, "blocked": ""})
+    cb, nav = _acb(fake_bot)
+    await sh.private_dns_action(cb, SetCB(sec="dns", act="do", key="now"), services, FakeState())
+    assert services.private_dns_decision() == "pending"
+    shown = [s for s in nav.sent if s[0] == "edit_text"]
+    assert shown and "Смена порта или подсети" in shown[-1][1]
+    assert "свой резолвер" in shown[-1][1], "подготовка называет, что DNS станет своим"
+    assert "🚚 Поднять второй интерфейс" in _labels(shown[-1][2])
+
+
+async def test_now_while_a_migration_runs_explains_and_stays(services, fake_bot, monkeypatch):
+    monkeypatch.setattr(services, "migration_blocked_reason", lambda: "идёт переезд")
+    monkeypatch.setattr(services, "server_screen", lambda: _srv(
+        {"mode": "public", "dns1": "1.1.1.1", "dns2": "1.0.0.1", "target": "10.8.1.1",
+         "decision": "pending"}, blocked="идёт переезд"))
+    cb, nav = _acb(fake_bot)
+    await sh.private_dns_action(cb, SetCB(sec="dns", act="do", key="now"), services, FakeState())
+    assert services.private_dns_decision() == "pending", "решение записано — исполнит идущий/следующий переезд"
+    assert cb.answers and cb.answers[-1][1] is True and "идёт переезд" in cb.answers[-1][0]
+
+
+def test_dns_handler_is_registered_before_the_generic_do_action():
+    order = [h.callback.__name__ for h in sh.router.callback_query.handlers]
+    assert order.index("private_dns_action") < order.index("do_action")

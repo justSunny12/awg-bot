@@ -40,6 +40,7 @@ from awgbot.domain.migration import MigrationMixin
 from awgbot.domain.selfupdate import SelfUpdateMixin
 from awgbot.domain.mailmix import MailMixin
 from awgbot.domain.backupcrypto import BackupCryptoMixin
+from awgbot.domain.privatedns import PrivateDnsMixin
 from awgbot.core.blocks import DeviceBlock, ClientBlock, DEVICE_TRAFFIC_ANY
 from awgbot.core import models
 from awgbot.core.enums import SubStatus, ActivationStatus, PauseMode, PeriodKind, FriendStatus
@@ -306,7 +307,7 @@ def _admin_self_over_text() -> str:
 # Services
 # ─────────────────────────────────────────────────────────────────────────────
 
-class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
+class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, PrivateDnsMixin):
     # username бота — для deep-link'ов в текстах (t.me/<bot>?start=…); main
     # кладёт его после getMe. Пусто — ссылки не рисуются, текст остаётся текстом.
     bot_username: str = ""
@@ -1982,6 +1983,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
             "port": self._live_listen_port() or g("app.network.server_port", config.SERVER_PORT),
             "port_conf": g("app.network.server_port", config.SERVER_PORT),
             "subnet": g("app.network.subnet_cidr", f"{config.SUBNET_PREFIX}.0/24"),
+            "private_dns": self.private_dns_info(),
             "kernel": kernel,
             "generation": awglock.applied_generation(),
             # Почему смена порта/подсети сейчас невозможна — или пусто
@@ -1999,6 +2001,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin):
                                        f"{config.SUBNET_PREFIX}.0/24"),
                 "clients": clients, "devices": devices,
                 "want_port": want_port,
+                "private_dns": self.private_dns_for_migration(),
                 "blocked": self.migration_blocked_reason()}
 
     # ── файервол из чата (README §6b) ────────────────────────────────────────

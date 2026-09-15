@@ -1190,10 +1190,10 @@ def settings_root() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def settings_back() -> InlineKeyboardMarkup:
+def settings_back(sec_to: str = "root") -> InlineKeyboardMarkup:
     """Одна кнопка «Назад» — для экранов-отбивок внутри настроек."""
     kb = InlineKeyboardBuilder()
-    kb.row(_back())
+    kb.row(_back(sec_to))
     return kb.as_markup()
 
 
@@ -1237,15 +1237,18 @@ def routing_provision() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def settings_server(blocked: str = "") -> InlineKeyboardMarkup:
+def settings_server(blocked: str = "", private_dns_offer: bool = False) -> InlineKeyboardMarkup:
     """Раздел «Сервер»: то, что уезжает в НОВЫЕ ссылки. Порт, подсеть и версия
     ядра только показываются: их смена — это перевыпуск профилей всем, и живёт
-    она в переезде, а не в кнопке."""
+    она в переезде, а не в кнопке. private_dns_offer — DNS публичный, есть
+    что предложить."""
     kb = InlineKeyboardBuilder()
     kb.button(text="✏️ Доменное имя", callback_data=SetCB(sec="srv", act="edit", key="app.network.server_host"))
     kb.button(text="✏️ Имя сервера", callback_data=SetCB(sec="srv", act="edit", key="app.client_config.server_name"))
     kb.button(text="✏️ DNS клиентов", callback_data=SetCB(sec="srv", act="edit", key="app.client_config.dns1"))
     kb.button(text="✏️ MTU", callback_data=SetCB(sec="srv", act="edit", key="app.client_config.mtu"))
+    if private_dns_offer:
+        kb.button(text="🔒 Свой DNS-резолвер", callback_data=SetCB(sec="dns", act="open"))
     if not blocked:
         # Порт и подсеть правятся не здесь, а переездом: они вморожены в каждую
         # выданную ссылку. Кнопка ведёт на экран, который называет цену.
@@ -1253,6 +1256,29 @@ def settings_server(blocked: str = "") -> InlineKeyboardMarkup:
                   callback_data=SetCB(sec="mig_prep", act="open"))
     kb.adjust(1)
     kb.row(_back())
+    return kb.as_markup()
+
+
+def private_dns_choices(migration_blocked: bool = False) -> InlineKeyboardMarkup:
+    """Три решения; «сейчас» ведёт в подготовку переезда — пока переезд
+    возможен."""
+    kb = InlineKeyboardBuilder()
+    if not migration_blocked:
+        kb.button(text="🚚 Переехать сейчас", callback_data=SetCB(sec="dns", act="do", key="now"))
+    kb.button(text="⏳ При следующем переезде", callback_data=SetCB(sec="dns", act="do", key="later"))
+    kb.button(text="Не нужно", callback_data=SetCB(sec="dns", act="do", key="never"))
+    kb.button(text="⬅️ Назад", callback_data=SetCB(sec="srv", act="open"))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def private_dns_offer_kb() -> InlineKeyboardMarkup:
+    """Инфобокс при старте: те же три решения, «Назад» не нужен."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🚚 Переехать сейчас", callback_data=SetCB(sec="dns", act="do", key="now"))
+    kb.button(text="⏳ При следующем переезде", callback_data=SetCB(sec="dns", act="do", key="later"))
+    kb.button(text="Не нужно", callback_data=SetCB(sec="dns", act="do", key="never"))
+    kb.adjust(1)
     return kb.as_markup()
 
 

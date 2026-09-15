@@ -617,6 +617,7 @@ cmd_reconfigure() {
         mkdir -p "$DATA_DIR"; chmod 700 "$DATA_DIR"
         seed_conf
         ensure_awg_server                  # чистый хост: сервер с нуля; есть — не трогаем
+        ensure_resolver                    # свой DNS клиентам: dnsmasq на <подсеть>.1
         if [[ "$ADVANCED" == "1" ]]; then
             configure_topology             # --advanced: все вопросы, как раньше
         else
@@ -905,6 +906,7 @@ cmd_post_update() {
     ensure_host_autostart
     ensure_awg_module_loaded
     ensure_awg_generation
+    adopt_resolver                         # dns1 уже приватный — резолвер под опеку бота
     seed_conf                              # досеять НОВЫЕ conf-файлы этой версии
                                            # (существующие не трогаем — idempotent)
     validate_config
@@ -1194,6 +1196,55 @@ ensure_awg_server() {  # клиентская роль: сервер с нуля
     fi
 }
 
+resolver_addr() {  # <подсеть>.1 по app.yaml — собственный адрес сервера в туннеле
+    local app="$CONF_DIR/app.yaml" prefix
+    prefix="$(yaml_get "$app" subnet_prefix)"
+    [[ "$prefix" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+    printf '%s.1' "$prefix"
+}
+
+ensure_resolver() {  # первая установка клиентской роли: dnsmasq на <подсеть>.1
+    # Публичный адрес в поле DNS — это Chrome/Edge, молча уходящие на DoH мимо
+    # любого перехвата: условная маршрутизация у такого человека работает
+    # «через раз». Приватный адрес браузеру не за что подхватить. Ставим с
+    # первого дня, чтобы первое же устройство получило свой резолвер.
+    local app="$CONF_DIR/app.yaml" addr
+    [[ "$(yaml_get "$app" runtime)" == "host" ]] || return 0
+    addr="$(resolver_addr)" || { warn "подсеть не разобрана — DNS клиентов остаётся публичным"; return 0; }
+    echo; log "─── Резолвер клиентов: dnsmasq на $addr ───"
+    if bash "$INSTALL_DIR/install/awg-resolver-setup.sh" install "$addr"; then
+        yaml_set "$app" dns1 "\"$addr\""
+        yaml_set "$app" dns2 "\"$addr\""
+        ok "DNS клиентов — свой резолвер $addr (оба поля)."
+    else
+        warn "резолвер не поднят — DNS клиентов остаётся публичным; позже: awg-bot resolver install"
+    fi
+}
+
+adopt_resolver() {  # обновление: dns1 уже <подсеть>.1 — резолвер ведёт бот, не обвязка
+    # Хост, где приватный адрес прописали руками и слушала его обвязка
+    # маршрутизации. Файл резолвера появляется у бота, обвязка при следующем
+    # реассерте ужимает свой до адреса перехвата. Публичный dns1 не трогаем:
+    # переход на свой резолвер — решение админа в боте (переезд профилей).
+    local app="$CONF_DIR/app.yaml" addr dns1
+    [[ "$(yaml_get "$app" runtime)" == "host" ]] || return 0
+    [[ -f /etc/dnsmasq.d/awgbot-resolver.conf ]] && return 0
+    addr="$(resolver_addr)" || return 0
+    dns1="$(yaml_get "$app" dns1)"
+    [[ "$dns1" == "$addr" ]] || return 0
+    log "dns1 = $addr — беру резолвер под опеку бота"
+    bash "$INSTALL_DIR/install/awg-resolver-setup.sh" install "$addr" \
+        || warn "резолвер не взят под опеку — позже: awg-bot resolver install $addr"
+}
+
+cmd_resolver() {  # awg-bot resolver status|install|add|remove [ADDR]
+    require_installed
+    local mode="${1:-status}" addr="${2:-}"
+    [[ "$mode" == "status" || "$mode" == "plan" ]] || require_root
+    [[ -n "$addr" ]] || addr="$(resolver_addr || true)"
+    bash "$INSTALL_DIR/install/awg-resolver-setup.sh" "$mode" "$addr"
+}
+
 cmd_routing_doctor() {
     require_installed
     # Тем же интерпретатором, из того же каталога и с тем же conf/data, что и
@@ -1255,6 +1306,8 @@ awg-bot — управление установленным ботом.
                              status | install | reload | prune | plan
   awg-bot first-device       конфигурация первого устройства админа в терминал
                              (ссылка, QR и файл — когда Telegram недоступен)
+  awg-bot resolver <cmd>     свой DNS-резолвер клиентов (dnsmasq на <подсеть>.1):
+                             status | install [addr] | add <addr> | remove <addr> | plan
   awg-bot uninstall          удалить приложение (опционально: данные приложения)
 EOF
 }
@@ -1278,6 +1331,7 @@ case "$VERB" in
     gw-bundle)   cmd_gw_bundle ;;
     awg)         cmd_awg "$@" ;;
     first-device) cmd_first_device "$@" ;;
+    resolver)    cmd_resolver "$@" ;;
     -h|--help|help|"") usage ;;
     *) usage; die "неизвестная команда: $VERB" ;;
 esac

@@ -14,32 +14,6 @@ from awgbot.infra import awg as infra_awg
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture()
-def mig(monkeypatch, services, fake_awg):
-    """Переезд настроен, второй интерфейс отвечает. Возвращает состояние фейка:
-    .peers_by_iface — что реально ушло на сервер."""
-    import types
-    monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
-    monkeypatch.setattr(config, "MIGRATION_INTERFACE", "awg1")
-    monkeypatch.setattr(config, "MIGRATION_SUBNET_PREFIX", "10.9.1")
-
-    state = types.SimpleNamespace(peers_by_iface={}, removed=[], blocked=set())
-
-    def add_peer(pub, psk, ip, iface=None):
-        state.peers_by_iface.setdefault(infra_awg.iface_of(iface), {})[pub] = ip
-
-    def remove_peer(pub, iface=None):
-        state.removed.append((pub, infra_awg.iface_of(iface)))
-        state.peers_by_iface.get(infra_awg.iface_of(iface), {}).pop(pub, None)
-
-    monkeypatch.setattr(infra_awg, "add_peer", add_peer)
-    monkeypatch.setattr(infra_awg, "remove_peer", remove_peer)
-    monkeypatch.setattr(infra_awg, "read_occupied_ips", lambda iface=None: set())
-    monkeypatch.setattr(infra_awg, "block_ip", lambda ip: state.blocked.add(ip))
-    monkeypatch.setattr(infra_awg, "unblock_ip", lambda ip: state.blocked.discard(ip))
-    return state
-
-
 def _seen(services, device_id, ago_days=0):
     """Отметить хендшейк: «подключался ago_days назад»."""
     from awgbot.util import timeutil

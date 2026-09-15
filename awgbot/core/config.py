@@ -227,6 +227,9 @@ MIGRATION_INTERFACE: str = _docker.get("migration_interface", "")
 # пересекаются, аллокатор нового конфига видит только свои адреса, и забота
 # «двойной комплект должен помещаться в /24» исчезает вовсе.
 MIGRATION_SUBNET_PREFIX: str = _docker.get("migration_subnet_prefix", "")
+# DNS двойников в окне переезда (резолвер на новом интерфейсе); горячее чтение
+# через settings в configgen.dns_for — здесь дефолт для старта.
+MIGRATION_DNS: str = _docker.get("migration_dns", "") or ""
 
 # ── Протокольные лимиты Telegram (НЕ настройки: их задаёт не наш конфиг) ─────
 # Текст сообщения — 4096, подпись к медиа — 1024, вложений в альбоме — 10.

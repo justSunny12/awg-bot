@@ -164,6 +164,21 @@ def awg_in_container() -> bool:
     return awg.in_container()
 
 
+def _resolver_warnings(services) -> list[str]:
+    """dns1/dns2 приватные — на них должен слушать dnsmasq. Не слушает — у
+    людей с такими конфигами нет DNS, а бот молчит."""
+    from awgbot.infra import resolver
+    info = services.private_dns_info()
+    if info["mode"] != "private":
+        return []
+    dead = [a for a in {info["dns1"], info["dns2"]} if a and not resolver.probe(a)]
+    if not dead:
+        return []
+    return [f"резолвер клиентов не отвечает на {', '.join(sorted(dead))} — у людей "
+            "с приватным DNS в конфиге нет резолва; awg-bot resolver status, "
+            "journalctl -u dnsmasq -e"]
+
+
 def collect_warnings(services) -> list[str]:
     """Не-блокирующие замечания. Возвращает список строк для отправки админу.
     Каждая проверка изолирована: её собственный сбой не роняет остальные и не
@@ -185,6 +200,12 @@ def collect_warnings(services) -> list[str]:
         warns += _firewall_warnings(services)
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight: проверка файервола: %s", e)
+
+    # свой DNS-резолвер клиентов: приватный адрес в конфигах обязан отвечать
+    try:
+        warns += _resolver_warnings(services)
+    except Exception as e:                       # noqa: BLE001
+        log.warning("preflight: проверка резолвера: %s", e)
 
     # свободное место под data-dir
     try:

@@ -254,6 +254,12 @@ class MigrationMixin:
         """
         if not self.migration_available():
             raise ServiceErrorMigration("Переезд не настроен: пустые ключи в app.yaml")
+        # Свой DNS двойников — ДО рождения: конфиг двойника рождается с этим
+        # адресом, и выдать его раньше, чем на нём кто-то отвечает, нельзя.
+        try:
+            self.private_dns_on_migration_start(config.MIGRATION_SUBNET_PREFIX)
+        except Exception as e:                            # noqa: BLE001
+            raise ServiceErrorMigration(f"резолвер клиентов на новом интерфейсе не поднят: {e}")
 
         origins = self._migratable()
         existing = self.db.twins_by_origin()
@@ -575,6 +581,7 @@ class MigrationMixin:
                 self.db.set_device_friend(d.id)
         self.db.set_state(_STATE_KEY, STATE_OFF)
         self.db.cohort_clear()
+        self.private_dns_on_cancel()
         return moved
 
     def migration_moved_devices(self) -> list:
@@ -735,6 +742,12 @@ class MigrationMixin:
         except Exception as e:                            # noqa: BLE001
             log.warning("promote: app.yaml не переписан: %s", e)
             return ""
+        # DNS клиентов: адрес двойников становится адресом всех, старый — со
+        # старым интерфейсом — снимается с резолвера.
+        try:
+            self.private_dns_on_promote(config.SUBNET_PREFIX)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("promote: DNS клиентов не переписан: %s", e)
         if target > applied:
             awglock.write_state(applied=target, target=0)
         else:

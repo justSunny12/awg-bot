@@ -69,6 +69,18 @@ async def _notify_migration_needed(bot: Bot, services: Services) -> None:
                      reply_markup=kb.migration_needed())
 
 
+async def _notify_private_dns_offer(bot: Bot, services: Services) -> None:
+    """Предложить свой DNS-резолвер: адрес в конфигах публичный, админ ещё не
+    решал. Три кнопки — три решения, любое гасит инфобокс."""
+    from awgbot.bot import keyboards as kb
+    from awgbot.bot import texts
+    if not await asyncio.to_thread(services.private_dns_offer_due):
+        return
+    info = await asyncio.to_thread(services.private_dns_info)
+    await notify_one(bot, config.ADMIN_ID, texts.private_dns_offer(info["target"]),
+                     reply_markup=kb.private_dns_offer_kb())
+
+
 async def do_reconcile(services: Services, bot: Bot) -> None:
     """Реконсиляция состава пиров + рассылка уведомлений (вызов из вотчдога и старта).
     Внешнее изменение файлов могло затронуть и [Interface] — сбрасываем кэш
@@ -399,6 +411,12 @@ async def main() -> None:
         await _notify_migration_needed(bot, services)
     except Exception as e:                               # noqa: BLE001
         log.warning("migration_needed: %s", e)
+    # DNS клиентов публичный, а решения ещё нет — предлагать при каждом старте:
+    # любой из трёх ответов инфобокс гасит.
+    try:
+        await _notify_private_dns_offer(bot, services)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("private_dns_offer: %s", e)
 
     # Тот же принцип для обычного рестарта из настроек: обещание «вернётся через
     # несколько секунд» исполняет новый процесс. Отдельно от блока выше — там

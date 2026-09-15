@@ -8,9 +8,13 @@
 # дальше только проверяет его наличие (routing.self_check).
 #
 # ЧТО ДЕЛАЕТ:
-#   1) dummy-интерфейс под dnsmasq (свой адрес, не зависит от докер-сетей);
-#   2) конфиг dnsmasq: слушать ТОЛЬКО на нём (0.0.0.0 перекрыл бы 127.0.0.53
-#      systemd-resolved и сломал резолвинг самого сервера);
+#   1) адрес для перехвата DNS. Есть резолвер бота (awg-resolver-setup.sh,
+#      dnsmasq на <подсеть>.1) — перехват ведёт на него, dummy не нужен.
+#      Прежняя схема (резолвера нет или его адрес ещё вшит в конфиги
+#      клиентов) — dummy-интерфейс со своим адресом;
+#   2) конфиг dnsmasq: при резолвере бота — только адрес перехвата, остальное
+#      (апстримы, защиты) ведёт резолвер; иначе полный, слушать ТОЛЬКО на
+#      своём адресе (0.0.0.0 перекрыл бы 127.0.0.53 systemd-resolved);
 #   3) DNAT :53 клиентской подсети на dnsmasq — чтобы выданные конфиги с
 #      DNS=1.1.1.1 продолжали работать без перевыпуска ссылок;
 #   4) разрешения FORWARD для клиентской подсети; MASQUERADE — только если его
@@ -58,6 +62,33 @@ case "${CLIENT_DNS_ADDR:-}" in
     10.*) [ "$CLIENT_DNS_ADDR" != "$DNS_ADDR" ] && CLIENT_DNS_FACADE=1 ;;
 esac
 DNSMASQ_CONF="/etc/dnsmasq.d/awgbot-base.conf"
+# Резолвер бота (awg-resolver-setup.sh): dnsmasq уже слушает <подсеть>.1 и
+# ведёт апстримы/защиты. Тогда перехват :53 ведём на его адрес, dummy не
+# поднимаем, а свой конфиг пишем минимальным — один владелец у каждой строки.
+RESOLVER_CONF="${RESOLVER_CONF:-/etc/dnsmasq.d/awgbot-resolver.conf}"
+RESOLVER_ADDR=""
+if [ -f "$RESOLVER_CONF" ]; then
+    RESOLVER_ADDR="$(sed -nE 's/^listen-address=([0-9.]+)$/\1/p' "$RESOLVER_CONF" | head -n1)"
+fi
+# Адреса dnsmasq, вшитые в конфиги клиентов (dns1/dns2 в app.yaml). Пока хоть
+# один из них — адрес dummy или фасад на нём, dummy обязан жить: снять его
+# значит оставить людей с мёртвым DNS до перевыпуска конфигов. Их перепишет
+# только переезд профилей — он же и уронит dummy.
+_cfg_dns2="$(awk -F'"' '/^  dns2:/{print $2; exit}' "$_APP_YAML" 2>/dev/null || true)"
+DUMMY_REFERENCED=""
+for _d in "$_cfg_dns1" "$_cfg_dns2"; do
+    [ -n "$_d" ] || continue
+    if [ "$_d" = "$DNS_ADDR" ]; then
+        DUMMY_REFERENCED=1
+    elif [ -n "$CLIENT_DNS_FACADE" ] && [ "$_d" = "$CLIENT_DNS_ADDR" ] \
+            && ! grep -qx "listen-address=$_d" "$RESOLVER_CONF" 2>/dev/null; then
+        DUMMY_REFERENCED=1      # фасад живёт на dummy, резолвер бота его не слушает
+    fi
+done
+USE_DUMMY=1
+if [ -n "$RESOLVER_ADDR" ] && [ -z "$DUMMY_REFERENCED" ]; then
+    USE_DUMMY=""; DNS_ADDR="$RESOLVER_ADDR"; CLIENT_DNS_FACADE=""
+fi
 DNSMASQ_SERVICE="${DNSMASQ_SERVICE:-dnsmasq}"
 UPSTREAM1="${UPSTREAM1:-1.1.1.1}"
 UPSTREAM2="${UPSTREAM2:-9.9.9.9}"
@@ -246,11 +277,21 @@ if [ "$MODE" = "rollback" ]; then
     if [ -n "$CONT_IP" ]; then
         run "ip route del $CLIENT_SUBNET via $CONT_IP 2>/dev/null || true"
     fi
-    run "rm -f $DNSMASQ_CONF"
     run "rm -rf /etc/systemd/system/${DNSMASQ_SERVICE}.service.d/ipset.conf"
+    if [ -n "$DUMMY_REFERENCED" ]; then
+        # Адрес dummy вшит в конфиги клиентов: dnsmasq на нём и сам интерфейс
+        # остаются — иначе у людей мёртвый DNS до перевыпуска. Уронит их
+        # переезд профилей, когда перепишет dns1/dns2.
+        say "  $DNS_ADDR указан в dns1/dns2 app.yaml — $DNS_IF и конфиг dnsmasq"
+        say "  оставлены: снять их значит оставить клиентов без DNS. Снимет переезд."
+    else
+        run "rm -f $DNSMASQ_CONF"
+    fi
     run "systemctl daemon-reload"
     run "systemctl restart ${DNSMASQ_SERVICE} 2>/dev/null || true"
-    run "ip link del $DNS_IF 2>/dev/null || true"
+    if [ -z "$DUMMY_REFERENCED" ]; then
+        run "ip link del $DNS_IF 2>/dev/null || true"
+    fi
     run "systemctl disable --now awg-bot-routing.service 2>/dev/null || true"
     run "rm -f /etc/systemd/system/awg-bot-routing.service"
     run "systemctl daemon-reload"
@@ -259,7 +300,10 @@ if [ "$MODE" = "rollback" ]; then
     exit 0
 fi
 
-# 1) dummy-интерфейс под dnsmasq
+# 1) адрес перехвата: резолвер бота или dummy-интерфейс прежней схемы
+if [ -z "$USE_DUMMY" ]; then
+    step "1. Перехват DNS ведёт на резолвер бота ($DNS_ADDR), dummy не нужен"
+else
 step "1. Интерфейс $DNS_IF ($DNS_ADDR)"
 if ip link show "$DNS_IF" >/dev/null 2>&1; then
     say "  уже есть"
@@ -281,9 +325,32 @@ if [ -n "$CLIENT_DNS_FACADE" ]; then
     fi
 fi
 run "ip link set $DNS_IF up"
+fi
 
 # 2) конфиг dnsmasq
 step "2. Конфиг dnsmasq → $DNSMASQ_CONF"
+if [ -n "$RESOLVER_ADDR" ]; then
+    # Апстримы, защиты и режим привязки ведёт резолвер бота (bind-dynamic там;
+    # bind-interfaces здесь с ним несовместим). Наше — только адрес перехвата,
+    # и то лишь если он не совпадает с адресом резолвера.
+    say "  резолвер бота ведёт апстримы и защиты; здесь — только адрес перехвата"
+    if [ "$MODE" = "apply" ]; then
+        {
+            echo "# Сгенерировано routing-host-setup.sh. Апстримы и защиты — в"
+            echo "# awgbot-resolver.conf (резолвер бота); списки доменов бот пишет"
+            echo "# отдельным файлом (conf/app.yaml → routing.dnsmasq_conf)."
+            [ -n "$USE_DUMMY" ] && echo "listen-address=$DNS_ADDR"
+            # фасад — только если его не слушает сам резолвер: один адрес в одном файле
+            if [ -n "$CLIENT_DNS_FACADE" ] && ! grep -qx "listen-address=$CLIENT_DNS_ADDR" "$RESOLVER_CONF"; then
+                echo "listen-address=$CLIENT_DNS_ADDR"
+            fi
+            true    # статус группы — не последнего теста (set -e)
+        } > "$DNSMASQ_CONF"
+        printf '  записан\n'
+    else
+        printf '  would: записать %s (только адрес перехвата)\n' "$DNSMASQ_CONF"
+    fi
+else
 say "  listen-address только на $DNS_ADDR: 0.0.0.0 перекрыл бы 127.0.0.53"
 say "  systemd-resolved и сломал бы резолвинг самого сервера"
 say "  stop-dns-rebind ОБЯЗАТЕЛЕН: без него пользователь добавит домен,"
@@ -327,6 +394,7 @@ CONF
     printf '  записан\n'
 else
     printf '  would: записать %s\n' "$DNSMASQ_CONF"
+fi
 fi
 
 # Пакет dnsmasq-base даёт только бинарь (его тянут libvirt/lxd/NetworkManager),

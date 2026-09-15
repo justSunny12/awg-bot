@@ -277,3 +277,88 @@ def test_link_and_migration_traffic_is_not_masqueraded_either(script):
         line = f'ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "${var}" -j ACCEPT'
         assert line in script, var
         assert script.index('-s "$CLIENT_SUBNET" -j MASQUERADE') < script.index(line)
+
+
+# ── резолвер бота и адрес перехвата ──────────────────────────────────────────
+# Блок параметров прогоняется настоящим кодом скрипта с подставным app.yaml
+# и конфигом резолвера: важны ВЫЧИСЛЕННЫЕ значения, а не текст.
+
+def _params(script: str, tmp_path, *, dns1: str, dns2: str, resolver_addrs=()) -> dict:
+    app = tmp_path / "app.yaml"
+    app.write_text("network:\n  subnet_cidr: \"10.8.1.0/24\"\nclient_config:\n"
+                   f'  dns1: "{dns1}"\n  dns2: "{dns2}"\n', encoding="utf-8")
+    rconf = tmp_path / "resolver.conf"
+    if resolver_addrs:
+        rconf.write_text("bind-dynamic\n" + "".join(f"listen-address={a}\n" for a in resolver_addrs),
+                         encoding="utf-8")
+    block = script[script.index("# ── параметры"):script.index("MODE=\"plan\"")]
+    prog = (f'_APP_YAML="{app}"\nRESOLVER_CONF="{rconf}"\n' + block
+            + '\nprintf "USE_DUMMY=%s\\nDNS_ADDR=%s\\nFACADE=%s\\nREFERENCED=%s\\n" '
+              '"$USE_DUMMY" "$DNS_ADDR" "$CLIENT_DNS_FACADE" "$DUMMY_REFERENCED"')
+    r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
+                       env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0, r.stderr
+    return dict(line.split("=", 1) for line in r.stdout.strip().splitlines())
+
+
+def test_with_the_bot_resolver_the_interception_targets_it_and_needs_no_dummy(script, tmp_path):
+    """Свежая установка: dnsmasq бота слушает <подсеть>.1, DNAT :53 старых
+    профилей ведёт туда же, dummy-интерфейс не поднимается вовсе."""
+    p = _params(script, tmp_path, dns1="10.8.1.1", dns2="10.8.1.1", resolver_addrs=["10.8.1.1"])
+    assert p["USE_DUMMY"] == "" and p["DNS_ADDR"] == "10.8.1.1" and p["FACADE"] == ""
+
+
+def test_without_the_bot_resolver_the_old_scheme_stays(script, tmp_path):
+    p = _params(script, tmp_path, dns1="1.1.1.1", dns2="1.0.0.1")
+    assert p["USE_DUMMY"] == "1" and p["DNS_ADDR"] == "10.255.53.1" and p["REFERENCED"] == ""
+
+
+def test_dummy_address_in_client_configs_keeps_the_dummy_alive(script, tmp_path):
+    """Адрес dummy вшит в конфиги клиентов (dns2) — dummy обязан жить даже при
+    резолвере бота, и перехват остаётся на нём: снять значит оставить людей с
+    мёртвым вторым DNS до перевыпуска."""
+    p = _params(script, tmp_path, dns1="10.9.1.1", dns2="10.255.53.1", resolver_addrs=["10.9.1.1"])
+    assert p["REFERENCED"] == "1" and p["USE_DUMMY"] == "1" and p["DNS_ADDR"] == "10.255.53.1"
+    assert p["FACADE"] == "1", "фасадный адрес на dummy тоже оставлен"
+
+
+def test_facade_address_alone_also_counts_as_referenced(script, tmp_path):
+    """Приватный dns1 на dummy без резолвера бота (хост до v2.19) — тоже
+    ссылка на dummy."""
+    p = _params(script, tmp_path, dns1="10.9.1.1", dns2="10.9.1.1")
+    assert p["REFERENCED"] == "1" and p["USE_DUMMY"] == "1" and p["FACADE"] == "1"
+
+
+def _rollback(script: str, tmp_path, *, referenced: bool) -> str:
+    """Ветка --rollback с подставными командами: что она снимет, а что оставит."""
+    block = script[script.index('if [ "$MODE" = "rollback" ]'):]
+    block = block[:block.index("\n    exit 0\nfi\n") + len("\n    exit 0\nfi\n")]
+    block = block.replace("exit 0", "true")
+    prelude = "\n".join([
+        'say(){ printf "%s\\n" "$*"; }', 'step(){ :; }',
+        'run(){ printf "RUN %s\\n" "$*"; }', 'drop_rule(){ printf "DROP %s\\n" "$*"; }',
+        'CLIENT_SUBNET=10.8.1.0/24', 'DNS_ADDR=10.255.53.1', 'CLIENT_DNS_ADDR=10.9.1.1',
+        'CLIENT_DNS_FACADE=1', 'CONT_IP=""', 'DNSMASQ_CONF=/etc/dnsmasq.d/awgbot-base.conf',
+        'DNSMASQ_SERVICE=dnsmasq', 'DNS_IF=awgdns0',
+        f'DUMMY_REFERENCED={"1" if referenced else ""}', 'MODE=rollback',
+    ])
+    r = subprocess.run(["sh", "-c", prelude + "\n" + block], capture_output=True, text=True,
+                       env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def test_rollback_removes_the_dummy_when_nothing_references_it(script, tmp_path):
+    out = _rollback(script, tmp_path, referenced=False)
+    assert "RUN ip link del awgdns0" in out and "RUN rm -f /etc/dnsmasq.d/awgbot-base.conf" in out
+
+
+def test_rollback_keeps_the_dummy_and_its_dnsmasq_while_client_configs_point_at_it(script, tmp_path):
+    """Снятие обвязки не имеет права уронить второй DNS у людей: адрес вшит в
+    выданные конфиги, перепишет их только переезд — он же и уронит dummy."""
+    out = _rollback(script, tmp_path, referenced=True)
+    assert "ip link del" not in out and "rm -f /etc/dnsmasq.d/awgbot-base.conf" not in out
+    assert "оставлены" in out
+    # остальное снимается как прежде
+    assert "DROP nat PREROUTING" in out and "DROP filter FORWARD" in out
+    assert "RUN rm -f /etc/systemd/system/awg-bot-routing.service" in out

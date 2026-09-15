@@ -79,3 +79,32 @@ async def test_offers_to_prepare_when_the_second_interface_is_missing(gen, sent)
     assert "ядро нового поколения" in text.lower()
     labels = [b.text for row in markup.inline_keyboard for b in row]
     assert any("Подготовить переезд" in l for l in labels)
+
+
+# ── свой DNS-резолвер: инфобокс при старте до решения ─────────────────────────
+
+class _DnsSvc:
+    def __init__(self, due: bool, target="10.8.1.1"):
+        self._due, self._target = due, target
+
+    def private_dns_offer_due(self):
+        return self._due
+
+    def private_dns_info(self):
+        return {"target": self._target, "mode": "public", "decision": ""}
+
+
+async def test_private_dns_offer_comes_with_three_decisions(sent):
+    await rt._notify_private_dns_offer(None, _DnsSvc(True))
+    assert len(sent) == 1
+    tg_id, text, markup = sent[0]
+    assert tg_id == config.ADMIN_ID
+    assert "10.8.1.1" in text and "через раз" in text and "переезд" in text.lower()
+    labels = [b.text for row in markup.inline_keyboard for b in row]
+    assert any("сейчас" in l for l in labels) and any("следующем переезде" in l for l in labels) \
+        and any("Не нужно" in l for l in labels)
+
+
+async def test_private_dns_offer_is_silent_once_decided(sent):
+    await rt._notify_private_dns_offer(None, _DnsSvc(False))
+    assert sent == []

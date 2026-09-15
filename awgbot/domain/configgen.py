@@ -71,6 +71,7 @@ def _conf_text(
     host: str,
     port: int,
     include_mtu: bool,
+    iface: str = "",
 ) -> str:
     """Текст клиентского конфига.
 
@@ -88,11 +89,11 @@ def _conf_text(
     смыслу. Во встроенный конфиг они по-прежнему идут: формат vpn:// заморожен
     и обязан воспроизводить эталон байт в байт.
     """
+    dns1, dns2 = dns_for(iface)
     lines = [
         "[Interface]",
         f"Address = {address}/32",
-        f'DNS = {_live("app.client_config.dns1", config.DNS1)}, '
-        f'{_live("app.client_config.dns2", config.DNS2)}',
+        f"DNS = {dns1}, {dns2}",
         f"PrivateKey = {private_key}",
     ]
     if include_mtu:
@@ -175,6 +176,21 @@ def _subnet_of(address: str) -> str:
     return address.rsplit(".", 1)[0] + ".0"
 
 
+def dns_for(iface: str = "") -> tuple[str, str]:
+    """DNS клиентского конфига — по ИНТЕРФЕЙСУ пира, как и протокол.
+
+    В окне переезда у двойников свой резолвер на новом интерфейсе
+    (<новая подсеть>.1, ключ app.docker.migration_dns): старый адрес умрёт
+    вместе со старым интерфейсом, а конфиг двойника переживёт финал. Оба поля
+    на один адрес — публичный вторым номером возвращает утечку DoH."""
+    if iface and config.MIGRATION_INTERFACE and iface == config.MIGRATION_INTERFACE:
+        mig = str(_live("app.docker.migration_dns", config.MIGRATION_DNS) or "").strip()
+        if mig:
+            return mig, mig
+    return (str(_live("app.client_config.dns1", config.DNS1)),
+            str(_live("app.client_config.dns2", config.DNS2)))
+
+
 def app_container_for(iface: str = "") -> str:
     """Идентификатор протокола для приложения — по ИНТЕРФЕЙСУ, на котором
     живёт пир.
@@ -198,7 +214,7 @@ def _build_vpn_json(
 ) -> dict:
     embedded_conf = _conf_text(
         private_key, address, obf, server_pubkey, psk, host, port,
-        include_mtu=False,
+        include_mtu=False, iface=iface,
     )
     last_config = _build_last_config(
         private_key, public_key, address, obf, server_pubkey, psk,
@@ -223,12 +239,13 @@ def _build_vpn_json(
     # значение обязано остаться прежним, иначе приложение перестанет опознавать
     # профили у всех разом. В окне смены поколения у второго интерфейса он свой.
     app_container = app_container_for(iface)
+    dns1, dns2 = dns_for(iface)
     return {
         "containers": [{"awg": awg_block, "container": app_container}],
         "defaultContainer": app_container,
         "description": _live("app.client_config.server_name", config.SERVER_NAME),
-        "dns1": _live("app.client_config.dns1", config.DNS1),
-        "dns2": _live("app.client_config.dns2", config.DNS2),
+        "dns1": dns1,
+        "dns2": dns2,
         "hostName": host,
     }
 
@@ -284,7 +301,7 @@ def generate(
     host = _live("app.network.server_host", config.SERVER_HOST)
 
     conf_standalone = _conf_text(
-        private_key, address, obf, spub, psk, host, port, include_mtu=True,
+        private_key, address, obf, spub, psk, host, port, include_mtu=True, iface=iface,
     )
     vpn_obj = _build_vpn_json(
         private_key, public_key, address, obf, spub, psk, host, port, iface,

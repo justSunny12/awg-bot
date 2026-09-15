@@ -417,3 +417,33 @@ def make_active_client(services):
         assert res.ok, res.reason
         return res.client
     return _make
+
+
+# ── переезд профилей: второй интерфейс настроен и отвечает ───────────────────
+from awgbot.infra import awg as _awg               # noqa: E402
+
+
+@pytest.fixture()
+def mig(monkeypatch, services, fake_awg):
+    """Переезд настроен, второй интерфейс отвечает. Возвращает состояние фейка:
+    .peers_by_iface — что реально ушло на сервер."""
+    import types
+    monkeypatch.setattr(_config, "AWG_INTERFACE", "awg0")
+    monkeypatch.setattr(_config, "MIGRATION_INTERFACE", "awg1")
+    monkeypatch.setattr(_config, "MIGRATION_SUBNET_PREFIX", "10.9.1")
+
+    state = types.SimpleNamespace(peers_by_iface={}, removed=[], blocked=set())
+
+    def add_peer(pub, psk, ip, iface=None):
+        state.peers_by_iface.setdefault(_awg.iface_of(iface), {})[pub] = ip
+
+    def remove_peer(pub, iface=None):
+        state.removed.append((pub, _awg.iface_of(iface)))
+        state.peers_by_iface.get(_awg.iface_of(iface), {}).pop(pub, None)
+
+    monkeypatch.setattr(_awg, "add_peer", add_peer)
+    monkeypatch.setattr(_awg, "remove_peer", remove_peer)
+    monkeypatch.setattr(_awg, "read_occupied_ips", lambda iface=None: set())
+    monkeypatch.setattr(_awg, "block_ip", lambda ip: state.blocked.add(ip))
+    monkeypatch.setattr(_awg, "unblock_ip", lambda ip: state.blocked.discard(ip))
+    return state

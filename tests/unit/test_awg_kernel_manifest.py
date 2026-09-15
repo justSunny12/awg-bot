@@ -531,3 +531,89 @@ def test_installer_writes_topology_even_for_a_pre_existing_server(bot_sh):
     assert "BASH_REMATCH[1]} + 1" in body and "ip_host_start" in body
 
 
+
+
+# ── свой DNS-резолвер в установщике ──────────────────────────────────────────
+
+def _run_resolver_func(tmp_path, name, *, app_yaml, script_rc=0, resolver_conf_exists=False):
+    """ensure_resolver / adopt_resolver с настоящими yaml_* и подставным
+    install/awg-resolver-setup.sh (пишет вызов в журнал, код — script_rc)."""
+    import os
+    import subprocess
+    script = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    inst = tmp_path / "install"; inst.mkdir(exist_ok=True)
+    journal = tmp_path / "journal"
+    (inst / "awg-resolver-setup.sh").write_text(
+        f'#!/bin/bash\necho "RESOLVER $*" >> "{journal}"\nexit {script_rc}\n', encoding="utf-8")
+    conf = tmp_path / "conf"; conf.mkdir(exist_ok=True)
+    app = conf / "app.yaml"; app.write_text(app_yaml, encoding="utf-8")
+    rconf = tmp_path / "resolver.conf"
+    if resolver_conf_exists:
+        rconf.write_text("bind-dynamic\nlisten-address=10.8.1.1\n", encoding="utf-8")
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "sed").write_text(
+        '#!/bin/sh\nif /usr/bin/sed --version >/dev/null 2>&1; then exec /usr/bin/sed "$@"; fi\n'
+        'if [ "$1" = "-i" ] && [ "$2" = "-E" ]; then shift 2; exec /usr/bin/sed -i "" -E "$@"; fi\n'
+        'exec /usr/bin/sed "$@"\n', encoding="utf-8")
+    (bin_dir / "sed").chmod(0o755)
+    body = _bot_func(script, name).replace("/etc/dnsmasq.d/awgbot-resolver.conf", str(rconf))
+    prog = "\n".join([
+        "set -e",
+        'log(){ printf "[log] %s\\n" "$*"; }', 'warn(){ printf "[warn] %s\\n" "$*"; }',
+        'ok(){ printf "[ok] %s\\n" "$*"; }', 'die(){ printf "[die] %s\\n" "$*"; exit 1; }',
+        f'CONF_DIR="{conf}"', f'INSTALL_DIR="{tmp_path}"',
+        _bot_func(script, "yaml_get"), _bot_func(script, "yaml_set"),
+        _bot_func(script, "resolver_addr"), body, name, "echo ДОШЛИ",
+    ])
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
+    proc = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, env=env)
+    read = lambda p: p.read_text(encoding="utf-8") if p.exists() else ""
+    return proc, read(app), read(journal)
+
+
+_RES_YAML = """docker:
+  runtime: "host"
+network:
+  subnet_prefix: "10.8.1"
+client_config:
+  dns1: "1.1.1.1"
+  dns2: "1.0.0.1"
+"""
+
+
+def test_fresh_install_gets_its_own_resolver_in_both_dns_fields(tmp_path):
+    proc, app, journal = _run_resolver_func(tmp_path, "ensure_resolver", app_yaml=_RES_YAML)
+    assert proc.returncode == 0 and "ДОШЛИ" in proc.stdout, proc.stdout + proc.stderr
+    assert journal.strip() == "RESOLVER install 10.8.1.1"
+    assert 'dns1: "10.8.1.1"' in app and 'dns2: "10.8.1.1"' in app
+
+
+def test_fresh_install_keeps_public_dns_when_the_resolver_fails(tmp_path):
+    """Резолвер не поднялся — конфиги не должны указывать в пустоту: поля
+    остаются публичными, установка продолжается с предупреждением."""
+    proc, app, journal = _run_resolver_func(tmp_path, "ensure_resolver", app_yaml=_RES_YAML, script_rc=1)
+    assert proc.returncode == 0 and "ДОШЛИ" in proc.stdout
+    assert "[warn]" in proc.stdout and 'dns1: "1.1.1.1"' in app
+
+
+def test_docker_mode_gets_no_resolver(tmp_path):
+    proc, app, journal = _run_resolver_func(
+        tmp_path, "ensure_resolver", app_yaml=_RES_YAML.replace('"host"', '"docker"'))
+    assert proc.returncode == 0 and journal == "" and 'dns1: "1.1.1.1"' in app
+
+
+def test_update_adopts_the_resolver_only_when_dns1_already_is_the_address(tmp_path):
+    """Хост, где приватный адрес прописали руками: резолвер переходит под
+    опеку бота. Публичный dns1 обновление не трогает — это решение админа."""
+    proc, app, journal = _run_resolver_func(
+        tmp_path / "priv", "adopt_resolver", app_yaml=_RES_YAML.replace('"1.1.1.1"', '"10.8.1.1"'))
+    assert proc.returncode == 0 and journal.strip() == "RESOLVER install 10.8.1.1"
+
+    proc, app, journal = _run_resolver_func(tmp_path / "pub", "adopt_resolver", app_yaml=_RES_YAML)
+    assert proc.returncode == 0 and journal == ""
+
+    proc, app, journal = _run_resolver_func(
+        tmp_path / "done", "adopt_resolver",
+        app_yaml=_RES_YAML.replace('"1.1.1.1"', '"10.8.1.1"'), resolver_conf_exists=True)
+    assert proc.returncode == 0 and journal == "", "уже под опекой — повторно не ставим"
