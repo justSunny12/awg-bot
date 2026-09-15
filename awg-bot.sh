@@ -1228,8 +1228,17 @@ adopt_resolver() {  # обновление: dns1 уже <подсеть>.1 — �
     # переход на свой резолвер — решение админа в боте (переезд профилей).
     local app="$CONF_DIR/app.yaml" addr dns1
     [[ "$(yaml_get "$app" runtime)" == "host" ]] || return 0
-    [[ -f /etc/dnsmasq.d/awgbot-resolver.conf ]] && return 0
     addr="$(resolver_addr)" || return 0
+    if [[ -f /etc/dnsmasq.d/awgbot-resolver.conf ]]; then
+        # Уже под опекой. Но демон лежит — конфиг переписываем: v2.19.0 писала
+        # ключи, которые dnsmasq принимает один раз на все файлы, и хост,
+        # прошедший через неё, остался с резолвером в рестарт-цикле.
+        systemctl is-active --quiet dnsmasq && return 0
+        warn "dnsmasq не активен при живом конфиге резолвера — переписываю конфиг"
+        bash "$INSTALL_DIR/install/awg-resolver-setup.sh" install "$addr" \
+            || warn "резолвер не поднят — awg-bot resolver install $addr; journalctl -u dnsmasq -e"
+        return 0
+    fi
     dns1="$(yaml_get "$app" dns1)"
     [[ "$dns1" == "$addr" ]] || return 0
     log "dns1 = $addr — беру резолвер под опеку бота"

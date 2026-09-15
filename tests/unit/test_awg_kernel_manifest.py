@@ -535,7 +535,8 @@ def test_installer_writes_topology_even_for_a_pre_existing_server(bot_sh):
 
 # ── свой DNS-резолвер в установщике ──────────────────────────────────────────
 
-def _run_resolver_func(tmp_path, name, *, app_yaml, script_rc=0, resolver_conf_exists=False):
+def _run_resolver_func(tmp_path, name, *, app_yaml, script_rc=0, resolver_conf_exists=False,
+                       dnsmasq_active=True):
     """ensure_resolver / adopt_resolver с настоящими yaml_* и подставным
     install/awg-resolver-setup.sh (пишет вызов в журнал, код — script_rc)."""
     import os
@@ -557,6 +558,8 @@ def _run_resolver_func(tmp_path, name, *, app_yaml, script_rc=0, resolver_conf_e
         'if [ "$1" = "-i" ] && [ "$2" = "-E" ]; then shift 2; exec /usr/bin/sed -i "" -E "$@"; fi\n'
         'exec /usr/bin/sed "$@"\n', encoding="utf-8")
     (bin_dir / "sed").chmod(0o755)
+    (bin_dir / "systemctl").write_text(f'#!/bin/sh\nexit {0 if dnsmasq_active else 3}\n', encoding="utf-8")
+    (bin_dir / "systemctl").chmod(0o755)
     body = _bot_func(script, name).replace("/etc/dnsmasq.d/awgbot-resolver.conf", str(rconf))
     prog = "\n".join([
         "set -e",
@@ -616,4 +619,15 @@ def test_update_adopts_the_resolver_only_when_dns1_already_is_the_address(tmp_pa
     proc, app, journal = _run_resolver_func(
         tmp_path / "done", "adopt_resolver",
         app_yaml=_RES_YAML.replace('"1.1.1.1"', '"10.8.1.1"'), resolver_conf_exists=True)
-    assert proc.returncode == 0 and journal == "", "уже под опекой — повторно не ставим"
+    assert proc.returncode == 0 and journal == "", "уже под опекой и жив — повторно не ставим"
+
+
+def test_update_rewrites_a_resolver_config_whose_daemon_is_down(tmp_path):
+    """Хост, прошедший через v2.19.0: конфиг есть, а dnsmasq в рестарт-цикле
+    из-за однократных ключей. Обновление переписывает конфиг, не дожидаясь
+    админа с sed'ом."""
+    proc, app, journal = _run_resolver_func(
+        tmp_path, "adopt_resolver", app_yaml=_RES_YAML, resolver_conf_exists=True,
+        dnsmasq_active=False)
+    assert proc.returncode == 0 and journal.strip() == "RESOLVER install 10.8.1.1"
+    assert "переписываю" in proc.stdout
