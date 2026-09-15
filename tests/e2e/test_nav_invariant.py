@@ -50,7 +50,7 @@ async def test_settings_input_moves_nav_and_cleans_prompt(services, fake_bot, mo
     assert typed.message_id in _deleted(fake_bot), "ввод человека остался в чате"
     assert prompt.message_id in _deleted(fake_bot), "вопрос остался в чате"
     answers = [s for s in typed.sent if s[0] == "answer"]
-    assert "«Частота опроса» успешно изменена" in answers[0][1] and "→ <b>5</b> мин" in answers[0][1]
+    assert answers[0][1].startswith("✅ «Частота опроса» успешно изменена: ") and "→ <b>5</b> мин" in answers[0][1]
     assert answers[0][2] is None and answers[-1][2] is not None, "финишер без кнопок, раздел с кнопками"
 
 
@@ -64,7 +64,7 @@ async def test_settings_text_value_finisher_shows_old_and_new(services, fake_bot
     typed = _msg(fake_bot, ADMIN, "10.9.1.1")
     await sh.receive_value(typed, st, services)
     fin = [s for s in typed.sent if s[0] == "answer"][0][1]
-    assert "«DNS клиентов» успешно изменена: 1.1.1.1, 1.0.0.1 → <b>10.9.1.1</b>." in fin
+    assert fin == "✅ «DNS клиентов» успешно изменён: 1.1.1.1, 1.0.0.1 → <b>10.9.1.1</b>."
 
 
 async def test_settings_bad_input_is_tracked_reask(services, fake_bot):

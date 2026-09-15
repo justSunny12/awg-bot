@@ -1211,10 +1211,11 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int)
     человек вставляет списком, и молча взять половину — значит оставить его
     гадать, почему добавилось меньше, чем он прислал."""
     parts = []
-    if added:
-        names = ", ".join(f"<b>{_e(d)}</b>" for d in added)
-        verb = "добавлен" if len(added) == 1 else "добавлены"
-        parts.append(f"✅ {names} {verb} в {_ROUTING_LIST_INTO}.")
+    if len(added) == 1:
+        parts.append(f"✅ <b>{_e(added[0])}</b> добавлен в {_ROUTING_LIST_INTO}.")
+    elif added:
+        parts.append(f"✅ Добавлено в {_ROUTING_LIST_INTO}:\n"
+                     + "\n".join(f"• {_e(d)}" for d in added))
     if rejected:
         parts.append("⚠️ Не добавлено:\n" + "\n".join(
             f"• {_e(raw)} — {_e(reason)}" for raw, reason in rejected))
@@ -2090,6 +2091,23 @@ def settings_prompt(key: str) -> str:
     return f"Введи новое значение: <b>{_e(label)}</b>\nЕдиница: {_e(unit)}\nДиапазон: {lo}–{hi}."
 
 
+# Род подписи настройки — для согласованного глагола в финишере («Частота
+# опроса изменена», «Порог CPU изменён», «Доменное имя изменено»). Не в списке
+# — мужской.
+_SETTINGS_GENDER = {
+    "quiet_hours.quiet_hours_start": "n",            # Начало
+    "limits.traffic_bonus_gb": "f",                  # Бонус-квота
+    "grace.grace_days": "n",                         # Grace-дней (количество)
+    "app.scheduler.monitor_minutes": "f",            # Частота
+    "app.gateway.monitor_minutes": "f",
+    "email.resume_code_len": "f",                    # Длина
+    "app.network.server_host": "n",                  # Доменное имя
+    "app.client_config.server_name": "n",            # Имя сервера
+    "app.firewall.ssh_allow": "pl",                  # Адреса
+}
+_CHANGED = {"m": "изменён", "f": "изменена", "n": "изменено", "pl": "изменены"}
+
+
 def settings_changed(key: str, old, new) -> str:
     """Финишер после ввода значения — остаётся в чате, раздел приходит следом.
     Единица — из таблицы границ, без диапазона в скобках."""
@@ -2098,13 +2116,13 @@ def settings_changed(key: str, old, new) -> str:
     else:
         _lo, _hi, label, unit = SETTINGS_BOUNDS[key]
         unit = " " + unit.split(" (")[0]
+    verb = _CHANGED[_SETTINGS_GENDER.get(key, "m")]
     old_s = _e(str(old)) if old not in (None, "", []) else "—"
-    return (f"✅ Настройка «{_e(label)}» успешно изменена: "
-            f"{old_s} → <b>{_e(str(new))}</b>{_e(unit)}.")
+    return f"✅ «{_e(label)}» успешно {verb}: {old_s} → <b>{_e(str(new))}</b>{_e(unit)}."
 
 
 def settings_ssh_allow_added(entries: list) -> str:
-    return ("✅ Настройка «Адреса для SSH»: добавлено "
+    return ("✅ «Адреса для SSH»: добавлено "
             + ", ".join(f"<b>{_e(x)}</b>" for x in entries) + ".")
 
 

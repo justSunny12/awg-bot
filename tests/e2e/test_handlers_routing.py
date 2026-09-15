@@ -92,7 +92,7 @@ async def test_add_domains_reports_each_line(services, make_active_client, fake_
                       chat_id=77, user_id=77, bot=fake_bot)
     await routing_h.routing_add_apply(msg, c, services, FakeState())
     out = "".join(s[1] for s in msg.sent if s[0] == "answer")
-    assert "<b>bank.com</b>, <b>netflix.com</b> добавлены в список сайтов" in out
+    assert "✅ Добавлено в список сайтов, открываемых с российского адреса:\n• bank.com\n• netflix.com" in out
     assert "ругается на VPN" in out
     assert "Не добавлено" in out                    # мусорная строка объяснена
     assert set(services.routing_domains(c.id)) == {"bank.com", "netflix.com"}
