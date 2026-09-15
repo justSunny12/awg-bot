@@ -335,3 +335,32 @@ def test_gateway_reports_update_that_did_not_apply(svc, monkeypatch):
     svc.db.set_state("update_pending", "v2.4.2")
     note = svc.confirm_applied_update()
     assert note is not None and "2.4.1" in note.text and "2.4.2" in note.text
+
+
+def test_tick_heals_uplink_policy_and_reports_once(svc, monkeypatch):
+    """Пропавшее правило/маршрут аплинка перевыставляется в том же тике и
+    об этом приходит одно уведомление — это событие, а не стрик."""
+    monkeypatch.setattr(svc, "status", lambda: _quiet_status())
+    fixes = iter([["правило по метке", "маршрут в аплинк"], []])
+    monkeypatch.setattr(svc, "uplink_policy_heal", lambda: next(fixes))
+    notes = svc.monitor_tick()
+    assert len(notes) == 1 and "перевыставлена" in notes[0].text and not notes[0].critical
+    assert svc.monitor_tick() == []
+
+
+def test_plumbing_reports_uplink_policy(svc, monkeypatch):
+    import subprocess as sp
+    from awgbot.infra import gwguard
+    monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
+    run = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []})
+    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
+    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    monkeypatch.setattr(gwguard, "uplink_interface", lambda: "awg0")
+    monkeypatch.setattr(gwguard, "uplink_policy", lambda i: {"rule": True, "route": False})
+    checks = {c.name: c for c in svc.plumbing_checks()}
+    assert checks["политика аплинка"].ok is False and "маршрут в awg0" in checks["политика аплинка"].detail
+    monkeypatch.setattr(gwguard, "uplink_policy", lambda i: {"rule": True, "route": True})
+    assert {c.name: c for c in svc.plumbing_checks()}["политика аплинка"].ok is True
+    monkeypatch.setattr(gwguard, "uplink_interface", lambda: "")
+    assert {c.name: c for c in svc.plumbing_checks()}["политика аплинка"].ok is None

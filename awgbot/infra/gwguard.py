@@ -194,6 +194,55 @@ def script_status() -> dict:
     return out
 
 
+# ── политика «Telegram → аплинк»: ip rule по метке + маршрут в таблице ──────
+# Ставит PostUp аплинка при подъёме; systemd-networkd при своём (пере)запуске
+# по умолчанию сносит ЧУЖИЕ ip rule и маршруты — интерфейс жив, метка стоит,
+# а пакеты Telegram уходят домашнему провайдеру. Агент проверяет каждый тик и
+# перевыставляет сам: это два idempotent-вызова ip, юнит дёргать незачем.
+
+UPLINK_TABLE = 100
+TG_MARK = 1
+
+
+def _ip_json(args: list[str]) -> list:
+    try:
+        proc = subprocess.run(["ip", "-j", *args], capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if proc.returncode != 0:
+        return []
+    try:
+        return json.loads(proc.stdout.decode(errors="replace") or "[]")
+    except ValueError:
+        return []
+
+
+def uplink_policy(uplink_if: str) -> dict:
+    """{'rule': bool, 'route': bool} — есть ли правило «метка → таблица» и
+    маршрут по умолчанию в аплинк в этой таблице."""
+    rule = any(int(str(r.get("fwmark", "0")), 0) == TG_MARK
+               and str(r.get("table")) == str(UPLINK_TABLE)
+               for r in _ip_json(["rule", "show"]))
+    route = any(r.get("dst") == "default" and r.get("dev") == uplink_if
+                for r in _ip_json(["route", "show", "table", str(UPLINK_TABLE)]))
+    return {"rule": rule, "route": route}
+
+
+def uplink_policy_ensure(uplink_if: str) -> list[str]:
+    """Перевыставить недостающее. Возвращает, что было восстановлено."""
+    state = uplink_policy(uplink_if)
+    fixed: list[str] = []
+    if not state["rule"]:
+        if subprocess.run(["ip", "rule", "add", "fwmark", str(TG_MARK), "lookup", str(UPLINK_TABLE)],
+                          capture_output=True, timeout=10).returncode == 0:
+            fixed.append("правило по метке")
+    if not state["route"]:
+        if subprocess.run(["ip", "route", "replace", "default", "dev", uplink_if,
+                           "table", str(UPLINK_TABLE)], capture_output=True, timeout=10).returncode == 0:
+            fixed.append("маршрут в аплинк")
+    return fixed
+
+
 def client_subnet() -> str:
     """Подсеть клиентов ВПС: из conf агента, иначе из юнита обвязки, куда её
     вшил бандл. Установщику спрашивать её незачем."""

@@ -275,3 +275,49 @@ def test_script_installs_uplink_on_a_fresh_machine(script):
     assert 'UPLINK_IF="$UPLINK_IF_DEFAULT"' in step0
     assert 'grep -vx "$LINK_IF"' in step0, "свой линк не считается чужим аплинком"
     assert re.search(r'^UPLINK_IF_DEFAULT="?\$\{UPLINK_IF_DEFAULT:-awg0\}"?|UPLINK_IF_DEFAULT=.*awg0', script, re.M)
+
+
+# ── политика «Telegram → аплинк»: правило по метке + маршрут в таблице ───────
+
+def _ip_stub(rules_json: str, routes_json: str, calls: list):
+
+    class CP:
+        def __init__(self, out=""):
+            self.returncode, self.stdout, self.stderr = 0, out.encode(), b""
+
+    def run(argv, **kw):
+        a = list(argv)
+        calls.append(a)
+        if a[:3] == ["ip", "-j", "rule"]:
+            return CP(rules_json)
+        if a[:3] == ["ip", "-j", "route"]:
+            return CP(routes_json)
+        return CP()
+    return run
+
+
+def test_uplink_policy_detects_missing_rule_and_route_and_restores_them(monkeypatch):
+    """systemd-networkd при перезапуске сносит чужие ip rule и маршруты: аплинк
+    жив, метка стоит, а Telegram агента уходит домашнему провайдеру. Агент
+    должен увидеть пропажу и перевыставить оба — idempotent-командами ip."""
+    import subprocess
+    calls: list = []
+    monkeypatch.setattr(subprocess, "run", _ip_stub("[]", "[]", calls))
+    assert gwguard.uplink_policy("awg0") == {"rule": False, "route": False}
+    fixed = gwguard.uplink_policy_ensure("awg0")
+    assert fixed == ["правило по метке", "маршрут в аплинк"]
+    assert ["ip", "rule", "add", "fwmark", "1", "lookup", "100"] in calls
+    assert ["ip", "route", "replace", "default", "dev", "awg0", "table", "100"] in calls
+
+    calls.clear()
+    present_rules = '[{"priority":32765,"src":"all","fwmark":"0x1","table":"100"}]'
+    present_routes = '[{"dst":"default","dev":"awg0","scope":"link","flags":[]}]'
+    monkeypatch.setattr(subprocess, "run", _ip_stub(present_rules, present_routes, calls))
+    assert gwguard.uplink_policy("awg0") == {"rule": True, "route": True}
+    assert gwguard.uplink_policy_ensure("awg0") == []
+    assert not any(a[:2] in (["ip", "rule"], ["ip", "route"]) and a[2] in ("add", "replace")
+                   for a in calls)
+    # маршрут есть, но в другой интерфейс (ошибочно повёрнут в линк) — чинить
+    wrong = '[{"dst":"default","dev":"awglink","scope":"link","flags":[]}]'
+    monkeypatch.setattr(subprocess, "run", _ip_stub(present_rules, wrong, calls))
+    assert gwguard.uplink_policy("awg0")["route"] is False

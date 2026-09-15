@@ -181,7 +181,31 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         checks.append(GwCheck("юнит реассерта", rc == 0,
                               "" if rc == 0 else
                               f"{config.GW_UNIT} не включён — ребут не восстановит обвязку"))
+        # Политика «Telegram → аплинк»: без неё метка стоит, а пакеты агента
+        # уходят домашнему провайдеру — Telegram недоступен, агент молчит.
+        uplink = gwguard.uplink_interface()
+        if uplink:
+            pol = gwguard.uplink_policy(uplink)
+            ok = pol["rule"] and pol["route"]
+            lack = [n for n, v in (("правило по метке", pol["rule"]),
+                                   (f"маршрут в {uplink}", pol["route"])) if not v]
+            checks.append(GwCheck("политика аплинка", ok,
+                                  "" if ok else "нет: " + ", ".join(lack) + " — агент перевыставит"))
+        else:
+            checks.append(GwCheck("политика аплинка", None, "аплинк не найден"))
         return checks
+
+    def uplink_policy_heal(self) -> list[str]:
+        """Перевыставить правило/маршрут аплинка, если пропали (см. gwguard).
+        Каждый тик, без интервала: две idempotent-команды ip."""
+        from awgbot.infra import gwguard
+        uplink = gwguard.uplink_interface()
+        if not uplink:
+            return []
+        fixed = gwguard.uplink_policy_ensure(uplink)
+        if fixed:
+            log.warning("gateway: политика аплинка перевыставлена: %s", ", ".join(fixed))
+        return fixed
 
     # ── ядро/версии ──────────────────────────────────────────────────────────
 
@@ -289,6 +313,21 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
             self.tg_mark_ensure(st.tg_missing)          # без повторной пробы
         except Exception as e:                          # noqa: BLE001
             log.warning("gateway: tg_mark_ensure: %s", e)
+        try:
+            fixed = self.uplink_policy_heal()
+        except Exception as e:                          # noqa: BLE001
+            log.warning("gateway: uplink_policy_heal: %s", e)
+            fixed = []
+        if fixed:
+            # Одно уведомление на факт: пропажа правила — событие (обычно
+            # перезапуск systemd-networkd), о котором стоит знать, а не стрик.
+            notes.append(Notification(
+                config.ADMIN_ID,
+                "🔧 Политика «Telegram → аплинк» пропала и перевыставлена: "
+                + ", ".join(fixed) + ". Обычно так делает перезапуск "
+                "systemd-networkd — установщик шлюза запрещает ему трогать "
+                "чужие правила, перевыпусти конфигурацию шлюза с ВПС, если "
+                "повторится.", critical=False))
 
         return [n for n in notes if n.text]
 

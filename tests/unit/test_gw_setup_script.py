@@ -206,3 +206,16 @@ def test_legacy_iptables_is_removed_on_apply_and_rollback(script):
                  "iptables -X $FWD_CHAIN", "-t mangle -D OUTPUT -d $n -j MARK"):
         assert frag in cleanup, frag
     assert 'if [ "$MODE" = "plan" ]' in cleanup, "в режиме показа циклы -C/-D не сходятся"
+
+
+def test_networkd_is_told_to_keep_foreign_rules_and_policy_is_reasserted(script):
+    """systemd-networkd при перезапуске сносит чужие ip rule и маршруты; drop-in
+    запрещает ему это, а сам скрипт перевыставляет правило и маршрут аплинка —
+    реассерт юнита чинит и их. Откат drop-in убирает."""
+    part = script.split('step "1b.', 1)[1].split('step "2.', 1)[0]
+    assert "ManageForeignRoutes=no" in part and "ManageForeignRoutingPolicyRules=no" in part
+    assert "/etc/systemd/networkd.conf.d/awg-gw.conf" in part
+    assert 'ip rule add fwmark $TG_MARK lookup $UPLINK_TABLE' in part
+    assert 'ip route replace default dev $UPLINK_IF table $UPLINK_TABLE' in part
+    rollback = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
+    assert "networkd.conf.d/awg-gw.conf" in rollback

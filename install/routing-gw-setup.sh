@@ -245,7 +245,7 @@ if [ "$MODE" = "rollback" ]; then
     run "nft delete table $GUARD_TABLE 2>/dev/null || true"
     run "rm -f $GUARD_FILE $FW_ENV $GW_STATUS_FILE"
     run "rmdir $GW_ETC 2>/dev/null || true"
-    run "rm -f $HOST_CONF_DIR/$LINK_IF.conf $UNIT $SYSCTL_CONF"
+    run "rm -f $HOST_CONF_DIR/$LINK_IF.conf $UNIT $SYSCTL_CONF /etc/systemd/networkd.conf.d/awg-gw.conf"
     run "systemctl daemon-reload"
     say ""
     say "Готово. Существующие интерфейсы и маршрутизация шлюза не тронуты."
@@ -446,6 +446,35 @@ fi
 # Отдельным файлом — иначе значение живёт до перезагрузки, а вернувшийся из
 # ребута шлюз выглядит исправным и не пропускает ни пакета.
 run "printf 'net.ipv4.ip_forward = 1\\n' > $SYSCTL_CONF"
+
+# ── 1b. политика «Telegram → аплинк»: правило по метке и таблица ─────────────
+# Ставит PostUp аплинка при подъёме, но systemd-networkd при (пере)запуске по
+# умолчанию сносит чужие ip rule и маршруты: аплинк жив, метка стоит, а
+# Telegram агента уходит домашнему провайдеру. Запрещаем networkd их трогать
+# (drop-in читается при его следующем старте — ровно тогда, когда он и снёс
+# бы) и перевыставляем политику здесь: реассерт юнита её тоже чинит.
+step "1b. Политика Telegram → аплинк"
+NETWORKD_DROPIN="/etc/systemd/networkd.conf.d/awg-gw.conf"
+if [ -d /etc/systemd ] && command -v networkctl >/dev/null 2>&1; then
+    if [ -f "$NETWORKD_DROPIN" ]; then
+        say "  drop-in networkd уже есть"
+    else
+        run "mkdir -p /etc/systemd/networkd.conf.d"
+        run "printf '[Network]\nManageForeignRoutes=no\nManageForeignRoutingPolicyRules=no\n' > $NETWORKD_DROPIN"
+    fi
+else
+    say "  systemd-networkd не используется — drop-in не нужен"
+fi
+if [ -n "${UPLINK_IF:-}" ] && [ "$GW_STATUS" = "confirmed" ] && ip link show "$UPLINK_IF" >/dev/null 2>&1; then
+    if ip rule list | grep -q "fwmark $TG_MARK lookup $UPLINK_TABLE"; then
+        say "  правило по метке есть"
+    else
+        run "ip rule add fwmark $TG_MARK lookup $UPLINK_TABLE"
+    fi
+    run "ip route replace default dev $UPLINK_IF table $UPLINK_TABLE"
+else
+    say "  аплинк не поднят или шлюз не помечен — политику ставит PostUp при подъёме"
+fi
 
 # ── 2. таблица nft — вся обвязка одним атомарным файлом ──────────────────────
 step "2. Таблица $GUARD_TABLE"
