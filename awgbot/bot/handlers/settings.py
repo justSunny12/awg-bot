@@ -21,6 +21,7 @@ from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import (BackupPassphrase, EmailSetup, GatewayToken,
                                 MigrationPort, SettingsInput)
 from awgbot.bot.handlers import mailwizard
+from awgbot.bot.notifier import send_notifications
 from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu,
                                         ask_tracked, cleanup_content)
 from awgbot.domain.services import ServiceError
@@ -433,7 +434,8 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         await cb.answer("Профиль не найден", show_alert=True)
         return
     new_state = not client.routing_allowed
-    await call(services.set_routing_allowed, client.id, new_state)
+    notes = await call(services.set_routing_allowed, client.id, new_state)
+    await send_notifications(cb.bot, notes)
     await _render(cb, "rt_users", services)
     await cb.answer(f"{client.name}: РФ-доступ "
                     + ("разрешён" if new_state else "запрещён"))

@@ -50,7 +50,7 @@ async def test_settings_input_moves_nav_and_cleans_prompt(services, fake_bot, mo
     assert typed.message_id in _deleted(fake_bot), "ввод человека остался в чате"
     assert prompt.message_id in _deleted(fake_bot), "вопрос остался в чате"
     answers = [s for s in typed.sent if s[0] == "answer"]
-    assert answers[0][1].startswith("✅ «Частота опроса» успешно изменена: ") and "→ <b>5</b> мин" in answers[0][1]
+    assert answers[0][1].startswith("✅ Частота опроса успешно изменена: ") and "→ <b>5</b> мин" in answers[0][1]
     assert answers[0][2] is None and answers[-1][2] is not None, "финишер без кнопок, раздел с кнопками"
 
 
@@ -64,7 +64,7 @@ async def test_settings_text_value_finisher_shows_old_and_new(services, fake_bot
     typed = _msg(fake_bot, ADMIN, "10.9.1.1")
     await sh.receive_value(typed, st, services)
     fin = [s for s in typed.sent if s[0] == "answer"][0][1]
-    assert fin == "✅ «DNS клиентов» успешно изменён: 1.1.1.1, 1.0.0.1 → <b>10.9.1.1</b>."
+    assert fin == "✅ DNS клиентов успешно изменён: 1.1.1.1, 1.0.0.1 → <b>10.9.1.1</b>."
 
 
 async def test_settings_bad_input_is_tracked_reask(services, fake_bot):
@@ -200,3 +200,51 @@ async def test_gateway_token_message_deleted_even_when_rejected(services, fake_b
 def test_admin_router_has_no_device_add_alias():
     assert not hasattr(ah, "admin_dev_add_alias")
     assert DeviceCB(action="add").pack() == "d:add:0"     # клиентская кнопка жива
+
+
+# ── удаление устройства клиентом: финишер, потом меню ────────────────────────
+
+async def test_client_delete_last_device_goes_to_main(services, fake_bot, make_active_client):
+    from awgbot.bot.callbacks import DelDeviceCB
+    cl = make_active_client(tg_id=6410, device_limit=2)
+    dc = services.add_device(cl.id, "Телефон")
+    cb, screen = _cb(fake_bot, cl.tg_id)
+    await ch.device_delete_confirm(cb, DelDeviceCB(device_id=dc.device_id, stage="confirm"),
+                                   cl, services)
+    edits = [s for s in screen.sent if s[0] == "edit_text"]
+    assert edits[-1][1] == "🗑 Устройство «Телефон» удалено. Теперь можно добавить до 2 устройств."
+    assert edits[-1][2] is None
+    answers = [s for s in screen.sent if s[0] == "answer"]
+    assert answers and answers[-1][2] is not None and "Устройства" not in answers[-1][1][:40]
+
+
+async def test_client_delete_one_of_two_returns_to_device_list(services, fake_bot,
+                                                                make_active_client):
+    from awgbot.bot.callbacks import DelDeviceCB
+    cl = make_active_client(tg_id=6411, device_limit=3)
+    a = services.add_device(cl.id, "A"); services.add_device(cl.id, "B")
+    cb, screen = _cb(fake_bot, cl.tg_id)
+    await ch.device_delete_confirm(cb, DelDeviceCB(device_id=a.device_id, stage="confirm"),
+                                   cl, services)
+    edits = [s for s in screen.sent if s[0] == "edit_text"]
+    assert "«A» удалено. Теперь можно добавить до 2 устройств." in edits[-1][1]
+    answers = [s for s in screen.sent if s[0] == "answer"]
+    assert "Твои устройства" in answers[-1][1]
+    labels = [b.text for row in answers[-1][2].inline_keyboard for b in row]
+    assert any("B" in l for l in labels)
+
+
+async def test_connect_method_after_creation_says_menu(services, fake_bot, make_active_client):
+    cl = make_active_client(tg_id=6412, device_limit=2)
+    st = FakeState(); await st.update_data(dev_name="Тел", for_friend=False)
+    typed = _msg(fake_bot, cl.tg_id, "0")
+    await ch.device_add_traffic(typed, cl, services, st)
+    answers = [s for s in typed.sent if s[0] == "answer" and s[2] is not None]
+    labels = [b.text for row in answers[-1][2].inline_keyboard for b in row]
+    assert "⬅️ В меню" in labels and "⬅️ Назад" not in labels
+
+
+def test_limit_changed_notice_uses_arrow():
+    from awgbot.bot import texts
+    assert texts.limit_changed_notice(1, 2) == "Максимальное количество устройств для тебя изменено: 1 → 2."
+    assert texts.limit_changed_notice(2, 0).endswith("2 → без ограничения.")

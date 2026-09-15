@@ -83,15 +83,11 @@ def _btn_suffix(dev) -> str:
 
 
 def _dev_emoji(d) -> str:
-    """Иконка типа устройства: 🛰 шлюз, 📲 передано другу, 📱 обычное.
-
-    Та же, что в текстовых списках (texts.device_emoji): в кнопках она про
-    шлюз не знала, и в «Мои устройства» он выглядел обычным устройством —
-    ровно там, где важно не перепутать его с телефоном.
-    """
-    if getattr(d, "is_gateway", 0):
-        return "🛰"
-    return "📲" if d.friend is not None else "📱"
+    """Иконка типа устройства — та же, что в текстовых списках (см.
+    texts.device_emoji): своя копия здесь про шлюз и про непринятый инвайт не
+    знала."""
+    from awgbot.bot.texts import device_emoji
+    return device_emoji(d)
 
 
 def client_devices(devices) -> InlineKeyboardMarkup:
@@ -330,14 +326,17 @@ def gateway_remove_confirm() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def connect_method_choice(device_id: int, back_target: str) -> InlineKeyboardMarkup:
+def connect_method_choice(device_id: int, back_target: str,
+                          back_label: str = "⬅️ Назад") -> InlineKeyboardMarkup:
     """«Как планируешь подключить устройство?» — ссылка/QR/файл по одному в
-    ряду. Для контекстов с DeviceCB (свои устройства, админ — любое устройство)."""
+    ряду. Для контекстов с DeviceCB (свои устройства, админ — любое устройство).
+    back_label — подпись выхода: после создания устройства возврат ведёт в
+    меню, и кнопка так и называется."""
     kb = InlineKeyboardBuilder()
     kb.button(text="🔗 Получить ссылку", callback_data=DeviceCB(action="gen_link", device_id=device_id))
     kb.button(text="🔳 Получить QR-код", callback_data=DeviceCB(action="gen_qr", device_id=device_id))
     kb.button(text="📄 Получить файл", callback_data=DeviceCB(action="gen_file", device_id=device_id))
-    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
+    kb.row(InlineKeyboardButton(text=back_label, callback_data=back_target))
     kb.adjust(1, 2)                 # ссылка / [QR|файл] (ряд «Назад» — отдельно)
     return kb.as_markup()
 

@@ -2607,15 +2607,28 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             return None
         return self.db.get_state(self._RT_LINK_KEY) != "0"
 
-    def set_routing_allowed(self, client_id: int, allowed: bool) -> None:
-        """Разрешение админа — верхний слой флага.
+    def set_routing_allowed(self, client_id: int, allowed: bool) -> list["Notification"]:
+        """Разрешение админа — верхний слой флага. Возвращает уведомление
+        владельцу (0 или 1).
 
-        Флаги устройств НЕ трогаем: отзыв должен гасить эффект, а не разрушать
-        настройку. Вернул разрешение — у человека всё как было, перенастраивать
-        нечего.
+        Выдача включает режим на ВСЕХ устройствах профиля сразу: человеку
+        обещано «функция включена для всех твоих устройств», и включать их
+        руками после выдачи приходилось админу. Отзыв флаги устройств НЕ
+        трогает: он гасит эффект, а не разрушает настройку.
         """
+        client = self.db.get_client(client_id)
+        if client is None:
+            return []
+        changed = bool(client.routing_allowed) != bool(allowed)
         self.db.update_client_fields(client_id, routing_allowed=1 if allowed else 0)
+        if allowed:
+            self.db.set_devices_routing(client_id, True)
         self.reconcile_routing()
+        if not changed or not client.tg_id:
+            return []
+        from awgbot.bot import texts                   # ленивый, как в соседних миксинах
+        return [Notification(client.tg_id, texts.ROUTING_GRANTED_NOTICE if allowed
+                             else texts.ROUTING_REVOKED_NOTICE)]
 
     def set_routing_all(self, client_id: int, on: bool) -> int:
         """Массовое включение/выключение по всему профилю. Возвращает, сколько

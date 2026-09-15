@@ -911,10 +911,10 @@ def test_device_counter_shows_visible_rows(services, mig, make_active_client):
     """«Включено на N из M» считается по видимым строкам: в окне переезда у
     каждого устройства их две, и сырой счёт показывал человеку удвоенное."""
     c = make_active_client(name="c", tg_id=7060)
-    a = services.add_device(c.id, "A")
-    services.add_device(c.id, "B")
-    services.set_routing_allowed(c.id, True)
-    services.set_routing_device(a.device_id, True)
+    services.add_device(c.id, "A")
+    b = services.add_device(c.id, "B")
+    services.set_routing_allowed(c.id, True)          # выдача включает все
+    services.set_routing_device(b.device_id, False)   # одно выключили руками
     services.migration_start()
 
     assert services.routing_device_counts(c.id) == (1, 2)

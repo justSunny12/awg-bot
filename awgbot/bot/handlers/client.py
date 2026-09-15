@@ -492,7 +492,7 @@ async def device_add_traffic(message: Message, client, services, state: FSMConte
     dev = await call(services.db.get_device, created.device_id)
     back = Menu(action="main").pack()
     await send_menu(message, services, texts.CONNECT_METHOD_ASK,
-                    kb.connect_method_choice(dev.id, back))
+                    kb.connect_method_choice(dev.id, back, back_label="⬅️ В меню"))
 
 
 # ── удаление (усиленное для единственного) ──────────────────────────────────
@@ -530,11 +530,19 @@ async def device_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
     except ServiceError as e:
         await cb.answer(str(e), show_alert=True)
         return
-    devices = await call(services.db.list_devices, client.id)
-    slots = await call(services.device_slots, client.id)
-    await edit(cb, "🗑 Устройство удалено.\n\n<b>📱Твои устройства</b>\n\n" + texts.device_slots_line(*slots),
-               kb.client_devices(devices))
     await cb.answer()
+    # итог — на месте вопроса и остаётся в чате; следом — «Мои устройства»,
+    # а если удалили последнее — сразу главное меню: пустой список с одной
+    # кнопкой «Назад» ничего не говорит
+    devices = await call(services.db.list_devices, client.id)
+    used, limit = await call(services.device_slots, client.id)
+    await edit(cb, texts.device_deleted(dev.name, used, limit), None)
+    if not devices:
+        await _show_main(cb.message, services, client)
+        return
+    await send_menu(cb.message, services,
+                    "<b>📱Твои устройства</b>\n\n" + texts.device_slots_line(used, limit),
+                    kb.client_devices(devices), keep_id=cb.message.message_id)
 
 
 # ── помощь с настройкой (меню; гайды — в handlers/guide.py) ──────────────────

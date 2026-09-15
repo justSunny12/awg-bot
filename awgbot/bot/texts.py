@@ -665,11 +665,13 @@ def traffic_profiles_text(rows, bot_username: str = "") -> str:
 
 
 def device_emoji(d) -> str:
-    """Иконка типа устройства — та же, что в списках: 🛰 шлюз, 📲 передано
-    другу, 📱 своё."""
+    """Иконка типа устройства — единая для текстов и кнопок: 🛰 шлюз,
+    ⏳ отдано другу, но инвайт ещё не принят, 📲 у друга, 📱 своё."""
     if getattr(d, "is_gateway", 0):
         return "🛰"
-    return "📲" if d.friend is not None else "📱"
+    if d.friend is None:
+        return "📱"
+    return "⏳" if d.friend.status == "pending" else "📲"
 
 
 # Списки с эмодзи в начале строк: подряд строки визуально налезают друг на
@@ -1239,6 +1241,21 @@ ROUTING_CLEAR_CONFIRM = (
 ROUTING_UNAVAILABLE = ("Режим сейчас недоступен — идут работы на стороне сервера. "
                        "Попробуй позже.")
 
+# Владельцу профиля — админ выдал/отозвал разрешение на РФ-доступ.
+ROUTING_GRANTED_NOTICE = (
+    "К твоей подписке добавлена функция РФ-доступа 🎉\n"
+    "С ней можно пользоваться РФ-приложениями и сайтами, не выключая VPN.\n"
+    "Функция автоматически включена для всех твоих устройств — выключить "
+    "(ну мало ли вдруг) можешь сам через меню бота.\n\n"
+    "Если какой-то сайт продолжает ругаться на включённый VPN — добавь его в "
+    "список обхода через пункт меню бота «Доступ к РФ-сервисам»."
+)
+ROUTING_REVOKED_NOTICE = (
+    "Функция РФ-доступа больше не входит в твою подписку 😔\n"
+    "Для доступа к РФ-сайтам и приложениям, ругающимся на VPN, теперь придётся "
+    "его выключать."
+)
+
 
 def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
                     routing_ok: bool = None) -> str:
@@ -1266,6 +1283,16 @@ def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
         else:
             text += f"\n\nУстройств добавлено: {used} из {limit}."
     return text
+
+
+def device_deleted(name: str, used: int, limit: int) -> str:
+    """Финишер после удаления устройства клиентом: что удалено и сколько теперь
+    можно добавить. Остаётся в чате, меню приходит следом."""
+    head = f"🗑 Устройство «{_e(name)}» удалено."
+    free = limit - used
+    if limit == 0 or free <= 0:
+        return head
+    return head + f" Теперь можно добавить до {free} {plural_ru(free, 'устройства', 'устройств', 'устройств')}."
 
 
 def device_slots_line(used: int, limit: int) -> str:
@@ -1333,8 +1360,7 @@ UNMANAGED_DEVICE_DIALOG = (
 def limit_changed_notice(old: int, new: int) -> str:
     def _fmt(v):
         return "без ограничения" if v == 0 else str(v)
-    return (f"Максимальное количество устройств для тебя изменено. "
-            f"Было: {_fmt(old)}, стало: {_fmt(new)}.")
+    return f"Максимальное количество устройств для тебя изменено: {_fmt(old)} → {_fmt(new)}."
 
 def plural_ru(n: int, one: str, few: str, many: str) -> str:
     """Русское склонение по числу — переиспользует хелпер из timeutil
@@ -2118,11 +2144,11 @@ def settings_changed(key: str, old, new) -> str:
         unit = " " + unit.split(" (")[0]
     verb = _CHANGED[_SETTINGS_GENDER.get(key, "m")]
     old_s = _e(str(old)) if old not in (None, "", []) else "—"
-    return f"✅ «{_e(label)}» успешно {verb}: {old_s} → <b>{_e(str(new))}</b>{_e(unit)}."
+    return f"✅ {_e(label)} успешно {verb}: {old_s} → <b>{_e(str(new))}</b>{_e(unit)}."
 
 
 def settings_ssh_allow_added(entries: list) -> str:
-    return ("✅ «Адреса для SSH»: добавлено "
+    return ("✅ Адреса для SSH: добавлено "
             + ", ".join(f"<b>{_e(x)}</b>" for x in entries) + ".")
 
 

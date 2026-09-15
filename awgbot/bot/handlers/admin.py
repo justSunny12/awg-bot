@@ -1344,7 +1344,7 @@ async def self_add_traffic(message: Message, services, state: FSMContext):
     dev = await call(services.db.get_device, created.device_id)
     back = Menu(action="main").pack()
     await send_menu(message, services, texts.CONNECT_METHOD_ASK,
-                    kb.connect_method_choice(dev.id, back))
+                    kb.connect_method_choice(dev.id, back, back_label="⬅️ В меню"))
 
 
 @router.callback_query(Menu.filter(F.action == "devices"))

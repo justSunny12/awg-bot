@@ -865,3 +865,51 @@ async def test_feature_toggle_blocks_both_editors_and_keeps_device_flags(
                                   services, FakeState())
     text, labels = last_screen(nav)
     assert "a.ru" in "".join(labels) and "b.ru" in "".join(labels)
+
+
+# ── выдача разрешения: включает все устройства и уведомляет владельца ────────
+
+async def test_grant_enables_all_devices_and_notifies_owner(services, make_active_client,
+                                                            fake_bot, monkeypatch):
+    """Админ выдал доступ — режим сразу на всех устройствах профиля (обещано в
+    уведомлении), владельцу приходит уведомление. Отзыв — уведомление, флаги
+    устройств не трогаются; повторное нажатие того же — без уведомления."""
+    from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.callbacks import SetCB
+    from awgbot.bot import texts
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    c = make_active_client(tg_id=150)
+    services.add_device(c.id, "Тел"); services.add_device(c.id, "Ноут")
+    assert services.routing_device_counts(c.id) == (0, 2)
+
+    cb, _ = _cb(fake_bot, config.ADMIN_ID)
+    fake_bot.records.clear()
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow", val=str(c.id)), services)
+    assert services.routing_device_counts(c.id) == (2, 2)
+    sent = [r for r in fake_bot.records if r[0] == "send_message" and r[1] == 150]
+    assert sent and sent[0][2] == texts.ROUTING_GRANTED_NOTICE
+
+    services.set_routing_device([d for d in services.db.list_devices(c.id)][0].id, False)
+    cb, _ = _cb(fake_bot, config.ADMIN_ID)
+    fake_bot.records.clear()
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow", val=str(c.id)), services)
+    assert services.db.get_client(c.id).routing_allowed == 0
+    assert services.routing_device_counts(c.id) == (1, 2), "отзыв стёр флаги устройств"
+    sent = [r for r in fake_bot.records if r[0] == "send_message" and r[1] == 150]
+    assert sent and sent[0][2] == texts.ROUTING_REVOKED_NOTICE
+
+    assert services.set_routing_allowed(c.id, False) == [], "то же состояние — молча"
+
+
+def test_pending_friend_device_has_hourglass_icon(services, make_active_client):
+    from awgbot.bot import keyboards as kb, texts
+    c = make_active_client(tg_id=151, device_limit=3)
+    services.add_device(c.id, "Своё")
+    friend = services.add_device(c.id, "Другу")
+    services.make_device_friendly(friend.device_id)
+    devs = {d.name: d for d in services.db.list_devices(c.id)}
+    assert texts.device_emoji(devs["Своё"]) == "📱"
+    assert texts.device_emoji(devs["Другу"]) == "⏳"
+    labels = [b.text for row in kb.client_devices(devs.values()).inline_keyboard for b in row]
+    assert any(l.startswith("⏳ Другу") for l in labels) and any(l.startswith("📱 Своё") for l in labels)
