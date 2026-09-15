@@ -232,14 +232,15 @@ def test_new_version_notifies_even_after_previous_notified(services, monkeypatch
 
 def test_skipped_steps_are_links_to_their_release_pages():
     """Прыжок через ступени: каждая пропущенная версия — ссылка на свою
-    страницу релиза (changelog), плюс ссылка на разницу целиком; хвост длиннее
-    десяти — свёрнут в «ещё N». Всё вместе — под лимит Telegram."""
+    страницу релиза (changelog); ссылки на diff кода нет — админу нужен
+    changelog, а не исходники; хвост длиннее десяти — свёрнут в «ещё N». Всё
+    вместе — под лимит Telegram."""
     def rel(i):
         return updates.Release(tag=f"v1.{i}.0", version=(1, i, 0), body="", asset_url=None,
                                sha256=None, title=f"шаг {i}")
     text = texts.update_available("v1.3.0", "- x", installed="1.1.0", skipped=(rel(2),))
     assert f'href="https://github.com/{cfg.UPDATES_REPO}/releases/tag/v1.2.0">v1.2.0 — шаг 2</a>' in text
-    assert f'href="https://github.com/{cfg.UPDATES_REPO}/compare/v1.1.0...v1.3.0"' in text
+    assert "/compare/" not in text, "ссылка на diff кода пугает, а не помогает"
     assert "Список изменений" in text and "- x" in text
 
     many = texts.update_available("v1.20.0", "- y" * 10, installed="1.1.0",

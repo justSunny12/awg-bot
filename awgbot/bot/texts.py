@@ -1563,9 +1563,9 @@ def _ver(v: str) -> str:
 
 def _skipped_block(installed: str, tag: str, skipped) -> str:
     """Пропущенные ступени между установленной и целью: по строке на релиз —
-    тег и заголовок ссылкой на его страницу (changelog) на GitHub, плюс ссылка
-    на полную разницу. Пусто — ступеней нет. Строк не больше десятка: длинный
-    хвост уезжает в ссылку на разницу."""
+    тег и заголовок ссылкой на его страницу (changelog) на GitHub. Ссылки на
+    diff кода нет намеренно: админ читает changelog, а не исходники. Пусто —
+    ступеней нет. Строк не больше десятка: длинный хвост сворачивается."""
     from awgbot.core import config
     skipped = list(skipped or ())
     if not skipped:
@@ -1578,9 +1578,7 @@ def _skipped_block(installed: str, tag: str, skipped) -> str:
         lines.append(f"• <a href=\"{_e(f'{repo}/releases/tag/{r.tag}')}\">{_e(label)}</a>")
     if len(skipped) > len(shown):
         lines.insert(0, f"• … ещё {len(skipped) - len(shown)}")
-    diff = f"{repo}/compare/{_ver(installed)}...{_ver(tag)}"
-    return ("Вместе с ней встанут пропущенные версии:\n" + "\n".join(lines)
-            + f"\n<a href=\"{_e(diff)}\">Все изменения одним списком</a>\n")
+    return "Вместе с ней встанут пропущенные версии:\n" + "\n".join(lines) + "\n"
 
 
 def update_available(tag: str, body: str, installed: str | None = None,
