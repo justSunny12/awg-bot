@@ -89,7 +89,7 @@ def test_traffic_limit_device_ask_enrichment():
     assert "в пределах лимита профиля" not in unlimited
     assert unlimited.endswith("без ограничения.")
     limited = texts.traffic_limit_device_ask(50 * 1024**3)
-    assert "в пределах лимита профиля: 50.00 ГБ" in limited
+    assert "в пределах лимита профиля: 50 ГБ" in limited
 
 
 def test_device_created_report_variants():
@@ -101,7 +101,7 @@ def test_device_created_report_variants():
     r = texts.device_created_report("Ноут", client_name="Вася", device_count=2,
                                     max_devices=5, dev_limit_bytes=50*GB, profile_limit_bytes=100*GB)
     assert r == ("✅ Устройство «Ноут» создано для профиля «Вася».\n"
-                 "Потребление устройства: 50.00 ГБ.\nКоличество устройств: 2/5")
+                 "Потребление устройства: 50 ГБ.\nКоличество устройств: 2/5")
     # без лимита устройства, профиль с лимитом
     r2 = texts.device_created_report("Тел", device_count=3, max_devices=5, profile_limit_bytes=100*GB)
     assert r2 == ("✅ Устройство «Тел» создано.\n"

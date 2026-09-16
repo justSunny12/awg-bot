@@ -27,16 +27,33 @@ def _e(s) -> str:
 # Единицы
 # ─────────────────────────────────────────────────────────────────────────────
 
+def gb(num_bytes: int) -> str:
+    """Байты → гигабайты числом: арифметическое округление до сотых,
+    незначащие нули долой — «8.99», «50», «0.5», «0». Единица везде одна (ГБ),
+    ставит её вызывающий: так «8.99 из 50 ГБ» не повторяет её дважды."""
+    from decimal import Decimal, ROUND_HALF_UP
+    d = (Decimal(int(num_bytes or 0)) / Decimal(_BYTES_PER_GB)).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP)
+    s = f"{d:f}"
+    return s.rstrip("0").rstrip(".") if "." in s else s
+
+
 def human_bytes(n: int) -> str:
-    """Байты → человекочитаемо (Б/КБ/МБ/ГБ/ТБ)."""
-    n = int(n or 0)
-    for unit in ("Б", "КБ", "МБ", "ГБ", "ТБ"):
-        if n < 1024 or unit == "ТБ":
-            if unit == "Б":
-                return f"{n} Б"
-            return f"{n:.1f} {unit}"
-        n /= 1024
-    return f"{n:.1f} ТБ"
+    """Объём с единицей — всегда в ГБ («0.01 ГБ», не «8.0 МБ»): одна шкала на
+    все экраны, чтобы расход и лимит читались одной меркой."""
+    return f"{gb(n)} ГБ"
+
+
+def used_of_limit(used: int, limit_bytes: int, note: str = "") -> str:
+    """«8.99 из 50 ГБ»; без лимита — «8.99 ГБ». note — чей лимит, в скобках:
+    «8.99 из 50 ГБ (лимит устройства)»; лимит профиля — без пометки."""
+    if not limit_bytes:
+        return f"{gb(used)} ГБ"
+    return f"{gb(used)} из {gb(limit_bytes)} ГБ" + (f" ({note})" if note else "")
+
+
+def _updown(rx: int, tx: int) -> str:
+    return f"(↑ {gb(rx)} | ↓ {gb(tx)} ГБ)"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -51,8 +68,8 @@ _BYTES_PER_GB = 1024 ** 3
 
 
 def gb_str(num_bytes: int) -> str:
-    """Лимит в ГБ, 2 знака: 100 → «100.00 ГБ». 0 трактуется вызывающим как безлимит."""
-    return f"{num_bytes / _BYTES_PER_GB:.2f} ГБ"
+    """Лимит с единицей: «100 ГБ», «0.5 ГБ». 0 трактуется вызывающим как безлимит."""
+    return f"{gb(num_bytes)} ГБ"
 
 
 def _dev_traffic_line(dev_limit_bytes: int, profile_limit_bytes: int, *, own: bool) -> str:
@@ -96,31 +113,21 @@ def device_created_report(dev_name: str, *, client_name: str = None,
             + _device_count_line(device_count, max_devices))
 
 
-def _limit_suffix(limit_bytes: int) -> str:
-    """Хвост «(лимит X ГБ)» / «(без ограничения)»."""
-    if limit_bytes == 0:
-        return "(без ограничения)"
-    return f"(лимит {gb_str(limit_bytes)})"
-
-
 def consumption_line(used_sum: int, limit_bytes: int, *, blocked: bool,
                      until: str | None = None) -> str:
-    """Строка потребления для клиента/друга: сумма расхода + лимит/статус.
-    used_sum — сумма up+down. blocked — исчерпан ли лимит (доступ приостановлен).
-    until — дата снятия («01.08.2026»)."""
+    """Строка потребления устройства у клиента/друга: «8.99 из 50 ГБ (лимит
+    устройства)», без своего лимита — «8.99 ГБ». blocked — лимит исчерпан
+    (доступ приостановлен), until — дата снятия («01.08.2026»)."""
+    line = f"Потребление за месяц: {used_of_limit(used_sum, limit_bytes, 'лимит устройства')}"
     if blocked and limit_bytes:
-        tail = f"лимит {gb_str(limit_bytes)}, исчерпан"
-        if until:
-            tail += f" — приостановлено до {until}"
-        return f"Потребление за месяц: {human_bytes(used_sum)} ({tail})"
-    return f"Потребление за месяц: {human_bytes(used_sum)} {_limit_suffix(limit_bytes)}"
+        line += " — исчерпан" + (f", приостановлено до {until}" if until else "")
+    return line
 
 
 def consumption_line_admin(rx: int, tx: int, limit_bytes: int) -> str:
-    """Строка потребления для админа: тотал + разбивка ↑↓ + лимит."""
-    total = int(rx) + int(tx)
-    return (f"Потребление: {human_bytes(total)} "
-            f"(↑ {human_bytes(rx)} | ↓ {human_bytes(tx)}) {_limit_suffix(limit_bytes)}")
+    """Строка потребления устройства для админа: то же + разбивка ↑↓."""
+    return (f"Потребление: {used_of_limit(int(rx) + int(tx), limit_bytes, 'лимит устройства')} "
+            f"{_updown(rx, tx)}")
 
 
 def client_total_line(rx: int, tx: int, limit_bytes: int, bonus_bytes: int,
@@ -128,16 +135,13 @@ def client_total_line(rx: int, tx: int, limit_bytes: int, bonus_bytes: int,
     """Тотал клиента. С доп.квотой показываем разбивку «лимит + доп. до конца
     месяца» и клиенту, и админу (по договорённости — не словом «бонус»)."""
     total = int(rx) + int(tx)
-    if limit_bytes == 0:
-        base = "без ограничения"
-    elif bonus_bytes:
-        base = f"лимит {gb_str(limit_bytes)} + {gb_str(bonus_bytes)} до конца месяца"
+    if limit_bytes and bonus_bytes:
+        base = f"{gb(total)} из {gb(limit_bytes)} + {gb(bonus_bytes)} ГБ до конца месяца"
     else:
-        base = f"лимит {gb_str(limit_bytes)}"
+        base = used_of_limit(total, limit_bytes)
     if for_admin:
-        return (f"Потребление профиля за месяц: {human_bytes(total)} "
-                f"(↑ {human_bytes(rx)} | ↓ {human_bytes(tx)}) ({base})")
-    return f"Потребление за месяц: {human_bytes(total)} ({base})"
+        return f"Потребление профиля за месяц: {base} {_updown(rx, tx)}"
+    return f"Потребление за месяц: {base}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -372,12 +376,12 @@ def held_device_card(dev, owner_limit_bytes: int) -> str:
     used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
     mask = int(dev.block_reason)
     if dev.traffic_limit:
-        tail = f"лимит устройства {gb_str(dev.traffic_limit)}"
+        line = used_of_limit(used, dev.traffic_limit, "лимит устройства")
     elif owner_limit_bytes:
-        tail = f"лимит профиля владельца {gb_str(owner_limit_bytes)}"
+        line = used_of_limit(used, owner_limit_bytes)         # лимит профиля владельца
     else:
-        tail = "без ограничения"
-    parts = [device_line(dev), f"Потребление за месяц: {human_bytes(used)} — {tail}"]
+        line = used_of_limit(used, 0)
+    parts = [device_line(dev), f"Потребление за месяц: {line}"]
     reasons = blocks.device_reasons_ru(mask, for_admin=False)
     if reasons:
         parts.append("⛔ Заблокировано: " + ", ".join(reasons))
@@ -860,7 +864,7 @@ def _deep_link(bot_username: str, payload: str, label: str) -> str:
 
 
 def _traffic_triplet(rx: int, tx: int) -> str:
-    return f"{human_bytes(rx + tx)} (↑ {human_bytes(rx)} | ↓ {human_bytes(tx)})"
+    return f"{human_bytes(rx + tx)} {_updown(rx, tx)}"
 
 
 def traffic_profiles_text(rows, bot_username: str = "") -> str:
@@ -983,8 +987,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         # Подпись — deep-link в разбивку по профилям: единственный способ сделать
         # текст кликабельным, кнопка под панелью загромождала бы меню.
         label = _deep_link(bot_username, "traffic", "📊 Потребление за месяц (все)")
-        groups.append(f"{label}: {human_bytes(rx + tx)} "
-                      f"(↑ {human_bytes(rx)} | ↓ {human_bytes(tx)})")
+        groups.append(f"{label}: {human_bytes(rx + tx)} {_updown(rx, tx)}")
     mig = migration_panel_line(migration)
     if mig:
         groups.append(mig)
@@ -2793,7 +2796,7 @@ def gateway_panel(st) -> str:
     hw.append(f"{pad}<i>(обновлено {fresh})</i>")
     parts += hw + ["", f"🌡 Монитор здоровья: {_gw_health_summary(st.checks)}", ""]
     parts.append(f"📊 Потребление за месяц: {human_bytes(st.month_rx + st.month_tx)} "
-                 f"(↑ {human_bytes(st.month_rx)} | ↓ {human_bytes(st.month_tx)})")
+                 f"{_updown(st.month_rx, st.month_tx)}")
     return "\n".join(parts)
 
 

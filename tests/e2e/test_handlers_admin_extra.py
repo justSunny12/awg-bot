@@ -216,7 +216,7 @@ async def test_panel_traffic_line_is_a_deep_link(services, fake_bot):
     out = texts.admin_panel({"ok": True, "traffic_rx": 1, "traffic_tx": 2},
                             bot_username="awg_test_bot")
     assert 'href="https://t.me/awg_test_bot?start=traffic">📊 Потребление за месяц (все)</a>' in out
-    assert "Потребление за месяц (все)</a>: 3 Б" in out
+    assert "Потребление за месяц (все)</a>: 0 ГБ (↑ 0 | ↓ 0 ГБ)" in out
 
 
 async def test_start_traffic_opens_profiles_and_removes_the_command(
@@ -287,7 +287,7 @@ async def test_devices_breakdown_lists_real_devices_with_traffic(services, make_
     msg = FakeMessage(text=f"/start traffic-{c.id}", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await ah.admin_start(msg, services, FakeState(), command=_cmd(f"traffic-{c.id}"))
     sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and "🔴 Телефон: 8.0 МБ (↑ 3.0 МБ | ↓ 5.0 МБ)" in sent[-1]
+    assert sent and "🔴 Телефон: 0.01 ГБ (↑ 0 | ↓ 0 ГБ)" in sent[-1]
 
 
 def test_transfer_buttons_are_split_by_role(services, make_active_client):

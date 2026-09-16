@@ -51,7 +51,7 @@ async def test_guest_devices_and_card(services, fake_bot, make_active_client):
     cb, nav = _cb(fake_bot, 98101)
     await fh.friend_open(cb, FriendCB(action="open", device_id=dc.device_id), guest, services)
     text, labels = last_screen(nav)
-    assert "Телефон" in text and "лимит профиля владельца 100.00 ГБ" in text
+    assert "Телефон" in text and "Потребление за месяц: 0 из 100 ГБ" in text
     assert '👤 Получено от <a href="tg://user?id=8101">Вася</a>' in text
     assert labels == ["🔌 Данные для подключения", "🛑 Заблокировать", "🗑 Удалить", "⬅️ Назад"]
 
