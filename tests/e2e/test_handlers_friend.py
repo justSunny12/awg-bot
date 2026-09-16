@@ -187,3 +187,28 @@ async def test_owner_devices_screen_lists_lent_out_without_toggle(
     cb, _ = _cb(fake_bot, 8111)
     await rh.routing_lent_row(cb)
     assert cb.answers[-1][1] is True
+
+
+async def test_holder_toggles_held_device_owner_cannot(services, fake_bot, make_active_client,
+                                                        monkeypatch):
+    """Переключатель — у держателя; владелец своё переданное не трогает даже
+    со старой кнопки, админ из чужой панели — тоже."""
+    from awgbot.core import config
+    from awgbot.bot.handlers import routing as rh
+    from awgbot.bot.callbacks import RoutingCB
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    owner = make_active_client(tg_id=8120, device_limit=3)
+    services.set_routing_allowed(owner.id, True)
+    dc, guest = _lend(services, owner, 98120, "Тел")
+    assert services.db.get_device(dc.device_id).routing_on == 1
+    cb, _ = _cb(fake_bot, 98120)
+    await rh.routing_device_toggle(cb, RoutingCB(action="dev", ref=dc.device_id), guest, services)
+    assert cb.answers[-1][0] == "выключено"
+    assert services.db.get_device(dc.device_id).routing_on == 0
+    owner = services.db.get_client(owner.id)
+    cb, _ = _cb(fake_bot, 8120)
+    await rh.routing_device_toggle(cb, RoutingCB(action="dev", ref=dc.device_id), owner, services)
+    assert cb.answers[-1][1] is True and services.db.get_device(dc.device_id).routing_on == 0
+    cb, _ = _cb(fake_bot, config.ADMIN_ID)
+    await rh.routing_device_toggle(cb, RoutingCB(action="dev", ref=dc.device_id), None, services)
+    assert cb.answers[-1][1] is True and services.db.get_device(dc.device_id).routing_on == 0

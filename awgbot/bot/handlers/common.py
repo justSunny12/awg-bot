@@ -284,13 +284,15 @@ async def send_device_config(target: Message, services, dev, kind: str) -> None:
 
 
 async def remove_device_and_notify(bot, services, device_id: int) -> None:
-    """Удаляет устройство и, если у него был активный друг, уведомляет его, что
-    доступ прекращён. Обёртка над services.remove_device (тот возвращает
-    friend_tg_id или None)."""
+    """Удаляет устройство и, если его держал кто-то другой, уведомляет
+    держателя, что доступ прекращён — с указанием, кто удалил: владелец или
+    администратор. Обёртка над services.remove_device (тот возвращает tg
+    держателя или None)."""
     from awgbot.bot import texts
+    dev = await call(services.db.get_device, device_id)
     friend_tg = await call(services.remove_device, device_id)
-    if friend_tg:
-        await notify_one(bot, friend_tg, texts.FRIEND_DEVICE_DELETED_GENERIC)
+    if friend_tg and dev is not None:
+        await notify_one(bot, friend_tg, texts.lent_device_deleted_by_admin_notice(dev))
 
 
 async def drop_message(cb: CallbackQuery) -> None:

@@ -1069,10 +1069,14 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             # трафик и заархивирует устройство не тому человеку.
             for peer in self._device_pair(dev):
                 self.db.reassign_device(peer.id, new_client_id)
-                # держатель стал владельцем — держать нечего; иной держатель
-                # остаётся (устройство сменило дарителя)
-                if dev.holder_client_id == new_client_id:
+                # Держатель снимается всегда: устройство переехало к другому
+                # владельцу, а держать чужое можно только от одного дарителя
+                # (docs/guest-role.md) — оставить его значило бы нарушить это
+                # правило руками админа. Стал владельцем сам — держать нечего.
+                if dev.holder_client_id is not None:
                     self.db.set_device_holder(peer.id, None)
+        if dev.holder_client_id is not None and dev.holder_client_id != new_client_id:
+            self.guest_close_if_empty(dev.holder_client_id)
         # счётчики ПОСЛЕ перепривязки (живой COUNT — уже актуальны)
         donor_count = self.db.count_devices(donor.id) if donor else 0
         recip_count = self.db.count_devices(new_client_id)
@@ -1085,6 +1089,9 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             "recipient": {
                 "tg_id": client.tg_id, "count": recip_count, "limit": new_limit,
             },
+            # прежний держатель (если был и не стал владельцем) — ему сказать
+            "holder_tg": (dev.holder_tg_id
+                          if dev.holder_client_id not in (None, new_client_id) else None),
         }
 
     def ensure_admin_client(self) -> int:
@@ -1976,6 +1983,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
                 friend_tg = (dev.friend_tg_id
                              if dev.friend_status == FriendStatus.ACTIVE else None)
                 self.db.delete_device(dev.id)
+                if dev.holder_client_id is not None:
+                    self.guest_close_if_empty(dev.holder_client_id)   # гость без устройств
                 if client and not client.is_service:
                     notifications.append(Notification(
                         config.ADMIN_ID,

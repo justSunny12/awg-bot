@@ -147,12 +147,22 @@ async def routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
     client_id, — профиль достаём через устройство. Экран перерисовывается на
     месте."""
     dev = await call(services.db.get_device, callback_data.ref)
-    # Чужое устройство у клиента — отказ молча по существу: колбэк мог прийти
-    # из старого сообщения, а подтверждать чужой id ответом «нет такого» незачем.
-    if dev is None or (client is not None and dev.client_id != client.id):
+    # Переключает СУБЪЕКТ устройства (docs/guest-role.md): держатель, а если
+    # его нет — владелец. Чужое у клиента и своё переданное у владельца — отказ
+    # молча по существу: колбэк мог прийти из старого сообщения, а объяснять
+    # чужой id ответом «нет такого» незачем.
+    if dev is None:
         await cb.answer(texts.ROUTING_UNAVAILABLE, show_alert=True)
         return
-    profile = await _profile(services, client, dev.client_id)
+    subject_id = dev.holder_client_id if dev.is_lent else dev.client_id
+    if client is not None and subject_id != client.id:
+        await cb.answer(texts.ROUTING_UNAVAILABLE, show_alert=True)
+        return
+    if client is None and dev.is_lent:
+        # админ из чужой панели: переданным управляет держатель
+        await cb.answer("Этим устройством управляет тот, кому оно передано", show_alert=True)
+        return
+    profile = await _profile(services, client, subject_id)
     if not await _guard(cb, services, profile):
         return
     new_state = await call(services.toggle_routing_device, dev.id)

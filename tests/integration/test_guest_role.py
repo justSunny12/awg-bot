@@ -191,3 +191,41 @@ def test_admin_cannot_take_a_friend_code(services, make_active_client):
     dc = services.add_device(owner.id, "A")
     res = services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=config.ADMIN_ID)
     assert not res.ok and res.reason == "already_user"
+
+
+# ── ревью 17.09.2026: дыры, найденные сверкой с концептом ────────────────────
+
+def test_sweep_of_the_last_held_device_closes_the_guest(services, make_active_client, monkeypatch):
+    """Сверка удалила пропавший с сервера пир: держатель-гость без устройств
+    обязан закрыться так же, как при удалении кнопкой."""
+    owner = make_active_client(tg_id=920)
+    dc, res = _lend(services, owner, "Тел", 9920)
+    guest_id = res.holder.id
+    monkeypatch.setattr(config, "MISSING_SWEEPS_THRESHOLD", 1)
+    from awgbot.infra import awg as infra_awg
+    monkeypatch.setattr(infra_awg, "read_file", lambda p: "[Interface]\nPrivateKey = x\n")
+    monkeypatch.setattr(infra_awg, "read_server_params",
+                        lambda force=False, iface=None: {"psk": "PSK=="})
+    for _ in range(3):
+        services.reconcile_peers()
+    assert services.db.get_device(dc.device_id) is None, "сверка не удалила пропавший пир"
+    assert services.db.get_client(guest_id) is None, "гость остался без устройств и не закрылся"
+
+
+def test_admin_reassign_detaches_the_holder_and_keeps_one_donor_rule(services, make_active_client):
+    """Админ перенёс переданное устройство к третьему профилю: держатель его
+    теряет (иначе он держал бы устройства от двух дарителей), гость без
+    устройств закрывается, прежнему держателю есть кому сказать."""
+    owner = make_active_client(tg_id=921, device_limit=3)
+    third = make_active_client(tg_id=922, device_limit=3)
+    dc, res = _lend(services, owner, "Тел", 9921)
+    info = services.reassign_device(dc.device_id, third.id)
+    dev = services.db.get_device(dc.device_id)
+    assert dev.client_id == third.id and dev.holder_client_id is None
+    assert info["holder_tg"] == 9921
+    assert services.db.get_client(res.holder.id) is None
+    # держатель стал владельцем — держать нечего, уведомлять некого
+    holder = make_active_client(tg_id=923, device_limit=3)
+    d2, _ = _lend(services, owner, "Ещё", 923)
+    info = services.reassign_device(d2.device_id, holder.id)
+    assert info["holder_tg"] is None and services.db.get_device(d2.device_id).holder_client_id is None

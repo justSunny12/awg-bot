@@ -1114,6 +1114,9 @@ async def _do_reassign(cb, services, device_id, client_id, *, add_slot: bool):
     if donor and donor["tg_id"]:
         await notify_one(cb.bot, donor["tg_id"],
                          texts.reassign_donor_notice(info["name"], donor["count"], donor["limit"]))
+    # держатель переданного устройства теряет его: переезд к другому владельцу
+    if info.get("holder_tg"):
+        await notify_one(cb.bot, info["holder_tg"], texts.lent_device_reassigned_notice(info["name"]))
     await cb.answer()
 
 

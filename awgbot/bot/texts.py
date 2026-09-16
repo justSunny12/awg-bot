@@ -365,6 +365,19 @@ def lent_device_deleted_by_holder_notice(dev, used: int, limit: int) -> str:
             f"{tg_link(dev.holder_name, dev.holder_tg_id)}, удалено по его запросу.\n{now}.")
 
 
+def lent_device_deleted_by_admin_notice(dev) -> str:
+    """Держателю: переданное ему устройство удалил администратор."""
+    return (f"Устройство «{_e(dev.name)}», которым ты управлял, удалено администратором — "
+            "доступ по нему больше не работает.")
+
+
+def lent_device_reassigned_notice(name: str) -> str:
+    """Держателю: администратор перенёс устройство в другой профиль."""
+    return (f"Устройство «{_e(name)}», которым ты управлял, администратор перенёс в другой "
+            "профиль — управлять им через бота ты больше не можешь. Само подключение "
+            "работает, пока новый владелец его не удалит.")
+
+
 def lent_device_deleted_by_owner_notice(dev) -> str:
     """Держателю: владелец удалил переданное ему устройство."""
     return (f"Устройство «{_e(dev.name)}», которым ты управлял, удалено владельцем "
@@ -444,30 +457,11 @@ def block_device_ask(name: str) -> str:
             "его не разблокируешь.")
 
 
-def friend_panel(dev, host_client) -> str:
-    """Панель друга: инфо про УСТРОЙСТВО (не про юзера) + подписка хозяина.
-    Потребление — суммой (up+down), с лимитом устройства и статусом блокировки."""
-    from awgbot.core import blocks
-    online = timeutil.handshake_is_online(dev.last_handshake)
-    head = f"📱 Устройство: {_e(dev.name)}"
-    online_line = "Сейчас: " + ("🟢 онлайн" if online else "🔴 оффлайн")
-    sub = subscription_block(host_client, show_pause=False)
-    used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
-    blocked = bool(int(dev.block_reason) & int(blocks.DEVICE_TRAFFIC_ANY))
-    tr = consumption_line(used, dev.traffic_limit, blocked=blocked,
-                          until=timeutil.first_of_next_month_str() if blocked else None)
-    parts = [f"{head}\n{online_line}", sub, tr]
-    # причины блокировки — как у клиента (тихий админ-блок другу не виден)
-    reasons = blocks.device_reasons_ru(int(dev.block_reason), for_admin=False)
-    if reasons:
-        parts.append("⛔ Заблокировано: " + ", ".join(reasons))
-    return "\n\n".join(parts)
-
-
+# Единственный, кому код друга не даётся, — администратор: все устройства
+# сервера и так под его управлением.
 FRIEND_ALREADY_USER = (
-    "Ты уже пользуешься этим ботом как владелец доступа 🙂\n"
-    "Одному человеку — одна роль. Приглашение друга можно активировать только "
-    "с аккаунта, у которого ещё нет доступа."
+    "Ты администратор — принимать чужие устройства незачем: все устройства "
+    "сервера и так под твоим управлением 🙂"
 )
 
 
@@ -518,11 +512,6 @@ ADD_FOR_WHOM = (
     "<b>\U0001F464 Другу</b> — сгенерирую приглашение в бота. Друг активирует его "
     "и сможет <b>сам</b> получать данные для подключения здесь, в боте — "
     "тебе не придётся пересылать их ему вручную."
-)
-
-
-FRIEND_DEVICE_DELETED_GENERIC = (
-    "Устройство, которым ты управлял, удалено владельцем — доступ по нему больше не работает."
 )
 
 
