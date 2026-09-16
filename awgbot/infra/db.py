@@ -1898,8 +1898,15 @@ class Database:
         """
         rows = self._connection().execute(
             "SELECT id FROM clients "
-            " WHERE is_service = 0 AND (routing_allowed = 1 OR tg_id = ?)",
-            (admin_tg_id,)).fetchall()
+            " WHERE is_service = 0 AND (routing_allowed = 1 OR tg_id = ?) "
+            "UNION "
+            # держатели чужих устройств от разрешённого владельца — свой набор
+            # у каждого субъекта (docs/guest-role.md)
+            "SELECT DISTINCT d.holder_client_id FROM devices d "
+            "  JOIN clients oc ON oc.id = d.client_id "
+            " WHERE d.holder_client_id IS NOT NULL "
+            "   AND (oc.routing_allowed = 1 OR oc.tg_id = ?)",
+            (admin_tg_id, admin_tg_id)).fetchall()
         return sorted(int(r["id"]) for r in rows)
 
     def routing_active_addresses(self, admin_tg_id: int = 0) -> dict[int, list[str]]:
@@ -1915,29 +1922,37 @@ class Database:
         значило бы дублировать инвариант блокировок вторым механизмом, который
         может с ним разойтись.
         """
+        # Субъект — ДЕРЖАТЕЛЬ (docs/guest-role.md): переданное устройство идёт
+        # в набор того, кто им управляет; разрешение — владельца устройства.
         out: dict[int, list[str]] = {}
         for r in self._connection().execute(
-                """SELECT d.client_id, d.address
+                """SELECT COALESCE(d.holder_client_id, d.client_id) AS subject, d.address
                      FROM devices d
                      JOIN clients c ON c.id = d.client_id
                     WHERE d.routing_on = 1
                       AND (c.routing_allowed = 1 OR c.tg_id = ?)
-                    ORDER BY d.client_id, d.address""",
+                    ORDER BY subject, d.address""",
                 (admin_tg_id,)).fetchall():
-            out.setdefault(int(r["client_id"]), []).append(r["address"])
+            out.setdefault(int(r["subject"]), []).append(r["address"])
         return out
 
+    # Устройства СУБЪЕКТА маршрутизации (docs/guest-role.md): свои, которые
+    # никому не переданы, плюс чужие, которые он держит.
+    _SUBJECT_WHERE = ("((d.client_id = ? AND d.holder_client_id IS NULL) "
+                      "OR d.holder_client_id = ?)")
+
     def set_devices_routing(self, client_id: int, on: bool) -> int:
-        """Включить/выключить режим на ВСЕХ устройствах профиля. Возвращает
-        число изменённых строк — по нему видно, было ли действие холостым."""
+        """Включить/выключить режим на всех устройствах СУБЪЕКТА (свои
+        непереданные + удерживаемые). Возвращает число изменённых строк — по
+        нему видно, было ли действие холостым."""
         with self._tx() as cur:
-            cur.execute("UPDATE devices SET routing_on = ? "
-                        " WHERE client_id = ? AND routing_on <> ?",
-                        (1 if on else 0, client_id, 1 if on else 0))
+            cur.execute("UPDATE devices AS d SET routing_on = ? "
+                        f" WHERE {self._SUBJECT_WHERE} AND routing_on <> ?",
+                        (1 if on else 0, client_id, client_id, 1 if on else 0))
             return cur.rowcount
 
-    def routing_device_counts(self, client_id: int) -> tuple[int, int]:
-        """(включено, всего) по устройствам профиля.
+    def routing_device_counts(self, client_id: int, admin_tg_id: int = 0) -> tuple[int, int]:
+        """(включено, всего) по устройствам СУБЪЕКТА с разрешённым РФ-доступом.
 
         Состояние профиля ВЫВОДИТСЯ отсюда, отдельной колонки под него нет:
         «профиль включён» ⇔ включено хоть одно устройство. Пока состояние
@@ -1951,8 +1966,44 @@ class Database:
         """
         row = self._connection().execute(
             f"SELECT COALESCE(SUM(d.routing_on), 0) AS on_, COUNT(*) AS n FROM devices d "
-            f"{self._visible_where()}", (client_id,)).fetchone()
+            f"{self._subject_visible_where(admin_tg_id)}",
+            (client_id, client_id, admin_tg_id)).fetchone()
         return int(row["on_"]), int(row["n"])
+
+    def _subject_visible_where(self, admin_tg_id: int) -> str:
+        """Видимые устройства субъекта, у которых РФ-доступ РАЗРЕШЁН владельцем
+        (свои — по своему разрешению, удерживаемые — по разрешению дарителя)."""
+        elig = ("EXISTS (SELECT 1 FROM clients oc WHERE oc.id = d.client_id "
+                "AND (oc.routing_allowed = 1 OR oc.tg_id = ?))")
+        if self.migration_visibility_running():
+            vis = "d.id NOT IN (SELECT twin_of FROM devices WHERE twin_of IS NOT NULL)"
+        else:
+            vis = self._TWIN_DANGLING_OK
+        return f"WHERE {self._SUBJECT_WHERE} AND {elig} AND {vis}"
+
+    def list_routing_devices(self, client_id: int, admin_tg_id: int = 0) -> list:
+        """Устройства субъекта для экрана переключателей: свои непереданные,
+        затем удерживаемые; только те, чей владелец разрешил РФ-доступ."""
+        return [_device_from_row(r) for r in self._connection().execute(
+            _DEVICE_SELECT + f" {self._subject_visible_where(admin_tg_id)} "
+            "ORDER BY (d.holder_client_id IS NOT NULL), is_gateway_eff DESC, d.created_at",
+            (client_id, client_id, admin_tg_id)).fetchall()]
+
+    def list_lent_out_devices(self, client_id: int) -> list:
+        """Свои устройства профиля, переданные другим (управляет держатель)."""
+        return [_device_from_row(r) for r in self._connection().execute(
+            _DEVICE_SELECT + " WHERE d.client_id = ? AND d.holder_client_id IS NOT NULL "
+            f"AND {self._friend_visible_where()} ORDER BY d.created_at, d.id",
+            (client_id,)).fetchall()]
+
+    def set_owner_devices_routing(self, client_id: int, on: bool) -> int:
+        """Все устройства ВЛАДЕЛЬЦА, включая переданные, — при выдаче
+        разрешения: держателям обещано «включено для всех твоих устройств»."""
+        with self._tx() as cur:
+            cur.execute("UPDATE devices SET routing_on = ? "
+                        " WHERE client_id = ? AND routing_on <> ?",
+                        (1 if on else 0, client_id, 1 if on else 0))
+            return cur.rowcount
 
     # ── Аллокация IP ─────────────────────────────────────────────────────────
 

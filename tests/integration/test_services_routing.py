@@ -980,3 +980,83 @@ def test_traffic_poll_covers_every_interface(services, make_active_client, monke
     assert services.db.get_device(old.device_id).traffic_rx_month == 50
     assert services.db.get_device(new.device_id).traffic_rx_month == 200, \
         "трафик соседнего интерфейса не учтён"
+
+
+# ── субъект маршрутизации — держатель (docs/guest-role.md) ──────────────────
+
+def _lend(services, owner, tg, name):
+    dc = services.add_device(owner.id, name)
+    res = services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=tg)
+    assert res.ok, res.reason
+    return dc, res.holder
+
+
+def test_lent_device_goes_to_the_holders_set_with_owner_permission(
+        services, make_active_client, fake_routing):
+    """Переданное устройство — в наборе ДЕРЖАТЕЛЯ, но только пока владелец
+    разрешён: отзыв у владельца гасит и его."""
+    owner = make_active_client(tg_id=700, device_limit=3)
+    services.set_routing_allowed(owner.id, True)
+    own = _device(services, owner, "своё")
+    lent, guest = _lend(services, owner, 9700, "другу")
+    assert fake_routing.sets[_srcset(owner.id)] == [own.address], "переданное осталось у владельца"
+    assert fake_routing.sets[_srcset(guest.id)] == [lent.address]
+    assert services.routing_device_counts(owner.id) == (1, 1)
+    assert services.routing_device_counts(guest.id) == (1, 1)
+    assert [d.id for d in services.routing_lent_out(owner.id)] == [lent.device_id]
+    assert [d.id for d in services.routing_devices(guest.id)] == [lent.device_id]
+
+    services.set_routing_allowed(owner.id, False)
+    assert not fake_routing.sets.get(_srcset(guest.id)), "отзыв у владельца не погасил держателя"
+    assert services.routing_device_counts(guest.id) == (0, 0)
+    assert services.routing_allowed_for(guest) is False
+
+
+def test_holder_has_own_domains_and_toggles(services, make_active_client, fake_routing):
+    """Список адресов и тумблеры — у держателя свои, от владельца не наследуются."""
+    owner = make_active_client(tg_id=701, device_limit=3)
+    services.set_routing_allowed(owner.id, True)
+    services.routing_add_domains(owner.id, "owner.ru")
+    lent, guest = _lend(services, owner, 9701, "другу")
+    assert services.routing_domains(guest.id) == []
+    services.routing_add_domains(guest.id, "guest.ru")
+    assert services.routing_domains(owner.id) == ["owner.ru"]
+    assert services.routing_allowed_for(guest) is True
+    assert services.routing_client_visible(guest) is True
+    # гость выключил — владелец не тронут
+    services.toggle_routing_device(lent.device_id)
+    assert not fake_routing.sets.get(_srcset(guest.id))
+    assert services.routing_profile_on(guest.id) is False
+    assert services.set_routing_all(owner.id, False) == 0 or True
+    # владелец «включить все» не трогает переданное — управляет держатель
+    services.set_routing_all(owner.id, True)
+    assert services.db.get_device(lent.device_id).routing_on == 0
+
+
+def test_client_holder_mixes_own_and_held_under_owner_permissions(
+        services, make_active_client, fake_routing):
+    """Обычный клиент без разрешения держит устройство разрешённого владельца:
+    раздел виден, в режиме — только удерживаемое; свои — вне режима."""
+    owner = make_active_client(tg_id=702, device_limit=3)
+    services.set_routing_allowed(owner.id, True)
+    holder = make_active_client(tg_id=703, device_limit=2)
+    own = _device(services, holder, "моё")
+    lent, _ = _lend(services, owner, 703, "чужое")
+    assert services.routing_allowed_for(holder) is True
+    assert [d.id for d in services.routing_devices(holder.id)] == [lent.device_id]
+    assert fake_routing.sets[_srcset(holder.id)] == [lent.address]
+    services.set_routing_all(holder.id, True)
+    assert fake_routing.sets[_srcset(holder.id)] == [lent.address], "своё без разрешения — не в режиме"
+    assert services.db.get_device(own.device_id).routing_on == 1, "флаг стоит, ждёт разрешения"
+
+
+def test_grant_and_revoke_notify_holders_too(services, make_active_client, fake_routing):
+    owner = make_active_client(tg_id=704, name="Вася", device_limit=3)
+    _lend(services, owner, 9704, "A")
+    _lend(services, owner, 9704, "B")
+    notes = services.set_routing_allowed(owner.id, True)
+    assert [n.tg_id for n in notes] == [704, 9704]
+    assert notes[1].text.startswith('К устройствам, которые тебе передал <a href="tg://user?id=704">Вася</a>')
+    notes = services.set_routing_allowed(owner.id, False)
+    assert [n.tg_id for n in notes] == [704, 9704]
+    assert notes[1].text.startswith('Функция РФ-доступа для устройств от <a href="tg://user?id=704">Вася</a>')

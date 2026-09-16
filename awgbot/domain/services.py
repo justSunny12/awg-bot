@@ -999,6 +999,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             holder = self.db.get_client(holder.id)
         for peer in self._device_pair(dev):
             self.db.set_device_holder(peer.id, holder.id)
+        if dev.routing_on:
+            self.reconcile_routing()                  # адрес переезжает в набор держателя
         return FriendActivation(ok=True, reason="ok", device_id=dev.id, device_name=dev.name,
                                 holder=holder, donor=self.db.get_client(dev.client_id),
                                 held=self.db.list_held_devices(holder.id))
@@ -2670,7 +2672,14 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             return False
         if client.tg_id and client.tg_id == config.ADMIN_ID:
             return True
-        return bool(client.routing_allowed)
+        if client.routing_allowed:
+            return True
+        # держатель чужих устройств: разрешение — у их владельца (docs/guest-role.md)
+        for dev in self.db.list_held_devices(client.id):
+            owner = self.db.get_client(dev.client_id)
+            if owner is not None and (owner.routing_allowed or owner.tg_id == config.ADMIN_ID):
+                return True
+        return False
 
     def routing_client_visible(self, client) -> bool:
         """Показывать ли фичу клиенту вообще. Пока админ не выдал разрешение,
@@ -2678,12 +2687,20 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         return bool(self.routing_allowed_for(client) and self.routing_available())
 
     def routing_device_counts(self, client_id: int) -> tuple[int, int]:
-        """(включено, всего) — и заголовок кнопки, и состояние профиля разом."""
-        return self.db.routing_device_counts(client_id)
+        """(включено, всего) — и заголовок кнопки, и состояние профиля разом.
+        По устройствам СУБЪЕКТА с разрешённым РФ-доступом: свои непереданные и
+        удерживаемые."""
+        return self.db.routing_device_counts(client_id, config.ADMIN_ID)
 
     def routing_devices(self, client_id: int) -> list:
-        """Устройства профиля для экрана переключателей, в порядке показа."""
-        return self.db.list_devices(client_id)
+        """Устройства субъекта для экрана переключателей: свои, затем
+        удерживаемые чужие."""
+        return self.db.list_routing_devices(client_id, config.ADMIN_ID)
+
+    def routing_lent_out(self, client_id: int) -> list:
+        """Свои устройства, переданные другим: в разделе видны без
+        переключателя — управляет держатель."""
+        return self.db.list_lent_out_devices(client_id)
 
     def routing_profile_on(self, client_id: int) -> bool:
         """Режим у профиля включён ⇔ включён хоть на одном устройстве.
@@ -2692,7 +2709,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         убрана: она обязана была совпадать с флагами устройств, а свестись
         обратно при расхождении ей было негде.
         """
-        return self.db.routing_device_counts(client_id)[0] > 0
+        return self.db.routing_device_counts(client_id, config.ADMIN_ID)[0] > 0
 
     def routing_health_for_client(self, client) -> Optional[bool]:
         """Показывать ли клиенту статусную строку и что в ней.
@@ -2725,13 +2742,25 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         changed = bool(client.routing_allowed) != bool(allowed)
         self.db.update_client_fields(client_id, routing_allowed=1 if allowed else 0)
         if allowed:
-            self.db.set_devices_routing(client_id, True)
+            self.db.set_owner_devices_routing(client_id, True)   # и переданные тоже
         self.reconcile_routing()
-        if not changed or not client.tg_id:
+        if not changed:
             return []
         from awgbot.bot import texts                   # ленивый, как в соседних миксинах
-        return [Notification(client.tg_id, texts.ROUTING_GRANTED_NOTICE if allowed
-                             else texts.ROUTING_REVOKED_NOTICE)]
+        notes: list[Notification] = []
+        if client.tg_id:
+            notes.append(Notification(client.tg_id, texts.ROUTING_GRANTED_NOTICE if allowed
+                                      else texts.ROUTING_REVOKED_NOTICE))
+        # держателям переданных устройств — то же, с оговоркой, от кого
+        seen: set[int] = set()
+        for dev in self.db.list_lent_out_devices(client_id):
+            if dev.holder_tg_id and dev.holder_tg_id not in seen:
+                seen.add(dev.holder_tg_id)
+                notes.append(Notification(
+                    dev.holder_tg_id,
+                    texts.routing_granted_holder_notice(client) if allowed
+                    else texts.routing_revoked_holder_notice(client)))
+        return notes
 
     def set_routing_all(self, client_id: int, on: bool) -> int:
         """Массовое включение/выключение по всему профилю. Возвращает, сколько

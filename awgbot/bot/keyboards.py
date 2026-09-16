@@ -153,21 +153,27 @@ def block_device_confirm(device_id: int, *, guest: bool = False) -> InlineKeyboa
     return kb.as_markup()
 
 
-def guest_main(has_devices: bool = True) -> InlineKeyboardMarkup:
+def guest_main(has_devices: bool = True, *, routing_visible: bool = False,
+               routing_on: bool = False, client_id: int = 0) -> InlineKeyboardMarkup:
     """Главное меню гостя (docs/guest-role.md): как клиентское, без добавления
-    и подписки. «Мои устройства» — всегда, даже при одном."""
+    и подписки. «Мои устройства» — всегда, даже при одном; РФ-доступ — при
+    фиче у владельца."""
     kb = InlineKeyboardBuilder()
     kb.button(text="📱 Мои устройства", callback_data=FriendCB(action="list"))
+    if routing_visible:
+        kb.button(text=f"{_chk(routing_on)} Доступ к РФ-сервисам",
+                  callback_data=RoutingCB(action="panel", ref=client_id))
     if has_devices:
         # device_id=0 — «выбери устройство» (при одном — сразу выдача)
         kb.button(text="🔗 Ссылка", callback_data=FriendCB(action="gen_link"))
         kb.button(text="🔳 QR-код", callback_data=FriendCB(action="gen_qr"))
         kb.button(text="📄 Файл", callback_data=FriendCB(action="gen_file"))
     kb.button(text="❓ Помощь с настройкой", callback_data=FriendCB(action="help"))
+    head = [1, 1] if routing_visible else [1]
     if has_devices:
-        kb.adjust(1, 3, 1)
+        kb.adjust(*head, 3, 1)
     else:
-        kb.adjust(1, 1)
+        kb.adjust(*head, 1)
     return kb.as_markup()
 
 
@@ -207,7 +213,7 @@ def admin_client_device_list(devices, client_id: int) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def routing_devices(client_id: int, devices, *, back_target) -> InlineKeyboardMarkup:
+def routing_devices(client_id: int, devices, *, back_target, lent_out=()) -> InlineKeyboardMarkup:
     """Экран устройств профиля: по кнопке на устройство, переключение на месте.
 
     Один вход вместо тумблеров, рассыпанных по карточкам устройств: всё
@@ -232,8 +238,14 @@ def routing_devices(client_id: int, devices, *, back_target) -> InlineKeyboardMa
     rows = [1]
     for d in devices:
         mark = "✅" if d.routing_on else "☑️"
-        kb.button(text=f"{mark} {d.name}{_btn_suffix(d)}",
+        held = f" — от {d.owner_name}" if d.is_lent else ""    # чужое, которое держим
+        kb.button(text=f"{mark} {d.name}{_btn_suffix(d)}{held}",
                   callback_data=RoutingCB(action="dev", ref=d.id))
+        rows.append(1)
+    # свои переданные — в самом конце, без переключателя: управляет держатель
+    for d in lent_out:
+        kb.button(text=f"👤 {d.name} — {d.holder_name}",
+                  callback_data=RoutingCB(action="lent", ref=d.id))
         rows.append(1)
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
     kb.adjust(*rows, 1)

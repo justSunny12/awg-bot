@@ -24,7 +24,7 @@ from aiogram.types import CallbackQuery, Message
 from awgbot.core import config
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
-from awgbot.bot.callbacks import ClientCB, Menu, RoutingCB
+from awgbot.bot.callbacks import ClientCB, FriendCB, Menu, RoutingCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, ask_tracked, cleanup_content,
                                         edit, send_menu)
@@ -34,8 +34,10 @@ router = Router(name="routing")
 # Админ тоже пользуется VPN, а middleware отдаёт ему role=admin и client=None.
 # Без него в фильтре у админа не было бы ни мастер-тумблера, ни списка адресов —
 # только право раздавать доступ другим.
-router.message.filter(RoleFilter("client", "admin"))
-router.callback_query.filter(RoleFilter("client", "admin"))
+# Гость (invited) — тоже субъект: его переданные устройства, его список
+# адресов (docs/guest-role.md).
+router.message.filter(RoleFilter("client", "admin", "invited"))
+router.callback_query.filter(RoleFilter("client", "admin", "invited"))
 
 
 async def _profile(services, client, ref: int = 0):
@@ -65,6 +67,8 @@ def _back_target(client, speaker) -> str:
     того профиля, откуда пришёл."""
     if speaker is None and client.tg_id != config.ADMIN_ID:
         return ClientCB(action="open", client_id=client.id).pack()
+    if getattr(client, "is_guest", False):
+        return FriendCB(action="refresh").pack()
     return Menu(action="main").pack()
 
 
@@ -104,12 +108,20 @@ async def routing_panel(cb: CallbackQuery, callback_data: RoutingCB, client, ser
 
 
 async def devices_view(services, client):
-    """(text, markup) экрана устройств профиля."""
+    """(text, markup) экрана устройств субъекта: свои и удерживаемые с
+    переключателями, свои переданные — строкой без него."""
     devices = await call(services.routing_devices, client.id)
     enabled, total = await call(services.routing_device_counts, client.id)
-    return texts.routing_devices_text(enabled, total), kb.routing_devices(
-        client.id, devices,
+    lent_out = await call(services.routing_lent_out, client.id)
+    return texts.routing_devices_text(enabled, total, lent_out), kb.routing_devices(
+        client.id, devices, lent_out=lent_out,
         back_target=RoutingCB(action="panel", ref=client.id).pack())
+
+
+@router.callback_query(RoutingCB.filter(F.action == "lent"))
+async def routing_lent_row(cb: CallbackQuery):
+    """Строка переданного устройства — без действия: управляет держатель."""
+    await cb.answer("Этим устройством управляет тот, кому оно передано", show_alert=True)
 
 
 async def _show_devices(cb: CallbackQuery, services, client) -> None:

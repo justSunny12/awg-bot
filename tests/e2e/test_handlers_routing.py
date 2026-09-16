@@ -878,7 +878,7 @@ async def test_grant_enables_all_devices_and_notifies_owner(services, make_activ
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
     c = make_active_client(tg_id=150)
     services.add_device(c.id, "Тел"); services.add_device(c.id, "Ноут")
-    assert services.routing_device_counts(c.id) == (0, 2)
+    assert services.routing_device_counts(c.id) == (0, 0), "без разрешения устройств в режиме нет"
 
     cb, _ = _cb(fake_bot, config.ADMIN_ID)
     fake_bot.records.clear()
@@ -892,7 +892,8 @@ async def test_grant_enables_all_devices_and_notifies_owner(services, make_activ
     fake_bot.records.clear()
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow", val=str(c.id)), services)
     assert services.db.get_client(c.id).routing_allowed == 0
-    assert services.routing_device_counts(c.id) == (1, 2), "отзыв стёр флаги устройств"
+    assert services.routing_device_counts(c.id) == (0, 0), "без разрешения — ничего не в режиме"
+    assert sum(d.routing_on for d in services.db.list_devices(c.id)) == 1, "отзыв стёр флаги устройств"
     sent = [r for r in fake_bot.records if r[0] == "send_message" and r[1] == 150]
     assert sent and sent[0][2] == texts.ROUTING_REVOKED_NOTICE
 

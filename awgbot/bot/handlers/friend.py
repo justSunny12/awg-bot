@@ -48,8 +48,11 @@ async def guest_main_payload(services, client):
     devs = await _held(services, client)
     donor = await call(services.db.get_client, devs[0].client_id) if devs else None
     server_ok = await call(services.server_ok_cached)
-    return (texts.greeting_guest(client.name, server_ok, donor, len(devs)),
-            kb.guest_main(has_devices=bool(devs)))
+    routing_ok = await call(services.routing_health_for_client, client)   # None — фичи нет
+    return (texts.greeting_guest(client.name, server_ok, donor, len(devs), routing_ok),
+            kb.guest_main(has_devices=bool(devs), routing_visible=routing_ok is not None,
+                          routing_on=await call(services.routing_profile_on, client.id),
+                          client_id=client.id))
 
 
 async def show_guest_main(target: Message, services, client) -> None:

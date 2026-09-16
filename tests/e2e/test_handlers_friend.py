@@ -133,3 +133,57 @@ async def test_guest_help_platform(services, fake_bot, make_active_client):
     cb, nav = _cb(fake_bot, 98107)
     await fh.friend_help_platform(cb, HelpCB(platform="android"))
     assert any(s[0] == "edit_text" for s in nav.sent)
+
+
+# ── РФ-доступ у гостя (docs/guest-role.md) ─────────────────────────────────
+
+async def test_guest_main_shows_rf_line_and_button_only_with_owner_permission(
+        services, fake_bot, make_active_client, monkeypatch):
+    from awgbot.core import config
+    from awgbot.bot.handlers import routing as rh
+    from awgbot.bot.callbacks import RoutingCB
+    from tests.conftest import FakeState
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    owner = make_active_client(tg_id=8110, name="Вася", device_limit=3)
+    dc, guest = _lend(services, owner, 98110, "Тел")
+    text, markup = await fh.guest_main_payload(services, guest)
+    labels = [b.text for row in markup.inline_keyboard for b in row]
+    assert "РФ-доступ" not in text and not any("РФ" in l for l in labels)
+
+    services.set_routing_allowed(owner.id, True)
+    text, markup = await fh.guest_main_payload(services, guest)
+    labels = [b.text for row in markup.inline_keyboard for b in row]
+    assert "🇷🇺 РФ-доступ:" in text
+    assert labels[1] == "🟢 Доступ к РФ-сервисам", labels
+
+    # раздел открывается гостю, «Назад» — на его главный экран
+    cb, nav = _cb(fake_bot, 98110)
+    await rh.routing_panel(cb, RoutingCB(action="panel", ref=guest.id), guest, services, FakeState())
+    text, labels = last_screen(nav)
+    assert "РФ-доступ" in text and any("Устройства: 1 из 1" in l for l in labels)
+    back = nav.sent[-1][2].inline_keyboard[-1][0].callback_data
+    assert back == "fr:refresh:0"
+
+
+async def test_owner_devices_screen_lists_lent_out_without_toggle(
+        services, fake_bot, make_active_client, monkeypatch):
+    from awgbot.core import config
+    from awgbot.bot.handlers import routing as rh
+    from awgbot.bot.callbacks import RoutingCB
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    owner = make_active_client(tg_id=8111, name="Вася", device_limit=3)
+    services.set_routing_allowed(owner.id, True)
+    services.add_device(owner.id, "Своё")
+    lent, _ = _lend(services, owner, 98111, "Ноутбук")
+    owner = services.db.get_client(owner.id)
+    cb, nav = _cb(fake_bot, 8111)
+    await rh.routing_devices_screen(cb, RoutingCB(action="devs", ref=owner.id), owner, services)
+    text, labels = last_screen(nav)
+    assert "Включено на <b>1</b> из <b>1</b>" in text
+    assert texts.ROUTING_LENT_OUT_NOTE in text
+    assert labels[-2] == "👤 Ноутбук — Артём"
+    rows = nav.sent[-1][2].inline_keyboard
+    assert rows[-2][0].callback_data == f"rt:lent:{lent.device_id}:-1"
+    cb, _ = _cb(fake_bot, 8111)
+    await rh.routing_lent_row(cb)
+    assert cb.answers[-1][1] is True
