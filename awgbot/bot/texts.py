@@ -38,35 +38,26 @@ def _num(value, unit_bytes: int) -> str:
 
 
 def gb(num_bytes: int) -> str:
-    """Гигабайты числом, без единицы — для лимитов, которые задаются в ГБ."""
-    return _num(num_bytes, _BYTES_PER_GB)
-
-
-def vol_parts(num_bytes: int) -> tuple[str, str]:
-    """(число, единица): до гигабайта — мегабайты, дальше — гигабайты. Две
-    шкалы, не пять: «8 МБ», «512 МБ», «8.99 ГБ» — байты и килобайты человеку
-    ни о чём не говорят."""
+    """Гигабайты числом, без единицы. Одна шкала на все экраны: ноль — «0»,
+    любая ненулевая мелочь — «0.01», дальше — до сотых."""
     n = int(num_bytes or 0)
-    if n < _BYTES_PER_GB:
-        return _num(n, 1024 ** 2), "МБ"
-    return _num(n, _BYTES_PER_GB), "ГБ"
+    if 0 < n < _BYTES_PER_GB // 100:
+        return "0.01"
+    return _num(n, _BYTES_PER_GB)
 
 
 def human_bytes(n: int) -> str:
-    """Объём с единицей: «8 МБ», «8.99 ГБ»."""
-    return " ".join(vol_parts(n))
+    """Объём с единицей — всегда в ГБ: «0 ГБ», «0.01 ГБ», «8.99 ГБ»."""
+    return f"{gb(n)} ГБ"
 
 
 def used_of_limit(used: int, limit_bytes: int, note: str = "") -> str:
-    """«8.99 из 50 ГБ» (единица одна — не повторяем), «512 МБ из 50 ГБ»; без
-    лимита — «8.99 ГБ». note — чей лимит, в скобках: «… (лимит устройства)»;
-    лимит профиля — без пометки."""
+    """«8.99 из 50 ГБ» (единица одна — не повторяем); без лимита — «8.99 ГБ».
+    note — чей лимит, в скобках: «… (лимит устройства)»; лимит профиля — без
+    пометки."""
     if not limit_bytes:
         return human_bytes(used)
-    uv, uu = vol_parts(used)
-    lv, lu = vol_parts(limit_bytes)
-    core = f"{uv} из {lv} {lu}" if uu == lu else f"{uv} {uu} из {lv} {lu}"
-    return core + (f" ({note})" if note else "")
+    return f"{gb(used)} из {gb(limit_bytes)} ГБ" + (f" ({note})" if note else "")
 
 
 def _updown(rx: int, tx: int) -> str:
@@ -152,9 +143,7 @@ def client_total_line(rx: int, tx: int, limit_bytes: int, bonus_bytes: int,
     месяца» и клиенту, и админу (по договорённости — не словом «бонус»)."""
     total = int(rx) + int(tx)
     if limit_bytes and bonus_bytes:
-        uv, uu = vol_parts(total)
-        used_s = uv if uu == "ГБ" else f"{uv} {uu}"
-        base = f"{used_s} из {gb(limit_bytes)} + {gb(bonus_bytes)} ГБ до конца месяца"
+        base = f"{gb(total)} из {gb(limit_bytes)} + {gb(bonus_bytes)} ГБ до конца месяца"
     else:
         base = used_of_limit(total, limit_bytes)
     if for_admin:
