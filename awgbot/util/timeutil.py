@@ -96,6 +96,11 @@ def fmt_dt(dt: datetime) -> str:
     return dt.strftime("%d.%m.%Y %H:%M")
 
 
+def fmt_date(dt: datetime) -> str:
+    """DD.MM.YYYY (в UTC+3) — для сроков подписки в объявлениях."""
+    return dt.astimezone(TZ).strftime("%d.%m.%Y")
+
+
 def fmt_dt_sec(dt: datetime) -> str:
     """DD.MM.YYYY HH:MM:SS (в UTC+3) — для ручной правки периода админом."""
     return dt.astimezone(TZ).strftime("%d.%m.%Y %H:%M:%S")

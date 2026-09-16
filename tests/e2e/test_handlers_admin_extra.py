@@ -305,12 +305,21 @@ def test_transfer_buttons_are_split_by_role(services, make_active_client):
 
 # ── онлайн: статус в списке получателей и экран устройств онлайн ─────────────
 
-def test_broadcast_targets_show_status_and_put_online_first(services, make_active_client):
+def test_broadcast_targets_mark_subscription_only_in_extend_mode(services, make_active_client):
+    """Онлайн-кружков в выборе адресатов нет (не онлайн — прочитает потом). В
+    режиме с продлением справа от имени — состояние подписки: ∞ бессрочная,
+    ⛔ и дата — истекла; активной — ничего."""
     from awgbot.bot import keyboards as kbs
-    a = make_active_client("Анна", tg_id=1001); b = make_active_client("Борис", tg_id=1002)
-    labels = [btn.text for row in kbs.broadcast_targets([a, b], set(), {b.id}).inline_keyboard
-              for btn in row if btn.text.startswith(("✅", "☑️")) and "все" not in btn.text]
-    assert labels == ["☑️ Борис 🟢", "☑️ Анна 🔴"]
+    a = make_active_client("Анна", tg_id=1001)
+    b = make_active_client("Борис", tg_id=1002, period_kind="never")
+    v = make_active_client("Вера", tg_id=1003)
+    services.db.update_client_fields(v.id, period_end="2026-09-01T00:00:00+03:00", status="expired")
+    rows = [services.db.get_client(c.id) for c in (a, b, v)]
+    def labels(extend):
+        return [btn.text for row in kbs.broadcast_targets(rows, set(), extend=extend).inline_keyboard
+                for btn in row if btn.text.startswith(("✅", "☑️")) and "все" not in btn.text]
+    assert labels(False) == ["☑️ Анна", "☑️ Борис", "☑️ Вера"]
+    assert labels(True) == ["☑️ Анна", "☑️ Борис ∞", "☑️ Вера ⛔ 01.09.2026"]
 
 
 async def test_online_link_opens_the_list_of_online_devices(services, make_active_client, fake_bot, monkeypatch):

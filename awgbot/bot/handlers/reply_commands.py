@@ -40,10 +40,13 @@ async def on_hide(cb: CallbackQuery):
 @router.message(F.text == kb.BTN_CANCEL, StateFilter("*"))
 async def on_cancel(message: Message, state: FSMContext, services,
                     role: str = "", client=None):
-    """✖️ Отмена — прервать текстовый диалог в любом состоянии. «Отменено.» несёт
-    снятие reply-клавы (чтобы «Отмена» не висела), затем — главное меню роли."""
+    """✖️ Отмена — прервать текстовый диалог в любом состоянии. Финишер называет,
+    что именно отменено (по группе состояний), и несёт снятие reply-клавы
+    (чтобы «Отмена» не висела); затем — главное меню роли."""
+    from awgbot.bot import texts
+    what = texts.cancelled(await state.get_state())
     await state.clear()
-    await message.answer("Отменено.", reply_markup=kb.reply_hide())
+    await message.answer(what, reply_markup=kb.reply_hide())
     await show_main_menu(message, services, role, client)
 
 

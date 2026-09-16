@@ -1338,8 +1338,8 @@ class Database:
             f" LIMIT 1", (*ids_list, exclude_tg_id)).fetchone()
         return row is not None
 
-    def broadcast_recipients_for_clients(self, client_ids,
-                                         exclude_tg_id: int) -> list[int]:
+    def broadcast_recipients_for_clients(self, client_ids, exclude_tg_id: int,
+                                         owners_only: bool = False) -> list[int]:
         """Адресаты объявления по НАБОРУ профилей: владельцы + активные друзья.
 
         Друзья входят потому, что устройство у них от этих профилей: объявление
@@ -1355,13 +1355,15 @@ class Database:
         if not ids_list:
             return []
         ph = ",".join("?" * len(ids_list))
-        rows = self._connection().execute(
-            f"SELECT tg_id FROM clients "
-            f" WHERE id IN ({ph}) AND tg_id IS NOT NULL AND is_service = 0 "
-            f"UNION "
-            f"SELECT h.tg_id FROM devices d JOIN clients h ON h.id = d.holder_client_id "
-            f" WHERE d.client_id IN ({ph}) AND h.tg_id IS NOT NULL",
-            (*ids_list, *ids_list)).fetchall()
+        q = (f"SELECT tg_id FROM clients "
+             f" WHERE id IN ({ph}) AND tg_id IS NOT NULL AND is_service = 0 ")
+        params: list = list(ids_list)
+        if not owners_only:          # объявление с продлением — только владельцам
+            q += (f"UNION "
+                  f"SELECT h.tg_id FROM devices d JOIN clients h ON h.id = d.holder_client_id "
+                  f" WHERE d.client_id IN ({ph}) AND h.tg_id IS NOT NULL")
+            params += ids_list
+        rows = self._connection().execute(q, params).fetchall()
         ids = {int(r["tg_id"]) for r in rows}
         ids.discard(int(exclude_tg_id))
         return sorted(ids)

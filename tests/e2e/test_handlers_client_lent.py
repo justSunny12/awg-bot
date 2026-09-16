@@ -29,7 +29,7 @@ async def test_owner_sees_lent_device_with_holder_and_limited_buttons(services, 
     await ch.device_open(cb, DeviceCB(action="open", device_id=dc.device_id), owner, services)
     text, labels = last_screen(nav)
     assert '👤 Передано <a href="tg://user?id=97100">Артём</a> и управляется им' in text
-    assert labels == ["✏️ Имя", "🗑 Удалить", "⬅️ Назад"]
+    assert labels == ["✏️ Имя", "📊 Лимит потребления", "🗑 Удалить", "⬅️ Назад"]
     # список: своё переданное — 📲
     cb, nav = _cb(fake_bot, 7100)
     await ch.menu_devices(cb, owner, services)

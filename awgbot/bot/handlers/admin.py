@@ -1574,36 +1574,44 @@ _BROADCAST_COOLDOWN_SEC = 30          # анти-дабл-тап: не слат�
 _last_broadcast_at: dict[tuple, float] = {}
 
 
-async def _bc_clients(services):
+async def _bc_clients(services, extend: bool = False):
     """Профили-кандидаты. Служебный и админский исключены: у первого нет
-    владельца, второй — сам отправитель."""
-    return await call(services.db.list_clients, exclude_tg=config.ADMIN_ID)
+    владельца, второй — сам отправитель. В режиме с продлением — только
+    активировавшие доступ: остальным доставлять некуда."""
+    clients = await call(services.db.list_clients, exclude_tg=config.ADMIN_ID)
+    return [c for c in clients if c.tg_id] if extend else clients
+
+
+async def _bc_selected(services, data: dict) -> list:
+    """Отмеченные профили — свежими объектами из БД, в порядке списка."""
+    sel = set(data.get("targets") or ())
+    return [c for c in await _bc_clients(services, bool(data.get("extend"))) if c.id in sel]
 
 
 async def _bc_show_targets(cb: CallbackQuery, state: FSMContext, services):
-    """Список профилей и их онлайн — в FSM на время экрана: перечитывать всё
-    на каждый тап по чекбоксу незачем (статусы обновятся при повторном входе)."""
-    from types import SimpleNamespace
     data = await state.get_data()
-    if "bc_clients" not in data:
-        clients = await _bc_clients(services)
-        online = await call(services.online_client_ids)
-        data["bc_clients"] = [(c.id, c.name) for c in clients]
-        data["bc_online"] = sorted(online)
-        await state.update_data(bc_clients=data["bc_clients"], bc_online=data["bc_online"])
-    clients = [SimpleNamespace(id=i, name=n) for i, n in data["bc_clients"]]
+    extend = bool(data.get("extend"))
+    clients = await _bc_clients(services, extend)
     selected = set(data.get("targets") or ())
-    await edit(cb, texts.BROADCAST_TARGETS,
-               kb.broadcast_targets(clients, selected, set(data["bc_online"])))
+    await edit(cb, texts.BROADCAST_TARGETS_EXTEND if extend else texts.BROADCAST_TARGETS,
+               kb.broadcast_targets(clients, selected, extend=extend))
 
 
 @router.callback_query(BroadcastCB.filter(F.action == "pick"))
 async def broadcast_pick(cb: CallbackQuery, state: FSMContext, services):
-    """Единственный вход в рассылку — выбор адресатов."""
+    """Единственный вход в рассылку — выбор режима: простое или с продлением
+    подписки. Черновик — с чистого листа."""
     await state.set_state(Broadcast.targets)
-    # Черновик — с чистого листа. Список адресатов и онлайн кэшируются в FSM на
-    # время экрана, на новом входе перечитываются: могли появиться профили.
-    await state.set_data({"targets": []})
+    await state.set_data({})
+    await edit(cb, texts.BROADCAST_MODE, kb.broadcast_mode())
+    await cb.answer()
+
+
+@router.callback_query(BroadcastCB.filter(F.action == "mode"))
+async def broadcast_mode(cb: CallbackQuery, callback_data: BroadcastCB, state: FSMContext,
+                         services):
+    await state.set_state(Broadcast.targets)
+    await state.set_data({"targets": [], "extend": bool(callback_data.ref)})
     await _bc_show_targets(cb, state, services)
     await cb.answer()
 
@@ -1622,9 +1630,9 @@ async def broadcast_toggle(cb: CallbackQuery, callback_data: BroadcastCB,
 async def broadcast_toggle_all(cb: CallbackQuery, state: FSMContext, services):
     """Отметить всех либо снять всех. Направление выводим из состояния: когда
     отмечено уже всё, осмысленно только снять."""
-    clients = await _bc_clients(services)
-    ids = [c.id for c in clients]
-    sel = set((await state.get_data()).get("targets") or ())
+    data = await state.get_data()
+    ids = [c.id for c in await _bc_clients(services, bool(data.get("extend")))]
+    sel = set(data.get("targets") or ())
     await state.update_data(targets=[] if ids and sel.issuperset(ids) else ids)
     await _bc_show_targets(cb, state, services)
     await cb.answer()
@@ -1632,15 +1640,49 @@ async def broadcast_toggle_all(cb: CallbackQuery, state: FSMContext, services):
 
 @router.callback_query(BroadcastCB.filter(F.action == "next"))
 async def broadcast_next(cb: CallbackQuery, state: FSMContext, services):
-    sel = set((await state.get_data()).get("targets") or ())
-    if not sel:
+    data = await state.get_data()
+    clients = await _bc_selected(services, data)
+    if not clients:
         await cb.answer(texts.BROADCAST_NO_TARGETS, show_alert=True)
         return
-    names = [c.name for c in await _bc_clients(services) if c.id in sel]
-    friends = await call(services.db.broadcast_has_friends, sel, config.ADMIN_ID)
+    if data.get("extend"):
+        # шаг дней. Бессрочным продлевать нечего: отмечены только они —
+        # выбран не тот режим, а не «продлить на ноль»
+        plan = await call(services.extension_plan, [c.id for c in clients], 1)
+        if all(e.unlimited for e in plan):
+            await cb.answer(texts.BROADCAST_ALL_UNLIMITED, show_alert=True)
+            return
+        await state.set_state(Broadcast.days)
+        await edit(cb, texts.broadcast_days_prompt(plan), kb.broadcast_cancel())
+        await cb.answer()
+        return
+    friends = await call(services.db.broadcast_has_friends, {c.id for c in clients},
+                         config.ADMIN_ID)
     await state.set_state(Broadcast.text)
-    await edit(cb, texts.broadcast_prompt(names, friends), kb.broadcast_cancel())
+    await edit(cb, texts.broadcast_prompt(clients, friends), kb.broadcast_cancel())
     await cb.answer()
+
+
+@router.message(Broadcast.days)
+async def broadcast_days(message: Message, state: FSMContext, services):
+    """Число дней продления. Своё сообщение админа и переспросы — в уборку;
+    приглашение к тексту — новым нав-сообщением, вопрос про дни гаснет."""
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
+    raw = (message.text or "").strip()
+    if not raw.isdigit() or not 1 <= int(raw) <= 365:
+        await ask_tracked(message, services, texts.BROADCAST_DAYS_BAD,
+                          reply_markup=kb.broadcast_cancel())
+        return
+    data = await state.get_data()
+    clients = await _bc_selected(services, data)
+    await state.update_data(days=int(raw))
+    await state.set_state(Broadcast.text)
+    nav = await call(services.db.get_nav_message_id, message.chat.id)
+    if nav:
+        await call(services.db.add_content_msg_id, message.chat.id, nav)
+    await send_menu(message, services,
+                    texts.broadcast_prompt(clients, False, extend_days=int(raw)),
+                    kb.broadcast_cancel())
 
 
 # Альбом Telegram доставляет НЕСКОЛЬКИМИ апдейтами, по одному на снимок, и
@@ -1762,7 +1804,9 @@ async def _bc_preview(message: Message, state: FSMContext, services):
         # задним числом, и проверка только на приёме текста это пропустила бы.
         # Отбивка отказа — с кнопкой отмены и в preview_ids: выход в один тап
         # из любого состояния, и никакого накопления при пересборках.
-        limit = config.TG_CAPTION_MAX if photos else config.TG_TEXT_MAX
+        extend = bool(data.get("extend"))
+        limit = ((config.TG_CAPTION_MAX if photos else config.TG_TEXT_MAX)
+                 - (texts.extension_reserve() if extend else 0))   # шапка — из лимита
         length = int(data.get("text_len") or len(text)) if text else 0
         if length > limit:
             notes.append(texts.broadcast_too_long(length, limit, bool(photos)))
@@ -1773,13 +1817,24 @@ async def _bc_preview(message: Message, state: FSMContext, services):
             return
         sel = set(data.get("targets") or ())
         tg_ids = await call(services.db.broadcast_recipients_for_clients,
-                            sel, config.ADMIN_ID)
+                            sel, config.ADMIN_ID, owners_only=extend)
         if not tg_ids:
             await state.clear()
             await message.answer("Некому отправлять — нет активных получателей.")
             return
-        names = [c.name for c in await _bc_clients(services) if c.id in sel]
-        friends = await call(services.db.broadcast_has_friends, sel, config.ADMIN_ID)
+        clients = await _bc_selected(services, data)
+        friends = (False if extend
+                   else await call(services.db.broadcast_has_friends, sel, config.ADMIN_ID))
+        # С продлением: в превью — шапка с датами первого продлеваемого (у
+        # каждого адресата она своя), в подвале — все даты.
+        extension = None
+        shown = text
+        if extend:
+            days = int(data.get("days") or 0)
+            plan = await call(services.extension_plan, sel, days)
+            extension = (days, plan)
+            first = next((e for e in plan if not e.unlimited), None)
+            shown = texts.announcement_text(texts.extension_header(days, first), text)
         # Экран-приглашение тоже в уборку. Сам он не исчезнет: при переходе на
         # превью навигация лишь СНИМАЕТ с него кнопки (_dismiss_previous_nav), и
         # текст «пришли объявление» остаётся висеть над перепиской.
@@ -1801,18 +1856,19 @@ async def _bc_preview(message: Message, state: FSMContext, services):
                 # апдейтов альбома, и медленный аплоад растягивает их на десятки
                 # секунд) — доедет, и превью пересоберётся само. Блок при этом
                 # прямо спрашивает про пустой текст, отправить можно как есть.
-                sent = await send_announcement(message.bot, chat_id, text, photos)
+                sent = await send_announcement(message.bot, chat_id, shown, photos)
                 ids = [m.message_id for m in sent] if isinstance(sent, (list, tuple)) \
                     else [sent.message_id]
                 confirm_text = texts.broadcast_preview_photos(
-                    len(tg_ids), names, friends, has_text=bool(text))
+                    len(tg_ids), clients, friends, has_text=bool(text), extension=extension)
                 if notes:
                     confirm_text = notes[0] + "\n\n" + confirm_text
                 confirm = await message.answer(confirm_text,
                                                reply_markup=kb.broadcast_confirm())
                 await state.update_data(preview_ids=[*ids, confirm.message_id])
             else:
-                confirm_text = texts.broadcast_preview(text, len(tg_ids), names, friends)
+                confirm_text = texts.broadcast_preview(shown, len(tg_ids), clients, friends,
+                                                       extension)
                 if notes:
                     confirm_text = notes[0] + "\n\n" + confirm_text
                 confirm = await message.answer(confirm_text,
@@ -1870,7 +1926,9 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     # картинка, добавленная после текста, меняет лимит задним числом. Уйди это
     # в Telegram — каждый получатель вернул бы Bad Request, и отчёт записал бы
     # их в «заблокировали бота».
-    limit = config.TG_CAPTION_MAX if photos else config.TG_TEXT_MAX
+    extend = bool(data.get("extend"))
+    limit = ((config.TG_CAPTION_MAX if photos else config.TG_TEXT_MAX)
+             - (texts.extension_reserve() if extend else 0))
     length = int(data.get("text_len") or len(text)) if text else 0
     if length > limit:
         await cb.answer(f"Не отправлено: {length} символов при лимите {limit} "
@@ -1888,14 +1946,29 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     await cleanup_content(cb.bot, services, cb.message.chat.id)
     await edit(cb, "📢 Рассылаю объявление…", None)   # и кнопки сняты (markup=None)
     tg_ids = await call(services.db.broadcast_recipients_for_clients,
-                        sel, config.ADMIN_ID)
+                        sel, config.ADMIN_ID, owners_only=extend)
     if not tg_ids:
         await edit(cb, "Некому отправлять — нет активных получателей.",
                    await _main_menu_markup(services))
         return
-    ok, failed = await broadcast(cb.message.bot, tg_ids, text, photos)
-    names = [c.name for c in await _bc_clients(services) if c.id in set(sel)]
-    friends = await call(services.db.broadcast_has_friends, sel, config.ADMIN_ID)
+    extension = by_tg = None
+    shown = text
+    if extend:
+        # Сначала продлить, потом отправить: человек читает «увеличена» — к
+        # этому моменту это уже правда; а недоставка (заблокировал бота)
+        # подарка не отменяет — решение принял админ. Шапка у каждого своя.
+        days = int(data.get("days") or 0)
+        plan, notes = await call(services.extend_days, sel, days)
+        await send_notifications(cb.bot, notes)      # держателям — «доступ вернулся»
+        extension = (days, plan)
+        by_tg = {e.client.tg_id: texts.announcement_text(texts.extension_header(days, e), text)
+                 for e in plan if e.client.tg_id}
+        first = next((e for e in plan if not e.unlimited), None)
+        shown = texts.announcement_text(texts.extension_header(days, first), text)
+    ok, failed = await broadcast(cb.message.bot, tg_ids, text, photos, by_tg)
+    clients = await _bc_selected(services, data)
+    friends = (False if extend
+               else await call(services.db.broadcast_has_friends, sel, config.ADMIN_ID))
     # Отчёт — ТОЛЬКО факт доставки; само объявление остаётся в чате строкой
     # выше как след разосланного (копии у отправителя нет — Telegram показывает
     # ему лишь собственные реплики боту, а не то, что бот разослал другим).
@@ -1904,10 +1977,10 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     # текстом и хвостом «Отправляем?»: хвост срезаем (остаётся чистый текст
     # объявления), отчёт приходит следом.
     if photos:
-        await edit(cb, texts.broadcast_report(names, friends, ok, failed), None)
+        await edit(cb, texts.broadcast_report(clients, friends, ok, failed, extension), None)
     else:
-        await edit(cb, text, None)
-        await cb.message.answer(texts.broadcast_report(names, friends, ok, failed))
+        await edit(cb, shown, None)
+        await cb.message.answer(texts.broadcast_report(clients, friends, ok, failed, extension))
     # Панель — СЛЕДУЮЩИМ сообщением, со своим обычным текстом и статусами.
     # Прежде отчёт нёс на себе клавиатуру главного меню: тогда он либо
     # переписывался при следующей навигации, либо оставлял в чате второе живое

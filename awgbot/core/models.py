@@ -142,6 +142,14 @@ class Client:
     @property
     def pause_saved_end(self): return self.pause.saved_end if self.pause else None
     @property
+    def effective_period_end(self) -> Optional[str]:
+        """Конец периода «по-настоящему»: на открытой админ-паузе period_end
+        пуст (временно бессрочная), а настоящий конец — сохранённый."""
+        if self.pause_mode == "admin_open" and self.pause_saved_end:
+            return self.pause_saved_end
+        return self.period_end
+
+    @property
     def is_paused(self) -> bool:
         return self.pause is not None and self.pause.active_since is not None
 

@@ -160,7 +160,7 @@ async def send_announcement(bot, tg_id, text: str, photos=()):
     return await bot.send_media_group(tg_id, media=media)
 
 
-async def broadcast(bot, tg_ids, text, photos=()) -> tuple[int, int]:
+async def broadcast(bot, tg_ids, text, photos=(), texts_by_tg=None) -> tuple[int, int]:
     """Массовая рассылка объявления по списку tg_id. Возвращает (доставлено,
     не удалось). Ошибки отправки (заблокировали бота, удалён аккаунт) считаем в
     «не удалось» и продолжаем. Пейсинг между сообщениями — как в общей рассылке
@@ -168,13 +168,16 @@ async def broadcast(bot, tg_ids, text, photos=()) -> tuple[int, int]:
     parse_mode берётся дефолтный (бот сконфигурирован с HTML). Тихие часы к
     объявлениям НЕ применяем — это осознанная явная отправка админом."""
     async def one(tg_id) -> bool:
+        # texts_by_tg — свой текст адресату (объявление с продлением: шапка с
+        # его датами); нет в карте — общий
+        t = texts_by_tg.get(tg_id, text) if texts_by_tg else text
         try:
-            await send_announcement(bot, tg_id, text, photos)
+            await send_announcement(bot, tg_id, t, photos)
             return True
         except TelegramRetryAfter as e:
             await asyncio.sleep(e.retry_after)
             try:
-                await send_announcement(bot, tg_id, text, photos)
+                await send_announcement(bot, tg_id, t, photos)
                 return True
             except Exception as e2:                  # noqa: BLE001
                 log.warning("broadcast: не доставлено %s (после retry): %s", tg_id, e2)

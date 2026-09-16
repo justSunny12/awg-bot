@@ -63,12 +63,12 @@ def test_target_picker_marks_selection_and_offers_bulk():
     assert labels_none[0].endswith("Отметить все")
     # проверяем строки профилей, а не кнопку массового действия — она сама
     # начинается с галочки и под фильтр «отмечено» попала бы ложно
-    assert "☑️ К1 🔴" in labels_none and "☑️ К2 🔴" in labels_none
+    assert "☑️ К1" in labels_none and "☑️ К2" in labels_none
     assert not any(l.startswith("✅ К1") for l in labels_none)
 
     some = kb.broadcast_targets(clients, {1})
     labels = _btn_texts(some)
-    assert "✅ К1 🔴" in labels and "☑️ К2 🔴" in labels
+    assert "✅ К1" in labels and "☑️ К2" in labels
     assert labels[0].endswith("Отметить все")        # отмечено не всё
 
     every = kb.broadcast_targets(clients, {1, 2})
@@ -564,6 +564,13 @@ async def test_broadcast_draft_chain_is_cleaned_on_cancel(services, make_active_
     assert 555 in tracked, "экран-приглашение осталось бы висеть"
 
 
+def _cl(name, tg_name=""):
+    from awgbot.core import models
+    return models.Client(id=hash(name) % 1000, tg_id=100, name=name, device_limit=1,
+                         block_reason=0, is_service=0, activation_status="active",
+                         invite_code=None, created_at="2026-01-01", tg_name=tg_name)
+
+
 def test_broadcast_report_wording_by_shape():
     """Четыре формы отчёта — только ФАКТ доставки, со ссылкой «выше»: само
     объявление остаётся в чате предыдущим сообщением, и пересказывать его
@@ -572,21 +579,26 @@ def test_broadcast_report_wording_by_shape():
     равно числу профилей и уже видно из перечисления."""
     from awgbot.bot import texts as T
 
-    one = T.broadcast_report(["Наташа"], False, 1, 0)
+    n, k = _cl("Наташа"), _cl("Ксюша")
+    one = T.broadcast_report([n], False, 1, 0)
     assert one == "✅ Объявление выше доставлено владельцу профиля Наташа"
     assert "адресат" not in one
 
-    one_fr = T.broadcast_report(["Наташа"], True, 2, 0)
+    one_fr = T.broadcast_report([n], True, 2, 0)
     assert ("владельцу профиля Наташа и тем, с кем он поделился устройствами: "
             "всего 2 адресата.") in one_fr
 
-    many = T.broadcast_report(["Наташа", "Ксюша"], False, 2, 0)
+    many = T.broadcast_report([n, k], False, 2, 0)
     assert many == "✅ Объявление выше доставлено владельцам профилей Наташа, Ксюша"
 
-    many_fr = T.broadcast_report(["Наташа", "Ксюша"], True, 4, 0)
+    many_fr = T.broadcast_report([n, k], True, 4, 0)
     assert ("владельцам профилей Наташа, Ксюша и тем, с кем они поделились "
             "устройствами: всего 4 адресата.") in many_fr
 
+    with_tg = T.broadcast_report([_cl("Наташа", tg_name="Ната")], True, 2, 0)
+    assert with_tg.startswith('✅ Объявление выше доставлено владельцу профиля Наташа '
+                              '(<a href="tg://user?id=100">Ната</a>) и тем, с кем он поделился '
+                              'устройствами: всего 2 адресата.')
     for r in (one, one_fr, many, many_fr):
         assert "Текст объявления" not in r and "картинк" not in r, \
             "отчёт снова пересказывает объявление"
@@ -594,15 +606,15 @@ def test_broadcast_report_wording_by_shape():
 
 def test_broadcast_report_declines_recipient_word():
     from awgbot.bot import texts as T
-    assert "всего 1 адресат." in T.broadcast_report(["А"], True, 1, 0)
-    assert "всего 5 адресатов." in T.broadcast_report(["А"], True, 5, 0)
+    assert "всего 1 адресат." in T.broadcast_report([_cl("А")], True, 1, 0)
+    assert "всего 5 адресатов." in T.broadcast_report([_cl("А")], True, 5, 0)
 
 
 def test_broadcast_report_does_not_hide_failures():
     """«Доставлено» при недоставленных было бы неправдой, а узнать об этом
     больше неоткуда."""
     from awgbot.bot import texts as T
-    r = T.broadcast_report(["А"], True, 3, 2)
+    r = T.broadcast_report([_cl("А")], True, 3, 2)
     assert "⚠️ Не доставлено 2 адресатам" in r
 
 

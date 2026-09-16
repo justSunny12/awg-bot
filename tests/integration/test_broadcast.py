@@ -148,7 +148,7 @@ def test_friends_clause_only_when_friends_exist(services, make_active_client):
     solo = make_active_client(name="Один", tg_id=6001)
     assert services.db.broadcast_has_friends([solo.id], cfg.ADMIN_ID) is False
 
-    prompt = texts.broadcast_prompt(["Один"], False)
+    prompt = texts.broadcast_prompt([solo], False)
     assert "Получит: <b>Один</b> — владелец профиля." in prompt
     assert "поделил" not in prompt
 
@@ -157,14 +157,27 @@ def test_friends_clause_only_when_friends_exist(services, make_active_client):
     services.activate_friend(code, tg_id=6099)
     assert services.db.broadcast_has_friends([solo.id], cfg.ADMIN_ID) is True
 
-    prompt2 = texts.broadcast_prompt(["Один"], True)
+    prompt2 = texts.broadcast_prompt([solo], True)
     assert "Получат: <b>Один</b> — владелец профиля и те, с кем он поделился" in prompt2
 
 
-def test_audience_wording_matches_number_of_profiles():
+def test_audience_names_the_account_when_it_differs(services, make_active_client):
+    """Профильное имя даёт админ, а кто это в Telegram — имя аккаунта ссылкой
+    следом; совпадают — без дубля."""
+    from awgbot.bot import texts
+    c = make_active_client(name="Один", tg_id=6002)
+    services.db.update_client_fields(c.id, tg_name="Иван", tg_username="ivan")
+    c = services.db.get_client(c.id)
+    assert 'Получит: <b>Один</b> (<a href="https://t.me/ivan">Иван</a>) — владелец профиля' \
+        in texts.broadcast_prompt([c], False)
+
+
+def test_audience_wording_matches_number_of_profiles(make_active_client):
     """Единственный профиль и несколько согласуются по-разному."""
     from awgbot.bot import texts
-    one = texts.broadcast_prompt(["Ксюша"], False)
-    many = texts.broadcast_prompt(["Ксюша", "Дима"], False)
+    k = make_active_client(name="Ксюша", tg_id=6003)
+    d = make_active_client(name="Дима", tg_id=6004)
+    one = texts.broadcast_prompt([k], False)
+    many = texts.broadcast_prompt([k, d], False)
     assert "владелец профиля" in one and "владельцы этих профилей" in many
     assert "Получит:" in one and "Получат:" in many

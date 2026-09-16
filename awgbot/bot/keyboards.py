@@ -129,13 +129,15 @@ def held_device_actions(dev, back_target: str, *, cb_cls=None) -> InlineKeyboard
 
 
 def lent_out_device_actions(dev, back_target: str) -> InlineKeyboardMarkup:
-    """Карточка переданного устройства у ВЛАДЕЛЬЦА: имя и удаление — остальным
-    управляет держатель."""
+    """Карточка переданного устройства у ВЛАДЕЛЬЦА: имя, лимит потребления
+    (квота — его, устройство ест её у него) и удаление — остальным управляет
+    держатель."""
     kb = InlineKeyboardBuilder()
     kb.button(text="✏️ Имя", callback_data=DeviceCB(action="edit_name", device_id=dev.id))
+    kb.button(text="📊 Лимит потребления", callback_data=DeviceCB(action="edit_traffic", device_id=dev.id))
     kb.button(text="🗑 Удалить", callback_data=DelDeviceCB(device_id=dev.id, stage="ask"))
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
-    kb.adjust(1, 1, 1)
+    kb.adjust(1, 1, 1, 1)
     return kb.as_markup()
 
 
@@ -535,8 +537,21 @@ def admin_main(unassigned_count: int, self_has_devices: bool = False,
     return kb.as_markup()
 
 
-def broadcast_targets(clients, selected, online_ids=frozenset()) -> InlineKeyboardMarkup:
+def broadcast_mode() -> InlineKeyboardMarkup:
+    """Первый экран объявления: простое или с продлением подписки."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✉️ Простое", callback_data=BroadcastCB(action="mode", ref=0))
+    kb.button(text="💌 С продлением подписки", callback_data=BroadcastCB(action="mode", ref=1))
+    kb.button(text="\u2b05\ufe0f Отмена", callback_data=BroadcastCB(action="cancel"))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def broadcast_targets(clients, selected, *, extend: bool = False) -> InlineKeyboardMarkup:
     """Выбор адресатов: отметки на профилях, «отметить все», «Далее», «Отмена».
+    extend — объявление с продлением: справа от имени состояние подписки
+    (∞ бессрочная, ⛔ и дата — истекла), чтобы решить, кому и сколько.
+    Онлайн-статуса нет намеренно: не онлайн — прочитает потом.
 
     Мультивыбор, а не по одному профилю за раз: объявление обычно касается
     нескольких сразу, и гонять весь путь ввод-превью-отправка по разу на каждого
@@ -551,12 +566,10 @@ def broadcast_targets(clients, selected, online_ids=frozenset()) -> InlineKeyboa
     kb.button(text="☑️ Снять все" if all_on else "✅ Отметить все",
               callback_data=BroadcastCB(action="all"))
     rows = [1]
-    # Онлайн-профили сверху: объявление чаще адресовано тем, кто сейчас на
-    # связи. Статус — справа от имени. Внутри групп порядок исходный.
-    for c in sorted(clients, key=lambda c: c.id not in online_ids):
+    for c in clients:
         mark = "✅" if c.id in selected else "☑️"
-        dot = "🟢" if c.id in online_ids else "🔴"
-        kb.button(text=f"{mark} {c.name} {dot}",
+        sub = _texts.subscription_mark(c) if extend else ""
+        kb.button(text=f"{mark} {c.name}{sub}",
                   callback_data=BroadcastCB(action="tgl", ref=c.id))
         rows.append(1)
     kb.button(text="\u2b05\ufe0f Отмена", callback_data=BroadcastCB(action="cancel"))

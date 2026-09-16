@@ -380,12 +380,17 @@ class FakeState:
     """Минимальный FSMContext: тестируемым хендлерам достаточно этих методов."""
     def __init__(self):
         self._data = {}
+        self._state = None
 
     async def clear(self):
         self._data = {}
+        self._state = None
 
-    async def set_state(self, *a, **k):
-        pass
+    async def set_state(self, state=None, **k):
+        self._state = getattr(state, "state", state)    # State → "Group:name"
+
+    async def get_state(self):
+        return self._state
 
     async def update_data(self, **kw):
         self._data.update(kw)

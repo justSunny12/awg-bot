@@ -145,6 +145,22 @@ class ExtendResult:
     notifications: list = field(default_factory=list)
 
 
+@dataclass
+class DaysExtension:
+    """Сдвиг конца подписки на N дней для одного адресата объявления с
+    продлением. old_end/new_end — None у бессрочной: продлевать нечего,
+    объявление уходит без шапки. from_now — истёкшая: отсчёт от сегодня, а не
+    от старого конца."""
+    client: object
+    old_end: Optional[object] = None      # datetime
+    new_end: Optional[object] = None      # datetime
+    from_now: bool = False
+
+    @property
+    def unlimited(self) -> bool:
+        return self.new_end is None
+
+
 # Тексты уведомлений (сухие, без слов про оплату — ТЗ 6.5).
 _MONTH_CUT_MINUTES = 30 * 24 * 60             # порог, который месяцу не показываем
 _TXT_EXTENDED = "Подписка продлена до {end}"
@@ -1297,6 +1313,54 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
 
 
 
+
+    # ── объявление с продлением: правая граница периода уезжает на N дней ────
+
+    def extension_plan(self, client_ids, days: int) -> list["DaysExtension"]:
+        """Что даст продление на days дней каждому профилю — без записи, для
+        превью. Активная — конец + N; истёкшая — сегодня + N (плюшка за простой
+        или «неделька на слюнки» — от старого конца она была бы пустой);
+        открытая админ-пауза — сохранённый конец (period_end на ней пуст);
+        бессрочная — ничего. Порядок — по имени профиля."""
+        now = timeutil.now()
+        delta = datetime.timedelta(days=int(days))
+        out: list[DaysExtension] = []
+        for cid in sorted({int(c) for c in (client_ids or ())}):
+            c = self.db.get_client(cid)
+            if c is None or c.is_service:
+                continue
+            end_iso = c.effective_period_end
+            if not end_iso:
+                out.append(DaysExtension(c))
+                continue
+            old = timeutil.parse_iso(end_iso)
+            if c.status == SubStatus.EXPIRED or old <= now:
+                out.append(DaysExtension(c, old, now + delta, from_now=True))
+            else:
+                out.append(DaysExtension(c, old, old + delta))
+        out.sort(key=lambda e: e.client.name.lower())
+        return out
+
+    def extend_days(self, client_ids, days: int) -> tuple[list["DaysExtension"], list["Notification"]]:
+        """Применить extension_plan — одной транзакцией. Начало и тип периода,
+        периодный трафик, долг отсрочки не трогаются: только правая граница
+        уезжает на N дней. Истёкшим снимается EXPIRY (как при правке дат),
+        держателям их устройств — «доступ вернулся»; штатное «Подписка
+        продлена до …» владельцу глушится — эту роль играет шапка объявления."""
+        plan = self.extension_plan(client_ids, days)
+        notes: list[Notification] = []
+        with self.db.transaction():
+            for e in plan:
+                if e.unlimited:
+                    continue
+                c = e.client
+                if c.pause_mode == PauseMode.ADMIN_OPEN and c.pause_saved_end:
+                    self.db.update_client_fields(c.id, pause_saved_end=timeutil.to_iso(e.new_end))
+                    continue
+                start = timeutil.parse_iso(c.period_start) if c.period_start else timeutil.now()
+                _, _, ns = self.set_subscription_dates(c.id, start, e.new_end)
+                notes.extend(n for n in ns if n.tg_id != c.tg_id)
+        return plan, notes
 
     def activate_grace(self, client_id: int, days: int):
         """Клиент сам продлевает годовую подписку на `days` дней (один раз за
