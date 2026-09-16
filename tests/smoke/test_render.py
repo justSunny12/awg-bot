@@ -37,6 +37,12 @@ def test_volumes_are_gigabytes_rounded_to_hundredths():
     assert texts.consumption_line(8 * M, 0, blocked=False) == "Потребление за месяц: 0.01 ГБ"
     assert texts.client_total_line(G, 2 * G, 50 * G, 10 * G, for_admin=False) == \
         "Потребление за месяц: 3 из 50 + 10 ГБ до конца месяца"
+    from awgbot.core import models
+    gw = models.Device(id=1, client_id=1, name="Малина", public_key="P", private_key="k",
+                       preshared_key="", address="10.8.1.9", block_reason=0, created_at="2026-01-01",
+                       is_gateway=1, traffic=models.DeviceTraffic(rx_month=int(0.83 * G), tx_month=int(10.95 * G)))
+    assert "Потребление: 11.78 ГБ (↑ 10.95 ГБ | ↓ 0.83 ГБ)" in texts.gateway_device_card(gw), \
+        "у шлюза единица дублировалась: «11.79 ГБ ГБ»"
     assert texts.client_total_line(M, 2 * M, 50 * G, 10 * G, for_admin=True) == \
         "Потребление профиля за месяц: 0.01 из 50 + 10 ГБ до конца месяца (↑ 0.01 ГБ | ↓ 0.01 ГБ)"
 

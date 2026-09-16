@@ -585,7 +585,8 @@ def gateway_device_card(dev) -> str:
     dot = "🟢" if online else "🔴"
     rx, tx = int(dev.traffic_rx_month), int(dev.traffic_tx_month)
     return (f"{dot} 🛰 {_e(dev.name)} ({plain_ip(dev.address)}), последний коннект: {last}\n"
-            f"Потребление: {gb_str(rx + tx)} ГБ (↑ {gb_str(tx)} ГБ | ↓ {gb_str(rx)} ГБ)\n\n"
+            # стрелки — со стороны шлюза: его исходящее — это tx сервера
+            f"Потребление: {human_bytes(rx + tx)} {_updown(tx, rx)}\n\n"
             "<b>Это устройство — шлюз условной маршрутизации, через него идёт "
             "трафик на РФ-домены.</b>")
 
@@ -1685,9 +1686,7 @@ def client_created_report(name: str, *, device_limit: int, traffic_limit_bytes: 
     Остаётся в чате (не транзиентный invite-контент)."""
     dev = f"до {device_limit} устройств" if device_limit else "количество устройств не ограничено"
     if traffic_limit_bytes:
-        gb = traffic_limit_bytes / _BYTES_PER_GB
-        gb_txt = f"{gb:.0f}" if gb == int(gb) else f"{gb:.2f}"
-        traf = f"до {gb_txt} ГБ"
+        traf = f"до {gb_str(traffic_limit_bytes)}"
     else:
         traf = "потребление не ограничено"
     if period_end is None:
