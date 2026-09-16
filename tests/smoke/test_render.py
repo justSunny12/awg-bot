@@ -72,7 +72,7 @@ def test_static_keyboards_build():
     assert _is_markup(kb.block_pause_choice(1))
     assert _is_markup(kb.block_notify_choice("cli", 1, pause_days=0))
     assert _is_markup(kb.friend_help_menu())
-    assert _is_markup(kb.guest_main(True)) and _is_markup(kb.guest_main(False))
+    assert _is_markup(kb.guest_main()) and _is_markup(kb.guest_main(routing_visible=True, client_id=1))
 
 
 def test_added_by_admin_offers_all_three_ways_and_hides():

@@ -1080,6 +1080,11 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             # Парно: перенеси одну строку — и пара разорвётся между профилями,
             # старый пир останется у донора, а завершение переезда сольёт
             # трафик и заархивирует устройство не тому человеку.
+            if dev.holder_client_id is not None and dev.holder_client_id != new_client_id:
+                # Прежний держатель теряет не только управление, но и ДОСТУП:
+                # ключи перевыпускаются (имя и адрес те же), его конфиг мёртв.
+                # Внутри транзакции: не поднялся новый пир — БД не тронута.
+                self.rekey_device(dev.id)
             for peer in self._device_pair(dev):
                 self.db.reassign_device(peer.id, new_client_id)
                 # Держатель снимается всегда: устройство переехало к другому
@@ -1088,10 +1093,6 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
                 # правило руками админа. Стал владельцем сам — держать нечего.
                 if dev.holder_client_id is not None:
                     self.db.set_device_holder(peer.id, None)
-        if dev.holder_client_id is not None and dev.holder_client_id != new_client_id:
-            # прежний держатель теряет и доступ: пир перевыпускается с тем же
-            # именем для нового владельца
-            self.rekey_device(dev.id)
         # счётчики ПОСЛЕ перепривязки (живой COUNT — уже актуальны)
         donor_count = self.db.count_devices(donor.id) if donor else 0
         recip_count = self.db.count_devices(new_client_id)

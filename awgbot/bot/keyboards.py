@@ -153,27 +153,22 @@ def block_device_confirm(device_id: int, *, guest: bool = False) -> InlineKeyboa
     return kb.as_markup()
 
 
-def guest_main(has_devices: bool = True, *, routing_visible: bool = False,
-               routing_on: bool = False, client_id: int = 0) -> InlineKeyboardMarkup:
+def guest_main(*, routing_visible: bool = False, routing_on: bool = False,
+               client_id: int = 0) -> InlineKeyboardMarkup:
     """Главное меню гостя (docs/guest-role.md): как клиентское, без добавления
     и подписки. «Мои устройства» — всегда, даже при одном; РФ-доступ — при
-    фиче у владельца."""
+    фиче у владельца. Без устройств меню не рисуется вовсе."""
     kb = InlineKeyboardBuilder()
     kb.button(text="📱 Мои устройства", callback_data=FriendCB(action="list"))
     if routing_visible:
         kb.button(text=f"{_chk(routing_on)} Доступ к РФ-сервисам",
                   callback_data=RoutingCB(action="panel", ref=client_id))
-    if has_devices:
-        # device_id=0 — «выбери устройство» (при одном — сразу выдача)
-        kb.button(text="🔗 Ссылка", callback_data=FriendCB(action="gen_link"))
-        kb.button(text="🔳 QR-код", callback_data=FriendCB(action="gen_qr"))
-        kb.button(text="📄 Файл", callback_data=FriendCB(action="gen_file"))
+    # device_id=0 — «выбери устройство» (при одном — сразу выдача)
+    kb.button(text="🔗 Ссылка", callback_data=FriendCB(action="gen_link"))
+    kb.button(text="🔳 QR-код", callback_data=FriendCB(action="gen_qr"))
+    kb.button(text="📄 Файл", callback_data=FriendCB(action="gen_file"))
     kb.button(text="❓ Помощь с настройкой", callback_data=FriendCB(action="help"))
-    head = [1, 1] if routing_visible else [1]
-    if has_devices:
-        kb.adjust(*head, 3, 1)
-    else:
-        kb.adjust(*head, 1)
+    kb.adjust(*([1, 1] if routing_visible else [1]), 3, 1)
     return kb.as_markup()
 
 

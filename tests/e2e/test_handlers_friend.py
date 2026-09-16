@@ -124,8 +124,7 @@ async def test_guest_delete_notifies_owner_and_empty_guest_keeps_profile(service
     assert services.db.get_client_by_tg(98106) is not None
     answers = [s for s in nav.sent if s[0] == "answer"]
     assert texts.GUEST_NO_DEVICES_LEFT in answers[-1][1] and "Статус подписки" not in answers[-1][1]
-    labels = [b.text for row in answers[-1][2].inline_keyboard for b in row]
-    assert labels == ["📱 Мои устройства", "❓ Помощь с настройкой"]
+    assert answers[-1][2] is None, "без устройств кнопкам делать нечего"
 
 
 async def test_guest_help_platform(services, fake_bot, make_active_client):
