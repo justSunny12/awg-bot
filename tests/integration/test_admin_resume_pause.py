@@ -6,6 +6,7 @@ def test_admin_resume_pause_button_and_exit(services, fake_awg):
     end = timeutil.to_iso(datetime.now(timeutil.TZ) + timedelta(days=200))
     cid = services.db.create_client("Отпускник", 1, timeutil.now_iso(), end, "c", period_kind="year")
     services.db.activate_client("c", 5)
+    services.db.set_pause_balance(cid, 28)          # профиль заведён мимо services
     dev = services.add_device(cid, "phone")
     ok, reserved, _, _ = services.enter_pause(cid)
     assert ok and reserved > 0

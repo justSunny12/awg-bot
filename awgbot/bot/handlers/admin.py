@@ -782,7 +782,7 @@ async def edit_period_start(cb: CallbackQuery, callback_data: ClientCB,
     await state.update_data(client_id=client.id)
     await ask_tracked(cb.message, services,
         f"Выбери новую дату начала подписки (или отправь «-», чтобы оставить "
-        f"текущую: {cur_txt})\nФормат ввода: DD.MM.YYYY HH:MM:SS",
+        f"текущую: {cur_txt})\nФормат ввода: DD.MM.YYYY HH:MM:SS (время можно опустить — будет 00:00:00)",
         reply_markup=kb.reply_cancel())
     await cb.answer()
 
@@ -802,14 +802,14 @@ async def edit_period_start_apply(message: Message, services, state: FSMContext)
         new_start = client.period_start and timeutil.parse_iso(client.period_start)
         if new_start is None:
             await ask_tracked(message, services, "У профиля нет текущей даты начала — нельзя оставить "
-                                 "«как есть». Введи дату (DD.MM.YYYY HH:MM:SS):",
+                                 "«как есть». Введи дату (DD.MM.YYYY, время можно добавить):",
                                  reply_markup=kb.reply_cancel())
             return
     else:
         try:
             new_start = timeutil.parse_dt_sec(raw)
         except ValueError:
-            await ask_tracked(message, services, "Не разобрал дату. Формат: DD.MM.YYYY HH:MM:SS. "
+            await ask_tracked(message, services, "Не разобрал дату. Формат: DD.MM.YYYY HH:MM:SS, время можно опустить. "
                                  "Попробуй ещё раз (или «-» — оставить текущую):",
                                  reply_markup=kb.reply_cancel())
             return
@@ -820,7 +820,7 @@ async def edit_period_start_apply(message: Message, services, state: FSMContext)
     await ask_tracked(message, services,
         f"Выбери новую дату окончания подписки (текущая: {cur_txt}).\n"
         f"«-» — оставить как есть, «0» — сделать бессрочной.\n"
-        f"Формат ввода: DD.MM.YYYY HH:MM:SS",
+        f"Формат ввода: DD.MM.YYYY HH:MM:SS (время можно опустить — будет 00:00:00)",
         reply_markup=kb.reply_cancel())
 
 
@@ -844,7 +844,7 @@ async def edit_period_end_apply(message: Message, services, state: FSMContext):
         try:
             new_end = timeutil.parse_dt_sec(raw)
         except ValueError:
-            await ask_tracked(message, services, "Не разобрал дату. Формат: DD.MM.YYYY HH:MM:SS. "
+            await ask_tracked(message, services, "Не разобрал дату. Формат: DD.MM.YYYY HH:MM:SS, время можно опустить. "
                                  "«-» — оставить, «0» — бессрочно. Попробуй ещё раз:",
                                  reply_markup=kb.reply_cancel())
             return

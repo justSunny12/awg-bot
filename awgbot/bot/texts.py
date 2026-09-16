@@ -15,7 +15,7 @@ from awgbot.core import settings
 import html
 
 from awgbot.util import timeutil
-from awgbot.core.enums import SubStatus, ActivationStatus, PeriodKind, FriendStatus
+from awgbot.core.enums import SubStatus, ActivationStatus, FriendStatus
 
 
 def _e(s) -> str:
@@ -270,16 +270,18 @@ def subscription_block(client, *, for_admin: bool = False, show_pause: bool = Tr
     lines.append(period_line)
     if not pause_visible:
         lines.append(f"До истечения: {timeutil.fmt_remaining(end)}")
-    # счётчик самоблоков клиента (только годовая, только пользовательский режим).
-    # Другу не показываем — паузой управляет владелец, другу счётчик бесполезен.
-    if show_pause and client.period_kind == PeriodKind.YEAR:
-        used = int(client.pause_used_days)
-        if paused and mode == "user":
-            used += int(client.pause_reserved_days)
-        max_days = settings.get_int("pause.pause_max_total_days", 28)
-        avail = max(0, max_days - used)
-        until = f" до {timeutil.fmt_dt(end)}" if end else ""
-        lines.append(f"Приостановка: доступно {avail}/{max_days} дн.{until}")
+    # счёт дней паузы. Другу не показываем — паузой управляет владелец,
+    # другу счётчик бесполезен.
+    if show_pause and end:
+        bal = int(client.pause_balance_days)
+        kind = str(client.period_kind or "")
+        if kind == "year":
+            of = f"/{settings.get_int('pause.pause_max_total_days', 28)}"
+        elif kind == "month":
+            of = f"/{12 * settings.get_int('pause.monthly_pause_days', 2)}"
+        else:
+            of = ""
+        lines.append(f"Приостановка: доступно {bal}{of} дн. до {timeutil.fmt_dt(end)}")
     return "\n".join(lines)
 
 
@@ -1043,46 +1045,69 @@ def _pause_visibility(client, *, for_admin: bool = False) -> tuple:
     return paused, mode, pause_visible
 
 
-def subscription_manage_text(client, traffic, online: bool, device_count: int) -> str:
-    """Инфобокс «Управлять подпиской» (было «Моя информация»): имя, текущий
-    (онлайн/оффлайн) статус, статус/период/срок/приостановка подписки,
-    потребление и лимит, количество устройств. Без итогового списка устройств
-    по имени — это уже есть в «Мои устройства»."""
-    lines = [f"👤 {_e(client.name)}",
-            "Текущий статус: " + ("🟢 онлайн" if online else "🔴 оффлайн")]
+_KIND_LABELS = {"day": "на день", "week": "на неделю", "month": "ежемесячная",
+                "year": "годовая", "never": "бессрочная"}
 
+
+def subscription_kind_label(kind) -> str:
+    return _KIND_LABELS.get(str(kind or ""), str(kind or "—"))
+
+
+def _days_word(n: int) -> str:
+    return plural_ru(n, "день", "дня", "дней")
+
+
+def pause_balance_line(client) -> str:
+    """«Приостановка подписки: …» — счёт дней паузы против максимума типа:
+    годовая — /28, ежемесячная — /24 с пояснением про начисление; день/неделя
+    — сколько накоплено (пополнения нет); бессрочная — пусто (строки нет)."""
+    if not client.effective_period_end:
+        return ""
+    bal = int(client.pause_balance_days)
+    kind = str(client.period_kind or "")
+    year_max = settings.get_int("pause.pause_max_total_days", 28)
+    month_days = settings.get_int("pause.monthly_pause_days", 2)
+    if kind == "year":
+        return f"Приостановка подписки: доступно {bal}/{year_max} дней"
+    if kind == "month":
+        return (f"Приостановка подписки: доступно {bal}/{12 * month_days} дней\n"
+                f"<i>(+{month_days} {_days_word(month_days)} за каждый своевременно "
+                "оплаченный месяц)</i>")
+    if bal:
+        return f"Приостановка подписки: доступно {bal} {_days_word(bal)}"
+    return "Приостановка подписки: недоступно для этого типа подписки"
+
+
+def subscription_manage_text(client, *, routing_visible: bool) -> str:
+    """Экран «Управлять подпиской» / «Моя подписка»: тип, статус, РФ-доступ,
+    период и остаток срока, счёт дней паузы, лимиты. Потребление — на главной,
+    список устройств — в «Мои устройства»."""
     paused, mode, pause_visible = _pause_visibility(client)
-    sub_lines = [f"Статус подписки: {subscription_status_only(client)}"]
-    if client.period_end:
-        start = timeutil.parse_iso(client.period_start) if client.period_start else None
-        end = timeutil.parse_iso(client.period_end)
-        period_str = timeutil.fmt_period(start, end) if start else f"до {timeutil.fmt_dt(end)}"
-        sub_lines.append(f"Период подписки: {period_str}")
+    status = "⏳ приостановлена" if pause_visible else subscription_status_only(client, expiring=True)
+    lines = ["<b>Информация о подписке:</b>", "",
+             f"Тип подписки: {subscription_kind_label(client.period_kind)}",
+             f"Статус: {status}",
+             f"РФ-доступ: {'🟢 доступен' if routing_visible else '🔴 не доступен'}"]
+    start = timeutil.parse_iso(client.period_start) if client.period_start else None
+    end_iso = client.effective_period_end
+    if end_iso:
+        end = timeutil.parse_iso(end_iso)
+        period = timeutil.fmt_period(start, end) if start else f"до {timeutil.fmt_dt(end)}"
+        lines.append(f"Период подписки: {period}")
         if not pause_visible:
-            sub_lines.append(f"До истечения: {timeutil.fmt_remaining(end)}")
+            lines.append(f"До истечения: {timeutil.fmt_remaining(end)}")
     else:
-        sub_lines.append("Период подписки: бессрочно")
-    if pause_visible:
-        if mode == "user":
-            reserved = int(client.pause_reserved_days)
-            sub_lines.append(f"Приостановка: до {reserved} дн. (можешь возобновить раньше)")
-        elif mode == "admin_fixed":
-            sub_lines.append("Приостановка: администратором, срок пересчитается при снятии")
-        else:
-            sub_lines.append("Приостановка: администратором, бессрочно")
-    elif paused:
-        # тихий админ-блок — пользователю паузу не показываем вовсе (уже
-        # учтено в subscription_status_only через pause_visible=False)
-        pass
-    lines.append("\n".join(sub_lines))
-
-    lines.append(client_total_line(traffic["rx_month"], traffic["tx_month"],
-                                   client.traffic_limit, client.bonus_bytes, for_admin=False))
-
-    lim = client.device_limit
-    lines.append(f"Устройств: {device_count} (без ограничения)" if lim == 0
-                else f"Устройств: {device_count} из {lim}")
-    return "\n\n".join(lines)
+        lines.append("Период подписки: " + (f"с {timeutil.fmt_dt(start)} — бессрочно" if start
+                                             else "бессрочно"))
+    pause = pause_balance_line(client)
+    if pause:
+        lines += ["", pause]
+    lines += ["",
+              "Лимит потребления в месяц: " + (gb_str(client.traffic_limit) if client.traffic_limit
+                                               else "без ограничения"),
+              "Лимит устройств: " + (str(client.device_limit) if client.device_limit
+                                     else "без ограничения")]
+    return "\n".join(lines)
 
 
 def subscription_status_only(client, *, expiring: bool = False) -> str:
@@ -1766,16 +1791,13 @@ def grace_activated_admin(name: str, days: int) -> str:
 
 # ── Приостановка: инфобоксы диалога ──────────────────────────────────────────
 
-def pause_ask(available_days: int, used: int, total: int) -> str:
-    """Инфобокс перед выбором длительности: сколько доступно и почему."""
-    why = ""
-    if used > 0:
-        why = f"\n\nУже израсходовано {used}/{total} дн. приостановки за действующий период подписки."
+def pause_ask(available_days: int) -> str:
+    """Инфобокс перед выбором длительности: сколько доступно и как считается."""
     return (f"⏸ Подписку можно приостановить максимум на {available_days} дн.\n\n"
             "Пока подписка на паузе, её срок не тикает. Возобновить можно в любой "
-            "момент. Тогда неиспользованные дни приостановки вернутся обратно — "
+            "момент. Тогда неиспользованные дни приостановки вернутся на счёт — "
             "их можно будет использовать позже, а зачтётся только фактическое "
-            "количество дней паузы (даже 1 минута паузы считается как целый день)." + why +
+            "количество дней паузы (даже 1 минута паузы считается как целый день)."
             "\n\nНа сколько дней приостановить?")
 
 
@@ -1814,13 +1836,15 @@ def pause_unavailable() -> str:
     """Лимит берём из конфига (не хардкод): при смене PAUSE_MAX_TOTAL_DAYS текст
     иначе называл бы пользователю неверную цифру. Функция (а не константа) —
     config импортируется лениво, как и в остальных динамических текстах модуля."""
-    return ("Приостановка сейчас недоступна: она возможна только для годовой "
-            f"подписки, и суммарно не более {settings.get_int("pause.pause_max_total_days", 28)} дней за период.")
+    md = settings.get_int("pause.monthly_pause_days", 2)
+    return ("Приостановка сейчас недоступна: на счету нет дней. Годовая подписка даёт "
+            f"{settings.get_int('pause.pause_max_total_days', 28)} дней за период, "
+            f"ежемесячная — по {md} {_days_word(md)} за каждое своевременное продление.")
 
 
 def pause_limit_exhausted() -> str:
     """Годовая подписка, но доступных дней приостановки не осталось."""
-    return "Лимит дней приостановки в текущем периоде исчерпан."
+    return "Дни приостановки на счету закончились — пополнится при продлении подписки."
 
 def pause_resume_ask(actual: int, reserved: int) -> str:
     """Инфобокс подтверждения досрочного выхода из паузы — явно указываем,
@@ -2000,9 +2024,15 @@ SETTINGS_SUBS = (
     "выданные подписки тоже.\n\n"
     "• <b>Бонус-квота</b> — сколько трафика добавляется профилю по кнопке "
     "«добавить квоту», когда он упёрся в лимит и просит ещё.\n"
-    "• <b>Макс. дней паузы</b> — сколько всего дней в год профиль может "
-    "простоять «в отпуске». Пауза останавливает срок подписки: неиспользованные "
-    "дни возвращаются в конце.\n"
+    "• <b>Макс. дней паузы (год)</b> — сколько всего дней в год профиль с "
+    "<b>годовой</b> подпиской может простоять «в отпуске». Пауза останавливает "
+    "срок подписки: неиспользованные дни возвращаются при досрочном снятии.\n"
+    "<i>Счётчик доступных дней пополняется при продлении на год.</i>\n"
+    "• <b>Дней паузы в месяц</b> — сколько дней паузы начислять профилям с "
+    "<b>ежемесячной</b> подпиской за своевременное продление. Переход подписки "
+    "в статус «истекла» или использование грейс-периода исключают бонус за "
+    "следующее продление на месяц.\n"
+    "<i>Максимум накопления: за 12 своевременных продлений.</i>\n"
     "• <b>Грейс-период</b> — сколько дней после окончания подписки профиль ещё "
     "работает. Нужен, чтобы истёкший в отпуске или ночью не отваливался молча: "
     "бот предупреждает, а доступ пока живёт.\n\n"
@@ -2222,7 +2252,8 @@ SETTINGS_BOUNDS = {
     "resource_alerts.thresholds_percent.ram": (1, 100, "Порог RAM", "% (1–100)"),
     "resource_alerts.thresholds_percent.disk": (1, 100, "Порог диска", "% (1–100)"),
     "limits.traffic_bonus_gb": (1, 100000, "Бонус-квота", "ГБ"),
-    "pause.pause_max_total_days": (1, 365, "Макс. дней паузы", "дней (1–365)"),
+    "pause.pause_max_total_days": (1, 365, "Макс. дней паузы (год)", "дней (1–365)"),
+    "pause.monthly_pause_days": (0, 31, "Дней паузы в месяц", "дней (0–31)"),
     "grace.grace_days": (1, 365, "Grace-дней", "дней (1–365)"),
     "app.scheduler.monitor_minutes": (1, 1440, "Частота опроса", "мин (1–1440)"),
     "app.monitoring.alert_streak": (1, 100, "Порог стрика", "замеров (1–100)"),
@@ -2402,6 +2433,7 @@ _SETTINGS_GENDER = {
     "quiet_hours.quiet_hours_start": "n",            # Начало
     "limits.traffic_bonus_gb": "f",                  # Бонус-квота
     "grace.grace_days": "n",                         # Grace-дней (количество)
+    "pause.monthly_pause_days": "n",                 # Дней паузы в месяц (количество)
     "app.scheduler.monitor_minutes": "f",            # Частота
     "app.gateway.monitor_minutes": "f",
     "email.resume_code_len": "f",                    # Длина

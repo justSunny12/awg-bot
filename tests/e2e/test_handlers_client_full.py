@@ -27,7 +27,7 @@ async def test_menu_main_and_info_and_devices(services, fake_bot, make_active_cl
     services.add_device(client.id, "d")
     cl = _fresh(services, client)
     expect = {ch.menu_main: ("Привет", "Мои устройства"),
-              ch.menu_info: ("Статус подписки", "Приостановить"),
+              ch.menu_info: ("Информация о подписке", "Приостановить"),
               ch.menu_devices: ("Устройств добавлено: 1", "d")}
     for handler, (in_text, in_button) in expect.items():
         cb, nav = _cb(fake_bot, 5000)
@@ -233,8 +233,53 @@ async def test_pause_full_cycle(services, fake_bot, make_active_client):
     assert not _fresh(services, client).is_paused
 
 
+async def test_subscription_screen_and_menu_label(services, fake_bot, make_active_client):
+    """«⚙️ Управлять подпиской» — только когда есть рычаг (пауза или её снятие);
+    иначе «📝 Моя подписка». Экран — тип, статус, РФ-доступ, период, остаток,
+    счёт паузы, лимиты; потребления и списка устройств здесь нет."""
+    from awgbot.bot import keyboards as kb, texts
+    from awgbot.util import timeutil
+    G = 1024 ** 3
+    y = make_active_client(tg_id=5030, period_kind="year", device_limit=4, traffic_limit=50 * G)
+    d = make_active_client(tg_id=5031, period_kind="day")
+    assert "⚙️ Управлять подпиской" in [b.text for r in kb.client_main(manage_sub=ch._manage_sub(
+        _fresh(services, y))).inline_keyboard for b in r]
+    assert "📝 Моя подписка" in [b.text for r in kb.client_main(manage_sub=ch._manage_sub(
+        _fresh(services, d))).inline_keyboard for b in r]
+
+    text, _ = await ch._info_parts(services, y.id)
+    c = _fresh(services, y)
+    start, end = timeutil.parse_iso(c.period_start), timeutil.parse_iso(c.period_end)
+    assert text.startswith("<b>Информация о подписке:</b>\n\nТип подписки: годовая\nСтатус: 🟢 активна\n"
+                           "РФ-доступ: 🔴 не доступен\n"
+                           f"Период подписки: {timeutil.fmt_period(start, end)}\nДо истечения: ")
+    assert "\n\nПриостановка подписки: доступно 28/28 дней\n\n" in text
+    assert text.endswith("Лимит потребления в месяц: 50 ГБ\nЛимит устройств: 4")
+    assert "Потребление" not in text and "Устройств:" not in text
+
+    m = make_active_client(tg_id=5032, period_kind="month", device_limit=0)
+    text, _ = await ch._info_parts(services, m.id)
+    assert "Тип подписки: ежемесячная" in text
+    assert ("Приостановка подписки: доступно 2/24 дней\n"
+            "<i>(+2 дня за каждый своевременно оплаченный месяц)</i>") in text
+    assert text.endswith("Лимит потребления в месяц: без ограничения\nЛимит устройств: без ограничения")
+
+    n = make_active_client(tg_id=5033, period_kind="never")
+    text, _ = await ch._info_parts(services, n.id)
+    assert "Тип подписки: бессрочная" in text and "Приостановка" not in text
+    assert "До истечения" not in text and "— бессрочно" in text
+    text, _ = await ch._info_parts(services, d.id)
+    assert "Приостановка подписки: недоступно для этого типа подписки" in text
+
+    services.enter_pause(y.id, 5)
+    text, _ = await ch._info_parts(services, y.id)
+    assert "Статус: ⏳ приостановлена" in text and "До истечения" not in text
+    assert "доступно 23/28 дней" in text
+    assert texts.subscription_status_only(_fresh(services, y)).startswith("⏸")
+
+
 async def test_pause_ask_unavailable(services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=5018, period_kind="month")
+    client = make_active_client(tg_id=5018, period_kind="day")     # счёт паузы пуст
     cl = _fresh(services, client)
     cb, nav = _cb(fake_bot, 5018)
     await ch.pause_ask(cb, PauseCB(action="ask", ref=client.id), cl, services)

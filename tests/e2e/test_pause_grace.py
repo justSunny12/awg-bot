@@ -14,8 +14,8 @@ def test_pause_available_days_year(services, make_active_client):
     assert services.pause_available_days(client.id) == settings.get_int("pause.pause_max_total_days", 28)
 
 
-def test_pause_unavailable_on_month(services, make_active_client):
-    client = make_active_client(period_kind="month")
+def test_pause_unavailable_without_balance(services, make_active_client):
+    client = make_active_client(period_kind="day")               # день/неделя счёт не копят
     assert services.pause_available_days(client.id) == 0
     ok, reserved, _, _ = services.enter_pause(client.id)
     assert ok is False and reserved == 0

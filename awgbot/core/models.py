@@ -56,6 +56,7 @@ class PauseState:
     active_since: Optional[str] = None    # ISO входа в паузу
     reserved_days: int = 0
     used_days: int = 0
+    balance_days: int = 0                 # счёт дней паузы (годовая 28/период, месячная +2 за продление)
     mode: Optional[str] = None            # user | admin_fixed | admin_open
     saved_end: Optional[str] = None       # снимок period_end для admin_open
     resume_code: Optional[str] = None     # одноразовый код email-выхода (NULL вне паузы)
@@ -137,6 +138,8 @@ class Client:
     def pause_reserved_days(self): return self.pause.reserved_days if self.pause else 0
     @property
     def pause_used_days(self): return self.pause.used_days if self.pause else 0
+    @property
+    def pause_balance_days(self): return self.pause.balance_days if self.pause else 0
     @property
     def pause_mode(self): return self.pause.mode if self.pause else None
     @property

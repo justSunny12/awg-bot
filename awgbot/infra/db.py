@@ -56,16 +56,18 @@ def _client_from_row(row) -> Optional["models.Client"]:
                                       pending_cut=int(row["grace_pending_cut"]))
     pause = None
     if "pause_used_days" in keys and row["pause_used_days"] is not None:
+        balance = int(row["pause_balance_days"] or 0)
         if row["pause_active_since"]:
             pause = models.PauseState(
                 active_since=row["pause_active_since"],
                 reserved_days=int(row["pause_reserved_days"]),
                 used_days=int(row["pause_used_days"]),
+                balance_days=balance,
                 mode=row["pause_mode"],
                 saved_end=row["pause_saved_end"],
                 resume_code=(row["resume_code"] if "resume_code" in keys else None))
-        elif int(row["pause_used_days"]):
-            pause = models.PauseState(used_days=int(row["pause_used_days"]))
+        elif int(row["pause_used_days"]) or balance:
+            pause = models.PauseState(used_days=int(row["pause_used_days"]), balance_days=balance)
     return models.Client(
         id=int(row["id"]),
         tg_id=row["tg_id"],
@@ -148,7 +150,7 @@ SELECT c.*, s.period_start, s.period_end, s.period_kind, s.status, s.notified_th
        q.traffic_limit, q.bonus_bytes, q.bonus_granted_month, q.traffic_notified,
        g.grace_used, g.grace_pending_cut,
        p.pause_active_since, p.pause_reserved_days, p.pause_used_days,
-       p.pause_mode, p.pause_saved_end, p.resume_code
+       p.pause_balance_days, p.pause_mode, p.pause_saved_end, p.resume_code
 FROM clients c
 JOIN client_subscription s ON s.client_id = c.id
 JOIN client_quota q        ON q.client_id = c.id
@@ -238,7 +240,11 @@ CREATE TABLE IF NOT EXISTS client_pause (
     client_id           INTEGER PRIMARY KEY,
     pause_active_since  TEXT,                         -- ISO входа; NULL = не на паузе (но строка может жить ради used_days)
     pause_reserved_days INTEGER NOT NULL DEFAULT 0,   -- зарезервировано дней вперёд (user/admin_fixed)
-    pause_used_days     INTEGER NOT NULL DEFAULT 0,   -- израсходовано дней за период (лимит 28, только user)
+    pause_used_days     INTEGER NOT NULL DEFAULT 0,   -- израсходовано дней за период (только user)
+    -- Счёт дней паузы (v2.22.0): годовая — 28 за период, ежемесячная — +2 за
+    -- каждое своевременное продление (накопление до 12 таких). Вход в паузу
+    -- списывает резерв, досрочный выход возвращает неиспользованное.
+    pause_balance_days  INTEGER NOT NULL DEFAULT 0,
     pause_mode          TEXT,                         -- user | admin_fixed | admin_open
     pause_saved_end     TEXT,                         -- снимок period_end для admin_open
     resume_code         TEXT,                         -- одноразовый код email-выхода (NULL вне паузы)
@@ -371,6 +377,7 @@ CREATE TABLE IF NOT EXISTS client_pause_histories (
     pause_active_since  TEXT,
     pause_reserved_days INTEGER NOT NULL DEFAULT 0,
     pause_used_days     INTEGER NOT NULL DEFAULT 0,
+    pause_balance_days  INTEGER NOT NULL DEFAULT 0,
     pause_mode          TEXT,
     pause_saved_end     TEXT,
     archived_at         TEXT    NOT NULL,
@@ -588,6 +595,7 @@ class Database:
         проходит через v2.10.0 и получает это там.
         """
         self._migrate_guest_role_columns()
+        self._migrate_pause_balance_column()
         with self._tx() as cur:
             cur.executescript(SCHEMA)
         self._migrate_drop_full_access()
@@ -624,6 +632,22 @@ class Database:
                 with self._tx() as cur:
                     cur.execute("ALTER TABLE devices ADD COLUMN holder_client_id INTEGER "
                                 "REFERENCES clients(id) ON DELETE SET NULL")
+
+    def _migrate_pause_balance_column(self) -> None:
+        """v2.22.0: счёт дней паузы (client_pause.pause_balance_days и та же
+        колонка в истории). Идемпотентно. Сами балансы для действующих профилей
+        считает services.migrate_pause_balances — разово, по истории продлений."""
+        con = self._connection()
+        for table in ("client_pause", "client_pause_histories"):
+            exists = con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                                 (table,)).fetchone()
+            if exists is None:
+                continue
+            have = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
+            if "pause_balance_days" not in have:
+                with self._tx() as cur:
+                    cur.execute(f"ALTER TABLE {table} ADD COLUMN pause_balance_days "
+                                "INTEGER NOT NULL DEFAULT 0")
 
     def _migrate_friends_to_guests(self) -> None:
         """v2.20.0: прежние «друзья» (device_friend.status = active, tg на
@@ -911,7 +935,8 @@ class Database:
         "grace_used": "client_grace", "grace_pending_cut": "client_grace",
         # client_pause (ленивая)
         "pause_active_since": "client_pause", "pause_reserved_days": "client_pause",
-        "pause_used_days": "client_pause", "pause_mode": "client_pause",
+        "pause_used_days": "client_pause", "pause_balance_days": "client_pause",
+        "pause_mode": "client_pause",
         "pause_saved_end": "client_pause", "resume_code": "client_pause",
     }
     _CLIENT_LAZY = {"client_grace", "client_pause"}
@@ -930,18 +955,38 @@ class Database:
             cur.execute(
                 """INSERT INTO client_pause
                    (client_id, pause_active_since, pause_reserved_days,
-                    pause_used_days, pause_mode, pause_saved_end, resume_code)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                    pause_used_days, pause_balance_days, pause_mode, pause_saved_end,
+                    resume_code)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(client_id) DO UPDATE SET
                      pause_active_since=excluded.pause_active_since,
                      pause_reserved_days=excluded.pause_reserved_days,
                      pause_used_days=excluded.pause_used_days,
+                     pause_balance_days=excluded.pause_balance_days,
                      pause_mode=excluded.pause_mode,
                      pause_saved_end=excluded.pause_saved_end,
                      resume_code=excluded.resume_code""",
                 (client_id, pause.active_since, pause.reserved_days,
-                 pause.used_days, str(pause.mode) if pause.mode else None,
+                 pause.used_days, pause.balance_days, str(pause.mode) if pause.mode else None,
                  pause.saved_end, pause.resume_code))
+
+    def set_pause_balance(self, client_id: int, days: int) -> None:
+        """Счёт дней паузы — отдельно от эпизода: строка паузы ленивая, и
+        после сброса периода (archive_pause удаляет её) баланс кладётся заново."""
+        with self._tx() as cur:
+            cur.execute(
+                """INSERT INTO client_pause (client_id, pause_balance_days) VALUES (?, ?)
+                   ON CONFLICT(client_id) DO UPDATE SET pause_balance_days=excluded.pause_balance_days""",
+                (client_id, max(0, int(days))))
+
+    def monthly_renewals(self, client_id: int) -> int:
+        """Сколько раз подписка продлевалась с ежемесячного периода — по
+        снимкам закрытых периодов (для разового расчёта счёта паузы)."""
+        row = self._connection().execute(
+            "SELECT COUNT(*) AS n FROM client_subscription_histories "
+            " WHERE client_id = ? AND period_kind = 'month' AND close_reason = 'renewed'",
+            (client_id,)).fetchone()
+        return int(row["n"])
 
     def update_client_fields(self, client_id: int, **fields) -> None:
         """Точечное обновление полей клиента с маршрутизацией по нормализованным
@@ -1549,11 +1594,11 @@ class Database:
         cur.execute(
             """INSERT INTO client_pause_histories
                (client_id, pause_active_since, pause_reserved_days, pause_used_days,
-                pause_mode, pause_saved_end, archived_at, close_reason)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                pause_balance_days, pause_mode, pause_saved_end, archived_at, close_reason)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (client_id, row["pause_active_since"], row["pause_reserved_days"],
-             row["pause_used_days"], row["pause_mode"], row["pause_saved_end"],
-             _now_iso(), reason))
+             row["pause_used_days"], row["pause_balance_days"], row["pause_mode"],
+             row["pause_saved_end"], _now_iso(), reason))
 
     def archive_pause(self, client_id: int, reason: str, cur=None) -> None:
         """Полностью закрыть паузу: снимок эпизода → историю + удалить активную

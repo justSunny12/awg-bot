@@ -7,6 +7,7 @@ def test_pause_day_choice_and_days(services, fake_awg):
     end = timeutil.to_iso(datetime.now(timeutil.TZ) + timedelta(days=300))
     cid = services.db.create_client("P", 1, timeutil.now_iso(), end, "c", period_kind="year")
     services.db.activate_client("c", 5)
+    services.db.set_pause_balance(cid, settings.get_int("pause.pause_max_total_days", 28))
     avail = services.pause_available_days(cid)
     # клавиатура: если avail<14, кнопки «14 дн.» быть не должно
     labels = [b.text for r in kb.pause_day_choice(cid, avail).inline_keyboard for b in r]
@@ -33,6 +34,7 @@ def test_pause_counter_shows_period_end(services, fake_awg):
     end = timeutil.to_iso(datetime(2027, 3, 15, 12, 0, 0, tzinfo=timeutil.TZ))
     cid = services.db.create_client("X", 1, timeutil.now_iso(), end, "c", period_kind="year")
     services.db.activate_client("c", 5)
+    services.db.set_pause_balance(cid, settings.get_int("pause.pause_max_total_days", 28))
     c = services.db.get_client(cid)
     block = texts.subscription_block(c, for_admin=True)
     line = [l for l in block.split("\n") if "Приостановка" in l][0]
@@ -41,7 +43,8 @@ def test_pause_counter_shows_period_end(services, fake_awg):
 
 def test_pause_limit_exhausted_text():
     from awgbot.bot import texts
-    assert texts.pause_limit_exhausted() == "Лимит дней приостановки в текущем периоде исчерпан."
+    assert texts.pause_limit_exhausted() == \
+        "Дни приостановки на счету закончились — пополнится при продлении подписки."
 
 
 def test_pause_not_capped_by_subscription_remainder(services, fake_awg):
@@ -53,6 +56,7 @@ def test_pause_not_capped_by_subscription_remainder(services, fake_awg):
     end = timeutil.to_iso(datetime.now(timeutil.TZ) + timedelta(days=2))
     cid = services.db.create_client("Short", 1, timeutil.now_iso(), end, "c", period_kind="year")
     services.db.activate_client("c", 5)
+    services.db.set_pause_balance(cid, settings.get_int("pause.pause_max_total_days", 28))
     avail = services.pause_available_days(cid)
     # не должно быть 2 (остаток подписки) — должно быть весь суммарный лимит
     assert avail == settings.get_int("pause.pause_max_total_days", 28)
@@ -69,6 +73,7 @@ def test_friend_panel_hides_pause_counter(services, fake_awg):
     end = timeutil.to_iso(datetime.now(timeutil.TZ) + timedelta(days=200))
     cid = services.db.create_client("Host", 2, timeutil.now_iso(), end, "c", period_kind="year")
     services.db.activate_client("c", 5)
+    services.db.set_pause_balance(cid, settings.get_int("pause.pause_max_total_days", 28))
     c = services.db.get_client(cid)
     assert "Приостановка" in texts.subscription_block(c, for_admin=True)   # админ видит
     assert "Приостановка" not in texts.subscription_block(c, show_pause=False)  # друг нет

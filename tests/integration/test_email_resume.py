@@ -7,6 +7,7 @@ def test_email_resume_flow(services, fake_awg):
     end = timeutil.to_iso(datetime.now(timeutil.TZ) + timedelta(days=200))
     cid = services.db.create_client("Vac", 1, timeutil.now_iso(), end, "c", period_kind="year")
     services.db.activate_client("c", 555)
+    services.db.set_pause_balance(cid, 28)          # профиль заведён мимо services
     services.add_device(cid, "phone")
     # вход в паузу → выдаётся код
     ok, reserved, notes, code = services.enter_pause(cid, 7)

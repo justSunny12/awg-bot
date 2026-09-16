@@ -53,7 +53,8 @@ async def _show_main(target, services, client, *, via_edit=None):
     routing_visible = await call(services.routing_client_visible, client)
     markup = kb.client_main(has_devices=used > 0, routing_visible=routing_visible,
                             client_id=client.id,
-                            routing_on=await call(services.routing_profile_on, client.id))
+                            routing_on=await call(services.routing_profile_on, client.id),
+                            manage_sub=_manage_sub(client))
     if via_edit is not None:
         await cleanup_content(via_edit.bot, services, via_edit.message.chat.id)
         await edit_nav(via_edit, services, text, markup)
@@ -239,18 +240,24 @@ def _pause_flags(client) -> tuple[bool, bool]:
     paused_any = (client.is_paused
                   or bool(int(client.block_reason) & int(blocks.ClientBlock.PAUSED)))
     paused_user = client.is_paused and client.pause_mode == PauseMode.USER
-    can_pause = client.period_kind == PeriodKind.YEAR and not paused_any
+    can_pause = (not paused_any and bool(client.period_end)
+                 and int(client.pause_balance_days) > 0)
     return paused_user, can_pause
+
+
+def _manage_sub(client) -> bool:
+    """Есть ли у клиента рычаг: снять свою паузу или войти в неё."""
+    paused_user, can_pause = _pause_flags(client)
+    return paused_user or can_pause
 
 
 @router.callback_query(Menu.filter(F.action == "info"))
 async def menu_info(cb: CallbackQuery, client, services):
-    devices = await call(services.db.list_devices, client.id)
-    traffic = await call(services.db.get_client_traffic, client.id)
-    online = await call(services.client_is_online, client.id)
-    text = texts.subscription_manage_text(client, traffic, online, len(devices))
-    paused_user, can_pause = _pause_flags(client)
-    await edit(cb, text, kb.client_info_actions(client, paused=paused_user, can_pause=can_pause))
+    parts = await _info_parts(services, client.id)
+    if parts is None:
+        await cb.answer("Профиль не найден", show_alert=True)
+        return
+    await edit(cb, *parts)
     await cb.answer()
 
 
@@ -789,8 +796,7 @@ async def _info_parts(services, client_id: int):
         return None
     client = d["client"]
     paused_user, can_pause = _pause_flags(client)
-    return (texts.subscription_manage_text(client, d["traffic"], d["online"],
-                                           len(d["devices"])),
+    return (texts.subscription_manage_text(client, routing_visible=d["routing"]),
             kb.client_info_actions(client, paused=paused_user, can_pause=can_pause))
 
 
@@ -812,9 +818,7 @@ async def pause_ask(cb: CallbackQuery, callback_data: PauseCB, client, services)
         else:
             await cb.answer(texts.pause_unavailable(), show_alert=True)
         return
-    await edit(cb, texts.pause_ask(avail, int(client.pause_used_days),
-                                   settings.get_int("pause.pause_max_total_days", 28)),
-               kb.pause_day_choice(client.id, avail))
+    await edit(cb, texts.pause_ask(avail), kb.pause_day_choice(client.id, avail))
     await cb.answer()
 
 

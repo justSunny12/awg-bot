@@ -185,9 +185,9 @@ async def show_main_menu(message: Message, services, role: str, client=None) -> 
         from awgbot.bot.handlers.admin import _panel_parts
         text, markup = await _panel_parts(services)
     elif role == "client":
-        from awgbot.bot.handlers.client import _greeting
+        from awgbot.bot.handlers.client import _greeting, _manage_sub
         text, (used, _) = await _greeting(services, client)
-        markup = kb.client_main(has_devices=used > 0)
+        markup = kb.client_main(has_devices=used > 0, manage_sub=_manage_sub(client))
     elif role == "invited":
         from awgbot.bot.handlers.friend import guest_main_payload
         text, markup = await guest_main_payload(services, client)

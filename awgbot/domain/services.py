@@ -412,7 +412,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         devices = self.db.list_devices(client_id)
         return {"client": client, "devices": devices,
                 "traffic": self.db.get_client_traffic(client_id),
-                "online": self._devices_online(devices)}
+                "online": self._devices_online(devices),
+                "routing": self.routing_client_visible(client)}
 
     def svc_screen_data(self) -> dict:
         state = self.migration_state()
@@ -756,6 +757,9 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             timeutil.to_iso(end) if end else None, invite,
             traffic_limit=traffic_limit, period_kind=period_kind,
         )
+        credit = self._pause_credit(None, period_kind)      # первый оплаченный период
+        if credit:
+            self.db.set_pause_balance(cid, credit)
         return ClientCreated(client_id=cid, invite_code=invite, period_end=end)
 
     def activate_client(self, invite_code: str, tg_id: int) -> ActivationResult:
@@ -1216,6 +1220,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             client = self.db.get_client(client_id)
 
         extra = self.remaining_for(client_id) if keep_remainder else 0
+        pause_credit = self._pause_credit(client, period_kind)   # по СТАРОМУ состоянию
         new_start = timeutil.now()
         never = period_kind == PeriodKind.NEVER
         # «долг» отсрочки вычитается из нового периода (никогда — из «never»:
@@ -1249,6 +1254,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         self.db.archive_subscription(client_id, "renewed")
         self.db.archive_grace(client_id, "new_period")   # снесёт строку, если была
         self.db.archive_pause(client_id, "new_period")   # снимок эпизода + сброс used_days
+        if pause_credit:
+            self.db.set_pause_balance(client_id, pause_credit)   # счёт паузы — заново
         self.db.update_client_fields(
             client_id,
             period_start=timeutil.to_iso(new_start),
@@ -1385,15 +1392,76 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
 
     # ── Приостановка подписки («в отпуск») ───────────────────────────────────
 
+    # ── счёт дней паузы (docs: README «Приостановка подписки») ──────────────
+    # Годовая: 28 за период — счёт заполняется при создании на год и при каждом
+    # продлении на год. Ежемесячная: +2 за каждый своевременно оплаченный месяц
+    # (создание и продление, пока подписка не истекла и без отсрочки), копится
+    # до 12 таких. Годовая → месячная: остаток переносится в пределах месячного
+    # максимума. День/неделя/бессрочно: счёт не пополняется, остаток живёт.
+
+    @staticmethod
+    def pause_year_days() -> int:
+        return settings.get_int("pause.pause_max_total_days", 28)
+
+    @staticmethod
+    def pause_month_days() -> int:
+        return settings.get_int("pause.monthly_pause_days", 2)
+
+    @classmethod
+    def pause_month_cap(cls) -> int:
+        return 12 * cls.pause_month_days()
+
+    def _pause_credit(self, client, new_kind: str) -> int:
+        """Счёт после оплаты периода new_kind. client — состояние ДО (None при
+        создании). Ежемесячно «своевременно» = подписка не истекла и без
+        отсрочки в закрываемом периоде."""
+        bal = int(client.pause_balance_days) if client is not None else 0
+        if new_kind == PeriodKind.YEAR:
+            return self.pause_year_days()
+        if new_kind == PeriodKind.MONTH:
+            timely = client is None or (client.status == SubStatus.ACTIVE and not client.grace_used)
+            return min(bal + (self.pause_month_days() if timely else 0), self.pause_month_cap())
+        return bal
+
     def pause_available_days(self, client_id: int) -> int:
-        """Сколько дней приостановки клиент может взять ПРЯМО СЕЙЧАС = остаток
-        суммарного лимита за период (PAUSE_MAX_TOTAL_DAYS − уже использовано).
-        Только годовая; иначе 0. Ни остатком подписки, ни «максимумом за один
-        вход» НЕ ограничиваем — единственный лимит суммарный, за период."""
+        """Сколько дней приостановки клиент может взять ПРЯМО СЕЙЧАС — его счёт.
+        Бессрочной паузе нечего останавливать — 0. Ни остатком подписки, ни
+        «максимумом за один вход» не ограничиваем."""
         client = self.db.get_client(client_id)
-        if client is None or client.period_kind != PeriodKind.YEAR or not client.period_end:
+        if client is None or not client.period_end:
             return 0
-        return max(0, settings.get_int("pause.pause_max_total_days", 28) - int(client.pause_used_days))
+        return max(0, int(client.pause_balance_days))
+
+    _PAUSE_BALANCE_MIGRATED = "pause_balance_migrated"
+
+    def migrate_pause_balances(self) -> int:
+        """Разово после обновления на счёт паузы: годовым — остаток старого
+        лимита (28 − использовано − резерв текущей паузы), ежемесячным — по
+        числу оплаченных месяцев (создание + продления с месячного, все
+        считаются своевременными) в пределах максимума, минус то же. Возвращает
+        число профилей, получивших счёт."""
+        if self.db.get_state(self._PAUSE_BALANCE_MIGRATED) == "1":
+            return 0
+        n = 0
+        with self.db.transaction():
+            for c in self.db.list_clients(include_service=False):
+                spent = int(c.pause_used_days)
+                if c.is_paused and c.pause_mode == PauseMode.USER:
+                    spent += int(c.pause_reserved_days)
+                if c.period_kind == PeriodKind.YEAR:
+                    bal = self.pause_year_days() - spent
+                elif c.period_kind == PeriodKind.MONTH:
+                    months = 1 + self.db.monthly_renewals(c.id)
+                    bal = min(months * self.pause_month_days(), self.pause_month_cap()) - spent
+                else:
+                    continue
+                if bal > 0:
+                    self.db.set_pause_balance(c.id, bal)
+                    n += 1
+            self.db.set_state(self._PAUSE_BALANCE_MIGRATED, "1")
+        if n:
+            log.info("пауза: счёт дней выдан %d профилям", n)
+        return n
 
     def enter_pause(self, client_id: int, days: int = None):
         """Клиентский самоблок (mode=user). Резервирует `days` дней вперёд
@@ -1422,6 +1490,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
                 active_since=timeutil.to_iso(now), reserved_days=reserved,
                 mode=PauseMode.USER,
                 used_days=int(client.pause_used_days),   # накопленное за период
+                balance_days=int(client.pause_balance_days) - reserved,   # резерв списан
                 resume_code=code))
             self.db.update_client_fields(
                 client_id,
@@ -1452,7 +1521,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
                 self.db.save_pause(client_id, models.PauseState(
                     active_since=timeutil.to_iso(now), reserved_days=days,
                     mode=PauseMode.ADMIN_FIXED,
-                    used_days=int(client.pause_used_days)))
+                    used_days=int(client.pause_used_days),
+                    balance_days=int(client.pause_balance_days)))
                 if client.period_end:
                     end = timeutil.parse_iso(client.period_end)
                     self.db.update_client_fields(client_id, period_end=timeutil.to_iso(
@@ -1462,7 +1532,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
                 self.db.save_pause(client_id, models.PauseState(
                     active_since=timeutil.to_iso(now), reserved_days=0,
                     mode=PauseMode.ADMIN_OPEN, saved_end=client.period_end,
-                    used_days=int(client.pause_used_days)))
+                    used_days=int(client.pause_used_days),
+                    balance_days=int(client.pause_balance_days)))
                 self.db.update_client_fields(client_id, period_end=None)
         return days
 
@@ -1514,14 +1585,19 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
                 end = timeutil.parse_iso(client.period_end)
                 new_end = end - datetime.timedelta(days=reserved - actual)
                 new_end_iso = timeutil.to_iso(new_end)
-            used_add = actual if mode == PauseMode.USER else 0  # лимит 28 копит только user
+            used_add = actual if mode == PauseMode.USER else 0  # счёт списывает только user
+        # неиспользованный резерв — обратно на счёт (только свой самоблок)
+        balance = int(client.pause_balance_days)
+        if mode == PauseMode.USER:
+            balance += int(client.pause_reserved_days) - actual
         # атомарно: снимок эпизода в аудит + гашение активности паузы (used_days
         # периода сохраняем «спящим») + правка периода/блока
         with self.db.transaction():
             self.db.snapshot_pause(client_id, "auto" if auto else "manual")
             self.db.save_pause(client_id, models.PauseState(
                 active_since=None, reserved_days=0, mode=None, saved_end=None,
-                used_days=int(client.pause_used_days) + used_add))
+                used_days=int(client.pause_used_days) + used_add,
+                balance_days=max(0, balance)))
             self.db.update_client_fields(
                 client_id,
                 period_end=new_end_iso,

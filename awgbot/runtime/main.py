@@ -265,6 +265,7 @@ async def main() -> None:
     db.init_schema()
     services = Services(db)
     services.ensure_admin_client()          # админ — тоже пользователь VPN
+    services.migrate_pause_balances()       # v2.22.0: счёт дней паузы — разово
 
     bot = Bot(
         config.BOT_TOKEN,

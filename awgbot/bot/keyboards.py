@@ -46,7 +46,8 @@ from awgbot.bot.callbacks import (AdminSelfCB, BlockCB, ClientCB, ConfirmCB, Del
 # ─────────────────────────────────────────────────────────────────────────────
 
 def client_main(has_devices: bool = True, routing_visible: bool = False,
-                client_id: int = 0, routing_on: bool = False) -> InlineKeyboardMarkup:
+                client_id: int = 0, routing_on: bool = False,
+                manage_sub: bool = True) -> InlineKeyboardMarkup:
     """Главное меню клиента. Пункт «Доступ к РФ-сервисам» появляется только после
     того, как админ выдал разрешение: до этого фича невидима, иначе каждый первый
     пойдёт спрашивать, что это за пункт и почему не работает.
@@ -57,7 +58,10 @@ def client_main(has_devices: bool = True, routing_visible: bool = False,
     kb.button(text="➕ Добавить устройство", callback_data=DeviceCB(action="add"))
     if has_devices:
         kb.button(text="📱 Мои устройства", callback_data=Menu(action="devices"))
-    kb.button(text="⚙️ Управлять подпиской", callback_data=Menu(action="info"))
+    # «Управлять» — только когда есть чем: единственный рычаг клиента —
+    # пауза (войти или снять); иначе экран сугубо информационный
+    kb.button(text="⚙️ Управлять подпиской" if manage_sub else "📝 Моя подписка",
+              callback_data=Menu(action="info"))
     if routing_visible:
         kb.button(text=f"{_chk(routing_on)} Доступ к РФ-сервисам",
                   callback_data=RoutingCB(action="panel", ref=client_id))
@@ -1577,8 +1581,10 @@ def settings_subs() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text=f"Бонус-квота: {s.get_int('limits.traffic_bonus_gb', 100)} ГБ",
               callback_data=SetCB(sec="subs", act="edit", key="limits.traffic_bonus_gb"))
-    kb.button(text=f"Макс. дней паузы: {s.get_int('pause.pause_max_total_days', 28)}",
+    kb.button(text=f"Макс. дней паузы (год): {s.get_int('pause.pause_max_total_days', 28)}",
               callback_data=SetCB(sec="subs", act="edit", key="pause.pause_max_total_days"))
+    kb.button(text=f"Дней паузы в месяц: {s.get_int('pause.monthly_pause_days', 2)}",
+              callback_data=SetCB(sec="subs", act="edit", key="pause.monthly_pause_days"))
     kb.button(text=f"Продолжительность грейс-периода: {s.get_int('grace.grace_days', 14)}",
               callback_data=SetCB(sec="subs", act="edit", key="grace.grace_days"))
     kb.adjust(1)

@@ -107,10 +107,16 @@ def fmt_dt_sec(dt: datetime) -> str:
 
 
 def parse_dt_sec(s: str) -> datetime:
-    """«DD.MM.YYYY HH:MM:SS» → aware-datetime в UTC+3. Бросает ValueError при
-    неверном формате (ловит вызывающий, просит повторить ввод)."""
-    dt = datetime.strptime(s.strip(), "%d.%m.%Y %H:%M:%S")
-    return dt.replace(tzinfo=TZ)
+    """«DD.MM.YYYY HH:MM:SS», «DD.MM.YYYY HH:MM» или «DD.MM.YYYY» (недостающее
+    время — нули) → aware-datetime в UTC+3. Бросает ValueError при неверном
+    формате (ловит вызывающий, просит повторить ввод)."""
+    raw = " ".join(s.split())
+    for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(raw, fmt).replace(tzinfo=TZ)
+        except ValueError:
+            continue
+    raise ValueError(f"не дата: {s!r}")
 
 
 def first_of_next_month_str() -> str:
