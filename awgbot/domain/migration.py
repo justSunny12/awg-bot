@@ -364,8 +364,9 @@ class MigrationMixin:
         if not dev.friend_status:
             return
         if dev.friend_status == FriendStatus.ACTIVE:
-            self.db.set_device_friend(new_id, friend_tg_id=dev.friend_tg_id,
-                                      friend_status=FriendStatus.ACTIVE)
+            # держатель — тот же (docs/guest-role.md): set_device_holder снимает
+            # приглашение, а у двойника его и нет
+            self.db.set_device_holder(new_id, dev.holder_client_id)
             return
         self.db.set_device_friend(new_id, friend_code=dev.friend_code,
                                   friend_status=dev.friend_status)

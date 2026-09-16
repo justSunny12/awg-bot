@@ -40,11 +40,11 @@ async def test_activate_friend_code_invalid(services, fake_bot):
     assert any(s[0] == "answer" and s[1] == texts.ACTIVATION_INVALID for s in msg.sent)
 
 
-async def test_activate_friend_code_already_user(services, fake_bot, make_active_client):
+async def test_activate_friend_code_by_admin_is_refused(services, fake_bot, make_active_client):
+    from awgbot.core import config
     owner = make_active_client(tg_id=8202)
-    make_active_client(tg_id=98202)                         # уже клиент
     _, code = _friendly_device(services, owner.id)
-    msg = FakeMessage(chat_id=98202, user_id=98202, bot=fake_bot)
+    msg = FakeMessage(chat_id=config.ADMIN_ID, user_id=config.ADMIN_ID, bot=fake_bot)
     await client_h._try_activate(msg, services, code)
     from awgbot.bot import texts
     assert any(s[0] == "answer" and s[1] == texts.FRIEND_ALREADY_USER for s in msg.sent)

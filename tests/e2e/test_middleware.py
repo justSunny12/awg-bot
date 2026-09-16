@@ -42,15 +42,19 @@ async def test_active_client_gets_client_role(db, make_active_client):
 
 
 async def test_invited_friend_role(services, make_active_client):
+    """Гость (docs/guest-role.md): роль invited, в client — его собственный
+    гостевой профиль; имя подтягивается из Telegram при первом сообщении."""
     owner = make_active_client(tg_id=5001)
     dc = services.add_device(owner.id, "d")
-    services.db.set_device_friend(dc.device_id, friend_tg_id=9001,
-                                  friend_code="Fabc", friend_status="active")
+    res = services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=9001)
+    assert res.ok and res.holder.is_guest and res.holder.name == "Друг"
     mw = AccessMiddleware(services.db)
     result, data = await _run(mw, uid=9001, text="меню")
     assert result == "HANDLED"
-    assert data["role"] == "invited" and data["device"].id == dc.device_id
-    assert data["client"].id == owner.id                 # хозяин прокинут
+    assert data["role"] == "invited" and data["client"].is_guest
+    assert data["client"].tg_id == 9001
+    assert data["client"].name == "U", "имя гостя не взято из Telegram"
+    assert services.guest_donor(data["client"]).id == owner.id
 
 
 async def test_stranger_start_is_activation(db):

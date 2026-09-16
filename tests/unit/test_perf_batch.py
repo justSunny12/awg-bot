@@ -76,7 +76,7 @@ async def test_middleware_negative_cache_for_strangers(services, monkeypatch):
     access_cache.invalidate_all()
     mw = AccessMiddleware(services.db)
     calls = []
-    for name in ("get_client_by_tg", "get_device_by_friend_tg"):
+    for name in ("get_client_by_tg",):
         orig = getattr(services.db, name)
         monkeypatch.setattr(services.db, name, lambda uid, _o=orig, _n=name: (calls.append(_n), _o(uid))[1])
     seen = []
@@ -90,7 +90,7 @@ async def test_middleware_negative_cache_for_strangers(services, monkeypatch):
                                       chat=Chat.model_construct(id=9001, type="private"))
         await mw(handler, msg, {"event_from_user": user})
     assert seen == ["activation"], "чужой текст — молчание, /start — активация"
-    assert calls == ["get_client_by_tg", "get_device_by_friend_tg"], "БД — один раз на TTL"
+    assert calls == ["get_client_by_tg"], "БД — один раз на TTL"
 
 
 # ── пакетное удаление с откатом на поштучное ─────────────────────────────────

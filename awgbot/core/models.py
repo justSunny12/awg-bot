@@ -75,6 +75,10 @@ class Client:
     activation_status: str
     invite_code: Optional[str]
     created_at: str
+    # Тип профиля (docs/guest-role.md): owner — обычный, со своей подпиской;
+    # guest — гость: профиль без подписки, держит устройства, переданные ему
+    # одним владельцем, живёт, пока держит хоть одно.
+    kind: str = "owner"
     # Условная маршрутизация: РАЗРЕШЕНИЕ админа. Собственного «включено» у
     # профиля нет — оно выводится из устройств (включено хоть на одном), см.
     # db.routing_device_counts. Хранить его ещё и здесь значило бы завести
@@ -89,6 +93,10 @@ class Client:
     # Инкапсулируют делегирование и None-логику ленивых процессов в ОДНОМ месте,
     # чтобы вызывающий код читал client.period_end / client.pause_mode напрямую
     # (атрибутами, не через dict-магию), а None-безопасность жила тут.
+    @property
+    def is_guest(self) -> bool:
+        return self.kind == "guest"
+
     @property
     def period_start(self): return self.subscription.period_start
     @property
@@ -150,10 +158,11 @@ class DeviceTraffic:
 
 @dataclass
 class Friend:
-    """Гостевой доступ (передача устройства другу). None ⇔ обычное устройство."""
-    tg_id: Optional[int] = None
+    """Ожидающее приглашение на устройство: код выдан, друг его ещё не
+    активировал. None ⇔ приглашения нет. После активации устройство получает
+    ДЕРЖАТЕЛЯ (Device.holder_*), а строка приглашения исчезает."""
     code: Optional[str] = None
-    status: Optional[str] = None          # pending | active
+    status: Optional[str] = None          # pending
 
 
 @dataclass
@@ -183,6 +192,15 @@ class Device:
     is_gateway: int = 0
     traffic: DeviceTraffic = field(default_factory=DeviceTraffic)
     friend: Optional[Friend] = None
+    # Держатель — кто управляет устройством через бота, если это не владелец
+    # (docs/guest-role.md): гость или обычный клиент. Слот, квота, подписка и
+    # разрешение РФ-доступа — у владельца (client_id). None ⇔ своё устройство.
+    holder_client_id: Optional[int] = None
+    holder_tg_id: Optional[int] = None
+    holder_name: str = ""
+    # Владелец — для карточки у держателя («получено от …»).
+    owner_tg_id: Optional[int] = None
+    owner_name: str = ""
 
     @property
     def is_managed(self) -> bool:
@@ -210,11 +228,20 @@ class Device:
     @property
     def missing_count(self): return self.traffic.missing_count
     @property
-    def friend_tg_id(self): return self.friend.tg_id if self.friend else None
+    def is_lent(self) -> bool:
+        """Передано: управляет держатель, а не владелец."""
+        return self.holder_client_id is not None
+
+    # ——— совместимость: «активный друг» = держатель, «pending» = приглашение ———
+    @property
+    def friend_tg_id(self): return self.holder_tg_id
     @property
     def friend_code(self): return self.friend.code if self.friend else None
     @property
-    def friend_status(self): return self.friend.status if self.friend else None
+    def friend_status(self):
+        if self.is_lent:
+            return "active"
+        return self.friend.status if self.friend else None
 
 
 __all__ = ["Subscription", "TrafficQuota", "GraceState", "PauseState", "Client",

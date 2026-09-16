@@ -47,36 +47,35 @@ class AccessMiddleware(BaseMiddleware):
         #    Без кэша каждый апдейт стоил 1–3 запроса синхронно в event loop.
         hit = access_cache.get(uid)
         if hit is not None and hit[0] != "stranger":
-            role, client, device = hit
+            role, client, _device = hit
             data["role"] = role
             data["client"] = client
-            if device is not None:
-                data["device"] = device
             return await handler(event, data)
         if hit is None:
             cached_stranger = False
         else:
             cached_stranger = True                      # отрицательный кэш: флуд
-            client = fdev = None                        # посторонних — 0 SQL
+            client = None                               # посторонних — 0 SQL
 
-        # 3) Активный клиент из БД
+        # 3) Профиль из БД: владелец → client; гость (docs/guest-role.md) →
+        #    invited с его собственным гостевым профилем в client
         client = None if cached_stranger else self.db.get_client_by_tg(uid)
         if (client is not None and not client.is_service
                 and client.activation_status == ActivationStatus.ACTIVE):
+            if client.is_guest:
+                # имя гостя — из Telegram: при переносе прежних друзей его не
+                # было, а средство узнать — только первое сообщение
+                name = (user.first_name or user.username or "").strip()
+                if name and client.name in ("Друг", ""):
+                    self.db.update_client_fields(client.id, name=name[:64])
+                    client = self.db.get_client(client.id)
+                access_cache.put(uid, "invited", client)
+                data["role"] = "invited"
+                data["client"] = client
+                return await handler(event, data)
             access_cache.put(uid, "client", client)
             data["role"] = "client"
             data["client"] = client
-            return await handler(event, data)
-
-        # 4) Друг (invited): управляет ОДНИМ гостевым устройством. Кладём в data
-        #    и устройство, и клиента-хозяина (для показа его подписки).
-        fdev = None if cached_stranger else self.db.get_device_by_friend_tg(uid)
-        if fdev is not None:
-            owner = self.db.get_client(fdev.client_id)
-            access_cache.put(uid, "invited", owner, fdev)
-            data["role"] = "invited"
-            data["client"] = owner
-            data["device"] = fdev
             return await handler(event, data)
 
         if not cached_stranger:

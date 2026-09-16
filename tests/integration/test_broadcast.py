@@ -97,19 +97,17 @@ def test_same_person_twice_gets_one_delivery(services, make_active_client):
     """Тот же DISTINCT-инвариант, что у общей рассылки: один человек — одна
     доставка, даже если он попал в выборку с двух сторон.
 
-    Пишем связь через db напрямую: activate_friend владельцу собственного
-    устройства откажет («already_user»), а проверяем мы здесь не его гейт, а
-    дедуп в UNION. Совпасть адреса могут и без этого пути — например, если
-    друг позже заведёт собственный профиль на тот же Telegram.
+    Человек — владелец профиля c1 и держатель устройства из профиля c2:
+    в выборку по обоим профилям он попадает с двух сторон.
     """
     import awgbot.core.config as cfg
     c = make_active_client(name="c1", tg_id=3001)
-    dc = services.add_device(c.id, "Телефон")
-    services.db.set_device_friend(dc.device_id, friend_tg_id=3001,
-                                  friend_status="active")
+    c2 = make_active_client(name="c2", tg_id=3002)
+    dc = services.add_device(c2.id, "Телефон")
+    assert services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=3001).ok
 
-    ids = services.db.broadcast_recipients_for_clients([c.id], exclude_tg_id=cfg.ADMIN_ID)
-    assert ids == [3001], "один человек получил бы объявление дважды"
+    ids = services.db.broadcast_recipients_for_clients([c.id, c2.id], exclude_tg_id=cfg.ADMIN_ID)
+    assert ids == [3001, 3002], "один человек получил бы объявление дважды"
 
 
 def test_recipients_union_over_several_profiles(services, make_active_client):

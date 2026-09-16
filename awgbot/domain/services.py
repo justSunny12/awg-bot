@@ -93,6 +93,7 @@ class ActivationResult:
     ok: bool
     reason: str = ""              # invalid | already_has_access | ok
     client: Optional[object] = None
+    upgrade: Optional["GuestUpgrade"] = None   # гость стал владельцем (docs/guest-role.md)
 
 
 @dataclass
@@ -118,10 +119,24 @@ class DeviceCreated:
 
 @dataclass
 class FriendActivation:
+    """Итог активации кода F… (docs/guest-role.md).
+    reason: ok | invalid | own_device (код на устройство своего же профиля) |
+    other_donor (у держателя уже есть устройства от другого владельца — в
+    held/donor что и от кого)."""
     ok: bool
-    reason: str = ""             # invalid | already_user | ok
+    reason: str = ""
     device_id: Optional[int] = None
     device_name: Optional[str] = None
+    holder: Optional[object] = None      # профиль держателя (гость или клиент)
+    donor: Optional[object] = None       # владелец устройства (при ok) / прежний даритель (other_donor)
+    held: list = field(default_factory=list)   # устройства, которые держатель уже держит
+
+
+@dataclass
+class GuestUpgrade:
+    """Гость стал владельцем: что перенесено и от кого."""
+    donor: Optional[object] = None
+    moved: list = field(default_factory=list)  # Device — перенесённые в новый профиль
 
 
 @dataclass
@@ -711,13 +726,52 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
 
     def activate_client(self, invite_code: str, tg_id: int) -> ActivationResult:
         existing = self.db.get_client_by_tg(tg_id)
-        if existing is not None and not existing.is_service:
+        if existing is not None and not existing.is_service and not existing.is_guest:
             return ActivationResult(ok=False, reason="already_has_access", client=existing)
         row = self.db.get_client_by_invite(invite_code)
         if row is None:
             return ActivationResult(ok=False, reason="invalid")
+        upgrade = None
+        if existing is not None and existing.is_guest:
+            upgrade = self._upgrade_guest(existing, row.id)
         self.db.activate_client(row.id, tg_id)
-        return ActivationResult(ok=True, reason="ok", client=self.db.get_client(row.id))
+        return ActivationResult(ok=True, reason="ok", client=self.db.get_client(row.id),
+                                upgrade=upgrade)
+
+    def _upgrade_guest(self, guest, new_client_id: int) -> "GuestUpgrade":
+        """Гость становится владельцем (docs/guest-role.md): ВСЕ переданные ему
+        устройства переходят в новый профиль независимо от лимита («3 из 2»
+        честно), слоты дарителю возвращаются, управлять ими он больше не может.
+        Пиры не трогаются. Личный список адресов едет с гостем. Гостевой
+        профиль закрывается — иначе tg_id занят и активация не пройдёт."""
+        held = self.db.list_held_devices(guest.id)
+        donor = self.db.get_client(held[0].client_id) if held else None
+        moved = []
+        for dev in held:
+            for peer in self._device_pair(dev):
+                self.db.update_device_fields(peer.id, client_id=new_client_id,
+                                             holder_client_id=None)
+            self._recompute_device_blocks(dev.id, new_client_id)
+            moved.append(dev)
+        self.db.move_routing_domains(guest.id, new_client_id)
+        self.db.delete_client(guest.id, archive_reason="upgraded")
+        if moved:
+            self.reconcile_routing()
+        return GuestUpgrade(donor=donor, moved=moved)
+
+    def _recompute_device_blocks(self, device_id: int, client_id: int) -> None:
+        """Каскадные биты прежнего владельца (истечение, пауза) с устройства
+        снять и наложить по новому: устройство переехало вместе с записью, а
+        бит — это состояние подписки, которая осталась у прежнего."""
+        client = self.db.get_client(client_id)
+        if client is None or self.db.get_device(device_id) is None:
+            return
+        for bit, want in ((DeviceBlock.EXPIRY, client.status == SubStatus.EXPIRED),
+                          (DeviceBlock.PAUSED, client.is_paused)):
+            if want:
+                self._device_set_block(device_id, bit)
+            else:
+                self._device_clear_block(device_id, bit)
 
     def regenerate_invite(self, client_id: int) -> str:
         """Перевыпуск инвайта для pending-клиента (потерял ссылку до активации)."""
@@ -845,6 +899,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             if peer.id != device_id:
                 self.db.delete_device(peer.id, archive_reason=None)
         self.db.delete_device(device_id)
+        if dev.holder_client_id is not None:
+            self.guest_close_if_empty(dev.holder_client_id)
         return friend_tg
 
     def generate_config(self, device_id: int, *, for_bundle: bool = False) -> dict:
@@ -899,8 +955,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         if dev.friend_status == FriendStatus.ACTIVE:
             raise ServiceError("Устройством уже управляет друг")
         code = self._gen_friend_code()
-        self.db.set_device_friend(device_id, friend_tg_id=None,
-                                  friend_code=code, friend_status=FriendStatus.PENDING)
+        self.db.set_device_friend(device_id, friend_code=code, friend_status=FriendStatus.PENDING)
         return code
 
     def reissue_friend_code(self, device_id: int) -> str:
@@ -911,27 +966,62 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         if dev.friend_status != FriendStatus.PENDING:
             raise ServiceError("Перевыдать код можно только для неактивированного приглашения")
         code = self._gen_friend_code()
-        self.db.set_device_friend(device_id, friend_tg_id=None,
-                                  friend_code=code, friend_status=FriendStatus.PENDING)
+        self.db.set_device_friend(device_id, friend_code=code, friend_status=FriendStatus.PENDING)
         return code
 
-    def activate_friend(self, code: str, tg_id: int) -> "FriendActivation":
-        """Активация кода друга. Проверки: код существует и pending; этот tg ещё
-        не действующий пользователь/админ (одна роль на человека)."""
-        # уже клиент или админ → другом быть не может
-        existing = self.db.get_client_by_tg(tg_id)
-        if tg_id == config.ADMIN_ID or (existing is not None and not existing.is_service):
-            return FriendActivation(ok=False, reason="already_user")
+    def activate_friend(self, code: str, tg_id: int, tg_name: str = "") -> "FriendActivation":
+        """Активация кода F… (docs/guest-role.md). Держателем становится профиль
+        этого tg: гость (заводится при первом коде, имя — из Telegram) или
+        обычный клиент. Правило одного дарителя: у держателя уже есть устройства
+        от другого владельца → отказ other_donor, код не сгорает. Админ и своё
+        устройство — отказ."""
         dev = self.db.get_device_by_friend_code(code)
         if dev is None or dev.friend_status != FriendStatus.PENDING:
             return FriendActivation(ok=False, reason="invalid")
-        self.db.set_device_friend(dev.id, friend_tg_id=tg_id,
-                                  friend_code=None, friend_status=FriendStatus.ACTIVE)
-        return FriendActivation(ok=True, reason="ok", device_id=dev.id,
-                                device_name=dev.name)
+        if tg_id == config.ADMIN_ID:
+            return FriendActivation(ok=False, reason="already_user")
+        holder = self.db.get_client_by_tg(tg_id)
+        if holder is not None and holder.is_service:
+            holder = None
+        if holder is not None and holder.id == dev.client_id:
+            return FriendActivation(ok=False, reason="own_device", device_id=dev.id,
+                                    device_name=dev.name, holder=holder)
+        held = self.db.list_held_devices(holder.id) if holder is not None else []
+        if held and held[0].client_id != dev.client_id:
+            return FriendActivation(ok=False, reason="other_donor", device_id=dev.id,
+                                    device_name=dev.name, holder=holder,
+                                    donor=self.db.get_client(held[0].client_id), held=held)
+        if holder is None:
+            hid = self.db.create_guest_client(tg_id, (tg_name or "Друг").strip()[:64])
+            holder = self.db.get_client(hid)
+        elif holder.is_guest and tg_name and holder.name in ("Друг", "") :
+            self.db.update_client_fields(holder.id, name=tg_name.strip()[:64])
+            holder = self.db.get_client(holder.id)
+        for peer in self._device_pair(dev):
+            self.db.set_device_holder(peer.id, holder.id)
+        return FriendActivation(ok=True, reason="ok", device_id=dev.id, device_name=dev.name,
+                                holder=holder, donor=self.db.get_client(dev.client_id),
+                                held=self.db.list_held_devices(holder.id))
+
+    def guest_donor(self, client):
+        """Владелец устройств, которые держит профиль (гость — всегда один);
+        None — не держит ничего."""
+        held = self.db.list_held_devices(client.id)
+        return self.db.get_client(held[0].client_id) if held else None
+
+    def guest_close_if_empty(self, client_id: int) -> bool:
+        """Гость без единого устройства перестаёт существовать: держать ему
+        нечего, а роль без устройств — тупик. True — профиль закрыт."""
+        client = self.db.get_client(client_id)
+        if client is None or not client.is_guest:
+            return False
+        if self.db.list_held_devices(client_id):
+            return False
+        self.db.delete_client(client_id, archive_reason="guest_empty")
+        return True
 
     def friend_devices(self, tg_id: int) -> list:
-        """ВСЕ активные устройства друга (мультидружба)."""
+        """ВСЕ переданные устройства, которые держит этот tg (гость или клиент)."""
         return self.db.get_devices_by_friend_tg(tg_id)
 
     def friend_device_by_id(self, tg_id: int, device_id: int):
@@ -977,6 +1067,10 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             # трафик и заархивирует устройство не тому человеку.
             for peer in self._device_pair(dev):
                 self.db.reassign_device(peer.id, new_client_id)
+                # держатель стал владельцем — держать нечего; иной держатель
+                # остаётся (устройство сменило дарителя)
+                if dev.holder_client_id == new_client_id:
+                    self.db.set_device_holder(peer.id, None)
         # счётчики ПОСЛЕ перепривязки (живой COUNT — уже актуальны)
         donor_count = self.db.count_devices(donor.id) if donor else 0
         recip_count = self.db.count_devices(new_client_id)

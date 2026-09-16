@@ -90,13 +90,41 @@ def test_activate_friend_code_not_pending(services, make_active_client):
     assert not res.ok and res.reason == "invalid"
 
 
-def test_activate_friend_rejects_existing_client(services, make_active_client):
+def test_activate_friend_by_existing_client_holds_without_slot(services, make_active_client):
+    """Обычный клиент принимает чужое устройство: держит его своим профилем,
+    слот и квота — у дарителя (docs/guest-role.md)."""
     owner = make_active_client(tg_id=809)
-    other = make_active_client(tg_id=90809)                 # уже действующий клиент
+    other = make_active_client(tg_id=90809, device_limit=1)
     dc = services.add_device(owner.id, "d")
     code = services.make_device_friendly(dc.device_id)
     res = services.activate_friend(code, tg_id=other.tg_id)
-    assert not res.ok and res.reason == "already_user"
+    assert res.ok and res.holder.id == other.id and not res.holder.is_guest
+    dev = services.db.get_device(dc.device_id)
+    assert dev.client_id == owner.id and dev.holder_client_id == other.id
+    assert services.db.count_devices(other.id) == 0, "чужое устройство заняло слот держателя"
+    assert [d.id for d in services.db.list_held_devices(other.id)] == [dc.device_id]
+
+
+def test_activate_friend_refuses_own_device_and_second_donor(services, make_active_client):
+    """Своё устройство держать незачем; устройства от второго дарителя — отказ,
+    код не сгорает (правило одного дарителя)."""
+    owner = make_active_client(tg_id=814)
+    other_owner = make_active_client(tg_id=815)
+    own = services.add_device(owner.id, "своё")
+    res = services.activate_friend(services.make_device_friendly(own.device_id), tg_id=owner.tg_id)
+    assert not res.ok and res.reason == "own_device"
+
+    first = services.add_device(owner.id, "первое")
+    res = services.activate_friend(services.make_device_friendly(first.device_id), tg_id=90814,
+                                   tg_name="Артём")
+    assert res.ok and res.holder.is_guest and res.holder.name == "Артём"
+    foreign = services.add_device(other_owner.id, "чужое")
+    code = services.make_device_friendly(foreign.device_id)
+    res = services.activate_friend(code, tg_id=90814)
+    assert not res.ok and res.reason == "other_donor"
+    assert res.donor.id == owner.id and [d.name for d in res.held] == ["первое"]
+    assert services.db.get_device_by_friend_code(code) is not None, "код сгорел"
+    assert services.db.get_device(foreign.device_id).holder_client_id is None
 
 
 def test_activate_friend_rejects_admin(services, make_active_client):
@@ -109,15 +137,17 @@ def test_activate_friend_rejects_admin(services, make_active_client):
 
 # ── мультидружба + защита владения ───────────────────────────────────────────
 def test_multi_friendship_lists_all(services, make_active_client):
-    owner_a = make_active_client(tg_id=811)
-    owner_b = make_active_client(tg_id=812)
-    da = services.add_device(owner_a.id, "a")
-    db_ = services.add_device(owner_b.id, "b")
+    """Несколько устройств от ОДНОГО владельца — все у держателя."""
+    owner = make_active_client(tg_id=811, device_limit=3)
+    da = services.add_device(owner.id, "a")
+    db_ = services.add_device(owner.id, "b")
     friend = 90811
     services.activate_friend(services.make_device_friendly(da.device_id), tg_id=friend)
     services.activate_friend(services.make_device_friendly(db_.device_id), tg_id=friend)
     devs = services.friend_devices(friend)
     assert {d.id for d in devs} == {da.device_id, db_.device_id}
+    guest = services.db.get_client_by_tg(friend)
+    assert guest.is_guest and services.db.list_clients() == [c for c in services.db.list_clients() if not c.is_guest]
 
 
 def test_friend_device_by_id_ownership_guard(services, make_active_client):

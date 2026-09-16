@@ -87,7 +87,12 @@ def test_device_traffic_and_friend_delegation():
 
 
 def test_device_friend_present():
-    d = _device(friend=models.Friend(tg_id=777, code="abc", status="active"))
-    assert d.friend_tg_id == 777
-    assert d.friend_code == "abc"
-    assert d.friend_status == "active"
+    """Ожидающее приглашение — Friend(code, pending); переданное — держатель:
+    friend_status = active и friend_tg_id = tg держателя (совместимость)."""
+    d = _device(friend=models.Friend(code="abc", status="pending"))
+    assert d.friend_tg_id is None and d.friend_code == "abc" and d.friend_status == "pending"
+    assert not d.is_lent
+    h = _device(holder_client_id=5, holder_tg_id=777, holder_name="Артём",
+                owner_tg_id=1, owner_name="Вася")
+    assert h.is_lent and h.friend_tg_id == 777 and h.friend_status == "active"
+    assert h.friend_code is None

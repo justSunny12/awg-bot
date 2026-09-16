@@ -76,6 +76,7 @@ def _client_from_row(row) -> Optional["models.Client"]:
         activation_status=row["activation_status"],
         invite_code=row["invite_code"],
         created_at=row["created_at"],
+        kind=(row["kind"] if "kind" in keys else "owner"),
         routing_allowed=(int(row["routing_allowed"]) if "routing_allowed" in keys else 0),
         subscription=models.Subscription(
             period_start=row["period_start"], period_end=row["period_end"],
@@ -97,8 +98,7 @@ def _device_from_row(row) -> Optional["models.Device"]:
         return None
     friend = None
     if row["friend_status"]:
-        friend = models.Friend(tg_id=row["friend_tg_id"], code=row["friend_code"],
-                               status=row["friend_status"])
+        friend = models.Friend(code=row["friend_code"], status=row["friend_status"])
     return models.Device(
         id=int(row["id"]),
         client_id=int(row["client_id"]),
@@ -118,7 +118,10 @@ def _device_from_row(row) -> Optional["models.Device"]:
             rx_month=int(row["traffic_rx_month"]), tx_month=int(row["traffic_tx_month"]),
             rx_period=int(row["traffic_rx_period"]), tx_period=int(row["traffic_tx_period"]),
             last_handshake=row["last_handshake"], missing_count=int(row["missing_count"])),
-        friend=friend)
+        friend=friend,
+        holder_client_id=(int(row["holder_client_id"]) if row["holder_client_id"] is not None else None),
+        holder_tg_id=row["holder_tg_id"], holder_name=row["holder_name"] or "",
+        owner_tg_id=row["owner_tg_id"], owner_name=row["owner_name"] or "")
 
 # Имя служебного клиента, к которому цепляются пиры без владельца (карантин).
 SERVICE_CLIENT_NAME = "Устройства без клиента"
@@ -153,10 +156,14 @@ SELECT d.*,
        (d.is_gateway OR EXISTS (SELECT 1 FROM devices o WHERE o.id = d.twin_of AND o.is_gateway = 1)) AS is_gateway_eff,
        t.traffic_limit, t.traffic_rx_month, t.traffic_tx_month,
        t.traffic_rx_period, t.traffic_tx_period, t.last_handshake, t.missing_count,
-       f.friend_tg_id, f.friend_code, f.friend_status
+       f.friend_code, f.friend_status,
+       h.tg_id AS holder_tg_id, h.name AS holder_name,
+       oc.tg_id AS owner_tg_id, oc.name AS owner_name
 FROM devices d
 JOIN device_traffic t     ON t.device_id = d.id
 LEFT JOIN device_friend f ON f.device_id = d.id
+LEFT JOIN clients h       ON h.id = d.holder_client_id
+LEFT JOIN clients oc      ON oc.id = d.client_id
 """
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -175,6 +182,9 @@ CREATE TABLE IF NOT EXISTS clients (
     invite_code         TEXT,                         -- гасится (NULL) после активации
     is_service          INTEGER NOT NULL DEFAULT 0,   -- 1 = служебный «Устройства без клиента»
     created_at          TEXT    NOT NULL,
+    -- Тип профиля (docs/guest-role.md): owner — со своей подпиской; guest —
+    -- гость без подписки, держит переданные ему устройства одного владельца.
+    kind                TEXT    NOT NULL DEFAULT 'owner',
     -- Условная маршрутизация (docs/conditional-routing.md). Здесь только
     -- РАЗРЕШЕНИЕ админа; само «включено» живёт пер-девайсно (devices.routing_on),
     -- а состояние профиля выводится из него. Снятие разрешения гасит эффект, но
@@ -244,7 +254,12 @@ CREATE TABLE IF NOT EXISTS devices (
     -- прямо в окне переезда.
     twin_of             INTEGER,
     created_at          TEXT    NOT NULL,
-    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    -- Держатель (docs/guest-role.md): кто управляет устройством через бота,
+    -- если не владелец. Слот, квота, подписка — у владельца (client_id).
+    -- NULL = своё устройство.
+    holder_client_id    INTEGER,
+    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+    FOREIGN KEY (holder_client_id) REFERENCES clients(id) ON DELETE SET NULL
 );
 
 -- ── Счётчики потребления устройства (1:1, всегда есть) ──────────────────────
@@ -260,12 +275,15 @@ CREATE TABLE IF NOT EXISTS device_traffic (
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
 );
 
--- ── Гостевой доступ (1:1, ЛЕНИВАЯ: строки нет ⇔ обычное устройство хозяина) ──
+-- ── Приглашение на устройство (1:1, ЛЕНИВАЯ: строки нет ⇔ приглашения нет) ──
+-- Только ОЖИДАЮЩИЙ код: после активации устройство получает держателя
+-- (devices.holder_client_id), а строка удаляется. friend_tg_id остался от
+-- прежней модели «друг = tg_id на устройстве», не используется.
 CREATE TABLE IF NOT EXISTS device_friend (
     device_id           INTEGER PRIMARY KEY,
-    friend_tg_id        INTEGER,                         -- Telegram друга
-    friend_code         TEXT,                            -- инвайт-код; NULL после активации
-    friend_status       TEXT,                            -- pending | active
+    friend_tg_id        INTEGER,
+    friend_code         TEXT,                            -- инвайт-код
+    friend_status       TEXT,                            -- pending
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
 );
 
@@ -314,6 +332,7 @@ CREATE TABLE IF NOT EXISTS ui_state (
 );
 
 CREATE INDEX IF NOT EXISTS idx_devices_client   ON devices(client_id);
+CREATE INDEX IF NOT EXISTS idx_devices_holder   ON devices(holder_client_id) WHERE holder_client_id IS NOT NULL;
 -- public_key и tg_id уже UNIQUE — у них есть автоиндекс, отдельные дублировали бы его
 CREATE INDEX IF NOT EXISTS idx_clients_invite   ON clients(invite_code);
 -- пары переезда: twins_by_origin и подзапрос видимости ходят по twin_of;
@@ -556,10 +575,62 @@ class Database:
         флаг шлюза, схлопывание режимов личных списков…), снято — хост старше
         проходит через v2.10.0 и получает это там.
         """
+        self._migrate_guest_role_columns()
         with self._tx() as cur:
             cur.executescript(SCHEMA)
         self._migrate_drop_full_access()
         self._ensure_service_client()
+        self._migrate_friends_to_guests()
+
+    def _migrate_guest_role_columns(self) -> None:
+        """v2.20.0 (docs/guest-role.md): clients.kind и devices.holder_client_id.
+        CREATE TABLE IF NOT EXISTS существующие таблицы не доводит — колонки
+        добавляются здесь, ДО SCHEMA (индекс по holder_client_id в SCHEMA
+        требует колонку). Идемпотентно."""
+        con = self._connection()
+        tables = {r["name"] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "clients" in tables:
+            have = {r["name"] for r in con.execute("PRAGMA table_info(clients)")}
+            if "kind" not in have:
+                with self._tx() as cur:
+                    cur.execute("ALTER TABLE clients ADD COLUMN kind TEXT NOT NULL DEFAULT 'owner'")
+        if "devices" in tables:
+            have = {r["name"] for r in con.execute("PRAGMA table_info(devices)")}
+            if "holder_client_id" not in have:
+                with self._tx() as cur:
+                    cur.execute("ALTER TABLE devices ADD COLUMN holder_client_id INTEGER "
+                                "REFERENCES clients(id) ON DELETE SET NULL")
+
+    def _migrate_friends_to_guests(self) -> None:
+        """v2.20.0: прежние «друзья» (device_friend.status = active, tg на
+        устройстве) становятся гостевыми профилями-держателями. Имя — «Друг» до
+        первого сообщения (middleware подтянет из Telegram). Друг, который уже
+        обычный клиент, держит устройство своим профилем. Идемпотентно: строк
+        active после переноса не остаётся."""
+        con = self._connection()
+        rows = con.execute(
+            "SELECT device_id, friend_tg_id FROM device_friend "
+            "WHERE friend_status = 'active' AND friend_tg_id IS NOT NULL").fetchall()
+        if not rows:
+            return
+        with self._tx() as cur:
+            for r in rows:
+                tg = int(r["friend_tg_id"])
+                holder = cur.execute("SELECT id FROM clients WHERE tg_id = ?", (tg,)).fetchone()
+                if holder is None:
+                    cur.execute(
+                        """INSERT INTO clients (tg_id, name, device_limit, activation_status,
+                           invite_code, is_service, created_at, kind)
+                           VALUES (?, 'Друг', 0, 'active', NULL, 0, ?, 'guest')""",
+                        (tg, _now_iso()))
+                    hid = cur.lastrowid
+                    cur.execute("INSERT INTO client_subscription (client_id, status) VALUES (?, 'active')", (hid,))
+                    cur.execute("INSERT INTO client_quota (client_id) VALUES (?)", (hid,))
+                else:
+                    hid = int(holder["id"])
+                cur.execute("UPDATE devices SET holder_client_id = ? WHERE id = ?",
+                            (hid, int(r["device_id"])))
+                cur.execute("DELETE FROM device_friend WHERE device_id = ?", (int(r["device_id"]),))
 
     def _migrate_drop_full_access(self) -> None:
         """Разовая зачистка: колонка devices.full_access_link осталась от
@@ -768,11 +839,17 @@ class Database:
                      exclude_tg: Optional[int] = None,
                      admin_first_tg: Optional[int] = None,
                      paused_only: bool = False,
-                     active_finite_only: bool = False) -> list:
+                     active_finite_only: bool = False,
+                     include_guests: bool = False) -> list:
+        """Профили-владельцы. Гости (kind = guest) по умолчанию исключены: у них
+        нет подписки, квоты и лимита — проверкам сроков, трафика, спискам админа
+        и рассылке там делать нечего."""
         q = _CLIENT_SELECT + " WHERE 1=1"
         params: list = []
         if not include_service:
             q += " AND c.is_service = 0"
+        if not include_guests:
+            q += " AND c.kind = 'owner'"
         if paused_only:
             q += " AND p.pause_active_since IS NOT NULL"
         if active_finite_only:
@@ -807,7 +884,7 @@ class Database:
         # clients
         "name": "clients", "device_limit": "clients", "tg_id": "clients",
         "activation_status": "clients", "invite_code": "clients", "block_reason": "clients",
-        "routing_allowed": "clients",
+        "routing_allowed": "clients", "kind": "clients",
         # client_subscription
         "period_start": "client_subscription", "period_end": "client_subscription",
         "period_kind": "client_subscription", "status": "client_subscription",
@@ -1011,35 +1088,62 @@ class Database:
         return self._TWIN_DANGLING_OK
 
     def get_device_by_friend_tg(self, tg_id: int):
-        """Активное гостевое устройство, которым управляет этот Telegram-друг."""
-        return _device_from_row(self._connection().execute(
-            _DEVICE_SELECT + " WHERE f.friend_tg_id = ? AND f.friend_status = 'active'"
-            f" AND {self._friend_visible_where()}",
-            (tg_id,)).fetchone())
+        """Первое из переданных устройств, которые держит этот Telegram-аккаунт."""
+        devs = self.get_devices_by_friend_tg(tg_id)
+        return devs[0] if devs else None
 
     def get_devices_by_friend_tg(self, tg_id: int) -> list:
-        """ВСЕ активные гостевые устройства этого друга (мультидружба: один tg_id
-        может управлять несколькими устройствами разных клиентов)."""
+        """ВСЕ переданные устройства, которые держит этот Telegram-аккаунт
+        (docs/guest-role.md): держатель — гость или обычный клиент."""
         return [_device_from_row(r) for r in self._connection().execute(
-            _DEVICE_SELECT + " WHERE f.friend_tg_id = ? AND f.friend_status = 'active'"
-            f" AND {self._friend_visible_where()} ORDER BY d.id", (tg_id,)).fetchall()]
+            _DEVICE_SELECT + " WHERE h.tg_id = ?"
+            f" AND {self._friend_visible_where()} ORDER BY d.created_at, d.id",
+            (tg_id,)).fetchall()]
 
-    def set_device_friend(self, device_id: int, *, friend_tg_id=None,
-                          friend_code=None, friend_status=None) -> None:
-        """Точечно обновляет запись друга на устройстве. Ленивая 1:1: если все три
-        поля пусты — строку device_friend удаляем (устройство перестало быть
-        гостевым); иначе upsert. None-значения записываются как есть."""
+    def list_held_devices(self, client_id: int) -> list:
+        """Переданные устройства, которые держит профиль (чужие, но управляет он).
+        По одной строке на устройство — то же правило видимости, что у списка
+        владельца."""
+        return [_device_from_row(r) for r in self._connection().execute(
+            _DEVICE_SELECT + " WHERE d.holder_client_id = ?"
+            f" AND {self._friend_visible_where()} ORDER BY d.created_at, d.id",
+            (client_id,)).fetchall()]
+
+    def set_device_holder(self, device_id: int, holder_client_id: Optional[int]) -> None:
+        """Назначить держателя (None — устройство снова своё у владельца).
+        Ожидающее приглашение при этом снимается: оно исполнено или отменено."""
         with self._tx() as cur:
-            if friend_tg_id is None and friend_code is None and friend_status is None:
+            cur.execute("UPDATE devices SET holder_client_id = ? WHERE id = ?",
+                        (holder_client_id, device_id))
+            cur.execute("DELETE FROM device_friend WHERE device_id = ?", (device_id,))
+
+    def set_device_friend(self, device_id: int, *, friend_code=None, friend_status=None) -> None:
+        """Ожидающее приглашение на устройстве. Ленивая 1:1: оба поля пусты —
+        строку удаляем (приглашения нет); иначе upsert."""
+        with self._tx() as cur:
+            if friend_code is None and friend_status is None:
                 cur.execute("DELETE FROM device_friend WHERE device_id = ?", (device_id,))
             else:
                 cur.execute(
-                    "INSERT INTO device_friend (device_id, friend_tg_id, friend_code, "
-                    "friend_status) VALUES (?, ?, ?, ?) "
+                    "INSERT INTO device_friend (device_id, friend_code, friend_status) "
+                    "VALUES (?, ?, ?) "
                     "ON CONFLICT(device_id) DO UPDATE SET "
-                    "friend_tg_id=excluded.friend_tg_id, friend_code=excluded.friend_code, "
-                    "friend_status=excluded.friend_status",
-                    (device_id, friend_tg_id, friend_code, friend_status))
+                    "friend_code=excluded.friend_code, friend_status=excluded.friend_status",
+                    (device_id, friend_code, friend_status))
+
+    def create_guest_client(self, tg_id: int, name: str) -> int:
+        """Гостевой профиль (docs/guest-role.md): без подписки и лимита, сразу
+        активен — держит переданные устройства одного владельца."""
+        with self._tx() as cur:
+            cur.execute(
+                """INSERT INTO clients (tg_id, name, device_limit, activation_status,
+                   invite_code, is_service, created_at, kind)
+                   VALUES (?, ?, 0, 'active', NULL, 0, ?, 'guest')""",
+                (tg_id, name, _now_iso()))
+            cid = cur.lastrowid
+            cur.execute("INSERT INTO client_subscription (client_id, status) VALUES (?, 'active')", (cid,))
+            cur.execute("INSERT INTO client_quota (client_id) VALUES (?)", (cid,))
+            return cid
 
     def migration_visibility_running(self) -> bool:
         """Каким комплектом пары жить экранам и выдаче — новым или старым.
@@ -1209,10 +1313,8 @@ class Database:
             return False
         ph = ",".join("?" * len(ids_list))
         row = self._connection().execute(
-            f"SELECT f.friend_tg_id AS tg_id FROM device_friend f "
-            f"  JOIN devices d ON d.id = f.device_id "
-            f" WHERE d.client_id IN ({ph}) AND f.friend_tg_id IS NOT NULL "
-            f"   AND f.friend_status = 'active' AND f.friend_tg_id != ? "
+            f"SELECT h.tg_id FROM devices d JOIN clients h ON h.id = d.holder_client_id "
+            f" WHERE d.client_id IN ({ph}) AND h.tg_id IS NOT NULL AND h.tg_id != ? "
             f" LIMIT 1", (*ids_list, exclude_tg_id)).fetchone()
         return row is not None
 
@@ -1237,10 +1339,8 @@ class Database:
             f"SELECT tg_id FROM clients "
             f" WHERE id IN ({ph}) AND tg_id IS NOT NULL AND is_service = 0 "
             f"UNION "
-            f"SELECT f.friend_tg_id AS tg_id FROM device_friend f "
-            f"  JOIN devices d ON d.id = f.device_id "
-            f" WHERE d.client_id IN ({ph}) AND f.friend_tg_id IS NOT NULL "
-            f"   AND f.friend_status = 'active'",
+            f"SELECT h.tg_id FROM devices d JOIN clients h ON h.id = d.holder_client_id "
+            f" WHERE d.client_id IN ({ph}) AND h.tg_id IS NOT NULL",
             (*ids_list, *ids_list)).fetchall()
         ids = {int(r["tg_id"]) for r in rows}
         ids.discard(int(exclude_tg_id))
@@ -1260,7 +1360,7 @@ class Database:
     _DEVICE_FIELD_TABLE = {
         "name": "devices", "private_key": "devices",
         "block_reason": "devices", "client_id": "devices",
-        "routing_on": "devices",
+        "routing_on": "devices", "holder_client_id": "devices",
         "iface": "devices", "twin_of": "devices", "is_gateway": "devices",
         "public_key": "devices", "preshared_key": "devices", "address": "devices",
         "traffic_limit": "device_traffic", "traffic_rx_month": "device_traffic",
@@ -1521,19 +1621,25 @@ class Database:
             with self._tx() as c:
                 return self.archive_friend(device_id, reason, c)
 
+        owner = cur.execute(
+            "SELECT d.client_id, h.tg_id AS holder_tg FROM devices d "
+            "LEFT JOIN clients h ON h.id = d.holder_client_id WHERE d.id = ?",
+            (device_id,)).fetchone()
         row = cur.execute("SELECT * FROM device_friend WHERE device_id = ?",
                           (device_id,)).fetchone()
-        if row is None:
+        if row is not None:
+            tg, code, status = None, row["friend_code"], row["friend_status"]
+        elif owner is not None and owner["holder_tg"] is not None:
+            tg, code, status = owner["holder_tg"], None, "active"    # держатель — эпизод дружбы
+        else:
             return
-        owner = cur.execute("SELECT client_id FROM devices WHERE id = ?",
-                            (device_id,)).fetchone()
         cur.execute(
             """INSERT INTO device_friend_histories
                (device_id, client_id, friend_tg_id, friend_code, friend_status,
                 archived_at, close_reason)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (device_id, owner["client_id"] if owner else None, row["friend_tg_id"],
-             row["friend_code"], row["friend_status"], _now_iso(), reason))
+            (device_id, owner["client_id"] if owner else None, tg, code, status,
+             _now_iso(), reason))
         cur.execute("DELETE FROM device_friend WHERE device_id = ?", (device_id,))
 
     def archive_block(self, client_id: int, mask: int, reason: str, cur=None) -> None:
@@ -1731,6 +1837,15 @@ class Database:
     # перенос записи из одного списка в другой поменял бы её смысл на обратный.
     # Пользователю режим не показывается — он видит свой список того режима,
     # который выбрал админ, и знать про второй ему незачем.
+    def move_routing_domains(self, src_client_id: int, dst_client_id: int) -> None:
+        """Личный список адресов — с профиля на профиль (гость стал владельцем).
+        Дубли у получателя не задваиваются (PK (client_id, domain))."""
+        with self._tx() as cur:
+            cur.execute("INSERT OR IGNORE INTO client_routing_domains (client_id, domain, added_at) "
+                        "SELECT ?, domain, added_at FROM client_routing_domains WHERE client_id = ?",
+                        (dst_client_id, src_client_id))
+            cur.execute("DELETE FROM client_routing_domains WHERE client_id = ?", (src_client_id,))
+
     def list_routing_domains(self, client_id: int) -> list[str]:
         """Личный список клиента, в порядке добавления."""
         return [r["domain"] for r in self._connection().execute(
