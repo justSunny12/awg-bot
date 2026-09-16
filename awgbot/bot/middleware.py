@@ -25,6 +25,18 @@ class AccessMiddleware(BaseMiddleware):
     def __init__(self, db):
         self.db = db
 
+    def _touch_tg_name(self, client, user: User):
+        """Имя Telegram-аккаунта на профиле — для ссылок на человека в текстах.
+        Пишем только при изменении: запись сбрасывает кэш ролей."""
+        if client is None:
+            return None
+        name = (user.full_name or user.username or "").strip()[:128]
+        if name and name != client.tg_name:
+            from awgbot.util import timeutil
+            self.db.update_client_fields(client.id, tg_name=name, tg_name_at=timeutil.now_iso())
+            return self.db.get_client(client.id)
+        return client
+
     async def __call__(
         self,
         handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
@@ -37,10 +49,14 @@ class AccessMiddleware(BaseMiddleware):
 
         uid = user.id
 
-        # 1) Админ — полный доступ
+        # 1) Админ — полный доступ. Имя его Telegram-аккаунта тоже нужно (он
+        #    бывает дарителем) — обновляем не чаще TTL кэша, как у остальных.
         if uid == config.ADMIN_ID:
             data["role"] = "admin"
             data["client"] = None
+            if access_cache.get(uid) is None:
+                self._touch_tg_name(self.db.get_client_by_tg(uid), user)
+                access_cache.put(uid, "admin", None)
             return await handler(event, data)
 
         # 2) Кэш «кто это»: TTL короткий, любая запись в БД сбрасывает его.
@@ -62,6 +78,7 @@ class AccessMiddleware(BaseMiddleware):
         client = None if cached_stranger else self.db.get_client_by_tg(uid)
         if (client is not None and not client.is_service
                 and client.activation_status == ActivationStatus.ACTIVE):
+            client = self._touch_tg_name(client, user)
             if client.is_guest:
                 # имя гостя — из Telegram: при переносе прежних друзей его не
                 # было, а средство узнать — только первое сообщение

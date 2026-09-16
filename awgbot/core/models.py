@@ -79,6 +79,10 @@ class Client:
     # guest — гость: профиль без подписки, держит устройства, переданные ему
     # одним владельцем, живёт, пока держит хоть одно.
     kind: str = "owner"
+    # Имя Telegram-аккаунта — для ссылок на человека в текстах (профильное
+    # name задаёт админ и оно про подписку, не про человека).
+    tg_name: str = ""
+    tg_name_at: Optional[str] = None       # когда имя обновлялось; None — никогда
     # Условная маршрутизация: РАЗРЕШЕНИЕ админа. Собственного «включено» у
     # профиля нет — оно выводится из устройств (включено хоть на одном), см.
     # db.routing_device_counts. Хранить его ещё и здесь значило бы завести
@@ -198,9 +202,11 @@ class Device:
     holder_client_id: Optional[int] = None
     holder_tg_id: Optional[int] = None
     holder_name: str = ""
+    holder_tg_name: str = ""
     # Владелец — для карточки у держателя («получено от …»).
     owner_tg_id: Optional[int] = None
     owner_name: str = ""
+    owner_tg_name: str = ""
 
     @property
     def is_managed(self) -> bool:

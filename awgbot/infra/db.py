@@ -77,6 +77,8 @@ def _client_from_row(row) -> Optional["models.Client"]:
         invite_code=row["invite_code"],
         created_at=row["created_at"],
         kind=(row["kind"] if "kind" in keys else "owner"),
+        tg_name=(row["tg_name"] if "tg_name" in keys else "") or "",
+        tg_name_at=(row["tg_name_at"] if "tg_name_at" in keys else None),
         routing_allowed=(int(row["routing_allowed"]) if "routing_allowed" in keys else 0),
         subscription=models.Subscription(
             period_start=row["period_start"], period_end=row["period_end"],
@@ -121,7 +123,9 @@ def _device_from_row(row) -> Optional["models.Device"]:
         friend=friend,
         holder_client_id=(int(row["holder_client_id"]) if row["holder_client_id"] is not None else None),
         holder_tg_id=row["holder_tg_id"], holder_name=row["holder_name"] or "",
-        owner_tg_id=row["owner_tg_id"], owner_name=row["owner_name"] or "")
+        holder_tg_name=row["holder_tg_name"] or "",
+        owner_tg_id=row["owner_tg_id"], owner_name=row["owner_name"] or "",
+        owner_tg_name=row["owner_tg_name"] or "")
 
 # Имя служебного клиента, к которому цепляются пиры без владельца (карантин).
 SERVICE_CLIENT_NAME = "Устройства без клиента"
@@ -157,8 +161,8 @@ SELECT d.*,
        t.traffic_limit, t.traffic_rx_month, t.traffic_tx_month,
        t.traffic_rx_period, t.traffic_tx_period, t.last_handshake, t.missing_count,
        f.friend_code, f.friend_status,
-       h.tg_id AS holder_tg_id, h.name AS holder_name,
-       oc.tg_id AS owner_tg_id, oc.name AS owner_name
+       h.tg_id AS holder_tg_id, h.name AS holder_name, h.tg_name AS holder_tg_name,
+       oc.tg_id AS owner_tg_id, oc.name AS owner_name, oc.tg_name AS owner_tg_name
 FROM devices d
 JOIN device_traffic t     ON t.device_id = d.id
 LEFT JOIN device_friend f ON f.device_id = d.id
@@ -185,6 +189,10 @@ CREATE TABLE IF NOT EXISTS clients (
     -- Тип профиля (docs/guest-role.md): owner — со своей подпиской; guest —
     -- гость без подписки, держит переданные ему устройства одного владельца.
     kind                TEXT    NOT NULL DEFAULT 'owner',
+    -- Имя Telegram-аккаунта (first + last name) — для ссылок на человека в
+    -- текстах; обновляет middleware по каждому сообщению, пусто — ещё не писал.
+    tg_name             TEXT    NOT NULL DEFAULT '',
+    tg_name_at          TEXT,                         -- когда имя обновлялось; NULL — никогда
     -- Условная маршрутизация (docs/conditional-routing.md). Здесь только
     -- РАЗРЕШЕНИЕ админа; само «включено» живёт пер-девайсно (devices.routing_on),
     -- а состояние профиля выводится из него. Снятие разрешения гасит эффект, но
@@ -594,6 +602,12 @@ class Database:
             if "kind" not in have:
                 with self._tx() as cur:
                     cur.execute("ALTER TABLE clients ADD COLUMN kind TEXT NOT NULL DEFAULT 'owner'")
+            if "tg_name" not in have:
+                with self._tx() as cur:
+                    cur.execute("ALTER TABLE clients ADD COLUMN tg_name TEXT NOT NULL DEFAULT ''")
+            if "tg_name_at" not in have:
+                with self._tx() as cur:
+                    cur.execute("ALTER TABLE clients ADD COLUMN tg_name_at TEXT")
         if "devices" in tables:
             have = {r["name"] for r in con.execute("PRAGMA table_info(devices)")}
             if "holder_client_id" not in have:
@@ -884,7 +898,8 @@ class Database:
         # clients
         "name": "clients", "device_limit": "clients", "tg_id": "clients",
         "activation_status": "clients", "invite_code": "clients", "block_reason": "clients",
-        "routing_allowed": "clients", "kind": "clients",
+        "routing_allowed": "clients", "kind": "clients", "tg_name": "clients",
+        "tg_name_at": "clients",
         # client_subscription
         "period_start": "client_subscription", "period_end": "client_subscription",
         "period_kind": "client_subscription", "status": "client_subscription",
@@ -1130,6 +1145,15 @@ class Database:
                     "ON CONFLICT(device_id) DO UPDATE SET "
                     "friend_code=excluded.friend_code, friend_status=excluded.friend_status",
                     (device_id, friend_code, friend_status))
+
+    def clients_needing_tg_name(self, older_than_iso: str) -> list:
+        """Профили с Telegram-аккаунтом, чьё имя аккаунта не знаем или знаем
+        давно (tg_name_at < порога) — кандидаты фонового обновления через
+        get_chat. Гости включены: их имя показывается владельцу."""
+        return [_client_from_row(r) for r in self._connection().execute(
+            _CLIENT_SELECT + " WHERE c.tg_id IS NOT NULL AND c.is_service = 0 "
+            "AND (c.tg_name = '' OR c.tg_name_at IS NULL OR c.tg_name_at < ?) "
+            "ORDER BY c.id", (older_than_iso,)).fetchall()]
 
     def create_guest_client(self, tg_id: int, name: str) -> int:
         """Гостевой профиль (docs/guest-role.md): без подписки и лимита, сразу

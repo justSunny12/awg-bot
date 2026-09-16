@@ -285,12 +285,27 @@ def tg_link(name: str, tg_id) -> str:
     return _e(name or "профиль")
 
 
+def client_link(c) -> str:
+    """Ссылка на человека: имя его Telegram-аккаунта (профильное name — про
+    подписку, его задаёт админ), пока имени нет — профильное."""
+    return tg_link(getattr(c, "tg_name", "") or c.name, c.tg_id)
+
+
+def owner_link(dev) -> str:
+    return tg_link(dev.owner_tg_name or dev.owner_name, dev.owner_tg_id)
+
+
+def holder_link(dev) -> str:
+    return tg_link(dev.holder_tg_name or dev.holder_name, dev.holder_tg_id)
+
+
 def _n_devices(n: int) -> str:
     return f"{n} {plural_ru(n, 'устройство', 'устройства', 'устройств')}"
 
 
 def greeting_guest(name: str, server_ok: bool, donor, n_devices: int,
                    routing_ok: bool = None) -> str:
+    """name — имя гостя из Telegram (client.tg_name, иначе профильное)."""
     """Главный экран гостя (docs/guest-role.md): как клиентский, подписка —
     владельца, устройств — сколько держит."""
     status_block = server_status_client(server_ok)
@@ -300,7 +315,7 @@ def greeting_guest(name: str, server_ok: bool, donor, n_devices: int,
         # устройств нет — профиль живёт (список адресов и история при нём),
         # подписки показывать нечьей
         return (f"Привет, {_e(name)}! 👋\n\n{status_block}\n\n{GUEST_NO_DEVICES_LEFT}")
-    owner = f" (владелец: {tg_link(donor.name, donor.tg_id)})"
+    owner = f" (владелец: {client_link(donor)})"
     return (f"Привет, {_e(name)}! 👋\n\n"
             f"{status_block}\n\n"
             f"Статус подписки: {subscription_status_only(donor)}{owner}\n\n"
@@ -313,7 +328,7 @@ def held_devices_tail(held) -> str:
     if not held:
         return ""
     d = held[0]
-    return f" (+ {len(held)} от {tg_link(d.owner_name, d.owner_tg_id)})"
+    return f" (+ {len(held)} от {owner_link(d)})"
 
 
 def _device_limit_line(dev) -> str:
@@ -339,13 +354,13 @@ def held_device_card(dev, owner_limit_bytes: int) -> str:
     reasons = blocks.device_reasons_ru(mask, for_admin=False)
     if reasons:
         parts.append("⛔ Заблокировано: " + ", ".join(reasons))
-    parts.append(f"\n👤 Получено от {tg_link(dev.owner_name, dev.owner_tg_id)}")
+    parts.append(f"\n👤 Получено от {owner_link(dev)}")
     return "\n".join(parts)
 
 
 def lent_out_marker(dev) -> str:
     """Строка в карточке владельца: кому передано."""
-    return f"👤 Передано {tg_link(dev.holder_name, dev.holder_tg_id)} и управляется им"
+    return f"👤 Передано {holder_link(dev)} и управляется им"
 
 
 def device_delete_by_holder_ask(name: str) -> str:
@@ -356,7 +371,7 @@ def device_delete_by_holder_ask(name: str) -> str:
 
 def device_delete_by_owner_ask(dev) -> str:
     return (f"Удалить «{_e(dev.name)}»? Устройство передано "
-            f"{tg_link(dev.holder_name, dev.holder_tg_id)}: у него пропадёт доступ с этого "
+            f"{holder_link(dev)}: у него пропадёт доступ с этого "
             "устройства, а создать новое сам он не сможет — только получить от тебя новый код.")
 
 
@@ -365,7 +380,7 @@ def lent_device_deleted_by_holder_notice(dev, used: int, limit: int) -> str:
     now = (f"Теперь у тебя {used} из {limit} устройств" if limit
            else f"Теперь у тебя {_n_devices(used)}")
     return (f"Устройство «{_e(dev.name)}», ранее переданное "
-            f"{tg_link(dev.holder_name, dev.holder_tg_id)}, удалено по его запросу.\n{now}.")
+            f"{holder_link(dev)}, удалено по его запросу.\n{now}.")
 
 
 def lent_device_deleted_by_admin_notice(dev) -> str:
@@ -384,7 +399,7 @@ def lent_device_reassigned_notice(name: str) -> str:
 def lent_device_deleted_by_owner_notice(dev) -> str:
     """Держателю: владелец удалил переданное ему устройство."""
     return (f"Устройство «{_e(dev.name)}», которым ты управлял, удалено владельцем "
-            f"({tg_link(dev.owner_name, dev.owner_tg_id)}) — доступ по нему больше не работает.")
+            f"({owner_link(dev)}) — доступ по нему больше не работает.")
 
 
 def _names_list(names: list) -> str:
@@ -399,12 +414,12 @@ def friend_device_added(dev, donor, n_held: int, own_slots: tuple | None = None)
     """Держателю: ещё одно устройство от того же владельца. Вторая строка —
     только когда устройств стало больше одного; у обычного клиента — со
     своими: «2 из 3 устройств + 1 от [Вася]»."""
-    head = (f"✅ Устройство «{_e(dev.name)}» от {tg_link(donor.name, donor.tg_id)} "
+    head = (f"✅ Устройство «{_e(dev.name)}» от {client_link(donor)} "
             "успешно добавлено.")
     if own_slots is not None:
         used, limit = own_slots
         own = f"{used} из {limit} устройств" if limit else _n_devices(used)
-        return head + f"\nТеперь у тебя {own} (+ {n_held} от {tg_link(donor.name, donor.tg_id)})."
+        return head + f"\nТеперь у тебя {own} (+ {n_held} от {client_link(donor)})."
     if n_held > 1:
         return head + f"\nТеперь у тебя {_n_devices(n_held)}."
     return head
@@ -414,7 +429,7 @@ def friend_other_donor_refusal(held: list, donor) -> str:
     """Код от другого владельца при уже удерживаемых устройствах."""
     names = [d.name for d in held]
     one = len(names) == 1
-    link = tg_link(donor.name, donor.tg_id)
+    link = client_link(donor)
     return (f"У тебя уже есть {'устройство' if one else 'устройства'} {_names_list(names)}, "
             f"{'переданное' if one else 'переданные'} {link}.\n"
             "Владеть устройствами от разных друзей одновременно не получится 😔\n"
@@ -425,7 +440,7 @@ def friend_other_donor_refusal(held: list, donor) -> str:
 def guest_upgraded(donor, moved: list, limit: int) -> str:
     """Гость стал владельцем: что перенесено; сверх лимита — честно."""
     lines = [ACTIVATION_OK, "",
-             f"Переданные тебе устройства от профиля {tg_link(donor.name, donor.tg_id)} "
+             f"Переданные тебе устройства от профиля {client_link(donor)} "
              "перенесены в твой профиль — перенастраивать ничего не нужно, они работают как раньше:"]
     lines += [f"• {_e(d.name)}" for d in moved]
     if limit and len(moved) > limit:
@@ -441,7 +456,7 @@ def guest_upgraded_donor_notice(moved: list, holder, used: int, limit: int) -> s
     one = len(names) == 1
     now = f"У тебя теперь {used} из {limit} устройств" if limit else f"У тебя теперь {_n_devices(used)}"
     return (f"📤 {'Устройство' if one else 'Устройства'} {_names_list(names)} "
-            f"{'перешло' if one else 'перешли'} к {tg_link(holder.name, holder.tg_id)} — он активировал "
+            f"{'перешло' if one else 'перешли'} к {client_link(holder)} — он активировал "
             f"собственную подписку, и {'устройство переехало' if one else 'устройства переехали'} "
             f"в его профиль. {now}.")
 
@@ -551,7 +566,7 @@ def gateway_claim_already(dev) -> str:
 
 def friend_marker(dev) -> str:
     if dev.is_lent:
-        return f"👤 Передано {tg_link(dev.holder_name, dev.holder_tg_id)}"
+        return f"👤 Передано {holder_link(dev)}"
     if dev.friend_status == FriendStatus.PENDING:
         return "⏳ Приглашение другу ждёт активации"
     return ""
@@ -1430,7 +1445,7 @@ ROUTING_GRANTED_NOTICE = (
     "список обхода через пункт меню бота «Доступ к РФ-сервисам»."
 )
 def routing_granted_holder_notice(donor) -> str:
-    return (f"К устройствам, которые тебе передал {tg_link(donor.name, donor.tg_id)}, "
+    return (f"К устройствам, которые тебе передал {client_link(donor)}, "
             "добавлена функция РФ-доступа 🎉\n"
             "С ней можно пользоваться РФ-приложениями и сайтами, не выключая VPN.\n"
             "Функция автоматически включена для всех твоих устройств — выключить "
@@ -1440,7 +1455,7 @@ def routing_granted_holder_notice(donor) -> str:
 
 
 def routing_revoked_holder_notice(donor) -> str:
-    return (f"Функция РФ-доступа для устройств от {tg_link(donor.name, donor.tg_id)} "
+    return (f"Функция РФ-доступа для устройств от {client_link(donor)} "
             "больше недоступна 😔\n"
             "Для доступа к РФ-сайтам и приложениям, ругающимся на VPN, теперь придётся "
             "его выключать.")

@@ -16,6 +16,7 @@ services синхронны → зовём через asyncio.to_thread, что�
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -419,6 +420,22 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     scheduler.add_job(job_update_check, "date", run_date=now, id="update_check_startup",
                       max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
 
+    # имена Telegram-аккаунтов: разово на старте (после обновления они пусты у
+    # всех) и раз в сутки для тех, кто давно не писал; в сеть — с джиттером
+    async def job_tg_names():
+        try:
+            n = await refresh_tg_names(bot, db)
+            if n:
+                log.info("имена Telegram-аккаунтов обновлены: %d", n)
+        except Exception as e:                        # noqa: BLE001
+            log.warning("tg_names: %s", e)
+
+    scheduler.add_job(job_tg_names, CronTrigger(hour=4, minute=30, jitter=1800, timezone=_TZ),
+                      id="tg_names", max_instances=1, coalesce=True,
+                      misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
+    scheduler.add_job(job_tg_names, "date", run_date=now, id="tg_names_startup",
+                      max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
     # ── Класс 2: горячее перевешивание расписаний по изменению настройки ──────
     # settings.reload()/set_value() зовёт эти хуки ТОЛЬКО по изменившимся ключам
     # (diff), поэтому неизменённые job'ы не трогаем. reschedule_job безопасно
@@ -486,6 +503,40 @@ async def notify_update_available(bot, services, nxt) -> None:
     await send_notifications(bot, [Notification(
         config.ADMIN_ID, texts.update_available(nxt.tag, nxt.body, skipped=nxt.skipped),
         reply_markup=kb.update_notify())])
+
+
+TG_NAME_MAX_AGE_DAYS = 7      # имя аккаунта старше — переспросить у Telegram
+
+
+async def refresh_tg_names(bot, db, max_age_days: int = TG_NAME_MAX_AGE_DAYS) -> int:
+    """Имена Telegram-аккаунтов на профилях — для ссылок на людей в текстах.
+
+    Кто пишет боту, у того имя обновляет middleware по каждому сообщению без
+    единого запроса к API. Здесь — молчуны: у кого имени нет (после
+    обновления — у всех) или оно старше max_age_days, спрашиваем get_chat —
+    по одному, раз в сутки, десятки профилей. Экраны API не трогают никогда.
+    Отказ API (заблокировал бота, удалил аккаунт) — молча, остаётся прежнее.
+    Возвращает, скольким обновили."""
+    cutoff = timeutil.to_iso(timeutil.now() - datetime.timedelta(days=max_age_days))
+    rows = await asyncio.to_thread(db.clients_needing_tg_name, cutoff)
+    done = 0
+    for c in rows:
+        try:
+            chat = await bot.get_chat(c.tg_id)
+        except Exception as e:                        # noqa: BLE001
+            log.info("tg_name %s: %s", c.tg_id, e)
+            continue
+        name = (getattr(chat, "full_name", None) or " ".join(
+            x for x in (getattr(chat, "first_name", "") or "", getattr(chat, "last_name", "") or "") if x)
+            or getattr(chat, "username", "") or "").strip()[:128]
+        if not name:
+            continue
+        fields = {"tg_name_at": timeutil.now_iso()}
+        if name != c.tg_name:
+            fields["tg_name"] = name
+        await asyncio.to_thread(db.update_client_fields, c.id, **fields)
+        done += 1
+    return done
 
 
 async def monthly_backup(services, bot, log_tag: str) -> None:

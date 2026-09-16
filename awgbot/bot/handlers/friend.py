@@ -49,7 +49,7 @@ async def guest_main_payload(services, client):
     donor = await call(services.db.get_client, devs[0].client_id) if devs else None
     server_ok = await call(services.server_ok_cached)
     routing_ok = await call(services.routing_health_for_client, client)   # None — фичи нет
-    text = texts.greeting_guest(client.name, server_ok, donor, len(devs), routing_ok)
+    text = texts.greeting_guest(client.tg_name or client.name, server_ok, donor, len(devs), routing_ok)
     if not devs:
         return text, None          # без устройств кнопкам делать нечего — ждём новый код
     return (text, kb.guest_main(routing_visible=routing_ok is not None,
