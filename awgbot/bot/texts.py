@@ -27,33 +27,50 @@ def _e(s) -> str:
 # Единицы
 # ─────────────────────────────────────────────────────────────────────────────
 
-def gb(num_bytes: int) -> str:
-    """Байты → гигабайты числом: арифметическое округление до сотых,
-    незначащие нули долой — «8.99», «50», «0.5», «0». Единица везде одна (ГБ),
-    ставит её вызывающий: так «8.99 из 50 ГБ» не повторяет её дважды."""
+def _num(value, unit_bytes: int) -> str:
+    """Число в единицах unit_bytes: арифметическое округление до сотых,
+    незначащие нули долой — «8.99», «50», «0.5», «0»."""
     from decimal import Decimal, ROUND_HALF_UP
-    d = (Decimal(int(num_bytes or 0)) / Decimal(_BYTES_PER_GB)).quantize(
+    d = (Decimal(int(value or 0)) / Decimal(unit_bytes)).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP)
     s = f"{d:f}"
     return s.rstrip("0").rstrip(".") if "." in s else s
 
 
+def gb(num_bytes: int) -> str:
+    """Гигабайты числом, без единицы — для лимитов, которые задаются в ГБ."""
+    return _num(num_bytes, _BYTES_PER_GB)
+
+
+def vol_parts(num_bytes: int) -> tuple[str, str]:
+    """(число, единица): до гигабайта — мегабайты, дальше — гигабайты. Две
+    шкалы, не пять: «8 МБ», «512 МБ», «8.99 ГБ» — байты и килобайты человеку
+    ни о чём не говорят."""
+    n = int(num_bytes or 0)
+    if n < _BYTES_PER_GB:
+        return _num(n, 1024 ** 2), "МБ"
+    return _num(n, _BYTES_PER_GB), "ГБ"
+
+
 def human_bytes(n: int) -> str:
-    """Объём с единицей — всегда в ГБ («0.01 ГБ», не «8.0 МБ»): одна шкала на
-    все экраны, чтобы расход и лимит читались одной меркой."""
-    return f"{gb(n)} ГБ"
+    """Объём с единицей: «8 МБ», «8.99 ГБ»."""
+    return " ".join(vol_parts(n))
 
 
 def used_of_limit(used: int, limit_bytes: int, note: str = "") -> str:
-    """«8.99 из 50 ГБ»; без лимита — «8.99 ГБ». note — чей лимит, в скобках:
-    «8.99 из 50 ГБ (лимит устройства)»; лимит профиля — без пометки."""
+    """«8.99 из 50 ГБ» (единица одна — не повторяем), «512 МБ из 50 ГБ»; без
+    лимита — «8.99 ГБ». note — чей лимит, в скобках: «… (лимит устройства)»;
+    лимит профиля — без пометки."""
     if not limit_bytes:
-        return f"{gb(used)} ГБ"
-    return f"{gb(used)} из {gb(limit_bytes)} ГБ" + (f" ({note})" if note else "")
+        return human_bytes(used)
+    uv, uu = vol_parts(used)
+    lv, lu = vol_parts(limit_bytes)
+    core = f"{uv} из {lv} {lu}" if uu == lu else f"{uv} {uu} из {lv} {lu}"
+    return core + (f" ({note})" if note else "")
 
 
 def _updown(rx: int, tx: int) -> str:
-    return f"(↑ {gb(rx)} | ↓ {gb(tx)} ГБ)"
+    return f"(↑ {human_bytes(rx)} | ↓ {human_bytes(tx)})"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -113,14 +130,13 @@ def device_created_report(dev_name: str, *, client_name: str = None,
             + _device_count_line(device_count, max_devices))
 
 
-def consumption_line(used_sum: int, limit_bytes: int, *, blocked: bool,
-                     until: str | None = None) -> str:
+def consumption_line(used_sum: int, limit_bytes: int, *, blocked: bool) -> str:
     """Строка потребления устройства у клиента/друга: «8.99 из 50 ГБ (лимит
-    устройства)», без своего лимита — «8.99 ГБ». blocked — лимит исчерпан
-    (доступ приостановлен), until — дата снятия («01.08.2026»)."""
+    устройства)», без своего лимита — «8.99 ГБ». blocked — лимит исчерпан;
+    когда снимется, говорит строка блокировок ниже, не эта."""
     line = f"Потребление за месяц: {used_of_limit(used_sum, limit_bytes, 'лимит устройства')}"
     if blocked and limit_bytes:
-        line += " — исчерпан" + (f", приостановлено до {until}" if until else "")
+        line += " — исчерпан"
     return line
 
 
@@ -136,7 +152,9 @@ def client_total_line(rx: int, tx: int, limit_bytes: int, bonus_bytes: int,
     месяца» и клиенту, и админу (по договорённости — не словом «бонус»)."""
     total = int(rx) + int(tx)
     if limit_bytes and bonus_bytes:
-        base = f"{gb(total)} из {gb(limit_bytes)} + {gb(bonus_bytes)} ГБ до конца месяца"
+        uv, uu = vol_parts(total)
+        used_s = uv if uu == "ГБ" else f"{uv} {uu}"
+        base = f"{used_s} из {gb(limit_bytes)} + {gb(bonus_bytes)} ГБ до конца месяца"
     else:
         base = used_of_limit(total, limit_bytes)
     if for_admin:
@@ -191,9 +209,7 @@ def device_card_text(dev, *, for_admin: bool) -> str:
             dev.traffic_rx_month, dev.traffic_tx_month, dev.traffic_limit))
     else:
         used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
-        parts.append(consumption_line(
-            used, dev.traffic_limit, blocked=traffic_blocked,
-            until=timeutil.first_of_next_month_str() if traffic_blocked else None))
+        parts.append(consumption_line(used, dev.traffic_limit, blocked=traffic_blocked))
     reasons = blocks.device_reasons_ru(mask, for_admin=for_admin)
     if reasons:
         parts.append("⛔ Заблокировано: " + ", ".join(reasons))

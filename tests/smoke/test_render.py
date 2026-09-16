@@ -15,22 +15,29 @@ pytestmark = pytest.mark.smoke
 
 
 # ── чистые форматтеры (unit: подстроки) ──────────────────────────────────────
-def test_bytes_are_always_gigabytes_rounded_to_hundredths():
-    """Одна шкала на все экраны: только ГБ, арифметическое округление до сотых,
-    незначащие нули долой — «8.99 из 50 ГБ», а не «8.0 МБ (лимит 50.00 ГБ)»."""
-    G = 1024 ** 3
+def test_volumes_are_megabytes_or_gigabytes_rounded_to_hundredths():
+    """Две шкалы на все экраны: до гигабайта — МБ, дальше — ГБ; арифметическое
+    округление до сотых, незначащие нули долой — «8.99 из 50 ГБ», а не
+    «8.0 МБ (лимит 50.00 ГБ)»."""
+    G, M = 1024 ** 3, 1024 ** 2
     assert texts.gb(0) == "0" and texts.gb(50 * G) == "50" and texts.gb(G // 2) == "0.5"
     assert texts.gb(int(8.99 * G)) == "8.99"
     assert texts.gb(int(8.995 * G) + 1) == "9", "округление арифметическое, не банковское"
     assert texts.gb(int(8.994 * G)) == "8.99"
-    assert texts.human_bytes(2048) == "0 ГБ" and texts.human_bytes(8 * 1024 ** 2) == "0.01 ГБ"
+    assert texts.human_bytes(0) == "0 МБ" and texts.human_bytes(2048) == "0 МБ"
+    assert texts.human_bytes(8 * M) == "8 МБ" and texts.human_bytes(int(8.5 * M)) == "8.5 МБ"
+    assert texts.human_bytes(G - 1) == "1024 МБ" and texts.human_bytes(G) == "1 ГБ"
     assert texts.used_of_limit(int(8.99 * G), 50 * G) == "8.99 из 50 ГБ"
+    assert texts.used_of_limit(512 * M, 50 * G) == "512 МБ из 50 ГБ"
     assert texts.used_of_limit(int(8.99 * G), 50 * G, "лимит устройства") == "8.99 из 50 ГБ (лимит устройства)"
     assert texts.used_of_limit(int(8.99 * G), 0) == "8.99 ГБ"
-    assert texts.consumption_line(int(8.99 * G), 50 * G, blocked=True, until="01.10.2026") == \
-        "Потребление за месяц: 8.99 из 50 ГБ (лимит устройства) — исчерпан, приостановлено до 01.10.2026"
+    assert texts.consumption_line(int(8.99 * G), 50 * G, blocked=True) == \
+        "Потребление за месяц: 8.99 из 50 ГБ (лимит устройства) — исчерпан"
+    assert texts.consumption_line(8 * M, 0, blocked=False) == "Потребление за месяц: 8 МБ"
     assert texts.client_total_line(G, 2 * G, 50 * G, 10 * G, for_admin=False) == \
         "Потребление за месяц: 3 из 50 + 10 ГБ до конца месяца"
+    assert texts.client_total_line(M, 2 * M, 50 * G, 10 * G, for_admin=True) == \
+        "Потребление профиля за месяц: 3 МБ из 50 + 10 ГБ до конца месяца (↑ 1 МБ | ↓ 2 МБ)"
 
 
 def test_gb_str_and_slots_and_limit_notice():
