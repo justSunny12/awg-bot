@@ -73,7 +73,8 @@ def test_activate_friend_happy(services, make_active_client):
     assert dev.friend_status == FriendStatus.ACTIVE
     assert dev.friend_tg_id == 90805
     assert dev.friend_code is None                          # код погашен
-    assert services.friend_devices(90805)[0].id == dc.device_id
+    holder = services.db.get_client_by_tg(90805)
+    assert holder.is_guest and services.db.list_held_devices(holder.id)[0].id == dc.device_id
 
 
 def test_activate_friend_invalid_code(services):
@@ -144,16 +145,19 @@ def test_multi_friendship_lists_all(services, make_active_client):
     friend = 90811
     services.activate_friend(services.make_device_friendly(da.device_id), tg_id=friend)
     services.activate_friend(services.make_device_friendly(db_.device_id), tg_id=friend)
-    devs = services.friend_devices(friend)
-    assert {d.id for d in devs} == {da.device_id, db_.device_id}
     guest = services.db.get_client_by_tg(friend)
+    devs = services.db.list_held_devices(guest.id)
+    assert {d.id for d in devs} == {da.device_id, db_.device_id}
     assert guest.is_guest and services.db.list_clients() == [c for c in services.db.list_clients() if not c.is_guest]
 
 
-def test_friend_device_by_id_ownership_guard(services, make_active_client):
+def test_held_devices_are_scoped_to_the_holder(services, make_active_client):
+    """Чужой device_id в колбэке отсекается тем, что выборка идёт по держателю:
+    у другого профиля этого устройства в списке нет."""
     owner = make_active_client(tg_id=813)
     dc = services.add_device(owner.id, "d")
     services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=90813)
-    # чужой tg спрашивает про это устройство → None (защита от чужого device_id)
-    assert services.friend_device_by_id(90814, dc.device_id) is None
-    assert services.friend_device_by_id(90813, dc.device_id).id == dc.device_id
+    other = make_active_client(tg_id=90814)
+    assert [d.id for d in services.db.list_held_devices(other.id)] == []
+    holder = services.db.get_client_by_tg(90813)
+    assert [d.id for d in services.db.list_held_devices(holder.id)] == [dc.device_id]

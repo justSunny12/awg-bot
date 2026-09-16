@@ -116,7 +116,7 @@ class HostModeUnsupported(RuntimeError):
     """Операция ещё не портирована на host-режим (docs/ROADMAP.md, шаг 2).
 
     НЕ наследник AwgError, и это намеренно. Половина вызывающих глотает AwgError
-    и продолжает с пустым результатом: container_pid → None, container_running →
+    и продолжает с пустым результатом: container_pid → None, awg_responding →
     False, host_ssh_targets → частичный список. Унаследуй заслон от AwgError — и
     он утонул бы ровно в тех except'ах, ради которых поставлен, вернув ту самую
     молчаливую деградацию. Для SSH-фильтра это была бы дыра без единого признака.

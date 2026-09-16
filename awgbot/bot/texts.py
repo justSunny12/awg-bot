@@ -297,12 +297,22 @@ def client_link(c) -> str:
     return tg_link(getattr(c, "tg_name", "") or c.name, c.tg_id, getattr(c, "tg_username", ""))
 
 
+def owner_name(dev) -> str:
+    """Как звать владельца устройства: имя его Telegram-аккаунта, пока нет —
+    профильное. Для кнопок (там ссылка невозможна) и для owner_link."""
+    return dev.owner_tg_name or dev.owner_name
+
+
+def holder_name(dev) -> str:
+    return dev.holder_tg_name or dev.holder_name
+
+
 def owner_link(dev) -> str:
-    return tg_link(dev.owner_tg_name or dev.owner_name, dev.owner_tg_id, dev.owner_tg_username)
+    return tg_link(owner_name(dev), dev.owner_tg_id, dev.owner_tg_username)
 
 
 def holder_link(dev) -> str:
-    return tg_link(dev.holder_tg_name or dev.holder_name, dev.holder_tg_id, dev.holder_tg_username)
+    return tg_link(holder_name(dev), dev.holder_tg_id, dev.holder_tg_username)
 
 
 def _n_devices(n: int) -> str:
@@ -1825,7 +1835,7 @@ def _ver(v: str) -> str:
     return v if v.startswith("v") else f"v{v}"
 
 
-def _skipped_block(installed: str, tag: str, skipped) -> str:
+def _skipped_block(tag: str, skipped) -> str:
     """Пропущенные ступени между установленной и целью: по строке на релиз —
     тег и заголовок ссылкой на его страницу (changelog) на GitHub. Ссылки на
     diff кода нет намеренно: админ читает changelog, а не исходники. Пусто —
@@ -1853,7 +1863,7 @@ def update_available(tag: str, body: str, installed: str | None = None,
     cur = _ver(installed if installed is not None else config.INSTALLED_VERSION)
     header = (f"Текущая версия бота {_e(cur)}.\n"
               f"Доступна новая версия: {_e(_ver(tag))}\n"
-              + _skipped_block(cur, tag, skipped)
+              + _skipped_block(tag, skipped)
               + "Список изменений:\n")
     return header + _changelog_block(body, header)
 
@@ -1867,7 +1877,7 @@ def update_admin_available(installed: str, tag: str, body: str, skipped=()) -> s
     """Админ-проверка: доступно обновление до цели (с пропущенными ступенями)."""
     header = (f"Текущая версия бота {_e(_ver(installed))}.\n"
               f"Доступно обновление до {_e(_ver(tag))}\n"
-              + _skipped_block(installed, tag, skipped)
+              + _skipped_block(tag, skipped)
               + "Список изменений:\n")
     return header + _changelog_block(body, header)
 

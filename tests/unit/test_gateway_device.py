@@ -296,6 +296,20 @@ def _ip_stub(rules_json: str, routes_json: str, calls: list):
     return run
 
 
+def test_uplink_policy_survives_foreign_rules_with_masked_fwmark(monkeypatch):
+    """Чужие правила на той же машине печатают метку с маской («0x1/0xff») или
+    вовсе без неё; разбор одного такого правила не должен ронять весь тик."""
+    import subprocess
+    rules = ('[{"priority":100,"src":"all","fwmark":"0x2/0xff","table":"200"},'
+             '{"priority":101,"src":"all","table":"main"},'
+             '{"priority":102,"src":"all","fwmark":"0x1","table":"100"}]')
+    monkeypatch.setattr(subprocess, "run", _ip_stub(rules, '[{"dst":"default","dev":"awg0"}]', []))
+    assert gwguard.uplink_policy("awg0") == {"rule": True, "route": True}
+    rules = '[{"priority":100,"src":"all","fwmark":"garbage","table":"100"}]'
+    monkeypatch.setattr(subprocess, "run", _ip_stub(rules, "[]", []))
+    assert gwguard.uplink_policy("awg0") == {"rule": False, "route": False}
+
+
 def test_uplink_policy_detects_missing_rule_and_route_and_restores_them(monkeypatch):
     """systemd-networkd при перезапуске сносит чужие ip rule и маршруты: аплинк
     жив, метка стоит, а Telegram агента уходит домашнему провайдеру. Агент

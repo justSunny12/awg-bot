@@ -82,12 +82,6 @@ class AccessMiddleware(BaseMiddleware):
                 and client.activation_status == ActivationStatus.ACTIVE):
             client = self._touch_tg_name(client, user)
             if client.is_guest:
-                # имя гостя — из Telegram: при переносе прежних друзей его не
-                # было, а средство узнать — только первое сообщение
-                name = (user.first_name or user.username or "").strip()
-                if name and client.name in ("Друг", ""):
-                    self.db.update_client_fields(client.id, name=name[:64])
-                    client = self.db.get_client(client.id)
                 access_cache.put(uid, "invited", client)
                 data["role"] = "invited"
                 data["client"] = client

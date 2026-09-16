@@ -641,17 +641,7 @@ class Database:
             for r in rows:
                 tg = int(r["friend_tg_id"])
                 holder = cur.execute("SELECT id FROM clients WHERE tg_id = ?", (tg,)).fetchone()
-                if holder is None:
-                    cur.execute(
-                        """INSERT INTO clients (tg_id, name, device_limit, activation_status,
-                           invite_code, is_service, created_at, kind)
-                           VALUES (?, 'Друг', 0, 'active', NULL, 0, ?, 'guest')""",
-                        (tg, _now_iso()))
-                    hid = cur.lastrowid
-                    cur.execute("INSERT INTO client_subscription (client_id, status) VALUES (?, 'active')", (hid,))
-                    cur.execute("INSERT INTO client_quota (client_id) VALUES (?)", (hid,))
-                else:
-                    hid = int(holder["id"])
+                hid = int(holder["id"]) if holder is not None else self._insert_guest(cur, tg, "Друг")
                 cur.execute("UPDATE devices SET holder_client_id = ? WHERE id = ?",
                             (hid, int(r["device_id"])))
                 cur.execute("DELETE FROM device_friend WHERE device_id = ?", (int(r["device_id"]),))
@@ -1112,19 +1102,6 @@ class Database:
                     "(SELECT twin_of FROM devices WHERE twin_of IS NOT NULL)")
         return self._TWIN_DANGLING_OK
 
-    def get_device_by_friend_tg(self, tg_id: int):
-        """Первое из переданных устройств, которые держит этот Telegram-аккаунт."""
-        devs = self.get_devices_by_friend_tg(tg_id)
-        return devs[0] if devs else None
-
-    def get_devices_by_friend_tg(self, tg_id: int) -> list:
-        """ВСЕ переданные устройства, которые держит этот Telegram-аккаунт
-        (docs/guest-role.md): держатель — гость или обычный клиент."""
-        return [_device_from_row(r) for r in self._connection().execute(
-            _DEVICE_SELECT + " WHERE h.tg_id = ?"
-            f" AND {self._friend_visible_where()} ORDER BY d.created_at, d.id",
-            (tg_id,)).fetchall()]
-
     def list_held_devices(self, client_id: int) -> list:
         """Переданные устройства, которые держит профиль (чужие, но управляет он).
         По одной строке на устройство — то же правило видимости, что у списка
@@ -1165,19 +1142,25 @@ class Database:
             "AND (c.tg_name = '' OR c.tg_name_at IS NULL OR c.tg_name_at < ?) "
             "ORDER BY c.id", (older_than_iso,)).fetchall()]
 
+    @staticmethod
+    def _insert_guest(cur, tg_id: int, name: str) -> int:
+        """Строки гостевого профиля: clients + пустые подписка и квота (у гостя
+        их нет, но 1:1-таблицы обязаны существовать). Возвращает id."""
+        cur.execute(
+            """INSERT INTO clients (tg_id, name, device_limit, activation_status,
+               invite_code, is_service, created_at, kind)
+               VALUES (?, ?, 0, 'active', NULL, 0, ?, 'guest')""",
+            (tg_id, name, _now_iso()))
+        cid = cur.lastrowid
+        cur.execute("INSERT INTO client_subscription (client_id, status) VALUES (?, 'active')", (cid,))
+        cur.execute("INSERT INTO client_quota (client_id) VALUES (?)", (cid,))
+        return cid
+
     def create_guest_client(self, tg_id: int, name: str) -> int:
         """Гостевой профиль (docs/guest-role.md): без подписки и лимита, сразу
         активен — держит переданные устройства одного владельца."""
         with self._tx() as cur:
-            cur.execute(
-                """INSERT INTO clients (tg_id, name, device_limit, activation_status,
-                   invite_code, is_service, created_at, kind)
-                   VALUES (?, ?, 0, 'active', NULL, 0, ?, 'guest')""",
-                (tg_id, name, _now_iso()))
-            cid = cur.lastrowid
-            cur.execute("INSERT INTO client_subscription (client_id, status) VALUES (?, 'active')", (cid,))
-            cur.execute("INSERT INTO client_quota (client_id) VALUES (?)", (cid,))
-            return cid
+            return self._insert_guest(cur, tg_id, name)
 
     def migration_visibility_running(self) -> bool:
         """Каким комплектом пары жить экранам и выдаче — новым или старым.

@@ -732,9 +732,15 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         if row is None:
             return ActivationResult(ok=False, reason="invalid")
         upgrade = None
-        if existing is not None and existing.is_guest:
-            upgrade = self._upgrade_guest(existing, row.id)
-        self.db.activate_client(row.id, tg_id)
+        # Переход гостя и активация — один коммит: гостевой профиль удаляется
+        # раньше (tg_id занят), и упасть между этим и активацией значило бы
+        # оставить человека без профиля, а устройства — у никого.
+        with self.db.transaction():
+            if existing is not None and existing.is_guest:
+                upgrade = self._upgrade_guest(existing, row.id)
+            self.db.activate_client(row.id, tg_id)
+        if upgrade is not None and upgrade.moved:
+            self.reconcile_routing()                  # наборы — после коммита
         return ActivationResult(ok=True, reason="ok", client=self.db.get_client(row.id),
                                 upgrade=upgrade)
 
@@ -743,21 +749,18 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         устройства переходят в новый профиль независимо от лимита («3 из 2»
         честно), слоты дарителю возвращаются, управлять ими он больше не может.
         Пиры не трогаются. Личный список адресов едет с гостем. Гостевой
-        профиль закрывается — иначе tg_id занят и активация не пройдёт."""
+        профиль закрывается — иначе tg_id занят и активация не пройдёт.
+        Только БД: вызывается внутри транзакции activate_client."""
         held = self.db.list_held_devices(guest.id)
         donor = self.db.get_client(held[0].client_id) if held else None
-        moved = []
         for dev in held:
             for peer in self._device_pair(dev):
                 self.db.update_device_fields(peer.id, client_id=new_client_id,
                                              holder_client_id=None)
             self._recompute_device_blocks(dev.id, new_client_id)
-            moved.append(dev)
         self.db.move_routing_domains(guest.id, new_client_id)
         self.db.delete_client(guest.id, archive_reason="upgraded")
-        if moved:
-            self.reconcile_routing()
-        return GuestUpgrade(donor=donor, moved=moved)
+        return GuestUpgrade(donor=donor, moved=held)
 
     def _recompute_device_blocks(self, device_id: int, client_id: int) -> None:
         """Каскадные биты прежнего владельца (истечение, пауза) с устройства
@@ -990,11 +993,10 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
                                     device_name=dev.name, holder=holder,
                                     donor=self.db.get_client(held[0].client_id), held=held)
         if holder is None:
+            # профильное имя — раз, при рождении; дальше человека зовут по
+            # имени аккаунта (clients.tg_name), его ведёт middleware
             hid = self.db.create_guest_client(tg_id, (tg_name or "Друг").strip()[:64])
             holder = self.db.get_client(hid)
-        elif holder.is_guest and tg_name and holder.name in ("Друг", "") :
-            self.db.update_client_fields(holder.id, name=tg_name.strip()[:64])
-            holder = self.db.get_client(holder.id)
         for peer in self._device_pair(dev):
             self.db.set_device_holder(peer.id, holder.id)
         if dev.routing_on:
@@ -1002,12 +1004,6 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         return FriendActivation(ok=True, reason="ok", device_id=dev.id, device_name=dev.name,
                                 holder=holder, donor=self.db.get_client(dev.client_id),
                                 held=self.db.list_held_devices(holder.id))
-
-    def guest_donor(self, client):
-        """Владелец устройств, которые держит профиль (гость — всегда один);
-        None — не держит ничего."""
-        held = self.db.list_held_devices(client.id)
-        return self.db.get_client(held[0].client_id) if held else None
 
     def rekey_device(self, device_id: int) -> None:
         """Перевыпустить ключи устройства: прежний конфиг у людей перестаёт
@@ -1034,18 +1030,6 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
                     pass
                 raise ServiceError(f"Не удалось перевыпустить ключи на сервере: {e}")
             self.db.update_device_fields(peer.id, public_key=pub, private_key=priv)
-
-    def friend_devices(self, tg_id: int) -> list:
-        """ВСЕ переданные устройства, которые держит этот tg (гость или клиент)."""
-        return self.db.get_devices_by_friend_tg(tg_id)
-
-    def friend_device_by_id(self, tg_id: int, device_id: int):
-        """Устройство друга по id С ПРОВЕРКОЙ, что оно действительно его (защита
-        от чужого device_id в callback). Возвращает Row или None."""
-        for dev in self.db.get_devices_by_friend_tg(tg_id):
-            if dev.id == device_id:
-                return dev
-        return None
 
     def reassign_device(self, device_id: int, new_client_id: int,
                         add_slot: bool = False) -> dict:

@@ -158,7 +158,12 @@ async def friend_gen(cb: CallbackQuery, callback_data: FriendCB, client, service
     try:
         await send_device_config(cb.message, services, dev, kind)
     except ServiceError as e:
+        # как у клиента: финишер «выше — ссылка» под отказом врал бы; меню под
+        # кнопкой уже снято — главный экран следом
         await cb.message.answer(f"Не удалось выдать конфиг: {texts._e(str(e))}")
+        await show_guest_main(cb.message, services, client)
+        await cb.answer()
+        return
     await content_finisher(cb.message, services, texts.finish_config(kind, dev.name), "invited")
     await cb.answer()
 

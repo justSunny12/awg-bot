@@ -13,6 +13,7 @@ from awgbot.core import settings
 from awgbot.core import blocks as _blocks
 from awgbot.core.enums import ActivationStatus
 from awgbot.bot.callbacks import GwCB, HideCB
+from awgbot.bot import texts as _texts
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Reply-клавиатура (глобальные команды у поля ввода): «Меню» и «Отмена».
@@ -85,8 +86,7 @@ def _dev_emoji(d) -> str:
     """Иконка типа устройства — та же, что в текстовых списках (см.
     texts.device_emoji): своя копия здесь про шлюз и про непринятый инвайт не
     знала."""
-    from awgbot.bot.texts import device_emoji
-    return device_emoji(d)
+    return _texts.device_emoji(d)
 
 
 def client_devices(devices, held=()) -> InlineKeyboardMarkup:
@@ -105,7 +105,7 @@ def client_devices(devices, held=()) -> InlineKeyboardMarkup:
                   callback_data=DeviceCB(action="open", device_id=d.id))
     for d in held:
         marker = _blocks.blocked_marker_device(int(d.block_reason), for_admin=False)
-        kb.button(text=f"{marker}👤 {d.name} — от {d.owner_name}",
+        kb.button(text=f"{marker}👤 {d.name} — от {_texts.owner_name(d)}",
                   callback_data=DeviceCB(action="open", device_id=d.id))
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
     kb.adjust(1)
@@ -233,13 +233,13 @@ def routing_devices(client_id: int, devices, *, back_target, lent_out=()) -> Inl
     rows = [1]
     for d in devices:
         mark = "✅" if d.routing_on else "☑️"
-        held = f" — от {d.owner_name}" if d.is_lent else ""    # чужое, которое держим
+        held = f" — от {_texts.owner_name(d)}" if d.is_lent else ""    # чужое, которое держим
         kb.button(text=f"{mark} {d.name}{_btn_suffix(d)}{held}",
                   callback_data=RoutingCB(action="dev", ref=d.id))
         rows.append(1)
     # свои переданные — в самом конце, без переключателя: управляет держатель
     for d in lent_out:
-        kb.button(text=f"👤 {d.name} — {d.holder_name}",
+        kb.button(text=f"👤 {d.name} — {_texts.holder_name(d)}",
                   callback_data=RoutingCB(action="lent", ref=d.id))
         rows.append(1)
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))

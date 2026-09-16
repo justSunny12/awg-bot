@@ -80,6 +80,25 @@ async def test_guest_gen_from_main_picks_when_several(services, fake_bot, make_a
     assert any(s[0] == "answer" and "Ссылка для подключения" in s[1] for s in nav.sent)
 
 
+async def test_guest_gen_failure_shows_main_screen_not_a_finisher(services, fake_bot,
+                                                                 make_active_client, monkeypatch):
+    """Сервер не выдал конфиг: под отказом финишер «☝️ Выше — ссылка» врал бы, а
+    меню под кнопкой уже снято — как у клиента, следом главный экран."""
+    from awgbot.domain.services import ServiceError
+    owner = make_active_client(tg_id=8106)
+    dc, guest = _lend(services, owner, 98106, "Тел")
+
+    def boom(device_id, **kw):
+        raise ServiceError("сервер не отвечает")
+    monkeypatch.setattr(services, "generate_config", boom)
+    cb, nav = _cb(fake_bot, 98106)
+    await fh.friend_gen(cb, FriendCB(action="gen_link", device_id=dc.device_id), guest, services)
+    answers = [s[1] for s in nav.sent if s[0] == "answer"]
+    assert any("Не удалось выдать конфиг" in a for a in answers)
+    assert not any("Выше" in a for a in answers), "финишер под отказом"
+    assert answers[-1].startswith("Привет,"), "главный экран не пришёл"
+
+
 async def test_guest_block_needs_confirmation(services, fake_bot, make_active_client):
     owner = make_active_client(tg_id=8105)
     dc, guest = _lend(services, owner, 98105, "Тел")

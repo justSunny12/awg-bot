@@ -39,7 +39,7 @@ def test_first_code_creates_a_guest_profile_holding_the_device(services, make_ac
     # слот и квота — у владельца
     assert services.db.count_devices(owner.id) == 1
     assert services.db.count_devices(guest.id) == 0
-    assert services.guest_donor(guest).id == owner.id
+    assert services.db.list_held_devices(guest.id)[0].client_id == owner.id
     # гости не попадают в списки владельцев
     assert guest.id not in [c.id for c in services.db.list_clients()]
     assert guest.id in [c.id for c in services.db.list_clients(include_guests=True)]
@@ -69,7 +69,7 @@ def test_guest_profile_survives_without_devices_and_takes_a_new_donor(services, 
     assert services.routing_domains(guest_id) == ["bank.ru"], "список адресов пережил пустоту"
     other = make_active_client(tg_id=903)
     dc, res = _lend(services, other, "C", 9902)
-    assert res.holder.id == guest_id and services.guest_donor(res.holder).id == other.id
+    assert res.holder.id == guest_id and res.donor.id == other.id
 
 
 def test_admin_reassign_to_the_holder_clears_the_holder(services, make_active_client):
@@ -108,6 +108,29 @@ def test_guest_upgrade_moves_all_held_devices_even_over_the_limit(services, make
         assert dev.client_id == new.id and dev.holder_client_id is None
     assert services.routing_domains(new.id) == ["bank.ru"], "список адресов уехал с гостем"
     assert services.db.list_held_devices(new.id) == []
+
+
+def test_guest_upgrade_is_atomic_with_activation(services, make_active_client, monkeypatch):
+    """Гостевой профиль удаляется раньше активации (tg_id занят). Упала
+    активация — откат целиком: гость на месте, устройства у него, список
+    адресов цел; иначе человек остался бы без профиля, а устройства — у никого."""
+    import pytest as _pt
+    owner = make_active_client(tg_id=915, device_limit=3)
+    a, res = _lend(services, owner, "Телефон", 9915)
+    guest = res.holder
+    services.routing_add_domains(guest.id, "bank.ru")
+    created = services.create_client("Артём", 2, "year", 0)
+
+    def fail(client_id, tg_id):
+        raise RuntimeError("диск кончился")
+    monkeypatch.setattr(services.db, "activate_client", fail)
+    with _pt.raises(RuntimeError):
+        services.activate_client(created.invite_code, 9915)
+    assert services.db.get_client(guest.id) is not None, "гость пропал вместе с откатом"
+    dev = services.db.get_device(a.device_id)
+    assert dev.client_id == owner.id and dev.holder_client_id == guest.id
+    assert services.routing_domains(guest.id) == ["bank.ru"]
+    assert services.db.get_client(created.client_id).activation_status == "pending"
 
 
 def test_guest_upgrade_recomputes_cascade_blocks_from_the_new_owner(services, make_active_client):
@@ -182,7 +205,7 @@ def test_legacy_friends_become_guest_holders_on_schema_init(tmp_path):
     pending = [d for d in db.list_devices(oid) if d.name == "C"][0]
     assert pending.friend_status == "pending" and pending.friend_code == "Fpending"
     db.init_schema()                                       # идемпотентно
-    assert db.get_client_by_tg(555).id == guest.id and len(db.get_devices_by_friend_tg(555)) == 2
+    assert db.get_client_by_tg(555).id == guest.id and len(db.list_held_devices(guest.id)) == 2
 
 
 def test_admin_cannot_take_a_friend_code(services, make_active_client):

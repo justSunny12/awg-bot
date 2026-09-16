@@ -53,8 +53,9 @@ async def test_invited_friend_role(services, make_active_client):
     assert result == "HANDLED"
     assert data["role"] == "invited" and data["client"].is_guest
     assert data["client"].tg_id == 9001
-    assert data["client"].name == "U", "имя гостя не взято из Telegram"
-    assert services.guest_donor(data["client"]).id == owner.id
+    assert data["client"].name == "Друг", "профильное имя гостя — раз, при рождении"
+    assert data["client"].tg_name == "U", "имя аккаунта не взято из Telegram"
+    assert services.db.list_held_devices(data["client"].id)[0].client_id == owner.id
 
 
 async def test_stranger_start_is_activation(db):

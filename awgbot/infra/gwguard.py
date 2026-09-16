@@ -217,11 +217,20 @@ def _ip_json(args: list[str]) -> list:
         return []
 
 
+def _fwmark_of(rule: dict) -> int:
+    """Метка правила из `ip -j rule`: «0x1», с маской — «0x1/0xff» (чужие
+    правила на той же машине); нечитаемое — 0, а не исключение на весь тик."""
+    raw = str(rule.get("fwmark", "0")).split("/", 1)[0].strip()
+    try:
+        return int(raw, 0)
+    except ValueError:
+        return 0
+
+
 def uplink_policy(uplink_if: str) -> dict:
     """{'rule': bool, 'route': bool} — есть ли правило «метка → таблица» и
     маршрут по умолчанию в аплинк в этой таблице."""
-    rule = any(int(str(r.get("fwmark", "0")), 0) == TG_MARK
-               and str(r.get("table")) == str(UPLINK_TABLE)
+    rule = any(_fwmark_of(r) == TG_MARK and str(r.get("table")) == str(UPLINK_TABLE)
                for r in _ip_json(["rule", "show"]))
     route = any(r.get("dst") == "default" and r.get("dev") == uplink_if
                 for r in _ip_json(["route", "show", "table", str(UPLINK_TABLE)]))

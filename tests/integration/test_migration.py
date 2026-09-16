@@ -584,12 +584,13 @@ def test_friend_sees_the_device_once(services, mig, make_active_client):
     services.activate_friend(code, tg_id=7099)
     services.migration_start()
 
-    rows = services.db.get_devices_by_friend_tg(7099)
+    holder = services.db.get_client_by_tg(7099)
+    rows = services.db.list_held_devices(holder.id)
     assert len(rows) == 1, "друг видит устройство дважды"
     assert rows[0].iface == "awg1", "другу показан уходящий интерфейс"
 
     services.migration_cancel()
-    rows = services.db.get_devices_by_friend_tg(7099)
+    rows = services.db.list_held_devices(holder.id)
     assert len(rows) == 1 and rows[0].iface == "", "после отмены друг не вернулся на старую"
 
 
