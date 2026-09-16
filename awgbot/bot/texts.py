@@ -278,25 +278,31 @@ def subscription_block(client, *, for_admin: bool = False, show_pause: bool = Tr
 # Карточка клиента (для админа и для самого клиента)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def tg_link(name: str, tg_id) -> str:
-    """Имя человека ссылкой на его Telegram-аккаунт; без tg_id — просто имя."""
+def tg_link(name: str, tg_id, username: str = "") -> str:
+    """Имя человека ссылкой на его Telegram-аккаунт. По username — t.me/…,
+    её видят все; ссылка tg://user?id= у постороннего (не в контактах, нет
+    общих чатов) молча превращается в текст, поэтому она — запасная. Без
+    tg_id — просто имя."""
+    label = _e(name or "профиль")
+    if username:
+        return f'<a href="https://t.me/{_e(username.lstrip("@"))}">{label}</a>'
     if tg_id:
-        return f'<a href="tg://user?id={int(tg_id)}">{_e(name or "профиль")}</a>'
-    return _e(name or "профиль")
+        return f'<a href="tg://user?id={int(tg_id)}">{label}</a>'
+    return label
 
 
 def client_link(c) -> str:
     """Ссылка на человека: имя его Telegram-аккаунта (профильное name — про
     подписку, его задаёт админ), пока имени нет — профильное."""
-    return tg_link(getattr(c, "tg_name", "") or c.name, c.tg_id)
+    return tg_link(getattr(c, "tg_name", "") or c.name, c.tg_id, getattr(c, "tg_username", ""))
 
 
 def owner_link(dev) -> str:
-    return tg_link(dev.owner_tg_name or dev.owner_name, dev.owner_tg_id)
+    return tg_link(dev.owner_tg_name or dev.owner_name, dev.owner_tg_id, dev.owner_tg_username)
 
 
 def holder_link(dev) -> str:
-    return tg_link(dev.holder_tg_name or dev.holder_name, dev.holder_tg_id)
+    return tg_link(dev.holder_tg_name or dev.holder_name, dev.holder_tg_id, dev.holder_tg_username)
 
 
 def _n_devices(n: int) -> str:

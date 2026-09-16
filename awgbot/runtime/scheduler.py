@@ -531,9 +531,12 @@ async def refresh_tg_names(bot, db, max_age_days: int = TG_NAME_MAX_AGE_DAYS) ->
             or getattr(chat, "username", "") or "").strip()[:128]
         if not name:
             continue
+        uname = (getattr(chat, "username", "") or "").strip()[:64]
         fields = {"tg_name_at": timeutil.now_iso()}
         if name != c.tg_name:
             fields["tg_name"] = name
+        if uname != c.tg_username:
+            fields["tg_username"] = uname
         await asyncio.to_thread(db.update_client_fields, c.id, **fields)
         done += 1
     return done

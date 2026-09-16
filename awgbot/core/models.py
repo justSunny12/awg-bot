@@ -83,6 +83,7 @@ class Client:
     # name задаёт админ и оно про подписку, не про человека).
     tg_name: str = ""
     tg_name_at: Optional[str] = None       # когда имя обновлялось; None — никогда
+    tg_username: str = ""                  # публичный @username — ссылка t.me/ видна всем
     # Условная маршрутизация: РАЗРЕШЕНИЕ админа. Собственного «включено» у
     # профиля нет — оно выводится из устройств (включено хоть на одном), см.
     # db.routing_device_counts. Хранить его ещё и здесь значило бы завести
@@ -203,10 +204,12 @@ class Device:
     holder_tg_id: Optional[int] = None
     holder_name: str = ""
     holder_tg_name: str = ""
+    holder_tg_username: str = ""
     # Владелец — для карточки у держателя («получено от …»).
     owner_tg_id: Optional[int] = None
     owner_name: str = ""
     owner_tg_name: str = ""
+    owner_tg_username: str = ""
 
     @property
     def is_managed(self) -> bool:

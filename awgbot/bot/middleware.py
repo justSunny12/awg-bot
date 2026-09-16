@@ -31,9 +31,11 @@ class AccessMiddleware(BaseMiddleware):
         if client is None:
             return None
         name = (user.full_name or user.username or "").strip()[:128]
-        if name and name != client.tg_name:
+        uname = (user.username or "").strip()[:64]
+        if name and (name != client.tg_name or uname != client.tg_username):
             from awgbot.util import timeutil
-            self.db.update_client_fields(client.id, tg_name=name, tg_name_at=timeutil.now_iso())
+            self.db.update_client_fields(client.id, tg_name=name, tg_username=uname,
+                                         tg_name_at=timeutil.now_iso())
             return self.db.get_client(client.id)
         return client
 
