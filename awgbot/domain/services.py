@@ -899,8 +899,6 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             if peer.id != device_id:
                 self.db.delete_device(peer.id, archive_reason=None)
         self.db.delete_device(device_id)
-        if dev.holder_client_id is not None:
-            self.guest_close_if_empty(dev.holder_client_id)
         return friend_tg
 
     def generate_config(self, device_id: int, *, for_bundle: bool = False) -> dict:
@@ -1011,16 +1009,31 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         held = self.db.list_held_devices(client.id)
         return self.db.get_client(held[0].client_id) if held else None
 
-    def guest_close_if_empty(self, client_id: int) -> bool:
-        """Гость без единого устройства перестаёт существовать: держать ему
-        нечего, а роль без устройств — тупик. True — профиль закрыт."""
-        client = self.db.get_client(client_id)
-        if client is None or not client.is_guest:
-            return False
-        if self.db.list_held_devices(client_id):
-            return False
-        self.db.delete_client(client_id, archive_reason="guest_empty")
-        return True
+    def rekey_device(self, device_id: int) -> None:
+        """Перевыпустить ключи устройства: прежний конфиг у людей перестаёт
+        работать, имя и адрес те же. Нужно, когда устройство уходит от
+        держателя к другому владельцу (docs/guest-role.md): иначе прежний
+        держатель сохранил бы доступ по чужому теперь устройству. Сервер —
+        снять старый пир, поставить новый; не поднялся — вернуть старый."""
+        dev = self.db.get_device(device_id)
+        if dev is None:
+            raise ServiceError("Устройство не найдено")
+        self._refuse_if_gateway(dev)
+        if not dev.private_key:
+            raise ServiceError("Это устройство создавал не бот — перевыпустить ключи нельзя")
+        priv, pub = awg.gen_keypair()
+        for peer in self._device_pair(dev):
+            iface = awg.iface_of(peer.iface)
+            try:
+                awg.remove_peer(peer.public_key, iface=iface)
+                awg.add_peer(pub, peer.preshared_key, peer.address, iface=iface)
+            except awg.AwgError as e:
+                try:
+                    awg.add_peer(peer.public_key, peer.preshared_key, peer.address, iface=iface)
+                except awg.AwgError:
+                    pass
+                raise ServiceError(f"Не удалось перевыпустить ключи на сервере: {e}")
+            self.db.update_device_fields(peer.id, public_key=pub, private_key=priv)
 
     def friend_devices(self, tg_id: int) -> list:
         """ВСЕ переданные устройства, которые держит этот tg (гость или клиент)."""
@@ -1076,7 +1089,9 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
                 if dev.holder_client_id is not None:
                     self.db.set_device_holder(peer.id, None)
         if dev.holder_client_id is not None and dev.holder_client_id != new_client_id:
-            self.guest_close_if_empty(dev.holder_client_id)
+            # прежний держатель теряет и доступ: пир перевыпускается с тем же
+            # именем для нового владельца
+            self.rekey_device(dev.id)
         # счётчики ПОСЛЕ перепривязки (живой COUNT — уже актуальны)
         donor_count = self.db.count_devices(donor.id) if donor else 0
         recip_count = self.db.count_devices(new_client_id)
@@ -1983,8 +1998,6 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
                 friend_tg = (dev.friend_tg_id
                              if dev.friend_status == FriendStatus.ACTIVE else None)
                 self.db.delete_device(dev.id)
-                if dev.holder_client_id is not None:
-                    self.guest_close_if_empty(dev.holder_client_id)   # гость без устройств
                 if client and not client.is_service:
                     notifications.append(Notification(
                         config.ADMIN_ID,

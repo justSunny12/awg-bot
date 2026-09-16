@@ -53,7 +53,7 @@ async def test_owner_delete_of_lent_device_warns_and_notifies_holder(services, f
     holder_msgs = [r[2] for r in fake_bot.records if r[0] == "send_message" and r[1] == 97101]
     assert holder_msgs == ['Устройство «Ноут», которым ты управлял, удалено владельцем '
                            '(<a href="tg://user?id=7101">Вася</a>) — доступ по нему больше не работает.']
-    assert services.db.get_client_by_tg(97101) is None, "гость без устройств закрыт"
+    assert services.db.get_client_by_tg(97101) is not None, "профиль гостя не терминируется"
 
 
 async def test_client_holder_sees_foreign_device_after_own(services, fake_bot, make_active_client):
@@ -64,7 +64,7 @@ async def test_client_holder_sees_foreign_device_after_own(services, fake_bot, m
     assert services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=7103).ok
     # главный экран: «+ 1 от [Вася]»
     text, _ = await ch._greeting(services, holder)
-    assert 'Устройств добавлено: 1 из 2 + 1 от <a href="tg://user?id=7102">Вася</a>.' in text
+    assert 'Устройств добавлено: 1 из 2 (+ 1 от <a href="tg://user?id=7102">Вася</a>).' in text
     cb, nav = _cb(fake_bot, 7103)
     await ch.menu_devices(cb, holder, services)
     _, labels = last_screen(nav)

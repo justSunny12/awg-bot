@@ -235,11 +235,9 @@ async def friend_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
         await notify_one(cb.bot, dev.owner_tg_id,
                          texts.lent_device_deleted_by_holder_notice(dev, used, limit))
     await edit(cb, f"🗑 Устройство «{texts._e(dev.name)}» удалено.", None)
-    fresh = await call(services.db.get_client, client.id)
-    if fresh is None:                                       # гость без устройств закрыт
-        await cb.message.answer(texts.GUEST_NO_DEVICES_LEFT)
-        return
-    await send_menu(cb.message, services, *await guest_main_payload(services, fresh),
+    # профиль гостя живёт и без устройств (список адресов, история — при нём);
+    # главный экран сам скажет, что делать дальше
+    await send_menu(cb.message, services, *await guest_main_payload(services, client),
                     keep_id=cb.message.message_id)
 
 

@@ -296,11 +296,14 @@ def greeting_guest(name: str, server_ok: bool, donor, n_devices: int,
     status_block = server_status_client(server_ok)
     if routing_ok is not None:
         status_block += "\n" + routing_status_line(routing_ok)
-    owner = f" (владелец: {tg_link(donor.name, donor.tg_id)})" if donor is not None else ""
-    sub = subscription_status_only(donor) if donor is not None else "—"
+    if donor is None or not n_devices:
+        # устройств нет — профиль живёт (список адресов и история при нём),
+        # подписки показывать нечьей
+        return (f"Привет, {_e(name)}! 👋\n\n{status_block}\n\n{GUEST_NO_DEVICES_LEFT}")
+    owner = f" (владелец: {tg_link(donor.name, donor.tg_id)})"
     return (f"Привет, {_e(name)}! 👋\n\n"
             f"{status_block}\n\n"
-            f"Статус подписки: {sub}{owner}\n\n"
+            f"Статус подписки: {subscription_status_only(donor)}{owner}\n\n"
             f"У тебя {_n_devices(n_devices)}")
 
 
@@ -310,7 +313,7 @@ def held_devices_tail(held) -> str:
     if not held:
         return ""
     d = held[0]
-    return f" + {len(held)} от {tg_link(d.owner_name, d.owner_tg_id)}"
+    return f" (+ {len(held)} от {tg_link(d.owner_name, d.owner_tg_id)})"
 
 
 def _device_limit_line(dev) -> str:
@@ -372,10 +375,10 @@ def lent_device_deleted_by_admin_notice(dev) -> str:
 
 
 def lent_device_reassigned_notice(name: str) -> str:
-    """Держателю: администратор перенёс устройство в другой профиль."""
+    """Держателю: администратор перенёс устройство в другой профиль — ключи
+    перевыпущены, прежний конфиг не работает."""
     return (f"Устройство «{_e(name)}», которым ты управлял, администратор перенёс в другой "
-            "профиль — управлять им через бота ты больше не можешь. Само подключение "
-            "работает, пока новый владелец его не удалит.")
+            "профиль — доступ по нему у тебя больше не работает.")
 
 
 def lent_device_deleted_by_owner_notice(dev) -> str:
@@ -401,7 +404,7 @@ def friend_device_added(dev, donor, n_held: int, own_slots: tuple | None = None)
     if own_slots is not None:
         used, limit = own_slots
         own = f"{used} из {limit} устройств" if limit else _n_devices(used)
-        return head + f"\nТеперь у тебя {own} + {n_held} от {tg_link(donor.name, donor.tg_id)}."
+        return head + f"\nТеперь у тебя {own} (+ {n_held} от {tg_link(donor.name, donor.tg_id)})."
     if n_held > 1:
         return head + f"\nТеперь у тебя {_n_devices(n_held)}."
     return head

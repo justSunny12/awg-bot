@@ -78,7 +78,7 @@ async def test_client_takes_a_foreign_device(services, fake_bot, make_active_cli
     await ch.take_code_as_member(msg, services, holder, code)
     answers = [s[1] for s in msg.sent if s[0] == "answer"]
     assert answers[0] == ('✅ Устройство «Чужое» от <a href="tg://user?id=6204">Вася</a> успешно добавлено.\n'
-                          'Теперь у тебя 1 из 2 устройств + 1 от <a href="tg://user?id=6204">Вася</a>.')
+                          'Теперь у тебя 1 из 2 устройств (+ 1 от <a href="tg://user?id=6204">Вася</a>).')
     assert "Привет, Петя" in answers[-1]
     # клиентский инвайт клиенту — по-прежнему «уже есть доступ»
     created = services.create_client("Ещё", 1, "year", 0)

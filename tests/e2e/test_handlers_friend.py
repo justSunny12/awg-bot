@@ -97,8 +97,8 @@ async def test_guest_block_needs_confirmation(services, fake_bot, make_active_cl
     assert "✅ Разблокировать" in labels
 
 
-async def test_guest_delete_notifies_owner_and_closes_empty_guest(services, fake_bot,
-                                                                   make_active_client):
+async def test_guest_delete_notifies_owner_and_empty_guest_keeps_profile(services, fake_bot,
+                                                                          make_active_client):
     owner = make_active_client(tg_id=8106, name="Вася", device_limit=3)
     a, guest = _lend(services, owner, 98106, "A")
     b, guest = _lend(services, owner, 98106, "B")
@@ -117,12 +117,15 @@ async def test_guest_delete_notifies_owner_and_closes_empty_guest(services, fake
     assert edits[-1][1] == "🗑 Устройство «A» удалено." and edits[-1][2] is None
     answers = [s for s in nav.sent if s[0] == "answer"]
     assert "У тебя 1 устройство" in answers[-1][1] and answers[-1][2] is not None
-    # последнее — гость закрывается
+    # последнее — профиль остаётся, главный экран объясняет, что дальше
     cb, nav = _cb(fake_bot, 98106)
     await fh.friend_delete_confirm(cb, DelDeviceCB(device_id=b.device_id, stage="confirm"),
                                    guest, services)
-    assert services.db.get_client_by_tg(98106) is None
-    assert any(s[0] == "answer" and s[1] == texts.GUEST_NO_DEVICES_LEFT for s in nav.sent)
+    assert services.db.get_client_by_tg(98106) is not None
+    answers = [s for s in nav.sent if s[0] == "answer"]
+    assert texts.GUEST_NO_DEVICES_LEFT in answers[-1][1] and "Статус подписки" not in answers[-1][1]
+    labels = [b.text for row in answers[-1][2].inline_keyboard for b in row]
+    assert labels == ["📱 Мои устройства", "❓ Помощь с настройкой"]
 
 
 async def test_guest_help_platform(services, fake_bot, make_active_client):

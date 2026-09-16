@@ -53,24 +53,23 @@ def test_pending_code_is_still_a_friend_row(services, make_active_client):
     assert dev.friend_status == "pending" and dev.friend_code == code and not dev.is_lent
 
 
-def test_guest_closes_when_last_held_device_is_removed(services, make_active_client):
+def test_guest_profile_survives_without_devices_and_takes_a_new_donor(services, make_active_client):
+    """Гость без устройств не закрывается (данные профиля хранить бесплатно);
+    новый код — уже от любого владельца: правило одного дарителя считается по
+    удерживаемым, а их нет."""
     owner = make_active_client(tg_id=902, device_limit=3)
     a, res = _lend(services, owner, "A", 9902)
     b, _ = _lend(services, owner, "B", 9902)
     guest_id = res.holder.id
+    services.routing_add_domains(guest_id, "bank.ru")
     assert services.remove_device(a.device_id) == 9902, "держатель — адресат «удалено владельцем»"
-    assert services.db.get_client(guest_id) is not None
     services.remove_device(b.device_id)
-    assert services.db.get_client(guest_id) is None, "гость без устройств должен закрыться"
-    assert services.db.get_client_by_tg(9902) is None
-
-
-def test_owner_client_holding_a_device_is_not_closed(services, make_active_client):
-    owner = make_active_client(tg_id=903)
-    holder = make_active_client(tg_id=904)
-    dc, _ = _lend(services, owner, "A", 904)
-    services.remove_device(dc.device_id)
-    assert services.db.get_client(holder.id) is not None
+    guest = services.db.get_client(guest_id)
+    assert guest is not None and guest.is_guest and services.db.list_held_devices(guest_id) == []
+    assert services.routing_domains(guest_id) == ["bank.ru"], "список адресов пережил пустоту"
+    other = make_active_client(tg_id=903)
+    dc, res = _lend(services, other, "C", 9902)
+    assert res.holder.id == guest_id and services.guest_donor(res.holder).id == other.id
 
 
 def test_admin_reassign_to_the_holder_clears_the_holder(services, make_active_client):
@@ -195,9 +194,9 @@ def test_admin_cannot_take_a_friend_code(services, make_active_client):
 
 # ── ревью 17.09.2026: дыры, найденные сверкой с концептом ────────────────────
 
-def test_sweep_of_the_last_held_device_closes_the_guest(services, make_active_client, monkeypatch):
-    """Сверка удалила пропавший с сервера пир: держатель-гость без устройств
-    обязан закрыться так же, как при удалении кнопкой."""
+def test_sweep_of_the_last_held_device_leaves_the_guest_profile(services, make_active_client, monkeypatch):
+    """Сверка удалила пропавший с сервера пир: устройства у гостя нет, профиль
+    остаётся — как и при удалении кнопкой."""
     owner = make_active_client(tg_id=920)
     dc, res = _lend(services, owner, "Тел", 9920)
     guest_id = res.holder.id
@@ -209,23 +208,31 @@ def test_sweep_of_the_last_held_device_closes_the_guest(services, make_active_cl
     for _ in range(3):
         services.reconcile_peers()
     assert services.db.get_device(dc.device_id) is None, "сверка не удалила пропавший пир"
-    assert services.db.get_client(guest_id) is None, "гость остался без устройств и не закрылся"
+    assert services.db.get_client(guest_id) is not None and services.db.list_held_devices(guest_id) == []
 
 
-def test_admin_reassign_detaches_the_holder_and_keeps_one_donor_rule(services, make_active_client):
+def test_admin_reassign_detaches_the_holder_and_rekeys(services, make_active_client, fake_awg):
     """Админ перенёс переданное устройство к третьему профилю: держатель его
-    теряет (иначе он держал бы устройства от двух дарителей), гость без
-    устройств закрывается, прежнему держателю есть кому сказать."""
+    теряет вместе с доступом — ключи перевыпускаются с тем же именем и адресом
+    (иначе он держал бы устройства от двух дарителей и сохранил бы доступ по
+    чужому). Профиль гостя живёт. Прежнему держателю есть кому сказать."""
     owner = make_active_client(tg_id=921, device_limit=3)
     third = make_active_client(tg_id=922, device_limit=3)
     dc, res = _lend(services, owner, "Тел", 9921)
+    before = services.db.get_device(dc.device_id)
     info = services.reassign_device(dc.device_id, third.id)
     dev = services.db.get_device(dc.device_id)
     assert dev.client_id == third.id and dev.holder_client_id is None
     assert info["holder_tg"] == 9921
-    assert services.db.get_client(res.holder.id) is None
+    assert dev.public_key != before.public_key and dev.private_key != before.private_key
+    assert dev.name == "Тел" and dev.address == before.address
+    assert before.public_key not in fake_awg.peers and dev.public_key in fake_awg.peers
+    assert services.db.get_client(res.holder.id) is not None, "профиль гостя не терминируется"
     # держатель стал владельцем — держать нечего, уведомлять некого
     holder = make_active_client(tg_id=923, device_limit=3)
     d2, _ = _lend(services, owner, "Ещё", 923)
+    keys = services.db.get_device(d2.device_id).public_key
     info = services.reassign_device(d2.device_id, holder.id)
-    assert info["holder_tg"] is None and services.db.get_device(d2.device_id).holder_client_id is None
+    d2f = services.db.get_device(d2.device_id)
+    assert info["holder_tg"] is None and d2f.holder_client_id is None
+    assert d2f.public_key == keys, "стал владельцем сам — конфиг его, перевыпуск не нужен"
