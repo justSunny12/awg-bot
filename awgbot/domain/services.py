@@ -350,9 +350,26 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             "rt_on": bool(ac and rt_visible and self.routing_profile_on(ac.id)),
         }
 
+    def online_ref(self) -> datetime.datetime:
+        """Момент, на который считать «онлайн»: последний опрос пиров.
+
+        Хендшейки в БД свежее опроса не бывают, а опрос идёт раз в тик. Сравнивать
+        их с текущим временем значило бы гасить тех, кто был на связи в момент
+        опроса, с каждой минутой после него: счётчик в панели считался на момент
+        опроса, а список по ссылке через три минуты показывал вдвое меньше.
+        Опрос старше порога (опросчик встал) — данные протухли, берём «сейчас»:
+        все оффлайн, и это честно."""
+        raw = self.db.get_state("online_polled_at") or ""
+        now = timeutil.now()
+        thr = settings.get_int("app.online_handshake_seconds", 300)
+        if raw.isdigit() and 0 <= now.timestamp() - int(raw) <= thr:
+            return datetime.datetime.fromtimestamp(int(raw), tz=timeutil.TZ)
+        return now
+
     def _devices_online(self, devices) -> bool:
         thr = settings.get_int("app.online_handshake_seconds", 300)
-        return any(timeutil.handshake_is_online(d.traffic.last_handshake, threshold=thr)
+        ref = self.online_ref()
+        return any(timeutil.handshake_is_online(d.traffic.last_handshake, ref, threshold=thr)
                    for d in devices)
 
     def client_card_data(self, client_id: int) -> Optional[dict]:
@@ -397,8 +414,9 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
     def online_devices(self) -> list[tuple]:
         """[(устройство, имя профиля)] с живым хендшейком — по ВСЕМ профилям,
         включая админа. Порядок: по имени профиля, внутри — по имени устройства."""
+        ref = self.online_ref()
         devs = [d for d in self.db.list_all_devices()
-                if timeutil.handshake_is_online(d.traffic.last_handshake)]
+                if timeutil.handshake_is_online(d.traffic.last_handshake, ref)]
         names = {c.id: c.name for c in self.db.list_clients(include_service=True)}
         devs.sort(key=lambda d: (0 if d.is_gateway else 1,
                                  names.get(d.client_id, "").lower(), d.name.lower()))
@@ -1545,11 +1563,16 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
                 log.warning("poll_traffic: %s не опрошен: %s", awg.iface_of(raw), e)
         # бесплатный побочный продукт: онлайн-счётчик для статусного блока
         # (dump уже в руках — не тратим отдельный exec в мониторе)
+        polled_at = timeutil.now()
         online = sum(1 for p in peers.values()
-                     if timeutil.handshake_is_online(p["last_handshake"]))
+                     if timeutil.handshake_is_online(p["last_handshake"], polled_at))
         with self.db.transaction():
             if self.db.get_state("online_count") != str(online):
                 self.db.set_state("online_count", str(online))   # только при изменении
+            # момент опроса: «онлайн» в списках и карточках считается на него,
+            # а не на «сейчас» (см. online_ref) — иначе цифра в панели и список
+            # по ссылке расходятся на возраст последнего опроса
+            self.db.set_state("online_polled_at", str(int(polled_at.timestamp())))
             # Все сэмплы одним запросом, дельты и новые базы — двумя executemany:
             # 3M+1 операторов на тик превращаются в четыре. Строку сэмпла
             # переписываем только при изменении счётчиков — оффлайн-устройство
@@ -3435,7 +3458,8 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
     def client_is_online(self, client_id: int) -> bool:
         """Онлайн ли хоть одно устройство профиля — одним индексным запросом."""
         return self.db.client_has_online_device(
-            client_id, settings.get_int("app.online_handshake_seconds", 300))
+            client_id, settings.get_int("app.online_handshake_seconds", 300),
+            ref_ts=int(self.online_ref().timestamp()))
 
     def device_slots(self, client_id: int) -> tuple[int, int]:
         """(добавлено, лимит) — для подсветки «M из N»."""
@@ -3566,18 +3590,23 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             return cached == "1"
         return self.server_ok()          # state ещё не прогрет (первый старт)
 
-    def refresh_status_now(self) -> None:
+    def refresh_status_now(self) -> list:
         """Внеплановое обновление статусного блока по требованию (кнопка админа):
-        живой снимок awg-статуса + локальных метрик железа прямо в state, минуя
-        ожидание следующего тика монитора. Блокирующий (docker exec + /proc) —
-        вызывать через asyncio.to_thread. Меню/инфобокс потом читают из state
-        как обычно (0 docker exec на показ)."""
+        живой снимок awg-статуса, опрос пиров (счётчик онлайн и хендшейки — без
+        него цифра оставалась бы от прошлого тика) и локальные метрики железа
+        прямо в state, минуя ожидание следующего тика монитора. Блокирующий
+        (docker exec + /proc) — вызывать через asyncio.to_thread. Меню/инфобокс
+        потом читают из state как обычно (0 docker exec на показ). Возвращает
+        уведомления опроса (поздравления переезда) — отправить их обязан
+        вызывающий."""
         from awgbot.runtime import hostmetrics
-        self.db.set_state("last_server_ok", "1" if self.server_ok() else "0")
+        ok = self.server_ok()
+        self.db.set_state("last_server_ok", "1" if ok else "0")
         started = awg.service_started_at()
         if started:
             self.db.set_state("container_started_at", started)
         hostmetrics.collect_and_store(self.db)
+        return self.poll_traffic() if ok else []
 
     def restart_service(self) -> None:
         """Перезапуск AmneziaWG по кнопке админа. На хосте это awg-quick

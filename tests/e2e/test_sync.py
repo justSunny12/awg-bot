@@ -99,6 +99,55 @@ def test_poll_updates_online_count(services, fake_awg, make_active_client, monke
     assert services.db.get_state("online_count") == "1"
 
 
+def test_online_list_and_counter_agree_until_the_next_poll(services, fake_awg, make_active_client,
+                                                            monkeypatch):
+    """Счётчик в панели считается на момент опроса, а список по ссылке читает те
+    же хендшейки из БД. Пока следующего опроса не было, список обязан сходиться
+    со счётчиком: сравнение с «сейчас» гасило тех, кто был на связи при опросе,
+    с каждой минутой после него — «онлайн: 5» в панели и «(2)» по ссылке."""
+    client = make_active_client(tg_id=704)
+    dc = services.add_device(client.id, "d")
+    dev = services.db.get_device(dc.device_id)
+    t0 = timeutil.now()
+    monkeypatch.setattr(timeutil, "now", lambda: t0)
+    hs = int(t0.timestamp()) - 200                         # при опросе: онлайн (порог 300)
+    _set_dump(monkeypatch, [_dump_entry(dev.public_key, dev.address, 10, 10, hs=hs)])
+    services.poll_traffic()
+    assert services.db.get_state("online_count") == "1"
+    assert [d.id for d, _ in services.online_devices()] == [dc.device_id]
+    assert services.client_is_online(client.id) is True
+
+    # через 2,5 минуты после опроса (нового опроса не было): по «сейчас»
+    # хендшейку 350 с — оффлайн, по моменту опроса — по-прежнему онлайн
+    import datetime as _dt
+    monkeypatch.setattr(timeutil, "now", lambda: t0 + _dt.timedelta(seconds=150))
+    assert [d.id for d, _ in services.online_devices()] == [dc.device_id]
+    assert services.client_is_online(client.id) is True
+    assert services.client_card_data(client.id)["online"] is True
+
+    # опросчик встал: опрос старше порога — данные протухли, честный оффлайн
+    monkeypatch.setattr(timeutil, "now", lambda: t0 + _dt.timedelta(seconds=400))
+    assert services.online_devices() == []
+    assert services.client_is_online(client.id) is False
+
+
+def test_status_refresh_repolls_peers(services, fake_awg, make_active_client, monkeypatch):
+    """Кнопка «статус» обязана переопросить пиров: без этого счётчик онлайн
+    оставался от прошлого тика, и «обновить» ничего не обновляло."""
+    client = make_active_client(tg_id=705)
+    dc = services.add_device(client.id, "d")
+    dev = services.db.get_device(dc.device_id)
+    _set_dump(monkeypatch, [_dump_entry(dev.public_key, dev.address, 10, 10, hs=None)])
+    services.poll_traffic()
+    assert services.db.get_state("online_count") == "0"
+    now_ts = int(timeutil.now().timestamp())
+    _set_dump(monkeypatch, [_dump_entry(dev.public_key, dev.address, 20, 20, hs=now_ts)])
+    monkeypatch.setattr(services, "server_ok", lambda: True)
+    assert services.refresh_status_now() == []
+    assert services.db.get_state("online_count") == "1"
+    assert services.db.get_device(dc.device_id).last_handshake == now_ts
+
+
 # ── reset_monthly_traffic ────────────────────────────────────────────────────
 def test_monthly_reset_zeroes_counters_and_traffic_blocks(services, fake_awg, make_active_client):
     client = make_active_client(tg_id=710)

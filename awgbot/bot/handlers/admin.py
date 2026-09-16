@@ -1160,8 +1160,9 @@ async def refresh_status(cb: CallbackQuery, services):
     роутер под RoleFilter). Дёргает контейнер и /proc разово, пишет в state,
     затем перерисовывает панель из свежего state."""
     await cb.answer("Обновляю…")
-    await call(services.refresh_status_now)
+    notes = await call(services.refresh_status_now)
     await edit_nav(cb, services, *await _panel_parts(services))
+    await send_notifications(cb.bot, notes)
 
 
 # ── Обновления бота (self-update) ────────────────────────────────────────────
