@@ -242,10 +242,14 @@ async def test_subscription_screen_and_menu_label(services, fake_bot, make_activ
     G = 1024 ** 3
     y = make_active_client(tg_id=5030, period_kind="year", device_limit=4, traffic_limit=50 * G)
     d = make_active_client(tg_id=5031, period_kind="day")
-    assert "⚙️ Управлять подпиской" in [b.text for r in kb.client_main(manage_sub=ch._manage_sub(
-        _fresh(services, y))).inline_keyboard for b in r]
+    n = make_active_client(tg_id=5033, period_kind="never")
+    for c in (y, d):                      # и без дней на счету — пусть видит, за что дают
+        assert "⚙️ Управлять подпиской" in [b.text for r in kb.client_main(
+            manage_sub=ch._manage_sub(_fresh(services, c))).inline_keyboard for b in r]
     assert "📝 Моя подписка" in [b.text for r in kb.client_main(manage_sub=ch._manage_sub(
-        _fresh(services, d))).inline_keyboard for b in r]
+        _fresh(services, n))).inline_keyboard for b in r]
+    pause_tail = ("\n<i>+2 дня за каждое своевременное продление на месяц, не более 24</i>"
+                  "\n<i>+28 дней за продление на год</i>")
 
     text, _ = await ch._info_parts(services, y.id)
     c = _fresh(services, y)
@@ -253,28 +257,30 @@ async def test_subscription_screen_and_menu_label(services, fake_bot, make_activ
     assert text.startswith("<b>Информация о подписке:</b>\n\nТип подписки: годовая\nСтатус: 🟢 активна\n"
                            "РФ-доступ: 🔴 не доступен\n"
                            f"Период подписки: {timeutil.fmt_period(start, end)}\nДо истечения: ")
-    assert "\n\nПриостановка подписки: доступно 28/28 дней\n\n" in text
+    assert f"\n\n<b>Приостановка подписки:</b> доступно 28 дней{pause_tail}\n\n" in text
     assert text.endswith("Лимит потребления в месяц: 50 ГБ\nЛимит устройств: 4")
     assert "Потребление" not in text and "Устройств:" not in text
 
     m = make_active_client(tg_id=5032, period_kind="month", device_limit=0)
     text, _ = await ch._info_parts(services, m.id)
     assert "Тип подписки: ежемесячная" in text
-    assert ("Приостановка подписки: доступно 2/24 дней\n"
-            "<i>(+2 дня за каждый своевременно оплаченный месяц)</i>") in text
+    assert f"<b>Приостановка подписки:</b> доступно 2 дня{pause_tail}" in text
+    _, markup = await ch._info_parts(services, m.id)
+    assert "⏸ Приостановить (в отпуск)" in [b.text for r in markup.inline_keyboard for b in r]
     assert text.endswith("Лимит потребления в месяц: без ограничения\nЛимит устройств: без ограничения")
 
-    n = make_active_client(tg_id=5033, period_kind="never")
     text, _ = await ch._info_parts(services, n.id)
     assert "Тип подписки: бессрочная" in text and "Приостановка" not in text
     assert "До истечения" not in text and "— бессрочно" in text
-    text, _ = await ch._info_parts(services, d.id)
-    assert "Приостановка подписки: недоступно для этого типа подписки" in text
+    text, markup = await ch._info_parts(services, d.id)
+    assert f"<b>Приостановка подписки:</b> доступно 0 дней{pause_tail}" in text
+    assert "⏸ Приостановить (в отпуск)" not in [b.text for r in markup.inline_keyboard for b in r], \
+        "кнопка паузы без дней на счету"
 
     services.enter_pause(y.id, 5)
     text, _ = await ch._info_parts(services, y.id)
     assert "Статус: ⏳ приостановлена" in text and "До истечения" not in text
-    assert "доступно 23/28 дней" in text
+    assert "доступно 23 дня" in text
     assert texts.subscription_status_only(_fresh(services, y)).startswith("⏸")
 
 

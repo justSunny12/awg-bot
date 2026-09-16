@@ -1058,24 +1058,18 @@ def _days_word(n: int) -> str:
 
 
 def pause_balance_line(client) -> str:
-    """«Приостановка подписки: …» — счёт дней паузы против максимума типа:
-    годовая — /28, ежемесячная — /24 с пояснением про начисление; день/неделя
-    — сколько накоплено (пополнения нет); бессрочная — пусто (строки нет)."""
+    """«Приостановка подписки: доступно N дней» + как счёт пополняется — всем,
+    кроме бессрочных (им останавливать нечего): и тем, у кого дней нет — пусть
+    видят, за что их дают."""
     if not client.effective_period_end:
         return ""
     bal = int(client.pause_balance_days)
-    kind = str(client.period_kind or "")
-    year_max = settings.get_int("pause.pause_max_total_days", 28)
+    year_days = settings.get_int("pause.pause_max_total_days", 28)
     month_days = settings.get_int("pause.monthly_pause_days", 2)
-    if kind == "year":
-        return f"Приостановка подписки: доступно {bal}/{year_max} дней"
-    if kind == "month":
-        return (f"Приостановка подписки: доступно {bal}/{12 * month_days} дней\n"
-                f"<i>(+{month_days} {_days_word(month_days)} за каждый своевременно "
-                "оплаченный месяц)</i>")
-    if bal:
-        return f"Приостановка подписки: доступно {bal} {_days_word(bal)}"
-    return "Приостановка подписки: недоступно для этого типа подписки"
+    return (f"<b>Приостановка подписки:</b> доступно {bal} {_days_word(bal)}\n"
+            f"<i>+{month_days} {_days_word(month_days)} за каждое своевременное продление "
+            f"на месяц, не более {12 * month_days}</i>\n"
+            f"<i>+{year_days} {_days_word(year_days)} за продление на год</i>")
 
 
 def subscription_manage_text(client, *, routing_visible: bool) -> str:
@@ -1793,12 +1787,13 @@ def grace_activated_admin(name: str, days: int) -> str:
 
 def pause_ask(available_days: int) -> str:
     """Инфобокс перед выбором длительности: сколько доступно и как считается."""
-    return (f"⏸ Подписку можно приостановить максимум на {available_days} дн.\n\n"
+    return (f"⏸ Подписку можно приостановить максимум на "
+            f"{available_days} {_days_word(available_days)}.\n\n"
             "Пока подписка на паузе, её срок не тикает. Возобновить можно в любой "
-            "момент. Тогда неиспользованные дни приостановки вернутся на счёт — "
-            "их можно будет использовать позже, а зачтётся только фактическое "
-            "количество дней паузы (даже 1 минута паузы считается как целый день)."
-            "\n\nНа сколько дней приостановить?")
+            "момент. Тогда неиспользованные дни приостановки вернутся обратно — "
+            "их можно будет использовать позже, а израсходуется только фактическое "
+            "количество <i>начатых</i> дней паузы.\n\n"
+            "На сколько дней приостановить?")
 
 
 def pause_warning(days: int) -> str:

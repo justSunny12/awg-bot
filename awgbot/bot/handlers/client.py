@@ -246,9 +246,9 @@ def _pause_flags(client) -> tuple[bool, bool]:
 
 
 def _manage_sub(client) -> bool:
-    """Есть ли у клиента рычаг: снять свою паузу или войти в неё."""
-    paused_user, can_pause = _pause_flags(client)
-    return paused_user or can_pause
+    """«Управлять» — всем, кроме бессрочных: пауза — их рычаг, и видеть его
+    полезно и тем, у кого дней пока нет (за что дают — на экране)."""
+    return bool(client.effective_period_end)
 
 
 @router.callback_query(Menu.filter(F.action == "info"))

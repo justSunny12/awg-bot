@@ -58,8 +58,8 @@ def client_main(has_devices: bool = True, routing_visible: bool = False,
     kb.button(text="➕ Добавить устройство", callback_data=DeviceCB(action="add"))
     if has_devices:
         kb.button(text="📱 Мои устройства", callback_data=Menu(action="devices"))
-    # «Управлять» — только когда есть чем: единственный рычаг клиента —
-    # пауза (войти или снять); иначе экран сугубо информационный
+    # «Управлять» — у всех, кроме бессрочных: их единственный рычаг — пауза;
+    # бессрочной останавливать нечего, экран сугубо информационный
     kb.button(text="⚙️ Управлять подпиской" if manage_sub else "📝 Моя подписка",
               callback_data=Menu(action="info"))
     if routing_visible:
