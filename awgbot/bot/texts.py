@@ -371,6 +371,70 @@ def lent_device_deleted_by_owner_notice(dev) -> str:
             f"({tg_link(dev.owner_name, dev.owner_tg_id)}) — доступ по нему больше не работает.")
 
 
+def _names_list(names: list) -> str:
+    """«A», «B» и «C» — через запятую, перед последним «и»."""
+    q = [f"«{_e(n)}»" for n in names]
+    if len(q) <= 1:
+        return "".join(q)
+    return ", ".join(q[:-1]) + " и " + q[-1]
+
+
+def friend_device_added(dev, donor, n_held: int, own_slots: tuple | None = None) -> str:
+    """Держателю: ещё одно устройство от того же владельца. Вторая строка —
+    только когда устройств стало больше одного; у обычного клиента — со
+    своими: «2 из 3 устройств + 1 от [Вася]»."""
+    head = (f"✅ Устройство «{_e(dev.name)}» от {tg_link(donor.name, donor.tg_id)} "
+            "успешно добавлено.")
+    if own_slots is not None:
+        used, limit = own_slots
+        own = f"{used} из {limit} устройств" if limit else _n_devices(used)
+        return head + f"\nТеперь у тебя {own} + {n_held} от {tg_link(donor.name, donor.tg_id)}."
+    if n_held > 1:
+        return head + f"\nТеперь у тебя {_n_devices(n_held)}."
+    return head
+
+
+def friend_other_donor_refusal(held: list, donor) -> str:
+    """Код от другого владельца при уже удерживаемых устройствах."""
+    names = [d.name for d in held]
+    one = len(names) == 1
+    link = tg_link(donor.name, donor.tg_id)
+    return (f"У тебя уже есть {'устройство' if one else 'устройства'} {_names_list(names)}, "
+            f"{'переданное' if one else 'переданные'} {link}.\n"
+            "Владеть устройствами от разных друзей одновременно не получится 😔\n"
+            f"Ты можешь либо удалить {'устройство' if one else 'все устройства'} от {link} и "
+            "отправить мне этот код повторно, либо оставить всё как есть — решать тебе 🤷‍♂️")
+
+
+def guest_upgraded(donor, moved: list, limit: int) -> str:
+    """Гость стал владельцем: что перенесено; сверх лимита — честно."""
+    lines = [ACTIVATION_OK, "",
+             f"Переданные тебе устройства от профиля {tg_link(donor.name, donor.tg_id)} "
+             "перенесены в твой профиль — перенастраивать ничего не нужно, они работают как раньше:"]
+    lines += [f"• {_e(d.name)}" for d in moved]
+    if limit and len(moved) > limit:
+        lines += ["", f"В твою подписку входит {_n_devices(limit)}, а перенесено {len(moved)} — "
+                      "все они продолжают работать. Добавить новое получится, когда освободится "
+                      "место в рамках лимита."]
+    return "\n".join(lines)
+
+
+def guest_upgraded_donor_notice(moved: list, holder, used: int, limit: int) -> str:
+    """Прежнему владельцу — одним сообщением про все уехавшие."""
+    names = [d.name for d in moved]
+    one = len(names) == 1
+    now = f"У тебя теперь {used} из {limit} устройств" if limit else f"У тебя теперь {_n_devices(used)}"
+    return (f"📤 {'Устройство' if one else 'Устройства'} {_names_list(names)} "
+            f"{'перешло' if one else 'перешли'} к {tg_link(holder.name, holder.tg_id)} — он активировал "
+            f"собственную подписку, и {'устройство переехало' if one else 'устройства переехали'} "
+            f"в его профиль. {now}.")
+
+
+def guest_upgraded_admin_tail(donor, moved: list, limit: int) -> str:
+    return (f"\nПеренесено переданных устройств: {len(moved)} (от {_e(donor.name)}), "
+            f"лимит подписки {limit if limit else 'без ограничения'}.")
+
+
 GUEST_NO_DEVICES_LEFT = ("Устройств больше нет. Чтобы снова пользоваться VPN, попроси у "
                          "друга новый код.")
 

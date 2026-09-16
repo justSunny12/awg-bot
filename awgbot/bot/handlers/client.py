@@ -112,8 +112,9 @@ async def _try_activate(message: Message, services, code: str):
 
 
 async def _activate_friend(message: Message, services, code: str):
-    """Активация кода друга (F…): человек получает роль invited над устройством."""
-    res = await call(services.activate_friend, code, message.from_user.id)
+    """Активация кода друга (F…) незнакомцем: заводится гостевой профиль."""
+    u = message.from_user
+    res = await call(services.activate_friend, code, u.id, (u.first_name or u.username or ""))
     if not res.ok:
         if res.reason == "already_user":
             await message.answer(texts.FRIEND_ALREADY_USER)
@@ -124,14 +125,91 @@ async def _activate_friend(message: Message, services, code: str):
     # показать главный экран гостя сразу
     from awgbot.bot.handlers.friend import show_guest_main
     await show_guest_main(message, services, res.holder)
-    # уведомить хозяина, что друг активировал устройство
+    await _notify_owner_activated(message, services, res)
+
+
+async def _notify_owner_activated(message: Message, services, res) -> None:
+    """Владельцу: друг активировал устройство."""
     dev = await call(services.db.get_device, res.device_id)
-    host = await call(services.db.get_client, dev.client_id)
+    host = await call(services.db.get_client, dev.client_id) if dev else None
     u = message.from_user
     handle = f"@{u.username}" if u.username else (u.full_name or str(u.id))
     if host and host.tg_id:
         await notify_one(message.bot, host.tg_id,
                          texts.friend_activated_host_notice(dev.name, handle))
+
+
+async def take_code_as_member(message: Message, services, client, code: str) -> None:
+    """Код от того, у кого уже есть профиль — гость или клиент (docs/guest-role.md).
+
+    F… — ещё одно устройство от того же владельца (иной владелец — отказ, код
+    цел). C… — у клиента отказ «уже есть доступ»; у гостя — переход во
+    владельцы с переносом всех переданных устройств.
+    """
+    code = code.strip()
+    u = message.from_user
+    if code[:1] == "F":
+        res = await call(services.activate_friend, code, u.id, (u.first_name or u.username or ""))
+        if not res.ok:
+            if res.reason == "other_donor":
+                await message.answer(texts.friend_other_donor_refusal(res.held, res.donor))
+            elif res.reason == "own_device":
+                await message.answer("Это твоё собственное устройство — держать его незачем 🙂")
+            else:
+                await message.answer(texts.ACTIVATION_INVALID)
+            return
+        holder = res.holder
+        own_slots = None if holder.is_guest else await call(services.device_slots, holder.id)
+        dev = await call(services.db.get_device, res.device_id)
+        await message.answer(texts.friend_device_added(dev, res.donor, len(res.held), own_slots))
+        if holder.is_guest:
+            from awgbot.bot.handlers.friend import show_guest_main
+            await show_guest_main(message, services, holder)
+        else:
+            await _show_main(message, services, holder)
+        await _notify_owner_activated(message, services, res)
+        return
+    if not client.is_guest:
+        await message.answer(texts.ACTIVATION_ALREADY)
+        return
+    res = await call(services.activate_client, code, u.id)
+    if not res.ok:
+        await message.answer(texts.ACTIVATION_INVALID)
+        return
+    up, new = res.upgrade, res.client
+    handle = f"@{u.username}" if u.username else (u.full_name or str(u.id))
+    if up is not None and up.moved:
+        await message.answer(texts.guest_upgraded(up.donor, up.moved, new.device_limit))
+        if up.donor is not None and up.donor.tg_id:
+            used, limit = await call(services.device_slots, up.donor.id)
+            await notify_one(message.bot, up.donor.tg_id,
+                             texts.guest_upgraded_donor_notice(up.moved, new, used, limit))
+        admin_text = (texts.activated_admin_notice(new.name, handle)
+                      + texts.guest_upgraded_admin_tail(up.donor, up.moved, new.device_limit))
+    else:
+        await message.answer(texts.ACTIVATION_OK)
+        admin_text = texts.activated_admin_notice(new.name, handle)
+    await _show_main(message, services, new)           # помощь не предлагаем: уже подключён
+    if settings.get_bool("notifications.client_events.activation", True):
+        await notify_one(message.bot, config.ADMIN_ID, admin_text)
+
+
+@router.message(CommandStart(deep_link=True), RoleFilter("client"))
+async def start_client_with_code(message: Message, command: CommandObject, client, services,
+                                 state: FSMContext):
+    """/start {код} у действующего клиента: чужое устройство ему в держание."""
+    await state.clear()
+    await take_code_as_member(message, services, client, (command.args or "").strip())
+
+
+@router.message(Command("code"), RoleFilter("client"))
+async def code_client(message: Message, command: CommandObject, client, services, state: FSMContext):
+    await state.clear()
+    code = (command.args or "").strip()
+    if not code:
+        await message.answer(texts.CODE_NO_ARG)
+        return
+    await take_code_as_member(message, services, client, code)
 
 
 @router.message(CommandStart(), RoleFilter("client"))

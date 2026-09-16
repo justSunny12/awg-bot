@@ -14,7 +14,7 @@ handlers/friend.py — роутер роли invited: ГОСТЬ (docs/guest-rol
 from __future__ import annotations
 
 from aiogram import F, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
@@ -68,6 +68,24 @@ async def _card_payload(services, dev):
     owner = await call(services.db.get_client, dev.client_id)
     return (texts.held_device_card(dev, int(owner.traffic_limit) if owner else 0),
             kb.held_device_actions(dev, FriendCB(action="list").pack(), cb_cls=FriendCB))
+
+
+@router.message(CommandStart(deep_link=True))
+async def friend_start_with_code(message: Message, command: CommandObject, client, services):
+    """/start {код} у гостя: ещё одно устройство от того же владельца или
+    переход во владельцы (код клиента). Раньше код здесь молча терялся."""
+    from awgbot.bot.handlers.client import take_code_as_member
+    await take_code_as_member(message, services, client, (command.args or "").strip())
+
+
+@router.message(Command("code"))
+async def friend_code(message: Message, command: CommandObject, client, services):
+    from awgbot.bot.handlers.client import take_code_as_member
+    code = (command.args or "").strip()
+    if not code:
+        await message.answer(texts.CODE_NO_ARG)
+        return
+    await take_code_as_member(message, services, client, code)
 
 
 @router.message(CommandStart())
