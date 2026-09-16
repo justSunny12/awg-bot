@@ -252,7 +252,6 @@ async def menu_info(cb: CallbackQuery, client, services):
     await cb.answer()
 
 
-@router.callback_query(Menu.filter(F.action == "devices"))
 async def _devices_payload(services, client):
     devices = await call(services.db.list_devices, client.id)
     held = await call(services.db.list_held_devices, client.id)
@@ -261,6 +260,7 @@ async def _devices_payload(services, client):
     return header, kb.client_devices(devices, held)
 
 
+@router.callback_query(Menu.filter(F.action == "devices"))
 async def menu_devices(cb: CallbackQuery, client, services):
     await edit(cb, *await _devices_payload(services, client))
     await cb.answer()
@@ -280,7 +280,6 @@ async def menu_gen_pick(cb: CallbackQuery, callback_data: Menu, client, services
 
 # ── устройство ───────────────────────────────────────────────────────────────
 
-@router.callback_query(DeviceCB.filter(F.action == "open"))
 async def _device_card_parts(services, client, dev):
     """Карточка с точки зрения клиента (docs/guest-role.md): своё — полная;
     своё, но переданное — имя и удаление; чужое, которое он держит — карточка
@@ -301,6 +300,7 @@ async def _device_card_parts(services, client, dev):
     return text, kb.device_actions(dev, is_admin=False, back_target=back)
 
 
+@router.callback_query(DeviceCB.filter(F.action == "open"))
 async def device_open(cb: CallbackQuery, callback_data: DeviceCB, client, services):
     dev = await call(mine_or_held, services, client, callback_data.device_id)
     if dev is None:

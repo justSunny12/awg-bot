@@ -35,3 +35,16 @@ def test_real_routers_assemble_into_dispatcher():
     for mod in _HANDLER_MODULES:
         dp.include_router(mod.router)
     assert len(list(dp.sub_routers)) == len(_HANDLER_MODULES)
+
+
+@pytest.mark.parametrize("mod", _HANDLER_MODULES, ids=lambda m: m.__name__.split(".")[-1])
+def test_no_helper_is_registered_as_a_handler(mod):
+    """Декоратор, вставший над вспомогательной функцией, вешает на кнопку
+    помощник с чужой сигнатурой — aiogram зовёт его с cb/services и падает.
+    Ровно так «Мои устройства» у клиента упали в v2.20.0. Помощники — с
+    подчёркиванием, обработчики — без; регистрация помощника — брак."""
+    handlers = [h.callback for obs in (mod.router.message, mod.router.callback_query)
+                for h in obs.handlers]
+    leaked = [h.__name__ for h in handlers if h.__name__.startswith("_")]
+    assert not leaked, leaked
+    assert handlers, "в роутере нет ни одного обработчика"
