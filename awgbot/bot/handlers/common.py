@@ -189,8 +189,8 @@ async def show_main_menu(message: Message, services, role: str, client=None) -> 
         text, (used, _) = await _greeting(services, client)
         markup = kb.client_main(has_devices=used > 0)
     elif role == "invited":
-        from awgbot.bot.handlers.friend import friend_panel_payload
-        text, markup = await friend_panel_payload(services, message.from_user.id)
+        from awgbot.bot.handlers.friend import guest_main_payload
+        text, markup = await guest_main_payload(services, client)
     else:
         return
     # Возврат в меню = конец диалога: убираем все промежуточные служебные
@@ -257,6 +257,19 @@ def own_device(services, client, device_id: int):
     return dev
 
 
+def held_device(services, client, device_id: int):
+    """Чужое устройство, которое клиент ДЕРЖИТ (docs/guest-role.md), или None."""
+    dev = services.db.get_device(device_id)
+    if dev is None or dev.holder_client_id != client.id:
+        return None
+    return dev
+
+
+def mine_or_held(services, client, device_id: int):
+    """Своё или удерживаемое — для выдачи конфига и карточки."""
+    return own_device(services, client, device_id) or held_device(services, client, device_id)
+
+
 async def send_device_config(target: Message, services, dev, kind: str) -> None:
     """Единая точка «сгенерировать и отправить конфиг устройства».
     kind: link | file | qr | both. Поднимает ServiceError наверх (хендлер решает,
@@ -294,4 +307,5 @@ async def drop_message(cb: CallbackQuery) -> None:
 
 
 __all__ = ["call", "edit", "drop_message", "send_link", "send_conf", "cleanup_content", "ask_tracked",
-           "park_screen", "purge_menus", "dismiss_update_reports", "own_device", "send_device_config"]
+           "park_screen", "purge_menus", "dismiss_update_reports", "own_device", "held_device",
+           "mine_or_held", "send_device_config"]

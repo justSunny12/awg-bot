@@ -23,7 +23,7 @@ from awgbot.bot import texts
 from awgbot.bot.callbacks import BlockCB, DelDeviceCB, DeviceCB, GraceCB, HelpCB, Menu, PauseCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.notifier import notify_one, send_notifications
-from awgbot.bot.handlers.common import (call, cleanup_content, drop_message, edit, edit_nav, ask_tracked, own_device, purge_menus, park_screen,
+from awgbot.bot.handlers.common import (call, cleanup_content, drop_message, edit, edit_nav, ask_tracked, own_device, mine_or_held, purge_menus, park_screen,
                              remove_device_and_notify, send_device_config, send_menu,
                              content_finisher)
 from awgbot.domain.services import BYTES_PER_GB, LimitReached, ServiceError
@@ -39,7 +39,8 @@ async def _greeting(services, client):
     server_ok = await call(services.server_ok_cached)     # 0 exec: статус из state
     slots = await call(services.device_slots, client.id)
     routing_ok = await call(services.routing_health_for_client, client)
-    return texts.greeting_client(client, server_ok, slots, routing_ok), slots
+    held = await call(services.db.list_held_devices, client.id)
+    return texts.greeting_client(client, server_ok, slots, routing_ok, held=held), slots
 
 
 async def _show_main(target, services, client, *, via_edit=None):
@@ -120,9 +121,9 @@ async def _activate_friend(message: Message, services, code: str):
             await message.answer(texts.ACTIVATION_INVALID)
         return
     await message.answer(texts.friend_activated(res.device_name))
-    # показать гостевую панель сразу
-    from awgbot.bot.handlers.friend import show_friend_panel
-    await show_friend_panel(message, services, message.from_user.id)
+    # показать главный экран гостя сразу
+    from awgbot.bot.handlers.friend import show_guest_main
+    await show_guest_main(message, services, res.holder)
     # уведомить хозяина, что друг активировал устройство
     dev = await call(services.db.get_device, res.device_id)
     host = await call(services.db.get_client, dev.client_id)
@@ -174,11 +175,16 @@ async def menu_info(cb: CallbackQuery, client, services):
 
 
 @router.callback_query(Menu.filter(F.action == "devices"))
-async def menu_devices(cb: CallbackQuery, client, services):
+async def _devices_payload(services, client):
     devices = await call(services.db.list_devices, client.id)
+    held = await call(services.db.list_held_devices, client.id)
     slots = await call(services.device_slots, client.id)
-    header = "<b>📱Твои устройства</b>\n\n" + texts.device_slots_line(*slots)
-    await edit(cb, header, kb.client_devices(devices))
+    header = "<b>📱Твои устройства</b>\n\n" + texts.device_slots_line(*slots) + texts.held_devices_tail(held)
+    return header, kb.client_devices(devices, held)
+
+
+async def menu_devices(cb: CallbackQuery, client, services):
+    await edit(cb, *await _devices_payload(services, client))
     await cb.answer()
 
 
@@ -197,19 +203,32 @@ async def menu_gen_pick(cb: CallbackQuery, callback_data: Menu, client, services
 # ── устройство ───────────────────────────────────────────────────────────────
 
 @router.callback_query(DeviceCB.filter(F.action == "open"))
-async def device_open(cb: CallbackQuery, callback_data: DeviceCB, client, services):
-    dev = await call(own_device, services, client, callback_data.device_id)
-    if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
-        return
+async def _device_card_parts(services, client, dev):
+    """Карточка с точки зрения клиента (docs/guest-role.md): своё — полная;
+    своё, но переданное — имя и удаление; чужое, которое он держит — карточка
+    держателя."""
+    back = Menu(action="devices").pack()
+    if dev.holder_client_id == client.id:
+        owner = await call(services.db.get_client, dev.client_id)
+        return (texts.held_device_card(dev, int(owner.traffic_limit) if owner else 0),
+                kb.held_device_actions(dev, back))
     text = texts.device_card_text(dev, for_admin=False)
     if not dev.private_key:
         text += texts.UNMANAGED_DEVICE_EXPLAIN
+    if dev.is_lent:
+        return text + f"\n\n{texts.lent_out_marker(dev)}", kb.lent_out_device_actions(dev, back)
     marker = texts.friend_marker(dev)
     if marker:
         text += f"\n\n{marker}"
-    await edit(cb, text, kb.device_actions(
-        dev, is_admin=False, back_target=Menu(action="devices").pack()))
+    return text, kb.device_actions(dev, is_admin=False, back_target=back)
+
+
+async def device_open(cb: CallbackQuery, callback_data: DeviceCB, client, services):
+    dev = await call(mine_or_held, services, client, callback_data.device_id)
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
+        return
+    await edit(cb, *await _device_card_parts(services, client, dev))
     await cb.answer()
 
 
@@ -259,8 +278,8 @@ async def client_device_edit_name_apply(message: Message, client, services, stat
 @router.callback_query(DeviceCB.filter(F.action == "connect_menu"))
 async def device_connect_menu(cb: CallbackQuery, callback_data: DeviceCB, client, services):
     """«Как планируешь подключить устройство?» — назад к карточке этого же
-    устройства."""
-    dev = await call(own_device, services, client, callback_data.device_id)
+    устройства. Своё или удерживаемое."""
+    dev = await call(mine_or_held, services, client, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
@@ -369,8 +388,8 @@ async def device_reinvite(cb: CallbackQuery, callback_data: DeviceCB, client, se
 async def device_gen(cb: CallbackQuery, callback_data: DeviceCB, client, services):
     """Выдача по устройству — один обработчик на три вида. Для устройства без
     приватного ключа (пир подхвачен с сервера) вместо ошибки — дружелюбный
-    диалог «удали / назад»."""
-    dev = await call(own_device, services, client, callback_data.device_id)
+    диалог «удали / назад». Своё или удерживаемое."""
+    dev = await call(mine_or_held, services, client, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
@@ -475,8 +494,13 @@ async def device_add_traffic(message: Message, client, services, state: FSMConte
         # помечаем гостевым и отдаём инвайт для пересылки
         code = await call(services.make_device_friendly, created.device_id)
         me = await message.bot.me()
-        await message.answer(f"✅ Устройство «{texts._e(name)}» создано для друга.",
-                             reply_markup=kb.reply_hide())
+        used, limit = await call(services.device_slots, client.id)
+        plimit = await call(services.profile_traffic_limit, client.id)
+        await message.answer(
+            texts.device_created_report(name, device_count=used, max_devices=limit,
+                                        dev_limit_bytes=tlimit, profile_limit_bytes=plimit,
+                                        for_friend=True),
+            reply_markup=kb.reply_hide())
         sent = await message.answer(
             texts.friend_invite_message(name, code, me.username))
         await call(services.db.add_content_msg_id, sent.chat.id, sent.message_id)
@@ -497,7 +521,17 @@ async def device_add_traffic(message: Message, client, services, state: FSMConte
 
 # ── удаление (усиленное для единственного) ──────────────────────────────────
 
-async def _show_delete_prompt(cb, services, dev):
+async def _show_delete_prompt(cb, services, client, dev):
+    """Три вопроса: своё (обычный / единственное), своё переданное (у держателя
+    пропадёт доступ), удерживаемое чужое (нового не создать — только код)."""
+    if dev.holder_client_id == client.id:
+        await edit(cb, texts.device_delete_by_holder_ask(dev.name),
+                   kb.confirm_delete_device(dev.id, only=False))
+        return
+    if dev.is_lent:
+        await edit(cb, texts.device_delete_by_owner_ask(dev),
+                   kb.confirm_delete_device(dev.id, only=False))
+        return
     only = await call(services.is_only_device, dev.id)
     if only:
         await edit(cb, texts.DELETE_ONLY_DEVICE_WARNING, kb.confirm_delete_device(dev.id, only=True))
@@ -511,38 +545,55 @@ async def device_delete_ask(cb: CallbackQuery, callback_data, client, services):
     """Вход в подтверждение удаления (из списка устройств или из карточки —
     оба ведут сюда через DelDeviceCB, кнопка «Удалить» в карточке эмитит
     именно этот колбэк, а не прямое удаление)."""
-    dev = await call(own_device, services, client, callback_data.device_id)
+    dev = await call(mine_or_held, services, client, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    await _show_delete_prompt(cb, services, dev)
+    await _show_delete_prompt(cb, services, client, dev)
     await cb.answer()
 
 
 @router.callback_query(DelDeviceCB.filter(F.stage == "confirm"))
 async def device_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, client, services):
-    dev = await call(own_device, services, client, callback_data.device_id)
+    dev = await call(mine_or_held, services, client, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
+    by_holder = dev.holder_client_id == client.id
     try:
-        await remove_device_and_notify(cb.bot, services, dev.id)
+        if by_holder:
+            await call(services.remove_device, dev.id)      # «удалено владельцем» не про него
+        elif dev.is_lent:
+            await call(services.remove_device, dev.id)
+            if dev.holder_tg_id:
+                await notify_one(cb.bot, dev.holder_tg_id, texts.lent_device_deleted_by_owner_notice(dev))
+        else:
+            await remove_device_and_notify(cb.bot, services, dev.id)
     except ServiceError as e:
         await cb.answer(str(e), show_alert=True)
         return
     await cb.answer()
+    if by_holder:
+        # владельцу — что удалено и сколько у него теперь
+        if dev.owner_tg_id:
+            used, limit = await call(services.device_slots, dev.client_id)
+            await notify_one(cb.bot, dev.owner_tg_id,
+                             texts.lent_device_deleted_by_holder_notice(dev, used, limit))
+        await edit(cb, f"🗑 Устройство «{texts._e(dev.name)}» удалено.", None)
+        await send_menu(cb.message, services, *await _devices_payload(services, client),
+                        keep_id=cb.message.message_id)
+        return
     # итог — на месте вопроса и остаётся в чате; следом — «Мои устройства»,
     # а если удалили последнее — сразу главное меню: пустой список с одной
     # кнопкой «Назад» ничего не говорит
     devices = await call(services.db.list_devices, client.id)
     used, limit = await call(services.device_slots, client.id)
     await edit(cb, texts.device_deleted(dev.name, used, limit), None)
-    if not devices:
+    if not devices and not await call(services.db.list_held_devices, client.id):
         await _show_main(cb.message, services, client)
         return
-    await send_menu(cb.message, services,
-                    "<b>📱Твои устройства</b>\n\n" + texts.device_slots_line(used, limit),
-                    kb.client_devices(devices), keep_id=cb.message.message_id)
+    await send_menu(cb.message, services, *await _devices_payload(services, client),
+                    keep_id=cb.message.message_id)
 
 
 # ── помощь с настройкой (меню; гайды — в handlers/guide.py) ──────────────────
@@ -596,20 +647,39 @@ async def grace_take(cb: CallbackQuery, callback_data: GraceCB, client, services
 from awgbot.core.blocks import DeviceBlock as DeviceBlock
 
 
-@router.callback_query(BlockCB.filter(F.action == "menu_block"))
-async def client_block_device(cb: CallbackQuery, callback_data: BlockCB, client, services):
+async def _blockable(services, client, callback_data: BlockCB):
+    """Устройство под блокировку своим битом: своё (не переданное — там
+    управляет держатель) или удерживаемое чужое."""
     if callback_data.target != "dev":
-        await cb.answer("Недоступно", show_alert=True)
+        return None
+    dev = await call(mine_or_held, services, client, callback_data.ref)
+    if dev is None or (dev.is_lent and dev.holder_client_id != client.id):
+        return None
+    return dev
+
+
+@router.callback_query(BlockCB.filter(F.action == "menu_block"))
+async def client_block_ask(cb: CallbackQuery, callback_data: BlockCB, client, services):
+    """Блокировка — с подтверждением: действие с последствиями, а кнопка стоит
+    рядом с безобидными."""
+    dev = await _blockable(services, client, callback_data)
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
         return
-    dev = await call(own_device, services, client, callback_data.ref)
+    await edit(cb, texts.block_device_ask(dev.name), kb.block_device_confirm(dev.id))
+    await cb.answer()
+
+
+@router.callback_query(BlockCB.filter(F.action == "block"))
+async def client_block_device(cb: CallbackQuery, callback_data: BlockCB, client, services):
+    dev = await _blockable(services, client, callback_data)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
     notes = await call(services.block_device_manual, dev.id, DeviceBlock.USER, True)
     await send_notifications(cb.bot, notes)
     dev = await call(services.db.get_device, dev.id)
-    await edit(cb, texts.device_card_text(dev, for_admin=False),
-               kb.device_actions(dev, is_admin=False, back_target=Menu(action="devices").pack()))
+    await edit(cb, *await _device_card_parts(services, client, dev))
     await cb.answer("Заблокировано")
 
 
@@ -617,10 +687,7 @@ async def client_block_device(cb: CallbackQuery, callback_data: BlockCB, client,
 async def client_unblock_device(cb: CallbackQuery, callback_data: BlockCB, client, services):
     """Клиент снимает ТОЛЬКО свой USER-бит. Админские биты не трогает — если
     устройство заблокировано и админом, оно останется заблокированным."""
-    if callback_data.target != "dev":
-        await cb.answer("Недоступно", show_alert=True)
-        return
-    dev = await call(own_device, services, client, callback_data.ref)
+    dev = await _blockable(services, client, callback_data)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
@@ -630,8 +697,7 @@ async def client_unblock_device(cb: CallbackQuery, callback_data: BlockCB, clien
     notes = await call(services.unblock_device_manual, dev.id, DeviceBlock.USER, True)
     await send_notifications(cb.bot, notes)
     dev = await call(services.db.get_device, dev.id)
-    await edit(cb, texts.device_card_text(dev, for_admin=False),
-               kb.device_actions(dev, is_admin=False, back_target=Menu(action="devices").pack()))
+    await edit(cb, *await _device_card_parts(services, client, dev))
     await cb.answer("Разблокировано")
 
 # ── Приостановка подписки («в отпуск») ───────────────────────────────────────

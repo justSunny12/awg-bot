@@ -55,35 +55,45 @@ def gb_str(num_bytes: int) -> str:
     return f"{num_bytes / _BYTES_PER_GB:.2f} ГБ"
 
 
+def _dev_traffic_line(dev_limit_bytes: int, profile_limit_bytes: int, *, own: bool) -> str:
+    """Строка о лимите потребления устройства для отчёта о создании.
+    Свой лимит устройства → показываем его; иначе потребление ограничено лишь
+    лимитом профиля («твоего», когда устройство создано для друга — лимит
+    остаётся у дарителя). Когда не ограничивает ни то, ни другое — говорить не
+    о чем, и оговорка про лимит профиля только сбивает: лимита нет вовсе."""
+    if dev_limit_bytes:
+        return f"Потребление устройства: {gb_str(dev_limit_bytes)}"
+    if profile_limit_bytes:
+        whose = "лимита профиля" if own else "твоего лимита профиля"
+        return f"Потребление устройства не ограничено в рамках {whose}"
+    return "Потребление устройства не ограничено"
+
+
 def _limit_devices_str(limit: int) -> str:
     return "∞" if not limit else str(limit)
 
 
-def _dev_traffic_line(dev_limit_bytes: int, profile_limit_bytes: int) -> str:
-    """Строка о лимите потребления устройства для отчёта о создании.
-    Свой лимит устройства → показываем его; иначе потребление ограничено лишь
-    лимитом профиля. Когда не ограничивает ни то, ни другое — говорить не о чем,
-    и оговорка «в рамках лимита профиля» только сбивает: лимита нет вовсе."""
-    if dev_limit_bytes:
-        return f"Лимит потребления: {gb_str(dev_limit_bytes)}"
-    if profile_limit_bytes:
-        return (f"Потребление в рамках лимита профиля не ограничено "
-                f"({gb_str(profile_limit_bytes)}/профиль)")
-    return "Потребление не ограничено"
+def _device_count_line(device_count: int, max_devices: int) -> str:
+    if not max_devices:
+        return f"Количество устройств: {device_count}"
+    return f"Количество устройств: {device_count}/{max_devices}"
 
 
 def device_created_report(dev_name: str, *, client_name: str = None,
                           device_count: int = 0, max_devices: int = 0,
-                          dev_limit_bytes: int = 0, profile_limit_bytes: int = 0) -> str:
-    """Отчёт о создании устройства. client_name — только для админа (у
-    клиента/друга один профиль)."""
+                          dev_limit_bytes: int = 0, profile_limit_bytes: int = 0,
+                          for_friend: bool = False) -> str:
+    """Отчёт о создании устройства: имя, потребление, счётчик. client_name —
+    только для админа (у клиента один профиль); for_friend — «создано для
+    друга», лимит — «твоего» профиля."""
     head = f"✅ Устройство «{_e(dev_name)}» создано"
     if client_name:
         head += f" для профиля «{_e(client_name)}»"
-    head += ".\n"
-    head += f"Количество устройств: {device_count}/{_limit_devices_str(max_devices)}\n"
-    head += _dev_traffic_line(dev_limit_bytes, profile_limit_bytes) + "."
-    return head
+    elif for_friend:
+        head += " для друга"
+    return (head + ".\n"
+            + _dev_traffic_line(dev_limit_bytes, profile_limit_bytes, own=not for_friend) + ".\n"
+            + _device_count_line(device_count, max_devices))
 
 
 def _limit_suffix(limit_bytes: int) -> str:
@@ -268,6 +278,108 @@ def subscription_block(client, *, for_admin: bool = False, show_pause: bool = Tr
 # Карточка клиента (для админа и для самого клиента)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def tg_link(name: str, tg_id) -> str:
+    """Имя человека ссылкой на его Telegram-аккаунт; без tg_id — просто имя."""
+    if tg_id:
+        return f'<a href="tg://user?id={int(tg_id)}">{_e(name or "профиль")}</a>'
+    return _e(name or "профиль")
+
+
+def _n_devices(n: int) -> str:
+    return f"{n} {plural_ru(n, 'устройство', 'устройства', 'устройств')}"
+
+
+def greeting_guest(name: str, server_ok: bool, donor, n_devices: int,
+                   routing_ok: bool = None) -> str:
+    """Главный экран гостя (docs/guest-role.md): как клиентский, подписка —
+    владельца, устройств — сколько держит."""
+    status_block = server_status_client(server_ok)
+    if routing_ok is not None:
+        status_block += "\n" + routing_status_line(routing_ok)
+    owner = f" (владелец: {tg_link(donor.name, donor.tg_id)})" if donor is not None else ""
+    sub = subscription_status_only(donor) if donor is not None else "—"
+    return (f"Привет, {_e(name)}! 👋\n\n"
+            f"{status_block}\n\n"
+            f"Статус подписки: {sub}{owner}\n\n"
+            f"У тебя {_n_devices(n_devices)}")
+
+
+def held_devices_tail(held) -> str:
+    """Хвост «+ 1 от [Вася]» к строке устройств обычного клиента, который держит
+    чужие; пусто — не держит."""
+    if not held:
+        return ""
+    d = held[0]
+    return f" + {len(held)} от {tg_link(d.owner_name, d.owner_tg_id)}"
+
+
+def _device_limit_line(dev) -> str:
+    """Хвост потребления у переданного устройства: чей лимит его ограничивает."""
+    if dev.traffic_limit:
+        return f"лимит устройства {gb_str(dev.traffic_limit)}"
+    return ""
+
+
+def held_device_card(dev, owner_limit_bytes: int) -> str:
+    """Карточка переданного устройства у ДЕРЖАТЕЛЯ: строка, потребление с
+    указанием, чей лимит, «получено от»; причины блокировки — как у клиента."""
+    from awgbot.core import blocks
+    used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
+    mask = int(dev.block_reason)
+    if dev.traffic_limit:
+        tail = f"лимит устройства {gb_str(dev.traffic_limit)}"
+    elif owner_limit_bytes:
+        tail = f"лимит профиля владельца {gb_str(owner_limit_bytes)}"
+    else:
+        tail = "без ограничения"
+    parts = [device_line(dev), f"Потребление за месяц: {human_bytes(used)} — {tail}"]
+    reasons = blocks.device_reasons_ru(mask, for_admin=False)
+    if reasons:
+        parts.append("⛔ Заблокировано: " + ", ".join(reasons))
+    parts.append(f"\n👤 Получено от {tg_link(dev.owner_name, dev.owner_tg_id)}")
+    return "\n".join(parts)
+
+
+def lent_out_marker(dev) -> str:
+    """Строка в карточке владельца: кому передано."""
+    return f"👤 Передано {tg_link(dev.holder_name, dev.holder_tg_id)} и управляется им"
+
+
+def device_delete_by_holder_ask(name: str) -> str:
+    return (f"Удалить «{_e(name)}»? Это устройство, переданное другом: после удаления "
+            "доступ с него пропадёт, а создать новое ты не сможешь — только получить "
+            "новый код от друга.")
+
+
+def device_delete_by_owner_ask(dev) -> str:
+    return (f"Удалить «{_e(dev.name)}»? Устройство передано "
+            f"{tg_link(dev.holder_name, dev.holder_tg_id)}: у него пропадёт доступ с этого "
+            "устройства, а создать новое сам он не сможет — только получить от тебя новый код.")
+
+
+def lent_device_deleted_by_holder_notice(dev, used: int, limit: int) -> str:
+    """Владельцу: держатель удалил переданное устройство."""
+    now = (f"Теперь у тебя {used} из {limit} устройств" if limit
+           else f"Теперь у тебя {_n_devices(used)}")
+    return (f"Устройство «{_e(dev.name)}», ранее переданное "
+            f"{tg_link(dev.holder_name, dev.holder_tg_id)}, удалено по его запросу.\n{now}.")
+
+
+def lent_device_deleted_by_owner_notice(dev) -> str:
+    """Держателю: владелец удалил переданное ему устройство."""
+    return (f"Устройство «{_e(dev.name)}», которым ты управлял, удалено владельцем "
+            f"({tg_link(dev.owner_name, dev.owner_tg_id)}) — доступ по нему больше не работает.")
+
+
+GUEST_NO_DEVICES_LEFT = ("Устройств больше нет. Чтобы снова пользоваться VPN, попроси у "
+                         "друга новый код.")
+
+
+def block_device_ask(name: str) -> str:
+    return (f"Заблокировать «{_e(name)}»? Устройство перестанет подключаться, пока ты "
+            "его не разблокируешь.")
+
+
 def friend_panel(dev, host_client) -> str:
     """Панель друга: инфо про УСТРОЙСТВО (не про юзера) + подписка хозяина.
     Потребление — суммой (up+down), с лимитом устройства и статусом блокировки."""
@@ -382,8 +494,8 @@ def gateway_claim_already(dev) -> str:
 
 
 def friend_marker(dev) -> str:
-    if dev.friend_status == FriendStatus.ACTIVE:
-        return "👤 Передано другу"
+    if dev.is_lent:
+        return f"👤 Передано {tg_link(dev.holder_name, dev.holder_tg_id)}"
     if dev.friend_status == FriendStatus.PENDING:
         return "⏳ Приглашение другу ждёт активации"
     return ""
@@ -669,9 +781,11 @@ def device_emoji(d) -> str:
     ⏳ отдано другу, но инвайт ещё не принят, 📲 у друга, 📱 своё."""
     if getattr(d, "is_gateway", 0):
         return "🛰"
-    if d.friend is None:
-        return "📱"
-    return "⏳" if d.friend.status == "pending" else "📲"
+    if getattr(d, "is_lent", False):
+        return "📲"
+    if d.friend is not None and d.friend.status == "pending":
+        return "⏳"
+    return "📱"
 
 
 # Списки с эмодзи в начале строк: подряд строки визуально налезают друг на
@@ -1267,7 +1381,7 @@ ROUTING_REVOKED_NOTICE = (
 
 
 def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
-                    routing_ok: bool = None) -> str:
+                    routing_ok: bool = None, held=()) -> str:
     """Инфобокс главного меню клиента: приветствие, статус сервера (отдельным
     абзацем сразу после приветствия — пустая строка с обеих сторон), статус
     подписки (только статус — период/даты в «Управлять подпиской»), максимум
@@ -1285,12 +1399,13 @@ def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
            f"Статус подписки: {subscription_status_only(client)}")
     if slots is not None:
         used, limit = slots
+        tail = held_devices_tail(held)             # «+ 1 от [Вася]» — чужие, которые держит
         if limit == 0:                             # безлимит
-            text += f"\n\nУстройств добавлено: {used} (без ограничения)."
-        elif used == 0:
+            text += f"\n\nУстройств добавлено: {used} (без ограничения){tail}."
+        elif used == 0 and not tail:
             text += f"\n\nВсего можно добавить до {limit} {plural_ru(limit, 'устройства', 'устройств', 'устройств')}. Пока не добавлено ни одного."
         else:
-            text += f"\n\nУстройств добавлено: {used} из {limit}."
+            text += f"\n\nУстройств добавлено: {used} из {limit}{tail}."
     return text
 
 

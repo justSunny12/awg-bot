@@ -52,7 +52,7 @@ async def test_send_device_config_qr(services, fake_bot, make_active_client):
 async def test_show_main_menu_invited(services, fake_bot, make_active_client):
     owner = make_active_client(tg_id=7303)
     dc = services.add_device(owner.id, "d")
-    services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=97303)
+    res = services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=97303)
     msg = FakeMessage(chat_id=97303, user_id=97303, bot=fake_bot)
-    await cm.show_main_menu(msg, services, "invited", None)
-    assert any(s[0] == "answer" for s in msg.sent)
+    await cm.show_main_menu(msg, services, "invited", res.holder)
+    assert any(s[0] == "answer" and "У тебя 1 устройство" in s[1] for s in msg.sent)

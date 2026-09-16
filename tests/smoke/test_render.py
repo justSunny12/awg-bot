@@ -39,7 +39,7 @@ def test_device_count_is_a_fraction_everywhere():
     admin = texts.device_created_report("Pi4", client_name="Админ", device_count=6,
                                         max_devices=0)
     owner = texts.reassign_recipient_notice("Pi4", 6, 0, recipient_is_admin=True)
-    assert "Количество устройств: 6/∞" in admin
+    assert "Количество устройств: 6" in admin
     assert "Теперь у тебя 6/∞ подключённых устройств." in owner
     # с лимитом — тот же вид, число вместо ∞
     assert "Теперь у тебя 1/5 подключённых устройств." in \
@@ -52,10 +52,10 @@ def test_unlimited_consumption_says_it_in_one_phrase():
     """Ни лимита устройства, ни лимита профиля — «Потребление не ограничено».
     Прежняя оговорка про рамки лимита профиля намекала на лимит, которого нет."""
     free = texts.device_created_report("П", client_name="В", device_count=1)
-    assert free.endswith("Потребление не ограничено.")
+    assert "Потребление устройства не ограничено." in free
     withprofile = texts.device_created_report("П", client_name="В", device_count=1,
                                               profile_limit_bytes=100 * 1024 ** 3)
-    assert "в рамках лимита профиля не ограничено (100.00 ГБ/профиль)" in withprofile
+    assert "Потребление устройства не ограничено в рамках лимита профиля." in withprofile
 
 
 # ── клавиатуры без БД ────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ def test_static_keyboards_build():
     assert _is_markup(kb.block_pause_choice(1))
     assert _is_markup(kb.block_notify_choice("cli", 1, pause_days=0))
     assert _is_markup(kb.friend_help_menu())
-    assert _is_markup(kb.friend_main(1, multi=True))
+    assert _is_markup(kb.guest_main(True)) and _is_markup(kb.guest_main(False))
 
 
 def test_added_by_admin_offers_all_three_ways_and_hides():

@@ -1,14 +1,15 @@
 """
-handlers/friend.py — роутер роли invited («Друг»).
+handlers/friend.py — роутер роли invited: ГОСТЬ (docs/guest-role.md).
 
-Друг управляет гостевыми устройствами внутри чужих клиентов: видит инфо про
-устройство (имя, онлайн, потребление) + подписку хозяина, умеет выдать ссылку,
-файл, вызвать помощь. Ничего структурного (добавить/удалить/пригласить) нельзя,
-и лимиты менять нельзя — только просмотр.
+Гость — профиль без своей подписки, держит устройства, переданные ему одним
+владельцем. Экраны — по образу клиентских: главный (статус сервера, подписка
+владельца, счётчик), «Мои устройства», карточка устройства (подключение,
+блокировка, удаление), выдача ссылки/QR/файла, помощь. Ничего структурного
+(добавить, передать, переименовать) гость не может: имя и слот — у владельца.
 
-МУЛЬТИДРУЖБА: один tg_id может управлять НЕСКОЛЬКИМИ устройствами (разных
-клиентов). Если устройство одно — сразу его карточка; если несколько — список,
-клик открывает карточку конкретного. Действия несут device_id.
+В контексте middleware кладёт client = гостевой профиль; устройства — те,
+что он держит (list_held_devices). Ownership каждого действия проверяется
+по держателю: чужой device_id из старого сообщения — «не найдено».
 """
 from __future__ import annotations
 
@@ -18,10 +19,11 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
-from awgbot.bot.callbacks import FriendCB, HelpCB
+from awgbot.bot.callbacks import BlockCB, DelDeviceCB, FriendCB, HelpCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.handlers.common import (call, drop_message, edit, edit_nav, send_device_config, purge_menus,
-                             send_menu, content_finisher, cleanup_content)
+from awgbot.bot.handlers.common import (call, drop_message, edit, edit_nav, send_device_config,
+                                        purge_menus, send_menu, content_finisher, cleanup_content)
+from awgbot.bot.notifier import notify_one, send_notifications
 from awgbot.domain.services import ServiceError
 
 router = Router(name="friend")
@@ -31,92 +33,76 @@ router.message.filter(RoleFilter("invited"))
 router.callback_query.filter(RoleFilter("invited"))
 
 
-async def _device_card(services, dev):
-    """Текст+разметка карточки одного устройства друга."""
-    host = await call(services.db.get_client, dev.client_id)
-    devs = await call(services.friend_devices, dev.friend_tg_id)
-    multi = len(devs) > 1
-    return texts.friend_panel(dev, host), kb.friend_main(dev.id, multi=multi)
+# ── экраны ───────────────────────────────────────────────────────────────────
+
+async def _held(services, client, device_id: int = 0):
+    """Устройства, которые держит гость; с device_id — одно из них или None."""
+    devs = await call(services.db.list_held_devices, client.id)
+    if not device_id:
+        return devs
+    return next((d for d in devs if d.id == device_id), None)
 
 
-async def friend_panel_payload(services, tg_id: int):
-    """Текст+разметка стартового экрана друга: карточка (если устройство одно)
-    или список (если несколько). Возвращает (text, markup) или (msg, None)."""
-    devs = await call(services.friend_devices, tg_id)
-    if not devs:
-        return "Устройство не найдено.", None
-    if len(devs) == 1:
-        return await _device_card(services, devs[0])
-    return "<b>📱Твои устройства</b>\n\nВыбери, каким управлять:", kb.friend_device_list(devs)
+async def guest_main_payload(services, client):
+    """(text, markup) главного экрана гостя."""
+    devs = await _held(services, client)
+    donor = await call(services.db.get_client, devs[0].client_id) if devs else None
+    server_ok = await call(services.server_ok_cached)
+    return (texts.greeting_guest(client.name, server_ok, donor, len(devs)),
+            kb.guest_main(has_devices=bool(devs)))
 
 
-async def show_friend_panel(target: Message, services, tg_id: int):
-    """Отрисовать стартовый экран друга (свежим сообщением)."""
-    text, markup = await friend_panel_payload(services, tg_id)
-    if markup is None:
-        return
-    await send_menu(target, services, text, markup)
+async def show_guest_main(target: Message, services, client) -> None:
+    """Главный экран гостя новым сообщением (через send_menu — прежнее гаснет)."""
+    await cleanup_content(target.bot, services, target.chat.id)
+    await send_menu(target, services, *await guest_main_payload(services, client))
+
+
+async def _devices_payload(services, client):
+    devs = await _held(services, client)
+    return (f"<b>📱 Мои устройства</b>\n\nУ тебя {texts._n_devices(len(devs))}",
+            kb.guest_devices(devs))
+
+
+async def _card_payload(services, dev):
+    owner = await call(services.db.get_client, dev.client_id)
+    return (texts.held_device_card(dev, int(owner.traffic_limit) if owner else 0),
+            kb.held_device_actions(dev, FriendCB(action="list").pack(), cb_cls=FriendCB))
 
 
 @router.message(CommandStart())
-async def friend_start(message: Message, services):
+async def friend_start(message: Message, client, services):
     await purge_menus(message.bot, services, message.chat.id)   # /start = заново
-    await show_friend_panel(message, services, message.from_user.id)
+    await show_guest_main(message, services, client)
+
+
+@router.callback_query(FriendCB.filter(F.action == "refresh"))
+async def friend_refresh(cb: CallbackQuery, client, services):
+    """Главный экран на месте: «В меню» из завершителя, «Назад» из списка."""
+    await cleanup_content(cb.bot, services, cb.message.chat.id)
+    await edit_nav(cb, services, *await guest_main_payload(services, client))
+    await cb.answer()
 
 
 @router.callback_query(FriendCB.filter(F.action == "list"))
-async def friend_list(cb: CallbackQuery, services):
-    """Назад к списку устройств друга (мультидружба)."""
-    devs = await call(services.friend_devices, cb.from_user.id)
-    if len(devs) == 1:
-        text, markup = await _device_card(services, devs[0])
-    elif devs:
-        text, markup = "<b>📱Твои устройства</b>\n\nВыбери, каким управлять:", kb.friend_device_list(devs)
-    else:
-        await cb.answer("Устройств нет", show_alert=True)
-        return
-    await edit_nav(cb, services, text, markup)
+async def friend_list(cb: CallbackQuery, client, services):
+    await edit(cb, *await _devices_payload(services, client))
     await cb.answer()
 
 
 @router.callback_query(FriendCB.filter(F.action == "open"))
-async def friend_open(cb: CallbackQuery, callback_data: FriendCB, services):
-    """Открыть карточку конкретного устройства друга."""
-    dev = await call(services.friend_device_by_id, cb.from_user.id, callback_data.device_id)
+async def friend_open(cb: CallbackQuery, callback_data: FriendCB, client, services):
+    dev = await _held(services, client, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    text, markup = await _device_card(services, dev)
-    await edit_nav(cb, services, text, markup)
+    await edit(cb, *await _card_payload(services, dev))
     await cb.answer()
 
 
-@router.callback_query(FriendCB.filter(F.action == "refresh"))
-async def friend_refresh(cb: CallbackQuery, callback_data: FriendCB, services):
-    """Обновить карточку. device_id=0 (безадресные кнопки: «К устройству» из
-    завершителя, «Назад» из помощи) → стартовый экран (карточка единственного
-    устройства или список при мультидружбе)."""
-    await cleanup_content(cb.bot, services, cb.message.chat.id)
-    dev = None
-    if callback_data.device_id:
-        dev = await call(services.friend_device_by_id, cb.from_user.id, callback_data.device_id)
-    if dev is None:
-        text, markup = await friend_panel_payload(services, cb.from_user.id)
-        if markup is None:
-            await cb.answer("Устройство не найдено", show_alert=True)
-            return
-        await edit_nav(cb, services, text, markup)
-        await cb.answer()
-        return
-    text, markup = await _device_card(services, dev)
-    await edit_nav(cb, services, text, markup)
-    await cb.answer("Обновлено")
-
-
 @router.callback_query(FriendCB.filter(F.action == "connect_menu"))
-async def friend_connect_menu(cb: CallbackQuery, callback_data: FriendCB, services):
-    """«Как планируешь подключить устройство?» — назад к карточке устройства."""
-    dev = await call(services.friend_device_by_id, cb.from_user.id, callback_data.device_id)
+async def friend_connect_menu(cb: CallbackQuery, callback_data: FriendCB, client, services):
+    dev = await _held(services, client, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
@@ -125,13 +111,25 @@ async def friend_connect_menu(cb: CallbackQuery, callback_data: FriendCB, servic
 
 
 @router.callback_query(FriendCB.filter(F.action.in_(kb.GEN_ACTIONS)))
-async def friend_gen(cb: CallbackQuery, callback_data: FriendCB, services):
-    """Ссылка/QR/файл другу — один обработчик на три вида (QR раньше шёл своим
-    путём мимо send_device_config)."""
-    dev = await call(services.friend_device_by_id, cb.from_user.id, callback_data.device_id)
-    if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
-        return
+async def friend_gen(cb: CallbackQuery, callback_data: FriendCB, client, services):
+    """Ссылка/QR/файл. device_id=0 — с главного экрана: одно устройство —
+    сразу выдача, несколько — выбор."""
+    devs = await _held(services, client)
+    if not callback_data.device_id:
+        if not devs:
+            await cb.answer("Устройств нет", show_alert=True)
+            return
+        if len(devs) > 1:
+            await edit(cb, kb.PICK_DEVICE_PROMPT[callback_data.action],
+                       kb.guest_pick_device(devs, callback_data.action))
+            await cb.answer()
+            return
+        dev = devs[0]
+    else:
+        dev = next((d for d in devs if d.id == callback_data.device_id), None)
+        if dev is None:
+            await cb.answer("Устройство не найдено", show_alert=True)
+            return
     kind = kb.gen_kind(callback_data.action)
     await drop_message(cb)
     try:
@@ -142,6 +140,90 @@ async def friend_gen(cb: CallbackQuery, callback_data: FriendCB, services):
     await cb.answer()
 
 
+# ── блокировка своим битом (с подтверждением) ────────────────────────────────
+
+@router.callback_query(BlockCB.filter(F.action == "menu_block"))
+async def friend_block_ask(cb: CallbackQuery, callback_data: BlockCB, client, services):
+    dev = await _held(services, client, callback_data.ref) if callback_data.target == "dev" else None
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
+        return
+    await edit(cb, texts.block_device_ask(dev.name), kb.block_device_confirm(dev.id, guest=True))
+    await cb.answer()
+
+
+@router.callback_query(BlockCB.filter(F.action == "block"))
+async def friend_block_do(cb: CallbackQuery, callback_data: BlockCB, client, services):
+    from awgbot.core.blocks import DeviceBlock
+    dev = await _held(services, client, callback_data.ref) if callback_data.target == "dev" else None
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
+        return
+    notes = await call(services.block_device_manual, dev.id, DeviceBlock.USER, True)
+    await send_notifications(cb.bot, notes)
+    dev = await call(services.db.get_device, dev.id)
+    await edit(cb, *await _card_payload(services, dev))
+    await cb.answer("Заблокировано")
+
+
+@router.callback_query(BlockCB.filter(F.action == "menu_unblock"))
+async def friend_unblock(cb: CallbackQuery, callback_data: BlockCB, client, services):
+    from awgbot.core.blocks import DeviceBlock
+    dev = await _held(services, client, callback_data.ref) if callback_data.target == "dev" else None
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
+        return
+    if not (int(dev.block_reason) & int(DeviceBlock.USER)):
+        await cb.answer("Ты не блокировал это устройство", show_alert=True)
+        return
+    notes = await call(services.unblock_device_manual, dev.id, DeviceBlock.USER, True)
+    await send_notifications(cb.bot, notes)
+    dev = await call(services.db.get_device, dev.id)
+    await edit(cb, *await _card_payload(services, dev))
+    await cb.answer("Разблокировано")
+
+
+# ── удаление переданного устройства держателем ──────────────────────────────
+
+@router.callback_query(DelDeviceCB.filter(F.stage == "ask"))
+async def friend_delete_ask(cb: CallbackQuery, callback_data: DelDeviceCB, client, services):
+    dev = await _held(services, client, callback_data.device_id)
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
+        return
+    await edit(cb, texts.device_delete_by_holder_ask(dev.name),
+               kb.confirm_delete_device(dev.id, only=False, guest=True))
+    await cb.answer()
+
+
+@router.callback_query(DelDeviceCB.filter(F.stage == "confirm"))
+async def friend_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, client, services):
+    dev = await _held(services, client, callback_data.device_id)
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
+        return
+    try:
+        await call(services.remove_device, dev.id)          # держатель удалил сам —
+    except ServiceError as e:                               # «удалено владельцем» ему не шлём
+        await cb.answer(str(e), show_alert=True)
+        return
+    await cb.answer()
+    # владельцу — что и сколько теперь у него
+    if dev.owner_tg_id:
+        used, limit = await call(services.device_slots, dev.client_id)
+        await notify_one(cb.bot, dev.owner_tg_id,
+                         texts.lent_device_deleted_by_holder_notice(dev, used, limit))
+    await edit(cb, f"🗑 Устройство «{texts._e(dev.name)}» удалено.", None)
+    fresh = await call(services.db.get_client, client.id)
+    if fresh is None:                                       # гость без устройств закрыт
+        await cb.message.answer(texts.GUEST_NO_DEVICES_LEFT)
+        return
+    await send_menu(cb.message, services, *await guest_main_payload(services, fresh),
+                    keep_id=cb.message.message_id)
+
+
+# ── помощь ───────────────────────────────────────────────────────────────────
+
 @router.callback_query(FriendCB.filter(F.action == "help"))
 async def friend_help(cb: CallbackQuery):
     await edit(cb, "С каким устройством помочь?", kb.friend_help_menu())
@@ -150,13 +232,12 @@ async def friend_help(cb: CallbackQuery):
 
 @router.callback_query(HelpCB.filter(F.platform.in_(("apple", "android", "windows", "mac"))))
 async def friend_help_platform(cb: CallbackQuery, callback_data: HelpCB):
-    """Помощь по платформе для друга: инструкция подключения одним сообщением."""
+    """Помощь по платформе для гостя: инструкция подключения одним сообщением."""
     from awgbot.bot import guides
     guide = callback_data.platform
     steps = [guides.step_text(guide, i) for i in range(guides.step_count(guide))]
-    body = "\n\n".join(steps)
-    await edit(cb, body, kb.friend_help_back())
+    await edit(cb, "\n\n".join(steps), kb.friend_help_back())
     await cb.answer()
 
 
-__all__ = ["router", "show_friend_panel", "friend_panel_payload"]
+__all__ = ["router", "show_guest_main", "guest_main_payload"]
