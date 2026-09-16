@@ -91,7 +91,7 @@ def test_links_prefer_account_name_and_fall_back_to_profile(services, make_activ
     assert 'Получено от <a href="https://t.me/vasya">Вася Пупкин</a>' in texts.held_device_card(dev, 0)
     assert texts.lent_out_marker(dev) == '👤 Передано <a href="tg://user?id=93130">Артём</a> и управляется им'
     donor = services.db.get_client(owner.id)
-    assert 'владелец: <a href="https://t.me/vasya">Вася Пупкин</a>' in texts.greeting_guest("Артём", True, donor, 1)
+    assert 'владелец: <a href="https://t.me/vasya">Вася Пупкин</a>' in texts.greeting_guest("Артём", True, donor, [dev])
 
 
 def test_scheduler_registers_daily_and_startup_refresh(services, db):

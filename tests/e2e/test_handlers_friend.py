@@ -36,9 +36,28 @@ async def test_guest_main_screen(services, fake_bot, make_active_client):
     assert text.startswith("Привет, Артём! 👋")
     assert "VPN-сервер" in text
     assert 'Статус подписки: 🟢 активна (владелец: <a href="tg://user?id=8100">Вася</a>)' in text
-    assert "У тебя 2 устройства" in text
+    # потребление — по каждому удерживаемому: у владельца лимита нет → без ограничений
+    assert ("Потребление за месяц:\n• 0 ГБ (Ноут, без ограничений)\n• 0 ГБ (Тел, без ограничений)"
+            "\n\nУ тебя 2 устройства") in text
     assert labels[0] == "📱 Мои устройства" and "❓ Помощь с настройкой" in labels
     assert {"🔗 Ссылка", "🔳 QR-код", "📄 Файл"} <= set(labels)
+
+
+async def test_guest_main_screen_consumption_against_limits(services, fake_bot, make_active_client):
+    """Лимит устройства — свой, иначе профиля владельца; одно устройство — в
+    строку; срок подписки дарителя гостю не показываем даже когда владельцу уже
+    напоминали."""
+    G = 1024 ** 3
+    owner = make_active_client(tg_id=8107, name="Вася", device_limit=3, traffic_limit=50 * G)
+    services.db.update_client_fields(owner.id, notified_thresholds="10080")
+    dc, guest = _lend(services, owner, 98107, "Тел")
+    services.db.add_traffic_bulk([(dc.device_id, 20 * G, 4 * G + G // 10)])
+    text, _ = await fh.guest_main_payload(services, guest)
+    assert "Потребление за месяц: 24.1 из 50 ГБ (Тел)\n\nУ тебя 1 устройство" in text
+    assert "🟢 активна (владелец:" in text and "истекает" not in text
+    services.set_device_traffic_limit(dc.device_id, 30 * G)
+    text, _ = await fh.guest_main_payload(services, guest)
+    assert "Потребление за месяц: 24.1 из 30 ГБ (Тел)" in text
 
 
 async def test_guest_devices_and_card(services, fake_bot, make_active_client):

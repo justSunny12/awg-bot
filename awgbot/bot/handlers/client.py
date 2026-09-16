@@ -40,7 +40,9 @@ async def _greeting(services, client):
     slots = await call(services.device_slots, client.id)
     routing_ok = await call(services.routing_health_for_client, client)
     held = await call(services.db.list_held_devices, client.id)
-    return texts.greeting_client(client, server_ok, slots, routing_ok, held=held), slots
+    traffic = await call(services.db.get_client_traffic, client.id)
+    return texts.greeting_client(client, server_ok, slots, routing_ok, held=held,
+                                 traffic=traffic), slots
 
 
 async def _show_main(target, services, client, *, via_edit=None):

@@ -134,6 +134,27 @@ def test_object_renders_do_not_crash(services, make_active_client):
     assert texts.greeting_client(client, server_ok=True, slots=(1, 3))
 
 
+def test_client_greeting_shows_consumption_and_expiry(services, make_active_client):
+    """Главный экран клиента: потребление за месяц против лимита (не только в
+    «Управлять подпиской») и «🟠 истекает DD.MM HH:MM» с первого напоминания."""
+    from awgbot.util import timeutil
+    G = 1024 ** 3
+    c = make_active_client(name="Тестовый клиент", tg_id=8601, traffic_limit=50 * G)
+    traffic = {"rx_month": 20 * G, "tx_month": 4 * G + G // 10}
+    out = texts.greeting_client(c, True, (3, 4), None, traffic=traffic)
+    assert ("Статус подписки: 🟢 активна\n\nПотребление за месяц: 24.1 из 50 ГБ\n\n"
+            "Устройств добавлено: 3 из 4.") in out
+    services.db.update_client_fields(c.id, notified_thresholds="10080")
+    c = services.db.get_client(c.id)
+    end = timeutil.parse_iso(c.period_end).astimezone(timeutil.TZ)
+    assert f"Статус подписки: 🟠 истекает {end.strftime('%d.%m %H:%M')}" in \
+        texts.greeting_client(c, True, (3, 4), None, traffic=traffic)
+    assert "🟢 активна" in texts.subscription_status_only(c), "срок — только на главной клиента"
+    services.db.update_client_fields(c.id, traffic_limit=0)
+    assert "Потребление за месяц: 24.1 ГБ\n" in texts.greeting_client(
+        services.db.get_client(c.id), True, (3, 4), None, traffic=traffic)
+
+
 def test_friend_panel_and_admin_panel_render(services, make_active_client):
     owner = make_active_client(name="Хозяин", tg_id=8501)
     dc = services.add_device(owner.id, "Ноут")
@@ -141,7 +162,7 @@ def test_friend_panel_and_admin_panel_render(services, make_active_client):
     dev = services.db.get_device(dc.device_id)
     host = services.db.get_client(owner.id)
     assert texts.held_device_card(dev, int(host.traffic_limit))
-    assert texts.greeting_guest("Артём", True, host, 1)
+    assert texts.greeting_guest("Артём", True, host, [dev])
     # статусный блок админ-панели из state (метрик железа нет — рендер обязан пережить)
     st = services.server_status_cached()
     assert texts.admin_panel(st)

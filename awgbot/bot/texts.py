@@ -339,15 +339,33 @@ def _n_devices(n: int) -> str:
     return f"{n} {plural_ru(n, 'устройство', 'устройства', 'устройств')}"
 
 
-def greeting_guest(name: str, server_ok: bool, donor, n_devices: int,
-                   routing_ok: bool = None) -> str:
-    """name — имя гостя из Telegram (client.tg_name, иначе профильное)."""
+def _guest_consumption(held, donor) -> str:
+    """Потребление по каждому удерживаемому устройству против его лимита —
+    своего, иначе профиля владельца; ни того ни другого — «без ограничений».
+    Одно устройство — в строку, несколько — списком."""
+    rows = []
+    for d in held:
+        used = int(d.traffic_rx_month) + int(d.traffic_tx_month)
+        limit = int(d.traffic_limit) or int(donor.traffic_limit)
+        if limit:
+            rows.append(f"{used_of_limit(used, limit)} ({_e(d.name)})")
+        else:
+            rows.append(f"{human_bytes(used)} ({_e(d.name)}, без ограничений)")
+    if len(rows) == 1:
+        return f"Потребление за месяц: {rows[0]}"
+    return "Потребление за месяц:\n" + "\n".join(f"• {r}" for r in rows)
+
+
+def greeting_guest(name: str, server_ok: bool, donor, held, routing_ok: bool = None) -> str:
     """Главный экран гостя (docs/guest-role.md): как клиентский, подписка —
-    владельца, устройств — сколько держит."""
+    владельца (без срока: это его дело), потребление — по удерживаемым
+    устройствам, устройств — сколько держит. name — имя гостя из Telegram
+    (client.tg_name, иначе профильное)."""
     status_block = server_status_client(server_ok)
     if routing_ok is not None:
         status_block += "\n" + routing_status_line(routing_ok)
-    if donor is None or not n_devices:
+    held = list(held)
+    if donor is None or not held:
         # устройств нет — профиль живёт (список адресов и история при нём),
         # подписки показывать нечьей
         return (f"Привет, {_e(name)}! 👋\n\n{status_block}\n\n{GUEST_NO_DEVICES_LEFT}")
@@ -355,7 +373,8 @@ def greeting_guest(name: str, server_ok: bool, donor, n_devices: int,
     return (f"Привет, {_e(name)}! 👋\n\n"
             f"{status_block}\n\n"
             f"Статус подписки: {subscription_status_only(donor)}{owner}\n\n"
-            f"У тебя {_n_devices(n_devices)}")
+            f"{_guest_consumption(held, donor)}\n\n"
+            f"У тебя {_n_devices(len(held))}")
 
 
 def held_devices_tail(held) -> str:
@@ -1066,13 +1085,20 @@ def subscription_manage_text(client, traffic, online: bool, device_count: int) -
     return "\n\n".join(lines)
 
 
-def subscription_status_only(client) -> str:
+def subscription_status_only(client, *, expiring: bool = False) -> str:
     """Только статус подписки (без периода/дат — те в «Управлять подпиской»).
-    Для лёгкого инфобокса главного меню клиента."""
+    Для лёгкого инфобокса главного меню клиента. expiring — показывать
+    «🟠 истекает DD.MM HH:MM» с момента, когда человеку ушло первое «истекает
+    через…» (пороги в notified_thresholds); гостю про срок дарителя не говорим."""
     _, mode, pause_visible = _pause_visibility(client)
     if pause_visible:
         return "⏸ приостановлено пользователем" if mode == "user" else "⏸ приостановлено администратором"
-    return "🟢 активна" if client.status == SubStatus.ACTIVE else "🔴 истекла"
+    if client.status != SubStatus.ACTIVE:
+        return "🔴 истекла"
+    if expiring and client.period_end and client.notified_thresholds:
+        end = timeutil.parse_iso(client.period_end).astimezone(timeutil.TZ)
+        return f"🟠 истекает {end.strftime('%d.%m %H:%M')}"
+    return "🟢 активна"
 
 
 def server_status_client(ok: bool) -> str:
@@ -1505,11 +1531,13 @@ ROUTING_REVOKED_NOTICE = (
 
 
 def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
-                    routing_ok: bool = None, held=()) -> str:
+                    routing_ok: bool = None, held=(), traffic: dict | None = None) -> str:
     """Инфобокс главного меню клиента: приветствие, статус сервера (отдельным
     абзацем сразу после приветствия — пустая строка с обеих сторон), статус
-    подписки (только статус — период/даты в «Управлять подпиской»), максимум
-    устройств и текущее количество.
+    подписки (только статус — период/даты в «Управлять подпиской»; «истекает
+    DD.MM HH:MM» — с первого напоминания), потребление за месяц против лимита
+    (traffic — rx_month/tx_month профиля), максимум устройств и текущее
+    количество.
 
     routing_ok=None — строки о РФ-шлюзе нет вовсе: админ функцию не разрешил,
     и рассказывать про механизм тому, кому он недоступен, — шум. Разрешил —
@@ -1520,7 +1548,11 @@ def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
         status_block += "\n" + routing_status_line(routing_ok)
     text = (f"Привет, {_e(client.name)}! 👋\n\n"
            f"{status_block}\n\n"
-           f"Статус подписки: {subscription_status_only(client)}")
+           f"Статус подписки: {subscription_status_only(client, expiring=True)}")
+    if traffic is not None:
+        text += "\n\n" + client_total_line(traffic["rx_month"], traffic["tx_month"],
+                                            client.traffic_limit, client.bonus_bytes,
+                                            for_admin=False)
     if slots is not None:
         used, limit = slots
         tail = held_devices_tail(held)             # «+ 1 от [Вася]» — чужие, которые держит
