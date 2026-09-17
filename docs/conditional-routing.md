@@ -13,7 +13,7 @@
 | Чистая логика (нормализация доменов, генерация dnsmasq) | `domain/routing.py` |
 | Команды (ipset/iptables/ip/dnsmasq) | `infra/routing.py` |
 | Бизнес-логика, реконсиляция, деградация | `domain/services.py` |
-| Интерфейс | `bot/handlers/routing.py`, `keyboards.py`, `texts.py` |
+| Интерфейс | `bot/handlers/routing.py`, `keyboards/`, `texts/` |
 | Самопроверка и мониторинг | `runtime/preflight.py`, `runtime/scheduler.py` |
 
 **Фича спит, пока `routing.gw_interface` пуст**: UI её не показывает,
@@ -274,7 +274,7 @@ punycode, дедуп. Пользователь вставит `https://www.sberb
   (FSM, приём пачкой), удаление записи, «очистить список». Плюс строка вида
   «База: N сервисов · Ваши: 7».
 - **В инфобоксе главного меню** — вторая статусная строка рядом с состоянием
-  сервера ([`texts.py:520`](../awgbot/bot/texts.py#L520)). Показывается только
+  сервера ([`texts/routing.py:242`](../awgbot/bot/texts/routing.py#L242)). Показывается только
   тем, у кого есть хотя бы одно устройство с включённым режимом.
 
 ### Статусная строка
