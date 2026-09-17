@@ -139,7 +139,9 @@ _selfcheck_at: float = 0.0
 # маршрутизацию ВСЕМ до перезапуска бота, а ложное «ок» ловится зондом живости
 # в пределах его такта. Минута — компромисс с ценой самой проверки: она ходит в
 # подпроцессы, а available() зовётся ещё и при отрисовке экранов.
-_SELFCHECK_BAD_TTL = 60.0
+_SELFCHECK_BAD_TTL = 60.0        # первая перепроверка отрицательного вердикта
+_SELFCHECK_BAD_TTL_MAX = 300.0   # потолок бэкоффа: 60 → 120 → 240 → 300 с
+_selfcheck_bad_streak = 0        # подряд отрицательных вердиктов
 
 _MARK_HEX = f"0x{config.ROUTING_FWMARK:x}"
 
@@ -275,9 +277,16 @@ def self_check(force: bool = False) -> tuple[bool, str]:
     ближайшего обновления списков, то есть до шести часов после того, как
     причина устранена.
     """
-    global _selfcheck_cache, _selfcheck_at
+    global _selfcheck_cache, _selfcheck_at, _selfcheck_bad_streak
     if _selfcheck_cache is not None and not force:
-        if _selfcheck_cache[0] or time.time() - _selfcheck_at < _SELFCHECK_BAD_TTL:
+        # Отрицательный вердикт перепроверяется с бэкоффом: сломанная обвязка
+        # стоила 12–18 exec на каждый тик и каждый рендер экрана. Всё, что
+        # чинит сам бот (обвяз, шлюз, списки, детект рестарта), сбрасывает кэш
+        # явно; после ручной починки по SSH фича вернётся не позже чем через
+        # потолок бэкоффа — либо сразу по «Доктору» (force).
+        ttl = min(_SELFCHECK_BAD_TTL * 2 ** max(0, _selfcheck_bad_streak - 1),
+                  _SELFCHECK_BAD_TTL_MAX)
+        if _selfcheck_cache[0] or time.time() - _selfcheck_at < ttl:
             return _selfcheck_cache
 
     result: tuple[bool, str]
@@ -303,6 +312,7 @@ def self_check(force: bool = False) -> tuple[bool, str]:
 
     prev, _selfcheck_cache = _selfcheck_cache, result
     _selfcheck_at = time.time()
+    _selfcheck_bad_streak = 0 if result[0] else _selfcheck_bad_streak + 1
     # Логируем СМЕНУ вердикта, а не каждую проверку: пока отказ держится, он
     # переспрашивается раз в минуту, и «неактивна» сыпалось бы в журнал вечно,
     # хороня под собой ту единственную строку, где отказ начался. Возврат к «ок»
@@ -325,9 +335,10 @@ def invalidate_self_check() -> None:
     Нужен после того, как окружение изменилось по нашей же инициативе (залили
     списки, доставили обвяз): иначе закэшированное «недоступна» держалось бы до
     перезапуска бота, хотя причина уже устранена."""
-    global _selfcheck_cache, _selfcheck_at
+    global _selfcheck_cache, _selfcheck_at, _selfcheck_bad_streak
     _selfcheck_cache = None
     _selfcheck_at = 0.0
+    _selfcheck_bad_streak = 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -108,3 +108,31 @@ async def test_private_dns_offer_comes_with_three_decisions(sent):
 async def test_private_dns_offer_is_silent_once_decided(sent):
     await rt._notify_private_dns_offer(None, _DnsSvc(False))
     assert sent == []
+
+
+async def test_bot_identity_is_synced_once_per_fingerprint(db, monkeypatch):
+    """Имя/описания бота выставляются по отпечатку (имя, описания, версия) в
+    state: совпал — ни одного запроса к Bot API на старте."""
+    from types import SimpleNamespace
+    calls = []
+
+    class Bot:
+        async def get_my_name(self): calls.append("get_name"); return SimpleNamespace(name="old")
+        async def set_my_name(self, n): calls.append(("set_name", n))
+        async def get_my_description(self): calls.append("get_desc"); return SimpleNamespace(description="d")
+        async def set_my_description(self, d): calls.append(("set_desc", d))
+        async def get_my_short_description(self): calls.append("get_short"); return SimpleNamespace(short_description="s")
+        async def set_my_short_description(self, d): calls.append(("set_short", d))
+        async def delete_my_commands(self): calls.append("del_cmds")
+
+    monkeypatch.setattr(config, "BOT_NAME", "Very Oblivious")
+    monkeypatch.setattr(config, "BOT_DESCRIPTION", "d")
+    monkeypatch.setattr(config, "BOT_SHORT_DESCRIPTION", "s")
+    assert await rt._sync_bot_identity(Bot(), db) is True
+    assert calls == ["get_name", ("set_name", "Very Oblivious"), "get_desc", "get_short", "del_cmds"]
+    calls.clear()
+    assert await rt._sync_bot_identity(Bot(), db) is False
+    assert calls == [], "отпечаток совпал, а к Bot API всё равно сходили"
+    monkeypatch.setattr(config, "BOT_DESCRIPTION", "new")
+    assert await rt._sync_bot_identity(Bot(), db) is True
+    assert ("set_desc", "new") in calls

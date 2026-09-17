@@ -243,3 +243,32 @@ def test_force_still_bypasses_the_cache(selfcheck_env):
     selfcheck_env.up = False
     assert routing.self_check(force=True)[0] is False
     assert selfcheck_env.calls > was
+
+
+def test_negative_verdict_backs_off_up_to_the_cap(selfcheck_env, monkeypatch):
+    """Сломанная обвязка стоила 12–18 exec на каждый тик и каждый рендер:
+    перепроверка раз в минуту. Теперь интервал растёт 60 → 120 → 240 → 300 с,
+    а починка руками бота (invalidate) или «Доктор» (force) сбрасывают его."""
+    selfcheck_env.up = False
+    assert routing.self_check()[0] is False
+    expected = [60, 120, 240, 300, 300]
+    for i, ttl in enumerate(expected, start=1):
+        assert routing._selfcheck_bad_streak == i
+        was = selfcheck_env.calls
+        monkeypatch.setattr(routing, "_selfcheck_at", routing._selfcheck_at - ttl + 5)
+        routing.self_check()
+        assert selfcheck_env.calls == was, f"перепроверили раньше бэкоффа {ttl} с"
+        monkeypatch.setattr(routing, "_selfcheck_at", routing._selfcheck_at - 6)
+        routing.self_check()
+        assert selfcheck_env.calls > was, f"не перепроверили по истечении {ttl} с"
+    # починили снаружи, дождались потолка — «ок», стрик обнулён
+    selfcheck_env.up = True
+    monkeypatch.setattr(routing, "_selfcheck_at", routing._selfcheck_at - 301)
+    assert routing.self_check()[0] is True and routing._selfcheck_bad_streak == 0
+    # снова сломалось — отсчёт с минуты, а invalidate обнуляет стрик
+    selfcheck_env.up = False
+    monkeypatch.setattr(routing, "_selfcheck_at", 0.0)
+    routing.invalidate_self_check()
+    assert routing.self_check()[0] is False and routing._selfcheck_bad_streak == 1
+    routing.invalidate_self_check()
+    assert routing._selfcheck_bad_streak == 0

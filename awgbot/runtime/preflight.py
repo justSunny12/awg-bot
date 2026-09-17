@@ -179,10 +179,11 @@ def _resolver_warnings(services) -> list[str]:
             "journalctl -u dnsmasq -e"]
 
 
-def collect_warnings(services) -> list[str]:
+def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
     """Не-блокирующие замечания. Возвращает список строк для отправки админу.
     Каждая проверка изолирована: её собственный сбой не роняет остальные и не
-    роняет бота — в худшем случае конкретная проверка молча пропускается."""
+    роняет бота — в худшем случае конкретная проверка молча пропускается.
+    server_ok — живость awg, если старт её уже измерил: второй exec незачем."""
     warns: list[str] = []
 
     # Автозагрузка awg-интерфейса в host-режиме. Дыра, найденная ребутом ВПС:
@@ -222,7 +223,8 @@ def collect_warnings(services) -> list[str]:
     from awgbot.infra import awg
     _in_cont = awg.in_container()
     try:
-        if not services.server_ok():
+        alive = server_ok if server_ok is not None else services.server_ok()
+        if not alive:
             warns.append(
                 "контейнер AmneziaWG не отвечает на старте — "
                 "проверьте `docker ps` и журнал контейнера" if _in_cont else

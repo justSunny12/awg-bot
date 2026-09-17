@@ -3617,6 +3617,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             if stored is not None:                        # не первый запуск
                 self.reconcile_blocks()
                 self.reconcile_ssh_access()               # SSH-фильтр тоже слетел
+                routing.invalidate_self_check()           # обвязка могла подняться/лечь
                 return True
         return False
 

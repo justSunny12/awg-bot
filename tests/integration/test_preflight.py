@@ -145,3 +145,17 @@ def test_gateway_is_not_probed_while_the_feature_is_off(monkeypatch):
     assert any(w.startswith("шлюз условной маршрутизации не отвечает на старте") for w in warns)
     warns = preflight.collect_warnings(_routing_svc(probed, rt.PROBE_OK))
     assert not any("шлюз" in w for w in warns)
+
+
+def test_known_server_liveness_is_not_measured_twice():
+    """Старт уже измерил живость awg — второй exec в замечаниях незачем."""
+    asked = []
+
+    class Svc:
+        def server_ok(self): asked.append(1); return True
+        def email_resume_enabled(self): return False
+    warns = preflight.collect_warnings(Svc(), server_ok=False)
+    assert asked == [] and any("не отвечает" in w or "молчит" in w.lower() or "awg" in w.lower()
+                               for w in warns), warns
+    preflight.collect_warnings(Svc())
+    assert asked == [1], "без переданной живости — один замер, как раньше"

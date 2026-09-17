@@ -13,6 +13,7 @@ main.py — точка входа. Собирает всё вместе и за�
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 
 from aiogram import Bot, Dispatcher
@@ -121,6 +122,36 @@ async def report_update_result(bot, services) -> None:
     if sent is not None:
         await asyncio.to_thread(services.remember_update_report,
                                 sent.chat.id, sent.message_id)
+
+
+async def _sync_bot_identity(bot: Bot, db: Database) -> bool:
+    """Публичное имя/описания бота — из conf/bot_identity.yaml (маскирующие
+    формулировки, ничего не должно выдавать назначение бота стороннему
+    наблюдателю профиля). Правки, вбитые вручную в BotFather, переживут только
+    до следующего рестарта — дальше их перетрёт этот блок.
+
+    Меню команд (кнопка «/») НЕ регистрируем и явно СТИРАЕМ: раньше сюда уже
+    отправлялся /code, Bot API хранит это до явной перезаписи.
+
+    Отпечаток (имя, описания, версия) — в state: совпал — ни одного запроса к
+    Bot API (раньше каждый старт стоил три-четыре, а set_my_name Telegram
+    ещё и рейт-лимитит). Возвращает True, если запросы делались."""
+    ident = hashlib.sha256("|".join((config.BOT_NAME or "", config.BOT_DESCRIPTION or "",
+                                     config.BOT_SHORT_DESCRIPTION or "",
+                                     config.INSTALLED_VERSION)).encode()).hexdigest()[:16]
+    if db.get_state("bot_identity") == ident:
+        return False
+    if config.BOT_NAME and (await bot.get_my_name()).name != config.BOT_NAME:
+        await bot.set_my_name(config.BOT_NAME)
+    if config.BOT_DESCRIPTION and \
+            (await bot.get_my_description()).description != config.BOT_DESCRIPTION:
+        await bot.set_my_description(config.BOT_DESCRIPTION)
+    if config.BOT_SHORT_DESCRIPTION and \
+            (await bot.get_my_short_description()).short_description != config.BOT_SHORT_DESCRIPTION:
+        await bot.set_my_short_description(config.BOT_SHORT_DESCRIPTION)
+    await bot.delete_my_commands()
+    db.set_state("bot_identity", ident)
+    return True
 
 
 async def _announce_reboot(bot, db, who: str) -> None:
@@ -343,9 +374,10 @@ async def main() -> None:
             log.info("миграция: нормализовано устройств: %d (iface → дефолт)", n)
     except Exception as e:                               # noqa: BLE001
         log.warning("normalize_default_iface: %s", e)
+    startup_ok: bool | None = None
     try:
-        ok = await asyncio.to_thread(services.server_ok)
-        db.set_state("last_server_ok", "1" if ok else "0")
+        startup_ok = await asyncio.to_thread(services.server_ok)
+        db.set_state("last_server_ok", "1" if startup_ok else "0")
     except Exception:                                    # noqa: BLE001
         pass
 
@@ -373,21 +405,6 @@ async def main() -> None:
         await asyncio.to_thread(services.reconcile_blocks)   # восстановить блокировки
     except Exception as e:                               # noqa: BLE001
         log.warning("reconcile_blocks на старте: %s", e)
-    try:
-        await asyncio.to_thread(services.reconcile_ssh_access)  # SSH из туннеля: set устройств админа
-        await asyncio.to_thread(services.retire_legacy_ssh_gate)
-    except Exception as e:                               # noqa: BLE001
-        log.warning("reconcile_ssh_access на старте: %s", e)
-    try:
-        # Списки условной маршрутизации — на старте, а не руками до него. Метод
-        # сам решает, пора ли обновлять; при пустом кэше делает это немедленно:
-        # без списков режим не действует вовсе, и человек, включивший тумблер,
-        # не получил бы ничего до следующего окна расписания.
-        await asyncio.to_thread(services.routing_update_lists)
-        await asyncio.to_thread(services.reconcile_routing)
-    except Exception as e:                               # noqa: BLE001
-        log.warning("routing на старте: %s", e)
-
     # итог self-update: если перед рестартом запускалось обновление — удалить
     # «дождись завершения» и отчитаться админу («успешно обновлен…» + changelog
     # с кнопкой «В меню» / «не применилось»). Флаги стираются однократно.
@@ -429,57 +446,53 @@ async def main() -> None:
     except Exception as e:                               # noqa: BLE001
         log.warning("restore_panel_after_restart: %s", e)
 
-    # Публичное имя/описания бота — из conf/bot_identity.yaml (маскирующие
-    # формулировки, ничего не должно выдавать назначение бота стороннему
-    # наблюдателю профиля). Правки, вбитые вручную в BotFather, переживут
-    # только до следующего рестарта — дальше их перетрёт этот блок.
-    #
-    # Меню команд (кнопка «/») НЕ регистрируем и явно СТИРАЕМ: пусто по
-    # умолчанию у нового бота, но раньше сюда уже отправлялся /code — Bot API
-    # хранит это на своей стороне до явной перезаписи, простое прекращение
-    # set_my_commands() старую запись не уберёт. /code уже объясняется текстом
-    # на /start (COLD_START_GREETING), лишняя публичная подсказка не нужна.
-    try:
-        # set_my_name жёстко рейт-лимитится Telegram'ом (смена имени — редкая
-        # операция), а мы рестартуем чаще, чем меняем identity. Сравниваем с
-        # текущим и пишем только при реальном отличии — без flood-warning'ов в
-        # логах и лишних записей на стороне Bot API.
-        if config.BOT_NAME and (await bot.get_my_name()).name != config.BOT_NAME:
-            await bot.set_my_name(config.BOT_NAME)
-        if config.BOT_DESCRIPTION and \
-                (await bot.get_my_description()).description != config.BOT_DESCRIPTION:
-            await bot.set_my_description(config.BOT_DESCRIPTION)
-        if config.BOT_SHORT_DESCRIPTION and \
-                (await bot.get_my_short_description()).short_description != config.BOT_SHORT_DESCRIPTION:
-            await bot.set_my_short_description(config.BOT_SHORT_DESCRIPTION)
-        await bot.delete_my_commands()
-    except Exception as e:                               # noqa: BLE001
-        log.warning("set_my_name/description/delete_commands: %s", e)
-
     watcher.ensure_watching()
     scheduler.start()
     log.info("Бот запущен")
 
-    # Отложенные warning-замечания preflight: бот уже готов слать — отправляем
-    # админу первым содержательным сообщением. Собственный сбой блока не критичен.
-    try:
-        warns = await asyncio.to_thread(preflight.collect_warnings, services)
-        if warns:
-            # Через notifier, а не bot.send_message: он и тихие часы соблюдает,
-            # и подставляет «Скрыть». Это проактивное уведомление — админ его
-            # не заказывал, значит должен иметь возможность убрать. Мимо
-            # notifier'а такие сообщения приходят без кнопки и висят в чате.
-            from awgbot.bot.notifier import notify_one
-            await notify_one(bot, config.ADMIN_ID, preflight.format_warnings(warns))
-    except Exception as e:                       # noqa: BLE001
-        log.warning("preflight warnings: %s", e)
+    # ── после старта поллинга: всё, без чего первый апдейт обслуживается ──
+    # Раньше это шло до getUpdates и стоило 10–30 с молчания на каждом старте:
+    # списки маршрутизации (HTTP, до 15 с на источник), зонд шлюза и вход по
+    # IMAP в замечаниях, четыре запроса к Bot API за именем. Бот отвечает через
+    # пару секунд, а это догоняет в фоне; сбой любого шага — в лог, не наружу.
+    async def _after_start() -> None:
+        try:
+            await asyncio.to_thread(services.reconcile_ssh_access)  # SSH из туннеля: set устройств админа
+            await asyncio.to_thread(services.retire_legacy_ssh_gate)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("reconcile_ssh_access на старте: %s", e)
+        try:
+            # Списки условной маршрутизации — на старте, а не руками до него.
+            # Метод сам решает, пора ли обновлять; при пустом кэше делает это
+            # немедленно: без списков режим не действует вовсе. Пока качаются,
+            # действуют прежние правила — это не отказ.
+            await asyncio.to_thread(services.routing_update_lists)
+            await asyncio.to_thread(services.reconcile_routing)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("routing на старте: %s", e)
+        try:
+            await _sync_bot_identity(bot, db)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("set_my_name/description/delete_commands: %s", e)
+        # Замечания preflight — первым содержательным сообщением админу. Через
+        # notifier: он и тихие часы соблюдает, и подставляет «Скрыть» — это
+        # проактивное уведомление, админ его не заказывал.
+        try:
+            warns = await asyncio.to_thread(preflight.collect_warnings, services, startup_ok)
+            if warns:
+                await notify_one(bot, config.ADMIN_ID, preflight.format_warnings(warns))
+        except Exception as e:                           # noqa: BLE001
+            log.warning("preflight warnings: %s", e)
+        await _announce_reboot(bot, db, "бота")
+        try:
+            from awgbot.bot.handlers.restore import report_restore_result
+            await report_restore_result(bot, services)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("report_restore_result: %s", e)
+        log.info("стартовые фоновые задачи завершены")
 
-    await _announce_reboot(bot, db, "бота")
-    try:
-        from awgbot.bot.handlers.restore import report_restore_result
-        await report_restore_result(bot, services)
-    except Exception as e:                               # noqa: BLE001
-        log.warning("report_restore_result: %s", e)
+    after_start = asyncio.create_task(_after_start())
+    after_start.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     try:
         # long-poll 50 с вместо дефолтных 10: впятеро меньше холостых
