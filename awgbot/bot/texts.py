@@ -270,11 +270,19 @@ def subscription_block(client, *, for_admin: bool = False, show_pause: bool = Tr
     lines.append(period_line)
     if not pause_visible:
         lines.append(f"До истечения: {timeutil.fmt_remaining(end)}")
-    # счёт дней паузы — без максимума и без срока: дни не сгорают. Другу не
-    # показываем — паузой управляет владелец, другу счётчик бесполезен.
+    # счёт дней паузы против максимума типа (год ×2, месяц ×12); без срока —
+    # дни не сгорают. Другу не показываем — паузой управляет владелец, другу
+    # счётчик бесполезен.
     if show_pause and end:
         bal = int(client.pause_balance_days)
-        lines.append(f"Приостановка: доступно {bal} {_days_word(bal)}")
+        kind = str(client.period_kind or "")
+        if kind == "year":
+            of = f"/{2 * settings.get_int('pause.pause_max_total_days', 28)}"
+        elif kind == "month":
+            of = f"/{12 * settings.get_int('pause.monthly_pause_days', 2)}"
+        else:
+            of = ""
+        lines.append(f"Приостановка: доступно {bal}{of} дней")
     return "\n".join(lines)
 
 
