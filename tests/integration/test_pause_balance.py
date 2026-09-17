@@ -52,8 +52,12 @@ def test_yearly_renewals_accumulate_to_two_even_untimely(services, make_active_c
     services.db.update_client_fields(y.id, status="expired", period_end="2026-09-01T00:00:00+03:00")
     services.extend_period(y.id, "year", keep_remainder=False)
     assert services.pause_available_days(y.id) == 2 * _year(), "годовое начисление — безусловное"
+    # третье продление копит, но не выше порога: потратил 5 — вернутся ровно 5
+    services.db.set_pause_balance(y.id, 2 * _year() - 5)
     services.extend_period(y.id, "year", keep_remainder=False)
-    assert services.pause_available_days(y.id) == 2 * _year(), "не более двух продлений"
+    assert services.pause_available_days(y.id) == 2 * _year(), "третье копит не выше порога"
+    services.extend_period(y.id, "year", keep_remainder=False)
+    assert services.pause_available_days(y.id) == 2 * _year(), "на пороге начислять нечего"
 
 
 def test_switching_kinds(services, make_active_client):
