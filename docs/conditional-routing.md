@@ -12,7 +12,7 @@
 | Схема и CRUD | `infra/db.py` |
 | Чистая логика (нормализация доменов, генерация dnsmasq) | `domain/routing.py` |
 | Команды (ipset/iptables/ip/dnsmasq) | `infra/routing.py` |
-| Бизнес-логика, реконсиляция, деградация | `domain/services.py` |
+| Бизнес-логика, реконсиляция, деградация | `domain/services/routing.py`, `domain/services/gateway_link.py` |
 | Интерфейс | `bot/handlers/routing.py`, `keyboards.py`, `texts.py` |
 | Самопроверка и мониторинг | `runtime/preflight.py`, `runtime/scheduler.py` |
 

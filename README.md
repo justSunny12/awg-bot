@@ -280,7 +280,9 @@ awgbot/
              routing    команды условной маршрутизации: ipset/iptables/ip/dnsmasq
              updates    релизы репозитория, сверка sha256
              email_resume  IMAP/SMTP аварийного email-выхода из паузы
-  domain/    services   бизнес-логика (склейка db+awg+configgen+routing)
+  domain/    services/  бизнес-логика (склейка db+awg+configgen+routing) — пакет
+                        миксинов по областям: blocks, clients, devices, subscription,
+                        traffic, reconcile, firewall, gateway_link, routing, status
              configgen  генерация vpn:// и .conf (кодек формата приложения)
              routing    чистая логика: нормализация доменов, генерация dnsmasq
   bot/       texts, keyboards, guides   презентация
