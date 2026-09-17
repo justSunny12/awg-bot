@@ -759,6 +759,9 @@ async def _do_extend(cb, services, client_id, kind, keep: bool, return_to: str |
     else:
         done = (f"✅ Подписка профиля {name} продлена на 1 {_PERIOD_ACC.get(kind, kind)}, "
                 f"до {timeutil.fmt_dt(result.new_end)}")
+        pause_line = texts.pause_credit_admin(result.pause)
+        if pause_line:
+            done += f"\n{pause_line}"
     await edit(cb, done, None)
     keep = cb.message.message_id
     if return_to == "expiring" and await call(services.expiring_subscriptions):

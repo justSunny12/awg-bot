@@ -1059,6 +1059,46 @@ def _days_word(n: int) -> str:
     return plural_ru(n, "день", "дня", "дней")
 
 
+def _pause_kind_ru(kind: str) -> str:
+    return "годовой" if kind == "year" else "ежемесячной"
+
+
+def pause_credit_line(pc) -> str:
+    """Владельцу при продлении — что стало со счётом паузы (вторая строка к
+    «Подписка продлена до …»). Типы, которые не копят, — пусто."""
+    if pc is None or pc.kind not in ("year", "month"):
+        return ""
+    if pc.reason == "expired":
+        return ("⏸ Дни паузы за этот период не начислены: подписка продлена после истечения. "
+                f"Доступно {_days(pc.after)}.")
+    if pc.reason == "grace":
+        return ("⏸ Дни паузы за этот период не начислены: в прошлом периоде использована "
+                f"отсрочка. Доступно {_days(pc.after)}.")
+    if pc.reason == "cap":
+        return ("⏸ Дни паузы не добавлены: достигнуто максимальное количество для "
+                f"{_pause_kind_ru(pc.kind)} подписки ({pc.cap}).")
+    full = (settings.get_int("pause.pause_max_total_days", 28) if pc.kind == "year"
+            else settings.get_int("pause.monthly_pause_days", 2))
+    partial = pc.added < full
+    note = ("" if not partial
+            else " (максимум)" if pc.kind == "year"
+            else " (максимум для ежемесячной подписки)")
+    return f"⏸ Дней паузы добавлено: +{pc.added}, доступно {pc.after}{note}."
+
+
+def pause_credit_admin(pc) -> str:
+    """Админу в финишер продления — то же коротко."""
+    if pc is None or pc.kind not in ("year", "month"):
+        return ""
+    if pc.reason == "expired":
+        return f"Дней паузы: не начислены — после истечения, доступно {pc.after}"
+    if pc.reason == "grace":
+        return f"Дней паузы: не начислены — отсрочка, доступно {pc.after}"
+    if pc.reason == "cap":
+        return f"Дней паузы: не добавлены — максимум {_pause_kind_ru(pc.kind)} ({pc.cap})"
+    return f"Дней паузы: +{pc.added} → {pc.after}" + (" (максимум)" if pc.after == pc.cap else "")
+
+
 def pause_balance_line(client) -> str:
     """«Приостановка подписки: доступно N дней» + как счёт пополняется — всем,
     кроме бессрочных (им останавливать нечего): и тем, у кого дней нет — пусть

@@ -65,9 +65,10 @@ def test_switching_kinds(services, make_active_client):
     services.extend_period(m.id, "year", keep_remainder=False)
     assert services.pause_available_days(m.id) == _md() + _year(), "месяц → год: остаток + годовое"
     y = make_active_client("Y", tg_id=7531, period_kind="year")
-    services.extend_period(y.id, "month", keep_remainder=False)
-    assert services.pause_available_days(y.id) == 12 * _md(), \
-        "год → месяц: остаток переносится, но не выше месячного максимума"
+    r = services.extend_period(y.id, "month", keep_remainder=False)
+    assert services.pause_available_days(y.id) == _year(), \
+        "год → месяц: накопленное сверх месячного порога не сгорает"
+    assert r.pause.reason == "cap" and r.pause.added == 0, "выше порога не начисляется"
     services.db.set_pause_balance(y.id, 5)
     services.extend_period(y.id, "month", keep_remainder=False)
     assert services.pause_available_days(y.id) == 5 + _md()
@@ -123,6 +124,54 @@ def test_open_admin_pause_keeps_balance_and_period_none(services, make_active_cl
     assert c.period_end is None and c.pause_mode == PauseMode.ADMIN_OPEN
     assert c.pause_balance_days == _year()
     assert services.pause_available_days(y.id) == 0, "на открытой паузе входить некуда"
+
+
+def test_credit_reasons_and_notifications(services, make_active_client):
+    """Владельцу — вторая строка к «Подписка продлена до …»: что стало со
+    счётом и почему; админу — та же строка коротко."""
+    from awgbot.bot import texts
+    m = make_active_client("M", tg_id=7570, period_kind="month")
+    r = services.extend_period(m.id, "month", keep_remainder=False)
+    own = [n.text for n in r.notifications if n.tg_id == 7570][0]
+    assert own.startswith("Подписка продлена до ") and own.endswith(
+        "\n⏸ Дней паузы добавлено: +2, доступно 4.")
+    assert texts.pause_credit_admin(r.pause) == "Дней паузы: +2 → 4"
+
+    services.db.set_pause_balance(m.id, 23)
+    r = services.extend_period(m.id, "month", keep_remainder=False)
+    assert r.pause.after == 24 and texts.pause_credit_line(r.pause) == \
+        "⏸ Дней паузы добавлено: +1, доступно 24 (максимум для ежемесячной подписки)."
+    assert texts.pause_credit_admin(r.pause) == "Дней паузы: +1 → 24 (максимум)"
+    r = services.extend_period(m.id, "month", keep_remainder=False)
+    assert texts.pause_credit_line(r.pause) == ("⏸ Дни паузы не добавлены: достигнуто максимальное "
+                                                "количество для ежемесячной подписки (24).")
+    assert texts.pause_credit_admin(r.pause) == "Дней паузы: не добавлены — максимум ежемесячной (24)"
+
+    services.db.update_client_fields(m.id, status="expired", period_end="2026-09-01T00:00:00+03:00")
+    services.db.set_pause_balance(m.id, 4)
+    r = services.extend_period(m.id, "month", keep_remainder=False)
+    assert texts.pause_credit_line(r.pause) == ("⏸ Дни паузы за этот период не начислены: подписка "
+                                                "продлена после истечения. Доступно 4 дня.")
+    assert texts.pause_credit_admin(r.pause) == "Дней паузы: не начислены — после истечения, доступно 4"
+    services.db.update_client_fields(m.id, grace_used=1)
+    services.db.set_pause_balance(m.id, 1)
+    r = services.extend_period(m.id, "month", keep_remainder=False)
+    assert texts.pause_credit_line(r.pause) == ("⏸ Дни паузы за этот период не начислены: в прошлом "
+                                                "периоде использована отсрочка. Доступно 1 день.")
+
+    y = make_active_client("Y", tg_id=7571, period_kind="year")
+    services.db.set_pause_balance(y.id, 51)
+    r = services.extend_period(y.id, "year", keep_remainder=False)
+    assert texts.pause_credit_line(r.pause) == "⏸ Дней паузы добавлено: +5, доступно 56 (максимум)."
+    r = services.extend_period(y.id, "year", keep_remainder=False)
+    assert texts.pause_credit_line(r.pause) == ("⏸ Дни паузы не добавлены: достигнуто максимальное "
+                                                "количество для годовой подписки (56).")
+    r = services.extend_period(y.id, "never", keep_remainder=False)
+    own = [n.text for n in r.notifications if n.tg_id == 7571][0]
+    assert own == "Подписка теперь бессрочная 🎉" and texts.pause_credit_line(r.pause) == ""
+    d = make_active_client("D", tg_id=7572, period_kind="day")
+    r = services.extend_period(d.id, "week", keep_remainder=False)
+    assert texts.pause_credit_line(r.pause) == "" and texts.pause_credit_admin(r.pause) == ""
 
 
 def test_parse_dates_without_time():

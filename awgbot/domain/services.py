@@ -140,9 +140,27 @@ class GuestUpgrade:
 
 
 @dataclass
+class PauseCredit:
+    """Что стало со счётом дней паузы при оплате периода kind.
+    reason: credited — начислено (added < полного — упёрлись в порог) |
+    cap — порог уже достигнут, не начислено | expired — ежемесячное после
+    истечения | grace — в прошлом периоде была отсрочка | none — тип не копит."""
+    kind: str
+    before: int
+    after: int
+    cap: int
+    reason: str
+
+    @property
+    def added(self) -> int:
+        return self.after - self.before
+
+
+@dataclass
 class ExtendResult:
     new_end: object              # datetime
     notifications: list = field(default_factory=list)
+    pause: Optional["PauseCredit"] = None
 
 
 @dataclass
@@ -757,7 +775,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
             timeutil.to_iso(end) if end else None, invite,
             traffic_limit=traffic_limit, period_kind=period_kind,
         )
-        credit = self._pause_credit(None, period_kind)      # первый оплаченный период
+        credit = self._pause_credit(None, period_kind).after   # первый оплаченный период
         if credit:
             self.db.set_pause_balance(cid, credit)
         return ClientCreated(client_id=cid, invite_code=invite, period_end=end)
@@ -1254,7 +1272,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         self.db.archive_subscription(client_id, "renewed")
         self.db.archive_grace(client_id, "new_period")   # снесёт строку, если была
         self.db.archive_pause(client_id, "new_period")   # снимок эпизода + сброс used_days
-        self.db.set_pause_balance(client_id, pause_credit)   # счёт паузы — заново (0 у бессрочной)
+        self.db.set_pause_balance(client_id, pause_credit.after)   # счёт — заново (0 у бессрочной)
         self.db.update_client_fields(
             client_id,
             period_start=timeutil.to_iso(new_start),
@@ -1268,8 +1286,12 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         if client.tg_id:
             msg = (_TXT_EXTENDED_FOREVER if new_end is None
                    else _TXT_EXTENDED.format(end=timeutil.fmt_dt(new_end)))
+            from awgbot.bot import texts                   # ленивый, как в соседних миксинах
+            line = texts.pause_credit_line(pause_credit)   # что стало со счётом паузы
+            if line:
+                msg += f".\n{line}" if not msg.endswith(".") else f"\n{line}"
             notifications.append(Notification(client.tg_id, msg))
-        return ExtendResult(new_end=new_end, notifications=notifications)
+        return ExtendResult(new_end=new_end, notifications=notifications, pause=pause_credit)
 
     def set_subscription_dates(self, client_id: int, new_start, new_end):
         """Прямая правка дат подписки админом (не продление): пишем ровно
@@ -1415,19 +1437,28 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
     def pause_year_cap(cls) -> int:
         return 2 * cls.pause_year_days()
 
-    def _pause_credit(self, client, new_kind: str) -> int:
+    def _pause_credit(self, client, new_kind: str) -> "PauseCredit":
         """Счёт после оплаты периода new_kind. client — состояние ДО (None при
         создании). Ежемесячно «своевременно» = подписка не истекла и без
-        отсрочки в закрываемом периоде; годовое начисление — безусловное."""
+        отсрочки в закрываемом периоде; годовое начисление — безусловное.
+        Накопленное сверх порога нового типа не сгорает — просто выше порога
+        не начисляется."""
         bal = int(client.pause_balance_days) if client is not None else 0
         if new_kind == PeriodKind.YEAR:
-            return min(bal + self.pause_year_days(), self.pause_year_cap())
-        if new_kind == PeriodKind.MONTH:
-            timely = client is None or (client.status == SubStatus.ACTIVE and not client.grace_used)
-            return min(bal + (self.pause_month_days() if timely else 0), self.pause_month_cap())
-        if new_kind == PeriodKind.NEVER:
-            return 0
-        return bal
+            add, cap = self.pause_year_days(), self.pause_year_cap()
+        elif new_kind == PeriodKind.MONTH:
+            add, cap = self.pause_month_days(), self.pause_month_cap()
+            if client is not None and client.status == SubStatus.EXPIRED:
+                return PauseCredit(new_kind, bal, bal, cap, "expired")
+            if client is not None and client.grace_used:
+                return PauseCredit(new_kind, bal, bal, cap, "grace")
+        elif new_kind == PeriodKind.NEVER:
+            return PauseCredit(new_kind, bal, 0, 0, "none")
+        else:
+            return PauseCredit(new_kind, bal, bal, 0, "none")
+        if bal >= cap:
+            return PauseCredit(new_kind, bal, bal, cap, "cap")
+        return PauseCredit(new_kind, bal, min(bal + add, cap), cap, "credited")
 
     def pause_available_days(self, client_id: int) -> int:
         """Сколько дней приостановки клиент может взять ПРЯМО СЕЙЧАС — его счёт.
