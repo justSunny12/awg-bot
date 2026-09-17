@@ -36,8 +36,13 @@ class StatusMixin:
         n_dev = self.db.count_devices(ac.id) if ac else 0
         # ряд «Ссылка/QR/Файл» — только когда есть что выдавать: шлюз в
         # «Моих устройствах» есть, а ссылки у него нет
-        gw = self.db.gateway_device() if n_dev else None
-        n_issuable = n_dev - (1 if gw is not None and ac and gw.client_id == ac.id else 0)
+        n_gw = 0
+        if n_dev and ac:
+            for g in self.db.gateways():
+                d = self.db.get_device(g.device_id)
+                if d is not None and d.client_id == ac.id:
+                    n_gw += 1
+        n_issuable = n_dev - n_gw
         return {
             "st": st, "ac": ac, "routing_ok": routing_ok, "mig": mig,
             "expiring": len(self.expiring_subscriptions()),

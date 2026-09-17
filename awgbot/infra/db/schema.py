@@ -104,6 +104,41 @@ def _device_from_row(row) -> Optional["models.Device"]:
         owner_tg_id=row["owner_tg_id"], owner_name=row["owner_name"] or "",
         owner_tg_name=row["owner_tg_name"] or "", owner_tg_username=row["owner_tg_username"] or "")
 
+
+def _link_conf_params(link_if: str) -> tuple[int, str]:
+    """(ListenPort, /30 линка) из живого конфига интерфейса на ВПС; конфига
+    нет (тесты, свежая машина) — умолчания первого слота из config."""
+    import re
+    from pathlib import Path
+    from awgbot.core import config
+    port, cidr = config.ROUTING_LINK_PORTS[0], config.ROUTING_LINK_CIDRS[0]
+    try:
+        text = Path(config.AWG_DIR, f"{link_if}.conf").read_text(encoding="utf-8")
+    except OSError:
+        return port, cidr
+    m = re.search(r"(?m)^\s*ListenPort\s*=\s*(\d+)", text)
+    if m:
+        port = int(m.group(1))
+    m = re.search(r"(?m)^\s*Address\s*=\s*([\d.]+)/(\d+)", text)
+    if m:
+        import ipaddress
+        try:
+            cidr = str(ipaddress.ip_interface(f"{m.group(1)}/{m.group(2)}").network)
+        except ValueError:
+            pass
+    return port, cidr
+
+
+def _gateway_from_row(row) -> Optional["models.Gateway"]:
+    if row is None:
+        return None
+    return models.Gateway(
+        id=int(row["id"]), device_id=int(row["device_id"]), link_if=row["link_if"],
+        link_port=int(row["link_port"]), link_cidr=row["link_cidr"],
+        preferred=int(row["preferred"]),
+        home_subnets=[n for n in (row["home_subnets"] or "").split() if n],
+        label=row["label"] or "", created_at=row["created_at"] or "")
+
 # Имя служебного клиента, к которому цепляются пиры без владельца (карантин).
 SERVICE_CLIENT_NAME = "Устройства без клиента"
 
@@ -134,7 +169,9 @@ LEFT JOIN client_pause p   ON p.client_id = c.id
 
 _DEVICE_SELECT = """
 SELECT d.*,
-       (d.is_gateway OR EXISTS (SELECT 1 FROM devices o WHERE o.id = d.twin_of AND o.is_gateway = 1)) AS is_gateway_eff,
+       EXISTS (SELECT 1 FROM gateways g
+               WHERE g.device_id = d.id
+                  OR (d.twin_of IS NOT NULL AND g.device_id = d.twin_of)) AS is_gateway_eff,
        t.traffic_limit, t.traffic_rx_month, t.traffic_tx_month,
        t.traffic_rx_period, t.traffic_tx_period, t.last_handshake, t.missing_count,
        f.friend_code, f.friend_status,
@@ -240,7 +277,7 @@ CREATE TABLE IF NOT EXISTS devices (
     -- (config.AWG_INTERFACE), а не «неизвестно»: так миграция БД обходится без
     -- бэкфилла, а после переезда значение нормализуется обратно в пустое.
     iface               TEXT    NOT NULL DEFAULT '',
-    is_gateway          INTEGER NOT NULL DEFAULT 0,      -- 0/1: шлюз условной маршрутизации (не более одного)
+    is_gateway          INTEGER NOT NULL DEFAULT 0,      -- УСТАРЕЛО (v2.24.0): слоты шлюзов — таблица gateways; колонка пуста
     -- id старой строки у двойника, рождённого переездом. NULL = обычное
     -- устройство. По имени пару не собрать: name не уникален и его правят
     -- прямо в окне переезда.
@@ -330,8 +367,26 @@ CREATE INDEX IF NOT EXISTS idx_clients_invite   ON clients(invite_code);
 -- пары переезда: twins_by_origin и подзапрос видимости ходят по twin_of;
 -- частичный индекс пуст вне окна переезда
 CREATE INDEX IF NOT EXISTS idx_devices_twin     ON devices(twin_of) WHERE twin_of IS NOT NULL;
--- шлюз один, и это гарантирует БД, а не дисциплина в коде
+-- прежний индекс единственности шлюза; колонка пуста с v2.24.0, индекс безвреден
 CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_gateway ON devices(is_gateway) WHERE is_gateway = 1;
+
+-- ── Слоты шлюзов условной маршрутизации (docs/gateway-failover.md) ─────────
+-- Устройство админа на машине-шлюзе и её линк на ВПС. Один слот несёт
+-- трафик, остальные в резерве; кто именно — в state (routing_active_gateway).
+CREATE TABLE IF NOT EXISTS gateways (
+    id            INTEGER PRIMARY KEY,                   -- номер слота: 1, 2 …
+    device_id     INTEGER NOT NULL UNIQUE,               -- аплинк малины — устройство админа
+    link_if       TEXT    NOT NULL UNIQUE,               -- awglink, awglink2
+    link_port     INTEGER NOT NULL UNIQUE,               -- 443, 8443
+    link_cidr     TEXT    NOT NULL UNIQUE,               -- 10.99.99.0/30
+    preferred     INTEGER NOT NULL DEFAULT 0,            -- 0/1: берёт трафик при холодном старте
+    home_subnets  TEXT    NOT NULL DEFAULT '',           -- домашние подсети за шлюзом, через пробел
+    label         TEXT    NOT NULL DEFAULT '',           -- подпись места («дом 1»)
+    created_at    TEXT    NOT NULL,
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+);
+-- предпочтительный — не более одного: держит БД, как прежде держала единственность шлюза
+CREATE UNIQUE INDEX IF NOT EXISTS idx_gateways_preferred ON gateways(preferred) WHERE preferred = 1;
 -- истечение: предфильтр «активные с конечным периодом до границы»
 CREATE INDEX IF NOT EXISTS idx_sub_end          ON client_subscription(status, period_end);
 CREATE INDEX IF NOT EXISTS idx_friend_tg        ON device_friend(friend_tg_id);
@@ -501,6 +556,39 @@ class SchemaMixin:
         self._migrate_drop_full_access()
         self._ensure_service_client()
         self._migrate_friends_to_guests()
+        self._migrate_gateway_slots()
+
+    def _migrate_gateway_slots(self) -> None:
+        """v2.24.0 (docs/gateway-failover.md): флаг devices.is_gateway → строка
+        в gateways (слот 1, предпочтительный, линк из конфига). Порт и /30
+        линка — из живого конфига интерфейса, без него — умолчания слота 1.
+        Ключи состояния бандла получают суффикс слота. Идемпотентно: второй
+        проход не находит флага."""
+        from awgbot.core import config
+        con = self._connection()
+        row = con.execute("SELECT id FROM devices WHERE is_gateway = 1").fetchone()
+        if row is None:
+            return
+        link_if = config.ROUTING_GW_INTERFACE or "awglink"
+        port, cidr = _link_conf_params(link_if)
+        with self._tx() as cur:
+            have = cur.execute("SELECT 1 FROM gateways WHERE id = 1").fetchone()
+            if have is None:
+                cur.execute(
+                    "INSERT INTO gateways(id, device_id, link_if, link_port, link_cidr, preferred, "
+                    "home_subnets, label, created_at) VALUES (1, ?, ?, ?, ?, 1, ?, '', ?)",
+                    (int(row["id"]), link_if, port, cidr,
+                     " ".join(config.ROUTING_HOME_SUBNETS), _now_iso()))
+                for old, new in (("gw_bundle_issued_at", "gw_bundle_issued_at_1"),
+                                 ("gw_bundle_ssh_allow", "gw_bundle_ssh_allow_1"),
+                                 ("gw_bundle_ssh_allow_notified", "gw_bundle_ssh_allow_notified_1")):
+                    v = cur.execute("SELECT value FROM server_state WHERE key = ?", (old,)).fetchone()
+                    if v is not None:
+                        cur.execute("INSERT OR REPLACE INTO server_state(key, value) VALUES (?, ?)",
+                                    (new, v["value"]))
+                        cur.execute("DELETE FROM server_state WHERE key = ?", (old,))
+                cur.execute("INSERT OR REPLACE INTO server_state(key, value) VALUES ('routing_active_gateway', '1')")
+            cur.execute("UPDATE devices SET is_gateway = 0 WHERE is_gateway = 1")
 
     def _migrate_guest_role_columns(self) -> None:
         """v2.20.0 (docs/guest-role.md): clients.kind и devices.holder_client_id.

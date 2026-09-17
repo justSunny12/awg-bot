@@ -16,9 +16,9 @@ from awgbot.core import config
 from awgbot.core import settings
 from awgbot.bot import texts
 from awgbot.bot import keyboards as kb
-from awgbot.bot.callbacks import GwMarkCB, SetCB
+from awgbot.bot.callbacks import GwMarkCB, GwSlotCB, SetCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.states import GatewayToken, MigrationPort
+from awgbot.bot.states import GatewayToken, GatewayHome, GatewayLabel, MigrationPort
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.notifier import send_notifications
 from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu,
@@ -33,7 +33,7 @@ router.callback_query.filter(RoleFilter("admin"))
 
 
 # ── рендер экранов ───────────────────────────────────────────────────────────
-async def _screen(sec: str, services):
+async def _screen(sec: str, services, key: str = ""):
     """(text, markup) для раздела sec.
 
     Корутина, а не обычная функция: разделы «upd» и «rt» ходят в БД и в
@@ -94,15 +94,27 @@ async def _screen(sec: str, services):
         on = settings.get_bool("app.routing.enabled", False)
         status = await call(services.routing_status)
         text = texts.settings_routing_text(on, status)
-        gw_state = await call(services.gateway_state) if on else {"device": None}
+        states = await call(services.gateway_states) if on else []
         if on:
-            text += texts.settings_routing_gateway_line(gw_state)
-        return text, kb.settings_routing(on, has_gateway=gw_state["device"] is not None)
+            text += texts.settings_routing_gateway_block(states)
+        return text, kb.settings_routing(on, states,
+                                         can_add=len(states) < config.ROUTING_GATEWAYS_MAX)
     if sec == "rt_gw":
         if not config.ROUTING_ENABLED or not settings.get_bool("app.routing.enabled", False):
             return texts.SETTINGS_ROUTING_SUBOFF, kb.settings_back()
         cands = await call(services.gateway_candidates)
-        return texts.GATEWAY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands))
+        slot = int(key or 0)
+        states = await call(services.gateway_states)
+        if slot:
+            st = next((x for x in states if x["gateway"].id == slot), None)
+            if st is None:
+                return "Такого слота шлюза нет.", kb.settings_back("rt")
+            return texts.gateway_replace_intro(st), kb.gateway_choose_kind(bool(cands), slot)
+        if states:
+            if len(states) >= config.ROUTING_GATEWAYS_MAX:
+                return "Слоты шлюзов заняты: убери один, чтобы добавить другой.", kb.settings_back("rt")
+            return texts.GATEWAY_STANDBY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands), 0)
+        return texts.GATEWAY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands), 0)
     if sec in ("rt_lists", "rt_users", "rt_bundle"):
         # Подразделы существуют только при включённой функции. Колбэк приходит
         # и из старого сообщения — тогда честно говорим, что раздел пуст.
@@ -110,7 +122,12 @@ async def _screen(sec: str, services):
             return texts.SETTINGS_ROUTING_SUBOFF, kb.settings_back()
         if sec == "rt_bundle":
             # Промежуточный экран: файл уносит ключ линка, выпуск — осознанно.
-            return texts.ROUTING_BUNDLE_INTRO, kb.settings_routing_bundle()
+            slot = int(key or 0)
+            head = texts.ROUTING_BUNDLE_INTRO
+            if slot:
+                st = await call(services.gateway_state, slot)
+                head = head.replace("Конфигурация шлюза</b>", f"Конфигурация шлюза {texts.slot_short(st)}</b>", 1)
+            return head, kb.settings_routing_bundle(slot)
         if sec == "rt_lists":
             info = await call(services.routing_lists_info)
             return texts.routing_lists_text(info), kb.settings_routing_lists(info["every_hours"])
@@ -119,8 +136,8 @@ async def _screen(sec: str, services):
     return texts.SETTINGS_ROOT, kb.settings_root()
 
 
-async def _render(cb: CallbackQuery, sec: str, services):
-    text, markup = await _screen(sec, services)
+async def _render(cb: CallbackQuery, sec: str, services, key: str = ""):
+    text, markup = await _screen(sec, services, key)
     await edit(cb, text, markup)
 
 
@@ -153,11 +170,11 @@ async def _record(cb: CallbackQuery, text: str, services):
                     keep_id=cb.message.message_id)
 
 
-async def send_gw_bundle(message: Message, services) -> bool:
-    """Собрать, зашифровать и отдать конфигурацию шлюза файлом с кнопкой
+async def send_gw_bundle(message: Message, services, slot: int = 0) -> bool:
+    """Собрать, зашифровать и отдать конфигурацию слота файлом с кнопкой
     «В меню». Одна точка для настроек, назначения шлюза и приёма токена."""
     try:
-        blob, name = await call(services.gw_bundle_encrypted)
+        blob, name = await call(services.gw_bundle_encrypted, slot or None)
     except (ServiceError, OSError) as e:
         await message.answer(f"⚠️ Конфигурация шлюза не собрана: {texts._e(str(e))}")
         return False
@@ -173,32 +190,28 @@ async def send_gw_bundle(message: Message, services) -> bool:
 async def _deliver_bundle(cb: CallbackQuery, services, res: dict, headline: str) -> None:
     """Итог назначения: текст и сразу файл. Новые ключи → открытый файл для
     первого применения руками; ключи те же → шифрованный, для чата агента."""
+    slot = res["gateway"].id
     await edit(cb, headline, None)
     await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
     if res.get("rekeyed"):
-        try:
-            blob, name = await call(services.gw_bundle_plain)
-        except (ServiceError, OSError) as e:
-            await cb.message.answer(f"⚠️ Файл первого применения не собран: {texts._e(str(e))}")
-            return
-        from aiogram.types import BufferedInputFile
-        await cb.message.answer_document(
-            BufferedInputFile(blob, filename=name),
-            caption="🛰 Файл первого применения: на машине-шлюзе `sudo sh awg-gw-bundle.sh`. "
-                    "Внутри ключи — после применения удали.",
-            reply_markup=kb.bundle_menu_kb())
+        await _send_plain_bundle(cb.message, services, slot)
     else:
-        await send_gw_bundle(cb.message, services)
+        await send_gw_bundle(cb.message, services, slot)
+
+
+def _slot_of(callback_data) -> int:
+    return int(getattr(callback_data, "slot", 0) or 0)
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "pick_list"))
-async def gateway_pick_list(cb: CallbackQuery, services):
+async def gateway_pick_list(cb: CallbackQuery, callback_data: GwMarkCB, services):
+    slot = _slot_of(callback_data)
     cands = await call(services.gateway_candidates)
     await cb.answer()
     if not cands:
-        await edit(cb, texts.GATEWAY_PICK_EMPTY, kb.gateway_choose_kind(False))
+        await edit(cb, texts.GATEWAY_PICK_EMPTY, kb.gateway_choose_kind(False, slot))
         return
-    await edit(cb, texts.GATEWAY_PICK_INTRO, kb.gateway_pick(cands))
+    await edit(cb, texts.GATEWAY_PICK_INTRO, kb.gateway_pick(cands, slot))
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "pick"))
@@ -208,54 +221,72 @@ async def gateway_pick(cb: CallbackQuery, callback_data: GwMarkCB, services):
         await cb.answer("Устройство не найдено", show_alert=True)
         return
     await cb.answer()
-    prev = await call(services.db.gateway_device)
-    await edit(cb, texts.gateway_mark_ask(dev, prev), kb.gateway_mark_confirm(dev.id))
+    slot = _slot_of(callback_data)
+    states = await call(services.gateway_states)
+    prev = None
+    replace_state = None
+    if slot:
+        replace_state = next((st for st in states if st["gateway"].id == slot), None)
+        prev = replace_state.get("device") if replace_state else None
+    await edit(cb, texts.gateway_mark_ask(dev, prev, standby=bool(states) and not slot,
+                                          replace_state=replace_state),
+               kb.gateway_mark_confirm(dev.id, slot))
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "mark_yes"))
 async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services,
                            state: FSMContext):
-    """Существующее устройство. Шлюз уже был и это другая машина — ключи
-    линка меняются, чтобы прежняя потеряла линк сама.
-
-    Со сменой ключей файл первого применения едет открытым и ставится на
-    машине с нуля — значит ему нужен токен агента ровно так же, как новой
-    машине. Без него установка на шлюзе снова начинала задавать вопросы."""
-    prev = await call(services.db.gateway_device)
-    rekey = prev is not None and prev.id != callback_data.device_id
-    if rekey and not await call(services.gw_bot_token):
+    """Существующее устройство. Замена машины в слоте — ключи линка слота
+    меняются, чтобы прежняя потеряла линк сама; новый слот после первого —
+    свой линк, свои ключи. Со сменой ключей файл первого применения едет
+    открытым и ставится с нуля — значит ему нужен токен агента слота."""
+    slot = _slot_of(callback_data)
+    states = await call(services.gateway_states)
+    cur = next((st for st in states if st["gateway"].id == slot), None) if slot else None
+    rekey = (cur is not None and cur["gateway"].device_id != callback_data.device_id) \
+        or (not slot and bool(states))
+    token_slot = slot or (len(states) + 1)
+    if rekey and not await call(services.gw_bot_token, token_slot):
         await cb.answer()
         await state.set_state(GatewayToken.value)
-        await state.update_data(gw_device_id=callback_data.device_id)
-        await edit(cb, texts.GATEWAY_ASK_TOKEN, kb.settings_cancel("rt_gw"))
+        await state.update_data(gw_device_id=callback_data.device_id, gw_slot=slot)
+        await edit(cb, texts.gateway_ask_token(token_slot), kb.settings_cancel("rt_gw"))
         return
     await cb.answer("Назначаю…")
     try:
-        res = await call(services.gateway_setup, callback_data.device_id, rekey=rekey)
+        res = await call(services.gateway_setup, callback_data.device_id, rekey=rekey,
+                         slot_id=slot or None)
     except ServiceError as e:
         await cb.message.answer(f"⚠️ {texts._e(str(e))}")
         return
-    await _deliver_bundle(cb, services, res, texts.gateway_marked(res["device"], res["rekeyed"]))
+    await _deliver_bundle(cb, services, res,
+                          texts.gateway_marked(res["device"], res["rekeyed"],
+                                               services.bundle_name(res["gateway"])))
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "new_ask"))
-async def gateway_new_ask(cb: CallbackQuery, services):
+async def gateway_new_ask(cb: CallbackQuery, callback_data: GwMarkCB, services):
     await cb.answer()
-    await edit(cb, texts.GATEWAY_NEW_ASK, kb.gateway_new_confirm())
+    slot = _slot_of(callback_data)
+    n = slot or (len(await call(services.db.gateways)) + 1)
+    await edit(cb, texts.gateway_new_ask(n), kb.gateway_new_confirm(slot))
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "new_yes"))
-async def gateway_new_yes(cb: CallbackQuery, services, state: FSMContext):
-    """Новая машина. Токен её бота спрашиваем ЗДЕСЬ и один раз: он уедет внутрь
-    файла первого применения, и установка на шлюзе не задаст ни одного
-    вопроса. Токен уже есть — идём сразу к выпуску."""
-    if not await call(services.gw_bot_token):
+async def gateway_new_yes(cb: CallbackQuery, callback_data: GwMarkCB, services, state: FSMContext):
+    """Новая машина. Токен её бота спрашиваем ЗДЕСЬ и один раз на слот: он
+    уедет внутрь файла первого применения, и установка на шлюзе не задаст ни
+    одного вопроса. Токен уже есть — идём сразу к выпуску."""
+    slot = _slot_of(callback_data)
+    token_slot = slot or (len(await call(services.db.gateways)) + 1)
+    if not await call(services.gw_bot_token, token_slot):
         await cb.answer()
         await state.set_state(GatewayToken.value)
-        await edit(cb, texts.GATEWAY_ASK_TOKEN, kb.settings_cancel("rt_gw"))
+        await state.update_data(gw_slot=slot)
+        await edit(cb, texts.gateway_ask_token(token_slot), kb.settings_cancel("rt_gw"))
         return
     await cb.answer("Создаю устройство и ключи…")
-    await _gateway_new_go(cb.message, services)
+    await _gateway_new_go(cb.message, services, slot)
 
 
 @router.message(GatewayToken.value)
@@ -265,50 +296,54 @@ async def gateway_token_received(message: Message, state: FSMContext, services):
         await message.delete()          # токен в истории чата не держим — и
     except Exception:                   # noqa: BLE001
         pass                            # непринятый тоже: секрет есть секрет
+    data = await state.get_data()
+    slot = int(data.get("gw_slot") or 0)
+    token_slot = slot or (len(await call(services.db.gateways)) + 1)
     try:
-        await call(services.set_gw_bot_token, token)
+        await call(services.set_gw_bot_token, token, token_slot)
     except ServiceError as e:
         await message.answer(f"⚠️ {texts._e(str(e))}")
         return
-    data = await state.get_data()
     await state.clear()
-    # Токен спрашивают из двух мест: «новая машина» и смена шлюза со сменой
+    # Токен спрашивают из двух мест: «новая машина» и замена машины со сменой
     # ключей. Куда возвращаться, помнит state.
     device_id = data.get("gw_device_id")
     if device_id:
-        await _gateway_mark_go(message, services, int(device_id))
+        await _gateway_mark_go(message, services, int(device_id), slot)
         return
-    await _gateway_new_go(message, services)
+    await _gateway_new_go(message, services, slot)
 
 
-async def _gateway_mark_go(message: Message, services, device_id: int) -> None:
+async def _gateway_mark_go(message: Message, services, device_id: int, slot: int = 0) -> None:
     """Назначить шлюзом существующее устройство со сменой ключей и отдать файл
     первого применения с инструкцией."""
     try:
-        res = await call(services.gateway_setup, device_id, rekey=True)
+        res = await call(services.gateway_setup, device_id, rekey=True, slot_id=slot or None)
     except ServiceError as e:
         await message.answer(f"⚠️ {texts._e(str(e))}")
         return
-    await message.answer(texts.gateway_install_instructions(res["device"]))
-    await _send_plain_bundle(message, services)
+    await message.answer(texts.gateway_install_instructions(res["device"],
+                                                            services.bundle_name(res["gateway"])))
+    await _send_plain_bundle(message, services, res["gateway"].id)
 
 
-async def _gateway_new_go(message: Message, services) -> None:
+async def _gateway_new_go(message: Message, services, slot: int = 0) -> None:
     """Создать устройство «Шлюз», выпустить файл первого применения и объяснить
-    две команды на машине-шлюзе."""
+    одну команду на машине-шлюзе."""
     try:
-        res = await call(services.gateway_setup, None)
+        res = await call(services.gateway_setup, None, slot_id=slot or None)
     except ServiceError as e:
         await message.answer(f"⚠️ {texts._e(str(e))}")
         return
-    await message.answer(texts.gateway_install_instructions(res["device"]))
-    await _send_plain_bundle(message, services)
+    await message.answer(texts.gateway_install_instructions(res["device"],
+                                                            services.bundle_name(res["gateway"])))
+    await _send_plain_bundle(message, services, res["gateway"].id)
 
 
-async def _send_plain_bundle(message: Message, services) -> None:
+async def _send_plain_bundle(message: Message, services, slot: int = 0) -> None:
     """Открытый файл первого применения: внутри ключи и токен агента."""
     try:
-        blob, name = await call(services.gw_bundle_plain)
+        blob, name = await call(services.gw_bundle_plain, slot or None)
     except (ServiceError, OSError) as e:
         await message.answer(f"⚠️ Файл первого применения не собран: {texts._e(str(e))}")
         return
@@ -321,31 +356,242 @@ async def _send_plain_bundle(message: Message, services) -> None:
         reply_markup=kb.bundle_menu_kb())
 
 
-@router.callback_query(GwMarkCB.filter(F.action == "remove_ask"))
-async def gateway_remove_ask(cb: CallbackQuery, services):
-    dev = await call(services.db.gateway_device)
-    if dev is None:
-        await cb.answer("Шлюз не назначен", show_alert=True)
+# ── слоты шлюзов (docs/gateway-failover.md §6) ───────────────────────────────
+
+async def _slot_state(cb: CallbackQuery, services, slot: int, *, lazy_ping: bool = True):
+    try:
+        return await call(services.gateway_screen_state, slot, lazy_ping=lazy_ping)
+    except ServiceError as e:
+        await cb.answer(str(e), show_alert=True)
+        return None
+
+
+async def _render_card(cb: CallbackQuery, services, slot: int) -> None:
+    st = await _slot_state(cb, services, slot)
+    if st is None:
         return
+    await edit(cb, texts.gateway_card_text(st, st["states"]),
+               kb.gateway_card(st, back_to_list=len(st["states"]) > 1))
+
+
+async def _render_list(cb: CallbackQuery, services) -> None:
+    states = await call(services.gateway_states)
+    switched = await call(services.db.get_state, services._RT_SWITCHED_KEY)
+    auto = settings.get_bool("app.routing.failover.enabled", True)
+    await edit(cb, texts.gateway_list_text(states, switched or "", auto),
+               kb.gateway_list(states, can_add=len(states) < config.ROUTING_GATEWAYS_MAX,
+                               failover_on=auto))
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "list"))
+async def gw_slot_list(cb: CallbackQuery, services, state: FSMContext):
+    await state.clear()
+    await _render_list(cb, services)
     await cb.answer()
-    await edit(cb, texts.gateway_remove_ask(dev), kb.gateway_remove_confirm())
 
 
-@router.callback_query(GwMarkCB.filter(F.action == "remove_yes"))
-async def gateway_remove_yes(cb: CallbackQuery, services):
+@router.callback_query(GwSlotCB.filter(F.action == "card"))
+async def gw_slot_card(cb: CallbackQuery, callback_data: GwSlotCB, services, state: FSMContext):
+    await state.clear()
+    await _render_card(cb, services, callback_data.slot)
+    await cb.answer()
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "add"))
+async def gw_slot_add(cb: CallbackQuery, services):
+    await cb.answer()
+    await _render(cb, "rt_gw", services)
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "failover"))
+async def gw_slot_failover(cb: CallbackQuery, services):
+    key = "app.routing.failover.enabled"
+    try:
+        await call(settings.set_value, key, not settings.get_bool(key, True))
+    except settings.SettingsWriteError as e:
+        await cb.answer(str(e), show_alert=True)
+        return
+    await _render_list(cb, services)
+    await cb.answer("Автопереключение " + ("включено" if settings.get_bool(key, True) else "выключено"))
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "pref"))
+async def gw_slot_pref(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    """Галочка на месте: у ☑️ — перенести на этот слот, у ✅ — снять вовсе."""
+    gw = await call(services.db.gateway, callback_data.slot)
+    if gw is None:
+        await cb.answer("Такого слота нет", show_alert=True)
+        return
+    await call(services.gateway_set_preferred, None if gw.preferred else gw.id)
+    await _render_card(cb, services, gw.id)
+    await cb.answer("Предпочтительный: " + ("снят" if gw.preferred else "этот шлюз"))
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "ping"))
+async def gw_slot_ping(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    """Замер сейчас; карточка перерисовывается той, откуда нажали: из карточки
+    устройства — она, из карточки слота — она."""
+    gw = await call(services.db.gateway, callback_data.slot)
+    if gw is None:
+        await cb.answer("Такого слота нет", show_alert=True)
+        return
+    ms = await call(services.gateway_ping, gw.id)
+    st = await call(services.gateway_screen_state, gw.id, lazy_ping=False)
+    st["ping_ms"] = ms
+    text = cb.message.text or cb.message.caption or ""
+    if "Это устройство — шлюз" in text or "последний коннект" in text:
+        from awgbot.bot.handlers.admin.devices import _device_card_parts
+        dev = await call(services.db.get_device, gw.device_id)
+        if dev is not None:
+            await edit(cb, *await _device_card_parts(services, dev))
+    else:
+        await edit(cb, texts.gateway_card_text(st, st["states"]),
+                   kb.gateway_card(st, back_to_list=len(st["states"]) > 1))
+    await cb.answer("Пинг со шлюза: " + texts.ping_fmt(ms) if ms is not None
+                    else f"Наружу через {st['display']} не пройти", show_alert=ms is None)
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "switch_ask"))
+async def gw_slot_switch_ask(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
+    if st is None:
+        return
+    if st.get("active"):
+        await cb.answer("Трафик уже идёт через этот шлюз")
+        return
+    current = next((x for x in st["states"] if x.get("active")), None)
+    healthy = bool(st.get("link_ok"))
+    await edit(cb, texts.gateway_switch_ask(st, current, healthy),
+               kb.gateway_switch_confirm(st["gateway"].id, healthy))
+    await cb.answer()
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "switch_yes"))
+async def gw_slot_switch_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    try:
+        gw = await call(services.gateway_switch, callback_data.slot, manual=True)
+    except ServiceError as e:
+        await cb.answer(str(e), show_alert=True)
+        return
+    await _render_card(cb, services, gw.id)
+    st = await call(services.gateway_screen_state, gw.id, lazy_ping=False)
+    await cb.answer(f"Трафик идёт через {st['display']}".replace("«", "").replace("»", ""))
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "bundle"))
+async def gw_slot_bundle(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    await cb.answer()
+    await _render(cb, "rt_bundle", services, key=str(callback_data.slot or ""))
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "home"))
+async def gw_slot_home(cb: CallbackQuery, callback_data: GwSlotCB, services, state: FSMContext):
+    st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
+    if st is None:
+        return
+    await state.set_state(GatewayHome.value)
+    await state.update_data(gw_slot=st["gateway"].id)
+    await edit(cb, texts.gateway_home_text(st), kb.gateway_slot_cancel(st["gateway"].id))
+    await cb.answer()
+
+
+@router.message(GatewayHome.value)
+async def gateway_home_received(message: Message, state: FSMContext, services):
+    slot = int((await state.get_data()).get("gw_slot") or 0)
+    await state.clear()
+    try:
+        res = await call(services.gateway_set_home_subnets, slot, message.text or "")
+        st = await call(services.gateway_screen_state, slot, lazy_ping=False)
+    except ServiceError as e:
+        await message.answer(f"⚠️ {texts._e(str(e))}")
+        return
+    await message.answer(texts.gateway_home_report(res, st))
+    await send_menu(message, services, texts.gateway_card_text(st, st["states"]),
+                    kb.gateway_card(st, back_to_list=len(st["states"]) > 1))
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "label"))
+async def gw_slot_label(cb: CallbackQuery, callback_data: GwSlotCB, services, state: FSMContext):
+    st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
+    if st is None:
+        return
+    await state.set_state(GatewayLabel.value)
+    await state.update_data(gw_slot=st["gateway"].id)
+    await edit(cb, texts.gateway_label_text(st), kb.gateway_slot_cancel(st["gateway"].id))
+    await cb.answer()
+
+
+@router.message(GatewayLabel.value)
+async def gateway_label_received(message: Message, state: FSMContext, services):
+    slot = int((await state.get_data()).get("gw_slot") or 0)
+    await state.clear()
+    try:
+        await call(services.gateway_set_label, slot, message.text or "")
+        st = await call(services.gateway_screen_state, slot, lazy_ping=False)
+    except ServiceError as e:
+        await message.answer(f"⚠️ {texts._e(str(e))}")
+        return
+    await send_menu(message, services, texts.gateway_card_text(st, st["states"]),
+                    kb.gateway_card(st, back_to_list=len(st["states"]) > 1))
+
+
+async def _remove_ask(cb: CallbackQuery, services, slot: int) -> None:
+    st = await _slot_state(cb, services, slot, lazy_ping=False)
+    if st is None:
+        return
+    dev = st.get("device")
+    if dev is None:
+        await cb.answer("Устройство слота не найдено", show_alert=True)
+        return
+    other = next((x for x in st["states"] if x["gateway"].id != slot), None)
+    await cb.answer()
+    await edit(cb, texts.gateway_remove_ask(dev, state=st, other=other),
+               kb.gateway_remove_confirm(slot))
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "remove_ask"))
+async def gw_slot_remove_ask(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    await _remove_ask(cb, services, callback_data.slot)
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "remove_ask"))
+async def gateway_remove_ask(cb: CallbackQuery, callback_data: GwMarkCB, services):
+    """«🛑 Не шлюз?» из карточки устройства и старые сообщения без слота."""
+    slot = _slot_of(callback_data)
+    if not slot and callback_data.device_id:
+        gw = await call(services.db.gateway_by_device, callback_data.device_id)
+        slot = gw.id if gw else 0
+    if not slot:
+        first = await call(services.gateway_first_slot)
+        if first is None:
+            await cb.answer("Шлюз не назначен", show_alert=True)
+            return
+        slot = first.id
+    await _remove_ask(cb, services, slot)
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "remove_yes"))
+async def gw_slot_remove_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
     await cb.answer("Убираю…")
-    prev = await call(services.gateway_remove)
+    prev = await call(services.gateway_remove, callback_data.slot or None)
     if prev is None:
         await edit(cb, "Шлюз и так не назначен.", kb.settings_back())
         return
-    await edit(cb, texts.gateway_removed(prev), kb.settings_back())
+    states = await call(services.gateway_states)
+    now_active = next((x for x in states if x.get("active")), None)
+    await edit(cb, texts.gateway_removed(prev, now_active), kb.settings_back())
+
+
+@router.callback_query(GwMarkCB.filter(F.action == "remove_yes"))
+async def gateway_remove_yes(cb: CallbackQuery, callback_data: GwMarkCB, services):
+    await gw_slot_remove_yes(cb, GwSlotCB(action="remove_yes", slot=_slot_of(callback_data)), services)
 
 
 # ── открытие раздела ─────────────────────────────────────────────────────────
 @router.callback_query(SetCB.filter(F.act == "open"))
 async def open_section(cb: CallbackQuery, callback_data: SetCB, services, state: FSMContext):
     await state.clear()
-    await _render(cb, callback_data.sec, services)
+    await _render(cb, callback_data.sec, services, callback_data.key or "")
     await cb.answer()
 
 
@@ -382,7 +628,7 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
             # Включили — тут же замер шлюза: пока фича была выключена, о его
             # состоянии молчали (и на старте тоже), и узнать, что он лежит,
             # админ должен сейчас, а не когда пожалуются люди.
-            if settings.get_bool(k, False) and await call(services.db.gateway_device) is not None:
+            if settings.get_bool(k, False) and await call(services.db.gateways):
                 ok, _reason = await call(services.routing_status)
                 if ok:
                     warn = texts.routing_gateway_warning(await call(services.routing_probe),
@@ -407,7 +653,7 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         except Exception:                                  # noqa: BLE001
             pass
         await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
-        await send_gw_bundle(cb.message, services)
+        await send_gw_bundle(cb.message, services, int(callback_data.val or 0))
         return
     if callback_data.key == "lists_refresh":
         # Колбэк отвечается ОДИН раз — второй ответ Telegram молча роняет.
@@ -714,9 +960,10 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         await cb.answer("Завершаю…")
         removed, dropped, failed = await call(services.migration_finish)
         await _record(cb, texts.migration_finished(removed, dropped, failed), services)
-        if not failed and await call(services.db.gateway_device) is not None:
-            # шлюз получил двойника с новыми ключами — файл сразу, без напоминаний
-            await send_gw_bundle(cb.message, services)
+        if not failed:
+            # шлюзы получили двойников с новыми ключами — файлы сразу, по слоту
+            for g in await call(services.db.gateways):
+                await send_gw_bundle(cb.message, services, g.id)
         # Смена поколения могла ждать финала этого переезда (установщик её не
         # начинал, чтобы не подменить цель). Теперь очередь дошла.
         if not failed:

@@ -189,8 +189,12 @@ async def _device_card_parts(services, dev):
     привязки — из принадлежности устройства. Шлюз — своя карточка."""
     back_target, reassign_label = await _device_back_target_and_label(services, dev)
     if dev.is_gateway:
-        return (texts.gateway_device_card(dev),
-                kb.gateway_device_actions(dev, back_target=back_target))
+        # состояние слота: роль (несёт трафик / резерв) и пинг — лениво,
+        # пустой кэш заполняется при первом открытии карточки
+        st = await call(services.gateway_state_for_device, dev.id)
+        slot = st["gateway"].id if st else 0
+        return (texts.gateway_device_card(dev, st),
+                kb.gateway_device_actions(dev, back_target=back_target, slot=slot))
     text = texts.device_card_text(dev, for_admin=True)
     marker = texts.friend_marker(dev)
     if marker:

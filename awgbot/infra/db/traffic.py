@@ -55,8 +55,9 @@ class TrafficMixin:
                  COALESCE(SUM(t.traffic_rx_period), 0) AS rx_period,
                  COALESCE(SUM(t.traffic_tx_period), 0) AS tx_period
                FROM device_traffic t JOIN devices d ON d.id = t.device_id
-               WHERE d.client_id = ? AND d.is_gateway = 0 AND NOT EXISTS
-                 (SELECT 1 FROM devices o WHERE o.id = d.twin_of AND o.is_gateway = 1)""",
+               WHERE d.client_id = ? AND NOT EXISTS
+                 (SELECT 1 FROM gateways g WHERE g.device_id = d.id
+                     OR (d.twin_of IS NOT NULL AND g.device_id = d.twin_of))""",
             (client_id,),
         ).fetchone()
         return dict(row)

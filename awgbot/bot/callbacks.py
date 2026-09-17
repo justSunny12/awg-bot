@@ -199,11 +199,25 @@ class BroadcastCB(CallbackData, prefix="bc"):
 
 
 class GwMarkCB(CallbackData, prefix="gwm"):
-    """Шлюз у основного бота: pick_list|pick|mark_yes (из моих устройств),
-    new_ask|new_yes (новая машина), remove_ask|remove_yes («🛑 Убрать шлюз» /
-    «🛑 Не шлюз?»)."""
+    """Назначение машины в слот шлюза у основного бота: pick_list|pick|mark_yes
+    (из моих устройств), new_ask|new_yes (новая машина), remove_ask|remove_yes
+    («🛑 Не шлюз?» из карточки устройства). slot — номер слота; 0 — новый слот
+    (docs/gateway-failover.md)."""
     action: str
     device_id: int = 0
+    slot: int = 0
+
+
+class GwSlotCB(CallbackData, prefix="gws"):
+    """Слоты шлюзов (docs/gateway-failover.md §6). action:
+      list — список слотов; card — карточка слота; add — новый слот;
+      switch_ask|switch_yes — переложить трафик на слот; ping — замер;
+      pref — тумблер «предпочтительный при холодном старте»;
+      home|label — ввод домашних подсетей / подписи (FSM);
+      remove_ask|remove_yes — убрать слот; bundle — конфигурация слота;
+      failover — тумблер автопереключения."""
+    action: str
+    slot: int = 0
 
 
 class GwCB(CallbackData, prefix="gw"):

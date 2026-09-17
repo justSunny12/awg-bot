@@ -118,11 +118,15 @@ def _routing_svc(probed: list, verdict: str):
     from types import SimpleNamespace
 
     class Svc:
-        db = SimpleNamespace(gateway_device=lambda: SimpleNamespace(id=1))
+        db = SimpleNamespace(gateways=lambda: [SimpleNamespace(id=1)])
         def server_ok(self): return True
         def email_resume_enabled(self): return False
         def routing_status(self): return True, ""
         def routing_probe(self): probed.append(1); return verdict
+        def routing_startup_warnings(self):
+            from awgbot.bot import texts as _texts
+            w = _texts.routing_gateway_warning(self.routing_probe(), at_start=True)
+            return [w] if w else []
     return Svc()
 
 

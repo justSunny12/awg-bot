@@ -68,8 +68,19 @@ class SettingsInput(StatesGroup):
 
 
 class GatewayToken(StatesGroup):
-    """Токен бота-агента для новой машины-шлюза: спрашиваем один раз, дальше
-    он живёт в env и уезжает в файл первого применения."""
+    """Токен бота-агента для новой машины-шлюза: спрашиваем один раз на слот,
+    дальше он живёт в env и уезжает в файл первого применения. В данных —
+    gw_slot (слот) и gw_device_id (замена машины)."""
+    value = State()
+
+
+class GatewayHome(StatesGroup):
+    """Домашние подсети слота шлюза (docs/gateway-failover.md 6.8). В данных — gw_slot."""
+    value = State()
+
+
+class GatewayLabel(StatesGroup):
+    """Подпись места слота шлюза («дом 1»). В данных — gw_slot."""
     value = State()
 
 

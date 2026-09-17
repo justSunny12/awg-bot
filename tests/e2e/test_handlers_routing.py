@@ -593,7 +593,7 @@ async def test_bundle_document_carries_menu_button_and_dims_settings(
     from awgbot.bot.callbacks import SetCB
     from tests.conftest import FakeCallback, FakeMessage
     import awgbot.core.config as cfg
-    monkeypatch.setattr(services, "gw_bundle_encrypted", lambda: (b"AWGGWB1\nxx", "b.enc"))
+    monkeypatch.setattr(services, "gw_bundle_encrypted", lambda slot=None: (b"AWGGWB1\nxx", "b.enc"))
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     sent_docs = []
 
@@ -668,12 +668,20 @@ def test_routing_section_buttons_depend_on_gateway():
     при включённой функции; без шлюза — «Назначить шлюз» вместо конфигурации,
     смены и снятия; при выключенной — только выключатель. Переключатели
     профилей и пикер периода в корне не живут — они в своих подразделах."""
+    from types import SimpleNamespace
     from awgbot.bot import keyboards as kb
-    on = [b.text for row in kb.settings_routing(True, has_gateway=True).inline_keyboard for b in row]
-    assert on[:6] == ["🟢 Условная маршрутизация", "⚙️ Конфигурация шлюза", "🔁 Сменить шлюз",
-                      "🛑 Убрать шлюз", "📋 Списки маршрутизации", "👥 Доступность пользователям"], on
+    one = [{"gateway": SimpleNamespace(id=1), "device": SimpleNamespace(name="NASPi"),
+            "active": True, "link_ok": True, "preferred": True, "issued_at": "", "handshake_age": 3}]
+    on = [b.text for row in kb.settings_routing(True, one).inline_keyboard for b in row]
+    assert on[:5] == ["🟢 Условная маршрутизация", "🛰 Шлюз: NASPi", "➕ Резервный шлюз",
+                      "📋 Списки маршрутизации", "👥 Доступность пользователям"], on
     assert not any("шифр" in t for t in on), "приписки про шифрование — не для UI"
-    no_gw = [b.text for row in kb.settings_routing(True, has_gateway=False).inline_keyboard for b in row]
+    two = one + [{"gateway": SimpleNamespace(id=2), "device": SimpleNamespace(name="Pi2"),
+                  "active": False, "link_ok": True, "preferred": False, "issued_at": "", "handshake_age": 5}]
+    many = [b.text for row in kb.settings_routing(True, two).inline_keyboard for b in row]
+    assert many[:4] == ["🟢 Условная маршрутизация", "🛰 Шлюзы: 2",
+                        "📋 Списки маршрутизации", "👥 Доступность пользователям"], many
+    no_gw = [b.text for row in kb.settings_routing(True, []).inline_keyboard for b in row]
     assert no_gw[:4] == ["🟢 Условная маршрутизация", "🛰 Назначить шлюз",
                          "📋 Списки маршрутизации", "👥 Доступность пользователям"], no_gw
     off = [b.text for row in kb.settings_routing(False).inline_keyboard for b in row]
@@ -711,9 +719,13 @@ async def test_bundle_button_opens_intro_screen_before_issuing(services, fake_bo
     import awgbot.core.config as cfg
     monkeypatch.setattr(cfg, "ROUTING_ENABLED", True)
     monkeypatch.setattr(st, "get_bool", lambda key, default=False: True)
-    markup = kb.settings_routing(True)
+    from types import SimpleNamespace
+    from awgbot.bot.callbacks import GwSlotCB
+    state = {"gateway": SimpleNamespace(id=1, home_subnets=[], label=""), "device": SimpleNamespace(name="NASPi"),
+             "active": True, "link_ok": True, "preferred": True, "issued_at": "", "handshake_age": 3}
+    markup = kb.gateway_card(state, back_to_list=False)
     btn = [b for row in markup.inline_keyboard for b in row if "Конфигурация" in b.text][0]
-    assert btn.callback_data == SetCB(sec="rt_bundle", act="open").pack()
+    assert btn.callback_data == GwSlotCB(action="bundle", slot=1).pack()
     text, markup = await sh._screen("rt_bundle", services)
     assert "Что произойдёт" in text
     datas = [b.callback_data for row in markup.inline_keyboard for b in row]
@@ -947,7 +959,7 @@ async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
     # пока фича спала, о нём молчали (и на старте тоже), лежит — сказать сейчас
     from types import SimpleNamespace
     from awgbot.infra import routing as rt
-    monkeypatch.setattr(services.db, "gateway_device", lambda: SimpleNamespace(id=1))
+    monkeypatch.setattr(services.db, "gateways", lambda: [SimpleNamespace(id=1)])
     monkeypatch.setattr(services, "routing_status", lambda: (True, ""))
 
     async def _no_render(cb, sec, services_):        # раздел рисует полную карточку шлюза — не о нём тест

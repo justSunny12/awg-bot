@@ -298,6 +298,12 @@ def routing_client_subnets() -> list[tuple[str, str]]:
 ROUTING_HOME_SUBNETS: list[str] = [str(n).strip() for n in (_rt.get("home_subnets") or []) if str(n).strip()]
 ROUTING_TABLE = int(_rt.get("table", 100))
 ROUTING_FWMARK = int(_rt.get("fwmark", 1))
+# Слоты шлюзов (docs/gateway-failover.md): порты и /30 линков по номеру слота.
+# Второй порт — не 443 (его держит первый линк); 8443 так же теряется среди
+# QUIC-подобного. Больше двух слотов — смысл только при трёх домах.
+ROUTING_LINK_PORTS: list[int] = [int(p) for p in (_rt.get("link_ports") or [443, 8443])]
+ROUTING_LINK_CIDRS: list[str] = [str(c) for c in (_rt.get("link_cidrs") or ["10.99.99.0/30", "10.99.99.4/30"])]
+ROUTING_GATEWAYS_MAX = int(_rt.get("gateways_max", 2))
 
 # Имена наборов и цепочек — КОНСТАНТЫ, а не настройка. Админу менять их незачем,
 # а сама возможность менять создаёт рассинхрон при обновлении: боевой yaml не

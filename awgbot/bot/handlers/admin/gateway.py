@@ -38,4 +38,4 @@ async def gateway_claim_message(message: Message, services):
         return
     await message.answer(texts.gateway_claim_marked(res["device"]))
     from awgbot.bot.handlers.settings import send_gw_bundle
-    await send_gw_bundle(message, services)              # без отдельного нажатия
+    await send_gw_bundle(message, services, res["gateway"].id)   # без отдельного нажатия

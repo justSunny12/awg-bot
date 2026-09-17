@@ -13,6 +13,7 @@ from typing import Optional
 from awgbot.core import config
 from awgbot.core import settings
 from awgbot.infra import routing
+from awgbot.util import timeutil
 from awgbot.domain import routing as domain_routing
 from awgbot.domain.services.types import Notification, RoutingAddResult, ServiceError
 from awgbot.domain.services.base import _e
@@ -103,12 +104,14 @@ class RoutingMixin:
                 "с зарубежного адреса и могут ругаться. Всё остальное и так "
                 "шло мимо шлюза — на него это не влияет.")
 
-    def _txt_rt_gw_down(self) -> str:
-        return ("🔴 Шлюз условной маршрутизации недоступен. "
+    def _txt_rt_gw_down(self, active=None) -> str:
+        who = f" {self._gw_display(active)}" if active is not None else ""
+        return (f"🔴 Шлюз условной маршрутизации{who} недоступен. "
                 + self._rt_effect_line() + self._TXT_RT_BUNDLE_HINT)
 
-    def _txt_rt_gw_no_path(self) -> str:
-        return ("🔴 Шлюз условной маршрутизации отвечает, но интернета за ним нет "
+    def _txt_rt_gw_no_path(self, active=None) -> str:
+        who = f" {self._gw_display(active)}" if active is not None else ""
+        return (f"🔴 Шлюз условной маршрутизации{who} отвечает, но интернета за ним нет "
                 "— проверь аплинк и NAT на самом шлюзе. " + self._rt_effect_line())
 
     _TXT_RT_GW_UP = "🟢 Шлюз условной маршрутизации снова в строю."
@@ -800,121 +803,345 @@ class RoutingMixin:
                 and settings.get_bool("app.routing.enabled", False))
 
     def routing_probe(self) -> str:
-        """Замер прямо сейчас. Отдельно от routing_link_ok, чтобы было видно,
-        где реальные пинги, а где чтение кэша."""
+        """Замер прямо сейчас — АКТИВНОГО шлюза, тем путём, которым ходят
+        клиенты (метка фичи, таблица фичи). Отдельно от routing_link_ok, чтобы
+        было видно, где реальные пинги, а где чтение кэша."""
+        targets, port = self._rt_probe_targets()
+        active = self.active_gateway()
+        return routing.probe_gateway(list(targets), port,
+                                     iface=active.link_if if active else "")
+
+    @staticmethod
+    def _rt_probe_targets() -> tuple[list, int]:
         # Две цели по умолчанию: один внешний хост — сам по себе точка отказа,
         # и его заминка выглядела бы как отвал шлюза.
         targets = settings.get("app.routing.probe_targets", None) or ["77.88.8.8", "8.8.8.8"]
         port = int(settings.get("app.routing.probe_port", 53))
-        return routing.probe_gateway(list(targets), port)
+        return list(targets), port
+
+    # Зонд резерва: те же цели и две попытки, но короче таймаут — резерв не
+    # держит трафик, и его ответ ничего не откладывает.
+    _RT_STANDBY_TIMEOUT = 2.0
+
+    def _probe_slot(self, gw, *, active: bool) -> str:
+        targets, port = self._rt_probe_targets()
+        if active:
+            return routing.probe_gateway(targets, port, iface=gw.link_if)
+        return routing.probe_gateway(targets, port, timeout=self._RT_STANDBY_TIMEOUT,
+                                     iface=gw.link_if, mark=gw.mark)
+
+    def _probe_slots(self, slots, active) -> dict:
+        """Все слоты разом: зонды независимы, а последовательно при лежащем
+        резерве такт держал бы поток ещё на 2 × 2 с."""
+        if len(slots) == 1:
+            g = slots[0]
+            return {g.id: self._probe_slot(g, active=(active is not None and active.id == g.id))}
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=len(slots)) as pool:
+            futs = {g.id: pool.submit(self._probe_slot, g,
+                                      active=(active is not None and active.id == g.id))
+                    for g in slots}
+            return {sid: f.result() for sid, f in futs.items()}
+
+    # ── стрики по слоту ──────────────────────────────────────────────────────
+    def _rt_keys(self, slot_id) -> tuple[str, str, str]:
+        """(up, down, announced) ключи стриков: слота — свои, без слотов (линк
+        обвязки без назначенного шлюза) — прежние общие."""
+        if slot_id is None:
+            return self._RT_STREAK_KEY, self._RT_DOWN_KEY, self._RT_ANNOUNCED_KEY
+        return (f"routing_gw_{slot_id}_up_streak", f"routing_gw_{slot_id}_down_streak",
+                f"routing_gw_{slot_id}_announced")
+
+    _RT_LAST_TICK_KEY = "routing_last_tick_at"
+
+    def _rt_failover_enabled(self) -> bool:
+        return settings.get_bool("app.routing.failover.enabled", True)
+
+    def _rt_switch_interval_ok(self) -> bool:
+        raw = self.db.get_state(self._RT_SWITCHED_KEY) or ""
+        if not raw:
+            return True
+        try:
+            since = (timeutil.now() - timeutil.parse_iso(raw)).total_seconds()
+        except ValueError:
+            return True
+        return since >= 60 * settings.get_int("app.routing.failover.min_interval_minutes", 10)
 
     def routing_liveness_tick(self) -> list[Notification]:
-        """Замер живости шлюза и деградация. Тикает часто (десятки секунд).
+        """Замер живости шлюзов и деградация/переключение. Тикает часто
+        (десятки секунд). docs/gateway-failover.md §5.
 
-        Раньше это жило в трёхминутном мониторе и решало по возрасту хендшейка.
-        Метрика была неверна и остаётся таковой: возраст хендшейка говорит,
+        Метрика — проходимость наружу, а не возраст хендшейка: тот говорит,
         поднят ли туннель, а не ходит ли через него трафик.
 
-        Частота досталась от обратной модели, где шлюз был ОСНОВНЫМ путём и его
-        отказ означал «нет интернета». Сейчас он означает «российские сервисы
-        ругаются на адрес», и такой срочности нет. Такт оставлен коротким
-        сознательно: замер — это TCP-коннект, стоит копейки, а быстрый возврат
-        из деградации полезен сам по себе.
-
-        Пороги СИММЕТРИЧНЫ — три замера в обе стороны, см. _RT_DOWN_STREAK.
-        Асимметрия имела смысл, пока включение было рискованнее выключения;
-        теперь дороже всего дребезг, потому что каждое переключение
-        перекладывает трафик всех включённых профилей.
+        Порядок решений такта: 1) не задействовано — маркировка снята сразу;
+        2) стрики каждого слота (гистерезис, потолки); 3) переключение —
+        активный лежит порог тактов, есть слот с тремя хорошими, интервал
+        прошёл; 4) гашение/возврат — по стрикам активного, как прежде;
+        5) объявления. Липкость — следствие шага 3: пока активный не набрал
+        порог плохих, его никто не трогает.
         """
         if not routing.available():
             return []
-        # Зондируем, только если маркировка вообще должна быть включена: при
-        # выключенной фиче рубильник обязан стоять в «выкл» независимо от того,
-        # что там со шлюзом.
         engaged = self.routing_engaged()
-        # Зонд СНАРУЖИ замка: он длится секунды (сеть), и держать на это время
-        # реконсиляцию значило бы менять один отказ на другой.
-        verdict = self.routing_probe() if engaged else routing.PROBE_DOWN
-        # Тик только МЕРИТ. Обвязку утверждаем по событию — смена вердикта,
-        # первый тик после старта — и страховочно каждый 10-й тик (5 мин):
-        # утверждать маршрут и правила каждые 30 с значило ~14 000 exec/сутки
-        # ради состояния, которое меняется раз в неделю.
+        slots = self.db.gateways()
+        active = self.active_gateway()
+        # Зонды СНАРУЖИ замка и до транзакции: они длятся секунды (сеть), и
+        # держать на это время БД или реконсиляцию значило бы менять один отказ
+        # на другой.
+        results: dict = {}
+        if engaged:
+            results = self._probe_slots(slots, active) if slots else {None: self.routing_probe()}
+        akey = active.id if active is not None else None
+        verdict = results.get(akey, routing.PROBE_DOWN) if engaged else routing.PROBE_DOWN
+        # Обвязку утверждаем по событию — смена вердикта, первый тик после
+        # старта — и страховочно каждый 10-й тик (5 мин): утверждать маршрут и
+        # правила каждые 30 с значило ~14 000 exec/сутки ради состояния,
+        # которое меняется раз в неделю.
         self._rt_tick = getattr(self, "_rt_tick", -1) + 1
         last_verdict = getattr(self, "_rt_last_verdict", None)
         if engaged and (verdict != last_verdict or self._rt_tick % 10 == 0):
-            routing.ensure_policy()
+            self._ensure_gateway_policy()
         self._rt_last_verdict = verdict
 
-        # ГИСТЕРЕЗИС, а не пересчёт с нуля каждый тик. Пока порог гашения был
-        # равен единице, пересчёт совпадал с гистерезисом и разницы не было. С
-        # порогом больше единицы он ломается: плохой замер обнуляет счётчик
-        # хороших, и следующий же хороший такт даёт good=1 < порога возврата —
-        # то есть маркировка снимается ИМЕННО ТОГДА, когда шлюз ожил. Состояние
-        # обязано меняться только на пересечении порогов, а не выводиться из
-        # текущей серии.
         was_on = self.db.get_state(self._RT_LINK_KEY) == "1"
-        # Стрики с потолком на пороге (сравнения только «>= порога» / «< порога»)
-        # и одной транзакцией: в установившемся состоянии тик каждые 30 с не
-        # пишет на диск вовсе — раньше это было 3 коммита × 2880 в сутки.
         down_cap = max(self._RT_DOWN_STREAK, self._RT_ANNOUNCE_AFTER)
+        if slots:
+            down_cap = max(down_cap, settings.get_int("app.routing.failover.standby_announce_after", 20))
+        notes: list[Notification] = []
+        switched_to = None
+        refused = False
+        streaks: dict = {}                      # ключ слота → (up, down)
         with self.db.transaction():
-          if not engaged:
-            # РЕШЕНИЕ, а не измерение. Гистерезис сглаживает дребезг сети, но
-            # выключение фичи админом — не дребезг, и ждать три такта тут значит
-            # не выполнить прямое указание. Раньше разницы не было: «выключено»
-            # выражалось тем же плохим вердиктом, а порог гашения равнялся
-            # единице, и оба пути совпадали.
-            self.db.set_state(self._RT_STREAK_KEY, "0")
-            down = 0
-            ok = False
-          elif verdict == routing.PROBE_OK:
-            good = min(int(self.db.get_state(self._RT_STREAK_KEY) or 0) + 1, self._RT_UP_STREAK)
-            self.db.set_state(self._RT_STREAK_KEY, str(good))
-            down = 0
-            ok = True if was_on else good >= self._RT_UP_STREAK
-          else:
-            self.db.set_state(self._RT_STREAK_KEY, "0")
-            down = min(int(self.db.get_state(self._RT_DOWN_KEY) or 0) + 1, down_cap)
-            # держим маркировку, пока порог гашения не набран
-            ok = was_on and down < self._RT_DOWN_STREAK
-          self.db.set_state(self._RT_DOWN_KEY, str(down))
+            self.db.set_state(self._RT_LAST_TICK_KEY, timeutil.to_iso(timeutil.now()))
+            keys = [g.id for g in slots] if slots else [None]
+            if not engaged:
+                # РЕШЕНИЕ, а не измерение: выключение фичи админом — не дребезг,
+                # и ждать три такта тут значит не выполнить прямое указание.
+                for k in keys:
+                    up_k, down_k, _a = self._rt_keys(k)
+                    self.db.set_state(up_k, "0")
+                    self.db.set_state(down_k, "0")
+                    streaks[k] = (0, 0)
+                ok = False
+            else:
+                # ГИСТЕРЕЗИС, а не пересчёт с нуля каждый тик: состояние меняется
+                # только на пересечении порогов. Стрики с потолком — в
+                # установившемся состоянии такт не пишет на диск вовсе.
+                for k in keys:
+                    up_k, down_k, _a = self._rt_keys(k)
+                    up = int(self.db.get_state(up_k) or 0)
+                    down = int(self.db.get_state(down_k) or 0)
+                    if results.get(k) == routing.PROBE_OK:
+                        up, down = min(up + 1, self._RT_UP_STREAK), 0
+                    else:
+                        up, down = 0, min(down + 1, down_cap)
+                        if k is not None and down >= self._RT_DOWN_STREAK:
+                            self._gw_ping_forget(k)      # хост упал — пинг устарел
+                    self.db.set_state(up_k, str(up))
+                    self.db.set_state(down_k, str(down))
+                    streaks[k] = (up, down)
+                a_up, a_down = streaks[akey]
+                # ПЕРЕКЛЮЧЕНИЕ: активный лежит порог, есть кандидат с тремя
+                # хорошими, интервал с прошлого автоматического прошёл.
+                if (slots and len(slots) > 1 and a_down >= self._RT_DOWN_STREAK
+                        and self._rt_failover_enabled()):
+                    cand = next((g for g in slots if g.id != akey
+                                 and streaks[g.id][0] >= self._RT_UP_STREAK), None)
+                    if cand is not None:
+                        if self._rt_switch_interval_ok():
+                            switched_to = cand
+                            self.db.set_state(self._RT_ACTIVE_KEY, str(cand.id))
+                            self.db.set_state(self._RT_SWITCHED_KEY, timeutil.to_iso(timeutil.now()))
+                            # об отвале прежнего активного сообщает само
+                            # переключение — его «снова в строю» придёт с
+                            # хвостом «остаётся в резерве»
+                            self.db.set_state(self._rt_keys(akey)[2], "1")
+                            akey = cand.id
+                            a_up, a_down = streaks[akey]
+                            verdict = results.get(akey, routing.PROBE_DOWN)
+                        else:
+                            refused = True
+                if verdict == routing.PROBE_OK:
+                    ok = True if (was_on or switched_to is not None) else a_up >= self._RT_UP_STREAK
+                else:
+                    ok = was_on and a_down < self._RT_DOWN_STREAK
 
+        if switched_to is not None:
+            try:
+                routing.switch_active(switched_to.link_if)
+            except routing.RoutingError as e:
+                log.warning("routing: переключение на слот %s не удалось: %s", switched_to.id, e)
+            active = switched_to
         try:
             # ПОД ЗАМКОМ: реконсиляция под ним же пересобирает ту цепочку, чей
-            # рубильник мы дёргаем. _routing_apply перекладывает и наборы, и
-            # состав правил; включить маркировку посреди этого значит открыть
-            # хук в цепочку, собранную наполовину, — метить не тем набором и не
-            # для тех профилей.
+            # рубильник мы дёргаем.
             with routing.mutation_lock:
                 routing.set_marking_enabled(ok)
         except routing.RoutingError as e:
             log.warning("routing_liveness_tick: %s", e)
             return []
-
         self.db.set_state(self._RT_LINK_KEY, "1" if ok else "0")
-
-        # ДЕЙСТВИЕ и ОБЪЯВЛЕНИЕ — разные пороги, и это не педантизм. Написать
-        # админу дорого: короткий провал на домашнем аплинке — обычное дело, и
-        # пара «отвалился/поднялся» в одну минуту не несёт ему информации, только
-        # приучает не читать. Об отказе сообщаем, лишь когда он подтвердился
-        # несколькими замерами. Сейчас пороги СОВПАДАЮТ (три и три), то есть
-        # админ узнаёт ровно в момент смены состояния; разными они остаются по
-        # смыслу — это разные решения, и разводить их можно, не трогая второе.
-        announced = self.db.get_state(self._RT_ANNOUNCED_KEY) == "1"
-
-        if ok:
-            # «Снова в строю» — только если об отвале действительно сообщали.
-            # Иначе админ получал бы одинокое «всё хорошо» на ровном месте.
-            if not announced:
-                return []
-            self.db.set_state(self._RT_ANNOUNCED_KEY, "0")
-            return [Notification(config.ADMIN_ID, self._TXT_RT_GW_UP)]
-
-        if announced or down < self._RT_ANNOUNCE_AFTER:
+        if not engaged:
             return []
-        self.db.set_state(self._RT_ANNOUNCED_KEY, "1")
-        # Разные причины — разный ремонт, поэтому и текст разный: «шлюз молчит»
-        # чинят на линке, «за шлюзом нет интернета» — на самом шлюзе.
-        text = (self._txt_rt_gw_no_path() if verdict == routing.PROBE_NO_PATH
-                else self._txt_rt_gw_down())
-        return [Notification(config.ADMIN_ID, text, critical=True)]
+
+        # ── объявления: действие и объявление — разные пороги ────────────────
+        a_up_k, a_down_k, a_ann_k = self._rt_keys(akey)
+        announced = self.db.get_state(a_ann_k) == "1"
+        a_up, a_down = streaks[akey]
+        others = [g for g in slots if g.id != akey]
+        if switched_to is not None:
+            prev = next((g for g in slots if g.id != switched_to.id
+                         and self.db.get_state(self._rt_keys(g.id)[2]) == "1"), None)
+            notes.append(Notification(config.ADMIN_ID,
+                                      self._txt_rt_switched(prev, switched_to, results.get(prev.id) if prev else verdict),
+                                      critical=True))
+        elif ok:
+            if announced:
+                self.db.set_state(a_ann_k, "0")
+                notes.append(Notification(config.ADMIN_ID, self._txt_rt_gw_up(active)))
+        elif not announced and a_down >= self._RT_ANNOUNCE_AFTER:
+            self.db.set_state(a_ann_k, "1")
+            if refused:
+                text = self._txt_rt_switch_refused(active)
+            else:
+                # Разные причины — разный ремонт: «шлюз молчит» чинят на линке,
+                # «за шлюзом нет интернета» — на самом шлюзе.
+                text = (self._txt_rt_gw_no_path(active) if verdict == routing.PROBE_NO_PATH
+                        else self._txt_rt_gw_down(active))
+                if others:
+                    dead = [g for g in others if streaks[g.id][1] >= self._RT_DOWN_STREAK]
+                    if dead:
+                        text += " " + self._txt_rt_standby_also_down(dead)
+            notes.append(Notification(config.ADMIN_ID, text, critical=True))
+        # резерв: длинный стрик, без critical; ожил — «остаётся в резерве»
+        standby_after = settings.get_int("app.routing.failover.standby_announce_after", 20)
+        for g in others:
+            _u, _d, ann_k = self._rt_keys(g.id)
+            g_up, g_down = streaks[g.id]
+            g_ann = self.db.get_state(ann_k) == "1"
+            if g_ann and g_up >= self._RT_UP_STREAK:
+                self.db.set_state(ann_k, "0")
+                notes.append(Notification(config.ADMIN_ID, self._txt_rt_standby_up(g, active)))
+            elif not g_ann and g_down >= standby_after:
+                self.db.set_state(ann_k, "1")
+                notes.append(Notification(config.ADMIN_ID,
+                                          self._txt_rt_standby_down(g, active, g_down)))
+        return notes
+
+    # ── холодный старт ───────────────────────────────────────────────────────
+    def routing_cold_start(self) -> Optional[object]:
+        """Выбор активного на старте (docs/gateway-failover.md §5). Тёплый
+        старт (перезапустился только бот) — сохранённый активный, людям адрес
+        не меняем. Холодный (ВПС перезагружался: аптайм хоста меньше, чем
+        прошло с последнего такта; или состояния нет) — предпочтительный, если
+        отвечает; иначе сохранённый, если отвечает; иначе любой отвечающий;
+        иначе предпочтительный всё равно. Возвращает выбранный слот."""
+        slots = self.db.gateways()
+        if not slots:
+            return None
+        saved = self.active_gateway()
+        preferred = self.preferred_gateway()
+        if not self._rt_is_cold_start():
+            return saved
+        if preferred is None:
+            return saved
+        if not self.routing_engaged():
+            self._rt_set_active(preferred)
+            return preferred
+        order = [preferred] + [g for g in (saved,) if g.id != preferred.id] \
+            + [g for g in slots if g.id not in (preferred.id, saved.id)]
+        for g in order:
+            if self._probe_slot(g, active=False) == routing.PROBE_OK:
+                self._rt_set_active(g)
+                return g
+        self._rt_set_active(preferred)
+        return preferred
+
+    def _rt_set_active(self, gw) -> None:
+        cur = self.active_gateway()
+        if cur is not None and cur.id == gw.id:
+            return
+        self.db.set_state(self._RT_ACTIVE_KEY, str(gw.id))
+        try:
+            routing.switch_active(gw.link_if)
+        except routing.RoutingError as e:
+            log.warning("routing: холодный старт, слот %s: %s", gw.id, e)
+        log.info("routing: холодный старт — трафик через слот %s (%s)", gw.id, gw.link_if)
+
+    def _rt_is_cold_start(self) -> bool:
+        raw = self.db.get_state(self._RT_LAST_TICK_KEY) or ""
+        if not raw or not self.db.get_state(self._RT_ACTIVE_KEY):
+            return True
+        from awgbot.runtime import hostmetrics
+        uptime = hostmetrics.read_uptime_seconds()
+        if uptime is None:
+            return False
+        try:
+            since = (timeutil.now() - timeutil.parse_iso(raw)).total_seconds()
+        except ValueError:
+            return True
+        return uptime < since
+
+    def routing_startup_warnings(self) -> list[str]:
+        """Замечания preflight по слотам: активный — прежний текст, резерв —
+        «резерва нет». Слотов нет — один замер линка обвязки."""
+        from awgbot.bot import texts as _texts
+        slots = self.db.gateways()
+        if not slots:
+            warn = _texts.routing_gateway_warning(self.routing_probe(), at_start=True)
+            return [warn] if warn else []
+        active = self.active_gateway()
+        out = []
+        for g in slots:
+            is_active = active is not None and active.id == g.id
+            verdict = self._probe_slot(g, active=is_active)
+            if verdict == routing.PROBE_OK:
+                continue
+            if is_active:
+                warn = _texts.routing_gateway_warning(verdict, at_start=True)
+                out.append(f"{warn} (шлюз {self._gw_display(g)})" if warn else "")
+            else:
+                out.append(f"резервный шлюз {self._gw_display(g)} не отвечает на старте — "
+                           "резерва сейчас нет, трафик идёт через "
+                           f"{self._gw_display(active) if active else 'основной'}")
+        return [w for w in out if w]
+
+    # ── тексты уведомлений ───────────────────────────────────────────────────
+    def _txt_rt_gw_up(self, active=None) -> str:
+        who = f" {self._gw_display(active)}" if active is not None else ""
+        return f"🟢 Шлюз условной маршрутизации{who} снова в строю."
+
+    def _txt_rt_switched(self, prev, new, verdict: str) -> str:
+        head = (f"🔁 РФ-шлюз переключён: {self._gw_display(prev) if prev else 'прежний'} не отвечает, "
+                f"трафик идёт через {self._gw_display(new)}.\n\n"
+                "Исходящий адрес у клиентов сменился — российские приложения могут "
+                f"попросить войти заново. Останусь на {self._gw_display(new)} и после того, как "
+                f"{self._gw_display(prev) if prev else 'прежний'} оживёт; вернуть — в его карточке "
+                "(⚙️ Настройки → Условная маршрутизация → Шлюзы).")
+        if verdict == routing.PROBE_NO_PATH:
+            head += "\n\nТуннель до него жив — проверь аплинк и NAT на самом шлюзе."
+        else:
+            head += self._TXT_RT_BUNDLE_HINT
+        return head
+
+    def _txt_rt_switch_refused(self, active) -> str:
+        mins = settings.get_int("app.routing.failover.min_interval_minutes", 10)
+        return (f"🔴 {self._gw_display(active)} перестал отвечать раньше чем через {mins} мин "
+                "после переключения на него. Второе переключение подряд не делаю: так падает "
+                "что-то общее, а не один дом. " + self._rt_effect_line()
+                + " Переключить руками — в карточке шлюза.")
+
+    def _txt_rt_standby_also_down(self, dead) -> str:
+        names = ", ".join(self._gw_display(g) for g in dead)
+        return f"Резервный {names} тоже не отвечает."
+
+    def _txt_rt_standby_down(self, g, active, ticks: int) -> str:
+        mins = max(1, ticks * settings.get_int("app.routing.probe_seconds", 30) // 60)
+        via = f"трафик идёт через {self._gw_display(active)}" if active else "трафик не затронут"
+        return (f"⚠️ Резервный РФ-шлюз {self._gw_display(g)} не отвечает уже {mins} мин — "
+                f"резерва сейчас нет. Клиенты не затронуты: {via}.")
+
+    def _txt_rt_standby_up(self, g, active) -> str:
+        via = f" Трафик идёт через {self._gw_display(active)}." if active else ""
+        return f"🟢 Резервный РФ-шлюз {self._gw_display(g)} снова отвечает — остаётся в резерве.{via}"

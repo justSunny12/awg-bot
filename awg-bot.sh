@@ -1271,6 +1271,11 @@ cmd_gw_bundle() {
     require_root; require_installed
     local sh_="$INSTALL_DIR/install/routing-link-setup.sh"
     [[ -f "$sh_" ]] || die "не найден $sh_ — поставка неполная?"
+    # --link <if>: бандл другого слота (резервный шлюз, docs/gateway-failover.md);
+    # без него — первый линк, как и было
+    if [[ "${1:-}" == "--link" && -n "${2:-}" ]]; then
+        LINK_IF="$2" exec sh "$sh_" --bundle
+    fi
     exec sh "$sh_" --bundle
 }
 
@@ -1310,7 +1315,8 @@ awg-bot — управление установленным ботом.
                              status | setup | confirm [--disable-ufw] | apply | allow <ip…> |
                              deny <ip…> | off | rollback
   awg-bot routing-doctor     где рвётся условная маршрутизация (только чтение)
-  awg-bot gw-bundle          пересобрать бандл для шлюза (ключи не меняются)
+  awg-bot gw-bundle [--link IF]  пересобрать бандл для шлюза (ключи не меняются);
+                             --link — линк другого слота (резервный шлюз)
   awg-bot awg <cmd>          ядро AmneziaWG по манифесту поставки (install/awg.lock):
                              status | install | reload | prune | plan
   awg-bot first-device       конфигурация первого устройства админа в терминал
@@ -1337,7 +1343,7 @@ case "$VERB" in
     logs)        cmd_logs ;;
     firewall)    cmd_firewall "$@" ;;
     routing-doctor) cmd_routing_doctor ;;
-    gw-bundle)   cmd_gw_bundle ;;
+    gw-bundle)   cmd_gw_bundle "$@" ;;
     awg)         cmd_awg "$@" ;;
     first-device) cmd_first_device "$@" ;;
     resolver)    cmd_resolver "$@" ;;

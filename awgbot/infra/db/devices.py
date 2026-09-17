@@ -9,7 +9,7 @@ from typing import Optional
 
 from awgbot.util.timeutil import now_iso as _now_iso  # единый источник времени (UTC+3)
 
-from .schema import _DEVICE_SELECT, _device_from_row
+from .schema import _DEVICE_SELECT, _device_from_row, _gateway_from_row
 
 
 class DevicesMixin:
@@ -250,7 +250,7 @@ class DevicesMixin:
         "name": "devices", "private_key": "devices",
         "block_reason": "devices", "client_id": "devices",
         "routing_on": "devices", "holder_client_id": "devices",
-        "iface": "devices", "twin_of": "devices", "is_gateway": "devices",
+        "iface": "devices", "twin_of": "devices",
         "public_key": "devices", "preshared_key": "devices", "address": "devices",
         "traffic_limit": "device_traffic", "traffic_rx_month": "device_traffic",
         "traffic_tx_month": "device_traffic", "traffic_rx_period": "device_traffic",
@@ -297,12 +297,71 @@ class DevicesMixin:
                 (value, device_id))
             return cur.rowcount == 1
 
-    # ── шлюз условной маршрутизации ──────────────────────────────────────────
+    # ── слоты шлюзов условной маршрутизации (docs/gateway-failover.md) ───────
+    # Порядок везде один: предпочтительный первым, затем по номеру слота. Он же
+    # решает споры — кандидат на переключение, домашняя подсеть у двух слотов.
+    _GW_ORDER = " ORDER BY preferred DESC, id"
 
-    def gateway_device(self):
-        """Устройство с настоящим флагом (в окне переезда — исходная строка пары)."""
-        return _device_from_row(self._connection().execute(
-            _DEVICE_SELECT + " WHERE d.is_gateway = 1").fetchone())
+    def gateways(self) -> list:
+        return [_gateway_from_row(r) for r in self._connection().execute(
+            "SELECT * FROM gateways" + self._GW_ORDER).fetchall()]
+
+    def gateway(self, slot_id: int):
+        return _gateway_from_row(self._connection().execute(
+            "SELECT * FROM gateways WHERE id = ?", (int(slot_id),)).fetchone())
+
+    def gateway_by_device(self, device_id: int):
+        """Слот устройства; в окне переезда двойник находит слот по оригиналу пары."""
+        return _gateway_from_row(self._connection().execute(
+            "SELECT g.* FROM gateways g JOIN devices d ON d.id = ? "
+            "WHERE g.device_id = d.id OR (d.twin_of IS NOT NULL AND g.device_id = d.twin_of)",
+            (int(device_id),)).fetchone())
+
+    def gateway_add(self, device_id: int, link_if: str, link_port: int, link_cidr: str,
+                    *, preferred: bool = False, slot_id: Optional[int] = None):
+        """Новый слот: номер — следующий свободный (или заданный), предпочтительный
+        — если попросили или это первый слот вовсе."""
+        with self._tx() as cur:
+            if slot_id is None:
+                row = cur.execute("SELECT COALESCE(MAX(id), 0) + 1 AS n FROM gateways").fetchone()
+                slot_id = int(row["n"])
+            first = cur.execute("SELECT COUNT(*) AS n FROM gateways").fetchone()["n"] == 0
+            if preferred or first:
+                cur.execute("UPDATE gateways SET preferred = 0 WHERE preferred = 1")
+            cur.execute(
+                "INSERT INTO gateways(id, device_id, link_if, link_port, link_cidr, preferred, "
+                "home_subnets, label, created_at) VALUES (?, ?, ?, ?, ?, ?, '', '', ?)",
+                (int(slot_id), int(device_id), link_if, int(link_port), link_cidr,
+                 1 if (preferred or first) else 0, _now_iso()))
+        return self.gateway(slot_id)
+
+    def gateway_update(self, slot_id: int, **fields) -> None:
+        """Точечное обновление: device_id (финал переезда), home_subnets (список
+        или строка), label."""
+        allowed = {"device_id", "home_subnets", "label"}
+        bad = set(fields) - allowed
+        if bad:
+            raise ValueError(f"gateway_update: неизвестные поля {sorted(bad)}")
+        if not fields:
+            return
+        if "home_subnets" in fields and not isinstance(fields["home_subnets"], str):
+            fields["home_subnets"] = " ".join(str(n) for n in fields["home_subnets"])
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        with self._tx() as cur:
+            cur.execute(f"UPDATE gateways SET {sets} WHERE id = ?",
+                        (*fields.values(), int(slot_id)))
+
+    def gateway_set_preferred(self, slot_id: Optional[int]) -> None:
+        """Снять галочку со всех и поставить одному (None — только снять), одной
+        транзакцией: частичный уникальный индекс не даст двух даже на миг."""
+        with self._tx() as cur:
+            cur.execute("UPDATE gateways SET preferred = 0 WHERE preferred = 1")
+            if slot_id is not None:
+                cur.execute("UPDATE gateways SET preferred = 1 WHERE id = ?", (int(slot_id),))
+
+    def gateway_delete(self, slot_id: int) -> None:
+        with self._tx() as cur:
+            cur.execute("DELETE FROM gateways WHERE id = ?", (int(slot_id),))
 
     def twin_of_device(self, device_id: int):
         """Двойник устройства в окне переезда, если есть."""
@@ -312,14 +371,6 @@ class DevicesMixin:
     def get_device_by_pubkey(self, public_key: str):
         return _device_from_row(self._connection().execute(
             _DEVICE_SELECT + " WHERE d.public_key = ?", (public_key,)).fetchone())
-
-    def set_gateway(self, device_id) -> None:
-        """Снять флаг со всех и поставить одному (None — только снять), одной
-        транзакцией: уникальный индекс не даст двух шлюзов даже на миг."""
-        with self._tx() as cur:
-            cur.execute("UPDATE devices SET is_gateway = 0 WHERE is_gateway = 1")
-            if device_id is not None:
-                cur.execute("UPDATE devices SET is_gateway = 1 WHERE id = ?", (int(device_id),))
 
     def delete_device(self, device_id: int, archive_reason: str = "deleted") -> None:
         """Удаляет устройство. Перед удалением — снимок в историю + закрытие

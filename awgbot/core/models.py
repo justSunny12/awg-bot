@@ -182,6 +182,32 @@ class Friend:
 
 
 @dataclass
+class Gateway:
+    """Слот шлюза условной маршрутизации (docs/gateway-failover.md): устройство
+    админа на машине-шлюзе и её линк на ВПС. Слотов может быть несколько —
+    один несёт трафик, остальные в резерве; кто несёт, решает состояние
+    (`routing_active_gateway`), а не строка слота."""
+    id: int
+    device_id: int
+    link_if: str                    # awglink, awglink2
+    link_port: int                  # 443, 8443
+    link_cidr: str                  # 10.99.99.0/30
+    preferred: int = 0              # берёт трафик при холодном старте (не более одного)
+    home_subnets: list[str] = field(default_factory=list)
+    label: str = ""                 # «дом 1» — подпись места, необязательна
+    created_at: str = ""
+
+    @property
+    def mark(self) -> int:
+        """Бит метки для зонда этого слота: не пересекается с меткой фичи (0x1)."""
+        return 1 << self.id
+
+    def table(self, base: int) -> int:
+        """Таблица маршрутизации слота — только для зонда резерва."""
+        return base + self.id
+
+
+@dataclass
 class Device:
     id: int
     client_id: int
@@ -203,8 +229,10 @@ class Device:
     # id старой строки у двойника, рождённого переездом; None — обычное
     # устройство. Пара нужна прогрессу, слиянию истории и парным операциям.
     twin_of: Optional[int] = None
-    # Шлюз условной маршрутизации (единственный на сервере): не считается в
-    # лимитах, не блокируется, не передаётся, не удаляется, ссылку не выдаёт.
+    # Устройство стоит в слоте шлюза условной маршрутизации (docs/gateway-failover.md):
+    # не считается в лимитах, не блокируется, не передаётся, не удаляется,
+    # ссылку не выдаёт. Производное от таблицы gateways (и по оригиналу пары в
+    # окне переезда), в самой строке устройства флага больше нет.
     is_gateway: int = 0
     traffic: DeviceTraffic = field(default_factory=DeviceTraffic)
     friend: Optional[Friend] = None

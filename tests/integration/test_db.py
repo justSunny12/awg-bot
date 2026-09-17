@@ -181,9 +181,11 @@ def test_fresh_schema_is_complete_and_idempotent(tmp_path):
                            period_end="2027-01-01", invite_code="A")
     a = db.create_device(cid, "a", "PA", "S", "10.8.1.2", private_key="k")
     b = db.create_device(cid, "b", "PB", "S", "10.8.1.3", private_key="k")
-    db.set_gateway(a)
+    # предпочтительный слот — не более одного, держит частичный уникальный индекс
+    db.gateway_add(a, "awglink", 443, "10.99.99.0/30")
+    db.gateway_add(b, "awglink2", 8443, "10.99.99.4/30")
     with pytest.raises(sqlite3.IntegrityError):
-        con.execute("UPDATE devices SET is_gateway = 1 WHERE id = ?", (b,))
+        con.execute("UPDATE gateways SET preferred = 1 WHERE device_id = ?", (b,))
     db.close()
 
 

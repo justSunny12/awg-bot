@@ -9,16 +9,41 @@ from .fmt import _e, human_bytes, _updown, plain_ip, client_link, plural_ru
 
 # ── шлюз условной маршрутизации ──────────────────────────────────────────────
 
-def gateway_device_card(dev) -> str:
+def ping_fmt(ms) -> str:
+    """«43 мс» / «1,2 с» — русские сокращённые единицы."""
+    if ms is None:
+        return "не измерен"
+    ms = int(ms)
+    if ms < 1000:
+        return f"{ms} мс"
+    return f"{ms / 1000:.1f}".replace(".", ",") + " с"
+
+
+def gateway_role_line(state) -> str:
+    """Строка роли слота для карточки устройства: несёт трафик / в резерве."""
+    if not state or state.get("gateway") is None:
+        return ""
+    if state.get("active"):
+        return "▶️ Несёт трафик РФ-доступа."
+    via = state.get("active_display") or ""
+    return f"⏸ Резервный шлюз, трафик через {via}." if via else "⏸ Резервный шлюз."
+
+
+def gateway_device_card(dev, state=None) -> str:
     last = timeutil.fmt_handshake(dev.last_handshake)
     online = timeutil.handshake_is_online(dev.last_handshake)
     dot = "🟢" if online else "🔴"
     rx, tx = int(dev.traffic_rx_month), int(dev.traffic_tx_month)
-    return (f"{dot} 🛰 {_e(dev.name)} ({plain_ip(dev.address)}), последний коннект: {last}\n"
+    head = (f"{dot} 🛰 {_e(dev.name)} ({plain_ip(dev.address)}), последний коннект: {last}\n"
             # стрелки — со стороны шлюза: его исходящее — это tx сервера
-            f"Потребление: {human_bytes(rx + tx)} {_updown(tx, rx)}\n\n"
-            "<b>Это устройство — шлюз условной маршрутизации, через него идёт "
+            f"Потребление: {human_bytes(rx + tx)} {_updown(tx, rx)}")
+    ping = (state or {}).get("ping_ms", None)
+    if state is not None:
+        head += f"\nПинг со шлюза: {ping_fmt(ping) if ping is not None else 'наружу не пройти'}"
+    tail = ("\n\n<b>Это устройство — шлюз условной маршрутизации, через него идёт "
             "трафик на РФ-домены.</b>")
+    role = gateway_role_line(state)
+    return head + tail + (f"\n{role}" if role else "")
 
 
 def gateway_claim_marked(dev) -> str:
@@ -29,6 +54,301 @@ def gateway_claim_marked(dev) -> str:
 
 def gateway_claim_already(dev) -> str:
     return f"🛰 «{_e(dev.name)}» уже шлюз, ничего не менял."
+
+
+# ── слоты шлюзов (docs/gateway-failover.md §6) ───────────────────────────────
+
+def slot_name(state) -> str:
+    """«NASPi» (10.8.1.5), дом 1 — имя с адресом и подписью."""
+    dev, gw = state.get("device"), state.get("gateway")
+    name = f"«{_e(dev.name)}» ({plain_ip(dev.address)})" if dev is not None else f"слот {gw.id}"
+    return name + (f", {_e(gw.label)}" if gw is not None and gw.label else "")
+
+
+def slot_short(state) -> str:
+    """«NASPi» (дом 1) — для уведомлений и кнопок."""
+    dev, gw = state.get("device"), state.get("gateway")
+    name = f"«{_e(dev.name)}»" if dev is not None else f"слот {gw.id}"
+    return name + (f" ({_e(gw.label)})" if gw is not None and gw.label else "")
+
+
+def _slot_down_mins(state) -> int:
+    from awgbot.core import settings as _settings
+    return max(1, int(state.get("down_ticks", 0)) * _settings.get_int("app.routing.probe_seconds", 30) // 60)
+
+
+def slot_status(state) -> str:
+    """Состояние слота одной фразой: несёт трафик / в резерве / жду хендшейка /
+    не отвечает."""
+    issued = state.get("issued_at") or ""
+    age = state.get("handshake_age")
+    waiting = bool(issued) and (age is None or age > 300)
+    if state.get("active"):
+        if state.get("link_ok"):
+            return "🟢 несёт трафик"
+        if waiting:
+            return "⏳ конфигурация выпущена, жду хендшейка от шлюза"
+        return "🔴 не отвечает"
+    if state.get("link_ok"):
+        return "🟢 в резерве"
+    if waiting:
+        return "⏳ конфигурация выпущена, жду хендшейка от шлюза"
+    if state.get("down_ticks", 0):
+        return f"🔴 не отвечает {_slot_down_mins(state)} мин"
+    return "⚪️ в резерве, ещё не проверен"
+
+
+def settings_routing_gateway_line(state: dict) -> str:
+    """Одно состояние вместо инструкции: нет шлюза → назначить; выпущен бандл,
+    хендшейка после него нет → жду; линк жив → работает; иначе не отвечает."""
+    dev = state.get("device")
+    if dev is None:
+        return "\n🛰 Шлюз не назначен. Назначь машину-шлюз — конфигурация выпустится сразу."
+    head = f"\n🛰 Шлюз: «{_e(dev.name)}» ({plain_ip(dev.address)}) — "
+    if state.get("link_ok"):
+        return head + "🟢 работает."
+    issued = state.get("issued_at") or ""
+    age = state.get("handshake_age")
+    if issued and (age is None or age > 300):
+        return head + "⏳ конфигурация выпущена, жду хендшейка от шлюза."
+    return head + "🔴 не отвечает."
+
+
+def settings_routing_gateway_block(states: list) -> str:
+    """Блок шлюзов в разделе: ноль, один или несколько слотов."""
+    if not states:
+        return settings_routing_gateway_line({"device": None})
+    if len(states) == 1:
+        return (settings_routing_gateway_line(states[0])
+                + "\nРезервного шлюза нет: если этот перестанет отвечать, российские "
+                  "сервисы откроются с зарубежного адреса.")
+    lines = ["\n🛰 Шлюзы:"]
+    for st in states:
+        mark = "▶️" if st.get("active") else "⏸"
+        lines.append(f"{mark} {slot_name(st)} — {slot_status(st)}")
+    return "\n".join(lines)
+
+
+def gateway_list_text(states: list, switched_at: str = "", auto_on: bool = True) -> str:
+    lines = ["🛰 <b>Шлюзы</b>", "",
+             "Трафик несёт один шлюз, второй ждёт в резерве. Когда активный перестаёт "
+             "отвечать, а резерв в порядке, бот перекладывает трафик сам — и остаётся на "
+             "нём: вернуть на прежний можно из его карточки.", ""]
+    for st in states:
+        mark = "▶️" if st.get("active") else "⏸"
+        star = " ⭐" if st.get("preferred") else ""
+        lines.append(f"{mark} {slot_name(st)}{star} — {slot_status(st)}")
+    pref = next((st for st in states if st.get("preferred")), None)
+    lines.append("")
+    if pref is not None:
+        lines.append(f"⭐ Предпочтительный при холодном старте: {slot_short(pref)}.")
+    else:
+        lines.append("Предпочтительный не выбран: при холодном старте трафик берёт слот 1.")
+    if not auto_on:
+        lines.append("🔁 Автопереключение выключено: при отказе активного бот снимет "
+                     "маркировку, а не переложит трафик на резерв.")
+    if switched_at:
+        try:
+            when = timeutil.fmt_dt(timeutil.parse_iso(switched_at))
+            lines.append(f"Последнее переключение: {when}, автоматически.")
+        except ValueError:
+            pass
+    return "\n".join(lines)
+
+
+def gateway_card_text(state: dict, states: list) -> str:
+    gw, dev = state["gateway"], state.get("device")
+    name = f"«{_e(dev.name)}»" if dev is not None else f"слот {gw.id}"
+    head = f"🛰 <b>Шлюз {name}" + (f", {_e(gw.label)}" if gw.label else "") + "</b>\n"
+    age = state.get("handshake_age")
+    hs = (f"🟢 хендшейк {timeutil.fmt_remaining_short(int(age))} назад" if age is not None and age <= 300
+          else "🔴 хендшейка нет")
+    link = f"Линк {_e(gw.link_if)}, порт {gw.link_port} — {hs}"
+    others = [s for s in states if s["gateway"].id != gw.id]
+    active_other = next((s for s in others if s.get("active")), None)
+    if state.get("active"):
+        if state.get("link_ok"):
+            body = f"\n▶️ Несёт трафик. {link}.\nИсходящий адрес клиентов сейчас — адрес этого дома."
+        else:
+            body = (f"\n▶️ Несёт трафик, но {slot_status(state)}. {link}.\n"
+                    + ("Маркировка снята: российские сервисы открываются с зарубежного адреса."))
+    else:
+        if state.get("link_ok"):
+            body = f"\n⏸ В резерве. {link}, наружу проходит."
+        else:
+            body = f"\n⏸ В резерве: {slot_status(state)}. {link}."
+        if active_other is not None:
+            body += f"\nТрафик сейчас идёт через {slot_short(active_other)}."
+    nets = gw.home_subnets
+    home = ("\n\n🏠 Домашние подсети: " + (", ".join(_e(n) for n in nets) if nets else "не заданы"))
+    if nets:
+        home += "\nУстройства админа достают до них через этот линк."
+    conflict = next((s for s in others if set(s["gateway"].home_subnets) & set(nets)), None)
+    if conflict is not None:
+        first = min([state] + others, key=lambda s: (0 if s.get("preferred") else 1, s["gateway"].id))
+        if first["gateway"].id != gw.id:
+            home += (f"\n⚠️ Та же подсеть у {slot_short(conflict)}: маршрут достаётся ему, до этого "
+                     "дома устройства админа не дойдут. Смени подсеть в одной из квартир.")
+    issued = state.get("issued_at") or ""
+    tail = ""
+    if issued:
+        try:
+            tail += f"\n\nКонфигурация выпущена {timeutil.fmt_dt(timeutil.parse_iso(issued))}."
+        except ValueError:
+            pass
+    ping = state.get("ping_ms", None)
+    tail += ("\n" if tail else "\n\n") + "Пинг со шлюза: " + (ping_fmt(ping) if ping is not None else "наружу не пройти")
+    return head + body + home + tail
+
+
+GATEWAY_STANDBY_CHOOSE_INTRO = (
+    "🛰 <b>Резервный шлюз</b>\n\nВторая машина в другом месте — со своим домашним "
+    "адресом. Когда основной шлюз перестанет отвечать, трафик пойдёт через неё.\n\n"
+    "Машина-шлюз — это твоё устройство в этом боте: её клиентский туннель к серверу. "
+    "Выбери, из чего назначить:\n"
+    "• из уже выпущенных устройств — если оно стоит на машине, где линк уже работал;\n"
+    "• новая машина — бот создаст устройство «Шлюз 2» и первый файл для чистой "
+    "установки.\n\n"
+    "Для резервного шлюза поднимется второй линк — свои ключи, свой порт. Первый файл "
+    "применяется на машине руками, как и у основного.")
+
+
+def gateway_replace_intro(state: dict) -> str:
+    dev = state.get("device")
+    name = f"«{_e(dev.name)}»" if dev is not None else f"слот {state['gateway'].id}"
+    role = ("Слот резервный: трафик клиентов не затронут." if not state.get("active")
+            else "Это активный шлюз: на время замены трафик переложится на резерв, "
+                 "если он жив, иначе российские сервисы откроются с зарубежного адреса, "
+                 "пока новая машина не поднимется.")
+    return (f"🔁 <b>Заменить машину: {name}</b>\n\n{role}\n\nВыбери, из чего назначить:\n"
+            "• из уже выпущенных устройств — если оно стоит на машине, где линк уже работал;\n"
+            "• новая машина — бот создаст устройство и первый файл для чистой установки.\n\n"
+            "Ключи линка этого слота сменятся: прежняя машина потеряет линк сама.")
+
+
+def gateway_mark_ask(dev, prev, *, standby: bool = False, replace_state=None) -> str:
+    head = (f"🛰 Устройство «{_e(dev.name)}» ({plain_ip(dev.address)}) станет шлюзом: не "
+            "считается в лимитах, не блокируется, не удаляется и ссылку не выдаёт.")
+    if prev is not None:
+        head += (f"\n\nСейчас шлюз — «{_e(prev.name)}». Ключи линка сменятся: прежняя машина "
+                 "потеряет линк сама, а новой первый файл придётся применить руками.")
+    elif standby:
+        head += ("\n\nСлот резервный: поднимется второй линк со своими ключами, первый файл "
+                 "применяется на машине руками. Трафик клиентов не затронут.")
+    if replace_state is not None and replace_state.get("active"):
+        head += "\n\nЭто активный слот: на время замены трафик переложится на резерв, если он жив."
+    return head + "\n\nПосле подтверждения сразу выпущу конфигурацию для бота шлюза."
+
+
+def gateway_marked(dev, rekeyed: bool, bundle_name: str = "awg-gw-bundle.sh") -> str:
+    if rekeyed:
+        return (f"🛰 «{_e(dev.name)}» ({plain_ip(dev.address)}) назначен шлюзом, ключи линка новые.\n\n"
+                "Файл ниже — <b>первое применение, руками</b>: скопируй его на машину и выполни\n"
+                f"<code>sudo sh {_e(bundle_name)}</code>\n"
+                "После этого бот шлюза появится в чате, и дальше всё через него. Файл после "
+                "применения удали: внутри ключи.")
+    return (f"🛰 «{_e(dev.name)}» ({plain_ip(dev.address)}) назначен шлюзом. "
+            "Конфигурация ниже — перешли её боту шлюза, он применит сам.")
+
+
+def gateway_new_ask(slot: int = 1) -> str:
+    name = "Шлюз" if slot <= 1 else f"Шлюз {slot}"
+    return (f"➕ <b>Новая машина</b>\n\nБот создаст устройство «{name}» в твоём профиле, "
+            "выпустит новые ключи линка и отдаст файл первого применения.\n\n"
+            "Первый раз файл применяется на машине руками, одной командой: у бота "
+            "шлюза там ещё нет Telegram, его даёт как раз этот файл. Дальше всё "
+            "через чат бота шлюза. Если в слоте уже была машина, она потеряет линк сама.")
+
+
+def gateway_ask_token(slot: int = 1) -> str:
+    head = ("🤖 <b>Токен бота шлюза</b>" if slot <= 1 else "🤖 <b>Токен бота резервного шлюза</b>")
+    why = ("У шлюза свой бот: домашняя машина не должна знать токен этого." if slot <= 1 else
+           "У каждого шлюза свой бот: два агента на одном токене перехватывали бы "
+           "сообщения друг у друга, а домашняя машина не должна знать токен этого бота.")
+    return (f"{head}\n\n{why} Создай "
+            + ("второго" if slot <= 1 else "ещё одного")
+            + " бота у @BotFather и пришли сюда его токен — строка вида <code>123456789:AA…</code>.\n\n"
+            "Он уедет внутрь файла первого применения, и установка на шлюзе не задаст "
+            "ни одного вопроса. Бот запомнит токен: переустановишь машину — файл "
+            "выпустится заново без похода в BotFather.")
+
+
+def gateway_switch_ask(target: dict, current, healthy: bool) -> str:
+    who = slot_short(target)
+    cur = slot_short(current) if current else "прежний шлюз"
+    if healthy:
+        return (f"▶️ <b>Переключить трафик на {who}?</b>\n\n"
+                "Российские сервисы у всех включённых профилей начнут выходить с адреса этого "
+                "дома. Исходящий адрес сменится — приложения могут попросить войти заново.\n\n"
+                f"{cur} останется в резерве. Автоматически бот обратно не вернёт.")
+    return (f"⚠️ <b>{who} не отвечает уже {_slot_down_mins(target)} мин.</b>\n\n"
+            "Переключить трафик на шлюз, через который наружу сейчас не пройти? Российские "
+            "сервисы у всех включённых профилей перестанут открываться, пока он не оживёт — "
+            f"или пока автомат не вернёт трафик на {cur} (три хороших замера подряд).")
+
+
+def gateway_home_text(state: dict) -> str:
+    nets = state["gateway"].home_subnets
+    cur = ", ".join(_e(n) for n in nets) if nets else "не заданы"
+    return (f"🏠 <b>Домашние подсети {slot_short(state)}</b>\n\n"
+            "Подсети за этим шлюзом, до которых твои устройства должны доставать через "
+            "туннель — NAS, роутер, домашние сервисы. Кому туда можно, решает файервол "
+            "шлюза (только устройствам админа); здесь — только путь.\n\n"
+            f"Сейчас: {cur}.\n\n"
+            "Пришли подсети через пробел или с новой строки, например "
+            "<code>192.168.2.0/24</code>. Пустое сообщение или «—» — убрать все.")
+
+
+def gateway_home_report(res: dict, state: dict) -> str:
+    parts = []
+    kept = res.get("kept") or []
+    parts.append("🏠 Домашние подсети " + slot_short(state) + ": "
+                 + (", ".join(_e(n) for n in kept) if kept else "убраны") + ".")
+    if res.get("rejected"):
+        parts.append("⚠️ Не принято:\n" + "\n".join(f"• {_e(raw)} — {_e(why)}" for raw, why in res["rejected"]))
+    conflict = res.get("conflict")
+    if conflict is not None:
+        parts.append(f"⚠️ Та же подсеть задана и слоту {conflict.id}: маршрут достанется "
+                     "предпочтительному (при равенстве — меньшему слоту). Смени подсеть в одной "
+                     "из квартир.")
+    return "\n\n".join(parts)
+
+
+def gateway_label_text(state: dict) -> str:
+    return (f"✏️ <b>Подпись шлюза {slot_short(state)}</b>\n\n"
+            "Короткая подпись места — «дом 2», «дача». Показывается рядом с именем в "
+            "списках и уведомлениях, чтобы по имени машины не гадать, где она стоит.\n"
+            "До 20 символов; пустое — убрать.")
+
+
+def gateway_remove_ask(dev, *, state=None, other=None) -> str:
+    """Три варианта: резервный; активный при живом резерве; последний."""
+    gw = state["gateway"] if state else None
+    link = f"Линк {_e(gw.link_if)} снимается, машина потеряет его сама." if gw and gw.id != 1 \
+        else "Ключи линка сменятся, машина потеряет линк сама."
+    if state and not state.get("active") and other is not None:
+        return (f"🛑 «{_e(dev.name)}» перестанет быть резервным шлюзом.\n\n{link} Трафик "
+                f"клиентов не затронут — он идёт через {slot_short(other)}. Резерва больше не "
+                f"будет: если {slot_short(other)} перестанет отвечать, российские сервисы "
+                "откроются с зарубежного адреса.\nУстройство станет обычным: лимиты, "
+                "блокировки, ссылки — как у всех.")
+    if state and state.get("active") and other is not None:
+        return (f"🛑 «{_e(dev.name)}» перестанет быть шлюзом.\n\nТрафик клиентов перейдёт на "
+                f"{slot_short(other)} прямо сейчас — исходящий адрес сменится, приложения могут "
+                f"попросить войти заново. {link} Устройство станет обычным.")
+    return (f"🛑 «{_e(dev.name)}» перестанет быть шлюзом.\n\nКлючи линка сменятся, машина "
+            "потеряет линк сама; условная маршрутизация выключится до назначения нового "
+            "шлюза. Устройство станет обычным: лимиты, блокировки, ссылки — как у всех.")
+
+
+def gateway_removed(dev, now_active=None) -> str:
+    if now_active is not None:
+        return (f"🛑 «{_e(dev.name)}» больше не шлюз, линк слота снят.\n\n"
+                f"Трафик идёт через {slot_short(now_active)}; резерва теперь нет.")
+    return (f"🛑 «{_e(dev.name)}» больше не шлюз, ключи линка сменены, условная "
+            "маршрутизация выключена.\n\nЧтобы назначить новый шлюз, включи "
+            "функцию тумблером в разделе — обвязка и линк на месте, "
+            "разворачивать заново ничего не нужно.")
 
 
 # ── Условная маршрутизация (docs/conditional-routing.md) ─────────────────────
@@ -96,22 +416,6 @@ def settings_routing_text(enabled: bool, status: tuple) -> str:
                    "профилей функция разрешена.")
 
 
-def settings_routing_gateway_line(state: dict) -> str:
-    """Одно состояние вместо инструкции: нет шлюза → назначить; выпущен бандл,
-    хендшейка после него нет → жду; линк жив → работает; иначе не отвечает."""
-    dev = state.get("device")
-    if dev is None:
-        return "\n🛰 Шлюз не назначен. Назначь машину-шлюз — конфигурация выпустится сразу."
-    head = f"\n🛰 Шлюз: «{_e(dev.name)}» ({plain_ip(dev.address)}) — "
-    if state.get("link_ok"):
-        return head + "🟢 работает."
-    issued = state.get("issued_at") or ""
-    age = state.get("handshake_age")
-    if issued and (age is None or age > 300):
-        return head + "⏳ конфигурация выпущена, жду хендшейка от шлюза."
-    return head + "🔴 не отвечает."
-
-
 GATEWAY_CHOOSE_INTRO = ("🛰 <b>Шлюз</b>\n\nМашина-шлюз — это твоё устройство в этом боте: её "
                         "клиентский туннель к серверу. Выбери, из чего назначить:\n"
                         "• из уже выпущенных устройств — если оно стоит на машине, где линк уже "
@@ -119,46 +423,6 @@ GATEWAY_CHOOSE_INTRO = ("🛰 <b>Шлюз</b>\n\nМашина-шлюз — эт�
                         "файл для чистой установки.")
 GATEWAY_PICK_INTRO = "🛰 <b>Из моих устройств</b>\n\nКакое из них стоит на машине-шлюзе?"
 GATEWAY_PICK_EMPTY = "🛰 У профиля админа нет устройств, выпущенных ботом. Назначь новую машину."
-GATEWAY_NEW_ASK = ("➕ <b>Новая машина</b>\n\nБот создаст устройство «Шлюз» в твоём профиле, "
-                   "выпустит новые ключи линка и отдаст файл первого применения.\n\n"
-                   "Первый раз файл применяется на машине руками, одной командой: у бота "
-                   "шлюза там ещё нет Telegram, его даёт как раз этот файл. Дальше всё "
-                   "через чат бота шлюза. Если шлюз уже был, прежняя машина потеряет линк сама.")
-
-
-def gateway_mark_ask(dev, prev) -> str:
-    head = (f"🛰 Устройство «{_e(dev.name)}» ({plain_ip(dev.address)}) станет шлюзом: не "
-            "считается в лимитах, не блокируется, не удаляется и ссылку не выдаёт.")
-    if prev is not None:
-        head += (f"\n\nСейчас шлюз — «{_e(prev.name)}». Ключи линка сменятся: прежняя машина "
-                 "потеряет линк сама, а новой первый файл придётся применить руками.")
-    return head + "\n\nПосле подтверждения сразу выпущу конфигурацию для бота шлюза."
-
-
-def gateway_marked(dev, rekeyed: bool) -> str:
-    if rekeyed:
-        return (f"🛰 «{_e(dev.name)}» ({plain_ip(dev.address)}) назначен шлюзом, ключи линка новые.\n\n"
-                "Файл ниже — <b>первое применение, руками</b>: скопируй его на машину и выполни\n"
-                "<code>sudo sh awg-gw-bundle.sh</code>\n"
-                "После этого бот шлюза появится в чате, и дальше всё через него. Файл после "
-                "применения удали: внутри ключи.")
-    return (f"🛰 «{_e(dev.name)}» ({plain_ip(dev.address)}) назначен шлюзом. "
-            "Конфигурация ниже — перешли её боту шлюза, он применит сам.")
-
-
-def gateway_remove_ask(dev) -> str:
-    return (f"🛑 «{_e(dev.name)}» перестанет быть шлюзом.\n\nКлючи линка сменятся, машина "
-            "потеряет линк сама; условная маршрутизация выключится до назначения нового "
-            "шлюза. Устройство станет обычным: лимиты, блокировки, ссылки — как у всех.")
-
-
-def gateway_removed(dev) -> str:
-    return (f"🛑 «{_e(dev.name)}» больше не шлюз, ключи линка сменены, условная "
-            "маршрутизация выключена.\n\nЧтобы назначить новый шлюз, включи "
-            "функцию тумблером в разделе — обвязка и линк на месте, "
-            "разворачивать заново ничего не нужно.")
-
-
 ROUTING_PROVISION_INTRO = (
     "<b>🇷🇺 Условная маршрутизация</b>\n\nФункция ещё не развёрнута на этом "
     "сервере.\n\nРоссийские сервисы, которые ругаются на зарубежный адрес, "
@@ -186,20 +450,11 @@ def routing_provision_failed(reason: str) -> str:
             "Частая причина — нет пакета dnsmasq в репозиториях образа.")
 
 
-GATEWAY_ASK_TOKEN = (
-    "🤖 <b>Токен бота шлюза</b>\n\nУ шлюза свой бот: домашняя машина не должна "
-    "знать токен этого. Создай второго бота у @BotFather и пришли сюда его "
-    "токен — строка вида <code>123456789:AA…</code>.\n\n"
-    "Он уедет внутрь файла первого применения, и установка на шлюзе не задаст "
-    "ни одного вопроса. Бот запомнит токен: переустановишь машину — файл "
-    "выпустится заново без похода в BotFather.")
-
-
 GW_INSTALL_URL = ("https://raw.githubusercontent.com/justSunny12/awg-bot/main/"
                   "install/awg-bot-install.sh")
 
 
-def gateway_install_instructions(dev) -> str:
+def gateway_install_instructions(dev, bundle_name: str = "awg-gw-bundle.sh") -> str:
     """Что делать с файлом первого применения — ОДНА строка со своей машины.
 
     Копирование и установка склеены намеренно: установка на шлюзе не задаёт
@@ -209,9 +464,9 @@ def gateway_install_instructions(dev) -> str:
     return (f"🛰 Шлюзом назначен «{_e(dev.name)}» ({plain_ip(dev.address)}).\n\n"
             "Сохрани файл ниже и выполни <b>со своей машины</b> одну команду — "
             "она скопирует его на шлюз и сразу поставит агента:\n\n"
-            "<code>scp awg-gw-bundle.sh root@ШЛЮЗ:/root/ &amp;&amp; \\\n"
+            f"<code>scp {_e(bundle_name)} root@ШЛЮЗ:/root/ &amp;&amp; \\\n"
             "  ssh -t root@ШЛЮЗ 'curl -fsSL " + GW_INSTALL_URL + " | \\\n"
-            "  sudo bash -s -- --role gateway --bundle /root/awg-gw-bundle.sh'</code>\n\n"
+            f"  sudo bash -s -- --role gateway --bundle /root/{_e(bundle_name)}'</code>\n\n"
             "Вопросов установка не задаст: токен агента и твой Telegram ID уже "
             "внутри файла. Он поднимет аплинк, линк и обвязку, потом поставит "
             "агента.\n\nКогда установка закончится, открой <b>бот шлюза</b> и "

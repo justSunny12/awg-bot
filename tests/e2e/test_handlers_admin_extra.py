@@ -420,7 +420,7 @@ async def test_gateway_is_not_offered_for_link_qr_file(services, fake_bot):
     services.ensure_admin_client()
     ac = services.admin_client()
     pi = services.add_device(ac.id, "NASPi")
-    services.db.set_gateway(pi.device_id)
+    services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30")
     for action in ("gen_link", "gen_qr", "gen_file"):
         cb, nav = _acb(fake_bot)
         await ah.self_gen_pick(cb, AdminSelfCB(action=action), services)
@@ -447,7 +447,7 @@ async def test_main_menu_hides_issue_row_when_only_device_is_the_gateway(service
     services.ensure_admin_client()
     ac = services.admin_client()
     pi = services.add_device(ac.id, "NASPi")
-    services.db.set_gateway(pi.device_id)
+    services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30")
     cb, nav = _acb(fake_bot)
     await ah.admin_main_menu(cb, services, FakeState())
     _, labels = last_screen(nav)

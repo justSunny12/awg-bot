@@ -21,10 +21,19 @@ def gw(services, fake_awg, make_active_client, monkeypatch):
     admin = make_active_client(name="Админ", tg_id=config.ADMIN_ID)
     phone = services.add_device(admin.id, "phone")
     pi = services.add_device(admin.id, "NASPi")
-    monkeypatch.setattr(services, "_link_privkey", lambda: PRIV)
+    monkeypatch.setattr(services, "_link_privkey", lambda gw=None: PRIV)
     services.modes = []
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: services.modes.append(mode))
     return admin, phone, pi
+
+
+def _slot1(services, device_id):
+    return services.db.gateway_add(device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
+
+
+def _gw_dev_id(services):
+    gw = services.active_gateway()
+    return gw.device_id if gw else None
 
 
 def _claim(services, pub):
@@ -35,7 +44,7 @@ def test_claim_marks_only_admin_device_and_only_once(gw, services, make_active_c
     admin, phone, pi = gw
     dev = services.db.get_device(pi.device_id)
     res = _claim(services, dev.public_key)
-    assert res["status"] == "marked" and services.db.gateway_device().id == dev.id
+    assert res["status"] == "marked" and _gw_dev_id(services) == dev.id
     assert services.db.get_device(dev.id).is_gateway == 1
     # тот же токен второй раз — отказ (nonce), новый токен — «уже шлюз»
     tok = gwsign.sign(PRIV, "claim", dev.public_key)
@@ -58,9 +67,9 @@ def test_claim_refuses_when_another_gateway_is_assigned(gw, services):
     admin, phone, pi = gw
     d_pi = services.db.get_device(pi.device_id); d_ph = services.db.get_device(phone.device_id)
     _claim(services, d_pi.public_key)
-    with pytest.raises(ServiceError, match="Сменить шлюз"):
+    with pytest.raises(ServiceError, match="Заменить машину"):
         _claim(services, d_ph.public_key)
-    assert services.db.gateway_device().id == d_pi.id
+    assert _gw_dev_id(services) == d_pi.id
 
 
 def test_setup_existing_device_rekeys_only_when_asked(gw, services):
@@ -68,12 +77,12 @@ def test_setup_existing_device_rekeys_only_when_asked(gw, services):
     res = services.gateway_setup(pi.device_id)
     assert res["previous"] is None and not res["created"] and not res["rekeyed"]
     assert services.modes == [], "тот же ключ линка — скрипт не трогаем"
-    res = services.gateway_setup(phone.device_id, rekey=True)
+    res = services.gateway_setup(phone.device_id, rekey=True, slot_id=1)
     assert res["previous"].id == pi.device_id and res["rekeyed"]
-    assert services.db.gateway_device().id == phone.device_id
+    assert _gw_dev_id(services) == phone.device_id
     assert services.db.get_device(pi.device_id).is_gateway == 0
     assert services.modes == ["--rekey"]
-    assert services.gateway_setup(phone.device_id, rekey=True)["previous"] is None, "то же устройство — prev нет"
+    assert services.gateway_setup(phone.device_id, rekey=True, slot_id=1)["previous"] is None, "то же устройство — prev нет"
     with pytest.raises(ServiceError):
         services.gateway_setup(999999)
 
@@ -84,7 +93,7 @@ def test_setup_new_machine_creates_device_and_rekeys(gw, services):
     res = services.gateway_setup(None)
     dev = res["device"]
     assert res["created"] and res["rekeyed"] and dev.name == "Шлюз" and dev.id not in before
-    assert dev.is_gateway == 1 and services.db.gateway_device().id == dev.id
+    assert dev.is_gateway == 1 and _gw_dev_id(services) == dev.id
     assert services.modes == ["--rekey"]
     assert dev.id not in [d.id for d in services.gateway_candidates()]
 
@@ -94,7 +103,8 @@ def test_gateway_state_reflects_bundle_and_link(gw, services, monkeypatch):
     from awgbot.bot import texts
     assert services.gateway_state()["device"] is None
     assert "не назначен" in texts.settings_routing_gateway_line(services.gateway_state())
-    services.db.set_gateway(pi.device_id)
+    _slot1(services, pi.device_id)
+    monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: "down")
     monkeypatch.setattr(services, "routing_link_ok", lambda: False)
     st = services.gateway_state()
     assert st["device"].id == pi.device_id and not st["link_ok"]
@@ -104,18 +114,25 @@ def test_gateway_state_reflects_bundle_and_link(gw, services, monkeypatch):
     assert "работает" in texts.settings_routing_gateway_line(services.gateway_state())
 
 
-def test_unique_index_forbids_two_gateways(gw, services):
+def test_unique_index_forbids_two_preferred_slots(gw, services):
+    """Предпочтительный — не более одного: держит БД, а не дисциплина в коде;
+    одно устройство — не более чем в одном слоте."""
     import sqlite3
     admin, phone, pi = gw
-    services.db.set_gateway(pi.device_id)
+    _slot1(services, pi.device_id)
+    services.db.gateway_add(phone.device_id, "awglink2", 8443, "10.99.99.4/30")
     with pytest.raises(sqlite3.IntegrityError):
         with services.db._tx() as cur:
-            cur.execute("UPDATE devices SET is_gateway = 1 WHERE id = ?", (phone.device_id,))
+            cur.execute("UPDATE gateways SET preferred = 1 WHERE id = 2")
+    with pytest.raises(sqlite3.IntegrityError):
+        services.db.gateway_add(pi.device_id, "awglink3", 9443, "10.99.99.8/30")
+    services.db.gateway_set_preferred(2)
+    assert [g.id for g in services.db.gateways()] == [2, 1], "предпочтительный первым"
 
 
 def test_gateway_is_locked_against_everything(gw, services, make_active_client):
     admin, phone, pi = gw
-    services.db.set_gateway(pi.device_id)
+    _slot1(services, pi.device_id)
     for fn, args in ((services.block_device_manual, (pi.device_id, DeviceBlock.ADMIN_SILENT, False)),
                      (services.remove_device, (pi.device_id,)),
                      (services.make_device_friendly, (pi.device_id,)),
@@ -141,7 +158,7 @@ def test_gateway_traffic_is_not_the_profiles_but_the_device_is_listed_first(
     устройство — обычное: в списках первым, со своим значком. Счётчики —
     test_counters_agree_with_the_lists_they_head."""
     admin, phone, pi = gw
-    services.db.set_gateway(pi.device_id)
+    _slot1(services, pi.device_id)
     services.db.add_traffic_bulk([(pi.device_id, 10 ** 12, 10 ** 12),          # «весь РФ-трафик»
                                   (phone.device_id, 5, 5)])
     t = services.db.get_client_traffic(admin.id)
@@ -166,11 +183,11 @@ def test_gateway_traffic_is_not_the_profiles_but_the_device_is_listed_first(
 
 def test_remove_unmarks_rekeys_and_disables_routing(gw, services, monkeypatch):
     admin, phone, pi = gw
-    services.db.set_gateway(pi.device_id)
+    _slot1(services, pi.device_id)
     store = {}
     monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v) or [k])
     prev = services.gateway_remove()
-    assert prev.id == pi.device_id and services.db.gateway_device() is None
+    assert prev.id == pi.device_id and _gw_dev_id(services) is None
     assert store.get("app.routing.enabled") is False
     assert services.modes == ["--rekey"], "прежняя машина теряет линк сама"
     assert services.gateway_remove() is None and services.modes == ["--rekey"]
@@ -179,7 +196,7 @@ def test_remove_unmarks_rekeys_and_disables_routing(gw, services, monkeypatch):
 def test_bundle_env_carries_gateway_key_and_uplink_conf(gw, services, monkeypatch, tmp_path):
     import builtins, os as _os
     admin, phone, pi = gw
-    services.db.set_gateway(pi.device_id)
+    _slot1(services, pi.device_id)
     dev = services.db.get_device(pi.device_id)
     (tmp_path / "gw-awglink.conf").write_text("[Interface]\nPrivateKey = " + PRIV + "\n")
     (tmp_path / "awg-gw-bundle.sh").write_bytes(b"#!/bin/sh\n#__GW_SETUP_BELOW__\n")
@@ -206,21 +223,21 @@ def test_migration_hands_the_flag_to_the_twin(services, fake_awg, make_active_cl
     monkeypatch.setattr(infra_awg, "read_occupied_ips", lambda iface=None: set())
     admin = make_active_client(name="Админ", tg_id=config.ADMIN_ID)
     pi = services.add_device(admin.id, "NASPi")
-    services.db.set_gateway(pi.device_id)
+    _slot1(services, pi.device_id)
     import time as _t
     services.db.update_device_fields(pi.device_id, last_handshake=int(_t.time()))
     services.migration_start()
     twin_id = services.db.twins_by_origin()[pi.device_id]
     twin = services.db.get_device(twin_id)
     assert twin.is_gateway == 1, "двойник виден шлюзом уже в окне переезда"
-    assert services.db.gateway_device().id == pi.device_id, "настоящий флаг — на исходной строке"
+    assert services.db.gateway_by_device(twin_id).device_id == pi.device_id, "слот — на исходной строке"
     assert services.db.twin_of_device(pi.device_id).id == twin_id
     assert services.db.count_devices(admin.id) == 1, \
         "пара шлюза — одна видимая строка, и она считается"
     services.db.update_device_fields(twin_id, last_handshake=int(_t.time()))
     services.migration_finish()
     assert services.db.get_device(pi.device_id) is None
-    assert services.db.gateway_device().id == twin_id, "флаг переехал к двойнику"
+    assert _gw_dev_id(services) == twin_id, "слот переехал к двойнику"
 
 
 def test_new_gateway_machine_counts_against_the_limit(gw, services):
@@ -234,7 +251,7 @@ def test_new_gateway_machine_counts_against_the_limit(gw, services):
         services.gateway_setup(None)                      # лимит исчерпан — отказ
     services.db.update_client_fields(admin.id, device_limit=0)   # безлимит, как у админа
     res = services.gateway_setup(None)
-    assert res["created"] and services.db.gateway_device().id == res["device"].id
+    assert res["created"] and _gw_dev_id(services) == res["device"].id
     assert services.db.count_devices(admin.id) == 3, "шлюз в счётчике"
 
 
@@ -296,7 +313,7 @@ def test_counters_agree_with_the_lists_they_head(gw, services):
     from awgbot.bot import texts
     from awgbot.util import timeutil
     admin, phone, pi = gw
-    services.db.set_gateway(pi.device_id)
+    _slot1(services, pi.device_id)
     now = int(timeutil.now().timestamp())
     for dev_id in (phone.device_id, pi.device_id):
         services.db.update_device_fields(dev_id, last_handshake=now)

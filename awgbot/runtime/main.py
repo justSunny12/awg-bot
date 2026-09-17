@@ -462,6 +462,13 @@ async def main() -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("reconcile_ssh_access на старте: %s", e)
         try:
+            # Слоты шлюзов (docs/gateway-failover.md): юнит первого линка —
+            # на шаблон, активный на холодном старте — предпочтительный.
+            await asyncio.to_thread(services.gateway_units_migrate)
+            await asyncio.to_thread(services.routing_cold_start)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("слоты шлюзов на старте: %s", e)
+        try:
             # Списки условной маршрутизации — на старте, а не руками до него.
             # Метод сам решает, пора ли обновлять; при пустом кэше делает это
             # немедленно: без списков режим не действует вовсе. Пока качаются,

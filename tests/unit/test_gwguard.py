@@ -71,7 +71,7 @@ def test_gw_bundle_drift_notifies_once_per_change(services, make_active_client, 
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
     admin = make_active_client(name="Админ", tg_id=config.ADMIN_ID)
     assert services.gw_bundle_drift_notes() == [], "бандл ещё не собирали — молчим"
-    services.db.set_state(services._GW_BUNDLE_SSH_KEY, "")      # бандл собран с пустым списком
+    services.db.set_state(services._GW_BUNDLE_SSH_KEY + "_1", "")   # бандл слота 1 собран с пустым списком
     services.add_device(admin.id, "phone")
     notes = services.gw_bundle_drift_notes()
     assert len(notes) == 1 and "Перевыпусти" in notes[0].text

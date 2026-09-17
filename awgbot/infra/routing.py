@@ -148,7 +148,53 @@ _MARK_HEX = f"0x{config.ROUTING_FWMARK:x}"
 
 _PROBE_SET = "awgbot_rt_probe"
 
-_last_probe_ms: Optional[int] = None
+# Задержка последнего удавшегося коннекта — ПО МЕТКЕ: зонд фичи (0x1) и зонды
+# слотов (1<<slot) ходят разными путями, и одна переменная на всех показывала
+# бы задержку не того шлюза.
+_last_probe_ms: dict[int, Optional[int]] = {}
+
+
+def _active_if() -> str:
+    """Интерфейс активного линка по умолчанию — из конфига: без слотов (одна
+    машина, как до v2.24.0) это и есть единственный линк."""
+    return config.ROUTING_GW_INTERFACE
+
+
+# ── слоты шлюзов (docs/gateway-failover.md) ──────────────────────────────────
+# У каждого слота своя таблица и свой бит метки — только ради зонда резерва:
+# клиентский трафик ходит по таблице фичи, куда указывает активный линк.
+
+def slot_table(slot_id: int) -> int:
+    return config.ROUTING_TABLE + int(slot_id)
+
+
+def slot_mark(slot_id: int) -> int:
+    return 1 << int(slot_id)
+
+
+def _slot_rule(slot_id: int) -> list[str]:
+    m = f"0x{slot_mark(slot_id):x}"
+    return ["fwmark", f"{m}/{m}", "lookup", str(slot_table(slot_id))]
+
+
+def ensure_slot_policy(slot_id: int, iface: str) -> None:
+    """Таблица и правило слота: путь зонда резерва через ЕГО линк. Идемпотентно."""
+    _host(["ip", "route", "replace", "default", "dev", iface, "table", str(slot_table(slot_id))])
+    rules = _host(["ip", "rule", "show"], check=False, timeout=_PROBE_TIMEOUT)
+    text = rules.stdout.decode(errors="replace")
+    if f"lookup {slot_table(slot_id)}" not in text:
+        _host(["ip", "rule", "add", *_slot_rule(slot_id)])
+
+
+def drop_slot_policy(slot_id: int, iface: str = "") -> None:
+    """Снять таблицу и правило слота (слот убран). Отсутствие — не ошибка."""
+    while _host_ok(["ip", "rule", "del", *_slot_rule(slot_id)]):
+        pass
+    _host(["ip", "route", "flush", "table", str(slot_table(slot_id))], check=False)
+
+
+def link_present(iface: str) -> bool:
+    return bool(iface) and _host_ok(["ip", "link", "show", iface])
 
 
 def _check_host_tools() -> None:
@@ -594,25 +640,35 @@ def _rule_present() -> bool:
     return _MARK_HEX in text and f"lookup {config.ROUTING_TABLE}" in text
 
 
-def ensure_route() -> None:
-    """Маршрут по умолчанию в таблице фичи — в линк-туннель до шлюза."""
-    _host(["ip", "route", "replace", "default", "dev", config.ROUTING_GW_INTERFACE,
+def ensure_route(iface: str = "") -> None:
+    """Маршрут по умолчанию в таблице фичи — в линк АКТИВНОГО шлюза."""
+    _host(["ip", "route", "replace", "default", "dev", iface or _active_if(),
            "table", str(config.ROUTING_TABLE)])
 
 
-def ensure_home_routes() -> None:
-    """Домашние подсети за шлюзом — в линк, в ОСНОВНОЙ таблице: без маршрута
+def switch_active(iface: str) -> None:
+    """Переложить клиентский трафик на другой линк — это и есть переключение
+    шлюза: одна команда, маркировка не снимается ни на такт."""
+    ensure_route(iface)
+    log.info("routing: трафик РФ-доступа — через %s", iface)
+
+
+def ensure_home_routes(pairs=None) -> None:
+    """Домашние подсети за шлюзом — в ЕГО линк, в ОСНОВНОЙ таблице: без маршрута
     пакет устройства админа на 192.168.x.x ушёл бы в интернет ВПС и умер.
     Кому туда можно, решает файервол шлюза (устройствам админа), здесь только
-    путь. Убранная из conf подсеть остаётся в ядре до ребута — осознанно."""
+    путь. pairs — [(подсеть, интерфейс)]; по умолчанию — из конфига в линк
+    конфига. Убранная подсеть остаётся в ядре до ребута — осознанно."""
     import ipaddress
-    for net in config.ROUTING_HOME_SUBNETS:
+    if pairs is None:
+        pairs = [(n, _active_if()) for n in config.ROUTING_HOME_SUBNETS]
+    for net, iface in pairs:
         try:
             ipaddress.ip_network(net, strict=False)
         except ValueError:
             log.warning("routing.home_subnets: %r не похоже на подсеть — пропущено", net)
             continue
-        _host(["ip", "route", "replace", net, "dev", config.ROUTING_GW_INTERFACE])
+        _host(["ip", "route", "replace", net, "dev", iface])
 
 
 # ── Наблюдение за состоянием (только чтение; для диагностики) ────────────────
@@ -636,11 +692,12 @@ def table_route() -> Optional[str]:
     return proc.stdout.decode(errors="replace").strip() or None
 
 
-def mss_clamp_present() -> bool:
-    if not config.ROUTING_GW_INTERFACE:
+def mss_clamp_present(iface: str = "") -> bool:
+    iface = iface or _active_if()
+    if not iface:
         return False
     return _host_ok(["iptables", "-t", "mangle", "-C", "FORWARD",
-                     "-o", config.ROUTING_GW_INTERFACE, "-p", "tcp",
+                     "-o", iface, "-p", "tcp",
                      "--tcp-flags", "SYN,RST", "SYN",
                      "-j", "TCPMSS", "--clamp-mss-to-pmtu"])
 
@@ -664,7 +721,7 @@ def set_count(name: str) -> int:
     return 0
 
 
-def ensure_mss_clamp() -> None:
+def ensure_mss_clamp(iface: str = "") -> None:
     """Подрезать MSS у соединений, уходящих на шлюз. Идемпотентно.
 
     Путь на шлюз инкапсулирован ДВАЖДЫ: клиент → ВПС (AmneziaWG) и ВПС → шлюз
@@ -682,17 +739,18 @@ def ensure_mss_clamp() -> None:
     FORWARD, потому что TCPMSS в PREROUTING не действует, а маркировка живёт
     именно там.
     """
-    if not config.ROUTING_GW_INTERFACE:
+    iface = iface or _active_if()
+    if not iface:
         return
-    rule = ["-o", config.ROUTING_GW_INTERFACE, "-p", "tcp",
+    rule = ["-o", iface, "-p", "tcp",
             "--tcp-flags", "SYN,RST", "SYN",
             "-j", "TCPMSS", "--clamp-mss-to-pmtu"]
     if not _host_ok(["iptables", "-t", "mangle", "-C", "FORWARD", *rule]):
         _host(["iptables", "-t", "mangle", "-A", "FORWARD", *rule])
-        log.info("routing: включён MSS-кламп на %s", config.ROUTING_GW_INTERFACE)
+        log.info("routing: включён MSS-кламп на %s", iface)
 
 
-def ensure_policy() -> None:
+def ensure_policy(active_iface: str = "", slots=()) -> None:
     """Статическая часть политики: маршрут, ip rule и MSS-кламп. Идемпотентно.
 
     Раньше правило и маршрут ставились вместе с включением режима и снимались
@@ -704,12 +762,25 @@ def ensure_policy() -> None:
     Поэтому маршрут с правилом — постоянная обвязка (сами по себе они трафик
     никуда не уводят: в цепочку никто не прыгает, метить некому), а рубильником
     служит ХУК в PREROUTING.
+
+    active_iface — линк, который несёт трафик; slots — [(slot_id, iface,
+    home_subnets)] всех слотов: у каждого своя таблица для зонда, MSS-кламп на
+    своём линке и маршруты в свои домашние подсети. Без слотов (до первого
+    назначения) — как раньше, по интерфейсу конфига.
     """
-    if not config.ROUTING_GW_INTERFACE:
+    active_iface = active_iface or _active_if()
+    if not active_iface:
         return
-    ensure_route()
-    ensure_home_routes()
-    ensure_mss_clamp()
+    ensure_route(active_iface)
+    if slots:
+        pairs = [(net, iface) for _sid, iface, nets in slots for net in nets]
+        ensure_home_routes(pairs)
+        for sid, iface, _nets in slots:
+            ensure_slot_policy(sid, iface)
+            ensure_mss_clamp(iface)
+    else:
+        ensure_home_routes()
+        ensure_mss_clamp(active_iface)
     if not _rule_present():
         _host(["ip", "rule", "add", *_RULE])
 
@@ -748,13 +819,13 @@ def set_marking_enabled(on: bool) -> None:
 # Живость линка до шлюза
 # ─────────────────────────────────────────────────────────────────────────────
 
-def link_peer_address() -> Optional[str]:
+def link_peer_address(iface: str = "") -> Optional[str]:
     """Адрес шлюза в линке. Линк — /30, адресов ровно два, наш известен из
     `ip addr`, значит второй вычисляется однозначно. Спрашивать конфиг не нужно:
     ядро — более достоверный источник, чем файл, который могли и не применить.
     """
     proc = _host(["ip", "-4", "-o", "addr", "show", "dev",
-                  config.ROUTING_GW_INTERFACE], check=False, timeout=_PROBE_TIMEOUT)
+                  iface or _active_if()], check=False, timeout=_PROBE_TIMEOUT)
     if proc.returncode != 0:
         return None
     for tok in proc.stdout.decode(errors="replace").split():
@@ -779,7 +850,7 @@ PROBE_NO_PATH = "path"   # шлюз отвечает, но наружу чере
 PROBE_DOWN = "down"      # шлюз не отвечает вовсе
 
 
-def _tcp_probe(host: str, port: int, timeout: float) -> bool:
+def _tcp_probe(host: str, port: int, timeout: float, mark: Optional[int] = None) -> bool:
     """TCP-коннект С МЕТКОЙ фичи — то есть ровно тем путём, которым ходит
     клиентский трафик: ip rule по метке → таблица фичи → линк → шлюз → его NAT.
 
@@ -789,32 +860,53 @@ def _tcp_probe(host: str, port: int, timeout: float) -> bool:
     доходил, потому что INPUT на нём ICMP не разрешает. Проверялся путь,
     который никогда не был настроен, а настоящий — не проверялся вовсе.
     """
-    global _last_probe_ms
+    mark = config.ROUTING_FWMARK if mark is None else int(mark)
     so_mark = getattr(socket, "SO_MARK", 36)
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     started = time.monotonic()
     try:
-        sock.setsockopt(socket.SOL_SOCKET, so_mark, config.ROUTING_FWMARK)
+        sock.setsockopt(socket.SOL_SOCKET, so_mark, mark)
         sock.settimeout(timeout)
         sock.connect((host, port))
-        _last_probe_ms = int((time.monotonic() - started) * 1000)
+        _last_probe_ms[mark] = int((time.monotonic() - started) * 1000)
         return True
     except OSError:
-        _last_probe_ms = None
+        _last_probe_ms[mark] = None
         return False
     finally:
         sock.close()
 
 
-def last_probe_latency_ms() -> Optional[int]:
-    """Сколько занял последний удавшийся коннект. Для диагностики: «медленно» и
-    «мёртво» снаружи неотличимы, а чинятся совершенно по-разному. Растущая
-    задержка на пути через шлюз — обычно признак того, что туннель на нём
-    считается в userspace, а не ядром."""
-    return _last_probe_ms
+def last_probe_latency_ms(mark: Optional[int] = None) -> Optional[int]:
+    """Сколько занял последний удавшийся коннект (по метке: без неё — зонд
+    фичи). Для диагностики: «медленно» и «мёртво» снаружи неотличимы, а чинятся
+    совершенно по-разному. Растущая задержка на пути через шлюз — обычно
+    признак того, что туннель на нём считается в userspace, а не ядром."""
+    return _last_probe_ms.get(config.ROUTING_FWMARK if mark is None else int(mark))
 
 
-def probe_source() -> Optional[str]:
+def probe_latency(targets, port: int = 53, *, mark: Optional[int] = None,
+                  samples: int = 3, timeout: float = 4.0) -> Optional[int]:
+    """«Пинг со шлюза»: медиана нескольких коннектов через путь с заданной
+    меткой (слот) до первой ответившей цели. None — наружу не пройти."""
+    targets = [targets] if isinstance(targets, str) else list(targets)
+    host = None
+    for h in targets:
+        if _tcp_probe(h, port, timeout, mark):
+            host = h
+            break
+    if host is None:
+        return None
+    m = config.ROUTING_FWMARK if mark is None else int(mark)
+    got = [_last_probe_ms.get(m)]
+    for _ in range(max(0, samples - 1)):
+        if _tcp_probe(host, port, timeout, mark):
+            got.append(_last_probe_ms.get(m))
+    vals = sorted(v for v in got if v is not None)
+    return vals[len(vals) // 2] if vals else None
+
+
+def probe_source(iface: str = "") -> Optional[str]:
     """С какого адреса уходит зонд — то есть и весь маркированный трафик.
 
     Полезно ровно в разборе отказа: шлюз маскарадит клиентскую подсеть, а зонд
@@ -823,7 +915,7 @@ def probe_source() -> Optional[str]:
     интернета», поэтому адрес называем прямо.
     """
     proc = _host(["ip", "-4", "-o", "addr", "show", "dev",
-                  config.ROUTING_GW_INTERFACE], check=False, timeout=_PROBE_TIMEOUT)
+                  iface or _active_if()], check=False, timeout=_PROBE_TIMEOUT)
     if proc.returncode != 0:
         return None
     for tok in proc.stdout.decode(errors="replace").split():
@@ -833,7 +925,8 @@ def probe_source() -> Optional[str]:
 
 
 def probe_gateway(target, port: int = 53, attempts: int = 2,
-                  timeout: float = 4.0) -> str:
+                  timeout: float = 4.0, *, iface: str = "",
+                  mark: Optional[int] = None) -> str:
     """Проходит ли трафик НАРУЖУ через шлюз. Возвращает PROBE_*.
 
     Меряем то, что важно, а не то, что легко померить: возраст хендшейка
@@ -844,7 +937,8 @@ def probe_gateway(target, port: int = 53, attempts: int = 2,
     Потери гасим повторами ВНУТРИ замера: одиночный потерянный пакет — шум, а
     не отвал, и растягивать из-за него решение на минуты незачем.
     """
-    if not config.ROUTING_GW_INTERFACE:
+    iface = iface or _active_if()
+    if not iface:
         return PROBE_DOWN
     # ensure_policy() здесь НЕ зовём, хотя без правила и маршрута зонд проверит
     # не тот путь. Измеритель, который чинит измеряемое, — не измеритель:
@@ -858,27 +952,28 @@ def probe_gateway(target, port: int = 53, attempts: int = 2,
     # наружу есть, — а это ровно то, что мы и хотим знать.
     targets = [target] if isinstance(target, str) else list(target)
     for _ in range(max(1, attempts)):
-        if _any_reachable(targets, port, timeout):
+        if _any_reachable(targets, port, timeout, mark):
             return PROBE_OK
     # Наружу не прошли. Различаем, где чинить, по состоянию туннеля — здесь это
     # уместно: решение о живости уже принято выше, хендшейк лишь уточняет адрес
     # ремонта. Свежий хендшейк ⇒ туннель жив, значит дело за шлюзом.
-    age = link_handshake_age()
+    age = link_handshake_age(iface)
     return PROBE_NO_PATH if (age is not None and age <= 180) else PROBE_DOWN
 
 
-def _any_reachable(targets: list, port: int, timeout: float) -> bool:
+def _any_reachable(targets: list, port: int, timeout: float,
+                   mark: Optional[int] = None) -> bool:
     """Одна попытка по всем целям РАЗОМ: цели независимы, а последовательный
     обход в худшем случае держал рабочий поток 2 × N × 4 с. Первый успех —
     ответ, остальные коннекты дотикают свой таймаут в фоне."""
     if len(targets) == 1:
-        return _tcp_probe(targets[0], port, timeout)
+        return _tcp_probe(targets[0], port, timeout, mark)
     from concurrent.futures import ThreadPoolExecutor, as_completed
     # без `with`: выход из контекста ждёт ВСЕ потоки, а нам нужен первый успех —
     # остальные коннекты дотикают свой таймаут в фоне
     pool = ThreadPoolExecutor(max_workers=len(targets))
     try:
-        futs = [pool.submit(_tcp_probe, h, port, timeout) for h in targets]
+        futs = [pool.submit(_tcp_probe, h, port, timeout, mark) for h in targets]
         for f in as_completed(futs):
             if f.result():
                 return True
@@ -887,11 +982,11 @@ def _any_reachable(targets: list, port: int, timeout: float) -> bool:
         pool.shutdown(wait=False, cancel_futures=True)
 
 
-def link_handshake_age() -> Optional[int]:
+def link_handshake_age(iface: str = "") -> Optional[int]:
     """Возраст последнего хендшейка с шлюзом, сек. None — пира нет или интерфейс
     не отвечает. Линк живёт на ХОСТЕ, поэтому и awg спрашиваем на хосте.
     """
-    proc = _host(["awg", "show", config.ROUTING_GW_INTERFACE, "dump"], check=False)
+    proc = _host(["awg", "show", iface or _active_if(), "dump"], check=False)
     if proc.returncode != 0:
         return None
     peers = awg.parse_dump(proc.stdout.decode(errors="replace"))

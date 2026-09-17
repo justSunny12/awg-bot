@@ -38,9 +38,14 @@ LINK_IF="${LINK_IF:-awglink}"
 # первое, что видит DPI, и менять его дороже, чем выбрать сразу. Занят чем-то
 # другим — переопредели: LINK_PORT=... routing-link-setup.sh --apply
 LINK_PORT="${LINK_PORT:-443}"
-LINK_VPS_ADDR="${LINK_VPS_ADDR:-10.99.99.1}"
-LINK_GW_ADDR="${LINK_GW_ADDR:-10.99.99.2}"
+# /30 линка: адреса сторон выводятся из него (первый — ВПС, второй — шлюз),
+# чтобы второй слот (docs/gateway-failover.md) задавался одной переменной.
 LINK_CIDR="${LINK_CIDR:-10.99.99.0/30}"
+_cidr_base="${LINK_CIDR%/*}"
+_cidr_last="${_cidr_base##*.}"
+_cidr_head="${_cidr_base%.*}"
+LINK_VPS_ADDR="${LINK_VPS_ADDR:-$_cidr_head.$(( _cidr_last + 1 ))}"
+LINK_GW_ADDR="${LINK_GW_ADDR:-$_cidr_head.$(( _cidr_last + 2 ))}"
 # Из конфига бота, не из хардкода: юнит зовёт --reassert без окружения, и после
 # смены клиентской подсети исключение из MASQUERADE обязано реассертиться для
 # новой — иначе шлюз после ребута видит клиентов чужим адресом.
@@ -50,8 +55,19 @@ CLIENT_SUBNET="${CLIENT_SUBNET:-${_cfg_subnet:-10.8.1.0/24}}"
 CONF_DIR="${CONF_DIR:-/etc/amnezia/amneziawg}"
 CONF="$CONF_DIR/$LINK_IF.conf"
 GW_CONF_OUT="${GW_CONF_OUT:-/root/gw-$LINK_IF.conf}"
-GW_BUNDLE_OUT="${GW_BUNDLE_OUT:-/root/awg-gw-bundle.sh}"
-UNIT="/etc/systemd/system/awg-link.service"
+# Бандл первого линка — под прежним именем: его ждут инструкции и установщик
+# на шлюзе; у остальных слотов имя с интерфейсом, чтобы файлы не перетирались.
+if [ "$LINK_IF" = "awglink" ]; then
+    GW_BUNDLE_OUT="${GW_BUNDLE_OUT:-/root/awg-gw-bundle.sh}"
+else
+    GW_BUNDLE_OUT="${GW_BUNDLE_OUT:-/root/awg-gw-bundle-$LINK_IF.sh}"
+fi
+# Юнит — ШАБЛОН по интерфейсу (awg-link@awglink, awg-link@awglink2): линков
+# может быть несколько, по одному на слот шлюза. Прежний awg-link.service
+# переезжает на шаблон при первом --reassert (см. migrate_unit).
+UNIT_TEMPLATE="/etc/systemd/system/awg-link@.service"
+UNIT_INSTANCE="awg-link@$LINK_IF.service"
+LEGACY_UNIT="/etc/systemd/system/awg-link.service"
 
 # Версия КОНТРАКТА ЛИНКА: формат конфига шлюза плюс набор обфускации, который
 # обе стороны обязаны понимать одинаково. Бампается, когда меняется генерация
@@ -103,6 +119,44 @@ install_self() {
         printf '  $ install -m 0755 %s %s\n' "$_src" "$_dst" >&2
     fi
     printf '%s' "$_dst"          # только путь в stdout — его подхватит SELF
+}
+
+# Переезд первого линка с awg-link.service на шаблон: интерфейс не трогаем (он
+# поднят), меняется только то, что его поднимает после ребута. Идемпотентно.
+migrate_unit() {
+    [ -f "$LEGACY_UNIT" ] || return 0
+    [ "$LINK_IF" = "awglink" ] || return 0
+    SELF="$(install_self)"
+    [ -f "$UNIT_TEMPLATE" ] || write_unit_template
+    run "systemctl disable awg-link.service 2>/dev/null || true"
+    run "rm -f $LEGACY_UNIT"
+    run "systemctl daemon-reload"
+    run "systemctl enable $UNIT_INSTANCE"
+    say "  юнит переведён на шаблон: $UNIT_INSTANCE"
+}
+
+# Шаблон юнита: один файл на все линки, экземпляр — по имени интерфейса.
+# Реассерт зовёт этот же скрипт с LINK_IF из имени экземпляра. $SELF —
+# постоянный путь скрипта (install_self), выставляется до вызова.
+write_unit_template() {
+    cat > "$UNIT_TEMPLATE" <<UNITEOF
+[Unit]
+Description=awg-bot: линк-туннель до шлюза условной маршрутизации (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=LINK_IF=%i
+# --reassert, а не только awg-quick: правила iptables эфемерны, и исключение
+# линка из MASQUERADE после ребута пришлось бы ставить заново вручную.
+ExecStart=$SELF --reassert
+ExecStop=/usr/bin/awg-quick down %i
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
 }
 
 # Исключение линка из MASQUERADE. Вынесено в функцию, потому что нужно не только
@@ -223,10 +277,10 @@ print_gw_instructions() {
     say "    scp $GW_BUNDLE_OUT <юзер>@<адрес-шлюза>:~/"
     say ""
     say "И там:"
-    say "    sudo sh ~/awg-gw-bundle.sh"
-    say "    rm ~/awg-gw-bundle.sh          # внутри приватный ключ"
+    say "    sudo sh ~/$(basename "$GW_BUNDLE_OUT")"
+    say "    rm ~/$(basename "$GW_BUNDLE_OUT")          # внутри приватный ключ"
     say ""
-    say "Пересобрать бандл позже (ключи НЕ меняются): $0 --bundle"
+    say "Пересобрать бандл позже (ключи НЕ меняются): LINK_IF=$LINK_IF $0 --bundle"
 }
 
 if [ "$MODE" = "bundle" ]; then
@@ -237,6 +291,7 @@ fi
 
 if [ "$MODE" = "reassert" ]; then
     [ -f "$CONF" ] || { say "линк не настроен ($CONF нет) — нечего поднимать"; exit 0; }
+    migrate_unit
     ip link show "$LINK_IF" >/dev/null 2>&1 || run "awg-quick up $LINK_IF"
     assert_nat_exempt
     exit 0
@@ -244,10 +299,18 @@ fi
 
 # ── откат ────────────────────────────────────────────────────────────────────
 if [ "$MODE" = "rollback" ]; then
-    step "Снятие линка"
-    run "systemctl disable --now awg-link.service 2>/dev/null || true"
+    step "Снятие линка $LINK_IF"
+    run "systemctl disable --now $UNIT_INSTANCE 2>/dev/null || true"
+    if [ "$LINK_IF" = "awglink" ]; then
+        run "systemctl disable --now awg-link.service 2>/dev/null || true"
+        run "rm -f $LEGACY_UNIT"
+    fi
     run "awg-quick down $LINK_IF 2>/dev/null || true"
-    run "rm -f $UNIT $CONF $GW_CONF_OUT $GW_BUNDLE_OUT"
+    run "rm -f $CONF $GW_CONF_OUT $GW_BUNDLE_OUT"
+    # шаблон юнита общий на все линки: снимаем, только если экземпляров не осталось
+    if ! ls /etc/systemd/system/multi-user.target.wants/awg-link@*.service >/dev/null 2>&1; then
+        run "rm -f $UNIT_TEMPLATE"
+    fi
     run "systemctl daemon-reload"
     while iptables -t nat -C POSTROUTING -s "$CLIENT_SUBNET" -o "$LINK_IF" \
           -j ACCEPT 2>/dev/null; do
@@ -404,25 +467,13 @@ assert_nat_exempt
 # ── 4. автозапуск ────────────────────────────────────────────────────────────
 step "4. Автозапуск"
 SELF="$(install_self)"
-cat > "$UNIT" <<UNITEOF
-[Unit]
-Description=awg-bot: линк-туннель до шлюза условной маршрутизации
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-# --reassert, а не только awg-quick: правила iptables эфемерны, и исключение
-# линка из MASQUERADE после ребута пришлось бы ставить заново вручную.
-ExecStart=$SELF --reassert
-ExecStop=/usr/bin/awg-quick down $LINK_IF
-
-[Install]
-WantedBy=multi-user.target
-UNITEOF
+write_unit_template
+if [ -f "$LEGACY_UNIT" ] && [ "$LINK_IF" = "awglink" ]; then
+    run "systemctl disable awg-link.service 2>/dev/null || true"
+    run "rm -f $LEGACY_UNIT"
+fi
 run "systemctl daemon-reload"
-run "systemctl enable awg-link.service"
+run "systemctl enable $UNIT_INSTANCE"
 
 # ── 5. конфиг для малинки ────────────────────────────────────────────────────
 step "5. Конфиг для шлюза → $GW_CONF_OUT"
@@ -467,5 +518,7 @@ emit_gw_bundle
 say "  собран (права 600 — внутри приватный ключ и psk)"
 print_gw_instructions
 say ""
-say "Затем на ВПС в conf/app.yaml:  routing.gw_interface: \"$LINK_IF\""
-say "и перезапустить бота. До этого фича спит."
+if [ "$LINK_IF" = "awglink" ]; then
+    say "Затем на ВПС в conf/app.yaml:  routing.gw_interface: \"$LINK_IF\""
+    say "и перезапустить бота. До этого фича спит."
+fi

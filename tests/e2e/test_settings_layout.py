@@ -132,7 +132,7 @@ def test_lists_of_choices_use_ticks_not_circles():
     notify = [b.text for row in kb.settings_notify_clients().inline_keyboard for b in row]
     assert all(not l.startswith(("🟢", "🔴")) for l in notify), notify
     # а вот у переключателей сервиса кружок остаётся
-    rt = [b.text for row in kb.settings_routing(True, has_gateway=True).inline_keyboard for b in row]
+    rt = [b.text for row in kb.settings_routing(True, []).inline_keyboard for b in row]
     assert rt[0].startswith("🟢"), rt
 
 

@@ -258,13 +258,35 @@ def _tunnel_ifs() -> list[str]:
     return [i for i in gated_ifaces() if i]
 
 
+def link_ifaces() -> list[str]:
+    """Линки до шлюзов (docs/gateway-failover.md): интерфейс из конфига плюс
+    все конфиги в каталоге awg с `Table = off` — так выглядит только линк,
+    у клиентских интерфейсов таблицу ведёт awg-quick. Без БД: этот модуль
+    зовётся и из CLI `awg-bot firewall`, где бота нет."""
+    out: list[str] = []
+    if config.ROUTING_GW_INTERFACE:
+        out.append(config.ROUTING_GW_INTERFACE)
+    try:
+        for p in sorted(Path(config.AWG_DIR).glob("*.conf")):
+            try:
+                text = p.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if re.search(r"(?m)^\s*Table\s*=\s*off\b", text) and p.stem not in out:
+                out.append(p.stem)
+    except OSError:
+        pass
+    return out
+
+
 def _nat_exclude_ifs() -> list[str]:
     """Интерфейсы, в которые трафик клиентов уходит БЕЗ маскарада: клиентские
-    awg (пир → пир), линк до шлюза (шлюз маскарадит сам и должен видеть
+    awg (пир → пир), линки до шлюзов (шлюз маскарадит сам и должен видеть
     настоящий адрес клиента для исключений). Наружу (WAN) — всё остальное."""
     out = list(_tunnel_ifs())
-    if config.ROUTING_GW_INTERFACE and config.ROUTING_GW_INTERFACE not in out:
-        out.append(config.ROUTING_GW_INTERFACE)
+    for name in link_ifaces():
+        if name not in out:
+            out.append(name)
     return out
 
 

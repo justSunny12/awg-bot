@@ -164,8 +164,8 @@ def test_probe_reports_no_path_when_tunnel_is_up_but_internet_is_not(monkeypatch
     from awgbot.core import config
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
     monkeypatch.setattr(routing, "ensure_policy", lambda: None)
-    monkeypatch.setattr(routing, "_tcp_probe", lambda h, p, t: False)
-    monkeypatch.setattr(routing, "link_handshake_age", lambda: 30)   # туннель жив
+    monkeypatch.setattr(routing, "_tcp_probe", lambda h, p, t, mark=None: False)
+    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": 30)   # туннель жив
     assert routing.probe_gateway("77.88.8.8") == routing.PROBE_NO_PATH
 
 
@@ -174,8 +174,8 @@ def test_probe_reports_down_when_gateway_is_silent(monkeypatch):
     from awgbot.core import config
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
     monkeypatch.setattr(routing, "ensure_policy", lambda: None)
-    monkeypatch.setattr(routing, "_tcp_probe", lambda h, p, t: False)
-    monkeypatch.setattr(routing, "link_handshake_age", lambda: None)  # туннеля нет
+    monkeypatch.setattr(routing, "_tcp_probe", lambda h, p, t, mark=None: False)
+    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": None)  # туннеля нет
     assert routing.probe_gateway("77.88.8.8") == routing.PROBE_DOWN
 
 
@@ -188,7 +188,7 @@ def test_probe_retries_absorb_a_lost_packet(monkeypatch):
     monkeypatch.setattr(routing, "ensure_policy", lambda: None)
     calls = []
 
-    def flaky(host, port, timeout):
+    def flaky(host, port, timeout, mark=None):
         calls.append(host)
         return len(calls) >= 2          # первая попытка потеряна, вторая дошла
 
@@ -205,7 +205,7 @@ def test_probe_targets_are_tried_in_parallel(monkeypatch):
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
     seen = []
 
-    def slow(h, p, t):
+    def slow(h, p, t, mark=None):
         seen.append((h, threading.get_ident()))
         time.sleep(0.2 if h == "slow" else 0.0)
         return h == "fast"
@@ -302,7 +302,7 @@ def test_probe_does_not_repair_what_it_measures(monkeypatch):
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awggw")
     touched = []
     monkeypatch.setattr(routing, "ensure_policy", lambda: touched.append(1))
-    monkeypatch.setattr(routing, "_tcp_probe", lambda h, p, t: True)
+    monkeypatch.setattr(routing, "_tcp_probe", lambda h, p, t, mark=None: True)
     routing.probe_gateway("77.88.8.8")
     assert not touched, "зонд починил обвязку вместо того, чтобы её измерить"
 

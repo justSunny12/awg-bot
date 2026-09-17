@@ -129,7 +129,7 @@ def _gateway_assigned(services) -> bool:
     развёрнута, устройство ещё не выбрано — и «шлюз не отвечает» приходило бы
     первым сообщением сразу после успешного «✅ Обвязка развёрнута»."""
     try:
-        return services.db.gateway_device() is not None
+        return bool(services.db.gateways())
     except Exception as e:                               # noqa: BLE001
         log.warning("preflight: шлюз не проверен: %s", e)
         return False
@@ -259,10 +259,8 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
             else:
                 # Именно ЗАМЕР, а не routing_link_ok(): тот читает результат
                 # прошлого тика, а на старте это сведения из прошлой жизни бота.
-                from awgbot.bot import texts as _texts
-                warn = _texts.routing_gateway_warning(services.routing_probe(), at_start=True)
-                if warn:
-                    warns.append(warn)
+                # По слотам: активный — прежний текст, резерв — «резерва нет».
+                warns.extend(services.routing_startup_warnings())
         except Exception as e:                           # noqa: BLE001
             log.warning("preflight: проверка маршрутизации не удалась: %s", e)
 

@@ -43,25 +43,36 @@ def gwsetup(services, fake_awg, make_active_client, monkeypatch):
     phone = services.add_device(admin.id, "phone")
     pi = services.add_device(admin.id, "NASPi")
     modes = []
-    monkeypatch.setattr(services, "_link_privkey", lambda: PRIV)
+    monkeypatch.setattr(services, "_link_privkey", lambda gw=None: PRIV)
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: modes.append(mode))
     def _issued(blob, name):
         from awgbot.util import timeutil
-        services.db.set_state(services._GW_BUNDLE_ISSUED_KEY, timeutil.to_iso(timeutil.now()))
+        services.db.set_state(services._GW_BUNDLE_ISSUED_KEY + "_1", timeutil.to_iso(timeutil.now()))
         return blob, name
-    monkeypatch.setattr(services, "gw_bundle_encrypted", lambda: _issued(b"ENC", "awg-gw-bundle.enc"))
-    monkeypatch.setattr(services, "gw_bundle_plain", lambda: _issued(b"PLAIN", "awg-gw-bundle.sh"))
+    monkeypatch.setattr(services, "gw_bundle_encrypted", lambda slot=None: _issued(b"ENC", "awg-gw-bundle.enc"))
+    monkeypatch.setattr(services, "gw_bundle_plain", lambda slot=None: _issued(b"PLAIN", "awg-gw-bundle.sh"))
     monkeypatch.setattr(settings, "set_value", lambda k, v: [k])
     # Токен агента живёт в /etc/awg-bot/env — в тестах держим его в памяти.
     token = {"v": ""}
-    monkeypatch.setattr(services, "gw_bot_token", lambda: token["v"])
-    monkeypatch.setattr(services, "set_gw_bot_token", lambda t: token.__setitem__("v", t))
+    monkeypatch.setattr(services, "gw_bot_token", lambda slot=None: token["v"])
+    monkeypatch.setattr(services, "set_gw_bot_token", lambda t, slot=None: token.__setitem__("v", t))
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
     monkeypatch.setattr(settings, "get_bool", lambda k, d=False: True if k == "app.routing.enabled" else d)
     monkeypatch.setattr(services, "routing_status", lambda: (True, "ок"))
     monkeypatch.setattr(services, "routing_link_ok", lambda: False)
+    monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: "down")
+    monkeypatch.setattr(services, "gateway_ping", lambda slot: None)
     services.modes = modes
     return admin, services.db.get_device(phone.device_id), services.db.get_device(pi.device_id)
+
+
+def _slot1(services, device_id):
+    return services.db.gateway_add(device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
+
+
+def _gw_dev_id(services):
+    gw = services.active_gateway()
+    return gw.device_id if gw else None
 
 
 def _docs(nav):
@@ -79,7 +90,7 @@ async def test_settings_assign_existing_device_no_rekey(services, fake_bot, gwse
     _, markup = await sh._screen("rt_gw", services)
     assert _labels(markup)[:2] == ["📱 Из моих устройств", "➕ Новая машина"]
     cb, nav = _acb(fake_bot)
-    await sh.gateway_pick_list(cb, services)
+    await sh.gateway_pick_list(cb, GwMarkCB(action="pick_list"), services)
     labels = _labels(next(s[2] for s in nav.sent if s[0] == "edit_text"))
     assert any("NASPi" in l for l in labels) and any("phone" in l for l in labels)
     cb, nav = _acb(fake_bot)
@@ -88,13 +99,13 @@ async def test_settings_assign_existing_device_no_rekey(services, fake_bot, gwse
     cb, nav = _acb(fake_bot)
     await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi.id),
                               services, FakeState())
-    assert services.db.gateway_device().id == pi.id
+    assert _gw_dev_id(services) == pi.id
     assert services.modes == [], "тот же ключ линка: машина уже его знает"
     docs = _docs(nav)
     assert len(docs) == 1 and "боту шлюза" in docs[0][1], "шифрованный файл для чата агента"
     text, markup = await sh._screen("rt", services)
     labels = _labels(markup)
-    assert "⚙️ Конфигурация шлюза" in labels and "🔁 Сменить шлюз" in labels and "🛑 Убрать шлюз" in labels
+    assert "🛰 Шлюз: NASPi" in labels and "➕ Резервный шлюз" in labels
     assert "🛰 Назначить шлюз" not in labels and "NASPi" in text and "жду" in text
 
 
@@ -102,21 +113,21 @@ async def test_settings_change_gateway_rekeys_and_gives_plain_first_run_file(ser
     """Шлюз был, выбрали другое устройство: ключи линка новые, файл первого
     применения открытый; никаких токенов старому шлюзу."""
     _, phone, pi = gwsetup
-    services.db.set_gateway(pi.id)
+    _slot1(services, pi.id)
     cb, nav = _acb(fake_bot)
-    await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=phone.id), services)
+    await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=phone.id, slot=1), services)
     assert any("Сейчас шлюз — «NASPi»" in s[1] for s in nav.sent if s[0] == "edit_text")
     # Со сменой ключей файл едет открытым и ставится с нуля — значит нужен
     # токен агента, как и для новой машины.
     st = FakeState()
     cb, nav = _acb(fake_bot)
-    await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=phone.id), services, st)
+    await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=phone.id, slot=1), services, st)
     assert any("Токен бота шлюза" in s[1] for s in nav.sent if s[0] == "edit_text")
-    assert services.db.gateway_device().id == pi.id, "до токена шлюз прежний"
+    assert _gw_dev_id(services) == pi.id, "до токена шлюз прежний"
     msg = _amsg(fake_bot, "123456789:AA-token-value-long-enough-here")
     await sh.gateway_token_received(msg, st, services)
     nav = msg
-    assert services.db.gateway_device().id == phone.id
+    assert _gw_dev_id(services) == phone.id
     assert services.db.get_device(pi.id).is_gateway == 0
     assert services.modes == ["--rekey"]
     docs = _docs(nav)
@@ -133,22 +144,22 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
     первого применения, и установка на шлюзе не задаст ни одного вопроса."""
     _, phone, pi = gwsetup
     stored: dict = {}
-    monkeypatch.setattr(services, "gw_bot_token", lambda: stored.get("t", ""))
+    monkeypatch.setattr(services, "gw_bot_token", lambda slot=None: stored.get("t", ""))
     monkeypatch.setattr(services, "set_gw_bot_token",
-                        lambda t: stored.__setitem__("t", t))
+                        lambda t, slot=None: stored.__setitem__("t", t))
     cb, nav = _acb(fake_bot)
-    await sh.gateway_new_ask(cb, services)
+    await sh.gateway_new_ask(cb, GwMarkCB(action="new_ask"), services)
     assert any("Новая машина" in s[1] for s in nav.sent if s[0] == "edit_text")
 
     st = FakeState()
     cb, nav = _acb(fake_bot)
-    await sh.gateway_new_yes(cb, services, st)
+    await sh.gateway_new_yes(cb, GwMarkCB(action="new_yes"), services, st)
     assert any("Токен бота шлюза" in s[1] for s in nav.sent if s[0] == "edit_text")
-    assert services.db.gateway_device() is None, "без токена ничего не создаём"
+    assert _gw_dev_id(services) is None, "без токена ничего не создаём"
 
     msg = _amsg(fake_bot, "123456789:AA-token-value-long-enough-here")
     await sh.gateway_token_received(msg, st, services)
-    gw = services.db.gateway_device()
+    gw = services.db.get_device(_gw_dev_id(services) or 0)
     assert gw is not None and gw.name == "Шлюз" and gw.id not in (phone.id, pi.id)
     assert services.modes == ["--rekey"]
     assert stored["t"].startswith("123456789:")
@@ -165,31 +176,32 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
     assert one.index("scp") < one.index("ssh -t") < one.index("--role gateway")
 
     # Токен уже есть — второй раз не спрашиваем
-    services.db.set_gateway(None)
+    services.db.gateway_delete(1)
     cb, nav = _acb(fake_bot)
-    await sh.gateway_new_yes(cb, services, FakeState())
+    await sh.gateway_new_yes(cb, GwMarkCB(action="new_yes"), services, FakeState())
     assert not any("Токен бота шлюза" in s[1] for s in nav.sent if s[0] == "edit_text")
-    assert services.db.gateway_device() is not None, nav.sent
+    assert _gw_dev_id(services) is not None, nav.sent
 
 
 async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup):
     """«Убрать шлюз» / «Не шлюз?»: флаг снят, ключи сменены, маршрутизация
     выключена; карточка снова обычная."""
     _, phone, pi = gwsetup
-    services.db.set_gateway(pi.id)
+    _slot1(services, pi.id)
     cb, nav = _acb(fake_bot)
     await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi.id), services)
     text, markup = next((s[1], s[2]) for s in nav.sent if s[0] == "edit_text")
     assert "🛰" in text and "шлюз условной маршрутизации" in text
     labels = _labels(markup)
     assert "🛑 Не шлюз?" in labels and "⚙️ Конфигурация шлюза" in labels and "✏️ Имя" in labels
+    assert labels[-2] == "📡 Пинг" and labels[-1] == "⬅️ Назад", "пинг — последним перед «Назад»"
     assert not any("Удалить" in l or "Заблокировать" in l or "подключения" in l for l in labels)
     cb, nav = _acb(fake_bot)
-    await sh.gateway_remove_ask(cb, services)
+    await sh.gateway_remove_ask(cb, GwMarkCB(action="remove_ask"), services)
     assert any("перестанет быть шлюзом" in s[1] for s in nav.sent if s[0] == "edit_text")
     cb, nav = _acb(fake_bot)
-    await sh.gateway_remove_yes(cb, services)
-    assert services.db.gateway_device() is None
+    await sh.gateway_remove_yes(cb, GwMarkCB(action="remove_yes"), services)
+    assert _gw_dev_id(services) is None
     assert services.modes == ["--rekey"]
     assert not any("GW1:" in (s[1] or "") for s in nav.sent)
     assert any("больше не шлюз" in s[1] for s in nav.sent if s[0] == "edit_text")
@@ -199,7 +211,7 @@ async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup
     assert any("Удалить" in b.text for row in markup.inline_keyboard for b in row)
     # повторное снятие — сообщение, а не падение
     cb, nav = _acb(fake_bot)
-    await sh.gateway_remove_yes(cb, services)
+    await sh.gateway_remove_yes(cb, GwMarkCB(action="remove_yes"), services)
     assert any("и так не назначен" in s[1] for s in nav.sent if s[0] == "edit_text")
 
 
@@ -209,13 +221,13 @@ async def test_forwarded_claim_is_fallback_only(services, fake_bot, gwsetup):
     _, phone, pi = gwsetup
     msg = _amsg(fake_bot, "Перешли основному боту:\n" + gwsign.sign(PRIV, "claim", pi.public_key))
     await ah.gateway_claim_message(msg, services)
-    assert services.db.gateway_device().id == pi.id
+    assert _gw_dev_id(services) == pi.id
     assert any("назначено шлюзом" in s[1] for s in msg.sent if s[0] == "answer")
     assert any(s[0] == "document" for s in msg.sent), "конфигурация сразу"
     msg = _amsg(fake_bot, gwsign.sign(PRIV, "claim", phone.public_key))
     await ah.gateway_claim_message(msg, services)
-    assert services.db.gateway_device().id == pi.id
-    assert any("не принято" in s[1] and "Сменить шлюз" in s[1] for s in msg.sent if s[0] == "answer")
+    assert _gw_dev_id(services) == pi.id
+    assert any("не принято" in s[1] and "Заменить машину" in s[1] for s in msg.sent if s[0] == "answer")
     bad = _amsg(fake_bot, "GW1:abc.def")
     await ah.gateway_claim_message(bad, services)
     assert any("не принято" in s[1] for s in bad.sent if s[0] == "answer")
@@ -230,10 +242,10 @@ def test_gateway_mark_rules(services, gwsetup, make_active_client):
     with pytest.raises(SE):
         services.gateway_setup(foreign.device_id)
     res = services.gateway_setup(pi.id)
-    assert res["previous"] is None and services.db.gateway_device().id == pi.id
-    assert services.gateway_setup(pi.id)["previous"] is None, "повтор — без изменений"
-    res = services.gateway_setup(phone.id)
-    assert res["previous"].id == pi.id and services.db.gateway_device().id == phone.id
+    assert res["previous"] is None and _gw_dev_id(services) == pi.id
+    assert services.gateway_setup(pi.id, slot_id=1)["previous"] is None, "повтор — без изменений"
+    res = services.gateway_setup(phone.id, slot_id=1)
+    assert res["previous"].id == pi.id and _gw_dev_id(services) == phone.id
     assert [d.id for d in services.gateway_candidates()] == [pi.id], "текущий шлюз в кандидатах не нужен"
 
 
@@ -273,7 +285,7 @@ async def test_agent_reports_status_in_words_and_claims_only_when_unmarked(fake_
 async def test_migration_finish_sends_bundle_when_gateway_assigned(services, fake_bot, gwsetup, monkeypatch):
     """Финал переезда: двойник шлюза получил флаг и новые ключи — файл сразу."""
     _, phone, pi = gwsetup
-    services.db.set_gateway(pi.id)
+    _slot1(services, pi.id)
     monkeypatch.setattr(services, "migration_available", lambda: True)
     monkeypatch.setattr(services, "migration_running", lambda: True)
     monkeypatch.setattr(services, "migration_finish", lambda: (1, 0, []))

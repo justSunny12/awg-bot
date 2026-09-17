@@ -1,6 +1,7 @@
 """
-gateway_link.py — шлюз условной маршрутизации: пометка устройства, бандл,
-токен бота-агента.
+gateway_link.py — шлюзы условной маршрутизации (docs/gateway-failover.md):
+слоты, назначение и замена машины, бандл и токен агента по слоту,
+переключение трафика, пинг со шлюза, предпочтительный слот.
 """
 from __future__ import annotations
 
@@ -21,9 +22,7 @@ log = logging.getLogger("awgbot.services")
 
 
 class GatewayLinkMixin:
-    # ── бандл шлюза: скрипт линка и сборка архива ────────────────────────────
-    _GW_BUNDLE_ISSUED_KEY = "gw_bundle_issued_at"
-
+    # ── скрипт линка ─────────────────────────────────────────────────────────
     def _link_script(self) -> str:
         return str(config.BASE_DIR / "install" / "routing-link-setup.sh")
 
@@ -35,67 +34,173 @@ class GatewayLinkMixin:
             raise ServiceError(f"скрипт линка ({mode}) не отработал: "
                                + proc.stderr.decode(errors="replace").strip()[-200:])
 
-    def _gw_bundle_env(self) -> tuple[dict, list[str]]:
-        """Окружение сборки бандла: устройства админа, ключ и конфиг аплинка
-        назначенного шлюза (в окне переезда — двойника, старый ключ отдельно)."""
+    _LEGACY_LINK_UNIT = "/etc/systemd/system/awg-link.service"
+
+    def gateway_units_migrate(self) -> bool:
+        """Юнит первого линка — на шаблон awg-link@ (docs/gateway-failover.md
+        §13.3). Сам по себе переезд случился бы на первом ребуте ВПС (реассерт
+        зовёт юнит); ждать его незачем — зовём --reassert явно один раз.
+        Возвращает, был ли переезд."""
+        if not config.ROUTING_GW_INTERFACE or not os.path.exists(self._LEGACY_LINK_UNIT):
+            return False
+        first = self.gateway_first_slot()
+        env = self._slot_env(first) if first is not None else {"LINK_IF": config.ROUTING_GW_INTERFACE}
+        self._run_link_script("--reassert", env)
+        return True
+
+    @staticmethod
+    def _slot_env(gw) -> dict:
+        """Окружение скрипта линка для слота: имя интерфейса, порт, /30."""
+        return {"LINK_IF": gw.link_if, "LINK_PORT": str(gw.link_port), "LINK_CIDR": gw.link_cidr}
+
+    # ── слоты ────────────────────────────────────────────────────────────────
+    _RT_ACTIVE_KEY = "routing_active_gateway"
+
+    def active_gateway(self):
+        """Слот, который несёт трафик: из состояния; ключа нет или слот убран —
+        первый по порядку (предпочтительный, затем номер)."""
+        slots = self.db.gateways()
+        if not slots:
+            return None
+        raw = self.db.get_state(self._RT_ACTIVE_KEY)
+        if raw:
+            for g in slots:
+                if str(g.id) == raw:
+                    return g
+        return slots[0]
+
+    def preferred_gateway(self):
+        return next((g for g in self.db.gateways() if g.preferred), None)
+
+    def gateway_first_slot(self):
+        """Слот 1 — тот, что достался из прежней схемы с одним шлюзом."""
+        slots = self.db.gateways()
+        return next((g for g in slots if g.id == 1), slots[0] if slots else None)
+
+    def _gw_slot(self, slot_id: Optional[int]):
+        """Слот по номеру (без номера — первый). Слотов нет вовсе — заглушка на
+        линке обвязки: бандл без назначенного устройства собирался и до слотов
+        (ключи линка есть, устройства ещё нет)."""
+        gw = self.db.gateway(slot_id) if slot_id else self.gateway_first_slot()
+        if gw is None:
+            if slot_id:
+                raise ServiceError("такого слота шлюза нет")
+            from awgbot.core.models import Gateway
+            return Gateway(id=1, device_id=0, link_if=config.ROUTING_GW_INTERFACE or "awglink",
+                           link_port=config.ROUTING_LINK_PORTS[0], link_cidr=config.ROUTING_LINK_CIDRS[0],
+                           preferred=1)
+        return gw
+
+    def _gw_slot_key(self, key: str, slot_id: int) -> str:
+        return f"{key}_{int(slot_id)}"
+
+    def _gw_display(self, gw) -> str:
+        """«Имя» (подпись) — для текстов и уведомлений."""
+        dev = self.db.get_device(gw.device_id)
+        name = dev.name if dev is not None else f"слот {gw.id}"
+        return f"«{name}»" + (f" ({gw.label})" if gw.label else "")
+
+    def gateway_next_slot(self) -> tuple[int, str, int, str]:
+        """(номер, интерфейс, порт, /30) для нового слота. Отказ при потолке
+        или когда конфиг не знает порта/подсети для такого номера."""
+        slots = self.db.gateways()
+        if len(slots) >= config.ROUTING_GATEWAYS_MAX:
+            raise ServiceError(f"слотов шлюзов уже {len(slots)} — потолок routing.gateways_max")
+        used_ids = {g.id for g in slots}
+        used_if = {g.link_if for g in slots}
+        used_port = {g.link_port for g in slots}
+        used_cidr = {g.link_cidr for g in slots}
+        for n in range(1, config.ROUTING_GATEWAYS_MAX + 1):
+            if n in used_ids:
+                continue
+            iface = (config.ROUTING_GW_INTERFACE or "awglink") if n == 1 else f"awglink{n}"
+            if n > len(config.ROUTING_LINK_PORTS) or n > len(config.ROUTING_LINK_CIDRS):
+                raise ServiceError(f"для слота {n} нет порта или подсети линка в routing.link_ports / link_cidrs")
+            port, cidr = config.ROUTING_LINK_PORTS[n - 1], config.ROUTING_LINK_CIDRS[n - 1]
+            if iface in used_if or port in used_port or cidr in used_cidr:
+                raise ServiceError(f"слот {n}: интерфейс, порт или подсеть линка уже заняты")
+            return n, iface, port, cidr
+        raise ServiceError("свободного слота нет")
+
+    # ── бандл шлюза: скрипт линка и сборка архива ────────────────────────────
+    _GW_BUNDLE_ISSUED_KEY = "gw_bundle_issued_at"
+
+    def _link_privkey(self, gw=None) -> str:
+        from awgbot.util import bundlecrypt
+        link_if = gw.link_if if gw is not None else (config.ROUTING_GW_INTERFACE or "awglink")
+        try:
+            with open(f"/root/gw-{link_if}.conf", encoding="utf-8") as f:
+                return bundlecrypt.read_privkey(f.read())
+        except (OSError, ValueError) as e:
+            raise ServiceError(f"ключ линка не прочитан: {e}")
+
+    def _gw_bundle_env(self, gw) -> tuple[dict, list[str]]:
+        """Окружение сборки бандла слота: устройства админа, ключ и конфиг
+        аплинка устройства слота (в окне переезда — двойника, старый ключ
+        отдельно), параметры линка слота."""
         admin_ips = self._gw_ssh_allow()
-        env = {"ADMIN_IPS": " ".join(admin_ips)}
-        gw = self.db.gateway_device()
-        if gw is not None:
+        env = {"ADMIN_IPS": " ".join(admin_ips), **self._slot_env(gw)}
+        dev = self.db.get_device(gw.device_id) if gw.device_id else None
+        if dev is not None:
             import base64
-            twin = self.db.twin_of_device(gw.id)
-            target = twin or gw
+            twin = self.db.twin_of_device(dev.id)
+            target = twin or dev
             env["GATEWAY_PUBKEY"] = target.public_key
-            env["GATEWAY_PREV_PUBKEY"] = gw.public_key if twin else ""
+            env["GATEWAY_PREV_PUBKEY"] = dev.public_key if twin else ""
             try:
                 env["UPLINK_B64"] = base64.b64encode(self.gateway_uplink_conf(target).encode()).decode()
             except ServiceError as e:
                 log.warning("bundle: конфиг аплинка шлюза не собран: %s", e)
         return env, admin_ips
 
-    def _gw_bundle_build(self) -> tuple[bytes, str]:
-        """Собрать бандл скриптом линка (ключи не меняются) и дополнить почтой,
-        фразой бэкапов. Возвращает (открытый текст, приватный ключ шлюза)."""
+    @staticmethod
+    def _bundle_path(gw) -> str:
+        return "/root/awg-gw-bundle.sh" if gw.link_if == "awglink" else f"/root/awg-gw-bundle-{gw.link_if}.sh"
+
+    @staticmethod
+    def bundle_name(gw) -> str:
+        """Имя файла первого применения для слота — как его кладёт скрипт."""
+        return "awg-gw-bundle.sh" if gw.link_if == "awglink" else f"awg-gw-bundle-{gw.link_if}.sh"
+
+    def _gw_bundle_build(self, gw) -> tuple[bytes, str]:
+        """Собрать бандл слота скриптом линка (ключи не меняются) и дополнить
+        почтой, фразой бэкапов, токеном агента. Возвращает (открытый текст,
+        приватный ключ линка слота)."""
         from awgbot.util import bundlecrypt
-        env, admin_ips = self._gw_bundle_env()
+        env, admin_ips = self._gw_bundle_env(gw)
         self._run_link_script("--bundle", env)
-        link_if = config.ROUTING_GW_INTERFACE or "awglink"
-        with open(f"/root/gw-{link_if}.conf", encoding="utf-8") as f:
+        with open(f"/root/gw-{gw.link_if}.conf", encoding="utf-8") as f:
             priv = bundlecrypt.read_privkey(f.read())
-        with open("/root/awg-gw-bundle.sh", "rb") as f:
+        with open(self._bundle_path(gw), "rb") as f:
             plain = f.read()
         plain = self._bundle_with_mail(plain)
-        plain = self._bundle_with_agent(plain)
-        self.db.set_state(self._GW_BUNDLE_SSH_KEY, " ".join(admin_ips))
-        self.db.set_state(self._GW_BUNDLE_SSH_NOTIFIED_KEY, "")
-        self.db.set_state(self._GW_BUNDLE_ISSUED_KEY, timeutil.to_iso(timeutil.now()))
+        plain = self._bundle_with_agent(plain, gw.id)
+        self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, gw.id), " ".join(admin_ips))
+        self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, gw.id), "")
+        self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_ISSUED_KEY, gw.id),
+                          timeutil.to_iso(timeutil.now()))
         return plain, priv
 
-    def gw_bundle_encrypted(self) -> tuple[bytes, str]:
-        """Бандл для доставки чатом: шифрован ключом линка, который есть только
-        у уже настроенного шлюза. Открытый бандл на диске ВПС остаётся под 600."""
+    def gw_bundle_encrypted(self, slot_id: Optional[int] = None) -> tuple[bytes, str]:
+        """Бандл для доставки чатом: шифрован ключом линка СВОЕГО слота, он есть
+        только у уже настроенной машины этого слота. Открытый бандл на диске
+        ВПС остаётся под 600."""
         from awgbot.util import bundlecrypt
-        plain, priv = self._gw_bundle_build()
-        return bundlecrypt.encrypt(plain, priv), "awg-gw-bundle.enc"
+        gw = self._gw_slot(slot_id)
+        plain, priv = self._gw_bundle_build(gw)
+        name = "awg-gw-bundle.enc" if gw.link_if == "awglink" else f"awg-gw-bundle-{gw.link_if}.enc"
+        return bundlecrypt.encrypt(plain, priv), name
 
-    def gw_bundle_plain(self) -> tuple[bytes, str]:
+    def gw_bundle_plain(self, slot_id: Optional[int] = None) -> tuple[bytes, str]:
         """Открытый бандл — для ПЕРВОГО применения на машине, у которой ключа
         линка ещё нет (новая машина или новые ключи). Внутри приватные ключи:
         тот же уровень доверия, что у ссылок vpn:// с ключами устройств."""
-        plain, _ = self._gw_bundle_build()
-        return plain, "awg-gw-bundle.sh"
+        gw = self._gw_slot(slot_id)
+        plain, _ = self._gw_bundle_build(gw)
+        return plain, self.bundle_name(gw)
 
-    # ── шлюз условной маршрутизации: пометка устройства ──────────────────────
+    # ── пометка устройства: запасной путь через пересланный токен ────────────
     _GW_NONCES_KEY = "gw_claim_nonces"
-
-    def _link_privkey(self) -> str:
-        from awgbot.util import bundlecrypt
-        link_if = config.ROUTING_GW_INTERFACE or "awglink"
-        try:
-            with open(f"/root/gw-{link_if}.conf", encoding="utf-8") as f:
-                return bundlecrypt.read_privkey(f.read())
-        except (OSError, ValueError) as e:
-            raise ServiceError(f"ключ линка не прочитан: {e}")
 
     def _gw_nonce_seen(self, nonce: str) -> bool:
         seen = (self.db.get_state(self._GW_NONCES_KEY) or "").split()
@@ -105,12 +210,25 @@ class GatewayLinkMixin:
         return False
 
     def gateway_claim(self, text: str) -> dict:
-        """Пересланное от агента сообщение с токеном `claim`. Проверка подписи
-        ключом линка, поиск устройства по ключу аплинка, единственность.
-        Возвращает {'status': 'marked'|'already', 'device'}; занятый другим
-        устройством шлюз — ServiceError, менять его — через настройки."""
+        """Пересланное от агента сообщение с токеном `claim`. Подпись — ключом
+        линка одного из слотов (перебираем все: по ключу и находится слот),
+        устройство — по ключу аплинка. Возвращает {'status': 'marked'|'already',
+        'device', 'gateway'}. Слот занят другим устройством — ServiceError:
+        менять машину — через карточку шлюза."""
         from awgbot.util import gwsign
-        data = gwsign.verify(self._link_privkey(), text)
+        slots = self.db.gateways()
+        data = None
+        slot = None
+        last_err: Exception | None = None
+        for gw in slots or [None]:
+            try:
+                data = gwsign.verify(self._link_privkey(gw), text)
+                slot = gw
+                break
+            except (ValueError, ServiceError) as e:
+                last_err = e
+        if data is None:
+            raise ValueError(str(last_err) if last_err else "ключ линка не прочитан")
         if self._gw_nonce_seen(data["nonce"]):
             raise ServiceError("это сообщение уже принимали — пусть шлюз выдаст новое")
         dev = self.db.get_device_by_pubkey(data["pub"])
@@ -120,17 +238,21 @@ class GatewayLinkMixin:
         admin = self.admin_client()
         if admin is None or dev.client_id != admin.id:
             raise ServiceError("шлюзом может быть только устройство профиля админа")
-        if dev.is_gateway:
-            return {"status": "already", "device": dev}
-        prev = self.db.gateway_device()
-        if prev is not None:
-            raise ServiceError(f"шлюз уже назначен: «{prev.name}». Сменить его можно в "
-                               "настройках условной маршрутизации («🔁 Сменить шлюз»)")
-        self.db.set_gateway(dev.id)
-        return {"status": "marked", "device": self.db.get_device(dev.id)}
+        mine = self.db.gateway_by_device(dev.id)
+        if mine is not None:
+            return {"status": "already", "device": dev, "gateway": mine}
+        if slot is not None and slot.device_id != dev.id:
+            raise ServiceError(f"в слоте этого линка уже назначен {self._gw_display(slot)}. "
+                               "Заменить машину можно в карточке шлюза (🔁 Заменить машину)")
+        if slot is None:
+            # слотов нет вовсе (линк поднят обвязкой, шлюз ещё не назначали):
+            # заводим первый слот на этом устройстве, ключи линка уже общие
+            n, iface, port, cidr = self.gateway_next_slot()
+            slot = self.db.gateway_add(dev.id, iface, port, cidr, slot_id=n)
+        return {"status": "marked", "device": self.db.get_device(dev.id), "gateway": slot}
 
     def gateway_candidates(self) -> list:
-        """Устройства админа, выпущенные ботом, кроме текущего шлюза."""
+        """Устройства админа, выпущенные ботом и не занятые слотами."""
         admin = self.admin_client()
         if admin is None:
             return []
@@ -138,20 +260,31 @@ class GatewayLinkMixin:
 
     _GW_NEW_NAME = "Шлюз"
 
-    def gateway_setup(self, device_id: Optional[int] = None, *, rekey: bool = False) -> dict:
-        """Назначить шлюз. device_id — существующее устройство админа; None —
-        создать новое устройство «Шлюз» в профиле админа (новая машина).
-        rekey — новые ключи линка: прежняя машина теряет линк по построению,
-        а первый бандл для новой едет открытым (ключа у неё ещё нет).
-        Возвращает {'device', 'previous', 'created', 'rekeyed'}."""
+    def gateway_setup(self, device_id: Optional[int] = None, *, rekey: bool = False,
+                      slot_id: Optional[int] = None) -> dict:
+        """Назначить машину в слот. slot_id None — новый слот (первый — на
+        линке обвязки; следующие поднимают свой линк); заданный — замена машины
+        в нём. device_id — существующее устройство админа; None — создать
+        новое устройство «Шлюз»/«Шлюз N» в профиле админа (новая машина).
+        rekey — новые ключи линка слота: прежняя машина теряет линк по
+        построению, а первый бандл для новой едет открытым.
+        Возвращает {'gateway', 'device', 'previous', 'created', 'rekeyed'}."""
         admin = self.admin_client()
         if admin is None:
             raise ServiceError("профиль админа ещё не создан")
+        gw = self.db.gateway(slot_id) if slot_id else None
+        if slot_id and gw is None:
+            raise ServiceError("такого слота шлюза нет")
+        new_slot = gw is None
+        if new_slot:
+            n, iface, port, cidr = self.gateway_next_slot()
         created = False
         if device_id is None:
             # Лимит шлюзу не делают исключением: профиль админа безлимитный по
             # построению, а счётчик, который врёт на одну строку, хуже лимита.
-            dc = self.add_device(admin.id, self._GW_NEW_NAME)
+            name = self._GW_NEW_NAME if (new_slot and n == 1) or (gw is not None and gw.id == 1) \
+                else f"{self._GW_NEW_NAME} {n if new_slot else gw.id}"
+            dc = self.add_device(admin.id, name)
             device_id = dc.device_id
             created = True
             rekey = True                       # новая машина без ключа линка
@@ -162,51 +295,278 @@ class GatewayLinkMixin:
             raise ServiceError("шлюзом может быть только устройство профиля админа")
         if not dev.private_key:
             raise ServiceError("это устройство создавал не бот — его конфиг в бандл не собрать")
-        prev = self.db.gateway_device()
-        if prev is not None and prev.id == dev.id:
-            prev = None
-        self.db.set_gateway(dev.id)
-        if rekey:
-            self._run_link_script("--rekey")
+        other = self.db.gateway_by_device(dev.id)
+        if other is not None and (gw is None or other.id != gw.id):
+            raise ServiceError(f"это устройство уже шлюз в слоте {other.id}")
+        prev = None
+        if new_slot:
+            if n > 1:
+                # второй и дальше: свой линк, свои ключи — первый бандл только руками
+                self._run_link_script("--apply", {"LINK_IF": iface, "LINK_PORT": str(port),
+                                                  "LINK_CIDR": cidr})
+                rekey = True
+            gw = self.db.gateway_add(dev.id, iface, port, cidr, slot_id=n)
+            if rekey and n == 1:
+                self._run_link_script("--rekey", self._slot_env(gw))
+        else:
+            if gw.device_id != dev.id:
+                prev = self.db.get_device(gw.device_id)
+                self.db.gateway_update(gw.id, device_id=dev.id)
+            if rekey:
+                self._run_link_script("--rekey", self._slot_env(gw))
+        gw = self.db.gateway(gw.id)
+        if rekey or new_slot:
             routing.invalidate_self_check()
-        return {"device": self.db.get_device(dev.id), "previous": prev,
+            try:
+                self._ensure_gateway_policy()
+            except routing.RoutingError as e:
+                log.warning("gateway_setup: обвязка слота не доведена: %s", e)
+        return {"gateway": gw, "device": self.db.get_device(dev.id), "previous": prev,
                 "created": created, "rekeyed": rekey}
 
-    def gateway_remove(self) -> Optional[object]:
-        """Убрать шлюз: флаг снять, ключи линка сменить (прежняя машина теряет
-        линк), условную маршрутизацию выключить. Возвращает бывший шлюз."""
-        prev = self.db.gateway_device()
-        if prev is None:
+    def gateway_remove(self, slot_id: Optional[int] = None) -> Optional[object]:
+        """Убрать слот: активный при живом другом слоте — трафик на него;
+        последний — условную маршрутизацию выключить. Линк слота: первый —
+        смена ключей (обвязка остаётся), прочие — снимается целиком.
+        Возвращает бывшее устройство слота (None — слота не было)."""
+        gw = self.db.gateway(slot_id) if slot_id else self.gateway_first_slot()
+        if gw is None:
             return None
-        self.db.set_gateway(None)
+        prev = self.db.get_device(gw.device_id)
+        others = [g for g in self.db.gateways() if g.id != gw.id]
+        active = self.active_gateway()
+        # трафик — на другой слот ДО удаления строки: иначе «активный» уже
+        # вычислится как первый оставшийся, и маршрут в ядре не переложится
+        if others and active is not None and active.id == gw.id:
+            self.gateway_switch(others[0].id, manual=True)
+        self.db.gateway_delete(gw.id)
+        for key in (self._GW_BUNDLE_ISSUED_KEY, self._GW_BUNDLE_SSH_KEY, self._GW_BUNDLE_SSH_NOTIFIED_KEY):
+            self.db.set_state(self._gw_slot_key(key, gw.id), "")
+        self._gw_ping_forget(gw.id)
+        if not others:
+            try:
+                settings.set_value("app.routing.enabled", False)
+            except Exception as e:                            # noqa: BLE001
+                log.warning("gateway_remove: маршрутизация не выключена: %s", e)
         try:
-            settings.set_value("app.routing.enabled", False)
-        except Exception as e:                            # noqa: BLE001
-            log.warning("gateway_remove: маршрутизация не выключена: %s", e)
-        try:
-            self._run_link_script("--rekey")
+            if gw.id == 1:
+                self._run_link_script("--rekey", self._slot_env(gw))
+            else:
+                self._run_link_script("--rollback", self._slot_env(gw))
+                routing.drop_slot_policy(gw.id, gw.link_if)
             routing.invalidate_self_check()
-        except ServiceError as e:
-            log.warning("gateway_remove: ключи линка не сменены: %s", e)
+        except (ServiceError, routing.RoutingError) as e:
+            log.warning("gateway_remove: линк слота %s не снят: %s", gw.id, e)
         try:
             self.reconcile_routing()
         except Exception as e:                            # noqa: BLE001
             log.warning("gateway_remove: реконсиляция: %s", e)
         return prev
 
-    def gateway_state(self) -> dict:
-        """Одно состояние для экрана: устройство, когда выпущен бандл, жив ли
-        линк по последнему замеру и возраст хендшейка."""
-        gw = self.db.gateway_device()
-        issued = self.db.get_state(self._GW_BUNDLE_ISSUED_KEY) or ""
-        age = None
-        if gw is not None and config.ROUTING_GW_INTERFACE:
-            try:
-                age = routing.link_handshake_age()
-            except Exception:                             # noqa: BLE001
-                age = None
-        return {"device": gw, "issued_at": issued, "link_ok": self.routing_link_ok(),
-                "handshake_age": age}
+    def gateway_set_preferred(self, slot_id: Optional[int]) -> None:
+        if slot_id is not None and self.db.gateway(slot_id) is None:
+            raise ServiceError("такого слота шлюза нет")
+        self.db.gateway_set_preferred(slot_id)
+
+    def gateway_set_label(self, slot_id: int, label: str) -> None:
+        label = " ".join(str(label).split())[:20].strip()
+        self._gw_slot(slot_id)
+        self.db.gateway_update(slot_id, label=label)
+
+    def gateway_set_home_subnets(self, slot_id: int, raw: str) -> dict:
+        """Разбор пачки подсетей: IPv4, не клиентская, не подсеть линка.
+        Возвращает {'kept': [...], 'rejected': [(строка, причина)], 'conflict':
+        слот, у которого та же подсеть, или None}. Пусто или «—» — убрать все."""
+        import ipaddress
+        gw = self._gw_slot(slot_id)
+        text = (raw or "").strip()
+        kept: list[str] = []
+        rejected: list[tuple[str, str]] = []
+        if text and text not in ("-", "—"):
+            for tok in re.split(r"[\s,;]+", text):
+                if not tok:
+                    continue
+                try:
+                    net = ipaddress.ip_network(tok, strict=False)
+                except ValueError:
+                    rejected.append((tok, "не похоже на подсеть"))
+                    continue
+                if net.version != 4:
+                    rejected.append((tok, "только IPv4"))
+                    continue
+                if any(net.overlaps(ipaddress.ip_network(s, strict=False))
+                       for s, _i in config.routing_client_subnets()):
+                    rejected.append((tok, "это подсеть клиентов"))
+                    continue
+                if any(net.overlaps(ipaddress.ip_network(g.link_cidr, strict=False))
+                       for g in self.db.gateways()):
+                    rejected.append((tok, "это подсеть линка"))
+                    continue
+                if str(net) not in kept:
+                    kept.append(str(net))
+        self.db.gateway_update(gw.id, home_subnets=kept)
+        conflict = None
+        for g in self.db.gateways():
+            if g.id != gw.id and set(g.home_subnets) & set(kept):
+                conflict = g
+                break
+        try:
+            self._ensure_gateway_policy()
+        except routing.RoutingError as e:
+            log.warning("gateway_set_home_subnets: маршруты не доведены: %s", e)
+        return {"kept": kept, "rejected": rejected, "conflict": conflict}
+
+    def gateway_slots_policy(self) -> list[tuple[int, str, list[str]]]:
+        """[(слот, интерфейс, подсети)] для ensure_policy: домашняя подсеть,
+        заданная двум слотам, достаётся первому по порядку."""
+        seen: set[str] = set()
+        out = []
+        for g in self.db.gateways():
+            nets = [n for n in g.home_subnets if n not in seen]
+            seen.update(nets)
+            out.append((g.id, g.link_if, nets))
+        return out
+
+    def _ensure_gateway_policy(self) -> None:
+        active = self.active_gateway()
+        if active is None:
+            routing.ensure_policy()
+            return
+        routing.ensure_policy(active.link_if, self.gateway_slots_policy())
+
+    # ── переключение трафика ─────────────────────────────────────────────────
+    _RT_SWITCHED_KEY = "routing_switched_at"
+
+    def gateway_switch(self, slot_id: int, *, manual: bool):
+        """Переложить трафик на слот: один маршрут в таблице фичи, маркировка
+        не снимается. Стрики нового активного — его слотовые. manual — рукой:
+        интервал автомата не трогается (он защищает от автомата, не от
+        человека)."""
+        gw = self._gw_slot(slot_id)
+        active = self.active_gateway()
+        if active is not None and active.id == gw.id:
+            return gw
+        routing.switch_active(gw.link_if)
+        with self.db.transaction():
+            self.db.set_state(self._RT_ACTIVE_KEY, str(gw.id))
+            if not manual:
+                self.db.set_state(self._RT_SWITCHED_KEY, timeutil.to_iso(timeutil.now()))
+        log.info("routing: %s переключение на слот %s (%s)",
+                 "ручное" if manual else "автоматическое", gw.id, gw.link_if)
+        return gw
+
+    # ── пинг со шлюза: кэш на сутки, лениво ──────────────────────────────────
+    _GW_PING_KEY = "routing_gw_ping"
+    _GW_PING_TTL = 24 * 3600
+
+    def _gw_ping_forget(self, slot_id: int) -> None:
+        self.db.set_state(f"{self._GW_PING_KEY}_{int(slot_id)}", "")
+
+    def gateway_ping_cached(self, slot_id: int) -> Optional[tuple[int, str]]:
+        """(мс, когда) из кэша, если ему меньше суток."""
+        raw = self.db.get_state(f"{self._GW_PING_KEY}_{int(slot_id)}") or ""
+        if not raw or " " not in raw:
+            return None
+        ms, at = raw.split(" ", 1)
+        try:
+            age = (timeutil.now() - timeutil.parse_iso(at)).total_seconds()
+        except ValueError:
+            return None
+        if age > self._GW_PING_TTL:
+            return None
+        return int(ms), at
+
+    def gateway_ping(self, slot_id: int) -> Optional[int]:
+        """Замер сейчас: медиана коннектов по таблице слота до цели зонда.
+        Успех — в кэш; отказ — кэш снят, None."""
+        gw = self._gw_slot(slot_id)
+        targets = settings.get("app.routing.probe_targets", None) or ["77.88.8.8", "8.8.8.8"]
+        port = int(settings.get("app.routing.probe_port", 53))
+        ms = routing.probe_latency(list(targets), port, mark=gw.mark)
+        if ms is None:
+            self._gw_ping_forget(gw.id)
+            return None
+        self.db.set_state(f"{self._GW_PING_KEY}_{gw.id}",
+                          f"{int(ms)} {timeutil.to_iso(timeutil.now())}")
+        return int(ms)
+
+    def gateway_ping_lazy(self, slot_id: int) -> Optional[int]:
+        """Для экранов: из кэша, а без него — замер (первое открытие экрана)."""
+        cached = self.gateway_ping_cached(slot_id)
+        if cached is not None:
+            return cached[0]
+        return self.gateway_ping(slot_id)
+
+    # ── состояние для экранов ────────────────────────────────────────────────
+    def gateway_states(self) -> list[dict]:
+        """По слоту: gateway, device, active, preferred, link_ok, handshake_age,
+        issued_at, down_ticks, display. Порядок — предпочтительный, затем номер.
+        Сетевых вызовов нет, кроме возраста хендшейка (один exec на слот)."""
+        active = self.active_gateway()
+        out = []
+        for g in self.db.gateways():
+            dev = self.db.get_device(g.device_id)
+            age = None
+            if config.ROUTING_GW_INTERFACE:
+                try:
+                    age = routing.link_handshake_age(g.link_if)
+                except Exception:                             # noqa: BLE001
+                    age = None
+            down = int(self.db.get_state(f"routing_gw_{g.id}_down_streak") or 0)
+            up = int(self.db.get_state(f"routing_gw_{g.id}_up_streak") or 0)
+            is_active = active is not None and active.id == g.id
+            link_ok = (self.routing_link_ok() if is_active
+                       else up >= self._RT_UP_STREAK and down == 0)
+            out.append({
+                "gateway": g, "device": dev, "active": is_active, "preferred": bool(g.preferred),
+                "link_ok": link_ok, "handshake_age": age, "down_ticks": down, "up_ticks": up,
+                "issued_at": self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_ISSUED_KEY, g.id)) or "",
+                "display": self._gw_display(g),
+                "ping": self.gateway_ping_cached(g.id),
+            })
+        return out
+
+    def gateway_state(self, slot_id: Optional[int] = None) -> dict:
+        """Состояние одного слота (по умолчанию первого) — экраны раздела.
+        Без слотов: {'device': None, 'gateway': None}."""
+        states = self.gateway_states()
+        if not states:
+            return {"device": None, "gateway": None, "issued_at": "", "link_ok": False,
+                    "handshake_age": None, "active": False, "preferred": False, "ping": None,
+                    "down_ticks": 0, "up_ticks": 0, "display": ""}
+        if slot_id:
+            for st in states:
+                if st["gateway"].id == slot_id:
+                    return st
+            raise ServiceError("такого слота шлюза нет")
+        first = self.gateway_first_slot()
+        return next(st for st in states if st["gateway"].id == first.id)
+
+    def gateway_screen_state(self, slot_id: int, *, lazy_ping: bool = True) -> dict:
+        """Состояние слота для карточек: к gateway_state — пинг (лениво: пустой
+        кэш заполняется замером при первом открытии экрана), подпись активного
+        и состояния всех слотов для соседних строк."""
+        states = self.gateway_states()
+        st = next((x for x in states if x["gateway"].id == int(slot_id)), None)
+        if st is None:
+            raise ServiceError("такого слота шлюза нет")
+        active = next((x for x in states if x.get("active")), None)
+        st["active_display"] = active["display"] if active else ""
+        st["states"] = states
+        cached = st.get("ping")
+        if cached is not None:
+            st["ping_ms"] = cached[0]
+        elif lazy_ping:
+            st["ping_ms"] = self.gateway_ping(slot_id)
+        else:
+            st["ping_ms"] = None
+        return st
+
+    def gateway_state_for_device(self, device_id: int) -> Optional[dict]:
+        gw = self.db.gateway_by_device(device_id)
+        if gw is None:
+            return None
+        return self.gateway_screen_state(gw.id)
 
     def gateway_uplink_conf(self, dev) -> str:
         """Конфиг аплинка шлюза для бандла: обычный клиентский .conf устройства
@@ -221,47 +581,60 @@ class GatewayLinkMixin:
         return sorted(set(self.db.admin_device_addresses(config.ADMIN_ID)))
 
     def gw_bundle_drift_notes(self) -> list[Notification]:
-        """Состав устройств админа разошёлся с тем, что уехало в бандл шлюза:
-        напомнить один раз на каждое новое расхождение. Пока бандл не собирали
-        — молчим: напоминать не о чем."""
+        """Состав устройств админа разошёлся с тем, что уехало в бандл слота:
+        напомнить один раз на каждое новое расхождение, по слоту. Пока бандл
+        слота не собирали — молчим: напоминать не о чем."""
         if not config.ROUTING_ENABLED:
             return []
-        sent = self.db.get_state(self._GW_BUNDLE_SSH_KEY)
-        if sent is None:
-            return []
         cur = " ".join(self._gw_ssh_allow())
-        if cur == sent or self.db.get_state(self._GW_BUNDLE_SSH_NOTIFIED_KEY) == cur:
-            return []
-        self.db.set_state(self._GW_BUNDLE_SSH_NOTIFIED_KEY, cur)
-        return [Notification(config.ADMIN_ID,
-                             "🛰 Состав устройств админа изменился, а на шлюз уехал прежний: "
-                             "доступ к шлюзу и домашней сети через туннель — по старому списку. "
-                             "Перевыпусти конфигурацию шлюза (🛰 Шлюз → Конфигурация шлюза).")]
+        notes = []
+        # без слотов — слот-заглушка линка обвязки, но только при включённой
+        # функции: после снятия последнего шлюза напоминать некому
+        for g in self.db.gateways() or ([self._gw_slot(None)]
+                                        if settings.get_bool("app.routing.enabled", False) else []):
+            sent = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, g.id))
+            if sent is None:                    # бандл слота не собирали — напоминать не о чем
+                continue
+            if cur == sent or self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, g.id)) == cur:
+                continue
+            self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, g.id), cur)
+            notes.append(Notification(
+                config.ADMIN_ID,
+                f"🛰 Состав устройств админа изменился, а на шлюз {self._gw_display(g)} уехал "
+                "прежний: доступ к шлюзу и домашней сети через туннель — по старому списку. "
+                "Перевыпусти конфигурацию шлюза (Условная маршрутизация → Шлюзы → "
+                "Конфигурация шлюза)."))
+        return notes
 
     # Маркер контракта как ОТДЕЛЬНАЯ СТРОКА. Тот же текст встречается в бандле и
     # внутри sed-выражения, которым он вырезает скрипт обвязки; вставка туда
     # ломала sed, и на шлюз ложился пустой скрипт (наступили: 09.09.2026).
     _MAIL_MARK_LINE = re.compile(rb"^#__GW_SETUP_BELOW__$", re.M)
 
-    # ── токен бота-агента: спрашиваем один раз, храним рядом со своим ────────
+    # ── токен бота-агента: свой у каждого слота (два агента на одном токене
+    # перехватывали бы апдейты друг у друга), спрашивается один раз на слот ──
     _GW_TOKEN_ENV = "GW_BOT_TOKEN"
+
+    def _gw_token_env(self, slot_id: Optional[int]) -> str:
+        return self._GW_TOKEN_ENV if not slot_id or int(slot_id) == 1 else f"{self._GW_TOKEN_ENV}_{int(slot_id)}"
 
     @staticmethod
     def _env_path() -> str:
         return os.environ.get("AWG_BOT_ENV", "/etc/awg-bot/env")
 
-    def gw_bot_token(self) -> str:
-        """Токен бота шлюза из env. Пусто — ещё не спрашивали."""
+    def gw_bot_token(self, slot_id: Optional[int] = None) -> str:
+        """Токен бота шлюза слота из env. Пусто — ещё не спрашивали."""
+        key = self._gw_token_env(slot_id)
         try:
             with open(self._env_path(), encoding="utf-8") as f:
                 for line in f:
-                    if line.startswith(self._GW_TOKEN_ENV + "="):
+                    if line.startswith(key + "="):
                         return line.split("=", 1)[1].strip()
         except OSError:
             pass
         return ""
 
-    def set_gw_bot_token(self, token: str) -> None:
+    def set_gw_bot_token(self, token: str, slot_id: Optional[int] = None) -> None:
         """Запомнить токен агента. Хранение осознанное: без него перевыпуск
         файла первого применения (переустановили машину-шлюз, сменили её)
         снова требовал бы идти в BotFather. Уровень доверия тот же, что у
@@ -270,22 +643,23 @@ class GatewayLinkMixin:
         if not re.fullmatch(r"\d{5,}:[A-Za-z0-9_-]{20,}", token):
             raise ServiceError("это не похоже на токен бота — жду строку вида 123456789:AA…")
         path = self._env_path()
+        key = self._gw_token_env(slot_id)
         try:
             lines = []
             try:
                 with open(path, encoding="utf-8") as f:
                     lines = [ln for ln in f.read().splitlines()
-                             if not ln.startswith(self._GW_TOKEN_ENV + "=")]
+                             if not ln.startswith(key + "=")]
             except FileNotFoundError:
                 pass
-            lines.append(f"{self._GW_TOKEN_ENV}={token}")
+            lines.append(f"{key}={token}")
             with open(path, "w", encoding="utf-8") as f:
                 f.write("\n".join(lines) + "\n")
             os.chmod(path, 0o600)
         except OSError as e:
             raise ServiceError(f"не записать {path}: {e}")
 
-    def _bundle_with_agent(self, plain: bytes) -> bytes:
+    def _bundle_with_agent(self, plain: bytes, slot_id: Optional[int] = None) -> bytes:
         """Токен агента и ADMIN_ID — в файл первого применения, чтобы установка
         на шлюзе не задавала ВООБЩЕ ни одного вопроса.
 
@@ -293,7 +667,7 @@ class GatewayLinkMixin:
         обвязки), то есть при запуске бандла не исполняются — это данные для
         установщика, а не команды.
         """
-        token = self.gw_bot_token()
+        token = self.gw_bot_token(slot_id)
         if not token:
             return plain
         m = self._MAIL_MARK_LINE.search(plain)
