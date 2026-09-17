@@ -41,11 +41,16 @@ def pick_client_for_add_device(clients) -> InlineKeyboardMarkup:
 
 def admin_main(unassigned_count: int, self_has_devices: bool = False,
                routing_visible: bool = False, routing_on: bool = False,
-               self_client_id: int = 0) -> InlineKeyboardMarkup:
+               self_client_id: int = 0, self_can_issue: bool | None = None) -> InlineKeyboardMarkup:
     """Главное меню админа. Личный блок (он тоже пользователь VPN) сверху,
     затем управление клиентской базой. «Добавить устройство» ведёт в диалог
     выбора (себе/другому клиенту) — там же гейт по личному лимиту, а не тут:
-    другому клиенту добавлять можно и при исчерпанном личном лимите."""
+    другому клиенту добавлять можно и при исчерпанном личном лимите.
+    self_can_issue — есть ли устройство, которому можно выдать ссылку/QR/файл
+    (шлюз в «Моих устройствах» есть, а ссылки у него нет); по умолчанию — как
+    self_has_devices."""
+    if self_can_issue is None:
+        self_can_issue = self_has_devices
     kb = InlineKeyboardBuilder()
     pattern: list[int] = []
     kb.button(text="➕ Добавить устройство", callback_data=Menu(action="add_device_choice"))
@@ -59,10 +64,11 @@ def admin_main(unassigned_count: int, self_has_devices: bool = False,
             kb.button(text=f"{_chk(routing_on)} Доступ к РФ-сервисам",
                       callback_data=RoutingCB(action="panel", ref=self_client_id))
             pattern.append(1)
-        kb.button(text="🔗 Ссылка", callback_data=AdminSelfCB(action="gen_link"))
-        kb.button(text="🔳 QR-код", callback_data=AdminSelfCB(action="gen_qr"))
-        kb.button(text="📄 Файл", callback_data=AdminSelfCB(action="gen_file"))
-        pattern.append(3)
+        if self_can_issue:
+            kb.button(text="🔗 Ссылка", callback_data=AdminSelfCB(action="gen_link"))
+            kb.button(text="🔳 QR-код", callback_data=AdminSelfCB(action="gen_qr"))
+            kb.button(text="📄 Файл", callback_data=AdminSelfCB(action="gen_file"))
+            pattern.append(3)
     if unassigned_count > 0:
         kb.button(text=f"📦 Устройства без профиля ({unassigned_count})",
                   callback_data=Menu(action="unassigned"))

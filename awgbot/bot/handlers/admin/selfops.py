@@ -48,7 +48,7 @@ async def self_devices(cb: CallbackQuery, services):
 async def self_gen_pick(cb: CallbackQuery, callback_data: AdminSelfCB, services):
     """Выбор своего устройства под ссылку/QR/файл — одним обработчиком."""
     ac = await _self(services)
-    devices = await call(services.db.list_devices, ac.id)
+    devices = kb.issuable(await call(services.db.list_devices, ac.id))
     if not devices:
         await cb.answer("Сначала добавь устройство", show_alert=True)
         return

@@ -10,7 +10,7 @@ from awgbot.bot.callbacks import (
     RoutingCB)
 from awgbot.bot import texts as _texts
 
-from .common import _chk, _btn_suffix, _dev_emoji, append_hide_row, _manual_block_button
+from .common import _chk, _btn_suffix, _dev_emoji, append_hide_row, _manual_block_button, issuable
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -260,9 +260,11 @@ def pick_device(devices, action: str, back_cb: str = None) -> InlineKeyboardMark
     Показываем и устройства без ключа (с суффиксом): клик по ним ведёт не в ошибку,
     а в диалог «пришли ссылку или удали» (обрабатывается отдельно).
     back_cb — packed callback для «Назад» (по умолчанию главное меню; админ из
-    карточки клиента передаёт возврат в карточку)."""
+    карточки клиента передаёт возврат в карточку). Шлюз в списке не
+    предлагается: ссылки/QR/файла у него нет — его конфиг едет только внутри
+    конфигурации шлюза, сервис такую выдачу отвергает."""
     kb = InlineKeyboardBuilder()
-    for d in devices:
+    for d in issuable(devices):
         kb.button(text=f"{d.name}{_btn_suffix(d)}",
                   callback_data=DeviceCB(action=action, device_id=d.id))
     kb.row(InlineKeyboardButton(
@@ -480,7 +482,7 @@ def guide_connect_devices(devices, slots, guide: str = "connect") -> InlineKeybo
     kb = InlineKeyboardBuilder()
     if limit == 0 or used < limit:      # 0 = безлимит
         kb.button(text="➕ Добавить устройство", callback_data=GuideCB(guide=guide, step=-1))
-    for d in devices:
+    for d in issuable(devices):
         # получить ссылку+файл этого устройства и перейти к шагу настройки
         kb.button(text=f"🔗 {d.name}",
                   callback_data=DeviceCB(action="gen_guide", device_id=d.id))

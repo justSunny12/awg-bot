@@ -278,7 +278,7 @@ async def menu_devices(cb: CallbackQuery, client, services):
 @router.callback_query(Menu.filter(F.action.in_(kb.GEN_ACTIONS)))
 async def menu_gen_pick(cb: CallbackQuery, callback_data: Menu, client, services):
     """Выбор устройства под ссылку/QR/файл — одним обработчиком на три кнопки."""
-    devices = await call(services.db.list_devices, client.id)
+    devices = kb.issuable(await call(services.db.list_devices, client.id))
     if not devices:
         await cb.answer("Сначала добавь устройство", show_alert=True)
         return

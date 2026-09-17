@@ -33,11 +33,17 @@ class StatusMixin:
         rt_visible = bool(ac and self.routing_client_visible(ac))
         routing_ok = self.routing_health_for_client(ac) if (ac and rt_visible) else None
         mig = self.migration_progress() if self.migration_running() else None
+        n_dev = self.db.count_devices(ac.id) if ac else 0
+        # ряд «Ссылка/QR/Файл» — только когда есть что выдавать: шлюз в
+        # «Моих устройствах» есть, а ссылки у него нет
+        gw = self.db.gateway_device() if n_dev else None
+        n_issuable = n_dev - (1 if gw is not None and ac and gw.client_id == ac.id else 0)
         return {
             "st": st, "ac": ac, "routing_ok": routing_ok, "mig": mig,
             "expiring": len(self.expiring_subscriptions()),
             "unassigned": self.count_unassigned_devices(),
-            "has_dev": bool(ac and self.db.count_devices(ac.id)),
+            "has_dev": n_dev > 0,
+            "can_issue": n_issuable > 0,
             "rt_visible": rt_visible,
             "rt_on": bool(ac and rt_visible and self.routing_profile_on(ac.id)),
         }

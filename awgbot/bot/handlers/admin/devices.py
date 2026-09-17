@@ -101,7 +101,7 @@ async def admin_add_device_traffic(message: Message, services, state: FSMContext
 
 @router.callback_query(ClientCB.filter(F.action == "gen_for"))
 async def admin_gen_for(cb: CallbackQuery, callback_data: ClientCB, services):
-    devices = await call(services.db.list_devices, callback_data.client_id)
+    devices = kb.issuable(await call(services.db.list_devices, callback_data.client_id))
     if not devices:
         await cb.answer("У профиля нет устройств", show_alert=True)
         return

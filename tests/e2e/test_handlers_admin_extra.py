@@ -409,3 +409,51 @@ async def test_expiring_screen_and_extend_returns_to_it_or_menu(services, make_a
     answers = [t for kind, t, _ in msg.sent if kind == "answer"]
     assert "Панель администратора" in answers[-1], "после продления не вернулись в меню (список опустел)"
     assert "продлена на" not in answers[-1], "меню дублирует инфосообщение"
+
+
+# ── шлюз не предлагается под ссылку/QR/файл ──────────────────────────────────
+async def test_gateway_is_not_offered_for_link_qr_file(services, fake_bot):
+    """Сервис выдачу шлюзу отвергает; но кнопки главного меню «Ссылка/QR/Файл»
+    и «Выдать конфиг» из карточки профиля всё равно ставили его в список —
+    клик вёл в алерт. Теперь в пикерах его нет, а профиль с одним шлюзом
+    считается без устройств."""
+    services.ensure_admin_client()
+    ac = services.admin_client()
+    pi = services.add_device(ac.id, "NASPi")
+    services.db.set_gateway(pi.device_id)
+    for action in ("gen_link", "gen_qr", "gen_file"):
+        cb, nav = _acb(fake_bot)
+        await ah.self_gen_pick(cb, AdminSelfCB(action=action), services)
+        assert any("добавь устройство" in a.lower() for a, _ in cb.answers if a), "шлюз сошёл за устройство"
+    cb, nav = _acb(fake_bot)
+    await ah.admin_gen_for(cb, ClientCB(action="gen_for", client_id=ac.id), services)
+    assert any("нет устройств" in a.lower() for a, _ in cb.answers if a)
+    phone = services.add_device(ac.id, "phone")
+    cb, nav = _acb(fake_bot)
+    await ah.self_gen_pick(cb, AdminSelfCB(action="gen_link"), services)
+    _, labels = last_screen(nav)
+    assert any("phone" in l for l in labels) and not any("NASPi" in l for l in labels)
+    cb, nav = _acb(fake_bot)
+    await ah.admin_gen_for(cb, ClientCB(action="gen_for", client_id=ac.id), services)
+    _, labels = last_screen(nav)
+    assert any("phone" in l for l in labels) and not any("NASPi" in l for l in labels)
+    assert phone.device_id != pi.device_id
+
+
+async def test_main_menu_hides_issue_row_when_only_device_is_the_gateway(services, fake_bot):
+    """Шлюз в «Моих устройствах» виден, но ряд «Ссылка/QR-код/Файл» без
+    выдаваемого устройства — пустое обещание; появляется с первым обычным."""
+    from tests.conftest import FakeState
+    services.ensure_admin_client()
+    ac = services.admin_client()
+    pi = services.add_device(ac.id, "NASPi")
+    services.db.set_gateway(pi.device_id)
+    cb, nav = _acb(fake_bot)
+    await ah.admin_main_menu(cb, services, FakeState())
+    _, labels = last_screen(nav)
+    assert "📱 Мои устройства" in labels and "🔗 Ссылка" not in labels
+    services.add_device(ac.id, "phone")
+    cb, nav = _acb(fake_bot)
+    await ah.admin_main_menu(cb, services, FakeState())
+    _, labels = last_screen(nav)
+    assert "🔗 Ссылка" in labels and "📄 Файл" in labels

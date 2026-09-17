@@ -30,6 +30,7 @@ def _menu_markup_from(snap: dict):
     # админ — такой же пользователь VPN: режим ему нужен в главном меню, рядом
     # со своими устройствами. Разрешение у него по умолчанию (routing_allowed_for)
     return kb.admin_main(snap["unassigned"], self_has_devices=snap["has_dev"],
+                         self_can_issue=snap["can_issue"],
                          routing_visible=snap["rt_visible"], routing_on=snap["rt_on"],
                          self_client_id=(ac.id if ac else 0))
 
