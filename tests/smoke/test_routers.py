@@ -42,8 +42,10 @@ def test_no_helper_is_registered_as_a_handler(mod):
     """Декоратор, вставший над вспомогательной функцией, вешает на кнопку
     помощник с чужой сигнатурой — aiogram зовёт его с cb/services и падает.
     Ровно так «Мои устройства» у клиента упали в v2.20.0. Помощники — с
-    подчёркиванием, обработчики — без; регистрация помощника — брак."""
-    handlers = [h.callback for obs in (mod.router.message, mod.router.callback_query)
+    подчёркиванием, обработчики — без; регистрация помощника — брак.
+    Роутер может быть пакетом из подроутеров (admin) — обходим всю цепочку."""
+    handlers = [h.callback for sub in mod.router.chain_tail
+                for obs in (sub.message, sub.callback_query)
                 for h in obs.handlers]
     leaked = [h.__name__ for h in handlers if h.__name__.startswith("_")]
     assert not leaked, leaked

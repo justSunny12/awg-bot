@@ -288,7 +288,8 @@ awgbot/
   bot/       texts, keyboards, guides   презентация
              filters, middleware, callbacks, states   glue aiogram
              notifier   рассылка уведомлений (пейсинг + RetryAfter)
-             handlers/  роутеры client + admin + friend + routing + settings + …
+             handlers/  роутеры client + admin/ (пакет: panel, clients, devices, gateway,
+                        updates, selfops, blocks, broadcast) + friend + routing + settings + …
   runtime/   main         сборка и запуск
              preflight    самопроверка окружения на старте (fatal / warning)
              scheduler    APScheduler-задачи (трафик, сроки, монитор, живость шлюза)

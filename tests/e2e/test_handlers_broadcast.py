@@ -101,7 +101,7 @@ async def test_broadcast_keeps_telegram_formatting(services, make_active_client,
     заметить это до отправки было невозможно.
     """
     from tests.conftest import FakeMessage
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     c = make_active_client(name="Ксюша", tg_id=7001)
@@ -123,7 +123,7 @@ async def test_broadcast_rejects_blank_before_reading_markup(services, make_acti
     """Пустое сообщение отбиваем по тексту, а не по разметке: у сообщения без
     текста html_text брать неоткуда."""  # формулировку см. texts.BROADCAST_EMPTY
     from tests.conftest import FakeMessage
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     c = make_active_client(name="Ксюша", tg_id=7002)
@@ -160,7 +160,7 @@ async def test_photos_without_text_get_a_real_preview_not_a_demand(
     говорит про пустой текст, и отправить можно как есть.
     """
     from tests.conftest import FakeMessage
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
@@ -197,7 +197,7 @@ async def test_one_batch_renders_the_preview_exactly_once(
     финишировали апдейты, остаётся таска последнего.
     """
     from tests.conftest import FakeMessage
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0.2)
@@ -234,7 +234,7 @@ async def test_late_caption_joins_the_preview(services, make_active_client,
     рендера — превью-огрызок заменяется полным без единого действия админа.
     """
     from tests.conftest import FakeMessage
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
@@ -269,7 +269,7 @@ async def test_broadcast_sends_photos_without_text(services, make_active_client,
     """Объявление из одних картинок отправляется: превью прямо спрашивало про
     пустой текст, и «Отправить» — легитимный ответ на этот вопрос."""
     from tests.conftest import FakeCallback, FakeMessage, FakeState
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     c = make_active_client(name="Ксюша", tg_id=7018)
@@ -295,7 +295,7 @@ async def test_every_draft_prompt_offers_a_way_out(services, make_active_client,
     чего-то ждёт: и на отказе по длине, и на «жду текст или картинку».
     """
     from tests.conftest import FakeMessage
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     c = make_active_client(name="Ксюша", tg_id=7019)
@@ -322,7 +322,7 @@ async def test_broadcast_album_with_caption_is_one_action(
     дополнительных шагов. Подпись приезжает на ОДНОМ из сообщений альбома, и
     черновик обязан подхватить её с любого."""
     from tests.conftest import FakeMessage
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
@@ -358,7 +358,7 @@ async def test_broadcast_photos_after_text_rebuild_the_preview(
     подтверждения и запись, неотличимая от разосланной.
     """
     from tests.conftest import FakeMessage
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
@@ -393,7 +393,7 @@ async def test_broadcast_refuses_caption_over_limit_and_keeps_the_draft(
     заново из-за одного лишнего абзаца — худший из возможных ответов.
     """
     from tests.conftest import FakeMessage
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
@@ -430,7 +430,7 @@ async def test_broadcast_send_revalidates_the_limit(services, make_active_client
     отчёт записал бы всех в «заблокировали бота».
     """
     from tests.conftest import FakeCallback, FakeMessage, FakeState
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     c = make_active_client(name="Ксюша", tg_id=7015)
@@ -461,7 +461,7 @@ async def test_broadcast_concurrent_album_updates_lose_nothing(
     целостность свойством кода, а не удачным свойством хранилища.
     """
     from tests.conftest import FakeMessage
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     class NetworkishState(FakeState):
@@ -497,7 +497,7 @@ async def test_broadcast_stops_at_the_album_limit(services, make_active_client,
     десяти. Отбиваем на приёме, а не на отправке — иначе объявление упало бы
     целиком, после набранного текста."""
     from tests.conftest import FakeMessage
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     monkeypatch.setattr(admin_h, "_BC_SETTLE_SECONDS", 0)
@@ -547,7 +547,7 @@ async def test_broadcast_draft_chain_is_cleaned_on_cancel(services, make_active_
     текстом — то есть черновик оставался в чате.
     """
     from tests.conftest import FakeMessage
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     c = make_active_client(name="Ксюша", tg_id=7010)
@@ -627,7 +627,7 @@ async def test_send_leaves_report_and_opens_panel_separately(
     меню — держать инвариант «одно активное» было нечем.
     """
     from tests.conftest import FakeCallback, FakeMessage, FakeState
-    from awgbot.bot.handlers import admin as admin_h
+    from awgbot.bot.handlers.admin import broadcast as admin_h
     import awgbot.core.config as cfg
 
     admin_h._last_broadcast_at.clear()
