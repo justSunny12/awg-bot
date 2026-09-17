@@ -26,8 +26,8 @@ def test_pause_day_choice_and_days(services, fake_awg):
     assert ok and reserved == avail_now
 
 
-def test_pause_counter_shows_period_end(services, fake_awg):
-    """Пункт 3: счётчик приостановки содержит дату конца подписки."""
+def test_pause_counter_is_a_bare_balance(services, fake_awg):
+    """Счётчик — только накопленное: без максимума и без срока, дни не сгорают."""
     from awgbot.bot import texts
     from awgbot.util import timeutil
     from datetime import datetime
@@ -38,7 +38,11 @@ def test_pause_counter_shows_period_end(services, fake_awg):
     c = services.db.get_client(cid)
     block = texts.subscription_block(c, for_admin=True)
     line = [l for l in block.split("\n") if "Приостановка" in l][0]
-    assert "до 15.03.2027" in line
+    assert line == "Приостановка: доступно 28 дней"
+    services.db.set_pause_balance(cid, 21)
+    line = [l for l in texts.subscription_block(services.db.get_client(cid), for_admin=True).split("\n")
+            if "Приостановка" in l][0]
+    assert line == "Приостановка: доступно 21 день"
 
 
 def test_pause_limit_exhausted_text():
