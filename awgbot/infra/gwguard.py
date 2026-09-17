@@ -237,9 +237,11 @@ def uplink_policy(uplink_if: str) -> dict:
     return {"rule": rule, "route": route}
 
 
-def uplink_policy_ensure(uplink_if: str) -> list[str]:
-    """Перевыставить недостающее. Возвращает, что было восстановлено."""
-    state = uplink_policy(uplink_if)
+def uplink_policy_ensure(uplink_if: str, state: dict | None = None) -> list[str]:
+    """Перевыставить недостающее. state — уже снятое uplink_policy (тик
+    снимает его для проверок и отдаёт сюда, чтобы не ходить в ip дважды).
+    Возвращает, что было восстановлено."""
+    state = state if state is not None else uplink_policy(uplink_if)
     fixed: list[str] = []
     if not state["rule"]:
         if subprocess.run(["ip", "rule", "add", "fwmark", str(TG_MARK), "lookup", str(UPLINK_TABLE)],

@@ -177,15 +177,20 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                                   "" if pol in (None, "accept") else
                                   f"ip filter FORWARD: {pol} — drop чужой таблицы "
                                   "перекрывает транзит клиентов"))
-        rc = _run(["systemctl", "is-enabled", config.GW_UNIT]).returncode
-        checks.append(GwCheck("юнит реассерта", rc == 0,
-                              "" if rc == 0 else
+        # Включённость юнита меняется только руками — статический ярус (45
+        # мин, кнопки «Статус»/«Монитор здоровья» сбрасывают), а не exec на тик.
+        enabled = self._unit_enabled()
+        checks.append(GwCheck("юнит реассерта", enabled,
+                              "" if enabled else
                               f"{config.GW_UNIT} не включён — ребут не восстановит обвязку"))
         # Политика «Telegram → аплинк»: без неё метка стоит, а пакеты агента
         # уходят домашнему провайдеру — Telegram недоступен, агент молчит.
+        # Аплинк (автодетект — три exec) и состояние политики запоминаем на
+        # тик: heal возьмёт их отсюда, а не снимет заново.
         uplink = gwguard.uplink_interface()
+        pol = gwguard.uplink_policy(uplink) if uplink else None
+        self._uplink_state = (uplink, pol)
         if uplink:
-            pol = gwguard.uplink_policy(uplink)
             ok = pol["rule"] and pol["route"]
             lack = [n for n, v in (("правило по метке", pol["rule"]),
                                    (f"маршрут в {uplink}", pol["route"])) if not v]
@@ -195,14 +200,29 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
             checks.append(GwCheck("политика аплинка", None, "аплинк не найден"))
         return checks
 
+    def _unit_enabled(self) -> bool:
+        c = self.__dict__.get("_unit_enabled_cache")
+        if c and time.monotonic() - c[0] < self._STATIC_TTL:
+            return c[1]
+        enabled = _run(["systemctl", "is-enabled", config.GW_UNIT]).returncode == 0
+        self.__dict__["_unit_enabled_cache"] = (time.monotonic(), enabled)
+        return enabled
+
     def uplink_policy_heal(self) -> list[str]:
         """Перевыставить правило/маршрут аплинка, если пропали (см. gwguard).
-        Каждый тик, без интервала: две idempotent-команды ip."""
+        Каждый тик: аплинк и состояние политики — те, что только что снял
+        plumbing_checks (дубль автодетекта и двух `ip -j` на тик снят); вне
+        тика — свои пробы. Idempotent-команды ip только при пропаже."""
         from awgbot.infra import gwguard
-        uplink = gwguard.uplink_interface()
+        state = self.__dict__.pop("_uplink_state", None)
+        if state is None:
+            uplink = gwguard.uplink_interface()
+            pol = gwguard.uplink_policy(uplink) if uplink else None
+        else:
+            uplink, pol = state
         if not uplink:
             return []
-        fixed = gwguard.uplink_policy_ensure(uplink)
+        fixed = gwguard.uplink_policy_ensure(uplink, pol)
         if fixed:
             log.warning("gateway: политика аплинка перевыставлена: %s", ", ".join(fixed))
         return fixed
@@ -299,15 +319,15 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         и час тишины здесь равен часу неработающего РФ-доступа у всех. Остальное
         — обычные уведомления с обычными стриками.
         """
-        st = self.snapshot()
         notes: list[Notification] = []
         streak = settings.get_int("app.monitoring.alert_streak", 5)
 
-        # все стрики тика — одной транзакцией: было до 20 коммитов за тик на
-        # флеш малины, в спокойном состоянии теперь ноль (set_state не пишет
-        # неизменившееся, счётчики упираются в потолок)
+        # Весь тик — одной транзакцией: снимок для панели, месячный трафик и
+        # стрики. Было три коммита за тик (снимок, трафик, стрики) — на флеш
+        # малины это три fsync каждые три минуты; стал один.
         with self.db.transaction():
-          notes += self._tick_alerts(st, streak)
+            st = self.snapshot()
+            notes += self._tick_alerts(st, streak)
 
         try:
             self.tg_mark_ensure(st.tg_missing)          # без повторной пробы
@@ -341,8 +361,11 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
             "✅ Линк до ВПС ожил, хендшейк свежий.",
             loud=settings.get_bool("app.gateway.link_alert_loud", True))
 
+        # Лежащий домашний канал для РФ-доступа равносилен лежащему линку —
+        # тот же короткий стрик, а не общий на пять тиков.
         notes += self._streak_alert(
-            "egress", st.egress_ms is None, streak,
+            "egress", st.egress_ms is None,
+            settings.get_int("app.gateway.egress_alert_streak", 2),
             "⚠️ Шлюз не выходит наружу: домашний канал не отвечает. РФ-доступ "
             "через шлюз не работает.",
             "✅ Домашний канал шлюза снова отвечает.")
@@ -585,16 +608,33 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         (домашний канал, не туннель). Возвращает время первого удачного, мс;
         None — никто не ответил. Две цели: один внешний хост сам по себе точка
         отказа, и его заминка выглядела бы как отвал канала."""
-        targets = settings.get("app.gateway.egress_targets", None) or ["77.88.8.8", "8.8.8.8"]
+        targets = [str(t) for t in (settings.get("app.gateway.egress_targets", None)
+                                    or ["77.88.8.8", "8.8.8.8"])]
         port = int(settings.get("app.gateway.egress_port", 53))
-        for host in targets:
-            t0 = time.monotonic()
-            try:
-                with socket.create_connection((str(host), port), timeout=3.0):
-                    return round((time.monotonic() - t0) * 1000, 1)
-            except OSError:
-                continue
-        return None
+        if len(targets) == 1:
+            return self._egress_one(targets[0], port)
+        # Цели независимы — ходим ко всем разом, первый ответ и есть результат:
+        # последовательно при лежащем канале тик держал поток 2 × 3 с.
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        pool = ThreadPoolExecutor(max_workers=len(targets))
+        try:
+            futs = [pool.submit(self._egress_one, h, port) for h in targets]
+            for f in as_completed(futs):
+                ms = f.result()
+                if ms is not None:
+                    return ms
+            return None
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+
+    @staticmethod
+    def _egress_one(host: str, port: int) -> float | None:
+        t0 = time.monotonic()
+        try:
+            with socket.create_connection((host, port), timeout=3.0):
+                return round((time.monotonic() - t0) * 1000, 1)
+        except OSError:
+            return None
 
     # ── резервная копия ──────────────────────────────────────────────────────
 
@@ -677,6 +717,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
     def invalidate_static(self) -> None:
         """Сбросить кэш статических проб: «Статус», «Монитор здоровья», старт."""
         self.__dict__.pop("_static_cache", None)
+        self.__dict__.pop("_unit_enabled_cache", None)
 
     def _static(self) -> tuple[tuple[str, str], tuple[list[str], int], str | None]:
         from awgbot.runtime import hostmetrics

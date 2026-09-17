@@ -231,7 +231,7 @@ def _quiet_status(**kw):
     st = GwStatus(link_up=True, handshake_age=10.0,
                   checks=[GwCheck("MASQUERADE", True)], temp=50.0, disk=30.0,
                   throttled={"raw": 0, "now": [], "ever": []},
-                  module_version="v", srcversion="s", kernels_total=3)
+                  module_version="v", srcversion="s", kernels_total=3, egress_ms=25.0)
     for k, v in kw.items():
         setattr(st, k, v)
     return st
@@ -364,3 +364,112 @@ def test_plumbing_reports_uplink_policy(svc, monkeypatch):
     assert {c.name: c for c in svc.plumbing_checks()}["политика аплинка"].ok is True
     monkeypatch.setattr(gwguard, "uplink_interface", lambda: "")
     assert {c.name: c for c in svc.plumbing_checks()}["политика аплинка"].ok is None
+
+
+# ── экономия тика: аплинк и политика снимаются один раз, юнит — в статике ────
+
+def test_tick_reuses_uplink_probe_for_heal(svc, monkeypatch):
+    """Автодетект аплинка (три exec) и `ip -j rule/route` (два) шли в тике
+    дважды: в проверках и в самовосстановлении. Heal берёт то, что только что
+    сняли проверки; вне тика — пробует сам."""
+    import subprocess as sp
+    from awgbot.infra import gwguard
+    monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
+    run = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []})
+    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
+    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    calls = {"iface": 0, "policy": 0, "ensure": []}
+
+    def iface():
+        calls["iface"] += 1; return "awg0"
+
+    def policy(i):
+        calls["policy"] += 1; return {"rule": False, "route": True}
+
+    def ensure(i, state=None):
+        calls["ensure"].append((i, state)); return ["правило по метке"]
+    monkeypatch.setattr(gwguard, "uplink_interface", iface)
+    monkeypatch.setattr(gwguard, "uplink_policy", policy)
+    monkeypatch.setattr(gwguard, "uplink_policy_ensure", ensure)
+
+    svc.plumbing_checks()
+    assert svc.uplink_policy_heal() == ["правило по метке"]
+    assert calls["iface"] == 1 and calls["policy"] == 1, "heal снял аплинк/политику заново"
+    assert calls["ensure"] == [("awg0", {"rule": False, "route": True})]
+    svc.uplink_policy_heal()                     # вне тика — свои пробы
+    assert calls["iface"] == 2 and calls["policy"] == 2
+
+
+def test_unit_enabled_is_cached_until_invalidated(svc, monkeypatch):
+    """`systemctl is-enabled` — не на каждый тик: включённость юнита меняется
+    только руками; кнопки «Статус»/«Монитор здоровья» сбрасывают кэш."""
+    import subprocess as sp
+    from awgbot.infra import gwguard
+    monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
+    base = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []})
+    seen = []
+
+    def run(argv, timeout=10, **kw):
+        if list(argv)[:2] == ["systemctl", "is-enabled"]:
+            seen.append(1)
+        return base(argv, timeout, **kw)
+    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
+    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    monkeypatch.setattr(gwguard, "uplink_interface", lambda: "")
+    svc.plumbing_checks(); svc.plumbing_checks()
+    assert len(seen) == 1, "юнит спрашивали на каждый вызов"
+    svc.invalidate_static()
+    svc.plumbing_checks()
+    assert len(seen) == 2
+
+
+def test_monitor_tick_is_a_single_commit(svc, monkeypatch):
+    """Снимок панели, месячный трафик и стрики — один коммит за тик, а не три
+    fsync на флеш малины."""
+    monkeypatch.setattr(svc, "status", lambda: _quiet_status(rx=100, tx=50))
+    monkeypatch.setattr(svc, "uplink_policy_heal", lambda: [])
+    monkeypatch.setattr(svc, "tg_mark_ensure", lambda missing=None: 0)
+    before = svc.db.commits
+    svc.monitor_tick()
+    assert svc.db.commits - before == 1, "тик стоил больше одной транзакции"
+    assert svc.cached_status(60) is not None and svc.cached_status(60).month_rx == 100
+
+
+def test_egress_probe_targets_in_parallel(svc, monkeypatch):
+    """Две цели — разом: первый ответ и есть результат, медленную не ждём;
+    все молчат — None."""
+    import time as _t
+
+    class _Conn:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def connect(addr, timeout=3.0):
+        host, _ = addr
+        if host == "slow":
+            _t.sleep(0.3); raise OSError("timeout")
+        return _Conn()
+    monkeypatch.setattr(gw.socket, "create_connection", connect)
+    monkeypatch.setattr(gw.settings, "get", lambda k, d=None: ["slow", "fast"] if k.endswith("egress_targets") else d)
+    t0 = _t.monotonic()
+    assert svc.egress_probe() is not None
+    assert _t.monotonic() - t0 < 0.2, "ждали медленную цель"
+
+    def all_dead(addr, timeout=3.0):
+        raise OSError("down")
+    monkeypatch.setattr(gw.socket, "create_connection", all_dead)
+    assert svc.egress_probe() is None
+
+
+def test_egress_alert_has_its_own_short_streak(svc, monkeypatch):
+    """Лежащий домашний канал равносилен лежащему линку — алерт на втором тике,
+    а не на пятом."""
+    monkeypatch.setattr(svc, "uplink_policy_heal", lambda: [])
+    monkeypatch.setattr(svc, "tg_mark_ensure", lambda missing=None: 0)
+    monkeypatch.setattr(svc, "status", lambda: _quiet_status(egress_ms=None))
+    first = svc.monitor_tick()
+    assert not any("не выходит наружу" in n.text for n in first)
+    second = svc.monitor_tick()
+    assert any("не выходит наружу" in n.text for n in second)

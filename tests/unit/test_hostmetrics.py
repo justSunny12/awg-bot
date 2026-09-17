@@ -89,3 +89,19 @@ def test_get_host_metrics_corrupt(tmp_path):
     db = Database(str(tmp_path / "t.db")); db.init_schema()
     db.set_state(hm.STATE_METRICS, "{not json")
     assert hm.get_host_metrics(db) is None
+
+
+def test_throttled_word_is_read_from_sysfs_before_vcgencmd(tmp_path):
+    """На Pi 4/5 слово троттлинга лежит в sysfs — файл вместо exec vcgencmd на
+    каждый тик; прошивка пишет hex с «0x» и без."""
+    from awgbot.runtime import hostmetrics as hm
+    p = tmp_path / "get_throttled"
+    p.write_text("0x50005\n")
+    assert hm._read_throttled_sysfs(str(p)) == 0x50005
+    p.write_text("50005\n")
+    assert hm._read_throttled_sysfs(str(p)) == 0x50005
+    p.write_text("0\n")
+    assert hm._read_throttled_sysfs(str(p)) == 0
+    assert hm._read_throttled_sysfs(str(tmp_path / "nope")) is None
+    p.write_text("garbage\n")
+    assert hm._read_throttled_sysfs(str(p)) is None

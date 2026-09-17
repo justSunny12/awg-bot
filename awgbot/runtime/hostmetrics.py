@@ -190,6 +190,20 @@ _THROTTLE_BITS_EVER = {16: "недонапряжение случалось", 17
                        18: "троттлинг случался"}
 
 
+_THROTTLED_SYSFS = "/sys/devices/platform/soc/soc:firmware/get_throttled"
+
+
+def _read_throttled_sysfs(path: str = _THROTTLED_SYSFS) -> int | None:
+    """То же слово состояния из sysfs (Pi 4/5, прошивка отдаёт hex — с «0x»
+    или без): чтение файла вместо exec vcgencmd на каждый тик. None — файла
+    нет (не Pi или старая прошивка) — тогда vcgencmd."""
+    try:
+        raw = pathlib.Path(path).read_text(encoding="ascii").strip()
+        return int(raw[2:] if raw.lower().startswith("0x") else raw, 16)
+    except (OSError, ValueError):
+        return None
+
+
 def read_pi_throttled() -> dict | None:
     """Состояние питания/троттлинга Raspberry Pi через vcgencmd.
 
@@ -198,13 +212,15 @@ def read_pi_throttled() -> dict | None:
     Недонапряжение — классическая тихая смерть Pi: внешне работает, под
     нагрузкой виснет, и связать это с блоком питания неоткуда.
     """
-    import subprocess
-    try:
-        out = subprocess.run(["vcgencmd", "get_throttled"], capture_output=True,
-                             timeout=5).stdout.decode(errors="replace")
-        raw = int(out.split("=")[1].strip(), 16)
-    except Exception:                                  # noqa: BLE001
-        return None
+    raw = _read_throttled_sysfs()
+    if raw is None:
+        import subprocess
+        try:
+            out = subprocess.run(["vcgencmd", "get_throttled"], capture_output=True,
+                                 timeout=5).stdout.decode(errors="replace")
+            raw = int(out.split("=")[1].strip(), 16)
+        except Exception:                              # noqa: BLE001
+            return None
     now = [t for bit, t in _THROTTLE_BITS_NOW.items() if raw & (1 << bit)]
     ever = [t for bit, t in _THROTTLE_BITS_EVER.items() if raw & (1 << bit)]
     return {"raw": raw, "now": now, "ever": ever}
