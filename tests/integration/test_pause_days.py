@@ -48,7 +48,7 @@ def test_pause_counter_shows_balance_of_type_max(services, fake_awg):
     services.db.update_client_fields(cid, period_kind="week")
     line = [l for l in texts.subscription_block(services.db.get_client(cid), for_admin=True).split("\n")
             if "Приостановка" in l][0]
-    assert line == "Приостановка: доступно 21 дней"
+    assert line == "Приостановка: доступно 21 день", "без максимума — склонение по числу"
 
 
 def test_pause_limit_exhausted_text():

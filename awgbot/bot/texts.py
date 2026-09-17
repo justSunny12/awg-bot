@@ -281,8 +281,9 @@ def subscription_block(client, *, for_admin: bool = False, show_pause: bool = Tr
         elif kind == "month":
             of = f"/{12 * settings.get_int('pause.monthly_pause_days', 2)}"
         else:
-            of = ""
-        lines.append(f"Приостановка: доступно {bal}{of} дней")
+            of = ""          # день/неделя: не копят, максимум — чужой, не показываем
+        word = "дней" if of else _days_word(bal)
+        lines.append(f"Приостановка: доступно {bal}{of} {word}")
     return "\n".join(lines)
 
 
