@@ -7,7 +7,7 @@ import pytest
 
 from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 from awgbot.bot.callbacks import BroadcastCB
-from awgbot.bot.handlers import admin as admin_h
+from awgbot.bot.handlers.admin import broadcast as admin_h
 from awgbot.util import timeutil
 import awgbot.core.config as cfg
 
