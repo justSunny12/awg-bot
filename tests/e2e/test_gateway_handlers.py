@@ -7,7 +7,7 @@ import os
 import pytest
 
 import awgbot.core.config as cfg
-from awgbot.bot.callbacks import GwCB
+from awgbot.bot.callbacks import GwCB, HideCB
 from awgbot.bot.handlers import gateway as gh
 from awgbot.domain.gateway import GatewayServices, GwStatus
 from awgbot.infra.db import Database
@@ -120,7 +120,6 @@ async def test_update_failure_message_can_be_hidden(svc, fake_bot, monkeypatch):
     следом: отказ не итог ступени, держать его в истории незачем, а меню под
     кнопкой уже удалено."""
     import types
-    from awgbot.bot import keyboards as kb
     nxt = types.SimpleNamespace(tag="v9.9.9", body="", skipped=())
     monkeypatch.setattr(svc, "update_next", lambda: nxt)
 
@@ -140,7 +139,7 @@ async def test_update_failure_message_can_be_hidden(svc, fake_bot, monkeypatch):
     text, markup = [x for x in sent if "Не удалось обновить" in x[0]][0]
     labels = [b.text for row in markup.inline_keyboard for b in row]
     assert labels == ["Скрыть"]
-    assert markup.inline_keyboard[0][0].callback_data == kb.HideCB().pack()
+    assert markup.inline_keyboard[0][0].callback_data == HideCB().pack()
     assert not svc.db.get_state("update_pending")
     panel = [s for s in msg.sent if s[0] == "answer" and s[2] is not None]
     assert panel and "Шлюз" in panel[-1][1] or svc.db.get_nav_message_id(cfg.ADMIN_ID), "панель не пришла"
