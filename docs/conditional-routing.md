@@ -9,7 +9,7 @@
 | Слой | Файл |
 |---|---|
 | Топология фичи | `conf/app.yaml` → `routing:`, `core/config.py` |
-| Схема и CRUD | `infra/db.py` |
+| Схема и CRUD | `infra/db/` (`schema.py`, `routing.py`) |
 | Чистая логика (нормализация доменов, генерация dnsmasq) | `domain/routing.py` |
 | Команды (ipset/iptables/ip/dnsmasq) | `infra/routing.py` |
 | Бизнес-логика, реконсиляция, деградация | `domain/services/routing.py`, `domain/services/gateway_link.py` |

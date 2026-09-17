@@ -275,7 +275,7 @@ awgbot/
              enums, models, blocks   доменные типы, битмаски блокировок
   util/      timeutil   время UTC+3, форматтеры, формат даты Amnezia
              qrgen      QR/GIF; secrets_util  argon2id/SecretBox (крипто бэкапов)
-  infra/     db         SQLite (per-thread), схема, миграции, доступ
+  infra/     db/        SQLite (per-thread): ядро, схема и миграции, миксины по темам
              awg        ЕДИНСТВЕННЫЙ слой команд к awg (host | docker exec)
              routing    команды условной маршрутизации: ipset/iptables/ip/dnsmasq
              updates    релизы репозитория, сверка sha256
