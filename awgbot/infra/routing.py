@@ -84,9 +84,15 @@ def _host(args: list[str], *, check: bool = True,
     return proc
 
 
+# Проверки «есть ли правило/маршрут/набор» — только чтение: их зовут тик и
+# рендер экранов, и ждать 20 с ответа netlink там нечего — дольше 5 с это уже
+# «не смог посмотреть» (третье состояние), а не отказ.
+_PROBE_TIMEOUT = 5
+
+
 def _host_ok(args: list[str]) -> bool:
     """Код возврата 0? Для проверок существования правил (iptables -C и т.п.)."""
-    return _host(args, check=False).returncode == 0
+    return _host(args, check=False, timeout=_PROBE_TIMEOUT).returncode == 0
 
 
 def _cont(args: list[str], *, check: bool = True):
@@ -210,7 +216,7 @@ def _check_subnet_plumbing(subnet: str, iface: str) -> None:
     # именно `route show <подсеть>`, а не `route get <адрес>`: get вернёт код 0
     # практически всегда, потому что подойдёт маршрут по умолчанию, — проверка
     # была бы ложноположительной. Нужен ЯВНЫЙ маршрут для этой подсети.
-    proc = _host(["ip", "route", "show", subnet], check=False)
+    proc = _host(["ip", "route", "show", subnet], check=False, timeout=_PROBE_TIMEOUT)
     route = proc.stdout.decode(errors="replace") if proc.returncode == 0 else ""
     if not route.strip():
         raise RoutingUnavailable(
@@ -412,7 +418,7 @@ def parse_ipset_save(text: str) -> dict[str, set[str]]:
 def snapshot_sets() -> Optional[dict[str, set[str]]]:
     """Состав всех наборов одним exec; None — не смогли прочитать (тогда
     вызывающий пересобирает всё безусловно, как раньше)."""
-    proc = _host(["ipset", "save"], check=False)
+    proc = _host(["ipset", "save"], check=False, timeout=_PROBE_TIMEOUT)
     if proc.returncode != 0:
         return None
     return parse_ipset_save(proc.stdout.decode(errors="replace"))
@@ -420,7 +426,7 @@ def snapshot_sets() -> Optional[dict[str, set[str]]]:
 
 
 def list_sets() -> list[str]:
-    proc = _host(["ipset", "list", "-n"], check=False)
+    proc = _host(["ipset", "list", "-n"], check=False, timeout=_PROBE_TIMEOUT)
     return [l.strip() for l in proc.stdout.decode(errors="replace").splitlines() if l.strip()]
 
 
@@ -572,7 +578,7 @@ def _hook_present() -> bool:
 
 
 def _rule_present() -> bool:
-    proc = _host(["ip", "rule", "show"], check=False)
+    proc = _host(["ip", "rule", "show"], check=False, timeout=_PROBE_TIMEOUT)
     text = proc.stdout.decode(errors="replace")
     return _MARK_HEX in text and f"lookup {config.ROUTING_TABLE}" in text
 
@@ -613,7 +619,7 @@ def hook_present() -> bool:
 def table_route() -> Optional[str]:
     """Маршрут по умолчанию в таблице фичи, как его показывает ядро."""
     proc = _host(["ip", "route", "show", "default", "table",
-                  str(config.ROUTING_TABLE)], check=False)
+                  str(config.ROUTING_TABLE)], check=False, timeout=_PROBE_TIMEOUT)
     if proc.returncode != 0:
         return None
     return proc.stdout.decode(errors="replace").strip() or None
@@ -635,7 +641,7 @@ def set_count(name: str) -> int:
     следует «на шлюз не идёт ничего»), но означает, что режим не работает: либо
     списки не скачаны, либо dnsmasq не может писать в ipset — а это самый
     молчаливый из отказов, резолв при нём исправен."""
-    proc = _host(["ipset", "list", name, "-t"], check=False)
+    proc = _host(["ipset", "list", name, "-t"], check=False, timeout=_PROBE_TIMEOUT)
     if proc.returncode != 0:
         return 0
     for line in proc.stdout.decode(errors="replace").splitlines():
@@ -737,7 +743,7 @@ def link_peer_address() -> Optional[str]:
     ядро — более достоверный источник, чем файл, который могли и не применить.
     """
     proc = _host(["ip", "-4", "-o", "addr", "show", "dev",
-                  config.ROUTING_GW_INTERFACE], check=False)
+                  config.ROUTING_GW_INTERFACE], check=False, timeout=_PROBE_TIMEOUT)
     if proc.returncode != 0:
         return None
     for tok in proc.stdout.decode(errors="replace").split():
@@ -806,7 +812,7 @@ def probe_source() -> Optional[str]:
     интернета», поэтому адрес называем прямо.
     """
     proc = _host(["ip", "-4", "-o", "addr", "show", "dev",
-                  config.ROUTING_GW_INTERFACE], check=False)
+                  config.ROUTING_GW_INTERFACE], check=False, timeout=_PROBE_TIMEOUT)
     if proc.returncode != 0:
         return None
     for tok in proc.stdout.decode(errors="replace").split():
@@ -841,14 +847,33 @@ def probe_gateway(target, port: int = 53, attempts: int = 2,
     # наружу есть, — а это ровно то, что мы и хотим знать.
     targets = [target] if isinstance(target, str) else list(target)
     for _ in range(max(1, attempts)):
-        for host in targets:
-            if _tcp_probe(host, port, timeout):
-                return PROBE_OK
+        if _any_reachable(targets, port, timeout):
+            return PROBE_OK
     # Наружу не прошли. Различаем, где чинить, по состоянию туннеля — здесь это
     # уместно: решение о живости уже принято выше, хендшейк лишь уточняет адрес
     # ремонта. Свежий хендшейк ⇒ туннель жив, значит дело за шлюзом.
     age = link_handshake_age()
     return PROBE_NO_PATH if (age is not None and age <= 180) else PROBE_DOWN
+
+
+def _any_reachable(targets: list, port: int, timeout: float) -> bool:
+    """Одна попытка по всем целям РАЗОМ: цели независимы, а последовательный
+    обход в худшем случае держал рабочий поток 2 × N × 4 с. Первый успех —
+    ответ, остальные коннекты дотикают свой таймаут в фоне."""
+    if len(targets) == 1:
+        return _tcp_probe(targets[0], port, timeout)
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    # без `with`: выход из контекста ждёт ВСЕ потоки, а нам нужен первый успех —
+    # остальные коннекты дотикают свой таймаут в фоне
+    pool = ThreadPoolExecutor(max_workers=len(targets))
+    try:
+        futs = [pool.submit(_tcp_probe, h, port, timeout) for h in targets]
+        for f in as_completed(futs):
+            if f.result():
+                return True
+        return False
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def link_handshake_age() -> Optional[int]:

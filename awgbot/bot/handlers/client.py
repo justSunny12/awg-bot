@@ -714,13 +714,9 @@ async def grace_take(cb: CallbackQuery, callback_data: GraceCB, client, services
         except Exception:
             pass
         return
-    # гасим кнопки у уведомления и подтверждаем
-    try:
-        await cb.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-    await cb.message.answer(
-        texts.grace_activated_client(grace_days, timeutil.fmt_dt(new_end)))
+    # итог — на месте предложения: одна правка вместо «снять кнопки» + новое
+    # сообщение; вопрос отслужил, а история «предлагали → взял» остаётся в тексте
+    await edit(cb, texts.grace_activated_client(grace_days, timeutil.fmt_dt(new_end)), None)
     if settings.get_bool("notifications.client_events.grace", True):
         await notify_one(cb.message.bot, config.ADMIN_ID,
                          texts.grace_activated_admin(client.name, grace_days))

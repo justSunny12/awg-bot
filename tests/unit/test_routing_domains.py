@@ -196,6 +196,26 @@ def test_probe_retries_absorb_a_lost_packet(monkeypatch):
     assert routing.probe_gateway("77.88.8.8") == routing.PROBE_OK
 
 
+def test_probe_targets_are_tried_in_parallel(monkeypatch):
+    """Цели независимы: последовательный обход в худшем случае держал поток
+    2 × N × 4 с. Одна попытка ходит ко всем разом, первый успех — ответ."""
+    import threading, time
+    from awgbot.infra import routing
+    from awgbot.core import config
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
+    seen = []
+
+    def slow(h, p, t):
+        seen.append((h, threading.get_ident()))
+        time.sleep(0.2 if h == "slow" else 0.0)
+        return h == "fast"
+    monkeypatch.setattr(routing, "_tcp_probe", slow)
+    t0 = time.monotonic()
+    assert routing.probe_gateway(["slow", "fast"], attempts=1) == routing.PROBE_OK
+    assert time.monotonic() - t0 < 0.15, "ждали медленную цель, хотя быстрая уже ответила"
+    assert len({tid for _, tid in seen}) == 2, "цели ходили в одном потоке — последовательно"
+
+
 # ── диагностика тракта ───────────────────────────────────────────────────────
 
 def test_doctor_names_the_machine_to_fix(monkeypatch):
