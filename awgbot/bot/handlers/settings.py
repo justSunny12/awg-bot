@@ -379,6 +379,16 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
         # только значение в yaml: применяем сразу, не дожидаясь тика монитора
         if k == "app.routing.enabled":
             await call(services.reconcile_routing)
+            # Включили — тут же замер шлюза: пока фича была выключена, о его
+            # состоянии молчали (и на старте тоже), и узнать, что он лежит,
+            # админ должен сейчас, а не когда пожалуются люди.
+            if settings.get_bool(k, False) and await call(services.db.gateway_device) is not None:
+                ok, _reason = await call(services.routing_status)
+                if ok:
+                    warn = texts.routing_gateway_warning(await call(services.routing_probe),
+                                                         at_start=False)
+                    if warn:
+                        await cb.message.answer(f"⚠️ {warn}", reply_markup=kb.hide_only())
     await core.toggle_bool(cb, services, HOOKS, key, callback_data.sec, after_set=_after_set)
 
 

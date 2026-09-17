@@ -112,3 +112,36 @@ def test_mail_check_is_skipped_when_not_configured():
     warns = preflight.collect_warnings(Svc())
     assert checked == []
     assert not any("env" in w for w in warns)
+
+
+def _routing_svc(probed: list, verdict: str):
+    from types import SimpleNamespace
+
+    class Svc:
+        db = SimpleNamespace(gateway_device=lambda: SimpleNamespace(id=1))
+        def server_ok(self): return True
+        def email_resume_enabled(self): return False
+        def routing_status(self): return True, ""
+        def routing_probe(self): probed.append(1); return verdict
+    return Svc()
+
+
+def test_gateway_is_not_probed_while_the_feature_is_off(monkeypatch):
+    """Выключенная в настройках функция спит: «шлюз не отвечает на старте»
+    приходило при выключенной фиче — замер и замечание только при включённой."""
+    from awgbot.core import config, settings
+    from awgbot.infra import routing as rt
+    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
+    real = settings.get_bool
+    state = {"app.routing.enabled": False}
+    monkeypatch.setattr(settings, "get_bool", lambda k, d=False: state.get(k, real(k, d)))
+    probed: list = []
+    warns = preflight.collect_warnings(_routing_svc(probed, rt.PROBE_DOWN))
+    assert probed == [] and not any("шлюз" in w for w in warns)
+
+    state["app.routing.enabled"] = True
+    warns = preflight.collect_warnings(_routing_svc(probed, rt.PROBE_DOWN))
+    assert probed == [1]
+    assert any(w.startswith("шлюз условной маршрутизации не отвечает на старте") for w in warns)
+    warns = preflight.collect_warnings(_routing_svc(probed, rt.PROBE_OK))
+    assert not any("шлюз" in w for w in warns)

@@ -943,7 +943,28 @@ async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
     assert state["app.routing.enabled"] is False
     assert cb.answers and "выключена" in cb.answers[0][0]
 
-    # выключено → нажатие включает сразу, без вопроса
+    # выключено → нажатие включает сразу, без вопроса; шлюз тут же замеряется:
+    # пока фича спала, о нём молчали (и на старте тоже), лежит — сказать сейчас
+    from types import SimpleNamespace
+    from awgbot.infra import routing as rt
+    monkeypatch.setattr(services.db, "gateway_device", lambda: SimpleNamespace(id=1))
+    monkeypatch.setattr(services, "routing_status", lambda: (True, ""))
+
+    async def _no_render(cb, sec, services_):        # раздел рисует полную карточку шлюза — не о нём тест
+        pass
+    monkeypatch.setattr(sh, "_render", _no_render)
+    monkeypatch.setattr(services, "routing_probe", lambda: rt.PROBE_DOWN)
     cb, nav = _cb(fake_bot, config.ADMIN_ID)
     await sh.toggle(cb, SetCB(sec="rt", act="toggle", key="app.routing.enabled"), services)
     assert state["app.routing.enabled"] is True
+    said = [s[1] for s in nav.sent if s[0] == "answer"]
+    assert said and said[-1].startswith("⚠️ шлюз условной маршрутизации не отвечает при включении"), said
+
+    # шлюз отвечает — молчим
+    await sh.routing_action(_cb(fake_bot, config.ADMIN_ID)[0],
+                            SetCB(sec="rt", act="do", key="off!"), services)
+    monkeypatch.setattr(services, "routing_probe", lambda: rt.PROBE_OK)
+    cb, nav = _cb(fake_bot, config.ADMIN_ID)
+    await sh.toggle(cb, SetCB(sec="rt", act="toggle", key="app.routing.enabled"), services)
+    assert state["app.routing.enabled"] is True
+    assert not [s for s in nav.sent if s[0] == "answer" and "шлюз" in (s[1] or "")]

@@ -240,10 +240,14 @@ def collect_warnings(services) -> list[str]:
                      "выдача конфигов/реконсиляция могут не работать")
 
     # условная маршрутизация: инструменты на месте и namespace сходится.
-    # Проверяем ТОЛЬКО если фича включена в конфиге — иначе она спит и мешать не
-    # должна. Провал не блокирует старт: фича сама себя выключает (UI её прячет,
-    # планировщик пропускает), VPN при этом работает как обычно.
-    if config.ROUTING_ENABLED and _gateway_assigned(services):
+    # Проверяем ТОЛЬКО если фича развёрнута (интерфейс линка в конфиге) И
+    # включена выключателем в настройках — выключенная спит и мешать не должна;
+    # замер при включении делает сам выключатель. Провал не блокирует старт:
+    # фича сама себя выключает (UI её прячет, планировщик пропускает), VPN при
+    # этом работает как обычно.
+    from awgbot.core import settings as _settings
+    if (config.ROUTING_ENABLED and _settings.get_bool("app.routing.enabled", False)
+            and _gateway_assigned(services)):
         try:
             ok, reason = services.routing_status()
             if not ok:
@@ -253,18 +257,10 @@ def collect_warnings(services) -> list[str]:
             else:
                 # Именно ЗАМЕР, а не routing_link_ok(): тот читает результат
                 # прошлого тика, а на старте это сведения из прошлой жизни бота.
-                from awgbot.infra import routing as _rt
-                verdict = services.routing_probe()
-                if verdict == _rt.PROBE_NO_PATH:
-                    warns.append("шлюз условной маршрутизации отвечает, но интернета "
-                                 "за ним нет — чинить на самом шлюзе (аплинк, "
-                                 "ip_forward, MASQUERADE). Маркировка снята, "
-                                 "российские сервисы временно открываются с "
-                                 "зарубежного адреса")
-                elif verdict != _rt.PROBE_OK:
-                    warns.append("шлюз условной маршрутизации не отвечает на старте — "
-                                 "маркировка снята, российские сервисы временно "
-                                 "открываются с зарубежного адреса")
+                from awgbot.bot import texts as _texts
+                warn = _texts.routing_gateway_warning(services.routing_probe(), at_start=True)
+                if warn:
+                    warns.append(warn)
         except Exception as e:                           # noqa: BLE001
             log.warning("preflight: проверка маршрутизации не удалась: %s", e)
 
