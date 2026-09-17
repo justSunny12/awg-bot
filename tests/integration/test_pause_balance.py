@@ -47,10 +47,19 @@ def test_expired_or_graced_month_gets_no_credit_on_the_next_renewal(services, ma
     assert services.pause_available_days(m.id) == 2 * _md(), "отсрочка в периоде — без бонуса"
 
 
+def test_yearly_renewals_accumulate_to_two_even_untimely(services, make_active_client):
+    y = make_active_client("Y", tg_id=7525, period_kind="year")
+    services.db.update_client_fields(y.id, status="expired", period_end="2026-09-01T00:00:00+03:00")
+    services.extend_period(y.id, "year", keep_remainder=False)
+    assert services.pause_available_days(y.id) == 2 * _year(), "годовое начисление — безусловное"
+    services.extend_period(y.id, "year", keep_remainder=False)
+    assert services.pause_available_days(y.id) == 2 * _year(), "не более двух продлений"
+
+
 def test_switching_kinds(services, make_active_client):
     m = make_active_client("M", tg_id=7530, period_kind="month")
     services.extend_period(m.id, "year", keep_remainder=False)
-    assert services.pause_available_days(m.id) == _year(), "переход на год заполняет счёт"
+    assert services.pause_available_days(m.id) == _md() + _year(), "месяц → год: остаток + годовое"
     y = make_active_client("Y", tg_id=7531, period_kind="year")
     services.extend_period(y.id, "month", keep_remainder=False)
     assert services.pause_available_days(y.id) == 12 * _md(), \
@@ -62,6 +71,7 @@ def test_switching_kinds(services, make_active_client):
     assert services.pause_available_days(y.id) == 5 + _md(), "неделя: счёт не пополняется, живёт"
     services.extend_period(y.id, "never", keep_remainder=False)
     assert services.pause_available_days(y.id) == 0, "бессрочной останавливать нечего"
+    assert services.db.get_client(y.id).pause_balance_days == 0, "у бессрочной счёт всегда ноль"
 
 
 def test_pause_spends_and_refunds_the_balance(services, fake_awg, make_active_client):

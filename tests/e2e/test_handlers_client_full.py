@@ -249,7 +249,7 @@ async def test_subscription_screen_and_menu_label(services, fake_bot, make_activ
     assert "📝 Моя подписка" in [b.text for r in kb.client_main(manage_sub=ch._manage_sub(
         _fresh(services, n))).inline_keyboard for b in r]
     pause_tail = ("\n<i>+2 дня за каждое своевременное продление на месяц, не более 24</i>"
-                  "\n<i>+28 дней за продление на год</i>")
+                  "\n<i>+28 дней за продление на год, не более 56</i>")
 
     text, _ = await ch._info_parts(services, y.id)
     c = _fresh(services, y)

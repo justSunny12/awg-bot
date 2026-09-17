@@ -1581,9 +1581,9 @@ def settings_subs() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text=f"Бонус-квота: {s.get_int('limits.traffic_bonus_gb', 100)} ГБ",
               callback_data=SetCB(sec="subs", act="edit", key="limits.traffic_bonus_gb"))
-    kb.button(text=f"Макс. дней паузы (год): {s.get_int('pause.pause_max_total_days', 28)}",
+    kb.button(text=f"Дней паузы (год): {s.get_int('pause.pause_max_total_days', 28)}",
               callback_data=SetCB(sec="subs", act="edit", key="pause.pause_max_total_days"))
-    kb.button(text=f"Дней паузы в месяц: {s.get_int('pause.monthly_pause_days', 2)}",
+    kb.button(text=f"Дней паузы (месяц): {s.get_int('pause.monthly_pause_days', 2)}",
               callback_data=SetCB(sec="subs", act="edit", key="pause.monthly_pause_days"))
     kb.button(text=f"Продолжительность грейс-периода: {s.get_int('grace.grace_days', 14)}",
               callback_data=SetCB(sec="subs", act="edit", key="grace.grace_days"))

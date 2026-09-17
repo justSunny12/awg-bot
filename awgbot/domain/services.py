@@ -1254,8 +1254,7 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
         self.db.archive_subscription(client_id, "renewed")
         self.db.archive_grace(client_id, "new_period")   # снесёт строку, если была
         self.db.archive_pause(client_id, "new_period")   # снимок эпизода + сброс used_days
-        if pause_credit:
-            self.db.set_pause_balance(client_id, pause_credit)   # счёт паузы — заново
+        self.db.set_pause_balance(client_id, pause_credit)   # счёт паузы — заново (0 у бессрочной)
         self.db.update_client_fields(
             client_id,
             period_start=timeutil.to_iso(new_start),
@@ -1393,11 +1392,12 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
     # ── Приостановка подписки («в отпуск») ───────────────────────────────────
 
     # ── счёт дней паузы (docs: README «Приостановка подписки») ──────────────
-    # Годовая: 28 за период — счёт заполняется при создании на год и при каждом
-    # продлении на год. Ежемесячная: +2 за каждый своевременно оплаченный месяц
-    # (создание и продление, пока подписка не истекла и без отсрочки), копится
-    # до 12 таких. Годовая → месячная: остаток переносится в пределах месячного
-    # максимума. День/неделя/бессрочно: счёт не пополняется, остаток живёт.
+    # Годовая: +28 при создании на год и при каждом продлении на год (даже
+    # несвоевременном), копится до двух таких. Ежемесячная: +2 за каждый
+    # своевременно оплаченный месяц (создание и продление, пока подписка не
+    # истекла и без отсрочки), копится до 12 таких. Смена типа: остаток
+    # переносится в пределах максимума нового типа. День/неделя: счёт не
+    # пополняется, остаток живёт. Бессрочно: останавливать нечего — счёт ноль.
 
     @staticmethod
     def pause_year_days() -> int:
@@ -1411,16 +1411,22 @@ class Services(SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, Pr
     def pause_month_cap(cls) -> int:
         return 12 * cls.pause_month_days()
 
+    @classmethod
+    def pause_year_cap(cls) -> int:
+        return 2 * cls.pause_year_days()
+
     def _pause_credit(self, client, new_kind: str) -> int:
         """Счёт после оплаты периода new_kind. client — состояние ДО (None при
         создании). Ежемесячно «своевременно» = подписка не истекла и без
-        отсрочки в закрываемом периоде."""
+        отсрочки в закрываемом периоде; годовое начисление — безусловное."""
         bal = int(client.pause_balance_days) if client is not None else 0
         if new_kind == PeriodKind.YEAR:
-            return self.pause_year_days()
+            return min(bal + self.pause_year_days(), self.pause_year_cap())
         if new_kind == PeriodKind.MONTH:
             timely = client is None or (client.status == SubStatus.ACTIVE and not client.grace_used)
             return min(bal + (self.pause_month_days() if timely else 0), self.pause_month_cap())
+        if new_kind == PeriodKind.NEVER:
+            return 0
         return bal
 
     def pause_available_days(self, client_id: int) -> int:
