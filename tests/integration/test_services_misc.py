@@ -220,7 +220,7 @@ def test_is_only_device_false_for_service_pool(services, fake_awg):
 def test_set_subscription_dates_heals_never_deadlock(services, fake_awg):
     """Дедлок: бессрочную (period_end=None) можно сделать срочной через прямую
     правку дат; status пересчитывается, period_kind сохраняется."""
-    from awgbot.domain.services import SubStatus
+    from awgbot.core.enums import SubStatus
     from awgbot.util import timeutil
     from datetime import datetime
     cid = services.db.create_client("p", 1, timeutil.now_iso(), None, "c", period_kind="never")
@@ -235,7 +235,7 @@ def test_set_subscription_dates_heals_never_deadlock(services, fake_awg):
 
 
 def test_set_subscription_dates_past_end_expired(services, fake_awg):
-    from awgbot.domain.services import SubStatus
+    from awgbot.core.enums import SubStatus
     from awgbot.util import timeutil
     from datetime import datetime
     cid = services.db.create_client("p2", 1, timeutil.now_iso(),
@@ -249,7 +249,7 @@ def test_set_subscription_dates_past_end_expired(services, fake_awg):
 
 def test_set_subscription_dates_reactivation_unblocks_devices(services, fake_awg):
     """Ревью-фикс: expired→active через правку дат снимает EXPIRY-блок с устройств."""
-    from awgbot.domain.services import SubStatus
+    from awgbot.core.enums import SubStatus
     from awgbot.core.blocks import DeviceBlock
     from awgbot.util import timeutil
     from datetime import datetime
@@ -272,7 +272,7 @@ def test_set_subscription_dates_reactivation_unblocks_devices(services, fake_awg
 
 def test_set_subscription_dates_forever(services, fake_awg):
     """Новая семантика: new_end=None → бессрочная (period_end=NULL, active)."""
-    from awgbot.domain.services import SubStatus
+    from awgbot.core.enums import SubStatus
     from awgbot.util import timeutil
     from datetime import datetime
     cid = services.db.create_client("pf", 1,

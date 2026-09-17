@@ -17,6 +17,21 @@ v2.18.0 адресат писался хэштегом без минимума:
 объявляет поколение AmneziaWG в поставке: боты по нему решают, нужен ли
 переезд профилей и можно ли обновляться прямо сейчас (§4a).
 
+## v2.23.0 — крупные модули разложены в пакеты; поведение не менялось
+
+#requires_main_2.20.0
+#requires_gw_2.10.0
+#awg_gen1
+
+Чисто структурный релиз: ни одна строка логики и ни один текст не изменились — тела функций и методов перенесены дословно (сверено по AST: 314 определений texts, 134 keyboards, 242 services, 129 db, 114 admin — без пропусков и правок). Импортные пути снаружи прежние: `from awgbot.domain.services import …`, `from awgbot.bot import texts, keyboards`, `from awgbot.infra.db import Database`, `awgbot.bot.handlers.admin.router`.
+
+- `domain/services.py` (3 800 строк, ~200 методов одного класса) → пакет `domain/services/`: `Services` собирается из миксинов по областям — `blocks`, `clients`, `devices`, `subscription`, `traffic`, `reconcile`, `firewall`, `gateway_link`, `routing`, `status`; типы, исключения и константы — `types.py`.
+- `infra/db.py` (2 100) → `infra/db/`: `schema.py` (DDL, конвертеры строк, миграции — порядок в `init_schema` дословный), `core.py` (соединение, транзакции, key-value), миксины `clients`, `devices`, `traffic`, `history`, `routing`, `nav`, `broadcast`.
+- `bot/texts.py` (3 000) и `bot/keyboards.py` (2 000) → пакеты по экранам (`fmt`/`common`, `client`, `admin`, `routing`, `settings`, `updates`, `broadcast`, `gateway`, `migration`); `__init__` реэкспортирует всё явным списком, включая используемые снаружи приватные помощники.
+- `bot/handlers/admin.py` (2 000, 77 хендлеров) → пакет роутеров `panel`, `clients`, `devices`, `gateway`, `updates`, `selfops`, `blocks`, `broadcast`, включённых в прежнем порядке; относительный порядок регистрации сохранён и закреплён smoke-сторожем `tests/smoke/test_admin_router_order.py` (17 пар «специфичный раньше общего», каждый message-хендлер обязан быть перечислен).
+- Пространство имён `awgbot.domain.services` — только своё: класс, исключения, типы результатов, две константы; модули и енумы, которые прежний файл отдавал побочно, снаружи берутся из своих пакетов.
+- Тесты: правки только импортов там, где тест патчит модульное состояние (рассылка — теперь через подмодуль `handlers.admin.broadcast`; `texts.admin._HOSTNAME`), сторож роутеров собирает хендлеры по всей цепочке.
+
 ## v2.22.3 — быстрый старт, бэкофф самопроверки маршрутизации, параллельный зонд шлюза
 
 #requires_main_2.20.0

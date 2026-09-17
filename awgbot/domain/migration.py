@@ -38,7 +38,7 @@ log = logging.getLogger("awgbot.migration")
 
 # Состояние живёт в server_state одним ключом. Значения намеренно строковые и
 # читаемые: в базу заглядывают руками, и «running» понятнее единицы.
-# Константы — в infra/db.py: фильтру видимости устройств состояние нужно прямо
+# Константы — в infra/db/core.py: фильтру видимости устройств состояние нужно прямо
 # в запросе, а infra не может тянуть domain.
 from awgbot.infra.db import MIGRATION_STATE_KEY as _STATE_KEY  # noqa: E402
 from awgbot.infra.db import MIGRATION_RUNNING as STATE_RUNNING  # noqa: E402
