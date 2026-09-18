@@ -1226,8 +1226,15 @@ def probe_latency(targets, port, *, mark: int, samples=3, timeout=4.0) -> int | 
   RemainAfterExit=yes
   Environment=LINK_IF=%i
   ExecStart=/usr/local/sbin/routing-link-setup.sh --reassert
-  ExecStop=/usr/bin/awg-quick down %i
+  ExecStop=/usr/local/sbin/routing-link-setup.sh --down
   ```
+
+  Остановка — через скрипт, а не абсолютным путём к `awg-quick`: тулзы лежат
+  там, куда положил make, и захардкоженный `/usr/bin` однажды не сошёлся —
+  остановка падала, интерфейс жил, и реассерт не применял смену порта.
+  Реассерт переподнимает поднятый линк, только если порт в ядре разошёлся с
+  `ListenPort` конфига. Шаблон прежней версии бот перезаписывает при первом
+  старте.
 
   `--apply` включает `awg-link@$LINK_IF`. Переезд первого слота на шаблон —
   в `--reassert`: при `LINK_IF=awglink` и живом `awg-link.service` он делает

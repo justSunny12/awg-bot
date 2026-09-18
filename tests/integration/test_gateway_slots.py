@@ -519,3 +519,22 @@ def test_slot_port_follows_the_live_link_config(services, make_active_client, mo
     assert services.db.gateway(1).link_port == 443 and refreshed == [1]
     assert len(notes) == 1 and "443" in notes[0].text and "перевыпусти" in notes[0].text
     assert services.gateway_sync_link_ports() == [], "второй раз — тишина"
+
+
+def test_link_unit_is_refreshed_when_the_template_is_from_an_older_version(services, monkeypatch, tmp_path):
+    """Шаблон юнита прежней версии останавливал линк абсолютным путём к
+    awg-quick и не применял смену порта: бот на старте зовёт реассерт и при
+    старом юните, и при устаревшем шаблоне; при свежем — молчит."""
+    runs = []
+    monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: runs.append(mode))
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
+    legacy = tmp_path / "awg-link.service"; tmpl = tmp_path / "awg-link@.service"
+    monkeypatch.setattr(services, "_LEGACY_LINK_UNIT", str(legacy))
+    monkeypatch.setattr(services, "_LINK_UNIT_TEMPLATE", str(tmpl))
+    assert services.gateway_units_migrate() is False and runs == []
+    tmpl.write_text("[Service]\nExecStop=/usr/bin/awg-quick down %i\n")
+    assert services.gateway_units_migrate() is True and runs == ["--reassert"]
+    tmpl.write_text("[Service]\nExecStop=/usr/local/sbin/routing-link-setup.sh --down\n")
+    assert services.gateway_units_migrate() is False and runs == ["--reassert"]
+    legacy.write_text("[Service]\n")
+    assert services.gateway_units_migrate() is True and runs == ["--reassert", "--reassert"]

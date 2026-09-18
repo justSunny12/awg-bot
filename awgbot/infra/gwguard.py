@@ -172,6 +172,24 @@ def uplink_interface() -> str:
     return ""
 
 
+def wan_source_ip() -> tuple[str, bool]:
+    """(адрес, серый ли он): с какого адреса машина выходит наружу — по
+    `ip route get` до хоста ВПС (эндпоинт линка), без единого внешнего запроса.
+    За NAT на интерфейсе серый адрес, а белый знает только роутер — это
+    честно помечается вторым значением. Пусто — не определить."""
+    import ipaddress
+    target = _endpoint_host(config.GW_LINK_IF) or "1.1.1.1"
+    for r in _ip_json(["route", "get", target]):
+        src = str(r.get("prefsrc") or "")
+        if not src:
+            continue
+        try:
+            return src, ipaddress.ip_address(src).is_private
+        except ValueError:
+            return src, False
+    return "", False
+
+
 def uplink_pubkey() -> tuple[str, str]:
     """(интерфейс, публичный ключ) аплинка; пусто — не нашли."""
     iface = uplink_interface()

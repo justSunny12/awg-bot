@@ -187,3 +187,33 @@ def test_bundle_link_change_detection_and_received_text(svc, monkeypatch, tmp_pa
     assert svc.inspect_bundle(bundle(link + "MTU = 1300\n"))["link_changed"] is True
     assert "не перезапустится" in texts.gateway_bundle_received(False)
     assert "Интерфейс линка опустится" in texts.gateway_bundle_received(True)
+
+
+def test_panel_shows_the_outbound_address_and_marks_nat():
+    """«↗️ Внешний IP» под строкой сервера — адрес выхода наружу без внешних
+    запросов; серый адрес честно помечен: белый знает роутер."""
+    from awgbot.bot import texts
+    from awgbot.domain.gateway import GwStatus
+    st = GwStatus(link_up=True, handshake_age=3.0, hostname="NASPi", uptime_seconds=3600,
+                  wan_ip="203.0.113.10")
+    out = texts.gateway_panel(st)
+    lines = out.splitlines()
+    assert lines[2].startswith("🖥 Сервер") and lines[3] == "↗️ Внешний IP: <code>203.0.113.10</code>" \
+        and lines[4].startswith("⬆️ Аптайм")
+    st.wan_ip, st.wan_private = "192.168.1.10", True
+    assert "↗️ Внешний IP: <code>192.168.1.10</code> (за NAT — белый адрес знает роутер)" in texts.gateway_panel(st)
+    st.wan_ip = ""
+    assert "Внешний IP" not in texts.gateway_panel(st)
+
+
+def test_wan_source_ip_comes_from_the_route_to_the_vps(monkeypatch):
+    from awgbot.infra import gwguard
+    monkeypatch.setattr(gwguard, "_endpoint_host", lambda iface: "203.0.113.1")
+    seen = []
+    monkeypatch.setattr(gwguard, "_ip_json", lambda args: (seen.append(args) or [{"prefsrc": "192.168.1.10"}]))
+    assert gwguard.wan_source_ip() == ("192.168.1.10", True)
+    assert seen[-1] == ["route", "get", "203.0.113.1"], "маршрут спрашиваем до ВПС"
+    monkeypatch.setattr(gwguard, "_ip_json", lambda args: [{"prefsrc": "93.184.216.34"}])
+    assert gwguard.wan_source_ip() == ("93.184.216.34", False)
+    monkeypatch.setattr(gwguard, "_ip_json", lambda args: [])
+    assert gwguard.wan_source_ip() == ("", False)

@@ -35,13 +35,25 @@ class GatewayLinkMixin:
                                + proc.stderr.decode(errors="replace").strip()[-200:])
 
     _LEGACY_LINK_UNIT = "/etc/systemd/system/awg-link.service"
+    _LINK_UNIT_TEMPLATE = "/etc/systemd/system/awg-link@.service"
+
+    def _link_units_stale(self) -> bool:
+        """Старый юнит ещё есть, либо шаблон поставлен прежней версией (ExecStop
+        абсолютным путём к awg-quick, из-за чего перезапуск не опускал линк)."""
+        if os.path.exists(self._LEGACY_LINK_UNIT):
+            return True
+        try:
+            with open(self._LINK_UNIT_TEMPLATE, encoding="utf-8") as f:
+                return "--down" not in f.read()
+        except OSError:
+            return False
 
     def gateway_units_migrate(self) -> bool:
         """Юнит первого линка — на шаблон awg-link@ (docs/gateway-failover.md
-        §13.3). Сам по себе переезд случился бы на первом ребуте ВПС (реассерт
-        зовёт юнит); ждать его незачем — зовём --reassert явно один раз.
-        Возвращает, был ли переезд."""
-        if not config.ROUTING_GW_INTERFACE or not os.path.exists(self._LEGACY_LINK_UNIT):
+        §13.3), а шаблон прежней версии — на текущий. Сам по себе переезд
+        случился бы на первом ребуте ВПС (реассерт зовёт юнит); ждать его
+        незачем — зовём --reassert явно один раз. Возвращает, был ли переезд."""
+        if not config.ROUTING_GW_INTERFACE or not self._link_units_stale():
             return False
         first = self.gateway_first_slot()
         env = self._slot_env(first) if first is not None else {"LINK_IF": config.ROUTING_GW_INTERFACE}

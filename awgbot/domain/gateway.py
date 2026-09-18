@@ -73,6 +73,8 @@ class GwStatus:
     uptime_seconds: int | None = None
     hostname: str = ""
     server_name: str = ""                   # имя ВПС для «Линк до …»
+    wan_ip: str = ""                        # адрес выхода наружу (ip route get до ВПС)
+    wan_private: bool = False               # он серый — белый знает роутер
     module_version: str = ""
     srcversion: str = ""
     kernels_missing: list[str] = field(default_factory=list)
@@ -718,6 +720,18 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         """Сбросить кэш статических проб: «Статус», «Монитор здоровья», старт."""
         self.__dict__.pop("_static_cache", None)
         self.__dict__.pop("_unit_enabled_cache", None)
+        self.__dict__.pop("_wan_cache", None)
+
+    def wan_source(self) -> tuple[str, bool]:
+        """Адрес выхода наружу — статический ярус: меняется с провайдером, а не
+        с тиком."""
+        from awgbot.infra import gwguard
+        c = self.__dict__.get("_wan_cache")
+        if c and time.monotonic() - c[0] < self._STATIC_TTL:
+            return c[1]
+        val = gwguard.wan_source_ip()
+        self.__dict__["_wan_cache"] = (time.monotonic(), val)
+        return val
 
     def _static(self) -> tuple[tuple[str, str], tuple[list[str], int], str | None]:
         from awgbot.runtime import hostmetrics
@@ -771,6 +785,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         st.uptime_seconds = hostmetrics.read_uptime_seconds()
         st.hostname = socket.gethostname()
         st.server_name = self.server_name()
+        st.wan_ip, st.wan_private = self.wan_source()
         st.mark_status = self.gateway_mark_status()
         return st
 

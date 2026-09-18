@@ -86,6 +86,10 @@ case "${1:-}" in
     # машина теряет линк по построению — ей ничего не нужно сообщать.
     --rekey)    MODE="apply"; REKEY=1 ;;
     --reassert) MODE="reassert" ;;
+    # ExecStop юнита: опустить линк. Через скрипт, а не абсолютным путём к
+    # awg-quick — тулзы ставятся туда, куда собрал make, и захардкоженный
+    # /usr/bin однажды не сошёлся: ExecStop падал, интерфейс оставался жить.
+    --down)     MODE="down" ;;
     --rollback) MODE="rollback" ;;
     --bundle)   MODE="bundle" ;;
     ""|--plan)  MODE="plan" ;;
@@ -124,6 +128,14 @@ install_self() {
 # Переезд первого линка с awg-link.service на шаблон: интерфейс не трогаем (он
 # поднят), меняется только то, что его поднимает после ребута. Идемпотентно.
 migrate_unit() {
+    # Шаблон с прежним ExecStop (абсолютный путь к awg-quick) — переписать:
+    # иначе перезапуск юнита не опускает линк, и смена порта не применяется.
+    if [ -f "$UNIT_TEMPLATE" ] && ! grep -q -- '--down' "$UNIT_TEMPLATE"; then
+        SELF="$(install_self)"
+        write_unit_template
+        run "systemctl daemon-reload"
+        say "  шаблон юнита обновлён: остановка через $SELF --down"
+    fi
     [ -f "$LEGACY_UNIT" ] || return 0
     [ "$LINK_IF" = "awglink" ] || return 0
     SELF="$(install_self)"
@@ -152,7 +164,7 @@ Environment=LINK_IF=%i
 # --reassert, а не только awg-quick: правила iptables эфемерны, и исключение
 # линка из MASQUERADE после ребута пришлось бы ставить заново вручную.
 ExecStart=$SELF --reassert
-ExecStop=/usr/bin/awg-quick down %i
+ExecStop=$SELF --down
 
 [Install]
 WantedBy=multi-user.target
@@ -294,10 +306,28 @@ if [ "$MODE" = "bundle" ]; then
     exit 0
 fi
 
+if [ "$MODE" = "down" ]; then
+    ip link show "$LINK_IF" >/dev/null 2>&1 && run "awg-quick down $LINK_IF"
+    exit 0
+fi
+
 if [ "$MODE" = "reassert" ]; then
     [ -f "$CONF" ] || { say "линк не настроен ($CONF нет) — нечего поднимать"; exit 0; }
     migrate_unit
-    ip link show "$LINK_IF" >/dev/null 2>&1 || run "awg-quick up $LINK_IF"
+    if ip link show "$LINK_IF" >/dev/null 2>&1; then
+        # Поднятый линк переподнимаем только если ядро разошлось с конфигом:
+        # порт сменили руками в conf — перезапуск юнита обязан это применить,
+        # а не молча оставить старый.
+        _want="$(awk '/^ListenPort/{print $3; exit}' "$CONF" 2>/dev/null)"
+        _live="$(awg show "$LINK_IF" listen-port 2>/dev/null)"
+        if [ -n "$_want" ] && [ -n "$_live" ] && [ "$_want" != "$_live" ]; then
+            say "  порт линка в конфиге $_want, в ядре $_live — переподнимаю"
+            run "awg-quick down $LINK_IF"
+            run "awg-quick up $LINK_IF"
+        fi
+    else
+        run "awg-quick up $LINK_IF"
+    fi
     assert_nat_exempt
     exit 0
 fi
