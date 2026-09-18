@@ -134,6 +134,24 @@ def unit_admin_ips() -> list[str]:
     return [t for t in (m.group(1).split() if m else []) if t]
 
 
+def unit_state() -> dict:
+    """Состояние юнита обвязки: ActiveState / UnitFileState / Result. Нужно,
+    чтобы отличать «таблицы нет, потому что обвязка старого образца» от «юнит
+    не отработал» и «юнит выключен» — лечатся они по-разному."""
+    try:
+        proc = subprocess.run(["systemctl", "show", config.GW_UNIT, "--property=ActiveState",
+                               "--property=UnitFileState", "--property=Result"],
+                              capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    out = {}
+    for line in proc.stdout.decode(errors="replace").splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            out[k.strip()] = v.strip()
+    return out
+
+
 def reassert() -> tuple[bool, str]:
     """Перевыставить таблицу: рестарт юнита — тот зовёт скрипт с окружением
     бандла. Линк скрипт не трогает, если конфиг не менялся."""

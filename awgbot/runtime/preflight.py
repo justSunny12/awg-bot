@@ -116,9 +116,25 @@ def collect_warnings_gateway(services=None) -> list[str]:
     try:
         from awgbot.infra import gwguard
         if gwguard.table_info() is None:
-            warns.append("таблицы awg_gw_guard нет — обвязка старого образца (iptables): "
-                         "шлюз открыт клиентам туннеля; перевыпусти конфигурацию "
-                         "шлюза с ВПС и примени её здесь")
+            # Таблицы нет по трём разным причинам, и лечатся они по-разному.
+            # Юнит обвязки в этот момент ещё выставляет её (после ребута он
+            # ждёт аплинк) — молчим: жалоба на то, что вот-вот появится, была
+            # первым сообщением агента после каждой перезагрузки.
+            st = gwguard.unit_state()
+            active, filestate = st.get("ActiveState", ""), st.get("UnitFileState", "")
+            if active in ("activating", "reloading", "deactivating"):
+                pass
+            elif active == "failed" or st.get("Result", "success") not in ("success", ""):
+                warns.append("юнит обвязки awg-link-gw не отработал, таблицы awg_gw_guard нет: "
+                             "шлюз открыт клиентам туннеля; смотри journalctl -u awg-link-gw -b")
+            elif active == "inactive" or filestate in ("disabled", "masked"):
+                warns.append("обвязка не выставлена — юнит awg-link-gw не запущен, таблицы "
+                             "awg_gw_guard нет: шлюз открыт клиентам туннеля; включи его "
+                             "(systemctl enable --now awg-link-gw)")
+            else:
+                warns.append("таблицы awg_gw_guard нет — обвязка старого образца (iptables): "
+                             "шлюз открыт клиентам туннеля; перевыпусти конфигурацию "
+                             "шлюза с ВПС и примени её здесь")
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight(gw): таблица: %s", e)
     return warns

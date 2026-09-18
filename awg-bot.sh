@@ -207,11 +207,21 @@ install_unit() {
         docker_after=" docker.service"
         docker_req=$'\nRequires=docker.service'
     fi
+    # На шлюзе таблицу awg_gw_guard ставит юнит обвязки, и живёт она только в
+    # ядре — после ребута её восстанавливает он же. Без упорядочивания агент
+    # успевал сделать проверки раньше и первым сообщением после каждой
+    # перезагрузки говорил «таблицы нет, шлюз открыт клиентам туннеля».
+    # Wants, а не Requires: не отработавшая обвязка не должна уносить агента —
+    # через него её и чинят.
+    local link_after="" link_want=""
+    if [[ "$(yaml_get "$CONF_DIR/app.yaml" role)" == "gateway" ]]; then
+        link_after=" awg-link-gw.service"; link_want=" awg-link-gw.service"
+    fi
     cat > "$UNIT_PATH" <<EOF
 [Unit]
 Description=AmneziaWG Telegram bot
-After=network-online.target${docker_after}
-Wants=network-online.target${docker_req}
+After=network-online.target${docker_after}${link_after}
+Wants=network-online.target${link_want}${docker_req}
 
 [Service]
 Type=simple

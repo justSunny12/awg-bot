@@ -163,3 +163,43 @@ def test_known_server_liveness_is_not_measured_twice():
                                for w in warns), warns
     preflight.collect_warnings(Svc())
     assert asked == [1], "без переданной живости — один замер, как раньше"
+
+
+# ── шлюз: почему нет таблицы обвязки ─────────────────────────────────────────
+
+def _gw_warns(monkeypatch, unit_state: dict) -> list[str]:
+    """Замечания агента шлюза при отсутствующей таблице awg_gw_guard."""
+    import subprocess
+    from types import SimpleNamespace
+    from awgbot.infra import gwguard
+    monkeypatch.setattr(subprocess, "run",                     # systemctl вне малины нет
+                        lambda *a, **k: SimpleNamespace(returncode=0, stdout=b"", stderr=b""))
+    monkeypatch.setattr(gwguard, "table_info", lambda: None)
+    monkeypatch.setattr(gwguard, "unit_state", lambda: unit_state)
+    monkeypatch.setattr(gwguard, "client_subnet", lambda: "10.9.0.0/24")
+    return [w for w in preflight.collect_warnings_gateway() if "awg_gw_guard" in w]
+
+
+def test_plumbing_still_starting_is_not_reported_as_missing(monkeypatch):
+    """После ребута юнит обвязки ждёт аплинк и ставит таблицу позже агента.
+    Жалоба на то, что вот-вот появится, была первым сообщением после КАЖДОЙ
+    перезагрузки — и выглядела как «шлюз открыт клиентам туннеля»."""
+    assert _gw_warns(monkeypatch, {"ActiveState": "activating", "UnitFileState": "enabled"}) == []
+
+
+def test_failed_plumbing_unit_is_named_as_the_reason(monkeypatch):
+    warns = _gw_warns(monkeypatch, {"ActiveState": "failed", "UnitFileState": "enabled",
+                                    "Result": "exit-code"})
+    assert warns and "awg-link-gw не отработал" in warns[0] and "journalctl" in warns[0]
+
+
+def test_stopped_plumbing_unit_is_told_apart_from_old_style(monkeypatch):
+    warns = _gw_warns(monkeypatch, {"ActiveState": "inactive", "UnitFileState": "disabled",
+                                    "Result": "success"})
+    assert warns and "не запущен" in warns[0] and "enable --now" in warns[0]
+
+
+def test_live_unit_without_a_table_means_old_style_plumbing(monkeypatch):
+    warns = _gw_warns(monkeypatch, {"ActiveState": "active", "UnitFileState": "enabled",
+                                    "Result": "success"})
+    assert warns and "старого образца" in warns[0]

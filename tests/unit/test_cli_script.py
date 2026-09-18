@@ -144,7 +144,7 @@ def _extract_func(text: str, name: str) -> str:
     return m.group(0)
 
 
-def _render_unit(tmp_path, script: str, runtime: str) -> str:
+def _render_unit(tmp_path, script: str, runtime: str, role: str = "client") -> str:
     """Прогоняет НАСТОЯЩУЮ install_unit из awg-bot.sh и возвращает юнит.
 
     Не грепаем исходник, а рендерим: проверять надо то, что доедет до systemd,
@@ -153,7 +153,7 @@ def _render_unit(tmp_path, script: str, runtime: str) -> str:
     import subprocess
 
     conf = tmp_path / "conf"; conf.mkdir()
-    (conf / "app.yaml").write_text(f'docker:\n  runtime: "{runtime}"\n', encoding="utf-8")
+    (conf / "app.yaml").write_text(f'role: "{role}"\ndocker:\n  runtime: "{runtime}"\n', encoding="utf-8")
     unit = tmp_path / "awg-bot.service"
 
     harness = "\n".join([
@@ -197,6 +197,23 @@ def test_unit_drops_docker_dependency_in_host_mode(tmp_path, script):
     assert "Wants=network-online.target" in unit
     assert "ExecStart=/opt/awg-bot/venv/bin/python -m awgbot" in unit
     assert "WantedBy=multi-user.target" in unit
+
+
+def test_gateway_agent_starts_after_the_plumbing_unit(tmp_path, script):
+    """Таблицу awg_gw_guard ставит юнит обвязки, и живёт она только в ядре:
+    после ребута её восстанавливает он же, теперь ещё и дождавшись аплинка.
+    Без упорядочивания агент успевал сделать проверки раньше и первым
+    сообщением после каждой перезагрузки говорил «таблицы нет, шлюз открыт
+    клиентам туннеля». Requires не ставим: не отработавшая обвязка не должна
+    уносить агента — через него её и чинят."""
+    unit = _render_unit(tmp_path, script, "host", role="gateway")
+    assert "After=network-online.target awg-link-gw.service" in unit
+    assert "Wants=network-online.target awg-link-gw.service" in unit
+    assert "Requires=awg-link-gw.service" not in unit
+
+
+def test_main_bot_unit_knows_nothing_about_gateway_plumbing(tmp_path, script):
+    assert "awg-link-gw" not in _render_unit(tmp_path, script, "host")
 
 
 # ── обновление: вторая половина обязана идти новым кодом ─────────────────────
