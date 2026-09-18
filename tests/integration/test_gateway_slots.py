@@ -436,30 +436,37 @@ def test_link_changes_refresh_the_host_firewall_and_clear_the_hold(services, mak
     assert refreshed == [1, 1] and services.db.get_state(services._RT_HOLD_KEY) == ""
 
 
-def test_switch_needs_an_outage_longer_than_the_window(two, services, monkeypatch):
-    """Боевое окно: 10 тактов (5 мин). Три плохих подряд — ещё не повод; провал,
-    который тянется всё окно с доступностью ниже 75 %, — повод."""
+def test_switch_on_the_third_failure_in_a_sliding_window(two, services, monkeypatch):
+    """Боевое окно: 10 замеров (5 мин), порог 75 % → третий неуспешный в окне,
+    подряд или вразнобой, переключает сразу; замеры старше окна не считаются."""
     admin, g1, g2 = two
     monkeypatch.setattr(services, "_rt_window_size", lambda: 10)
     _settle(services)
-    for _ in range(7):
-        services.routing_liveness_tick()                   # окно заполнено хорошими
     services.probe[1] = "down"
-    for _ in range(5):
+    services.routing_liveness_tick(); services.routing_liveness_tick()
+    assert services.active_gateway().id == 1, "две неудачи — ещё нет"
+    services.routing_liveness_tick()
+    assert services.active_gateway().id == 2, "третья — переключение сразу"
+    # обратно, руками; вразнобой: плохой, два хороших, плохой, два хороших, плохой
+    services.probe[1] = "ok"
+    for _ in range(services._RT_UP_STREAK):
         services.routing_liveness_tick()
-    assert services.active_gateway().id == 1, "5 плохих подряд — окно ещё не провалено целиком"
-    assert services.db.get_state(services._RT_LINK_KEY) == "0", "маркировка при этом снята по стрику"
-    for _ in range(5):
-        services.routing_liveness_tick()
-    assert services.active_gateway().id == 2, "10 плохих — недоступен дольше окна"
-    # частичная недоступность: каждый третий замер плохой, окно начинается с плохого
-    services.gateway_switch(1, manual=True); services.probe[1] = "ok"
-    for _ in range(12):
-        services.routing_liveness_tick()
+    services.gateway_switch(1, manual=True)
     services.db.set_state(services._RT_SWITCHED_KEY, "")
-    pattern = ["down", "ok", "ok"] * 4
-    for v in pattern:
+    for v in ["down", "ok", "ok", "down", "ok", "ok"]:
         services.probe[1] = v
         services.routing_liveness_tick()
-    # окно из 10: [down ok ok down ok ok down ok ok down] → 4 плохих из 10 = 60 % < 75 %, первый плохой
-    assert services.active_gateway().id == 2, "частичная недоступность дольше окна — переключение"
+    assert services.active_gateway().id == 1
+    services.probe[1] = "down"
+    services.routing_liveness_tick()
+    assert services.active_gateway().id == 2, "третья неудача за пять минут — переключение"
+    # окно скользит: две неудачи, потом девять хороших, потом одна — в окне только две
+    services.probe[1] = "ok"
+    for _ in range(services._RT_UP_STREAK):
+        services.routing_liveness_tick()
+    services.gateway_switch(1, manual=True)
+    services.db.set_state(services._RT_SWITCHED_KEY, "")
+    for v in ["down", "down"] + ["ok"] * 9 + ["down"]:
+        services.probe[1] = v
+        services.routing_liveness_tick()
+    assert services.active_gateway().id == 1, "старые неудачи выпали из окна"

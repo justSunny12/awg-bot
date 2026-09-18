@@ -907,11 +907,12 @@ class RoutingMixin:
         return settings.get_bool("app.routing.failover.enabled", True)
 
     # ── окно доступности активного: переключение — не по стрику подряд ──────
-    # Провал домашнего канала на минуту-полторы (три такта подряд) ещё не повод
-    # менять людям исходящий адрес: переключаемся при полной или частичной
-    # недоступности дольше окна (5 мин) — когда за окно доступность ниже
-    # порога (75 %) И провал длится всё окно (самый старый замер в окне уже
-    # плохой). Окно живёт в памяти: писать его в БД каждый такт незачем.
+    # Скользящее окно последних N замеров (5 мин / такт = 10). Доступность
+    # ниже порога (75 %) — то есть в окне набралось ≥ 3 неуспешных замеров,
+    # подряд или вразнобой, — и переключаемся тут же, на третьем неуспешном,
+    # не дожидаясь заполнения окна. Старые замеры выпадают из окна, и три
+    # неудачи, размазанные дольше пяти минут, поводом не становятся. Окно
+    # живёт в памяти: писать его в БД каждый такт незачем.
     def _rt_window_size(self) -> int:
         secs = max(1, settings.get_int("app.routing.probe_seconds", 30))
         mins = settings.get_int("app.routing.failover.window_minutes", 5)
@@ -930,14 +931,14 @@ class RoutingMixin:
             win.pop(slot_id, None)
 
     def _rt_window_failed(self, slot_id) -> bool:
-        """Активный «недоступен дольше окна»: окно заполнено, доступность в нём
-        ниже порога, и самый старый замер окна уже плохой."""
+        """В окне последних N замеров неуспешных не меньше, чем допускает порог
+        доступности: N × (100 − порог) / 100, с округлением вверх (10 × 25 % = 3)."""
+        import math
         win = self.__dict__.setdefault("_rt_window", {}).get(slot_id, [])
         n = self._rt_window_size()
-        if len(win) < n or win[0]:
-            return False
         limit = settings.get_int("app.routing.failover.min_availability", 75)
-        return 100 * sum(1 for g in win if g) < limit * n
+        need = max(1, math.ceil(n * (100 - limit) / 100))
+        return sum(1 for g in win if not g) >= need
 
     def _rt_switch_interval_ok(self) -> bool:
         raw = self.db.get_state(self._RT_SWITCHED_KEY) or ""
@@ -1042,8 +1043,8 @@ class RoutingMixin:
                 if hold and hold == str(akey) and a_up >= self._RT_UP_STREAK:
                     self.db.set_state(self._RT_HOLD_KEY, "")
                     hold = ""
-                # ПЕРЕКЛЮЧЕНИЕ: активный недоступен дольше окна (доступность
-                # ниже порога, провал длится всё окно), есть кандидат с тремя
+                # ПЕРЕКЛЮЧЕНИЕ: в окне активного набралось неуспешных замеров
+                # больше, чем допускает порог доступности, есть кандидат с тремя
                 # хорошими, интервал с прошлого автоматического прошёл.
                 if (slots and len(slots) > 1 and self._rt_window_failed(akey)
                         and self._rt_failover_enabled() and hold != str(akey)):
