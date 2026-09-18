@@ -295,6 +295,18 @@ async def remove_device_and_notify(bot, services, device_id: int) -> None:
         await notify_one(bot, friend_tg, texts.lent_device_deleted_by_admin_notice(dev))
 
 
+async def forget_secret(message: Message) -> None:
+    """Убрать из чата присланный секрет: содержимое уже у нас в памяти, а в
+    истории Telegram оно остаётся навсегда. В конфигурации шлюза — приватный
+    ключ линка, токен агента, фраза шифрования копий и пароль почты; в
+    резервной копии — вся база. Так же поступаем с токеном и паролем, которые
+    админ присылает текстом."""
+    try:
+        await message.delete()
+    except Exception:                                      # noqa: BLE001
+        pass                                               # >48 ч, уже удалено
+
+
 async def drop_message(cb: CallbackQuery) -> None:
     """Удалить сообщение под кнопкой (используется перед выдачей ссылки/файла,
     чтобы прежнее меню-с-кнопками не висело НАД присланной ссылкой). Если удалить

@@ -20,7 +20,7 @@ from awgbot.bot import texts
 from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers import settingscore as core
-from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, purge_menus, dismiss_update_reports
+from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, purge_menus, dismiss_update_reports, forget_secret
 from awgbot.util import bundlecrypt
 
 router = Router(name="gateway")
@@ -305,6 +305,10 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
     if not blob.startswith(bundlecrypt.MAGIC):
         await message.answer(texts.GW_BUNDLE_NOT_OURS)
         return
+    # Файл у нас в памяти — в чате ему делать нечего. Основной бот свою копию
+    # убирает по «В меню», а пересланная жила в переписке с агентом вечно:
+    # внутри ключ линка, токен агента, фраза шифрования копий, пароль почты.
+    await forget_secret(message)
     await state.update_data(bundle=base64.b64encode(blob).decode())
     # осмотр до вопроса: изменится ли конфиг линка — от этого зависит, будет
     # ли обрыв и нужно ли о нём предупреждать. Не расшифровался — скажем при

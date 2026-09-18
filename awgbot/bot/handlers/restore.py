@@ -12,7 +12,7 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
-from awgbot.bot.handlers.common import call
+from awgbot.bot.handlers.common import call, forget_secret
 
 _MAX_BYTES = 64 * 1024 * 1024
 _SUFFIXES = (".tgz", ".tgz.enc", ".tar.gz", ".tar.gz.enc")
@@ -36,6 +36,7 @@ async def offer_restore(message: Message, services, state, *, gateway: bool) -> 
     if not info.get("ok"):
         await message.answer(texts.restore_rejected(info.get("error", "не удалось прочитать")))
         return True
+    await forget_secret(message)                       # в копии вся база — в чате ей не место
     await state.update_data(restore_plain=base64.b64encode(info["plain"]).decode(),
                             restore_at=info["created_at"])
     warning = texts.awg_restart_warning_body(gateway) if info.get("ifaces_changed") else ""

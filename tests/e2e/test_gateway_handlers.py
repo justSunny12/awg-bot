@@ -71,6 +71,7 @@ async def test_foreign_document_is_refused_before_anything(svc):
     await gh.gw_bundle_document(msg, svc, state)
     assert "не принят" in msg.sent[-1][1]
     assert "bundle" not in (await state.get_data())
+    assert not msg.deleted, "чужой файл не наш секрет — сообщение админа не трогаем"
 
 
 async def test_our_bundle_waits_for_confirmation_then_applies(svc):
@@ -83,6 +84,8 @@ async def test_our_bundle_waits_for_confirmation_then_applies(svc):
     await gh.gw_bundle_document(msg, svc, state)
     assert svc.applied == [], "применили без подтверждения"
     assert msg.sent[-1][2] is not None, "нет кнопок подтверждения"
+    # внутри ключ линка, токен агента, фраза шифрования копий и пароль почты
+    assert msg.deleted, "пересланная конфигурация осталась в чате"
 
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
     await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)

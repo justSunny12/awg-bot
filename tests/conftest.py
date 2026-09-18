@@ -321,6 +321,7 @@ class FakeMessage:
         self.from_user = FakeUser(user_id, username=username)
         self.bot = bot
         self.sent = []           # что этот объект «ответил»
+        self.deleted = False     # убрали ли сообщение из чата (секреты)
 
     async def answer(self, text, reply_markup=None, **kw):
         self.sent.append(("answer", text, reply_markup))
@@ -366,6 +367,7 @@ class FakeMessage:
         return self
 
     async def delete(self):
+        self.deleted = True
         if self.bot:
             self.bot.records.append(("delete", self.chat.id))
 

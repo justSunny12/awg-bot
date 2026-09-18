@@ -225,6 +225,8 @@ async def test_backup_file_in_chat_offers_restore_and_confirm_launches(services,
     await ah.admin_document(msg, services, state)
     sent = [t for kind, t, _ in msg.sent if kind == "answer"]
     assert sent and "бэкап настроек бота и сервиса от 09.09.2026 10:30" in sent[-1] and "Важно!" in sent[-1]
+    # в копии вся база — сообщение с ней из чата убираем, как и присланный токен
+    assert msg.deleted
     launched = []
     monkeypatch.setattr(services, "launch_restore", lambda path: launched.append(path))
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
