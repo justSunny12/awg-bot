@@ -39,14 +39,23 @@ def ping_fmt(ms) -> str:
     return f"{ms / 1000:.1f}".replace(".", ",") + " с"
 
 
+def _slot_dot(state) -> str:
+    """Кружок состояния слота — тот же, что в строке статуса."""
+    if state.get("link_ok"):
+        return "🟢"
+    return "🔴" if state.get("unavailable") else "⏳"
+
+
 def gateway_role_line(state) -> str:
-    """Строка роли слота для карточки устройства: несёт трафик / в резерве."""
+    """Строка роли слота для карточки устройства: кружок состояния, тег роли,
+    что это значит для трафика."""
     if not state or state.get("gateway") is None:
         return ""
+    dot = _slot_dot(state)
     if state.get("active"):
-        return "<b>[Активен]</b> — несёт трафик РФ-доступа"
+        return f"{dot} <b>[Активен]</b> — несёт трафик РФ-доступа"
     via = state.get("active_display") or ""
-    return f"<b>[Резерв]</b> — трафик идёт через {via}" if via else "<b>[Резерв]</b>"
+    return f"{dot} <b>[Резерв]</b> — трафик идёт через {via}" if via else f"{dot} <b>[Резерв]</b>"
 
 
 def gateway_device_card(dev, state=None) -> str:
@@ -58,7 +67,7 @@ def gateway_device_card(dev, state=None) -> str:
             # стрелки — со стороны шлюза: его исходящее — это tx сервера
             f"Потребление: {human_bytes(rx + tx)} {_updown(tx, rx)}")
     if state is not None:
-        head += "\n" + ext_ip_line(state.get("ext_ip")) + "\n" + ping_line(state.get("ping_ms"))
+        head += "\n\n" + ext_ip_line(state.get("ext_ip")) + "\n" + ping_line(state.get("ping_ms"))
     tail = ("\n\n<b>Это устройство — шлюз условной маршрутизации, через него идёт "
             "трафик на РФ-домены.</b>")
     role = gateway_role_line(state)
@@ -104,7 +113,7 @@ def slot_status(state) -> str:
     «🔴 <b>[Резерв]</b>, не отвечает 14 мин»."""
     tag = "<b>[Активен]</b>" if state.get("active") else "<b>[Резерв]</b>"
     if state.get("link_ok"):
-        return f"🟢 {tag}"
+        return f"{_slot_dot(state)} {tag}"
     if state.get("unavailable"):
         # хендшейк свежий, а наружу не пройти — лежит не линк, а выход в
         # интернет за шлюзом; иначе — молчит сам шлюз
