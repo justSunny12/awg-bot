@@ -261,11 +261,12 @@ def _settle(services, fake_routing):
 
 def _fail_until_announced(services, fake_routing, verdict="down"):
     """Провалить зонд столько раз, сколько нужно для письма админу. Возвращает
-    уведомления последнего тика."""
+    уведомления за все такты: письмо может прийти и раньше последнего — в
+    скользящем окне ещё могут лежать неудачи прошлого провала."""
     fake_routing.probe = verdict
     notes = []
-    for _ in range(services._RT_ANNOUNCE_AFTER):
-        notes = services.routing_liveness_tick()
+    for _ in range(services._rt_fail_need()):
+        notes += services.routing_liveness_tick()
     return notes
 
 
@@ -315,7 +316,7 @@ def test_recovery_takes_the_full_streak(services, fake_routing):
     _settle(services, fake_routing)
 
     fake_routing.probe = "down"
-    for _ in range(services._RT_DOWN_STREAK):
+    for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     assert fake_routing.marking is False, "порог набран, а маркировка стоит"
 
@@ -484,7 +485,7 @@ def test_short_blip_degrades_silently(services, fake_routing):
     _settle(services, fake_routing)
 
     fake_routing.probe = "down"
-    for i in range(services._RT_DOWN_STREAK - 1):
+    for i in range(services._rt_fail_need() - 1):
         assert services.routing_liveness_tick() == [], "написал админу до порога"
         assert fake_routing.marking is True, f"погасили на {i + 1}-м замере из порога"
 

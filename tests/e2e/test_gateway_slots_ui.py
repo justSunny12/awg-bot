@@ -58,7 +58,7 @@ def slots(services, fake_awg, fake_routing, make_active_client, monkeypatch):
     probe = {1: "ok", 2: "ok"}
     monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: probe[g.id])
     monkeypatch.setattr(services, "_rt_standby_interval", lambda: 0)
-    monkeypatch.setattr(services, "_rt_window_size", lambda: 3)
+    monkeypatch.setattr(services, "_rt_window_size", lambda: 10)
     pings = {"n": 0}
 
     def _ping(iface="", **k):
@@ -177,7 +177,7 @@ async def test_manual_switch_both_ways_with_confirmation(services, slots, fake_b
     assert services.active_gateway().id == 1
     # лежащий резерв — предупреждение и «Всё равно»
     services.probe[2] = "down"
-    for _ in range(services._RT_DOWN_STREAK):
+    for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_switch_ask(cb, GwSlotCB(action="switch_ask", slot=2), services)

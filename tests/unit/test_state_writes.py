@@ -66,11 +66,10 @@ def test_liveness_down_counter_is_capped_but_announces(services, fake_routing):
         services.routing_liveness_tick()
     fake_routing.probe = "down"
     notes = []
-    for _ in range(services._RT_ANNOUNCE_AFTER * 3):
+    for _ in range(services._rt_fail_need() * 3):
         notes += services.routing_liveness_tick()
     assert len(notes) == 1, "письмо один раз, независимо от длины провала"
-    cap = max(services._RT_DOWN_STREAK, services._RT_ANNOUNCE_AFTER)
-    assert int(services.db.get_state(services._RT_DOWN_KEY)) == cap
+    assert services.db.get_state("routing_link_down_streak") is None, "стрика «плохих подряд» больше нет — окно в памяти"
     n0 = services.db.commits
     services.routing_liveness_tick()
     assert services.db.commits == n0, "затяжной провал — тоже без записей"

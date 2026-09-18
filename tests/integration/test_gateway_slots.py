@@ -26,7 +26,7 @@ def two(services, fake_awg, fake_routing, make_active_client, monkeypatch):
     probe = {1: "ok", 2: "ok"}
     monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: probe[g.id])
     monkeypatch.setattr(services, "_rt_standby_interval", lambda: 0)   # зонд резерва каждый такт
-    monkeypatch.setattr(services, "_rt_window_size", lambda: 3)         # окно = три такта (боевое — 5 мин)
+    monkeypatch.setattr(services, "_rt_window_size", lambda: 10)        # боевое окно: 10 замеров, порог 5
     switched = []
     monkeypatch.setattr(routing, "switch_active", lambda iface: switched.append(iface))
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: None)
@@ -145,7 +145,7 @@ def test_failover_switches_after_threshold_and_stays(two, services):
     assert services.active_gateway().id == 1 and services.db.get_state(services._RT_LINK_KEY) == "1"
     services.probe[1] = "down"
     notes = []
-    for _ in range(services._RT_DOWN_STREAK):
+    for _ in range(services._rt_fail_need()):
         notes += services.routing_liveness_tick()
     assert services.active_gateway().id == 2 and services.switched == ["awglink2"]
     assert services.db.get_state(services._RT_LINK_KEY) == "1", "маркировка не снималась ни на такт"
@@ -165,7 +165,7 @@ def test_failover_needs_a_healthy_candidate_else_degrades(two, services):
     _settle(services)
     services.probe[1] = services.probe[2] = "down"
     notes = []
-    for _ in range(services._RT_DOWN_STREAK):
+    for _ in range(services._rt_fail_need()):
         notes += services.routing_liveness_tick()
     assert services.active_gateway().id == 1 and services.switched == []
     assert services.db.get_state(services._RT_LINK_KEY) == "0", "гашение, как без резерва"
@@ -181,7 +181,7 @@ def test_second_switch_within_the_interval_is_refused(two, services):
     admin, g1, g2 = two
     _settle(services)
     services.probe[1] = "down"
-    for _ in range(services._RT_DOWN_STREAK):
+    for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     assert services.active_gateway().id == 2
     services.probe[1] = "ok"
@@ -189,7 +189,7 @@ def test_second_switch_within_the_interval_is_refused(two, services):
         services.routing_liveness_tick()
     services.probe[2] = "down"
     notes = []
-    for _ in range(services._RT_DOWN_STREAK):
+    for _ in range(services._rt_fail_need()):
         notes += services.routing_liveness_tick()
     assert services.active_gateway().id == 2, "второе переключение подряд не делаем"
     assert services.db.get_state(services._RT_LINK_KEY) == "0"
@@ -207,7 +207,7 @@ def test_failover_can_be_switched_off(two, services, monkeypatch):
     monkeypatch.setattr(settings, "get_bool", lambda k, d=False: False if k == "app.routing.failover.enabled" else real(k, d))
     _settle(services)
     services.probe[1] = "down"
-    for _ in range(services._RT_DOWN_STREAK):
+    for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     assert services.active_gateway().id == 1 and services.db.get_state(services._RT_LINK_KEY) == "0"
 
@@ -216,9 +216,8 @@ def test_standby_outage_is_announced_late_and_quietly(two, services):
     admin, g1, g2 = two
     _settle(services)
     services.probe[2] = "down"
-    after = settings.get_int("app.routing.failover.standby_announce_after", 20)
     notes = []
-    for _ in range(after):
+    for _ in range(services._rt_window_size() * 2):
         notes += services.routing_liveness_tick()
     assert services.active_gateway().id == 1 and services.db.get_state(services._RT_LINK_KEY) == "1"
     assert len(notes) == 1 and "Резервный" in notes[0].text and not notes[0].critical
@@ -250,7 +249,7 @@ def test_ping_cache_is_invalidated_when_the_host_falls(two, services, monkeypatc
     assert services.gateway_external_ip(2) == "198.51.100.7" and services.gateway_external_ip(1) is None
     _settle(services)
     services.probe[2] = "down"
-    for _ in range(services._RT_DOWN_STREAK):
+    for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     assert services.gateway_ping_cached(2) is None, "хост упал — пинг устарел"
     monkeypatch.setattr(routing, "ping_peer", lambda iface="", **k: None)
@@ -342,7 +341,7 @@ def test_standby_is_probed_rarely_and_lives_by_handshake_in_between(two, service
     st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
     assert st["link_ok"], "хендшейк свежий, последний зонд прошёл — резерв в порядке"
     ages["awglink2"] = 600                                  # хендшейк протух
-    for _ in range(services._RT_DOWN_STREAK):
+    for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
     assert not st["link_ok"] and probes.count(2) == 1, "без хендшейка резерв мёртв без единого зонда"
@@ -354,11 +353,11 @@ def test_manual_switch_to_a_dead_gateway_holds_the_automaton(two, services):
     admin, g1, g2 = two
     _settle(services)
     services.probe[2] = "down"
-    for _ in range(services._RT_DOWN_STREAK):
+    for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     services.gateway_switch(2, manual=True)
     assert services.db.get_state(services._RT_HOLD_KEY) == "2"
-    for _ in range(services._RT_DOWN_STREAK + 2):
+    for _ in range(services._rt_fail_need() + 2):
         services.routing_liveness_tick()
     assert services.active_gateway().id == 2, "удержание: автомат не перекладывает обратно"
     assert services.db.get_state(services._RT_LINK_KEY) == "0"
@@ -367,7 +366,7 @@ def test_manual_switch_to_a_dead_gateway_holds_the_automaton(two, services):
         services.routing_liveness_tick()
     assert services.db.get_state(services._RT_HOLD_KEY) == "", "ожил — удержание снято"
     services.probe[2] = "down"
-    for _ in range(services._RT_DOWN_STREAK):
+    for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     assert services.active_gateway().id == 1, "упал снова — автомат переключил на живой"
     # ручное на ЖИВОЙ (три хороших) — удержания нет
@@ -387,10 +386,10 @@ def test_fresh_standby_shows_link_check_until_three_good(two, services):
     st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
     assert texts.slot_status(st) == "🟢 <b>[Резерв]</b>"
     services.probe[2] = "down"
-    for _ in range(services._RT_DOWN_STREAK):
+    for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
-    assert texts.slot_status(st).startswith("🔴 <b>[Резерв]</b>, не отвечает")
+    assert texts.slot_status(st).startswith("🔴 <b>[Резерв]</b>, ") and "мин" in texts.slot_status(st)
 
 
 def test_first_tick_lays_slot_policy_before_probing(two, services, monkeypatch):
@@ -415,7 +414,7 @@ def test_standby_needs_a_fresh_handshake_even_when_its_probe_passes(two, service
     st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
     assert not st["link_ok"]
     services.probe[1] = "down"
-    for _ in range(services._RT_DOWN_STREAK):
+    for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     assert services.active_gateway().id == 1, "на резерв без хендшейка не переключаемся"
 
@@ -446,10 +445,10 @@ def test_switch_on_the_third_failure_in_a_sliding_window(two, services, monkeypa
     for _ in range(4):
         services.routing_liveness_tick()
     assert services.active_gateway().id == 1, "четыре неудачи — ещё нет"
-    assert services.db.get_state(services._RT_LINK_KEY) == "0", "маркировка при этом уже снята"
+    assert services.db.get_state(services._RT_LINK_KEY) == "1", "и маркировка на месте: одно окно на всё"
     services.routing_liveness_tick()
     assert services.active_gateway().id == 2, "пятая — переключение сразу"
-    assert services.db.get_state(services._RT_LINK_KEY) == "1", "и маркировка вернулась"
+    assert services.db.get_state(services._RT_LINK_KEY) == "1", "маркировка не снималась ни на такт"
     # обратно, руками; вразнобой: плохой, хороший, … — пятая неудача на девятом замере
     services.probe[1] = "ok"
     for _ in range(services._RT_UP_STREAK):

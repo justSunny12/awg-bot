@@ -58,6 +58,7 @@ def states(active=1, ok=(True, True), down=(0, 0), up=(3, 3), hs=(38, 51)):
         x["active"] = (i == active)
         x["link_ok"] = ok[i - 1]
         x["down_ticks"] = down[i - 1]
+        x["unavailable"] = down[i - 1] >= 5
         x["up_ticks"] = up[i - 1]
         x["ping_ms"] = (43 if i == 1 else 61) if ok[i - 1] else None
         x["ext_ip"] = "203.0.113.10" if i == 1 else "198.51.100.7"

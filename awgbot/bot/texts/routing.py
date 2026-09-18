@@ -105,18 +105,14 @@ def slot_status(state) -> str:
     tag = "<b>[Активен]</b>" if state.get("active") else "<b>[Резерв]</b>"
     if state.get("link_ok"):
         return f"🟢 {tag}"
-    down = int(state.get("down_ticks", 0) or 0)
-    if down >= 3:
+    if state.get("unavailable"):
         # хендшейк свежий, а наружу не пройти — лежит не линк, а выход в
         # интернет за шлюзом; иначе — молчит сам шлюз
         age = state.get("handshake_age")
         what = "нет доступа в интернет" if age is not None and age <= 300 else "не отвечает"
         return f"🔴 {tag}, {what} {_slot_down_mins(state)} мин"
-    if state.get("active"):
-        # активный без трёх плохих — стрик ещё копится либо только назначен
-        return f"⏳ {tag}, проверка связи…" if not down else f"🔴 {tag}"
-    # резерв: связь проверяется — после назначения, после отвала, пока стрик
-    # не набрал трёх хороших; часы вместо «жду хендшейка»
+    # окно ещё не набрало ни порога неудач, ни трёх хороших подряд: после
+    # назначения, после отвала — связь проверяется; часы вместо «жду хендшейка»
     return f"⏳ {tag}, проверка связи…"
 
 
@@ -192,8 +188,8 @@ def gateway_card_text(state: dict, states: list) -> str:
     if state.get("active"):
         if state.get("link_ok"):
             body += "\nНесёт трафик РФ-доступа: исходящий адрес клиентов сейчас — адрес этой сети."
-        elif int(state.get("down_ticks", 0) or 0) >= 3:
-            body += "\nМаркировка снята: российские сервисы открываются с зарубежного адреса."
+        elif state.get("unavailable"):
+            body += "\nУсловная маршрутизация выключена: российские сервисы открываются с зарубежного адреса."
     else:
         if state.get("link_ok"):
             body += "\nНаружу проходит, готов принять трафик."

@@ -470,6 +470,10 @@ class GatewayLinkMixin:
         if active is not None and active.id == gw.id:
             return gw
         routing.switch_active(gw.link_if)
+        # «лежащий» — недоступен по окну и не набрал трёх хороших подряд (ожил —
+        # уже живой, хоть окно и помнит провал); считаем до сброса окна
+        up = int(self.db.get_state(f"routing_gw_{gw.id}_up_streak") or 0)
+        dead = self._rt_unavailable(gw.id) and up < self._RT_UP_STREAK
         # окно замеров нового активного — с чистого листа: неудачи со времён
         # резерва не должны тут же тянуть трафик обратно
         self._rt_window_reset(gw.id)
@@ -479,9 +483,6 @@ class GatewayLinkMixin:
                 # Переключили руками на лежащий шлюз — значит, так надо: автомат
                 # его не перекладывает обратно, пока он не оживёт. На живой —
                 # удержания нет: упадёт, автомат переключит на живой резерв.
-                down = int(self.db.get_state(f"routing_gw_{gw.id}_down_streak") or 0)
-                up = int(self.db.get_state(f"routing_gw_{gw.id}_up_streak") or 0)
-                dead = down >= self._RT_DOWN_STREAK or (up == 0 and down > 0)
                 self.db.set_state(self._RT_HOLD_KEY, str(gw.id) if dead else "")
             else:
                 self.db.set_state(self._RT_SWITCHED_KEY, timeutil.to_iso(timeutil.now()))
@@ -556,14 +557,15 @@ class GatewayLinkMixin:
                     age = routing.link_handshake_age(g.link_if)
                 except Exception:                             # noqa: BLE001
                     age = None
-            down = int(self.db.get_state(f"routing_gw_{g.id}_down_streak") or 0)
             up = int(self.db.get_state(f"routing_gw_{g.id}_up_streak") or 0)
+            unavailable = self._rt_unavailable(g.id)
             is_active = active is not None and active.id == g.id
             link_ok = (self.routing_link_ok() if is_active
-                       else up >= self._RT_UP_STREAK and down == 0)
+                       else up >= self._RT_UP_STREAK and not unavailable)
             out.append({
                 "gateway": g, "device": dev, "active": is_active, "preferred": bool(g.preferred),
-                "link_ok": link_ok, "handshake_age": age, "down_ticks": down, "up_ticks": up,
+                "link_ok": link_ok, "handshake_age": age, "unavailable": unavailable,
+                "down_ticks": self._rt_bad_ticks(g.id), "up_ticks": up,
                 "issued_at": self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_ISSUED_KEY, g.id)) or "",
                 "display": self._gw_display(g),
                 "ping": self.gateway_ping_cached(g.id),
@@ -577,7 +579,7 @@ class GatewayLinkMixin:
         if not states:
             return {"device": None, "gateway": None, "issued_at": "", "link_ok": False,
                     "handshake_age": None, "active": False, "preferred": False, "ping": None,
-                    "down_ticks": 0, "up_ticks": 0, "display": ""}
+                    "unavailable": False, "down_ticks": 0, "up_ticks": 0, "display": ""}
         if slot_id:
             for st in states:
                 if st["gateway"].id == slot_id:

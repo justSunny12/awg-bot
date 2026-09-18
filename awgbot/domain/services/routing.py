@@ -61,28 +61,19 @@ class RoutingMixin:
 
     _RT_LINK_KEY = "routing_link_ok"
     _RT_STREAK_KEY = "routing_link_up_streak"
-    _RT_UP_STREAK = 3                     # хороших замеров подряд до возврата
-    # Плохих замеров подряд до ГАШЕНИЯ маркировки. Три — столько же, сколько на
-    # возврат, и одинаково в обоих режимах: решение принято сознательно, ради
-    # того чтобы мелкие сетевые флуктуации не дёргали режим туда-сюда. Каждое
-    # переключение перекладывает трафик всех включённых, и на коротком провале
-    # это дороже самого провала.
+    _RT_UP_STREAK = 3                     # хороших замеров подряд: «стабильно жив»
+    # «НЕДОСТУПЕН» — одно понятие на гашение, переключение и письмо админу:
+    # скользящее окно последних замеров (failover.window_minutes / такт = 10),
+    # в нём неуспешных не меньше, чем допускает порог доступности
+    # (failover.min_availability, 50 % → 5 из 10), подряд или вразнобой.
+    # Стрика «плохих подряд» нет вовсе: гашение и переключение всегда в одном
+    # такте, а частичная недоступность видна так же, как полная.
     #
-    # Цена названа и принята: при умолчании «домой» помечено почти всё, поэтому
-    # пока порог набирается, помеченный трафик уходит в тоннель, который никуда
-    # не ведёт. Это не «не тот адрес», а отсутствие связи — до полутора минут в
-    # худшем случае. Раньше там гасили по первому замеру именно из-за этого.
-    #
-    # Одиночный плохой замер и так не шум: внутри него зонд делает две попытки к
-    # двум целям с таймаутом 4 с, то есть подтверждает отказ секундами. Три
-    # замера — это уже около минуты подтверждённой недоступности.
-    #
-    # Совпадает с порогом объявления, и это удобно: админ узнаёт ровно тогда,
-    # когда состояние действительно сменилось, а не до или после.
-    _RT_DOWN_STREAK = 3
-    _RT_DOWN_KEY = "routing_link_down_streak"
+    # Цена названа и принята: пока окно набирает неудачи, помеченный трафик
+    # уходит в тоннель, который никуда не ведёт, — до двух с половиной минут при
+    # полном отказе. Одиночный плохой замер и так не шум: внутри него зонд
+    # делает две попытки к двум целям с таймаутом 4 с.
     _RT_ANNOUNCED_KEY = "routing_link_announced"
-    _RT_ANNOUNCE_AFTER = 3                # плохих замеров подряд до письма админу
     # Подсказка про бандл — не украшение. Обфускация линка симметрична: не сойдись
     # H1..H4/S1..S4 у сторон, хендшейка не будет вовсе. Отказ громкий (вот эта
     # самая тревога), но причина со стороны ВПС не видна, и без строки ниже её
@@ -893,13 +884,12 @@ class RoutingMixin:
             return {sid: f.result() for sid, f in futs.items()}
 
     # ── стрики по слоту ──────────────────────────────────────────────────────
-    def _rt_keys(self, slot_id) -> tuple[str, str, str]:
-        """(up, down, announced) ключи стриков: слота — свои, без слотов (линк
-        обвязки без назначенного шлюза) — прежние общие."""
+    def _rt_keys(self, slot_id) -> tuple[str, str]:
+        """(up, announced) ключи слота; без слотов (линк обвязки без назначенного
+        шлюза) — прежние общие."""
         if slot_id is None:
-            return self._RT_STREAK_KEY, self._RT_DOWN_KEY, self._RT_ANNOUNCED_KEY
-        return (f"routing_gw_{slot_id}_up_streak", f"routing_gw_{slot_id}_down_streak",
-                f"routing_gw_{slot_id}_announced")
+            return self._RT_STREAK_KEY, self._RT_ANNOUNCED_KEY
+        return f"routing_gw_{slot_id}_up_streak", f"routing_gw_{slot_id}_announced"
 
     _RT_HOLD_KEY = "routing_manual_hold"       # слот, на который переключили руками при отказе
 
@@ -919,26 +909,45 @@ class RoutingMixin:
         return max(2, (mins * 60) // secs)
 
     def _rt_window_push(self, slot_id, good: bool) -> None:
-        win = self.__dict__.setdefault("_rt_window", {})
+        win = self.__dict__.setdefault("_rt_windows", {})
         n = self._rt_window_size()
         win[slot_id] = (win.get(slot_id, []) + [good])[-n:]
 
     def _rt_window_reset(self, slot_id=None) -> None:
-        win = self.__dict__.setdefault("_rt_window", {})
+        win = self.__dict__.setdefault("_rt_windows", {})
         if slot_id is None:
             win.clear()
         else:
             win.pop(slot_id, None)
 
-    def _rt_window_failed(self, slot_id) -> bool:
-        """В окне последних N замеров неуспешных не меньше, чем допускает порог
-        доступности: N × (100 − порог) / 100, с округлением вверх (10 × 50 % = 5)."""
+    def _rt_fail_need(self) -> int:
+        """Сколько неуспешных замеров в окне делают шлюз недоступным:
+        N × (100 − порог) / 100, с округлением вверх (10 × 50 % = 5)."""
         import math
-        win = self.__dict__.setdefault("_rt_window", {}).get(slot_id, [])
         n = self._rt_window_size()
         limit = settings.get_int("app.routing.failover.min_availability", 50)
-        need = max(1, math.ceil(n * (100 - limit) / 100))
-        return sum(1 for g in win if not g) >= need
+        return max(1, math.ceil(n * (100 - limit) / 100))
+
+    def _rt_window(self, slot_id) -> list:
+        return self.__dict__.setdefault("_rt_windows", {}).get(slot_id, [])
+
+    def _rt_unavailable(self, slot_id) -> bool:
+        """Недоступен: в окне неуспешных не меньше порога."""
+        return sum(1 for g in self._rt_window(slot_id) if not g) >= self._rt_fail_need()
+
+    def _rt_dead(self, slot_id) -> bool:
+        """Молчит всё окно: окно заполнено, все замеры неуспешные."""
+        win = self._rt_window(slot_id)
+        return len(win) >= self._rt_window_size() and not any(win)
+
+    def _rt_bad_ticks(self, slot_id) -> int:
+        """Сколько тактов длится недоступность — от первой неудачи в окне;
+        для статусов «не отвечает N мин». 0 — доступен."""
+        if not self._rt_unavailable(slot_id):
+            return 0
+        win = self._rt_window(slot_id)
+        first = next((i for i, g in enumerate(win) if not g), 0)
+        return len(win) - first
 
     def _rt_switch_interval_ok(self) -> bool:
         raw = self.db.get_state(self._RT_SWITCHED_KEY) or ""
@@ -951,18 +960,19 @@ class RoutingMixin:
         return since >= 60 * settings.get_int("app.routing.failover.min_interval_minutes", 10)
 
     def routing_liveness_tick(self) -> list[Notification]:
-        """Замер живости шлюзов и деградация/переключение. Тикает часто
+        """Замер живости шлюзов, деградация и переключение. Тикает часто
         (десятки секунд). docs/gateway-failover.md §5.
 
         Метрика — проходимость наружу, а не возраст хендшейка: тот говорит,
         поднят ли туннель, а не ходит ли через него трафик.
 
-        Порядок решений такта: 1) не задействовано — маркировка снята сразу;
-        2) стрики каждого слота (гистерезис, потолки); 3) переключение —
-        активный лежит порог тактов, есть слот с тремя хорошими, интервал
-        прошёл; 4) гашение/возврат — по стрикам активного, как прежде;
-        5) объявления. Липкость — следствие шага 3: пока активный не набрал
-        порог плохих, его никто не трогает.
+        Одно понятие «недоступен» на все решения — скользящее окно замеров
+        (§5): в окне неуспешных не меньше, чем допускает порог доступности.
+        Порядок такта: 1) не задействовано — маркировка снята сразу;
+        2) окно и стрик хороших каждого слота; 3) недоступен и есть кандидат
+        (три хороших подряд, сам доступен) → переключение; 4) недоступен без
+        кандидата → гашение, три хороших подряд → возврат; 5) объявления — в
+        том же такте, что и действие. Липкость — следствие шага 3.
         """
         if not routing.available():
             return []
@@ -996,45 +1006,33 @@ class RoutingMixin:
         self._rt_last_verdict = verdict
 
         was_on = self.db.get_state(self._RT_LINK_KEY) == "1"
-        down_cap = max(self._RT_DOWN_STREAK, self._RT_ANNOUNCE_AFTER)
-        if slots:
-            down_cap = max(down_cap, settings.get_int("app.routing.failover.standby_announce_after", 20))
         notes: list[Notification] = []
         switched_to = None
         refused = False
-        streaks: dict = {}                      # ключ слота → (up, down)
+        ups: dict = {}                          # ключ слота → хороших подряд
         with self.db.transaction():
             keys = [g.id for g in slots] if slots else [None]
             if not engaged:
                 # РЕШЕНИЕ, а не измерение: выключение фичи админом — не дребезг,
-                # и ждать три такта тут значит не выполнить прямое указание.
+                # и ждать окно тут значит не выполнить прямое указание.
                 for k in keys:
-                    up_k, down_k, _a = self._rt_keys(k)
-                    self.db.set_state(up_k, "0")
-                    self.db.set_state(down_k, "0")
-                    streaks[k] = (0, 0)
+                    self.db.set_state(self._rt_keys(k)[0], "0")
+                    ups[k] = 0
                 self._rt_window_reset()
                 ok = False
             else:
-                # ГИСТЕРЕЗИС, а не пересчёт с нуля каждый тик: состояние меняется
-                # только на пересечении порогов. Стрики с потолком — в
-                # установившемся состоянии такт не пишет на диск вовсе.
+                # Окно — в памяти; стрик хороших — с потолком: в установившемся
+                # состоянии такт не пишет на диск вовсе.
                 for k in keys:
-                    up_k, down_k, _a = self._rt_keys(k)
-                    up = int(self.db.get_state(up_k) or 0)
-                    down = int(self.db.get_state(down_k) or 0)
+                    up_k, _a = self._rt_keys(k)
                     good = results.get(k) == routing.PROBE_OK
                     self._rt_window_push(k, good)
-                    if good:
-                        up, down = min(up + 1, self._RT_UP_STREAK), 0
-                    else:
-                        up, down = 0, min(down + 1, down_cap)
-                        if k is not None and down >= self._RT_DOWN_STREAK:
-                            self._gw_ping_forget(k)      # хост упал — пинг устарел
+                    up = min(int(self.db.get_state(up_k) or 0) + 1, self._RT_UP_STREAK) if good else 0
                     self.db.set_state(up_k, str(up))
-                    self.db.set_state(down_k, str(down))
-                    streaks[k] = (up, down)
-                a_up, a_down = streaks[akey]
+                    ups[k] = up
+                    if k is not None and self._rt_unavailable(k):
+                        self._gw_ping_forget(k)          # хост недоступен — пинг устарел
+                a_up = ups[akey]
                 # Ручное удержание: админ сам переложил трафик на лежащий шлюз —
                 # значит, так надо, и автомат его не перекладывает обратно.
                 # Ожил (три хороших) — удержание снято: упадёт снова, автомат
@@ -1043,13 +1041,13 @@ class RoutingMixin:
                 if hold and hold == str(akey) and a_up >= self._RT_UP_STREAK:
                     self.db.set_state(self._RT_HOLD_KEY, "")
                     hold = ""
-                # ПЕРЕКЛЮЧЕНИЕ: в окне активного набралось неуспешных замеров
-                # больше, чем допускает порог доступности, есть кандидат с тремя
-                # хорошими, интервал с прошлого автоматического прошёл.
-                if (slots and len(slots) > 1 and self._rt_window_failed(akey)
+                # ПЕРЕКЛЮЧЕНИЕ: активный недоступен, есть кандидат (три хороших
+                # подряд), интервал с прошлого автоматического прошёл.
+                unavailable = self._rt_unavailable(akey)
+                if (slots and len(slots) > 1 and unavailable
                         and self._rt_failover_enabled() and hold != str(akey)):
                     cand = next((g for g in slots if g.id != akey
-                                 and streaks[g.id][0] >= self._RT_UP_STREAK), None)
+                                 and ups[g.id] >= self._RT_UP_STREAK), None)
                     if cand is not None:
                         if self._rt_switch_interval_ok():
                             switched_to = cand
@@ -1058,21 +1056,22 @@ class RoutingMixin:
                             # об отвале прежнего активного сообщает само
                             # переключение — его «снова в строю» придёт с
                             # хвостом «остаётся в резерве»
-                            self.db.set_state(self._rt_keys(akey)[2], "1")
+                            self.db.set_state(self._rt_keys(akey)[1], "1")
                             # оба — с чистого листа: у нового активного в окне
                             # могли остаться неудачи со времён резерва, и они
                             # тут же потянули бы его обратно
                             self._rt_window_reset(akey)
                             self._rt_window_reset(cand.id)
                             akey = cand.id
-                            a_up, a_down = streaks[akey]
+                            a_up = ups[akey]
+                            unavailable = False
                             verdict = results.get(akey, routing.PROBE_DOWN)
                         else:
                             refused = True
                 if verdict == routing.PROBE_OK:
                     ok = True if (was_on or switched_to is not None) else a_up >= self._RT_UP_STREAK
                 else:
-                    ok = was_on and a_down < self._RT_DOWN_STREAK
+                    ok = was_on and not unavailable
 
         if switched_to is not None:
             try:
@@ -1092,14 +1091,13 @@ class RoutingMixin:
         if not engaged:
             return []
 
-        # ── объявления: действие и объявление — разные пороги ────────────────
-        a_up_k, a_down_k, a_ann_k = self._rt_keys(akey)
+        # ── объявления: в том же такте, что и действие ───────────────────────
+        _a_up_k, a_ann_k = self._rt_keys(akey)
         announced = self.db.get_state(a_ann_k) == "1"
-        a_up, a_down = streaks[akey]
         others = [g for g in slots if g.id != akey]
         if switched_to is not None:
             prev = next((g for g in slots if g.id != switched_to.id
-                         and self.db.get_state(self._rt_keys(g.id)[2]) == "1"), None)
+                         and self.db.get_state(self._rt_keys(g.id)[1]) == "1"), None)
             notes.append(Notification(config.ADMIN_ID,
                                       self._txt_rt_switched(prev, switched_to, results.get(prev.id) if prev else verdict),
                                       critical=True))
@@ -1107,30 +1105,28 @@ class RoutingMixin:
             if announced:
                 self.db.set_state(a_ann_k, "0")
                 notes.append(Notification(config.ADMIN_ID, self._txt_rt_gw_up(active)))
-        elif not announced and a_down >= self._RT_ANNOUNCE_AFTER:
+        elif not announced and self._rt_unavailable(akey):
             self.db.set_state(a_ann_k, "1")
             if refused:
                 text = self._txt_rt_switch_refused(active)
             else:
                 # Разные причины — разный ремонт: «шлюз молчит» чинят на линке,
                 # «за шлюзом нет интернета» — на самом шлюзе.
-                dead = [g for g in others if streaks[g.id][1] >= self._RT_DOWN_STREAK]
+                dead = [g for g in others if self._rt_unavailable(g.id)]
                 text = (self._txt_rt_gw_no_path(active, dead) if verdict == routing.PROBE_NO_PATH
                         else self._txt_rt_gw_down(active, dead))
             notes.append(Notification(config.ADMIN_ID, text, critical=True))
-        # резерв: длинный стрик, без critical; ожил — «остаётся в резерве»
-        standby_after = settings.get_int("app.routing.failover.standby_announce_after", 20)
+        # резерв: молчит всё окно — письмо без звука; ожил — «остаётся в резерве»
         for g in others:
-            _u, _d, ann_k = self._rt_keys(g.id)
-            g_up, g_down = streaks[g.id]
+            _u, ann_k = self._rt_keys(g.id)
             g_ann = self.db.get_state(ann_k) == "1"
-            if g_ann and g_up >= self._RT_UP_STREAK:
+            if g_ann and ups[g.id] >= self._RT_UP_STREAK:
                 self.db.set_state(ann_k, "0")
                 notes.append(Notification(config.ADMIN_ID, self._txt_rt_standby_up(g, active)))
-            elif not g_ann and g_down >= standby_after:
+            elif not g_ann and self._rt_dead(g.id):
                 self.db.set_state(ann_k, "1")
                 notes.append(Notification(config.ADMIN_ID,
-                                          self._txt_rt_standby_down(g, active, g_down)))
+                                          self._txt_rt_standby_down(g, active, self._rt_window_size())))
         return notes
 
     # ── холодный старт ───────────────────────────────────────────────────────
