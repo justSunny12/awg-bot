@@ -278,16 +278,16 @@ def settings_routing_monitor(info: dict) -> InlineKeyboardMarkup:
     порог доступности — пикерами (горячие ключи), тумблер автопереключения."""
     kb = InlineKeyboardBuilder()
     rows = []
-    for secs in (30, 45, 60, 90):
+    for secs in (30, 45, 60):
         mark = "🔘 " if secs == info["probe_seconds"] else ""
         kb.button(text=f"{mark}такт {secs} с",
                   callback_data=SetCB(sec="rt", act="pick", key="probe", val=str(secs)))
-    rows.append(4)
-    for n in (5, 10, 20, 30):
+    rows.append(3)
+    for n in (5, 10, 20):
         mark = "🔘 " if n == info["window"] else ""
         kb.button(text=f"{mark}окно {n}",
                   callback_data=SetCB(sec="rt", act="pick", key="window", val=str(n)))
-    rows.append(4)
+    rows.append(3)
     for pct in (25, 50, 75):
         mark = "🔘 " if pct == info["availability"] else ""
         kb.button(text=f"{mark}порог {pct} %",

@@ -837,8 +837,8 @@ async def _firewall_action(cb: CallbackQuery, callback_data: SetCB, services) ->
 
 # ── выбор enum (расписание обновлений) ───────────────────────────────────────
 _RT_MON_PICKS = {
-    "probe": ("app.routing.probe_seconds", ("30", "45", "60", "90")),
-    "window": ("app.routing.failover.window_samples", ("5", "10", "20", "30")),
+    "probe": ("app.routing.probe_seconds", ("30", "45", "60")),
+    "window": ("app.routing.failover.window_samples", ("5", "10", "20")),
     "avail": ("app.routing.failover.min_availability", ("25", "50", "75")),
 }
 
