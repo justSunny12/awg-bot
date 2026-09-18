@@ -48,6 +48,36 @@ class GatewayLinkMixin:
         self._run_link_script("--reassert", env)
         return True
 
+    def gateway_sync_link_ports(self) -> list[Notification]:
+        """Порт линка слота — по живому конфигу на ВПС. Порт меняют руками
+        (ListenPort в awglink.conf, перезапуск линка), и строка слота обязана
+        это заметить сама: она даёт порт скрипту линка и бандлу, а бандл везёт
+        Endpoint на шлюз. Сменился — правим слот, файервол хоста и напоминаем
+        перевыпустить конфигурацию шлюза: у той стороны Endpoint старый."""
+        from awgbot.infra.db.schema import _link_conf_params
+        if not config.ROUTING_GW_INTERFACE:
+            return []
+        notes = []
+        changed = False
+        for g in self.db.gateways():
+            if not os.path.exists(os.path.join(config.AWG_DIR, f"{g.link_if}.conf")):
+                continue
+            port, _cidr = _link_conf_params(g.link_if)
+            if port == g.link_port:
+                continue
+            self.db.gateway_update(g.id, link_port=port)
+            changed = True
+            log.info("gateway: порт линка слота %s — %s (был %s)", g.id, port, g.link_port)
+            notes.append(Notification(
+                config.ADMIN_ID,
+                f"🛰 Порт линка шлюза {self._gw_display(g)} на ВПС теперь {port} (был "
+                f"{g.link_port}). Шлюз об этом не знает — перевыпусти конфигурацию шлюза "
+                f"(Условная маршрутизация → {self._gw_display(g)} → Конфигурация шлюза) и "
+                "примени её на той стороне, иначе линк не поднимется."))
+        if changed:
+            self._gw_firewall_refresh()
+        return notes
+
     def _gw_firewall_refresh(self) -> None:
         """Порт нового линка (и снятие старого) — в файервол хоста сразу, а не
         при следующей плановой перерисовке: иначе второй шлюз не достучится до

@@ -498,3 +498,24 @@ def test_switch_starts_the_new_active_with_a_clean_window(two, services, monkeyp
     services.probe[2] = "down"
     services.routing_liveness_tick()
     assert services.active_gateway().id == 2, "одна неудача после переключения — не пятая"
+
+
+def test_slot_port_follows_the_live_link_config(services, make_active_client, monkeypatch, tmp_path, fake_routing):
+    """Порт линка меняют руками на ВПС (ListenPort + перезапуск линка): слот
+    подхватывает его при старте, файервол перерисовывается, админу —
+    напоминание перевыпустить конфигурацию шлюза."""
+    admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
+    pi = services.add_device(admin.id, "NASPi")
+    services.db.gateway_add(pi.device_id, "awglink", 47231, "10.99.99.0/30", slot_id=1)
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
+    monkeypatch.setattr(config, "AWG_DIR", str(tmp_path))
+    refreshed = []
+    monkeypatch.setattr(services, "_gw_firewall_refresh", lambda: refreshed.append(1))
+    assert services.gateway_sync_link_ports() == [], "конфига нет — не трогаем"
+    (tmp_path / "awglink.conf").write_text("[Interface]\nAddress = 10.99.99.1/30\nListenPort = 47231\n")
+    assert services.gateway_sync_link_ports() == [] and refreshed == []
+    (tmp_path / "awglink.conf").write_text("[Interface]\nAddress = 10.99.99.1/30\nListenPort = 443\n")
+    notes = services.gateway_sync_link_ports()
+    assert services.db.gateway(1).link_port == 443 and refreshed == [1]
+    assert len(notes) == 1 and "443" in notes[0].text and "перевыпусти" in notes[0].text
+    assert services.gateway_sync_link_ports() == [], "второй раз — тишина"

@@ -465,6 +465,9 @@ async def main() -> None:
             # Слоты шлюзов (docs/gateway-failover.md): юнит первого линка —
             # на шаблон, активный на холодном старте — предпочтительный.
             await asyncio.to_thread(services.gateway_units_migrate)
+            # порт линка правят руками в конфиге ВПС — строка слота узнаёт сама
+            for note in await asyncio.to_thread(services.gateway_sync_link_ports):
+                await notify_one(bot, note.tg_id, note.text)
             await asyncio.to_thread(services.routing_cold_start)
         except Exception as e:                           # noqa: BLE001
             log.warning("слоты шлюзов на старте: %s", e)
