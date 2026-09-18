@@ -57,6 +57,7 @@ def slots(services, fake_awg, fake_routing, make_active_client, monkeypatch):
     monkeypatch.setattr(services, "routing_link_ok", lambda: True)
     probe = {1: "ok", 2: "ok"}
     monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: probe[g.id])
+    monkeypatch.setattr(services, "_rt_standby_interval", lambda: 0)
     pings = {"n": 0}
 
     def _ping(t, p, mark=None, **k):
@@ -96,7 +97,7 @@ async def test_section_with_two_slots_lists_them(services, slots):
     text, markup = await sh._screen("rt", services)
     labels = _labels(markup)
     assert "🛰 Шлюзы: 2" in labels and "➕ Резервный шлюз" not in labels
-    assert "▶️ «NASPi»" in text and "несёт трафик" in text and "⏸ «Pi2»" in text and "в резерве" in text
+    assert "«NASPi»" in text and "🟢 <b>[Активен]</b>" in text and "«Pi2»" in text and "🟢 <b>[Резерв]</b>" in text
 
 
 async def test_list_and_card_show_roles_preferred_and_ping_lazily(services, slots, fake_bot):
@@ -108,7 +109,8 @@ async def test_list_and_card_show_roles_preferred_and_ping_lazily(services, slot
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_list(cb, services, FakeState())
     text, labels = _screen(nav)
-    assert labels[0].startswith("▶️ NASPi — 🟢 ⭐") and labels[1].startswith("⏸ Pi2 — 🟢")
+    assert labels[0] == "NASPi ⭐" and labels[1] == "Pi2", "статус — в инфобоксе, не на кнопке"
+    assert "«NASPi»" in text and "🟢 <b>[Активен]</b>" in text and "🟢 <b>[Резерв]</b>" in text
     assert "➕ Добавить шлюз" not in labels, "потолок два слота"
     assert "🔁 Автопереключение: вкл" in labels
     assert "Предпочтительный при холодном старте: «NASPi»" in text and "дом 2" in text
@@ -118,7 +120,7 @@ async def test_list_and_card_show_roles_preferred_and_ping_lazily(services, slot
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=2), services, FakeState())
     text, labels = _screen(nav)
     assert services.pings["n"] == 1 and "Пинг со шлюза: 43 мс" in text
-    assert "⏸ В резерве" in text and "Трафик сейчас идёт через «NASPi»" in text
+    assert "<b>[Резерв]</b>" in text and "Трафик сейчас идёт через «NASPi»" in text
     assert labels[0] == "▶️ Переключить трафик сюда" and labels[1].startswith("☑️ Предпочтительный")
     assert labels[-2] == "📡 Пинг" and labels[-1] == "⬅️ Назад"
     # второе открытие — из кэша
@@ -133,7 +135,7 @@ async def test_list_and_card_show_roles_preferred_and_ping_lazily(services, slot
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=1), services, FakeState())
     text, labels = _screen(nav)
-    assert "▶️ Несёт трафик" in text and "Переключить трафик сюда" not in labels
+    assert "<b>[Активен]</b>" in text and "Переключить трафик сюда" not in labels
     assert labels[0].startswith("✅ Предпочтительный")
 
 
@@ -210,7 +212,7 @@ async def test_add_second_slot_as_new_machine_asks_its_own_token(services, slots
     _slot1(services, pi)
     services.token[1] = "111111111:AA-first-token-value-long-enough"
     text, markup = await sh._screen("rt_gw", services)
-    assert "Резервный шлюз" in text and _labels(markup)[:2] == ["📱 Из моих устройств", "➕ Новая машина"]
+    assert "Резервный шлюз" in text and _labels(markup)[:2] == ["📱 Из моих устройств", "➕ Новое устройство"]
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await sh.gateway_new_yes(cb, GwMarkCB(action="new_yes", slot=0), services, st)
@@ -273,7 +275,7 @@ async def test_remove_standby_and_active(services, slots, fake_bot, monkeypatch)
     cb, nav = _acb(fake_bot)
     await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi2.id), services)
     text, labels = _screen(nav)
-    assert "▶️ Несёт трафик РФ-доступа" in text and "Пинг со шлюза" in text
+    assert "<b>[Активен]</b> — несёт трафик РФ-доступа" in text and "Пинг со шлюза" in text
     assert "🛰 Карточка шлюза" in labels and labels[-2] == "📡 Пинг"
     cb, nav = _acb(fake_bot)
     await sh.gateway_remove_ask(cb, GwMarkCB(action="remove_ask", device_id=pi2.id), services)

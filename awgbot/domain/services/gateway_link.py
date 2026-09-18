@@ -343,6 +343,7 @@ class GatewayLinkMixin:
         for key in (self._GW_BUNDLE_ISSUED_KEY, self._GW_BUNDLE_SSH_KEY, self._GW_BUNDLE_SSH_NOTIFIED_KEY):
             self.db.set_state(self._gw_slot_key(key, gw.id), "")
         self._gw_ping_forget(gw.id)
+        self._standby_forget(gw.id)
         if not others:
             try:
                 settings.set_value("app.routing.enabled", False)
@@ -449,7 +450,15 @@ class GatewayLinkMixin:
         routing.switch_active(gw.link_if)
         with self.db.transaction():
             self.db.set_state(self._RT_ACTIVE_KEY, str(gw.id))
-            if not manual:
+            if manual:
+                # Переключили руками на лежащий шлюз — значит, так надо: автомат
+                # его не перекладывает обратно, пока он не оживёт. На живой —
+                # удержания нет: упадёт, автомат переключит на живой резерв.
+                down = int(self.db.get_state(f"routing_gw_{gw.id}_down_streak") or 0)
+                up = int(self.db.get_state(f"routing_gw_{gw.id}_up_streak") or 0)
+                dead = down >= self._RT_DOWN_STREAK or (up == 0 and down > 0)
+                self.db.set_state(self._RT_HOLD_KEY, str(gw.id) if dead else "")
+            else:
                 self.db.set_state(self._RT_SWITCHED_KEY, timeutil.to_iso(timeutil.now()))
         log.info("routing: %s переключение на слот %s (%s)",
                  "ручное" if manual else "автоматическое", gw.id, gw.link_if)

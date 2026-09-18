@@ -25,6 +25,7 @@ def two(services, fake_awg, fake_routing, make_active_client, monkeypatch):
     g2 = services.db.gateway_add(pi2.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
     probe = {1: "ok", 2: "ok"}
     monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: probe[g.id])
+    monkeypatch.setattr(services, "_rt_standby_interval", lambda: 0)   # зонд резерва каждый такт
     switched = []
     monkeypatch.setattr(routing, "switch_active", lambda iface: switched.append(iface))
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: None)
@@ -306,3 +307,70 @@ def test_home_subnets_are_parsed_and_conflicts_reported(two, services):
     assert services.gateway_set_home_subnets(2, "—")["kept"] == []
     services.gateway_set_label(2, "  дом   2  очень длинная подпись сверх меры")
     assert services.db.gateway(2).label == "дом 2 очень длинная"
+
+
+def test_standby_is_probed_rarely_and_lives_by_handshake_in_between(two, services, monkeypatch):
+    """Маячок наружу с домашнего адреса каждые полминуты — сигнатура: резерв
+    зондируется редко, с джиттером; между зондами живость — по хендшейку."""
+    admin, g1, g2 = two
+    monkeypatch.setattr(services, "_rt_standby_interval", lambda: 5)
+    probes = []
+    monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: probes.append(g.id) or "ok")
+    ages = {"awglink2": 30}
+    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": ages.get(iface))
+    for _ in range(services._RT_UP_STREAK + 2):
+        services.routing_liveness_tick()
+    assert probes.count(2) == 1, "резерв зондирован один раз, дальше — по хендшейку"
+    assert probes.count(1) == services._RT_UP_STREAK + 2, "активный — каждый такт"
+    st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
+    assert st["link_ok"], "хендшейк свежий, последний зонд прошёл — резерв в порядке"
+    ages["awglink2"] = 600                                  # хендшейк протух
+    for _ in range(services._RT_DOWN_STREAK):
+        services.routing_liveness_tick()
+    st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
+    assert not st["link_ok"] and probes.count(2) == 1, "без хендшейка резерв мёртв без единого зонда"
+
+
+def test_manual_switch_to_a_dead_gateway_holds_the_automaton(two, services):
+    """Админ переложил трафик на лежащий шлюз — значит, так надо: автомат не
+    возвращает. Ожил и упал снова — автомат переключает, как обычно."""
+    admin, g1, g2 = two
+    _settle(services)
+    services.probe[2] = "down"
+    for _ in range(services._RT_DOWN_STREAK):
+        services.routing_liveness_tick()
+    services.gateway_switch(2, manual=True)
+    assert services.db.get_state(services._RT_HOLD_KEY) == "2"
+    for _ in range(services._RT_DOWN_STREAK + 2):
+        services.routing_liveness_tick()
+    assert services.active_gateway().id == 2, "удержание: автомат не перекладывает обратно"
+    assert services.db.get_state(services._RT_LINK_KEY) == "0"
+    services.probe[2] = "ok"
+    for _ in range(services._RT_UP_STREAK):
+        services.routing_liveness_tick()
+    assert services.db.get_state(services._RT_HOLD_KEY) == "", "ожил — удержание снято"
+    services.probe[2] = "down"
+    for _ in range(services._RT_DOWN_STREAK):
+        services.routing_liveness_tick()
+    assert services.active_gateway().id == 1, "упал снова — автомат переключил на живой"
+    # ручное на ЖИВОЙ (три хороших) — удержания нет
+    services.probe[2] = "ok"
+    for _ in range(services._RT_UP_STREAK):
+        services.routing_liveness_tick()
+    services.gateway_switch(2, manual=True)
+    assert services.db.get_state(services._RT_HOLD_KEY) == ""
+
+
+def test_fresh_standby_shows_link_check_until_three_good(two, services):
+    from awgbot.bot import texts
+    admin, g1, g2 = two
+    st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
+    assert texts.slot_status(st) == "⏳ <b>[Резерв]</b>, проверка связи"
+    _settle(services)
+    st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
+    assert texts.slot_status(st) == "🟢 <b>[Резерв]</b>"
+    services.probe[2] = "down"
+    for _ in range(services._RT_DOWN_STREAK):
+        services.routing_liveness_tick()
+    st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
+    assert texts.slot_status(st).startswith("🔴 <b>[Резерв]</b>, не отвечает")

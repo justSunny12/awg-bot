@@ -822,6 +822,8 @@ class RoutingMixin:
     # Зонд резерва: те же цели и две попытки, но короче таймаут — резерв не
     # держит трафик, и его ответ ничего не откладывает.
     _RT_STANDBY_TIMEOUT = 2.0
+    # Свежесть хендшейка резерва: keepalive линка 25 с, хендшейк раз в ~2 мин.
+    _RT_STANDBY_HANDSHAKE_MAX = 180
 
     def _probe_slot(self, gw, *, active: bool) -> str:
         targets, port = self._rt_probe_targets()
@@ -830,17 +832,51 @@ class RoutingMixin:
         return routing.probe_gateway(targets, port, timeout=self._RT_STANDBY_TIMEOUT,
                                      iface=gw.link_if, mark=gw.mark)
 
+    def _rt_standby_interval(self) -> int:
+        """Минут между зондами резерва; 0 — каждый такт (тесты)."""
+        return settings.get_int("app.routing.failover.standby_probe_minutes", 5)
+
+    def _standby_verdict(self, gw) -> str:
+        """Живость РЕЗЕРВА без маячка каждые полминуты: наружу зондируем редко и
+        с джиттером (строго периодический коннект с домашнего адреса — сигнатура
+        для ТСПУ), а между зондами живость — по свежести хендшейка линка (это
+        локальный exec, наружу ничего не уходит). Резерв «в порядке» = последний
+        зонд прошёл И хендшейк свежий: такой шлюз примет нагрузку."""
+        import random
+        import time as _time
+        nxt = self.__dict__.setdefault("_rt_standby_next", {})
+        last = self.__dict__.setdefault("_rt_standby_last", {})
+        every = self._rt_standby_interval()
+        now = _time.monotonic()
+        if every <= 0 or gw.id not in last or now >= nxt.get(gw.id, 0.0):
+            last[gw.id] = self._probe_slot(gw, active=False)
+            nxt[gw.id] = now + every * 60 * random.uniform(0.6, 1.4)
+            return last[gw.id]
+        age = routing.link_handshake_age(gw.link_if)
+        if age is None or age > self._RT_STANDBY_HANDSHAKE_MAX:
+            return routing.PROBE_DOWN
+        return last[gw.id]
+
+    def _standby_forget(self, slot_id: int) -> None:
+        self.__dict__.setdefault("_rt_standby_next", {}).pop(slot_id, None)
+        self.__dict__.setdefault("_rt_standby_last", {}).pop(slot_id, None)
+
     def _probe_slots(self, slots, active) -> dict:
         """Все слоты разом: зонды независимы, а последовательно при лежащем
         резерве такт держал бы поток ещё на 2 × 2 с."""
         if len(slots) == 1:
             g = slots[0]
-            return {g.id: self._probe_slot(g, active=(active is not None and active.id == g.id))}
+            if active is not None and active.id == g.id:
+                return {g.id: self._probe_slot(g, active=True)}
+            return {g.id: self._standby_verdict(g)}
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=len(slots)) as pool:
-            futs = {g.id: pool.submit(self._probe_slot, g,
-                                      active=(active is not None and active.id == g.id))
-                    for g in slots}
+            futs = {}
+            for g in slots:
+                if active is not None and active.id == g.id:
+                    futs[g.id] = pool.submit(self._probe_slot, g, active=True)
+                else:
+                    futs[g.id] = pool.submit(self._standby_verdict, g)
             return {sid: f.result() for sid, f in futs.items()}
 
     # ── стрики по слоту ──────────────────────────────────────────────────────
@@ -853,6 +889,7 @@ class RoutingMixin:
                 f"routing_gw_{slot_id}_announced")
 
     _RT_LAST_TICK_KEY = "routing_last_tick_at"
+    _RT_HOLD_KEY = "routing_manual_hold"       # слот, на который переключили руками при отказе
 
     def _rt_failover_enabled(self) -> bool:
         return settings.get_bool("app.routing.failover.enabled", True)
@@ -942,10 +979,18 @@ class RoutingMixin:
                     self.db.set_state(down_k, str(down))
                     streaks[k] = (up, down)
                 a_up, a_down = streaks[akey]
+                # Ручное удержание: админ сам переложил трафик на лежащий шлюз —
+                # значит, так надо, и автомат его не перекладывает обратно.
+                # Ожил (три хороших) — удержание снято: упадёт снова, автомат
+                # переключит, как обычно.
+                hold = self.db.get_state(self._RT_HOLD_KEY) or ""
+                if hold and hold == str(akey) and a_up >= self._RT_UP_STREAK:
+                    self.db.set_state(self._RT_HOLD_KEY, "")
+                    hold = ""
                 # ПЕРЕКЛЮЧЕНИЕ: активный лежит порог, есть кандидат с тремя
                 # хорошими, интервал с прошлого автоматического прошёл.
                 if (slots and len(slots) > 1 and a_down >= self._RT_DOWN_STREAK
-                        and self._rt_failover_enabled()):
+                        and self._rt_failover_enabled() and hold != str(akey)):
                     cand = next((g for g in slots if g.id != akey
                                  and streaks[g.id][0] >= self._RT_UP_STREAK), None)
                     if cand is not None:
@@ -1117,7 +1162,8 @@ class RoutingMixin:
                 f"трафик идёт через {self._gw_display(new)}.\n\n"
                 "Исходящий адрес у клиентов сменился — российские приложения могут "
                 f"попросить войти заново. Останусь на {self._gw_display(new)} и после того, как "
-                f"{self._gw_display(prev) if prev else 'прежний'} оживёт; вернуть — в его карточке "
+                f"{self._gw_display(prev) if prev else 'прежний'} оживёт.\n"
+                "Принудительно вернуть трафик обратно можно в карточке шлюза "
                 "(⚙️ Настройки → Условная маршрутизация → Шлюзы).")
         if verdict == routing.PROBE_NO_PATH:
             head += "\n\nТуннель до него жив — проверь аплинк и NAT на самом шлюзе."
@@ -1126,11 +1172,16 @@ class RoutingMixin:
         return head
 
     def _txt_rt_switch_refused(self, active) -> str:
-        mins = settings.get_int("app.routing.failover.min_interval_minutes", 10)
-        return (f"🔴 {self._gw_display(active)} перестал отвечать раньше чем через {mins} мин "
-                "после переключения на него. Второе переключение подряд не делаю: так падает "
-                "что-то общее, а не один дом. " + self._rt_effect_line()
-                + " Переключить руками — в карточке шлюза.")
+        raw = self.db.get_state(self._RT_SWITCHED_KEY) or ""
+        try:
+            mins = max(1, int((timeutil.now() - timeutil.parse_iso(raw)).total_seconds() // 60))
+        except ValueError:
+            mins = settings.get_int("app.routing.failover.min_interval_minutes", 10)
+        return (f"🔴 {self._gw_display(active)} перестал отвечать через {mins} мин после "
+                "переключения на него. Второе переключение подряд не делаю: проблема выглядит "
+                "системной. " + self._rt_effect_line()
+                + " Переключить принудительно можно в карточке шлюза "
+                "(⚙️ Настройки → Условная маршрутизация → Шлюзы).")
 
     def _txt_rt_standby_also_down(self, dead) -> str:
         names = ", ".join(self._gw_display(g) for g in dead)

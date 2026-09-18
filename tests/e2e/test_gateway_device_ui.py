@@ -88,7 +88,7 @@ async def test_settings_assign_existing_device_no_rekey(services, fake_bot, gwse
     assert "🛰 Назначить шлюз" in labels and "⚙️ Конфигурация шлюза" not in labels
     assert "не назначен" in text
     _, markup = await sh._screen("rt_gw", services)
-    assert _labels(markup)[:2] == ["📱 Из моих устройств", "➕ Новая машина"]
+    assert _labels(markup)[:2] == ["📱 Из моих устройств", "➕ Новое устройство"]
     cb, nav = _acb(fake_bot)
     await sh.gateway_pick_list(cb, GwMarkCB(action="pick_list"), services)
     labels = _labels(next(s[2] for s in nav.sent if s[0] == "edit_text"))
@@ -149,7 +149,7 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
                         lambda t, slot=None: stored.__setitem__("t", t))
     cb, nav = _acb(fake_bot)
     await sh.gateway_new_ask(cb, GwMarkCB(action="new_ask"), services)
-    assert any("Новая машина" in s[1] for s in nav.sent if s[0] == "edit_text")
+    assert any("Новое устройство" in s[1] for s in nav.sent if s[0] == "edit_text")
 
     st = FakeState()
     cb, nav = _acb(fake_bot)

@@ -113,12 +113,11 @@ def gateway_list(states, *, can_add: bool, failover_on: bool) -> InlineKeyboardM
     kb = InlineKeyboardBuilder()
     rows = []
     for st in states:
+        # статус — в инфобоксе; на кнопке только имя и звезда предпочтительного
         dev = st.get("device")
-        name = dev.name if dev is not None else f"слот {st['gateway'].id}"
-        mark = "▶️" if st.get("active") else "⏸"
-        dot = "🟢" if st.get("link_ok") else ("⏳" if st.get("issued_at") and st.get("handshake_age") is None else "🔴")
+        name = dev.name if dev is not None else f"шлюз {st['gateway'].id}"
         star = " ⭐" if st.get("preferred") else ""
-        kb.button(text=f"{mark} {name} — {dot}{star}",
+        kb.button(text=f"{name}{star}",
                   callback_data=GwSlotCB(action="card", slot=st["gateway"].id))
         rows.append(1)
     if can_add:
@@ -164,7 +163,7 @@ def gateway_choose_kind(has_candidates: bool, slot: int = 0) -> InlineKeyboardMa
     kb = InlineKeyboardBuilder()
     if has_candidates:
         kb.button(text="📱 Из моих устройств", callback_data=GwMarkCB(action="pick_list", slot=slot))
-    kb.button(text="➕ Новая машина", callback_data=GwMarkCB(action="new_ask", slot=slot))
+    kb.button(text="➕ Новое устройство", callback_data=GwMarkCB(action="new_ask", slot=slot))
     back = (GwSlotCB(action="card", slot=slot).pack() if slot else SetCB(sec="rt", act="open").pack())
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back))
     kb.adjust(1)
@@ -193,7 +192,7 @@ def gateway_mark_confirm(device_id: int, slot: int = 0) -> InlineKeyboardMarkup:
 
 def gateway_new_confirm(slot: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="➕ Да, новая машина", callback_data=GwMarkCB(action="new_yes", slot=slot))
+    kb.button(text="➕ Да, новое устройство", callback_data=GwMarkCB(action="new_yes", slot=slot))
     kb.button(text="Отмена", callback_data=SetCB(sec="rt_gw", act="open", key=str(slot or "")))
     kb.adjust(1)
     return kb.as_markup()

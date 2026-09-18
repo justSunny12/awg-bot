@@ -24,9 +24,9 @@ def gateway_role_line(state) -> str:
     if not state or state.get("gateway") is None:
         return ""
     if state.get("active"):
-        return "▶️ Несёт трафик РФ-доступа."
+        return "<b>[Активен]</b> — несёт трафик РФ-доступа"
     via = state.get("active_display") or ""
-    return f"⏸ Резервный шлюз, трафик через {via}." if via else "⏸ Резервный шлюз."
+    return f"<b>[Резерв]</b> — трафик идёт через {via}" if via else "<b>[Резерв]</b>"
 
 
 def gateway_device_card(dev, state=None) -> str:
@@ -78,24 +78,21 @@ def _slot_down_mins(state) -> int:
 
 
 def slot_status(state) -> str:
-    """Состояние слота одной фразой: несёт трафик / в резерве / жду хендшейка /
-    не отвечает."""
-    issued = state.get("issued_at") or ""
-    age = state.get("handshake_age")
-    waiting = bool(issued) and (age is None or age > 300)
-    if state.get("active"):
-        if state.get("link_ok"):
-            return "🟢 несёт трафик"
-        if waiting:
-            return "⏳ конфигурация выпущена, жду хендшейка от шлюза"
-        return "🔴 не отвечает"
+    """Состояние слота: кружок и роль тегом, уточнение — после запятой:
+    «🟢 <b>[Активен]</b>», «⏳ <b>[Резерв]</b>, проверка связи»,
+    «🔴 <b>[Резерв]</b>, не отвечает 14 мин»."""
+    tag = "<b>[Активен]</b>" if state.get("active") else "<b>[Резерв]</b>"
     if state.get("link_ok"):
-        return "🟢 в резерве"
-    if waiting:
-        return "⏳ конфигурация выпущена, жду хендшейка от шлюза"
-    if state.get("down_ticks", 0):
-        return f"🔴 не отвечает {_slot_down_mins(state)} мин"
-    return "⚪️ в резерве, ещё не проверен"
+        return f"🟢 {tag}"
+    down = int(state.get("down_ticks", 0) or 0)
+    if down >= 3:
+        return f"🔴 {tag}, не отвечает {_slot_down_mins(state)} мин"
+    if state.get("active"):
+        # активный без трёх плохих — стрик ещё копится либо только назначен
+        return f"⏳ {tag}, проверка связи" if not down else f"🔴 {tag}"
+    # резерв: связь проверяется — после назначения, после отвала, пока стрик
+    # не набрал трёх хороших; часы вместо «жду хендшейка»
+    return f"⏳ {tag}, проверка связи"
 
 
 def settings_routing_gateway_line(state: dict) -> str:
@@ -124,8 +121,7 @@ def settings_routing_gateway_block(states: list) -> str:
                   "сервисы откроются с зарубежного адреса.")
     lines = ["\n🛰 Шлюзы:"]
     for st in states:
-        mark = "▶️" if st.get("active") else "⏸"
-        lines.append(f"{mark} {slot_name(st)} — {slot_status(st)}")
+        lines.append(f"{slot_name(st)} — {slot_status(st)}")
     return "\n".join(lines)
 
 
@@ -135,9 +131,8 @@ def gateway_list_text(states: list, switched_at: str = "", auto_on: bool = True)
              "отвечать, а резерв в порядке, бот перекладывает трафик сам — и остаётся на "
              "нём: вернуть на прежний можно из его карточки.", ""]
     for st in states:
-        mark = "▶️" if st.get("active") else "⏸"
         star = " ⭐" if st.get("preferred") else ""
-        lines.append(f"{mark} {slot_name(st)}{star} — {slot_status(st)}")
+        lines.append(f"{slot_name(st)}{star} — {slot_status(st)}")
     pref = next((st for st in states if st.get("preferred")), None)
     lines.append("")
     if pref is not None:
@@ -166,17 +161,15 @@ def gateway_card_text(state: dict, states: list) -> str:
     link = f"Линк {_e(gw.link_if)}, порт {gw.link_port} — {hs}"
     others = [s for s in states if s["gateway"].id != gw.id]
     active_other = next((s for s in others if s.get("active")), None)
+    body = f"\n{slot_status(state)}. {link}."
     if state.get("active"):
         if state.get("link_ok"):
-            body = f"\n▶️ Несёт трафик. {link}.\nИсходящий адрес клиентов сейчас — адрес этого дома."
-        else:
-            body = (f"\n▶️ Несёт трафик, но {slot_status(state)}. {link}.\n"
-                    + ("Маркировка снята: российские сервисы открываются с зарубежного адреса."))
+            body += "\nНесёт трафик РФ-доступа: исходящий адрес клиентов сейчас — адрес этой сети."
+        elif int(state.get("down_ticks", 0) or 0) >= 3:
+            body += "\nМаркировка снята: российские сервисы открываются с зарубежного адреса."
     else:
         if state.get("link_ok"):
-            body = f"\n⏸ В резерве. {link}, наружу проходит."
-        else:
-            body = f"\n⏸ В резерве: {slot_status(state)}. {link}."
+            body += "\nНаружу проходит, готов принять трафик."
         if active_other is not None:
             body += f"\nТрафик сейчас идёт через {slot_short(active_other)}."
     nets = gw.home_subnets
@@ -187,8 +180,8 @@ def gateway_card_text(state: dict, states: list) -> str:
     if conflict is not None:
         first = min([state] + others, key=lambda s: (0 if s.get("preferred") else 1, s["gateway"].id))
         if first["gateway"].id != gw.id:
-            home += (f"\n⚠️ Та же подсеть у {slot_short(conflict)}: маршрут достаётся ему, до этого "
-                     "дома устройства админа не дойдут. Смени подсеть в одной из квартир.")
+            home += (f"\n⚠️ Та же подсеть у {slot_short(conflict)}: маршрут достаётся ему, до этой "
+                     "сети устройства админа не дойдут. Смени подсеть в одной из сетей.")
     issued = state.get("issued_at") or ""
     tail = ""
     if issued:
@@ -202,15 +195,12 @@ def gateway_card_text(state: dict, states: list) -> str:
 
 
 GATEWAY_STANDBY_CHOOSE_INTRO = (
-    "🛰 <b>Резервный шлюз</b>\n\nВторая машина в другом месте — со своим домашним "
-    "адресом. Когда основной шлюз перестанет отвечать, трафик пойдёт через неё.\n\n"
-    "Машина-шлюз — это твоё устройство в этом боте: её клиентский туннель к серверу. "
-    "Выбери, из чего назначить:\n"
-    "• из уже выпущенных устройств — если оно стоит на машине, где линк уже работал;\n"
-    "• новая машина — бот создаст устройство «Шлюз 2» и первый файл для чистой "
-    "установки.\n\n"
-    "Для резервного шлюза поднимется второй линк — свои ключи, свой порт. Первый файл "
-    "применяется на машине руками, как и у основного.")
+    "🛰 <b>Резервный шлюз</b>\n\nЕщё одно устройство — со своим внешним IP. Когда "
+    "основной шлюз перестанет отвечать, трафик пойдёт через него.\n\n"
+    "Шлюзом можно назначить одно из твоих уже созданных в боте устройств или "
+    "создать новое.\n\n"
+    "Для резервного шлюза поднимется второй линк — свои ключи, свой порт. Первый "
+    "файл применяется на машине руками, как и у основного.")
 
 
 def gateway_replace_intro(state: dict) -> str:
@@ -219,10 +209,10 @@ def gateway_replace_intro(state: dict) -> str:
     role = ("Слот резервный: трафик клиентов не затронут." if not state.get("active")
             else "Это активный шлюз: на время замены трафик переложится на резерв, "
                  "если он жив, иначе российские сервисы откроются с зарубежного адреса, "
-                 "пока новая машина не поднимется.")
+                 "пока новое устройство не поднимется.")
     return (f"🔁 <b>Заменить машину: {name}</b>\n\n{role}\n\nВыбери, из чего назначить:\n"
             "• из уже выпущенных устройств — если оно стоит на машине, где линк уже работал;\n"
-            "• новая машина — бот создаст устройство и первый файл для чистой установки.\n\n"
+            "• новое устройство — бот создаст его и первый файл для чистой установки.\n\n"
             "Ключи линка этого слота сменятся: прежняя машина потеряет линк сама.")
 
 
@@ -253,7 +243,7 @@ def gateway_marked(dev, rekeyed: bool, bundle_name: str = "awg-gw-bundle.sh") ->
 
 def gateway_new_ask(slot: int = 1) -> str:
     name = "Шлюз" if slot <= 1 else f"Шлюз {slot}"
-    return (f"➕ <b>Новая машина</b>\n\nБот создаст устройство «{name}» в твоём профиле, "
+    return (f"➕ <b>Новое устройство</b>\n\nБот создаст устройство «{name}» в твоём профиле, "
             "выпустит новые ключи линка и отдаст файл первого применения.\n\n"
             "Первый раз файл применяется на машине руками, одной командой: у бота "
             "шлюза там ещё нет Telegram, его даёт как раз этот файл. Дальше всё "
@@ -284,7 +274,7 @@ def gateway_switch_ask(target: dict, current, healthy: bool) -> str:
     return (f"⚠️ <b>{who} не отвечает уже {_slot_down_mins(target)} мин.</b>\n\n"
             "Переключить трафик на шлюз, через который наружу сейчас не пройти? Российские "
             "сервисы у всех включённых профилей перестанут открываться, пока он не оживёт — "
-            f"или пока автомат не вернёт трафик на {cur} (три хороших замера подряд).")
+            "или до ручного переключения на живой шлюз.")
 
 
 def gateway_home_text(state: dict) -> str:
@@ -308,9 +298,9 @@ def gateway_home_report(res: dict, state: dict) -> str:
         parts.append("⚠️ Не принято:\n" + "\n".join(f"• {_e(raw)} — {_e(why)}" for raw, why in res["rejected"]))
     conflict = res.get("conflict")
     if conflict is not None:
-        parts.append(f"⚠️ Та же подсеть задана и слоту {conflict.id}: маршрут достанется "
-                     "предпочтительному (при равенстве — меньшему слоту). Смени подсеть в одной "
-                     "из квартир.")
+        parts.append(f"⚠️ Та же подсеть задана и шлюзу №{conflict.id}: маршрут достанется "
+                     "предпочтительному (при равенстве — первому). Смени подсеть в одной "
+                     "из сетей.")
     return "\n\n".join(parts)
 
 
@@ -419,7 +409,7 @@ def settings_routing_text(enabled: bool, status: tuple) -> str:
 GATEWAY_CHOOSE_INTRO = ("🛰 <b>Шлюз</b>\n\nМашина-шлюз — это твоё устройство в этом боте: её "
                         "клиентский туннель к серверу. Выбери, из чего назначить:\n"
                         "• из уже выпущенных устройств — если оно стоит на машине, где линк уже "
-                        "работал;\n• новая машина — бот создаст устройство «Шлюз» и первый "
+                        "работал;\n• новое устройство — бот создаст устройство «Шлюз» и первый "
                         "файл для чистой установки.")
 GATEWAY_PICK_INTRO = "🛰 <b>Из моих устройств</b>\n\nКакое из них стоит на машине-шлюзе?"
 GATEWAY_PICK_EMPTY = "🛰 У профиля админа нет устройств, выпущенных ботом. Назначь новую машину."
