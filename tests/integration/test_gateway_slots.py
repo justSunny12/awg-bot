@@ -102,7 +102,8 @@ def test_second_slot_brings_its_own_link_and_needs_no_rekey_of_the_first(
     runs = []
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: runs.append((mode, dict(env or {}))))
     services.gateway_setup(pi.device_id)
-    assert runs == [], "первый слот на живом линке: ключи те же"
+    assert runs == [("--rekey", {"LINK_IF": "awglink", "LINK_PORT": "443", "LINK_CIDR": "10.99.99.0/30"})], \
+        "назначение всегда полным путём: ключи линка новые и у первого слота"
     res = services.gateway_setup(pi2.device_id)
     assert res["gateway"].id == 2 and res["rekeyed"] and res["previous"] is None
     assert runs[-1][0] == "--apply" and runs[-1][1]["LINK_IF"] == "awglink2" \
@@ -241,17 +242,21 @@ def test_manual_switch_ignores_thresholds_and_the_interval(two, services):
 
 def test_ping_cache_is_invalidated_when_the_host_falls(two, services, monkeypatch):
     admin, g1, g2 = two
-    monkeypatch.setattr(routing, "probe_latency", lambda t, p, mark=None, **k: 43)
+    monkeypatch.setattr(routing, "ping_peer", lambda iface="", **k: 43)
+    monkeypatch.setattr(routing, "external_ip", lambda mark=None, **k: "198.51.100.7")
     assert services.gateway_ping(2) == 43 and services.gateway_ping_cached(2)[0] == 43
     assert services.gateway_ping_lazy(2) == 43
+    assert services.gateway_external_ip_lazy(2) == "198.51.100.7"
+    assert services.gateway_external_ip_cached(2) == "198.51.100.7"
     _settle(services)
     services.probe[2] = "down"
     for _ in range(services._RT_DOWN_STREAK):
         services.routing_liveness_tick()
     assert services.gateway_ping_cached(2) is None, "хост упал — пинг устарел"
-    monkeypatch.setattr(routing, "probe_latency", lambda t, p, mark=None, **k: None)
+    assert services.gateway_external_ip_cached(2) is None, "и внешний IP тоже"
+    monkeypatch.setattr(routing, "ping_peer", lambda iface="", **k: None)
     assert services.gateway_ping(2) is None
-    monkeypatch.setattr(routing, "probe_latency", lambda t, p, mark=None, **k: 1200)
+    monkeypatch.setattr(routing, "ping_peer", lambda iface="", **k: 1200)
     assert services.gateway_ping_lazy(2) == 1200
     from awgbot.bot import texts
     assert texts.ping_fmt(43) == "43 мс" and texts.ping_fmt(1200) == "1,2 с"
@@ -289,10 +294,13 @@ def test_startup_warnings_name_the_slot(two, services):
     assert services.routing_startup_warnings() == []
     services.probe[2] = "down"
     warns = services.routing_startup_warnings()
-    assert len(warns) == 1 and "резервный шлюз" in warns[0] and "Pi2" in warns[0]
+    assert len(warns) == 1 and warns[0].startswith("Резервный шлюз") and "Pi2" in warns[0]
     services.probe[1] = "down"
     warns = services.routing_startup_warnings()
-    assert len(warns) == 2 and any("NASPi" in w for w in warns)
+    assert len(warns) == 1 and "«NASPi» и «Pi2» не отвечают" in warns[0], "оба лежат — одной строкой"
+    services.probe[2] = "ok"
+    warns = services.routing_startup_warnings()
+    assert len(warns) == 1 and warns[0].startswith("Шлюз условной маршрутизации") and "NASPi" in warns[0]
 
 
 def test_home_subnets_are_parsed_and_conflicts_reported(two, services):
@@ -365,7 +373,7 @@ def test_fresh_standby_shows_link_check_until_three_good(two, services):
     from awgbot.bot import texts
     admin, g1, g2 = two
     st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
-    assert texts.slot_status(st) == "⏳ <b>[Резерв]</b>, проверка связи"
+    assert texts.slot_status(st) == "⏳ <b>[Резерв]</b>, проверка связи…"
     _settle(services)
     st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
     assert texts.slot_status(st) == "🟢 <b>[Резерв]</b>"

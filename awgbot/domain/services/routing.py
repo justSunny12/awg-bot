@@ -88,9 +88,16 @@ class RoutingMixin:
     # самая тревога), но причина со стороны ВПС не видна, и без строки ниже её
     # ищут в аплинке и NAT, где её нет.
     _TXT_RT_BUNDLE_HINT = (
-        "\n\nЕсли началось сразу после обновления — пересобери бандл шлюза "
+        "\n\n<i>Если началось сразу после обновления — перевыпусти конфигурацию шлюза "
         "(<code>awg-bot gw-bundle</code>) и переустанови его на той стороне: "
-        "набор обфускации линка обязан совпадать, иначе хендшейк не проходит.")
+        "набор обфускации линка обязан совпадать, иначе хендшейк не проходит.</i>")
+
+    def _txt_rt_bundle_hint(self, gw=None) -> str:
+        where = (f"(Условная маршрутизация → {self._gw_display(gw)} → Конфигурация шлюза)"
+                 if gw is not None else "(<code>awg-bot gw-bundle</code>)")
+        return ("\n\n<i>Если началось сразу после обновления — перевыпусти конфигурацию шлюза "
+                f"{where} и переустанови его на той стороне: набор обфускации линка обязан "
+                "совпадать, иначе хендшейк не проходит.</i>")
 
     @staticmethod
     def _rt_effect_line() -> str:
@@ -100,19 +107,23 @@ class RoutingMixin:
         шло мимо. Раньше, в упразднённой обратной модели, тот же отвал означал
         «у людей пропал интернет» — и текст был другой.
         """
-        return ("Маркировка снята: российские сервисы временно открываются "
-                "с зарубежного адреса и могут ругаться. Всё остальное и так "
+        return ("Условная маршрутизация выключена: российские сервисы временно "
+                "открываются с зарубежного адреса и могут ругаться. Всё остальное и так "
                 "шло мимо шлюза — на него это не влияет.")
 
-    def _txt_rt_gw_down(self, active=None) -> str:
+    def _txt_rt_gw_down(self, active=None, also=()) -> str:
+        """also — резервные слоты, которые тоже лежат: их строка идёт сразу за
+        первой фразой, до объяснения эффекта и подсказки про бандл."""
         who = f" {self._gw_display(active)}" if active is not None else ""
-        return (f"🔴 Шлюз условной маршрутизации{who} недоступен. "
-                + self._rt_effect_line() + self._TXT_RT_BUNDLE_HINT)
+        tail = (" " + self._txt_rt_standby_also_down(also)) if also else ""
+        return (f"🔴 Шлюз условной маршрутизации{who} недоступен.{tail}\n"
+                + self._rt_effect_line() + self._txt_rt_bundle_hint(active))
 
-    def _txt_rt_gw_no_path(self, active=None) -> str:
+    def _txt_rt_gw_no_path(self, active=None, also=()) -> str:
         who = f" {self._gw_display(active)}" if active is not None else ""
+        tail = (" " + self._txt_rt_standby_also_down(also)) if also else ""
         return (f"🔴 Шлюз условной маршрутизации{who} отвечает, но интернета за ним нет "
-                "— проверь аплинк и NAT на самом шлюзе. " + self._rt_effect_line())
+                f"— проверь аплинк и NAT на самом шлюзе.{tail}\n" + self._rt_effect_line())
 
     _TXT_RT_GW_UP = "🟢 Шлюз условной маршрутизации снова в строю."
 
@@ -1052,12 +1063,9 @@ class RoutingMixin:
             else:
                 # Разные причины — разный ремонт: «шлюз молчит» чинят на линке,
                 # «за шлюзом нет интернета» — на самом шлюзе.
-                text = (self._txt_rt_gw_no_path(active) if verdict == routing.PROBE_NO_PATH
-                        else self._txt_rt_gw_down(active))
-                if others:
-                    dead = [g for g in others if streaks[g.id][1] >= self._RT_DOWN_STREAK]
-                    if dead:
-                        text += " " + self._txt_rt_standby_also_down(dead)
+                dead = [g for g in others if streaks[g.id][1] >= self._RT_DOWN_STREAK]
+                text = (self._txt_rt_gw_no_path(active, dead) if verdict == routing.PROBE_NO_PATH
+                        else self._txt_rt_gw_down(active, dead))
             notes.append(Notification(config.ADMIN_ID, text, critical=True))
         # резерв: длинный стрик, без critical; ожил — «остаётся в резерве»
         standby_after = settings.get_int("app.routing.failover.standby_announce_after", 20)
@@ -1137,20 +1145,26 @@ class RoutingMixin:
             warn = _texts.routing_gateway_warning(self.routing_probe(), at_start=True)
             return [warn] if warn else []
         active = self.active_gateway()
+        verdicts = {g.id: self._probe_slot(g, active=(active is not None and active.id == g.id))
+                    for g in slots}
+        dead = [g for g in slots if verdicts[g.id] != routing.PROBE_OK]
+        if not dead:
+            return []
+        if len(dead) == len(slots) and len(slots) > 1:
+            names = " и ".join(self._gw_display(g) for g in slots)
+            return [f"Шлюзы условной маршрутизации {names} не отвечают.\n"
+                    + self._rt_effect_line()]
         out = []
-        for g in slots:
-            is_active = active is not None and active.id == g.id
-            verdict = self._probe_slot(g, active=is_active)
-            if verdict == routing.PROBE_OK:
-                continue
-            if is_active:
-                warn = _texts.routing_gateway_warning(verdict, at_start=True)
-                out.append(f"{warn} (шлюз {self._gw_display(g)})" if warn else "")
+        for g in dead:
+            if active is not None and active.id == g.id:
+                warn = _texts.routing_gateway_warning(verdicts[g.id], at_start=True)
+                if warn:
+                    out.append(f"{warn[0].upper()}{warn[1:]} (шлюз {self._gw_display(g)})")
             else:
-                out.append(f"резервный шлюз {self._gw_display(g)} не отвечает на старте — "
+                out.append(f"Резервный шлюз {self._gw_display(g)} не отвечает на старте — "
                            "резерва сейчас нет, трафик идёт через "
                            f"{self._gw_display(active) if active else 'основной'}")
-        return [w for w in out if w]
+        return out
 
     # ── тексты уведомлений ───────────────────────────────────────────────────
     def _txt_rt_gw_up(self, active=None) -> str:
@@ -1168,7 +1182,7 @@ class RoutingMixin:
         if verdict == routing.PROBE_NO_PATH:
             head += "\n\nТуннель до него жив — проверь аплинк и NAT на самом шлюзе."
         else:
-            head += self._TXT_RT_BUNDLE_HINT
+            head += self._txt_rt_bundle_hint(prev)
         return head
 
     def _txt_rt_switch_refused(self, active) -> str:
@@ -1180,7 +1194,7 @@ class RoutingMixin:
         return (f"🔴 {self._gw_display(active)} перестал отвечать через {mins} мин после "
                 "переключения на него. Второе переключение подряд не делаю: проблема выглядит "
                 "системной. " + self._rt_effect_line()
-                + " Переключить принудительно можно в карточке шлюза "
+                + "\n\nПереключить принудительно можно в карточке шлюза "
                 "(⚙️ Настройки → Условная маршрутизация → Шлюзы).")
 
     def _txt_rt_standby_also_down(self, dead) -> str:

@@ -259,7 +259,12 @@ BODYEOF
         cat <<'TAILEOF'
 chmod 0600 "$DEST/link.conf"
 
-exec "$DEST/routing-gw-setup.sh" "${1:---apply}" "$DEST/link.conf"
+# Внутри приватный ключ: после успешного применения файл удаляет себя сам,
+# чтобы не полагаться на память человека. Отказ — файл остаётся для повтора.
+"$DEST/routing-gw-setup.sh" "${1:---apply}" "$DEST/link.conf"
+_rc=$?
+[ "$_rc" -eq 0 ] && rm -f -- "$0" 2>/dev/null
+exit "$_rc"
 TAILEOF
         printf '#__GW_SETUP_BELOW__\n'
         cat "$_gwsrc"

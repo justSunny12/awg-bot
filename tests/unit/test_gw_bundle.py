@@ -75,7 +75,7 @@ def test_bundle_pins_the_client_subnet(bundle):
                      bundle, re.M), "подсеть не вшита"
     assert "\nexport CLIENT_SUBNET\n" in bundle
     # экспорт обязан стоять ДО передачи управления gw-скрипту
-    assert bundle.index("export CLIENT_SUBNET") < bundle.index('exec "$DEST/routing-gw-setup.sh"')
+    assert bundle.index("export CLIENT_SUBNET") < bundle.index('"$DEST/routing-gw-setup.sh" "${1:---apply}"')
 
 
 def test_bundle_carries_the_link_config_verbatim(bundle):
@@ -116,7 +116,7 @@ def test_bundle_installs_to_a_stable_path(bundle):
     """
     assert 'DEST="/opt/awg-gw"' in bundle
     assert "mktemp" not in bundle, "временный каталог ломает автозапуск"
-    assert re.search(r'exec "\$DEST/routing-gw-setup\.sh"', bundle)
+    assert re.search(r'^"\$DEST/routing-gw-setup\.sh" ', bundle, re.M)
 
 
 @pytest.mark.parametrize("argv, expect", [([], "--apply"), (["--rollback"], "--rollback")])
@@ -124,7 +124,7 @@ def test_bundle_defaults_to_apply_and_passes_rollback_through(bundle, tmp_path, 
     """Без аргумента — применить; --rollback обязан доехать до скрипта. Прогоняем
     строку передачи управления из САМОГО бандла с подставным gw-скриптом."""
     handoff = next(line for line in bundle.splitlines()
-                   if line.startswith('exec "$DEST/routing-gw-setup.sh"'))
+                   if line.startswith('"$DEST/routing-gw-setup.sh"'))
     dest = tmp_path / "dest"; dest.mkdir()
     fake = dest / "routing-gw-setup.sh"
     fake.write_text('#!/bin/sh\necho "$1"\n', encoding="utf-8"); fake.chmod(0o755)
@@ -193,4 +193,24 @@ def test_bundle_carries_the_admin_devices_for_ssh(bundle):
     assert m, "ADMIN_IPS не вшит"
     assert m.group(1).split() == ["10.8.1.2", "10.8.1.3", "/"], "остались только цифры, точки, слеши"
     assert "\nexport ADMIN_IPS\n" in bundle
-    assert bundle.index("export ADMIN_IPS") < bundle.index('exec "$DEST/routing-gw-setup.sh"')
+    assert bundle.index("export ADMIN_IPS") < bundle.index('"$DEST/routing-gw-setup.sh" "${1:---apply}"')
+
+
+def test_bundle_removes_itself_only_after_a_successful_apply(bundle, tmp_path):
+    """Внутри приватный ключ: после успешного применения файл удаляет себя сам,
+    при отказе — остаётся для повтора. Секреты установщика лежат ПОСЛЕ exit и
+    при запуске не исполняются."""
+    lines = bundle.splitlines()
+    start = next(i for i, l in enumerate(lines) if l.startswith('"$DEST/routing-gw-setup.sh"'))
+    end = next(i for i, l in enumerate(lines) if l.startswith("exit "))
+    tail = "\n".join(lines[start:end + 1])
+    assert bundle.index("\n#__GW_SETUP_BELOW__\n") > bundle.index('exit "$_rc"'), "данные — после exit"
+    dest = tmp_path / "dest"; dest.mkdir()
+    fake = dest / "routing-gw-setup.sh"
+    for rc, kept in ((0, False), (1, True)):
+        fake.write_text(f"#!/bin/sh\nexit {rc}\n", encoding="utf-8"); fake.chmod(0o755)
+        me = tmp_path / f"bundle{rc}.sh"
+        me.write_text(f'#!/bin/sh\nDEST="{dest}"\n{tail}\necho НЕ_ИСПОЛНЯЕТСЯ\n', encoding="utf-8")
+        r = subprocess.run(["sh", str(me)], capture_output=True, text=True)
+        assert r.returncode == rc and "НЕ_ИСПОЛНЯЕТСЯ" not in r.stdout
+        assert me.exists() == kept, f"rc={rc}: файл {'остался' if me.exists() else 'удалён'}"

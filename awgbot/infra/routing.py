@@ -906,6 +906,62 @@ def probe_latency(targets, port: int = 53, *, mark: Optional[int] = None,
     return vals[len(vals) // 2] if vals else None
 
 
+def ping_peer(iface: str = "", count: int = 3, timeout: float = 2.0) -> Optional[int]:
+    """«Пинг до шлюза»: ICMP с ВПС на адрес шлюза в линке, медиана RTT в мс.
+    Файервол шлюза пускает ICMP с ВПС по линку. None — не отвечает или
+    линка нет. Локальная команда, наружу с домашнего адреса ничего не уходит."""
+    import re as _re
+    peer = link_peer_address(iface)
+    if not peer:
+        return None
+    proc = _host(["ping", "-c", str(count), "-i", "0.3", "-W", str(int(timeout)), peer],
+                 check=False, timeout=int(count * (timeout + 0.5)) + 3)
+    if proc.returncode != 0 and b"time=" not in proc.stdout:
+        return None
+    vals = sorted(float(m) for m in _re.findall(r"time=([\d.]+) ms",
+                                                 proc.stdout.decode(errors="replace")))
+    return int(round(vals[len(vals) // 2])) if vals else None
+
+
+_EXTIP_HOSTS = ("api.ipify.org", "icanhazip.com", "ifconfig.me")
+
+
+def external_ip(mark: Optional[int] = None, timeout: float = 4.0) -> Optional[str]:
+    """Внешний адрес, с которым трафик выходит через путь с заданной меткой
+    (слот шлюза): HTTP-запрос к сервису «мой IP» сокетом с SO_MARK. Имя
+    сервиса резолвится резолвером ВПС, сам коннект уходит через линк и NAT
+    шлюза — ответ и есть адрес его дома. None — не удалось."""
+    mark = config.ROUTING_FWMARK if mark is None else int(mark)
+    so_mark = getattr(socket, "SO_MARK", 36)
+    for host in _EXTIP_HOSTS:
+        try:
+            addr = socket.getaddrinfo(host, 80, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
+        except (OSError, IndexError):
+            continue
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, so_mark, mark)
+            sock.settimeout(timeout)
+            sock.connect((addr, 80))
+            sock.sendall(f"GET / HTTP/1.0\r\nHost: {host}\r\nUser-Agent: curl/8\r\n\r\n".encode())
+            data = b""
+            while len(data) < 4096:
+                chunk = sock.recv(1024)
+                if not chunk:
+                    break
+                data += chunk
+        except OSError:
+            continue
+        finally:
+            sock.close()
+        body = data.split(b"\r\n\r\n", 1)[-1].decode(errors="replace").strip()
+        try:
+            return str(ipaddress.IPv4Address(body.splitlines()[-1].strip())) if body else None
+        except (ValueError, IndexError):
+            continue
+    return None
+
+
 def probe_source(iface: str = "") -> Optional[str]:
     """С какого адреса уходит зонд — то есть и весь маркированный трафик.
 

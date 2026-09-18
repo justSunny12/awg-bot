@@ -72,16 +72,19 @@ def test_claim_refuses_when_another_gateway_is_assigned(gw, services):
     assert _gw_dev_id(services) == d_pi.id
 
 
-def test_setup_existing_device_rekeys_only_when_asked(gw, services):
+def test_setup_existing_device_always_rekeys(gw, services):
+    """Назначение всегда полным путём: устройство, созданное в боте раньше,
+    линка не знает — ключи линка слота выпускаются заново и при первом
+    назначении, и при замене."""
     admin, phone, pi = gw
     res = services.gateway_setup(pi.device_id)
-    assert res["previous"] is None and not res["created"] and not res["rekeyed"]
-    assert services.modes == [], "тот же ключ линка — скрипт не трогаем"
-    res = services.gateway_setup(phone.device_id, rekey=True, slot_id=1)
+    assert res["previous"] is None and not res["created"] and res["rekeyed"]
+    assert services.modes == ["--rekey"], "первое назначение — тоже новые ключи"
+    res = services.gateway_setup(phone.device_id, slot_id=1)
     assert res["previous"].id == pi.device_id and res["rekeyed"]
     assert _gw_dev_id(services) == phone.device_id
     assert services.db.get_device(pi.device_id).is_gateway == 0
-    assert services.modes == ["--rekey"]
+    assert services.modes == ["--rekey", "--rekey"]
     assert services.gateway_setup(phone.device_id, rekey=True, slot_id=1)["previous"] is None, "то же устройство — prev нет"
     with pytest.raises(ServiceError):
         services.gateway_setup(999999)

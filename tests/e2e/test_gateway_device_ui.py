@@ -79,9 +79,11 @@ def _docs(nav):
     return [s for s in nav.sent if s[0] == "document"]
 
 
-async def test_settings_assign_existing_device_no_rekey(services, fake_bot, gwsetup):
+async def test_settings_assign_existing_device_goes_the_full_way(services, fake_bot, gwsetup):
     """Без шлюза раздел предлагает «Назначить шлюз» → выбор вида → из моих
-    устройств → подтверждение → пометка; ключи не менялись → шифрованный файл."""
+    устройств → подтверждение → токен агента → пометка с новыми ключами линка,
+    файл первого применения и инструкция: устройство линка не знает, поэтому
+    путь всегда полный, как у нового устройства."""
     _, phone, pi = gwsetup
     text, markup = await sh._screen("rt", services)
     labels = _labels(markup)
@@ -96,13 +98,18 @@ async def test_settings_assign_existing_device_no_rekey(services, fake_bot, gwse
     cb, nav = _acb(fake_bot)
     await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=pi.id), services)
     assert any("станет шлюзом" in s[1] for s in nav.sent if s[0] == "edit_text")
+    st = FakeState()
     cb, nav = _acb(fake_bot)
-    await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi.id),
-                              services, FakeState())
+    await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi.id), services, st)
+    assert any("Токен бота шлюза" in s[1] for s in nav.sent if s[0] == "edit_text"), "сначала токен"
+    assert _gw_dev_id(services) is None
+    msg = _amsg(fake_bot, "123456789:AA-token-value-long-enough-here")
+    await sh.gateway_token_received(msg, st, services)
     assert _gw_dev_id(services) == pi.id
-    assert services.modes == [], "тот же ключ линка: машина уже его знает"
-    docs = _docs(nav)
-    assert len(docs) == 1 and "боту шлюза" in docs[0][1], "шифрованный файл для чата агента"
+    assert services.modes == ["--rekey"], "ключи линка новые: устройство линка не знает"
+    docs = _docs(msg)
+    assert len(docs) == 1 and "первого применения" in docs[0][1], "открытый файл, руками"
+    assert any("--role gateway" in s[1] for s in msg.sent if s[0] == "answer"), "инструкция"
     text, markup = await sh._screen("rt", services)
     labels = _labels(markup)
     assert "🛰 Шлюз: NASPi" in labels and "➕ Резервный шлюз" in labels

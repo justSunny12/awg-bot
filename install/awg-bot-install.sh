@@ -181,6 +181,15 @@ if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
     # Рабочая установка уже есть — не тупикуем, а предлагаем действия. Весь
     # функционал уже в установленном awg-bot; мы лишь вызываем его с нужным verb.
     BOT="$INSTALL_DIR/awg-bot.sh"
+    if [[ "$ROLE" == "gateway" ]]; then
+        # Шлюз ставится одной командой с файлом конфигурации, и повтор той же
+        # команды (новый файл, переустановка, замена слота) не должен упираться
+        # в меню: агент уже стоит — это успех, применяем файл и идём дальше.
+        # Всё в пути роли gateway идемпотентно.
+        log "awg-bot уже установлен в $INSTALL_DIR — применяю конфигурацию шлюза и перезапускаю агента"
+        case "${SRC_ROOT:-}" in /tmp/awg-bot-install.*) rm -rf "$SRC_ROOT" ;; esac
+        exec "$BOT" reconfigure --role gateway ${EXTRA[@]+"${EXTRA[@]}"}
+    fi
     printf '\n%s[install]%s awg-bot уже установлен в %s. Что делаем?\n' "$c_info" "$c_off" "$INSTALL_DIR" >&2
     printf '  1) Обновить код из этой поставки (awg-bot update)\n' >&2
     printf '  2) Восстановить из резервной копии (awg-bot restore)\n' >&2

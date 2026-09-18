@@ -225,6 +225,8 @@ def fake_routing(monkeypatch, tmp_path):
     _set("probe_gateway", lambda target, *a, **k: state.probe)
     _set("ensure_policy", lambda active_iface="", slots=(): None)
     _set("switch_active", lambda iface: None)
+    _set("ping_peer", lambda iface="", **k: None)          # пинг до шлюза по линку
+    _set("external_ip", lambda mark=None, **k: None)      # внешний IP через слот
     _set("hook_present", lambda: bool(state.marking))
     _set("write_dnsmasq_conf", write_conf)
     return state

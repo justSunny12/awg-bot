@@ -249,7 +249,7 @@ def test_bundle_header_carries_gateway_fields(tmp_path):
     assert re.search(rf'^GATEWAY_PUBKEY="{re.escape(PUB)}"$', text, re.M), "мусор из окружения отсеян"
     assert 'GATEWAY_PREV_PUBKEY=""' in text and f'UPLINK_B64="{up}"' in text
     for var in ("GATEWAY_PUBKEY", "UPLINK_B64"):
-        assert text.index(f"export {var}") < text.index('exec "$DEST/routing-gw-setup.sh"')
+        assert text.index(f"export {var}") < text.index('"$DEST/routing-gw-setup.sh" "${1:---apply}"')
 
 
 def test_uplink_postup_lands_inside_interface_section(tmp_path):

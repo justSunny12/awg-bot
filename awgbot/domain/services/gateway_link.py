@@ -304,14 +304,21 @@ class GatewayLinkMixin:
                 # второй и дальше: свой линк, свои ключи — первый бандл только руками
                 self._run_link_script("--apply", {"LINK_IF": iface, "LINK_PORT": str(port),
                                                   "LINK_CIDR": cidr})
-                rekey = True
+            else:
+                # первый слот: линк обвязки, но ключи — новые: назначение всегда
+                # полным путём, устройство линка не знает
+                self._run_link_script("--rekey", {"LINK_IF": iface, "LINK_PORT": str(port),
+                                                  "LINK_CIDR": cidr})
+            rekey = True
             gw = self.db.gateway_add(dev.id, iface, port, cidr, slot_id=n)
-            if rekey and n == 1:
-                self._run_link_script("--rekey", self._slot_env(gw))
         else:
             if gw.device_id != dev.id:
                 prev = self.db.get_device(gw.device_id)
                 self.db.gateway_update(gw.id, device_id=dev.id)
+                # Замена машины — всегда полный путь: новые ключи линка, файл
+                # первого применения руками. Устройство могло никогда не быть
+                # шлюзом, и линка у него нет по построению.
+                rekey = True
             if rekey:
                 self._run_link_script("--rekey", self._slot_env(gw))
         gw = self.db.gateway(gw.id)
@@ -397,7 +404,7 @@ class GatewayLinkMixin:
                     continue
                 if any(net.overlaps(ipaddress.ip_network(s, strict=False))
                        for s, _i in config.routing_client_subnets()):
-                    rejected.append((tok, "это подсеть клиентов"))
+                    rejected.append((tok, "это клиентская подсеть AWG"))
                     continue
                 if any(net.overlaps(ipaddress.ip_network(g.link_cidr, strict=False))
                        for g in self.db.gateways()):
@@ -464,36 +471,55 @@ class GatewayLinkMixin:
                  "ручное" if manual else "автоматическое", gw.id, gw.link_if)
         return gw
 
-    # ── пинг со шлюза: кэш на сутки, лениво ──────────────────────────────────
+    # ── пинг до шлюза и его внешний IP: кэш на сутки, лениво ─────────────────
     _GW_PING_KEY = "routing_gw_ping"
+    _GW_EXTIP_KEY = "routing_gw_extip"
     _GW_PING_TTL = 24 * 3600
 
     def _gw_ping_forget(self, slot_id: int) -> None:
         self.db.set_state(f"{self._GW_PING_KEY}_{int(slot_id)}", "")
+        self.db.set_state(f"{self._GW_EXTIP_KEY}_{int(slot_id)}", "")
 
-    def gateway_ping_cached(self, slot_id: int) -> Optional[tuple[int, str]]:
-        """(мс, когда) из кэша, если ему меньше суток."""
-        raw = self.db.get_state(f"{self._GW_PING_KEY}_{int(slot_id)}") or ""
+    def _gw_cached(self, key: str, slot_id: int) -> Optional[tuple[str, str]]:
+        raw = self.db.get_state(f"{key}_{int(slot_id)}") or ""
         if not raw or " " not in raw:
             return None
-        ms, at = raw.split(" ", 1)
+        val, at = raw.split(" ", 1)
         try:
             age = (timeutil.now() - timeutil.parse_iso(at)).total_seconds()
         except ValueError:
             return None
-        if age > self._GW_PING_TTL:
-            return None
-        return int(ms), at
+        return None if age > self._GW_PING_TTL else (val, at)
+
+    def gateway_external_ip_cached(self, slot_id: int) -> Optional[str]:
+        c = self._gw_cached(self._GW_EXTIP_KEY, slot_id)
+        return c[0] if c else None
+
+    def gateway_external_ip(self, slot_id: int) -> Optional[str]:
+        """Внешний адрес дома шлюза — через таблицу слота; в кэш на сутки."""
+        gw = self._gw_slot(slot_id)
+        ip = routing.external_ip(gw.mark)
+        if ip:
+            self.db.set_state(f"{self._GW_EXTIP_KEY}_{gw.id}", f"{ip} {timeutil.to_iso(timeutil.now())}")
+        else:
+            self.db.set_state(f"{self._GW_EXTIP_KEY}_{gw.id}", "")
+        return ip
+
+    def gateway_external_ip_lazy(self, slot_id: int) -> Optional[str]:
+        return self.gateway_external_ip_cached(slot_id) or self.gateway_external_ip(slot_id)
+
+    def gateway_ping_cached(self, slot_id: int) -> Optional[tuple[int, str]]:
+        """(мс, когда) из кэша, если ему меньше суток."""
+        c = self._gw_cached(self._GW_PING_KEY, slot_id)
+        return (int(c[0]), c[1]) if c else None
 
     def gateway_ping(self, slot_id: int) -> Optional[int]:
-        """Замер сейчас: медиана коннектов по таблице слота до цели зонда.
+        """Пинг с ВПС ДО шлюза: ICMP по линку на адрес шлюза, медиана трёх.
         Успех — в кэш; отказ — кэш снят, None."""
         gw = self._gw_slot(slot_id)
-        targets = settings.get("app.routing.probe_targets", None) or ["77.88.8.8", "8.8.8.8"]
-        port = int(settings.get("app.routing.probe_port", 53))
-        ms = routing.probe_latency(list(targets), port, mark=gw.mark)
+        ms = routing.ping_peer(gw.link_if)
         if ms is None:
-            self._gw_ping_forget(gw.id)
+            self.db.set_state(f"{self._GW_PING_KEY}_{gw.id}", "")
             return None
         self.db.set_state(f"{self._GW_PING_KEY}_{gw.id}",
                           f"{int(ms)} {timeutil.to_iso(timeutil.now())}")
@@ -569,6 +595,9 @@ class GatewayLinkMixin:
             st["ping_ms"] = self.gateway_ping(slot_id)
         else:
             st["ping_ms"] = None
+        st["ext_ip"] = self.gateway_external_ip_cached(slot_id)
+        if st["ext_ip"] is None and lazy_ping:
+            st["ext_ip"] = self.gateway_external_ip(slot_id)
         return st
 
     def gateway_state_for_device(self, device_id: int) -> Optional[dict]:
@@ -609,10 +638,10 @@ class GatewayLinkMixin:
             self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, g.id), cur)
             notes.append(Notification(
                 config.ADMIN_ID,
-                f"🛰 Состав устройств админа изменился, а на шлюз {self._gw_display(g)} уехал "
-                "прежний: доступ к шлюзу и домашней сети через туннель — по старому списку. "
-                "Перевыпусти конфигурацию шлюза (Условная маршрутизация → Шлюзы → "
-                "Конфигурация шлюза)."))
+                f"🛰 Список твоих устройств изменился, а файервол шлюза {self._gw_display(g)} "
+                "знает прежний: новые устройства не достанут до шлюза и его домашней сети "
+                "через туннель. Перевыпусти конфигурацию шлюза (Условная маршрутизация → "
+                f"{self._gw_display(g)} → Конфигурация шлюза) и примени её на шлюзе."))
         return notes
 
     # Маркер контракта как ОТДЕЛЬНАЯ СТРОКА. Тот же текст встречается в бандле и
@@ -672,7 +701,7 @@ class GatewayLinkMixin:
         """Токен агента и ADMIN_ID — в файл первого применения, чтобы установка
         на шлюзе не задавала ВООБЩЕ ни одного вопроса.
 
-        Строки кладутся ПОСЛЕ `exec` в теле бандла (перед маркером скрипта
+        Строки кладутся ПОСЛЕ `exit` в теле бандла (перед маркером скрипта
         обвязки), то есть при запуске бандла не исполняются — это данные для
         установщика, а не команды.
         """

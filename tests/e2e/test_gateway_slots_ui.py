@@ -60,11 +60,12 @@ def slots(services, fake_awg, fake_routing, make_active_client, monkeypatch):
     monkeypatch.setattr(services, "_rt_standby_interval", lambda: 0)
     pings = {"n": 0}
 
-    def _ping(t, p, mark=None, **k):
+    def _ping(iface="", **k):
         pings["n"] += 1
-        return 43 if mark == 4 else 61          # метка слота 2 — бит 1<<2
+        return 43 if iface == "awglink2" else 61
     from awgbot.infra import routing as rt
-    monkeypatch.setattr(rt, "probe_latency", _ping)
+    monkeypatch.setattr(rt, "ping_peer", _ping)
+    monkeypatch.setattr(rt, "external_ip", lambda mark=None, **k: "198.51.100.7" if mark == 4 else "203.0.113.10")
     monkeypatch.setattr(rt, "switch_active", lambda iface: None)
     services.runs, services.probe, services.pings, services.token = runs, probe, pings, token
     return admin, services.db.get_device(pi.device_id), services.db.get_device(pi2.device_id)
@@ -109,7 +110,7 @@ async def test_list_and_card_show_roles_preferred_and_ping_lazily(services, slot
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_list(cb, services, FakeState())
     text, labels = _screen(nav)
-    assert labels[0] == "NASPi ⭐" and labels[1] == "Pi2", "статус — в инфобоксе, не на кнопке"
+    assert labels[0] == "⭐ NASPi" and labels[1] == "Pi2", "статус — в инфобоксе, не на кнопке"
     assert "«NASPi»" in text and "🟢 <b>[Активен]</b>" in text and "🟢 <b>[Резерв]</b>" in text
     assert "➕ Добавить шлюз" not in labels, "потолок два слота"
     assert "🔁 Автопереключение: вкл" in labels
@@ -119,7 +120,8 @@ async def test_list_and_card_show_roles_preferred_and_ping_lazily(services, slot
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=2), services, FakeState())
     text, labels = _screen(nav)
-    assert services.pings["n"] == 1 and "Пинг со шлюза: 43 мс" in text
+    assert services.pings["n"] == 1 and "Пинг с " in text and "43 мс" in text
+    assert "↗️ Внешний IP: <code>198.51.100.7</code>" in text
     assert "<b>[Резерв]</b>" in text and "Трафик сейчас идёт через «NASPi»" in text
     assert labels[0] == "▶️ Переключить трафик сюда" and labels[1].startswith("☑️ Предпочтительный")
     assert labels[-2] == "📡 Пинг" and labels[-1] == "⬅️ Назад"
@@ -130,7 +132,7 @@ async def test_list_and_card_show_roles_preferred_and_ping_lazily(services, slot
     # кнопка пинга меряет заново
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_ping(cb, GwSlotCB(action="ping", slot=2), services)
-    assert services.pings["n"] == 2 and cb.answers[0][0] == "Пинг со шлюза: 43 мс"
+    assert services.pings["n"] == 2 and cb.answers[0][0].startswith("Пинг с ") and cb.answers[0][0].endswith("43 мс")
     # карточка активного: без кнопки переключения, галочка стоит
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=1), services, FakeState())
@@ -256,7 +258,7 @@ async def test_remove_standby_and_active(services, slots, fake_bot, monkeypatch)
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_remove_ask(cb, GwSlotCB(action="remove_ask", slot=2), services)
     text, labels = _screen(nav)
-    assert "перестанет быть резервным шлюзом" in text and "🛑 Да, убрать шлюз" in labels
+    assert "перестанет быть резервным шлюзом" in text and "🛑 Да, снять шлюз" in labels
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_remove_yes(cb, GwSlotCB(action="remove_yes", slot=2), services)
     assert [g.id for g in services.db.gateways()] == [1] and services.runs[-1][0] == "--rollback"
@@ -275,7 +277,7 @@ async def test_remove_standby_and_active(services, slots, fake_bot, monkeypatch)
     cb, nav = _acb(fake_bot)
     await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi2.id), services)
     text, labels = _screen(nav)
-    assert "<b>[Активен]</b> — несёт трафик РФ-доступа" in text and "Пинг со шлюза" in text
+    assert "<b>[Активен]</b> — несёт трафик РФ-доступа" in text and "Пинг с " in text and "Внешний IP" in text
     assert "🛰 Карточка шлюза" in labels and labels[-2] == "📡 Пинг"
     cb, nav = _acb(fake_bot)
     await sh.gateway_remove_ask(cb, GwMarkCB(action="remove_ask", device_id=pi2.id), services)

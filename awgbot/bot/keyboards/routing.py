@@ -116,8 +116,8 @@ def gateway_list(states, *, can_add: bool, failover_on: bool) -> InlineKeyboardM
         # статус — в инфобоксе; на кнопке только имя и звезда предпочтительного
         dev = st.get("device")
         name = dev.name if dev is not None else f"шлюз {st['gateway'].id}"
-        star = " ⭐" if st.get("preferred") else ""
-        kb.button(text=f"{name}{star}",
+        star = "⭐ " if st.get("preferred") else ""
+        kb.button(text=f"{star}{name}",
                   callback_data=GwSlotCB(action="card", slot=st["gateway"].id))
         rows.append(1)
     if can_add:
@@ -147,8 +147,8 @@ def gateway_card(state, *, back_to_list: bool) -> InlineKeyboardMarkup:
     kb.button(text="⚙️ Конфигурация шлюза", callback_data=GwSlotCB(action="bundle", slot=gw.id))
     kb.button(text="🏠 Домашние подсети", callback_data=GwSlotCB(action="home", slot=gw.id))
     kb.button(text="✏️ Подпись", callback_data=GwSlotCB(action="label", slot=gw.id))
-    kb.button(text="🔁 Заменить машину", callback_data=SetCB(sec="rt_gw", act="open", key=str(gw.id)))
-    kb.button(text="🛑 Убрать шлюз", callback_data=GwSlotCB(action="remove_ask", slot=gw.id))
+    kb.button(text="🔁 Заменить устройство", callback_data=SetCB(sec="rt_gw", act="open", key=str(gw.id)))
+    kb.button(text="🛑 Снять шлюз", callback_data=GwSlotCB(action="remove_ask", slot=gw.id))
     kb.button(text="📡 Пинг", callback_data=GwSlotCB(action="ping", slot=gw.id))
     rows += [1, 1, 1, 1, 1, 1, 1]
     back = GwSlotCB(action="list").pack() if back_to_list else SetCB(sec="rt").pack()
@@ -200,7 +200,7 @@ def gateway_new_confirm(slot: int = 0) -> InlineKeyboardMarkup:
 
 def gateway_remove_confirm(slot: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="🛑 Да, убрать шлюз", callback_data=GwSlotCB(action="remove_yes", slot=slot))
+    kb.button(text="🛑 Да, снять шлюз", callback_data=GwSlotCB(action="remove_yes", slot=slot))
     kb.button(text="Отмена", callback_data=(GwSlotCB(action="card", slot=slot) if slot
                                             else SetCB(sec="rt", act="open")))
     kb.adjust(1)

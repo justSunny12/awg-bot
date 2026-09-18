@@ -412,3 +412,49 @@ def test_home_subnets_are_routed_into_the_link(monkeypatch):
     routing.ensure_home_routes()
     assert calls == [["ip", "route", "replace", "192.168.1.0/24", "dev", "awglink"],
                      ["ip", "route", "replace", "10.20.0.0/16", "dev", "awglink"]]
+
+
+def test_ping_peer_takes_the_median_and_survives_loss(monkeypatch):
+    """«Пинг до шлюза»: ICMP по линку на адрес шлюза, медиана; потерянные
+    ответы не считаются, полный отказ — None."""
+    import subprocess
+    from awgbot.infra import routing
+    monkeypatch.setattr(routing, "link_peer_address", lambda iface="": "10.99.99.2")
+    out = (b"64 bytes from 10.99.99.2: icmp_seq=1 ttl=64 time=41.2 ms\n"
+           b"64 bytes from 10.99.99.2: icmp_seq=3 ttl=64 time=45.9 ms\n"
+           b"64 bytes from 10.99.99.2: icmp_seq=2 ttl=64 time=1200.0 ms\n")
+    monkeypatch.setattr(routing, "_host", lambda argv, **k: subprocess.CompletedProcess(argv, 1, out, b""))
+    assert routing.ping_peer("awglink2") == 46
+    monkeypatch.setattr(routing, "_host", lambda argv, **k: subprocess.CompletedProcess(argv, 1, b"", b""))
+    assert routing.ping_peer("awglink2") is None
+    monkeypatch.setattr(routing, "link_peer_address", lambda iface="": None)
+    assert routing.ping_peer("awglink2") is None
+
+
+def test_external_ip_parses_the_body_and_falls_through_services(monkeypatch):
+    """Внешний IP через путь с меткой слота: первый сервис молчит — берём
+    следующий; тело ответа — адрес последней строкой."""
+    import socket
+    from awgbot.infra import routing
+    calls = []
+
+    class Sock:
+        def __init__(self, *a): self.host = None
+        def setsockopt(self, *a): calls.append(("mark", a[-1]))
+        def settimeout(self, t): pass
+        def connect(self, addr):
+            self.host = addr[0]
+            if addr[0] == "1.1.1.1":
+                raise OSError("timeout")
+        def sendall(self, data): pass
+        def recv(self, n):
+            if getattr(self, "_done", False):
+                return b""
+            self._done = True
+            return b"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n198.51.100.7\n"
+        def close(self): pass
+    monkeypatch.setattr(socket, "socket", lambda *a, **k: Sock())
+    monkeypatch.setattr(socket, "getaddrinfo",
+                        lambda host, *a, **k: [(None, None, None, None, ("1.1.1.1" if host == "api.ipify.org" else "2.2.2.2", 80))])
+    assert routing.external_ip(4) == "198.51.100.7"
+    assert ("mark", 4) in calls, "сокет помечен меткой слота"
