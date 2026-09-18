@@ -181,20 +181,13 @@ def gateway_card_text(state: dict, states: list) -> str:
     else:
         ago = f"{int(age)} с" if age < 60 else f"{int(age) // 60} мин"
         hs = f"🟢 хендшейк {ago} назад"
-    link = f"Линк {_e(gw.link_if)}, порт {gw.link_port} — {hs}"
+    link = f"Линк {_e(gw.link_if)}, порт {gw.link_port}"
     others = [s for s in states if s["gateway"].id != gw.id]
-    active_other = next((s for s in others if s.get("active")), None)
-    body = f"\n{slot_status(state)}. {link}."
-    if state.get("active"):
-        if state.get("link_ok"):
-            body += "\nНесёт трафик РФ-доступа: исходящий адрес клиентов сейчас — адрес этой сети."
-        elif state.get("unavailable"):
-            body += "\nУсловная маршрутизация выключена: российские сервисы открываются с зарубежного адреса."
-    else:
-        if state.get("link_ok"):
-            body += "\nНаружу проходит, готов принять трафик."
-        if active_other is not None:
-            body += f"\nТрафик сейчас идёт через {slot_short(active_other)}."
+    # статус и линк — одной строкой, хендшейк — отдельной: две даты в одной
+    # строке читались хуже
+    body = f"\n{slot_status(state)}. {link}\n{hs}."
+    if state.get("active") and state.get("unavailable"):
+        body += "\nУсловная маршрутизация выключена: российские сервисы открываются с зарубежного адреса."
     body += "\n" + ext_ip_line(state.get("ext_ip"))
     nets = gw.home_subnets
     home = ("\n\n🏠 Домашние подсети: " + (", ".join(_e(n) for n in nets) if nets else "не заданы"))

@@ -123,7 +123,7 @@ async def test_list_and_card_show_roles_preferred_and_ping_lazily(services, slot
     text, labels = _screen(nav)
     assert services.pings["n"] == 1 and "Пинг с " in text and "43 мс" in text
     assert "↗️ Внешний IP: <code>198.51.100.7</code>" in text
-    assert "<b>[Резерв]</b>" in text and "Трафик сейчас идёт через «NASPi»" in text
+    assert "<b>[Резерв]</b>" in text and "Трафик сейчас идёт" not in text, "лишних подсказок в карточке нет"
     assert labels[0] == "▶️ Переключить трафик сюда" and labels[1].startswith("☑️ Предпочтительный")
     assert labels[-2] == "📡 Пинг" and labels[-1] == "⬅️ Назад"
     # второе открытие — из кэша
