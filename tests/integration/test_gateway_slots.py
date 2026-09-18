@@ -265,26 +265,36 @@ def test_ping_cache_is_invalidated_when_the_host_falls(two, services, monkeypatc
 # ── холодный старт ───────────────────────────────────────────────────────────
 
 def test_cold_start_prefers_the_preferred_slot_only_when_the_host_rebooted(two, services, monkeypatch):
+    """Холодный старт — по моменту загрузки хоста: первый такт живости стартует
+    раньше этой проверки, и по последнему такту его не отличить."""
     from awgbot.runtime import hostmetrics
     admin, g1, g2 = two
     services.db.set_state(services._RT_ACTIVE_KEY, "2")
-    services.db.set_state(services._RT_LAST_TICK_KEY,
-                          timeutil.to_iso(timeutil.now() - __import__("datetime").timedelta(minutes=10)))
-    # тёплый: хост стоит давно — сохранённый активный
+    now = int(timeutil.now().timestamp())
+    services.db.set_state(services._RT_BOOT_KEY, str(now - 100000))
+    services.routing_liveness_tick()                       # такт уже был — не помеха
+    # тёплый: тот же момент загрузки — сохранённый активный
     monkeypatch.setattr(hostmetrics, "read_uptime_seconds", lambda: 100000)
     assert services.routing_cold_start().id == 2 and services.switched == []
     # холодный: хост поднялся минуту назад — предпочтительный (слот 1), он отвечает
     monkeypatch.setattr(hostmetrics, "read_uptime_seconds", lambda: 60)
     assert services.routing_cold_start().id == 1 and services.switched == ["awglink"]
-    # холодный, предпочтительный молчит → сохранённый (2) отвечает
+    assert services.db.get_state(services._RT_BOOT_KEY) == str(int(timeutil.now().timestamp()) - 60)
+    # тот же момент загрузки второй раз — уже тёплый
     services.db.set_state(services._RT_ACTIVE_KEY, "2")
+    assert services.routing_cold_start().id == 2
+
+    def cold():                                            # «хост перезагрузился» заново
+        services.db.set_state(services._RT_BOOT_KEY, str(now - 100000))
+    # холодный, предпочтительный молчит → сохранённый (2) отвечает
+    cold(); services.db.set_state(services._RT_ACTIVE_KEY, "2")
     services.probe[1] = "down"
     assert services.routing_cold_start().id == 2
     # все молчат → предпочтительный всё равно
-    services.probe[2] = "down"
+    cold(); services.probe[2] = "down"
     assert services.routing_cold_start().id == 1
     # предпочтительного нет — сохранённый
-    services.db.gateway_set_preferred(None)
+    cold(); services.db.gateway_set_preferred(None)
     services.db.set_state(services._RT_ACTIVE_KEY, "2")
     assert services.routing_cold_start().id == 2
 
@@ -382,3 +392,46 @@ def test_fresh_standby_shows_link_check_until_three_good(two, services):
         services.routing_liveness_tick()
     st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
     assert texts.slot_status(st).startswith("🔴 <b>[Резерв]</b>, не отвечает")
+
+
+def test_first_tick_lays_slot_policy_before_probing(two, services, monkeypatch):
+    """Без правила по метке зонд резерва ушёл бы через основную таблицу ВПС и
+    «прошёл» при мёртвом линке: первый такт ставит обвязку слотов до зондов."""
+    admin, g1, g2 = two
+    order = []
+    monkeypatch.setattr(services, "_ensure_gateway_policy", lambda: order.append("policy"))
+    monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: order.append(f"probe{g.id}") or "ok")
+    services.routing_liveness_tick()
+    assert order[0] == "policy" and {"probe1", "probe2"} <= set(order[1:])
+
+
+def test_standby_needs_a_fresh_handshake_even_when_its_probe_passes(two, services, monkeypatch):
+    """Зонд прошёл, а хендшейка нет — путь ушёл мимо линка: такой резерв
+    нагрузку не примет и кандидатом не считается."""
+    admin, g1, g2 = two
+    monkeypatch.setattr(services, "_rt_standby_interval", lambda: 5)
+    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": None)
+    for _ in range(services._RT_UP_STREAK):
+        services.routing_liveness_tick()
+    st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
+    assert not st["link_ok"]
+    services.probe[1] = "down"
+    for _ in range(services._RT_DOWN_STREAK):
+        services.routing_liveness_tick()
+    assert services.active_gateway().id == 1, "на резерв без хендшейка не переключаемся"
+
+
+def test_link_changes_refresh_the_host_firewall_and_clear_the_hold(services, make_active_client, monkeypatch, fake_routing):
+    admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
+    pi = services.add_device(admin.id, "NASPi"); pi2 = services.add_device(admin.id, "Pi2")
+    monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: None)
+    monkeypatch.setattr(routing, "switch_active", lambda iface: None)
+    refreshed = []
+    monkeypatch.setattr(services, "_gw_firewall_refresh", lambda: refreshed.append(1))
+    services.gateway_setup(pi.device_id)
+    assert refreshed == [], "первый слот — линк обвязки, порт уже открыт"
+    services.gateway_setup(pi2.device_id)
+    assert refreshed == [1], "второй линк — порт в файервол сразу"
+    services.db.set_state(services._RT_HOLD_KEY, "2")
+    services.gateway_remove(2)
+    assert refreshed == [1, 1] and services.db.get_state(services._RT_HOLD_KEY) == ""

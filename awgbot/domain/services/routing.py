@@ -862,7 +862,9 @@ class RoutingMixin:
         if every <= 0 or gw.id not in last or now >= nxt.get(gw.id, 0.0):
             last[gw.id] = self._probe_slot(gw, active=False)
             nxt[gw.id] = now + every * 60 * random.uniform(0.6, 1.4)
-            return last[gw.id]
+        # Хендшейк — всегда, и в такт зонда тоже: пройденный зонд без свежего
+        # хендшейка означает, что путь ушёл не через линк (обвязка слота не на
+        # месте) — такой резерв нагрузку не примет.
         age = routing.link_handshake_age(gw.link_if)
         if age is None or age > self._RT_STANDBY_HANDSHAKE_MAX:
             return routing.PROBE_DOWN
@@ -899,7 +901,6 @@ class RoutingMixin:
         return (f"routing_gw_{slot_id}_up_streak", f"routing_gw_{slot_id}_down_streak",
                 f"routing_gw_{slot_id}_announced")
 
-    _RT_LAST_TICK_KEY = "routing_last_tick_at"
     _RT_HOLD_KEY = "routing_manual_hold"       # слот, на который переключили руками при отказе
 
     def _rt_failover_enabled(self) -> bool:
@@ -938,6 +939,14 @@ class RoutingMixin:
         # держать на это время БД или реконсиляцию значило бы менять один отказ
         # на другой.
         results: dict = {}
+        if engaged and slots and not hasattr(self, "_rt_tick"):
+            # ПЕРВЫЙ такт: таблицы и правила слотов — до зондов. Без правила по
+            # метке зонд резерва ушёл бы через основную таблицу ВПС и «прошёл»,
+            # даже если линк мёртв.
+            try:
+                self._ensure_gateway_policy()
+            except routing.RoutingError as e:
+                log.warning("routing_liveness_tick: обвязка слотов на старте: %s", e)
         if engaged:
             results = self._probe_slots(slots, active) if slots else {None: self.routing_probe()}
         akey = active.id if active is not None else None
@@ -961,7 +970,6 @@ class RoutingMixin:
         refused = False
         streaks: dict = {}                      # ключ слота → (up, down)
         with self.db.transaction():
-            self.db.set_state(self._RT_LAST_TICK_KEY, timeutil.to_iso(timeutil.now()))
             keys = [g.id for g in slots] if slots else [None]
             if not engaged:
                 # РЕШЕНИЕ, а не измерение: выключение фичи админом — не дребезг,
@@ -1122,19 +1130,27 @@ class RoutingMixin:
             log.warning("routing: холодный старт, слот %s: %s", gw.id, e)
         log.info("routing: холодный старт — трафик через слот %s (%s)", gw.id, gw.link_if)
 
+    _RT_BOOT_KEY = "routing_host_boot_at"      # момент загрузки хоста, виденный ботом
+
     def _rt_is_cold_start(self) -> bool:
-        raw = self.db.get_state(self._RT_LAST_TICK_KEY) or ""
-        if not raw or not self.db.get_state(self._RT_ACTIVE_KEY):
-            return True
+        """Холодный старт — хост перезагружался с прошлого запуска бота: момент
+        загрузки (сейчас минус аптайм) сдвинулся. Именно момент загрузки, а не
+        последний такт: первый такт живости стартует вместе с планировщиком,
+        раньше этой проверки, и по нему холодный старт не отличить. Нет
+        сохранённого активного — тоже холодный. Момент загрузки запоминается
+        при каждом вызове."""
         from awgbot.runtime import hostmetrics
         uptime = hostmetrics.read_uptime_seconds()
-        if uptime is None:
-            return False
-        try:
-            since = (timeutil.now() - timeutil.parse_iso(raw)).total_seconds()
-        except ValueError:
-            return True
-        return uptime < since
+        stored = self.db.get_state(self._RT_BOOT_KEY) or ""
+        cold = not self.db.get_state(self._RT_ACTIVE_KEY)
+        if uptime is not None:
+            boot = int(timeutil.now().timestamp()) - int(uptime)
+            try:
+                cold = cold or not stored or abs(boot - int(stored)) > 120
+            except ValueError:
+                cold = True
+            self.db.set_state(self._RT_BOOT_KEY, str(boot))
+        return cold
 
     def routing_startup_warnings(self) -> list[str]:
         """Замечания preflight по слотам: активный — прежний текст, резерв —

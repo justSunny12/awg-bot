@@ -48,6 +48,17 @@ class GatewayLinkMixin:
         self._run_link_script("--reassert", env)
         return True
 
+    def _gw_firewall_refresh(self) -> None:
+        """Порт нового линка (и снятие старого) — в файервол хоста сразу, а не
+        при следующей плановой перерисовке: иначе второй шлюз не достучится до
+        ВПС до неё."""
+        try:
+            from awgbot.infra import nftguard
+            if nftguard.enabled():
+                self._firewall_apply(rollback=False)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gateway: файервол хоста не перерисован: %s", e)
+
     @staticmethod
     def _slot_env(gw) -> dict:
         """Окружение скрипта линка для слота: имя интерфейса, порт, /30."""
@@ -304,6 +315,7 @@ class GatewayLinkMixin:
                 # второй и дальше: свой линк, свои ключи — первый бандл только руками
                 self._run_link_script("--apply", {"LINK_IF": iface, "LINK_PORT": str(port),
                                                   "LINK_CIDR": cidr})
+                self._gw_firewall_refresh()
             else:
                 # первый слот: линк обвязки, но ключи — новые: назначение всегда
                 # полным путём, устройство линка не знает
@@ -349,6 +361,8 @@ class GatewayLinkMixin:
         self.db.gateway_delete(gw.id)
         for key in (self._GW_BUNDLE_ISSUED_KEY, self._GW_BUNDLE_SSH_KEY, self._GW_BUNDLE_SSH_NOTIFIED_KEY):
             self.db.set_state(self._gw_slot_key(key, gw.id), "")
+        if (self.db.get_state(self._RT_HOLD_KEY) or "") == str(gw.id):
+            self.db.set_state(self._RT_HOLD_KEY, "")
         self._gw_ping_forget(gw.id)
         self._standby_forget(gw.id)
         if not others:
@@ -362,6 +376,7 @@ class GatewayLinkMixin:
             else:
                 self._run_link_script("--rollback", self._slot_env(gw))
                 routing.drop_slot_policy(gw.id, gw.link_if)
+                self._gw_firewall_refresh()
             routing.invalidate_self_check()
         except (ServiceError, routing.RoutingError) as e:
             log.warning("gateway_remove: линк слота %s не снят: %s", gw.id, e)
@@ -498,6 +513,13 @@ class GatewayLinkMixin:
     def gateway_external_ip(self, slot_id: int) -> Optional[str]:
         """Внешний адрес дома шлюза — через таблицу слота; в кэш на сутки."""
         gw = self._gw_slot(slot_id)
+        try:
+            # без правила по метке запрос ушёл бы через основную таблицу ВПС и
+            # вернул бы адрес ВПС — проверяем обвязку слота перед замером
+            routing.ensure_slot_policy(gw.id, gw.link_if)
+        except routing.RoutingError as e:
+            log.warning("gateway: обвязка слота %s не доведена: %s", gw.id, e)
+            return None
         ip = routing.external_ip(gw.mark)
         if ip:
             self.db.set_state(f"{self._GW_EXTIP_KEY}_{gw.id}", f"{ip} {timeutil.to_iso(timeutil.now())}")
