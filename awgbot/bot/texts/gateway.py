@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .fmt import _e, human_bytes, _updown, _fmt_age, plain_ip
+from .fmt import _e, human_bytes, _updown, _fmt_age
 from .settings import SETTINGS_SVC, SVC_CONFIRM_AWG
 
 
@@ -33,17 +33,12 @@ def _gw_health_summary(checks) -> str:
 def gateway_panel(st) -> str:
     """Панель агента — зеркало панели основного бота: сервер, линк, железо,
     монитор здоровья, потребление. Всё из снимка; свежесть — строкой «Обновлено».
-    Без свопа в RAM (MemAvailable). Внешний IP — адрес выхода наружу по
-    `ip route get`, без внешних запросов; за NAT он серый, и это сказано."""
+    Без свопа в RAM (MemAvailable), без внешнего IP (ВПС к шлюзу не ходит)."""
     from awgbot.util import timeutil
     host = f" ({_e(st.hostname)})" if st.hostname else ""
     server = "🟢 работает" if st.link_up else "🔴 интерфейс линка лежит"
     parts = [f"🛰 <b>РФ-шлюз{host}</b>", ""]
     head = [f"🖥 Сервер: {server}"]
-    wan = getattr(st, "wan_ip", "") or ""
-    if wan:
-        head.append(f"↗️ Внешний IP: {plain_ip(wan)}"
-                    + (" (за NAT — белый адрес знает роутер)" if getattr(st, "wan_private", False) else ""))
     if st.uptime_seconds is not None:
         head.append(f"⬆️ Аптайм: {timeutil.fmt_remaining_short(int(st.uptime_seconds))}")
     parts += head + ["", f"📡 Линк до {_e(st.server_name or 'ВПС')}: {_gw_link_line(st)}"]
