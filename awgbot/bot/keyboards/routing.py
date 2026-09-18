@@ -135,22 +135,26 @@ def gateway_list(states, *, can_add: bool, failover_on: bool) -> InlineKeyboardM
 def gateway_card(state, *, back_to_list: bool) -> InlineKeyboardMarkup:
     """Карточка слота (6.3): переключение у резервного, галочка
     предпочтительного, конфигурация, подсети, подпись, замена, убрать, пинг
-    последним перед «Назад»."""
+    последним перед «Назад». back_to_list — шлюзов больше одного: «Назад» ведёт
+    в список, и только тогда есть смысл в галочке предпочтительного — с
+    единственным шлюзом выбирать не из чего."""
     gw = state["gateway"]
     kb = InlineKeyboardBuilder()
     rows = []
     if not state.get("active"):
         kb.button(text="▶️ Переключить трафик сюда", callback_data=GwSlotCB(action="switch_ask", slot=gw.id))
         rows.append(1)
-    kb.button(text=("✅" if state.get("preferred") else "☑️") + " Предпочтительный при холодном старте",
-              callback_data=GwSlotCB(action="pref", slot=gw.id))
+    if back_to_list:
+        kb.button(text=("✅" if state.get("preferred") else "☑️") + " Предпочтительный при холодном старте",
+                  callback_data=GwSlotCB(action="pref", slot=gw.id))
+        rows.append(1)
     kb.button(text="⚙️ Конфигурация шлюза", callback_data=GwSlotCB(action="bundle", slot=gw.id))
     kb.button(text="🏠 Домашние подсети", callback_data=GwSlotCB(action="home", slot=gw.id))
     kb.button(text="✏️ Подпись", callback_data=GwSlotCB(action="label", slot=gw.id))
     kb.button(text="🔁 Заменить устройство", callback_data=SetCB(sec="rt_gw", act="open", key=str(gw.id)))
     kb.button(text="🛑 Снять шлюз", callback_data=GwSlotCB(action="remove_ask", slot=gw.id))
     kb.button(text="📡 Пинг", callback_data=GwSlotCB(action="ping", slot=gw.id))
-    rows += [1, 1, 1, 1, 1, 1, 1]
+    rows += [1, 1, 1, 1, 1, 1]
     back = GwSlotCB(action="list").pack() if back_to_list else SetCB(sec="rt").pack()
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back))
     kb.adjust(*rows, 1)

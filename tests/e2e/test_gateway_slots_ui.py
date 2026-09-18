@@ -338,3 +338,20 @@ async def test_monitoring_screen_edits_probe_window_and_threshold(services, slot
     cb, nav = _acb(fake_bot)
     await sh.pick(cb, SetCB(sec="rt", act="pick", key="probe", val="7"), services)
     assert cb.answers and "Нет такого варианта" in cb.answers[0][0]
+
+
+async def test_single_gateway_card_has_no_preferred_toggle(services, slots, fake_bot):
+    """С единственным шлюзом выбирать предпочтительного не из чего: ни кнопки,
+    ни строки; со вторым слотом галочка появляется."""
+    _, pi, pi2 = slots
+    _slot1(services, pi)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=1), services, FakeState())
+    text, labels = _screen(nav)
+    assert not any("Предпочтительный" in l for l in labels) and "Предпочтительн" not in text
+    assert labels[-1] == "⬅️ Назад" and labels[-2] == "📡 Пинг"
+    _slot2(services, pi2)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=1), services, FakeState())
+    _, labels = _screen(nav)
+    assert any(l.startswith("✅ Предпочтительный") for l in labels)
