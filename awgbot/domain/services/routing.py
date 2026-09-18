@@ -906,6 +906,39 @@ class RoutingMixin:
     def _rt_failover_enabled(self) -> bool:
         return settings.get_bool("app.routing.failover.enabled", True)
 
+    # ── окно доступности активного: переключение — не по стрику подряд ──────
+    # Провал домашнего канала на минуту-полторы (три такта подряд) ещё не повод
+    # менять людям исходящий адрес: переключаемся при полной или частичной
+    # недоступности дольше окна (5 мин) — когда за окно доступность ниже
+    # порога (75 %) И провал длится всё окно (самый старый замер в окне уже
+    # плохой). Окно живёт в памяти: писать его в БД каждый такт незачем.
+    def _rt_window_size(self) -> int:
+        secs = max(1, settings.get_int("app.routing.probe_seconds", 30))
+        mins = settings.get_int("app.routing.failover.window_minutes", 5)
+        return max(2, (mins * 60) // secs)
+
+    def _rt_window_push(self, slot_id, good: bool) -> None:
+        win = self.__dict__.setdefault("_rt_window", {})
+        n = self._rt_window_size()
+        win[slot_id] = (win.get(slot_id, []) + [good])[-n:]
+
+    def _rt_window_reset(self, slot_id=None) -> None:
+        win = self.__dict__.setdefault("_rt_window", {})
+        if slot_id is None:
+            win.clear()
+        else:
+            win.pop(slot_id, None)
+
+    def _rt_window_failed(self, slot_id) -> bool:
+        """Активный «недоступен дольше окна»: окно заполнено, доступность в нём
+        ниже порога, и самый старый замер окна уже плохой."""
+        win = self.__dict__.setdefault("_rt_window", {}).get(slot_id, [])
+        n = self._rt_window_size()
+        if len(win) < n or win[0]:
+            return False
+        limit = settings.get_int("app.routing.failover.min_availability", 75)
+        return 100 * sum(1 for g in win if g) < limit * n
+
     def _rt_switch_interval_ok(self) -> bool:
         raw = self.db.get_state(self._RT_SWITCHED_KEY) or ""
         if not raw:
@@ -979,6 +1012,7 @@ class RoutingMixin:
                     self.db.set_state(up_k, "0")
                     self.db.set_state(down_k, "0")
                     streaks[k] = (0, 0)
+                self._rt_window_reset()
                 ok = False
             else:
                 # ГИСТЕРЕЗИС, а не пересчёт с нуля каждый тик: состояние меняется
@@ -988,7 +1022,9 @@ class RoutingMixin:
                     up_k, down_k, _a = self._rt_keys(k)
                     up = int(self.db.get_state(up_k) or 0)
                     down = int(self.db.get_state(down_k) or 0)
-                    if results.get(k) == routing.PROBE_OK:
+                    good = results.get(k) == routing.PROBE_OK
+                    self._rt_window_push(k, good)
+                    if good:
                         up, down = min(up + 1, self._RT_UP_STREAK), 0
                     else:
                         up, down = 0, min(down + 1, down_cap)
@@ -1006,9 +1042,10 @@ class RoutingMixin:
                 if hold and hold == str(akey) and a_up >= self._RT_UP_STREAK:
                     self.db.set_state(self._RT_HOLD_KEY, "")
                     hold = ""
-                # ПЕРЕКЛЮЧЕНИЕ: активный лежит порог, есть кандидат с тремя
+                # ПЕРЕКЛЮЧЕНИЕ: активный недоступен дольше окна (доступность
+                # ниже порога, провал длится всё окно), есть кандидат с тремя
                 # хорошими, интервал с прошлого автоматического прошёл.
-                if (slots and len(slots) > 1 and a_down >= self._RT_DOWN_STREAK
+                if (slots and len(slots) > 1 and self._rt_window_failed(akey)
                         and self._rt_failover_enabled() and hold != str(akey)):
                     cand = next((g for g in slots if g.id != akey
                                  and streaks[g.id][0] >= self._RT_UP_STREAK), None)
@@ -1021,6 +1058,7 @@ class RoutingMixin:
                             # переключение — его «снова в строю» придёт с
                             # хвостом «остаётся в резерве»
                             self.db.set_state(self._rt_keys(akey)[2], "1")
+                            self._rt_window_reset(akey)      # прежний — с чистого листа
                             akey = cand.id
                             a_up, a_down = streaks[akey]
                             verdict = results.get(akey, routing.PROBE_DOWN)

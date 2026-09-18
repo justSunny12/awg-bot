@@ -431,30 +431,15 @@ def test_ping_peer_takes_the_median_and_survives_loss(monkeypatch):
     assert routing.ping_peer("awglink2") is None
 
 
-def test_external_ip_parses_the_body_and_falls_through_services(monkeypatch):
-    """Внешний IP через путь с меткой слота: первый сервис молчит — берём
-    следующий; тело ответа — адрес последней строкой."""
-    import socket
+def test_external_ip_comes_from_the_link_peer_endpoint(monkeypatch):
+    """Внешний адрес шлюза — эндпоинт пира линка из `awg show dump`: ВПС видит
+    его с каждым хендшейком, сторонние сервисы «мой IP» не нужны."""
+    import subprocess
     from awgbot.infra import routing
-    calls = []
-
-    class Sock:
-        def __init__(self, *a): self.host = None
-        def setsockopt(self, *a): calls.append(("mark", a[-1]))
-        def settimeout(self, t): pass
-        def connect(self, addr):
-            self.host = addr[0]
-            if addr[0] == "1.1.1.1":
-                raise OSError("timeout")
-        def sendall(self, data): pass
-        def recv(self, n):
-            if getattr(self, "_done", False):
-                return b""
-            self._done = True
-            return b"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n198.51.100.7\n"
-        def close(self): pass
-    monkeypatch.setattr(socket, "socket", lambda *a, **k: Sock())
-    monkeypatch.setattr(socket, "getaddrinfo",
-                        lambda host, *a, **k: [(None, None, None, None, ("1.1.1.1" if host == "api.ipify.org" else "2.2.2.2", 80))])
-    assert routing.external_ip(4) == "198.51.100.7"
-    assert ("mark", 4) in calls, "сокет помечен меткой слота"
+    dump = ("priv\tpub\t443\toff\n"
+            "PEER=\tPSK=\t203.0.113.10:51820\t0.0.0.0/0\t1758000000\t10\t20\t25\n")
+    monkeypatch.setattr(routing, "_host", lambda argv, **k: subprocess.CompletedProcess(argv, 0, dump.encode(), b""))
+    assert routing.link_peer_endpoint("awglink2") == "203.0.113.10"
+    none = "priv\tpub\t443\toff\nPEER=\tPSK=\t(none)\t0.0.0.0/0\t0\t0\t0\t25\n"
+    monkeypatch.setattr(routing, "_host", lambda argv, **k: subprocess.CompletedProcess(argv, 0, none.encode(), b""))
+    assert routing.link_peer_endpoint("awglink2") is None

@@ -33,7 +33,7 @@ config.ROUTING_GW_INTERFACE = "awglink"
 HS = {"awglink": 38, "awglink2": 51}
 routing.link_handshake_age = lambda iface="": HS.get(iface)
 routing.ping_peer = lambda *a, **k: 43
-routing.external_ip = lambda *a, **k: "203.0.113.10"
+routing.link_peer_endpoint = lambda iface="": "203.0.113.10" if iface == "awglink" else "198.51.100.7"
 svc._probe_slot = lambda g, active=False: "ok"
 from awgbot.bot.texts import routing as _tr
 _tr.vps_hostname = lambda: "AWG-SRV"

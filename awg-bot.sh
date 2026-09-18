@@ -148,6 +148,14 @@ detect_python() {
     done
     return 1
 }
+ensure_ping() {
+    # «Пинг до шлюза» в карточках слотов — ICMP по линку; iputils-ping на
+    # минимальных образах может отсутствовать
+    command -v ping >/dev/null 2>&1 && return 0
+    log "ставлю iputils-ping (пинг до шлюза по линку)…"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q iputils-ping >/dev/null 2>&1 \
+        || warn "iputils-ping не установился — «Пинг до шлюза» в карточках покажет «не отвечает»"
+}
 ensure_python() {
     if detect_python; then log "Python: $PYBIN ($("$PYBIN" -V 2>&1))"; return; fi
     warn "не найден Python 3.12+ (нужен для StrEnum)."
@@ -615,6 +623,7 @@ cmd_reconfigure() {
     if [[ "$first_run" -eq 1 ]]; then
         ensure_awg_kernel
         ensure_python
+        ensure_ping
         build_venv
         mkdir -p "$DATA_DIR"; chmod 700 "$DATA_DIR"
         seed_conf
@@ -903,6 +912,7 @@ cmd_post_update() {
     trap post_update_rescue EXIT
     local wipe="${1:-0}"
     ensure_python
+    ensure_ping
     build_venv
     install_unit
     ensure_host_autostart

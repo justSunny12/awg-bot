@@ -488,12 +488,10 @@ class GatewayLinkMixin:
 
     # ── пинг до шлюза и его внешний IP: кэш на сутки, лениво ─────────────────
     _GW_PING_KEY = "routing_gw_ping"
-    _GW_EXTIP_KEY = "routing_gw_extip"
     _GW_PING_TTL = 24 * 3600
 
     def _gw_ping_forget(self, slot_id: int) -> None:
         self.db.set_state(f"{self._GW_PING_KEY}_{int(slot_id)}", "")
-        self.db.set_state(f"{self._GW_EXTIP_KEY}_{int(slot_id)}", "")
 
     def _gw_cached(self, key: str, slot_id: int) -> Optional[tuple[str, str]]:
         raw = self.db.get_state(f"{key}_{int(slot_id)}") or ""
@@ -506,29 +504,15 @@ class GatewayLinkMixin:
             return None
         return None if age > self._GW_PING_TTL else (val, at)
 
-    def gateway_external_ip_cached(self, slot_id: int) -> Optional[str]:
-        c = self._gw_cached(self._GW_EXTIP_KEY, slot_id)
-        return c[0] if c else None
-
     def gateway_external_ip(self, slot_id: int) -> Optional[str]:
-        """Внешний адрес дома шлюза — через таблицу слота; в кэш на сутки."""
+        """Внешний адрес дома шлюза — эндпоинт пира линка, как его видит ВПС с
+        последнего хендшейка. Один локальный exec, наружу ничего не уходит."""
         gw = self._gw_slot(slot_id)
         try:
-            # без правила по метке запрос ушёл бы через основную таблицу ВПС и
-            # вернул бы адрес ВПС — проверяем обвязку слота перед замером
-            routing.ensure_slot_policy(gw.id, gw.link_if)
+            return routing.link_peer_endpoint(gw.link_if)
         except routing.RoutingError as e:
-            log.warning("gateway: обвязка слота %s не доведена: %s", gw.id, e)
+            log.warning("gateway: эндпоинт линка слота %s не прочитан: %s", gw.id, e)
             return None
-        ip = routing.external_ip(gw.mark)
-        if ip:
-            self.db.set_state(f"{self._GW_EXTIP_KEY}_{gw.id}", f"{ip} {timeutil.to_iso(timeutil.now())}")
-        else:
-            self.db.set_state(f"{self._GW_EXTIP_KEY}_{gw.id}", "")
-        return ip
-
-    def gateway_external_ip_lazy(self, slot_id: int) -> Optional[str]:
-        return self.gateway_external_ip_cached(slot_id) or self.gateway_external_ip(slot_id)
 
     def gateway_ping_cached(self, slot_id: int) -> Optional[tuple[int, str]]:
         """(мс, когда) из кэша, если ему меньше суток."""
@@ -617,9 +601,7 @@ class GatewayLinkMixin:
             st["ping_ms"] = self.gateway_ping(slot_id)
         else:
             st["ping_ms"] = None
-        st["ext_ip"] = self.gateway_external_ip_cached(slot_id)
-        if st["ext_ip"] is None and lazy_ping:
-            st["ext_ip"] = self.gateway_external_ip(slot_id)
+        st["ext_ip"] = self.gateway_external_ip(slot_id)
         return st
 
     def gateway_state_for_device(self, device_id: int) -> Optional[dict]:

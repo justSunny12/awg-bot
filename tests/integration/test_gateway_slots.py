@@ -26,6 +26,7 @@ def two(services, fake_awg, fake_routing, make_active_client, monkeypatch):
     probe = {1: "ok", 2: "ok"}
     monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: probe[g.id])
     monkeypatch.setattr(services, "_rt_standby_interval", lambda: 0)   # зонд резерва каждый такт
+    monkeypatch.setattr(services, "_rt_window_size", lambda: 3)         # окно = три такта (боевое — 5 мин)
     switched = []
     monkeypatch.setattr(routing, "switch_active", lambda iface: switched.append(iface))
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: None)
@@ -243,17 +244,15 @@ def test_manual_switch_ignores_thresholds_and_the_interval(two, services):
 def test_ping_cache_is_invalidated_when_the_host_falls(two, services, monkeypatch):
     admin, g1, g2 = two
     monkeypatch.setattr(routing, "ping_peer", lambda iface="", **k: 43)
-    monkeypatch.setattr(routing, "external_ip", lambda mark=None, **k: "198.51.100.7")
+    monkeypatch.setattr(routing, "link_peer_endpoint", lambda iface="": "198.51.100.7" if iface == "awglink2" else None)
     assert services.gateway_ping(2) == 43 and services.gateway_ping_cached(2)[0] == 43
     assert services.gateway_ping_lazy(2) == 43
-    assert services.gateway_external_ip_lazy(2) == "198.51.100.7"
-    assert services.gateway_external_ip_cached(2) == "198.51.100.7"
+    assert services.gateway_external_ip(2) == "198.51.100.7" and services.gateway_external_ip(1) is None
     _settle(services)
     services.probe[2] = "down"
     for _ in range(services._RT_DOWN_STREAK):
         services.routing_liveness_tick()
     assert services.gateway_ping_cached(2) is None, "хост упал — пинг устарел"
-    assert services.gateway_external_ip_cached(2) is None, "и внешний IP тоже"
     monkeypatch.setattr(routing, "ping_peer", lambda iface="", **k: None)
     assert services.gateway_ping(2) is None
     monkeypatch.setattr(routing, "ping_peer", lambda iface="", **k: 1200)
@@ -435,3 +434,32 @@ def test_link_changes_refresh_the_host_firewall_and_clear_the_hold(services, mak
     services.db.set_state(services._RT_HOLD_KEY, "2")
     services.gateway_remove(2)
     assert refreshed == [1, 1] and services.db.get_state(services._RT_HOLD_KEY) == ""
+
+
+def test_switch_needs_an_outage_longer_than_the_window(two, services, monkeypatch):
+    """Боевое окно: 10 тактов (5 мин). Три плохих подряд — ещё не повод; провал,
+    который тянется всё окно с доступностью ниже 75 %, — повод."""
+    admin, g1, g2 = two
+    monkeypatch.setattr(services, "_rt_window_size", lambda: 10)
+    _settle(services)
+    for _ in range(7):
+        services.routing_liveness_tick()                   # окно заполнено хорошими
+    services.probe[1] = "down"
+    for _ in range(5):
+        services.routing_liveness_tick()
+    assert services.active_gateway().id == 1, "5 плохих подряд — окно ещё не провалено целиком"
+    assert services.db.get_state(services._RT_LINK_KEY) == "0", "маркировка при этом снята по стрику"
+    for _ in range(5):
+        services.routing_liveness_tick()
+    assert services.active_gateway().id == 2, "10 плохих — недоступен дольше окна"
+    # частичная недоступность: каждый третий замер плохой, окно начинается с плохого
+    services.gateway_switch(1, manual=True); services.probe[1] = "ok"
+    for _ in range(12):
+        services.routing_liveness_tick()
+    services.db.set_state(services._RT_SWITCHED_KEY, "")
+    pattern = ["down", "ok", "ok"] * 4
+    for v in pattern:
+        services.probe[1] = v
+        services.routing_liveness_tick()
+    # окно из 10: [down ok ok down ok ok down ok ok down] → 4 плохих из 10 = 60 % < 75 %, первый плохой
+    assert services.active_gateway().id == 2, "частичная недоступность дольше окна — переключение"

@@ -229,7 +229,7 @@ def fake_routing(monkeypatch, tmp_path):
     _set("ensure_slot_policy", lambda slot_id, iface: None)
     _set("link_handshake_age", lambda iface="": 30)      # линк жив; тесты про отвал переопределяют
     _set("drop_slot_policy", lambda slot_id, iface="": None)
-    _set("external_ip", lambda mark=None, **k: None)      # внешний IP через слот
+    _set("link_peer_endpoint", lambda iface="": None)    # внешний IP шлюза из эндпоинта пира
     _set("hook_present", lambda: bool(state.marking))
     _set("write_dnsmasq_conf", write_conf)
     return state

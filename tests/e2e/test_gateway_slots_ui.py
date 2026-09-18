@@ -58,6 +58,7 @@ def slots(services, fake_awg, fake_routing, make_active_client, monkeypatch):
     probe = {1: "ok", 2: "ok"}
     monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: probe[g.id])
     monkeypatch.setattr(services, "_rt_standby_interval", lambda: 0)
+    monkeypatch.setattr(services, "_rt_window_size", lambda: 3)
     pings = {"n": 0}
 
     def _ping(iface="", **k):
@@ -65,7 +66,7 @@ def slots(services, fake_awg, fake_routing, make_active_client, monkeypatch):
         return 43 if iface == "awglink2" else 61
     from awgbot.infra import routing as rt
     monkeypatch.setattr(rt, "ping_peer", _ping)
-    monkeypatch.setattr(rt, "external_ip", lambda mark=None, **k: "198.51.100.7" if mark == 4 else "203.0.113.10")
+    monkeypatch.setattr(rt, "link_peer_endpoint", lambda iface="": "198.51.100.7" if iface == "awglink2" else "203.0.113.10")
     monkeypatch.setattr(rt, "switch_active", lambda iface: None)
     services.runs, services.probe, services.pings, services.token = runs, probe, pings, token
     return admin, services.db.get_device(pi.device_id), services.db.get_device(pi2.device_id)

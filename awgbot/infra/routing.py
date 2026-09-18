@@ -923,42 +923,21 @@ def ping_peer(iface: str = "", count: int = 3, timeout: float = 2.0) -> Optional
     return int(round(vals[len(vals) // 2])) if vals else None
 
 
-_EXTIP_HOSTS = ("api.ipify.org", "icanhazip.com", "ifconfig.me")
-
-
-def external_ip(mark: Optional[int] = None, timeout: float = 4.0) -> Optional[str]:
-    """Внешний адрес, с которым трафик выходит через путь с заданной меткой
-    (слот шлюза): HTTP-запрос к сервису «мой IP» сокетом с SO_MARK. Имя
-    сервиса резолвится резолвером ВПС, сам коннект уходит через линк и NAT
-    шлюза — ответ и есть адрес его дома. None — не удалось."""
-    mark = config.ROUTING_FWMARK if mark is None else int(mark)
-    so_mark = getattr(socket, "SO_MARK", 36)
-    for host in _EXTIP_HOSTS:
-        try:
-            addr = socket.getaddrinfo(host, 80, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
-        except (OSError, IndexError):
-            continue
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            sock.setsockopt(socket.SOL_SOCKET, so_mark, mark)
-            sock.settimeout(timeout)
-            sock.connect((addr, 80))
-            sock.sendall(f"GET / HTTP/1.0\r\nHost: {host}\r\nUser-Agent: curl/8\r\n\r\n".encode())
-            data = b""
-            while len(data) < 4096:
-                chunk = sock.recv(1024)
-                if not chunk:
-                    break
-                data += chunk
-        except OSError:
-            continue
-        finally:
-            sock.close()
-        body = data.split(b"\r\n\r\n", 1)[-1].decode(errors="replace").strip()
-        try:
-            return str(ipaddress.IPv4Address(body.splitlines()[-1].strip())) if body else None
-        except (ValueError, IndexError):
-            continue
+def link_peer_endpoint(iface: str = "") -> Optional[str]:
+    """Внешний адрес шлюза — из эндпоинта пира линка: ВПС видит его с каждым
+    хендшейком, спрашивать сторонние сервисы «мой IP» с домашнего адреса
+    незачем. None — пира нет или хендшейка ещё не было."""
+    proc = _host(["awg", "show", iface or _active_if(), "dump"], check=False)
+    if proc.returncode != 0:
+        return None
+    for p_ in awg.parse_dump(proc.stdout.decode(errors="replace")):
+        ep = p_.get("endpoint")
+        if ep:
+            host = ep.rsplit(":", 1)[0].strip("[]")
+            try:
+                return str(ipaddress.ip_address(host))
+            except ValueError:
+                return host
     return None
 
 
