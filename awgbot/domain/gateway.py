@@ -196,6 +196,17 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                                    (f"маршрут в {uplink}", pol["route"])) if not v]
             checks.append(GwCheck("политика аплинка", ok,
                                   "" if ok else "нет: " + ", ".join(lack) + " — агент перевыставит"))
+            # Маскарад в аплинк: без него локальный пакет уходит в туннель с
+            # адресом домашней сети, и ВПС его отбрасывает — Telegram через ВПС
+            # не проходит. На прежней малине это делало чужое правило домашней
+            # схемы, чистая установка без него нема.
+            info = self.__dict__.get("_guard_info")
+            if info is not None:
+                masq = uplink in info.get("masq_ifaces", set())
+                checks.append(GwCheck("маскарад в аплинк", masq,
+                                      "" if masq else f"нет masquerade в {uplink}: пакеты агента "
+                                      "уходят в туннель с домашним адресом — перевыпусти "
+                                      "конфигурацию шлюза с ВПС и примени её здесь"))
         else:
             checks.append(GwCheck("политика аплинка", None, "аплинк не найден"))
         return checks

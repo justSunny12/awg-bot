@@ -493,6 +493,14 @@ if [ "$MODE" = "plan" ]; then
     say "  would: записать $GUARD_FILE и применить: nft -f $GUARD_FILE"
 else
 mkdir -p "$GW_ETC"
+# Маскарад в АПЛИНК — для самого агента. Локально рождённый пакет выбирает
+# исходный адрес до метки в output: берёт адрес домашнего интерфейса, а после
+# перемаршрутизации по метке улетает в аплинк с чужим src — ВПС его отбросит
+# (у пира разрешён только адрес аплинка). Маскарад подменяет src на адрес
+# аплинка. Без него агент на чистой машине нем: на прежней малине это делало
+# чужое правило домашней схемы, и отсутствие своего не было видно.
+UPLINK_MASQ=""
+[ -n "${UPLINK_IF:-}" ] && UPLINK_MASQ="        oifname \"$UPLINK_IF\" masquerade"
 {
 cat <<GUARDEOF
 #!/usr/sbin/nft -f
@@ -550,6 +558,7 @@ cat <<GUARDEOF
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
         ip saddr @tunnel_nets4 oifname "$WAN_IF" masquerade
+$UPLINK_MASQ
     }
 
     chain output {

@@ -26,6 +26,25 @@ def test_table_info_parses_sets_and_chains(monkeypatch):
     assert info["sets"]["tunnel_nets4"] == {"10.9.1.0/24", "10.99.99.0/30"}
     assert info["sets"]["admin4"] == {"10.9.1.2", "10.9.1.3"}
     assert info["chains"] == {"input", "forward"}
+    assert info["masq_ifaces"] == set()
+
+
+def test_table_info_lists_masqueraded_interfaces(monkeypatch):
+    doc = {"nftables": [
+        {"chain": {"name": "postrouting"}},
+        {"rule": {"chain": "postrouting", "expr": [
+            {"match": {"op": "==", "left": {"payload": {"protocol": "ip", "field": "saddr"}}, "right": "@tunnel_nets4"}},
+            {"match": {"op": "==", "left": {"meta": {"key": "oifname"}}, "right": "end0"}},
+            {"masquerade": None}]}},
+        {"rule": {"chain": "postrouting", "expr": [
+            {"match": {"op": "==", "left": {"meta": {"key": "oifname"}}, "right": "awg0"}},
+            {"masquerade": None}]}},
+        {"rule": {"chain": "forward", "expr": [
+            {"match": {"op": "==", "left": {"meta": {"key": "oifname"}}, "right": "awglink"}},
+            {"accept": None}]}},
+    ]}
+    monkeypatch.setattr(gwguard, "_nft", lambda a, timeout=10: _cp(0, json.dumps(doc)))
+    assert gwguard.table_info()["masq_ifaces"] == {"end0", "awg0"}
 
 
 def test_table_info_none_when_absent(monkeypatch):

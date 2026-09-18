@@ -54,8 +54,9 @@ def _elem_str(el) -> str:
 
 
 def table_info() -> Optional[dict]:
-    """{'sets': {имя: set(str)}, 'chains': set(имя)} или None — таблицы нет.
-    Один exec: `nft -j list table`."""
+    """{'sets': {имя: set(str)}, 'chains': set(имя), 'masq_ifaces': set(str)}
+    или None — таблицы нет. masq_ifaces — в какие интерфейсы стоит masquerade
+    (по oifname). Один exec: `nft -j list table`."""
     proc = _nft(["-j", "list", "table", TABLE_FAMILY, TABLE_NAME])
     if proc.returncode != 0:
         return None
@@ -65,13 +66,21 @@ def table_info() -> Optional[dict]:
         raise GwGuardError(f"nft -j: {e}")
     sets: dict[str, set[str]] = {}
     chains: set[str] = set()
+    masq: set[str] = set()
     for item in doc.get("nftables", []):
         if "set" in item:
             s = item["set"]
             sets[s["name"]] = {_elem_str(e) for e in (s.get("elem") or [])}
         elif "chain" in item:
             chains.add(item["chain"]["name"])
-    return {"sets": sets, "chains": chains}
+        elif "rule" in item:
+            expr = item["rule"].get("expr") or []
+            if any("masquerade" in e for e in expr if isinstance(e, dict)):
+                for e in expr:
+                    m = e.get("match") if isinstance(e, dict) else None
+                    if m and (m.get("left") or {}).get("meta", {}).get("key") == "oifname":
+                        masq.add(str(m.get("right")))
+    return {"sets": sets, "chains": chains, "masq_ifaces": masq}
 
 
 def iptables_forward_policy() -> Optional[str]:

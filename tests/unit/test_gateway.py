@@ -133,7 +133,7 @@ def test_link_status_reads_freshest_handshake(svc, monkeypatch):
 _ALL_CHAINS = ("input", "tunnel_in", "forward", "postrouting", "output")
 
 
-def _guard_json(sets: dict, chains=None):
+def _guard_json(sets: dict, chains=None, masq=("end0", "awg0")):
     chains = _ALL_CHAINS if chains is None else chains
     import json
     items = [{"metainfo": {}}]
@@ -142,10 +142,14 @@ def _guard_json(sets: dict, chains=None):
                               "elem": list(elems)}})
     for c in chains:
         items.append({"chain": {"family": "inet", "table": "awg_gw_guard", "name": c}})
+    for iface in masq:
+        items.append({"rule": {"family": "inet", "table": "awg_gw_guard", "chain": "postrouting",
+                               "expr": [{"match": {"op": "==", "left": {"meta": {"key": "oifname"}},
+                                                   "right": iface}}, {"masquerade": None}]}})
     return json.dumps({"nftables": items})
 
 
-def _guard_run(sets, chains=None, fwd_policy="accept"):
+def _guard_run(sets, chains=None, fwd_policy="accept", masq=("end0", "awg0")):
     """_run/subprocess-стаб: таблица awg_gw_guard в JSON, чужой FORWARD с политикой."""
     import json
 
@@ -154,7 +158,7 @@ def _guard_run(sets, chains=None, fwd_policy="accept"):
         if a[:1] == ["nft"]:
             a = a[1:]
         if a[:3] == ["-j", "list", "table"]:
-            return _cp(0, _guard_json(sets, chains))
+            return _cp(0, _guard_json(sets, chains, masq))
         if a[:3] == ["-j", "list", "chain"]:
             return _cp(0, json.dumps({"nftables": [{"chain": {"name": "FORWARD", "policy": fwd_policy}}]}))
         if a[:2] == ["systemctl", "is-enabled"]:
@@ -361,7 +365,15 @@ def test_plumbing_reports_uplink_policy(svc, monkeypatch):
     checks = {c.name: c for c in svc.plumbing_checks()}
     assert checks["политика аплинка"].ok is False and "маршрут в awg0" in checks["политика аплинка"].detail
     monkeypatch.setattr(gwguard, "uplink_policy", lambda i: {"rule": True, "route": True})
-    assert {c.name: c for c in svc.plumbing_checks()}["политика аплинка"].ok is True
+    checks = {c.name: c for c in svc.plumbing_checks()}
+    assert checks["политика аплинка"].ok is True
+    assert checks["маскарад в аплинк"].ok is True, "masquerade в awg0 стоит"
+    # без маскарада в аплинк агент на чистой машине нем — проверка это видит
+    run = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []}, masq=("end0",))
+    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
+    checks = {c.name: c for c in svc.plumbing_checks()}
+    assert checks["маскарад в аплинк"].ok is False and "перевыпусти конфигурацию" in checks["маскарад в аплинк"].detail
     monkeypatch.setattr(gwguard, "uplink_interface", lambda: "")
     assert {c.name: c for c in svc.plumbing_checks()}["политика аплинка"].ok is None
 

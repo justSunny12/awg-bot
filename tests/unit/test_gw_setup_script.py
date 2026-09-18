@@ -219,3 +219,15 @@ def test_networkd_is_told_to_keep_foreign_rules_and_policy_is_reasserted(script)
     assert 'ip route replace default dev $UPLINK_IF table $UPLINK_TABLE' in part
     rollback = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
     assert "networkd.conf.d/awg-gw.conf" in rollback
+
+
+def test_guard_masquerades_the_agent_into_the_uplink(script):
+    """Локальный пакет агента выбирает исходный адрес до метки в output и без
+    маскарада улетает в аплинк с домашним адресом — ВПС его отбрасывает. Маскарад
+    в аплинк ставит сам скрипт, а не чужое правило домашней схемы."""
+    assert 'UPLINK_MASQ="        oifname \\"$UPLINK_IF\\" masquerade"' in script
+    body = script.split("GUARDEOF", 1)[1]
+    post = body.split("chain postrouting", 1)[1].split("}", 1)[0]
+    assert 'ip saddr @tunnel_nets4 oifname "$WAN_IF" masquerade' in post
+    assert "$UPLINK_MASQ" in post, "маскарад в аплинк — в той же nat-цепочке"
+    assert script.index('UPLINK_MASQ=""') < script.index("cat <<GUARDEOF"), "переменная считается до heredoc"
