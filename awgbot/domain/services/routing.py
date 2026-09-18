@@ -1059,7 +1059,11 @@ class RoutingMixin:
                             # переключение — его «снова в строю» придёт с
                             # хвостом «остаётся в резерве»
                             self.db.set_state(self._rt_keys(akey)[2], "1")
-                            self._rt_window_reset(akey)      # прежний — с чистого листа
+                            # оба — с чистого листа: у нового активного в окне
+                            # могли остаться неудачи со времён резерва, и они
+                            # тут же потянули бы его обратно
+                            self._rt_window_reset(akey)
+                            self._rt_window_reset(cand.id)
                             akey = cand.id
                             a_up, a_down = streaks[akey]
                             verdict = results.get(akey, routing.PROBE_DOWN)

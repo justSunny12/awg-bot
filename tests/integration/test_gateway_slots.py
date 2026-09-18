@@ -470,3 +470,27 @@ def test_switch_on_the_third_failure_in_a_sliding_window(two, services, monkeypa
         services.probe[1] = v
         services.routing_liveness_tick()
     assert services.active_gateway().id == 1, "старые неудачи выпали из окна"
+
+
+def test_switch_starts_the_new_active_with_a_clean_window(two, services, monkeypatch):
+    """У резерва в окне могли быть неудачи: после переключения они не должны
+    тут же тянуть трафик обратно — окно нового активного начинается заново."""
+    admin, g1, g2 = two
+    monkeypatch.setattr(services, "_rt_window_size", lambda: 10)
+    _settle(services)
+    services.probe[2] = "down"
+    services.routing_liveness_tick(); services.routing_liveness_tick()   # две неудачи резерва
+    services.probe[2] = "ok"
+    for _ in range(services._RT_UP_STREAK):
+        services.routing_liveness_tick()
+    services.probe[1] = "down"
+    for _ in range(3):
+        services.routing_liveness_tick()
+    assert services.active_gateway().id == 2
+    services.db.set_state(services._RT_SWITCHED_KEY, "")                 # интервал не мешает
+    services.probe[1] = "ok"
+    for _ in range(services._RT_UP_STREAK):
+        services.routing_liveness_tick()
+    services.probe[2] = "down"
+    services.routing_liveness_tick()
+    assert services.active_gateway().id == 2, "одна неудача после переключения — не третья"

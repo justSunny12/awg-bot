@@ -470,6 +470,9 @@ class GatewayLinkMixin:
         if active is not None and active.id == gw.id:
             return gw
         routing.switch_active(gw.link_if)
+        # окно замеров нового активного — с чистого листа: неудачи со времён
+        # резерва не должны тут же тянуть трафик обратно
+        self._rt_window_reset(gw.id)
         with self.db.transaction():
             self.db.set_state(self._RT_ACTIVE_KEY, str(gw.id))
             if manual:
