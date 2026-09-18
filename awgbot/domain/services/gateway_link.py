@@ -254,7 +254,7 @@ class GatewayLinkMixin:
             return {"status": "already", "device": dev, "gateway": mine}
         if slot is not None and slot.device_id != dev.id:
             raise ServiceError(f"в слоте этого линка уже назначен {self._gw_display(slot)}. "
-                               "Заменить машину можно в карточке шлюза (🔁 Заменить машину)")
+                               "Заменить устройство можно в карточке шлюза (🔁 Заменить устройство)")
         if slot is None:
             # слотов нет вовсе (линк поднят обвязкой, шлюз ещё не назначали):
             # заводим первый слот на этом устройстве, ключи линка уже общие

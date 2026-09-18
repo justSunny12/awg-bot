@@ -234,7 +234,7 @@ async def test_forwarded_claim_is_fallback_only(services, fake_bot, gwsetup):
     msg = _amsg(fake_bot, gwsign.sign(PRIV, "claim", phone.public_key))
     await ah.gateway_claim_message(msg, services)
     assert _gw_dev_id(services) == pi.id
-    assert any("не принято" in s[1] and "Заменить машину" in s[1] for s in msg.sent if s[0] == "answer")
+    assert any("не принято" in s[1] and "Заменить устройство" in s[1] for s in msg.sent if s[0] == "answer")
     bad = _amsg(fake_bot, "GW1:abc.def")
     await ah.gateway_claim_message(bad, services)
     assert any("не принято" in s[1] for s in bad.sent if s[0] == "answer")

@@ -150,6 +150,7 @@ def test_failover_switches_after_threshold_and_stays(two, services):
     assert services.active_gateway().id == 2 and services.switched == ["awglink2"]
     assert services.db.get_state(services._RT_LINK_KEY) == "1", "маркировка не снималась ни на такт"
     assert len(notes) == 1 and "переключён" in notes[0].text and "Pi2" in notes[0].text
+    assert not notes[0].critical, "переехали на резерв — люди с РФ-адресом, это не авария"
     # прежний ожил — остаётся в резерве, одно письмо
     services.probe[1] = "ok"
     notes = []
@@ -169,7 +170,7 @@ def test_failover_needs_a_healthy_candidate_else_degrades(two, services):
         notes += services.routing_liveness_tick()
     assert services.active_gateway().id == 1 and services.switched == []
     assert services.db.get_state(services._RT_LINK_KEY) == "0", "гашение, как без резерва"
-    assert len(notes) == 1 and "тоже не отвечает" in notes[0].text
+    assert len(notes) == 1 and "тоже не отвечает" in notes[0].text and notes[0].critical
     # резерв ожил — вытаскивает из деградации
     services.probe[2] = "ok"
     for _ in range(services._RT_UP_STREAK):

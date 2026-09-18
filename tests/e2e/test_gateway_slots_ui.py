@@ -299,3 +299,42 @@ async def test_bundle_screen_and_action_are_per_slot(services, slots, fake_bot):
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle", val="2"), services)
     docs = [s for s in nav.sent if s[0] == "document"]
     assert docs and docs[0][1] is not None
+
+
+async def test_monitoring_screen_edits_probe_window_and_threshold(services, slots, fake_bot, monkeypatch):
+    """⚙️ → Условная маршрутизация → «📡 Мониторинг и резервирование» последним
+    перед «Назад»: такт зонда, окно и порог — пикерами, автопереключение —
+    тумблером; значения горячие."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    monkeypatch.delattr(services, "_rt_window_size")      # фикстура прибила окно — здесь оно из настроек
+    store = {}
+    monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v) or [k])
+    real_int = settings.get_int
+    monkeypatch.setattr(settings, "get_int", lambda k, d=0: store.get(k, real_int(k, d)))
+    _, markup = await sh._screen("rt", services)
+    labels = _labels(markup)
+    assert labels[-2] == "📡 Мониторинг и резервирование" and labels[-1] == "⬅️ Назад"
+    text, markup = await sh._screen("rt_mon", services)
+    labels = _labels(markup)
+    assert "такт 30 с" in " ".join(labels) and "🔘 такт 30 с" in labels and "🔘 окно 10" in labels and "🔘 порог 50 %" in labels
+    assert "5 неуспешных из 10" in text and "≈ 5 мин" in text
+    assert any(l.endswith("Автопереключение на резерв") for l in labels)
+    cb, nav = _acb(fake_bot)
+    await sh.pick(cb, SetCB(sec="rt", act="pick", key="window", val="20"), services)
+    assert store["app.routing.failover.window_samples"] == 20
+    text, labels = _screen(nav)
+    assert "🔘 окно 20" in labels and "10 неуспешных из 20" in text and "≈ 10 мин" in text
+    cb, nav = _acb(fake_bot)
+    await sh.pick(cb, SetCB(sec="rt", act="pick", key="avail", val="75"), services)
+    assert store["app.routing.failover.min_availability"] == 75
+    text, _ = _screen(nav)
+    assert "5 неуспешных из 20" in text
+    cb, nav = _acb(fake_bot)
+    await sh.pick(cb, SetCB(sec="rt", act="pick", key="probe", val="60"), services)
+    assert store["app.routing.probe_seconds"] == 60
+    text, _ = _screen(nav)
+    assert "каждые 60 с" in text and "≈ 20 мин" in text
+    cb, nav = _acb(fake_bot)
+    await sh.pick(cb, SetCB(sec="rt", act="pick", key="probe", val="7"), services)
+    assert cb.answers and "Нет такого варианта" in cb.answers[0][0]

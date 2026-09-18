@@ -115,8 +115,8 @@ h("5. Назначение в слот")
 screen("5.1 Первый шлюз (как было)", texts.GATEWAY_CHOOSE_INTRO, kb.gateway_choose_kind(True, 0))
 screen("5.2 Резервный шлюз", texts.GATEWAY_STANDBY_CHOOSE_INTRO, kb.gateway_choose_kind(True, 0))
 st = states()
-screen("5.3 Заменить машину (резервный слот)", texts.gateway_replace_intro(st[1]), kb.gateway_choose_kind(True, 2))
-screen("5.4 Заменить машину (активный слот)", texts.gateway_replace_intro(st[0]), kb.gateway_choose_kind(True, 1))
+screen("5.3 Заменить устройство (резервный слот)", texts.gateway_replace_intro(st[1]), kb.gateway_choose_kind(True, 2))
+screen("5.4 Заменить устройство (активный слот)", texts.gateway_replace_intro(st[0]), kb.gateway_choose_kind(True, 1))
 screen("5.5 Из моих устройств", texts.GATEWAY_PICK_INTRO, kb.gateway_pick([dev2], 0))
 screen("5.6 Подтверждение: это шлюз (резервный слот)", texts.gateway_mark_ask(dev2, None, standby=True), kb.gateway_mark_confirm(dev2.id, 0))
 screen("5.7 Подтверждение: замена в активном слоте", texts.gateway_mark_ask(dev2, dev1, replace_state=st[0]), kb.gateway_mark_confirm(dev2.id, 1))
@@ -152,6 +152,11 @@ screen("8.5 Итог: убран последний", texts.gateway_removed(dev1
 h("9. Конфигурация шлюза")
 head = texts.ROUTING_BUNDLE_INTRO.replace("Конфигурация шлюза</b>", f"Конфигурация шлюза {texts.slot_short(st[1])}</b>", 1)
 screen("9.1 Экран перед выпуском (слот 2)", head, kb.settings_routing_bundle(2))
+
+h("9а. Мониторинг и резервирование")
+info = svc.routing_monitor_info()
+screen("9а.1 Экран", texts.routing_monitor_text(info), kb.settings_routing_monitor(info),
+       note="⚙️ Настройки → Условная маршрутизация → последним пунктом перед «Назад»")
 
 h("10. Уведомления админу")
 g1, g2 = db.gateway(1), db.gateway(2)

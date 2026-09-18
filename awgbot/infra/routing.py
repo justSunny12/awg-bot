@@ -885,27 +885,6 @@ def last_probe_latency_ms(mark: Optional[int] = None) -> Optional[int]:
     return _last_probe_ms.get(config.ROUTING_FWMARK if mark is None else int(mark))
 
 
-def probe_latency(targets, port: int = 53, *, mark: Optional[int] = None,
-                  samples: int = 3, timeout: float = 4.0) -> Optional[int]:
-    """«Пинг со шлюза»: медиана нескольких коннектов через путь с заданной
-    меткой (слот) до первой ответившей цели. None — наружу не пройти."""
-    targets = [targets] if isinstance(targets, str) else list(targets)
-    host = None
-    for h in targets:
-        if _tcp_probe(h, port, timeout, mark):
-            host = h
-            break
-    if host is None:
-        return None
-    m = config.ROUTING_FWMARK if mark is None else int(mark)
-    got = [_last_probe_ms.get(m)]
-    for _ in range(max(0, samples - 1)):
-        if _tcp_probe(host, port, timeout, mark):
-            got.append(_last_probe_ms.get(m))
-    vals = sorted(v for v in got if v is not None)
-    return vals[len(vals) // 2] if vals else None
-
-
 def ping_peer(iface: str = "", count: int = 3, timeout: float = 2.0) -> Optional[int]:
     """«Пинг до шлюза»: ICMP с ВПС на адрес шлюза в линке, медиана RTT в мс.
     Файервол шлюза пускает ICMP с ВПС по линку. None — не отвечает или

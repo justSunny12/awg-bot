@@ -115,11 +115,14 @@ async def _screen(sec: str, services, key: str = ""):
                 return "Слоты шлюзов заняты: убери один, чтобы добавить другой.", kb.settings_back("rt")
             return texts.GATEWAY_STANDBY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands), 0)
         return texts.GATEWAY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands), 0)
-    if sec in ("rt_lists", "rt_users", "rt_bundle"):
+    if sec in ("rt_lists", "rt_users", "rt_bundle", "rt_mon"):
         # Подразделы существуют только при включённой функции. Колбэк приходит
         # и из старого сообщения — тогда честно говорим, что раздел пуст.
         if not config.ROUTING_ENABLED or not settings.get_bool("app.routing.enabled", False):
             return texts.SETTINGS_ROUTING_SUBOFF, kb.settings_back()
+        if sec == "rt_mon":
+            info = await call(services.routing_monitor_info)
+            return texts.routing_monitor_text(info), kb.settings_routing_monitor(info)
         if sec == "rt_bundle":
             # Промежуточный экран: файл уносит ключ линка, выпуск — осознанно.
             slot = int(key or 0)
@@ -833,6 +836,13 @@ async def _firewall_action(cb: CallbackQuery, callback_data: SetCB, services) ->
 
 
 # ── выбор enum (расписание обновлений) ───────────────────────────────────────
+_RT_MON_PICKS = {
+    "probe": ("app.routing.probe_seconds", ("30", "45", "60", "90")),
+    "window": ("app.routing.failover.window_samples", ("5", "10", "20", "30")),
+    "avail": ("app.routing.failover.min_availability", ("25", "50", "75")),
+}
+
+
 @router.callback_query(SetCB.filter(F.act == "pick"))
 async def pick(cb: CallbackQuery, callback_data: SetCB, services):
     if callback_data.sec == "rt" and callback_data.key == "lists":
@@ -846,6 +856,21 @@ async def pick(cb: CallbackQuery, callback_data: SetCB, services):
             await cb.answer(str(e), show_alert=True)
             return
         await _render(cb, "rt_lists", services)
+        await cb.answer()
+        return
+    if callback_data.sec == "rt" and callback_data.key in _RT_MON_PICKS:
+        # мониторинг и резервирование: такт зонда, окно, порог — горячие ключи;
+        # такт переставляет задачу планировщика сам (см. scheduler.HOT)
+        setting, allowed = _RT_MON_PICKS[callback_data.key]
+        if callback_data.val not in allowed:
+            await cb.answer("Нет такого варианта.", show_alert=True)
+            return
+        try:
+            await call(settings.set_value, setting, int(callback_data.val))
+        except settings.SettingsWriteError as e:
+            await cb.answer(str(e), show_alert=True)
+            return
+        await _render(cb, "rt_mon", services)
         await cb.answer()
         return
     if callback_data.sec == "backup" and callback_data.key == "channel":

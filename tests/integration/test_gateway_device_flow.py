@@ -67,7 +67,7 @@ def test_claim_refuses_when_another_gateway_is_assigned(gw, services):
     admin, phone, pi = gw
     d_pi = services.db.get_device(pi.device_id); d_ph = services.db.get_device(phone.device_id)
     _claim(services, d_pi.public_key)
-    with pytest.raises(ServiceError, match="Заменить машину"):
+    with pytest.raises(ServiceError, match="Заменить устройство"):
         _claim(services, d_ph.public_key)
     assert _gw_dev_id(services) == d_pi.id
 

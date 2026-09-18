@@ -63,7 +63,7 @@ class RoutingMixin:
     _RT_STREAK_KEY = "routing_link_up_streak"
     _RT_UP_STREAK = 3                     # хороших замеров подряд: «стабильно жив»
     # «НЕДОСТУПЕН» — одно понятие на гашение, переключение и письмо админу:
-    # скользящее окно последних замеров (failover.window_minutes / такт = 10),
+    # скользящее окно последних замеров (failover.window_samples, 10),
     # в нём неуспешных не меньше, чем допускает порог доступности
     # (failover.min_availability, 50 % → 5 из 10), подряд или вразнобой.
     # Стрика «плохих подряд» нет вовсе: гашение и переключение всегда в одном
@@ -78,11 +78,6 @@ class RoutingMixin:
     # H1..H4/S1..S4 у сторон, хендшейка не будет вовсе. Отказ громкий (вот эта
     # самая тревога), но причина со стороны ВПС не видна, и без строки ниже её
     # ищут в аплинке и NAT, где её нет.
-    _TXT_RT_BUNDLE_HINT = (
-        "\n\n<i>Если началось сразу после обновления — перевыпусти конфигурацию шлюза "
-        "(<code>awg-bot gw-bundle</code>) и переустанови его на той стороне: "
-        "набор обфускации линка обязан совпадать, иначе хендшейк не проходит.</i>")
-
     def _txt_rt_bundle_hint(self, gw=None) -> str:
         where = (f"(Условная маршрутизация → {self._gw_display(gw)} → Конфигурация шлюза)"
                  if gw is not None else "(<code>awg-bot gw-bundle</code>)")
@@ -904,9 +899,8 @@ class RoutingMixin:
     # неудачи, размазанные дольше пяти минут, поводом не становятся. Окно
     # живёт в памяти: писать его в БД каждый такт незачем.
     def _rt_window_size(self) -> int:
-        secs = max(1, settings.get_int("app.routing.probe_seconds", 30))
-        mins = settings.get_int("app.routing.failover.window_minutes", 5)
-        return max(2, (mins * 60) // secs)
+        """Ширина скользящего окна — в замерах (failover.window_samples)."""
+        return max(2, settings.get_int("app.routing.failover.window_samples", 10))
 
     def _rt_window_push(self, slot_id, good: bool) -> None:
         win = self.__dict__.setdefault("_rt_windows", {})
@@ -927,6 +921,17 @@ class RoutingMixin:
         n = self._rt_window_size()
         limit = settings.get_int("app.routing.failover.min_availability", 50)
         return max(1, math.ceil(n * (100 - limit) / 100))
+
+    def routing_monitor_info(self) -> dict:
+        """Параметры мониторинга и резервирования для экрана настроек."""
+        secs = settings.get_int("app.routing.probe_seconds", 30)
+        n = self._rt_window_size()
+        return {"probe_seconds": secs, "window": n, "need": self._rt_fail_need(),
+                "availability": settings.get_int("app.routing.failover.min_availability", 50),
+                "window_minutes": max(1, round(n * secs / 60)),
+                "standby_minutes": self._rt_standby_interval(),
+                "failover": self._rt_failover_enabled(),
+                "interval_minutes": settings.get_int("app.routing.failover.min_interval_minutes", 10)}
 
     def _rt_window(self, slot_id) -> list:
         return self.__dict__.setdefault("_rt_windows", {}).get(slot_id, [])
@@ -1098,9 +1103,10 @@ class RoutingMixin:
         if switched_to is not None:
             prev = next((g for g in slots if g.id != switched_to.id
                          and self.db.get_state(self._rt_keys(g.id)[1]) == "1"), None)
+            # переехали на резерв — люди с РФ-адресом, это не авария: без звука;
+            # критичны только отказы, оставившие людей без РФ-доступа
             notes.append(Notification(config.ADMIN_ID,
-                                      self._txt_rt_switched(prev, switched_to, results.get(prev.id) if prev else verdict),
-                                      critical=True))
+                                      self._txt_rt_switched(prev, switched_to, results.get(prev.id) if prev else verdict)))
         elif ok:
             if announced:
                 self.db.set_state(a_ann_k, "0")

@@ -266,8 +266,38 @@ def settings_routing(enabled: bool, states=(), *, can_add: bool = True) -> Inlin
                   callback_data=SetCB(sec="rt_lists", act="open"))
         kb.button(text="👥 Доступность пользователям",
                   callback_data=SetCB(sec="rt_users", act="open"))
+        kb.button(text="📡 Мониторинг и резервирование",
+                  callback_data=SetCB(sec="rt_mon", act="open"))
     kb.row(_back())
     kb.adjust(1)
+    return kb.as_markup()
+
+
+def settings_routing_monitor(info: dict) -> InlineKeyboardMarkup:
+    """Подраздел «Мониторинг и резервирование»: такт зонда, ширина окна и
+    порог доступности — пикерами (горячие ключи), тумблер автопереключения."""
+    kb = InlineKeyboardBuilder()
+    rows = []
+    for secs in (30, 45, 60, 90):
+        mark = "🔘 " if secs == info["probe_seconds"] else ""
+        kb.button(text=f"{mark}такт {secs} с",
+                  callback_data=SetCB(sec="rt", act="pick", key="probe", val=str(secs)))
+    rows.append(4)
+    for n in (5, 10, 20, 30):
+        mark = "🔘 " if n == info["window"] else ""
+        kb.button(text=f"{mark}окно {n}",
+                  callback_data=SetCB(sec="rt", act="pick", key="window", val=str(n)))
+    rows.append(4)
+    for pct in (25, 50, 75):
+        mark = "🔘 " if pct == info["availability"] else ""
+        kb.button(text=f"{mark}порог {pct} %",
+                  callback_data=SetCB(sec="rt", act="pick", key="avail", val=str(pct)))
+    rows.append(3)
+    kb.button(text=f"{_chk(info['failover'])} Автопереключение на резерв",
+              callback_data=SetCB(sec="rt_mon", act="toggle", key="app.routing.failover.enabled"))
+    rows.append(1)
+    kb.adjust(*rows)
+    kb.row(_back("rt"))
     return kb.as_markup()
 
 
