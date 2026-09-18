@@ -92,10 +92,33 @@ def test_streak_alert_arms_after_n_and_disarms_after_n(svc):
     notes = fire(True)
     assert len(notes) == 1 and notes[0].text == "ПЛОХО"
     assert notes[0].force_sound is True, "алерт шлюза обязан быть громким"
+    notes[0].on_sent()                      # рассылка доложила о доставке
     assert fire(True) == [], "повторный алерт при уже взведённом"
     assert fire(False) == [] and fire(False) == []
     notes = fire(False)
     assert len(notes) == 1 and notes[0].text == "ОК"
+    notes[0].on_sent()
+    assert fire(False) == []
+
+
+def test_undelivered_alert_leaves_no_lone_recovery(svc):
+    """Связь у шлюза падает вместе с линком, и алерт не улетает. Отметку
+    «показан» ставили до отправки — админ получал только «✅ Линк ожил», и
+    беда выглядела так, будто её не было. Не дошло — повторяем; починилось
+    раньше, чем вернулась связь, — отбой не о чем."""
+    fire = lambda bad: svc._streak_alert("t3", bad, 2, "ПЛОХО", "ОК")
+    fire(True)
+    assert [n.text for n in fire(True)] == ["ПЛОХО"]
+    assert [n.text for n in fire(True)] == ["ПЛОХО"], "недоставленный алерт не повторён"
+    assert fire(False) == [] and fire(False) == [], "отбой без алерта"
+
+
+def test_delivered_recovery_is_repeated_until_it_lands(svc):
+    fire = lambda bad: svc._streak_alert("t4", bad, 1, "ПЛОХО", "ОК")
+    fire(True)[0].on_sent()
+    assert [n.text for n in fire(False)] == ["ОК"]      # доставку не подтвердили
+    assert [n.text for n in fire(False)] == ["ОК"]
+    fire(False)[0].on_sent()
     assert fire(False) == []
 
 

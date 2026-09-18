@@ -87,3 +87,46 @@ async def test_notify_one_skips_empty_and_delivers(monkeypatch):
     await notifier.notify_one(bot, 0, "skip")               # нет адресата
     await notifier.notify_one(bot, 555, "hi")
     assert [c["chat_id"] for c in bot.calls] == [555]
+
+
+# ── подтверждение доставки ───────────────────────────────────────────────────
+
+async def test_state_change_waits_for_actual_delivery():
+    """on_sent — отметка, которая имеет смысл, только если адресат уведомление
+    получил. Монитор шлюза взводил «алерт показан» до отправки: связь у шлюза
+    падает вместе с линком, алерт терялся, а «✅ ожил» приходил как первое и
+    единственное слово о происшествии."""
+    done = []
+    bot = RecordingBot(fail_for=(222,))
+    await notifier.send_notifications(bot, [
+        Notification(111, "дошло", on_sent=lambda: done.append(111)),
+        Notification(222, "не дошло", on_sent=lambda: done.append(222)),
+    ])
+    assert done == [111]
+
+
+async def test_email_fallback_counts_as_delivery():
+    """Критичный алерт уехал письмом — состояние менять можно: админ его
+    получил, и повторять каждый тик нечего."""
+    from aiogram.exceptions import TelegramNetworkError
+    import awgbot.core.config as cfg
+
+    class DeadBot:
+        async def send_message(self, *a, **k):
+            raise TelegramNetworkError(method=None, message="network down")
+
+    done = []
+
+    async def fb(text):
+        pass
+    notifier.set_email_fallback(fb)
+    try:
+        await notifier.send_notifications(DeadBot(), [
+            Notification(cfg.ADMIN_ID, "🚨 линк мёртв", critical=True,
+                         on_sent=lambda: done.append("mail")),
+            Notification(cfg.ADMIN_ID, "обычное", critical=False,
+                         on_sent=lambda: done.append("plain")),
+        ])
+    finally:
+        notifier.set_email_fallback(None)
+    assert done == ["mail"], "почта — доставка только для критичного"

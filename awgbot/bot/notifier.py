@@ -44,15 +44,31 @@ def _network_failure(e: Exception) -> bool:
     return isinstance(e, (TelegramNetworkError, asyncio.TimeoutError, OSError))
 
 
-async def _fallback(critical: bool, tg_id, text: str) -> None:
+async def _fallback(critical: bool, tg_id, text: str) -> bool:
+    """True — алерт всё-таки доставлен, письмом."""
     from awgbot.core import config
     if not critical or _email_fallback is None or tg_id != config.ADMIN_ID:
-        return
+        return False
     try:
         await _email_fallback(text)
         log.warning("критичный алерт ушёл на почту: Telegram недоступен")
+        return True
     except Exception as e2:                          # noqa: BLE001
         log.warning("запасной канал (почта) не сработал: %s", e2)
+        return False
+
+
+async def _confirm(on_sent) -> None:
+    """Сообщить отправителю, что уведомление дошло. Монитор шлюза взводит
+    «алерт показан» только отсюда: запись в базу до отправки приводила к
+    одинокому отбою — беда случилась, алерт не улетел (сеть у шлюза падает
+    вместе с линком), а «✅ ожил» приходил как первое и единственное слово."""
+    if on_sent is None:
+        return
+    try:
+        await asyncio.to_thread(on_sent)
+    except Exception as e:                           # noqa: BLE001
+        log.warning("доставка уведомления не подтверждена: %s", e)
 
 
 def _silent_now(force_sound: bool) -> bool:
@@ -63,28 +79,32 @@ def _silent_now(force_sound: bool) -> bool:
     return timeutil.in_quiet_hours(settings.get_int("quiet_hours.quiet_hours_start", 20), settings.get_int("quiet_hours.quiet_hours_end", 7))
 
 
-async def _send(bot, tg_id, text, markup, silent, critical: bool = False):
+async def _send(bot, tg_id, text, markup, silent, critical: bool = False, on_sent=None):
     """Одна отправка: RetryAfter → подождать и повторить один раз; прочие
     ошибки — залогировать и продолжить рассылку. Сетевой отказ на критичном
     алерте админу — запасной канал (почта). Возвращает отправленное
-    сообщение либо None."""
+    сообщение либо None; on_sent зовём при доставке любым из каналов."""
     try:
-        return await bot.send_message(tg_id, text, reply_markup=markup,
+        sent = await bot.send_message(tg_id, text, reply_markup=markup,
                                       disable_notification=silent)
+        await _confirm(on_sent)
+        return sent
     except TelegramRetryAfter as e:
         log.warning("flood-контроль: жду %s с и повторяю для %s", e.retry_after, tg_id)
         await asyncio.sleep(e.retry_after)
         try:
-            return await bot.send_message(tg_id, text, reply_markup=markup,
+            sent = await bot.send_message(tg_id, text, reply_markup=markup,
                                           disable_notification=silent)
+            await _confirm(on_sent)
+            return sent
         except Exception as e2:                      # noqa: BLE001
             log.warning("Не удалось отправить уведомление %s (после retry): %s", tg_id, e2)
-            if _network_failure(e2):
-                await _fallback(critical, tg_id, text)
+            if _network_failure(e2) and await _fallback(critical, tg_id, text):
+                await _confirm(on_sent)
     except Exception as e:                           # noqa: BLE001
         log.warning("Не удалось отправить уведомление %s: %s", tg_id, e)
-        if _network_failure(e):
-            await _fallback(critical, tg_id, text)
+        if _network_failure(e) and await _fallback(critical, tg_id, text):
+            await _confirm(on_sent)
 
 
 _PARALLEL = 6                          # окно одновременно летящих отправок
@@ -114,7 +134,8 @@ async def send_notifications(bot, notifications) -> None:
         silent = False if getattr(n, "force_sound", False) else quiet_silent
         markup = getattr(n, "reply_markup", None) or kb.hide_only()
         await _send(bot, n.tg_id, n.text, markup, silent,
-                    critical=bool(getattr(n, "critical", False)))
+                    critical=bool(getattr(n, "critical", False)),
+                    on_sent=getattr(n, "on_sent", None))
     if len(items) == 1:
         await one(items[0])
         return

@@ -90,7 +90,9 @@ def test_gateway_streak_alert_quiet_costs_no_commits(tmp_path):
     assert db.commits == n0
     # семантика на месте: три плохих → алерт, ещё три плохих — тишина, три хороших → отбой
     fire = lambda bad: svc._streak_alert("t", bad, 3, "ПЛОХО", "ОК")
-    assert fire(True) == [] and fire(True) == [] and len(fire(True)) == 1
+    assert fire(True) == [] and fire(True) == []
+    notes = fire(True); assert len(notes) == 1
+    notes[0].on_sent()                       # взводит доставка, а не сам тик
     assert fire(True) == [] and fire(True) == [] and fire(True) == []
     assert fire(False) == [] and fire(False) == [] and len(fire(False)) == 1
 

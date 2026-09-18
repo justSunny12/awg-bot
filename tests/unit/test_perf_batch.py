@@ -141,7 +141,7 @@ async def test_send_notifications_reads_quiet_hours_once(monkeypatch):
     monkeypatch.setattr(notifier, "_silent_now", lambda force: (reads.append(force), False)[1])
     sent = []
 
-    async def fake_send(bot, tg_id, text, markup, silent, critical=False):
+    async def fake_send(bot, tg_id, text, markup, silent, critical=False, on_sent=None):
         sent.append(tg_id)
     monkeypatch.setattr(notifier, "_send", fake_send)
     monkeypatch.setattr(notifier, "_BATCH_PACING_SECONDS", 0)

@@ -292,6 +292,13 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
 
     # ── гистерезис ───────────────────────────────────────────────────────────
 
+    def _armer(self, key: str, value: str):
+        """Отложенная отметка «алерт показан» — её ставит рассылка по факту
+        доставки (Notification.on_sent)."""
+        def _mark() -> None:
+            self.db.set_state(f"gwst_armed_{key}", value)
+        return _mark
+
     def _streak_alert(self, key: str, bad: bool | None, streak: int,
                       on_text: str, off_text: str, loud: bool = True,
                       critical: bool = True) -> list[Notification]:
@@ -306,17 +313,21 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         notes: list[Notification] = []
         # Потолок на пороге: выше него счётчик ничего не решает, а без потолка
         # каждый спокойный тик был бы записью на SD-карту.
+        # «Взведён» переключаем только ПОСЛЕ доставки. Запись до отправки давала
+        # одинокий отбой: сеть у шлюза падает вместе с линком, алерт не улетал,
+        # а «✅ ожил» приходил первым и единственным словом — беда выглядела
+        # так, будто её не было. Не дошло — следующий тик скажет то же самое.
         if bad:
             hi, lo = min(hi + 1, streak), 0
             if hi >= streak and not armed:
-                self.db.set_state(f"gwst_armed_{key}", "1")
                 notes.append(Notification(config.ADMIN_ID, on_text, force_sound=loud,
-                                          critical=critical))
+                                          critical=critical,
+                                          on_sent=self._armer(key, "1")))
         else:
             lo, hi = min(lo + 1, streak), 0
             if lo >= streak and armed:
-                self.db.set_state(f"gwst_armed_{key}", "0")
-                notes.append(Notification(config.ADMIN_ID, off_text))
+                notes.append(Notification(config.ADMIN_ID, off_text,
+                                          on_sent=self._armer(key, "0")))
         self.db.set_state(f"gwst_hi_{key}", str(hi))
         self.db.set_state(f"gwst_lo_{key}", str(lo))
         return notes
