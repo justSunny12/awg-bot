@@ -231,3 +231,93 @@ def test_guard_masquerades_the_agent_into_the_uplink(script):
     assert 'ip saddr @tunnel_nets4 oifname "$WAN_IF" masquerade' in post
     assert "$UPLINK_MASQ" in post, "маскарад в аплинк — в той же nat-цепочке"
     assert script.index('UPLINK_MASQ=""') < script.index("cat <<GUARDEOF"), "переменная считается до heredoc"
+
+
+# ── чей это шлюз: ключ УСТРОЙСТВА, а не линка ────────────────────────────────
+
+def _uplink_fns(script: str) -> str:
+    """Функции поиска аплинка из скрипта — гоняем их как есть."""
+    return script.split("# Публичный ключ интерфейса", 1)[1].split("# Прежняя обвязка в iptables", 1)[0]
+
+
+def _fake_awg(tmp_path, ifaces: str, keys: dict) -> Path:
+    """`awg` для прогона: список интерфейсов, ключ интерфейса, pubkey из stdin
+    (PRIV-X → PUB-X)."""
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir(exist_ok=True)
+    keys_file = tmp_path / "keys.txt"
+    keys_file.write_text("".join(f"{k} {v}\n" for k, v in keys.items()), encoding="utf-8")
+    awg = bin_dir / "awg"
+    awg.write_text(
+        "#!/bin/sh\n"
+        "[ \"$1\" = pubkey ] && { sed 's/^PRIV/PUB/'; exit 0; }\n"
+        f"[ \"$1\" = show ] && [ \"$2\" = interfaces ] && {{ printf '%s\\n' '{ifaces}'; exit 0; }}\n"
+        f"[ \"$1\" = show ] && [ \"$3\" = public-key ] && {{ grep \"^$2 \" '{keys_file}' | cut -d' ' -f2; exit 0; }}\n"
+        "exit 1\n", encoding="utf-8")
+    awg.chmod(0o755)
+    return awg
+
+
+def _uplinks(script, tmp_path, *, ifaces, keys, confs, link_if="awglink2"):
+    """(вывод uplink_list, найденный по ключу PUB-A аплинк)."""
+    conf_dir = tmp_path / "awg"; conf_dir.mkdir(exist_ok=True)
+    for name, priv in confs.items():
+        (conf_dir / f"{name}.conf").write_text(f"[Interface]\nPrivateKey = {priv}\nAddress = 10.9.0.2/32\n",
+                                               encoding="utf-8")
+    awg = _fake_awg(tmp_path, ifaces, keys)
+    prelude = f'set -e\nAWG_BIN="{awg}"\nLINK_IF="{link_if}"\nHOST_CONF_DIR="{conf_dir}"\n'
+    r = _sh(prelude + _uplink_fns(script) + '\nuplink_list\necho "|$(iface_by_pubkey PUB-A)|"')
+    assert r.returncode == 0, r.stderr
+    lines = r.stdout.splitlines()
+    return [ln for ln in lines[:-1] if ln.strip()], lines[-1].strip("|")
+
+
+def test_marked_gateway_is_recognised_before_its_uplink_comes_up(script, tmp_path):
+    """Юнит обвязки стартует раньше awg-quick@ аплинка: живых интерфейсов, кроме
+    линка, ещё нет. По одним живым интерфейсам машина выглядела чужой — линк
+    ложился, юнит гасил сам себя, и шлюз не вставал после ребута. Ключ
+    устройства лежит в конфиге и до подъёма интерфейса."""
+    lst, found = _uplinks(script, tmp_path, ifaces="awglink2", keys={},
+                          confs={"awg0": "PRIV-A", "awglink2": "PRIV-L"})
+    assert found == "awg0", "помеченное устройство узнано по конфигу аплинка"
+    assert lst == ["awg0 PUB-A"]
+
+
+def test_live_uplink_key_decides_for_a_foreign_machine(script, tmp_path):
+    """Аплинк поднят и ключ ЧУЖОЙ — машина шлюзом слота не является."""
+    lst, found = _uplinks(script, tmp_path, ifaces="awg0 awglink2", keys={"awg0": "PUB-B"},
+                          confs={"awg0": "PRIV-B", "awglink2": "PRIV-L"})
+    assert found == "" and lst == ["awg0 PUB-B"]
+
+
+def test_link_of_the_neighbour_slot_is_not_an_uplink(script, tmp_path):
+    """Ключ линка принадлежит паре ВПС↔шлюз, а не устройству: сравнивать с ним
+    пометку слота нельзя — ни со своим линком, ни с линком соседнего слота."""
+    lst, found = _uplinks(script, tmp_path, ifaces="awglink awglink2",
+                          keys={"awglink": "PUB-A", "awglink2": "PUB-L"},
+                          confs={"awglink": "PRIV-A", "awglink2": "PRIV-L"})
+    assert lst == [] and found == "", "линк аплинком не считается"
+
+
+def test_foreign_machine_does_not_switch_its_own_unit_off(script):
+    """Выключенный юнит означал ручное вмешательство даже там, где машина
+    шлюзом осталась: после ребута она решала «шлюз чужой» и гасила себя. Юнит
+    идемпотентен и перепроверяет пометку при каждом старте."""
+    assert "systemctl disable awg-link-gw" not in script
+    foreign = script.split('if [ "$GW_FOREIGN" = "1" ]; then', 1)[1].split("\nfi\n", 1)[0]
+    assert "down $LINK_IF" in foreign and "exit 0" in foreign
+
+
+def test_unresolved_uplink_leaves_the_link_alone(script):
+    """Аплинка не видно вовсе — сказать «шлюз чужой» не по чему: линк не трогаем
+    (раньше эта ветка сливалась с чужим шлюзом и линк ложился)."""
+    unconf = script.split('if [ "$GW_UNCONFIRMED" = "1" ]; then', 1)[1].split("\nfi\n", 1)[0]
+    assert "down $LINK_IF" not in unconf and 'write_status "unconfirmed"' in unconf
+    step0 = script.split('step "0. Шлюзовое устройство"', 1)[1].split("# ── 1. конфиг", 1)[0]
+    assert 'GW_STATUS="unconfirmed"' in step0 and 'elif [ -n "$_others" ]' in step0
+
+
+def test_unit_starts_after_the_uplink(script):
+    """awg-link-gw без упорядочивания стартует раньше awg-quick@ аплинка."""
+    unit = script.split("cat > \"$UNIT\"", 1)[1].split("UNITEOF", 2)[1]
+    for d in ("After", "Wants"):
+        assert f"{d}=network-online.target${{UPLINK_IF:+ awg-quick@$UPLINK_IF.service}}" in unit, d

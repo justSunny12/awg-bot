@@ -81,7 +81,7 @@ class GwStatus:
     month_tx: int = 0
     egress_ms: float | None = None          # выход наружу через домашний канал, мс
     tg_missing: list[str] = field(default_factory=list)   # диапазоны Telegram без маркировки
-    mark_status: str = ""                   # шлюзовое устройство: confirmed|unmarked|foreign
+    mark_status: str = ""                   # шлюзовое устройство: confirmed|unmarked|foreign|unconfirmed
     ts: str = ""                            # когда снят (ISO); пусто — живой
 
     def to_json(self) -> str:
@@ -578,19 +578,19 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                 pass
 
     # ── шлюзовое устройство: пометка в основном боте ─────────────────────────
-    _GW_MARK_KEY = "gw_mark_status"           # unmarked | confirmed | foreign | ?
+    _GW_MARK_KEY = "gw_mark_status"           # unmarked | confirmed | foreign | unconfirmed | ?
 
     def gateway_mark_outcome(self) -> dict:
         """После применения бандла: он ли помеченный шлюз. Решение принял
-        скрипт обвязки (файл статуса), здесь — перевод в действие: unmarked и
-        foreign означают «переслать claim основному боту»."""
+        скрипт обвязки (файл статуса), здесь — перевод в действие: unmarked,
+        foreign и unconfirmed означают «переслать claim основному боту»."""
         from awgbot.infra import gwguard
         st = gwguard.script_status()
         status = st.get("GW_STATUS", "?")
         iface, pub = gwguard.uplink_pubkey()
         self.db.set_state(self._GW_MARK_KEY, status)
         out = {"status": status, "uplink": iface, "pubkey": pub, "claim": None}
-        if status in ("unmarked", "foreign") and pub:
+        if status in ("unmarked", "foreign", "unconfirmed") and pub:
             try:
                 out["claim"] = self.gateway_claim_message(pub)
             except (OSError, ValueError) as e:

@@ -191,7 +191,7 @@ def uplink_pubkey() -> tuple[str, str]:
 
 def script_status() -> dict:
     """Что решил скрипт обвязки при последнем применении: GW_STATUS
-    unmarked|confirmed|foreign и ключ помеченного шлюза."""
+    unmarked|confirmed|foreign|unconfirmed и ключ помеченного шлюза."""
     out = {}
     try:
         for line in Path(STATUS_FILE).read_text(encoding="utf-8").splitlines():

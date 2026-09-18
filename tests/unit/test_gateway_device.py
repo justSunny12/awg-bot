@@ -111,7 +111,7 @@ def test_gateway_mark_outcome(tmp_path, monkeypatch):
     monkeypatch.setattr(gw, "pathlib_read", lambda p: "[Interface]\nPrivateKey = " + PRIV + "\n")
     monkeypatch.setattr(gwguard, "uplink_pubkey", lambda: ("awg0", PUB))
     # не помечен → claim (запасной путь); помечен другой → claim; свой → тишина
-    for status, expect in (("unmarked", True), ("foreign", True), ("confirmed", False)):
+    for status, expect in (("unmarked", True), ("foreign", True), ("unconfirmed", True), ("confirmed", False)):
         monkeypatch.setattr(gwguard, "script_status", lambda s=status: {"GW_STATUS": s})
         out = svc.gateway_mark_outcome()
         assert out["status"] == status and bool(out["claim"]) is expect, status
@@ -129,7 +129,8 @@ def test_gateway_apply_report_is_human_text(tmp_path, monkeypatch):
     cases = {
         ("confirmed", "installed", "up"): "Аплинк обновлён и поднят, линк поднят, шлюз подтверждён.",
         ("confirmed", "unchanged", "up"): "Аплинк без изменений, линк поднят, шлюз подтверждён.",
-        ("foreign", "", "foreign"): "Линк лежит: в основном боте назначен другой шлюз.",
+        ("foreign", "", "foreign"): "Линк лежит: шлюз этого слота — другое устройство.",
+        ("unconfirmed", "", "unconfirmed"): "Линк не тронут: аплинк этой машины не найден, шлюз не подтверждён.",
         ("unmarked", "", ""): "Шлюз в основном боте не назначен.",
     }
     for (gs, up, link), expect in cases.items():
@@ -218,7 +219,7 @@ def test_script_keeps_link_down_for_a_foreign_gateway(script):
     link = script.split('# ── 1. конфиг и подъём', 1)[1].split("# ── 1a.", 1)[0]
     assert 'if [ "$GW_FOREIGN" = "1" ]' in link
     foreign = link.split('if [ "$GW_FOREIGN" = "1" ]', 1)[1].split("fi", 1)[0]
-    assert "down $LINK_IF" in foreign and "systemctl disable awg-link-gw.service" in foreign and "exit 0" in foreign
+    assert "down $LINK_IF" in foreign and "exit 0" in foreign
     assert script.index('if [ "$GW_FOREIGN" = "1" ]') < script.index('run "$AWG_QUICK up $LINK_IF"')
 
 
@@ -273,7 +274,8 @@ def test_script_installs_uplink_on_a_fresh_machine(script):
     assert '[ -z "$UPLINK_IF" ]' in fresh and '[ -z "$_others" ]' in fresh and '[ -n "$UPLINK_B64" ]' in fresh
     assert '! -f "$HOST_CONF_DIR/${UPLINK_IF_DEFAULT}.conf"' in fresh
     assert 'UPLINK_IF="$UPLINK_IF_DEFAULT"' in step0
-    assert 'grep -vx "$LINK_IF"' in step0, "свой линк не считается чужим аплинком"
+    assert '_others="$(uplink_list' in step0
+    assert 'case "$_i" in "$LINK_IF"|awglink*) continue ;; esac' in script, "свой линк и линк соседнего слота аплинком не считаются"
     assert re.search(r'^UPLINK_IF_DEFAULT="?\$\{UPLINK_IF_DEFAULT:-awg0\}"?|UPLINK_IF_DEFAULT=.*awg0', script, re.M)
 
 

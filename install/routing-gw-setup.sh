@@ -73,18 +73,44 @@ GATEWAY_PREV_PUBKEY="${GATEWAY_PREV_PUBKEY:-}"
 UPLINK_B64="${UPLINK_B64:-}"
 UPLINK_TABLE="${UPLINK_TABLE:-100}"          # таблица политики «метка → аплинк»
 UPLINK_IF_DEFAULT="${UPLINK_IF:-awg0}"        # имя аплинка на чистой машине
-GW_FOREIGN=0                                  # 1 = помечен другой шлюз, линк не поднимаем
+GW_FOREIGN=0                                  # 1 = слот помечен другому устройству, линк не поднимаем
+GW_UNCONFIRMED=0                              # 1 = аплинка не видно, шлюз не подтверждён — линк не трогаем
 GW_STATUS_FILE="$GW_ETC/gateway.status"       # что решил скрипт — читает агент
 
-# Публичный ключ интерфейса и его имя по ключу: `awg show <if> public-key`.
+# Публичный ключ интерфейса: `awg show <if> public-key`.
 iface_pubkey() { "$AWG_BIN" show "$1" public-key 2>/dev/null || true; }
-iface_by_pubkey() {            # $1 = ключ; печатает имя интерфейса или ничего
-    [ -n "$1" ] || return 0
-    for _i in $("$AWG_BIN" show interfaces 2>/dev/null); do
-        [ "$_i" = "$LINK_IF" ] && continue
-        [ "$(iface_pubkey "$_i")" = "$1" ] && { printf '%s' "$_i"; return 0; }
+conf_pubkey() {                # $1 = конфиг; публичный ключ из PrivateKey или ничего
+    _pk="$(awk -F'= *' '/^PrivateKey/{print $2; exit}' "$1" 2>/dev/null | tr -d ' \r')"
+    [ -n "$_pk" ] || return 0
+    printf '%s' "$_pk" | "$AWG_BIN" pubkey 2>/dev/null || true
+}
+# Аплинки ЭТОЙ машины строками «имя ключ»: сначала живые интерфейсы, затем
+# конфиги тех, что ещё не поднялись. Линки до ВПС (свой слот и слот соседа —
+# awglink*) аплинками не считаются: их ключ принадлежит паре ВПС↔шлюз, а не
+# устройству, и сравнивать пометку слота с ним нельзя.
+uplink_list() {
+    _live=" $("$AWG_BIN" show interfaces 2>/dev/null | tr '\n' ' ')"
+    for _i in $_live; do
+        case "$_i" in "$LINK_IF"|awglink*) continue ;; esac
+        printf '%s %s\n' "$_i" "$(iface_pubkey "$_i")"
     done
-    return 0
+    # Конфиги: при загрузке юнит обвязки стартует РАНЬШЕ awg-quick@ аплинка, и
+    # по одним живым интерфейсам машина выглядит чужой — линк ложится, юнит
+    # гасит сам себя (наступили при ребуте второго шлюза 19.09.2026). Ключ
+    # устройства лежит в конфиге и до подъёма интерфейса.
+    for _c in "$HOST_CONF_DIR"/*.conf; do
+        [ -f "$_c" ] || continue
+        _n="$(basename "$_c" .conf)"
+        case "$_n" in "$LINK_IF"|awglink*) continue ;; esac
+        case "$_live" in *" $_n "*) continue ;; esac
+        printf '%s %s\n' "$_n" "$(conf_pubkey "$_c")"
+    done
+}
+iface_by_pubkey() {            # $1 = ключ УСТРОЙСТВА; печатает имя аплинка или ничего
+    [ -n "$1" ] || return 0
+    uplink_list | while read -r _n _k; do
+        [ -n "$_k" ] && [ "$_k" = "$1" ] && { printf '%s' "$_n"; break; }
+    done
 }
 
 # Прежняя обвязка в iptables: снимаем идемпотентно и при --apply (переезд на
@@ -286,7 +312,7 @@ else
     # устройство и несёт его ключи — кто применил бандл, тот и шлюз. Ставим
     # аплинк под именем UPLINK_IF (по умолчанию awg0). Машина с ЧУЖИМ аплинком
     # шлюзом не становится — это ветка «foreign» ниже.
-    _others="$("$AWG_BIN" show interfaces 2>/dev/null | tr ' ' '\n' | grep -vx "$LINK_IF" | grep -vx '' || true)"
+    _others="$(uplink_list | cut -d' ' -f1)"
     if [ -z "$UPLINK_IF" ] && [ -z "$_others" ] && [ -n "$UPLINK_B64" ] \
        && [ ! -f "$HOST_CONF_DIR/${UPLINK_IF_DEFAULT}.conf" ]; then
         UPLINK_IF="$UPLINK_IF_DEFAULT"
@@ -344,13 +370,23 @@ else
             fi
             rm -f "$_tmp" "$_tmp.conf"
         fi
-    else
-        say "  ВНИМАНИЕ: в основном боте помечен ДРУГОЙ шлюз (ключ ${GATEWAY_PUBKEY%%????????????????????????????????}…)."
-        say "  Два шлюза вместе не работают: линк на этой машине НЕ поднимаю."
+    elif [ -n "$_others" ]; then
+        say "  ВНИМАНИЕ: конфигурация слота ($LINK_IF) выпущена ДРУГОМУ устройству"
+        say "  (ключ ${GATEWAY_PUBKEY%%????????????????????????????????}…), у этой машины аплинк: $(printf '%s' "$_others" | tr '\n' ' ')."
+        say "  Линк слота НЕ поднимаю: трафик пошёл бы мимо помеченного шлюза."
         say "  Агент попросит переслать сообщение основному боту; после пометки"
-        say "  перевыпусти конфигурацию и примени её ещё раз."
+        say "  перевыпусти конфигурацию слота и примени её ещё раз."
         GW_FOREIGN=1
         GW_STATUS="foreign"
+    else
+        # Аплинка нет ни живого, ни в конфигах — сказать «шлюз чужой» не по чему.
+        # Раньше эта ветка сливалась с «чужим»: линк опускался, юнит выключал
+        # сам себя, и машина не вставала обратно даже когда аплинк поднимался.
+        say "  ВНИМАНИЕ: аплинка этой машины не видно — ни интерфейса, ни конфига в $HOST_CONF_DIR."
+        say "  Подтвердить, что шлюз слота ($LINK_IF) — эта машина, нечем: линк не трогаю."
+        say "  Подними аплинк (awg-quick up <имя>) и примени конфигурацию слота ещё раз."
+        GW_UNCONFIRMED=1
+        GW_STATUS="unconfirmed"
     fi
 fi
 write_status() {   # $1 = состояние линка
@@ -389,12 +425,21 @@ fi
 [ -n "$AWG_QUICK" ] || { say "ОШИБКА: awg-quick не найден на ХОСТЕ."; \
     say "  Собери amneziawg-tools той же версии, что и модуль ядра."; exit 1; }
 if [ "$GW_FOREIGN" = "1" ]; then
-    say "  линк не поднимаю (помечен другой шлюз); если был поднят — опускаю"
+    # Юнит обвязки НЕ выключаем: он идемпотентен и при следующем старте
+    # перепроверит пометку сам. Выключенный юнит означал ручное вмешательство
+    # даже там, где машина шлюзом осталась.
+    say "  линк не поднимаю (слот помечен другому устройству); если был поднят — опускаю"
     run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
-    run "systemctl disable awg-link-gw.service 2>/dev/null || true"
     write_status "foreign"
     say ""
-    say "Готово частично: конфиг и скрипт на месте, линк лежит до пометки этой машины шлюзом."
+    say "Готово частично: конфиг и скрипт на месте, линк лежит до пометки этой машины шлюзом слота."
+    exit 0
+fi
+if [ "$GW_UNCONFIRMED" = "1" ]; then
+    say "  линк не трогаю (аплинк не найден — шлюз слота не подтверждён)"
+    write_status "unconfirmed"
+    say ""
+    say "Готово частично: конфиг и скрипт на месте, линк — как был, до подъёма аплинка."
     exit 0
 fi
 if ip link show "$LINK_IF" >/dev/null 2>&1 && [ "$LINK_SAME" = "1" ]; then
@@ -590,8 +635,8 @@ Description=awg-bot: линк до ВПС и изоляция клиентов (
 # хостовой awg-quick. С Requires=docker.service не стартовавший (или снесённый)
 # docker уносил за собой весь обвяз шлюза — молча, и обнаруживалось это как
 # «интернета за шлюзом нет» уже со стороны ВПС.
-After=network-online.target
-Wants=network-online.target
+After=network-online.target${UPLINK_IF:+ awg-quick@$UPLINK_IF.service}
+Wants=network-online.target${UPLINK_IF:+ awg-quick@$UPLINK_IF.service}
 
 [Service]
 Type=oneshot

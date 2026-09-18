@@ -45,10 +45,11 @@ def gateway_panel(st) -> str:
     mark = getattr(st, "mark_status", "") or ""
     if mark and mark != "confirmed":
         # Статусы производит ровно один источник — routing-gw-setup.sh:
-        # unmarked | confirmed | foreign. Прежний «released» остался от снятой
-        # схемы release-токенов, и ветка была недостижимой.
+        # unmarked | confirmed | foreign | unconfirmed. Прежний «released»
+        # остался от снятой схемы release-токенов, и ветка была недостижимой.
         parts.append({"unmarked": "🛰 Шлюз в основном боте не назначен — перешли ему сообщение из отчёта",
-                      "foreign": "⚠️ В основном боте назначен другой шлюз — линк лежит"}
+                      "foreign": "⚠️ Шлюз этого слота — другое устройство, линк лежит",
+                      "unconfirmed": "⚠️ Аплинк этой машины не найден — шлюз не подтверждён"}
                      .get(mark, f"🛰 Пометка: {_e(mark)}"))
     parts.append("")
 
@@ -141,8 +142,10 @@ GW_BUNDLE_PASSPHRASE_QUESTION = (
 
 def gateway_claim_forward_text(token: str, status: str) -> str:
     head = ("🛰 <b>Шлюз в основном боте не назначен.</b>" if status == "unmarked" else
-            "⚠️ <b>В основном боте назначен другой шлюз.</b> Линк на этой машине лежит: "
-            "смени шлюз в настройках основного бота (🔁 Сменить шлюз).")
+            "⚠️ <b>Аплинк этой машины не найден.</b> Подтвердить шлюз нечем: подними аплинк "
+            "и примени конфигурацию ещё раз." if status == "unconfirmed" else
+            "⚠️ <b>Шлюз этого слота — другое устройство.</b> Линк на этой машине лежит: "
+            "смени шлюз в настройках основного бота (🔁 Заменить устройство).")
     return (head + "\n\nЗапасной путь — перешли это сообщение основному боту как есть: "
             "он найдёт это устройство по ключу, назначит его шлюзом и выпустит конфигурацию; "
             f"её примени здесь ещё раз.\n\n<code>{_e(token)}</code>")
@@ -160,12 +163,16 @@ def gateway_apply_report(st: dict) -> str:
     if link == "up":
         lines.append("линк поднят")
     elif link == "foreign":
-        lines.append("линк лежит: в основном боте назначен другой шлюз")
+        lines.append("линк лежит: шлюз этого слота — другое устройство")
+    elif link == "unconfirmed":
+        lines.append("линк не тронут: аплинк этой машины не найден")
     gs = st.get("GW_STATUS", "")
     if gs == "confirmed":
         lines.append("шлюз подтверждён")
     elif gs == "unmarked":
         lines.append("шлюз в основном боте не назначен")
+    elif gs == "unconfirmed":
+        lines.append("шлюз не подтверждён")
     if not lines:
         return ""
     text = ", ".join(lines)
