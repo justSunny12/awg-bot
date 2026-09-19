@@ -383,3 +383,16 @@ def test_uplink_gets_mss_clamp_next_to_its_masquerade(script):
     fwd = body.split("chain forward", 1)[1].split("}", 1)[0]
     assert "$UPLINK_MSS" in fwd
     assert script.index('UPLINK_MSS=""') < script.index("cat <<GUARDEOF")
+
+
+def test_peer_subnets_are_let_in_from_the_link_above_the_private_drop(script):
+    """Доступ между подсетями за шлюзами: чужие подсети — по источнику, выше
+    drop по приватным; набор из PEER_HOME_NETS бандла, закреплён в юните."""
+    assert re.search(r'^PEER_HOME_NETS="\$\(printf .*tr -cd \'0-9\./ \'', script, re.M)
+    assert 'PEER_ELEMS="$(ipv4_list $PEER_HOME_NETS)"' in script
+    body = script.split("GUARDEOF", 1)[1]
+    assert "set peer_nets4 {" in body
+    fwd = script.split("chain forward {\n        type filter hook forward priority filter; policy accept;", 1)[1].split("}", 1)[0]
+    assert fwd.index('ip saddr @peer_nets4 accept') < fwd.index('ip daddr @private4 drop')
+    unit = script.split("cat > \"$UNIT\"", 1)[1].split("UNITEOF", 2)[1]
+    assert 'Environment="PEER_HOME_NETS=$PEER_HOME_NETS"' in unit

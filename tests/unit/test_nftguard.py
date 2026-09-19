@@ -482,3 +482,24 @@ def test_nat_only_form_needs_no_chains_without_tunnel_nets(host_mode, monkeypatc
     text = nftguard.render(nftguard.build_spec([]))
     assert "masquerade" not in text and "hook postrouting" not in text
     assert "hook input" not in text
+
+
+# ── доступ между подсетями за шлюзами (docs/gateway-lan.md, функция B) ───────
+
+def test_forward_between_links_opens_only_with_the_toggle_and_two_links(host_mode, monkeypatch):
+    """Транзит линк ↔ линк — по тумблеру и только при двух линках; без наборов
+    подсетей: что едет, ограничивает AllowedIPs на стороне шлюза, а таблица
+    собирается и из CLI без БД. Стоит после invalid drop, до правил туннеля."""
+    monkeypatch.setattr(nftguard, "link_ifaces", lambda: ["awglink", "awglink2"])
+    _conf(monkeypatch, **{"app.firewall.enabled": True})
+    text = nftguard.render(nftguard.build_spec(["10.9.1.5"]))
+    assert 'iifname { "awglink", "awglink2" } oifname { "awglink", "awglink2" } accept' not in text, "тумблер выключен"
+    _conf(monkeypatch, **{"app.firewall.enabled": True, "app.routing.peer_nets.enabled": True})
+    text = nftguard.render(nftguard.build_spec(["10.9.1.5"]))
+    lines = [ln.strip() for ln in text.splitlines()]
+    rule = 'iifname { "awglink", "awglink2" } oifname { "awglink", "awglink2" } accept'
+    assert rule in lines
+    fwd = lines[lines.index("chain forward {"):]
+    assert fwd.index("ct state invalid drop") < fwd.index(rule) < fwd.index("ip saddr @tunnel_nets4 accept")
+    monkeypatch.setattr(nftguard, "link_ifaces", lambda: ["awglink"])
+    assert "oifname { \"awglink\" } accept" not in nftguard.render(nftguard.build_spec(["10.9.1.5"])), "один линк — не с кем"

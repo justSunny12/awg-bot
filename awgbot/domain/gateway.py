@@ -476,6 +476,21 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                        "обвязка без маршрута GitHub в аплинк — агент не сможет обновляться; "
                        "перевыпусти конфигурацию шлюза с ВПС и примени её здесь")
 
+    def peer_nets_check(self, info: dict | None) -> GwCheck | None:
+        """Подсети за другими шлюзами (docs/gateway-lan.md, функция B): набор
+        peer_nets4 против PEER_HOME_NETS из юнита. Переменная пустая — проверки
+        нет: функции на этом шлюзе нет."""
+        from awgbot.infra import gwguard
+        want = gwguard.unit_env("PEER_HOME_NETS").split()
+        if not want:
+            return None
+        present = (info or {}).get("sets", {}).get("peer_nets4", set())
+        missing = [n for n in want if n not in present]
+        return GwCheck("подсети за другими шлюзами", not missing,
+                       "" if not missing else
+                       f"в таблице нет {', '.join(missing)}; перевыпусти конфигурацию шлюза с ВПС "
+                       "и примени её здесь")
+
     def tg_mark_ensure(self, missing: list[str] | None = None) -> int:
         """Таблицу правит только скрипт: недостающее восстанавливаем рестартом
         юнита (скрипт идемпотентен, линк без нужды не трогает). Не чаще раза в
@@ -882,6 +897,9 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                               f"нет в таблице {len(missing)} диапазонов — "
                               f"агент перевыставит таблицу"))
         checks.append(self.gh_route_check(self._guard_info))
+        peer_check = self.peer_nets_check(self._guard_info)
+        if peer_check is not None:
+            checks.append(peer_check)
         ok_link = st.link_up and st.handshake_age is not None
         checks.append(GwCheck("линк", ok_link, "" if ok_link else
                               ("интерфейс лежит" if not st.link_up else "хендшейка не было")))

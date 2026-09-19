@@ -93,6 +93,8 @@ class GuardSpec:
     nat: bool = True                  # host: MASQUERADE подсетей туннеля наружу
     nat_exclude_ifs: list[str] = field(default_factory=list)  # куда НЕ маскарадить: awg-интерфейсы, линк
     filter: bool = True               # False — NAT-only форма (файервол выключен)
+    peer_link_ifs: list[str] = field(default_factory=list)    # линки, между которыми открыт транзит
+                                                              # (docs/gateway-lan.md, функция B)
 
 
 def enabled() -> bool:
@@ -250,7 +252,19 @@ def build_spec(admin_ips) -> GuardSpec:
         own_forward=host_mode, unresolved=bad,
         nat=host_mode, nat_exclude_ifs=_nat_exclude_ifs() if host_mode else [],
         filter=enabled(),
+        peer_link_ifs=_peer_link_ifs() if host_mode else [],
     )
+
+
+def _peer_link_ifs() -> list[str]:
+    """Линки, между которыми открыт транзит (доступ между подсетями за
+    шлюзами): тумблер включён и линков два и больше. Без наборов подсетей —
+    в линк со стороны шлюза попадает только то, что пропустил его AllowedIPs,
+    а таблица собирается и из CLI без БД."""
+    if not settings.get_bool("app.routing.peer_nets.enabled", False):
+        return []
+    links = link_ifaces()
+    return links if len(links) >= 2 else []
 
 
 def _tunnel_ifs() -> list[str]:
@@ -399,6 +413,11 @@ def render(spec: GuardSpec) -> str:
             "        ct state established,related accept",
             "        ct state invalid drop",
         ]
+        if spec.peer_link_ifs:
+            # линк ↔ линк: локальные сети за шлюзами друг до друга (функция B);
+            # что именно едет, ограничивает AllowedIPs на стороне шлюза
+            links = _ifs(spec.peer_link_ifs)
+            out.append(f"        iifname {links} oifname {links} accept")
         if spec.tunnel_ifs:
             # пир → пир: только устройствам админа (шлюз, свои устройства);
             # остальным клиентам друг до друга пути нет

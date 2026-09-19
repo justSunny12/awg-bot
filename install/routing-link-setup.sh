@@ -55,6 +55,16 @@ CLIENT_SUBNET="${CLIENT_SUBNET:-${_cfg_subnet:-10.8.1.0/24}}"
 CONF_DIR="${CONF_DIR:-/etc/amnezia/amneziawg}"
 CONF="$CONF_DIR/$LINK_IF.conf"
 GW_CONF_OUT="${GW_CONF_OUT:-/root/gw-$LINK_IF.conf}"
+# Подсети за другими шлюзами (docs/gateway-lan.md, функция B): в AllowedIPs
+# пира ВПС в конфиге шлюза — тогда awg-quick сам ставит маршруты в них через
+# линк. Приходит от бота при сборке; пусто — как раньше.
+PEER_HOME_NETS="$(printf '%s' "${PEER_HOME_NETS:-}" | tr -cd '0-9./ ' | tr ' ' '\n' \
+    | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$' | paste -sd' ' - 2>/dev/null || true)"
+gw_allowed_ips() {             # клиентская подсеть, /30 линка, чужие подсети — через запятую
+    _a="$CLIENT_SUBNET, $LINK_CIDR"
+    for _n in $PEER_HOME_NETS; do _a="$_a, $_n"; done
+    printf '%s' "$_a"
+}
 # Бандл первого линка — под прежним именем: его ждут инструкции и установщик
 # на шлюзе; у остальных слотов имя с интерфейсом, чтобы файлы не перетирались.
 if [ "$LINK_IF" = "awglink" ]; then
@@ -214,6 +224,14 @@ emit_gw_bundle() {
         fi
     fi
 
+    # AllowedIPs пира ВПС зависит от подсетей за другими шлюзами, а те меняются
+    # после --apply: правим строку в источнике при каждой сборке, как порт.
+    _want="AllowedIPs = $(gw_allowed_ips)"
+    if [ -f "$GW_CONF_OUT" ] && ! grep -qxF "$_want" "$GW_CONF_OUT"; then
+        say "AllowedIPs в $GW_CONF_OUT отстал (подсети за другими шлюзами) — правлю"
+        sed "s|^AllowedIPs = .*\$|$_want|" "$GW_CONF_OUT" > "$GW_CONF_OUT.tmp" \
+            && mv "$GW_CONF_OUT.tmp" "$GW_CONF_OUT"
+    fi
     {
         cat <<HDREOF
 #!/bin/sh
@@ -252,6 +270,7 @@ HDREOF
         printf 'LAN_MODE="%s"\nexport LAN_MODE\n' "$(printf '%s' "${LAN_MODE:-0}" | tr -cd '01' | cut -c1)"
         printf 'HOME_SUBNETS="%s"\nexport HOME_SUBNETS\n' "$(printf '%s' "${HOME_SUBNETS:-}" | tr -cd '0-9./ ')"
         printf 'RESOLVER="%s"\nexport RESOLVER\n' "$(printf '%s' "${RESOLVER:-}" | tr -cd '0-9.')"
+        printf 'PEER_HOME_NETS="%s"\nexport PEER_HOME_NETS\n' "$PEER_HOME_NETS"
         # Имя ВПС — для панели агента («Линк до …»): на шлюзе взять его неоткуда.
         printf 'SERVER_NAME="%s"\n' "$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9._-' | cut -c1-64)"
         cat <<'BODYEOF'
@@ -566,7 +585,7 @@ H4 = $H4
 PublicKey = $VPS_PUB
 PresharedKey = $PSK
 Endpoint = $ENDPOINT_HOST:$LINK_PORT
-AllowedIPs = $CLIENT_SUBNET, $LINK_CIDR
+AllowedIPs = $(gw_allowed_ips)
 PersistentKeepalive = 25
 GWEOF
 chmod 600 "$GW_CONF_OUT"

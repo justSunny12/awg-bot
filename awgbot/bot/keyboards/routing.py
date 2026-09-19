@@ -107,9 +107,11 @@ def gateway_device_actions(dev, back_target: str, slot: int = 0) -> InlineKeyboa
     return kb.as_markup()
 
 
-def gateway_list(states, *, can_add: bool, failover_on: bool) -> InlineKeyboardMarkup:
+def gateway_list(states, *, can_add: bool, failover_on: bool,
+                 peer_nets_on: bool | None = None) -> InlineKeyboardMarkup:
     """Список слотов (docs/gateway-failover.md 6.2): по кнопке на слот,
-    добавить, тумблер автопереключения (только при двух и более)."""
+    добавить, тумблер автопереключения и тумблер доступа между подсетями
+    (docs/gateway-lan.md, функция B) — только при двух и более."""
     kb = InlineKeyboardBuilder()
     rows = []
     for st in states:
@@ -127,6 +129,10 @@ def gateway_list(states, *, can_add: bool, failover_on: bool) -> InlineKeyboardM
         kb.button(text=f"🔁 Автопереключение: {'вкл' if failover_on else 'выкл'}",
                   callback_data=GwSlotCB(action="failover"))
         rows.append(1)
+        if peer_nets_on is not None:
+            kb.button(text=f"↔️ Доступ между подсетями: {'вкл' if peer_nets_on else 'выкл'}",
+                      callback_data=GwSlotCB(action="peer_ask"))
+            rows.append(1)
     kb.row(_back("rt"))
     kb.adjust(*rows, 1)
     return kb.as_markup()
@@ -224,6 +230,15 @@ def gateway_lan_confirm(slot: int, on: bool) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="⬅️ Отмена", callback_data=GwSlotCB(action="card", slot=slot))
     kb.button(text="Включить" if on else "Выключить", callback_data=GwSlotCB(action="lan_yes", slot=slot))
+    kb.adjust(2)
+    return kb.as_markup()
+
+
+def gateway_peer_confirm(on: bool) -> InlineKeyboardMarkup:
+    """Подтверждение доступа между подсетями за шлюзами: «Отмена» первой."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Отмена", callback_data=GwSlotCB(action="list"))
+    kb.button(text="Включить" if on else "Выключить", callback_data=GwSlotCB(action="peer_yes"))
     kb.adjust(2)
     return kb.as_markup()
 

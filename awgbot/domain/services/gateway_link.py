@@ -218,11 +218,94 @@ class GatewayLinkMixin:
         return dns1 if resolver.is_private(dns1) and resolver.installed() else ""
 
     def _lan_env(self, gw) -> dict:
-        """Переменные функции A для скрипта обвязки: LAN_MODE, HOME_SUBNETS
-        (первая подсеть даёт LAN-интерфейс и адрес резолвера), RESOLVER."""
+        """Переменные функций A и B для скрипта обвязки: LAN_MODE, HOME_SUBNETS
+        (первая подсеть даёт LAN-интерфейс и адрес резолвера), RESOLVER,
+        PEER_HOME_NETS (подсети за другими шлюзами — в AllowedIPs и файервол)."""
         return {"LAN_MODE": "1" if gw.lan_mode else "0",
                 "HOME_SUBNETS": " ".join(gw.home_subnets),
-                "RESOLVER": self.gateway_resolver_addr(gw) if gw.lan_mode else ""}
+                "RESOLVER": self.gateway_resolver_addr(gw) if gw.lan_mode else "",
+                "PEER_HOME_NETS": " ".join(self.gateway_peer_nets(gw.id))}
+
+    # ── доступ между подсетями за шлюзами (docs/gateway-lan.md, функция B) ───
+    _PEER_NETS_KEY = "app.routing.peer_nets.enabled"
+
+    def peer_nets_enabled(self) -> bool:
+        return settings.get_bool(self._PEER_NETS_KEY, False)
+
+    @staticmethod
+    def _nets_overlap(a: list[str], b: list[str]) -> list[str]:
+        """Подсети из a, пересекающиеся (в т.ч. вложенностью) с какой-либо из b."""
+        import ipaddress
+        out = []
+        for x in a:
+            try:
+                nx = ipaddress.ip_network(x, strict=False)
+            except ValueError:
+                continue
+            for y in b:
+                try:
+                    if nx.overlaps(ipaddress.ip_network(y, strict=False)):
+                        out.append(x)
+                        break
+                except ValueError:
+                    continue
+        return out
+
+    def gateway_peer_nets(self, slot_id: int) -> list[str]:
+        """Подсети за другими шлюзами для слота: тумблер включён, у обоих слотов
+        включено «за шлюзом — без VPN» (ровно оно гарантирует, что ответ найдёт
+        дорогу назад), без дублей, без пересекающихся с собственными."""
+        if not self.peer_nets_enabled():
+            return []
+        me = self.db.gateway(slot_id)
+        if me is None or not me.lan_mode:
+            return []
+        out: list[str] = []
+        for g in self.db.gateways():
+            if g.id == me.id or not g.lan_mode:
+                continue
+            bad = set(self._nets_overlap(g.home_subnets, me.home_subnets))
+            for n in g.home_subnets:
+                if n not in bad and n not in out:
+                    out.append(n)
+        return out
+
+    def gateway_peer_nets_info(self) -> dict:
+        """Состояние функции B для экрана «Шлюзы»: {'enabled', 'state', …}.
+        state: off | no_lan (слоты без режима без VPN) | no_nets (без подсетей) |
+        overlap (пересечение) | ok (pairs — [(display, nets, display, nets)])."""
+        slots = self.db.gateways()
+        info: dict = {"enabled": self.peer_nets_enabled(), "state": "off", "slots": len(slots)}
+        if not info["enabled"]:
+            return info
+        no_lan = [g for g in slots if not g.lan_mode]
+        if len(slots) - len(no_lan) < 2:
+            info["state"] = "no_lan"
+            info["who"] = [self._gw_display(g) for g in no_lan]
+            return info
+        lan = [g for g in slots if g.lan_mode]
+        no_nets = [g for g in lan if not g.home_subnets]
+        if no_nets:
+            info["state"] = "no_nets"
+            info["who"] = [self._gw_display(g) for g in no_nets]
+            return info
+        for i, a in enumerate(lan):
+            for b in lan[i + 1:]:
+                ov = self._nets_overlap(a.home_subnets, b.home_subnets)
+                if ov:
+                    info["state"] = "overlap"
+                    info["who"] = [self._gw_display(a), self._gw_display(b)]
+                    info["nets"] = ov
+                    return info
+        info["state"] = "ok"
+        info["pairs"] = [(self._gw_display(g), list(g.home_subnets)) for g in lan]
+        return info
+
+    def set_peer_nets(self, on: bool) -> None:
+        """Тумблер функции B. Таблицу ВПС перевыставит хук настроек (форвардинг
+        линк ↔ линк действует сразу); конфигурации шлюзов — перевыпуск, о нём
+        напомнит снимок зависимостей."""
+        settings.set_value(self._PEER_NETS_KEY, on)
 
     def gateway_set_lan_mode(self, slot_id: int, on: bool) -> dict:
         """Включить/выключить «за шлюзом — без VPN» у слота. Включение требует
@@ -535,14 +618,20 @@ class GatewayLinkMixin:
         self.db.gateway_update(gw.id, home_subnets=kept)
         conflict = None
         for g in self.db.gateways():
-            if g.id != gw.id and set(g.home_subnets) & set(kept):
+            if g.id != gw.id and self._nets_overlap(kept, g.home_subnets):   # и вложенность
                 conflict = g
                 break
         try:
             self._ensure_gateway_policy()
         except routing.RoutingError as e:
             log.warning("gateway_set_home_subnets: маршруты не доведены: %s", e)
-        return {"kept": kept, "rejected": rejected, "conflict": conflict}
+        # кому перевыпускать конфигурацию из-за этих подсетей (функция B)
+        others = [self._gw_display(g) for g in self.db.gateways()
+                  if g.id != gw.id and kept and kept != list(gw.home_subnets)
+                  and self.gateway_peer_nets(g.id)] if self.peer_nets_enabled() and gw.lan_mode else []
+        return {"kept": kept, "rejected": rejected, "conflict": conflict,
+                "conflict_name": self._gw_display(conflict).strip("«»") if conflict is not None else "",
+                "peer_others": others}
 
     def gateway_slots_policy(self) -> list[tuple[int, str, list[str]]]:
         """[(слот, интерфейс, подсети)] для ensure_policy: домашняя подсеть,
@@ -740,6 +829,9 @@ class GatewayLinkMixin:
         else:
             st["ping_ms"] = None
         st["ext_ip"] = self.gateway_external_ip(slot_id)
+        # функция B (docs/gateway-lan.md): пускают ли сюда из-за других шлюзов
+        st["peer_nets_enabled"] = self.peer_nets_enabled()
+        st["peer_nets"] = self.gateway_peer_nets(int(slot_id))
         return st
 
     def gateway_state_for_device(self, device_id: int) -> Optional[dict]:
@@ -764,16 +856,17 @@ class GatewayLinkMixin:
 
     def _gw_bundle_deps(self, gw) -> str:
         env = self._lan_env(gw)
-        return f"lan={env['LAN_MODE']};nets={env['HOME_SUBNETS']};resolver={env['RESOLVER']}"
+        return (f"lan={env['LAN_MODE']};nets={env['HOME_SUBNETS']};resolver={env['RESOLVER']};"
+                f"peer={env['PEER_HOME_NETS']}")
 
     @staticmethod
     def _gw_deps_changed(before: str, after: str) -> list[str]:
         """Что именно разошлось — для напоминания своим текстом."""
         names = {"lan": "функция «За шлюзом — без VPN»", "nets": "локальные подсети",
-                 "resolver": "резолвер сервера"}
+                 "resolver": "резолвер сервера", "peer": "подсети за другими шлюзами"}
         b = dict(x.split("=", 1) for x in before.split(";") if "=" in x)
         a = dict(x.split("=", 1) for x in after.split(";") if "=" in x)
-        return [names[k] for k in ("lan", "nets", "resolver") if b.get(k, "") != a.get(k, "")]
+        return [names[k] for k in ("lan", "nets", "resolver", "peer") if b.get(k, "") != a.get(k, "")]
 
     def _gw_ssh_allow(self) -> list[str]:
         return sorted(set(self.db.admin_device_addresses(config.ADMIN_ID)))

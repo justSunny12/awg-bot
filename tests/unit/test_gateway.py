@@ -521,3 +521,16 @@ def test_egress_alert_has_its_own_short_streak(svc, monkeypatch):
     assert not any("не выходит наружу" in n.text for n in first)
     second = svc.monitor_tick()
     assert any("не выходит наружу" in n.text for n in second)
+
+
+def test_peer_nets_check_exists_only_when_the_bundle_brought_subnets(svc, monkeypatch):
+    """Набор peer_nets4 против PEER_HOME_NETS из юнита; переменная пустая —
+    функции на шлюзе нет, и проверки нет."""
+    from awgbot.infra import gwguard
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: "")
+    assert svc.peer_nets_check({"sets": {}}) is None
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: "192.168.1.0/24 192.168.2.0/24" if k == "PEER_HOME_NETS" else "")
+    c = svc.peer_nets_check({"sets": {"peer_nets4": {"192.168.1.0/24"}}})
+    assert c.ok is False and "192.168.2.0/24" in c.detail and "перевыпусти конфигурацию" in c.detail
+    assert svc.peer_nets_check({"sets": {"peer_nets4": {"192.168.1.0/24", "192.168.2.0/24"}}}).ok is True
+    assert svc.peer_nets_check(None).ok is False

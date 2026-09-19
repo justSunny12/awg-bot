@@ -337,3 +337,35 @@ def test_uplink_policy_detects_missing_rule_and_route_and_restores_them(monkeypa
     wrong = '[{"dst":"default","dev":"awglink","scope":"link","flags":[]}]'
     monkeypatch.setattr(subprocess, "run", _ip_stub(present_rules, wrong, calls))
     assert gwguard.uplink_policy("awg0")["route"] is False
+
+
+def test_gateway_conf_allowed_ips_carry_peer_subnets_and_bundle_refreshes_them(tmp_path):
+    """Чужие подсети — в AllowedIPs пира ВПС в конфиге шлюза: awg-quick сам
+    ставит маршруты. Меняются после --apply — --bundle правит строку в
+    источнике, как порт в Endpoint."""
+    link = (ROOT / "install" / "routing-link-setup.sh").read_text(encoding="utf-8").replace(
+        '[ "$(id -u)" = "0" ] || { echo "нужен root"; exit 1; }', ":", 1)
+    assert "AllowedIPs = $(gw_allowed_ips)" in link
+    inst = tmp_path / "install"; inst.mkdir()
+    (inst / "routing-link-setup.sh").write_text(link, encoding="utf-8")
+    (inst / "routing-gw-setup.sh").write_text((ROOT / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8"), encoding="utf-8")
+    conf = tmp_path / "gw.conf"
+    conf.write_text("[Interface]\nAddress = 10.99.99.2/30\nPrivateKey = X==\n\n[Peer]\n"
+                    "Endpoint = 203.0.113.10:443\nAllowedIPs = 10.9.1.0/24, 10.99.99.0/30\n", encoding="utf-8")
+    (tmp_path / "linkconf").mkdir(); (tmp_path / "linkconf" / "awglink.conf").write_text("[Interface]\nListenPort = 443\nPrivateKey = X==\n", encoding="utf-8")
+    out = tmp_path / "b.sh"
+    env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "CONF_DIR": str(tmp_path / "linkconf"),
+           "GW_CONF_OUT": str(conf), "GW_BUNDLE_OUT": str(out), "CLIENT_SUBNET": "10.9.1.0/24",
+           "PEER_HOME_NETS": "192.168.1.0/24 192.168.2.0/24; rm -rf /"}
+    r = subprocess.run(["sh", str(inst / "routing-link-setup.sh"), "--bundle"], cwd=tmp_path,
+                       capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    assert "AllowedIPs = 10.9.1.0/24, 10.99.99.0/30, 192.168.1.0/24, 192.168.2.0/24\n" in conf.read_text(encoding="utf-8")
+    text = out.read_text(encoding="utf-8")
+    assert re.search(r'^PEER_HOME_NETS="192\.168\.1\.0/24 192\.168\.2\.0/24"$', text, re.M), "мусор отсеян"
+    assert "AllowedIPs = 10.9.1.0/24, 10.99.99.0/30, 192.168.1.0/24, 192.168.2.0/24" in text
+    # без чужих подсетей — как раньше
+    env["PEER_HOME_NETS"] = ""
+    subprocess.run(["sh", str(inst / "routing-link-setup.sh"), "--bundle"], cwd=tmp_path,
+                   capture_output=True, text=True, env=env)
+    assert "AllowedIPs = 10.9.1.0/24, 10.99.99.0/30\n" in conf.read_text(encoding="utf-8")

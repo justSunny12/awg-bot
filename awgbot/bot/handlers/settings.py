@@ -363,9 +363,10 @@ async def _render_list(cb: CallbackQuery, services) -> None:
     states = await call(services.gateway_states)
     switched = await call(services.db.get_state, services._RT_SWITCHED_KEY)
     auto = settings.get_bool("app.routing.failover.enabled", True)
-    await edit(cb, texts.gateway_list_text(states, switched or "", auto),
+    peer = await call(services.gateway_peer_nets_info)
+    await edit(cb, texts.gateway_list_text(states, switched or "", auto, peer),
                kb.gateway_list(states, can_add=len(states) < config.ROUTING_GATEWAYS_MAX,
-                               failover_on=auto))
+                               failover_on=auto, peer_nets_on=peer["enabled"]))
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "list"))
@@ -398,6 +399,29 @@ async def gw_slot_failover(cb: CallbackQuery, services):
         return
     await _render_list(cb, services)
     await cb.answer("Автопереключение " + ("включено" if settings.get_bool(key, True) else "выключено"))
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "peer_ask"))
+async def gw_slot_peer_ask(cb: CallbackQuery, services):
+    """Доступ между подсетями за шлюзами (docs/gateway-lan.md, функция B):
+    диалог на месте списка. Включить можно и до того, как слоты готовы —
+    инфобокс скажет, чего не хватает."""
+    on = not await call(services.peer_nets_enabled)
+    await edit(cb, texts.gateway_peer_ask(on), kb.gateway_peer_confirm(on))
+    await cb.answer()
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "peer_yes"))
+async def gw_slot_peer_yes(cb: CallbackQuery, services):
+    on = not await call(services.peer_nets_enabled)
+    try:
+        await call(services.set_peer_nets, on)
+    except settings.SettingsWriteError as e:
+        await cb.answer(str(e), show_alert=True)
+        return
+    await _render_list(cb, services)
+    await cb.answer("Доступ между подсетями " + ("включён" if on else "выключен")
+                    + ": перевыпусти конфигурации шлюзов", show_alert=True)
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "pref"))

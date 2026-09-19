@@ -62,6 +62,10 @@ LAN_DOMAIN="/usr/local/sbin/awg-lan-domain.sh"
 LAN_MODE="${LAN_MODE:-0}"
 HOME_SUBNETS="${HOME_SUBNETS:-}"
 RESOLVER="${RESOLVER:-}"
+# Подсети за другими шлюзами (docs/gateway-lan.md, функция B): им из линка
+# открыт транзит в локальную сеть — по источнику, выше drop по приватным.
+PEER_HOME_NETS="$(printf '%s' "${PEER_HOME_NETS:-}" | tr -cd '0-9./ ' | tr ' ' '\n' \
+    | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$' | paste -sd' ' - 2>/dev/null || true)"
 GW_ETC="/etc/awg-gw"
 GUARD_FILE="$GW_ETC/guard.nft"           # таблица — источник для nft -f при каждом старте
 FW_ENV="$GW_ETC/firewall.env"            # ADMIN_IPS_EXTRA, правится на шлюзе (awg-bot firewall)
@@ -514,6 +518,7 @@ if [ "$MODE" = "plan" ]; then
     say "  0. шлюзовое устройство: ${GATEWAY_PUBKEY:+помечен, конфиг аплинка ставится машине с тем же ключом}${GATEWAY_PUBKEY:-не помечен}"
     say "  4. юнит awg-link-gw.service"
     say "  5. локальная сеть без VPN: ${LAN_MODE:-0} (подсети: ${HOME_SUBNETS:-—}; резолвер: ${RESOLVER:-запасной через аплинк})"
+    say "     подсети за другими шлюзами (транзит из линка): ${PEER_HOME_NETS:-—}"
     exit 0
 fi
 
@@ -787,6 +792,7 @@ say "  домашнюю сеть; прочее дропается."
 say "  Метки Telegram ($TG_MARK): агенту нужен Telegram через ВПС."
 command -v nft >/dev/null 2>&1 || { say "ОШИБКА: нет nft — apt install nftables"; exit 1; }
 ADMIN_ELEMS="$(ipv4_list $ADMIN_IPS $ADMIN_IPS_EXTRA)"
+PEER_ELEMS="$(ipv4_list $PEER_HOME_NETS)"
 say "  Устройства админа: ${ADMIN_ELEMS:-— (никому, кроме ВПС по линку)}"
 if [ "$MODE" = "plan" ]; then
     say "  would: записать $GUARD_FILE и применить: nft -f $GUARD_FILE"
@@ -842,6 +848,13 @@ GUARDEOF
 [ -n "$ADMIN_ELEMS" ] && printf '        elements = { %s }\n' "$ADMIN_ELEMS"
 cat <<GUARDEOF
     }
+    set peer_nets4 {
+        type ipv4_addr
+        flags interval
+GUARDEOF
+[ -n "$PEER_ELEMS" ] && printf '        elements = { %s }\n' "$PEER_ELEMS"
+cat <<GUARDEOF
+    }
 
     chain input {
         type filter hook input priority filter; policy accept;
@@ -861,6 +874,7 @@ cat <<GUARDEOF
 $UPLINK_MSS
         oifname "$LINK_IF" ct state established,related accept
         iifname "$LINK_IF" ip saddr @admin4 accept
+        iifname "$LINK_IF" ip saddr @peer_nets4 accept
         iifname "$LINK_IF" ip daddr @private4 drop
         iifname "$LINK_IF" accept
     }
@@ -920,6 +934,7 @@ Environment=UPLINK_B64=$UPLINK_B64
 Environment=LAN_MODE=$LAN_MODE
 Environment="HOME_SUBNETS=$HOME_SUBNETS"
 Environment=RESOLVER=$RESOLVER
+Environment="PEER_HOME_NETS=$PEER_HOME_NETS"
 EnvironmentFile=-$FW_ENV
 # Зовём этот же скрипт: он идемпотентен, источник истины один.
 ExecStart=$SELF --apply $HOST_CONF_DIR/$LINK_IF.conf

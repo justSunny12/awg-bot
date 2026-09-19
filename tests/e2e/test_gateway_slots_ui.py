@@ -496,3 +496,98 @@ async def test_lan_mode_travels_in_the_bundle_and_reminds_on_change(services, sl
     services.gateway_set_lan_mode(1, False)
     notes = services.gw_bundle_drift_notes()
     assert len(notes) == 1 and "За шлюзом — без VPN" in notes[0].text and "резолвер сервера" in notes[0].text
+
+
+# ── доступ между подсетями за шлюзами (docs/gateway-lan.md, функция B) ───────
+
+def _peer_conf(monkeypatch):
+    store = {"app.routing.enabled": True, "app.routing.failover.enabled": True,
+             "app.routing.peer_nets.enabled": False}
+    monkeypatch.setattr(settings, "get_bool", lambda k, d=False: bool(store.get(k, d)))
+    monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v) or [k])
+    return store
+
+
+def test_peer_nets_are_derived_only_between_lan_mode_slots(services, slots, monkeypatch):
+    """Чужие подсети слота: тумблер, оба слота без VPN, без пересечений — иначе
+    пусто. Пересечение — предупреждение при вводе, не отказ; исчезло — пара
+    вернулась сама."""
+    store = _peer_conf(monkeypatch)
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    services.gateway_set_home_subnets(1, "192.168.1.0/24")
+    services.gateway_set_home_subnets(2, "192.168.68.0/24")
+    assert services.gateway_peer_nets(1) == [] and services.gateway_peer_nets_info()["state"] == "off"
+    store["app.routing.peer_nets.enabled"] = True
+    info = services.gateway_peer_nets_info()
+    assert info["state"] == "no_lan" and len(info["who"]) == 2
+    assert services.gateway_peer_nets(1) == [], "без режима без VPN ответы не найдут дорогу назад"
+    services.db.gateway_update(1, lan_mode=1); services.db.gateway_update(2, lan_mode=1)
+    assert services.gateway_peer_nets(1) == ["192.168.68.0/24"] and services.gateway_peer_nets(2) == ["192.168.1.0/24"]
+    info = services.gateway_peer_nets_info()
+    assert info["state"] == "ok" and [n for _, n in info["pairs"]] == [["192.168.1.0/24"], ["192.168.68.0/24"]]
+    # вложенность — тоже пересечение; ввод принят, пара выпала
+    res = services.gateway_set_home_subnets(2, "192.168.0.0/16")
+    assert res["conflict"] is not None and res["conflict"].id == 1
+    assert services.gateway_peer_nets(1) == [] and services.gateway_peer_nets(2) == []
+    assert services.gateway_peer_nets_info()["state"] == "overlap"
+    res = services.gateway_set_home_subnets(2, "192.168.68.0/24")
+    assert res["conflict"] is None and res["peer_others"] == ["«NASPi»"], "кому перевыпускать"
+    assert services.gateway_peer_nets(1) == ["192.168.68.0/24"]
+    env, _ = services._gw_bundle_env(services.db.gateway(1))
+    assert env["PEER_HOME_NETS"] == "192.168.68.0/24"
+    services.gateway_set_home_subnets(2, "")
+    assert services.gateway_peer_nets_info()["state"] == "no_nets"
+
+
+async def test_peer_nets_toggle_has_a_dialog_and_shows_state_in_the_list(services, slots, fake_bot, monkeypatch):
+    store = _peer_conf(monkeypatch)
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_list(cb, services, FakeState())
+    text, labels = _screen(nav)
+    assert "↔️ Доступ между подсетями: выкл" in labels and "Доступ между подсетями за шлюзами выключен" in text
+    assert labels.index("🔁 Автопереключение: вкл") + 1 == labels.index("↔️ Доступ между подсетями: выкл"), "сразу под автопереключением"
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_peer_ask(cb, services)
+    text, labels = _screen(nav)
+    assert "клиентам VPN в них хода нет" in text and "<b>весь</b> трафик" in text and labels == ["⬅️ Отмена", "Включить"]
+    await sh.gw_slot_peer_yes(cb, services)
+    assert store["app.routing.peer_nets.enabled"] is True
+    text, labels = _screen(nav)
+    assert "↔️ Доступ между подсетями: вкл" in labels and "не включено «За шлюзом — без VPN»" in text
+    services.db.gateway_update(1, lan_mode=1); services.db.gateway_update(2, lan_mode=1)
+    services.gateway_set_home_subnets(1, "192.168.1.0/24"); services.gateway_set_home_subnets(2, "192.168.68.0/24")
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_list(cb, services, FakeState())
+    text, _ = _screen(nav)
+    assert "включён: 192.168.1.0/24 («NASPi») ↔ 192.168.68.0/24 («Pi2»)" in text
+    # карточка: подсеть этого шлюза — цель для других
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=2), services, FakeState())
+    text, _ = _screen(nav)
+    assert "↔️ Доступ из подсетей других шлюзов до <code>192.168.68.0/24</code> включён" in text
+    # выключение
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_peer_ask(cb, services)
+    assert "закроется сразу" in _screen(nav)[0]
+    await sh.gw_slot_peer_yes(cb, services)
+    assert store["app.routing.peer_nets.enabled"] is False
+
+
+def test_peer_nets_change_reminds_about_reissue(services, slots, monkeypatch):
+    store = _peer_conf(monkeypatch)
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    services.db.gateway_update(1, lan_mode=1); services.db.gateway_update(2, lan_mode=1)
+    services.gateway_set_home_subnets(1, "192.168.1.0/24"); services.gateway_set_home_subnets(2, "192.168.68.0/24")
+    monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "")
+    for sid in (1, 2):
+        services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, sid),
+                              services._gw_bundle_deps(services.db.gateway(sid)))
+    assert services.gw_bundle_drift_notes() == []
+    store["app.routing.peer_nets.enabled"] = True
+    notes = services.gw_bundle_drift_notes()
+    assert len(notes) == 2 and all("подсети за другими шлюзами" in n.text for n in notes), "обоим слотам, один раз"
+    assert services.gw_bundle_drift_notes() == []

@@ -155,7 +155,29 @@ def settings_routing_gateway_block(states: list) -> str:
     return "\n".join(lines)
 
 
-def gateway_list_text(states: list, switched_at: str = "", auto_on: bool = True) -> str:
+def peer_nets_line(info: dict) -> str:
+    """Строка состояния функции B на экране «Шлюзы» (docs/gateway-lan.md §6)."""
+    st = info.get("state", "off")
+    if st == "off":
+        return "↔️ Доступ между подсетями за шлюзами выключен."
+    who = info.get("who") or []
+    if st == "no_lan":
+        return ("↔️ Доступ между подсетями за шлюзами включён, но у " + ", ".join(_e(w) for w in who)
+                + " не включено «За шлюзом — без VPN» — без этого ответы не найдут дорогу назад.")
+    if st == "no_nets":
+        return ("↔️ Доступ между подсетями за шлюзами включён, но у " + ", ".join(_e(w) for w in who)
+                + " локальные подсети не заданы — задай их в карточке шлюза.")
+    if st == "overlap":
+        nets = ", ".join(_e(n) for n in info.get("nets") or [])
+        return (f"↔️ Доступ между подсетями за шлюзами включён, но недоступен: подсети "
+                f"{_e(who[0])} и {_e(who[1])} пересекаются ({nets}). Смени локальную подсеть "
+                "одного из шлюзов.")
+    pairs = " ↔ ".join(f"{', '.join(_e(n) for n in nets)} ({_e(name)})" for name, nets in info.get("pairs") or [])
+    return f"↔️ Доступ между подсетями за шлюзами включён: {pairs}."
+
+
+def gateway_list_text(states: list, switched_at: str = "", auto_on: bool = True,
+                      peer_info: dict | None = None) -> str:
     lines = ["🛰 <b>Шлюзы</b>", "",
              "Трафик несёт один шлюз, второй ждёт в резерве. Когда активный перестаёт "
              "отвечать, а резерв в порядке, бот перекладывает трафик сам — и остаётся на "
@@ -171,6 +193,8 @@ def gateway_list_text(states: list, switched_at: str = "", auto_on: bool = True)
     if not auto_on:
         lines.append("🔁 <b>Автопереключение выключено:</b> при отказе активного шлюза бот "
                      "выключит условную маршрутизацию, а не переключит её на резервный шлюз.")
+    if peer_info is not None and len(states) > 1:
+        lines.append(peer_nets_line(peer_info))
     if switched_at:
         try:
             when = timeutil.fmt_dt(timeutil.parse_iso(switched_at))
@@ -204,12 +228,17 @@ def gateway_card_text(state: dict, states: list) -> str:
         home += "\nУстройства админа достают до них через этот линк."
     if gw.lan_mode:
         home += "\n🏠 За шлюзом — без VPN: включено"
-    conflict = next((s for s in others if set(s["gateway"].home_subnets) & set(nets)), None)
+    if state.get("peer_nets"):
+        # подсеть этого шлюза — цель, куда пускают из-за других (функция B)
+        home += ("\n↔️ Доступ из подсетей других шлюзов до "
+                 + ", ".join(f"<code>{_e(n)}</code>" for n in nets) + " включён")
+    conflict = next((s for s in others if _nets_overlap(nets, s["gateway"].home_subnets)), None)
     if conflict is not None:
+        ov = ", ".join(_e(n) for n in _nets_overlap(nets, conflict["gateway"].home_subnets))
         first = min([state] + others, key=lambda s: (0 if s.get("preferred") else 1, s["gateway"].id))
-        if first["gateway"].id != gw.id:
-            home += (f"\n⚠️ Та же подсеть у {slot_short(conflict)}: маршрут достаётся ему, до этой "
-                     "сети устройства админа не дойдут. Смени подсеть в одной из сетей.")
+        route = ("маршрут достаётся ему, " if first["gateway"].id != gw.id else "")
+        home += (f"\n⚠️ {ov} пересекается с подсетью {slot_short(conflict)}: {route}а доступ без VPN "
+                 "между устройствами за этими шлюзами недоступен, пока подсети пересекаются.")
     issued = state.get("issued_at") or ""
     tail = ""
     if issued:
@@ -388,12 +417,46 @@ def gateway_switch_ask(target: dict, current, healthy: bool) -> str:
             "или до ручного переключения на живой шлюз.")
 
 
+def _nets_overlap(a: list, b: list) -> list:
+    import ipaddress
+    out = []
+    for x in a:
+        try:
+            nx = ipaddress.ip_network(x, strict=False)
+            if any(nx.overlaps(ipaddress.ip_network(y, strict=False)) for y in b):
+                out.append(x)
+        except ValueError:
+            continue
+    return out
+
+
+def gateway_peer_ask(on: bool) -> str:
+    """Диалог тумблера функции B (docs/gateway-lan.md §6)."""
+    if on:
+        return ("↔️ <b>Доступ между подсетями за шлюзами</b>\n\n"
+                "Устройства из локальной подсети одного шлюза смогут ходить в локальную подсеть "
+                "другого по настоящим адресам — без включённого VPN, через AWG шлюза. Только твои "
+                "локальные сети: клиентам VPN в них хода нет. Работает только между шлюзами, у "
+                "которых включено «За шлюзом — без VPN»: ровно оно гарантирует, что <b>весь</b> "
+                "трафик подсети идёт через шлюз, с обеих сторон — иначе ответы не найдут дорогу "
+                "назад.\n\n"
+                "После включения перевыпусти конфигурацию каждого шлюза. Задержка между подсетями "
+                "складывается из задержек шлюзов до сервера AWG, а связь живёт, пока подняты оба "
+                "линка.\n\nВключить?")
+    return ("↔️ <b>Доступ между подсетями за шлюзами</b>\n\n"
+            "Доступ между квартирами закроется сразу. После выключения необходимо перевыпустить "
+            "конфигурацию каждого шлюза.\n\nВыключить?")
+
+
 def gateway_home_text(state: dict) -> str:
     gw = state["gateway"]
     nets = gw.home_subnets
     cur = ", ".join(_e(n) for n in nets) if nets else "не заданы"
     lan = ("По первой подсети из списка агент шлюза настроит всё необходимое для работы "
            "без VPN (резолвер, маскарад).\n\n" if gw.lan_mode else "")
+    if state.get("peer_nets_enabled"):
+        lan += ("При включённом доступе между подсетями <u>локальные подсети шлюзов не должны "
+                "пересекаться</u>.\n\n")
     return (f"🏠 <b>Локальные подсети {slot_short(state)}</b>\n\n"
             "Подсети за этим шлюзом, до которых твои устройства должны доставать через "
             "туннель — NAS, роутер, локальные сервисы. Кому туда можно, решает файервол "
@@ -412,9 +475,14 @@ def gateway_home_report(res: dict, state: dict) -> str:
         parts.append("⚠️ Не принято:\n" + "\n".join(f"• {_e(raw)} — {_e(why)}" for raw, why in res["rejected"]))
     conflict = res.get("conflict")
     if conflict is not None:
-        parts.append(f"⚠️ Та же подсеть задана и шлюзу №{conflict.id}: маршрут достанется "
-                     "предпочтительному (при равенстве — первому). Смени подсеть в одной "
-                     "из сетей.")
+        ov = ", ".join(_e(n) for n in _nets_overlap(kept, conflict.home_subnets)) or "подсеть"
+        who = f"«{_e(res['conflict_name'])}»" if res.get("conflict_name") else f"шлюза №{conflict.id}"
+        parts.append(f"⚠️ {ov} пересекается с подсетью {who}: маршрут достаётся предпочтительному "
+                     "(при равенстве — первому), а доступ без VPN между устройствами за этими "
+                     "шлюзами недоступен, пока подсети пересекаются.")
+    elif res.get("peer_others"):
+        parts.append("Подсети попадут в конфигурацию остальных шлюзов: перевыпусти её для "
+                     + ", ".join(_e(w) for w in res["peer_others"]) + " и примени на той стороне.")
     return "\n\n".join(parts)
 
 

@@ -217,7 +217,8 @@ class GwSlotCB(CallbackData, prefix="gws"):
       remove_ask|remove_yes — убрать слот; bundle — конфигурация слота;
       failover — тумблер автопереключения;
       lan_ask|lan_yes — «за шлюзом — без VPN» с подтверждением (docs/gateway-lan.md);
-      router — экран настройки роутера."""
+      router — экран настройки роутера;
+      peer_ask|peer_yes — доступ между подсетями за шлюзами с подтверждением."""
     action: str
     slot: int = 0
 
