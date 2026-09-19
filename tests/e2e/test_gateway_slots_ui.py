@@ -378,3 +378,58 @@ async def test_single_gateway_card_has_no_preferred_toggle(services, slots, fake
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=1), services, FakeState())
     _, labels = _screen(nav)
     assert any(l.startswith("✅ Предпочтительный") for l in labels)
+
+
+# ── строка РФ-доступа в шапке админа ─────────────────────────────────────────
+
+def _admin_line(services) -> str:
+    from awgbot.bot import texts
+    return texts.routing_admin_status_line(services.routing_admin_status())
+
+
+def _push(services, slot: int, good: bool, n: int = 10) -> None:
+    for _ in range(n):
+        services._rt_window_push(slot, good)
+
+
+async def test_admin_status_line_names_the_active_gateway_and_the_standby(services, slots, monkeypatch):
+    """Пять случаев из ТЗ: один жив; два живы; резерв мёртв (🟠); один мёртв;
+    оба мертвы — с именами, а не «сервер работает»."""
+    _, pi, pi2 = slots
+    _slot1(services, pi)
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🟢 работает (NASPi)"
+    services.db.gateway_update(1, label="дом 1")
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🟢 работает (NASPi, дом 1)"
+    services.db.gateway_update(1, label="")
+
+    _slot2(services, pi2)
+    assert _admin_line(services).endswith("работает (NASPi), резерв проверяется"), "стрика ещё нет"
+    services.db.set_state("routing_gw_2_up_streak", "3")
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🟢 работает (NASPi), резерв жив"
+    _push(services, 2, False)
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🟠 работает (NASPi), резерв не отвечает"
+
+    monkeypatch.setattr(services, "routing_link_ok", lambda: False)
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🔴 выключен — NASPi, Pi2 не отвечают"
+    services._rt_window_reset(2); services.db.set_state("routing_gw_2_up_streak", "3")
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🔴 выключен, NASPi не отвечает, резерв жив"
+
+    services.db.gateway_delete(2)
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🔴 выключен, NASPi не отвечает"
+
+
+async def test_client_status_line_has_two_states_only():
+    from awgbot.bot import texts
+    assert texts.routing_status_line(True) == "🇷🇺 РФ-доступ: 🟢 работает"
+    assert texts.routing_status_line(False) == "🇷🇺 РФ-доступ: 🔴 не работает"
+
+
+async def test_admin_panel_uses_the_detailed_line(services, slots, monkeypatch):
+    _, pi, _ = slots
+    _slot1(services, pi)
+    monkeypatch.setattr(services, "server_status_cached", lambda: {"ok": True})
+    snap = services.admin_panel_snapshot()
+    assert snap["routing_info"] and snap["routing_info"]["active"] == "NASPi"
+    from awgbot.bot import texts
+    text = texts.admin_panel(snap["st"], snap["routing_ok"], routing_info=snap["routing_info"])
+    assert "🇷🇺 РФ-доступ: 🟢 работает (NASPi)" in text

@@ -639,6 +639,34 @@ class GatewayLinkMixin:
             })
         return out
 
+    def routing_admin_status(self) -> Optional[dict]:
+        """Сводка для строки РФ-доступа в шапке админа: работает ли, кто несёт
+        трафик, что с резервом. Без единого exec: шапка рисуется из кэша, а
+        возраст хендшейка ей не нужен — живость слотов уже посчитал тик.
+        None — слотов нет."""
+        slots = self.db.gateways()
+        if not slots:
+            return None
+        active = self.active_gateway()
+
+        def _name(g) -> str:
+            dev = self.db.get_device(g.device_id)
+            name = dev.name if dev is not None else f"слот {g.id}"
+            return f"{name}, {g.label}" if g.label else name
+
+        standby = []
+        for g in slots:
+            if active is not None and g.id == active.id:
+                continue
+            unavailable = self._rt_unavailable(g.id)
+            up = int(self.db.get_state(f"routing_gw_{g.id}_up_streak") or 0)
+            alive = up >= self._RT_UP_STREAK and not unavailable
+            standby.append({"name": _name(g),
+                            "state": "alive" if alive else ("dead" if unavailable else "unknown")})
+        return {"ok": self.routing_link_ok(),
+                "active": _name(active) if active is not None else "",
+                "standby": standby}
+
     def gateway_state(self, slot_id: Optional[int] = None) -> dict:
         """Состояние одного слота (по умолчанию первого) — экраны раздела.
         Без слотов: {'device': None, 'gateway': None}."""

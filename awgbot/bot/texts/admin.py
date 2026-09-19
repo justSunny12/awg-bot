@@ -8,7 +8,7 @@ from .fmt import (
     _e, human_bytes, _updown, gb_str, _limit_devices_str, device_label, plain_ip,
     _fmt_age, device_emoji)
 from .migration import migration_panel_line
-from .routing import routing_status_line
+from .routing import routing_status_line, routing_admin_status_line
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ def _hostname() -> str:
 
 
 def admin_panel(st: dict, routing_ok: bool = None, migration=None,
-                bot_username: str = "", expiring: int = 0) -> str:
+                bot_username: str = "", expiring: int = 0, routing_info: dict = None) -> str:
     """Шапка админ-меню: компактный статус из кэша (ноль docker exec).
     st — из services.server_status_cached(); метрики железа (CPU/RAM/диск хоста)
     бот снимает локально (/proc, statvfs); показываем с возрастом. None-поля — «…»."""
@@ -127,7 +127,9 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     # Статус РФ-шлюза — отдельной группой сразу после сервера: это второй хост,
     # от которого зависит связь, и узнавать о его состоянии заходом в раздел
     # настроек — на один шаг дольше, чем нужно. None — функция не настроена.
-    if routing_ok is not None:
+    if routing_info is not None:
+        groups.append(routing_admin_status_line(routing_info))
+    elif routing_ok is not None:
         groups.append(routing_status_line(routing_ok))
     if st.get("online_count") is not None:
         label = _deep_link(bot_username, "online", "📶 Устройств онлайн")

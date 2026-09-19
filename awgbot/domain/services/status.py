@@ -32,6 +32,7 @@ class StatusMixin:
         ac = self.admin_client()
         rt_visible = bool(ac and self.routing_client_visible(ac))
         routing_ok = self.routing_health_for_client(ac) if (ac and rt_visible) else None
+        routing_info = self.routing_admin_status() if routing_ok is not None else None
         mig = self.migration_progress() if self.migration_running() else None
         n_dev = self.db.count_devices(ac.id) if ac else 0
         # ряд «Ссылка/QR/Файл» — только когда есть что выдавать: шлюз в
@@ -44,7 +45,7 @@ class StatusMixin:
                     n_gw += 1
         n_issuable = n_dev - n_gw
         return {
-            "st": st, "ac": ac, "routing_ok": routing_ok, "mig": mig,
+            "st": st, "ac": ac, "routing_ok": routing_ok, "routing_info": routing_info, "mig": mig,
             "expiring": len(self.expiring_subscriptions()),
             "unassigned": self.count_unassigned_devices(),
             "has_dev": n_dev > 0,

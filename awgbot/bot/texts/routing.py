@@ -432,9 +432,9 @@ def settings_routing_text(enabled: bool, status: tuple) -> str:
         head += f"\n⚠️ Не работает: {_e(reason)}\n"
     if not enabled:
         return head + "\nФункция выключена. Включи, чтобы выдавать доступ профилям."
-    return head + ("\nКонфигурация шлюза — файлом для бота шлюза;\n"
-                   "Списки маршрутизации — что именно идёт через российский адрес;\n"
-                   "Доступность пользователей — кому разрешён доступ к функции.\n")
+    return head + ("\n<b>Конфигурация шлюза</b> — файлом для бота шлюза;\n"
+                   "<b>Списки маршрутизации</b> — что именно идёт через российский адрес;\n"
+                   "<b>Доступность пользователей</b> — кому разрешён доступ к функции.\n")
 
 
 GATEWAY_CHOOSE_INTRO = ("🛰 <b>Шлюз</b>\n\nШлюз — устройство, используемое для условной "
@@ -539,15 +539,41 @@ def routing_users_text() -> str:
 
 
 def routing_status_line(ok: bool) -> str:
-    """Строка о состоянии РФ-шлюза в ОБЩЕМ статусном блоке — рядом со статусом
-    сервера, а не отдельным сообщением.
+    """Строка о состоянии РФ-доступа в ОБЩЕМ статусном блоке клиента — рядом
+    со статусом сервера, а не отдельным сообщением. Два состояния: трафик
+    проходит или нет; про шлюзы и резерв клиенту знать незачем.
 
     Показывается только тем, кому админ функцию разрешил: рассказывать про
     механизм тому, кто им не пользуется, — шум.
     """
-    return (f"🇷🇺 {ROUTING_NAME}: 🟢 сервер работает" if ok else
-            f"🇷🇺 {ROUTING_NAME}: 🔴 сервер недоступен — сайты открываются "
-            f"с зарубежного адреса")
+    return (f"🇷🇺 {ROUTING_NAME}: 🟢 работает" if ok else
+            f"🇷🇺 {ROUTING_NAME}: 🔴 не работает")
+
+
+def routing_admin_status_line(info: dict) -> str:
+    """Та же строка в шапке админа — с тем, кто несёт трафик, и состоянием
+    резерва (services.routing_admin_status): один шлюз — «работает (имя)»;
+    два — «…, резерв жив / не отвечает / проверяется», мёртвый резерв красит
+    строку в 🟠; выключен — кто именно не отвечает."""
+    active, standby = info.get("active", ""), info.get("standby") or []
+    if info.get("ok"):
+        dead = [s for s in standby if s["state"] == "dead"]
+        dot = "🟠" if dead else "🟢"
+        line = f"🇷🇺 {ROUTING_NAME}: {dot} работает" + (f" ({_e(active)})" if active else "")
+        if standby:
+            st = standby[0]["state"]
+            line += {"alive": ", резерв жив", "dead": ", резерв не отвечает"}.get(st, ", резерв проверяется")
+        return line
+    names = ([active] if active else []) + [s["name"] for s in standby if s["state"] != "alive"]
+    alive = [s["name"] for s in standby if s["state"] == "alive"]
+    line = f"🇷🇺 {ROUTING_NAME}: 🔴 выключен"
+    if len(names) == 1:
+        line += f", {_e(names[0])} не отвечает"
+    elif names:
+        line += " — " + ", ".join(_e(n) for n in names) + " не отвечают"
+    if alive:
+        line += ", резерв жив"
+    return line
 
 
 ROUTING_ABOUT = (

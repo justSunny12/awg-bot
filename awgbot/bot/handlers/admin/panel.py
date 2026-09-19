@@ -38,7 +38,7 @@ def _menu_markup_from(snap: dict):
 def _panel_text_from(services, snap: dict) -> str:
     return texts.admin_panel(snap["st"], snap["routing_ok"], migration=snap["mig"],
                              bot_username=getattr(services, "bot_username", ""),
-                             expiring=snap["expiring"])
+                             expiring=snap["expiring"], routing_info=snap.get("routing_info"))
 
 
 async def _panel_parts(services):
