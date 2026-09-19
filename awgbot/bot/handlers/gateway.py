@@ -84,9 +84,32 @@ async def restore_panel_after_restart(bot, services) -> None:
     await call(services.db.nav_touch, chat_id, sent.message_id)
 
 
+_FIRST_PANEL_KEY = "gw_first_panel_sent"
+
+
+async def send_first_panel(bot, services) -> None:
+    """Первый запуск после установки: панель админу сама, если диалог уже
+    есть — при опознании кодом админ боту писал, и установщик обещает «бот
+    напишет сам». Из файла первого применения диалога нет: Telegram не даёт
+    боту начать первым, отправка не проходит — молчим, панель придёт на
+    /start, как и сказано в инструкции."""
+    from awgbot.core import config
+    if await call(services.db.get_state, _FIRST_PANEL_KEY):
+        return
+    try:
+        st = await _status(services, fresh=False)
+        sent = await bot.send_message(config.ADMIN_ID, texts.gateway_panel(st),
+                                      reply_markup=kb.gateway_panel_kb())
+    except Exception:                                  # noqa: BLE001
+        return                                         # диалога ещё нет
+    await call(services.db.nav_touch, config.ADMIN_ID, sent.message_id)
+    await call(services.db.set_state, _FIRST_PANEL_KEY, "1")
+
+
 @router.message(CommandStart())
 async def gw_start(message: Message, services, state: FSMContext):
     await state.clear()
+    await call(services.db.set_state, _FIRST_PANEL_KEY, "1")   # диалог есть — первая панель не нужна
     await purge_menus(message.bot, services, message.chat.id)
     await _panel(message, services)
 

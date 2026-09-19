@@ -255,6 +255,12 @@ async def run_gateway() -> None:
     except Exception as e:                               # noqa: BLE001
         log.warning("gateway restore_panel_after_restart: %s", e)
 
+    # Обещание установщика «бот напишет сам» после опознания кодом.
+    try:
+        await gateway_handlers.send_first_panel(bot, services)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("gateway send_first_panel: %s", e)
+
     await _announce_reboot(bot, services.db, "агента")
     try:
         from awgbot.bot.handlers.restore import report_restore_result

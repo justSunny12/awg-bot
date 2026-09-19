@@ -224,9 +224,10 @@ if [[ -n "$SRC_ROOT" ]]; then
     verify_archive "$TGZ" "$SRC_ROOT"
     log "раскладываю код в ${INSTALL_DIR}…"
     ( shopt -s dotglob; cp -a "$SRC_ROOT"/. "$INSTALL_DIR"/ )
-    # Установщик в /opt не нужен: там живёт awg-bot.sh, который делает всё
-    # дальнейшее (update, restore, uninstall).
-    rm -f "$INSTALL_DIR/install/awg-bot-install.sh"
+    # Установщик остаётся в /opt вместе с остальной поставкой: основной бот
+    # собирает из своей установки поставку для шлюза (файл первого применения
+    # везёт её с собой — с шлюза в России GitHub без туннеля не достать), и
+    # без установщика внутри та была бы неполной. Обновление и так кладёт его.
 else
     log "распаковываю код в ${INSTALL_DIR}…"
     tar xzf "$TGZ" -C "$INSTALL_DIR"

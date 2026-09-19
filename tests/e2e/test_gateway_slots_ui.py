@@ -229,7 +229,7 @@ async def test_add_second_slot_as_new_machine_asks_its_own_token(services, slots
     assert services.runs[-1][0] == "--apply" and services.runs[-1][1]["LINK_IF"] == "awglink2"
     docs = [s for s in msg.sent if s[0] == "document"]
     assert len(docs) == 1 and "первого применения" in docs[0][1]
-    instr = next(s[1] for s in msg.sent if s[0] == "answer" and "--role gateway" in s[1])
+    instr = next(s[1] for s in msg.sent if s[0] == "answer" and "--install" in s[1])
     assert "awg-gw-bundle-awglink2.sh" in instr
 
 

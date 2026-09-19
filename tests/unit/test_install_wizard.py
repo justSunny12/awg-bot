@@ -169,8 +169,8 @@ def test_bootstrap_runs_from_an_unpacked_delivery(bootstrap):
     assert 'UNPACK_ROOT="$(cd "$SELF_DIR/.." && pwd)"' in bootstrap
     assert '-f "$UNPACK_ROOT/awgbot/__main__.py"' in bootstrap
     assert 'cp -a "$SRC_ROOT"/. "$INSTALL_DIR"/' in bootstrap
-    assert 'rm -f "$INSTALL_DIR/install/awg-bot-install.sh"' in bootstrap, \
-        "установщик в /opt не нужен: там уже awg-bot.sh"
+    assert 'rm -f "$INSTALL_DIR/install/awg-bot-install.sh"' not in bootstrap, \
+        "установщик остаётся в /opt: из него бот собирает поставку для шлюза"
 
 
 def test_bootstrap_still_accepts_a_plain_archive(bootstrap):
@@ -312,7 +312,7 @@ def test_gateway_install_without_a_bundle_says_exactly_what_to_do(script):
     почитать документацию."""
     body = script.split('if [[ "$role" == "gateway" ]]; then', 1)[1].split("\n    fi\n", 1)[0]
     stop = body.split('elif [[ -z "$(env_get BOT_TOKEN)" ]]; then', 1)[1].split("fi", 1)[0]
-    assert "scp awg-gw-bundle.sh" in stop and "--role gateway" in stop
+    assert "scp awg-gw-bundle.sh" in stop and "--install" in stop
     assert "Назначить шлюз" in stop
 
 
@@ -333,3 +333,13 @@ def test_bundle_is_searched_where_scp_puts_it(script):
 
 def test_bundle_flag_travels_through_the_bootstrap(bootstrap):
     assert "--bundle) " in bootstrap and "EXTRA+=(--bundle" in bootstrap
+
+
+def test_gateway_install_finish_line_matches_how_the_admin_was_identified(script):
+    """Опознание кодом: админ боту уже писал, агент пришлёт панель сам. Из
+    файла первого применения диалога нет, первым бот написать не может —
+    «напиши /start». Одно «Готово» на оба случая врало в одном из них."""
+    body = script.split('if [[ "$role" == "gateway" ]]; then', 1)[1].split("\n    fi\n", 1)[0]
+    tail = body.split("cleanup_delivery", 1)[1]
+    assert 'if [[ "$from_bundle" -eq 1 ]]' in tail
+    assert "напиши /start" in tail and "напишет сам" in tail

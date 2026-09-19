@@ -229,3 +229,37 @@ def test_gateway_update_check_hook_pauses_on_never_and_reschedules_otherwise(mon
     store["updates.poll_schedule"] = "week"
     hook("updates.poll_schedule", "week")
     assert calls[-1][0] == "resched" and calls[-1][2] == "CronTrigger"
+
+
+# ── первая панель после установки ────────────────────────────────────────────
+
+async def test_first_start_sends_the_panel_once_when_the_dialog_exists(svc, fake_bot, monkeypatch):
+    """Опознание кодом: админ боту уже писал, установщик обещает «бот напишет
+    сам» — агент присылает панель на первом старте, и только один раз."""
+    monkeypatch.setattr(svc, "cached_status", lambda max_age: GwStatus(link_up=True, handshake_age=5.0))
+    await gh.send_first_panel(fake_bot, svc)
+    sent = [r for r in fake_bot.records if r[0] == "send_message"]
+    assert len(sent) == 1 and sent[0][1] == cfg.ADMIN_ID and "РФ-шлюз" in sent[0][2]
+    await gh.send_first_panel(fake_bot, svc)
+    assert len([r for r in fake_bot.records if r[0] == "send_message"]) == 1, "повтор на каждом старте"
+
+
+async def test_first_start_stays_silent_without_a_dialog(svc, monkeypatch):
+    """Из файла первого применения диалога нет: Telegram не даёт боту начать
+    первым — молчим и НЕ считаем панель показанной, чтобы попробовать позже."""
+    monkeypatch.setattr(svc, "cached_status", lambda max_age: GwStatus(link_up=True, handshake_age=5.0))
+
+    class NoDialog(FakeBot):
+        async def send_message(self, *a, **k):
+            raise RuntimeError("Forbidden: bot can't initiate conversation with a user")
+    await gh.send_first_panel(NoDialog(), svc)
+    assert not svc.db.get_state(gh._FIRST_PANEL_KEY)
+
+
+async def test_start_marks_the_first_panel_as_shown(svc, fake_bot, monkeypatch):
+    monkeypatch.setattr(svc, "cached_status", lambda max_age: GwStatus(link_up=True, handshake_age=5.0))
+    msg = FakeMessage(text="/start", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_start(msg, svc, FakeState())
+    assert svc.db.get_state(gh._FIRST_PANEL_KEY) == "1"
+    await gh.send_first_panel(fake_bot, svc)
+    assert not [r for r in fake_bot.records if r[0] == "send_message"], "после /start первая панель не нужна"

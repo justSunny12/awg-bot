@@ -247,10 +247,35 @@ class GatewayLinkMixin:
     def gw_bundle_plain(self, slot_id: Optional[int] = None) -> tuple[bytes, str]:
         """Открытый бандл — для ПЕРВОГО применения на машине, у которой ключа
         линка ещё нет (новая машина или новые ключи). Внутри приватные ключи:
-        тот же уровень доверия, что у ссылок vpn:// с ключами устройств."""
+        тот же уровень доверия, что у ссылок vpn:// с ключами устройств.
+
+        Везёт с собой ПОСТАВКУ: шлюз стоит в России, GitHub там без туннеля
+        недоступен, а туннель как раз и ставится этим файлом — качать агента
+        с шлюза неоткуда (наступили на чистой машине 19.09.2026). Шифрованный
+        бандл для чата поставку не везёт: у той машины агент уже стоит."""
         gw = self._gw_slot(slot_id)
         plain, _ = self._gw_bundle_build(gw)
-        return plain, self.bundle_name(gw)
+        return self._bundle_with_dist(plain), self.bundle_name(gw)
+
+    _DIST_BEGIN = b"#__AWG_BOT_TGZ_BELOW__\n"
+    _DIST_END = b"#__AWG_BOT_TGZ_END__\n"
+
+    def _bundle_with_dist(self, plain: bytes) -> bytes:
+        """Поставка base64-блоком между маркерами — ПОСЛЕ `exit` тела бандла и
+        ДО маркера скрипта обвязки: при запуске не исполняется, в скрипт
+        обвязки не попадает. Режим `--install` бандла вырезает её и передаёт
+        управление установщику из неё."""
+        import base64
+        from awgbot.util import dist
+        m = self._MAIL_MARK_LINE.search(plain)
+        if m is None:
+            return plain
+        try:
+            blob = dist.archive()
+        except dist.DistError as e:
+            raise ServiceError(str(e))
+        body = base64.encodebytes(blob)                 # строками по 76 символов
+        return plain[:m.start()] + self._DIST_BEGIN + body + self._DIST_END + plain[m.start():]
 
     # ── пометка устройства: запасной путь через пересланный токен ────────────
     _GW_NONCES_KEY = "gw_claim_nonces"

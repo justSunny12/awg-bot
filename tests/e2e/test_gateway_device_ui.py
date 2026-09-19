@@ -109,7 +109,7 @@ async def test_settings_assign_existing_device_goes_the_full_way(services, fake_
     assert services.modes == ["--rekey"], "ключи линка новые: устройство линка не знает"
     docs = _docs(msg)
     assert len(docs) == 1 and "первого применения" in docs[0][1], "открытый файл, руками"
-    assert any("--role gateway" in s[1] for s in msg.sent if s[0] == "answer"), "инструкция"
+    assert any("--install" in s[1] for s in msg.sent if s[0] == "answer"), "инструкция"
     text, markup = await sh._screen("rt", services)
     labels = _labels(markup)
     assert "🛰 Шлюз: NASPi" in labels and "➕ Резервный шлюз" in labels
@@ -142,7 +142,7 @@ async def test_settings_change_gateway_rekeys_and_gives_plain_first_run_file(ser
     assert not any("GW1:" in (s[1] or "") for s in nav.sent), "токенов в новой схеме нет"
     # Машина ставится с нуля — значит и здесь показывается та же инструкция,
     # что для новой машины: одна команда со своей машины.
-    assert any("--role gateway" in s[1] and "scp" in s[1]
+    assert any("--install" in s[1] and "scp" in s[1]
                for s in nav.sent if s[0] == "answer")
 
 
@@ -172,15 +172,17 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
     assert stored["t"].startswith("123456789:")
     docs = _docs(msg)
     assert len(docs) == 1 and "первого применения" in docs[0][1]
-    instr = [s[1] for s in msg.sent if s[0] == "answer" and "--role gateway" in s[1]]
+    instr = [s[1] for s in msg.sent if s[0] == "answer" and "--install" in s[1]]
     assert instr, "инструкция не показана"
     # Копирование и установка склеены: установка на шлюзе вопросов не задаёт,
     # значит отделять её от scp и заходить на шлюз вторым сеансом незачем.
     one = instr[0]
     assert "scp awg-gw-bundle.sh" in one and "ssh -t" in one
     assert "&amp;&amp;" in one, "команды не склеены в одну"
-    assert "--bundle /root/awg-gw-bundle.sh" in one, "путь к только что скопированному файлу"
-    assert one.index("scp") < one.index("ssh -t") < one.index("--role gateway")
+    assert "sh /root/awg-gw-bundle.sh --install" in one, "путь к только что скопированному файлу"
+    assert one.index("scp") < one.index("ssh -t") < one.index("--install")
+    # поставка внутри файла: с шлюза в России GitHub без туннеля не достать
+    assert "githubusercontent" not in one
 
     # Токен уже есть — второй раз не спрашиваем
     services.db.gateway_delete(1)

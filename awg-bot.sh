@@ -605,9 +605,9 @@ cmd_reconfigure() {
         elif [[ -z "$(env_get BOT_TOKEN)" ]]; then
             die "нет файла первого применения. Выпусти его в основном боте
   (Настройки → Условная маршрутизация → Назначить шлюз → Новая машина),
-  скопируй сюда и повтори:
+  скопируй сюда и запусти его — поставка агента внутри, GitHub не нужен:
     scp awg-gw-bundle.sh root@ЭТОТ_ХОСТ:/root/
-    curl -fsSL https://raw.githubusercontent.com/justSunny12/awg-bot/main/install/awg-bot-install.sh | sudo bash -s -- --role gateway"
+    sudo sh /root/awg-gw-bundle.sh --install"
         fi
         ensure_python
         build_venv
@@ -626,7 +626,14 @@ cmd_reconfigure() {
         systemctl is-active --quiet "$SERVICE" && ok "$SERVICE (агент шлюза) запущен." \
             || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
         cleanup_delivery "$cleanup_inst" "$cleanup_tgz"
-        ok "Готово: напиши /start боту шлюза."
+        # Из файла первого применения диалога с ботом ещё нет, и первым он
+        # написать не может; после опознания кодом — админ ему уже писал, и
+        # агент пришлёт панель сам (обещание кода «бот напишет сюда сам»).
+        if [[ "$from_bundle" -eq 1 ]]; then
+            ok "Готово: напиши /start боту шлюза — первым написать он не может."
+        else
+            ok "Готово: бот шлюза напишет сам."
+        fi
         return
     fi
 

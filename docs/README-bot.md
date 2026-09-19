@@ -51,7 +51,8 @@ curl -fsSL https://raw.githubusercontent.com/<repo>/main/install/awg-bot-install
 Аргументы передаются после `-s --`:
 
 ```bash
-curl -fsSL …/awg-bot-install.sh | sudo bash -s -- --role gateway   # агент на шлюзе
+curl -fsSL …/awg-bot-install.sh | sudo bash -s -- --role gateway   # агент на шлюзе (если GitHub с него доступен;
+                                                                   # штатно — файл первого применения, §6c)
 curl -fsSL …/awg-bot-install.sh | sudo bash -s -- --port 51820     # порт awg
 curl -fsSL …/awg-bot-install.sh | sudo bash -s -- --advanced       # все вопросы
 ```
@@ -591,12 +592,15 @@ Address` в sshd_config уберите руками — адресную фил�
 
 ```bash
 scp awg-gw-bundle.sh root@ШЛЮЗ:/root/ && \
-  ssh -t root@ШЛЮЗ 'curl -fsSL https://raw.githubusercontent.com/<repo>/main/install/awg-bot-install.sh | \
-  sudo bash -s -- --role gateway --bundle /root/awg-gw-bundle.sh'
+  ssh -t root@ШЛЮЗ 'sudo sh /root/awg-gw-bundle.sh --install'
 ```
 
 Установка на шлюзе вопросов не задаёт, поэтому её незачем отделять от
 копирования. `ssh -t` нужен для пароля sudo; под root пароль не спросят вовсе.
+Поставка агента едет **внутри файла** (основной бот собирает её из своей
+установки, версия та же): шлюз стоит в России, GitHub там без туннеля
+недоступен, а туннель этим файлом и ставится — в интернет за поставкой шлюз
+не ходит. Нужны только репозитории системы (apt) и PyPI. Файл ~1,5 МБ.
 
 Установка агента **не задаёт ни одного вопроса**: токен агента и `ADMIN_ID`
 лежат внутри файла, установщик находит его в `/root` сам (или берёт путь из
@@ -721,8 +725,9 @@ root-ключ домашней машины никогда не лежит на 
 ### Установка
 
 ```bash
-# на шлюзе; файл первого применения уже скопирован в /root — вопросов не будет
-curl -fsSL https://raw.githubusercontent.com/<repo>/main/install/awg-bot-install.sh | sudo bash -s -- --role gateway
+# на шлюзе; файл первого применения уже скопирован в /root — вопросов не будет,
+# поставка агента внутри файла, GitHub с шлюза не нужен
+sudo sh /root/awg-gw-bundle.sh --install
 ```
 
 Токен бота шлюза спрашивает ОСНОВНОЙ бот — один раз, при «Новое устройство», — и
