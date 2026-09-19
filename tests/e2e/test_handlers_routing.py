@@ -721,7 +721,7 @@ async def test_bundle_button_opens_intro_screen_before_issuing(services, fake_bo
     monkeypatch.setattr(st, "get_bool", lambda key, default=False: True)
     from types import SimpleNamespace
     from awgbot.bot.callbacks import GwSlotCB
-    state = {"gateway": SimpleNamespace(id=1, home_subnets=[], label=""), "device": SimpleNamespace(name="NASPi"),
+    state = {"gateway": SimpleNamespace(id=1, home_subnets=[], label="", lan_mode=0), "device": SimpleNamespace(name="NASPi"),
              "active": True, "link_ok": True, "preferred": True, "issued_at": "", "handshake_age": 3}
     markup = kb.gateway_card(state, back_to_list=False)
     btn = [b for row in markup.inline_keyboard for b in row if "Конфигурация" in b.text][0]

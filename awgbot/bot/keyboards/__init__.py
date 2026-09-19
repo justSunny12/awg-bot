@@ -47,7 +47,8 @@ from .routing import (
     gateway_remove_confirm, routing_disable_confirm, settings_routing,
     routing_provision, settings_routing_bundle, settings_routing_lists,
     settings_routing_users, bundle_menu_kb, gateway_list, gateway_card,
-    gateway_switch_confirm, gateway_slot_cancel, settings_routing_monitor)
+    gateway_switch_confirm, gateway_slot_cancel, settings_routing_monitor,
+    gateway_lan_confirm, gateway_router_back)
 from .broadcast import (
     broadcast_mode, broadcast_targets, broadcast_cancel, broadcast_confirm)
 from .gateway import (
@@ -86,7 +87,7 @@ __all__ = [
     "gateway_mark_confirm", "gateway_new_confirm", "gateway_remove_confirm",
     "routing_disable_confirm", "settings_routing", "routing_provision",
     "settings_routing_bundle", "settings_routing_lists", "settings_routing_users",
-    "bundle_menu_kb", "gateway_list", "gateway_card", "gateway_switch_confirm",
+    "bundle_menu_kb", "gateway_list", "gateway_card", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_router_back",
     "gateway_slot_cancel", "settings_routing_monitor", "broadcast_mode", "broadcast_targets", "broadcast_cancel",
     "broadcast_confirm", "gateway_panel_kb", "gateway_settings_kb",
     "gateway_notify_kb", "gateway_mon_kb", "gateway_backup_kb", "gateway_email_kb",

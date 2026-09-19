@@ -464,6 +464,48 @@ async def gw_slot_switch_yes(cb: CallbackQuery, callback_data: GwSlotCB, service
     await cb.answer(f"Трафик идёт через {st['display']}".replace("«", "").replace("»", ""))
 
 
+@router.callback_query(GwSlotCB.filter(F.action == "lan_ask"))
+async def gw_slot_lan_ask(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    """«За шлюзом — без VPN» (docs/gateway-lan.md): диалог на месте карточки.
+    Без локальной подсети включать нечего — alert, не диалог."""
+    st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
+    if st is None:
+        return
+    gw = st["gateway"]
+    on = not gw.lan_mode
+    if on and not gw.home_subnets:
+        await cb.answer(texts.GATEWAY_LAN_NO_SUBNET, show_alert=True)
+        return
+    resolver = await call(services.gateway_resolver_addr, gw) if on else ""
+    await edit(cb, texts.gateway_lan_ask(st, on, resolver), kb.gateway_lan_confirm(gw.id, on))
+    await cb.answer()
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "lan_yes"))
+async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
+    if st is None:
+        return
+    on = not st["gateway"].lan_mode
+    try:
+        await call(services.gateway_set_lan_mode, callback_data.slot, on)
+    except ServiceError as e:
+        await cb.answer(str(e), show_alert=True)
+        return
+    await _render_card(cb, services, callback_data.slot)
+    await cb.answer("Включено: перевыпусти конфигурацию шлюза" if on
+                    else "Выключено: перевыпусти конфигурацию шлюза", show_alert=True)
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "router"))
+async def gw_slot_router(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
+    if st is None:
+        return
+    await edit(cb, texts.gateway_router_text(st), kb.gateway_router_back(st["gateway"].id))
+    await cb.answer()
+
+
 @router.callback_query(GwSlotCB.filter(F.action == "bundle"))
 async def gw_slot_bundle(cb: CallbackQuery, callback_data: GwSlotCB, services):
     await cb.answer()

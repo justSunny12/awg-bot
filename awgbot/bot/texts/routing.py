@@ -202,6 +202,8 @@ def gateway_card_text(state: dict, states: list) -> str:
     home = ("\n\n🏠 Локальные подсети: " + (", ".join(_e(n) for n in nets) if nets else "не заданы"))
     if nets:
         home += "\nУстройства админа достают до них через этот линк."
+    if gw.lan_mode:
+        home += "\n🏠 За шлюзом — без VPN: включено"
     conflict = next((s for s in others if set(s["gateway"].home_subnets) & set(nets)), None)
     if conflict is not None:
         first = min([state] + others, key=lambda s: (0 if s.get("preferred") else 1, s["gateway"].id))
@@ -217,6 +219,84 @@ def gateway_card_text(state: dict, states: list) -> str:
             pass
     tail += ("\n" if tail else "\n\n") + ping_line(state.get("ping_ms"))
     return head + body + home + tail
+
+
+def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
+    """Диалог «за шлюзом — без VPN» (docs/gateway-lan.md §6): что произойдёт,
+    что потребуется от человека, чем это грозит."""
+    name = slot_short(state)
+    if on:
+        warn = ("" if resolver else
+                "\n\n⚠️ Свой резолвер на сервере не настроен (⚙️ Настройки → Приватный DNS): "
+                "шлюз будет резолвить через 1.1.1.1 по туннелю — без защиты от DoH и без "
+                "общего кэша. Крайне рекомендуется настроить эту функцию для повышения "
+                "отказоустойчивости.")
+        return (f"🏠 <b>За шлюзом — без VPN: {name}</b>\n\n"
+                "Роутер квартиры заворачивает весь трафик локальной сети на шлюз, а шлюз "
+                "маршрутизирует его сам: заблокированное — в туннель AWG, остальное — напрямую "
+                "со своего IP-адреса. На устройствах в подсети шлюза VPN включать не нужно.\n\n"
+                "Что потребуется от тебя: настроить роутер по рецепту (покажу после включения) "
+                "— маршрутизацию всего трафика в шлюз со статическим локальным IP, DNS = адрес "
+                "шлюза. Без этого функция не заработает.\n\n"
+                "Что изменится: шлюз становится точкой отказа квартиры — его падение оставит "
+                "квартиру без интернета вовсе, резервный шлюз здесь не поможет.\n\n"
+                f"После включения функции потребуется перевыпустить конфигурацию шлюза.{warn}\n\n"
+                "Включить?")
+    return (f"🏠 <b>За шлюзом — без VPN: {name}</b>\n\n"
+            "Шлюз перестанет маршрутизировать трафик квартиры, доступ между подсетями для "
+            "этого шлюза также выключится. Перевыпусти конфигурацию и примени её — списки и "
+            "резолвер на шлюзе снимутся, свои списки останутся в файлах.\n\n"
+            "⚠️ <b>Чтобы устройства за шлюзом не остались без доступа в Интернет, сначала "
+            "отключи маршрутизацию всего трафика в шлюз на роутере!</b>\n\n"
+            "Выключить функцию?")
+
+
+GATEWAY_LAN_NO_SUBNET = ("Сначала необходимо задать локальную подсеть шлюза: без этого работать "
+                         "не будет. Наиболее частые варианты: 192.168.1.0/24, 192.168.0.0/24.")
+
+
+def gateway_router_text(state: dict) -> str:
+    """📖 Настройка роутера (docs/gateway-lan.md §3.6): требования и два рецепта
+    с подставленной подсетью. Адрес малины в подсети знает только она — он в
+    панели агента (строка «локальная сеть»)."""
+    gw = state["gateway"]
+    net = gw.home_subnets[0] if gw.home_subnets else "192.168.1.0/24"
+    gw_ip = "АДРЕС_ШЛЮЗА"
+    return (f"📖 <b>Настройка роутера: {slot_short(state)}</b>\n\n"
+            "Требования, без которых функция не работает:\n"
+            "• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес шлюза "
+            "(policy-based routing);\n"
+            "• разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — правило "
+            "выше <code>drop invalid</code>;\n"
+            "• аппаратное ускорение (fasttrack, flow offloading) выключено;\n"
+            "• DHCP раздаёт DNS = адрес шлюза; у шлюза статический адрес.\n\n"
+            f"Подсеть: <code>{_e(net)}</code>. Адрес шлюза в ней — в панели бота шлюза "
+            "(строка «локальная сеть»); ниже он — <code>АДРЕС_ШЛЮЗА</code>.\n\n"
+            "<b>MikroTik RouterOS 7</b>\n"
+            "<pre>/routing table add disabled=no fib name=antiblock\n"
+            "/ip firewall mangle\n"
+            f"add action=accept chain=prerouting comment=anti-loop src-address={gw_ip}\n"
+            "add action=mark-routing chain=prerouting comment=all-LAN-via-gw \\\n"
+            f"    new-routing-mark=antiblock passthrough=no src-address={_e(net)} dst-address=!{_e(net)}\n"
+            f"/ip route add dst-address=0.0.0.0/0 gateway={gw_ip} routing-table=antiblock\n"
+            "/ip firewall filter\n"
+            f"add action=accept chain=forward comment=asym-via-gw src-address={_e(net)} dst-address=!{_e(net)}\n"
+            f"/ip dhcp-server network set [find] dns-server={gw_ip}</pre>\n"
+            "Правило asym-via-gw — выше drop invalid; fasttrack выключить.\n\n"
+            "<b>OpenWrt</b>\n"
+            "<pre>echo '200 vpn' &gt;&gt; /etc/iproute2/rt_tables\n"
+            f"ip route add default via {gw_ip} table vpn\n"
+            f"ip rule add from {gw_ip} priority 100 lookup main\n"
+            f"ip rule add from {_e(net)} to {_e(net)} priority 110 lookup main\n"
+            f"ip rule add from {_e(net)} priority 120 lookup vpn\n"
+            f"iptables -I FORWARD 1 -s {_e(net)} ! -d {_e(net)} -j ACCEPT\n"
+            "uci set firewall.@defaults[0].flow_offloading_hw='0'\n"
+            "uci set firewall.@defaults[0].flow_offloading='0'\n"
+            f"uci add_list dhcp.lan.dhcp_option='6,{gw_ip}'\n"
+            "uci commit</pre>\n"
+            "Порядок приоритетов важен: сначала исключается сам шлюз, затем трафик внутри сети, "
+            "потом всё остальное уходит на шлюз. Закрепить: ip rule/route — в /etc/rc.local, "
+            "iptables — в /etc/firewall.user.")
 
 
 GATEWAY_STANDBY_CHOOSE_INTRO = (
@@ -309,12 +389,15 @@ def gateway_switch_ask(target: dict, current, healthy: bool) -> str:
 
 
 def gateway_home_text(state: dict) -> str:
-    nets = state["gateway"].home_subnets
+    gw = state["gateway"]
+    nets = gw.home_subnets
     cur = ", ".join(_e(n) for n in nets) if nets else "не заданы"
+    lan = ("По первой подсети из списка агент шлюза настроит всё необходимое для работы "
+           "без VPN (резолвер, маскарад).\n\n" if gw.lan_mode else "")
     return (f"🏠 <b>Локальные подсети {slot_short(state)}</b>\n\n"
             "Подсети за этим шлюзом, до которых твои устройства должны доставать через "
-            "туннель — NAS, роутер, домашние сервисы. Кому туда можно, решает файервол "
-            "шлюза (только устройствам админа); здесь — только путь.\n\n"
+            "туннель — NAS, роутер, локальные сервисы. Кому туда можно, решает файервол "
+            f"шлюза (только устройствам админа); здесь — только путь.\n\n{lan}"
             f"Сейчас: {cur}.\n\n"
             "Пришли подсети через пробел или с новой строки, например "
             "<code>192.168.2.0/24</code>. «—» — убрать все.")
@@ -408,8 +491,9 @@ def routing_lists_block(info: dict) -> str:
 ROUTING_BUNDLE_INTRO = (
     "⚙️ <b>Конфигурация шлюза</b>\n\n"
     "Что произойдёт:\n"
-    "1. Бот соберёт файл конфигурации линка для шлюза: адрес и порт сервера, "
-    "ключи линка, подсеть клиентов.\n"
+    "1. Бот соберёт файл конфигурации для шлюза: адрес и порт сервера, ключи "
+    "линка. Если включён режим без VPN, добавит необходимые скрипты и локальную "
+    "подсеть.\n"
     "2. Файл придёт сюда отдельным сообщением с кнопкой «В меню».\n"
     "3. Перешли его боту шлюза — он проверит и применит сам.\n"
     "4. Нажатие «В меню» удалит сообщение с файлом из чата.\n\n"

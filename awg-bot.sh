@@ -1292,6 +1292,24 @@ cmd_routing_doctor() {
       ./venv/bin/python -m awgbot.runtime.routing_doctor )
 }
 
+cmd_lan() {
+    # Локальная сеть без VPN на шлюзе (docs/gateway-lan.md, функция A): личные
+    # списки и обновление фидов. Делегируем скриптам, которые кладёт обвязка
+    # шлюза (routing-gw-setup.sh) — источник истины один; глагол здесь ради
+    # находимости, как gw-bundle. Только роль gateway с включённой функцией.
+    require_root
+    local dom="/usr/local/sbin/awg-lan-domain.sh" lists="/usr/local/sbin/awg-lan-lists.sh"
+    case "${1:-}" in
+        add|ru|del|list)
+            [[ -x "$dom" ]] || die "локальная сеть без VPN на этом шлюзе не включена (нет $dom) — включи её в основном боте и примени конфигурацию"
+            exec "$dom" "$@" ;;
+        update)
+            [[ -x "$lists" ]] || die "локальная сеть без VPN на этом шлюзе не включена (нет $lists)"
+            exec "$lists" ;;
+        *) die "usage: awg-bot lan add|ru|del <домен…> | list | update" ;;
+    esac
+}
+
 cmd_gw_bundle() {
     # Делегируем скрипту линка: источник истины один, дублировать сборку бандла
     # здесь значило бы завести второе место, которое разъедется при правке.
@@ -1344,6 +1362,8 @@ awg-bot — управление установленным ботом.
                              status | setup | confirm [--disable-ufw] | apply | allow <ip…> |
                              deny <ip…> | off | rollback
   awg-bot routing-doctor     где рвётся условная маршрутизация (только чтение)
+  awg-bot lan <cmd>          шлюз, локальная сеть без VPN: add|ru|del <домен…> — личные списки
+                             (в туннель / напрямую / убрать), list, update — обновить фиды
   awg-bot gw-bundle [--link IF]  пересобрать бандл для шлюза (ключи не меняются);
                              --link — линк другого слота (резервный шлюз)
   awg-bot awg <cmd>          ядро AmneziaWG по манифесту поставки (install/awg.lock):
@@ -1373,6 +1393,7 @@ case "$VERB" in
     firewall)    cmd_firewall "$@" ;;
     routing-doctor) cmd_routing_doctor ;;
     gw-bundle)   cmd_gw_bundle "$@" ;;
+    lan)         cmd_lan "$@" ;;
     awg)         cmd_awg "$@" ;;
     first-device) cmd_first_device "$@" ;;
     resolver)    cmd_resolver "$@" ;;

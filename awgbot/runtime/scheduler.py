@@ -651,6 +651,22 @@ def setup_gateway_scheduler(services, bot):
             log.warning("gw_monitor reschedule: %s", e)
     settings.on_change("app.gateway.monitor_minutes", _gw_monitor_hook)
 
+    # Списки локальной сети без VPN (docs/gateway-lan.md §3.3): фиды через
+    # аплинк, раз в 6 ч с джиттером (строго периодический запрос — маячок),
+    # первый раз через 3 мин после старта. Без LAN_MODE в юните — холостая.
+    async def job_gw_lan_lists():
+        try:
+            notes = await asyncio.to_thread(services.lan_lists_update)
+            await send_notifications(bot, notes)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("gw_lan_lists: %s", e)
+
+    scheduler.add_job(
+        job_gw_lan_lists, IntervalTrigger(hours=6, jitter=int(6 * 3600 * 0.4), timezone=config.TZ),
+        id="gw_lan_lists", max_instances=1, coalesce=True,
+        next_run_time=timeutil.now() + datetime.timedelta(minutes=3),
+        misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
     async def job_gw_backup():
         await monthly_backup(services, bot, "gw backup")
 

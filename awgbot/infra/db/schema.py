@@ -137,7 +137,8 @@ def _gateway_from_row(row) -> Optional["models.Gateway"]:
         link_port=int(row["link_port"]), link_cidr=row["link_cidr"],
         preferred=int(row["preferred"]),
         home_subnets=[n for n in (row["home_subnets"] or "").split() if n],
-        label=row["label"] or "", created_at=row["created_at"] or "")
+        label=row["label"] or "", created_at=row["created_at"] or "",
+        lan_mode=int(row["lan_mode"] or 0) if "lan_mode" in row.keys() else 0)
 
 # Имя служебного клиента, к которому цепляются пиры без владельца (карантин).
 SERVICE_CLIENT_NAME = "Устройства без клиента"
@@ -380,8 +381,9 @@ CREATE TABLE IF NOT EXISTS gateways (
     link_port     INTEGER NOT NULL UNIQUE,               -- 443, 8443
     link_cidr     TEXT    NOT NULL UNIQUE,               -- 10.99.99.0/30
     preferred     INTEGER NOT NULL DEFAULT 0,            -- 0/1: берёт трафик при холодном старте
-    home_subnets  TEXT    NOT NULL DEFAULT '',           -- домашние подсети за шлюзом, через пробел
+    home_subnets  TEXT    NOT NULL DEFAULT '',           -- локальные подсети за шлюзом, через пробел
     label         TEXT    NOT NULL DEFAULT '',           -- подпись места («дом 1»)
+    lan_mode      INTEGER NOT NULL DEFAULT 0,            -- 0/1: «за шлюзом — без VPN» (docs/gateway-lan.md)
     created_at    TEXT    NOT NULL,
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
 );
@@ -557,6 +559,7 @@ class SchemaMixin:
         self._ensure_service_client()
         self._migrate_friends_to_guests()
         self._migrate_gateway_slots()
+        self._migrate_gateway_lan_mode()
 
     def _migrate_gateway_slots(self) -> None:
         """v2.24.0 (docs/gateway-failover.md): флаг devices.is_gateway → строка
@@ -589,6 +592,18 @@ class SchemaMixin:
                         cur.execute("DELETE FROM server_state WHERE key = ?", (old,))
                 cur.execute("INSERT OR REPLACE INTO server_state(key, value) VALUES ('routing_active_gateway', '1')")
             cur.execute("UPDATE devices SET is_gateway = 0 WHERE is_gateway = 1")
+
+    def _migrate_gateway_lan_mode(self) -> None:
+        """v3.0.0 (docs/gateway-lan.md): gateways.lan_mode — «за шлюзом — без
+        VPN» по слоту. Идемпотентно."""
+        con = self._connection()
+        tables = {r["name"] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "gateways" not in tables:
+            return
+        have = {r["name"] for r in con.execute("PRAGMA table_info(gateways)")}
+        if "lan_mode" not in have:
+            with self._tx() as cur:
+                cur.execute("ALTER TABLE gateways ADD COLUMN lan_mode INTEGER NOT NULL DEFAULT 0")
 
     def _migrate_guest_role_columns(self) -> None:
         """v2.20.0 (docs/guest-role.md): clients.kind и devices.holder_client_id.

@@ -71,7 +71,29 @@ def gateway_panel(st) -> str:
     age = st.age_seconds()
     fresh = _fmt_age(age) if age is not None and age >= 1 else "только что"
     hw.append(f"{pad}<i>(обновлено {fresh})</i>")
-    parts += hw + ["", f"🌡 Монитор здоровья: {_gw_health_summary(st.checks)}", ""]
+    parts += hw
+    lan = getattr(st, "lan", None) or {}
+    if lan:
+        # локальная сеть без VPN (docs/gateway-lan.md §3.5): своим блоком
+        names = {"резолвер", "апстрим через аплинк", "списки", "таблица локальной сети",
+                 "трафик с роутера", "DNS с роутера", "IPv6 на LAN"}
+        bad = [c for c in st.checks if c.name in names and c.ok is False]
+        head_ = "🔴 " + ", ".join(c.name for c in bad[:3]) if bad else "🟢 работает"
+        parts += ["", f"🏠 За шлюзом — без VPN: {head_}"]
+        where = f"{_e(lan.get('iface', '') or '?')}, {_e(lan.get('addr', '') or '?')}"
+        parts.append(f"{pad}локальная сеть: {where}")
+        pk = lan.get("lan_pkts")
+        parts.append(f"{pad}трафик с роутера: " + (f"{pk:,} пакетов".replace(",", " ") if pk else "нет"))
+        parts.append(f"{pad}резолвер: апстрим {_e(lan.get('resolver', ''))}")
+        upd = lan.get("updated_at") or ""
+        try:
+            upd = timeutil.fmt_dt(timeutil.parse_iso(upd)) if upd else "ещё не обновлялись"
+        except ValueError:
+            upd = "?"
+        parts.append(f"{pad}списки: {lan.get('domains', 0)} доменов, {lan.get('nets', 0)} подсетей, "
+                     f"{lan.get('resolved', 0)} адресов по резолву; обновлены {upd}")
+        parts.append(f"{pad}свои: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую")
+    parts += ["", f"🌡 Монитор здоровья: {_gw_health_summary(st.checks)}", ""]
     parts.append(f"📊 Потребление за месяц: {human_bytes(st.month_rx + st.month_tx)} "
                  f"{_updown(st.month_rx, st.month_tx)}")
     return "\n".join(parts)

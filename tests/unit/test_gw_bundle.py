@@ -117,8 +117,8 @@ def test_bundle_installs_to_a_stable_path(bundle):
     assert 'DEST="/opt/awg-gw"' in bundle
     # временный каталог есть только у --install (поставка распаковывается во
     # временный, установщик его убирает); сам скрипт обвязки — в постоянный
-    assert "mktemp" not in bundle.split("# Раскладываем в ПОСТОЯННЫЙ каталог", 1)[1], \
-        "временный каталог ломает автозапуск"
+    body = bundle.split("# Раскладываем в ПОСТОЯННЫЙ каталог", 1)[1].split("#__GW_SETUP_BELOW__", 1)[0]
+    assert "mktemp" not in body, "временный каталог ломает автозапуск"
     assert re.search(r'^"\$DEST/routing-gw-setup\.sh" ', bundle, re.M)
 
 

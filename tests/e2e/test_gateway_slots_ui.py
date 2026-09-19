@@ -433,3 +433,66 @@ async def test_admin_panel_uses_the_detailed_line(services, slots, monkeypatch):
     from awgbot.bot import texts
     text = texts.admin_panel(snap["st"], snap["routing_ok"], routing_info=snap["routing_info"])
     assert "🇷🇺 РФ-доступ: 🟢 работает (NASPi)" in text
+
+
+# ── «за шлюзом — без VPN» (docs/gateway-lan.md, функция A) ───────────────────
+
+async def test_lan_mode_needs_a_subnet_then_asks_and_toggles(services, slots, fake_bot, monkeypatch):
+    _, pi, _ = slots
+    _slot1(services, pi)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
+    assert cb.answers and "локальную подсеть" in cb.answers[0][0], "без подсети — alert, не диалог"
+    services.gateway_set_home_subnets(1, "192.168.68.0/24")
+    monkeypatch.setattr(services, "gateway_resolver_addr", lambda gw: "")
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
+    text, labels = _screen(nav)
+    assert "За шлюзом — без VPN" in text and "точкой отказа" in text and "Включить?" in text
+    assert "Свой резолвер на сервере не настроен" in text, "без резолвера ВПС — предупреждение, не отказ"
+    assert labels == ["⬅️ Отмена", "Включить"]
+    await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1), services)
+    assert services.db.gateway(1).lan_mode == 1
+    text, labels = _screen(nav)
+    assert "🏠 За шлюзом — без VPN: включено" in text
+    assert "🏠 За шлюзом — без VPN: вкл" in labels and "📖 Настройка роутера" in labels
+    assert cb.answers[-1][0].startswith("Включено: перевыпусти")
+    # рецепт роутера — с подсетью слота
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_router(cb, GwSlotCB(action="router", slot=1), services)
+    text, labels = _screen(nav)
+    assert "MikroTik" in text and "OpenWrt" in text and "192.168.68.0/24" in text and labels == ["⬅️ Назад"]
+    # выключение — с предупреждением про роутер
+    monkeypatch.setattr(services, "gateway_resolver_addr", lambda gw: "10.9.1.1")
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
+    text, labels = _screen(nav)
+    assert "сначала отключи маршрутизацию" in text and labels == ["⬅️ Отмена", "Выключить"]
+    await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1), services)
+    assert services.db.gateway(1).lan_mode == 0
+    assert "📖 Настройка роутера" not in _screen(nav)[1]
+
+
+async def test_lan_mode_travels_in_the_bundle_and_reminds_on_change(services, slots, monkeypatch):
+    """LAN_MODE, HOME_SUBNETS и RESOLVER едут в окружении сборки; смена любого
+    из них после выпуска — напоминание о перевыпуске своим текстом, один раз."""
+    _, pi, _ = slots
+    _slot1(services, pi)
+    services.gateway_set_home_subnets(1, "192.168.68.0/24")
+    monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "10.9.1.1" if g.lan_mode else "")
+    env, _ = services._gw_bundle_env(services.db.gateway(1))
+    assert env["LAN_MODE"] == "0" and env["HOME_SUBNETS"] == "192.168.68.0/24" and env["RESOLVER"] == ""
+    services.gateway_set_lan_mode(1, True)
+    env, _ = services._gw_bundle_env(services.db.gateway(1))
+    assert env["LAN_MODE"] == "1" and env["RESOLVER"] == "10.9.1.1"
+    # снимок зависимостей — при сборке бандла
+    services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1),
+                          services._gw_bundle_deps(services.db.gateway(1)))
+    assert services.gw_bundle_drift_notes() == []
+    services.gateway_set_home_subnets(1, "192.168.1.0/24")
+    notes = services.gw_bundle_drift_notes()
+    assert len(notes) == 1 and "локальные подсети" in notes[0].text and "устарела" in notes[0].text
+    assert services.gw_bundle_drift_notes() == [], "один раз на расхождение"
+    services.gateway_set_lan_mode(1, False)
+    notes = services.gw_bundle_drift_notes()
+    assert len(notes) == 1 and "За шлюзом — без VPN" in notes[0].text and "резолвер сервера" in notes[0].text

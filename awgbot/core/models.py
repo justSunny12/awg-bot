@@ -196,6 +196,7 @@ class Gateway:
     home_subnets: list[str] = field(default_factory=list)
     label: str = ""                 # «дом 1» — подпись места, необязательна
     created_at: str = ""
+    lan_mode: int = 0               # 0/1: «за шлюзом — без VPN» (docs/gateway-lan.md)
 
     @property
     def mark(self) -> int:

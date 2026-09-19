@@ -246,6 +246,12 @@ HDREOF
         printf 'GATEWAY_PUBKEY="%s"\nexport GATEWAY_PUBKEY\n' "$(printf '%s' "${GATEWAY_PUBKEY:-}" | tr -cd 'A-Za-z0-9+/=')"
         printf 'GATEWAY_PREV_PUBKEY="%s"\nexport GATEWAY_PREV_PUBKEY\n' "$(printf '%s' "${GATEWAY_PREV_PUBKEY:-}" | tr -cd 'A-Za-z0-9+/=')"
         printf 'UPLINK_B64="%s"\nexport UPLINK_B64\n' "$(printf '%s' "${UPLINK_B64:-}" | tr -cd 'A-Za-z0-9+/=')"
+        # «За шлюзом — без VPN» (docs/gateway-lan.md): включена ли функция у
+        # слота, локальные подсети (первая даёт LAN-интерфейс и адрес
+        # резолвера), апстрим резолвера — свой резолвер ВПС через аплинк.
+        printf 'LAN_MODE="%s"\nexport LAN_MODE\n' "$(printf '%s' "${LAN_MODE:-0}" | tr -cd '01' | cut -c1)"
+        printf 'HOME_SUBNETS="%s"\nexport HOME_SUBNETS\n' "$(printf '%s' "${HOME_SUBNETS:-}" | tr -cd '0-9./ ')"
+        printf 'RESOLVER="%s"\nexport RESOLVER\n' "$(printf '%s' "${RESOLVER:-}" | tr -cd '0-9.')"
         # Имя ВПС — для панели агента («Линк до …»): на шлюзе взять его неоткуда.
         printf 'SERVER_NAME="%s"\n' "$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9._-' | cut -c1-64)"
         cat <<'BODYEOF'

@@ -292,3 +292,136 @@ def client_subnet() -> str:
         return ""
     m = re.search(r'^Environment="?CLIENT_SUBNET=([0-9./]+)"?', text, re.M)
     return m.group(1) if m else ""
+
+
+# ── локальная сеть без VPN (docs/gateway-lan.md, функция A) ──────────────────
+HOME_TABLE_NAME = "awg_home"
+LAN_STATUS_FILE = "/var/lib/awg-gw/lists.status"
+LAN_LISTS_SCRIPT = "/usr/local/sbin/awg-lan-lists.sh"
+LAN_DOMAIN_SCRIPT = "/usr/local/sbin/awg-lan-domain.sh"
+
+
+def unit_env(key: str) -> str:
+    """Значение Environment=KEY=… из юнита обвязки — что приехало в бандле."""
+    try:
+        text = Path(f"/etc/systemd/system/{config.GW_UNIT}").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    m = re.search(rf'^Environment="?{re.escape(key)}=([^"\n]*)"?', text, re.M)
+    return (m.group(1) if m else "").strip()
+
+
+def lan_mode() -> bool:
+    return unit_env("LAN_MODE") == "1"
+
+
+def lan_status() -> dict:
+    """Что записал скрипт списков: updated_at, domains, nets, rc."""
+    out = {}
+    try:
+        for line in Path(LAN_STATUS_FILE).read_text(encoding="utf-8").splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return out
+
+
+def home_table_info() -> Optional[dict]:
+    """{'sets': {имя: число элементов}, 'chains': set, 'lan_pkts': int, 'dns_pkts': int}
+    или None — таблицы нет. lan_pkts — счётчик «из локальной сети наружу»
+    (первое правило со счётчиком в prerouting), dns_pkts — «DNS с роутера»
+    (input). Один exec."""
+    proc = _nft(["-j", "list", "table", TABLE_FAMILY, HOME_TABLE_NAME])
+    if proc.returncode != 0:
+        return None
+    try:
+        doc = json.loads(proc.stdout.decode(errors="replace") or "{}")
+    except json.JSONDecodeError as e:
+        raise GwGuardError(f"nft -j: {e}")
+    sets: dict[str, int] = {}
+    chains: set[str] = set()
+    counters: dict[str, int] = {}
+    for item in doc.get("nftables", []):
+        if "set" in item:
+            s = item["set"]
+            sets[s["name"]] = len(s.get("elem") or [])
+        elif "chain" in item:
+            chains.add(item["chain"]["name"])
+        elif "rule" in item:
+            r = item["rule"]
+            chain = r.get("chain", "")
+            if chain in counters:
+                continue
+            for e in r.get("expr") or []:
+                if isinstance(e, dict) and "counter" in e:
+                    counters[chain] = int((e["counter"] or {}).get("packets", 0))
+                    break
+    return {"sets": sets, "chains": chains,
+            "lan_pkts": counters.get("prerouting", 0), "dns_pkts": counters.get("input", 0)}
+
+
+def lan_own_lists() -> tuple[int, int]:
+    """(в туннель, напрямую) — персональные списки, строки nftset=."""
+    def _count(name: str) -> int:
+        try:
+            text = Path(f"/etc/dnsmasq.d/{name}").read_text(encoding="utf-8")
+        except OSError:
+            return 0
+        return sum(1 for ln in text.splitlines() if ln.startswith("nftset="))
+    return _count("awg-gw-vpn-user.conf"), _count("awg-gw-ru-user.conf")
+
+
+def dnsmasq_active() -> Optional[bool]:
+    try:
+        proc = subprocess.run(["systemctl", "is-active", "--quiet", "dnsmasq"],
+                              capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.returncode == 0
+
+
+def resolve_via_local(name: str = "github.com") -> Optional[bool]:
+    """Резолвит ли dnsmasq через аплинк: один запрос к 127.0.0.1. None — dig нет."""
+    try:
+        proc = subprocess.run(["dig", "+short", "+time=3", "+tries=1", "@127.0.0.1", name, "A"],
+                              capture_output=True, timeout=15)
+    except FileNotFoundError:
+        return None
+    except (OSError, subprocess.SubprocessError):
+        return False
+    out = proc.stdout.decode(errors="replace")
+    return proc.returncode == 0 and bool(re.search(r"^\d+\.\d+\.\d+\.\d+$", out, re.M))
+
+
+def ipv6_disabled(iface: str) -> Optional[bool]:
+    try:
+        return Path(f"/proc/sys/net/ipv6/conf/{iface}/disable_ipv6").read_text().strip() == "1"
+    except OSError:
+        return None
+
+
+def run_lan_lists(timeout: int = 600) -> tuple[bool, str]:
+    """Обновить списки скриптом обвязки. (ok, хвост вывода)."""
+    try:
+        proc = subprocess.run([LAN_LISTS_SCRIPT], capture_output=True, timeout=timeout)
+    except FileNotFoundError:
+        return False, "скрипта списков нет — перевыпусти конфигурацию шлюза"
+    except subprocess.TimeoutExpired:
+        return False, "таймаут обновления списков"
+    except OSError as e:
+        return False, str(e)
+    tail = (proc.stdout + proc.stderr).decode(errors="replace").strip().splitlines()[-3:]
+    return proc.returncode == 0, "\n".join(tail)
+
+
+def run_lan_domain(cmd: str, domains: list[str], timeout: int = 60) -> tuple[bool, str]:
+    """Персональные списки: add | ru | del | list. (ok, вывод)."""
+    try:
+        proc = subprocess.run([LAN_DOMAIN_SCRIPT, cmd, *domains], capture_output=True, timeout=timeout)
+    except FileNotFoundError:
+        return False, "скрипта списков нет — перевыпусти конфигурацию шлюза"
+    except (OSError, subprocess.SubprocessError) as e:
+        return False, str(e)
+    return proc.returncode == 0, (proc.stdout + proc.stderr).decode(errors="replace").strip()

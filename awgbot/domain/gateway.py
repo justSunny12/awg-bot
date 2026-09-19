@@ -82,6 +82,7 @@ class GwStatus:
     egress_ms: float | None = None          # выход наружу через домашний канал, мс
     tg_missing: list[str] = field(default_factory=list)   # диапазоны Telegram без маркировки
     mark_status: str = ""                   # шлюзовое устройство: confirmed|unmarked|foreign|unconfirmed
+    lan: dict = field(default_factory=dict) # локальная сеть без VPN (docs/gateway-lan.md): пусто — выключена
     ts: str = ""                            # когда снят (ISO); пусто — живой
 
     def to_json(self) -> str:
@@ -495,6 +496,108 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         log.warning("gateway: реассерт таблицы не удался: %s", err)
         return 0
 
+    # ── локальная сеть без VPN (docs/gateway-lan.md, функция A) ──────────────
+    _LAN_LAST_KEY = "gw_lan_counters"       # {"lan": pkts, "dns": pkts, "lan_at": iso, "dns_at": iso}
+    _LAN_QUIET_SECONDS = 6 * 3600           # столько без пакетов из LAN — «роутер не заворачивает»
+    _LAN_FAILS_KEY = "gw_lan_lists_fails"
+
+    def lan_status(self) -> tuple[dict, list[GwCheck]]:
+        """(блок для панели, проверки) — только при LAN_MODE=1 в юните; иначе
+        ({}, []). Счётчики заворота и DNS — по разности с прошлым тиком:
+        растут — роутер шлёт; не растут дольше _LAN_QUIET_SECONDS — нет."""
+        from awgbot.infra import gwguard
+        if not gwguard.lan_mode():
+            return {}, []
+        st = gwguard.script_status()
+        iface, addr = st.get("LAN_IF", ""), st.get("LAN_ADDR", "")
+        resolver = gwguard.unit_env("RESOLVER")
+        info: dict = {"iface": iface, "addr": addr, "resolver": resolver or "1.1.1.1 (запасной)"}
+        checks: list[GwCheck] = []
+        # резолвер
+        active = gwguard.dnsmasq_active()
+        checks.append(GwCheck("резолвер", active, "" if active else
+                              ("dnsmasq не запущен: journalctl -u dnsmasq -e" if active is False
+                               else "systemctl не ответил")))
+        up = gwguard.resolve_via_local() if active else None
+        checks.append(GwCheck("апстрим через аплинк", up,
+                              "" if up else
+                              (f"{info['resolver']} не отвечает через аплинк: аплинк или резолвер сервера"
+                               if up is False else "dig не установлен")))
+        # таблица и наборы
+        try:
+            home = gwguard.home_table_info()
+        except gwguard.GwGuardError:
+            home = None
+        sets = (home or {}).get("sets", {})
+        checks.append(GwCheck("таблица локальной сети", home is not None and "prerouting" in home["chains"],
+                              "" if home is not None else
+                              "таблицы awg_home нет: перевыпусти конфигурацию шлюза и примени её"))
+        ls = gwguard.lan_status()
+        info["domains"] = int(ls.get("domains") or 0)
+        info["nets"] = sets.get("lan_vpn_nets4", 0)
+        info["resolved"] = sets.get("lan_vpn4", 0)
+        info["updated_at"] = ls.get("updated_at", "")
+        info["own_vpn"], info["own_ru"] = gwguard.lan_own_lists()
+        lists_ok = home is not None and (sets.get("lan_vpn_nets4", 0) > 0 or info["domains"] > 0)
+        checks.append(GwCheck("списки", lists_ok, "" if lists_ok else
+                              "наборы пусты: обновление не прошло (🔄 Обновить списки)"))
+        # заворот и DNS с роутера — по росту счётчиков
+        if home is not None:
+            last = {}
+            try:
+                last = json.loads(self.db.get_state(self._LAN_LAST_KEY) or "{}")
+            except json.JSONDecodeError:
+                last = {}
+            now = timeutil.now()
+            cur = {"lan": home["lan_pkts"], "dns": home["dns_pkts"]}
+            for key, name, why in (("lan", "трафик с роутера",
+                                     "роутер не маршрутизирует трафик на шлюз (📖 Настройка роутера)"),
+                                    ("dns", "DNS с роутера",
+                                     "DHCP роутера раздаёт не адрес шлюза")):
+                prev = int(last.get(key, -1))
+                at = last.get(f"{key}_at") or ""
+                if prev < 0 or cur[key] > prev or cur[key] < prev:      # первый тик / рост / сброс
+                    at = timeutil.to_iso(now)
+                    ok: bool | None = True if prev >= 0 else None
+                    detail = "" if prev >= 0 else "первый замер"
+                else:
+                    try:
+                        quiet = (now - timeutil.parse_iso(at)).total_seconds() if at else 0.0
+                    except ValueError:
+                        quiet = 0.0
+                    ok = quiet < self._LAN_QUIET_SECONDS
+                    detail = "" if ok else (f"пакетов из локальной сети нет с "
+                                            f"{timeutil.fmt_dt(timeutil.parse_iso(at)) if at else '?'}: {why}")
+                info[f"{key}_pkts"] = cur[key]
+                last[key] = cur[key]
+                last[f"{key}_at"] = at
+                checks.append(GwCheck(name, ok, detail))
+            self.db.set_state(self._LAN_LAST_KEY, json.dumps(last))
+        if iface:
+            v6 = gwguard.ipv6_disabled(iface)
+            checks.append(GwCheck("IPv6 на LAN", v6, "" if v6 else
+                                  ("включён: AAAA уведёт трафик мимо туннеля" if v6 is False else "не прочитался")))
+        return info, checks
+
+    def lan_lists_update(self) -> list[Notification]:
+        """Задача планировщика: обновить списки; два провала подряд — замечание."""
+        from awgbot.infra import gwguard
+        if not gwguard.lan_mode():
+            return []
+        ok, tail = gwguard.run_lan_lists()
+        fails = 0 if ok else int(self.db.get_state(self._LAN_FAILS_KEY) or 0) + 1
+        self.db.set_state(self._LAN_FAILS_KEY, str(fails))
+        if ok:
+            log.info("gateway: списки локальной сети обновлены")
+            return []
+        log.warning("gateway: списки локальной сети не обновились: %s", tail)
+        if fails == 2:
+            return [Notification(config.ADMIN_ID,
+                                 "⚠️ Списки локальной сети не обновились дважды подряд: "
+                                 + (tail or "без подробностей") + "\nФиды — через аплинк; проверь "
+                                 "монитор здоровья.", critical=False)]
+        return []
+
     # ── операции с кнопки (этап 2) ───────────────────────────────────────────
 
     def restart_link(self) -> tuple[bool, str]:
@@ -789,6 +892,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         checks.append(GwCheck("ядра", not st.kernels_missing,
                               "" if not st.kernels_missing else
                               "без модуля awg: " + ", ".join(st.kernels_missing)))
+        st.lan, lan_checks = self.lan_status()
+        checks += lan_checks
         st.egress_ms = self.egress_probe()
         checks.append(GwCheck("выход наружу", st.egress_ms is not None,
                               f"{st.egress_ms:.0f} мс" if st.egress_ms is not None else

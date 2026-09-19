@@ -150,11 +150,19 @@ def gateway_card(state, *, back_to_list: bool) -> InlineKeyboardMarkup:
         rows.append(1)
     kb.button(text="⚙️ Конфигурация шлюза", callback_data=GwSlotCB(action="bundle", slot=gw.id))
     kb.button(text="🏠 Локальные подсети", callback_data=GwSlotCB(action="home", slot=gw.id))
+    # «За шлюзом — без VPN» (docs/gateway-lan.md): тумблер с подтверждением,
+    # при включённом — рецепт роутера
+    kb.button(text=f"🏠 За шлюзом — без VPN: {'вкл' if gw.lan_mode else 'выкл'}",
+              callback_data=GwSlotCB(action="lan_ask", slot=gw.id))
+    rows += [1, 1, 1]
+    if gw.lan_mode:
+        kb.button(text="📖 Настройка роутера", callback_data=GwSlotCB(action="router", slot=gw.id))
+        rows.append(1)
     kb.button(text="✏️ Подпись", callback_data=GwSlotCB(action="label", slot=gw.id))
     kb.button(text="🔁 Заменить устройство", callback_data=SetCB(sec="rt_gw", act="open", key=str(gw.id)))
     kb.button(text="🛑 Снять шлюз", callback_data=GwSlotCB(action="remove_ask", slot=gw.id))
     kb.button(text="📡 Пинг", callback_data=GwSlotCB(action="ping", slot=gw.id))
-    rows += [1, 1, 1, 1, 1, 1]
+    rows += [1, 1, 1, 1]
     back = GwSlotCB(action="list").pack() if back_to_list else SetCB(sec="rt").pack()
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back))
     kb.adjust(*rows, 1)
@@ -208,6 +216,21 @@ def gateway_remove_confirm(slot: int = 0) -> InlineKeyboardMarkup:
     kb.button(text="Отмена", callback_data=(GwSlotCB(action="card", slot=slot) if slot
                                             else SetCB(sec="rt", act="open")))
     kb.adjust(1)
+    return kb.as_markup()
+
+
+def gateway_lan_confirm(slot: int, on: bool) -> InlineKeyboardMarkup:
+    """Подтверждение «за шлюзом — без VPN»: «Отмена» первой."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Отмена", callback_data=GwSlotCB(action="card", slot=slot))
+    kb.button(text="Включить" if on else "Выключить", callback_data=GwSlotCB(action="lan_yes", slot=slot))
+    kb.adjust(2)
+    return kb.as_markup()
+
+
+def gateway_router_back(slot: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Назад", callback_data=GwSlotCB(action="card", slot=slot))
     return kb.as_markup()
 
 

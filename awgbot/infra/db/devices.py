@@ -338,7 +338,7 @@ class DevicesMixin:
     def gateway_update(self, slot_id: int, **fields) -> None:
         """Точечное обновление: device_id (финал переезда), home_subnets (список
         или строка), label."""
-        allowed = {"device_id", "home_subnets", "label", "link_port"}
+        allowed = {"device_id", "home_subnets", "label", "link_port", "lan_mode"}
         bad = set(fields) - allowed
         if bad:
             raise ValueError(f"gateway_update: неизвестные поля {sorted(bad)}")

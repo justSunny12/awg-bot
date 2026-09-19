@@ -192,7 +192,7 @@ class GatewayLinkMixin:
         аплинка устройства слота (в окне переезда — двойника, старый ключ
         отдельно), параметры линка слота."""
         admin_ips = self._gw_ssh_allow()
-        env = {"ADMIN_IPS": " ".join(admin_ips), **self._slot_env(gw)}
+        env = {"ADMIN_IPS": " ".join(admin_ips), **self._slot_env(gw), **self._lan_env(gw)}
         dev = self.db.get_device(gw.device_id) if gw.device_id else None
         if dev is not None:
             import base64
@@ -205,6 +205,35 @@ class GatewayLinkMixin:
             except ServiceError as e:
                 log.warning("bundle: конфиг аплинка шлюза не собран: %s", e)
         return env, admin_ips
+
+    # ── «за шлюзом — без VPN» (docs/gateway-lan.md, функция A) ───────────────
+    def gateway_resolver_addr(self, gw) -> str:
+        """Апстрим резолвера малины — свой резолвер ВПС из DNS устройства слота;
+        пусто — резолвера нет, малина возьмёт запасной через аплинк."""
+        from awgbot.infra import resolver
+        dev = self.db.get_device(gw.device_id) if gw.device_id else None
+        if dev is None:
+            return ""
+        dns1, _dns2 = configgen.dns_for(getattr(dev, "iface", "") or "")
+        return dns1 if resolver.is_private(dns1) and resolver.installed() else ""
+
+    def _lan_env(self, gw) -> dict:
+        """Переменные функции A для скрипта обвязки: LAN_MODE, HOME_SUBNETS
+        (первая подсеть даёт LAN-интерфейс и адрес резолвера), RESOLVER."""
+        return {"LAN_MODE": "1" if gw.lan_mode else "0",
+                "HOME_SUBNETS": " ".join(gw.home_subnets),
+                "RESOLVER": self.gateway_resolver_addr(gw) if gw.lan_mode else ""}
+
+    def gateway_set_lan_mode(self, slot_id: int, on: bool) -> dict:
+        """Включить/выключить «за шлюзом — без VPN» у слота. Включение требует
+        локальной подсети: по ней малина находит свой адрес. Возвращает
+        {'gateway', 'resolver': адрес или '' (запасной апстрим)}."""
+        gw = self._gw_slot(slot_id)
+        if on and not gw.home_subnets:
+            raise ServiceError("сначала задай локальную подсеть шлюза: по ней шлюз находит свой адрес")
+        self.db.gateway_update(gw.id, lan_mode=1 if on else 0)
+        gw = self.db.gateway(gw.id)
+        return {"gateway": gw, "resolver": self.gateway_resolver_addr(gw) if on else ""}
 
     @staticmethod
     def _bundle_path(gw) -> str:
@@ -230,6 +259,8 @@ class GatewayLinkMixin:
         plain = self._bundle_with_agent(plain, gw.id)
         self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, gw.id), " ".join(admin_ips))
         self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, gw.id), "")
+        self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_KEY, gw.id), self._gw_bundle_deps(gw))
+        self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_NOTIFIED_KEY, gw.id), "")
         self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_ISSUED_KEY, gw.id),
                           timeutil.to_iso(timeutil.now()))
         return plain, priv
@@ -432,7 +463,8 @@ class GatewayLinkMixin:
         if others and active is not None and active.id == gw.id:
             self.gateway_switch(others[0].id, manual=True)
         self.db.gateway_delete(gw.id)
-        for key in (self._GW_BUNDLE_ISSUED_KEY, self._GW_BUNDLE_SSH_KEY, self._GW_BUNDLE_SSH_NOTIFIED_KEY):
+        for key in (self._GW_BUNDLE_ISSUED_KEY, self._GW_BUNDLE_SSH_KEY, self._GW_BUNDLE_SSH_NOTIFIED_KEY,
+                    self._GW_BUNDLE_DEPS_KEY, self._GW_BUNDLE_DEPS_NOTIFIED_KEY):
             self.db.set_state(self._gw_slot_key(key, gw.id), "")
         if (self.db.get_state(self._RT_HOLD_KEY) or "") == str(gw.id):
             self.db.set_state(self._RT_HOLD_KEY, "")
@@ -724,6 +756,24 @@ class GatewayLinkMixin:
 
     _GW_BUNDLE_SSH_KEY = "gw_bundle_ssh_allow"
     _GW_BUNDLE_SSH_NOTIFIED_KEY = "gw_bundle_ssh_allow_notified"
+    # Прочие зависимости бандла (docs/gateway-lan.md §4.3): режим без VPN,
+    # локальные подсети, резолвер. Устройства админа — отдельным ключом выше:
+    # у них своё напоминание.
+    _GW_BUNDLE_DEPS_KEY = "gw_bundle_deps"
+    _GW_BUNDLE_DEPS_NOTIFIED_KEY = "gw_bundle_deps_notified"
+
+    def _gw_bundle_deps(self, gw) -> str:
+        env = self._lan_env(gw)
+        return f"lan={env['LAN_MODE']};nets={env['HOME_SUBNETS']};resolver={env['RESOLVER']}"
+
+    @staticmethod
+    def _gw_deps_changed(before: str, after: str) -> list[str]:
+        """Что именно разошлось — для напоминания своим текстом."""
+        names = {"lan": "функция «За шлюзом — без VPN»", "nets": "локальные подсети",
+                 "resolver": "резолвер сервера"}
+        b = dict(x.split("=", 1) for x in before.split(";") if "=" in x)
+        a = dict(x.split("=", 1) for x in after.split(";") if "=" in x)
+        return [names[k] for k in ("lan", "nets", "resolver") if b.get(k, "") != a.get(k, "")]
 
     def _gw_ssh_allow(self) -> list[str]:
         return sorted(set(self.db.admin_device_addresses(config.ADMIN_ID)))
@@ -749,9 +799,24 @@ class GatewayLinkMixin:
             notes.append(Notification(
                 config.ADMIN_ID,
                 f"🛰 Список твоих устройств изменился, а файервол шлюза {self._gw_display(g)} "
-                "знает прежний: новые устройства не достанут до шлюза и его домашней сети "
+                "знает прежний: новые устройства не достанут до шлюза и его локальной сети "
                 "через туннель. Перевыпусти конфигурацию шлюза (Условная маршрутизация → "
                 f"{self._gw_display(g)} → Конфигурация шлюза) и примени её на шлюзе."))
+        # прочие зависимости: режим без VPN, подсети, резолвер — своим текстом
+        for g in self.db.gateways():
+            sent = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_KEY, g.id))
+            if sent is None:
+                continue
+            cur = self._gw_bundle_deps(g)
+            if cur == sent or self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_NOTIFIED_KEY, g.id)) == cur:
+                continue
+            self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_NOTIFIED_KEY, g.id), cur)
+            what = ", ".join(self._gw_deps_changed(sent, cur)) or "настройки шлюза"
+            notes.append(Notification(
+                config.ADMIN_ID,
+                f"🛰 Конфигурация {self._gw_display(g)} устарела: изменились {what}. "
+                f"Перевыпусти её (Условная маршрутизация → {self._gw_display(g)} → "
+                "Конфигурация шлюза) и примени на шлюзе."))
         return notes
 
     # Маркер контракта как ОТДЕЛЬНАЯ СТРОКА. Тот же текст встречается в бандле и
