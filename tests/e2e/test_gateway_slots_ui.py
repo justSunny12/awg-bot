@@ -204,10 +204,31 @@ async def test_home_subnets_and_label_inputs(services, slots, fake_bot):
     msg = _amsg(fake_bot, "дом 2")
     await sh.gateway_label_received(msg, st, services)
     assert services.db.gateway(2).label == "дом 2"
+    # приглашение и ввод — служебные: после ответа убираются, в чате остаётся
+    # карточка; голый edit оставлял «✏️ Подпись шлюза» навсегда
+    deleted = [r[2] for r in fake_bot.records if r[0] == "delete_message"]
+    assert nav.message_id in deleted and msg.message_id in deleted
+    assert await st.get_state() is None
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=1), services, FakeState())
     text, _ = _screen(nav)
     assert "🏠 Домашние подсети: 192.168.1.0/24" in text
+
+
+async def test_failed_label_input_reasks_and_keeps_the_input_open(services, slots, fake_bot):
+    """Отказ сервиса (слот исчез, пока приглашение висело): переспрос, ввод не
+    закрыт, «Отмена» на приглашении работает — и ничего не убираем."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    st = FakeState()
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_label(cb, GwSlotCB(action="label", slot=2), services, st)
+    services.db.gateway_delete(2)
+    msg = _amsg(fake_bot, "дом 2")
+    await sh.gateway_label_received(msg, st, services)
+    assert any(s[0] == "answer" and s[1].startswith("⚠️") for s in msg.sent)
+    assert await st.get_state() is not None, "ввод открыт — можно ответить ещё раз"
+    assert not [r for r in fake_bot.records if r[0] == "delete_message"], "до успеха ничего не убираем"
 
 
 async def test_add_second_slot_as_new_machine_asks_its_own_token(services, slots, fake_bot):
@@ -224,6 +245,8 @@ async def test_add_second_slot_as_new_machine_asks_its_own_token(services, slots
     msg = _amsg(fake_bot, "222222222:BB-second-token-value-long-enough")
     await sh.gateway_token_received(msg, st, services)
     assert services.token[2].startswith("222222222:")
+    assert nav.message_id in [r[2] for r in fake_bot.records if r[0] == "delete_message"], \
+        "приглашение ввести токен отслужило"
     gws = services.db.gateways()
     assert [g.id for g in gws] == [1, 2] and services.db.get_device(gws[1].device_id).name == "Шлюз 2"
     assert services.runs[-1][0] == "--apply" and services.runs[-1][1]["LINK_IF"] == "awglink2"

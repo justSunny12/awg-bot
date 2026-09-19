@@ -238,7 +238,7 @@ async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services,
         await cb.answer()
         await state.set_state(GatewayToken.value)
         await state.update_data(gw_device_id=callback_data.device_id, gw_slot=slot)
-        await edit(cb, texts.gateway_ask_token(token_slot), kb.settings_cancel("rt_gw"))
+        await core.ask(cb, services, texts.gateway_ask_token(token_slot), kb.settings_cancel("rt_gw"))
         return
     await cb.answer("Назначаю…")
     await edit(cb, "🛰 Назначаю шлюз…", None)
@@ -265,7 +265,7 @@ async def gateway_new_yes(cb: CallbackQuery, callback_data: GwMarkCB, services, 
         await cb.answer()
         await state.set_state(GatewayToken.value)
         await state.update_data(gw_slot=slot)
-        await edit(cb, texts.gateway_ask_token(token_slot), kb.settings_cancel("rt_gw"))
+        await core.ask(cb, services, texts.gateway_ask_token(token_slot), kb.settings_cancel("rt_gw"))
         return
     await cb.answer("Создаю устройство и ключи…")
     await _gateway_new_go(cb.message, services, slot)
@@ -284,9 +284,10 @@ async def gateway_token_received(message: Message, state: FSMContext, services):
     try:
         await call(services.set_gw_bot_token, token, token_slot)
     except ServiceError as e:
-        await message.answer(f"⚠️ {texts._e(str(e))}")
+        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
         return
     await state.clear()
+    await cleanup_content(message.bot, services, message.chat.id)   # приглашение отслужило
     # Токен спрашивают из двух мест: «новая машина» и замена машины со сменой
     # ключей. Куда возвращаться, помнит state.
     device_id = data.get("gw_device_id")
@@ -474,20 +475,24 @@ async def gw_slot_home(cb: CallbackQuery, callback_data: GwSlotCB, services, sta
         return
     await state.set_state(GatewayHome.value)
     await state.update_data(gw_slot=st["gateway"].id)
-    await edit(cb, texts.gateway_home_text(st), kb.gateway_slot_cancel(st["gateway"].id))
+    # приглашение — в служебные (core.ask): после ответа оно отслужило и
+    # убирается вместе с вводом; голый edit оставлял его в чате навсегда
+    await core.ask(cb, services, texts.gateway_home_text(st), kb.gateway_slot_cancel(st["gateway"].id))
     await cb.answer()
 
 
 @router.message(GatewayHome.value)
 async def gateway_home_received(message: Message, state: FSMContext, services):
     slot = int((await state.get_data()).get("gw_slot") or 0)
-    await state.clear()
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     try:
         res = await call(services.gateway_set_home_subnets, slot, message.text or "")
         st = await call(services.gateway_screen_state, slot, lazy_ping=False)
     except ServiceError as e:
-        await message.answer(f"⚠️ {texts._e(str(e))}")
+        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")   # ввод открыт, «Отмена» на месте
         return
+    await state.clear()
+    await cleanup_content(message.bot, services, message.chat.id)
     await message.answer(texts.gateway_home_report(res, st))
     await send_menu(message, services, texts.gateway_card_text(st, st["states"]),
                     kb.gateway_card(st, back_to_list=len(st["states"]) > 1))
@@ -500,20 +505,22 @@ async def gw_slot_label(cb: CallbackQuery, callback_data: GwSlotCB, services, st
         return
     await state.set_state(GatewayLabel.value)
     await state.update_data(gw_slot=st["gateway"].id)
-    await edit(cb, texts.gateway_label_text(st), kb.gateway_slot_cancel(st["gateway"].id))
+    await core.ask(cb, services, texts.gateway_label_text(st), kb.gateway_slot_cancel(st["gateway"].id))
     await cb.answer()
 
 
 @router.message(GatewayLabel.value)
 async def gateway_label_received(message: Message, state: FSMContext, services):
     slot = int((await state.get_data()).get("gw_slot") or 0)
-    await state.clear()
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     try:
         await call(services.gateway_set_label, slot, message.text or "")
         st = await call(services.gateway_screen_state, slot, lazy_ping=False)
     except ServiceError as e:
-        await message.answer(f"⚠️ {texts._e(str(e))}")
+        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
         return
+    await state.clear()
+    await cleanup_content(message.bot, services, message.chat.id)
     await send_menu(message, services, texts.gateway_card_text(st, st["states"]),
                     kb.gateway_card(st, back_to_list=len(st["states"]) > 1))
 
