@@ -443,6 +443,9 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
     TG_RANGES = ("91.108.4.0/22", "91.108.8.0/22", "91.108.12.0/22",
                  "91.108.16.0/22", "91.108.20.0/22", "91.108.56.0/22",
                  "149.154.160.0/20", "185.76.151.0/24")
+    # GitHub той же меткой в аплинк: с него агент обновляется, а в юрисдикции
+    # шлюза он без туннеля недоступен. Список — как в routing-gw-setup.sh.
+    GH_RANGES = ("140.82.112.0/20", "143.55.64.0/20", "185.199.108.0/22", "192.30.252.0/22")
 
     _guard_info: dict | None = None
     _REASSERT_MIN_INTERVAL = 10 * 60
@@ -461,6 +464,16 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
             return list(self.TG_RANGES)
         present = info["sets"].get("tg_nets4", set())
         return [n for n in self.TG_RANGES if n not in present]
+
+    def gh_route_check(self, info: dict | None) -> GwCheck:
+        """Отдельно от Telegram: реассерт тут не поможет — старый скрипт
+        обвязки набора gh_nets4 не знает, нужен новый файл конфигурации с ВПС."""
+        present = (info or {}).get("sets", {}).get("gh_nets4", set())
+        missing = [n for n in self.GH_RANGES if n not in present]
+        return GwCheck("маршрут к GitHub", not missing,
+                       "" if not missing else
+                       "обвязка без маршрута GitHub в аплинк — агент не сможет обновляться; "
+                       "перевыпусти конфигурацию шлюза с ВПС и примени её здесь")
 
     def tg_mark_ensure(self, missing: list[str] | None = None) -> int:
         """Таблицу правит только скрипт: недостающее восстанавливаем рестартом
@@ -765,6 +778,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                               "" if not missing else
                               f"нет в таблице {len(missing)} диапазонов — "
                               f"агент перевыставит таблицу"))
+        checks.append(self.gh_route_check(self._guard_info))
         ok_link = st.link_up and st.handshake_age is not None
         checks.append(GwCheck("линк", ok_link, "" if ok_link else
                               ("интерфейс лежит" if not st.link_up else "хендшейка не было")))

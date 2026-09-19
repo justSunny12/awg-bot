@@ -58,6 +58,12 @@ TG_MARK="${TG_MARK:-0x1}"
 # Диапазоны Telegram (AS62014/62041/59930/44907) — стабильны годами; тот же
 # список знает агент (domain/gateway.py TG_RANGES) и сверяет с таблицей.
 TG_NETS="91.108.4.0/22 91.108.8.0/22 91.108.12.0/22 91.108.16.0/22 91.108.20.0/22 91.108.56.0/22 149.154.160.0/20 185.76.151.0/24"
+# GitHub — той же меткой в аплинк: агент обновляется с releases, а в юрисдикции
+# шлюза GitHub без туннеля недоступен. Четыре сети из api.github.com/meta
+# (web/api/git), в них github.com, api.github.com и *.githubusercontent.com
+# (release-assets, objects, raw); региональные /32 Azure оттуда же — не для
+# нас. Тот же список знает агент (domain/gateway.py GH_RANGES).
+GH_NETS="140.82.112.0/20 143.55.64.0/20 185.199.108.0/22 192.30.252.0/22"
 PRIVATE_NETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10"
 # Устройства админа (из бандла с ВПС) — им с туннеля открыто ВСЁ: сама машина и
 # домашняя сеть через неё. Прочим клиентам — изоляция и drop. Старое имя
@@ -285,7 +291,7 @@ if [ "$MODE" = "plan" ]; then
     say "Будет сделано:"
     say "  1. конфиг → $HOST_CONF_DIR/$LINK_IF.conf, awg-quick up хостовыми утилитами"
     say "  2. таблица nft $GUARD_TABLE: MASQUERADE $CLIENT_SUBNET → $WAN_IF, изоляция"
-    say "     клиентов от приватных сетей, метки Telegram, защита шлюза от туннеля"
+    say "     клиентов от приватных сетей, метки Telegram и GitHub → аплинк, защита шлюза от туннеля"
     say "     (с туннеля на шлюз: ВПС по линку; полный доступ — ADMIN_IPS=${ADMIN_IPS:-—})"
     say "  3. снятие прежних правил iptables ($FWD_CHAIN, MASQUERADE, метки)"
     say "  0. шлюзовое устройство: ${GATEWAY_PUBKEY:+помечен, конфиг аплинка ставится машине с тем же ключом}${GATEWAY_PUBKEY:-не помечен}"
@@ -571,6 +577,11 @@ table $GUARD_TABLE {
         flags interval
         elements = { $(ipv4_list $TG_NETS) }
     }
+    set gh_nets4 {
+        type ipv4_addr
+        flags interval
+        elements = { $(ipv4_list $GH_NETS) }
+    }
     set admin4 {
         type ipv4_addr
         flags interval
@@ -609,6 +620,7 @@ $UPLINK_MASQ
     chain output {
         type route hook output priority mangle; policy accept;
         ip daddr @tg_nets4 meta mark set $TG_MARK
+        ip daddr @gh_nets4 meta mark set $TG_MARK
     }
 }
 GUARDEOF

@@ -321,3 +321,17 @@ def test_unit_starts_after_the_uplink(script):
     unit = script.split("cat > \"$UNIT\"", 1)[1].split("UNITEOF", 2)[1]
     for d in ("After", "Wants"):
         assert f"{d}=network-online.target${{UPLINK_IF:+ awg-quick@$UPLINK_IF.service}}" in unit, d
+
+
+def test_github_goes_into_the_uplink_like_telegram(script):
+    """Агент обновляется с GitHub, а в юрисдикции шлюза он без туннеля
+    недоступен: та же метка → та же политика → аплинк. Список — тот же, что у
+    агента (domain/gateway.py GH_RANGES)."""
+    import re
+    from awgbot.domain.gateway import GatewayServices
+    m = re.search(r'^GH_NETS="([^"]+)"$', script, re.M)
+    assert m and set(m.group(1).split()) == set(GatewayServices.GH_RANGES)
+    body = script.split("GUARDEOF", 1)[1]
+    assert "set gh_nets4 {" in body and "elements = { $(ipv4_list $GH_NETS) }" in body
+    out = body.split("chain output", 1)[1].split("}", 1)[0]
+    assert "ip daddr @gh_nets4 meta mark set $TG_MARK" in out, "той же меткой, что Telegram"

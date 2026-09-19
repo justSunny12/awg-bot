@@ -252,6 +252,19 @@ def test_docker_drop_policy_on_forward_is_reported(svc, monkeypatch):
     assert checks["политика FORWARD"].ok is False
 
 
+def test_github_route_is_a_plumbing_check(svc):
+    """С GitHub агент обновляется, а в юрисдикции шлюза он без туннеля
+    недоступен — той же меткой в аплинк, что и Telegram. Старая обвязка набора
+    не знает: совет — новый файл конфигурации, реассерт не поможет."""
+    from awgbot.domain.gateway import GatewayServices
+    full = {"sets": {"gh_nets4": set(GatewayServices.GH_RANGES)}}
+    assert svc.gh_route_check(full).ok is True
+    part = {"sets": {"gh_nets4": {"140.82.112.0/20"}}}
+    c = svc.gh_route_check(part)
+    assert c.ok is False and "перевыпусти конфигурацию" in c.detail
+    assert svc.gh_route_check(None).ok is False, "таблицы нет — маршрута нет"
+
+
 # ── тик монитора ─────────────────────────────────────────────────────────────
 
 def _quiet_status(**kw):
