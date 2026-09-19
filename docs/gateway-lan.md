@@ -209,16 +209,36 @@ conf-file=/etc/dnsmasq.d/awg-gw-doh.conf
 всё своё**, если было (выключили функцию — перевыпустили — применили).
 
 ```
-/etc/nftables.d/awg-home.nft                таблица awg_home (наборы без delete, цепочки flush+add)
-/etc/sysctl.d/98-awg-gw-lan.conf            rp_filter=2 all/default/<LAN>, disable_ipv6 на LAN
-/etc/dnsmasq.d/awg-gw-base.conf, awg-gw-doh.conf
+/etc/awg-gw/home.nft                        таблица awg_home (наборы без delete, цепочки flush+add)
+/etc/sysctl.d/98-awg-gw-lan.conf            rp_filter=2 на LAN
+/etc/dnsmasq.d/awg-gw-base.conf, awg-gw-doh.conf, awg-gw-vpn-feed.conf
 /etc/dnsmasq.d/awg-gw-vpn-user.conf, awg-gw-ru-user.conf   (создаются пустыми, не перезаписываются)
-/etc/systemd/system/dnsmasq.service.d/awg-gw.conf          (Restart, CAP_NET_ADMIN)
+/etc/default/dnsmasq                        DNSMASQ_EXCEPT=lo — системный DNS шлюза dnsmasq не трогает
+/etc/systemd/system/dnsmasq.service.d/awg-gw.conf          (Restart)
 /etc/systemd/system/awg-quick@<аплинк>.service.d/awg-gw.conf  (StartLimitIntervalSec=0, Restart)
-/etc/systemd/network/99-awg-gw-unmanaged.network           ([Match] Name=awg* / Unmanaged=yes)
-/opt/awg-gw/lan-lists.sh                    фиды → conf + набор + слепок (зовёт агент и `awg-bot lan update`)
-/opt/awg-gw/lan-domain.sh                   add/ru/del/list для персональных списков (зовёт агент и CLI)
+/etc/systemd/network/99-awg-gw-unmanaged.network           ([Match] Name=awg* / Unmanaged=yes) + networkctl reload
+/usr/local/sbin/awg-lan-lists.sh            фиды → conf + наборы + слепки (зовёт агент и `awg-bot lan update`)
+/usr/local/sbin/awg-lan-domain.sh           add/ru/del/list личных списков (зовёт агент и CLI)
+/var/lib/awg-gw/*.nft, lists.status         слепки наборов lan_vpn4 / lan_vpn_nets4 и итог обновления
+/var/lib/awg-gw/migrated/                   снятые файлы ручного слоя и личные списки при выключении —
+                                            ВНЕ /etc/dnsmasq.d: dnsmasq читает там всё, кроме .dpkg-*
 ```
+
+Наборы: `lan_vpn4` (домены по резолву, растёт), `lan_vpn_nets4` (подсети из
+фидов, перезаливается атомарно), `lan_ru4` (исключения). Проверки перед
+применением: занятый `:53` (кто-то, кроме dnsmasq, на `0.0.0.0`, `127.0.0.1`
+или LAN-адресе — честный отказ с именем процесса; stub systemd-resolved на
+`127.0.0.53` не мешает). Раздел 5 скрипта не роняет применение: юнит уже
+включён и перезапускается до победы, отказ уходит в `LAN_ERROR` статуса и в
+проверку агента «применение локальной сети».
+
+IPv6 у клиентов режется ответами резолвера (`filter-AAAA`), а не sysctl на
+шлюзе: RA раздаёт роутер, а networkd OMV включает v6 на интерфейсе при
+каждом Apply — требование «IPv6 в локальной сети выключен» в рецепте роутера.
+
+Чужая политика FORWARD (docker на OMV ставит DROP): accept в нашей
+inet-таблице её не отменяет — раздел 3a ставит accept для своих интерфейсов
+в `ip filter FORWARD`, только когда политика DROP.
 
 Оверрайд `awg-quick@` и `unmanaged.network` — **не только для A**: аплинк и
 линк есть у каждого шлюза, а именно они страдали от networkd (OMV: любой
@@ -251,7 +271,7 @@ systemd-resolved на 0.0.0.0) — до применения, с честным 
   пусты; таблица `awg_home` на месте с правилами по файлу; **заворот с
   роутера** — счётчик правила маркировки в prerouting растёт между тактами
   (нет пакетов из LAN сутки — «роутер не заворачивает трафик на шлюз»);
-  IPv6 на LAN выключен.
+  Проверки локальной сети — своим стриком, не критичные.
 - **Кнопки**: «➕ В туннель» / «➕ Напрямую» (ввод домена, тот же разбор, что
   у `awg-add`: схема и `www.` отбрасываются, денилист), «📋 Свои списки»
   (показать/удалить), «🔄 Обновить списки». Приглашения — служебные,

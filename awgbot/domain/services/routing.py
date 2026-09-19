@@ -314,6 +314,8 @@ class RoutingMixin:
         dev = self.db.get_device(device_id)
         if dev is None:
             return
+        if on and dev.is_gateway:
+            return                                  # шлюзу РФ-доступ не нужен никогда (старая клавиатура)
         for peer in self._device_pair(dev):
             self.db.update_device_fields(peer.id, routing_on=1 if on else 0)
         self.reconcile_routing()

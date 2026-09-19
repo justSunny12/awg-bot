@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import random
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -666,7 +667,7 @@ def setup_gateway_scheduler(services, bot):
     scheduler.add_job(
         job_gw_lan_lists, IntervalTrigger(hours=6, jitter=int(6 * 3600 * 0.4), timezone=config.TZ),
         id="gw_lan_lists", max_instances=1, coalesce=True,
-        next_run_time=timeutil.now() + datetime.timedelta(minutes=3),
+        next_run_time=timeutil.now() + datetime.timedelta(seconds=random.randint(120, 300)),
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
     async def job_gw_backup():

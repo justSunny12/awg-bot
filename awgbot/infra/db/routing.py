@@ -192,7 +192,7 @@ class RoutingMixin:
         """Все устройства ВЛАДЕЛЬЦА, включая переданные, — при выдаче
         разрешения: держателям обещано «включено для всех твоих устройств»."""
         with self._tx() as cur:
-            cur.execute("UPDATE devices SET routing_on = ? "
-                        " WHERE client_id = ? AND routing_on <> ?",
+            cur.execute("UPDATE devices AS d SET routing_on = ? "
+                        f" WHERE d.client_id = ? AND routing_on <> ? AND {self._NOT_GATEWAY}",
                         (1 if on else 0, client_id, 1 if on else 0))
             return cur.rowcount

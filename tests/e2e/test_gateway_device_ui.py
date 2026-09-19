@@ -330,9 +330,14 @@ def test_gateway_device_is_out_of_ru_access(services, gwsetup, monkeypatch):
     services.db.update_device_fields(pi.id, routing_on=1)
     assert services.routing_device_counts(admin.id) == (1, 1)
     assert pi.address not in sum(services.db.routing_active_addresses(ADMIN).values(), [])
-    # «включить на всех» профиля шлюз не трогает
+    # «включить на всех» профиля, выдача разрешения владельцу и тумблер по id
+    # из старой клавиатуры — шлюз не трогают
     services.db.update_device_fields(pi.id, routing_on=0)
     services.db.set_devices_routing(admin.id, True)
+    assert services.db.get_device(pi.id).routing_on == 0
+    services.db.set_owner_devices_routing(admin.id, True)
+    assert services.db.get_device(pi.id).routing_on == 0
+    services.set_routing_device(pi.id, True)
     assert services.db.get_device(pi.id).routing_on == 0
     # повторное назначение без флага — строки о снятии в отчёте нет
     res = services.gateway_setup(pi.id, rekey=True, slot_id=res["gateway"].id)

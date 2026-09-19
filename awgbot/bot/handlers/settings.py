@@ -526,7 +526,9 @@ async def gw_slot_router(cb: CallbackQuery, callback_data: GwSlotCB, services):
     st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
     if st is None:
         return
-    await edit(cb, texts.gateway_router_text(st), kb.gateway_router_back(st["gateway"].id))
+    gw = st["gateway"]
+    await edit(cb, texts.gateway_router_text(texts.slot_short(st), gw.home_subnets[0] if gw.home_subnets else ""),
+               kb.gateway_router_back(gw.id))
     await cb.answer()
 
 

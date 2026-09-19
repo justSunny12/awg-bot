@@ -75,9 +75,7 @@ def gateway_panel(st) -> str:
     lan = getattr(st, "lan", None) or {}
     if lan:
         # локальная сеть без VPN (docs/gateway-lan.md §3.5): своим блоком
-        names = {"резолвер", "апстрим через аплинк", "списки", "таблица локальной сети",
-                 "трафик с роутера", "DNS с роутера", "IPv6 на LAN"}
-        bad = [c for c in st.checks if c.name in names and c.ok is False]
+        bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
         head_ = "🔴 " + ", ".join(c.name for c in bad[:3]) if bad else "🟢 работает"
         parts += ["", f"🏠 За шлюзом — без VPN: {head_}"]
         where = f"{_e(lan.get('iface', '') or '?')}, {_e(lan.get('addr', '') or '?')}"
@@ -90,8 +88,8 @@ def gateway_panel(st) -> str:
             upd = timeutil.fmt_dt(timeutil.parse_iso(upd)) if upd else "ещё не обновлялись"
         except ValueError:
             upd = "?"
-        parts.append(f"{pad}списки: {lan.get('domains', 0)} доменов, {lan.get('nets', 0)} подсетей, "
-                     f"{lan.get('resolved', 0)} адресов по резолву; обновлены {upd}")
+        parts.append(f"{pad}списки: {lan.get('domains', 0)} доменов, {lan.get('nets', 0)} подсетей; "
+                     f"обновлены {upd}")
         parts.append(f"{pad}свои: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую")
     parts += ["", f"🌡 Монитор здоровья: {_gw_health_summary(st.checks)}", ""]
     parts.append(f"📊 Потребление за месяц: {human_bytes(st.month_rx + st.month_tx)} "
@@ -143,8 +141,7 @@ def gateway_lan_text(st) -> str:
             f"Интерфейс {_e(lan.get('iface', '') or '?')}, адрес {_e(lan.get('addr', '') or '?')}; "
             f"резолвер — апстрим {_e(lan.get('resolver', '') or '?')} через аплинк.\n"
             f"Трафик с роутера: {(str(pk) + ' пакетов') if pk else 'нет'}.\n"
-            f"Списки: {lan.get('domains', 0)} доменов, {lan.get('nets', 0)} подсетей, "
-            f"{lan.get('resolved', 0)} адресов по резолву; обновлены {upd}.\n"
+            f"Списки: {lan.get('domains', 0)} доменов, {lan.get('nets', 0)} подсетей; обновлены {upd}.\n"
             f"Свои: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую.")
 
 

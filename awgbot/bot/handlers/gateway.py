@@ -360,8 +360,7 @@ async def gw_lan_list(cb: CallbackQuery, services):
 async def gw_lan_update(cb: CallbackQuery, services):
     """Фиды сейчас: секунды, поэтому синхронно с отбивкой «обновляю»."""
     await cb.answer("Обновляю списки…")
-    from awgbot.infra import gwguard
-    ok, tail = await call(gwguard.run_lan_lists)
+    ok, tail = await call(services.lan_lists_now)
     await cb.message.answer(texts.gateway_lan_result(ok, tail or ("списки обновлены" if ok else "")))
     await _panel(cb.message, services, fresh=True, keep_id=cb.message.message_id)
 
@@ -369,17 +368,10 @@ async def gw_lan_update(cb: CallbackQuery, services):
 @router.callback_query(GwCB.filter(F.action == "lan_router"))
 async def gw_lan_router(cb: CallbackQuery, services):
     """Рецепт роутера — тот же текст, что у основного бота, с подсетью и
-    адресом этой малины (их знает только она)."""
+    адресом этого шлюза (их знает только он)."""
     import socket
-    from awgbot.infra import gwguard
-    from types import SimpleNamespace
-    from awgbot.bot.texts import routing as rt
-    st = gwguard.script_status()
-    nets = [n for n in gwguard.unit_env("HOME_SUBNETS").split() if n]
-    fake = {"gateway": SimpleNamespace(home_subnets=nets, label="", id=0),
-            "device": SimpleNamespace(name=socket.gethostname())}
-    text = rt.gateway_router_text(fake).replace("АДРЕС_ШЛЮЗА", st.get("LAN_ADDR") or "АДРЕС_ШЛЮЗА")
-    await edit_nav(cb, services, text, kb.gateway_lan_kb())
+    net, addr = await call(services.lan_router_params)
+    await edit_nav(cb, services, texts.gateway_router_text(socket.gethostname(), net, addr), kb.gateway_lan_kb())
     await cb.answer()
 
 

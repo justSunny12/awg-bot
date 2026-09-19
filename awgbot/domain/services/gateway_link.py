@@ -147,10 +147,13 @@ class GatewayLinkMixin:
     def _gw_slot_key(self, key: str, slot_id: int) -> str:
         return f"{key}_{int(slot_id)}"
 
+    def _gw_name(self, gw) -> str:
+        dev = self.db.get_device(gw.device_id)
+        return dev.name if dev is not None else f"слот {gw.id}"
+
     def _gw_display(self, gw) -> str:
         """«Имя» (подпись) — для текстов и уведомлений."""
-        dev = self.db.get_device(gw.device_id)
-        name = dev.name if dev is not None else f"слот {gw.id}"
+        name = self._gw_name(gw)
         return f"«{name}»" + (f" ({gw.label})" if gw.label else "")
 
     def gateway_next_slot(self) -> tuple[int, str, int, str]:
@@ -234,22 +237,8 @@ class GatewayLinkMixin:
 
     @staticmethod
     def _nets_overlap(a: list[str], b: list[str]) -> list[str]:
-        """Подсети из a, пересекающиеся (в т.ч. вложенностью) с какой-либо из b."""
-        import ipaddress
-        out = []
-        for x in a:
-            try:
-                nx = ipaddress.ip_network(x, strict=False)
-            except ValueError:
-                continue
-            for y in b:
-                try:
-                    if nx.overlaps(ipaddress.ip_network(y, strict=False)):
-                        out.append(x)
-                        break
-                except ValueError:
-                    continue
-        return out
+        from awgbot.util import nets
+        return nets.overlap(a, b)
 
     def gateway_peer_nets(self, slot_id: int) -> list[str]:
         """Подсети за другими шлюзами для слота: тумблер включён, у обоих слотов
@@ -299,6 +288,7 @@ class GatewayLinkMixin:
                     return info
         info["state"] = "ok"
         info["pairs"] = [(self._gw_display(g), list(g.home_subnets)) for g in lan]
+        info["pairs_named"] = [(self._gw_name(g), g.label, list(g.home_subnets)) for g in lan]
         return info
 
     def set_peer_nets(self, on: bool) -> None:
@@ -314,6 +304,8 @@ class GatewayLinkMixin:
         gw = self._gw_slot(slot_id)
         if on and not gw.home_subnets:
             raise ServiceError("сначала задай локальную подсеть шлюза: по ней шлюз находит свой адрес")
+        if on and (not gw.device_id or self.db.get_device(gw.device_id) is None):
+            raise ServiceError("у слота нет устройства — без аплинка режим без VPN не работает")
         self.db.gateway_update(gw.id, lan_mode=1 if on else 0)
         gw = self.db.gateway(gw.id)
         return {"gateway": gw, "resolver": self.gateway_resolver_addr(gw) if on else ""}
@@ -591,6 +583,9 @@ class GatewayLinkMixin:
         import ipaddress
         gw = self._gw_slot(slot_id)
         text = (raw or "").strip()
+        if gw.lan_mode and (not text or text in ("-", "—")):
+            # без подсети скрипт обвязки не найдёт свой интерфейс — бандл ушёл бы в отказ
+            raise ServiceError("включён режим «За шлюзом — без VPN»: сначала выключи его, потом убирай подсети")
         kept: list[str] = []
         rejected: list[tuple[str, str]] = []
         if text and text not in ("-", "—"):
@@ -630,7 +625,7 @@ class GatewayLinkMixin:
                   if g.id != gw.id and kept and kept != list(gw.home_subnets)
                   and self.gateway_peer_nets(g.id)] if self.peer_nets_enabled() and gw.lan_mode else []
         return {"kept": kept, "rejected": rejected, "conflict": conflict,
-                "conflict_name": self._gw_display(conflict).strip("«»") if conflict is not None else "",
+                "conflict_name": self._gw_display(conflict) if conflict is not None else "",
                 "peer_others": others}
 
     def gateway_slots_policy(self) -> list[tuple[int, str, list[str]]]:

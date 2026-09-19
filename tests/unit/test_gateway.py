@@ -534,3 +534,17 @@ def test_peer_nets_check_exists_only_when_the_bundle_brought_subnets(svc, monkey
     assert c.ok is False and "192.168.2.0/24" in c.detail and "перевыпусти конфигурацию" in c.detail
     assert svc.peer_nets_check({"sets": {"peer_nets4": {"192.168.1.0/24", "192.168.2.0/24"}}}).ok is True
     assert svc.peer_nets_check(None).ok is False
+
+
+def test_lan_checks_alert_separately_and_quietly(svc, monkeypatch):
+    """Тишина в пустой квартире или упавший резолвер — не «обвязка неисправна»
+    с критичным звуком: у локальной сети свой стрик, не критичный."""
+    from awgbot.domain.gateway import GwCheck
+    lan = [GwCheck("трафик с роутера", False, "пакетов нет", group="lan")]
+    monkeypatch.setattr(svc, "status", lambda: _quiet_status(checks=[GwCheck("MASQUERADE", True)] + lan))
+    monkeypatch.setattr(svc, "uplink_policy_heal", lambda: [])
+    notes = []
+    for _ in range(5):
+        notes += svc.monitor_tick()
+    assert len(notes) == 1 and "Локальная сеть без VPN" in notes[0].text and not notes[0].critical
+    assert not any("Обвязка шлюза неисправна" in n.text for n in notes)

@@ -95,6 +95,8 @@ class GuardSpec:
     filter: bool = True               # False — NAT-only форма (файервол выключен)
     peer_link_ifs: list[str] = field(default_factory=list)    # линки, между которыми открыт транзит
                                                               # (docs/gateway-lan.md, функция B)
+    peer_link_block: list[str] = field(default_factory=list)  # NAT-only форма: линки, между которыми
+                                                              # транзит ЗАКРЫТ (тумблер выключен)
 
 
 def enabled() -> bool:
@@ -252,16 +254,18 @@ def build_spec(admin_ips) -> GuardSpec:
         own_forward=host_mode, unresolved=bad,
         nat=host_mode, nat_exclude_ifs=_nat_exclude_ifs() if host_mode else [],
         filter=enabled(),
-        peer_link_ifs=_peer_link_ifs() if host_mode else [],
+        peer_link_ifs=_peer_link_ifs(True) if host_mode else [],
+        peer_link_block=_peer_link_ifs(False) if host_mode else [],
     )
 
 
-def _peer_link_ifs() -> list[str]:
-    """Линки, между которыми открыт транзит (доступ между подсетями за
-    шлюзами): тумблер включён и линков два и больше. Без наборов подсетей —
-    в линк со стороны шлюза попадает только то, что пропустил его AllowedIPs,
-    а таблица собирается и из CLI без БД."""
-    if not settings.get_bool("app.routing.peer_nets.enabled", False):
+def _peer_link_ifs(enabled: bool) -> list[str]:
+    """Линки, между которыми транзит открыт (enabled=True: тумблер доступа
+    между подсетями включён) или должен быть закрыт (enabled=False: выключен) —
+    только при двух и больше линках. Без наборов подсетей — в линк со стороны
+    шлюза попадает только то, что пропустил его AllowedIPs, а таблица
+    собирается и из CLI без БД."""
+    if settings.get_bool("app.routing.peer_nets.enabled", False) != enabled:
         return []
     links = link_ifaces()
     return links if len(links) >= 2 else []
@@ -356,14 +360,24 @@ def render(spec: GuardSpec) -> str:
         nat_chain.append("    }")
     if not spec.filter:
         # NAT-only: файервол выключен, но клиентам нужен выход наружу.
-        # Фильтрующих цепочек нет вовсе — политика хоста остаётся его.
+        # Фильтрующих цепочек нет вовсе — политика хоста остаётся его. Одно
+        # исключение: выключенный тумблер доступа между подсетями обещает
+        # «закроется сразу» — при открытой политике хоста это единственное
+        # место, где транзит линк ↔ линк можно закрыть.
+        block: list[str] = []
+        if spec.peer_link_block:
+            links = _ifs(spec.peer_link_block)
+            block = ["", "    chain forward {",
+                     "        type filter hook forward priority filter; policy accept;",
+                     f"        iifname {links} oifname {links} drop",
+                     "    }"]
         out = head + [
             "# Форма NAT-only: firewall.enabled=false, фильтра нет, только NAT клиентов.",
             f"table {TABLE}",
             f"delete table {TABLE}",
             f"table {TABLE} {{",
             _set_block(SET_TUNNEL_NETS, "ipv4_addr", spec.tunnel_nets4, True),
-        ] + nat_chain + ["}"]
+        ] + nat_chain + block + ["}"]
         return "\n".join(out) + "\n"
     out: list[str] = head + [
         f"table {TABLE}",

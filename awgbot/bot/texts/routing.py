@@ -172,7 +172,9 @@ def peer_nets_line(info: dict) -> str:
         return (f"↔️ Доступ между подсетями за шлюзами включён, но недоступен: подсети "
                 f"{_e(who[0])} и {_e(who[1])} пересекаются ({nets}). Смени локальную подсеть "
                 "одного из шлюзов.")
-    pairs = " ↔ ".join(f"{', '.join(_e(n) for n in nets)} ({_e(name)})" for name, nets in info.get("pairs") or [])
+    # 192.168.1.0/24 («NASPi», дом 1) — подпись через запятую, без вложенных скобок
+    pairs = " ↔ ".join(f"{', '.join(_e(n) for n in nets)} («{_e(name)}»{', ' + _e(label) if label else ''})"
+                       for name, label, nets in info.get("pairs_named") or [])
     return f"↔️ Доступ между подсетями за шлюзами включён: {pairs}."
 
 
@@ -236,8 +238,8 @@ def gateway_card_text(state: dict, states: list) -> str:
     if conflict is not None:
         ov = ", ".join(_e(n) for n in _nets_overlap(nets, conflict["gateway"].home_subnets))
         first = min([state] + others, key=lambda s: (0 if s.get("preferred") else 1, s["gateway"].id))
-        route = ("маршрут достаётся ему, " if first["gateway"].id != gw.id else "")
-        home += (f"\n⚠️ {ov} пересекается с подсетью {slot_short(conflict)}: {route}а доступ без VPN "
+        route = ("маршрут достаётся ему, а " if first["gateway"].id != gw.id else "")
+        home += (f"\n⚠️ {ov} пересекается с подсетью {slot_short(conflict)}: {route}доступ без VPN "
                  "между устройствами за этими шлюзами недоступен, пока подсети пересекаются.")
     issued = state.get("issued_at") or ""
     tail = ""
@@ -284,23 +286,30 @@ GATEWAY_LAN_NO_SUBNET = ("Сначала необходимо задать ло�
                          "не будет. Наиболее частые варианты: 192.168.1.0/24, 192.168.0.0/24.")
 
 
-def gateway_router_text(state: dict) -> str:
+ROUTER_IP_PLACEHOLDER = "АДРЕС_ШЛЮЗА"
+
+
+def gateway_router_text(title: str, net: str, gw_ip: str = "") -> str:
     """📖 Настройка роутера (docs/gateway-lan.md §3.6): требования и два рецепта
-    с подставленной подсетью. Адрес малины в подсети знает только она — он в
-    панели агента (строка «локальная сеть»)."""
-    gw = state["gateway"]
-    net = gw.home_subnets[0] if gw.home_subnets else "192.168.1.0/24"
-    gw_ip = "АДРЕС_ШЛЮЗА"
-    return (f"📖 <b>Настройка роутера: {slot_short(state)}</b>\n\n"
+    с подставленной подсетью. Адрес шлюза в подсети знает только он сам:
+    основной бот показывает плейсхолдер и отсылает в панель агента, агент
+    подставляет настоящий."""
+    net = net or "192.168.1.0/24"
+    gw_ip = gw_ip or ROUTER_IP_PLACEHOLDER
+    where = ("" if gw_ip != ROUTER_IP_PLACEHOLDER else
+             " Адрес шлюза в ней — в панели бота шлюза (строка «локальная сеть»); ниже он — "
+             f"<code>{ROUTER_IP_PLACEHOLDER}</code>.")
+    return (f"📖 <b>Настройка роутера: {_e(title)}</b>\n\n"
             "Требования, без которых функция не работает:\n"
             "• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес шлюза "
             "(policy-based routing);\n"
             "• разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — правило "
             "выше <code>drop invalid</code>;\n"
             "• аппаратное ускорение (fasttrack, flow offloading) выключено;\n"
-            "• DHCP раздаёт DNS = адрес шлюза; у шлюза статический адрес.\n\n"
-            f"Подсеть: <code>{_e(net)}</code>. Адрес шлюза в ней — в панели бота шлюза "
-            "(строка «локальная сеть»); ниже он — <code>АДРЕС_ШЛЮЗА</code>.\n\n"
+            "• DHCP раздаёт DNS = адрес шлюза; у шлюза статический адрес;\n"
+            "• IPv6 в локальной сети выключен (RA/DHCPv6): резолвер шлюза AAAA не отдаёт, "
+            "но адрес v6 от роутера увёл бы трафик мимо туннеля.\n\n"
+            f"Подсеть: <code>{_e(net)}</code>.{where}\n\n"
             "<b>MikroTik RouterOS 7</b>\n"
             "<pre>/routing table add disabled=no fib name=antiblock\n"
             "/ip firewall mangle\n"
@@ -418,16 +427,8 @@ def gateway_switch_ask(target: dict, current, healthy: bool) -> str:
 
 
 def _nets_overlap(a: list, b: list) -> list:
-    import ipaddress
-    out = []
-    for x in a:
-        try:
-            nx = ipaddress.ip_network(x, strict=False)
-            if any(nx.overlaps(ipaddress.ip_network(y, strict=False)) for y in b):
-                out.append(x)
-        except ValueError:
-            continue
-    return out
+    from awgbot.util import nets
+    return nets.overlap(a, b)
 
 
 def gateway_peer_ask(on: bool) -> str:
@@ -476,7 +477,7 @@ def gateway_home_report(res: dict, state: dict) -> str:
     conflict = res.get("conflict")
     if conflict is not None:
         ov = ", ".join(_e(n) for n in _nets_overlap(kept, conflict.home_subnets)) or "подсеть"
-        who = f"«{_e(res['conflict_name'])}»" if res.get("conflict_name") else f"шлюза №{conflict.id}"
+        who = _e(res["conflict_name"]) if res.get("conflict_name") else f"шлюза №{conflict.id}"
         parts.append(f"⚠️ {ov} пересекается с подсетью {who}: маршрут достаётся предпочтительному "
                      "(при равенстве — первому), а доступ без VPN между устройствами за этими "
                      "шлюзами недоступен, пока подсети пересекаются.")
@@ -560,8 +561,8 @@ ROUTING_BUNDLE_INTRO = (
     "⚙️ <b>Конфигурация шлюза</b>\n\n"
     "Что произойдёт:\n"
     "1. Бот соберёт файл конфигурации для шлюза: адрес и порт сервера, ключи "
-    "линка. Если включён режим без VPN, добавит необходимые скрипты и локальную "
-    "подсеть.\n"
+    "линка. Если включён режим без VPN или доступ между подсетями, добавит "
+    "необходимые скрипты и локальные подсети — свою и других шлюзов.\n"
     "2. Файл придёт сюда отдельным сообщением с кнопкой «В меню».\n"
     "3. Перешли его боту шлюза — он проверит и применит сам.\n"
     "4. Нажатие «В меню» удалит сообщение с файлом из чата.\n\n"

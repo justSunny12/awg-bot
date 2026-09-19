@@ -396,3 +396,15 @@ def test_peer_subnets_are_let_in_from_the_link_above_the_private_drop(script):
     assert fwd.index('ip saddr @peer_nets4 accept') < fwd.index('ip daddr @private4 drop')
     unit = script.split("cat > \"$UNIT\"", 1)[1].split("UNITEOF", 2)[1]
     assert 'Environment="PEER_HOME_NETS=$PEER_HOME_NETS"' in unit
+
+
+def test_foreign_forward_drop_gets_accepts_for_our_interfaces(script):
+    """docker ставит политику FORWARD DROP в ip filter; accept в нашей inet-таблице
+    её не отменяет — транзит квартиры умирал бы молча. Правила в его цепочке,
+    только когда политика DROP, снимаются при откате."""
+    sec = script.split('step "3a. Чужая политика FORWARD"', 1)[1].split('step "4.', 1)[0]
+    assert "grep -q '^-P FORWARD DROP'" in sec
+    assert 'iptables -w -C FORWARD "$1" "$2" -j ACCEPT' in sec and "iptables -w -I FORWARD 1 $1 $2 -j ACCEPT" in sec
+    assert '"$LINK_IF" "${UPLINK_IF:-}" "${LAN_IF_PRE:-}"' in sec
+    rollback = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
+    assert "iptables -w -D FORWARD" in rollback

@@ -315,7 +315,7 @@ def lan_mode() -> bool:
     return unit_env("LAN_MODE") == "1"
 
 
-def lan_status() -> dict:
+def lists_status() -> dict:
     """Что записал скрипт списков: updated_at, domains, nets, rc."""
     out = {}
     try:
@@ -332,8 +332,10 @@ def home_table_info() -> Optional[dict]:
     """{'sets': {имя: число элементов}, 'chains': set, 'lan_pkts': int, 'dns_pkts': int}
     или None — таблицы нет. lan_pkts — счётчик «из локальной сети наружу»
     (первое правило со счётчиком в prerouting), dns_pkts — «DNS с роутера»
-    (input). Один exec."""
-    proc = _nft(["-j", "list", "table", TABLE_FAMILY, HOME_TABLE_NAME])
+    (input). Один exec, терсный (-t): без элементов наборов — lan_vpn4 растёт
+    без конца, выгружать его каждые три минуты ради двух счётчиков незачем;
+    число элементов поэтому всегда 0, счёты — из lists.status."""
+    proc = _nft(["-j", "-t", "list", "table", TABLE_FAMILY, HOME_TABLE_NAME])
     if proc.returncode != 0:
         return None
     try:
@@ -395,11 +397,26 @@ def resolve_via_local(name: str = "github.com") -> Optional[bool]:
     return proc.returncode == 0 and bool(re.search(r"^\d+\.\d+\.\d+\.\d+$", out, re.M))
 
 
-def ipv6_disabled(iface: str) -> Optional[bool]:
+def iface_for_subnet(net: str) -> Optional[tuple[str, str]]:
+    """(интерфейс, адрес) с адресом из подсети — тем же правилом, что
+    lan_iface_for в скрипте обвязки; None — нет или не прочиталось."""
     try:
-        return Path(f"/proc/sys/net/ipv6/conf/{iface}/disable_ipv6").read_text().strip() == "1"
-    except OSError:
+        want = ipaddress.ip_network(net, strict=False)
+        proc = subprocess.run(["ip", "-j", "-4", "addr", "show"], capture_output=True, timeout=10)
+        links = json.loads(proc.stdout.decode(errors="replace") or "[]")
+    except (ValueError, OSError, subprocess.SubprocessError, json.JSONDecodeError):
         return None
+    for link in links:
+        name = link.get("ifname", "")
+        if name == "lo" or name.startswith(("awg", "docker", "veth", "br-")):
+            continue
+        for a in link.get("addr_info") or []:
+            try:
+                if ipaddress.ip_address(a.get("local", "")) in want:
+                    return name, a["local"]
+            except ValueError:
+                continue
+    return None
 
 
 def run_lan_lists(timeout: int = 600) -> tuple[bool, str]:

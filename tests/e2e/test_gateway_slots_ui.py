@@ -536,7 +536,12 @@ def test_peer_nets_are_derived_only_between_lan_mode_slots(services, slots, monk
     assert services.gateway_peer_nets(1) == ["192.168.68.0/24"]
     env, _ = services._gw_bundle_env(services.db.gateway(1))
     assert env["PEER_HOME_NETS"] == "192.168.68.0/24"
+    import pytest as _pt
+    with _pt.raises(Exception, match="сначала выключи"):
+        services.gateway_set_home_subnets(2, "")             # при включённом режиме без VPN подсети не убрать
+    services.db.gateway_update(2, lan_mode=0)
     services.gateway_set_home_subnets(2, "")
+    services.db.gateway_update(2, lan_mode=1)
     assert services.gateway_peer_nets_info()["state"] == "no_nets"
 
 
@@ -563,6 +568,11 @@ async def test_peer_nets_toggle_has_a_dialog_and_shows_state_in_the_list(service
     await sh.gw_slot_list(cb, services, FakeState())
     text, _ = _screen(nav)
     assert "включён: 192.168.1.0/24 («NASPi») ↔ 192.168.68.0/24 («Pi2»)" in text
+    services.db.gateway_update(2, label="дом 2")
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_list(cb, services, FakeState())
+    assert "192.168.68.0/24 («Pi2», дом 2)" in _screen(nav)[0], "подпись через запятую, без вложенных скобок"
+    services.db.gateway_update(2, label="")
     # карточка: подсеть этого шлюза — цель для других
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=2), services, FakeState())

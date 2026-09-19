@@ -503,3 +503,16 @@ def test_forward_between_links_opens_only_with_the_toggle_and_two_links(host_mod
     assert fwd.index("ct state invalid drop") < fwd.index(rule) < fwd.index("ip saddr @tunnel_nets4 accept")
     monkeypatch.setattr(nftguard, "link_ifaces", lambda: ["awglink"])
     assert "oifname { \"awglink\" } accept" not in nftguard.render(nftguard.build_spec(["10.9.1.5"])), "один линк — не с кем"
+
+
+def test_nat_only_form_closes_links_when_the_toggle_is_off(host_mode, monkeypatch):
+    """Файервол выключен, политика хоста открыта: единственное место, где
+    выключенный тумблер может закрыть транзит линк ↔ линк — и обещание
+    «закроется сразу» держится."""
+    monkeypatch.setattr(nftguard, "link_ifaces", lambda: ["awglink", "awglink2"])
+    _conf(monkeypatch, **{"app.firewall.enabled": False})
+    text = nftguard.render(nftguard.build_spec(["10.9.1.5"]))
+    assert 'iifname { "awglink", "awglink2" } oifname { "awglink", "awglink2" } drop' in text
+    assert "policy accept" in text.split("chain forward", 1)[1], "политика хоста остаётся его"
+    _conf(monkeypatch, **{"app.firewall.enabled": False, "app.routing.peer_nets.enabled": True})
+    assert "chain forward" not in nftguard.render(nftguard.build_spec(["10.9.1.5"]))
