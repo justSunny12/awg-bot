@@ -376,6 +376,12 @@ class GatewayLinkMixin:
         other = self.db.gateway_by_device(dev.id)
         if other is not None and (gw is None or other.id != gw.id):
             raise ServiceError(f"это устройство уже шлюз в слоте {other.id}")
+        # Шлюзу РФ-доступ не нужен никогда: его российский трафик на ВПС
+        # вернулся бы по линку на ту же малину. Снимаем при назначении (парно,
+        # с двойником) — дальше устройство в списке РФ-доступа не показывается.
+        routing_reset = bool(dev.routing_on)
+        if routing_reset:
+            self.set_routing_device(dev.id, False)
         prev = None
         if new_slot:
             if n > 1:
@@ -408,7 +414,7 @@ class GatewayLinkMixin:
             except routing.RoutingError as e:
                 log.warning("gateway_setup: обвязка слота не доведена: %s", e)
         return {"gateway": gw, "device": self.db.get_device(dev.id), "previous": prev,
-                "created": created, "rekeyed": rekey}
+                "created": created, "rekeyed": rekey, "routing_reset": routing_reset}
 
     def gateway_remove(self, slot_id: Optional[int] = None) -> Optional[object]:
         """Убрать слот: активный при живом другом слоте — трафик на него;

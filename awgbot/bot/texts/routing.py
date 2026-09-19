@@ -199,7 +199,7 @@ def gateway_card_text(state: dict, states: list) -> str:
         body += "\nУсловная маршрутизация выключена: российские сервисы открываются с зарубежного адреса."
     body += "\n" + ext_ip_line(state.get("ext_ip"))
     nets = gw.home_subnets
-    home = ("\n\n🏠 Домашние подсети: " + (", ".join(_e(n) for n in nets) if nets else "не заданы"))
+    home = ("\n\n🏠 Локальные подсети: " + (", ".join(_e(n) for n in nets) if nets else "не заданы"))
     if nets:
         home += "\nУстройства админа достают до них через этот линк."
     conflict = next((s for s in others if set(s["gateway"].home_subnets) & set(nets)), None)
@@ -311,7 +311,7 @@ def gateway_switch_ask(target: dict, current, healthy: bool) -> str:
 def gateway_home_text(state: dict) -> str:
     nets = state["gateway"].home_subnets
     cur = ", ".join(_e(n) for n in nets) if nets else "не заданы"
-    return (f"🏠 <b>Домашние подсети {slot_short(state)}</b>\n\n"
+    return (f"🏠 <b>Локальные подсети {slot_short(state)}</b>\n\n"
             "Подсети за этим шлюзом, до которых твои устройства должны доставать через "
             "туннель — NAS, роутер, домашние сервисы. Кому туда можно, решает файервол "
             "шлюза (только устройствам админа); здесь — только путь.\n\n"
@@ -323,7 +323,7 @@ def gateway_home_text(state: dict) -> str:
 def gateway_home_report(res: dict, state: dict) -> str:
     parts = []
     kept = res.get("kept") or []
-    parts.append("🏠 Домашние подсети " + slot_short(state) + ": "
+    parts.append("🏠 Локальные подсети " + slot_short(state) + ": "
                  + (", ".join(_e(n) for n in kept) if kept else "убраны") + ".")
     if res.get("rejected"):
         parts.append("⚠️ Не принято:\n" + "\n".join(f"• {_e(raw)} — {_e(why)}" for raw, why in res["rejected"]))
@@ -478,7 +478,8 @@ GW_INSTALL_URL = ("https://raw.githubusercontent.com/justSunny12/awg-bot/main/"
                   "install/awg-bot-install.sh")
 
 
-def gateway_install_instructions(dev, bundle_name: str = "awg-gw-bundle.sh") -> str:
+def gateway_install_instructions(dev, bundle_name: str = "awg-gw-bundle.sh",
+                                 routing_reset: bool = False) -> str:
     """Что делать с файлом первого применения — ОДНА строка со своей машины.
 
     Копирование и установка склеены намеренно: установка на шлюзе не задаёт
@@ -487,7 +488,8 @@ def gateway_install_instructions(dev, bundle_name: str = "awg-gw-bundle.sh") -> 
     Поставка агента едет ВНУТРИ файла: с шлюза в России GitHub без туннеля не
     достать, а туннель этим файлом и ставится.
     """
-    return (f"🛰 Шлюзом назначен «{_e(dev.name)}» ({plain_ip(dev.address)}).\n\n"
+    reset = "\nРФ-доступ у устройства снят: шлюзу он не нужен." if routing_reset else ""
+    return (f"🛰 Шлюзом назначен «{_e(dev.name)}» ({plain_ip(dev.address)}).{reset}\n\n"
             "Сохрани файл ниже и выполни <b>со своей машины</b> одну команду — "
             "она скопирует его на шлюз и сразу поставит агента:\n\n"
             f"<code>scp {_e(bundle_name)} root@ШЛЮЗ:/root/ &amp;&amp; \\\n"

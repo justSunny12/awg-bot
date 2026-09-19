@@ -192,7 +192,7 @@ async def test_home_subnets_and_label_inputs(services, slots, fake_bot):
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_home(cb, GwSlotCB(action="home", slot=1), services, st)
     text, labels = _screen(nav)
-    assert "Домашние подсети «NASPi»" in text and labels == ["✖️ Отмена"]
+    assert "Локальные подсети «NASPi»" in text and labels == ["✖️ Отмена"]
     msg = _amsg(fake_bot, "192.168.1.0/24 мусор")
     await sh.gateway_home_received(msg, st, services)
     assert services.db.gateway(1).home_subnets == ["192.168.1.0/24"]
@@ -212,7 +212,7 @@ async def test_home_subnets_and_label_inputs(services, slots, fake_bot):
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=1), services, FakeState())
     text, _ = _screen(nav)
-    assert "🏠 Домашние подсети: 192.168.1.0/24" in text
+    assert "🏠 Локальные подсети: 192.168.1.0/24" in text
 
 
 async def test_failed_label_input_reasks_and_keeps_the_input_open(services, slots, fake_bot):

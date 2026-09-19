@@ -115,6 +115,7 @@ class RoutingMixin:
                      JOIN clients c ON c.id = d.client_id
                     WHERE d.routing_on = 1
                       AND (c.routing_allowed = 1 OR c.tg_id = ?)
+                      AND """ + self._NOT_GATEWAY + """
                     ORDER BY subject, d.address""",
                 (admin_tg_id,)).fetchall():
             out.setdefault(int(r["subject"]), []).append(r["address"])
@@ -124,6 +125,13 @@ class RoutingMixin:
     # никому не переданы, плюс чужие, которые он держит.
     _SUBJECT_WHERE = ("((d.client_id = ? AND d.holder_client_id IS NULL) "
                       "OR d.holder_client_id = ?)")
+    # Устройство-шлюз (и его двойник в окне переезда) в РФ-доступе не участвует:
+    # его российский трафик на ВПС вернулся бы по линку на ту же малину. Ни в
+    # списке переключателей, ни в счётчиках «включено на N из M», ни в наборе
+    # маркировки — а не только «снято при назначении»: флаг мог остаться от
+    # прежней версии, где шлюз в списке был (и первым).
+    _NOT_GATEWAY = ("NOT EXISTS (SELECT 1 FROM gateways g WHERE g.device_id = d.id "
+                    "OR (d.twin_of IS NOT NULL AND g.device_id = d.twin_of))")
 
     def set_devices_routing(self, client_id: int, on: bool) -> int:
         """Включить/выключить режим на всех устройствах СУБЪЕКТА (свои
@@ -131,7 +139,7 @@ class RoutingMixin:
         нему видно, было ли действие холостым."""
         with self._tx() as cur:
             cur.execute("UPDATE devices AS d SET routing_on = ? "
-                        f" WHERE {self._SUBJECT_WHERE} AND routing_on <> ?",
+                        f" WHERE {self._SUBJECT_WHERE} AND routing_on <> ? AND {self._NOT_GATEWAY}",
                         (1 if on else 0, client_id, client_id, 1 if on else 0))
             return cur.rowcount
 
@@ -163,7 +171,7 @@ class RoutingMixin:
             vis = "d.id NOT IN (SELECT twin_of FROM devices WHERE twin_of IS NOT NULL)"
         else:
             vis = self._TWIN_DANGLING_OK
-        return f"WHERE {self._SUBJECT_WHERE} AND {elig} AND {vis}"
+        return f"WHERE {self._SUBJECT_WHERE} AND {elig} AND {vis} AND {self._NOT_GATEWAY}"
 
     def list_routing_devices(self, client_id: int, admin_tg_id: int = 0) -> list:
         """Устройства субъекта для экрана переключателей: свои непереданные,

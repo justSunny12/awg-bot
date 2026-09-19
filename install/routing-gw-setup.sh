@@ -49,6 +49,7 @@ CLIENT_SUBNET="${CLIENT_SUBNET:-10.8.1.0/24}"
 FWD_CHAIN="AWGLINK_FWD"                  # прежняя цепочка iptables — только снятие
 UNIT="/etc/systemd/system/awg-link-gw.service"
 SYSCTL_CONF="/etc/sysctl.d/99-awgbot-gw.conf"
+NETWORKD_UNMANAGED="/etc/systemd/network/99-awg-gw-unmanaged.network"   # networkd не трогает awg*
 GW_ETC="/etc/awg-gw"
 GUARD_FILE="$GW_ETC/guard.nft"           # таблица — источник для nft -f при каждом старте
 FW_ENV="$GW_ETC/firewall.env"            # ADMIN_IPS_EXTRA, правится на шлюзе (awg-bot firewall)
@@ -277,7 +278,8 @@ if [ "$MODE" = "rollback" ]; then
     run "nft delete table $GUARD_TABLE 2>/dev/null || true"
     run "rm -f $GUARD_FILE $FW_ENV $GW_STATUS_FILE"
     run "rmdir $GW_ETC 2>/dev/null || true"
-    run "rm -f $HOST_CONF_DIR/$LINK_IF.conf $UNIT $SYSCTL_CONF /etc/systemd/networkd.conf.d/awg-gw.conf"
+    run "rm -f $HOST_CONF_DIR/$LINK_IF.conf $UNIT $SYSCTL_CONF /etc/systemd/networkd.conf.d/awg-gw.conf $NETWORKD_UNMANAGED"
+    run "rm -f /etc/systemd/system/awg-quick@*.service.d/awg-gw.conf"
     run "systemctl daemon-reload"
     say ""
     say "Готово. Существующие интерфейсы и маршрутизация шлюза не тронуты."
@@ -327,6 +329,18 @@ else
     if [ -n "$UPLINK_IF" ]; then
         say "  это помеченный шлюз: аплинк $UPLINK_IF"
         GW_STATUS="confirmed"
+        # Аплинк на загрузке поднимается дольше, чем systemd готов ждать: пять
+        # отказов за десять секунд (DNS ещё не резолвит Endpoint) — и юнит
+        # сдаётся навсегда, малина остаётся без Telegram и без списков.
+        # Снимаем лимит и перезапускаем до победы.
+        _ovr="/etc/systemd/system/awg-quick@$UPLINK_IF.service.d"
+        if [ ! -f "$_ovr/awg-gw.conf" ]; then
+            run "mkdir -p $_ovr"
+            run "printf '[Unit]\nStartLimitIntervalSec=0\n\n[Service]\nRestart=on-failure\nRestartSec=10\n' > $_ovr/awg-gw.conf"
+            run "systemctl daemon-reload"
+        else
+            say "  оверрайд awg-quick@$UPLINK_IF (перезапуск до победы) уже есть"
+        fi
         if [ -n "$UPLINK_B64" ]; then
             # временный каталог тут ни к чему: файл живёт рядом с
             # прочим состоянием шлюза и сразу удаляется
@@ -341,6 +355,7 @@ else
                     /^Table = off$/ {
                         printf "PostUp = ip rule list | grep -q \"fwmark %s lookup %s\" || ip rule add fwmark %s lookup %s\n", mark, tbl, mark, tbl
                         printf "PostUp = ip route replace default dev %%i table %s\n", tbl
+                        printf "PostUp = sysctl -qw net.ipv4.conf.%%i.rp_filter=2\n"
                         printf "PostDown = ip route del default dev %%i table %s 2>/dev/null || true\n", tbl
                     }' "$_tmp" > "$_tmp.conf"
                 _dst="$HOST_CONF_DIR/$UPLINK_IF.conf"
@@ -496,7 +511,13 @@ else
 fi
 # Отдельным файлом — иначе значение живёт до перезагрузки, а вернувшийся из
 # ребута шлюз выглядит исправным и не пропускает ни пакета.
-run "printf 'net.ipv4.ip_forward = 1\\n' > $SYSCTL_CONF"
+# rp_filter=2 (loose): ответы из интернета приходят в аплинк, а обратный путь
+# до их источника по main лежит через домашний интерфейс — строгая проверка
+# такое роняет. Loose пропускает, если маршрут к источнику есть хоть где-то;
+# выключать проверку совсем незачем. Аплинк — PostUp его конфига (интерфейса
+# на момент применения sysctl ещё нет).
+run "printf 'net.ipv4.ip_forward = 1\\nnet.ipv4.conf.all.rp_filter = 2\\nnet.ipv4.conf.default.rp_filter = 2\\n' > $SYSCTL_CONF"
+run "sysctl -qw net.ipv4.conf.all.rp_filter=2 net.ipv4.conf.default.rp_filter=2"
 
 # ── 1b. политика «Telegram → аплинк»: правило по метке и таблица ─────────────
 # Ставит PostUp аплинка при подъёме, но systemd-networkd при (пере)запуске по
@@ -512,6 +533,16 @@ if [ -d /etc/systemd ] && command -v networkctl >/dev/null 2>&1; then
     else
         run "mkdir -p /etc/systemd/networkd.conf.d"
         run "printf '[Network]\nManageForeignRoutes=no\nManageForeignRoutingPolicyRules=no\n' > $NETWORKD_DROPIN"
+    fi
+    # Сами интерфейсы awg* networkd тоже не должен подхватывать: с ним на
+    # каждом перезапуске (любой Apply в OMV) оба туннеля переставали слать
+    # пакеты — хендшейк застывал, sent не рос, юниты active. Снаружи это
+    # выглядело отказом ВПС.
+    if [ -f "$NETWORKD_UNMANAGED" ]; then
+        say "  awg* для networkd unmanaged — уже"
+    else
+        run "mkdir -p /etc/systemd/network"
+        run "printf '[Match]\nName=awg*\n\n[Link]\nUnmanaged=yes\n' > $NETWORKD_UNMANAGED"
     fi
 else
     say "  systemd-networkd не используется — drop-in не нужен"
@@ -552,6 +583,11 @@ mkdir -p "$GW_ETC"
 # чужое правило домашней схемы, и отсутствие своего не было видно.
 UPLINK_MASQ=""
 [ -n "${UPLINK_IF:-}" ] && UPLINK_MASQ="        oifname \"$UPLINK_IF\" masquerade"
+# MSS-кламп в аплинк: транзитный TCP из локальной сети в туннель без него
+# упирается в MTU туннеля и виснет на больших ответах. Свойство аплинка, не
+# домашнего слоя: агенту с его Telegram он тоже полезен.
+UPLINK_MSS=""
+[ -n "${UPLINK_IF:-}" ] && UPLINK_MSS="        oifname \"$UPLINK_IF\" tcp flags syn / syn,rst tcp option maxseg size set rt mtu"
 {
 cat <<GUARDEOF
 #!/usr/sbin/nft -f
@@ -605,6 +641,7 @@ cat <<GUARDEOF
 
     chain forward {
         type filter hook forward priority filter; policy accept;
+$UPLINK_MSS
         oifname "$LINK_IF" ct state established,related accept
         iifname "$LINK_IF" ip saddr @admin4 accept
         iifname "$LINK_IF" ip daddr @private4 drop

@@ -305,3 +305,38 @@ async def test_migration_finish_sends_bundle_when_gateway_assigned(services, fak
     cb, nav = _acb(fake_bot)
     await sh.migration_action(cb, SetCB(sec="mig", act="do", key="finish!"), services)
     assert not any(s[0] == "document" for s in nav.sent), "с ошибками финала файл не выдаём"
+
+
+# ── шлюз и РФ-доступ ─────────────────────────────────────────────────────────
+
+def test_gateway_device_is_out_of_ru_access(services, gwsetup, monkeypatch):
+    """Шлюзу РФ-доступ не нужен никогда: его российский трафик на ВПС вернулся
+    бы по линку на ту же малину. Назначение снимает флаг, а список
+    переключателей, счётчики и набор маркировки шлюз не видят — даже если флаг
+    остался от прежней версии, где шлюз в списке был (и первым)."""
+    admin, phone, pi = gwsetup
+    monkeypatch.setattr(services, "reconcile_routing", lambda: None)
+    services.set_routing_device(pi.id, True)
+    services.set_routing_device(phone.id, True)
+    assert services.db.get_device(pi.id).routing_on == 1
+    assert {d.id for d in services.routing_devices(admin.id)} == {phone.id, pi.id}
+
+    res = services.gateway_setup(pi.id, rekey=True)
+    assert res["routing_reset"] is True
+    assert services.db.get_device(pi.id).routing_on == 0, "назначение сняло флаг"
+    assert [d.id for d in services.routing_devices(admin.id)] == [phone.id], "шлюза в списке нет"
+    assert services.routing_device_counts(admin.id) == (1, 1)
+    # даже с флагом, поставленным в обход (прежняя версия) — не в наборе и не в счёте
+    services.db.update_device_fields(pi.id, routing_on=1)
+    assert services.routing_device_counts(admin.id) == (1, 1)
+    assert pi.address not in sum(services.db.routing_active_addresses(ADMIN).values(), [])
+    # «включить на всех» профиля шлюз не трогает
+    services.db.update_device_fields(pi.id, routing_on=0)
+    services.db.set_devices_routing(admin.id, True)
+    assert services.db.get_device(pi.id).routing_on == 0
+    # повторное назначение без флага — строки о снятии в отчёте нет
+    res = services.gateway_setup(pi.id, rekey=True, slot_id=res["gateway"].id)
+    assert res["routing_reset"] is False
+    from awgbot.bot import texts
+    assert "РФ-доступ у устройства снят" in texts.gateway_install_instructions(pi, routing_reset=True)
+    assert "РФ-доступ у устройства снят" not in texts.gateway_install_instructions(pi)

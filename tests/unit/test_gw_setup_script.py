@@ -335,3 +335,51 @@ def test_github_goes_into_the_uplink_like_telegram(script):
     assert "set gh_nets4 {" in body and "elements = { $(ipv4_list $GH_NETS) }" in body
     out = body.split("chain output", 1)[1].split("}", 1)[0]
     assert "ip daddr @gh_nets4 meta mark set $TG_MARK" in out, "той же меткой, что Telegram"
+
+
+# ── база аплинка (v3.0, этап 1): грабли ручного слоя, снятые в поставке ───────
+
+def test_uplink_unit_retries_until_it_wins(script):
+    """awg-quick@<аплинк> на загрузке падает, пока DNS не резолвит Endpoint; пять
+    отказов за десять секунд — и systemd сдаётся навсегда: малина без Telegram и
+    без списков. Лимит снимаем, перезапускаем до победы."""
+    step0 = script.split('step "0. Шлюзовое устройство"', 1)[1].split("# ── 1. конфиг", 1)[0]
+    assert "awg-quick@$UPLINK_IF.service.d" in step0
+    assert "StartLimitIntervalSec=0" in step0 and "Restart=on-failure" in step0
+    assert step0.index('GW_STATUS="confirmed"') < step0.index("StartLimitIntervalSec=0"), \
+        "оверрайд — только помеченному шлюзу, аплинк которого известен"
+    rollback = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
+    assert "awg-quick@*.service.d/awg-gw.conf" in rollback
+
+
+def test_networkd_leaves_awg_interfaces_alone(script):
+    """OMV переводит сеть на networkd, тот подхватывает awg0 и awglink как
+    обычные интерфейсы, и любой Apply останавливал оба туннеля молча — снаружи
+    это выглядело отказом ВПС."""
+    assert re.search(r'^NETWORKD_UNMANAGED="/etc/systemd/network/[^"]+\.network"', script, re.M)
+    part = script.split('step "1b.', 1)[1].split('step "2.', 1)[0]
+    assert "Name=awg*" in part and "Unmanaged=yes" in part
+    rollback = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
+    assert "$NETWORKD_UNMANAGED" in rollback
+
+
+def test_rp_filter_is_loose_everywhere_the_uplink_answers(script):
+    """Ответы из интернета приходят в аплинк, а обратный путь до источника по
+    main лежит через домашний интерфейс — строгий rp_filter такое роняет.
+    Loose (2), не 0: проверка остаётся, выключать её незачем. Аплинк — из PostUp:
+    в sysctl-файл его не вписать, интерфейса на момент применения ещё нет."""
+    apply_part = script.split('step "1a.', 1)[1]
+    assert "net.ipv4.conf.all.rp_filter = 2" in apply_part and "net.ipv4.conf.default.rp_filter = 2" in apply_part
+    assert "> $SYSCTL_CONF" in apply_part
+    awk = script.split("awk -v mark=\"$TG_MARK\" -v tbl=\"$UPLINK_TABLE\" '", 1)[1].split("' \"$_tmp\"", 1)[0]
+    assert "PostUp = sysctl -qw net.ipv4.conf.%%i.rp_filter=2" in awk
+
+
+def test_uplink_gets_mss_clamp_next_to_its_masquerade(script):
+    """Транзитный TCP из локальной сети в туннель без клампа виснет на больших
+    ответах. Свойство аплинка, не домашнего слоя."""
+    assert 'UPLINK_MSS="        oifname \\"$UPLINK_IF\\" tcp flags syn / syn,rst tcp option maxseg size set rt mtu"' in script
+    body = script.split("GUARDEOF", 1)[1]
+    fwd = body.split("chain forward", 1)[1].split("}", 1)[0]
+    assert "$UPLINK_MSS" in fwd
+    assert script.index('UPLINK_MSS=""') < script.index("cat <<GUARDEOF")

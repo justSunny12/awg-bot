@@ -306,7 +306,8 @@ async def _gateway_mark_go(message: Message, services, device_id: int, slot: int
         await message.answer(f"⚠️ {texts._e(str(e))}")
         return
     await message.answer(texts.gateway_install_instructions(res["device"],
-                                                            services.bundle_name(res["gateway"])))
+                                                            services.bundle_name(res["gateway"]),
+                                                            routing_reset=res.get("routing_reset", False)))
     await _send_plain_bundle(message, services, res["gateway"].id)
 
 
@@ -319,7 +320,8 @@ async def _gateway_new_go(message: Message, services, slot: int = 0) -> None:
         await message.answer(f"⚠️ {texts._e(str(e))}")
         return
     await message.answer(texts.gateway_install_instructions(res["device"],
-                                                            services.bundle_name(res["gateway"])))
+                                                            services.bundle_name(res["gateway"]),
+                                                            routing_reset=res.get("routing_reset", False)))
     await _send_plain_bundle(message, services, res["gateway"].id)
 
 

@@ -149,7 +149,7 @@ def gateway_card(state, *, back_to_list: bool) -> InlineKeyboardMarkup:
                   callback_data=GwSlotCB(action="pref", slot=gw.id))
         rows.append(1)
     kb.button(text="⚙️ Конфигурация шлюза", callback_data=GwSlotCB(action="bundle", slot=gw.id))
-    kb.button(text="🏠 Домашние подсети", callback_data=GwSlotCB(action="home", slot=gw.id))
+    kb.button(text="🏠 Локальные подсети", callback_data=GwSlotCB(action="home", slot=gw.id))
     kb.button(text="✏️ Подпись", callback_data=GwSlotCB(action="label", slot=gw.id))
     kb.button(text="🔁 Заменить устройство", callback_data=SetCB(sec="rt_gw", act="open", key=str(gw.id)))
     kb.button(text="🛑 Снять шлюз", callback_data=GwSlotCB(action="remove_ask", slot=gw.id))
