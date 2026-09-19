@@ -263,3 +263,63 @@ async def test_start_marks_the_first_panel_as_shown(svc, fake_bot, monkeypatch):
     assert svc.db.get_state(gh._FIRST_PANEL_KEY) == "1"
     await gh.send_first_panel(fake_bot, svc)
     assert not [r for r in fake_bot.records if r[0] == "send_message"], "после /start первая панель не нужна"
+
+
+# ── локальная сеть без VPN: личные списки из чата (docs/gateway-lan.md §3.5) ──
+
+def _lan_status():
+    return GwStatus(link_up=True, handshake_age=5.0,
+                    lan={"iface": "end0", "addr": "192.168.68.222", "resolver": "10.9.1.1", "domains": 3,
+                         "nets": 4, "resolved": 5, "updated_at": "", "own_vpn": 1, "own_ru": 0, "lan_pkts": 9})
+
+
+async def test_panel_offers_the_lan_screen_only_when_enabled(svc, fake_bot, monkeypatch):
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    monkeypatch.setattr(svc, "cached_status", lambda max_age: GwStatus(link_up=True, handshake_age=5.0))
+    await gh.gw_panel(cb, svc, FakeState())
+    labels = [b.text for row in msg.sent[-1][2].inline_keyboard for b in row]
+    assert "🏠 Локальная сеть" not in labels
+    monkeypatch.setattr(svc, "cached_status", lambda max_age: _lan_status())
+    await gh.gw_panel(cb, svc, FakeState())
+    labels = [b.text for row in msg.sent[-1][2].inline_keyboard for b in row]
+    assert "🏠 Локальная сеть" in labels
+    await gh.gw_lan(cb, svc, FakeState())
+    text, markup = msg.sent[-1][1], msg.sent[-1][2]
+    assert "Локальная сеть без VPN" in text and "end0" in text and "Свои: 1 в туннель" in text
+    labels = [b.text for row in markup.inline_keyboard for b in row]
+    assert labels[:4] == ["➕ В туннель", "➕ Напрямую", "📋 Свои списки", "🔄 Обновить списки"]
+
+
+async def test_domain_input_goes_to_the_script_and_the_prompt_is_cleaned(svc, fake_bot, monkeypatch):
+    monkeypatch.setattr(svc, "cached_status", lambda max_age: _lan_status())
+    calls = []
+    monkeypatch.setattr(svc, "lan_domains", lambda cmd, domains: (calls.append((cmd, domains)) or (True, "example.com: добавлен\n  example.com → 2 адрес(а) в наборе lan_vpn4")))
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    st = FakeState()
+    await gh.gw_lan_ask(cb, GwCB(action="lan_ru"), svc, st)
+    assert "Напрямую" in msg.sent[-1][1] and await st.get_state() is not None
+    reply = FakeMessage(text="Example.com shop.ru", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_lan_domain_received(reply, st, svc)
+    assert calls == [("ru", ["Example.com", "shop.ru"])], "разбор — в скрипте, бот передаёт как есть"
+    assert await st.get_state() is None
+    deleted = [r[2] for r in fake_bot.records if r[0] == "delete_message"]
+    assert msg.message_id in deleted and reply.message_id in deleted, "приглашение и ввод убраны"
+    answers = [s[1] for s in reply.sent if s[0] == "answer"]
+    assert any(a.startswith("✅") and "добавлен" in a for a in answers)
+    assert "Локальная сеть без VPN" in answers[-1], "снова экран локальной сети"
+
+
+async def test_own_lists_screen_and_delete(svc, fake_bot, monkeypatch):
+    monkeypatch.setattr(svc, "lan_own_lists", lambda: [("vpn", "example.com"), ("ru", "shop.ru")])
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_lan_list(cb, svc)
+    text = msg.sent[-1][1]
+    assert "В туннель:\n• example.com" in text and "Напрямую:\n• shop.ru" in text
+    labels = [b.text for row in msg.sent[-1][2].inline_keyboard for b in row]
+    assert labels == ["🗑 Убрать", "⬅️ Назад"]
+    monkeypatch.setattr(svc, "lan_own_lists", lambda: [])
+    await gh.gw_lan_list(cb, svc)
+    assert "Пока пусто" in msg.sent[-1][1]

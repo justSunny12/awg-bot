@@ -594,6 +594,24 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                                   ("включён: AAAA уведёт трафик мимо туннеля" if v6 is False else "не прочитался")))
         return info, checks
 
+    def lan_domains(self, cmd: str, domains: list[str]) -> tuple[bool, str]:
+        """Личные списки из чата: add | ru | del. Разбор и денилист — в скрипте."""
+        from awgbot.infra import gwguard
+        return gwguard.run_lan_domain(cmd, domains)
+
+    def lan_own_lists(self) -> list[tuple[str, str]]:
+        """[(vpn|ru, домен)] из скрипта списков."""
+        from awgbot.infra import gwguard
+        ok, out = gwguard.run_lan_domain("list", [])
+        if not ok:
+            return []
+        items = []
+        for line in out.splitlines():
+            parts = line.split(None, 1)
+            if len(parts) == 2 and parts[0] in ("vpn", "ru"):
+                items.append((parts[0], parts[1].strip()))
+        return items
+
     def lan_lists_update(self) -> list[Notification]:
         """Задача планировщика: обновить списки; два провала подряд — замечание."""
         from awgbot.infra import gwguard

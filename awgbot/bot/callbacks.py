@@ -231,6 +231,9 @@ class GwCB(CallbackData, prefix="gw"):
       restart|reassert|botrestart — показ подтверждения, с «!» — исполнение;
       backup!, restore!|restore_drop, em_setup|em_check|em_test|em_forget(!);
       apply!|apply_ow!|apply_keep!|drop — принять/отклонить бандл;
-      upd_toggle|upd_check|upd_sched (val — вариант расписания)."""
+      upd_toggle|upd_check|upd_sched (val — вариант расписания);
+      lan — локальная сеть без VPN (docs/gateway-lan.md); lan_add|lan_ru|lan_del —
+      ввод доменов в личные списки, lan_list — свои списки, lan_update —
+      обновить фиды сейчас."""
     action: str
     val: str = ""

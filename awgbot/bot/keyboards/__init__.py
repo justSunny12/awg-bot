@@ -56,7 +56,8 @@ from .gateway import (
     gateway_backup_kb, gateway_email_kb, gateway_email_forget_confirm,
     gateway_email_offer, gateway_encryption_kb, gateway_cancel_kb, gateway_maint_kb,
     gateway_updates_kb, gateway_confirm_kb, gateway_bundle_kb,
-    gateway_bundle_passphrase_kb, gateway_back_kb, gateway_update_available_kb)
+    gateway_bundle_passphrase_kb, gateway_back_kb, gateway_update_available_kb,
+    gateway_lan_kb, gateway_lan_list_kb)
 
 __all__ = [
     "BTN_CANCEL", "reply_cancel", "reply_hide", "period_choices", "yes_no", "to_menu",
@@ -94,5 +95,5 @@ __all__ = [
     "gateway_email_forget_confirm", "gateway_email_offer", "gateway_encryption_kb",
     "gateway_cancel_kb", "gateway_maint_kb", "gateway_updates_kb",
     "gateway_confirm_kb", "gateway_bundle_kb", "gateway_bundle_passphrase_kb",
-    "gateway_back_kb", "gateway_update_available_kb",
+    "gateway_back_kb", "gateway_update_available_kb", "gateway_lan_kb", "gateway_lan_list_kb",
 ]

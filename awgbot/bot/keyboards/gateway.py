@@ -11,16 +11,42 @@ from .common import _chk
 from .settings import _enc_label
 
 
-def gateway_panel_kb() -> InlineKeyboardMarkup:
-    """Панель шлюза: обновить | монитор здоровья / мастер восстановления /
-    настройки. Мастер — на подтверждение: обрыв РФ у всех, пусть на секунды,
-    не должен случаться от промаха пальцем. Перезапуски — в настройках."""
+def gateway_panel_kb(lan: bool = False) -> InlineKeyboardMarkup:
+    """Панель шлюза: обновить | монитор здоровья / локальная сеть (когда
+    включена, docs/gateway-lan.md) / мастер восстановления / настройки.
+    Мастер — на подтверждение: обрыв РФ у всех, пусть на секунды, не должен
+    случаться от промаха пальцем. Перезапуски — в настройках."""
     kb = InlineKeyboardBuilder()
     kb.button(text="🔄 Статус", callback_data=GwCB(action="refresh"))
     kb.button(text="🌡 Монитор здоровья", callback_data=GwCB(action="health"))
+    rows = [2]
+    if lan:
+        kb.button(text="🏠 Локальная сеть", callback_data=GwCB(action="lan"))
+        rows.append(1)
     kb.button(text="🔧 Мастер восстановления", callback_data=GwCB(action="reassert"))
     kb.button(text="⚙️ Настройки", callback_data=GwCB(action="settings"))
-    kb.adjust(2, 1, 1)
+    kb.adjust(*rows, 1, 1)
+    return kb.as_markup()
+
+
+def gateway_lan_kb() -> InlineKeyboardMarkup:
+    """Экран локальной сети без VPN: личные списки и обновление фидов."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="➕ В туннель", callback_data=GwCB(action="lan_add"))
+    kb.button(text="➕ Напрямую", callback_data=GwCB(action="lan_ru"))
+    kb.button(text="📋 Свои списки", callback_data=GwCB(action="lan_list"))
+    kb.button(text="🔄 Обновить списки", callback_data=GwCB(action="lan_update"))
+    kb.button(text="📖 Настройка роутера", callback_data=GwCB(action="lan_router"))
+    kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
+    kb.adjust(2, 2, 1, 1)
+    return kb.as_markup()
+
+
+def gateway_lan_list_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🗑 Убрать", callback_data=GwCB(action="lan_del"))
+    kb.button(text="⬅️ Назад", callback_data=GwCB(action="lan"))
+    kb.adjust(2)
     return kb.as_markup()
 
 

@@ -107,7 +107,8 @@ from .broadcast import (
     extension_reserve, broadcast_prompt, broadcast_preview, broadcast_preview_photos,
     broadcast_too_many_photos, broadcast_too_long, broadcast_report)
 from .gateway import (
-    gateway_panel, gateway_health, GW_SETTINGS, GW_SETTINGS_NOTIFY, GW_SETTINGS_MON,
+    gateway_panel, gateway_health, gateway_lan_text, gateway_lan_ask_domain, gateway_lan_own_text,
+    gateway_lan_result, GW_SETTINGS, GW_SETTINGS_NOTIFY, GW_SETTINGS_MON,
     GW_BACKUP_NO_KEY, host_rebooted, GW_MAINT, GW_CONFIRM_RESTART, GW_CONFIRM_REASSERT,
     GW_CONFIRM_BOT_RESTART, GW_BOT_RESTARTING, GW_BUNDLE_NOT_OURS,
     GW_BUNDLE_PASSPHRASE_QUESTION, gateway_claim_forward_text, gateway_apply_report,
@@ -198,6 +199,7 @@ __all__ = [
     "extension_header", "announcement_text", "extension_reserve", "broadcast_prompt",
     "broadcast_preview", "broadcast_preview_photos", "broadcast_too_many_photos",
     "broadcast_too_long", "broadcast_report", "gateway_panel", "gateway_health",
+    "gateway_lan_text", "gateway_lan_ask_domain", "gateway_lan_own_text", "gateway_lan_result",
     "GW_SETTINGS", "GW_SETTINGS_NOTIFY", "GW_SETTINGS_MON", "GW_BACKUP_NO_KEY",
     "host_rebooted", "GW_MAINT", "GW_CONFIRM_RESTART", "GW_CONFIRM_REASSERT",
     "GW_CONFIRM_BOT_RESTART", "GW_BOT_RESTARTING", "GW_BUNDLE_NOT_OURS",

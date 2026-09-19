@@ -18,9 +18,10 @@ from aiogram.types import CallbackQuery, Message
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
+from awgbot.bot.states import GatewayLanDomain
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers import settingscore as core
-from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, purge_menus, dismiss_update_reports, forget_secret
+from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, purge_menus, dismiss_update_reports, forget_secret, ask_tracked
 from awgbot.util import bundlecrypt
 
 router = Router(name="gateway")
@@ -56,10 +57,11 @@ async def _panel(target, services, cb: CallbackQuery | None = None, fresh: bool 
     """Панель — через нав-хелперы: одно живое меню в чате, прошлое гаснет,
     история ведётся для /start."""
     st = await _status(services, fresh)
+    lan = bool(getattr(st, "lan", None))
     if cb is not None:
-        await edit_nav(cb, services, texts.gateway_panel(st), kb.gateway_panel_kb())
+        await edit_nav(cb, services, texts.gateway_panel(st), kb.gateway_panel_kb(lan))
     else:
-        await send_menu(target, services, texts.gateway_panel(st), kb.gateway_panel_kb(),
+        await send_menu(target, services, texts.gateway_panel(st), kb.gateway_panel_kb(lan),
                         keep_id=keep_id)
 
 
@@ -80,7 +82,7 @@ async def restore_panel_after_restart(bot, services) -> None:
     await _dismiss_previous_nav(bot, services, chat_id)
     st = await _status(services, fresh=False)
     sent = await bot.send_message(chat_id, texts.gateway_panel(st),
-                                  reply_markup=kb.gateway_panel_kb())
+                                  reply_markup=kb.gateway_panel_kb(bool(getattr(st, "lan", None))))
     await call(services.db.nav_touch, chat_id, sent.message_id)
 
 
@@ -99,7 +101,7 @@ async def send_first_panel(bot, services) -> None:
     try:
         st = await _status(services, fresh=False)
         sent = await bot.send_message(config.ADMIN_ID, texts.gateway_panel(st),
-                                      reply_markup=kb.gateway_panel_kb())
+                                      reply_markup=kb.gateway_panel_kb(bool(getattr(st, "lan", None))))
     except Exception:                                  # noqa: BLE001
         return                                         # диалога ещё нет
     await call(services.db.nav_touch, config.ADMIN_ID, sent.message_id)
@@ -305,6 +307,79 @@ async def gw_hide(cb: CallbackQuery):
         await cb.message.delete()
     except Exception:                                 # noqa: BLE001
         pass
+    await cb.answer()
+
+
+# ── локальная сеть без VPN (docs/gateway-lan.md §3.5) ────────────────────────
+
+async def _lan_screen(services):
+    st = await _status(services, fresh=False)
+    return texts.gateway_lan_text(st), kb.gateway_lan_kb()
+
+
+@router.callback_query(GwCB.filter(F.action == "lan"))
+async def gw_lan(cb: CallbackQuery, services, state: FSMContext):
+    await state.clear()
+    await cleanup_content(cb.message.bot, services, cb.message.chat.id)
+    await edit_nav(cb, services, *await _lan_screen(services))
+    await cb.answer()
+
+
+@router.callback_query(GwCB.filter(F.action.in_({"lan_add", "lan_ru", "lan_del"})))
+async def gw_lan_ask(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
+    kind = callback_data.action.split("_", 1)[1]
+    await state.set_state(GatewayLanDomain.value)
+    await state.update_data(kind=kind)
+    await core.ask(cb, services, texts.gateway_lan_ask_domain(kind), kb.gateway_cancel_kb("lan"))
+    await cb.answer()
+
+
+@router.message(GatewayLanDomain.value)
+async def gw_lan_domain_received(message: Message, state: FSMContext, services):
+    kind = (await state.get_data()).get("kind") or "add"
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
+    domains = [t for t in (message.text or "").split() if t]
+    if not domains:
+        await ask_tracked(message, services, "⚠️ Пришли хотя бы один домен.")
+        return
+    await state.clear()
+    ok, out = await call(services.lan_domains, kind, domains)
+    await cleanup_content(message.bot, services, message.chat.id)
+    await message.answer(texts.gateway_lan_result(ok, out))
+    await send_menu(message, services, *await _lan_screen(services))
+
+
+@router.callback_query(GwCB.filter(F.action == "lan_list"))
+async def gw_lan_list(cb: CallbackQuery, services):
+    items = await call(services.lan_own_lists)
+    await edit_nav(cb, services, texts.gateway_lan_own_text(items), kb.gateway_lan_list_kb())
+    await cb.answer()
+
+
+@router.callback_query(GwCB.filter(F.action == "lan_update"))
+async def gw_lan_update(cb: CallbackQuery, services):
+    """Фиды сейчас: секунды, поэтому синхронно с отбивкой «обновляю»."""
+    await cb.answer("Обновляю списки…")
+    from awgbot.infra import gwguard
+    ok, tail = await call(gwguard.run_lan_lists)
+    await cb.message.answer(texts.gateway_lan_result(ok, tail or ("списки обновлены" if ok else "")))
+    await _panel(cb.message, services, fresh=True, keep_id=cb.message.message_id)
+
+
+@router.callback_query(GwCB.filter(F.action == "lan_router"))
+async def gw_lan_router(cb: CallbackQuery, services):
+    """Рецепт роутера — тот же текст, что у основного бота, с подсетью и
+    адресом этой малины (их знает только она)."""
+    import socket
+    from awgbot.infra import gwguard
+    from types import SimpleNamespace
+    from awgbot.bot.texts import routing as rt
+    st = gwguard.script_status()
+    nets = [n for n in gwguard.unit_env("HOME_SUBNETS").split() if n]
+    fake = {"gateway": SimpleNamespace(home_subnets=nets, label="", id=0),
+            "device": SimpleNamespace(name=socket.gethostname())}
+    text = rt.gateway_router_text(fake).replace("АДРЕС_ШЛЮЗА", st.get("LAN_ADDR") or "АДРЕС_ШЛЮЗА")
+    await edit_nav(cb, services, text, kb.gateway_lan_kb())
     await cb.answer()
 
 

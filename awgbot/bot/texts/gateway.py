@@ -125,6 +125,54 @@ def gateway_health(st) -> str:
     return "\n".join(lines)
 
 
+def gateway_lan_text(st) -> str:
+    """🏠 Локальная сеть без VPN (docs/gateway-lan.md §3.5): что настроено, как
+    дела со списками, откуда берутся личные."""
+    from awgbot.util import timeutil
+    lan = getattr(st, "lan", None) or {}
+    upd = lan.get("updated_at") or ""
+    try:
+        upd = timeutil.fmt_dt(timeutil.parse_iso(upd)) if upd else "ещё не обновлялись"
+    except ValueError:
+        upd = "?"
+    pk = lan.get("lan_pkts")
+    return ("🏠 <b>Локальная сеть без VPN</b>\n\n"
+            "Роутер заворачивает трафик локальной сети сюда, шлюз делит его сам: домены и "
+            "подсети из списков — в туннель, остальное — напрямую. Личные списки: домен "
+            "накрывает и все поддомены; «напрямую» побеждает «в туннель».\n\n"
+            f"Интерфейс {_e(lan.get('iface', '') or '?')}, адрес {_e(lan.get('addr', '') or '?')}; "
+            f"резолвер — апстрим {_e(lan.get('resolver', '') or '?')} через аплинк.\n"
+            f"Трафик с роутера: {(str(pk) + ' пакетов') if pk else 'нет'}.\n"
+            f"Списки: {lan.get('domains', 0)} доменов, {lan.get('nets', 0)} подсетей, "
+            f"{lan.get('resolved', 0)} адресов по резолву; обновлены {upd}.\n"
+            f"Свои: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую.")
+
+
+def gateway_lan_ask_domain(kind: str) -> str:
+    head = {"add": "➕ <b>В туннель</b>", "ru": "➕ <b>Напрямую</b>", "del": "🗑 <b>Убрать из своих списков</b>"}[kind]
+    what = ("Домен накрывает и все поддомены." if kind != "del" else "Домен уйдёт из обоих списков.")
+    return (f"{head}\n\nПришли домен (можно несколько через пробел). Схема и www. не нужны: "
+            f"<code>example.com</code>. {what}")
+
+
+def gateway_lan_own_text(items: list[tuple[str, str]]) -> str:
+    if not items:
+        return "📋 <b>Свои списки</b>\n\nПока пусто: добавь домены кнопками «В туннель» и «Напрямую»."
+    vpn = [d for k, d in items if k == "vpn"]
+    ru = [d for k, d in items if k == "ru"]
+    lines = ["📋 <b>Свои списки</b>", ""]
+    if vpn:
+        lines += ["В туннель:"] + [f"• {_e(d)}" for d in vpn] + [""]
+    if ru:
+        lines += ["Напрямую:"] + [f"• {_e(d)}" for d in ru]
+    return "\n".join(lines).rstrip()
+
+
+def gateway_lan_result(ok: bool, out: str) -> str:
+    body = _e(out.strip()) if out.strip() else ("готово" if ok else "не удалось")
+    return ("✅ " if ok else "⚠️ ") + body
+
+
 GW_SETTINGS = ("⚙️ <b>Настройки</b>\n\nУведомления, мониторинг, резервное копирование, "
                "обслуживание и обновления бота.")
 GW_SETTINGS_NOTIFY = ("🔔 <b>Уведомления</b>\n\nТихие часы (ночью без звука) и алерты "

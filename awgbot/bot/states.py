@@ -84,6 +84,12 @@ class GatewayLabel(StatesGroup):
     value = State()
 
 
+class GatewayLanDomain(StatesGroup):
+    """Агент шлюза: домены в личные списки локальной сети без VPN
+    (docs/gateway-lan.md §3.5). В данных — kind: add | ru | del."""
+    value = State()
+
+
 class MigrationPort(StatesGroup):
     """Порт второго интерфейса перед переездом: единственный параметр, который
     иногда хотят выбрать сами (443 на хосте, где его никто не слушает)."""
