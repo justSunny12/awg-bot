@@ -750,6 +750,12 @@ async def ssh_port_received(message: Message, state: FSMContext, services):
         await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535. Попробуй ещё раз.")
         return
     port = int(raw)
+    if port == int((await call(services.firewall_screen)).get("ssh_port") or 0):
+        # Тот же порт — не ошибка и не «занят»: финишер и раздел, ввод закрыт.
+        await state.clear()
+        await message.answer(texts.ssh_port_same(port))
+        await core.after_input(message, services, HOOKS, "fw")
+        return
     try:
         busy = await call(services.ssh_port_busy, port)
     except ServiceError as e:

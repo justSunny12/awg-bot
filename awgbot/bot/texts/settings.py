@@ -397,6 +397,11 @@ def ssh_port_busy(port: int) -> str:
     return f"⛔ Порт {port} занят, необходимо выбрать другой."
 
 
+def ssh_port_same(port: int) -> str:
+    return (f"ℹ️ Порт доступа по SSH не изменился, т.к. выбран ранее уже "
+            f"установленный ({port}).")
+
+
 def ssh_port_changed(old: int, new: int) -> str:
     return (f"✅ Порт SSH изменён: {old} → <b>{new}</b>. Проверь вход <b>новым</b> "
             f"подключением на порт {new}; текущие сеансы живут. Если снаружи стоит "

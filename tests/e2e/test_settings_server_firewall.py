@@ -427,7 +427,8 @@ async def test_free_port_is_applied_and_the_section_is_redrawn(services, fake_bo
     changed = []
     monkeypatch.setattr(services, "ssh_port_busy", lambda p: "")
     monkeypatch.setattr(services, "ssh_port_change", lambda p: changed.append(p) or 22)
-    monkeypatch.setattr(services, "firewall_screen", lambda: _fw(ssh_port=2222))
+    # экран отдаёт текущий порт: до смены 22, после — новый
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw(ssh_port=changed[-1] if changed else 22))
     st = FakeState()
     await st.set_state("SshPort:value")
     msg = FakeMessage(text="2222", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
@@ -456,3 +457,20 @@ async def test_bad_port_is_asked_again_and_refusal_from_sshd_is_shown(services, 
     await sh.ssh_port_received(msg, st, services)
     assert any("Порт не изменён" in s[1] and "Bad configuration" in s[1]
                for s in msg.sent if s[0] == "answer")
+
+
+async def test_same_port_is_a_finisher_not_a_refusal(services, fake_bot, monkeypatch):
+    """Текущий порт формально «занят» (им же sshd) — но человеку это не
+    отказ: закрываем ввод финишером и показываем раздел, ничего не трогая."""
+    touched = []
+    monkeypatch.setattr(services, "ssh_port_busy", lambda p: touched.append(("busy", p)) or "x")
+    monkeypatch.setattr(services, "ssh_port_change", lambda p: touched.append(("change", p)) or 22)
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw(ssh_port=22))
+    st = FakeState()
+    await st.set_state("SshPort:value")
+    msg = FakeMessage(text="22", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await sh.ssh_port_received(msg, st, services)
+    assert not touched and await st.get_state() is None
+    texts_sent = [s[1] for s in msg.sent if s[0] == "answer"]
+    assert any("не изменился" in t and "(22)" in t for t in texts_sent), texts_sent
+    assert any("порт SSH 22" in t for t in texts_sent), "раздел показан после финишера"
