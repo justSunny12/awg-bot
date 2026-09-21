@@ -196,7 +196,7 @@ def set_port(port: int) -> list[str]:
             raise SshdError("sshd -t: " + (chk.stderr.strip() or chk.stdout.strip()))
         eff = effective_ports()
         if eff != [port]:
-            raise SshdError(f"sshd применил бы порты {eff or 'по умолчанию'}, а не {port} — "
+            raise SshdError(f"sshd применил бы порты {', '.join(map(str, eff)) or 'по умолчанию'}, а не {port} — "
                             "в конфиге есть что-то, чего я не понял; поправь руками")
     except SshdError:
         restore()
