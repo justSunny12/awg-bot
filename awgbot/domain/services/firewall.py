@@ -42,8 +42,9 @@ class FirewallMixin:
     # вернуть порт можно этой же кнопкой — чат от SSH не зависит.
 
     def ssh_port_busy(self, port: int) -> str:
-        """Кто слушает порт; пусто — свободен. Свой текущий порт — тоже
-        «занят»: sshd на нём и стоит."""
+        """Имя процесса, который слушает порт («?» — есть сокет, имя не
+        видно); пусто — свободен. Свой текущий порт — тоже «занят»: sshd на
+        нём и стоит."""
         from awgbot.infra import sshd
         if not sshd.valid_port(port):
             raise ServiceError("порт — число от 1 до 65535")
@@ -60,10 +61,10 @@ class FirewallMixin:
             raise ServiceError("порт — число от 1 до 65535")
         old = int(settings.get_int("app.network.ssh_port", config.SSH_PORT))
         if port == old:
-            raise ServiceError(f"порт {port} и так текущий")
+            raise ServiceError(f"порт {port} уже выбран текущий")
         busy = self.ssh_port_busy(port)
         if busy:
-            raise ServiceError(f"порт {port} занят: {busy}")
+            raise ServiceError(f"порт {port} уже занят процессом {busy}")
         settings.set_value("app.network.ssh_port", port)
         try:
             for line in sshd.set_port(port):
@@ -95,12 +96,13 @@ class FirewallMixin:
         return cur
 
     def firewall_allow_remove(self, entry: str) -> list[str]:
-        """Убрать адрес. Это МОЖЕТ запереть — применяем с таймером отката."""
+        """Убрать адрес — сразу, без таймера: из чата любое действие
+        отменяется здесь же, а чат от SSH не зависит."""
         cur = [v for v in (settings.get("app.firewall.ssh_allow", []) or []) if v != entry]
         settings.set_value("app.firewall.ssh_allow", cur)
         from awgbot.infra import nftguard
         if nftguard.enabled():
-            self._firewall_apply(rollback=True)
+            self._firewall_apply(rollback=False)
         return cur
 
     _FW_ROLLBACK_SECONDS = 300
@@ -121,20 +123,20 @@ class FirewallMixin:
                "-m", "tools.firewall", "rollback"]
         nftguard.arm_rollback(self._FW_ROLLBACK_SECONDS, cmd, env)
 
-    def firewall_enable(self) -> int:
-        """Включить фильтр с таймером отката. Возвращает секунды на проверку.
-
-        Пустой вайтлист не запрещаем: SSH останется открыт всем адресам, и это
-        осознанный выбор (ключи никто не отменял) — а вот молча включить фильтр,
-        который никого не пускает, было бы ловушкой."""
+    def firewall_enable(self) -> None:
+        """Включить фильтр — сразу, без таймера отката (он остался у CLI, где
+        кроме терминала другого пути нет; из чата фильтр выключается той же
+        кнопкой). Без адресов не включаем: такой фильтр открывает SSH всем и
+        не фильтрует ничего — кнопки в разделе тоже нет."""
         from awgbot.infra import nftguard
+        if not (settings.get("app.firewall.ssh_allow", []) or []):
+            raise ServiceError("сначала добавь хотя бы один адрес для входа снаружи")
         settings.set_value("app.firewall.enabled", True)
         try:
-            self._firewall_apply(rollback=True)
+            self._firewall_apply(rollback=False)
         except nftguard.GuardError as e:
             settings.set_value("app.firewall.enabled", False)
             raise ServiceError(str(e))
-        return self._FW_ROLLBACK_SECONDS
 
     def firewall_confirm(self) -> bool:
         from awgbot.infra import nftguard

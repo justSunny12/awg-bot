@@ -76,23 +76,30 @@ def fw(services, monkeypatch, tmp_path):
     return store, acts
 
 
-def test_enable_applies_with_a_rollback_timer(services, fw):
+def test_enable_applies_at_once_without_a_timer(services, fw):
+    """Из чата — сразу: чат от SSH не зависит, выключается той же кнопкой.
+    Таймер отката остался у CLI, где другого пути кроме терминала нет."""
     store, acts = fw
-    seconds = services.firewall_enable()
+    store["app.firewall.ssh_allow"] = ["203.0.113.7"]
+    assert services.firewall_enable() is None
     assert store["app.firewall.enabled"] is True
-    assert seconds == services._FW_ROLLBACK_SECONDS
-    kinds = [a[0] for a in acts]
-    assert kinds == ["apply", "arm"], "правила без таймера отката или наоборот"
-    arm = next(a for a in acts if a[0] == "arm")
-    assert arm[1] == seconds
-    assert "tools.firewall" in " ".join(arm[2]) and "rollback" in " ".join(arm[2]), \
-        "таймер зовёт не тот модуль — откат просто не случится"
+    assert [a[0] for a in acts] == ["apply"], "таймера из чата быть не должно"
+
+
+def test_enable_without_addresses_is_refused(services, fw):
+    """Фильтр без адресов открывает SSH всем и не фильтрует ничего — кнопки в
+    разделе нет, а сервис не даёт включить и мимо кнопки."""
+    store, acts = fw
+    with pytest.raises(ServiceError, match="адрес"):
+        services.firewall_enable()
+    assert store["app.firewall.enabled"] is False and not acts
 
 
 def test_enable_rolls_the_flag_back_when_the_table_is_refused(services, fw, monkeypatch):
     """Останься enabled=true при неприменённой таблице — следующий тик бота
-    применил бы её сам, без таймера и без человека: самозапирание без страховки."""
+    применил бы её сам, без человека."""
     store, acts = fw
+    store["app.firewall.ssh_allow"] = ["203.0.113.7"]
 
     def boom(text):
         raise nftguard.GuardError("nft: синтаксис")
@@ -103,7 +110,9 @@ def test_enable_rolls_the_flag_back_when_the_table_is_refused(services, fw, monk
 
 
 def test_confirm_disarms_and_disable_keeps_nat(services, fw):
+    """confirm — для таймера, который поставил CLI; disable снимает его же."""
     store, acts = fw
+    store["app.firewall.ssh_allow"] = ["203.0.113.7"]
     services.firewall_enable()
     acts.clear()
     assert services.firewall_confirm() is True
@@ -127,15 +136,14 @@ def test_adding_an_address_never_arms_the_timer(services, fw):
     assert store["app.firewall.ssh_allow"] == ["203.0.113.7", "home.example.org", "198.51.100.9"]
 
 
-def test_removing_an_address_arms_the_timer(services, fw):
-    """Удаление МОЖЕТ запереть: последний адрес — это и есть вход снаружи."""
+def test_removing_an_address_applies_at_once(services, fw):
     store, acts = fw
     store["app.firewall.enabled"] = True
     store["app.firewall.ssh_allow"] = ["203.0.113.7", "198.51.100.9"]
     acts.clear()
     left = services.firewall_allow_remove("203.0.113.7")
     assert left == ["198.51.100.9"]
-    assert [a[0] for a in acts] == ["apply", "arm"]
+    assert [a[0] for a in acts] == ["apply"]
 
 
 def test_bad_address_is_refused_before_it_reaches_the_config(services, fw):

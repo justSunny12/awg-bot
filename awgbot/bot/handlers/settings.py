@@ -751,10 +751,10 @@ async def ssh_port_received(message: Message, state: FSMContext, services):
         return
     port = int(raw)
     if port == int((await call(services.firewall_screen)).get("ssh_port") or 0):
-        # Тот же порт — не ошибка и не «занят»: финишер и раздел, ввод закрыт.
+        # Тот же порт — не ошибка и не «занят»: диалог закрыт, финишер с выбором.
         await state.clear()
-        await message.answer(texts.ssh_port_same(port))
-        await core.after_input(message, services, HOOKS, "fw")
+        await cleanup_content(message.bot, services, message.chat.id)
+        await send_menu(message, services, texts.ssh_port_same(port), kb.ssh_port_finisher())
         return
     try:
         busy = await call(services.ssh_port_busy, port)
@@ -762,10 +762,12 @@ async def ssh_port_received(message: Message, state: FSMContext, services):
         await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
         return
     if busy:
-        # Отказ, не переспрос: человек выбирает другой порт с экрана раздела.
+        # Отказ, не переспрос: диалог закрыт, финишер с выбором — другой порт
+        # или раздел.
         await state.clear()
         await cleanup_content(message.bot, services, message.chat.id)
-        await send_menu(message, services, texts.ssh_port_busy(port), kb.settings_back("fw"))
+        await send_menu(message, services, texts.ssh_port_busy(port, "" if busy == "?" else busy),
+                        kb.ssh_port_finisher())
         return
     await state.clear()
     try:
@@ -773,8 +775,26 @@ async def ssh_port_received(message: Message, state: FSMContext, services):
     except ServiceError as e:
         await message.answer(f"⚠️ Порт не изменён: {texts._e(str(e))}")
     else:
-        await message.answer(texts.ssh_port_changed(old, port))
+        await message.answer(texts.ssh_port_changed(old, port), reply_markup=kb.hide_only())
     await core.after_input(message, services, HOOKS, "fw")
+
+
+@router.callback_query(SetCB.filter((F.sec == "fw") & (F.act == "do")
+                                    & F.key.in_({"port_retry", "port_back"})))
+async def ssh_port_finisher_action(cb: CallbackQuery, callback_data: SetCB, state: FSMContext,
+                                   services):
+    """Кнопки финишера: финишер остаётся в чате с одной «Скрыть», дальше —
+    новое приглашение или раздел новым сообщением."""
+    try:
+        await cb.message.edit_reply_markup(reply_markup=kb.hide_only())
+    except Exception:                                     # noqa: BLE001
+        pass
+    if callback_data.key == "port_retry":
+        await state.set_state(SshPort.value)
+        await send_menu(cb.message, services, texts.SSH_PORT_ASK, kb.settings_cancel("fw"))
+    else:
+        await send_menu(cb.message, services, *await _screen("fw", services))
+    await cb.answer()
 
 
 # ── ввод значения (FSM) ──────────────────────────────────────────────────────
@@ -840,15 +860,15 @@ async def _routing_provision(cb: CallbackQuery, services) -> None:
 
 
 async def _firewall_action(cb: CallbackQuery, callback_data: SetCB, services) -> None:
-    """Действия раздела «Файервол». Включение и удаление адреса могут запереть
-    вход, поэтому идут с таймером отката; подтверждает его человек ЗДЕСЬ, а не
-    вторым SSH-сеансом: чат работает независимо от того, сломался SSH или нет."""
+    """Действия раздела «Доступ по SSH». Из чата всё применяется сразу, без
+    таймера отката: чат от SSH не зависит, и любое действие отменяется той же
+    кнопкой. confirm/rollback остались для таймера, который ставит CLI
+    (`awg-bot firewall setup`): его кнопки приходят в чат из терминала."""
     key, val = callback_data.key, callback_data.val
     try:
         if key == "on":
-            seconds = await call(services.firewall_enable)
-            await cb.answer()
-            await cb.message.answer(texts.firewall_armed(seconds))
+            await call(services.firewall_enable)
+            await cb.answer("Фильтр включён")
         elif key == "off":
             await call(services.firewall_disable)
             await cb.answer("Фильтр снят")

@@ -165,8 +165,15 @@ def test_port_busy_reports_the_listener(monkeypatch):
             if args[-1].endswith(":2222") else ""
         return subprocess.CompletedProcess(args, 0, out, "")
     monkeypatch.setattr(sshd.subprocess, "run", run)
-    assert "nginx" in sshd.port_busy(2222)
+    assert sshd.port_busy(2222) == "nginx"
     assert sshd.port_busy(2223) == ""
+
+
+def test_port_busy_without_process_name_is_still_busy(monkeypatch):
+    """Не root или сокет ядра: `ss` не покажет users:(…) — порт всё равно занят."""
+    monkeypatch.setattr(sshd.subprocess, "run", lambda args, **kw: subprocess.CompletedProcess(
+        args, 0, "udp UNCONN 0 0 0.0.0.0:2222 0.0.0.0:*\n", ""))
+    assert sshd.port_busy(2222) == "?"
 
 
 def test_out_of_range_port_is_refused_without_touching_anything(monkeypatch):

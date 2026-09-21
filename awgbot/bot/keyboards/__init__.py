@@ -36,7 +36,7 @@ from .admin import (
 from .settings import (
     settings_root, settings_back, settings_server, private_dns_choices,
     private_dns_offer_kb, migration_prepare_confirm, migration_generation_pending,
-    settings_firewall, settings_notify, CLIENT_EVENT_LABELS, settings_notify_clients,
+    settings_firewall, ssh_port_finisher, settings_notify, CLIENT_EVENT_LABELS, settings_notify_clients,
     settings_email, email_forget_confirm, settings_subs, settings_mon, settings_backup,
     backup_encryption_kb, restore_confirm, email_setup_offer, settings_svc,
     svc_confirm, migration_confirm, settings_updates, settings_cancel, update_notify,
@@ -75,7 +75,7 @@ __all__ = [
     "reassign_addslot", "confirm_lower_limit", "traffic_profiles_kb", "expiring_kb",
     "online_devices_kb", "traffic_devices_kb", "settings_root", "settings_back",
     "settings_server", "private_dns_choices", "private_dns_offer_kb",
-    "migration_prepare_confirm", "migration_generation_pending", "settings_firewall",
+    "migration_prepare_confirm", "migration_generation_pending", "settings_firewall", "ssh_port_finisher",
     "settings_notify", "CLIENT_EVENT_LABELS", "settings_notify_clients",
     "settings_email", "email_forget_confirm", "settings_subs", "settings_mon",
     "settings_backup", "backup_encryption_kb", "restore_confirm", "email_setup_offer",

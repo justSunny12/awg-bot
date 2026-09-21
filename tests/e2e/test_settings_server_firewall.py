@@ -117,33 +117,37 @@ async def test_firewall_screen_offers_enable_and_lists_addresses(services, fake_
     monkeypatch.setattr(services, "firewall_screen",
                         lambda: _fw(raw_allow=["203.0.113.7", "home.example.org"]))
     text, markup = await sh._screen("fw", services)
-    assert "🔴 фильтр выключен" in text and "203.0.113.7" in text
+    assert "Порт SSH: 22" in text and "203.0.113.7" in text
     assert "Доступ по SSH" in text, "заголовок раздела не обновлён"
-    assert "таймером" in text, "перед включением про таймер сказать надо"
+    assert "таймер" not in text.lower(), "из чата таймера нет — текст не должен его обещать"
     labels = _labels(markup)
     assert "🟢 Включить фильтр" in labels and "➕ Добавить адрес" in labels
     assert "➖ 203.0.113.7" in labels and "➖ home.example.org" in labels
 
 
-async def test_armed_screen_allows_only_confirm_or_rollback(services, fake_bot, monkeypatch):
-    """Пока идёт обратный отсчёт, любое другое действие — способ забыть о нём."""
-    monkeypatch.setattr(services, "firewall_screen", lambda: _fw(enabled=True, rollback=True))
-    text, markup = await sh._screen("fw", services)
-    assert "Идёт проверка входа" in text and "новое" in text
-    labels = _labels(markup)
-    assert labels[:2] == ["✅ Вход работает, подтверждаю", "↩️ Откатить сейчас"]
-    assert not any("Включить" in l or "Добавить" in l for l in labels)
-
-
-async def test_enable_arms_the_timer_and_confirm_disarms_it(services, fake_bot, monkeypatch):
-    calls = []
-    monkeypatch.setattr(services, "firewall_enable", lambda: calls.append("on") or 300)
-    monkeypatch.setattr(services, "firewall_confirm", lambda: calls.append("confirm") or True)
+async def test_no_addresses_means_no_enable_button(services, fake_bot, monkeypatch):
+    """Фильтр без адресов открывает SSH всем и не фильтрует ничего — включать
+    нечего. Выключенный с адресами — включается; включённый — выключается."""
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw())
+    _, markup = await sh._screen("fw", services)
+    assert not any("фильтр" in l.lower() for l in _labels(markup))
     monkeypatch.setattr(services, "firewall_screen", lambda: _fw(enabled=True))
+    _, markup = await sh._screen("fw", services)
+    assert "🔴 Выключить фильтр" in _labels(markup), "выключить можно и без адресов"
+
+
+async def test_enable_applies_at_once_and_cli_timer_buttons_still_work(services, fake_bot, monkeypatch):
+    """Из чата — сразу, без таймера и без «подтверди». Кнопки confirm/rollback
+    рисует CLI (его таймер остался) — бот их по-прежнему обслуживает."""
+    calls = []
+    monkeypatch.setattr(services, "firewall_enable", lambda: calls.append("on"))
+    monkeypatch.setattr(services, "firewall_confirm", lambda: calls.append("confirm") or True)
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw(enabled=True, raw_allow=["203.0.113.7"]))
     cb, nav = _acb(fake_bot)
     await sh.do_action(cb, SetCB(sec="fw", act="do", key="on"), services)
     assert calls == ["on"]
-    assert any("Проверь вход" in s[1] for s in nav.sent if s[0] == "answer")
+    assert not any(s[0] == "answer" for s in nav.sent), "никаких «проверь вход» — применено и всё"
+    assert any("Фильтр включён" in str(a) for a in cb.answers), cb.answers
     cb, nav = _acb(fake_bot)
     await sh.do_action(cb, SetCB(sec="fw", act="do", key="confirm"), services)
     assert calls == ["on", "confirm"]
@@ -254,7 +258,7 @@ async def test_prepare_screen_names_the_cohort_and_the_cost(services, fake_bot, 
     assert "7" in text and "3" in text, "размер когорты не назван"
     assert "отмена безопасна" in text.lower() and "финал" in text.lower()
     labels = _labels(markup)
-    assert "🚚 Поднять второй интерфейс" in labels and "✏️ Задать порт" in labels
+    assert "🚚 Поднять второй интерфейс" in labels and "✏️ Изменить порт" in labels
 
 
 async def test_prepare_runs_and_restarts(services, fake_bot, monkeypatch):
@@ -404,12 +408,11 @@ async def test_port_button_is_first_and_opens_the_prompt(services, fake_bot, mon
     assert any("Порт SSH" in s[1] for s in nav.sent if s[0] == "edit_text"), nav.sent
 
 
-async def test_busy_port_is_refused_with_a_way_back(services, fake_bot, monkeypatch):
-    """Занятый порт — отказ с кнопкой «Назад» в раздел, а не переспрос: ввод
-    закрыт, порт не менялся."""
+async def test_busy_port_is_refused_with_retry_and_back(services, fake_bot, monkeypatch):
+    """Занятый порт — отказ финишером с выбором (другой порт / раздел), а не
+    переспрос: ввод закрыт, порт не менялся, имя процесса названо."""
     changed = []
-    monkeypatch.setattr(services, "ssh_port_busy",
-                        lambda p: 'tcp LISTEN 0.0.0.0:8443 users:(("nginx",pid=1,fd=6))')
+    monkeypatch.setattr(services, "ssh_port_busy", lambda p: "nginx")
     monkeypatch.setattr(services, "ssh_port_change", lambda p: changed.append(p) or 22)
     monkeypatch.setattr(services, "firewall_screen", lambda: _fw())
     st = FakeState()
@@ -417,10 +420,40 @@ async def test_busy_port_is_refused_with_a_way_back(services, fake_bot, monkeypa
     msg = FakeMessage(text="8443", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await sh.ssh_port_received(msg, st, services)
     assert not changed and await st.get_state() is None
-    sent = [s for s in msg.sent if s[0] == "answer" and "Порт 8443 занят, необходимо выбрать другой" in s[1]]
+    sent = [s for s in msg.sent if s[0] == "answer" and "порт 8443 уже занят процессом" in s[1]]
     assert sent, msg.sent
-    assert _labels(sent[0][2]) == ["⬅️ Назад"]
-    assert SetCB.unpack(sent[0][2].inline_keyboard[0][0].callback_data).sec == "fw"
+    assert "<code>nginx</code>" in sent[0][1]
+    assert _labels(sent[0][2]) == ["✏️ Изменить порт", "⬅️ Назад"]
+    keys = [SetCB.unpack(b.callback_data).key for row in sent[0][2].inline_keyboard for b in row]
+    assert keys == ["port_retry", "port_back"]
+
+
+async def test_busy_port_without_a_visible_process_name(services, fake_bot, monkeypatch):
+    monkeypatch.setattr(services, "ssh_port_busy", lambda p: "?")
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw())
+    st = FakeState()
+    await st.set_state("SshPort:value")
+    msg = FakeMessage(text="8443", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await sh.ssh_port_received(msg, st, services)
+    assert any(s[1].endswith("порт 8443 занят") for s in msg.sent if s[0] == "answer"), msg.sent
+
+
+async def test_finisher_buttons_reopen_the_prompt_or_the_section(services, fake_bot, monkeypatch):
+    """Кнопка финишера: сам финишер остаётся с одной «Скрыть», дальше — новое
+    приглашение (и снова ввод порта) или раздел новым сообщением."""
+    from awgbot.bot.states import SshPort
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw())
+    cb, nav = _acb(fake_bot)
+    st = FakeState()
+    await sh.ssh_port_finisher_action(cb, SetCB(sec="fw", act="do", key="port_retry"), st, services)
+    assert await st.get_state() == SshPort.value.state
+    assert ("edit_reply_markup", ADMIN) in fake_bot.records, "финишер остаётся, клавиатура — «Скрыть»"
+    assert any(s[0] == "answer" and "Порт SSH" in s[1] for s in nav.sent)
+    cb, nav = _acb(fake_bot)
+    st = FakeState()
+    await sh.ssh_port_finisher_action(cb, SetCB(sec="fw", act="do", key="port_back"), st, services)
+    assert await st.get_state() is None
+    assert any(s[0] == "answer" and "Доступ по SSH" in s[1] for s in nav.sent)
 
 
 async def test_free_port_is_applied_and_the_section_is_redrawn(services, fake_bot, monkeypatch):
@@ -436,7 +469,7 @@ async def test_free_port_is_applied_and_the_section_is_redrawn(services, fake_bo
     assert changed == [2222] and await st.get_state() is None
     texts_sent = [s[1] for s in msg.sent if s[0] == "answer"]
     assert any("22 → <b>2222</b>" in t for t in texts_sent)
-    assert any("порт SSH 2222" in t for t in texts_sent), "раздел перерисован с новым портом"
+    assert any("Порт SSH: 2222" in t for t in texts_sent), "раздел перерисован с новым портом"
 
 
 async def test_bad_port_is_asked_again_and_refusal_from_sshd_is_shown(services, fake_bot, monkeypatch):
@@ -461,9 +494,9 @@ async def test_bad_port_is_asked_again_and_refusal_from_sshd_is_shown(services, 
 
 async def test_same_port_is_a_finisher_not_a_refusal(services, fake_bot, monkeypatch):
     """Текущий порт формально «занят» (им же sshd) — но человеку это не
-    отказ: закрываем ввод финишером и показываем раздел, ничего не трогая."""
+    отказ: закрываем ввод финишером с выбором, ничего не трогая."""
     touched = []
-    monkeypatch.setattr(services, "ssh_port_busy", lambda p: touched.append(("busy", p)) or "x")
+    monkeypatch.setattr(services, "ssh_port_busy", lambda p: touched.append(("busy", p)) or "sshd")
     monkeypatch.setattr(services, "ssh_port_change", lambda p: touched.append(("change", p)) or 22)
     monkeypatch.setattr(services, "firewall_screen", lambda: _fw(ssh_port=22))
     st = FakeState()
@@ -471,6 +504,6 @@ async def test_same_port_is_a_finisher_not_a_refusal(services, fake_bot, monkeyp
     msg = FakeMessage(text="22", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await sh.ssh_port_received(msg, st, services)
     assert not touched and await st.get_state() is None
-    texts_sent = [s[1] for s in msg.sent if s[0] == "answer"]
-    assert any("не изменился" in t and "(22)" in t for t in texts_sent), texts_sent
-    assert any("порт SSH 22" in t for t in texts_sent), "раздел показан после финишера"
+    sent = [s for s in msg.sent if s[0] == "answer" and "не изменился" in s[1] and "(22)" in s[1]]
+    assert sent, msg.sent
+    assert _labels(sent[0][2]) == ["✏️ Изменить порт", "⬅️ Назад"]

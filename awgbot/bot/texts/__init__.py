@@ -98,7 +98,7 @@ from .settings import (
     SVC_CONFIRM_BOT, settings_svc_text, SETTINGS_UPD, settings_upd_text,
     SETTINGS_BOUNDS, SETTINGS_TEXT, PRIVATE_DNS_WHAT, private_dns_offer,
     PRIVATE_DNS_LATER, PRIVATE_DNS_DISMISSED, settings_server_text,
-    settings_firewall_text, firewall_armed, firewall_confirmed, firewall_rolled_back,
+    settings_firewall_text, firewall_confirmed, firewall_rolled_back,
     SSH_PORT_ASK, ssh_port_busy, ssh_port_same, ssh_port_changed,
     settings_prompt, settings_changed, settings_ssh_allow_added, settings_bad_value)
 from .broadcast import (
@@ -191,7 +191,7 @@ __all__ = [
     "SETTINGS_UPD", "settings_upd_text", "SETTINGS_BOUNDS", "SETTINGS_TEXT",
     "PRIVATE_DNS_WHAT", "private_dns_offer", "PRIVATE_DNS_LATER",
     "PRIVATE_DNS_DISMISSED", "settings_server_text", "settings_firewall_text",
-    "firewall_armed", "firewall_confirmed", "firewall_rolled_back", "settings_prompt",
+    "firewall_confirmed", "firewall_rolled_back", "settings_prompt",
     "SSH_PORT_ASK", "ssh_port_busy", "ssh_port_same", "ssh_port_changed",
     "settings_changed", "settings_ssh_allow_added", "settings_bad_value",
     "BROADCAST_EMPTY", "BROADCAST_MODE", "BROADCAST_TARGETS",

@@ -50,15 +50,22 @@ def valid_port(port: int) -> bool:
     return 1 <= int(port) <= 65535
 
 
+_PROC_RE = re.compile(r'users:\(\("([^"]+)"')
+
+
 def port_busy(port: int) -> str:
-    """Кто слушает порт (TCP или UDP, любой адрес) — первая строка `ss`,
-    пусто — никто. sshd на своём текущем порту тоже «занято»: менять на него
-    нечего."""
+    """Имя процесса, который слушает порт (TCP или UDP, любой адрес) — из
+    `users:(("nginx",pid=…))` в выводе `ss`; сокет есть, а имени не видно
+    (не root, сокет ядра) — «?»; пусто — порт свободен. sshd на своём
+    текущем порту тоже «занято»: менять на него нечего."""
     proc = _run(["ss", "-Hlntup", f"sport = :{int(port)}"])
     if proc.returncode != 0:
         raise SshdError("ss: " + (proc.stderr.strip() or f"код {proc.returncode}"))
-    line = proc.stdout.strip().splitlines()
-    return line[0].strip() if line else ""
+    lines = proc.stdout.strip().splitlines()
+    if not lines:
+        return ""
+    m = _PROC_RE.search(lines[0])
+    return m.group(1) if m else "?"
 
 
 def effective_ports() -> list[int]:
@@ -196,8 +203,10 @@ def set_port(port: int) -> list[str]:
             raise SshdError("sshd -t: " + (chk.stderr.strip() or chk.stdout.strip()))
         eff = effective_ports()
         if eff != [port]:
-            raise SshdError(f"sshd применил бы порты {', '.join(map(str, eff)) or 'по умолчанию'}, а не {port} — "
-                            "в конфиге есть что-то, чего я не понял; поправь руками")
+            shown = (("порт " if len(eff) == 1 else "порты ") + ", ".join(map(str, eff))) \
+                if eff else "порт по умолчанию"
+            raise SshdError(f"sshd применил бы {shown}, а не {port} — в конфиге есть "
+                            "что-то, чего я не понял; поправь руками")
     except SshdError:
         restore()
         raise

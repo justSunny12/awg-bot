@@ -101,7 +101,7 @@ def migration_prepare_confirm(want_port: int = 0) -> InlineKeyboardMarkup:
     kb.button(text="🚚 Поднять второй интерфейс",
               callback_data=SetCB(sec="mig_prep", act="do", key="go",
                                   val=str(want_port or "")))
-    kb.button(text="✏️ Задать порт", callback_data=SetCB(sec="mig_prep", act="edit", key="port"))
+    kb.button(text="✏️ Изменить порт", callback_data=SetCB(sec="mig_prep", act="edit", key="port"))
     kb.button(text="✖️ Отмена", callback_data=SetCB(sec="srv", act="open"))
     kb.adjust(1)
     return kb.as_markup()
@@ -118,17 +118,9 @@ def migration_generation_pending() -> InlineKeyboardMarkup:
 
 
 def settings_firewall(st: dict) -> InlineKeyboardMarkup:
-    """Раздел «Файервол». Пока армирован таймер отката — только два действия:
-    подтвердить или откатить сейчас. Всё остальное в этот момент — способ
-    забыть, что на часах идёт обратный отсчёт."""
+    """Раздел «Доступ по SSH». «Включить фильтр» — только когда есть хоть один
+    адрес: фильтр без адресов открывает SSH всем и ничего не фильтрует."""
     kb = InlineKeyboardBuilder()
-    if st.get("rollback"):
-        kb.button(text="✅ Вход работает, подтверждаю",
-                  callback_data=SetCB(sec="fw", act="do", key="confirm"))
-        kb.button(text="↩️ Откатить сейчас", callback_data=SetCB(sec="fw", act="do", key="rollback"))
-        kb.adjust(1)
-        kb.row(_back())
-        return kb.as_markup()
     kb.button(text="🅿️ Изменить порт", callback_data=SetCB(sec="fw", act="edit", key="port"))
     kb.button(text="➕ Добавить адрес", callback_data=SetCB(sec="fw", act="edit", key="app.firewall.ssh_allow"))
     # В callback_data уезжает НОМЕР записи, а не сам адрес: разделитель полей —
@@ -139,10 +131,20 @@ def settings_firewall(st: dict) -> InlineKeyboardMarkup:
         kb.button(text=f"➖ {entry}", callback_data=SetCB(sec="fw", act="do", key="del", val=str(i)))
     if st.get("enabled"):
         kb.button(text="🔴 Выключить фильтр", callback_data=SetCB(sec="fw", act="do", key="off"))
-    else:
+    elif st.get("raw_allow"):
         kb.button(text="🟢 Включить фильтр", callback_data=SetCB(sec="fw", act="do", key="on"))
     kb.adjust(1)
     kb.row(_back())
+    return kb.as_markup()
+
+
+def ssh_port_finisher() -> InlineKeyboardMarkup:
+    """Финишер «порт не изменился / не выполнена»: попробовать другой порт
+    или вернуться в раздел; нажатие оставляет финишер с одной «Скрыть»."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✏️ Изменить порт", callback_data=SetCB(sec="fw", act="do", key="port_retry"))
+    kb.button(text="\u2b05\ufe0f Назад", callback_data=SetCB(sec="fw", act="do", key="port_back"))
+    kb.adjust(1)
     return kb.as_markup()
 
 

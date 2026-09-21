@@ -87,8 +87,8 @@ def test_bad_address_leaves_the_firewall_off(cli):
 
 def test_arming_sends_two_buttons_to_the_chat(cli):
     """Правила могли отрезать именно тот SSH, из которого их применяли. Кнопка
-    приходит в чат сама — и та же, что рисует бот."""
-    from awgbot.bot import keyboards as kb
+    приходит в чат сама — и ведёт в _firewall_action бота (confirm / rollback)."""
+    from awgbot.bot.callbacks import SetCB
     store, acts = cli
     fw._arm(300)
     chat = [a for a in acts if a[0] == "chat"]
@@ -96,10 +96,9 @@ def test_arming_sends_two_buttons_to_the_chat(cli):
     text, kwargs = chat[0][1][0], chat[0][2]
     assert "проверка входа" in text.lower() or "проверь" in text.lower()
     buttons = dict((t, d) for t, d in kwargs["buttons"])
-    drawn = {b.text: b.callback_data
-             for row in kb.settings_firewall({"rollback": True}).inline_keyboard for b in row}
-    assert set(buttons.values()) == {drawn[t] for t in buttons}, \
-        "кнопка из CLI уйдёт в другой обработчик, чем кнопка из бота"
+    assert set(buttons.values()) == {SetCB(sec="fw", act="do", key=k).pack()
+                                     for k in ("confirm", "rollback")}, \
+        "кнопка из CLI уйдёт не в _firewall_action бота"
 
 
 def test_rollback_removes_the_table_and_tells_the_admin(cli):
