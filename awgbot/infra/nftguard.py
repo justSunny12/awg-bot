@@ -94,7 +94,7 @@ class GuardSpec:
     nat_exclude_ifs: list[str] = field(default_factory=list)  # куда НЕ маскарадить: awg-интерфейсы, линк
     filter: bool = True               # False — NAT-only форма (файервол выключен)
     peer_link_ifs: list[str] = field(default_factory=list)    # линки, между которыми открыт транзит
-                                                              # (docs/gateway-lan.md, функция B)
+                                                              # (концепт «локальная сеть», функция B)
     peer_link_block: list[str] = field(default_factory=list)  # NAT-only форма: линки, между которыми
                                                               # транзит ЗАКРЫТ (тумблер выключен)
 
@@ -277,7 +277,7 @@ def _tunnel_ifs() -> list[str]:
 
 
 def link_ifaces() -> list[str]:
-    """Линки до шлюзов (docs/gateway-failover.md): интерфейс из конфига плюс
+    """Линки до шлюзов (концепт «резервный шлюз»): интерфейс из конфига плюс
     все конфиги в каталоге awg с `Table = off` — так выглядит только линк,
     у клиентских интерфейсов таблицу ведёт awg-quick. Без БД: этот модуль
     зовётся и из CLI `awg-bot firewall`, где бота нет."""

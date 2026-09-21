@@ -93,7 +93,7 @@ def test_activate_friend_code_not_pending(services, make_active_client):
 
 def test_activate_friend_by_existing_client_holds_without_slot(services, make_active_client):
     """Обычный клиент принимает чужое устройство: держит его своим профилем,
-    слот и квота — у дарителя (docs/guest-role.md)."""
+    слот и квота — у дарителя (концепт «гость»)."""
     owner = make_active_client(tg_id=809)
     other = make_active_client(tg_id=90809, device_limit=1)
     dc = services.add_device(owner.id, "d")

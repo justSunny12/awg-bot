@@ -1,5 +1,5 @@
 """
-gateway_link.py — шлюзы условной маршрутизации (docs/gateway-failover.md):
+gateway_link.py — шлюзы условной маршрутизации (концепт «резервный шлюз»):
 слоты, назначение и замена машины, бандл и токен агента по слоту,
 переключение трафика, пинг со шлюза, предпочтительный слот.
 """
@@ -49,7 +49,7 @@ class GatewayLinkMixin:
             return False
 
     def gateway_units_migrate(self) -> bool:
-        """Юнит первого линка — на шаблон awg-link@ (docs/gateway-failover.md
+        """Юнит первого линка — на шаблон awg-link@ (концепт «резервный шлюз»
         §13.3), а шаблон прежней версии — на текущий. Сам по себе переезд
         случился бы на первом ребуте ВПС (реассерт зовёт юнит); ждать его
         незачем — зовём --reassert явно один раз. Возвращает, был ли переезд."""
@@ -209,7 +209,7 @@ class GatewayLinkMixin:
                 log.warning("bundle: конфиг аплинка шлюза не собран: %s", e)
         return env, admin_ips
 
-    # ── «за шлюзом — без VPN» (docs/gateway-lan.md, функция A) ───────────────
+    # ── «за шлюзом — без VPN» (концепт «локальная сеть», функция A) ───────────────
     def gateway_resolver_addr(self, gw) -> str:
         """Апстрим резолвера малины — свой резолвер ВПС из DNS устройства слота;
         пусто — резолвера нет, малина возьмёт запасной через аплинк."""
@@ -229,7 +229,7 @@ class GatewayLinkMixin:
                 "RESOLVER": self.gateway_resolver_addr(gw) if gw.lan_mode else "",
                 "PEER_HOME_NETS": " ".join(self.gateway_peer_nets(gw.id))}
 
-    # ── доступ между подсетями за шлюзами (docs/gateway-lan.md, функция B) ───
+    # ── доступ между подсетями за шлюзами (концепт «локальная сеть», функция B) ───
     _PEER_NETS_KEY = "app.routing.peer_nets.enabled"
 
     def peer_nets_enabled(self) -> bool:
@@ -824,7 +824,7 @@ class GatewayLinkMixin:
         else:
             st["ping_ms"] = None
         st["ext_ip"] = self.gateway_external_ip(slot_id)
-        # функция B (docs/gateway-lan.md): пускают ли сюда из-за других шлюзов
+        # функция B (концепт «локальная сеть»): пускают ли сюда из-за других шлюзов
         st["peer_nets_enabled"] = self.peer_nets_enabled()
         st["peer_nets"] = self.gateway_peer_nets(int(slot_id))
         return st
@@ -843,7 +843,7 @@ class GatewayLinkMixin:
 
     _GW_BUNDLE_SSH_KEY = "gw_bundle_ssh_allow"
     _GW_BUNDLE_SSH_NOTIFIED_KEY = "gw_bundle_ssh_allow_notified"
-    # Прочие зависимости бандла (docs/gateway-lan.md §4.3): режим без VPN,
+    # Прочие зависимости бандла (концепт «локальная сеть» §4.3): режим без VPN,
     # локальные подсети, резолвер. Устройства админа — отдельным ключом выше:
     # у них своё напоминание.
     _GW_BUNDLE_DEPS_KEY = "gw_bundle_deps"

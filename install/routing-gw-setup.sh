@@ -1,7 +1,7 @@
 #!/bin/sh
 # ─────────────────────────────────────────────────────────────────────────────
 # routing-gw-setup.sh — сторона ШЛЮЗА (малинки) для условной маршрутизации.
-# Запускается НА МАЛИНКЕ. См. docs/conditional-routing.md, §12.
+# Запускается НА МАЛИНКЕ. См. концепт «условная маршрутизация», §12.
 #
 # КОНТЕКСТ. Линк поднимается ХОСТОВЫМИ awg/awg-quick — модуль ядра amneziawg
 # живёт на хосте, и версия утилит обязана совпадать с ним. Контейнер Amnezia
@@ -83,7 +83,7 @@ UPLINK_IF_DEFAULT="${UPLINK_IF:-awg0}"        # имя аплинка на чи�
 GW_FOREIGN=0                                  # 1 = слот помечен другому устройству, линк не поднимаем
 GW_UNCONFIRMED=0                              # 1 = аплинка не видно, шлюз не подтверждён — линк не трогаем
 GW_STATUS_FILE="$GW_ETC/gateway.status"       # что решил скрипт — читает агент
-# локальная сеть без VPN (docs/gateway-lan.md): вторая таблица nft, dnsmasq, списки
+# локальная сеть без VPN (концепт «локальная сеть»): вторая таблица nft, dnsmasq, списки
 HOME_TABLE="inet awg_home"
 HOME_FILE="$GW_ETC/home.nft"            # после GW_ETC — иначе уедет в корень ФС
 LAN_SYSCTL="/etc/sysctl.d/98-awg-gw-lan.conf"
@@ -101,7 +101,7 @@ RESOLVER="$(printf '%s' "${RESOLVER:-}" | tr -cd '0-9.' | grep -E '^[0-9]{1,3}(\
 LAN_LISTS="/usr/local/sbin/awg-lan-lists.sh"
 LAN_DOMAIN="/usr/local/sbin/awg-lan-domain.sh"
 LAN_MODE="${LAN_MODE:-0}"
-# Подсети за другими шлюзами (docs/gateway-lan.md, функция B): им из линка
+# Подсети за другими шлюзами (концепт «локальная сеть», функция B): им из линка
 # открыт транзит в локальную сеть — по источнику, выше drop по приватным.
 PEER_HOME_NETS="$(printf '%s' "${PEER_HOME_NETS:-}" | tr -cd '0-9./ ' | tr ' ' '\n' \
     | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$' | paste -sd' ' - 2>/dev/null || true)"
@@ -176,7 +176,7 @@ legacy_cleanup() {
     done
 }
 
-# ── локальная сеть без VPN (docs/gateway-lan.md, функция A): помощники ────────
+# ── локальная сеть без VPN (концепт «локальная сеть», функция A): помощники ────────
 LAN_IF=""; LAN_ADDR=""; LAN_ERROR=""
 dn_set_elsewhere() {           # $1 = regex: ключ dnsmasq уже задан в ДРУГОМ файле?
     # Debian запускает демон с conf-dir=/etc/dnsmasq.d,.dpkg-dist,.dpkg-old,
@@ -226,7 +226,7 @@ lan_remove() {                 # снять всё своё; личные спи
     [ -f "$LAN_DOMAIN" ] && run "rm -f $LAN_DOMAIN"
     return 0
 }
-lan_migrate_manual() {         # ручной слой (docs/gateway-lan.md §7): переезжает, не ломается
+lan_migrate_manual() {         # ручной слой (концепт «локальная сеть» §7): переезжает, не ломается
     _moved=""
     for _u in home-split.service awg-lists.timer awg-lists.service; do
         if [ -f "/etc/systemd/system/$_u" ]; then
@@ -268,7 +268,7 @@ lan_migrate_manual() {         # ручной слой (docs/gateway-lan.md §7)
 write_lan_scripts() {          # скрипты списков — из этого же файла, чтобы бандл был самодостаточен
 cat > "$LAN_LISTS" <<'LISTSEOF'
 #!/bin/sh
-# awg-lan-lists.sh — списки локальной сети без VPN (docs/gateway-lan.md §3.3).
+# awg-lan-lists.sh — списки локальной сети без VPN (концепт «локальная сеть» §3.3).
 # Зовёт агент по расписанию (с джиттером) и `awg-bot lan update`. Идемпотентно.
 #   фид доменов  → /etc/dnsmasq.d/awg-gw-vpn-feed.conf (nftset= в lan_vpn4), минус исключения
 #   фиды подсетей → набор lan_vpn_nets4 (атомарно: flush + add)
@@ -1018,7 +1018,7 @@ Environment="ADMIN_IPS=$ADMIN_IPS"
 Environment=GATEWAY_PUBKEY=$GATEWAY_PUBKEY
 Environment=GATEWAY_PREV_PUBKEY=$GATEWAY_PREV_PUBKEY
 Environment=UPLINK_B64=$UPLINK_B64
-# Локальная сеть без VPN (docs/gateway-lan.md): флаг, подсети, резолвер ВПС.
+# Локальная сеть без VPN (концепт «локальная сеть»): флаг, подсети, резолвер ВПС.
 Environment=LAN_MODE=$LAN_MODE
 Environment="HOME_SUBNETS=$HOME_SUBNETS"
 Environment=RESOLVER=$RESOLVER
@@ -1034,7 +1034,7 @@ WantedBy=multi-user.target
 UNITEOF
 run "systemctl daemon-reload"
 run "systemctl enable awg-link-gw.service"
-# ── 5. локальная сеть: «за шлюзом — без VPN» (docs/gateway-lan.md, функция A) ─
+# ── 5. локальная сеть: «за шлюзом — без VPN» (концепт «локальная сеть», функция A) ─
 # Роутер заворачивает весь трафик локальной сети на малину, малина делит его
 # сама: заблокированное — по метке аплинка в туннель, остальное — напрямую.
 # Резолвер dnsmasq на LAN-адресе с апстримом через аплинк наполняет наборы

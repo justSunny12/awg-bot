@@ -294,7 +294,7 @@ def client_subnet() -> str:
     return m.group(1) if m else ""
 
 
-# ── локальная сеть без VPN (docs/gateway-lan.md, функция A) ──────────────────
+# ── локальная сеть без VPN (концепт «локальная сеть», функция A) ──────────────────
 HOME_TABLE_NAME = "awg_home"
 LAN_STATUS_FILE = "/var/lib/awg-gw/lists.status"
 LAN_LISTS_SCRIPT = "/usr/local/sbin/awg-lan-lists.sh"

@@ -329,7 +329,7 @@ class ClientsMixin:
         return cid
 
     def create_guest_client(self, tg_id: int, name: str) -> int:
-        """Гостевой профиль (docs/guest-role.md): без подписки и лимита, сразу
+        """Гостевой профиль (концепт «гость»): без подписки и лимита, сразу
         активен — держит переданные устройства одного владельца."""
         with self._tx() as cur:
             return self._insert_guest(cur, tg_id, name)

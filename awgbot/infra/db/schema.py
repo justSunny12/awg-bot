@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS clients (
     invite_code         TEXT,                         -- гасится (NULL) после активации
     is_service          INTEGER NOT NULL DEFAULT 0,   -- 1 = служебный «Устройства без клиента»
     created_at          TEXT    NOT NULL,
-    -- Тип профиля (docs/guest-role.md): owner — со своей подпиской; guest —
+    -- Тип профиля (концепт «гость»): owner — со своей подпиской; guest —
     -- гость без подписки, держит переданные ему устройства одного владельца.
     kind                TEXT    NOT NULL DEFAULT 'owner',
     -- Имя Telegram-аккаунта (first + last name) — для ссылок на человека в
@@ -211,7 +211,7 @@ CREATE TABLE IF NOT EXISTS clients (
     tg_name             TEXT    NOT NULL DEFAULT '',
     tg_name_at          TEXT,                         -- когда имя обновлялось; NULL — никогда
     tg_username         TEXT    NOT NULL DEFAULT '',  -- публичный @username, если есть: ссылка t.me/ работает у всех
-    -- Условная маршрутизация (docs/conditional-routing.md). Здесь только
+    -- Условная маршрутизация (концепт «условная маршрутизация»). Здесь только
     -- РАЗРЕШЕНИЕ админа; само «включено» живёт пер-девайсно (devices.routing_on),
     -- а состояние профиля выводится из него. Снятие разрешения гасит эффект, но
     -- флаги устройств НЕ стирает: вернул разрешение — настройка восстановилась.
@@ -284,7 +284,7 @@ CREATE TABLE IF NOT EXISTS devices (
     -- прямо в окне переезда.
     twin_of             INTEGER,
     created_at          TEXT    NOT NULL,
-    -- Держатель (docs/guest-role.md): кто управляет устройством через бота,
+    -- Держатель (концепт «гость»): кто управляет устройством через бота,
     -- если не владелец. Слот, квота, подписка — у владельца (client_id).
     -- NULL = своё устройство.
     holder_client_id    INTEGER,
@@ -371,7 +371,7 @@ CREATE INDEX IF NOT EXISTS idx_devices_twin     ON devices(twin_of) WHERE twin_o
 -- прежний индекс единственности шлюза; колонка пуста с v2.24.0, индекс безвреден
 CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_gateway ON devices(is_gateway) WHERE is_gateway = 1;
 
--- ── Слоты шлюзов условной маршрутизации (docs/gateway-failover.md) ─────────
+-- ── Слоты шлюзов условной маршрутизации (концепт «резервный шлюз») ─────────
 -- Устройство админа на машине-шлюзе и её линк на ВПС. Один слот несёт
 -- трафик, остальные в резерве; кто именно — в state (routing_active_gateway).
 CREATE TABLE IF NOT EXISTS gateways (
@@ -383,7 +383,7 @@ CREATE TABLE IF NOT EXISTS gateways (
     preferred     INTEGER NOT NULL DEFAULT 0,            -- 0/1: берёт трафик при холодном старте
     home_subnets  TEXT    NOT NULL DEFAULT '',           -- локальные подсети за шлюзом, через пробел
     label         TEXT    NOT NULL DEFAULT '',           -- подпись места («дом 1»)
-    lan_mode      INTEGER NOT NULL DEFAULT 0,            -- 0/1: «за шлюзом — без VPN» (docs/gateway-lan.md)
+    lan_mode      INTEGER NOT NULL DEFAULT 0,            -- 0/1: «за шлюзом — без VPN» (концепт «локальная сеть»)
     created_at    TEXT    NOT NULL,
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
 );
@@ -562,7 +562,7 @@ class SchemaMixin:
         self._migrate_gateway_lan_mode()
 
     def _migrate_gateway_slots(self) -> None:
-        """v2.24.0 (docs/gateway-failover.md): флаг devices.is_gateway → строка
+        """v2.24.0 (концепт «резервный шлюз»): флаг devices.is_gateway → строка
         в gateways (слот 1, предпочтительный, линк из конфига). Порт и /30
         линка — из живого конфига интерфейса, без него — умолчания слота 1.
         Ключи состояния бандла получают суффикс слота. Идемпотентно: второй
@@ -594,7 +594,7 @@ class SchemaMixin:
             cur.execute("UPDATE devices SET is_gateway = 0 WHERE is_gateway = 1")
 
     def _migrate_gateway_lan_mode(self) -> None:
-        """v3.0.0 (docs/gateway-lan.md): gateways.lan_mode — «за шлюзом — без
+        """v3.0.0 (концепт «локальная сеть»): gateways.lan_mode — «за шлюзом — без
         VPN» по слоту. Идемпотентно."""
         con = self._connection()
         tables = {r["name"] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -606,7 +606,7 @@ class SchemaMixin:
                 cur.execute("ALTER TABLE gateways ADD COLUMN lan_mode INTEGER NOT NULL DEFAULT 0")
 
     def _migrate_guest_role_columns(self) -> None:
-        """v2.20.0 (docs/guest-role.md): clients.kind и devices.holder_client_id.
+        """v2.20.0 (концепт «гость»): clients.kind и devices.holder_client_id.
         CREATE TABLE IF NOT EXISTS существующие таблицы не доводит — колонки
         добавляются здесь, ДО SCHEMA (индекс по holder_client_id в SCHEMA
         требует колонку). Идемпотентно."""

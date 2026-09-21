@@ -14,7 +14,7 @@
 Этот файл — обзор проекта и архитектуры. Дальше:
 
 - **[docs/README-bot.md](docs/README-bot.md)** — установка, конфигурация, эксплуатация
-- **[docs/conditional-routing.md](docs/conditional-routing.md)** — условная маршрутизация целиком
+- **[концепт «условная маршрутизация»](концепт «условная маршрутизация»)** — условная маршрутизация целиком
 - **[docs/CHANGELOG.md](docs/CHANGELOG.md)** — журнал изменений
 - **[docs/ROADMAP.md](docs/ROADMAP.md)** — что впереди и почему
 

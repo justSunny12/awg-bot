@@ -468,7 +468,7 @@ async def main() -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("reconcile_ssh_access на старте: %s", e)
         try:
-            # Слоты шлюзов (docs/gateway-failover.md): юнит первого линка —
+            # Слоты шлюзов (концепт «резервный шлюз»): юнит первого линка —
             # на шаблон, активный на холодном старте — предпочтительный.
             await asyncio.to_thread(services.gateway_units_migrate)
             # порт линка правят руками в конфиге ВПС — строка слота узнаёт сама

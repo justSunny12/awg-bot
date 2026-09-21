@@ -265,7 +265,7 @@ async def test_start_marks_the_first_panel_as_shown(svc, fake_bot, monkeypatch):
     assert not [r for r in fake_bot.records if r[0] == "send_message"], "после /start первая панель не нужна"
 
 
-# ── локальная сеть без VPN: личные списки из чата (docs/gateway-lan.md §3.5) ──
+# ── локальная сеть без VPN: личные списки из чата (концепт «локальная сеть» §3.5) ──
 
 def _lan_status():
     return GwStatus(link_up=True, handshake_age=5.0,

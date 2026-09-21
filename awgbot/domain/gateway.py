@@ -83,7 +83,7 @@ class GwStatus:
     egress_ms: float | None = None          # выход наружу через домашний канал, мс
     tg_missing: list[str] = field(default_factory=list)   # диапазоны Telegram без маркировки
     mark_status: str = ""                   # шлюзовое устройство: confirmed|unmarked|foreign|unconfirmed
-    lan: dict = field(default_factory=dict) # локальная сеть без VPN (docs/gateway-lan.md): пусто — выключена
+    lan: dict = field(default_factory=dict) # локальная сеть без VPN (концепт «локальная сеть»): пусто — выключена
     ts: str = ""                            # когда снят (ISO); пусто — живой
 
     def to_json(self) -> str:
@@ -486,7 +486,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                        "перевыпусти конфигурацию шлюза с ВПС и примени её здесь")
 
     def peer_nets_check(self, info: dict | None) -> GwCheck | None:
-        """Подсети за другими шлюзами (docs/gateway-lan.md, функция B): набор
+        """Подсети за другими шлюзами (концепт «локальная сеть», функция B): набор
         peer_nets4 против PEER_HOME_NETS из юнита. Переменная пустая — проверки
         нет: функции на этом шлюзе нет."""
         from awgbot.infra import gwguard
@@ -520,7 +520,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         log.warning("gateway: реассерт таблицы не удался: %s", err)
         return 0
 
-    # ── локальная сеть без VPN (docs/gateway-lan.md, функция A) ──────────────
+    # ── локальная сеть без VPN (концепт «локальная сеть», функция A) ──────────────
     _LAN_LAST_KEY = "gw_lan_counters"       # {"lan": pkts, "dns": pkts, "lan_at": iso, "dns_at": iso}
     _LAN_QUIET_SECONDS = 24 * 3600          # столько без пакетов из LAN — «роутер не заворачивает»
     _LAN_FAILS_KEY = "gw_lan_lists_fails"

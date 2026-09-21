@@ -74,7 +74,7 @@ def gateway_panel(st) -> str:
     parts += hw
     lan = getattr(st, "lan", None) or {}
     if lan:
-        # локальная сеть без VPN (docs/gateway-lan.md §3.5): своим блоком
+        # локальная сеть без VPN (концепт «локальная сеть» §3.5): своим блоком
         bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
         head_ = "🔴 " + ", ".join(c.name for c in bad[:3]) if bad else "🟢 работает"
         parts += ["", f"🏠 За шлюзом — без VPN: {head_}"]
@@ -124,7 +124,7 @@ def gateway_health(st) -> str:
 
 
 def gateway_lan_text(st) -> str:
-    """🏠 Локальная сеть без VPN (docs/gateway-lan.md §3.5): что настроено, как
+    """🏠 Локальная сеть без VPN (концепт «локальная сеть» §3.5): что настроено, как
     дела со списками, откуда берутся личные."""
     from awgbot.util import timeutil
     lan = getattr(st, "lan", None) or {}

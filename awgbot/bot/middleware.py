@@ -75,7 +75,7 @@ class AccessMiddleware(BaseMiddleware):
             cached_stranger = True                      # отрицательный кэш: флуд
             client = None                               # посторонних — 0 SQL
 
-        # 3) Профиль из БД: владелец → client; гость (docs/guest-role.md) →
+        # 3) Профиль из БД: владелец → client; гость (концепт «гость») →
         #    invited с его собственным гостевым профилем в client
         client = None if cached_stranger else self.db.get_client_by_tg(uid)
         if (client is not None and not client.is_service

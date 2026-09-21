@@ -1,7 +1,7 @@
 #!/bin/sh
 # ─────────────────────────────────────────────────────────────────────────────
 # routing-link-setup.sh — линк-туннель ВПС ↔ шлюз под условную маршрутизацию.
-# Запускается НА ВПС. См. docs/conditional-routing.md, §11.
+# Запускается НА ВПС. См. концепт «условная маршрутизация», §11.
 #
 # ЗАЧЕМ ОТДЕЛЬНЫЙ ТУННЕЛЬ. У шлюза уже есть туннель к клиентскому интерфейсу
 # ВПС — им пользуется домашняя схема малинки. Трогать его нельзя: перенос сломал
@@ -39,7 +39,7 @@ LINK_IF="${LINK_IF:-awglink}"
 # другим — переопредели: LINK_PORT=... routing-link-setup.sh --apply
 LINK_PORT="${LINK_PORT:-443}"
 # /30 линка: адреса сторон выводятся из него (первый — ВПС, второй — шлюз),
-# чтобы второй слот (docs/gateway-failover.md) задавался одной переменной.
+# чтобы второй слот (концепт «резервный шлюз») задавался одной переменной.
 LINK_CIDR="${LINK_CIDR:-10.99.99.0/30}"
 _cidr_base="${LINK_CIDR%/*}"
 _cidr_last="${_cidr_base##*.}"
@@ -55,7 +55,7 @@ CLIENT_SUBNET="${CLIENT_SUBNET:-${_cfg_subnet:-10.8.1.0/24}}"
 CONF_DIR="${CONF_DIR:-/etc/amnezia/amneziawg}"
 CONF="$CONF_DIR/$LINK_IF.conf"
 GW_CONF_OUT="${GW_CONF_OUT:-/root/gw-$LINK_IF.conf}"
-# Подсети за другими шлюзами (docs/gateway-lan.md, функция B): в AllowedIPs
+# Подсети за другими шлюзами (концепт «локальная сеть», функция B): в AllowedIPs
 # пира ВПС в конфиге шлюза — тогда awg-quick сам ставит маршруты в них через
 # линк. Приходит от бота при сборке; пусто — как раньше.
 PEER_HOME_NETS="$(printf '%s' "${PEER_HOME_NETS:-}" | tr -cd '0-9./ ' | tr ' ' '\n' \
@@ -264,7 +264,7 @@ HDREOF
         printf 'GATEWAY_PUBKEY="%s"\nexport GATEWAY_PUBKEY\n' "$(printf '%s' "${GATEWAY_PUBKEY:-}" | tr -cd 'A-Za-z0-9+/=')"
         printf 'GATEWAY_PREV_PUBKEY="%s"\nexport GATEWAY_PREV_PUBKEY\n' "$(printf '%s' "${GATEWAY_PREV_PUBKEY:-}" | tr -cd 'A-Za-z0-9+/=')"
         printf 'UPLINK_B64="%s"\nexport UPLINK_B64\n' "$(printf '%s' "${UPLINK_B64:-}" | tr -cd 'A-Za-z0-9+/=')"
-        # «За шлюзом — без VPN» (docs/gateway-lan.md): включена ли функция у
+        # «За шлюзом — без VPN» (концепт «локальная сеть»): включена ли функция у
         # слота, локальные подсети (первая даёт LAN-интерфейс и адрес
         # резолвера), апстрим резолвера — свой резолвер ВПС через аплинк.
         printf 'LAN_MODE="%s"\nexport LAN_MODE\n' "$(printf '%s' "${LAN_MODE:-0}" | tr -cd '01' | cut -c1)"

@@ -1,5 +1,5 @@
 """Отрисовать все экраны и уведомления резервного шлюза из кода на образцовых
-данных — файл на вычитку. Запуск: PYTHONPATH=. .venv/bin/python tools/render_gateway_texts.py > docs/gateway-failover-texts.md"""
+данных — в stdout, на вычитку. Запуск: PYTHONPATH=. .venv/bin/python tools/render_gateway_texts.py > <файл вне репозитория>"""
 import tempfile
 import pathlib
 

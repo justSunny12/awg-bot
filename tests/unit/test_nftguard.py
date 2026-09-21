@@ -484,7 +484,7 @@ def test_nat_only_form_needs_no_chains_without_tunnel_nets(host_mode, monkeypatc
     assert "hook input" not in text
 
 
-# ── доступ между подсетями за шлюзами (docs/gateway-lan.md, функция B) ───────
+# ── доступ между подсетями за шлюзами (концепт «локальная сеть», функция B) ───────
 
 def test_forward_between_links_opens_only_with_the_toggle_and_two_links(host_mode, monkeypatch):
     """Транзит линк ↔ линк — по тумблеру и только при двух линках; без наборов

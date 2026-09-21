@@ -341,7 +341,7 @@ async def _send_plain_bundle(message: Message, services, slot: int = 0) -> None:
         reply_markup=kb.bundle_menu_kb())
 
 
-# ── слоты шлюзов (docs/gateway-failover.md §6) ───────────────────────────────
+# ── слоты шлюзов (концепт «резервный шлюз» §6) ───────────────────────────────
 
 async def _slot_state(cb: CallbackQuery, services, slot: int, *, lazy_ping: bool = True):
     try:
@@ -403,7 +403,7 @@ async def gw_slot_failover(cb: CallbackQuery, services):
 
 @router.callback_query(GwSlotCB.filter(F.action == "peer_ask"))
 async def gw_slot_peer_ask(cb: CallbackQuery, services):
-    """Доступ между подсетями за шлюзами (docs/gateway-lan.md, функция B):
+    """Доступ между подсетями за шлюзами (концепт «локальная сеть», функция B):
     диалог на месте списка. Включить можно и до того, как слоты готовы —
     инфобокс скажет, чего не хватает."""
     on = not await call(services.peer_nets_enabled)
@@ -490,7 +490,7 @@ async def gw_slot_switch_yes(cb: CallbackQuery, callback_data: GwSlotCB, service
 
 @router.callback_query(GwSlotCB.filter(F.action == "lan_ask"))
 async def gw_slot_lan_ask(cb: CallbackQuery, callback_data: GwSlotCB, services):
-    """«За шлюзом — без VPN» (docs/gateway-lan.md): диалог на месте карточки.
+    """«За шлюзом — без VPN» (концепт «локальная сеть»): диалог на месте карточки.
     Без локальной подсети включать нечего — alert, не диалог."""
     st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
     if st is None:

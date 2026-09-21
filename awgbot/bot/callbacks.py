@@ -160,7 +160,7 @@ class SetCB(CallbackData, prefix="set"):
 
 
 class RoutingCB(CallbackData, prefix="rt"):
-    """Условная маршрутизация (docs/conditional-routing.md). action:
+    """Условная маршрутизация (концепт «условная маршрутизация»). action:
       panel   — открыть раздел клиента (список доменов + вход в устройства);
       devs    — экран устройств профиля с переключателями (ref = client_id);
       dev     — переключить режим ОДНОГО устройства (ref = device_id);
@@ -202,21 +202,21 @@ class GwMarkCB(CallbackData, prefix="gwm"):
     """Назначение машины в слот шлюза у основного бота: pick_list|pick|mark_yes
     (из моих устройств), new_ask|new_yes (новая машина), remove_ask|remove_yes
     («🛑 Не шлюз?» из карточки устройства). slot — номер слота; 0 — новый слот
-    (docs/gateway-failover.md)."""
+    (концепт «резервный шлюз»)."""
     action: str
     device_id: int = 0
     slot: int = 0
 
 
 class GwSlotCB(CallbackData, prefix="gws"):
-    """Слоты шлюзов (docs/gateway-failover.md §6). action:
+    """Слоты шлюзов (концепт «резервный шлюз» §6). action:
       list — список слотов; card — карточка слота; add — новый слот;
       switch_ask|switch_yes — переложить трафик на слот; ping — замер;
       pref — тумблер «предпочтительный при холодном старте»;
       home|label — ввод домашних подсетей / подписи (FSM);
       remove_ask|remove_yes — убрать слот; bundle — конфигурация слота;
       failover — тумблер автопереключения;
-      lan_ask|lan_yes — «за шлюзом — без VPN» с подтверждением (docs/gateway-lan.md);
+      lan_ask|lan_yes — «за шлюзом — без VPN» с подтверждением (концепт «локальная сеть»);
       router — экран настройки роутера;
       peer_ask|peer_yes — доступ между подсетями за шлюзами с подтверждением."""
     action: str
@@ -232,7 +232,7 @@ class GwCB(CallbackData, prefix="gw"):
       backup!, restore!|restore_drop, em_setup|em_check|em_test|em_forget(!);
       apply!|apply_ow!|apply_keep!|drop — принять/отклонить бандл;
       upd_toggle|upd_check|upd_sched (val — вариант расписания);
-      lan — локальная сеть без VPN (docs/gateway-lan.md); lan_add|lan_ru|lan_del —
+      lan — локальная сеть без VPN (концепт «локальная сеть»); lan_add|lan_ru|lan_del —
       ввод доменов в личные списки, lan_list — свои списки, lan_update —
       обновить фиды сейчас."""
     action: str

@@ -35,7 +35,7 @@ router = Router(name="routing")
 # Без него в фильтре у админа не было бы ни мастер-тумблера, ни списка адресов —
 # только право раздавать доступ другим.
 # Гость (invited) — тоже субъект: его переданные устройства, его список
-# адресов (docs/guest-role.md).
+# адресов (концепт «гость»).
 router.message.filter(RoleFilter("client", "admin", "invited"))
 router.callback_query.filter(RoleFilter("client", "admin", "invited"))
 
@@ -147,7 +147,7 @@ async def routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
     client_id, — профиль достаём через устройство. Экран перерисовывается на
     месте."""
     dev = await call(services.db.get_device, callback_data.ref)
-    # Переключает СУБЪЕКТ устройства (docs/guest-role.md): держатель, а если
+    # Переключает СУБЪЕКТ устройства (концепт «гость»): держатель, а если
     # его нет — владелец. Чужое у клиента и своё переданное у владельца — отказ
     # молча по существу: колбэк мог прийти из старого сообщения, а объяснять
     # чужой id ответом «нет такого» незачем.

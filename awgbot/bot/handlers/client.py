@@ -143,7 +143,7 @@ async def _notify_owner_activated(message: Message, services, res) -> None:
 
 
 async def take_code_as_member(message: Message, services, client, code: str) -> None:
-    """Код от того, у кого уже есть профиль — гость или клиент (docs/guest-role.md).
+    """Код от того, у кого уже есть профиль — гость или клиент (концепт «гость»).
 
     F… — ещё одно устройство от того же владельца (иной владелец — отказ, код
     цел). C… — у клиента отказ «уже есть доступ»; у гостя — переход во
@@ -290,7 +290,7 @@ async def menu_gen_pick(cb: CallbackQuery, callback_data: Menu, client, services
 # ── устройство ───────────────────────────────────────────────────────────────
 
 async def _device_card_parts(services, client, dev):
-    """Карточка с точки зрения клиента (docs/guest-role.md): своё — полная;
+    """Карточка с точки зрения клиента (концепт «гость»): своё — полная;
     своё, но переданное — имя и удаление; чужое, которое он держит — карточка
     держателя."""
     back = Menu(action="devices").pack()

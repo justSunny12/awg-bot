@@ -58,7 +58,7 @@ class ActivationResult:
     ok: bool
     reason: str = ""              # invalid | already_has_access | ok
     client: Optional[object] = None
-    upgrade: Optional["GuestUpgrade"] = None   # гость стал владельцем (docs/guest-role.md)
+    upgrade: Optional["GuestUpgrade"] = None   # гость стал владельцем (концепт «гость»)
 
 
 @dataclass
@@ -84,7 +84,7 @@ class DeviceCreated:
 
 @dataclass
 class FriendActivation:
-    """Итог активации кода F… (docs/guest-role.md).
+    """Итог активации кода F… (концепт «гость»).
     reason: ok | invalid | own_device (код на устройство своего же профиля) |
     other_donor (у держателя уже есть устройства от другого владельца — в
     held/donor что и от кого)."""

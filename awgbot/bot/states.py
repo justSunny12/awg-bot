@@ -75,7 +75,7 @@ class GatewayToken(StatesGroup):
 
 
 class GatewayHome(StatesGroup):
-    """Домашние подсети слота шлюза (docs/gateway-failover.md 6.8). В данных — gw_slot."""
+    """Домашние подсети слота шлюза (концепт «резервный шлюз» 6.8). В данных — gw_slot."""
     value = State()
 
 
@@ -86,7 +86,7 @@ class GatewayLabel(StatesGroup):
 
 class GatewayLanDomain(StatesGroup):
     """Агент шлюза: домены в личные списки локальной сети без VPN
-    (docs/gateway-lan.md §3.5). В данных — kind: add | ru | del."""
+    (концепт «локальная сеть» §3.5). В данных — kind: add | ru | del."""
     value = State()
 
 

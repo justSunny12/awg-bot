@@ -118,7 +118,7 @@ def _guest_consumption(held, donor) -> str:
 
 
 def greeting_guest(name: str, server_ok: bool, donor, held, routing_ok: bool = None) -> str:
-    """Главный экран гостя (docs/guest-role.md): как клиентский, подписка —
+    """Главный экран гостя (концепт «гость»): как клиентский, подписка —
     владельца (без срока: это его дело), потребление — по удерживаемым
     устройствам, устройств — сколько держит. name — имя гостя из Telegram
     (client.tg_name, иначе профильное)."""

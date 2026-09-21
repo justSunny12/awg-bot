@@ -310,7 +310,7 @@ async def gw_hide(cb: CallbackQuery):
     await cb.answer()
 
 
-# ── локальная сеть без VPN (docs/gateway-lan.md §3.5) ────────────────────────
+# ── локальная сеть без VPN (концепт «локальная сеть» §3.5) ────────────────────────
 
 async def _lan_screen(services):
     st = await _status(services, fresh=False)
