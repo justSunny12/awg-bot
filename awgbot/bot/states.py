@@ -84,6 +84,11 @@ class GatewayLabel(StatesGroup):
     value = State()
 
 
+class SshPort(StatesGroup):
+    """Новый порт sshd из раздела «Доступ по SSH»."""
+    value = State()
+
+
 class MigrationPort(StatesGroup):
     """Порт второго интерфейса перед переездом: единственный параметр, который
     иногда хотят выбрать сами (443 на хосте, где его никто не слушает)."""

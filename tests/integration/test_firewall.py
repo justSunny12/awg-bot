@@ -159,3 +159,58 @@ def test_ipv6_survives_the_whole_path(services, fw):
     markup = kb.settings_firewall({"raw_allow": ["2001:db8::1"], "enabled": True})
     labels = [b.text for row in markup.inline_keyboard for b in row]
     assert "➖ 2001:db8::1" in labels
+
+
+# ── порт SSH из чата ─────────────────────────────────────────────────────────
+# Порт живёт в conf и в sshd; сервис меняет оба и не оставляет их разными.
+
+@pytest.fixture()
+def sshd_fake(monkeypatch):
+    from awgbot.infra import sshd
+    st = {"busy": "", "fail": "", "set": []}
+    monkeypatch.setattr(sshd, "port_busy", lambda p: st["busy"])
+
+    def set_port(p):
+        if st["fail"]:
+            raise sshd.SshdError(st["fail"])
+        st["set"].append(p)
+        return [f"sshd слушает {p}"]
+    monkeypatch.setattr(sshd, "set_port", set_port)
+    return st
+
+
+def test_port_change_writes_conf_first_and_then_moves_sshd(services, fw, sshd_fake, monkeypatch):
+    from awgbot.core import settings
+    store, _ = fw
+    store["app.network.ssh_port"] = 22
+    monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
+    assert services.ssh_port_change(2222) == 22
+    assert store["app.network.ssh_port"] == 2222 and sshd_fake["set"] == [2222]
+
+
+def test_port_change_restores_conf_when_sshd_refuses(services, fw, sshd_fake, monkeypatch):
+    from awgbot.core import settings
+    store, _ = fw
+    store["app.network.ssh_port"] = 22
+    monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
+    sshd_fake["fail"] = "sshd -t: Bad configuration option"
+    with pytest.raises(ServiceError, match="Bad configuration"):
+        services.ssh_port_change(2222)
+    assert store["app.network.ssh_port"] == 22, "фильтр не должен ждать порт, на котором sshd нет"
+
+
+def test_busy_and_same_port_are_refused_before_anything_changes(services, fw, sshd_fake, monkeypatch):
+    from awgbot.core import settings
+    store, _ = fw
+    store["app.network.ssh_port"] = 22
+    monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
+    sshd_fake["busy"] = 'tcp LISTEN 0.0.0.0:8443 users:(("nginx",pid=1,fd=6))'
+    assert "nginx" in services.ssh_port_busy(8443)
+    with pytest.raises(ServiceError, match="занят"):
+        services.ssh_port_change(8443)
+    sshd_fake["busy"] = ""
+    with pytest.raises(ServiceError, match="текущий"):
+        services.ssh_port_change(22)
+    with pytest.raises(ServiceError, match="1 до 65535"):
+        services.ssh_port_busy(0)
+    assert store["app.network.ssh_port"] == 22 and not sshd_fake["set"]

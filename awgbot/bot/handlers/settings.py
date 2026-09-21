@@ -18,7 +18,7 @@ from awgbot.bot import texts
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import GwMarkCB, GwSlotCB, SetCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.states import GatewayToken, GatewayHome, GatewayLabel, MigrationPort
+from awgbot.bot.states import GatewayToken, GatewayHome, GatewayLabel, MigrationPort, SshPort
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.notifier import send_notifications
 from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu,
@@ -730,6 +730,45 @@ async def migration_port_ask(cb: CallbackQuery, state: FSMContext, services):
     await state.set_state(MigrationPort.value)
     await core.ask(cb, services, texts.MIGRATION_ASK_PORT, kb.settings_cancel("mig_prep"))
     await cb.answer()
+
+
+# ── порт SSH ─────────────────────────────────────────────────────────────────
+# Тоже раньше общего edit_value: ключ "port" — не настройка из SETTINGS_BOUNDS,
+# а действие с проверками (занят ли порт, принял ли sshd).
+@router.callback_query(SetCB.filter((F.sec == "fw") & (F.act == "edit") & (F.key == "port")))
+async def ssh_port_ask(cb: CallbackQuery, state: FSMContext, services):
+    await state.set_state(SshPort.value)
+    await core.ask(cb, services, texts.SSH_PORT_ASK, kb.settings_cancel("fw"))
+    await cb.answer()
+
+
+@router.message(SshPort.value)
+async def ssh_port_received(message: Message, state: FSMContext, services):
+    raw = (message.text or "").strip()
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
+    if not raw.isdigit() or not 1 <= int(raw) <= 65535:
+        await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535. Попробуй ещё раз.")
+        return
+    port = int(raw)
+    try:
+        busy = await call(services.ssh_port_busy, port)
+    except ServiceError as e:
+        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
+        return
+    if busy:
+        # Отказ, не переспрос: человек выбирает другой порт с экрана раздела.
+        await state.clear()
+        await cleanup_content(message.bot, services, message.chat.id)
+        await send_menu(message, services, texts.ssh_port_busy(port), kb.settings_back("fw"))
+        return
+    await state.clear()
+    try:
+        old = await call(services.ssh_port_change, port)
+    except ServiceError as e:
+        await message.answer(f"⚠️ Порт не изменён: {texts._e(str(e))}")
+    else:
+        await message.answer(texts.ssh_port_changed(old, port))
+    await core.after_input(message, services, HOOKS, "fw")
 
 
 # ── ввод значения (FSM) ──────────────────────────────────────────────────────

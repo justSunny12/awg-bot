@@ -388,3 +388,71 @@ async def test_now_while_a_migration_runs_explains_and_stays(services, fake_bot,
 def test_dns_handler_is_registered_before_the_generic_do_action():
     order = [h.callback.__name__ for h in sh.router.callback_query.handlers]
     assert order.index("private_dns_action") < order.index("do_action")
+
+
+# ── порт SSH ─────────────────────────────────────────────────────────────────
+
+async def test_port_button_is_first_and_opens_the_prompt(services, fake_bot, monkeypatch):
+    from awgbot.bot.states import SshPort
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw())
+    _, markup = await sh._screen("fw", services)
+    assert _labels(markup)[0] == "🅿️ Изменить порт"
+    cb, nav = _acb(fake_bot)
+    st = FakeState()
+    await sh.ssh_port_ask(cb, st, services)
+    assert await st.get_state() == SshPort.value.state
+    assert any("Порт SSH" in s[1] for s in nav.sent if s[0] == "edit_text"), nav.sent
+
+
+async def test_busy_port_is_refused_with_a_way_back(services, fake_bot, monkeypatch):
+    """Занятый порт — отказ с кнопкой «Назад» в раздел, а не переспрос: ввод
+    закрыт, порт не менялся."""
+    changed = []
+    monkeypatch.setattr(services, "ssh_port_busy",
+                        lambda p: 'tcp LISTEN 0.0.0.0:8443 users:(("nginx",pid=1,fd=6))')
+    monkeypatch.setattr(services, "ssh_port_change", lambda p: changed.append(p) or 22)
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw())
+    st = FakeState()
+    await st.set_state("SshPort:value")
+    msg = FakeMessage(text="8443", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await sh.ssh_port_received(msg, st, services)
+    assert not changed and await st.get_state() is None
+    sent = [s for s in msg.sent if s[0] == "answer" and "Порт 8443 занят, необходимо выбрать другой" in s[1]]
+    assert sent, msg.sent
+    assert _labels(sent[0][2]) == ["⬅️ Назад"]
+    assert SetCB.unpack(sent[0][2].inline_keyboard[0][0].callback_data).sec == "fw"
+
+
+async def test_free_port_is_applied_and_the_section_is_redrawn(services, fake_bot, monkeypatch):
+    changed = []
+    monkeypatch.setattr(services, "ssh_port_busy", lambda p: "")
+    monkeypatch.setattr(services, "ssh_port_change", lambda p: changed.append(p) or 22)
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw(ssh_port=2222))
+    st = FakeState()
+    await st.set_state("SshPort:value")
+    msg = FakeMessage(text="2222", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await sh.ssh_port_received(msg, st, services)
+    assert changed == [2222] and await st.get_state() is None
+    texts_sent = [s[1] for s in msg.sent if s[0] == "answer"]
+    assert any("22 → <b>2222</b>" in t for t in texts_sent)
+    assert any("порт SSH 2222" in t for t in texts_sent), "раздел перерисован с новым портом"
+
+
+async def test_bad_port_is_asked_again_and_refusal_from_sshd_is_shown(services, fake_bot, monkeypatch):
+    from awgbot.domain.services import ServiceError
+    monkeypatch.setattr(services, "ssh_port_busy", lambda p: "")
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw())
+
+    def boom(p):
+        raise ServiceError("sshd -t: Bad configuration option")
+    monkeypatch.setattr(services, "ssh_port_change", boom)
+    st = FakeState()
+    await st.set_state("SshPort:value")
+    msg = FakeMessage(text="70000", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await sh.ssh_port_received(msg, st, services)
+    assert await st.get_state() == "SshPort:value", "ввод открыт — можно поправить"
+    assert any("от 1 до 65535" in s[1] for s in msg.sent if s[0] == "answer")
+    msg = FakeMessage(text="2222", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await sh.ssh_port_received(msg, st, services)
+    assert any("Порт не изменён" in s[1] and "Bad configuration" in s[1]
+               for s in msg.sent if s[0] == "answer")

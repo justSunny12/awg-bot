@@ -129,6 +129,7 @@ def settings_firewall(st: dict) -> InlineKeyboardMarkup:
         kb.adjust(1)
         kb.row(_back())
         return kb.as_markup()
+    kb.button(text="🅿️ Изменить порт", callback_data=SetCB(sec="fw", act="edit", key="port"))
     kb.button(text="➕ Добавить адрес", callback_data=SetCB(sec="fw", act="edit", key="app.firewall.ssh_allow"))
     # В callback_data уезжает НОМЕР записи, а не сам адрес: разделитель полей —
     # двоеточие, и любой IPv6 («2001:db8::1») ломал упаковку с ValueError. Адрес

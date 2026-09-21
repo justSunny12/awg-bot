@@ -34,6 +34,45 @@ class FirewallMixin:
                 "unresolved": list(spec.unresolved), "admin_ips": list(spec.tunnel_admin4),
                 "nat": spec.nat}
 
+    # ── порт SSH (кнопка «Изменить порт») ────────────────────────────────────
+    # Порт живёт в conf (его фильтрует таблица) и в sshd; из чата меняются оба.
+    # Порядок: сначала conf — хук on_change пересобирает таблицу, и к моменту
+    # рестарта sshd новый порт уже открыт; sshd не принял — conf возвращаем.
+    # Таймера отката нет намеренно: текущие SSH-сеансы рестарт не рвёт, а
+    # вернуть порт можно этой же кнопкой — чат от SSH не зависит.
+
+    def ssh_port_busy(self, port: int) -> str:
+        """Кто слушает порт; пусто — свободен. Свой текущий порт — тоже
+        «занят»: sshd на нём и стоит."""
+        from awgbot.infra import sshd
+        if not sshd.valid_port(port):
+            raise ServiceError("порт — число от 1 до 65535")
+        try:
+            return sshd.port_busy(int(port))
+        except sshd.SshdError as e:
+            raise ServiceError(str(e))
+
+    def ssh_port_change(self, port: int) -> int:
+        """Перевести sshd и фильтр на порт. Возвращает прежний порт."""
+        from awgbot.infra import sshd
+        port = int(port)
+        if not sshd.valid_port(port):
+            raise ServiceError("порт — число от 1 до 65535")
+        old = int(settings.get_int("app.network.ssh_port", config.SSH_PORT))
+        if port == old:
+            raise ServiceError(f"порт {port} и так текущий")
+        busy = self.ssh_port_busy(port)
+        if busy:
+            raise ServiceError(f"порт {port} занят: {busy}")
+        settings.set_value("app.network.ssh_port", port)
+        try:
+            for line in sshd.set_port(port):
+                log.info("sshd: %s", line)
+        except sshd.SshdError as e:
+            settings.set_value("app.network.ssh_port", old)
+            raise ServiceError(str(e))
+        return old
+
     def firewall_allow_add(self, raw: str) -> list[str]:
         """Добавить адреса в вайтлист SSH. Добавление запереть не может —
         применяем без таймера отката."""

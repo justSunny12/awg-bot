@@ -253,7 +253,8 @@ IP_HOST_END = _net.get("ip_host_end", 254)
 
 # Порт SSH хоста — дефолт для таблицы файервола (nftguard) и пер-пирного
 # фильтра из туннеля (reconcile_ssh_access). Оба читают его горячо через
-# settings; здесь — запасное значение. Меняешь порт sshd — правь app.yaml.
+# settings; здесь — запасное значение. Порт меняется кнопкой «Изменить порт»
+# в разделе «Доступ по SSH» (infra/sshd): она правит и sshd, и app.yaml.
 SSH_PORT = int(_net.get("ssh_port", 22))
 
 

@@ -70,6 +70,8 @@ def test_every_edit_button_points_at_a_known_setting():
                 cb = SetCB.unpack(b.callback_data)
                 if cb.act != "edit":
                     continue
+                if (cb.sec, cb.key) == ("fw", "port"):
+                    continue                       # свой хендлер ssh_port_ask (проверен ниже)
                 checked += 1
                 assert cb.key in known, f"кнопка «{b.text}» ведёт в несуществующий ключ {cb.key}"
     assert checked >= 8, "проверять оказалось нечего — тест устарел"
@@ -184,6 +186,14 @@ def test_specific_settings_handlers_are_registered_before_the_generic_one():
     assert order.index("migration_port_ask") < order.index("edit_value"), (
         "migration_port_ask зарегистрирован после edit_value — кнопка «Задать "
         "порт» упрётся в «настройка недоступна»")
+    # И с «Изменить порт» в разделе SSH — тот же ключ "port" вне SETTINGS_BOUNDS.
+    assert order.index("ssh_port_ask") < order.index("edit_value"), (
+        "ssh_port_ask зарегистрирован после edit_value — кнопка «Изменить порт» "
+        "упрётся в «настройка недоступна»")
+    assert _first_matching_handler(sh.router, SetCB(sec="fw", act="edit", key="port")) \
+        == "ssh_port_ask"
+    assert _first_matching_handler(sh.router, SetCB(sec="fw", act="edit", key="app.firewall.ssh_allow")) \
+        == "edit_value", "«Добавить адрес» по-прежнему идёт общим вводом"
 
 
 async def test_migration_port_button_opens_the_port_prompt(services, fake_bot):
