@@ -30,6 +30,16 @@ def _gw_health_summary(checks) -> str:
     return "✅ проблем не выявлено"
 
 
+def channel_panel_line() -> str:
+    """Строка канала до ВПС в панели агента (концепт «канал линка», §7.2).
+    Канал не включён бандлом — строки нет вовсе: сказать о нём нечего, а
+    «выключено» читалось бы как поломка."""
+    from awgbot.runtime import linkclient
+    if not linkclient.enabled():
+        return ""
+    return "🔗 Канал до ВПС: " + ("🟢 на связи" if linkclient.online() else "⚪ нет связи")
+
+
 def gateway_panel(st) -> str:
     """Панель агента — зеркало панели основного бота: сервер, линк, железо,
     монитор здоровья, потребление. Всё из снимка; свежесть — строкой «Обновлено».
@@ -42,6 +52,9 @@ def gateway_panel(st) -> str:
     if st.uptime_seconds is not None:
         head.append(f"⬆️ Аптайм: {timeutil.fmt_remaining_short(int(st.uptime_seconds))}")
     parts += head + ["", f"📡 Линк до {_e(st.server_name or 'ВПС')}: {_gw_link_line(st)}"]
+    chan = channel_panel_line()
+    if chan:
+        parts.append(chan)
     mark = getattr(st, "mark_status", "") or ""
     if mark and mark != "confirmed":
         # Статусы производит ровно один источник — routing-gw-setup.sh:

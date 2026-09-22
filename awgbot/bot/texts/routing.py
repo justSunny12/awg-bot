@@ -249,7 +249,78 @@ def gateway_card_text(state: dict, states: list) -> str:
         except ValueError:
             pass
     tail += ("\n" if tail else "\n\n") + ping_line(state.get("ping_ms"))
-    return head + body + home + tail
+    chan = channel_block(state.get("channel"), state.get("link_ok"))
+    return head + body + home + tail + (("\n\n" + chan) if chan else "")
+
+
+def _ago(seconds) -> str:
+    s = int(seconds or 0)
+    if s < 60:
+        return "только что"
+    if s < 3600:
+        return f"{s // 60} мин назад"
+    if s < 86400:
+        return f"{s // 3600} ч назад"
+    return f"{s // 86400} дн назад"
+
+
+def channel_drift_block(ch: dict | None) -> str:
+    """Блок «Что стоит на шлюзе» для экрана конфигурации: построчная сверка
+    выданного с установленным. Снимка нет — молчим: пустой блок честнее, чем
+    «всё сошлось» без единого факта."""
+    if not ch or not ch.get("has_snap"):
+        return ""
+    drift = ch.get("drift") or []
+    stale = "" if ch.get("online") else f" (по снимку {_ago(ch.get('age'))}, канал сейчас не на связи)"
+    if not drift:
+        return f"\n\n<b>Что стоит на шлюзе</b>{stale}: совпадает с тем, что выдаст этот файл."
+    items = "\n".join(f"• {_e(d)}" for d in drift)
+    return (f"\n\n<b>Что стоит на шлюзе</b>{stale} — расходится с выдаваемым:\n{items}\n"
+            "Перевыпусти файл и примени его на шлюзе.")
+
+
+def channel_block(ch: dict | None, server_ok) -> str:
+    """Четыре строки канала в карточке слота (концепт «канал линка», §7.1):
+    связь, код на той стороне, сверка конфигурации, выход наружу.
+
+    Всё, что пришло с малины, — недоверенные данные: только через _e.
+    Снимка нет — говорим, что сказать нечего, а не рисуем «всё сошлось»."""
+    if not ch:
+        return ""
+    if not ch.get("ever"):
+        return ("🔗 Канал до шлюза: ещё не поднимался — перевыпусти конфигурацию шлюза "
+                "и примени её на той стороне.")
+    lines = []
+    if ch.get("online"):
+        lines.append("🔗 Канал до шлюза: 🟢 на связи")
+    else:
+        seen = ch.get("seen") or ""
+        when = ""
+        if seen:
+            try:
+                when = ", последний раз " + timeutil.fmt_dt(timeutil.parse_iso(seen))
+            except ValueError:
+                when = ""
+        lines.append(f"🔗 Канал до шлюза: ⚪ нет связи{when}")
+    if ch.get("has_snap"):
+        agent = _e(str(ch.get("agent") or "?"))
+        gen, mine = ch.get("awg_gen"), ch.get("awg_gen_mine")
+        gen_note = ""
+        if gen is not None and mine is not None and gen != mine:
+            gen_note = f" · ⚠️ поколение AWG {gen}, у сервера {mine}"
+        lines.append(f"🤖 Агент {agent}{gen_note}")
+        drift = ch.get("drift") or []
+        stale = "" if ch.get("online") else f" (по снимку {_ago(ch.get('age'))})"
+        if drift:
+            lines.append(f"⚠️ Конфигурация на шлюзе расходится с выданной: {len(drift)} "
+                         f"— подробности в «Конфигурация шлюза»{stale}")
+        else:
+            lines.append(f"✅ Конфигурация на шлюзе совпадает с выданной{stale}")
+        gw_ok = ch.get("egress_gw")
+        mark = {True: "есть", False: "нет", None: "не знает"}
+        lines.append(f"🌐 Выход наружу: сервер — {mark[bool(server_ok)]}, "
+                     f"шлюз — {mark[gw_ok if isinstance(gw_ok, bool) else None]}")
+    return "\n".join(lines)
 
 
 def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:

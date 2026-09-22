@@ -169,6 +169,11 @@ def gateway_card(state, *, back_to_list: bool) -> InlineKeyboardMarkup:
     kb.button(text="🛑 Снять шлюз", callback_data=GwSlotCB(action="remove_ask", slot=gw.id))
     kb.button(text="📡 Пинг", callback_data=GwSlotCB(action="ping", slot=gw.id))
     rows += [1, 1, 1, 1]
+    # Канал на связи — можно попросить свежий снимок. Кнопка только при живой
+    # сессии: без неё просить некого, а неработающая кнопка хуже отсутствующей.
+    if (state.get("channel") or {}).get("online"):
+        kb.button(text="🔄 Обновить с шлюза", callback_data=GwSlotCB(action="snap", slot=gw.id))
+        rows.append(1)
     back = GwSlotCB(action="list").pack() if back_to_list else SetCB(sec="rt").pack()
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back))
     kb.adjust(*rows, 1)

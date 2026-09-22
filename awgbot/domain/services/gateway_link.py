@@ -835,6 +835,8 @@ class GatewayLinkMixin:
         # функция B (концепт «локальная сеть»): пускают ли сюда из-за других шлюзов
         st["peer_nets_enabled"] = self.peer_nets_enabled()
         st["peer_nets"] = self.gateway_peer_nets(int(slot_id))
+        # канал линка (концепт «канал линка», §7.1): только из state, без запросов
+        st["channel"] = self.gwlink_card(st["gateway"], st.get("handshake_age"))
         return st
 
     def gateway_state_for_device(self, device_id: int) -> Optional[dict]:
@@ -874,6 +876,23 @@ class GatewayLinkMixin:
     def _gw_ssh_allow(self) -> list[str]:
         return sorted(set(self.db.admin_device_addresses(config.ADMIN_ID)))
 
+    def _gw_installed_matches(self, gw) -> bool | None:
+        """Совпадает ли то, что РЕАЛЬНО стоит на шлюзе, с тем, что ВПС выдал бы
+        сейчас. None — снимка канала нет, и судить не по чему: тогда
+        напоминания работают как раньше, по памяти о выдаче.
+
+        С каналом напоминание перестаёт быть догадкой. Раньше ВПС сравнивал своё
+        со своим — что выдал тогда с тем, что выдал бы сейчас, — и напоминал
+        даже тогда, когда человек уже перевыпустил и применил файл другим путём.
+        Теперь установленное совпало — тишина, даже если бандл не перевыпускали.
+        """
+        if not getattr(gw, "id", None):
+            return None
+        snap = self.gwlink_snapshot(gw.id)
+        if not isinstance(snap.get("bundle"), dict):
+            return None
+        return not self.gwlink_config_drift(gw)
+
     def gw_bundle_drift_notes(self) -> list[Notification]:
         """Состав устройств админа разошёлся с тем, что уехало в бандл слота:
         напомнить один раз на каждое новое расхождение, по слоту. Пока бандл
@@ -889,6 +908,8 @@ class GatewayLinkMixin:
             sent = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, g.id))
             if sent is None:                    # бандл слота не собирали — напоминать не о чем
                 continue
+            if self._gw_installed_matches(g) is True:
+                continue
             if cur == sent or self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, g.id)) == cur:
                 continue
             self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, g.id), cur)
@@ -902,6 +923,8 @@ class GatewayLinkMixin:
         for g in self.db.gateways():
             sent = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_KEY, g.id))
             if sent is None:
+                continue
+            if self._gw_installed_matches(g) is True:
                 continue
             cur = self._gw_bundle_deps(g)
             if cur == sent or self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_NOTIFIED_KEY, g.id)) == cur:

@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from aiogram import F, Router
@@ -131,6 +132,10 @@ async def _screen(sec: str, services, key: str = ""):
             if slot:
                 st = await call(services.gateway_state, slot)
                 head = head.replace("Конфигурация шлюза</b>", f"Конфигурация шлюза {texts.slot_short(st)}</b>", 1)
+                # что реально стоит на шлюзе по снимку канала — здесь человек
+                # выпускает файл, здесь же видно, доехал ли прошлый
+                ch = await call(services.gwlink_card, st["gateway"], st.get("handshake_age"))
+                head += texts.channel_drift_block(ch)
             return head, kb.settings_routing_bundle(slot)
         if sec == "rt_lists":
             info = await call(services.routing_lists_info)
@@ -460,6 +465,23 @@ async def gw_slot_ping(cb: CallbackQuery, callback_data: GwSlotCB, services):
                    kb.gateway_card(st, back_to_list=len(st["states"]) > 1))
     await cb.answer(texts.ping_line(ms).replace("<code>", "").replace("</code>", "") if ms is not None
                     else f"Шлюз {st['display']} не отвечает", show_alert=ms is None)
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "snap"))
+async def gw_slot_snap(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    """«Обновить с шлюза»: попросить полный снимок по каналу. Автообновления по
+    таймеру нет и не будет — это был бы тот же период, только с человеческим
+    лицом; один запрос на нажатие."""
+    from awgbot.runtime import linkserver
+    srv = linkserver.current()
+    sent = bool(srv) and await srv.send(callback_data.slot, "ask", {"what": "snap"})
+    if not sent:
+        await cb.answer("Канал до шлюза сейчас не на связи", show_alert=True)
+        return
+    # Ответ приходит за доли секунды; ждём немного и перерисовываем то, что есть.
+    await asyncio.sleep(1.0)
+    await _render_card(cb, services, callback_data.slot)
+    await cb.answer("Снимок обновлён")
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "switch_ask"))

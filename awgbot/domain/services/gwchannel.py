@@ -149,6 +149,42 @@ class GwChannelMixin:
                 out.append(f"{human}: у сервера «{mine or '—'}», на шлюзе «{theirs or '—'}»")
         return out
 
+    # ── карточка слота ───────────────────────────────────────────────────────
+
+    def gwlink_card(self, gw, handshake_age) -> dict:
+        """Что карточка слота знает о канале: связь, код на той стороне, сверка
+        конфигурации, взгляд шлюза на выход наружу. Без единого exec и без
+        запросов к шлюзу — только то, что уже лежит в state.
+
+        «На связи» — конъюнкция: сессия открыта И хендшейк линка свежий.
+        Heartbeat'а в канале нет намеренно, поэтому полуоткрытая сессия (у
+        малины выдернули питание, RST не дошёл) перестаёт врать не позже, чем
+        протухнет хендшейк.
+        """
+        from awgbot.infra import awglock
+        sess = self.gwlink_session(gw.id)
+        fresh = handshake_age is not None and handshake_age <= 180
+        snap = self.gwlink_snapshot(gw.id)
+        seen = self.db.get_state(self._gwlink_key(self._GWLINK_SEEN_KEY, gw.id)) or ""
+        try:
+            mine_gen = awglock.generation()
+        except Exception:                                 # noqa: BLE001
+            mine_gen = None
+        return {
+            "online": bool(sess) and fresh,
+            "ever": bool(seen or snap),
+            "since": sess.get("since", ""),
+            "seen": seen,
+            "age": self.gwlink_snapshot_age(gw.id),
+            "agent": snap.get("agent_version", ""),
+            "awg_gen": snap.get("awg_generation"),
+            "awg_gen_mine": mine_gen,
+            "drift": self.gwlink_config_drift(gw) if snap else [],
+            "has_snap": bool(snap),
+            "egress_gw": snap.get("egress_ok") if snap else None,
+            "peer_nets": snap.get("peer_nets") if snap else None,
+        }
+
     # ── claim по каналу ──────────────────────────────────────────────────────
 
     def gwlink_claim_in(self, slot_id: int, token: str) -> None:

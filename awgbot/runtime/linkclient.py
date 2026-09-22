@@ -209,6 +209,11 @@ def ensure(services) -> LinkClient | None:
     return _client
 
 
+def online() -> bool:
+    """Сессия с ВПС сейчас открыта. Без сети: просто состояние объекта."""
+    return _client is not None and _client._writer is not None
+
+
 async def on_tick(services) -> None:
     """После тика монитора: отправить дельту, если что-то действительно
     изменилось. Зовётся из задачи планировщика, а не своим расписанием —
