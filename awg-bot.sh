@@ -769,7 +769,24 @@ ensure_host_autostart() {
     # контейнер, в host-режиме его поднимает awg-quick@<iface> — и его никто не
     # включал. Ребут оставлял хост без туннелей. Включаем на каждом обновлении:
     # idempotent, и режим доезжает сюда сам, как и в install_unit.
-    [[ "$(yaml_get "$CONF_DIR/app.yaml" role)" != "gateway" ]] || return 0
+    if [[ "$(yaml_get "$CONF_DIR/app.yaml" role)" == "gateway" ]]; then
+        # Та же дыра, что и на ВПС, только на другой стороне: копию
+        # routing-gw-setup.sh в /usr/local/sbin кладёт бандл, её выполняет
+        # awg-link-gw.service при каждой загрузке, и обновление агента её не
+        # трогало — исправление обвязки, приехавшее в поставке, доезжало до
+        # шлюза только новым бандлом с ВПС. Обновляем, если копия уже есть:
+        # нет — значит обвязку тут не разворачивали, и класть нечего.
+        # Применится со следующим запуском юнита (реассерт агента или ребут):
+        # дёргать обвязку из обновления значит рвать линк без спроса.
+        local _rgs="/usr/local/sbin/routing-gw-setup.sh"
+        if [[ -f "$_rgs" && -f "$INSTALL_DIR/install/routing-gw-setup.sh" ]] \
+           && ! cmp -s "$INSTALL_DIR/install/routing-gw-setup.sh" "$_rgs"; then
+            install -m 0755 "$INSTALL_DIR/install/routing-gw-setup.sh" "$_rgs" \
+                && ok "обновлена копия обвязки в $_rgs (её выполняет юнит при загрузке)" \
+                || warn "не удалось обновить $_rgs — обвязка останется по версии времён бандла"
+        fi
+        return 0
+    fi
     [[ "$(yaml_get "$CONF_DIR/app.yaml" runtime)" == "host" ]] || return 0
     local iface; iface="$(yaml_get "$CONF_DIR/app.yaml" interface)"
     if [[ -n "$iface" ]] && systemctl list-unit-files 'awg-quick@.service' 2>/dev/null | grep -q awg-quick; then

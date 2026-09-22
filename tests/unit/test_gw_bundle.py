@@ -26,13 +26,16 @@ PublicKey = SRVPUB==
 PresharedKey = PSKPSK==
 Endpoint = 203.0.113.10:443
 AllowedIPs = 10.8.1.0/24, 10.99.99.0/30
+PersistentKeepalive = 25
 """
 
 
-@pytest.fixture(scope="module")
-def bundle(tmp_path_factory) -> str:
-    """Собирает бандл настоящим скриптом и отдаёт его текст."""
-    d = tmp_path_factory.mktemp("gwb")
+def _emit_bundle(d: Path, *, conf_text: str = _CONF, env: dict | None = None) -> str:
+    """Собирает бандл НАСТОЯЩИМ скриптом в каталоге d и отдаёт его текст.
+
+    conf_text — конфиг шлюза, который уже лежит на ВПС (таким он был в момент
+    выпуска ключей); env — надстройка над базовым окружением сборки.
+    """
     inst = d / "install"; inst.mkdir()
     # копии рядом: emit_gw_bundle ищет gw-скрипт по соседству с собой
     src = LINK.read_text(encoding="utf-8").replace(
@@ -40,22 +43,33 @@ def bundle(tmp_path_factory) -> str:
     (inst / "routing-link-setup.sh").write_text(src, encoding="utf-8")
     (inst / "routing-gw-setup.sh").write_text(GW.read_text(encoding="utf-8"),
                                               encoding="utf-8")
-    conf = d / "gw.conf"; conf.write_text(_CONF, encoding="utf-8")
+    conf = d / "gw.conf"; conf.write_text(conf_text, encoding="utf-8")
     # живой конфиг линка ВПС: порт УЖЕ сменён (Endpoint в gw.conf отстал)
     confdir = d / "linkconf"; confdir.mkdir()
     (confdir / "awglink.conf").write_text(
         "[Interface]\nListenPort = 47231\nPrivateKey = X==\n", encoding="utf-8")
     out = d / "awg-gw-bundle.sh"
 
+    penv = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "CONF_DIR": str(confdir),
+            # по умолчанию конфига бота у сборки нет — работают дефолты скрипта;
+            # путь задаём явно, чтобы прогон не зависел от /etc машины
+            "_APP_YAML": str(d / "no-such-app.yaml"),
+            "GW_CONF_OUT": str(conf), "GW_BUNDLE_OUT": str(out),
+            "ADMIN_IPS": "10.8.1.2 10.8.1.3; rm -rf /"}      # мусор обязан отсеяться
+    penv.update(env or {})
     r = subprocess.run(
         ["sh", str(inst / "routing-link-setup.sh"), "--bundle"],
-        cwd=d, capture_output=True, text=True, errors="replace",
-        env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "CONF_DIR": str(confdir),
-             "GW_CONF_OUT": str(conf), "GW_BUNDLE_OUT": str(out),
-             "ADMIN_IPS": "10.8.1.2 10.8.1.3; rm -rf /"})   # мусор обязан отсеяться
+        cwd=d, capture_output=True, text=True, errors="replace", env=penv)
     assert r.returncode == 0, r.stderr
     assert out.exists(), r.stdout
     return out.read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def bundle(tmp_path_factory) -> str:
+    """Бандл со сборки по умолчанию: app.yaml бота недоступен (его нет по
+    дефолтному пути), значит работают дефолты скрипта."""
+    return _emit_bundle(tmp_path_factory.mktemp("gwb"))
 
 
 def test_bundle_is_valid_shell(bundle, tmp_path):
@@ -79,11 +93,12 @@ def test_bundle_pins_the_client_subnet(bundle):
 
 
 def test_bundle_carries_the_link_config_verbatim(bundle):
-    """Конфиг должен доехать байт в байт — кроме порта в Endpoint: его сборка
-    бандла СИНХРОНИЗИРУЕТ с живым ListenPort линка (иначе шлюз уезжает в
-    закрытый порт, см. test_bundle_syncs_endpoint...)."""
+    """Конфиг должен доехать байт в байт — кроме двух строк, которые сборка
+    бандла СИНХРОНИЗИРУЕТ с конфигом ВПС: порта в Endpoint (иначе шлюз уезжает
+    в закрытый порт, см. test_bundle_syncs_endpoint...) и PersistentKeepalive
+    (см. test_bundle_refreshes_the_keepalive...)."""
     for line in _CONF.strip().splitlines():
-        if line.startswith("Endpoint"):
+        if line.startswith(("Endpoint", "PersistentKeepalive")):
             continue
         assert line in bundle, line
 
@@ -95,6 +110,72 @@ def test_bundle_syncs_endpoint_port_with_the_live_link(bundle):
     куда ещё надо дойти. Наступили при переносе 443 → 47231."""
     assert "Endpoint = 203.0.113.10:47231" in bundle, "порт не синхронизирован"
     assert ":443" not in bundle, "старый порт уехал в бандл"
+
+
+def _keepalives(text: str) -> list:
+    return re.findall(r"^PersistentKeepalive = (.+)$", text, re.M)
+
+
+def test_bundle_refreshes_the_keepalive_of_a_gateway_issued_before_the_range(bundle):
+    """PersistentKeepalive замерзает в конфиге шлюза при выпуске ключей.
+
+    Шлюзы, выданные до того, как значение стало диапазоном, остались с
+    прибитыми 25 секундами — а это метроном ванильного WireGuard, видимый на
+    простаивающем линке без всякой расшифровки. Перевыпускать ради этого ключи
+    нельзя (это новый линк и поход к малине), значит строку обязана подтягивать
+    каждая сборка бандла — как порт Endpoint и AllowedIPs.
+    """
+    assert "PersistentKeepalive = 25" in _CONF, "фикстура должна изображать дореформенный шлюз"
+    assert _keepalives(bundle) == ["25-35"], "в бандл уехало старое значение"
+
+
+def test_link_keepalive_comes_from_the_same_key_as_client_peers(tmp_path):
+    """Ритм линка и ритм клиентов задаёт один ключ конфига бота: поменял
+    client_config.keepalive_seconds — поменялось и у линка, иначе линк остаётся
+    единственным узнаваемым метрономом на сервере."""
+    (tmp_path / "app.yaml").write_text(
+        'client_config:\n  mtu: 1376\n  keepalive_seconds: "20-40"\n', encoding="utf-8")
+    out = _emit_bundle(tmp_path, env={"_APP_YAML": str(tmp_path / "app.yaml")})
+    assert _keepalives(out) == ["20-40"]
+
+
+@pytest.mark.parametrize("raw, expect", [
+    ("25", "25"),              # одиночное число законно: клиенты дореформенного поколения
+    ("20-40", "20-40"),
+    ("", "25-35"),             # ключа нет или он пуст
+    ("много", "25-35"),        # мусор
+    ("-5", "25-35"),           # диапазон без начала
+    ("5-", "25-35"),           # диапазон без конца
+    ("1-2-3", "25-35"),        # не диапазон вовсе
+])
+def test_broken_keepalive_in_the_config_falls_back_to_the_default_range(tmp_path, raw, expect):
+    """Мусор в ключе не должен доехать до конфига шлюза: awg-quick на малине
+    отвергнет неразбираемое значение целиком, линк не поднимется, и увидят это
+    уже на той стороне. Непонятное значение — диапазон по умолчанию."""
+    (tmp_path / "app.yaml").write_text(
+        f'client_config:\n  keepalive_seconds: "{raw}"\n', encoding="utf-8")
+    out = _emit_bundle(tmp_path, env={"_APP_YAML": str(tmp_path / "app.yaml")})
+    assert _keepalives(out) == [expect], f"из {raw!r} получилось не то"
+
+
+def test_keepalive_can_be_overridden_by_the_environment(tmp_path):
+    """Окружение сильнее конфига — как у порта и подсети: так значение
+    проверяют на живом линке, не правя конфиг бота."""
+    (tmp_path / "app.yaml").write_text(
+        'client_config:\n  keepalive_seconds: "20-40"\n', encoding="utf-8")
+    out = _emit_bundle(tmp_path, env={"_APP_YAML": str(tmp_path / "app.yaml"),
+                                      "LINK_KEEPALIVE": "31-47"})
+    assert _keepalives(out) == ["31-47"]
+
+
+def test_a_config_without_keepalive_does_not_grow_one(tmp_path):
+    """Правка строки — именно правка: конфиг без PersistentKeepalive (пир без
+    keepalive заводят намеренно) сборка не дополняет и не ломает."""
+    conf = "\n".join(l for l in _CONF.splitlines()
+                     if not l.startswith("PersistentKeepalive")) + "\n"
+    out = _emit_bundle(tmp_path, conf_text=conf)
+    assert _keepalives(out) == [], "строка появилась там, где её не было"
+    assert "PresharedKey = PSKPSK==" in out, "остальной конфиг доехал"
 
 
 def test_bundle_embeds_the_gw_script_byte_for_byte(bundle, tmp_path):

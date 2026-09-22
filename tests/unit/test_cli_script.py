@@ -269,3 +269,104 @@ def test_shell_scripts_are_executable(path: Path):
     assert out.returncode == 0 and out.stdout.strip(), f"{rel} не в индексе git"
     mode = out.stdout.split()[0]
     assert mode == "100755", f"{rel}: режим {mode}, нужен 100755 (chmod +x и закоммить)"
+
+
+# ── обновление: копии обвязки в /usr/local/sbin ──────────────────────────────
+
+_DELIVERY_GW = "#!/bin/sh\n# обвязка шлюза из поставки\n"
+_DELIVERY_HOST = "#!/bin/sh\n# обвязка ВПС из поставки\n"
+_OLD = 1_600_000_000            # заведомо прошлое время правки копии
+
+
+def _run_autostart(tmp_path, script: str, *, role: str,
+                   gw_copy: str | None = None, host_copy: str | None = None):
+    """Прогоняет НАСТОЯЩУЮ ensure_host_autostart и отдаёт (вывод, каталог sbin).
+
+    Пути /usr/local/sbin и /etc/systemd/system в теле функции абсолютные —
+    подменяем их временными каталогами, иначе тест правил бы машину, на которой
+    идёт прогон. Всё остальное настоящее: и сравнение cmp, и install.
+    """
+    import os
+    import subprocess
+
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    sbin = tmp_path / "sbin"; sbin.mkdir()
+    units = tmp_path / "units"; units.mkdir()
+    inst = tmp_path / "opt"; (inst / "install").mkdir(parents=True)
+    (inst / "install" / "routing-gw-setup.sh").write_text(_DELIVERY_GW, encoding="utf-8")
+    (inst / "install" / "routing-host-setup.sh").write_text(_DELIVERY_HOST, encoding="utf-8")
+    for name, body in (("routing-gw-setup.sh", gw_copy), ("routing-host-setup.sh", host_copy)):
+        if body is None:
+            continue
+        p = sbin / name
+        p.write_text(body, encoding="utf-8"); p.chmod(0o755)
+        os.utime(p, (_OLD, _OLD))
+    conf = tmp_path / "conf"; conf.mkdir()
+    (conf / "app.yaml").write_text(
+        f'role: "{role}"\ndocker:\n  runtime: "host"\ninterface: "awg0"\n', encoding="utf-8")
+
+    body = (_extract_func(script, "ensure_host_autostart")
+            .replace("/usr/local/sbin", str(sbin))
+            .replace("/etc/systemd/system", str(units)))
+    harness = "\n".join([
+        "set -uo pipefail",
+        f'CONF_DIR="{conf}"', f'INSTALL_DIR="{inst}"', 'SERVICE="awg-bot"',
+        "ok() { echo \"ok: $*\"; }", "warn() { echo \"warn: $*\"; }",
+        # реальный systemctl тут нечего делать: юниты этой ветки не трогаются
+        "systemctl() { case \"$1\" in is-enabled) echo enabled ;; esac; return 0; }",
+        _extract_func(script, "yaml_get"),
+        body,
+        "ensure_host_autostart",
+    ])
+    r = subprocess.run(["bash", "-c", harness], capture_output=True, text=True,
+                       errors="replace")
+    assert r.returncode == 0, r.stderr
+    return r.stdout, sbin
+
+
+def test_update_on_the_gateway_refreshes_the_plumbing_copy(tmp_path, script):
+    """Копию routing-gw-setup.sh в /usr/local/sbin выполняет awg-link-gw.service
+    при каждой загрузке, а кладёт её бандл с ВПС. Пока обновление агента её не
+    трогало, исправление обвязки, приехавшее в поставке, доезжало до шлюза
+    только перевыпуском конфигурации — то есть походом к малине.
+    """
+    out, sbin = _run_autostart(tmp_path, script, role="gateway",
+                               gw_copy="#!/bin/sh\n# версия времён бандла\n")
+    copy = sbin / "routing-gw-setup.sh"
+    assert copy.read_text(encoding="utf-8") == _DELIVERY_GW, "копия осталась старой"
+    assert copy.stat().st_mode & 0o777 == 0o755, "копию запускает юнит — нужен бит исполнения"
+    assert "routing-gw-setup.sh" in out and "ok:" in out, "молчаливое обновление не найти в журнале"
+
+
+def test_gateway_without_a_plumbing_copy_gets_none(tmp_path, script):
+    """Нет копии — значит обвязку на этой машине не разворачивали (агент стоит,
+    бандл не применяли). Положить файл сейчас значит оставить в /usr/local/sbin
+    скрипт, который никто не звал и который расходится с тем, что применит
+    первый же бандл."""
+    out, sbin = _run_autostart(tmp_path, script, role="gateway")
+    assert not (sbin / "routing-gw-setup.sh").exists(), "обвязка появилась там, где её не ставили"
+
+
+def test_matching_plumbing_copy_is_left_alone(tmp_path, script):
+    """Совпала — не трогаем: переустановка на каждом обновлении меняла бы время
+    файла и мешала понять, когда обвязка действительно менялась."""
+    out, sbin = _run_autostart(tmp_path, script, role="gateway", gw_copy=_DELIVERY_GW)
+    copy = sbin / "routing-gw-setup.sh"
+    assert int(copy.stat().st_mtime) == _OLD, "файл переписали без нужды"
+    assert "routing-gw-setup.sh" not in out, "сообщили об обновлении, которого не было"
+
+
+def test_roles_do_not_touch_each_others_plumbing(tmp_path, script):
+    """У ВПС своя копия обвязки, у шлюза своя. Роль main обязана обновлять
+    routing-host-setup.sh и не лезть в шлюзовую — иначе на сервере появляется
+    скрипт чужой стороны, который однажды кто-нибудь запустит."""
+    out, sbin = _run_autostart(tmp_path, script, role="client",
+                               gw_copy="#!/bin/sh\n# чужая версия\n",
+                               host_copy="#!/bin/sh\n# версия времён установки\n")
+    assert (sbin / "routing-host-setup.sh").read_text(encoding="utf-8") == _DELIVERY_HOST
+    assert (sbin / "routing-gw-setup.sh").read_text(encoding="utf-8") == "#!/bin/sh\n# чужая версия\n"
+    # и наоборот: шлюз не переустанавливает обвязку ВПС
+    out, sbin = _run_autostart(tmp_path / "gw", script, role="gateway",
+                               gw_copy=_DELIVERY_GW,
+                               host_copy="#!/bin/sh\n# версия времён установки\n")
+    assert (sbin / "routing-host-setup.sh").read_text(encoding="utf-8") == "#!/bin/sh\n# версия времён установки\n"

@@ -666,6 +666,13 @@ class GatewayLinkMixin:
         # окно замеров нового активного — с чистого листа: неудачи со времён
         # резерва не должны тут же тянуть трафик обратно
         self._rt_window_reset(gw.id)
+        # и память зондов обоих — как при автоматическом переключении: роли
+        # поменялись, а база счётчиков и кэш вердикта сняты для прежней. Рост
+        # rx, накопленный слотом в резерве, иначе сошёл бы за улику прохождения
+        # в первый же такт новой роли.
+        self._standby_forget(gw.id)
+        if active is not None:
+            self._standby_forget(active.id)
         with self.db.transaction():
             self.db.set_state(self._RT_ACTIVE_KEY, str(gw.id))
             if manual:

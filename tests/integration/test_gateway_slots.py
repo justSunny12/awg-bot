@@ -348,6 +348,170 @@ def test_standby_is_probed_rarely_and_lives_by_handshake_in_between(two, service
     assert not st["link_ok"] and probes.count(2) == 1, "без хендшейка резерв мёртв без единого зонда"
 
 
+# ── живость активного слота: сначала улики, потом зонд ───────────────────────
+# Зонд активного слота — коннект с адреса ВПС в одну и ту же цель каждые
+# полминуты: сам по себе сигнатура. Поэтому он последний довод, а первый —
+# счётчики линка, которые не стоят ни одного пакета наружу.
+
+def _probe_log(services, monkeypatch) -> list:
+    """Журнал зондов по слотам; вердикт — прежний, из services.probe."""
+    probes: list = []
+    monkeypatch.setattr(services, "_probe_slot",
+                        lambda g, active=False: probes.append(g.id) or services.probe[g.id])
+    return probes
+
+
+def test_return_traffic_proves_the_path_and_costs_no_probe(two, services, fake_routing, monkeypatch):
+    """Обратный трафик клиентов через линк — доказательство пути ВПС → шлюз →
+    интернет → обратно, и оно сильнее зонда: зонд стучится в одну цель на 53-м
+    порту, а это сессии живых людей. Пока rx растёт, наружу не уходит ни одного
+    пакета — и «лежит» по зонду не имеет силы против того, что уже ходит.
+    """
+    _settle(services)
+    probes = _probe_log(services, monkeypatch)
+    fake_routing.link_rx_step = 1 << 20          # ответы клиентам идут через линк
+    services.probe[1] = "down"                   # зонд, если бы его позвали, соврал бы
+    notes = []
+    for _ in range(services._rt_fail_need() + 3):
+        notes += services.routing_liveness_tick()
+    assert 1 not in probes, "путь доказан уликами — зондировать наружу незачем"
+    assert services.active_gateway().id == 1 and services.switched == [], (
+        "шлюз, через который прямо сейчас ходит трафик, не подменяют резервом")
+    assert services.db.get_state(services._RT_LINK_KEY) == "1", "маркировка не снималась"
+    assert notes == [], "сообщать людям нечего: ничего не сломалось"
+
+
+def test_demand_without_answers_is_probed_every_tick(two, services, fake_routing, monkeypatch):
+    """Клиенты шлют в линк (tx растёт), обратно тихо — это худший случай: у
+    шлюза лёг аплинк или слетел форвардинг, и люди прямо сейчас сидят без
+    интернета. Тут экономить на зондах нельзя: проверяем каждый такт и
+    переключаемся в тот же срок, что и до реформы."""
+    _settle(services)
+    probes = _probe_log(services, monkeypatch)
+    fake_routing.link_tx_step, fake_routing.link_rx_step = 1 << 20, 0
+    services.probe[1] = "down"
+    need = services._rt_fail_need()
+    for _ in range(need):
+        services.routing_liveness_tick()
+    assert probes.count(1) == need, "спрос без ответа проверяется каждый такт"
+    assert services.active_gateway().id == 2, "и отказ замечен в прежний срок"
+
+
+def test_idle_link_is_probed_rarely_and_lives_by_the_cached_verdict(two, services, fake_routing, monkeypatch):
+    """Через линк не ходит никто: ни спроса, ни улик. Зонд тут никого не
+    спасает (ответа не ждут), а коннект раз в полминуты с адреса ВПС в одну и
+    ту же цель — сигнатура. Растягиваем такт до probe_seconds ×
+    probe_idle_multiplier, между зондами держим прошлый вердикт.
+    """
+    import random
+    import time as _time
+    clock = {"t": 10_000.0}
+    monkeypatch.setattr(_time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)   # джиттер прочь — считаем такты
+    _settle(services)                                          # такт зонда 30 с, простой — 180 с
+    fake_routing.link_rx_step = fake_routing.link_tx_step = 0   # тишина в обе стороны
+    probes = _probe_log(services, monkeypatch)
+    services.probe[1] = "down"                                 # зонд, когда дойдёт дело, скажет «лежит»
+
+    def tick():
+        clock["t"] += 30
+        return services.routing_liveness_tick()
+
+    for _ in range(5):
+        tick()
+    assert probes.count(1) == 0, "первые 2,5 минуты простоя — ни одного пакета наружу"
+    assert services.db.get_state(services._RT_LINK_KEY) == "1", (
+        "между зондами живость держат кэш вердикта и свежий хендшейк")
+    tick()                                                     # 180 с с прошлого зонда
+    assert probes.count(1) == 1, "по истечении растянутого такта зонд всё-таки идёт"
+    for _ in range(3):
+        tick()
+    assert probes.count(1) == 1, "свежий вердикт держится тем же кэшем — следом не зондируем"
+    assert services.active_gateway().id == 1 and services.switched == [], (
+        "одного неуспешного замера в окне для переключения мало, как и раньше")
+
+
+def test_zero_idle_multiplier_brings_the_probe_back_to_every_tick(two, services, fake_routing, monkeypatch):
+    """Рычаг на случай разбора в бою: 0 в конфиге возвращает прежнее поведение —
+    зонд каждый такт, даже когда через линк никто не ходит."""
+    real = settings.get
+    monkeypatch.setattr(settings, "get", lambda k, d=None:
+                        0 if k == "app.routing.probe_idle_multiplier" else real(k, d))
+    _settle(services)
+    fake_routing.link_rx_step = fake_routing.link_tx_step = 0
+    probes = _probe_log(services, monkeypatch)
+    for _ in range(4):
+        services.routing_liveness_tick()
+    assert probes.count(1) == 4, "с нулевым множителем растяжки нет"
+
+
+def test_idle_link_with_a_stale_handshake_falls_without_a_probe(two, services, fake_routing, monkeypatch):
+    """Шлюз замолчал совсем: трафика нет и хендшейка нет дольше, чем keepalive
+    может объяснить. Кэшированный «в порядке» тут держать нельзя — иначе
+    отвалившийся шлюз выглядел бы живым до следующего растянутого такта.
+    Приговор выносится локально, без единого пакета наружу."""
+    _settle(services)
+    fake_routing.link_rx_step = fake_routing.link_tx_step = 0
+    probes = _probe_log(services, monkeypatch)
+    ages = {"awglink": 600, "awglink2": 30}
+    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": ages.get(iface))
+    for _ in range(services._rt_fail_need()):
+        services.routing_liveness_tick()
+    assert probes.count(1) == 0, "протухший хендшейк — приговор без зонда"
+    assert services.active_gateway().id == 2, "и повод переложить трафик на резерв"
+
+
+def test_counters_going_backwards_are_a_link_restart_not_an_outage(two, services, fake_routing, monkeypatch):
+    """awg-quick перезапустили — счётчики пошли с нуля. Разница «ушла вниз» не
+    улика ни в какую сторону: базу снимаем заново зондом. Считать это отвалом
+    значило бы переложить трафик на резерв после обычного реассерта линка."""
+    _settle(services)
+    fake_routing.link_rx_step = 1 << 20
+    probes = _probe_log(services, monkeypatch)
+    services.routing_liveness_tick()
+    assert probes.count(1) == 0, "трафик ходит — зонда нет"
+    fake_routing.link_rx = fake_routing.link_tx = 0             # линк перезапустили
+    fake_routing.link_rx_step = fake_routing.link_tx_step = 0
+    services.routing_liveness_tick()
+    assert probes.count(1) == 1, "после сброса счётчиков базу снимает зонд"
+    assert services.db.get_state(services._RT_LINK_KEY) == "1" and services.switched == [], (
+        "перезапуск линка — не отвал шлюза")
+    fake_routing.link_rx_step = 1 << 20                          # трафик пошёл от новой базы
+    services.routing_liveness_tick()
+    assert probes.count(1) == 1, "новая база принята — снова хватает улик"
+
+
+def test_switching_to_the_standby_forgets_the_evidence_of_both_slots(two, services, fake_routing, monkeypatch):
+    """После переключения роли поменялись, а снятые счётчики и кэш вердикта
+    относятся к прежнему миру. Не забыть их — значит вернувшийся в активные
+    слот примет за улику рост, случившийся, пока он был резервом, и первый же
+    такт в новой роли соврёт «в порядке» про лежащий шлюз."""
+    _settle(services)
+    probes = _probe_log(services, monkeypatch)
+    services.probe[1] = "down"
+    for _ in range(services._rt_fail_need()):
+        services.routing_liveness_tick()
+    assert services.active_gateway().id == 2, "переключились на резерв"
+    # через нового активного пошёл трафик — счётчики линка растут
+    fake_routing.link_rx_step, fake_routing.link_tx_step = 1 << 20, 0
+    for _ in range(3):
+        services.routing_liveness_tick()
+    # интервал автомата прошёл, слот 2 лёг, слот 1 отвечает — возвращаемся
+    services.db.set_state(services._RT_SWITCHED_KEY,
+                          timeutil.to_iso(timeutil.now() - __import__("datetime").timedelta(minutes=30)))
+    services.probe[1], services.probe[2] = "ok", "down"
+    fake_routing.link_rx_step, fake_routing.link_tx_step = 0, 1 << 20
+    for _ in range(services._rt_fail_need()):
+        services.routing_liveness_tick()
+    assert services.active_gateway().id == 1, "автомат вернул трафик на оживший слот"
+    services.probe[1] = "down"                     # слот 1 лёг сразу после возвращения
+    fake_routing.link_rx_step, fake_routing.link_tx_step = 1 << 20, 0
+    before = probes.count(1)
+    services.routing_liveness_tick()
+    assert probes.count(1) == before + 1, (
+        "база снята для прежней роли — первый такт в новой обязан начаться с зонда")
+
+
 def test_manual_switch_to_a_dead_gateway_holds_the_automaton(two, services):
     """Админ переложил трафик на лежащий шлюз — значит, так надо: автомат не
     возвращает. Ожил и упал снова — автомат переключает, как обычно."""

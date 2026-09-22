@@ -22,6 +22,16 @@
 #   4) собирает БАНДЛ для шлюза: скрипт настройки и конфиг линка одним файлом,
 #      плюс печатает готовую строку scp и что запустить на той стороне.
 #
+# ОКРУЖЕНИЕ: LINK_IF (awglink; у второго слота — awglink2), LINK_PORT (443),
+# LINK_CIDR — /30 линка, из него выводятся LINK_VPS_ADDR и LINK_GW_ADDR,
+# ENDPOINT_HOST, PEER_HOME_NETS (подсети за другими шлюзами — в AllowedIPs
+# пира ВПС), CONF_DIR, GW_CONF_OUT, GW_BUNDLE_OUT. Из конфига бота (_APP_YAML,
+# /etc/awg-bot/conf/app.yaml) и перечитываются при каждой сборке бандла:
+# CLIENT_SUBNET (network.subnet_cidr) и LINK_KEEPALIVE
+# (client_config.keepalive_seconds) — PersistentKeepalive линка идёт в ритме
+# клиентских пиров, «25-35» или одиночное число; непонятное значение
+# откатывается к «25-35». Любую переменную можно переопределить окружением.
+#
 # ЗАПУСК:
 #   sudo sh routing-link-setup.sh              # показать план
 #   sudo sh routing-link-setup.sh --apply      # поднять
@@ -52,6 +62,18 @@ LINK_GW_ADDR="${LINK_GW_ADDR:-$_cidr_head.$(( _cidr_last + 2 ))}"
 _APP_YAML="${_APP_YAML:-/etc/awg-bot/conf/app.yaml}"
 _cfg_subnet="$(awk -F'"' '/^  subnet_cidr:/{print $2; exit}' "$_APP_YAML" 2>/dev/null || true)"
 CLIENT_SUBNET="${CLIENT_SUBNET:-${_cfg_subnet:-10.8.1.0/24}}"
+# PersistentKeepalive линка — ИЗ ТОГО ЖЕ КЛЮЧА, что у клиентских пиров
+# (client_config.keepalive_seconds). Прибитые 25 секунд — метроном ванильного
+# WireGuard: на простаивающем туннеле он виден без всякой расшифровки, а линк
+# простаивает ровно тогда, когда за ним никто не ходит. Диапазон разбирают
+# тулзы AmneziaWG 3.x (u16_range_from_string) — их поставка и ставит обеим
+# сторонам. Одиночное число тут законно: его ставят ради клиентов
+# дореформенного поколения, и линк тогда честно повторяет их ритм.
+_cfg_keepalive="$(awk -F'"' '/^  keepalive_seconds:/{print $2; exit}' "$_APP_YAML" 2>/dev/null || true)"
+LINK_KEEPALIVE="${LINK_KEEPALIVE:-${_cfg_keepalive:-25-35}}"
+case "$LINK_KEEPALIVE" in
+    ''|*[!0-9-]*|-*|*-|*-*-*) LINK_KEEPALIVE="25-35" ;;
+esac
 CONF_DIR="${CONF_DIR:-/etc/amnezia/amneziawg}"
 CONF="$CONF_DIR/$LINK_IF.conf"
 GW_CONF_OUT="${GW_CONF_OUT:-/root/gw-$LINK_IF.conf}"
@@ -103,7 +125,7 @@ case "${1:-}" in
     --rollback) MODE="rollback" ;;
     --bundle)   MODE="bundle" ;;
     ""|--plan)  MODE="plan" ;;
-    -h|--help)  sed -n '2,27p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,40p' "$0"; exit 0 ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
 esac
 
@@ -230,6 +252,17 @@ emit_gw_bundle() {
     if [ -f "$GW_CONF_OUT" ] && ! grep -qxF "$_want" "$GW_CONF_OUT"; then
         say "AllowedIPs в $GW_CONF_OUT отстал (подсети за другими шлюзами) — правлю"
         sed "s|^AllowedIPs = .*\$|$_want|" "$GW_CONF_OUT" > "$GW_CONF_OUT.tmp" \
+            && mv "$GW_CONF_OUT.tmp" "$GW_CONF_OUT"
+    fi
+
+    # PersistentKeepalive — тоже из конфига бота, и тоже замерзает при
+    # генерации: шлюзы, выданные до того, как значение стало диапазоном,
+    # остались бы с прибитыми 25 навсегда. Правим строку при каждой сборке.
+    _want_ka="PersistentKeepalive = $LINK_KEEPALIVE"
+    if [ -f "$GW_CONF_OUT" ] && grep -q '^PersistentKeepalive = ' "$GW_CONF_OUT" \
+        && ! grep -qxF "$_want_ka" "$GW_CONF_OUT"; then
+        say "PersistentKeepalive в $GW_CONF_OUT отстал — правлю на $LINK_KEEPALIVE"
+        sed "s|^PersistentKeepalive = .*\$|$_want_ka|" "$GW_CONF_OUT" > "$GW_CONF_OUT.tmp" \
             && mv "$GW_CONF_OUT.tmp" "$GW_CONF_OUT"
     fi
     {
@@ -586,7 +619,7 @@ PublicKey = $VPS_PUB
 PresharedKey = $PSK
 Endpoint = $ENDPOINT_HOST:$LINK_PORT
 AllowedIPs = $(gw_allowed_ips)
-PersistentKeepalive = 25
+PersistentKeepalive = $LINK_KEEPALIVE
 GWEOF
 chmod 600 "$GW_CONF_OUT"
 say "  записан (права 600 — внутри приватный ключ и psk)"

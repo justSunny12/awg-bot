@@ -158,6 +158,12 @@ def fake_routing(monkeypatch, tmp_path):
         sets={}, chain=None, conf=None, conf_writes=0,
         marking=None, probe="ok", enabled=True, nat_exempt=None,
         dns={},                       # домен → IPv4, что «вернёт» резолвер
+        # Счётчики пира линка. По умолчанию мир такой: клиенты через линк
+        # ходят (tx растёт), обратно не приходит ничего (rx стоит) — то есть
+        # спрос есть, улик прохождения нет, и вердикт активного слота решает
+        # зонд, как во всех тестах автомата. Тесты про простой ставят шаги
+        # сами.
+        link_rx=0, link_tx=0, link_rx_step=0, link_tx_step=1 << 20,
     )
 
     def replace_members(name, kind, members, current=None):
@@ -228,6 +234,17 @@ def fake_routing(monkeypatch, tmp_path):
     _set("ping_peer", lambda iface="", **k: None)          # пинг до шлюза по линку
     _set("ensure_slot_policy", lambda slot_id, iface: None)
     _set("link_handshake_age", lambda iface="": 30)      # линк жив; тесты про отвал переопределяют
+
+    def link_peer_state(iface=""):
+        # Возраст берём ЧЕРЕЗ модуль: тесты про отвал линка переопределяют
+        # link_handshake_age, и снимок обязан следовать за ними, а не
+        # застывать на значении, снятом при сборке фикстуры.
+        state.link_rx += state.link_rx_step
+        state.link_tx += state.link_tx_step
+        return {"age": routing.link_handshake_age(iface),
+                "rx": state.link_rx, "tx": state.link_tx}
+
+    _set("link_peer_state", link_peer_state)
     _set("drop_slot_policy", lambda slot_id, iface="": None)
     _set("link_peer_endpoint", lambda iface="": None)    # внешний IP шлюза из эндпоинта пира
     _set("hook_present", lambda: bool(state.marking))

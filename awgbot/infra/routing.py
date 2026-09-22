@@ -996,18 +996,36 @@ def _any_reachable(targets: list, port: int, timeout: float,
         pool.shutdown(wait=False, cancel_futures=True)
 
 
-def link_handshake_age(iface: str = "") -> Optional[int]:
-    """Возраст последнего хендшейка с шлюзом, сек. None — пира нет или интерфейс
-    не отвечает. Линк живёт на ХОСТЕ, поэтому и awg спрашиваем на хосте.
+def link_peer_state(iface: str = "") -> Optional[dict]:
+    """Хендшейк и счётчики пира линка одним снимком: {"age", "rx", "tx"}.
+
+    Один `awg show dump` вместо двух: возраст хендшейка и байты приходят из
+    одной строки, а спрашивают их в одном такте и по одному поводу — живо ли
+    направление. None — пира нет или интерфейс не отвечает.
+
+    Счётчики тут не для отчётности, а для УЛИК: выросший rx означает, что
+    шлюз прислал через линк настоящий обратный трафик клиентов, и путь
+    ВПС → линк → шлюз → интернет → обратно уже доказан — без единого пакета
+    наружу. Линк живёт на ХОСТЕ, поэтому и awg спрашиваем на хосте.
     """
     proc = _host(["awg", "show", iface or _active_if(), "dump"], check=False)
     if proc.returncode != 0:
         return None
     peers = awg.parse_dump(proc.stdout.decode(errors="replace"))
-    stamps = [p["last_handshake"] for p in peers if p.get("last_handshake")]
-    if not stamps:
+    if not peers:
         return None
-    return max(0, int(time.time()) - max(stamps))
+    stamps = [p["last_handshake"] for p in peers if p.get("last_handshake")]
+    age = max(0, int(time.time()) - max(stamps)) if stamps else None
+    return {"age": age,
+            "rx": sum(int(p.get("rx") or 0) for p in peers),
+            "tx": sum(int(p.get("tx") or 0) for p in peers)}
+
+
+def link_handshake_age(iface: str = "") -> Optional[int]:
+    """Возраст последнего хендшейка с шлюзом, сек. None — пира нет, интерфейс
+    не отвечает или хендшейка не было вовсе."""
+    st = link_peer_state(iface)
+    return st["age"] if st else None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1139,7 +1157,7 @@ __all__ = [
     # наборы
     "ensure_set", "replace_members", "add_networks", "destroy_set", "list_sets",
     # маркировка и политика
-    "rebuild_chain", "set_marking_enabled", "link_handshake_age",
+    "rebuild_chain", "set_marking_enabled", "link_handshake_age", "link_peer_state",
     "probe_gateway", "link_peer_address", "resolve_a",
     "PROBE_OK", "PROBE_NO_PATH", "PROBE_DOWN",
     "ensure_mss_clamp", "mss_clamp_present",

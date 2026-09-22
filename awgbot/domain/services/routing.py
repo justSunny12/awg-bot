@@ -821,7 +821,8 @@ class RoutingMixin:
     # Зонд резерва: те же цели и две попытки, но короче таймаут — резерв не
     # держит трафик, и его ответ ничего не откладывает.
     _RT_STANDBY_TIMEOUT = 2.0
-    # Свежесть хендшейка резерва: keepalive линка 25 с, хендшейк раз в ~2 мин.
+    # Свежесть хендшейка резерва: keepalive линка — диапазон из client_config
+    # (по умолчанию 25–35 с, как у клиентских пиров), хендшейк раз в ~2 мин.
     _RT_STANDBY_HANDSHAKE_MAX = 180
 
     def _probe_slot(self, gw, *, active: bool) -> str:
@@ -859,8 +860,78 @@ class RoutingMixin:
         return last[gw.id]
 
     def _standby_forget(self, slot_id: int) -> None:
+        """Забыть память зондов слота — и резервную, и активную: после смены
+        роли или удаления слота кэшированный вердикт относится к другому миру."""
         self.__dict__.setdefault("_rt_standby_next", {}).pop(slot_id, None)
         self.__dict__.setdefault("_rt_standby_last", {}).pop(slot_id, None)
+        self.__dict__.setdefault("_rt_active_seen", {}).pop(slot_id, None)
+
+    # Рост rx линка за такт, который НЕ подделать служебным трафиком: keepalive
+    # это 32 байта, хендшейк вместе с джанком AmneziaWG (Jc ≤ 10 пакетов по
+    # 8–70 байт, S1/S2 ≤ 150) — меньше килобайта. Всё, что выше, прислал шлюз,
+    # а прислать ему нечего, кроме обратного трафика клиентов.
+    _RT_RETURN_BYTES = 4096
+
+    def _rt_idle_probe_interval(self) -> float:
+        """Секунд между зондами активного слота, когда через линк никто не
+        ходит; 0 — каждый такт (тесты)."""
+        base = settings.get_int("app.routing.probe_seconds", 30)
+        return base * float(settings.get("app.routing.probe_idle_multiplier", 6) or 0)
+
+    def _active_verdict(self, gw) -> str:
+        """Живость АКТИВНОГО слота: сначала бесплатные улики, потом зонд.
+
+        Вернувшийся через линк трафик клиентов — прямое доказательство пути
+        ВПС → линк → шлюз → интернет → обратно, и оно сильнее зонда: зонд
+        проверяет одну цель на 53-м порту, а это настоящие сессии живых людей.
+        Стоит оно при этом ноль пакетов наружу.
+
+        Улик нет — смотрим, есть ли спрос: клиенты шлют в линк (растёт tx), а
+        обратно ничего — это худший случай (аплинк шлюза лёг, форвардинг
+        слетел), и зондируем каждый такт. Не ходит никто — растягиваем такт с
+        джиттером: коннект раз в полминуты с адреса ВПС в одну и ту же цель
+        сам по себе сигнатура, и платить ею за скорость реакции там, где никто
+        не ждёт ответа, незачем. Между зондами живость держит свежесть
+        хендшейка — это локальный exec, наружу не уходит ничего.
+        """
+        import random
+        import time as _time
+        seen = self.__dict__.setdefault("_rt_active_seen", {})
+        st = routing.link_peer_state(gw.link_if)
+        now = _time.monotonic()
+        prev = seen.get(gw.id)
+        if st is None:
+            seen.pop(gw.id, None)
+            return self._probe_slot(gw, active=True)
+        fresh = st["age"] is not None and st["age"] <= self._RT_STANDBY_HANDSHAKE_MAX
+        every = self._rt_idle_probe_interval()
+
+        def _probe() -> str:
+            v = self._probe_slot(gw, active=True)
+            seen[gw.id] = {"rx": st["rx"], "tx": st["tx"], "verdict": v,
+                           "next": now + every * random.uniform(0.6, 1.4)}
+            return v
+
+        if prev is None:
+            return _probe()
+        # Счётчики сбрасываются вместе с интерфейсом: линк перезапустили —
+        # прежний замер не с чем сравнивать, и «упало» тут означало бы отвал
+        # шлюза там, где была перезагрузка awg-quick.
+        if st["rx"] < prev["rx"] or st["tx"] < prev["tx"]:
+            return _probe()
+        returned = st["rx"] - prev["rx"] > self._RT_RETURN_BYTES
+        demand = st["tx"] - prev["tx"] > self._RT_RETURN_BYTES
+        if returned and fresh:
+            prev.update(rx=st["rx"], tx=st["tx"], verdict=routing.PROBE_OK)
+            return routing.PROBE_OK
+        if demand or every <= 0 or now >= prev.get("next", 0.0):
+            return _probe()
+        prev.update(rx=st["rx"], tx=st["tx"])
+        # Кэшированный «в порядке» живёт ровно до тех пор, пока жив хендшейк:
+        # молчащий шлюз обязан проявиться сам, без зонда.
+        if not fresh:
+            return routing.PROBE_DOWN
+        return prev.get("verdict", routing.PROBE_OK)
 
     def _probe_slots(self, slots, active) -> dict:
         """Все слоты разом: зонды независимы, а последовательно при лежащем
@@ -868,14 +939,14 @@ class RoutingMixin:
         if len(slots) == 1:
             g = slots[0]
             if active is not None and active.id == g.id:
-                return {g.id: self._probe_slot(g, active=True)}
+                return {g.id: self._active_verdict(g)}
             return {g.id: self._standby_verdict(g)}
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=len(slots)) as pool:
             futs = {}
             for g in slots:
                 if active is not None and active.id == g.id:
-                    futs[g.id] = pool.submit(self._probe_slot, g, active=True)
+                    futs[g.id] = pool.submit(self._active_verdict, g)
                 else:
                     futs[g.id] = pool.submit(self._standby_verdict, g)
             return {sid: f.result() for sid, f in futs.items()}
@@ -1069,6 +1140,10 @@ class RoutingMixin:
                             # тут же потянули бы его обратно
                             self._rt_window_reset(akey)
                             self._rt_window_reset(cand.id)
+                            # и память зондов: роли поменялись, а кэш вердикта
+                            # и базовые счётчики сняты для прежней
+                            self._standby_forget(akey)
+                            self._standby_forget(cand.id)
                             akey = cand.id
                             a_up = ups[akey]
                             unavailable = False
