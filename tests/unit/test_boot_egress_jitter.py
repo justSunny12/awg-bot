@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pytest
 
+from awgbot.domain import gateway as gw
 from awgbot.domain.gateway import GatewayServices
 from awgbot.infra.db import Database
 from awgbot.runtime import hostboot
@@ -29,6 +30,12 @@ def test_host_rebooted_text():
 
 def test_egress_check_in_snapshot(db, monkeypatch):
     svc = GatewayServices(db)
+    # Зонд наружу теперь идёт не каждым тиком: в простое такт растягивается, и
+    # второй снимок подряд жил бы кэшем вердикта. Здесь проверяется сама
+    # проверка в снимке, поэтому растяжку снимаем штатным рычагом — множителем 0.
+    real = gw.settings.get
+    monkeypatch.setattr(gw.settings, "get", lambda k, d=None:
+                        0 if k == "app.gateway.egress_idle_multiplier" else real(k, d))
     monkeypatch.setattr(svc, "link_status", lambda: (True, 5.0, 0, 0))
     monkeypatch.setattr(svc, "plumbing_checks", lambda: [])
     monkeypatch.setattr(svc, "tg_mark_missing", lambda info=None: [])

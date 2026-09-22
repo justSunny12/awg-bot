@@ -81,7 +81,9 @@ class GwStatus:
     kernels_total: int = 0
     month_rx: int = 0                       # потребление линка за календарный месяц
     month_tx: int = 0
-    egress_ms: float | None = None          # выход наружу через домашний канал, мс
+    egress_ms: float | None = None          # выход наружу через канал квартиры, мс последнего замера
+    egress_ok: bool | None = None           # он же вердиктом: улики или зонд
+    egress_src: str = ""                    # чем доказан: трафик | проба | кэш
     tg_missing: list[str] = field(default_factory=list)   # диапазоны Telegram без маркировки
     mark_status: str = ""                   # шлюзовое устройство: confirmed|unmarked|foreign|unconfirmed
     lan: dict = field(default_factory=dict) # локальная сеть без VPN (концепт «локальная сеть»): пусто — выключена
@@ -394,11 +396,11 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         # Лежащий домашний канал для РФ-доступа равносилен лежащему линку —
         # тот же короткий стрик, а не общий на пять тиков.
         notes += self._streak_alert(
-            "egress", st.egress_ms is None,
+            "egress", st.egress_ok is False,
             settings.get_int("app.gateway.egress_alert_streak", 2),
-            "⚠️ Шлюз не выходит наружу: домашний канал не отвечает. РФ-доступ "
+            "⚠️ Шлюз не выходит наружу: канал квартиры не отвечает. РФ-доступ "
             "через шлюз не работает.",
-            "✅ Домашний канал шлюза снова отвечает.")
+            "✅ Канал квартиры снова отвечает.")
 
         broken = [c for c in st.checks if c.ok is False and c.group != "lan"]
         notes += self._streak_alert(
@@ -859,6 +861,63 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
 
+    # Обратный трафик клиентов в линк — улика сильнее зонда: он доказывает,
+    # что канал квартиры дошёл до интернета и ответы вернулись. Подделать его
+    # служебным нечем: в линк агент шлёт только ответы клиентам да keepalive в
+    # 32 байта, свой трафик к Telegram он гонит аплинком.
+    _EGRESS_RETURN_BYTES = 4096
+
+    def _egress_idle_seconds(self) -> float:
+        """Секунд между зондами наружу, когда через линк не ходит никто;
+        0 — зондировать каждый тик (как было)."""
+        mins = settings.get_int("app.gateway.monitor_minutes", 3)
+        return mins * 60 * float(settings.get("app.gateway.egress_idle_multiplier", 4) or 0)
+
+    def _egress_verdict(self, link_rx: int, link_tx: int) -> tuple[bool, float | None, str]:
+        """(есть ли выход наружу, мс последнего замера, чем доказано).
+
+        Зонд — коннект С АДРЕСА КВАРТИРЫ к двум фиксированным целям, тик за
+        тиком: четыре с лишним сотни одинаковых коннектов в сутки, то есть
+        ровно тот маячок, про который мы сами пишем «строго периодический
+        коннект с домашнего адреса — сигнатура для ТСПУ». Поэтому сначала
+        улики, и только потом зонд.
+
+        Вырос tx линка — ответы из интернета дошли и ушли клиентам: путь
+        доказан даром. Вырос rx без tx — клиенты шлют, а обратно тихо: это и
+        есть отказ канала, зондируем немедленно. Не ходит никто — зондируем
+        редко и с джиттером: ждать ответа в простое всё равно некому.
+        """
+        import random
+        seen = self.__dict__.get("_egress_seen")
+        now = time.monotonic()
+        every = self._egress_idle_seconds()
+
+        def _probe() -> tuple[bool, float | None, str]:
+            ms = self.egress_probe()
+            self.__dict__["_egress_seen"] = {
+                "rx": link_rx, "tx": link_tx, "ms": ms, "ok": ms is not None,
+                "next": now + every * random.uniform(0.6, 1.4)}
+            return ms is not None, ms, "проба"
+
+        # Счётчики сбрасывает подъём линка: «ушли вниз» — не отказ канала, а
+        # перезапуск awg-quick, и сравнивать больше не с чем.
+        if seen is None or link_rx < seen["rx"] or link_tx < seen["tx"]:
+            return _probe()
+        returned = link_tx - seen["tx"] > self._EGRESS_RETURN_BYTES
+        demand = link_rx - seen["rx"] > self._EGRESS_RETURN_BYTES
+        if returned:
+            # Такт зонда отодвигаем, как после зонда: улика — доказательство
+            # СИЛЬНЕЕ пробы, и после неё ждать столько же честно. Иначе первый
+            # же тик после конца трафика уходил бы зондом, а конец трафика —
+            # это обычный вечер, а не отказ.
+            seen.update(rx=link_rx, tx=link_tx, ok=True,
+                        next=now + every * random.uniform(0.6, 1.4))
+            return True, seen["ms"], "трафик"
+        if demand or every <= 0 or now >= seen.get("next", 0.0):
+            return _probe()
+        seen.update(rx=link_rx, tx=link_tx)
+        return seen["ok"], seen["ms"], "кэш"
+
     @staticmethod
     def _egress_one(host: str, port: int) -> float | None:
         t0 = time.monotonic()
@@ -1019,10 +1078,12 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                               "без модуля awg: " + ", ".join(st.kernels_missing)))
         st.lan, lan_checks = self.lan_status()
         checks += lan_checks
-        st.egress_ms = self.egress_probe()
-        checks.append(GwCheck("выход наружу", st.egress_ms is not None,
-                              f"{st.egress_ms:.0f} мс" if st.egress_ms is not None else
-                              "домашний канал не отвечает — РФ-доступ через шлюз не работает"))
+        st.egress_ok, st.egress_ms, st.egress_src = self._egress_verdict(st.rx, st.tx)
+        checks.append(GwCheck("выход наружу", st.egress_ok,
+                              ("по обратному трафику клиентов" if st.egress_src == "трафик" else
+                               f"{st.egress_ms:.0f} мс" if st.egress_ok and st.egress_ms is not None
+                               else "" if st.egress_ok else
+                               "канал квартиры не отвечает — РФ-доступ через шлюз не работает")))
         st.checks = checks
         st.temp = hostmetrics.read_soc_temp()
         st.throttled = hostmetrics.read_pi_throttled()

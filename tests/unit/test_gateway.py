@@ -271,7 +271,8 @@ def _quiet_status(**kw):
     st = GwStatus(link_up=True, handshake_age=10.0,
                   checks=[GwCheck("MASQUERADE", True)], temp=50.0, disk=30.0,
                   throttled={"raw": 0, "now": [], "ever": []},
-                  module_version="v", srcversion="s", kernels_total=3, egress_ms=25.0)
+                  module_version="v", srcversion="s", kernels_total=3,
+                  egress_ms=25.0, egress_ok=True, egress_src="проба")
     for k, v in kw.items():
         setattr(st, k, v)
     return st
@@ -512,11 +513,14 @@ def test_egress_probe_targets_in_parallel(svc, monkeypatch):
 
 
 def test_egress_alert_has_its_own_short_streak(svc, monkeypatch):
-    """Лежащий домашний канал равносилен лежащему линку — алерт на втором тике,
+    """Лежащий канал квартиры равносилен лежащему линку — алерт на втором тике,
     а не на пятом."""
     monkeypatch.setattr(svc, "uplink_policy_heal", lambda: [])
     monkeypatch.setattr(svc, "tg_mark_ensure", lambda missing=None: 0)
-    monkeypatch.setattr(svc, "status", lambda: _quiet_status(egress_ms=None))
+    # «Канал лежит» — это вердикт egress_ok, а не отсутствие миллисекунд:
+    # при вердикте по обратному трафику мс может не быть вовсе.
+    monkeypatch.setattr(svc, "status",
+                        lambda: _quiet_status(egress_ok=False, egress_ms=None, egress_src="проба"))
     first = svc.monitor_tick()
     assert not any("не выходит наружу" in n.text for n in first)
     second = svc.monitor_tick()

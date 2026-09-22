@@ -922,7 +922,11 @@ class RoutingMixin:
         returned = st["rx"] - prev["rx"] > self._RT_RETURN_BYTES
         demand = st["tx"] - prev["tx"] > self._RT_RETURN_BYTES
         if returned and fresh:
-            prev.update(rx=st["rx"], tx=st["tx"], verdict=routing.PROBE_OK)
+            # Такт зонда отодвигаем, как после зонда: улика — доказательство
+            # СИЛЬНЕЕ пробы. Иначе первый же тик после конца трафика уходил бы
+            # зондом, а конец трафика — это обычный вечер, а не отказ.
+            prev.update(rx=st["rx"], tx=st["tx"], verdict=routing.PROBE_OK,
+                        next=now + every * random.uniform(0.6, 1.4))
             return routing.PROBE_OK
         if demand or every <= 0 or now >= prev.get("next", 0.0):
             return _probe()
