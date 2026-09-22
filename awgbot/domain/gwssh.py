@@ -46,6 +46,25 @@ def _no32(cidr: str) -> str:
     return cidr[:-3] if cidr.endswith("/32") else cidr
 
 
+def _merge_nets(entries: list[str]) -> list[str]:
+    """Схлопнуть пересекающиеся адреса/подсети списка, имена оставить как
+    есть; порядок — как ввели, поглощённые записи уходят."""
+    from awgbot.infra import gwguard
+    literal = [e for e in entries if e[0].isdigit()]
+    kept = set(gwguard.collapse(literal))
+    out: list[str] = []
+    for e in entries:
+        if not e[0].isdigit():
+            out.append(e)
+        elif e in kept and e not in out:
+            out.append(e)
+    # схлопывание могло породить новую подсеть (две смежные /25 → /24)
+    for k in gwguard.collapse(literal):
+        if k not in out:
+            out.append(k)
+    return out
+
+
 class GwSshMixin:
     _SSH_PORT_SEEN_KEY = "gw_ssh_port_seen"
     # Владелец конфига, правила OMV и ufw меняются руками и редко — не exec на
@@ -206,8 +225,9 @@ class GwSshMixin:
     def ssh_allow_add(self, raw: str) -> list[str]:
         """Добавить адреса снаружи: IP, подсеть или имя, через пробел/запятую.
         Только IPv4 — таблица v4, за роутером квартиры v6-проброса нет.
-        Пересечение с уже введённым — отказ: nft не примет набор с
-        пересекающимися интервалами, и после ребута обвязки не будет."""
+        Пересечения (адрес внутри подсети, подсеть поверх адресов) — nft не
+        примет набор, и после ребута обвязки не будет — схлопываются: в списке
+        остаётся покрывающая подсеть, вызывающий видит, что объединено."""
         from awgbot.infra import gwguard, nftguard
         entries: list[str] = []
         for tok in str(raw).replace(",", " ").split():
@@ -224,12 +244,8 @@ class GwSshMixin:
             raise ServiceError("пусто: жду адрес, подсеть или имя")
         with self._ssh_lock:
             cur = self._ssh_allow_split(gwguard.read_env())
-            for e in entries:
-                hit = gwguard.overlaps(e, [c for c in cur if c != e] + [x for x in entries if x != e])
-                if hit:
-                    raise ServiceError(f"{e} пересекается с {hit} — в списке не может быть адреса "
-                                       "и подсети, которая его уже покрывает")
             cur += [e for e in entries if e not in cur]
+            cur = _merge_nets(cur)
             gwguard.write_env(SSH_ALLOW=" ".join(cur))
             self._ssh_sync_sets()
         return cur
@@ -349,7 +365,7 @@ class GwSshMixin:
                         if cur and seen != str(port):
                             self.invalidate_ssh_static()  # порт сменил, возможно, новый владелец
                             owner = sshd.owner()
-                            who = (f" (задал {'OMV' if owner.kind == 'omv' else 'другой генератор конфига'})"
+                            who = (f" (задал {'OMV' if owner.kind == 'omv' else 'другой процесс'})"
                                    if owner else " — sshd_config правили мимо бота")
                             tail = ("Фильтр переведён на новый порт: из туннеля, из локальной сети "
                                     "и снаружи." if ok else
@@ -357,8 +373,7 @@ class GwSshMixin:
                                     "пока сервер по линку стучится в старый порт.")
                             notes.append(Notification(
                                 config.ADMIN_ID,
-                                f"🛡 Порт SSH на шлюзе изменился: {cur} → {port}{who}. {tail} "
-                                "Если ходишь снаружи — поправь проброс порта на роутере.",
+                                f"🛡 Порт SSH на шлюзе изменился: {cur} → {port}{who}. {tail}",
                                 critical=False))
                         self.db.set_state(self._SSH_PORT_SEEN_KEY, str(port))
                 else:
@@ -387,7 +402,7 @@ class GwSshMixin:
         table_ports = (info or {}).get("ssh_ports", {})
         held = table_ports.get("tunnel_in")
         if port is None:
-            checks.append(GwCheck("порт SSH", None, "sshd не запущен — доступ только из консоли"))
+            checks.append(GwCheck("порт SSH", None, "sshd не запущен"))
         elif info is None:
             pass                                           # таблицы нет — своя проверка выше
         else:

@@ -25,13 +25,14 @@ def gateway_panel_kb() -> InlineKeyboardMarkup:
 
 
 def gateway_settings_kb() -> InlineKeyboardMarkup:
-    """Тот же порядок, что у основного бота; чего у шлюза нет (сервер, доступ
-    по SSH, маршрутизация, подписки) — нет и здесь. Мониторинг и резервное
-    копирование, как и там, живут в «Обслуживании»."""
+    """Тот же порядок, что у основного бота; чего у шлюза нет (сервер,
+    маршрутизация, подписки) — нет и здесь. Мониторинг и резервное
+    копирование, как и там, живут в «Обслуживании»; доступ по SSH — свой
+    раздел (порт как факт, фильтр снаружи)."""
     kb = InlineKeyboardBuilder()
     kb.button(text="🔔 Уведомления", callback_data=GwCB(action="notify"))
-    kb.button(text="🛡 Доступ по SSH", callback_data=GwCB(action="ssh"))
     kb.button(text="✉️ E-mail", callback_data=GwCB(action="email"))
+    kb.button(text="🛡 Доступ по SSH", callback_data=GwCB(action="ssh"))
     kb.button(text="🔄 Обслуживание", callback_data=GwCB(action="maint"))
     kb.button(text="⬆️ Обновления бота", callback_data=GwCB(action="updates"))
     kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
@@ -192,11 +193,12 @@ def gateway_ssh_port_finisher_kb() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def gateway_ssh_on_confirm_kb() -> InlineKeyboardMarkup:
-    """Включение фильтра снаружи — с подтверждения, «Отмена» первой."""
+def gateway_ssh_confirm_kb(action: str, val: str, label: str) -> InlineKeyboardMarkup:
+    """Подтверждение действия раздела SSH (включить/выключить фильтр, убрать
+    адрес) — «Отмена» первой, возврат в раздел."""
     kb = InlineKeyboardBuilder()
     kb.button(text="⬅️ Отмена", callback_data=GwCB(action="ssh"))
-    kb.button(text="🟢 Включить", callback_data=GwCB(action="ssh_on!"))
+    kb.button(text=label, callback_data=GwCB(action=action, val=val))
     kb.adjust(2)
     return kb.as_markup()
 

@@ -191,24 +191,20 @@ def test_allow_list_is_ipv4_only_and_feeds_the_live_set(svc, host):
     assert host.sets["ssh_allow4"] == {"198.51.100.4", "198.51.101.0/24"}
 
 
-def test_overlapping_entries_are_refused_and_resolved_names_inside_subnets_are_not_duplicated(svc, host):
+def test_overlapping_entries_are_merged_and_resolved_names_inside_subnets_are_not_duplicated(svc, host):
     """nft отвергает пересекающиеся интервалы — и в транзакции, и в файле при
-    загрузке (после ребута обвязки не было бы). Адрес внутри введённой подсети
-    — отказ; имя, резолвящееся в подсеть из списка, в SSH_ALLOW_RESOLVED не
-    попадает, набор схлопнут."""
-    svc.ssh_allow_add("198.51.100.0/24")
-    with pytest.raises(ServiceError, match="пересекается с 198.51.100.0/24"):
-        svc.ssh_allow_add("198.51.100.5")
-    with pytest.raises(ServiceError, match="пересекается"):
-        svc.ssh_allow_add("198.51.0.0/16")
-    with pytest.raises(ServiceError, match="пересекается"):
-        svc.ssh_allow_add("203.0.113.0/24 203.0.113.9")
-    svc.ssh_allow_add("home2.dyn.example")                 # резолвится в 198.51.100.4 — внутри /24
+    загрузке (после ребута обвязки не было бы). Пересечения схлопываются:
+    остаётся покрывающая подсеть; имя, резолвящееся в подсеть из списка, в
+    SSH_ALLOW_RESOLVED не попадает."""
+    assert svc.ssh_allow_add("198.51.100.0/24") == ["198.51.100.0/24"]
+    assert svc.ssh_allow_add("198.51.100.5") == ["198.51.100.0/24"], "адрес внутри подсети поглощён"
+    assert svc.ssh_allow_add("203.0.113.9 203.0.113.0/24") == ["198.51.100.0/24", "203.0.113.0/24"]
+    assert svc.ssh_allow_add("198.51.0.0/16") == ["203.0.113.0/24", "198.51.0.0/16"], \
+        "подсеть поверх прежней — прежняя уходит"
+    svc.ssh_allow_add("home2.dyn.example")                 # резолвится в 198.51.100.4 — внутри /16
     env = gwguard.read_env()
-    assert env["SSH_ALLOW"] == "198.51.100.0/24 home2.dyn.example"
+    assert env["SSH_ALLOW"] == "203.0.113.0/24 198.51.0.0/16 home2.dyn.example"
     assert env.get("SSH_ALLOW_RESOLVED", "") == "", "адрес покрыт подсетью — в файл не пишем"
-    assert host.sets["ssh_allow4"] == {"198.51.100.0/24", "198.51.100.4"}, \
-        "фейковый set_sync не схлопывает; настоящий — collapse (test_gwguard)"
 
 
 def test_dyndns_change_is_followed_on_tick_without_a_reassert(svc, host, monkeypatch):

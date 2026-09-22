@@ -375,16 +375,31 @@ async def gw_ssh_allow_received(message: Message, state: FSMContext, services):
         return
     await state.clear()
     new = [x for x in after if x not in before]
-    await message.answer(texts.gateway_ssh_allow_added(new) if new else texts.GW_SSH_ALLOW_ALREADY)
+    gone = [x for x in before if x not in after]          # схлопнуто в добавленную подсеть
+    await message.answer(texts.gateway_ssh_allow_added(new, gone) if new or gone
+                         else texts.GW_SSH_ALLOW_ALREADY)
     await core.after_input(message, services, HOOKS, "ssh")
 
 
-@router.callback_query(GwCB.filter(F.action.in_({"ssh_del", "ssh_on", "ssh_on!", "ssh_off"})))
+@router.callback_query(GwCB.filter(F.action.in_({"ssh_del", "ssh_del!", "ssh_on", "ssh_on!",
+                                                  "ssh_off", "ssh_off!"})))
 async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
+    """Удаление адреса, включение и выключение фильтра — с подтверждения
+    («Отмена» первой): всё это меняет, кто попадёт на шлюз снаружи."""
     await state.clear()
     act = callback_data.action
     try:
         if act == "ssh_del":
+            allow = (await call(services.ssh_screen)).get("allow") or []
+            idx = int(callback_data.val) if callback_data.val.isdigit() else -1
+            if not 0 <= idx < len(allow):
+                await cb.answer("Список изменился — открой раздел заново", show_alert=True)
+            else:
+                await edit_nav(cb, services, texts.gateway_ssh_del_ask(allow[idx]),
+                               kb.gateway_ssh_confirm_kb("ssh_del!", str(idx), "➖ Убрать"))
+                await cb.answer()
+                return
+        elif act == "ssh_del!":
             allow = (await call(services.ssh_screen)).get("allow") or []
             idx = int(callback_data.val) if callback_data.val.isdigit() else -1
             if not 0 <= idx < len(allow):
@@ -395,12 +410,17 @@ async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state:
         elif act == "ssh_on":
             st = await call(services.ssh_screen)
             await edit_nav(cb, services, texts.gateway_ssh_filter_on_ask(st["port"]),
-                           kb.gateway_ssh_on_confirm_kb())
+                           kb.gateway_ssh_confirm_kb("ssh_on!", "", "🟢 Включить"))
             await cb.answer()
             return
         elif act == "ssh_on!":
             await call(services.ssh_filter_on)
             await cb.answer("Фильтр включён")
+        elif act == "ssh_off":
+            await edit_nav(cb, services, texts.GW_SSH_FILTER_OFF_ASK,
+                           kb.gateway_ssh_confirm_kb("ssh_off!", "", "🔴 Выключить"))
+            await cb.answer()
+            return
         else:
             await call(services.ssh_filter_off)
             await cb.answer(texts.GW_SSH_FILTER_OFF, show_alert=True)

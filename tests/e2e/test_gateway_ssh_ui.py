@@ -107,16 +107,16 @@ async def test_section_under_omv_names_the_owner_and_old_plumbing_hides_the_filt
     svc.screen = _scr(port=2222, owner="omv", owner_port=2222, ports=[2222], conf_ports=[2222],
                       filter=True, allow=["203.0.113.7"], omv_rules=3)
     text = texts.gateway_ssh_text(svc.screen)
-    assert "Порт SSH: 2222 — задаёт OMV (Службы → SSH)" in text
+    assert "Порт SSH: 2222 — <b>контролирует OMV</b> <i>(в его UI: Службы → SSH)</i>" in text
     assert "🟢 Снаружи: фильтр включён" in text and "правила файервола (3)" in text
     assert "⚠️ В OMV задан порт" not in text and "не перезапущен" not in text, \
         "порты совпадают — предупреждать не о чем"
     text = texts.gateway_ssh_text(_scr(port=22, owner="omv", owner_port=2222))
-    assert "⚠️ В OMV задан порт 2222, sshd слушает 22 — нажми «Применить» в OMV." in text
+    assert "⚠️ В OMV задан порт 2222, sshd слушает 22 — нажми «Применить» в OMV" in text
     text = texts.gateway_ssh_text(_scr(conf_ports=[2222]))
-    assert "В конфиге sshd порт 2222, слушает 22 — sshd не перезапущен" in text
+    assert "В конфиге sshd порт 2222, сервис слушает 22 — перезапусти sshd" in text
     text = texts.gateway_ssh_text(_scr(ports=[22, 2200]))
-    assert "sshd слушает ещё порт 2200 — фильтр держит только 22" in text
+    assert "sshd слушает ещё порт (2200) — фильтр держит только 22" in text
     text = texts.gateway_ssh_text(_scr(sshd_down=True))
     assert "⚪ sshd не запущен" in text
     old = _scr(new_plumbing=False)
@@ -208,7 +208,7 @@ async def test_foreign_owner_refuses_before_touching_anything(svc, fake_bot):
     await st.set_state(SshPort.value)
     msg = FakeMessage(text="2200", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await gh.gw_ssh_port_received(msg, st, svc)
-    assert any("генерирует другая программа" in s[1] and "Ansible managed" in s[1]
+    assert any("управляет другой процесс" in s[1] and "Ansible managed" in s[1]
                for s in msg.sent if s[0] == "answer")
 
 
@@ -264,24 +264,47 @@ async def test_allow_add_and_remove(svc, fake_bot):
     assert await st.get_state() is None
     cb, nav = _cb(fake_bot)
     await gh.gw_ssh_action(cb, GwCB(action="ssh_del", val="0"), svc, FakeState())
+    assert ("remove", "home2.dyn.example") not in svc.calls, "удаление — с подтверждения"
+    text = [t for k, t, _ in nav.sent if k == "edit_text"][-1]
+    assert "Убрать <code>home2.dyn.example</code>" in text
+    assert _labels(nav.sent[-1][2]) == ["⬅️ Отмена", "➖ Убрать"]
+    cb, nav = _cb(fake_bot)
+    await gh.gw_ssh_action(cb, GwCB(action="ssh_del!", val="0"), svc, FakeState())
     assert ("remove", "home2.dyn.example") in svc.calls and any("убран" in str(a) for a in cb.answers)
     cb, nav = _cb(fake_bot)
     await gh.gw_ssh_action(cb, GwCB(action="ssh_del", val="7"), svc, FakeState())
     assert any("Список изменился" in str(a) for a in cb.answers)
 
 
-async def test_filter_on_needs_confirmation_off_is_immediate(svc, fake_bot):
+async def test_adding_covered_addresses_reports_the_merge(svc, fake_bot, monkeypatch):
+    from awgbot.infra import gwguard
+    monkeypatch.setattr(gwguard, "read_env", lambda: {"SSH_ALLOW": "203.0.113.7"})
+    monkeypatch.setattr(svc, "ssh_allow_add", lambda raw: ["203.0.113.0/24"])
+    st = FakeState()
+    await st.set_state(GwSshAllow.value)
+    msg = FakeMessage(text="203.0.113.0/24", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await gh.gw_ssh_allow_received(msg, st, svc)
+    assert any("добавлено <b>203.0.113.0/24</b>; объединено с новой подсетью: <code>203.0.113.7</code>" in s[1]
+               for s in msg.sent if s[0] == "answer"), msg.sent
+
+
+async def test_filter_on_and_off_need_confirmation(svc, fake_bot):
     cb, nav = _cb(fake_bot)
     await gh.gw_ssh_action(cb, GwCB(action="ssh_on"), svc, FakeState())
     assert ("on",) not in svc.calls
     text = [t for k, t, _ in nav.sent if k == "edit_text"][-1]
-    assert "Включить фильтр снаружи?" in text and "шлюз:22" in text and "подменяет адрес" in text
+    assert "Включить фильтр снаружи?" in text and "подменяет адрес" in text
     assert _labels(nav.sent[-1][2]) == ["⬅️ Отмена", "🟢 Включить"]
     cb, nav = _cb(fake_bot)
     await gh.gw_ssh_action(cb, GwCB(action="ssh_on!"), svc, FakeState())
     assert ("on",) in svc.calls and svc.screen["filter"] is True
     cb, nav = _cb(fake_bot)
     await gh.gw_ssh_action(cb, GwCB(action="ssh_off"), svc, FakeState())
+    assert ("off",) not in svc.calls, "выключение — тоже с подтверждения"
+    text = [t for k, t, _ in nav.sent if k == "edit_text"][-1]
+    assert "Выключить фильтр снаружи?" in text and _labels(nav.sent[-1][2]) == ["⬅️ Отмена", "🔴 Выключить"]
+    cb, nav = _cb(fake_bot)
+    await gh.gw_ssh_action(cb, GwCB(action="ssh_off!"), svc, FakeState())
     assert ("off",) in svc.calls and any("открыт всем" in str(a) for a in cb.answers)
 
 

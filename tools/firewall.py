@@ -377,7 +377,7 @@ COMMANDS = {
 GW_DOC = """awg-bot firewall (шлюз) — таблица awg_gw_guard ставится бандлом с ВПС.
 
   status                 таблица, устройства админа (полный доступ с туннеля), политика FORWARD
-  allow <ip|cidr> …      доверенные адреса сверх бандла (доступ к шлюзу и домашней сети) и применить
+  allow <ip|cidr> …      доверенные адреса сверх бандла (доступ к шлюзу и локальной сети) и применить
   deny  <ip|cidr> …      убрать из локальных добавок и применить
   apply                  перевыставить таблицу (systemctl restart awg-link-gw)
 
@@ -412,17 +412,24 @@ def gw_status(_args) -> int:
 def _gw_edit(add: list[str], remove: list[str]) -> int:
     from awgbot.infra import gwguard
     cur = gwguard.read_extra()
-    # admin4 — flags interval: пересечение с устройствами админа из бандла или
-    # с уже добавленным nft отвергнет, а после ребута — всю таблицу.
-    known = gwguard.unit_admin_ips() + cur
     for v in add:
-        hit = gwguard.overlaps(v, [k for k in known if k != v] + [a for a in add if a != v])
-        if hit:
-            print(f"[ОШИБКА] {v} пересекается с {hit} — адрес и подсеть, которая его покрывает, вместе нельзя")
-            return 1
         if v not in cur:
             cur.append(v)
     cur = [v for v in cur if v not in remove]
+    # admin4 — flags interval: пересечение nft отвергнет, а после ребута — всю
+    # таблицу. Схлопываем: с устройствами админа из бандла (их менять нельзя —
+    # покрывающую подсеть не добавляем) и между собой.
+    bundle = gwguard.unit_admin_ips()
+    clash = [v for v in cur if gwguard.overlaps(v, bundle)]
+    if clash:
+        print(f"[ОШИБКА] {', '.join(clash)} пересекается с устройствами админа из бандла "
+              f"({', '.join(bundle)}) — их не объединить, они приезжают с сервера")
+        return 1
+    merged = gwguard.collapse(cur)
+    gone = [v for v in cur if v not in merged]
+    cur = merged
+    if gone:
+        print(f"объединено с покрывающей подсетью: {', '.join(gone)}")
     try:
         gwguard.write_extra(cur)
     except ValueError as e:

@@ -28,7 +28,7 @@ def _svc():
 
 def cmd_status(_args) -> int:
     st = _svc().ssh_screen()
-    owner = {"omv": "OMV (Службы → SSH)", "generator": "другая программа"}.get(st["owner"], "бот")
+    owner = {"omv": "OMV (Службы → SSH)", "generator": "другой процесс"}.get(st["owner"], "бот")
     port = "sshd не запущен" if st["sshd_down"] else str(st["port"])
     print(f"порт SSH          : {port}  владелец конфига: {owner}")
     if st.get("owner_port") and st["owner_port"] != st["port"]:
@@ -39,7 +39,8 @@ def cmd_status(_args) -> int:
     if extra:
         print(f"                    sshd слушает ещё: {', '.join(map(str, extra))}")
     print(f"из туннеля        : устройства админа ({len(st['admin_ips'])}) и сервер по линку — всегда")
-    print("из локальной сети : открыт всегда")
+    lan = ", ".join(st.get("lan") or [])
+    print(f"из локальной сети : открыт всегда{' (' + lan + ')' if lan else ''}")
     if not st["new_plumbing"]:
         print("снаружи           : обвязка старого образца — фильтр появится после перевыпуска конфигурации шлюза")
     else:
@@ -48,7 +49,9 @@ def cmd_status(_args) -> int:
     if st["resolved"]:
         print(f"в наборе          : {', '.join(st['resolved'])}")
     if st["unresolved"]:
-        print(f"не резолвятся     : {', '.join(st['unresolved'])}")
+        held = st.get("held") or []
+        print(f"не резолвятся     : {', '.join(st['unresolved'])}"
+              + (f" — держу прошлый адрес: {', '.join(held)}" if held else " — прошлого адреса нет"))
     print(f"сервер снаружи    : {st['server'] or '— (адрес не определён)'}")
     for name, port_ in sorted(st["table_ports"].items()):
         print(f"таблица, {name:<9}: порт {port_}")
@@ -63,12 +66,12 @@ def cmd_port(args) -> int:
     from awgbot.domain.gwssh import SshOwnerRefusal
     from awgbot.domain.services import ServiceError
     if not args or not args[0].isdigit():
-        print("укажите порт: awg-bot ssh port <1–65535>"); return 2
+        print("укажи порт: awg-bot ssh port <1–65535>"); return 2
     try:
         old = _svc().ssh_port_change(int(args[0]))
     except SshOwnerRefusal as e:
         where = e.owner.where or ("файл: " + ", ".join(e.owner.files))
-        print(f"[ОТКАЗ] sshd_config принадлежит {'OMV' if e.owner.kind == 'omv' else 'другой программе'}: "
+        print(f"[ОТКАЗ] sshd_config принадлежит {'OMV' if e.owner.kind == 'omv' else 'другому процессу'}: "
               f"порт меняется там — {where}. Иначе настройка проживёт до первой генерации файла; "
               "бот увидит новый порт сам и переведёт на него фильтр.")
         return 1
@@ -116,7 +119,7 @@ def cmd_off(_args) -> int:
         _svc().ssh_filter_off()
     except ServiceError as e:
         print(f"[ОШИБКА] {e}"); return 1
-    print("✓ фильтр снаружи снят: SSH открыт всем, до кого доходит проброс")
+    print("✓ фильтр снаружи снят: SSH открыт всем")
     return 0
 
 

@@ -1112,7 +1112,7 @@ cmd_restore() {
     # подхватит файл при следующем реассерте (агент сверяет порт по тику).
     if [[ -f "$tmp/awg-gw/firewall.env" ]]; then
         if cmp -s "$tmp/awg-gw/firewall.env" /etc/awg-gw/firewall.env 2>/dev/null; then
-            log "firewall.env шлюза не изменился с момента копии — не трогаю."
+            log "firewall.env шлюза не изменился с момента копии — не трогаю"
         else
             mkdir -p /etc/awg-gw
             cp -a "$tmp/awg-gw/firewall.env" /etc/awg-gw/firewall.env; chmod 644 /etc/awg-gw/firewall.env
