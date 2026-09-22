@@ -172,6 +172,9 @@ def _firewall_warnings(services) -> list[str]:
     if nftguard.ufw_active():
         out.append("ufw активен рядом с таблицей awg_bot_guard — два владельца "
                    "правил; после проверки входа: `awg-bot firewall confirm --disable-ufw`")
+    if nftguard.firewalld_active():
+        out.append("firewalld активен рядом с таблицей awg_bot_guard — два владельца "
+                   "правил; порт SSH и порты awg открывай и в нём или выключи его")
     return out
 
 

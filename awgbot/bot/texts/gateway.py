@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .fmt import _e, human_bytes, _updown, _fmt_age, plural_ru
-from .settings import SETTINGS_SVC, SVC_CONFIRM_AWG
+from .settings import SETTINGS_SVC, SVC_CONFIRM_AWG, ssh_owner_refusal
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -294,24 +294,8 @@ GW_SSH_PORT_ASK = ("🅿️ <b>Порт SSH</b>\n\nПришли номер по�
 
 
 def gateway_ssh_owner_refusal(st: dict, listening: int | None) -> str:
-    """Отказ смены порта: конфигом sshd владеет не бот. Экран, не alert —
-    текст длинный и нужен целиком."""
-    if st.get("owner") == "omv":
-        now = f"sshd слушает {listening}" if listening else "sshd не запущен"
-        if st.get("owner_port"):
-            now += f", в OMV задан {st['owner_port']}"
-        return ("⛔ <b>Смена порта SSH не выполнена: файлом sshd_config на этом шлюзе управляет OMV.</b>\n\n"
-                "Порт задаётся в OMV: Службы → SSH → «Порт», затем «Применить» в жёлтой плашке. "
-                "Если поменять его здесь, настройка проживёт до первого применения изменений в OMV — "
-                "он перепишет sshd_config своим шаблоном, и sshd вернётся на порт из OMV.\n\n"
-                "Что сделает бот сам: увидит новый порт (сверяет каждые несколько минут) и переведёт "
-                "на него фильтр — из туннеля, из локальной сети и снаружи. Проброс порта на роутере "
-                f"(при наличии) поправь сам.\n\nСейчас: {now}.")
-    f = (st.get("owner_files") or ["/etc/ssh/sshd_config"])[0]
-    return ("⛔ <b>Смена порта SSH не выполнена: файлом sshd_config на этом шлюзе управляет другой "
-            f"процесс.</b>\n\nВ <code>{_e(f)}</code> сказано: «<i>{_e(st.get('owner_detail') or '')}</i>». "
-            "Порт меняй там, откуда файл генерируется, иначе настройка проживёт до его следующей "
-            "генерации. Бот увидит новый порт сам и переведёт на него фильтр.")
+    """Отказ смены порта на шлюзе — тот же текст, что у основного бота."""
+    return ssh_owner_refusal(st, listening, place="шлюзе")
 
 
 def gateway_ssh_port_changed(old: int, new: int) -> str:

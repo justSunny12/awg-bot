@@ -24,6 +24,7 @@ from awgbot.bot.notifier import send_notifications
 from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu,
                                         ask_tracked, cleanup_content)
 from awgbot.domain.services import ServiceError
+from awgbot.domain.gwssh import SshOwnerRefusal
 
 log = logging.getLogger("awgbot.settings")
 
@@ -737,6 +738,13 @@ async def migration_port_ask(cb: CallbackQuery, state: FSMContext, services):
 # а действие с проверками (занят ли порт, принял ли sshd).
 @router.callback_query(SetCB.filter((F.sec == "fw") & (F.act == "edit") & (F.key == "port")))
 async def ssh_port_ask(cb: CallbackQuery, state: FSMContext, services):
+    st = await call(services.firewall_screen)
+    if st.get("owner"):
+        # Конфигом sshd владеет другая программа — отказ сразу по кнопке.
+        await state.clear()
+        await edit(cb, texts.ssh_owner_refusal(st, st.get("listening")), kb.settings_back("fw"))
+        await cb.answer()
+        return
     await state.set_state(SshPort.value)
     await core.ask(cb, services, texts.SSH_PORT_ASK, kb.settings_cancel("fw"))
     await cb.answer()
@@ -772,6 +780,12 @@ async def ssh_port_received(message: Message, state: FSMContext, services):
     await state.clear()
     try:
         old = await call(services.ssh_port_change, port)
+    except SshOwnerRefusal as e:
+        # гонка: владелец появился между показом экрана и вводом
+        await cleanup_content(message.bot, services, message.chat.id)
+        st = await call(services.firewall_screen)
+        await send_menu(message, services, texts.ssh_owner_refusal(st, e.listening), kb.settings_back("fw"))
+        return
     except ServiceError as e:
         await message.answer(f"⚠️ Порт не изменён: {texts._e(str(e))}")
     else:

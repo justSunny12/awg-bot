@@ -507,3 +507,23 @@ async def test_same_port_is_a_finisher_not_a_refusal(services, fake_bot, monkeyp
     sent = [s for s in msg.sent if s[0] == "answer" and "не изменился" in s[1] and "(22)" in s[1]]
     assert sent, msg.sent
     assert _labels(sent[0][2]) == ["✏️ Изменить порт", "⬅️ Назад"]
+
+
+async def test_foreign_owner_refuses_on_the_button_and_the_screen_warns_about_drift(services, fake_bot, monkeypatch):
+    monkeypatch.setattr(services, "firewall_screen",
+                        lambda: _fw(owner="generator", owner_detail="managed by ansible",
+                                    owner_files=["/etc/ssh/sshd_config"], listening=22, drift=False))
+    cb, nav = _cb = _acb(fake_bot)
+    st = FakeState()
+    await sh.ssh_port_ask(cb, st, services)
+    assert await st.get_state() is None
+    text = [t for k, t, _ in nav.sent if k == "edit_text"][-1]
+    assert "на этом сервере управляет другой процесс" in text and "managed by ansible" in text
+    text, _ = await sh._screen("fw", services)
+    assert "контролирует другой процесс" in text
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw(listening=2222, drift=True))
+    text, _ = await sh._screen("fw", services)
+    assert "sshd слушает порт 2222, а фильтр держит 22" in text
+    monkeypatch.setattr(services, "firewall_screen", lambda: _fw(firewalld=True))
+    text, _ = await sh._screen("fw", services)
+    assert "firewalld активен" in text

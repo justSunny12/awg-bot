@@ -27,8 +27,14 @@ class FirewallMixin:
         from awgbot.infra import nftguard
         st = nftguard.status(self.db.admin_device_addresses(config.ADMIN_ID))
         spec = st["spec"]
+        drift = self.ssh_port_drift()
+        owner = self.ssh_owner()
         return {"enabled": st["enabled"], "present": st["present"],
-                "rollback": st["rollback"], "ufw": st["ufw"],
+                "rollback": st["rollback"], "ufw": st["ufw"], "firewalld": st.get("firewalld", False),
+                "listening": drift["listening"], "drift": drift["drift"],
+                "owner": owner.kind, "owner_where": owner.where, "owner_port": owner.port,
+                "owner_detail": owner.detail, "owner_files": list(owner.files),
+                "sshd_down": drift["listening"] is None,
                 "ssh_port": spec.ssh_port, "allow": list(spec.ssh_allow4) + list(spec.ssh_allow6),
                 "raw_allow": list(settings.get("app.firewall.ssh_allow", []) or []),
                 "unresolved": list(spec.unresolved), "admin_ips": list(spec.tunnel_admin4),
@@ -53,13 +59,29 @@ class FirewallMixin:
         except sshd.SshdError as e:
             raise ServiceError(str(e))
 
+    def ssh_owner(self):
+        """Кто владеет sshd_config на сервере (OMV здесь не бывает, но
+        cloud-образы и конфиг-менеджеры — да). Живьём: дёшево (чтение файлов)."""
+        from awgbot.infra import sshd
+        return sshd.owner()
+
     def ssh_port_change(self, port: int) -> int:
-        """Перевести sshd и фильтр на порт. Возвращает прежний порт."""
+        """Перевести sshd и фильтр на порт. Возвращает прежний порт. Конфигом
+        sshd владеет другая программа — отказ: она перепишет файл при первой
+        своей генерации, и порт вернётся."""
         from awgbot.infra import sshd
         port = int(port)
         if not sshd.valid_port(port):
             raise ServiceError("порт — число от 1 до 65535")
         old = int(settings.get_int("app.network.ssh_port", config.SSH_PORT))
+        owner = sshd.owner()
+        if owner:
+            from awgbot.domain.gwssh import SshOwnerRefusal
+            try:
+                listening = (sshd.listening_ports() or [None])[0]
+            except sshd.SshdError:
+                listening = None
+            raise SshOwnerRefusal(owner, listening)
         if port == old:
             raise ServiceError(f"порт {port} уже выбран текущий")
         busy = self.ssh_port_busy(port)
@@ -150,6 +172,54 @@ class FirewallMixin:
         done = nftguard.remove()
         settings.set_value("app.firewall.enabled", False)
         return done
+
+    # ── порт как факт на сервере: сверка, не следование ──────────────────────
+    # Владелец конфига здесь — бот; расхождение порта sshd с conf почти всегда
+    # ошибка человека (правил sshd_config руками при включённом фильтре — и
+    # запер себя молча). Поэтому предупреждаем, а не следуем; следуем только
+    # при найденном чужом владельце (cloud-init порт не трогает, а конфиг-
+    # менеджер — может), как агент шлюза.
+    _SSH_DRIFT_KEY = "ssh_port_drift_seen"
+
+    def ssh_port_drift(self) -> dict:
+        """{'listening': int|None, 'conf': int, 'ports', 'drift'} — расхождения
+        нет, если sshd слушает порт из conf или не запущен."""
+        from awgbot.infra import sshd
+        conf = int(settings.get_int("app.network.ssh_port", config.SSH_PORT))
+        try:
+            ports = sshd.listening_ports()
+        except sshd.SshdError:
+            ports = []
+        listening = conf if conf in ports else (ports[0] if ports else None)
+        return {"listening": listening, "conf": conf, "ports": ports,
+                "drift": listening is not None and listening != conf}
+
+    def ssh_port_drift_notes(self) -> list:
+        """Тик: порт sshd ≠ conf → при чужом владельце следовать (conf →
+        хук пересобирает таблицу), иначе — предупредить один раз на значение."""
+        from awgbot.domain.services import Notification
+        from awgbot.infra import sshd
+        d = self.ssh_port_drift()
+        if not d["drift"]:
+            if self.db.get_state(self._SSH_DRIFT_KEY):
+                self.db.set_state(self._SSH_DRIFT_KEY, "")
+            return []
+        seen = self.db.get_state(self._SSH_DRIFT_KEY) or ""
+        if seen == str(d["listening"]):
+            return []
+        self.db.set_state(self._SSH_DRIFT_KEY, str(d["listening"]))
+        owner = sshd.owner()
+        if owner:
+            settings.set_value("app.network.ssh_port", int(d["listening"]))
+            who = "OMV" if owner.kind == "omv" else "другой процесс"
+            return [Notification(config.ADMIN_ID,
+                                 f"🛡 Порт SSH на сервере изменился: {d['conf']} → {d['listening']} "
+                                 f"(задал {who}). Фильтр переведён на новый порт. Если снаружи стоит "
+                                 "файервол провайдера — открой в нём новый порт.", critical=False)]
+        return [Notification(config.ADMIN_ID,
+                             f"⚠️ sshd слушает порт {d['listening']}, а фильтр держит {d['conf']} — вход "
+                             f"снаружи и из туннеля закрыт. Нажми «🅿️ Изменить порт» → {d['listening']} "
+                             f"или верни sshd на {d['conf']}.", critical=True)]
 
     def retire_legacy_ssh_gate(self) -> None:
         """Разово снять прежние ворота (цепочка AWGBOT_SSH + PostUp-страж) —

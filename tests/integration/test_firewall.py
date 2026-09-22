@@ -222,3 +222,63 @@ def test_busy_and_same_port_are_refused_before_anything_changes(services, fw, ss
     with pytest.raises(ServiceError, match="1 до 65535"):
         services.ssh_port_busy(0)
     assert store["app.network.ssh_port"] == 22 and not sshd_fake["set"]
+
+
+# ── этап 2: владелец sshd_config и порт как факт на сервере ──────────────────
+
+@pytest.fixture()
+def sshd_owner_fake(monkeypatch):
+    from awgbot.infra import sshd
+    st = {"owner": sshd.SshdOwner(), "listening": [22]}
+    monkeypatch.setattr(sshd, "owner", lambda: st["owner"])
+    monkeypatch.setattr(sshd, "listening_ports", lambda: list(st["listening"]))
+    return st
+
+
+def test_port_change_refused_when_a_generator_owns_the_config(services, fw, sshd_fake, sshd_owner_fake, monkeypatch):
+    from awgbot.core import settings
+    from awgbot.domain.gwssh import SshOwnerRefusal
+    from awgbot.infra import sshd
+    store, _ = fw
+    store["app.network.ssh_port"] = 22
+    monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
+    sshd_owner_fake["owner"] = sshd.SshdOwner("generator", "", None, "Ansible managed: do not edit",
+                                              ["/etc/ssh/sshd_config"])
+    with pytest.raises(SshOwnerRefusal) as ei:
+        services.ssh_port_change(2222)
+    assert ei.value.owner.kind == "generator" and ei.value.listening == 22
+    assert store["app.network.ssh_port"] == 22 and not sshd_fake["set"]
+
+
+def test_port_drift_warns_once_when_the_bot_owns_the_config(services, fw, sshd_owner_fake, monkeypatch):
+    """sshd_config правили руками при включённом фильтре — сервер заперт молча.
+    Владелец — бот: предупреждаем, не следуем; один раз на значение."""
+    from awgbot.core import settings
+    store, _ = fw
+    store["app.network.ssh_port"] = 22
+    monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
+    assert services.ssh_port_drift_notes() == []
+    sshd_owner_fake["listening"] = [2222]
+    notes = services.ssh_port_drift_notes()
+    assert len(notes) == 1 and "слушает порт 2222" in notes[0].text and "держит 22" in notes[0].text
+    assert notes[0].critical is True
+    assert store["app.network.ssh_port"] == 22, "не следуем"
+    assert services.ssh_port_drift_notes() == [], "второй тик молчит"
+    sshd_owner_fake["listening"] = [22]
+    assert services.ssh_port_drift_notes() == []
+    sshd_owner_fake["listening"] = [2222]
+    assert len(services.ssh_port_drift_notes()) == 1, "новое расхождение — новое предупреждение"
+
+
+def test_port_drift_is_followed_when_a_foreign_owner_sets_it(services, fw, sshd_owner_fake, monkeypatch):
+    from awgbot.core import settings
+    from awgbot.infra import sshd
+    store, _ = fw
+    store["app.network.ssh_port"] = 22
+    monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
+    sshd_owner_fake["owner"] = sshd.SshdOwner("generator", "", None, "managed by ansible", ["/etc/ssh/sshd_config"])
+    sshd_owner_fake["listening"] = [2222]
+    notes = services.ssh_port_drift_notes()
+    assert len(notes) == 1 and "22 → 2222" in notes[0].text and "другой процесс" in notes[0].text
+    assert store["app.network.ssh_port"] == 2222, "чужой владелец — следуем, как агент"
+    assert notes[0].critical is False

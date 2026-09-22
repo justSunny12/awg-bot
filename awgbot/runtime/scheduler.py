@@ -145,6 +145,15 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                 await asyncio.to_thread(services.reconcile_ssh_access)
             except Exception as e:                       # noqa: BLE001
                 log.warning("reconcile_ssh_access: %s", e)
+            # порт sshd против conf: правка sshd_config руками при включённом
+            # фильтре запирала сервер молча — теперь предупреждение (владелец
+            # здесь бот); при чужом владельце — следование, как у агента
+            try:
+                drift_notes = await asyncio.to_thread(services.ssh_port_drift_notes)
+                if drift_notes:
+                    await send_notifications(bot, drift_notes)
+            except Exception as e:                       # noqa: BLE001
+                log.warning("ssh_port_drift_notes: %s", e)
             # ребайнд вотчдога: PID меняется ТОЛЬКО при рестарте (который мы
             # детектим по StartedAt), поэтому дёргать container_pid каждый тик
             # незачем — только при рестарте или если наблюдатель умер.

@@ -363,9 +363,14 @@ def settings_firewall_text(st: dict) -> str:
     действие отменяется здесь же."""
     head = "🟢 фильтр включён · порт" if st.get("enabled") else "Порт"
     allow = st.get("raw_allow") or []
+    port_line = f"{head} SSH: {st.get('ssh_port')}"
+    if st.get("owner") == "omv":
+        port_line += " — <b>контролирует OMV</b> <i>(в его UI: Службы → SSH)</i>"
+    elif st.get("owner"):
+        port_line += " — <b>контролирует другой процесс</b>"
     lines = [
         "<b>🛡 Доступ по SSH</b>", "",
-        f"{head} SSH: {st.get('ssh_port')}",
+        port_line,
         ("Адреса для входа снаружи: " + ", ".join(f"<code>{_e(a)}</code>" for a in allow))
         if allow else "Адреса не заданы — SSH открыт всем (только по SSH-ключам).",
     ]
@@ -373,9 +378,41 @@ def settings_firewall_text(st: dict) -> str:
         lines.append("⚠️ Не резолвятся: " + ", ".join(_e(x) for x in st["unresolved"]))
     if st.get("admin_ips"):
         lines.append(f"Из туннеля SSH открыт устройствам админа ({len(st['admin_ips'])}) — всегда.")
+    if st.get("drift"):
+        lines.append(f"⚠️ sshd слушает порт {st['listening']}, а фильтр держит {st.get('ssh_port')} — "
+                     f"вход снаружи и из туннеля закрыт. Нажми «🅿️ Изменить порт» → {st['listening']} "
+                     f"или верни sshd на {st.get('ssh_port')}")
+    elif st.get("sshd_down"):
+        lines.append("⚪ sshd не запущен")
+    if st.get("owner") == "generator" and st.get("owner_detail"):
+        lines.append(f"ℹ️ В <code>{_e((st.get('owner_files') or ['sshd_config'])[0])}</code> сказано: "
+                     f"«<i>{_e(st['owner_detail'])}</i>»")
     if st.get("ufw"):
         lines.append("⚠️ ufw активен: второй владелец правил, лучше выключить (<code>ufw disable</code>).")
+    if st.get("firewalld"):
+        lines.append("⚠️ firewalld активен: второй владелец правил, новый порт открывай и в нём или выключи его.")
     return "\n".join(lines)
+
+
+def ssh_owner_refusal(st: dict, listening: int | None, place: str = "сервере") -> str:
+    """Отказ смены порта: конфигом sshd владеет не бот. Экран, не alert —
+    текст длинный и нужен целиком. place — «сервере» / «шлюзе»."""
+    if st.get("owner") == "omv":
+        now = f"sshd слушает {listening}" if listening else "sshd не запущен"
+        if st.get("owner_port"):
+            now += f", в OMV задан {st['owner_port']}"
+        return (f"⛔ <b>Смена порта SSH не выполнена: файлом sshd_config на этом {place} управляет OMV.</b>\n\n"
+                "Порт задаётся в OMV: Службы → SSH → «Порт», затем «Применить» в жёлтой плашке. "
+                "Если поменять его здесь, настройка проживёт до первого применения изменений в OMV — "
+                "он перепишет sshd_config своим шаблоном, и sshd вернётся на порт из OMV.\n\n"
+                "Что сделает бот сам: увидит новый порт (сверяет каждые несколько минут) и переведёт "
+                "на него фильтр — из туннеля, из локальной сети и снаружи. Проброс порта на роутере "
+                f"(при наличии) поправь сам.\n\nСейчас: {now}.")
+    f = (st.get("owner_files") or ["/etc/ssh/sshd_config"])[0]
+    return (f"⛔ <b>Смена порта SSH не выполнена: файлом sshd_config на этом {place} управляет другой "
+            f"процесс.</b>\n\nВ <code>{_e(f)}</code> сказано: «<i>{_e(st.get('owner_detail') or '')}</i>». "
+            "Порт меняй там, откуда файл генерируется, иначе настройка проживёт до его следующей "
+            "генерации. Бот увидит новый порт сам и переведёт на него фильтр.")
 
 
 SSH_PORT_ASK = ("🅿️ <b>Порт SSH</b>\n\nПришли номер порта (1–65535). Занятый порт "
@@ -395,7 +432,7 @@ def ssh_port_same(port: int) -> str:
 def ssh_port_changed(old: int, new: int) -> str:
     return (f"✅ Порт SSH изменён: {old} → <b>{new}</b>. Текущие SSH-сеансы не рвутся — "
             f"проверь вход новым подключением на порт {new}. Если снаружи стоит "
-            "файервол провайдера — открой в нём новый порт.")
+            "файервол провайдера, ufw или fail2ban — открой новый порт и там.")
 
 
 def firewall_confirmed() -> str:
