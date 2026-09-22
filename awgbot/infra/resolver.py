@@ -83,6 +83,15 @@ def run(mode: str, addr: str = "") -> str:
     return out
 
 
+def ensure_dropin() -> str:
+    """Подтянуть override юнита dnsmasq к версии из поставки. Зовётся на старте
+    бота: режим install при обновлении не повторяется, и правка override'а
+    (например, снятый лимит попыток systemd) иначе не доезжает до хостов,
+    поставленных прежними версиями. Скрипт переписывает файл только при
+    расхождении."""
+    return run("dropin")
+
+
 def add(addr: str) -> None:
     """Слушать ещё и addr; резолвера нет — поставить с ним."""
     run("add" if installed() else "install", addr)

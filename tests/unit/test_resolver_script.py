@@ -205,3 +205,42 @@ def test_script_is_executable_in_the_index():
     out = subprocess.run(["git", "ls-files", "-s", "install/awg-resolver-setup.sh"],
                          cwd=ROOT, capture_output=True, text=True).stdout
     assert out.startswith("100755"), out
+
+
+# ── override юнита: доезжает до хостов, поставленных прежними версиями ───────
+
+def _dropin(host):
+    p = host.dir / "dropin" / "awgbot-resolver.conf"
+    return p.read_text(encoding="utf-8") if p.exists() else ""
+
+
+def test_dropin_is_refreshed_on_add_and_by_its_own_mode(host):
+    """Режим install при обновлении бота не повторяется: правка override'а
+    (снятый лимит попыток systemd) иначе не доехала бы до давних установок —
+    и dnsmasq, падающий на загрузке до появления адреса, гас бы насовсем."""
+    host.run("install", "10.8.1.1")
+    assert "StartLimitIntervalSec=0" in _dropin(host)
+    # хост со старым override'ом: add и dropin приводят его к версии поставки
+    (host.dir / "dropin" / "awgbot-resolver.conf").write_text(
+        "[Service]\nRestart=on-failure\nRestartSec=5\n", encoding="utf-8")
+    host.run("add", "10.9.1.1")
+    assert "StartLimitIntervalSec=0" in _dropin(host)
+    (host.dir / "dropin" / "awgbot-resolver.conf").write_text("старьё\n", encoding="utf-8")
+    out = host.run("dropin")
+    assert out.returncode == 0 and "StartLimitIntervalSec=0" in _dropin(host)
+    assert "daemon-reload" in host.log(), "после подмены override нужен daemon-reload"
+
+
+def test_dropin_is_not_rewritten_when_it_already_matches(host):
+    """Лишняя запись на флеш и daemon-reload каждый старт бота ни к чему."""
+    host.run("install", "10.8.1.1")
+    before = (host.dir / "dropin" / "awgbot-resolver.conf").stat().st_mtime_ns
+    (host.dir / "journal").write_text("", encoding="utf-8")
+    assert host.run("dropin").returncode == 0
+    assert (host.dir / "dropin" / "awgbot-resolver.conf").stat().st_mtime_ns == before
+    assert "daemon-reload" not in host.log()
+
+
+def test_dropin_mode_does_nothing_without_a_resolver(host):
+    out = host.run("dropin")
+    assert out.returncode == 0 and _dropin(host) == ""
