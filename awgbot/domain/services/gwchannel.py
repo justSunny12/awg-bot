@@ -182,6 +182,8 @@ class GwChannelMixin:
             "drift": self.gwlink_config_drift(gw) if snap else [],
             "has_snap": bool(snap),
             "egress_gw": snap.get("egress_ok") if snap else None,
+            "link_contract": snap.get("link_contract", "") if snap else "",
+            "plumbing_gen": snap.get("plumbing_gen", "") if snap else "",
             "peer_nets": snap.get("peer_nets") if snap else None,
         }
 

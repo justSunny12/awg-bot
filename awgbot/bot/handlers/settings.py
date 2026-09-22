@@ -473,15 +473,27 @@ async def gw_slot_snap(cb: CallbackQuery, callback_data: GwSlotCB, services):
     таймеру нет и не будет — это был бы тот же период, только с человеческим
     лицом; один запрос на нажатие."""
     from awgbot.runtime import linkserver
+    slot = callback_data.slot
+    key = services._gwlink_key(services._GWLINK_SNAP_AT_KEY, slot)
+    before = await call(services.db.get_state, key) or ""
     srv = linkserver.current()
-    sent = bool(srv) and await srv.send(callback_data.slot, "ask", {"what": "snap"})
+    sent = bool(srv) and await srv.send(slot, "ask", {"what": "snap"})
     if not sent:
         await cb.answer("Канал до шлюза сейчас не на связи", show_alert=True)
         return
-    # Ответ приходит за доли секунды; ждём немного и перерисовываем то, что есть.
-    await asyncio.sleep(1.0)
-    await _render_card(cb, services, callback_data.slot)
-    await cb.answer("Снимок обновлён")
+    # Ждём, пока снимок действительно придёт: агент может быть занят тиком.
+    # «Обновлено», когда карточка нарисована из старого, — хуже, чем честное
+    # «не успел».
+    fresh = False
+    for _ in range(12):
+        await asyncio.sleep(0.25)
+        if (await call(services.db.get_state, key) or "") != before:
+            fresh = True
+            break
+    await _render_card(cb, services, slot)
+    await cb.answer("Снимок обновлён" if fresh else
+                    "Шлюз не ответил за 3 секунды — показан прежний снимок",
+                    show_alert=not fresh)
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "switch_ask"))

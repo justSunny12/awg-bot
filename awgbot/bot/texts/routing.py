@@ -272,11 +272,17 @@ def channel_drift_block(ch: dict | None) -> str:
         return ""
     drift = ch.get("drift") or []
     stale = "" if ch.get("online") else f" (по снимку {_ago(ch.get('age'))}, канал сейчас не на связи)"
+    gen = {"new": "нового образца",
+           "old": "⚠️ старого образца — перевыпусти файл",
+           "none": "⚠️ не развёрнута — примени файл на шлюзе"}.get(ch.get("plumbing_gen") or "", "")
+    contract = _e(str(ch.get("link_contract") or "")) or "не указан (конфиг старого образца)"
+    facts = f"\nКонтракт линка: {contract}" + (f" · обвязка {gen}" if gen else "")
     if not drift:
-        return f"\n\n<b>Что стоит на шлюзе</b>{stale}: совпадает с тем, что выдаст этот файл."
+        return (f"\n\n<b>Что стоит на шлюзе</b>{stale}: совпадает с тем, что выдаст этот файл."
+                + facts)
     items = "\n".join(f"• {_e(d)}" for d in drift)
-    return (f"\n\n<b>Что стоит на шлюзе</b>{stale} — расходится с выдаваемым:\n{items}\n"
-            "Перевыпусти файл и примени его на шлюзе.")
+    return (f"\n\n<b>Что стоит на шлюзе</b>{stale} — расходится с выдаваемым:\n{items}"
+            + facts + "\nПеревыпусти файл и примени его на шлюзе.")
 
 
 def channel_block(ch: dict | None, server_ok) -> str:

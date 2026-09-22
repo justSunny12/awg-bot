@@ -102,6 +102,7 @@ class LinkClient:
             await self._send("hello", {"proto": gwlink.PROTO,
                                        "agent": config.INSTALLED_VERSION})
             await self.push(full=True)
+            await self._maybe_claim()
             last_seq: int | None = None
             while True:
                 line = await reader.readline()
@@ -171,7 +172,23 @@ class LinkClient:
             return False
         self._rev += 1
         self._prev = snap
-        return await self._send("delta", {**patch, "rev": self._rev}, pad=gwlink.PAD_DELTA)
+        sent = await self._send("delta", {**patch, "rev": self._rev}, pad=gwlink.PAD_DELTA)
+        if sent and "mark_status" in patch:
+            # Пометка сменилась (применили бандл нового слота) — не заставляем
+            # человека пересылать токен руками, если канал уже жив.
+            await self._maybe_claim()
+        return sent
+
+    async def _maybe_claim(self) -> None:
+        """Шлюз в основном боте не помечен — отправить токен пометки каналом.
+        Проверка на той стороне — общая с ручной пересылкой, включая нонсы."""
+        try:
+            token = await asyncio.to_thread(self.services.gateway_claim_if_needed)
+        except Exception as e:                            # noqa: BLE001
+            log.info("канал линка: claim не собран: %s", e)
+            return
+        if token:
+            await self._send("claim", {"token": token}, pad=gwlink.PAD_SNAP)
 
     async def _handle(self, msg: dict) -> None:
         if msg.get("t") == "ask" and msg.get("what") == "snap":

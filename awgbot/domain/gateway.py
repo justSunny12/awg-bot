@@ -830,6 +830,23 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                 log.warning("gateway: claim не собран: %s", e)
         return out
 
+    def gateway_claim_if_needed(self) -> str | None:
+        """Токен пометки для канала, если шлюз в основном боте не помечен; иначе
+        None. Без побочных эффектов: статус — последний, что записал скрипт
+        обвязки, ключ аплинка — с машины. Ручная пересылка остаётся как была:
+        канал лишь избавляет человека от копирования сообщения между чатами."""
+        from awgbot.infra import gwguard
+        if self.gateway_mark_status() not in ("unmarked", "foreign", "unconfirmed"):
+            return None
+        _iface, pub = gwguard.uplink_pubkey()
+        if not pub:
+            return None
+        try:
+            return self.gateway_claim_message(pub)
+        except (OSError, ValueError) as e:
+            log.warning("gateway: claim для канала не собран: %s", e)
+            return None
+
     def gateway_claim_message(self, pubkey: str) -> str:
         """Подписанный ключом линка токен «я шлюз с таким аплинком»."""
         from awgbot.util import bundlecrypt, gwsign

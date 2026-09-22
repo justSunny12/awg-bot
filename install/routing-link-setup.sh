@@ -31,6 +31,12 @@
 # (client_config.keepalive_seconds) — PersistentKeepalive линка идёт в ритме
 # клиентских пиров, «25-35» или одиночное число; непонятное значение
 # откатывается к «25-35». Любую переменную можно переопределить окружением.
+# В БАНДЛ дополнительно вшиваются LINK_CHANNEL (1 по умолчанию — агент держит
+# канал состояния до ВПС внутри линка, концепт «канал линка»; 0 — собрать
+# конфигурацию без канала) и LINK_CHANNEL_PORT (routing.link_channel_port из
+# app.yaml, 8787 по умолчанию — тот же ключ, на котором ВПС слушает). Обе
+# уезжают в юнит обвязки на шлюзе строками Environment=, читает их агент;
+# перевыпуск конфигурации шлюза и есть рубильник функции.
 #
 # ЗАПУСК:
 #   sudo sh routing-link-setup.sh              # показать план
@@ -77,6 +83,12 @@ LINK_KEEPALIVE="${LINK_KEEPALIVE:-${_cfg_keepalive:-25-35}}"
 case "$LINK_KEEPALIVE" in
     ''|*[!0-9-]*|-*|*-|*-*-*) LINK_KEEPALIVE="25-35" ;;
 esac
+# Порт канала — тот же ключ, на котором ВПС слушает (routing.link_channel_port).
+# Бандл, собранный с другим числом, увёз бы шлюз стучаться в порт, где никого
+# нет, и канал молча не поднялся бы. Бот передаёт значение и окружением; отсюда
+# оно нужно CLI `awg-bot gw-bundle`, которому окружение никто не готовит.
+_cfg_chport="$(awk '/^  link_channel_port:/{print $2; exit}' "$_APP_YAML" 2>/dev/null | tr -cd '0-9' || true)"
+LINK_CHANNEL_PORT="${LINK_CHANNEL_PORT:-${_cfg_chport:-8787}}"
 CONF_DIR="${CONF_DIR:-/etc/amnezia/amneziawg}"
 CONF="$CONF_DIR/$LINK_IF.conf"
 GW_CONF_OUT="${GW_CONF_OUT:-/root/gw-$LINK_IF.conf}"
@@ -128,7 +140,7 @@ case "${1:-}" in
     --rollback) MODE="rollback" ;;
     --bundle)   MODE="bundle" ;;
     ""|--plan)  MODE="plan" ;;
-    -h|--help)  sed -n '2,43p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,50p' "$0"; exit 0 ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
 esac
 

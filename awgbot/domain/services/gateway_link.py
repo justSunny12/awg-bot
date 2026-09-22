@@ -195,7 +195,10 @@ class GatewayLinkMixin:
         аплинка устройства слота (в окне переезда — двойника, старый ключ
         отдельно), параметры линка слота."""
         admin_ips = self._gw_ssh_allow()
-        env = {"ADMIN_IPS": " ".join(admin_ips), **self._slot_env(gw), **self._lan_env(gw)}
+        from awgbot.runtime import linkserver
+        env = {"ADMIN_IPS": " ".join(admin_ips), **self._slot_env(gw), **self._lan_env(gw),
+               # порт канала — из того же ключа, на котором слушает linkserver
+               "LINK_CHANNEL_PORT": str(linkserver.channel_port())}
         dev = self.db.get_device(gw.device_id) if gw.device_id else None
         if dev is not None:
             import base64
