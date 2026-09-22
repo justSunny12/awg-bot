@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .fmt import _e, human_bytes, _updown, _fmt_age, plural_ru
-from .settings import SETTINGS_SVC, SVC_CONFIRM_AWG, ssh_owner_refusal, warnings_block
+from .settings import SETTINGS_SVC, SVC_CONFIRM_AWG, ssh_owner_refusal, warnings_block, address_list_line
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -250,14 +250,8 @@ def gateway_ssh_text(st: dict) -> str:
     else:
         lines.append("Снаружи (проброс порта на роутере): фильтр выключен — открыт всем проброшенным")
     lines.append("")
-    if allow:
-        shown = ", ".join(f"<code>{_e(a)}</code>" for a in allow[:_ALLOW_SHOWN])
-        if len(allow) > _ALLOW_SHOWN:
-            shown += f" и ещё {len(allow) - _ALLOW_SHOWN}"
-        lines.append("Адреса для входа снаружи (фильтр): " + shown)
-    else:
-        lines.append("Адреса для входа снаружи (фильтр): не заданы"
-                     + (" — снаружи доступ только с сервера AWG" if st.get("filter") else ""))
+    lines.append(address_list_line(len(allow),
+                                   " — снаружи доступ только с сервера AWG" if st.get("filter") else ""))
     warns: list[str] = []
     unresolved = st.get("unresolved") or []
     if unresolved:

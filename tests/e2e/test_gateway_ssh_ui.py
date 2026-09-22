@@ -350,7 +350,10 @@ def test_section_text_names_held_addresses_lan_and_caps_the_list():
     assert "прошлого адреса нет" in text
     many = [f"h{i}.dyn.example" for i in range(20)]
     text = texts.gateway_ssh_text(_scr(allow=many))
-    assert "и ещё 8" in text and "h19.dyn.example" not in text
+    assert "20 адресов — редактируемый список ниже" in text and "h1.dyn.example" not in text, \
+        "список в инфобокс не выносится — он кнопками ниже"
+    assert len([b for r in kb.gateway_ssh_kb(_scr(allow=many)).inline_keyboard for b in r
+                if b.text.startswith("➖")]) == 20
 
 
 def test_warnings_go_into_their_own_block_in_both_sections():
@@ -361,5 +364,6 @@ def test_warnings_go_into_their_own_block_in_both_sections():
     t = settings_firewall_text({"enabled": True, "ssh_port": 22, "raw_allow": [f"h{i}.example" for i in range(15)],
                                 "unresolved": [f"h{i}.example" for i in range(15)], "admin_ips": ["x"]})
     assert "🟢 Снаружи: фильтр включён — только адреса из списка" in t
-    assert t.count("и ещё 3") == 2, "список и «Не резолвятся» у ВПС ограничены, как у шлюза"
+    assert "15 адресов — редактируемый список ниже" in t and t.count("и ещё 3") == 1, \
+        "«Не резолвятся» у ВПС ограничены, как у шлюза; список — кнопками"
     assert "<b>Предупреждения:</b>\n⚠️ Не резолвятся:" in t

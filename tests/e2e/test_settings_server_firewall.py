@@ -117,7 +117,8 @@ async def test_firewall_screen_offers_enable_and_lists_addresses(services, fake_
     monkeypatch.setattr(services, "firewall_screen",
                         lambda: _fw(raw_allow=["203.0.113.7", "home.example.org"]))
     text, markup = await sh._screen("fw", services)
-    assert "Порт SSH: 22" in text and "203.0.113.7" in text
+    assert "Порт SSH: 22" in text and "2 адреса — редактируемый список ниже" in text
+    assert "203.0.113.7" not in text, "список — кнопками, не в инфобоксе"
     assert "Доступ по SSH" in text, "заголовок раздела не обновлён"
     assert "таймер" not in text.lower(), "из чата таймера нет — текст не должен его обещать"
     labels = _labels(markup)

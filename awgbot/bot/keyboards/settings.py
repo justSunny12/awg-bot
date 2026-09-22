@@ -127,7 +127,7 @@ def settings_firewall(st: dict) -> InlineKeyboardMarkup:
     # двоеточие, и любой IPv6 («2001:db8::1») ломал упаковку с ValueError. Адрес
     # при этом уже записан в конфиг, то есть раздел переставал открываться
     # навсегда, и убрать запись из чата было нечем.
-    for i, entry in enumerate(st.get("raw_allow", [])[:8]):
+    for i, entry in enumerate(st.get("raw_allow", [])[:40]):     # весь список — кнопками
         kb.button(text=f"➖ {entry}", callback_data=SetCB(sec="fw", act="do", key="del", val=str(i)))
     if st.get("enabled"):
         kb.button(text="🔴 Выключить фильтр", callback_data=SetCB(sec="fw", act="do", key="off"))

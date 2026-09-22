@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .fmt import _e, _fmt_age
+from .fmt import _e, _fmt_age, plural_ru
 from .migration import migration_panel_line
 from .updates import _ver
 
@@ -367,6 +367,15 @@ def _shown(items, code: bool = True) -> str:
     return out
 
 
+def address_list_line(n: int, tail: str = "") -> str:
+    """Список адресов в инфобокс не выносится — он редактируется кнопками
+    под ним; здесь только число и отсылка."""
+    if not n:
+        return "Адреса для входа снаружи (фильтр): не заданы" + tail
+    return (f"Адреса для входа снаружи (фильтр): {n} "
+            + plural_ru(n, "адрес", "адреса", "адресов") + " — редактируемый список ниже")
+
+
 def warnings_block(items: list[str]) -> list[str]:
     """Предупреждения раздела — отдельным блоком после пустой строки, по
     одному на строку; нет предупреждений — ничего."""
@@ -392,7 +401,7 @@ def settings_firewall_text(st: dict) -> str:
     else:
         lines.append("Снаружи: фильтр выключен — открыт всем (только по SSH-ключам)")
     lines.append("")
-    lines.append("Адреса для входа снаружи (фильтр): " + (_shown(allow) if allow else "не заданы"))
+    lines.append(address_list_line(len(allow)))
     warns: list[str] = []
     if st.get("unresolved"):
         warns.append("⚠️ Не резолвятся: " + _shown(st["unresolved"], code=False))

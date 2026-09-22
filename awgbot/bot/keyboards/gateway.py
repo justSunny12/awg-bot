@@ -164,6 +164,9 @@ def gateway_encryption_kb(has_secret: bool) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+_ALLOW_BUTTONS = 40     # Telegram: до 100 кнопок; больше сорока адресов — уже не тот инструмент
+
+
 def gateway_ssh_kb(st: dict) -> InlineKeyboardMarkup:
     """Раздел «🛡 Доступ по SSH» агента — зеркало settings_firewall основного
     бота: порт, адреса (val — номер записи, не адрес: IPv6 ломал бы упаковку),
@@ -171,7 +174,8 @@ def gateway_ssh_kb(st: dict) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="🅿️ Изменить порт", callback_data=GwCB(action="ssh_port"))
     kb.button(text="➕ Добавить адрес", callback_data=GwCB(action="ssh_add"))
-    for i, entry in enumerate((st.get("allow") or [])[:8]):
+    # Весь список — кнопками: инфобокс его не показывает, только число
+    for i, entry in enumerate((st.get("allow") or [])[:_ALLOW_BUTTONS]):
         kb.button(text=f"➖ {entry}", callback_data=GwCB(action="ssh_del", val=str(i)))
     if st.get("new_plumbing"):
         if st.get("filter"):
