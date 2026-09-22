@@ -906,7 +906,8 @@ def link_peer_endpoint(iface: str = "") -> Optional[str]:
     """Внешний адрес шлюза — из эндпоинта пира линка: ВПС видит его с каждым
     хендшейком, спрашивать сторонние сервисы «мой IP» с домашнего адреса
     незачем. None — пира нет или хендшейка ещё не было."""
-    proc = _host(["awg", "show", iface or _active_if(), "dump"], check=False)
+    proc = _host(["awg", "show", iface or _active_if(), "dump"], check=False,
+                 timeout=_PROBE_TIMEOUT)
     if proc.returncode != 0:
         return None
     for p_ in awg.parse_dump(proc.stdout.decode(errors="replace")):
@@ -1007,8 +1008,14 @@ def link_peer_state(iface: str = "") -> Optional[dict]:
     шлюз прислал через линк настоящий обратный трафик клиентов, и путь
     ВПС → линк → шлюз → интернет → обратно уже доказан — без единого пакета
     наружу. Линк живёт на ХОСТЕ, поэтому и awg спрашиваем на хосте.
+
+    Таймаут пробы, а не дефолтные 20 с: это чтение идёт КАЖДЫМ тактом живости
+    на каждый слот, и подвисший netlink (перезапуск awg-quick под нагрузкой)
+    держал бы поток пула до двадцати секунд, съедая следующий такт целиком —
+    задание с max_instances=1.
     """
-    proc = _host(["awg", "show", iface or _active_if(), "dump"], check=False)
+    proc = _host(["awg", "show", iface or _active_if(), "dump"], check=False,
+                 timeout=_PROBE_TIMEOUT)
     if proc.returncode != 0:
         return None
     peers = awg.parse_dump(proc.stdout.decode(errors="replace"))

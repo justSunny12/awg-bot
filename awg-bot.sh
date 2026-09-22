@@ -1401,8 +1401,8 @@ awg-bot — управление установленным ботом.
   awg-bot restore [tgz]      восстановить из снимка (по умолч. — самый свежий)
   awg-bot logs               журнал сервиса (follow)
   awg-bot firewall <cmd>     файервол хоста (единственная точка — таблица awg_bot_guard):
-                             status | setup | confirm [--disable-ufw] | apply | allow <ip…> |
-                             deny <ip…> | off | rollback
+                             status | setup | confirm [--disable-ufw] | apply [--no-rollback] |
+                             allow <ip…> | deny <ip…> | off | rollback
   awg-bot ssh <cmd>          шлюз: доступ по SSH (порт — факт от sshd, фильтр снаружи):
                              status | port <N> | allow <ip|cidr|имя…> | deny … | on | off
   awg-bot routing-doctor     где рвётся условная маршрутизация (только чтение)
@@ -1415,7 +1415,8 @@ awg-bot — управление установленным ботом.
   awg-bot first-device       конфигурация первого устройства админа в терминал
                              (ссылка, QR и файл — когда Telegram недоступен)
   awg-bot resolver <cmd>     свой DNS-резолвер клиентов (dnsmasq на <подсеть>.1):
-                             status | install [addr] | add <addr> | remove <addr> | plan
+                             status | install [addr] | add <addr> | remove <addr> | plan |
+                             dropin — обновить override юнита dnsmasq (зовёт бот на старте)
   awg-bot uninstall          удалить приложение (опционально: данные приложения)
 EOF
 }

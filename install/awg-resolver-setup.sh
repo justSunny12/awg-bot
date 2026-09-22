@@ -31,6 +31,10 @@
 #   remove ADDR    снять адрес (старый интерфейс после финала переезда)
 #   status         ADDRS=… ACTIVE=0|1 в stdout; код 0 — конфиг есть и демон жив
 #   plan ADDR      что сделал бы install, ничего не меняя (без root)
+#   dropin         только override юнита (Restart=on-failure): зовёт бот на
+#                  старте, чтобы правка доехала до хостов прежних версий.
+#                  Демон НЕ трогается — override действует со следующего его
+#                  запуска, а рестарт ради этого обрывает DNS у всех
 #
 # ОКРУЖЕНИЕ: RESOLVER_CONF, DNSMASQ_SERVICE, UPSTREAMS ("1.1.1.1 1.0.0.1"),
 # DROPIN_DIR (каталог override юнита), ROUTING_BASE_CONF.
@@ -287,5 +291,5 @@ case "$MODE" in
         [[ -f "$RESOLVER_CONF" && "$active" -eq 1 ]]
         ;;
     *)
-        sed -n '2,32p' "$0"; exit 2 ;;
+        sed -n '2,41p' "$0"; exit 2 ;;
 esac

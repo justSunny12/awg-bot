@@ -37,6 +37,7 @@ bridge-подсети целиком, FORWARD оставлен docker'у.
 """
 from __future__ import annotations
 
+import concurrent.futures as futures
 import ipaddress
 import json
 import logging
@@ -106,6 +107,23 @@ def enabled() -> bool:
 # ── разбор вайтлиста: IP, CIDR, имя (DynDNS) ─────────────────────────────────
 _resolve_cache: dict[str, tuple[float, list[str]]] = {}
 _RESOLVE_TTL = 15 * 60
+# У getaddrinfo своего таймаута нет: при молчащем резолвере вызов уходит в
+# системный (обычно 5 с на каждый nameserver в resolv.conf), а зовут его и тик
+# агента, и отрисовка раздела SSH — экран с кнопками просто замирал. Ждём
+# ограниченно в отдельном потоке: не ответил вовремя — это ровно тот случай,
+# на который рассчитан возврат прошлого значения, «DNS молчит».
+_RESOLVE_TIMEOUT = 3.0
+_resolve_pool = futures.ThreadPoolExecutor(max_workers=2,
+                                           thread_name_prefix="nft-resolve")
+
+
+def _getaddrinfo_timed(host: str):
+    """getaddrinfo с потолком ожидания. Просроченный вызов бросаем на произвол:
+    поток отвиснет сам, а его результат никому не нужен — кэш пишет вызывающий,
+    и гонки за него нет."""
+    fut = _resolve_pool.submit(socket.getaddrinfo, host, None,
+                               proto=socket.IPPROTO_TCP)
+    return fut.result(timeout=_RESOLVE_TIMEOUT)
 
 
 def classify(entry: str) -> tuple[str, str]:
@@ -129,9 +147,9 @@ def _resolve(host: str) -> list[str]:
     if hit and hit[0] > now:
         return hit[1]
     try:
-        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+        infos = _getaddrinfo_timed(host)
         ips = sorted({i[4][0].split("%")[0] for i in infos})
-    except (socket.gaierror, OSError):
+    except (socket.gaierror, OSError, futures.TimeoutError):
         # DNS не ответил: держим прошлое значение, а не роняем вайтлист —
         # иначе моргнувший резолвер запер бы админа снаружи
         return hit[1] if hit else []

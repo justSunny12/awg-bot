@@ -93,7 +93,10 @@ DNSMASQ_SERVICE="${DNSMASQ_SERVICE:-dnsmasq}"
 UPSTREAM1="${UPSTREAM1:-1.1.1.1}"
 UPSTREAM2="${UPSTREAM2:-9.9.9.9}"
 # имя контейнера берём из conf бота, а не хардкодим
-CONTAINER="${CONTAINER:-$(awk -F'"' '/^  container:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null)}"
+# `|| true`: без него set -e уносил весь скрипт, когда конфига бота на машине
+# нет вовсе, — и первым это ловил `--help`, прочитанный ДО установки: справка
+# молча не печаталась, код возврата 2.
+CONTAINER="${CONTAINER:-$(awk -F'"' '/^  container:/{print $2}' /etc/awg-bot/conf/app.yaml 2>/dev/null || true)}"
 CONTAINER="${CONTAINER:-amnezia-awg2}"
 
 MODE="plan"
@@ -102,7 +105,7 @@ case "${1:-}" in
     --rollback)     MODE="rollback" ;;
     --install-unit) MODE="unit" ;;
     ""|--plan)      MODE="plan" ;;
-    -h|--help)      sed -n '2,31p' "$0"; exit 0 ;;
+    -h|--help)      sed -n '2,38p' "$0"; exit 0 ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
 esac
 
@@ -481,7 +484,7 @@ ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
 # файервол шлюза различает пиров по настоящему адресу. ensure_rule вставляет
 # через -I, поэтому исключение встаёт ВЫШЕ MASQUERADE.
 ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -o "$AWG_IF" -j ACCEPT
-# То же для линка до шлюза: файервол шлюза пускает в домашнюю сеть только
+# То же для линка до шлюза: файервол шлюза пускает в локальную сеть только
 # устройства админа по настоящему адресу. Исключение ставил скрипт линка, но
 # наш MASQUERADE при реассерте вставал ВЫШЕ него (-I) — потому ставим и здесь,
 # после маскарада. Для условной маршрутизации порядок был безразличен: шлюз
