@@ -335,3 +335,64 @@ def test_github_goes_into_the_uplink_like_telegram(script):
     assert "set gh_nets4 {" in body and "elements = { $(ipv4_list $GH_NETS) }" in body
     out = body.split("chain output", 1)[1].split("}", 1)[0]
     assert "ip daddr @gh_nets4 meta mark set $TG_MARK" in out, "той же меткой, что Telegram"
+
+
+# ── SSH снаружи: цепочка ssh_in, порт как факт, локальное состояние ──────────
+
+def test_ssh_filter_chain_is_always_there_but_jumped_only_when_enabled(script):
+    """Цепочка и наборы создаются всегда (по ним агент отличает обвязку нового
+    образца); переход на неё в input — только при SSH_FILTER=1: выключенный
+    фильтр не должен оставлять в input ни одного правила про SSH."""
+    body = script.split("GUARDEOF", 1)[1]
+    assert "chain ssh_in {" in body and "set ssh_allow4 {" in body and "set server4 {" in body
+    assert '[ "$SSH_FILTER" = 1 ] && SSH_JUMP="        tcp dport $SSH_PORT jump ssh_in"' in script
+    inp = body.split("chain input", 1)[1].split("}", 1)[0]
+    assert "$SSH_JUMP" in inp and inp.index("jump tunnel_in") < inp.index("$SSH_JUMP"), \
+        "туннель разбирается своей цепочкой раньше"
+    sin = body.split("chain ssh_in", 1)[1].split("}", 1)[0]
+    assert "ip saddr @private4 accept" in sin, "локальная сеть открыта всегда — запереться из квартиры нельзя"
+    assert "ip saddr @server4 accept" in sin and "ip saddr @ssh_allow4 accept" in sin
+    assert sin.strip().endswith("drop")
+
+
+def test_ssh_port_comes_from_firewall_env_as_a_number(script):
+    """Порт — факт от sshd, который агент пишет в firewall.env; не число — 22,
+    иначе `nft -c` отказал бы всей таблице после ребута."""
+    assert script.index('[ -f "$FW_ENV" ] && . "$FW_ENV"') > script.index('SSH_PORT="${SSH_PORT:-22}"')
+    assert "case \"$SSH_PORT\" in ''|*[!0-9]*) SSH_PORT=22 ;; esac" in script
+    assert '[ "$SSH_FILTER" = "1" ] || SSH_FILTER=0' in script
+    # старое имя SSH_ALLOW из бандла — это ADMIN_IPS; список снаружи берётся только из файла
+    assert script.index('SSH_ALLOW=""; SSH_ALLOW_RESOLVED=""; SSH_FILTER=""') \
+        > script.index('ADMIN_IPS="${ADMIN_IPS:-${SSH_ALLOW:-}}"')
+    assert "ipv4_list $SSH_ALLOW $SSH_ALLOW_RESOLVED" in script, "имена в nft не попадают — их отсеет ipv4_list"
+
+
+def test_server_ipv4_takes_endpoint_host_and_resolves_names(script, tmp_path):
+    fns = script.split("server_ipv4() {", 1)[1].split("\n}\n", 1)[0]
+    conf = tmp_path / "awglink.conf"
+    conf.write_text("[Peer]\nPublicKey = x\nEndpoint = 203.0.113.10:51820\n")
+    out = _sh(f"server_ipv4() {{{fns}\n}}\nserver_ipv4 {conf}")
+    assert out.stdout.strip() == "203.0.113.10"
+    conf.write_text("[Peer]\nEndpoint=vpn.example.org:51820\n")
+    fake = tmp_path / "getent"
+    fake.write_text("#!/bin/sh\n[ \"$1\" = ahostsv4 ] && echo '198.51.100.7 STREAM vpn.example.org'\n")
+    fake.chmod(0o755)
+    out = _sh(f"server_ipv4() {{{fns}\n}}\nserver_ipv4 {conf}", path=f"{tmp_path}:/usr/bin:/bin")
+    assert out.stdout.strip() == "198.51.100.7"
+    out = _sh(f"server_ipv4() {{{fns}\n}}\nserver_ipv4 /nonexistent")
+    assert out.stdout.strip() == "" and out.returncode == 0, "нет конфига — пустой набор, не ошибка"
+
+
+def test_rollback_keeps_the_local_firewall_env(script):
+    """Адреса и порт в firewall.env — данные человека: --rollback откладывает
+    файл в .bak, а не удаляет вместе с обвязкой."""
+    rollback = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
+    assert 'mv -f $FW_ENV $FW_ENV.bak' in rollback
+    assert "$FW_ENV $GW_STATUS_FILE" not in rollback
+
+
+def test_unit_gets_no_new_environment_lines_for_ssh(script):
+    """Локальное состояние читается через EnvironmentFile — юнит без новых
+    Environment=: бандл ничего про SSH снаружи не знает."""
+    unit = script.split("cat > \"$UNIT\" <<UNITEOF", 1)[1].split("UNITEOF", 1)[0]
+    assert "SSH_" not in unit and "EnvironmentFile=-$FW_ENV" in unit

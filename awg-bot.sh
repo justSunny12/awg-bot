@@ -1174,6 +1174,13 @@ cmd_firewall() {
         && exec ./venv/bin/python -m tools.firewall "$@" )
 }
 
+cmd_ssh() {  # шлюз: порт sshd, адреса снаружи, фильтр — то же, что раздел «Доступ по SSH» агента
+    require_root
+    ( cd "$INSTALL_DIR" \
+        && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
+        && exec ./venv/bin/python -m tools.gwssh "$@" )
+}
+
 cmd_first_device() {  # показать конфигурацию первого устройства админа в терминале
     require_installed
     ( cd "$INSTALL_DIR" \
@@ -1343,6 +1350,8 @@ awg-bot — управление установленным ботом.
   awg-bot firewall <cmd>     файервол хоста (единственная точка — таблица awg_bot_guard):
                              status | setup | confirm [--disable-ufw] | apply | allow <ip…> |
                              deny <ip…> | off | rollback
+  awg-bot ssh <cmd>          шлюз: доступ по SSH (порт — факт от sshd, фильтр снаружи):
+                             status | port <N> | allow <ip|cidr|имя…> | deny … | on | off
   awg-bot routing-doctor     где рвётся условная маршрутизация (только чтение)
   awg-bot gw-bundle [--link IF]  пересобрать бандл для шлюза (ключи не меняются);
                              --link — линк другого слота (резервный шлюз)
@@ -1371,6 +1380,7 @@ case "$VERB" in
     restart)     cmd_restart ;;
     logs)        cmd_logs ;;
     firewall)    cmd_firewall "$@" ;;
+    ssh)         cmd_ssh "$@" ;;
     routing-doctor) cmd_routing_doctor ;;
     gw-bundle)   cmd_gw_bundle "$@" ;;
     awg)         cmd_awg "$@" ;;

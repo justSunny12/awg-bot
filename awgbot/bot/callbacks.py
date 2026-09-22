@@ -228,6 +228,8 @@ class GwCB(CallbackData, prefix="gw"):
       restart|reassert|botrestart — показ подтверждения, с «!» — исполнение;
       backup!, restore!|restore_drop, em_setup|em_check|em_test|em_forget(!);
       apply!|apply_ow!|apply_keep!|drop — принять/отклонить бандл;
-      upd_toggle|upd_check|upd_sched (val — вариант расписания)."""
+      upd_toggle|upd_check|upd_sched (val — вариант расписания);
+      ssh — раздел «Доступ по SSH», ssh_port|ssh_add|ssh_del (val — номер)|
+      ssh_on|ssh_on!|ssh_off|ssh_port_retry|ssh_port_back — его действия."""
     action: str
     val: str = ""

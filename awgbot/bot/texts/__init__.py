@@ -112,7 +112,10 @@ from .gateway import (
     GW_BACKUP_NO_KEY, host_rebooted, GW_MAINT, GW_CONFIRM_RESTART, GW_CONFIRM_REASSERT,
     GW_CONFIRM_BOT_RESTART, GW_BOT_RESTARTING, GW_BUNDLE_NOT_OURS,
     GW_BUNDLE_PASSPHRASE_QUESTION, gateway_claim_forward_text, gateway_apply_report,
-    gateway_op_result, awg_restart_warning_body, gateway_bundle_received)
+    gateway_op_result, awg_restart_warning_body, gateway_bundle_received,
+    gateway_ssh_text, GW_SSH_PORT_ASK, gateway_ssh_owner_refusal, gateway_ssh_port_changed,
+    GW_SSH_ALLOW_ASK, gateway_ssh_allow_added, gateway_ssh_filter_on_ask, GW_SSH_FILTER_OFF,
+    gateway_ssh_panel_line)
 from .common import HB_SERVER_DOWN, HB_SERVER_UP, cancelled, BOT_RESTARTED
 
 __all__ = [
@@ -204,6 +207,9 @@ __all__ = [
     "host_rebooted", "GW_MAINT", "GW_CONFIRM_RESTART", "GW_CONFIRM_REASSERT",
     "GW_CONFIRM_BOT_RESTART", "GW_BOT_RESTARTING", "GW_BUNDLE_NOT_OURS",
     "GW_BUNDLE_PASSPHRASE_QUESTION", "gateway_claim_forward_text",
+    "gateway_ssh_text", "GW_SSH_PORT_ASK", "gateway_ssh_owner_refusal", "gateway_ssh_port_changed",
+    "GW_SSH_ALLOW_ASK", "gateway_ssh_allow_added", "gateway_ssh_filter_on_ask", "GW_SSH_FILTER_OFF",
+    "gateway_ssh_panel_line",
     "gateway_apply_report", "gateway_op_result", "awg_restart_warning_body",
     "gateway_bundle_received", "HB_SERVER_DOWN", "HB_SERVER_UP", "cancelled",
     "BOT_RESTARTED",

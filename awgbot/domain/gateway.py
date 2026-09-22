@@ -33,6 +33,7 @@ from awgbot.domain.services import Notification, ServiceError  # noqa: E402
 from awgbot.domain.selfupdate import SelfUpdateMixin  # noqa: E402
 from awgbot.domain.backupcrypto import BackupCryptoMixin  # noqa: E402
 from awgbot.domain.mailmix import MailMixin  # noqa: E402
+from awgbot.domain.gwssh import GwSshMixin  # noqa: E402
 
 
 def _run(argv: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
@@ -82,6 +83,7 @@ class GwStatus:
     egress_ms: float | None = None          # выход наружу через домашний канал, мс
     tg_missing: list[str] = field(default_factory=list)   # диапазоны Telegram без маркировки
     mark_status: str = ""                   # шлюзовое устройство: confirmed|unmarked|foreign|unconfirmed
+    ssh: dict = field(default_factory=dict) # порт (факт), владелец, фильтр снаружи, адреса — для панели
     ts: str = ""                            # когда снят (ISO); пусто — живой
 
     def to_json(self) -> str:
@@ -100,7 +102,7 @@ class GwStatus:
         return max(0.0, (timeutil.now() - timeutil.parse_iso(self.ts)).total_seconds())
 
 
-class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
+class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin):
     """Механика агента. db — обычная Database: нужен только state (гистерезис,
     снимки); клиентские таблицы просто пустуют, и городить отдельную схему ради
     их отсутствия — усложнение без выгоды."""
@@ -360,6 +362,10 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         except Exception as e:                          # noqa: BLE001
             log.warning("gateway: uplink_policy_heal: %s", e)
             fixed = []
+        try:
+            notes += self.ssh_reconcile(self._guard_info)
+        except Exception as e:                          # noqa: BLE001
+            log.warning("gateway: ssh_reconcile: %s", e)
         if fixed:
             # Одно уведомление на факт: пропажа правила — событие (обычно
             # перезапуск systemd-networkd), о котором стоит знать, а не стрик.
@@ -687,6 +693,13 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                 extra.append((f"awg/{os.path.basename(p)}", open(p, "rb").read()))
             except OSError:
                 pass
+        # Локальное состояние файервола (порт, адреса снаружи, доверенные из
+        # туннеля) — данные человека, бандл их не восстановит.
+        from awgbot.infra import gwguard
+        try:
+            extra.append(("awg-gw/firewall.env", open(gwguard.FW_ENV, "rb").read()))
+        except OSError:
+            pass
         return self.write_backup_archive("gw", extra, require_encryption=True)
 
     def _apply_bundle_mail(self, text: str) -> bool:
@@ -753,6 +766,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         """Сбросить кэш статических проб: «Статус», «Монитор здоровья», старт."""
         self.__dict__.pop("_static_cache", None)
         self.__dict__.pop("_unit_enabled_cache", None)
+        self.invalidate_ssh_static()
 
     def _static(self) -> tuple[tuple[str, str], tuple[list[str], int], str | None]:
         from awgbot.runtime import hostmetrics
@@ -779,6 +793,14 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                               f"нет в таблице {len(missing)} диапазонов — "
                               f"агент перевыставит таблицу"))
         checks.append(self.gh_route_check(self._guard_info))
+        try:
+            checks += self.ssh_checks(self._guard_info)
+            scr = self.ssh_screen(self._guard_info)
+            st.ssh = {"port": scr["port"], "owner": scr["owner"], "filter": scr["filter"],
+                      "allow": len(scr["allow"]), "sshd_down": scr["sshd_down"],
+                      "new_plumbing": scr["new_plumbing"]}
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gateway: ssh status: %s", e)
         ok_link = st.link_up and st.handshake_age is not None
         checks.append(GwCheck("линк", ok_link, "" if ok_link else
                               ("интерфейс лежит" if not st.link_up else "хендшейка не было")))

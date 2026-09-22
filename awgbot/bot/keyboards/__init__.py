@@ -55,7 +55,8 @@ from .gateway import (
     gateway_backup_kb, gateway_email_kb, gateway_email_forget_confirm,
     gateway_email_offer, gateway_encryption_kb, gateway_cancel_kb, gateway_maint_kb,
     gateway_updates_kb, gateway_confirm_kb, gateway_bundle_kb,
-    gateway_bundle_passphrase_kb, gateway_back_kb, gateway_update_available_kb)
+    gateway_bundle_passphrase_kb, gateway_back_kb, gateway_update_available_kb,
+    gateway_ssh_kb, gateway_ssh_port_finisher_kb, gateway_ssh_on_confirm_kb)
 
 __all__ = [
     "BTN_CANCEL", "reply_cancel", "reply_hide", "period_choices", "yes_no", "to_menu",
@@ -88,7 +89,7 @@ __all__ = [
     "settings_routing_bundle", "settings_routing_lists", "settings_routing_users",
     "bundle_menu_kb", "gateway_list", "gateway_card", "gateway_switch_confirm",
     "gateway_slot_cancel", "settings_routing_monitor", "broadcast_mode", "broadcast_targets", "broadcast_cancel",
-    "broadcast_confirm", "gateway_panel_kb", "gateway_settings_kb",
+    "broadcast_confirm", "gateway_panel_kb", "gateway_ssh_kb", "gateway_ssh_port_finisher_kb", "gateway_ssh_on_confirm_kb", "gateway_settings_kb",
     "gateway_notify_kb", "gateway_mon_kb", "gateway_backup_kb", "gateway_email_kb",
     "gateway_email_forget_confirm", "gateway_email_offer", "gateway_encryption_kb",
     "gateway_cancel_kb", "gateway_maint_kb", "gateway_updates_kb",

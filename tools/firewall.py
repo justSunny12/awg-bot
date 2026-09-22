@@ -380,6 +380,8 @@ GW_DOC = """awg-bot firewall (шлюз) — таблица awg_gw_guard став
   allow <ip|cidr> …      доверенные адреса сверх бандла (доступ к шлюзу и домашней сети) и применить
   deny  <ip|cidr> …      убрать из локальных добавок и применить
   apply                  перевыставить таблицу (systemctl restart awg-link-gw)
+
+Порт SSH, адреса снаружи и фильтр снаружи — `awg-bot ssh …`.
 """
 
 
@@ -401,6 +403,9 @@ def gw_status(_args) -> int:
           + ("" if pol in (None, "accept") else "  ← drop перекроет транзит клиентов"))
     rc = subprocess.run(["systemctl", "is-enabled", config.GW_UNIT], capture_output=True).returncode
     print(f"юнит {config.GW_UNIT}: {'включён' if rc == 0 else 'НЕ включён'}")
+    env = gwguard.read_env()
+    print(f"SSH снаружи: порт {env.get('SSH_PORT') or '22 (факт ещё не снят)'}, фильтр "
+          f"{'включён' if env.get('SSH_FILTER') == '1' else 'выключен'} — подробнее: awg-bot ssh status")
     return 0
 
 

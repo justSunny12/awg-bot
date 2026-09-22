@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .fmt import _e, human_bytes, _updown, _fmt_age
+from .fmt import _e, human_bytes, _updown, _fmt_age, plural_ru
 from .settings import SETTINGS_SVC, SVC_CONFIRM_AWG
 
 
@@ -51,6 +51,9 @@ def gateway_panel(st) -> str:
                       "foreign": "⚠️ Шлюз этого слота — другое устройство, линк лежит",
                       "unconfirmed": "⚠️ Аплинк этой машины не найден — шлюз не подтверждён"}
                      .get(mark, f"🛰 Пометка: {_e(mark)}"))
+    ssh_line = gateway_ssh_panel_line(getattr(st, "ssh", None) or {})
+    if ssh_line:
+        parts.append(ssh_line)
     parts.append("")
 
     pad = " " * 7
@@ -173,6 +176,11 @@ def gateway_apply_report(st: dict) -> str:
         lines.append("шлюз в основном боте не назначен")
     elif gs == "unconfirmed":
         lines.append("шлюз не подтверждён")
+    if st.get("SSH_FILTER") == "1":
+        n = int(st.get("SSH_ALLOW_COUNT") or 0)
+        lines.append(f"фильтр SSH снаружи: включён, {n} " + plural_ru(n, "адрес", "адреса", "адресов"))
+    elif st.get("SSH_FILTER") == "0":
+        lines.append("фильтр SSH снаружи: выключен")
     if not lines:
         return ""
     text = ", ".join(lines)
@@ -198,3 +206,139 @@ def gateway_bundle_received(link_changed: bool) -> str:
             "обвязки с ВПС. Конфиг линка не изменился — линк не перезапустится, "
             "правила будут переставлены.")
     return base + (f"\n\n{awg_restart_warning_body(True)}" if link_changed else "")
+
+
+# ── 🛡 Доступ по SSH (концепт «доступ по SSH на шлюзе») ─────────────────────
+
+def _owner_name(kind: str) -> str:
+    return {"omv": "OMV", "generator": "другая программа"}.get(kind, "")
+
+
+def gateway_ssh_text(st: dict) -> str:
+    """Раздел: порт (факт) и его владелец, туннель, локальная сеть, снаружи,
+    адреса, предупреждения — по месту."""
+    port = st.get("port")
+    lines = ["<b>🛡 Доступ по SSH</b>", ""]
+    if st.get("sshd_down"):
+        lines.append(f"⚪ sshd не запущен — доступ только из консоли. Порт в таблице: {port}.")
+    elif st.get("owner") == "omv":
+        lines.append(f"Порт SSH: {port} — задаёт OMV (Службы → SSH). Бот следит за ним и "
+                     "держит фильтр на нём.")
+    elif st.get("owner"):
+        lines.append(f"Порт SSH: {port} — задаёт другая программа (см. ниже). Бот следит за "
+                     "ним и держит фильтр на нём.")
+    else:
+        lines.append(f"Порт SSH: {port}")
+    admins = len(st.get("admin_ips") or [])
+    lines.append(f"Из туннеля SSH открыт устройствам админа ({admins}) и серверу по линку — всегда.")
+    lines.append("Из локальной сети: открыт всегда.")
+    allow = st.get("allow") or []
+    if not st.get("new_plumbing"):
+        lines.append("⚠️ Обвязка шлюза старого образца: фильтр снаружи появится после "
+                     "перевыпуска конфигурации шлюза с сервера и применения её здесь.")
+    elif st.get("filter"):
+        lines.append("🟢 Снаружи: фильтр включён — только адреса из списка и сервер.")
+    else:
+        lines.append("Снаружи (проброс порта на роутере): фильтр выключен — открыт всем, "
+                     "до кого доходит проброс.")
+    if allow:
+        lines.append("Адреса для входа снаружи: " + ", ".join(f"<code>{_e(a)}</code>" for a in allow))
+    else:
+        lines.append("Адреса для входа снаружи: не заданы" + (" — снаружи только сервер." if st.get("filter") else "."))
+    if st.get("server"):
+        lines.append(f"Серверу снаружи открыт всегда: <code>{_e(st['server'])}</code> (адрес линка).")
+    for name in st.get("unresolved") or []:
+        lines.append(f"⚠️ Не резолвится: {_e(name)} — держу прошлый адрес.")
+    op = st.get("owner_port")
+    if st.get("owner") == "omv" and op and port and op != port and not st.get("sshd_down"):
+        lines.append(f"⚠️ В OMV задан порт {op}, sshd слушает {port} — нажми «Применить» в OMV.")
+    conf = [p for p in (st.get("conf_ports") or []) if p != port]
+    if conf and not st.get("sshd_down") and not (st.get("owner") == "omv" and op in conf):
+        lines.append(f"⚠️ В конфиге sshd порт {conf[0]}, слушает {port} — sshd не перезапущен.")
+    extra = [p for p in (st.get("ports") or []) if p != port]
+    if extra:
+        lines.append(f"⚠️ sshd слушает ещё порт {', '.join(map(str, extra))} — фильтр держит только {port}.")
+    if st.get("owner") == "generator" and st.get("owner_detail"):
+        lines.append(f"ℹ️ В <code>{_e((st.get('owner_files') or ['sshd_config'])[0])}</code> сказано: "
+                     f"«<i>{_e(st['owner_detail'])}</i>».")
+    if st.get("omv_rules"):
+        lines.append(f"⚠️ В OMV заданы правила файервола ({st['omv_rules']}): они действуют рядом "
+                     "с таблицей шлюза; при смене порта поправь и там (Сеть → Файервол).")
+    if st.get("ufw"):
+        lines.append("⚠️ ufw активен: второй владелец правил, новый порт открывай и в нём или выключи ufw.")
+    return "\n".join(lines)
+
+
+GW_SSH_PORT_ASK = ("🅿️ <b>Порт SSH</b>\n\nПришли номер порта (1–65535). Занятый порт не возьму.\n\n"
+                   "Переведу на него sshd и фильтр; текущие SSH-сеансы не рвутся — проверь вход "
+                   "новым подключением. Проброс порта на роутере поправь сам.")
+
+
+def gateway_ssh_owner_refusal(st: dict, listening: int | None) -> str:
+    """Отказ смены порта: конфигом sshd владеет не бот. Экран, не alert —
+    текст длинный и нужен целиком."""
+    if st.get("owner") == "omv":
+        now = f"sshd слушает {listening}" if listening else "sshd не запущен"
+        if st.get("owner_port"):
+            now += f", в OMV задан {st['owner_port']}"
+        return ("⛔ <b>Смена порта SSH не выполнена: файлом sshd_config на этом шлюзе управляет OMV.</b>\n\n"
+                "Порт задаётся в OMV: Службы → SSH → «Порт», затем «Применить» в жёлтой плашке. "
+                "Если поменять его здесь, настройка проживёт до первого применения изменений в OMV — "
+                "он перепишет sshd_config своим шаблоном, и sshd вернётся на порт из OMV.\n\n"
+                "Что сделает бот сам: увидит новый порт (сверяет каждые несколько минут) и переведёт "
+                "на него фильтр — из туннеля, из локальной сети и снаружи. Проброс порта на роутере "
+                f"поправь сам.\n\nСейчас: {now}.")
+    f = (st.get("owner_files") or ["/etc/ssh/sshd_config"])[0]
+    return ("⛔ <b>Смена порта SSH не выполнена: sshd_config на этом шлюзе генерирует другая "
+            f"программа.</b>\n\nВ <code>{_e(f)}</code> сказано: «<i>{_e(st.get('owner_detail') or '')}</i>». "
+            "Порт меняй там, откуда файл генерируется, иначе настройка проживёт до его следующей "
+            "генерации. Бот увидит новый порт сам и переведёт на него фильтр.")
+
+
+def gateway_ssh_port_changed(old: int, new: int) -> str:
+    return (f"✅ Порт SSH изменён: {old} → <b>{new}</b>. Текущие SSH-сеансы не рвутся — проверь вход "
+            f"новым подключением на порт {new}. Снаружи — поправь проброс на роутере: снаружи "
+            f"&lt;любой порт&gt; → шлюз:{new} (какой порт открыт снаружи, бот не знает).")
+
+
+GW_SSH_ALLOW_ASK = ("➕ <b>Адреса для входа снаружи</b>\n\nПришли IP, подсеть или имя DynDNS "
+                    "(можно несколько через пробел). Только IPv4: за роутером квартиры v6-проброса "
+                    "нет. Имя буду резолвить сам и следить за сменой адреса.")
+
+
+def gateway_ssh_allow_added(entries: list[str]) -> str:
+    return "✅ Адреса для входа снаружи: добавлено " + ", ".join(f"<b>{_e(e)}</b>" for e in entries) + "."
+
+
+def gateway_ssh_filter_on_ask(port: int) -> str:
+    return (f"🟢 <b>Включить фильтр снаружи?</b>\n\nНа порт SSH шлюза ({port}) снаружи — то есть "
+            f"через проброс на роутере «снаружи &lt;любой порт&gt; → шлюз:{port}» — будут пускаться "
+            "только адреса из списка и сервер. Какой порт открыт снаружи, бот не знает и не проверяет. "
+            "Из туннеля и из локальной сети — как было, всегда. Запереться из квартиры или через AWG "
+            "нельзя, а этот чат от SSH не зависит — выключить фильтр можно той же кнопкой.\n\n"
+            "Проверь после включения новым подключением снаружи. Если роутер подменяет адрес "
+            "отправителя при пробросе, снаружи все выглядят роутером — тогда фильтр по адресам не "
+            "работает: настрой проброс без подмены адреса.\n\nСписок пуст — снаружи останется только сервер.")
+
+
+GW_SSH_FILTER_OFF = "Фильтр снят: снаружи SSH открыт всем, до кого доходит проброс"
+
+
+def gateway_ssh_panel_line(ssh: dict) -> str:
+    """Строка панели: порт (владелец) · снаружи."""
+    if not ssh:
+        return ""
+    port = ssh.get("port")
+    who = f" ({_owner_name(ssh.get('owner', ''))})" if ssh.get("owner") else ""
+    if ssh.get("sshd_down"):
+        head = "sshd не запущен"
+    else:
+        head = f"порт {port}{who}"
+    if not ssh.get("new_plumbing"):
+        outside = "снаружи: без фильтра (обвязка старого образца)"
+    elif ssh.get("filter"):
+        n = int(ssh.get("allow") or 0)
+        outside = f"снаружи: фильтр, {n} " + plural_ru(n, "адрес", "адреса", "адресов")
+    else:
+        outside = "снаружи: открыт"
+    return f"🛡 SSH: {head} · {outside}"

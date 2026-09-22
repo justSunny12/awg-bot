@@ -17,12 +17,14 @@ conf/app.yaml (его фильтрует таблица nftguard) и сам sshd
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
 import subprocess
 import tempfile
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 log = logging.getLogger("awgbot.sshd")
@@ -79,6 +81,123 @@ def effective_ports() -> list[int]:
         if len(parts) == 2 and parts[0] == "port" and parts[1].isdigit():
             ports.append(int(parts[1]))
     return ports
+
+
+def listening_ports() -> list[int]:
+    """Порты, которые sshd СЛУШАЕТ сейчас (факт, не конфиг): `ss -Hltnp`,
+    сокеты процесса sshd; при socket-активации слушает systemd — тогда
+    `sshd -T`. Пусто — sshd не запущен (или без root имена процессов не
+    видны). Конфиг может быть не применён (OMV записал, sshd не
+    перезапущен; правили руками) — фильтр должен совпадать с тем, куда
+    придёт пакет, поэтому первичен факт."""
+    proc = _run(["ss", "-Hltnp"])
+    if proc.returncode != 0:
+        raise SshdError("ss: " + (proc.stderr.strip() or f"код {proc.returncode}"))
+    ports: list[int] = []
+    for ln in proc.stdout.splitlines():
+        parts = ln.split()
+        if len(parts) < 4:
+            continue
+        m = _PROC_RE.search(ln)
+        name = m.group(1) if m else ""
+        if name not in ("sshd", "systemd"):
+            continue
+        port = parts[3].rsplit(":", 1)[-1]
+        if port.isdigit() and int(port) not in ports:
+            ports.append(int(port))
+    if not ports and socket_activated():
+        return effective_ports()
+    return ports
+
+
+@dataclass
+class SshdOwner:
+    """Кто владеет sshd_config. kind: '' — никто (правит бот), 'omv' —
+    openmediavault, 'generator' — иная программа (шапка «managed by / do not
+    edit»). where — где менять порт человеку; port — порт по мнению
+    владельца (OMV: из его базы), None — не узнать; detail — найденная строка."""
+    kind: str = ""
+    where: str = ""
+    port: int | None = None
+    detail: str = ""
+    files: list[str] = field(default_factory=list)
+
+    def __bool__(self) -> bool:
+        return bool(self.kind)
+
+
+OMV_CONFIG = "/etc/openmediavault/config.xml"
+_OMV_HEAD_RE = re.compile(r"openmediavault", re.IGNORECASE)
+_GEN_HEAD_RE = re.compile(r"auto-?generated|managed by|do not edit", re.IGNORECASE)
+_HEAD_LINES = 5
+
+
+def _head(path: str) -> list[str]:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return [next(f).rstrip("\n") for _ in range(_HEAD_LINES)]
+    except (OSError, StopIteration):
+        try:
+            return Path(path).read_text(encoding="utf-8", errors="replace").splitlines()[:_HEAD_LINES]
+        except OSError:
+            return []
+
+
+def omv_ssh_conf() -> dict | None:
+    """`omv-confdbadm read conf.service.ssh` → {'enable', 'port', …}; None —
+    не OMV или команда не ответила JSON."""
+    try:
+        proc = _run(["omv-confdbadm", "read", "conf.service.ssh"])
+    except SshdError:
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        doc = json.loads(proc.stdout.strip() or "null")
+    except ValueError:
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def omv_firewall_rules() -> int:
+    """Сколько правил файервола задано в OMV (Сеть → Файервол): они живут в
+    ip filter рядом с нашей таблицей, и drop там окончателен."""
+    try:
+        proc = _run(["omv-confdbadm", "read", "conf.system.network.iptables.rule"])
+        doc = json.loads(proc.stdout.strip() or "[]") if proc.returncode == 0 else []
+    except (SshdError, ValueError):
+        return 0
+    return len(doc) if isinstance(doc, list) else 0
+
+
+def owner() -> SshdOwner:
+    """Владелец sshd_config. OMV — есть его база и (шапка файла говорит
+    «openmediavault» или база отвечает про ssh); иная программа — шапка
+    файла или drop-in'а «auto-generated / managed by / do not edit».
+    cloud-init (drop-in только про пароли) и пакетный conffile Debian —
+    не владельцы: порт там никто не перепишет."""
+    files = [SSHD_CONFIG]
+    d = Path(SSHD_DROPIN_DIR)
+    if d.is_dir():
+        files += sorted(str(p) for p in d.glob("*.conf"))
+    heads = {f: _head(f) for f in files}
+    main_head = "\n".join(heads.get(SSHD_CONFIG, []))
+    if os.path.exists(OMV_CONFIG):
+        by_head = bool(_OMV_HEAD_RE.search(main_head))
+        conf = omv_ssh_conf()
+        if by_head or conf is not None:
+            port = (conf or {}).get("port")
+            head0 = heads.get(SSHD_CONFIG) or [""]
+            return SshdOwner("omv", "OMV: Службы → SSH → «Порт», затем «Применить»",
+                             int(port) if str(port).isdigit() else None,
+                             head0[0].strip("# ").strip(), [SSHD_CONFIG])
+    for f, head in heads.items():
+        if "cloud-init" in f:
+            continue
+        for ln in head:
+            if ln.lstrip().startswith("#") and _GEN_HEAD_RE.search(ln):
+                return SshdOwner("generator", "", None, ln.strip("# ").strip(), [f])
+    return SshdOwner()
 
 
 def socket_activated() -> bool:

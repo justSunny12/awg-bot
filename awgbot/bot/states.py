@@ -85,7 +85,13 @@ class GatewayLabel(StatesGroup):
 
 
 class SshPort(StatesGroup):
-    """Новый порт sshd из раздела «Доступ по SSH»."""
+    """Новый порт sshd из раздела «Доступ по SSH» (основной бот и агент шлюза —
+    роутеры разведены фильтром роли)."""
+    value = State()
+
+
+class GwSshAllow(StatesGroup):
+    """Адреса для входа снаружи на шлюз."""
     value = State()
 
 
