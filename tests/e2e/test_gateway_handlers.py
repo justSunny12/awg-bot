@@ -81,11 +81,16 @@ async def test_our_bundle_waits_for_confirmation_then_applies(svc):
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
     msg.document = _Doc(len(blob))
     state = FakeState()
+    svc.db.nav_touch(cfg.ADMIN_ID, 777)                      # прежняя панель
     await gh.gw_bundle_document(msg, svc, state)
     assert svc.applied == [], "применили без подтверждения"
     assert msg.sent[-1][2] is not None, "нет кнопок подтверждения"
     # внутри ключ линка, токен агента, фраза шифрования копий и пароль почты
     assert msg.deleted, "пересланная конфигурация осталась в чате"
+    # прежняя панель удалена целиком: без кнопок над итогом применения она —
+    # мусор; вопрос «применить?» — теперь живое меню
+    assert ("delete_message", cfg.ADMIN_ID, 777) in bot.records, bot.records
+    assert svc.db.get_nav_message_id(cfg.ADMIN_ID) not in (None, 777)
 
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
     await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)

@@ -21,7 +21,8 @@ from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.handlers.common import (call, edit_nav, send_menu, cleanup_content, purge_menus,
-                                        dismiss_update_reports, forget_secret, ask_tracked)
+                                        dismiss_update_reports, forget_secret, ask_tracked,
+                                        drop_previous_nav)
 from awgbot.bot.states import SshPort, GwSshAllow
 from awgbot.domain.gwssh import SshOwnerRefusal
 from awgbot.domain.services import ServiceError
@@ -512,8 +513,11 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
     # применении, там текст ошибки полный.
     info = await call(services.inspect_bundle, blob)
     link_changed = bool(info.get("link_changed", True)) if info.get("ok") else True
-    await message.answer(texts.gateway_bundle_received(link_changed),
-                         reply_markup=kb.gateway_bundle_kb())
+    # Вопрос «применить?» — новое живое меню; прежнюю панель удаляем целиком:
+    # без кнопок над итогом применения она только занимала бы экран.
+    await drop_previous_nav(message.bot, services, message.chat.id)
+    await send_menu(message, services, texts.gateway_bundle_received(link_changed),
+                    kb.gateway_bundle_kb())
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"apply!", "apply_ow!", "apply_keep!"})))
