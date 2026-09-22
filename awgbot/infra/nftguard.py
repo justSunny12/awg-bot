@@ -68,6 +68,10 @@ SET_ALLOW4 = "ssh_allow4"
 SET_ALLOW6 = "ssh_allow6"
 SET_TUNNEL_NETS = "tunnel_nets4"
 SET_TUNNEL_ADMIN = "admin4"
+# Адреса шлюзов в /30 линков: им и только им открыт порт канала
+# (концепт «канал линка», §4.1). Клиентская подсеть в tunnel_nets4 сюда
+# не входит — канал не для клиентов.
+SET_LINK_PEERS = "link_peers4"
 
 
 class GuardError(RuntimeError):
@@ -98,6 +102,8 @@ class GuardSpec:
                                                               # (концепт «локальная сеть», функция B)
     peer_link_block: list[str] = field(default_factory=list)  # NAT-only форма: линки, между которыми
                                                               # транзит ЗАКРЫТ (тумблер выключен)
+    link_peers4: list[str] = field(default_factory=list)      # адреса шлюзов в /30 линков
+    link_channel_port: int = 0                                # порт канала; 0 — канала нет
 
 
 def enabled() -> bool:
@@ -274,6 +280,8 @@ def build_spec(admin_ips) -> GuardSpec:
         filter=enabled(),
         peer_link_ifs=_peer_link_ifs(True) if host_mode else [],
         peer_link_block=_peer_link_ifs(False) if host_mode else [],
+        link_peers4=link_peer_addrs() if host_mode else [],
+        link_channel_port=link_channel_port() if host_mode else 0,
     )
 
 
@@ -313,6 +321,42 @@ def link_ifaces() -> list[str]:
     except OSError:
         pass
     return out
+
+
+def link_peer_addrs() -> list[str]:
+    """Адреса шлюзов в /30 линков — из конфигов линков, без БД и без exec.
+
+    Адрес ВПС в конфиге есть всегда (`Address = …/30`), а второй хост /30
+    вычисляется однозначно: адресов там ровно два. Конфиг, а не ядро, потому
+    что таблицу собирает и CLI, и делает это до подъёма интерфейсов —
+    fail-closed с загрузки важнее свежести.
+    """
+    out: list[str] = []
+    for name in link_ifaces():
+        try:
+            text = Path(f"{config.AWG_DIR}/{name}.conf").read_text(encoding="utf-8")
+        except OSError:
+            continue
+        m = re.search(r"(?m)^\s*Address\s*=\s*([0-9.]+/\d+)", text)
+        if not m:
+            continue
+        try:
+            iface = ipaddress.ip_interface(m.group(1))
+        except ValueError:
+            continue
+        if iface.network.prefixlen != 30:
+            continue
+        for host in iface.network.hosts():
+            if host != iface.ip and str(host) not in out:
+                out.append(str(host))
+    return out
+
+
+def link_channel_port() -> int:
+    """Порт канала; 0 — канала нет вовсе (ни одного линка)."""
+    if not link_ifaces():
+        return 0
+    return settings.get_int("app.routing.link_channel_port", 8787)
 
 
 def _nat_exclude_ifs() -> list[str]:
@@ -405,6 +449,7 @@ def render(spec: GuardSpec) -> str:
         _set_block(SET_ALLOW6, "ipv6_addr", spec.ssh_allow6, True),
         _set_block(SET_TUNNEL_NETS, "ipv4_addr", spec.tunnel_nets4, True),
         _set_block(SET_TUNNEL_ADMIN, "ipv4_addr", spec.tunnel_admin4, False),
+        _set_block(SET_LINK_PEERS, "ipv4_addr", spec.link_peers4, False),
         "",
         "    chain input {",
         "        type filter hook input priority filter; policy drop;",
@@ -419,6 +464,11 @@ def render(spec: GuardSpec) -> str:
     if spec.tunnel_nets4:
         out.append(f"        ip saddr @{SET_TUNNEL_NETS} udp dport 53 accept")
         out.append(f"        ip saddr @{SET_TUNNEL_NETS} tcp dport 53 accept")
+    if spec.link_peers4 and spec.link_channel_port:
+        # Канал ВПС ↔ шлюз: вход только с адреса шлюза в /30 своего линка.
+        # Клиентам туннеля сюда хода нет — их подсеть в другом наборе.
+        out.append(f"        ip saddr @{SET_LINK_PEERS} tcp dport "
+                   f"{int(spec.link_channel_port)} accept")
     if spec.open_tcp:
         out.append(f"        tcp dport {_ports(spec.open_tcp)} accept")
     if spec.open_udp:

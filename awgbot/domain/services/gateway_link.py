@@ -545,6 +545,7 @@ class GatewayLinkMixin:
             self.db.set_state(self._RT_HOLD_KEY, "")
         self._gw_ping_forget(gw.id)
         self._standby_forget(gw.id)
+        self.gwlink_forget(gw.id)          # снимок и сессия канала — вместе со слотом
         if not others:
             try:
                 settings.set_value("app.routing.enabled", False)

@@ -274,6 +274,15 @@ async def run_gateway() -> None:
     # отчёт, а уведомление о следующей ступени терялось над ним.
     scheduler = setup_gateway_scheduler(services, bot)
 
+    # Канал до ВПС внутри линка (концепт «канал линка»): включается тем, что
+    # привёз бандл. Своего расписания у него нет — сессия висит открытой, а
+    # сообщения идут по событию; в простое по каналу не уходит ни байта.
+    try:
+        from awgbot.runtime import linkclient
+        linkclient.ensure(services)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("канал линка: клиент не поднят: %s", e)
+
     log.info("Агент шлюза запущен (роль gateway)")
     try:
         await dp.start_polling(bot, polling_timeout=50,
@@ -281,6 +290,8 @@ async def run_gateway() -> None:
     finally:
         scheduler.shutdown(wait=False)
         conf_watcher.stop()
+        from awgbot.runtime import linkclient
+        await linkclient.shutdown()
         log.info("Останавливаюсь…")
 
 
@@ -502,6 +513,13 @@ async def main() -> None:
                 await notify_one(bot, config.ADMIN_ID, preflight.format_warnings(warns))
         except Exception as e:                           # noqa: BLE001
             log.warning("preflight warnings: %s", e)
+        try:
+            # Слушатель канала линка — после слотов: он биндится на адреса их
+            # /30, и до миграции юнитов их могло не быть.
+            from awgbot.runtime import linkserver
+            await linkserver.ensure(services)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("канал линка: слушатель не поднят: %s", e)
         await _announce_reboot(bot, db, "бота")
         try:
             from awgbot.bot.handlers.restore import report_restore_result
@@ -527,6 +545,8 @@ async def main() -> None:
         scheduler.shutdown(wait=False)
         watcher.stop()
         conf_watcher.stop()
+        from awgbot.runtime import linkserver
+        await linkserver.shutdown()
         await bot.session.close()
         db.close()
 

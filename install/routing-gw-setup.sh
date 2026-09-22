@@ -145,6 +145,11 @@ RESOLVER="$(printf '%s' "${RESOLVER:-}" | tr -cd '0-9.' | grep -E '^[0-9]{1,3}(\
 LAN_LISTS="/usr/local/sbin/awg-lan-lists.sh"
 LAN_DOMAIN="/usr/local/sbin/awg-lan-domain.sh"
 LAN_MODE="${LAN_MODE:-0}"
+# Канал до ВПС: 1 — агент держит сессию внутри линка. Значения из бандла, у
+# старых бандлов их нет — тогда канала нет, и это рабочее состояние.
+LINK_CHANNEL="$(printf '%s' "${LINK_CHANNEL:-0}" | tr -cd '01' | cut -c1)"
+LINK_CHANNEL_PORT="$(printf '%s' "${LINK_CHANNEL_PORT:-8787}" | tr -cd '0-9' | cut -c1-5)"
+case "$LINK_CHANNEL_PORT" in ''|0) LINK_CHANNEL_PORT=8787 ;; esac
 # Подсети за другими шлюзами (концепт «локальная сеть», функция B): им из линка
 # открыт транзит в локальную сеть — по источнику, выше drop по приватным.
 PEER_HOME_NETS="$(printf '%s' "${PEER_HOME_NETS:-}" | tr -cd '0-9./ ' | tr ' ' '\n' \
@@ -1132,6 +1137,11 @@ Environment=LAN_MODE=$LAN_MODE
 Environment="HOME_SUBNETS=$HOME_SUBNETS"
 Environment=RESOLVER=$RESOLVER
 Environment="PEER_HOME_NETS=$PEER_HOME_NETS"
+# Канал до ВПС внутри линка (концепт «канал линка»): включается бандлом и
+# только им. Агент читает эти строки из юнита — без перевыпуска конфигурации
+# он никуда не ходит.
+Environment=LINK_CHANNEL=$LINK_CHANNEL
+Environment=LINK_CHANNEL_PORT=$LINK_CHANNEL_PORT
 EnvironmentFile=-$FW_ENV
 # Зовём этот же скрипт: он идемпотентен, источник истины один.
 ExecStart=$SELF --apply $HOST_CONF_DIR/$LINK_IF.conf

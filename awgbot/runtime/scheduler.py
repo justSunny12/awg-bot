@@ -353,6 +353,14 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             await send_notifications(bot, notes)
         except Exception as e:                        # noqa: BLE001
             log.warning("routing_liveness: %s", e)
+        try:
+            # Слушатель канала линка — здесь же: слот могли завести или снять,
+            # а привязка к адресу /30 существует, только пока поднят линк.
+            # Вызов дешёвый: состав слотов совпал — сразу выход.
+            from awgbot.runtime import linkserver
+            await linkserver.ensure(services)
+        except Exception as e:                        # noqa: BLE001
+            log.warning("канал линка: слушатель не перевешен: %s", e)
 
     async def job_migration_watch():
         """Частый тик окна переезда: поздравить того, кто ТОЛЬКО ЧТО подключился.
@@ -643,6 +651,13 @@ def setup_gateway_scheduler(services, bot):
             await send_notifications(bot, notes)
         except Exception as e:                           # noqa: BLE001
             log.warning("gw_monitor: %s", e)
+        try:
+            # Дельта снимка в канал — здесь, а не своим расписанием: у канала
+            # его нет по замыслу. Ничего не изменилось — не уходит ничего.
+            from awgbot.runtime import linkclient
+            await linkclient.on_tick(services)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("канал линка: дельта не ушла: %s", e)
 
     def _trig_gw_monitor():
         # тик ходит в сеть (проба наружу) — джиттер, чтобы не быть маячком

@@ -309,6 +309,11 @@ HDREOF
         printf 'PEER_HOME_NETS="%s"\nexport PEER_HOME_NETS\n' "$PEER_HOME_NETS"
         # Имя ВПС — для панели агента («Линк до …»): на шлюзе взять его неоткуда.
         printf 'SERVER_NAME="%s"\n' "$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9._-' | cut -c1-64)"
+        # Канал ВПС ↔ шлюз внутри линка (концепт «канал линка»): включается
+        # бандлом и только им. Агент, не получивший этих строк, никуда не
+        # ходит — перевыпуск конфигурации и есть рубильник функции.
+        printf 'LINK_CHANNEL="%s"\nexport LINK_CHANNEL\n' "$(printf '%s' "${LINK_CHANNEL:-1}" | tr -cd '01' | cut -c1)"
+        printf 'LINK_CHANNEL_PORT="%s"\nexport LINK_CHANNEL_PORT\n' "$(printf '%s' "${LINK_CHANNEL_PORT:-8787}" | tr -cd '0-9' | cut -c1-5)"
         cat <<'BODYEOF'
 set -e
 [ "$(id -u)" = "0" ] || { echo "нужен root: sudo sh $0"; exit 1; }

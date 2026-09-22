@@ -493,16 +493,26 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                        "обвязка без маршрута GitHub в аплинк — агент не сможет обновляться; "
                        "перевыпусти конфигурацию шлюза с ВПС и примени её здесь")
 
-    def peer_nets_check(self, info: dict | None) -> GwCheck | None:
-        """Подсети за другими шлюзами (концепт «локальная сеть», функция B): набор
-        peer_nets4 против PEER_HOME_NETS из юнита. Переменная пустая — проверки
-        нет: функции на этом шлюзе нет."""
+    @staticmethod
+    def peer_nets_missing(info: dict | None) -> list[str] | None:
+        """Чего из PEER_HOME_NETS нет в наборе peer_nets4. None — переменная
+        пуста, функции на этом шлюзе нет. Отдельно от проверки, потому что тот
+        же ответ нужен снимку для канала — но строкой для человека, собранной
+        здесь, там делать нечего."""
         from awgbot.infra import gwguard
         want = gwguard.unit_env("PEER_HOME_NETS").split()
         if not want:
             return None
         present = (info or {}).get("sets", {}).get("peer_nets4", set())
-        missing = [n for n in want if n not in present]
+        return [n for n in want if n not in present]
+
+    def peer_nets_check(self, info: dict | None) -> GwCheck | None:
+        """Подсети за другими шлюзами (концепт «локальная сеть», функция B): набор
+        peer_nets4 против PEER_HOME_NETS из юнита. Переменная пустая — проверки
+        нет: функции на этом шлюзе нет."""
+        missing = self.peer_nets_missing(info)
+        if missing is None:
+            return None
         return GwCheck("подсети за другими шлюзами", not missing,
                        "" if not missing else
                        f"в таблице нет {', '.join(missing)}; перевыпусти конфигурацию шлюза с ВПС "
@@ -1114,6 +1124,23 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         st.ts = timeutil.to_iso(timeutil.now())
         self.db.set_state(self._SNAPSHOT_KEY, st.to_json())
         return st
+
+    def gw_snapshot(self) -> dict:
+        """Снимок состояния для канала (концепт «канал линка», §3.5).
+
+        Берёт то, что тик уже снял: своего `nft` не зовёт, в сеть не ходит
+        (инвариант §3.5.0.1). Два чтения сверх этого — конфиг линка и
+        `install/awg.lock`, оба локальные и оба по несколько сотен байт.
+        """
+        from awgbot.domain import gwsnapshot
+        st = self.cached_status(24 * 3600)
+        missing = self.peer_nets_missing(self._guard_info)
+        return gwsnapshot.collect(
+            mark_status=self.gateway_mark_status(),
+            egress_ok=st.egress_ok if st is not None else None,
+            guard_info=self._guard_info,
+            peer_nets=None if missing is None else (not missing, missing),
+            ts=st.ts if st is not None else "")
 
     def cached_status(self, max_age_seconds: float) -> GwStatus | None:
         """Снимок последнего тика, если он не старше max_age; иначе None —

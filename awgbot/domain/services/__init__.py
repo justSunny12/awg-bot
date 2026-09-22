@@ -39,12 +39,13 @@ from awgbot.domain.services.traffic import TrafficMixin
 from awgbot.domain.services.reconcile import ReconcileMixin
 from awgbot.domain.services.firewall import FirewallMixin
 from awgbot.domain.services.gateway_link import GatewayLinkMixin
+from awgbot.domain.services.gwchannel import GwChannelMixin
 from awgbot.domain.services.routing import RoutingMixin
 
 
 class Services(ServicesBase, StatusMixin, BlocksMixin, ClientsMixin, DevicesMixin,
                SubscriptionMixin, TrafficMixin, ReconcileMixin, FirewallMixin,
-               GatewayLinkMixin, RoutingMixin,
+               GatewayLinkMixin, GwChannelMixin, RoutingMixin,
                SelfUpdateMixin, MailMixin, BackupCryptoMixin, MigrationMixin, PrivateDnsMixin):
     """Сборка из миксинов по областям: каждый — свой модуль пакета, тела
     методов те же, что были в одном файле. Порядок баз — порядок разделов
