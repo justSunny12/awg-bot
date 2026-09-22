@@ -351,3 +351,15 @@ def test_section_text_names_held_addresses_lan_and_caps_the_list():
     many = [f"h{i}.dyn.example" for i in range(20)]
     text = texts.gateway_ssh_text(_scr(allow=many))
     assert "и ещё 8" in text and "h19.dyn.example" not in text
+
+
+def test_warnings_go_into_their_own_block_in_both_sections():
+    from awgbot.bot.texts.settings import settings_firewall_text
+    t = texts.gateway_ssh_text(_scr(port=2222, ports=[2222], conf_ports=[2222], owner="omv", owner_port=22, ufw=True))
+    assert "\n\n<b>Предупреждения:</b>\n⚠️ В OMV задан порт 22" in t and "\n⚠️ ufw активен" in t
+    assert "<b>Предупреждения:</b>" not in texts.gateway_ssh_text(_scr()), "нечего — блока нет"
+    t = settings_firewall_text({"enabled": True, "ssh_port": 22, "raw_allow": [f"h{i}.example" for i in range(15)],
+                                "unresolved": [f"h{i}.example" for i in range(15)], "admin_ips": ["x"]})
+    assert "🟢 Снаружи: фильтр включён — только адреса из списка" in t
+    assert t.count("и ещё 3") == 2, "список и «Не резолвятся» у ВПС ограничены, как у шлюза"
+    assert "<b>Предупреждения:</b>\n⚠️ Не резолвятся:" in t

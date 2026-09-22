@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .fmt import _e, human_bytes, _updown, _fmt_age, plural_ru
-from .settings import SETTINGS_SVC, SVC_CONFIRM_AWG, ssh_owner_refusal
+from .settings import SETTINGS_SVC, SVC_CONFIRM_AWG, ssh_owner_refusal, warnings_block
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -258,6 +258,7 @@ def gateway_ssh_text(st: dict) -> str:
     else:
         lines.append("Адреса для входа снаружи (фильтр): не заданы"
                      + (" — снаружи доступ только с сервера AWG" if st.get("filter") else ""))
+    warns: list[str] = []
     unresolved = st.get("unresolved") or []
     if unresolved:
         held = st.get("held") or []
@@ -269,25 +270,25 @@ def gateway_ssh_text(st: dict) -> str:
             held_s += f" и ещё {len(held) - _ALLOW_SHOWN}"
         tail = (" — держу прошлый адрес: " + held_s
                 if held else " — прошлого адреса нет, снаружи по этому имени не зайти")
-        lines.append("⚠️ Не резолвится: " + names + tail)
+        warns.append("⚠️ Не резолвится: " + names + tail)
     op = st.get("owner_port")
     if st.get("owner") == "omv" and op and port and op != port and not st.get("sshd_down"):
-        lines.append(f"⚠️ В OMV задан порт {op}, sshd слушает {port} — нажми «Применить» в OMV")
+        warns.append(f"⚠️ В OMV задан порт {op}, sshd слушает {port} — нажми «Применить» в OMV")
     conf = [p for p in (st.get("conf_ports") or []) if p != port]
     if conf and not st.get("sshd_down") and not (st.get("owner") == "omv" and op in conf):
-        lines.append(f"⚠️ В конфиге sshd порт {conf[0]}, сервис слушает {port} — перезапусти sshd")
+        warns.append(f"⚠️ В конфиге sshd порт {conf[0]}, сервис слушает {port} — перезапусти sshd")
     extra = [p for p in (st.get("ports") or []) if p != port]
     if extra:
-        lines.append(f"⚠️ sshd слушает ещё порт ({', '.join(map(str, extra))}) — фильтр держит только {port}")
+        warns.append(f"⚠️ sshd слушает ещё порт ({', '.join(map(str, extra))}) — фильтр держит только {port}")
     if st.get("owner") == "generator" and st.get("owner_detail"):
-        lines.append(f"ℹ️ В <code>{_e((st.get('owner_files') or ['sshd_config'])[0])}</code> сказано: "
+        warns.append(f"ℹ️ В <code>{_e((st.get('owner_files') or ['sshd_config'])[0])}</code> сказано: "
                      f"«<i>{_e(st['owner_detail'])}</i>»")
     if st.get("omv_rules"):
-        lines.append(f"⚠️ В OMV заданы правила файервола ({st['omv_rules']}): они действуют рядом "
+        warns.append(f"⚠️ В OMV заданы правила файервола ({st['omv_rules']}): они действуют рядом "
                      "с таблицей шлюза; при смене порта поправь и там (Сеть → Файервол)")
     if st.get("ufw"):
-        lines.append("⚠️ ufw активен: второй владелец правил, новый порт открывай и в нём или выключи ufw")
-    return "\n".join(lines)
+        warns.append("⚠️ ufw активен: второй владелец правил, новый порт открывай и в нём или выключи ufw")
+    return "\n".join(lines + warnings_block(warns))
 
 
 GW_SSH_PORT_ASK = ("🅿️ <b>Порт SSH</b>\n\nПришли номер порта (1–65535). Занятый порт не возьму.\n\n"

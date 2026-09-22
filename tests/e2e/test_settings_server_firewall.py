@@ -230,7 +230,7 @@ async def test_enabled_screen_does_not_repeat_the_timer_promise(services, fake_b
     место в экране, который и без того длинный."""
     monkeypatch.setattr(services, "firewall_screen", lambda: _fw(enabled=True))
     text, _ = await sh._screen("fw", services)
-    assert "🟢 фильтр включён" in text
+    assert "🟢 Снаружи: фильтр включён" in text
     assert "таймером" not in text and "NAT клиентов" not in text
 
 # ── переезд из раздела «Сервер AWG» ─────────────────────────────────────────

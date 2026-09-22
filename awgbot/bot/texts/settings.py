@@ -357,14 +357,29 @@ def settings_server_text(d: dict) -> str:
     return "\n".join(lines)
 
 
+_ALLOW_SHOWN = 12       # кнопки — до 8, текст — до 12: лимит 4096 при длинных именах
+
+
+def _shown(items, code: bool = True) -> str:
+    out = ", ".join((f"<code>{_e(a)}</code>" if code else _e(a)) for a in items[:_ALLOW_SHOWN])
+    if len(items) > _ALLOW_SHOWN:
+        out += f" и ещё {len(items) - _ALLOW_SHOWN}"
+    return out
+
+
+def warnings_block(items: list[str]) -> list[str]:
+    """Предупреждения раздела — отдельным блоком после пустой строки, по
+    одному на строку; нет предупреждений — ничего."""
+    return ["", "<b>Предупреждения:</b>", *items] if items else []
+
+
 def settings_firewall_text(st: dict) -> str:
-    """Раздел «Доступ по SSH»: порт, адреса, состояние фильтра. Из чата всё
-    применяется сразу, без таймера отката: чат от SSH не зависит, и любое
-    действие отменяется здесь же. Блоки разделены пустой строкой; статусные
-    строки — без точки в конце (как в разделе агента)."""
-    head = "🟢 фильтр включён · порт" if st.get("enabled") else "Порт"
+    """Раздел «Доступ по SSH»: порт, туннель, снаружи, адреса, предупреждения.
+    Из чата всё применяется сразу, без таймера отката: чат от SSH не зависит,
+    и любое действие отменяется здесь же. Блоки разделены пустой строкой;
+    статусные строки — без точки в конце (как в разделе агента)."""
     allow = st.get("raw_allow") or []
-    port_line = f"{head} SSH: {st.get('ssh_port')}"
+    port_line = f"Порт SSH: {st.get('ssh_port')}"
     if st.get("owner") == "omv":
         port_line += " — <b>контролирует OMV</b> <i>(в его UI: Службы → SSH)</i>"
     elif st.get("owner"):
@@ -372,24 +387,29 @@ def settings_firewall_text(st: dict) -> str:
     lines = ["<b>🛡 Доступ по SSH</b>", "", port_line, ""]
     if st.get("admin_ips"):
         lines += [f"Из туннеля SSH открыт устройствам админа ({len(st['admin_ips'])})", ""]
-    lines.append(("Адреса для входа снаружи (фильтр): " + ", ".join(f"<code>{_e(a)}</code>" for a in allow))
-                 if allow else "Адреса для входа снаружи (фильтр): не заданы — SSH открыт всем (только по SSH-ключам)")
+    if st.get("enabled"):
+        lines.append("🟢 Снаружи: фильтр включён — только адреса из списка")
+    else:
+        lines.append("Снаружи: фильтр выключен — открыт всем (только по SSH-ключам)")
+    lines.append("")
+    lines.append("Адреса для входа снаружи (фильтр): " + (_shown(allow) if allow else "не заданы"))
+    warns: list[str] = []
     if st.get("unresolved"):
-        lines.append("⚠️ Не резолвятся: " + ", ".join(_e(x) for x in st["unresolved"]))
+        warns.append("⚠️ Не резолвятся: " + _shown(st["unresolved"], code=False))
     if st.get("drift"):
-        lines.append(f"⚠️ sshd слушает порт {st['listening']}, а фильтр держит {st.get('ssh_port')} — "
+        warns.append(f"⚠️ sshd слушает порт {st['listening']}, а фильтр держит {st.get('ssh_port')} — "
                      f"вход снаружи и из туннеля закрыт. Нажми «🅿️ Изменить порт» → {st['listening']} "
                      f"или верни sshd на {st.get('ssh_port')}")
     elif st.get("sshd_down"):
-        lines.append("⚪ sshd не запущен")
+        warns.append("⚪ sshd не запущен")
     if st.get("owner") == "generator" and st.get("owner_detail"):
-        lines.append(f"ℹ️ В <code>{_e((st.get('owner_files') or ['sshd_config'])[0])}</code> сказано: "
+        warns.append(f"ℹ️ В <code>{_e((st.get('owner_files') or ['sshd_config'])[0])}</code> сказано: "
                      f"«<i>{_e(st['owner_detail'])}</i>»")
     if st.get("ufw"):
-        lines.append("⚠️ ufw активен: второй владелец правил, лучше выключить (<code>ufw disable</code>)")
+        warns.append("⚠️ ufw активен: второй владелец правил, лучше выключить (<code>ufw disable</code>)")
     if st.get("firewalld"):
-        lines.append("⚠️ firewalld активен: второй владелец правил, новый порт открывай и в нём или выключи его")
-    return "\n".join(lines)
+        warns.append("⚠️ firewalld активен: второй владелец правил, новый порт открывай и в нём или выключи его")
+    return "\n".join(lines + warnings_block(warns))
 
 
 def ssh_owner_refusal(st: dict, listening: int | None, place: str = "сервере") -> str:
