@@ -513,7 +513,7 @@ async def test_foreign_owner_refuses_on_the_button_and_the_screen_warns_about_dr
     monkeypatch.setattr(services, "firewall_screen",
                         lambda: _fw(owner="generator", owner_detail="managed by ansible",
                                     owner_files=["/etc/ssh/sshd_config"], listening=22, drift=False))
-    cb, nav = _cb = _acb(fake_bot)
+    cb, nav = _acb(fake_bot)
     st = FakeState()
     await sh.ssh_port_ask(cb, st, services)
     assert await st.get_state() is None

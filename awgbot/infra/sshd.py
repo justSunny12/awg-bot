@@ -142,6 +142,13 @@ class SshdOwner:
 OMV_CONFIG = "/etc/openmediavault/config.xml"
 _OMV_HEAD_RE = re.compile(r"openmediavault", re.IGNORECASE)
 _GEN_HEAD_RE = re.compile(r"auto-?generated|managed by|do not edit", re.IGNORECASE)
+# Своя шапка: мы судим о владельце по шапке чужого файла — и сами оставляем
+# такую же метку, чтобы другой инструмент (и человек) видел, кто держит порт.
+# Только про порт: остальное в файле бот не трогает и не генерирует.
+OUR_HEAD = ("# Port managed by awg-bot (Telegram bot: «Доступ по SSH» → «Изменить порт»).\n"
+            "# Change the SSH port in the bot, not here: it keeps the host firewall on this port.\n"
+            "# Other settings in this file are not touched by awg-bot.\n")
+_OUR_HEAD_RE = re.compile(r"awg-bot", re.IGNORECASE)
 _HEAD_LINES = 5
 
 
@@ -208,6 +215,8 @@ def owner() -> SshdOwner:
         if "cloud-init" in f:
             continue
         for ln in head:
+            if _OUR_HEAD_RE.search(ln):
+                continue                                  # наша метка — владелец бот
             if ln.lstrip().startswith("#") and _GEN_HEAD_RE.search(ln):
                 return SshdOwner("generator", "", None, ln.strip("# ").strip(), [f])
     return SshdOwner()
@@ -257,7 +266,10 @@ def rewrite_port(text: str, port: int, primary: bool) -> str:
                 at = i + 1
         out.insert(at, f"Port {port}")
     res = "\n".join(out)
-    return res + "\n" if text.endswith("\n") or not text else res
+    res = res + "\n" if text.endswith("\n") or not text else res
+    if primary and not any("managed by awg-bot" in ln for ln in res.splitlines()[:_HEAD_LINES]):
+        res = OUR_HEAD + res                              # один раз, в первых строках
+    return res
 
 
 def _write_atomic(path: str, text: str) -> None:

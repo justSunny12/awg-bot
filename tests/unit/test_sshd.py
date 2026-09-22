@@ -15,10 +15,12 @@ def test_primary_replaces_first_port_and_mutes_the_rest():
     src = "Include /etc/ssh/sshd_config.d/*.conf\nPort 22\nPort 2200\nPermitRootLogin no\n"
     out = sshd.rewrite_port(src, 2222, primary=True)
     lines = out.splitlines()
-    assert lines[1] == "Port 2222"
-    assert lines[2].startswith("# Port 2200") and "awg-bot" in lines[2]
-    assert lines[3] == "PermitRootLogin no" and out.endswith("\n")
-    assert sshd.rewrite_port(out, 2222, primary=True) == out, "повторный проход ничего не меняет"
+    head = len(sshd.OUR_HEAD.splitlines())
+    assert lines[:head] == sshd.OUR_HEAD.splitlines(), "своя шапка — другим инструментам и человеку"
+    assert lines[head + 1] == "Port 2222"
+    assert lines[head + 2].startswith("# Port 2200") and "awg-bot" in lines[head + 2]
+    assert lines[head + 3] == "PermitRootLogin no" and out.endswith("\n")
+    assert sshd.rewrite_port(out, 2222, primary=True) == out, "повторный проход ничего не меняет (шапка одна)"
 
 
 def test_primary_uses_the_commented_default_line():
@@ -26,7 +28,7 @@ def test_primary_uses_the_commented_default_line():
     раскомментировать её естественнее, чем плодить вторую строку."""
     src = "#Port 22\n#AddressFamily any\n"
     out = sshd.rewrite_port(src, 2222, primary=True)
-    assert out == "Port 2222\n#AddressFamily any\n"
+    assert out == sshd.OUR_HEAD + "Port 2222\n#AddressFamily any\n"
 
 
 def test_primary_without_any_port_inserts_after_include():
@@ -34,15 +36,16 @@ def test_primary_without_any_port_inserts_after_include():
     drop-in с портом добавил бы второй слушающий порт."""
     src = "# comment\nInclude /etc/ssh/sshd_config.d/*.conf\nPermitRootLogin no\n"
     out = sshd.rewrite_port(src, 2222, primary=True)
-    assert out.splitlines() == ["# comment", "Include /etc/ssh/sshd_config.d/*.conf",
-                                "Port 2222", "PermitRootLogin no"]
-    assert sshd.rewrite_port("", 2222, primary=True) == "Port 2222\n"
+    assert out.splitlines()[3:] == ["# comment", "Include /etc/ssh/sshd_config.d/*.conf",
+                                    "Port 2222", "PermitRootLogin no"]
+    assert sshd.rewrite_port("", 2222, primary=True) == sshd.OUR_HEAD + "Port 2222\n"
 
 
 def test_dropin_only_mutes_ports():
     src = "  Port 2200\nX11Forwarding no\n"
     out = sshd.rewrite_port(src, 2222, primary=False)
     assert out.splitlines()[0].startswith("  # Port 2200") and "Port 2222" not in out
+    assert "managed by awg-bot" not in out, "шапка — только в главном файле"
     assert sshd.rewrite_port("X11Forwarding no\n", 2222, primary=False) == "X11Forwarding no\n"
 
 
@@ -91,7 +94,7 @@ def test_set_port_rewrites_configs_and_restarts_the_service(cfg, monkeypatch, tm
     host = _Host()
     monkeypatch.setattr(sshd.subprocess, "run", host)
     lines = sshd.set_port(2222)
-    assert main.read_text() == "Include /etc/ssh/sshd_config.d/*.conf\nPort 2222\n"
+    assert main.read_text() == sshd.OUR_HEAD + "Include /etc/ssh/sshd_config.d/*.conf\nPort 2222\n"
     assert dropin.read_text().startswith("# Port 22") and "PasswordAuthentication no" in dropin.read_text()
     assert not sock.exists(), "без socket-активации drop-in к ssh.socket не нужен"
     assert ["systemctl", "restart", "ssh.service"] in host.calls
@@ -298,6 +301,14 @@ def test_plain_debian_and_cloud_init_have_no_owner(owner_fs):
     main.write_text("# This is the sshd server system-wide configuration file.\n"
                     "Include /etc/ssh/sshd_config.d/*.conf\n#Port 22\n")
     (dd / "50-cloud-init.conf").write_text("# Managed by cloud-init\nPasswordAuthentication no\n")
+    assert not sshd.owner()
+
+
+def test_our_own_header_does_not_make_us_a_foreign_owner(owner_fs):
+    """Своя шапка «Port managed by awg-bot» подпадает под «managed by» — но
+    это владелец-бот, а не чужой генератор."""
+    main, _, _ = owner_fs
+    main.write_text(sshd.OUR_HEAD + "Include /etc/ssh/sshd_config.d/*.conf\nPort 2222\n")
     assert not sshd.owner()
 
 
