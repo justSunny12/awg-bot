@@ -516,3 +516,75 @@ def test_nat_only_form_closes_links_when_the_toggle_is_off(host_mode, monkeypatc
     assert "policy accept" in text.split("chain forward", 1)[1], "политика хоста остаётся его"
     _conf(monkeypatch, **{"app.firewall.enabled": False, "app.routing.peer_nets.enabled": True})
     assert "chain forward" not in nftguard.render(nftguard.build_spec(["10.9.1.5"]))
+
+
+# ── канал ВПС ↔ шлюз (концепт «канал линка»): одна строка и один набор ───────
+
+def _links(monkeypatch, tmp_path, **confs):
+    """Каталог конфигов awg: имя интерфейса → текст конфига линка."""
+    monkeypatch.setattr(config, "AWG_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "")
+    for name, text in confs.items():
+        (tmp_path / f"{name}.conf").write_text(text, encoding="utf-8")
+
+
+def test_link_peer_addresses_are_computed_from_the_link_configs(monkeypatch, tmp_path):
+    """Адрес шлюза в /30 считается из конфига линка, а не спрашивается у ядра:
+    таблицу собирает и CLI, и делает это до подъёма интерфейсов. Ошибись здесь —
+    канал либо закрыт для своего шлюза, либо открыт лишнему адресу."""
+    _links(monkeypatch, tmp_path,
+           awglink="[Interface]\nTable = off\nAddress = 10.99.99.1/30\n",
+           awglink2="[Interface]\nTable = off\nAddress = 10.99.99.5/30\n",
+           awg1="[Interface]\nAddress = 10.9.1.1/24\n")          # клиентский — не линк
+    assert nftguard.link_peer_addrs() == ["10.99.99.2", "10.99.99.6"]
+
+
+@pytest.mark.parametrize("conf", [
+    "[Interface]\nTable = off\nAddress = 10.99.99.1/24\n",        # не /30 — не линк слота
+    "[Interface]\nTable = off\nPrivateKey = X==\n",               # без адреса
+    "[Interface]\nTable = off\nAddress = 10.99.99.999/30\n",      # мусор вместо адреса
+])
+def test_a_link_config_without_a_usable_30_gives_no_peer(monkeypatch, tmp_path, conf):
+    """Непонятный конфиг не должен породить выдуманный адрес: пустой набор
+    закрывает канал, выдуманный адрес открывает порт кому попало."""
+    _links(monkeypatch, tmp_path, awglink=conf)
+    assert nftguard.link_peer_addrs() == []
+
+
+def test_the_channel_rule_lets_in_the_gateway_and_nobody_else(host_mode, monkeypatch, tmp_path):
+    """Единственное новое правило файервола: вход с адреса шлюза в его же /30 на
+    порт канала. Клиентская подсеть в другом наборе — канал не для клиентов, и
+    открывать его туннелю целиком значило бы отдать снимок любому устройству."""
+    _links(monkeypatch, tmp_path, awglink="[Interface]\nTable = off\nAddress = 10.99.99.1/30\n")
+    _conf(monkeypatch, **{"app.firewall.enabled": True, "app.routing.link_channel_port": 8787})
+    spec = nftguard.build_spec(["10.9.1.5"])
+    assert spec.link_peers4 == ["10.99.99.2"] and spec.link_channel_port == 8787
+    lines = [ln.strip() for ln in nftguard.render(spec).splitlines()]
+    assert "ip saddr @link_peers4 tcp dport 8787 accept" in lines
+    assert "elements = { 10.99.99.2 }" in lines
+    inp = lines[lines.index("chain input {"):]
+    inp = inp[:inp.index("}")]
+    assert "ip saddr @link_peers4 tcp dport 8787 accept" in inp, "правило вне входной цепочки"
+    assert "type filter hook input priority filter; policy drop;" in inp, (
+        "цепочка с policy drop — всё, что не разрешено строкой выше, не войдёт")
+    peers_set = lines[lines.index("set link_peers4 {"):]
+    assert "10.9.1.0/24" not in peers_set[:peers_set.index("}")], "клиентская подсеть в наборе канала"
+
+
+def test_the_channel_port_follows_the_setting(host_mode, monkeypatch, tmp_path):
+    """Порт слушателя и порт в правиле — один ключ настроек. Разойдись они, и
+    канал молча не поднялся бы: шлюз стучится туда, где его дропают."""
+    _links(monkeypatch, tmp_path, awglink="[Interface]\nTable = off\nAddress = 10.99.99.1/30\n")
+    _conf(monkeypatch, **{"app.firewall.enabled": True, "app.routing.link_channel_port": 9099})
+    assert "ip saddr @link_peers4 tcp dport 9099 accept" in nftguard.render(
+        nftguard.build_spec(["10.9.1.5"]))
+
+
+def test_without_links_there_is_no_channel_rule_at_all(host_mode, monkeypatch, tmp_path):
+    """Сервер без шлюзов канала не держит: лишняя открытая строка в таблице —
+    поверхность, которой не за что платить."""
+    _links(monkeypatch, tmp_path)
+    _conf(monkeypatch, **{"app.firewall.enabled": True})
+    spec = nftguard.build_spec(["10.9.1.5"])
+    assert spec.link_peers4 == [] and spec.link_channel_port == 0
+    assert "link_peers4 tcp dport" not in nftguard.render(spec)

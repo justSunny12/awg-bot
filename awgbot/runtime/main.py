@@ -314,6 +314,10 @@ async def main() -> None:
     services = Services(db)
     services.ensure_admin_client()          # админ — тоже пользователь VPN
     services.migrate_pause_balances()       # v2.22.0: счёт дней паузы — разово
+    # Сессии канала линка прошлого процесса мертвы вместе с его сокетами: без
+    # сброса карточка слота зажгла бы «на связи» у шлюза, который ещё не
+    # переподключился. До поллинга — чтобы ни один экран их не увидел.
+    services.gwlink_sessions_reset()
 
     bot = Bot(
         config.BOT_TOKEN,

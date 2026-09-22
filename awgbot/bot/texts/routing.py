@@ -272,6 +272,11 @@ def channel_drift_block(ch: dict | None) -> str:
         return ""
     drift = ch.get("drift") or []
     stale = "" if ch.get("online") else f" (по снимку {_ago(ch.get('age'))}, канал сейчас не на связи)"
+    if not ch.get("has_bundle"):
+        # Снимок есть, а установленной конфигурации в нём нет: пустая сверка
+        # тут значит «сказать нечего», и галочка «совпадает» была бы враньём.
+        return (f"\n\n<b>Что стоит на шлюзе</b>{stale}: шлюз ещё не сообщал, что у него "
+                "стоит — сверять не с чем.")
     gen = {"new": "нового образца",
            "old": "⚠️ старого образца — перевыпусти файл",
            "none": "⚠️ не развёрнута — примени файл на шлюзе"}.get(ch.get("plumbing_gen") or "", "")
@@ -317,7 +322,9 @@ def channel_block(ch: dict | None, server_ok) -> str:
         lines.append(f"🤖 Агент {agent}{gen_note}")
         drift = ch.get("drift") or []
         stale = "" if ch.get("online") else f" (по снимку {_ago(ch.get('age'))})"
-        if drift:
+        if not ch.get("has_bundle"):
+            lines.append("⚙️ Конфигурация: шлюз ещё не сообщал, что у него стоит")
+        elif drift:
             lines.append(f"⚠️ Конфигурация на шлюзе расходится с выданной: {len(drift)} "
                          f"— подробности в «Конфигурация шлюза»{stale}")
         else:
@@ -326,6 +333,16 @@ def channel_block(ch: dict | None, server_ok) -> str:
         mark = {True: "есть", False: "нет", None: "не знает"}
         lines.append(f"🌐 Выход наружу: сервер — {mark[bool(server_ok)]}, "
                      f"шлюз — {mark[gw_ok if isinstance(gw_ok, bool) else None]}")
+    # Часы малины разошлись с сервером: канал принимает сообщения только в
+    # окне ±5 минут и за его краем молчит без видимой причины — сказать раньше.
+    skew = ch.get("clock_skew")
+    if isinstance(skew, int) and abs(skew) >= 120:
+        side = "спешат" if skew > 0 else "отстают"
+        lines.append(f"⏱ Часы шлюза {side} на {abs(skew) // 60} мин — за 5 мин канал "
+                     "перестанет принимать сообщения; проверь синхронизацию времени на шлюзе")
+    err = ch.get("error") or ""
+    if err and not ch.get("online"):
+        lines.append(f"Последний обрыв: {_e(err)}")
     return "\n".join(lines)
 
 

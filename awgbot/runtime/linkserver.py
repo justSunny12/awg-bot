@@ -62,6 +62,10 @@ class LinkServer:
         self._sessions: dict[int, asyncio.StreamWriter] = {}
         self._keys: dict[int, bytes] = {}
         self._seq: dict[int, int] = {}
+        # Сколько снимков принято по слоту за жизнь процесса: «Обновить»
+        # сравнивает до и после. Строка времени в state для этого не годится —
+        # она с точностью до секунды, и снимок в ту же секунду был бы «не пришёл».
+        self.snaps_in: dict[int, int] = {}
 
     # ── жизненный цикл ───────────────────────────────────────────────────────
 
@@ -164,6 +168,7 @@ class LinkServer:
                     msg = gwlink.unpack(key, line, last_seq=last_seq)
                 except gwlink.ProtocolError as e:
                     log.warning("канал линка: слот %s — %s", gw.id, e)
+                    await asyncio.to_thread(self.services.gwlink_note_error, gw.id, str(e))
                     break
                 last_seq = int(msg.get("seq") or 0)
                 await self._handle(gw, msg)
@@ -194,6 +199,8 @@ class LinkServer:
             rev = int(msg.get("rev") or 0)
             ok = await asyncio.to_thread(self.services.gwlink_snapshot_in, gw.id, patch,
                                          rev, kind == "snap")
+            if ok:
+                self.snaps_in[gw.id] = self.snaps_in.get(gw.id, 0) + 1
             if not ok:
                 # Разрыв нумерации: дельта потерялась или пришла не по порядку.
                 # Просим полный снимок и начинаем счёт заново.
@@ -239,6 +246,8 @@ async def ensure(services) -> LinkServer | None:
     if config.ROLE == "gateway":
         return None
     if _server is None:
+        # Первый подъём в этом процессе: сессии прежнего процесса мертвы.
+        await asyncio.to_thread(services.gwlink_sessions_reset)
         _server = LinkServer(services)
     await _server.ensure()
     return _server

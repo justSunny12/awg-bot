@@ -474,9 +474,8 @@ async def gw_slot_snap(cb: CallbackQuery, callback_data: GwSlotCB, services):
     лицом; один запрос на нажатие."""
     from awgbot.runtime import linkserver
     slot = callback_data.slot
-    key = services._gwlink_key(services._GWLINK_SNAP_AT_KEY, slot)
-    before = await call(services.db.get_state, key) or ""
     srv = linkserver.current()
+    before = srv.snaps_in.get(slot, 0) if srv else 0
     sent = bool(srv) and await srv.send(slot, "ask", {"what": "snap"})
     if not sent:
         await cb.answer("Канал до шлюза сейчас не на связи", show_alert=True)
@@ -487,7 +486,7 @@ async def gw_slot_snap(cb: CallbackQuery, callback_data: GwSlotCB, services):
     fresh = False
     for _ in range(12):
         await asyncio.sleep(0.25)
-        if (await call(services.db.get_state, key) or "") != before:
+        if srv.snaps_in.get(slot, 0) != before:
             fresh = True
             break
     await _render_card(cb, services, slot)

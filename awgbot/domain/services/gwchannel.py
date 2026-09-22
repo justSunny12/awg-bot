@@ -42,6 +42,7 @@ class GwChannelMixin:
         self.db.set_state(self._gwlink_key(self._GWLINK_SESSION_KEY, slot_id),
                           f"since={now} agent={agent} proto={int(proto)}")
         self.db.set_state(self._gwlink_key(self._GWLINK_SEEN_KEY, slot_id), now)
+        self.db.set_state(self._gwlink_key(self._GWLINK_ERROR_KEY, slot_id), "")
         log.info("канал линка: слот %s на связи (агент %s, proto %s)", slot_id, agent, proto)
 
     def gwlink_session_closed(self, slot_id: int) -> None:
@@ -50,6 +51,25 @@ class GwChannelMixin:
                           timeutil.to_iso(timeutil.now()))
         # Нумерация снимка живёт в сессии: следующая начнётся с полного.
         self.db.set_state(self._gwlink_key(self._GWLINK_SNAP_REV_KEY, slot_id), "")
+
+    _GWLINK_ERROR_KEY = "gwlink_error"
+
+    def gwlink_sessions_reset(self) -> None:
+        """Старт процесса: ни одной живой сессии быть не может — сокеты умерли
+        вместе с прежним процессом. Без сброса строка сессии пережила бы
+        рестарт, и карточка зажигала бы «на связи» у шлюза, который ещё не
+        переподключился, — а при выключенном канале или лежащем линке врала бы
+        бесконечно. Время «последний раз» не трогаем: оно правдиво."""
+        for gw in self.db.gateways():
+            self.db.set_state(self._gwlink_key(self._GWLINK_SESSION_KEY, gw.id), "")
+            self.db.set_state(self._gwlink_key(self._GWLINK_SNAP_REV_KEY, gw.id), "")
+
+    def gwlink_note_error(self, slot_id: int, reason: str) -> None:
+        """Почему сервер оборвал сессию. Без этого «нет связи» оставалось бы без
+        причины — а самая коварная из них, разошедшиеся часы, иначе не видна
+        вовсе: каждое сообщение отвергается окном времени, и канал просто молчит."""
+        self.db.set_state(self._gwlink_key(self._GWLINK_ERROR_KEY, slot_id),
+                          f"{timeutil.to_iso(timeutil.now())} {reason[:200]}")
 
     def gwlink_session(self, slot_id: int) -> dict:
         """{'since', 'agent', 'proto'} или пусто — не на связи."""
@@ -118,7 +138,8 @@ class GwChannelMixin:
     def gwlink_forget(self, slot_id: int) -> None:
         """Снятие слота: ключи канала уходят вместе с ключами бандла."""
         for key in (self._GWLINK_SESSION_KEY, self._GWLINK_SEEN_KEY, self._GWLINK_SNAP_KEY,
-                    self._GWLINK_SNAP_REV_KEY, self._GWLINK_SNAP_AT_KEY, self._GWLINK_SNAP_TS_KEY):
+                    self._GWLINK_SNAP_REV_KEY, self._GWLINK_SNAP_AT_KEY, self._GWLINK_SNAP_TS_KEY,
+                    self._GWLINK_ERROR_KEY):
             self.db.set_state(self._gwlink_key(key, slot_id), "")
 
     # ── сверка выданного с установленным ─────────────────────────────────────
@@ -184,8 +205,30 @@ class GwChannelMixin:
             "egress_gw": snap.get("egress_ok") if snap else None,
             "link_contract": snap.get("link_contract", "") if snap else "",
             "plumbing_gen": snap.get("plumbing_gen", "") if snap else "",
+            # Снимок есть, а блока установленной конфигурации нет (старый или
+            # урезанный агент): пустая сверка тогда значит «сказать нечего», а
+            # не «совпадает» — экран обязан это различать.
+            "has_bundle": isinstance(snap.get("bundle"), dict) if snap else False,
+            "clock_skew": self._gwlink_clock_skew(gw.id),
+            "error": (self.db.get_state(self._gwlink_key(self._GWLINK_ERROR_KEY, gw.id)) or ""
+                      ).partition(" ")[2],
             "peer_nets": snap.get("peer_nets") if snap else None,
         }
+
+    def _gwlink_clock_skew(self, slot_id: int) -> int | None:
+        """Насколько часы малины расходятся с часами ВПС, секунд: `ts` снимка по
+        часам малины против времени приёма по нашим. Доставка внутри линка —
+        доли секунды, так что разница и есть расхождение часов. None — нечем
+        мерить. Канал отвергает сообщения вне окна ±5 минут; строка на экране
+        нужна раньше, чем он замолчит без видимой причины."""
+        ts = self.db.get_state(self._gwlink_key(self._GWLINK_SNAP_TS_KEY, slot_id)) or ""
+        at = self.db.get_state(self._gwlink_key(self._GWLINK_SNAP_AT_KEY, slot_id)) or ""
+        if not ts or not at:
+            return None
+        try:
+            return int((timeutil.parse_iso(ts) - timeutil.parse_iso(at)).total_seconds())
+        except ValueError:
+            return None
 
     # ── claim по каналу ──────────────────────────────────────────────────────
 

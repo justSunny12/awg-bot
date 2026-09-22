@@ -298,3 +298,67 @@ def test_bundle_removes_itself_only_after_a_successful_apply(bundle, tmp_path):
         r = subprocess.run(["sh", str(me)], capture_output=True, text=True)
         assert r.returncode == rc and "НЕ_ИСПОЛНЯЕТСЯ" not in r.stdout
         assert me.exists() == kept, f"rc={rc}: файл {'остался' if me.exists() else 'удалён'}"
+
+
+# ── канал ВПС ↔ шлюз (концепт «канал линка»): рубильник едет бандлом ─────────
+
+def _channel(text: str) -> tuple[str, str]:
+    on = re.search(r'^LINK_CHANNEL="([^"]*)"$', text, re.M)
+    port = re.search(r'^LINK_CHANNEL_PORT="([^"]*)"$', text, re.M)
+    assert on and port, "строк канала в бандле нет"
+    return on.group(1), port.group(1)
+
+
+def test_bundle_turns_the_channel_on_and_exports_it(bundle):
+    """Перевыпуск конфигурации — единственный рубильник канала: агент читает эти
+    строки из юнита обвязки. Не доедут — канал не поднимется, и человек будет
+    гадать, почему карточка слота молчит."""
+    assert _channel(bundle) == ("1", "8787")
+    assert "\nexport LINK_CHANNEL\n" in bundle and "\nexport LINK_CHANNEL_PORT\n" in bundle
+    assert bundle.index("export LINK_CHANNEL") < bundle.index(
+        '"$DEST/routing-gw-setup.sh" "${1:---apply}"'), "переменные встают до запуска обвязки"
+
+
+def test_a_bundle_can_be_built_without_the_channel(tmp_path):
+    """Откат функции — сборка конфигурации с выключенным каналом, а не правка
+    кода на малине: агент, получивший 0, никуда не ходит."""
+    out = _emit_bundle(tmp_path, env={"LINK_CHANNEL": "0"})
+    assert _channel(out)[0] == "0"
+
+
+def test_the_channel_port_comes_from_the_same_key_the_server_listens_on(tmp_path):
+    """Порт брался из двух мест, и сменивший его в конфиге получал шлюз,
+    стучащийся туда, где никто не слушает. Бандл обязан читать тот же ключ, что
+    слушатель, — иначе канал молча не поднимается."""
+    (tmp_path / "app.yaml").write_text(
+        "routing:\n  link_channel_port: 9099\n", encoding="utf-8")
+    out = _emit_bundle(tmp_path, env={"_APP_YAML": str(tmp_path / "app.yaml")})
+    assert _channel(out)[1] == "9099"
+
+
+def test_a_commented_out_key_is_not_a_value(tmp_path):
+    """Ключ в поставочном app.yaml закомментирован. Прочитай сборка комментарий
+    как значение — и любая правка соседней строки меняла бы порт канала."""
+    (tmp_path / "app.yaml").write_text(
+        "routing:\n  # link_channel_port: 9099\n", encoding="utf-8")
+    out = _emit_bundle(tmp_path, env={"_APP_YAML": str(tmp_path / "app.yaml")})
+    assert _channel(out)[1] == "8787"
+
+
+def test_the_environment_wins_over_the_config_for_the_channel_port(tmp_path):
+    """Окружение сильнее конфига — как у подсети и keepalive: бот передаёт порт
+    из того же ключа, на котором поднял слушатель, и его значение главнее."""
+    (tmp_path / "app.yaml").write_text(
+        "routing:\n  link_channel_port: 9099\n", encoding="utf-8")
+    out = _emit_bundle(tmp_path, env={"_APP_YAML": str(tmp_path / "app.yaml"),
+                                      "LINK_CHANNEL_PORT": "7171"})
+    assert _channel(out)[1] == "7171"
+
+
+def test_junk_in_the_channel_port_does_not_reach_the_gateway(tmp_path):
+    """Значение едет в юнит на чужой машине: мусор там сломал бы разбор у агента
+    или подменил строку Environment=."""
+    out = _emit_bundle(tmp_path, env={"LINK_CHANNEL_PORT": "9 0 9 9; rm -rf /",
+                                      "LINK_CHANNEL": "да"})
+    on, port = _channel(out)
+    assert port == "9099" and on == "", "в бандл уехало непроверенное значение"

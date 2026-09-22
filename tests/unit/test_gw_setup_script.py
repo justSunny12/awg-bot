@@ -496,3 +496,47 @@ def test_unit_gets_no_new_environment_lines_for_ssh(script):
     Environment=: бандл ничего про SSH снаружи не знает."""
     unit = script.split("cat > \"$UNIT\" <<UNITEOF", 1)[1].split("UNITEOF", 1)[0]
     assert "SSH_" not in unit and "EnvironmentFile=-$FW_ENV" in unit
+
+
+# ── канал до ВПС (концепт «канал линка»): рубильник в юните ──────────────────
+
+def _channel_vars(script: str, **env) -> tuple[str, str]:
+    """Прогнать настоящие строки скрипта, которые разбирают значения канала."""
+    lines = [ln for ln in script.splitlines()
+             if ln.startswith("LINK_CHANNEL") or ln.startswith('case "$LINK_CHANNEL_PORT"')]
+    assert len(lines) == 3, f"строки разбора канала изменились: {lines}"
+    prog = "\n".join(lines) + '\nprintf "%s|%s" "$LINK_CHANNEL" "$LINK_CHANNEL_PORT"'
+    out = subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
+                         env={"PATH": "/usr/bin:/bin", **env})
+    assert out.returncode == 0, out.stderr
+    return tuple(out.stdout.split("|"))
+
+
+def test_a_bundle_without_the_channel_lines_leaves_the_channel_off(script):
+    """Старые бандлы этих строк не несут вовсе. Молчаливое «включено по
+    умолчанию» означало бы, что агент после обновления сам пошёл бы на ВПС —
+    функцию включает перевыпуск конфигурации, и только он."""
+    assert _channel_vars(script) == ("0", "8787")
+
+
+def test_the_channel_switch_and_port_are_sanitised_before_they_reach_the_unit(script):
+    """Значения приезжают из бандла, то есть из окружения. Мусор, доехавший до
+    юнита, сломал бы разбор у агента (порт читается как число) или подменил бы
+    команду в строке Environment=."""
+    assert _channel_vars(script, LINK_CHANNEL="1", LINK_CHANNEL_PORT="9099") == ("1", "9099")
+    assert _channel_vars(script, LINK_CHANNEL="1; rm -rf /")[0] == "1"
+    assert _channel_vars(script, LINK_CHANNEL="да") == ("", "8787"), "непонятное — не «включено»"
+    assert _channel_vars(script, LINK_CHANNEL_PORT="порт")[1] == "8787"
+    assert _channel_vars(script, LINK_CHANNEL_PORT="0")[1] == "8787", "нулевой порт — не порт"
+    assert _channel_vars(script, LINK_CHANNEL_PORT="123456789")[1] == "12345", "порт не длиннее пяти цифр"
+
+
+def test_the_unit_carries_the_channel_lines_so_the_agent_can_read_them(script):
+    """Единственный канал настроек на малину — бандл: агент читает рубильник из
+    юнита обвязки, а не угадывает его. Пропадут строки — канал не поднимется
+    ни на одном шлюзе, и понять это будет неоткуда."""
+    unit = script.split('cat > "$UNIT" <<UNITEOF', 1)[1].split("UNITEOF", 1)[0]
+    assert "Environment=LINK_CHANNEL=$LINK_CHANNEL\n" in unit
+    assert "Environment=LINK_CHANNEL_PORT=$LINK_CHANNEL_PORT\n" in unit
+    assert unit.index("Environment=LINK_CHANNEL=") < unit.index("EnvironmentFile=-$FW_ENV"), (
+        "локальный файл читается после строк бандла — иначе он не перекроет их")
