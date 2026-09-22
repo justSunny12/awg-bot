@@ -123,6 +123,19 @@ class PrivateDnsMixin:
 
     # ── здоровье резолвера (тик монитора) ────────────────────────────────────
 
+    def resolver_ensure_dropin(self) -> None:
+        """Override юнита dnsmasq — к версии из поставки (см. resolver.ensure_dropin).
+        Резолвера нет — скрипт сам ничего не делает."""
+        if not resolver.installed():
+            return
+        try:
+            out = resolver.ensure_dropin()
+        except resolver.ResolverError as e:
+            log.warning("резолвер: override юнита не обновлён: %s", e)
+            return
+        if out.strip():
+            log.info("резолвер: %s", out.strip().splitlines()[-1])
+
     def resolver_health_tick(self) -> list:
         """Приватный DNS у клиентов — значит резолвер обязан отвечать. Проба
         UDP-запросом с хоста; отказ — одно уведомление, восстановление — одно."""

@@ -21,7 +21,12 @@ from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
 from awgbot.bot.states import GatewayLanDomain
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers import settingscore as core
-from awgbot.bot.handlers.common import call, edit_nav, send_menu, cleanup_content, purge_menus, dismiss_update_reports, forget_secret, ask_tracked
+from awgbot.bot.handlers.common import (call, edit_nav, send_menu, cleanup_content, purge_menus,
+                                        dismiss_update_reports, forget_secret, ask_tracked,
+                                        drop_previous_nav)
+from awgbot.bot.states import SshPort, GwSshAllow
+from awgbot.domain.gwssh import SshOwnerRefusal
+from awgbot.domain.services import ServiceError
 from awgbot.util import bundlecrypt
 
 router = Router(name="gateway")
@@ -160,8 +165,14 @@ def _email_section(services):
             kb.gateway_email_kb(acc is not None))
 
 
+def _ssh_section(services):
+    st = services.ssh_screen()
+    return texts.gateway_ssh_text(st), kb.gateway_ssh_kb(st)
+
+
 _SECTIONS = {
     "notify": lambda services: (texts.GW_SETTINGS_NOTIFY, kb.gateway_notify_kb()),
+    "ssh": _ssh_section,
     "email": _email_section,
     "mon": lambda services: (texts.GW_SETTINGS_MON, kb.gateway_mon_kb()),
     "backup": lambda services: (texts.SETTINGS_BACKUP,
@@ -255,6 +266,170 @@ async def gw_email_action(cb: CallbackQuery, callback_data: GwCB, services, stat
 _core = core.register(router, HOOKS, default_sec="mon")
 gw_receive_value, gw_passphrase_first, gw_passphrase_second = (
     _core["receive_value"], _core["passphrase_first"], _core["passphrase_second"])
+
+
+# ── 🛡 Доступ по SSH ─────────────────────────────────────────────────────────
+# Та же механика, что в разделе основного бота (handlers/settings.py): ввод
+# порта — FSM, «тот же» и «занят» — финишер с выбором, результат — со «Скрыть»
+# и раздел следом. Сверх того — отказ при чужом владельце sshd_config.
+
+@router.callback_query(GwCB.filter(F.action.in_({"ssh_port", "ssh_port_retry"})))
+async def gw_ssh_port_ask(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
+    st = await call(services.ssh_screen)
+    if st.get("owner"):
+        # Чужой владелец — отказ сразу по кнопке, без ввода: у целевых машин
+        # (OMV) это основной случай, лишний шаг ни к чему.
+        await state.clear()
+        await edit_nav(cb, services,
+                       texts.gateway_ssh_owner_refusal(st, None if st.get("sshd_down") else st["port"]),
+                       kb.gateway_back_kb("ssh"))
+        await cb.answer()
+        return
+    await state.set_state(SshPort.value)
+    if callback_data.action == "ssh_port_retry":
+        # с финишера: он остаётся в чате с одной «Скрыть», приглашение — новым
+        try:
+            await cb.message.edit_reply_markup(reply_markup=kb.hide_only())
+        except Exception:                                 # noqa: BLE001
+            pass
+        await send_menu(cb.message, services, texts.GW_SSH_PORT_ASK, kb.gateway_cancel_kb("ssh"))
+    else:
+        await core.ask(cb, services, texts.GW_SSH_PORT_ASK, kb.gateway_cancel_kb("ssh"))
+    await cb.answer()
+
+
+@router.callback_query(GwCB.filter(F.action == "ssh_port_back"))
+async def gw_ssh_port_back(cb: CallbackQuery, services, state: FSMContext):
+    await state.clear()
+    try:
+        await cb.message.edit_reply_markup(reply_markup=kb.hide_only())
+    except Exception:                                     # noqa: BLE001
+        pass
+    await send_menu(cb.message, services, *await _section(services, "ssh"))
+    await cb.answer()
+
+
+@router.message(SshPort.value)
+async def gw_ssh_port_received(message: Message, state: FSMContext, services):
+    raw = (message.text or "").strip()
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
+    if not raw.isdigit() or not 1 <= int(raw) <= 65535:
+        await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535. Попробуй ещё раз.")
+        return
+    port = int(raw)
+    st = await call(services.ssh_screen)
+    if st.get("owner"):
+        # Чужой владелец — отказ экраном (текст длинный), ввод закрыт.
+        await state.clear()
+        await cleanup_content(message.bot, services, message.chat.id)
+        await send_menu(message, services,
+                        texts.gateway_ssh_owner_refusal(st, None if st.get("sshd_down") else st["port"]),
+                        kb.gateway_back_kb("ssh"))
+        return
+    if not st.get("sshd_down") and port == int(st.get("port") or 0):
+        await state.clear()
+        await cleanup_content(message.bot, services, message.chat.id)
+        await send_menu(message, services, texts.ssh_port_same(port), kb.gateway_ssh_port_finisher_kb())
+        return
+    try:
+        busy = await call(services.ssh_port_busy, port)
+    except ServiceError as e:
+        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
+        return
+    if busy:
+        await state.clear()
+        await cleanup_content(message.bot, services, message.chat.id)
+        await send_menu(message, services, texts.ssh_port_busy(port, "" if busy == "?" else busy),
+                        kb.gateway_ssh_port_finisher_kb())
+        return
+    await state.clear()
+    try:
+        old = await call(services.ssh_port_change, port)
+    except SshOwnerRefusal as e:
+        await cleanup_content(message.bot, services, message.chat.id)
+        st = await call(services.ssh_screen)
+        await send_menu(message, services, texts.gateway_ssh_owner_refusal(st, e.listening),
+                        kb.gateway_back_kb("ssh"))
+        return
+    except ServiceError as e:
+        await message.answer(f"⚠️ Порт не изменён: {texts._e(str(e))}")
+    else:
+        await message.answer(texts.gateway_ssh_port_changed(old, port), reply_markup=kb.hide_only())
+    await core.after_input(message, services, HOOKS, "ssh")
+
+
+@router.callback_query(GwCB.filter(F.action == "ssh_add"))
+async def gw_ssh_allow_ask(cb: CallbackQuery, services, state: FSMContext):
+    await state.set_state(GwSshAllow.value)
+    await core.ask(cb, services, texts.GW_SSH_ALLOW_ASK, kb.gateway_cancel_kb("ssh"))
+    await cb.answer()
+
+
+@router.message(GwSshAllow.value)
+async def gw_ssh_allow_received(message: Message, state: FSMContext, services):
+    raw = (message.text or "").strip()
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
+    from awgbot.infra import gwguard
+    before = services._ssh_allow_split(await call(gwguard.read_env))
+    try:
+        after = await call(services.ssh_allow_add, raw)
+    except ServiceError as e:
+        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}. Попробуй ещё раз.")
+        return
+    await state.clear()
+    new = [x for x in after if x not in before]
+    gone = [x for x in before if x not in after]          # схлопнуто в добавленную подсеть
+    await message.answer(texts.gateway_ssh_allow_added(new, gone) if new or gone
+                         else texts.GW_SSH_ALLOW_ALREADY)
+    await core.after_input(message, services, HOOKS, "ssh")
+
+
+@router.callback_query(GwCB.filter(F.action.in_({"ssh_del", "ssh_del!", "ssh_on", "ssh_on!",
+                                                  "ssh_off", "ssh_off!"})))
+async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
+    """Удаление адреса, включение и выключение фильтра — с подтверждения
+    («Отмена» первой): всё это меняет, кто попадёт на шлюз снаружи."""
+    await state.clear()
+    act = callback_data.action
+    try:
+        if act == "ssh_del":
+            allow = (await call(services.ssh_screen)).get("allow") or []
+            idx = int(callback_data.val) if callback_data.val.isdigit() else -1
+            if not 0 <= idx < len(allow):
+                await cb.answer("Список изменился — открой раздел заново", show_alert=True)
+            else:
+                await edit_nav(cb, services, texts.gateway_ssh_del_ask(allow[idx]),
+                               kb.gateway_ssh_confirm_kb("ssh_del!", str(idx), "➖ Убрать"))
+                await cb.answer()
+                return
+        elif act == "ssh_del!":
+            allow = (await call(services.ssh_screen)).get("allow") or []
+            idx = int(callback_data.val) if callback_data.val.isdigit() else -1
+            if not 0 <= idx < len(allow):
+                await cb.answer("Список изменился — открой раздел заново", show_alert=True)
+            else:
+                await call(services.ssh_allow_remove, allow[idx])
+                await cb.answer(f"{allow[idx]} убран")
+        elif act == "ssh_on":
+            st = await call(services.ssh_screen)
+            await edit_nav(cb, services, texts.gateway_ssh_filter_on_ask(st["port"]),
+                           kb.gateway_ssh_confirm_kb("ssh_on!", "", "🟢 Включить"))
+            await cb.answer()
+            return
+        elif act == "ssh_on!":
+            await call(services.ssh_filter_on)
+            await cb.answer("Фильтр включён")
+        elif act == "ssh_off":
+            await edit_nav(cb, services, texts.GW_SSH_FILTER_OFF_ASK,
+                           kb.gateway_ssh_confirm_kb("ssh_off!", "", "🔴 Выключить"))
+            await cb.answer()
+            return
+        else:
+            await call(services.ssh_filter_off)
+            await cb.answer(texts.GW_SSH_FILTER_OFF, show_alert=True)
+    except ServiceError as e:
+        await cb.answer(str(e)[:180], show_alert=True)
+    await _render(cb, services, "ssh")
 
 
 _CONFIRM = {
@@ -405,8 +580,11 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
     # применении, там текст ошибки полный.
     info = await call(services.inspect_bundle, blob)
     link_changed = bool(info.get("link_changed", True)) if info.get("ok") else True
-    await message.answer(texts.gateway_bundle_received(link_changed),
-                         reply_markup=kb.gateway_bundle_kb())
+    # Вопрос «применить?» — новое живое меню; прежнюю панель удаляем целиком:
+    # без кнопок над итогом применения она только занимала бы экран.
+    await drop_previous_nav(message.bot, services, message.chat.id)
+    await send_menu(message, services, texts.gateway_bundle_received(link_changed),
+                    kb.gateway_bundle_kb())
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"apply!", "apply_ow!", "apply_keep!"})))

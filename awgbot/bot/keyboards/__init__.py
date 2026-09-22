@@ -36,7 +36,7 @@ from .admin import (
 from .settings import (
     settings_root, settings_back, settings_server, private_dns_choices,
     private_dns_offer_kb, migration_prepare_confirm, migration_generation_pending,
-    settings_firewall, settings_notify, CLIENT_EVENT_LABELS, settings_notify_clients,
+    settings_firewall, ssh_port_finisher, settings_notify, CLIENT_EVENT_LABELS, settings_notify_clients,
     settings_email, email_forget_confirm, settings_subs, settings_mon, settings_backup,
     backup_encryption_kb, restore_confirm, email_setup_offer, settings_svc,
     svc_confirm, migration_confirm, settings_updates, settings_cancel, update_notify,
@@ -57,7 +57,8 @@ from .gateway import (
     gateway_email_offer, gateway_encryption_kb, gateway_cancel_kb, gateway_maint_kb,
     gateway_updates_kb, gateway_confirm_kb, gateway_bundle_kb,
     gateway_bundle_passphrase_kb, gateway_back_kb, gateway_update_available_kb,
-    gateway_lan_kb, gateway_lan_list_kb)
+    gateway_lan_kb, gateway_lan_list_kb,
+    gateway_ssh_kb, gateway_ssh_port_finisher_kb, gateway_ssh_confirm_kb)
 
 __all__ = [
     "BTN_CANCEL", "reply_cancel", "reply_hide", "period_choices", "yes_no", "to_menu",
@@ -77,7 +78,7 @@ __all__ = [
     "reassign_addslot", "confirm_lower_limit", "traffic_profiles_kb", "expiring_kb",
     "online_devices_kb", "traffic_devices_kb", "settings_root", "settings_back",
     "settings_server", "private_dns_choices", "private_dns_offer_kb",
-    "migration_prepare_confirm", "migration_generation_pending", "settings_firewall",
+    "migration_prepare_confirm", "migration_generation_pending", "settings_firewall", "ssh_port_finisher",
     "settings_notify", "CLIENT_EVENT_LABELS", "settings_notify_clients",
     "settings_email", "email_forget_confirm", "settings_subs", "settings_mon",
     "settings_backup", "backup_encryption_kb", "restore_confirm", "email_setup_offer",
@@ -90,7 +91,7 @@ __all__ = [
     "settings_routing_bundle", "settings_routing_lists", "settings_routing_users",
     "bundle_menu_kb", "gateway_list", "gateway_card", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_router_back", "gateway_peer_confirm",
     "gateway_slot_cancel", "settings_routing_monitor", "broadcast_mode", "broadcast_targets", "broadcast_cancel",
-    "broadcast_confirm", "gateway_panel_kb", "gateway_settings_kb",
+    "broadcast_confirm", "gateway_panel_kb", "gateway_ssh_kb", "gateway_ssh_port_finisher_kb", "gateway_ssh_confirm_kb", "gateway_settings_kb",
     "gateway_notify_kb", "gateway_mon_kb", "gateway_backup_kb", "gateway_email_kb",
     "gateway_email_forget_confirm", "gateway_email_offer", "gateway_encryption_kb",
     "gateway_cancel_kb", "gateway_maint_kb", "gateway_updates_kb",

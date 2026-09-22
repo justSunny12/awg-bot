@@ -98,7 +98,8 @@ from .settings import (
     SVC_CONFIRM_BOT, settings_svc_text, SETTINGS_UPD, settings_upd_text,
     SETTINGS_BOUNDS, SETTINGS_TEXT, PRIVATE_DNS_WHAT, private_dns_offer,
     PRIVATE_DNS_LATER, PRIVATE_DNS_DISMISSED, settings_server_text,
-    settings_firewall_text, firewall_armed, firewall_confirmed, firewall_rolled_back,
+    settings_firewall_text, firewall_confirmed, firewall_rolled_back,
+    SSH_PORT_ASK, ssh_port_busy, ssh_port_same, ssh_port_changed, ssh_owner_refusal,
     settings_prompt, settings_changed, settings_ssh_allow_added, settings_bad_value)
 from .broadcast import (
     BROADCAST_EMPTY, BROADCAST_MODE, BROADCAST_TARGETS, BROADCAST_TARGETS_EXTEND,
@@ -112,7 +113,10 @@ from .gateway import (
     GW_BACKUP_NO_KEY, host_rebooted, GW_MAINT, GW_CONFIRM_RESTART, GW_CONFIRM_REASSERT,
     GW_CONFIRM_BOT_RESTART, GW_BOT_RESTARTING, GW_BUNDLE_NOT_OURS,
     GW_BUNDLE_PASSPHRASE_QUESTION, gateway_claim_forward_text, gateway_apply_report,
-    gateway_op_result, awg_restart_warning_body, gateway_bundle_received)
+    gateway_op_result, awg_restart_warning_body, gateway_bundle_received,
+    gateway_ssh_text, GW_SSH_PORT_ASK, gateway_ssh_owner_refusal, gateway_ssh_port_changed,
+    GW_SSH_ALLOW_ASK, gateway_ssh_allow_added, GW_SSH_ALLOW_ALREADY, gateway_ssh_filter_on_ask,
+    GW_SSH_FILTER_OFF, GW_SSH_FILTER_OFF_ASK, gateway_ssh_del_ask, gateway_ssh_panel_line)
 from .common import HB_SERVER_DOWN, HB_SERVER_UP, cancelled, BOT_RESTARTED
 
 __all__ = [
@@ -191,7 +195,8 @@ __all__ = [
     "SETTINGS_UPD", "settings_upd_text", "SETTINGS_BOUNDS", "SETTINGS_TEXT",
     "PRIVATE_DNS_WHAT", "private_dns_offer", "PRIVATE_DNS_LATER",
     "PRIVATE_DNS_DISMISSED", "settings_server_text", "settings_firewall_text",
-    "firewall_armed", "firewall_confirmed", "firewall_rolled_back", "settings_prompt",
+    "firewall_confirmed", "firewall_rolled_back", "settings_prompt",
+    "SSH_PORT_ASK", "ssh_port_busy", "ssh_port_same", "ssh_port_changed", "ssh_owner_refusal",
     "settings_changed", "settings_ssh_allow_added", "settings_bad_value",
     "BROADCAST_EMPTY", "BROADCAST_MODE", "BROADCAST_TARGETS",
     "BROADCAST_TARGETS_EXTEND", "BROADCAST_NO_TARGETS", "BROADCAST_ALL_UNLIMITED",
@@ -204,6 +209,10 @@ __all__ = [
     "host_rebooted", "GW_MAINT", "GW_CONFIRM_RESTART", "GW_CONFIRM_REASSERT",
     "GW_CONFIRM_BOT_RESTART", "GW_BOT_RESTARTING", "GW_BUNDLE_NOT_OURS",
     "GW_BUNDLE_PASSPHRASE_QUESTION", "gateway_claim_forward_text",
+    "gateway_ssh_text", "GW_SSH_PORT_ASK", "gateway_ssh_owner_refusal", "gateway_ssh_port_changed",
+    "GW_SSH_ALLOW_ASK", "gateway_ssh_allow_added", "GW_SSH_ALLOW_ALREADY", "gateway_ssh_filter_on_ask",
+    "GW_SSH_FILTER_OFF", "GW_SSH_FILTER_OFF_ASK", "gateway_ssh_del_ask",
+    "gateway_ssh_panel_line",
     "gateway_apply_report", "gateway_op_result", "awg_restart_warning_body",
     "gateway_bundle_received", "HB_SERVER_DOWN", "HB_SERVER_UP", "cancelled",
     "BOT_RESTARTED",

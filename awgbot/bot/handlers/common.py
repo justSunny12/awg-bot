@@ -52,6 +52,23 @@ async def _dismiss_previous_nav(bot, services, chat_id: int, keep_id=None) -> No
         pass
 
 
+async def drop_previous_nav(bot, services, chat_id: int) -> None:
+    """Удалить прежнее нав-сообщение целиком, а не снять с него кнопки: когда
+    следующий экран приходит новым сообщением по внешнему событию (файл
+    конфигурации в чате агента), панель без кнопок над ним — просто мусор."""
+    prev = await call(services.db.get_nav_message_id, chat_id)
+    if prev is None:
+        return
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=prev)
+    except Exception:                                      # noqa: BLE001
+        try:
+            await bot.edit_message_reply_markup(chat_id=chat_id, message_id=prev, reply_markup=None)
+        except Exception:                                  # noqa: BLE001
+            pass
+    await call(services.db.set_nav_message_id, chat_id, None)
+
+
 async def send_menu(message: Message, services, text, markup, keep_id=None) -> None:
     """Показать меню/нав-экран НОВЫМ сообщением, погасив предыдущее активное.
     Единая точка показа — держит инвариант «одно живое меню в чате».

@@ -693,6 +693,17 @@ def ufw_active() -> bool:
     return b"Status: active" in out
 
 
+def firewalld_active() -> bool:
+    """Второй владелец правил на RHEL-семействе; на apt-системах редко, но
+    ставится руками."""
+    try:
+        rc = subprocess.run(["systemctl", "is-active", "--quiet", "firewalld"],
+                            capture_output=True, timeout=10).returncode
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return rc == 0
+
+
 def status(admin_ips) -> dict:
     spec = build_spec(admin_ips)
     text = render(spec)
@@ -702,4 +713,5 @@ def status(admin_ips) -> dict:
         "live_admin": live_set(SET_TUNNEL_ADMIN) if present else None,
         "live_allow4": live_set(SET_ALLOW4) if present else None,
         "spec": spec, "rollback": rollback_armed(), "ufw": ufw_active(),
+        "firewalld": firewalld_active(),
     }

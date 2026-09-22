@@ -234,6 +234,8 @@ class GwCB(CallbackData, prefix="gw"):
       upd_toggle|upd_check|upd_sched (val — вариант расписания);
       lan — локальная сеть без VPN (концепт «локальная сеть»); lan_add|lan_ru|lan_del —
       ввод доменов в личные списки, lan_list — свои списки, lan_update —
-      обновить фиды сейчас."""
+      обновить фиды сейчас.
+      ssh — раздел «Доступ по SSH», ssh_port|ssh_add|ssh_del (val — номер)|
+      ssh_on|ssh_on!|ssh_off|ssh_port_retry|ssh_port_back — его действия."""
     action: str
     val: str = ""

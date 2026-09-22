@@ -4,10 +4,15 @@ routing-gw-setup.sh (юнит awg-link-gw.service), и локальные доб
 
 Генератор таблицы — ОДИН, скрипт: он же реассертит её при загрузке и по
 `systemctl restart awg-link-gw.service`. Агент таблицу не пишет — только
-читает (проверки, панель) и просит перевыставить. Единственное, что живёт на
-самом шлюзе, — ADMIN_IPS_EXTRA в /etc/awg-gw/firewall.env: адреса, добавленные
-командой `awg-bot firewall allow` сверх приехавших в бандле устройств админа
-(им с туннеля открыто всё: сама машина и домашняя сеть за ней).
+читает (проверки, панель) и просит перевыставить; единственное исключение —
+наборы с динамикой (`ssh_allow4`, `server4`: резолв имён DynDNS), которые
+агент наполняет сам через `set_sync`, как основной бот держит admin4.
+
+Локальное состояние файервола шлюза — /etc/awg-gw/firewall.env, его читают
+скрипт и юнит (EnvironmentFile): ADMIN_IPS_EXTRA (доверенные из туннеля сверх
+бандла, `awg-bot firewall allow`), SSH_PORT (факт: порт, который слушает
+sshd — пишет агент), SSH_FILTER, SSH_ALLOW, SSH_ALLOW_RESOLVED (SSH снаружи,
+раздел «Доступ по SSH» агента и `awg-bot ssh …`).
 """
 from __future__ import annotations
 
@@ -15,6 +20,7 @@ import ipaddress
 import json
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -54,9 +60,11 @@ def _elem_str(el) -> str:
 
 
 def table_info() -> Optional[dict]:
-    """{'sets': {имя: set(str)}, 'chains': set(имя), 'masq_ifaces': set(str)}
-    или None — таблицы нет. masq_ifaces — в какие интерфейсы стоит masquerade
-    (по oifname). Один exec: `nft -j list table`."""
+    """{'sets': {имя: set(str)}, 'chains': set(имя), 'masq_ifaces': set(str),
+    'ssh_ports': {цепочка: порт}} или None — таблицы нет. masq_ifaces — в
+    какие интерфейсы стоит masquerade (по oifname); ssh_ports — какой tcp
+    dport держат правила про SSH (tunnel_in: сервер по линку; input: переход
+    на ssh_in). Один exec: `nft -j list table`."""
     proc = _nft(["-j", "list", "table", TABLE_FAMILY, TABLE_NAME])
     if proc.returncode != 0:
         return None
@@ -67,6 +75,7 @@ def table_info() -> Optional[dict]:
     sets: dict[str, set[str]] = {}
     chains: set[str] = set()
     masq: set[str] = set()
+    ssh_ports: dict[str, int] = {}
     for item in doc.get("nftables", []):
         if "set" in item:
             s = item["set"]
@@ -80,7 +89,13 @@ def table_info() -> Optional[dict]:
                     m = e.get("match") if isinstance(e, dict) else None
                     if m and (m.get("left") or {}).get("meta", {}).get("key") == "oifname":
                         masq.add(str(m.get("right")))
-    return {"sets": sets, "chains": chains, "masq_ifaces": masq}
+            for e in expr:
+                m = e.get("match") if isinstance(e, dict) else None
+                left = (m or {}).get("left") or {}
+                if m and left.get("payload", {}).get("field") == "dport" \
+                        and left["payload"].get("protocol") == "tcp" and isinstance(m.get("right"), int):
+                    ssh_ports[str(item["rule"].get("chain"))] = int(m["right"])
+    return {"sets": sets, "chains": chains, "masq_ifaces": masq, "ssh_ports": ssh_ports}
 
 
 def iptables_forward_policy() -> Optional[str]:
@@ -99,29 +114,189 @@ def iptables_forward_policy() -> Optional[str]:
     return None
 
 
-# ── локальные добавки: ADMIN_IPS_EXTRA ───────────────────────────────────────
+# ── локальное состояние: /etc/awg-gw/firewall.env ───────────────────────────
+ENV_KEYS = ("ADMIN_IPS_EXTRA", "SSH_PORT", "SSH_FILTER", "SSH_ALLOW", "SSH_ALLOW_RESOLVED")
+_ENV_HEAD = ("# awg-bot (шлюз): локальное состояние файервола. Правится из чата агента и\n"
+             "# командами awg-bot firewall / awg-bot ssh; читают юнит awg-link-gw и скрипт\n"
+             "# обвязки. ADMIN_IPS_EXTRA — доверенные из туннеля сверх бандла; SSH_PORT —\n"
+             "# порт, который слушает sshd (факт, пишет агент); SSH_FILTER/SSH_ALLOW/\n"
+             "# SSH_ALLOW_RESOLVED — фильтр SSH снаружи и его адреса.\n")
+_ENV_LINE_RE = re.compile(r'^([A-Z_][A-Z0-9_]*)="([^"\n]*)"$', re.M)
+_HOST_RE = re.compile(r"[A-Za-z0-9.-]{1,253}")
+_ADDR_CHARS_RE = re.compile(r"[0-9A-Fa-f:./]+")     # ipaddress пускает scope id (%…) — sh нет
 
-def read_extra() -> list[str]:
+
+def read_env() -> dict[str, str]:
+    """Все NAME="…" из файла; нет файла — пусто."""
     try:
         text = Path(FW_ENV).read_text(encoding="utf-8")
     except OSError:
-        return []
-    m = re.search(r'^ADMIN_IPS_EXTRA="([^"\n]*)"', text, re.M)
-    return [t for t in (m.group(1).split() if m else []) if t]
+        return {}
+    return {m.group(1): m.group(2) for m in _ENV_LINE_RE.finditer(text)}
+
+
+def _check_env_value(key: str, value: str) -> str:
+    """Файл исполняется sh (`. "$FW_ENV"`): каждое значение — строгий набор
+    символов. Списки адресов — IP/CIDR/имена через пробел, порт — число."""
+    v = " ".join(str(value).split())
+    if key == "SSH_PORT":
+        if v and not (v.isdigit() and 1 <= int(v) <= 65535):
+            raise ValueError(f"SSH_PORT: {v!r} не порт")
+        return v
+    if key == "SSH_FILTER":
+        return "1" if v in ("1", "true", "True") else "0"
+    for tok in v.split():
+        try:
+            ipaddress.ip_network(tok, strict=False)
+            if _ADDR_CHARS_RE.fullmatch(tok):
+                continue
+        except ValueError:
+            pass
+        # имя — как nftguard.classify: с точкой, не с цифры, допустимые символы
+        if key == "SSH_ALLOW" and _HOST_RE.fullmatch(tok) and "." in tok and not tok[0].isdigit():
+            continue
+        raise ValueError(f"{key}: {tok!r} не адрес" + (", не подсеть и не имя" if key == "SSH_ALLOW" else ""))
+    return v
+
+
+def write_env(**fields: str) -> dict[str, str]:
+    """Обновить указанные ключи, остальное сохранить; запись целиком, атомарно.
+    Возвращает итоговое содержимое."""
+    cur = read_env()
+    for k, v in fields.items():
+        if k not in ENV_KEYS:
+            raise ValueError(f"неизвестный ключ {k}")
+        cur[k] = _check_env_value(k, v)
+    p = Path(FW_ENV)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    body = _ENV_HEAD + "".join(f'{k}="{cur[k]}"\n' for k in ENV_KEYS if k in cur) \
+        + "".join(f'{k}="{v}"\n' for k, v in cur.items() if k not in ENV_KEYS)
+    fd, tmp = tempfile.mkstemp(prefix=".firewall.env.", dir=str(p.parent))
+    with open(fd, "w", encoding="utf-8") as f:
+        f.write(body)
+    Path(tmp).chmod(0o644)
+    Path(tmp).replace(p)
+    return cur
+
+
+def read_extra() -> list[str]:
+    return [t for t in read_env().get("ADMIN_IPS_EXTRA", "").split() if t]
 
 
 def write_extra(entries: list[str]) -> None:
     for e in entries:
         ipaddress.ip_network(e, strict=False)          # ValueError наружу
-    p = Path(FW_ENV)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    body = ("# awg-bot (шлюз): доверенные адреса сверх устройств админа из бандла —\n"
-            "# им с туннеля открыт шлюз и домашняя сеть. Правится командой\n"
-            "# awg-bot firewall allow/deny; читает юнит awg-link-gw.\n"
-            f'ADMIN_IPS_EXTRA="{" ".join(entries)}"\n')
-    tmp = p.with_suffix(".env.tmp")
-    tmp.write_text(body, encoding="utf-8")
-    tmp.replace(p)
+    write_env(ADMIN_IPS_EXTRA=" ".join(entries))
+
+
+def set_sync(name: str, desired: set[str], info: dict | None = None) -> bool:
+    """Привести живой набор таблицы к desired одной транзакцией
+    (`flush set` + `add element`). Нет расхождения — ни одного exec.
+    Возвращает, менял ли. Таблицы или набора нет — False (старая обвязка)."""
+    if info is None:
+        info = table_info()
+    if not info or name not in info["sets"]:
+        return False
+    live = {_norm_elem(e) for e in info["sets"][name]}
+    want = {_norm_elem(e) for e in collapse(desired)}
+    if live == want:
+        return False
+    lines = [f"flush set {TABLE} {name}"]
+    if want:
+        lines.append(f"add element {TABLE} {name} {{ {', '.join(sorted(want))} }}")
+    fd, tmp = tempfile.mkstemp(prefix="awg-gw-set-", suffix=".nft")
+    try:
+        with open(fd, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        proc = _nft(["-f", tmp])
+        if proc.returncode != 0:
+            raise GwGuardError("nft -f: " + proc.stderr.decode(errors="replace").strip()[-200:])
+    finally:
+        try:
+            Path(tmp).unlink()
+        except OSError:
+            pass
+    return True
+
+
+def collapse(entries) -> list[str]:
+    """Схлопнуть пересекающиеся и смежные подсети: nft отвергает пересечения
+    в наборе с flags interval («conflicting intervals») — и в транзакции, и в
+    файле при загрузке. Не-адреса (имена) пропускаются."""
+    nets = []
+    for e in entries:
+        try:
+            nets.append(ipaddress.ip_network(str(e), strict=False))
+        except ValueError:
+            continue
+    return [_norm_elem(str(n)) for n in ipaddress.collapse_addresses(nets)]
+
+
+def overlaps(entry: str, others) -> str:
+    """Чем из others пересекается entry (первое найденное), пусто — ничем.
+    Для отказа «уже покрыт подсетью …» до записи в файл."""
+    try:
+        net = ipaddress.ip_network(str(entry), strict=False)
+    except ValueError:
+        return ""
+    for o in others:
+        try:
+            on = ipaddress.ip_network(str(o), strict=False)
+        except ValueError:
+            continue
+        if net.overlaps(on):
+            return str(o)
+    return ""
+
+
+def plumbing_installed() -> bool:
+    """Юнит обвязки на месте (после --rollback его нет — писать состояние и
+    дёргать реассерт некуда)."""
+    return Path(f"/etc/systemd/system/{config.GW_UNIT}").exists()
+
+
+def lan_nets(iface: str = "") -> list[str]:
+    """Подсети интерфейса квартиры (маршруты scope link) — то, что скрипт
+    кладёт в lan4 при старте; агент сверяет по тику (DHCP мог сменить подсеть).
+    Пусто — не определить (агент тогда набор не трогает)."""
+    if not iface:
+        for r in _ip_json(["route", "show", "default"]):
+            if r.get("dev"):
+                iface = str(r["dev"])
+                break
+    if not iface:
+        return []
+    out = []
+    for r in _ip_json(["route", "show", "dev", iface, "scope", "link"]):
+        dst = str(r.get("dst", ""))
+        if "/" in dst and dst not in out:
+            out.append(dst)
+    return out
+
+
+def _norm_elem(e: str) -> str:
+    """nft отдаёт /32 без маски и подсети с ней; сравниваем в одном виде."""
+    try:
+        net = ipaddress.ip_network(str(e), strict=False)
+    except ValueError:
+        return str(e)
+    return str(net.network_address) if net.prefixlen == net.max_prefixlen else str(net)
+
+
+def server_host() -> str:
+    """Хост сервера снаружи: живой эндпоинт пира линка, запас — Endpoint из
+    конфига линка. IP или имя; пусто — не узнать."""
+    host = _endpoint_host(config.GW_LINK_IF)
+    if host:
+        return host
+    try:
+        text = Path(config.GW_LINK_CONF).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    m = re.search(r"^\s*Endpoint\s*=\s*(\S+)", text, re.M)
+    if not m:
+        return ""
+    return m.group(1).rsplit(":", 1)[0].strip("[]")
 
 
 def unit_admin_ips() -> list[str]:

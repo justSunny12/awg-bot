@@ -90,6 +90,17 @@ class GatewayLanDomain(StatesGroup):
     value = State()
 
 
+class SshPort(StatesGroup):
+    """Новый порт sshd из раздела «Доступ по SSH» (основной бот и агент шлюза —
+    роутеры разведены фильтром роли)."""
+    value = State()
+
+
+class GwSshAllow(StatesGroup):
+    """Адреса для входа снаружи на шлюз."""
+    value = State()
+
+
 class MigrationPort(StatesGroup):
     """Порт второго интерфейса перед переездом: единственный параметр, который
     иногда хотят выбрать сами (443 на хосте, где его никто не слушает)."""

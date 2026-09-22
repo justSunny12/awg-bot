@@ -33,6 +33,7 @@ from awgbot.domain.services import Notification, ServiceError  # noqa: E402
 from awgbot.domain.selfupdate import SelfUpdateMixin  # noqa: E402
 from awgbot.domain.backupcrypto import BackupCryptoMixin  # noqa: E402
 from awgbot.domain.mailmix import MailMixin  # noqa: E402
+from awgbot.domain.gwssh import GwSshMixin  # noqa: E402
 
 
 def _run(argv: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
@@ -84,6 +85,7 @@ class GwStatus:
     tg_missing: list[str] = field(default_factory=list)   # диапазоны Telegram без маркировки
     mark_status: str = ""                   # шлюзовое устройство: confirmed|unmarked|foreign|unconfirmed
     lan: dict = field(default_factory=dict) # локальная сеть без VPN (концепт «локальная сеть»): пусто — выключена
+    ssh: dict = field(default_factory=dict) # порт (факт), владелец, фильтр снаружи, адреса — для панели
     ts: str = ""                            # когда снят (ISO); пусто — живой
 
     def to_json(self) -> str:
@@ -102,7 +104,7 @@ class GwStatus:
         return max(0.0, (timeutil.now() - timeutil.parse_iso(self.ts)).total_seconds())
 
 
-class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
+class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin):
     """Механика агента. db — обычная Database: нужен только state (гистерезис,
     снимки); клиентские таблицы просто пустуют, и городить отдельную схему ради
     их отсутствия — усложнение без выгоды."""
@@ -362,6 +364,10 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         except Exception as e:                          # noqa: BLE001
             log.warning("gateway: uplink_policy_heal: %s", e)
             fixed = []
+        # Реконсайл SSH прошёл внутри status() — до проверок, чтобы снимок не
+        # называл «реассерт не прошёл» то, что ещё не пробовали; уведомления
+        # оттуда забираем здесь.
+        notes += self.__dict__.pop("_ssh_pending", [])
         if fixed:
             # Одно уведомление на факт: пропажа правила — событие (обычно
             # перезапуск systemd-networkd), о котором стоит знать, а не стрик.
@@ -878,6 +884,13 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
                 extra.append((f"awg/{os.path.basename(p)}", open(p, "rb").read()))
             except OSError:
                 pass
+        # Локальное состояние файервола (порт, адреса снаружи, доверенные из
+        # туннеля) — данные человека, бандл их не восстановит.
+        from awgbot.infra import gwguard
+        try:
+            extra.append(("awg-gw/firewall.env", open(gwguard.FW_ENV, "rb").read()))
+        except OSError:
+            pass
         return self.write_backup_archive("gw", extra, require_encryption=True)
 
     def _apply_bundle_mail(self, text: str) -> bool:
@@ -944,6 +957,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         """Сбросить кэш статических проб: «Статус», «Монитор здоровья», старт."""
         self.__dict__.pop("_static_cache", None)
         self.__dict__.pop("_unit_enabled_cache", None)
+        self.invalidate_ssh_static()
 
     def _static(self) -> tuple[tuple[str, str], tuple[list[str], int], str | None]:
         from awgbot.runtime import hostmetrics
@@ -973,6 +987,26 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin):
         peer_check = self.peer_nets_check(self._guard_info)
         if peer_check is not None:
             checks.append(peer_check)
+        try:
+            # Порт sshd — один `ss` на тик: реконсайл, проверки и панель берут
+            # этот снимок. Реассерт внутри реконсайла — перечитать таблицу.
+            fact = self.ssh_port_fact()
+            before = self._ssh_last_reassert
+            self.__dict__.setdefault("_ssh_pending", []).extend(
+                self.ssh_reconcile(self._guard_info, fact))
+            if self._ssh_last_reassert != before:
+                from awgbot.infra import gwguard
+                try:
+                    self._guard_info = gwguard.table_info()
+                except gwguard.GwGuardError:
+                    pass
+            checks += self.ssh_checks(self._guard_info, fact)
+            scr = self.ssh_screen(self._guard_info, fact, conf=False)
+            st.ssh = {"port": scr["port"], "owner": scr["owner"], "filter": scr["filter"],
+                      "allow": len(scr["allow"]), "sshd_down": scr["sshd_down"],
+                      "new_plumbing": scr["new_plumbing"]}
+        except Exception as e:                            # noqa: BLE001
+            log.warning("gateway: ssh status: %s", e)
         ok_link = st.link_up and st.handshake_age is not None
         checks.append(GwCheck("линк", ok_link, "" if ok_link else
                               ("интерфейс лежит" if not st.link_up else "хендшейка не было")))

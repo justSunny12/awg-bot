@@ -86,11 +86,12 @@ def test_first_device_is_printed_after_a_successful_start(script):
 def test_chat_buttons_match_what_the_bot_handles():
     """Кнопка из другого процесса обязана попасть в тот же обработчик, что и
     кнопка, нарисованная ботом: разойдись формат — нажатие уходит в никуда."""
-    from awgbot.bot import keyboards as kb
+    from awgbot.bot.callbacks import SetCB
     from tools.firewall import _fw_cb
-    st = {"rollback": True}
-    drawn = [b.callback_data for row in kb.settings_firewall(st).inline_keyboard for b in row]
-    assert _fw_cb("confirm") in drawn and _fw_cb("rollback") in drawn
+    # Бот эти кнопки больше не рисует (из чата таймера нет), но их колбэки
+    # по-прежнему ведёт _firewall_action по ключам confirm / rollback.
+    assert _fw_cb("confirm") == SetCB(sec="fw", act="do", key="confirm").pack()
+    assert _fw_cb("rollback") == SetCB(sec="fw", act="do", key="rollback").pack()
 
 
 def test_tgsend_sends_html_with_one_button_per_row(monkeypatch):

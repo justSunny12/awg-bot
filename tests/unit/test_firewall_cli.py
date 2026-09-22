@@ -87,8 +87,8 @@ def test_bad_address_leaves_the_firewall_off(cli):
 
 def test_arming_sends_two_buttons_to_the_chat(cli):
     """Правила могли отрезать именно тот SSH, из которого их применяли. Кнопка
-    приходит в чат сама — и та же, что рисует бот."""
-    from awgbot.bot import keyboards as kb
+    приходит в чат сама — и ведёт в _firewall_action бота (confirm / rollback)."""
+    from awgbot.bot.callbacks import SetCB
     store, acts = cli
     fw._arm(300)
     chat = [a for a in acts if a[0] == "chat"]
@@ -96,10 +96,9 @@ def test_arming_sends_two_buttons_to_the_chat(cli):
     text, kwargs = chat[0][1][0], chat[0][2]
     assert "проверка входа" in text.lower() or "проверь" in text.lower()
     buttons = dict((t, d) for t, d in kwargs["buttons"])
-    drawn = {b.text: b.callback_data
-             for row in kb.settings_firewall({"rollback": True}).inline_keyboard for b in row}
-    assert set(buttons.values()) == {drawn[t] for t in buttons}, \
-        "кнопка из CLI уйдёт в другой обработчик, чем кнопка из бота"
+    assert set(buttons.values()) == {SetCB(sec="fw", act="do", key=k).pack()
+                                     for k in ("confirm", "rollback")}, \
+        "кнопка из CLI уйдёт не в _firewall_action бота"
 
 
 def test_rollback_removes_the_table_and_tells_the_admin(cli):
@@ -120,3 +119,35 @@ def test_off_disarms_before_removing(cli):
     assert fw.cmd_off([]) == 0
     assert [a[0] for a in acts][:2] == ["disarm", "remove"]
     assert store["app.firewall.enabled"] is False
+
+
+# ── awg-bot ssh … на шлюзе ───────────────────────────────────────────────────
+
+def test_gw_ssh_cli_refuses_on_the_server_and_reports_the_owner(monkeypatch, capsys):
+    from awgbot.core import config
+    from awgbot.domain.gwssh import SshOwnerRefusal
+    from awgbot.infra import sshd
+    from tools import gwssh
+    monkeypatch.setattr(config, "ROLE", "main")
+    assert gwssh.main(["status"]) == 2
+    assert "агента шлюза" in capsys.readouterr().out
+    monkeypatch.setattr(config, "ROLE", "gateway")
+    assert gwssh.main([]) == 2 and "port <N>" in capsys.readouterr().out
+
+    class Svc:
+        def ssh_port_change(self, port):
+            raise SshOwnerRefusal(sshd.SshdOwner("omv", "OMV: Службы → SSH → «Порт»", 22), 22)
+
+        def ssh_screen(self):
+            return {"port": 22, "sshd_down": False, "ports": [22], "env_port": 22, "owner": "omv",
+                    "owner_port": 22, "admin_ips": ["10.9.1.2"], "new_plumbing": True, "filter": True,
+                    "allow": ["home2.dyn.example"], "resolved": ["198.51.100.4"], "unresolved": [],
+                    "server": "203.0.113.10", "table_ports": {"tunnel_in": 22, "input": 22},
+                    "omv_rules": 0, "ufw": False}
+    monkeypatch.setattr(gwssh, "_svc", lambda: Svc())
+    assert gwssh.main(["port", "2222"]) == 1
+    out = capsys.readouterr().out
+    assert "[ОТКАЗ]" in out and "Службы → SSH" in out
+    assert gwssh.main(["status"]) == 0
+    out = capsys.readouterr().out
+    assert "владелец конфига: OMV" in out and "фильтр включён" in out and "home2.dyn.example" in out

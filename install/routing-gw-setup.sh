@@ -30,8 +30,13 @@
 # работали. Политика INPUT для домашней сети остаётся accept.
 #
 # ОКРУЖЕНИЕ (из юнита/бандла): CLIENT_SUBNET, LINK_IF, ADMIN_IPS (устройства
-# админа — полный доступ с туннеля), ADMIN_IPS_EXTRA (добавленное на самом
-# шлюзе: /etc/awg-gw/firewall.env), SSH_PORT (22), TG_MARK (0x1).
+# админа — полный доступ с туннеля), TG_MARK (0x1). Локальное состояние
+# файервола шлюза — /etc/awg-gw/firewall.env (пишут агент и awg-bot ssh/firewall):
+# ADMIN_IPS_EXTRA (доверенные из туннеля сверх бандла), SSH_PORT (факт: порт,
+# который слушает sshd; 22), SSH_FILTER (1 — фильтр SSH снаружи включён),
+# SSH_ALLOW (адреса снаружи: IP/CIDR/имена), SSH_ALLOW_RESOLVED (последний
+# резолв имён — агент). Фильтр снаружи (цепочка ssh_in) касается только порта
+# SSH и только не-туннельных источников: локальная сеть и сервер открыты всегда.
 #
 # ЗАПУСК:
 #   sudo sh routing-gw-setup.sh                    # показать план
@@ -69,9 +74,17 @@ PRIVATE_NETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/
 # Устройства админа (из бандла с ВПС) — им с туннеля открыто ВСЁ: сама машина и
 # домашняя сеть через неё. Прочим клиентам — изоляция и drop. Старое имя
 # переменной (SSH_ALLOW) принимается для бандлов прежнего выпуска.
-ADMIN_IPS="${ADMIN_IPS:-${SSH_ALLOW:-}}"
+# Без двоеточия: запасное имя — только когда ADMIN_IPS НЕ ЗАДАН (старый
+# бандл); юнит всегда задаёт его, пусть и пустым, а SSH_ALLOW из firewall.env
+# к этому моменту уже в окружении (EnvironmentFile) — это список снаружи.
+ADMIN_IPS="${ADMIN_IPS-${SSH_ALLOW:-}}"
 ADMIN_IPS_EXTRA="${ADMIN_IPS_EXTRA:-}"
+# Старое имя SSH_ALLOW отработало выше как ADMIN_IPS; дальше SSH_ALLOW — список
+# адресов СНАРУЖИ из firewall.env, и бандловое значение ему не должно достаться.
+SSH_ALLOW=""; SSH_ALLOW_RESOLVED=""; SSH_FILTER=""
 [ -f "$FW_ENV" ] && . "$FW_ENV"
+case "$SSH_PORT" in ''|*[!0-9]*) SSH_PORT=22 ;; esac
+[ "$SSH_FILTER" = "1" ] || SSH_FILTER=0
 # Шлюзовое устройство (пометка в основном боте): ключ аплинка помеченного
 # шлюза, старый ключ в окне переезда, конфиг аплинка в base64. Пусто — шлюз
 # в основном боте не помечен.
@@ -449,6 +462,27 @@ ipv4_list() {
     done | awk '!seen[$0]++' | paste -sd, - | sed 's/,/, /g'
 }
 
+# Адрес сервера снаружи — хост Endpoint из конфига линка: IP как есть, имя —
+# один резолв (при отказе пусто: набор server4 наполнит агент по тику).
+# v6-литерал ([…]:порт) снаружи не поддерживается — пусто.
+server_ipv4() {
+    _h="$(awk '/^[[:space:]]*Endpoint[[:space:]]*=/ {sub(/^[^=]*=[[:space:]]*/, ""); print; exit}' \
+        "${1:-/dev/null}" 2>/dev/null | sed 's/:[0-9]*$//')"
+    case "$_h" in
+        ""|\[*) return 0 ;;
+        *[!0-9.]*) getent ahostsv4 "$_h" 2>/dev/null | awk '{print $1; exit}' ;;
+        *) printf '%s\n' "$_h" ;;
+    esac
+}
+
+# Локальная сеть — подсети интерфейса квартиры (маршруты scope link): именно
+# они, а не RFC1918 целиком — за CGNAT провайдера (100.64/10) соседи по пулу
+# приходили бы через проброс как «свои». Пусто — RFC1918 (запас).
+lan_ipv4() {
+    ip -4 route show dev "$1" scope link 2>/dev/null | awk '$1 ~ /\// {print $1}' \
+        | awk '!seen[$0]++' | paste -sd, - | sed 's/,/, /g'
+}
+
 # Контейнер, интерфейс выхода и каталог конфигов ОПРЕДЕЛЯЮТСЯ, а не задаются
 # дефолтом: чужие имена в поставке — источник тихих ошибок «скрипт отработал, но
 # не там». Любое можно переопределить переменной окружения.
@@ -558,7 +592,9 @@ if [ "$MODE" = "rollback" ]; then
         done
     fi
     run "nft delete table $GUARD_TABLE 2>/dev/null || true"
-    run "rm -f $GUARD_FILE $FW_ENV $GW_STATUS_FILE"
+    # firewall.env — данные человека (адреса, порт): не удаляем, а откладываем.
+    [ -f "$FW_ENV" ] && run "mv -f $FW_ENV $FW_ENV.bak"
+    run "rm -f $GUARD_FILE $GW_STATUS_FILE"
     run "rmdir $GW_ETC 2>/dev/null || true"
     run "rm -f $HOST_CONF_DIR/$LINK_IF.conf $UNIT $SYSCTL_CONF /etc/systemd/networkd.conf.d/awg-gw.conf $NETWORKD_UNMANAGED"
     run "rm -f /etc/systemd/system/awg-quick@*.service.d/awg-gw.conf"
@@ -577,6 +613,7 @@ if [ "$MODE" = "plan" ]; then
     say "  2. таблица nft $GUARD_TABLE: MASQUERADE $CLIENT_SUBNET → $WAN_IF, изоляция"
     say "     клиентов от приватных сетей, метки Telegram и GitHub → аплинк, защита шлюза от туннеля"
     say "     (с туннеля на шлюз: ВПС по линку; полный доступ — ADMIN_IPS=${ADMIN_IPS:-—})"
+    say "     SSH снаружи (порт $SSH_PORT): фильтр $([ "$SSH_FILTER" = 1 ] && echo включён || echo выключен); адреса: ${SSH_ALLOW:-—}"
     say "  3. снятие прежних правил iptables ($FWD_CHAIN, MASQUERADE, метки)"
     say "  0. шлюзовое устройство: ${GATEWAY_PUBKEY:+помечен, конфиг аплинка ставится машине с тем же ключом}${GATEWAY_PUBKEY:-не помечен}"
     say "  4. юнит awg-link-gw.service"
@@ -696,9 +733,10 @@ else
 fi
 write_status() {   # $1 = состояние линка
     [ "$MODE" = "plan" ] && return 0
-    printf 'GW_STATUS=%s\nGATEWAY_PUBKEY=%s\nUPLINK=%s\nUPLINK_IF=%s\nLINK=%s\nLAN=%s\nLAN_IF=%s\nLAN_ADDR=%s\nLAN_ERROR=%s\n' \
+    printf 'GW_STATUS=%s\nGATEWAY_PUBKEY=%s\nUPLINK=%s\nUPLINK_IF=%s\nLINK=%s\nLAN=%s\nLAN_IF=%s\nLAN_ADDR=%s\nLAN_ERROR=%s\nSSH_PORT=%s\nSSH_FILTER=%s\nSSH_ALLOW_COUNT=%s\n' \
         "$GW_STATUS" "$GATEWAY_PUBKEY" "$UPLINK_STATE" "${UPLINK_IF:-}" "$1" \
-        "${LAN_MODE:-0}" "${LAN_IF:-}" "${LAN_ADDR:-}" "${LAN_ERROR:-}" > "$GW_STATUS_FILE"
+        "${LAN_MODE:-0}" "${LAN_IF:-}" "${LAN_ADDR:-}" "${LAN_ERROR:-}" \
+        "$SSH_PORT" "$SSH_FILTER" "$(set -- $SSH_ALLOW; echo $#)" > "$GW_STATUS_FILE"
 }
 write_status "pending"
 
@@ -849,17 +887,31 @@ fi
 # ── 2. таблица nft — вся обвязка одним атомарным файлом ──────────────────────
 step "2. Таблица $GUARD_TABLE"
 say "  MASQUERADE $CLIENT_SUBNET и $LINK_CIDR → $WAN_IF: российские сервисы увидят"
-say "  домашний адрес; с адреса линка ходит зонд живости с ВПС."
+say "  локальный адрес; с адреса линка ходит зонд живости с ВПС."
 say "  Изоляция: клиентам из туннеля закрыты все приватные сети (NAS, роутер,"
 say "  docker, link-local), остальное — транзит наружу."
 say "  Защита шлюза: с адресов туннеля на саму машину пускаем только ВПС по"
 say "  линку ($LINK_PEER: SSH, ICMP); устройствам админа открыто всё, включая"
-say "  домашнюю сеть; прочее дропается."
+say "  локальную сеть; прочее дропается."
 say "  Метки Telegram ($TG_MARK): агенту нужен Telegram через ВПС."
 command -v nft >/dev/null 2>&1 || { say "ОШИБКА: нет nft — apt install nftables"; exit 1; }
 ADMIN_ELEMS="$(ipv4_list $ADMIN_IPS $ADMIN_IPS_EXTRA)"
 PEER_ELEMS="$(ipv4_list $PEER_HOME_NETS)"
 say "  Устройства админа: ${ADMIN_ELEMS:-— (никому, кроме ВПС по линку)}"
+# SSH снаружи (через проброс на роутере): при SSH_FILTER=1 на порт sshd пускаются
+# только локальная сеть, сервер и адреса из SSH_ALLOW (имена — по последнему
+# резолву агента, SSH_ALLOW_RESOLVED; ipv4_list имена отсеивает сам).
+SSH_ALLOW_ELEMS="$(ipv4_list $SSH_ALLOW $SSH_ALLOW_RESOLVED)"
+SERVER_ELEMS="$(server_ipv4 "$SRC_CONF")"
+say "  SSH снаружи (порт $SSH_PORT): фильтр $([ "$SSH_FILTER" = 1 ] && echo включён || echo выключен);"
+say "  адреса: ${SSH_ALLOW_ELEMS:-—}; сервер снаружи: ${SERVER_ELEMS:-— (адрес не определён)}"
+SSH_JUMP=""
+# Только IPv4: таблица inet, а accept'ы в ssh_in — по ip saddr; без nfproto
+# v6-пакет доходил бы до drop, и «из локальной сети всегда» ломалось бы.
+[ "$SSH_FILTER" = 1 ] && SSH_JUMP="        meta nfproto ipv4 tcp dport $SSH_PORT jump ssh_in"
+LAN_ELEMS="$(lan_ipv4 "$WAN_IF")"
+say "  локальная сеть (SSH снаружи не фильтруется): ${LAN_ELEMS:-RFC1918 целиком — подсеть $WAN_IF не определена}"
+[ -n "$LAN_ELEMS" ] || LAN_ELEMS="10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16"
 if [ "$MODE" = "plan" ]; then
     say "  would: записать $GUARD_FILE и применить: nft -f $GUARD_FILE"
 else
@@ -921,17 +973,43 @@ GUARDEOF
 [ -n "$PEER_ELEMS" ] && printf '        elements = { %s }\n' "$PEER_ELEMS"
 cat <<GUARDEOF
     }
+    set ssh_allow4 {
+        type ipv4_addr
+        flags interval
+GUARDEOF
+[ -n "$SSH_ALLOW_ELEMS" ] && printf '        elements = { %s }\n' "$SSH_ALLOW_ELEMS"
+cat <<GUARDEOF
+    }
+    set server4 {
+        type ipv4_addr
+GUARDEOF
+[ -n "$SERVER_ELEMS" ] && printf '        elements = { %s }\n' "$SERVER_ELEMS"
+cat <<GUARDEOF
+    }
+    set lan4 {
+        type ipv4_addr
+        flags interval
+        elements = { $LAN_ELEMS }
+    }
 
     chain input {
         type filter hook input priority filter; policy accept;
         iifname "lo" accept
         ip saddr @tunnel_nets4 jump tunnel_in
+$SSH_JUMP
     }
     chain tunnel_in {
         ct state established,related accept
         ip protocol icmp accept
         ip saddr @admin4 accept
         ip saddr $LINK_PEER tcp dport $SSH_PORT accept
+        drop
+    }
+    chain ssh_in {
+        ct state established,related accept
+        ip saddr @lan4 accept
+        ip saddr @server4 accept
+        ip saddr @ssh_allow4 accept
         drop
     }
 

@@ -51,12 +51,14 @@ def gateway_lan_list_kb() -> InlineKeyboardMarkup:
 
 
 def gateway_settings_kb() -> InlineKeyboardMarkup:
-    """Тот же порядок, что у основного бота; чего у шлюза нет (сервер, доступ
-    по SSH, маршрутизация, подписки) — нет и здесь. Мониторинг и резервное
-    копирование, как и там, живут в «Обслуживании»."""
+    """Тот же порядок, что у основного бота; чего у шлюза нет (сервер,
+    маршрутизация, подписки) — нет и здесь. Мониторинг и резервное
+    копирование, как и там, живут в «Обслуживании»; доступ по SSH — свой
+    раздел (порт как факт, фильтр снаружи)."""
     kb = InlineKeyboardBuilder()
     kb.button(text="🔔 Уведомления", callback_data=GwCB(action="notify"))
     kb.button(text="✉️ E-mail", callback_data=GwCB(action="email"))
+    kb.button(text="🛡 Доступ по SSH", callback_data=GwCB(action="ssh"))
     kb.button(text="🔄 Обслуживание", callback_data=GwCB(action="maint"))
     kb.button(text="⬆️ Обновления бота", callback_data=GwCB(action="updates"))
     kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
@@ -188,6 +190,49 @@ def gateway_encryption_kb(has_secret: bool) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+_ALLOW_BUTTONS = 40     # Telegram: до 100 кнопок; больше сорока адресов — уже не тот инструмент
+
+
+def gateway_ssh_kb(st: dict) -> InlineKeyboardMarkup:
+    """Раздел «🛡 Доступ по SSH» агента — зеркало settings_firewall основного
+    бота: порт, адреса (val — номер записи, не адрес: IPv6 ломал бы упаковку),
+    фильтр. На обвязке старого образца кнопок фильтра нет — включать нечего."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🅿️ Изменить порт", callback_data=GwCB(action="ssh_port"))
+    kb.button(text="➕ Добавить адрес", callback_data=GwCB(action="ssh_add"))
+    # Весь список — кнопками: инфобокс его не показывает, только число
+    for i, entry in enumerate((st.get("allow") or [])[:_ALLOW_BUTTONS]):
+        kb.button(text=f"➖ {entry}", callback_data=GwCB(action="ssh_del", val=str(i)))
+    if st.get("new_plumbing"):
+        if st.get("filter"):
+            kb.button(text="🔴 Выключить фильтр", callback_data=GwCB(action="ssh_off"))
+        else:
+            kb.button(text="🟢 Включить фильтр", callback_data=GwCB(action="ssh_on"))
+    kb.adjust(1)
+    kb.row(_gw_back("settings"))
+    return kb.as_markup()
+
+
+def gateway_ssh_port_finisher_kb() -> InlineKeyboardMarkup:
+    """Финишер «порт не изменился / не выполнена»: другой порт или раздел;
+    нажатие оставляет финишер с одной «Скрыть»."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✏️ Изменить порт", callback_data=GwCB(action="ssh_port_retry"))
+    kb.button(text="\u2b05\ufe0f Назад", callback_data=GwCB(action="ssh_port_back"))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def gateway_ssh_confirm_kb(action: str, val: str, label: str) -> InlineKeyboardMarkup:
+    """Подтверждение действия раздела SSH (включить/выключить фильтр, убрать
+    адрес) — «Отмена» первой, возврат в раздел."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Отмена", callback_data=GwCB(action="ssh"))
+    kb.button(text=label, callback_data=GwCB(action=action, val=val))
+    kb.adjust(2)
+    return kb.as_markup()
+
+
 def gateway_cancel_kb(sec: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="\u2b05\ufe0f Отмена", callback_data=GwCB(action=sec))
@@ -254,9 +299,14 @@ def gateway_bundle_passphrase_kb() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def gateway_back_kb() -> InlineKeyboardMarkup:
+def gateway_back_kb(sec: str = "") -> InlineKeyboardMarkup:
+    """Одна кнопка назад: без sec — «В меню» (панель), с sec — «Назад» в раздел
+    (отказ смены порта возвращает в «Доступ по SSH»)."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
+    if sec:
+        kb.row(_gw_back(sec))
+    else:
+        kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
     return kb.as_markup()
 
 

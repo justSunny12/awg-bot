@@ -172,10 +172,15 @@ ensure_package() {
         || die "пакет dnsmasq не установился — apt-get install -y dnsmasq и повтори"
 }
 
+# Drop-in пишется при КАЖДОМ запуске с правами root, а не только при install:
+# правка самого drop-in'а (например, снятие лимита попыток) иначе не доезжает
+# до хостов, поставленных раньше, — обновление бота его не трогает.
+# Переписываем только при расхождении: лишняя запись на флеш ни к чему.
 write_dropin() {
     if [[ "$PLAN" -eq 1 ]]; then printf '  would: записать %s\n' "$DROPIN"; return 0; fi
     mkdir -p "$DROPIN_DIR"
-    cat > "$DROPIN" <<'EOF'
+    local tmp; tmp="$(mktemp)"
+    cat > "$tmp" <<'EOF'
 # Поставлено awg-resolver-setup.sh. Резолвер клиентов — единственный DNS у
 # всех, кто получил конфиг с приватным адресом: упал — люди без DNS. Поэтому
 # поднимаем сам и не ждём ручного вмешательства. Без лимита попыток: адрес
@@ -187,6 +192,10 @@ StartLimitIntervalSec=0
 Restart=on-failure
 RestartSec=5
 EOF
+    if cmp -s "$tmp" "$DROPIN"; then rm -f "$tmp"; return 0; fi
+    mv "$tmp" "$DROPIN"; chmod 0644 "$DROPIN"
+    log "обновлён $DROPIN"
+    return 10                     # «изменился» — вызывающий решает, нужен ли daemon-reload
 }
 
 restart_service() {
@@ -231,7 +240,7 @@ case "$MODE" in
         write_conf $have
         adopt_routing_conf $have
         ensure_package
-        write_dropin
+        write_dropin || true          # daemon-reload сделает restart_service
         restart_service
         verify "$ADDR"
         log "резолвер слушает: ${have# }"
@@ -244,6 +253,7 @@ case "$MODE" in
         has_addr "$ADDR" $have && { log "уже слушаем $ADDR"; exit 0; }
         write_conf $have "$ADDR"
         adopt_routing_conf "$ADDR"
+        write_dropin || true          # daemon-reload сделает restart_service
         restart_service
         verify "$ADDR"
         log "добавлен $ADDR; слушаем: ${have% }$ADDR"
@@ -260,6 +270,15 @@ case "$MODE" in
         write_conf $keep
         restart_service
         log "снят $ADDR; слушаем:$keep"
+        ;;
+    dropin)
+        # Только drop-in: зовёт бот на старте, чтобы правка доехала до хостов,
+        # поставленных прежними версиями (install их не переустанавливает).
+        # Демон не трогаем: override действует со следующего его запуска, а
+        # рестарт резолвера ради этого — обрыв DNS у всех на ровном месте.
+        [[ "${EUID:-$(id -u)}" -eq 0 ]] || die "нужен root"
+        [[ -f "$RESOLVER_CONF" ]] || { log "резолвера нет — drop-in не нужен"; exit 0; }
+        write_dropin || { run "systemctl daemon-reload"; }
         ;;
     status)
         have="$(listen_addrs)"

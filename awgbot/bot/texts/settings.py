@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .fmt import _e, _fmt_age
+from .fmt import _e, _fmt_age, plural_ru
 from .migration import migration_panel_line
 from .updates import _ver
 
@@ -357,40 +357,109 @@ def settings_server_text(d: dict) -> str:
     return "\n".join(lines)
 
 
+_ALLOW_SHOWN = 12       # кнопки — до 8, текст — до 12: лимит 4096 при длинных именах
+
+
+def _shown(items, code: bool = True) -> str:
+    out = ", ".join((f"<code>{_e(a)}</code>" if code else _e(a)) for a in items[:_ALLOW_SHOWN])
+    if len(items) > _ALLOW_SHOWN:
+        out += f" и ещё {len(items) - _ALLOW_SHOWN}"
+    return out
+
+
+def address_list_line(n: int, tail: str = "") -> str:
+    """Список адресов в инфобокс не выносится — он редактируется кнопками
+    под ним; здесь только число и отсылка."""
+    if not n:
+        return "Адреса для входа снаружи (фильтр): не заданы" + tail
+    return (f"Адреса для входа снаружи (фильтр): {n} "
+            + plural_ru(n, "адрес", "адреса", "адресов") + " — редактируемый список ниже")
+
+
+def warnings_block(items: list[str]) -> list[str]:
+    """Предупреждения раздела — отдельным блоком после пустой строки, по
+    одному на строку; нет предупреждений — ничего."""
+    return ["", "<b>Предупреждения:</b>", *items] if items else []
+
+
 def settings_firewall_text(st: dict) -> str:
-    """Раздел «Файервол»: состояние и что будет при включении."""
-    if st.get("rollback"):
-        return ("<b>🛡 Доступ по SSH</b>\n\n⏱ <b>Идёт проверка входа.</b>\n\n"
-                "Правила уже применены. Открой <b>новое</b> SSH-подключение к серверу "
-                "и, если оно проходит, подтверди здесь. Не подтвердишь — правила "
-                "снимутся сами, доступ вернётся всем адресам.\n\n"
-                "Это и есть страховка: заперев себе SSH, ты не сможешь ничего "
-                "исправить в терминале, зато этот чат работает независимо.")
-    head = "🟢 фильтр включён" if st.get("enabled") else "🔴 фильтр выключен"
+    """Раздел «Доступ по SSH»: порт, туннель, снаружи, адреса, предупреждения.
+    Из чата всё применяется сразу, без таймера отката: чат от SSH не зависит,
+    и любое действие отменяется здесь же. Блоки разделены пустой строкой;
+    статусные строки — без точки в конце (как в разделе агента)."""
     allow = st.get("raw_allow") or []
-    lines = [
-        "<b>🛡 Доступ по SSH</b>", "",
-        f"{head} · порт SSH {st.get('ssh_port')}",
-        ("Адреса для входа снаружи: " + ", ".join(f"<code>{_e(a)}</code>" for a in allow))
-        if allow else "Адреса не заданы — SSH открыт всем (только по ключам).",
-    ]
-    if st.get("unresolved"):
-        lines.append("⚠️ не резолвятся: " + ", ".join(_e(x) for x in st["unresolved"]))
+    port_line = f"Порт SSH: {st.get('ssh_port')}"
+    if st.get("owner") == "omv":
+        port_line += " — <b>контролирует OMV</b> <i>(в его UI: Службы → SSH)</i>"
+    elif st.get("owner"):
+        port_line += " — <b>контролирует другой процесс</b>"
+    lines = ["<b>🛡 Доступ по SSH</b>", "", port_line, ""]
     if st.get("admin_ips"):
-        lines.append(f"Из туннеля SSH открыт устройствам админа ({len(st['admin_ips'])}) — всегда.")
+        lines += [f"Из туннеля SSH открыт устройствам админа ({len(st['admin_ips'])})", ""]
+    if st.get("enabled"):
+        lines.append("🟢 Снаружи: фильтр включён — только адреса из списка")
+    else:
+        lines.append("Снаружи: фильтр выключен — открыт всем (только по SSH-ключам)")
+    lines.append("")
+    lines.append(address_list_line(len(allow)))
+    warns: list[str] = []
+    if st.get("unresolved"):
+        warns.append("⚠️ Не резолвятся: " + _shown(st["unresolved"], code=False))
+    if st.get("drift"):
+        warns.append(f"⚠️ sshd слушает порт {st['listening']}, а фильтр держит {st.get('ssh_port')} — "
+                     f"вход снаружи и из туннеля закрыт. Нажми «🅿️ Изменить порт» → {st['listening']} "
+                     f"или верни sshd на {st.get('ssh_port')}")
+    elif st.get("sshd_down"):
+        warns.append("⚪ sshd не запущен")
+    if st.get("owner") == "generator" and st.get("owner_detail"):
+        warns.append(f"ℹ️ В <code>{_e((st.get('owner_files') or ['sshd_config'])[0])}</code> сказано: "
+                     f"«<i>{_e(st['owner_detail'])}</i>»")
     if st.get("ufw"):
-        lines.append("⚠️ ufw активен: второй владелец правил, лучше выключить (<code>ufw disable</code>).")
-    if not st.get("enabled"):
-        # Про таймер говорим ровно там, где его вот-вот поставят: на включённом
-        # фильтре это уже прошедшее время, и строка только занимает место.
-        lines += ["", "Включение применяет правила с таймером: если вход по SSH "
-                      "сломается, они снимутся сами."]
-    return "\n".join(lines)
+        warns.append("⚠️ ufw активен: второй владелец правил, лучше выключить (<code>ufw disable</code>)")
+    if st.get("firewalld"):
+        warns.append("⚠️ firewalld активен: второй владелец правил, новый порт открывай и в нём или выключи его")
+    return "\n".join(lines + warnings_block(warns))
 
 
-def firewall_armed(seconds: int) -> str:
-    return (f"⏱ Правила применены. Проверь вход <b>новым</b> SSH-подключением и "
-            f"подтверди в течение {seconds // 60} мин — иначе они снимутся сами.")
+def ssh_owner_refusal(st: dict, listening: int | None, place: str = "сервере") -> str:
+    """Отказ смены порта: конфигом sshd владеет не бот. Экран, не alert —
+    текст длинный и нужен целиком. place — «сервере» / «шлюзе»."""
+    if st.get("owner") == "omv":
+        now = f"sshd слушает {listening}" if listening else "sshd не запущен"
+        if st.get("owner_port"):
+            now += f", в OMV задан {st['owner_port']}"
+        return (f"⛔ <b>Смена порта SSH не выполнена: файлом sshd_config на этом {place} управляет OMV.</b>\n\n"
+                "Порт задаётся в OMV: Службы → SSH → «Порт», затем «Применить» в жёлтой плашке. "
+                "Если поменять его здесь, настройка проживёт до первого применения изменений в OMV — "
+                "он перепишет sshd_config своим шаблоном, и sshd вернётся на порт из OMV.\n\n"
+                "Что сделает бот сам: увидит новый порт (сверяет каждые несколько минут) и переведёт "
+                "на него фильтр — из туннеля, из локальной сети и снаружи. Проброс порта на роутере "
+                f"(при наличии) поправь сам.\n\nСейчас: {now}.")
+    f = (st.get("owner_files") or ["/etc/ssh/sshd_config"])[0]
+    return (f"⛔ <b>Смена порта SSH не выполнена: файлом sshd_config на этом {place} управляет другой "
+            f"процесс.</b>\n\nВ <code>{_e(f)}</code> сказано: «<i>{_e(st.get('owner_detail') or '')}</i>». "
+            "Порт меняй там, откуда файл генерируется, иначе настройка проживёт до его следующей "
+            "генерации. Бот увидит новый порт сам и переведёт на него фильтр.")
+
+
+SSH_PORT_ASK = ("🅿️ <b>Порт SSH</b>\n\nПришли номер порта (1–65535). Занятый порт "
+                "не возьму.\n\nПереведу на него sshd и фильтр; текущие SSH-сеансы "
+                "не рвутся — проверь вход новым подключением.")
+
+
+def ssh_port_busy(port: int, proc: str = "") -> str:
+    who = f" уже занят процессом <code>{_e(proc)}</code>" if proc else " занят"
+    return f"⛔ Смена порта SSH не выполнена: порт {port}{who}"
+
+
+def ssh_port_same(port: int) -> str:
+    return f"ℹ️ Порт доступа по SSH не изменился — выбран уже установленный ({port})"
+
+
+def ssh_port_changed(old: int, new: int) -> str:
+    return (f"✅ Порт SSH изменён: {old} → <b>{new}</b>. Текущие SSH-сеансы не рвутся — "
+            f"проверь вход новым подключением на порт {new}. Если снаружи стоит "
+            "файервол провайдера, ufw или fail2ban — открой новый порт и там.")
 
 
 def firewall_confirmed() -> str:

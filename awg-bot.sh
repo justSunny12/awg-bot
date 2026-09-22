@@ -1107,6 +1107,24 @@ cmd_restore() {
             fi
         fi
     fi
+    # Локальное состояние файервола шлюза (порт SSH, адреса снаружи, доверенные
+    # из туннеля) — данные человека, бандл их не восстановит. Юнит обвязки
+    # подхватит файл при следующем реассерте (агент сверяет порт по тику).
+    if [[ -f "$tmp/awg-gw/firewall.env" ]]; then
+        if cmp -s "$tmp/awg-gw/firewall.env" /etc/awg-gw/firewall.env 2>/dev/null; then
+            log "firewall.env шлюза не изменился с момента копии — не трогаю"
+        else
+            mkdir -p /etc/awg-gw
+            cp -a "$tmp/awg-gw/firewall.env" /etc/awg-gw/firewall.env; chmod 644 /etc/awg-gw/firewall.env
+            if systemctl is-enabled awg-link-gw.service >/dev/null 2>&1; then
+                systemctl restart awg-link-gw.service >/dev/null 2>&1 \
+                    && ok "firewall.env шлюза восстановлен, обвязка перевыставлена" \
+                    || warn "firewall.env восстановлен, но обвязка не перевыставилась: awg-bot firewall apply"
+            else
+                ok "firewall.env шлюза восстановлен (обвязки ещё нет — подхватится при применении конфигурации)"
+            fi
+        fi
+    fi
     # маркер для бота: новый процесс доложит админу, из какой копии восстановились
     printf '{"created_at": "%s", "source": "%s"}\n' "$bk_at" "$(basename "$tgz")" > "$DATA_DIR/restore-done.json"
     rm -rf "$tmp"
@@ -1172,6 +1190,13 @@ cmd_firewall() {
     ( cd "$INSTALL_DIR" \
         && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
         && exec ./venv/bin/python -m tools.firewall "$@" )
+}
+
+cmd_ssh() {  # шлюз: порт sshd, адреса снаружи, фильтр — то же, что раздел «Доступ по SSH» агента
+    require_root
+    ( cd "$INSTALL_DIR" \
+        && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
+        && exec ./venv/bin/python -m tools.gwssh "$@" )
 }
 
 cmd_first_device() {  # показать конфигурацию первого устройства админа в терминале
@@ -1361,6 +1386,8 @@ awg-bot — управление установленным ботом.
   awg-bot firewall <cmd>     файервол хоста (единственная точка — таблица awg_bot_guard):
                              status | setup | confirm [--disable-ufw] | apply | allow <ip…> |
                              deny <ip…> | off | rollback
+  awg-bot ssh <cmd>          шлюз: доступ по SSH (порт — факт от sshd, фильтр снаружи):
+                             status | port <N> | allow <ip|cidr|имя…> | deny … | on | off
   awg-bot routing-doctor     где рвётся условная маршрутизация (только чтение)
   awg-bot lan <cmd>          шлюз, локальная сеть без VPN: add|ru|del <домен…> — личные списки
                              (в туннель / напрямую / убрать), list, update — обновить фиды
@@ -1391,6 +1418,7 @@ case "$VERB" in
     restart)     cmd_restart ;;
     logs)        cmd_logs ;;
     firewall)    cmd_firewall "$@" ;;
+    ssh)         cmd_ssh "$@" ;;
     routing-doctor) cmd_routing_doctor ;;
     gw-bundle)   cmd_gw_bundle "$@" ;;
     lan)         cmd_lan "$@" ;;
