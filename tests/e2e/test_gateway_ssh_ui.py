@@ -94,7 +94,7 @@ async def test_section_shows_port_tunnel_lan_outside_and_buttons(svc, fake_bot):
     cb, nav = _cb(fake_bot)
     await gh.gw_section(cb, GwCB(action="ssh"), svc, FakeState())
     text = [t for k, t, _ in nav.sent if k == "edit_text"][-1]
-    assert "Порт SSH: 22" in text and "устройствам админа (3)" in text and "серверу по линку" in text
+    assert "Порт SSH: 22" in text and "устройствам админа (3)" in text and "с сервера AWG" in text
     assert "Из локальной сети: открыт всегда" in text
     assert "фильтр выключен" in text and "home2.dyn.example" in text and "203.0.113.10" in text
     assert "⚠️ Не резолвится: home2.dyn.example" in text
@@ -345,7 +345,7 @@ def test_section_text_names_held_addresses_lan_and_caps_the_list():
     text = texts.gateway_ssh_text(_scr(allow=["home2.dyn.example"], unresolved=["home2.dyn.example"],
                                        held=["198.51.100.4"], lan=["192.168.1.0/24"]))
     assert "держу прошлый адрес: <code>198.51.100.4</code>" in text
-    assert "Из локальной сети: открыт всегда (<code>192.168.1.0/24</code>)." in text
+    assert "Из локальной сети: открыт всегда (<code>192.168.1.0/24</code>)" in text
     text = texts.gateway_ssh_text(_scr(allow=["home2.dyn.example"], unresolved=["home2.dyn.example"]))
     assert "прошлого адреса нет" in text
     many = [f"h{i}.dyn.example" for i in range(20)]

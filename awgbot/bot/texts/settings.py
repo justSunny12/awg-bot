@@ -360,7 +360,8 @@ def settings_server_text(d: dict) -> str:
 def settings_firewall_text(st: dict) -> str:
     """Раздел «Доступ по SSH»: порт, адреса, состояние фильтра. Из чата всё
     применяется сразу, без таймера отката: чат от SSH не зависит, и любое
-    действие отменяется здесь же."""
+    действие отменяется здесь же. Блоки разделены пустой строкой; статусные
+    строки — без точки в конце (как в разделе агента)."""
     head = "🟢 фильтр включён · порт" if st.get("enabled") else "Порт"
     allow = st.get("raw_allow") or []
     port_line = f"{head} SSH: {st.get('ssh_port')}"
@@ -368,16 +369,13 @@ def settings_firewall_text(st: dict) -> str:
         port_line += " — <b>контролирует OMV</b> <i>(в его UI: Службы → SSH)</i>"
     elif st.get("owner"):
         port_line += " — <b>контролирует другой процесс</b>"
-    lines = [
-        "<b>🛡 Доступ по SSH</b>", "",
-        port_line,
-        ("Адреса для входа снаружи: " + ", ".join(f"<code>{_e(a)}</code>" for a in allow))
-        if allow else "Адреса не заданы — SSH открыт всем (только по SSH-ключам).",
-    ]
+    lines = ["<b>🛡 Доступ по SSH</b>", "", port_line, ""]
+    if st.get("admin_ips"):
+        lines += [f"Из туннеля SSH открыт устройствам админа ({len(st['admin_ips'])})", ""]
+    lines.append(("Адреса для входа снаружи (фильтр): " + ", ".join(f"<code>{_e(a)}</code>" for a in allow))
+                 if allow else "Адреса для входа снаружи (фильтр): не заданы — SSH открыт всем (только по SSH-ключам)")
     if st.get("unresolved"):
         lines.append("⚠️ Не резолвятся: " + ", ".join(_e(x) for x in st["unresolved"]))
-    if st.get("admin_ips"):
-        lines.append(f"Из туннеля SSH открыт устройствам админа ({len(st['admin_ips'])}) — всегда.")
     if st.get("drift"):
         lines.append(f"⚠️ sshd слушает порт {st['listening']}, а фильтр держит {st.get('ssh_port')} — "
                      f"вход снаружи и из туннеля закрыт. Нажми «🅿️ Изменить порт» → {st['listening']} "
@@ -388,9 +386,9 @@ def settings_firewall_text(st: dict) -> str:
         lines.append(f"ℹ️ В <code>{_e((st.get('owner_files') or ['sshd_config'])[0])}</code> сказано: "
                      f"«<i>{_e(st['owner_detail'])}</i>»")
     if st.get("ufw"):
-        lines.append("⚠️ ufw активен: второй владелец правил, лучше выключить (<code>ufw disable</code>).")
+        lines.append("⚠️ ufw активен: второй владелец правил, лучше выключить (<code>ufw disable</code>)")
     if st.get("firewalld"):
-        lines.append("⚠️ firewalld активен: второй владелец правил, новый порт открывай и в нём или выключи его.")
+        lines.append("⚠️ firewalld активен: второй владелец правил, новый порт открывай и в нём или выключи его")
     return "\n".join(lines)
 
 

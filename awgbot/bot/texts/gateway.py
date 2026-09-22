@@ -219,7 +219,8 @@ _ALLOW_SHOWN = 12       # кнопки — до 8, текст — до 12: ли�
 
 def gateway_ssh_text(st: dict) -> str:
     """Раздел: порт (факт) и его владелец, туннель, локальная сеть, снаружи,
-    адреса, предупреждения — по месту."""
+    адреса, предупреждения — по месту. Блоки разделены пустой строкой;
+    статусные строки — без точки в конце."""
     port = st.get("port")
     lines = ["<b>🛡 Доступ по SSH</b>", ""]
     if st.get("sshd_down"):
@@ -232,30 +233,31 @@ def gateway_ssh_text(st: dict) -> str:
                      "за портом и держит фильтр на нём.")
     else:
         lines.append(f"Порт SSH: {port}")
+    lines.append("")
     admins = len(st.get("admin_ips") or [])
-    lines.append(f"Из туннеля SSH открыт устройствам админа ({admins}) и серверу по линку — "
-                 "всегда (даже с выключенным фильтром).")
+    server = f" (<code>{_e(st['server'])}</code>)" if st.get("server") else ""
+    lines.append(f"Из туннеля SSH открыт устройствам админа ({admins}) и с сервера AWG{server}")
     lan = st.get("lan") or []
     lines.append("Из локальной сети: открыт всегда"
-                 + (" (" + ", ".join(f"<code>{_e(n)}</code>" for n in lan[:3]) + ")." if lan else "."))
+                 + (" (" + ", ".join(f"<code>{_e(n)}</code>" for n in lan[:3]) + ")" if lan else ""))
+    lines.append("")
     allow = st.get("allow") or []
     if not st.get("new_plumbing"):
         lines.append("⚠️ Обвязка шлюза старого образца: фильтр снаружи появится после "
-                     "перевыпуска конфигурации шлюза с сервера и применения её здесь.")
+                     "перевыпуска конфигурации шлюза с сервера и применения её здесь")
     elif st.get("filter"):
-        lines.append("🟢 Снаружи: фильтр включён — только адреса из списка и сервер.")
+        lines.append("🟢 Снаружи: фильтр включён — только адреса из списка и сервер")
     else:
-        lines.append("Снаружи (проброс порта на роутере): фильтр выключен — открыт всем, "
-                     "до кого доходит проброс.")
+        lines.append("Снаружи (проброс порта на роутере): фильтр выключен — открыт всем проброшенным")
+    lines.append("")
     if allow:
         shown = ", ".join(f"<code>{_e(a)}</code>" for a in allow[:_ALLOW_SHOWN])
         if len(allow) > _ALLOW_SHOWN:
             shown += f" и ещё {len(allow) - _ALLOW_SHOWN}"
-        lines.append("Адреса для входа снаружи: " + shown)
+        lines.append("Адреса для входа снаружи (фильтр): " + shown)
     else:
-        lines.append("Адреса для входа снаружи: не заданы" + (" — снаружи доступ только с сервера AWG" if st.get("filter") else "."))
-    if st.get("server"):
-        lines.append(f"Серверу доступ снаружи открыт всегда: <code>{_e(st['server'])}</code> (адрес линка).")
+        lines.append("Адреса для входа снаружи (фильтр): не заданы"
+                     + (" — снаружи доступ только с сервера AWG" if st.get("filter") else ""))
     unresolved = st.get("unresolved") or []
     if unresolved:
         held = st.get("held") or []
@@ -267,7 +269,7 @@ def gateway_ssh_text(st: dict) -> str:
             held_s += f" и ещё {len(held) - _ALLOW_SHOWN}"
         tail = (" — держу прошлый адрес: " + held_s
                 if held else " — прошлого адреса нет, снаружи по этому имени не зайти")
-        lines.append("⚠️ Не резолвится: " + names + tail + ".")
+        lines.append("⚠️ Не резолвится: " + names + tail)
     op = st.get("owner_port")
     if st.get("owner") == "omv" and op and port and op != port and not st.get("sshd_down"):
         lines.append(f"⚠️ В OMV задан порт {op}, sshd слушает {port} — нажми «Применить» в OMV")
@@ -279,12 +281,12 @@ def gateway_ssh_text(st: dict) -> str:
         lines.append(f"⚠️ sshd слушает ещё порт ({', '.join(map(str, extra))}) — фильтр держит только {port}")
     if st.get("owner") == "generator" and st.get("owner_detail"):
         lines.append(f"ℹ️ В <code>{_e((st.get('owner_files') or ['sshd_config'])[0])}</code> сказано: "
-                     f"«<i>{_e(st['owner_detail'])}</i>».")
+                     f"«<i>{_e(st['owner_detail'])}</i>»")
     if st.get("omv_rules"):
         lines.append(f"⚠️ В OMV заданы правила файервола ({st['omv_rules']}): они действуют рядом "
-                     "с таблицей шлюза; при смене порта поправь и там (Сеть → Файервол).")
+                     "с таблицей шлюза; при смене порта поправь и там (Сеть → Файервол)")
     if st.get("ufw"):
-        lines.append("⚠️ ufw активен: второй владелец правил, новый порт открывай и в нём или выключи ufw.")
+        lines.append("⚠️ ufw активен: второй владелец правил, новый порт открывай и в нём или выключи ufw")
     return "\n".join(lines)
 
 
