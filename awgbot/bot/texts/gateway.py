@@ -214,6 +214,9 @@ def _owner_name(kind: str) -> str:
     return {"omv": "OMV", "generator": "другая программа"}.get(kind, "")
 
 
+_ALLOW_SHOWN = 12       # кнопки — до 8, текст — до 12: лимит 4096 при длинных именах
+
+
 def gateway_ssh_text(st: dict) -> str:
     """Раздел: порт (факт) и его владелец, туннель, локальная сеть, снаружи,
     адреса, предупреждения — по месту."""
@@ -231,7 +234,9 @@ def gateway_ssh_text(st: dict) -> str:
         lines.append(f"Порт SSH: {port}")
     admins = len(st.get("admin_ips") or [])
     lines.append(f"Из туннеля SSH открыт устройствам админа ({admins}) и серверу по линку — всегда.")
-    lines.append("Из локальной сети: открыт всегда.")
+    lan = st.get("lan") or []
+    lines.append("Из локальной сети: открыт всегда"
+                 + (" (" + ", ".join(f"<code>{_e(n)}</code>" for n in lan[:3]) + ")." if lan else "."))
     allow = st.get("allow") or []
     if not st.get("new_plumbing"):
         lines.append("⚠️ Обвязка шлюза старого образца: фильтр снаружи появится после "
@@ -242,13 +247,20 @@ def gateway_ssh_text(st: dict) -> str:
         lines.append("Снаружи (проброс порта на роутере): фильтр выключен — открыт всем, "
                      "до кого доходит проброс.")
     if allow:
-        lines.append("Адреса для входа снаружи: " + ", ".join(f"<code>{_e(a)}</code>" for a in allow))
+        shown = ", ".join(f"<code>{_e(a)}</code>" for a in allow[:_ALLOW_SHOWN])
+        if len(allow) > _ALLOW_SHOWN:
+            shown += f" и ещё {len(allow) - _ALLOW_SHOWN}"
+        lines.append("Адреса для входа снаружи: " + shown)
     else:
         lines.append("Адреса для входа снаружи: не заданы" + (" — снаружи только сервер." if st.get("filter") else "."))
     if st.get("server"):
         lines.append(f"Серверу снаружи открыт всегда: <code>{_e(st['server'])}</code> (адрес линка).")
-    for name in st.get("unresolved") or []:
-        lines.append(f"⚠️ Не резолвится: {_e(name)} — держу прошлый адрес.")
+    unresolved = st.get("unresolved") or []
+    if unresolved:
+        held = st.get("held") or []
+        tail = (" — держу прошлый адрес: " + ", ".join(f"<code>{_e(h)}</code>" for h in held)
+                if held else " — прошлого адреса нет, снаружи по этому имени не зайти")
+        lines.append("⚠️ Не резолвится: " + ", ".join(_e(n) for n in unresolved) + tail + ".")
     op = st.get("owner_port")
     if st.get("owner") == "omv" and op and port and op != port and not st.get("sshd_down"):
         lines.append(f"⚠️ В OMV задан порт {op}, sshd слушает {port} — нажми «Применить» в OMV.")
@@ -308,6 +320,9 @@ GW_SSH_ALLOW_ASK = ("➕ <b>Адреса для входа снаружи</b>\n\
 
 def gateway_ssh_allow_added(entries: list[str]) -> str:
     return "✅ Адреса для входа снаружи: добавлено " + ", ".join(f"<b>{_e(e)}</b>" for e in entries) + "."
+
+
+GW_SSH_ALLOW_ALREADY = "ℹ️ Всё из введённого уже в списке — ничего не менял."
 
 
 def gateway_ssh_filter_on_ask(port: int) -> str:

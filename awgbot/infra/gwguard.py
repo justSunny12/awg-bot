@@ -123,6 +123,7 @@ _ENV_HEAD = ("# awg-bot (шлюз): локальное состояние фай
              "# SSH_ALLOW_RESOLVED — фильтр SSH снаружи и его адреса.\n")
 _ENV_LINE_RE = re.compile(r'^([A-Z_][A-Z0-9_]*)="([^"\n]*)"$', re.M)
 _HOST_RE = re.compile(r"[A-Za-z0-9.-]{1,253}")
+_ADDR_CHARS_RE = re.compile(r"[0-9A-Fa-f:./]+")     # ipaddress пускает scope id (%…) — sh нет
 
 
 def read_env() -> dict[str, str]:
@@ -147,10 +148,12 @@ def _check_env_value(key: str, value: str) -> str:
     for tok in v.split():
         try:
             ipaddress.ip_network(tok, strict=False)
-            continue
+            if _ADDR_CHARS_RE.fullmatch(tok):
+                continue
         except ValueError:
             pass
-        if key == "SSH_ALLOW" and _HOST_RE.fullmatch(tok):
+        # имя — как nftguard.classify: с точкой, не с цифры, допустимые символы
+        if key == "SSH_ALLOW" and _HOST_RE.fullmatch(tok) and "." in tok and not tok[0].isdigit():
             continue
         raise ValueError(f"{key}: {tok!r} не адрес" + (", не подсеть и не имя" if key == "SSH_ALLOW" else ""))
     return v
@@ -195,7 +198,7 @@ def set_sync(name: str, desired: set[str], info: dict | None = None) -> bool:
     if not info or name not in info["sets"]:
         return False
     live = {_norm_elem(e) for e in info["sets"][name]}
-    want = {_norm_elem(e) for e in desired}
+    want = {_norm_elem(e) for e in collapse(desired)}
     if live == want:
         return False
     lines = [f"flush set {TABLE} {name}"]
@@ -214,6 +217,61 @@ def set_sync(name: str, desired: set[str], info: dict | None = None) -> bool:
         except OSError:
             pass
     return True
+
+
+def collapse(entries) -> list[str]:
+    """Схлопнуть пересекающиеся и смежные подсети: nft отвергает пересечения
+    в наборе с flags interval («conflicting intervals») — и в транзакции, и в
+    файле при загрузке. Не-адреса (имена) пропускаются."""
+    nets = []
+    for e in entries:
+        try:
+            nets.append(ipaddress.ip_network(str(e), strict=False))
+        except ValueError:
+            continue
+    return [_norm_elem(str(n)) for n in ipaddress.collapse_addresses(nets)]
+
+
+def overlaps(entry: str, others) -> str:
+    """Чем из others пересекается entry (первое найденное), пусто — ничем.
+    Для отказа «уже покрыт подсетью …» до записи в файл."""
+    try:
+        net = ipaddress.ip_network(str(entry), strict=False)
+    except ValueError:
+        return ""
+    for o in others:
+        try:
+            on = ipaddress.ip_network(str(o), strict=False)
+        except ValueError:
+            continue
+        if net.overlaps(on):
+            return str(o)
+    return ""
+
+
+def plumbing_installed() -> bool:
+    """Юнит обвязки на месте (после --rollback его нет — писать состояние и
+    дёргать реассерт некуда)."""
+    return Path(f"/etc/systemd/system/{config.GW_UNIT}").exists()
+
+
+def lan_nets(iface: str = "") -> list[str]:
+    """Подсети интерфейса квартиры (маршруты scope link) — то, что скрипт
+    кладёт в lan4 при старте; агент сверяет по тику (DHCP мог сменить подсеть).
+    Пусто — не определить (агент тогда набор не трогает)."""
+    if not iface:
+        for r in _ip_json(["route", "show", "default"]):
+            if r.get("dev"):
+                iface = str(r["dev"])
+                break
+    if not iface:
+        return []
+    out = []
+    for r in _ip_json(["route", "show", "dev", iface, "scope", "link"]):
+        dst = str(r.get("dst", ""))
+        if "/" in dst and dst not in out:
+            out.append(dst)
+    return out
 
 
 def _norm_elem(e: str) -> str:

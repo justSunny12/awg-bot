@@ -191,7 +191,7 @@ def test_admin_ips_come_from_bundle_and_local_env(script):
     assert 'Environment="ADMIN_IPS=$ADMIN_IPS"' in script
     assert "EnvironmentFile=-$FW_ENV" in script
     assert "ipv4_list $ADMIN_IPS $ADMIN_IPS_EXTRA" in script
-    assert 'ADMIN_IPS="${ADMIN_IPS:-${SSH_ALLOW:-}}"' in script, "бандл прежнего выпуска принимается"
+    assert 'ADMIN_IPS="${ADMIN_IPS-${SSH_ALLOW:-}}"' in script, "бандл прежнего выпуска принимается"
     # чужие символы в файл nft не попадают
     assert '*[!0-9./]*|"") ;;' in script
 
@@ -345,12 +345,15 @@ def test_ssh_filter_chain_is_always_there_but_jumped_only_when_enabled(script):
     фильтр не должен оставлять в input ни одного правила про SSH."""
     body = script.split("GUARDEOF", 1)[1]
     assert "chain ssh_in {" in body and "set ssh_allow4 {" in body and "set server4 {" in body
-    assert '[ "$SSH_FILTER" = 1 ] && SSH_JUMP="        tcp dport $SSH_PORT jump ssh_in"' in script
+    assert '[ "$SSH_FILTER" = 1 ] && SSH_JUMP="        meta nfproto ipv4 tcp dport $SSH_PORT jump ssh_in"' \
+        in script, "без nfproto v6-пакет из квартиры доходил бы до drop"
     inp = body.split("chain input", 1)[1].split("}", 1)[0]
     assert "$SSH_JUMP" in inp and inp.index("jump tunnel_in") < inp.index("$SSH_JUMP"), \
         "туннель разбирается своей цепочкой раньше"
     sin = body.split("chain ssh_in", 1)[1].split("}", 1)[0]
-    assert "ip saddr @private4 accept" in sin, "локальная сеть открыта всегда — запереться из квартиры нельзя"
+    assert "ip saddr @lan4 accept" in sin, "локальная сеть открыта всегда — запереться из квартиры нельзя"
+    assert "@private4" not in sin, "RFC1918 целиком пускал бы соседей по CGNAT (100.64/10) как своих"
+    assert "set lan4 {" in body and "elements = { $LAN_ELEMS }" in body
     assert "ip saddr @server4 accept" in sin and "ip saddr @ssh_allow4 accept" in sin
     assert sin.strip().endswith("drop")
 
@@ -361,9 +364,15 @@ def test_ssh_port_comes_from_firewall_env_as_a_number(script):
     assert script.index('[ -f "$FW_ENV" ] && . "$FW_ENV"') > script.index('SSH_PORT="${SSH_PORT:-22}"')
     assert "case \"$SSH_PORT\" in ''|*[!0-9]*) SSH_PORT=22 ;; esac" in script
     assert '[ "$SSH_FILTER" = "1" ] || SSH_FILTER=0' in script
-    # старое имя SSH_ALLOW из бандла — это ADMIN_IPS; список снаружи берётся только из файла
+    # старое имя SSH_ALLOW из бандла — это ADMIN_IPS, но только когда ADMIN_IPS
+    # НЕ ЗАДАН: юнит задаёт его пустым, а SSH_ALLOW из firewall.env — список снаружи
+    assert 'ADMIN_IPS="${ADMIN_IPS-${SSH_ALLOW:-}}"' in script
     assert script.index('SSH_ALLOW=""; SSH_ALLOW_RESOLVED=""; SSH_FILTER=""') \
-        > script.index('ADMIN_IPS="${ADMIN_IPS:-${SSH_ALLOW:-}}"')
+        > script.index('ADMIN_IPS="${ADMIN_IPS-${SSH_ALLOW:-}}"')
+    out = _sh('ADMIN_IPS=""; SSH_ALLOW="203.0.113.7"; ADMIN_IPS="${ADMIN_IPS-${SSH_ALLOW:-}}"; echo "[$ADMIN_IPS]"')
+    assert out.stdout.strip() == "[]", "пустой ADMIN_IPS из юнита не подменяется списком снаружи"
+    out = _sh('unset ADMIN_IPS; SSH_ALLOW="10.9.1.2"; ADMIN_IPS="${ADMIN_IPS-${SSH_ALLOW:-}}"; echo "[$ADMIN_IPS]"')
+    assert out.stdout.strip() == "[10.9.1.2]", "старый бандл без ADMIN_IPS принимается"
     assert "ipv4_list $SSH_ALLOW $SSH_ALLOW_RESOLVED" in script, "имена в nft не попадают — их отсеет ipv4_list"
 
 
@@ -381,6 +390,24 @@ def test_server_ipv4_takes_endpoint_host_and_resolves_names(script, tmp_path):
     assert out.stdout.strip() == "198.51.100.7"
     out = _sh(f"server_ipv4() {{{fns}\n}}\nserver_ipv4 /nonexistent")
     assert out.stdout.strip() == "" and out.returncode == 0, "нет конфига — пустой набор, не ошибка"
+    conf.write_text("[Peer]\nEndpoint = [2001:db8::1]:51820\n")
+    out = _sh(f"server_ipv4() {{{fns}\n}}\nserver_ipv4 {conf}", path=f"{tmp_path}:/usr/bin:/bin")
+    assert out.stdout.strip() == "", "v6-эндпоинт снаружи не поддерживается — пусто, без getent"
+
+
+def test_lan_ipv4_takes_link_routes_of_the_lan_interface(script, tmp_path):
+    fns = script.split("lan_ipv4() {", 1)[1].split("\n}\n", 1)[0]
+    fake = tmp_path / "ip"
+    fake.write_text("#!/bin/sh\n[ \"$5\" = end0 ] && printf '%s\\n' "
+                    "'192.168.1.0/24 proto kernel scope link src 192.168.1.111' "
+                    "'192.168.50.0/24 proto kernel scope link src 192.168.50.2' "
+                    "'192.168.1.0/24 proto kernel scope link src 192.168.1.111'\nexit 0\n")
+    fake.chmod(0o755)
+    out = _sh(f"lan_ipv4() {{{fns}\n}}\nlan_ipv4 end0", path=f"{tmp_path}:/usr/bin:/bin")
+    assert out.stdout.strip() == "192.168.1.0/24, 192.168.50.0/24"
+    out = _sh(f"lan_ipv4() {{{fns}\n}}\nlan_ipv4 nope", path=f"{tmp_path}:/usr/bin:/bin")
+    assert out.stdout.strip() == ""
+    assert 'LAN_ELEMS="10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16"' in script, "запас — RFC1918 без CGNAT"
 
 
 def test_rollback_keeps_the_local_firewall_env(script):

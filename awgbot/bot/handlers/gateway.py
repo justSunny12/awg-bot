@@ -272,6 +272,16 @@ gw_receive_value, gw_passphrase_first, gw_passphrase_second = (
 
 @router.callback_query(GwCB.filter(F.action.in_({"ssh_port", "ssh_port_retry"})))
 async def gw_ssh_port_ask(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
+    st = await call(services.ssh_screen)
+    if st.get("owner"):
+        # Чужой владелец — отказ сразу по кнопке, без ввода: у целевых машин
+        # (OMV) это основной случай, лишний шаг ни к чему.
+        await state.clear()
+        await edit_nav(cb, services,
+                       texts.gateway_ssh_owner_refusal(st, None if st.get("sshd_down") else st["port"]),
+                       kb.gateway_back_kb("ssh"))
+        await cb.answer()
+        return
     await state.set_state(SshPort.value)
     if callback_data.action == "ssh_port_retry":
         # с финишера: он остаётся в чате с одной «Скрыть», приглашение — новым
@@ -356,14 +366,16 @@ async def gw_ssh_allow_ask(cb: CallbackQuery, services, state: FSMContext):
 async def gw_ssh_allow_received(message: Message, state: FSMContext, services):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    before = (await call(services.ssh_screen)).get("allow") or []
+    from awgbot.infra import gwguard
+    before = services._ssh_allow_split(await call(gwguard.read_env))
     try:
         after = await call(services.ssh_allow_add, raw)
     except ServiceError as e:
         await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}. Попробуй ещё раз.")
         return
     await state.clear()
-    await message.answer(texts.gateway_ssh_allow_added([x for x in after if x not in before] or [raw]))
+    new = [x for x in after if x not in before]
+    await message.answer(texts.gateway_ssh_allow_added(new) if new else texts.GW_SSH_ALLOW_ALREADY)
     await core.after_input(message, services, HOOKS, "ssh")
 
 

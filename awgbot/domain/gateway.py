@@ -362,10 +362,10 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         except Exception as e:                          # noqa: BLE001
             log.warning("gateway: uplink_policy_heal: %s", e)
             fixed = []
-        try:
-            notes += self.ssh_reconcile(self._guard_info)
-        except Exception as e:                          # noqa: BLE001
-            log.warning("gateway: ssh_reconcile: %s", e)
+        # Реконсайл SSH прошёл внутри status() — до проверок, чтобы снимок не
+        # называл «реассерт не прошёл» то, что ещё не пробовали; уведомления
+        # оттуда забираем здесь.
+        notes += self.__dict__.pop("_ssh_pending", [])
         if fixed:
             # Одно уведомление на факт: пропажа правила — событие (обычно
             # перезапуск systemd-networkd), о котором стоит знать, а не стрик.
@@ -794,8 +794,20 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                               f"агент перевыставит таблицу"))
         checks.append(self.gh_route_check(self._guard_info))
         try:
-            checks += self.ssh_checks(self._guard_info)
-            scr = self.ssh_screen(self._guard_info)
+            # Порт sshd — один `ss` на тик: реконсайл, проверки и панель берут
+            # этот снимок. Реассерт внутри реконсайла — перечитать таблицу.
+            fact = self.ssh_port_fact()
+            before = self._ssh_last_reassert
+            self.__dict__.setdefault("_ssh_pending", []).extend(
+                self.ssh_reconcile(self._guard_info, fact))
+            if self._ssh_last_reassert != before:
+                from awgbot.infra import gwguard
+                try:
+                    self._guard_info = gwguard.table_info()
+                except gwguard.GwGuardError:
+                    pass
+            checks += self.ssh_checks(self._guard_info, fact)
+            scr = self.ssh_screen(self._guard_info, fact, conf=False)
             st.ssh = {"port": scr["port"], "owner": scr["owner"], "filter": scr["filter"],
                       "allow": len(scr["allow"]), "sshd_down": scr["sshd_down"],
                       "new_plumbing": scr["new_plumbing"]}

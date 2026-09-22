@@ -189,13 +189,46 @@ def test_out_of_range_port_is_refused_without_touching_anything(monkeypatch):
 _SS = ('LISTEN 0 128 0.0.0.0:2222 0.0.0.0:* users:(("sshd",pid=612,fd=3))\n'
        'LISTEN 0 128 [::]:2222 [::]:* users:(("sshd",pid=612,fd=4))\n'
        'LISTEN 0 4096 127.0.0.1:53 0.0.0.0:* users:(("dnsmasq",pid=700,fd=5))\n'
-       'LISTEN 0 511 0.0.0.0:80 0.0.0.0:* users:(("nginx",pid=800,fd=6))\n')
+       'LISTEN 0 511 0.0.0.0:80 0.0.0.0:* users:(("nginx",pid=800,fd=6))\n'
+       # rpcbind.socket на OMV: держатели — rpcbind и systemd (pid 1); сервис
+       # остановлен — останется один systemd
+       'LISTEN 0 4096 0.0.0.0:111 0.0.0.0:* users:(("rpcbind",pid=765,fd=4),("systemd",pid=1,fd=146))\n'
+       'LISTEN 0 4096 [::]:111 [::]:* users:(("systemd",pid=1,fd=148))\n'
+       # чужой процесс с именем sshd под обычным пользователем
+       'LISTEN 0 128 0.0.0.0:2200 0.0.0.0:* users:(("sshd",pid=9001,fd=3))\n')
 
 
-def test_listening_ports_are_sshd_sockets_only(monkeypatch):
+def test_listening_ports_are_real_sshd_sockets_only(monkeypatch):
+    """Имя процесса подделывается; сокеты socket-юнитов (rpcbind :111 на OMV)
+    держит systemd. Порт sshd — только у сокета настоящего sshd (бинарь + uid 0)."""
     monkeypatch.setattr(sshd.subprocess, "run",
                         lambda args, **kw: subprocess.CompletedProcess(args, 0, _SS, ""))
+    monkeypatch.setattr(sshd, "_is_sshd_pid", lambda pid: pid == 612)
     assert sshd.listening_ports() == [2222]
+
+
+def test_is_sshd_pid_checks_exe_and_owner(monkeypatch):
+    links = {"/proc/612/exe": "/usr/sbin/sshd", "/proc/9001/exe": "/home/u/sshd",
+             "/proc/613/exe": "/usr/sbin/sshd (deleted)"}
+    uids = {"/proc/612": 0, "/proc/9001": 1000, "/proc/613": 0}
+
+    class St:
+        def __init__(self, uid): self.st_uid = uid
+
+    def readlink(p, **kw):
+        if str(p) not in links:
+            raise OSError(p)
+        return links[str(p)]
+
+    def stat(p, **kw):
+        if str(p) not in uids:
+            raise OSError(p)
+        return St(uids[str(p)])
+    monkeypatch.setattr(sshd.os, "readlink", readlink)
+    monkeypatch.setattr(sshd.os, "stat", stat)
+    assert sshd._is_sshd_pid(612) and sshd._is_sshd_pid(613)
+    assert not sshd._is_sshd_pid(9001), "sshd с таким именем, но не root"
+    assert not sshd._is_sshd_pid(4242), "процесса нет"
 
 
 def test_listening_ports_empty_when_sshd_is_down(monkeypatch):
@@ -204,10 +237,11 @@ def test_listening_ports_empty_when_sshd_is_down(monkeypatch):
     def run(args, **kw):
         calls.append(args)
         if args[0] == "ss":
-            return subprocess.CompletedProcess(args, 0, _SS.splitlines()[2] + "\n", "")
+            return subprocess.CompletedProcess(args, 0, "\n".join(_SS.splitlines()[2:]) + "\n", "")
         return subprocess.CompletedProcess(args, 1, "", "")          # ssh.socket не включён
     monkeypatch.setattr(sshd.subprocess, "run", run)
-    assert sshd.listening_ports() == []
+    monkeypatch.setattr(sshd, "_is_sshd_pid", lambda pid: False)
+    assert sshd.listening_ports() == [], "сокеты systemd без socket-активации sshd — не его порты"
 
 
 def test_listening_ports_fall_back_to_config_under_socket_activation(monkeypatch):

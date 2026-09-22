@@ -83,13 +83,27 @@ def effective_ports() -> list[int]:
     return ports
 
 
+_PID_RE = re.compile(r'\(\("([^"]+)",pid=(\d+)')
+
+
+def _is_sshd_pid(pid: int) -> bool:
+    """Сокет принадлежит sshd, а не процессу с таким же именем: имя (comm)
+    выставляет кто угодно, а /proc/<pid>/exe и владелец uid 0 — нет."""
+    try:
+        exe = os.readlink(f"/proc/{pid}/exe")
+        uid = os.stat(f"/proc/{pid}").st_uid
+    except OSError:
+        return False
+    return os.path.basename(exe.split(" (deleted)")[0]) == "sshd" and uid == 0
+
+
 def listening_ports() -> list[int]:
     """Порты, которые sshd СЛУШАЕТ сейчас (факт, не конфиг): `ss -Hltnp`,
-    сокеты процесса sshd; при socket-активации слушает systemd — тогда
-    `sshd -T`. Пусто — sshd не запущен (или без root имена процессов не
-    видны). Конфиг может быть не применён (OMV записал, sshd не
-    перезапущен; правили руками) — фильтр должен совпадать с тем, куда
-    придёт пакет, поэтому первичен факт."""
+    сокеты, среди держателей которых есть процесс sshd (по /proc: бинарь sshd
+    и uid 0 — имя процесса подделывается). При socket-активации слушает
+    systemd — тогда `sshd -T`. Пусто — sshd не запущен. Конфиг может быть не
+    применён (OMV записал, sshd не перезапущен; правили руками) — фильтр
+    должен совпадать с тем, куда придёт пакет, поэтому первичен факт."""
     proc = _run(["ss", "-Hltnp"])
     if proc.returncode != 0:
         raise SshdError("ss: " + (proc.stderr.strip() or f"код {proc.returncode}"))
@@ -98,16 +112,15 @@ def listening_ports() -> list[int]:
         parts = ln.split()
         if len(parts) < 4:
             continue
-        m = _PROC_RE.search(ln)
-        name = m.group(1) if m else ""
-        if name not in ("sshd", "systemd"):
+        holders = [(name, int(pid)) for name, pid in _PID_RE.findall(ln)]
+        if not any(name == "sshd" and _is_sshd_pid(pid) for name, pid in holders):
             continue
         port = parts[3].rsplit(":", 1)[-1]
         if port.isdigit() and int(port) not in ports:
             ports.append(int(port))
     if not ports and socket_activated():
         return effective_ports()
-    return ports
+    return sorted(ports)
 
 
 @dataclass

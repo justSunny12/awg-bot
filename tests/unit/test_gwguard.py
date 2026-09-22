@@ -134,7 +134,9 @@ def test_env_keeps_unknown_lines_and_validates_values(tmp_path, monkeypatch):
     assert 'SSH_PORT="2222"' in text and text.startswith("# awg-bot"), "формат sh для юнита"
     assert gwguard.read_extra() == ["10.9.1.7"]
     for bad in ({"SSH_PORT": "70000"}, {"SSH_PORT": "22a"}, {"SSH_ALLOW": "2001:db8::1 ok; rm -rf /"},
-                {"SSH_ALLOW_RESOLVED": "home.example.org"}, {"NOPE": "1"}):
+                {"SSH_ALLOW_RESOLVED": "home.example.org"}, {"NOPE": "1"},
+                # файл исполняется sh: scope id v6 и «имена» с ведущей цифрой не проходят
+                {"ADMIN_IPS_EXTRA": "fe80::1%$(id)"}, {"SSH_ALLOW": "12345"}, {"SSH_ALLOW": "1.2.3.4.5"}):
         with pytest.raises(ValueError):
             gwguard.write_env(**bad)
     assert gwguard.read_env()["SSH_PORT"] == "2222", "отказ ничего не пишет"
@@ -159,6 +161,9 @@ def test_set_sync_writes_one_transaction_only_on_drift(monkeypatch, tmp_path):
     assert written[-1] == ("flush set inet awg_gw_guard ssh_allow4\n"
                            "add element inet awg_gw_guard ssh_allow4 { 198.51.100.4, 203.0.113.7 }\n")
     assert gwguard.set_sync("server4", set(), info) is False
+    # пересечения схлопываются до записи: nft отвергает «conflicting intervals»
+    assert gwguard.set_sync("ssh_allow4", {"203.0.113.0/24", "203.0.113.7", "203.0.112.0/24"}, info) is True
+    assert written[-1].splitlines()[1].endswith("{ 203.0.112.0/23 }")
     assert gwguard.set_sync("server4", {"198.51.100.10"}, info) is True
     assert gwguard.set_sync("nope", {"1.2.3.4"}, info) is False, "старая обвязка без набора — молча"
     monkeypatch.setattr(gwguard, "_nft", lambda a, timeout=10: _cp(1))
@@ -177,3 +182,17 @@ def test_server_host_prefers_the_live_endpoint(monkeypatch, tmp_path):
     assert gwguard.server_host() == "vpn.example.org"
     monkeypatch.setattr(config, "GW_LINK_CONF", str(tmp_path / "none.conf"))
     assert gwguard.server_host() == ""
+
+
+def test_collapse_and_overlaps_and_lan_nets(monkeypatch):
+    assert gwguard.collapse(["203.0.113.0/24", "203.0.113.7", "home.example.org", "198.51.100.4"]) \
+        == ["198.51.100.4", "203.0.113.0/24"]
+    assert gwguard.overlaps("203.0.113.7", ["198.51.100.0/24", "203.0.113.0/24"]) == "203.0.113.0/24"
+    assert gwguard.overlaps("203.0.113.0/24", ["203.0.113.7"]) == "203.0.113.7", "и подсеть поверх адреса"
+    assert gwguard.overlaps("203.0.113.7", ["home.example.org"]) == ""
+    routes = {("route", "show", "default"): [{"dst": "default", "dev": "end0"}],
+              ("route", "show", "dev", "end0", "scope", "link"): [
+                  {"dst": "192.168.1.0/24"}, {"dst": "192.168.1.0/24"}, {"dst": "10.42.0.0/16"}]}
+    monkeypatch.setattr(gwguard, "_ip_json", lambda a: routes.get(tuple(a), []))
+    assert gwguard.lan_nets() == ["192.168.1.0/24", "10.42.0.0/16"]
+    assert gwguard.lan_nets("wlan0") == []

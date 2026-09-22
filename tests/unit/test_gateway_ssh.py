@@ -29,7 +29,8 @@ class _Host:
         self.owner = owner or sshd.SshdOwner()
         self.chains = set(chains)
         self.table_ports = dict(table_ports if table_ports is not None else {"tunnel_in": 22})
-        self.sets = sets if sets is not None else {"ssh_allow4": set(), "server4": set()}
+        self.sets = sets if sets is not None else {"ssh_allow4": set(), "server4": set(),
+                                                   "lan4": {"192.168.1.0/24"}}
         self.acts: list = []
 
     def info(self):
@@ -69,6 +70,8 @@ def host(tmp_path, monkeypatch):
         return True
     monkeypatch.setattr(gwguard, "set_sync", set_sync)
     monkeypatch.setattr(gwguard, "server_host", lambda: "203.0.113.10")
+    monkeypatch.setattr(gwguard, "plumbing_installed", lambda: True)
+    monkeypatch.setattr(gwguard, "lan_nets", lambda iface="": ["192.168.1.0/24"])
     monkeypatch.setattr(gwguard, "unit_admin_ips", lambda: ["10.9.1.2"])
     monkeypatch.setattr(nftguard, "ufw_active", lambda: False)
     monkeypatch.setattr(nftguard, "_resolve", lambda host: {"home2.dyn.example": ["198.51.100.4"]}.get(host, []))
@@ -171,20 +174,41 @@ def test_port_change_table_first_then_sshd_and_rollback(svc, host, monkeypatch):
 # ── адреса снаружи и фильтр ──────────────────────────────────────────────────
 
 def test_allow_list_is_ipv4_only_and_feeds_the_live_set(svc, host):
-    cur = svc.ssh_allow_add("home2.dyn.example, 203.0.113.7 198.51.100.0/24")
-    assert cur == ["home2.dyn.example", "203.0.113.7", "198.51.100.0/24"]
+    cur = svc.ssh_allow_add("home2.dyn.example, 203.0.113.7 198.51.101.0/24")
+    assert cur == ["home2.dyn.example", "203.0.113.7", "198.51.101.0/24"]
     env = gwguard.read_env()
-    assert env["SSH_ALLOW"] == "home2.dyn.example 203.0.113.7 198.51.100.0/24"
+    assert env["SSH_ALLOW"] == "home2.dyn.example 203.0.113.7 198.51.101.0/24"
     assert env["SSH_ALLOW_RESOLVED"] == "198.51.100.4", "резолв имени — для следующей загрузки"
-    assert host.sets["ssh_allow4"] == {"198.51.100.4", "203.0.113.7", "198.51.100.0/24"}
+    assert host.sets["ssh_allow4"] == {"198.51.100.4", "203.0.113.7", "198.51.101.0/24"}
     assert host.sets["server4"] == {"203.0.113.10"}
+    assert host.sets["lan4"] == {"192.168.1.0/24"}
     assert ("reassert",) not in host.acts, "список — живой набор, юнит не дёргаем"
     with pytest.raises(ServiceError, match="IPv6"):
         svc.ssh_allow_add("2001:db8::1")
-    with pytest.raises(ServiceError, match="не адрес"):
+    with pytest.raises(ServiceError, match="не адрес, не подсеть и не имя$"):
         svc.ssh_allow_add("мусор")
-    assert svc.ssh_allow_remove("203.0.113.7") == ["home2.dyn.example", "198.51.100.0/24"]
-    assert host.sets["ssh_allow4"] == {"198.51.100.4", "198.51.100.0/24"}
+    assert svc.ssh_allow_remove("203.0.113.7") == ["home2.dyn.example", "198.51.101.0/24"]
+    assert host.sets["ssh_allow4"] == {"198.51.100.4", "198.51.101.0/24"}
+
+
+def test_overlapping_entries_are_refused_and_resolved_names_inside_subnets_are_not_duplicated(svc, host):
+    """nft отвергает пересекающиеся интервалы — и в транзакции, и в файле при
+    загрузке (после ребута обвязки не было бы). Адрес внутри введённой подсети
+    — отказ; имя, резолвящееся в подсеть из списка, в SSH_ALLOW_RESOLVED не
+    попадает, набор схлопнут."""
+    svc.ssh_allow_add("198.51.100.0/24")
+    with pytest.raises(ServiceError, match="пересекается с 198.51.100.0/24"):
+        svc.ssh_allow_add("198.51.100.5")
+    with pytest.raises(ServiceError, match="пересекается"):
+        svc.ssh_allow_add("198.51.0.0/16")
+    with pytest.raises(ServiceError, match="пересекается"):
+        svc.ssh_allow_add("203.0.113.0/24 203.0.113.9")
+    svc.ssh_allow_add("home2.dyn.example")                 # резолвится в 198.51.100.4 — внутри /24
+    env = gwguard.read_env()
+    assert env["SSH_ALLOW"] == "198.51.100.0/24 home2.dyn.example"
+    assert env.get("SSH_ALLOW_RESOLVED", "") == "", "адрес покрыт подсетью — в файл не пишем"
+    assert host.sets["ssh_allow4"] == {"198.51.100.0/24", "198.51.100.4"}, \
+        "фейковый set_sync не схлопывает; настоящий — collapse (test_gwguard)"
 
 
 def test_dyndns_change_is_followed_on_tick_without_a_reassert(svc, host, monkeypatch):
@@ -195,11 +219,56 @@ def test_dyndns_change_is_followed_on_tick_without_a_reassert(svc, host, monkeyp
     assert host.sets["ssh_allow4"] == {"198.51.100.9"}
     assert gwguard.read_env()["SSH_ALLOW_RESOLVED"] == "198.51.100.9"
     assert ("reassert",) not in host.acts
+
+
+def test_silent_dns_keeps_the_last_known_address(svc, host, monkeypatch):
+    """После ребута/рестарта агента кэш резолвера пуст; DNS роутера ещё не
+    поднялся — прошлый адрес берётся из SSH_ALLOW_RESOLVED, набор и файл не
+    пустеют (fail-closed, а не «снаружи никого»)."""
+    gwguard.write_env(SSH_ALLOW="home2.dyn.example", SSH_ALLOW_RESOLVED="198.51.100.9")
+    host.sets["ssh_allow4"] = {"198.51.100.9"}
     monkeypatch.setattr(nftguard, "_resolve", lambda h: [])              # DNS молчит
-    host.acts.clear()
     svc.ssh_reconcile(host.info())
+    assert host.sets["ssh_allow4"] == {"198.51.100.9"}, "прошлый адрес удержан"
+    assert gwguard.read_env()["SSH_ALLOW_RESOLVED"] == "198.51.100.9", "файл не затёрт"
     scr = svc.ssh_screen(host.info())
-    assert scr["unresolved"] == ["home2.dyn.example"]
+    assert scr["unresolved"] == ["home2.dyn.example"] and scr["held"] == ["198.51.100.9"]
+    monkeypatch.setattr(nftguard, "_resolve", lambda h: ["198.51.100.10"])   # DNS ожил
+    svc.ssh_reconcile(host.info())
+    assert host.sets["ssh_allow4"] == {"198.51.100.10"}
+    assert gwguard.read_env()["SSH_ALLOW_RESOLVED"] == "198.51.100.10"
+
+
+def test_multiple_sshd_ports_keep_the_recorded_one(svc, host):
+    """sshd на двух портах: порядок `ss` не контракт — держим порт из файла,
+    без него — меньший; уведомлений от перестановки быть не должно."""
+    gwguard.write_env(SSH_PORT="2222")
+    host.listening = [22, 2222]
+    assert svc.ssh_port_fact()[0] == 2222
+    gwguard.write_env(SSH_PORT="")
+    assert svc.ssh_port_fact()[0] == 22
+
+
+def test_failed_reassert_is_reported_and_retried(svc, host, monkeypatch):
+    gwguard.write_env(SSH_PORT="22")
+    host.listening = [2222]
+    monkeypatch.setattr(gwguard, "reassert", lambda: host.acts.append(("reassert",)) or (False, "timeout"))
+    notes = svc.ssh_reconcile(host.info())
+    assert len(notes) == 1 and "не удалось" in notes[0].text and "переведён" not in notes[0].text
+    assert gwguard.read_env()["SSH_PORT"] == "2222"
+    host.acts.clear()
+    svc.ssh_reconcile(host.info())                        # таблица всё ещё на 22
+    assert ("reassert",) not in host.acts, "повтор не чаще раза в 10 минут"
+    svc._ssh_last_reassert = 0.0
+    svc.ssh_reconcile(host.info())
+    assert ("reassert",) in host.acts, "троттлинг истёк — повтор"
+
+
+def test_nothing_is_written_after_rollback(svc, host, monkeypatch):
+    monkeypatch.setattr(gwguard, "plumbing_installed", lambda: False)
+    host.listening = [2222]
+    assert svc.ssh_reconcile(host.info()) == []
+    assert gwguard.read_env() == {} and not host.acts
 
 
 def test_filter_toggle_reasserts_and_needs_the_new_plumbing(svc, host):

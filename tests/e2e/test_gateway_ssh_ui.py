@@ -292,3 +292,39 @@ async def test_filter_on_refusal_from_old_plumbing_is_an_alert(svc, fake_bot, mo
     cb, nav = _cb(fake_bot)
     await gh.gw_ssh_action(cb, GwCB(action="ssh_on!"), svc, FakeState())
     assert any("старого образца" in str(a) for a in cb.answers)
+
+
+async def test_owner_refusal_comes_right_on_the_button(svc, fake_bot):
+    """На малине с OMV «Изменить порт» сразу показывает отказ — без приглашения
+    и ввода: лишний шаг у целевых пользователей ни к чему."""
+    svc.screen = _scr(owner="omv", owner_port=22)
+    cb, nav = _cb(fake_bot)
+    st = FakeState()
+    await gh.gw_ssh_port_ask(cb, GwCB(action="ssh_port"), svc, st)
+    assert await st.get_state() is None
+    text = [t for k, t, _ in nav.sent if k == "edit_text"][-1]
+    assert "управляет OMV" in text and _labels(nav.sent[-1][2]) == ["⬅️ Назад"]
+
+
+async def test_readding_a_known_address_says_so(svc, fake_bot, monkeypatch):
+    from awgbot.infra import gwguard
+    monkeypatch.setattr(gwguard, "read_env", lambda: {"SSH_ALLOW": "home2.dyn.example"})
+    svc.screen = _scr(allow=["home2.dyn.example"])
+    monkeypatch.setattr(svc, "ssh_allow_add", lambda raw: ["home2.dyn.example"])
+    st = FakeState()
+    await st.set_state(GwSshAllow.value)
+    msg = FakeMessage(text="home2.dyn.example", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await gh.gw_ssh_allow_received(msg, st, svc)
+    assert any("уже в списке" in s[1] for s in msg.sent if s[0] == "answer")
+
+
+def test_section_text_names_held_addresses_lan_and_caps_the_list():
+    text = texts.gateway_ssh_text(_scr(allow=["home2.dyn.example"], unresolved=["home2.dyn.example"],
+                                       held=["198.51.100.4"], lan=["192.168.1.0/24"]))
+    assert "держу прошлый адрес: <code>198.51.100.4</code>" in text
+    assert "Из локальной сети: открыт всегда (<code>192.168.1.0/24</code>)." in text
+    text = texts.gateway_ssh_text(_scr(allow=["home2.dyn.example"], unresolved=["home2.dyn.example"]))
+    assert "прошлого адреса нет" in text
+    many = [f"h{i}.dyn.example" for i in range(20)]
+    text = texts.gateway_ssh_text(_scr(allow=many))
+    assert "и ещё 8" in text and "h19.dyn.example" not in text

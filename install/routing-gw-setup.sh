@@ -73,7 +73,10 @@ PRIVATE_NETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/
 # Устройства админа (из бандла с ВПС) — им с туннеля открыто ВСЁ: сама машина и
 # домашняя сеть через неё. Прочим клиентам — изоляция и drop. Старое имя
 # переменной (SSH_ALLOW) принимается для бандлов прежнего выпуска.
-ADMIN_IPS="${ADMIN_IPS:-${SSH_ALLOW:-}}"
+# Без двоеточия: запасное имя — только когда ADMIN_IPS НЕ ЗАДАН (старый
+# бандл); юнит всегда задаёт его, пусть и пустым, а SSH_ALLOW из firewall.env
+# к этому моменту уже в окружении (EnvironmentFile) — это список снаружи.
+ADMIN_IPS="${ADMIN_IPS-${SSH_ALLOW:-}}"
 ADMIN_IPS_EXTRA="${ADMIN_IPS_EXTRA:-}"
 # Старое имя SSH_ALLOW отработало выше как ADMIN_IPS; дальше SSH_ALLOW — список
 # адресов СНАРУЖИ из firewall.env, и бандловое значение ему не должно достаться.
@@ -188,14 +191,23 @@ ipv4_list() {
 
 # Адрес сервера снаружи — хост Endpoint из конфига линка: IP как есть, имя —
 # один резолв (при отказе пусто: набор server4 наполнит агент по тику).
+# v6-литерал ([…]:порт) снаружи не поддерживается — пусто.
 server_ipv4() {
-    _h="$(awk -F'[= ]+' '/^[[:space:]]*Endpoint/ {print $2; exit}' "${1:-/dev/null}" 2>/dev/null \
-        | sed 's/^\[//; s/\]:[0-9]*$//; s/:[0-9]*$//')"
-    [ -n "$_h" ] || return 0
+    _h="$(awk '/^[[:space:]]*Endpoint[[:space:]]*=/ {sub(/^[^=]*=[[:space:]]*/, ""); print; exit}' \
+        "${1:-/dev/null}" 2>/dev/null | sed 's/:[0-9]*$//')"
     case "$_h" in
+        ""|\[*) return 0 ;;
         *[!0-9.]*) getent ahostsv4 "$_h" 2>/dev/null | awk '{print $1; exit}' ;;
         *) printf '%s\n' "$_h" ;;
     esac
+}
+
+# Локальная сеть — подсети интерфейса квартиры (маршруты scope link): именно
+# они, а не RFC1918 целиком — за CGNAT провайдера (100.64/10) соседи по пулу
+# приходили бы через проброс как «свои». Пусто — RFC1918 (запас).
+lan_ipv4() {
+    ip -4 route show dev "$1" scope link 2>/dev/null | awk '$1 ~ /\// {print $1}' \
+        | awk '!seen[$0]++' | paste -sd, - | sed 's/,/, /g'
 }
 
 # Контейнер, интерфейс выхода и каталог конфигов ОПРЕДЕЛЯЮТСЯ, а не задаются
@@ -574,7 +586,12 @@ SERVER_ELEMS="$(server_ipv4 "$SRC_CONF")"
 say "  SSH снаружи (порт $SSH_PORT): фильтр $([ "$SSH_FILTER" = 1 ] && echo включён || echo выключен);"
 say "  адреса: ${SSH_ALLOW_ELEMS:-—}; сервер снаружи: ${SERVER_ELEMS:-— (адрес не определён)}"
 SSH_JUMP=""
-[ "$SSH_FILTER" = 1 ] && SSH_JUMP="        tcp dport $SSH_PORT jump ssh_in"
+# Только IPv4: таблица inet, а accept'ы в ssh_in — по ip saddr; без nfproto
+# v6-пакет доходил бы до drop, и «из локальной сети всегда» ломалось бы.
+[ "$SSH_FILTER" = 1 ] && SSH_JUMP="        meta nfproto ipv4 tcp dport $SSH_PORT jump ssh_in"
+LAN_ELEMS="$(lan_ipv4 "$WAN_IF")"
+say "  локальная сеть (SSH снаружи не фильтруется): ${LAN_ELEMS:-RFC1918 целиком — подсеть $WAN_IF не определена}"
+[ -n "$LAN_ELEMS" ] || LAN_ELEMS="10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16"
 if [ "$MODE" = "plan" ]; then
     say "  would: записать $GUARD_FILE и применить: nft -f $GUARD_FILE"
 else
@@ -637,6 +654,11 @@ GUARDEOF
 [ -n "$SERVER_ELEMS" ] && printf '        elements = { %s }\n' "$SERVER_ELEMS"
 cat <<GUARDEOF
     }
+    set lan4 {
+        type ipv4_addr
+        flags interval
+        elements = { $LAN_ELEMS }
+    }
 
     chain input {
         type filter hook input priority filter; policy accept;
@@ -653,7 +675,7 @@ $SSH_JUMP
     }
     chain ssh_in {
         ct state established,related accept
-        ip saddr @private4 accept
+        ip saddr @lan4 accept
         ip saddr @server4 accept
         ip saddr @ssh_allow4 accept
         drop

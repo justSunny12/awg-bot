@@ -1107,6 +1107,24 @@ cmd_restore() {
             fi
         fi
     fi
+    # Локальное состояние файервола шлюза (порт SSH, адреса снаружи, доверенные
+    # из туннеля) — данные человека, бандл их не восстановит. Юнит обвязки
+    # подхватит файл при следующем реассерте (агент сверяет порт по тику).
+    if [[ -f "$tmp/awg-gw/firewall.env" ]]; then
+        if cmp -s "$tmp/awg-gw/firewall.env" /etc/awg-gw/firewall.env 2>/dev/null; then
+            log "firewall.env шлюза не изменился с момента копии — не трогаю."
+        else
+            mkdir -p /etc/awg-gw
+            cp -a "$tmp/awg-gw/firewall.env" /etc/awg-gw/firewall.env; chmod 644 /etc/awg-gw/firewall.env
+            if systemctl is-enabled awg-link-gw.service >/dev/null 2>&1; then
+                systemctl restart awg-link-gw.service >/dev/null 2>&1 \
+                    && ok "firewall.env шлюза восстановлен, обвязка перевыставлена" \
+                    || warn "firewall.env восстановлен, но обвязка не перевыставилась: awg-bot firewall apply"
+            else
+                ok "firewall.env шлюза восстановлен (обвязки ещё нет — подхватится при применении конфигурации)"
+            fi
+        fi
+    fi
     # маркер для бота: новый процесс доложит админу, из какой копии восстановились
     printf '{"created_at": "%s", "source": "%s"}\n' "$bk_at" "$(basename "$tgz")" > "$DATA_DIR/restore-done.json"
     rm -rf "$tmp"
