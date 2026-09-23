@@ -461,11 +461,12 @@ GW_SSH_ALLOW_ASK = ("➕ <b>Адреса для входа снаружи</b>\n\
 def gateway_ssh_allow_added(entries: list[str], merged: list[str] | None = None) -> str:
     """merged — записи, которые схлопнулись в добавленную подсеть (nft не
     принимает пересечения; человеку — что объединено, а не отказ)."""
-    text = "✅ Адреса для входа снаружи: добавлено " + ", ".join(f"<b>{_e(e)}</b>" for e in entries) \
+    # адреса и подсети — моноширинным: жирный адрес Telegram превращает в ссылку
+    text = "✅ Адреса для входа снаружи: добавлено " + ", ".join(f"<code>{_e(e)}</code>" for e in entries) \
         if entries else "✅ Адреса для входа снаружи"
     if merged:
         text += "; объединено с новой подсетью: " + ", ".join(f"<code>{_e(m)}</code>" for m in merged)
-    return text + "."
+    return text
 
 
 def gateway_ssh_del_ask(entry: str) -> str:

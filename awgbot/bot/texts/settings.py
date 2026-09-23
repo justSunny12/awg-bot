@@ -512,8 +512,9 @@ def settings_changed(key: str, old, new) -> str:
 
 
 def settings_ssh_allow_added(entries: list) -> str:
+    # адреса — моноширинным: жирный адрес Telegram превращает в ссылку
     return ("✅ Адреса для SSH: добавлено "
-            + ", ".join(f"<b>{_e(x)}</b>" for x in entries) + ".")
+            + ", ".join(f"<code>{_e(x)}</code>" for x in entries))
 
 
 def settings_bad_value(key: str) -> str:

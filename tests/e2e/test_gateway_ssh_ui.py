@@ -261,7 +261,7 @@ async def test_allow_add_and_remove(svc, fake_bot):
     assert await st.get_state() == GwSshAllow.value.state, "переспрос — ввод открыт"
     msg = FakeMessage(text="home2.dyn.example", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await gh.gw_ssh_allow_received(msg, st, svc)
-    assert any("добавлено <b>home2.dyn.example</b>" in s[1] for s in msg.sent if s[0] == "answer")
+    assert any("добавлено <code>home2.dyn.example</code>" in s[1] for s in msg.sent if s[0] == "answer")
     assert await st.get_state() is None
     cb, nav = _cb(fake_bot)
     await gh.gw_ssh_action(cb, GwCB(action="ssh_del", val="0"), svc, FakeState())
@@ -285,7 +285,7 @@ async def test_adding_covered_addresses_reports_the_merge(svc, fake_bot, monkeyp
     await st.set_state(GwSshAllow.value)
     msg = FakeMessage(text="203.0.113.0/24", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await gh.gw_ssh_allow_received(msg, st, svc)
-    assert any("добавлено <b>203.0.113.0/24</b>; объединено с новой подсетью: <code>203.0.113.7</code>" in s[1]
+    assert any("добавлено <code>203.0.113.0/24</code>; объединено с новой подсетью: <code>203.0.113.7</code>" in s[1]
                for s in msg.sent if s[0] == "answer"), msg.sent
 
 
