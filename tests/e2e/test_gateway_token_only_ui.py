@@ -250,7 +250,7 @@ async def test_token_input_replacing_a_known_bot_with_a_dead_token_drops_the_old
     _known_bot(services, 2)
     _telegram(monkeypatch, fail=True)
     st, _, _ = await _ask_token(services, fake_bot)
-    msg = _amsg(fake_bot, "333333333:CC-third-token-value-long-enough")
+    msg = _amsg(fake_bot, "333333333:AA-third-dummy-token-value")
     await sh.gateway_token_received(msg, st, services)
     card = [s for s in msg.sent if s[0] == "answer"][-1][1]
     assert "pi2_gw_bot" not in card, card
