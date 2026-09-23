@@ -369,7 +369,7 @@ def unit_set_env(values: dict[str, str]) -> str:
             new = new[:anchor.start()] + line + "\n" + new[anchor.start():]
     if new != text:
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(new, encoding="utf-8")
+        _write_private(tmp, new)                  # в юните UPLINK_B64 с приватным ключом
         tmp.replace(path)
         try:
             _daemon_reload()
@@ -377,10 +377,19 @@ def unit_set_env(values: dict[str, str]) -> str:
             # Юнит переписан, а systemd о нём не узнал: «не применилось» при новых
             # значениях в файле — худший исход, следующая доставка увидела бы
             # «совпало» и не перезапустила бы ничего. Возвращаем прежний текст.
-            tmp.write_text(text, encoding="utf-8")
+            _write_private(tmp, text)
             tmp.replace(path)
             raise
     return text
+
+
+def _write_private(path: Path, text: str) -> None:
+    """Файл с секретом: 0600 с первого байта, а не chmod после записи."""
+    import os
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.chmod(path, 0o600)
 
 
 def _daemon_reload() -> None:
@@ -397,7 +406,7 @@ def unit_restore(text: str) -> None:
     """Вернуть юнит к прежнему тексту (откат неудачного применения)."""
     path = unit_path()
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(text, encoding="utf-8")
+    _write_private(tmp, text)
     tmp.replace(path)
     _daemon_reload()
 

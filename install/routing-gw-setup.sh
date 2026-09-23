@@ -1215,6 +1215,10 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 UNITEOF
+# 0600: в юните UPLINK_B64 — конфиг аплинка с приватным ключом; юнит читает
+# только systemd (root), а любому локальному пользователю малины (OMV, шары)
+# видеть ключ незачем. Прежние выпуски оставляли 0644 — правим и их.
+chmod 0600 "$UNIT"
 run "systemctl daemon-reload"
 run "systemctl enable awg-link-gw.service"
 # ── 5. локальная сеть: «за шлюзом — без VPN» (концепт «локальная сеть», функция A) ─
