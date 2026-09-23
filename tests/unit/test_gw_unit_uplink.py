@@ -23,7 +23,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh"
-PUB = "UPLINKPUBKEY0000000000000000000000000000000="
+PUB = "DUMMY"
 SECRET = "UPLINK-PRIVATE-KEY-DO-NOT-LEAK"
 UPLINK_CONF = f"[Interface]\nPrivateKey = {SECRET}\nAddress = 10.8.1.15/32\nTable = off\n\n[Peer]\nPublicKey = S==\n"
 UPLINK_B64 = base64.b64encode(UPLINK_CONF.encode()).decode()
