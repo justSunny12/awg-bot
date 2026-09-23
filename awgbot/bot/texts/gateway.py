@@ -191,7 +191,18 @@ def gateway_lan_own_text(items: list[tuple[str, str]]) -> str:
         if not doms:
             continue
         room = max(20, _OWN_SHOWN - shown)        # каждому разделу — хоть начало
-        lines += [title] + [f"• {_e(d)}" for d in doms[:room]]
+        # и потолок по символам: домен бывает до 253 знаков, и сто двадцать
+        # длинных строк переросли бы лимит сообщения так же, как тысяча коротких
+        budget = _OWN_CHARS // 2
+        picked = []
+        for d in doms[:room]:
+            row = f"• {_e(d)}"
+            if budget - len(row) - 1 < 0:
+                break
+            picked.append(row)
+            budget -= len(row) + 1
+        room = len(picked)
+        lines += [title] + picked
         if len(doms) > room:
             lines.append(f"…и ещё {len(doms) - room} — полностью: <code>awg-bot lan list</code>")
         lines.append("")
@@ -200,6 +211,7 @@ def gateway_lan_own_text(items: list[tuple[str, str]]) -> str:
 
 
 _OWN_SHOWN = 120
+_OWN_CHARS = 3200                 # на оба раздела; остальное — шапка и хвосты
 
 
 def gateway_lan_result(ok: bool, out: str) -> str:
