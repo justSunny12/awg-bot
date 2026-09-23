@@ -412,3 +412,29 @@ async def test_address_list_pages_and_removal_from_page_two_hits_the_right_entry
     go = [b for row in nav.sent[-1][2].inline_keyboard for b in row if b.text == "➖ Убрать"][0]
     await gh.gw_ssh_action(cb, GwCB.unpack(go.callback_data), svc, FakeState())
     assert svc.calls == [("remove", entry)], f"убран не тот адрес: {svc.calls}"
+
+
+PEER_LINE = "Из локальных подсетей других шлюзов: открыт всегда"
+
+
+def test_section_names_peer_nets_only_when_there_are_any():
+    """Из подсети другого шлюза SSH открыт всегда, фильтр его не касается, —
+    человек должен это видеть: иначе, включив фильтр, он будет считать соседнюю
+    сеть закрытой. Нет соседей — строки нет вовсе, а не «(пусто)»."""
+    for empty in ({}, {"peer_nets": []}):
+        text = texts.gateway_ssh_text(_scr(**empty))
+        assert "других шлюзов" not in text, (empty, text)
+    text = texts.gateway_ssh_text(_scr(lan=["192.168.1.0/24"], peer_nets=["10.20.0.0/16", "192.168.68.0/24"]))
+    lines = text.splitlines()
+    i = lines.index("Из локальной сети: открыт всегда (<code>192.168.1.0/24</code>)")
+    assert lines[i + 1] == f"{PEER_LINE} (<code>10.20.0.0/16</code>, <code>192.168.68.0/24</code>)", lines
+    # строка — и при включённом фильтре: соседей он не закрывает
+    assert PEER_LINE in texts.gateway_ssh_text(_scr(filter=True, peer_nets=["192.168.68.0/24"]))
+
+
+def test_section_peer_nets_line_is_capped_and_escaped():
+    text = texts.gateway_ssh_text(_scr(peer_nets=["10.1.0.0/16", "10.2.0.0/16", "10.3.0.0/16", "10.4.0.0/16"]))
+    line = next(ln for ln in text.splitlines() if ln.startswith(PEER_LINE))
+    assert "10.3.0.0/16" in line and "10.4.0.0/16" not in line, line
+    text = texts.gateway_ssh_text(_scr(peer_nets=["10.0.0.0/8<b>"]))
+    assert "10.0.0.0/8&lt;b&gt;" in text and "10.0.0.0/8<b>" not in text, text

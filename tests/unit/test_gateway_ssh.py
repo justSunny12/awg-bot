@@ -288,3 +288,28 @@ def test_screen_collects_port_owner_and_plumbing_state(svc, host):
     host.listening = []
     scr = svc.ssh_screen(host.info())
     assert scr["sshd_down"] is True and scr["port"] == 22
+
+
+# ── подсети других шлюзов (peer_nets4) на экране ─────────────────────────────
+
+def test_screen_reports_peer_nets_from_the_table_set(svc, host):
+    """Экран показывает то, что реально пускает ssh_in, — набор peer_nets4
+    таблицы, а не то, что обещал бандл; отсортировано, чтобы строка не
+    прыгала от порядка элементов в `nft -j`."""
+    host.sets["peer_nets4"] = {"192.168.68.0/24", "10.20.0.0/16"}
+    assert svc.ssh_screen(host.info())["peer_nets"] == ["10.20.0.0/16", "192.168.68.0/24"]
+
+
+def test_screen_peer_nets_empty_when_the_set_is_empty_absent_or_unreadable(svc, host, monkeypatch):
+    """Доступ выключен (набор пуст), обвязка старого образца (набора нет),
+    nft недоступен — пустой список, без исключения: экран SSH не должен
+    падать из-за функции, которой у человека нет."""
+    host.sets["peer_nets4"] = set()
+    assert svc.ssh_screen(host.info())["peer_nets"] == []
+    del host.sets["peer_nets4"]
+    assert svc.ssh_screen(host.info())["peer_nets"] == []
+
+    def _broken():
+        raise gwguard.GwGuardError("nft: нет доступа")
+    monkeypatch.setattr(gwguard, "table_info", _broken)
+    assert svc.ssh_screen()["peer_nets"] == []
