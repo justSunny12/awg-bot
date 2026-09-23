@@ -2,6 +2,7 @@
 #   ./venv/bin/pip install -r requirements-dev.txt
 pytest>=8
 pytest-asyncio>=0.23
+pytest-xdist>=3       # прогон набора параллельно (-n auto в pytest.ini; -n 0 — по порядку)
 pyflakes>=3             # проверка кода перед выпуском (docs/RELEASING.md §4)
 pip-audit>=2.7          # известные уязвимости в зависимостях — перед выпуском и при
                         # актуализации окружения
