@@ -221,6 +221,8 @@ async def run_gateway() -> None:
     access = AccessMiddleware(db)          # клиентов в БД нет: пускает админа,
     dp.message.outer_middleware(access)    # остальных молча роняет — ровно то,
     dp.callback_query.outer_middleware(access)  # что шлюзу и нужно
+    from awgbot.bot import paging as _paging
+    dp.include_router(_paging.router)              # листание списков — до экранов
     dp.include_router(gateway_handlers.router)
 
     conf_watcher = ConfWatcher(config.CONF_DIR)
@@ -229,8 +231,15 @@ async def run_gateway() -> None:
     from awgbot.bot import notifier as _notifier
 
     async def _mail_fallback(text: str) -> None:
-        if await asyncio.to_thread(services.email_alert_fallback_enabled):
-            await asyncio.to_thread(services.email_send_alert, text)
+        # Telegram шлюза ходит через туннель; лёг линк — Telegram нет, а
+        # интернет есть, и письмо уйдёт. Нет и прямого выхода — письмо не
+        # уйдёт тем более: не пробуем, чтобы не засорять журнал отказами SMTP.
+        if not await asyncio.to_thread(services.email_alert_fallback_enabled):
+            return
+        if await asyncio.to_thread(services.egress_probe) is None:
+            log.warning("Telegram недоступен, и прямого выхода в интернет нет — письмо не уйдёт, не пробую")
+            return
+        await asyncio.to_thread(services.email_send_alert, text)
     _notifier.set_email_fallback(_mail_fallback)
 
     try:
@@ -356,6 +365,8 @@ async def main() -> None:
     dp.message.outer_middleware(access)
     dp.callback_query.outer_middleware(access)
 
+    from awgbot.bot import paging as _paging
+    dp.include_router(_paging.router)              # листание списков — до экранов
     dp.include_router(reply_commands_handlers.router)   # ПЕРВЫМ: reply-команды бьют раньше FSM
     dp.include_router(admin_handlers.router)
     dp.include_router(settings_handlers.router)

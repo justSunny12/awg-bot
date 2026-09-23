@@ -10,7 +10,7 @@ from awgbot.bot.callbacks import (
     AdminSelfCB, ClientCB, ConfirmCB, DeviceCB, Menu, ReassignCB, RoutingCB, SetCB,
     BroadcastCB)
 
-from .common import _chk, _btn_suffix, _dev_emoji, _manual_block_button
+from .common import _chk, _btn_suffix, _dev_emoji, _manual_block_button, page_slice, page_nav
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -29,13 +29,15 @@ def admin_add_device_choice() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def pick_client_for_add_device(clients) -> InlineKeyboardMarkup:
+def pick_client_for_add_device(clients, page: int = 0) -> InlineKeyboardMarkup:
     """Список клиентов для «Добавить устройство → другому клиенту»."""
     kb = InlineKeyboardBuilder()
-    for c in clients:
+    chunk, page, prev, nxt = page_slice(clients, page, static=1)
+    for _i, c in chunk:
         kb.button(text=c.name, callback_data=ClientCB(action="add_device", client_id=c.id))
+    nav = page_nav(kb, "addpick", 0, page, prev, nxt, Menu(action="add_device_pick").pack())
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
-    kb.adjust(1)
+    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
     return kb.as_markup()
 
 
@@ -85,7 +87,7 @@ def admin_main(unassigned_count: int, self_has_devices: bool = False,
     return kb.as_markup()
 
 
-def admin_clients(clients, online_ids=()) -> InlineKeyboardMarkup:
+def admin_clients(clients, online_ids=(), page: int = 0) -> InlineKeyboardMarkup:
     """Список профилей. Кружок — про ОНЛАЙН: зелёный, если подключён хотя бы
     один пир, иначе красный; ⏳ — профиль ещё не активировал доступ.
 
@@ -94,15 +96,17 @@ def admin_clients(clients, online_ids=()) -> InlineKeyboardMarkup:
     """
     online = set(online_ids or ())
     kb = InlineKeyboardBuilder()
-    for c in clients:
+    chunk, page, prev, nxt = page_slice(clients, page, static=1)
+    for _i, c in chunk:
         mark = "⏳" if c.activation_status == ActivationStatus.PENDING else (
             "🟢" if c.id in online else "🔴")
         # админ видит все блокировки (включая тихие)
         blk = _blocks.blocked_marker_client(int(c.block_reason), for_admin=True)
         kb.button(text=f"{blk}{mark} {c.name}",
                   callback_data=ClientCB(action="open", client_id=c.id))
+    nav = page_nav(kb, "clients", 0, page, prev, nxt, Menu(action="clients").pack())
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
-    kb.adjust(1)
+    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
     return kb.as_markup()
 
 
@@ -190,16 +194,19 @@ def admin_client_back(client_id: int) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def admin_client_device_list(devices, client_id: int) -> InlineKeyboardMarkup:
+def admin_client_device_list(devices, client_id: int, page: int = 0) -> InlineKeyboardMarkup:
     """Список устройств КОНКРЕТНОГО клиента (админ смотрит из его карточки).
     Тап открывает карточку устройства (DeviceCB open) — не генерит ссылку сразу.
     «Назад» — к карточке ЭТОГО клиента, не к общему списку клиентов."""
     kb = InlineKeyboardBuilder()
-    for d in devices:
+    chunk, page, prev, nxt = page_slice(devices, page, static=1)
+    for _i, d in chunk:
         marker = _blocks.blocked_marker_device(int(d.block_reason), for_admin=True)
         kb.button(text=f"{marker}{_dev_emoji(d)} {d.name}", callback_data=DeviceCB(action="open", device_id=d.id))
+    nav = page_nav(kb, "clidevs", client_id, page, prev, nxt,
+                   ClientCB(action="devices", client_id=client_id).pack())
     kb.button(text="⬅️ Назад", callback_data=ClientCB(action="open", client_id=client_id))
-    kb.adjust(1)
+    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
     return kb.as_markup()
 
 
@@ -207,24 +214,29 @@ def admin_client_device_list(devices, client_id: int) -> InlineKeyboardMarkup:
 # Устройства без клиента → привязка
 # ─────────────────────────────────────────────────────────────────────────────
 
-def unassigned_devices(devices) -> InlineKeyboardMarkup:
+def unassigned_devices(devices, page: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    for d in devices:
+    chunk, page, prev, nxt = page_slice(devices, page, static=1)
+    for _i, d in chunk:
         kb.button(text=f"{d.name}{_btn_suffix(d)} — {d.address}",
                   callback_data=DeviceCB(action="open", device_id=d.id))
+    nav = page_nav(kb, "unassigned", 0, page, prev, nxt, Menu(action="unassigned").pack())
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
-    kb.adjust(1)
+    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
     return kb.as_markup()
 
 
-def reassign_targets(device_id: int, clients) -> InlineKeyboardMarkup:
+def reassign_targets(device_id: int, clients, page: int = 0) -> InlineKeyboardMarkup:
     """Список клиентов, к которым можно привязать устройство без профиля."""
     kb = InlineKeyboardBuilder()
-    for c in clients:
+    chunk, page, prev, nxt = page_slice(clients, page, static=1)
+    for _i, c in chunk:
         kb.button(text=c.name,
                   callback_data=ReassignCB(device_id=device_id, client_id=c.id, stage="go"))
+    nav = page_nav(kb, "reassign", device_id, page, prev, nxt,
+                   DeviceCB(action="reassign", device_id=device_id).pack())
     kb.button(text="⬅️ Назад", callback_data=Menu(action="unassigned"))
-    kb.adjust(1)
+    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
     return kb.as_markup()
 
 

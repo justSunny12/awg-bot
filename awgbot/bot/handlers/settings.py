@@ -72,7 +72,9 @@ async def _screen(sec: str, services, key: str = ""):
         return texts.migration_prepare_intro(d), kb.migration_prepare_confirm()
     if sec == "fw":
         st = await call(services.firewall_screen)
-        return texts.settings_firewall_text(st), kb.settings_firewall(st)
+        from awgbot.bot import paging
+        return texts.settings_firewall_text(st), kb.settings_firewall(
+            st, page=paging.page_of(config.ADMIN_ID, "fw"))
     if sec == "mon":
         return texts.SETTINGS_MON, kb.settings_mon()
     if sec == "backup":
@@ -140,7 +142,9 @@ async def _screen(sec: str, services, key: str = ""):
             info = await call(services.routing_lists_info)
             return texts.routing_lists_text(info), kb.settings_routing_lists(info["every_hours"])
         clients = await call(services.routing_grantable_clients)
-        return texts.routing_users_text(), kb.settings_routing_users(clients)
+        from awgbot.bot import paging
+        return texts.routing_users_text(), kb.settings_routing_users(
+            clients, page=paging.page_of(config.ADMIN_ID, "rtusers"))
     return texts.SETTINGS_ROOT, kb.settings_root()
 
 
@@ -207,7 +211,9 @@ async def gateway_pick_list(cb: CallbackQuery, callback_data: GwMarkCB, services
     if not cands:
         await edit(cb, texts.GATEWAY_PICK_EMPTY, kb.gateway_choose_kind(False, slot))
         return
-    await edit(cb, texts.GATEWAY_PICK_INTRO, kb.gateway_pick(cands, slot))
+    from awgbot.bot import paging
+    await edit(cb, texts.GATEWAY_PICK_INTRO,
+               kb.gateway_pick(cands, slot, page=paging.page_of(cb.message.chat.id, "gwpick", slot)))
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "pick"))
@@ -467,47 +473,6 @@ async def gw_slot_ping(cb: CallbackQuery, callback_data: GwSlotCB, services):
                    kb.gateway_card(st, back_to_list=len(st["states"]) > 1))
     await cb.answer(texts.ping_line(ms).replace("<code>", "").replace("</code>", "") if ms is not None
                     else f"Шлюз {st['display']} не отвечает", show_alert=ms is None)
-
-
-@router.callback_query(GwSlotCB.filter(F.action == "snap"))
-async def gw_slot_snap(cb: CallbackQuery, callback_data: GwSlotCB, services):
-    """«Обновить с шлюза»: попросить полный снимок по каналу. Автообновления по
-    таймеру нет и не будет — это был бы тот же период, только с человеческим
-    лицом; один запрос на нажатие."""
-    from awgbot.runtime import linkserver
-    slot = callback_data.slot
-    srv = linkserver.current()
-    # Ждём, пока снимок действительно придёт: агент может быть занят тиком.
-    # «Обновлено», когда карточка нарисована из старого, — хуже, чем честное
-    # «не успел».
-    fresh = await srv.ask_snap(slot, timeout=3.0) if srv else None
-    if fresh is None:
-        await cb.answer("Канал до шлюза сейчас не на связи", show_alert=True)
-        return
-    await _render_card(cb, services, slot)
-    await cb.answer("Снимок обновлён" if fresh else
-                    "Шлюз не ответил за 3 секунды — показан прежний снимок",
-                    show_alert=not fresh)
-
-
-@router.callback_query(GwSlotCB.filter(F.action == "diag"))
-async def gw_slot_diag(cb: CallbackQuery, callback_data: GwSlotCB, services):
-    """Диагностика обвязки шлюза по каналу — закрытый список, только чтение."""
-    await edit(cb, texts.GATEWAY_DIAG_INTRO, kb.gateway_diag(callback_data.slot))
-    await cb.answer()
-
-
-@router.callback_query(GwSlotCB.filter(F.action.in_({"diag_unit", "diag_table", "diag_status"})))
-async def gw_slot_diag_show(cb: CallbackQuery, callback_data: GwSlotCB, services):
-    from awgbot.runtime import linkserver
-    name = callback_data.action.removeprefix("diag_")
-    srv = linkserver.current()
-    text = await srv.ask_tail(callback_data.slot, name) if srv else None
-    if text is None:
-        await cb.answer("Шлюз не ответил — канал не на связи или агент занят", show_alert=True)
-        return
-    await edit(cb, texts.gateway_diag_text(name, text), kb.gateway_diag(callback_data.slot))
-    await cb.answer()
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "switch_ask"))

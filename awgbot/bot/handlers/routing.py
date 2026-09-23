@@ -85,9 +85,11 @@ async def panel_view(services, client, back_target: str):
     text = texts.routing_panel_text(
         master_on=on, domains=domains,
         enabled=enabled, total=total, link_ok=link_ok)
+    from awgbot.bot import paging
     return text, kb.routing_panel(
         client.id, master_on=on, domains=domains,
-        enabled=enabled, total=total, back_target=back_target)
+        enabled=enabled, total=total, back_target=back_target,
+        page=paging.page_of(client.tg_id, "rtpanel", client.id))
 
 
 async def show_panel(cb: CallbackQuery, services, client, speaker):
@@ -113,9 +115,11 @@ async def devices_view(services, client):
     devices = await call(services.routing_devices, client.id)
     enabled, total = await call(services.routing_device_counts, client.id)
     lent_out = await call(services.routing_lent_out, client.id)
+    from awgbot.bot import paging
     return texts.routing_devices_text(enabled, total, lent_out), kb.routing_devices(
         client.id, devices, lent_out=lent_out,
-        back_target=RoutingCB(action="panel", ref=client.id).pack())
+        back_target=RoutingCB(action="panel", ref=client.id).pack(),
+        page=paging.page_of(client.tg_id, "rtdevs", client.id))
 
 
 @router.callback_query(RoutingCB.filter(F.action == "lent"))

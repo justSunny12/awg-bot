@@ -83,7 +83,7 @@ class GatewayLinkMixin:
             log.info("gateway: порт линка слота %s — %s (был %s)", g.id, port, g.link_port)
             notes.append(Notification(
                 config.ADMIN_ID,
-                f"🛰 Порт линка шлюза {self._gw_display_h(g)} на ВПС теперь {port} (был "
+                f"🛰 Порт линка шлюза {self._gw_display_h(g)} на сервере AWG теперь {port} (был "
                 f"{g.link_port}). Шлюз об этом не знает — перевыпусти конфигурацию шлюза "
                 f"(Условная маршрутизация → {self._gw_display_h(g)} → Конфигурация шлюза) и "
                 "примени её на той стороне, иначе линк не поднимется."))
@@ -889,8 +889,8 @@ class GatewayLinkMixin:
     @staticmethod
     def _gw_deps_changed(before: str, after: str) -> list[str]:
         """Что именно разошлось — для напоминания своим текстом."""
-        names = {"lan": "функция «За шлюзом — без VPN»", "nets": "локальные подсети",
-                 "resolver": "резолвер сервера", "peer": "подсети за другими шлюзами"}
+        names = {"lan": "состояние функции «За шлюзом — без VPN»", "nets": "локальные подсети",
+                 "resolver": "резолвер сервера", "peer": "локальные подсети других шлюзов"}
         b = dict(x.split("=", 1) for x in before.split(";") if "=" in x)
         a = dict(x.split("=", 1) for x in after.split(";") if "=" in x)
         return [names[k] for k in ("lan", "nets", "resolver", "peer") if b.get(k, "") != a.get(k, "")]
@@ -936,10 +936,10 @@ class GatewayLinkMixin:
         snap = self.gwlink_snapshot(g.id) if getattr(g, "id", None) else {}
         if not isinstance(snap.get("bundle"), dict):
             return False, None
-        lines, keys = self.gwlink_config_drift(g, with_keys=True)
+        from awgbot.domain.services.gwchannel import drift_lines
+        items = self.gwlink_config_drift_items(g)
         covers = self._gw_channel_covers(g)
-        pending = [(ln, k) for ln, k in zip(lines, keys)
-                   if not (covers and k in gwlink.SETTINGS_KEYS)]
+        pending = [it for it in items if not (covers and it[0] in gwlink.SETTINGS_KEYS)]
         key = self._gw_slot_key(self._GW_DRIFT_NOTIFIED_KEY, g.id)
         told = self.db.get_state(key) or ""
         if not pending:
@@ -947,20 +947,19 @@ class GatewayLinkMixin:
                 self.db.set_state(key, "")
                 return True, Notification(
                     config.ADMIN_ID,
-                    f"✅ На шлюзе {self._gw_display_h(g)} конфигурация совпадает с выданной.")
+                    f"✅ Конфигурация шлюза {self._gw_display_h(g)} актуализирована")
             return True, None
         # подпись — по самим строкам: settings_hash знает только ключи канала, и
         # смена подсетей соседей (едут файлом) не давала бы нового напоминания
         import hashlib
-        sig = hashlib.sha256("\n".join(ln for ln, _k in pending).encode()).hexdigest()
+        sig = hashlib.sha256("\n".join(drift_lines(pending, html=False)).encode()).hexdigest()
         if told == sig:
             return True, None
         self.db.set_state(key, sig)
-        import html
-        what = "; ".join(html.escape(ln, quote=False) for ln, _k in pending)
+        what = "; ".join(drift_lines(pending, html=True))
         return True, Notification(
             config.ADMIN_ID,
-            f"🛰 На шлюзе {self._gw_display_h(g)} стоит не то, что выдаёт сервер: {what}. "
+            f"🛰 Конфигурация шлюза {self._gw_display_h(g)} неактуальна: {what}. "
             f"Перевыпусти конфигурацию (Условная маршрутизация → {self._gw_display_h(g)} → "
             "Конфигурация шлюза) и примени её на шлюзе.")
 
@@ -998,7 +997,7 @@ class GatewayLinkMixin:
                 config.ADMIN_ID,
                 f"🛰 Список твоих устройств изменился, а файервол шлюза {self._gw_display_h(g)} "
                 "знает прежний: новые устройства не достанут до шлюза и его локальной сети "
-                "через туннель. Перевыпусти конфигурацию шлюза (Условная маршрутизация → "
+                "через туннель.\n\nПеревыпусти конфигурацию шлюза (Условная маршрутизация → "
                 f"{self._gw_display_h(g)} → Конфигурация шлюза) и примени её на шлюзе."))
         # прочие зависимости: режим без VPN, подсети, резолвер — своим текстом
         for g in self.db.gateways():
@@ -1014,7 +1013,7 @@ class GatewayLinkMixin:
             what = ", ".join(self._gw_deps_changed(sent, cur)) or "настройки шлюза"
             notes.append(Notification(
                 config.ADMIN_ID,
-                f"🛰 Конфигурация {self._gw_display_h(g)} устарела: изменились {what}. "
+                f"🛰 Конфигурация шлюза {self._gw_display_h(g)} неактуальна: изменились {what}. "
                 f"Перевыпусти её (Условная маршрутизация → {self._gw_display_h(g)} → "
                 "Конфигурация шлюза) и примени на шлюзе."))
         return notes

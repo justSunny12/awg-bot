@@ -138,12 +138,12 @@ def test_status_carries_lan_block_and_panel_shows_it(svc, monkeypatch):
                        "nets": 412, "updated_at": "2026-09-20T10:00:00+05:00",
                        "own_vpn": 2, "own_ru": 1, "lan_pkts": 12345})
     out = texts.gateway_panel(st)
-    assert "🏠 За шлюзом — без VPN: 🟢 работает" in out
-    assert "локальная сеть: end0, 192.168.68.222" in out and "12 345 пакетов" in out
-    assert "1180 доменов, 412 подсетей" in out and "свои: 2 в туннель, 1 напрямую" in out
+    assert "🏠 Локальная сеть без VPN: 🟢 работает" in out
+    assert "локальная сеть: end0, <code>192.168.68.222</code>" in out and "12 345 пакетов" in out
+    assert "1180 доменов, 412 подсетей" in out and "свои списки: 2 в туннель, 1 напрямую" in out
     st.checks.append(GwCheck("трафик с роутера", False, "пакетов нет", group="lan"))
-    assert "🏠 За шлюзом — без VPN: 🔴 трафик с роутера" in texts.gateway_panel(st)
-    assert "За шлюзом — без VPN" not in texts.gateway_panel(GwStatus()), "выключено — блока нет"
+    assert "🏠 Локальная сеть без VPN: 🔴 трафик с роутера" in texts.gateway_panel(st)
+    assert "Локальная сеть без VPN" not in texts.gateway_panel(GwStatus()), "выключено — блока нет"
     # снимок переживает JSON
     assert GwStatus.from_json(st.to_json()).lan["addr"] == "192.168.68.222"
 
@@ -289,3 +289,39 @@ def test_the_panel_says_what_is_wrong_with_the_upstream(svc, monkeypatch):
     by = {c.name: c for c in GatewayServices(svc.db).lan_status()[1]}
     assert by["апстрим через аплинк"].ok is None
     assert by["апстрим через аплинк"].detail == "статистика dnsmasq не прочиталась"
+
+
+def test_missing_lists_script_is_a_failed_check_with_a_reissue_advice(svc, monkeypatch, tmp_path):
+    """Скрипта списков нет (конфигурация старого образца, скрипт стёрли) —
+    применить фиды нечем, ни свои, ни привезённые каналом. Монитор обязан
+    сказать это прямо, а не показывать «списки не загружены» без причины."""
+    _lan_on(monkeypatch, home=_home())
+    monkeypatch.setattr(gwguard, "LAN_LISTS_SCRIPT", str(tmp_path / "нет-такого.sh"))
+    _, checks = svc.lan_status()
+    by = {c.name: c for c in checks}
+    assert "скрипт списков" in by, [c.name for c in checks]
+    assert by["скрипт списков"].ok is False and "перевыпусти конфигурацию шлюза" in by["скрипт списков"].detail
+    assert by["скрипт списков"].group == "lan", "своим стриком, не критичным"
+
+
+def test_present_lists_script_adds_no_check(svc, monkeypatch, tmp_path):
+    """Скрипт на месте — строки о нём нет вовсе: зелёная «скрипт списков: ок»
+    в мониторе была бы шумом."""
+    script = tmp_path / "awg-lan-lists.sh"
+    script.write_text("#!/bin/sh\n", encoding="utf-8")
+    _lan_on(monkeypatch, home=_home())
+    monkeypatch.setattr(gwguard, "LAN_LISTS_SCRIPT", str(script))
+    _, checks = svc.lan_status()
+    assert "скрипт списков" not in {c.name for c in checks}
+
+
+def test_lan_block_carries_the_first_local_subnet_for_the_recovery_note(svc, monkeypatch):
+    """Подсеть в блоке — для отбоя «Локальная сеть без VPN (хост, подсеть)
+    снова в порядке»: у двух шлюзов отбои иначе не различить. Подсетей в
+    юните нет — пустая строка, а не падение."""
+    _lan_on(monkeypatch, home=_home())
+    info, _ = svc.lan_status()
+    assert info["subnet"] == "192.168.68.0/24"
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: {"RESOLVER": "10.9.1.1"}.get(k, ""))
+    info, _ = svc.lan_status()
+    assert info["subnet"] == ""

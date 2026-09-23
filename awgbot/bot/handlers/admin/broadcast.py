@@ -58,8 +58,10 @@ async def _bc_show_targets(cb: CallbackQuery, state: FSMContext, services):
     extend = bool(data.get("extend"))
     clients = await _bc_clients(services, extend)
     selected = set(data.get("targets") or ())
+    from awgbot.bot import paging
     await edit(cb, texts.BROADCAST_TARGETS_EXTEND if extend else texts.BROADCAST_TARGETS,
-               kb.broadcast_targets(clients, selected, extend=extend))
+               kb.broadcast_targets(clients, selected, extend=extend,
+                                    page=paging.page_of(cb.message.chat.id, "bcast")))
 
 
 @router.callback_query(BroadcastCB.filter(F.action == "pick"))
@@ -77,6 +79,13 @@ async def broadcast_mode(cb: CallbackQuery, callback_data: BroadcastCB, state: F
                          services):
     await state.set_state(Broadcast.targets)
     await state.set_data({"targets": [], "extend": bool(callback_data.ref)})
+    await _bc_show_targets(cb, state, services)
+    await cb.answer()
+
+
+@router.callback_query(BroadcastCB.filter(F.action == "targets"))
+async def broadcast_targets_again(cb: CallbackQuery, state: FSMContext, services):
+    """Перерисовать выбор адресатов как есть — по нему листаются страницы."""
     await _bc_show_targets(cb, state, services)
     await cb.answer()
 

@@ -1,12 +1,10 @@
 """
 Агент шлюза, этапы 3 и 4 концепта «канал линка»: фиды локальной сети,
-привезённые каналом; роль слота, сказанная сервером; диагностика обвязки по
-закрытому списку.
+привезённые каналом; роль слота, сказанная сервером.
 
-Фиды и запросы диагностики приходят с ВПС, который может быть взломан. Цена
-ошибки: сжатая «бомба» съедает память малины, чужой фид под видом нашего
-ложится в dnsmasq всей квартиры, запрос «покажи файл X» выносит с малины то,
-что на ВПС делать нечего, а ключ из вывода скрипта уезжает в чат основного бота.
+Фиды приходят с ВПС, который может быть взломан. Цена ошибки: сжатая «бомба»
+съедает память малины, чужой фид под видом нашего ложится в dnsmasq всей
+квартиры.
 И обратная сторона: пока канал возит фиды, адрес квартиры не должен сам ходить
 за ними на GitHub и в Google — ради этого этап и затевался.
 
@@ -20,13 +18,11 @@ import base64
 import hashlib
 import json
 import os
-import subprocess
 import time
 import zlib
 
 import pytest
 
-from awgbot.domain import gateway as gwmod
 from awgbot.domain.gateway import GatewayServices
 from awgbot.infra import gwguard
 from awgbot.infra.db import Database
@@ -228,166 +224,3 @@ def test_the_role_told_by_the_server_is_remembered(svc):
     assert svc.link_role() == "active"
     svc.set_link_role(False)
     assert svc.link_role() == "standby"
-
-
-# ── диагностика по закрытому списку ──────────────────────────────────────────
-
-@pytest.fixture()
-def host(svc, tmp_path, monkeypatch):
-    """Что вернут journalctl и nft; какие команды реально запускались."""
-    ran: list[list[str]] = []
-    out = {"journalctl": b"", "nft": b""}
-
-    def run(argv, timeout=10):
-        ran.append(list(argv))
-        return subprocess.CompletedProcess(argv, 0, stdout=out.get(argv[0], b""), stderr=b"")
-
-    monkeypatch.setattr(gwmod, "_run", run)
-    status = tmp_path / "gateway.status"
-    monkeypatch.setattr(gwguard, "STATUS_FILE", str(status))
-    return ran, out, status
-
-
-@pytest.mark.parametrize("name", ["", "shell", "../../etc/shadow", "unit; id", "UNIT", "tail", "cat /etc/awg-gw"])
-def test_an_unknown_diagnostic_name_runs_nothing(svc, host, name):
-    """Сервер может попросить только одно из трёх, и только прочесть. Любое
-    другое имя — отказ без единого запуска: закрытый список не расширяется
-    изобретательностью того, кто взломал ВПС."""
-    ran, _, _ = host
-    assert svc.diag_tail(name) == "такой диагностики нет"
-    assert ran == [], f"по имени {name!r} что-то запустилось: {ran}"
-
-
-def test_the_three_known_diagnostics_read_exactly_their_source(svc, host):
-    ran, out, status = host
-    out["journalctl"] = b"started routing-gw-setup\nok\n"
-    out["nft"] = b"table inet awg_gw_guard {\n}\n"
-    status.write_text("GW_STATUS=confirmed\n", encoding="utf-8")
-    assert "started routing-gw-setup" in svc.diag_tail("unit")
-    assert "awg_gw_guard" in svc.diag_tail("table")
-    assert svc.diag_tail("status") == "GW_STATUS=confirmed\n"
-    assert [c[0] for c in ran] == ["journalctl", "nft"], "чтение статуса запустило команду"
-    assert ran[0][:3] == ["journalctl", "-u", gwmod.config.GW_UNIT]
-    assert ran[1] == ["nft", "list", "table", "inet", "awg_gw_guard"]
-
-
-def test_keys_are_masked_before_they_leave_the_gateway(svc, host):
-    """Скрипт обвязки однажды напечатает ключ — например, строку конфига с
-    ошибкой. В канал он уйти не должен: хвост журнала рисуется в чате ВПС."""
-    _, out, _ = host
-    key = base64.b64encode(os.urandom(32)).decode()
-    out["journalctl"] = f"PrivateKey = {key}\nUPLINK_B64={base64.b64encode(os.urandom(90)).decode()}\n".encode()
-    text = svc.diag_tail("unit")
-    assert key not in text and "[скрыто]" in text
-    assert "UPLINK_B64=[скрыто]" in text
-
-
-def test_a_long_output_is_cut_to_its_tail(svc, host):
-    _, out, _ = host
-    out["nft"] = ("строка\n" * 2000 + "ПОСЛЕДНЯЯ\n").encode()
-    text = svc.diag_tail("table")
-    # таблица проходит вырезание SSH построчно, и финальный перевод строки
-    # теряется — смысл проверки в том, с какого конца резали
-    assert len(text) <= 3000 and text.rstrip("\n").endswith("ПОСЛЕДНЯЯ"), "обрезано не с того конца"
-
-
-def test_a_diagnostic_that_cannot_run_says_so_instead_of_breaking(svc, host, monkeypatch):
-    """journalctl завис или его нет — ответ текстом, а не исключение: исключение
-    в обработчике сообщения рвёт канал целиком."""
-    def boom(argv, timeout=10):
-        raise subprocess.TimeoutExpired(argv, timeout)
-    monkeypatch.setattr(gwmod, "_run", boom)
-    assert svc.diag_tail("unit").startswith("не прочиталось")
-    monkeypatch.setattr(gwmod, "_run", lambda a, timeout=10: (_ for _ in ()).throw(FileNotFoundError(a[0])))
-    assert svc.diag_tail("table").startswith("не прочиталось")
-    assert svc.diag_tail("status").startswith("не прочиталось"), "нет файла статуса — тоже текстом"
-
-
-# ── таблица файервола без SSH шлюза ─────────────────────────────────────────
-
-NFT_TABLE = """table inet awg_gw_guard {
-	set admin4 {
-		type ipv4_addr
-		flags interval
-		elements = { 10.8.1.2 }
-	}
-	set ssh_allow4 {
-		type ipv4_addr
-		flags interval
-		elements = { 203.0.113.5, 198.51.100.0/24,
-			     192.0.2.77 }
-	}
-	set server4 {
-		type ipv4_addr
-		elements = { 198.51.100.200 }
-	}
-	set lan4 {
-		type ipv4_addr
-		flags interval
-		elements = { 192.168.68.0/24 }
-	}
-
-	chain input {
-		type filter hook input priority filter; policy accept;
-		iifname "lo" accept
-		ip saddr @tunnel_nets4 jump tunnel_in
-		meta nfproto ipv4 tcp dport 2222 jump ssh_in
-	}
-
-	chain tunnel_in {
-		ct state established,related accept
-		ip saddr @admin4 accept
-		ip saddr 10.99.99.1 tcp dport 2222 accept
-		drop
-	}
-
-	chain ssh_in {
-		ct state established,related accept
-		ip saddr @lan4 accept
-		ip saddr @server4 accept
-		ip saddr @ssh_allow4 accept
-		drop
-	}
-
-	chain forward {
-		type filter hook forward priority filter; policy accept;
-		iifname "awglink" ip saddr @admin4 accept
-	}
-}
-"""
-
-
-def test_the_firewall_table_goes_to_the_server_without_the_gateway_ssh(svc, host):
-    """Таблица обвязки уходит на ВПС по кнопке диагностики. SSH шлюза — порт и
-    вайтлист адресов, с которых на малину заходят снаружи, — ВПС знать незачем:
-    взломанный сервер получил бы готовую карту входа в квартиру."""
-    _, out, _ = host
-    out["nft"] = NFT_TABLE.encode()
-    text = svc.diag_tail("table")
-    for secret in ("203.0.113.5", "198.51.100.0/24", "192.0.2.77", "198.51.100.200",
-                   "2222", "@ssh_allow4", "@server4", "@lan4", "192.168.68.0/24"):
-        assert secret not in text, f"{secret!r} уехал на ВПС:\n{text}"
-    # имя блока остаётся — видно, что он есть и скрыт, а не потерян
-    assert "chain ssh_in { [скрыто] }" in text and "set ssh_allow4 { [скрыто] }" in text
-    assert text.count("[правило SSH скрыто]") == 2, "переход на ssh_in и правило порта для линка"
-
-
-def test_the_rest_of_the_table_stays_readable(svc, host):
-    """Вырезается только SSH: остальное — ради чего кнопку и нажимают."""
-    _, out, _ = host
-    out["nft"] = NFT_TABLE.encode()
-    text = svc.diag_tail("table")
-    assert "set admin4 {" in text and "10.8.1.2" in text
-    assert "chain tunnel_in {" in text and "ip saddr @admin4 accept" in text
-    assert 'iifname "awglink" ip saddr @admin4 accept' in text and "chain forward {" in text
-    # вырезанный блок не съел соседей: скобки сошлись
-    assert text.index("chain input {") < text.index("chain tunnel_in {") < text.index("chain forward {")
-    assert text.rstrip().endswith("}"), "хвост таблицы съеден"
-
-
-def test_the_ssh_cut_applies_to_the_table_only(svc, host):
-    """Журнал юнита не таблица: строки про порт в нём — вывод скрипта, и
-    вырезать из него «правила» значило бы прятать причину отказа."""
-    _, out, _ = host
-    out["journalctl"] = b"SSH port 2222: tcp dport 2222 accept from saddr 203.0.113.5\n"
-    assert "tcp dport 2222 accept" in svc.diag_tail("unit")

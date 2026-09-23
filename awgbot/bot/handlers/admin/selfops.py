@@ -40,7 +40,9 @@ async def self_devices(cb: CallbackQuery, services):
     devices = await call(services.db.list_devices, ac.id)
     slots = await call(services.device_slots, ac.id)
     header = "<b>\U0001F4F1Мои устройства</b>\n\n" + texts.device_slots_line(*slots)
-    await edit(cb, header, kb.client_devices(devices))
+    from awgbot.bot import paging
+    await edit(cb, header, kb.client_devices(
+        devices, page=paging.page_of(cb.message.chat.id, "devices"), render=cb.data))
     await cb.answer()
 
 
@@ -52,8 +54,10 @@ async def self_gen_pick(cb: CallbackQuery, callback_data: AdminSelfCB, services)
     if not devices:
         await cb.answer("Сначала добавь устройство", show_alert=True)
         return
+    from awgbot.bot import paging
     await edit(cb, kb.PICK_DEVICE_PROMPT[callback_data.action],
-               kb.pick_device(devices, callback_data.action))
+               kb.pick_device(devices, callback_data.action, render=cb.data,
+                              page=paging.page_of(cb.message.chat.id, "pick")))
     await cb.answer()
 
 

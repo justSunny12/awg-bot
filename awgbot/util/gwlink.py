@@ -265,8 +265,8 @@ DEFAULT_PORT = 8787
 # поле снимка — ключ в нижнем регистре (`bundle.<ключ>`).
 BUNDLE_KEYS = SETTINGS_KEYS + BUNDLE_ONLY_KEYS
 KEY_HUMAN = {"ADMIN_IPS": "устройства админа", "HOME_SUBNETS": "локальные подсети",
-             "LAN_MODE": "режим «за шлюзом — без VPN»", "RESOLVER": "резолвер",
-             "PEER_HOME_NETS": "подсети за другими шлюзами"}
+             "LAN_MODE": "режим «За шлюзом — без VPN»", "RESOLVER": "резолвер",
+             "PEER_HOME_NETS": "локальные подсети других шлюзов"}
 
 
 def snap_field(key: str) -> str:

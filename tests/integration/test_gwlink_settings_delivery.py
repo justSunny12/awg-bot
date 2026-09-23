@@ -350,7 +350,7 @@ async def test_a_subnet_edit_on_the_server_is_delivered_applied_and_confirmed(se
     assert services.gwlink_ack(1)["ok"] is True
     assert services.gwlink_config_drift(services.db.gateway(1)) == []
     assert services.gw_bundle_drift_notes() == [], "доставлено каналом, а бот всё равно гонит перевыпускать"
-    assert chat == ["⚙️ Сервер прислал новые настройки шлюза — применены: локальные подсети."]
+    assert chat == ["⚙️ Сервер AWG прислал новые настройки шлюза — применены: локальные подсети."]
     assert client._writer is writer and services.gwlink_session(1)["since"] == since, (
         "применение настроек порвало сессию канала")
     assert link.online(1) is True

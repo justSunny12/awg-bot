@@ -172,7 +172,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                 checks.append(GwCheck(
                     "таблица awg_gw_guard", False,
                     "нет — обвязка старого образца или снята; перевыпусти "
-                    "конфигурацию шлюза с ВПС"))
+                    "конфигурацию шлюза с сервера AWG"))
         self._guard_info = info
         if info is not None:
             nets = info["sets"].get("tunnel_nets4", set())
@@ -230,8 +230,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                 masq = uplink in info.get("masq_ifaces", set())
                 checks.append(GwCheck("маскарад в аплинк", masq,
                                       "" if masq else f"нет masquerade в {uplink}: пакеты агента "
-                                      "уходят в туннель с домашним адресом — перевыпусти "
-                                      "конфигурацию шлюза с ВПС и примени её здесь"))
+                                      "уходят в туннель с локальным адресом — перевыпусти "
+                                      "конфигурацию шлюза с сервера AWG и примени её здесь"))
         else:
             checks.append(GwCheck("политика аплинка", None, "аплинк не найден"))
         return checks
@@ -397,7 +397,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                 "🔧 Политика «Telegram → аплинк» пропала и перевыставлена: "
                 + ", ".join(fixed) + ". Обычно так делает перезапуск "
                 "systemd-networkd — установщик шлюза запрещает ему трогать "
-                "чужие правила, перевыпусти конфигурацию шлюза с ВПС, если "
+                "чужие правила, перевыпусти конфигурацию шлюза с сервера AWG, если "
                 "повторится.", critical=False))
 
         return [n for n in notes if n.text]
@@ -407,19 +407,20 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         hs_bad = not self.link_ok(st)
         notes += self._streak_alert(
             "link", hs_bad, settings.get_int("app.gateway.link_alert_streak", 2),
-            "🚨 Линк до ВПС мёртв: хендшейка нет дольше допустимого. РФ-доступ "
+            "🚨 Линк до сервера AWG мёртв: хендшейка нет дольше допустимого. РФ-доступ "
             "у клиентов не работает.",
-            "✅ Линк до ВПС ожил, хендшейк свежий.",
+            "✅ Линк до сервера AWG ожил, хендшейк свежий.",
             loud=settings.get_bool("app.gateway.link_alert_loud", True))
 
         # Лежащий домашний канал для РФ-доступа равносилен лежащему линку —
         # тот же короткий стрик, а не общий на пять тиков.
+        host = html.escape(socket.gethostname(), quote=False)
         notes += self._streak_alert(
             "egress", st.egress_ok is False,
             settings.get_int("app.gateway.egress_alert_streak", 2),
-            "⚠️ Шлюз не выходит наружу: канал квартиры не отвечает. РФ-доступ "
+            "⚠️ Шлюз не выходит наружу: канал не отвечает. РФ-доступ "
             "через шлюз не работает.",
-            "✅ Канал квартиры снова отвечает.")
+            f"✅ Канал шлюза {host} снова отвечает")
 
         broken = [c for c in st.checks if c.ok is False and c.group != "lan"]
         notes += self._streak_alert(
@@ -427,16 +428,18 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             "⚠️ Обвязка шлюза неисправна: "
             + "; ".join(f"{html.escape(c.name, quote=False)} — {html.escape(c.detail, quote=False)}"
                         for c in broken[:3]),
-            "✅ Обвязка шлюза снова в порядке.")
+            "✅ Обвязка шлюза снова в порядке")
         # локальная сеть без VPN — отдельно и не критично: тишина в пустой
         # квартире или упавший резолвер — не «РФ-доступ у всех лёг»
         lan_broken = [c for c in st.checks if c.ok is False and c.group == "lan"]
+        subnet = html.escape((st.lan or {}).get("subnet", "") or "", quote=False)
         notes += self._streak_alert(
             "lan", bool(lan_broken), streak,
             "⚠️ Локальная сеть без VPN: "
             + "; ".join(f"{html.escape(c.name, quote=False)} — {html.escape(c.detail, quote=False)}"
                         for c in lan_broken[:3]),
-            "✅ Локальная сеть без VPN снова в порядке.", critical=False)
+            f"✅ Локальная сеть без VPN ({host}" + (f", <code>{subnet}</code>" if subnet else "")
+            + ") снова в порядке", critical=False)
 
         notes += self._streak_alert(              # не критично: стреляет только на ребуте
             "kernels", bool(st.kernels_missing), streak,
@@ -512,7 +515,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         return GwCheck("маршрут к GitHub", not missing,
                        "" if not missing else
                        "обвязка без маршрута GitHub в аплинк — агент не сможет обновляться; "
-                       "перевыпусти конфигурацию шлюза с ВПС и примени её здесь")
+                       "перевыпусти конфигурацию шлюза с сервера AWG и примени её здесь")
 
     @staticmethod
     def peer_nets_missing(info: dict | None) -> list[str] | None:
@@ -534,9 +537,9 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         missing = self.peer_nets_missing(info)
         if missing is None:
             return None
-        return GwCheck("подсети за другими шлюзами", not missing,
+        return GwCheck("локальные подсети других шлюзов", not missing,
                        "" if not missing else
-                       f"в таблице нет {', '.join(missing)}; перевыпусти конфигурацию шлюза с ВПС "
+                       f"в таблице нет {', '.join(missing)}; перевыпусти конфигурацию шлюза с сервера AWG "
                        "и примени её здесь")
 
     def tg_mark_ensure(self, missing: list[str] | None = None) -> int:
@@ -619,8 +622,15 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         st = gwguard.script_status()
         iface, addr = st.get("LAN_IF", ""), st.get("LAN_ADDR", "")
         resolver = gwguard.unit_env("RESOLVER")
-        info: dict = {"iface": iface, "addr": addr, "resolver": resolver or "1.1.1.1 (запасной)"}
+        nets_all = gwguard.unit_env("HOME_SUBNETS").split()
+        info: dict = {"iface": iface, "addr": addr, "resolver": resolver or "1.1.1.1 (запасной)",
+                      "subnet": nets_all[0] if nets_all else ""}
         checks: list[GwCheck] = []
+        # скрипта списков нет — фиды применить нечем, ни свои, ни из канала
+        if not os.path.exists(gwguard.LAN_LISTS_SCRIPT):
+            checks.append(GwCheck("скрипт списков", False,
+                                  "скрипт обновления списков условной маршрутизации не найден — "
+                                  "перевыпусти конфигурацию шлюза"))
         # скрипт обвязки не смог применить раздел — причина в статусе, а не «перевыпусти»
         err = st.get("LAN_ERROR", "")
         if err:
@@ -667,7 +677,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         info["own_vpn"], info["own_ru"] = gwguard.lan_own_lists()
         lists_ok = table_ok and (info["nets"] > 0 or info["domains"] > 0)
         checks.append(GwCheck("списки", lists_ok, "" if lists_ok else
-                              "списки не загружены: обновление не прошло (🔄 Обновить списки)"))
+                              "списки не загружены: обновление не прошло"))
         # заворот и DNS с роутера — по росту счётчиков
         if home is not None:
             last = {}
@@ -678,7 +688,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             now = timeutil.now()
             cur = {"lan": home["lan_pkts"], "dns": home["dns_pkts"]}
             for key, name, why in (("lan", "трафик с роутера",
-                                     "роутер не маршрутизирует трафик на шлюз (📖 Настройка роутера)"),
+                                     "роутер не маршрутизирует трафик на шлюз (❓ Настройка роутера)"),
                                     ("dns", "DNS с роутера",
                                      "DHCP роутера раздаёт не адрес шлюза")):
                 prev = int(last.get(key, -1))
@@ -750,59 +760,6 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         """active | standby | "" — сервер не сообщал (канала нет)."""
         return (self.db.get_state(self._LINK_ROLE_KEY) or "").strip()
 
-    # Закрытый список: имя → что показать. Никаких произвольных команд — сервер
-    # может попросить только это, и только прочесть. Всё — про обвязку, которую
-    # сервер же и выдал: юнит реассерта, таблица файервола шлюза, решение
-    # скрипта. Железо, локальная сеть и прочее хозяйство агента сюда не входят.
-    DIAG_NAMES = ("unit", "table", "status")
-    _DIAG_MAX = 3000
-    _SECRET_RE = re.compile(r"[A-Za-z0-9+/]{40,}={0,2}")
-
-    @staticmethod
-    def _strip_ssh(text: str) -> str:
-        """Из таблицы файервола — прочь всё про SSH шлюза: цепочку ssh_in и её
-        наборы, правило перехода на неё. Порт и вайтлист — то, чем на шлюз
-        заходят снаружи, и на ВПС им делать нечего (концепт, §10.4.1)."""
-        out, skip = [], 0
-        for line in text.splitlines():
-            s = line.strip()
-            if skip:
-                skip += s.count("{") - s.count("}")
-                continue
-            if re.match(r"^(chain ssh_in|set (ssh_allow4|server4|lan4))\b", s):
-                skip = s.count("{") - s.count("}")
-                out.append(line.split(s)[0] + s.split("{")[0].strip() + " { [скрыто] }")
-                continue
-            if "jump ssh_in" in s or re.search(r"tcp dport \d+ accept", s) and "saddr" in s:
-                out.append(line.split(s)[0] + "[правило SSH скрыто]")
-                continue
-            out.append(line)
-        return "\n".join(out)
-
-    def diag_tail(self, name: str) -> str:
-        """Текст диагностики по имени из закрытого списка; чужое имя — отказ."""
-        from awgbot.infra import gwguard
-        if name not in self.DIAG_NAMES:
-            return "такой диагностики нет"
-        try:
-            if name == "unit":
-                proc = _run(["journalctl", "-u", config.GW_UNIT, "-n", "40", "--no-pager",
-                             "-o", "cat"], timeout=15)
-                text = _out(proc)
-            elif name == "table":
-                proc = _run(["nft", "list", "table", "inet", "awg_gw_guard"], timeout=15)
-                text = _out(proc) or proc.stderr.decode(errors="replace")
-            else:
-                text = pathlib_read(gwguard.STATUS_FILE)
-        except (OSError, subprocess.SubprocessError) as e:
-            return f"не прочиталось: {e}"
-        if name == "table":
-            text = self._strip_ssh(text)
-        # Ключи и base64-блоки — прочь: ничего похожего на секрет в канал не
-        # уходит, даже если однажды попадёт в вывод скрипта.
-        text = self._SECRET_RE.sub("[скрыто]", text)
-        return text[-self._DIAG_MAX:] if len(text) > self._DIAG_MAX else text
-
     # ── фиды локальной сети по каналу (концепт «канал линка», этап 3) ────────
     _LAN_CHANNEL_HASH_KEY = "gwlink_lists_hash"
     _LAN_CHANNEL_AT_KEY = "gwlink_lists_at"
@@ -850,7 +807,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         import zlib
         from awgbot.infra import gwguard
         if not gwguard.lan_mode():
-            return {"ok": False, "error": "режим «за шлюзом — без VPN» на шлюзе выключен"}
+            return {"ok": False, "error": "режим «За шлюзом — без VPN» на шлюзе выключен"}
         if not os.path.exists(gwguard.LAN_LISTS_SCRIPT):
             return {"ok": False, "error": "скрипта списков нет — примени конфигурацию шлюза"}
         if len(packed_b64 or "") > self._LAN_FEED_MAX:
@@ -1058,8 +1015,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
 
     # ── настройки с сервера по каналу (концепт «канал линка», этап 2) ────────
     _SETTINGS_HUMAN = {"ADMIN_IPS": "устройства админа", "HOME_SUBNETS": "локальные подсети",
-                       "LAN_MODE": "режим «за шлюзом — без VPN»",
-                       "PEER_HOME_NETS": "подсети за другими шлюзами", "RESOLVER": "резолвер"}
+                       "LAN_MODE": "режим «За шлюзом — без VPN»",
+                       "PEER_HOME_NETS": "локальные подсети других шлюзов", "RESOLVER": "резолвер"}
 
     def apply_link_settings(self, raw: dict) -> dict:
         """Применить настройки, присланные сервером по каналу.
@@ -1090,7 +1047,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             try:
                 before = gwguard.unit_set_env({k: want[k] for k in changed})
             except (OSError, gwguard.GwGuardError) as e:
-                return {"ok": False, "changed": changed, "error": f"юнит не переписан: {e}"}
+                return {"ok": False, "changed": changed, "error": f"юнит не переписан ({e})"}
             # Запас на включение режима без VPN: скрипт ставит dnsmasq через apt,
             # а на малине это минуты, не секунды.
             ok, err = gwguard.reassert(timeout=600)
@@ -1110,12 +1067,12 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         what = ", ".join(self._SETTINGS_HUMAN.get(k, k) for k in result.get("changed") or [])
         err = html.escape(str(result.get("error") or "ошибка"), quote=False)
         if result.get("ok"):
-            return f"⚙️ Сервер прислал новые настройки шлюза — применены: {what}."
+            return f"⚙️ Сервер AWG прислал новые настройки шлюза — применены: {what}."
         if not result.get("changed"):
             # отвергнуты ещё на проверке значений — ничего не менялось, и
             # «вернул прежние» было бы неправдой
-            return f"⚠️ Сервер прислал настройки шлюза, которые не прошли проверку: {err}. Ничего не менял."
-        return (f"⚠️ Сервер прислал новые настройки шлюза ({what}), но они не "
+            return f"⚠️ Сервер AWG прислал настройки шлюза, которые не прошли проверку: {err}. Ничего не менял."
+        return (f"⚠️ Сервер AWG прислал новые настройки шлюза ({what}), но они не "
                 f"применились: {err}. Вернул прежние.")
 
     def gateway_claim_if_needed(self) -> str | None:
@@ -1190,7 +1147,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
 
     def _minus_channel(self, link_rx: int, link_tx: int) -> tuple[int, int]:
         """Счётчики линка за вычетом собственного канала (снимки, ответы,
-        диагностика, фиды): иначе ответ канала серверу сходил бы за ответы из
+        фиды): иначе ответ канала серверу сходил бы за ответы из
         интернета, ушедшие клиентам, и выход наружу доказывался бы трафиком,
         который никуда наружу не ходил."""
         return self.channel.minus(0, link_rx, link_tx)
@@ -1312,7 +1269,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         """Имя ВПС для «Линк до …»: явная настройка → имя из бандла → «ВПС»."""
         return (str(settings.get("app.gateway.server_name", "") or "").strip()
                 or (self.db.get_state(self._SERVER_NAME_KEY) or "").strip()
-                or "ВПС")
+                or "сервера AWG")
 
     # ── потребление за месяц ─────────────────────────────────────────────────
 
@@ -1419,7 +1376,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                               ("по обратному трафику клиентов" if st.egress_src == "трафик" else
                                f"{st.egress_ms:.0f} мс" if st.egress_ok and st.egress_ms is not None
                                else "" if st.egress_ok else
-                               "канал квартиры не отвечает — РФ-доступ через шлюз не работает")))
+                               "канал не отвечает — РФ-доступ через шлюз не работает")))
         st.checks = checks
         st.temp = hostmetrics.read_soc_temp()
         st.throttled = hostmetrics.read_pi_throttled()

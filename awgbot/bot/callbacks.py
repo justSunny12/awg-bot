@@ -223,6 +223,18 @@ class GwSlotCB(CallbackData, prefix="gws"):
     slot: int = 0
 
 
+class PageCB(CallbackData, prefix="pg", sep="|"):
+    """Листание длинного списка кнопок (правило: не больше десяти кнопок на
+    экране). screen — имя списка, ref — его параметр (id профиля, слот),
+    page — страница, back — упакованный колбэк, который рисует этот экран:
+    хендлер листания запоминает страницу и отдаёт тот же колбэк заново.
+    Разделитель «|», потому что в back — свои двоеточия."""
+    screen: str
+    ref: int = 0
+    page: int = 0
+    back: str = ""
+
+
 class GwCB(CallbackData, prefix="gw"):
     """Кнопки агента шлюза (роль gateway). action:
       panel|refresh|health — панель и её обновление, проверки живьём;
@@ -232,9 +244,9 @@ class GwCB(CallbackData, prefix="gw"):
       backup!, restore!|restore_drop, em_setup|em_check|em_test|em_forget(!);
       apply!|apply_ow!|apply_keep!|drop — принять/отклонить бандл;
       upd_toggle|upd_check|upd_sched (val — вариант расписания);
-      lan — локальная сеть без VPN (концепт «локальная сеть»); lan_add|lan_ru|lan_del —
-      ввод доменов в личные списки, lan_list — свои списки, lan_update —
-      обновить фиды сейчас.
+      lan — локальная сеть без VPN (концепт «локальная сеть»); lan_add|lan_ru —
+      ввод доменов в личные списки, lan_list — свои списки (домены кнопками,
+      с листанием), lan_rm|lan_rm! (val — номер) — убрать домен с подтверждения.
       ssh — раздел «Доступ по SSH», ssh_port|ssh_add|ssh_del (val — номер)|
       ssh_on|ssh_on!|ssh_off|ssh_port_retry|ssh_port_back — его действия."""
     action: str

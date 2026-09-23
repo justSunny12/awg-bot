@@ -30,6 +30,25 @@ def _cut(v: str) -> str:
     return v if len(v) <= 160 else v[:157] + "…"
 
 
+def drift_lines(items: list, html: bool) -> list[str]:
+    """Строки расхождения «что выдаёт сервер — что стоит на шлюзе» из структуры
+    (ключ, человеческое имя, у сервера, на шлюзе). Режим без VPN — словами, а
+    не 1/0; подсети и адреса — в <code>, когда строка идёт в HTML. Живёт в
+    домене: уведомления собираются здесь же, а слой текстов только берёт."""
+    import html as _html
+    esc = (lambda s: _html.escape(str(s), quote=False)) if html else (lambda s: str(s))
+    out = []
+    for key, human, mine, theirs in items:
+        if key == "LAN_MODE":
+            fmt = lambda v: {"1": "включён", "0": "выключен"}.get(v, esc(v) if v else "—")   # noqa: E731
+        elif html:
+            fmt = lambda v: f"<code>{esc(v)}</code>" if v else "«—»"            # noqa: E731
+        else:
+            fmt = lambda v: f"«{v}»" if v else "«—»"                              # noqa: E731
+        out.append(f"{esc(human)}: у сервера {fmt(mine)}, на шлюзе {fmt(theirs)}")
+    return out
+
+
 class GwChannelMixin:
     _GWLINK_SESSION_KEY = "gwlink_session"
     _GWLINK_SEEN_KEY = "gwlink_seen"
@@ -173,24 +192,29 @@ class GwChannelMixin:
         второй схемы сериализации для этого не нужно. Снимка нет — расхождений
         не выдумываем: пустой список значит «сказать нечего», а не «всё сошлось».
         """
+        items = self.gwlink_config_drift_items(gw)
+        keys = [k for k, _h, _m, _t in items]
+        out = drift_lines(items, html=False)
+        return (out, keys) if with_keys else out
+
+    def gwlink_config_drift_items(self, gw) -> list[tuple[str, str, str, str]]:
+        """То же расхождение структурой: (ключ, человеческое имя, у сервера, на
+        шлюзе) — тексты рисуют его по-своему (подсети в <code>, режим словами).
+        До 64 значений с каждой стороны — значение обрезается, иначе экран с
+        несколькими расхождениями перерос бы лимит сообщения."""
         from awgbot.util import gwlink
-        keys: list[str] = []
         snap = self.gwlink_snapshot(gw.id)
         got = snap.get("bundle") if isinstance(snap.get("bundle"), dict) else None
         if not got:
-            return ([], keys) if with_keys else []
+            return []
         want = self.gwlink_issued_env(gw)
-        out = []
+        items = []
         for key in gwlink.BUNDLE_KEYS:
             mine = want[key]
             theirs = " ".join(str(got.get(gwlink.snap_field(key), "")).split())
             if mine != theirs:
-                # до 64 значений с каждой стороны — строку обрезаем, иначе экран
-                # выпуска с несколькими расхождениями перерос бы лимит сообщения
-                out.append(f"{gwlink.KEY_HUMAN[key]}: у сервера «{_cut(mine) or '—'}», "
-                           f"на шлюзе «{_cut(theirs) or '—'}»")
-                keys.append(key)
-        return (out, keys) if with_keys else out
+                items.append((key, gwlink.KEY_HUMAN[key], _cut(mine), _cut(theirs)))
+        return items
 
     # ── настройки по каналу (этап 2) ─────────────────────────────────────────
     _GWLINK_ACK_KEY = "gwlink_ack"
@@ -383,6 +407,7 @@ class GwChannelMixin:
             "awg_gen": snap.get("awg_generation"),
             "awg_gen_mine": mine_gen,
             "drift": drift,
+            "drift_items": self.gwlink_config_drift_items(gw) if snap else [],
             # что из расхождения довезёт канал, а что — только файл (подсети
             # соседей живут и в конфиге линка): экран не должен обещать
             # доставку, которой не будет

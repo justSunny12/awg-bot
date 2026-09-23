@@ -30,12 +30,12 @@ hello сервер не шлёт ничего.
 снимке и в такте живости (`deliver_all` из `ensure`) сверяется локально, что
 разошлось, и по сети уходит только это — настройки (`deliver`), фиды локальной
 сети (`deliver_lists`), роль слота (`send_role`). Один и тот же набор за сессию
-повторно не уходит. Диагностику и свежий снимок по запросу человека дают
-`ask_tail` и `ask_snap`.
+повторно не уходит. Полный снимок сервер просит сам (`ask snap`) — только при
+разрыве нумерации дельт; по запросу человека ничего у шлюза не спрашивается,
+диагностики по каналу нет.
 
 Байты канала по слоту копятся в `services.channel`: зонд живости по уликам
-линка вычитает их, чтобы снимки, фиды и диагностика не сходили за обратный
-трафик клиентов.
+линка вычитает их, чтобы снимки и фиды не сходили за обратный трафик клиентов.
 """
 from __future__ import annotations
 
@@ -96,14 +96,6 @@ class LinkServer:
         self.services = services
         self._servers: dict[tuple[str, int], asyncio.AbstractServer] = {}
         self._sessions: dict[int, _Session] = {}
-        # Сколько снимков принято по слоту за жизнь процесса: «Обновить»
-        # сравнивает до и после. Строка времени в state для этого не годится —
-        # она с точностью до секунды, и снимок в ту же секунду был бы «не пришёл».
-        self.snaps_in: dict[int, int] = {}
-        self.tails: dict[int, tuple[str, str]] = {}
-        self.tails_in: dict[int, int] = {}
-
-    # ── байты канала: чтобы не выдавать их за обратный трафик клиентов ──────
 
     def _io(self, slot_id: int, rx: int = 0, tx: int = 0) -> None:
         """Счёт байтов канала по слоту поверх счётчиков линка (services.channel).
@@ -267,18 +259,12 @@ class LinkServer:
             ok = await asyncio.to_thread(self.services.gwlink_snapshot_in, gw.id, patch,
                                          rev, kind == "snap")
             if ok:
-                self.snaps_in[gw.id] = self.snaps_in.get(gw.id, 0) + 1
                 # снимок показал, что стоит на шлюзе, — самое время доставить
                 await self.deliver(gw.id)
             else:
                 # Разрыв нумерации: дельта потерялась или пришла не по порядку.
                 # Просим полный снимок и начинаем счёт заново.
                 await self.send(gw.id, "ask", {"what": "snap"})
-            return
-        if kind == "tail":
-            name = str(msg.get("name") or "")[:16]
-            self.tails[gw.id] = (name, str(msg.get("text") or "")[:4000])
-            self.tails_in[gw.id] = self.tails_in.get(gw.id, 0) + 1
             return
         if kind == "lists_ack":
             if msg.get("ok"):
@@ -306,7 +292,7 @@ class LinkServer:
         sess = self._sessions.get(slot_id)
         if sess is None or not sess.hello:
             # до hello нонса шлюза нет: подписать нечем, а такт живости или
-            # «Обновить» между коннектом и hello подсунули бы клиенту первое
+            # доставка между коннектом и hello подсунули бы клиенту первое
             # слово с пустой подписью — он порвал бы сессию
             return False
         sess.seq += 1
@@ -402,31 +388,6 @@ class LinkServer:
             return False
         sess.role_sent = is_active
         return await self.send(slot_id, "role", {"active": is_active})
-
-    async def _ask(self, slot_id: int, body: dict, counter: dict, timeout: float) -> bool:
-        before = counter.get(slot_id, 0)
-        if not await self.send(slot_id, "ask", body):
-            return False
-        for _ in range(max(1, int(timeout / 0.25))):
-            await asyncio.sleep(0.25)
-            if counter.get(slot_id, 0) != before:
-                return True
-        return False
-
-    async def ask_snap(self, slot_id: int, timeout: float = 3.0) -> bool | None:
-        """Попросить полный снимок и дождаться. None — сессии нет; False —
-        шлюз не ответил вовремя."""
-        if slot_id not in self._sessions:
-            return None
-        return await self._ask(slot_id, {"what": "snap"}, self.snaps_in, timeout)
-
-    async def ask_tail(self, slot_id: int, name: str, timeout: float = 6.0) -> str | None:
-        """Попросить у шлюза диагностику по имени из закрытого списка и дождаться.
-        None — шлюз не на связи или не ответил вовремя."""
-        if not await self._ask(slot_id, {"what": "tail", "name": name}, self.tails_in, timeout):
-            return None
-        got = self.tails.get(slot_id)
-        return got[1] if got and got[0] == name else None
 
     async def deliver_all(self) -> None:
         """Такт живости: у каждой живой сессии проверить, нечего ли доставить.

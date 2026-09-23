@@ -50,8 +50,10 @@ async def _render(cb: CallbackQuery, services, client, guide: str, step: int):
     if guides.base_guide(guide) == "connect" and step == 0:
         devices = await call(services.db.list_devices, client.id)
         slots = await call(services.device_slots, client.id)
+        from awgbot.bot import paging
         await _render_screen(cb, services, text, None,
-                             kb.guide_connect_devices(devices, slots, guide=guide))
+                             kb.guide_connect_devices(devices, slots, guide=guide,
+                                                      page=paging.page_of(cb.message.chat.id, "guidedev")))
         return
 
     next_guide = guides.NEXT_GUIDE.get(guide) if step == last else None

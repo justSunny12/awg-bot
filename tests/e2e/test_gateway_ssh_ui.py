@@ -6,6 +6,7 @@ import pytest
 
 import awgbot.core.config as cfg
 from awgbot.bot import keyboards as kb, texts
+from awgbot.bot.keyboards import common as kbc
 from awgbot.bot.callbacks import GwCB
 from awgbot.bot.handlers import gateway as gh
 from awgbot.bot.states import SshPort, GwSshAllow
@@ -352,8 +353,16 @@ def test_section_text_names_held_addresses_lan_and_caps_the_list():
     text = texts.gateway_ssh_text(_scr(allow=many))
     assert "20 адресов — редактируемый список ниже" in text and "h1.dyn.example" not in text, \
         "список в инфобокс не выносится — он кнопками ниже"
-    assert len([b for r in kb.gateway_ssh_kb(_scr(allow=many)).inline_keyboard for b in r
-                if b.text.startswith("➖")]) == 20
+    # весь список — кнопками, но не больше десяти на экране: остальное листается
+    seen: list[str] = []
+    for page in range(10):
+        markup = kb.gateway_ssh_kb(_scr(allow=many), page=page)
+        labels = _labels(markup)
+        assert len(labels) <= kbc.MAX_BUTTONS, f"страница {page}: {len(labels)} кнопок"
+        seen += [t.removeprefix("➖ ") for t in labels if t.startswith("➖")]
+        if kbc.NEXT_LABEL not in labels:
+            break
+    assert seen == many, "листанием доступен не весь список или не по порядку"
 
 
 def test_warnings_go_into_their_own_block_in_both_sections():
@@ -367,3 +376,39 @@ def test_warnings_go_into_their_own_block_in_both_sections():
     assert "15 адресов — редактируемый список ниже" in t and t.count("и ещё 3") == 1, \
         "«Не резолвятся» у ВПС ограничены, как у шлюза; список — кнопками"
     assert "<b>Предупреждения:</b>\n⚠️ Не резолвятся:" in t
+
+
+async def test_address_list_pages_and_removal_from_page_two_hits_the_right_entry(svc, fake_bot, monkeypatch):
+    """Адресов больше, чем влезает на экран: список листается, а номер в кнопке
+    «➖» — по ПОЛНОМУ списку. Считай его от начала страницы — со второй страницы
+    убирался бы адрес с первой, и снаружи на шлюз пускало бы не тех."""
+    from awgbot.bot import paging
+    monkeypatch.setattr(paging, "_pages", {})
+    many = [f"198.51.100.{i}" for i in range(1, 16)]
+    svc.screen = _scr(allow=list(many))
+    cb, nav = _cb(fake_bot)
+    await gh.gw_section(cb, GwCB(action="ssh"), svc, FakeState())
+    first = _labels(nav.sent[-1][2])
+    assert len(first) <= kbc.MAX_BUTTONS and kbc.NEXT_LABEL in first and kbc.PREV_LABEL not in first, first
+
+    # страница запомнена листанием — экран раздела рисует её
+    paging.remember(ADMIN, "gwssh", 0, 1)
+    cb, nav = _cb(fake_bot)
+    await gh.gw_section(cb, GwCB(action="ssh"), svc, FakeState())
+    markup = nav.sent[-1][2]
+    second = _labels(markup)
+    assert kbc.PREV_LABEL in second and len(second) <= kbc.MAX_BUTTONS, second
+    rm = [b for row in markup.inline_keyboard for b in row if b.text.startswith("➖")]
+    assert rm and rm[0].text != "➖ " + many[0], "вторая страница показывает начало списка"
+    target = rm[0]
+    entry = target.text.removeprefix("➖ ")
+    data = GwCB.unpack(target.callback_data)
+    assert int(data.val) == many.index(entry), "номер кнопки — не по полному списку"
+
+    cb, nav = _cb(fake_bot)
+    await gh.gw_ssh_action(cb, data, svc, FakeState())
+    ask = [t for k, t, _ in nav.sent if k == "edit_text"][-1]
+    assert entry in ask, f"подтверждение спрашивает не про {entry}: {ask}"
+    go = [b for row in nav.sent[-1][2].inline_keyboard for b in row if b.text == "➖ Убрать"][0]
+    await gh.gw_ssh_action(cb, GwCB.unpack(go.callback_data), svc, FakeState())
+    assert svc.calls == [("remove", entry)], f"убран не тот адрес: {svc.calls}"

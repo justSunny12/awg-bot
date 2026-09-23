@@ -261,17 +261,18 @@ async def menu_info(cb: CallbackQuery, client, services):
     await cb.answer()
 
 
-async def _devices_payload(services, client):
+async def _devices_payload(services, client, chat_id: int = 0):
     devices = await call(services.db.list_devices, client.id)
     held = await call(services.db.list_held_devices, client.id)
     slots = await call(services.device_slots, client.id)
     header = "<b>📱Твои устройства</b>\n\n" + texts.device_slots_line(*slots) + texts.held_devices_tail(held)
-    return header, kb.client_devices(devices, held)
+    from awgbot.bot import paging
+    return header, kb.client_devices(devices, held, page=paging.page_of(chat_id or client.tg_id, "devices"))
 
 
 @router.callback_query(Menu.filter(F.action == "devices"))
 async def menu_devices(cb: CallbackQuery, client, services):
-    await edit(cb, *await _devices_payload(services, client))
+    await edit(cb, *await _devices_payload(services, client, cb.message.chat.id))
     await cb.answer()
 
 
@@ -282,8 +283,10 @@ async def menu_gen_pick(cb: CallbackQuery, callback_data: Menu, client, services
     if not devices:
         await cb.answer("Сначала добавь устройство", show_alert=True)
         return
+    from awgbot.bot import paging
     await edit(cb, kb.PICK_DEVICE_PROMPT[callback_data.action],
-               kb.pick_device(devices, callback_data.action))
+               kb.pick_device(devices, callback_data.action, render=cb.data,
+                              page=paging.page_of(cb.message.chat.id, "pick")))
     await cb.answer()
 
 
@@ -504,7 +507,9 @@ async def device_add_start(cb: CallbackQuery, client, services, state: FSMContex
     used, limit = await call(services.device_slots, client.id)
     if limit != 0 and used >= limit:              # 0 = безлимит
         devices = await call(services.db.list_devices, client.id)
-        await edit(cb, texts.device_slots_line(used, limit), kb.pick_device_to_delete(devices))
+        from awgbot.bot import paging
+        await edit(cb, texts.device_slots_line(used, limit),
+                   kb.pick_device_to_delete(devices, page=paging.page_of(cb.message.chat.id, "deldev")))
         await cb.answer()
         return
     # сначала выбор: себе или другу (до имени)

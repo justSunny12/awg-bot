@@ -140,7 +140,7 @@ async def _gateway_card_screen(services, slot: int):
     except ServiceError:
         # ссылка из старой шапки, слот с тех пор сняли: свой ответ, а не
         # «профиль не найден» с клавиатурой потребления
-        return "🛰 Такого шлюза больше нет — слот снят.", kb.settings_back("rt")
+        return "🛰 Такого шлюза больше нет — слот снят", kb.settings_back("rt")
     return texts.gateway_card_text(st, st["states"]), kb.gateway_card(st, back_to_list=len(st["states"]) > 1)
 
 

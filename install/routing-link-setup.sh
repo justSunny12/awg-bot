@@ -268,7 +268,7 @@ emit_gw_bundle() {
     # после --apply: правим строку в источнике при каждой сборке, как порт.
     _want="AllowedIPs = $(gw_allowed_ips)"
     if [ -f "$GW_CONF_OUT" ] && ! grep -qxF "$_want" "$GW_CONF_OUT"; then
-        say "AllowedIPs в $GW_CONF_OUT отстал (подсети за другими шлюзами) — правлю"
+        say "AllowedIPs в $GW_CONF_OUT отстал (локальные подсети других шлюзов) — правлю"
         sed "s|^AllowedIPs = .*\$|$_want|" "$GW_CONF_OUT" > "$GW_CONF_OUT.tmp" \
             && mv "$GW_CONF_OUT.tmp" "$GW_CONF_OUT"
     fi
@@ -455,7 +455,7 @@ if [ "$MODE" = "rollback" ]; then
         run "iptables -t nat -D POSTROUTING -s $CLIENT_SUBNET -o $LINK_IF -j ACCEPT"
     done
     say ""
-    say "Готово. Домашний туннель малинки и обвяз хоста не тронуты."
+    say "Готово. Туннель шлюза и обвязка хоста не тронуты."
     exit 0
 fi
 
@@ -495,7 +495,7 @@ if [ -f "$CONF" ] && [ "$MODE" = "apply" ]; then
         say "    awg-quick up $LINK_IF"
     fi
     say ""
-    say "Пересоздать с нуля: сначала $0 --rollback — сменятся ключи, и малинку"
+    say "Пересоздать с нуля: сначала $0 --rollback — сменятся ключи, и шлюз"
     say "придётся перенастроить заново."
     exit 0
 fi
@@ -511,11 +511,11 @@ ENDPOINT_HOST="${ENDPOINT_HOST:-$(ip -4 addr show scope global 2>/dev/null \
 [ -n "$ENDPOINT_HOST" ] || { say "ОШИБКА: не определён внешний адрес. Задай ENDPOINT_HOST=..."; exit 1; }
 
 say "Параметры:"
-say "  интерфейс      : $LINK_IF ($LINK_VPS_ADDR ↔ $LINK_GW_ADDR)"
-say "  порт           : $LINK_PORT"
-say "  эндпоинт для ГВ: $ENDPOINT_HOST:$LINK_PORT"
-say "  конфиг ВПС     : $CONF"
-say "  конфиг для ГВ  : $GW_CONF_OUT"
+say "  интерфейс         : $LINK_IF ($LINK_VPS_ADDR ↔ $LINK_GW_ADDR)"
+say "  порт              : $LINK_PORT"
+say "  эндпоинт для шлюза: $ENDPOINT_HOST:$LINK_PORT"
+say "  конфиг сервера AWG: $CONF"
+say "  конфиг для шлюза  : $GW_CONF_OUT"
 if [ "$MODE" = "plan" ]; then
     say ""
     say "(режим показа: ключи не генерируются, ничего не меняется — добавь --apply)"
@@ -525,7 +525,7 @@ if [ "$MODE" = "plan" ]; then
     say "  2. записать $CONF (Table = off!) и поднять awg-quick up $LINK_IF"
     say "  3. iptables -t nat -I POSTROUTING -s $CLIENT_SUBNET -o $LINK_IF -j ACCEPT"
     say "  4. юнит awg-link.service + enable"
-    say "  5. записать конфиг малинки в $GW_CONF_OUT"
+    say "  5. записать конфигурацию шлюза в $GW_CONF_OUT"
     say "  6. собрать бандл для шлюза в $GW_BUNDLE_OUT"
     exit 0
 fi
@@ -565,8 +565,8 @@ say "  ключи сгенерированы, обфускация своя (н�
 
 # ── 2. конфиг и подъём ───────────────────────────────────────────────────────
 step "2. Конфиг $CONF и подъём интерфейса"
-say "  Table = off — иначе AllowedIPs=0.0.0.0/0 у пира увёл бы весь трафик ВПС"
-say "  в малинку вместе с этой SSH-сессией"
+say "  Table = off — иначе AllowedIPs=0.0.0.0/0 у пира увёл бы весь трафик сервера AWG"
+say "  в шлюз вместе с этой SSH-сессией"
 mkdir -p "$CONF_DIR"
 cat > "$CONF" <<CONFEOF
 # Линк ВПС ↔ шлюз для условной маршрутизации. Сгенерировано routing-link-setup.sh.
@@ -599,7 +599,7 @@ run "awg-quick up $LINK_IF"
 # ── 3. вывести линк из-под MASQUERADE ────────────────────────────────────────
 step "3. Исключение линка из MASQUERADE"
 say "  Обвяз хоста маскарадит всю $CLIENT_SUBNET. Без исключения шлюз увидел бы"
-say "  адрес ВПС вместо адреса клиента — и различать клиентов стало бы нечем."
+say "  адрес сервера AWG вместо адреса клиента — и различать клиентов стало бы нечем."
 assert_nat_exempt
 
 # ── 4. автозапуск ────────────────────────────────────────────────────────────
@@ -657,6 +657,6 @@ say "  собран (права 600 — внутри приватный ключ
 print_gw_instructions
 say ""
 if [ "$LINK_IF" = "awglink" ]; then
-    say "Затем на ВПС в conf/app.yaml:  routing.gw_interface: \"$LINK_IF\""
+    say "Затем на сервере AWG в conf/app.yaml:  routing.gw_interface: \"$LINK_IF\""
     say "и перезапустить бота. До этого фича спит."
 fi

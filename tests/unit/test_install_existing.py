@@ -221,7 +221,7 @@ class _Host:
             "set -euo pipefail\n"
             f'INSTALL_DIR="{self.install}"; ETC_DIR="{self.etc}"; DATA_DIR="{self.data}"\n'
             f'SELF_LINK="{self.link}"\n'
-            "c_info=''; c_off=''\n"
+            "c_info=''; c_err=''; c_off=''\n"
             "log() { printf '[install] %s\\n' \"$*\"; }\n"
             "die() { printf '[install:ОШИБКА] %s\\n' \"$*\" >&2; exit 1; }\n"
             f'ROLE="{role}"; EXTRA=({extra_sh})\n'
@@ -345,8 +345,9 @@ def test_wipe_without_an_explicit_y_changes_nothing(host, second):
     host.installed("2.25.2", "gateway")
     before = host.snapshot()
     r = host.run(["2", second], role="gateway", tgz=host.archive("3.0.0"))
-    assert r.returncode != 0
-    assert "отмена — ничего не изменено" in r.stderr, r.stderr
+    # отказ — не ошибка: строка лога и код 0, но установка дальше не идёт
+    assert r.returncode == 0, r.stderr
+    assert "отмена — ничего не изменено" in r.stdout, r.stdout + r.stderr
     assert host.snapshot() == before, "удалено без подтверждения"
     assert host.changes() == [], f"вызваны команды без подтверждения: {host.calls()}"
     assert "CONTINUE_FRESH_INSTALL" not in r.stdout
@@ -427,7 +428,7 @@ def test_wipe_on_gateway_lists_what_goes_and_keeps_the_uplink(host):
     r = host.run(["2", ""], role="gateway", tgz=host.archive("3.0.0"))
     warn = r.stderr.split("Будут удалены:", 1)[1].split("[y/N]", 1)[0]
     # пути в тексте подменены вместе с остальными — сверяем их концы
-    for piece in ("линк до ВПС", "юнит и таблицы обвязки", "/etc/awg-gw,", "/var/lib/awg-gw,",
+    for piece in ("линк до сервера AWG", "юнит и таблицы обвязки", "/etc/awg-gw,", "/var/lib/awg-gw,",
                   "/opt/awg-gw.", "Аплинк остаётся."):
         assert piece in warn, f"в предупреждении нет «{piece}»: {warn}"
     assert "БЕЗ ДОСТУПА" not in r.stderr
@@ -440,8 +441,9 @@ def test_wipe_on_vps_needs_the_typed_word(host, word):
     host.installed("2.25.2", "client", container="amnezia-awg")
     before = host.snapshot()
     r = host.run(["2", "y", word], tgz=host.archive("3.0.0"))
-    assert r.returncode != 0
-    assert "отмена — ничего не изменено" in r.stderr, r.stderr
+    assert r.returncode == 0, r.stderr
+    assert "отмена — ничего не изменено" in r.stdout, r.stdout + r.stderr
+    assert "CONTINUE_FRESH_INSTALL" not in r.stdout, "после отказа установка пошла дальше"
     assert host.snapshot() == before, "ВПС снесён без слова УДАЛИТЬ"
     assert host.changes() == [], host.calls()
 
@@ -514,10 +516,12 @@ def test_cancel_changes_nothing(host, answer):
     host.installed("2.25.2", "client")
     before = host.snapshot()
     r = host.run([answer], tgz=host.archive("3.0.0"))
-    assert r.returncode != 0
-    assert "отмена — ничего не изменено" in r.stderr
+    # отмена — не ошибка: обычная строка лога и код 0
+    assert r.returncode == 0, r.stderr
+    assert "отмена — ничего не изменено" in r.stdout, r.stdout + r.stderr
+    assert "CONTINUE_FRESH_INSTALL" not in r.stdout, "после отмены установка пошла дальше"
     assert host.snapshot() == before and host.changes() == [], host.calls()
-    assert "sudo sh <файл>" not in r.stderr, "подсказка шлюза ушла на ВПС"
+    assert "sudo sh <файл>" not in r.stdout + r.stderr, "подсказка шлюза ушла на ВПС"
 
 
 def test_cancel_on_gateway_says_how_to_apply_a_new_configuration(host):
@@ -527,8 +531,9 @@ def test_cancel_on_gateway_says_how_to_apply_a_new_configuration(host):
     before = host.snapshot()
     r = host.run(["3"], role="gateway", extra=("--bundle", "/root/awg-gw-bundle.sh"),
                  tgz=host.archive("3.0.0"))
-    assert r.returncode != 0
-    assert "sudo sh <файл> (без --install)" in r.stderr, r.stderr
+    assert r.returncode == 0, r.stderr
+    assert "sudo sh <файл> (без --install)" in r.stdout, r.stdout + r.stderr
+    assert "CONTINUE_FRESH_INSTALL" not in r.stdout
     assert host.snapshot() == before and host.changes() == [], host.calls()
 
 

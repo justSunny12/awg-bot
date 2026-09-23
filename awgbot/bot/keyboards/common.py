@@ -8,7 +8,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import config
 from awgbot.core import blocks as _blocks
-from awgbot.bot.callbacks import BlockCB, ClientCB, ConfirmCB, Menu, PeriodCB, HideCB
+from awgbot.bot.callbacks import BlockCB, ClientCB, ConfirmCB, Menu, PeriodCB, HideCB, PageCB
 from awgbot.bot import texts as _texts
 
 
@@ -49,6 +49,46 @@ def _tick(on: bool) -> str:
     что в списке устройств маршрутизации и в выборе адресатов рассылки.
     """
     return "✅" if on else "☑️"
+
+
+# ── Листание длинных списков ─────────────────────────────────────────────────
+# Правило одно на весь интерфейс: не больше десяти кнопок на экране. Кнопки
+# списка занимают то, что осталось от постоянных кнопок экрана; не влезло —
+# страницы, и тогда две кнопки листания тоже входят в десятку. Подписи
+# намеренно словами, а не «◀️ Назад»: та ведёт на другой экран.
+MAX_BUTTONS = 10
+PREV_LABEL = "◀️ Пред. страница"
+NEXT_LABEL = "След. страница ▶️"
+
+
+def page_slice(items, page: int, static: int) -> tuple[list, int, bool, bool]:
+    """(кнопки этой страницы, страница после зажима, есть ли назад, есть ли
+    вперёд). static — сколько постоянных кнопок на экране, кроме списка и
+    листания. Помещается целиком — страницы нет. Элементы — (index, item):
+    номер в ПОЛНОМ списке остаётся у колбэков удаления и переключения."""
+    items = list(items)
+    room = max(1, MAX_BUTTONS - static)
+    if len(items) <= room:
+        return list(enumerate(items)), 0, False, False
+    per = max(1, room - 2)
+    pages = (len(items) + per - 1) // per
+    page = min(max(int(page or 0), 0), pages - 1)
+    start = page * per
+    chunk = [(start + i, x) for i, x in enumerate(items[start:start + per])]
+    return chunk, page, page > 0, page < pages - 1
+
+
+def page_nav(kb: InlineKeyboardBuilder, screen: str, ref: int, page: int,
+             has_prev: bool, has_next: bool, back: str) -> int:
+    """Кнопки листания рядом; возвращает, сколько их добавлено (для adjust)."""
+    n = 0
+    if has_prev:
+        kb.button(text=PREV_LABEL, callback_data=PageCB(screen=screen, ref=ref, page=page - 1, back=back))
+        n += 1
+    if has_next:
+        kb.button(text=NEXT_LABEL, callback_data=PageCB(screen=screen, ref=ref, page=page + 1, back=back))
+        n += 1
+    return n
 
 
 def issuable(devices) -> list:

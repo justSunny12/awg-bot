@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import settings
 from awgbot.bot.callbacks import UpdateCB, GwCB
 
-from .common import _chk
+from .common import _chk, page_slice, page_nav
 from .settings import _enc_label
 
 
@@ -21,7 +21,7 @@ def gateway_panel_kb(lan: bool = False) -> InlineKeyboardMarkup:
     kb.button(text="🌡 Монитор здоровья", callback_data=GwCB(action="health"))
     rows = [2]
     if lan:
-        kb.button(text="🏠 Локальная сеть", callback_data=GwCB(action="lan"))
+        kb.button(text="🏠 Локальная сеть без VPN", callback_data=GwCB(action="lan"))
         rows.append(1)
     kb.button(text="🔧 Мастер восстановления", callback_data=GwCB(action="reassert"))
     kb.button(text="⚙️ Настройки", callback_data=GwCB(action="settings"))
@@ -30,22 +30,52 @@ def gateway_panel_kb(lan: bool = False) -> InlineKeyboardMarkup:
 
 
 def gateway_lan_kb() -> InlineKeyboardMarkup:
-    """Экран локальной сети без VPN: личные списки и обновление фидов."""
+    """Экран локальной сети без VPN: свои списки и рецепт роутера. Обновления
+    списков кнопкой нет — фиды привозит сервер или скачивает агент сам."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="➕ В туннель", callback_data=GwCB(action="lan_add"))
-    kb.button(text="➕ Напрямую", callback_data=GwCB(action="lan_ru"))
     kb.button(text="📋 Свои списки", callback_data=GwCB(action="lan_list"))
-    kb.button(text="🔄 Обновить списки", callback_data=GwCB(action="lan_update"))
-    kb.button(text="📖 Настройка роутера", callback_data=GwCB(action="lan_router"))
+    kb.button(text="❓ Настройка роутера", callback_data=GwCB(action="lan_router"))
     kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
-    kb.adjust(2, 2, 1, 1)
+    kb.adjust(1)
     return kb.as_markup()
 
 
-def gateway_lan_list_kb() -> InlineKeyboardMarkup:
+def lan_own_sorted(items) -> list[tuple[str, str]]:
+    """Личные списки одним порядком для экрана и колбэков: сначала «напрямую»
+    (🇷🇺), затем «в туннель» (📤), внутри — по алфавиту."""
+    return sorted(items, key=lambda kd: (0 if kd[0] == "ru" else 1, kd[1]))
+
+
+def gateway_lan_list_kb(items, page: int = 0) -> InlineKeyboardMarkup:
+    """«Свои списки»: добавить в туннель / напрямую, затем список кнопками
+    «➖ домен (📤|🇷🇺)» — не больше десяти кнопок на экране, длинный список
+    листается. val — номер в отсортированном списке, не домен (64 байта)."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="🗑 Убрать", callback_data=GwCB(action="lan_del"))
+    kb.button(text="➕ В туннель", callback_data=GwCB(action="lan_add"))
+    kb.button(text="➕ Напрямую", callback_data=GwCB(action="lan_ru"))
+    chunk, page, prev, nxt = page_slice(lan_own_sorted(items), page, static=3)
+    for i, (kind, dom) in chunk:
+        kb.button(text=f"➖ {dom} ({'🇷🇺' if kind == 'ru' else '📤'})",
+                  callback_data=GwCB(action="lan_rm", val=str(i)))
+    nav = page_nav(kb, "lanlist", 0, page, prev, nxt, GwCB(action="lan_list").pack())
     kb.button(text="⬅️ Назад", callback_data=GwCB(action="lan"))
+    kb.adjust(2, *([1] * len(chunk)), *([nav] if nav else []), 1)
+    return kb.as_markup()
+
+
+def lan_own_tag(kind: str, dom: str) -> str:
+    """Короткая метка записи для колбэка подтверждения: домен целиком в 64
+    байта не влезает, а номер один сменит хозяина, стоит списку измениться."""
+    import hashlib
+    return hashlib.sha1(f"{kind} {dom}".encode()).hexdigest()[:8]
+
+
+def gateway_lan_rm_confirm(idx: int, kind: str, dom: str) -> InlineKeyboardMarkup:
+    """Убрать домен из своих списков — с подтверждения, «Отмена» первой.
+    В колбэке — номер и метка записи: список успел измениться — переспрос."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Отмена", callback_data=GwCB(action="lan_list"))
+    kb.button(text="➖ Убрать", callback_data=GwCB(action="lan_rm!", val=f"{idx}.{lan_own_tag(kind, dom)}"))
     kb.adjust(2)
     return kb.as_markup()
 
@@ -190,25 +220,25 @@ def gateway_encryption_kb(has_secret: bool) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-_ALLOW_BUTTONS = 40     # Telegram: до 100 кнопок; больше сорока адресов — уже не тот инструмент
-
-
-def gateway_ssh_kb(st: dict) -> InlineKeyboardMarkup:
+def gateway_ssh_kb(st: dict, page: int = 0) -> InlineKeyboardMarkup:
     """Раздел «🛡 Доступ по SSH» агента — зеркало settings_firewall основного
-    бота: порт, адреса (val — номер записи, не адрес: IPv6 ломал бы упаковку),
-    фильтр. На обвязке старого образца кнопок фильтра нет — включать нечего."""
+    бота: порт, адреса (val — номер записи по полному списку, не адрес: IPv6
+    ломал бы упаковку), фильтр. На обвязке старого образца кнопок фильтра нет —
+    включать нечего. Весь список — кнопками, не больше десяти на экране."""
     kb = InlineKeyboardBuilder()
     kb.button(text="🅿️ Изменить порт", callback_data=GwCB(action="ssh_port"))
     kb.button(text="➕ Добавить адрес", callback_data=GwCB(action="ssh_add"))
-    # Весь список — кнопками: инфобокс его не показывает, только число
-    for i, entry in enumerate((st.get("allow") or [])[:_ALLOW_BUTTONS]):
+    toggle = bool(st.get("new_plumbing"))
+    chunk, page, prev, nxt = page_slice(list(st.get("allow") or []), page, static=4 if toggle else 3)
+    for i, entry in chunk:
         kb.button(text=f"➖ {entry}", callback_data=GwCB(action="ssh_del", val=str(i)))
-    if st.get("new_plumbing"):
+    nav = page_nav(kb, "gwssh", 0, page, prev, nxt, GwCB(action="ssh").pack())
+    if toggle:
         if st.get("filter"):
             kb.button(text="🔴 Выключить фильтр", callback_data=GwCB(action="ssh_off"))
         else:
             kb.button(text="🟢 Включить фильтр", callback_data=GwCB(action="ssh_on"))
-    kb.adjust(1)
+    kb.adjust(1, 1, *([1] * len(chunk)), *([nav] if nav else []), *([1] if toggle else []))
     kb.row(_gw_back("settings"))
     return kb.as_markup()
 

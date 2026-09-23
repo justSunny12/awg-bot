@@ -114,7 +114,7 @@ async def test_list_and_card_show_roles_preferred_and_ping_lazily(services, slot
     assert labels[0] == "⭐ NASPi" and labels[1] == "Pi2", "статус — в инфобоксе, не на кнопке"
     assert "«NASPi»" in text and "🟢 <b>[Активен]</b>" in text and "🟢 <b>[Резерв]</b>" in text
     assert "➕ Добавить шлюз" not in labels, "потолок два слота"
-    assert "🔁 Автопереключение: вкл" in labels
+    assert "✅ Автопереключение: вкл" in labels
     assert "Предпочтительный при холодном старте: «NASPi»" in text and "дом 2" in text
     # карточка резерва: пинг измерен лениво при первом открытии, кнопка последней перед «Назад»
     assert services.pings["n"] == 0
@@ -212,7 +212,7 @@ async def test_home_subnets_and_label_inputs(services, slots, fake_bot):
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=1), services, FakeState())
     text, _ = _screen(nav)
-    assert "🏠 Локальные подсети: 192.168.1.0/24" in text
+    assert "🏠 Локальные подсети: <code>192.168.1.0/24</code>" in text
 
 
 async def test_failed_label_input_reasks_and_keeps_the_input_open(services, slots, fake_bot):
@@ -450,12 +450,12 @@ async def test_lan_mode_needs_a_subnet_then_asks_and_toggles(services, slots, fa
     text, labels = _screen(nav)
     assert "За шлюзом — без VPN" in text and "точкой отказа" in text and "Включить?" in text
     assert "Свой резолвер на сервере не настроен" in text, "без резолвера ВПС — предупреждение, не отказ"
-    assert labels == ["⬅️ Отмена", "Включить"]
+    assert labels == ["⬅️ Отмена", "✅ Включить"]
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1), services)
     assert services.db.gateway(1).lan_mode == 1
     text, labels = _screen(nav)
     assert "🏠 За шлюзом — без VPN: включено" in text
-    assert "🏠 За шлюзом — без VPN: вкл" in labels and "📖 Настройка роутера" in labels
+    assert "✅ За шлюзом — без VPN: вкл" in labels and "❓ Настройка роутера" in labels
     assert cb.answers[-1][0].startswith("Включено: перевыпусти")
     # рецепт роутера — с подсетью слота
     cb, nav = _acb(fake_bot)
@@ -467,10 +467,10 @@ async def test_lan_mode_needs_a_subnet_then_asks_and_toggles(services, slots, fa
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
     text, labels = _screen(nav)
-    assert "сначала отключи маршрутизацию" in text and labels == ["⬅️ Отмена", "Выключить"]
+    assert "сначала отключи маршрутизацию" in text and labels == ["⬅️ Отмена", "☑️ Выключить"]
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1), services)
     assert services.db.gateway(1).lan_mode == 0
-    assert "📖 Настройка роутера" not in _screen(nav)[1]
+    assert "❓ Настройка роутера" not in _screen(nav)[1]
 
 
 async def test_lan_mode_travels_in_the_bundle_and_reminds_on_change(services, slots, monkeypatch):
@@ -491,7 +491,7 @@ async def test_lan_mode_travels_in_the_bundle_and_reminds_on_change(services, sl
     assert services.gw_bundle_drift_notes() == []
     services.gateway_set_home_subnets(1, "192.168.1.0/24")
     notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1 and "локальные подсети" in notes[0].text and "устарела" in notes[0].text
+    assert len(notes) == 1 and "локальные подсети" in notes[0].text and "неактуальна" in notes[0].text
     assert services.gw_bundle_drift_notes() == [], "один раз на расхождение"
     services.gateway_set_lan_mode(1, False)
     notes = services.gw_bundle_drift_notes()
@@ -552,16 +552,16 @@ async def test_peer_nets_toggle_has_a_dialog_and_shows_state_in_the_list(service
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_list(cb, services, FakeState())
     text, labels = _screen(nav)
-    assert "↔️ Доступ между подсетями: выкл" in labels and "Доступ между подсетями за шлюзами выключен" in text
-    assert labels.index("🔁 Автопереключение: вкл") + 1 == labels.index("↔️ Доступ между подсетями: выкл"), "сразу под автопереключением"
+    assert "☑️ Доступ между подсетями: выкл" in labels and "Доступ между подсетями за шлюзами выключен" in text
+    assert labels.index("✅ Автопереключение: вкл") + 1 == labels.index("☑️ Доступ между подсетями: выкл"), "сразу под автопереключением"
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_peer_ask(cb, services)
     text, labels = _screen(nav)
-    assert "клиентам VPN в них хода нет" in text and "<b>весь</b> трафик" in text and labels == ["⬅️ Отмена", "Включить"]
+    assert "клиентам VPN в них хода нет" in text and "<b>весь</b> трафик" in text and labels == ["⬅️ Отмена", "✅ Включить"]
     await sh.gw_slot_peer_yes(cb, services)
     assert store["app.routing.peer_nets.enabled"] is True
     text, labels = _screen(nav)
-    assert "↔️ Доступ между подсетями: вкл" in labels and "не включено «За шлюзом — без VPN»" in text
+    assert "✅ Доступ между подсетями: вкл" in labels and "не включено «За шлюзом — без VPN»" in text
     services.db.gateway_update(1, lan_mode=1); services.db.gateway_update(2, lan_mode=1)
     services.gateway_set_home_subnets(1, "192.168.1.0/24"); services.gateway_set_home_subnets(2, "192.168.68.0/24")
     cb, nav = _acb(fake_bot)
@@ -599,5 +599,5 @@ def test_peer_nets_change_reminds_about_reissue(services, slots, monkeypatch):
     assert services.gw_bundle_drift_notes() == []
     store["app.routing.peer_nets.enabled"] = True
     notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 2 and all("подсети за другими шлюзами" in n.text for n in notes), "обоим слотам, один раз"
+    assert len(notes) == 2 and all("локальные подсети других шлюзов" in n.text for n in notes), "обоим слотам, один раз"
     assert services.gw_bundle_drift_notes() == []

@@ -10,7 +10,8 @@ from awgbot.bot.callbacks import (
     RoutingCB)
 from awgbot.bot import texts as _texts
 
-from .common import _chk, _btn_suffix, _dev_emoji, append_hide_row, _manual_block_button, issuable
+from .common import (_chk, _btn_suffix, _dev_emoji, append_hide_row, _manual_block_button, issuable,
+                     page_slice, page_nav)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -52,7 +53,7 @@ def client_main(has_devices: bool = True, routing_visible: bool = False,
     return kb.as_markup()
 
 
-def client_devices(devices, held=()) -> InlineKeyboardMarkup:
+def client_devices(devices, held=(), page: int = 0, render: str = "") -> InlineKeyboardMarkup:
     """Список своих устройств; следом — чужие, которые профиль держит
     (концепт «гость»), с пометкой «от кого». Без кнопки добавления — она
     уже есть в главном меню, дублировать здесь избыточно.
@@ -62,16 +63,16 @@ def client_devices(devices, held=()) -> InlineKeyboardMarkup:
     сети» есть отдельным экраном.
     """
     kb = InlineKeyboardBuilder()
-    for d in devices:
+    rows = [(d, False) for d in devices] + [(d, True) for d in held]
+    chunk, page, prev, nxt = page_slice(rows, page, static=1)
+    for _i, (d, is_held) in chunk:
         marker = _blocks.blocked_marker_device(int(d.block_reason), for_admin=False)
-        kb.button(text=f"{marker}{_dev_emoji(d)} {d.name}{_btn_suffix(d)}",
-                  callback_data=DeviceCB(action="open", device_id=d.id))
-    for d in held:
-        marker = _blocks.blocked_marker_device(int(d.block_reason), for_admin=False)
-        kb.button(text=f"{marker}👤 {d.name} — от {_texts.owner_name(d)}",
-                  callback_data=DeviceCB(action="open", device_id=d.id))
+        label = (f"{marker}👤 {d.name} — от {_texts.owner_name(d)}" if is_held
+                 else f"{marker}{_dev_emoji(d)} {d.name}{_btn_suffix(d)}")
+        kb.button(text=label, callback_data=DeviceCB(action="open", device_id=d.id))
+    nav = page_nav(kb, "devices", 0, page, prev, nxt, render or Menu(action="devices").pack())
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
-    kb.adjust(1)
+    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
     return kb.as_markup()
 
 
@@ -137,15 +138,17 @@ def guest_main(*, routing_visible: bool = False, routing_on: bool = False,
     return kb.as_markup()
 
 
-def guest_devices(devices) -> InlineKeyboardMarkup:
+def guest_devices(devices, page: int = 0) -> InlineKeyboardMarkup:
     """«Мои устройства» гостя: список, назад — на главный экран гостя."""
     kb = InlineKeyboardBuilder()
-    for d in devices:
+    chunk, page, prev, nxt = page_slice(devices, page, static=1)
+    for _i, d in chunk:
         marker = _blocks.blocked_marker_device(int(d.block_reason), for_admin=False)
         kb.button(text=f"{marker}📱 {d.name}",
                   callback_data=FriendCB(action="open", device_id=d.id))
+    nav = page_nav(kb, "gdevices", 0, page, prev, nxt, FriendCB(action="list").pack())
     kb.button(text="⬅️ Назад", callback_data=FriendCB(action="refresh"))
-    kb.adjust(1)
+    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
     return kb.as_markup()
 
 
@@ -255,7 +258,8 @@ def gen_kind(action: str) -> str:
     return action[len("gen_"):]
 
 
-def pick_device(devices, action: str, back_cb: str = None) -> InlineKeyboardMarkup:
+def pick_device(devices, action: str, back_cb: str = None, page: int = 0,
+                render: str = "", ref: int = 0) -> InlineKeyboardMarkup:
     """action: gen_link | gen_file | gen_qr — выбор устройства.
     Показываем и устройства без ключа (с суффиксом): клик по ним ведёт не в ошибку,
     а в диалог «пришли ссылку или удали» (обрабатывается отдельно).
@@ -264,12 +268,16 @@ def pick_device(devices, action: str, back_cb: str = None) -> InlineKeyboardMark
     предлагается: ссылки/QR/файла у него нет — его конфиг едет только внутри
     конфигурации шлюза, сервис такую выдачу отвергает."""
     kb = InlineKeyboardBuilder()
-    for d in issuable(devices):
+    chunk, page, prev, nxt = page_slice(issuable(devices), page, static=1)
+    for _i, d in chunk:
         kb.button(text=f"{d.name}{_btn_suffix(d)}",
                   callback_data=DeviceCB(action=action, device_id=d.id))
+    # render — колбэк, который рисует этот экран (у клиента — пункт меню,
+    # у админа — своя кнопка): по нему листание перерисовывает список
+    nav = page_nav(kb, "pick", ref, page, prev, nxt, render or Menu(action=action).pack())
+    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []))
     kb.row(InlineKeyboardButton(
         text="⬅️ Назад", callback_data=back_cb or Menu(action="main").pack()))
-    kb.adjust(1)
     return kb.as_markup()
 
 
@@ -324,13 +332,15 @@ def friend_finisher() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def guest_pick_device(devices, action: str) -> InlineKeyboardMarkup:
+def guest_pick_device(devices, action: str, page: int = 0) -> InlineKeyboardMarkup:
     """Выбор устройства гостя под ссылку/QR/файл; назад — на главный экран."""
     kb = InlineKeyboardBuilder()
-    for d in devices:
+    chunk, page, prev, nxt = page_slice(devices, page, static=1)
+    for _i, d in chunk:
         kb.button(text=f"{d.name}", callback_data=FriendCB(action=action, device_id=d.id))
+    nav = page_nav(kb, "gpick", 0, page, prev, nxt, FriendCB(action=action).pack())
     kb.button(text="⬅️ Назад", callback_data=FriendCB(action="refresh"))
-    kb.adjust(1)
+    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
     return kb.as_markup()
 
 
@@ -377,12 +387,14 @@ def confirm_delete_device(device_id: int, only: bool, *, guest: bool = False) ->
     return kb.as_markup()
 
 
-def pick_device_to_delete(devices) -> InlineKeyboardMarkup:
+def pick_device_to_delete(devices, page: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    for d in devices:
+    chunk, page, prev, nxt = page_slice(devices, page, static=1)
+    for _i, d in chunk:
         kb.button(text=f"🗑 {d.name}", callback_data=DelDeviceCB(device_id=d.id, stage="ask"))
+    nav = page_nav(kb, "deldev", 0, page, prev, nxt, DeviceCB(action="add").pack())
     kb.button(text="⬅️ Назад", callback_data=Menu(action="devices"))
-    kb.adjust(1)
+    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
     return kb.as_markup()
 
 
@@ -474,20 +486,23 @@ def guide_connect_done(guide: str, device_id: int, *, apple_end: bool) -> Inline
     return kb.as_markup()
 
 
-def guide_connect_devices(devices, slots, guide: str = "connect") -> InlineKeyboardMarkup:
+def guide_connect_devices(devices, slots, guide: str = "connect", page: int = 0) -> InlineKeyboardMarkup:
     """Шаг 0 подключения: «Добавить устройство» + существующие устройства.
     Кнопки устройств/добавления сами ведут дальше (выдают ссылку+файл и переводят
     на шаг настройки) — отдельной «Далее» нет. guide сохраняет вариант."""
     used, limit = slots
     kb = InlineKeyboardBuilder()
-    if limit == 0 or used < limit:      # 0 = безлимит
+    can_add = limit == 0 or used < limit      # 0 = безлимит
+    if can_add:
         kb.button(text="➕ Добавить устройство", callback_data=GuideCB(guide=guide, step=-1))
-    for d in issuable(devices):
+    chunk, page, prev, nxt = page_slice(issuable(devices), page, static=2 if can_add else 1)
+    for _i, d in chunk:
         # получить ссылку+файл этого устройства и перейти к шагу настройки
         kb.button(text=f"🔗 {d.name}",
                   callback_data=DeviceCB(action="gen_guide", device_id=d.id))
+    nav = page_nav(kb, "guidedev", 0, page, prev, nxt, GuideCB(guide=guide, step=0).pack())
     kb.button(text="🏠 В меню", callback_data=Menu(action="main"))
-    kb.adjust(1)
+    kb.adjust(*([1] if can_add else []), *([1] * len(chunk)), *([nav] if nav else []), 1)
     return kb.as_markup()
 
 

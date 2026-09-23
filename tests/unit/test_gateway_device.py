@@ -141,6 +141,23 @@ def test_gateway_apply_report_is_human_text(tmp_path, monkeypatch):
     assert texts.gateway_apply_report({}) == "", "нет статуса — нет отчёта, останется хвост"
 
 
+def test_apply_report_names_the_local_network_result():
+    """Бандл включил режим без VPN: отчёт применения обязан сказать, встал ли он
+    и на каком интерфейсе, — или почему нет. Иначе человек идёт настраивать
+    роутер под сеть, которую скрипт так и не поднял."""
+    from awgbot.bot import texts
+    base = {"GW_STATUS": "confirmed", "LINK": "up"}
+    ok = texts.gateway_apply_report({**base, "LAN": "1", "LAN_IF": "end0", "LAN_ADDR": "192.168.68.222"})
+    assert ok == "Линк поднят, шлюз подтверждён, локальная сеть без VPN: применена (end0, 192.168.68.222).", ok
+    bad = texts.gateway_apply_report({**base, "LAN": "1", "LAN_ERROR": "порт 53 занят: pihole-FTL"})
+    assert "локальная сеть без VPN: не применена — порт 53 занят: pihole-FTL" in bad, bad
+    assert "применена (" not in bad
+    bare = texts.gateway_apply_report({**base, "LAN": "1"})
+    assert bare.endswith("локальная сеть без VPN: применена."), "без интерфейса — без пустых скобок"
+    for off in ({**base, "LAN": "0"}, base):
+        assert "локальная сеть" not in texts.gateway_apply_report(off), "режим выключен — строки нет"
+
+
 def test_client_subnet_from_conf_or_unit(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.8.1.0/24")
     assert gwguard.client_subnet() == "10.8.1.0/24"

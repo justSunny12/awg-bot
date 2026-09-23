@@ -7,11 +7,11 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.bot.callbacks import DeviceCB, RoutingCB, SetCB, GwMarkCB, GwSlotCB
 from awgbot.bot import texts as _texts
 
-from .common import _chk, _tick, _btn_suffix
+from .common import _chk, _tick, _btn_suffix, page_slice, page_nav
 from .settings import _back
 
 
-def routing_devices(client_id: int, devices, *, back_target, lent_out=()) -> InlineKeyboardMarkup:
+def routing_devices(client_id: int, devices, *, back_target, lent_out=(), page: int = 0) -> InlineKeyboardMarkup:
     """Экран устройств профиля: по кнопке на устройство, переключение на месте.
 
     Один вход вместо тумблеров, рассыпанных по карточкам устройств: всё
@@ -34,17 +34,22 @@ def routing_devices(client_id: int, devices, *, back_target, lent_out=()) -> Inl
     kb.button(text="☑️ Выключить все" if all_on else "✅ Включить все",
               callback_data=RoutingCB(action="all", ref=client_id))
     rows = [1]
-    for d in devices:
-        mark = "✅" if d.routing_on else "☑️"
-        held = f" — от {_texts.owner_name(d)}" if d.is_lent else ""    # чужое, которое держим
-        kb.button(text=f"{mark} {d.name}{_btn_suffix(d)}{held}",
-                  callback_data=RoutingCB(action="dev", ref=d.id))
-        rows.append(1)
     # свои переданные — в самом конце, без переключателя: управляет держатель
-    for d in lent_out:
-        kb.button(text=f"👤 {d.name} — {_texts.holder_name(d)}",
-                  callback_data=RoutingCB(action="lent", ref=d.id))
+    items = [(d, False) for d in devices] + [(d, True) for d in lent_out]
+    chunk, page, prev, nxt = page_slice(items, page, static=2)
+    for _i, (d, out) in chunk:
+        if out:
+            kb.button(text=f"👤 {d.name} — {_texts.holder_name(d)}",
+                      callback_data=RoutingCB(action="lent", ref=d.id))
+        else:
+            mark = "✅" if d.routing_on else "☑️"
+            held = f" — от {_texts.owner_name(d)}" if d.is_lent else ""    # чужое, которое держим
+            kb.button(text=f"{mark} {d.name}{_btn_suffix(d)}{held}",
+                      callback_data=RoutingCB(action="dev", ref=d.id))
         rows.append(1)
+    nav = page_nav(kb, "rtdevs", client_id, page, prev, nxt, RoutingCB(action="devs", ref=client_id).pack())
+    if nav:
+        rows.append(nav)
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
     kb.adjust(*rows, 1)
     return kb.as_markup()
@@ -52,7 +57,7 @@ def routing_devices(client_id: int, devices, *, back_target, lent_out=()) -> Inl
 
 def routing_panel(client_id: int, *, master_on: bool, domains: list,
                   enabled: int = 0, total: int = 0,
-                  back_target: str) -> InlineKeyboardMarkup:
+                  back_target: str, page: int = 0) -> InlineKeyboardMarkup:
     """Раздел «Доступ к РФ-сервисам»: вход в устройства и личный список адресов.
 
     Первая кнопка не переключает, а ОТКРЫВАЕТ список устройств. Раньше она была
@@ -69,11 +74,16 @@ def routing_panel(client_id: int, *, master_on: bool, domains: list,
         rows.append(1)
         # Минус, а не корзина: строка убирает ОДНУ запись из списка — то же
         # действие, что «➖» в разделе доступа по SSH. Корзина остаётся там,
-        # где сносят всё разом, ниже.
-        for i, dom in enumerate(domains):
+        # где сносят всё разом, ниже. Номер в колбэке — по ПОЛНОМУ списку.
+        chunk, page, prev, nxt = page_slice(domains, page, static=4 if domains else 3)
+        for i, dom in chunk:
             kb.button(text=f"➖ {dom}",
                       callback_data=RoutingCB(action="del", ref=client_id, idx=i))
             rows.append(1)
+        nav = page_nav(kb, "rtpanel", client_id, page, prev, nxt,
+                       RoutingCB(action="panel", ref=client_id).pack())
+        if nav:
+            rows.append(nav)
         if domains:
             kb.button(text="🗑 Очистить список",
                       callback_data=RoutingCB(action="clear", ref=client_id))
@@ -126,11 +136,12 @@ def gateway_list(states, *, can_add: bool, failover_on: bool,
         kb.button(text="➕ Добавить шлюз", callback_data=GwSlotCB(action="add"))
         rows.append(1)
     if len(states) > 1:
-        kb.button(text=f"🔁 Автопереключение: {'вкл' if failover_on else 'выкл'}",
+        # галочка — состояние настройки: ✅ включена, ☑️ выключена
+        kb.button(text=f"{_tick(failover_on)} Автопереключение: {'вкл' if failover_on else 'выкл'}",
                   callback_data=GwSlotCB(action="failover"))
         rows.append(1)
         if peer_nets_on is not None:
-            kb.button(text=f"↔️ Доступ между подсетями: {'вкл' if peer_nets_on else 'выкл'}",
+            kb.button(text=f"{_tick(peer_nets_on)} Доступ между подсетями: {'вкл' if peer_nets_on else 'выкл'}",
                       callback_data=GwSlotCB(action="peer_ask"))
             rows.append(1)
     kb.row(_back("rt"))
@@ -158,37 +169,20 @@ def gateway_card(state, *, back_to_list: bool) -> InlineKeyboardMarkup:
     kb.button(text="🏠 Локальные подсети", callback_data=GwSlotCB(action="home", slot=gw.id))
     # «За шлюзом — без VPN» (концепт «локальная сеть»): тумблер с подтверждением,
     # при включённом — рецепт роутера
-    kb.button(text=f"🏠 За шлюзом — без VPN: {'вкл' if gw.lan_mode else 'выкл'}",
+    kb.button(text=f"{_tick(bool(gw.lan_mode))} За шлюзом — без VPN: {'вкл' if gw.lan_mode else 'выкл'}",
               callback_data=GwSlotCB(action="lan_ask", slot=gw.id))
     rows += [1, 1, 1]
     if gw.lan_mode:
-        kb.button(text="📖 Настройка роутера", callback_data=GwSlotCB(action="router", slot=gw.id))
+        kb.button(text="❓ Настройка роутера", callback_data=GwSlotCB(action="router", slot=gw.id))
         rows.append(1)
     kb.button(text="✏️ Подпись", callback_data=GwSlotCB(action="label", slot=gw.id))
     kb.button(text="🔁 Заменить устройство", callback_data=SetCB(sec="rt_gw", act="open", key=str(gw.id)))
     kb.button(text="🛑 Снять шлюз", callback_data=GwSlotCB(action="remove_ask", slot=gw.id))
     kb.button(text="📡 Пинг", callback_data=GwSlotCB(action="ping", slot=gw.id))
     rows += [1, 1, 1, 1]
-    # Канал на связи — можно попросить свежий снимок. Кнопка только при живой
-    # сессии: без неё просить некого, а неработающая кнопка хуже отсутствующей.
-    if (state.get("channel") or {}).get("online"):
-        kb.button(text="🔄 Обновить с шлюза", callback_data=GwSlotCB(action="snap", slot=gw.id))
-        kb.button(text="🩺 Диагностика обвязки", callback_data=GwSlotCB(action="diag", slot=gw.id))
-        rows += [1, 1]
     back = GwSlotCB(action="list").pack() if back_to_list else SetCB(sec="rt").pack()
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back))
     kb.adjust(*rows, 1)
-    return kb.as_markup()
-
-
-def gateway_diag(slot: int) -> InlineKeyboardMarkup:
-    """Диагностика обвязки шлюза по каналу — закрытый список из трёх."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="📜 Журнал юнита обвязки", callback_data=GwSlotCB(action="diag_unit", slot=slot))
-    kb.button(text="🧱 Таблица файервола шлюза", callback_data=GwSlotCB(action="diag_table", slot=slot))
-    kb.button(text="📋 Решение скрипта обвязки", callback_data=GwSlotCB(action="diag_status", slot=slot))
-    kb.button(text="⬅️ Назад", callback_data=GwSlotCB(action="card", slot=slot))
-    kb.adjust(1)
     return kb.as_markup()
 
 
@@ -205,15 +199,17 @@ def gateway_choose_kind(has_candidates: bool, slot: int = 0) -> InlineKeyboardMa
     return kb.as_markup()
 
 
-def gateway_pick(devices, slot: int = 0) -> InlineKeyboardMarkup:
+def gateway_pick(devices, slot: int = 0, page: int = 0) -> InlineKeyboardMarkup:
     """Выбор шлюзового устройства из устройств админа."""
     kb = InlineKeyboardBuilder()
-    for d in devices:
+    chunk, page, prev, nxt = page_slice(devices, page, static=1)
+    for _i, d in chunk:
         kb.button(text=f"📱 {d.name} ({d.address})",
                   callback_data=GwMarkCB(action="pick", device_id=d.id, slot=slot))
+    nav = page_nav(kb, "gwpick", slot, page, prev, nxt, GwMarkCB(action="pick_list", slot=slot).pack())
+    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []))
     kb.row(InlineKeyboardButton(text="⬅️ Назад",
                                 callback_data=SetCB(sec="rt_gw", act="open", key=str(slot or "")).pack()))
-    kb.adjust(*([1] * len(devices)), 1)
     return kb.as_markup()
 
 
@@ -246,7 +242,7 @@ def gateway_lan_confirm(slot: int, on: bool) -> InlineKeyboardMarkup:
     """Подтверждение «за шлюзом — без VPN»: «Отмена» первой."""
     kb = InlineKeyboardBuilder()
     kb.button(text="⬅️ Отмена", callback_data=GwSlotCB(action="card", slot=slot))
-    kb.button(text="Включить" if on else "Выключить", callback_data=GwSlotCB(action="lan_yes", slot=slot))
+    kb.button(text="✅ Включить" if on else "☑️ Выключить", callback_data=GwSlotCB(action="lan_yes", slot=slot))
     kb.adjust(2)
     return kb.as_markup()
 
@@ -255,7 +251,7 @@ def gateway_peer_confirm(on: bool) -> InlineKeyboardMarkup:
     """Подтверждение доступа между подсетями за шлюзами: «Отмена» первой."""
     kb = InlineKeyboardBuilder()
     kb.button(text="⬅️ Отмена", callback_data=GwSlotCB(action="list"))
-    kb.button(text="Включить" if on else "Выключить", callback_data=GwSlotCB(action="peer_yes"))
+    kb.button(text="✅ Включить" if on else "☑️ Выключить", callback_data=GwSlotCB(action="peer_yes"))
     kb.adjust(2)
     return kb.as_markup()
 
@@ -397,15 +393,17 @@ def settings_routing_lists(lists_every: int) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def settings_routing_users(clients=()) -> InlineKeyboardMarkup:
+def settings_routing_users(clients=(), page: int = 0) -> InlineKeyboardMarkup:
     """Подраздел «Доступность пользователям». Разрешение живёт здесь, а не в
     карточке профиля: это настройка сервиса, а не свойство клиента — все, кому
     выдан доступ, видны одним списком."""
     kb = InlineKeyboardBuilder()
-    for c in clients:
+    chunk, page, prev, nxt = page_slice(list(clients), page, static=1)
+    for _i, c in chunk:
         kb.button(text=f"{_tick(c.routing_allowed)} {c.name}",
                   callback_data=SetCB(sec="rt", act="do", key="allow", val=str(c.id)))
-    kb.adjust(1)
+    nav = page_nav(kb, "rtusers", 0, page, prev, nxt, SetCB(sec="rt_users", act="open").pack())
+    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []))
     kb.row(_back("rt"))
     return kb.as_markup()
 

@@ -40,7 +40,7 @@ from .migration import (
 from .routing import (
     gateway_device_card, gateway_claim_marked, gateway_claim_already, ROUTING_NAME,
     SETTINGS_ROUTING_ABSENT, routing_lists_block, ROUTING_BUNDLE_INTRO,
-    channel_block, channel_drift_block, GATEWAY_DIAG_INTRO, gateway_diag_text, GW_CARD_PAYLOAD, agent_bot_line,
+    channel_block, channel_drift_block, drift_lines, GW_CARD_PAYLOAD, agent_bot_line,
     settings_routing_text, settings_routing_gateway_line, GATEWAY_CHOOSE_INTRO,
     GATEWAY_PICK_INTRO, GATEWAY_PICK_EMPTY, gateway_new_ask, gateway_mark_ask,
     gateway_marked, gateway_remove_ask, gateway_removed, ROUTING_PROVISION_INTRO,
@@ -110,7 +110,7 @@ from .broadcast import (
     broadcast_too_many_photos, broadcast_too_long, broadcast_report)
 from .gateway import (
     gateway_panel, gateway_health, gateway_lan_text, gateway_lan_ask_domain, gateway_lan_own_text,
-    gateway_lan_result, GW_SETTINGS, GW_SETTINGS_NOTIFY, GW_SETTINGS_MON,
+    gateway_lan_result, gateway_lan_rm_ask, gateway_claim_via_channel_text, GW_SETTINGS, GW_SETTINGS_NOTIFY, GW_SETTINGS_MON,
     GW_BACKUP_NO_KEY, host_rebooted, GW_MAINT, GW_CONFIRM_RESTART, GW_CONFIRM_REASSERT,
     GW_CONFIRM_BOT_RESTART, GW_BOT_RESTARTING, GW_BUNDLE_NOT_OURS,
     GW_BUNDLE_PASSPHRASE_QUESTION, gateway_claim_forward_text, gateway_apply_report,
@@ -134,7 +134,7 @@ __all__ = [
     "migration_generation_pending", "migration_needed", "migration_promoted",
     "migration_promote_restart_failed", "gateway_device_card", "gateway_claim_marked",
     "gateway_claim_already", "ROUTING_NAME", "SETTINGS_ROUTING_ABSENT",
-    "routing_lists_block", "ROUTING_BUNDLE_INTRO", "channel_block", "channel_drift_block", "GATEWAY_DIAG_INTRO", "gateway_diag_text", "GW_CARD_PAYLOAD", "agent_bot_line", "settings_routing_text",
+    "routing_lists_block", "ROUTING_BUNDLE_INTRO", "channel_block", "channel_drift_block", "drift_lines", "GW_CARD_PAYLOAD", "agent_bot_line", "settings_routing_text",
     "settings_routing_gateway_line", "GATEWAY_CHOOSE_INTRO", "GATEWAY_PICK_INTRO",
     "GATEWAY_PICK_EMPTY", "gateway_new_ask", "gateway_mark_ask", "gateway_marked",
     "gateway_remove_ask", "gateway_removed", "ROUTING_PROVISION_INTRO",
@@ -206,6 +206,7 @@ __all__ = [
     "broadcast_preview", "broadcast_preview_photos", "broadcast_too_many_photos",
     "broadcast_too_long", "broadcast_report", "gateway_panel", "gateway_health",
     "gateway_lan_text", "gateway_lan_ask_domain", "gateway_lan_own_text", "gateway_lan_result",
+    "gateway_lan_rm_ask", "gateway_claim_via_channel_text",
     "GW_SETTINGS", "GW_SETTINGS_NOTIFY", "GW_SETTINGS_MON", "GW_BACKUP_NO_KEY",
     "host_rebooted", "GW_MAINT", "GW_CONFIRM_RESTART", "GW_CONFIRM_REASSERT",
     "GW_CONFIRM_BOT_RESTART", "GW_BOT_RESTARTING", "GW_BUNDLE_NOT_OURS",

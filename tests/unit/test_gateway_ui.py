@@ -48,7 +48,7 @@ def test_snapshot_roundtrip_keeps_checks_and_metrics(svc, monkeypatch):
 def test_server_name_prefers_setting_then_bundle_then_default(svc, monkeypatch):
     from awgbot.core import settings
     monkeypatch.setattr(settings, "get", lambda key, default=None: default)
-    assert svc.server_name() == "ВПС"
+    assert svc.server_name() == "сервера AWG"
     svc.db.set_state(GatewayServices._SERVER_NAME_KEY, "awg-srv")
     assert svc.server_name() == "awg-srv"
     monkeypatch.setattr(settings, "get",

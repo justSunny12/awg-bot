@@ -305,43 +305,28 @@ async def test_a_replaced_machine_in_the_slot_is_heard_without_a_restart(service
     await gw.close()
 
 
-# ── «Обновить»: запрос снимка с ожиданием ────────────────────────────────────
+# ── полный снимок сервер просит только при разрыве нумерации ─────────────────
 
-async def test_ask_snap_waits_for_the_gateway_answer(services, two):
-    """Кнопка «Обновить» говорит «Снимок обновлён» только если снимок
-    действительно пришёл: иначе человек смотрит на старое и думает, что видит
-    результат своего последнего действия."""
+async def test_consecutive_deltas_never_make_the_server_ask_for_a_full_snapshot(services, two):
+    """Кнопки «Обновить с шлюза» больше нет: сам сервер просит полный снимок
+    только при разрыве нумерации дельт. Проси он его и без разрыва — канал
+    гонял бы полные снимки по кругу, а зонд живости путал бы их с трафиком."""
     srv, binds, port = two
     await srv.ensure()
     gw = await _hello(srv)
     assert await gw.role()
-
-    async def answer():
-        ask = await gw.recv()
-        assert ask["t"] == "ask" and ask["what"] == "snap"
-        await gw.send("snap", {**SNAP, "agent_version": "3.1.1", "rev": 1})
-
-    task = asyncio.create_task(answer())
-    assert await srv.ask_snap(1, timeout=2.0) is True
-    await task
-    assert services.gwlink_snapshot(1)["agent_version"] == "3.1.1"
+    await gw.send("snap", {**SNAP, "agent_version": "3.1.1", "rev": 1})
+    await gw.send("delta", {"egress_ok": False, "rev": 2})
+    await gw.send("delta", {"egress_ok": True, "rev": 3})
+    await _until(lambda: services.db.get_state("gwlink_snap_rev_1") == "3")
+    # после снимка сервер может что-то доставить (настройки, фиды) — смотрим
+    # всё, что пришло за полсекунды, а не одно первое сообщение
+    got: list[dict] = []
+    while True:
+        try:
+            got.append(await gw.recv(timeout=0.5))
+        except asyncio.TimeoutError:
+            break
+    asks = [m for m in got if m.get("t") == "ask"]
+    assert asks == [], f"сервер попросил снимок без разрыва нумерации: {asks}"
     await gw.close()
-
-
-async def test_ask_snap_says_false_when_the_gateway_is_silent(services, two):
-    srv, binds, port = two
-    await srv.ensure()
-    gw = await _hello(srv)
-    assert await gw.role()
-    assert await srv.ask_snap(1, timeout=0.5) is False, "молчание шлюза выдано за свежий снимок"
-    ask = await gw.recv()
-    assert ask["t"] == "ask" and ask["what"] == "snap", "запрос снимка не ушёл"
-    await gw.close()
-
-
-async def test_ask_snap_says_none_without_a_session(services, two):
-    """Сессии нет — «не на связи», а не «не ответил»: это разные советы человеку."""
-    srv, binds, port = two
-    await srv.ensure()
-    assert await srv.ask_snap(1, timeout=0.3) is None
-    assert await srv.ask_snap(2, timeout=0.3) is None

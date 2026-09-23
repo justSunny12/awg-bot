@@ -63,10 +63,11 @@ async def show_guest_main(target: Message, services, client) -> None:
     await send_menu(target, services, *await guest_main_payload(services, client))
 
 
-async def _devices_payload(services, client):
+async def _devices_payload(services, client, chat_id: int = 0):
     devs = await _held(services, client)
+    from awgbot.bot import paging
     return (f"<b>📱 Мои устройства</b>\n\nУ тебя {texts._n_devices(len(devs))}",
-            kb.guest_devices(devs))
+            kb.guest_devices(devs, page=paging.page_of(chat_id or client.tg_id, "gdevices")))
 
 
 async def _card_payload(services, dev):
@@ -143,8 +144,10 @@ async def friend_gen(cb: CallbackQuery, callback_data: FriendCB, client, service
             await cb.answer("Устройств нет", show_alert=True)
             return
         if len(devs) > 1:
+            from awgbot.bot import paging
             await edit(cb, kb.PICK_DEVICE_PROMPT[callback_data.action],
-                       kb.guest_pick_device(devs, callback_data.action))
+                       kb.guest_pick_device(devs, callback_data.action,
+                                            page=paging.page_of(cb.message.chat.id, "gpick")))
             await cb.answer()
             return
         dev = devs[0]

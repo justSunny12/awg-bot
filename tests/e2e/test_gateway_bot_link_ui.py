@@ -171,7 +171,7 @@ async def test_start_gw_for_a_missing_slot_does_not_break(services, slots, fake_
         msgs.append(msg)
         assert msg.deleted, payload
         shown = [r[2] for r in fake_bot.records if r[0] in ("answer", "edit_message_text")]
-        assert shown and shown[-1] == "🛰 Такого шлюза больше нет — слот снят.", (payload, shown)
+        assert shown and shown[-1] == "🛰 Такого шлюза больше нет — слот снят", (payload, shown)
     # у первого показа (сообщением) видна клавиатура
     markup = next(s[2] for s in msgs[0].sent if s[0] == "answer")
     datas = [b.callback_data for row in markup.inline_keyboard for b in row]

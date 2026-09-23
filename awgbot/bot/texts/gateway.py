@@ -38,7 +38,7 @@ def channel_panel_line() -> str:
     if not linkclient.enabled():
         return ""
     online = linkclient.online()
-    line = "🔗 Канал до ВПС: " + ("🟢 на связи" if online else "⚪ нет связи")
+    line = "🔗 Канал до сервера AWG: " + ("🟢 на связи" if online else "⚪ нет связи")
     role = linkclient.role() if online else ""
     if role:
         # Роль сообщает сервер: решает автомат переключения там, сам агент её
@@ -59,16 +59,21 @@ def gateway_panel(st) -> str:
     head = [f"🖥 Сервер: {server}"]
     if st.uptime_seconds is not None:
         head.append(f"⬆️ Аптайм: {timeutil.fmt_remaining_short(int(st.uptime_seconds))}")
-    parts += head + ["", f"📡 Линк до {_e(st.server_name or 'ВПС')}: {_gw_link_line(st)}"]
+    parts += head + ["", f"📡 Линк до {_e(st.server_name or 'сервера AWG')}: {_gw_link_line(st)}"]
     chan = channel_panel_line()
     if chan:
         parts.append(chan)
     mark = getattr(st, "mark_status", "") or ""
     if mark and mark != "confirmed":
         # Статусы производит ровно один источник — routing-gw-setup.sh:
-        # unmarked | confirmed | foreign | unconfirmed. Прежний «released»
-        # остался от снятой схемы release-токенов, и ветка была недостижимой.
-        parts.append({"unmarked": "🛰 Шлюз в основном боте не назначен — перешли ему сообщение из отчёта",
+        # unmarked | confirmed | foreign | unconfirmed. Токен пометки при живом
+        # канале агент отправляет сам — просить переслать сообщение незачем.
+        from awgbot.runtime import linkclient
+        unmarked = ("🛰 Шлюз в основном боте не назначен — запрос на назначение отправлен "
+                    "серверу AWG по каналу" if linkclient.online() else
+                    "🛰 Шлюз в основном боте не назначен. Канал конфигурации сервера AWG "
+                    "недоступен — перешли ему сообщение из отчёта")
+        parts.append({"unmarked": unmarked,
                       "foreign": "⚠️ Шлюз этого слота — другое устройство, линк лежит",
                       "unconfirmed": "⚠️ Аплинк этой машины не найден — шлюз не подтверждён"}
                      .get(mark, f"🛰 Пометка: {_e(mark)}"))
@@ -101,15 +106,13 @@ def gateway_panel(st) -> str:
         # локальная сеть без VPN (концепт «локальная сеть» §3.5): своим блоком
         bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
         head_ = "🔴 " + ", ".join(c.name for c in bad[:3]) if bad else "🟢 работает"
-        parts += ["", f"🏠 За шлюзом — без VPN: {head_}"]
-        where = f"{_e(lan.get('iface', '') or '?')}, {_e(lan.get('addr', '') or '?')}"
+        parts += ["", f"🏠 Локальная сеть без VPN: {head_}"]
+        where = f"{_e(lan.get('iface', '') or '?')}, <code>{_e(lan.get('addr', '') or '?')}</code>"
         parts.append(f"{pad}локальная сеть: {where}")
-        pk = lan.get("lan_pkts")
-        parts.append(f"{pad}трафик с роутера: " + (f"{pk:,} пакетов".replace(",", " ") if pk else "нет"))
+        parts.append(f"{pad}трафик с роутера: {_packets(lan.get('lan_pkts'))}")
         parts.append(f"{pad}резолвер: апстрим {_e(lan.get('resolver', ''))}")
-        parts.append(f"{pad}списки: {lan.get('domains', 0)} доменов, {lan.get('nets', 0)} подсетей; "
-                     + _lists_updated(lan.get("updated_at") or ""))
-        parts.append(f"{pad}свои: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую")
+        parts.append(f"{pad}списки: {_lists_counts(lan)}; " + _lists_updated(lan.get("updated_at") or ""))
+        parts.append(f"{pad}свои списки: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую")
     parts += ["", f"🌡 Монитор здоровья: {_gw_health_summary(st.checks)}", ""]
     parts.append(f"📊 Потребление за месяц: {human_bytes(st.month_rx + st.month_tx)} "
                  f"{_updown(st.month_rx, st.month_tx)}")
@@ -143,6 +146,20 @@ def gateway_health(st) -> str:
     return "\n".join(lines)
 
 
+def _packets(pk) -> str:
+    """«1 234 567 пакетов» — с разделителем разрядов и склонением; нет — «нет»."""
+    n = int(pk or 0)
+    if not n:
+        return "нет"
+    return f"{n:,}".replace(",", " ") + " " + plural_ru(n, "пакет", "пакета", "пакетов")
+
+
+def _lists_counts(lan: dict) -> str:
+    d, n = int(lan.get("domains", 0) or 0), int(lan.get("nets", 0) or 0)
+    return (f"{d} " + plural_ru(d, "домен", "домена", "доменов") + ", "
+            + f"{n} " + plural_ru(n, "подсеть", "подсети", "подсетей"))
+
+
 def _lists_updated(raw: str) -> str:
     """«обновлены <когда>» или «ещё не обновлялись» — целой фразой: иначе
     склеивалось «обновлены ещё не обновлялись»."""
@@ -159,76 +176,56 @@ def gateway_lan_text(st) -> str:
     """🏠 Локальная сеть без VPN (концепт «локальная сеть» §3.5): что настроено, как
     дела со списками, откуда берутся личные."""
     lan = getattr(st, "lan", None) or {}
-    pk = lan.get("lan_pkts")
     return ("🏠 <b>Локальная сеть без VPN</b>\n\n"
-            "Роутер заворачивает трафик локальной сети сюда, шлюз делит его сам: домены и "
-            "подсети из списков — в туннель, остальное — напрямую. Личные списки: домен "
-            "накрывает и все поддомены; «напрямую» побеждает «в туннель».\n\n"
-            f"Интерфейс {_e(lan.get('iface', '') or '?')}, адрес {_e(lan.get('addr', '') or '?')}; "
-            f"резолвер — апстрим {_e(lan.get('resolver', '') or '?')} через аплинк.\n"
-            f"Трафик с роутера: {(str(pk) + ' пакетов') if pk else 'нет'}.\n"
-            f"Списки: {lan.get('domains', 0)} доменов, {lan.get('nets', 0)} подсетей; "
-            f"{_lists_updated(lan.get('updated_at') or '')}.\n"
-            f"Свои: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую.")
+            "Роутер маршрутизирует весь трафик локальной сети сюда, далее шлюз принимает роль "
+            "маршрутизатора: домены и подсети из списков идут в туннель, остальное — напрямую. "
+            "Личные списки: домен накрывает и все поддомены; правила «напрямую» приоритетнее "
+            "правил «в туннель».\n\n"
+            f"Интерфейс {_e(lan.get('iface', '') or '?')}, адрес <code>{_e(lan.get('addr', '') or '?')}</code>; "
+            f"резолвер — апстрим <code>{_e(lan.get('resolver', '') or '?')}</code> через аплинк\n"
+            f"Трафик с роутера: {_packets(lan.get('lan_pkts'))}\n"
+            f"Списки: {_lists_counts(lan)}; {_lists_updated(lan.get('updated_at') or '')}\n"
+            f"Свои списки: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую")
 
 
 def gateway_lan_ask_domain(kind: str) -> str:
-    head = {"add": "➕ <b>В туннель</b>", "ru": "➕ <b>Напрямую</b>", "del": "🗑 <b>Убрать из своих списков</b>"}[kind]
-    what = ("Домен накрывает и все поддомены." if kind != "del" else "Домен уйдёт из обоих списков.")
+    head = {"add": "➕ <b>В туннель</b>", "ru": "➕ <b>Напрямую</b>"}[kind]
     return (f"{head}\n\nПришли домен (можно несколько через пробел). Схема и www. не нужны: "
-            f"<code>example.com</code>. {what}")
+            "<code>example.com</code>. Домен накрывает и все поддомены.")
+
+
+def gateway_lan_rm_ask(domain: str, kind: str) -> str:
+    where = "напрямую" if kind == "ru" else "в туннель"
+    return (f"➖ <b>Убрать <code>{_e(domain)}</code> из своих списков?</b>\n\n"
+            f"Сейчас домен идёт {where}; после удаления — как решат общие списки.")
 
 
 def gateway_lan_own_text(items: list[tuple[str, str]]) -> str:
+    """Сами домены — кнопками под инфобоксом («➖ домен (📤|🇷🇺)», с
+    листанием); текст только объясняет порядок и значки."""
     if not items:
-        return "📋 <b>Свои списки</b>\n\nПока пусто: добавь домены кнопками «В туннель» и «Напрямую»."
-    vpn = [d for k, d in items if k == "vpn"]
-    ru = [d for k, d in items if k == "ru"]
-    lines = ["📋 <b>Свои списки</b>", ""]
-    # Список ничем не ограничен, а сообщение — 4096 символами: длинный список
-    # Telegram отверг бы целиком, и человек не увидел бы ни строки. Показываем
-    # начало каждого раздела и честный остаток; полный — `awg-bot lan list`.
-    shown = 0
-    for title, doms in (("В туннель:", vpn), ("Напрямую:", ru)):
-        if not doms:
-            continue
-        room = max(20, _OWN_SHOWN - shown)        # каждому разделу — хоть начало
-        # и потолок по символам: домен бывает до 253 знаков, и сто двадцать
-        # длинных строк переросли бы лимит сообщения так же, как тысяча коротких
-        budget = _OWN_CHARS // 2
-        picked = []
-        for d in doms[:room]:
-            row = f"• {_e(d)}"
-            if budget - len(row) - 1 < 0:
-                break
-            picked.append(row)
-            budget -= len(row) + 1
-        room = len(picked)
-        lines += [title] + picked
-        if len(doms) > room:
-            lines.append(f"…и ещё {len(doms) - room} — полностью: <code>awg-bot lan list</code>")
-        lines.append("")
-        shown += min(len(doms), room)
-    return "\n".join(lines).rstrip()
-
-
-_OWN_SHOWN = 120
-_OWN_CHARS = 3200                 # на оба раздела; остальное — шапка и хвосты
+        return "📋 <b>Свои списки</b>\n\nПока пусто: добавь домены кнопками «➕ В туннель» и «➕ Напрямую»."
+    return ("📋 <b>Свои списки</b>\n\n"
+            "Элементы списка отсортированы: сначала показываются домены с маршрутом напрямую "
+            "(помечены 🇷🇺), затем с маршрутом в туннель (помечены 📤)")
 
 
 def gateway_lan_result(ok: bool, out: str) -> str:
-    out = out.strip()
-    # ответ скрипта — строка на домен; десятки доменов за раз переросли бы лимит
-    # сообщения, и Telegram отверг бы ответ целиком
-    if len(out) > 3500:
-        rows = out.splitlines()
-        keep, size = [], 0
-        for r in rows:
-            if size + len(r) > 3300:
-                break
-            keep.append(r)
-            size += len(r) + 1
-        out = "\n".join(keep) + f"\n…и ещё {len(rows) - len(keep)} строк"
+    """Итог add/ru/del — строки скрипта «домен: добавлен / убран / уже в
+    списке»; служебные строки про адреса в наборе (с отступом) не показываем."""
+    rows = [r for r in out.strip().splitlines() if r and not r.startswith(" ")]
+    # десятки доменов за раз переросли бы лимит сообщения, и Telegram отверг
+    # бы ответ целиком
+    keep, size = [], 0
+    for r in rows:
+        if size + len(r) > 3300:
+            break
+        keep.append(r)
+        size += len(r) + 1
+    out = "\n".join(keep)
+    if len(rows) > len(keep):
+        rest = len(rows) - len(keep)
+        out += f"\n…и ещё {rest} " + plural_ru(rest, "строка", "строки", "строк")
     body = _e(out) if out else ("готово" if ok else "не удалось")
     return ("✅ " if ok else "⚠️ ") + body
 
@@ -265,9 +262,21 @@ GW_BUNDLE_NOT_OURS = ("Это не конфигурация шлюза — фа�
                       "бот: «Условная маршрутизация» → «Конфигурация шлюза».")
 GW_BUNDLE_PASSPHRASE_QUESTION = (
     "🔐 <b>В конфигурации — парольная фраза шифрования бэкапов, и она отличается "
-    "от заданной на шлюзе.</b>\n\nПерезаписать фразу шлюза фразой с ВПС? Прежние "
+    "от заданной на шлюзе.</b>\n\nПерезаписать фразу шлюза фразой с сервера AWG? Прежние "
     "копии шлюза останутся открываемыми только старой фразой. Если оставить свою — "
     "всё остальное из файла применится как обычно.")
+
+
+def gateway_claim_via_channel_text(status: str) -> str:
+    """Токен пометки ушёл серверу по каналу — пересылать ничего не нужно."""
+    head = ("🛰 <b>Шлюз в основном боте не назначен.</b>" if status == "unmarked" else
+            "⚠️ <b>Аплинк этой машины не найден.</b> Подтвердить шлюз нечем: подними аплинк "
+            "и примени конфигурацию ещё раз." if status == "unconfirmed" else
+            "⚠️ <b>Шлюз этого слота — другое устройство.</b> Линк на этой машине лежит: "
+            "смени шлюз в настройках основного бота (🔁 Заменить устройство).")
+    return (head + "\n\nЗапрос на назначение отправлен серверу AWG по каналу конфигурации: "
+            "основной бот найдёт это устройство по ключу и выпустит конфигурацию — её примени "
+            "здесь ещё раз.")
 
 
 def gateway_claim_forward_text(token: str, status: str) -> str:
@@ -276,9 +285,9 @@ def gateway_claim_forward_text(token: str, status: str) -> str:
             "и примени конфигурацию ещё раз." if status == "unconfirmed" else
             "⚠️ <b>Шлюз этого слота — другое устройство.</b> Линк на этой машине лежит: "
             "смени шлюз в настройках основного бота (🔁 Заменить устройство).")
-    return (head + "\n\nЗапасной путь — перешли это сообщение основному боту как есть: "
-            "он найдёт это устройство по ключу, назначит его шлюзом и выпустит конфигурацию; "
-            f"её примени здесь ещё раз.\n\n<code>{_e(token)}</code>")
+    return (head + "\n\nКанал конфигурации сервера AWG недоступен. Перешли это сообщение "
+            "основному боту как есть: он найдёт это устройство по ключу, назначит его шлюзом "
+            f"и выпустит конфигурацию; её примени здесь ещё раз.\n\n<code>{_e(token)}</code>")
 
 
 def gateway_apply_report(st: dict) -> str:
@@ -308,6 +317,13 @@ def gateway_apply_report(st: dict) -> str:
         lines.append(f"фильтр SSH снаружи: включён, {n} " + plural_ru(n, "адрес", "адреса", "адресов"))
     elif st.get("SSH_FILTER") == "0":
         lines.append("фильтр SSH снаружи: выключен")
+    if st.get("LAN") == "1":
+        err = st.get("LAN_ERROR") or ""
+        if err:
+            lines.append(f"локальная сеть без VPN: не применена — {err}")
+        else:
+            lines.append("локальная сеть без VPN: применена"
+                         + (f" ({st.get('LAN_IF')}, {st.get('LAN_ADDR')})" if st.get("LAN_IF") else ""))
     if not lines:
         return ""
     text = ", ".join(lines)
@@ -327,10 +343,10 @@ def awg_restart_warning_body(gateway: bool) -> str:
 
 def gateway_bundle_received(link_changed: bool) -> str:
     base = ("📦 <b>Получена конфигурация шлюза.</b>\n\nВнутри — конфиг линка и скрипт "
-            "обвязки с ВПС. Применение перепишет конфиг линка и переставит правила."
+            "обвязки с сервера AWG. Применение перепишет конфиг линка и переставит правила."
             if link_changed else
             "📦 <b>Получена конфигурация шлюза.</b>\n\nВнутри — конфиг линка и скрипт "
-            "обвязки с ВПС. Конфиг линка не изменился — линк не перезапустится, "
+            "обвязки с сервера AWG. Конфиг линка не изменился — линк не перезапустится, "
             "правила будут переставлены.")
     return base + (f"\n\n{awg_restart_warning_body(True)}" if link_changed else "")
 

@@ -420,7 +420,8 @@ async def test_a_tick_before_hello_does_not_spoil_the_first_word(services, link)
     gw = await _connect(link)
     await _until(lambda: 1 in link._sessions)
     await link.deliver_all()
-    assert await link.ask_snap(1, timeout=0.3) is not True
+    assert await link.send(1, "ask", {"what": "snap"}) is False, (
+        "до hello сервер отправил слово без нонса шлюза")
     await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.1.0"})
     first = await gw.recv()
     assert first["t"] == "role" and first.get("nonce"), (

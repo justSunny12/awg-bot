@@ -75,8 +75,9 @@ def test_a_bundle_issued_but_never_applied_is_reminded_by_the_snapshot(services,
     notes = services.gw_bundle_drift_notes()
     assert len(notes) == 1, f"напоминаний {len(notes)}: {[n.text for n in notes]}"
     text = notes[0].text
-    assert "стоит не то, что выдаёт сервер" in text and "локальные подсети" in text
-    assert "«192.168.68.0/24»" in text and "«192.168.1.0/24»" in text, "не сказано, что с чем разошлось"
+    assert "неактуальна" in text and "локальные подсети" in text
+    assert "<code>192.168.68.0/24</code>" in text and "<code>192.168.1.0/24</code>" in text, (
+        "не сказано, что с чем разошлось")
     assert "Перевыпусти" in text
     assert services.gw_bundle_drift_notes() == [], "то же расхождение напомнено дважды"
 
@@ -100,7 +101,7 @@ def test_a_drift_that_went_away_gets_one_quiet_all_clear(services, slot):
     assert len(services.gw_bundle_drift_notes()) == 1
     _snap(services, _installed(services))
     notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1 and "совпадает с выданной" in notes[0].text, [n.text for n in notes]
+    assert len(notes) == 1 and "актуализирована" in notes[0].text, [n.text for n in notes]
     assert services.gw_bundle_drift_notes() == [], "отбой повторился"
 
 
@@ -124,8 +125,10 @@ def test_what_only_the_file_carries_is_reminded_even_with_a_live_channel(service
     _snap(services, _installed(services, peer_home_nets="192.168.2.0/24"))
     services.gwlink_session_opened(1, "3.1.0", 1)
     notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1 and "подсети за другими шлюзами" in notes[0].text
-    assert "локальные подсети" not in notes[0].text
+    assert len(notes) == 1 and "локальные подсети других шлюзов" in notes[0].text, (
+        [n.text for n in notes])
+    # свои подсети канал довезёт — в напоминании их быть не должно
+    assert "локальные подсети: у сервера" not in notes[0].text, notes[0].text
 
 
 def test_a_reminder_does_not_carry_markup_from_the_gateway(services, slot):

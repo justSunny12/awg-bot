@@ -1,7 +1,7 @@
 """
 Канал линка, этапы 3 и 4 (концепт «канал линка», §12): фиды локальной сети
-качает ВПС и возит каналом; роль слота доезжает до агентов; диагностика обвязки
-по закрытому списку; автомат переключения снимку шлюза не верит.
+качает ВПС и возит каналом; роль слота доезжает до агентов; просьба о диагностике
+на малине ничего не запускает; автомат переключения снимку шлюза не верит.
 
 Сокеты настоящие (петля), сервер — боевой LinkServer поверх временной БД, в
 сквозных сценариях на той стороне — боевой LinkClient и настоящий
@@ -11,7 +11,8 @@
 Цена ошибки: фид, который рвёт сессию, превращает канал в петлю
 переподключений; фиды, которые перестали доезжать, возвращают адрес квартиры
 на GitHub; роль, которая не доехала, — панель агента врёт «несёт трафик» о
-резерве; чужое имя диагностики — чтение с малины того, что ВПС не положено.
+резерве; просьба диагностики, исполненная малиной, — чтение с неё того, что
+ВПС не положено.
 """
 from __future__ import annotations
 
@@ -483,59 +484,29 @@ def test_the_agent_panel_names_the_role_only_while_the_channel_is_up(monkeypatch
     monkeypatch.setattr(linkclient, "enabled", lambda: True)
     monkeypatch.setattr(linkclient, "online", lambda: True)
     monkeypatch.setattr(linkclient, "role", lambda: "active")
-    assert channel_panel_line() == "🔗 Канал до ВПС: 🟢 на связи · несёт трафик"
+    assert channel_panel_line() == "🔗 Канал до сервера AWG: 🟢 на связи · несёт трафик"
     monkeypatch.setattr(linkclient, "role", lambda: "standby")
-    assert channel_panel_line() == "🔗 Канал до ВПС: 🟢 на связи · в резерве"
+    assert channel_panel_line() == "🔗 Канал до сервера AWG: 🟢 на связи · в резерве"
     monkeypatch.setattr(linkclient, "role", lambda: "")
-    assert channel_panel_line() == "🔗 Канал до ВПС: 🟢 на связи"
+    assert channel_panel_line() == "🔗 Канал до сервера AWG: 🟢 на связи"
     monkeypatch.setattr(linkclient, "online", lambda: False)
     monkeypatch.setattr(linkclient, "role", lambda: "active")
-    assert channel_panel_line() == "🔗 Канал до ВПС: ⚪ нет связи"
+    assert channel_panel_line() == "🔗 Канал до сервера AWG: ⚪ нет связи"
 
 
-# ── диагностика ──────────────────────────────────────────────────────────────
+# ── диагностики по каналу нет ────────────────────────────────────────────────
 
-async def test_the_server_gets_a_known_diagnostic_and_nothing_else(services, link, pi):
-    """Закрытый список проверяет шлюз, а не сервер: взломанный ВПС шлёт
-    что угодно, и отказать обязана малина — без единого запуска."""
+async def test_a_server_asking_for_a_diagnostic_gets_nothing_run_and_no_answer(services, link, pi):
+    """Диагностику по каналу сняли. Старый или взломанный ВПС всё ещё может
+    прислать «ask tail» — малина обязана ничего не запустить, ничего не
+    прочесть и не оборвать сессию: неизвестная просьба пропускается."""
     await _up(services, pi)
-    text = await link.ask_tail(1, "unit", timeout=3)
-    assert text is not None and "journal line" in text
     before = list(pi["ran"])
-    assert await link.ask_tail(1, "../../etc/shadow", timeout=3) == "такой диагностики нет"
-    # длинное имя сервер при приёме ответа обрезает и ответа не узнаёт — это
-    # его дело; важно, что малина ничего не запустила
-    await link.ask_tail(1, "unit; cat /root/awg-gw-bundle.sh", timeout=1)
-    assert pi["ran"] == before, "по чужому имени на малине что-то запустилось"
-    assert pi["client"]._writer is not None and link.online(1)
-
-
-async def test_a_silent_gateway_gives_no_answer_rather_than_a_stale_one(services, link):
-    """Шлюз занят и не ответил — None, а не прошлый ответ: человек не должен
-    читать вчерашнюю таблицу как сегодняшнюю."""
-    gw = await _hello(link)
-    await _until(lambda: link.online(1))
-    link.tails[1] = ("unit", "вчерашний ответ")
-    assert await link.ask_tail(1, "unit", timeout=0.5) is None
-    ask = await _next(gw, "ask")
-    assert ask["what"] == "tail" and ask["name"] == "unit"
-    await gw.close()
-
-
-async def test_an_answer_for_another_name_is_not_taken_for_this_one(services, link):
-    gw = await _hello(link)
-    await _until(lambda: link.online(1))
-    task = asyncio.create_task(link.ask_tail(1, "table", timeout=2))
-    assert (await _next(gw, "ask"))["name"] == "table"
-    await gw.send("tail", {"name": "unit", "text": "журнал вместо таблицы"})
-    assert await task is None
-    await gw.close()
-
-
-async def test_asking_a_gateway_that_is_not_connected_returns_at_once(services, link):
-    t0 = time.monotonic()
-    assert await link.ask_tail(1, "unit", timeout=3) is None
-    assert time.monotonic() - t0 < 0.5, "ждали ответа от шлюза, которого нет на связи"
+    for name in ("unit", "table", "../../etc/shadow"):
+        assert await link.send(1, "ask", {"what": "tail", "name": name}), "сессия есть — отправка должна пройти"
+    await asyncio.sleep(0.5)
+    assert pi["ran"] == before, f"по просьбе диагностики на малине что-то запустилось: {pi['ran']}"
+    assert pi["client"]._writer is not None and link.online(1), "просьба диагностики оборвала сессию"
 
 
 # ── автомат переключения снимку не верит ─────────────────────────────────────

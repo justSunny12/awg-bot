@@ -106,7 +106,10 @@ async def admin_gen_for(cb: CallbackQuery, callback_data: ClientCB, services):
         await cb.answer("У профиля нет устройств", show_alert=True)
         return
     back = ClientCB(action="open", client_id=callback_data.client_id).pack()
-    await edit(cb, "Выбери устройство:", kb.pick_device(devices, "gen_link", back_cb=back))
+    from awgbot.bot import paging
+    await edit(cb, "Выбери устройство:", kb.pick_device(
+        devices, "gen_link", back_cb=back, render=cb.data, ref=callback_data.client_id,
+        page=paging.page_of(cb.message.chat.id, "pick", callback_data.client_id)))
     await cb.answer()
 
 
@@ -119,8 +122,11 @@ async def admin_client_devices(cb: CallbackQuery, callback_data: ClientCB, servi
         await cb.answer()
         return
     lines = "\n".join(texts.device_line(d) for d in devices)
+    from awgbot.bot import paging
     await edit(cb, f"📋 Устройства профиля:\n{lines}",
-               kb.admin_client_device_list(devices, callback_data.client_id))
+               kb.admin_client_device_list(
+                   devices, callback_data.client_id,
+                   page=paging.page_of(cb.message.chat.id, "clidevs", callback_data.client_id)))
     await cb.answer()
 
 
@@ -155,7 +161,9 @@ async def unassigned_list(cb: CallbackQuery, services):
     if not devices:
         await edit_nav(cb, services, "Устройств без профиля нет.", await _main_menu_markup(services))
     else:
-        await edit(cb, "📦 Устройства без профиля:", kb.unassigned_devices(devices))
+        from awgbot.bot import paging
+        await edit(cb, "📦 Устройства без профиля:", kb.unassigned_devices(
+            devices, page=paging.page_of(cb.message.chat.id, "unassigned")))
     await cb.answer()
 
 
@@ -233,8 +241,10 @@ async def device_reassign_start(cb: CallbackQuery, callback_data: DeviceCB, serv
     if not clients:
         await cb.answer("Нет других профилей для привязки", show_alert=True)
         return
+    from awgbot.bot import paging
     await edit(cb, "К какому профилю привязать устройство?",
-               kb.reassign_targets(callback_data.device_id, clients))
+               kb.reassign_targets(callback_data.device_id, clients,
+                                   page=paging.page_of(cb.message.chat.id, "reassign", callback_data.device_id)))
     await cb.answer()
 
 
@@ -341,8 +351,9 @@ async def admin_add_device_pick(cb: CallbackQuery, services):
     if not clients:
         await cb.answer("Профилей пока нет", show_alert=True)
         return
+    from awgbot.bot import paging
     await edit(cb, "Кому из профилей добавить устройство?",
-               kb.pick_client_for_add_device(clients))
+               kb.pick_client_for_add_device(clients, page=paging.page_of(cb.message.chat.id, "addpick")))
     await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
     await cb.answer()
 

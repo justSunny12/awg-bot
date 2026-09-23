@@ -23,8 +23,8 @@ linkclient.py — сторона шлюза для канала ВПС ↔ шл�
 `settings` — четыре настройки обвязки (применяет `apply_link_settings`, ответ
 `ack`, уведомление человеку в чат агента), `lists` — фиды локальной сети
 (`apply_lan_feeds`, ответ `lists_ack`; `lists_ok` — у шлюза уже те же,
-запас своего скачивания отсчитывается от конца сессии), `role` — несёт ли слот трафик, и
-`ask`/`tail` — одна из трёх диагностик только на чтение. Неизвестный вид
+запас своего скачивания отсчитывается от конца сессии), `role` — несёт ли слот
+трафик, `ask snap` — просьба о полном снимке. Неизвестный вид
 пропускается с записью в журнал: новый ВПС со старым агентом не рвёт сессию.
 Повтор отсекают нонсы сессии (gwlink, proto 2): hello несёт наш нонс, первое
 сообщение сервера — его; дальше подписываем нонсом сервера, проверяем своим.
@@ -339,11 +339,6 @@ class LinkClient:
             return
         if msg.get("t") == "role":
             await asyncio.to_thread(self.services.set_link_role, bool(msg.get("active")))
-            return
-        if msg.get("t") == "ask" and msg.get("what") == "tail":
-            name = str(msg.get("name") or "")
-            text = await asyncio.to_thread(self.services.diag_tail, name)
-            await self._send("tail", {"name": name, "text": text}, pad=gwlink.PAD_DELTA)
             return
         if msg.get("t") == "lists_ok":
             # сервер при подключении подтвердил: у нас те же фиды, что у него

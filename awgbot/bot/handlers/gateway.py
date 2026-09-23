@@ -18,6 +18,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
+from awgbot.core import config
 from awgbot.bot import texts
 from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
 from awgbot.bot.states import GatewayLanDomain
@@ -170,8 +171,9 @@ def _email_section(services):
 
 
 def _ssh_section(services):
+    from awgbot.bot import paging
     st = services.ssh_screen()
-    return texts.gateway_ssh_text(st), kb.gateway_ssh_kb(st)
+    return texts.gateway_ssh_text(st), kb.gateway_ssh_kb(st, page=paging.page_of(config.ADMIN_ID, "gwssh"))
 
 
 _SECTIONS = {
@@ -507,12 +509,12 @@ async def gw_lan(cb: CallbackQuery, services, state: FSMContext):
     await cb.answer()
 
 
-@router.callback_query(GwCB.filter(F.action.in_({"lan_add", "lan_ru", "lan_del"})))
+@router.callback_query(GwCB.filter(F.action.in_({"lan_add", "lan_ru"})))
 async def gw_lan_ask(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
     kind = callback_data.action.split("_", 1)[1]
     await state.set_state(GatewayLanDomain.value)
     await state.update_data(kind=kind)
-    await core.ask(cb, services, texts.gateway_lan_ask_domain(kind), kb.gateway_cancel_kb("lan"))
+    await core.ask(cb, services, texts.gateway_lan_ask_domain(kind), kb.gateway_cancel_kb("lan_list"))
     await cb.answer()
 
 
@@ -528,24 +530,43 @@ async def gw_lan_domain_received(message: Message, state: FSMContext, services):
     ok, out = await call(services.lan_domains, kind, domains)
     await cleanup_content(message.bot, services, message.chat.id)
     await message.answer(texts.gateway_lan_result(ok, out))
-    await send_menu(message, services, *await _lan_screen(services))
+    # назад — в свои списки, откуда пришли: с новым доменом уже в кнопках
+    await send_menu(message, services, *await _lan_list_screen(services, message.chat.id))
+
+
+async def _lan_list_screen(services, chat_id: int):
+    from awgbot.bot import paging
+    items = await call(services.lan_own_lists)
+    return (texts.gateway_lan_own_text(items),
+            kb.gateway_lan_list_kb(items, page=paging.page_of(chat_id, "lanlist")))
 
 
 @router.callback_query(GwCB.filter(F.action == "lan_list"))
-async def gw_lan_list(cb: CallbackQuery, services):
-    items = await call(services.lan_own_lists)
-    await edit_nav(cb, services, texts.gateway_lan_own_text(items), kb.gateway_lan_list_kb())
+async def gw_lan_list(cb: CallbackQuery, services, state: FSMContext):
+    await state.clear()
+    await edit_nav(cb, services, *await _lan_list_screen(services, cb.message.chat.id))
     await cb.answer()
 
 
-@router.callback_query(GwCB.filter(F.action == "lan_update"))
-async def gw_lan_update(cb: CallbackQuery, services):
-    """Фиды сейчас: секунды, поэтому синхронно с отбивкой «обновляю»."""
-    await cb.answer("Обновляю списки…")
-    ok, tail = await call(services.lan_lists_now)
-    await cb.message.answer(texts.gateway_lan_result(ok, tail or ("списки обновлены" if ok else "")))
-    # назад — туда, откуда нажали: на экран локальной сети, со свежими цифрами
-    await send_menu(cb.message, services, *await _lan_screen(services))
+@router.callback_query(GwCB.filter(F.action.in_({"lan_rm", "lan_rm!"})))
+async def gw_lan_remove(cb: CallbackQuery, callback_data: GwCB, services):
+    """«➖ домен» из своих списков: сначала подтверждение («Отмена» первой),
+    затем удаление. Номер — по отсортированному списку; список успел
+    измениться — переспрос, не чужой домен."""
+    items = kb.lan_own_sorted(await call(services.lan_own_lists))
+    num, _dot, tag = (callback_data.val or "").partition(".")
+    idx = int(num) if num.isdigit() else -1
+    if not 0 <= idx < len(items) or (tag and tag != kb.lan_own_tag(*items[idx])):
+        await cb.answer("Список изменился — открой его заново", show_alert=True)
+        return
+    kind, dom = items[idx]
+    if callback_data.action == "lan_rm":
+        await edit_nav(cb, services, texts.gateway_lan_rm_ask(dom, kind), kb.gateway_lan_rm_confirm(idx, kind, dom))
+        await cb.answer()
+        return
+    ok, out = await call(services.lan_domains, "del", [dom])
+    await cb.answer(texts.gateway_lan_result(ok, out)[:180], show_alert=not ok)
+    await edit_nav(cb, services, *await _lan_list_screen(services, cb.message.chat.id))
 
 
 @router.callback_query(GwCB.filter(F.action == "lan_router"))
@@ -646,12 +667,23 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
             # планового обновления. Через минуту, а не сейчас: канал, если он
             # есть, за это время привезёт фиды сам, и своё скачивание не понадобится
             asyncio.get_running_loop().create_task(_lan_lists_soon(services, cb.bot))
-        # он ли помеченный шлюз: не помечен или помечен другой → сообщение для
-        # пересылки основному боту отдельным сообщением, чтобы пересылалось как есть
+        # он ли помеченный шлюз: не помечен или помечен другой → токен пометки.
+        # При живом канале агент отправляет его серверу сам — просить человека
+        # пересылать сообщение незачем; сообщение с токеном — только когда
+        # канала нет. Секунды ожидания — на подключение только что поднятого
+        # клиента канала.
         outcome = await call(services.gateway_mark_outcome)
         if outcome.get("claim"):
-            await cb.message.answer(texts.gateway_claim_forward_text(outcome["claim"], outcome["status"]),
-                                    reply_markup=kb.hide_only())
+            for _ in range(6):
+                if linkclient.online():
+                    break
+                await asyncio.sleep(0.5)
+            if linkclient.online():
+                await cb.message.answer(texts.gateway_claim_via_channel_text(outcome["status"]),
+                                        reply_markup=kb.hide_only())
+            else:
+                await cb.message.answer(texts.gateway_claim_forward_text(outcome["claim"], outcome["status"]),
+                                        reply_markup=kb.hide_only())
     await _panel(cb.message, services, fresh=True, keep_id=cb.message.message_id)
 
 

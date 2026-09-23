@@ -1,6 +1,7 @@
 """Хендлеры агента шлюза: подтверждения и приём бандла."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
 
@@ -284,16 +285,17 @@ async def test_panel_offers_the_lan_screen_only_when_enabled(svc, fake_bot, monk
     monkeypatch.setattr(svc, "cached_status", lambda max_age: GwStatus(link_up=True, handshake_age=5.0))
     await gh.gw_panel(cb, svc, FakeState())
     labels = [b.text for row in msg.sent[-1][2].inline_keyboard for b in row]
-    assert "🏠 Локальная сеть" not in labels
+    assert "🏠 Локальная сеть без VPN" not in labels
     monkeypatch.setattr(svc, "cached_status", lambda max_age: _lan_status())
     await gh.gw_panel(cb, svc, FakeState())
     labels = [b.text for row in msg.sent[-1][2].inline_keyboard for b in row]
-    assert "🏠 Локальная сеть" in labels
+    assert "🏠 Локальная сеть без VPN" in labels
     await gh.gw_lan(cb, svc, FakeState())
     text, markup = msg.sent[-1][1], msg.sent[-1][2]
-    assert "Локальная сеть без VPN" in text and "end0" in text and "Свои: 1 в туннель" in text
+    assert "Локальная сеть без VPN" in text and "end0" in text and "Свои списки: 1 в туннель" in text
     labels = [b.text for row in markup.inline_keyboard for b in row]
-    assert labels[:4] == ["➕ В туннель", "➕ Напрямую", "📋 Свои списки", "🔄 Обновить списки"]
+    # обновления списков кнопкой нет: фиды привозит сервер или агент качает сам
+    assert labels == ["📋 Свои списки", "❓ Настройка роутера", "⬅️ В меню"], labels
 
 
 async def test_domain_input_goes_to_the_script_and_the_prompt_is_cleaned(svc, fake_bot, monkeypatch):
@@ -313,21 +315,97 @@ async def test_domain_input_goes_to_the_script_and_the_prompt_is_cleaned(svc, fa
     assert msg.message_id in deleted and reply.message_id in deleted, "приглашение и ввод убраны"
     answers = [s[1] for s in reply.sent if s[0] == "answer"]
     assert any(a.startswith("✅") and "добавлен" in a for a in answers)
-    assert "Локальная сеть без VPN" in answers[-1], "снова экран локальной сети"
+    assert "Свои списки" in answers[-1], "после ввода — назад в свои списки, откуда пришли"
 
 
-async def test_own_lists_screen_and_delete(svc, fake_bot, monkeypatch):
-    monkeypatch.setattr(svc, "lan_own_lists", lambda: [("vpn", "example.com"), ("ru", "shop.ru")])
+def _own_lists_labels(msg) -> list[str]:
+    return [b.text for row in msg.sent[-1][2].inline_keyboard for b in row]
+
+
+async def test_own_lists_screen_shows_domains_as_buttons_direct_first(svc, fake_bot, monkeypatch):
+    """Свои списки — кнопками «➖ домен (значок)»: сначала «напрямую» (🇷🇺), затем
+    «в туннель» (📤), внутри — по алфавиту. Порядок один для экрана и для
+    номеров в колбэках — иначе «➖» убрал бы соседний домен."""
+    monkeypatch.setattr(svc, "lan_own_lists",
+                        lambda: [("vpn", "zeta.com"), ("ru", "shop.ru"), ("vpn", "alpha.com"), ("ru", "bank.ru")])
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_list(cb, svc)
-    text = msg.sent[-1][1]
-    assert "В туннель:\n• example.com" in text and "Напрямую:\n• shop.ru" in text
-    labels = [b.text for row in msg.sent[-1][2].inline_keyboard for b in row]
-    assert labels == ["🗑 Убрать", "⬅️ Назад"]
+    await gh.gw_lan_list(cb, svc, FakeState())
+    assert _own_lists_labels(msg) == [
+        "➕ В туннель", "➕ Напрямую",
+        "➖ bank.ru (🇷🇺)", "➖ shop.ru (🇷🇺)", "➖ alpha.com (📤)", "➖ zeta.com (📤)",
+        "⬅️ Назад"], _own_lists_labels(msg)
     monkeypatch.setattr(svc, "lan_own_lists", lambda: [])
-    await gh.gw_lan_list(cb, svc)
+    await gh.gw_lan_list(cb, svc, FakeState())
     assert "Пока пусто" in msg.sent[-1][1]
+    assert _own_lists_labels(msg) == ["➕ В туннель", "➕ Напрямую", "⬅️ Назад"]
+
+
+async def test_removing_an_own_domain_asks_first_and_removes_exactly_that_one(svc, fake_bot, monkeypatch):
+    """«➖» — действие с последствиями: сначала подтверждение с «Отменой»
+    первой; «Убрать» удаляет именно тот домен, что был на кнопке, — номер
+    считается по отсортированному списку, а не по порядку в файле."""
+    own = [("vpn", "zeta.com"), ("ru", "shop.ru"), ("vpn", "alpha.com")]
+    monkeypatch.setattr(svc, "lan_own_lists", lambda: list(own))
+    calls = []
+    monkeypatch.setattr(svc, "lan_domains", lambda cmd, domains: (calls.append((cmd, domains)) or (True, f"{domains[0]}: убран")))
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    # по отсортированному: 0 — shop.ru (🇷🇺), 1 — alpha.com, 2 — zeta.com
+    await gh.gw_lan_remove(cb, GwCB(action="lan_rm", val="1"), svc)
+    text = msg.sent[-1][1]
+    assert "alpha.com" in text and "в туннель" in text, text
+    markup = msg.sent[-1][2]
+    buttons = [b for row in markup.inline_keyboard for b in row]
+    assert [b.text for b in buttons] == ["⬅️ Отмена", "➖ Убрать"], "«Отмена» — первой"
+    assert calls == [], "подтверждение само ничего не удаляет"
+
+    # «Отмена» возвращает в свои списки
+    assert GwCB.unpack(buttons[0].callback_data).action == "lan_list"
+    await gh.gw_lan_list(cb, svc, FakeState())
+    assert "➖ alpha.com (📤)" in _own_lists_labels(msg), "после отмены список прежний"
+    assert calls == []
+
+    # «Убрать» — тот самый домен
+    go = GwCB.unpack(buttons[1].callback_data)
+    assert go.action == "lan_rm!"
+    await gh.gw_lan_remove(cb, go, svc)
+    assert calls == [("del", ["alpha.com"])], f"убран не тот домен: {calls}"
+    assert "Свои списки" in msg.sent[-1][1], "после удаления — снова свои списки"
+
+
+async def test_a_stale_remove_button_does_not_touch_anything(svc, fake_bot, monkeypatch):
+    """Кнопка из старого сообщения: список с тех пор укоротился, номера нет.
+    Удалять наугад нельзя — только переспросить."""
+    monkeypatch.setattr(svc, "lan_own_lists", lambda: [("vpn", "alpha.com")])
+    calls = []
+    monkeypatch.setattr(svc, "lan_domains", lambda cmd, domains: calls.append((cmd, domains)) or (True, ""))
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    for val in ("5", "", "x"):
+        await gh.gw_lan_remove(cb, GwCB(action="lan_rm!", val=val), svc)
+    assert calls == [], f"по устаревшей кнопке что-то удалено: {calls}"
+    assert cb.answers[-1] == ("Список изменился — открой его заново", True)
+
+
+async def test_confirming_after_the_list_changed_does_not_remove_a_neighbour(svc, fake_bot, monkeypatch):
+    """Между «➖» и «Убрать» список изменился (домен добавили из консоли
+    `awg-lan-domain.sh` или со второго устройства): новый домен встал перед
+    выбранным. Хендлер обещает «список успел измениться — переспрос, не чужой
+    домен»; по номеру из подтверждения убрать соседний — прямое нарушение."""
+    own = [("vpn", "beta.com")]
+    monkeypatch.setattr(svc, "lan_own_lists", lambda: list(own))
+    calls = []
+    monkeypatch.setattr(svc, "lan_domains", lambda cmd, domains: calls.append((cmd, domains)) or (True, ""))
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_lan_remove(cb, GwCB(action="lan_rm", val="0"), svc)
+    assert "beta.com" in msg.sent[-1][1]
+    go = GwCB.unpack([b for row in msg.sent[-1][2].inline_keyboard for b in row][1].callback_data)
+    own.insert(0, ("vpn", "alpha.com"))                 # появился раньше по алфавиту
+    await gh.gw_lan_remove(cb, go, svc)
+    assert ("del", ["alpha.com"]) not in calls, (
+        "подтверждали удаление beta.com, а убран alpha.com — соседний домен")
 
 
 # ── снимок на ВПС сразу после операции из чата (канал линка) ────────────────
@@ -446,3 +524,79 @@ async def test_a_failed_bundle_sends_nothing_extra(chan):
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
     await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)
     assert [m["t"] for m in sent()] == ["snap"]
+
+
+# ── заявка на назначение шлюза после применения: канал или пересылка ─────────
+
+class _ClaimSvc(_Svc):
+    """Бандл применился, а шлюз в основном боте не назначен: есть токен заявки."""
+
+    def inspect_bundle(self, blob):
+        return {"ok": True}
+
+    def gateway_apply_report(self):
+        return ""
+
+    def lan_lists_needed(self):
+        return False
+
+    def gateway_mark_outcome(self):
+        return {"claim": "AWGGW-DUMMY-TOKEN", "status": "unmarked"}
+
+
+async def _apply_with_claim(tmp_path, monkeypatch, online):
+    """Применить бандл при заданном поведении канала; вернуть (ответы в чат,
+    сколько секунд агент ждал канал)."""
+    from awgbot.runtime import linkclient
+    d = Database(tmp_path / "gw.db"); d.init_schema()
+    svc = _ClaimSvc(d)
+    waited = []
+    real_sleep = asyncio.sleep
+
+    async def fake_sleep(sec, *a, **k):
+        waited.append(sec)
+        await real_sleep(0)
+
+    async def no_poke(services):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(linkclient, "poke", no_poke)
+    monkeypatch.setattr(linkclient, "online", online)
+    bot = FakeBot()
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
+    state = FakeState()
+    await state.update_data(bundle=base64.b64encode(b"bundle").decode())
+    await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)
+    answers = [s[1] for s in msg.sent if s[0] == "answer"]
+    return answers, sum(waited)
+
+
+async def test_a_claim_goes_through_the_channel_when_it_comes_up_in_time(tmp_path, monkeypatch):
+    """Бандл только что поднял канал; клиент канала подключается не мгновенно.
+    Агент ждёт до трёх секунд и, дождавшись, говорит «отправлено по каналу» —
+    без токена в чате: пересылать нечего, а токен в истории — лишний след."""
+    calls = {"n": 0}
+
+    def online():
+        calls["n"] += 1
+        return calls["n"] > 2                          # поднялся на третьей проверке
+
+    answers, waited = await _apply_with_claim(tmp_path, monkeypatch, online)
+    claim = [a for a in answers if "не назначен" in a]
+    assert len(claim) == 1, answers
+    assert "отправлен серверу AWG по каналу" in claim[0], claim[0]
+    assert "AWGGW-DUMMY-TOKEN" not in claim[0] and "Перешли" not in claim[0], "токен в чате при живом канале"
+    assert waited <= 3.0, f"ждали канал {waited} с — дольше обещанных трёх"
+
+
+async def test_a_claim_falls_back_to_forwarding_when_the_channel_stays_down(tmp_path, monkeypatch):
+    """Канал так и не поднялся за три секунды — единственный путь заявки —
+    переслать сообщение основному боту; без токена человеку нечего пересылать."""
+    answers, waited = await _apply_with_claim(tmp_path, monkeypatch, lambda: False)
+    claim = [a for a in answers if "не назначен" in a]
+    assert len(claim) == 1, answers
+    assert "Перешли это сообщение основному боту" in claim[0] and "AWGGW-DUMMY-TOKEN" in claim[0], claim[0]
+    assert "по каналу конфигурации:" not in claim[0]
+    assert 2.5 <= waited <= 3.0, f"канал ждали {waited} с вместо трёх"

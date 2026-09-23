@@ -42,7 +42,9 @@ async def clients_list(cb: CallbackQuery, services):
         await edit_nav(cb, services, "Профилей пока нет.", await _main_menu_markup(services))
     else:
         online = await call(services.online_client_ids)
-        await edit(cb, "👥 Профили:", kb.admin_clients(clients, online))
+        from awgbot.bot import paging
+        await edit(cb, "👥 Профили:", kb.admin_clients(
+            clients, online, page=paging.page_of(cb.message.chat.id, "clients")))
 
 
 async def _client_card_parts(services, client_id: int):

@@ -46,7 +46,7 @@ from .routing import (
     gateway_choose_kind, gateway_pick, gateway_mark_confirm, gateway_new_confirm,
     gateway_remove_confirm, routing_disable_confirm, settings_routing,
     routing_provision, settings_routing_bundle, settings_routing_lists,
-    settings_routing_users, bundle_menu_kb, gateway_list, gateway_card, gateway_diag,
+    settings_routing_users, bundle_menu_kb, gateway_list, gateway_card,
     gateway_switch_confirm, gateway_slot_cancel, settings_routing_monitor,
     gateway_lan_confirm, gateway_router_back, gateway_peer_confirm)
 from .broadcast import (
@@ -57,7 +57,7 @@ from .gateway import (
     gateway_email_offer, gateway_encryption_kb, gateway_cancel_kb, gateway_maint_kb,
     gateway_updates_kb, gateway_confirm_kb, gateway_bundle_kb,
     gateway_bundle_passphrase_kb, gateway_back_kb, gateway_update_available_kb,
-    gateway_lan_kb, gateway_lan_list_kb,
+    gateway_lan_kb, gateway_lan_list_kb, gateway_lan_rm_confirm, lan_own_sorted, lan_own_tag,
     gateway_ssh_kb, gateway_ssh_port_finisher_kb, gateway_ssh_confirm_kb)
 
 __all__ = [
@@ -89,7 +89,7 @@ __all__ = [
     "gateway_mark_confirm", "gateway_new_confirm", "gateway_remove_confirm",
     "routing_disable_confirm", "settings_routing", "routing_provision",
     "settings_routing_bundle", "settings_routing_lists", "settings_routing_users",
-    "bundle_menu_kb", "gateway_list", "gateway_card", "gateway_diag", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_router_back", "gateway_peer_confirm",
+    "bundle_menu_kb", "gateway_list", "gateway_card", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_router_back", "gateway_peer_confirm",
     "gateway_slot_cancel", "settings_routing_monitor", "broadcast_mode", "broadcast_targets", "broadcast_cancel",
     "broadcast_confirm", "gateway_panel_kb", "gateway_ssh_kb", "gateway_ssh_port_finisher_kb", "gateway_ssh_confirm_kb", "gateway_settings_kb",
     "gateway_notify_kb", "gateway_mon_kb", "gateway_backup_kb", "gateway_email_kb",
@@ -97,4 +97,5 @@ __all__ = [
     "gateway_cancel_kb", "gateway_maint_kb", "gateway_updates_kb",
     "gateway_confirm_kb", "gateway_bundle_kb", "gateway_bundle_passphrase_kb",
     "gateway_back_kb", "gateway_update_available_kb", "gateway_lan_kb", "gateway_lan_list_kb",
+    "gateway_lan_rm_confirm", "lan_own_sorted", "lan_own_tag",
 ]

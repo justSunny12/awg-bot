@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import settings
 from awgbot.bot.callbacks import Menu, UpdateCB, SetCB, GwCB, HideCB
 
-from .common import _chk, _tick
+from .common import _chk, _tick, page_slice, page_nav
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -117,23 +117,27 @@ def migration_generation_pending() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def settings_firewall(st: dict) -> InlineKeyboardMarkup:
+def settings_firewall(st: dict, page: int = 0) -> InlineKeyboardMarkup:
     """Раздел «Доступ по SSH». «Включить фильтр» — только когда есть хоть один
     адрес: фильтр без адресов открывает SSH всем и ничего не фильтрует."""
     kb = InlineKeyboardBuilder()
     kb.button(text="🅿️ Изменить порт", callback_data=SetCB(sec="fw", act="edit", key="port"))
     kb.button(text="➕ Добавить адрес", callback_data=SetCB(sec="fw", act="edit", key="app.firewall.ssh_allow"))
-    # В callback_data уезжает НОМЕР записи, а не сам адрес: разделитель полей —
-    # двоеточие, и любой IPv6 («2001:db8::1») ломал упаковку с ValueError. Адрес
-    # при этом уже записан в конфиг, то есть раздел переставал открываться
-    # навсегда, и убрать запись из чата было нечем.
-    for i, entry in enumerate(st.get("raw_allow", [])[:40]):     # весь список — кнопками
+    # В callback_data уезжает НОМЕР записи (по полному списку), а не сам адрес:
+    # разделитель полей — двоеточие, и любой IPv6 («2001:db8::1») ломал упаковку
+    # с ValueError. Адрес при этом уже записан в конфиг, то есть раздел
+    # переставал открываться навсегда, и убрать запись из чата было нечем.
+    allow = list(st.get("raw_allow", []) or [])
+    toggle = bool(st.get("enabled")) or bool(allow)
+    chunk, page, prev, nxt = page_slice(allow, page, static=4 if toggle else 3)
+    for i, entry in chunk:
         kb.button(text=f"➖ {entry}", callback_data=SetCB(sec="fw", act="do", key="del", val=str(i)))
+    nav = page_nav(kb, "fw", 0, page, prev, nxt, SetCB(sec="fw").pack())
     if st.get("enabled"):
         kb.button(text="🔴 Выключить фильтр", callback_data=SetCB(sec="fw", act="do", key="off"))
-    elif st.get("raw_allow"):
+    elif allow:
         kb.button(text="🟢 Включить фильтр", callback_data=SetCB(sec="fw", act="do", key="on"))
-    kb.adjust(1)
+    kb.adjust(2, *([1] * len(chunk)), *([nav] if nav else []), 1)
     kb.row(_back())
     return kb.as_markup()
 

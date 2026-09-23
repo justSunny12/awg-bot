@@ -95,7 +95,7 @@ def collect_warnings_gateway(services=None) -> list[str]:
     warns += _service_autostart_warning()
     if not os.path.exists(_c.GW_LINK_CONF):
         warns.append(f"нет конфига линка {_c.GW_LINK_CONF} — линк не поднимется; "
-                     f"шлюз ставится бандлом с ВПС (routing-link-setup.sh --bundle)")
+                     f"шлюз ставится бандлом с сервера AWG (routing-link-setup.sh --bundle)")
     import subprocess
     rc = subprocess.run(["systemctl", "is-enabled", _c.GW_UNIT],
                         capture_output=True).returncode
@@ -109,7 +109,7 @@ def collect_warnings_gateway(services=None) -> list[str]:
     try:
         from awgbot.infra import gwguard as _gwg
         if not _gwg.client_subnet():
-            warns.append("подсеть клиентов неизвестна (нет конфигурации с ВПС?) — "
+            warns.append("подсеть клиентов неизвестна (нет конфигурации с сервера AWG?) — "
                          "проверка MASQUERADE выключена")
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight(gw): подсеть клиентов: %s", e)
@@ -134,7 +134,7 @@ def collect_warnings_gateway(services=None) -> list[str]:
             else:
                 warns.append("таблицы awg_gw_guard нет — обвязка старого образца (iptables): "
                              "шлюз открыт клиентам туннеля; перевыпусти конфигурацию "
-                             "шлюза с ВПС и примени её здесь")
+                             "шлюза с сервера AWG и примени её здесь")
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight(gw): таблица: %s", e)
     return warns
