@@ -560,11 +560,12 @@ def test_the_channel_rule_lets_in_the_gateway_and_nobody_else(host_mode, monkeyp
     spec = nftguard.build_spec(["10.9.1.5"])
     assert spec.link_peers4 == ["10.99.99.2"] and spec.link_channel_port == 8787
     lines = [ln.strip() for ln in nftguard.render(spec).splitlines()]
-    assert "ip saddr @link_peers4 tcp dport 8787 accept" in lines
+    rule = 'iifname { "awglink" } ip saddr @link_peers4 tcp dport 8787 accept'
+    assert rule in lines, "вход канала — только из интерфейса линка: адрес /30 снаружи подделать можно"
     assert "elements = { 10.99.99.2 }" in lines
     inp = lines[lines.index("chain input {"):]
     inp = inp[:inp.index("}")]
-    assert "ip saddr @link_peers4 tcp dport 8787 accept" in inp, "правило вне входной цепочки"
+    assert rule in inp, "правило вне входной цепочки"
     assert "type filter hook input priority filter; policy drop;" in inp, (
         "цепочка с policy drop — всё, что не разрешено строкой выше, не войдёт")
     peers_set = lines[lines.index("set link_peers4 {"):]
@@ -576,7 +577,7 @@ def test_the_channel_port_follows_the_setting(host_mode, monkeypatch, tmp_path):
     канал молча не поднялся бы: шлюз стучится туда, где его дропают."""
     _links(monkeypatch, tmp_path, awglink="[Interface]\nTable = off\nAddress = 10.99.99.1/30\n")
     _conf(monkeypatch, **{"app.firewall.enabled": True, "app.routing.link_channel_port": 9099})
-    assert "ip saddr @link_peers4 tcp dport 9099 accept" in nftguard.render(
+    assert 'iifname { "awglink" } ip saddr @link_peers4 tcp dport 9099 accept' in nftguard.render(
         nftguard.build_spec(["10.9.1.5"]))
 
 

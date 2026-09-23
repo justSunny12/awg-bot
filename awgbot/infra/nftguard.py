@@ -103,6 +103,7 @@ class GuardSpec:
     peer_link_block: list[str] = field(default_factory=list)  # NAT-only форма: линки, между которыми
                                                               # транзит ЗАКРЫТ (тумблер выключен)
     link_peers4: list[str] = field(default_factory=list)      # адреса шлюзов в /30 линков
+    link_ifs: list[str] = field(default_factory=list)         # интерфейсы линков — вход канала только с них
     link_channel_port: int = 0                                # порт канала; 0 — канала нет
 
 
@@ -281,6 +282,7 @@ def build_spec(admin_ips) -> GuardSpec:
         peer_link_ifs=_peer_link_ifs(True) if host_mode else [],
         peer_link_block=_peer_link_ifs(False) if host_mode else [],
         link_peers4=link_peer_addrs() if host_mode else [],
+        link_ifs=link_ifaces() if host_mode else [],
         link_channel_port=link_channel_port() if host_mode else 0,
     )
 
@@ -465,11 +467,13 @@ def render(spec: GuardSpec) -> str:
     if spec.tunnel_nets4:
         out.append(f"        ip saddr @{SET_TUNNEL_NETS} udp dport 53 accept")
         out.append(f"        ip saddr @{SET_TUNNEL_NETS} tcp dport 53 accept")
-    if spec.link_peers4 and spec.link_channel_port:
-        # Канал ВПС ↔ шлюз: вход только с адреса шлюза в /30 своего линка.
+    if spec.link_peers4 and spec.link_channel_port and spec.link_ifs:
+        # Канал ВПС ↔ шлюз: вход только с адреса шлюза в /30 своего линка И
+        # только из интерфейса линка: адрес /30 снаружи подделать можно, а
+        # пакет, пришедший с публичного интерфейса, линком быть не может.
         # Клиентам туннеля сюда хода нет — их подсеть в другом наборе.
-        out.append(f"        ip saddr @{SET_LINK_PEERS} tcp dport "
-                   f"{int(spec.link_channel_port)} accept")
+        out.append(f"        iifname {_ifs(spec.link_ifs)} ip saddr @{SET_LINK_PEERS} "
+                   f"tcp dport {int(spec.link_channel_port)} accept")
     if spec.open_tcp:
         out.append(f"        tcp dport {_ports(spec.open_tcp)} accept")
     if spec.open_udp:
