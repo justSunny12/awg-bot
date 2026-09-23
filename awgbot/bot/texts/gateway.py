@@ -128,7 +128,8 @@ def gateway_health(st) -> str:
     lines = ["🌡 <b>Монитор здоровья</b>", ""]
     for c in st.checks:
         mark = "✅" if c.ok else ("⚪" if c.ok is None else "🔴")
-        lines.append(f"{mark} {c.name}" + (f" — {c.detail}" if c.detail else ""))
+        # детали — с хоста (вывод скрипта, имена интерфейсов): экранируем
+        lines.append(f"{mark} {_e(c.name)}" + (f" — {_e(c.detail)}" if c.detail else ""))
     lines.append("")
     ver = st.module_version or "?"
     src = f", srcversion {st.srcversion[:8]}…" if st.srcversion else ""
@@ -182,15 +183,39 @@ def gateway_lan_own_text(items: list[tuple[str, str]]) -> str:
     vpn = [d for k, d in items if k == "vpn"]
     ru = [d for k, d in items if k == "ru"]
     lines = ["📋 <b>Свои списки</b>", ""]
-    if vpn:
-        lines += ["В туннель:"] + [f"• {_e(d)}" for d in vpn] + [""]
-    if ru:
-        lines += ["Напрямую:"] + [f"• {_e(d)}" for d in ru]
+    # Список ничем не ограничен, а сообщение — 4096 символами: длинный список
+    # Telegram отверг бы целиком, и человек не увидел бы ни строки. Показываем
+    # начало каждого раздела и честный остаток; полный — `awg-bot lan list`.
+    shown = 0
+    for title, doms in (("В туннель:", vpn), ("Напрямую:", ru)):
+        if not doms:
+            continue
+        room = max(20, _OWN_SHOWN - shown)        # каждому разделу — хоть начало
+        lines += [title] + [f"• {_e(d)}" for d in doms[:room]]
+        if len(doms) > room:
+            lines.append(f"…и ещё {len(doms) - room} — полностью: <code>awg-bot lan list</code>")
+        lines.append("")
+        shown += min(len(doms), room)
     return "\n".join(lines).rstrip()
 
 
+_OWN_SHOWN = 120
+
+
 def gateway_lan_result(ok: bool, out: str) -> str:
-    body = _e(out.strip()) if out.strip() else ("готово" if ok else "не удалось")
+    out = out.strip()
+    # ответ скрипта — строка на домен; десятки доменов за раз переросли бы лимит
+    # сообщения, и Telegram отверг бы ответ целиком
+    if len(out) > 3500:
+        rows = out.splitlines()
+        keep, size = [], 0
+        for r in rows:
+            if size + len(r) > 3300:
+                break
+            keep.append(r)
+            size += len(r) + 1
+        out = "\n".join(keep) + f"\n…и ещё {len(rows) - len(keep)} строк"
+    body = _e(out) if out else ("готово" if ok else "не удалось")
     return ("✅ " if ok else "⚠️ ") + body
 
 

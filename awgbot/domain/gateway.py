@@ -13,6 +13,7 @@ gateway.py — доменная механика роли gateway (docs/ROADMAP.
 from __future__ import annotations
 
 import glob
+import html
 import json
 import logging
 import os
@@ -421,7 +422,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         notes += self._streak_alert(
             "lan", bool(lan_broken), streak,
             "⚠️ Локальная сеть без VPN: "
-            + "; ".join(f"{c.name} — {c.detail}" for c in lan_broken[:3]),
+            + "; ".join(f"{html.escape(c.name, quote=False)} — {html.escape(c.detail, quote=False)}"
+                        for c in lan_broken[:3]),
             "✅ Локальная сеть без VPN снова в порядке.", critical=False)
 
         notes += self._streak_alert(              # не критично: стреляет только на ребуте
@@ -840,7 +842,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         if fails == 2:
             return [Notification(config.ADMIN_ID,
                                  "⚠️ Списки локальной сети не обновились дважды подряд: "
-                                 + (tail or "без подробностей") + "\nФиды — через аплинк; проверь "
+                                 + (html.escape(tail, quote=False) or "без подробностей")
+                                 + "\nФиды — через аплинк; проверь "
                                  "монитор здоровья.", critical=False)]
         return []
 
@@ -1027,10 +1030,15 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     def link_settings_note(self, result: dict) -> str:
         """Текст уведомления в чат агента о настройках, пришедших по каналу."""
         what = ", ".join(self._SETTINGS_HUMAN.get(k, k) for k in result.get("changed") or [])
+        err = html.escape(str(result.get("error") or "ошибка"), quote=False)
         if result.get("ok"):
             return f"⚙️ Сервер прислал новые настройки шлюза — применены: {what}."
-        return (f"⚠️ Сервер прислал новые настройки шлюза ({what or 'настройки'}), но они не "
-                f"применились: {result.get('error') or 'ошибка'}. Вернул прежние.")
+        if not result.get("changed"):
+            # отвергнуты ещё на проверке значений — ничего не менялось, и
+            # «вернул прежние» было бы неправдой
+            return f"⚠️ Сервер прислал настройки шлюза, которые не прошли проверку: {err}. Ничего не менял."
+        return (f"⚠️ Сервер прислал новые настройки шлюза ({what}), но они не "
+                f"применились: {err}. Вернул прежние.")
 
     def gateway_claim_if_needed(self) -> str | None:
         """Токен пометки для канала, если шлюз в основном боте не помечен; иначе

@@ -79,7 +79,7 @@ class RoutingMixin:
     # самая тревога), но причина со стороны ВПС не видна, и без строки ниже её
     # ищут в аплинке и NAT, где её нет.
     def _txt_rt_bundle_hint(self, gw=None) -> str:
-        where = (f"(Условная маршрутизация → {self._gw_display(gw)} → Конфигурация шлюза)"
+        where = (f"(Условная маршрутизация → {self._gw_display_h(gw)} → Конфигурация шлюза)"
                  if gw is not None else "(<code>awg-bot gw-bundle</code>)")
         return ("\n\n<i>Если началось сразу после обновления — перевыпусти конфигурацию шлюза "
                 f"{where} и переустанови его на той стороне: набор обфускации линка обязан "
@@ -100,13 +100,13 @@ class RoutingMixin:
     def _txt_rt_gw_down(self, active=None, also=()) -> str:
         """also — резервные слоты, которые тоже лежат: их строка идёт сразу за
         первой фразой, до объяснения эффекта и подсказки про бандл."""
-        who = f" {self._gw_display(active)}" if active is not None else ""
+        who = f" {self._gw_display_h(active)}" if active is not None else ""
         tail = (" " + self._txt_rt_standby_also_down(also)) if also else ""
         return (f"🔴 Шлюз условной маршрутизации{who} недоступен.{tail}\n"
                 + self._rt_effect_line() + self._txt_rt_bundle_hint(active))
 
     def _txt_rt_gw_no_path(self, active=None, also=()) -> str:
-        who = f" {self._gw_display(active)}" if active is not None else ""
+        who = f" {self._gw_display_h(active)}" if active is not None else ""
         tail = (" " + self._txt_rt_standby_also_down(also)) if also else ""
         return (f"🔴 Шлюз условной маршрутизации{who} отвечает, но интернета за ним нет "
                 f"— проверь аплинк и NAT на самом шлюзе.{tail}\n" + self._rt_effect_line())
@@ -1293,7 +1293,7 @@ class RoutingMixin:
         if not dead:
             return []
         if len(dead) == len(slots) and len(slots) > 1:
-            names = " и ".join(self._gw_display(g) for g in slots)
+            names = " и ".join(self._gw_display_h(g) for g in slots)
             return [f"Шлюзы условной маршрутизации {names} не отвечают.\n"
                     + self._rt_effect_line()]
         out = []
@@ -1301,24 +1301,24 @@ class RoutingMixin:
             if active is not None and active.id == g.id:
                 warn = _texts.routing_gateway_warning(verdicts[g.id], at_start=True)
                 if warn:
-                    out.append(f"{warn[0].upper()}{warn[1:]} (шлюз {self._gw_display(g)})")
+                    out.append(f"{warn[0].upper()}{warn[1:]} (шлюз {self._gw_display_h(g)})")
             else:
-                out.append(f"Резервный шлюз {self._gw_display(g)} не отвечает на старте — "
+                out.append(f"Резервный шлюз {self._gw_display_h(g)} не отвечает на старте — "
                            "резерва сейчас нет, трафик идёт через "
-                           f"{self._gw_display(active) if active else 'основной'}")
+                           f"{self._gw_display_h(active) if active else 'основной'}")
         return out
 
     # ── тексты уведомлений ───────────────────────────────────────────────────
     def _txt_rt_gw_up(self, active=None) -> str:
-        who = f" {self._gw_display(active)}" if active is not None else ""
+        who = f" {self._gw_display_h(active)}" if active is not None else ""
         return f"🟢 Шлюз условной маршрутизации{who} снова в строю."
 
     def _txt_rt_switched(self, prev, new, verdict: str) -> str:
-        head = (f"🔁 РФ-шлюз переключён: {self._gw_display(prev) if prev else 'прежний'} не отвечает, "
-                f"трафик идёт через {self._gw_display(new)}.\n\n"
+        head = (f"🔁 РФ-шлюз переключён: {self._gw_display_h(prev) if prev else 'прежний'} не отвечает, "
+                f"трафик идёт через {self._gw_display_h(new)}.\n\n"
                 "Исходящий адрес у клиентов сменился — российские приложения могут "
-                f"попросить войти заново. Останусь на {self._gw_display(new)} и после того, как "
-                f"{self._gw_display(prev) if prev else 'прежний'} оживёт.\n"
+                f"попросить войти заново. Останусь на {self._gw_display_h(new)} и после того, как "
+                f"{self._gw_display_h(prev) if prev else 'прежний'} оживёт.\n"
                 "Принудительно вернуть трафик обратно можно в карточке шлюза "
                 "(⚙️ Настройки → Условная маршрутизация → Шлюзы).")
         if verdict == routing.PROBE_NO_PATH:
@@ -1333,22 +1333,22 @@ class RoutingMixin:
             mins = max(1, int((timeutil.now() - timeutil.parse_iso(raw)).total_seconds() // 60))
         except ValueError:
             mins = settings.get_int("app.routing.failover.min_interval_minutes", 10)
-        return (f"🔴 {self._gw_display(active)} перестал отвечать через {mins} мин после "
+        return (f"🔴 {self._gw_display_h(active)} перестал отвечать через {mins} мин после "
                 "переключения на него. Второе переключение подряд не делаю: проблема выглядит "
                 "системной. " + self._rt_effect_line()
                 + "\n\nПереключить принудительно можно в карточке шлюза "
                 "(⚙️ Настройки → Условная маршрутизация → Шлюзы).")
 
     def _txt_rt_standby_also_down(self, dead) -> str:
-        names = ", ".join(self._gw_display(g) for g in dead)
+        names = ", ".join(self._gw_display_h(g) for g in dead)
         return f"Резервный {names} тоже не отвечает."
 
     def _txt_rt_standby_down(self, g, active, ticks: int) -> str:
         mins = max(1, ticks * settings.get_int("app.routing.probe_seconds", 30) // 60)
-        via = f"трафик идёт через {self._gw_display(active)}" if active else "трафик не затронут"
-        return (f"⚠️ Резервный РФ-шлюз {self._gw_display(g)} не отвечает уже {mins} мин — "
+        via = f"трафик идёт через {self._gw_display_h(active)}" if active else "трафик не затронут"
+        return (f"⚠️ Резервный РФ-шлюз {self._gw_display_h(g)} не отвечает уже {mins} мин — "
                 f"резерва сейчас нет. Клиенты не затронуты: {via}.")
 
     def _txt_rt_standby_up(self, g, active) -> str:
-        via = f" Трафик идёт через {self._gw_display(active)}." if active else ""
-        return f"🟢 Резервный РФ-шлюз {self._gw_display(g)} снова отвечает — остаётся в резерве.{via}"
+        via = f" Трафик идёт через {self._gw_display_h(active)}." if active else ""
+        return f"🟢 Резервный РФ-шлюз {self._gw_display_h(g)} снова отвечает — остаётся в резерве.{via}"

@@ -186,7 +186,11 @@ class GwChannelMixin:
             mine = " ".join(str(want.get(env, "")).split())
             theirs = " ".join(str(got.get(field, "")).split())
             if mine != theirs:
-                out.append(f"{human}: у сервера «{mine or '—'}», на шлюзе «{theirs or '—'}»")
+                # до 64 значений с каждой стороны — строку обрезаем, иначе экран
+                # выпуска с несколькими расхождениями перерос бы лимит сообщения
+                def _cut(v: str) -> str:
+                    return v if len(v) <= 160 else v[:157] + "…"
+                out.append(f"{human}: у сервера «{_cut(mine) or '—'}», на шлюзе «{_cut(theirs) or '—'}»")
                 keys.append(env)
         return (out, keys) if with_keys else out
 

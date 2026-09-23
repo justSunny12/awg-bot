@@ -82,9 +82,9 @@ class GatewayLinkMixin:
             log.info("gateway: порт линка слота %s — %s (был %s)", g.id, port, g.link_port)
             notes.append(Notification(
                 config.ADMIN_ID,
-                f"🛰 Порт линка шлюза {self._gw_display(g)} на ВПС теперь {port} (был "
+                f"🛰 Порт линка шлюза {self._gw_display_h(g)} на ВПС теперь {port} (был "
                 f"{g.link_port}). Шлюз об этом не знает — перевыпусти конфигурацию шлюза "
-                f"(Условная маршрутизация → {self._gw_display(g)} → Конфигурация шлюза) и "
+                f"(Условная маршрутизация → {self._gw_display_h(g)} → Конфигурация шлюза) и "
                 "примени её на той стороне, иначе линк не поднимется."))
         if changed:
             self._gw_firewall_refresh()
@@ -152,9 +152,17 @@ class GatewayLinkMixin:
         return dev.name if dev is not None else f"слот {gw.id}"
 
     def _gw_display(self, gw) -> str:
-        """«Имя» (подпись) — для текстов и уведомлений."""
+        """«Имя» (подпись) — сырое, для данных, которые экранирует слой текстов."""
         name = self._gw_name(gw)
         return f"«{name}»" + (f" ({gw.label})" if gw.label else "")
+
+    def _gw_display_h(self, gw) -> str:
+        """То же для текста, который уходит сообщением как HTML прямо отсюда.
+        Имя и подпись задаёт человек: `<` или `&` в них без экранирования
+        Telegram отвергает, и уведомление не доходит вовсе — ровно тогда,
+        когда шлюз лёг."""
+        import html
+        return html.escape(self._gw_display(gw), quote=False)
 
     def gateway_next_slot(self) -> tuple[int, str, int, str]:
         """(номер, интерфейс, порт, /30) для нового слота. Отказ при потолке
@@ -948,10 +956,10 @@ class GatewayLinkMixin:
             self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, g.id), cur)
             notes.append(Notification(
                 config.ADMIN_ID,
-                f"🛰 Список твоих устройств изменился, а файервол шлюза {self._gw_display(g)} "
+                f"🛰 Список твоих устройств изменился, а файервол шлюза {self._gw_display_h(g)} "
                 "знает прежний: новые устройства не достанут до шлюза и его локальной сети "
                 "через туннель. Перевыпусти конфигурацию шлюза (Условная маршрутизация → "
-                f"{self._gw_display(g)} → Конфигурация шлюза) и примени её на шлюзе."))
+                f"{self._gw_display_h(g)} → Конфигурация шлюза) и примени её на шлюзе."))
         # прочие зависимости: режим без VPN, подсети, резолвер — своим текстом
         for g in self.db.gateways():
             sent = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_KEY, g.id))
@@ -969,8 +977,8 @@ class GatewayLinkMixin:
             what = ", ".join(self._gw_deps_changed(sent, cur)) or "настройки шлюза"
             notes.append(Notification(
                 config.ADMIN_ID,
-                f"🛰 Конфигурация {self._gw_display(g)} устарела: изменились {what}. "
-                f"Перевыпусти её (Условная маршрутизация → {self._gw_display(g)} → "
+                f"🛰 Конфигурация {self._gw_display_h(g)} устарела: изменились {what}. "
+                f"Перевыпусти её (Условная маршрутизация → {self._gw_display_h(g)} → "
                 "Конфигурация шлюза) и примени на шлюзе."))
         return notes
 

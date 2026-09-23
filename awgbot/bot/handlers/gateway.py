@@ -537,7 +537,8 @@ async def gw_lan_update(cb: CallbackQuery, services):
     await cb.answer("Обновляю списки…")
     ok, tail = await call(services.lan_lists_now)
     await cb.message.answer(texts.gateway_lan_result(ok, tail or ("списки обновлены" if ok else "")))
-    await _panel(cb.message, services, fresh=True, keep_id=cb.message.message_id)
+    # назад — туда, откуда нажали: на экран локальной сети, со свежими цифрами
+    await send_menu(cb.message, services, *await _lan_screen(services))
 
 
 @router.callback_query(GwCB.filter(F.action == "lan_router"))
@@ -546,7 +547,10 @@ async def gw_lan_router(cb: CallbackQuery, services):
     адресом этого шлюза (их знает только он)."""
     import socket
     net, addr = await call(services.lan_router_params)
-    await edit_nav(cb, services, texts.gateway_router_text(socket.gethostname(), net, addr), kb.gateway_lan_kb())
+    # «Назад» — на экран локальной сети, откуда пришли: с клавиатурой того экрана
+    # рецепт читался бы как сам экран «Локальная сеть»
+    await edit_nav(cb, services, texts.gateway_router_text(socket.gethostname(), net, addr),
+                   kb.gateway_back_kb("lan"))
     await cb.answer()
 
 
