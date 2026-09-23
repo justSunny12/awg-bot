@@ -7,8 +7,10 @@ handlers/gateway.py — панель и операции агента шлюза
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
+import logging
 
 from aiogram import F, Router
 from aiogram.filters import CommandStart
@@ -28,6 +30,8 @@ from awgbot.bot.states import SshPort, GwSshAllow
 from awgbot.domain.gwssh import SshOwnerRefusal
 from awgbot.domain.services import ServiceError
 from awgbot.util import bundlecrypt
+
+log = logging.getLogger("awgbot.gateway")
 
 router = Router(name="gateway")
 router.message.filter(RoleFilter("admin"))
@@ -557,6 +561,19 @@ async def gw_lan_router(cb: CallbackQuery, services):
     await cb.answer()
 
 
+async def _lan_lists_soon(services, bot, delay: float = 60.0) -> None:
+    """Первые списки после включения режима без VPN бандлом. lan_lists_update
+    сам промолчит, если фиды уже привёз канал."""
+    from awgbot.bot.notifier import send_notifications
+    await asyncio.sleep(delay)
+    try:
+        notes = await call(services.lan_lists_update)
+        if notes:
+            await send_notifications(bot, notes)
+    except Exception as e:                                # noqa: BLE001
+        log.warning("gateway: первые списки после бандла: %s", e)
+
+
 # ── бандл файлом ─────────────────────────────────────────────────────────────
 
 @router.message(F.document)
@@ -624,6 +641,11 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
         # отправить снимок: человек смотрит на карточку слота на ВПС сейчас
         from awgbot.runtime import linkclient
         await linkclient.poke(services)
+        if await call(services.lan_lists_needed):
+            # режим без VPN включён этим бандлом, списков ещё нет: не ждать
+            # планового обновления. Через минуту, а не сейчас: канал, если он
+            # есть, за это время привезёт фиды сам, и своё скачивание не понадобится
+            asyncio.get_running_loop().create_task(_lan_lists_soon(services, cb.bot))
         # он ли помеченный шлюз: не помечен или помечен другой → сообщение для
         # пересылки основному боту отдельным сообщением, чтобы пересылалось как есть
         outcome = await call(services.gateway_mark_outcome)

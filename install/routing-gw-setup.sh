@@ -479,7 +479,10 @@ set -u
 D="${AWG_DNSMASQ_D:-/etc/dnsmasq.d}"
 VPN="$D/awg-gw-vpn-user.conf"; RU="$D/awg-gw-ru-user.conf"
 TABLE="inet awg_home"
-UPLINK_CONF="${AWG_UPLINK_CONF:-/etc/amnezia/amneziawg/awg0.conf}"
+# Аплинк — тот, что нашёл скрипт обвязки (UPLINK_IF в статусе): на машине с
+# аплинком не awg0 иначе хост ВПС не был бы под запретом
+_up="$(sed -n 's/^UPLINK_IF=//p' /etc/awg-gw/gateway.status 2>/dev/null | head -n1 | tr -cd 'A-Za-z0-9_.-')"
+UPLINK_CONF="${AWG_UPLINK_CONF:-/etc/amnezia/amneziawg/${_up:-awg0}.conf}"
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 [ "$(id -u)" = "0" ] || { echo "нужен root"; exit 1; }
 touch "$VPN" "$RU"
@@ -1262,8 +1265,11 @@ lan_apply() {                  # отказ — return 1 с LAN_ERROR: юнит 
         printf 'stop-dns-rebind\nrebind-localhost-ok\n'
         # IPv6 в квартире выключить с малины нельзя (RA раздаёт роутер, networkd
         # OMV включает v6 на интерфейсе при каждом Apply) — зато AAAA можно не
-        # отдавать: без адреса v6 трафик мимо туннеля не уйдёт
-        if command -v dnsmasq >/dev/null 2>&1 && dnsmasq --help 2>&1 | grep -q 'filter-AAAA'; then
+        # отдавать: без адреса v6 трафик мимо туннеля не уйдёт. Пакета ещё нет
+        # (первое применение: конфиг пишется ДО apt) — ключ кладём: apt ставит
+        # dnsmasq ≥ 2.89 (Debian 12+), а без него первый же старт раздавал бы
+        # AAAA до следующего реассерта — днями
+        if ! command -v dnsmasq >/dev/null 2>&1 || dnsmasq --help 2>&1 | grep -q 'filter-AAAA'; then
             printf 'filter-AAAA\n'
         fi
     } > "$_tmp"

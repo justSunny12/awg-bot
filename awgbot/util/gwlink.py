@@ -131,11 +131,14 @@ def unpack(key: bytes, line: bytes | str, *, now: float | None = None,
         raise ProtocolError("сообщение повреждено") from e
     if not isinstance(data, dict) or not isinstance(data.get("t"), str):
         raise ProtocolError("сообщение без вида")
-    ts = int(data.get("ts") or 0)
+    try:
+        ts = int(data.get("ts") or 0)
+        seq = int(data.get("seq") or 0)
+    except (TypeError, ValueError, OverflowError) as e:
+        raise ProtocolError("сообщение повреждено") from e
     now = time.time() if now is None else now
     if abs(now - ts) > MAX_SKEW_SECONDS:
         raise ProtocolError("сообщение вне окна времени — повтор или часы разошлись")
-    seq = int(data.get("seq") or 0)
     if last_seq is not None and seq <= last_seq:
         raise ProtocolError("порядок сообщений нарушен — повтор")
     data.pop("_", None)

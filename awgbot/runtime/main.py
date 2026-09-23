@@ -485,11 +485,14 @@ async def main() -> None:
         try:
             await asyncio.to_thread(services.reconcile_ssh_access)  # SSH из туннеля: set устройств админа
             await asyncio.to_thread(services.retire_legacy_ssh_gate)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("reconcile_ssh_access на старте: %s", e)
+        try:
             # override юнита dnsmasq — к версии из поставки: режим install при
             # обновлении не повторяется, и правки override'а иначе не доезжают
             await asyncio.to_thread(services.resolver_ensure_dropin)
         except Exception as e:                           # noqa: BLE001
-            log.warning("reconcile_ssh_access на старте: %s", e)
+            log.warning("resolver_ensure_dropin на старте: %s", e)
         try:
             # Слоты шлюзов (концепт «резервный шлюз»): юнит первого линка —
             # на шаблон, активный на холодном старте — предпочтительный.

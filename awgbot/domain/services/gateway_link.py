@@ -944,7 +944,10 @@ class GatewayLinkMixin:
                     config.ADMIN_ID,
                     f"✅ На шлюзе {self._gw_display_h(g)} конфигурация совпадает с выданной.")
             return True, None
-        sig = gwlink.settings_hash({k: ln for ln, k in pending}) if pending else ""
+        # подпись — по самим строкам: settings_hash знает только ключи канала, и
+        # смена подсетей соседей (едут файлом) не давала бы нового напоминания
+        import hashlib
+        sig = hashlib.sha256("\n".join(ln for ln, _k in pending).encode()).hexdigest()
         if told == sig:
             return True, None
         self.db.set_state(key, sig)

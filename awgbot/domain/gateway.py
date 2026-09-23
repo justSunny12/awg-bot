@@ -882,6 +882,17 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             self.db.set_state(self._LAN_FAILS_KEY, "0")
         return {"ok": True, "error": ""}
 
+    def lan_lists_needed(self) -> bool:
+        """Режим без VPN включён, а списков ещё нет: сразу после применения
+        бандла, включившего режим, ждать планового обновления (до шести часов)
+        значило бы оставить квартиру с пустыми наборами — «заблокированное»
+        шло бы напрямую."""
+        from awgbot.infra import gwguard
+        if not gwguard.lan_mode():
+            return False
+        ls = gwguard.lists_status()
+        return not (int(ls.get("domains") or 0) or int(ls.get("nets") or 0))
+
     def lan_lists_update(self) -> list[Notification]:
         """Задача планировщика: обновить списки; два провала подряд — замечание.
         Пока фиды привозит канал — не ходит никуда: адрес квартиры за фидами на

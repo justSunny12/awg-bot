@@ -451,7 +451,7 @@ def gateway_router_text(title: str, net: str, gw_ip: str = "") -> str:
     основной бот показывает плейсхолдер и отсылает в панель агента, агент
     подставляет настоящий."""
     net = net or "192.168.1.0/24"
-    gw_ip = gw_ip or ROUTER_IP_PLACEHOLDER
+    gw_ip = _e(gw_ip) if gw_ip else ROUTER_IP_PLACEHOLDER
     where = ("" if gw_ip != ROUTER_IP_PLACEHOLDER else
              " Адрес шлюза в ней — в панели бота шлюза (строка «локальная сеть»); ниже он — "
              f"<code>{ROUTER_IP_PLACEHOLDER}</code>.")

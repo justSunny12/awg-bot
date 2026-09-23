@@ -275,6 +275,13 @@ class LinkServer:
             return
         if kind == "ack":
             await asyncio.to_thread(self.services.gwlink_ack_in, gw.id, msg)
+            if msg.get("ok") and "LAN_MODE" in (msg.get("changed") or []):
+                # Режим без VPN только что включился каналом: фиды, отправленные
+                # при hello, шлюз отверг («режим выключен»), а повторно за сессию
+                # они не уходят. Теперь есть кому их принять — шлём заново, иначе
+                # квартира ждала бы своих фидов до следующего скачивания агента.
+                sess.lists_sent = ""
+                await self.deliver_lists(gw.id)
             return
         if kind == "claim":
             token = str(msg.get("token") or "")[:4096]
