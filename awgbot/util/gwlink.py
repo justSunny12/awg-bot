@@ -36,13 +36,20 @@ PREFIX = "GL1:"
 PROTO = 1
 # Больше этого — рвём сессию, не пытаясь разобрать: единственный источник на том
 # конце наш же агент, и мегабайтная строка означает либо поломку, либо попытку
-# засадить нам память. Для списков этапа 3 будет свой предел и чанки.
+# засадить нам память. Предел один на обоих концах — и у приёмника строки, и у
+# разбора ниже. Фиды локальной сети (этап 3) идут одним сжатым сообщением и
+# весят килобайты — до предела далеко.
 MAX_LINE = 256 * 1024
 # Окно повтора. Семь суток gwsign нужны человеческой пересылке; здесь обе
 # стороны живые и в одной сети, и широкое окно только помогало бы повторщику.
 MAX_SKEW_SECONDS = 300
 PAD_SNAP = 512
 PAD_DELTA = 256
+# Большое тело (фиды локальной сети) режется на части этого размера: строка
+# с конвертом обязана влезть в MAX_LINE на приёмной стороне, иначе сессия
+# рвётся, переподключается, получает тот же фид — и так по кругу.
+CHUNK = 128 * 1024
+MAX_CHUNKS = 64
 
 
 class ProtocolError(ValueError):
@@ -129,3 +136,82 @@ def unpack(key: bytes, line: bytes | str, *, now: float | None = None,
         raise ProtocolError("порядок сообщений нарушен — повтор")
     data.pop("_", None)
     return data
+
+
+# ── настройки по каналу (этап 2) ─────────────────────────────────────────────
+#
+# Канал возит ДАННЫЕ из закрытого списка, никогда код и никогда секреты. Ключи —
+# ровно те, что бандл сегодня везёт в юнит обвязки переменными окружения, и ни
+# одного больше. Чего здесь нет и не будет: конфиг аплинка (внутри приватный
+# ключ), ключи линка, токен агента, почта, фраза шифрования, тело скрипта,
+# поставка — всё это только бандлом, который переносит человек.
+# PEER_HOME_NETS здесь НЕТ, и это не забыто: на шлюзе подсети соседей живут не
+# только в юните, но и в AllowedIPs пира ВПС в конфиге линка — от них awg
+# принимает пакеты и ставит маршруты. Конфиг линка правит только бандл, и
+# доставка одного юнита дала бы зелёную галочку при неработающем доступе.
+SETTINGS_KEYS = ("ADMIN_IPS", "HOME_SUBNETS", "LAN_MODE", "RESOLVER")
+BUNDLE_ONLY_KEYS = ("PEER_HOME_NETS",)
+_MAX_LIST = 64
+
+
+def _ipv4(tok: str) -> bool:
+    import ipaddress
+    try:
+        return ipaddress.ip_address(tok).version == 4
+    except ValueError:
+        return False
+
+
+def _cidr4(tok: str) -> bool:
+    import ipaddress
+    if "/" not in tok:
+        return False
+    try:
+        return ipaddress.ip_network(tok, strict=False).version == 4
+    except ValueError:
+        return False
+
+
+def _norm(val) -> str:
+    return " ".join(str(val if val is not None else "").split())
+
+
+def validate_settings(raw: dict) -> dict:
+    """Проверить присланные настройки по типу каждого значения.
+
+    Неизвестный ключ игнорируется (новый ВПС, старый агент). Значение не
+    прошло проверку — отвергается ВСЁ сообщение: половина новых настроек хуже
+    старых целиком. Проверка строже, чем нужно для работы: в значениях могут
+    быть только цифры, точки, косые и пробелы — ни кавычек, ни переводов строк,
+    то есть их нечем вывести ни в юнит, ни в оболочку.
+    """
+    if not isinstance(raw, dict):
+        raise ProtocolError("настройки — не словарь")
+    out: dict[str, str] = {}
+    for key in SETTINGS_KEYS:
+        if key not in raw:
+            raise ProtocolError(f"в настройках нет {key}")
+        val = _norm(raw[key])
+        toks = val.split()
+        if len(toks) > _MAX_LIST:
+            raise ProtocolError(f"{key}: слишком много значений")
+        if key == "LAN_MODE":
+            ok = val in ("0", "1")
+        elif key == "RESOLVER":
+            ok = val == "" or _ipv4(val)
+        elif key == "ADMIN_IPS":
+            ok = all(_ipv4(t) for t in toks)
+        else:                                    # HOME_SUBNETS, PEER_HOME_NETS
+            ok = all(_cidr4(t) for t in toks)
+        if not ok:
+            raise ProtocolError(f"{key}: недопустимое значение")
+        out[key] = val
+    return out
+
+
+def settings_hash(values: dict) -> str:
+    """Отпечаток набора настроек: ключи по порядку, значения нормализованы.
+    Хэш содержимого, а не счётчик поколений: ВПС, восстановленный из копии, не
+    откатит счётчик назад и не решит, что малина «уже применила более новое»."""
+    text = "".join(f"{k}={_norm(values.get(k, ''))}\n" for k in SETTINGS_KEYS)
+    return hashlib.sha256(text.encode()).hexdigest()

@@ -8,6 +8,12 @@ routing-gw-setup.sh (юнит awg-link-gw.service), и локальные доб
 наборы с динамикой (`ssh_allow4`, `server4`: резолв имён DynDNS), которые
 агент наполняет сам через `set_sync`, как основной бот держит admin4.
 
+Юнит обвязки агент правит в одном случае — настройки, пришедшие каналом
+линка (`unit_set_env`/`unit_restore`): переписывает строки Environment= четырёх
+ключей `gwlink.SETTINGS_KEYS` и перезапускает юнит, при отказе возвращает
+прежний текст. Фиды, привезённые каналом, лежат в /var/lib/awg-gw/feed и
+применяются тем же скриптом списков с AWG_LAN_FROM.
+
 Локальное состояние файервола шлюза — /etc/awg-gw/firewall.env, его читают
 скрипт и юнит (EnvironmentFile): ADMIN_IPS_EXTRA (доверенные из туннеля сверх
 бандла, `awg-bot firewall allow`), SSH_PORT (факт: порт, который слушает
@@ -327,11 +333,87 @@ def unit_state() -> dict:
     return out
 
 
-def reassert() -> tuple[bool, str]:
+def unit_path() -> Path:
+    return Path(f"/etc/systemd/system/{config.GW_UNIT}")
+
+
+def unit_set_env(values: dict[str, str]) -> str:
+    """Переписать строки `Environment=KEY=…` юнита обвязки для данных ключей и
+    перечитать юниты. Возвращает прежний текст юнита — для отката.
+
+    Настройки, пришедшие каналом, кладём ПРЯМО В ЮНИТ, а не отдельным файлом
+    рядом: юнит — единственный источник, из которого скрипт обвязки стартует
+    при каждой загрузке, и он же переписывает юнит при каждом применении. Файл
+    рядом (EnvironmentFile) переживал бы применение старого бандла руками и
+    тихо возвращал бы значения, которые человек только что заменил.
+
+    Значения к этому моменту проверены строго (цифры, точки, косые, пробелы):
+    кавычек и переводов строк в них нет, вывести из строки нечем.
+    """
+    path = unit_path()
+    text = path.read_text(encoding="utf-8")
+    new = text
+    for key, val in values.items():
+        if not re.fullmatch(r"[0-9./ ]*", val):
+            raise GwGuardError(f"{key}: недопустимые символы в значении")
+        line = f'Environment="{key}={val}"'
+        pat = re.compile(rf'^Environment="?{re.escape(key)}=[^\n]*$', re.M)
+        if pat.search(new):
+            new = pat.sub(line, new, count=1)
+        else:
+            # ключа в юните нет (обвязка старого образца) — перед первым
+            # EnvironmentFile или ExecStart, туда, где его и ставит скрипт
+            anchor = re.search(r"^(EnvironmentFile=|ExecStart=)", new, re.M)
+            if anchor is None:
+                raise GwGuardError("юнит обвязки без ExecStart — не трогаю")
+            new = new[:anchor.start()] + line + "\n" + new[anchor.start():]
+    if new != text:
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(new, encoding="utf-8")
+        tmp.replace(path)
+        try:
+            _daemon_reload()
+        except GwGuardError:
+            # Юнит переписан, а systemd о нём не узнал: «не применилось» при новых
+            # значениях в файле — худший исход, следующая доставка увидела бы
+            # «совпало» и не перезапустила бы ничего. Возвращаем прежний текст.
+            tmp.write_text(text, encoding="utf-8")
+            tmp.replace(path)
+            raise
+    return text
+
+
+def _daemon_reload() -> None:
+    try:
+        proc = subprocess.run(["systemctl", "daemon-reload"], capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise GwGuardError(f"systemctl daemon-reload не отработал: {e}") from e
+    if proc is not None and getattr(proc, "returncode", 0) != 0:
+        raise GwGuardError("systemctl daemon-reload отказал: "
+                           + proc.stderr.decode(errors="replace").strip()[-200:])
+
+
+def unit_restore(text: str) -> None:
+    """Вернуть юнит к прежнему тексту (откат неудачного применения)."""
+    path = unit_path()
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+    _daemon_reload()
+
+
+def reassert(timeout: int = 90) -> tuple[bool, str]:
     """Перевыставить таблицу: рестарт юнита — тот зовёт скрипт с окружением
     бандла. Линк скрипт не трогает, если конфиг не менялся."""
-    proc = subprocess.run(["systemctl", "restart", config.GW_UNIT],
-                          capture_output=True, timeout=90)
+    try:
+        proc = subprocess.run(["systemctl", "restart", config.GW_UNIT],
+                              capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False, f"юнит обвязки не отработал за {timeout} с"
+    except OSError as e:
+        # systemctl нет или не запустился — тот же отказ: вызывающий обязан
+        # откатить юнит, а не оставить новые значения без таблицы под ними
+        return False, f"systemctl не запустился: {e}"
     ok = proc.returncode == 0
     return ok, "" if ok else proc.stderr.decode(errors="replace").strip()[-300:]
 
@@ -594,10 +676,18 @@ def iface_for_subnet(net: str) -> Optional[tuple[str, str]]:
     return None
 
 
-def run_lan_lists(timeout: int = 600) -> tuple[bool, str]:
-    """Обновить списки скриптом обвязки. (ok, хвост вывода)."""
+LAN_FEED_DIR = "/var/lib/awg-gw/feed"
+
+
+def run_lan_lists(timeout: int = 600, from_dir: str = "") -> tuple[bool, str]:
+    """Обновить списки скриптом обвязки. (ok, хвост вывода). from_dir — фиды
+    не качать, а взять готовыми оттуда (их привёз канал линка)."""
+    import os
+    env = dict(os.environ)
+    if from_dir:
+        env["AWG_LAN_FROM"] = from_dir
     try:
-        proc = subprocess.run([LAN_LISTS_SCRIPT], capture_output=True, timeout=timeout)
+        proc = subprocess.run([LAN_LISTS_SCRIPT], capture_output=True, timeout=timeout, env=env)
     except FileNotFoundError:
         return False, "скрипта списков нет — перевыпусти конфигурацию шлюза"
     except subprocess.TimeoutExpired:

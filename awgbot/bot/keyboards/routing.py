@@ -173,10 +173,22 @@ def gateway_card(state, *, back_to_list: bool) -> InlineKeyboardMarkup:
     # сессии: без неё просить некого, а неработающая кнопка хуже отсутствующей.
     if (state.get("channel") or {}).get("online"):
         kb.button(text="🔄 Обновить с шлюза", callback_data=GwSlotCB(action="snap", slot=gw.id))
-        rows.append(1)
+        kb.button(text="🩺 Диагностика обвязки", callback_data=GwSlotCB(action="diag", slot=gw.id))
+        rows += [1, 1]
     back = GwSlotCB(action="list").pack() if back_to_list else SetCB(sec="rt").pack()
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back))
     kb.adjust(*rows, 1)
+    return kb.as_markup()
+
+
+def gateway_diag(slot: int) -> InlineKeyboardMarkup:
+    """Диагностика обвязки шлюза по каналу — закрытый список из трёх."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📜 Журнал юнита обвязки", callback_data=GwSlotCB(action="diag_unit", slot=slot))
+    kb.button(text="🧱 Таблица файервола шлюза", callback_data=GwSlotCB(action="diag_table", slot=slot))
+    kb.button(text="📋 Решение скрипта обвязки", callback_data=GwSlotCB(action="diag_status", slot=slot))
+    kb.button(text="⬅️ Назад", callback_data=GwSlotCB(action="card", slot=slot))
+    kb.adjust(1)
     return kb.as_markup()
 
 

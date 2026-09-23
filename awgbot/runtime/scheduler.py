@@ -169,6 +169,9 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                 # расписанию из conf) и не пуст ли кэш — при пустом обновляет
                 # немедленно, потому что без списков режим не действует вовсе
                 await asyncio.to_thread(services.routing_update_lists)
+                # фиды локальной сети для шлюзов — тем же периодом; доставит их
+                # канал в ближайший такт живости
+                await asyncio.to_thread(services.gwlink_lan_feeds_update)
                 await asyncio.to_thread(services.reconcile_routing)
                 # источник замолчал — сказать. Кэш переживает недоступность
                 # намеренно, и потому источник может умереть навсегда, а списки

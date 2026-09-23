@@ -896,6 +896,36 @@ class GatewayLinkMixin:
             return None
         return not self.gwlink_config_drift(gw)
 
+    def _gw_peer_nets_pending(self, gw) -> bool:
+        """Подсети за другими шлюзами на шлюзе расходятся с выдаваемыми — или
+        сказать нечего (снимка нет). Их канал не везёт: они живут и в конфиге
+        линка, который правит только бандл."""
+        snap = self.gwlink_snapshot(gw.id) if getattr(gw, "id", None) else {}
+        got = snap.get("bundle") if isinstance(snap.get("bundle"), dict) else None
+        if got is None:
+            return True
+        want = " ".join(self.gateway_peer_nets(gw.id))
+        return want != " ".join(str(got.get("peer_home_nets", "")).split())
+
+    def _gw_channel_covers(self, gw) -> bool:
+        """Доставкой настроек занимается канал: сессия жива, либо канал замолчал
+        меньше `routing.link_channel.stale_hours` назад (по умолчанию сутки) —
+        он поднимется и довезёт сам. Напоминание «перевыпусти» тогда только
+        шум: человек перевыпустит, а канал довёз бы то же самое. Канал молчит
+        дольше — возвращается прежний путь, одним тихим напоминанием."""
+        if not getattr(gw, "id", None):
+            return False
+        if self.gwlink_session(gw.id):
+            return True
+        seen = self.db.get_state(self._gwlink_key(self._GWLINK_SEEN_KEY, gw.id)) or ""
+        if not seen:
+            return False
+        try:
+            age = (timeutil.now() - timeutil.parse_iso(seen)).total_seconds()
+        except ValueError:
+            return False
+        return age < 3600 * settings.get_int("app.routing.link_channel.stale_hours", 24)
+
     def gw_bundle_drift_notes(self) -> list[Notification]:
         """Состав устройств админа разошёлся с тем, что уехало в бандл слота:
         напомнить один раз на каждое новое расхождение, по слоту. Пока бандл
@@ -911,7 +941,7 @@ class GatewayLinkMixin:
             sent = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, g.id))
             if sent is None:                    # бандл слота не собирали — напоминать не о чем
                 continue
-            if self._gw_installed_matches(g) is True:
+            if self._gw_installed_matches(g) is True or self._gw_channel_covers(g):
                 continue
             if cur == sent or self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, g.id)) == cur:
                 continue
@@ -928,6 +958,9 @@ class GatewayLinkMixin:
             if sent is None:
                 continue
             if self._gw_installed_matches(g) is True:
+                continue
+            # канал довезёт режим, подсети и резолвер, но не подсети соседей
+            if self._gw_channel_covers(g) and not self._gw_peer_nets_pending(g):
                 continue
             cur = self._gw_bundle_deps(g)
             if cur == sent or self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_NOTIFIED_KEY, g.id)) == cur:

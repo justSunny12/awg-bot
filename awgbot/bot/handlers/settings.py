@@ -495,6 +495,26 @@ async def gw_slot_snap(cb: CallbackQuery, callback_data: GwSlotCB, services):
                     show_alert=not fresh)
 
 
+@router.callback_query(GwSlotCB.filter(F.action == "diag"))
+async def gw_slot_diag(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    """Диагностика обвязки шлюза по каналу — закрытый список, только чтение."""
+    await edit(cb, texts.GATEWAY_DIAG_INTRO, kb.gateway_diag(callback_data.slot))
+    await cb.answer()
+
+
+@router.callback_query(GwSlotCB.filter(F.action.in_({"diag_unit", "diag_table", "diag_status"})))
+async def gw_slot_diag_show(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    from awgbot.runtime import linkserver
+    name = callback_data.action.removeprefix("diag_")
+    srv = linkserver.current()
+    text = await srv.ask_tail(callback_data.slot, name) if srv else None
+    if text is None:
+        await cb.answer("Шлюз не ответил — канал не на связи или агент занят", show_alert=True)
+        return
+    await edit(cb, texts.gateway_diag_text(name, text), kb.gateway_diag(callback_data.slot))
+    await cb.answer()
+
+
 @router.callback_query(GwSlotCB.filter(F.action == "switch_ask"))
 async def gw_slot_switch_ask(cb: CallbackQuery, callback_data: GwSlotCB, services):
     st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
@@ -551,8 +571,13 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
         await cb.answer(str(e), show_alert=True)
         return
     await _render_card(cb, services, callback_data.slot)
-    await cb.answer("Включено: перевыпусти конфигурацию шлюза" if on
-                    else "Выключено: перевыпусти конфигурацию шлюза", show_alert=True)
+    online = bool((st.get("channel") or {}).get("online"))
+    tail = "шлюз применит сам по каналу" if online else "перевыпусти конфигурацию шлюза"
+    if online and await call(services.peer_nets_enabled):
+        # режим доедет каналом, а подсети соседей меняются у обоих шлюзов и
+        # живут в конфиге линка — это только файлом
+        tail += "; для доступа между подсетями перевыпусти конфигурации шлюзов"
+    await cb.answer(("Включено: " if on else "Выключено: ") + tail, show_alert=True)
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "router"))

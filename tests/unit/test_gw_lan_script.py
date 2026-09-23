@@ -201,6 +201,82 @@ def test_lists_report_a_failed_feed_but_keep_going(lists_env):
     assert "rc=1" in (dump / "lists.status").read_text()
 
 
+# ── списки из канала линка (концепт «канал линка», этап 3) ──────────────────
+
+@pytest.fixture()
+def channel_env(lists_env, tmp_path):
+    """Те же списки, но фиды привёз канал: каталог с domains.lst и nets.lst, а
+    curl записывает каждый вызов — адрес квартиры не должен ходить за фидами."""
+    tool, dns_d, dump, log, env = lists_env
+    bin_dir = Path(env["PATH"].split(":", 1)[0])
+    _fake(bin_dir, "curl", f'echo "curl $*" >> {log}\nexit 22\n')
+    feed = tmp_path / "channel-feed"; feed.mkdir()
+    (feed / "domains.lst").write_text(
+        "".join(f"ipset=/chan{i}.org/vpn_domains\n" for i in range(12))
+        + "ipset=/shop.ru/vpn_domains\n<html>мусор</html>\n", encoding="utf-8")
+    (feed / "nets.lst").write_text("91.108.4.0/22\n8.8.8.0/24\nне подсеть\n", encoding="utf-8")
+    return tool, dns_d, dump, log, {**env, "AWG_LAN_FROM": str(feed)}, feed
+
+
+def test_channel_feeds_are_used_without_a_single_download(channel_env):
+    """Смысл этапа 3: фиды привёз сервер, и адрес квартиры за ними не ходит ни
+    на GitHub, ни в Google. Проверки те же, что для скачанного."""
+    tool, dns_d, dump, log, env, _feed = channel_env
+    (dns_d / "awg-gw-ru-user.conf").write_text("nftset=/shop.ru/inet#awg_home#lan_ru4\n", encoding="utf-8")
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    text = log.read_text()
+    assert "curl" not in text, f"при фидах из канала скрипт ходил в сеть: {text}"
+    feed = (dns_d / "awg-gw-vpn-feed.conf").read_text()
+    assert "nftset=/chan0.org/inet#awg_home#lan_vpn4" in feed
+    assert "shop.ru" not in feed and "<html>" not in feed, "исключения и мусор — как у скачанного"
+    assert "91.108.4.0/22" in text and "8.8.8.0/24" in text and "не подсеть" not in text
+    status = (dump / "lists.status").read_text()
+    assert "source=channel\n" in status and "rc=0" in status
+
+
+def test_a_broken_channel_feed_is_refused_like_a_downloaded_one(channel_env):
+    """Сервер прислал заглушку вместо фида (или его подменили). dnsmasq квартиры
+    получает её не больше, чем получил бы скачанную: короткий фид отвергнут,
+    прежний файл на месте."""
+    tool, dns_d, dump, log, env, feed = channel_env
+    (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    (feed / "domains.lst").write_text("<html>blocked</html>\n", encoding="utf-8")
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 1 and "подозрительно короткий" in r.stderr
+    assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n"
+    assert "curl" not in log.read_text(), "отказ фида из канала не повод идти за ним в сеть"
+
+
+def test_a_channel_feed_that_dnsmasq_rejects_is_rolled_back(channel_env):
+    tool, dns_d, dump, log, env, _feed = channel_env
+    (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env={**env, "DNSMASQ_TEST_RC": "1"})
+    assert r.returncode == 1 and "откатываю" in r.stderr
+    assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n"
+    assert "systemctl restart dnsmasq" not in log.read_text()
+
+
+def test_a_missing_channel_feed_is_named_as_such(channel_env):
+    """Каталог пуст — сообщение говорит про канал, а не «фид не скачался»:
+    иначе человек пошёл бы чинить сеть малины, которая тут ни при чём."""
+    tool, dns_d, dump, log, env, feed = channel_env
+    (feed / "domains.lst").unlink()
+    (feed / "nets.lst").unlink()
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 1
+    assert "фида нет в" in r.stderr and "привозит канал" in r.stderr
+    assert "не скачался" not in r.stderr
+    assert "curl" not in log.read_text()
+
+
+def test_without_the_channel_the_script_downloads_and_says_so(lists_env):
+    tool, dns_d, dump, log, env = lists_env
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    assert "source=net\n" in (dump / "lists.status").read_text()
+
+
 # ── раздел 5 скрипта: структура ──────────────────────────────────────────────
 
 def test_home_table_keeps_its_sets_across_reasserts(script):

@@ -37,7 +37,15 @@ def channel_panel_line() -> str:
     from awgbot.runtime import linkclient
     if not linkclient.enabled():
         return ""
-    return "🔗 Канал до ВПС: " + ("🟢 на связи" if linkclient.online() else "⚪ нет связи")
+    online = linkclient.online()
+    line = "🔗 Канал до ВПС: " + ("🟢 на связи" if online else "⚪ нет связи")
+    role = linkclient.role() if online else ""
+    if role:
+        # Роль сообщает сервер: решает автомат переключения там, сам агент её
+        # не знает. Канал оборван — роль из прошлой сессии могла смениться без
+        # нас, поэтому её не показываем вовсе, а не выдаём старую за текущую.
+        line += " · " + ("несёт трафик" if role == "active" else "в резерве")
+    return line
 
 
 def gateway_panel(st) -> str:

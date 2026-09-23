@@ -279,6 +279,11 @@ async def run_gateway() -> None:
     # сообщения идут по событию; в простое по каналу не уходит ни байта.
     try:
         from awgbot.runtime import linkclient
+        from awgbot.bot.notifier import notify_one as _notify_one
+
+        async def _chan_notify(text: str) -> None:
+            await _notify_one(bot, config.ADMIN_ID, text)
+        linkclient.set_notify(_chan_notify)
         linkclient.ensure(services)
     except Exception as e:                               # noqa: BLE001
         log.warning("канал линка: клиент не поднят: %s", e)

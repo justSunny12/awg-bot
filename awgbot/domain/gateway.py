@@ -36,6 +36,13 @@ from awgbot.domain.mailmix import MailMixin  # noqa: E402
 from awgbot.domain.gwssh import GwSshMixin  # noqa: E402
 
 
+import threading  # noqa: E402
+
+# Бандл из чата и настройки из канала применяются одним и тем же скриптом через
+# тот же юнит — вперемешку они переписывали бы юнит друг другу посреди прогона.
+_APPLY_LOCK = threading.Lock()
+
+
 def _run(argv: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
     return subprocess.run(argv, capture_output=True, timeout=timeout)
 
@@ -686,10 +693,143 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         nets = gwguard.unit_env("HOME_SUBNETS").split()
         return (nets[0] if nets else ""), gwguard.script_status().get("LAN_ADDR", "")
 
-    def lan_lists_update(self) -> list[Notification]:
-        """Задача планировщика: обновить списки; два провала подряд — замечание."""
+    # ── роль слота и диагностика по каналу (концепт «канал линка», этап 4) ──
+    _LINK_ROLE_KEY = "gwlink_role"
+
+    def set_link_role(self, active: bool) -> None:
+        """Роль этого шлюза, как её видит сервер: несёт он трафик или в резерве.
+        Сам агент узнать её не может — решает автомат переключения на ВПС."""
+        self.db.set_state(self._LINK_ROLE_KEY, "active" if active else "standby")
+
+    def link_role(self) -> str:
+        """active | standby | "" — сервер не сообщал (канала нет)."""
+        return (self.db.get_state(self._LINK_ROLE_KEY) or "").strip()
+
+    # Закрытый список: имя → что показать. Никаких произвольных команд — сервер
+    # может попросить только это, и только прочесть. Всё — про обвязку, которую
+    # сервер же и выдал: юнит реассерта, таблица файервола шлюза, решение
+    # скрипта. Железо, локальная сеть и прочее хозяйство агента сюда не входят.
+    DIAG_NAMES = ("unit", "table", "status")
+    _DIAG_MAX = 3000
+    _SECRET_RE = re.compile(r"[A-Za-z0-9+/]{40,}={0,2}")
+
+    def diag_tail(self, name: str) -> str:
+        """Текст диагностики по имени из закрытого списка; чужое имя — отказ."""
+        from awgbot.infra import gwguard
+        if name not in self.DIAG_NAMES:
+            return "такой диагностики нет"
+        try:
+            if name == "unit":
+                proc = _run(["journalctl", "-u", config.GW_UNIT, "-n", "40", "--no-pager",
+                             "-o", "cat"], timeout=15)
+                text = _out(proc)
+            elif name == "table":
+                proc = _run(["nft", "list", "table", "inet", "awg_gw_guard"], timeout=15)
+                text = _out(proc) or proc.stderr.decode(errors="replace")
+            else:
+                text = pathlib_read(gwguard.STATUS_FILE)
+        except (OSError, subprocess.SubprocessError) as e:
+            return f"не прочиталось: {e}"
+        # Ключи и base64-блоки — прочь: ничего похожего на секрет в канал не
+        # уходит, даже если однажды попадёт в вывод скрипта.
+        text = self._SECRET_RE.sub("[скрыто]", text)
+        return text[-self._DIAG_MAX:] if len(text) > self._DIAG_MAX else text
+
+    # ── фиды локальной сети по каналу (концепт «канал линка», этап 3) ────────
+    _LAN_CHANNEL_HASH_KEY = "gwlink_lists_hash"
+    _LAN_CHANNEL_AT_KEY = "gwlink_lists_at"
+    # Своё скачивание молчит, пока канал привозит фиды: сервер обновляет их раз
+    # в шесть часов, запас вдвое — чтобы одна пропущенная доставка не вернула
+    # адрес квартиры на GitHub раньше, чем канал успеет исправиться.
+    _LAN_CHANNEL_FRESH_S = 12 * 3600
+    _LAN_FEED_MAX = 8 * 1024 * 1024
+
+    def lan_feeds_hash(self) -> str:
+        """Отпечаток фидов, применённых из канала; пусто — не применяли."""
+        return (self.db.get_state(self._LAN_CHANNEL_HASH_KEY) or "").strip()
+
+    def lan_feeds_from_channel_fresh(self) -> bool:
+        """Фиды возит канал — своя задача никуда не ходит.
+
+        Пока сессия жива и фиды из канала однажды пришли — да: сервер обновляет
+        их сам и везёт, когда они меняются; неизменные фиды — это не повод
+        лезть на GitHub с адреса квартиры. Канал оборван — запас 12 часов от
+        последнего контакта, дальше агент снова качает сам."""
+        from awgbot.runtime import linkclient
+        if linkclient.online() and self.lan_feeds_hash():
+            return True
+        raw = self.db.get_state(self._LAN_CHANNEL_AT_KEY) or ""
+        return raw.isdigit() and time.time() - int(raw) < self._LAN_CHANNEL_FRESH_S
+
+    def lan_feeds_touch(self, digest: str = "") -> None:
+        """Отметка «канал подтвердил фиды»: сервер назвал тот же отпечаток или
+        сессия только что закрылась — отсюда отсчитывается запас."""
+        if digest and digest != self.lan_feeds_hash():
+            return
+        if self.lan_feeds_hash():
+            self.db.set_state(self._LAN_CHANNEL_AT_KEY, str(int(time.time())))
+
+    def apply_lan_feeds(self, digest: str, packed_b64: str) -> dict:
+        """Применить фиды, привезённые каналом: {ok, error}.
+
+        Принятое — недоверенные данные с чужой машины, поэтому: потолок размера
+        до и после распаковки (сжатая бомба не должна съесть память малины),
+        сверка отпечатка с присланным, запись во временный каталог, и дальше те
+        же проверки, что и для скачанного, — формат, длина, dnsmasq --test с
+        откатом. Сами фиды — только данные: скрипт кладёт их в конфиги dnsmasq и
+        в набор nft, ничего из них не исполняется.
+        """
+        import base64
+        import hashlib
+        import zlib
         from awgbot.infra import gwguard
         if not gwguard.lan_mode():
+            return {"ok": False, "error": "режим «за шлюзом — без VPN» на шлюзе выключен"}
+        if not os.path.exists(gwguard.LAN_LISTS_SCRIPT):
+            return {"ok": False, "error": "скрипта списков нет — примени конфигурацию шлюза"}
+        if len(packed_b64 or "") > self._LAN_FEED_MAX:
+            return {"ok": False, "error": "фиды больше предела"}
+        try:
+            packed = base64.b64decode(packed_b64 or "", validate=True)
+            d = zlib.decompressobj()
+            raw = d.decompress(packed, self._LAN_FEED_MAX)
+            if d.unconsumed_tail:
+                return {"ok": False, "error": "фиды после распаковки больше предела"}
+            data = json.loads(raw.decode())
+            domains, nets = str(data["domains"]), str(data["nets"])
+        except (ValueError, KeyError, TypeError, zlib.error, UnicodeDecodeError) as e:
+            return {"ok": False, "error": f"фиды повреждены: {e}"}
+        got = hashlib.sha256((domains + "\n--\n" + nets).encode()).hexdigest()
+        if got != digest:
+            return {"ok": False, "error": "отпечаток фидов не сошёлся"}
+        if digest == self.lan_feeds_hash():
+            self.db.set_state(self._LAN_CHANNEL_AT_KEY, str(int(time.time())))
+            return {"ok": True, "error": ""}
+        os.makedirs(gwguard.LAN_FEED_DIR, mode=0o700, exist_ok=True)
+        for name, text in (("domains.lst", domains), ("nets.lst", nets)):
+            path = os.path.join(gwguard.LAN_FEED_DIR, name)
+            with open(path + ".tmp", "w", encoding="utf-8") as f:
+                f.write(text)
+            os.replace(path + ".tmp", path)
+        ok, tail = gwguard.run_lan_lists(from_dir=gwguard.LAN_FEED_DIR)
+        if not ok:
+            return {"ok": False, "error": tail or "скрипт списков отказал"}
+        with self.db.transaction():
+            self.db.set_state(self._LAN_CHANNEL_HASH_KEY, digest)
+            self.db.set_state(self._LAN_CHANNEL_AT_KEY, str(int(time.time())))
+            self.db.set_state(self._LAN_FAILS_KEY, "0")
+        return {"ok": True, "error": ""}
+
+    def lan_lists_update(self) -> list[Notification]:
+        """Задача планировщика: обновить списки; два провала подряд — замечание.
+        Пока фиды привозит канал — не ходит никуда: адрес квартиры за фидами на
+        GitHub и в Google не ходит, это и есть смысл этапа 3. Канал замолчал —
+        задача сама вернётся к скачиванию."""
+        from awgbot.infra import gwguard
+        if not gwguard.lan_mode():
+            return []
+        if self.lan_feeds_from_channel_fresh():
+            log.info("gateway: фиды локальной сети привозит канал — сам не качаю")
             return []
         ok, tail = self.lan_lists_now()
         fails = int(self.db.get_state(self._LAN_FAILS_KEY) or 0)
@@ -776,7 +916,6 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         тем же путём, что и руками: sh bundle --apply; он сам перепишет
         линк-конфиг, переподнимет линк и юнит.
         """
-        import os, tempfile
         from awgbot.util import bundlecrypt
         try:
             priv = bundlecrypt.read_privkey(pathlib_read(config.GW_LINK_CONF))
@@ -796,6 +935,12 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                 self.backup_set_passphrase(phrase)
             except ValueError as e:
                 log.warning("gateway: фраза из бандла не принята: %s", e)
+        with _APPLY_LOCK:
+            return self._apply_bundle_run(plain)
+
+    @staticmethod
+    def _apply_bundle_run(plain: bytes) -> tuple[bool, str]:
+        import os, tempfile
         fd, path = tempfile.mkstemp(prefix="awg-gw-bundle-", suffix=".sh", dir="/root")
         try:
             with os.fdopen(fd, "wb") as f:
@@ -829,6 +974,63 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             except (OSError, ValueError) as e:
                 log.warning("gateway: claim не собран: %s", e)
         return out
+
+    # ── настройки с сервера по каналу (концепт «канал линка», этап 2) ────────
+    _SETTINGS_HUMAN = {"ADMIN_IPS": "устройства админа", "HOME_SUBNETS": "локальные подсети",
+                       "LAN_MODE": "режим «за шлюзом — без VPN»",
+                       "PEER_HOME_NETS": "подсети за другими шлюзами", "RESOLVER": "резолвер"}
+
+    def apply_link_settings(self, raw: dict) -> dict:
+        """Применить настройки, присланные сервером по каналу.
+
+        Возвращает {"ok", "changed": [ключи], "error"}. Без подтверждения
+        человека: в канале нет ни кода, ни секретов, а кнопка «ок» без
+        содержания учит нажимать не глядя; о факте человек узнаёт уведомлением.
+
+        Совпало с тем, что уже в юните, — ничего не трогаем: первая доставка
+        после включения канала на неизменённой системе не рестартит обвязку
+        вовсе. Разошлось — переписываем строки юнита и перезапускаем его; скрипт
+        обвязки идемпотентен и линк не трогает, если конфиг линка тот же, так
+        что сессия канала переживает применение настроек, которые сама принесла.
+        Отказ — юнит возвращается к прежнему тексту и перезапускается: лучше
+        жить со старыми настройками, чем с половиной новых.
+        """
+        from awgbot.infra import gwguard
+        from awgbot.util import gwlink
+        try:
+            want = gwlink.validate_settings(raw)
+        except gwlink.ProtocolError as e:
+            return {"ok": False, "changed": [], "error": str(e)}
+        current = {k: " ".join(gwguard.unit_env(k).split()) for k in gwlink.SETTINGS_KEYS}
+        changed = [k for k in gwlink.SETTINGS_KEYS if want[k] != current[k]]
+        if not changed:
+            return {"ok": True, "changed": [], "error": ""}
+        with _APPLY_LOCK:
+            try:
+                before = gwguard.unit_set_env({k: want[k] for k in changed})
+            except (OSError, gwguard.GwGuardError) as e:
+                return {"ok": False, "changed": changed, "error": f"юнит не переписан: {e}"}
+            # Запас на включение режима без VPN: скрипт ставит dnsmasq через apt,
+            # а на малине это минуты, не секунды.
+            ok, err = gwguard.reassert(timeout=600)
+            if ok:
+                self.invalidate_static()
+                return {"ok": True, "changed": changed, "error": ""}
+            log.warning("gateway: настройки с сервера не применились (%s) — откатываю", err)
+            try:
+                gwguard.unit_restore(before)
+                gwguard.reassert(timeout=600)
+            except (OSError, gwguard.GwGuardError) as e2:
+                log.warning("gateway: откат юнита не удался: %s", e2)
+            return {"ok": False, "changed": changed, "error": err or "обвязка не применилась"}
+
+    def link_settings_note(self, result: dict) -> str:
+        """Текст уведомления в чат агента о настройках, пришедших по каналу."""
+        what = ", ".join(self._SETTINGS_HUMAN.get(k, k) for k in result.get("changed") or [])
+        if result.get("ok"):
+            return f"⚙️ Сервер прислал новые настройки шлюза — применены: {what}."
+        return (f"⚠️ Сервер прислал новые настройки шлюза ({what or 'настройки'}), но они не "
+                f"применились: {result.get('error') or 'ошибка'}. Вернул прежние.")
 
     def gateway_claim_if_needed(self) -> str | None:
         """Токен пометки для канала, если шлюз в основном боте не помечен; иначе

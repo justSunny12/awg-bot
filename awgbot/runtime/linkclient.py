@@ -13,6 +13,16 @@ linkclient.py — сторона шлюза для канала ВПС ↔ шл�
 
 Канал включается тем, что привёз бандл (`LINK_CHANNEL=1` в юните обвязки): без
 перевыпуска конфигурации агент никуда не ходит — это и есть рубильник.
+
+С ВПС по той же сессии приходят только данные из закрытого списка (этапы 2–4):
+`settings` — четыре настройки обвязки (применяет `apply_link_settings`, ответ
+`ack`, уведомление человеку в чат агента), `lists` — фиды локальной сети
+(`apply_lan_feeds`, ответ `lists_ack`; `lists_ok` — у шлюза уже те же,
+запас своего скачивания отсчитывается от конца сессии), `role` — несёт ли слот трафик, и
+`ask`/`tail` — одна из трёх диагностик только на чтение. Неизвестный вид
+пропускается с записью в журнал: новый ВПС со старым агентом не рвёт сессию.
+Окно ±5 минут (`gwlink.MAX_SKEW_SECONDS`) — по часам этого хоста: их
+синхронизация здесь требование, а не пожелание.
 """
 from __future__ import annotations
 
@@ -78,6 +88,7 @@ class LinkClient:
         self._rev = 0
         self._prev: dict = {}
         self._sent_bytes = 0                  # для тестов «в простое ноль пакетов»
+        self._parts: dict = {}                # сборка фидов, пришедших частями
 
     # ── соединение ───────────────────────────────────────────────────────────
 
@@ -92,6 +103,8 @@ class LinkClient:
         host, port = server_address(), server_port()
         if not host:
             raise OSError("адрес ВПС в линке не определён")
+        # Фиды локальной сети (этап 3) едут одной строкой: сжатые они весят
+        # килобайты — до предела MAX_LINE запас в десятки раз.
         reader, writer = await asyncio.open_connection(host, port, limit=gwlink.MAX_LINE)
         self._writer = writer
         self._seq = 0
@@ -99,8 +112,10 @@ class LinkClient:
         self._prev = {}
         log.info("канал линка: подключился к %s:%s", host, port)
         try:
+            lists_hash = await asyncio.to_thread(self.services.lan_feeds_hash)
             await self._send("hello", {"proto": gwlink.PROTO,
-                                       "agent": config.INSTALLED_VERSION})
+                                       "agent": config.INSTALLED_VERSION,
+                                       "lists_hash": lists_hash})
             await self.push(full=True)
             await self._maybe_claim()
             last_seq: int | None = None
@@ -117,6 +132,9 @@ class LinkClient:
                 await self._handle(msg)
         finally:
             self._writer = None
+            # запас на своё скачивание фидов отсчитывается от конца сессии
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(self.services.lan_feeds_touch)
             with contextlib.suppress(Exception):
                 writer.close()
                 await writer.wait_closed()
@@ -179,6 +197,56 @@ class LinkClient:
             await self._maybe_claim()
         return sent
 
+    async def _apply_settings(self, values) -> None:
+        """Настройки с сервера: проверить, применить, ответить, сказать человеку.
+
+        Применение — в потоке: рестарт юнита обвязки идёт секунды, и держать на
+        это время цикл событий агента (его Telegram) незачем. Ответ `ack` несёт
+        отпечаток применённого — сервер по нему понимает, что доставка
+        завершена, и больше этот набор не шлёт."""
+        result = await asyncio.to_thread(self.services.apply_link_settings, values or {})
+        body = {"ok": bool(result.get("ok")), "changed": list(result.get("changed") or []),
+                "error": str(result.get("error") or "")[:300]}
+        try:
+            body["hash"] = gwlink.settings_hash(gwlink.validate_settings(values or {}))
+        except gwlink.ProtocolError:
+            body["hash"] = ""
+        await self._send("ack", body, pad=gwlink.PAD_DELTA)
+        if result.get("changed") or not result.get("ok"):
+            # Человек узнаёт о факте в чате агента: применено без его кнопки,
+            # значит сказать обязательно. Пустое применение — тишина.
+            if _notify is not None:
+                try:
+                    await _notify(self.services.link_settings_note(result))
+                except Exception as e:                    # noqa: BLE001
+                    log.info("канал линка: уведомление не ушло: %s", e)
+            await self.push()                             # снимок с новыми значениями — сразу
+
+    def _collect_part(self, msg: dict) -> str | None:
+        """Сложить часть фидов; вернуть целое, когда пришли все. Части другого
+        отпечатка сбрасывают начатую сборку: сервер сменил фиды на ходу."""
+        digest = str(msg.get("hash") or "")[:64]
+        try:
+            i, n = int(msg.get("i")), int(msg.get("n"))
+        except (TypeError, ValueError):
+            return None
+        if not (0 < n <= gwlink.MAX_CHUNKS and 0 <= i < n):
+            return None
+        if self._parts.get("hash") != digest or self._parts.get("n") != n:
+            self._parts = {"hash": digest, "n": n, "got": {}}
+        self._parts["got"][i] = str(msg.get("z") or "")[:gwlink.CHUNK]
+        if len(self._parts["got"]) < n:
+            return None
+        whole = "".join(self._parts["got"][k] for k in range(n))
+        self._parts = {}
+        return whole
+
+    async def _apply_lists(self, digest: str, z: str) -> None:
+        result = await asyncio.to_thread(self.services.apply_lan_feeds, digest, z)
+        await self._send("lists_ack", {"ok": bool(result.get("ok")), "hash": digest,
+                                       "error": str(result.get("error") or "")[:300]},
+                         pad=gwlink.PAD_DELTA)
+
     async def _maybe_claim(self) -> None:
         """Шлюз в основном боте не помечен — отправить токен пометки каналом.
         Проверка на той стороне — общая с ручной пересылкой, включая нонсы."""
@@ -191,8 +259,42 @@ class LinkClient:
             await self._send("claim", {"token": token}, pad=gwlink.PAD_SNAP)
 
     async def _handle(self, msg: dict) -> None:
+        """Разбор одного сообщения. Исключение внутри — в журнал, а не наружу:
+        иначе поломка одного обработчика рвала бы сессию целиком, и та же
+        доставка повторялась бы на каждом переподключении."""
+        try:
+            await self._dispatch(msg)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:                            # noqa: BLE001
+            log.warning("канал линка: сообщение «%s» не обработано: %s", msg.get("t"), e)
+
+    async def _dispatch(self, msg: dict) -> None:
+        if msg.get("t") == "lists_part":
+            whole = self._collect_part(msg)
+            if whole is not None:
+                await self._apply_lists(str(msg.get("hash") or "")[:64], whole)
+            return
         if msg.get("t") == "ask" and msg.get("what") == "snap":
             await self.push(full=True)
+            return
+        if msg.get("t") == "settings":
+            await self._apply_settings(msg.get("values"))
+            return
+        if msg.get("t") == "role":
+            await asyncio.to_thread(self.services.set_link_role, bool(msg.get("active")))
+            return
+        if msg.get("t") == "ask" and msg.get("what") == "tail":
+            name = str(msg.get("name") or "")
+            text = await asyncio.to_thread(self.services.diag_tail, name)
+            await self._send("tail", {"name": name, "text": text}, pad=gwlink.PAD_DELTA)
+            return
+        if msg.get("t") == "lists_ok":
+            # сервер при подключении подтвердил: у нас те же фиды, что у него
+            await asyncio.to_thread(self.services.lan_feeds_touch, str(msg.get("hash") or ""))
+            return
+        if msg.get("t") == "lists":
+            await self._apply_lists(str(msg.get("hash") or "")[:64], str(msg.get("z") or ""))
             return
         log.info("канал линка: с ВПС пришло неизвестное «%s» — игнорирую", msg.get("t"))
 
@@ -213,6 +315,14 @@ class LinkClient:
 
 
 _client: LinkClient | None = None
+_notify = None
+
+
+def set_notify(fn) -> None:
+    """Корутина `fn(text)` — отправить человеку в чат агента. Ставит main:
+    у клиента канала своего бота нет."""
+    global _notify
+    _notify = fn
 
 
 def ensure(services) -> LinkClient | None:
@@ -224,6 +334,16 @@ def ensure(services) -> LinkClient | None:
         _client = LinkClient(services)
     _client.start()
     return _client
+
+
+def role() -> str:
+    """active | standby | "" — что последним сообщил сервер."""
+    if _client is None:
+        return ""
+    try:
+        return _client.services.link_role()
+    except Exception:                                     # noqa: BLE001
+        return ""
 
 
 def online() -> bool:

@@ -30,6 +30,9 @@
 #      (наборы lan_vpn4/lan_vpn_nets4/lan_ru4, метка в туннель, маскарад в
 #      локальную сеть) и скрипты списков в /usr/local/sbin — awg-lan-lists.sh
 #      (фиды) и awg-lan-domain.sh (личные списки, их же зовёт awg-bot lan).
+#      awg-lan-lists.sh с AWG_LAN_FROM=<каталог> фиды не качает, а берёт
+#      готовыми (domains.lst, nets.lst) — их привозит канал линка в
+#      /var/lib/awg-gw/feed; в lists.status тогда source=channel, иначе net.
 #      Таблица пишется БЕЗ delete table: наборы наполняет dnsmasq на лету, и
 #      реассерт обязан их сохранить — пересобираются только цепочки. Ручной
 #      слой прежней схемы переезжает в /var/lib/awg-gw/migrated, туда же при
@@ -41,8 +44,13 @@
 # работали. Политика INPUT для локальной сети остаётся accept.
 #
 # ОКРУЖЕНИЕ. Первую группу вшивает в себя бандл и закрепляет юнит awg-link-gw
-# строками Environment= — значения приезжают с ВПС и меняются только
-# перевыпуском конфигурации шлюза:
+# строками Environment= — значения приезжают с ВПС и меняются перевыпуском
+# конфигурации шлюза. Четыре из них (ADMIN_IPS, HOME_SUBNETS, LAN_MODE,
+# RESOLVER — gwlink.SETTINGS_KEYS) при живом канале доставляет
+# сервер: агент переписывает эти строки прямо в юните и перезапускает его
+# (концепт «канал линка», этап 2). Отдельного файла для них нет намеренно —
+# юнит единственный источник, и следующее применение бандла перепишет его
+# целиком:
 #   CLIENT_SUBNET   подсеть клиентов ВПС (MASQUERADE, изоляция)
 #   LINK_IF         интерфейс линка (awglink, у второго слота awglink2)
 #   ADMIN_IPS       устройства админа — полный доступ с туннеля
@@ -55,7 +63,9 @@
 #   HOME_SUBNETS    локальные подсети шлюза: по первой он находит свой
 #                   интерфейс и адрес в квартире
 #   RESOLVER        адрес резолвера ВПС для апстрима; пусто — запасной 1.1.1.1
-#   PEER_HOME_NETS  подсети за другими шлюзами: им из линка открыт транзит
+#   PEER_HOME_NETS  подсети за другими шлюзами: им из линка открыт транзит.
+#                   Только бандлом (gwlink.BUNDLE_ONLY_KEYS): те же подсети
+#                   стоят в AllowedIPs конфига линка, канал их не везёт
 #   LINK_CHANNEL    1 — агент держит канал состояния до ВПС внутри линка
 #                   (концепт «канал линка»); 0 или нет строки — не держит.
 #                   Сам скрипт канала не касается: он только закрепляет обе
@@ -323,10 +333,17 @@ write_lan_scripts() {          # скрипты списков — из этог
 cat > "$LAN_LISTS" <<'LISTSEOF'
 #!/bin/sh
 # awg-lan-lists.sh — списки локальной сети без VPN (концепт «локальная сеть» §3.3).
-# Зовёт агент по расписанию (с джиттером) и `awg-bot lan update`. Идемпотентно.
+# Зовёт агент по расписанию (с джиттером), `awg-bot lan update` и агент же, когда
+# фиды привёз канал (с AWG_LAN_FROM). Идемпотентно.
+# AWG_LAN_FROM=<каталог> — фиды не качать, а взять готовыми из domains.lst и
+# nets.lst в этом каталоге: их привозит сервер по каналу линка (концепт «канал
+# линка», этап 3), и адрес квартиры тогда не ходит за ними ни на GitHub, ни в
+# Google. Проверки те же, что для скачанного: формат, длина, dnsmasq --test.
 #   фид доменов  → /etc/dnsmasq.d/awg-gw-vpn-feed.conf (nftset= в lan_vpn4), минус исключения
 #   фиды подсетей → набор lan_vpn_nets4 (атомарно: flush + add)
 #   слепки наборов → /var/lib/awg-gw/*.nft (грузятся при старте до фидов)
+#   итог → /var/lib/awg-gw/lists.status: updated_at, domains, nets, rc,
+#          source (net — скачано, channel — привёз канал)
 set -u
 TABLE="inet awg_home"
 D="${AWG_DNSMASQ_D:-/etc/dnsmasq.d}"
@@ -345,8 +362,13 @@ TMP="$(mktemp)"; TMP2="$(mktemp)"; NETS="$(mktemp)"
 trap 'rm -f "$TMP" "$TMP2" "$NETS"' EXIT
 rc=0
 
+FROM="${AWG_LAN_FROM:-}"
+get_domains() {
+    if [ -n "$FROM" ]; then cp "$FROM/domains.lst" "$TMP" 2>/dev/null
+    else curl -sf --max-time 60 "$DOMAINS_URL" -o "$TMP"; fi
+}
 # ── домены: во временный файл (недокачанный .new в conf-dir читался бы демоном)
-if curl -sf --max-time 60 "$DOMAINS_URL" -o "$TMP" && [ -s "$TMP" ]; then
+if get_domains && [ -s "$TMP" ]; then
     # sed -i без суффикса — GNU-изм: правим через временный файл
     sed 's|^ipset=\(/.*/\)vpn_domains$|nftset=\1inet#awg_home#lan_vpn4|' "$TMP" > "$TMP2" && mv "$TMP2" "$TMP"
     # исключения побеждают: dnsmasq применяет одну директиву на домен, и какая
@@ -378,20 +400,26 @@ if curl -sf --max-time 60 "$DOMAINS_URL" -o "$TMP" && [ -s "$TMP" ]; then
         fi
     fi
 else
-    echo "домены: фид не скачался ($DOMAINS_URL)" >&2; rc=1
+    if [ -n "$FROM" ]; then echo "домены: фида нет в $FROM (привозит канал)" >&2
+    else echo "домены: фид не скачался ($DOMAINS_URL)" >&2; fi
+    rc=1
 fi
 
 # ── подсети: itdoginfo по сервисам + официальный фид Google
 : > "$NETS"
-for svc in $SUBNET_SERVICES; do
-    curl -sf --max-time 60 "$ITDOG/Subnets/IPv4/${svc}.lst" >> "$NETS" 2>/dev/null \
-        || { echo "подсети: $svc не скачался" >&2; rc=1; }
-    echo >> "$NETS"
-done
-curl -sf --max-time 60 "$GOOG_URL" 2>/dev/null \
-    | grep -oE '"ipv4Prefix":[[:space:]]*"[0-9./]+"' \
-    | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+' >> "$NETS" \
-    || { echo "подсети: goog.json не скачался" >&2; rc=1; }
+if [ -n "$FROM" ]; then
+    cat "$FROM/nets.lst" >> "$NETS" 2>/dev/null || { echo "подсети: нет $FROM/nets.lst" >&2; rc=1; }
+else
+    for svc in $SUBNET_SERVICES; do
+        curl -sf --max-time 60 "$ITDOG/Subnets/IPv4/${svc}.lst" >> "$NETS" 2>/dev/null \
+            || { echo "подсети: $svc не скачался" >&2; rc=1; }
+        echo >> "$NETS"
+    done
+    curl -sf --max-time 60 "$GOOG_URL" 2>/dev/null \
+        | grep -oE '"ipv4Prefix":[[:space:]]*"[0-9./]+"' \
+        | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+' >> "$NETS" \
+        || { echo "подсети: goog.json не скачался" >&2; rc=1; }
+fi
 elems="$(grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$' "$NETS" | sort -u | paste -sd, -)"
 if [ -n "$elems" ]; then
     # одной транзакцией: между flush и add окна нет
@@ -406,7 +434,8 @@ for s in lan_vpn4 lan_vpn_nets4; do
 done
 _dom="$(grep -c '^nftset=' "$FEED" 2>/dev/null)"; _dom="${_dom:-0}"
 _nets="$(printf '%s' "$elems" | tr ',' '\n' | grep -c .)"; _nets="${_nets:-0}"
-printf 'updated_at=%s\ndomains=%s\nnets=%s\nrc=%s\n' "$(date -Iseconds)" "$_dom" "$_nets" "$rc" > "$DUMP/lists.status"
+printf 'updated_at=%s\ndomains=%s\nnets=%s\nrc=%s\nsource=%s\n' "$(date -Iseconds)" "$_dom" "$_nets" "$rc" \
+    "$([ -n "$FROM" ] && echo channel || echo net)" > "$DUMP/lists.status"
 exit $rc
 LISTSEOF
 chmod 0755 "$LAN_LISTS"

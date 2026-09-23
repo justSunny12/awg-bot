@@ -31,7 +31,7 @@ PRIV = base64.b64encode(os.urandom(32)).decode()
 KEY = gwlink.channel_key(PRIV)
 
 SNAP = {"bundle": {"lan_mode": "1", "home_subnets": "192.168.68.0/24",
-                   "resolver": "10.9.1.1", "peer_home_nets": "", "admin_ips": "10.9.1.2"},
+                   "resolver": "10.9.1.1", "peer_home_nets": "", "admin_ips": "10.8.1.2"},
         "link_contract": "1", "plumbing_gen": "new", "mark_status": "confirmed",
         "agent_version": "3.1.0", "awg_generation": 1, "egress_ok": True,
         "boot_id": "b" * 36, "ts": "2026-09-22T20:00:00+03:00"}
@@ -64,6 +64,11 @@ class _Gw:
         line = await asyncio.wait_for(self.reader.readline(), timeout=timeout)
         return gwlink.unpack(self.key, line)
 
+    async def role(self) -> bool:
+        """Первое, что сервер говорит после `hello`, — роль слота (активный или
+        резерв), один раз за сессию. Прочитать её и вернуть, пришла ли."""
+        return (await self.recv())["t"] == "role"
+
     async def silent(self, seconds: float = 0.3) -> bool:
         """Правда ли, что сервер не сказал ни слова: в простое канал молчит."""
         try:
@@ -84,6 +89,15 @@ async def link(services, make_active_client, monkeypatch):
     admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     pi = services.add_device(admin.id, "NASPi")
     services.db.gateway_add(pi.device_id, "awglink", 443, "127.0.0.0/30", slot_id=1)
+    services.gateway_set_home_subnets(1, "192.168.68.0/24")
+    services.gateway_set_lan_mode(1, True)
+    monkeypatch.setattr(services, "gateway_resolver_addr", lambda g: "10.9.1.1" if g.lan_mode else "")
+    # Снимок фикстуры — ровно то, что ВПС выдаёт этому слоту: иначе с этапа 2
+    # сервер сразу отвечает на снимок настройками, а тесты здесь не про них.
+    want = services.gwlink_settings_want(services.db.gateway(1))
+    want = {k.lower(): v for k, v in want.items()}
+    want["peer_home_nets"] = " ".join(services.gateway_peer_nets(1))   # едет только бандлом
+    assert want == SNAP["bundle"], "фикстурный снимок разошёлся с выдаваемым — поправь SNAP['bundle']"
     monkeypatch.setattr(services, "_link_privkey", lambda g=None: PRIV)
     port = _free_port()
     monkeypatch.setattr(linkserver, "channel_port", lambda: port)
@@ -132,6 +146,7 @@ async def test_a_connecting_gateway_gets_a_session_and_its_snapshot_is_stored(se
     assert snap["agent_version"] == "3.1.0" and snap["egress_ok"] is True
     assert services.gwlink_snapshot_age(1) is not None and services.gwlink_snapshot_age(1) < 60
     assert link.online(1) is True
+    assert await gw.role(), "после hello сервер обязан один раз сказать роль слота"
     assert await gw.silent(), "в простое сервер не шлёт ни одного пакета"
     await gw.close()
 
@@ -182,6 +197,7 @@ async def test_a_gap_in_numbering_makes_the_server_ask_for_a_full_snapshot(servi
     await _until(lambda: services.gwlink_snapshot(1))
     await gw.send("delta", {"egress_ok": False, "rev": 9})
 
+    assert await gw.role()
     ask = await gw.recv()
     assert ask["t"] == "ask" and ask["what"] == "snap"
     assert services.gwlink_snapshot(1)["egress_ok"] is True, "дельта не по порядку всё-таки легла"
@@ -197,6 +213,7 @@ async def test_a_delta_before_any_snapshot_is_refused_and_a_full_one_is_asked(se
     gw = await _connect(link)
     await gw.send("hello", {"proto": 1, "agent": "3.1.0"})
     await gw.send("delta", {"egress_ok": False, "rev": 2})
+    assert await gw.role()
     ask = await gw.recv()
     assert ask["t"] == "ask" and ask["what"] == "snap"
     assert services.gwlink_snapshot(1) == {}
@@ -327,6 +344,7 @@ async def test_the_second_session_of_a_slot_evicts_the_first(services, link):
     assert services.gwlink_snapshot(1)["agent_version"] == "3.2.0"
     assert services.gwlink_session(1), "вытеснение первой сессии погасило и вторую"
     assert link.online(1) is True
+    assert await first.role()
     assert b"" == await first.reader.read(1), "старую сессию не закрыли"
     await first.close()
     await second.close()
@@ -446,7 +464,7 @@ def test_without_a_snapshot_there_is_no_age_and_no_verdict(services):
     «сказать нечего», а не «всё сошлось»: выдумывать вердикт из ничего —
     худшее, что может сделать экран."""
     assert services.gwlink_snapshot(1) == {} and services.gwlink_snapshot_age(1) is None
-    assert services.gwlink_card(type("G", (), {"id": 1})(), 10)["has_snap"] is False
+    assert services.gwlink_card(type("G", (), {"id": 1, "lan_mode": 0})(), 10)["has_snap"] is False
 
 
 def test_a_broken_row_in_the_state_does_not_take_the_screen_down(services):
@@ -517,6 +535,12 @@ class _Agent:
     def gateway_claim_if_needed(self):
         return self.token or None
 
+    def lan_feeds_hash(self) -> str:
+        return ""                      # фидов локальной сети из канала не применяли
+
+    def set_link_role(self, active: bool) -> None:
+        self.role = active
+
 
 async def test_the_real_client_and_the_real_server_agree_on_the_wire(
         services, link, tmp_path, monkeypatch):
@@ -544,10 +568,12 @@ async def test_the_real_client_and_the_real_server_agree_on_the_wire(
         assert services.gwlink_session(1)["agent"] == config.INSTALLED_VERSION
         sent_after_hello = client._sent_bytes
 
-        # событие на малине: перевыпуск конфигурации поменял подсети
-        agent.snap["bundle"]["home_subnets"] = "192.168.1.0/24"
+        # событие на малине: шлюз потерял выход наружу. Событие — не из
+        # настроек: смена подсетей на шлюзе с этапа 2 вызывает ответ сервера
+        # настройками, это проверяет test_gwlink_settings_delivery.py.
+        agent.snap["egress_ok"] = False
         await client.push()
-        await _until(lambda: services.gwlink_snapshot(1)["bundle"]["home_subnets"] == "192.168.1.0/24")
+        await _until(lambda: services.gwlink_snapshot(1)["egress_ok"] is False)
         assert services.gwlink_snapshot(1)["agent_version"] == "3.1.0", "дельта унесла лишнее"
 
         # тик без событий — по каналу не уходит ни байта
@@ -556,9 +582,9 @@ async def test_the_real_client_and_the_real_server_agree_on_the_wire(
         assert client._sent_bytes == bytes_before_idle > sent_after_hello
 
         # человек нажал «Обновить»: ВПС просит полный снимок
-        agent.snap["egress_ok"] = False
+        agent.snap["plumbing_gen"] = "old"
         assert await link.send(1, "ask", {"what": "snap"}) is True
-        await _until(lambda: services.gwlink_snapshot(1)["egress_ok"] is False)
+        await _until(lambda: services.gwlink_snapshot(1)["plumbing_gen"] == "old")
         assert services.db.get_state("gwlink_snap_rev_1") == "1", "нумерация началась заново"
     finally:
         await client.stop()
