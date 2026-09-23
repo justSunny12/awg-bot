@@ -13,6 +13,7 @@ class ServicesBase:
     # username бота — для deep-link'ов в текстах (t.me/<bot>?start=…); main
     # кладёт его после getMe. Пусто — ссылки не рисуются, текст остаётся текстом.
     bot_username: str = ""
+    bot_name: str = ""          # имя профиля бота (агент отдаёт его серверу снимком канала)
 
     def __init__(self, db):
         self.db = db

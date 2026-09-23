@@ -317,3 +317,130 @@ async def test_liveness_job_survives_a_broken_getme(two_slots, fake_bot, monkeyp
     monkeypatch.setattr(gwbotme, "ensure_all", _boom)
     await setup_scheduler(s, fake_bot, s.db).get_job("routing_liveness").func()
     assert ticks == [1], "такт живости не отработал"
+
+
+# ── бот шлюза из снимка канала ───────────────────────────────────────────────
+# Агент сам знает своего бота (getMe на старте) и везёт его в снимке канала.
+# Слот, заведённый до того, как сервер стал спрашивать токен, иначе остался бы
+# без ссылки: токен задаётся один раз при настройке и в интерфейсе не вводится.
+
+SNAP = {"agent_version": "3.1.0", "mark_status": "confirmed", "egress_ok": True,
+        "boot_id": "b" * 36, "ts": "2026-09-22T20:00:00+03:00"}
+
+
+def _snap_in(s, slot, agent_bot, rev=1, full=True):
+    patch = {**SNAP, "agent_bot": agent_bot} if full else {"agent_bot": agent_bot}
+    assert s.gwlink_snapshot_in(slot, {**patch, "rev": rev}, rev, full) is True, "снимок не принят"
+
+
+def test_without_a_token_the_bot_comes_from_the_channel_snapshot(two_slots):
+    """Токена слота на сервере нет, а агент прислал себя снимком — карточка и
+    подпись файла ведут в его чат. И только своего слота."""
+    s = two_slots
+    assert s.gw_bot_identity(2) == {}, "без токена и снимка бот взялся из ниоткуда"
+    _snap_in(s, 2, {"username": "pi2_gw_bot", "name": "Шлюз Pi2"})
+    assert s.gw_bot_identity(2) == {"username": "pi2_gw_bot", "name": "Шлюз Pi2"}, \
+        "снимок канала не дал бота шлюза"
+    assert s.gw_bot_identity(1) == {}, "бот из снимка слота 2 оказался у слота 1"
+
+
+def test_token_cache_wins_over_the_snapshot(two_slots):
+    """Ответ Telegram по токену точнее и переживает смену агента: при нём
+    снимок не подменяет ссылку."""
+    s = two_slots
+    _snap_in(s, 1, {"username": "from_snapshot_bot", "name": "Из снимка"})
+    s.set_gw_bot_token(TOKEN1, 1)
+    s.set_gw_bot_identity(1, "from_token_bot", "По токену")
+    assert s.gw_bot_identity(1) == {"username": "from_token_bot", "name": "По токену"}, \
+        "снимок перебил ответ getMe по токену"
+
+
+def test_replaced_token_falls_back_to_the_snapshot(two_slots):
+    """Токен сменили, getMe по новому ещё не ответил: кэш старого бота уже не
+    годится, а снимок агента — годится, он о том боте, что сейчас на машине."""
+    s = two_slots
+    s.set_gw_bot_token(TOKEN1, 1)
+    s.set_gw_bot_identity(1, "old_gw_bot", "Старый")
+    _snap_in(s, 1, {"username": "naspi_gw_bot", "name": "Шлюз квартиры"})
+    s.set_gw_bot_token(TOKEN1_NEW, 1)
+    assert s.gw_bot_identity(1) == {"username": "naspi_gw_bot", "name": "Шлюз квартиры"}
+
+
+def test_snapshot_with_empty_username_gives_no_link(two_slots):
+    """Агент стартовал без сети и getMe не прошёл — в снимке пустые строки.
+    Ссылки нет, а не «<a href="https://t.me/">…» в никуда. Так же и с именем
+    без username и с негодным username, который сервер обнулил при приёме."""
+    s = two_slots
+    for bot in ({"username": "", "name": ""}, {"username": "", "name": "Шлюз"},
+                {"username": "evil/../x", "name": "Шлюз"}):
+        _snap_in(s, 1, bot)
+        assert s.gw_bot_identity(1) == {}, f"снимок {bot!r} дал строку «Бот шлюза»"
+
+
+def test_snapshot_of_an_old_agent_without_the_field_gives_no_link(two_slots):
+    """Старый агент поля не присылает — ссылки нет, карточка не падает."""
+    s = two_slots
+    _snap_in(s, 1, None)
+    assert "agent_bot" not in s.gwlink_snapshot(1)
+    assert s.gw_bot_identity(1) == {}
+    s.db.set_state("gwlink_snap_1", json.dumps({"agent_bot": "строка"}))
+    assert s.gw_bot_identity(1) == {}, "мусор в хранимом снимке дал ссылку"
+
+
+def test_name_falls_back_to_empty_not_to_none(two_slots):
+    """Имени в снимке нет — строка, а не None: подпись ссылки текстом берёт
+    username."""
+    s = two_slots
+    _snap_in(s, 1, {"username": "naspi_gw_bot"})
+    assert s.gw_bot_identity(1) == {"username": "naspi_gw_bot", "name": ""}
+
+
+def test_a_delta_with_a_new_bot_moves_the_link_and_forgetting_the_slot_drops_it(two_slots, monkeypatch):
+    """Бота переименовали или заменили — дельта снимка меняет ссылку. Слот
+    сняли — снимок уходит, и ссылка вместе с ним: новый слот под тем же
+    номером не наследует чужого бота."""
+    s = two_slots
+    _snap_in(s, 2, {"username": "pi2_gw_bot", "name": "Шлюз Pi2"})
+    _snap_in(s, 2, {"username": "pi2_new_bot", "name": "Новый"}, rev=2, full=False)
+    assert s.gw_bot_identity(2) == {"username": "pi2_new_bot", "name": "Новый"}, \
+        "дельта с новым ботом не сменила ссылку"
+    _snap_in(s, 2, {"username": "", "name": ""}, rev=3, full=False)
+    assert s.gw_bot_identity(2) == {}, "агент без getMe, а ссылка осталась прежней"
+    monkeypatch.setattr(s, "_run_link_script", lambda mode, env=None: None)
+    _snap_in(s, 2, {"username": "pi2_gw_bot", "name": "Шлюз Pi2"}, rev=1)
+    s.gateway_remove(2)
+    assert s.gw_bot_identity(2) == {}, "снятый слот оставил ссылку из снимка"
+
+
+def test_snapshot_does_not_cancel_getme_when_a_token_exists(two_slots):
+    """Снимок не в счёт для дозаполнения по токену: слот с токеном без ответа
+    Telegram остаётся в списке на getMe, даже если ссылка уже есть из снимка.
+    Слот без токена в список не попадает, сколько бы снимков ни пришло."""
+    s = two_slots
+    _snap_in(s, 1, {"username": "naspi_gw_bot", "name": "Шлюз"})
+    _snap_in(s, 2, {"username": "pi2_gw_bot", "name": "Pi2"})
+    s.set_gw_bot_token(TOKEN1, 1)
+    assert s.gw_bot_identity_missing() == [1], "снимок отменил getMe по токену или слот без токена попал в список"
+    s.set_gw_bot_identity(1, "naspi_gw_bot", "Шлюз")
+    assert s.gw_bot_identity_missing() == []
+
+
+def test_card_and_bundle_caption_link_the_bot_from_the_snapshot(two_slots, monkeypatch):
+    """Сквозняком до текста: карточка слота (через gateway_screen_state) и
+    подпись под файлом конфигурации ведут в чат бота из снимка — с
+    экранированием имени; кэш по токену, если есть, главнее."""
+    from awgbot.bot import texts
+    s = two_slots
+    monkeypatch.setattr(s, "gateway_ping", lambda slot: None)
+    _snap_in(s, 2, {"username": "pi2_gw_bot", "name": "Шлюз <Pi2>"})
+    link = '<a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>'
+    st = s.gateway_screen_state(2, lazy_ping=False)
+    card = texts.gateway_card_text(st, [st])
+    assert card.endswith("\n\nБот шлюза: " + link), card
+    display, bot = s.gw_bundle_target(2)
+    assert f"боту шлюза ({link})" in texts.gateway_bundle_caption(display, bot), "подпись файла без ссылки"
+    s.set_gw_bot_token(TOKEN2, 2)
+    s.set_gw_bot_identity(2, "token_bot", "По токену")
+    st = s.gateway_screen_state(2, lazy_ping=False)
+    card = texts.gateway_card_text(st, [st])
+    assert 'href="https://t.me/token_bot"' in card and "pi2_gw_bot" not in card, card

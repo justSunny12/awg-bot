@@ -301,18 +301,9 @@ async def gateway_token_received(message: Message, state: FSMContext, services):
     await cleanup_content(message.bot, services, message.chat.id)   # приглашение отслужило
     # кто этот бот — сразу: карточка слота ведёт в его чат ссылкой
     from awgbot.runtime import gwbotme
-    known = await gwbotme.refresh(services, token_slot)
-    # Токен спрашивают из трёх мест: «новая машина», замена машины со сменой
-    # ключей и просто токен уже настроенного слота. Куда возвращаться, помнит state.
-    if data.get("gw_token_only"):
-        if not known:
-            await ask_tracked(message, services,
-                              "⚠️ Telegram не ответил по этому токену — он отозван или сеть. "
-                              "Токен сохранён, сервер спросит снова через 10 минут.")
-        st = await call(services.gateway_screen_state, token_slot)
-        await send_menu(message, services, texts.gateway_card_text(st, st["states"]),
-                        card_kb(st, message.chat.id))
-        return
+    await gwbotme.refresh(services, token_slot)
+    # Токен спрашивают из двух мест: «новая машина» и замена машины со сменой
+    # ключей. Куда возвращаться, помнит state.
     device_id = data.get("gw_device_id")
     if device_id:
         await _gateway_mark_go(message, services, int(device_id), slot)
@@ -570,20 +561,6 @@ async def gw_slot_router(cb: CallbackQuery, callback_data: GwSlotCB, services):
 async def gw_slot_bundle(cb: CallbackQuery, callback_data: GwSlotCB, services):
     await cb.answer()
     await _render(cb, "rt_bundle", services, key=str(callback_data.slot or ""))
-
-
-@router.callback_query(GwSlotCB.filter(F.action == "token"))
-async def gw_slot_token(cb: CallbackQuery, callback_data: GwSlotCB, services, state: FSMContext):
-    """Токен бота уже настроенного слота — для ссылок в его чат. Слот,
-    заведённый до того, как сервер стал спрашивать токен, иначе не заполнить."""
-    st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
-    if st is None:
-        return
-    await state.set_state(GatewayToken.value)
-    await state.update_data(gw_slot=st["gateway"].id, gw_token_only=True)
-    await cb.answer()
-    await core.ask(cb, services, texts.gateway_token_only_ask(st["display"], st.get("agent_bot")),
-                   kb.gateway_slot_cancel(st["gateway"].id))
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "home"))

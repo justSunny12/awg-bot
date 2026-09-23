@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 # Закрытый список полей. Тест падает на появлении нового: без сторожа в снимок
 # со временем натечёт всё, что «и так снимается».
 FACT_FIELDS = ("bundle", "link_contract", "plumbing_gen", "mark_status",
-               "agent_version", "awg_generation")
+               "agent_version", "awg_generation", "agent_bot")
 # Поля блока bundle — те же ключи, что везёт бандл в юнит, одной таблицей в
 # util/gwlink: разойдись списки, сверка на ВПС молча не видела бы расхождения.
 from awgbot.util import gwlink as _gwlink  # noqa: E402
@@ -77,8 +77,11 @@ def boot_id() -> str:
         return ""
 
 
+_USERNAME_RE = re.compile(r"[A-Za-z0-9_]{1,32}")   # username Telegram — и только он идёт в ссылку
+
+
 def collect(*, mark_status: str, egress_ok: bool | None, guard_info: dict | None,
-            peer_nets: tuple[bool, list[str]] | None) -> dict:
+            peer_nets: tuple[bool, list[str]] | None, agent_bot: dict | None = None) -> dict:
     """Собрать снимок. Всё чтение — локальное: юнит обвязки, конфиг линка,
     install/awg.lock, константа версии. Ни одного сетевого вызова (§3.5.0.1).
 
@@ -96,6 +99,10 @@ def collect(*, mark_status: str, egress_ok: bool | None, guard_info: dict | None
         "mark_status": mark_status or "",
         "agent_version": config.INSTALLED_VERSION,
         "awg_generation": awglock.generation(),
+        # кто бот этого шлюза (username, имя) — сервер ведёт в его чат ссылкой;
+        # без своего getMe (сеть на старте) поле пустое, а не выдуманное
+        "agent_bot": {"username": str((agent_bot or {}).get("username") or ""),
+                      "name": str((agent_bot or {}).get("name") or "")},
         "egress_ok": egress_ok,
         # rev ставит клиент по месту в сессии, ts — конверт (время отправки):
         # их значения здесь всё равно перезаписались бы
@@ -166,6 +173,12 @@ def sanitize(raw: dict) -> dict:
             out["awg_generation"] = int(src["awg_generation"])
         except (TypeError, ValueError):
             pass
+    ab = src.get("agent_bot")
+    if isinstance(ab, dict):
+        # username уходит в адрес ссылки — только то, что Telegram и выдаёт
+        username = _clean_str(ab.get("username", ""))
+        out["agent_bot"] = {"username": username if _USERNAME_RE.fullmatch(username) else "",
+                            "name": _clean_str(ab.get("name", ""))[:64]}
     if "egress_ok" in src:
         val = src["egress_ok"]
         out["egress_ok"] = bool(val) if isinstance(val, bool) else None

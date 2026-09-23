@@ -1425,7 +1425,9 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             mark_status=self.gateway_mark_status(),
             egress_ok=st.egress_ok if st is not None else None,
             guard_info=self._guard_info,
-            peer_nets=None if missing is None else (not missing, missing))
+            peer_nets=None if missing is None else (not missing, missing),
+            agent_bot={"username": getattr(self, "bot_username", ""),
+                       "name": getattr(self, "bot_name", "")})
 
     def cached_status(self, max_age_seconds: float) -> GwStatus | None:
         """Снимок последнего тика, если он не старше max_age; иначе None —

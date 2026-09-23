@@ -414,20 +414,26 @@ async def test_address_list_pages_and_removal_from_page_two_hits_the_right_entry
     assert svc.calls == [("remove", entry)], f"убран не тот адрес: {svc.calls}"
 
 
-PEER_LINE = "Из локальных подсетей других шлюзов: открыт всегда"
+PEER_LINE = "Из локальных сетей других шлюзов: открыт для "
+PEER_OFF_LINE = ("При включении функции «Доступ между подсетями» будет открыт доступ "
+                 "из локальных подсетей других шлюзов")
 
 
-def test_section_names_peer_nets_only_when_there_are_any():
-    """Из подсети другого шлюза SSH открыт всегда, фильтр его не касается, —
-    человек должен это видеть: иначе, включив фильтр, он будет считать соседнюю
-    сеть закрытой. Нет соседей — строки нет вовсе, а не «(пусто)»."""
+def test_section_names_peer_nets_or_says_how_to_get_them():
+    """Из подсети другого шлюза SSH открыт сам, как только на сервере включён
+    доступ между подсетями, — отдельного действия и списка адресов не нужно,
+    и человек должен это видеть. Нет соседей — строка о том, что их даёт."""
     for empty in ({}, {"peer_nets": []}):
         text = texts.gateway_ssh_text(_scr(**empty))
-        assert "других шлюзов" not in text, (empty, text)
+        lines = text.splitlines()
+        i = lines.index("Из локальной сети: открыт всегда")
+        assert lines[i + 1] == PEER_OFF_LINE, (empty, lines)
+        assert "открыт для" not in text, (empty, text)
     text = texts.gateway_ssh_text(_scr(lan=["192.168.1.0/24"], peer_nets=["10.20.0.0/16", "192.168.68.0/24"]))
     lines = text.splitlines()
     i = lines.index("Из локальной сети: открыт всегда (<code>192.168.1.0/24</code>)")
-    assert lines[i + 1] == f"{PEER_LINE} (<code>10.20.0.0/16</code>, <code>192.168.68.0/24</code>)", lines
+    assert lines[i + 1] == f"{PEER_LINE}<code>10.20.0.0/16</code>, <code>192.168.68.0/24</code>", lines
+    assert PEER_OFF_LINE not in text
     # строка — и при включённом фильтре: соседей он не закрывает
     assert PEER_LINE in texts.gateway_ssh_text(_scr(filter=True, peer_nets=["192.168.68.0/24"]))
 

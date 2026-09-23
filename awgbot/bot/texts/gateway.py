@@ -383,10 +383,15 @@ def gateway_ssh_text(st: dict) -> str:
     lan = st.get("lan") or []
     lines.append("Из локальной сети: открыт всегда"
                  + (" (" + ", ".join(f"<code>{_e(n)}</code>" for n in lan[:3]) + ")" if lan else ""))
+    # подсети других шлюзов открыты сами, как только на сервере включён доступ
+    # между подсетями: отдельного действия и списка адресов не нужно
     peers = st.get("peer_nets") or []
     if peers:
-        lines.append("Из локальных подсетей других шлюзов: открыт всегда ("
-                     + ", ".join(f"<code>{_e(n)}</code>" for n in peers[:3]) + ")")
+        lines.append("Из локальных сетей других шлюзов: открыт для "
+                     + ", ".join(f"<code>{_e(n)}</code>" for n in peers[:3]))
+    else:
+        lines.append("При включении функции «Доступ между подсетями» будет открыт доступ "
+                     "из локальных подсетей других шлюзов")
     lines.append("")
     allow = st.get("allow") or []
     if not st.get("new_plumbing"):

@@ -485,3 +485,106 @@ def _async(value):
     async def _f(*a, **k):
         return value
     return _f
+
+
+# ── бот шлюза из снимка канала (токена на сервере нет) ───────────────────────
+
+def _snapshot_bot(services, slot, username, name, rev=1, full=True):
+    """Агент прислал себя снимком канала: полным или дельтой."""
+    body = {"agent_bot": {"username": username, "name": name}, "rev": rev}
+    if full:
+        body.update(agent_version="3.1.0", mark_status="confirmed", egress_ok=True)
+    assert services.gwlink_snapshot_in(slot, body, rev, full) is True
+
+
+async def test_slot_card_links_the_bot_from_the_channel_snapshot(services, slots, fake_bot):
+    """Слот заведён до того, как сервер стал спрашивать токен, и ввести токен
+    в интерфейсе негде: ссылку в чат бота даёт снимок канала — та же строка,
+    последней, и кнопки карточки те же."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    assert services.token == {}, "сцена этого теста — слот без токена на сервере"
+    _snapshot_bot(services, 2, "pi2_gw_bot", "Шлюз <Pi2>")
+    text, labels = await _card_text(services, fake_bot, 2)
+    assert text.endswith("\n\n" + AGENT), f"карточка без ссылки на бота из снимка:\n{text}"
+    other, _ = await _card_text(services, fake_bot, 1)
+    assert "Бот шлюза" not in other, "бот из снимка слота 2 попал в карточку слота 1"
+
+
+async def test_slot_card_link_follows_the_snapshot_delta(services, slots, fake_bot):
+    """Бота переименовали — дельта снимка, и карточка уже с новым именем;
+    агент перезапустился без сети (пустой username) — строки нет."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    _snapshot_bot(services, 2, "pi2_gw_bot", "Шлюз <Pi2>")
+    _snapshot_bot(services, 2, "pi2_gw_bot", "Новое имя", rev=2, full=False)
+    text, _ = await _card_text(services, fake_bot, 2)
+    assert text.endswith('Бот шлюза: <a href="https://t.me/pi2_gw_bot">Новое имя</a>'), text
+    _snapshot_bot(services, 2, "", "", rev=3, full=False)
+    text, _ = await _card_text(services, fake_bot, 2)
+    assert "Бот шлюза" not in text, "пустой username в снимке, а ссылка осталась"
+
+
+async def test_token_answer_wins_over_the_snapshot_in_the_card(services, slots, fake_bot):
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    _snapshot_bot(services, 2, "snap_bot", "Из снимка")
+    _known_bot(services, 2)
+    text, _ = await _card_text(services, fake_bot, 2)
+    assert text.endswith("\n\n" + AGENT) and "snap_bot" not in text, text
+
+
+async def test_send_gw_bundle_captions_the_bot_from_the_snapshot(services, slots, fake_bot):
+    """Файл с ключами уходит с подписью, какому боту его пересылать, и без
+    токена на сервере — по снимку канала."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    _snapshot_bot(services, 2, "pi2_gw_bot", "Шлюз <Pi2>")
+    msg = _amsg(fake_bot)
+    assert await sh.send_gw_bundle(msg, services, 2) is True
+    docs = [s[1] for s in msg.sent if s[0] == "document"]
+    assert docs == ['⚙️ Конфигурация шлюза «Pi2». Перешли файл боту шлюза '
+                    '(<a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>) — он проверит и применит сам.'], docs
+
+
+# ── кнопки «Токен бота шлюза» больше нет ─────────────────────────────────────
+
+def test_bundle_screen_has_no_token_button():
+    """Токен задаётся один раз при настройке; экран выпуска файла — только
+    «Выпустить» и «Отмена», для слота и без него."""
+    from awgbot.bot import keyboards as kbs
+    for slot in (0, 1, 2):
+        mk = kbs.settings_routing_bundle(slot)
+        labels = [b.text for row in mk.inline_keyboard for b in row]
+        assert labels == ["📤 Выпустить файл", "✖️ Отмена"], (slot, labels)
+        datas = [b.callback_data for row in mk.inline_keyboard for b in row]
+        assert GwSlotCB(action="token", slot=slot).pack() not in datas, (slot, datas)
+
+
+def _all_routers():
+    from awgbot.bot import paging
+    from awgbot.bot.handlers import (admin, client, friend, gateway, guide, reply_commands,
+                                     routing, settings)
+    todo = [m.router for m in (paging, admin, settings, reply_commands, client, friend,
+                               guide, routing, gateway)]
+    seen = []
+    while todo:
+        r = todo.pop(0)
+        if r not in seen:
+            seen.append(r)
+            todo.extend(r.sub_routers)
+    return seen
+
+
+def test_nobody_handles_the_removed_token_callback():
+    """Старая кнопка могла остаться в чате в прежнем меню: колбэк «token»
+    не должен открыть ввод токена ни в одном роутере. Контроль сверки —
+    соседнее действие того же колбэка находится."""
+    from tests.e2e.test_settings_layout import _first_matching_handler
+    routers = _all_routers()
+    assert any(_first_matching_handler(r, GwSlotCB(action="bundle", slot=2)) == "gw_slot_bundle"
+               for r in routers), "сверка не находит даже живой хендлер — проверка ничего не значит"
+    hit = [(r.name, _first_matching_handler(r, GwSlotCB(action="token", slot=2))) for r in routers]
+    assert not [h for h in hit if h[1]], f"колбэк снятой кнопки кто-то обрабатывает: {hit}"
+    assert not hasattr(sh, "gw_slot_token") and not hasattr(texts, "gateway_token_only_ask"), \
+        "хвосты снятой кнопки остались в модулях"

@@ -1061,9 +1061,20 @@ class GatewayLinkMixin:
         return hashlib.sha256(token.encode()).hexdigest()[:12] if token else ""
 
     def gw_bot_identity(self, slot_id: Optional[int]) -> dict:
-        """{'username', 'name'} бота шлюза слота — из кэша getMe; пусто, если не
-        спрашивали или токен с тех пор сменился (ответ старого токена — не о
-        том боте)."""
+        """{'username', 'name'} бота шлюза слота: из кэша getMe по токену, а без
+        него — из снимка канала (агент знает своего бота сам). Слот, заведённый
+        до того, как токен стал спрашиваться на сервере, иначе остался бы без
+        ссылки: токен задаётся один раз при настройке и в интерфейсе не вводится.
+        Пусто — не спрашивали, токен сменился или канал ещё не поднимался."""
+        me = self._gw_bot_identity_cached(slot_id)
+        if me.get("username"):
+            return me
+        snap = self.gwlink_snapshot(int(slot_id or 1)).get("agent_bot")
+        if isinstance(snap, dict) and snap.get("username"):
+            return {"username": str(snap["username"]), "name": str(snap.get("name") or "")}
+        return {}
+
+    def _gw_bot_identity_cached(self, slot_id: Optional[int]) -> dict:
         import json
         raw = self.db.get_state(self._gw_slot_key(self._GW_BOT_ME_KEY, int(slot_id or 1))) or ""
         if not raw:
@@ -1083,9 +1094,10 @@ class GatewayLinkMixin:
                                       "token_id": self._gw_token_id(slot_id)}, ensure_ascii=False))
 
     def gw_bot_identity_missing(self) -> list[int]:
-        """Слоты, у которых токен есть, а ответа Telegram ещё нет."""
+        """Слоты, у которых токен есть, а ответа Telegram ещё нет (снимок
+        канала не в счёт: ответ по токену точнее и переживает смену агента)."""
         return [g.id for g in self.db.gateways()
-                if self.gw_bot_token(g.id) and not self.gw_bot_identity(g.id)]
+                if self.gw_bot_token(g.id) and not self._gw_bot_identity_cached(g.id)]
 
     def set_gw_bot_token(self, token: str, slot_id: Optional[int] = None) -> None:
         """Запомнить токен агента. Хранение осознанное: без него перевыпуск

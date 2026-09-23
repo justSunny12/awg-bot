@@ -375,10 +375,6 @@ def settings_routing_bundle(slot: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="📤 Выпустить файл",
               callback_data=SetCB(sec="rt", act="do", key="bundle", val=str(slot or "")))
-    if slot:
-        # токен бота шлюза живёт рядом с файлом: он уезжает внутри первого
-        # файла, а слоту, заведённому до этого, его вводят здесь
-        kb.button(text="🤖 Токен бота шлюза", callback_data=GwSlotCB(action="token", slot=slot))
     kb.button(text="✖️ Отмена", callback_data=(GwSlotCB(action="card", slot=slot).pack() if slot
                                               else SetCB(sec="rt").pack()))
     kb.adjust(1)

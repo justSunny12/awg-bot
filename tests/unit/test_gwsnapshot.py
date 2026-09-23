@@ -25,7 +25,7 @@ from awgbot.infra.db import Database
 # Имена полей — ЯВНЫМ списком, а не импортом из модуля: сторож границы обязан
 # падать от правки кода, а не переезжать вместе с ней.
 FACTS = ("bundle", "link_contract", "plumbing_gen", "mark_status",
-         "agent_version", "awg_generation")
+         "agent_version", "awg_generation", "agent_bot")   # agent_bot — кто бот шлюза, для ссылки в его чат
 BUNDLE = ("lan_mode", "home_subnets", "resolver", "peer_home_nets", "admin_ips")
 SERVICE = ("rev", "ts", "boot_id")
 VERDICTS = ("peer_nets", "egress_ok")
@@ -348,9 +348,11 @@ def test_sanitize_cuts_monsters_and_drops_everything_it_does_not_know():
            "link_contract": 1, "plumbing_gen": "new", "mark_status": "confirmed",
            "boot_id": "b" * 36, "ts": "2026-09-22T20:00:00+03:00", "rev": "4",
            "peer_nets": {"ok": True, "missing": ["10.0.0.0/8"] * 500},
+           "agent_bot": {"username": "Some_Bot", "name": "Имя " * 100, "id": 5},
            "temp": 51.2, "ssh": {"port": 2222}, "checks": [1, 2, 3], "exec": "rm -rf /"}
     out = gwsnapshot.sanitize(raw)
     assert set(out) == set(FACTS + VERDICTS + ("boot_id", "ts", "rev"))
+    assert set(out["agent_bot"]) == {"username", "name"} and len(out["agent_bot"]["name"]) == 64
     assert set(out["bundle"]) == set(BUNDLE), "неизвестные ключи внутри bundle отброшены"
     assert len(out["bundle"]["home_subnets"]) == 512, "длина значения не ограничена"
     assert out["bundle"]["peer_home_nets"] == "", "недосланное поле стало пустым, а не пропало"
@@ -396,3 +398,73 @@ def test_an_old_agent_that_sends_half_the_fields_is_still_accepted():
     экрана."""
     out = gwsnapshot.sanitize({"agent_version": "3.0.0", "ts": "2026-09-22T20:00:00+03:00"})
     assert out == {"agent_version": "3.0.0", "ts": "2026-09-22T20:00:00+03:00"}
+
+
+# ── бот шлюза (agent_bot): кто он, для ссылки с ВПС в его чат ────────────────
+
+def test_collect_carries_the_agent_bot_as_two_strings(pi):
+    """Агент знает своего бота по getMe на старте. Поле — всегда две строки:
+    без getMe пустые, а не выдуманные и не None (сервер хранит строки и по
+    пустому username ссылку не рисует)."""
+    snap = pi.snap(agent_bot={"username": "naspi_gw_bot", "name": "Шлюз квартиры", "id": 7})
+    assert snap["agent_bot"] == {"username": "naspi_gw_bot", "name": "Шлюз квартиры"}, \
+        "в снимок ушло лишнее или не то из ответа getMe"
+    for missing in ({}, None, {"username": None, "name": None}):
+        assert pi.snap(agent_bot=missing)["agent_bot"] == {"username": "", "name": ""}, missing
+    old_call = pi.snap()                     # вызов collect без аргумента agent_bot
+    assert old_call["agent_bot"] == {"username": "", "name": ""}
+
+
+def test_delta_brings_a_renamed_bot_and_nothing_else(pi):
+    """Имя бота шлюза сменили в BotFather и перезапустили агента — ссылка на
+    ВПС обязана поменяться дельтой. И обратное: тот же бот на следующем тике —
+    не новость, канал молчит."""
+    before = pi.snap(agent_bot={"username": "naspi_gw_bot", "name": "Старое"})
+    same = pi.snap(agent_bot={"username": "naspi_gw_bot", "name": "Старое"})
+    assert gwsnapshot.delta(before, same) == {}, "тот же бот породил дельту"
+    after = pi.snap(agent_bot={"username": "naspi_gw_bot", "name": "Новое"})
+    assert gwsnapshot.delta(before, after) == {
+        "agent_bot": {"username": "naspi_gw_bot", "name": "Новое"}}, "смена имени бота не приехала дельтой"
+
+
+@pytest.mark.parametrize("username", [
+    "naspi_gw_bot", "A", "a" * 32, "Bot_123",
+])
+def test_sanitize_keeps_a_real_telegram_username(username):
+    out = gwsnapshot.sanitize({"agent_bot": {"username": username, "name": "Шлюз"}})
+    assert out["agent_bot"] == {"username": username, "name": "Шлюз"}, \
+        "настоящий username отброшен — ссылки на бота шлюза не будет"
+
+
+@pytest.mark.parametrize("username", [
+    "a" * 33, "evil/../bot", "bot?start=x", "bot#x", "бот", "bot name", "@naspi_bot",
+    "naspi_bot\n", "naspi_bot\nx", "", "a\"onclick=\"x", "bot.example.com",
+])
+def test_sanitize_blanks_anything_that_is_not_a_username(username):
+    """username уходит в адрес ссылки `https://t.me/<username>`. Малина может
+    быть скомпрометирована: всё, кроме того, что выдаёт Telegram, — пусто, и
+    ссылки нет вовсе, а не ссылка на чужой адрес или разорванная разметка."""
+    out = gwsnapshot.sanitize({"agent_bot": {"username": username, "name": "Шлюз"}})
+    assert out["agent_bot"]["username"] == "", f"в адрес ссылки прошло {username!r}"
+    assert out["agent_bot"]["name"] == "Шлюз", "имя от негодного username не зависит"
+
+
+def test_sanitize_takes_agent_bot_only_as_a_dict_and_only_two_keys():
+    """Не словарь — поля нет вовсе (как у старого агента), а не пустышка или
+    падение. Лишние ключи отбрасываются: ВПС хранит только то, что рисует."""
+    for junk in ("naspi_gw_bot", ["naspi_gw_bot"], 5, None, True):
+        out = gwsnapshot.sanitize({"agent_bot": junk, "agent_version": "3.1.0"})
+        assert "agent_bot" not in out, f"поле из {junk!r} появилось"
+    out = gwsnapshot.sanitize({"agent_bot": {"username": "b_bot", "name": "Имя",
+                                             "token": "1:SECRET", "id": 5}})
+    assert out["agent_bot"] == {"username": "b_bot", "name": "Имя"}, "лишние ключи доехали до БД"
+    out = gwsnapshot.sanitize({"agent_bot": {"username": ["x"], "name": {"a": 1}}})
+    assert out["agent_bot"] == {"username": "", "name": ""}, "не строки в полях не обнулились"
+    assert "agent_bot" not in gwsnapshot.sanitize({}), "старый агент без поля получил пустышку"
+
+
+def test_sanitize_cuts_the_bot_name_to_64():
+    """Имя профиля Telegram — до 64 символов; больше прислать может только
+    подделка, и строка карточки не должна растягиваться на экран."""
+    out = gwsnapshot.sanitize({"agent_bot": {"username": "b_bot", "name": "Я" * 1000}})
+    assert out["agent_bot"]["name"] == "Я" * 64

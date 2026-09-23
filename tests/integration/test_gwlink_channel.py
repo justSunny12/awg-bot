@@ -778,3 +778,31 @@ async def test_the_real_client_and_the_real_server_agree_on_the_wire(
     await _until(lambda: not services.gwlink_session(1))
     assert services.gwlink_session(1) == {}, "остановленный агент оставил сессию открытой"
     assert agent.channel.online is False, "сессия кончилась, а домен агента считает её открытой"
+
+
+async def test_the_agent_bot_rides_the_wire_and_its_rename_arrives_as_a_delta(
+        services, link, tmp_path, monkeypatch):
+    """Бот шлюза едет с малины снимком по настоящему каналу и доходит до
+    ссылки в карточке слота без токена на сервере; переименовали бота —
+    дельта, и ссылка уже с новым именем."""
+    from awgbot.runtime import linkclient
+    conf = tmp_path / "awglink.conf"
+    conf.write_text(f"[Interface]\nPrivateKey = {PRIV}\n", encoding="utf-8")
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
+    host, port = link._bound[0]
+    monkeypatch.setattr(linkclient, "server_address", lambda: host)
+    monkeypatch.setattr(linkclient, "server_port", lambda: port)
+
+    agent = _Agent({**SNAP, "agent_bot": {"username": "naspi_gw_bot", "name": "Шлюз"}})
+    client = linkclient.LinkClient(agent)
+    client.start()
+    try:
+        await _until(lambda: services.gwlink_snapshot(1))
+        assert services.gw_bot_token(1) == "", "сцена теста — слот без токена на сервере"
+        assert services.gw_bot_identity(1) == {"username": "naspi_gw_bot", "name": "Шлюз"}, \
+            "бот из снимка канала не дошёл до сервера"
+        agent.snap["agent_bot"] = {"username": "naspi_gw_bot", "name": "Шлюз квартиры"}
+        assert await client.push() is True, "смена имени бота не ушла дельтой"
+        await _until(lambda: services.gw_bot_identity(1).get("name") == "Шлюз квартиры")
+    finally:
+        await client.stop()

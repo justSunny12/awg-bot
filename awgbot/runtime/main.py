@@ -207,7 +207,11 @@ async def run_gateway() -> None:
               default=DefaultBotProperties(parse_mode=ParseMode.HTML,
                                            link_preview_is_disabled=True))
     try:
-        await bot.get_me()
+        me = await bot.get_me()
+        # кто этот бот — в снимок канала: сервер ведёт в его чат ссылкой, и
+        # токен агента ему для этого не нужен
+        services.bot_username = me.username or ""
+        services.bot_name = me.first_name or me.username or ""
     except TelegramUnauthorizedError as e:
         raise preflight.PreflightError(
             f"Bot API отверг токен (getMe: {e}). Проверьте BOT_TOKEN в "
@@ -348,6 +352,7 @@ async def main() -> None:
     try:
         me = await bot.get_me()
         services.bot_username = me.username or ""
+        services.bot_name = me.first_name or me.username or ""
     except TelegramUnauthorizedError as e:
         raise preflight.PreflightError(
             f"Bot API отверг токен (getMe: {e}). Проверьте BOT_TOKEN в "
