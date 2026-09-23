@@ -52,7 +52,11 @@ class _Pi:
         self.conf = tmp_path / "awglink.conf"
         self.conf.write_text("# awg-bot: контракт линка 1\n[Interface]\nPrivateKey = x\n",
                              encoding="utf-8")
-        monkeypatch.setattr(gwguard, "unit_env", lambda k: self.env.get(k, ""))
+        # ADMIN_IPS тоже из юнита: блок bundle собирается одним проходом по
+        # gwlink.BUNDLE_KEYS, отдельного чтения списка админа больше нет
+        monkeypatch.setattr(gwguard, "unit_env",
+                            lambda k: " ".join(self.admin_ips) if k == "ADMIN_IPS"
+                            else self.env.get(k, ""))
         monkeypatch.setattr(gwguard, "unit_admin_ips", lambda: list(self.admin_ips))
         monkeypatch.setattr(awglock, "generation", lambda: self.generation)
         monkeypatch.setattr(config, "GW_LINK_CONF", str(self.conf))
@@ -67,10 +71,15 @@ class _Pi:
         missing = [n for n in self.env.get("PEER_HOME_NETS", "").split()
                    if n not in self.peer_nets4]
         peer = None if not self.env.get("PEER_HOME_NETS") else (not missing, missing)
+        # rev и ts снимок не выбирает: их ставит клиент по месту в сессии и
+        # конверт по времени отправки — здесь делаем то же поверх собранного
+        stamp = {k: kw.pop(k) for k in ("rev", "ts") if k in kw}
         args = {"mark_status": "confirmed", "egress_ok": True, "guard_info": self.info(),
-                "peer_nets": peer, "ts": "2026-09-22T20:00:00+03:00"}
+                "peer_nets": peer}
         args.update(kw)
-        return gwsnapshot.collect(**args)
+        snap = gwsnapshot.collect(**args)
+        snap.update(stamp)
+        return snap
 
 
 @pytest.fixture()

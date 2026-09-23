@@ -206,7 +206,13 @@ class GatewayLinkMixin:
         from awgbot.runtime import linkserver
         env = {"ADMIN_IPS": " ".join(admin_ips), **self._slot_env(gw), **self._lan_env(gw),
                # порт канала — из того же ключа, на котором слушает linkserver
-               "LINK_CHANNEL_PORT": str(linkserver.channel_port())}
+               "LINK_CHANNEL_PORT": str(linkserver.channel_port()),
+               # keepalive линка — тем же значением, что у клиентских пиров: бот
+               # читает YAML целиком, а скрипт линка — только awk-ом по строке в
+               # двойных кавычках, и `keepalive_seconds: 25` без них у него
+               # пропадал бы в «25-35»
+               "LINK_KEEPALIVE": str(settings.get("app.client_config.keepalive_seconds",
+                                                  config.KEEPALIVE_SECONDS))}
         dev = self.db.get_device(gw.device_id) if gw.device_id else None
         if dev is not None:
             import base64
@@ -887,34 +893,6 @@ class GatewayLinkMixin:
     def _gw_ssh_allow(self) -> list[str]:
         return sorted(set(self.db.admin_device_addresses(config.ADMIN_ID)))
 
-    def _gw_installed_matches(self, gw) -> bool | None:
-        """Совпадает ли то, что РЕАЛЬНО стоит на шлюзе, с тем, что ВПС выдал бы
-        сейчас. None — снимка канала нет, и судить не по чему: тогда
-        напоминания работают как раньше, по памяти о выдаче.
-
-        С каналом напоминание перестаёт быть догадкой. Раньше ВПС сравнивал своё
-        со своим — что выдал тогда с тем, что выдал бы сейчас, — и напоминал
-        даже тогда, когда человек уже перевыпустил и применил файл другим путём.
-        Теперь установленное совпало — тишина, даже если бандл не перевыпускали.
-        """
-        if not getattr(gw, "id", None):
-            return None
-        snap = self.gwlink_snapshot(gw.id)
-        if not isinstance(snap.get("bundle"), dict):
-            return None
-        return not self.gwlink_config_drift(gw)
-
-    def _gw_peer_nets_pending(self, gw) -> bool:
-        """Подсети за другими шлюзами на шлюзе расходятся с выдаваемыми — или
-        сказать нечего (снимка нет). Их канал не везёт: они живут и в конфиге
-        линка, который правит только бандл."""
-        snap = self.gwlink_snapshot(gw.id) if getattr(gw, "id", None) else {}
-        got = snap.get("bundle") if isinstance(snap.get("bundle"), dict) else None
-        if got is None:
-            return True
-        want = " ".join(self.gateway_peer_nets(gw.id))
-        return want != " ".join(str(got.get("peer_home_nets", "")).split())
-
     def _gw_channel_covers(self, gw) -> bool:
         """Доставкой настроек занимается канал: сессия жива, либо канал замолчал
         меньше `routing.link_channel.stale_hours` назад (по умолчанию сутки) —
@@ -934,22 +912,76 @@ class GatewayLinkMixin:
             return False
         return age < 3600 * settings.get_int("app.routing.link_channel.stale_hours", 24)
 
+    _GW_DRIFT_NOTIFIED_KEY = "gw_drift_notified"
+
+    def _gw_snapshot_drift_note(self, g) -> tuple[bool, Notification | None]:
+        """Напоминание по СНИМКУ: (решено ли по снимку, уведомление или None).
+
+        Со снимком напоминание перестаёт быть памятью о выдаче: оно и глушится,
+        и будится тем, что реально стоит на шлюзе. Раньше снимок умел только
+        глушить: выпустил бандл, но не применил — «выдано то же, что надо»,
+        и напоминания не было ни одного, хотя на шлюзе стоит прежнее.
+
+        Из расхождения вычитается то, что довезёт канал (он жив или замолчал
+        недавно), — остаётся то, что едет только файлом (подсети соседей), или
+        всё, если канала нет. Одно напоминание на набор расхождений; сошлось
+        после напоминания — один тихий отбой.
+        """
+        from awgbot.util import gwlink
+        snap = self.gwlink_snapshot(g.id) if getattr(g, "id", None) else {}
+        if not isinstance(snap.get("bundle"), dict):
+            return False, None
+        lines, keys = self.gwlink_config_drift(g, with_keys=True)
+        covers = self._gw_channel_covers(g)
+        pending = [(ln, k) for ln, k in zip(lines, keys)
+                   if not (covers and k in gwlink.SETTINGS_KEYS)]
+        key = self._gw_slot_key(self._GW_DRIFT_NOTIFIED_KEY, g.id)
+        told = self.db.get_state(key) or ""
+        if not pending:
+            if told:
+                self.db.set_state(key, "")
+                return True, Notification(
+                    config.ADMIN_ID,
+                    f"✅ На шлюзе {self._gw_display_h(g)} конфигурация совпадает с выданной.")
+            return True, None
+        sig = gwlink.settings_hash({k: ln for ln, k in pending}) if pending else ""
+        if told == sig:
+            return True, None
+        self.db.set_state(key, sig)
+        import html
+        what = "; ".join(html.escape(ln, quote=False) for ln, _k in pending)
+        return True, Notification(
+            config.ADMIN_ID,
+            f"🛰 На шлюзе {self._gw_display_h(g)} стоит не то, что выдаёт сервер: {what}. "
+            f"Перевыпусти конфигурацию (Условная маршрутизация → {self._gw_display_h(g)} → "
+            "Конфигурация шлюза) и примени её на шлюзе.")
+
     def gw_bundle_drift_notes(self) -> list[Notification]:
-        """Состав устройств админа разошёлся с тем, что уехало в бандл слота:
-        напомнить один раз на каждое новое расхождение, по слоту. Пока бандл
-        слота не собирали — молчим: напоминать не о чем."""
+        """Напоминания о перевыпуске конфигурации шлюзов. Есть снимок канала —
+        решает он (что реально стоит на шлюзе); нет — по памяти о выдаче: один
+        раз на каждое новое расхождение, по слоту. Пока бандл слота не собирали
+        и снимка нет — молчим: напоминать не о чем."""
         if not config.ROUTING_ENABLED:
             return []
         cur = " ".join(self._gw_ssh_allow())
         notes = []
+        by_snapshot: set = set()
+        for g in self.db.gateways():
+            decided, note = self._gw_snapshot_drift_note(g)
+            if decided:
+                by_snapshot.add(g.id)
+                if note is not None:
+                    notes.append(note)
         # без слотов — слот-заглушка линка обвязки, но только при включённой
         # функции: после снятия последнего шлюза напоминать некому
         for g in self.db.gateways() or ([self._gw_slot(None)]
                                         if settings.get_bool("app.routing.enabled", False) else []):
+            if g.id in by_snapshot:
+                continue
             sent = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, g.id))
             if sent is None:                    # бандл слота не собирали — напоминать не о чем
                 continue
-            if self._gw_installed_matches(g) is True or self._gw_channel_covers(g):
+            if self._gw_channel_covers(g):
                 continue
             if cur == sent or self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, g.id)) == cur:
                 continue
@@ -962,13 +994,10 @@ class GatewayLinkMixin:
                 f"{self._gw_display_h(g)} → Конфигурация шлюза) и примени её на шлюзе."))
         # прочие зависимости: режим без VPN, подсети, резолвер — своим текстом
         for g in self.db.gateways():
+            if g.id in by_snapshot:
+                continue
             sent = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_KEY, g.id))
             if sent is None:
-                continue
-            if self._gw_installed_matches(g) is True:
-                continue
-            # канал довезёт режим, подсети и резолвер, но не подсети соседей
-            if self._gw_channel_covers(g) and not self._gw_peer_nets_pending(g):
                 continue
             cur = self._gw_bundle_deps(g)
             if cur == sent or self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_DEPS_NOTIFIED_KEY, g.id)) == cur:

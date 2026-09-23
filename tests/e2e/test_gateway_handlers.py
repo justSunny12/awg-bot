@@ -328,3 +328,120 @@ async def test_own_lists_screen_and_delete(svc, fake_bot, monkeypatch):
     monkeypatch.setattr(svc, "lan_own_lists", lambda: [])
     await gh.gw_lan_list(cb, svc)
     assert "Пока пусто" in msg.sent[-1][1]
+
+
+# ── снимок на ВПС сразу после операции из чата (канал линка) ────────────────
+
+class _ChanSvc(_Svc):
+    """Агент с каналом: снимок меняется тем, что сделал человек в чате."""
+
+    def __init__(self, db):
+        super().__init__(db)
+        self.snap = {"bundle": {"lan_mode": "0"}, "plumbing_gen": "old", "egress_ok": True}
+
+    def gw_snapshot(self):
+        return {k: (dict(v) if isinstance(v, dict) else v) for k, v in self.snap.items()}
+
+    def gateway_claim_if_needed(self):
+        return None
+
+    def reassert(self):
+        self.snap["plumbing_gen"] = "new"            # мастер перевыставил обвязку
+        return True, "перевыставлено"
+
+    def apply_bundle(self, blob, overwrite_passphrase=False):
+        self.applied.append(blob)
+        self.snap["bundle"] = {"lan_mode": "1"}      # бандл включил режим без VPN
+        return True, "Готово"
+
+    def inspect_bundle(self, blob):
+        return {"ok": True}
+
+    def gateway_apply_report(self):
+        return ""
+
+    def gateway_mark_outcome(self):
+        return {}
+
+
+class _Wire:
+    def __init__(self):
+        self.lines: list[bytes] = []
+
+    def write(self, data):
+        self.lines.append(data)
+
+    async def drain(self):
+        pass
+
+    def close(self):
+        pass
+
+
+@pytest.fixture()
+async def chan(tmp_path, monkeypatch):
+    """Открытая сессия канала до ВПС: всё, что ушло, — в wire."""
+    import asyncio
+    from awgbot.infra import gwguard
+    from awgbot.runtime import linkclient
+    from awgbot.util import gwlink
+    priv = base64.b64encode(os.urandom(32)).decode()
+    conf = tmp_path / "awglink.conf"
+    conf.write_text(f"[Interface]\nPrivateKey = {priv}\n", encoding="utf-8")
+    monkeypatch.setattr(cfg, "GW_LINK_CONF", str(conf))
+    monkeypatch.setattr(cfg, "ROLE", "gateway")
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: "1" if k == "LINK_CHANNEL" else "")
+    d = Database(tmp_path / "gw.db"); d.init_schema()
+    svc = _ChanSvc(d)
+    client = linkclient.LinkClient(svc)
+    client._writer = _Wire()
+    client._task = asyncio.get_running_loop().create_future()   # задача «идёт» — ensure не перезапустит
+    monkeypatch.setattr(linkclient, "_client", client)
+    await client.push(full=True)
+    key = gwlink.channel_key(priv)
+    yield svc, lambda: [gwlink.unpack(key, x) for x in client._writer.lines]
+    client._task.cancel()
+
+
+async def test_the_recovery_wizard_sends_the_new_state_to_the_server_at_once(chan, fake_bot):
+    """Мастер восстановления перевыставил обвязку. Человек идёт смотреть
+    карточку слота на ВПС — там должно быть новое, а не то, что было до
+    ближайшего тика монитора через минуты."""
+    svc, sent = chan
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_execute(cb, GwCB(action="reassert!"), svc)
+    msgs = sent()
+    assert [m["t"] for m in msgs] == ["snap", "delta"], f"после мастера на ВПС ушло {msgs}"
+    assert msgs[-1]["plumbing_gen"] == "new"
+
+
+async def test_an_applied_bundle_is_on_the_server_before_the_next_tick(chan):
+    """Бандл применён — снимок с новым уходит сразу. Без этого карточка слота на
+    ВПС минуты показывала бы «конфигурация расходится» и звала перевыпускать то,
+    что уже стоит."""
+    svc, sent = chan
+    bot = FakeBot()
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
+    state = FakeState()
+    await state.update_data(bundle=base64.b64encode(b"BUNDLE").decode())
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
+    await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)
+    assert svc.applied == [b"BUNDLE"]
+    msgs = sent()
+    assert [m["t"] for m in msgs] == ["snap", "delta"], f"после применения бандла на ВПС ушло {msgs}"
+    assert msgs[-1]["bundle"] == {"lan_mode": "1"}
+
+
+async def test_a_failed_bundle_sends_nothing_extra(chan):
+    """Не применилось — сообщать на ВПС нечего сверх того, что скажет тик."""
+    svc, sent = chan
+    svc.apply_bundle = lambda blob, overwrite_passphrase=False: (False, "скрипт упал")
+    bot = FakeBot()
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
+    state = FakeState()
+    await state.update_data(bundle=base64.b64encode(b"BUNDLE").decode())
+    svc.snap["egress_ok"] = False                    # что-то сменилось само, до тика
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=bot)
+    await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)
+    assert [m["t"] for m in sent()] == ["snap"]

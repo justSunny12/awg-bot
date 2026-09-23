@@ -313,16 +313,13 @@ async def test_the_refresh_button_asks_the_gateway_and_redraws_the_card(
     sent = []
 
     class _Srv:
-        # Счётчик принятых снимков — по нему кнопка и понимает, что ответ
-        # пришёл: строка времени в state с точностью до секунды для этого не годится.
-        snaps_in: dict = {}
-
-        async def send(self, slot_id, kind, body=None):
+        # Ожидание ответа живёт в слушателе (ask_snap): True — снимок пришёл,
+        # False — не успел, None — сессии нет. Здесь шлюз отвечает сразу.
+        async def ask_snap(self, slot_id, timeout=3.0):
             """Шлюз на том конце: получил `ask snap` — прислал полный снимок."""
-            sent.append((slot_id, kind, dict(body or {})))
+            sent.append((slot_id, "ask", {"what": "snap"}, timeout))
             services.gwlink_snapshot_in(slot_id, {"bundle": _installed(services),
                                                   "agent_version": "3.1.0", "rev": 1}, 1, True)
-            self.snaps_in[slot_id] = self.snaps_in.get(slot_id, 0) + 1
             return True
 
     monkeypatch.setattr(linkserver, "current", lambda: _Srv())
@@ -330,7 +327,8 @@ async def test_the_refresh_button_asks_the_gateway_and_redraws_the_card(
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_snap(cb, GwSlotCB(action="snap", slot=1), services)
 
-    assert sent == [(1, "ask", {"what": "snap"})], "по кнопке уходит ровно один запрос"
+    assert sent == [(1, "ask", {"what": "snap"}, 3.0)], (
+        "по кнопке уходит ровно один запрос, и ждём его те самые 3 секунды из ответа")
     text, _ = _screen(nav)
     assert "✅ Конфигурация на шлюзе совпадает с выданной" in text, (
         "карточка перерисована из старого снимка")
@@ -345,10 +343,8 @@ async def test_a_gateway_that_did_not_answer_in_time_is_not_reported_as_refreshe
     services.db.set_state("gwlink_snap_at_1", "2026-09-22T18:00:00+03:00")
 
     class _Mute:
-        snaps_in: dict = {}                  # снимков не приходило и не придёт
-
-        async def send(self, slot_id, kind, body=None):
-            return True                      # запрос ушёл, ответа не будет
+        async def ask_snap(self, slot_id, timeout=3.0):
+            return False                     # запрос ушёл, ответа за timeout не было
 
     monkeypatch.setattr(linkserver, "current", lambda: _Mute())
     _no_waiting(monkeypatch)
@@ -644,3 +640,64 @@ def test_a_live_channel_does_not_silence_the_reminder_about_neighbour_subnets(
     notes = services.gw_bundle_drift_notes()
     assert len(notes) == 1 and "Перевыпусти" in notes[0].text, "канал жив — и о подсетях соседей молчок"
     assert services.gw_bundle_drift_notes() == [], "одно напоминание на расхождение"
+
+
+# ── «Обновить» без сессии; вердикт подсетей соседей на карточке ─────────────
+
+async def test_the_refresh_button_with_a_listener_but_no_session_says_the_channel_is_down(
+        services, slot, fake_bot, monkeypatch):
+    """Слушатель на ВПС есть, а сессии слота нет (малина перезагружается).
+    «Шлюз не ответил за 3 секунды» здесь неправда — спрашивать было некого."""
+    _snap(services, online=False)
+
+    class _NoSession:
+        async def ask_snap(self, slot_id, timeout=3.0):
+            return None
+
+    monkeypatch.setattr(linkserver, "current", lambda: _NoSession())
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_snap(cb, GwSlotCB(action="snap", slot=1), services)
+    assert cb.answers == [("Канал до шлюза сейчас не на связи", True)]
+    assert not [x for x in nav.sent if x[0] == "edit_text"], "экран перерисован впустую"
+
+
+async def test_missing_neighbour_subnets_on_the_gateway_are_named_on_the_card(services, slot, fake_bot):
+    """Доступ между подсетями включают тумблером на ВПС. Шлюз сообщил, что в
+    его таблице нет подсетей соседа, — это единственный вердикт, который едет с
+    малины, и едет ради этой строки: без неё отказ функции беспричинен."""
+    _snap(services, peer_nets={"ok": False, "missing": ["192.168.70.0/24", "192.168.71.0/24"]})
+    text, _ = await _card(services, fake_bot)
+    assert ("⚠️ Доступ между подсетями: на шлюзе в таблице нет 192.168.70.0/24, 192.168.71.0/24"
+            " — перевыпусти конфигурацию шлюза и примени её") in text
+
+
+async def test_a_healthy_neighbour_subnets_verdict_draws_nothing(services, slot, fake_bot):
+    _snap(services, peer_nets={"ok": True, "missing": []})
+    text, _ = await _card(services, fake_bot)
+    assert "Доступ между подсетями" not in text, "исправная функция нарисована как отказ"
+    _snap(services)                                  # функции на шлюзе нет — поля нет
+    text, _ = await _card(services, fake_bot)
+    assert "Доступ между подсетями" not in text
+
+
+def test_the_neighbour_subnets_line_escapes_what_the_gateway_sent():
+    """Имена подсетей приехали с чужой машины: разметка в них ломает сообщение
+    целиком, и карточка не рисуется вовсе."""
+    from awgbot.bot.texts.routing import channel_block
+    ch = {"ever": True, "online": True, "has_snap": True, "has_bundle": True,
+          "peer_nets": {"ok": False, "missing": ["<b>1.2.3.0/24</b>", "&x"]}}
+    out = channel_block(ch, True)
+    assert "<b>1.2.3.0/24</b>" not in out
+    assert "&lt;b&gt;1.2.3.0/24&lt;/b&gt;, &amp;x" in out
+
+
+def test_the_neighbour_subnets_line_names_at_most_eight_and_survives_an_empty_list():
+    from awgbot.bot.texts.routing import channel_block
+    many = [f"192.168.{i}.0/24" for i in range(12)]
+    ch = {"ever": True, "online": True, "has_snap": True, "has_bundle": True,
+          "peer_nets": {"ok": False, "missing": many}}
+    out = channel_block(ch, True)
+    assert "192.168.7.0/24" in out and "192.168.8.0/24" not in out, "список не ограничен восемью"
+    ch["peer_nets"] = {"ok": False, "missing": []}
+    assert "на шлюзе в таблице нет подсетей" in channel_block(ch, True), (
+        "пустой список отказа — строка без предмета")

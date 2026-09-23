@@ -28,12 +28,17 @@ def _lan_on(monkeypatch, *, home=None, active=True, up=True, status=None, own=(2
     monkeypatch.setattr(gwguard, "script_status", lambda: status or {"LAN_IF": "end0", "LAN_ADDR": "192.168.68.222"})
     monkeypatch.setattr(gwguard, "dnsmasq_active", lambda: active)
     monkeypatch.setattr(gwguard, "resolve_via_local", lambda name="github.com": up)
+    # апстрим — по статистике dnsmasq: отвечает / все запросы без ответа / dig нет
+    monkeypatch.setattr(gwguard, "upstream_stats",
+                        lambda: None if up is None else {"10.9.1.1#53": (10, 0 if up else 10)})
     monkeypatch.setattr(gwguard, "home_table_info", lambda: home)
     monkeypatch.setattr(gwguard, "lists_status", lambda: lists or {"domains": "1180", "nets": "412",
                                                                     "updated_at": "2026-09-20T10:00:00+05:00", "rc": "0"})
     monkeypatch.setattr(gwguard, "lan_own_lists", lambda: own)
     monkeypatch.setattr(gwguard, "iface_for_subnet", lambda net: live)
     monkeypatch.setattr(gwguard, "reassert", lambda: (True, ""))
+    # реассерт смотрит, не запущен ли юнит уже, — без настоящего systemctl
+    monkeypatch.setattr(gwguard, "unit_state", lambda: {"ActiveState": "active"})
 
 
 def _home(lan=100, dns=20, nets=412, resolved=50):
@@ -190,3 +195,97 @@ def test_unit_env_reads_quoted_and_bare_values(tmp_path, monkeypatch):
     assert gwguard.unit_env("LAN_MODE") == "1" and gwguard.lan_mode()
     assert gwguard.unit_env("HOME_SUBNETS") == "192.168.68.0/24 10.0.0.0/24"
     assert gwguard.unit_env("RESOLVER") == "10.9.1.1" and gwguard.unit_env("NOPE") == ""
+
+
+# ── апстрим по статистике dnsmasq, без запроса наружу ───────────────────────
+
+class _Stats:
+    """dnsmasq на малине: «отправлено / отказов» по апстримам; None — dig нет."""
+
+    def __init__(self, monkeypatch, sent=0, failed=0):
+        self.value: dict | None = {"10.9.1.1#53": (sent, failed)}
+        monkeypatch.setattr(gwguard, "upstream_stats", lambda: self.value)
+        monkeypatch.setattr(gwguard, "resolve_via_local", lambda name="github.com":
+                            pytest.fail("апстрим проверен живым запросом наружу"))
+
+    def set(self, sent, failed):
+        self.value = {"10.9.1.1#53": (sent, failed)}
+
+
+def test_the_first_look_judges_by_what_dnsmasq_accumulated(svc, monkeypatch):
+    """Первый взгляд после старта агента — по накопленному с запуска dnsmasq:
+    на все отправленные ни одного ответа — апстрим молчит."""
+    st = _Stats(monkeypatch, sent=40, failed=3)
+    assert svc._upstream_verdict() is True
+    svc2 = GatewayServices(svc.db)
+    st.set(40, 40)
+    assert svc2._upstream_verdict() is False, "ни одного ответа на 40 запросов — это отказ"
+
+
+def test_a_fresh_dnsmasq_that_sent_nothing_yet_is_not_an_unreadable_statistic(svc, monkeypatch):
+    """dnsmasq только что запустился, квартира спит — отправок ноль. Сказать
+    «статистика не прочиталась» (серый вердикт) здесь неправда: прочиталась, и
+    отказов в ней нет. Прошлого вердикта нет — значит считаем, что всё хорошо,
+    как и в простое после первого взгляда."""
+    _Stats(monkeypatch, sent=0, failed=0)
+    assert svc._upstream_verdict() is True
+
+
+def test_failures_growing_without_sends_are_a_silent_upstream(svc, monkeypatch):
+    """Аплинк лёг: dnsmasq пробует, отказы растут, успешных отправок нет."""
+    st = _Stats(monkeypatch, sent=100, failed=2)
+    assert svc._upstream_verdict() is True
+    st.set(100, 9)
+    assert svc._upstream_verdict() is False
+    st.set(130, 9)                                  # ожил: отправки пошли, отказов не прибавилось
+    assert svc._upstream_verdict() is True
+
+
+def test_an_idle_tick_keeps_the_previous_verdict(svc, monkeypatch):
+    """Ночью запросов нет вовсе: счётчики стоят. Спрашивать наружу ради
+    проверки значит завести маячок — держим прошлый вердикт, в обе стороны."""
+    st = _Stats(monkeypatch, sent=100, failed=2)
+    svc._upstream_verdict()
+    st.set(100, 9)
+    assert svc._upstream_verdict() is False
+    for _ in range(3):
+        assert svc._upstream_verdict() is False, "простой перевернул отказ в «работает»"
+    st.set(150, 9)
+    assert svc._upstream_verdict() is True
+    for _ in range(3):
+        assert svc._upstream_verdict() is True
+
+
+def test_a_dnsmasq_restart_starts_the_count_over(svc, monkeypatch):
+    """Счётчики dnsmasq сбрасываются рестартом (новые фиды — рестарт). Разница
+    «ушла вниз» — не отказ: судим по накопленному с нового старта."""
+    st = _Stats(monkeypatch, sent=500, failed=10)
+    svc._upstream_verdict()
+    st.set(20, 0)
+    assert svc._upstream_verdict() is True
+    st.set(3, 3)
+    svc3 = GatewayServices(svc.db)
+    svc3._upstream_verdict()
+    st.set(0, 0)                                    # рестарт, отправок ещё нет
+    assert svc3._upstream_verdict() is False, "рестарт без отправок перевернул прошлый отказ"
+
+
+def test_no_statistic_is_the_third_state(svc, monkeypatch):
+    """dig нет или dnsmasq не ответил — «нечем проверить», а не «работает»."""
+    st = _Stats(monkeypatch)
+    st.value = None
+    assert svc._upstream_verdict() is None
+    st.value = {}
+    assert svc._upstream_verdict() is None
+
+
+def test_the_panel_says_what_is_wrong_with_the_upstream(svc, monkeypatch):
+    _lan_on(monkeypatch, home=_home())
+    st = _Stats(monkeypatch, sent=10, failed=10)
+    by = {c.name: c for c in svc.lan_status()[1]}
+    assert by["апстрим через аплинк"].ok is False
+    assert "10.9.1.1 не отвечает через аплинк" in by["апстрим через аплинк"].detail
+    st.value = None
+    by = {c.name: c for c in GatewayServices(svc.db).lan_status()[1]}
+    assert by["апстрим через аплинк"].ok is None
+    assert by["апстрим через аплинк"].detail == "статистика dnsmasq не прочиталась"

@@ -37,7 +37,10 @@ log = logging.getLogger(__name__)
 # со временем натечёт всё, что «и так снимается».
 FACT_FIELDS = ("bundle", "link_contract", "plumbing_gen", "mark_status",
                "agent_version", "awg_generation")
-BUNDLE_FIELDS = ("lan_mode", "home_subnets", "resolver", "peer_home_nets", "admin_ips")
+# Поля блока bundle — те же ключи, что везёт бандл в юнит, одной таблицей в
+# util/gwlink: разойдись списки, сверка на ВПС молча не видела бы расхождения.
+from awgbot.util import gwlink as _gwlink  # noqa: E402
+BUNDLE_FIELDS = tuple(_gwlink.snap_field(k) for k in _gwlink.BUNDLE_KEYS)
 FIELDS = FACT_FIELDS + ("peer_nets", "egress_ok", "rev", "ts", "boot_id")
 
 _CONTRACT_RE = re.compile(r"^#\s*awg-bot:\s*контракт линка\s+(\d+)", re.M)
@@ -75,8 +78,7 @@ def boot_id() -> str:
 
 
 def collect(*, mark_status: str, egress_ok: bool | None, guard_info: dict | None,
-            peer_nets: tuple[bool, list[str]] | None, rev: int = 1,
-            ts: str = "") -> dict:
+            peer_nets: tuple[bool, list[str]] | None) -> dict:
     """Собрать снимок. Всё чтение — локальное: юнит обвязки, конфиг линка,
     install/awg.lock, константа версии. Ни одного сетевого вызова (§3.5.0.1).
 
@@ -87,21 +89,18 @@ def collect(*, mark_status: str, egress_ok: bool | None, guard_info: dict | None
     from awgbot.core import config
     from awgbot.infra import awglock, gwguard
     snap = {
-        "bundle": {
-            "lan_mode": gwguard.unit_env("LAN_MODE"),
-            "home_subnets": gwguard.unit_env("HOME_SUBNETS"),
-            "resolver": gwguard.unit_env("RESOLVER"),
-            "peer_home_nets": gwguard.unit_env("PEER_HOME_NETS"),
-            "admin_ips": " ".join(gwguard.unit_admin_ips()),
-        },
+        "bundle": {_gwlink.snap_field(k): " ".join(gwguard.unit_env(k).split())
+                   for k in _gwlink.BUNDLE_KEYS},
         "link_contract": link_contract(config.GW_LINK_CONF),
         "plumbing_gen": plumbing_gen(guard_info),
         "mark_status": mark_status or "",
         "agent_version": config.INSTALLED_VERSION,
         "awg_generation": awglock.generation(),
         "egress_ok": egress_ok,
-        "rev": int(rev),
-        "ts": ts,
+        # rev ставит клиент по месту в сессии, ts — конверт (время отправки):
+        # их значения здесь всё равно перезаписались бы
+        "rev": 1,
+        "ts": "",
         "boot_id": boot_id(),
     }
     # Единственный вердикт, который едет, и едет по исключению: он объясняет

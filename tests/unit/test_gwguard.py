@@ -196,3 +196,70 @@ def test_collapse_and_overlaps_and_lan_nets(monkeypatch):
     monkeypatch.setattr(gwguard, "_ip_json", lambda a: routes.get(tuple(a), []))
     assert gwguard.lan_nets() == ["192.168.1.0/24", "10.42.0.0/16"]
     assert gwguard.lan_nets("wlan0") == []
+
+
+# ── статистика апстримов dnsmasq (servers.bind) ─────────────────────────────
+
+def _dig(monkeypatch, *, out="", rc=0, exc=None):
+    """subprocess.run для dig: что вернул и с какими аргументами звали."""
+    calls: list[list[str]] = []
+
+    def run(argv, **kw):
+        calls.append(list(argv))
+        if exc is not None:
+            raise exc
+        return _cp(rc, out)
+    monkeypatch.setattr(gwguard.subprocess, "run", run)
+    return calls
+
+
+def test_upstream_stats_reads_sent_and_failed_per_server(monkeypatch):
+    """`dig servers.bind CH TXT` у dnsmasq — «отправлено / отказов» по каждому
+    апстриму. Запрос идёт в 127.0.0.1 классом CHAOS и наружу не уходит."""
+    calls = _dig(monkeypatch, out='"10.9.1.1#53 1234 5"\n"1.1.1.1#53@awg0 7 7"\n')
+    assert gwguard.upstream_stats() == {"10.9.1.1#53": (1234, 5), "1.1.1.1#53@awg0": (7, 7)}
+    argv = calls[0]
+    assert argv[0] == "dig" and "@127.0.0.1" in argv and argv[-3:] == ["servers.bind", "CH", "TXT"], (
+        f"спросили не dnsmasq и не статистику: {argv}")
+
+
+def test_upstream_stats_on_an_empty_answer_is_an_empty_dict(monkeypatch):
+    _dig(monkeypatch, out="")
+    assert gwguard.upstream_stats() == {}
+    _dig(monkeypatch, out=";; connection timed out; no servers could be reached\n")
+    assert gwguard.upstream_stats() == {}, "текст ошибки dig разобран как статистика"
+
+
+def test_upstream_stats_is_none_when_dig_cannot_answer(monkeypatch):
+    """dig нет, завис или вернул ошибку — «нечем проверить», а не пустая
+    статистика и не исключение посреди тика монитора."""
+    _dig(monkeypatch, exc=FileNotFoundError("dig"))
+    assert gwguard.upstream_stats() is None
+    _dig(monkeypatch, exc=subprocess.TimeoutExpired(["dig"], 15))
+    assert gwguard.upstream_stats() is None
+    _dig(monkeypatch, rc=9, out='"10.9.1.1#53 1 0"\n')
+    assert gwguard.upstream_stats() is None
+
+
+# ── наши ACCEPT в чужом ip filter FORWARD ────────────────────────────────────
+
+def test_forward_accepts_lists_our_interface_rules(monkeypatch):
+    """Раздел 3a скрипта открывает транзит своим интерфейсам в цепочке, где
+    docker поставил DROP. Правила с условиями — чужие, в счёт не идут."""
+    out = ("-P FORWARD DROP\n"
+           "-A FORWARD -o awglink -j ACCEPT\n"
+           "-A FORWARD -i awglink -j ACCEPT\n"
+           "-A FORWARD -i awg0 -j ACCEPT\n"
+           "-A FORWARD -j DOCKER-USER\n"
+           "-A FORWARD -i docker0 ! -o docker0 -j ACCEPT\n"
+           "-A FORWARD -o eth0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n")
+    calls = _dig(monkeypatch, out=out)
+    assert gwguard.forward_accepts() == {"o:awglink", "i:awglink", "i:awg0"}
+    assert calls[0][:1] == ["iptables"] and "-S" in calls[0] and "FORWARD" in calls[0]
+
+
+def test_forward_accepts_without_iptables_is_empty(monkeypatch):
+    _dig(monkeypatch, exc=FileNotFoundError("iptables"))
+    assert gwguard.forward_accepts() == set()
+    _dig(monkeypatch, exc=subprocess.TimeoutExpired(["iptables"], 10))
+    assert gwguard.forward_accepts() == set()

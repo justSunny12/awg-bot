@@ -291,7 +291,7 @@ class _Pi(GatewayServices):
 
     def gw_snapshot(self) -> dict:
         return gwsnapshot.collect(mark_status="confirmed", egress_ok=True, guard_info=None,
-                                  peer_nets=None, ts="")
+                                  peer_nets=None)
 
     def gateway_claim_if_needed(self):
         return None

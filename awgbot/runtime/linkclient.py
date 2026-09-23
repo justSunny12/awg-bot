@@ -1,5 +1,5 @@
 """
-linkclient.py — сторона шлюза для канала ВПС ↔ шлюз (концепт «канал линка», этап 1).
+linkclient.py — сторона шлюза для канала ВПС ↔ шлюз (концепт «канал линка»).
 
 Коннект устанавливает ТОЛЬКО малина: на ней не появляется ни одного слушающего
 сокета, и механика работает за любым NAT. Ответные пакеты сервера проходят в
@@ -10,6 +10,11 @@ linkclient.py — сторона шлюза для канала ВПС ↔ шл�
 уходит ни байта: снимок отправляется при подключении, дальше — только когда
 факт или вердикт действительно сменились. Переподключение — с бэкоффом и
 джиттером: ровный ритм попыток был бы тем же маячком, только на уровне TCP.
+Бэкофф сбрасывает только сессия, в которой сервер ответил. Линк лёг и поднялся
+(`on_tick`) — сессия рвётся и ставится заново: после жёсткого ребута ВПС она
+полуоткрыта, а в простое агент сам ничего не шлёт. После операций из чата
+(бандл, мастер восстановления) снимок уходит сразу (`poke`). Байты канала
+копятся в `_gwlink_io`: зонд выхода наружу вычитает их из счётчиков линка.
 
 Канал включается тем, что привёз бандл (`LINK_CHANNEL=1` в юните обвязки): без
 перевыпуска конфигурации агент никуда не ходит — это и есть рубильник.
@@ -39,7 +44,7 @@ from awgbot.util import gwlink
 
 log = logging.getLogger(__name__)
 
-DEFAULT_PORT = 8787
+DEFAULT_PORT = gwlink.DEFAULT_PORT
 # 5 с → 15 → 45 → 135 → 300, каждый шаг × uniform(0.6, 1.4). Потолок пять минут:
 # линк лежит редко и надолго, а долбиться в него чаще незачем.
 _BACKOFF = (5, 15, 45, 135, 300)
@@ -89,6 +94,8 @@ class LinkClient:
         self._prev: dict = {}
         self._sent_bytes = 0                  # для тестов «в простое ноль пакетов»
         self._parts: dict = {}                # сборка фидов, пришедших частями
+        self._confirmed = False               # сервер ответил в этой сессии хоть раз
+        self._link_ok: bool | None = None     # линк на прошлом тике — ловим восстановление
 
     # ── соединение ───────────────────────────────────────────────────────────
 
@@ -99,39 +106,63 @@ class LinkClient:
                 self._key = gwlink.channel_key(bundlecrypt.read_privkey(f.read()))
         return self._key
 
+    def _io(self, rx: int = 0, tx: int = 0) -> None:
+        """Байты канала поверх счётчиков линка — зонд выхода наружу по уликам
+        вычитает их: ответ канала серверу не должен сходить за ответы из
+        интернета, ушедшие клиентам."""
+        io = self.services.__dict__.setdefault("_gwlink_io", [0, 0, 0])
+        io[0] += rx
+        io[1] += tx
+        io[2] += 1
+
     async def _connect_once(self) -> None:
         host, port = server_address(), server_port()
         if not host:
             raise OSError("адрес ВПС в линке не определён")
-        # Фиды локальной сети (этап 3) едут одной строкой: сжатые они весят
-        # килобайты — до предела MAX_LINE запас в десятки раз.
-        reader, writer = await asyncio.open_connection(host, port, limit=gwlink.MAX_LINE)
+        # Предел строки — тот же MAX_LINE, что у разбора: большое тело сервер
+        # режет на части (gwlink.CHUNK), и ни одна из них его не перерастает.
+        # Ключ — заново на каждое подключение: бандл из чата мог привезти новый
+        # ключ линка, а процесс агента тот же.
+        self._key = None
+        # Коннект с таймаутом: без него попытка при дропе SYN висела бы до
+        # системного, минуты, и бэкофф считал бы не то.
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port, limit=gwlink.MAX_LINE), timeout=20)
         self._writer = writer
         self._seq = 0
         self._rev = 0
         self._prev = {}
+        self._confirmed = False
+        self._set_online(True)
         log.info("канал линка: подключился к %s:%s", host, port)
         try:
-            lists_hash = await asyncio.to_thread(self.services.lan_feeds_hash)
+            lists_hash = await asyncio.to_thread(self.services.lan_feeds_applied_hash)
             await self._send("hello", {"proto": gwlink.PROTO,
                                        "agent": config.INSTALLED_VERSION,
-                                       "lists_hash": lists_hash})
+                                       "lists_hash": lists_hash}, pad=gwlink.PAD_DELTA)
             await self.push(full=True)
             await self._maybe_claim()
             last_seq: int | None = None
             while True:
-                line = await reader.readline()
+                try:
+                    line = await reader.readline()
+                except ValueError:
+                    log.warning("канал линка: строка с ВПС сверх предела — разрыв")
+                    break
                 if not line:
                     break
+                self._io(rx=len(line))
                 try:
                     msg = gwlink.unpack(self._channel_key(), line, last_seq=last_seq)
                 except gwlink.ProtocolError as e:
                     log.warning("канал линка: сообщение с ВПС отвергнуто — %s", e)
                     break
                 last_seq = int(msg.get("seq") or 0)
+                self._confirmed = True
                 await self._handle(msg)
         finally:
             self._writer = None
+            self._set_online(False)
             # запас на своё скачивание фидов отсчитывается от конца сессии
             with contextlib.suppress(Exception):
                 await asyncio.to_thread(self.services.lan_feeds_touch)
@@ -139,17 +170,28 @@ class LinkClient:
                 writer.close()
                 await writer.wait_closed()
 
+    def _set_online(self, on: bool) -> None:
+        """Признак «сессия открыта» — для домена агента, без импорта runtime."""
+        self.services.__dict__["_gwlink_online"] = on
+
     async def _run(self) -> None:
         attempt = 0
         while True:
             try:
                 await self._connect_once()
-                attempt = 0                    # была живая сессия — счёт заново
             except asyncio.CancelledError:
                 raise
             except Exception as e:             # noqa: BLE001
                 # Молча: линк и так даёт свой алерт, а второй про то же — шум.
                 log.info("канал линка: нет связи с ВПС (%s)", e)
+            # Счёт заново — только если сервер ответил хоть одним подписанным
+            # сообщением. Сессия, которую сервер закрыл сразу (чужая подпись,
+            # часы вне окна ±5 мин — малина без RTC до синхронизации), иначе
+            # превращалась в стук каждые пять секунд без роста шага: ровный
+            # ритм в линке и запись на SD на каждом коннекте.
+            if self._confirmed:
+                attempt = 0
+                self._confirmed = False
             delay = _BACKOFF[min(attempt, len(_BACKOFF) - 1)] * random.uniform(0.6, 1.4)
             attempt += 1
             await asyncio.sleep(delay)
@@ -166,6 +208,7 @@ class LinkClient:
             writer.write(line)
             await writer.drain()
             self._sent_bytes += len(line)
+            self._io(tx=len(line))
             return True
         except (ConnectionError, OSError) as e:
             log.info("канал линка: отправка «%s» не прошла (%s)", kind, e)
@@ -202,15 +245,11 @@ class LinkClient:
 
         Применение — в потоке: рестарт юнита обвязки идёт секунды, и держать на
         это время цикл событий агента (его Telegram) незачем. Ответ `ack` несёт
-        отпечаток применённого — сервер по нему понимает, что доставка
-        завершена, и больше этот набор не шлёт."""
+        итог применения; что доставка завершена, сервер видит
+        завершена по снимку, который уходит следом."""
         result = await asyncio.to_thread(self.services.apply_link_settings, values or {})
         body = {"ok": bool(result.get("ok")), "changed": list(result.get("changed") or []),
                 "error": str(result.get("error") or "")[:300]}
-        try:
-            body["hash"] = gwlink.settings_hash(gwlink.validate_settings(values or {}))
-        except gwlink.ProtocolError:
-            body["hash"] = ""
         await self._send("ack", body, pad=gwlink.PAD_DELTA)
         if result.get("changed") or not result.get("ok"):
             # Человек узнаёт о факте в чате агента: применено без его кнопки,
@@ -326,9 +365,17 @@ def set_notify(fn) -> None:
 
 
 def ensure(services) -> LinkClient | None:
-    """Поднять клиента, если канал включён бандлом. Роль client сюда не ходит."""
+    """Поднять клиента, если канал включён бандлом. Роль client сюда не ходит.
+    Бандл с LINK_CHANNEL=0 гасит уже запущенного клиента на ближайшем тике —
+    рубильник не должен ждать перезапуска агента."""
     global _client
-    if config.ROLE != "gateway" or not enabled():
+    if config.ROLE != "gateway":
+        return None
+    if not enabled():
+        if _client is not None and _client._task is not None:
+            _client._task.cancel()
+            _client._task = None
+            _client._set_online(False)
         return None
     if _client is None:
         _client = LinkClient(services)
@@ -354,10 +401,40 @@ def online() -> bool:
 async def on_tick(services) -> None:
     """После тика монитора: отправить дельту, если что-то действительно
     изменилось. Зовётся из задачи планировщика, а не своим расписанием —
-    своего расписания у канала нет по замыслу."""
+    своего расписания у канала нет по замыслу.
+
+    Здесь же — переподключение по восстановлению линка. Жёсткий ребут ВПС не
+    шлёт FIN, а агент в простое сам ничего не отправляет и RST не получит:
+    сессия висела бы «открытой» днями, подавляя своё скачивание фидов. Линк
+    лёг и поднялся — значит, прежней сессии на той стороне нет наверняка;
+    рвём и подключаемся заново. Ноль пакетов сверх того, что и так идёт."""
+    client = ensure(services)
+    if client is None:
+        return
+    try:
+        st = services.cached_status(24 * 3600)
+        link_ok = bool(st is not None and services.link_ok(st))
+    except Exception:                                     # noqa: BLE001
+        link_ok = None
+    if link_ok is not None:
+        was = client._link_ok
+        client._link_ok = link_ok
+        if was is False and link_ok and client._writer is not None:
+            log.info("канал линка: линк восстановился — переподключаюсь")
+            with contextlib.suppress(Exception):
+                client._writer.close()
+            return
+    await client.push()
+
+
+async def poke(services) -> None:
+    """После операции из чата агента (бандл, мастер восстановления): поднять
+    клиента, если бандл только что включил канал, и сразу отправить дельту —
+    человек ждёт результата на ВПС сейчас, а не через тик."""
     client = ensure(services)
     if client is not None:
-        await client.push()
+        with contextlib.suppress(Exception):
+            await client.push()
 
 
 async def shutdown() -> None:

@@ -6,7 +6,6 @@
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from aiogram import F, Router
@@ -475,20 +474,13 @@ async def gw_slot_snap(cb: CallbackQuery, callback_data: GwSlotCB, services):
     from awgbot.runtime import linkserver
     slot = callback_data.slot
     srv = linkserver.current()
-    before = srv.snaps_in.get(slot, 0) if srv else 0
-    sent = bool(srv) and await srv.send(slot, "ask", {"what": "snap"})
-    if not sent:
-        await cb.answer("Канал до шлюза сейчас не на связи", show_alert=True)
-        return
     # Ждём, пока снимок действительно придёт: агент может быть занят тиком.
     # «Обновлено», когда карточка нарисована из старого, — хуже, чем честное
     # «не успел».
-    fresh = False
-    for _ in range(12):
-        await asyncio.sleep(0.25)
-        if srv.snaps_in.get(slot, 0) != before:
-            fresh = True
-            break
+    fresh = await srv.ask_snap(slot, timeout=3.0) if srv else None
+    if fresh is None:
+        await cb.answer("Канал до шлюза сейчас не на связи", show_alert=True)
+        return
     await _render_card(cb, services, slot)
     await cb.answer("Снимок обновлён" if fresh else
                     "Шлюз не ответил за 3 секунды — показан прежний снимок",

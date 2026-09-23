@@ -399,8 +399,15 @@ def gw_status(_args) -> int:
     print(f"из бандла (ADMIN_IPS): {', '.join(gwguard.unit_admin_ips()) or '—'}")
     print(f"локально (ADMIN_IPS_EXTRA): {', '.join(gwguard.read_extra()) or '—'}")
     pol = gwguard.iptables_forward_policy()
-    print(f"политика ip filter FORWARD: {pol or 'цепочки нет'}"
-          + ("" if pol in (None, "accept") else "  ← drop перекроет транзит клиентов"))
+    note = ""
+    if pol not in (None, "accept"):
+        # наши ACCEPT для линка в той же цепочке открывают транзит — как в
+        # проверке монитора агента
+        acc = gwguard.forward_accepts()
+        note = ("  (транзит линка открыт нашими ACCEPT)"
+                if {f"i:{config.GW_LINK_IF}", f"o:{config.GW_LINK_IF}"} <= acc
+                else "  ← drop перекроет транзит клиентов")
+    print(f"политика ip filter FORWARD: {pol or 'цепочки нет'}{note}")
     rc = subprocess.run(["systemctl", "is-enabled", config.GW_UNIT], capture_output=True).returncode
     print(f"юнит {config.GW_UNIT}: {'включён' if rc == 0 else 'НЕ включён'}")
     env = gwguard.read_env()

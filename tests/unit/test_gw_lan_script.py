@@ -309,9 +309,19 @@ def test_resolver_goes_upstream_through_the_uplink(script):
     assert "address=/use-application-dns.net/" in sec and "address=/dns.google/" in sec
     assert "filter-AAAA" in sec, "IPv6 у клиентов режется ответами резолвера, не sysctl на малине"
     assert "disable_ipv6" not in sec and "rp_filter = 2" in sec
-    assert "DNSMASQ_EXCEPT=lo" in sec, "системный резолвер малины dnsmasq не трогает"
+    # DNSMASQ_EXCEPT=lo init-скрипт Debian превращает в except-interface=lo, а тот
+    # глушит listen-address=127.0.0.1: скрипт эту строку больше не пишет, только
+    # убирает свою прежнюю (поведение — в test_old_dnsmasq_except_line_is_removed…)
+    assert "DNSMASQ_EXCEPT=lo\\n' >>" not in sec, "строка, глушащая 127.0.0.1, снова дописывается"
+    apt = "apt-get install -y -q -o DPkg::Lock::Timeout=120"
+    assert apt in sec, "apt без ожидания блокировки dpkg падает, пока OMV держит свой apt"
+    apt_line = sec[sec.index(apt):].split("\n", 1)[0]
+    assert "--force-confdef" in apt_line and "--force-confold" in apt_line, (
+        "без confdef/confold dpkg в юните без терминала застревает на вопросе о конфиге")
     # конфиг пишется ДО установки пакета: первый старт демона сразу с listen-address
-    assert sec.index("install -m 0644 $_tmp $DNSMASQ_D/awg-gw-base.conf") < sec.index("apt-get install -y -q dnsmasq")
+    assert sec.index("install -m 0644 $_tmp $DNSMASQ_D/awg-gw-base.conf") < sec.index(apt)
+    # оверрайд юнита тоже до apt: первый старт после установки уже после аплинка
+    assert sec.index("install -m 0644 $_ovr_want $DNSMASQ_OVR") < sec.index(apt)
 
 
 def test_lan_section_never_kills_the_script_after_the_unit_is_enabled(script):
@@ -383,3 +393,201 @@ def test_port53_check_ignores_dnsmasq_and_the_resolved_stub(script, tmp_path):
     assert _sh(prog, env={"PATH": f"{bin_dir}:/usr/bin:/bin"}).stdout.strip() == "", "stub resolved и наш dnsmasq — не помеха"
     _fake(bin_dir, "ss", 'echo \'udp UNCONN 0 0 0.0.0.0:53 0.0.0.0:* users:(("pihole-FTL",pid=3,fd=1))\'\n')
     assert "pihole-FTL" in _sh(prog, env={"PATH": f"{bin_dir}:/usr/bin:/bin"}).stdout
+
+
+# ── списки: блокировка, проверка конфигурации, отказ рестарта ───────────────
+
+def test_lists_wait_for_the_lock_and_say_busy_with_code_75(lists_env):
+    """Ручное «Обновить» и фиды из канала совпали по времени. Раньше второй
+    запуск молча выходил с нулём — агент считал фиды из канала применёнными,
+    хотя они не легли. Теперь ждём блокировку до двух минут, а не дождались —
+    код 75 («занято»), и ничего не трогаем."""
+    tool, dns_d, dump, log, env = lists_env
+    bin_dir = Path(env["PATH"].split(":", 1)[0])
+    _fake(bin_dir, "flock", f'echo "flock $*" >> {log}\nexit 1\n')       # блокировку держит другой
+    (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 75, f"занятая блокировка выдана за {r.returncode}: {r.stderr}"
+    assert "обновление уже идёт" in r.stderr
+    text = log.read_text()
+    assert "flock -w 120 9" in text, f"ждать блокировку надо до двух минут, а не сдаваться сразу: {text}"
+    assert "systemctl" not in text and "nft" not in text, "без блокировки скрипт что-то применил"
+    assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n"
+    assert not (dump / "lists.status").exists(), "статус переписан запуском, который ничего не сделал"
+
+
+def test_lists_run_normally_once_the_lock_is_taken(lists_env):
+    tool, dns_d, dump, log, env = lists_env
+    bin_dir = Path(env["PATH"].split(":", 1)[0])
+    _fake(bin_dir, "flock", f'echo "flock $*" >> {log}\nexit 0\n')
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    assert "systemctl restart dnsmasq" in log.read_text()
+
+
+def test_lists_check_the_feed_with_the_same_conf_dir_as_debian(lists_env):
+    """init-скрипт Debian подключает conf-dir ключом, а не строкой в
+    dnsmasq.conf: голый `dnsmasq --test` наш фид не видел вовсе и одобрял
+    любой мусор, после которого рестарт оставлял квартиру без DNS."""
+    tool, dns_d, dump, log, env = lists_env
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    tests = [ln for ln in log.read_text().splitlines() if ln.startswith("dnsmasq --test")]
+    assert tests == [f"dnsmasq --test --conf-dir={dns_d},.dpkg-dist,.dpkg-old,.dpkg-new"], (
+        f"проверка конфигурации не видит каталог с фидом: {tests}")
+
+
+def _failing_restart(bin_dir: Path, log: Path, fails: int = 1) -> None:
+    """systemctl, у которого первые `fails` рестартов dnsmasq не проходят."""
+    cnt = log.parent / "restarts"
+    _fake(bin_dir, "systemctl",
+          f'echo "systemctl $*" >> {log}\n'
+          f'if [ "$1" = restart ]; then n=$(cat {cnt} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {cnt}\n'
+          f'  [ "$n" -le {fails} ] && exit 1; fi\nexit 0\n')
+
+
+def test_a_feed_dnsmasq_cannot_start_with_is_rolled_back(lists_env):
+    """--test пропустил, а демон с новым фидом не поднялся (память, дубли с
+    чужим файлом). Раньше код был 0 и файл оставался — dnsmasq лежал, квартира
+    без DNS, агент думал, что всё применено. Теперь прежний фид возвращается,
+    демон поднимается с ним, код 1."""
+    tool, dns_d, dump, log, env = lists_env
+    feed = dns_d / "awg-gw-vpn-feed.conf"
+    feed.write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    _failing_restart(Path(env["PATH"].split(":", 1)[0]), log)
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 1, f"отказ рестарта выдан за успех: rc={r.returncode}"
+    assert "не поднялся с новым фидом" in r.stderr and "откатываю" in r.stderr
+    assert feed.read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n", "прежний фид не вернулся"
+    assert not (dns_d / "awg-gw-vpn-feed.conf.prev.awg").exists(), "копия отката осталась в conf-dir"
+    assert log.read_text().count("systemctl restart dnsmasq") == 2, (
+        "после отката демон надо поднять с прежним фидом")
+    assert "rc=1" in (dump / "lists.status").read_text()
+
+
+def test_a_first_feed_dnsmasq_cannot_start_with_is_removed(lists_env):
+    """Прежнего фида не было — откатывать не к чему, новый убирается целиком:
+    dnsmasq без фида лучше, чем лежащий dnsmasq с фидом."""
+    tool, dns_d, dump, log, env = lists_env
+    _failing_restart(Path(env["PATH"].split(":", 1)[0]), log)
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 1
+    assert not (dns_d / "awg-gw-vpn-feed.conf").exists(), "фид, с которым демон не встал, остался"
+
+
+def test_the_rollback_copy_is_removed_only_after_a_successful_restart(lists_env):
+    tool, dns_d, dump, log, env = lists_env
+    feed = dns_d / "awg-gw-vpn-feed.conf"
+    feed.write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    assert "nftset=/x.com/inet#awg_home#lan_vpn4" in feed.read_text()
+    assert not (dns_d / "awg-gw-vpn-feed.conf.prev.awg").exists(), (
+        "копия отката осталась в conf-dir: dnsmasq читает там всё, кроме .dpkg-*")
+
+
+# ── раздел 5: оверрайд dnsmasq и /etc/default/dnsmasq ───────────────────────
+
+def _ovr_fragment(script: str) -> str:
+    """Кусок lan_apply от уборки /etc/default/dnsmasq до сборки оверрайда
+    включительно — то, что уедет на малину, без правки."""
+    sec = script.split('step "5. Локальная сеть без VPN"', 1)[1]
+    start = sec.index("    if grep -qs '^# awg-bot: резолвер только для локальной сети'")
+    end = sec.index('    rm -f "$_ovr_want"\n', start) + len('    rm -f "$_ovr_want"\n')
+    return sec[start:end]
+
+
+@pytest.fixture()
+def ovr_env(script, tmp_path):
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir()
+    log = tmp_path / "log"
+    unit = tmp_path / "dnsmasq.service"
+    unit.write_text("[Service]\nExecStart=/usr/share/dnsmasq/systemd-helper exec\n"
+                    "ExecStartPost=/usr/share/dnsmasq/systemd-helper start-resolvconf\n"
+                    "ExecStop=/usr/share/dnsmasq/systemd-helper stop-resolvconf\n", encoding="utf-8")
+    _fake(bin_dir, "systemctl",
+          f'echo "systemctl $*" >> {log}\n[ "$1" = cat ] && cat {unit}\nexit 0\n')
+    default = tmp_path / "default-dnsmasq"
+    ovr = tmp_path / "dropin" / "awg-gw.conf"
+    prog = ("MODE=apply\nrun() { sh -c \"$*\"; }\n_dn_changed=0\n"
+            f"DNSMASQ_DEFAULT={default}\nDNSMASQ_OVR={ovr}\n"
+            + _ovr_fragment(script) + 'echo "changed=$_dn_changed"\n')
+
+    def go(**extra):
+        env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "TMPDIR": str(tmp_path), **extra}
+        return _sh(prog, env=env)
+    return go, ovr, default, unit, log
+
+
+def test_the_dnsmasq_override_starts_after_the_uplink_and_drops_the_resolvconf_hook(ovr_env):
+    """dnsmasq, стартовавший раньше awg0, оставался без апстрима
+    `server=…@awg0` до ручного рестарта (так было на живых малинах). Хук
+    resolvconf Debian вписал бы 127.0.0.1 системным резолвером малины — её
+    собственный DNS зависел бы от аплинка."""
+    go, ovr, default, unit, log = ovr_env
+    r = go(UPLINK_IF="awg0")
+    assert r.returncode == 0, r.stderr
+    text = ovr.read_text()
+    assert "[Unit]\nAfter=awg-quick@awg0.service\nWants=awg-quick@awg0.service\n" in text, text
+    assert "[Service]\nRestart=on-failure\nRestartSec=5\n" in text
+    assert "ExecStartPost=\nExecStop=\n" in text, "хук resolvconf из юнита не снят"
+    assert "systemctl daemon-reload" in log.read_text() and "changed=1" in r.stdout
+
+
+def test_the_resolvconf_hook_is_cleared_only_where_it_exists(ovr_env):
+    """Пустые ExecStartPost=/ExecStop= на юните, где их не было, сносят чужие
+    строки — ровно те, что пакет мог добавить позже. Нет хука — нет и сброса."""
+    go, ovr, default, unit, log = ovr_env
+    unit.write_text("[Service]\nExecStart=/usr/sbin/dnsmasq -k\n", encoding="utf-8")
+    assert go(UPLINK_IF="awg0").returncode == 0
+    assert "ExecStartPost" not in ovr.read_text() and "ExecStop" not in ovr.read_text()
+
+
+def test_an_unchanged_override_is_not_rewritten_and_does_not_reload(ovr_env):
+    """Оверрайд собирается при каждом старте юнита обвязки: переписывать его и
+    дёргать daemon-reload без изменений — рестарт dnsmasq всей квартиры на
+    ровном месте."""
+    go, ovr, default, unit, log = ovr_env
+    go(UPLINK_IF="awg0")
+    log.write_text("", encoding="utf-8")
+    r = go(UPLINK_IF="awg0")
+    assert "changed=0" in r.stdout, "неизменный оверрайд посчитан изменением"
+    assert "daemon-reload" not in log.read_text()
+    r = go(UPLINK_IF="awg1")                      # сменился аплинк — оверрайд обязан переехать
+    assert "awg-quick@awg1.service" in ovr.read_text() and "changed=1" in r.stdout
+
+
+def test_the_old_dnsmasq_except_line_is_removed_and_nothing_else(ovr_env):
+    """DNSMASQ_EXCEPT=lo init-скрипт Debian превращает в except-interface=lo, а
+    тот перекрывает listen-address: dnsmasq переставал слушать 127.0.0.1, и
+    проверка апстрима была вечно красной. Свою прежнюю строку убираем, чужие
+    строки файла — не трогаем."""
+    go, ovr, default, unit, log = ovr_env
+    default.write_text("ENABLED=1\nCONFIG_DIR=/etc/dnsmasq.d,.dpkg-dist\n"
+                       "\n# awg-bot: резолвер только для локальной сети, системный DNS малины не трогать\n"
+                       "DNSMASQ_EXCEPT=lo\n", encoding="utf-8")
+    r = go(UPLINK_IF="awg0")
+    assert r.returncode == 0, r.stderr
+    text = default.read_text()
+    assert "DNSMASQ_EXCEPT" not in text and "awg-bot" not in text, text
+    assert "ENABLED=1\n" in text and "CONFIG_DIR=/etc/dnsmasq.d,.dpkg-dist\n" in text, "снесли чужое"
+    log.write_text("", encoding="utf-8")
+    before = default.read_text()
+    go(UPLINK_IF="awg0")
+    assert default.read_text() == before, "второй проход снова правил файл"
+
+
+def test_a_foreign_dnsmasq_except_line_is_left_alone(ovr_env):
+    """Строку без нашей пометки поставил человек — это его решение."""
+    go, ovr, default, unit, log = ovr_env
+    default.write_text("DNSMASQ_EXCEPT=lo\n", encoding="utf-8")
+    go(UPLINK_IF="awg0")
+    assert default.read_text() == "DNSMASQ_EXCEPT=lo\n"
+
+
+def test_a_missing_default_file_is_not_created(ovr_env):
+    """На чистой малине файл, созданный до установки пакета, становится его
+    conffile: dpkg без терминала падает на вопросе о нём."""
+    go, ovr, default, unit, log = ovr_env
+    assert go(UPLINK_IF="awg0").returncode == 0
+    assert not default.exists(), "создан /etc/default/dnsmasq до установки пакета"

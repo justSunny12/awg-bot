@@ -641,6 +641,43 @@ def dnsmasq_active() -> Optional[bool]:
     return proc.returncode == 0
 
 
+def upstream_stats() -> Optional[dict[str, tuple[int, int]]]:
+    """Статистика апстримов dnsmasq без единого запроса наружу: `servers.bind`
+    в классе CHAOS отдаёт по каждому серверу «отправлено / отказов». None —
+    dig нет или dnsmasq не ответил.
+
+    Раньше апстрим проверялся живым запросом к github.com каждым тиком: при TTL
+    в минуту dnsmasq почти каждый раз уходил наружу — один и тот же запрос раз
+    в три минуты, тот самый периодический рисунок, от которого уходим."""
+    try:
+        proc = subprocess.run(["dig", "+short", "+time=3", "+tries=1", "@127.0.0.1",
+                               "servers.bind", "CH", "TXT"], capture_output=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    out: dict[str, tuple[int, int]] = {}
+    for m in re.finditer(r'"([0-9a-fA-F.:#@\w-]+)\s+(\d+)\s+(\d+)"',
+                         proc.stdout.decode(errors="replace")):
+        out[m.group(1)] = (int(m.group(2)), int(m.group(3)))
+    return out
+
+
+def forward_accepts() -> set[str]:
+    """Интерфейсы, для которых в чужой ip filter FORWARD стоят наши ACCEPT
+    (раздел 3a скрипта обвязки). Пусто — не прочиталось или ничего нет."""
+    try:
+        proc = subprocess.run(["iptables", "-w", "-S", "FORWARD"], capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    out = set()
+    for line in proc.stdout.decode(errors="replace").splitlines():
+        m = re.match(r"^-A FORWARD -(i|o) (\S+) -j ACCEPT$", line.strip())
+        if m:
+            out.add(f"{m.group(1)}:{m.group(2)}")
+    return out
+
+
 def resolve_via_local(name: str = "github.com") -> Optional[bool]:
     """Резолвит ли dnsmasq через аплинк: один запрос к 127.0.0.1. None — dig нет."""
     try:

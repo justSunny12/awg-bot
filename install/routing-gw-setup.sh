@@ -23,6 +23,9 @@
 #      АДМИНА (ADMIN_IPS, приезжают в бандле): им открыто всё, и машина, и
 #      локальная сеть через неё;
 #   3) снимает прежнюю обвязку в iptables (AWGLINK_FWD, MASQUERADE, метки);
+#      при политике DROP в чужой ip filter FORWARD (docker) вставляет в неё
+#      ACCEPT своим интерфейсам (линк, аплинк, локальная сеть) — п.3a; по ним
+#      агент и судит, что красной проверки «политика FORWARD» нет;
 #   4) автозапуск: юнит зовёт этот же скрипт, таблица ставится ДО подъёма линка;
 #   5) при LAN_MODE=1 — «за шлюзом без VPN» (концепт «локальная сеть»,
 #      функция A): dnsmasq на адресе шлюза в квартире (bind-dynamic, апстрим
@@ -37,11 +40,20 @@
 #      реассерт обязан их сохранить — пересобираются только цепочки. Ручной
 #      слой прежней схемы переезжает в /var/lib/awg-gw/migrated, туда же при
 #      снятии уходят личные списки. Занят :53 не-dnsmasq — честный отказ ДО
-#      apt, причина в статусе; остальная обвязка при этом стоит.
+#      apt, причина в статусе; остальная обвязка при этом стоит. Юниту
+#      dnsmasq — оверрайд dnsmasq.service.d/awg-gw.conf: After/Wants
+#      awg-quick@<аплинк> (апстрим привязан к интерфейсу), Restart=on-failure,
+#      выключенный хук resolvconf Debian (если он в юните). apt — с
+#      DPkg::Lock::Timeout=120 (OMV может держать dpkg) и force-confdef/confold
+#      (терминала у юнита нет). awg-lan-lists.sh — один запуск за раз: ждёт
+#      блокировку до 120 с, не дождался — код 75 «занято».
 #
 # ЧЕГО НЕ ДЕЛАЕТ: не трогает существующие интерфейсы, прежнюю ручную схему
 # маршрутизации и чужие правила iptables (docker и т.п.) — они работают как
-# работали. Политика INPUT для локальной сети остаётся accept.
+# работали (исключение — ACCEPT из п.3a). Политика INPUT для локальной сети
+# остаётся accept. /etc/default/dnsmasq не трогает: прежняя строка
+# DNSMASQ_EXCEPT=lo глушила 127.0.0.1 (except-interface=lo), а файл, созданный
+# до пакета, ронял dpkg; свою строку прежних выпусков — убирает.
 #
 # ОКРУЖЕНИЕ. Первую группу вшивает в себя бандл и закрепляет юнит awg-link-gw
 # строками Environment= — значения приезжают с ВПС и меняются перевыпуском
@@ -338,7 +350,11 @@ cat > "$LAN_LISTS" <<'LISTSEOF'
 # AWG_LAN_FROM=<каталог> — фиды не качать, а взять готовыми из domains.lst и
 # nets.lst в этом каталоге: их привозит сервер по каналу линка (концепт «канал
 # линка», этап 3), и адрес квартиры тогда не ходит за ними ни на GitHub, ни в
-# Google. Проверки те же, что для скачанного: формат, длина, dnsmasq --test.
+# Google. Проверки те же, что для скачанного: формат, длина, dnsmasq --test
+# (с conf-dir, как у init-скрипта Debian); отказ --test или рестарта dnsmasq —
+# откат прежнего фида и rc=1.
+# Один запуск за раз: ждём блокировку lists.lock до 120 с, не дождались —
+# выход 75 («занято»), не успех: иначе фиды из канала пропали бы молча.
 #   фид доменов  → /etc/dnsmasq.d/awg-gw-vpn-feed.conf (nftset= в lan_vpn4), минус исключения
 #   фиды подсетей → набор lan_vpn_nets4 (атомарно: flush + add)
 #   слепки наборов → /var/lib/awg-gw/*.nft (грузятся при старте до фидов)
@@ -353,7 +369,10 @@ mkdir -p "$DUMP"
 # один запуск за раз: кнопка «Обновить» и задача агента могут совпасть, а два
 # параллельных — двойная запись фида и двойной рестарт dnsmasq
 exec 9>"$DUMP/lists.lock"
-if command -v flock >/dev/null 2>&1 && ! flock -n 9; then echo "обновление уже идёт" >&2; exit 0; fi
+# Ждём до двух минут, а не выходим сразу: фиды из канала, пришедшие во время
+# ручного «Обновить», иначе молча не применились бы, а агент считал бы их
+# применёнными. Не дождались — код 75 («занято»), не успех.
+if command -v flock >/dev/null 2>&1 && ! flock -w 120 9; then echo "обновление уже идёт" >&2; exit 75; fi
 ITDOG="https://raw.githubusercontent.com/itdoginfo/allow-domains/main"
 DOMAINS_URL="${AWG_LAN_DOMAINS_URL:-$ITDOG/Russia/inside-dnsmasq-ipset.lst}"
 SUBNET_SERVICES="${AWG_LAN_SUBNET_SERVICES:-telegram meta twitter cloudflare discord}"
@@ -391,9 +410,17 @@ if get_domains && [ -s "$TMP" ]; then
     elif ! cmp -s "$TMP" "$FEED"; then
         [ -f "$FEED" ] && cp -p "$FEED" "$FEED.prev.awg" 2>/dev/null || true
         install -m 644 "$TMP" "$FEED"
-        if dnsmasq --test >/dev/null 2>&1; then
-            rm -f "$FEED.prev.awg"
-            systemctl restart dnsmasq      # именно restart: SIGHUP конфиги не перечитывает
+        # conf-dir Debian подключает ключом из init-скрипта (CONFIG_DIR в
+        # /etc/default/dnsmasq), и голый --test наш фид не видел вовсе
+        if dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; then
+            # именно restart: SIGHUP конфиги не перечитывает; отказ — откат фида
+            if systemctl restart dnsmasq; then
+                rm -f "$FEED.prev.awg"
+            else
+                echo "домены: dnsmasq не поднялся с новым фидом — откатываю" >&2; rc=1
+                if [ -f "$FEED.prev.awg" ]; then mv -f "$FEED.prev.awg" "$FEED"; else rm -f "$FEED"; fi
+                systemctl restart dnsmasq || true
+            fi
         else
             echo "домены: dnsmasq --test отверг новый фид — откатываю" >&2; rc=1
             if [ -f "$FEED.prev.awg" ]; then mv -f "$FEED.prev.awg" "$FEED"; else rm -f "$FEED"; fi
@@ -1264,23 +1291,48 @@ DOHEOF
     for _f in awg-gw-vpn-user.conf awg-gw-ru-user.conf; do
         [ -f "$DNSMASQ_D/$_f" ] || { run "printf '# awg-bot (шлюз): личный список — awg-bot lan add/ru/del\\n' > $DNSMASQ_D/$_f"; _dn_changed=1; }
     done
-    # Debian-хук systemd-start-resolvconf вписал бы 127.0.0.1 системным резолвером
-    # малины — и её собственный DNS (агент, awg-quick, apt) зависел бы от аплинка.
-    # Ровно от этого из аплинка вырезан DNS=; штатная ручка — DNSMASQ_EXCEPT=lo.
-    if ! grep -qs '^DNSMASQ_EXCEPT=' "$DNSMASQ_DEFAULT" 2>/dev/null; then
-        run "printf '\\n# awg-bot: резолвер только для локальной сети, системный DNS малины не трогать\\nDNSMASQ_EXCEPT=lo\\n' >> $DNSMASQ_DEFAULT"
-        _dn_changed=1
+    # /etc/default/dnsmasq НЕ трогаем. Прежняя строка DNSMASQ_EXCEPT=lo init-скрипт
+    # Debian превращает в except-interface=lo, а тот по man перекрывает
+    # listen-address: dnsmasq переставал слушать 127.0.0.1, и проверка апстрима
+    # была вечно красной. А на чистой малине файл, созданный до установки
+    # пакета, — его conffile: dpkg без терминала падает на вопросе о нём.
+    # Свою прежнюю строку, если осталась, убираем.
+    if grep -qs '^# awg-bot: резолвер только для локальной сети' "$DNSMASQ_DEFAULT"; then
+        _tmp="$(mktemp)"
+        grep -v -e '^# awg-bot: резолвер только для локальной сети' -e '^DNSMASQ_EXCEPT=lo$' \
+            "$DNSMASQ_DEFAULT" > "$_tmp" && run "install -m 0644 $_tmp $DNSMASQ_DEFAULT"
+        rm -f "$_tmp"; _dn_changed=1
     fi
-    if [ ! -f "$DNSMASQ_OVR" ]; then
+    # Оверрайд юнита: перезапуск при отказе; старт ПОСЛЕ аплинка — апстрим
+    # server=…@<аплинк> привязывается к интерфейсу, и dnsmasq, стартовавший
+    # раньше awg0 (так и было на живых малинах), оставался без апстрима до
+    # ручного рестарта; хук resolvconf Debian выключен — он вписал бы 127.0.0.1
+    # системным резолвером малины, и её собственный DNS (агент, awg-quick, apt)
+    # зависел бы от аплинка. Хук снимаем, только если он в юните и есть.
+    _ovr_want="$(mktemp)"
+    {
+        printf '# awg-bot (шлюз): оверрайд dnsmasq под локальную сеть без VPN.\n'
+        if [ -n "${UPLINK_IF:-}" ]; then
+            printf '[Unit]\nAfter=awg-quick@%s.service\nWants=awg-quick@%s.service\n' "$UPLINK_IF" "$UPLINK_IF"
+        fi
+        printf '[Service]\nRestart=on-failure\nRestartSec=5\n'
+        if systemctl cat dnsmasq.service 2>/dev/null | grep -q 'start-resolvconf'; then
+            printf 'ExecStartPost=\nExecStop=\n'
+        fi
+    } > "$_ovr_want"
+    if ! cmp -s "$_ovr_want" "$DNSMASQ_OVR"; then
         run "mkdir -p $(dirname "$DNSMASQ_OVR")"
-        run "printf '[Service]\\nRestart=on-failure\\nRestartSec=5\\n' > $DNSMASQ_OVR"
+        run "install -m 0644 $_ovr_want $DNSMASQ_OVR"
         run "systemctl daemon-reload"; _dn_changed=1
     fi
+    rm -f "$_ovr_want"
     # dnsmasq и dig (наполнение набора после ручного добавления домена)
     if ! command -v dnsmasq >/dev/null 2>&1 || ! command -v dig >/dev/null 2>&1; then
         say "  ставлю dnsmasq и dnsutils"
         run "apt-get update -q >/dev/null 2>&1 || true"
-        run "DEBIAN_FRONTEND=noninteractive apt-get install -y -q dnsmasq dnsutils" \
+        # confdef/confold — на вопрос о конфигах отвечать самим, без терминала
+        # (юнит его не даёт); Lock::Timeout — OMV мог держать dpkg своим apt
+        run "DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold dnsmasq dnsutils" \
             || { lan_fail "dnsmasq не установился — смотри вывод apt выше"; return 1; }
         run "touch $DNSMASQ_MARK"
         _dn_changed=1

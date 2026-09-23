@@ -108,6 +108,8 @@ class _Agent:
                             lambda: {"LAN_IF": "end0", "LAN_ADDR": "192.168.68.222"})
         monkeypatch.setattr(gwguard, "dnsmasq_active", lambda: True)
         monkeypatch.setattr(gwguard, "resolve_via_local", lambda name="github.com": True)
+        # апстрим — по статистике dnsmasq, без запроса наружу
+        monkeypatch.setattr(gwguard, "upstream_stats", lambda: {"10.9.1.1#53": (10, 0)})
         monkeypatch.setattr(gwguard, "home_table_info", self._home)
         monkeypatch.setattr(gwguard, "lists_status",
                             lambda: {"domains": "1180", "nets": "412", "rc": "0"})

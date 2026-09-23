@@ -26,6 +26,10 @@ from awgbot.domain.services.types import ServiceError
 log = logging.getLogger(__name__)
 
 
+def _cut(v: str) -> str:
+    return v if len(v) <= 160 else v[:157] + "…"
+
+
 class GwChannelMixin:
     _GWLINK_SESSION_KEY = "gwlink_session"
     _GWLINK_SEEN_KEY = "gwlink_seen"
@@ -169,41 +173,42 @@ class GwChannelMixin:
         второй схемы сериализации для этого не нужно. Снимка нет — расхождений
         не выдумываем: пустой список значит «сказать нечего», а не «всё сошлось».
         """
+        from awgbot.util import gwlink
         keys: list[str] = []
         snap = self.gwlink_snapshot(gw.id)
         got = snap.get("bundle") if isinstance(snap.get("bundle"), dict) else None
         if not got:
             return ([], keys) if with_keys else []
-        want = dict(self._lan_env(gw))
-        want["ADMIN_IPS"] = " ".join(self._gw_ssh_allow())
-        pairs = (("lan_mode", "LAN_MODE", "режим «за шлюзом — без VPN»"),
-                 ("home_subnets", "HOME_SUBNETS", "локальные подсети"),
-                 ("resolver", "RESOLVER", "резолвер"),
-                 ("peer_home_nets", "PEER_HOME_NETS", "подсети за другими шлюзами"),
-                 ("admin_ips", "ADMIN_IPS", "устройства админа"))
+        want = self.gwlink_issued_env(gw)
         out = []
-        for field, env, human in pairs:
-            mine = " ".join(str(want.get(env, "")).split())
-            theirs = " ".join(str(got.get(field, "")).split())
+        for key in gwlink.BUNDLE_KEYS:
+            mine = want[key]
+            theirs = " ".join(str(got.get(gwlink.snap_field(key), "")).split())
             if mine != theirs:
                 # до 64 значений с каждой стороны — строку обрезаем, иначе экран
                 # выпуска с несколькими расхождениями перерос бы лимит сообщения
-                def _cut(v: str) -> str:
-                    return v if len(v) <= 160 else v[:157] + "…"
-                out.append(f"{human}: у сервера «{_cut(mine) or '—'}», на шлюзе «{_cut(theirs) or '—'}»")
-                keys.append(env)
+                out.append(f"{gwlink.KEY_HUMAN[key]}: у сервера «{_cut(mine) or '—'}», "
+                           f"на шлюзе «{_cut(theirs) or '—'}»")
+                keys.append(key)
         return (out, keys) if with_keys else out
 
     # ── настройки по каналу (этап 2) ─────────────────────────────────────────
     _GWLINK_ACK_KEY = "gwlink_ack"
 
-    def gwlink_settings_want(self, gw) -> dict:
-        """Желаемые настройки слота — ровно те значения, из которых собирается
-        бандл: второй схемы нет, и расходиться им не с чего."""
+    def gwlink_issued_env(self, gw) -> dict:
+        """Что ВПС выдал бы слоту сейчас — по всем ключам бандла, нормализовано.
+        Те самые значения, из которых собирается бандл: второй схемы нет, и
+        расходиться им не с чего."""
         from awgbot.util import gwlink
         env = dict(self._lan_env(gw))
         env["ADMIN_IPS"] = " ".join(self._gw_ssh_allow())
-        return {k: " ".join(str(env.get(k, "")).split()) for k in gwlink.SETTINGS_KEYS}
+        return {k: " ".join(str(env.get(k, "")).split()) for k in gwlink.BUNDLE_KEYS}
+
+    def gwlink_settings_want(self, gw) -> dict:
+        """Желаемые настройки слота — только ключи, которые везёт канал."""
+        from awgbot.util import gwlink
+        env = self.gwlink_issued_env(gw)
+        return {k: env[k] for k in gwlink.SETTINGS_KEYS}
 
     def gwlink_settings_due(self, gw) -> dict | None:
         """Что отправить шлюзу сейчас, или None — отправлять нечего.
@@ -214,17 +219,10 @@ class GwChannelMixin:
         применённый руками из старого файла. Снимка нет — молчим: судить не по
         чему, а слать вслепую значит рестартить обвязку без нужды."""
         from awgbot.util import gwlink
-        snap = self.gwlink_snapshot(gw.id)
-        got = snap.get("bundle")
-        if not isinstance(got, dict):
+        _lines, keys = self.gwlink_config_drift(gw, with_keys=True)
+        if not any(k in gwlink.SETTINGS_KEYS for k in keys):
             return None
-        want = self.gwlink_settings_want(gw)
-        field = {"ADMIN_IPS": "admin_ips", "HOME_SUBNETS": "home_subnets",
-                 "LAN_MODE": "lan_mode", "RESOLVER": "resolver"}
-        if all(want[k] == " ".join(str(got.get(field[k], "")).split())
-               for k in gwlink.SETTINGS_KEYS):
-            return None
-        return want
+        return self.gwlink_settings_want(gw)
 
     def gwlink_ack_in(self, slot_id: int, body: dict) -> None:
         """Итог применения на шлюзе: `ok|fail время хэш|ошибка`."""
@@ -265,10 +263,20 @@ class GwChannelMixin:
             return {}
         return data if isinstance(data, dict) and data.get("hash") else {}
 
-    @staticmethod
-    def lan_feeds_hash(domains: str, nets: str) -> str:
-        import hashlib
-        return hashlib.sha256((domains + "\n--\n" + nets).encode()).hexdigest()
+    def gwlink_lan_feeds_digest(self) -> str:
+        """Отпечаток текущих фидов без разбора всего файла на каждом такте:
+        кеш по времени изменения, файл меняется раз в шесть часов."""
+        path = self._lan_feeds_path()
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            return ""
+        cached = self.__dict__.get("_lan_feeds_digest")
+        if cached and cached[0] == mtime:
+            return cached[1]
+        digest = self.gwlink_lan_feeds().get("hash", "")
+        self.__dict__["_lan_feeds_digest"] = (mtime, digest)
+        return digest
 
     def gwlink_lan_feeds_update(self, force: bool = False) -> bool:
         """Скачать фиды локальной сети для шлюзов. True — фиды сменились.
@@ -285,12 +293,16 @@ class GwChannelMixin:
         from awgbot.infra import routing
         if not any(g.lan_mode for g in self.db.gateways()):
             return False
+        import random
         now = int(_time.time())
         every = int(settings.get("app.routing.lists_refresh_hours", 6)) * 3600
-        last = self.db.get_state(self._LAN_FEEDS_AT_KEY) or ""
-        if not force and last.isdigit() and now - int(last) < every and self.gwlink_lan_feeds():
+        # В state — момент СЛЕДУЮЩЕГО похода, с джиттером ±40 %: «прошло шесть
+        # часов» внутри тика давало метроном с разбросом в минуты, а это семь
+        # одних и тех же адресов по часам.
+        nxt = self.db.get_state(self._LAN_FEEDS_AT_KEY) or ""
+        if not force and nxt.isdigit() and now < int(nxt) and self.gwlink_lan_feeds():
             return False
-        self.db.set_state(self._LAN_FEEDS_AT_KEY, str(now))
+        self.db.set_state(self._LAN_FEEDS_AT_KEY, str(now + int(every * random.uniform(0.6, 1.4))))
         body, err, _code = routing.fetch(self._LAN_DOMAINS_URL, timeout=60)
         if body is None or len(re.findall(r"(?m)^ipset=/", body)) < 10:
             log.warning("канал линка: фид доменов локальной сети не получен (%s)", err or "короткий")
@@ -309,7 +321,8 @@ class GwChannelMixin:
             log.warning("канал линка: подсети локальной сети не получены ни из одного источника")
             return False
         nets_text = "\n".join(sorted(set(nets))) + "\n"
-        digest = self.lan_feeds_hash(body, nets_text)
+        from awgbot.util import gwlink
+        digest = gwlink.feeds_hash(body, nets_text)
         if digest == self.gwlink_lan_feeds().get("hash"):
             return False
         path = self._lan_feeds_path()
@@ -364,7 +377,6 @@ class GwChannelMixin:
         return {
             "online": bool(sess) and fresh,
             "ever": bool(seen or snap),
-            "since": sess.get("since", ""),
             "seen": seen,
             "age": self.gwlink_snapshot_age(gw.id),
             "agent": snap.get("agent_version", ""),
@@ -414,6 +426,12 @@ class GwChannelMixin:
         пересылкой, включая список нонсов: канал лишь избавляет человека от
         копирования сообщения между чатами."""
         try:
-            self.gateway_claim(token)
+            res = self.gateway_claim(token)
         except (ValueError, ServiceError) as e:
             log.info("канал линка: claim слота %s не принят: %s", slot_id, e)
+            return
+        # Токен подписан ключом линка — значит, своего слота; но проверим явно:
+        # сообщение из сессии слота 1 не должно метить устройство слота 2.
+        got = res.get("gateway") if isinstance(res, dict) else None
+        if got is not None and getattr(got, "id", slot_id) != slot_id:
+            log.warning("канал линка: claim из сессии слота %s пометил слот %s", slot_id, got.id)

@@ -408,7 +408,7 @@ def test_idle_link_is_probed_rarely_and_lives_by_the_cached_verdict(two, service
     clock = {"t": 10_000.0}
     monkeypatch.setattr(_time, "monotonic", lambda: clock["t"])
     monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)   # джиттер прочь — считаем такты
-    _settle(services)                                          # такт зонда 30 с, простой — 180 с
+    _settle(services)                                          # такт зонда 30 с, простой — 10 × 30 = 300 с
     fake_routing.link_rx_step = fake_routing.link_tx_step = 0   # тишина в обе стороны
     probes = _probe_log(services, monkeypatch)
     services.probe[1] = "down"                                 # зонд, когда дойдёт дело, скажет «лежит»
@@ -417,12 +417,12 @@ def test_idle_link_is_probed_rarely_and_lives_by_the_cached_verdict(two, service
         clock["t"] += 30
         return services.routing_liveness_tick()
 
-    for _ in range(5):
+    for _ in range(9):
         tick()
-    assert probes.count(1) == 0, "первые 2,5 минуты простоя — ни одного пакета наружу"
+    assert probes.count(1) == 0, "первые 4,5 минуты простоя — ни одного пакета наружу"
     assert services.db.get_state(services._RT_LINK_KEY) == "1", (
         "между зондами живость держат кэш вердикта и свежий хендшейк")
-    tick()                                                     # 180 с с прошлого зонда
+    tick()                                                     # 300 с с прошлого зонда — как у резерва
     assert probes.count(1) == 1, "по истечении растянутого такта зонд всё-таки идёт"
     for _ in range(3):
         tick()
@@ -702,3 +702,69 @@ def test_link_unit_is_refreshed_when_the_template_is_from_an_older_version(servi
     assert services.gateway_units_migrate() is False and runs == ["--reassert"]
     legacy.write_text("[Service]\n")
     assert services.gateway_units_migrate() is True and runs == ["--reassert", "--reassert"]
+
+
+# ── байты канала линка — не улика живости ────────────────────────────────────
+# Канал ВПС ↔ шлюз (снимки, диагностика, фиды) идёт тем же линком. Его байты
+# считает слушатель (services._gwlink_io[слот] = [rx, tx, сообщений]); на
+# счётчиках линка они же плюс накладные WireGuard: около 96 байт на сегмент в
+# сторону данных и ACK той же длины навстречу.
+
+_WG_SEGMENT = 96
+
+
+def _channel_on_link(services, monkeypatch, *, rx: int = 0, tx: int = 0, msgs: int = 1):
+    """Каждый такт канал слота 1 передаёт rx/tx полезной нагрузки за msgs
+    сообщений: слушатель считает её, счётчики линка — её же с накладными."""
+    real = routing.link_peer_state
+    chan = {"rx": 0, "tx": 0}
+
+    def link_peer_state(iface=""):
+        st = real(iface)
+        if st is None or iface != "awglink":
+            return st
+        io = services.__dict__.setdefault("_gwlink_io", {})
+        cur = io.get(1) or [0, 0, 0]
+        io[1] = [cur[0] + rx, cur[1] + tx, cur[2] + msgs]
+        chan["rx"] += rx + msgs * _WG_SEGMENT
+        chan["tx"] += tx + msgs * _WG_SEGMENT
+        return {**st, "rx": st["rx"] + chan["rx"], "tx": st["tx"] + chan["tx"]}
+    monkeypatch.setattr(routing, "link_peer_state", link_peer_state)
+
+
+def test_channel_replies_are_not_return_traffic_of_the_clients(two, services, fake_routing, monkeypatch):
+    """Аплинк шлюза лёг: клиенты шлют в линк, обратно тихо. Человек открыл
+    диагностику слота — шлюз отвечает таблицей и журналом тем же линком. Без
+    вычета эти ответы сходили бы за обратный трафик клиентов: автомат считал
+    бы путь живым и не переложил трафик на резерв ровно тогда, когда человек
+    разбирается со сломанным слотом."""
+    _settle(services)
+    probes = _probe_log(services, monkeypatch)
+    fake_routing.link_tx_step, fake_routing.link_rx_step = 1 << 20, 0   # спрос без ответа
+    _channel_on_link(services, monkeypatch, rx=1 << 20, tx=256, msgs=12)
+    services.probe[1] = "down"
+    need = services._rt_fail_need()
+    for _ in range(need):
+        services.routing_liveness_tick()
+    assert probes.count(1) == need, "ответы канала приняты за улику — зонд не пошёл"
+    assert services.active_gateway().id == 2, "отказ активного не замечен из-за байтов канала"
+
+
+def test_feeds_sent_over_the_channel_are_not_client_demand(two, services, fake_routing, monkeypatch):
+    """ВПС везёт шлюзу фиды — сотни килобайт в линк. Приняв их за спрос
+    клиентов без ответа, автомат зондировал бы наружу каждым тактом — коннект
+    раз в полминуты с адреса ВПС в одну цель, та самая сигнатура простоя."""
+    import random
+    import time as _time
+    clock = {"t": 10_000.0}
+    monkeypatch.setattr(_time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+    _settle(services)
+    fake_routing.link_rx_step = fake_routing.link_tx_step = 0            # клиентов нет
+    _channel_on_link(services, monkeypatch, tx=300 * 1024, msgs=4)
+    probes = _probe_log(services, monkeypatch)
+    for _ in range(5):
+        clock["t"] += 30
+        services.routing_liveness_tick()
+    assert probes.count(1) == 0, f"фиды по каналу вызвали {probes.count(1)} зондов наружу"
+    assert services.active_gateway().id == 1

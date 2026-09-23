@@ -349,6 +349,8 @@ def test_tg_mark_ensure_reasserts_the_table_once_per_interval(svc, monkeypatch):
     from awgbot.infra import gwguard
     calls = []
     monkeypatch.setattr(gwguard, "reassert", lambda: (calls.append(1), (True, ""))[1])
+    # реассерт смотрит, не запущен ли юнит уже, — без настоящего systemctl
+    monkeypatch.setattr(gwguard, "unit_state", lambda: {"ActiveState": "active"})
     svc._last_reassert = 0.0
     assert svc.tg_mark_ensure(["149.154.160.0/20"]) == 1
     assert svc.tg_mark_ensure(["149.154.160.0/20"]) == 0, "второй раз подряд — ждём интервал"
@@ -552,3 +554,110 @@ def test_lan_checks_alert_separately_and_quietly(svc, monkeypatch):
         notes += svc.monitor_tick()
     assert len(notes) == 1 and "Локальная сеть без VPN" in notes[0].text and not notes[0].critical
     assert not any("Обвязка шлюза неисправна" in n.text for n in notes)
+
+
+# ── политика FORWARD: наши ACCEPT поверх DROP docker ─────────────────────────
+
+def _forward(svc, monkeypatch, iptables_s: str, policy: str = "drop"):
+    """Проверки обвязки при чужом FORWARD с политикой policy и выводом
+    `iptables -S FORWARD` iptables_s."""
+    import subprocess as sp
+    monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
+    monkeypatch.setattr(config, "GW_LINK_IF", "awglink")
+    base = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []}, fwd_policy=policy)
+
+    def run(argv, timeout=10, **kw):
+        if list(argv)[:1] == ["iptables"]:
+            if iptables_s is None:
+                raise FileNotFoundError("iptables")
+            return _cp(0, iptables_s)
+        return base(argv, timeout)
+    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
+    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    return {c.name: c for c in svc.plumbing_checks()}["политика FORWARD"]
+
+
+def test_docker_drop_with_our_link_accepts_is_not_a_false_alarm(svc, monkeypatch):
+    """docker поставил DROP, раздел 3a скрипта открыл транзит линку в той же
+    цепочке. Транзит клиентов идёт — красная проверка здесь была бы ложной
+    тревогой, из-за которой человек полез бы сносить docker."""
+    c = _forward(svc, monkeypatch, "-P FORWARD DROP\n-A FORWARD -o awglink -j ACCEPT\n"
+                                   "-A FORWARD -i awglink -j ACCEPT\n-A FORWARD -j DOCKER-USER\n")
+    assert c.ok is True and c.detail == ""
+
+
+@pytest.mark.parametrize("rules", [
+    "-P FORWARD DROP\n-A FORWARD -j DOCKER-USER\n",                       # скрипт ещё не открыл
+    "-P FORWARD DROP\n-A FORWARD -i awglink -j ACCEPT\n",                 # только в одну сторону
+    "-P FORWARD DROP\n-A FORWARD -i awg0 -j ACCEPT\n-A FORWARD -o awg0 -j ACCEPT\n",   # не линку
+    None,                                                                 # iptables не прочитался
+])
+def test_docker_drop_without_our_link_accepts_stays_red(svc, monkeypatch, rules):
+    """Без ACCEPT линка в обе стороны DROP чужой таблицы перекрывает транзит
+    клиентов — проверка обязана оставаться красной и говорить, почему."""
+    c = _forward(svc, monkeypatch, rules)
+    assert c.ok is False, f"транзит перекрыт, а проверка зелёная при {rules!r}"
+    assert "drop" in c.detail and "перекрывает транзит" in c.detail
+
+
+def test_an_accept_policy_needs_no_iptables_at_all(svc, monkeypatch):
+    c = _forward(svc, monkeypatch, None, policy="accept")
+    assert c.ok is True
+
+
+# ── реассерт не вмешивается в идущее применение ─────────────────────────────
+
+def _reassert_host(svc, monkeypatch, state="active"):
+    from awgbot.infra import gwguard
+    calls: list[int] = []
+    unit = {"ActiveState": state}
+    monkeypatch.setattr(gwguard, "reassert", lambda: (calls.append(1), (True, ""))[1])
+    monkeypatch.setattr(gwguard, "unit_state", lambda: dict(unit))
+    svc._last_reassert = 0.0
+    return calls, unit
+
+
+def test_no_reassert_while_a_bundle_or_channel_settings_are_being_applied(svc, monkeypatch):
+    """Включение режима без VPN минуты стоит на apt; таблицы awg_home в это
+    время ещё нет, и тик монитора, увидев это, перезапустил бы юнит обвязки —
+    посреди dpkg. Пока идёт применение, реассерт молчит и интервал не тратит."""
+    calls, _unit = _reassert_host(svc, monkeypatch)
+    assert gw._APPLY_LOCK.acquire(blocking=False)
+    try:
+        assert svc._reassert_throttled("таблицы нет") is False
+        assert svc.tg_mark_ensure(["149.154.160.0/20"]) == 0, "реассерт Telegram мимо замка"
+    finally:
+        gw._APPLY_LOCK.release()
+    assert calls == [], "юнит перезапущен посреди применения"
+    assert svc._reassert_throttled("таблицы нет") is True, (
+        "после применения реассерт ждёт интервал, хотя не случился")
+    assert calls == [1]
+
+
+def test_no_reassert_while_the_unit_is_already_starting(svc, monkeypatch):
+    """Юнит уже в activating — его запустил кто-то другой (бандл из чата,
+    systemd после ребута). Второй рестарт убил бы тот, что идёт."""
+    calls, unit = _reassert_host(svc, monkeypatch, state="activating")
+    assert svc._reassert_throttled("таблицы нет") is False
+    assert svc.tg_mark_ensure(["149.154.160.0/20"]) == 0
+    assert calls == []
+    unit["ActiveState"] = "active"
+    assert svc.tg_mark_ensure(["149.154.160.0/20"]) == 1, "юнит поднялся — реассерт снова доступен"
+    assert calls == [1]
+
+
+def test_a_reassert_does_not_hold_the_apply_lock(svc, monkeypatch):
+    """Замок берётся на время реассерта и отпускается — иначе следующий бандл
+    из чата ждал бы его вечно."""
+    calls, _unit = _reassert_host(svc, monkeypatch)
+    assert svc._reassert_throttled("x") is True
+    assert gw._APPLY_LOCK.acquire(blocking=False), "замок применения остался занят"
+    gw._APPLY_LOCK.release()
+    from awgbot.infra import gwguard
+    svc._last_reassert = 0.0
+    monkeypatch.setattr(gwguard, "reassert", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    with pytest.raises(RuntimeError):
+        svc._reassert_throttled("x")
+    assert gw._APPLY_LOCK.acquire(blocking=False), "исключение в реассерте оставило замок занятым"
+    gw._APPLY_LOCK.release()

@@ -221,3 +221,64 @@ def test_egress_alert_fires_on_a_failed_probe_and_is_cleared_by_return_traffic(a
 
 def _texts(notes, needle: str) -> list[str]:
     return [n.text for n in notes if needle in n.text]
+
+
+# ── байты канала линка — не улика ────────────────────────────────────────────
+
+# Накладные WireGuard на один TCP-сегмент канала, как их видят счётчики линка
+# (transfer в `wg show`): 16 байт заголовка + 16 тега + IP/TCP 52, дополненные
+# до 16, — около 96 байт в сторону данных и один ACK той же длины навстречу.
+_WG_SEGMENT = 96
+
+
+def _channel(agent, rx: int = 0, tx: int = 0, msgs: int = 1) -> tuple[int, int]:
+    """Канал до ВПС что-то передал тем же линком: полезная нагрузка — в счёт
+    канала (как её считает клиент), а на счётчиках линка — она же плюс
+    накладные: сегмент в сторону данных и ACK навстречу. Возвращает прирост
+    счётчиков линка (rx, tx)."""
+    io = agent.svc.__dict__.setdefault("_gwlink_io", [0, 0, 0])
+    io[0] += rx
+    io[1] += tx
+    io[2] += msgs
+    return rx + msgs * _WG_SEGMENT, tx + msgs * _WG_SEGMENT
+
+
+def test_a_channel_answer_does_not_paint_a_dead_path_green(agent):
+    """Канал квартиры лёг, зонд это увидел. Человек открыл на ВПС диагностику —
+    агент отвечает хвостом журнала и таблицей тем же линком. Без вычета эти
+    ответы сходили бы за ответы из интернета, ушедшие клиентам, и выход
+    наружу «доказывался» бы трафиком, который никуда наружу не ходил — ровно
+    тогда, когда человек разбирается с поломкой."""
+    agent.tick()                                  # база
+    agent.probe_ms = None
+    c = agent.tick(rx=_Agent.STEP)                # спрос без ответа → зонд → «лежит»
+    assert c.ok is False
+    for _ in range(3):
+        d_rx, d_tx = _channel(agent, tx=_Agent.STEP, msgs=12)   # диагностика, снимки
+        c = agent.tick(rx=d_rx, tx=d_tx)
+        assert c.ok is False, "ответы канала серверу приняты за обратный трафик клиентов"
+        assert agent.status.egress_src != "трафик"
+
+
+def test_feeds_arriving_over_the_channel_are_not_client_demand(agent):
+    """Фиды локальной сети — сотни килобайт с ВПС тем же линком. Приняв их за
+    спрос клиентов без ответа, агент зондировал бы наружу каждым тиком — тот
+    самый маячок с адреса квартиры."""
+    agent.tick()                                  # база
+    agent.forbidden = True                        # путь известен, спроса нет — зонду не место
+    for _ in range(3):
+        d_rx, d_tx = _channel(agent, rx=_Agent.STEP, msgs=4)
+        c = agent.tick(rx=d_rx, tx=d_tx)
+    assert c.ok is True and agent.probes == [42.0]
+
+
+def test_client_traffic_on_top_of_the_channel_still_counts(agent):
+    """Вычитается только канал: настоящий обратный трафик клиентов поверх него —
+    по-прежнему улика, и зонд не нужен."""
+    agent.tick()
+    agent.probe_ms = None
+    agent.tick(rx=_Agent.STEP)
+    agent.forbidden = True
+    d_rx, d_tx = _channel(agent, tx=_Agent.STEP, msgs=3)
+    c = agent.tick(rx=d_rx, tx=d_tx + _Agent.STEP)
+    assert c.ok is True and agent.status.egress_src == "трафик"

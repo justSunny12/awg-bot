@@ -456,6 +456,9 @@ async def gw_execute(cb: CallbackQuery, callback_data: GwCB, services):
         await cb.answer("Восстанавливаю…")
         ok, detail = await call(services.reassert)
         title = "Мастер восстановления"
+        # снимок с новым состоянием — на ВПС сейчас, а не через тик
+        from awgbot.runtime import linkclient
+        await linkclient.poke(services)
     # Итог остаётся в чате отдельным сообщением: «когда и чем кончилось»
     # спрашивают потом, а панель переписывается следующей навигацией.
     await edit_nav(cb, services, texts.gateway_op_result(title, ok, detail), None)
@@ -617,6 +620,10 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
         detail = await call(services.gateway_apply_report) or detail
     await edit_nav(cb, services, texts.gateway_op_result("Конфигурация шлюза", ok, detail), None)
     if ok:
+        # бандл мог только что включить канал — поднять клиента и сразу
+        # отправить снимок: человек смотрит на карточку слота на ВПС сейчас
+        from awgbot.runtime import linkclient
+        await linkclient.poke(services)
         # он ли помеченный шлюз: не помечен или помечен другой → сообщение для
         # пересылки основному боту отдельным сообщением, чтобы пересылалось как есть
         outcome = await call(services.gateway_mark_outcome)

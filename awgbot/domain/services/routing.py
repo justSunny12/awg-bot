@@ -876,7 +876,18 @@ class RoutingMixin:
         """Секунд между зондами активного слота, когда через линк никто не
         ходит; 0 — каждый такт (тесты)."""
         base = settings.get_int("app.routing.probe_seconds", 30)
-        return base * float(settings.get("app.routing.probe_idle_multiplier", 6) or 0)
+        return base * float(settings.get("app.routing.probe_idle_multiplier", 10) or 0)
+
+    _CHAN_OVERHEAD = 200         # на сообщение канала: TCP/IP, конверт AWG, встречный ACK
+
+    def _link_minus_channel(self, slot_id: int, st: dict) -> dict:
+        """Счётчики линка за вычетом канала линка: снимки, ответы, диагностика
+        и фиды идут тем же линком, и без вычета сходили бы за обратный трафик
+        клиентов — ложная улика ровно тогда, когда человек разбирается со
+        сломанным слотом (открыл диагностику) или канал крутится в переподключениях."""
+        io = (self.__dict__.get("_gwlink_io") or {}).get(slot_id) or [0, 0, 0]
+        extra = io[2] * self._CHAN_OVERHEAD
+        return {**st, "rx": st["rx"] - (io[0] + extra), "tx": st["tx"] - (io[1] + extra)}
 
     def _active_verdict(self, gw) -> str:
         """Живость АКТИВНОГО слота: сначала бесплатные улики, потом зонд.
@@ -898,6 +909,16 @@ class RoutingMixin:
         import time as _time
         seen = self.__dict__.setdefault("_rt_active_seen", {})
         st = routing.link_peer_state(gw.link_if)
+        # Перезапуск линка — только по СЫРЫМ счётчикам: за вычетом канала они
+        # могут и убывать (накладные взяты с запасом), и такое убывание
+        # сходило бы за перезапуск — зонд каждым тактом, пока идут фиды.
+        raws = self.__dict__.setdefault("_rt_active_raw", {})
+        last_raw = raws.get(gw.id)
+        restarted = False
+        if st is not None:
+            restarted = last_raw is not None and (st["rx"] < last_raw[0] or st["tx"] < last_raw[1])
+            raws[gw.id] = (st["rx"], st["tx"])
+            st = self._link_minus_channel(gw.id, st)
         now = _time.monotonic()
         prev = seen.get(gw.id)
         if st is None:
@@ -917,7 +938,7 @@ class RoutingMixin:
         # Счётчики сбрасываются вместе с интерфейсом: линк перезапустили —
         # прежний замер не с чем сравнивать, и «упало» тут означало бы отвал
         # шлюза там, где была перезагрузка awg-quick.
-        if st["rx"] < prev["rx"] or st["tx"] < prev["tx"]:
+        if restarted:
             return _probe()
         returned = st["rx"] - prev["rx"] > self._RT_RETURN_BYTES
         demand = st["tx"] - prev["tx"] > self._RT_RETURN_BYTES

@@ -163,6 +163,43 @@ def test_the_server_fetches_lan_feeds_only_when_a_slot_needs_them(services, link
     assert services.gwlink_lan_feeds_update(force=True) is False, "то же содержимое — не «сменились»"
 
 
+def test_the_server_goes_for_feeds_exactly_where_the_gateway_script_would(services, link, monkeypatch):
+    """ВПС качает фиды вместо шлюза. Каждый адрес, куда он ходит, — тот же, что
+    в скрипте списков шлюза (константы берём прогоном его строк). Разойдись
+    они — состав списков в квартире тихо поменяется при переходе на канал."""
+    from pathlib import Path
+    script = (Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8")
+    lists = script.split("cat > \"$LAN_LISTS\" <<'LISTSEOF'\n", 1)[1].split("\nLISTSEOF\n", 1)[0]
+    lines = [ln for ln in lists.splitlines()
+             if ln.startswith(("ITDOG=", "DOMAINS_URL=", "SUBNET_SERVICES=", "GOOG_URL="))]
+    prog = "\n".join(lines) + ('\nprintf "%s\\n" "$DOMAINS_URL" "$GOOG_URL"'
+                              '\nfor s in $SUBNET_SERVICES; do printf "%s\\n" "$ITDOG/Subnets/IPv4/$s.lst"; done')
+    r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0, r.stderr
+    gateway_urls = set(r.stdout.split())
+    net = _Net(monkeypatch)
+    services.gwlink_lan_feeds_update(force=True)
+    assert set(net.urls) == gateway_urls, (
+        f"ВПС ходит не туда, куда ходил шлюз: лишние {sorted(set(net.urls) - gateway_urls)}, "
+        f"пропущены {sorted(gateway_urls - set(net.urls))}")
+
+
+def test_the_next_feeds_download_is_jittered_not_a_metronome(services, link, monkeypatch):
+    """Семь одних и тех же адресов по часам с адреса ВПС — метроном. Момент
+    следующего похода берётся с разбросом ±40 % от периода, а не «прошло
+    шесть часов» внутри тика."""
+    import random
+    _Net(monkeypatch)
+    period = 6 * 3600
+    for factor in (0.6, 1.4):
+        monkeypatch.setattr(random, "uniform", lambda a, b, f=factor: f)
+        now = int(time.time())
+        services.gwlink_lan_feeds_update(force=True)
+        nxt = int(services.db.get_state(services._LAN_FEEDS_AT_KEY))
+        assert abs(nxt - (now + int(period * factor))) <= 2, (
+            f"следующий поход через {nxt - now} с при множителе {factor}")
+
+
 @pytest.mark.parametrize("breakage", ["short_domains", "no_nets"])
 def test_a_bad_download_keeps_the_previous_feeds(services, link, monkeypatch, breakage):
     """Источник отдал заглушку провайдера или пустоту. Застывший фид лучше
@@ -242,7 +279,7 @@ async def test_new_feeds_on_the_server_go_out_on_the_next_tick(services, link, m
 class _Pi(GatewayServices):
     def gw_snapshot(self) -> dict:
         return gwsnapshot.collect(mark_status="confirmed", egress_ok=True, guard_info=None,
-                                  peer_nets=None, ts="")
+                                  peer_nets=None)
 
     def gateway_claim_if_needed(self):
         return None

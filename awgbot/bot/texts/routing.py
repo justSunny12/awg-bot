@@ -381,6 +381,13 @@ def channel_block(ch: dict | None, server_ok) -> str:
         side = "спешат" if skew > 0 else "отстают"
         lines.append(f"⏱ Часы шлюза {side} на {abs(skew) // 60} мин — за 5 мин канал "
                      "перестанет принимать сообщения; проверь синхронизацию времени на шлюзе")
+    pn = ch.get("peer_nets") or {}
+    if isinstance(pn, dict) and pn and not pn.get("ok"):
+        # Единственный вердикт, который едет с шлюза, — ради этой строки: тумблер
+        # доступа между подсетями включён на ВПС, и без неё отказ беспричинен.
+        miss = ", ".join(_e(str(n)) for n in (pn.get("missing") or [])[:8]) or "подсетей"
+        lines.append(f"⚠️ Доступ между подсетями: на шлюзе в таблице нет {miss}"
+                     " — перевыпусти конфигурацию шлюза и примени её")
     lists = ch.get("lists") or {}
     if lists and not lists.get("ok"):
         lines.append(f"⚠️ Шлюз не принял фиды локальной сети: {_e(lists.get('error') or 'ошибка')}"

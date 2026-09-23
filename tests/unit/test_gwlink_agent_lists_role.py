@@ -98,7 +98,7 @@ def test_channel_feeds_are_handed_to_the_lists_script_instead_of_the_network(svc
     assert res == {"ok": True, "error": ""}
     assert lan.calls == [str(lan.dir)], "скрипт списков не получил каталог с фидами канала"
     assert lan.seen == {"domains.lst": DOMAINS, "nets.lst": NETS}
-    assert svc.lan_feeds_hash() == _digest(DOMAINS, NETS)
+    assert svc.lan_feeds_applied_hash() == _digest(DOMAINS, NETS)
     assert svc.lan_feeds_from_channel_fresh() is True
 
 
@@ -125,7 +125,7 @@ def test_a_broken_feed_is_refused_and_nothing_is_written(svc, lan, packed, why):
     res = svc.apply_lan_feeds("0" * 64, packed)
     assert res["ok"] is False and res["error"], why
     assert lan.calls == [] and not lan.dir.exists(), f"{why}: до скрипта дошло"
-    assert svc.lan_feeds_hash() == ""
+    assert svc.lan_feeds_applied_hash() == ""
 
 
 def test_a_feed_that_does_not_match_its_fingerprint_is_refused(svc, lan):
@@ -133,7 +133,7 @@ def test_a_feed_that_does_not_match_its_fingerprint_is_refused(svc, lan):
     объявил. Не сошёлся — это не наш фид, и в dnsmasq квартиры он не ложится."""
     res = svc.apply_lan_feeds(_digest(DOMAINS, NETS), _pack(domains=DOMAINS + "ipset=/evil.org/vpn_domains\n"))
     assert res["ok"] is False and "отпечаток" in res["error"]
-    assert lan.calls == [] and svc.lan_feeds_hash() == ""
+    assert lan.calls == [] and svc.lan_feeds_applied_hash() == ""
 
 
 def test_a_compressed_bomb_is_refused_without_unpacking_it_whole(svc, lan):
@@ -176,7 +176,7 @@ def test_a_feed_the_script_rejected_is_not_remembered_as_applied(svc, lan):
     lan.result = (False, "домены: фид подозрительно короткий")
     res = svc.apply_lan_feeds(_digest(DOMAINS, NETS), _pack())
     assert res == {"ok": False, "error": "домены: фид подозрительно короткий"}
-    assert svc.lan_feeds_hash() == ""
+    assert svc.lan_feeds_applied_hash() == ""
     assert svc.lan_feeds_from_channel_fresh() is False
 
 
@@ -286,7 +286,9 @@ def test_a_long_output_is_cut_to_its_tail(svc, host):
     _, out, _ = host
     out["nft"] = ("строка\n" * 2000 + "ПОСЛЕДНЯЯ\n").encode()
     text = svc.diag_tail("table")
-    assert len(text) <= 3000 and text.endswith("ПОСЛЕДНЯЯ\n"), "обрезано не с того конца"
+    # таблица проходит вырезание SSH построчно, и финальный перевод строки
+    # теряется — смысл проверки в том, с какого конца резали
+    assert len(text) <= 3000 and text.rstrip("\n").endswith("ПОСЛЕДНЯЯ"), "обрезано не с того конца"
 
 
 def test_a_diagnostic_that_cannot_run_says_so_instead_of_breaking(svc, host, monkeypatch):
@@ -299,3 +301,93 @@ def test_a_diagnostic_that_cannot_run_says_so_instead_of_breaking(svc, host, mon
     monkeypatch.setattr(gwmod, "_run", lambda a, timeout=10: (_ for _ in ()).throw(FileNotFoundError(a[0])))
     assert svc.diag_tail("table").startswith("не прочиталось")
     assert svc.diag_tail("status").startswith("не прочиталось"), "нет файла статуса — тоже текстом"
+
+
+# ── таблица файервола без SSH шлюза ─────────────────────────────────────────
+
+NFT_TABLE = """table inet awg_gw_guard {
+	set admin4 {
+		type ipv4_addr
+		flags interval
+		elements = { 10.8.1.2 }
+	}
+	set ssh_allow4 {
+		type ipv4_addr
+		flags interval
+		elements = { 203.0.113.5, 198.51.100.0/24,
+			     192.0.2.77 }
+	}
+	set server4 {
+		type ipv4_addr
+		elements = { 198.51.100.200 }
+	}
+	set lan4 {
+		type ipv4_addr
+		flags interval
+		elements = { 192.168.68.0/24 }
+	}
+
+	chain input {
+		type filter hook input priority filter; policy accept;
+		iifname "lo" accept
+		ip saddr @tunnel_nets4 jump tunnel_in
+		meta nfproto ipv4 tcp dport 2222 jump ssh_in
+	}
+
+	chain tunnel_in {
+		ct state established,related accept
+		ip saddr @admin4 accept
+		ip saddr 10.99.99.1 tcp dport 2222 accept
+		drop
+	}
+
+	chain ssh_in {
+		ct state established,related accept
+		ip saddr @lan4 accept
+		ip saddr @server4 accept
+		ip saddr @ssh_allow4 accept
+		drop
+	}
+
+	chain forward {
+		type filter hook forward priority filter; policy accept;
+		iifname "awglink" ip saddr @admin4 accept
+	}
+}
+"""
+
+
+def test_the_firewall_table_goes_to_the_server_without_the_gateway_ssh(svc, host):
+    """Таблица обвязки уходит на ВПС по кнопке диагностики. SSH шлюза — порт и
+    вайтлист адресов, с которых на малину заходят снаружи, — ВПС знать незачем:
+    взломанный сервер получил бы готовую карту входа в квартиру."""
+    _, out, _ = host
+    out["nft"] = NFT_TABLE.encode()
+    text = svc.diag_tail("table")
+    for secret in ("203.0.113.5", "198.51.100.0/24", "192.0.2.77", "198.51.100.200",
+                   "2222", "@ssh_allow4", "@server4", "@lan4", "192.168.68.0/24"):
+        assert secret not in text, f"{secret!r} уехал на ВПС:\n{text}"
+    # имя блока остаётся — видно, что он есть и скрыт, а не потерян
+    assert "chain ssh_in { [скрыто] }" in text and "set ssh_allow4 { [скрыто] }" in text
+    assert text.count("[правило SSH скрыто]") == 2, "переход на ssh_in и правило порта для линка"
+
+
+def test_the_rest_of_the_table_stays_readable(svc, host):
+    """Вырезается только SSH: остальное — ради чего кнопку и нажимают."""
+    _, out, _ = host
+    out["nft"] = NFT_TABLE.encode()
+    text = svc.diag_tail("table")
+    assert "set admin4 {" in text and "10.8.1.2" in text
+    assert "chain tunnel_in {" in text and "ip saddr @admin4 accept" in text
+    assert 'iifname "awglink" ip saddr @admin4 accept' in text and "chain forward {" in text
+    # вырезанный блок не съел соседей: скобки сошлись
+    assert text.index("chain input {") < text.index("chain tunnel_in {") < text.index("chain forward {")
+    assert text.rstrip().endswith("}"), "хвост таблицы съеден"
+
+
+def test_the_ssh_cut_applies_to_the_table_only(svc, host):
+    """Журнал юнита не таблица: строки про порт в нём — вывод скрипта, и
+    вырезать из него «правила» значило бы прятать причину отказа."""
+    _, out, _ = host
+    out["journalctl"] = b"SSH port 2222: tcp dport 2222 accept from saddr 203.0.113.5\n"
+    assert "tcp dport 2222 accept" in svc.diag_tail("unit")

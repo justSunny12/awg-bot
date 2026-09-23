@@ -187,8 +187,15 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                                   "" if not missing_chains else
                                   "нет: " + ", ".join(missing_chains)))
             pol = gwguard.iptables_forward_policy()
-            checks.append(GwCheck("политика FORWARD", pol in (None, "accept"),
-                                  "" if pol in (None, "accept") else
+            ok_fwd = pol in (None, "accept")
+            if not ok_fwd:
+                # docker ставит DROP; раздел 3a скрипта открывает транзит своим
+                # интерфейсам в той же цепочке. Есть наши ACCEPT для линка —
+                # транзит идёт, и красная проверка была бы ложной тревогой.
+                acc = gwguard.forward_accepts()
+                ok_fwd = {f"i:{config.GW_LINK_IF}", f"o:{config.GW_LINK_IF}"} <= acc
+            checks.append(GwCheck("политика FORWARD", ok_fwd,
+                                  "" if ok_fwd else
                                   f"ip filter FORWARD: {pol} — drop чужой таблицы "
                                   "перекрывает транзит клиентов"))
         # Включённость юнита меняется только руками — статический ярус (45
@@ -535,17 +542,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             missing = self.tg_mark_missing()
         if not missing:
             return 0
-        if time.monotonic() - self._last_reassert < self._REASSERT_MIN_INTERVAL:
-            return 0
-        self._last_reassert = time.monotonic()
-        from awgbot.infra import gwguard
-        ok, err = gwguard.reassert()
-        if ok:
-            log.warning("gateway: таблица awg_gw_guard перевыставлена (не хватало %d диапазонов Telegram)",
-                        len(missing))
-            return len(missing)
-        log.warning("gateway: реассерт таблицы не удался: %s", err)
-        return 0
+        ok = self._reassert_throttled(f"не хватало {len(missing)} диапазонов Telegram")
+        return len(missing) if ok else 0
 
     # ── локальная сеть без VPN (концепт «локальная сеть», функция A) ──────────────
     _LAN_LAST_KEY = "gw_lan_counters"       # {"lan": pkts, "dns": pkts, "lan_at": iso, "dns_at": iso}
@@ -558,12 +556,52 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         from awgbot.infra import gwguard
         if time.monotonic() - self._last_reassert < self._REASSERT_MIN_INTERVAL:
             return False
-        self._last_reassert = time.monotonic()
-        ok, err = gwguard.reassert()
+        # Идёт применение (бандл из чата, настройки из канала) — не трогаем:
+        # включение режима без VPN минуты стоит на apt, таблицы awg_home в это
+        # время ещё нет, и рестарт юнита посреди него убил бы dpkg. Юнит уже
+        # в activating — то же самое, только запущено извне.
+        if not _APPLY_LOCK.acquire(blocking=False):
+            return False
+        try:
+            if gwguard.unit_state().get("ActiveState") == "activating":
+                return False
+            self._last_reassert = time.monotonic()
+            ok, err = gwguard.reassert()
+        finally:
+            _APPLY_LOCK.release()
         if ok:
             log.warning("gateway: обвязка перевыставлена: %s", why)
         else:
             log.warning("gateway: реассерт обвязки не удался (%s): %s", why, err)
+        return ok
+
+    def _upstream_verdict(self) -> bool | None:
+        """Отвечает ли апстрим — по статистике dnsmasq, без запроса наружу.
+
+        За тик росли отказы и не росли успешные отправки — апстрим молчит.
+        Запросов не было вовсе (квартира спит) — держим прошлый вердикт: ждать
+        ответа некому, а спрашивать ради проверки значит завести маячок."""
+        from awgbot.infra import gwguard
+        stats = gwguard.upstream_stats()
+        if not stats:
+            return None
+        sent = sum(v[0] for v in stats.values())
+        failed = sum(v[1] for v in stats.values())
+        prev = self.__dict__.get("_upstream_prev")
+        self.__dict__["_upstream_prev"] = (sent, failed)
+        if prev is None or sent < prev[0] or failed < prev[1]:
+            # первый взгляд (или dnsmasq перезапустился) — по накопленному с
+            # его старта: ни одного ответа на все отправленные — апстрим молчит
+            if sent == 0:
+                return self.__dict__.setdefault("_upstream_ok", True)
+            ok = failed < sent
+            self.__dict__["_upstream_ok"] = ok
+            return ok
+        d_sent, d_failed = sent - prev[0], failed - prev[1]
+        if d_sent == 0 and d_failed == 0:
+            return self.__dict__.get("_upstream_ok", True)
+        ok = d_failed < d_sent or d_failed == 0
+        self.__dict__["_upstream_ok"] = ok
         return ok
 
     def lan_status(self) -> tuple[dict, list[GwCheck]]:
@@ -596,12 +634,12 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         checks.append(GwCheck("резолвер", active, "" if active else
                               ("dnsmasq не запущен: journalctl -u dnsmasq -e" if active is False
                                else "systemctl не ответил")))
-        up = gwguard.resolve_via_local() if active else None
+        up = self._upstream_verdict() if active else None
         checks.append(GwCheck("апстрим через аплинк", up,
                               "" if up else
                               (f"{info['resolver']} не отвечает через аплинк: аплинк или резолвер сервера"
                                if up is False else ("резолвер не запущен — не проверяли" if not active
-                                                    else "dig не установлен"))))
+                                                    else "статистика dnsmasq не прочиталась"))))
         # таблица и наборы
         try:
             home = gwguard.home_table_info()
@@ -715,6 +753,27 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     _DIAG_MAX = 3000
     _SECRET_RE = re.compile(r"[A-Za-z0-9+/]{40,}={0,2}")
 
+    @staticmethod
+    def _strip_ssh(text: str) -> str:
+        """Из таблицы файервола — прочь всё про SSH шлюза: цепочку ssh_in и её
+        наборы, правило перехода на неё. Порт и вайтлист — то, чем на шлюз
+        заходят снаружи, и на ВПС им делать нечего (концепт, §10.4.1)."""
+        out, skip = [], 0
+        for line in text.splitlines():
+            s = line.strip()
+            if skip:
+                skip += s.count("{") - s.count("}")
+                continue
+            if re.match(r"^(chain ssh_in|set (ssh_allow4|server4|lan4))\b", s):
+                skip = s.count("{") - s.count("}")
+                out.append(line.split(s)[0] + s.split("{")[0].strip() + " { [скрыто] }")
+                continue
+            if "jump ssh_in" in s or re.search(r"tcp dport \d+ accept", s) and "saddr" in s:
+                out.append(line.split(s)[0] + "[правило SSH скрыто]")
+                continue
+            out.append(line)
+        return "\n".join(out)
+
     def diag_tail(self, name: str) -> str:
         """Текст диагностики по имени из закрытого списка; чужое имя — отказ."""
         from awgbot.infra import gwguard
@@ -732,6 +791,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                 text = pathlib_read(gwguard.STATUS_FILE)
         except (OSError, subprocess.SubprocessError) as e:
             return f"не прочиталось: {e}"
+        if name == "table":
+            text = self._strip_ssh(text)
         # Ключи и base64-блоки — прочь: ничего похожего на секрет в канал не
         # уходит, даже если однажды попадёт в вывод скрипта.
         text = self._SECRET_RE.sub("[скрыто]", text)
@@ -746,7 +807,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     _LAN_CHANNEL_FRESH_S = 12 * 3600
     _LAN_FEED_MAX = 8 * 1024 * 1024
 
-    def lan_feeds_hash(self) -> str:
+    def lan_feeds_applied_hash(self) -> str:
         """Отпечаток фидов, применённых из канала; пусто — не применяли."""
         return (self.db.get_state(self._LAN_CHANNEL_HASH_KEY) or "").strip()
 
@@ -757,8 +818,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         их сам и везёт, когда они меняются; неизменные фиды — это не повод
         лезть на GitHub с адреса квартиры. Канал оборван — запас 12 часов от
         последнего контакта, дальше агент снова качает сам."""
-        from awgbot.runtime import linkclient
-        if linkclient.online() and self.lan_feeds_hash():
+        if self.__dict__.get("_gwlink_online") and self.lan_feeds_applied_hash():
             return True
         raw = self.db.get_state(self._LAN_CHANNEL_AT_KEY) or ""
         return raw.isdigit() and time.time() - int(raw) < self._LAN_CHANNEL_FRESH_S
@@ -766,9 +826,9 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     def lan_feeds_touch(self, digest: str = "") -> None:
         """Отметка «канал подтвердил фиды»: сервер назвал тот же отпечаток или
         сессия только что закрылась — отсюда отсчитывается запас."""
-        if digest and digest != self.lan_feeds_hash():
+        if digest and digest != self.lan_feeds_applied_hash():
             return
-        if self.lan_feeds_hash():
+        if self.lan_feeds_applied_hash():
             self.db.set_state(self._LAN_CHANNEL_AT_KEY, str(int(time.time())))
 
     def apply_lan_feeds(self, digest: str, packed_b64: str) -> dict:
@@ -782,7 +842,6 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         в набор nft, ничего из них не исполняется.
         """
         import base64
-        import hashlib
         import zlib
         from awgbot.infra import gwguard
         if not gwguard.lan_mode():
@@ -801,10 +860,11 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             domains, nets = str(data["domains"]), str(data["nets"])
         except (ValueError, KeyError, TypeError, zlib.error, UnicodeDecodeError) as e:
             return {"ok": False, "error": f"фиды повреждены: {e}"}
-        got = hashlib.sha256((domains + "\n--\n" + nets).encode()).hexdigest()
+        from awgbot.util import gwlink
+        got = gwlink.feeds_hash(domains, nets)
         if got != digest:
             return {"ok": False, "error": "отпечаток фидов не сошёлся"}
-        if digest == self.lan_feeds_hash():
+        if digest == self.lan_feeds_applied_hash():
             self.db.set_state(self._LAN_CHANNEL_AT_KEY, str(int(time.time())))
             return {"ok": True, "error": ""}
         os.makedirs(gwguard.LAN_FEED_DIR, mode=0o700, exist_ok=True)
@@ -948,7 +1008,9 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         try:
             with os.fdopen(fd, "wb") as f:
                 f.write(plain)
-            proc = _run(["sh", path, "--apply"], timeout=180)
+            # 600, как у настроек из канала: первое включение режима без VPN
+            # ставит dnsmasq через apt, на малине это минуты
+            proc = _run(["sh", path, "--apply"], timeout=600)
             out = (_out(proc) + proc.stderr.decode(errors="replace")).strip()
             tail = "\n".join(out.splitlines()[-6:])
             return proc.returncode == 0, tail
@@ -1110,6 +1172,17 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         mins = settings.get_int("app.gateway.monitor_minutes", 3)
         return mins * 60 * float(settings.get("app.gateway.egress_idle_multiplier", 4) or 0)
 
+    _CHAN_OVERHEAD = 200         # на сообщение канала: TCP/IP, конверт AWG, встречный ACK
+
+    def _minus_channel(self, link_rx: int, link_tx: int) -> tuple[int, int]:
+        """Счётчики линка за вычетом собственного канала (снимки, ответы,
+        диагностика, фиды): иначе ответ канала серверу сходил бы за ответы из
+        интернета, ушедшие клиентам, и выход наружу доказывался бы трафиком,
+        который никуда наружу не ходил."""
+        io = self.__dict__.get("_gwlink_io") or [0, 0, 0]
+        extra = io[2] * self._CHAN_OVERHEAD
+        return link_rx - (io[0] + extra), link_tx - (io[1] + extra)
+
     def _egress_verdict(self, link_rx: int, link_tx: int) -> tuple[bool, float | None, str]:
         """(есть ли выход наружу, мс последнего замера, чем доказано).
 
@@ -1125,6 +1198,13 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         редко и с джиттером: ждать ответа в простое всё равно некому.
         """
         import random
+        # Перезапуск линка — только по СЫРЫМ счётчикам: за вычетом канала они
+        # могут и убывать (накладные взяты с запасом), и такое убывание
+        # сходило бы за перезапуск — зонд каждым тактом, пока идут фиды.
+        last_raw = self.__dict__.get("_egress_raw")
+        self.__dict__["_egress_raw"] = (link_rx, link_tx)
+        restarted = last_raw is not None and (link_rx < last_raw[0] or link_tx < last_raw[1])
+        link_rx, link_tx = self._minus_channel(link_rx, link_tx)
         seen = self.__dict__.get("_egress_seen")
         now = time.monotonic()
         every = self._egress_idle_seconds()
@@ -1138,7 +1218,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
 
         # Счётчики сбрасывает подъём линка: «ушли вниз» — не отказ канала, а
         # перезапуск awg-quick, и сравнивать больше не с чем.
-        if seen is None or link_rx < seen["rx"] or link_tx < seen["tx"]:
+        if seen is None or restarted:
             return _probe()
         returned = link_tx - seen["tx"] > self._EGRESS_RETURN_BYTES
         demand = link_rx - seen["rx"] > self._EGRESS_RETURN_BYTES
@@ -1366,8 +1446,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             mark_status=self.gateway_mark_status(),
             egress_ok=st.egress_ok if st is not None else None,
             guard_info=self._guard_info,
-            peer_nets=None if missing is None else (not missing, missing),
-            ts=st.ts if st is not None else "")
+            peer_nets=None if missing is None else (not missing, missing))
 
     def cached_status(self, max_age_seconds: float) -> GwStatus | None:
         """Снимок последнего тика, если он не старше max_age; иначе None —

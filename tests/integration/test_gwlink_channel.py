@@ -377,7 +377,7 @@ async def test_the_listener_follows_the_slots(services, link):
     before = link._bound
     services.db.gateway_delete(1)
     await link.ensure()
-    assert link._bound == () and link._server is None, "слушатель остался на снятом слоте"
+    assert link._bound == () and link._servers == {}, "слушатель остался на снятом слоте"
     admin = services.db.get_client_by_tg(ADMIN)
     pi = services.add_device(admin.id, "NASPi-2")
     services.db.gateway_add(pi.device_id, "awglink", 443, "127.0.0.0/30", slot_id=1)
@@ -535,7 +535,7 @@ class _Agent:
     def gateway_claim_if_needed(self):
         return self.token or None
 
-    def lan_feeds_hash(self) -> str:
+    def lan_feeds_applied_hash(self) -> str:
         return ""                      # фидов локальной сети из канала не применяли
 
     def set_link_role(self, active: bool) -> None:
