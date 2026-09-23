@@ -1,7 +1,8 @@
 """
 gateway_link.py — шлюзы условной маршрутизации (концепт «резервный шлюз»):
 слоты, назначение и замена машины, бандл и токен агента по слоту,
-переключение трафика, пинг со шлюза, предпочтительный слот.
+переключение трафика, пинг со шлюза, предпочтительный слот, кто такой бот
+шлюза слота (кэш getMe по отпечатку токена; спрашивает runtime/gwbotme.py).
 """
 from __future__ import annotations
 
@@ -563,6 +564,7 @@ class GatewayLinkMixin:
         self._gw_ping_forget(gw.id)
         self._standby_forget(gw.id)
         self.gwlink_forget(gw.id)          # снимок и сессия канала — вместе со слотом
+        self.db.set_state(self._gw_slot_key(self._GW_BOT_ME_KEY, gw.id), "")
         if not others:
             try:
                 settings.set_value("app.routing.enabled", False)
@@ -808,10 +810,11 @@ class GatewayLinkMixin:
             unavailable = self._rt_unavailable(g.id)
             up = int(self.db.get_state(f"routing_gw_{g.id}_up_streak") or 0)
             alive = up >= self._RT_UP_STREAK and not unavailable
-            standby.append({"name": _name(g),
+            standby.append({"name": _name(g), "slot": g.id,
                             "state": "alive" if alive else ("dead" if unavailable else "unknown")})
         return {"ok": self.routing_link_ok(),
                 "active": _name(active) if active is not None else "",
+                "active_slot": active.id if active is not None else 0,
                 "standby": standby}
 
     def gateway_state(self, slot_id: Optional[int] = None) -> dict:
@@ -854,6 +857,8 @@ class GatewayLinkMixin:
         st["peer_nets"] = self.gateway_peer_nets(int(slot_id))
         # канал линка (концепт «канал линка», §7.1): только из state, без запросов
         st["channel"] = self.gwlink_card(st["gateway"], st.get("handshake_age"))
+        # бот шлюза — ссылкой в чат с ним: username и имя из кэша getMe
+        st["agent_bot"] = self.gw_bot_identity(int(slot_id))
         return st
 
     def gateway_state_for_device(self, device_id: int) -> Optional[dict]:
@@ -1041,6 +1046,41 @@ class GatewayLinkMixin:
         except OSError:
             pass
         return ""
+
+    # ── кто такой бот шлюза: username и имя из getMe по токену слота ───────
+    _GW_BOT_ME_KEY = "gw_bot_me"
+
+    def _gw_token_id(self, slot_id: Optional[int]) -> str:
+        import hashlib
+        token = self.gw_bot_token(slot_id)
+        return hashlib.sha256(token.encode()).hexdigest()[:12] if token else ""
+
+    def gw_bot_identity(self, slot_id: Optional[int]) -> dict:
+        """{'username', 'name'} бота шлюза слота — из кэша getMe; пусто, если не
+        спрашивали или токен с тех пор сменился (ответ старого токена — не о
+        том боте)."""
+        import json
+        raw = self.db.get_state(self._gw_slot_key(self._GW_BOT_ME_KEY, int(slot_id or 1))) or ""
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        if not isinstance(data, dict) or data.get("token_id") != self._gw_token_id(slot_id):
+            return {}
+        return {"username": str(data.get("username") or ""), "name": str(data.get("name") or "")}
+
+    def set_gw_bot_identity(self, slot_id: Optional[int], username: str, name: str) -> None:
+        import json
+        self.db.set_state(self._gw_slot_key(self._GW_BOT_ME_KEY, int(slot_id or 1)),
+                          json.dumps({"username": username, "name": name[:64],
+                                      "token_id": self._gw_token_id(slot_id)}, ensure_ascii=False))
+
+    def gw_bot_identity_missing(self) -> list[int]:
+        """Слоты, у которых токен есть, а ответа Telegram ещё нет."""
+        return [g.id for g in self.db.gateways()
+                if self.gw_bot_token(g.id) and not self.gw_bot_identity(g.id)]
 
     def set_gw_bot_token(self, token: str, slot_id: Optional[int] = None) -> None:
         """Запомнить токен агента. Хранение осознанное: без него перевыпуск

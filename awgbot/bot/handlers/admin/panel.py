@@ -131,6 +131,19 @@ async def _traffic_devices_screen(services, client_id: int):
     return texts.traffic_devices_text(client.name, rows), kb.traffic_devices_kb()
 
 
+async def _gateway_card_screen(services, slot: int):
+    from awgbot.domain.services import ServiceError
+    try:
+        # пинг — как по кнопке «Карточка»: лениво, пустой кэш заполняется
+        # замером; без него неизмеренный пинг читался бы как «шлюз не отвечает»
+        st = await call(services.gateway_screen_state, slot)
+    except ServiceError:
+        # ссылка из старой шапки, слот с тех пор сняли: свой ответ, а не
+        # «профиль не найден» с клавиатурой потребления
+        return "🛰 Такого шлюза больше нет — слот снят.", kb.settings_back("rt")
+    return texts.gateway_card_text(st, st["states"]), kb.gateway_card(st, back_to_list=len(st["states"]) > 1)
+
+
 async def _online_screen(services):
     devs = await call(services.online_devices)
     return texts.online_devices_text(devs), kb.online_devices_kb()
@@ -139,8 +152,9 @@ async def _online_screen(services):
 async def _traffic_deep_link(message: Message, services, payload: str,
                              state: FSMContext | None = None) -> bool:
     """«/start traffic», «/start traffic-<id>», «/start online», «/start
-    expiring», «/start extend-<id>» — переходы по ссылкам из панели и её
-    экранов. Команду, которую отправил клик, убираем из чата: она служебная."""
+    expiring», «/start extend-<id>», «/start gw-<слот>» — переходы по ссылкам
+    из панели и её экранов. Команду, которую отправил клик, убираем из чата:
+    она служебная."""
     if payload == "online":
         screen = await _online_screen(services)
     elif payload == "expiring":
@@ -152,6 +166,9 @@ async def _traffic_deep_link(message: Message, services, payload: str,
             await state.update_data(return_to="expiring")
         screen = await _extend_picker(services, int(payload[len("extend-"):]),
                                       cancel_to=Menu(action="expiring").pack())
+    elif payload.startswith(texts.GW_CARD_PAYLOAD + "-") and payload[len(texts.GW_CARD_PAYLOAD) + 1:].isdigit():
+        # имя шлюза или «резерв жив» в строке РФ-доступа — карточка слота
+        screen = await _gateway_card_screen(services, int(payload[len(texts.GW_CARD_PAYLOAD) + 1:]))
     elif payload == _TRAFFIC_PAYLOAD:
         screen = await _traffic_profiles_screen(services)
     elif payload.startswith(_TRAFFIC_PAYLOAD + "-") and payload[len(_TRAFFIC_PAYLOAD) + 1:].isdigit():

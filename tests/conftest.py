@@ -482,3 +482,21 @@ def mig(monkeypatch, services, fake_awg):
     monkeypatch.setattr(_awg, "block_ip", lambda ip: state.blocked.add(ip))
     monkeypatch.setattr(_awg, "unblock_ip", lambda ip: state.blocked.discard(ip))
     return state
+
+
+# ── Telegram в тестах закрыт ─────────────────────────────────────────────────
+# Настоящий aiogram.Bot в коде создаётся не только на старте: ввод токена бота
+# шлюза сразу спрашивает у Telegram getMe (runtime/gwbotme). Тест, дошедший до
+# такого места, без этой заглушки уходил бы в api.telegram.org — медленно,
+# зависимо от сети и с токеноподобной строкой наружу. Любой запрос настоящей
+# сессии падает сетевой ошибкой: для кода это «Telegram не ответил», и путь
+# отказа у всех таких мест обязан это переживать.
+@pytest.fixture(autouse=True)
+def _no_telegram_network(monkeypatch):
+    from aiogram.client.session.aiohttp import AiohttpSession
+    from aiogram.exceptions import TelegramNetworkError
+
+    async def _closed(self, bot, method, timeout=None):
+        raise TelegramNetworkError(method=method, message="сеть в тестах закрыта")
+
+    monkeypatch.setattr(AiohttpSession, "make_request", _closed)

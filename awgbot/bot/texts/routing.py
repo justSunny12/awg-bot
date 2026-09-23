@@ -71,7 +71,8 @@ def gateway_device_card(dev, state=None) -> str:
     tail = ("\n\n<b>Это устройство — шлюз условной маршрутизации, через него идёт "
             "трафик на РФ-домены.</b>")
     role = gateway_role_line(state)
-    return head + tail + (f"\n{role}" if role else "")
+    agent = agent_bot_line(state)
+    return head + tail + (f"\n{role}" if role else "") + (f"\n\n{agent}" if agent else "")
 
 
 def gateway_claim_marked(dev) -> str:
@@ -250,7 +251,9 @@ def gateway_card_text(state: dict, states: list) -> str:
             pass
     tail += ("\n" if tail else "\n\n") + ping_line(state.get("ping_ms"))
     chan = channel_block(state.get("channel"), state.get("link_ok"))
-    return head + body + home + tail + (("\n\n" + chan) if chan else "")
+    agent = agent_bot_line(state)
+    return (head + body + home + tail + (("\n\n" + chan) if chan else "")
+            + (("\n\n" + agent) if agent else ""))
 
 
 def _ago(seconds) -> str:
@@ -867,30 +870,56 @@ def routing_status_line(ok: bool) -> str:
             f"🇷🇺 {ROUTING_NAME}: 🔴 не работает")
 
 
-def routing_admin_status_line(info: dict) -> str:
+GW_CARD_PAYLOAD = "gw"          # «/start gw-<слот>» — карточка слота из шапки
+
+
+def routing_admin_status_line(info: dict, bot_username: str = "") -> str:
     """Та же строка в шапке админа — с тем, кто несёт трафик, и состоянием
     резерва (services.routing_admin_status): один шлюз — «работает (имя)»;
     два — «…, резерв жив / не отвечает / проверяется», мёртвый резерв красит
-    строку в 🟠; выключен — кто именно не отвечает."""
+    строку в 🟠; выключен — кто именно не отвечает. Имя шлюза и слово
+    «резерв» — ссылки в карточку слота (deep-link на себя), когда username
+    известен; состояние резерва остаётся текстом."""
+    from .fmt import deep_link
     active, standby = info.get("active", ""), info.get("standby") or []
+
+    def _link(label: str, slot) -> str:
+        return deep_link(bot_username, f"{GW_CARD_PAYLOAD}-{int(slot)}", label) if slot else _e(label)
+
     if info.get("ok"):
         dead = [s for s in standby if s["state"] == "dead"]
         dot = "🟠" if dead else "🟢"
-        line = f"🇷🇺 {ROUTING_NAME}: {dot} работает" + (f" ({_e(active)})" if active else "")
+        line = f"🇷🇺 {ROUTING_NAME}: {dot} работает"
+        if active:
+            line += f" ({_link(active, info.get('active_slot'))})"
         if standby:
-            st = standby[0]["state"]
-            line += {"alive": ", резерв жив", "dead": ", резерв не отвечает"}.get(st, ", резерв проверяется")
+            # ссылка — только на слове «резерв»: состояние остаётся текстом
+            st = standby[0]
+            tail = {"alive": "жив", "dead": "не отвечает"}.get(st["state"], "проверяется")
+            line += ", " + _link("резерв", st.get("slot")) + " " + tail
         return line
-    names = ([active] if active else []) + [s["name"] for s in standby if s["state"] != "alive"]
-    alive = [s["name"] for s in standby if s["state"] == "alive"]
+    names = ([(active, info.get("active_slot"))] if active else []) \
+        + [(s["name"], s.get("slot")) for s in standby if s["state"] != "alive"]
+    alive = [s for s in standby if s["state"] == "alive"]
     line = f"🇷🇺 {ROUTING_NAME}: 🔴 выключен"
     if len(names) == 1:
-        line += f", {_e(names[0])} не отвечает"
+        line += f", {_link(*names[0])} не отвечает"
     elif names:
-        line += " — " + ", ".join(_e(n) for n in names) + " не отвечают"
+        line += " — " + ", ".join(_link(n, s) for n, s in names) + " не отвечают"
     if alive:
-        line += ", резерв жив"
+        line += ", " + _link("резерв", alive[0].get("slot")) + " жив"
     return line
+
+
+def agent_bot_line(state: dict | None) -> str:
+    """Последняя строка карточки: ссылка в чат бота шлюза — имя профиля из
+    getMe по токену слота. Ссылка на диалог, без команд. Бота ещё не спросили
+    (токена нет или Telegram не ответил) — строки нет."""
+    me = (state or {}).get("agent_bot") or {}
+    if not me.get("username"):
+        return ""
+    name = me.get("name") or me["username"]
+    return f'Бот шлюза: <a href="https://t.me/{_e(me["username"])}">{_e(name)}</a>'
 
 
 ROUTING_ABOUT = (

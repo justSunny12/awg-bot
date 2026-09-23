@@ -16,13 +16,7 @@ from .routing import routing_status_line, routing_admin_status_line
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _deep_link(bot_username: str, payload: str, label: str) -> str:
-    """Кликабельный текст в сообщении бота — только ссылка. Deep-link на самого
-    себя: нажатие шлёт «/start <payload>», бот команду удаляет и открывает экран.
-    Без username — просто текст."""
-    if not bot_username:
-        return _e(label)
-    return f'<a href="https://t.me/{bot_username}?start={payload}">{_e(label)}</a>'
+from .fmt import deep_link as _deep_link
 
 
 def _traffic_triplet(rx: int, tx: int) -> str:
@@ -128,7 +122,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     # от которого зависит связь, и узнавать о его состоянии заходом в раздел
     # настроек — на один шаг дольше, чем нужно. None — функция не настроена.
     if routing_info is not None:
-        groups.append(routing_admin_status_line(routing_info))
+        groups.append(routing_admin_status_line(routing_info, bot_username))
     elif routing_ok is not None:
         groups.append(routing_status_line(routing_ok))
     if st.get("online_count") is not None:

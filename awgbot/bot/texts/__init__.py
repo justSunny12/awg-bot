@@ -40,7 +40,7 @@ from .migration import (
 from .routing import (
     gateway_device_card, gateway_claim_marked, gateway_claim_already, ROUTING_NAME,
     SETTINGS_ROUTING_ABSENT, routing_lists_block, ROUTING_BUNDLE_INTRO,
-    channel_block, channel_drift_block, GATEWAY_DIAG_INTRO, gateway_diag_text,
+    channel_block, channel_drift_block, GATEWAY_DIAG_INTRO, gateway_diag_text, GW_CARD_PAYLOAD, agent_bot_line,
     settings_routing_text, settings_routing_gateway_line, GATEWAY_CHOOSE_INTRO,
     GATEWAY_PICK_INTRO, GATEWAY_PICK_EMPTY, gateway_new_ask, gateway_mark_ask,
     gateway_marked, gateway_remove_ask, gateway_removed, ROUTING_PROVISION_INTRO,
@@ -134,7 +134,7 @@ __all__ = [
     "migration_generation_pending", "migration_needed", "migration_promoted",
     "migration_promote_restart_failed", "gateway_device_card", "gateway_claim_marked",
     "gateway_claim_already", "ROUTING_NAME", "SETTINGS_ROUTING_ABSENT",
-    "routing_lists_block", "ROUTING_BUNDLE_INTRO", "channel_block", "channel_drift_block", "GATEWAY_DIAG_INTRO", "gateway_diag_text", "settings_routing_text",
+    "routing_lists_block", "ROUTING_BUNDLE_INTRO", "channel_block", "channel_drift_block", "GATEWAY_DIAG_INTRO", "gateway_diag_text", "GW_CARD_PAYLOAD", "agent_bot_line", "settings_routing_text",
     "settings_routing_gateway_line", "GATEWAY_CHOOSE_INTRO", "GATEWAY_PICK_INTRO",
     "GATEWAY_PICK_EMPTY", "gateway_new_ask", "gateway_mark_ask", "gateway_marked",
     "gateway_remove_ask", "gateway_removed", "ROUTING_PROVISION_INTRO",

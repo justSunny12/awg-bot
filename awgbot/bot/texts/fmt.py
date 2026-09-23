@@ -6,6 +6,15 @@ import html
 from awgbot.util import timeutil
 
 
+def deep_link(bot_username: str, payload: str, label: str) -> str:
+    """Кликабельный текст в сообщении бота — только ссылка. Deep-link на самого
+    себя: нажатие шлёт «/start <payload>», бот команду удаляет и открывает экран.
+    Без username — просто текст."""
+    if not bot_username:
+        return _e(label)
+    return f'<a href="https://t.me/{bot_username}?start={payload}">{_e(label)}</a>'
+
+
 def _e(s) -> str:
     """Экранирование пользовательских строк (имён) для HTML parse_mode."""
     return html.escape(str(s))

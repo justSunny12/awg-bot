@@ -532,6 +532,13 @@ async def main() -> None:
             await linkserver.ensure(services)
         except Exception as e:                           # noqa: BLE001
             log.warning("канал линка: слушатель не поднят: %s", e)
+        try:
+            # имена ботов шлюзов для ссылок в карточках — только тем слотам,
+            # у которых ответа ещё нет
+            from awgbot.runtime import gwbotme
+            await gwbotme.ensure_all(services)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("боты шлюзов: getMe: %s", e)
         await _announce_reboot(bot, db, "бота")
         try:
             from awgbot.bot.handlers.restore import report_restore_result

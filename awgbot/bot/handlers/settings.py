@@ -293,6 +293,9 @@ async def gateway_token_received(message: Message, state: FSMContext, services):
         return
     await state.clear()
     await cleanup_content(message.bot, services, message.chat.id)   # приглашение отслужило
+    # кто этот бот — сразу: карточка слота ведёт в его чат ссылкой
+    from awgbot.runtime import gwbotme
+    await gwbotme.refresh(services, token_slot)
     # Токен спрашивают из двух мест: «новая машина» и замена машины со сменой
     # ключей. Куда возвращаться, помнит state.
     device_id = data.get("gw_device_id")

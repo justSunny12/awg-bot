@@ -364,6 +364,13 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             await linkserver.ensure(services)
         except Exception as e:                        # noqa: BLE001
             log.warning("канал линка: слушатель не перевешен: %s", e)
+        try:
+            # имя бота шлюза, если на старте Telegram не ответил: один getMe
+            # на слот без ответа, при ответе — больше никогда
+            from awgbot.runtime import gwbotme
+            await gwbotme.ensure_all(services)
+        except Exception as e:                        # noqa: BLE001
+            log.warning("боты шлюзов: getMe: %s", e)
 
     async def job_migration_watch():
         """Частый тик окна переезда: поздравить того, кто ТОЛЬКО ЧТО подключился.
