@@ -107,13 +107,8 @@ def gateway_panel(st) -> str:
         pk = lan.get("lan_pkts")
         parts.append(f"{pad}трафик с роутера: " + (f"{pk:,} пакетов".replace(",", " ") if pk else "нет"))
         parts.append(f"{pad}резолвер: апстрим {_e(lan.get('resolver', ''))}")
-        upd = lan.get("updated_at") or ""
-        try:
-            upd = timeutil.fmt_dt(timeutil.parse_iso(upd)) if upd else "ещё не обновлялись"
-        except ValueError:
-            upd = "?"
         parts.append(f"{pad}списки: {lan.get('domains', 0)} доменов, {lan.get('nets', 0)} подсетей; "
-                     f"обновлены {upd}")
+                     + _lists_updated(lan.get("updated_at") or ""))
         parts.append(f"{pad}свои: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую")
     parts += ["", f"🌡 Монитор здоровья: {_gw_health_summary(st.checks)}", ""]
     parts.append(f"📊 Потребление за месяц: {human_bytes(st.month_rx + st.month_tx)} "
@@ -148,16 +143,22 @@ def gateway_health(st) -> str:
     return "\n".join(lines)
 
 
+def _lists_updated(raw: str) -> str:
+    """«обновлены <когда>» или «ещё не обновлялись» — целой фразой: иначе
+    склеивалось «обновлены ещё не обновлялись»."""
+    from awgbot.util import timeutil
+    if not raw:
+        return "ещё не обновлялись"
+    try:
+        return "обновлены " + timeutil.fmt_dt(timeutil.parse_iso(raw))
+    except ValueError:
+        return "обновлены ?"
+
+
 def gateway_lan_text(st) -> str:
     """🏠 Локальная сеть без VPN (концепт «локальная сеть» §3.5): что настроено, как
     дела со списками, откуда берутся личные."""
-    from awgbot.util import timeutil
     lan = getattr(st, "lan", None) or {}
-    upd = lan.get("updated_at") or ""
-    try:
-        upd = timeutil.fmt_dt(timeutil.parse_iso(upd)) if upd else "ещё не обновлялись"
-    except ValueError:
-        upd = "?"
     pk = lan.get("lan_pkts")
     return ("🏠 <b>Локальная сеть без VPN</b>\n\n"
             "Роутер заворачивает трафик локальной сети сюда, шлюз делит его сам: домены и "
@@ -166,7 +167,8 @@ def gateway_lan_text(st) -> str:
             f"Интерфейс {_e(lan.get('iface', '') or '?')}, адрес {_e(lan.get('addr', '') or '?')}; "
             f"резолвер — апстрим {_e(lan.get('resolver', '') or '?')} через аплинк.\n"
             f"Трафик с роутера: {(str(pk) + ' пакетов') if pk else 'нет'}.\n"
-            f"Списки: {lan.get('domains', 0)} доменов, {lan.get('nets', 0)} подсетей; обновлены {upd}.\n"
+            f"Списки: {lan.get('domains', 0)} доменов, {lan.get('nets', 0)} подсетей; "
+            f"{_lists_updated(lan.get('updated_at') or '')}.\n"
             f"Свои: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую.")
 
 

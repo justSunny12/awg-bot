@@ -425,7 +425,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         notes += self._streak_alert(
             "plumbing", bool(broken), streak,
             "⚠️ Обвязка шлюза неисправна: "
-            + "; ".join(f"{c.name} — {c.detail}" for c in broken[:3]),
+            + "; ".join(f"{html.escape(c.name, quote=False)} — {html.escape(c.detail, quote=False)}"
+                        for c in broken[:3]),
             "✅ Обвязка шлюза снова в порядке.")
         # локальная сеть без VPN — отдельно и не критично: тишина в пустой
         # квартире или упавший резолвер — не «РФ-доступ у всех лёг»
