@@ -742,11 +742,14 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         self.db.set_state(self._LAN_FAILS_KEY, str(fails))
         return ok, tail
 
-    def lan_router_params(self) -> tuple[str, str]:
-        """(подсеть, адрес шлюза) для рецепта роутера — их знает только малина."""
+    def lan_router_params(self) -> tuple[str, str, list[str]]:
+        """(подсеть, адрес шлюза, локальные подсети других шлюзов) для рецепта
+        роутера — их знает только малина: подсети из юнита обвязки, адрес из
+        статуса скрипта."""
         from awgbot.infra import gwguard
         nets = gwguard.unit_env("HOME_SUBNETS").split()
-        return (nets[0] if nets else ""), gwguard.script_status().get("LAN_ADDR", "")
+        peers = gwguard.unit_env("PEER_HOME_NETS").split()
+        return (nets[0] if nets else ""), gwguard.script_status().get("LAN_ADDR", ""), peers
 
     # ── роль слота и диагностика по каналу (концепт «канал линка», этап 4) ──
     _LINK_ROLE_KEY = "gwlink_role"

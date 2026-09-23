@@ -194,10 +194,26 @@ async def edit_nav(cb: CallbackQuery, services, text, markup) -> None:
     await edit(cb, text, markup)
 
 
+# Чаты, где карточка слота шлюза открыта ссылкой с главного экрана: «Назад» с
+# неё и со всех её подэкранов — на главную, откуда пришли. Пометка живёт до
+# возврата на главную: любой другой вход в карточку (список, раздел, карточка
+# устройства) начинается с главной, и выход снова обычный.
+_card_home: set[int] = set()
+
+
+def card_from_home(chat_id: int | None, yes: bool) -> None:
+    (_card_home.add if yes else _card_home.discard)(chat_id)
+
+
+def card_is_from_home(chat_id: int | None) -> bool:
+    return chat_id in _card_home
+
+
 async def show_main_menu(message: Message, services, role: str, client=None) -> None:
     """Показать главное меню роли новым сообщением (через send_menu — трекается,
     гасит прежнее активное). Ленивый импорт ролевых рендереров — общий модуль
     не тянет хендлеры на уровне модуля."""
+    card_from_home(message.chat.id, False)
     if role == "admin":
         from awgbot.bot.handlers.admin import _panel_parts
         text, markup = await _panel_parts(services)

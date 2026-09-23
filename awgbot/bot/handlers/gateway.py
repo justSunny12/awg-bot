@@ -574,10 +574,10 @@ async def gw_lan_router(cb: CallbackQuery, services):
     """Рецепт роутера — тот же текст, что у основного бота, с подсетью и
     адресом этого шлюза (их знает только он)."""
     import socket
-    net, addr = await call(services.lan_router_params)
+    net, addr, peers = await call(services.lan_router_params)
     # «Назад» — на экран локальной сети, откуда пришли: с клавиатурой того экрана
     # рецепт читался бы как сам экран «Локальная сеть»
-    await edit_nav(cb, services, texts.gateway_router_text(socket.gethostname(), net, addr),
+    await edit_nav(cb, services, texts.gateway_router_text(socket.gethostname(), net, addr, peer_nets=peers),
                    kb.gateway_back_kb("lan"))
     await cb.answer()
 

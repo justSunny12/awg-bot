@@ -1,6 +1,8 @@
 """Ссылки из экранов в сторону шлюза: строка «Бот шлюза» последней в
 карточке слота и в карточке устройства-шлюза, deep-link «/start gw-<слот>»
-из строки РФ-доступа в шапке админа и getMe сразу после ввода токена."""
+из строки РФ-доступа в шапке админа (и «Назад» с такой карточки — на
+главную), getMe сразу после ввода токена и подпись под файлом конфигурации
+со ссылкой на бота шлюза."""
 from __future__ import annotations
 
 import types
@@ -8,12 +10,12 @@ import types
 import pytest
 
 from awgbot.bot import texts
-from awgbot.bot.callbacks import DeviceCB, GwMarkCB, GwSlotCB, SetCB
+from awgbot.bot.callbacks import DeviceCB, GwMarkCB, GwSlotCB, Menu, SetCB
 from awgbot.bot.handlers import admin as ah
 from awgbot.bot.handlers import settings as sh
 from awgbot.core import config
 from awgbot.runtime import gwbotme
-from tests.conftest import FakeState
+from tests.conftest import FakeCallback, FakeMessage, FakeState
 from tests.e2e import test_gateway_slots_ui as _slots_ui
 from tests.e2e.test_gateway_slots_ui import _acb, _amsg, _screen, _slot1, _slot2
 
@@ -31,6 +33,14 @@ def _no_retry_pause(monkeypatch):
     """Пауза после неудачного getMe живёт на уровне модуля — у каждого теста
     своя, чистая."""
     monkeypatch.setattr(gwbotme, "_next_try", {})
+
+
+@pytest.fixture(autouse=True)
+def _fresh_card_home(monkeypatch):
+    """Пометка «карточку открыли с главной» живёт на уровне модуля и по чату
+    админа — у каждого теста своя, иначе тесты видели бы чужие пометки."""
+    from awgbot.bot.handlers import common as _common
+    monkeypatch.setattr(_common, "_card_home", set())
 
 
 def _cmd(args):
@@ -194,6 +204,150 @@ async def test_start_gw_with_garbage_is_a_plain_start(services, slots, fake_bot)
         "«/start gw-abc» показал не то же, что голый /start"
 
 
+# ── «Назад» с карточки, открытой ссылкой с главного экрана ──────────────────
+
+HOME = Menu(action="main").pack()
+LIST = GwSlotCB(action="list").pack()
+
+
+def _back(markup):
+    """callback_data кнопки «⬅️ Назад» — последней в карточке."""
+    btn = markup.inline_keyboard[-1][0]
+    assert btn.text == "⬅️ Назад", [b.text for row in markup.inline_keyboard for b in row]
+    return btn.callback_data
+
+
+def _last_markup(msg, kinds=("answer", "edit_text")):
+    return next(s[2] for s in reversed(msg.sent) if s[0] in kinds)
+
+
+async def _deeplink(services, fake_bot, slot=2):
+    """«/start gw-<слот>» без живого меню: карточка уходит сообщением, и её
+    клавиатура видна целиком."""
+    msg = _amsg(fake_bot, f"/start gw-{slot}")
+    await ah.admin_start(msg, services, FakeState(), command=_cmd(f"gw-{slot}"))
+    return _last_markup(msg, ("answer",))
+
+
+def _cb_in(fake_bot, chat_id=ADMIN):
+    nav = FakeMessage(chat_id=chat_id, user_id=ADMIN, bot=fake_bot)
+    return FakeCallback(message=nav, user_id=ADMIN, bot=fake_bot), nav
+
+
+async def test_start_gw_card_back_leads_to_the_main_screen(services, slots, fake_bot):
+    """Человек кликнул имя шлюза в шапке главного экрана: «Назад» с карточки
+    должно вернуть его туда же. Уводить в список шлюзов, где он не был, —
+    заблудиться на два экрана вглубь настроек."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    assert _back(await _deeplink(services, fake_bot)) == HOME, "«Назад» с карточки по ссылке ведёт не на главную"
+
+
+async def test_start_gw_card_keeps_the_home_exit_after_ping(services, slots, fake_bot):
+    """«📡 Пинг» перерисовывает карточку — выход на главную не должен
+    подмениться списком от одного нажатия."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    await _deeplink(services, fake_bot)
+    cb, nav = _cb_in(fake_bot)
+    await sh.gw_slot_ping(cb, GwSlotCB(action="ping", slot=2), services)
+    markup = _last_markup(nav, ("edit_text",))
+    assert _back(markup) == HOME, "после пинга «Назад» перестало вести на главную"
+
+
+async def test_start_gw_card_keeps_the_home_exit_after_preferred_toggle(services, slots, fake_bot):
+    """Галочка предпочтительного — тоже перерисовка карточки по её кнопке."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    await _deeplink(services, fake_bot)
+    cb, nav = _cb_in(fake_bot)
+    await sh.gw_slot_pref(cb, GwSlotCB(action="pref", slot=2), services)
+    assert _back(_last_markup(nav, ("edit_text",))) == HOME, "после галочки «Назад» перестало вести на главную"
+
+
+async def test_start_gw_card_keeps_the_home_exit_after_label_input(services, slots, fake_bot):
+    """Подпись введена — карточка приходит заново сообщением, выход тот же."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    await _deeplink(services, fake_bot)
+    st = FakeState()
+    cb, _ = _cb_in(fake_bot)
+    await sh.gw_slot_label(cb, GwSlotCB(action="label", slot=2), services, st)
+    msg = _amsg(fake_bot, "дача")
+    await sh.gateway_label_received(msg, st, services)
+    assert _back(_last_markup(msg, ("answer",))) == HOME, "после ввода подписи «Назад» перестало вести на главную"
+
+
+async def test_start_gw_card_keeps_the_home_exit_after_label_cancel(services, slots, fake_bot):
+    """Открыл подпись и передумал — «✖️ Отмена» возвращает в ту же карточку;
+    выход с неё должен остаться на главную, как после ввода подписи. Отмена
+    шлёт тот же GwSlotCB(card), что и кнопка списка, — если пометка
+    снимается и тут, человек, пришедший с главной, уходит «Назад» в список."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    await _deeplink(services, fake_bot)
+    st = FakeState()
+    cb, nav = _cb_in(fake_bot)
+    await sh.gw_slot_label(cb, GwSlotCB(action="label", slot=2), services, st)
+    cancel = _last_markup(nav, ("edit_text", "answer")).inline_keyboard[0][0]
+    assert cancel.text == "✖️ Отмена"
+    cb2, nav2 = _cb_in(fake_bot)
+    await sh.gw_slot_card(cb2, GwSlotCB.unpack(cancel.callback_data), services, st)
+    assert _back(_last_markup(nav2, ("edit_text",))) == HOME, \
+        "отмена ввода подписи увела выход карточки с главной в список"
+
+
+async def test_card_opened_from_the_list_goes_back_to_the_list(services, slots, fake_bot):
+    """После ссылки человек вернулся на главную и открыл ту же карточку из
+    списка — «Назад» снова в список, и последующие перерисовки (пинг) пометку
+    не возвращают. Пометка «с главной» живёт до возврата на главную: любой
+    другой путь в карточку начинается оттуда."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    await _deeplink(services, fake_bot)
+    cb, _nav = _cb_in(fake_bot)
+    from awgbot.bot.handlers.admin import panel as _panel
+    await _panel.admin_main_menu(cb, services, FakeState())
+    cb, nav = _cb_in(fake_bot)
+    await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=2), services, FakeState())
+    assert _back(_last_markup(nav, ("edit_text",))) == LIST, "открыли из списка, а «Назад» всё ещё на главную"
+    cb, nav = _cb_in(fake_bot)
+    await sh.gw_slot_ping(cb, GwSlotCB(action="ping", slot=2), services)
+    assert _back(_last_markup(nav, ("edit_text",))) == LIST, "пометка «с главной» вернулась после пинга"
+
+
+async def test_card_home_exit_is_per_chat(services, slots, fake_bot):
+    """Ссылку открыли в одном чате — в другом карточка ведёт себя как обычно:
+    пометка не должна утекать между чатами."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    await _deeplink(services, fake_bot)
+    cb, nav = _cb_in(fake_bot, chat_id=ADMIN + 1)
+    await sh.gw_slot_ping(cb, GwSlotCB(action="ping", slot=2), services)
+    assert _back(_last_markup(nav, ("edit_text",))) == LIST, "пометка чата админа сработала в чужом чате"
+    cb, nav = _cb_in(fake_bot)
+    await sh.gw_slot_ping(cb, GwSlotCB(action="ping", slot=2), services)
+    assert _back(_last_markup(nav, ("edit_text",))) == HOME, "чужой чат снял пометку у чата админа"
+
+
+async def test_start_gw_single_slot_card_also_goes_home(services, slots, fake_bot):
+    """С одним шлюзом обычный «Назад» ведёт в раздел маршрутизации; по
+    ссылке — всё равно на главную."""
+    _, pi, _ = slots
+    _slot1(services, pi)
+    assert _back(await _deeplink(services, fake_bot, 1)) == HOME
+
+
+def test_card_keyboard_back_targets():
+    """Сама клавиатура: back_home главнее списка, без него — как раньше."""
+    from awgbot.bot import keyboards as kb
+    gw = types.SimpleNamespace(id=2, device_id=0, preferred=0, lan_mode=0, label="")
+    st = {"gateway": gw, "states": [{}, {}], "active": False, "preferred": False}
+    assert _back(kb.gateway_card(st, back_to_list=True, back_home=True)) == HOME
+    assert _back(kb.gateway_card(st, back_to_list=True)) == LIST
+    assert _back(kb.gateway_card(st, back_to_list=False)) == SetCB(sec="rt").pack()
+
+
 # ── getMe сразу после ввода токена ───────────────────────────────────────────
 
 async def _enter_second_token(services, fake_bot):
@@ -247,6 +401,84 @@ async def test_getme_failure_does_not_stop_the_bundle(services, slots, fake_bot)
     assert any(s[0] == "answer" and "--install" in s[1] for s in msg.sent), "инструкции нет"
     text, _ = await _card_text(services, fake_bot, 2)
     assert "Бот шлюза" not in text
+
+
+# ── подпись под файлом конфигурации ──────────────────────────────────────────
+
+def test_bundle_caption_links_the_agent_bot():
+    """Файл уходит в чат ВПС, а применять его надо в другом боте: подпись
+    говорит, для какого шлюза файл и куда его переслать — ссылкой."""
+    got = texts.gateway_bundle_caption("«Pi2» (дом 2)", {"username": "pi2_gw_bot", "name": "Шлюз Pi2"})
+    assert got == ('⚙️ Конфигурация шлюза «Pi2» (дом 2). Перешли файл боту шлюза '
+                   '(<a href="https://t.me/pi2_gw_bot">Шлюз Pi2</a>) — он проверит и применит сам.'), got
+
+
+def test_bundle_caption_without_known_bot_has_no_link():
+    """getMe ещё не отвечал — без ссылки и без пустых скобок."""
+    for bot in ({}, None, {"username": "", "name": "x"}):
+        got = texts.gateway_bundle_caption("«Pi2»", bot)
+        assert got == "⚙️ Конфигурация шлюза «Pi2». Перешли файл боту шлюза — он проверит и применит сам.", (bot, got)
+
+
+def test_bundle_caption_without_bot_name_shows_username():
+    got = texts.gateway_bundle_caption("«Pi2»", {"username": "pi2_gw_bot"})
+    assert '(<a href="https://t.me/pi2_gw_bot">pi2_gw_bot</a>)' in got, got
+
+
+def test_bundle_caption_escapes_names():
+    """Имя устройства, подпись слота и имя бота задаёт человек: `<` или `&`
+    без экранирования Telegram отвергает, и файл с ключами не уходит вовсе."""
+    got = texts.gateway_bundle_caption("«A<B>» (x & y)", {"username": "b_bot", "name": "Шлюз <Pi2> & co"})
+    assert "«A&lt;B&gt;» (x &amp; y)" in got, got
+    assert ">Шлюз &lt;Pi2&gt; &amp; co</a>" in got, got
+    assert "<B>" not in got and "<Pi2>" not in got, got
+
+
+async def test_send_gw_bundle_captions_the_file_with_slot_and_bot(services, slots, fake_bot):
+    """Документ реально уходит с подписью: имя и подпись слота, ссылка на его
+    бота; соседний слот без известного бота — без ссылки."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    services.db.gateway_update(2, label="дом <2>")
+    _known_bot(services, 2)
+    msg = _amsg(fake_bot)
+    assert await sh.send_gw_bundle(msg, services, 2) is True
+    docs = [s[1] for s in msg.sent if s[0] == "document"]
+    assert docs == ['⚙️ Конфигурация шлюза «Pi2» (дом &lt;2&gt;). Перешли файл боту шлюза '
+                    '(<a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>) — он проверит и применит сам.'], docs
+    msg1 = _amsg(fake_bot)
+    assert await sh.send_gw_bundle(msg1, services, 1) is True
+    docs1 = [s[1] for s in msg1.sent if s[0] == "document"]
+    assert docs1 == ["⚙️ Конфигурация шлюза «NASPi». Перешли файл боту шлюза — он проверит и применит сам."], \
+        "бот слота 2 попал в подпись файла слота 1"
+
+
+async def test_send_gw_bundle_forgets_the_bot_of_a_replaced_token(services, slots, fake_bot):
+    """Токен слота сменили — ссылка на прежнего бота в подписи увела бы файл
+    с ключами не туда."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    _known_bot(services, 2)
+    services.token[2] = "222222222:BB-another-token-value-long-enough"
+    msg = _amsg(fake_bot)
+    await sh.send_gw_bundle(msg, services, 2)
+    docs = [s[1] for s in msg.sent if s[0] == "document"]
+    assert docs and "t.me/pi2_gw_bot" not in docs[0], docs
+
+
+async def test_send_gw_bundle_failure_sends_no_file(services, slots, fake_bot, monkeypatch):
+    """Бандл не собрался — ни документа, ни подписи, только причина."""
+    from awgbot.domain.services import ServiceError
+    _, pi, _ = slots
+    _slot1(services, pi)
+
+    def _fail(slot=None):
+        raise ServiceError("нет ключей")
+    monkeypatch.setattr(services, "gw_bundle_encrypted", _fail)
+    msg = _amsg(fake_bot)
+    assert await sh.send_gw_bundle(msg, services, 1) is False
+    assert not [s for s in msg.sent if s[0] == "document"]
+    assert any(s[0] == "answer" and "нет ключей" in s[1] for s in msg.sent), msg.sent
 
 
 def _async(value):

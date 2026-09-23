@@ -437,13 +437,24 @@ GATEWAY_LAN_NO_SUBNET = ("Сначала необходимо задать ло�
 ROUTER_IP_PLACEHOLDER = "АДРЕС_ШЛЮЗА"
 
 
-def gateway_router_text(title: str, net: str, gw_ip: str = "") -> str:
-    """📖 Настройка роутера (концепт «локальная сеть» §3.6): требования и два рецепта
+def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list | None = None) -> str:
+    """❓ Настройка роутера (концепт «локальная сеть» §3.6): требования и два рецепта
     с подставленной подсетью. Адрес шлюза в подсети знает только он сам:
     основной бот показывает плейсхолдер и отсылает в панель агента, агент
-    подставляет настоящий."""
+    подставляет настоящий. peer_nets — локальные подсети других шлюзов при
+    включённом доступе между подсетями: сам роутер отвечает со своего адреса
+    по основной таблице, мимо заворота, и без маршрута до соседей его ответ
+    ушёл бы провайдеру."""
     net = net or "192.168.1.0/24"
     gw_ip = _e(gw_ip) if gw_ip else ROUTER_IP_PLACEHOLDER
+    peers = [str(p) for p in (peer_nets or []) if p]
+    mt_peer = "".join(f"/ip route add dst-address={_e(p)} gateway={gw_ip}\n" for p in peers)
+    ow_peer = "".join(f"ip route add {_e(p)} via {gw_ip}\n" for p in peers)
+    peer_note = ("" if not peers else
+                 "\n\n<b>Доступ между подсетями</b>: сам роутер отвечает со своего адреса по основной "
+                 "таблице, мимо заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен "
+                 "маршрут до них через шлюз (строки выше с " + ", ".join(f"<code>{_e(p)}</code>" for p in peers)
+                 + "). Устройства за роутером в этом не нуждаются: их ответ заворачивается.")
     where = ("" if gw_ip != ROUTER_IP_PLACEHOLDER else
              ". Адрес шлюза в ней — в панели бота шлюза (строка «локальная сеть»); ниже он — "
              f"<code>{ROUTER_IP_PLACEHOLDER}</code>.")
@@ -467,6 +478,7 @@ def gateway_router_text(title: str, net: str, gw_ip: str = "") -> str:
             f"/ip route add dst-address=0.0.0.0/0 gateway={gw_ip} routing-table=antiblock\n"
             "/ip firewall filter\n"
             f"add action=accept chain=forward comment=asym-via-gw src-address={_e(net)} dst-address=!{_e(net)}\n"
+            f"{mt_peer}"
             f"/ip dhcp-server network set [find] dns-server={gw_ip}</pre>\n"
             "Правило asym-via-gw — выше drop invalid; fasttrack выключить.\n\n"
             "<b>OpenWrt</b>\n"
@@ -478,11 +490,12 @@ def gateway_router_text(title: str, net: str, gw_ip: str = "") -> str:
             f"iptables -I FORWARD 1 -s {_e(net)} ! -d {_e(net)} -j ACCEPT\n"
             "uci set firewall.@defaults[0].flow_offloading_hw='0'\n"
             "uci set firewall.@defaults[0].flow_offloading='0'\n"
+            f"{ow_peer}"
             f"uci add_list dhcp.lan.dhcp_option='6,{gw_ip}'\n"
             "uci commit</pre>\n"
             "Порядок приоритетов важен: сначала исключается сам шлюз, затем трафик внутри сети, "
             "потом всё остальное уходит на шлюз. Закрепить: ip rule/route — в /etc/rc.local, "
-            "iptables — в /etc/firewall.user.")
+            "iptables — в /etc/firewall.user." + peer_note)
 
 
 GATEWAY_STANDBY_CHOOSE_INTRO = (
@@ -545,6 +558,20 @@ def gateway_new_ask(slot: int = 1) -> str:
             "Первый файл конфигурации необходимо будет применить в SSH устройства вручную: "
             "у бота шлюза там ещё нет доступа к Telegram. Дальше всё через чат-бота шлюза. "
             "Если в слоте уже была машина, она потеряет линк сама.")
+
+
+def gateway_token_only_ask(display: str, known: dict | None) -> str:
+    """Токен бота уже настроенного шлюза: по нему карточки ведут в его чат
+    ссылкой. Слот, заведённый до того, как токен стал спрашиваться на сервере,
+    без него, — отсюда и вход."""
+    me = known or {}
+    now = (f"Сейчас известен бот {_e(me.get('name') or me['username'])} "
+           f"(@{_e(me['username'])}); новый токен заменит его.\n\n" if me.get("username") else
+           "Бот этого шлюза серверу пока не известен: без токена ссылки на него в карточках нет.\n\n")
+    return (f"🤖 <b>Токен бота шлюза {_e(display)}</b>\n\n{now}"
+            "Пришли токен бота, который задан агенту на этой машине, — строка вида "
+            "<code>123456789:AA…</code>. Сервер спросит у Telegram имя бота и будет вести "
+            "в его чат ссылкой; сам агент и его настройки не меняются.")
 
 
 def gateway_ask_token(slot: int = 1) -> str:
@@ -705,6 +732,17 @@ def routing_lists_block(info: dict) -> str:
     return (f"\n📋 Списки: {info.get('count', 0)} записей из "
             f"{info.get('sources', 0)} источников, {when}; "
             f"период {info.get('every_hours', 6)} ч.")
+
+
+def gateway_bundle_caption(display: str, agent_bot: dict | None) -> str:
+    """Подпись под файлом конфигурации: какому шлюзу и какому боту его
+    пересылать — ссылкой в чат, как в карточке. Бота ещё не спросили —
+    без ссылки."""
+    me = agent_bot or {}
+    who = "боту шлюза"
+    if me.get("username"):
+        who += f' (<a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>)'
+    return f"⚙️ Конфигурация шлюза {_e(display)}. Перешли файл {who} — он проверит и применит сам."
 
 
 ROUTING_BUNDLE_INTRO = (

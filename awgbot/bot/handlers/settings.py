@@ -10,7 +10,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from awgbot.core import config
 from awgbot.core import settings
@@ -21,7 +21,7 @@ from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import GatewayToken, GatewayHome, GatewayLabel, MigrationPort, SshPort
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.notifier import send_notifications
-from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu,
+from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu, card_is_from_home,
                                         ask_tracked, cleanup_content)
 from awgbot.domain.services import ServiceError
 from awgbot.domain.gwssh import SshOwnerRefusal
@@ -191,10 +191,10 @@ async def send_gw_bundle(message: Message, services, slot: int = 0) -> bool:
         await message.answer(f"⚠️ Конфигурация шлюза не собрана: {texts._e(str(e))}")
         return False
     from aiogram.types import BufferedInputFile
+    display, agent_bot = await call(services.gw_bundle_target, slot or None)
     await message.answer_document(
         BufferedInputFile(blob, filename=name),
-        caption="⚙️ Конфигурация шлюза. Перешли файл боту шлюза — он проверит "
-                "и применит сам.",
+        caption=texts.gateway_bundle_caption(display, agent_bot),
         reply_markup=kb.bundle_menu_kb())
     return True
 
@@ -301,9 +301,18 @@ async def gateway_token_received(message: Message, state: FSMContext, services):
     await cleanup_content(message.bot, services, message.chat.id)   # приглашение отслужило
     # кто этот бот — сразу: карточка слота ведёт в его чат ссылкой
     from awgbot.runtime import gwbotme
-    await gwbotme.refresh(services, token_slot)
-    # Токен спрашивают из двух мест: «новая машина» и замена машины со сменой
-    # ключей. Куда возвращаться, помнит state.
+    known = await gwbotme.refresh(services, token_slot)
+    # Токен спрашивают из трёх мест: «новая машина», замена машины со сменой
+    # ключей и просто токен уже настроенного слота. Куда возвращаться, помнит state.
+    if data.get("gw_token_only"):
+        if not known:
+            await ask_tracked(message, services,
+                              "⚠️ Telegram не ответил по этому токену — он отозван или сеть. "
+                              "Токен сохранён, сервер спросит снова через 10 минут.")
+        st = await call(services.gateway_screen_state, token_slot)
+        await send_menu(message, services, texts.gateway_card_text(st, st["states"]),
+                        card_kb(st, message.chat.id))
+        return
     device_id = data.get("gw_device_id")
     if device_id:
         await _gateway_mark_go(message, services, int(device_id), slot)
@@ -365,12 +374,18 @@ async def _slot_state(cb: CallbackQuery, services, slot: int, *, lazy_ping: bool
         return None
 
 
+def card_kb(st: dict, chat_id: int | None) -> InlineKeyboardMarkup:
+    """Клавиатура карточки слота: выход на главную, если карточку открыли
+    ссылкой оттуда (common.card_from_home), иначе в список или раздел."""
+    return kb.gateway_card(st, back_to_list=len(st["states"]) > 1,
+                           back_home=card_is_from_home(chat_id))
+
+
 async def _render_card(cb: CallbackQuery, services, slot: int) -> None:
     st = await _slot_state(cb, services, slot)
     if st is None:
         return
-    await edit(cb, texts.gateway_card_text(st, st["states"]),
-               kb.gateway_card(st, back_to_list=len(st["states"]) > 1))
+    await edit(cb, texts.gateway_card_text(st, st["states"]), card_kb(st, cb.message.chat.id))
 
 
 async def _render_list(cb: CallbackQuery, services) -> None:
@@ -469,8 +484,7 @@ async def gw_slot_ping(cb: CallbackQuery, callback_data: GwSlotCB, services):
         if dev is not None:
             await edit(cb, *await _device_card_parts(services, dev))
     else:
-        await edit(cb, texts.gateway_card_text(st, st["states"]),
-                   kb.gateway_card(st, back_to_list=len(st["states"]) > 1))
+        await edit(cb, texts.gateway_card_text(st, st["states"]), card_kb(st, cb.message.chat.id))
     await cb.answer(texts.ping_line(ms).replace("<code>", "").replace("</code>", "") if ms is not None
                     else f"Шлюз {st['display']} не отвечает", show_alert=ms is None)
 
@@ -546,7 +560,8 @@ async def gw_slot_router(cb: CallbackQuery, callback_data: GwSlotCB, services):
     if st is None:
         return
     gw = st["gateway"]
-    await edit(cb, texts.gateway_router_text(texts.slot_short(st), gw.home_subnets[0] if gw.home_subnets else ""),
+    await edit(cb, texts.gateway_router_text(texts.slot_short(st), gw.home_subnets[0] if gw.home_subnets else "",
+                                             peer_nets=st.get("peer_nets") or []),
                kb.gateway_router_back(gw.id))
     await cb.answer()
 
@@ -555,6 +570,20 @@ async def gw_slot_router(cb: CallbackQuery, callback_data: GwSlotCB, services):
 async def gw_slot_bundle(cb: CallbackQuery, callback_data: GwSlotCB, services):
     await cb.answer()
     await _render(cb, "rt_bundle", services, key=str(callback_data.slot or ""))
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "token"))
+async def gw_slot_token(cb: CallbackQuery, callback_data: GwSlotCB, services, state: FSMContext):
+    """Токен бота уже настроенного слота — для ссылок в его чат. Слот,
+    заведённый до того, как сервер стал спрашивать токен, иначе не заполнить."""
+    st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
+    if st is None:
+        return
+    await state.set_state(GatewayToken.value)
+    await state.update_data(gw_slot=st["gateway"].id, gw_token_only=True)
+    await cb.answer()
+    await core.ask(cb, services, texts.gateway_token_only_ask(st["display"], st.get("agent_bot")),
+                   kb.gateway_slot_cancel(st["gateway"].id))
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "home"))
@@ -584,7 +613,7 @@ async def gateway_home_received(message: Message, state: FSMContext, services):
     await cleanup_content(message.bot, services, message.chat.id)
     await message.answer(texts.gateway_home_report(res, st))
     await send_menu(message, services, texts.gateway_card_text(st, st["states"]),
-                    kb.gateway_card(st, back_to_list=len(st["states"]) > 1))
+                    card_kb(st, message.chat.id))
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "label"))
@@ -611,7 +640,7 @@ async def gateway_label_received(message: Message, state: FSMContext, services):
     await state.clear()
     await cleanup_content(message.bot, services, message.chat.id)
     await send_menu(message, services, texts.gateway_card_text(st, st["states"]),
-                    kb.gateway_card(st, back_to_list=len(st["states"]) > 1))
+                    card_kb(st, message.chat.id))
 
 
 async def _remove_ask(cb: CallbackQuery, services, slot: int) -> None:

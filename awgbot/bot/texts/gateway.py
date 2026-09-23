@@ -383,6 +383,10 @@ def gateway_ssh_text(st: dict) -> str:
     lan = st.get("lan") or []
     lines.append("Из локальной сети: открыт всегда"
                  + (" (" + ", ".join(f"<code>{_e(n)}</code>" for n in lan[:3]) + ")" if lan else ""))
+    peers = st.get("peer_nets") or []
+    if peers:
+        lines.append("Из локальных подсетей других шлюзов: открыт всегда ("
+                     + ", ".join(f"<code>{_e(n)}</code>" for n in peers[:3]) + ")")
     lines.append("")
     allow = st.get("allow") or []
     if not st.get("new_plumbing"):

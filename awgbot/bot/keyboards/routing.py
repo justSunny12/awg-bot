@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from awgbot.bot.callbacks import DeviceCB, RoutingCB, SetCB, GwMarkCB, GwSlotCB
+from awgbot.bot.callbacks import DeviceCB, RoutingCB, SetCB, GwMarkCB, GwSlotCB, Menu
 from awgbot.bot import texts as _texts
 
 from .common import _chk, _tick, _btn_suffix, page_slice, page_nav
@@ -149,12 +149,13 @@ def gateway_list(states, *, can_add: bool, failover_on: bool,
     return kb.as_markup()
 
 
-def gateway_card(state, *, back_to_list: bool) -> InlineKeyboardMarkup:
+def gateway_card(state, *, back_to_list: bool, back_home: bool = False) -> InlineKeyboardMarkup:
     """Карточка слота (6.3): переключение у резервного, галочка
     предпочтительного, конфигурация, подсети, подпись, замена, убрать, пинг
     последним перед «Назад». back_to_list — шлюзов больше одного: «Назад» ведёт
     в список, и только тогда есть смысл в галочке предпочтительного — с
-    единственным шлюзом выбирать не из чего."""
+    единственным шлюзом выбирать не из чего. back_home — карточку открыли
+    ссылкой с главного экрана: «Назад» ведёт туда, откуда пришли, на главную."""
     gw = state["gateway"]
     kb = InlineKeyboardBuilder()
     rows = []
@@ -180,7 +181,10 @@ def gateway_card(state, *, back_to_list: bool) -> InlineKeyboardMarkup:
     kb.button(text="🛑 Снять шлюз", callback_data=GwSlotCB(action="remove_ask", slot=gw.id))
     kb.button(text="📡 Пинг", callback_data=GwSlotCB(action="ping", slot=gw.id))
     rows += [1, 1, 1, 1]
-    back = GwSlotCB(action="list").pack() if back_to_list else SetCB(sec="rt").pack()
+    if back_home:
+        back = Menu(action="main").pack()
+    else:
+        back = GwSlotCB(action="list").pack() if back_to_list else SetCB(sec="rt").pack()
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back))
     kb.adjust(*rows, 1)
     return kb.as_markup()
@@ -371,6 +375,10 @@ def settings_routing_bundle(slot: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="📤 Выпустить файл",
               callback_data=SetCB(sec="rt", act="do", key="bundle", val=str(slot or "")))
+    if slot:
+        # токен бота шлюза живёт рядом с файлом: он уезжает внутри первого
+        # файла, а слоту, заведённому до этого, его вводят здесь
+        kb.button(text="🤖 Токен бота шлюза", callback_data=GwSlotCB(action="token", slot=slot))
     kb.button(text="✖️ Отмена", callback_data=(GwSlotCB(action="card", slot=slot).pack() if slot
                                               else SetCB(sec="rt").pack()))
     kb.adjust(1)

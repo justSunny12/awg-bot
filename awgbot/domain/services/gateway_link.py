@@ -358,6 +358,12 @@ class GatewayLinkMixin:
                           timeutil.to_iso(timeutil.now()))
         return plain, priv
 
+    def gw_bundle_target(self, slot_id: Optional[int] = None) -> tuple[str, dict]:
+        """Кому уходит файл: «имя» (подпись) слота, сырое, и бот шлюза из кэша
+        getMe ({'username', 'name'} или пусто) — для подписи под файлом."""
+        gw = self._gw_slot(slot_id)
+        return self._gw_display(gw), (self.gw_bot_identity(gw.id) if gw.id else {})
+
     def gw_bundle_encrypted(self, slot_id: Optional[int] = None) -> tuple[bytes, str]:
         """Бандл для доставки чатом: шифрован ключом линка СВОЕГО слота, он есть
         только у уже настроенной машины этого слота. Открытый бандл на диске

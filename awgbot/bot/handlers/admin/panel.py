@@ -17,7 +17,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import Menu
-from awgbot.bot.handlers.common import (call, edit_nav, purge_menus, cleanup_content, send_menu,
+from awgbot.bot.handlers.common import (call, edit_nav, purge_menus, cleanup_content, send_menu, card_from_home,
                                         _dismiss_previous_nav)
 from awgbot.bot.notifier import send_notifications
 from awgbot.domain.services import SECONDS_PER_DAY
@@ -131,8 +131,11 @@ async def _traffic_devices_screen(services, client_id: int):
     return texts.traffic_devices_text(client.name, rows), kb.traffic_devices_kb()
 
 
-async def _gateway_card_screen(services, slot: int):
+async def _gateway_card_screen(services, slot: int, chat_id: int | None = None):
+    """Карточка слота по ссылке с главного экрана: «Назад» с неё — на главную,
+    не в список шлюзов, откуда человек не приходил."""
     from awgbot.domain.services import ServiceError
+    from awgbot.bot.handlers.settings import card_kb
     try:
         # пинг — как по кнопке «Карточка»: лениво, пустой кэш заполняется
         # замером; без него неизмеренный пинг читался бы как «шлюз не отвечает»
@@ -141,7 +144,8 @@ async def _gateway_card_screen(services, slot: int):
         # ссылка из старой шапки, слот с тех пор сняли: свой ответ, а не
         # «профиль не найден» с клавиатурой потребления
         return "🛰 Такого шлюза больше нет — слот снят", kb.settings_back("rt")
-    return texts.gateway_card_text(st, st["states"]), kb.gateway_card(st, back_to_list=len(st["states"]) > 1)
+    card_from_home(chat_id, True)
+    return texts.gateway_card_text(st, st["states"]), card_kb(st, chat_id)
 
 
 async def _online_screen(services):
@@ -168,7 +172,8 @@ async def _traffic_deep_link(message: Message, services, payload: str,
                                       cancel_to=Menu(action="expiring").pack())
     elif payload.startswith(texts.GW_CARD_PAYLOAD + "-") and payload[len(texts.GW_CARD_PAYLOAD) + 1:].isdigit():
         # имя шлюза или «резерв жив» в строке РФ-доступа — карточка слота
-        screen = await _gateway_card_screen(services, int(payload[len(texts.GW_CARD_PAYLOAD) + 1:]))
+        screen = await _gateway_card_screen(services, int(payload[len(texts.GW_CARD_PAYLOAD) + 1:]),
+                                            message.chat.id)
     elif payload == _TRAFFIC_PAYLOAD:
         screen = await _traffic_profiles_screen(services)
     elif payload.startswith(_TRAFFIC_PAYLOAD + "-") and payload[len(_TRAFFIC_PAYLOAD) + 1:].isdigit():
@@ -240,6 +245,7 @@ async def admin_traffic_profiles(cb: CallbackQuery, services):
 async def admin_main_menu(cb: CallbackQuery, services, state: FSMContext):
     await cb.answer()                                  # спиннер гаснет сразу
     await state.clear()
+    card_from_home(cb.message.chat.id, False)          # с главной карточка открывается заново
     await cleanup_content(cb.bot, services, cb.message.chat.id)
     await edit_nav(cb, services, *await _panel_parts(services))
 

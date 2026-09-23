@@ -431,6 +431,70 @@ def test_ssh_filter_chain_is_always_there_but_jumped_only_when_enabled(script):
     assert sin.strip().endswith("drop")
 
 
+def _guard_table(script: str, **env) -> str:
+    """Отрисовать таблицу обвязки так, как её пишет скрипт: блок
+    `{ cat <<GUARDEOF … } > "$GUARD_FILE.tmp"` с настоящей ipv4_list под sh,
+    вывод — в stdout вместо файла. Переменные — минимальная сцена шлюза."""
+    fn = script[script.index("ipv4_list() {"):]
+    fn = fn[:fn.index("\n}\n") + 3]
+    start = script.index("{\ncat <<GUARDEOF\n#!/usr/sbin/nft -f")
+    end = script.index('} > "$GUARD_FILE.tmp"', start)
+    block = script[start:end] + "}\n"
+    base = {"GUARD_TABLE": "inet awg_gw_guard", "FW_ENV": "/etc/awg-bot/firewall.env",
+            "CLIENT_SUBNET": "10.8.0.0/24", "LINK_CIDR": "10.99.99.4/30", "LINK_PEER": "10.99.99.5",
+            "PRIVATE_NETS": "10.0.0.0/8 192.168.0.0/16", "TG_NETS": "91.108.4.0/22", "GH_NETS": "140.82.112.0/20",
+            "ADMIN_ELEMS": "10.8.0.2", "PEER_ELEMS": "192.168.50.0/24", "SSH_ALLOW_ELEMS": "",
+            "SERVER_ELEMS": "203.0.113.10", "LAN_ELEMS": "192.168.1.0/24", "SSH_PORT": "22",
+            "SSH_JUMP": "        meta nfproto ipv4 tcp dport 22 jump ssh_in", "LINK_IF": "awglink2",
+            "WAN_IF": "eth0", "UPLINK_IF": "", "UPLINK_MSS": "", "UPLINK_MASQ": ""}
+    base.update(env)
+    prog = "".join(f"{k}='{v}'\n" for k, v in base.items()) + fn + block
+    r = _sh(prog)
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def _chain(table: str, name: str) -> list[str]:
+    body = table.split(f"chain {name} {{", 1)[1].split("}", 1)[0]
+    return [ln.strip() for ln in body.splitlines() if ln.strip()]
+
+
+@pytest.mark.parametrize("peer", ["192.168.50.0/24", ""])
+def test_ssh_in_lets_in_the_lan_behind_the_other_gateway(script, peer):
+    """Доступ между подсетями за шлюзами включён — админ из локальной сети
+    другого шлюза заходит на эту малину по SSH, как из своей. Правило стоит
+    после established и своей сети и до drop: ниже drop оно не работало бы,
+    а человек, для которого фильтр SSH включён, терял бы вход, ради которого
+    подсети соединяли. Набор пуст (доступ выключен) — правило то же и ничего
+    не пускает."""
+    table = _guard_table(script, PEER_ELEMS=peer)
+    assert _chain(table, "ssh_in") == [
+        "ct state established,related accept",
+        "ip saddr @lan4 accept",
+        "ip saddr @peer_nets4 accept",
+        "ip saddr @server4 accept",
+        "ip saddr @ssh_allow4 accept",
+        "drop",
+    ], table.split("chain ssh_in", 1)[1][:400]
+
+
+def test_every_set_used_by_ssh_in_is_declared_in_the_same_table(script):
+    """`nft -c` отвергает всю таблицу, если правило ссылается на набор,
+    которого в ней нет: обвязка шлюза не применилась бы вовсе — ни защиты от
+    туннеля, ни маскарада. Набор peer_nets4 объявлен в той же таблице, что и
+    ssh_in, до цепочек."""
+    table = _guard_table(script)
+    assert table.count("table inet awg_gw_guard {") == 1, table[:400]
+    body = table.split("table inet awg_gw_guard {", 1)[1]
+    declared = set(re.findall(r"^\s*set (\w+) \{", body, re.M))
+    used = set(re.findall(r"@(\w+)", " ".join(_chain(table, "ssh_in"))))
+    assert "peer_nets4" in used, "правила для подсетей другого шлюза в ssh_in нет"
+    assert used <= declared, f"ssh_in ссылается на необъявленные наборы: {sorted(used - declared)}"
+    assert body.index("set peer_nets4 {") < body.index("chain ssh_in {")
+    peer_set = body.split("set peer_nets4 {", 1)[1].split("\n    }", 1)[0]
+    assert "elements = { 192.168.50.0/24 }" in peer_set, peer_set
+
+
 def test_ssh_port_comes_from_firewall_env_as_a_number(script):
     """Порт — факт от sshd, который агент пишет в firewall.env; не число — 22,
     иначе `nft -c` отказал бы всей таблице после ребута."""

@@ -101,7 +101,9 @@
 # sshd; 22), SSH_FILTER (1 — фильтр снаружи включён), SSH_ALLOW (адреса
 # снаружи: IP/CIDR/имена), SSH_ALLOW_RESOLVED (последний резолв имён — агент).
 # Фильтр снаружи (цепочка ssh_in) касается только порта SSH и только
-# не-туннельных источников: локальная сеть и сервер открыты всегда.
+# не-туннельных источников: локальная сеть, сервер и подсети других шлюзов
+# (peer_nets4 — они приходят линком, но адрес у них не из tunnel_nets4)
+# открыты всегда.
 #
 # ЗАПУСК:
 #   sudo sh routing-gw-setup.sh                    # показать план
@@ -1010,7 +1012,7 @@ ADMIN_ELEMS="$(ipv4_list $ADMIN_IPS $ADMIN_IPS_EXTRA)"
 PEER_ELEMS="$(ipv4_list $PEER_HOME_NETS)"
 say "  Устройства админа: ${ADMIN_ELEMS:-— (никому, кроме сервера AWG по линку)}"
 # SSH снаружи (через проброс на роутере): при SSH_FILTER=1 на порт sshd пускаются
-# только локальная сеть, сервер и адреса из SSH_ALLOW (имена — по последнему
+# только локальная сеть, подсети других шлюзов, сервер и адреса из SSH_ALLOW (имена — по последнему
 # резолву агента, SSH_ALLOW_RESOLVED; ipv4_list имена отсеивает сам).
 SSH_ALLOW_ELEMS="$(ipv4_list $SSH_ALLOW $SSH_ALLOW_RESOLVED)"
 SERVER_ELEMS="$(server_ipv4 "$SRC_CONF")"
@@ -1119,6 +1121,7 @@ $SSH_JUMP
     chain ssh_in {
         ct state established,related accept
         ip saddr @lan4 accept
+        ip saddr @peer_nets4 accept
         ip saddr @server4 accept
         ip saddr @ssh_allow4 accept
         drop
