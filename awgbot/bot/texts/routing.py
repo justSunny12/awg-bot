@@ -728,7 +728,7 @@ def gateway_bundle_caption(display: str, agent_bot: dict | None) -> str:
     who = "боту шлюза"
     if me.get("username"):
         who += f' (<a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>)'
-    return f"⚙️ Конфигурация шлюза {_e(display)}. Перешли файл {who} — он проверит и применит сам."
+    return f"⚙️ Конфигурация шлюза <b>{_e(display)}</b>.\nПерешли файл {who} — он проверит и применит сам."
 
 
 ROUTING_BUNDLE_INTRO = (
