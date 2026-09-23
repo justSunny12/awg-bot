@@ -14,7 +14,7 @@ linkclient.py — сторона шлюза для канала ВПС ↔ шл�
 (`on_tick`) — сессия рвётся и ставится заново: после жёсткого ребута ВПС она
 полуоткрыта, а в простое агент сам ничего не шлёт. После операций из чата
 (бандл, мастер восстановления) снимок уходит сразу (`poke`). Байты канала
-копятся в `_gwlink_io`: зонд выхода наружу вычитает их из счётчиков линка.
+копятся в `services.channel`: зонд выхода наружу вычитает их из счётчиков линка.
 
 Канал включается тем, что привёз бандл (`LINK_CHANNEL=1` в юните обвязки): без
 перевыпуска конфигурации агент никуда не ходит — это и есть рубильник.
@@ -26,8 +26,9 @@ linkclient.py — сторона шлюза для канала ВПС ↔ шл�
 запас своего скачивания отсчитывается от конца сессии), `role` — несёт ли слот трафик, и
 `ask`/`tail` — одна из трёх диагностик только на чтение. Неизвестный вид
 пропускается с записью в журнал: новый ВПС со старым агентом не рвёт сессию.
-Окно ±5 минут (`gwlink.MAX_SKEW_SECONDS`) — по часам этого хоста: их
-синхронизация здесь требование, а не пожелание.
+Повтор отсекают нонсы сессии (gwlink, proto 2): hello несёт наш нонс, первое
+сообщение сервера — его; дальше подписываем нонсом сервера, проверяем своим.
+Часы хоста в проверку не входят — малина без RTC поднимает канал и до NTP.
 """
 from __future__ import annotations
 
@@ -96,6 +97,8 @@ class LinkClient:
         self._parts: dict = {}                # сборка фидов, пришедших частями
         self._confirmed = False               # сервер ответил в этой сессии хоть раз
         self._link_ok: bool | None = None     # линк на прошлом тике — ловим восстановление
+        self._cn = b""                        # наш нонс: им сервер подписывает нам
+        self._sn = b""                        # нонс сервера: им подписываем мы
 
     # ── соединение ───────────────────────────────────────────────────────────
 
@@ -107,13 +110,10 @@ class LinkClient:
         return self._key
 
     def _io(self, rx: int = 0, tx: int = 0) -> None:
-        """Байты канала поверх счётчиков линка — зонд выхода наружу по уликам
-        вычитает их: ответ канала серверу не должен сходить за ответы из
-        интернета, ушедшие клиентам."""
-        io = self.services.__dict__.setdefault("_gwlink_io", [0, 0, 0])
-        io[0] += rx
-        io[1] += tx
-        io[2] += 1
+        """Байты канала поверх счётчиков линка (services.channel, слот 0) — зонд
+        выхода наружу по уликам вычитает их: ответ канала серверу не должен
+        сходить за ответы из интернета, ушедшие клиентам."""
+        self.services.channel.account(0, rx=rx, tx=tx)
 
     async def _connect_once(self) -> None:
         host, port = server_address(), server_port()
@@ -128,21 +128,40 @@ class LinkClient:
         # системного, минуты, и бэкофф считал бы не то.
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(host, port, limit=gwlink.MAX_LINE), timeout=20)
-        self._writer = writer
         self._seq = 0
         self._rev = 0
         self._prev = {}
         self._confirmed = False
-        self._set_online(True)
+        self._cn, self._sn = gwlink.new_nonce(), b""
         log.info("канал линка: подключился к %s:%s", host, port)
         try:
+            # hello — без нонса (сервер свой ещё не назвал), с нашим нонсом внутри.
+            # _writer до ответа сервера не выставляем: снимок из тика или poke
+            # ушёл бы без нонса сервера, и тот оборвал бы сессию.
             lists_hash = await asyncio.to_thread(self.services.lan_feeds_applied_hash)
-            await self._send("hello", {"proto": gwlink.PROTO,
-                                       "agent": config.INSTALLED_VERSION,
-                                       "lists_hash": lists_hash}, pad=gwlink.PAD_DELTA)
+            self._seq += 1
+            hello = gwlink.pack(self._channel_key(), "hello",
+                                {"proto": gwlink.PROTO, "agent": config.INSTALLED_VERSION,
+                                 "lists_hash": lists_hash, "nonce": gwlink.nonce_b64(self._cn)},
+                                seq=self._seq, pad=gwlink.PAD_DELTA)
+            writer.write(hello)
+            await writer.drain()
+            self._sent_bytes += len(hello)
+            self._io(tx=len(hello))
+            # первое сообщение сервера — подписано нашим нонсом и несёт его нонс
+            first = await asyncio.wait_for(reader.readline(), timeout=20)
+            if not first:
+                return
+            self._io(rx=len(first))
+            msg = gwlink.unpack(self._channel_key(), first, nonce=self._cn)
+            self._sn = gwlink.nonce_from(msg.get("nonce"))
+            last_seq: int | None = int(msg.get("seq") or 0)
+            self._confirmed = True
+            self._writer = writer
+            self._set_online(True)
+            await self._handle(msg)
             await self.push(full=True)
             await self._maybe_claim()
-            last_seq: int | None = None
             while True:
                 try:
                     line = await reader.readline()
@@ -153,12 +172,11 @@ class LinkClient:
                     break
                 self._io(rx=len(line))
                 try:
-                    msg = gwlink.unpack(self._channel_key(), line, last_seq=last_seq)
+                    msg = gwlink.unpack(self._channel_key(), line, last_seq=last_seq, nonce=self._cn)
                 except gwlink.ProtocolError as e:
                     log.warning("канал линка: сообщение с ВПС отвергнуто — %s", e)
                     break
                 last_seq = int(msg.get("seq") or 0)
-                self._confirmed = True
                 await self._handle(msg)
         finally:
             self._writer = None
@@ -172,7 +190,7 @@ class LinkClient:
 
     def _set_online(self, on: bool) -> None:
         """Признак «сессия открыта» — для домена агента, без импорта runtime."""
-        self.services.__dict__["_gwlink_online"] = on
+        self.services.channel.online = on
 
     async def _run(self) -> None:
         attempt = 0
@@ -186,9 +204,8 @@ class LinkClient:
                 log.info("канал линка: нет связи с ВПС (%s)", e)
             # Счёт заново — только если сервер ответил хоть одним подписанным
             # сообщением. Сессия, которую сервер закрыл сразу (чужая подпись,
-            # часы вне окна ±5 мин — малина без RTC до синхронизации), иначе
-            # превращалась в стук каждые пять секунд без роста шага: ровный
-            # ритм в линке и запись на SD на каждом коннекте.
+            # чужой слот), иначе превращалась в стук каждые пять секунд без
+            # роста шага: ровный ритм в линке и запись на SD на каждом коннекте.
             if self._confirmed:
                 attempt = 0
                 self._confirmed = False
@@ -203,7 +220,7 @@ class LinkClient:
         if writer is None:
             return False
         self._seq += 1
-        line = gwlink.pack(self._channel_key(), kind, body, seq=self._seq, pad=pad)
+        line = gwlink.pack(self._channel_key(), kind, body, seq=self._seq, pad=pad, nonce=self._sn)
         try:
             writer.write(line)
             await writer.drain()

@@ -706,7 +706,7 @@ def test_link_unit_is_refreshed_when_the_template_is_from_an_older_version(servi
 
 # ── байты канала линка — не улика живости ────────────────────────────────────
 # Канал ВПС ↔ шлюз (снимки, диагностика, фиды) идёт тем же линком. Его байты
-# считает слушатель (services._gwlink_io[слот] = [rx, tx, сообщений]); на
+# считает слушатель (services.channel.account(слот, rx, tx) на сообщение); на
 # счётчиках линка они же плюс накладные WireGuard: около 96 байт на сегмент в
 # сторону данных и ACK той же длины навстречу.
 
@@ -723,9 +723,9 @@ def _channel_on_link(services, monkeypatch, *, rx: int = 0, tx: int = 0, msgs: i
         st = real(iface)
         if st is None or iface != "awglink":
             return st
-        io = services.__dict__.setdefault("_gwlink_io", {})
-        cur = io.get(1) or [0, 0, 0]
-        io[1] = [cur[0] + rx, cur[1] + tx, cur[2] + msgs]
+        services.channel.account(1, rx=rx, tx=tx)
+        for _ in range(msgs - 1):
+            services.channel.account(1)
         chan["rx"] += rx + msgs * _WG_SEGMENT
         chan["tx"] += tx + msgs * _WG_SEGMENT
         return {**st, "rx": st["rx"] + chan["rx"], "tx": st["tx"] + chan["tx"]}

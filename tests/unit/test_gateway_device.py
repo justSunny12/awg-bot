@@ -224,7 +224,10 @@ def test_script_keeps_link_down_for_a_foreign_gateway(script):
 
 
 def test_unit_carries_gateway_env(script):
-    for var in ("GATEWAY_PUBKEY", "GATEWAY_PREV_PUBKEY", "UPLINK_B64"):
+    """Ключи шлюза закрепляются в юните: по ним реассерт на загрузке узнаёт
+    свою машину. Конфиг аплинка — нет (он с приватным ключом и едет только на
+    время применения); это проверяет прогон блока в test_gw_unit_uplink.py."""
+    for var in ("GATEWAY_PUBKEY", "GATEWAY_PREV_PUBKEY"):
         assert f"Environment={var}=${var}" in script, var
 
 

@@ -341,8 +341,9 @@ def test_lan_mode_off_removes_its_own_and_rollback_too(script):
     rollback = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
     assert "lan_remove" in rollback
     fn = script.split("lan_remove() {", 1)[1].split("\n}", 1)[0]
-    assert "for _f in awg-gw-vpn-user.conf awg-gw-ru-user.conf" in fn and 'park "$DNSMASQ_D/$_f"' in fn, \
-        "личные списки — данные человека: паркуются, не rm"
+    assert "for _f in awg-gw-vpn-user.conf awg-gw-ru-user.conf" in fn \
+        and 'mv -f $DNSMASQ_D/$_f $LAN_DUMP/restore/$_f' in fn, \
+        "личные списки — данные человека: в restore/, откуда их вернёт следующее включение, не rm"
     assert "nft delete table $HOME_TABLE" in fn
     assert "systemctl disable --now dnsmasq" in fn and "$DNSMASQ_MARK" in fn, "ставили сами — снимаем"
     # dnsmasq читает в conf-dir всё, кроме .dpkg-*: .bak рядом класть нельзя

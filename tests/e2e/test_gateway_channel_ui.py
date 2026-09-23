@@ -701,3 +701,25 @@ def test_the_neighbour_subnets_line_names_at_most_eight_and_survives_an_empty_li
     ch["peer_nets"] = {"ok": False, "missing": []}
     assert "на шлюзе в таблице нет подсетей" in channel_block(ch, True), (
         "пустой список отказа — строка без предмета")
+
+
+@pytest.mark.parametrize("skew, side", [(600, "спешат"), (-3600, "отстают")])
+def test_the_clock_line_warns_about_the_clock_not_about_the_channel(skew, side):
+    """Канал от часов больше не зависит: строка, обещающая, что «канал
+    перестанет принимать сообщения», послала бы человека чинить то, что не
+    сломается, и промолчала бы о том, что сломается — TLS и расписания."""
+    from awgbot.bot.texts.routing import channel_block
+    ch = {"ever": True, "online": True, "has_snap": True, "has_bundle": True, "clock_skew": skew}
+    out = channel_block(ch, True)
+    line = next((x for x in out.splitlines() if x.startswith("⏱ Часы шлюза")), "")
+    assert line, f"расхождение {skew} с не показано"
+    assert f"{side} на {abs(skew) // 60} мин" in line
+    assert "синхронизацию" in line, "не сказано, что делать"
+    assert "перестанет принимать" not in line and "канал" not in line, (
+        f"строка по-прежнему пугает отказом канала: {line}")
+
+
+def test_a_small_clock_drift_draws_nothing():
+    from awgbot.bot.texts.routing import channel_block
+    ch = {"ever": True, "online": True, "has_snap": True, "has_bundle": True, "clock_skew": 119}
+    assert "Часы шлюза" not in channel_block(ch, True), "дрожь в пару минут подана как проблема"

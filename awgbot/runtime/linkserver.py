@@ -14,6 +14,10 @@ linkserver.py — сторона ВПС для канала ВПС ↔ шлюз 
 Слот определяется парой «на какой локальный адрес пришли» и «каким ключом линка
 проверилась подпись»: обе должны указывать на один слот, иначе разрыв. Вторая
 сессия того же слота вытесняет первую — малина перезагрузилась, старая висит.
+Повтор отсекают нонсы сессии (gwlink, proto 2): hello приносит нонс шлюза
+(поле `nonce`), первое сообщение сервера несёт его нонс тем же полем, дальше
+каждая сторона подписывает нонсом получателя. Часы в проверку не входят. До
+hello сервер не шлёт ничего.
 Ключ читается заново на каждую сессию: после замены машины в слоте ключ линка
 новый, а номер слота тот же, и кеш по номеру держал бы канал мёртвым до
 перезапуска бота.
@@ -29,9 +33,9 @@ linkserver.py — сторона ВПС для канала ВПС ↔ шлюз 
 повторно не уходит. Диагностику и свежий снимок по запросу человека дают
 `ask_tail` и `ask_snap`.
 
-Байты канала по слоту копятся в `_gwlink_io`: зонд живости по уликам линка
-вычитает их, чтобы снимки, фиды и диагностика не сходили за обратный трафик
-клиентов.
+Байты канала по слоту копятся в `services.channel`: зонд живости по уликам
+линка вычитает их, чтобы снимки, фиды и диагностика не сходили за обратный
+трафик клиентов.
 """
 from __future__ import annotations
 
@@ -80,6 +84,9 @@ class _Session:
         # вытеснила сессию, прошедшую hello: запись «на связи» в БД — её, и
         # закрыть её обязана эта, даже если сама до hello не дойдёт
         self.took_over = False
+        self.sn = gwlink.new_nonce()     # наш нонс: им шлюз подписывает всё после hello
+        self.cn = b""                    # нонс шлюза из hello: им подписываем мы
+        self.sn_sent = False             # первое наше сообщение несёт sn
 
 
 class LinkServer:
@@ -99,13 +106,12 @@ class LinkServer:
     # ── байты канала: чтобы не выдавать их за обратный трафик клиентов ──────
 
     def _io(self, slot_id: int, rx: int = 0, tx: int = 0) -> None:
-        """Счёт байтов канала по слоту поверх счётчиков линка. Зонд живости по
-        уликам вычитает их: иначе диагностика, фиды или снимки, прошедшие тем же
-        линком, сходили бы за обратный трафик клиентов, и автомат считал бы путь
-        наружу живым ровно тогда, когда человек разбирается со сломанным слотом."""
-        io = self.services.__dict__.setdefault("_gwlink_io", {})
-        cur = io.get(slot_id) or [0, 0, 0]
-        io[slot_id] = [cur[0] + rx, cur[1] + tx, cur[2] + 1]
+        """Счёт байтов канала по слоту поверх счётчиков линка (services.channel).
+        Зонд живости по уликам вычитает их: иначе диагностика, фиды или снимки,
+        прошедшие тем же линком, сходили бы за обратный трафик клиентов, и автомат
+        считал бы путь наружу живым ровно тогда, когда человек разбирается со
+        сломанным слотом."""
+        self.services.channel.account(slot_id, rx=rx, tx=tx)
 
     # ── жизненный цикл ───────────────────────────────────────────────────────
 
@@ -207,7 +213,14 @@ class LinkServer:
                     break
                 self._io(gw.id, rx=len(line))
                 try:
-                    msg = gwlink.unpack(key, line, last_seq=last_seq)
+                    # до hello подпись без нонса (только hello и может пройти),
+                    # после — нашим нонсом: чужая сессия не сходится
+                    msg = gwlink.unpack(key, line, last_seq=last_seq,
+                                        nonce=sess.sn if sess.hello else b"")
+                    if not sess.hello:
+                        if msg.get("t") != "hello":
+                            raise gwlink.ProtocolError("сообщение до hello")
+                        sess.cn = gwlink.nonce_from(msg.get("nonce"))
                 except gwlink.ProtocolError as e:
                     log.warning("канал линка: слот %s — %s", gw.id, e)
                     await asyncio.to_thread(self.services.gwlink_note_error, gw.id, str(e))
@@ -220,7 +233,7 @@ class LinkServer:
             if self._sessions.get(gw.id) is sess:
                 self._sessions.pop(gw.id, None)
                 # «Последний раз на связи» — только для сессии, которая была:
-                # отвергнутый на подписи или окне времени коннект не освежает
+                # отвергнутый на подписи (чужой ключ, чужая сессия) коннект не освежает
                 # отметку, иначе напоминания молчали бы вечно, хотя канал не
                 # доставил ни разу
                 if sess.hello or sess.took_over:
@@ -247,8 +260,7 @@ class LinkServer:
                          gw.id, proto, gwlink.PROTO)
             return
         if not sess.hello:
-            log.info("канал линка: слот %s прислал «%s» до hello — игнорирую", gw.id, kind)
-            return
+            return                                        # не бывает: отсеяно при разборе
         if kind in ("snap", "delta"):
             patch = gwsnapshot.sanitize(msg)
             rev = int(msg.get("rev") or 0)
@@ -292,10 +304,17 @@ class LinkServer:
     async def send(self, slot_id: int, kind: str, body: dict | None = None,
                    pad: int = gwlink.PAD_DELTA) -> bool:
         sess = self._sessions.get(slot_id)
-        if sess is None:
+        if sess is None or not sess.hello:
+            # до hello нонса шлюза нет: подписать нечем, а такт живости или
+            # «Обновить» между коннектом и hello подсунули бы клиенту первое
+            # слово с пустой подписью — он порвал бы сессию
             return False
         sess.seq += 1
-        line = gwlink.pack(sess.key, kind, body, seq=sess.seq, pad=pad)
+        body = dict(body or {})
+        if not sess.sn_sent:
+            body["nonce"] = gwlink.nonce_b64(sess.sn)     # наш нонс — первым сообщением
+            sess.sn_sent = True
+        line = gwlink.pack(sess.key, kind, body, seq=sess.seq, pad=pad, nonce=sess.cn)
         try:
             sess.writer.write(line)
             await sess.writer.drain()
@@ -375,8 +394,8 @@ class LinkServer:
         """Сказать агенту, активный он или резерв, — только при смене. Сам он
         этого знать не может: решает автомат переключения здесь, на ВПС."""
         sess = self._sessions.get(slot_id)
-        if sess is None:
-            return False
+        if sess is None or not sess.hello:
+            return False                      # до hello не отправится — и пометить нельзя
         active = await asyncio.to_thread(self.services.active_gateway)
         is_active = active is not None and active.id == slot_id
         if sess.role_sent == is_active:

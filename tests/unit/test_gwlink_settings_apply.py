@@ -34,7 +34,8 @@ from awgbot.util import gwlink
 pytestmark = pytest.mark.unit
 
 # Юнит так, как его пишет install/routing-gw-setup.sh (раздел «Автозапуск»):
-# часть значений в кавычках, часть без, секреты рядом с настройками.
+# часть значений в кавычках, часть без, ключи рядом с настройками. Конфига
+# аплинка (UPLINK_B64) в юните больше нет — он едет только на время применения.
 UNIT_TEXT = """[Unit]
 Description=awg-bot: линк до ВПС и изоляция клиентов (шлюз)
 After=network-online.target awg-quick@awg0.service
@@ -49,7 +50,6 @@ Environment=LINK_IF=awglink
 Environment="ADMIN_IPS=10.8.1.2"
 Environment=GATEWAY_PUBKEY=AAAAPUBKEY=
 Environment=GATEWAY_PREV_PUBKEY=
-Environment=UPLINK_B64=U0VDUkVULVVQTElOSy1LRVk=
 Environment=LAN_MODE=1
 Environment="HOME_SUBNETS=192.168.68.0/24"
 Environment=RESOLVER=10.9.1.1
@@ -263,9 +263,9 @@ def test_the_fingerprint_depends_on_content_not_on_spelling():
 # ── правка юнита ─────────────────────────────────────────────────────────────
 
 def test_rewriting_the_unit_touches_only_the_named_lines(unit):
-    """Юнит несёт и секреты (аплинк, ключи), и чужие строки. Правка настроек
-    обязана поменять ровно свои строки, а прочее оставить байт в байт — иначе
-    доставка подсетей однажды сотрёт конфиг аплинка."""
+    """Юнит несёт и ключи шлюза, и чужие строки. Правка настроек обязана
+    поменять ровно свои строки, а прочее оставить байт в байт — иначе доставка
+    подсетей однажды сотрёт ключ, по которому скрипт узнаёт свою машину."""
     before = gwguard.unit_set_env({"HOME_SUBNETS": "192.168.70.0/24 10.20.0.0/16",
                                    "RESOLVER": ""})
     assert before == UNIT_TEXT, "для отката возвращён не прежний текст"
@@ -277,8 +277,19 @@ def test_rewriting_the_unit_touches_only_the_named_lines(unit):
     # тот же юнит читает скрипт обвязки и снимок агента — форматы обязаны сойтись
     assert gwguard.unit_env("HOME_SUBNETS") == "192.168.70.0/24 10.20.0.0/16"
     assert gwguard.unit_env("RESOLVER") == ""
-    assert gwguard.unit_env("UPLINK_B64") == "U0VDUkVULVVQTElOSy1LRVk="
+    assert gwguard.unit_env("GATEWAY_PUBKEY") == "AAAAPUBKEY="
     assert ["systemctl", "daemon-reload"] in unit.calls, "systemd не перечитал изменённый юнит"
+
+
+def test_a_unit_rewritten_by_the_channel_stays_readable_only_by_root(unit):
+    """Скрипт обвязки ставит юниту 0600, канал переписывает его через
+    временный файл. Вернись права к 0644 после первой доставки подсетей —
+    любой локальный пользователь малины (OMV, шары) читал бы юнит, в том числе
+    юнит прежнего выпуска, где ещё лежит конфиг аплинка с приватным ключом."""
+    unit.path.chmod(0o644)                        # юнит прежнего выпуска
+    gwguard.unit_set_env({"HOME_SUBNETS": "192.168.70.0/24"})
+    assert unit.path.stat().st_mode & 0o777 == 0o600, oct(unit.path.stat().st_mode & 0o777)
+    assert not list(unit.path.parent.glob("*.tmp")), "временный файл юнита остался рядом"
 
 
 def test_admin_addresses_written_by_the_channel_read_back_as_a_list(unit):

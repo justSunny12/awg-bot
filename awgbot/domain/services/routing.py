@@ -878,16 +878,13 @@ class RoutingMixin:
         base = settings.get_int("app.routing.probe_seconds", 30)
         return base * float(settings.get("app.routing.probe_idle_multiplier", 10) or 0)
 
-    _CHAN_OVERHEAD = 200         # на сообщение канала: TCP/IP, конверт AWG, встречный ACK
-
     def _link_minus_channel(self, slot_id: int, st: dict) -> dict:
         """Счётчики линка за вычетом канала линка: снимки, ответы, диагностика
         и фиды идут тем же линком, и без вычета сходили бы за обратный трафик
         клиентов — ложная улика ровно тогда, когда человек разбирается со
         сломанным слотом (открыл диагностику) или канал крутится в переподключениях."""
-        io = (self.__dict__.get("_gwlink_io") or {}).get(slot_id) or [0, 0, 0]
-        extra = io[2] * self._CHAN_OVERHEAD
-        return {**st, "rx": st["rx"] - (io[0] + extra), "tx": st["tx"] - (io[1] + extra)}
+        rx, tx = self.channel.minus(slot_id, st["rx"], st["tx"])
+        return {**st, "rx": rx, "tx": tx}
 
     def _active_verdict(self, gw) -> str:
         """Живость АКТИВНОГО слота: сначала бесплатные улики, потом зонд.

@@ -27,6 +27,7 @@
 #      ACCEPT своим интерфейсам (линк, аплинк, локальная сеть) — п.3a; по ним
 #      агент и судит, что красной проверки «политика FORWARD» нет;
 #   4) автозапуск: юнит зовёт этот же скрипт, таблица ставится ДО подъёма линка;
+#      юнит переписывается целиком на каждом запуске и ставится с правами 0600;
 #   5) при LAN_MODE=1 — «за шлюзом без VPN» (концепт «локальная сеть»,
 #      функция A): dnsmasq на адресе шлюза в квартире (bind-dynamic, апстрим
 #      через АПЛИНК, NXDOMAIN на DoH-эндпоинты), ВТОРАЯ таблица inet awg_home
@@ -38,8 +39,11 @@
 #      /var/lib/awg-gw/feed; в lists.status тогда source=channel, иначе net.
 #      Таблица пишется БЕЗ delete table: наборы наполняет dnsmasq на лету, и
 #      реассерт обязан их сохранить — пересобираются только цепочки. Ручной
-#      слой прежней схемы переезжает в /var/lib/awg-gw/migrated, туда же при
-#      снятии уходят личные списки. Занят :53 не-dnsmasq — честный отказ ДО
+#      слой прежней схемы переезжает в /var/lib/awg-gw/migrated. Личные
+#      списки при снятии уходят в /var/lib/awg-gw/restore (туда же их
+#      откладывает awg-bot restore, пока режим не применён), и следующее
+#      включение берёт их оттуда; нет — пустые заготовки. Занят :53
+#      не-dnsmasq — честный отказ ДО
 #      apt, причина в статусе; остальная обвязка при этом стоит. Юниту
 #      dnsmasq — оверрайд dnsmasq.service.d/awg-gw.conf: After/Wants
 #      awg-quick@<аплинк> (апстрим привязан к интерфейсу), Restart=on-failure,
@@ -70,7 +74,10 @@
 #                   ключ аплинка помеченного шлюза (и прежний ключ пары в окне
 #                   переезда): по нему находится аплинк и проверяется, та ли
 #                   это машина — с чужим аплинком линк не поднимается
-#   UPLINK_B64      конфиг аплинка из бандла (base64)
+#   UPLINK_B64      конфиг аплинка из бандла (base64) — ТОЛЬКО на время
+#                   применения: в юнит не закрепляется (внутри приватный
+#                   ключ, а поставленный конфиг и так лежит в HOST_CONF_DIR с
+#                   0600). Реассерт из юнита аплинк не переставляет
 #   LAN_MODE        1 — поднять «за шлюзом без VPN» (см. п.5), 0 — снять своё
 #   HOME_SUBNETS    локальные подсети шлюза: по первой он находит свой
 #                   интерфейс и адрес в квартире
@@ -279,13 +286,17 @@ lan_iface_for() {              # $1 = подсеть a.b.c.d/n → «iface addr�
         BEGIN { split(net, p, "/"); h = 2^(32-(p[2]+0)); want = int(ip2n(p[1])/h) }
         $2 != "lo" && $2 !~ /^(awg|docker|veth|br-)/ { split($4, q, "/"); if (int(ip2n(q[1])/h) == want) { print $2, q[1]; exit } }'
 }
-lan_remove() {                 # снять всё своё; личные списки — в $LAN_OLD (данные человека)
+lan_remove() {                 # снять всё своё; личные списки — в $LAN_DUMP/restore (данные человека)
     _changed=0
     for _f in awg-gw-base.conf awg-gw-doh.conf awg-gw-vpn-feed.conf; do
         [ -f "$DNSMASQ_D/$_f" ] && { run "rm -f $DNSMASQ_D/$_f"; _changed=1; }
     done
+    # личные списки — данные человека: не в архив с датой, а в restore/, откуда
+    # следующее включение режима (или awg-bot restore) вернёт их на место
     for _f in awg-gw-vpn-user.conf awg-gw-ru-user.conf; do
-        [ -f "$DNSMASQ_D/$_f" ] && { park "$DNSMASQ_D/$_f"; _changed=1; }
+        [ -f "$DNSMASQ_D/$_f" ] || continue
+        run "mkdir -p $LAN_DUMP/restore"
+        run "mv -f $DNSMASQ_D/$_f $LAN_DUMP/restore/$_f"; _changed=1
     done
     [ -f "$DNSMASQ_OVR" ] && { run "rm -f $DNSMASQ_OVR"; run "systemctl daemon-reload"; _changed=1; }
     if [ -f "$DNSMASQ_MARK" ]; then
@@ -1195,7 +1206,6 @@ Environment=LINK_IF=$LINK_IF
 Environment="ADMIN_IPS=$ADMIN_IPS"
 Environment=GATEWAY_PUBKEY=$GATEWAY_PUBKEY
 Environment=GATEWAY_PREV_PUBKEY=$GATEWAY_PREV_PUBKEY
-Environment=UPLINK_B64=$UPLINK_B64
 # Локальная сеть без VPN (концепт «локальная сеть»): флаг, подсети, резолвер ВПС.
 Environment=LAN_MODE=$LAN_MODE
 Environment="HOME_SUBNETS=$HOME_SUBNETS"
@@ -1215,9 +1225,10 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 UNITEOF
-# 0600: в юните UPLINK_B64 — конфиг аплинка с приватным ключом; юнит читает
-# только systemd (root), а любому локальному пользователю малины (OMV, шары)
-# видеть ключ незачем. Прежние выпуски оставляли 0644 — правим и их.
+# 0600: прежние выпуски закрепляли в юните UPLINK_B64 с приватным ключом
+# аплинка и оставляли 0644 — любой локальный пользователь малины (OMV, шары)
+# мог его прочитать. Секрета в юните больше нет, права держим строгими:
+# юнит читает только systemd.
 chmod 0600 "$UNIT"
 run "systemctl daemon-reload"
 run "systemctl enable awg-link-gw.service"
@@ -1299,7 +1310,15 @@ DOHEOF
     if cmp -s "$_tmp" "$DNSMASQ_D/awg-gw-doh.conf"; then rm -f "$_tmp"; else
         run "install -m 0644 $_tmp $DNSMASQ_D/awg-gw-doh.conf"; rm -f "$_tmp"; _dn_changed=1; fi
     for _f in awg-gw-vpn-user.conf awg-gw-ru-user.conf; do
-        [ -f "$DNSMASQ_D/$_f" ] || { run "printf '# awg-bot (шлюз): личный список — awg-bot lan add/ru/del\\n' > $DNSMASQ_D/$_f"; _dn_changed=1; }
+        [ -f "$DNSMASQ_D/$_f" ] && continue
+        # awg-bot restore кладёт личные списки из копии сюда, когда режим на
+        # машине ещё не применён: подхватываем их при первом включении
+        if [ -f "$LAN_DUMP/restore/$_f" ]; then
+            run "mv -f $LAN_DUMP/restore/$_f $DNSMASQ_D/$_f"
+        else
+            run "printf '# awg-bot (шлюз): личный список — awg-bot lan add/ru/del\\n' > $DNSMASQ_D/$_f"
+        fi
+        _dn_changed=1
     done
     # /etc/default/dnsmasq НЕ трогаем. Прежняя строка DNSMASQ_EXCEPT=lo init-скрипт
     # Debian превращает в except-interface=lo, а тот по man перекрывает

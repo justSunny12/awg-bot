@@ -236,10 +236,10 @@ def _channel(agent, rx: int = 0, tx: int = 0, msgs: int = 1) -> tuple[int, int]:
     канала (как её считает клиент), а на счётчиках линка — она же плюс
     накладные: сегмент в сторону данных и ACK навстречу. Возвращает прирост
     счётчиков линка (rx, tx)."""
-    io = agent.svc.__dict__.setdefault("_gwlink_io", [0, 0, 0])
-    io[0] += rx
-    io[1] += tx
-    io[2] += msgs
+    ch = agent.svc.channel                       # клиент канала пишет сюда, слот 0
+    ch.account(0, rx=rx, tx=tx)
+    for _ in range(msgs - 1):
+        ch.account(0)
     return rx + msgs * _WG_SEGMENT, tx + msgs * _WG_SEGMENT
 
 

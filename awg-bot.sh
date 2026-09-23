@@ -27,6 +27,8 @@
 #   uninstall              снять сервис (код всегда; данные/секреты — по согласию).
 #   backup                 снимок состояния (БД + conf + env) → tar.gz.
 #   restore [<tgz>]        восстановить состояние из снимка (по умолчанию — свежий).
+#                          На шлюзе — ещё firewall.env и личные списки локальной
+#                          сети (без применённого режима — в /var/lib/awg-gw/restore).
 #   status                 состояние сервиса и пути.
 #   logs                   журнал сервиса (follow).
 
@@ -1140,6 +1142,22 @@ cmd_restore() {
             else
                 ok "firewall.env шлюза восстановлен (обвязки ещё нет — подхватится при применении конфигурации)"
             fi
+        fi
+    fi
+    # Личные списки локальной сети без VPN (awg-gw-*-user.conf) — тоже данные
+    # человека. Режим на машине применён (есть базовый конфиг dnsmasq) — кладём в
+    # conf-dir и перечитываем демон; ещё нет — откладываем в /var/lib/awg-gw/restore,
+    # скрипт обвязки подхватит их при первом включении режима.
+    if compgen -G "$tmp/awg-gw/lan/*-user.conf" >/dev/null; then
+        if [[ -f /etc/dnsmasq.d/awg-gw-base.conf ]]; then
+            cp -a "$tmp"/awg-gw/lan/*-user.conf /etc/dnsmasq.d/ && chmod 644 /etc/dnsmasq.d/awg-gw-*-user.conf
+            systemctl restart dnsmasq >/dev/null 2>&1 \
+                && ok "личные списки локальной сети восстановлены" \
+                || warn "личные списки восстановлены, но dnsmasq не перезапустился: journalctl -u dnsmasq -e"
+        else
+            mkdir -p /var/lib/awg-gw/restore
+            cp -a "$tmp"/awg-gw/lan/*-user.conf /var/lib/awg-gw/restore/
+            ok "личные списки локальной сети отложены в /var/lib/awg-gw/restore — встанут при включении режима без VPN"
         fi
     fi
     # маркер для бота: новый процесс доложит админу, из какой копии восстановились

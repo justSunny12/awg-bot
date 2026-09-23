@@ -121,6 +121,10 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
 
     def __init__(self, db):
         self.db = db
+        # канал до ВПС: открыта ли сессия и байты через линк — пишет
+        # runtime/linkclient (слот 0), читают зонд наружу и задача списков
+        from awgbot.domain.channelstate import ChannelState
+        self.channel = ChannelState()
 
     # ── линк ─────────────────────────────────────────────────────────────────
 
@@ -818,7 +822,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         их сам и везёт, когда они меняются; неизменные фиды — это не повод
         лезть на GitHub с адреса квартиры. Канал оборван — запас 12 часов от
         последнего контакта, дальше агент снова качает сам."""
-        if self.__dict__.get("_gwlink_online") and self.lan_feeds_applied_hash():
+        if self.channel.online and self.lan_feeds_applied_hash():
             return True
         raw = self.db.get_state(self._LAN_CHANNEL_AT_KEY) or ""
         return raw.isdigit() and time.time() - int(raw) < self._LAN_CHANNEL_FRESH_S
@@ -1183,16 +1187,12 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         mins = settings.get_int("app.gateway.monitor_minutes", 3)
         return mins * 60 * float(settings.get("app.gateway.egress_idle_multiplier", 4) or 0)
 
-    _CHAN_OVERHEAD = 200         # на сообщение канала: TCP/IP, конверт AWG, встречный ACK
-
     def _minus_channel(self, link_rx: int, link_tx: int) -> tuple[int, int]:
         """Счётчики линка за вычетом собственного канала (снимки, ответы,
         диагностика, фиды): иначе ответ канала серверу сходил бы за ответы из
         интернета, ушедшие клиентам, и выход наружу доказывался бы трафиком,
         который никуда наружу не ходил."""
-        io = self.__dict__.get("_gwlink_io") or [0, 0, 0]
-        extra = io[2] * self._CHAN_OVERHEAD
-        return link_rx - (io[0] + extra), link_tx - (io[1] + extra)
+        return self.channel.minus(0, link_rx, link_tx)
 
     def _egress_verdict(self, link_rx: int, link_tx: int) -> tuple[bool, float | None, str]:
         """(есть ли выход наружу, мс последнего замера, чем доказано).
@@ -1278,6 +1278,13 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             extra.append(("awg-gw/firewall.env", open(gwguard.FW_ENV, "rb").read()))
         except OSError:
             pass
+        # Личные списки локальной сети без VPN — тоже данные человека: набраны
+        # руками в чате агента, и замена малины без копии теряла бы их.
+        for name in ("awg-gw-vpn-user.conf", "awg-gw-ru-user.conf"):
+            try:
+                extra.append((f"awg-gw/lan/{name}", open(f"/etc/dnsmasq.d/{name}", "rb").read()))
+            except OSError:
+                pass
         return self.write_backup_archive("gw", extra, require_encryption=True)
 
     def _apply_bundle_mail(self, text: str) -> bool:

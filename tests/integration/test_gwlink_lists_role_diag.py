@@ -116,13 +116,9 @@ async def _next(gw: _Gw, kind: str, timeout: float = 2.0) -> dict | None:
     """Следующее сообщение вида `kind` или None; прочие виды пропускаются."""
     end = asyncio.get_running_loop().time() + timeout
     while (left := end - asyncio.get_running_loop().time()) > 0:
-        try:
-            line = await asyncio.wait_for(gw.reader.readline(), timeout=left)
-        except asyncio.TimeoutError:
+        msg = await gw.next_msg(left)
+        if msg is None:
             return None
-        if not line:
-            return None
-        msg = gwlink.unpack(gw.key, line)
         if msg.get("t") == kind:
             return msg
     return None

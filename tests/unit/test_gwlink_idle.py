@@ -28,6 +28,7 @@ from awgbot.runtime import hostmetrics, linkclient
 from awgbot.util import gwlink
 
 PRIV = base64.b64encode(os.urandom(32)).decode()
+SN = b"S" * gwlink.NONCE_BYTES            # нонс сервера открытой сессии
 
 
 class _Wire:
@@ -43,7 +44,8 @@ class _Wire:
         pass
 
     def messages(self, key: bytes) -> list[dict]:
-        return [gwlink.unpack(key, line) for line in self.lines]
+        # всё после hello подписано нонсом сервера — без него подпись не сходится
+        return [gwlink.unpack(key, line, nonce=SN) for line in self.lines]
 
 
 class _Agent:
@@ -160,6 +162,7 @@ def client(agent, monkeypatch):
     """Клиент канала с подставленным сокетом: сессия «открыта», байты считаем."""
     c = linkclient.LinkClient(agent.svc)
     c._writer = _Wire()
+    c._sn = SN
     monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
     return c
 

@@ -1,6 +1,6 @@
 """
-Конверт канала ВПС ↔ шлюз (util/gwlink): подпись, окно времени, порядок,
-предел строки, добивка до кратности.
+Конверт канала ВПС ↔ шлюз (util/gwlink): подпись, нонсы сессии (proto 2),
+порядок, предел строки, добивка до кратности. Часы в проверку не входят.
 
 Канал живёт внутри туннеля, шифрование даёт туннель — конверт отвечает ровно
 за две вещи: сообщение одного слота нельзя выдать за сообщение другого, и
@@ -97,23 +97,62 @@ def test_a_forwarded_claim_token_is_not_a_channel_message():
         gwlink.unpack(gwlink.channel_key(priv), token)
 
 
-# ── окно времени и порядок ───────────────────────────────────────────────────
+# ── нонсы сессии, часы и порядок ─────────────────────────────────────────────
 
-@pytest.mark.parametrize("shift", [-301, 301, -10_000])
-def test_a_message_outside_the_five_minute_window_is_refused(key, shift):
-    """Окно ±300 с: обе стороны живы и в одной сети, а широкое окно помогало бы
-    тому, кто записал сообщение и шлёт его заново."""
-    line = gwlink.pack(key, "snap", {"rev": 1}, seq=1, now=1_000_000 + shift)
+def test_a_message_of_another_session_is_refused(key):
+    """Подпись берётся над нонсом получателя и телом. Записанное в прошлой
+    сессии сообщение под верным ключом — старая правда: не сходится по
+    построению, а не по часам."""
+    past, now_ = gwlink.new_nonce(), gwlink.new_nonce()
+    assert past != now_, "два нонса подряд совпали — отсекать повтор нечем"
+    line = gwlink.pack(key, "delta", {"egress_ok": False, "rev": 2}, seq=2, nonce=past)
+    assert gwlink.unpack(key, line, nonce=past)["t"] == "delta", "своя сессия обязана проходить"
     with pytest.raises(gwlink.ProtocolError):
-        gwlink.unpack(key, line, now=1_000_000)
+        gwlink.unpack(key, line, nonce=now_)
+    with pytest.raises(gwlink.ProtocolError):
+        gwlink.unpack(key, line)                  # и как «hello без нонса» тоже не проходит
 
 
-@pytest.mark.parametrize("shift", [-299, 0, 299])
-def test_a_message_inside_the_window_passes(key, shift):
-    """Край окна не должен отсекать честное сообщение: часы малины без RTC
-    уезжают на секунды, и рвать из-за этого сессию — значит рвать её постоянно."""
-    line = gwlink.pack(key, "snap", {"rev": 1}, seq=1, now=1_000_000 + shift)
-    assert gwlink.unpack(key, line, now=1_000_000)["t"] == "snap"
+def test_hello_is_signed_without_a_nonce_and_only_hello_can_be(key):
+    """hello открывает сессию раньше, чем сервер назвал свой нонс, — подписан
+    без него и повторяем. Подписанное нонсом сообщение за hello не сходит."""
+    cn = gwlink.new_nonce()
+    hello = gwlink.pack(key, "hello", {"proto": gwlink.PROTO, "nonce": gwlink.nonce_b64(cn)}, seq=1)
+    msg = gwlink.unpack(key, hello)
+    assert gwlink.nonce_from(msg["nonce"]) == cn, "нонс шлюза не пережил конверт"
+    assert gwlink.unpack(key, hello)["t"] == "hello", "hello не повторяем — рестарт сервера рвал бы сессии"
+    with pytest.raises(gwlink.ProtocolError):
+        gwlink.unpack(key, hello, nonce=gwlink.new_nonce())
+
+
+def test_a_nonce_survives_the_round_trip_through_its_text_form():
+    n = gwlink.new_nonce()
+    assert len(n) == gwlink.NONCE_BYTES
+    assert gwlink.nonce_from(gwlink.nonce_b64(n)) == n
+
+
+@pytest.mark.parametrize("junk", [None, "", "не base64 @@@", "QUJD",
+                                  "A" * 200, 12345, ["список"],
+                                  base64.urlsafe_b64encode(b"x" * 15).decode().rstrip("="),
+                                  base64.urlsafe_b64encode(b"x" * 17).decode().rstrip("=")])
+def test_a_broken_nonce_raises_only_protocol_error(junk):
+    """Нонс приходит в поле сообщения с чужой машины. Мусор или не та длина —
+    разрыв сессии через ProtocolError, а не падение обработчика и не «пустой
+    нонс», которым подпись сошлась бы как у hello."""
+    with pytest.raises(gwlink.ProtocolError):
+        gwlink.nonce_from(junk)
+
+
+@pytest.mark.parametrize("shift", [-3600, -301, 301, 3600, -10_000_000])
+def test_clocks_far_apart_do_not_break_the_channel(key, shift):
+    """Малина без RTC поднялась раньше NTP и ушла на час в любую сторону.
+    Раньше окно ±5 минут молча гасило канал ровно тогда, когда он должен был
+    сказать «часы разошлись». Теперь `ts` справочный: сообщение проходит и
+    несёт время отправителя как есть — по нему ВПС и покажет расхождение."""
+    nonce = gwlink.new_nonce()
+    line = gwlink.pack(key, "snap", {"rev": 1}, seq=1, now=1_000_000 + shift, nonce=nonce)
+    msg = gwlink.unpack(key, line, now=1_000_000, nonce=nonce)
+    assert msg["t"] == "snap" and msg["ts"] == 1_000_000 + shift
 
 
 def test_a_repeated_or_backwards_seq_is_refused_and_the_next_one_passes(key):
@@ -192,4 +231,4 @@ def test_padding_lives_inside_the_signature_and_never_reaches_the_reader(key):
 def test_without_padding_the_message_is_as_short_as_its_body(key):
     """Служебные сообщения (`hello`, `ask`) добивкой не гоняем: они и так не
     несут события, а лишние полкилобайта в линке — трафик из ничего."""
-    assert len(gwlink.pack(key, "hello", {"proto": 1}, seq=1)) < gwlink.PAD_DELTA
+    assert len(gwlink.pack(key, "hello", {"proto": gwlink.PROTO}, seq=1)) < gwlink.PAD_DELTA

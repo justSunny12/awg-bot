@@ -97,13 +97,9 @@ async def _settings(gw: _Gw, timeout: float = 2.0) -> dict | None:
         left = end - asyncio.get_running_loop().time()
         if left <= 0:
             return None
-        try:
-            line = await asyncio.wait_for(gw.reader.readline(), timeout=left)
-        except asyncio.TimeoutError:
+        msg = await gw.next_msg(left)
+        if msg is None:
             return None
-        if not line:
-            return None
-        msg = gwlink.unpack(gw.key, line)
         if msg.get("t") == "settings":
             return msg
 
@@ -257,14 +253,13 @@ def test_nothing_is_due_without_a_snapshot_or_its_configuration_block(services, 
 
 async def test_clock_skew_is_measured_from_the_send_time_on_the_wire(services, link):
     """Время снимка приезжает в конверте unix-числом. Храни его как есть — сверка
-    часов никогда бы не срабатывала, и канал однажды замолчал бы по окну
-    времени без единой подсказки на экране. Здесь часы малины на 200 с впереди."""
+    часов никогда бы не срабатывала, и разошедшиеся часы малины (TLS к Telegram,
+    расписания) не видел бы никто: канал их не проверяет, но он единственный,
+    кто может о них сказать. Здесь часы малины на 200 с впереди."""
     host, port = link._bound[0]
     gw = _Gw(*await asyncio.open_connection(host, port), key=KEY)
     await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.2.0"})
-    gw.seq += 1
-    await gw.raw(gwlink.pack(KEY, "snap", _snap(_installed(services)), seq=gw.seq,
-                             now=time.time() + 200))
+    await gw.send("snap", _snap(_installed(services)), now=time.time() + 200)
     await _until(lambda: services.gwlink_snapshot(1))
     skew = services.gwlink_card(services.db.gateway(1), 10)["clock_skew"]
     assert skew is not None and 190 <= skew <= 210, f"сверка часов: {skew}"

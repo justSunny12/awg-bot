@@ -16,6 +16,18 @@ gwlink.py — конверт канала ВПС ↔ шлюз внутри ли�
     GL1:<base64url(JSON)>.<base64url(HMAC-SHA256[:20])>\\n
 JSON: {"t": <вид>, "seq": <номер в сессии>, "ts": <unix>, …поля вида…}
 
+ПОВТОР (proto 2). Защита от повтора — нонсами сессии, а не часами: при hello
+клиент называет свой нонс (поле `nonce`), сервер отвечает первым сообщением со
+своим тем же полем.
+Дальше каждая сторона подписывает сообщение с нонсом ПОЛУЧАТЕЛЯ (HMAC над
+нонс + тело): сообщение прошлой сессии не сходится по построению, а порядок
+внутри сессии держит `seq`. Сам hello подписан без нонса и повторяем — он не
+несёт ничего, кроме открытия сессии, и любое следующее сообщение повторщика
+подпись не пройдёт. Часы хоста в проверку не входят вовсе: малина без RTC,
+поднявшаяся раньше NTP, раньше молча теряла канал ровно тогда, когда он и
+должен был сказать «часы разошлись». `ts` остаётся справочным — по нему ВПС
+показывает расхождение часов, но не решает ничего.
+
 ДОБИВКА. В теле есть поле "_" из пробелов: длина сообщения доводится до
 кратности (512 для snap и settings, 256 для delta). Внутри туннеля наблюдателю
 не видно содержимое, но видны длины, и «всегда ровно 317 байт» — такая же
@@ -38,15 +50,13 @@ import time
 from awgbot.util import bundlecrypt
 
 PREFIX = "GL1:"
-PROTO = 1
+PROTO = 2
+NONCE_BYTES = 16
 # Больше этого — рвём сессию, не пытаясь разобрать: единственный источник на том
 # конце наш же агент, и мегабайтная строка означает либо поломку, либо попытку
 # засадить нам память. Предел один на обоих концах — и у приёмника строки, и у
 # разбора ниже. Большое тело (фиды локальной сети) режется на части — CHUNK.
 MAX_LINE = 256 * 1024
-# Окно повтора. Семь суток gwsign нужны человеческой пересылке; здесь обе
-# стороны живые и в одной сети, и широкое окно только помогало бы повторщику.
-MAX_SKEW_SECONDS = 300
 PAD_SNAP = 512
 PAD_DELTA = 256
 # Большое тело (фиды локальной сети) режется на части этого размера: строка
@@ -57,7 +67,7 @@ MAX_CHUNKS = 64
 
 
 class ProtocolError(ValueError):
-    """Сообщение не разобрано: подпись, окно времени, порядок, размер."""
+    """Сообщение не разобрано: подпись (в том числе чужой сессии), порядок, размер."""
 
 
 def channel_key(link_privkey_b64: str) -> bytes:
@@ -73,6 +83,26 @@ def _unb64u(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
+def new_nonce() -> bytes:
+    import secrets
+    return secrets.token_bytes(NONCE_BYTES)
+
+
+def nonce_b64(nonce: bytes) -> str:
+    return _b64u(nonce)
+
+
+def nonce_from(text) -> bytes:
+    """Нонс из поля сообщения; не той длины или мусор — ProtocolError."""
+    try:
+        raw = _unb64u(str(text or ""))
+    except (ValueError, TypeError) as e:
+        raise ProtocolError("нонс сессии повреждён") from e
+    if len(raw) != NONCE_BYTES:
+        raise ProtocolError("нонс сессии не той длины")
+    return raw
+
+
 def _b64len(n: int) -> int:
     """Длина base64url без '=' для n байт — считаем, а не кодируем: добивка
     подбирается в несколько проходов, и каждый проход кодировать накладно."""
@@ -80,8 +110,9 @@ def _b64len(n: int) -> int:
 
 
 def pack(key: bytes, kind: str, body: dict | None = None, *,
-         seq: int = 0, pad: int = 0, now: float | None = None) -> bytes:
-    """Одно сообщение строкой, готовое к отправке (с переводом строки)."""
+         seq: int = 0, pad: int = 0, now: float | None = None, nonce: bytes = b"") -> bytes:
+    """Одно сообщение строкой, готовое к отправке (с переводом строки).
+    nonce — нонс ПОЛУЧАТЕЛЯ; пусто только у hello."""
     payload = dict(body or {})
     payload.update(t=kind, seq=int(seq), ts=int(time.time() if now is None else now))
 
@@ -102,14 +133,17 @@ def pack(key: bytes, kind: str, body: dict | None = None, *,
             raw, total = _encode(filler)
             if total % pad == 0:
                 break
-    mac = hmac.new(key, raw, hashlib.sha256).digest()[:20]
+    mac = hmac.new(key, nonce + raw, hashlib.sha256).digest()[:20]
     return (PREFIX + _b64u(raw) + "." + _b64u(mac) + "\n").encode()
 
 
 def unpack(key: bytes, line: bytes | str, *, now: float | None = None,
-           last_seq: int | None = None) -> dict:
-    """Разобрать и проверить строку. ProtocolError — чужая подпись, окно
-    времени, повтор или мусор. Возвращает тело с "t", "seq", "ts"."""
+           last_seq: int | None = None, nonce: bytes = b"") -> dict:
+    """Разобрать и проверить строку. ProtocolError — чужая подпись (в том
+    числе чужой сессии — нонс не тот), повтор по seq или мусор. nonce — СВОЙ
+    нонс, которым отправитель обязан был подписать; пусто — только для hello.
+    now — не используется с proto 2 (окна времени нет), оставлен ради прежних
+    вызовов. Возвращает тело с "t", "seq", "ts"."""
     text = line.decode(errors="replace") if isinstance(line, bytes) else line
     text = text.strip()
     if len(text) > MAX_LINE:
@@ -122,9 +156,9 @@ def unpack(key: bytes, line: bytes | str, *, now: float | None = None,
         mac = _unb64u(tail)
     except (ValueError, TypeError) as e:
         raise ProtocolError("сообщение повреждено") from e
-    want = hmac.new(key, raw, hashlib.sha256).digest()[:20]
+    want = hmac.new(key, nonce + raw, hashlib.sha256).digest()[:20]
     if not hmac.compare_digest(mac, want):
-        raise ProtocolError("подпись не сходится — сообщение не от этого шлюза")
+        raise ProtocolError("подпись не сходится — не этот шлюз или чужая сессия")
     try:
         data = json.loads(raw.decode())
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
@@ -132,13 +166,10 @@ def unpack(key: bytes, line: bytes | str, *, now: float | None = None,
     if not isinstance(data, dict) or not isinstance(data.get("t"), str):
         raise ProtocolError("сообщение без вида")
     try:
-        ts = int(data.get("ts") or 0)
+        int(data.get("ts") or 0)
         seq = int(data.get("seq") or 0)
     except (TypeError, ValueError, OverflowError) as e:
         raise ProtocolError("сообщение повреждено") from e
-    now = time.time() if now is None else now
-    if abs(now - ts) > MAX_SKEW_SECONDS:
-        raise ProtocolError("сообщение вне окна времени — повтор или часы разошлись")
     if last_seq is not None and seq <= last_seq:
         raise ProtocolError("порядок сообщений нарушен — повтор")
     data.pop("_", None)

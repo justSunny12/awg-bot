@@ -589,3 +589,19 @@ def test_without_links_there_is_no_channel_rule_at_all(host_mode, monkeypatch, t
     spec = nftguard.build_spec(["10.9.1.5"])
     assert spec.link_peers4 == [] and spec.link_channel_port == 0
     assert "link_peers4 tcp dport" not in nftguard.render(spec)
+
+
+def test_without_link_interfaces_the_channel_rule_is_not_widened(host_mode, monkeypatch, tmp_path):
+    """Адреса шлюзов и порт известны, а имён интерфейсов линков нет (таблицу
+    собрали, когда конфиг линка не прочитался по имени). Правило без iifname
+    пустило бы на порт канала пакет с подделанным адресом /30 с любого
+    интерфейса, включая публичный, — лучше не открыть канал вовсе."""
+    import dataclasses
+    _links(monkeypatch, tmp_path, awglink="[Interface]\nTable = off\nAddress = 10.99.99.1/30\n")
+    _conf(monkeypatch, **{"app.firewall.enabled": True, "app.routing.link_channel_port": 8787})
+    spec = nftguard.build_spec(["10.9.1.5"])
+    assert spec.link_peers4 == ["10.99.99.2"] and spec.link_ifs, "сценарий собран не так"
+    bare = dataclasses.replace(spec, link_ifs=[])
+    text = nftguard.render(bare)
+    assert "tcp dport 8787" not in text, "правило канала без интерфейсов линков открыто с любого интерфейса"
+    assert "@link_peers4 tcp dport" not in text

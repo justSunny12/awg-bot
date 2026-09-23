@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import json
 import os
 import socket
 
@@ -21,6 +22,7 @@ import pytest
 
 from awgbot.core import config
 from awgbot.domain import gwsnapshot
+from awgbot.domain.channelstate import ChannelState
 from awgbot.runtime import linkserver
 from awgbot.util import gwlink, gwsign
 
@@ -45,24 +47,82 @@ def _free_port() -> int:
 
 
 class _Gw:
-    """Агент шлюза на том конце: шлёт подписанные строки и читает ответы."""
+    """Агент шлюза на том конце: шлёт подписанные строки и читает ответы.
+
+    Протокол нонсов (proto 2) — как у боевого клиента: hello подписан без
+    нонса и несёт свой нонс `n` (cn); первое сообщение сервера подписано cn и
+    несёт нонс сервера `n` (sn); дальше свои сообщения подписываем sn, ответы
+    сервера проверяем cn. Первое слово сервера читается лениво — перед первой
+    отправкой после hello — и откладывается в `inbox`, чтобы тесты, ждущие
+    роль, получили её как прежде."""
 
     def __init__(self, reader, writer, key=KEY):
         self.reader, self.writer, self.key = reader, writer, key
         self.seq = 0
+        self.cn = gwlink.new_nonce()
+        self.sn = b""
+        self.hello_sent = False
+        self.inbox: list[dict] = []
 
-    async def send(self, kind: str, body: dict | None = None, *, key=None, seq=None):
+    def pack(self, kind: str, body: dict | None = None, *, key=None, seq=None,
+             nonce: bytes | None = None, now: float | None = None) -> bytes:
+        """Строка так, как её подписал бы агент в этой сессии."""
         self.seq = self.seq + 1 if seq is None else seq
-        self.writer.write(gwlink.pack(key or self.key, kind, body, seq=self.seq))
+        body = dict(body or {})
+        if kind == "hello":
+            body.setdefault("nonce", gwlink.nonce_b64(self.cn))
+            sign = b"" if nonce is None else nonce
+        else:
+            sign = self.sn if nonce is None else nonce
+        return gwlink.pack(key or self.key, kind, body, seq=self.seq, nonce=sign, now=now)
+
+    async def send(self, kind: str, body: dict | None = None, *, key=None, seq=None,
+                   nonce: bytes | None = None, now: float | None = None):
+        if kind != "hello" and self.hello_sent and not self.sn:
+            await self._first()
+        self.writer.write(self.pack(kind, body, key=key, seq=seq, nonce=nonce, now=now))
         await self.writer.drain()
+        if kind == "hello":
+            self.hello_sent = True
+
+    async def _first(self, timeout: float = 2.0) -> None:
+        """Первое слово сервера после hello: из него — нонс сервера."""
+        line = await asyncio.wait_for(self.reader.readline(), timeout=timeout)
+        msg = self._take(line)
+        self.inbox.append(msg)
+
+    def _take(self, line: bytes) -> dict:
+        msg = gwlink.unpack(self.key, line, nonce=self.cn)
+        if not self.sn and self.hello_sent:
+            self.sn = gwlink.nonce_from(msg.get("nonce"))
+        return msg
 
     async def raw(self, line: bytes):
         self.writer.write(line)
         await self.writer.drain()
 
     async def recv(self, timeout: float = 2.0) -> dict:
+        if self.inbox:
+            return self.inbox.pop(0)
         line = await asyncio.wait_for(self.reader.readline(), timeout=timeout)
-        return gwlink.unpack(self.key, line)
+        return self._take(line)
+
+    async def recv_raw(self, timeout: float = 2.0) -> dict:
+        """Следующее слово сервера, как есть: для повторщика, у которого нонс
+        шлюза — чужой, записанный из hello."""
+        line = await asyncio.wait_for(self.reader.readline(), timeout=timeout)
+        head = line.decode().strip()[len(gwlink.PREFIX):].partition(".")[0]
+        return json.loads(base64.urlsafe_b64decode(head + "=" * (-len(head) % 4)))
+
+    async def next_msg(self, timeout: float = 2.0) -> dict | None:
+        """Следующее сообщение сервера или None — молчание или закрытый сокет."""
+        if self.inbox:
+            return self.inbox.pop(0)
+        try:
+            line = await asyncio.wait_for(self.reader.readline(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return None
+        return self._take(line) if line else None
 
     async def role(self) -> bool:
         """Первое, что сервер говорит после `hello`, — роль слота (активный или
@@ -71,6 +131,8 @@ class _Gw:
 
     async def silent(self, seconds: float = 0.3) -> bool:
         """Правда ли, что сервер не сказал ни слова: в простое канал молчит."""
+        if self.inbox:
+            return False
         try:
             await asyncio.wait_for(self.reader.readline(), timeout=seconds)
         except asyncio.TimeoutError:
@@ -140,7 +202,7 @@ async def test_a_connecting_gateway_gets_a_session_and_its_snapshot_is_stored(se
     await _until(lambda: services.gwlink_snapshot(1))
 
     sess = services.gwlink_session(1)
-    assert sess["agent"] == "3.1.0" and sess["proto"] == "1" and sess["since"]
+    assert sess["agent"] == "3.1.0" and sess["proto"] == str(gwlink.PROTO) and sess["since"]
     snap = services.gwlink_snapshot(1)
     assert snap["bundle"]["home_subnets"] == "192.168.68.0/24"
     assert snap["agent_version"] == "3.1.0" and snap["egress_ok"] is True
@@ -250,6 +312,122 @@ async def test_a_replayed_message_ends_the_session(services, link):
     await _until(lambda: not services.gwlink_session(1))
     assert services.gwlink_session(1) == {}
     assert services.gwlink_snapshot(1)["egress_ok"] is True
+    await gw.close()
+
+
+async def test_a_message_of_a_past_session_ends_the_session(services, link):
+    """Сообщение, записанное в прошлой сессии, подписано прошлым нонсом
+    сервера. Под верным ключом и со свежим номером оно — старая правда
+    (вчерашний «выход наружу есть»), и сервер обязан его отвергнуть, а не
+    наложить поверх свежего снимка."""
+    gw = await _connect(link)
+    await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.1.0"})
+    await gw.send("snap", {**SNAP, "rev": 1})
+    await _until(lambda: services.gwlink_snapshot(1))
+    await gw.send("delta", {"egress_ok": False, "rev": 2}, nonce=gwlink.new_nonce())
+    await _until(lambda: not services.gwlink_session(1))
+    assert services.gwlink_session(1) == {} and link.online(1) is False, (
+        "сообщение чужой сессии не порвало эту")
+    assert services.gwlink_snapshot(1)["egress_ok"] is True, "дельта прошлой сессии легла в снимок"
+    assert "подпись" in services.db.get_state("gwlink_error_1"), "причина разрыва не записана"
+    await gw.close()
+
+
+async def test_a_replayed_hello_opens_a_session_but_the_next_recorded_line_does_not_pass(
+        services, link):
+    """hello подписан без нонса и повторяем: записавший его откроет сессию —
+    и только. Всё, что он записал следом, подписано нонсом прошлой сессии
+    сервера, а у новой сессии нонс свой; снимок из записи не ложится, сессия
+    рвётся."""
+    gw = await _connect(link)
+    hello = gw.pack("hello", {"proto": gwlink.PROTO, "agent": "3.0.0"})
+    await gw.raw(hello)
+    gw.hello_sent = True
+    await gw._first()                             # нонс сервера этой сессии
+    snap = gw.pack("snap", {**SNAP, "agent_version": "3.0.0", "rev": 1})
+    await gw.raw(snap)
+    await _until(lambda: services.gwlink_snapshot(1).get("agent_version") == "3.0.0")
+    await gw.close()
+    await _until(lambda: not services.gwlink_session(1))
+    services.gwlink_snapshot_in(1, {**SNAP, "agent_version": "3.1.0", "rev": 1}, 1, True)
+
+    replay = await _connect(link)
+    await replay.raw(hello)
+    first = await replay.recv_raw()
+    assert first["t"] == "role" and first.get("nonce"), "повторённый hello не открыл сессию"
+    await _until(lambda: services.gwlink_session(1))
+    await replay.raw(snap)
+    await _until(lambda: not services.gwlink_session(1))
+    assert services.gwlink_session(1) == {}, "записанный снимок прошлой сессии прошёл в новой"
+    assert services.gwlink_snapshot(1)["agent_version"] == "3.1.0", "снимок из записи лёг в карточку"
+    await replay.close()
+
+
+async def test_the_first_server_word_carries_its_nonce_and_is_signed_with_ours(services, link):
+    """Первое слово сервера — единственное место, где шлюз узнаёт нонс сервера.
+    Не будь его там или подпиши сервер его не нонсом шлюза — боевой клиент
+    рвёт сессию, и канал не поднимается ни у кого."""
+    gw = await _connect(link)
+    await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.1.0"})
+    line = await asyncio.wait_for(gw.reader.readline(), timeout=2)
+    with pytest.raises(gwlink.ProtocolError):
+        gwlink.unpack(KEY, line)                  # без нонса шлюза подпись не сходится
+    first = gwlink.unpack(KEY, line, nonce=gw.cn)
+    assert len(gwlink.nonce_from(first.get("nonce"))) == gwlink.NONCE_BYTES
+    gw.sn = gwlink.nonce_from(first["nonce"])
+    await gw.send("snap", {**SNAP, "rev": 1})
+    await _until(lambda: services.gwlink_snapshot(1))
+    assert services.gwlink_snapshot(1)["agent_version"] == "3.1.0", (
+        "снимок, подписанный нонсом сервера, не принят")
+    await gw.close()
+
+
+async def test_every_session_gets_its_own_server_nonce(services, link):
+    """Нонс сервера — свой у каждой сессии, иначе запись прошлой сессии
+    проходила бы в следующей."""
+    seen = []
+    for _ in range(2):
+        gw = await _connect(link)
+        await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.1.0"})
+        await gw.role()
+        seen.append(gw.sn)
+        await gw.close()
+        await _until(lambda: not services.gwlink_session(1))
+    assert seen[0] and seen[0] != seen[1], "нонс сервера повторился между сессиями"
+
+
+@pytest.mark.parametrize("shift", [3600, -3600])
+async def test_gateway_clock_an_hour_off_does_not_break_the_session(services, link, shift):
+    """Малина без RTC ушла на час в любую сторону. Канал её не отвергает:
+    снимок ложится, сессия живёт, а расхождение видно в карточке."""
+    import time
+    gw = await _connect(link)
+    await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.1.0"}, now=time.time() + shift)
+    await gw.send("snap", {**SNAP, "rev": 1}, now=time.time() + shift)
+    await _until(lambda: services.gwlink_snapshot(1))
+    assert services.gwlink_snapshot(1)["agent_version"] == "3.1.0", f"часы {shift:+} с погасили канал"
+    assert link.online(1) is True
+    skew = services.gwlink_card(services.db.gateway(1), 10)["clock_skew"]
+    assert skew is not None and abs(skew - shift) < 30, f"расхождение часов не измерено: {skew}"
+    await gw.close()
+
+
+async def test_a_tick_before_hello_does_not_spoil_the_first_word(services, link):
+    """Шлюз подключился, hello ещё в пути, а такт живости (раз в полминуты)
+    уже обходит сессии. Сказанное в этот момент слово ушло бы без нонса шлюза
+    — клиент отвергнет его и порвёт сессию, а роль, отмеченная «сказанной»,
+    не придёт и после hello. До hello серверу говорить нечего."""
+    gw = await _connect(link)
+    await _until(lambda: 1 in link._sessions)
+    await link.deliver_all()
+    assert await link.ask_snap(1, timeout=0.3) is not True
+    await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.1.0"})
+    first = await gw.recv()
+    assert first["t"] == "role" and first.get("nonce"), (
+        f"первым после hello пришло «{first['t']}» без нонса сервера")
+    await gw.send("snap", {**SNAP, "rev": 1})
+    await _until(lambda: services.gwlink_snapshot(1))
+    assert services.gwlink_snapshot(1)["agent_version"] == "3.1.0"
     await gw.close()
 
 
@@ -527,6 +705,7 @@ class _Agent:
     def __init__(self, snap: dict, token: str = ""):
         self.snap = snap
         self.token = token
+        self.channel = ChannelState()      # сюда клиент пишет «на связи» и байты канала
 
     def gw_snapshot(self) -> dict:
         import copy
@@ -586,7 +765,15 @@ async def test_the_real_client_and_the_real_server_agree_on_the_wire(
         assert await link.send(1, "ask", {"what": "snap"}) is True
         await _until(lambda: services.gwlink_snapshot(1)["plumbing_gen"] == "old")
         assert services.db.get_state("gwlink_snap_rev_1") == "1", "нумерация началась заново"
+
+        # оба конца считают байты канала там, где их читает зонд живости:
+        # агент — слот 0 своих сервисов, ВПС — слот шлюза
+        assert agent.channel.online is True, "домен агента не знает, что сессия открыта"
+        gw_io, vps_io = agent.channel.traffic.get(0), services.channel.traffic.get(1)
+        assert gw_io and gw_io.tx >= client._sent_bytes and gw_io.rx > 0, "агент не считает байты канала"
+        assert vps_io and vps_io.rx >= client._sent_bytes and vps_io.tx > 0, "ВПС не считает байты канала"
     finally:
         await client.stop()
     await _until(lambda: not services.gwlink_session(1))
     assert services.gwlink_session(1) == {}, "остановленный агент оставил сессию открытой"
+    assert agent.channel.online is False, "сессия кончилась, а домен агента считает её открытой"

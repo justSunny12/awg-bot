@@ -369,7 +369,7 @@ def unit_set_env(values: dict[str, str]) -> str:
             new = new[:anchor.start()] + line + "\n" + new[anchor.start():]
     if new != text:
         tmp = path.with_suffix(".tmp")
-        _write_private(tmp, new)                  # в юните UPLINK_B64 с приватным ключом
+        _write_private(tmp, new)                  # права юнита — 0600, как ставит скрипт
         tmp.replace(path)
         try:
             _daemon_reload()

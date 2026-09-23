@@ -9,7 +9,7 @@
 `_connect_once` и цикл `_run`.
 
 Цена ошибок здесь — ритм в линке: сессия, которую сервер закрывает сразу
-(часы малины без RTC вне окна ±5 минут, чужой ключ), без роста шага
+(чужой ключ, чужой слот), без роста шага
 превращается в стук каждые пять секунд — ровный маячок внутри туннеля и запись
 на SD на каждом коннекте. И обратное — полуоткрытая сессия после жёсткого
 ребута ВПС, которая висит «на связи» днями и глушит своё скачивание фидов.
@@ -24,6 +24,7 @@ import time
 import pytest
 
 from awgbot.core import config
+from awgbot.domain.channelstate import ChannelState
 from awgbot.infra import gwguard
 from awgbot.runtime import linkclient
 from awgbot.util import gwlink
@@ -43,6 +44,7 @@ class _Agent:
         self.roles: list[bool] = []
         self.link_up = True
         self.touched = 0
+        self.channel = ChannelState()
 
     def lan_feeds_applied_hash(self) -> str:
         return ""
@@ -81,7 +83,10 @@ class _Conn:
 
     async def readline(self) -> bytes:
         if self.lines:
-            return self.lines.pop(0)
+            line = self.lines.pop(0)
+            # ответ сервера собирается по hello, который клиент уже прислал:
+            # подпись — нонсом клиента, первое слово несёт нонс сервера
+            return line(self) if callable(line) else line
         if self.hang:
             await self._gone.wait()               # сессия открыта, ВПС молчит
         return b""
@@ -98,6 +103,26 @@ class _Conn:
 
     async def wait_closed(self) -> None:
         pass
+
+    def hello(self, key: bytes = KEY) -> dict:
+        """Разобранный hello, пришедший в эту сессию (подписан без нонса)."""
+        return gwlink.unpack(key, self.written[0])
+
+
+SN = b"S" * gwlink.NONCE_BYTES            # нонс сервера в записанных сессиях
+
+
+def _reply(key: bytes, kind: str, body: dict, *, seq: int = 1, first: bool = True,
+           sign_key: bytes | None = None):
+    """Строка сервера для этой сессии: подписана нонсом из hello клиента,
+    первая несёт нонс сервера — как у боевого слушателя."""
+    def make(conn: "_Conn") -> bytes:
+        cn = gwlink.nonce_from(conn.hello(key).get("nonce"))
+        out = dict(body)
+        if first:
+            out["nonce"] = gwlink.nonce_b64(SN)
+        return gwlink.pack(sign_key or key, kind, out, seq=seq, nonce=cn)
+    return make
 
 
 class _Vps:
@@ -117,21 +142,21 @@ class _Vps:
         monkeypatch.setattr(linkclient, "server_port", lambda: gwlink.DEFAULT_PORT)
 
     def hangs_up(self) -> _Conn:
-        """Сервер закрыл сразу, не сказав ни слова: чужая подпись, часы вне окна."""
+        """Сервер закрыл сразу, не сказав ни слова: чужая подпись, чужой слот."""
         c = _Conn([])
         self.sessions.append(c)
         return c
 
     def answers(self, key: bytes = KEY, active: bool = True, **kw) -> _Conn:
         """Настоящая сессия: сервер сказал роль (первое, что он говорит после hello)."""
-        c = _Conn([gwlink.pack(key, "role", {"active": active}, seq=1)], **kw)
+        c = _Conn([_reply(key, "role", {"active": active})], **kw)
         self.sessions.append(c)
         return c
 
     def forged(self) -> _Conn:
         """На том конце не наш ВПС: подпись чужим ключом."""
         other = gwlink.channel_key(base64.b64encode(os.urandom(32)).decode())
-        c = _Conn([gwlink.pack(other, "role", {"active": True}, seq=1)])
+        c = _Conn([_reply(KEY, "role", {"active": True}, sign_key=other)])
         self.sessions.append(c)
         return c
 
@@ -166,8 +191,8 @@ def _delays(monkeypatch, stop_after: int) -> list[float]:
 # ── бэкофф ───────────────────────────────────────────────────────────────────
 
 async def test_a_server_that_hangs_up_at_once_does_not_reset_the_backoff(vps, monkeypatch):
-    """Малина без RTC до синхронизации часов: сервер отвергает каждое сообщение
-    окном ±5 минут и закрывает сессию сразу. Раньше любая «состоявшаяся»
+    """Чужой ключ или чужой слот: сервер отвергает hello и закрывает сессию
+    сразу. Раньше любая «состоявшаяся»
     сессия обнуляла счёт — выходил стук каждые пять секунд без роста шага.
     Теперь шаг растёт, пока сервер не ответит хоть одним подписанным словом."""
     for _ in range(4):
@@ -256,11 +281,11 @@ async def test_the_session_mark_follows_the_session(vps):
     agent = _Agent()
     client = linkclient.LinkClient(agent)
     seen: list = []
-    agent.set_link_role = lambda a: seen.append(agent.__dict__.get("_gwlink_online"))
+    agent.set_link_role = lambda a: seen.append(agent.channel.online)
     vps.answers()
     await client._connect_once()
     assert seen == [True], "во время сессии признак не выставлен"
-    assert agent.__dict__["_gwlink_online"] is False, "сессия кончилась, а признак остался"
+    assert agent.channel.online is False, "сессия кончилась, а признак остался"
     assert agent.touched == 1, "конец сессии не отметил запас на своё скачивание фидов"
 
 
@@ -299,7 +324,7 @@ async def test_a_bundle_that_turns_the_channel_off_stops_a_running_client(vps, g
         await asyncio.wait_for(task, 2)           # не погашена — TimeoutError, а не вечное ожидание
     assert conn.closed, "сессия до ВПС осталась открытой после выключения канала"
     assert not linkclient.online() and client._task is None
-    assert agent.__dict__["_gwlink_online"] is False
+    assert agent.channel.online is False
 
 
 async def test_the_channel_off_from_the_start_starts_nothing(gateway_role):
@@ -321,6 +346,7 @@ def _live_client(agent) -> linkclient.LinkClient:
     """Клиент с «открытой» сессией и задачей, которую ensure() не перезапустит."""
     client = linkclient.LinkClient(agent)
     client._writer = _Wire()
+    client._sn = SN                              # сессия открыта: нонс сервера известен
     client._task = asyncio.get_running_loop().create_future()
     linkclient._client = client
     return client
@@ -368,7 +394,7 @@ async def test_a_tick_still_sends_what_changed(gateway_role, conf):
     await client.push(full=True)
     agent.snap["egress_ok"] = False
     await linkclient.on_tick(agent)
-    kinds = [gwlink.unpack(KEY, x)["t"] for x in client._writer.written]
+    kinds = [gwlink.unpack(KEY, x, nonce=SN)["t"] for x in client._writer.written]
     assert kinds == ["snap", "delta"], f"тик не отправил изменившееся: {kinds}"
 
 
@@ -382,7 +408,7 @@ async def test_poke_sends_the_change_right_away(gateway_role, conf):
     await client.push(full=True)
     agent.snap["bundle"] = {"lan_mode": "0"}
     await linkclient.poke(agent)
-    msgs = [gwlink.unpack(KEY, x) for x in client._writer.written]
+    msgs = [gwlink.unpack(KEY, x, nonce=SN) for x in client._writer.written]
     assert [m["t"] for m in msgs] == ["snap", "delta"]
     assert msgs[-1]["bundle"] == {"lan_mode": "0"}
     await linkclient.poke(agent)
@@ -427,9 +453,117 @@ async def test_the_settings_answer_carries_the_outcome_and_no_fingerprint(gatewa
     await client.push(full=True)
     agent.snap["bundle"] = {"home_subnets": "192.168.70.0/24"}
     await client._apply_settings({"HOME_SUBNETS": "192.168.70.0/24"})
-    msgs = [gwlink.unpack(KEY, x) for x in client._writer.written]
+    msgs = [gwlink.unpack(KEY, x, nonce=SN) for x in client._writer.written]
     ack = next(m for m in msgs if m["t"] == "ack")
     assert set(ack) - {"t", "seq", "ts"} == {"ok", "changed", "error"}, f"в ответе лишнее: {sorted(ack)}"
     assert ack["ok"] is True and ack["changed"] == ["HOME_SUBNETS"]
     assert msgs[-1]["t"] == "delta" and msgs[-1]["bundle"] == {"home_subnets": "192.168.70.0/24"}, (
         "снимок с новыми значениями не ушёл следом за ответом")
+
+
+# ── нонсы сессии (proto 2) ───────────────────────────────────────────────────
+
+async def test_hello_names_our_nonce_and_everything_after_is_signed_with_the_servers(vps):
+    """Повтор отсекают нонсы: hello несёт нонс шлюза, дальше шлюз подписывает
+    нонсом сервера. Подпиши клиент снимок чем-то другим — слушатель на ВПС
+    оборвёт каждую сессию на первом же снимке, и канал не поднимется ни на
+    одной малине."""
+    conn = vps.answers()
+    await linkclient.LinkClient(_Agent())._connect_once()
+    hello = conn.hello()
+    assert hello["t"] == "hello" and hello["proto"] == gwlink.PROTO
+    assert len(gwlink.nonce_from(hello.get("nonce"))) == gwlink.NONCE_BYTES, "hello не назвал нонс шлюза"
+    assert len(conn.written) >= 2, "после ответа сервера снимок не ушёл"
+    snap = gwlink.unpack(KEY, conn.written[1], nonce=SN)
+    assert snap["t"] == "snap", f"вторым ушло «{snap['t']}»"
+    with pytest.raises(gwlink.ProtocolError):
+        gwlink.unpack(KEY, conn.written[1])      # без нонса сервера подпись не сходится
+
+
+async def test_every_session_gets_a_fresh_nonce(vps):
+    """Нонс шлюза — свой у каждой сессии. Повтори его клиент, записанный ответ
+    сервера из прошлой сессии прошёл бы проверку в новой."""
+    agent = _Agent()
+    client = linkclient.LinkClient(agent)
+    first, second = vps.answers(), vps.answers()
+    await client._connect_once()
+    await client._connect_once()
+    assert first.hello()["nonce"] != second.hello()["nonce"], "нонс шлюза повторился между сессиями"
+
+
+async def test_a_first_server_word_without_its_nonce_ends_the_session(vps, monkeypatch):
+    """Первое слово сервера обязано нести его нонс: без него клиенту нечем
+    подписывать, и любая его отправка была бы отвергнута. Такой ответ — не
+    ответ: сессия рвётся, роль не применяется, шаг бэкоффа растёт."""
+    for _ in range(3):
+        vps.sessions.append(_Conn([_reply(KEY, "role", {"active": True}, first=False)]))
+    agent = _Agent()
+    delays = _delays(monkeypatch, stop_after=3)
+    with pytest.raises(asyncio.CancelledError):
+        await linkclient.LinkClient(agent)._run()
+    assert agent.roles == [], "роль из сообщения без нонса сервера применена"
+    assert agent.channel.online is False
+    assert delays == [5, 15, 45], f"ответ без нонса сбросил бэкофф: {delays}"
+
+
+async def test_a_server_word_from_another_session_is_refused(vps, monkeypatch):
+    """Записанный ответ сервера из прошлой сессии (подписан прошлым нонсом
+    шлюза) под верным ключом — это старая правда: роль «несёшь трафик» от
+    вчерашнего переключения. Клиент обязан его отвергнуть."""
+    old = gwlink.new_nonce()
+    stale = gwlink.pack(KEY, "role", {"active": True, "nonce": gwlink.nonce_b64(SN)}, seq=1, nonce=old)
+    vps.sessions.append(_Conn([stale]))
+    agent = _Agent()
+    client = linkclient.LinkClient(agent)
+    with pytest.raises(gwlink.ProtocolError):
+        await client._connect_once()
+    assert agent.roles == [], "ответ чужой сессии применён"
+    assert client._confirmed is False and agent.channel.online is False
+
+
+async def test_later_server_words_from_another_session_end_it(vps):
+    """Внутри сессии каждое слово сервера проверяется нонсом шлюза: подсунутое
+    посреди живой сессии сообщение прошлой рвёт её, а не применяется."""
+    old = gwlink.new_nonce()
+    stale = gwlink.pack(KEY, "role", {"active": False}, seq=2, nonce=old)
+    vps.sessions.append(_Conn([_reply(KEY, "role", {"active": True}), stale,
+                               _reply(KEY, "role", {"active": False}, seq=3, first=False)]))
+    agent = _Agent()
+    await linkclient.LinkClient(agent)._connect_once()
+    assert agent.roles == [True], f"слово чужой сессии применено или сессия не порвана: {agent.roles}"
+
+
+async def test_nothing_goes_out_before_the_server_named_its_nonce(vps):
+    """Пока сервер не ответил, нонса для подписи нет: снимок из тика или poke,
+    ушедший в этот момент, оборвал бы только что открытую сессию. Поэтому до
+    первого ответа клиент не «на связи» и отправить ничего не может."""
+    conn = _Conn([], hang=True)
+    vps.sessions.append(conn)
+    agent = _Agent()
+    client = linkclient.LinkClient(agent)
+    task = asyncio.create_task(client._connect_once())
+    for _ in range(50):
+        if conn.written:
+            break
+        await asyncio.sleep(0.01)
+    assert len(conn.written) == 1, "hello не ушёл"
+    assert agent.channel.online is False, "клиент «на связи», а сервер ещё не ответил"
+    assert await client.push(full=True) is False
+    assert await client._send("claim", {"token": "x"}) is False
+    assert len(conn.written) == 1, "до ответа сервера ушло что-то кроме hello"
+    conn.close()
+    await asyncio.wait_for(task, 2)
+
+
+@pytest.mark.parametrize("shift", [3600, -3600])
+async def test_server_clock_an_hour_off_does_not_break_the_session(vps, monkeypatch, shift):
+    """Малина без RTC поднялась раньше NTP и ушла на час. Раньше канал молча
+    умирал ровно тогда, когда должен был сказать «часы разошлись»; теперь часы
+    в проверку не входят, и сессия живёт."""
+    real_pack = gwlink.pack
+    monkeypatch.setattr(linkclient.gwlink, "pack",
+                        lambda *a, **kw: real_pack(*a, **{**kw, "now": time.time() + shift}))
+    vps.answers()
+    agent = _Agent()
+    await linkclient.LinkClient(agent)._connect_once()
+    assert agent.roles == [True], f"слово сервера с часами {shift:+} с отвергнуто"

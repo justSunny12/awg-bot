@@ -16,3 +16,7 @@ class ServicesBase:
 
     def __init__(self, db):
         self.db = db
+        # канал линка: сессии и байты по слоту — пишет runtime/linkserver,
+        # читает зонд живости (домен не заглядывает в runtime)
+        from awgbot.domain.channelstate import ChannelState
+        self.channel = ChannelState()

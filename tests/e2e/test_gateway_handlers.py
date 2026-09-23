@@ -395,11 +395,12 @@ async def chan(tmp_path, monkeypatch):
     svc = _ChanSvc(d)
     client = linkclient.LinkClient(svc)
     client._writer = _Wire()
+    client._sn = sn = gwlink.new_nonce()                        # нонс сервера открытой сессии
     client._task = asyncio.get_running_loop().create_future()   # задача «идёт» — ensure не перезапустит
     monkeypatch.setattr(linkclient, "_client", client)
     await client.push(full=True)
     key = gwlink.channel_key(priv)
-    yield svc, lambda: [gwlink.unpack(key, x) for x in client._writer.lines]
+    yield svc, lambda: [gwlink.unpack(key, x, nonce=sn) for x in client._writer.lines]
     client._task.cancel()
 
 

@@ -374,13 +374,14 @@ def channel_block(ch: dict | None, server_ok) -> str:
         mark = {True: "есть", False: "нет", None: "не знает"}
         lines.append(f"🌐 Выход наружу: сервер — {mark[bool(server_ok)]}, "
                      f"шлюз — {mark[gw_ok if isinstance(gw_ok, bool) else None]}")
-    # Часы малины разошлись с сервером: канал принимает сообщения только в
-    # окне ±5 минут и за его краем молчит без видимой причины — сказать раньше.
+    # Часы малины разошлись с сервером: каналу они не нужны, а TLS к Telegram
+    # и GitHub, расписаниям и срокам — нужны; канал единственный, кто может
+    # это заметить и сказать.
     skew = ch.get("clock_skew")
     if isinstance(skew, int) and abs(skew) >= 120:
         side = "спешат" if skew > 0 else "отстают"
-        lines.append(f"⏱ Часы шлюза {side} на {abs(skew) // 60} мин — за 5 мин канал "
-                     "перестанет принимать сообщения; проверь синхронизацию времени на шлюзе")
+        lines.append(f"⏱ Часы шлюза {side} на {abs(skew) // 60} мин — проверь синхронизацию "
+                     "времени на шлюзе (TLS и расписания от неё зависят)")
     pn = ch.get("peer_nets") or {}
     if isinstance(pn, dict) and pn and not pn.get("ok"):
         # Единственный вердикт, который едет с шлюза, — ради этой строки: тумблер

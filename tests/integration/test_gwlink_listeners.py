@@ -177,11 +177,11 @@ async def test_removing_a_slot_closes_only_its_listener_and_its_sessions(service
 # ── сессия начинается с hello ────────────────────────────────────────────────
 
 async def test_a_connection_rejected_before_hello_does_not_count_as_contact(services, two):
-    """Малина без RTC до синхронизации часов: каждое её сообщение отвергается
-    окном ±5 минут. Раньше даже такой коннект освежал «последний раз на связи»
-    — и напоминание перевыпустить файл молчало сутки за сутками, хотя канал не
-    доставил ни разу. Причина разрыва при этом записывается — её покажет
-    карточка."""
+    """На том конце не ключ этого слота (малину заменили, а бандл не
+    перевыпустили): hello не проходит подпись. Раньше даже такой коннект
+    освежал «последний раз на связи» — и напоминание перевыпустить файл молчало
+    сутки за сутками, хотя канал не доставил ни разу. Причина разрыва при этом
+    записывается — её покажет карточка."""
     srv, binds, port = two
     await srv.ensure()
     services.db.set_state("gwlink_seen_1", "2026-01-01T00:00:00+03:00")
@@ -210,7 +210,7 @@ async def test_a_session_that_did_say_hello_is_remembered_as_contact(services, t
 
 async def test_a_rejected_newcomer_does_not_leave_the_old_session_on_record(services, two):
     """Малина перезагрузилась, старая сессия висит полуоткрытой; новая
-    вытесняет её и тут же отвергается (часы без RTC вне окна). Живых сессий
+    вытесняет её и тут же отвергается (чужая подпись). Живых сессий
     нет — и запись о сессии в БД обязана это знать: иначе карточка горит
     «на связи» (хендшейк линка свежий, малина-то жива), а напоминания
     перевыпустить файл молчат, пока канал «покрывает» слот."""
@@ -231,18 +231,28 @@ async def test_a_rejected_newcomer_does_not_leave_the_old_session_on_record(serv
     await new.close()
 
 
-async def test_messages_before_hello_are_ignored(services, two):
-    """Сессия начинается с hello: снимок до него — не от агента, который
-    представился, и в карточку слота он не ложится. Ответа на него тоже нет."""
+async def test_a_snapshot_before_hello_ends_the_session(services, two):
+    """Сессия начинается с hello: до него сервер не назвал своего нонса, и
+    всё, кроме hello, подписано «ни для кого» — это либо повтор записанного,
+    либо не наш агент. Такой снимок не ложится в карточку, сервер не отвечает
+    на него ни словом и рвёт сессию, не записав её как «была на связи»."""
     srv, binds, port = two
     await srv.ensure()
+    services.db.set_state("gwlink_seen_1", "2026-01-01T00:00:00+03:00")
     host, port_ = srv._bound[0]
     gw = _Gw(*await asyncio.open_connection(host, port_), key=KEY)
     await gw.send("snap", {**SNAP, "rev": 1})
-    await gw.send("claim", {"token": "GW1:x.y"})
-    assert await gw.silent(), "сервер ответил на сообщения до hello"
+    assert await asyncio.wait_for(gw.reader.read(), 2) == b"", (
+        "сервер ответил на снимок до hello или оставил сессию открытой")
+    await _until(lambda: 1 not in srv._sessions)
+    assert 1 not in srv._sessions
     assert services.gwlink_snapshot(1) == {}, "снимок до hello лёг в карточку"
-    await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.1.0"})
+    assert services.db.get_state("gwlink_seen_1") == "2026-01-01T00:00:00+03:00", (
+        "сессия без hello записана как «была на связи»")
+    assert "hello" in services.db.get_state("gwlink_error_1"), "причина разрыва не записана"
+    await gw.close()
+
+    gw = await _hello(srv)                        # следующая сессия — как положено
     assert await gw.role()
     await gw.send("snap", {**SNAP, "rev": 1})
     await _until(lambda: services.gwlink_snapshot(1))
@@ -266,6 +276,7 @@ async def test_the_first_word_after_hello_is_the_role_even_with_feeds_due(servic
     await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.1.0", "lists_hash": "старый"})
     first = await gw.recv()
     second = await gw.recv()
+    assert "nonce" in first, "первое слово сервера не несёт его нонс — клиент порвёт сессию"
     assert first["t"] == "role", f"первым после hello ушло «{first['t']}»"
     assert second["t"] in ("lists", "lists_part"), "фиды шлюзу со старым отпечатком не ушли"
     await gw.close()
