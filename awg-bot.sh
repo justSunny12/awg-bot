@@ -24,6 +24,11 @@
 #   update [<tgz>]         обновить код/зависимости/юнит из архива (по умолчанию —
 #                          awg-bot-update.tgz рядом; conf/env/данные не трогаются,
 #                          если явно не согласиться на их удаление).
+#                          Из установщика (пункт «обновить» поверх установки):
+#                          AWG_UPDATE_KEEP=1 — вопрос об удалении данных не
+#                          задаётся; AWG_UPDATE_THEN_BUNDLE=<файл> — шлюзу после
+#                          обновления применить этот файл конфигурации новым
+#                          кодом (reconfigure --role gateway --bundle).
 #   uninstall              снять сервис (код всегда; данные/секреты — по согласию).
 #   backup                 снимок состояния (БД + conf + env) → tar.gz.
 #   restore [<tgz>]        восстановить состояние из снимка (по умолчанию — свежий).
@@ -47,6 +52,11 @@ SELF_LINK="/usr/local/bin/awg-bot"
 
 ADVANCED="${AWG_BOT_ADVANCED:-0}"       # 1 — спрашивать всё, как раньше
 GW_BUNDLE="${AWG_BOT_GW_BUNDLE:-}"      # файл первого применения для роли gateway
+# от установщика при обновлении поверх прошлой установки: не спрашивать про
+# удаление данных; шлюзу после обновления применить этот файл конфигурации
+AWG_UPDATE_KEEP="${AWG_UPDATE_KEEP:-0}"
+AWG_UPDATE_THEN_BUNDLE="${AWG_UPDATE_THEN_BUNDLE:-}"
+AWG_UPDATE_CLEANUP="${AWG_UPDATE_CLEANUP:-}"        # временный каталог с архивом — убрать после обновления
 AWG_STATE="$ETC_DIR/awg.state"          # поколение AmneziaWG на этом хосте
 AWG_LOCK_FILE="$INSTALL_DIR/install/awg.lock"   # манифест версии из поставки
 
@@ -708,7 +718,10 @@ cmd_update() {
     log "обновление из: $tgz"
 
     local wipe=0
-    if confirm "Удалить пользовательские данные (БД в $DATA_DIR + секреты $ENV_FILE + конфиг)?" n; then
+    # AWG_UPDATE_KEEP=1 — установщик уже выбрал «обновить, сохранив данные»:
+    # второй раз про удаление не спрашиваем
+    if [[ "${AWG_UPDATE_KEEP:-0}" != "1" ]] \
+       && confirm "Удалить пользовательские данные (БД в $DATA_DIR + секреты $ENV_FILE + конфиг)?" n; then
         confirm "Точно удалить ВСЕ данные и настройки? Это НЕОБРАТИМО." n && wipe=1 || log "данные оставлены."
     fi
 
@@ -977,6 +990,14 @@ cmd_post_update() {
     fi
     trap - EXIT
     ok "Обновление завершено."
+    # временный каталог с архивом от установщика — только из /tmp, чужое не трогаем
+    case "${AWG_UPDATE_CLEANUP:-}" in /tmp/*) rm -rf "$AWG_UPDATE_CLEANUP" ;; esac
+    # Шлюз, обновлённый установщиком из файла конфигурации: применить этот
+    # файл теперь, новым кодом (AWG_UPDATE_THEN_BUNDLE ставит установщик).
+    if [[ -n "${AWG_UPDATE_THEN_BUNDLE:-}" && -f "$AWG_UPDATE_THEN_BUNDLE" ]]; then
+        log "применяю конфигурацию шлюза из $AWG_UPDATE_THEN_BUNDLE…"
+        exec "$SELF_PATH" reconfigure --role gateway --bundle "$AWG_UPDATE_THEN_BUNDLE"
+    fi
 }
 
 prune_old_kernel_builds() {

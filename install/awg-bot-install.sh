@@ -2,7 +2,7 @@
 #
 # awg-bot-install.sh — внешний установщик-bootstrap хоста бота awg-bot.
 #
-# Единственная задача — greenfield-подготовка «в одно окно»: развернуть код и
+# Главная задача — greenfield-подготовка «в одно окно»: развернуть код и
 # передать управление внутреннему инструменту, который всё настроит. Сам НЕ
 # настраивает и НЕ дублирует логику: конфигурация/venv/юнит/валидация живут в
 # awg-bot.sh (внутри архива → /opt/awg-bot/awg-bot.sh).
@@ -11,6 +11,28 @@
 # рядом) → mkdir FHS → разложить код в /opt/awg-bot → симлинк awg-bot →
 # exec awg-bot.sh reconfigure --first-run, передав на самоочистку всё
 # временное: архив и каталог распаковки.
+#
+# ПОВЕРХ РАБОЧЕЙ УСТАНОВКИ (есть /opt/awg-bot/venv) — обеим ролям одно меню:
+#   1) обновить до версии поставки, сохранив данные и настройки — только если
+#      версия на хосте МЕНЬШЕ версии в поставке, иначе пункт говорит «обновление
+#      не нужно». Зовёт `awg-bot update <архив>` с AWG_UPDATE_KEEP=1 (вопроса
+#      об удалении данных нет); шлюзу — ещё AWG_UPDATE_THEN_BUNDLE=<файл
+#      конфигурации из --bundle>, и после обновления файл применяется новым
+#      кодом (`awg-bot reconfigure --role gateway --bundle`);
+#   2) снести прошлую установку вместе с данными и настройками и поставить
+#      заново (второе подтверждение): код, /etc/awg-bot, /var/lib/awg-bot; у
+#      шлюза — ещё `routing-gw-setup.sh --rollback`, /etc/awg-gw, /var/lib/awg-gw,
+#      /opt/awg-gw и скрипты в /usr/local/sbin (аплинк НЕ трогается — это связь
+#      агента с Telegram); у ВПС — ВСЁ, что поставил бот: линки до шлюзов и
+#      обвязка условной маршрутизации (их же --rollback), резолвер клиентов,
+#      интерфейсы awg со всеми пирами, контейнер docker-режима, таблица
+#      inet awg_bot_guard — клиенты остаются без доступа, поэтому ВПС
+#      подтверждает это ещё и словом «УДАЛИТЬ». Дальше — обычная установка с
+#      чистого листа;
+#   3) отмена.
+# Молча применять файл конфигурации на уже установленном агенте установщик НЕ
+# будет: новую конфигурацию туда применяют из чата бота шлюза (переслать файл)
+# или `sudo sh <файл>` без --install.
 #
 # ОСНОВНОЙ СПОСОБ — ОДНА КОМАНДА. По ссылке едет не архив, а этот же скрипт:
 # curl отдаёт его в sudo bash, он качает поставку, распаковывает во временный
@@ -183,32 +205,147 @@ else
     log "архив: $TGZ"
 fi
 
-# ── greenfield: FHS-каталоги + распаковка кода + симлинк ──────────────────────
-if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
-    # Рабочая установка уже есть — не тупикуем, а предлагаем действия. Весь
-    # функционал уже в установленном awg-bot; мы лишь вызываем его с нужным verb.
-    BOT="$INSTALL_DIR/awg-bot.sh"
-    if [[ "$ROLE" == "gateway" ]]; then
-        # Шлюз ставится одной командой с файлом конфигурации, и повтор той же
-        # команды (новый файл, переустановка, замена слота) не должен упираться
-        # в меню: агент уже стоит — это успех, применяем файл и идём дальше.
-        # Всё в пути роли gateway идемпотентно.
-        log "awg-bot уже установлен в $INSTALL_DIR — применяю конфигурацию шлюза и перезапускаю агента"
-        case "${SRC_ROOT:-}" in /tmp/awg-bot-install.*) rm -rf "$SRC_ROOT" ;; esac
-        exec "$BOT" reconfigure --role gateway ${EXTRA[@]+"${EXTRA[@]}"}
+# ── прошлая установка: обновить, снести и поставить заново, отмена ───────────
+ver_of() { sed -nE 's/^__version__ *= *"([^"]+)".*/\1/p' "$1" 2>/dev/null | head -n1; }
+ver_lt() {   # $1 < $2 по X.Y.Z.P
+    [[ -n "$1" && -n "$2" && "$1" != "$2" ]] \
+        && [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" == "$1" ]]
+}
+wipe_previous() {
+    # Снять прошлую установку целиком, вместе с данными и настройками — то же,
+    # что awg-bot uninstall с ответами «да» на все вопросы, плюс всё, что бот
+    # поставил на хост: у шлюза — линк, юнит реассерта и таблицы (аплинк —
+    # связь агента с Telegram — не трогается), у ВПС — линки, обвязка
+    # маршрутизации, резолвер, интерфейсы awg с пирами, таблица файервола.
+    # Чистое поле для установки ниже.
+    local role; role="$(sed -nE 's/^ *role: *"?([a-z]+)"?.*/\1/p' "$ETC_DIR/conf/app.yaml" 2>/dev/null | head -n1)"
+    log "снимаю сервис, удаляю код, настройки и данные прошлой установки…"
+    systemctl disable --now awg-bot 2>/dev/null || true
+    rm -f /etc/systemd/system/awg-bot.service; systemctl daemon-reload 2>/dev/null || true
+    rm -f "$SELF_LINK"
+    if [[ "$role" == "gateway" ]]; then
+        [[ -x /usr/local/sbin/routing-gw-setup.sh ]] \
+            && sh /usr/local/sbin/routing-gw-setup.sh --rollback >/dev/null 2>&1 || true
+        # /opt/awg-gw — куда файл конфигурации кладёт скрипт обвязки и link.conf
+        # с приватным ключом линка: без него «снесено с настройками» было бы неправдой
+        rm -rf /etc/awg-gw /var/lib/awg-gw /opt/awg-gw
+        rm -f /usr/local/sbin/routing-gw-setup.sh /usr/local/sbin/awg-lan-lists.sh /usr/local/sbin/awg-lan-domain.sh
+    else
+        # ВПС — всё, что поставил бот: линки до шлюзов и обвязка условной
+        # маршрутизации (своими скриптами), резолвер клиентов, интерфейсы awg
+        # с пирами клиентов (host-режим: awg-quick@*, конфиги в
+        # /etc/amnezia/amneziawg; docker-рудимент: контейнер), таблица файервола.
+        # Клиенты после этого без доступа — об этом спрошено выше, отдельно.
+        local f name
+        for f in /etc/amnezia/amneziawg/awglink*.conf; do
+            [[ -f "$f" ]] || continue
+            name="$(basename "$f" .conf)"
+            [[ -x /usr/local/sbin/routing-link-setup.sh ]] \
+                && LINK_IF="$name" sh /usr/local/sbin/routing-link-setup.sh --rollback >/dev/null 2>&1 || true
+        done
+        [[ -x /usr/local/sbin/routing-host-setup.sh ]] \
+            && sh /usr/local/sbin/routing-host-setup.sh --rollback >/dev/null 2>&1 || true
+        rm -f /usr/local/sbin/routing-link-setup.sh /usr/local/sbin/routing-host-setup.sh
+        rm -f /etc/dnsmasq.d/awgbot-resolver.conf /etc/systemd/system/dnsmasq.service.d/awgbot-resolver.conf
+        systemctl daemon-reload 2>/dev/null || true
+        systemctl try-restart dnsmasq 2>/dev/null || true
+        for f in /etc/amnezia/amneziawg/*.conf; do
+            [[ -f "$f" ]] || continue
+            name="$(basename "$f" .conf)"
+            systemctl disable --now "awg-quick@$name" 2>/dev/null || true
+            awg-quick down "$name" >/dev/null 2>&1 || true
+        done
+        rm -rf /etc/amnezia/amneziawg /root/gw-awglink*.conf /root/awg-gw-bundle*.sh
+        name="$(sed -nE 's/^ *container: *"?([^"#]+)"?.*/\1/p' "$ETC_DIR/conf/app.yaml" 2>/dev/null | head -n1 | tr -d ' ')"
+        [[ -n "$name" ]] && command -v docker >/dev/null 2>&1 && docker rm -f "$name" >/dev/null 2>&1 || true
+        nft delete table inet awg_bot_guard 2>/dev/null || true
+        rm -f /etc/nftables.d/awg-bot-guard.nft
     fi
-    printf '\n%s[install]%s awg-bot уже установлен в %s. Что делаем?\n' "$c_info" "$c_off" "$INSTALL_DIR" >&2
-    printf '  1) Обновить код из этой поставки (awg-bot update)\n' >&2
-    printf '  2) Восстановить из резервной копии (awg-bot restore)\n' >&2
-    printf '  3) Удалить бота полностью (awg-bot uninstall)\n' >&2
-    printf '  4) Ничего, выйти\n' >&2
-    read -r -p "Выбор [1-4]: " __ch < /dev/tty
-    case "${__ch:-4}" in
-        1) [[ -n "$TGZ" ]] || die "рядом нет awg-bot.tgz для обновления — положи архив рядом и повтори, либо: sudo awg-bot update <путь>"
-           log "→ обновление из $TGZ"; exec "$BOT" update "$TGZ" ;;
-        2) log "→ восстановление из резервной копии"; exec "$BOT" restore ;;
-        3) log "→ удаление"; exec "$BOT" uninstall ;;
-        *) die "выход — ничего не изменено (для действий: sudo awg-bot update|restore|uninstall)" ;;
+    rm -rf "$INSTALL_DIR" "$ETC_DIR" "$DATA_DIR"
+}
+if [[ -x "$INSTALL_DIR/venv/bin/python" ]]; then
+    # Рабочая установка уже есть — обеим ролям одно и то же меню из трёх
+    # пунктов. Обновление — только вверх и с сохранением данных: вопрос
+    # «удалить ли данные» здесь не задаётся (AWG_UPDATE_KEEP), для этого есть
+    # второй пункт. Шлюзу после обновления применяется файл конфигурации, с
+    # которым пришли (AWG_UPDATE_THEN_BUNDLE).
+    BOT="$INSTALL_DIR/awg-bot.sh"
+    # Роль — та, что установлена (app.yaml), а не флаг запуска: команду для
+    # малины могли скопировать на ВПС, и диалог обязан говорить о том хосте,
+    # который будет снесён. Так же выбирает wipe_previous.
+    inst_role="$(sed -nE 's/^ *role: *"?([a-z]+)"?.*/\1/p' "$ETC_DIR/conf/app.yaml" 2>/dev/null | head -n1)"
+    inst_role="${inst_role:-client}"
+    have_ver="$(ver_of "$INSTALL_DIR/awgbot/__version__.py")"
+    if [[ -n "$SRC_ROOT" ]]; then
+        new_ver="$(ver_of "$SRC_ROOT/awgbot/__version__.py")"
+    else
+        new_ver="$(tar -xzOf "$TGZ" --wildcards '*awgbot/__version__.py' 2>/dev/null \
+                   | sed -nE 's/^__version__ *= *"([^"]+)".*/\1/p' | head -n1)"
+    fi
+    newer=0; ver_lt "$have_ver" "$new_ver" && newer=1
+    printf '\n%s[install]%s awg-bot уже установлен в %s: версия %s, в поставке %s. Что делаем?\n' \
+        "$c_info" "$c_off" "$INSTALL_DIR" "${have_ver:-?}" "${new_ver:-?}" >&2
+    if [[ "$newer" -eq 1 ]]; then
+        printf '  1) Обновить до %s, сохранив данные и настройки\n' "$new_ver" >&2
+    else
+        printf '  1) Обновление не нужно: установлена та же или более новая версия\n' >&2
+    fi
+    printf '  2) Удалить прошлую установку вместе с данными и настройками и поставить заново\n' >&2
+    printf '  3) Отмена\n' >&2
+    read -r -p "Выбор [1-3]: " __ch < /dev/tty
+    case "${__ch:-3}" in
+        1)
+            if [[ "$newer" -ne 1 ]]; then
+                hint=""
+                [[ "$inst_role" == "gateway" ]] && hint=". Конфигурацию на установленном агенте применяют из чата бота шлюза (переслать файл) или так: sudo sh <файл> (без --install)"
+                die "обновление не требуется: установлена ${have_ver:-?}, в поставке ${new_ver:-?}$hint"
+            fi
+            if [[ -z "$TGZ" ]]; then
+                # поставка распакована, архива рядом нет — awg-bot update ждёт архив
+                TGZ="$(mktemp -d)/awg-bot.tgz"
+                tar czf "$TGZ" -C "$SRC_ROOT" .
+            fi
+            bundle=""
+            if [[ "$inst_role" == "gateway" ]]; then
+                for ((i = 0; i < ${#EXTRA[@]}; i++)); do
+                    [[ "${EXTRA[$i]}" == "--bundle" ]] && bundle="${EXTRA[$((i + 1))]:-}"
+                done
+            fi
+            # временное — прочь: каталог распаковки из трубы и собранный архив
+            # никто после exec не уберёт; архив, если он в этом каталоге,
+            # переезжает, а убрать его после обновления просим awg-bot
+            cleanup=""
+            case "${SRC_ROOT:-}" in
+                /tmp/awg-bot-install.*)
+                    case "$TGZ" in "$SRC_ROOT"/*) cp "$TGZ" "$(mktemp -d)/awg-bot.tgz"; TGZ="$_" ;; esac
+                    rm -rf "$SRC_ROOT" ;;
+            esac
+            case "$TGZ" in /tmp/*) cleanup="$(dirname "$TGZ")" ;; esac
+            log "→ обновление ${have_ver:-?} → $new_ver из $TGZ, данные и настройки сохраняются"
+            AWG_UPDATE_KEEP=1 AWG_UPDATE_THEN_BUNDLE="$bundle" AWG_UPDATE_CLEANUP="$cleanup" exec "$BOT" update "$TGZ" ;;
+        2)
+            printf '[install:!] Будут удалены: код, /etc/awg-bot (секреты и конфиг), /var/lib/awg-bot (БД, копии)' >&2
+            if [[ "$inst_role" == "gateway" ]]; then
+                printf ', линк до ВПС, юнит и таблицы обвязки, /etc/awg-gw, /var/lib/awg-gw, /opt/awg-gw. Аплинк остаётся.\n' >&2
+            else
+                printf ',\n  ЛИНКИ ДО ШЛЮЗОВ, обвязка условной маршрутизации, резолвер клиентов, ИНТЕРФЕЙСЫ AWG СО ВСЕМИ ПИРАМИ.\n' >&2
+                printf '  Клиенты останутся БЕЗ ДОСТУПА. Чтобы вернуть его, придётся заново добавить всех в бота\n' >&2
+                printf '  и перевыпустить каждому конфигурацию; шлюзам — новые файлы конфигурации.\n' >&2
+            fi
+            printf '  Это необратимо. Резервную копию, если она нужна, забери с хоста до ответа.\n' >&2
+            read -r -p "Точно снести и поставить заново? [y/N]: " __a < /dev/tty
+            [[ "${__a,,}" == "y" ]] || die "отмена — ничего не изменено"
+            if [[ "$inst_role" != "gateway" ]]; then
+                read -r -p "Напиши слово УДАЛИТЬ, чтобы подтвердить, что клиенты останутся без доступа: " __a < /dev/tty
+                [[ "$__a" == "УДАЛИТЬ" ]] || die "отмена — ничего не изменено"
+            fi
+            wipe_previous
+            log "прошлая установка снята — ставлю заново" ;;
+        *)
+            if [[ "$inst_role" == "gateway" ]]; then
+                die "отмена — ничего не изменено. Новую конфигурацию на установленном агенте применяют из чата бота шлюза (переслать файл) или так: sudo sh <файл> (без --install)"
+            fi
+            die "отмена — ничего не изменено (для действий: sudo awg-bot update|restore|uninstall)" ;;
     esac
 fi
 # Полу-остаток (каталог есть, но рабочего venv нет) — прерванный uninstall/распаковка.
