@@ -17,6 +17,7 @@ import html
 import json
 import logging
 import os
+import shutil
 import re
 import socket
 import subprocess
@@ -422,7 +423,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             "через шлюз не работает.",
             f"✅ Канал шлюза {host} снова отвечает")
 
-        broken = [c for c in st.checks if c.ok is False and c.group != "lan"]
+        broken = [c for c in st.checks if c.ok is False and c.group not in ("lan", "svc")]
         notes += self._streak_alert(
             "plumbing", bool(broken), streak,
             "⚠️ Обвязка шлюза неисправна: "
@@ -750,6 +751,160 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         nets = gwguard.unit_env("HOME_SUBNETS").split()
         peers = gwguard.unit_env("PEER_HOME_NETS").split()
         return (nets[0] if nets else ""), gwguard.script_status().get("LAN_ADDR", ""), peers
+
+    # ── сервисы соседних сетей (концепт «сервисы соседних сетей») ────────────
+    # Не настраивается: работает там и тогда, где работает доступ между
+    # подсетями (PEER_HOME_NETS в юните) при режиме без VPN и канале линка.
+    _SVC_LOCAL_KEY = "gw_svc_local"          # свой список после обзора, JSON
+    _SVC_PEER_KEY = "gw_peer_svc"            # применённый чужой: {"hash", "items"}
+    _SVC_PEER_ERR_KEY = "gw_peer_svc_err"    # последняя ошибка применения
+    _SVC_MISSES = 3                          # обзоров подряд без сервиса — снимаем
+
+    def services_active(self) -> bool:
+        from awgbot.infra import gwguard
+        return (gwguard.lan_mode() and bool(gwguard.unit_env("PEER_HOME_NETS").split())
+                and gwguard.unit_env("LINK_CHANNEL") == "1")
+
+    def services_local(self) -> list[dict]:
+        """SMB-серверы этой сети, найденные обзором (после чистки)."""
+        try:
+            data = json.loads(self.db.get_state(self._SVC_LOCAL_KEY) or "[]")
+        except json.JSONDecodeError:
+            return []
+        return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
+
+    def services_scan(self) -> bool:
+        """Обзор mDNS своей сети. True — свой список изменился, пора слать серверу.
+        Гистерезис: появление — сразу, исчезновение — после _SVC_MISSES обзоров
+        подряд (уснувший NAS не роняет кэш DNS соседей рестартами dnsmasq);
+        обзор, не удавшийся вовсе, промахом не считается."""
+        from awgbot.domain import gwservices
+        from awgbot.infra import gwguard
+        prev = self.services_local()
+        if not self.services_active():
+            self.__dict__.pop("_svc_misses", None)
+            if prev:
+                self.db.set_state(self._SVC_LOCAL_KEY, "[]")
+                return True
+            return False
+        out = gwguard.avahi_browse()
+        if out is None:
+            return False
+        nets = gwguard.unit_env("HOME_SUBNETS").split()
+        found = {(r["a"], r["p"]): r for r in gwservices.parse_avahi(out, nets)}
+        misses: dict = self.__dict__.setdefault("_svc_misses", {})
+        cur: list[dict] = []
+        for r in prev:
+            key = (r.get("a"), r.get("p"))
+            if key in found:
+                misses.pop(key, None)
+                cur.append(found.pop(key))
+            else:
+                misses[key] = misses.get(key, 0) + 1
+                if misses[key] < self._SVC_MISSES:
+                    cur.append(r)
+                else:
+                    misses.pop(key, None)
+        cur += list(found.values())
+        cur = gwservices.clean(cur, nets, gwservices.MAX_OWN)
+        if cur == gwservices.clean(prev, nets, gwservices.MAX_OWN):
+            return False
+        self.db.set_state(self._SVC_LOCAL_KEY, json.dumps(cur, ensure_ascii=False))
+        log.info("gateway: SMB-серверы этой сети: %s", len(cur))
+        return True
+
+    def services_peer(self) -> dict:
+        try:
+            data = json.loads(self.db.get_state(self._SVC_PEER_KEY) or "{}")
+        except json.JSONDecodeError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def services_applied_hash(self) -> str:
+        """Отпечаток применённых записей соседей — в hello канала."""
+        return str(self.services_peer().get("hash") or "")
+
+    def apply_peer_services(self, digest: str, items) -> dict:
+        """Записи соседей от сервера → dnsmasq: {ok, error, n}. Данные с ВПС —
+        недоверенные: чистка по подсетям соседей из ЮНИТА, сборка файла из
+        шаблона, построчный белый список в помощнике. Тот же файл, что стоит,
+        — без рестарта dnsmasq; пустой список — файл снимается."""
+        from awgbot.domain import gwservices
+        from awgbot.infra import gwguard
+        digest = "".join(c for c in str(digest or "") if c in "0123456789abcdef")[:64]
+        if not gwguard.lan_mode():
+            return self._svc_store(digest, [], False, "режим «За шлюзом — без VPN» на шлюзе выключен")
+        peers = gwguard.unit_env("PEER_HOME_NETS").split()
+        clean_items = gwservices.clean(items, peers, gwservices.MAX_PEER) if peers else []
+        text = gwservices.render_dnsmasq(clean_items, gwguard.unit_env("HOME_SUBNETS").split(), digest)
+        try:
+            with open(gwguard.PEER_SERVICES_CONF, encoding="utf-8") as f:
+                current = f.read()
+        except OSError:
+            current = ""
+        if text == current:
+            return self._svc_store(digest, clean_items, True, "")
+        if not os.path.exists(gwguard.LAN_SERVICES_SCRIPT):
+            # обновление агента положило новую обвязку, но юнит её не запускал:
+            # помощник допишет реассерт (как при пропавшей таблице awg_home)
+            self._reassert_throttled("помощника сервисов соседей нет")
+            return self._svc_store(digest, [], False, "помощника сервисов нет — обвязка перевыставляется")
+        if not text:
+            ok, tail = gwguard.run_lan_services("")
+        else:
+            os.makedirs(os.path.dirname(gwguard.PEER_SERVICES_NEW), mode=0o700, exist_ok=True)
+            with open(gwguard.PEER_SERVICES_NEW, "w", encoding="utf-8") as f:
+                f.write(text)
+            ok, tail = gwguard.run_lan_services(gwguard.PEER_SERVICES_NEW)
+        return self._svc_store(digest, clean_items, ok, "" if ok else (tail or "помощник отказал"))
+
+    def _svc_store(self, digest: str, items: list, ok: bool, err: str) -> dict:
+        with self.db.transaction():
+            if ok:
+                self.db.set_state(self._SVC_PEER_KEY,
+                                  json.dumps({"hash": digest, "items": items}, ensure_ascii=False))
+            self.db.set_state(self._SVC_PEER_ERR_KEY, err)
+        return {"ok": ok, "error": err, "n": len(items)}
+
+    def services_status(self) -> tuple[dict, list[GwCheck]]:
+        """(блок панели, проверки группы «svc»): проверки видны в мониторе, но
+        уведомлений не шлют — соседи, которых нет, не авария."""
+        from awgbot.domain import gwservices
+        from awgbot.infra import gwguard
+        info: dict = {"active": self.services_active()}
+        checks: list[GwCheck] = []
+        if not info["active"]:
+            return info, checks
+        own = self.services_local()
+        info["own"] = [r.get("n", "") for r in own]
+        info["browse"] = shutil.which("avahi-browse") is not None
+        info["avahi"] = gwguard.avahi_active()
+        if not info["browse"]:
+            checks.append(GwCheck("обзор сервисов", None,
+                                  "нет avahi-browse (пакет avahi-utils): 🔧 Мастер восстановления"))
+        elif info["avahi"] is False:
+            checks.append(GwCheck("обзор сервисов", None,
+                                  "avahi-daemon не запущен: SMB-серверы этой сети соседям не видны"))
+        else:
+            checks.append(GwCheck("обзор сервисов", True, f"{len(own)} SMB в этой сети"))
+        peer = self.services_peer()
+        items = [r for r in (peer.get("items") or []) if isinstance(r, dict)]
+        info["peer"] = [r.get("n", "") for r in items]
+        info["peer_hosts"] = [r.get("h", "") for r in items]
+        info["ever"] = bool(peer)
+        info["err"] = self.db.get_state(self._SVC_PEER_ERR_KEY) or ""
+        if info["err"]:
+            checks.append(GwCheck("сервисы соседей", False, f"записи не применились: {info['err']}"))
+        elif items:
+            got = gwguard.dns_local(f"_smb._tcp.{gwservices.BROWSE_DOMAIN}", "PTR")
+            ok = None if got is None else bool(got)
+            checks.append(GwCheck("сервисы соседей", ok,
+                                  f"{len(items)} SMB опубликованы" if ok else
+                                  ("резолвер не отдаёт записи соседей: journalctl -u dnsmasq -e"
+                                   if ok is False else "dig не ответил")))
+        for c in checks:
+            c.group = "svc"
+        return info, checks
 
     # ── роль слота и диагностика по каналу (концепт «канал линка», этап 4) ──
     _LINK_ROLE_KEY = "gwlink_role"
@@ -1374,6 +1529,11 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                               "без модуля awg: " + ", ".join(st.kernels_missing)))
         st.lan, lan_checks = self.lan_status()
         checks += lan_checks
+        if st.lan:
+            # сервисы соседних сетей — внутри блока локальной сети, свои проверки
+            svc, svc_checks = self.services_status()
+            st.lan["svc"] = svc
+            checks += svc_checks
         st.egress_ok, st.egress_ms, st.egress_src = self._egress_verdict(st.rx, st.tx)
         checks.append(GwCheck("выход наружу", st.egress_ok,
                               ("по обратному трафику клиентов" if st.egress_src == "трафик" else

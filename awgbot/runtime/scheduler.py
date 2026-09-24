@@ -704,6 +704,24 @@ def setup_gateway_scheduler(services, bot):
         next_run_time=timeutil.now() + datetime.timedelta(seconds=random.randint(120, 300)),
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
+    # Сервисы соседних сетей (концепт «сервисы соседних сетей»): обзор mDNS
+    # своей сети раз в 15 мин с джиттером (запрос не покидает сегмент, но пусть
+    # не совпадает с тиком монитора), первый — через 2–5 мин; изменился список —
+    # уходит серверу каналом. Без доступа между подсетями в юните — холостая.
+    async def job_gw_lan_services():
+        try:
+            from awgbot.runtime import linkclient
+            await linkclient.services_changed(services)
+        except Exception as e:                           # noqa: BLE001
+            log.warning("gw_lan_services: %s", e)
+
+    scheduler.add_job(
+        job_gw_lan_services,
+        IntervalTrigger(minutes=15, jitter=int(15 * 60 * 0.4), timezone=config.TZ),
+        id="gw_lan_services", max_instances=1, coalesce=True,
+        next_run_time=timeutil.now() + datetime.timedelta(seconds=random.randint(120, 300)),
+        misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+
     async def job_gw_backup():
         await monthly_backup(services, bot, "gw backup")
 

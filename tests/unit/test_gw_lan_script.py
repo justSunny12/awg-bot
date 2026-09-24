@@ -592,3 +592,188 @@ def test_a_missing_default_file_is_not_created(ovr_env):
     go, ovr, default, unit, log = ovr_env
     assert go(UPLINK_IF="awg0").returncode == 0
     assert not default.exists(), "создан /etc/default/dnsmasq до установки пакета"
+
+
+# ── сервисы соседних сетей: awg-lan-services.sh ─────────────────────────────
+# Концепт «сервисы соседних сетей» §4.3, §9: файл записей собирает агент из
+# данных, пришедших каналом с ВПС; помощник — последний рубеж на малине.
+
+def _svc_file() -> str:
+    """Файл так, как его соберёт агент-получатель: из общего модуля."""
+    from awgbot.domain import gwservices as gs
+    items = [{"t": "_smb._tcp", "n": "NASPi5", "h": "naspi5", "p": 445, "a": "192.168.1.10"},
+             {"t": "_smb._tcp", "n": "Time Machine", "h": "naspi5", "p": 10445, "a": "192.168.1.10"}]
+    return gs.render_dnsmasq(items, ["192.168.68.0/24"])
+
+
+@pytest.fixture()
+def svc_env(script, tmp_path):
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir()
+    dns_d = tmp_path / "dnsmasq.d"; dns_d.mkdir()
+    dump = tmp_path / "dump"
+    log = tmp_path / "log"; log.write_text("", encoding="utf-8")
+    _fake(bin_dir, "systemctl", f'echo "systemctl $*" >> {log}\n')
+    _fake(bin_dir, "dnsmasq", f'echo "dnsmasq $*" >> {log}; exit "${{DNSMASQ_TEST_RC:-0}}"\n')
+    _fake(bin_dir, "id", 'echo "${FAKE_UID:-0}"\n')
+    tool = tmp_path / "awg-lan-services.sh"
+    tool.write_text(_heredoc(script, "LAN_SERVICES", "SVCEOF"), encoding="utf-8"); tool.chmod(0o755)
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "AWG_DNSMASQ_D": str(dns_d), "AWG_LAN_DUMP": str(dump)}
+    new = tmp_path / "peer-services.conf.new"
+
+    def go(text: str | None, **extra) -> subprocess.CompletedProcess:
+        args = []
+        if text is not None:
+            new.write_text(text, encoding="utf-8")
+            args = [str(new)]
+        return subprocess.run(["sh", str(tool), *args], capture_output=True, text=True,
+                              env={**env, **extra})
+    return go, dns_d / "awg-gw-peer-services.conf", log
+
+
+OLD_SVC = "# прежние записи\nlocal=/awg.internal/\n"
+
+
+def test_services_file_is_checked_installed_and_dnsmasq_restarted(svc_env):
+    go, conf, log = svc_env
+    text = _svc_file()
+    r = go(text)
+    assert r.returncode == 0, r.stderr
+    assert conf.read_text(encoding="utf-8") == text
+    assert "2 SMB" in r.stdout
+    out = log.read_text()
+    assert "dnsmasq --test --conf-dir=" in out and out.index("dnsmasq --test") < out.index("systemctl restart dnsmasq"), \
+        "конфиг проверен до рестарта"
+
+
+def test_a_single_foreign_line_refuses_the_whole_file(svc_env):
+    """Скомпрометированный ВПС не должен получить каналом ни server=, ни
+    address=: одна строка вне белого списка — отказ целиком (rc=2), прежний
+    файл на месте, dnsmasq не тронут."""
+    go, conf, log = svc_env
+    conf.write_text(OLD_SVC, encoding="utf-8")
+    r = go(_svc_file() + "server=/awg.internal/203.0.113.5\n")
+    assert r.returncode == 2 and "вне белого списка" in r.stderr, (r.returncode, r.stderr)
+    assert conf.read_text(encoding="utf-8") == OLD_SVC
+    assert "systemctl" not in log.read_text() and "dnsmasq --test" not in log.read_text()
+
+
+def test_a_file_dnsmasq_test_rejects_is_rolled_back(svc_env):
+    go, conf, log = svc_env
+    conf.write_text(OLD_SVC, encoding="utf-8")
+    r = go(_svc_file(), DNSMASQ_TEST_RC="1")
+    assert r.returncode == 1 and "откатываю" in r.stderr
+    assert conf.read_text(encoding="utf-8") == OLD_SVC, "прежний файл не вернулся"
+    assert not (conf.parent / "awg-gw-peer-services.conf.prev.awg").exists(), "копия отката в conf-dir"
+
+
+def test_a_first_file_dnsmasq_cannot_start_with_is_removed(svc_env, tmp_path):
+    go, conf, log = svc_env
+    _failing_restart(tmp_path / "bin", log)
+    r = go(_svc_file())
+    assert r.returncode == 1
+    assert not conf.exists(), "файл, с которым dnsmasq не встал, остался"
+
+
+def test_the_same_file_does_not_restart_dnsmasq(svc_env):
+    """Рестарт роняет кэш DNS всей сети — на тот же файл его не делаем."""
+    go, conf, log = svc_env
+    go(_svc_file())
+    n = log.read_text().count("systemctl restart dnsmasq")
+    r = go(_svc_file())
+    assert r.returncode == 0 and "без изменений" in r.stdout
+    assert log.read_text().count("systemctl restart dnsmasq") == n, "тот же файл — а рестарт был"
+
+
+def test_no_argument_removes_the_file_once(svc_env):
+    go, conf, log = svc_env
+    conf.write_text(OLD_SVC, encoding="utf-8")
+    r = go(None)
+    assert r.returncode == 0 and not conf.exists()
+    assert log.read_text().count("systemctl restart dnsmasq") == 1
+    r = go(None)
+    assert r.returncode == 0
+    assert log.read_text().count("systemctl restart dnsmasq") == 1, "снимать нечего — а рестарт был"
+
+
+def test_an_empty_file_and_a_non_root_run_are_refused(svc_env):
+    go, conf, log = svc_env
+    conf.write_text(OLD_SVC, encoding="utf-8")
+    r = go("")
+    assert r.returncode == 2 and conf.read_text(encoding="utf-8") == OLD_SVC, "пустой файл снёс записи"
+    r = go(_svc_file(), FAKE_UID="1000")
+    assert r.returncode == 1 and "нужен root" in r.stderr
+    assert conf.read_text(encoding="utf-8") == OLD_SVC
+
+
+def test_embedded_services_helper_parses(script, tmp_path):
+    f = tmp_path / "svc.sh"
+    f.write_text(_heredoc(script, "LAN_SERVICES", "SVCEOF"), encoding="utf-8")
+    r = subprocess.run(["sh", "-n", str(f)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+# Строки вне шаблона: что пытался бы протащить чужой ВПС, и чем ломается
+# шаблон на краях (длина, кавычка, пробел по краю, лишнее поле).
+_FOREIGN_LINES = [
+    "server=/awg.internal/203.0.113.5",
+    "address=/awg.internal/203.0.113.5",
+    "conf-file=/tmp/evil.conf",
+    "nftset=/awg.internal/inet#awg_home#lan_vpn4",
+    "local=/awg.internal/x/",
+    " local=/awg.internal/",
+    "local=/awg.internal/ ",
+    "local=/evil.com/",
+    "ptr-record=b._dns-sd._udp.1.0.68.168.192.in-addr.arpa,awg.internal",
+    "ptr-record=b._dns-sd._udp.0.68.168.192.in-addr.arpa,evil.com",
+    "ptr-record=db._dns-sd._udp.awg.internal,awg.internal",
+    "ptr-record=_services._dns-sd._udp.awg.internal,_http._tcp.awg.internal",
+    'ptr-record=_smb._tcp.awg.internal,"na"s._smb._tcp.awg.internal"',
+    'ptr-record=_smb._tcp.awg.internal,"' + "x" * 64 + '._smb._tcp.awg.internal"',
+    'ptr-record=_smb._tcp.awg.internal,"сервер._smb._tcp.awg.internal"',
+    'ptr-record=_smb._tcp.awg.internal,"nas,x._smb._tcp.awg.internal"',
+    'srv-host="nas._smb._tcp.awg.internal",nas.awg.internal,445,0,0',
+    'srv-host="nas._smb._tcp.awg.internal",nas.awg.internal,445445',
+    'srv-host="nas._smb._tcp.awg.internal",nas.evil.com,445',
+    'txt-record="nas._smb._tcp.awg.internal","evil"',
+    "host-record=nas.awg.internal,192.168.1.10,fe80::1",
+    "host-record=nas.awg.internal,fe80::1",
+    "host-record=nas.awg.internal,192.168.1",
+    "host-record=nas.awg.internal.evil.com,192.168.1.10",
+    "host-record=nas.awg.internal,192.168.1.10\tserver=/x/1.1.1.1",
+]
+# Края, которые обязаны пройти: самые длинные допустимые поля.
+_EDGE_OK_LINES = [
+    "# любой комментарий, даже server=/x/1.1.1.1",
+    'ptr-record=_smb._tcp.awg.internal,"' + "x" * 63 + '._smb._tcp.awg.internal"',
+    'srv-host="A b_c-d._smb._tcp.awg.internal",' + "h" * 63 + ".awg.internal,65535",
+    "host-record=NAS-1.awg.internal,999.999.999.999",
+]
+
+
+@pytest.mark.parametrize("locale", ["C", "C.UTF-8", "en_US.UTF-8"])
+def test_shell_whitelist_and_python_line_res_agree(svc_env, locale):
+    """Белый список живёт в двух местах: LINE_RES в Python (агент) и grep в
+    помощнике на малине. Разойдись они — либо агент соберёт файл, который
+    помощник отвергнет навсегда (записи соседей не лягут), либо помощник
+    пропустит строку, которую Python считает запрещённой. Гоняем каждую строку
+    собранного Python-ом файла и каждую подмешанную запрещённую через оба и
+    требуем одного вердикта. Локаль — как у юнита: диапазоны [A-Za-z] под
+    UTF-8 не должны пускать кириллицу."""
+    from awgbot.domain import gwservices as gs
+    go, conf, log = svc_env
+    rendered = [ln for ln in _svc_file().splitlines() if ln]
+    disagree = []
+    for line in rendered + _EDGE_OK_LINES + _FOREIGN_LINES:
+        py_ok = any(p.fullmatch(line) for p in gs.LINE_RES)
+        r = go("# проверка\n" + line + "\n", LC_ALL=locale)
+        assert r.returncode in (0, 2), (line, r.returncode, r.stderr)
+        if py_ok != (r.returncode == 0):
+            disagree.append((line, "python" if py_ok else "sh"))
+    assert disagree == [], f"вердикты разошлись (кто пропустил): {disagree}"
+    assert all(any(p.fullmatch(ln) for p in gs.LINE_RES) for ln in rendered + _EDGE_OK_LINES)
+    assert not any(any(p.fullmatch(ln) for p in gs.LINE_RES) for ln in _FOREIGN_LINES), \
+        "запрещённая строка проходит Python-шаблоны"
+    # и файл целиком: собранный — проходит, с подмешанной строкой — нет
+    assert go(_svc_file()).returncode == 0 and gs.lines_ok(_svc_file())
+    mixed = _svc_file() + _FOREIGN_LINES[0] + "\n"
+    assert go(mixed).returncode == 2 and not gs.lines_ok(mixed)

@@ -744,6 +744,68 @@ def run_lan_lists(timeout: int = 600, from_dir: str = "") -> tuple[bool, str]:
     return proc.returncode == 0, "\n".join(tail)
 
 
+# ── сервисы соседних сетей (концепт «сервисы соседних сетей») ─────────────────
+LAN_SERVICES_SCRIPT = "/usr/local/sbin/awg-lan-services.sh"
+PEER_SERVICES_CONF = "/etc/dnsmasq.d/awg-gw-peer-services.conf"
+PEER_SERVICES_NEW = "/var/lib/awg-gw/peer-services.conf.new"
+
+
+def avahi_active() -> Optional[bool]:
+    """Запущен ли avahi-daemon: без него SMB-серверы этой сети соседям не
+    видны. None — systemctl не ответил."""
+    try:
+        proc = subprocess.run(["systemctl", "is-active", "--quiet", "avahi-daemon"],
+                              capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.returncode == 0
+
+
+def avahi_browse(timeout: int = 15) -> Optional[str]:
+    """`avahi-browse -rtpk _smb._tcp` — что объявляют по mDNS в локальной сети.
+    Запрос не покидает её сегмент. None — утилиты нет или обзор не удался
+    (промахом гистерезиса не считается)."""
+    try:
+        proc = subprocess.run(["avahi-browse", "-rtpk", "_smb._tcp"], capture_output=True,
+                              timeout=timeout)
+    except FileNotFoundError:
+        return None
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.decode(errors="replace")
+
+
+def run_lan_services(path: str = "", timeout: int = 90) -> tuple[bool, str]:
+    """Установить файл записей соседей в dnsmasq помощником обвязки (проверка
+    построчно, --test, рестарт с откатом); без пути — снять файл. (ok, хвост)."""
+    try:
+        proc = subprocess.run([LAN_SERVICES_SCRIPT, *([path] if path else [])],
+                              capture_output=True, timeout=timeout)
+    except FileNotFoundError:
+        return False, "помощника сервисов нет — обвязка старого образца"
+    except subprocess.TimeoutExpired:
+        return False, "таймаут установки записей"
+    except OSError as e:
+        return False, str(e)
+    tail = (proc.stdout + proc.stderr).decode(errors="replace").strip().splitlines()[-3:]
+    return proc.returncode == 0, "\n".join(tail)
+
+
+def dns_local(name: str, qtype: str = "PTR") -> Optional[list[str]]:
+    """Что отдаёт свой dnsmasq по имени: `dig +short @127.0.0.1`. None — dig
+    нет или не ответил; пустой список — записи нет."""
+    try:
+        proc = subprocess.run(["dig", "+short", "+time=3", "+tries=1", "@127.0.0.1", name, qtype],
+                              capture_output=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return [ln.strip() for ln in proc.stdout.decode(errors="replace").splitlines() if ln.strip()]
+
+
 def run_lan_domain(cmd: str, domains: list[str], timeout: int = 60) -> tuple[bool, str]:
     """Персональные списки: add | ru | del | list. (ok, вывод)."""
     try:

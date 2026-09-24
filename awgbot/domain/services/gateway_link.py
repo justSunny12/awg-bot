@@ -865,6 +865,8 @@ class GatewayLinkMixin:
         st["channel"] = self.gwlink_card(st["gateway"], st.get("handshake_age"))
         # бот шлюза — ссылкой в чат с ним: username и имя из кэша getMe
         st["agent_bot"] = self.gw_bot_identity(int(slot_id))
+        # сервисы соседних сетей — числами, без имён
+        st["services"] = self.gwlink_services_card(st["gateway"])
         return st
 
     def gateway_state_for_device(self, device_id: int) -> Optional[dict]:

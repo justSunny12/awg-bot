@@ -180,8 +180,125 @@ class GwChannelMixin:
         """Снятие слота: ключи канала уходят вместе с ключами бандла."""
         for key in (self._GWLINK_SESSION_KEY, self._GWLINK_SEEN_KEY, self._GWLINK_SNAP_KEY,
                     self._GWLINK_SNAP_REV_KEY, self._GWLINK_SNAP_AT_KEY, self._GWLINK_SNAP_TS_KEY,
-                    self._GWLINK_ERROR_KEY, self._GWLINK_ACK_KEY, self._GWLINK_LISTS_KEY):
+                    self._GWLINK_ERROR_KEY, self._GWLINK_ACK_KEY, self._GWLINK_LISTS_KEY,
+                    self._GWLINK_SVC_KEY, self._GWLINK_SVC_AT_KEY, self._GWLINK_PEER_SVC_KEY):
             self.db.set_state(self._gwlink_key(key, slot_id), "")
+
+    # ── сервисы соседних сетей (концепт «сервисы соседних сетей») ────────────
+    _GWLINK_SVC_KEY = "gwlink_svc"           # список SMB-серверов сети слота (после чистки)
+    _GWLINK_SVC_AT_KEY = "gwlink_svc_at"
+    _GWLINK_PEER_SVC_KEY = "gwlink_peer_svc" # ответ слота на раздачу записей соседей
+    _SVC_NEIGHBOUR_STALE_S = 24 * 3600       # сосед молчит дольше — его сервисы не раздаются
+
+    def gwlink_services_in(self, slot_id: int, items) -> bool:
+        """Список SMB-серверов сети слота от его агента: чистка по подсетям
+        слота из БД (не из снимка), запись только при изменении. True — изменился."""
+        from awgbot.domain import gwservices
+        gw = self.db.gateway(slot_id)
+        if gw is None:
+            return False
+        cleaned = gwservices.clean(items, gw.home_subnets, gwservices.MAX_OWN)
+        raw = json.dumps(cleaned, ensure_ascii=False)
+        key = self._gwlink_key(self._GWLINK_SVC_KEY, slot_id)
+        self.db.set_state(self._gwlink_key(self._GWLINK_SVC_AT_KEY, slot_id),
+                          timeutil.to_iso(timeutil.now()))
+        if (self.db.get_state(key) or "[]") == raw:
+            return False
+        self.db.set_state(key, raw)
+        log.info("канал линка: слот %s назвал SMB-серверы своей сети: %s", slot_id, len(cleaned))
+        return True
+
+    def gwlink_services(self, slot_id: int) -> list[dict]:
+        try:
+            data = json.loads(self.db.get_state(self._gwlink_key(self._GWLINK_SVC_KEY, slot_id)) or "[]")
+        except json.JSONDecodeError:
+            return []
+        return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
+
+    def _gwlink_seen_recent(self, slot_id: int, within_s: int) -> bool:
+        if self.gwlink_session(slot_id):
+            return True
+        raw = self.db.get_state(self._gwlink_key(self._GWLINK_SEEN_KEY, slot_id)) or ""
+        try:
+            return bool(raw) and (timeutil.now() - timeutil.parse_iso(raw)).total_seconds() < within_s
+        except ValueError:
+            return False
+
+    def _gwlink_peer_nets_applied(self, gw) -> tuple[list[str], list[str]]:
+        """(что сервер выдаёт слоту по функции B, что из этого применено на
+        шлюзе по снимку): до перевыпуска маршрута к соседу нет."""
+        issued = self.gateway_peer_nets(gw.id)
+        snap = self.gwlink_snapshot(gw.id)
+        applied = str((snap.get("bundle") or {}).get("peer_home_nets") or "").split()
+        return issued, [n for n in issued if n in applied]
+
+    def gwlink_peer_services_for(self, gw) -> tuple[str, list[dict]]:
+        """Что раздать слоту: сервисы других слотов с адресами в пересечении
+        «выдано по B» ∩ «применено на шлюзе». Сосед молчит дольше суток — его
+        сервисы не раздаются. (отпечаток, записи); пусто — («», [])."""
+        from awgbot.domain import gwservices
+        _issued, allowed = self._gwlink_peer_nets_applied(gw)
+        items = self._gwlink_neighbour_services(gw, allowed)
+        return gwservices.feed_hash(items), items
+
+    def _gwlink_neighbour_services(self, gw, nets: list[str]) -> list[dict]:
+        """Сервисы других слотов на связи (не молчащих дольше суток) с адресами
+        в nets, после чистки."""
+        from awgbot.domain import gwservices
+        if not nets:
+            return []
+        out: list[dict] = []
+        for other in self.db.gateways():
+            if other.id == gw.id or not self._gwlink_seen_recent(other.id, self._SVC_NEIGHBOUR_STALE_S):
+                continue
+            out += self.gwlink_services(other.id)
+        return gwservices.clean(out, nets, gwservices.MAX_PEER)
+
+    def gwlink_peer_services_ack_in(self, slot_id: int, body: dict) -> None:
+        ok = bool(body.get("ok"))
+        digest = "".join(c for c in str(body.get("hash") or "") if c in "0123456789abcdef")[:64]
+        err = " ".join(str(body.get("error") or "").split())[:200]
+        try:
+            n = int(body.get("n") or 0)
+        except (TypeError, ValueError):
+            n = 0
+        self.db.set_state(self._gwlink_key(self._GWLINK_PEER_SVC_KEY, slot_id),
+                          f"{'ok' if ok else 'fail'} {digest or '-'} {n} "
+                          f"{timeutil.to_iso(timeutil.now())} {err}".strip())
+
+    def gwlink_peer_services_ack(self, slot_id: int) -> dict:
+        raw = self.db.get_state(self._gwlink_key(self._GWLINK_PEER_SVC_KEY, slot_id)) or ""
+        parts = raw.split(" ", 4)
+        if len(parts) < 4:
+            return {}
+        return {"ok": parts[0] == "ok", "hash": "" if parts[1] == "-" else parts[1],
+                "n": int(parts[2]) if parts[2].isdigit() else 0, "at": parts[3],
+                "error": parts[4] if len(parts) > 4 else ""}
+
+    def gwlink_services_card(self, gw) -> dict:
+        """Строка карточки слота: сколько SMB у слота, сколько ему раздано и что
+        с ними на шлюзе. Имена на экраны сервера не идут — только числа."""
+        from awgbot.domain import gwservices
+        own = self.gwlink_services(gw.id)
+        digest, items = self.gwlink_peer_services_for(gw)
+        ack = self.gwlink_peer_services_ack(gw.id)
+        snap = self.gwlink_snapshot(gw.id)
+        issued, applied = self._gwlink_peer_nets_applied(gw)
+        # в счёт — сервисы по ВЫДАННЫМ подсетям: до перевыпуска они уже есть,
+        # просто ждут, и строка обязана это сказать, а не «не найдены»
+        peer = self._gwlink_neighbour_services(gw, issued) if issued else []
+        if ack and ack.get("hash") == digest and (items or ack.get("hash")):
+            state = "applied" if ack.get("ok") else "failed"
+        elif issued and not applied:
+            state = "reissue"
+        elif snap and not gwservices.version_at_least(snap.get("agent_version", ""), (3, 1, 0)):
+            state = "old_agent"
+        elif ack and ack.get("hash") == digest:
+            state = "applied" if ack.get("ok") else "failed"
+        else:
+            state = "pending"
+        return {"enabled": bool(issued), "own": len(own), "peer": len(peer), "state": state,
+                "error": (ack.get("error") or "") if ack else ""}
 
     # ── сверка выданного с установленным ─────────────────────────────────────
 

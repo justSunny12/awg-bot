@@ -33,7 +33,16 @@
 #      через АПЛИНК, NXDOMAIN на DoH-эндпоинты), ВТОРАЯ таблица inet awg_home
 #      (наборы lan_vpn4/lan_vpn_nets4/lan_ru4, метка в туннель, маскарад в
 #      локальную сеть) и скрипты списков в /usr/local/sbin — awg-lan-lists.sh
-#      (фиды) и awg-lan-domain.sh (личные списки, их же зовёт awg-bot lan).
+#      (фиды), awg-lan-domain.sh (личные списки, их же зовёт awg-bot lan) и
+#      awg-lan-services.sh (записи сервисов соседних сетей для dnsmasq —
+#      концепт «сервисы соседних сетей»: SMB-серверы сети другого шлюза видны
+#      в Finder через домен обзора awg.internal; при PEER_HOME_NETS и живом
+#      avahi-daemon ставится avahi-utils для обзора своей сети; PEER_HOME_NETS
+#      пуст — файл awg-gw-peer-services.conf снимается).
+#      awg-lan-services.sh <файл> ставит записи, собранные агентом из данных
+#      канала: каждая строка — по белому списку шаблонов (LINE_RES в
+#      awgbot/domain/gwservices.py), dnsmasq --test, рестарт с откатом, та же
+#      блокировка lists.lock; без аргумента — снять; rc=2 — строка вне списка.
 #      awg-lan-lists.sh с AWG_LAN_FROM=<каталог> фиды не качает, а берёт
 #      готовыми (domains.lst, nets.lst) — их привозит канал линка в
 #      /var/lib/awg-gw/feed; в lists.status тогда source=channel, иначе net.
@@ -55,7 +64,8 @@
 # ЧЕГО НЕ ДЕЛАЕТ: не трогает существующие интерфейсы, прежнюю ручную схему
 # маршрутизации и чужие правила iptables (docker и т.п.) — они работают как
 # работали (исключение — ACCEPT из п.3a). Политика INPUT для локальной сети
-# остаётся accept. /etc/default/dnsmasq не трогает: прежняя строка
+# остаётся accept. avahi-daemon не ставит (он начал бы объявлять малину) —
+# только avahi-utils рядом с уже запущенным демоном. /etc/default/dnsmasq не трогает: прежняя строка
 # DNSMASQ_EXCEPT=lo глушила 127.0.0.1 (except-interface=lo), а файл, созданный
 # до пакета, ронял dpkg; свою строку прежних выпусков — убирает.
 #
@@ -84,7 +94,8 @@
 #   RESOLVER        адрес резолвера ВПС для апстрима; пусто — запасной 1.1.1.1
 #   PEER_HOME_NETS  подсети за другими шлюзами: им из линка открыт транзит.
 #                   Только бандлом (gwlink.BUNDLE_ONLY_KEYS): те же подсети
-#                   стоят в AllowedIPs конфига линка, канал их не везёт
+#                   стоят в AllowedIPs конфига линка, канал их не везёт.
+#                   Непуст — действуют и сервисы соседних сетей (п.5)
 #   LINK_CHANNEL    1 — агент держит канал состояния до ВПС внутри линка
 #                   (концепт «канал линка»); 0 или нет строки — не держит.
 #                   Сам скрипт канала не касается: он только закрепляет обе
@@ -180,6 +191,8 @@ HOME_SUBNETS="$(printf '%s' "${HOME_SUBNETS:-}" | tr -cd '0-9./ ' | tr ' ' '\n' 
 RESOLVER="$(printf '%s' "${RESOLVER:-}" | tr -cd '0-9.' | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || true)"
 LAN_LISTS="/usr/local/sbin/awg-lan-lists.sh"
 LAN_DOMAIN="/usr/local/sbin/awg-lan-domain.sh"
+LAN_SERVICES="/usr/local/sbin/awg-lan-services.sh"      # записи сервисов соседних сетей → dnsmasq
+PEER_SVC_CONF="$DNSMASQ_D/awg-gw-peer-services.conf"
 LAN_MODE="${LAN_MODE:-0}"
 # Канал до ВПС: 1 — агент держит сессию внутри линка. Значения из бандла, у
 # старых бандлов их нет — тогда канала нет, и это рабочее состояние.
@@ -290,7 +303,7 @@ lan_iface_for() {              # $1 = подсеть a.b.c.d/n → «iface addr�
 }
 lan_remove() {                 # снять всё своё; личные списки — в $LAN_DUMP/restore (данные человека)
     _changed=0
-    for _f in awg-gw-base.conf awg-gw-doh.conf awg-gw-vpn-feed.conf; do
+    for _f in awg-gw-base.conf awg-gw-doh.conf awg-gw-vpn-feed.conf awg-gw-peer-services.conf; do
         [ -f "$DNSMASQ_D/$_f" ] && { run "rm -f $DNSMASQ_D/$_f"; _changed=1; }
     done
     # личные списки — данные человека: не в архив с датой, а в restore/, откуда
@@ -313,6 +326,7 @@ lan_remove() {                 # снять всё своё; личные спи
     [ -f "$LAN_SYSCTL" ] && run "rm -f $LAN_SYSCTL"
     [ -f "$LAN_LISTS" ] && run "rm -f $LAN_LISTS"
     [ -f "$LAN_DOMAIN" ] && run "rm -f $LAN_DOMAIN"
+    [ -f "$LAN_SERVICES" ] && run "rm -f $LAN_SERVICES"
     return 0
 }
 lan_migrate_manual() {         # ручной слой (концепт «локальная сеть» §7): переезжает, не ломается
@@ -549,6 +563,69 @@ for pair in $added; do
 done
 DOMEOF
 chmod 0755 "$LAN_DOMAIN"
+cat > "$LAN_SERVICES" <<'SVCEOF'
+#!/bin/sh
+# awg-lan-services.sh — записи сервисов соседних сетей для dnsmasq (концепт
+# «сервисы соседних сетей»). Зовёт агент: с путём к файлу — установить, без
+# аргумента — снять. Содержимое агент собирает из данных, пришедших каналом
+# линка с сервера AWG, поэтому файл проверяется построчно по белому списку
+# шаблонов (тот же список — LINE_RES в awgbot/domain/gwservices.py): ни
+# server=, ни address=, ни conf-file= сюда не пролезут. Дальше как у списков:
+# тот же файл — выход без рестарта; dnsmasq --test с conf-dir; рестарт; отказ —
+# откат прежнего файла и rc=1. Блокировка общая с awg-lan-lists.sh: двух
+# рестартов dnsmasq разом не бывает. rc=2 — файл не прошёл проверку.
+set -u
+D="${AWG_DNSMASQ_D:-/etc/dnsmasq.d}"
+CONF="$D/awg-gw-peer-services.conf"
+DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"
+DOMAIN='awg\.internal'
+mkdir -p "$DUMP"
+exec 9>"$DUMP/lists.lock"
+if command -v flock >/dev/null 2>&1 && ! flock -w 120 9; then echo "обновление списков ещё идёт" >&2; exit 75; fi
+[ "$(id -u)" = "0" ] || { echo "нужен root" >&2; exit 1; }
+# conf-dir Debian подключает ключом из init-скрипта — голый --test файл не видит
+test_conf() { dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; }
+restart_dnsmasq() { test_conf && systemctl restart dnsmasq; }
+rollback() { if [ -f "$CONF.prev.awg" ]; then mv -f "$CONF.prev.awg" "$CONF"; else rm -f "$CONF"; fi; }
+if [ $# -eq 0 ]; then
+    [ -f "$CONF" ] || exit 0
+    rm -f "$CONF"
+    restart_dnsmasq || { echo "dnsmasq не поднялся после снятия записей: journalctl -u dnsmasq -e" >&2; exit 1; }
+    echo "записи соседей сняты"
+    exit 0
+fi
+SRC="$1"
+[ -s "$SRC" ] || { echo "файл записей пуст или не найден: $SRC" >&2; exit 2; }
+if grep -Ev -e '^#.*$' -e '^$' \
+    -e "^local=/$DOMAIN/\$" \
+    -e "^ptr-record=l?b\\._dns-sd\\._udp\\.([0-9]{1,3}\\.){4}in-addr\\.arpa,$DOMAIN\$" \
+    -e "^ptr-record=l?b\\._dns-sd\\._udp\\.$DOMAIN,$DOMAIN\$" \
+    -e "^ptr-record=_services\\._dns-sd\\._udp\\.$DOMAIN,_smb\\._tcp\\.$DOMAIN\$" \
+    -e "^ptr-record=_smb\\._tcp\\.$DOMAIN,\"[A-Za-z0-9 _-]{1,63}\\._smb\\._tcp\\.$DOMAIN\"\$" \
+    -e "^srv-host=\"[A-Za-z0-9 _-]{1,63}\\._smb\\._tcp\\.$DOMAIN\",[A-Za-z0-9-]{1,63}\\.$DOMAIN,[0-9]{1,5}\$" \
+    -e "^txt-record=\"[A-Za-z0-9 _-]{1,63}\\._smb\\._tcp\\.$DOMAIN\",\"\"\$" \
+    -e "^host-record=[A-Za-z0-9-]{1,63}\\.$DOMAIN,[0-9]{1,3}(\\.[0-9]{1,3}){3}\$" \
+    "$SRC" >/dev/null; then
+    echo "в файле записей есть строка вне белого списка — не применяю" >&2; exit 2
+fi
+if cmp -s "$SRC" "$CONF" 2>/dev/null; then echo "записи соседей без изменений"; exit 0; fi
+if [ -f "$CONF" ]; then cp -p "$CONF" "$CONF.prev.awg" 2>/dev/null || true; fi
+install -m 0644 "$SRC" "$CONF"
+if ! test_conf; then
+    # демон с плохим файлом не перезапускался — откат без рестарта, кэш сети цел
+    echo "dnsmasq --test отверг записи соседей — откатываю" >&2; rollback; exit 1
+fi
+if systemctl restart dnsmasq; then
+    rm -f "$CONF.prev.awg"
+    echo "записи соседей применены: $(grep -c '^srv-host=' "$CONF") SMB"
+    exit 0
+fi
+echo "dnsmasq не поднялся с записями соседей — откатываю" >&2
+rollback
+systemctl restart dnsmasq || true
+exit 1
+SVCEOF
+chmod 0755 "$LAN_SERVICES"
 }
 
 
@@ -731,6 +808,7 @@ if [ "$MODE" = "plan" ]; then
     say "  0. шлюзовое устройство: ${GATEWAY_PUBKEY:+помечен, конфиг аплинка ставится машине с тем же ключом}${GATEWAY_PUBKEY:-не помечен}"
     say "  4. юнит awg-link-gw.service"
     say "  5. локальная сеть без VPN: ${LAN_MODE:-0} (подсети: ${HOME_SUBNETS:-—}; резолвер: ${RESOLVER:-запасной через аплинк})"
+    say "     сервисы соседних сетей (SMB в Finder через awg.internal): $([ -n "${PEER_HOME_NETS:-}" ] && [ "${LAN_MODE:-0}" = "1" ] && echo включены || echo нет)"
     say "     локальные подсети других шлюзов (транзит из линка): ${PEER_HOME_NETS:-—}"
     exit 0
 fi
@@ -1415,6 +1493,18 @@ HOMEEOF
         [ -s "$LAN_DUMP/$_s.nft" ] && run "nft -f $LAN_DUMP/$_s.nft 2>/dev/null || true"
     done
     write_lan_scripts
+    # ── сервисы соседних сетей (концепт «сервисы соседних сетей»): обзор своей
+    # сети — avahi-browse при живом avahi-daemon (сам демон не ставим: он начал
+    # бы объявлять малину); соседей нет — записи соседей снять
+    if [ -n "${PEER_HOME_NETS:-}" ]; then
+        if systemctl is-active --quiet avahi-daemon 2>/dev/null && ! command -v avahi-browse >/dev/null 2>&1; then
+            say "  ставлю avahi-utils (обзор SMB-серверов этой сети для соседей)"
+            run "DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold avahi-utils" \
+                || say "  avahi-utils не установился — SMB-серверы этой сети соседям не видны, остальное работает"
+        fi
+    elif [ -f "$PEER_SVC_CONF" ]; then
+        run "rm -f $PEER_SVC_CONF"; _dn_changed=1
+    fi
     if [ "$_dn_changed" = "1" ] || ! systemctl is-active --quiet dnsmasq; then
         run "systemctl enable dnsmasq 2>/dev/null || true"
         run "systemctl restart dnsmasq" || { lan_fail "dnsmasq не запустился: journalctl -u dnsmasq -e"; return 1; }

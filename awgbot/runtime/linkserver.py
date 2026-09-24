@@ -80,6 +80,8 @@ class _Session:
         self.sent_hash = ""              # набор настроек, уже отправленный в этой сессии
         self.lists_have = ""             # отпечаток фидов, который шлюз назвал своим
         self.lists_sent = ""             # отпечаток фидов, уже ушедший в этой сессии
+        self.svc_have = ""               # отпечаток записей соседей, который шлюз назвал своим
+        self.svc_sent: str | None = None # отпечаток записей соседей, ушедший в этой сессии
         self.role_sent: bool | None = None
         # вытеснила сессию, прошедшую hello: запись «на связи» в БД — её, и
         # закрыть её обязана эта, даже если сама до hello не дойдёт
@@ -243,10 +245,12 @@ class LinkServer:
             await asyncio.to_thread(self.services.gwlink_session_opened, gw.id,
                                     str(msg.get("agent") or "")[:32], proto)
             sess.lists_have = str(msg.get("lists_hash") or "")[:64]
+            sess.svc_have = str(msg.get("svc_hash") or "")[:64]
             # роль — первым сообщением сервера: по нему клиент понимает, что
             # сессия настоящая, и только тогда сбрасывает свой бэкофф
             await self.send_role(gw.id)
             await self.deliver_lists(gw.id)
+            await self.deliver_peer_services(gw.id)
             if proto != gwlink.PROTO:
                 log.info("канал линка: слот %s говорит proto=%s, у нас %s",
                          gw.id, proto, gwlink.PROTO)
@@ -261,6 +265,8 @@ class LinkServer:
             if ok:
                 # снимок показал, что стоит на шлюзе, — самое время доставить
                 await self.deliver(gw.id)
+                # подсети соседей применены — теперь есть куда вести записи
+                await self.deliver_peer_services(gw.id)
             else:
                 # Разрыв нумерации: дельта потерялась или пришла не по порядку.
                 # Просим полный снимок и начинаем счёт заново.
@@ -284,6 +290,21 @@ class LinkServer:
         if kind == "claim":
             token = str(msg.get("token") or "")[:4096]
             await asyncio.to_thread(self.services.gwlink_claim_in, gw.id, token)
+            return
+        if kind == "svc":
+            # сервисы сети этого слота (концепт «сервисы соседних сетей»):
+            # изменились — соседям на связи уходит новый список
+            items = msg.get("items") if isinstance(msg.get("items"), list) else []
+            changed = await asyncio.to_thread(self.services.gwlink_services_in, gw.id, items[:200])
+            if changed:
+                for other in list(self._sessions):
+                    if other != gw.id:
+                        await self.deliver_peer_services(other)
+            return
+        if kind == "peer_svc_ack":
+            if msg.get("ok"):
+                sess.svc_have = str(msg.get("hash") or "")[:64]
+            await asyncio.to_thread(self.services.gwlink_peer_services_ack_in, gw.id, msg)
             return
         log.info("канал линка: слот %s прислал неизвестное «%s» — игнорирую", gw.id, kind)
 
@@ -376,6 +397,33 @@ class LinkServer:
                 return False
         return True
 
+    async def deliver_peer_services(self, slot_id: int) -> bool:
+        """Сервисы соседних сетей: отвезти слоту записи соседей, если их
+        отпечаток не совпал ни с тем, что шлюз назвал своим, ни с уже ушедшим в
+        этой сессии. Пустое к пустому не едет: отпечаток пустого списка — пустая
+        строка, а «ещё не слали» — None."""
+        sess = self._sessions.get(slot_id)
+        if sess is None or not sess.hello:
+            return False
+        fn = getattr(self.services, "gwlink_peer_services_for", None)
+        if fn is None:
+            return False
+        gw = await asyncio.to_thread(self.services.db.gateway, slot_id)
+        if gw is None:
+            return False
+        # снимка слота ещё нет (первая сессия, снят слот): что применено на
+        # шлюзе — неизвестно, а пустой список следом за полным — два рестарта
+        # dnsmasq; снимок придёт сразу после hello и позовёт нас сам
+        if not await asyncio.to_thread(self.services.gwlink_snapshot, gw.id):
+            return False
+        digest, items = await asyncio.to_thread(fn, gw)
+        if digest == sess.svc_have or digest == sess.svc_sent:
+            return False
+        sess.svc_sent = digest                     # метка ДО отправки — см. deliver()
+        log.info("канал линка: слоту %s уходят сервисы соседей (%s)", slot_id, len(items))
+        return await self.send(slot_id, "peer_svc", {"hash": digest, "items": items},
+                               pad=gwlink.PAD_SNAP)
+
     async def send_role(self, slot_id: int) -> bool:
         """Сказать агенту, активный он или резерв, — только при смене. Сам он
         этого знать не может: решает автомат переключения здесь, на ВПС."""
@@ -396,6 +444,7 @@ class LinkServer:
             try:
                 await self.deliver(slot_id)
                 await self.deliver_lists(slot_id)
+                await self.deliver_peer_services(slot_id)
                 await self.send_role(slot_id)
             except Exception as e:                        # noqa: BLE001
                 log.warning("канал линка: доставка слоту %s: %s", slot_id, e)

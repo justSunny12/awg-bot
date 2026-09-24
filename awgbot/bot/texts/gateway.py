@@ -22,7 +22,9 @@ def _gw_link_line(st) -> str:
 
 def _gw_health_summary(checks) -> str:
     broken = [c for c in checks if c.ok is False]
-    unknown = [c for c in checks if c.ok is None]
+    # «не проверено» у сервисов соседей (нет avahi на шлюзе без NAS) — штатно,
+    # в сводку панели не идёт; на экране монитора строка остаётся
+    unknown = [c for c in checks if c.ok is None and getattr(c, "group", "") != "svc"]
     if broken:
         return f"🔴 проблем: {len(broken)} — " + ", ".join(c.name for c in broken[:4])
     if unknown:
@@ -113,6 +115,11 @@ def gateway_panel(st) -> str:
         parts.append(f"{pad}резолвер: апстрим {_e(lan.get('resolver', ''))}")
         parts.append(f"{pad}списки: {_lists_counts(lan)}; " + _lists_updated(lan.get("updated_at") or ""))
         parts.append(f"{pad}свои списки: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую")
+        svc = lan.get("svc") or {}
+        if svc.get("active"):
+            # сервисы соседних сетей: работают сами вместе с доступом между подсетями
+            parts.append(f"{pad}сервисы соседей: {_svc_peer_short(svc)}")
+            parts.append(f"{pad}свои сервисы для соседей: {_svc_own_short(svc)}")
     parts += ["", f"🌡 Монитор здоровья: {_gw_health_summary(st.checks)}", ""]
     parts.append(f"📊 Потребление за месяц: {human_bytes(st.month_rx + st.month_tx)} "
                  f"{_updown(st.month_rx, st.month_tx)}")
@@ -144,6 +151,39 @@ def gateway_health(st) -> str:
     lines += ["", "Проблем не выявлено." if not bad else
               f"Проблем: {bad}. «Мастер восстановления» переставит правила и переподнимет линк."]
     return "\n".join(lines)
+
+
+def _svc_names(names: list) -> str:
+    """«naspi5, backup и ещё 2» — имена с малины соседа, экранированные."""
+    names = [str(n) for n in names if n]
+    shown = ", ".join(_e(n) for n in names[:3])
+    more = len(names) - 3
+    return shown + (f" и ещё {more}" if more > 0 else "")
+
+
+def _svc_peer_short(svc: dict) -> str:
+    names = svc.get("peer") or []
+    if names:
+        return f"{len(names)} SMB — {_svc_names(names)}"
+    return "нет" if svc.get("ever") else "пока не пришли"
+
+
+def _svc_own_short(svc: dict) -> str:
+    if svc.get("browse") is False:
+        return "нет avahi-browse (пакет avahi-utils)"
+    if svc.get("avahi") is False:
+        return "avahi-daemon не запущен"
+    names = svc.get("own") or []
+    return f"{len(names)} SMB" if names else "нет"
+
+
+def gateway_services_paragraph(svc: dict) -> str:
+    """Абзац экрана «Локальная сеть без VPN»: что видят соседи и как дойти по имени."""
+    hosts = [h for h in (svc.get("peer_hosts") or []) if h]
+    example = f"smb://{_e(hosts[0])}.awg.internal" if hosts else "smb://имя.awg.internal"
+    return (f"Сервисы соседей: {_svc_peer_short(svc)}. На Mac они видны в Finder → «Сеть» → "
+            f"awg.internal; с других устройств — по имени, например <code>{example}</code>. "
+            "Свои SMB-серверы этой сети видны соседям так же.")
 
 
 def _packets(pk) -> str:
@@ -185,7 +225,9 @@ def gateway_lan_text(st) -> str:
             f"резолвер — апстрим <code>{_e(lan.get('resolver', '') or '?')}</code> через аплинк\n"
             f"Трафик с роутера: {_packets(lan.get('lan_pkts'))}\n"
             f"Списки: {_lists_counts(lan)}; {_lists_updated(lan.get('updated_at') or '')}\n"
-            f"Свои списки: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую")
+            f"Свои списки: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую"
+            + (("\n\n" + gateway_services_paragraph(lan["svc"]))
+               if (lan.get("svc") or {}).get("active") else ""))
 
 
 def gateway_lan_ask_domain(kind: str) -> str:

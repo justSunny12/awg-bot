@@ -325,3 +325,87 @@ def test_lan_block_carries_the_first_local_subnet_for_the_recovery_note(svc, mon
     monkeypatch.setattr(gwguard, "unit_env", lambda k: {"RESOLVER": "10.9.1.1"}.get(k, ""))
     info, _ = svc.lan_status()
     assert info["subnet"] == ""
+
+
+# ── сервисы соседних сетей: проверки группы «svc» (концепт «сервисы соседних сетей» §4.2, §7.1) ──
+
+def _svc_on(monkeypatch, *, avahi=True, dig=("naspi5._smb._tcp.awg.internal.",), browse=True):
+    import shutil
+    env = {"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24", "PEER_HOME_NETS": "192.168.1.0/24",
+           "LINK_CHANNEL": "1", "RESOLVER": "10.9.1.1"}
+    monkeypatch.setattr(gwguard, "lan_mode", lambda: True)
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: env.get(k, ""))
+    monkeypatch.setattr(gwguard, "avahi_active", lambda: avahi)
+    monkeypatch.setattr(gwguard, "dns_local", lambda name, qtype="PTR": None if dig is None else list(dig))
+    real = shutil.which
+    monkeypatch.setattr(shutil, "which", lambda n, *a, **k: ("/usr/bin/avahi-browse" if browse else None)
+                        if n == "avahi-browse" else real(n, *a, **k))
+    return env
+
+
+def _peer_applied(svc, n=2, err=""):
+    items = [{"t": "_smb._tcp", "n": f"nas{i}", "h": f"nas{i}", "p": 445, "a": f"192.168.1.{i + 1}"}
+             for i in range(n)]
+    svc.db.set_state("gw_peer_svc", json.dumps({"hash": "ab" * 32, "items": items}))
+    svc.db.set_state("gw_peer_svc_err", err)
+
+
+def test_services_checks_say_what_the_monitor_should(svc, monkeypatch):
+    _svc_on(monkeypatch)
+    _peer_applied(svc)
+    info, checks = svc.services_status()
+    by = {c.name: c for c in checks}
+    assert all(c.group == "svc" for c in checks), "своя группа — без уведомлений"
+    assert by["сервисы соседей"].ok is True and by["сервисы соседей"].detail == "2 SMB опубликованы"
+    assert by["обзор сервисов"].ok is True and by["обзор сервисов"].detail == "0 SMB в этой сети"
+    assert info["active"] and info["peer"] == ["nas0", "nas1"]
+    # резолвер не отдаёт — 🔴 с подсказкой; dig не ответил — ⚪, а не «всё хорошо»
+    _svc_on(monkeypatch, dig=())
+    c = {c.name: c for c in svc.services_status()[1]}["сервисы соседей"]
+    assert c.ok is False and "резолвер не отдаёт записи соседей" in c.detail
+    _svc_on(monkeypatch, dig=None)
+    assert {c.name: c for c in svc.services_status()[1]}["сервисы соседей"].ok is None
+    # ошибка применения — 🔴 с её хвостом
+    _peer_applied(svc, err="dnsmasq отверг записи соседей")
+    c = {c.name: c for c in svc.services_status()[1]}["сервисы соседей"]
+    assert c.ok is False and "записи не применились: dnsmasq отверг" in c.detail
+
+
+def test_no_avahi_is_grey_not_red(svc, monkeypatch):
+    """Малина без NAS и без avahi — нормальное состояние (§12.3): ⚪, не 🔴."""
+    _svc_on(monkeypatch, avahi=False)
+    c = {c.name: c for c in svc.services_status()[1]}["обзор сервисов"]
+    assert c.ok is None and "avahi-daemon не запущен" in c.detail
+    _svc_on(monkeypatch, browse=False)
+    c = {c.name: c for c in svc.services_status()[1]}["обзор сервисов"]
+    assert c.ok is None and "avahi-utils" in c.detail and "Мастер восстановления" in c.detail
+
+
+def test_services_add_nothing_where_the_function_does_not_work(svc, monkeypatch):
+    """Без соседей в юните функции нет: ни блока, ни проверок, ни обзора."""
+    env = _svc_on(monkeypatch)
+    env["PEER_HOME_NETS"] = ""
+    monkeypatch.setattr(gwguard, "dns_local", lambda *a, **k: pytest.fail("dig без функции"))
+    assert svc.services_status() == ({"active": False}, [])
+
+
+def test_a_red_services_check_sends_neither_plumbing_nor_lan_alerts(svc, monkeypatch):
+    """Соседи, которых нет, — не авария (§4.2): 🔴 группы «svc» видна в
+    мониторе, но не поднимает ни «Обвязка шлюза неисправна», ни «Локальная
+    сеть без VPN», сколько бы тиков ни держалась."""
+    from awgbot.bot import texts
+    from tests.unit.test_gateway import _quiet_status
+    _svc_on(monkeypatch, dig=())
+    _peer_applied(svc)
+    _, checks = svc.services_status()
+    red = [c for c in checks if c.ok is False]
+    assert red and red[0].group == "svc"
+    st = _quiet_status(checks=[GwCheck("MASQUERADE", True)] + checks,
+                       lan={"subnet": "192.168.68.0/24", "svc": {"active": True}})
+    monkeypatch.setattr(svc, "status", lambda: st)
+    monkeypatch.setattr(svc, "uplink_policy_heal", lambda: [])
+    notes = []
+    for _ in range(6):
+        notes += svc.monitor_tick()
+    assert notes == [], f"проверка сервисов соседей подняла уведомление: {[n.text for n in notes]}"
+    assert "🔴 сервисы соседей" in texts.gateway_health(st), "в мониторе проверку видно"

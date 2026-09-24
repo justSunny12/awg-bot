@@ -604,3 +604,114 @@ def test_the_unit_carries_the_channel_lines_so_the_agent_can_read_them(script):
     assert "Environment=LINK_CHANNEL_PORT=$LINK_CHANNEL_PORT\n" in unit
     assert unit.index("Environment=LINK_CHANNEL=") < unit.index("EnvironmentFile=-$FW_ENV"), (
         "локальный файл читается после строк бандла — иначе он не перекроет их")
+
+
+# ── сервисы соседних сетей (концепт «сервисы соседних сетей» §4.3) ───────────
+
+def _svc_host(tmp_path):
+    """Малина для кусков раздела 5: каталоги во временной папке, systemctl и
+    apt-get записывают вызовы. PATH — только подставной каталог (с sh и rm),
+    чтобы настоящий avahi-browse хоста не решал за тест."""
+    import os
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir()
+    log = tmp_path / "log"; log.write_text("", encoding="utf-8")
+    for tool in ("sh", "rm", "cat", "printf"):
+        real = next((p for p in (f"/bin/{tool}", f"/usr/bin/{tool}") if os.path.exists(p)), None)
+        if real:
+            (bin_dir / tool).symlink_to(real)
+
+    def fake(name, body):
+        f = bin_dir / name
+        f.write_text("#!/bin/sh\n" + body, encoding="utf-8"); f.chmod(0o755)
+    fake("systemctl", f'echo "systemctl $*" >> {log}\n'
+                      'case "$*" in *avahi-daemon*) exit "${AVAHI_RC:-0}" ;; esac\nexit 0\n')
+    fake("apt-get", f'echo "apt-get $*" >> {log}\nexit "${{APT_RC:-0}}"\n')
+    fake("nft", "exit 1\n")
+    dns_d = tmp_path / "dnsmasq.d"; dns_d.mkdir()
+    return bin_dir, log, fake, dns_d
+
+
+def _helpers(script: str) -> str:
+    """say и run — как в скрипте: run печатает и исполняет через sh -c."""
+    start = script.index("\nsay()  {") + 1
+    return script[start:script.index("\n}\n", script.index("\nrun()  {", start)) + 3]
+
+
+def _peer_block(script: str) -> str:
+    sec = script.split("    write_lan_scripts\n", 1)[1]
+    return sec.split('    if [ "$_dn_changed" = "1" ]', 1)[0]
+
+
+def _run_peer_block(script, tmp_path, *, peers: str, avahi_rc="0", browse=False, apt_rc="0"):
+    bin_dir, log, fake, dns_d = _svc_host(tmp_path)
+    if browse:
+        fake("avahi-browse", "exit 0\n")
+    conf = dns_d / "awg-gw-peer-services.conf"
+    conf.write_text("local=/awg.internal/\n", encoding="utf-8")
+    prog = (_helpers(script) + f'\nMODE=apply\nPEER_SVC_CONF="{conf}"\nPEER_HOME_NETS="{peers}"\n'
+            "_dn_changed=0\n" + _peer_block(script) + '\necho "dn_changed=$_dn_changed"\n')
+    r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
+                       env={"PATH": str(bin_dir), "AVAHI_RC": avahi_rc, "APT_RC": apt_rc})
+    return r, log.read_text(), conf
+
+
+def test_without_peer_subnets_the_services_file_is_removed_and_dnsmasq_restarted(script, tmp_path):
+    """Доступ между подсетями выключили и перевыпустили конфигурацию: записи
+    соседей снимаются обвязкой, а не висят в Finder до следующего канала."""
+    r, log, conf = _run_peer_block(script, tmp_path, peers="")
+    assert r.returncode == 0, r.stderr
+    assert not conf.exists(), "записи соседей пережили выключение доступа между подсетями"
+    assert "dn_changed=1" in r.stdout, "файл снят, а dnsmasq не перезапускается"
+    assert "apt-get" not in log, "без соседей avahi-utils не нужен"
+
+
+def test_avahi_utils_is_installed_only_next_to_a_running_avahi_daemon(script, tmp_path):
+    r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24")
+    assert r.returncode == 0, r.stderr
+    apt = [ln for ln in log.splitlines() if ln.startswith("apt-get")]
+    assert len(apt) == 1 and apt[0].endswith(" avahi-utils"), apt
+    assert "avahi-daemon" not in apt[0], "демон не ставим: он начал бы объявлять саму малину"
+    assert conf.exists(), "при соседях файл записей снят обвязкой"
+    assert "dn_changed=0" in r.stdout
+
+
+@pytest.mark.parametrize("avahi_rc,browse", [("3", False), ("0", True)])
+def test_avahi_utils_is_not_installed_without_the_daemon_or_when_present(script, tmp_path, avahi_rc, browse):
+    """Демона нет — ставить утилиту незачем (в мониторе ⚪); утилита уже есть —
+    apt не трогаем: OMV держит свой apt, и лишний вызов ждёт его блокировку."""
+    r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24", avahi_rc=avahi_rc, browse=browse)
+    assert r.returncode == 0, r.stderr
+    assert "apt-get" not in log, log
+
+
+def test_a_failed_avahi_utils_install_does_not_fail_the_section(script, tmp_path):
+    """apt упал — остальное работает: раздел 5 не роняет юнит в цикл рестартов."""
+    r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24", apt_rc="100")
+    assert r.returncode == 0 and "dn_changed=0" in r.stdout, (r.returncode, r.stdout, r.stderr)
+    assert "avahi-utils не установился" in r.stdout
+
+
+def test_the_daemon_itself_is_never_installed(script):
+    installs = [ln for ln in script.splitlines() if "apt-get install" in ln]
+    assert installs and not any("avahi-daemon" in ln for ln in installs), installs
+
+
+def test_lan_remove_takes_the_services_file_and_helper_with_it(script, tmp_path):
+    """Выключение режима и --rollback снимают всё своё: файл записей соседей
+    остался бы в conf-dir, и dnsmasq продолжил бы отдавать соседские серверы."""
+    bin_dir, log, fake, dns_d = _svc_host(tmp_path)
+    for f in ("awg-gw-base.conf", "awg-gw-peer-services.conf"):
+        (dns_d / f).write_text("x\n", encoding="utf-8")
+    sbin = tmp_path / "sbin"; sbin.mkdir()
+    helper = sbin / "awg-lan-services.sh"; helper.write_text("#!/bin/sh\n", encoding="utf-8")
+    fn = re.search(r"^lan_remove\(\) \{.*?^\}$", script, re.S | re.M).group(0)
+    t = tmp_path
+    prog = (_helpers(script) + f'\nMODE=apply\nDNSMASQ_D="{dns_d}"\nLAN_DUMP="{t}/dump"\n'
+            f'DNSMASQ_OVR="{t}/none.conf"\nDNSMASQ_MARK="{t}/none.mark"\nHOME_TABLE="inet awg_home"\n'
+            f'HOME_FILE="{t}/home.nft"\nLAN_SYSCTL="{t}/sysctl.conf"\nLAN_LISTS="{sbin}/awg-lan-lists.sh"\n'
+            f'LAN_DOMAIN="{sbin}/awg-lan-domain.sh"\nLAN_SERVICES="{helper}"\n' + fn + "\nlan_remove\n")
+    r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True, env={"PATH": str(bin_dir)})
+    assert r.returncode == 0, r.stderr
+    assert not (dns_d / "awg-gw-peer-services.conf").exists(), "файл записей соседей пережил снятие"
+    assert not helper.exists(), "помощник сервисов пережил снятие"
+    assert "systemctl restart dnsmasq" in (tmp_path / "log").read_text()

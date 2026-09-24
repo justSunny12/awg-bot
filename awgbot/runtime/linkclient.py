@@ -40,7 +40,7 @@ import random
 import subprocess
 
 from awgbot.core import config
-from awgbot.domain import gwsnapshot
+from awgbot.domain import gwservices, gwsnapshot
 from awgbot.util import gwlink
 
 log = logging.getLogger(__name__)
@@ -139,10 +139,15 @@ class LinkClient:
             # _writer до ответа сервера не выставляем: снимок из тика или poke
             # ушёл бы без нонса сервера, и тот оборвал бы сессию.
             lists_hash = await asyncio.to_thread(self.services.lan_feeds_applied_hash)
+            # отпечаток применённых записей соседей — сервер не повезёт то же самое
+            svc_hash = await asyncio.to_thread(
+                getattr(self.services, "services_applied_hash", lambda: ""))
             self._seq += 1
+            self._svc_sent = None
             hello = gwlink.pack(self._channel_key(), "hello",
                                 {"proto": gwlink.PROTO, "agent": config.INSTALLED_VERSION,
-                                 "lists_hash": lists_hash, "nonce": gwlink.nonce_b64(self._cn)},
+                                 "lists_hash": lists_hash, "svc_hash": svc_hash,
+                                 "nonce": gwlink.nonce_b64(self._cn)},
                                 seq=self._seq, pad=gwlink.PAD_DELTA)
             writer.write(hello)
             await writer.drain()
@@ -161,6 +166,7 @@ class LinkClient:
             self._set_online(True)
             await self._handle(msg)
             await self.push(full=True)
+            await self.push_services(force=True)
             await self._maybe_claim()
             while True:
                 try:
@@ -297,6 +303,33 @@ class LinkClient:
         self._parts = {}
         return whole
 
+    async def push_services(self, *, force: bool = False) -> bool:
+        """Сервисы этой сети — серверу (концепт «сервисы соседних сетей»): при
+        подключении целиком, дальше только при изменении своего списка."""
+        if self._writer is None:
+            return False
+        get = getattr(self.services, "services_local", None)
+        if get is None:
+            return False
+        items = await asyncio.to_thread(get)
+        digest = gwservices.feed_hash(items)
+        if not force and digest == self._svc_sent:
+            return False
+        self._svc_sent = digest
+        return await self._send("svc", {"items": items}, pad=gwlink.PAD_SNAP)
+
+    async def _apply_peer_services(self, msg: dict) -> None:
+        apply = getattr(self.services, "apply_peer_services", None)
+        if apply is None:
+            return
+        digest = str(msg.get("hash") or "")[:64]
+        items = msg.get("items") if isinstance(msg.get("items"), list) else []
+        result = await asyncio.to_thread(apply, digest, items[:gwservices.MAX_PEER * 2])
+        await self._send("peer_svc_ack", {"ok": bool(result.get("ok")), "hash": digest,
+                                          "n": int(result.get("n") or 0),
+                                          "error": str(result.get("error") or "")[:300]},
+                         pad=gwlink.PAD_DELTA)
+
     async def _apply_lists(self, digest: str, z: str) -> None:
         result = await asyncio.to_thread(self.services.apply_lan_feeds, digest, z)
         await self._send("lists_ack", {"ok": bool(result.get("ok")), "hash": digest,
@@ -346,6 +379,9 @@ class LinkClient:
             return
         if msg.get("t") == "lists":
             await self._apply_lists(str(msg.get("hash") or "")[:64], str(msg.get("z") or ""))
+            return
+        if msg.get("t") == "peer_svc":
+            await self._apply_peer_services(msg)
             return
         log.info("канал линка: с ВПС пришло неизвестное «%s» — игнорирую", msg.get("t"))
 
@@ -442,11 +478,26 @@ async def on_tick(services) -> None:
 async def poke(services) -> None:
     """После операции из чата агента (бандл, мастер восстановления): поднять
     клиента, если бандл только что включил канал, и сразу отправить дельту —
-    человек ждёт результата на ВПС сейчас, а не через тик."""
+    человек ждёт результата на ВПС сейчас, а не через тик. Заодно — внеочередной
+    обзор сервисов: бандл мог включить или выключить доступ между подсетями."""
     client = ensure(services)
     if client is not None:
         with contextlib.suppress(Exception):
             await client.push()
+    with contextlib.suppress(Exception):
+        await services_changed(services)
+
+
+async def services_changed(services) -> None:
+    """Задача обзора (концепт «сервисы соседних сетей»): изменился свой список
+    — отправить серверу, если канал жив; нет — уйдёт целиком при подключении."""
+    scan = getattr(services, "services_scan", None)
+    if scan is None:
+        return
+    changed = await asyncio.to_thread(scan)
+    client = _client
+    if changed and client is not None and client._writer is not None:
+        await client.push_services(force=True)
 
 
 async def shutdown() -> None:
