@@ -758,6 +758,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     _SVC_LOCAL_KEY = "gw_svc_local"          # свой список после обзора, JSON
     _SVC_PEER_KEY = "gw_peer_svc"            # применённый чужой: {"hash", "items"}
     _SVC_PEER_ERR_KEY = "gw_peer_svc_err"    # последняя ошибка применения
+    _SVC_PENDING_KEY = "gw_peer_svc_pending" # не применённое из-за обвязки: {"hash","items"} — повтор
     _SVC_MISSES = 3                          # обзоров подряд без сервиса — снимаем
 
     def services_active(self) -> bool:
@@ -846,9 +847,16 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             return self._svc_store(digest, clean_items, True, "")
         if not os.path.exists(gwguard.LAN_SERVICES_SCRIPT):
             # обновление агента положило новую обвязку, но юнит её не запускал:
-            # помощник допишет реассерт (как при пропавшей таблице awg_home)
-            self._reassert_throttled("помощника сервисов соседей нет")
-            return self._svc_store(digest, [], False, "помощника сервисов нет — обвязка перевыставляется")
+            # помощник допишет реассерт (как при пропавшей таблице awg_home).
+            # Сервер второй раз за сессию не пришлёт — присланное храним и
+            # применяем сами: сразу после реассерта или на ближайшем тике
+            fixed = self._reassert_throttled("помощника сервисов соседей нет")
+            if not (fixed and os.path.exists(gwguard.LAN_SERVICES_SCRIPT)):
+                self.db.set_state(self._SVC_PENDING_KEY,
+                                  json.dumps({"hash": digest, "items": clean_items}, ensure_ascii=False))
+                return self._svc_store(digest, [], False,
+                                       "помощника сервисов нет — обвязка перевыставляется"
+                                       if fixed else "помощника сервисов нет — обвязка перевыставится в ближайшие минуты")
         if not text:
             ok, tail = gwguard.run_lan_services("")
         else:
@@ -863,8 +871,33 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             if ok:
                 self.db.set_state(self._SVC_PEER_KEY,
                                   json.dumps({"hash": digest, "items": items}, ensure_ascii=False))
+                self.db.set_state(self._SVC_PENDING_KEY, "")
             self.db.set_state(self._SVC_PEER_ERR_KEY, err)
         return {"ok": ok, "error": err, "n": len(items)}
+
+    def services_retry(self) -> dict | None:
+        """Повтор отложенного применения (помощника не было): помощник появился
+        — применить то, что прислал сервер; None — повторять нечего. Итог
+        уходит серверу как peer_svc_ack, он его ждёт с тем же отпечатком."""
+        from awgbot.infra import gwguard
+        raw = self.db.get_state(self._SVC_PENDING_KEY) or ""
+        if not raw or not os.path.exists(gwguard.LAN_SERVICES_SCRIPT):
+            return None
+        try:
+            pending = json.loads(raw)
+        except json.JSONDecodeError:
+            self.db.set_state(self._SVC_PENDING_KEY, "")
+            return None
+        if not isinstance(pending, dict):
+            self.db.set_state(self._SVC_PENDING_KEY, "")
+            return None
+        digest = str(pending.get("hash") or "")
+        result = self.apply_peer_services(digest, pending.get("items") or [])
+        if not result.get("ok") and (self.db.get_state(self._SVC_PENDING_KEY) or "") == raw:
+            # тот же отказ, не про помощника — второй раз не пробуем
+            self.db.set_state(self._SVC_PENDING_KEY, "")
+        result["hash"] = digest
+        return result
 
     def services_status(self) -> tuple[dict, list[GwCheck]]:
         """(блок панели, проверки группы «svc»): проверки видны в мониторе, но

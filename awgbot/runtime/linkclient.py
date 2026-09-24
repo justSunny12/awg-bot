@@ -330,6 +330,21 @@ class LinkClient:
                                           "error": str(result.get("error") or "")[:300]},
                          pad=gwlink.PAD_DELTA)
 
+    async def retry_peer_services(self) -> bool:
+        """Отложенное применение записей соседей (помощника не было): помощник
+        появился — применить и отчитаться серверу тем же отпечатком."""
+        retry = getattr(self.services, "services_retry", None)
+        if retry is None or self._writer is None:
+            return False
+        result = await asyncio.to_thread(retry)
+        if not result:
+            return False
+        return await self._send("peer_svc_ack", {"ok": bool(result.get("ok")),
+                                                 "hash": str(result.get("hash") or "")[:64],
+                                                 "n": int(result.get("n") or 0),
+                                                 "error": str(result.get("error") or "")[:300]},
+                                pad=gwlink.PAD_DELTA)
+
     async def _apply_lists(self, digest: str, z: str) -> None:
         result = await asyncio.to_thread(self.services.apply_lan_feeds, digest, z)
         await self._send("lists_ack", {"ok": bool(result.get("ok")), "hash": digest,
@@ -473,6 +488,8 @@ async def on_tick(services) -> None:
                 client._writer.close()
             return
     await client.push()
+    with contextlib.suppress(Exception):
+        await client.retry_peer_services()
 
 
 async def poke(services) -> None:
