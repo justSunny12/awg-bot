@@ -176,9 +176,9 @@ async def test_agent_panel_and_lan_screen_name_neighbour_servers(gw_svc, fake_bo
     соседа экранировано. Абзац экрана учит, как дойти по имени."""
     _peer(gw_svc, ["naspi5", "backup", "Time Machine", "<b>x</b>", "media"])
     panel, panel_labels, lan, lan_labels = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    assert "сервисы соседей: 5 SMB — naspi5, backup, Time Machine и ещё 2" in panel, panel
+    assert "сервисы соседей: 5 SMB — naspi5, backup, time machine и ещё 2" in panel, panel
     assert "свои сервисы для соседей: нет" in panel
-    assert "Сервисы соседей: 5 SMB — naspi5, backup, Time Machine и ещё 2. На Mac они видны в Finder" in lan
+    assert "Сервисы соседей: 5 SMB — naspi5, backup, time machine и ещё 2. На Mac они видны в Finder" in lan
     assert "<code>smb://naspi5.awg.internal</code>" in lan
     _peer(gw_svc, ["<b>x</b>"])
     panel, *_ = await _agent_screens(gw_svc, fake_bot, monkeypatch)

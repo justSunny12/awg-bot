@@ -155,7 +155,8 @@ def gateway_health(st) -> str:
 
 def _svc_names(names: list) -> str:
     """«naspi5, backup и ещё 2» — имена с малины соседа, экранированные."""
-    names = [str(n) for n in names if n]
+    # в нижнем регистре — так их отдаёт dnsmasq и показывает Finder
+    names = [str(n).lower() for n in names if n]
     shown = ", ".join(_e(n) for n in names[:3])
     more = len(names) - 3
     return shown + (f" и ещё {more}" if more > 0 else "")

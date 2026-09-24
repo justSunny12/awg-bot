@@ -912,12 +912,14 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         info["own"] = [r.get("n", "") for r in own]
         info["browse"] = shutil.which("avahi-browse") is not None
         info["avahi"] = gwguard.avahi_active()
-        if not info["browse"]:
-            checks.append(GwCheck("обзор сервисов", None,
-                                  "нет avahi-browse (пакет avahi-utils): 🔧 Мастер восстановления"))
-        elif info["avahi"] is False:
+        # сначала демон: без него обвязка avahi-utils не ставит, и совет про
+        # мастер восстановления на малине без NAS был бы пустым
+        if info["avahi"] is False:
             checks.append(GwCheck("обзор сервисов", None,
                                   "avahi-daemon не запущен: SMB-серверы этой сети соседям не видны"))
+        elif not info["browse"]:
+            checks.append(GwCheck("обзор сервисов", None,
+                                  "нет avahi-browse (пакет avahi-utils): 🔧 Мастер восстановления"))
         else:
             checks.append(GwCheck("обзор сервисов", True, f"{len(own)} SMB в этой сети"))
         peer = self.services_peer()

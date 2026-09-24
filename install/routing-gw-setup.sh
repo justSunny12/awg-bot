@@ -808,7 +808,7 @@ if [ "$MODE" = "plan" ]; then
     say "  0. шлюзовое устройство: ${GATEWAY_PUBKEY:+помечен, конфиг аплинка ставится машине с тем же ключом}${GATEWAY_PUBKEY:-не помечен}"
     say "  4. юнит awg-link-gw.service"
     say "  5. локальная сеть без VPN: ${LAN_MODE:-0} (подсети: ${HOME_SUBNETS:-—}; резолвер: ${RESOLVER:-запасной через аплинк})"
-    say "     сервисы соседних сетей (SMB в Finder через awg.internal): $([ -n "${PEER_HOME_NETS:-}" ] && [ "${LAN_MODE:-0}" = "1" ] && echo включены || echo нет)"
+    say "     сервисы соседних сетей (SMB в Finder через awg.internal): $([ -n "${PEER_HOME_NETS:-}" ] && [ "${LAN_MODE:-0}" = "1" ] && [ "${LINK_CHANNEL:-0}" = "1" ] && echo включены || echo нет)"
     say "     локальные подсети других шлюзов (транзит из линка): ${PEER_HOME_NETS:-—}"
     exit 0
 fi
