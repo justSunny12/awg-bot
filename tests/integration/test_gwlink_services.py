@@ -517,3 +517,68 @@ async def test_an_old_server_skips_svc_and_the_session_lives_on(pair, real_agent
     assert s.gwlink_services(1) == [], "старый сервер не должен был ничего сохранить"
     assert s.gwlink_snapshot(1), "снимок не дошёл"
 
+
+
+# ── отложенное применение: помощник появился после peer_svc ─────────────────
+
+async def test_records_refused_for_a_missing_helper_reach_dnsmasq_on_the_next_tick(pair, real_agent, monkeypatch):
+    """Агент обновился, юнит обвязки ещё не перезапускался — помощника нет,
+    `peer_svc` получил отказ. Сервер в этой сессии второй раз не пришлёт: на
+    ближайшем тике, когда помощник уже на месте, агент применяет сохранённое
+    сам и отвечает `peer_svc_ack` ok тем же отпечатком. Сервер считает его
+    своим, карточка — «опубликованы на шлюзе», повторной доставки нет.
+
+    Цена ошибки: Finder соседней сети пуст до переподключения канала (дни), а
+    карточка на ВПС висит «шлюз не принял» при исправной обвязке."""
+    from awgbot.bot.texts.routing import services_line
+    s = pair.services
+    acks: list[dict] = []
+    real_ack = s.gwlink_peer_services_ack_in
+    monkeypatch.setattr(s, "gwlink_peer_services_ack_in", lambda slot, body: acks.append(body) or real_ack(slot, body))
+    monkeypatch.setattr(config, "ROLE", "gateway")
+    _x_known(s)
+    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_NETS,
+                                      "LINK_CHANNEL": "1"})
+    agent._last_reassert = -1e9                        # троттлинг реассерта не держит
+    helper = gwguard.LAN_SERVICES_SCRIPT
+    monkeypatch.setattr(gwguard, "LAN_SERVICES_SCRIPT", helper + ".ещё-нет")
+    reasserts: list[int] = []
+    monkeypatch.setattr(gwguard, "unit_state", lambda: {"ActiveState": "active"})
+    monkeypatch.setattr(gwguard, "reassert", lambda timeout=90: reasserts.append(1) or (True, ""))
+    await _up(pair, client, 2)
+    assert await _until(lambda: acks, timeout=5), "на peer_svc агент не ответил"
+    assert acks[0]["ok"] is False and acks[0]["hash"] == H_NAS, acks
+    assert "помощника сервисов нет" in acks[0]["error"], acks
+    assert len(reasserts) == 1, "без помощника обвязку не перевыставили"
+    assert not host.conf.exists() and host.restarts() == 0
+    assert pair.srv._sessions[2].svc_have != H_NAS
+    assert s.gwlink_services_card(s.db.gateway(2))["state"] == "failed"
+    peer_svc_before = pair.sent.count((2, "peer_svc"))
+    assert peer_svc_before == 1
+
+    # тик без помощника — ни применения, ни лишнего ack
+    await linkclient.on_tick(agent)
+    await asyncio.sleep(0.3)
+    assert len(acks) == 1, f"тик без помощника отправил серверу {acks[1:]}"
+
+    # юнит отработал — помощник на месте; следующий тик монитора
+    monkeypatch.setattr(gwguard, "LAN_SERVICES_SCRIPT", helper)
+    await linkclient.on_tick(agent)
+    assert await _until(lambda: len(acks) == 2, timeout=5), "после появления помощника итог не ушёл серверу"
+    assert acks[1]["ok"] is True and acks[1]["hash"] == H_NAS and acks[1]["n"] == 1, acks[1]
+    assert "host-record=naspi5.awg.internal,192.168.1.10" in host.conf.read_text(encoding="utf-8")
+    assert host.restarts() == 1
+    assert pair.srv._sessions[2].svc_have == H_NAS, "сервер не признал записи применёнными"
+    card = s.gwlink_services_card(s.db.gateway(2))
+    assert card["state"] == "applied", card
+    assert services_line(card).endswith("опубликованы на шлюзе"), services_line(card)
+    assert agent.services_applied_hash() == H_NAS
+
+    # дальше тишина: ни повторной доставки с ВПС, ни повторного ack с малины
+    for _ in range(3):
+        await pair.srv.deliver_all()
+        await linkclient.on_tick(agent)
+    await asyncio.sleep(0.3)
+    assert pair.sent.count((2, "peer_svc")) == peer_svc_before, "сервер повторно отвёз те же записи"
+    assert len(acks) == 2, f"агент повторил ack: {acks[2:]}"
+    assert host.restarts() == 1, "повтор перезапустил dnsmasq соседней сети"

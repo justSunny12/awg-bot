@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import random
+import time
 
 import pytest
 
@@ -323,3 +324,190 @@ def test_without_peer_access_the_scan_does_not_touch_mdns_and_clears_the_list(ag
     assert lan.browses == n, "обзор mDNS без доступа между подсетями"
     lan.env.update(PEER_HOME_NETS="192.168.1.0/24", LINK_CHANNEL="")
     assert agent.services_scan() is False and lan.browses == n, "без канала обзор не нужен"
+
+
+# ── отложенное применение записей соседей (помощника ещё нет) ───────────────
+#
+# Обновление агента положило новую обвязку, а юнит её ещё не перезапускал:
+# помощника awg-lan-services.sh на диске нет. Сервер второй раз за сессию
+# записи не пришлёт — агент обязан сохранить присланное и применить сам, как
+# только помощник появится. Иначе Finder в соседней сети пуст до следующего
+# переподключения канала, а карточка на ВПС навсегда «шлюз не принял».
+
+class _Peer:
+    """Получатель записей соседей: юнит (режим, подсети), помощник на диске
+    (`helper_there`), что отвечает помощник (`rc_ok`, `tail`), реассерт юнита
+    обвязки. Помощник «ставит» файл: копирует присланный в dnsmasq.d."""
+
+    def __init__(self, tmp_path, monkeypatch):
+        self.env = {"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24",
+                    "PEER_HOME_NETS": "192.168.1.0/24", "LINK_CHANNEL": "1"}
+        self.helper = tmp_path / "awg-lan-services.sh"
+        self.conf = tmp_path / "dnsmasq.d" / gs.CONF_NAME
+        self.conf.parent.mkdir()
+        self.rc_ok, self.tail = True, ""
+        self.runs: list[str] = []
+        self.reasserts = 0
+        self.reassert_ok = True
+        monkeypatch.setattr(gwguard, "unit_env", lambda k: self.env.get(k, ""))
+        monkeypatch.setattr(gwguard, "lan_mode", lambda: self.env.get("LAN_MODE") == "1")
+        monkeypatch.setattr(gwguard, "LAN_SERVICES_SCRIPT", str(self.helper))
+        monkeypatch.setattr(gwguard, "PEER_SERVICES_CONF", str(self.conf))
+        monkeypatch.setattr(gwguard, "PEER_SERVICES_NEW", str(tmp_path / "lib" / "peer-services.conf.new"))
+        monkeypatch.setattr(gwguard, "run_lan_services", self._run)
+        monkeypatch.setattr(gwguard, "reassert", self._reassert)
+        monkeypatch.setattr(gwguard, "unit_state", lambda: {"ActiveState": "active"})
+
+    def _run(self, path: str = "", timeout: int = 90):
+        self.runs.append(path)
+        if not self.helper.exists():
+            return False, "помощника сервисов нет — обвязка старого образца"
+        if not self.rc_ok:
+            return False, self.tail
+        if path:
+            self.conf.write_text(open(path, encoding="utf-8").read(), encoding="utf-8")
+        elif self.conf.exists():
+            self.conf.unlink()
+        return True, ""
+
+    def _reassert(self, timeout: int = 90):
+        self.reasserts += 1
+        return self.reassert_ok, "" if self.reassert_ok else "юнит не поднялся"
+
+    def appear(self) -> None:
+        self.helper.write_text("#!/bin/sh\n", encoding="utf-8")
+
+
+NAS = _rec(n="NASPi5", h="naspi5", a="192.168.1.10")
+H_NAS = gs.feed_hash([NAS])
+
+
+@pytest.fixture()
+def peer(tmp_path, monkeypatch):
+    return _Peer(tmp_path, monkeypatch)
+
+
+def _pending(agent) -> str:
+    return agent.db.get_state(GatewayServices._SVC_PENDING_KEY) or ""
+
+
+def _throttle(agent) -> None:
+    """Реассерт был только что — следующий отложен троттлингом на 10 минут."""
+    agent._last_reassert = time.monotonic()
+
+
+def test_without_the_helper_and_a_throttled_reassert_the_records_wait(agent, peer):
+    """Помощника нет, реассерт отложен троттлингом: агент отвечает отказом,
+    честно говорящим «перевыставится», файла dnsmasq не трогает, а присланное
+    хранит — ровно тем отпечатком, который ждёт сервер."""
+    _throttle(agent)
+    res = agent.apply_peer_services(H_NAS, [NAS])
+    assert res["ok"] is False and res["n"] == 0, res
+    assert res["error"] == "помощника сервисов нет — обвязка перевыставится в ближайшие минуты", res
+    assert peer.reasserts == 0, "троттлинг реассерта не сработал"
+    assert peer.runs == [] and not peer.conf.exists(), "без помощника тронули dnsmasq"
+    assert json.loads(_pending(agent)) == {"hash": H_NAS, "items": [NAS]}, (
+        "присланное сервером не сохранено — до переподключения его никто не повторит")
+    assert agent.services_applied_hash() == "", "отказ записан как применённое"
+    assert agent.services_retry() is None, "помощника всё ещё нет — повторять нечего"
+    assert json.loads(_pending(agent))["hash"] == H_NAS, "пустой повтор съел отложенное"
+
+
+def test_a_reassert_that_did_not_bring_the_helper_keeps_the_records_pending(agent, peer):
+    """Реассерт прошёл, но помощник не появился (юнит ещё не дописал файл):
+    отказ «перевыставляется», присланное ждёт повтора."""
+    agent._last_reassert = time.monotonic() - 3600     # прошлый реассерт давно
+    res = agent.apply_peer_services(H_NAS, [NAS])
+    assert peer.reasserts == 1
+    assert res["ok"] is False and res["error"] == "помощника сервисов нет — обвязка перевыставляется", res
+    assert json.loads(_pending(agent))["hash"] == H_NAS
+    assert not peer.conf.exists()
+
+
+def test_the_helper_that_appeared_later_gets_the_records_on_retry(agent, peer):
+    """Помощник появился (юнит отработал на тике) — повтор ставит ровно то,
+    что прислал сервер, и возвращает тот же отпечаток: по нему сервер
+    перестаёт считать слот «не принявшим». Второй повтор — ничего."""
+    _throttle(agent)
+    agent.apply_peer_services(H_NAS, [NAS])
+    peer.appear()
+    res = agent.services_retry()
+    assert res is not None, "появившийся помощник не получил отложенное"
+    assert res["ok"] is True and res["n"] == 1 and res["hash"] == H_NAS, res
+    assert "host-record=naspi5.awg.internal,192.168.1.10" in peer.conf.read_text(encoding="utf-8")
+    assert _pending(agent) == "", "применённое осталось в очереди повтора"
+    assert agent.services_applied_hash() == H_NAS, "в hello уйдёт старый отпечаток — сервер пришлёт снова"
+    assert agent.db.get_state(GatewayServices._SVC_PEER_ERR_KEY) == "", "ошибка про помощника не снята"
+    runs = len(peer.runs)
+    assert agent.services_retry() is None, "повтор после успеха снова что-то применил"
+    assert len(peer.runs) == runs
+
+
+def test_a_reassert_that_brought_the_helper_applies_at_once(agent, peer, monkeypatch):
+    """Реассерт прошёл и помощник на месте — записи ставятся тем же вызовом,
+    без очереди и без отказа серверу."""
+    def reassert(why):
+        peer.appear()
+        return True
+    monkeypatch.setattr(agent, "_reassert_throttled", reassert)
+    res = agent.apply_peer_services(H_NAS, [NAS])
+    assert res["ok"] is True and res["n"] == 1 and res["error"] == "", res
+    assert peer.conf.exists(), "записи не поставлены сразу после реассерта"
+    assert _pending(agent) == "", "применённое сразу легло ещё и в очередь повтора"
+    assert agent.services_applied_hash() == H_NAS
+    assert agent.services_retry() is None
+
+
+def test_a_refusal_that_is_not_about_the_helper_is_not_retried(agent, peer):
+    """Помощник есть и отверг файл (dnsmasq --test, rc≠0) — повтор того же
+    файла дал бы тот же отказ и рестарт-попытку на каждом тике: в очередь не
+    кладём."""
+    peer.appear()
+    peer.rc_ok, peer.tail = False, "dnsmasq: bad option at line 3"
+    res = agent.apply_peer_services(H_NAS, [NAS])
+    assert res["ok"] is False and res["error"] == "dnsmasq: bad option at line 3", res
+    assert _pending(agent) == "", "отказ не про помощника попал в очередь повтора"
+    runs = len(peer.runs)
+    assert agent.services_retry() is None
+    assert len(peer.runs) == runs, "повтор без очереди звал помощника"
+
+
+def test_a_pending_record_the_helper_then_refuses_is_dropped_after_one_try(agent, peer):
+    """Отложили из-за помощника, он появился — и отверг файл. Итог уходит
+    серверу один раз (с отпечатком), дальше повторять нечего: каждый тик иначе
+    — попытка рестарта dnsmasq соседней сети."""
+    _throttle(agent)
+    agent.apply_peer_services(H_NAS, [NAS])
+    peer.appear()
+    peer.rc_ok, peer.tail = False, "rc=1"
+    res = agent.services_retry()
+    assert res is not None and res["ok"] is False and res["hash"] == H_NAS, res
+    assert _pending(agent) == "", "тот же отказ остался в очереди — повтор на каждом тике"
+    runs = len(peer.runs)
+    assert agent.services_retry() is None and len(peer.runs) == runs
+
+
+def test_a_newer_successful_delivery_drops_the_stale_pending(agent, peer):
+    """Отложили список A, а потом сервер прислал B и тот встал: повтор не
+    должен откатить сеть к устаревшему A."""
+    _throttle(agent)
+    agent.apply_peer_services(H_NAS, [NAS])
+    peer.appear()
+    other = _rec(n="backup", h="backup", a="192.168.1.20")
+    h_other = gs.feed_hash([other])
+    assert agent.apply_peer_services(h_other, [other])["ok"] is True
+    assert _pending(agent) == ""
+    assert agent.services_retry() is None, "повтор вернул устаревший список"
+    assert "192.168.1.20" in peer.conf.read_text(encoding="utf-8")
+    assert agent.services_applied_hash() == h_other
+
+
+@pytest.mark.parametrize("raw", ["{не json", "[1, 2]", '"строка"'])
+def test_a_broken_pending_record_is_dropped_quietly(agent, peer, raw):
+    """Битая запись очереди (оборванная запись, чужой формат) — снять и
+    ничего не применять: не падать на каждом тике."""
+    peer.appear()
+    agent.db.set_state(GatewayServices._SVC_PENDING_KEY, raw)
+    assert agent.services_retry() is None
+    assert _pending(agent) == "", "битая запись осталась — разбор на каждом тике"
+    assert peer.runs == [], "из битой записи что-то применили"
