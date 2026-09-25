@@ -36,10 +36,8 @@ def _with_rf(line: str, rf, link: str = "", bot_username: str = "") -> str:
     списке профилей подпись кликабельна, флаг — часть ссылки)."""
     if not rf:
         return line
-    tail = rf_line(*rf)
-    if link:
-        tail = tail.replace(f"🇷🇺 {ROUTING_NAME}", _deep_link(bot_username, link, f"🇷🇺 {ROUTING_NAME}"), 1)
-    return line + "\n" + tail
+    label = _deep_link(bot_username, link, f"🇷🇺 {ROUTING_NAME}") if link else ""
+    return line + "\n" + rf_line(*rf, label=label)
 
 
 def traffic_profiles_text(rows, bot_username: str = "", total: tuple[int, int] = (0, 0)) -> str:
@@ -56,7 +54,7 @@ def traffic_profiles_text(rows, bot_username: str = "", total: tuple[int, int] =
 
 
 def rf_profiles_text(data: dict, bot_username: str = "") -> str:
-    """РФ-доступ за месяц по профилям (концепт «учёт РФ-трафика», этап 2):
+    """РФ-доступ за месяц по профилям (концепт «учёт РФ-трафика»):
     итог сервера, строки профилей (от большего к меньшему) ссылками на
     разбивку по устройствам, «вне профилей» — когда сумма строк не сходится
     с итогом на величину, которую видно."""
@@ -144,10 +142,8 @@ def rf_traffic_line(rf: dict, bot_username: str = "") -> str:
     через шлюзы (концепт «учёт РФ-трафика»); подпись — deep-link на экран
     РФ-доступа по профилям."""
     rx, tx = int(rf.get("rx") or 0), int(rf.get("tx") or 0)
-    # тот же вид, что rf_line в карточках и списках, но подпись — ссылкой
-    # (флаг — часть ссылки, вычитка 3.1.0)
-    line = rf_line(rx, tx).replace(f"🇷🇺 {ROUTING_NAME}",
-                                   _deep_link(bot_username, RF_PAYLOAD, f"🇷🇺 {ROUTING_NAME}"), 1)
+    # тот же вид, что rf_line в карточках и списках, подпись — ссылкой
+    line = rf_line(rx, tx, label=_deep_link(bot_username, RF_PAYLOAD, f"🇷🇺 {ROUTING_NAME}"))
     if rf.get("error"):
         line += " · ⚠️ учёт трафика РФ-доступа не идёт"
     return line

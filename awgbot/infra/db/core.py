@@ -118,6 +118,19 @@ class DatabaseCore:
             self._hot_state[key] = row["value"] if row else None
         return row["value"] if row else None
 
+    def get_state_json(self, key: str, default):
+        """Ключ state как JSON того же типа, что default (dict или list);
+        пусто, мусор или другой тип — default. Дефолт не разделяется между
+        вызовами: возвращается копия."""
+        import json
+        try:
+            data = json.loads(self.get_state(key) or "null")
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, type(default)) and not isinstance(data, bool):
+            return data
+        return type(default)(default)
+
     @property
     def commits(self) -> int:
         """Сколько транзакций закоммичено этим экземпляром (для тестов и

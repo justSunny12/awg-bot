@@ -55,8 +55,9 @@ class _Calls(list):
         self.fps: list[str] = []
 
 
-def _applied_state(services, slot: int = 1) -> str:
-    return services.db.get_state(services._gwlink_key(services._GWLINK_APPLIED_KEY, slot)) or ""
+def _applied_state(services, slot: int = 1) -> dict:
+    """Итог применения в state слота: JSON {ok, at, fp, agent_at, error}; нет — {}."""
+    return services.db.get_state_json(services._gwlink_key(services._GWLINK_APPLIED_KEY, slot), {})
 
 
 async def _hello(srv) -> _chan._Gw:
@@ -122,13 +123,14 @@ async def test_a_report_from_an_old_agent_without_fingerprint_is_shown(link, ser
 
 async def test_a_success_report_is_stored_and_shown_once(link, services, hook):
     """Главный путь: шлюз сказал «применено» — крючок получает слот и успех
-    ровно один раз, в state слота — отметка «ok» со временем."""
+    ровно один раз, в state слота — успех со временем приёма."""
     gw = await _hello(link)
     await gw.send("applied", {"ok": True, "error": ""})
     assert await _until(lambda: hook), "крючок итога не вызван"
     await asyncio.sleep(0.1)
     assert hook == [(1, True, "")], f"итог показан не так или не один раз: {hook}"
-    assert _applied_state(services).startswith("ok "), _applied_state(services)
+    st = _applied_state(services)
+    assert st.get("ok") is True and st.get("at") and st.get("error") == "", st
     await gw.close()
 
 
@@ -144,7 +146,7 @@ async def test_a_failure_report_carries_its_reason_in_one_short_line(link, servi
     assert error.startswith("скрипт упал: нет места x") and "\n" not in error and "\t" not in error, error
     assert len(error) <= 300, f"причина длиной {len(error)} прошла в чат целиком"
     st = _applied_state(services)
-    assert st.startswith("fail ") and "скрипт упал: нет места" in st, st
+    assert st.get("ok") is False and st.get("error") == error, f"в state не та причина: {st}"
     await gw.close()
 
 
@@ -164,7 +166,7 @@ async def test_a_failing_hook_does_not_break_the_session(link, services, monkeyp
     await gw.send("snap", {**SNAP, "rev": 1})
     assert await _until(lambda: services.gwlink_snapshot(1)), "после упавшего крючка снимок не принят"
     assert link.online(1), "упавший крючок порвал сессию"
-    assert _applied_state(services).startswith("ok ")
+    assert _applied_state(services).get("ok") is True, _applied_state(services)
     await gw.close()
 
 
@@ -175,10 +177,25 @@ async def test_without_a_hook_the_report_is_only_stored(link, services, monkeypa
     gw = await _hello(link)
     await gw.send("applied", {"ok": False, "error": "нет"})
     assert await _until(lambda: _applied_state(services)), "итог без крючка не записан"
-    assert _applied_state(services).startswith("fail ") and _applied_state(services).endswith(" нет")
+    st = _applied_state(services)
+    assert st.get("ok") is False and st.get("error") == "нет", st
     await gw.send("snap", {**SNAP, "rev": 1})
     assert await _until(lambda: services.gwlink_snapshot(1)) and link.online(1)
     await gw.close()
+
+
+def test_a_result_in_the_old_text_format_does_not_break_the_next_report(link, services):
+    """После обновления сервера в state слота лежит прежняя строка «ok <время>»:
+    следующий итог принимается как новый (не повтор) и ложится уже JSON — а
+    не роняет приём исключением разбора."""
+    key = services._gwlink_key(services._GWLINK_APPLIED_KEY, 1)
+    services.db.set_state(key, "ok 2026-09-20T10:00:00+03:00")
+    got = services.gwlink_applied_in(1, {"ok": False, "error": "нет", "fp": FP, "at": AT})
+    assert got["dup"] is False, "итог после старого формата принят за повтор — админ его не увидит"
+    assert _applied_state(services) == {**_applied_state(services), "ok": False, "fp": FP,
+                                        "agent_at": AT, "error": "нет"}, _applied_state(services)
+    again = services.gwlink_applied_in(1, {"ok": False, "error": "нет", "fp": FP, "at": AT})
+    assert again["dup"] is True, "повтор того же итога (fp и время агента) не распознан"
 
 
 def test_forgetting_a_slot_clears_its_result_and_file_record(link, services):
@@ -188,7 +205,9 @@ def test_forgetting_a_slot_clears_its_result_and_file_record(link, services):
     services.gw_bundle_msg_set(1, config.ADMIN_ID, 501, 500)
     assert _applied_state(services) and services.gw_bundle_msg_get(1)
     services.gwlink_forget(1)
-    assert _applied_state(services) == "", "итог пережил снятие слота"
+    assert _applied_state(services) == {}, "итог пережил снятие слота"
+    assert services.db.get_state(services._gwlink_key(services._GWLINK_APPLIED_KEY, 1)) in (None, ""), \
+        "ключ итога остался в state"
     assert services.gw_bundle_msg_get(1) == {}, "запись о файле пережила снятие слота"
 
 
@@ -336,3 +355,23 @@ async def test_an_ack_for_another_result_leaves_the_queue_alone(link, services, 
     assert pi.applied_pending_get().get("fp") == FP, "подтверждение прежнего применения вычистило новое"
     await client._applied_acked({"t": "applied_ack", "fp": FP, "at": at})
     assert pi.applied_pending_get() == {}
+
+
+@pytest.mark.parametrize("at", ["", "не дата", None])
+def test_a_queued_result_without_a_readable_time_counts_as_expired(tmp_path, at):
+    """Итог в очереди без читаемого времени (обрезанная запись, чужой формат):
+    считается просроченным, а не вечно свежим — иначе агент слал бы его при
+    каждом подключении, а сервер показывал бы админу давно неактуальный итог."""
+    import json
+    db = Database(tmp_path / "gw.db"); db.init_schema()
+    try:
+        pi = GatewayServices(db)
+        pi.applied_pending_set(True, "", FP)
+        assert pi.applied_pending_get().get("fp") == FP, "свежий итог не читается — сцена не та"
+        body = {"ok": True, "error": "", "fp": FP}
+        if at is not None:
+            body["at"] = at
+        db.set_state(pi._APPLIED_PENDING_KEY, json.dumps(body))
+        assert pi.applied_pending_get() == {}, "итог без времени принят за свежий"
+    finally:
+        db.close()

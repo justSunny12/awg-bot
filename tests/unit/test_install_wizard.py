@@ -344,3 +344,16 @@ def test_gateway_install_finish_line_matches_how_the_admin_was_identified(script
     tail = body.split("cleanup_delivery", 1)[1]
     assert 'if [[ "$from_bundle" -eq 1 ]]' in tail
     assert "напиши /start" in tail and "напишет сам" in tail
+
+
+def test_install_from_the_bundle_leaves_the_first_start_marker_where_the_agent_looks(script):
+    """Установка по файлу первого применения оставляет метку рядом с базой
+    агента: по ней первый запуск говорит серверу «установлен», даже если база
+    от прежней установки уцелела. Разойдись имя или каталог — метку никто не
+    увидит, а файл с ключом линка так и провисит в чате сервера."""
+    from awgbot.runtime import main
+    body = script.split('if [[ "$role" == "gateway" ]]; then', 1)[1].split("\n    fi\n", 1)[0]
+    ok_branch = body.split("if gw_bundle_secrets", 1)[1].split("else", 1)[0]
+    assert f': > "$DATA_DIR/{main.FRESH_INSTALL_MARKER}"' in ok_branch, ok_branch
+    assert 'DATA_DIR="/var/lib/awg-bot"' in script
+    assert "Environment=AWG_BOT_DATA_DIR=$DATA_DIR" in script, "база агента — не в том каталоге, где метка"

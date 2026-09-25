@@ -454,3 +454,23 @@ def test_delta_on_counter_drop_is_the_current_value():
 def test_delta_on_growth_is_the_difference():
     assert rfacct.delta("boot:42", "boot:42", 1000, 1500) == 500
     assert rfacct.delta("boot:42", "boot:42", 1500, 1500) == 0
+
+
+def test_the_expected_rule_count_is_what_the_static_part_writes():
+    """RULES — сколько правил опрос ждёт в цепочке: меньше или больше, чем
+    пишет render_static, — и таблица переписывалась бы на каждом опросе, а
+    `awg-bot doctor` вечно жёлтый «ждём N»."""
+    assert len(_rules(rfacct.render_static(["awglink"], ["10.8.1.0/24"]))) == rfacct.RULES
+    assert len(_rules(rfacct.render_static(["awglink", "awglink2"], ["10.8.1.0/24"]))) == rfacct.RULES
+
+
+@pytest.mark.parametrize("name,want", [
+    ("d12_up", True), ("d1_up", True),
+    ("d12_dn", False), (rfacct.COUNTER_UP, False), (rfacct.COUNTER_DN, False), ("x12_up", False),
+])
+def test_a_device_counter_is_told_apart_by_name(name, want):
+    """Счётчик устройства — пара d<ID>_up/d<ID>_dn, считаем по _up: итоговые
+    rf_up/rf_dn устройствами не считаются (doctor не пишет «+2 устройства»)."""
+    assert rfacct.is_device_counter(name) is want
+    if want:
+        assert name == rfacct.counter_names(int(name[1:-3]))[0]

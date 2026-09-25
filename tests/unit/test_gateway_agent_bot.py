@@ -151,3 +151,50 @@ async def test_revoked_token_still_stops_the_agent(agent):
     with pytest.raises(preflight.PreflightError):
         await main.run_gateway()
     assert getattr(agent.services, "bot_username", "") == "", "отказ по токену оставил имя бота"
+
+
+# ── первый запуск после установки: база или метка установщика ────────────────
+
+def _record_first_start(monkeypatch) -> list[bool]:
+    seen: list[bool] = []
+    monkeypatch.setattr(gateway_mod.GatewayServices, "first_start_note", lambda self, fresh: seen.append(fresh))
+    return seen
+
+
+def _old_db(tmp_path) -> None:
+    from awgbot.infra.db import Database
+    d = Database(str(tmp_path / "gw.db")); d.init_schema(); d.close()
+
+
+async def test_a_reinstall_over_a_kept_database_still_counts_as_the_first_start(agent, monkeypatch, tmp_path):
+    """Переустановка агента поверх уцелевшей базы (файл первого применения):
+    база есть, но установщик оставил метку — серверу уходит «установлен», и
+    файл с ключом линка убирается из чата. Метка снимается: следующий запуск
+    — обычный."""
+    seen = _record_first_start(monkeypatch)
+    _old_db(tmp_path)
+    marker = tmp_path / main.FRESH_INSTALL_MARKER
+    marker.write_text("", encoding="utf-8")
+    await agent.start()
+    assert seen == [True], f"переустановка поверх базы не сочтена первым запуском: {seen}"
+    assert not marker.exists(), "метка первого запуска осталась — «установлен» уйдёт и после перезапуска"
+    agent.services.db.close()
+    agent.services = None
+    agent.getme_calls = 0
+    # перезапуск процесса: роутеры модуля снова свободны
+    from awgbot.bot import paging
+    from awgbot.bot.handlers import gateway as gateway_handlers
+    for r in (paging.router, gateway_handlers.router):
+        monkeypatch.setattr(r, "_parent_router", None)
+    await agent.start()
+    assert seen == [True, False], f"второй запуск после снятой метки сочтён первым: {seen}"
+
+
+@pytest.mark.parametrize("db_exists,want", [(False, True), (True, False)])
+async def test_without_the_marker_the_first_start_is_decided_by_the_database(agent, monkeypatch, tmp_path,
+                                                                             db_exists, want):
+    seen = _record_first_start(monkeypatch)
+    if db_exists:
+        _old_db(tmp_path)
+    await agent.start()
+    assert seen == [want], seen

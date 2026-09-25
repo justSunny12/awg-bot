@@ -220,11 +220,30 @@ async def test_without_a_channel_the_edit_waits_and_the_result_says_when_it_leav
 
 @pytest.mark.parametrize("word,channel", [("уже в списке", "1"), ("добавлен", "0")])
 async def test_no_tail_when_nothing_changed_or_nothing_is_shared(gw, host, fake_bot, monkeypatch, word, channel):
-    _synced(gw, host, {"a.com": "vpn"})
+    # «уже в списке» — домен действительно уже есть: файлы после правки те же
+    _synced(gw, host, {"a.com": "vpn", **({"example.com": "vpn"} if word == "уже в списке" else {})})
     host.env["LINK_CHANNEL"] = channel
     _add_via_script(gw, host, monkeypatch, out_word=word)
     result = await _type_domain(gw, fake_bot, "lan_add", "example.com")
     assert result == f"✅ example.com: {word}", result
+
+
+async def test_already_listed_gives_no_tail_but_still_sends_earlier_unsent_edits(
+        gw, host, fake_bot, monkeypatch, tmp_path):
+    """Правка руками лежит неотправленной (канала не было), человек добавляет
+    кнопкой домен, который уже в списке: хвоста «синхронизируются» нет — этой
+    кнопкой ничего не поменялось, — но накопленное уходит серверу тем же
+    нажатием, а не ждёт тика."""
+    _synced(gw, host, {"a.com": "vpn"})
+    host.write(vpn=["a.com", "b.com"])
+    assert gw.own_reconcile() is True, "правка руками не нашлась"
+    assert gw.own_unsent(), "правка без канала должна лежать неотправленной"
+    wire = _online(gw, monkeypatch, tmp_path)
+    _add_via_script(gw, host, monkeypatch, out_word="уже в списке")
+    result = await _type_domain(gw, fake_bot, "lan_add", "b.com")
+    assert result == "✅ b.com: уже в списке", f"хвост без новых правок: {result!r}"
+    msgs = wire.messages(gwlink.channel_key(PRIV))
+    assert [e[1:3] for m in msgs for e in m["ev"]] == [["b.com", "vpn"]], f"неотправленное не ушло: {msgs}"
 
 
 async def test_removing_by_button_answers_with_the_sync_tail(gw, host, fake_bot, monkeypatch, tmp_path):
@@ -348,6 +367,36 @@ async def test_the_own_lists_note_is_closed_by_exactly_one_empty_line(services, 
     if peer_access:
         after = text.splitlines()[text.splitlines().index(LAN_ON) + 4]
         assert after.startswith("↔️"), text
+
+
+async def test_the_overlap_warning_is_also_separated_from_the_own_lists_note(services, slots, fake_bot,
+                                                                            monkeypatch):
+    """Подсети слотов пересекаются, доступа между подсетями нет: под строкой
+    судьбы своих списков сразу идёт «⚠️ … пересекается…». Между ними — ровно
+    одна пустая строка; без неё два предупреждения слипаются в одно."""
+    store = _peer_conf(monkeypatch)
+    _two_lan_slots(services, slots)
+    services.gateway_set_home_subnets(2, "192.168.1.0/24")
+    store["app.routing.peer_nets.enabled"] = False
+    text, _ = await _card(services, fake_bot, 2)
+    assert _own_block(text)[1], f"строки судьбы нет — проверять нечего: {text}"
+    lines = text.splitlines()
+    i = lines.index(LAN_ON) + 2
+    assert lines[i + 1] == "" and "пересекается" in lines[i + 2], \
+        f"между строкой судьбы и предупреждением о пересечении не одна пустая строка:\n{text}"
+
+
+async def test_the_own_lists_line_is_not_drawn_when_sync_is_off(services, slots, fake_bot, monkeypatch):
+    """Карточка отдала «off» (синхронизация у слота не действует): строки
+    «📋 Свои списки» с нулями нет, и пустая строка под ней не появляется."""
+    store = _peer_conf(monkeypatch)
+    _two_lan_slots(services, slots)
+    store["app.routing.peer_nets.enabled"] = True
+    monkeypatch.setattr(services, "gwlink_own_card", lambda gw: {"vpn": 0, "ru": 0, "state": "off", "error": ""})
+    text, _ = await _card(services, fake_bot, 2)
+    assert "📋" not in text, text
+    lines = text.splitlines()
+    assert lines[lines.index(LAN_ON) + 1].startswith("↔️"), f"под режимом без VPN лишняя строка:\n{text}"
 
 
 async def test_applied_own_lists_are_followed_by_peer_access_without_a_gap(services, slots, fake_bot,

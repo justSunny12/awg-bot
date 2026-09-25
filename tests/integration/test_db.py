@@ -277,3 +277,34 @@ def test_rf_migration_from_v300_schema_is_idempotent_and_zeroed(tmp_path):
     fresh = [d for d in db.list_all_devices() if d.name == "Ноут"][0]
     assert (fresh.rf_rx_month, fresh.rf_tx_month) == (0, 0), "строка старого кода без умолчания РФ"
     db.close()
+
+
+@pytest.mark.parametrize("raw,default,want", [
+    (None, {}, {}),
+    ("", [], []),
+    ('{"a": 1}', {}, {"a": 1}),
+    ("[1, 2]", [], [1, 2]),
+    ("{не json", {}, {}),
+    ("[1, 2]", {}, {}),                 # другой тип — дефолт, а не список вместо словаря
+    ('{"a": 1}', [], []),
+    ("true", {}, {}),
+    ('"строка"', [], []),
+    ("ok 2026-09-20T10:00:00+03:00", {}, {}),   # строка прежнего формата в ключе
+])
+def test_get_state_json_returns_the_default_type_for_anything_else(db, raw, default, want):
+    """Ключи state с JSON читаются одним способом: пусто, мусор, строка
+    прежнего формата или чужой тип — дефолт того же типа, без исключения
+    в хендлере или цикле канала."""
+    if raw is not None:
+        db.set_state("probe_json", raw)
+    got = db.get_state_json("probe_json", default)
+    assert got == want and type(got) is type(default), got
+
+
+def test_get_state_json_does_not_share_the_default(db):
+    """Дефолт не разделяется: правка возвращённого пустого словаря не должна
+    стать «значением по умолчанию» для следующего вызова."""
+    default = {}
+    got = db.get_state_json("probe_missing", default)
+    got["x"] = 1
+    assert default == {} and db.get_state_json("probe_missing", default) == {}

@@ -144,8 +144,7 @@ def _total(services):
 
 def test_first_poll_creates_table_and_counts_nothing_yet(services, kernel, dump, make_active_client):
     """Первый опрос после обновления: таблицы нет — синхронизация её создаёт,
-    месяц не трогается. Начало учёта — с первого прочитанного показания
-    (следующий такт), см. test_since_is_written_once."""
+    месяц не трогается; второй такт читает базу, байтов ещё нет."""
     c = make_active_client(tg_id=9100)
     d = _dev(services, c)
     services.poll_traffic()
@@ -155,7 +154,6 @@ def test_first_poll_creates_table_and_counts_nothing_yet(services, kernel, dump,
     assert _total(services) == (0, 0) and _rf(services, d.id) == (0, 0)
     assert services.db.get_state("rf_acct_error") in (None, "")
     services.poll_traffic()
-    assert services.db.get_state("rf_acct_since"), "начало учёта не отмечено"
     assert _total(services) == (0, 0)
 
 
@@ -305,7 +303,7 @@ def test_no_links_means_no_accounting_at_all(services, kernel, dump, make_active
     services.poll_traffic()
     assert kernel.reads == 0 and kernel.syncs == []
     assert services.db.get_device(d.id).traffic_rx_month == 50
-    for key in ("rf_acct_gen", "rf_acct_since", "rf_acct_error", "rf_total_sample"):
+    for key in ("rf_acct_gen", "rf_acct_error", "rf_total_sample"):
         assert not services.db.get_state(key), f"{key} заведён без учёта"
 
 
@@ -358,27 +356,6 @@ def test_sync_failure_marks_error_but_reading_still_counts(services, kernel, dum
     services.poll_traffic()
     assert _total(services) == (3, 4) and _rf(services, d.id) == (3, 4)
     assert "nft -c" in services.db.get_state("rf_acct_error")
-
-
-def test_since_is_written_once(services, kernel, dump, make_active_client, monkeypatch):
-    """«Учёт — с DD.MM» — момент первого удачного опроса, а не последнего."""
-    make_active_client(tg_id=9111)
-    t0 = timeutil.now()
-    monkeypatch.setattr(timeutil, "now", lambda: t0)
-    services.poll_traffic(); services.poll_traffic()
-    first = services.db.get_state("rf_acct_since")
-    assert first
-    monkeypatch.setattr(timeutil, "now", lambda: t0 + datetime.timedelta(days=3))
-    services.poll_traffic()
-    assert services.db.get_state("rf_acct_since") == first
-
-
-def test_since_is_not_written_while_the_table_cannot_be_read(services, kernel, dump,
-                                                             make_active_client):
-    make_active_client(tg_id=9112)
-    kernel.read_error = kernel.sync_error = "nft не найден"
-    services.poll_traffic()
-    assert not services.db.get_state("rf_acct_since"), "учёт «начался», не прочитав ни одного счётчика"
 
 
 # ── месяц ────────────────────────────────────────────────────────────────────
@@ -452,7 +429,7 @@ def test_profile_rf_sums_devices_without_gateways(services, make_active_client):
     o = _dev(services, other, "O")
     services.db.gateway_add(gw.id, "awglink", 443, "10.99.99.0/30")
     services.db.rf_add_bulk([(a.id, 1, 2), (b.id, 10, 20), (gw.id, 1000, 1000), (o.id, 5, 5)])
-    assert services.db.get_client_rf(c.id) == {"rx": 11, "tx": 22}
+    assert services.db.get_client_rf(c.id) == (11, 22)
     by = services.db.rf_by_client()
     assert by[c.id] == (11, 22) and by[other.id] == (5, 5)
-    assert services.db.get_total_month_rf() == {"rx": 1016, "tx": 1027}
+    assert services.db.get_total_month_rf() == (1016, 1027)

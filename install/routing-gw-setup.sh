@@ -40,9 +40,10 @@
 #      наборы чистятся) и
 #      awg-lan-services.sh (записи сервисов соседних сетей для dnsmasq —
 #      концепт «сервисы соседних сетей»: SMB-серверы сети другого шлюза видны
-#      в Finder через домен обзора awg.internal; при PEER_HOME_NETS и живом
-#      avahi-daemon ставится avahi-utils для обзора своей сети; PEER_HOME_NETS
-#      пуст — файл awg-gw-peer-services.conf снимается).
+#      в Finder через домен обзора awg.internal; при PEER_HOME_NETS,
+#      LINK_CHANNEL=1 и живом avahi-daemon ставится avahi-utils для обзора
+#      своей сети — после apt-get update; PEER_HOME_NETS пуст — файл
+#      awg-gw-peer-services.conf снимается).
 #      awg-lan-services.sh <файл> ставит записи, собранные агентом из данных
 #      канала: каждая строка — по белому списку шаблонов (LINE_RES в
 #      awgbot/domain/gwservices.py), dnsmasq --test, рестарт с откатом, та же
@@ -50,9 +51,15 @@
 #      awg-lan-lists.sh с AWG_LAN_FROM=<каталог> фиды не качает, а берёт
 #      готовыми (domains.lst, nets.lst) — их привозит канал линка в
 #      /var/lib/awg-gw/feed; в lists.status тогда source=channel, иначе net.
+#      Скрипты awg-lan-*.sh пишутся во временный файл и подменяются mv:
+#      запущенный экземпляр дочитывает свой прежний inode. Копии для отката
+#      конфигов dnsmasq все три держат в /var/lib/awg-gw/rollback, НЕ в
+#      conf-dir: Debian читает оттуда всё, кроме .dpkg-*, и копия грузилась бы
+#      вместе с новым файлом.
 #      Таблица пишется БЕЗ delete table: наборы наполняет dnsmasq на лету, и
 #      реассерт обязан их сохранить — пересобираются только цепочки. Ручной
-#      слой прежней схемы переезжает в /var/lib/awg-gw/migrated. Личные
+#      слой прежней схемы переезжает в /var/lib/awg-gw/migrated — туда же
+#      хвосты conf-dir *.bak, *.tmp и *.prev.awg прежних версий. Личные
 #      списки при снятии уходят в /var/lib/awg-gw/restore (туда же их
 #      откладывает awg-bot restore, пока режим не применён), и следующее
 #      включение берёт их оттуда; нет — пустые заготовки. Занят :53
@@ -63,13 +70,15 @@
 #      выключенный хук resolvconf Debian (если он в юните). apt — с
 #      DPkg::Lock::Timeout=120 (OMV может держать dpkg) и force-confdef/confold
 #      (терминала у юнита нет). awg-lan-lists.sh — один запуск за раз: ждёт
-#      блокировку до 120 с, не дождался — код 75 «занято».
+#      блокировку до 120 с, не дождался — код 75 «занято» (агент ждёт скрипты
+#      списков и записей SMB 150 с — LAN_SCRIPT_TIMEOUT в gwguard.py).
 #
 # ЧЕГО НЕ ДЕЛАЕТ: не трогает существующие интерфейсы, прежнюю ручную схему
 # маршрутизации и чужие правила iptables (docker и т.п.) — они работают как
 # работали (исключение — ACCEPT из п.3a). Политика INPUT для локальной сети
 # остаётся accept. avahi-daemon не ставит (он начал бы объявлять малину) —
-# только avahi-utils рядом с уже запущенным демоном. /etc/default/dnsmasq не трогает: прежняя строка
+# только avahi-utils рядом с уже запущенным демоном и только при канале линка.
+# /etc/default/dnsmasq не трогает: прежняя строка
 # DNSMASQ_EXCEPT=lo глушила 127.0.0.1 (except-interface=lo), а файл, созданный
 # до пакета, ронял dpkg; свою строку прежних выпусков — убирает.
 #
@@ -307,8 +316,8 @@ lan_iface_for() {              # $1 = подсеть a.b.c.d/n → «iface addr�
 }
 lan_remove() {                 # снять всё своё; личные списки — в $LAN_DUMP/restore (данные человека)
     _changed=0
-    for _f in awg-gw-base.conf awg-gw-doh.conf awg-gw-vpn-feed.conf awg-gw-peer-services.conf; do
-        [ -f "$DNSMASQ_D/$_f" ] && { run "rm -f $DNSMASQ_D/$_f"; _changed=1; }
+    for _f in "$DNSMASQ_D/awg-gw-base.conf" "$DNSMASQ_D/awg-gw-doh.conf" "$DNSMASQ_D/awg-gw-vpn-feed.conf" "$PEER_SVC_CONF"; do
+        [ -f "$_f" ] && { run "rm -f $_f"; _changed=1; }
     done
     # личные списки — данные человека: не в архив с датой, а в restore/, откуда
     # следующее включение режима (или awg-bot restore) вернёт их на место
@@ -366,14 +375,16 @@ lan_migrate_manual() {         # ручной слой (концепт «лок�
         _moved="$_moved user-managed.conf→awg-gw-vpn-user.conf"
     fi
     # хвосты в conf-dir, которые dnsmasq тоже прочитает: .bak/.tmp прежних версий
-    for _f in "$DNSMASQ_D"/*.bak "$DNSMASQ_D"/*.tmp; do
+    for _f in "$DNSMASQ_D"/*.bak "$DNSMASQ_D"/*.tmp "$DNSMASQ_D"/*.prev.awg; do
         [ -f "$_f" ] && { park "$_f"; _moved="$_moved $(basename "$_f")"; }
     done
     [ -n "$_moved" ] && say "  ручной слой перенесён:$_moved (снятые файлы — в $LAN_OLD)"
     return 0
 }
 write_lan_scripts() {          # скрипты списков — из этого же файла, чтобы бандл был самодостаточен
-cat > "$LAN_LISTS" <<'LISTSEOF'
+    # каждый — во временный файл и mv: работающий экземпляр (dash читает по
+    # 8 КБ, скрипты длиннее) дочитывает свой прежний inode, а не новый текст
+cat > "$LAN_LISTS.new" <<'LISTSEOF'
 #!/bin/sh
 # awg-lan-lists.sh — списки локальной сети без VPN (концепт «локальная сеть» §3.3).
 # Зовёт агент по расписанию (с джиттером), `awg-bot lan update` и агент же, когда
@@ -383,7 +394,7 @@ cat > "$LAN_LISTS" <<'LISTSEOF'
 # линка», этап 3), и адрес квартиры тогда не ходит за ними ни на GitHub, ни в
 # Google. Проверки те же, что для скачанного: формат, длина, dnsmasq --test
 # (с conf-dir, как у init-скрипта Debian); отказ --test или рестарта dnsmasq —
-# откат прежнего фида и rc=1.
+# откат прежнего фида и rc=1. Копия для отката — $DUMP/rollback/vpn-feed.conf.prev.
 # Один запуск за раз: ждём блокировку lists.lock до 120 с, не дождались —
 # выход 75 («занято»), не успех: иначе фиды из канала пропали бы молча.
 #   фид доменов  → /etc/dnsmasq.d/awg-gw-vpn-feed.conf (nftset= в lan_vpn4), минус исключения
@@ -395,7 +406,7 @@ set -u
 TABLE="inet awg_home"
 D="${AWG_DNSMASQ_D:-/etc/dnsmasq.d}"
 FEED="$D/awg-gw-vpn-feed.conf"; RU="$D/awg-gw-ru-user.conf"
-DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"
+DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"; RB="$DUMP/rollback"
 mkdir -p "$DUMP"
 # один запуск за раз: кнопка «Обновить» и задача агента могут совпасть, а два
 # параллельных — двойная запись фида и двойной рестарт dnsmasq
@@ -444,22 +455,23 @@ if get_domains && [ -s "$TMP" ]; then
         echo "домены: фид подозрительно короткий — не применяю" >&2; rc=1
     # дифф-скип: рестарт роняет кэш всей сети, а список меняется не каждые 6 ч
     elif ! cmp -s "$TMP" "$FEED"; then
-        [ -f "$FEED" ] && cp -p "$FEED" "$FEED.prev.awg" 2>/dev/null || true
+        # копия для отката — вне conf-dir: оттуда dnsmasq читает всё, кроме .dpkg-*
+        mkdir -p "$RB"; [ -f "$FEED" ] && cp -p "$FEED" "$RB/vpn-feed.conf.prev" 2>/dev/null || true
         install -m 644 "$TMP" "$FEED"
         # conf-dir Debian подключает ключом из init-скрипта (CONFIG_DIR в
         # /etc/default/dnsmasq), и голый --test наш фид не видел вовсе
         if dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; then
             # именно restart: SIGHUP конфиги не перечитывает; отказ — откат фида
             if systemctl restart dnsmasq; then
-                rm -f "$FEED.prev.awg"; feed_ok=1
+                rm -f "$RB/vpn-feed.conf.prev"; feed_ok=1
             else
                 echo "домены: dnsmasq не поднялся с новым фидом — откатываю" >&2; rc=1
-                if [ -f "$FEED.prev.awg" ]; then mv -f "$FEED.prev.awg" "$FEED"; else rm -f "$FEED"; fi
+                if [ -f "$RB/vpn-feed.conf.prev" ]; then mv -f "$RB/vpn-feed.conf.prev" "$FEED"; else rm -f "$FEED"; fi
                 systemctl restart dnsmasq || true
             fi
         else
             echo "домены: dnsmasq --test отверг новый фид — откатываю" >&2; rc=1
-            if [ -f "$FEED.prev.awg" ]; then mv -f "$FEED.prev.awg" "$FEED"; else rm -f "$FEED"; fi
+            if [ -f "$RB/vpn-feed.conf.prev" ]; then mv -f "$RB/vpn-feed.conf.prev" "$FEED"; else rm -f "$FEED"; fi
         fi
     else
         feed_ok=1
@@ -506,8 +518,8 @@ printf 'updated_at=%s\ndomains=%s\nnets=%s\nrc=%s\nsource=%s\n' "$(date -Isecond
     "$([ -n "$FROM" ] && echo channel || echo net)" > "$DUMP/lists.status"
 exit $rc
 LISTSEOF
-chmod 0755 "$LAN_LISTS"
-cat > "$LAN_DOMAIN" <<'DOMEOF'
+chmod 0755 "$LAN_LISTS.new" && mv -f "$LAN_LISTS.new" "$LAN_LISTS"
+cat > "$LAN_DOMAIN.new" <<'DOMEOF'
 #!/bin/sh
 # awg-lan-domain.sh — свои списки локальной сети без VPN (концепт «локальная
 # сеть» §3.3; концепт «синхронизация своих списков», этап 1).
@@ -528,13 +540,14 @@ cat > "$LAN_DOMAIN" <<'DOMEOF'
 # уходит и из набора lan_ru4 (flush + dig оставшихся: набор маленький и
 # наполняется только отсюда); ушедший из «в туннель» вынимается из lan_vpn4 по
 # адресам dig, ошибки глушатся (адрес мог слиться в интервал или принадлежать
-# домену фида). Правило домена — DOMAIN_RE (зона буквами или punycode «xn--»);
+# домену фида). Копии для отката обоих файлов и фида — $DUMP/rollback/<имя>.prev.
+# Правило домена — DOMAIN_RE (зона буквами или punycode «xn--»);
 # то же правило применит сервер AWG к общему списку (этап 2 синхронизации).
 # awg-lan-domain: sync
 set -u
 D="${AWG_DNSMASQ_D:-/etc/dnsmasq.d}"
 VPN="$D/awg-gw-vpn-user.conf"; RU="$D/awg-gw-ru-user.conf"; FEED="$D/awg-gw-vpn-feed.conf"
-DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"; SRC="$DUMP/vpn-feed.src"
+DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"; SRC="$DUMP/vpn-feed.src"; RB="$DUMP/rollback"
 TABLE="inet awg_home"
 DOMAIN_RE='([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})'
 # Аплинк — тот, что нашёл скрипт обвязки (UPLINK_IF в статусе): на машине с
@@ -564,7 +577,7 @@ if command -v flock >/dev/null 2>&1 && ! flock -w 120 9; then echo "обновл
 TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT
 deny="$(sed -n 's/^Endpoint *= *\([^:]*\):.*/\1/p' "$UPLINK_CONF" 2>/dev/null | head -n1 | tr 'A-Z' 'a-z')"
 valid() { [ "${#1}" -le 253 ] && [ "$(printf '%s' "$1" | grep -c '')" -le 1 ] && printf '%s' "$1" | grep -Eq "^$DOMAIN_RE$"; }
-in_list() { printf '%s\n' "$2" | grep -qxF "$1"; }      # $1 домен, $2 список
+in_list() { grep -qxF "$1" "$TMPD/want_$2"; }             # $1 домен, $2 vpn|ru
 list_of "$VPN" > "$TMPD/before_vpn"; list_of "$RU" > "$TMPD/before_ru"
 cp "$TMPD/before_vpn" "$TMPD/want_vpn"; cp "$TMPD/before_ru" "$TMPD/want_ru"
 drop_from() { grep -vxF "$1" "$TMPD/want_$2" > "$TMPD/x" || true; mv "$TMPD/x" "$TMPD/want_$2"; }
@@ -591,7 +604,7 @@ else
         d="$(printf '%s' "$raw" | sed -E 's|^[a-zA-Z]+://||; s|/.*$||; s|^www\.||' | tr 'A-Z' 'a-z')"
         valid "$d" || { echo "$d: не похоже на домен, пропущен"; continue; }
         if [ "$cmd" = "del" ]; then
-            if in_list "$d" "$(cat "$TMPD/want_vpn")" || in_list "$d" "$(cat "$TMPD/want_ru")"; then
+            if in_list "$d" vpn || in_list "$d" ru; then
                 drop_from "$d" vpn; drop_from "$d" ru; say "$d: убран"
             else
                 echo "$d: в списках нет"
@@ -600,7 +613,7 @@ else
         fi
         [ -n "$deny" ] && [ "$d" = "$deny" ] && { echo "$d: это хост сервера — его добавить нельзя"; continue; }
         if [ "$cmd" = "add" ]; then k=vpn; other=ru; set_="lan_vpn4"; else k=ru; other=vpn; set_="lan_ru4"; fi
-        in_list "$d" "$(cat "$TMPD/want_$k")" && { echo "$d: уже в списке"; continue; }
+        in_list "$d" "$k" && { echo "$d: уже в списке"; continue; }
         drop_from "$d" "$other"; add_to "$d" "$k"
         added="$added $d:$set_"
         say "$d: добавлен"
@@ -615,7 +628,10 @@ fi
 sed 's|.*|nftset=/&/inet#awg_home#lan_vpn4|' "$TMPD/want_vpn" > "$TMPD/vpn.conf"
 sed 's|.*|nftset=/&/inet#awg_home#lan_ru4|' "$TMPD/want_ru" > "$TMPD/ru.conf"
 changed="$VPN $RU"
-for f in "$VPN" "$RU"; do cp -p "$f" "$f.prev.awg" 2>/dev/null || : > "$f.prev.awg"; done
+# копии для отката — вне conf-dir: оттуда dnsmasq читает всё, кроме .dpkg-*
+mkdir -p "$RB"
+prev() { printf '%s/%s.prev' "$RB" "$(basename "$1")"; }
+for f in "$VPN" "$RU"; do cp -p "$f" "$(prev "$f")" 2>/dev/null || : > "$(prev "$f")"; done
 install -m 644 "$TMPD/vpn.conf" "$VPN"; install -m 644 "$TMPD/ru.conf" "$RU"
 # ── фид доменов: исключения «напрямую» вычитаются заново по исходнику (тот же
 # awk, что в awg-lan-lists.sh); исходника нет — фид выправит ближайшая сборка
@@ -630,11 +646,11 @@ if [ -s "$SRC" ] && ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
           if (n) print out "/" $(NF) }' "$TMPD/ru_awk" "$SRC" \
         | grep -E '^(#.*|nftset=/[^/[:space:]]+(/[^/[:space:]]+)*/inet#awg_home#lan_vpn4)$' > "$TMPD/feed.conf" || true
     if [ -s "$TMPD/feed.conf" ] && ! cmp -s "$TMPD/feed.conf" "$FEED"; then
-        cp -p "$FEED" "$FEED.prev.awg" 2>/dev/null || : > "$FEED.prev.awg"
+        cp -p "$FEED" "$(prev "$FEED")" 2>/dev/null || : > "$(prev "$FEED")"
         install -m 644 "$TMPD/feed.conf" "$FEED"; changed="$changed $FEED"
     fi
 fi
-rollback() { for f in $changed; do mv -f "$f.prev.awg" "$f"; done; systemctl restart dnsmasq || true; }
+rollback() { for f in $changed; do mv -f "$(prev "$f")" "$f"; done; systemctl restart dnsmasq || true; }
 # conf-dir Debian подключает ключом из init-скрипта — голый --test файлы не видит
 if command -v dnsmasq >/dev/null 2>&1 && ! dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; then
     echo "dnsmasq --test отверг списки — откатываю" >&2; rollback; exit 1
@@ -642,22 +658,23 @@ fi
 if ! systemctl restart dnsmasq; then
     echo "dnsmasq не поднялся со своими списками — откатываю" >&2; rollback; exit 1
 fi
-for f in $changed; do rm -f "$f.prev.awg"; done
+for f in $changed; do rm -f "$(prev "$f")"; done
 cat "$TMPD/said"
 sleep 1
 # ── наборы nft
-resolve() { dig +short +time=3 @127.0.0.1 "$1" A 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; }
+resolve() { dig +short +time=3 +tries=1 @127.0.0.1 "$1" A 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; }
+set_op() {                     # set_op add|delete <набор> <домен> — адреса домена в набор / из набора
+    for ip in $(resolve "$3"); do nft "$1" element $TABLE "$2" "{ $ip }" 2>/dev/null || true; done
+}
 # ушедшие из «в туннель» — вынуть адреса (ошибки глушатся: интервал auto-merge, домен фида)
 grep -vxF -f "$TMPD/want_vpn" "$TMPD/before_vpn" 2>/dev/null | while read -r d; do
-    [ -n "$d" ] || continue
-    for ip in $(resolve "$d"); do nft delete element $TABLE lan_vpn4 "{ $ip }" 2>/dev/null || true; done
+    [ -n "$d" ] && set_op delete lan_vpn4 "$d"
 done
 # «напрямую» изменилось — набор целиком заново: он маленький и наполняется только отсюда
 if ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
     nft flush set $TABLE lan_ru4 2>/dev/null || true
     while read -r d; do
-        [ -n "$d" ] || continue
-        for ip in $(resolve "$d"); do nft add element $TABLE lan_ru4 "{ $ip }" 2>/dev/null || true; done
+        [ -n "$d" ] && set_op add lan_ru4 "$d"
     done < "$TMPD/want_ru"
 fi
 snapshot_vpn() {               # слепок набора грузится при старте: без него снятый адрес вернулся бы с загрузкой
@@ -670,8 +687,7 @@ if [ "$cmd" = "sync" ]; then
     grep -vxF -f "$TMPD/want_ru" "$TMPD/before_ru" 2>/dev/null | grep -vxF -f "$TMPD/want_vpn" | sed 's|^|− |'
     grep -vxF -f "$TMPD/want_vpn" "$TMPD/before_vpn" 2>/dev/null | grep -vxF -f "$TMPD/want_ru" | sed 's|^|− |'
     grep -vxF -f "$TMPD/before_vpn" "$TMPD/want_vpn" 2>/dev/null | while read -r d; do
-        [ -n "$d" ] || continue
-        for ip in $(resolve "$d"); do nft add element $TABLE lan_vpn4 "{ $ip }" 2>/dev/null || true; done
+        [ -n "$d" ] && set_op add lan_vpn4 "$d"
     done
     snapshot_vpn
     echo "свои списки: $(grep -c . "$TMPD/want_vpn") в туннель, $(grep -c . "$TMPD/want_ru") напрямую"
@@ -687,8 +703,8 @@ for pair in $added; do
 done
 snapshot_vpn
 DOMEOF
-chmod 0755 "$LAN_DOMAIN"
-cat > "$LAN_SERVICES" <<'SVCEOF'
+chmod 0755 "$LAN_DOMAIN.new" && mv -f "$LAN_DOMAIN.new" "$LAN_DOMAIN"
+cat > "$LAN_SERVICES.new" <<'SVCEOF'
 #!/bin/sh
 # awg-lan-services.sh — записи сервисов соседних сетей для dnsmasq (концепт
 # «сервисы соседних сетей»). Зовёт агент: с путём к файлу — установить, без
@@ -697,21 +713,22 @@ cat > "$LAN_SERVICES" <<'SVCEOF'
 # шаблонов (тот же список — LINE_RES в awgbot/domain/gwservices.py): ни
 # server=, ни address=, ни conf-file= сюда не пролезут. Дальше как у списков:
 # тот же файл — выход без рестарта; dnsmasq --test с conf-dir; рестарт; отказ —
-# откат прежнего файла и rc=1. Блокировка общая с awg-lan-lists.sh: двух
+# откат прежнего файла (копия — $DUMP/rollback/peer-services.conf.prev) и
+# rc=1. Блокировка общая с awg-lan-lists.sh: двух
 # рестартов dnsmasq разом не бывает. rc=2 — файл не прошёл проверку.
 set -u
 D="${AWG_DNSMASQ_D:-/etc/dnsmasq.d}"
 CONF="$D/awg-gw-peer-services.conf"
-DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"
+DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"; RB="$DUMP/rollback"; PREV="$RB/peer-services.conf.prev"
 DOMAIN='awg\.internal'
-mkdir -p "$DUMP"
+[ "$(id -u)" = "0" ] || { echo "нужен root" >&2; exit 1; }
+mkdir -p "$DUMP" "$RB"
 exec 9>"$DUMP/lists.lock"
 if command -v flock >/dev/null 2>&1 && ! flock -w 120 9; then echo "обновление списков или записей SMB ещё идёт" >&2; exit 75; fi
-[ "$(id -u)" = "0" ] || { echo "нужен root" >&2; exit 1; }
 # conf-dir Debian подключает ключом из init-скрипта — голый --test файл не видит
 test_conf() { dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; }
 restart_dnsmasq() { test_conf && systemctl restart dnsmasq; }
-rollback() { if [ -f "$CONF.prev.awg" ]; then mv -f "$CONF.prev.awg" "$CONF"; else rm -f "$CONF"; fi; }
+rollback() { if [ -f "$PREV" ]; then mv -f "$PREV" "$CONF"; else rm -f "$CONF"; fi; }
 if [ $# -eq 0 ]; then
     [ -f "$CONF" ] || exit 0
     rm -f "$CONF"
@@ -734,14 +751,15 @@ if grep -Ev -e '^#.*$' -e '^$' \
     echo "в файле записей есть строка вне белого списка — не применяю" >&2; exit 2
 fi
 if cmp -s "$SRC" "$CONF" 2>/dev/null; then echo "записи SMB подсетей других шлюзов без изменений"; exit 0; fi
-if [ -f "$CONF" ]; then cp -p "$CONF" "$CONF.prev.awg" 2>/dev/null || true; fi
+# копия для отката — вне conf-dir: оттуда dnsmasq читает всё, кроме .dpkg-*
+if [ -f "$CONF" ]; then cp -p "$CONF" "$PREV" 2>/dev/null || true; fi
 install -m 0644 "$SRC" "$CONF"
 if ! test_conf; then
     # демон с плохим файлом не перезапускался — откат без рестарта, кэш сети цел
     echo "dnsmasq --test отверг записи SMB — откатываю" >&2; rollback; exit 1
 fi
 if systemctl restart dnsmasq; then
-    rm -f "$CONF.prev.awg"
+    rm -f "$PREV"
     echo "записи SMB подсетей других шлюзов применены: $(grep -c '^srv-host=' "$CONF")"
     exit 0
 fi
@@ -750,7 +768,7 @@ rollback
 systemctl restart dnsmasq || true
 exit 1
 SVCEOF
-chmod 0755 "$LAN_SERVICES"
+chmod 0755 "$LAN_SERVICES.new" && mv -f "$LAN_SERVICES.new" "$LAN_SERVICES"
 }
 
 
@@ -1622,8 +1640,12 @@ HOMEEOF
     # сети — avahi-browse при живом avahi-daemon (сам демон не ставим: он начал
     # бы объявлять малину); соседей нет — записи соседей снять
     if [ -n "${PEER_HOME_NETS:-}" ]; then
-        if systemctl is-active --quiet avahi-daemon 2>/dev/null && ! command -v avahi-browse >/dev/null 2>&1; then
+        # без канала линка записи никуда не уедут — пакет не нужен; списки apt
+        # на малине могут быть старыми (404 на зеркале) — сначала update
+        if [ "${LINK_CHANNEL:-0}" = "1" ] && systemctl is-active --quiet avahi-daemon 2>/dev/null \
+                && ! command -v avahi-browse >/dev/null 2>&1; then
             say "  ставлю avahi-utils (обзор SMB-серверов этой подсети для подсетей других шлюзов)"
+            run "apt-get update -q >/dev/null 2>&1 || true"
             run "DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold avahi-utils" \
                 || say "  avahi-utils не установился — SMB-серверы этой подсети не видны из подсетей других шлюзов, остальное работает"
         fi

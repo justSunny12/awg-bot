@@ -22,8 +22,8 @@ def script() -> str:
 
 
 def _heredoc(script: str, var: str, tag: str) -> str:
-    """Тело `cat > "$VAR" <<'TAG' … TAG`."""
-    return script.split(f'cat > "${var}" <<\'{tag}\'\n', 1)[1].split(f"\n{tag}\n", 1)[0] + "\n"
+    """Тело `cat > "$VAR.new" <<'TAG' … TAG` (хелпер пишется во временный файл и mv)."""
+    return script.split(f'cat > "${var}.new" <<\'{tag}\'\n', 1)[1].split(f"\n{tag}\n", 1)[0] + "\n"
 
 
 def _fake(bin_dir: Path, name: str, body: str) -> None:
@@ -1551,3 +1551,197 @@ def test_the_busy_answer_reaches_the_agent_as_a_refusal(monkeypatch, tmp_path):
     stub.chmod(0o755)
     monkeypatch.setattr(gwguard, "LAN_DOMAIN_SCRIPT", str(stub))
     assert gwguard.run_lan_domain("ru", ["shop.ru"]) == (False, "обновление списков ещё идёт")
+
+
+# ── копии для отката — вне conf-dir ──────────────────────────────────────────
+# dnsmasq читает в conf-dir всё, кроме .dpkg-*: копия `*.prev.awg` рядом с
+# новым файлом читалась вместе с ним, и в момент рестарта у демона было два
+# набора директив (прежний и новый) — дубли, а для записей SMB ещё и две цели
+# SRV на одно имя. Теперь копии лежат в $AWG_LAN_DUMP/rollback/, а подменённый
+# systemctl записывает, что лежало в conf-dir именно в момент рестарта.
+
+def _snapshot_restart(env: dict, log: Path, fails: int = 0) -> Path:
+    """systemctl, который на `restart` пишет состав conf-dir и rollback/ в
+    файл снимков; первые `fails` рестартов не проходят."""
+    snap = log.parent / "restart-snapshots"
+    cnt = log.parent / "restart-count"
+    _fake(_bin(env), "systemctl",
+          f'echo "systemctl $*" >> {log}\n'
+          'if [ "$1" = restart ]; then\n'
+          f'  echo "--" >> {snap}\n'
+          f'  ls -A "$AWG_DNSMASQ_D" | sed "s|^|d:|" >> {snap}\n'
+          f'  ls -A "$AWG_LAN_DUMP/rollback" 2>/dev/null | sed "s|^|rb:|" >> {snap}\n'
+          f'  n=$(cat {cnt} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {cnt}\n'
+          f'  [ "$n" -le {fails} ] && exit 1\n'
+          'fi\nexit 0\n')
+    return snap
+
+
+def _snapshots(snap: Path) -> list[tuple[set, set]]:
+    """[(файлы conf-dir, файлы rollback/)] на каждый рестарт."""
+    out = []
+    for block in snap.read_text().split("--\n")[1:]:
+        lines = block.splitlines()
+        out.append(({ln[2:] for ln in lines if ln.startswith("d:")},
+                    {ln[3:] for ln in lines if ln.startswith("rb:")}))
+    return out
+
+
+def _no_copies(names: set) -> bool:
+    return not any(".prev" in n or n.endswith((".bak", ".tmp", ".new")) for n in names)
+
+
+def test_the_feed_rollback_copy_is_outside_the_conf_dir_during_the_restart(lists_env):
+    tool, dns_d, dump, log, env = lists_env
+    (dns_d / FEED).write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    snap = _snapshot_restart(env, log)
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    (confdir, rb), = _snapshots(snap)
+    assert _no_copies(confdir), f"при рестарте dnsmasq в conf-dir лежала копия: {confdir}"
+    assert FEED in confdir
+    assert rb == {"vpn-feed.conf.prev"}, f"копии для отката на время рестарта нет в rollback/: {rb}"
+    assert not (dump / "rollback" / "vpn-feed.conf.prev").exists(), "копия пережила удачный рестарт"
+
+
+def test_a_failed_feed_restart_restores_the_feed_from_rollback(lists_env):
+    tool, dns_d, dump, log, env = lists_env
+    old = "nftset=/old.org/inet#awg_home#lan_vpn4\n"
+    (dns_d / FEED).write_text(old, encoding="utf-8")
+    snap = _snapshot_restart(env, log, fails=1)
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 1 and "откатываю" in r.stderr, (r.returncode, r.stderr)
+    assert (dns_d / FEED).read_text() == old, "прежний фид не вернулся из rollback/"
+    shots = _snapshots(snap)
+    assert len(shots) == 2 and all(_no_copies(c) for c, _ in shots), shots
+    assert not (dump / "rollback" / "vpn-feed.conf.prev").exists(), "копия осталась после отката"
+
+
+def test_own_list_copies_are_outside_the_conf_dir_during_the_restart(own_env, tmp_path):
+    """И кнопочная правка (del), и sync: при рестарте в conf-dir только
+    настоящие файлы, копии — в rollback/, после удачи их нет."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["news.org"], ru=["shop.ru"])
+    _with_src(dns_d, dump, minus={"shop.ru"})
+    snap = _snapshot_restart(env, log)
+    assert _run(tool, env, "del", "shop.ru").returncode == 0
+    assert _sync(tool, env, tmp_path, "vpn alpha.com\nru bank.ru\n").returncode == 0
+    shots = _snapshots(snap)
+    assert len(shots) == 2, shots
+    for confdir, rb in shots:
+        assert _no_copies(confdir), f"при рестарте dnsmasq в conf-dir лежала копия: {confdir}"
+        assert {VPN_USER, RU_USER} <= confdir
+        assert {f"{VPN_USER}.prev", f"{RU_USER}.prev"} <= rb, f"копий для отката нет в rollback/: {rb}"
+    assert f"{FEED}.prev" in shots[0][1], "фид пересобран (исключение ушло), а его копии для отката нет"
+    assert not list((dump / "rollback").iterdir()), "копии пережили удачный рестарт"
+
+
+@pytest.mark.parametrize("fail", ["test", "restart"])
+def test_own_lists_are_restored_from_rollback(own_env, tmp_path, fail):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["news.org"], ru=["shop.ru"])
+    _with_src(dns_d, dump, minus={"shop.ru"})
+    before = {f: (dns_d / f).read_text() for f in (VPN_USER, RU_USER, FEED)}
+    snap = _snapshot_restart(env, log, fails=1 if fail == "restart" else 0)
+    extra = {"DNSMASQ_TEST_RC": "1"} if fail == "test" else {}
+    r = _sync(tool, {**env, **extra}, tmp_path, "vpn alpha.com\n")
+    assert r.returncode == 1 and "откатываю" in r.stderr, (r.returncode, r.stderr)
+    assert {f: (dns_d / f).read_text() for f in before} == before, "откат из rollback/ вернул не всё"
+    assert not list((dump / "rollback").iterdir()), "копии остались после отката"
+    if fail == "restart":
+        assert all(_no_copies(c) for c, _ in _snapshots(snap)), _snapshots(snap)
+
+
+def test_the_services_rollback_copy_is_outside_the_conf_dir(svc_env, tmp_path):
+    go, conf, log = svc_env
+    conf.write_text(OLD_SVC, encoding="utf-8")
+    env = {"PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin"}
+    snap = _snapshot_restart(env, log)
+    r = go(_svc_file(), AWG_DNSMASQ_D=str(conf.parent), AWG_LAN_DUMP=str(tmp_path / "dump"))
+    assert r.returncode == 0, r.stderr
+    (confdir, rb), = _snapshots(snap)
+    assert confdir == {"awg-gw-peer-services.conf"}, f"при рестарте в conf-dir: {confdir}"
+    assert rb == {"peer-services.conf.prev"}, f"копии для отката нет в rollback/: {rb}"
+    assert not (tmp_path / "dump" / "rollback" / "peer-services.conf.prev").exists()
+
+
+def test_a_failed_services_restart_restores_the_file_from_rollback(svc_env, tmp_path):
+    go, conf, log = svc_env
+    conf.write_text(OLD_SVC, encoding="utf-8")
+    env = {"PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin"}
+    snap = _snapshot_restart(env, log, fails=1)
+    r = go(_svc_file(), AWG_DNSMASQ_D=str(conf.parent), AWG_LAN_DUMP=str(tmp_path / "dump"))
+    assert r.returncode == 1 and "откатываю" in r.stderr, r.stderr
+    assert conf.read_text(encoding="utf-8") == OLD_SVC, "прежние записи не вернулись из rollback/"
+    shots = _snapshots(snap)
+    assert len(shots) == 2 and all(_no_copies(c) for c, _ in shots), shots
+    assert not (tmp_path / "dump" / "rollback" / "peer-services.conf.prev").exists()
+
+
+def test_a_non_root_services_run_creates_nothing_and_takes_no_lock(svc_env, tmp_path):
+    """Проверка root — до mkdir и flock: запуск не от root не заводит каталог
+    состояния с чужим владельцем и не держит блокировку списков."""
+    go, conf, log = svc_env
+    r = go(_svc_file(), FAKE_UID="1000")
+    assert r.returncode == 1 and "нужен root" in r.stderr, r.stderr
+    assert not (tmp_path / "dump").exists(), "не-root успел создать каталог состояния"
+
+
+def test_a_leftover_prev_copy_in_the_conf_dir_is_parked(script, tmp_path):
+    """Прежняя версия могла оставить `*.prev.awg` в conf-dir (упавший запуск):
+    dnsmasq читает его вместе с настоящим файлом. Перенос ручного слоя
+    убирает его в архив вместе с .bak/.tmp."""
+    from tests.unit.test_gw_setup_script import _helpers
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir()
+    for tool in ("ip", "nft", "systemctl"):
+        _fake(bin_dir, tool, "exit 1\n")
+    dns_d = tmp_path / "dnsmasq.d"; dns_d.mkdir()
+    for f in ("awg-gw-vpn-feed.conf.prev.awg", "awg-gw-ru-user.conf.prev.awg", "x.bak", "awg-gw-base.conf"):
+        (dns_d / f).write_text("x\n", encoding="utf-8")
+    old = tmp_path / "old"
+    park = re.search(r"^park\(\) \{.*?^\}$", script, re.S | re.M).group(0)
+    fn = re.search(r"^lan_migrate_manual\(\) \{.*?^\}$", script, re.S | re.M).group(0)
+    prog = (_helpers(script) + f'\nMODE=apply\nDNSMASQ_D="{dns_d}"\nLAN_OLD="{old}"\n'
+            + park + "\n" + fn + "\nlan_migrate_manual\n")
+    r = _sh(prog, env={"PATH": f"{bin_dir}:/usr/bin:/bin"})
+    assert r.returncode == 0, r.stderr
+    assert sorted(p.name for p in dns_d.iterdir()) == ["awg-gw-base.conf"], list(dns_d.iterdir())
+    parked = sorted(p.name.rsplit(".", 1)[0] for p in old.iterdir())
+    assert parked == ["awg-gw-ru-user.conf.prev.awg", "awg-gw-vpn-feed.conf.prev.awg", "x.bak"], parked
+    assert "awg-gw-vpn-feed.conf.prev.awg" in r.stdout, "перенос не назван в выводе"
+
+
+def test_resolving_asks_once_with_a_short_timeout(own_env):
+    """dig по умолчанию делает три попытки: недоступный резолвер держал бы
+    кнопку по 9 с на домен и выходил за таймаут агента."""
+    tool, dns_d, dump, log, env = own_env
+    calls = dump.parent / "dig-calls"
+    _fake(_bin(env), "dig", f'echo "$*" >> {calls}\necho 10.4.4.4\n')
+    _own(dns_d)
+    assert _run(tool, env, "add", "alpha.com").returncode == 0
+    lines = calls.read_text().splitlines()
+    assert lines and all("+time=3" in ln and "+tries=1" in ln for ln in lines), lines
+
+
+def test_helpers_are_replaced_by_mv_not_rewritten_in_place(script, tmp_path):
+    """Работающий экземпляр (dash читает скрипт кусками) должен дочитать свой
+    прежний inode: write_lan_scripts пишет во временный файл и подменяет mv."""
+    from tests.unit.test_gw_setup_script import _helpers
+    # тело функции — heredoc'и со своими «}» в начале строки: конец — после SVCEOF
+    start = script.index("\nwrite_lan_scripts() {") + 1
+    end = script.index("\n}\n", script.index("\nSVCEOF\n", start)) + 3
+    fn = script[start:end]
+    sbin = tmp_path / "sbin"; sbin.mkdir()
+    olds = {}
+    for name in ("awg-lan-lists.sh", "awg-lan-domain.sh", "awg-lan-services.sh"):
+        (sbin / name).write_text("#!/bin/sh\n# старый\n", encoding="utf-8")
+        olds[name] = (sbin / name).stat().st_ino
+    prog = (_helpers(script) + f'\nLAN_LISTS="{sbin}/awg-lan-lists.sh"\nLAN_DOMAIN="{sbin}/awg-lan-domain.sh"\n'
+            f'LAN_SERVICES="{sbin}/awg-lan-services.sh"\n' + fn + "\nwrite_lan_scripts\n")
+    r = _sh(prog, env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0, r.stderr
+    assert sorted(p.name for p in sbin.iterdir()) == sorted(olds), "временные .new остались рядом"
+    for name, ino in olds.items():
+        f = sbin / name
+        assert f.stat().st_ino != ino, f"{name} переписан на месте — работающий экземпляр дочитает новый текст"
+        assert f.stat().st_mode & 0o777 == 0o755 and "# старый" not in f.read_text(), name

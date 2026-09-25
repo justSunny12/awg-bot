@@ -13,6 +13,7 @@ routing_doctor.py — послойная проверка тракта усло�
 from __future__ import annotations
 
 import sys
+import time
 
 from awgbot.core import config, settings
 from awgbot.infra import routing
@@ -156,7 +157,6 @@ def _mb(n: int) -> str:
 
 def _probe_rf_acct(pause: float = 3.0) -> list[tuple[str, str, str]]:
     """Слой учёта: два чтения с паузой — растёт ли итог прямо сейчас."""
-    import time
     from awgbot.infra import rfacct
     try:
         acct = rfacct.read()
@@ -166,7 +166,7 @@ def _probe_rf_acct(pause: float = 3.0) -> list[tuple[str, str, str]]:
         return [(_WARN, "Учёт РФ-трафика: таблицы awg_bot_acct нет",
                  f"Её создаёт первый опрос трафика бота (раз в "
                  f"{settings.get_int('app.scheduler.traffic_poll_minutes', 5)} мин).")]
-    n_dev = sum(1 for k in acct.counters if k.startswith("d") and k.endswith("_up"))
+    n_dev = sum(1 for k in acct.counters if rfacct.is_device_counter(k))
     up = acct.counters.get(rfacct.COUNTER_UP, 0)
     dn = acct.counters.get(rfacct.COUNTER_DN, 0)
     grow = ""
@@ -181,11 +181,11 @@ def _probe_rf_acct(pause: float = 3.0) -> list[tuple[str, str, str]]:
             grow = f"; за {pause:g} с итог " + (f"вырос на {_mb(d)}" if d > 0 else "не изменился")
     # неполная цепочка — не отказ тракта: трафик идёт, опрос перепишет правила
     from awgbot.bot.texts.fmt import plural_ru
-    return [(_OK if acct.rules == 4 else _WARN,
+    return [(_OK if acct.rules == rfacct.RULES else _WARN,
              f"Учёт РФ-трафика: {n_dev} {plural_ru(n_dev, 'устройство', 'устройства', 'устройств')}, "
              f"↑ {_mb(up)}, ↓ {_mb(dn)} с перезагрузки сервера или пересоздания таблицы{grow}",
-             "" if acct.rules == 4 else
-             f"Правил в цепочке {acct.rules}, ждём 4 — ближайший опрос перепишет.")]
+             "" if acct.rules == rfacct.RULES else
+             f"Правил в цепочке {acct.rules}, ждём {rfacct.RULES} — ближайший опрос перепишет.")]
 
 
 def main() -> int:

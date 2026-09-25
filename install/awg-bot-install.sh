@@ -231,7 +231,8 @@ wipe_previous() {
         # /opt/awg-gw — куда файл конфигурации кладёт скрипт обвязки и link.conf
         # с приватным ключом линка: без него «снесено с настройками» было бы неправдой
         rm -rf /etc/awg-gw /var/lib/awg-gw /opt/awg-gw
-        rm -f /usr/local/sbin/routing-gw-setup.sh /usr/local/sbin/awg-lan-lists.sh /usr/local/sbin/awg-lan-domain.sh
+        rm -f /usr/local/sbin/routing-gw-setup.sh /usr/local/sbin/awg-lan-lists.sh \
+              /usr/local/sbin/awg-lan-domain.sh /usr/local/sbin/awg-lan-services.sh
     else
         # ВПС — всё, что поставил бот: линки до шлюзов и обвязка условной
         # маршрутизации (своими скриптами), резолвер клиентов, интерфейсы awg

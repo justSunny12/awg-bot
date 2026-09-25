@@ -625,7 +625,8 @@ def _svc_host(tmp_path):
         f.write_text("#!/bin/sh\n" + body, encoding="utf-8"); f.chmod(0o755)
     fake("systemctl", f'echo "systemctl $*" >> {log}\n'
                       'case "$*" in *avahi-daemon*) exit "${AVAHI_RC:-0}" ;; esac\nexit 0\n')
-    fake("apt-get", f'echo "apt-get $*" >> {log}\nexit "${{APT_RC:-0}}"\n')
+    fake("apt-get", f'echo "apt-get $*" >> {log}\n'
+                    'case "$1" in update) exit "${APT_UPDATE_RC:-0}" ;; esac\nexit "${APT_RC:-0}"\n')
     fake("nft", "exit 1\n")
     dns_d = tmp_path / "dnsmasq.d"; dns_d.mkdir()
     return bin_dir, log, fake, dns_d
@@ -642,16 +643,19 @@ def _peer_block(script: str) -> str:
     return sec.split('    if [ "$_dn_changed" = "1" ]', 1)[0]
 
 
-def _run_peer_block(script, tmp_path, *, peers: str, avahi_rc="0", browse=False, apt_rc="0"):
+def _run_peer_block(script, tmp_path, *, peers: str, avahi_rc="0", browse=False, apt_rc="0",
+                    link_channel="1", apt_update_rc="0"):
     bin_dir, log, fake, dns_d = _svc_host(tmp_path)
     if browse:
         fake("avahi-browse", "exit 0\n")
     conf = dns_d / "awg-gw-peer-services.conf"
     conf.write_text("local=/awg.internal/\n", encoding="utf-8")
     prog = (_helpers(script) + f'\nMODE=apply\nPEER_SVC_CONF="{conf}"\nPEER_HOME_NETS="{peers}"\n'
+            f'LINK_CHANNEL="{link_channel}"\n'
             "_dn_changed=0\n" + _peer_block(script) + '\necho "dn_changed=$_dn_changed"\n')
     r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
-                       env={"PATH": str(bin_dir), "AVAHI_RC": avahi_rc, "APT_RC": apt_rc})
+                       env={"PATH": str(bin_dir), "AVAHI_RC": avahi_rc, "APT_RC": apt_rc,
+                            "APT_UPDATE_RC": apt_update_rc})
     return r, log.read_text(), conf
 
 
@@ -669,8 +673,9 @@ def test_avahi_utils_is_installed_only_next_to_a_running_avahi_daemon(script, tm
     r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24")
     assert r.returncode == 0, r.stderr
     apt = [ln for ln in log.splitlines() if ln.startswith("apt-get")]
-    assert len(apt) == 1 and apt[0].endswith(" avahi-utils"), apt
-    assert "avahi-daemon" not in apt[0], "демон не ставим: он начал бы объявлять саму малину"
+    # списки apt на малине бывают старыми (404 на зеркале) — сначала update, потом install
+    assert len(apt) == 2 and apt[0].startswith("apt-get update") and apt[1].endswith(" avahi-utils"), apt
+    assert "avahi-daemon" not in apt[1], "демон не ставим: он начал бы объявлять саму малину"
     assert conf.exists(), "при соседях файл записей снят обвязкой"
     assert "ставлю avahi-utils (обзор SMB-серверов этой подсети для подсетей других шлюзов)" in r.stdout, r.stdout
     assert "dn_changed=0" in r.stdout
@@ -683,6 +688,26 @@ def test_avahi_utils_is_not_installed_without_the_daemon_or_when_present(script,
     r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24", avahi_rc=avahi_rc, browse=browse)
     assert r.returncode == 0, r.stderr
     assert "apt-get" not in log, log
+
+
+def test_avahi_utils_is_not_installed_without_the_link_channel(script, tmp_path):
+    """Без канала линка записи SMB никуда не уедут: пакет на малину ставить
+    незачем, и apt под OMV лишний раз не трогаем (ни update, ни install)."""
+    r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24", link_channel="0")
+    assert r.returncode == 0, r.stderr
+    assert "apt-get" not in log, f"apt без канала линка: {log!r}"
+    assert "ставлю avahi-utils" not in r.stdout, r.stdout
+    assert conf.exists(), "при соседях файл записей не снимается и без канала"
+
+
+def test_a_failed_apt_update_still_tries_the_install(script, tmp_path):
+    """update упал (зеркало недоступно, сети нет) — install всё равно
+    пробуется: пакет может найтись и по старым спискам, а раздел не падает."""
+    r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24", apt_update_rc="100")
+    assert r.returncode == 0 and "dn_changed=0" in r.stdout, (r.returncode, r.stdout, r.stderr)
+    apt = [ln for ln in log.splitlines() if ln.startswith("apt-get")]
+    assert len(apt) == 2 and apt[1].endswith(" avahi-utils"), f"после отказа update install не пробовался: {apt}"
+    assert "avahi-utils не установился" not in r.stdout, "отказ update выдан за отказ установки"
 
 
 def test_a_failed_avahi_utils_install_does_not_fail_the_section(script, tmp_path):
@@ -711,7 +736,8 @@ def test_lan_remove_takes_the_services_file_and_helper_with_it(script, tmp_path)
     prog = (_helpers(script) + f'\nMODE=apply\nDNSMASQ_D="{dns_d}"\nLAN_DUMP="{t}/dump"\n'
             f'DNSMASQ_OVR="{t}/none.conf"\nDNSMASQ_MARK="{t}/none.mark"\nHOME_TABLE="inet awg_home"\n'
             f'HOME_FILE="{t}/home.nft"\nLAN_SYSCTL="{t}/sysctl.conf"\nLAN_LISTS="{sbin}/awg-lan-lists.sh"\n'
-            f'LAN_DOMAIN="{sbin}/awg-lan-domain.sh"\nLAN_SERVICES="{helper}"\n' + fn + "\nlan_remove\n")
+            f'LAN_DOMAIN="{sbin}/awg-lan-domain.sh"\nLAN_SERVICES="{helper}"\n'
+            f'PEER_SVC_CONF="{dns_d}/awg-gw-peer-services.conf"\n' + fn + "\nlan_remove\n")
     r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True, env={"PATH": str(bin_dir)})
     assert r.returncode == 0, r.stderr
     assert not (dns_d / "awg-gw-peer-services.conf").exists(), "файл записей соседей пережил снятие"

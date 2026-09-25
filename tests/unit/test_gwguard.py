@@ -278,3 +278,50 @@ def test_run_lan_services_turns_a_missing_or_hanging_script_into_a_reason(monkey
         raise exc
     monkeypatch.setattr(gwguard.subprocess, "run", run)
     assert gwguard.run_lan_services("/tmp/x") == (False, msg)
+
+
+@pytest.mark.parametrize("exc,msg", [
+    (FileNotFoundError(), "скрипта своих списков нет — перевыпусти конфигурацию шлюза с сервера AWG "
+                          "и примени её здесь"),
+    (subprocess.TimeoutExpired("awg-lan-domain.sh", 150), "скрипт своих списков не ответил за 150 с"),
+])
+def test_run_lan_domain_turns_a_missing_or_hanging_script_into_a_reason(monkeypatch, exc, msg):
+    """Кнопка «В туннель» на шлюзе без скрипта или с зависшим скриптом: человек
+    видит, что делать, а не «[Errno 2]» или сырое исключение таймаута."""
+    def run(*a, **k):
+        raise exc
+    monkeypatch.setattr(gwguard.subprocess, "run", run)
+    assert gwguard.run_lan_domain("add", ["example.com"]) == (False, msg)
+
+
+def test_both_list_scripts_wait_longer_than_the_lock(monkeypatch):
+    """Скрипты своих списков и записей SMB ждут lists.lock до 120 с: вызовы
+    агента по умолчанию ждут дольше — иначе вместо «обновление ещё идёт»
+    человек получал бы таймаут. Проверяем реальный timeout в subprocess.run."""
+    seen = []
+
+    def run(argv, **kw):
+        seen.append(kw.get("timeout"))
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+    monkeypatch.setattr(gwguard.subprocess, "run", run)
+    gwguard.run_lan_domain("list", [])
+    gwguard.run_lan_services("")
+    assert seen == [gwguard.LAN_SCRIPT_TIMEOUT] * 2 and gwguard.LAN_SCRIPT_TIMEOUT > 120, seen
+
+
+def test_avahi_browse_available_follows_the_path(monkeypatch, tmp_path):
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert gwguard.avahi_browse_available() is False
+    tool = tmp_path / "avahi-browse"; tool.write_text("#!/bin/sh\n", encoding="utf-8"); tool.chmod(0o755)
+    assert gwguard.avahi_browse_available() is True
+
+
+def test_the_peer_services_file_is_where_the_helper_writes_it():
+    """Агент сверяет стоящий файл по этому пути, помощник пишет его в свой
+    conf-dir: разойдись имена — агент на каждой доставке считал бы файл новым
+    и перезапускал dnsmasq соседней сети."""
+    from pathlib import Path
+    script = (Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8")
+    assert gwguard.PEER_SERVICES_CONF == f"{gwguard.DNSMASQ_D}/awg-gw-peer-services.conf"
+    assert 'CONF="$D/awg-gw-peer-services.conf"' in script
+    assert 'PEER_SVC_CONF="$DNSMASQ_D/awg-gw-peer-services.conf"' in script

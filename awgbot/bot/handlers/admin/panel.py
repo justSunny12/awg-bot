@@ -150,9 +150,8 @@ async def _rf_devices_screen(services, client_id: int, back: str = "traffic_loca
     if client is None:
         return None
     rows = await call(services.rf_by_device, client_id)
-    t = await call(services.db.get_client_rf, client_id)
-    return (texts.rf_devices_text(client.name, rows, (int(t["rx"]), int(t["tx"]))),
-            kb.rf_devices_kb(back))
+    total = await call(services.db.get_client_rf, client_id)
+    return texts.rf_devices_text(client.name, rows, total), kb.rf_devices_kb(back)
 
 
 async def _gateway_card_screen(services, slot: int, chat_id: int | None = None):

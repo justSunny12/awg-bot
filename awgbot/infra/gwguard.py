@@ -25,12 +25,14 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional
 
 from awgbot.core import config
+from awgbot.domain import gwservices
 
 TABLE_FAMILY = "inet"
 TABLE_NAME = "awg_gw_guard"
@@ -562,9 +564,15 @@ def client_subnet() -> str:
 
 # ── локальная сеть без VPN (концепт «локальная сеть», функция A) ──────────────────
 HOME_TABLE_NAME = "awg_home"
+DNSMASQ_D = "/etc/dnsmasq.d"
 LAN_STATUS_FILE = "/var/lib/awg-gw/lists.status"
 LAN_LISTS_SCRIPT = "/usr/local/sbin/awg-lan-lists.sh"
 LAN_DOMAIN_SCRIPT = "/usr/local/sbin/awg-lan-domain.sh"
+OWN_LIST_FILES = ("awg-gw-vpn-user.conf", "awg-gw-ru-user.conf")   # свои списки в conf-dir
+OWN_LISTS_NEW = "/var/lib/awg-gw/own-lists.new"   # файл для `sync` — собирает агент из канона
+# скрипт своих списков ждёт блокировку lists.lock до 120 с: таймауты вызовов
+# длиннее, иначе отказ «занято» не доходил бы, а в панель шёл бы «timed out»
+LAN_SCRIPT_TIMEOUT = 150
 
 
 def unit_env(key: str) -> str:
@@ -638,7 +646,7 @@ def lan_own_lists() -> tuple[int, int]:
         except OSError:
             return 0
         return sum(1 for ln in text.splitlines() if ln.startswith("nftset="))
-    return _count("awg-gw-vpn-user.conf"), _count("awg-gw-ru-user.conf")
+    return _count(OWN_LIST_FILES[0]), _count(OWN_LIST_FILES[1])
 
 
 def dnsmasq_active() -> Optional[bool]:
@@ -746,8 +754,12 @@ def run_lan_lists(timeout: int = 600, from_dir: str = "") -> tuple[bool, str]:
 
 # ── сервисы соседних сетей (концепт «сервисы соседних сетей») ─────────────────
 LAN_SERVICES_SCRIPT = "/usr/local/sbin/awg-lan-services.sh"
-PEER_SERVICES_CONF = "/etc/dnsmasq.d/awg-gw-peer-services.conf"
+PEER_SERVICES_CONF = f"{DNSMASQ_D}/{gwservices.CONF_NAME}"
 PEER_SERVICES_NEW = "/var/lib/awg-gw/peer-services.conf.new"
+
+
+def avahi_browse_available() -> bool:
+    return shutil.which("avahi-browse") is not None
 
 
 def avahi_active() -> Optional[bool]:
@@ -768,16 +780,14 @@ def avahi_browse(timeout: int = 15) -> Optional[str]:
     try:
         proc = subprocess.run(["avahi-browse", "-rtpk", "_smb._tcp"], capture_output=True,
                               timeout=timeout)
-    except FileNotFoundError:
-        return None
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError):   # нет утилиты, не ответила
         return None
     if proc.returncode != 0:
         return None
     return proc.stdout.decode(errors="replace")
 
 
-def run_lan_services(path: str = "", timeout: int = 90) -> tuple[bool, str]:
+def run_lan_services(path: str = "", timeout: int = LAN_SCRIPT_TIMEOUT) -> tuple[bool, str]:
     """Установить файл записей соседей в dnsmasq помощником обвязки (проверка
     построчно, --test, рестарт с откатом); без пути — снять файл. (ok, хвост)."""
     try:
@@ -806,10 +816,6 @@ def dns_local(name: str, qtype: str = "PTR") -> Optional[list[str]]:
     return [ln.strip() for ln in proc.stdout.decode(errors="replace").splitlines() if ln.strip()]
 
 
-OWN_LISTS_NEW = "/var/lib/awg-gw/own-lists.new"   # файл для `sync` — собирает агент из канона
-DNSMASQ_D = "/etc/dnsmasq.d"
-
-
 def lan_domain_has_sync() -> bool:
     """Скрипт своих списков умеет `sync` (метка в шапке): без неё обвязка
     старого образца — канон применять нечем, нужен реассерт."""
@@ -820,13 +826,14 @@ def lan_domain_has_sync() -> bool:
         return False
 
 
-def run_lan_domain(cmd: str, domains: list[str], timeout: int = 150) -> tuple[bool, str]:
-    """Свои списки: add | ru | del | list | sync. (ok, вывод). Таймаут дольше,
-    чем скрипт ждёт блокировку (120 с): иначе отказ «занято» не доходил бы."""
+def run_lan_domain(cmd: str, domains: list[str], timeout: int = LAN_SCRIPT_TIMEOUT) -> tuple[bool, str]:
+    """Свои списки: add | ru | del | list | sync. (ok, вывод)."""
     try:
         proc = subprocess.run([LAN_DOMAIN_SCRIPT, cmd, *domains], capture_output=True, timeout=timeout)
     except FileNotFoundError:
-        return False, "скрипта списков нет — перевыпусти конфигурацию шлюза"
+        return False, "скрипта своих списков нет — перевыпусти конфигурацию шлюза с сервера AWG и примени её здесь"
+    except subprocess.TimeoutExpired:
+        return False, f"скрипт своих списков не ответил за {timeout} с"
     except (OSError, subprocess.SubprocessError) as e:
         return False, str(e)
     return proc.returncode == 0, (proc.stdout + proc.stderr).decode(errors="replace").strip()

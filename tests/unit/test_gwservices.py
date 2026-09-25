@@ -199,6 +199,22 @@ def test_colliding_host_labels_get_suffixes_and_stay_unique():
     assert len(hosts) == len(set(hosts)) == 3, f"метки хостов совпали: {hosts}"
 
 
+def test_same_instance_names_on_different_servers_stay_two_servers():
+    """Два сервера с одинаковым именем без учёта регистра («NAS» и «nas»):
+    dnsmasq сводит имена к нижнему регистру, и без уникализации один инстанс
+    получил бы две цели SRV — Finder вёл бы то к одному NAS, то к другому."""
+    items = [_rec(n="NAS", h="nas-a", a="192.168.1.1"), _rec(n="nas", h="nas-b", a="192.168.1.2")]
+    text = gs.render_dnsmasq(items, OWN)
+    srv = [ln for ln in text.splitlines() if ln.startswith("srv-host=")]
+    names = [ln.split("=", 1)[1].rsplit(",", 2)[0] for ln in srv]
+    assert len(srv) == 2 and len({n.lower() for n in names}) == 2, f"один инстанс на два сервера: {srv}"
+    assert names[0] == '"NAS._smb._tcp.awg.internal"' and names[1] == '"nas 2._smb._tcp.awg.internal"', names
+    assert {ln.rsplit(",", 2)[1] for ln in srv} == {"nas-a.awg.internal", "nas-b.awg.internal"}, srv
+    ptr = [ln for ln in text.splitlines() if ln.startswith("ptr-record=_smb._tcp.")]
+    assert len(ptr) == 2 and len({ln.lower() for ln in ptr}) == 2, ptr
+    assert gs.lines_ok(text), "уникализированное имя не проходит белый список помощника"
+
+
 def test_render_of_nothing_is_nothing():
     """Пусто — файла нет вовсе (снимается), а не файл с одним local=."""
     assert gs.render_dnsmasq([], OWN) == ""
@@ -456,6 +472,47 @@ def test_a_reassert_that_brought_the_helper_applies_at_once(agent, peer, monkeyp
     assert _pending(agent) == "", "применённое сразу легло ещё и в очередь повтора"
     assert agent.services_applied_hash() == H_NAS
     assert agent.services_retry() is None
+
+
+def test_the_retry_itself_reasserts_until_the_helper_appears(agent, peer, monkeypatch):
+    """Помощника нет и первый реассерт его не принёс: повтор на тике сам
+    перевыставляет обвязку (не чаще троттлинга) и ставит отложенные записи,
+    как только помощник появился — без переподключения канала."""
+    _throttle(agent)
+    agent.apply_peer_services(H_NAS, [NAS])
+    assert agent.services_retry() is None and peer.reasserts == 0, "троттлинг реассерта не соблюдён"
+    agent._last_reassert = -1e9                          # прошло 10 минут
+
+    def reassert(timeout=90):
+        peer.reasserts += 1
+        peer.appear()
+        return True, ""
+    monkeypatch.setattr(gwguard, "reassert", reassert)
+    res = agent.services_retry()
+    assert peer.reasserts == 1, "тик не перевыставил обвязку сам"
+    assert res is not None and res["ok"] is True and res["hash"] == H_NAS, res
+    assert peer.conf.exists() and _pending(agent) == ""
+
+
+def test_a_file_outside_the_line_whitelist_never_reaches_the_helper(agent, peer, monkeypatch, tmp_path):
+    """Второй рубеж на агенте: собранный файл не прошёл построчный белый
+    список (шаблон разошёлся с помощником) — отказ с причиной, файл не пишется
+    и помощник не зовётся."""
+    peer.appear()
+    monkeypatch.setattr(gs, "render_dnsmasq", lambda items, nets, digest="": "server=/awg.internal/1.1.1.1\n")
+    res = agent.apply_peer_services(H_NAS, [NAS])
+    assert res["ok"] is False and res["error"] == "записи SMB не прошли проверку строк", res
+    assert peer.runs == [] and not (tmp_path / "lib" / "peer-services.conf.new").exists()
+    assert agent.services_applied_hash() == ""
+
+
+def test_an_unwritable_services_file_refuses_with_a_reason(agent, peer, monkeypatch, tmp_path):
+    peer.appear()
+    blocker = tmp_path / "blocker"; blocker.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(gwguard, "PEER_SERVICES_NEW", str(blocker / "peer-services.conf.new"))
+    res = agent.apply_peer_services(H_NAS, [NAS])
+    assert res["ok"] is False and res["error"].startswith("файл записей SMB не записан: "), res
+    assert peer.runs == [] and not peer.conf.exists()
 
 
 def test_a_refusal_that_is_not_about_the_helper_is_not_retried(agent, peer):

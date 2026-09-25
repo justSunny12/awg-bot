@@ -23,7 +23,7 @@ import ipaddress
 import json
 import re
 
-SERVICE_TYPES = ("_smb._tcp",)          # закрытый список; расширение — сюда
+SERVICE_TYPES = ("_smb._tcp",)          # пока только SMB: шаблоны файла и помощника завязаны на него
 BROWSE_DOMAIN = "awg.internal"          # зарезервирован ICANN, апстримом не уходит
 MAX_OWN = 32                            # записей у одного слота
 MAX_PEER = 64                           # записей у получателя в сумме
@@ -36,7 +36,8 @@ _HOST_STRIP_RE = re.compile(r"[^A-Za-z0-9-]+")
 _D = BROWSE_DOMAIN.replace(".", r"\.")
 # Построчный белый список файла dnsmasq — те же шаблоны, что в помощнике
 # awg-lan-services.sh (routing-gw-setup.sh): последний рубеж на малине против
-# server=/address=/conf-file= из канала. Тест сверяет оба набора.
+# server=/address=/conf-file= из канала. Агент проверяет им файл до записи
+# (lines_ok), помощник — своим grep; тест сверяет оба набора.
 LINE_RES = tuple(re.compile(p) for p in (
     r"^#.*$",
     r"^local=/" + _D + r"/$",
@@ -172,7 +173,7 @@ def reverse_zone(net: str) -> str:
 def render_dnsmasq(items, own_nets, digest: str = "") -> str:
     """Файл записей для dnsmasq получателя (§3.3 концепта). Пустой список —
     пустая строка: файл снимается, а не пишется пустым."""
-    items = clean(items, [str(ipaddress.IPv4Network("0.0.0.0/0"))], MAX_PEER) if items else []
+    items = clean(items, ["0.0.0.0/0"], MAX_PEER) if items else []
     if not items:
         return ""
     d = BROWSE_DOMAIN
@@ -190,9 +191,12 @@ def render_dnsmasq(items, own_nets, digest: str = "") -> str:
     lines.append(f"ptr-record=b._dns-sd._udp.{d},{d}")
     lines.append(f"ptr-record=lb._dns-sd._udp.{d},{d}")
     lines.append(f"ptr-record=_services._dns-sd._udp.{d},_smb._tcp.{d}")
-    # метка хоста уникальна: совпали у двух записей — naspi5, naspi5-2, …;
-    # занятые метки (в том числе пришедшая «naspi5-2») не выдаются второй раз
+    # метка хоста и имя инстанса уникальны: совпали у двух записей — naspi5,
+    # naspi5-2 и «NAS», «NAS 2» (регистр не в счёт: dnsmasq приводит к нижнему,
+    # и два одинаковых имени слились бы в один сервер с двумя целями SRV);
+    # занятые (в том числе пришедшая «naspi5-2») не выдаются второй раз
     used: set[str] = set()
+    used_names: set[str] = set()
     for r in items:
         base = r["h"]
         host, k = base, 1
@@ -200,7 +204,12 @@ def render_dnsmasq(items, own_nets, digest: str = "") -> str:
             k += 1
             host = f"{base[:60]}-{k}"
         used.add(host)
-        inst = f'"{r["n"]}._smb._tcp.{d}"'
+        name, k = r["n"], 1
+        while name.lower() in used_names:
+            k += 1
+            name = f"{r['n'][:60]} {k}"
+        used_names.add(name.lower())
+        inst = f'"{name}._smb._tcp.{d}"'
         lines.append(f"ptr-record=_smb._tcp.{d},{inst}")
         lines.append(f"srv-host={inst},{host}.{d},{r['p']}")
         lines.append(f'txt-record={inst},""')

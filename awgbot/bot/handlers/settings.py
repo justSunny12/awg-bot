@@ -25,6 +25,7 @@ from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu, c
                                         _dismiss_previous_nav,
                                         ask_tracked, cleanup_content)
 from awgbot.domain.services import ServiceError
+from awgbot.util import bundlecrypt
 from awgbot.domain.gwssh import SshOwnerRefusal
 
 log = logging.getLogger("awgbot.settings")
@@ -194,20 +195,33 @@ async def send_gw_bundle(message: Message, services, slot: int = 0, instr_id: in
         reply_markup=kb.bundle_menu_kb(slot_id))
     if slot_id:
         await call(services.gw_bundle_msg_set, slot_id, message.chat.id, sent.message_id, instr_id,
-                   services.bundle_fingerprint(blob))
+                   bundlecrypt.fingerprint(blob))
     return True
 
 
-async def _drop_bundle_msgs(bot, services, slot_id: int, fp: str = "") -> bool:
+def _bundle_chat(where: dict) -> int:
+    return int(where.get("chat") or config.ADMIN_ID)
+
+
+async def _bundle_display(services, slot_id: int) -> tuple[str, dict]:
+    """(«имя» слота для подписи, бот шлюза); слота уже нет — «слот N»."""
+    try:
+        return await call(services.gw_bundle_target, slot_id)
+    except (ServiceError, OSError):
+        return f"слот {slot_id}", {}
+
+
+async def _drop_bundle_msgs(bot, services, slot_id: int, fp: str = "", where: dict | None = None) -> bool:
     """Убрать из чата выданный файл слота с его инструкцией и забыть о них.
     fp задан — только если это тот самый файл: итог о другом (чужом или
     прежнем) файле новый не трогает. Вернуть, было ли что убирать."""
-    where = await call(services.gw_bundle_msg_get, slot_id)
+    if where is None:
+        where = await call(services.gw_bundle_msg_get, slot_id)
     if not where:
         return False
     if fp and where.get("fp") and where.get("fp") != fp:
         return False
-    chat_id = int(where.get("chat") or config.ADMIN_ID)
+    chat_id = _bundle_chat(where)
     for mid in (where.get("instr"), where.get("file")):
         if mid:
             try:
@@ -225,14 +239,11 @@ async def bundle_applied(bot, services, slot_id: int, ok: bool, error: str, fp: 
     оттуда же. Итог о другом файле (fp не сошёлся) или без файла в чате —
     только запись, без уведомления."""
     where = await call(services.gw_bundle_msg_get, slot_id)
-    chat_id = int(where.get("chat") or config.ADMIN_ID)
-    if not await _drop_bundle_msgs(bot, services, slot_id, fp):
+    chat_id = _bundle_chat(where)
+    if not await _drop_bundle_msgs(bot, services, slot_id, fp, where):
         return
     # уведомление об итоге — раз чат админа затронут; следом карточка слота
-    try:
-        display, _bot = await call(services.gw_bundle_target, slot_id)
-    except (ServiceError, OSError):
-        display = f"слот {slot_id}"
+    display, _bot = await _bundle_display(services, slot_id)
     sent = await bot.send_message(chat_id, texts.gateway_bundle_applied_text(display, ok, error))
     await call(services.db.add_content_msg_id, chat_id, sent.message_id)
     await _show_card_anew(bot, services, chat_id, slot_id)
@@ -263,16 +274,13 @@ async def bundle_installed(bot, services, slot_id: int) -> None:
     единственная живая кнопка. Файл уже убрали — меню выше и так живое,
     второго не нужно."""
     where = await call(services.gw_bundle_msg_get, slot_id)
-    chat_id = int(where.get("chat") or config.ADMIN_ID)
+    chat_id = _bundle_chat(where)
     dropped = False
     if where.get("plain"):
         # шифрованный файл, выпущенный после файла первого применения, — не
         # этого события: его уберёт итог применения
-        dropped = await _drop_bundle_msgs(bot, services, slot_id)
-    try:
-        display, agent_bot = await call(services.gw_bundle_target, slot_id)
-    except (ServiceError, OSError):
-        display, agent_bot = f"слот {slot_id}", {}
+        dropped = await _drop_bundle_msgs(bot, services, slot_id, where=where)
+    display, agent_bot = await _bundle_display(services, slot_id)
     sent = await bot.send_message(chat_id, texts.gateway_installed_text(display, agent_bot))
     await call(services.db.add_content_msg_id, chat_id, sent.message_id)
     if dropped:
@@ -429,17 +437,14 @@ async def _send_plain_bundle(message: Message, services, slot: int = 0, instr_id
     from aiogram.types import BufferedInputFile
     if slot:
         await _drop_bundle_msgs(message.bot, services, slot)
-    try:
-        display, _bot = await call(services.gw_bundle_target, slot or None)
-    except (ServiceError, OSError):
-        display = f"слот {slot}"
+    display, _bot = await _bundle_display(services, slot or None)
     sent = await message.answer_document(
         BufferedInputFile(blob, filename=name),
         caption=texts.gateway_plain_bundle_caption(display),
         reply_markup=kb.bundle_menu_kb(slot))
     if slot:
         await call(services.gw_bundle_msg_set, slot, message.chat.id, sent.message_id, instr_id,
-                   services.bundle_fingerprint(blob), True)
+                   bundlecrypt.fingerprint(blob), True)
 
 
 # ── слоты шлюзов (концепт «резервный шлюз» §6) ───────────────────────────────
@@ -648,8 +653,8 @@ async def gw_slot_router(cb: CallbackQuery, callback_data: GwSlotCB, services):
 async def gw_slot_bundle(cb: CallbackQuery, callback_data: GwSlotCB, services):
     """«⚙️ Конфигурация шлюза» в карточке: файл сразу, без экрана «что
     произойдёт». Карточка гаснет и помечается как контент: живым остаётся
-    «В меню» на файле, а «В меню» и приход шлюза на связь уберут её вместе с
-    файлом (send_gw_bundle запоминает обе)."""
+    «В меню» на файле, а «В меню» и итог применения с шлюза уберут её вместе
+    с файлом (send_gw_bundle запоминает обе)."""
     await cb.answer("Собираю и шифрую…")
     await _issue_bundle_here(cb, services, int(callback_data.slot or 0))
 
@@ -868,17 +873,15 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         # которого выпускал
         slot = int(callback_data.val or 0)
         where = await call(services.gw_bundle_msg_get, slot) if slot else {}
-        # запись — о последнем файле слота; «В меню» на прежнем (перевыпуск
-        # его не убрал) удаляет только его, инструкцию и запись нового не трогает
-        ours = bool(where) and int(where.get("file") or 0) == cb.message.message_id
-        for mid in ((where.get("instr") if ours else None), cb.message.message_id):
-            if mid:
-                try:
-                    await cb.bot.delete_message(cb.message.chat.id, int(mid))
-                except Exception:                          # noqa: BLE001
-                    pass
-        if ours:
-            await call(services.gw_bundle_msg_clear, slot)
+        # запись — о последнем файле слота; «В меню» на прежнем (Telegram не дал
+        # его удалить при перевыпуске) убирает только его, запись нового цела
+        if where and int(where.get("file") or 0) == cb.message.message_id:
+            await _drop_bundle_msgs(cb.bot, services, slot, where=where)
+        else:
+            try:
+                await cb.bot.delete_message(cb.message.chat.id, cb.message.message_id)
+            except Exception:                              # noqa: BLE001
+                pass
         await cb.answer()
         try:
             st = await call(services.gateway_screen_state, slot) if slot else None
