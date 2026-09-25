@@ -13,12 +13,13 @@ gateway.py — доменная механика роли gateway (docs/ROADMAP.
 from __future__ import annotations
 
 import glob
+import hashlib
 import html
 import json
 import logging
 import os
-import shutil
 import re
+import secrets
 import socket
 import subprocess
 import time
@@ -36,6 +37,9 @@ from awgbot.domain.selfupdate import SelfUpdateMixin  # noqa: E402
 from awgbot.domain.backupcrypto import BackupCryptoMixin  # noqa: E402
 from awgbot.domain.mailmix import MailMixin  # noqa: E402
 from awgbot.domain.gwssh import GwSshMixin  # noqa: E402
+from awgbot.domain import gwownlists, gwservices  # noqa: E402
+from awgbot.domain.gwchecks import CHECK_GROUPS_SOFT  # noqa: E402
+from awgbot.util import gwlink  # noqa: E402
 
 
 import threading  # noqa: E402
@@ -423,7 +427,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             "через шлюз не работает.",
             f"✅ Канал шлюза {host} снова отвечает")
 
-        broken = [c for c in st.checks if c.ok is False and c.group not in ("lan", "svc", "own")]
+        broken = [c for c in st.checks if c.ok is False and c.group not in CHECK_GROUPS_SOFT]
         notes += self._streak_alert(
             "plumbing", bool(broken), streak,
             "⚠️ Обвязка шлюза неисправна: "
@@ -748,14 +752,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         """[(vpn|ru, домен)] из скрипта списков."""
         from awgbot.infra import gwguard
         ok, out = gwguard.run_lan_domain("list", [])
-        if not ok:
-            return []
-        items = []
-        for line in out.splitlines():
-            parts = line.split(None, 1)
-            if len(parts) == 2 and parts[0] in ("vpn", "ru"):
-                items.append((parts[0], parts[1].strip()))
-        return items
+        return [(k, d) for d, k in gwownlists.parse_list(out).items()] if ok else []
 
     def lan_lists_now(self) -> tuple[bool, str]:
         """Обновить списки (кнопка и задача): (ok, хвост вывода); счётчик
@@ -830,7 +827,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         try:
             age = (timeutil.now() - timeutil.parse_iso(str(data.get("at") or ""))).total_seconds()
         except ValueError:
-            age = 0
+            return {}                                 # без времени — как просроченный
         return {} if age > self._APPLIED_PENDING_TTL_S else data
 
     def applied_pending_clear(self) -> None:
@@ -847,32 +844,24 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     _OWN_ERR_KEY = "gw_own_err"              # хвост ошибки последнего применения
     _OWN_REJ_KEY = "gw_own_rej"              # что сервер отверг из последнего пакета: [[домен, причина]]
     _OWN_DEFER_KEY = "gw_own_defer"          # канон, отложенный из-за обвязки старого образца
-    _OWN_WAIT_ALERT_S = 600                  # правки без ответа сервера дольше — «обнови основной бот»
+    _OWN_STALE_SERVER_S = 600                # правки без ответа сервера дольше — «обнови основной бот»
     _own_run: str = ""                       # метка запуска: номера правок — в её пределах
 
     def own_active(self) -> bool:
         from awgbot.infra import gwguard
         return gwguard.lan_mode() and gwguard.unit_env("LINK_CHANNEL") == "1"
 
-    def _own_json(self, key: str, default):
-        try:
-            data = json.loads(self.db.get_state(key) or "null")
-        except json.JSONDecodeError:
-            return default
-        return data if isinstance(data, type(default)) else default
-
     def own_base(self) -> dict:
-        return self._own_json(self._OWN_BASE_KEY, {})
+        return self.db.get_state_json(self._OWN_BASE_KEY, {})
 
     def _own_pending_raw(self) -> dict:
-        p = self._own_json(self._OWN_PENDING_KEY, {})
+        p = self.db.get_state_json(self._OWN_PENDING_KEY, {})
         if not isinstance(p.get("ev"), list):
             p["ev"] = []
         return p
 
     def _own_run_id(self) -> str:
         if not self._own_run:
-            import secrets
             type(self)._own_run = secrets.token_hex(6)
         return self._own_run
 
@@ -888,10 +877,9 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
 
     def _own_files_fp(self) -> str:
         """sha256 обоих файлов своих списков: два чтения, без exec."""
-        import hashlib
         from awgbot.infra import gwguard
         h = hashlib.sha256()
-        for name in ("awg-gw-vpn-user.conf", "awg-gw-ru-user.conf"):
+        for name in gwguard.OWN_LIST_FILES:
             try:
                 with open(os.path.join(gwguard.DNSMASQ_D, name), "rb") as f:
                     h.update(f.read())
@@ -903,10 +891,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     def own_local(self) -> dict[str, str] | None:
         """{домен: вид} из файлов через скрипт; None — файлов нет (режим
         выключен, раздел не применился): отсутствие файла удалением не считается."""
-        from awgbot.domain import gwownlists
         from awgbot.infra import gwguard
-        if not all(os.path.exists(os.path.join(gwguard.DNSMASQ_D, n))
-                   for n in ("awg-gw-vpn-user.conf", "awg-gw-ru-user.conf")):
+        if not all(os.path.exists(os.path.join(gwguard.DNSMASQ_D, n)) for n in gwguard.OWN_LIST_FILES):
             return None
         ok, out = gwguard.run_lan_domain("list", [])
         return gwownlists.parse_list(out) if ok else None
@@ -931,7 +917,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         self._own_pending_set(p)
         return new
 
-    def _own_unsent(self) -> bool:
+    def own_unsent(self) -> bool:
         """Есть правки, которые ещё не уходили серверу в этой сессии: уже
         отправленные повторно на каждом тике не шлём — это был бы маячок;
         их повторит подключение (hello) или ответ сервера."""
@@ -940,38 +926,37 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
 
     def own_reconcile(self) -> bool:
         """Сверка файлов с базой ⊕ pending (тик монитора, после кнопки): нашлась
-        правка мимо канона — событием в pending. True — есть что отправить
-        (новые или ещё не ушедшие правки). Базы нет — не сверяем: первый список
-        уйдёт целиком с init по канону."""
-        from awgbot.domain import gwownlists
+        правка мимо канона — событием в pending. True — нашлись новые правки.
+        Базы нет — не сверяем: первый список уйдёт целиком с init по канону."""
         if not self.own_active():
             return False
         fp = self._own_files_fp()
         if fp == (self.db.get_state(self._OWN_FP_KEY) or ""):
-            return self._own_unsent()
+            return False
         base = self.own_base()
         local = self.own_local()
         if local is None:
-            return self._own_unsent()
+            return False
         self.db.set_state(self._OWN_FP_KEY, fp)
         if not base:
-            return self._own_unsent()
+            return False
         expected = gwownlists.apply_events(base.get("items") or {}, self._own_pending_raw().get("ev"))
         changes = gwownlists.diff(local, expected)
         if changes:
             self._own_add_events(changes)
             log.info("свои списки: правок мимо канона — %s, уходят серверу", len(changes))
-        return self._own_unsent()
+        return bool(changes)
 
-    def own_pending_events(self, mark_sent: bool = True) -> tuple[str, list]:
-        """(run, события) для отправки серверу; пусто — ([], "")."""
+    def own_pending_events(self) -> tuple[str, list]:
+        """(run, события) для отправки серверу; пусто — ("", []). Момент первой
+        отправки запоминается: по нему считается «сервер не отвечает»."""
         p = self._own_pending_raw()
         if not p.get("ev"):
             return "", []
         if p.get("run") != self._own_run_id():
             self._own_add_events([])          # перенумеровать под текущую метку
             p = self._own_pending_raw()
-        if mark_sent and not p.get("sent_at"):
+        if not p.get("sent_at"):
             p["sent_at"] = timeutil.to_iso(timeutil.now())
             self._own_pending_set(p)
         return str(p.get("run") or ""), [list(e) for e in p["ev"]]
@@ -988,9 +973,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         """Канон от сервера → файлы через `sync`: {ok, hash, n, error, skipped}.
         skipped — канон не применён по правилам §2.4 (правки не учтены, первая
         синхронизация, откат сервера): свои правки уходят ещё раз, ack не шлётся."""
-        from awgbot.domain import gwownlists
         from awgbot.infra import gwguard
-        digest = "".join(c for c in str(body.get("hash") or "") if c in "0123456789abcdef")[:64]
+        digest = gwlink.clean_hex(body.get("hash"))
         gen = str(body.get("gen") or "")[:32]
         try:
             ver = int(body.get("ver") or 0)
@@ -1006,9 +990,11 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         if local is None:
             return self._own_store(digest, None, False, "файлов своих списков нет — раздел не применился")
         # первая синхронизация или откат сервера: весь свой список — событиями
-        # init, один раз; когда сервер их разберёт (upto покроет), канон применится
+        # init, один раз; когда сервер их разберёт (upto покроет), канон применится.
+        # Список пуст — отправлять нечего, канон применяется сразу: иначе такой
+        # шлюз после переустановки сервера не применил бы его никогда
         p = self._own_pending_raw()
-        first = (not base and local) or (base and (gen != base.get("gen") or ver < int(base.get("ver") or 0)))
+        first = bool(local) and (not base or gen != base.get("gen") or ver < int(base.get("ver") or 0))
         if first and not any(len(e) > 3 and e[3] for e in p.get("ev") or []):
             self._own_add_events(sorted(local.items()), init=True)
             log.info("свои списки: первая синхронизация — %s доменов уходят серверу", len(local))
@@ -1018,25 +1004,37 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         if any(e for e in p.get("ev") or [] if p.get("run") != run or int(e[0]) > n_up):
             return {"ok": False, "skipped": "pending", "hash": digest, "n": 0, "error": ""}
         if not gwguard.lan_domain_has_sync():
-            fixed = self._reassert_throttled("скрипт своих списков без sync")
-            if not (fixed and gwguard.lan_domain_has_sync()):
-                self.db.set_state(self._OWN_DEFER_KEY, json.dumps(body, ensure_ascii=False))
-                return self._own_store(digest, None, False,
-                                       "скрипт своих списков старого образца — обвязка перевыставляется"
-                                       if fixed else "скрипт своих списков старого образца — обвязка перевыставится в ближайшие минуты")
+            err = self._defer_for_reassert("скрипт своих списков без sync", self._OWN_DEFER_KEY, body,
+                                           "скрипт своих списков старого образца")
+            if not gwguard.lan_domain_has_sync():
+                return self._own_store(digest, None, False, err)
+            self.db.set_state(self._OWN_DEFER_KEY, "")     # реассерт уже положил скрипт
         canon = {"gen": gen, "ver": ver, "hash": digest, "items": items}
         if items == local:
             return self._own_store(digest, canon, True, "")
-        os.makedirs(os.path.dirname(gwguard.OWN_LISTS_NEW), mode=0o700, exist_ok=True)
-        with open(gwguard.OWN_LISTS_NEW, "w", encoding="utf-8") as f:
-            f.write(gwownlists.render_sync(items))
-        # дольше, чем скрипт ждёт блокировку списков (120 с): иначе при идущей
-        # сборке фидов человек видел бы «timed out» вместо «обновление ещё идёт»
+        try:
+            os.makedirs(os.path.dirname(gwguard.OWN_LISTS_NEW), mode=0o700, exist_ok=True)
+            with open(gwguard.OWN_LISTS_NEW, "w", encoding="utf-8") as f:
+                f.write(gwownlists.render_sync(items))
+        except OSError as e:
+            return self._own_store(digest, None, False, f"файл для sync не записан: {e}")
         ok, tail = gwguard.run_lan_domain("sync", [gwguard.OWN_LISTS_NEW])
         if ok:
-            log.info("свои списки: применён канон сервера (%s)", len(items))
+            # база — то, что реально записано: скрипт мог отбросить хост Endpoint
+            written = self.own_local()
+            canon["items"] = items if written is None else written
+            log.info("свои списки: применён канон сервера (%s)", len(canon["items"]))
         return self._own_store(digest, canon if ok else None, ok,
                                "" if ok else (tail or "скрипт своих списков отказал без объяснений"))
+
+    def _defer_for_reassert(self, why: str, key: str, payload, noun: str) -> str:
+        """Обвязка старого образца (обновление агента положило новые скрипты, а
+        юнит их не запускал): перевыставить обвязку — не чаще раза в 10 минут —
+        и отложить присланное под key до повтора на тике; сервер второй раз за
+        сессию то же не пришлёт. Возвращает текст ошибки для панели."""
+        fixed = self._reassert_throttled(why)
+        self.db.set_state(key, json.dumps(payload, ensure_ascii=False))
+        return f"{noun} — обвязка перевыставляется" if fixed else f"{noun} — обвязка перевыставится в ближайшие минуты"
 
     def _own_store(self, digest: str, canon: dict | None, ok: bool, err: str) -> dict:
         with self.db.transaction():
@@ -1054,8 +1052,14 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         применить; None — повторять нечего."""
         from awgbot.infra import gwguard
         raw = self.db.get_state(self._OWN_DEFER_KEY) or ""
-        if not raw or not gwguard.lan_domain_has_sync():
+        if not raw:
             return None
+        if not gwguard.lan_domain_has_sync():
+            # первый реассерт мог не пройти (юнит был занят, троттлинг) —
+            # пробуем снова, пока отложенное ждёт
+            self._reassert_throttled("скрипт своих списков без sync")
+            if not gwguard.lan_domain_has_sync():
+                return None
         try:
             body = json.loads(raw)
         except json.JSONDecodeError:
@@ -1068,17 +1072,18 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     def own_status(self) -> tuple[dict, list[GwCheck]]:
         """(блок панели, проверки группы «own»): видны в мониторе, уведомлений не
         шлют. state: synced | pending | no_link | stale_server | failed | rejected | old_script | off."""
-        from awgbot.domain import gwownlists
         from awgbot.infra import gwguard
         info: dict = {"active": self.own_active()}
         checks: list[GwCheck] = []
         if not info["active"]:
             info["state"] = "off"
+            # режим есть, канала нет — экран списков скажет, почему они только этого шлюза
+            info["no_channel"] = gwguard.lan_mode() and gwguard.unit_env("LINK_CHANNEL") != "1"
             return info, checks
         p = self._own_pending_raw()
         info["pending"] = len(p.get("ev") or [])
         info["err"] = self.db.get_state(self._OWN_ERR_KEY) or ""
-        info["rej"] = self._own_json(self._OWN_REJ_KEY, [])
+        info["rej"] = self.db.get_state_json(self._OWN_REJ_KEY, [])
         info["synced"] = bool(self.own_base())
         online = bool(getattr(getattr(self, "channel", None), "online", False))
         info["online"] = online
@@ -1100,7 +1105,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         elif n and online is False:
             info["state"] = "no_link"
             checks.append(GwCheck("свои списки", None, f"ждут синхронизации ({n_word}): нет связи с сервером AWG"))
-        elif n and waited > self._OWN_WAIT_ALERT_S:
+        elif n and waited > self._OWN_STALE_SERVER_S:
             info["state"] = "stale_server"
             checks.append(GwCheck("свои списки", None,
                                   f"сервер AWG не отвечает на правки {int(waited // 60)} мин: обнови основной бот"))
@@ -1118,7 +1123,6 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             info["state"] = "synced"
             checks.append(GwCheck("свои списки", True, "синхронизированы с сервером AWG"
                                   if info["synced"] else "ждут первой синхронизации с сервером AWG"))
-        _ = gwownlists
         for c in checks:
             c.group = "own"
         return info, checks
@@ -1139,18 +1143,13 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
 
     def services_local(self) -> list[dict]:
         """SMB-серверы этой сети, найденные обзором (после чистки)."""
-        try:
-            data = json.loads(self.db.get_state(self._SVC_LOCAL_KEY) or "[]")
-        except json.JSONDecodeError:
-            return []
-        return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
+        return [r for r in self.db.get_state_json(self._SVC_LOCAL_KEY, []) if isinstance(r, dict)]
 
     def services_scan(self) -> bool:
         """Обзор mDNS своей сети. True — свой список изменился, пора слать серверу.
         Гистерезис: появление — сразу, исчезновение — после _SVC_MISSES обзоров
         подряд (уснувший NAS не роняет кэш DNS соседей рестартами dnsmasq);
         обзор, не удавшийся вовсе, промахом не считается."""
-        from awgbot.domain import gwservices
         from awgbot.infra import gwguard
         prev = self.services_local()
         if not self.services_active():
@@ -1186,11 +1185,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         return True
 
     def services_peer(self) -> dict:
-        try:
-            data = json.loads(self.db.get_state(self._SVC_PEER_KEY) or "{}")
-        except json.JSONDecodeError:
-            return {}
-        return data if isinstance(data, dict) else {}
+        return self.db.get_state_json(self._SVC_PEER_KEY, {})
 
     def services_applied_hash(self) -> str:
         """Отпечаток применённых записей соседей — в hello канала."""
@@ -1201,9 +1196,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         недоверенные: чистка по подсетям соседей из ЮНИТА, сборка файла из
         шаблона, построчный белый список в помощнике. Тот же файл, что стоит,
         — без рестарта dnsmasq; пустой список — файл снимается."""
-        from awgbot.domain import gwservices
         from awgbot.infra import gwguard
-        digest = "".join(c for c in str(digest or "") if c in "0123456789abcdef")[:64]
+        digest = gwlink.clean_hex(digest)
         if not gwguard.lan_mode():
             return self._svc_store(digest, [], False, "режим «За шлюзом — без VPN» на шлюзе выключен")
         peers = gwguard.unit_env("PEER_HOME_NETS").split()
@@ -1217,23 +1211,23 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         if text == current:
             return self._svc_store(digest, clean_items, True, "")
         if not os.path.exists(gwguard.LAN_SERVICES_SCRIPT):
-            # обновление агента положило новую обвязку, но юнит её не запускал:
-            # помощник допишет реассерт (как при пропавшей таблице awg_home).
-            # Сервер второй раз за сессию не пришлёт — присланное храним и
-            # применяем сами: сразу после реассерта или на ближайшем тике
-            fixed = self._reassert_throttled("помощника сервисов соседей нет")
-            if not (fixed and os.path.exists(gwguard.LAN_SERVICES_SCRIPT)):
-                self.db.set_state(self._SVC_PENDING_KEY,
-                                  json.dumps({"hash": digest, "items": clean_items}, ensure_ascii=False))
-                return self._svc_store(digest, [], False,
-                                       "скрипта записей SMB нет — обвязка перевыставляется"
-                                       if fixed else "скрипта записей SMB нет — обвязка перевыставится в ближайшие минуты")
+            err = self._defer_for_reassert("помощника сервисов соседей нет", self._SVC_PENDING_KEY,
+                                           {"hash": digest, "items": clean_items}, "скрипта записей SMB нет")
+            if not os.path.exists(gwguard.LAN_SERVICES_SCRIPT):
+                return self._svc_store(digest, [], False, err)
+            self.db.set_state(self._SVC_PENDING_KEY, "")    # реассерт уже положил помощник
         if not text:
             ok, tail = gwguard.run_lan_services("")
         else:
-            os.makedirs(os.path.dirname(gwguard.PEER_SERVICES_NEW), mode=0o700, exist_ok=True)
-            with open(gwguard.PEER_SERVICES_NEW, "w", encoding="utf-8") as f:
-                f.write(text)
+            # второй рубеж перед помощником: файл собран из шаблона, но данные — с ВПС
+            if not gwservices.lines_ok(text):
+                return self._svc_store(digest, [], False, "записи SMB не прошли проверку строк")
+            try:
+                os.makedirs(os.path.dirname(gwguard.PEER_SERVICES_NEW), mode=0o700, exist_ok=True)
+                with open(gwguard.PEER_SERVICES_NEW, "w", encoding="utf-8") as f:
+                    f.write(text)
+            except OSError as e:
+                return self._svc_store(digest, [], False, f"файл записей SMB не записан: {e}")
             ok, tail = gwguard.run_lan_services(gwguard.PEER_SERVICES_NEW)
         return self._svc_store(digest, clean_items, ok,
                                "" if ok else (tail or "скрипт записей SMB отказал без объяснений"))
@@ -1253,8 +1247,12 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         уходит серверу как peer_svc_ack, он его ждёт с тем же отпечатком."""
         from awgbot.infra import gwguard
         raw = self.db.get_state(self._SVC_PENDING_KEY) or ""
-        if not raw or not os.path.exists(gwguard.LAN_SERVICES_SCRIPT):
+        if not raw:
             return None
+        if not os.path.exists(gwguard.LAN_SERVICES_SCRIPT):
+            self._reassert_throttled("помощника сервисов соседей нет")
+            if not os.path.exists(gwguard.LAN_SERVICES_SCRIPT):
+                return None
         try:
             pending = json.loads(raw)
         except json.JSONDecodeError:
@@ -1274,7 +1272,6 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     def services_status(self) -> tuple[dict, list[GwCheck]]:
         """(блок панели, проверки группы «svc»): проверки видны в мониторе, но
         уведомлений не шлют — соседи, которых нет, не авария."""
-        from awgbot.domain import gwservices
         from awgbot.infra import gwguard
         info: dict = {"active": self.services_active()}
         checks: list[GwCheck] = []
@@ -1282,7 +1279,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             return info, checks
         own = self.services_local()
         info["own"] = [r.get("n", "") for r in own]
-        info["browse"] = shutil.which("avahi-browse") is not None
+        info["browse"] = gwguard.avahi_browse_available()
         info["avahi"] = gwguard.avahi_active()
         # сначала демон: без него обвязка avahi-utils не ставит, и совет про
         # мастер восстановления на малине без NAS был бы пустым
@@ -1298,7 +1295,6 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         peer = self.services_peer()
         items = [r for r in (peer.get("items") or []) if isinstance(r, dict)]
         info["peer"] = [r.get("n", "") for r in items]
-        info["peer_hosts"] = [r.get("h", "") for r in items]
         info["ever"] = bool(peer)
         info["err"] = self.db.get_state(self._SVC_PEER_ERR_KEY) or ""
         if info["err"]:

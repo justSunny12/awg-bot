@@ -160,7 +160,7 @@ class _Host:
         self.unit.write_text("[Unit]\n")
         if role == "gateway":
             self.sbin.mkdir(parents=True)
-            for s in ("routing-gw-setup.sh", "awg-lan-lists.sh", "awg-lan-domain.sh"):
+            for s in ("routing-gw-setup.sh", "awg-lan-lists.sh", "awg-lan-domain.sh", "awg-lan-services.sh"):
                 (self.sbin / s).write_text(f'#!/bin/sh\necho "{s} $*" >> "$CALLS"\n')
                 (self.sbin / s).chmod(0o755)
             self.gw_etc.mkdir(parents=True); (self.gw_etc / "firewall.env").write_text("X=1\n")
@@ -367,7 +367,7 @@ def test_wipe_on_gateway_rolls_back_the_link_and_removes_its_state(host):
     assert not any(c.startswith("nft ") for c in calls), "у шлюза нет таблицы awg_bot_guard"
     for p in (host.gw_etc, host.gw_var, host.gw_opt, host.install, host.etc, host.data, host.unit,
               host.sbin / "routing-gw-setup.sh", host.sbin / "awg-lan-lists.sh",
-              host.sbin / "awg-lan-domain.sh"):
+              host.sbin / "awg-lan-domain.sh", host.sbin / "awg-lan-services.sh"):
         assert not p.exists(), f"после сноса осталось: {p}"
     assert not host.link.is_symlink(), "симлинк awg-bot остался"
     assert host.updates() == []

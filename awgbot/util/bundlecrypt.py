@@ -17,6 +17,7 @@ BLAKE2b как KDF, SecretBox (XSalsa20-Poly1305) как AEAD.
 from __future__ import annotations
 
 import base64
+import hashlib
 import re
 
 MAGIC = b"AWGGWB1\n"
@@ -59,3 +60,9 @@ def read_privkey(conf_text: str) -> str:
     if not m:
         raise ValueError("в конфиге нет PrivateKey")
     return m.group(1)
+
+
+def fingerprint(blob: bytes) -> str:
+    """Отпечаток файла конфигурации (первые 16 знаков sha256): по нему агент и
+    сервер понимают, что говорят об одном файле."""
+    return hashlib.sha256(blob).hexdigest()[:16]

@@ -26,6 +26,7 @@ forward), аплинк шлюза (уходит в WAN, не в линк) — м
 from __future__ import annotations
 
 import ipaddress
+import hashlib
 import json
 import subprocess
 from dataclasses import dataclass, field
@@ -41,6 +42,7 @@ MAP_UP = "rf_dev_up"
 MAP_DN = "rf_dev_dn"
 COUNTER_UP = "rf_up"
 COUNTER_DN = "rf_dn"
+RULES = 4                               # правил в цепочке forward: по паре на направление
 # тот же список, что PRIVATE_NETS обвязки шлюза (install/routing-gw-setup.sh)
 PRIVATE_NETS = ("10.0.0.0/8", "100.64.0.0/10", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16")
 
@@ -57,6 +59,11 @@ class AcctState:
     up: dict[str, str] = field(default_factory=dict)            # адрес → имя счётчика (карта ↑)
     dn: dict[str, str] = field(default_factory=dict)            # адрес → имя счётчика (карта ↓)
     rules: int = 0                                              # правил в цепочке
+
+
+def is_device_counter(name: str) -> bool:
+    """d<ID>_up — счётчик устройства (парный d<ID>_dn — по имени)."""
+    return name.startswith("d") and name.endswith("_up")
 
 
 def counter_names(device_id: int) -> tuple[str, str]:
@@ -139,7 +146,7 @@ def render_devices(state: Optional[AcctState], devices: list[tuple[int, str]]) -
 
     # ушедшие: по любому следу в ядре (счётчик или элемент карты)
     stale = {n for n in list(st.counters) + list(have_up) + list(have_dn)
-             if n.startswith("d") and n.endswith("_up") and n not in want}
+             if is_device_counter(n) and n not in want}
     for up_name in sorted(stale):
         dn_name = up_name[:-3] + "_dn"
         if up_name in have_up:
@@ -261,14 +268,13 @@ def sync(state: Optional[AcctState], links: list[str], subnets: list[str],
     правила) переписывается только когда изменилась с последнего применения
     в этом процессе или таблицы нет; счётчики и карты — по диффу. Возвращает,
     было ли что писать."""
-    import hashlib
     global _static_applied
     if not links:
         return False
     static = render_static(links, subnets)
     digest = hashlib.sha256(static.encode()).hexdigest()
     script = ""
-    if state is None or digest != _static_applied or state.rules != 4:
+    if state is None or digest != _static_applied or state.rules != RULES:
         script += static
     script += render_devices(state, devices)
     if not script:

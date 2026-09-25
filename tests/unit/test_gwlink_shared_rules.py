@@ -147,7 +147,7 @@ def test_the_server_fetches_feeds_from_exactly_where_the_gateway_would():
     списков при переходе на канал: сайты, ходившие через туннель, пойдут
     напрямую. Константы скрипта берём прогоном его строк."""
     script = GW_SETUP.read_text(encoding="utf-8")
-    lists = script.split("cat > \"$LAN_LISTS\" <<'LISTSEOF'\n", 1)[1].split("\nLISTSEOF\n", 1)[0]
+    lists = script.split("cat > \"$LAN_LISTS.new\" <<'LISTSEOF'\n", 1)[1].split("\nLISTSEOF\n", 1)[0]
     lines = [ln for ln in lists.splitlines()
              if ln.startswith(("ITDOG=", "DOMAINS_URL=", "SUBNET_SERVICES=", "GOOG_URL="))]
     assert len(lines) == 4, f"строки источников в скрипте списков изменились: {lines}"

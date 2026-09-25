@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from awgbot.domain.gwchecks import CHECK_GROUPS_QUIET_UNKNOWN
+
 from .fmt import _e, human_bytes, _updown, _fmt_age, plural_ru
 from .settings import SETTINGS_SVC, SVC_CONFIRM_AWG, ssh_owner_refusal, warnings_block, address_list_line
 
@@ -22,9 +24,9 @@ def _gw_link_line(st) -> str:
 
 def _gw_health_summary(checks) -> str:
     broken = [c for c in checks if c.ok is False]
-    # «не проверено» у сервисов соседей (нет avahi на шлюзе без NAS) — штатно,
-    # в сводку панели не идёт; на экране монитора строка остаётся
-    unknown = [c for c in checks if c.ok is None and getattr(c, "group", "") not in ("svc", "own")]
+    # «не проверено» у SMB соседних сетей (нет avahi на шлюзе без NAS) и своих
+    # списков (ждут синхронизации) — штатно, в сводку панели не идёт
+    unknown = [c for c in checks if c.ok is None and getattr(c, "group", "") not in CHECK_GROUPS_QUIET_UNKNOWN]
     if broken:
         return f"🔴 проблем: {len(broken)} — " + ", ".join(c.name for c in broken[:4])
     if unknown:
@@ -192,8 +194,6 @@ def smb_line(svc: dict) -> str:
     own = len(svc.get("own") or [])
     own_s = str(own) if own else "не найдены"
     return f"🗂 SMB: в этой подсети — {own_s}, из других — {len(peers)}"
-
-
 
 
 def gateway_lan_text(st) -> str:

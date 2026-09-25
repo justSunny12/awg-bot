@@ -7,6 +7,7 @@ from awgbot.util import timeutil
 from awgbot.core.enums import SubStatus, ActivationStatus, FriendStatus
 
 from .fmt import (
+    rf_line,
     _e, human_bytes, used_of_limit, gb_str, client_total_line, device_label,
     device_line, client_link, owner_link, holder_link, _n_devices, plural_ru,
     _days_word, _days)
@@ -391,7 +392,6 @@ def client_card(client, devices, traffic, online: bool, *, for_admin: bool,
         traffic["rx_month"], traffic["tx_month"],
         client.traffic_limit, client.bonus_bytes, for_admin=for_admin)
     if for_admin and rf is not None:
-        from .fmt import rf_line
         tr += "\n" + rf_line(*rf)
 
     lim = client.device_limit

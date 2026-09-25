@@ -13,8 +13,10 @@ main.py — точка входа. Собирает всё вместе и за�
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import logging
+import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramUnauthorizedError
@@ -44,6 +46,8 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+FRESH_INSTALL_MARKER = ".fresh-install"   # кладёт установщик агента (awg-bot.sh), снимает первый запуск
+
 log = logging.getLogger("awgbot.main")
 
 
@@ -182,12 +186,16 @@ async def run_gateway() -> None:
     from awgbot.runtime.scheduler import setup_gateway_scheduler
     from awgbot.runtime import preflight
 
-    import os
-    fresh_db = not os.path.exists(config.DB_PATH)   # базы нет — это первый запуск после установки
+    # первый запуск после установки: базы ещё нет, либо установщик оставил
+    # метку (переустановка поверх сохранённых данных базу не трогает)
+    marker = os.path.join(os.path.dirname(config.DB_PATH), FRESH_INSTALL_MARKER)
+    fresh = not os.path.exists(config.DB_PATH) or os.path.exists(marker)
     db = Database(config.DB_PATH)
     db.init_schema()
     services = GatewayServices(db)
-    services.first_start_note(fresh_db)     # «установлен» серверу — только в первый час
+    services.first_start_note(fresh)        # «установлен» серверу — только в первый час
+    with contextlib.suppress(OSError):
+        os.remove(marker)
 
     # Шлюз стоит в юрисдикции, где Telegram заблокирован, и ходит к нему через
     # туннель до ВПС — по метке, как всё помеченное на этой машине. Туннель

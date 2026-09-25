@@ -211,7 +211,6 @@ class TrafficMixin:
 
     # ── учёт РФ-трафика ──────────────────────────────────────────────────────
     _RF_GEN_KEY = "rf_acct_gen"
-    _RF_SINCE_KEY = "rf_acct_since"
     _RF_ERROR_KEY = "rf_acct_error"
     _RF_MONTH_RX_KEY = "rf_month_rx"
     _RF_MONTH_TX_KEY = "rf_month_tx"
@@ -267,8 +266,6 @@ class TrafficMixin:
         self.db.rf_set_samples(bases)
         if prev_gen != gen:
             self.db.set_state(self._RF_GEN_KEY, gen)
-        if not self.db.get_state(self._RF_SINCE_KEY):
-            self.db.set_state(self._RF_SINCE_KEY, timeutil.to_iso(timeutil.now()))
 
     def _rf_note_error(self, err: str) -> None:
         """Одна строка журнала на смену состояния, значение — в state для панели."""
@@ -283,19 +280,22 @@ class TrafficMixin:
             log.info("учёт РФ-трафика: идёт")
 
     def rf_month_total(self) -> dict:
-        """Итог РФ-трафика сервера за месяц: {rx, tx, error, since} — только из state."""
+        """Итог РФ-трафика сервера за месяц: {rx, tx, error} — только из state."""
         return {"rx": int(self.db.get_state(self._RF_MONTH_RX_KEY) or 0),
                 "tx": int(self.db.get_state(self._RF_MONTH_TX_KEY) or 0),
-                "error": self.db.get_state(self._RF_ERROR_KEY) or "",
-                "since": self.db.get_state(self._RF_SINCE_KEY) or ""}
+                "error": self.db.get_state(self._RF_ERROR_KEY) or ""}
+
+    def rf_enabled(self) -> bool:
+        """Функция РФ-доступа развёрнута и включена — условие показа строк РФ
+        (главная, карточки, списки); самопроверка обвязки в него не входит:
+        сломанная обвязка — ровно тот случай, когда видеть «0 ГБ» полезно."""
+        return self.routing_provisioned() and settings.get_bool("app.routing.enabled", False)
 
     def rf_line_visible(self) -> bool:
-        """Строка РФ-трафика на главной: функция развёрнута и включена — всегда;
-        выключена — только пока в месяце есть РФ-трафик."""
+        """Строка РФ-трафика на главной: функция включена — всегда; выключена —
+        только пока в месяце есть РФ-трафик."""
         tot = self.rf_month_total()
-        if tot["rx"] + tot["tx"] > 0:
-            return True
-        return self.routing_provisioned() and settings.get_bool("app.routing.enabled", False)
+        return tot["rx"] + tot["tx"] > 0 or self.rf_enabled()
 
     # ── Лимиты потребления (ТЗ 7-8) ──────────────────────────────────────────
 

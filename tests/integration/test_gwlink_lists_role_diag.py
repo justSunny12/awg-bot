@@ -166,7 +166,7 @@ def test_the_server_goes_for_feeds_exactly_where_the_gateway_script_would(servic
     они — состав списков в квартире тихо поменяется при переходе на канал."""
     from pathlib import Path
     script = (Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8")
-    lists = script.split("cat > \"$LAN_LISTS\" <<'LISTSEOF'\n", 1)[1].split("\nLISTSEOF\n", 1)[0]
+    lists = script.split("cat > \"$LAN_LISTS.new\" <<'LISTSEOF'\n", 1)[1].split("\nLISTSEOF\n", 1)[0]
     lines = [ln for ln in lists.splitlines()
              if ln.startswith(("ITDOG=", "DOMAINS_URL=", "SUBNET_SERVICES=", "GOOG_URL="))]
     prog = "\n".join(lines) + ('\nprintf "%s\\n" "$DOMAINS_URL" "$GOOG_URL"'

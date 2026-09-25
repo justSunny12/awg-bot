@@ -308,6 +308,14 @@ def _entry(text: str, marker: str) -> str:
     return hits[0]
 
 
+def _rf_feature(monkeypatch, services, fake_routing, enabled: bool) -> None:
+    """Функция РФ-доступа: обвязка развёрнута (интерфейс линка в app.yaml —
+    в тестовой копии он пуст) и выключатель — по enabled. Условие строк РФ —
+    ровно это (rf_enabled)."""
+    monkeypatch.setattr(services, "routing_provisioned", lambda: True)
+    fake_routing.enabled = enabled
+
+
 def _profile(services, make_active_client, name, tg_id, *, allowed, rf=(0, 0)):
     c = make_active_client(name, tg_id=tg_id)
     if allowed:
@@ -350,13 +358,13 @@ async def _device_card(services, bot, device_id: int) -> str:
     (False, True, (GB, 3 * GB), "4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)"),            # выключили, байты остались → строка
 ])
 async def test_profile_rf_line_follows_one_rule_in_card_list_and_rf_screen(
-        services, fake_bot, fake_routing, make_active_client, enabled, allowed, rf, expect):
+        services, fake_bot, fake_routing, make_active_client, monkeypatch, enabled, allowed, rf, expect):
     """Профиль: строка РФ в карточке (сразу под потреблением профиля), под его
     строкой в списке потребления и строкой на экране РФ — везде по одному
     правилу. Не разрешён (или функция на сервере не развёрнута/выключена) и
     ноль — строки нет нигде: иначе у профилей висит «РФ-доступ: 0 ГБ»,
     которого у них быть не может."""
-    fake_routing.enabled = enabled
+    _rf_feature(monkeypatch, services, fake_routing, enabled)
     c, _ = _profile(services, make_active_client, "Ксюша", 6301, allowed=allowed, rf=rf)
 
     card = await _client_card(services, fake_bot, c.id)
@@ -386,11 +394,11 @@ async def test_profile_rf_line_follows_one_rule_in_card_list_and_rf_screen(
     (False, True, (GB, GB), "2 ГБ (↑ 1 ГБ | ↓ 1 ГБ)"),
 ])
 async def test_device_rf_line_follows_one_rule_in_card_list_and_rf_screen(
-        services, fake_bot, fake_routing, make_active_client, enabled, allowed, rf, expect):
+        services, fake_bot, fake_routing, make_active_client, monkeypatch, enabled, allowed, rf, expect):
     """Устройство: карточка (под «Потребление»), разбивка потребления профиля
     и экран РФ профиля — по одному правилу от владельца, состояния функции и
     собственных байт."""
-    fake_routing.enabled = enabled
+    _rf_feature(monkeypatch, services, fake_routing, enabled)
     c, did = _profile(services, make_active_client, "Ксюша", 6302, allowed=allowed, rf=rf)
 
     card = await _device_card(services, fake_bot, did)
@@ -450,10 +458,10 @@ async def test_profile_rf_sum_leaves_gateway_devices_out(services, fake_bot, rf_
 
 
 async def test_rf_screen_lists_admin_first_and_is_empty_without_profiles(
-        services, fake_bot, fake_routing, make_active_client):
+        services, fake_bot, fake_routing, make_active_client, monkeypatch):
     """Пусто — своя фраза, а не голый заголовок; дальше админ первым, как в
     списке клиентов, — ему разрешено всегда (функция развёрнута и включена)."""
-    fake_routing.enabled = True
+    _rf_feature(monkeypatch, services, fake_routing, True)
     empty = await _deep(services, fake_bot, "traffic_local")
     assert empty.endswith("\n\nПрофилей с РФ-доступом нет."), empty
     _profile(services, make_active_client, "Алёна", 6303, allowed=True)
@@ -462,6 +470,34 @@ async def test_rf_screen_lists_admin_first_and_is_empty_without_profiles(
     rows = [b for b in screen.split("\n\n") if b.startswith("👤 ")]
     assert len(rows) == 2 and "Алёна" in rows[1], screen
     assert "Профилей с РФ-доступом нет." not in screen
+
+
+async def test_rf_lines_stay_when_the_routing_self_check_fails(
+        services, fake_bot, fake_routing, make_active_client, monkeypatch):
+    """Самопроверка обвязки отрицательная (ipset/dnsmasq сломались), функция
+    развёрнута и включена: строки РФ «0 ГБ» у профиля и устройства остаются —
+    как строка на главной. Раньше они пропадали, и админ видел «РФ-доступа
+    нет» ровно тогда, когда нулевой счётчик и есть главная подсказка."""
+    from awgbot.infra import routing as infra_routing
+    _rf_feature(monkeypatch, services, fake_routing, True)
+    monkeypatch.setattr(infra_routing, "available", lambda: False)
+    assert not services.routing_available(), "подмена самопроверки не сработала"
+    c, did = _profile(services, make_active_client, "Ксюша", 6420, allowed=True)
+    want = [_RF_PREFIX + "0 ГБ (↑ 0 ГБ | ↓ 0 ГБ)"]
+    assert _rf_lines(await _client_card(services, fake_bot, c.id)) == want, "строка профиля пропала"
+    assert _rf_lines(await _device_card(services, fake_bot, did)) == want, "строка устройства пропала"
+    assert "👤 Ксюша: 0 ГБ" in await _deep(services, fake_bot, "traffic_local")
+
+
+async def test_rf_lines_need_the_feature_deployed_not_only_switched_on(
+        services, fake_bot, fake_routing, make_active_client, monkeypatch):
+    """Выключатель включён, а обвязка не развёрнута (интерфейса линка нет):
+    функции нет — нулевых строк РФ тоже нет."""
+    fake_routing.enabled = True
+    monkeypatch.setattr(services, "routing_provisioned", lambda: False)
+    c, did = _profile(services, make_active_client, "Ксюша", 6421, allowed=True)
+    assert _rf_lines(await _client_card(services, fake_bot, c.id)) == []
+    assert _rf_lines(await _device_card(services, fake_bot, did)) == []
 
 
 async def test_admin_gets_no_zero_rf_line_on_a_server_without_the_feature(
@@ -601,10 +637,10 @@ async def test_traffic_devices_screen_heads_with_the_profile_total(
 
 
 async def test_rf_screen_puts_the_biggest_profile_first(services, fake_bot, fake_routing,
-                                                        make_active_client):
+                                                        make_active_client, monkeypatch):
     """Экран РФ-доступа — тот же порядок, что у трафика: от большего к меньшему,
     равные — в прежнем порядке."""
-    fake_routing.enabled = True
+    _rf_feature(monkeypatch, services, fake_routing, True)
     _profile(services, make_active_client, "Алёна", 6407, allowed=True, rf=(GB, 0))
     _profile(services, make_active_client, "Борис", 6408, allowed=True, rf=(GB, 2 * GB))
     _profile(services, make_active_client, "Вера", 6409, allowed=True)

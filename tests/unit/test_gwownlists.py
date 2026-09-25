@@ -361,13 +361,18 @@ def test_sync_works_only_with_lan_mode_and_the_channel(agent, host):
 
 def test_an_edit_past_the_agent_becomes_one_event(agent, host):
     """`awg-bot lan add` на самой малине: тик находит правку и ставит её в
-    очередь серверу — один раз, а не на каждом тике."""
+    очередь серверу — один раз, а не на каждом тике. Вторая сверка новых
+    правок не находит (True только на новые — по нему кнопка дописывает хвост
+    «синхронизируются»), а неотправленное видно отдельно — own_unsent."""
     _synced(agent, host, {"a.com": "vpn", "b.ru": "ru"})
     host.write(vpn=["a.com", "new.com"], ru=["b.ru"])
     assert agent.own_reconcile() is True
     assert [e[1:] for e in _pending(agent)] == [["new.com", "vpn", False]]
-    assert agent.own_reconcile() is True, "правка ещё не отправлена — сверка говорит «есть что слать»"
+    assert agent.own_reconcile() is False, "та же правка второй раз названа новой"
+    assert agent.own_unsent() is True, "правка ещё не отправлена — есть что слать"
     assert len(_pending(agent)) == 1, "та же правка встала в очередь второй раз"
+    agent.own_pending_events()
+    assert agent.own_unsent() is False, "отправленная правка снова «неотправленная» — маячок на каждом тике"
 
 
 def test_removals_and_moves_become_del_and_the_new_kind(agent, host):
@@ -579,6 +584,76 @@ def test_a_newer_canon_of_the_same_server_is_applied(agent, host):
     assert res["ok"] is True and host.lists() == {}, "удаление на другом шлюзе не дошло"
 
 
+@pytest.mark.parametrize("gen,ver", [("g2", 1), ("g1", 1)])
+def test_an_empty_gateway_takes_the_canon_of_a_new_or_restored_server_at_once(agent, host, gen, ver):
+    """Шлюз с ПУСТЫМИ своими списками, база от прежнего сервера (другое
+    поколение или версия меньше базы): слать init нечего — канон применяется
+    сразу. Раньше такой шлюз отвечал «skipped: init» на каждый канон и не
+    применял его никогда: после переустановки сервера списки не доходили."""
+    _synced(agent, host, {"a.com": "vpn"}, ver=4)
+    assert agent.apply_own_lists(_canon({}, ver=5))["ok"] is True
+    assert host.lists() == {} and agent.own_base()["ver"] == 5
+    res = agent.apply_own_lists(_canon({"x.com": "vpn"}, gen=gen, ver=ver))
+    assert res["ok"] is True and not res.get("skipped"), f"пустой шлюз не принял канон: {res}"
+    assert host.lists() == {"x.com": "vpn"}
+    assert (agent.own_base()["gen"], agent.own_base()["ver"]) == (gen, ver), "база не стала новым каноном"
+    assert _pending(agent) == [], "пустой список ушёл init"
+
+
+def _dropping_sync(host, monkeypatch, drop: str) -> None:
+    """sync, который (как настоящий скрипт с хостом Endpoint аплинка) молча
+    не пишет домен `drop`."""
+    orig = host.run
+
+    def run(cmd, domains, timeout=150):
+        res = orig(cmd, domains, timeout)
+        if cmd == "sync" and res[0]:
+            cur = host.lists(); cur.pop(drop, None)
+            host.write([d for d, k in cur.items() if k == "vpn"], [d for d, k in cur.items() if k == "ru"])
+        return res
+    monkeypatch.setattr(gwguard, "run_lan_domain", run)
+
+
+def test_the_base_is_what_the_script_actually_wrote(agent, host, monkeypatch):
+    """Скрипт отбросил домен канона (хост Endpoint аплинка): база — то, что
+    лежит в файлах, а не присланное. Иначе следующая сверка сочла бы
+    отброшенный домен удалённым руками и отправила бы серверу «del» — домен
+    пропал бы у всех шлюзов."""
+    _synced(agent, host, {"a.com": "vpn"})
+    _dropping_sync(host, monkeypatch, "uplink.example.org")
+    res = agent.apply_own_lists(_canon({"a.com": "vpn", "uplink.example.org": "vpn"}, ver=2))
+    assert res["ok"] is True, res
+    assert agent.own_base()["items"] == {"a.com": "vpn"}, agent.own_base()
+    assert agent.own_reconcile() is False and _pending(agent) == [], \
+        f"отброшенный скриптом домен ушёл серверу правкой: {_pending(agent)}"
+
+
+def test_the_base_is_empty_when_the_script_dropped_the_only_domain(agent, host, monkeypatch):
+    """Тот же случай, когда отброшенный домен в каноне единственный: в файлах
+    пусто — и база пуста; сверка правок не находит."""
+    _synced(agent, host, {})
+    _dropping_sync(host, monkeypatch, "uplink.example.org")
+    res = agent.apply_own_lists(_canon({"uplink.example.org": "vpn"}, ver=2))
+    assert res["ok"] is True and host.lists() == {}, res
+    assert agent.own_base()["items"] == {}, f"база — присланное, а не записанное: {agent.own_base()}"
+    assert agent.own_reconcile() is False and _pending(agent) == [], \
+        f"отброшенный скриптом домен ушёл серверу правкой: {_pending(agent)}"
+
+
+def test_an_unwritable_sync_file_refuses_with_a_reason(agent, host, monkeypatch, tmp_path):
+    """Файл для sync не записался (каталог состояния — файл, диск полон): отказ
+    с причиной, а не исключение в цикле канала; база и файлы прежние."""
+    _synced(agent, host, {"a.com": "vpn"})
+    blocker = tmp_path / "blocker"; blocker.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(gwguard, "OWN_LISTS_NEW", str(blocker / "own-lists.new"))
+    host.calls.clear()
+    res = agent.apply_own_lists(_canon({"b.com": "vpn"}, ver=2))
+    assert res["ok"] is False and res["error"].startswith("файл для sync не записан: "), res
+    assert "sync" not in host.calls and host.lists() == {"a.com": "vpn"}
+    assert agent.own_base()["ver"] == 1
+    assert agent.own_status()[0]["state"] == "failed"
+
+
 def test_lan_mode_off_refuses_and_keeps_the_base(agent, host):
     _synced(agent, host, {"a.com": "vpn"})
     host.env["LAN_MODE"] = "0"
@@ -638,6 +713,28 @@ def test_an_old_script_triggers_a_reassert_and_the_canon_waits(agent, host):
     assert agent.own_retry() is None, "отложенный канон применён второй раз"
 
 
+def test_the_retry_itself_reasserts_until_the_script_learns_sync(agent, host, monkeypatch):
+    """Первый реассерт не помог (юнит был занят, скрипт остался старым): тик
+    сам пробует снова, когда троттлинг отпустит, и применяет отложенный канон,
+    как только скрипт стал новым. Раньше повтор ждал, пока обвязку
+    перевыставит кто-то другой, — канон висел до перезапуска агента."""
+    host.has_sync = False
+    agent.apply_own_lists(_canon({"a.com": "vpn"}, ver=2))
+    assert host.reasserts == 1
+    assert agent.own_retry() is None and host.reasserts == 1, "троттлинг реассерта не соблюдён"
+    agent._last_reassert = -1e9                         # прошло 10 минут
+
+    def reassert(timeout=90):
+        host.reasserts += 1
+        host.has_sync = True                            # юнит положил новый скрипт
+        return True, ""
+    monkeypatch.setattr(gwguard, "reassert", reassert)
+    res = agent.own_retry()
+    assert host.reasserts == 2, "тик не перевыставил обвязку сам"
+    assert res is not None and res["ok"] is True and host.lists() == {"a.com": "vpn"}, res
+    assert agent.own_retry() is None
+
+
 def test_nothing_to_retry_is_none(agent, host):
     assert agent.own_retry() is None
 
@@ -652,8 +749,17 @@ def _checks(agent):
 
 
 def test_status_is_off_without_the_channel(agent, host):
+    """Режим без VPN есть, канала нет — «off» с пометкой no_channel: экран
+    списков скажет, что они только этого шлюза и почему."""
     host.env["LINK_CHANNEL"] = "0"
-    assert agent.own_status() == ({"active": False, "state": "off"}, [])
+    assert agent.own_status() == ({"active": False, "state": "off", "no_channel": True}, [])
+
+
+def test_status_is_off_without_lan_mode_and_says_nothing_about_the_channel(agent, host):
+    """Режим выключен — про канал говорить нечего: no_channel ложно даже без канала."""
+    host.env.update(LINK_CHANNEL="0", LAN_MODE="0")
+    info, checks = agent.own_status()
+    assert info["state"] == "off" and not info["no_channel"] and checks == [], info
 
 
 def test_status_before_and_after_the_first_sync(agent, host):

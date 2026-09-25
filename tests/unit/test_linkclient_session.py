@@ -567,3 +567,84 @@ async def test_server_clock_an_hour_off_does_not_break_the_session(vps, monkeypa
     agent = _Agent()
     await linkclient.LinkClient(agent)._connect_once()
     assert agent.roles == [True], f"слово сервера с часами {shift:+} с отвергнуто"
+
+
+# ── тик и внеочередной обзор: отказ шага — в журнал, не молча ───────────────
+
+async def test_a_failing_tick_step_is_logged_and_the_next_step_still_runs(gateway_role, conf, caplog):
+    """Повтор записей SMB упал (исключение в агенте): сверка своих списков на
+    том же тике всё равно идёт, а отказ виден в журнале — раньше его глушили
+    молча, и «записи не применяются» нечем было объяснить."""
+    import logging
+    agent = _Agent()
+    reconciled: list[int] = []
+
+    def boom():
+        raise RuntimeError("помощник упал")
+    agent.services_retry = boom
+    agent.own_reconcile = lambda: reconciled.append(1) or False
+    agent.own_unsent = lambda: False
+    agent.own_retry = lambda: None
+    _live_client(agent)
+    with caplog.at_level(logging.WARNING, logger="awgbot"):
+        await linkclient.on_tick(agent)
+    assert reconciled == [1], "после упавшего шага сверка своих списков не пошла"
+    warns = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("retry_peer_services" in m and "помощник упал" in m for m in warns), warns
+
+
+async def test_a_failing_smb_scan_on_poke_is_logged(gateway_role, conf, caplog):
+    import logging
+    agent = _Agent()
+
+    def boom():
+        raise OSError("avahi-browse: нет прав")
+    agent.services_scan = boom
+    _live_client(agent)
+    with caplog.at_level(logging.WARNING, logger="awgbot"):
+        await linkclient.poke(agent)                  # не бросает
+    assert any("нет прав" in r.getMessage() for r in caplog.records if r.levelno == logging.WARNING), \
+        [r.getMessage() for r in caplog.records]
+
+
+async def test_the_smb_list_goes_on_every_change_and_never_without_one(gateway_role, conf):
+    """Обзор нашёл изменение — список уходит тут же; не нашёл — ни байта.
+    Повторно тот же список отправляется только при переподключении (hello)."""
+    agent = _Agent()
+    changes = iter([True, False, True])
+    agent.services_scan = lambda: next(changes)
+    agent.services_local = lambda: [{"t": "_smb._tcp", "n": "nas", "h": "nas", "p": 445, "a": "192.168.1.10"}]
+    client = _live_client(agent)
+    for _ in range(3):
+        await linkclient.services_changed(agent)
+    msgs = [gwlink.unpack(KEY, x, nonce=SN) for x in client._writer.written]
+    assert [m["t"] for m in msgs] == ["svc", "svc"], [m["t"] for m in msgs]
+    assert msgs[0]["items"] == agent.services_local()
+
+
+async def test_reconcile_never_runs_in_the_middle_of_applying_the_canon(gateway_role, conf):
+    """Сверка файлов посреди `sync` сочла бы строки канона своими правками и
+    отправила бы их серверу: применение канона и сверка идут по очереди."""
+    import threading
+    agent = _Agent()
+    started, release = threading.Event(), threading.Event()
+    order: list[str] = []
+
+    def apply(msg):
+        order.append("apply:start"); started.set()
+        release.wait(5)
+        order.append("apply:end")
+        return {"ok": True, "hash": "ab", "n": 0, "error": ""}
+    agent.apply_own_lists = apply
+    agent.own_reconcile = lambda: order.append("reconcile") or False
+    agent.own_unsent = lambda: False
+    agent.own_retry = lambda: None
+    client = _live_client(agent)
+    t_apply = asyncio.create_task(client._apply_own({"hash": "ab"}))
+    await asyncio.to_thread(started.wait, 5)
+    t_tick = asyncio.create_task(client.own_tick())
+    await asyncio.sleep(0.1)
+    assert order == ["apply:start"], f"сверка пошла посреди применения канона: {order}"
+    release.set()
+    await asyncio.wait_for(asyncio.gather(t_apply, t_tick), 5)
+    assert order == ["apply:start", "apply:end", "reconcile"], order

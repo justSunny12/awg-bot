@@ -291,3 +291,9 @@ def feeds_hash(domains: str, nets: str) -> str:
     """Отпечаток фидов локальной сети — одно правило на ВПС и на шлюзе:
     разойдись оно, шлюз отвергал бы каждую доставку и качал бы фиды сам."""
     return hashlib.sha256((domains + "\n--\n" + nets).encode()).hexdigest()
+
+
+def clean_hex(value, limit: int = 64) -> str:
+    """Отпечаток из чужого сообщения — только hex и не длиннее limit: всё
+    остальное (в том числе HTML) в state и на экраны не попадает."""
+    return "".join(c for c in str(value or "") if c in "0123456789abcdef")[:limit]

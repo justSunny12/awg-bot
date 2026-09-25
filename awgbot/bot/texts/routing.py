@@ -208,12 +208,32 @@ def gateway_list_text(states: list, switched_at: str = "", auto_on: bool = True,
     return "\n".join(lines)
 
 
+def _bot_link(agent_bot: dict | None) -> str:
+    """Ссылка в чат бота шлюза из {'username', 'name'} (кэш getMe или снимок
+    канала); бот неизвестен — пустая строка."""
+    me = agent_bot or {}
+    if not me.get("username"):
+        return ""
+    return f'<a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>'
+
+
+def _slot_note(state: str, gw: str, agent_bot: dict | None, error: str, purpose: str) -> str:
+    """Строка состояния под записями SMB / своими списками в карточке слота —
+    общие ветки: обновить шлюз (со ссылкой на бота), отказ шлюза, ожидание.
+    purpose — «Для доступа» / «Для синхронизации»."""
+    if state == "old_agent":
+        bot = _bot_link(agent_bot)
+        return f"⚠️ {purpose} необходимо обновить шлюз{gw}" + (f" (бот: {bot})" if bot else "")
+    if state == "failed":
+        return f"⚠️ Шлюз{gw} отказался принимать" + (f": {_e(error)}" if error else "")
+    return "⏳ Синхронизация с другими шлюзами…"
+
+
 def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> str:
     """SMB в карточке слота — только числа (концепт «сервисы соседних сетей»
-    §7.2, вычитка 3.1.0): сколько в подсети слота, сколько ему раздано из
-    подсетей других шлюзов; что с ними на шлюзе — строкой сразу под ней,
-    предупреждение — с ⚠️ в начале. name — «имя» шлюза, уже
-    экранированное (как в карточке), agent_bot — ссылка в чат его бота."""
+    §7.2): сколько в подсети слота, сколько ему раздано из подсетей других
+    шлюзов; что с ними на шлюзе — строкой сразу под ней. name — «имя» шлюза,
+    уже экранированное (как в карточке), agent_bot — ссылка в чат его бота."""
     own, peer = int(svc.get("own") or 0), int(svc.get("peer") or 0)
     if not own and not peer:
         return "🗂 SMB в подсетях шлюзов не найдены"
@@ -226,17 +246,8 @@ def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> s
         return head + ", доступны"
     if state == "reissue":
         note = f"⚠️ Для доступа необходим перевыпуск конфигурации шлюза{gw}"
-    elif state == "old_agent":
-        me = agent_bot or {}
-        bot = (f' (бот: <a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>)'
-               if me.get("username") else "")
-        note = f"⚠️ Для доступа необходимо обновить шлюз{gw}{bot}"
-    elif state == "failed":
-        err = svc.get("error") or ""
-        note = f"⚠️ Шлюз{gw} отказался принимать" + (f": {_e(err)}" if err else "")
     else:
-        note = "⏳ Синхронизация с другими шлюзами…"
-    # состояние — сразу под строкой (вычитка 3.1.0, часть VIII)
+        note = _slot_note(state, gw, agent_bot, svc.get("error") or "", "Для доступа")
     return head + "\n" + note
 
 
@@ -251,19 +262,10 @@ def own_lists_line(own: dict, name: str = "", agent_bot: dict | None = None) -> 
     gw = f" {name}" if name else ""
     if state == "applied":
         return head
-    if state == "old_agent":
-        me = agent_bot or {}
-        bot = (f' (бот: <a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>)'
-               if me.get("username") else "")
-        note = f"⚠️ Для синхронизации необходимо обновить шлюз{gw}{bot}"
-    elif state == "failed":
-        err = own.get("error") or ""
-        note = f"⚠️ Шлюз{gw} отказался принимать" + (f": {_e(err)}" if err else "")
-    elif state == "offline":
+    if state == "offline":
         note = f"⏳ Синхронизируется со шлюзом{gw}, когда он выйдет на связь"
     else:
-        note = "⏳ Синхронизация с другими шлюзами…"
-    # состояние — сразу под строкой (вычитка 3.1.0, часть VIII)
+        note = _slot_note(state, gw, agent_bot, own.get("error") or "", "Для синхронизации")
     return head + "\n" + note
 
 
@@ -290,23 +292,29 @@ def gateway_card_text(state: dict, states: list) -> str:
             + (", ".join(f"<code>{_e(n)}</code>" for n in nets) if nets else "не заданы"))
     if nets:
         home += "\nУстройства админа достают до них через этот линк."
+    # блок «свои списки» со строкой состояния закрывается пустой строкой перед
+    # тем, что идёт следом («↔️ Доступ…», предупреждение о пересечении)
+    gap_after_lists = False
     if gw.lan_mode:
         home += "\n\n🏠 За шлюзом — без VPN: включено"
-        if state.get("own_lists"):
-            own = own_lists_line(state["own_lists"], name, state.get("agent_bot"))
-            home += "\n" + own
+        own = state.get("own_lists") or {}
+        if own and own.get("state") != "off":
+            home += "\n" + own_lists_line(own, name, state.get("agent_bot"))
+            gap_after_lists = own.get("state") != "applied"
     if state.get("peer_nets"):
         # подсеть этого шлюза — цель, куда пускают из-за других (функция B);
-        # выключено — строки нет вовсе. Перед ней пустая строка, если блок
-        # списков закончился строкой состояния (⏳/⚠️ под «📋 Свои списки»)
-        if home.rstrip().rsplit("\n", 1)[-1][:1] in ("⏳", "⚠️"[:1]):
+        # выключено — строки нет вовсе
+        if gap_after_lists:
             home += "\n"
+            gap_after_lists = False
         home += ("\n↔️ Доступ из подсетей других шлюзов до "
                  + ", ".join(f"<code>{_e(n)}</code>" for n in nets))
         if state.get("services"):
             home += "\n" + services_line(state["services"], name, state.get("agent_bot"))
     conflict = next((s for s in others if _nets_overlap(nets, s["gateway"].home_subnets)), None)
     if conflict is not None:
+        if gap_after_lists:
+            home += "\n"
         ov = ", ".join(_e(n) for n in _nets_overlap(nets, conflict["gateway"].home_subnets))
         first = min([state] + others, key=lambda s: (0 if s.get("preferred") else 1, s["gateway"].id))
         route = ("маршрут достаётся ему, а " if first["gateway"].id != gw.id else "")
@@ -335,9 +343,6 @@ def _ago(seconds) -> str:
     if s < 86400:
         return f"{s // 3600} ч назад"
     return f"{s // 86400} дн назад"
-
-
-
 
 
 def channel_block(ch: dict | None, server_ok) -> str:
@@ -391,12 +396,11 @@ def channel_block(ch: dict | None, server_ok) -> str:
                              f"— изменения уходят каналом и применятся сами{tail}")
             else:
                 items = "\n".join(f"   • {d}" for d in drift_lines(ch.get("drift_items") or [], html=True))
-                when = "" if ch.get("online") else f", по снимку {_ago(ch.get('age'))}"
+                when = f", по снимку {_ago(ch.get('age'))}"       # ветка — канал не на связи
                 lines.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}{when}):\n{items}")
         else:
             lines.append(f"✅ Конфигурация шлюза актуальна{stale}")
         # обвязка не того образца — только файлом: канал её не переставит
-        # (раньше эту строку показывал снятый экран перед выпуском)
         gen_hint = {"old": "⚠️ Обвязка шлюза старого образца — перевыпусти файл конфигурации и примени его на шлюзе",
                     "none": "⚠️ Обвязка шлюза не развёрнута — примени файл конфигурации на шлюзе"}
         if ch.get("has_bundle") and ch.get("plumbing_gen") in gen_hint:
@@ -807,7 +811,6 @@ def gateway_plain_bundle_caption(display: str) -> str:
             "После возврата в меню сообщение с файлом и инструкция удалятся из чата.")
 
 
-
 def settings_routing_text(enabled: bool, status: tuple) -> str:
     """Экран «Условная маршрутизация» в настройках.
 
@@ -988,11 +991,8 @@ def agent_bot_line(state: dict | None) -> str:
     """Последняя строка карточки: ссылка в чат бота шлюза — имя профиля из
     getMe по токену слота. Ссылка на диалог, без команд. Бота ещё не спросили
     (токена нет или Telegram не ответил) — строки нет."""
-    me = (state or {}).get("agent_bot") or {}
-    if not me.get("username"):
-        return ""
-    name = me.get("name") or me["username"]
-    return f'Бот шлюза: <a href="https://t.me/{_e(me["username"])}">{_e(name)}</a>'
+    bot = _bot_link((state or {}).get("agent_bot"))
+    return f"Бот шлюза: {bot}" if bot else ""
 
 
 ROUTING_ABOUT = (

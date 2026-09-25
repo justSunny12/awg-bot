@@ -23,6 +23,7 @@ import asyncio
 import base64
 import os
 import threading
+import time
 import types
 from pathlib import Path
 
@@ -287,6 +288,76 @@ def test_two_gateways_merging_at_once_lose_nothing(pair):
     assert s.gwlink_own_canon()["ver"] == 80
 
 
+def test_the_first_edit_on_a_fresh_server_creates_the_canon_without_hanging(pair):
+    """Канона ещё нет, первое же слияние создаёт его под той же блокировкой,
+    под которой идёт слияние: с нереентерабельной блокировкой поток канала
+    вставал навсегда — и вместе с ним приём всех следующих сообщений слота."""
+    s = pair.services
+    assert not s.db.get_state(s._GWLINK_OWN_KEY), "канон уже создан — сцена не та"
+    done: list[bool] = []
+    t = threading.Thread(target=lambda: done.append(
+        s.gwlink_own_in(1, "rx", [[1, "a.com", "vpn", False]])), daemon=True)
+    t.start()
+    t.join(5)
+    assert not t.is_alive(), "слияние на пустом сервере зависло на блокировке"
+    assert done == [True] and _canon(s) == {"a.com": "vpn"}
+
+
+def test_two_threads_create_one_generation(pair, monkeypatch):
+    """Два слота впервые спрашивают канон одновременно: поколение создаётся
+    одно. Два разных — и шлюз, получивший первое, на втором счёл бы сервер
+    переустановленным и отправил весь список ещё раз init."""
+    from awgbot.domain.services import gwchannel
+    s = pair.services
+    n = iter(range(100))
+
+    def slow_token(k):
+        time.sleep(0.05)                          # окно гонки шире, чем разница стартов потоков
+        return f"{next(n):0{2 * k}x}"
+    monkeypatch.setattr(gwchannel.secrets, "token_hex", slow_token)
+    gens: list[str] = []
+    threads = [threading.Thread(target=lambda: gens.append(s.gwlink_own_canon()["gen"])) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(5)
+    assert len(gens) == 4 and len(set(gens)) == 1, f"поколений создано несколько: {gens}"
+    assert s.gwlink_own_canon()["gen"] == gens[0]
+
+
+def test_a_slot_without_lan_mode_is_off_and_the_canon_is_not_even_created(pair):
+    """Режим без VPN у слота выключен: строки своих списков в карточке нет
+    («off»), и карточка ради неё не создаёт канон и не считает его."""
+    s = pair.services
+    s.db.gateway_update(1, lan_mode=0)
+    assert _card(s, 1) == {"vpn": 0, "ru": 0, "state": "off", "error": ""}
+    assert not s.db.get_state(s._GWLINK_OWN_KEY), "карточка выключенного слота создала канон"
+
+
+def test_an_ack_is_stored_as_json_with_foreign_fields_cleaned(pair):
+    """Ответ шлюза на канон — JSON одним форматом с ответом на записи SMB;
+    отпечаток — только hex, ошибка — одной строкой, n — число."""
+    s = pair.services
+    s.gwlink_own_ack_in(1, {"ok": False, "hash": "<b>" + "ab" * 32 + "</b>", "n": "много",
+                            "error": "dnsmasq\n  отверг\tсписки"})
+    ack = s.gwlink_own_ack(1)
+    assert ack["ok"] is False and ack["n"] == 0 and ack["error"] == "dnsmasq отверг списки", ack
+    assert set(ack["hash"]) <= set("0123456789abcdef") and len(ack["hash"]) <= 64, ack
+    assert ack["at"], "время ответа не записано"
+    s.gwlink_peer_services_ack_in(1, {"ok": True, "hash": "cd", "n": 2})
+    assert set(s.gwlink_peer_services_ack(1)) == set(ack), "два ответа хранятся разными форматами"
+
+
+def test_an_ack_in_the_old_text_format_reads_as_no_answer(pair):
+    """После обновления сервера в state лежит строка прежнего формата: она
+    читается как «ответа нет» (карточка — ждём), а не ломает карточку."""
+    s = pair.services
+    digest, _ = s.gwlink_own_for(s.db.gateway(1))
+    s.db.set_state(s._gwlink_key(s._GWLINK_OWN_ACK_KEY, 1), f"ok {digest} 0 2026-09-20T10:00:00+03:00")
+    assert s.gwlink_own_ack(1) == {}
+    assert _card(s, 1)["state"] in ("pending", "offline"), _card(s, 1)
+
+
 async def test_the_first_sync_of_two_gateways_is_a_union_and_direct_wins(pair):
     """Оба шлюза пришли со своими списками 3.0/3.1: канон — объединение; спор
     вида — «напрямую», в каком бы порядке шлюзы ни подключались."""
@@ -341,7 +412,7 @@ class _Pi(GatewayServices):
 
 def _heredoc(tag: str, var: str) -> str:
     script = SCRIPT.read_text(encoding="utf-8")
-    return script.split(f'cat > "${var}" <<\'{tag}\'\n', 1)[1].split(f"\n{tag}\n", 1)[0] + "\n"
+    return script.split(f'cat > "${var}.new" <<\'{tag}\'\n', 1)[1].split(f"\n{tag}\n", 1)[0] + "\n"
 
 
 class _Host:
@@ -532,7 +603,7 @@ async def test_the_first_sync_merges_the_gateways_list_and_restarts_dnsmasq_once
     await y.close()
 
 
-async def test_an_offline_edit_and_a_restart_reach_the_canon_on_connect(pair, pi):
+async def test_an_offline_edit_and_a_restart_reach_the_canon_on_connect(pair, pi, monkeypatch):
     """Канала нет: `awg-bot lan add` на малине ложится в очередь сразу (тик
     монитора), монитор честно пишет «нет связи». Агент перезапустился —
     правка уходит под новой меткой при подключении, канон применяется без
@@ -551,8 +622,9 @@ async def test_an_offline_edit_and_a_restart_reach_the_canon_on_connect(pair, pi
     assert checks[0].detail == "ждут синхронизации (1 правка): нет связи с сервером AWG", checks[0].detail
     restarts = pi.host.restarts()
     old_run = a._own_run_id()
-    # перезапуск агента: новый процесс — новая метка
-    type(a)._own_run = ""
+    # перезапуск агента: новый процесс — новая метка (атрибут класса — через
+    # monkeypatch, чтобы метка не перетекла в соседние тесты)
+    monkeypatch.setattr(type(a), "_own_run", "")
     b = pi.agent()
     await pi.up(b)
     assert await _until(lambda: "shop.ru" in _canon(s), timeout=5), f"офлайн-правка не дошла: {pair.ev}"

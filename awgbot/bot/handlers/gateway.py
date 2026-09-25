@@ -537,25 +537,18 @@ async def gw_lan_domain_received(message: Message, state: FSMContext, services):
 
 async def _own_sync_tail(services, ok: bool, out: str) -> str:
     """После правки списка: сверка и отправка серверу сразу (концепт
-    «синхронизация своих списков» §13); хвост итога — куда уйдёт правка."""
+    «синхронизация своих списков» §13); хвост итога — куда уйдёт правка.
+    Изменилось ли что-то, решает сверка файлов, а не слова вывода скрипта."""
     from awgbot.runtime import linkclient
-    if not ok or not any(w in out for w in ("добавлен", "убран")):
+    if not ok or not await call(services.own_active):
         return ""
-    active = getattr(services, "own_active", None)
-    if active is None or not await call(active):
+    if not await linkclient.own_changed(services):
         return ""
-    await linkclient.own_changed(services)
     return "online" if linkclient.online() else "offline"
 
 
 async def _own_info(services) -> dict:
-    status = getattr(services, "own_status", None)
-    if status is None:
-        return {}
-    info, _checks = await call(status)
-    if not info.get("active"):
-        from awgbot.infra import gwguard
-        info["no_channel"] = gwguard.lan_mode() and gwguard.unit_env("LINK_CHANNEL") != "1"
+    info, _checks = await call(services.own_status)
     return info
 
 
@@ -692,9 +685,8 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
     await edit_nav(cb, services, texts.gateway_op_result("Конфигурация шлюза", ok, detail), None)
     # итог — серверу сразу: там у файла ждут ответа; отказ уходит тем же путём
     from awgbot.runtime import linkclient
-    from awgbot.domain.services.gwchannel import GwChannelMixin
-    await linkclient.report_applied(services, ok, "" if ok else detail,
-                                    GwChannelMixin.bundle_fingerprint(blob))
+    from awgbot.util import bundlecrypt
+    await linkclient.report_applied(services, ok, "" if ok else detail, bundlecrypt.fingerprint(blob))
     if ok:
         # бандл мог только что включить канал — поднять клиента и сразу
         # отправить снимок: человек смотрит на карточку слота на ВПС сейчас

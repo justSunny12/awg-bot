@@ -311,14 +311,16 @@ async def test_an_old_agent_ignores_peer_svc_and_keeps_its_session(pair):
 
 # ── снятие слота ─────────────────────────────────────────────────────────────
 
-def test_forgetting_a_slot_clears_its_three_service_keys(pair):
+def test_forgetting_a_slot_clears_its_two_service_keys(pair):
+    """Слот сняли — его список SMB-серверов и ответ на записи соседей уходят:
+    новый слот с тем же номером не унаследует чужие серверы в Finder соседей."""
     s = pair.services
     _x_known(s)
     s.gwlink_peer_services_ack_in(1, {"ok": True, "hash": H_NAS, "n": 1})
-    keys = [s._gwlink_key(k, 1) for k in (s._GWLINK_SVC_KEY, s._GWLINK_SVC_AT_KEY, s._GWLINK_PEER_SVC_KEY)]
+    keys = [s._gwlink_key(k, 1) for k in (s._GWLINK_SVC_KEY, s._GWLINK_PEER_SVC_KEY)]
     assert all(s.db.get_state(k) for k in keys)
     s.gwlink_forget(1)
-    assert [s.db.get_state(k) or "" for k in keys] == ["", "", ""], "ключи сервисов пережили снятие слота"
+    assert [s.db.get_state(k) or "" for k in keys] == ["", ""], "ключи сервисов пережили снятие слота"
     assert s.gwlink_services(1) == [] and s.gwlink_peer_services_ack(1) == {}
 
 
@@ -350,7 +352,7 @@ class _Host:
             (bin_dir / name).chmod(0o755)
         script = SCRIPT.read_text(encoding="utf-8")
         helper = tmp_path / "awg-lan-services.sh"
-        helper.write_text(script.split("cat > \"$LAN_SERVICES\" <<'SVCEOF'\n", 1)[1]
+        helper.write_text(script.split("cat > \"$LAN_SERVICES.new\" <<'SVCEOF'\n", 1)[1]
                           .split("\nSVCEOF\n", 1)[0] + "\n", encoding="utf-8")
         helper.chmod(0o755)
         monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")

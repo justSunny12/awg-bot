@@ -232,3 +232,18 @@ def test_without_padding_the_message_is_as_short_as_its_body(key):
     """Служебные сообщения (`hello`, `ask`) добивкой не гоняем: они и так не
     несут события, а лишние полкилобайта в линке — трафик из ничего."""
     assert len(gwlink.pack(key, "hello", {"proto": gwlink.PROTO}, seq=1)) < gwlink.PAD_DELTA
+
+
+@pytest.mark.parametrize("raw,limit,want", [
+    ("0123abcdef", 64, "0123abcdef"),
+    ("<i>x</i>\n12", 64, "12"),                         # теги и перевод строки не проходят
+    ("ABCDEF", 64, ""),                                 # верхний регистр — не наш отпечаток
+    (None, 64, ""),
+    (12345, 64, "12345"),
+    ("f" * 100, 32, "f" * 32),
+])
+def test_clean_hex_passes_only_lowercase_hex_up_to_the_limit(raw, limit, want):
+    """Отпечаток из чужого сообщения попадает в state и на экраны: всё, кроме
+    hex, отбрасывается, длина — не больше предела."""
+    from awgbot.util.gwlink import clean_hex
+    assert clean_hex(raw, limit) == want

@@ -93,8 +93,7 @@ class StatusMixin:
         devices = self.db.list_devices(client_id)
         progress = self.migration_client_progress(client_id) if self.migration_running() else None
         rt_visible = self.routing_client_visible(client)
-        t_rf = self.db.get_client_rf(client_id)
-        rf = (int(t_rf["rx"]), int(t_rf["tx"]))
+        rf = self.db.get_client_rf(client_id)
         return {
             "client": client, "devices": devices,
             "traffic": self.db.get_client_traffic(client_id),
@@ -148,12 +147,13 @@ class StatusMixin:
         по имени — тот же порядок, что в списке клиентов. rf — (rx, tx) РФ-части
         под строкой профиля или None, если строка ему не положена."""
         by = self.db.rf_by_client()
+        enabled = self.rf_enabled()
         out = []
         for c in self.db.list_clients(admin_first_tg=config.ADMIN_ID):
             t = self.db.get_client_traffic(c.id)
             rf = by.get(c.id, (0, 0))
             out.append((c, int(t["rx_month"]), int(t["tx_month"]),
-                        rf if self.rf_client_visible(c, rf) else None))
+                        rf if self.rf_client_visible(c, rf, enabled) else None))
         # от большего к меньшему (вычитка 3.1.0); при равенстве — прежний порядок
         out.sort(key=lambda r: -(r[1] + r[2]))
         return out
@@ -163,27 +163,28 @@ class StatusMixin:
         строке на устройство (list_devices сам решает, какую из пары показать);
         rf — как у профилей."""
         owner = self.db.get_client(client_id)
+        enabled = self.rf_enabled()
         return [(d, int(d.traffic.rx_month), int(d.traffic.tx_month),
-                 _dev_rf(d) if self.rf_device_visible(d, owner) else None)
+                 _dev_rf(d) if self.rf_device_visible(d, owner, enabled) else None)
                 for d in self.db.list_devices(client_id)]
 
-    # ── РФ-доступ в потреблении (концепт «учёт РФ-трафика», этап 2) ──────────
+    # ── РФ-доступ в потреблении (концепт «учёт РФ-трафика») ──────────────────
     # Строка РФ показывается там, где она осмысленна: профилю — если ему
-    # разрешён РФ-доступ и функция на сервере развёрнута (routing_client_visible)
-    # или за месяц уже что-то прошло (разрешение сняли, а байты остались);
-    # устройству — если владельцу так же разрешён и оно не шлюз, или у него
-    # самого РФ > 0. Одно правило на карточки, списки и экран РФ-доступа: без
-    # шлюзов у админа не было бы вечного «0 ГБ».
+    # разрешён РФ-доступ и функция развёрнута и включена (rf_enabled — то же
+    # условие, что у строки главной) или за месяц уже что-то прошло (разрешение
+    # сняли, а байты остались); устройству — если владельцу так же разрешён и
+    # оно не шлюз, или у него самого РФ > 0. Одно правило на карточки, списки
+    # и экран РФ-доступа: без шлюзов у админа не было бы вечного «0 ГБ».
 
-    def rf_client_visible(self, client, rf: tuple[int, int] | None = None) -> bool:
+    def rf_client_visible(self, client, rf: tuple[int, int], enabled: bool | None = None) -> bool:
         if client is None:
             return False
-        if rf is None:
-            t = self.db.get_client_rf(client.id)
-            rf = (int(t["rx"]), int(t["tx"]))
-        return rf[0] + rf[1] > 0 or self.routing_client_visible(client)
+        if rf[0] + rf[1] > 0:
+            return True
+        enabled = self.rf_enabled() if enabled is None else enabled
+        return enabled and self.routing_allowed_for(client)
 
-    def rf_device_visible(self, dev, owner=None) -> bool:
+    def rf_device_visible(self, dev, owner=None, enabled: bool | None = None) -> bool:
         if getattr(dev, "is_gateway", False):
             return False
         rx, tx = _dev_rf(dev)
@@ -191,7 +192,8 @@ class StatusMixin:
             return True
         if owner is None:
             owner = self.db.get_client(dev.client_id)
-        return self.routing_client_visible(owner)
+        enabled = self.rf_enabled() if enabled is None else enabled
+        return enabled and self.routing_allowed_for(owner)
 
     def rf_device_card(self, dev) -> Optional[tuple[int, int]]:
         """(rx, tx) для строки РФ в карточке устройства у админа или None."""
@@ -200,10 +202,11 @@ class StatusMixin:
     def rf_by_profile(self) -> list[tuple]:
         """[(client, rx, tx)] РФ за месяц — только профили, которым строка положена."""
         by = self.db.rf_by_client()
+        enabled = self.rf_enabled()
         out = []
         for c in self.db.list_clients(admin_first_tg=config.ADMIN_ID):
             rf = by.get(c.id, (0, 0))
-            if self.rf_client_visible(c, rf):
+            if self.rf_client_visible(c, rf, enabled):
                 out.append((c, rf[0], rf[1]))
         out.sort(key=lambda r: -(r[1] + r[2]))
         return out
@@ -212,8 +215,9 @@ class StatusMixin:
         """[(device, rx, tx)] РФ за месяц по устройствам профиля — только те, кому
         строка положена; шлюзы не показываются никогда."""
         owner = self.db.get_client(client_id)
+        enabled = self.rf_enabled()
         return [(d, *_dev_rf(d)) for d in self.db.list_devices(client_id)
-                if self.rf_device_visible(d, owner)]
+                if self.rf_device_visible(d, owner, enabled)]
 
     def rf_screen_data(self) -> dict:
         """Экран «РФ-доступ за месяц»: итог сервера, строки профилей, «вне
@@ -222,7 +226,7 @@ class StatusMixin:
         tot = self.rf_month_total()
         rows = self.rf_by_profile()
         devs = self.db.get_total_month_rf()
-        outside = max(0, int(tot["rx"]) + int(tot["tx"]) - int(devs["rx"]) - int(devs["tx"]))
+        outside = max(0, int(tot["rx"]) + int(tot["tx"]) - devs[0] - devs[1])
         return {"rx": int(tot["rx"]), "tx": int(tot["tx"]), "rows": rows, "outside": outside}
 
     # ── экран «Сервер» и подготовка переезда ────────────────────────────────

@@ -61,11 +61,12 @@ def _updown(rx: int, tx: int) -> str:
     return f"(↑ {human_bytes(rx)} | ↓ {human_bytes(tx)})"
 
 
-def rf_line(rx: int, tx: int) -> str:
+def rf_line(rx: int, tx: int, label: str = "") -> str:
     """Строка РФ-части под строкой потребления (карточки, списки, главная):
-    «└ 🇷🇺 РФ-доступ: 7.1 ГБ (↑ 0.7 ГБ | ↓ 6.4 ГБ)»."""
+    «└ 🇷🇺 РФ-доступ: 7.1 ГБ (↑ 0.7 ГБ | ↓ 6.4 ГБ)». label — готовая подпись
+    вместо «🇷🇺 РФ-доступ» (ссылкой на экран РФ; флаг — часть ссылки)."""
     from .routing import ROUTING_NAME
-    return f"└ 🇷🇺 {ROUTING_NAME}: {human_bytes(int(rx) + int(tx))} {_updown(rx, tx)}"
+    return f"└ {label or f'🇷🇺 {ROUTING_NAME}'}: {human_bytes(int(rx) + int(tx))} {_updown(rx, tx)}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

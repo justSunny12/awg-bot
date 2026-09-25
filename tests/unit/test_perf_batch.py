@@ -159,7 +159,7 @@ def test_admin_panel_snapshot_carries_everything_the_panel_needs(services):
         assert key in snap
     assert "traffic_rx" in snap["st"]
     # РФ-часть потребления — из того же снимка (только state, без exec)
-    assert {"rx", "tx", "error", "since", "show"} <= set(snap["rf"])
+    assert {"rx", "tx", "error", "show"} <= set(snap["rf"])
 
 
 def test_client_card_data_none_for_missing(services):

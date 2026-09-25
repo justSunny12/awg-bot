@@ -114,13 +114,13 @@ class TrafficMixin:
                    WHERE device_id = ?""",
                 [(up, dn, d) for d, up, dn in rows])
 
-    def get_client_rf(self, client_id: int) -> dict[str, int]:
-        """РФ профиля за месяц — сумма по устройствам владельца без шлюзов."""
+    def get_client_rf(self, client_id: int) -> tuple[int, int]:
+        """(rx, tx) РФ профиля за месяц — сумма по устройствам владельца без шлюзов."""
         row = self._connection().execute(
             f"""SELECT COALESCE(SUM(t.rf_rx_month), 0) AS rx, COALESCE(SUM(t.rf_tx_month), 0) AS tx
                 FROM device_traffic t JOIN devices d ON d.id = t.device_id
                 WHERE d.client_id = ? AND {self._NOT_GATEWAY_SQL}""", (client_id,)).fetchone()
-        return dict(row)
+        return int(row["rx"]), int(row["tx"])
 
     def rf_by_client(self) -> dict[int, tuple[int, int]]:
         """client_id → (rx, tx) РФ за месяц одним GROUP BY, без шлюзов."""
@@ -130,12 +130,12 @@ class TrafficMixin:
                 FROM device_traffic t JOIN devices d ON d.id = t.device_id
                 WHERE {self._NOT_GATEWAY_SQL} GROUP BY d.client_id""")}
 
-    def get_total_month_rf(self) -> dict[str, int]:
-        """Сумма РФ по всем устройствам (для сверки с итогом сервера: «вне профилей»)."""
+    def get_total_month_rf(self) -> tuple[int, int]:
+        """(rx, tx) — сумма РФ по всем устройствам (сверка с итогом сервера: «вне профилей»)."""
         row = self._connection().execute(
             "SELECT COALESCE(SUM(rf_rx_month), 0) AS rx, COALESCE(SUM(rf_tx_month), 0) AS tx "
             "FROM device_traffic").fetchone()
-        return dict(row)
+        return int(row["rx"]), int(row["tx"])
 
     # ── traffic_samples: база для дельт ──────────────────────────────────────
 

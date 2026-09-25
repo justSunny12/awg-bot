@@ -39,3 +39,15 @@ def test_read_privkey_from_conf():
     assert bc.read_privkey(conf) == PRIV
     with pytest.raises(ValueError):
         bc.read_privkey("[Interface]\nAddress = x\n")
+
+
+def test_fingerprint_names_one_file_the_same_way_on_both_sides():
+    """Отпечаток — 16 hex от sha256 файла как он лежит в чате: сервер считает
+    его при выдаче, агент — от полученного; по нему итог применения убирает
+    из чата именно этот файл. Разные файлы — разные отпечатки."""
+    blob = bc.encrypt(b"#!/bin/sh\necho hi\n", PRIV)
+    fp = bc.fingerprint(blob)
+    assert len(fp) == 16 and all(c in "0123456789abcdef" for c in fp), fp
+    assert bc.fingerprint(bytes(blob)) == fp, "один файл — один отпечаток"
+    assert bc.fingerprint(blob + b"\n") != fp
+    assert bc.fingerprint(b"") == "e3b0c44298fc1c14", "пустой файл — отпечаток sha256 пустой строки"
