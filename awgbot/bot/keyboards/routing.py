@@ -119,9 +119,8 @@ def gateway_device_actions(dev, back_target: str, slot: int = 0) -> InlineKeyboa
 
 def gateway_list(states, *, can_add: bool, failover_on: bool,
                  peer_nets_on: bool | None = None) -> InlineKeyboardMarkup:
-    """Список слотов (концепт «резервный шлюз» 6.2): по кнопке на слот,
-    добавить, тумблер автопереключения и тумблер доступа между подсетями
-    (концепт «локальная сеть», функция B) — только при двух и более."""
+    """Список слотов: по кнопке на слот,
+    добавить, тумблер автопереключения и тумблер доступа между подсетями — только при двух и более."""
     kb = InlineKeyboardBuilder()
     rows = []
     for st in states:
@@ -168,7 +167,7 @@ def gateway_card(state, *, back_to_list: bool, back_home: bool = False) -> Inlin
         rows.append(1)
     kb.button(text="⚙️ Конфигурация шлюза", callback_data=GwSlotCB(action="bundle", slot=gw.id))
     kb.button(text="🏠 Локальные подсети", callback_data=GwSlotCB(action="home", slot=gw.id))
-    # «За шлюзом — без VPN» (концепт «локальная сеть»): тумблер с подтверждением,
+    # «За шлюзом — без VPN»: тумблер с подтверждением,
     # при включённом — рецепт роутера
     kb.button(text=f"{_tick(bool(gw.lan_mode))} За шлюзом — без VPN: {'вкл' if gw.lan_mode else 'выкл'}",
               callback_data=GwSlotCB(action="lan_ask", slot=gw.id))

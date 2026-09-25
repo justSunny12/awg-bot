@@ -54,8 +54,7 @@ def client_main(has_devices: bool = True, routing_visible: bool = False,
 
 
 def client_devices(devices, held=(), page: int = 0, render: str = "") -> InlineKeyboardMarkup:
-    """Список своих устройств; следом — чужие, которые профиль держит
-    (концепт «гость»), с пометкой «от кого». Без кнопки добавления — она
+    """Список своих устройств; следом — чужие, которые профиль держит, с пометкой «от кого». Без кнопки добавления — она
     уже есть в главном меню, дублировать здесь избыточно.
 
     Значок один — тип устройства. Второй, про онлайн, пробовали и убрали: два
@@ -121,7 +120,7 @@ def block_device_confirm(device_id: int, *, guest: bool = False) -> InlineKeyboa
 
 def guest_main(*, routing_visible: bool = False, routing_on: bool = False,
                client_id: int = 0) -> InlineKeyboardMarkup:
-    """Главное меню гостя (концепт «гость»): как клиентское, без добавления
+    """Главное меню гостя: как клиентское, без добавления
     и подписки. «Мои устройства» — всегда, даже при одном; РФ-доступ — при
     фиче у владельца. Без устройств меню не рисуется вовсе."""
     kb = InlineKeyboardBuilder()

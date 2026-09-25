@@ -983,7 +983,7 @@ def test_traffic_poll_covers_every_interface(services, make_active_client, monke
         "трафик соседнего интерфейса не учтён"
 
 
-# ── субъект маршрутизации — держатель (концепт «гость») ──────────────────
+# ── субъект маршрутизации — держатель ──────────────────
 
 def _lend(services, owner, tg, name):
     dc = services.add_device(owner.id, name)

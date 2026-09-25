@@ -269,7 +269,7 @@ async def test_menu_button_dismisses_every_other_update_window(services, fake_bo
     assert services.pop_update_reports() == [], "история не очищена"
 
 
-# ── РФ-часть потребления на главной (концепт «учёт РФ-трафика», этап 1) ──────
+# ── РФ-часть потребления на главной ──────
 
 GB = 1024 ** 3
 

@@ -68,9 +68,8 @@ SET_ALLOW4 = "ssh_allow4"
 SET_ALLOW6 = "ssh_allow6"
 SET_TUNNEL_NETS = "tunnel_nets4"
 SET_TUNNEL_ADMIN = "admin4"
-# Адреса шлюзов в /30 линков: им и только им открыт порт канала
-# (концепт «канал линка», §4.1). Клиентская подсеть в tunnel_nets4 сюда
-# не входит — канал не для клиентов.
+# Адреса шлюзов в /30 линков: им и только им открыт порт канала.
+# Клиентская подсеть в tunnel_nets4 сюда не входит — канал не для клиентов.
 SET_LINK_PEERS = "link_peers4"
 
 
@@ -99,7 +98,7 @@ class GuardSpec:
     nat_exclude_ifs: list[str] = field(default_factory=list)  # куда НЕ маскарадить: awg-интерфейсы, линк
     filter: bool = True               # False — NAT-only форма (файервол выключен)
     peer_link_ifs: list[str] = field(default_factory=list)    # линки, между которыми открыт транзит
-                                                              # (концепт «локальная сеть», функция B)
+                                                              #
     peer_link_block: list[str] = field(default_factory=list)  # NAT-only форма: линки, между которыми
                                                               # транзит ЗАКРЫТ (тумблер выключен)
     link_peers4: list[str] = field(default_factory=list)      # адреса шлюзов в /30 линков
@@ -305,7 +304,7 @@ def _tunnel_ifs() -> list[str]:
 
 
 def link_ifaces() -> list[str]:
-    """Линки до шлюзов (концепт «резервный шлюз»): интерфейс из конфига плюс
+    """Линки до шлюзов: интерфейс из конфига плюс
     все конфиги в каталоге awg с `Table = off` — так выглядит только линк,
     у клиентских интерфейсов таблицу ведёт awg-quick. Без БД: этот модуль
     зовётся и из CLI `awg-bot firewall`, где бота нет."""

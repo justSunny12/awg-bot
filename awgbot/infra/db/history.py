@@ -226,8 +226,7 @@ class HistoryMixin:
                  r["rf_rx_month"], r["rf_tx_month"], stamp))
 
     def snapshot_server_rf(self, month: str, rx: int, tx: int, cur=None) -> None:
-        """Итог РФ-трафика сервера за завершившийся месяц (концепт «учёт
-        РФ-трафика»); нулевой месяц не пишется."""
+        """Итог РФ-трафика сервера за завершившийся месяц; нулевой месяц не пишется."""
         if cur is None:
             with self._tx() as c:
                 return self.snapshot_server_rf(month, rx, tx, c)

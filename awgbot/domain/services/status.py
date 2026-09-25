@@ -154,7 +154,7 @@ class StatusMixin:
             rf = by.get(c.id, (0, 0))
             out.append((c, int(t["rx_month"]), int(t["tx_month"]),
                         rf if self.rf_client_visible(c, rf, enabled) else None))
-        # от большего к меньшему (вычитка 3.1.0); при равенстве — прежний порядок
+        # от большего к меньшему; при равенстве — прежний порядок
         out.sort(key=lambda r: -(r[1] + r[2]))
         return out
 
@@ -168,7 +168,7 @@ class StatusMixin:
                  _dev_rf(d) if self.rf_device_visible(d, owner, enabled) else None)
                 for d in self.db.list_devices(client_id)]
 
-    # ── РФ-доступ в потреблении (концепт «учёт РФ-трафика») ──────────────────
+    # ── РФ-доступ в потреблении ──────────────────
     # Строка РФ показывается там, где она осмысленна: профилю — если ему
     # разрешён РФ-доступ и функция развёрнута и включена (rf_enabled — то же
     # условие, что у строки главной) или за месяц уже что-то прошло (разрешение

@@ -291,7 +291,7 @@ def own_device(services, client, device_id: int):
 
 
 def held_device(services, client, device_id: int):
-    """Чужое устройство, которое клиент ДЕРЖИТ (концепт «гость»), или None."""
+    """Чужое устройство, которое клиент ДЕРЖИТ, или None."""
     dev = services.db.get_device(device_id)
     if dev is None or dev.holder_client_id != client.id:
         return None

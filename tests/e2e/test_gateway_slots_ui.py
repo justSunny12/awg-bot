@@ -1,4 +1,4 @@
-"""Экраны слотов шлюзов (концепт «резервный шлюз» §6): раздел с одним и двумя
+"""Экраны слотов шлюзов: раздел с одним и двумя
 слотами, список, карточка, переключение в обе стороны, галочка
 предпочтительного, пинг, подсети, подпись, добавление второго слота с токеном,
 убрать резервный и активный."""
@@ -440,7 +440,7 @@ async def test_admin_panel_uses_the_detailed_line(services, slots, monkeypatch):
     assert "🇷🇺 РФ-доступ: 🟢 работает (NASPi)" in text
 
 
-# ── «за шлюзом — без VPN» (концепт «локальная сеть», функция A) ───────────────────
+# ── «за шлюзом — без VPN» ───────────────────
 
 async def test_lan_mode_needs_a_subnet_then_asks_and_toggles(services, slots, fake_bot, monkeypatch):
     _, pi, _ = slots
@@ -503,7 +503,7 @@ async def test_lan_mode_travels_in_the_bundle_and_reminds_on_change(services, sl
     assert len(notes) == 1 and "За шлюзом — без VPN" in notes[0].text and "резолвер сервера" in notes[0].text
 
 
-# ── доступ между подсетями за шлюзами (концепт «локальная сеть», функция B) ───────
+# ── доступ между подсетями за шлюзами ───────
 
 def _peer_conf(monkeypatch):
     store = {"app.routing.enabled": True, "app.routing.failover.enabled": True,

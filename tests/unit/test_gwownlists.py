@@ -1,7 +1,5 @@
 """
-Свои списки, общие для всех шлюзов (концепт «синхронизация своих списков»,
-этап 2): правила слияния на ВПС (§2.5), сверка файлов агента с базой ⊕ pending
-(§2.4), правило применения канона и состояние для монитора (§7.1).
+Свои списки, общие для всех шлюзов: правила слияния на ВПС, сверка файлов агента с базой ⊕ pending, правило применения канона и состояние для монитора.
 
 Слияние — чистые функции `gwownlists`. Агент — настоящий `GatewayServices`
 поверх временной БД; малина под ним — `_Host`: каталог dnsmasq.d с двумя
@@ -41,7 +39,7 @@ def _kinds(canon) -> dict:
     return gwownlists.canon_items(canon)
 
 
-# ── слияние на ВПС: таблица §2.5 ─────────────────────────────────────────────
+# ── слияние на ВПС: правила слияния ─────────────────────────────────────────────
 
 def test_a_new_domain_becomes_a_record_with_slot_and_time_and_bumps_ver():
     canon, upto, rej, changed = _merge({"gen": "g", "ver": 4, "items": {}}, [[1, "example.com", "vpn", False]], slot=2)
@@ -241,7 +239,7 @@ def test_list_output_parses_and_render_writes_only_clean_lines():
 
 
 def test_the_domain_rule_is_the_one_the_script_uses():
-    """Правило домена на ВПС и в awg-lan-domain.sh — одно (§2.1): общий список
+    """Правило домена на ВПС и в awg-lan-domain.sh — одно: общий список
     примеров из тестов скрипта даёт те же вердикты. Разойдись — домен,
     разосланный сервером, скрипт отвергал бы на каждом шлюзе."""
     from tests.unit.test_gw_lan_script import _DOMAIN_EXAMPLES
@@ -273,6 +271,9 @@ class _Host:
         self.write()
         monkeypatch.setattr(gwguard, "DNSMASQ_D", str(self.dns_d))
         monkeypatch.setattr(gwguard, "OWN_LISTS_NEW", str(self.new))
+        # файл для fill — рядом с файлом для sync, не в /var/lib хоста
+        self.fill_new = tmp_path / "lib" / "own-fill.new"
+        monkeypatch.setattr(gwguard, "OWN_FILL_NEW", str(self.fill_new))
         monkeypatch.setattr(gwguard, "unit_env", lambda k: self.env.get(k, ""))
         monkeypatch.setattr(gwguard, "lan_mode", lambda: self.env.get("LAN_MODE") == "1")
         monkeypatch.setattr(gwguard, "lan_domain_has_sync", lambda: self.has_sync)
@@ -313,6 +314,9 @@ class _Host:
             pairs = [ln.split(" ", 1) for ln in text.splitlines()]
             self.write([d for k, d in pairs if k == "vpn"], [d for k, d in pairs if k == "ru"])
             return True, "свои списки применены"
+        if cmd == "fill":
+            self.filled = Path(domains[0]).read_text(encoding="utf-8")
+            return True, "набор lan_vpn4 пополнен: 1 домен"
         raise AssertionError(f"неожиданный вызов скрипта: {cmd}")
 
 
@@ -492,7 +496,7 @@ def test_numbers_keep_growing_after_a_canon_is_applied(agent, host):
         f"сервер отбросил вторую правку как повтор: upto {upto}, событие {run2} {ev2}")
 
 
-# ── применение канона: правило §2.4 ──────────────────────────────────────────
+# ── применение канона: правило применения ──────────────────────────────────────────
 
 def test_a_covered_canon_is_written_through_sync_and_becomes_the_base(agent, host):
     _synced(agent, host, {"a.com": "vpn"})
@@ -654,6 +658,75 @@ def test_an_unwritable_sync_file_refuses_with_a_reason(agent, host, monkeypatch,
     assert agent.own_status()[0]["state"] == "failed"
 
 
+# ── fill: адреса новых «в туннель» — после sync, фоном ──────────────────────
+
+def test_new_tunnel_domains_go_to_the_fill_file_and_nothing_else(agent, host):
+    """sync больше не резолвит новые «в туннель»: их список для fill — ровно
+    новые домены «в туннель», включая переехавшие из «напрямую». Прежние и
+    «напрямую» в нём — лишний dig по сотне доменов на каждом каноне."""
+    _synced(agent, host, {"old.com": "vpn", "moved.ru": "ru", "stay.ru": "ru"})
+    res = agent.apply_own_lists(_canon({"old.com": "vpn", "moved.ru": "vpn", "stay.ru": "ru",
+                                        "b.com": "vpn", "a.com": "vpn", "new.ru": "ru"}, ver=2))
+    assert res["ok"] is True, res
+    assert res.get("fill") == str(host.fill_new), f"пути для fill в итоге нет: {res}"
+    assert host.fill_new.read_text() == "a.com\nb.com\nmoved.ru\n", host.fill_new.read_text()
+    assert "fill" not in host.calls, "fill запущен прямо в применении канона — канал ждал бы dig"
+
+
+def test_without_new_tunnel_domains_there_is_no_fill(agent, host):
+    """Канон только убрал домены или добавил «напрямую» — fill не нужен."""
+    _synced(agent, host, {"a.com": "vpn", "b.com": "vpn"})
+    host.fill_new.unlink(missing_ok=True)
+    res = agent.apply_own_lists(_canon({"a.com": "vpn", "c.ru": "ru"}, ver=2))
+    assert res["ok"] is True and "fill" not in res, res
+    assert not host.fill_new.exists(), "файл для fill записан без новых доменов"
+
+
+def test_the_same_lists_give_no_fill(agent, host):
+    _synced(agent, host, {"a.com": "vpn"})
+    res = agent.apply_own_lists(_canon({"a.com": "vpn"}, ver=2))
+    assert res["ok"] is True and "fill" not in res, res
+
+
+def test_a_failed_sync_gives_no_fill(agent, host):
+    _synced(agent, host, {"a.com": "vpn"})
+    host.sync_ok = False
+    res = agent.apply_own_lists(_canon({"a.com": "vpn", "b.com": "vpn"}, ver=2))
+    assert res["ok"] is False and "fill" not in res, res
+
+
+def test_a_domain_the_script_dropped_is_not_filled(agent, host, monkeypatch):
+    """Хост Endpoint скрипт отбросил — в набор «в туннель» его адрес не
+    попадает и через fill: иначе шлюз запер бы сам себя."""
+    _synced(agent, host, {"a.com": "vpn"})
+    _dropping_sync(host, monkeypatch, "uplink.example.org")
+    res = agent.apply_own_lists(_canon({"a.com": "vpn", "uplink.example.org": "vpn", "b.com": "vpn"}, ver=2))
+    assert res["ok"] is True, res
+    assert host.fill_new.read_text() == "b.com\n", host.fill_new.read_text()
+
+
+def test_an_unwritable_fill_file_keeps_the_canon_applied(agent, host, monkeypatch, tmp_path):
+    """fill — лишь ускорение: не записался его файл — канон всё равно
+    применён и подтверждён, без ключа fill."""
+    _synced(agent, host, {"a.com": "vpn"})
+    blocker = tmp_path / "blocker"; blocker.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(gwguard, "OWN_FILL_NEW", str(blocker / "own-fill.new"))
+    res = agent.apply_own_lists(_canon({"a.com": "vpn", "b.com": "vpn"}, ver=2))
+    assert res["ok"] is True and "fill" not in res, res
+    assert agent.own_base()["items"] == {"a.com": "vpn", "b.com": "vpn"}
+
+
+def test_own_fill_runs_the_script_with_the_long_timeout(agent, host):
+    """dig по каждому из сотен доменов идёт минутами: обычные 150 с оборвали
+    бы fill на первой синхронизации."""
+    _synced(agent, host, {})
+    res = agent.apply_own_lists(_canon({"a.com": "vpn"}, ver=2))
+    ok, tail = agent.own_fill(res["fill"])
+    assert ok is True and "пополнен" in tail, tail
+    assert host.filled == "a.com\n"
+    assert host.timeouts["fill"] == gwguard.OWN_FILL_TIMEOUT >= 1800, host.timeouts
+
+
 def test_lan_mode_off_refuses_and_keeps_the_base(agent, host):
     _synced(agent, host, {"a.com": "vpn"})
     host.env["LAN_MODE"] = "0"
@@ -739,7 +812,34 @@ def test_nothing_to_retry_is_none(agent, host):
     assert agent.own_retry() is None
 
 
-# ── состояние для монитора (§7.1) ────────────────────────────────────────────
+@pytest.mark.parametrize("raw", ["{не json", "[1, 2]", '"строка"', "{}"])
+def test_a_broken_deferred_canon_is_dropped_without_applying(agent, host, raw):
+    """Отложенный канон испорчен (обрыв записи на SD, чужой формат): снять и
+    ничего не делать, как битую очередь сервисов соседей. Прочитанный как
+    пустой канон, он ушёл бы в apply_own_lists: у шлюза со списками — весь
+    список серверу событиями init, у пустого — sync и база без поколения."""
+    _synced(agent, host, {"a.com": "vpn", "b.ru": "ru"}, ver=5)
+    base = agent.own_base()
+    host.calls.clear()
+    agent.db.set_state(GatewayServices._OWN_DEFER_KEY, raw)
+    assert agent.own_retry() is None
+    assert (agent.db.get_state(GatewayServices._OWN_DEFER_KEY) or "") == "", "битая запись осталась — разбор на каждом тике"
+    assert "sync" not in host.calls, "из битой записи запущен sync"
+    assert _pending(agent) == [], f"битая запись породила правки для сервера: {_pending(agent)}"
+    assert agent.own_base() == base, "база переписана битой записью"
+    assert host.lists() == {"a.com": "vpn", "b.ru": "ru"}
+
+
+def test_a_broken_deferred_canon_on_an_empty_gateway_touches_nothing(agent, host):
+    """Пустой шлюз: пустой канон применился бы сразу — sync пустого файла и
+    база без поколения и хэша."""
+    agent.db.set_state(GatewayServices._OWN_DEFER_KEY, "{не json")
+    assert agent.own_retry() is None
+    assert "sync" not in host.calls, "из битой записи запущен sync"
+    assert agent.own_base() == {}, f"битая запись стала базой: {agent.own_base()}"
+
+
+# ── состояние для монитора ────────────────────────────────────────────
 
 def _checks(agent):
     info, checks = agent.own_status()

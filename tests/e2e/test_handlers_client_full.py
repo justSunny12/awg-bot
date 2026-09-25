@@ -359,7 +359,7 @@ async def test_client_cannot_rename_foreign_device(services, fake_bot, make_acti
     assert services.db.get_device(dc.device_id).name == "ЧужоеУстройство"
 
 
-# ── РФ-доступ только админу (концепт «учёт РФ-трафика», этап 2) ──────────────
+# ── РФ-доступ только админу ──────────────
 
 async def test_client_screens_do_not_show_rf_even_when_allowed_and_counted(
         services, fake_bot, make_active_client):

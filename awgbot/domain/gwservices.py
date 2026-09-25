@@ -1,5 +1,5 @@
 """
-gwservices.py — сервисы соседних сетей (концепт «сервисы соседних сетей»).
+gwservices.py — сервисы соседних сетей.
 
 SMB-серверы локальной сети одного шлюза видны в Finder на Mac в сети другого
 шлюза без multicast через туннели: агент-источник находит их по mDNS
@@ -171,7 +171,7 @@ def reverse_zone(net: str) -> str:
 
 
 def render_dnsmasq(items, own_nets, digest: str = "") -> str:
-    """Файл записей для dnsmasq получателя (§3.3 концепта). Пустой список —
+    """Файл записей для dnsmasq получателя. Пустой список —
     пустая строка: файл снимается, а не пишется пустым."""
     items = clean(items, ["0.0.0.0/0"], MAX_PEER) if items else []
     if not items:
@@ -226,9 +226,8 @@ def lines_ok(text: str) -> bool:
 
 
 def version_at_least(ver: str, floor: tuple[int, ...]) -> bool:
-    """«3.1.0» ≥ (3, 1, 0)? Нечисловое — False (агент не назвал версию)."""
-    try:
-        parts = tuple(int(x) for x in str(ver).strip().split("."))
-    except ValueError:
-        return False
-    return bool(parts) and parts >= floor
+    """«3.1.0» ≥ (3, 1, 0)? Разбор — общий с проверкой обновлений
+    (infra.updates.parse_version); нечисловое — False (агент не назвал версию)."""
+    from awgbot.infra.updates import parse_version
+    parts = parse_version(str(ver or ""))
+    return bool(parts) and tuple(parts[:len(floor)]) >= floor

@@ -35,7 +35,7 @@ def _gw_health_summary(checks) -> str:
 
 
 def channel_panel_line() -> str:
-    """Строка канала до ВПС в панели агента (концепт «канал линка», §7.2).
+    """Строка канала до ВПС в панели агента.
     Канал не включён бандлом — строки нет вовсе: сказать о нём нечего, а
     «выключено» читалось бы как поломка."""
     from awgbot.runtime import linkclient
@@ -107,22 +107,22 @@ def gateway_panel(st) -> str:
     parts += hw
     lan = getattr(st, "lan", None) or {}
     if lan:
-        # локальная сеть без VPN (концепт «локальная сеть» §3.5): своим блоком
+        # локальная сеть без VPN: своим блоком
         bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
         head_ = "🔴 " + ", ".join(c.name for c in bad[:3]) if bad else "🟢 работает"
         parts += ["", f"🏠 Локальная сеть без VPN: {head_}"]
         where = f"{_e(lan.get('iface', '') or '?')}, <code>{_e(lan.get('addr', '') or '?')}</code>"
         parts.append(f"{pad}сеть: {where}")
         parts.append(f"{pad}трафик с роутера: {_packets(lan.get('lan_pkts'))}")
-        # канон — экран локальной сети (вычитка 3.1.0)
+        # та же строка, что на экране локальной сети
         parts.append(f"{pad}DNS — <code>{_e(lan.get('resolver', '') or '?')}</code> "
                      f"через {_e(lan.get('uplink', '') or 'аплинк')}")
-        # списки — своей группой (вычитка 3.1.0)
+        # списки — своей группой
         parts += ["", f"📋 Списки: {_lists_counts(lan)} ({_lists_updated_short(lan.get('updated_at') or '')})"]
         parts.append(f"{pad}{own_lists_short(lan)}")
         svc = lan.get("svc") or {}
         if svc.get("active"):
-            # SMB подсетей шлюзов (концепт «сервисы соседних сетей»): работают
+            # SMB подсетей шлюзов: работают
             # сами вместе с доступом между подсетями — одной строкой, числами
             parts += ["", smb_line(svc)]
     parts += ["", f"🌡 Монитор здоровья: {_gw_health_summary(st.checks)}", ""]
@@ -184,7 +184,7 @@ def _lists_updated_short(raw: str) -> str:
 
 
 def smb_line(svc: dict) -> str:
-    """«🗂 SMB: в этой подсети — N, из других — M» (вычитка 3.1.0): сервер ещё
+    """«🗂 SMB: в этой подсети — N, из других — M»: сервер ещё
     ничего не присылал — «обновляю…», прислал пустое — «не найдены». Имена и
     avahi здесь не показываются — только в мониторе."""
     peers = svc.get("peer") or []
@@ -197,7 +197,7 @@ def smb_line(svc: dict) -> str:
 
 
 def gateway_lan_text(st) -> str:
-    """🏠 Локальная сеть без VPN (концепт «локальная сеть» §3.5): что настроено, как
+    """🏠 Локальная сеть без VPN: что настроено, как
     дела со списками, откуда берутся личные."""
     lan = getattr(st, "lan", None) or {}
     return ("🏠 <b>Локальная сеть без VPN</b>\n\n"
@@ -223,8 +223,7 @@ def gateway_lan_ask_domain(kind: str) -> str:
 
 def own_lists_short(lan: dict) -> str:
     """Строка своих списков в панели и на экране локальной сети; хвост —
-    состояние синхронизации, если есть что сказать (концепт «синхронизация
-    своих списков» §7.1, вычитка 3.1.0)."""
+    состояние синхронизации, если есть что сказать."""
     own = lan.get("own") or {}
     head = f"Свои списки: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую"
     if not own.get("active"):
@@ -295,7 +294,7 @@ def gateway_lan_own_text(items: list[tuple[str, str]], own: dict | None = None) 
 def gateway_lan_result(ok: bool, out: str, sync: str = "") -> str:
     """Итог add/ru/del — строки скрипта «домен: добавлен / убран / уже в
     списке»; служебные строки про адреса в наборе (с отступом) не показываем.
-    sync — хвост про синхронизацию: "online" | "offline" | "" (концепт §7.1)."""
+    sync — хвост про синхронизацию: "online" | "offline" | ""."""
     rows = [r for r in out.strip().splitlines() if r and not r.startswith(" ")]
     # десятки доменов за раз переросли бы лимит сообщения, и Telegram отверг
     # бы ответ целиком
@@ -436,7 +435,7 @@ def gateway_bundle_received(link_changed: bool) -> str:
     return base + (f"\n\n{awg_restart_warning_body(True)}" if link_changed else "")
 
 
-# ── 🛡 Доступ по SSH (концепт «доступ по SSH на шлюзе») ─────────────────────
+# ── 🛡 Доступ по SSH ─────────────────────
 
 def _owner_name(kind: str) -> str:
     return {"omv": "OMV", "generator": "другой процесс"}.get(kind, "")

@@ -1,13 +1,11 @@
 """
-gwchannel.py — сторона ВПС: приём того, что привёз канал линка (концепт
-«канал линка», §3.2).
+gwchannel.py — сторона ВПС: приём того, что привёз канал линка.
 
 Здесь хранение, сверка и решение, что доставить шлюзу. Снимок рисуется на
 экранах и сравнивается с тем, что ВПС сам же выдал в конфигурации; расхождение
 определяет, какие настройки уйдут каналом (этап 2). Фиды локальной сети для
 шлюзов ВПС качает здесь же (этап 3); здесь же канон своих списков, общих для
-всех шлюзов, — слияние правок шлюзов и строка карточки слота (концепт
-«синхронизация своих списков»). В автомат переключения слотов снимок не
+всех шлюзов, — слияние правок шлюзов и строка карточки слота. В автомат переключения слотов снимок не
 входит: данные приехали с чужой машины, и доверять им выбор пути было бы
 странно.
 
@@ -173,14 +171,7 @@ class GwChannelMixin:
         return raw[:40]
 
     def gwlink_snapshot(self, slot_id: int) -> dict:
-        raw = self.db.get_state(self._gwlink_key(self._GWLINK_SNAP_KEY, slot_id)) or ""
-        if not raw:
-            return {}
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            return {}
-        return data if isinstance(data, dict) else {}
+        return self.db.get_state_json(self._gwlink_key(self._GWLINK_SNAP_KEY, slot_id), {})
 
     def gwlink_snapshot_age(self, slot_id: int) -> int | None:
         """Секунд с приёма ПО ЧАСАМ ВПС; None — снимка не было."""
@@ -204,7 +195,7 @@ class GwChannelMixin:
             self.db.set_state(self._gwlink_key(key, slot_id), "")
         # канон своих списков не трогается: он общий, вернувшийся шлюз его получит
 
-    # ── свои списки, общие для всех шлюзов (концепт «синхронизация своих списков») ──
+    # ── свои списки, общие для всех шлюзов ──
     _GWLINK_OWN_KEY = "gwlink_own_lists"     # канон: {"gen", "ver", "items": {домен: [вид, слот, время]}}
     _GWLINK_OWN_UPTO_KEY = "gwlink_own_upto" # «<run> <n>» — последнее разобранное событие слота
     _GWLINK_OWN_ACK_KEY = "gwlink_own_ack"   # ответ слота на канон: {ok, hash, n, at, error}
@@ -234,7 +225,7 @@ class GwChannelMixin:
         return [raw[0], int(raw[1])] if len(raw) == 2 and raw[1].isdigit() else ["", 0]
 
     def gwlink_own_in(self, slot_id: int, run: str, events) -> bool:
-        """События слота → канон (таблица §2.5 концепта): под блокировкой и одной
+        """События слота → канон (правила слияния — gwownlists.merge): под блокировкой и одной
         транзакцией — два слота разбираются в разных потоках. True — канон изменился."""
         with _OWN_LOCK, self.db.transaction():
             canon = self.gwlink_own_canon()
@@ -347,7 +338,7 @@ class GwChannelMixin:
     def gw_bundle_msg_clear(self, slot_id: int) -> None:
         self.db.set_state(self._gwlink_key(self._GWLINK_BUNDLE_MSG_KEY, slot_id), "")
 
-    # ── сервисы соседних сетей (концепт «сервисы соседних сетей») ────────────
+    # ── сервисы соседних сетей ────────────
     _GWLINK_SVC_KEY = "gwlink_svc"           # список SMB-серверов сети слота (после чистки)
     _GWLINK_PEER_SVC_KEY = "gwlink_peer_svc" # ответ слота на раздачу записей соседей
     _SVC_NEIGHBOUR_STALE_S = 24 * 3600       # сосед молчит дольше — его сервисы не раздаются

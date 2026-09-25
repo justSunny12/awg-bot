@@ -75,7 +75,7 @@ class TrafficMixin:
         ).fetchone()
         return dict(row)
 
-    # ── учёт РФ-трафика (концепт «учёт РФ-трафика») ──────────────────────────
+    # ── учёт РФ-трафика ──────────────────────────
 
     _NOT_GATEWAY_SQL = """NOT EXISTS
                  (SELECT 1 FROM gateways g WHERE g.device_id = d.id

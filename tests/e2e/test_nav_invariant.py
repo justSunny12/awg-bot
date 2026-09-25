@@ -250,7 +250,7 @@ def test_limit_changed_notice_uses_arrow():
     assert texts.limit_changed_notice(2, 0).endswith("2 → без ограничения.")
 
 
-# ── РФ-доступ: строки добавились, кнопки — нет (концепт «учёт РФ-трафика», этап 2) ──
+# ── РФ-доступ: строки добавились, кнопки — нет ──
 
 async def test_rf_lines_do_not_change_buttons_on_admin_screens(services, fake_bot, make_active_client):
     """Строка РФ — только текст: карточки профиля и устройства и разбивка

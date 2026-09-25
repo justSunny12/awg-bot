@@ -24,17 +24,16 @@ class SelfUpdateMixin:
 
     def remember_update_report(self, chat_id: int, message_id: int) -> None:
         import json
-        ids = json.loads(self.db.get_state(self._UPD_REPORTS_KEY) or "[]")
+        ids = self.db.get_state_json(self._UPD_REPORTS_KEY, [])
         ids = [x for x in ids if x != [chat_id, message_id]]
         ids = (ids + [[chat_id, message_id]])[-20:]
         self.db.set_state(self._UPD_REPORTS_KEY, json.dumps(ids))
 
     def pop_update_reports(self) -> list:
         """[(chat_id, message_id), …] всех запомненных окон; история очищается."""
-        import json
-        ids = json.loads(self.db.get_state(self._UPD_REPORTS_KEY) or "[]")
+        ids = self.db.get_state_json(self._UPD_REPORTS_KEY, [])
         self.db.set_state(self._UPD_REPORTS_KEY, "[]")
-        return [tuple(x) for x in ids]
+        return [tuple(x) for x in ids if isinstance(x, list) and len(x) == 2]
 
     _MUTE_KEY = "updates_muted"
     _NOTIFIED_KEY = "update_notified_tag"

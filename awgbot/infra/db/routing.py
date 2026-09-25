@@ -85,7 +85,7 @@ class RoutingMixin:
             " WHERE is_service = 0 AND (routing_allowed = 1 OR tg_id = ?) "
             "UNION "
             # держатели чужих устройств от разрешённого владельца — свой набор
-            # у каждого субъекта (концепт «гость»)
+            # у каждого субъекта
             "SELECT DISTINCT d.holder_client_id FROM devices d "
             "  JOIN clients oc ON oc.id = d.client_id "
             " WHERE d.holder_client_id IS NOT NULL "
@@ -106,7 +106,7 @@ class RoutingMixin:
         значило бы дублировать инвариант блокировок вторым механизмом, который
         может с ним разойтись.
         """
-        # Субъект — ДЕРЖАТЕЛЬ (концепт «гость»): переданное устройство идёт
+        # Субъект — ДЕРЖАТЕЛЬ: переданное устройство идёт
         # в набор того, кто им управляет; разрешение — владельца устройства.
         out: dict[int, list[str]] = {}
         for r in self._connection().execute(
@@ -121,7 +121,7 @@ class RoutingMixin:
             out.setdefault(int(r["subject"]), []).append(r["address"])
         return out
 
-    # Устройства СУБЪЕКТА маршрутизации (концепт «гость»): свои, которые
+    # Устройства СУБЪЕКТА маршрутизации: свои, которые
     # никому не переданы, плюс чужие, которые он держит.
     _SUBJECT_WHERE = ("((d.client_id = ? AND d.holder_client_id IS NULL) "
                       "OR d.holder_client_id = ?)")

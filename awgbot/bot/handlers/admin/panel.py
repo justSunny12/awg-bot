@@ -135,7 +135,7 @@ async def _traffic_devices_screen(services, client_id: int):
             kb.traffic_devices_kb())
 
 
-# ── РФ-доступ за месяц: по профилям → по устройствам (концепт «учёт РФ-трафика») ──
+# ── РФ-доступ за месяц: по профилям → по устройствам ──
 
 async def _rf_profiles_screen(services):
     data = await call(services.rf_screen_data)

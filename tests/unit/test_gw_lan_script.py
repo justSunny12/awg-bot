@@ -1,5 +1,5 @@
 """
-Локальная сеть без VPN на шлюзе (концепт «локальная сеть», функция A) — раздел 5
+Локальная сеть без VPN на шлюзе — раздел 5
 routing-gw-setup.sh и два вшитых в него скрипта: списки и персональные домены.
 
 Гоняем настоящий код скриптов с подменёнными ip/curl/nft/systemctl/dig: то,
@@ -205,7 +205,7 @@ def test_lists_report_a_failed_feed_but_keep_going(lists_env):
     assert "rc=1" in (dump / "lists.status").read_text()
 
 
-# ── списки из канала линка (концепт «канал линка», этап 3) ──────────────────
+# ── списки из канала линка ──────────────────
 
 @pytest.fixture()
 def channel_env(lists_env, tmp_path):
@@ -599,7 +599,7 @@ def test_a_missing_default_file_is_not_created(ovr_env):
 
 
 # ── сервисы соседних сетей: awg-lan-services.sh ─────────────────────────────
-# Концепт «сервисы соседних сетей» §4.3, §9: файл записей собирает агент из
+# файл записей собирает агент из
 # данных, пришедших каналом с ВПС; помощник — последний рубеж на малине.
 
 def _svc_file() -> str:
@@ -785,7 +785,7 @@ def test_shell_whitelist_and_python_line_res_agree(svc_env, locale):
 
 
 # ── свои списки: блокировка, правило домена, вычитание, наборы, sync ────────
-# (концепт «синхронизация своих списков», этап 1)
+#
 
 VPN_USER = "awg-gw-vpn-user.conf"
 RU_USER = "awg-gw-ru-user.conf"
@@ -953,7 +953,7 @@ def test_own_lists_run_normally_once_the_lock_is_taken(own_env):
 
 # ── правило домена — одно с сервером AWG ─────────────────────────────────────
 
-# Правило §2.1 концепта: на сервере AWG (этап 2) — то же самое выражение
+# Правило домена: на сервере AWG (этап 2) — то же самое выражение
 _CANON_DOMAIN_RE = re.compile(
     r"(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})")
 
@@ -1261,8 +1261,12 @@ def test_a_new_tunnel_domain_gets_into_the_snapshot(own_env, tmp_path):
     _own(dns_d)
     assert _run(tool, env, "add", "news.org").returncode == 0
     assert "10.3.3.3" in (dump / "lan_vpn4.nft").read_text()
+    # sync адреса нового домена не резолвит — это делает fill, который агент
+    # зовёт следом фоном; слепок обновляет тот же fill
     assert _sync(tool, env, tmp_path, "vpn news.org\nvpn alpha.com\n").returncode == 0
-    assert "10.4.4.4" in (dump / "lan_vpn4.nft").read_text(), "sync не обновил слепок"
+    assert "10.4.4.4" not in (dump / "lan_vpn4.nft").read_text(), "sync сам наполнил набор новым доменом"
+    assert _fill_run(tool, env, tmp_path, "alpha.com\n").returncode == 0
+    assert "10.4.4.4" in (dump / "lan_vpn4.nft").read_text(), "fill не обновил слепок"
 
 
 def test_a_failed_listing_keeps_the_previous_snapshot(own_env):
@@ -1294,6 +1298,12 @@ def _sync(tool, env, tmp_path, text: str, name="own.txt"):
     return _run(tool, env, "sync", str(f))
 
 
+def _fill_run(tool, env, tmp_path, text: str, name="fill.txt"):
+    f = tmp_path / name
+    f.write_text(text, encoding="utf-8")
+    return _run(tool, env, "fill", str(f))
+
+
 def test_the_script_announces_sync_in_its_header(script):
     """По метке агент узнаёт, что скрипт на малине уже понимает sync: без неё
     он не пошлёт полный список в скрипт, который его отвергнет."""
@@ -1310,10 +1320,19 @@ def test_sync_writes_both_lists_one_domain_per_line_in_order(own_env, tmp_path):
     assert "+ alpha.com (в туннель)" in r.stdout and "+ zeta.com (в туннель)" in r.stdout
     assert "+ bank.ru (напрямую)" in r.stdout and "+ shop.ru (напрямую)" in r.stdout
     assert r.stdout.rstrip().endswith("свои списки: 2 в туннель, 2 напрямую"), r.stdout
+    assert "адрес" not in r.stdout and "→" not in r.stdout, f"sync печатает адреса: {r.stdout}"
     nft = _nft(log)
-    assert "nft add element inet awg_home lan_vpn4 { 10.4.4.4 }" in nft and \
-        "nft add element inet awg_home lan_vpn4 { 10.5.5.5 }" in nft, "новые «в туннель» не легли в набор"
-    assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in nft
+    assert not any("add element inet awg_home lan_vpn4" in ln for ln in nft), \
+        f"sync сам резолвит новые «в туннель» — это работа fill: {nft}"
+    # слепок sync снимает (после своих удалений), но адресов новых «в туннель»
+    # в нём ещё нет — они появятся в наборе и слепке только после fill
+    assert "nft list set inet awg_home lan_vpn4" in nft, "sync не переписал слепок"
+    assert "10.4.4.4" not in (dump / "lan_vpn4.nft").read_text(), "адрес нового домена в слепке до fill"
+    assert _fill_run(tool, env, tmp_path, "alpha.com\nzeta.com\n").returncode == 0
+    assert _set(_sets_of(dump), "lan_vpn4") == {"10.4.4.4", "10.5.5.5"}, "fill не наполнил набор"
+    snap = (dump / "lan_vpn4.nft").read_text()
+    assert "10.4.4.4" in snap and "10.5.5.5" in snap, f"fill не обновил слепок: {snap}"
+    assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in nft, "«напрямую» наполняется в sync"
     assert _log(log).count("systemctl restart dnsmasq") == 1
 
 
@@ -1398,9 +1417,127 @@ def test_sync_reports_moves_and_removals_and_cleans_the_sets(own_env, tmp_path):
     assert "nft flush set inet awg_home lan_ru4" in nft
     assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in nft
     assert "nft add element inet awg_home lan_ru4 { 10.2.2.2 }" not in nft, "переехавший остался напрямую"
-    assert "nft add element inet awg_home lan_vpn4 { 10.2.2.2 }" in nft
-    assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3", "10.2.2.2"}
+    assert "nft add element inet awg_home lan_vpn4 { 10.2.2.2 }" not in nft, "переехавшего в туннель резолвит sync, а не fill"
+    assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3"}, "адреса ушедшего не сняты синхронно"
     assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1"}
+    # переехавший в туннель — через fill, как его позовёт агент
+    assert _fill_run(tool, env, tmp_path, "bank.ru\n").returncode == 0
+    assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3", "10.2.2.2"}
+
+
+def test_sync_that_only_removes_rewrites_the_snapshot(own_env, tmp_path):
+    """Канон только убрал домен «в туннель»: новых доменов нет, fill агент не
+    зовёт. Слепок lan_vpn4 грузится при старте — не перепиши его sync, снятый
+    адрес вернётся в набор с первой же перезагрузкой малины (как у кнопки del)."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["example.com", "news.org"])
+    _fill(_sets_of(dump), "lan_vpn4", ["93.184.216.34", "93.184.216.35", "10.3.3.3"])
+    (dump / "lan_vpn4.nft").write_text("elements = { 10.3.3.3, 93.184.216.34, 93.184.216.35 }\n", encoding="utf-8")
+    r = _sync(tool, env, tmp_path, "vpn news.org\n")
+    assert r.returncode == 0, r.stderr
+    assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3"}
+    snap = (dump / "lan_vpn4.nft").read_text()
+    assert "93.184.216.34" not in snap, f"sync снял адреса из набора, а слепок хранит их: {snap}"
+
+
+# ── fill <файл>: адреса новых «в туннель» — фоном после sync ────────────────
+
+def test_fill_puts_the_addresses_into_lan_vpn4_and_rewrites_the_snapshot(own_env, tmp_path):
+    """Агент зовёт fill после sync: без него новые домены «в туннель» шли бы
+    мимо туннеля до первого запроса клиента к dnsmasq, а после перезагрузки —
+    до следующего (слепок не знал бы их адресов)."""
+    tool, dns_d, dump, log, env = own_env
+    _fill(_sets_of(dump), "lan_vpn4", ["10.3.3.3"])
+    r = _fill_run(tool, env, tmp_path, "example.com\nalpha.com\n")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3", "93.184.216.34", "93.184.216.35", "10.4.4.4"}
+    snap = (dump / "lan_vpn4.nft").read_text()
+    assert all(ip in snap for ip in ("10.3.3.3", "93.184.216.34", "93.184.216.35", "10.4.4.4")), snap
+    nft = _nft(log)
+    assert nft[-1] == "nft list set inet awg_home lan_vpn4", f"слепок снят не после наполнения: {nft}"
+    assert r.stdout.strip() == "набор lan_vpn4 пополнен: 2 домена", r.stdout
+    assert not any("lan_ru4" in ln for ln in nft), "fill тронул «напрямую»"
+
+
+@pytest.mark.parametrize("n,word", [(1, "домен"), (2, "домена"), (4, "домена"), (5, "доменов"),
+                                    (11, "доменов"), (12, "доменов"), (21, "домен"), (22, "домена"),
+                                    (25, "доменов")])
+def test_fill_names_the_count_in_proper_russian(own_env, tmp_path, n, word):
+    tool, dns_d, dump, log, env = own_env
+    r = _fill_run(tool, env, tmp_path, "".join(f"site{i}.org\n" for i in range(n)))
+    assert r.returncode == 0 and r.stdout.strip() == f"набор lan_vpn4 пополнен: {n} {word}", r.stdout
+
+
+def test_fill_skips_a_foreign_line_and_fills_the_rest(own_env, tmp_path):
+    """Файл пишет агент, но скрипт на root не верит ему на слово: строка не
+    домен — пропуск (ни dig, ни nft по ней), остальные — в набор."""
+    tool, dns_d, dump, log, env = own_env
+    bad = ["bad name.com", "-x.com", "nftset=/evil.com/inet#awg_home#lan_ru4", "a..b.com", "Alpha.com",
+           "vpn news.org", "; rm -rf /"]
+    dig_log = tmp_path / "dig.log"
+    body = f'echo "$*" >> {dig_log}\n' + 'case "$*" in\n' + "".join(
+        f'  *" {d} "*) ' + "; ".join(f"echo {ip}" for ip in ips) + " ;;\n" for d, ips in _DIG_MAP.items()
+    ) + "esac\n"
+    _fake(_bin(env), "dig", body)
+    r = _fill_run(tool, env, tmp_path, "\n".join(["news.org", *bad, "zeta.com"]) + "\n")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3", "10.5.5.5"}
+    assert "пополнен: 2 домена" in r.stdout, f"чужие строки посчитаны: {r.stdout}"
+    asked = dig_log.read_text().splitlines()
+    assert len(asked) == 2 and all(" news.org " in a or " zeta.com " in a for a in asked), \
+        f"dig спрошен по чужой строке: {asked}"
+
+
+def test_fill_does_not_take_the_lists_lock(own_env, tmp_path):
+    """fill идёт фоном до получаса; возьми он lists.lock — кнопки «Свои списки»
+    и обновление фидов получали бы «обновление списков ещё идёт» (75) всё это
+    время. И наоборот: занятая блокировка fill не останавливает."""
+    tool, dns_d, dump, log, env = own_env
+    _fake(_bin(env), "flock", f'echo "flock $*" >> {log}\nexit 1\n')     # блокировку держит другой
+    r = _fill_run(tool, env, tmp_path, "news.org\n")
+    assert r.returncode == 0, f"занятая блокировка остановила fill: rc={r.returncode} {r.stderr}"
+    assert "flock" not in _log(log), "fill взял блокировку списков"
+    assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3"}
+    assert not (dump / "lists.lock").exists(), "fill открыл файл блокировки"
+
+
+def test_fill_leaves_the_dnsmasq_files_alone(own_env, tmp_path):
+    """fill — только набор и слепок: ни файлов dnsmasq.d, ни рестарта."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["news.org"], ru=["shop.ru"])
+    _with_src(dns_d, dump)
+    before = {f: (dns_d / f).read_text() for f in (VPN_USER, RU_USER, FEED)}
+    assert _fill_run(tool, env, tmp_path, "alpha.com\nshop.ru\n").returncode == 0
+    assert {f: (dns_d / f).read_text() for f in before} == before
+    assert "systemctl" not in _log(log) and "dnsmasq" not in _log(log)
+
+
+def test_fill_of_an_empty_file_is_quiet_and_ok(own_env, tmp_path):
+    tool, dns_d, dump, log, env = own_env
+    r = _fill_run(tool, env, tmp_path, "")
+    assert r.returncode == 0, r.stderr
+    assert "пополнен: 0 доменов" in r.stdout, r.stdout
+    assert not any("add element" in ln for ln in _nft(log))
+
+
+def test_fill_where_dig_finds_nothing_is_still_ok(own_env, tmp_path):
+    """DNS не ответил (dig пуст или упал) — не ошибка: dnsmasq наполнит набор
+    первым запросом клиента."""
+    tool, dns_d, dump, log, env = own_env
+    _fake(_bin(env), "dig", "echo ';; connection timed out' >&2; exit 9\n")
+    r = _fill_run(tool, env, tmp_path, "news.org\n")
+    assert r.returncode == 0, r.stderr
+    assert not any("add element" in ln for ln in _nft(log))
+
+
+def test_fill_without_a_readable_file_is_a_usage_error_naming_fill(own_env, tmp_path):
+    tool, dns_d, dump, log, env = own_env
+    for args in (("fill",), ("fill", str(tmp_path / "missing.txt")), ("fill", "a", "b")):
+        r = _run(tool, env, *args)
+        assert r.returncode == 1 and "usage" in r.stdout and "fill" in r.stdout, (args, r.stdout)
+    r = _run(tool, env, "nope")
+    assert r.returncode == 1 and "fill <файл>" in r.stdout, f"общий usage не называет fill: {r.stdout}"
+    assert _log(log) == ""
 
 
 def test_sync_of_an_empty_list_clears_both(own_env, tmp_path):
@@ -1497,7 +1634,7 @@ def _domain_tool_beside(script, lists_env_tuple, tmp_path) -> tuple[Path, dict]:
 
 
 def test_an_exception_removed_after_a_feed_run_returns_to_that_feed(script, lists_env, tmp_path):
-    """Сквозной сценарий §0.3: фиды применены с исключением shop.ru, человек
+    """Сквозной сценарий: фиды применены с исключением shop.ru, человек
     убрал исключение — shop.ru снова в фиде, не дожидаясь новых фидов."""
     tool, dns_d, dump, log, env = lists_env
     (dns_d / RU_USER).write_text(_ru_line("shop.ru") + "\n", encoding="utf-8")

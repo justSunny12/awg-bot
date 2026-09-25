@@ -562,7 +562,7 @@ def client_subnet() -> str:
     return m.group(1) if m else ""
 
 
-# ── локальная сеть без VPN (концепт «локальная сеть», функция A) ──────────────────
+# ── локальная сеть без VPN ──────────────────
 HOME_TABLE_NAME = "awg_home"
 DNSMASQ_D = "/etc/dnsmasq.d"
 LAN_STATUS_FILE = "/var/lib/awg-gw/lists.status"
@@ -570,6 +570,8 @@ LAN_LISTS_SCRIPT = "/usr/local/sbin/awg-lan-lists.sh"
 LAN_DOMAIN_SCRIPT = "/usr/local/sbin/awg-lan-domain.sh"
 OWN_LIST_FILES = ("awg-gw-vpn-user.conf", "awg-gw-ru-user.conf")   # свои списки в conf-dir
 OWN_LISTS_NEW = "/var/lib/awg-gw/own-lists.new"   # файл для `sync` — собирает агент из канона
+OWN_FILL_NEW = "/var/lib/awg-gw/own-fill.new"     # домены для `fill` — новые «в туннель» после sync
+OWN_FILL_TIMEOUT = 1800                           # dig по каждому домену, до 500 доменов — фоном
 # скрипт своих списков ждёт блокировку lists.lock до 120 с: таймауты вызовов
 # длиннее, иначе отказ «занято» не доходил бы, а в панель шёл бы «timed out»
 LAN_SCRIPT_TIMEOUT = 150
@@ -752,7 +754,7 @@ def run_lan_lists(timeout: int = 600, from_dir: str = "") -> tuple[bool, str]:
     return proc.returncode == 0, "\n".join(tail)
 
 
-# ── сервисы соседних сетей (концепт «сервисы соседних сетей») ─────────────────
+# ── сервисы соседних сетей ─────────────────
 LAN_SERVICES_SCRIPT = "/usr/local/sbin/awg-lan-services.sh"
 PEER_SERVICES_CONF = f"{DNSMASQ_D}/{gwservices.CONF_NAME}"
 PEER_SERVICES_NEW = "/var/lib/awg-gw/peer-services.conf.new"

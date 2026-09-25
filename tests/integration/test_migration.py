@@ -322,8 +322,7 @@ def test_finish_drops_the_stragglers_and_merges_history(services, mig,
 
 
 def test_finish_merges_rf_traffic_of_the_pair(services, mig, make_active_client):
-    """РФ-часть потребления сливается вместе с обычной (концепт «учёт
-    РФ-трафика»): в окне переезда она размазана по паре, и удаление старой
+    """РФ-часть потребления сливается вместе с обычной: в окне переезда она размазана по паре, и удаление старой
     строки без слияния унесло бы из разбивки половину месяца."""
     c = make_active_client(name="c", tg_id=7015)
     dc = services.add_device(c.id, "Тел")

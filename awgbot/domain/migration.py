@@ -364,7 +364,7 @@ class MigrationMixin:
         if not dev.friend_status:
             return
         if dev.friend_status == FriendStatus.ACTIVE:
-            # держатель — тот же (концепт «гость»): set_device_holder снимает
+            # держатель — тот же: set_device_holder снимает
             # приглашение, а у двойника его и нет
             self.db.set_device_holder(new_id, dev.holder_client_id)
             return
@@ -674,7 +674,7 @@ class MigrationMixin:
                 except awg.AwgError:
                     pass
             # слот шлюза указывает на исходную строку пары; на финале он
-            # переезжает к двойнику вместе с остальным (концепт «резервный шлюз»)
+            # переезжает к двойнику вместе с остальным
             _slot = self.db.gateway_by_device(old.id)
             if _slot is not None and _slot.device_id == old.id:
                 self.db.gateway_update(_slot.id, device_id=twin.id)

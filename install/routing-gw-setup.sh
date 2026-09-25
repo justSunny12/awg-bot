@@ -1,7 +1,7 @@
 #!/bin/sh
 # ─────────────────────────────────────────────────────────────────────────────
 # routing-gw-setup.sh — сторона ШЛЮЗА (малинки) для условной маршрутизации.
-# Запускается НА МАЛИНКЕ. См. концепт «условная маршрутизация», §12.
+# Запускается НА МАЛИНКЕ.
 #
 # КОНТЕКСТ. Линк поднимается ХОСТОВЫМИ awg/awg-quick — модуль ядра amneziawg
 # живёт на хосте, и версия утилит обязана совпадать с ним. Контейнер Amnezia
@@ -28,18 +28,18 @@
 #      агент и судит, что красной проверки «политика FORWARD» нет;
 #   4) автозапуск: юнит зовёт этот же скрипт, таблица ставится ДО подъёма линка;
 #      юнит переписывается целиком на каждом запуске и ставится с правами 0600;
-#   5) при LAN_MODE=1 — «за шлюзом без VPN» (концепт «локальная сеть»,
-#      функция A): dnsmasq на адресе шлюза в квартире (bind-dynamic, апстрим
+#   5) при LAN_MODE=1 — «за шлюзом без VPN»: dnsmasq на адресе шлюза в квартире (bind-dynamic, апстрим
 #      через АПЛИНК, NXDOMAIN на DoH-эндпоинты), ВТОРАЯ таблица inet awg_home
 #      (наборы lan_vpn4/lan_vpn_nets4/lan_ru4, метка в туннель, маскарад в
 #      локальную сеть) и скрипты списков в /usr/local/sbin — awg-lan-lists.sh
 #      (фиды; исходник до вычитания исключений — /var/lib/awg-gw/vpn-feed.src),
 #      awg-lan-domain.sh (свои списки: add|ru|del|list — их же зовёт awg-bot lan;
-#      sync <файл> — полный список, его зовёт только агент; одна блокировка
+#      sync <файл> — полный список, fill <файл> — адреса новых доменов «в
+#      туннель» в lan_vpn4 без блокировки, оба зовёт только агент; одна блокировка
 #      lists.lock с фидами, исключения «напрямую» вычитаются из фида заново,
 #      наборы чистятся) и
 #      awg-lan-services.sh (записи сервисов соседних сетей для dnsmasq —
-#      концепт «сервисы соседних сетей»: SMB-серверы сети другого шлюза видны
+#      сервисы соседних сетей: SMB-серверы сети другого шлюза видны
 #      в Finder через домен обзора awg.internal; при PEER_HOME_NETS,
 #      LINK_CHANNEL=1 и живом avahi-daemon ставится avahi-utils для обзора
 #      своей сети — после apt-get update; PEER_HOME_NETS пуст — файл
@@ -86,8 +86,8 @@
 # строками Environment= — значения приезжают с ВПС и меняются перевыпуском
 # конфигурации шлюза. Четыре из них (ADMIN_IPS, HOME_SUBNETS, LAN_MODE,
 # RESOLVER — gwlink.SETTINGS_KEYS) при живом канале доставляет
-# сервер: агент переписывает эти строки прямо в юните и перезапускает его
-# (концепт «канал линка», этап 2). Отдельного файла для них нет намеренно —
+# сервер: агент переписывает эти строки прямо в юните и перезапускает его.
+# Отдельного файла для них нет намеренно —
 # юнит единственный источник, и следующее применение бандла перепишет его
 # целиком:
 #   CLIENT_SUBNET   подсеть клиентов ВПС (MASQUERADE, изоляция)
@@ -110,7 +110,7 @@
 #                   стоят в AllowedIPs конфига линка, канал их не везёт.
 #                   Непуст — действуют и сервисы соседних сетей (п.5)
 #   LINK_CHANNEL    1 — агент держит канал состояния до ВПС внутри линка
-#                   (концепт «канал линка»); 0 или нет строки — не держит.
+#; 0 или нет строки — не держит.
 #                   Сам скрипт канала не касается: он только закрепляет обе
 #                   строки в юните, читает их агент
 #   LINK_CHANNEL_PORT  порт канала на адресе ВПС в /30 линка (8787)
@@ -187,7 +187,7 @@ UPLINK_IF_DEFAULT="${UPLINK_IF:-awg0}"        # имя аплинка на чи�
 GW_FOREIGN=0                                  # 1 = слот помечен другому устройству, линк не поднимаем
 GW_UNCONFIRMED=0                              # 1 = аплинка не видно, шлюз не подтверждён — линк не трогаем
 GW_STATUS_FILE="$GW_ETC/gateway.status"       # что решил скрипт — читает агент
-# локальная сеть без VPN (концепт «локальная сеть»): вторая таблица nft, dnsmasq, списки
+# локальная сеть без VPN: вторая таблица nft, dnsmasq, списки
 HOME_TABLE="inet awg_home"
 HOME_FILE="$GW_ETC/home.nft"            # после GW_ETC — иначе уедет в корень ФС
 LAN_SYSCTL="/etc/sysctl.d/98-awg-gw-lan.conf"
@@ -212,7 +212,7 @@ LAN_MODE="${LAN_MODE:-0}"
 LINK_CHANNEL="$(printf '%s' "${LINK_CHANNEL:-0}" | tr -cd '01' | cut -c1)"
 LINK_CHANNEL_PORT="$(printf '%s' "${LINK_CHANNEL_PORT:-8787}" | tr -cd '0-9' | cut -c1-5)"
 case "$LINK_CHANNEL_PORT" in ''|0) LINK_CHANNEL_PORT=8787 ;; esac
-# Подсети за другими шлюзами (концепт «локальная сеть», функция B): им из линка
+# Подсети за другими шлюзами: им из линка
 # открыт транзит в локальную сеть — по источнику, выше drop по приватным.
 PEER_HOME_NETS="$(printf '%s' "${PEER_HOME_NETS:-}" | tr -cd '0-9./ ' | tr ' ' '\n' \
     | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$' | paste -sd' ' - 2>/dev/null || true)"
@@ -287,7 +287,7 @@ legacy_cleanup() {
     done
 }
 
-# ── локальная сеть без VPN (концепт «локальная сеть», функция A): помощники ────────
+# ── локальная сеть без VPN: помощники ────────
 LAN_IF=""; LAN_ADDR=""; LAN_ERROR=""
 dn_set_elsewhere() {           # $1 = regex: ключ dnsmasq уже задан в ДРУГОМ файле?
     # Debian запускает демон с conf-dir=/etc/dnsmasq.d,.dpkg-dist,.dpkg-old,
@@ -342,7 +342,7 @@ lan_remove() {                 # снять всё своё; личные спи
     [ -f "$LAN_SERVICES" ] && run "rm -f $LAN_SERVICES"
     return 0
 }
-lan_migrate_manual() {         # ручной слой (концепт «локальная сеть» §7): переезжает, не ломается
+lan_migrate_manual() {         # ручной слой: переезжает, не ломается
     _moved=""
     for _u in home-split.service awg-lists.timer awg-lists.service; do
         if [ -f "/etc/systemd/system/$_u" ]; then
@@ -386,12 +386,11 @@ write_lan_scripts() {          # скрипты списков — из этог
     # 8 КБ, скрипты длиннее) дочитывает свой прежний inode, а не новый текст
 cat > "$LAN_LISTS.new" <<'LISTSEOF'
 #!/bin/sh
-# awg-lan-lists.sh — списки локальной сети без VPN (концепт «локальная сеть» §3.3).
+# awg-lan-lists.sh — списки локальной сети без VPN.
 # Зовёт агент по расписанию (с джиттером), `awg-bot lan update` и агент же, когда
 # фиды привёз канал (с AWG_LAN_FROM). Идемпотентно.
 # AWG_LAN_FROM=<каталог> — фиды не качать, а взять готовыми из domains.lst и
-# nets.lst в этом каталоге: их привозит сервер по каналу линка (концепт «канал
-# линка», этап 3), и адрес квартиры тогда не ходит за ними ни на GitHub, ни в
+# nets.lst в этом каталоге: их привозит сервер по каналу линка, и адрес квартиры тогда не ходит за ними ни на GitHub, ни в
 # Google. Проверки те же, что для скачанного: формат, длина, dnsmasq --test
 # (с conf-dir, как у init-скрипта Debian); отказ --test или рестарта dnsmasq —
 # откат прежнего фида и rc=1. Копия для отката — $DUMP/rollback/vpn-feed.conf.prev.
@@ -521,15 +520,19 @@ LISTSEOF
 chmod 0755 "$LAN_LISTS.new" && mv -f "$LAN_LISTS.new" "$LAN_LISTS"
 cat > "$LAN_DOMAIN.new" <<'DOMEOF'
 #!/bin/sh
-# awg-lan-domain.sh — свои списки локальной сети без VPN (концепт «локальная
-# сеть» §3.3; концепт «синхронизация своих списков», этап 1).
+# awg-lan-domain.sh — свои списки локальной сети без VPN.
 #   add <домен…>   — в туннель (awg-gw-vpn-user.conf, набор lan_vpn4)
 #   ru  <домен…>   — напрямую, российский адрес (awg-gw-ru-user.conf, набор lan_ru4)
 #   del <домен…>   — убрать из обоих
 #   list           — показать: «vpn <домен>» / «ru <домен>»
 #   sync <файл>    — полный список строками «vpn <домен>» / «ru <домен>» (его
 #                    собирает агент из канона сервера AWG): оба файла целиком,
-#                    один рестарт dnsmasq; чужая строка — отказ целиком, rc=2
+#                    один рестарт dnsmasq; чужая строка — отказ целиком, rc=2.
+#                    Адреса новых доменов «в туннель» в набор НЕ кладёт — это
+#                    делает fill, которым агент зовёт скрипт фоном после sync
+#   fill <файл>    — домены по одному на строку: их адреса (dig) — в lan_vpn4,
+#                    затем слепок набора; без блокировки списков (набор пополняет
+#                    и сам dnsmasq первым запросом клиента, это лишь ускорение)
 # Домен накрывает поддомены. Схема и www. отбрасываются. Хост сервера AWG
 # (Endpoint аплинка) добавить нельзя: увести туннель в туннель — запереть себя.
 # Одна блокировка со скриптом фидов (lists.lock): два писателя одних файлов и
@@ -568,15 +571,36 @@ case "$cmd" in
         list_of "$RU" | sed 's|^|ru |'
         exit 0 ;;
     add|ru|del) [ $# -gt 0 ] || { echo "usage: $0 $cmd <домен…>"; exit 1; } ;;
-    sync) [ $# -eq 1 ] && [ -f "${1:-}" ] || { echo "usage: $0 sync <файл>"; exit 1; } ;;
-    *) echo "usage: $0 add|ru|del <домен…> | list | sync <файл>"; exit 1 ;;
+    sync|fill) [ $# -eq 1 ] && [ -f "${1:-}" ] || { echo "usage: $0 $cmd <файл>"; exit 1; } ;;
+    *) echo "usage: $0 add|ru|del <домен…> | list | sync <файл> | fill <файл>"; exit 1 ;;
 esac
+valid() { [ "${#1}" -le 253 ] && [ "$(printf '%s' "$1" | grep -c '')" -le 1 ] && printf '%s' "$1" | grep -Eq "^$DOMAIN_RE$"; }
+resolve() { dig +short +time=3 +tries=1 @127.0.0.1 "$1" A 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; }
+set_op() {                     # set_op add|delete <набор> <домен> — адреса домена в набор / из набора
+    for ip in $(resolve "$3"); do nft "$1" element $TABLE "$2" "{ $ip }" 2>/dev/null || true; done
+}
+snapshot_vpn() {               # слепок набора грузится при старте: без него снятый адрес вернулся бы с загрузкой
+    nft list set $TABLE lan_vpn4 > "$DUMP/lan_vpn4.nft.tmp" 2>/dev/null && mv -f "$DUMP/lan_vpn4.nft.tmp" "$DUMP/lan_vpn4.nft" || rm -f "$DUMP/lan_vpn4.nft.tmp"
+}
+plural_dom() {                 # 1 домен, 2 домена, 5 доменов, 11 доменов
+    case "$1" in *1[0-9]) echo доменов;; *1) echo домен;; *[2-4]) echo домена;; *) echo доменов;; esac
+}
+if [ "$cmd" = "fill" ]; then
+    # без блокировки: файлы dnsmasq не трогаем, только набор и его слепок
+    n=0
+    while read -r d; do
+        valid "$d" || continue
+        set_op add lan_vpn4 "$d"; n=$((n+1))
+    done < "$1"
+    snapshot_vpn
+    echo "набор lan_vpn4 пополнен: $n $(plural_dom "$n")"
+    exit 0
+fi
 # одна блокировка со скриптом фидов: он читает ru-user.conf и тоже перезапускает dnsmasq
 exec 9>"$DUMP/lists.lock"
 if command -v flock >/dev/null 2>&1 && ! flock -w 120 9; then echo "обновление списков ещё идёт" >&2; exit 75; fi
 TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT
 deny="$(sed -n 's/^Endpoint *= *\([^:]*\):.*/\1/p' "$UPLINK_CONF" 2>/dev/null | head -n1 | tr 'A-Z' 'a-z')"
-valid() { [ "${#1}" -le 253 ] && [ "$(printf '%s' "$1" | grep -c '')" -le 1 ] && printf '%s' "$1" | grep -Eq "^$DOMAIN_RE$"; }
 in_list() { grep -qxF "$1" "$TMPD/want_$2"; }             # $1 домен, $2 vpn|ru
 list_of "$VPN" > "$TMPD/before_vpn"; list_of "$RU" > "$TMPD/before_ru"
 cp "$TMPD/before_vpn" "$TMPD/want_vpn"; cp "$TMPD/before_ru" "$TMPD/want_ru"
@@ -662,10 +686,6 @@ for f in $changed; do rm -f "$(prev "$f")"; done
 cat "$TMPD/said"
 sleep 1
 # ── наборы nft
-resolve() { dig +short +time=3 +tries=1 @127.0.0.1 "$1" A 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; }
-set_op() {                     # set_op add|delete <набор> <домен> — адреса домена в набор / из набора
-    for ip in $(resolve "$3"); do nft "$1" element $TABLE "$2" "{ $ip }" 2>/dev/null || true; done
-}
 # ушедшие из «в туннель» — вынуть адреса (ошибки глушатся: интервал auto-merge, домен фида)
 grep -vxF -f "$TMPD/want_vpn" "$TMPD/before_vpn" 2>/dev/null | while read -r d; do
     [ -n "$d" ] && set_op delete lan_vpn4 "$d"
@@ -677,18 +697,16 @@ if ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
         [ -n "$d" ] && set_op add lan_ru4 "$d"
     done < "$TMPD/want_ru"
 fi
-snapshot_vpn() {               # слепок набора грузится при старте: без него снятый адрес вернулся бы с загрузкой
-    nft list set $TABLE lan_vpn4 > "$DUMP/lan_vpn4.nft.tmp" 2>/dev/null && mv -f "$DUMP/lan_vpn4.nft.tmp" "$DUMP/lan_vpn4.nft" || rm -f "$DUMP/lan_vpn4.nft.tmp"
-}
 if [ "$cmd" = "sync" ]; then
     grep -vxF -f "$TMPD/before_vpn" "$TMPD/want_vpn" 2>/dev/null | sed 's|^|+ |; s|$| (в туннель)|'
     grep -vxF -f "$TMPD/before_ru" "$TMPD/want_ru" 2>/dev/null | sed 's|^|+ |; s|$| (напрямую)|'
     # «−» — только ушедшие из обоих видов; сменившие вид уже названы строкой «+»
     grep -vxF -f "$TMPD/want_ru" "$TMPD/before_ru" 2>/dev/null | grep -vxF -f "$TMPD/want_vpn" | sed 's|^|− |'
     grep -vxF -f "$TMPD/want_vpn" "$TMPD/before_vpn" 2>/dev/null | grep -vxF -f "$TMPD/want_ru" | sed 's|^|− |'
-    grep -vxF -f "$TMPD/before_vpn" "$TMPD/want_vpn" 2>/dev/null | while read -r d; do
-        [ -n "$d" ] && set_op add lan_vpn4 "$d"
-    done
+    # адреса новых доменов «в туннель» в набор кладёт fill — агент зовёт его
+    # фоном: dig по каждому (первая синхронизация — до 500) не должен держать
+    # ни блокировку списков, ни агента. Слепок — здесь: снятые выше адреса без
+    # него вернулись бы с перезагрузкой; fill после своих добавлений снимет свой
     snapshot_vpn
     echo "свои списки: $(grep -c . "$TMPD/want_vpn") в туннель, $(grep -c . "$TMPD/want_ru") напрямую"
     exit 0
@@ -706,8 +724,7 @@ DOMEOF
 chmod 0755 "$LAN_DOMAIN.new" && mv -f "$LAN_DOMAIN.new" "$LAN_DOMAIN"
 cat > "$LAN_SERVICES.new" <<'SVCEOF'
 #!/bin/sh
-# awg-lan-services.sh — записи сервисов соседних сетей для dnsmasq (концепт
-# «сервисы соседних сетей»). Зовёт агент: с путём к файлу — установить, без
+# awg-lan-services.sh — записи сервисов соседних сетей для dnsmasq. Зовёт агент: с путём к файлу — установить, без
 # аргумента — снять. Содержимое агент собирает из данных, пришедших каналом
 # линка с сервера AWG, поэтому файл проверяется построчно по белому списку
 # шаблонов (тот же список — LINE_RES в awgbot/domain/gwservices.py): ни
@@ -1430,12 +1447,12 @@ Environment=LINK_IF=$LINK_IF
 Environment="ADMIN_IPS=$ADMIN_IPS"
 Environment=GATEWAY_PUBKEY=$GATEWAY_PUBKEY
 Environment=GATEWAY_PREV_PUBKEY=$GATEWAY_PREV_PUBKEY
-# Локальная сеть без VPN (концепт «локальная сеть»): флаг, подсети, резолвер ВПС.
+# Локальная сеть без VPN: флаг, подсети, резолвер ВПС.
 Environment=LAN_MODE=$LAN_MODE
 Environment="HOME_SUBNETS=$HOME_SUBNETS"
 Environment=RESOLVER=$RESOLVER
 Environment="PEER_HOME_NETS=$PEER_HOME_NETS"
-# Канал до ВПС внутри линка (концепт «канал линка»): включается бандлом и
+# Канал до ВПС внутри линка: включается бандлом и
 # только им. Агент читает эти строки из юнита — без перевыпуска конфигурации
 # он никуда не ходит.
 Environment=LINK_CHANNEL=$LINK_CHANNEL
@@ -1456,7 +1473,7 @@ UNITEOF
 chmod 0600 "$UNIT"
 run "systemctl daemon-reload"
 run "systemctl enable awg-link-gw.service"
-# ── 5. локальная сеть: «за шлюзом — без VPN» (концепт «локальная сеть», функция A) ─
+# ── 5. локальная сеть: «за шлюзом — без VPN» ─
 # Роутер заворачивает весь трафик локальной сети на малину, малина делит его
 # сама: заблокированное — по метке аплинка в туннель, остальное — напрямую.
 # Резолвер dnsmasq на LAN-адресе с апстримом через аплинк наполняет наборы
@@ -1636,7 +1653,7 @@ HOMEEOF
         [ -s "$LAN_DUMP/$_s.nft" ] && run "nft -f $LAN_DUMP/$_s.nft 2>/dev/null || true"
     done
     write_lan_scripts
-    # ── сервисы соседних сетей (концепт «сервисы соседних сетей»): обзор своей
+    # ── сервисы соседних сетей: обзор своей
     # сети — avahi-browse при живом avahi-daemon (сам демон не ставим: он начал
     # бы объявлять малину); соседей нет — записи соседей снять
     if [ -n "${PEER_HOME_NETS:-}" ]; then

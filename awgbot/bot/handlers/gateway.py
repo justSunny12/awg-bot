@@ -495,7 +495,7 @@ async def gw_hide(cb: CallbackQuery):
     await cb.answer()
 
 
-# ── локальная сеть без VPN (концепт «локальная сеть» §3.5) ────────────────────────
+# ── локальная сеть без VPN ────────────────────────
 
 async def _lan_screen(services):
     st = await _status(services, fresh=False)
@@ -536,8 +536,7 @@ async def gw_lan_domain_received(message: Message, state: FSMContext, services):
 
 
 async def _own_sync_tail(services, ok: bool, out: str) -> str:
-    """После правки списка: сверка и отправка серверу сразу (концепт
-    «синхронизация своих списков» §13); хвост итога — куда уйдёт правка.
+    """После правки списка: сверка и отправка серверу сразу; хвост итога — куда уйдёт правка.
     Изменилось ли что-то, решает сверка файлов, а не слова вывода скрипта."""
     from awgbot.runtime import linkclient
     if not ok or not await call(services.own_active):

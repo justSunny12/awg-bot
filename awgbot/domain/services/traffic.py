@@ -132,7 +132,7 @@ class TrafficMixin:
                     peers[p["public_key"]] = p
             except awg.AwgError as e:
                 log.warning("poll_traffic: %s не опрошен: %s", awg.iface_of(raw), e)
-        # учёт РФ-трафика (концепт «учёт РФ-трафика»): чтение таблицы счётчиков —
+        # учёт РФ-трафика: чтение таблицы счётчиков —
         # вне транзакции, накопление — внутри той же, что у awg
         rf_links = self.rf_links()
         rf_state, rf_err = None, ""
