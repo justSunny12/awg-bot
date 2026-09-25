@@ -15,6 +15,7 @@ import logging
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
@@ -565,7 +566,12 @@ async def gw_lan_remove(cb: CallbackQuery, callback_data: GwCB, services):
         await cb.answer()
         return
     ok, out = await call(services.lan_domains, "del", [dom])
-    await cb.answer(texts.gateway_lan_result(ok, out)[:180], show_alert=not ok)
+    try:
+        await cb.answer(texts.gateway_lan_result(ok, out)[:180], show_alert=not ok)
+    except TelegramBadRequest:
+        # скрипт ждал блокировку списков дольше, чем Telegram держит нажатие —
+        # итог сообщением, а не всплывашкой
+        await ask_tracked(cb.message, services, texts.gateway_lan_result(ok, out))
     await edit_nav(cb, services, *await _lan_list_screen(services, cb.message.chat.id))
 
 

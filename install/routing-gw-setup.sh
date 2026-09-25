@@ -33,7 +33,11 @@
 #      через АПЛИНК, NXDOMAIN на DoH-эндпоинты), ВТОРАЯ таблица inet awg_home
 #      (наборы lan_vpn4/lan_vpn_nets4/lan_ru4, метка в туннель, маскарад в
 #      локальную сеть) и скрипты списков в /usr/local/sbin — awg-lan-lists.sh
-#      (фиды), awg-lan-domain.sh (личные списки, их же зовёт awg-bot lan) и
+#      (фиды; исходник до вычитания исключений — /var/lib/awg-gw/vpn-feed.src),
+#      awg-lan-domain.sh (свои списки: add|ru|del|list — их же зовёт awg-bot lan;
+#      sync <файл> — полный список, его зовёт только агент; одна блокировка
+#      lists.lock с фидами, исключения «напрямую» вычитаются из фида заново,
+#      наборы чистятся) и
 #      awg-lan-services.sh (записи сервисов соседних сетей для dnsmasq —
 #      концепт «сервисы соседних сетей»: SMB-серверы сети другого шлюза видны
 #      в Finder через домен обзора awg.internal; при PEER_HOME_NETS и живом
@@ -417,6 +421,10 @@ get_domains() {
 if get_domains && [ -s "$TMP" ]; then
     # sed -i без суффикса — GNU-изм: правим через временный файл
     sed 's|^ipset=\(/.*/\)vpn_domains$|nftset=\1inet#awg_home#lan_vpn4|' "$TMP" > "$TMP2" && mv "$TMP2" "$TMP"
+    # исходник до вычитания — awg-lan-domain.sh пересобирает фид по нему, когда
+    # меняются исключения «напрямую» (иначе новое исключение ждало бы новых фидов);
+    # кладётся только после проверки длины ниже, чтобы обрезанный фид не стал исходником
+    cp "$TMP" "$DUMP/vpn-feed.src.tmp"
     # исключения побеждают: dnsmasq применяет одну директиву на домен, и какая
     # из двух победит, зависело бы от порядка чтения каталога — вычитаем
     if [ -s "$RU" ]; then
@@ -431,6 +439,7 @@ if get_domains && [ -s "$TMP" ]; then
     # dnsmasq на «bad option» — квартира без DNS до следующего удачного фида.
     grep -E '^(#.*|nftset=/[^/[:space:]]+(/[^/[:space:]]+)*/inet#awg_home#lan_vpn4)$' "$TMP" > "$TMP2"
     mv "$TMP2" "$TMP"
+    feed_ok=0
     if [ "$(grep -c '^nftset=' "$TMP")" -lt 10 ]; then
         echo "домены: фид подозрительно короткий — не применяю" >&2; rc=1
     # дифф-скип: рестарт роняет кэш всей сети, а список меняется не каждые 6 ч
@@ -442,7 +451,7 @@ if get_domains && [ -s "$TMP" ]; then
         if dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; then
             # именно restart: SIGHUP конфиги не перечитывает; отказ — откат фида
             if systemctl restart dnsmasq; then
-                rm -f "$FEED.prev.awg"
+                rm -f "$FEED.prev.awg"; feed_ok=1
             else
                 echo "домены: dnsmasq не поднялся с новым фидом — откатываю" >&2; rc=1
                 if [ -f "$FEED.prev.awg" ]; then mv -f "$FEED.prev.awg" "$FEED"; else rm -f "$FEED"; fi
@@ -452,7 +461,12 @@ if get_domains && [ -s "$TMP" ]; then
             echo "домены: dnsmasq --test отверг новый фид — откатываю" >&2; rc=1
             if [ -f "$FEED.prev.awg" ]; then mv -f "$FEED.prev.awg" "$FEED"; else rm -f "$FEED"; fi
         fi
+    else
+        feed_ok=1
     fi
+    # исходник — только от принятого (или не изменившегося) фида: отвергнутый
+    # исходником не становится, иначе каждая правка «напрямую» падала бы на нём
+    if [ "$feed_ok" = 1 ]; then mv -f "$DUMP/vpn-feed.src.tmp" "$DUMP/vpn-feed.src"; else rm -f "$DUMP/vpn-feed.src.tmp"; fi
 else
     if [ -n "$FROM" ]; then echo "домены: фида нет в $FROM (привозит канал)" >&2
     else echo "домены: фид не скачался ($DOMAINS_URL)" >&2; fi
@@ -495,72 +509,183 @@ LISTSEOF
 chmod 0755 "$LAN_LISTS"
 cat > "$LAN_DOMAIN" <<'DOMEOF'
 #!/bin/sh
-# awg-lan-domain.sh — персональные списки локальной сети без VPN.
+# awg-lan-domain.sh — свои списки локальной сети без VPN (концепт «локальная
+# сеть» §3.3; концепт «синхронизация своих списков», этап 1).
 #   add <домен…>   — в туннель (awg-gw-vpn-user.conf, набор lan_vpn4)
 #   ru  <домен…>   — напрямую, российский адрес (awg-gw-ru-user.conf, набор lan_ru4)
 #   del <домен…>   — убрать из обоих
 #   list           — показать: «vpn <домен>» / «ru <домен>»
-# Домен накрывает поддомены. Схема и www. отбрасываются. Хост ВПС (Endpoint
-# аплинка) добавить нельзя: увести туннель в туннель — запереть себя.
+#   sync <файл>    — полный список строками «vpn <домен>» / «ru <домен>» (его
+#                    собирает агент из канона сервера AWG): оба файла целиком,
+#                    один рестарт dnsmasq; чужая строка — отказ целиком, rc=2
+# Домен накрывает поддомены. Схема и www. отбрасываются. Хост сервера AWG
+# (Endpoint аплинка) добавить нельзя: увести туннель в туннель — запереть себя.
+# Одна блокировка со скриптом фидов (lists.lock): два писателя одних файлов и
+# два рестарта dnsmasq разом не бывает; занято дольше 120 с — код 75. list —
+# без блокировки. Исключения «напрямую» вычитаются из фида доменов заново по
+# сохранённому исходнику vpn-feed.src (его кладёт awg-lan-lists.sh; нет
+# исходника — фид выправит ближайшая сборка). Домен, ушедший из «напрямую»,
+# уходит и из набора lan_ru4 (flush + dig оставшихся: набор маленький и
+# наполняется только отсюда); ушедший из «в туннель» вынимается из lan_vpn4 по
+# адресам dig, ошибки глушатся (адрес мог слиться в интервал или принадлежать
+# домену фида). Правило домена — DOMAIN_RE (зона буквами или punycode «xn--»);
+# то же правило применит сервер AWG к общему списку (этап 2 синхронизации).
+# awg-lan-domain: sync
 set -u
 D="${AWG_DNSMASQ_D:-/etc/dnsmasq.d}"
-VPN="$D/awg-gw-vpn-user.conf"; RU="$D/awg-gw-ru-user.conf"
+VPN="$D/awg-gw-vpn-user.conf"; RU="$D/awg-gw-ru-user.conf"; FEED="$D/awg-gw-vpn-feed.conf"
+DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"; SRC="$DUMP/vpn-feed.src"
 TABLE="inet awg_home"
+DOMAIN_RE='([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})'
 # Аплинк — тот, что нашёл скрипт обвязки (UPLINK_IF в статусе): на машине с
 # аплинком не awg0 иначе хост ВПС не был бы под запретом
 _up="$(sed -n 's/^UPLINK_IF=//p' /etc/awg-gw/gateway.status 2>/dev/null | head -n1 | tr -cd 'A-Za-z0-9_.-')"
 UPLINK_CONF="${AWG_UPLINK_CONF:-/etc/amnezia/amneziawg/${_up:-awg0}.conf}"
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 [ "$(id -u)" = "0" ] || { echo "нужен root"; exit 1; }
+mkdir -p "$DUMP"
 touch "$VPN" "$RU"
-drop_line() {                  # $1 = домен, $2 = файл; sed -i без суффикса — GNU-изм
-    # точки домена — не regex; многодоменные строки (nftset=/a/b/набор) из
-    # мигрированного ручного слоя — домен вырезается из середины, строка остаётся
-    _d="$(printf '%s' "$1" | sed 's/\./\\./g')"
-    sed -e "s|^\(nftset=\(/[^/]*\)*\)/$_d/|\1/|" -e '/^nftset=\/inet#/d' "$2" > "$2.tmp"; mv -f "$2.tmp" "$2"
+list_of() {                    # $1 = файл → домены по одному на строку, по алфавиту
+    # строка может нести несколько доменов (nftset=/a/b/набор — мигрированный ручной слой)
+    sed -n 's|^nftset=\(/.*\)/inet#.*|\1|p' "$1" | tr '/' '\n' | grep . | sort -u
 }
-has_domain() { grep -qE "^nftset=(/[^/]+)*/$(printf '%s' "$1" | sed 's/\./\\./g')/" "$2"; }
 case "$cmd" in
     list)
-        # строка может нести несколько доменов: nftset=/a/b/набор — по одному на строку
-        for _p in "vpn $VPN" "ru $RU"; do
-            _k="${_p%% *}"; _f="${_p#* }"
-            sed -n 's|^nftset=\(/.*\)/inet#.*|\1|p' "$_f" | tr '/' '\n' | grep . | sed "s|^|$_k |"
-        done
+        list_of "$VPN" | sed 's|^|vpn |'
+        list_of "$RU" | sed 's|^|ru |'
         exit 0 ;;
     add|ru|del) [ $# -gt 0 ] || { echo "usage: $0 $cmd <домен…>"; exit 1; } ;;
-    *) echo "usage: $0 add|ru|del <домен…> | list"; exit 1 ;;
+    sync) [ $# -eq 1 ] && [ -f "${1:-}" ] || { echo "usage: $0 sync <файл>"; exit 1; } ;;
+    *) echo "usage: $0 add|ru|del <домен…> | list | sync <файл>"; exit 1 ;;
 esac
+# одна блокировка со скриптом фидов: он читает ru-user.conf и тоже перезапускает dnsmasq
+exec 9>"$DUMP/lists.lock"
+if command -v flock >/dev/null 2>&1 && ! flock -w 120 9; then echo "обновление списков ещё идёт" >&2; exit 75; fi
+TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT
 deny="$(sed -n 's/^Endpoint *= *\([^:]*\):.*/\1/p' "$UPLINK_CONF" 2>/dev/null | head -n1 | tr 'A-Z' 'a-z')"
-changed=0; added=""
-for raw in "$@"; do
-    d="$(printf '%s' "$raw" | sed -E 's|^[a-zA-Z]+://||; s|/.*$||; s|^www\.||' | tr 'A-Z' 'a-z')"
-    printf '%s' "$d" | grep -Eq '^[a-z0-9.-]+\.[a-z]{2,}$' || { echo "$d: не похоже на домен, пропущен"; continue; }
-    if [ "$cmd" = "del" ]; then
-        if has_domain "$d" "$VPN" || has_domain "$d" "$RU"; then
-            drop_line "$d" "$VPN"; drop_line "$d" "$RU"; echo "$d: убран"; changed=1
-        else
-            echo "$d: в списках нет"
-        fi
-        continue
+valid() { [ "${#1}" -le 253 ] && [ "$(printf '%s' "$1" | grep -c '')" -le 1 ] && printf '%s' "$1" | grep -Eq "^$DOMAIN_RE$"; }
+in_list() { printf '%s\n' "$2" | grep -qxF "$1"; }      # $1 домен, $2 список
+list_of "$VPN" > "$TMPD/before_vpn"; list_of "$RU" > "$TMPD/before_ru"
+cp "$TMPD/before_vpn" "$TMPD/want_vpn"; cp "$TMPD/before_ru" "$TMPD/want_ru"
+drop_from() { grep -vxF "$1" "$TMPD/want_$2" > "$TMPD/x" || true; mv "$TMPD/x" "$TMPD/want_$2"; }
+add_to() { printf '%s\n' "$1" >> "$TMPD/want_$2"; }
+added=""                       # «домен:набор» — наполнить после рестарта
+# «добавлен»/«убран» — только после удачного рестарта: при откате человек видел
+# бы «добавлен» рядом с «откатываю»
+say() { printf '%s\n' "$1" >> "$TMPD/said"; }
+: > "$TMPD/said"
+if [ "$cmd" = "sync" ]; then
+    if grep -Ev "^(vpn|ru) $DOMAIN_RE\$" "$1" | grep -q . || ! awk 'length($2) > 253 { bad=1 } END { exit bad }' "$1"; then
+        echo "в файле есть строка не вида «vpn <домен>» / «ru <домен>» — не применяю" >&2; exit 2
     fi
-    [ -n "$deny" ] && [ "$d" = "$deny" ] && { echo "$d: это хост сервера — его добавить нельзя"; continue; }
-    if [ "$cmd" = "add" ]; then f="$VPN"; set_="lan_vpn4"; other="$RU"; else f="$RU"; set_="lan_ru4"; other="$VPN"; fi
-    has_domain "$d" "$f" && { echo "$d: уже в списке"; continue; }
-    drop_line "$d" "$other"                    # из противоположного списка — убрать
-    echo "nftset=/$d/inet#awg_home#$set_" >> "$f"
-    added="$added $d:$set_"; changed=1
-    echo "$d: добавлен"
+    sed -n 's/^ru //p' "$1" | sort -u > "$TMPD/want_ru"
+    # домен в обоих видах — «напрямую», как решает nft; хост сервера — пропущен с пометкой
+    sed -n 's/^vpn //p' "$1" | sort -u | grep -vxF -f "$TMPD/want_ru" > "$TMPD/want_vpn" || true
+    if [ -n "$deny" ]; then
+        for f in want_vpn want_ru; do
+            if grep -qxF "$deny" "$TMPD/$f"; then echo "$deny: это хост сервера — пропущен"; drop_from "$deny" "${f#want_}"; fi
+        done
+    fi
+else
+    for raw in "$@"; do
+        d="$(printf '%s' "$raw" | sed -E 's|^[a-zA-Z]+://||; s|/.*$||; s|^www\.||' | tr 'A-Z' 'a-z')"
+        valid "$d" || { echo "$d: не похоже на домен, пропущен"; continue; }
+        if [ "$cmd" = "del" ]; then
+            if in_list "$d" "$(cat "$TMPD/want_vpn")" || in_list "$d" "$(cat "$TMPD/want_ru")"; then
+                drop_from "$d" vpn; drop_from "$d" ru; say "$d: убран"
+            else
+                echo "$d: в списках нет"
+            fi
+            continue
+        fi
+        [ -n "$deny" ] && [ "$d" = "$deny" ] && { echo "$d: это хост сервера — его добавить нельзя"; continue; }
+        if [ "$cmd" = "add" ]; then k=vpn; other=ru; set_="lan_vpn4"; else k=ru; other=vpn; set_="lan_ru4"; fi
+        in_list "$d" "$(cat "$TMPD/want_$k")" && { echo "$d: уже в списке"; continue; }
+        drop_from "$d" "$other"; add_to "$d" "$k"
+        added="$added $d:$set_"
+        say "$d: добавлен"
+    done
+fi
+sort -u -o "$TMPD/want_vpn" "$TMPD/want_vpn"; sort -u -o "$TMPD/want_ru" "$TMPD/want_ru"
+if cmp -s "$TMPD/want_vpn" "$TMPD/before_vpn" && cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
+    [ "$cmd" = "sync" ] && echo "свои списки без изменений"
+    exit 0
+fi
+# ── файлы: по домену на строку, по алфавиту (sync и кнопка пишут одинаково)
+sed 's|.*|nftset=/&/inet#awg_home#lan_vpn4|' "$TMPD/want_vpn" > "$TMPD/vpn.conf"
+sed 's|.*|nftset=/&/inet#awg_home#lan_ru4|' "$TMPD/want_ru" > "$TMPD/ru.conf"
+changed="$VPN $RU"
+for f in "$VPN" "$RU"; do cp -p "$f" "$f.prev.awg" 2>/dev/null || : > "$f.prev.awg"; done
+install -m 644 "$TMPD/vpn.conf" "$VPN"; install -m 644 "$TMPD/ru.conf" "$RU"
+# ── фид доменов: исключения «напрямую» вычитаются заново по исходнику (тот же
+# awk, что в awg-lan-lists.sh); исходника нет — фид выправит ближайшая сборка
+if [ -s "$SRC" ] && ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
+    # пустой список «напрямую» — первому файлу awk нужна хоть одна строка, иначе
+    # NR==FNR сработает уже на исходнике и вычтет из фида всё
+    { echo "# ru"; cat "$RU"; } > "$TMPD/ru_awk"
+    awk -F/ '
+        NR==FNR { if ($0 ~ /^nftset=/) for (i=2; i<NF; i++) skip[$i]=1; next }
+        $0 !~ /^nftset=/ { print; next }
+        { out=$1; n=0; for (i=2; i<NF; i++) if (!($i in skip)) { out=out "/" $i; n++ }
+          if (n) print out "/" $(NF) }' "$TMPD/ru_awk" "$SRC" \
+        | grep -E '^(#.*|nftset=/[^/[:space:]]+(/[^/[:space:]]+)*/inet#awg_home#lan_vpn4)$' > "$TMPD/feed.conf" || true
+    if [ -s "$TMPD/feed.conf" ] && ! cmp -s "$TMPD/feed.conf" "$FEED"; then
+        cp -p "$FEED" "$FEED.prev.awg" 2>/dev/null || : > "$FEED.prev.awg"
+        install -m 644 "$TMPD/feed.conf" "$FEED"; changed="$changed $FEED"
+    fi
+fi
+rollback() { for f in $changed; do mv -f "$f.prev.awg" "$f"; done; systemctl restart dnsmasq || true; }
+# conf-dir Debian подключает ключом из init-скрипта — голый --test файлы не видит
+if command -v dnsmasq >/dev/null 2>&1 && ! dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; then
+    echo "dnsmasq --test отверг свои списки — откатываю" >&2; rollback; exit 1
+fi
+if ! systemctl restart dnsmasq; then
+    echo "dnsmasq не поднялся со своими списками — откатываю" >&2; rollback; exit 1
+fi
+for f in $changed; do rm -f "$f.prev.awg"; done
+cat "$TMPD/said"
+sleep 1
+# ── наборы nft
+resolve() { dig +short +time=3 @127.0.0.1 "$1" A 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; }
+# ушедшие из «в туннель» — вынуть адреса (ошибки глушатся: интервал auto-merge, домен фида)
+grep -vxF -f "$TMPD/want_vpn" "$TMPD/before_vpn" 2>/dev/null | while read -r d; do
+    [ -n "$d" ] || continue
+    for ip in $(resolve "$d"); do nft delete element $TABLE lan_vpn4 "{ $ip }" 2>/dev/null || true; done
 done
-[ "$changed" = "1" ] || exit 0
-systemctl restart dnsmasq && sleep 1
+# «напрямую» изменилось — набор целиком заново: он маленький и наполняется только отсюда
+if ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
+    nft flush set $TABLE lan_ru4 2>/dev/null || true
+    while read -r d; do
+        [ -n "$d" ] || continue
+        for ip in $(resolve "$d"); do nft add element $TABLE lan_ru4 "{ $ip }" 2>/dev/null || true; done
+    done < "$TMPD/want_ru"
+fi
+snapshot_vpn() {               # слепок набора грузится при старте: без него снятый адрес вернулся бы с загрузкой
+    nft list set $TABLE lan_vpn4 > "$DUMP/lan_vpn4.nft.tmp" 2>/dev/null && mv -f "$DUMP/lan_vpn4.nft.tmp" "$DUMP/lan_vpn4.nft" || rm -f "$DUMP/lan_vpn4.nft.tmp"
+}
+if [ "$cmd" = "sync" ]; then
+    grep -vxF -f "$TMPD/before_vpn" "$TMPD/want_vpn" 2>/dev/null | sed 's|^|+ |; s|$| (в туннель)|'
+    grep -vxF -f "$TMPD/before_ru" "$TMPD/want_ru" 2>/dev/null | sed 's|^|+ |; s|$| (напрямую)|'
+    # «−» — только ушедшие из обоих видов; сменившие вид уже названы строкой «+»
+    grep -vxF -f "$TMPD/want_ru" "$TMPD/before_ru" 2>/dev/null | grep -vxF -f "$TMPD/want_vpn" | sed 's|^|− |'
+    grep -vxF -f "$TMPD/want_vpn" "$TMPD/before_vpn" 2>/dev/null | grep -vxF -f "$TMPD/want_ru" | sed 's|^|− |'
+    grep -vxF -f "$TMPD/before_vpn" "$TMPD/want_vpn" 2>/dev/null | while read -r d; do
+        [ -n "$d" ] || continue
+        for ip in $(resolve "$d"); do nft add element $TABLE lan_vpn4 "{ $ip }" 2>/dev/null || true; done
+    done
+    snapshot_vpn
+    echo "свои списки: $(grep -c . "$TMPD/want_vpn") в туннель, $(grep -c . "$TMPD/want_ru") напрямую"
+    exit 0
+fi
 for pair in $added; do
     d="${pair%%:*}"; set_="${pair##*:}"; n=0
-    for ip in $(dig +short +time=3 @127.0.0.1 "$d" A 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'); do
-        nft add element $TABLE $set_ "{ $ip }" 2>/dev/null && n=$((n+1))
+    for ip in $(resolve "$d"); do
+        # «напрямую» уже наполнен целиком выше — только считаем
+        if [ "$set_" = "lan_ru4" ] || nft add element $TABLE $set_ "{ $ip }" 2>/dev/null; then n=$((n+1)); fi
     done
     echo "  $d → $n адрес(а) в наборе $set_"
 done
+snapshot_vpn
 DOMEOF
 chmod 0755 "$LAN_DOMAIN"
 cat > "$LAN_SERVICES" <<'SVCEOF'

@@ -67,10 +67,14 @@ def domain_env(script, tmp_path):
     _fake(bin_dir, "id", "echo 0\n")
     _fake(bin_dir, "dig", "case \"$*\" in *example.com*) echo 93.184.216.34; echo 93.184.216.35 ;; esac\n")
     _fake(bin_dir, "nft", f'echo "nft $*" >> {log}\n')
+    # dnsmasq есть в PATH — скрипт проверяет свои списки `dnsmasq --test` до рестарта
+    _fake(bin_dir, "dnsmasq", f'echo "dnsmasq $*" >> {log}; exit "${{DNSMASQ_TEST_RC:-0}}"\n')
     conf = tmp_path / "awg0.conf"; conf.write_text("[Peer]\nEndpoint = vps.example.net:51820\n", encoding="utf-8")
     tool = tmp_path / "awg-lan-domain.sh"
     tool.write_text(_heredoc(script, "LAN_DOMAIN", "DOMEOF"), encoding="utf-8"); tool.chmod(0o755)
-    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "AWG_DNSMASQ_D": str(dns_d), "AWG_UPLINK_CONF": str(conf)}
+    # AWG_LAN_DUMP — каталог блокировки lists.lock и исходника фида vpn-feed.src
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "AWG_DNSMASQ_D": str(dns_d), "AWG_UPLINK_CONF": str(conf),
+           "AWG_LAN_DUMP": str(tmp_path / "dump")}
     return tool, dns_d, log, env
 
 
@@ -778,3 +782,771 @@ def test_shell_whitelist_and_python_line_res_agree(svc_env, locale):
     assert go(_svc_file()).returncode == 0 and gs.lines_ok(_svc_file())
     mixed = _svc_file() + _FOREIGN_LINES[0] + "\n"
     assert go(mixed).returncode == 2 and not gs.lines_ok(mixed)
+
+
+# ── свои списки: блокировка, правило домена, вычитание, наборы, sync ────────
+# (концепт «синхронизация своих списков», этап 1)
+
+VPN_USER = "awg-gw-vpn-user.conf"
+RU_USER = "awg-gw-ru-user.conf"
+FEED = "awg-gw-vpn-feed.conf"
+
+# dig: у каждого домена свой адрес — по логу nft видно, чей адрес куда лёг
+_DIG_MAP = {"example.com": ["93.184.216.34", "93.184.216.35"], "shop.ru": ["10.1.1.1"],
+            "bank.ru": ["10.2.2.2"], "news.org": ["10.3.3.3"], "alpha.com": ["10.4.4.4"],
+            "zeta.com": ["10.5.5.5"]}
+
+
+def _vpn_line(d: str) -> str:
+    return f"nftset=/{d}/inet#awg_home#lan_vpn4"
+
+
+def _ru_line(d: str) -> str:
+    return f"nftset=/{d}/inet#awg_home#lan_ru4"
+
+
+def _own(dns_d: Path, vpn=(), ru=()) -> None:
+    """Состояние своих списков до вызова — как их оставила прежняя версия."""
+    (dns_d / VPN_USER).write_text("".join(_vpn_line(d) + "\n" for d in vpn), encoding="utf-8")
+    (dns_d / RU_USER).write_text("".join(_ru_line(d) + "\n" for d in ru), encoding="utf-8")
+
+
+def _bin(env: dict) -> Path:
+    return Path(env["PATH"].split(":", 1)[0])
+
+
+def _mapped_dig(env: dict) -> None:
+    body = 'case "$*" in\n' + "".join(
+        f'  *" {d} "*) ' + "; ".join(f"echo {ip}" for ip in ips) + " ;;\n" for d, ips in _DIG_MAP.items()
+    ) + "esac\n"
+    _fake(_bin(env), "dig", body)
+
+
+def _stateful_nft(env: dict, log: Path, sets: Path) -> None:
+    """nft с памятью: наборы — файлы адресов в `sets`. delete несуществующего
+    адреса — ошибка, как у настоящего nft; list set — вывод для слепка."""
+    sets.mkdir(exist_ok=True)
+    body = r"""echo "nft $*" >> @LOG@
+S=@SETS@
+case "$1 $2" in
+  "add element") ip=$(echo "$6" | tr -d '{} '); grep -qxF "$ip" "$S/$5" 2>/dev/null || echo "$ip" >> "$S/$5" ;;
+  "delete element") ip=$(echo "$6" | tr -d '{} ')
+      grep -qxF "$ip" "$S/$5" 2>/dev/null || { echo "Error: element does not exist" >&2; exit 1; }
+      grep -vxF "$ip" "$S/$5" > "$S/$5.x"; mv "$S/$5.x" "$S/$5" ;;
+  "flush set") : > "$S/$5" ;;
+  "list set") echo "table inet awg_home {"; echo "  set $5 {"
+      echo "    elements = { $(sort "$S/$5" 2>/dev/null | paste -sd, - | sed 's/,/, /g') }"; echo "  }"; echo "}" ;;
+esac
+exit 0
+"""
+    _fake(_bin(env), "nft", body.replace("@LOG@", str(log)).replace("@SETS@", str(sets)))
+
+
+def _set(sets: Path, name: str) -> set[str]:
+    f = sets / name
+    return set(f.read_text().split()) if f.exists() else set()
+
+
+def _fill(sets: Path, name: str, ips) -> None:
+    (sets / name).write_text("".join(ip + "\n" for ip in ips), encoding="utf-8")
+
+
+@pytest.fixture()
+def own_env(domain_env):
+    """domain_env с dig по таблице и nft с памятью; dump — каталог блокировки,
+    исходника фида и слепка lan_vpn4 (тот же, что у скрипта фидов на малине)."""
+    tool, dns_d, log, env = domain_env
+    _mapped_dig(env)
+    dump = Path(env["AWG_LAN_DUMP"]); dump.mkdir(exist_ok=True)
+    _stateful_nft(env, log, dump.parent / "sets")
+    return tool, dns_d, dump, log, env
+
+
+def _sets_of(dump: Path) -> Path:
+    return dump.parent / "sets"
+
+
+def _log(log: Path) -> str:
+    return log.read_text() if log.exists() else ""
+
+
+# Исходник фида так, как его оставляет awg-lan-lists.sh: после перевода
+# ipset= → nftset=, до вычитания исключений, с мусором и комментарием
+_SRC = ["# фид", _vpn_line("youtube.com/googlevideo.com"), _vpn_line("shop.ru"), _vpn_line("x.com"),
+        "<html>заглушка</html>"]
+
+
+def _feed_from(src_lines, minus=()) -> str:
+    """Фид, каким его собрал бы скрипт фидов: исходник минус исключения, только
+    наши директивы и комментарии."""
+    out = []
+    for ln in src_lines:
+        if ln.startswith("#"):
+            out.append(ln); continue
+        if not ln.startswith("nftset=/"):
+            continue
+        parts = ln.split("/")
+        doms = [d for d in parts[1:-1] if d not in minus]
+        if doms:
+            out.append("/".join([parts[0], *doms, parts[-1]]))
+    return "".join(ln + "\n" for ln in out)
+
+
+def _with_src(dns_d: Path, dump: Path, minus=()) -> None:
+    (dump / "vpn-feed.src").write_text("\n".join(_SRC) + "\n", encoding="utf-8")
+    (dns_d / FEED).write_text(_feed_from(_SRC, minus), encoding="utf-8")
+
+
+# ── блокировка ───────────────────────────────────────────────────────────────
+
+def test_own_lists_wait_for_the_feeds_lock_and_give_up_with_75(own_env):
+    """Кнопка «напрямую» совпала с обновлением фидов: оба пишут dnsmasq.d и
+    перезапускают dnsmasq, скрипт фидов при этом читает ru-user.conf для
+    вычитания. Без общей блокировки фид вычитался бы по полузаписанному файлу.
+    Не дождались двух минут — код 75 и ничего не тронуто."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["example.com"])
+    before = (dns_d / VPN_USER).read_text()
+    _fake(_bin(env), "flock", f'echo "flock $*" >> {log}\nexit 1\n')
+    for args in (("add", "news.org"), ("ru", "shop.ru"), ("del", "example.com")):
+        r = _run(tool, env, *args)
+        assert r.returncode == 75, f"{args}: занятая блокировка выдана за {r.returncode}: {r.stdout}{r.stderr}"
+        assert "обновление списков ещё идёт" in r.stderr
+    text = _log(log)
+    assert "flock -w 120 9" in text, f"ждать надо до двух минут: {text}"
+    assert "systemctl" not in text and "nft" not in text and "dnsmasq" not in text, \
+        f"без блокировки что-то применено: {text}"
+    assert (dns_d / VPN_USER).read_text() == before
+    assert not (dns_d / RU_USER).read_text()
+    assert (dump / "lists.lock").exists(), "блокировка не в каталоге скрипта фидов — это не общая блокировка"
+
+
+def test_own_lists_sync_also_takes_the_lock(own_env, tmp_path):
+    tool, dns_d, dump, log, env = own_env
+    _fake(_bin(env), "flock", f'echo "flock $*" >> {log}\nexit 1\n')
+    f = tmp_path / "own.txt"; f.write_text("vpn news.org\n", encoding="utf-8")
+    r = _run(tool, env, "sync", str(f))
+    assert r.returncode == 75, r.stdout + r.stderr
+    assert "news.org" not in (dns_d / VPN_USER).read_text()
+
+
+def test_listing_own_lists_does_not_wait_for_the_lock(own_env):
+    """Экран «Свои списки» читает list: пока идёт обновление фидов (до пары
+    минут), экран не должен висеть и не должен падать с «занято»."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["example.com"], ru=["shop.ru"])
+    _fake(_bin(env), "flock", f'echo "flock $*" >> {log}\nexit 1\n')
+    r = _run(tool, env, "list")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == "vpn example.com\nru shop.ru\n"
+    assert "flock" not in _log(log), "list взял блокировку — экран ждал бы обновления фидов"
+
+
+def test_own_lists_run_normally_once_the_lock_is_taken(own_env):
+    tool, dns_d, dump, log, env = own_env
+    _fake(_bin(env), "flock", f'echo "flock $*" >> {log}\nexit 0\n')
+    r = _run(tool, env, "add", "news.org")
+    assert r.returncode == 0, r.stderr
+    assert "flock -w 120 9" in _log(log) and "systemctl restart dnsmasq" in _log(log)
+    assert (dns_d / VPN_USER).read_text() == _vpn_line("news.org") + "\n"
+
+
+# ── правило домена — одно с сервером AWG ─────────────────────────────────────
+
+# Правило §2.1 концепта: на сервере AWG (этап 2) — то же самое выражение
+_CANON_DOMAIN_RE = re.compile(
+    r"(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})")
+
+
+def _long(n: int) -> str:
+    """Домен ровно из n символов (метки по 63)."""
+    return ".".join(["a" * 63] * 3) + "." + "b" * (n - 196) + ".com"
+
+
+_DOMAIN_EXAMPLES = {
+    # проходят
+    "a.bc": True, "example.com": True, "sub.example.co.uk": True, "x-y.com": True,
+    "123.com": True, "1.2.3.example.org": True, "xn--80ak6aa92e.com": True,
+    "a" * 63 + ".com": True, _long(253): True, "a.abcdefghij": True,
+    "example.xn--p1ai": True, "xn--80aswg.xn--p1ai": True,
+    # не проходят
+    "-x.com": False, "x-.com": False, "a..b.com": False, ".a.com": False, "a.com.": False,
+    "example": False, "xn--p1ai": False, "example.xn--": False, "a.c": False, "a.b1": False, "a_b.com": False,
+    "a" * 64 + ".com": False, _long(254): False, "пример.рф": False, "münchen.de": False,
+    "a.co1m": False,
+}
+
+
+def test_the_example_verdicts_are_the_canon_rule():
+    """Сами примеры сверены с правилом канона: иначе ниже сравнивали бы скрипт
+    с опечаткой в таблице."""
+    wrong = [d for d, ok in _DOMAIN_EXAMPLES.items() if bool(_CANON_DOMAIN_RE.fullmatch(d)) != ok]
+    assert wrong == [], f"пример расходится с правилом канона: {wrong}"
+
+
+def test_the_script_domain_rule_is_the_canon_rule(script):
+    """Строка DOMAIN_RE в скрипте — то же выражение, что у канона (без
+    опережающей проверки длины: её делает `valid`)."""
+    m = re.search(r"^DOMAIN_RE='([^']*)'$", _heredoc(script, "LAN_DOMAIN", "DOMEOF"), re.M)
+    assert m, "в скрипте своих списков нет DOMAIN_RE"
+    assert m.group(1) == _CANON_DOMAIN_RE.pattern.split("$)", 1)[1], m.group(1)
+
+
+@pytest.mark.parametrize("locale", ["C", "C.UTF-8", "en_US.UTF-8"])
+def test_buttons_accept_exactly_what_the_canon_accepts(own_env, locale):
+    """Разойдись правило у агента и на сервере — вечное «применено ≠ канон»:
+    домен, который сервер разослал, скрипт отвергает на каждом шлюзе. Прогоняем
+    общий список через кнопку add и через правило канона. Локаль — как у юнита:
+    [a-z] под UTF-8 не должен пускать кириллицу и умляуты."""
+    tool, dns_d, dump, log, env = own_env
+    r = _run(tool, {**env, "LC_ALL": locale}, "add", *_DOMAIN_EXAMPLES)
+    assert r.returncode == 0, r.stderr
+    lines = set(r.stdout.splitlines())
+    disagree = []
+    for d, ok in _DOMAIN_EXAMPLES.items():
+        took = f"{d}: добавлен" in lines
+        refused = f"{d}: не похоже на домен, пропущен" in lines
+        assert took != refused, f"{d}: ни принят, ни отвергнут: {r.stdout}"
+        if took != ok:
+            disagree.append((d[:40], "скрипт принял" if took else "скрипт отверг"))
+    assert disagree == [], f"кнопка и канон разошлись: {disagree}"
+    written = set(_run(tool, env, "list").stdout.split())
+    assert "-x.com" not in written and "a..b.com" not in written
+
+
+@pytest.mark.parametrize("locale", ["C", "C.UTF-8", "en_US.UTF-8"])
+def test_sync_accepts_exactly_what_the_canon_accepts(own_env, tmp_path, locale):
+    """То же правило в режиме sync: файл с одним отвергнутым доменом — отказ
+    целиком (rc=2), с принятым — применён."""
+    tool, dns_d, dump, log, env = own_env
+    disagree = []
+    for i, (d, ok) in enumerate(_DOMAIN_EXAMPLES.items()):
+        f = tmp_path / f"own{i}.txt"; f.write_text(f"vpn {d}\n", encoding="utf-8")
+        r = _run(tool, {**env, "LC_ALL": locale}, "sync", str(f))
+        assert r.returncode in (0, 2), (d, r.returncode, r.stderr)
+        if (r.returncode == 0) != ok:
+            disagree.append((d[:40], len(d), "sync принял" if r.returncode == 0 else "sync отверг"))
+    assert disagree == [], f"sync и канон разошлись: {disagree}"
+
+
+def test_a_multiline_argument_is_not_a_domain(own_env):
+    """Аргумент кнопки с переводом строки: правило проверяет строку целиком, а
+    не «хоть одну строку внутри» — иначе в список пишутся две директивы из
+    одного значения, одно из которых правило не видело."""
+    tool, dns_d, dump, log, env = own_env
+    r = _run(tool, env, "add", "news.org\nbad name.com")
+    assert "добавлен" not in r.stdout, r.stdout
+    assert (dns_d / VPN_USER).read_text() == "", "значение с переводом строки записано в список"
+
+
+# ── вычитание исключений из фида ─────────────────────────────────────────────
+
+def test_a_new_exception_leaves_the_feed_at_once_with_one_restart(own_env):
+    """Домен из фида перевели «напрямую»: раньше директива фида оставалась до
+    смены фидов на сервере, и какая из двух победит, решал порядок чтения
+    каталога. Теперь фид пересобирается по исходнику в том же рестарте."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d)
+    _with_src(dns_d, dump)
+    r = _run(tool, env, "ru", "shop.ru")
+    assert r.returncode == 0, r.stderr
+    feed = (dns_d / FEED).read_text()
+    assert "shop.ru" not in feed, f"исключение не вычтено из фида: {feed}"
+    assert _vpn_line("x.com") in feed and _vpn_line("youtube.com/googlevideo.com") in feed, "вычли лишнее"
+    assert "<html>" not in feed, "мусор исходника уехал в conf-dir"
+    assert feed == _feed_from(_SRC, minus={"shop.ru"}), "фид собран не так, как собрал бы скрипт фидов"
+    assert _log(log).count("systemctl restart dnsmasq") == 1, "фид и свой список — один рестарт"
+    assert not list(dns_d.glob("*.prev.awg")), "копии отката остались в conf-dir"
+
+
+def test_an_exception_inside_a_multi_domain_feed_line_cuts_only_itself(own_env):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d)
+    _with_src(dns_d, dump)
+    assert _run(tool, env, "ru", "googlevideo.com").returncode == 0
+    feed = (dns_d / FEED).read_text()
+    assert _vpn_line("youtube.com") + "\n" in feed and "googlevideo.com" not in feed, feed
+
+
+def test_a_removed_exception_returns_to_the_feed(own_env):
+    """Убрали «напрямую» — домен снова идёт в туннель по фиду. Раньше исходник
+    фида не хранился, и убранное исключение пропадало из фида до смены фидов."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, ru=["shop.ru"])
+    _with_src(dns_d, dump, minus={"shop.ru"})
+    r = _run(tool, env, "del", "shop.ru")
+    assert r.returncode == 0, r.stderr
+    assert _vpn_line("shop.ru") + "\n" in (dns_d / FEED).read_text(), "домен не вернулся в фид"
+    assert (dns_d / FEED).read_text() == _feed_from(_SRC)
+
+
+def test_a_removed_exception_returns_to_the_feed_while_others_stay_out(own_env):
+    """То же, когда другое исключение остаётся: оно из фида не возвращается."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, ru=["shop.ru", "x.com"])
+    _with_src(dns_d, dump, minus={"shop.ru", "x.com"})
+    assert _run(tool, env, "del", "shop.ru").returncode == 0
+    assert (dns_d / FEED).read_text() == _feed_from(_SRC, minus={"x.com"})
+
+
+def test_moving_an_exception_to_the_tunnel_returns_it_to_the_feed(own_env):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, ru=["shop.ru"])
+    _with_src(dns_d, dump, minus={"shop.ru"})
+    assert _run(tool, env, "add", "shop.ru").returncode == 0
+    assert (dns_d / FEED).read_text() == _feed_from(_SRC)
+    assert (dns_d / VPN_USER).read_text() == _vpn_line("shop.ru") + "\n"
+
+
+def test_without_the_feed_source_the_feed_is_left_alone(own_env):
+    """Исходника ещё нет (фиды не собирались с этой версии): фид не трогаем —
+    его выправит ближайшая сборка; свой список применяется как обычно."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d)
+    old = _feed_from(_SRC)
+    (dns_d / FEED).write_text(old, encoding="utf-8")
+    r = _run(tool, env, "ru", "shop.ru")
+    assert r.returncode == 0, r.stderr
+    assert (dns_d / FEED).read_text() == old, "фид переписан без исходника"
+    assert (dns_d / RU_USER).read_text() == _ru_line("shop.ru") + "\n"
+
+
+def test_a_tunnel_only_change_does_not_touch_the_feed(own_env):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d)
+    _with_src(dns_d, dump)
+    (dns_d / FEED).write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    assert _run(tool, env, "add", "news.org").returncode == 0
+    assert (dns_d / FEED).read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n", \
+        "«напрямую» не менялось — фид пересобран вхолостую"
+
+
+def test_a_rejected_config_rolls_back_the_lists_and_the_feed(own_env):
+    """dnsmasq --test отверг: оба своих списка и фид возвращаются как были,
+    наборы не трогаются, код 1 — квартира не остаётся без DNS."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["shop.ru"])
+    _with_src(dns_d, dump)
+    before = {f: (dns_d / f).read_text() for f in (VPN_USER, RU_USER, FEED)}
+    r = _run(tool, {**env, "DNSMASQ_TEST_RC": "1"}, "ru", "shop.ru")
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "откатываю" in r.stderr
+    assert "добавлен" not in r.stdout, f"человеку сказано «добавлен» про откаченное: {r.stdout}"
+    assert {f: (dns_d / f).read_text() for f in before} == before, "откат вернул не всё"
+    assert not list(dns_d.glob("*.prev.awg")), "копии отката остались в conf-dir"
+    assert "nft" not in _log(log), "наборы тронуты при откаченных списках"
+    tests = [ln for ln in _log(log).splitlines() if ln.startswith("dnsmasq --test")]
+    assert tests == [f"dnsmasq --test --conf-dir={dns_d},.dpkg-dist,.dpkg-old,.dpkg-new"], tests
+
+
+def test_a_failed_restart_rolls_back_and_restarts_with_the_old_lists(own_env):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["shop.ru"])
+    _with_src(dns_d, dump)
+    before = {f: (dns_d / f).read_text() for f in (VPN_USER, RU_USER, FEED)}
+    _failing_restart(_bin(env), log)
+    r = _run(tool, env, "ru", "shop.ru")
+    assert r.returncode == 1, "отказ рестарта выдан за успех"
+    assert "не поднялся" in r.stderr and "откатываю" in r.stderr
+    assert "добавлен" not in r.stdout, f"человеку сказано «добавлен» про откаченное: {r.stdout}"
+    assert {f: (dns_d / f).read_text() for f in before} == before
+    assert _log(log).count("systemctl restart dnsmasq") == 2, "после отката демон надо поднять с прежним"
+    assert not list(dns_d.glob("*.prev.awg"))
+    assert "nft" not in _log(log)
+
+
+# ── наборы nft ───────────────────────────────────────────────────────────────
+
+def _nft(log: Path) -> list[str]:
+    return [ln for ln in _log(log).splitlines() if ln.startswith("nft ")]
+
+
+def test_leaving_direct_refills_lan_ru4_from_the_remaining_list(own_env):
+    """Домен убрали из «напрямую»: правило lan_ru4 стоит выше меток, и без
+    чистки набора домен шёл бы мимо туннеля до перезагрузки. Набор маленький и
+    наполняется только отсюда — сбрасываем и наполняем оставшимися."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, ru=["shop.ru", "bank.ru"])
+    _fill(_sets_of(dump), "lan_ru4", ["10.1.1.1", "10.2.2.2"])
+    r = _run(tool, env, "del", "bank.ru")
+    assert r.returncode == 0, r.stderr
+    assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1"}, "адрес убранного домена остался в lan_ru4"
+    assert r.stdout.strip() == "bank.ru: убран", r.stdout
+    nft = _nft(log)
+    assert "nft flush set inet awg_home lan_ru4" in nft, nft
+    assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in nft, "оставшийся домен не вернулся в набор"
+    assert not any("10.2.2.2" in ln and "add" in ln for ln in nft), "убранный домен снова в наборе"
+    assert nft.index("nft flush set inet awg_home lan_ru4") < nft.index(
+        "nft add element inet awg_home lan_ru4 { 10.1.1.1 }"), "наполнение до сброса стёрто сбросом"
+    text = _log(log)
+    assert text.index("systemctl restart dnsmasq") < text.index("nft flush"), "dig до рестарта — по старым спискам"
+
+
+def test_moving_from_direct_to_tunnel_refills_both_sets(own_env):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, ru=["shop.ru", "bank.ru"])
+    _fill(_sets_of(dump), "lan_ru4", ["10.1.1.1", "10.2.2.2"])
+    r = _run(tool, env, "add", "bank.ru")
+    assert r.returncode == 0, r.stderr
+    assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1"}, "переведённый в туннель остался напрямую"
+    assert _set(_sets_of(dump), "lan_vpn4") == {"10.2.2.2"}
+    nft = _nft(log)
+    assert "nft flush set inet awg_home lan_ru4" in nft
+    assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in nft
+    assert "nft add element inet awg_home lan_ru4 { 10.2.2.2 }" not in nft
+    assert "nft add element inet awg_home lan_vpn4 { 10.2.2.2 }" in nft, "домен не лёг в туннельный набор"
+    assert "1 адрес(а) в наборе lan_vpn4" in r.stdout
+
+
+def test_a_new_direct_domain_lands_in_lan_ru4_once(own_env):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, ru=["shop.ru"])
+    r = _run(tool, env, "ru", "bank.ru")
+    assert r.returncode == 0, r.stderr
+    nft = _nft(log)
+    assert nft.count("nft add element inet awg_home lan_ru4 { 10.2.2.2 }") == 1, nft
+    assert "bank.ru → 1 адрес(а) в наборе lan_ru4" in r.stdout
+
+
+def test_deleting_a_tunnel_domain_takes_its_addresses_out_of_lan_vpn4(own_env):
+    """Удаление, донесённое до всех шлюзов, должно действовать: адреса,
+    уже попавшие в lan_vpn4, иначе жили бы там и в слепке навсегда."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["example.com", "news.org"])
+    _fill(_sets_of(dump), "lan_vpn4", ["93.184.216.34", "93.184.216.35", "10.3.3.3"])
+    r = _run(tool, env, "del", "example.com")
+    assert r.returncode == 0, r.stderr
+    assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3"}, "адреса убранного домена остались в lan_vpn4"
+    nft = _nft(log)
+    for ip in _DIG_MAP["example.com"]:
+        assert f"nft delete element inet awg_home lan_vpn4 {{ {ip} }}" in nft, nft
+    assert not any("10.3.3.3" in ln for ln in nft), "тронут адрес оставшегося домена"
+    assert not any("lan_ru4" in ln for ln in nft), "«напрямую» не менялось — набор сброшен зря"
+    assert "−" not in r.stdout, "в add/ru/del адреса снимаются молча"
+
+
+def test_a_failing_element_delete_does_not_break_the_run(own_env):
+    """Адрес слился в интервал или принадлежит домену фида — nft отказывает.
+    Это не повод падать: списки уже применены, остальные адреса вынимаются."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["example.com"])
+    _fake(_bin(env), "nft", f'echo "nft $*" >> {log}\n[ "$1" = delete ] && {{ echo "Error: interval" >&2; exit 1; }}\nexit 0\n')
+    r = _run(tool, env, "del", "example.com")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "Error" not in r.stderr, "ошибка nft вылезла человеку"
+    nft = _nft(log)
+    assert sum("delete element" in ln for ln in nft) == 2, "после первой ошибки второй адрес не вынимался"
+    assert (dns_d / VPN_USER).read_text() == ""
+
+
+def test_the_lan_vpn4_snapshot_forgets_removed_addresses(own_env):
+    """Слепок lan_vpn4 грузится при старте: не перепиши его после удаления —
+    снятый адрес вернётся в набор с первой же перезагрузкой малины."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["example.com", "news.org"])
+    _fill(_sets_of(dump), "lan_vpn4", ["93.184.216.34", "93.184.216.35", "10.3.3.3"])
+    (dump / "lan_vpn4.nft").write_text("elements = { 10.3.3.3, 93.184.216.34, 93.184.216.35 }\n", encoding="utf-8")
+    assert _run(tool, env, "del", "example.com").returncode == 0
+    snap = (dump / "lan_vpn4.nft").read_text()
+    assert "10.3.3.3" in snap and "93.184.216.34" not in snap, f"слепок хранит снятый адрес: {snap}"
+    nft = _nft(log)
+    assert nft.index("nft list set inet awg_home lan_vpn4") > max(
+        i for i, ln in enumerate(nft) if "delete element" in ln), "слепок снят до удаления"
+    assert not (dump / "lan_vpn4.nft.tmp").exists()
+
+
+def test_a_new_tunnel_domain_gets_into_the_snapshot(own_env, tmp_path):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d)
+    assert _run(tool, env, "add", "news.org").returncode == 0
+    assert "10.3.3.3" in (dump / "lan_vpn4.nft").read_text()
+    assert _sync(tool, env, tmp_path, "vpn news.org\nvpn alpha.com\n").returncode == 0
+    assert "10.4.4.4" in (dump / "lan_vpn4.nft").read_text(), "sync не обновил слепок"
+
+
+def test_a_failed_listing_keeps_the_previous_snapshot(own_env):
+    """nft list не ответил — прежний слепок лучше пустого: пустой при старте
+    оставил бы набор без адресов до первых запросов."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d)
+    (dump / "lan_vpn4.nft").write_text("elements = { 10.9.9.9 }\n", encoding="utf-8")
+    _fake(_bin(env), "nft", f'echo "nft $*" >> {log}\n[ "$1" = list ] && exit 1\nexit 0\n')
+    r = _run(tool, env, "add", "news.org")
+    assert r.returncode == 0, r.stderr
+    assert (dump / "lan_vpn4.nft").read_text() == "elements = { 10.9.9.9 }\n"
+    assert not (dump / "lan_vpn4.nft.tmp").exists()
+
+
+def test_a_repeated_add_changes_nothing(own_env):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["news.org"])
+    r = _run(tool, env, "add", "news.org")
+    assert r.returncode == 0 and "news.org: уже в списке" in r.stdout
+    assert _log(log) == "", f"повтор без изменений — а рестарт или наборы тронуты: {_log(log)}"
+
+
+# ── sync <файл> ──────────────────────────────────────────────────────────────
+
+def _sync(tool, env, tmp_path, text: str, name="own.txt"):
+    f = tmp_path / name
+    f.write_text(text, encoding="utf-8")
+    return _run(tool, env, "sync", str(f))
+
+
+def test_the_script_announces_sync_in_its_header(script):
+    """По метке агент узнаёт, что скрипт на малине уже понимает sync: без неё
+    он не пошлёт полный список в скрипт, который его отвергнет."""
+    assert "\n# awg-lan-domain: sync\n" in _heredoc(script, "LAN_DOMAIN", "DOMEOF")
+
+
+def test_sync_writes_both_lists_one_domain_per_line_in_order(own_env, tmp_path):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d)
+    r = _sync(tool, env, tmp_path, "vpn zeta.com\nru shop.ru\nvpn alpha.com\nru bank.ru\n")
+    assert r.returncode == 0, r.stderr
+    assert (dns_d / VPN_USER).read_text() == _vpn_line("alpha.com") + "\n" + _vpn_line("zeta.com") + "\n"
+    assert (dns_d / RU_USER).read_text() == _ru_line("bank.ru") + "\n" + _ru_line("shop.ru") + "\n"
+    assert "+ alpha.com (в туннель)" in r.stdout and "+ zeta.com (в туннель)" in r.stdout
+    assert "+ bank.ru (напрямую)" in r.stdout and "+ shop.ru (напрямую)" in r.stdout
+    assert r.stdout.rstrip().endswith("свои списки: 2 в туннель, 2 напрямую"), r.stdout
+    nft = _nft(log)
+    assert "nft add element inet awg_home lan_vpn4 { 10.4.4.4 }" in nft and \
+        "nft add element inet awg_home lan_vpn4 { 10.5.5.5 }" in nft, "новые «в туннель» не легли в набор"
+    assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in nft
+    assert _log(log).count("systemctl restart dnsmasq") == 1
+
+
+def test_sync_of_the_same_lists_in_another_order_does_not_restart(own_env, tmp_path):
+    """Кнопка дописывает строку в конец файла, sync пишет по алфавиту, а
+    мигрированный ручной слой держит несколько доменов в строке. Сравнение — по
+    составу: иначе первая же чужая правка роняла бы кэш DNS всей квартиры ради
+    порядка строк."""
+    tool, dns_d, dump, log, env = own_env
+    (dns_d / VPN_USER).write_text("nftset=/zeta.com/alpha.com/inet#awg_home#lan_vpn4\n", encoding="utf-8")
+    (dns_d / RU_USER).write_text(_ru_line("shop.ru") + "\n" + _ru_line("bank.ru") + "\n", encoding="utf-8")
+    before = {f: (dns_d / f).read_text() for f in (VPN_USER, RU_USER)}
+    r = _sync(tool, env, tmp_path, "ru bank.ru\nvpn alpha.com\nru shop.ru\nvpn zeta.com\nvpn alpha.com\n")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "свои списки без изменений", r.stdout
+    assert _log(log) == "", f"тот же состав — а рестарт или наборы: {_log(log)}"
+    assert {f: (dns_d / f).read_text() for f in before} == before, "файлы переписаны без изменений состава"
+
+
+def test_sync_refuses_the_whole_file_for_one_foreign_line(own_env, tmp_path):
+    """Файл собирает агент; строка не того вида — признак поломки или подмены.
+    Отказ целиком, rc=2: половина применённого списка хуже прежнего."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["news.org"], ru=["shop.ru"])
+    before = {f: (dns_d / f).read_text() for f in (VPN_USER, RU_USER)}
+    for bad in ("add alpha.com", "vpn alpha.com extra", "vpn Alpha.com", "nftset=/evil.com/inet#awg_home#lan_ru4",
+                "vpn -x.com", "ru a..b.com", " vpn alpha.com", "vpn alpha.com ", "del news.org"):
+        r = _sync(tool, env, tmp_path, f"vpn alpha.com\n{bad}\nru bank.ru\n")
+        assert r.returncode == 2, f"{bad!r}: rc={r.returncode} {r.stdout}{r.stderr}"
+        assert {f: (dns_d / f).read_text() for f in before} == before, f"{bad!r}: файлы тронуты"
+    assert _log(log) == "", "при отказе что-то применено"
+
+
+def test_sync_rejects_a_domain_longer_than_253(own_env, tmp_path):
+    """Правило канона ограничивает длину 253: sync обязан отвергать то же, что
+    кнопка, иначе канон и применённое разойдутся."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d)
+    r = _sync(tool, env, tmp_path, f"vpn {_long(254)}\n")
+    assert r.returncode == 2, f"домен длиной 254 принят sync: rc={r.returncode} {r.stdout}"
+    assert (dns_d / VPN_USER).read_text() == ""
+
+
+def test_sync_puts_a_domain_listed_both_ways_to_direct(own_env, tmp_path):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d)
+    r = _sync(tool, env, tmp_path, "vpn shop.ru\nru shop.ru\nvpn news.org\n")
+    assert r.returncode == 0, r.stderr
+    assert (dns_d / VPN_USER).read_text() == _vpn_line("news.org") + "\n", "домен остался в обоих списках"
+    assert (dns_d / RU_USER).read_text() == _ru_line("shop.ru") + "\n"
+    assert "свои списки: 1 в туннель, 1 напрямую" in r.stdout
+
+
+def test_sync_skips_the_server_host_with_a_note(own_env, tmp_path):
+    """Хост сервера AWG в туннель — запереть себя. Остальной список
+    применяется, пропуск назван."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d)
+    for kind in ("vpn", "ru"):
+        r = _sync(tool, env, tmp_path, f"{kind} vps.example.net\nvpn news.org\n", name=f"{kind}.txt")
+        assert r.returncode == 0, r.stderr
+        assert "vps.example.net: это хост сервера — пропущен" in r.stdout, r.stdout
+        assert "vps.example.net" not in (dns_d / VPN_USER).read_text() + (dns_d / RU_USER).read_text()
+        assert (dns_d / VPN_USER).read_text() == _vpn_line("news.org") + "\n"
+
+
+def test_sync_reports_moves_and_removals_and_cleans_the_sets(own_env, tmp_path):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["example.com", "news.org"], ru=["shop.ru", "bank.ru"])
+    _fill(_sets_of(dump), "lan_vpn4", ["93.184.216.34", "93.184.216.35", "10.3.3.3"])
+    _fill(_sets_of(dump), "lan_ru4", ["10.1.1.1", "10.2.2.2"])
+    # example.com ушёл совсем, bank.ru переехал в туннель, news.org и shop.ru — на месте
+    r = _sync(tool, env, tmp_path, "vpn news.org\nvpn bank.ru\nru shop.ru\n")
+    assert r.returncode == 0, r.stderr
+    lines = r.stdout.splitlines()
+    assert "− example.com" in lines and "+ bank.ru (в туннель)" in lines, lines
+    assert "− bank.ru" not in lines, f"переезд из вида в вид назван удалением: {lines}"
+    assert not any("news.org" in ln or "shop.ru" in ln for ln in lines), f"неизменное названо изменением: {lines}"
+    assert lines[-1] == "свои списки: 2 в туннель, 1 напрямую"
+    nft = _nft(log)
+    assert "nft delete element inet awg_home lan_vpn4 { 93.184.216.34 }" in nft
+    assert "nft flush set inet awg_home lan_ru4" in nft
+    assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in nft
+    assert "nft add element inet awg_home lan_ru4 { 10.2.2.2 }" not in nft, "переехавший остался напрямую"
+    assert "nft add element inet awg_home lan_vpn4 { 10.2.2.2 }" in nft
+    assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3", "10.2.2.2"}
+    assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1"}
+
+
+def test_sync_of_an_empty_list_clears_both(own_env, tmp_path):
+    """Канон пуст (всё удалили на других шлюзах) — пустой файл применяется,
+    а не считается ошибкой."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["news.org"], ru=["shop.ru"])
+    r = _sync(tool, env, tmp_path, "")
+    assert r.returncode == 0, r.stderr
+    assert (dns_d / VPN_USER).read_text() == "" and (dns_d / RU_USER).read_text() == ""
+    assert "свои списки: 0 в туннель, 0 напрямую" in r.stdout
+
+
+def test_sync_of_fifty_domains_restarts_dnsmasq_once(own_env, tmp_path):
+    """Пакет от сервера — один рестарт dnsmasq, а не рестарт на домен: каждый
+    рестарт роняет кэш DNS всей квартиры."""
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d)
+    _with_src(dns_d, dump)
+    text = "".join(f"vpn site{i}.org\n" for i in range(25)) + "".join(f"ru shop{i}.ru\n" for i in range(24)) \
+        + "ru shop.ru\n"
+    r = _sync(tool, env, tmp_path, text)
+    assert r.returncode == 0, r.stderr
+    t = _log(log)
+    assert t.count("systemctl restart dnsmasq") == 1, t.count("systemctl restart dnsmasq")
+    assert t.count("dnsmasq --test") == 1
+    assert "свои списки: 25 в туннель, 25 напрямую" in r.stdout
+    assert "shop.ru" not in (dns_d / FEED).read_text(), "sync не вычел исключение из фида"
+
+
+def test_sync_rolls_back_all_three_files_when_dnsmasq_rejects(own_env, tmp_path):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["news.org"])
+    _with_src(dns_d, dump)
+    before = {f: (dns_d / f).read_text() for f in (VPN_USER, RU_USER, FEED)}
+    f = tmp_path / "own.txt"; f.write_text("vpn alpha.com\nru shop.ru\n", encoding="utf-8")
+    r = _run(tool, {**env, "DNSMASQ_TEST_RC": "1"}, "sync", str(f))
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "+ " not in r.stdout and "свои списки:" not in r.stdout, f"итог про откаченное: {r.stdout}"
+    assert {f: (dns_d / f).read_text() for f in before} == before, "откат вернул не все три файла"
+    assert not list(dns_d.glob("*.prev.awg"))
+    assert "nft" not in _log(log)
+
+
+def test_sync_without_a_readable_file_is_a_usage_error(own_env, tmp_path):
+    tool, dns_d, dump, log, env = own_env
+    _own(dns_d, vpn=["news.org"])
+    for args in (("sync",), ("sync", str(tmp_path / "missing.txt"))):
+        r = _run(tool, env, *args)
+        assert r.returncode == 1 and "usage" in r.stdout, (args, r.stdout)
+    assert (dns_d / VPN_USER).read_text() == _vpn_line("news.org") + "\n"
+    assert _log(log) == ""
+
+
+# ── исходник фида: копия до вычитания ────────────────────────────────────────
+
+def test_downloaded_feed_source_is_kept_before_subtraction(lists_env):
+    """По исходнику скрипт своих списков вычитает исключения заново. Храни мы
+    фид после вычитания — убранное «напрямую» в фид бы не вернулось."""
+    tool, dns_d, dump, log, env = lists_env
+    (dns_d / RU_USER).write_text(_ru_line("shop.ru") + "\n", encoding="utf-8")
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    src = (dump / "vpn-feed.src").read_text()
+    assert _vpn_line("shop.ru") + "\n" in src, "исходник сохранён уже после вычитания"
+    assert _vpn_line("youtube.com/googlevideo.com") in src and "vpn_domains" not in src, \
+        "исходник не в формате nftset — вычитание по нему не сработает"
+    assert "shop.ru" not in (dns_d / FEED).read_text()
+    assert not (dump / "vpn-feed.src.tmp").exists()
+
+
+def test_channel_feed_source_is_kept_before_subtraction(channel_env):
+    tool, dns_d, dump, log, env, _feed = channel_env
+    (dns_d / RU_USER).write_text(_ru_line("shop.ru") + "\n", encoding="utf-8")
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    src = (dump / "vpn-feed.src").read_text()
+    assert _vpn_line("shop.ru") + "\n" in src and _vpn_line("chan0.org") + "\n" in src, src
+
+
+def _domain_tool_beside(script, lists_env_tuple, tmp_path) -> tuple[Path, dict]:
+    """Скрипт своих списков рядом со скриптом фидов: тот же dnsmasq.d, тот же
+    каталог исходника и блокировки — как на малине."""
+    tool, dns_d, dump, log, env = lists_env_tuple[:5]
+    bin_dir = _bin(env)
+    _fake(bin_dir, "id", "echo 0\n")
+    _fake(bin_dir, "sleep", "")
+    _fake(bin_dir, "dig", "")
+    dtool = tmp_path / "awg-lan-domain.sh"
+    dtool.write_text(_heredoc(script, "LAN_DOMAIN", "DOMEOF"), encoding="utf-8")
+    conf = tmp_path / "awg0.conf"; conf.write_text("[Peer]\nEndpoint = vps.example.net:51820\n", encoding="utf-8")
+    denv = {k: v for k, v in env.items() if k != "AWG_LAN_FROM"}
+    return dtool, {**denv, "AWG_UPLINK_CONF": str(conf)}
+
+
+def test_an_exception_removed_after_a_feed_run_returns_to_that_feed(script, lists_env, tmp_path):
+    """Сквозной сценарий §0.3: фиды применены с исключением shop.ru, человек
+    убрал исключение — shop.ru снова в фиде, не дожидаясь новых фидов."""
+    tool, dns_d, dump, log, env = lists_env
+    (dns_d / RU_USER).write_text(_ru_line("shop.ru") + "\n", encoding="utf-8")
+    assert subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env).returncode == 0
+    assert "shop.ru" not in (dns_d / FEED).read_text()
+    dtool, denv = _domain_tool_beside(script, lists_env, tmp_path)
+    r = _run(dtool, denv, "del", "shop.ru")
+    assert r.returncode == 0, r.stderr
+    assert _vpn_line("shop.ru") + "\n" in (dns_d / FEED).read_text(), "исключение убрано, а в фид домен не вернулся"
+
+
+def test_a_refused_short_feed_is_not_applied_later_by_an_exception_change(script, channel_env, tmp_path):
+    """Сервер прислал обрезанный фид — скрипт фидов его отверг как
+    подозрительно короткий, в dnsmasq.d остался прежний полный. Следующее
+    изменение «напрямую» не должно поставить отвергнутый фид в обход этой
+    проверки: исходник обязан соответствовать применённому фиду."""
+    tool, dns_d, dump, log, env, feed = channel_env
+    assert subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env).returncode == 0
+    good = (dns_d / FEED).read_text()
+    assert good.count("nftset=") >= 10
+    (feed / "domains.lst").write_text("ipset=/cut1.org/vpn_domains\nipset=/cut2.org/vpn_domains\n", encoding="utf-8")
+    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    assert r.returncode == 1 and "подозрительно короткий" in r.stderr
+    assert (dns_d / FEED).read_text() == good
+    dtool, denv = _domain_tool_beside(script, channel_env, tmp_path)
+    r = _run(dtool, denv, "ru", "chan0.org")
+    assert r.returncode == 0, r.stderr
+    now = (dns_d / FEED).read_text()
+    assert "cut1.org" not in now and now.count("nftset=") >= 10, \
+        f"отвергнутый короткий фид встал через кнопку «напрямую»: {now}"
+
+
+# ── агент ↔ скрипт: «занято» доходит до человека ─────────────────────────────
+
+def test_the_agent_waits_longer_than_the_script_waits_for_the_lock(script):
+    """Скрипт ждёт блокировку до N секунд и лишь потом говорит «занято». Сдайся
+    агент раньше — вместо внятного «обновление списков ещё идёт» человек
+    увидел бы таймаут, а применение могло бы пройти уже без него."""
+    import inspect
+    from awgbot.infra import gwguard
+    m = re.search(r"flock -w (\d+) 9", _heredoc(script, "LAN_DOMAIN", "DOMEOF"))
+    assert m, "скрипт своих списков не ждёт блокировку"
+    timeout = inspect.signature(gwguard.run_lan_domain).parameters["timeout"].default
+    assert timeout > int(m.group(1)), f"агент ждёт {timeout} с, скрипт — {m.group(1)} с"
+
+
+def test_the_busy_answer_reaches_the_agent_as_a_refusal(monkeypatch, tmp_path):
+    from awgbot.infra import gwguard
+    stub = tmp_path / "awg-lan-domain.sh"
+    stub.write_text("#!/bin/sh\necho 'обновление списков ещё идёт' >&2\nexit 75\n", encoding="utf-8")
+    stub.chmod(0o755)
+    monkeypatch.setattr(gwguard, "LAN_DOMAIN_SCRIPT", str(stub))
+    assert gwguard.run_lan_domain("ru", ["shop.ru"]) == (False, "обновление списков ещё идёт")

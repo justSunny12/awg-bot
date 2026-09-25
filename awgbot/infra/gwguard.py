@@ -806,8 +806,9 @@ def dns_local(name: str, qtype: str = "PTR") -> Optional[list[str]]:
     return [ln.strip() for ln in proc.stdout.decode(errors="replace").splitlines() if ln.strip()]
 
 
-def run_lan_domain(cmd: str, domains: list[str], timeout: int = 60) -> tuple[bool, str]:
-    """Персональные списки: add | ru | del | list. (ok, вывод)."""
+def run_lan_domain(cmd: str, domains: list[str], timeout: int = 150) -> tuple[bool, str]:
+    """Свои списки: add | ru | del | list | sync. (ok, вывод). Таймаут дольше,
+    чем скрипт ждёт блокировку (120 с): иначе отказ «занято» не доходил бы."""
     try:
         proc = subprocess.run([LAN_DOMAIN_SCRIPT, cmd, *domains], capture_output=True, timeout=timeout)
     except FileNotFoundError:
