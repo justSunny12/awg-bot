@@ -290,7 +290,8 @@ def rf_profiles_kb() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def rf_devices_kb() -> InlineKeyboardMarkup:
+def rf_devices_kb(back: str = "traffic_local") -> InlineKeyboardMarkup:
+    """«Назад» — туда, откуда пришли: экран РФ-доступа или список трафика."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="\u2b05\ufe0f Назад", callback_data=Menu(action="traffic_local"))
+    kb.button(text="\u2b05\ufe0f Назад", callback_data=Menu(action=back))
     return kb.as_markup()

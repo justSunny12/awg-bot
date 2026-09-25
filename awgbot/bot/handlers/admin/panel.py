@@ -119,7 +119,9 @@ _TRAFFIC_PAYLOAD = "traffic"
 
 async def _traffic_profiles_screen(services):
     rows = await call(services.traffic_by_profile)
-    return (texts.traffic_profiles_text(rows, getattr(services, "bot_username", "")),
+    tot = await call(services.db.get_total_month_traffic)
+    return (texts.traffic_profiles_text(rows, getattr(services, "bot_username", ""),
+                                        (int(tot["rx"]), int(tot["tx"]))),
             kb.traffic_profiles_kb())
 
 
@@ -128,7 +130,9 @@ async def _traffic_devices_screen(services, client_id: int):
     if client is None:
         return None
     rows = await call(services.traffic_by_device, client_id)
-    return texts.traffic_devices_text(client.name, rows), kb.traffic_devices_kb()
+    t = await call(services.db.get_client_traffic, client_id)
+    return (texts.traffic_devices_text(client.name, rows, (int(t["rx_month"]), int(t["tx_month"]))),
+            kb.traffic_devices_kb())
 
 
 # ── РФ-доступ за месяц: по профилям → по устройствам (концепт «учёт РФ-трафика») ──
@@ -139,12 +143,16 @@ async def _rf_profiles_screen(services):
             kb.rf_profiles_kb())
 
 
-async def _rf_devices_screen(services, client_id: int):
+async def _rf_devices_screen(services, client_id: int, back: str = "traffic_local"):
+    """Разбивка РФ профиля; back — откуда пришли («Назад» туда же): с экрана
+    РФ-доступа (traffic_local) или из списка трафика по профилям (traffic)."""
     client = await call(services.db.get_client, client_id)
     if client is None:
         return None
     rows = await call(services.rf_by_device, client_id)
-    return texts.rf_devices_text(client.name, rows), kb.rf_devices_kb()
+    t = await call(services.db.get_client_rf, client_id)
+    return (texts.rf_devices_text(client.name, rows, (int(t["rx"]), int(t["tx"]))),
+            kb.rf_devices_kb(back))
 
 
 async def _gateway_card_screen(services, slot: int, chat_id: int | None = None):
@@ -167,6 +175,14 @@ async def _gateway_card_screen(services, slot: int, chat_id: int | None = None):
 async def _online_screen(services):
     devs = await call(services.online_devices)
     return texts.online_devices_text(devs), kb.online_devices_kb()
+
+
+def _rf_payload_id(payload: str) -> int | None:
+    """traffic_local-<id> | traffic_local-<id>-t → id."""
+    rest = payload[len(texts.RF_PAYLOAD) + 1:]
+    if rest.endswith("-t"):
+        rest = rest[:-2]
+    return int(rest) if rest.isdigit() else None
 
 
 async def _traffic_deep_link(message: Message, services, payload: str,
@@ -192,8 +208,10 @@ async def _traffic_deep_link(message: Message, services, payload: str,
                                             message.chat.id)
     elif payload == texts.RF_PAYLOAD:
         screen = await _rf_profiles_screen(services)
-    elif payload.startswith(texts.RF_PAYLOAD + "-") and payload[len(texts.RF_PAYLOAD) + 1:].isdigit():
-        screen = await _rf_devices_screen(services, int(payload[len(texts.RF_PAYLOAD) + 1:]))
+    elif payload.startswith(texts.RF_PAYLOAD + "-") and _rf_payload_id(payload) is not None:
+        # «…-t» — пришли из списка трафика по профилям: «Назад» туда же
+        screen = await _rf_devices_screen(services, _rf_payload_id(payload),
+                                          "traffic" if payload.endswith("-t") else "traffic_local")
     elif payload == _TRAFFIC_PAYLOAD:
         screen = await _traffic_profiles_screen(services)
     elif payload.startswith(_TRAFFIC_PAYLOAD + "-") and payload[len(_TRAFFIC_PAYLOAD) + 1:].isdigit():

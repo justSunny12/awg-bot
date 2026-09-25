@@ -155,7 +155,7 @@ def test_the_ceiling_refuses_new_domains_but_not_changes():
     items = {f"d{i}.com": ["vpn", 1, "t"] for i in range(gwownlists.MAX_DOMAINS)}
     canon = {"gen": "g", "ver": 1, "items": items}
     canon, _, rej, changed = _merge(canon, [[1, "new.com", "vpn", False], [2, "d1.com", "ru", False]])
-    assert rej == [["new.com", "потолок 500 доменов"]], rej
+    assert rej == [["new.com", "максимум 500 доменов"]], rej
     assert changed and _kinds(canon)["d1.com"] == "ru", "смена вида при полном каноне — не новый домен"
     assert len(canon["items"]) == 500
     canon, _, rej, _ = _merge(canon, [[3, "d2.com", "del", False], [4, "new.com", "vpn", False]])
@@ -267,7 +267,7 @@ class _Host:
         self.calls: list[str] = []
         self.timeouts: dict[str, int] = {}
         self.list_ok = True
-        self.sync_ok, self.sync_err = True, "dnsmasq --test отверг свои списки — откатываю"
+        self.sync_ok, self.sync_err = True, "dnsmasq --test отверг списки — откатываю"
         self.has_sync = True
         self.reasserts = 0
         self.write()
@@ -692,12 +692,12 @@ def test_status_names_what_the_server_refused_and_the_monitor_escapes_it(agent, 
     from awgbot.bot import texts
     from awgbot.domain.gateway import GwStatus
     _synced(agent, host, {"a.com": "vpn"})
-    agent.own_rejected_in([["<b>x</b>.com", "потолок 500 доменов"]])
+    agent.own_rejected_in([["<b>x</b>.com", "максимум 500 доменов"]])
     info, c = _checks(agent)
     assert info["state"] == "rejected" and c.ok is None
-    assert c.detail == "сервер AWG не принял 1 домен: <b>x</b>.com — потолок 500 доменов", c.detail
+    assert c.detail == "сервер AWG не принял 1 домен: <b>x</b>.com — максимум 500 доменов", c.detail
     health = texts.gateway_health(GwStatus(checks=[c]))
-    assert "⚪ свои списки — сервер AWG не принял 1 домен: &lt;b&gt;x&lt;/b&gt;.com — потолок 500 доменов" in health, health
+    assert "⚪ свои списки — сервер AWG не принял 1 домен: &lt;b&gt;x&lt;/b&gt;.com — максимум 500 доменов" in health, health
     agent.own_rejected_in([["a.com", "не домен"], ["b.com", "не домен"]])
     assert _checks(agent)[1].detail.startswith("сервер AWG не принял 2 домена: a.com — не домен")
 

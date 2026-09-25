@@ -26,46 +26,55 @@ def _traffic_triplet(rx: int, tx: int) -> str:
     return f"{human_bytes(rx + tx)} {_updown(rx, tx)}"
 
 
-def _with_rf(line: str, rf) -> str:
-    return line + ("\n" + rf_line(*rf) if rf else "")
+def month_label() -> str:
+    """«09.2026» — текущий месяц в заголовках трафика (вычитка 3.1.0)."""
+    return timeutil.now().strftime("%m.%Y")
 
 
-def traffic_profiles_text(rows, bot_username: str = "") -> str:
-    """Потребление за месяц по профилям; имя профиля — deep-link на разбивку по
-    его устройствам. Под строкой профиля — его РФ-часть, если положена."""
-    head = "📊 <b>Потребление трафика за текущий месяц:</b>"
+def _with_rf(line: str, rf, link: str = "", bot_username: str = "") -> str:
+    """Строка РФ под записью; link — payload deep-link на разбивку РФ (в
+    списке профилей подпись кликабельна, флаг — часть ссылки)."""
+    if not rf:
+        return line
+    tail = rf_line(*rf)
+    if link:
+        tail = tail.replace(f"🇷🇺 {ROUTING_NAME}", _deep_link(bot_username, link, f"🇷🇺 {ROUTING_NAME}"), 1)
+    return line + "\n" + tail
+
+
+def traffic_profiles_text(rows, bot_username: str = "", total: tuple[int, int] = (0, 0)) -> str:
+    """Трафик за месяц по профилям (от большего к меньшему); имя профиля —
+    deep-link на разбивку по его устройствам. Под строкой профиля — его
+    РФ-часть, если положена, подписью-ссылкой на разбивку РФ (назад — сюда)."""
+    head = f"📊 <b>Трафик за {month_label()}:</b>\n{_traffic_triplet(*total)}"
     if not rows:
         return head + _LIST_SEP + "Профилей нет."
     return head + _LIST_SEP + _LIST_SEP.join(
-        _with_rf(f"👤 {_deep_link(bot_username, f'traffic-{c.id}', c.name)}: {_traffic_triplet(rx, tx)}", rf)
+        _with_rf(f"👤 {_deep_link(bot_username, f'traffic-{c.id}', c.name)}: {_traffic_triplet(rx, tx)}",
+                 rf, f"{RF_PAYLOAD}-{c.id}-t", bot_username)
         for c, rx, tx, rf in rows)
 
 
 def rf_profiles_text(data: dict, bot_username: str = "") -> str:
     """РФ-доступ за месяц по профилям (концепт «учёт РФ-трафика», этап 2):
-    итог сервера, дата начала учёта в месяце старта, строки профилей ссылками
-    на разбивку по устройствам, «вне профилей» — когда сумма строк не сходится
+    итог сервера, строки профилей (от большего к меньшему) ссылками на
+    разбивку по устройствам, «вне профилей» — когда сумма строк не сходится
     с итогом на величину, которую видно."""
-    head = (f"🇷🇺 <b>{ROUTING_NAME} за текущий месяц:</b> "
+    head = (f"🇷🇺 <b>{ROUTING_NAME} за {month_label()}:</b>\n"
             f"{_traffic_triplet(data['rx'], data['tx'])}")
-    if data.get("since"):
-        try:
-            head += f"\nУчёт — с {timeutil.parse_iso(data['since']).strftime('%d.%m')}."
-        except ValueError:
-            pass
     rows = data.get("rows") or []
     body = (_LIST_SEP.join(
         f"👤 {_deep_link(bot_username, f'{RF_PAYLOAD}-{c.id}', c.name)}: {_traffic_triplet(rx, tx)}"
         for c, rx, tx in rows) if rows else "Профилей с РФ-доступом нет.")
     out = head + _LIST_SEP + body
     if int(data.get("outside") or 0) >= _BYTES_PER_GB // 100:
-        out += (_LIST_SEP + f"Вне профилей: {human_bytes(data['outside'])} — "
+        out += (_LIST_SEP + f"🧐 <b>Вне профилей:</b> {human_bytes(data['outside'])} — "
                 "удалённые устройства и первые минуты новых.")
     return out
 
 
-def rf_devices_text(client_name: str, rows) -> str:
-    head = f"🇷🇺 <b>{ROUTING_NAME} профиля {_e(client_name)} за текущий месяц:</b>"
+def rf_devices_text(client_name: str, rows, total: tuple[int, int] = (0, 0)) -> str:
+    head = f"🇷🇺 <b>{ROUTING_NAME} за {month_label()}, {_e(client_name)}:</b>\n{_traffic_triplet(*total)}"
     if not rows:
         return head + _LIST_SEP + "Устройств с РФ-доступом нет."
     return head + _LIST_SEP + _LIST_SEP.join(
@@ -90,8 +99,8 @@ def online_devices_text(rows) -> str:
         for d, client_name in rows)
 
 
-def traffic_devices_text(client_name: str, rows) -> str:
-    head = f"📊 <b>Потребление профиля {_e(client_name)} за текущий месяц:</b>"
+def traffic_devices_text(client_name: str, rows, total: tuple[int, int] = (0, 0)) -> str:
+    head = f"📊 <b>Трафик за {month_label()}, {_e(client_name)}:</b>\n{_traffic_triplet(*total)}"
     if not rows:
         return head + _LIST_SEP + "Устройств нет."
     # та же метка, что в списке устройств у админа: онлайн, блок, «не ботом»
@@ -136,7 +145,9 @@ def rf_traffic_line(rf: dict, bot_username: str = "") -> str:
     РФ-доступа по профилям."""
     rx, tx = int(rf.get("rx") or 0), int(rf.get("tx") or 0)
     # тот же вид, что rf_line в карточках и списках, но подпись — ссылкой
-    line = rf_line(rx, tx).replace(ROUTING_NAME, _deep_link(bot_username, RF_PAYLOAD, ROUTING_NAME), 1)
+    # (флаг — часть ссылки, вычитка 3.1.0)
+    line = rf_line(rx, tx).replace(f"🇷🇺 {ROUTING_NAME}",
+                                   _deep_link(bot_username, RF_PAYLOAD, f"🇷🇺 {ROUTING_NAME}"), 1)
     if rf.get("error"):
         line += " · ⚠️ учёт трафика РФ-доступа не идёт"
     return line
@@ -184,7 +195,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         rx, tx = int(st["traffic_rx"]), int(st["traffic_tx"])
         # Подпись — deep-link в разбивку по профилям: единственный способ сделать
         # текст кликабельным, кнопка под панелью загромождала бы меню.
-        label = _deep_link(bot_username, "traffic", "📊 Потребление за месяц (все)")
+        label = _deep_link(bot_username, "traffic", f"📊 Трафик за {month_label()}")
         line = f"{label}: {human_bytes(rx + tx)} {_updown(rx, tx)}"
         if rf and rf.get("show"):
             line += "\n" + rf_traffic_line(rf, bot_username)

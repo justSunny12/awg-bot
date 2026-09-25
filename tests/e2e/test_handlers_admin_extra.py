@@ -9,6 +9,7 @@ test_handlers_settings_mail_backup.py; раскладка настроек — t
 
 import pytest
 
+from awgbot.bot import texts
 from awgbot.bot.handlers import admin as ah
 from awgbot.bot.callbacks import AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DeviceCB
 from awgbot.core import config
@@ -215,8 +216,9 @@ async def test_panel_traffic_line_is_a_deep_link(services, fake_bot):
     from awgbot.bot import texts
     out = texts.admin_panel({"ok": True, "traffic_rx": 1, "traffic_tx": 2},
                             bot_username="awg_test_bot")
-    assert 'href="https://t.me/awg_test_bot?start=traffic">📊 Потребление за месяц (все)</a>' in out
-    assert "Потребление за месяц (все)</a>: 0.01 ГБ (↑ 0.01 ГБ | ↓ 0.01 ГБ)" in out
+    label = f"📊 Трафик за {texts.month_label()}"
+    assert f'href="https://t.me/awg_test_bot?start=traffic">{label}</a>' in out, out
+    assert f"{label}</a>: 0.01 ГБ (↑ 0.01 ГБ | ↓ 0.01 ГБ)" in out, out
 
 
 async def test_start_traffic_opens_profiles_and_removes_the_command(
@@ -230,7 +232,7 @@ async def test_start_traffic_opens_profiles_and_removes_the_command(
     await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic"))
     assert any(r[0] == "delete" for r in fake_bot.records), "команда /start traffic не удалена"
     sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and "Потребление трафика за текущий месяц" in sent[-1]
+    assert sent and sent[-1].startswith(f"📊 <b>Трафик за {texts.month_label()}:</b>\n"), sent
     assert f'👤 <a href="https://t.me/awg_test_bot?start=traffic-{c.id}">Профиль А</a>' in sent[-1]
 
 
@@ -243,7 +245,7 @@ async def test_start_traffic_replaces_the_active_menu_in_place(services, make_ac
     msg = FakeMessage(text="/start traffic", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic"))
     edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
-    assert edits and "Потребление трафика за текущий месяц" in edits[-1][2]
+    assert edits and f"📊 <b>Трафик за {texts.month_label()}:</b>" in edits[-1][2], edits
     assert not any(kind == "answer" for kind, _, _ in msg.sent), "экран ушёл новым сообщением"
 
 
@@ -257,12 +259,14 @@ async def test_start_traffic_client_opens_devices_and_back_leads_to_profiles(
     msg = FakeMessage(text=f"/start traffic-{c.id}", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await ah.admin_start(msg, services, FakeState(), command=_cmd(f"traffic-{c.id}"))
     sent = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
-    assert sent and "Потребление профиля Профиль Б за текущий месяц:" in sent[-1][0]
+    assert sent and sent[-1][0].startswith(
+        f"📊 <b>Трафик за {texts.month_label()}, Профиль Б:</b>\n"), sent
     back = [b for row in sent[-1][1].inline_keyboard for b in row]
     assert back and back[0].callback_data == Menu(action="traffic").pack()
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await ah.admin_traffic_profiles(cb, services)
-    assert any("Потребление трафика за текущий месяц" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    assert any(f"📊 <b>Трафик за {texts.month_label()}:</b>" in t
+               for kind, t, _ in msg.sent if kind == "edit_text")
 
 
 async def test_plain_start_still_purges_and_shows_panel(services, fake_bot):
@@ -491,8 +495,8 @@ async def test_start_traffic_local_opens_rf_profiles_and_removes_the_command(
     sent = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
     assert sent, "экран не пришёл"
     text, markup = sent[-1]
-    assert text.startswith("🇷🇺 <b>РФ-доступ за текущий месяц:</b> 3 ГБ (↑ 1 ГБ | ↓ 2 ГБ)"), text
-    assert "Потребление трафика" not in text, "открылся экран потребления вместо РФ"
+    assert text.startswith(f"🇷🇺 <b>РФ-доступ за {texts.month_label()}:</b>\n3 ГБ (↑ 1 ГБ | ↓ 2 ГБ)"), text
+    assert "📊" not in text, "открылся экран трафика вместо РФ"
     assert (f'👤 <a href="https://t.me/awg_test_bot?start=traffic_local-{c.id}">Ксюша</a>: '
             "3 ГБ (↑ 1 ГБ | ↓ 2 ГБ)") in text, text
     buttons = [b for row in markup.inline_keyboard for b in row]
@@ -507,7 +511,7 @@ async def test_start_traffic_local_replaces_the_active_menu_in_place(
     msg = _amsg(fake_bot, "/start traffic_local")
     await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic_local"))
     edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
-    assert edits and "РФ-доступ за текущий месяц" in edits[-1][2], edits
+    assert edits and f"РФ-доступ за {texts.month_label()}:" in edits[-1][2], edits
     assert not any(kind == "answer" for kind, _, _ in msg.sent), "экран ушёл новым сообщением"
     assert any(r[0] == "delete" for r in fake_bot.records), "команда не удалена"
 
@@ -525,7 +529,8 @@ async def test_start_traffic_local_client_opens_devices_and_back_leads_to_rf_pro
     sent = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
     assert sent, "экран не пришёл"
     text, markup = sent[-1]
-    assert text.startswith("🇷🇺 <b>РФ-доступ профиля Ксюша за текущий месяц:</b>"), text
+    assert text.startswith(f"🇷🇺 <b>РФ-доступ за {texts.month_label()}, Ксюша:</b>\n"
+                           "4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)"), text
     assert "🔴 Телефон: 4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)" in text, text
     buttons = [b for row in markup.inline_keyboard for b in row]
     assert [(b.text, b.callback_data) for b in buttons] == \
@@ -533,7 +538,64 @@ async def test_start_traffic_local_client_opens_devices_and_back_leads_to_rf_pro
     cb = FakeCallback(message=msg, user_id=ADMIN, bot=fake_bot)
     await admin_rf_profiles(cb, services)
     back = [t for kind, t, _ in msg.sent if kind == "edit_text"]
-    assert back and back[-1].startswith("🇷🇺 <b>РФ-доступ за текущий месяц:</b>"), back
+    assert back and back[-1].startswith(f"🇷🇺 <b>РФ-доступ за {texts.month_label()}:</b>"), back
+
+
+async def test_rf_link_from_the_traffic_list_goes_back_to_the_traffic_list(
+        services, make_active_client, fake_bot):
+    """Строка РФ под профилем в списке трафика — ссылка «…-t» на ту же разбивку
+    РФ, но «Назад» оттуда — обратно в список трафика, а не на экран РФ-доступа:
+    иначе админ, пришедший из трафика, теряет место и попадает в чужой экран."""
+    from awgbot.bot.callbacks import Menu
+    services.bot_username = "awg_test_bot"
+    c, _ = _rf_client(services, make_active_client, "Ксюша", 2103, rf=(_GB, 3 * _GB))
+
+    # список трафика: подпись «🇷🇺 РФ-доступ» целиком (с флагом) — ссылка с -t
+    msg = _amsg(fake_bot, "/start traffic")
+    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic"))
+    listing = [t for kind, t, _ in msg.sent if kind == "answer"][-1]
+    assert (f'└ <a href="https://t.me/awg_test_bot?start=traffic_local-{c.id}-t">🇷🇺 РФ-доступ</a>: '
+            "4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)") in listing, listing
+
+    # переход по ней: тот же экран РФ профиля, что с экрана РФ-доступа; живое
+    # меню забываем — экран придёт новым сообщением, и видны его кнопки
+    services.db.set_nav_message_id(ADMIN, None)
+    msg_t = _amsg(fake_bot, f"/start traffic_local-{c.id}-t")
+    await ah.admin_start(msg_t, services, FakeState(), command=_cmd(f"traffic_local-{c.id}-t"))
+    shown = [(t, m) for kind, t, m in msg_t.sent if kind == "answer"]
+    assert shown, "экран РФ профиля по ссылке с -t не отрисован"
+    text, markup = shown[-1]
+    assert text.startswith(f"🇷🇺 <b>РФ-доступ за {texts.month_label()}, Ксюша:</b>\n"
+                           "4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)"), text
+    assert "🔴 Телефон: 4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)" in text, text
+    assert any(r[0] == "delete" for r in fake_bot.records), "команда не удалена"
+    buttons = [b for row in markup.inline_keyboard for b in row]
+    assert [(b.text, b.callback_data) for b in buttons] == \
+        [("⬅️ Назад", Menu(action="traffic").pack())], "«Назад» из РФ профиля ведёт не в список трафика"
+
+    # «Назад» — список трафика по профилям, не экран РФ
+    cb = FakeCallback(message=msg_t, user_id=ADMIN, bot=fake_bot)
+    await ah.admin_traffic_profiles(cb, services)
+    back = [t for kind, t, _ in msg_t.sent if kind == "edit_text"]
+    assert back and back[-1].startswith(f"📊 <b>Трафик за {texts.month_label()}:</b>"), back
+
+
+@pytest.mark.parametrize("payload", ["traffic_local-abc-t", "traffic_local--t", "traffic_local-t"])
+async def test_rf_link_with_a_broken_t_suffix_falls_back_to_the_panel(services, fake_bot, payload):
+    """Суффикс «-t» без числового id — не ссылка бота: обычная панель, а не
+    исключение разбора или экран РФ с чужим профилем."""
+    msg = _amsg(fake_bot, f"/start {payload}")
+    await ah.admin_start(msg, services, FakeState(), command=_cmd(payload))
+    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
+    assert sent and "Панель администратора" in sent[-1], sent
+    assert not any(t.startswith("🇷🇺") for t in sent), sent
+
+
+async def test_rf_link_with_t_for_a_missing_profile_says_not_found(services, fake_bot):
+    msg = _amsg(fake_bot, "/start traffic_local-999999-t")
+    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic_local-999999-t"))
+    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
+    assert sent and sent[-1] == "Профиль не найден.", sent
 
 
 async def test_start_traffic_local_for_missing_profile_says_not_found(services, fake_bot):
@@ -553,4 +615,4 @@ async def test_start_traffic_local_with_garbage_suffix_falls_back_to_the_panel(s
     await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic_local-abc"))
     sent = [t for kind, t, _ in msg.sent if kind == "answer"]
     assert sent and "Панель администратора" in sent[-1], sent
-    assert not any("РФ-доступ профиля" in t for t in sent)
+    assert not any(t.startswith("🇷🇺") for t in sent)

@@ -126,7 +126,7 @@ def merge(canon: dict, slot_id: int, run: str, events, upto, now_iso: str, deny=
         if init and cur_kind == "ru":
             continue                                  # первое слияние: «напрямую» сильнее
         if cur is None and len(items) >= MAX_DOMAINS:
-            rejected.append([d, f"потолок {MAX_DOMAINS} доменов"])
+            rejected.append([d, f"максимум {MAX_DOMAINS} доменов"])
             continue
         if cur_kind != kind:
             items[d] = [kind, int(slot_id), str(now_iso)]

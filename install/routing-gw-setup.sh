@@ -637,7 +637,7 @@ fi
 rollback() { for f in $changed; do mv -f "$f.prev.awg" "$f"; done; systemctl restart dnsmasq || true; }
 # conf-dir Debian подключает ключом из init-скрипта — голый --test файлы не видит
 if command -v dnsmasq >/dev/null 2>&1 && ! dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; then
-    echo "dnsmasq --test отверг свои списки — откатываю" >&2; rollback; exit 1
+    echo "dnsmasq --test отверг списки — откатываю" >&2; rollback; exit 1
 fi
 if ! systemctl restart dnsmasq; then
     echo "dnsmasq не поднялся со своими списками — откатываю" >&2; rollback; exit 1

@@ -211,16 +211,16 @@ def gateway_list_text(states: list, switched_at: str = "", auto_on: bool = True,
 def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> str:
     """SMB в карточке слота — только числа (концепт «сервисы соседних сетей»
     §7.2, вычитка 3.1.0): сколько в подсети слота, сколько ему раздано из
-    подсетей других шлюзов; что с ними на шлюзе — отдельной строкой после
-    пустой, предупреждение — с ⚠️ в начале. name — «имя» шлюза, уже
+    подсетей других шлюзов; что с ними на шлюзе — строкой сразу под ней,
+    предупреждение — с ⚠️ в начале. name — «имя» шлюза, уже
     экранированное (как в карточке), agent_bot — ссылка в чат его бота."""
     own, peer = int(svc.get("own") or 0), int(svc.get("peer") or 0)
     if not own and not peer:
         return "🗂 SMB в подсетях шлюзов не найдены"
     if not peer:
-        return f"🗂 SMB: в этой подсети — {own}, из подсетей других шлюзов — нет"
+        return f"🗂 SMB: в этой подсети — {own}, из других — нет"
     state = svc.get("state", "")
-    head = f"🗂 SMB: в этой подсети — {own}, из подсетей других шлюзов — {peer}"
+    head = f"🗂 SMB: в этой подсети — {own}, из других — {peer}"
     gw = f" {name}" if name else ""
     if state == "applied":
         return head + ", доступны"
@@ -235,17 +235,18 @@ def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> s
         err = svc.get("error") or ""
         note = f"⚠️ Шлюз{gw} отказался принимать" + (f": {_e(err)}" if err else "")
     else:
-        note = f"⏳ Отправлены на шлюз{gw}"
-    return head + "\n\n" + note
+        note = "⏳ Синхронизация с другими шлюзами…"
+    # состояние — сразу под строкой (вычитка 3.1.0, часть VIII)
+    return head + "\n" + note
 
 
 def own_lists_line(own: dict, name: str = "", agent_bot: dict | None = None) -> str:
-    """Свои списки шлюзов в карточке слота — только числа (концепт
-    «синхронизация своих списков» §7.2); что с ними на шлюзе — отдельной
-    строкой после пустой, только если не «применены»."""
+    """Свои списки в карточке слота — только числа (концепт «синхронизация
+    своих списков» §7.2); что с ними на шлюзе — строкой сразу под ней, только
+    если не «применены»."""
     vpn, ru = int(own.get("vpn") or 0), int(own.get("ru") or 0)
-    head = ("📋 Свои списки шлюзов: пусто" if not vpn and not ru
-            else f"📋 Свои списки шлюзов: {vpn} в туннель, {ru} напрямую")
+    head = ("📋 Свои списки: пусто" if not vpn and not ru
+            else f"📋 Свои списки: {vpn} в туннель, {ru} напрямую")
     state = own.get("state", "")
     gw = f" {name}" if name else ""
     if state == "applied":
@@ -259,10 +260,11 @@ def own_lists_line(own: dict, name: str = "", agent_bot: dict | None = None) -> 
         err = own.get("error") or ""
         note = f"⚠️ Шлюз{gw} отказался принимать" + (f": {_e(err)}" if err else "")
     elif state == "offline":
-        note = f"⏳ Уйдут на шлюз{gw}, когда он выйдет на связь"
+        note = f"⏳ Синхронизируется со шлюзом{gw}, когда он выйдет на связь"
     else:
-        note = f"⏳ Отправлены на шлюз{gw}"
-    return head + "\n\n" + note
+        note = "⏳ Синхронизация с другими шлюзами…"
+    # состояние — сразу под строкой (вычитка 3.1.0, часть VIII)
+    return head + "\n" + note
 
 
 def gateway_card_text(state: dict, states: list) -> str:
@@ -291,10 +293,14 @@ def gateway_card_text(state: dict, states: list) -> str:
     if gw.lan_mode:
         home += "\n\n🏠 За шлюзом — без VPN: включено"
         if state.get("own_lists"):
-            home += "\n" + own_lists_line(state["own_lists"], name, state.get("agent_bot"))
+            own = own_lists_line(state["own_lists"], name, state.get("agent_bot"))
+            home += "\n" + own
     if state.get("peer_nets"):
         # подсеть этого шлюза — цель, куда пускают из-за других (функция B);
-        # выключено — строки нет вовсе
+        # выключено — строки нет вовсе. Перед ней пустая строка, если блок
+        # списков закончился строкой состояния (⏳/⚠️ под «📋 Свои списки»)
+        if home.rstrip().rsplit("\n", 1)[-1][:1] in ("⏳", "⚠️"[:1]):
+            home += "\n"
         home += ("\n↔️ Доступ из подсетей других шлюзов до "
                  + ", ".join(f"<code>{_e(n)}</code>" for n in nets))
         if state.get("services"):
@@ -757,6 +763,15 @@ def routing_lists_block(info: dict) -> str:
     return (f"\n📋 Списки: {info.get('count', 0)} записей из "
             f"{info.get('sources', 0)} источников, {when}; "
             f"период {info.get('every_hours', 6)} ч.")
+
+
+def gateway_bundle_applied_text(display: str, ok: bool, error: str = "") -> str:
+    """Уведомление в чате админа по итогу применения файла на шлюзе (каналом):
+    файл и карточка над ним уходят, следом — карточка слота."""
+    if ok:
+        return f"✅ Конфигурация шлюза <b>{_e(display)}</b> успешно обновлена"
+    return (f"⚠️ Конфигурация шлюза <b>{_e(display)}</b> не обновлена"
+            + (f": {_e(error)}" if error else ""))
 
 
 def gateway_installed_text(display: str, agent_bot: dict | None) -> str:

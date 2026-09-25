@@ -332,6 +332,24 @@ def test_lan_block_carries_the_first_local_subnet_for_the_recovery_note(svc, mon
     assert info["subnet"] == ""
 
 
+@pytest.mark.parametrize("status,shown", [
+    ({"LAN_IF": "end0", "LAN_ADDR": "192.168.68.222", "UPLINK_IF": "wlan0"}, "wlan0"),
+    ({"LAN_IF": "end0", "LAN_ADDR": "192.168.68.222"}, "аплинк"),
+    ({"LAN_IF": "end0", "LAN_ADDR": "192.168.68.222", "UPLINK_IF": "<br&0>"}, "&lt;br&amp;0&gt;"),
+], ids=["named", "unknown", "escaped"])
+def test_the_lan_screen_names_the_uplink_the_script_reported(svc, monkeypatch, status, shown):
+    """Строка DNS на экране локальной сети — через какой интерфейс идёт
+    апстрим, по UPLINK_IF из статуса скрипта: с двумя интерфейсами на малине
+    «через аплинк» не говорит, куда смотреть. Скрипт не назвал — слово
+    «аплинк»; имя экранировано (статус пишет скрипт, не бот)."""
+    from awgbot.bot import texts
+    _lan_on(monkeypatch, home=_home(), status=status)
+    info, _ = svc.lan_status()
+    assert info["uplink"] == status.get("UPLINK_IF", ""), info
+    out = texts.gateway_lan_text(GwStatus(link_up=True, lan=info))
+    assert f"\nDNS — <code>10.9.1.1</code> через {shown}\n" in out, out
+
+
 # ── сервисы соседних сетей: проверки группы «svc» (концепт «сервисы соседних сетей» §4.2, §7.1) ──
 
 def _svc_on(monkeypatch, *, avahi=True, dig=("naspi5._smb._tcp.awg.internal.",), browse=True):
@@ -430,7 +448,7 @@ def test_a_red_own_lists_check_sends_neither_plumbing_nor_lan_alerts(svc, monkey
     monkeypatch.setattr(gwguard, "lan_mode", lambda: True)
     monkeypatch.setattr(gwguard, "unit_env", lambda k: env.get(k, ""))
     monkeypatch.setattr(gwguard, "lan_domain_has_sync", lambda: True)
-    svc.db.set_state("gw_own_err", "dnsmasq --test отверг свои списки — откатываю")
+    svc.db.set_state("gw_own_err", "dnsmasq --test отверг списки — откатываю")
     info, checks = svc.own_status()
     red = [c for c in checks if c.ok is False]
     assert red and red[0].group == "own" and info["state"] == "failed", checks
