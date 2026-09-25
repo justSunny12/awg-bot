@@ -872,6 +872,7 @@ class GatewayLinkMixin:
         st["agent_bot"] = self.gw_bot_identity(int(slot_id))
         # сервисы соседних сетей — числами, без имён
         st["services"] = self.gwlink_services_card(st["gateway"])
+        st["own_lists"] = self.gwlink_own_card(st["gateway"])
         return st
 
     def gateway_state_for_device(self, device_id: int) -> Optional[dict]:

@@ -5,7 +5,9 @@ gwchannel.py — сторона ВПС: приём того, что привёз
 Здесь хранение, сверка и решение, что доставить шлюзу. Снимок рисуется на
 экранах и сравнивается с тем, что ВПС сам же выдал в конфигурации; расхождение
 определяет, какие настройки уйдут каналом (этап 2). Фиды локальной сети для
-шлюзов ВПС качает здесь же (этап 3). В автомат переключения слотов снимок не
+шлюзов ВПС качает здесь же (этап 3); здесь же канон своих списков, общих для
+всех шлюзов, — слияние правок шлюзов и строка карточки слота (концепт
+«синхронизация своих списков»). В автомат переключения слотов снимок не
 входит: данные приехали с чужой машины, и доверять им выбор пути было бы
 странно.
 
@@ -18,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 
 from awgbot.util import timeutil
 from awgbot.domain import gwsnapshot
@@ -47,6 +50,14 @@ def drift_lines(items: list, html: bool) -> list[str]:
             fmt = lambda v: f"«{v}»" if v else "«—»"                              # noqa: E731
         out.append(f"{esc(human)}: у сервера {fmt(mine)}, на шлюзе {fmt(theirs)}")
     return out
+
+
+_OWN_LOCK = threading.Lock()   # слияние своих списков: два слота — два потока
+
+
+def gwownlists_version_ok(ver: str) -> bool:
+    from awgbot.domain import gwservices
+    return gwservices.version_at_least(ver, (3, 1, 0))
 
 
 class GwChannelMixin:
@@ -182,8 +193,120 @@ class GwChannelMixin:
                     self._GWLINK_SNAP_REV_KEY, self._GWLINK_SNAP_AT_KEY, self._GWLINK_SNAP_TS_KEY,
                     self._GWLINK_ERROR_KEY, self._GWLINK_ACK_KEY, self._GWLINK_LISTS_KEY,
                     self._GWLINK_SVC_KEY, self._GWLINK_SVC_AT_KEY, self._GWLINK_PEER_SVC_KEY,
-                    self._GWLINK_APPLIED_KEY, self._GWLINK_BUNDLE_MSG_KEY):
+                    self._GWLINK_APPLIED_KEY, self._GWLINK_BUNDLE_MSG_KEY,
+                    self._GWLINK_OWN_UPTO_KEY, self._GWLINK_OWN_ACK_KEY, self._GWLINK_OWN_REJ_KEY,
+                    self._GWLINK_OWN_CAP_KEY):
             self.db.set_state(self._gwlink_key(key, slot_id), "")
+        # канон своих списков не трогается: он общий, вернувшийся шлюз его получит
+
+    # ── свои списки, общие для всех шлюзов (концепт «синхронизация своих списков») ──
+    _GWLINK_OWN_KEY = "gwlink_own_lists"     # канон: {"gen", "ver", "items": {домен: [вид, слот, время]}}
+    _GWLINK_OWN_UPTO_KEY = "gwlink_own_upto" # «<run> <n>» — последнее разобранное событие слота
+    _GWLINK_OWN_ACK_KEY = "gwlink_own_ack"   # ответ слота на канон: ok|fail <хэш|-> <n> <время> <ошибка>
+    _GWLINK_OWN_REJ_KEY = "gwlink_own_rej"   # что из последнего пакета слота отвергнуто: [[домен, причина]]
+    _GWLINK_OWN_CAP_KEY = "gwlink_own_cap"   # «1»/«0» — назвал ли агент own_hash в hello (знает ли синхронизацию)
+
+    def gwlink_own_hello_in(self, slot_id: int, capable: bool) -> None:
+        self.db.set_state(self._gwlink_key(self._GWLINK_OWN_CAP_KEY, slot_id), "1" if capable else "0")
+
+    def gwlink_own_canon(self) -> dict:
+        try:
+            data = json.loads(self.db.get_state(self._GWLINK_OWN_KEY) or "{}")
+        except json.JSONDecodeError:
+            data = {}
+        if not isinstance(data, dict) or not data.get("gen"):
+            # поколение — случайное при создании и с этого момента постоянное:
+            # по нему шлюз отличает «тот же сервер» от переустановленного
+            import secrets
+            data = {"gen": secrets.token_hex(4), "ver": 0, "items": {}}
+            self.db.set_state(self._GWLINK_OWN_KEY, json.dumps(data))
+        if not isinstance(data.get("items"), dict):
+            data["items"] = {}
+        return data
+
+    def _gwlink_own_upto(self, slot_id: int) -> list:
+        raw = (self.db.get_state(self._gwlink_key(self._GWLINK_OWN_UPTO_KEY, slot_id)) or "").split()
+        return [raw[0], int(raw[1])] if len(raw) == 2 and raw[1].isdigit() else ["", 0]
+
+    def gwlink_own_in(self, slot_id: int, run: str, events) -> bool:
+        """События слота → канон (таблица §2.5 концепта): под блокировкой и одной
+        транзакцией — два слота разбираются в разных потоках. True — канон изменился."""
+        from awgbot.domain import gwownlists
+        from awgbot.core import config
+        with _OWN_LOCK, self.db.transaction():
+            canon = self.gwlink_own_canon()
+            canon, upto, rejected, changed = gwownlists.merge(
+                canon, slot_id, run, events, self._gwlink_own_upto(slot_id),
+                timeutil.to_iso(timeutil.now()), deny=[config.SERVER_HOST])
+            self.db.set_state(self._gwlink_key(self._GWLINK_OWN_UPTO_KEY, slot_id), f"{upto[0]} {upto[1]}")
+            self.db.set_state(self._gwlink_key(self._GWLINK_OWN_REJ_KEY, slot_id),
+                              json.dumps(rejected, ensure_ascii=False) if rejected else "")
+            if changed:
+                self.db.set_state(self._GWLINK_OWN_KEY, json.dumps(canon, ensure_ascii=False))
+        if changed:
+            log.info("канал линка: слот %s изменил свои списки (ver %s, %s доменов)",
+                     slot_id, canon.get("ver"), len(canon.get("items") or {}))
+        if rejected:
+            log.info("канал линка: слот %s — отвергнуто правок своих списков: %s", slot_id, len(rejected))
+        return changed
+
+    def gwlink_own_for(self, gw) -> tuple[str, dict]:
+        """(отпечаток для слота, тело own_set): канон целиком плюс upto его
+        правок и отвергнутое из последнего пакета."""
+        from awgbot.domain import gwownlists
+        canon = self.gwlink_own_canon()
+        items = gwownlists.canon_items(canon)
+        upto = self._gwlink_own_upto(gw.id)
+        digest = gwownlists.digest(canon["gen"], canon["ver"], items, upto)
+        try:
+            rej = json.loads(self.db.get_state(self._gwlink_key(self._GWLINK_OWN_REJ_KEY, gw.id)) or "[]")
+        except json.JSONDecodeError:
+            rej = []
+        return digest, {"hash": digest, "gen": canon["gen"], "ver": int(canon["ver"]),
+                        "items": sorted([d, k] for d, k in items.items()), "upto": upto,
+                        "rej": rej if isinstance(rej, list) else []}
+
+    def gwlink_own_ack_in(self, slot_id: int, body: dict) -> None:
+        ok = bool(body.get("ok"))
+        digest = "".join(c for c in str(body.get("hash") or "") if c in "0123456789abcdef")[:64]
+        err = " ".join(str(body.get("error") or "").split())[:200]
+        try:
+            n = int(body.get("n") or 0)
+        except (TypeError, ValueError):
+            n = 0
+        self.db.set_state(self._gwlink_key(self._GWLINK_OWN_ACK_KEY, slot_id),
+                          f"{'ok' if ok else 'fail'} {digest or '-'} {n} {timeutil.to_iso(timeutil.now())} {err}".strip())
+
+    def gwlink_own_ack(self, slot_id: int) -> dict:
+        raw = self.db.get_state(self._gwlink_key(self._GWLINK_OWN_ACK_KEY, slot_id)) or ""
+        parts = raw.split(" ", 4)
+        if len(parts) < 4:
+            return {}
+        return {"ok": parts[0] == "ok", "hash": "" if parts[1] == "-" else parts[1],
+                "n": int(parts[2]) if parts[2].isdigit() else 0, "at": parts[3],
+                "error": parts[4] if len(parts) > 4 else ""}
+
+    def gwlink_own_card(self, gw) -> dict:
+        """Строка карточки слота: числа канона и что с ним на шлюзе. Домены на
+        экраны сервера не идут. state: applied | pending | offline | failed | old_agent."""
+        from awgbot.domain import gwownlists
+        digest, body = self.gwlink_own_for(gw)
+        vpn, ru = gwownlists.counts(dict(body["items"]))
+        ack = self.gwlink_own_ack(gw.id)
+        snap = self.gwlink_snapshot(gw.id)
+        cap = self.db.get_state(self._gwlink_key(self._GWLINK_OWN_CAP_KEY, gw.id)) or ""
+        if ack and ack.get("hash") == digest:
+            state = "applied" if ack.get("ok") else "failed"
+        elif cap == "0" or (not cap and snap and not gwownlists_version_ok(snap.get("agent_version", ""))):
+            # агент не назвал own_hash в hello (или, до первой сессии с этой
+            # версией, стар по снимку) — синхронизацию не знает
+            state = "old_agent"
+        elif not self.gwlink_session(gw.id):
+            state = "offline"
+        else:
+            state = "pending"
+        return {"enabled": bool(gw.lan_mode), "vpn": vpn, "ru": ru, "state": state,
+                "error": (ack.get("error") or "") if ack else ""}
 
     # ── итог применения конфигурации, пришедший каналом ──────────────────────
     _GWLINK_APPLIED_KEY = "gwlink_applied"       # ok|fail время отпечаток время-у-агента ошибка
