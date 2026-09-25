@@ -263,11 +263,12 @@ def gateway_card_text(state: dict, states: list) -> str:
     if nets:
         home += "\nУстройства админа достают до них через этот линк."
     if gw.lan_mode:
-        home += "\n🏠 За шлюзом — без VPN: включено"
+        home += "\n\n🏠 За шлюзом — без VPN: включено"
     if state.get("peer_nets"):
-        # подсеть этого шлюза — цель, куда пускают из-за других (функция B)
+        # подсеть этого шлюза — цель, куда пускают из-за других (функция B);
+        # выключено — строки нет вовсе
         home += ("\n↔️ Доступ из подсетей других шлюзов до "
-                 + ", ".join(f"<code>{_e(n)}</code>" for n in nets) + " включён")
+                 + ", ".join(f"<code>{_e(n)}</code>" for n in nets))
         if state.get("services"):
             home += "\n" + services_line(state["services"], name, state.get("agent_bot"))
     conflict = next((s for s in others if _nets_overlap(nets, s["gateway"].home_subnets)), None)
@@ -635,8 +636,8 @@ def gateway_peer_ask(on: bool) -> str:
                 "которых включено «За шлюзом — без VPN»: ровно оно гарантирует, что <b>весь</b> "
                 "трафик подсети идёт через шлюз, с обеих сторон — иначе ответы не найдут дорогу "
                 "назад.\n\n"
-                + "На Windows-устройствах SMB-серверы каждой подсети будут доступны по ссылкам вида "
-                "<code>smb://имя.awg.internal</code>.\n"
+                + "На Windows-устройствах SMB-серверы каждой подсети будут доступны по пути вида "
+                "<code>\\\\имя.awg.internal</code>.\n"
                 "На устройствах macOS SMB-серверы каждой подсети станут видны в Finder: "
                 "«Сеть» → awg.internal.\n"
                 "Видны только серверы тех подсетей, где на шлюзе запущен avahi-daemon.\n\n"

@@ -454,7 +454,7 @@ async def test_lan_mode_needs_a_subnet_then_asks_and_toggles(services, slots, fa
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1), services)
     assert services.db.gateway(1).lan_mode == 1
     text, labels = _screen(nav)
-    assert "🏠 За шлюзом — без VPN: включено" in text
+    assert "\n\n🏠 За шлюзом — без VPN: включено" in text, f"режим без VPN — отдельной группой после пустой строки: {text}"
     assert "✅ За шлюзом — без VPN: вкл" in labels and "❓ Настройка роутера" in labels
     assert cb.answers[-1][0].startswith("Включено: перевыпусти")
     # рецепт роутера — с подсетью слота
@@ -577,13 +577,17 @@ async def test_peer_nets_toggle_has_a_dialog_and_shows_state_in_the_list(service
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=2), services, FakeState())
     text, _ = _screen(nav)
-    assert "↔️ Доступ из подсетей других шлюзов до <code>192.168.68.0/24</code> включён" in text
+    assert "\n↔️ Доступ из подсетей других шлюзов до <code>192.168.68.0/24</code>\n" in text, (
+        f"строка доступа без хвоста «включён»: {text}")
     # выключение
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_peer_ask(cb, services)
     assert "закроется сразу" in _screen(nav)[0]
     await sh.gw_slot_peer_yes(cb, services)
     assert store["app.routing.peer_nets.enabled"] is False
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=2), services, FakeState())
+    assert "↔️" not in _screen(nav)[0], "доступ выключен — строки о нём в карточке нет вовсе"
 
 
 def test_peer_nets_change_reminds_about_reissue(services, slots, monkeypatch):

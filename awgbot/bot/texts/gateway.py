@@ -183,16 +183,13 @@ def smb_line(svc: dict) -> str:
     """«🗂 SMB: в этой подсети — N, из подсетей других шлюзов — M» (вычитка
     3.1.0): сервер ещё ничего не присылал — «обновляю…», прислал пустое — «не
     найдены». Имена и avahi здесь не показываются — только в мониторе."""
-    own = ("не проверено" if svc.get("avahi") is False or svc.get("browse") is False
-           else len(svc.get("own") or []))
     peers = svc.get("peer") or []
-    if peers:
-        tail = str(len(peers))
-    elif svc.get("ever"):
-        tail = "не найдены"
-    else:
-        tail = "обновляю…"
-    return f"🗂 SMB: в этой подсети — {own}, из подсетей других шлюзов — {tail}"
+    if not peers:
+        return "🗂 Сервисы SMB: не найдены" if svc.get("ever") else "🗂 Сервисы SMB: обновляю…"
+    # своих нет или не смотрели (без avahi) — «не найдены», не «0»
+    own = len(svc.get("own") or [])
+    own_s = str(own) if own else "не найдены"
+    return f"🗂 SMB: в этой подсети — {own_s}, из подсетей других шлюзов — {len(peers)}"
 
 
 

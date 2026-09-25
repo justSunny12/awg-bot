@@ -183,8 +183,8 @@ async def test_the_peer_access_dialog_mentions_finder_only_when_turning_on(servi
     peers["app.routing.peer_nets.enabled"] = False
     await sh.gw_slot_peer_ask(cb, services)
     text = _screen(nav)[0]
-    win = ("На Windows-устройствах SMB-серверы каждой подсети будут доступны по ссылкам вида "
-           "<code>smb://имя.awg.internal</code>.")
+    win = ("На Windows-устройствах SMB-серверы каждой подсети будут доступны по пути вида "
+           "<code>\\\\имя.awg.internal</code>.")
     mac = "На устройствах macOS SMB-серверы каждой подсети станут видны в Finder: «Сеть» → awg.internal."
     avahi = "Видны только серверы тех подсетей, где на шлюзе запущен avahi-daemon."
     assert win + "\n" + mac + "\n" + avahi + "\n\n" in text, text
@@ -250,7 +250,8 @@ async def test_agent_panel_and_lan_screen_count_smb_in_one_line(gw_svc, fake_bot
     имя с чужой малины не попадает в разметку вовсе."""
     _peer(gw_svc, ["naspi5", "backup", "Time Machine", "<b>x</b>", "media"])
     panel, panel_labels, lan, lan_labels = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    line = "🗂 SMB: в этой подсети — 0, из подсетей других шлюзов — 5"
+    # своих не нашлось — «не найдены», не «0»
+    line = "🗂 SMB: в этой подсети — не найдены, из подсетей других шлюзов — 5"
     assert "\n\n" + line + "\n" in panel, panel
     assert lan.endswith("\n\n" + line), f"строка SMB на экране локальной сети не последней после пустой: {lan}"
     for t in (panel, lan):
@@ -271,30 +272,37 @@ async def test_the_lan_screen_groups_address_traffic_lists_and_smb(gw_svc, fake_
              "Трафик с роутера: 9 пакетов\n\n"
              "Списки: 3 домена, 4 подсети (ещё не обновлялись)\n"
              "Свои списки: 1 в туннель, 0 напрямую\n\n"
-             "🗂 SMB: в этой подсети — 0, из подсетей других шлюзов — 1")
+             "🗂 SMB: в этой подсети — не найдены, из подсетей других шлюзов — 1")
     assert lan.endswith(block), lan
 
 
 async def test_agent_panel_before_anything_arrived_and_after_an_empty_feed(gw_svc, fake_bot, monkeypatch):
-    """Сервер ещё ничего не присылал — «обновляю…»; прислал пустое — «не
-    найдены». Без avahi свою подсеть не посчитать: «не проверено», а не «0» —
-    ноль читался бы как «серверов нет»; почему — пишет монитор, не панель."""
+    """Записей от других шлюзов нет — строка целиком про сервисы: сервер ещё
+    ничего не присылал — «обновляю…», прислал пустое — «не найдены». Счёт
+    «в этой подсети — 0, из других — …» без соседей читался бы как сломанный;
+    почему своих не видно (нет avahi) — пишет монитор, не панель."""
     panel, *_ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    assert "🗂 SMB: в этой подсети — 0, из подсетей других шлюзов — обновляю…" in panel, panel
+    assert "\n🗂 Сервисы SMB: обновляю…\n" in panel, panel
     gw_svc.db.set_state("gw_peer_svc", '{"hash": "", "items": []}')
     monkeypatch.setattr(gwguard, "avahi_active", lambda: False)
     panel, *_ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    assert "🗂 SMB: в этой подсети — не проверено, из подсетей других шлюзов — не найдены" in panel, panel
+    assert "\n🗂 Сервисы SMB: не найдены\n" in panel, panel
     assert "avahi" not in panel, panel
 
 
 def test_smb_line_without_avahi_browse_is_not_checked_either():
-    """Демон есть, а avahi-browse нет — своя подсеть так же не посчитана."""
+    """Демон есть, а avahi-browse нет — своя подсеть не посчитана: «не
+    найдены», а не «0». Без записей соседей своя подсеть в строку не идёт
+    вовсе — строка целиком «Сервисы SMB: не найдены / обновляю…»."""
     from awgbot.bot.texts.gateway import smb_line
     assert smb_line({"avahi": True, "browse": False, "own": [], "peer": ["a"], "ever": True}) == \
-        "🗂 SMB: в этой подсети — не проверено, из подсетей других шлюзов — 1"
+        "🗂 SMB: в этой подсети — не найдены, из подсетей других шлюзов — 1"
+    assert smb_line({"avahi": True, "browse": True, "own": ["x", "y"], "peer": ["a"], "ever": True}) == \
+        "🗂 SMB: в этой подсети — 2, из подсетей других шлюзов — 1", "свои найдены — число, не «не найдены»"
     assert smb_line({"avahi": True, "browse": True, "own": ["x", "y"], "peer": [], "ever": True}) == \
-        "🗂 SMB: в этой подсети — 2, из подсетей других шлюзов — не найдены"
+        "🗂 Сервисы SMB: не найдены", "сервер прислал пустое — без счёта своей подсети"
+    assert smb_line({"avahi": True, "browse": True, "own": ["x"], "peer": [], "ever": False}) == \
+        "🗂 Сервисы SMB: обновляю…", "сервер ещё ничего не присылал"
 
 
 async def test_agent_screens_are_silent_where_the_function_does_not_work(gw_svc, fake_bot, monkeypatch):
