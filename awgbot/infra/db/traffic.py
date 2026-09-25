@@ -24,16 +24,20 @@ class TrafficMixin:
                      traffic_rx_month  = traffic_rx_month  + COALESCE((SELECT traffic_rx_month  FROM device_traffic WHERE device_id = ?), 0),
                      traffic_tx_month  = traffic_tx_month  + COALESCE((SELECT traffic_tx_month  FROM device_traffic WHERE device_id = ?), 0),
                      traffic_rx_period = traffic_rx_period + COALESCE((SELECT traffic_rx_period FROM device_traffic WHERE device_id = ?), 0),
-                     traffic_tx_period = traffic_tx_period + COALESCE((SELECT traffic_tx_period FROM device_traffic WHERE device_id = ?), 0)
+                     traffic_tx_period = traffic_tx_period + COALESCE((SELECT traffic_tx_period FROM device_traffic WHERE device_id = ?), 0),
+                     rf_rx_month       = rf_rx_month       + COALESCE((SELECT rf_rx_month       FROM device_traffic WHERE device_id = ?), 0),
+                     rf_tx_month       = rf_tx_month       + COALESCE((SELECT rf_tx_month       FROM device_traffic WHERE device_id = ?), 0)
                    WHERE device_id = ?""",
-                (src_device_id, src_device_id, src_device_id, src_device_id, dst_device_id),
+                (src_device_id, src_device_id, src_device_id, src_device_id,
+                 src_device_id, src_device_id, dst_device_id),
             )
 
     def reset_month_traffic_all(self) -> None:
         """Сброс месячных счётчиков у всех устройств (1-го числа 00:00 UTC+3)."""
         with self._tx() as cur:
             cur.execute(
-                "UPDATE device_traffic SET traffic_rx_month = 0, traffic_tx_month = 0"
+                "UPDATE device_traffic SET traffic_rx_month = 0, traffic_tx_month = 0, "
+                "rf_rx_month = 0, rf_tx_month = 0"
             )
 
     def reset_period_traffic(self, client_id: int) -> None:
@@ -69,6 +73,68 @@ class TrafficMixin:
                       COALESCE(SUM(traffic_tx_month), 0) AS tx
                FROM device_traffic"""
         ).fetchone()
+        return dict(row)
+
+    # ── учёт РФ-трафика (концепт «учёт РФ-трафика») ──────────────────────────
+
+    _NOT_GATEWAY_SQL = """NOT EXISTS
+                 (SELECT 1 FROM gateways g WHERE g.device_id = d.id
+                     OR (d.twin_of IS NOT NULL AND g.device_id = d.twin_of))"""
+
+    def rf_acct_devices(self) -> list[tuple[int, str]]:
+        """[(device_id, address)] — все устройства, кроме шлюзов и их двойников:
+        им счётчики в ядре; кто из них имеет доступ к функции, решает интерфейс."""
+        return [(int(r["id"]), str(r["address"] or "")) for r in self._connection().execute(
+            f"SELECT d.id, d.address FROM devices d WHERE {self._NOT_GATEWAY_SQL} ORDER BY d.id")]
+
+    def rf_samples_all(self) -> dict[int, tuple[int, int]]:
+        return {int(r["device_id"]): (int(r["last_up"]), int(r["last_dn"])) for r in
+                self._connection().execute("SELECT device_id, last_up, last_dn FROM rf_samples")}
+
+    def rf_set_samples(self, rows: list[tuple[int, int, int]]) -> None:
+        if not rows:
+            return
+        now = _now_iso()
+        with self._tx() as cur:
+            cur.executemany(
+                """INSERT INTO rf_samples (device_id, last_up, last_dn, last_update)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(device_id) DO UPDATE SET
+                     last_up = excluded.last_up, last_dn = excluded.last_dn,
+                     last_update = excluded.last_update""",
+                [(d, up, dn, now) for d, up, dn in rows])
+
+    def rf_add_bulk(self, rows: list[tuple[int, int, int]]) -> None:
+        """Батч дельт РФ: [(device_id, d_up, d_dn)]; ↑ устройства — rf_rx, ↓ — rf_tx."""
+        if not rows:
+            return
+        with self._tx() as cur:
+            cur.executemany(
+                """UPDATE device_traffic SET rf_rx_month = rf_rx_month + ?, rf_tx_month = rf_tx_month + ?
+                   WHERE device_id = ?""",
+                [(up, dn, d) for d, up, dn in rows])
+
+    def get_client_rf(self, client_id: int) -> dict[str, int]:
+        """РФ профиля за месяц — сумма по устройствам владельца без шлюзов."""
+        row = self._connection().execute(
+            f"""SELECT COALESCE(SUM(t.rf_rx_month), 0) AS rx, COALESCE(SUM(t.rf_tx_month), 0) AS tx
+                FROM device_traffic t JOIN devices d ON d.id = t.device_id
+                WHERE d.client_id = ? AND {self._NOT_GATEWAY_SQL}""", (client_id,)).fetchone()
+        return dict(row)
+
+    def rf_by_client(self) -> dict[int, tuple[int, int]]:
+        """client_id → (rx, tx) РФ за месяц одним GROUP BY, без шлюзов."""
+        return {int(r["client_id"]): (int(r["rx"]), int(r["tx"])) for r in self._connection().execute(
+            f"""SELECT d.client_id, COALESCE(SUM(t.rf_rx_month), 0) AS rx,
+                       COALESCE(SUM(t.rf_tx_month), 0) AS tx
+                FROM device_traffic t JOIN devices d ON d.id = t.device_id
+                WHERE {self._NOT_GATEWAY_SQL} GROUP BY d.client_id""")}
+
+    def get_total_month_rf(self) -> dict[str, int]:
+        """Сумма РФ по всем устройствам (для сверки с итогом сервера: «вне профилей»)."""
+        row = self._connection().execute(
+            "SELECT COALESCE(SUM(rf_rx_month), 0) AS rx, COALESCE(SUM(rf_tx_month), 0) AS tx "
+            "FROM device_traffic").fetchone()
         return dict(row)
 
     # ── traffic_samples: база для дельт ──────────────────────────────────────

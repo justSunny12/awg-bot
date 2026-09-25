@@ -266,3 +266,105 @@ async def test_menu_button_dismisses_every_other_update_window(services, fake_bo
     assert stripped == [501, 502], "остальные окна — через бота, по одному разу"
     assert ("edit_reply_markup", chat) in fake_bot.records, "текущее — своим методом"
     assert services.pop_update_reports() == [], "история не очищена"
+
+
+# ── РФ-часть потребления на главной (концепт «учёт РФ-трафика», этап 1) ──────
+
+GB = 1024 ** 3
+
+
+async def _panel_text(services, fake_bot) -> str:
+    services.ensure_admin_client()
+    msg = FakeMessage(text="/start", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await admin_h.admin_start(msg, services, FakeState())
+    return [s for s in msg.sent if s[0] == "answer"][-1][1]
+
+
+def _rf_world(services, fake_routing, monkeypatch, *, enabled, rx=0, tx=0, error=""):
+    """Функция развёрнута (линк в конфиге) и включена/выключена; итог месяца и
+    ошибка учёта — в состоянии, как их оставил опрос."""
+    monkeypatch.setattr(services, "routing_provisioned", lambda: True)
+    fake_routing.enabled = enabled
+    services.db.set_state("rf_month_rx", str(rx))
+    services.db.set_state("rf_month_tx", str(tx))
+    services.db.set_state("rf_acct_error", error)
+
+
+def _rf_line(text: str):
+    lines = [ln for ln in text.splitlines() if ln.startswith("└ 🇷🇺 РФ-доступ:")]
+    return lines[0] if lines else None
+
+
+async def test_panel_shows_zero_rf_line_when_the_feature_is_on(services, fake_bot, fake_routing,
+                                                              monkeypatch):
+    """Функция включена — строка всегда, и «0 ГБ» тоже: ровно тогда видно, что
+    маркировка не работает, хотя люди пользуются."""
+    _rf_world(services, fake_routing, monkeypatch, enabled=True)
+    text = await _panel_text(services, fake_bot)
+    line = _rf_line(text)
+    assert line == "└ 🇷🇺 РФ-доступ: 0 ГБ (↑ 0 ГБ | ↓ 0 ГБ)", text
+    head = [ln for ln in text.splitlines() if "Потребление за месяц (все)" in ln][0]
+    assert text.splitlines().index(line) == text.splitlines().index(head) + 1, \
+        "строка РФ не сразу под потреблением"
+
+
+async def test_panel_hides_rf_line_when_off_and_nothing_counted(services, fake_bot, fake_routing,
+                                                               monkeypatch):
+    _rf_world(services, fake_routing, monkeypatch, enabled=False)
+    text = await _panel_text(services, fake_bot)
+    assert _rf_line(text) is None, text
+
+
+async def test_panel_keeps_rf_line_when_off_but_month_has_rf(services, fake_bot, fake_routing,
+                                                            monkeypatch):
+    """Выключили в середине месяца — накопленное не пропадает с главной."""
+    _rf_world(services, fake_routing, monkeypatch, enabled=False, rx=GB, tx=3 * GB)
+    line = _rf_line(await _panel_text(services, fake_bot))
+    assert line == "└ 🇷🇺 РФ-доступ: 4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)"
+
+
+async def test_panel_rf_line_marks_broken_accounting_and_keeps_numbers(services, fake_bot,
+                                                                      fake_routing, monkeypatch):
+    _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB, tx=GB,
+              error="nft не найден — установите пакет nftables")
+    line = _rf_line(await _panel_text(services, fake_bot))
+    assert line == "└ 🇷🇺 РФ-доступ: 2 ГБ (↑ 1 ГБ | ↓ 1 ГБ) · ⚠️ учёт не идёт"
+    assert "nft" not in line, "текст ошибки ядра в шапке админа"
+
+
+async def test_panel_rf_line_has_no_link_in_stage_one(services, fake_bot, fake_routing, monkeypatch):
+    """До этапа 2 экрана РФ нет — ссылка вела бы в никуда."""
+    services.bot_username = "awg_test_bot"
+    _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
+    text = await _panel_text(services, fake_bot)
+    line = _rf_line(text)
+    assert line and "href" not in line and "<a" not in line
+    assert "start=traffic" in text, "ссылка потребления пропала"
+
+
+async def test_client_and_guest_home_do_not_change_with_rf_data(services, fake_bot, fake_routing,
+                                                               make_active_client, monkeypatch):
+    """РФ-потребление — сведения о человеке, только админу: главная клиента и
+    гостя с накопленным РФ та же, что без него."""
+    from awgbot.bot.handlers import client as client_h
+    from awgbot.bot.handlers import friend as fh
+    owner = make_active_client(tg_id=6100, name="Вася")
+    dc = services.add_device(owner.id, "Тел")
+    lent = services.add_device(owner.id, "Ноут")
+    res = services.activate_friend(services.make_device_friendly(lent.device_id), tg_id=96100)
+    assert res.ok, res.reason
+
+    async def homes():
+        m1 = FakeMessage(text="/start", chat_id=6100, user_id=6100, bot=fake_bot)
+        await client_h.start_client(m1, services.db.get_client(owner.id), services, FakeState())
+        m2 = FakeMessage(text="/start", chat_id=96100, user_id=96100, bot=fake_bot)
+        await fh.friend_start(m2, res.holder, services)
+        return ([s[1] for s in m1.sent if s[0] == "answer"][-1],
+                [s[1] for s in m2.sent if s[0] == "answer"][-1])
+
+    before = await homes()
+    _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=5 * GB, tx=7 * GB)
+    services.db.rf_add_bulk([(dc.device_id, GB, 2 * GB), (lent.device_id, GB, GB)])
+    after = await homes()
+    assert after == before, "главная клиента или гостя изменилась от РФ-данных"
+    assert all("учёт" not in t and "└ 🇷🇺" not in t for t in after)

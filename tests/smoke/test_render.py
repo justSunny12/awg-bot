@@ -191,3 +191,16 @@ def test_admin_client_keyboard_has_no_dangerous_buttons():
     for forbidden in ("Удалить", "Лимит", "Продлить", "лок"):   # блок/Блок/…
         assert forbidden not in labels, f"кнопка '{forbidden}' не должна быть у админ-клиента"
     assert "Имя" in labels and "Устройства" in labels
+
+
+def test_rf_traffic_line_render():
+    """Вторая строка группы потребления (концепт «учёт РФ-трафика»): объём и
+    ↑↓ — как у обычного потребления; суффикс — только при ошибке учёта."""
+    G = 1024 ** 3
+    assert texts.rf_traffic_line({"rx": G, "tx": 3 * G}) == "└ 🇷🇺 РФ-доступ: 4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)"
+    assert texts.rf_traffic_line({"rx": 0, "tx": 0, "error": "x"}) == \
+        "└ 🇷🇺 РФ-доступ: 0 ГБ (↑ 0 ГБ | ↓ 0 ГБ) · ⚠️ учёт не идёт"
+    st = {"ok": True, "traffic_rx": 1, "traffic_tx": 2}
+    assert "└ 🇷🇺" not in texts.admin_panel(st), "строка РФ без данных о ней"
+    assert "└ 🇷🇺" not in texts.admin_panel(st, rf={"rx": G, "tx": G, "show": False})
+    assert "└ 🇷🇺 РФ-доступ: 2 ГБ" in texts.admin_panel(st, rf={"rx": G, "tx": G, "show": True})

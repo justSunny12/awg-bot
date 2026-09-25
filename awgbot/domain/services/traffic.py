@@ -10,7 +10,7 @@ import logging
 from awgbot.core import config
 from awgbot.core import settings
 from awgbot.util import timeutil
-from awgbot.infra import awg
+from awgbot.infra import awg, rfacct
 from awgbot.core.blocks import DeviceBlock, ClientBlock
 from awgbot.core.enums import SubStatus, ActivationStatus, PeriodKind, FriendStatus
 from awgbot.domain.services.types import BYTES_PER_GB, Notification
@@ -132,6 +132,15 @@ class TrafficMixin:
                     peers[p["public_key"]] = p
             except awg.AwgError as e:
                 log.warning("poll_traffic: %s не опрошен: %s", awg.iface_of(raw), e)
+        # учёт РФ-трафика (концепт «учёт РФ-трафика»): чтение таблицы счётчиков —
+        # вне транзакции, накопление — внутри той же, что у awg
+        rf_links = self.rf_links()
+        rf_state, rf_err = None, ""
+        if rf_links:
+            try:
+                rf_state = rfacct.read()
+            except rfacct.AcctError as e:
+                rf_err = str(e)
         # бесплатный побочный продукт: онлайн-счётчик для статусного блока
         # (dump уже в руках — не тратим отдельный exec в мониторе)
         polled_at = timeutil.now()
@@ -183,7 +192,110 @@ class TrafficMixin:
                         self.db.update_device_fields(dev.id, last_handshake=p["last_handshake"])
             self.db.add_traffic_bulk(deltas)
             self.db.set_samples(bases)
+            if rf_links and rf_state is not None:
+                self._rf_accumulate(rf_state)
+        if rf_links:
+            # состав счётчиков — после коммита: сначала снять показания, потом
+            # удалять счётчики ушедших устройств. Чтение отказало — состав не
+            # известен, писать вслепую поверх живой таблицы не будем
+            if not rf_err:
+                try:
+                    rfacct.sync(rf_state, rf_links, [n for n, _i in config.routing_client_subnets()],
+                                self.db.rf_acct_devices())
+                except rfacct.AcctError as e:
+                    rf_err = str(e)
+            self._rf_note_error(rf_err)
+        else:
+            self._rf_note_error("")          # шлюзов нет — и учёта нет, старая ошибка не висит
         return greetings
+
+    # ── учёт РФ-трафика ──────────────────────────────────────────────────────
+    _RF_GEN_KEY = "rf_acct_gen"
+    _RF_SINCE_KEY = "rf_acct_since"
+    _RF_ERROR_KEY = "rf_acct_error"
+    _RF_MONTH_RX_KEY = "rf_month_rx"
+    _RF_MONTH_TX_KEY = "rf_month_tx"
+    _RF_TOTAL_SAMPLE_KEY = "rf_total_sample"
+
+    def rf_links(self) -> list[str]:
+        """Линки шлюзов из БД плюс интерфейс из конфига; пусто — учёта нет."""
+        out: list[str] = []
+        for g in self.db.gateways():
+            if g.link_if and g.link_if not in out:
+                out.append(g.link_if)
+        base = config.ROUTING_GW_INTERFACE
+        if base and base not in out:
+            out.append(base)
+        return out
+
+    def _rf_accumulate(self, state) -> None:
+        """Дельты по счётчикам nft → месяц (в транзакции опроса). Поколение —
+        boot_id и handle таблицы: перезагрузка или flush ruleset обнуляют
+        счётчики, и всё текущее значение идёт в дельту."""
+        from awgbot.domain.gwsnapshot import boot_id
+        gen = f"{boot_id()}:{int(state.handle)}"
+        prev_gen = self.db.get_state(self._RF_GEN_KEY) or ""
+        # итог сервера
+        cur_up = int(state.counters.get(rfacct.COUNTER_UP, 0))
+        cur_dn = int(state.counters.get(rfacct.COUNTER_DN, 0))
+        raw = (self.db.get_state(self._RF_TOTAL_SAMPLE_KEY) or "").split()
+        prev_up, prev_dn = (int(raw[0]), int(raw[1])) if len(raw) == 2 and all(x.isdigit() for x in raw) else (None, None)
+        d_up = rfacct.delta(prev_gen, gen, prev_up, cur_up)
+        d_dn = rfacct.delta(prev_gen, gen, prev_dn, cur_dn)
+        if d_up or d_dn:
+            self.db.set_state(self._RF_MONTH_RX_KEY, str(int(self.db.get_state(self._RF_MONTH_RX_KEY) or 0) + d_up))
+            self.db.set_state(self._RF_MONTH_TX_KEY, str(int(self.db.get_state(self._RF_MONTH_TX_KEY) or 0) + d_dn))
+        if (prev_up, prev_dn) != (cur_up, cur_dn):
+            self.db.set_state(self._RF_TOTAL_SAMPLE_KEY, f"{cur_up} {cur_dn}")
+        # устройства
+        samples = self.db.rf_samples_all()
+        deltas: list[tuple[int, int, int]] = []
+        bases: list[tuple[int, int, int]] = []
+        for dev_id, _addr in self.db.rf_acct_devices():
+            up_name, dn_name = rfacct.counter_names(dev_id)
+            if up_name not in state.counters and dn_name not in state.counters:
+                continue                                  # счётчиков ещё нет — ждём синхронизации
+            cu, cd = int(state.counters.get(up_name, 0)), int(state.counters.get(dn_name, 0))
+            s = samples.get(dev_id)
+            pu, pd = (s[0], s[1]) if s else (None, None)
+            du, dd = rfacct.delta(prev_gen, gen, pu, cu), rfacct.delta(prev_gen, gen, pd, cd)
+            if du or dd:
+                deltas.append((dev_id, du, dd))
+            if s is None or (pu, pd) != (cu, cd):
+                bases.append((dev_id, cu, cd))
+        self.db.rf_add_bulk(deltas)
+        self.db.rf_set_samples(bases)
+        if prev_gen != gen:
+            self.db.set_state(self._RF_GEN_KEY, gen)
+        if not self.db.get_state(self._RF_SINCE_KEY):
+            self.db.set_state(self._RF_SINCE_KEY, timeutil.to_iso(timeutil.now()))
+
+    def _rf_note_error(self, err: str) -> None:
+        """Одна строка журнала на смену состояния, значение — в state для панели."""
+        err = " ".join((err or "").split())[:200]
+        prev = self.db.get_state(self._RF_ERROR_KEY) or ""
+        if err == prev:
+            return
+        self.db.set_state(self._RF_ERROR_KEY, err)
+        if err:
+            log.warning("учёт РФ-трафика: не идёт — %s", err)
+        else:
+            log.info("учёт РФ-трафика: идёт")
+
+    def rf_month_total(self) -> dict:
+        """Итог РФ-трафика сервера за месяц: {rx, tx, error, since} — только из state."""
+        return {"rx": int(self.db.get_state(self._RF_MONTH_RX_KEY) or 0),
+                "tx": int(self.db.get_state(self._RF_MONTH_TX_KEY) or 0),
+                "error": self.db.get_state(self._RF_ERROR_KEY) or "",
+                "since": self.db.get_state(self._RF_SINCE_KEY) or ""}
+
+    def rf_line_visible(self) -> bool:
+        """Строка РФ-трафика на главной: функция развёрнута и включена — всегда;
+        выключена — только пока в месяце есть РФ-трафик."""
+        tot = self.rf_month_total()
+        if tot["rx"] + tot["tx"] > 0:
+            return True
+        return self.routing_provisioned() and settings.get_bool("app.routing.enabled", False)
 
     # ── Лимиты потребления (ТЗ 7-8) ──────────────────────────────────────────
 
@@ -433,6 +545,10 @@ class TrafficMixin:
         # падение посередине не оставит половину клиентов сброшенной.
         with self.db.transaction():
           self.db.snapshot_monthly_traffic(_prev_month)
+          rf = self.rf_month_total()
+          self.db.snapshot_server_rf(_prev_month, rf["rx"], rf["tx"])
+          self.db.set_state(self._RF_MONTH_RX_KEY, "0")
+          self.db.set_state(self._RF_MONTH_TX_KEY, "0")
           self.db.reset_month_traffic_all()
           twins = self.db.twins_by_origin()
           for client in self.db.list_clients(include_service=False):

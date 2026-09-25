@@ -8,7 +8,7 @@ from .fmt import (
     _e, human_bytes, _updown, gb_str, _limit_devices_str, device_label, plain_ip,
     _fmt_age, device_emoji)
 from .migration import migration_panel_line
-from .routing import routing_status_line, routing_admin_status_line
+from .routing import routing_status_line, routing_admin_status_line, ROUTING_NAME
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -91,8 +91,19 @@ def _hostname() -> str:
     return _HOSTNAME
 
 
+def rf_traffic_line(rf: dict) -> str:
+    """Вторая строка группы потребления: РФ-часть — то, что сервер выпустил
+    через шлюзы (концепт «учёт РФ-трафика»). Без ссылки до этапа 2."""
+    rx, tx = int(rf.get("rx") or 0), int(rf.get("tx") or 0)
+    line = f"└ 🇷🇺 {ROUTING_NAME}: {human_bytes(rx + tx)} {_updown(rx, tx)}"
+    if rf.get("error"):
+        line += " · ⚠️ учёт не идёт"
+    return line
+
+
 def admin_panel(st: dict, routing_ok: bool = None, migration=None,
-                bot_username: str = "", expiring: int = 0, routing_info: dict = None) -> str:
+                bot_username: str = "", expiring: int = 0, routing_info: dict = None,
+                rf: dict = None) -> str:
     """Шапка админ-меню: компактный статус из кэша (ноль docker exec).
     st — из services.server_status_cached(); метрики железа (CPU/RAM/диск хоста)
     бот снимает локально (/proc, statvfs); показываем с возрастом. None-поля — «…»."""
@@ -133,7 +144,10 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         # Подпись — deep-link в разбивку по профилям: единственный способ сделать
         # текст кликабельным, кнопка под панелью загромождала бы меню.
         label = _deep_link(bot_username, "traffic", "📊 Потребление за месяц (все)")
-        groups.append(f"{label}: {human_bytes(rx + tx)} {_updown(rx, tx)}")
+        line = f"{label}: {human_bytes(rx + tx)} {_updown(rx, tx)}"
+        if rf and rf.get("show"):
+            line += "\n" + rf_traffic_line(rf)
+        groups.append(line)
     mig = migration_panel_line(migration)
     if mig:
         groups.append(mig)

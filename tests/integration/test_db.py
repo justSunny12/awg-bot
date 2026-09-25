@@ -197,3 +197,83 @@ def test_content_cleanup_dedup(db):
     assert db.pop_content_msg_ids(200) == [50, 51]
 
 
+
+
+# ── учёт РФ-трафика: миграция схемы 3.0.0 (концепт «учёт РФ-трафика» §8) ─────
+
+def _v300_tree(tmp_path):
+    """Код v3.0.0 во временном каталоге — схема и запись «как у старой версии»
+    той самой версией, а не рукописной копией."""
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    ok = subprocess.run(["git", "-C", str(root), "rev-parse", "-q", "--verify", "v3.0.0^{commit}"],
+                        capture_output=True).returncode == 0
+    if not ok:
+        pytest.skip("нет тега v3.0.0 в репозитории")
+    tree = tmp_path / "v300"
+    tree.mkdir()
+    tar = subprocess.run(["git", "-C", str(root), "archive", "v3.0.0", "awgbot"],
+                         capture_output=True, check=True).stdout
+    subprocess.run(["tar", "-x", "-C", str(tree)], input=tar, check=True)
+    return tree
+
+
+def _run_old(tree, db_path, body):
+    import os
+    import subprocess
+    import sys
+    code = ("from awgbot.infra.db import Database\n"
+            f"db = Database({str(db_path)!r})\n" + body)
+    env = dict(os.environ, PYTHONPATH=str(tree), BOT_TOKEN="1:x", ADMIN_ID="1")
+    r = subprocess.run([sys.executable, "-c", code], cwd=tree, env=env,
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    return r.stdout
+
+
+def test_rf_migration_from_v300_schema_is_idempotent_and_zeroed(tmp_path):
+    """БД хоста на 3.0.0 → текущий init_schema дважды: колонки и таблицы учёта
+    есть, у старых строк РФ = 0, прежние данные не тронуты. Затем старый код
+    (откат на 3.0.0) пишет устройство, потребление и архив месяца в уже
+    мигрированную БД — новые колонки ему не мешают."""
+    from awgbot.infra.db import Database
+    tree = _v300_tree(tmp_path)
+    path = tmp_path / "bot.db"
+    _run_old(tree, path, (
+        "db.init_schema()\n"
+        "cid = db.create_client('Старый', 3, '2026-01-01T00:00:00+03:00', '2027-01-01T00:00:00+03:00', 'c1')\n"
+        "did = db.create_device(cid, 'Тел', 'PUB1', 'PSK1', '10.8.1.7', private_key='PRIV1')\n"
+        "db.add_traffic_bulk([(did, 100, 200)])\n"
+        "db.snapshot_monthly_traffic('2026-08')\n"))
+
+    db = Database(str(path))
+    con = db._connection()
+    cols = lambda t: {r["name"] for r in con.execute(f"PRAGMA table_info({t})")}
+    assert "rf_rx_month" not in cols("device_traffic"), "образец уже в новой схеме — тест ничего не проверяет"
+    db.init_schema()
+    db.init_schema()
+    assert {"rf_rx_month", "rf_tx_month"} <= cols("device_traffic")
+    assert {"rf_rx", "rf_tx"} <= cols("traffic_monthly")
+    assert {"device_id", "last_up", "last_dn"} <= cols("rf_samples")
+    assert {"month", "rf_rx", "rf_tx", "archived_at"} <= cols("server_traffic_monthly")
+    dev = db.list_all_devices()[0]
+    assert (dev.traffic_rx_month, dev.traffic_tx_month) == (100, 200), "миграция тронула потребление"
+    assert (dev.rf_rx_month, dev.rf_tx_month) == (0, 0)
+    old = con.execute("SELECT rx, tx, rf_rx, rf_tx FROM traffic_monthly").fetchone()
+    assert tuple(old) == (100, 200, 0, 0)
+    db.close()
+
+    out = _run_old(tree, path, (
+        "cid = db.list_clients()[0].id\n"
+        "did = db.create_device(cid, 'Ноут', 'PUB2', 'PSK2', '10.8.1.8', private_key='PRIV2')\n"
+        "db.add_traffic_bulk([(did, 5, 6)])\n"
+        "db.snapshot_monthly_traffic('2026-09')\n"
+        "d = db.get_device(did)\n"
+        "print('OLD', d.name, d.traffic_rx_month, d.traffic_tx_month)\n"))
+    assert "OLD Ноут 5 6" in out
+    db = Database(str(path))
+    db.init_schema()
+    fresh = [d for d in db.list_all_devices() if d.name == "Ноут"][0]
+    assert (fresh.rf_rx_month, fresh.rf_tx_month) == (0, 0), "строка старого кода без умолчания РФ"
+    db.close()

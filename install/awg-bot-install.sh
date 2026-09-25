@@ -25,8 +25,9 @@
 #      /opt/awg-gw и скрипты в /usr/local/sbin (аплинк НЕ трогается — это связь
 #      агента с Telegram); у ВПС — ВСЁ, что поставил бот: линки до шлюзов и
 #      обвязка условной маршрутизации (их же --rollback), резолвер клиентов,
-#      интерфейсы awg со всеми пирами, контейнер docker-режима, таблица
-#      inet awg_bot_guard — клиенты остаются без доступа, поэтому ВПС
+#      интерфейсы awg со всеми пирами, контейнер docker-режима, таблицы
+#      inet awg_bot_guard и inet awg_bot_acct (учёт РФ-трафика) — клиенты
+#      остаются без доступа, поэтому ВПС
 #      подтверждает это ещё и словом «УДАЛИТЬ». Дальше — обычная установка с
 #      чистого листа;
 #   3) отмена. Отмена здесь и отказ на втором подтверждении — не ошибка:
@@ -260,6 +261,7 @@ wipe_previous() {
         name="$(sed -nE 's/^ *container: *"?([^"#]+)"?.*/\1/p' "$ETC_DIR/conf/app.yaml" 2>/dev/null | head -n1 | tr -d ' ')"
         [[ -n "$name" ]] && command -v docker >/dev/null 2>&1 && docker rm -f "$name" >/dev/null 2>&1 || true
         nft delete table inet awg_bot_guard 2>/dev/null || true
+        nft delete table inet awg_bot_acct 2>/dev/null || true
         rm -f /etc/nftables.d/awg-bot-guard.nft
     fi
     rm -rf "$INSTALL_DIR" "$ETC_DIR" "$DATA_DIR"

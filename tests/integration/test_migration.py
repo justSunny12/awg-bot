@@ -321,6 +321,27 @@ def test_finish_drops_the_stragglers_and_merges_history(services, mig,
     assert not services.migration_running()
 
 
+def test_finish_merges_rf_traffic_of_the_pair(services, mig, make_active_client):
+    """РФ-часть потребления сливается вместе с обычной (концепт «учёт
+    РФ-трафика»): в окне переезда она размазана по паре, и удаление старой
+    строки без слияния унесло бы из разбивки половину месяца."""
+    c = make_active_client(name="c", tg_id=7015)
+    dc = services.add_device(c.id, "Тел")
+    _seen(services, dc.device_id, ago_days=1)
+    services.db.add_traffic_bulk([(dc.device_id, 700, 300)])
+    services.db.rf_add_bulk([(dc.device_id, 70, 30)])
+    services.migration_start()
+
+    twin = _twin(services, dc.device_id)
+    _seen(services, twin.id, ago_days=0)
+    services.db.rf_add_bulk([(twin.id, 5, 6)])
+
+    services.migration_finish()
+    kept = services.db.get_device(twin.id)
+    assert (kept.rf_rx_month, kept.rf_tx_month) == (75, 36), "РФ старой строки потерян при слиянии"
+    assert kept.traffic_rx_month == 700, "обычное потребление при слиянии сдвинулось"
+
+
 def test_finish_archives_rather_than_deletes_silently(services, mig, make_active_client):
     """Строки уходят в архив с явной причиной: иначе потом не восстановить, кто
     отвалился и почему."""

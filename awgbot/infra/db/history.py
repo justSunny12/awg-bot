@@ -209,18 +209,32 @@ class HistoryMixin:
                 return self.snapshot_monthly_traffic(month, c)
 
         rows = cur.execute(
-            "SELECT t.device_id, d.client_id, t.traffic_rx_month, t.traffic_tx_month "
+            "SELECT t.device_id, d.client_id, t.traffic_rx_month, t.traffic_tx_month, "
+            "t.rf_rx_month, t.rf_tx_month "
             "FROM device_traffic t JOIN devices d ON d.id = t.device_id").fetchall()
         stamp = _now_iso()
         for r in rows:
-            if not r["traffic_rx_month"] and not r["traffic_tx_month"]:
+            if not (r["traffic_rx_month"] or r["traffic_tx_month"]
+                    or r["rf_rx_month"] or r["rf_tx_month"]):
                 continue          # нулевые месяцы не пишем
             cur.execute(
                 """INSERT INTO traffic_monthly
-                   (device_id, client_id, month, rx, tx, archived_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (device_id, client_id, month, rx, tx, rf_rx, rf_tx, archived_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (r["device_id"], r["client_id"], month,
-                 r["traffic_rx_month"], r["traffic_tx_month"], stamp))
+                 r["traffic_rx_month"], r["traffic_tx_month"],
+                 r["rf_rx_month"], r["rf_tx_month"], stamp))
+
+    def snapshot_server_rf(self, month: str, rx: int, tx: int, cur=None) -> None:
+        """Итог РФ-трафика сервера за завершившийся месяц (концепт «учёт
+        РФ-трафика»); нулевой месяц не пишется."""
+        if cur is None:
+            with self._tx() as c:
+                return self.snapshot_server_rf(month, rx, tx, c)
+        if not rx and not tx:
+            return
+        cur.execute("INSERT INTO server_traffic_monthly (month, rf_rx, rf_tx, archived_at) "
+                    "VALUES (?, ?, ?, ?)", (month, int(rx), int(tx), _now_iso()))
 
     def purge_histories(self, cutoff_iso: str, batch_size: int = 500) -> dict[str, int]:
         """Удалить исторические записи старше cutoff (по archived_at) из ВСЕХ

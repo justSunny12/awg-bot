@@ -155,9 +155,11 @@ async def test_send_notifications_reads_quiet_hours_once(monkeypatch):
 def test_admin_panel_snapshot_carries_everything_the_panel_needs(services):
     snap = services.admin_panel_snapshot()
     for key in ("st", "ac", "routing_ok", "mig", "expiring", "unassigned",
-                "has_dev", "can_issue", "rt_visible", "rt_on"):
+                "has_dev", "can_issue", "rt_visible", "rt_on", "rf"):
         assert key in snap
     assert "traffic_rx" in snap["st"]
+    # РФ-часть потребления — из того же снимка (только state, без exec)
+    assert {"rx", "tx", "error", "since", "show"} <= set(snap["rf"])
 
 
 def test_client_card_data_none_for_missing(services):

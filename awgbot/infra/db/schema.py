@@ -96,7 +96,8 @@ def _device_from_row(row) -> Optional["models.Device"]:
             limit=int(row["traffic_limit"]),
             rx_month=int(row["traffic_rx_month"]), tx_month=int(row["traffic_tx_month"]),
             rx_period=int(row["traffic_rx_period"]), tx_period=int(row["traffic_tx_period"]),
-            last_handshake=row["last_handshake"], missing_count=int(row["missing_count"])),
+            last_handshake=row["last_handshake"], missing_count=int(row["missing_count"]),
+            rf_rx_month=int(row["rf_rx_month"] or 0), rf_tx_month=int(row["rf_tx_month"] or 0)),
         friend=friend,
         holder_client_id=(int(row["holder_client_id"]) if row["holder_client_id"] is not None else None),
         holder_tg_id=row["holder_tg_id"], holder_name=row["holder_name"] or "",
@@ -150,7 +151,7 @@ HISTORY_TABLES = [
     "client_subscription_histories", "client_quota_histories",
     "device_friend_histories", "client_block_histories",
     "clients_histories", "devices_histories", "device_quota_histories",
-    "traffic_monthly",
+    "traffic_monthly", "server_traffic_monthly",
 ]
 
 # JOIN-выборки: собирают нормализованные таблицы в одну строку для builder'ов.
@@ -175,6 +176,7 @@ SELECT d.*,
                   OR (d.twin_of IS NOT NULL AND g.device_id = d.twin_of)) AS is_gateway_eff,
        t.traffic_limit, t.traffic_rx_month, t.traffic_tx_month,
        t.traffic_rx_period, t.traffic_tx_period, t.last_handshake, t.missing_count,
+       t.rf_rx_month, t.rf_tx_month,
        f.friend_code, f.friend_status,
        h.tg_id AS holder_tg_id, h.name AS holder_name, h.tg_name AS holder_tg_name,
        h.tg_username AS holder_tg_username,
@@ -348,6 +350,24 @@ CREATE TABLE IF NOT EXISTS traffic_samples (
     last_tx             INTEGER NOT NULL,
     last_update         TEXT    NOT NULL,             -- когда счётчики последний раз менялись
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+);
+-- учёт РФ-трафика (концепт «учёт РФ-трафика»): базы дельт по счётчикам nft
+-- устройства — отдельно от traffic_samples: у тех строку рождает опрос awg,
+-- и чужая «первая база» с нулями сделала бы всё потребление пира одной дельтой
+CREATE TABLE IF NOT EXISTS rf_samples (
+    device_id           INTEGER PRIMARY KEY,
+    last_up             INTEGER NOT NULL,
+    last_dn             INTEGER NOT NULL,
+    last_update         TEXT    NOT NULL,
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+);
+-- архив итога РФ-трафика сервера за месяц (по устройствам — traffic_monthly.rf_*)
+CREATE TABLE IF NOT EXISTS server_traffic_monthly (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    month               TEXT    NOT NULL,
+    rf_rx               INTEGER NOT NULL DEFAULT 0,
+    rf_tx               INTEGER NOT NULL DEFAULT 0,
+    archived_at         TEXT    NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS server_state (
@@ -560,6 +580,7 @@ class SchemaMixin:
         self._migrate_friends_to_guests()
         self._migrate_gateway_slots()
         self._migrate_gateway_lan_mode()
+        self._migrate_rf_traffic()
 
     def _migrate_gateway_slots(self) -> None:
         """v2.24.0 (концепт «резервный шлюз»): флаг devices.is_gateway → строка
@@ -604,6 +625,19 @@ class SchemaMixin:
         if "lan_mode" not in have:
             with self._tx() as cur:
                 cur.execute("ALTER TABLE gateways ADD COLUMN lan_mode INTEGER NOT NULL DEFAULT 0")
+
+    def _migrate_rf_traffic(self) -> None:
+        """v3.1.0 (концепт «учёт РФ-трафика»): device_traffic.rf_rx_month/rf_tx_month и
+        traffic_monthly.rf_rx/rf_tx — РФ-часть потребления. Идемпотентно."""
+        con = self._connection()
+        for table, cols in (("device_traffic", ("rf_rx_month", "rf_tx_month")),
+                            ("traffic_monthly", ("rf_rx", "rf_tx"))):
+            have = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
+            missing = [c for c in cols if c not in have]
+            if missing:
+                with self._tx() as cur:
+                    for c in missing:
+                        cur.execute(f"ALTER TABLE {table} ADD COLUMN {c} INTEGER NOT NULL DEFAULT 0")
 
     def _migrate_guest_role_columns(self) -> None:
         """v2.20.0 (концепт «гость»): clients.kind и devices.holder_client_id.

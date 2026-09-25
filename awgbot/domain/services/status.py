@@ -44,8 +44,11 @@ class StatusMixin:
                 if d is not None and d.client_id == ac.id:
                     n_gw += 1
         n_issuable = n_dev - n_gw
+        rf = self.rf_month_total()
+        rf["show"] = self.rf_line_visible()
         return {
             "st": st, "ac": ac, "routing_ok": routing_ok, "routing_info": routing_info, "mig": mig,
+            "rf": rf,
             "expiring": len(self.expiring_subscriptions()),
             "unassigned": self.count_unassigned_devices(),
             "has_dev": n_dev > 0,

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import sys
 
-from awgbot.core import config
+from awgbot.core import config, settings
 from awgbot.infra import routing
 
 _OK, _BAD, _WARN = "  ок  ", " СБОЙ ", " ??? "
@@ -140,6 +140,29 @@ def _probe_layers() -> list[tuple[str, str, str]]:
         n = routing.set_count(name)
         out.append((_OK if n else _BAD, f"Набор {name}: {n} записей",
                     "" if n else "Пустой набор ⇒ на шлюз уйдёт ВСЁ, включая заблокированное."))
+
+    # ── 7. учёт РФ-трафика (концепт «учёт РФ-трафика») — только чтение ──
+    from awgbot.infra import rfacct
+    try:
+        acct = rfacct.read()
+    except rfacct.AcctError as e:
+        out.append((_WARN, "Учёт РФ-трафика: не читается", str(e)))
+    else:
+        if acct is None:
+            out.append((_WARN, "Учёт РФ-трафика: таблицы awg_bot_acct нет",
+                        f"Её создаёт первый опрос трафика бота (раз в "
+                        f"{settings.get_int('app.scheduler.traffic_poll_minutes', 5)} мин)."))
+        else:
+            from awgbot.bot.texts.fmt import human_bytes
+            n_dev = sum(1 for k in acct.counters if k.startswith("d") and k.endswith("_up"))
+            up = acct.counters.get(rfacct.COUNTER_UP, 0)
+            dn = acct.counters.get(rfacct.COUNTER_DN, 0)
+            # неполная цепочка — не отказ тракта: трафик идёт, опрос перепишет правила
+            out.append((_OK if acct.rules == 4 else _WARN,
+                        f"Учёт РФ-трафика: {n_dev} устройств, ↑ {human_bytes(up)}, ↓ {human_bytes(dn)} "
+                        "с загрузки таблицы",
+                        "" if acct.rules == 4 else
+                        f"Правил в цепочке {acct.rules}, а нужно 4 — ближайший опрос перепишет."))
     return out
 
 

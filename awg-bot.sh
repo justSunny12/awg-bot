@@ -29,7 +29,8 @@
 #                          задаётся; AWG_UPDATE_THEN_BUNDLE=<файл> — шлюзу после
 #                          обновления применить этот файл конфигурации новым
 #                          кодом (reconfigure --role gateway --bundle).
-#   uninstall              снять сервис (код всегда; данные/секреты — по согласию).
+#   uninstall              снять сервис (код и таблица учёта РФ-трафика всегда; данные,
+#                          секреты и файервол — по согласию).
 #   backup                 снимок состояния (БД + conf + env) → tar.gz.
 #   restore [<tgz>]        восстановить состояние из снимка (по умолчанию — свежий).
 #                          На шлюзе — ещё firewall.env и личные списки локальной
@@ -1213,6 +1214,8 @@ cmd_post_uninstall() {
     # Firewall: снимаем ТОЛЬКО свою таблицу/файл (их создал awg-bot firewall setup).
     # Снятие адресных drop'ов делает SSH снова открытым для всех — доступ к хосту
     # при этом НЕ теряется (мы только убираем ограничение, а не рвём established).
+    # учёт РФ-трафика — таблица без вердиктов, снимаем без вопроса
+    nft delete table inet awg_bot_acct 2>/dev/null && ok "таблица awg_bot_acct снята" || true
     local fw_rules="/etc/nftables.d/awg-bot-guard.nft"
     local fw_table="inet awg_bot_guard"
     if [[ -f "$fw_rules" ]] || nft list table $fw_table >/dev/null 2>&1; then

@@ -170,6 +170,8 @@ class DeviceTraffic:
     tx_period: int = 0
     last_handshake: Optional[int] = None
     missing_count: int = 0
+    rf_rx_month: int = 0                    # РФ-часть потребления за месяц (через шлюзы)
+    rf_tx_month: int = 0
 
 
 @dataclass
@@ -272,6 +274,10 @@ class Device:
     def traffic_rx_period(self): return self.traffic.rx_period
     @property
     def traffic_tx_period(self): return self.traffic.tx_period
+    @property
+    def rf_rx_month(self): return self.traffic.rf_rx_month
+    @property
+    def rf_tx_month(self): return self.traffic.rf_tx_month
     @property
     def last_handshake(self): return self.traffic.last_handshake
     @property
