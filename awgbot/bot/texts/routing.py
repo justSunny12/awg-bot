@@ -759,6 +759,15 @@ def routing_lists_block(info: dict) -> str:
             f"период {info.get('every_hours', 6)} ч.")
 
 
+def gateway_bundle_applied_text(display: str, ok: bool, error: str = "") -> str:
+    """Итог применения конфигурации, пришедший от шлюза каналом: ставится вместо
+    файла (он уже отслужил, а внутри ключ линка)."""
+    if ok:
+        return f"✅ Конфигурация успешно применена на стороне шлюза {_e(display)}"
+    return (f"⚠️ Применить конфигурацию на стороне шлюза {_e(display)} не получилось"
+            + (f": {_e(error)}" if error else ""))
+
+
 def gateway_bundle_caption(display: str, agent_bot: dict | None) -> str:
     """Подпись под файлом конфигурации: какому шлюзу и какому боту его
     пересылать — ссылкой в чат, как в карточке. Бота ещё не спросили —

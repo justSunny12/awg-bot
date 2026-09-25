@@ -412,10 +412,20 @@ def settings_routing_users(clients=(), page: int = 0) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def bundle_menu_kb() -> InlineKeyboardMarkup:
-    """«В меню» на сообщении с бандлом. Своя кнопка, а не общая с обновлениями:
-    та снимает клавиатуру, оставляя текст следом, — а бандл после возврата
-    должен ИСЧЕЗНУТЬ из чата: это файл с приватным ключом линка."""
+def bundle_menu_kb(slot: int = 0) -> InlineKeyboardMarkup:
+    """«Отмена» на сообщении с бандлом: файл и инструкция уходят из чата (внутри
+    ключ линка), человек возвращается в карточку слота, для которого файл
+    выпускался. Своя кнопка, а не общая с обновлениями: та снимает клавиатуру,
+    оставляя текст."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="\u2b05\ufe0f В меню", callback_data=SetCB(sec="rt", act="do", key="bundle_menu"))
+    kb.button(text="\u2b05\ufe0f Отмена",
+              callback_data=SetCB(sec="rt", act="do", key="bundle_cancel", val=str(slot or "")))
+    return kb.as_markup()
+
+
+def bundle_result_kb(slot: int = 0) -> InlineKeyboardMarkup:
+    """«Назад» под итогом применения конфигурации — в карточку слота."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="\u2b05\ufe0f Назад", callback_data=(GwSlotCB(action="card", slot=slot).pack() if slot
+                                                       else SetCB(sec="rt").pack()))
     return kb.as_markup()

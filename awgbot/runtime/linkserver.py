@@ -306,6 +306,21 @@ class LinkServer:
                 sess.svc_have = str(msg.get("hash") or "")[:64]
             await asyncio.to_thread(self.services.gwlink_peer_services_ack_in, gw.id, msg)
             return
+        if kind == "applied":
+            # шлюз применил файл конфигурации из своего чата (или не смог) —
+            # сразу, не дожидаясь снимка: человек ждёт итог у файла на сервере
+            res = await asyncio.to_thread(self.services.gwlink_applied_in, gw.id, msg)
+            # подтверждение — первым: агент держит итог в очереди до него, и
+            # повтор того же итога (сессия умерла с буфером) сервер узнаёт сам
+            await self.send(gw.id, "applied_ack", {"fp": str(res.get("fp") or ""),
+                                                   "at": str(res.get("at") or "")})
+            if _on_applied is not None and not res.get("dup"):
+                try:
+                    await _on_applied(gw.id, bool(res.get("ok")), str(res.get("error") or ""),
+                                      str(res.get("fp") or ""))
+                except Exception as e:                    # noqa: BLE001
+                    log.warning("канал линка: итог применения слота %s не показан: %s", gw.id, e)
+            return
         log.info("канал линка: слот %s прислал неизвестное «%s» — игнорирую", gw.id, kind)
 
     async def send(self, slot_id: int, kind: str, body: dict | None = None,
@@ -453,6 +468,17 @@ class LinkServer:
 # ── единственный экземпляр на процесс ────────────────────────────────────────
 
 _server: LinkServer | None = None
+
+
+_on_applied = None
+
+
+def set_on_applied(fn) -> None:
+    """Корутина `fn(slot_id, ok, error, fp)` — показать итог применения в чате
+    админа (fp — отпечаток применённого файла, "" у старого агента). Ставит
+    main: у слушателя канала своего бота нет."""
+    global _on_applied
+    _on_applied = fn
 
 
 async def ensure(services) -> LinkServer | None:

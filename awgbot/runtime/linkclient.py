@@ -167,6 +167,7 @@ class LinkClient:
             await self._handle(msg)
             await self.push(full=True)
             await self.push_services(force=True)
+            await self.flush_applied()
             await self._maybe_claim()
             while True:
                 try:
@@ -303,6 +304,39 @@ class LinkClient:
         self._parts = {}
         return whole
 
+    async def flush_applied(self) -> bool:
+        """Отправить серверу отложенный итог применения файла. Из очереди он
+        уходит по подтверждению сервера (applied_ack), а не по записи в сокет:
+        бандл тут же перезапускает линк, и строка в буфере умершей сессии
+        пропала бы вместе с ней. Повтор сервер отличает по отпечатку и времени."""
+        if self._writer is None:
+            return False
+        get = getattr(self.services, "applied_pending_get", None)
+        if get is None:
+            return False
+        pending = await asyncio.to_thread(get)
+        if not pending:
+            return False
+        return await self._send("applied", {"ok": bool(pending.get("ok")),
+                                            "error": str(pending.get("error") or "")[:300],
+                                            "fp": str(pending.get("fp") or "")[:32],
+                                            "at": str(pending.get("at") or "")[:40]},
+                                pad=gwlink.PAD_DELTA)
+
+    async def _applied_acked(self, msg: dict) -> None:
+        """Сервер принял итог: очередь пуста. Подтверждение на другой файл
+        (очередь успели перезаписать) очередь не трогает."""
+        get = getattr(self.services, "applied_pending_get", None)
+        if get is None:
+            return
+        pending = await asyncio.to_thread(get)
+        if not pending:
+            return
+        if str(pending.get("fp") or "") != str(msg.get("fp") or "") or \
+                str(pending.get("at") or "") != str(msg.get("at") or ""):
+            return
+        await asyncio.to_thread(self.services.applied_pending_clear)
+
     async def push_services(self, *, force: bool = False) -> bool:
         """Сервисы этой сети — серверу (концепт «сервисы соседних сетей»): при
         подключении целиком, дальше только при изменении своего списка."""
@@ -397,6 +431,9 @@ class LinkClient:
             return
         if msg.get("t") == "peer_svc":
             await self._apply_peer_services(msg)
+            return
+        if msg.get("t") == "applied_ack":
+            await self._applied_acked(msg)
             return
         log.info("канал линка: с ВПС пришло неизвестное «%s» — игнорирую", msg.get("t"))
 
@@ -503,6 +540,21 @@ async def poke(services) -> None:
             await client.push()
     with contextlib.suppress(Exception):
         await services_changed(services)
+
+
+async def report_applied(services, ok: bool, error: str = "", fp: str = "") -> None:
+    """Файл конфигурации применён из чата агента (или нет): сказать серверу
+    сразу, если канал жив, иначе — первым делом при подключении. fp —
+    отпечаток файла (sha256 шифрованного, первые 16 знаков): сервер сверит
+    его с выданным и не уберёт из чата чужой или более новый файл."""
+    setter = getattr(services, "applied_pending_set", None)
+    if setter is None:
+        return
+    await asyncio.to_thread(setter, ok, error, fp)
+    client = _client
+    if client is not None and client._writer is not None:
+        with contextlib.suppress(Exception):
+            await client.flush_applied()
 
 
 async def services_changed(services) -> None:

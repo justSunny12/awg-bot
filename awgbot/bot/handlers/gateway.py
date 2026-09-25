@@ -663,10 +663,14 @@ async def gw_bundle_apply(cb: CallbackQuery, callback_data: GwCB, services, stat
         # человеческий итог из статуса скрипта; хвост вывода — только при отказе
         detail = await call(services.gateway_apply_report) or detail
     await edit_nav(cb, services, texts.gateway_op_result("Конфигурация шлюза", ok, detail), None)
+    # итог — серверу сразу: там у файла ждут ответа; отказ уходит тем же путём
+    from awgbot.runtime import linkclient
+    from awgbot.domain.services.gwchannel import GwChannelMixin
+    await linkclient.report_applied(services, ok, "" if ok else detail,
+                                    GwChannelMixin.bundle_fingerprint(blob))
     if ok:
         # бандл мог только что включить канал — поднять клиента и сразу
         # отправить снимок: человек смотрит на карточку слота на ВПС сейчас
-        from awgbot.runtime import linkclient
         await linkclient.poke(services)
         if await call(services.lan_lists_needed):
             # режим без VPN включён этим бандлом, списков ещё нет: не ждать

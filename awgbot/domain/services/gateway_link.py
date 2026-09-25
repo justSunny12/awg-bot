@@ -358,6 +358,11 @@ class GatewayLinkMixin:
                           timeutil.to_iso(timeutil.now()))
         return plain, priv
 
+    def gw_slot_id(self, slot_id: Optional[int] = None) -> int:
+        """Номер слота, для которого выпускается файл (без номера — первый; 0 —
+        слотов нет, файл на заглушке)."""
+        return int(getattr(self._gw_slot(slot_id), "id", 0) or 0)
+
     def gw_bundle_target(self, slot_id: Optional[int] = None) -> tuple[str, dict]:
         """Кому уходит файл: «имя» (подпись) слота, сырое, и бот шлюза из кэша
         getMe ({'username', 'name'} или пусто) — для подписи под файлом."""

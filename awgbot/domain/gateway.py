@@ -752,6 +752,38 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         peers = gwguard.unit_env("PEER_HOME_NETS").split()
         return (nets[0] if nets else ""), gwguard.script_status().get("LAN_ADDR", ""), peers
 
+    # ── итог применения файла из чата — серверу каналом ──────────────────────
+    _APPLIED_PENDING_KEY = "gwlink_applied_pending"
+
+    _APPLIED_PENDING_TTL_S = 24 * 3600
+
+    def applied_pending_set(self, ok: bool, error: str, fp: str = "") -> None:
+        """Итог ждёт отправки: канал после применения бандла обычно
+        переподключается, а сказать серверу надо ровно один раз. fp — отпечаток
+        применённого файла: сервер по нему узнаёт, о каком файле речь."""
+        self.db.set_state(self._APPLIED_PENDING_KEY,
+                          json.dumps({"ok": bool(ok), "error": " ".join((error or "").split())[:300],
+                                      "fp": str(fp or "")[:32],
+                                      "at": timeutil.to_iso(timeutil.now())}, ensure_ascii=False))
+
+    def applied_pending_get(self) -> dict:
+        """Итог в очереди; просроченный (сутки без канала) — как пустой: столько
+        у файла на сервере никто не ждёт, а сервер без ответа его и не убрал бы."""
+        try:
+            data = json.loads(self.db.get_state(self._APPLIED_PENDING_KEY) or "{}")
+        except json.JSONDecodeError:
+            return {}
+        if not (isinstance(data, dict) and "ok" in data):
+            return {}
+        try:
+            age = (timeutil.now() - timeutil.parse_iso(str(data.get("at") or ""))).total_seconds()
+        except ValueError:
+            age = 0
+        return {} if age > self._APPLIED_PENDING_TTL_S else data
+
+    def applied_pending_clear(self) -> None:
+        self.db.set_state(self._APPLIED_PENDING_KEY, "")
+
     # ── сервисы соседних сетей (концепт «сервисы соседних сетей») ────────────
     # Не настраивается: работает там и тогда, где работает доступ между
     # подсетями (PEER_HOME_NETS в юните) при режиме без VPN и канале линка.
