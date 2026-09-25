@@ -849,8 +849,8 @@ def _full_disk(monkeypatch, path) -> dict:
 
 
 async def test_a_canon_refused_for_a_full_disk_lands_after_the_fix_without_a_reconnect(pair, pi, monkeypatch):
-    """Диск малины полон — канон не записан, сервер видит «непредвиденная
-    ошибка». Первые десять минут агент молчит; потом (диск уже почищен) на
+    """Диск малины полон — канон не записан, сервер видит «ошибка записи
+    файла». Первые десять минут агент молчит; потом (диск уже почищен) на
     тике просит канон пустым own_ev, сервер присылает его снова в той же
     сессии, настоящий sync применяет, ответ ok. Дальше — ни байта.
 
@@ -865,7 +865,7 @@ async def test_a_canon_refused_for_a_full_disk_lands_after_the_fix_without_a_rec
     assert await _until(lambda: pair.acks, timeout=5), "на канон агент не ответил"
     ack = pair.acks[0][1]
     assert ack["ok"] is False and ack["error"] == (
-        "непредвиденная ошибка, файл своих списков не записан: нет места на диске"), ack
+        "ошибка записи файла: нет места на диске"), ack
     assert _card(s, 1)["state"] == "failed" and pi.host.lists() == {}
     sets, evs = _own_sets(pair, 1), len(pair.ev)
     assert sets == 1

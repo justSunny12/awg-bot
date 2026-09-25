@@ -270,8 +270,8 @@ def test_forward_accepts_without_iptables_is_empty(monkeypatch):
 
 
 @pytest.mark.parametrize("exc,msg", [
-    (FileNotFoundError(), "скрипта записей SMB нет — перевыпусти конфигурацию шлюза"),
-    (subprocess.TimeoutExpired("awg-lan-services.sh", 90), "скрипт записей SMB не ответил за 90 с"),
+    (FileNotFoundError(), "отсутствует скрипт — перевыпусти конфигурацию шлюза"),
+    (subprocess.TimeoutExpired("awg-lan-services.sh", 90), "скрипт не ответил за 90 с"),
 ])
 def test_run_lan_services_turns_a_missing_or_hanging_script_into_a_reason(monkeypatch, exc, msg):
     """Скрипта записей нет (обвязка до 3.1.0) или он завис — агент не падает, а
@@ -284,8 +284,8 @@ def test_run_lan_services_turns_a_missing_or_hanging_script_into_a_reason(monkey
 
 
 @pytest.mark.parametrize("exc,msg", [
-    (FileNotFoundError(), "скрипта своих списков нет — перевыпусти конфигурацию шлюза"),
-    (subprocess.TimeoutExpired("awg-lan-domain.sh", 150), "скрипт своих списков не ответил за 150 с"),
+    (FileNotFoundError(), "отсутствует скрипт — перевыпусти конфигурацию шлюза"),
+    (subprocess.TimeoutExpired("awg-lan-domain.sh", 150), "скрипт не ответил за 150 с"),
 ])
 def test_run_lan_domain_turns_a_missing_or_hanging_script_into_a_reason(monkeypatch, exc, msg):
     """Кнопка «В туннель» на шлюзе без скрипта или с зависшим скриптом: человек
@@ -301,11 +301,11 @@ def test_run_lan_domain_turns_a_missing_or_hanging_script_into_a_reason(monkeypa
     (errno.EROFS, "диск только для чтения"),
     (errno.EACCES, "нет прав на запись"),
     (errno.EPERM, "нет прав на запись"),
-    (errno.ENOENT, "нет каталога для файла"),
-    (errno.ENOTDIR, "нет каталога для файла"),
+    (errno.ENOENT, "директория не найдена"),
+    (errno.ENOTDIR, "директория не найдена"),
     (errno.EIO, "ошибка ввода-вывода диска"),
     (errno.EDQUOT, "исчерпана дисковая квота"),
-    (errno.EEXIST, "нет каталога для файла"),          # на месте каталога — файл
+    (errno.EEXIST, "директория не найдена"),          # на месте каталога — файл
     (errno.EMFILE, "ошибка записи (EMFILE)"),
     (None, "ошибка записи"),
     (99999, "ошибка записи"),
@@ -330,7 +330,7 @@ def test_os_error_text_reads_the_code_of_real_subclasses(tmp_path):
     try:
         open(blocker / "f", "w")
     except OSError as e:
-        assert gwguard.os_error_text(e) == "нет каталога для файла", e
+        assert gwguard.os_error_text(e) == "директория не найдена", e
     else:
         pytest.fail("файл внутри файла открылся на запись")
 

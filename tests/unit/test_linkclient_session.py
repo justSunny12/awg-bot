@@ -656,7 +656,7 @@ def _kinds_sent(client) -> list[str]:
     return [gwlink.unpack(KEY, x, nonce=SN)["t"] for x in client._writer.written]
 
 
-def _fill_agent(fill_result=(True, "набор lan_vpn4 пополнен: 1 домен")):
+def _fill_agent(fill_result=(True, "набор lan_vpn4: адреса 3 доменов взяты в обработку")):
     """Агент, у которого канон применился с новыми «в туннель»; fill ждёт
     `release` (dig по сотням доменов) и записывает, что и когда звали."""
     import threading
@@ -721,7 +721,7 @@ async def test_a_successful_fill_is_logged_as_info(gateway_role, conf, caplog):
         await client._apply_own({"hash": "ab"})
         await asyncio.wait_for(client._fill_task, 5)
     infos = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
-    assert any("пополнен: 1 домен" in m for m in infos), infos
+    assert "свои списки: набор lan_vpn4: адреса 3 доменов взяты в обработку" in infos, infos
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING], "удачный fill — с предупреждением"
 
 

@@ -377,7 +377,7 @@ def test_without_peer_access_the_scan_does_not_touch_mdns_and_clears_the_list(ag
 # помощника awg-lan-services.sh на диске нет. Сервер второй раз за сессию
 # записи не пришлёт — агент обязан сохранить присланное и применить сам, как
 # только помощник появится. Иначе Finder в соседней сети пуст до следующего
-# переподключения канала, а карточка на ВПС навсегда «шлюз отказался принимать».
+# переподключения канала, а карточка на ВПС навсегда «шлюз не смог принять записи».
 
 class _Peer:
     """Получатель записей соседей: юнит (режим, подсети), помощник на диске
@@ -406,7 +406,7 @@ class _Peer:
     def _run(self, path: str = "", timeout: int = 90):
         self.runs.append(path)
         if not self.helper.exists():
-            return False, "скрипта записей SMB нет — обвязка старого образца"
+            return False, "отсутствует скрипт — перевыпусти конфигурацию шлюза"
         if not self.rc_ok:
             return False, self.tail
         if path:
@@ -448,7 +448,7 @@ def test_without_the_helper_and_a_throttled_reassert_the_records_wait(agent, pee
     _throttle(agent)
     res = agent.apply_peer_services(H_NAS, [NAS])
     assert res["ok"] is False and res["n"] == 0, res
-    assert res["error"] == "скрипта записей SMB нет — обвязка перевыставится в ближайшие минуты", res
+    assert res["error"] == "отсутствует скрипт — обвязка перевыставится в ближайшие минуты", res
     assert peer.reasserts == 0, "троттлинг реассерта не сработал"
     assert peer.runs == [] and not peer.conf.exists(), "без помощника тронули dnsmasq"
     assert json.loads(_pending(agent)) == {"hash": H_NAS, "items": [NAS]}, (
@@ -464,7 +464,7 @@ def test_a_reassert_that_did_not_bring_the_helper_keeps_the_records_pending(agen
     agent._last_reassert = time.monotonic() - 3600     # прошлый реассерт давно
     res = agent.apply_peer_services(H_NAS, [NAS])
     assert peer.reasserts == 1
-    assert res["ok"] is False and res["error"] == "скрипта записей SMB нет — обвязка перевыставляется", res
+    assert res["ok"] is False and res["error"] == "отсутствует скрипт — обвязка перевыставляется", res
     assert json.loads(_pending(agent))["hash"] == H_NAS
     assert not peer.conf.exists()
 
@@ -542,7 +542,7 @@ def test_an_unwritable_services_file_refuses_with_a_reason(agent, peer, monkeypa
     res = agent.apply_peer_services(H_NAS, [NAS])
     # каталог-«файл»: makedirs отказывает EEXIST — на месте каталога файл
     assert res["ok"] is False and res["error"] == (
-        "непредвиденная ошибка, файл записей SMB не записан: нет каталога для файла"), res
+        "ошибка записи файла: директория не найдена"), res
     assert peer.runs == [] and not peer.conf.exists()
 
 
@@ -562,8 +562,12 @@ def test_a_full_disk_for_the_services_file_is_named_in_words(agent, peer, monkey
     monkeypatch.setattr(gw_mod, "open", full_disk, raising=False)
     res = agent.apply_peer_services(H_NAS, [NAS])
     assert res["ok"] is False and res["error"] == (
-        "непредвиденная ошибка, файл записей SMB не записан: нет места на диске"), res
+        "ошибка записи файла: нет места на диске"), res
     assert peer.runs == [] and not peer.conf.exists(), "помощник звался без файла"
+    # в мониторе поломка — «не удалось применить. Ошибка записи файла: …», без двух двоеточий подряд
+    smb = [c for c in agent.services_status()[1] if c.name == "SMB подсетей других шлюзов"]
+    assert smb and smb[0].ok is False, smb
+    assert smb[0].detail == "не удалось применить. Ошибка записи файла: нет места на диске", smb[0].detail
 
 
 def test_a_refusal_that_is_not_about_the_helper_is_not_retried(agent, peer):
@@ -582,7 +586,7 @@ def test_a_refusal_that_is_not_about_the_helper_is_not_retried(agent, peer):
 
 def test_a_silent_refusal_still_says_something_to_the_server(agent, peer):
     """Скрипт записей отказал с пустым выводом — у сервера в карточке всё равно
-    должна быть причина, а не «отказался принимать:» с пустотой."""
+    должна быть причина, а не «не смог принять записи:» с пустотой."""
     peer.appear()
     peer.rc_ok, peer.tail = False, ""
     res = agent.apply_peer_services(H_NAS, [NAS])

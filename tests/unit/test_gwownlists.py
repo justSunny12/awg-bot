@@ -316,7 +316,7 @@ class _Host:
             return True, "свои списки применены"
         if cmd == "fill":
             self.filled = Path(domains[0]).read_text(encoding="utf-8")
-            return True, "набор lan_vpn4 пополнен: 1 домен"
+            return True, "набор lan_vpn4: адреса 1 домена взяты в обработку"
         raise AssertionError(f"неожиданный вызов скрипта: {cmd}")
 
 
@@ -409,7 +409,7 @@ def test_an_unchanged_fingerprint_does_not_run_the_script(agent, host):
 
 
 def test_a_missing_file_is_never_a_removal(agent, host):
-    """Режим выключили или раздел не применился — файлов нет. Сверка молчит:
+    """Режим выключили или локальная сеть без VPN не применилась — файлов нет. Сверка молчит:
     иначе весь список ушёл бы удалениями и опустел на всех шлюзах."""
     _synced(agent, host, {"a.com": "vpn", "b.ru": "ru"})
     (host.dns_d / RU_USER).unlink()
@@ -654,7 +654,7 @@ def test_an_unwritable_sync_file_refuses_with_a_reason(agent, host, monkeypatch,
     res = agent.apply_own_lists(_canon({"b.com": "vpn"}, ver=2))
     # каталог-«файл»: makedirs отказывает EEXIST — на месте каталога файл
     assert res["ok"] is False and res["error"] == (
-        "непредвиденная ошибка, файл своих списков не записан: нет каталога для файла"), res
+        "ошибка записи файла: директория не найдена"), res
     assert "sync" not in host.calls and host.lists() == {"a.com": "vpn"}
     assert agent.own_base()["ver"] == 1
     assert agent.own_status()[0]["state"] == "failed"
@@ -679,8 +679,12 @@ def test_a_full_disk_is_named_in_words_without_the_path(agent, host, monkeypatch
     host.calls.clear()
     res = agent.apply_own_lists(_canon({"b.com": "vpn"}, ver=2))
     assert res["ok"] is False and res["error"] == (
-        "непредвиденная ошибка, файл своих списков не записан: нет места на диске"), res
+        "ошибка записи файла: нет места на диске"), res
     assert "sync" not in host.calls and host.lists() == {"a.com": "vpn"}, "скрипт звался без файла"
+    # в мониторе поломка — отдельной фразой, а не «не применились: ошибка записи файла: …»:
+    # два двоеточия подряд читались бы как два уровня причин
+    detail = agent.own_status()[1][0].detail
+    assert detail == "не удалось применить. Ошибка записи файла: нет места на диске", detail
 
 
 # ── fill: адреса новых «в туннель» — после sync, фоном ──────────────────────
@@ -747,7 +751,7 @@ def test_own_fill_runs_the_script_with_the_long_timeout(agent, host):
     _synced(agent, host, {})
     res = agent.apply_own_lists(_canon({"a.com": "vpn"}, ver=2))
     ok, tail = agent.own_fill(res["fill"])
-    assert ok is True and "пополнен" in tail, tail
+    assert ok is True and "взяты в обработку" in tail, tail
     assert host.filled == "a.com\n"
     assert host.timeouts["fill"] == gwguard.OWN_FILL_TIMEOUT >= 1800, host.timeouts
 
@@ -765,7 +769,8 @@ def test_missing_files_refuse_the_canon(agent, host):
     _synced(agent, host, {"a.com": "vpn"})
     (host.dns_d / VPN_USER).unlink()
     res = agent.apply_own_lists(_canon({}, ver=2))
-    assert res["ok"] is False and "раздел не применился" in res["error"], res
+    assert res["ok"] is False and res["error"] == (
+        "не найдены файлы своих списков — функционал локальной сети без VPN недоступен"), res
     assert agent.own_base()["ver"] == 1
 
 
@@ -801,7 +806,7 @@ def test_an_old_script_triggers_a_reassert_and_the_canon_waits(agent, host):
     host.has_sync = False
     res = agent.apply_own_lists(_canon({"a.com": "vpn"}, ver=2))
     assert res["ok"] is False and host.reasserts == 1
-    assert "скрипт своих списков старого образца" in res["error"], res
+    assert res["error"] == "скрипт старого образца — обвязка перевыставляется", res
     assert host.lists() == {} and "sync" not in host.calls
     assert agent.own_status()[0]["state"] == "old_script"
     assert agent.own_retry() is None, "скрипт всё ещё старый — применять нечем"
@@ -952,4 +957,4 @@ def test_status_of_an_old_script(agent, host):
     host.has_sync = False
     info, c = _checks(agent)
     assert info["state"] == "old_script" and c.ok is None
-    assert c.detail == "скрипт старого образца, обвязка перевыставляется"
+    assert c.detail == "скрипт старого образца — обвязка перевыставляется"

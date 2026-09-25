@@ -97,7 +97,7 @@ async def test_the_slot_card_counts_services_and_follows_their_fate(services, pe
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": "<b>dnsmasq</b> & rc=1"})
     text, _ = await _card(services, fake_bot, 2)
     assert _svc_line(text) == HEAD, _svc_line(text)
-    assert _svc_note(text) == "⚠️ Шлюз «Pi2» отказался принимать: &lt;b&gt;dnsmasq&lt;/b&gt; &amp; rc=1", (
+    assert _svc_note(text) == "⚠️ Шлюз «Pi2» не смог принять записи: &lt;b&gt;dnsmasq&lt;/b&gt; &amp; rc=1", (
         f"ошибка шлюза не экранирована или потерялась: {_svc_note(text)}")
     text1, _ = await _card(services, fake_bot, 1)
     assert _svc_line(text1) == "🗂 SMB: в этой подсети — 1, из других — нет", text1
@@ -105,12 +105,12 @@ async def test_the_slot_card_counts_services_and_follows_their_fate(services, pe
 
 
 async def test_a_refusal_without_details_has_no_dangling_colon(services, peers, fake_bot):
-    """Шлюз отказал, не объяснив, — «отказался принимать» без двоеточия в
+    """Шлюз отказал, не объяснив, — «не смог принять записи» без двоеточия в
     конце: висящее «: » читалось бы как обрезанное сообщение."""
     _publish(services)
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": ""})
     text, _ = await _card(services, fake_bot, 2)
-    assert _svc_note(text) == "⚠️ Шлюз «Pi2» отказался принимать", text
+    assert _svc_note(text) == "⚠️ Шлюз «Pi2» не смог принять записи", text
 
 
 @pytest.mark.parametrize("peers_applied,version,note", [
@@ -150,28 +150,26 @@ async def test_the_gateway_name_in_the_note_is_escaped_once(services, peers, fak
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": ""})
     text, _ = await _card(services, fake_bot, 2)
     assert "«Pi &amp; &lt;2&gt;»" in text.splitlines()[0], text.splitlines()[0]
-    assert _svc_note(text) == "⚠️ Шлюз «Pi &amp; &lt;2&gt;» отказался принимать", (
+    assert _svc_note(text) == "⚠️ Шлюз «Pi &amp; &lt;2&gt;» не смог принять записи", (
         f"имя шлюза экранировано дважды: {_svc_note(text)}")
 
 
 async def test_a_breakage_on_the_gateway_is_not_called_a_refusal(services, peers, fake_bot):
     """Файл записей не записался на малине (диск полон) — это поломка на
-    шлюзе, а не отказ принять записи: карточка пишет «Шлюз «X»: непредвиденная
-    ошибка…», без «отказался принимать», иначе человек ищет, что не так с
+    шлюзе, а не отказ принять записи: карточка пишет «Шлюз «X»: ошибка записи
+    файла: …», без «не смог принять», иначе человек ищет, что не так с
     записями, а чинить нужно диск. Настоящий отказ (dnsmasq) — прежней фразой."""
     _publish(services)
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error":
-                                             "непредвиденная ошибка, файл записей SMB не записан: "
-                                             "нет места на диске"})
+                                             "ошибка записи файла: нет места на диске"})
     text, _ = await _card(services, fake_bot, 2)
     assert _svc_line(text) == HEAD, _svc_line(text)
-    assert _svc_note(text) == ("⚠️ Шлюз «Pi2»: непредвиденная ошибка, файл записей SMB не записан: "
-                               "нет места на диске"), _svc_note(text)
-    assert "отказался принимать" not in text, f"поломка на шлюзе названа отказом: {text}"
+    assert _svc_note(text) == "⚠️ Шлюз «Pi2»: ошибка записи файла: нет места на диске", _svc_note(text)
+    assert "не смог принять" not in text, f"поломка на шлюзе названа отказом: {text}"
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": "не пройдена проверка строк"})
     text, _ = await _card(services, fake_bot, 2)
-    assert _svc_note(text) == "⚠️ Шлюз «Pi2» отказался принимать: не пройдена проверка строк", (
-        f"отказ проверки строк потерял «отказался принимать»: {_svc_note(text)}")
+    assert _svc_note(text) == "⚠️ Шлюз «Pi2» не смог принять записи: не пройдена проверка строк", (
+        f"отказ проверки строк потерял «не смог принять записи»: {_svc_note(text)}")
 
 
 async def test_a_breakage_text_from_the_gateway_is_escaped(services, peers, fake_bot, slots):
@@ -181,18 +179,17 @@ async def test_a_breakage_text_from_the_gateway_is_escaped(services, peers, fake
     services.rename_device(pi2.id, "Pi & <2>")
     _publish(services)
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error":
-                                             "непредвиденная ошибка, файл записей SMB не записан: <b>&</b>"})
+                                             "ошибка записи файла: <b>&</b>"})
     text, _ = await _card(services, fake_bot, 2)
-    assert _svc_note(text) == ("⚠️ Шлюз «Pi &amp; &lt;2&gt;»: непредвиденная ошибка, файл записей SMB "
-                               "не записан: &lt;b&gt;&amp;&lt;/b&gt;"), _svc_note(text)
+    assert _svc_note(text) == "⚠️ Шлюз «Pi &amp; &lt;2&gt;»: ошибка записи файла: &lt;b&gt;&amp;&lt;/b&gt;", (
+        _svc_note(text))
 
 
 @pytest.mark.parametrize("error,note", [
-    ("непредвиденная ошибка, файл записей SMB не записан: нет места на диске",
-     "⚠️ Шлюз: непредвиденная ошибка, файл записей SMB не записан: нет места на диске"),
-    ("dnsmasq: bad option", "⚠️ Шлюз отказался принимать: dnsmasq: bad option"),
-    # «непредвиденная ошибка» не в начале — это чужой текст, а не поломка агента
-    ("rc=1: непредвиденная ошибка", "⚠️ Шлюз отказался принимать: rc=1: непредвиденная ошибка"),
+    ("ошибка записи файла: нет места на диске", "⚠️ Шлюз: ошибка записи файла: нет места на диске"),
+    ("dnsmasq: bad option", "⚠️ Шлюз не смог принять записи: dnsmasq: bad option"),
+    # «ошибка записи файла» не в начале — это чужой текст, а не поломка агента
+    ("rc=1: ошибка записи файла", "⚠️ Шлюз не смог принять записи: rc=1: ошибка записи файла"),
 ])
 def test_the_breakage_branch_without_a_name_reads_whole(error, note):
     """Без имени шлюза фраза поломки целая — «Шлюз: …», без двойного пробела;
@@ -204,7 +201,7 @@ def test_the_breakage_branch_without_a_name_reads_whole(error, note):
 @pytest.mark.parametrize("state,note", [
     ("reissue", "⚠️ Для доступа необходим перевыпуск конфигурации шлюза"),
     ("old_agent", "⚠️ Для доступа необходимо обновить шлюз"),
-    ("failed", "⚠️ Шлюз отказался принимать"),
+    ("failed", "⚠️ Шлюз не смог принять записи"),
     ("pending", "⏳ Синхронизация с другими шлюзами…"),
 ])
 def test_without_a_name_the_note_does_not_repeat_the_word_gateway(state, note):

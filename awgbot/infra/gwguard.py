@@ -796,9 +796,9 @@ def run_lan_services(path: str = "", timeout: int = LAN_SCRIPT_TIMEOUT) -> tuple
         proc = subprocess.run([LAN_SERVICES_SCRIPT, *([path] if path else [])],
                               capture_output=True, timeout=timeout)
     except FileNotFoundError:
-        return False, "скрипта записей SMB нет — перевыпусти конфигурацию шлюза"
+        return False, "отсутствует скрипт — перевыпусти конфигурацию шлюза"
     except subprocess.TimeoutExpired:
-        return False, f"скрипт записей SMB не ответил за {timeout} с"
+        return False, f"скрипт не ответил за {timeout} с"
     except OSError as e:
         return False, str(e)
     tail = (proc.stdout + proc.stderr).decode(errors="replace").strip().splitlines()[-3:]
@@ -833,9 +833,9 @@ def run_lan_domain(cmd: str, domains: list[str], timeout: int = LAN_SCRIPT_TIMEO
     try:
         proc = subprocess.run([LAN_DOMAIN_SCRIPT, cmd, *domains], capture_output=True, timeout=timeout)
     except FileNotFoundError:
-        return False, "скрипта своих списков нет — перевыпусти конфигурацию шлюза"
+        return False, "отсутствует скрипт — перевыпусти конфигурацию шлюза"
     except subprocess.TimeoutExpired:
-        return False, f"скрипт своих списков не ответил за {timeout} с"
+        return False, f"скрипт не ответил за {timeout} с"
     except (OSError, subprocess.SubprocessError) as e:
         return False, str(e)
     return proc.returncode == 0, (proc.stdout + proc.stderr).decode(errors="replace").strip()
@@ -843,9 +843,9 @@ def run_lan_domain(cmd: str, domains: list[str], timeout: int = LAN_SCRIPT_TIMEO
 
 _OS_ERRORS = {
     "ENOSPC": "нет места на диске", "EROFS": "диск только для чтения", "EACCES": "нет прав на запись",
-    "EPERM": "нет прав на запись", "ENOENT": "нет каталога для файла", "EIO": "ошибка ввода-вывода диска",
-    "EDQUOT": "исчерпана дисковая квота", "ENOTDIR": "нет каталога для файла",
-    "EEXIST": "нет каталога для файла",   # на месте каталога — файл
+    "EPERM": "нет прав на запись", "ENOENT": "директория не найдена", "EIO": "ошибка ввода-вывода диска",
+    "EDQUOT": "исчерпана дисковая квота", "ENOTDIR": "директория не найдена",
+    "EEXIST": "директория не найдена",    # на месте каталога — файл
 }
 
 

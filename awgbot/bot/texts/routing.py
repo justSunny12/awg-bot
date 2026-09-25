@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from awgbot.util import timeutil
 from awgbot.domain.services.gwchannel import drift_lines   # строки расхождения рисует домен
+from awgbot.domain.gwchecks import WRITE_ERROR
 
 from .fmt import _e, human_bytes, _updown, plain_ip, client_link, plural_ru
 
@@ -217,17 +218,17 @@ def _bot_link(agent_bot: dict | None) -> str:
     return f'<a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>'
 
 
-def _slot_note(state: str, gw: str, agent_bot: dict | None, error: str, purpose: str) -> str:
+def _slot_note(state: str, gw: str, agent_bot: dict | None, error: str, purpose: str, what: str) -> str:
     """Строка состояния под записями SMB / своими списками в карточке слота —
     общие ветки: обновить шлюз (со ссылкой на бота), отказ шлюза, ожидание.
-    purpose — «Для доступа» / «Для синхронизации»."""
+    purpose — «Для доступа» / «Для синхронизации», what — «записи» / «списки»."""
     if state == "old_agent":
         bot = _bot_link(agent_bot)
         return f"⚠️ {purpose} необходимо обновить шлюз{gw}" + (f" (бот: {bot})" if bot else "")
     if state == "failed":
-        if error.startswith("непредвиденная ошибка"):
+        if error.startswith(WRITE_ERROR):
             return f"⚠️ Шлюз{gw}: {_e(error)}"          # поломка на шлюзе, не отказ
-        return f"⚠️ Шлюз{gw} отказался принимать" + (f": {_e(error)}" if error else "")
+        return f"⚠️ Шлюз{gw} не смог принять {what}" + (f": {_e(error)}" if error else "")
     return "⏳ Синхронизация с другими шлюзами…"
 
 
@@ -248,7 +249,7 @@ def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> s
     if state == "reissue":
         note = f"⚠️ Для доступа необходим перевыпуск конфигурации шлюза{gw}"
     else:
-        note = _slot_note(state, gw, agent_bot, svc.get("error") or "", "Для доступа")
+        note = _slot_note(state, gw, agent_bot, svc.get("error") or "", "Для доступа", "записи")
     return head + "\n" + note
 
 
@@ -265,7 +266,7 @@ def own_lists_line(own: dict, name: str = "", agent_bot: dict | None = None) -> 
     if state == "offline":
         note = f"⏳ Синхронизируется со шлюзом{gw}, когда он выйдет на связь"
     else:
-        note = _slot_note(state, gw, agent_bot, own.get("error") or "", "Для синхронизации")
+        note = _slot_note(state, gw, agent_bot, own.get("error") or "", "Для синхронизации", "списки")
     return head + "\n" + note
 
 
