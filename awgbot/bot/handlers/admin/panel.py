@@ -131,6 +131,22 @@ async def _traffic_devices_screen(services, client_id: int):
     return texts.traffic_devices_text(client.name, rows), kb.traffic_devices_kb()
 
 
+# ── РФ-доступ за месяц: по профилям → по устройствам (концепт «учёт РФ-трафика») ──
+
+async def _rf_profiles_screen(services):
+    data = await call(services.rf_screen_data)
+    return (texts.rf_profiles_text(data, getattr(services, "bot_username", "")),
+            kb.rf_profiles_kb())
+
+
+async def _rf_devices_screen(services, client_id: int):
+    client = await call(services.db.get_client, client_id)
+    if client is None:
+        return None
+    rows = await call(services.rf_by_device, client_id)
+    return texts.rf_devices_text(client.name, rows), kb.rf_devices_kb()
+
+
 async def _gateway_card_screen(services, slot: int, chat_id: int | None = None):
     """Карточка слота по ссылке с главного экрана: «Назад» с неё — на главную,
     не в список шлюзов, откуда человек не приходил."""
@@ -174,6 +190,10 @@ async def _traffic_deep_link(message: Message, services, payload: str,
         # имя шлюза или «резерв жив» в строке РФ-доступа — карточка слота
         screen = await _gateway_card_screen(services, int(payload[len(texts.GW_CARD_PAYLOAD) + 1:]),
                                             message.chat.id)
+    elif payload == texts.RF_PAYLOAD:
+        screen = await _rf_profiles_screen(services)
+    elif payload.startswith(texts.RF_PAYLOAD + "-") and payload[len(texts.RF_PAYLOAD) + 1:].isdigit():
+        screen = await _rf_devices_screen(services, int(payload[len(texts.RF_PAYLOAD) + 1:]))
     elif payload == _TRAFFIC_PAYLOAD:
         screen = await _traffic_profiles_screen(services)
     elif payload.startswith(_TRAFFIC_PAYLOAD + "-") and payload[len(_TRAFFIC_PAYLOAD) + 1:].isdigit():
@@ -238,6 +258,13 @@ async def admin_expiring(cb: CallbackQuery, services, state: FSMContext):
 async def admin_traffic_profiles(cb: CallbackQuery, services):
     """«Назад» из разбивки по устройствам — в разбивку по профилям."""
     await edit_nav(cb, services, *await _traffic_profiles_screen(services))
+    await cb.answer()
+
+
+@router.callback_query(Menu.filter(F.action == "traffic_local"))
+async def admin_rf_profiles(cb: CallbackQuery, services):
+    """«Назад» с РФ-доступа профиля — на экран по профилям."""
+    await edit_nav(cb, services, *await _rf_profiles_screen(services))
     await cb.answer()
 
 

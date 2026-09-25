@@ -357,7 +357,7 @@ def test_device_line_format_and_plain_ip(services, make_active_client):
 def test_list_screens_separate_entries_with_a_blank_line(services, make_active_client):
     from awgbot.bot import texts
     a = make_active_client("А", tg_id=1101); b = make_active_client("Б", tg_id=1102)
-    out = texts.traffic_profiles_text([(a, 1, 1), (b, 2, 2)], "bot")
+    out = texts.traffic_profiles_text([(a, 1, 1, None), (b, 2, 2, None)], "bot")
     assert "\n\n👤 " in out and out.count("\n\n") == 2
 
 
@@ -457,3 +457,100 @@ async def test_main_menu_hides_issue_row_when_only_device_is_the_gateway(service
     await ah.admin_main_menu(cb, services, FakeState())
     _, labels = last_screen(nav)
     assert "🔗 Ссылка" in labels and "📄 Файл" in labels
+
+
+# ── РФ-доступ за месяц: ссылки traffic_local (концепт «учёт РФ-трафика», этап 2) ──
+
+_GB = 1024 ** 3
+
+
+def _rf_client(services, make_active_client, name, tg_id, *, rf=(0, 0)):
+    """Профиль с разрешённым РФ-доступом и одним устройством; rf — (↑, ↓)
+    устройства за месяц, как их накопил бы опрос."""
+    c = make_active_client(name, tg_id=tg_id)
+    services.db.update_client_fields(c.id, routing_allowed=1)
+    dc = services.add_device(c.id, "Телефон")
+    if any(rf):
+        services.db.rf_add_bulk([(dc.device_id, *rf)])
+    return c, dc
+
+
+async def test_start_traffic_local_opens_rf_profiles_and_removes_the_command(
+        services, make_active_client, fake_bot):
+    """«РФ-доступ» с главной ведёт на экран по профилям, а не в потребление
+    (payload начинается с «traffic»): перепутай развилку — админ увидит не тот
+    экран. Команда /start из чата убирается, имя профиля — ссылка дальше."""
+    from awgbot.bot.callbacks import Menu
+    services.bot_username = "awg_test_bot"
+    c, _ = _rf_client(services, make_active_client, "Ксюша", 2101, rf=(_GB, 2 * _GB))
+    services.db.set_state("rf_month_rx", str(_GB))
+    services.db.set_state("rf_month_tx", str(2 * _GB))
+    msg = _amsg(fake_bot, "/start traffic_local")
+    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic_local"))
+    assert any(r[0] == "delete" for r in fake_bot.records), "команда /start traffic_local не удалена"
+    sent = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
+    assert sent, "экран не пришёл"
+    text, markup = sent[-1]
+    assert text.startswith("🇷🇺 <b>РФ-доступ за текущий месяц:</b> 3 ГБ (↑ 1 ГБ | ↓ 2 ГБ)"), text
+    assert "Потребление трафика" not in text, "открылся экран потребления вместо РФ"
+    assert (f'👤 <a href="https://t.me/awg_test_bot?start=traffic_local-{c.id}">Ксюша</a>: '
+            "3 ГБ (↑ 1 ГБ | ↓ 2 ГБ)") in text, text
+    buttons = [b for row in markup.inline_keyboard for b in row]
+    assert [(b.text, b.callback_data) for b in buttons] == [("⬅️ В меню", Menu(action="main").pack())]
+
+
+async def test_start_traffic_local_replaces_the_active_menu_in_place(
+        services, make_active_client, fake_bot):
+    """Экран РФ встаёт на место панели редактированием: иначе в чате два живых
+    меню, и «В меню» старой панели ведёт мимо."""
+    services.db.set_nav_message_id(ADMIN, 777)
+    msg = _amsg(fake_bot, "/start traffic_local")
+    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic_local"))
+    edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
+    assert edits and "РФ-доступ за текущий месяц" in edits[-1][2], edits
+    assert not any(kind == "answer" for kind, _, _ in msg.sent), "экран ушёл новым сообщением"
+    assert any(r[0] == "delete" for r in fake_bot.records), "команда не удалена"
+
+
+async def test_start_traffic_local_client_opens_devices_and_back_leads_to_rf_profiles(
+        services, make_active_client, fake_bot):
+    """Имя профиля на экране РФ → разбивка по его устройствам; «Назад» — на
+    экран РФ по профилям, а не в обычное потребление."""
+    from awgbot.bot.callbacks import Menu
+    from awgbot.bot.handlers.admin.panel import admin_rf_profiles
+    c, _ = _rf_client(services, make_active_client, "Ксюша", 2102, rf=(_GB, 3 * _GB))
+    msg = _amsg(fake_bot, f"/start traffic_local-{c.id}")
+    await ah.admin_start(msg, services, FakeState(), command=_cmd(f"traffic_local-{c.id}"))
+    assert any(r[0] == "delete" for r in fake_bot.records), "команда не удалена"
+    sent = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
+    assert sent, "экран не пришёл"
+    text, markup = sent[-1]
+    assert text.startswith("🇷🇺 <b>РФ-доступ профиля Ксюша за текущий месяц:</b>"), text
+    assert "🔴 Телефон: 4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)" in text, text
+    buttons = [b for row in markup.inline_keyboard for b in row]
+    assert [(b.text, b.callback_data) for b in buttons] == \
+        [("⬅️ Назад", Menu(action="traffic_local").pack())], "«Назад» ведёт не на экран РФ"
+    cb = FakeCallback(message=msg, user_id=ADMIN, bot=fake_bot)
+    await admin_rf_profiles(cb, services)
+    back = [t for kind, t, _ in msg.sent if kind == "edit_text"]
+    assert back and back[-1].startswith("🇷🇺 <b>РФ-доступ за текущий месяц:</b>"), back
+
+
+async def test_start_traffic_local_for_missing_profile_says_not_found(services, fake_bot):
+    """Ссылка из старого экрана на удалённый профиль — внятный ответ, а не
+    пустой экран или исключение в хендлере; команда всё равно убирается."""
+    msg = _amsg(fake_bot, "/start traffic_local-999999")
+    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic_local-999999"))
+    assert any(r[0] == "delete" for r in fake_bot.records), "команда не удалена"
+    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
+    assert sent and sent[-1] == "Профиль не найден.", sent
+
+
+async def test_start_traffic_local_with_garbage_suffix_falls_back_to_the_panel(services, fake_bot):
+    """«traffic_local-abc» — не ссылка бота: обычный /start с панелью, а не
+    экран РФ с чужим id."""
+    msg = _amsg(fake_bot, "/start traffic_local-abc")
+    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic_local-abc"))
+    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
+    assert sent and "Панель администратора" in sent[-1], sent
+    assert not any("РФ-доступ профиля" in t for t in sent)

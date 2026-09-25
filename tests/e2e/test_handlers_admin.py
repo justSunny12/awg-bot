@@ -332,14 +332,26 @@ async def test_panel_rf_line_marks_broken_accounting_and_keeps_numbers(services,
     assert "nft" not in line, "текст ошибки ядра в шапке админа"
 
 
-async def test_panel_rf_line_has_no_link_in_stage_one(services, fake_bot, fake_routing, monkeypatch):
-    """До этапа 2 экрана РФ нет — ссылка вела бы в никуда."""
+async def test_panel_rf_line_links_to_the_rf_screen(services, fake_bot, fake_routing, monkeypatch):
+    """Этап 2: «РФ-доступ» на главной — ссылка на экран по профилям. Пропадёт
+    ссылка — до разбивки РФ по людям админ из главной не доберётся."""
     services.bot_username = "awg_test_bot"
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
     text = await _panel_text(services, fake_bot)
-    line = _rf_line(text)
-    assert line and "href" not in line and "<a" not in line
-    assert "start=traffic" in text, "ссылка потребления пропала"
+    lines = [ln for ln in text.splitlines() if ln.startswith("└ 🇷🇺 ")]
+    assert lines and lines[0] == ('└ 🇷🇺 <a href="https://t.me/awg_test_bot?start=traffic_local">'
+                                  'РФ-доступ</a>: 1 ГБ (↑ 1 ГБ | ↓ 0 ГБ)'), text
+    assert "start=traffic\"" in text, "ссылка потребления пропала"
+
+
+async def test_panel_rf_line_is_plain_text_without_bot_username(services, fake_bot, fake_routing,
+                                                               monkeypatch):
+    """Имя бота ещё не известно — ссылку собрать не из чего: подпись простым
+    текстом, а не битая ссылка «t.me/?start=…»."""
+    services.bot_username = ""
+    _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
+    line = _rf_line(await _panel_text(services, fake_bot))
+    assert line == "└ 🇷🇺 РФ-доступ: 1 ГБ (↑ 1 ГБ | ↓ 0 ГБ)", line
 
 
 async def test_client_and_guest_home_do_not_change_with_rf_data(services, fake_bot, fake_routing,

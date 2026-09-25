@@ -279,3 +279,290 @@ async def test_delete_client_keeps_profile_when_peer_stays_on_server(
     assert services.db.get_device(dc.device_id) is not None
     said = " ".join(str(s) for s in nav.sent)
     assert "НЕ удалён" in said and "телефон" in said
+
+
+# ── РФ-доступ в карточках, списках и на экранах РФ (концепт «учёт РФ-трафика», этап 2) ──
+# Одно правило показа на все места: профилю строка положена, если ему разрешён
+# РФ-доступ или за месяц уже что-то прошло; устройству — то же по владельцу,
+# кроме шлюза. Расхождение между местами — админ видит РФ в карточке и не
+# находит его в списке (или наоборот).
+
+GB = 1024 ** 3
+_RF_PREFIX = "└ 🇷🇺 РФ-доступ: "
+
+
+def _cmd(args):
+    from aiogram.filters import CommandObject
+    return CommandObject(prefix="/", command="start", args=args)
+
+
+def _rf_lines(text: str) -> list[str]:
+    return [ln for ln in text.splitlines() if ln.startswith(_RF_PREFIX)]
+
+
+def _entry(text: str, marker: str) -> str:
+    """Запись списка (между пустыми строками), где встречается marker."""
+    hits = [b for b in text.split("\n\n") if marker in b]
+    assert hits, f"{marker!r} нет в списке:\n{text}"
+    return hits[0]
+
+
+def _profile(services, make_active_client, name, tg_id, *, allowed, rf=(0, 0)):
+    c = make_active_client(name, tg_id=tg_id)
+    if allowed:
+        services.db.update_client_fields(c.id, routing_allowed=1)
+    dc = services.add_device(c.id, "Телефон")
+    if any(rf):
+        services.db.rf_add_bulk([(dc.device_id, *rf)])
+    return services.db.get_client(c.id), dc.device_id
+
+
+async def _deep(services, bot, payload: str) -> str:
+    """Экран по ссылке /start <payload>: первый раз приходит новым сообщением,
+    дальше — правкой живого меню."""
+    seen = len(bot.records)
+    msg = _amsg(bot, f"/start {payload}")
+    await ah.admin_start(msg, services, FakeState(), command=_cmd(payload))
+    shown = [t for kind, t, _ in msg.sent if kind == "answer"]
+    shown += [r[2] for r in bot.records[seen:] if r[0] == "edit_message_text"]
+    assert shown, f"экран по ссылке {payload} не отрисован"
+    return shown[-1]
+
+
+async def _client_card(services, bot, client_id: int) -> str:
+    cb, nav = _acb(bot)
+    await ah.client_open(cb, ClientCB(action="open", client_id=client_id), services)
+    return last_screen(nav)[0]
+
+
+async def _device_card(services, bot, device_id: int) -> str:
+    cb, nav = _acb(bot)
+    await ah.admin_device_open(cb, DeviceCB(action="open", device_id=device_id), services)
+    return last_screen(nav)[0]
+
+
+@pytest.mark.parametrize("enabled, allowed, rf, expect", [
+    (True, True, (0, 0), "0 ГБ (↑ 0 ГБ | ↓ 0 ГБ)"),                 # разрешён и 0 → строка
+    (False, True, (0, 0), None),                                      # разрешён, 0, функция выключена → нет
+    (True, False, (0, 0), None),                                      # не разрешён и 0 → нет
+    (True, False, (GB, 3 * GB), "4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)"),            # не разрешён, но было → строка
+    (False, True, (GB, 3 * GB), "4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)"),            # выключили, байты остались → строка
+])
+async def test_profile_rf_line_follows_one_rule_in_card_list_and_rf_screen(
+        services, fake_bot, fake_routing, make_active_client, enabled, allowed, rf, expect):
+    """Профиль: строка РФ в карточке (сразу под потреблением профиля), под его
+    строкой в списке потребления и строкой на экране РФ — везде по одному
+    правилу. Не разрешён (или функция на сервере не развёрнута/выключена) и
+    ноль — строки нет нигде: иначе у профилей висит «РФ-доступ: 0 ГБ»,
+    которого у них быть не может."""
+    fake_routing.enabled = enabled
+    c, _ = _profile(services, make_active_client, "Ксюша", 6301, allowed=allowed, rf=rf)
+
+    card = await _client_card(services, fake_bot, c.id)
+    lines = card.splitlines()
+    if expect is None:
+        assert _rf_lines(card) == [], card
+    else:
+        assert _rf_lines(card) == [_RF_PREFIX + expect], card
+        head = next(i for i, ln in enumerate(lines) if ln.startswith("Потребление профиля за месяц"))
+        assert lines[head + 1] == _RF_PREFIX + expect, "строка РФ не сразу под потреблением профиля"
+
+    entry = _entry(await _deep(services, fake_bot, "traffic"), "Ксюша")
+    assert _rf_lines(entry) == ([] if expect is None else [_RF_PREFIX + expect]), entry
+
+    screen = await _deep(services, fake_bot, "traffic_local")
+    if expect is None:
+        assert "Ксюша" not in screen, screen
+    else:
+        assert f"👤 Ксюша: {expect}" in screen, screen
+
+
+@pytest.mark.parametrize("enabled, allowed, rf, expect", [
+    (True, True, (0, 0), "0 ГБ (↑ 0 ГБ | ↓ 0 ГБ)"),
+    (False, True, (0, 0), None),
+    (True, False, (0, 0), None),
+    (True, False, (GB, GB), "2 ГБ (↑ 1 ГБ | ↓ 1 ГБ)"),
+    (False, True, (GB, GB), "2 ГБ (↑ 1 ГБ | ↓ 1 ГБ)"),
+])
+async def test_device_rf_line_follows_one_rule_in_card_list_and_rf_screen(
+        services, fake_bot, fake_routing, make_active_client, enabled, allowed, rf, expect):
+    """Устройство: карточка (под «Потребление»), разбивка потребления профиля
+    и экран РФ профиля — по одному правилу от владельца, состояния функции и
+    собственных байт."""
+    fake_routing.enabled = enabled
+    c, did = _profile(services, make_active_client, "Ксюша", 6302, allowed=allowed, rf=rf)
+
+    card = await _device_card(services, fake_bot, did)
+    lines = card.splitlines()
+    if expect is None:
+        assert _rf_lines(card) == [], card
+    else:
+        assert _rf_lines(card) == [_RF_PREFIX + expect], card
+        head = next(i for i, ln in enumerate(lines) if ln.startswith("Потребление:"))
+        assert lines[head + 1] == _RF_PREFIX + expect, "строка РФ не сразу под потреблением"
+
+    entry = _entry(await _deep(services, fake_bot, f"traffic-{c.id}"), "Телефон")
+    assert _rf_lines(entry) == ([] if expect is None else [_RF_PREFIX + expect]), entry
+
+    screen = await _deep(services, fake_bot, f"traffic_local-{c.id}")
+    if expect is None:
+        assert "Телефон" not in screen and "Устройств с РФ-доступом нет." in screen, screen
+    else:
+        assert f"🔴 Телефон: {expect}" in screen, screen
+
+
+@pytest.fixture()
+def rf_gateway(services, make_active_client, monkeypatch):
+    """Профиль админа с телефоном и устройством-шлюзом; у обоих РФ-счётчики
+    (у шлюза — как если бы байты на него всё-таки легли)."""
+    monkeypatch.setattr(services, "gateway_ping", lambda slot: None)
+    monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: "down")
+    admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
+    phone = services.add_device(admin.id, "phone")
+    pi = services.add_device(admin.id, "NASPi")
+    services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
+    services.db.rf_add_bulk([(phone.device_id, GB, GB), (pi.device_id, 5 * GB, 5 * GB)])
+    return admin, phone.device_id, pi.device_id
+
+
+async def test_gateway_device_gets_no_rf_line_anywhere(services, fake_bot, rf_gateway):
+    """Шлюз — не потребитель: его строки РФ нет ни в карточке, ни в
+    разбивке, ни на экране РФ профиля, даже если байты на нём есть."""
+    admin, phone_id, pi_id = rf_gateway
+    card = await _device_card(services, fake_bot, pi_id)
+    assert "🛰" in card and _rf_lines(card) == [], card
+    breakdown = await _deep(services, fake_bot, f"traffic-{admin.id}")
+    assert _rf_lines(_entry(breakdown, "NASPi")) == [], breakdown
+    assert _rf_lines(_entry(breakdown, "phone")) == [_RF_PREFIX + "2 ГБ (↑ 1 ГБ | ↓ 1 ГБ)"], breakdown
+    screen = await _deep(services, fake_bot, f"traffic_local-{admin.id}")
+    assert "NASPi" not in screen and "phone: 2 ГБ (↑ 1 ГБ | ↓ 1 ГБ)" in screen, screen
+
+
+async def test_profile_rf_sum_leaves_gateway_devices_out(services, fake_bot, rf_gateway):
+    """РФ профиля — сумма его устройств без шлюзов: карточка, список
+    потребления и экран РФ показывают 2 ГБ телефона, а не 12 ГБ со шлюзом."""
+    admin, _, _ = rf_gateway
+    want = _RF_PREFIX + "2 ГБ (↑ 1 ГБ | ↓ 1 ГБ)"
+    assert _rf_lines(await _client_card(services, fake_bot, admin.id)) == [want]
+    assert _rf_lines(_entry(await _deep(services, fake_bot, "traffic"), "Админ")) == [want]
+    assert "👤 Админ: 2 ГБ (↑ 1 ГБ | ↓ 1 ГБ)" in await _deep(services, fake_bot, "traffic_local")
+
+
+async def test_rf_screen_lists_admin_first_and_is_empty_without_profiles(
+        services, fake_bot, fake_routing, make_active_client):
+    """Пусто — своя фраза, а не голый заголовок; дальше админ первым, как в
+    списке клиентов, — ему разрешено всегда (функция развёрнута и включена)."""
+    fake_routing.enabled = True
+    empty = await _deep(services, fake_bot, "traffic_local")
+    assert empty.endswith("\n\nПрофилей с РФ-доступом нет."), empty
+    _profile(services, make_active_client, "Алёна", 6303, allowed=True)
+    services.ensure_admin_client()
+    screen = await _deep(services, fake_bot, "traffic_local")
+    rows = [b for b in screen.split("\n\n") if b.startswith("👤 ")]
+    assert len(rows) == 2 and "Алёна" in rows[1], screen
+    assert "Профилей с РФ-доступом нет." not in screen
+
+
+async def test_admin_gets_no_zero_rf_line_on_a_server_without_the_feature(
+        services, fake_bot, fake_routing):
+    """Админу РФ-доступ разрешён всегда; но на сервере без шлюзов (функция не
+    развёрнута или выключена) вечное «РФ-доступ: 0 ГБ» в его карточке, в
+    потреблении и на экране РФ — шум про то, чего нет."""
+    fake_routing.enabled = False
+    services.ensure_admin_client()
+    admin = services.admin_client()
+    services.add_device(admin.id, "phone")
+    assert _rf_lines(await _client_card(services, fake_bot, admin.id)) == []
+    assert _rf_lines(await _deep(services, fake_bot, "traffic")) == []
+    assert _rf_lines(await _deep(services, fake_bot, f"traffic-{admin.id}")) == []
+    screen = await _deep(services, fake_bot, "traffic_local")
+    assert "👤 " not in screen and "Профилей с РФ-доступом нет." in screen, screen
+
+
+def _rf_total(services, rx: int, tx: int, since: str = ""):
+    services.db.set_state("rf_month_rx", str(rx))
+    services.db.set_state("rf_month_tx", str(tx))
+    services.db.set_state("rf_acct_since", since)
+
+
+_OUTSIDE = "Вне профилей: "
+
+
+async def test_rf_screen_shows_outside_as_total_minus_devices(services, fake_bot, make_active_client):
+    """«Вне профилей» — итог сервера минус сумма по устройствам: без неё сумма
+    строк не сходится с заголовком, и админ ищет ошибку в счёте."""
+    _profile(services, make_active_client, "Ксюша", 6304, allowed=True, rf=(GB, GB))
+    extra = int(0.22 * GB)
+    _rf_total(services, GB, GB + extra)
+    screen = await _deep(services, fake_bot, "traffic_local")
+    assert screen.startswith("🇷🇺 <b>РФ-доступ за текущий месяц:</b> 2.22 ГБ"), screen
+    assert screen.endswith("\n\nВне профилей: 0.22 ГБ — удалённые устройства и первые минуты новых."), \
+        screen
+
+
+@pytest.mark.parametrize("extra, shown", [
+    (0, False),                      # сошлось — строки нет
+    (GB // 100 - 1, False),          # меньше 0.01 ГБ — шум округления, не показываем
+    (GB // 100, True),               # ровно 0.01 ГБ — уже видно
+])
+async def test_rf_screen_outside_threshold(services, fake_bot, make_active_client, extra, shown):
+    _profile(services, make_active_client, "Ксюша", 6305, allowed=True, rf=(GB, GB))
+    _rf_total(services, GB, GB + extra)
+    screen = await _deep(services, fake_bot, "traffic_local")
+    assert (_OUTSIDE in screen) is shown, screen
+    if shown:
+        assert "Вне профилей: 0.01 ГБ —" in screen, screen
+
+
+async def test_rf_screen_hides_outside_when_devices_exceed_total(services, fake_bot, make_active_client):
+    """Устройства насчитали больше итога (итог сбросили, строки — ещё нет):
+    «вне профилей» не уходит в минус и не показывается."""
+    _profile(services, make_active_client, "Ксюша", 6306, allowed=True, rf=(3 * GB, 3 * GB))
+    _rf_total(services, GB, GB)
+    screen = await _deep(services, fake_bot, "traffic_local")
+    assert _OUTSIDE not in screen, screen
+
+
+async def test_deleted_device_moves_its_rf_into_outside(services, fake_bot, make_active_client):
+    """Устройство удалили в середине месяца: его РФ остаётся в итоге сервера и
+    переезжает в «вне профилей», заголовок не меняется."""
+    c = make_active_client("Ксюша", tg_id=6307)
+    services.db.update_client_fields(c.id, routing_allowed=1)
+    keep = services.add_device(c.id, "Телефон")
+    gone = services.add_device(c.id, "Ноут")
+    services.db.rf_add_bulk([(keep.device_id, GB, GB), (gone.device_id, GB, GB)])
+    _rf_total(services, 2 * GB, 2 * GB)
+    before = await _deep(services, fake_bot, "traffic_local")
+    assert _OUTSIDE not in before and "👤 Ксюша: 4 ГБ" in before, before
+    services.remove_device(gone.device_id)
+    after = await _deep(services, fake_bot, "traffic_local")
+    assert after.startswith("🇷🇺 <b>РФ-доступ за текущий месяц:</b> 4 ГБ"), after
+    assert "👤 Ксюша: 2 ГБ" in after, after
+    assert "Вне профилей: 2 ГБ —" in after, after
+
+
+async def test_rf_screen_shows_start_date_only_in_the_start_month(services, fake_bot):
+    """«Учёт — с …» — только в месяце, когда учёт начался: там итог неполный.
+    В следующих месяцах дата — шум: месяц посчитан целиком."""
+    from datetime import timedelta
+    from awgbot.util import timeutil
+    now = timeutil.now()
+    _rf_total(services, 0, 0, since=timeutil.to_iso(now))
+    lines = (await _deep(services, fake_bot, "traffic_local")).split("\n")
+    assert lines[1] == f"Учёт — с {now.strftime('%d.%m')}.", lines
+
+    _rf_total(services, 0, 0, since=timeutil.to_iso(now - timedelta(days=40)))
+    screen = await _deep(services, fake_bot, "traffic_local")
+    assert "Учёт — с" not in screen, screen
+
+    _rf_total(services, 0, 0, since="")
+    screen = await _deep(services, fake_bot, "traffic_local")
+    assert "Учёт — с" not in screen, screen
+
+
+async def test_rf_screen_survives_garbage_in_start_date(services, fake_bot):
+    """Битая отметка начала учёта в state — экран без даты, а не исключение
+    в хендлере (админ жмёт ссылку — и ничего)."""
+    _rf_total(services, GB, 0, since="не дата")
+    screen = await _deep(services, fake_bot, "traffic_local")
+    assert screen.startswith("🇷🇺 <b>РФ-доступ за текущий месяц:</b> 1 ГБ") and "Учёт — с" not in screen

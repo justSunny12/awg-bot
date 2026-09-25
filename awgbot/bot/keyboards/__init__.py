@@ -32,7 +32,8 @@ from .admin import (
     admin_add_device_choice, pick_client_for_add_device, admin_main, admin_clients,
     admin_client_actions, admin_client_back, admin_client_device_list,
     unassigned_devices, reassign_targets, reassign_addslot, confirm_lower_limit,
-    traffic_profiles_kb, expiring_kb, online_devices_kb, traffic_devices_kb)
+    traffic_profiles_kb, expiring_kb, online_devices_kb, traffic_devices_kb,
+    rf_profiles_kb, rf_devices_kb)
 from .settings import (
     settings_root, settings_back, settings_server, private_dns_choices,
     private_dns_offer_kb, migration_prepare_confirm, migration_generation_pending,
@@ -76,7 +77,8 @@ __all__ = [
     "admin_main", "admin_clients", "admin_client_actions", "admin_client_back",
     "admin_client_device_list", "unassigned_devices", "reassign_targets",
     "reassign_addslot", "confirm_lower_limit", "traffic_profiles_kb", "expiring_kb",
-    "online_devices_kb", "traffic_devices_kb", "settings_root", "settings_back",
+    "online_devices_kb", "traffic_devices_kb", "rf_profiles_kb", "rf_devices_kb",
+    "settings_root", "settings_back",
     "settings_server", "private_dns_choices", "private_dns_offer_kb",
     "migration_prepare_confirm", "migration_generation_pending", "settings_firewall", "ssh_port_finisher",
     "settings_notify", "CLIENT_EVENT_LABELS", "settings_notify_clients",

@@ -61,6 +61,13 @@ def _updown(rx: int, tx: int) -> str:
     return f"(↑ {human_bytes(rx)} | ↓ {human_bytes(tx)})"
 
 
+def rf_line(rx: int, tx: int) -> str:
+    """Строка РФ-части под строкой потребления (карточки, списки, главная):
+    «└ 🇷🇺 РФ-доступ: 7.1 ГБ (↑ 0.7 ГБ | ↓ 6.4 ГБ)»."""
+    from .routing import ROUTING_NAME
+    return f"└ 🇷🇺 {ROUTING_NAME}: {human_bytes(int(rx) + int(tx))} {_updown(rx, tx)}"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Потребление (в UI слово «трафик» заменено на «потребление», чтобы не пугать).
 # Расход — автоформатом human_bytes; лимит — в ГБ с 2 знаками. Клиент/друг видят
@@ -182,10 +189,11 @@ def device_line(dev) -> str:
     return f"{device_label(dev)} ({plain_ip(dev.address)}), последний коннект: {last}"
 
 
-def device_card_text(dev, *, for_admin: bool) -> str:
+def device_card_text(dev, *, for_admin: bool, rf: tuple[int, int] | None = None) -> str:
     """Карточка одного устройства: строка + потребление + причины блокировки.
     Причины фильтруются по роли: тихий админ-блок пользователю не показывается
-    (для него устройство выглядит рабочим)."""
+    (для него устройство выглядит рабочим). rf — РФ-часть под потреблением,
+    только админу и только когда строка устройству положена (services.rf_device_card)."""
     from awgbot.core import blocks
     parts = [device_line(dev)]
     mask = int(dev.block_reason)
@@ -193,6 +201,8 @@ def device_card_text(dev, *, for_admin: bool) -> str:
     if for_admin:
         parts.append(consumption_line_admin(
             dev.traffic_rx_month, dev.traffic_tx_month, dev.traffic_limit))
+        if rf is not None:
+            parts.append(rf_line(*rf))
     else:
         used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
         parts.append(consumption_line(used, dev.traffic_limit, blocked=traffic_blocked))

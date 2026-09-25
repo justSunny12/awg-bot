@@ -6,7 +6,7 @@ from awgbot.util import timeutil
 
 from .fmt import (
     _e, human_bytes, _updown, gb_str, _limit_devices_str, device_label, plain_ip,
-    _fmt_age, device_emoji)
+    _fmt_age, device_emoji, rf_line, _BYTES_PER_GB)
 from .migration import migration_panel_line
 from .routing import routing_status_line, routing_admin_status_line, ROUTING_NAME
 
@@ -19,19 +19,57 @@ from .routing import routing_status_line, routing_admin_status_line, ROUTING_NAM
 from .fmt import deep_link as _deep_link
 
 
+RF_PAYLOAD = "traffic_local"     # /start traffic_local[-<id>] — экраны РФ-доступа
+
+
 def _traffic_triplet(rx: int, tx: int) -> str:
     return f"{human_bytes(rx + tx)} {_updown(rx, tx)}"
 
 
+def _with_rf(line: str, rf) -> str:
+    return line + ("\n" + rf_line(*rf) if rf else "")
+
+
 def traffic_profiles_text(rows, bot_username: str = "") -> str:
     """Потребление за месяц по профилям; имя профиля — deep-link на разбивку по
-    его устройствам."""
+    его устройствам. Под строкой профиля — его РФ-часть, если положена."""
     head = "📊 <b>Потребление трафика за текущий месяц:</b>"
     if not rows:
         return head + _LIST_SEP + "Профилей нет."
     return head + _LIST_SEP + _LIST_SEP.join(
-        f"👤 {_deep_link(bot_username, f'traffic-{c.id}', c.name)}: {_traffic_triplet(rx, tx)}"
-        for c, rx, tx in rows)
+        _with_rf(f"👤 {_deep_link(bot_username, f'traffic-{c.id}', c.name)}: {_traffic_triplet(rx, tx)}", rf)
+        for c, rx, tx, rf in rows)
+
+
+def rf_profiles_text(data: dict, bot_username: str = "") -> str:
+    """РФ-доступ за месяц по профилям (концепт «учёт РФ-трафика», этап 2):
+    итог сервера, дата начала учёта в месяце старта, строки профилей ссылками
+    на разбивку по устройствам, «вне профилей» — когда сумма строк не сходится
+    с итогом на величину, которую видно."""
+    head = (f"🇷🇺 <b>{ROUTING_NAME} за текущий месяц:</b> "
+            f"{_traffic_triplet(data['rx'], data['tx'])}")
+    if data.get("since"):
+        try:
+            head += f"\nУчёт — с {timeutil.parse_iso(data['since']).strftime('%d.%m')}."
+        except ValueError:
+            pass
+    rows = data.get("rows") or []
+    body = (_LIST_SEP.join(
+        f"👤 {_deep_link(bot_username, f'{RF_PAYLOAD}-{c.id}', c.name)}: {_traffic_triplet(rx, tx)}"
+        for c, rx, tx in rows) if rows else "Профилей с РФ-доступом нет.")
+    out = head + _LIST_SEP + body
+    if int(data.get("outside") or 0) >= _BYTES_PER_GB // 100:
+        out += (_LIST_SEP + f"Вне профилей: {human_bytes(data['outside'])} — "
+                "удалённые устройства и первые минуты новых.")
+    return out
+
+
+def rf_devices_text(client_name: str, rows) -> str:
+    head = f"🇷🇺 <b>{ROUTING_NAME} профиля {_e(client_name)} за текущий месяц:</b>"
+    if not rows:
+        return head + _LIST_SEP + "Устройств с РФ-доступом нет."
+    return head + _LIST_SEP + _LIST_SEP.join(
+        f"{device_label(d, for_admin=True)}: {_traffic_triplet(rx, tx)}" for d, rx, tx in rows)
 
 
 # Списки с эмодзи в начале строк: подряд строки визуально налезают друг на
@@ -58,7 +96,8 @@ def traffic_devices_text(client_name: str, rows) -> str:
         return head + _LIST_SEP + "Устройств нет."
     # та же метка, что в списке устройств у админа: онлайн, блок, «не ботом»
     return head + _LIST_SEP + _LIST_SEP.join(
-        f"{device_label(d, for_admin=True)}: {_traffic_triplet(rx, tx)}" for d, rx, tx in rows)
+        _with_rf(f"{device_label(d, for_admin=True)}: {_traffic_triplet(rx, tx)}", rf)
+        for d, rx, tx, rf in rows)
 
 
 def expiring_text(rows, bot_username: str = "") -> str:
@@ -91,11 +130,13 @@ def _hostname() -> str:
     return _HOSTNAME
 
 
-def rf_traffic_line(rf: dict) -> str:
+def rf_traffic_line(rf: dict, bot_username: str = "") -> str:
     """Вторая строка группы потребления: РФ-часть — то, что сервер выпустил
-    через шлюзы (концепт «учёт РФ-трафика»). Без ссылки до этапа 2."""
+    через шлюзы (концепт «учёт РФ-трафика»); подпись — deep-link на экран
+    РФ-доступа по профилям."""
     rx, tx = int(rf.get("rx") or 0), int(rf.get("tx") or 0)
-    line = f"└ 🇷🇺 {ROUTING_NAME}: {human_bytes(rx + tx)} {_updown(rx, tx)}"
+    # тот же вид, что rf_line в карточках и списках, но подпись — ссылкой
+    line = rf_line(rx, tx).replace(ROUTING_NAME, _deep_link(bot_username, RF_PAYLOAD, ROUTING_NAME), 1)
     if rf.get("error"):
         line += " · ⚠️ учёт трафика РФ-доступа не идёт"
     return line
@@ -146,7 +187,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         label = _deep_link(bot_username, "traffic", "📊 Потребление за месяц (все)")
         line = f"{label}: {human_bytes(rx + tx)} {_updown(rx, tx)}"
         if rf and rf.get("show"):
-            line += "\n" + rf_traffic_line(rf)
+            line += "\n" + rf_traffic_line(rf, bot_username)
         groups.append(line)
     mig = migration_panel_line(migration)
     if mig:

@@ -374,8 +374,11 @@ TRANSFER_FRIEND_WARNING = (
 )
 
 
-def client_card(client, devices, traffic, online: bool, *, for_admin: bool) -> str:
-    """Полная карточка: имя, подписка, онлайн, потребление, устройства."""
+def client_card(client, devices, traffic, online: bool, *, for_admin: bool,
+                rf: tuple[int, int] | None = None) -> str:
+    """Полная карточка: имя, подписка, онлайн, потребление, устройства. rf —
+    РФ-часть под потреблением: только админу и только когда профилю положена
+    (services.client_card_data решает)."""
     head = f"👤 {_e(client.name)}"
     if for_admin and client.activation_status == ActivationStatus.PENDING:
         head += "  ⏳ ждёт активации"
@@ -387,6 +390,9 @@ def client_card(client, devices, traffic, online: bool, *, for_admin: bool) -> s
     tr = client_total_line(
         traffic["rx_month"], traffic["tx_month"],
         client.traffic_limit, client.bonus_bytes, for_admin=for_admin)
+    if for_admin and rf is not None:
+        from .fmt import rf_line
+        tr += "\n" + rf_line(*rf)
 
     lim = client.device_limit
     limit_line = (f"Устройств: {len(devices)} (без ограничения)" if lim == 0

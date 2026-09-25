@@ -80,7 +80,8 @@ from .client import (
     pause_warning, pause_emergency_code, pause_entered_summary, pause_unavailable,
     pause_limit_exhausted, pause_resume_ask, pause_resumed_self)
 from .admin import (
-    traffic_profiles_text, rf_traffic_line, online_devices_text, traffic_devices_text, expiring_text,
+    traffic_profiles_text, rf_traffic_line, rf_profiles_text, rf_devices_text, RF_PAYLOAD,
+    online_devices_text, traffic_devices_text, expiring_text,
     admin_panel, CLIENT_DELETE_PARTIAL, admin_bootstrap_device, reassign_donor_notice,
     reassign_recipient_notice, reassign_recipient_notice_with_slot,
     activated_admin_notice, client_created_report, LIMIT_REACHED, EXTEND_KEEP_QUESTION,
@@ -175,7 +176,8 @@ __all__ = [
     "grace_activated_client", "GRACE_STALE", "grace_activated_admin", "pause_ask",
     "pause_warning", "pause_emergency_code", "pause_entered_summary",
     "pause_unavailable", "pause_limit_exhausted", "pause_resume_ask",
-    "pause_resumed_self", "traffic_profiles_text", "rf_traffic_line", "online_devices_text",
+    "pause_resumed_self", "traffic_profiles_text", "rf_traffic_line", "rf_profiles_text",
+    "rf_devices_text", "RF_PAYLOAD", "online_devices_text",
     "traffic_devices_text", "expiring_text", "admin_panel", "CLIENT_DELETE_PARTIAL",
     "admin_bootstrap_device", "reassign_donor_notice", "reassign_recipient_notice",
     "reassign_recipient_notice_with_slot", "activated_admin_notice",

@@ -120,3 +120,35 @@ async def test_created_for_friend_finisher(services, fake_bot, make_active_clien
     assert fin == ("✅ Устройство «Другу» создано для друга.\n"
                    "Потребление устройства не ограничено в рамках твоего лимита профиля.\n"
                    "Количество устройств: 1/3")
+
+
+async def test_holder_and_guest_cards_do_not_show_rf(services, fake_bot, make_active_client):
+    """Переданное устройство с РФ-байтами владельца: ни клиент-держатель, ни
+    гость по ссылке строки РФ в карточке не видят — это сведения для админа."""
+    from awgbot.bot.callbacks import FriendCB
+    from awgbot.bot.handlers import friend as fh
+    owner = make_active_client(tg_id=7200, name="Вася", device_limit=3)
+    services.db.update_client_fields(owner.id, routing_allowed=1)
+    holder = make_active_client(tg_id=7201, name="Петя", device_limit=2)
+    to_holder = services.add_device(owner.id, "Ноут")
+    to_guest = services.add_device(owner.id, "Планшет")
+    assert services.activate_friend(services.make_device_friendly(to_holder.device_id), tg_id=7201).ok
+    guest = services.activate_friend(services.make_device_friendly(to_guest.device_id), tg_id=97201)
+    assert guest.ok, guest.reason
+
+    async def cards():
+        cb, nav = _cb(fake_bot, 7201)
+        await ch.device_open(cb, DeviceCB(action="open", device_id=to_holder.device_id),
+                             services.db.get_client(holder.id), services)
+        held = last_screen(nav)
+        cb, nav = _cb(fake_bot, 97201)
+        await fh.friend_open(cb, FriendCB(action="open", device_id=to_guest.device_id),
+                             guest.holder, services)
+        return held, last_screen(nav)
+
+    before = await cards()
+    services.db.rf_add_bulk([(to_holder.device_id, 1024 ** 3, 1024 ** 3),
+                             (to_guest.device_id, 1024 ** 3, 1024 ** 3)])
+    after = await cards()
+    assert after == before, "карточка держателя или гостя изменилась от РФ-данных"
+    assert all("🇷🇺" not in text for text, _ in after), after

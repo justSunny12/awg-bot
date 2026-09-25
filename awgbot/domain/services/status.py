@@ -18,6 +18,12 @@ from awgbot.domain.services.types import Notification
 log = logging.getLogger("awgbot.services")
 
 
+def _dev_rf(dev) -> tuple[int, int]:
+    """РФ-часть потребления устройства за месяц из его строки трафика."""
+    t = getattr(dev, "traffic", None)
+    return (int(getattr(t, "rf_rx_month", 0) or 0), int(getattr(t, "rf_tx_month", 0) or 0))
+
+
 class StatusMixin:
     # ── потребление за месяц: по профилям и по устройствам ───────────────────
 
@@ -87,12 +93,15 @@ class StatusMixin:
         devices = self.db.list_devices(client_id)
         progress = self.migration_client_progress(client_id) if self.migration_running() else None
         rt_visible = self.routing_client_visible(client)
+        t_rf = self.db.get_client_rf(client_id)
+        rf = (int(t_rf["rx"]), int(t_rf["tx"]))
         return {
             "client": client, "devices": devices,
             "traffic": self.db.get_client_traffic(client_id),
             "online": self._devices_online(devices),
             "progress": progress, "rt_visible": rt_visible,
             "rt_on": self.routing_profile_on(client_id) if rt_visible else False,
+            "rf": rf if self.rf_client_visible(client, rf) else None,
         }
 
     def client_info_data(self, client_id: int) -> Optional[dict]:
@@ -135,19 +144,94 @@ class StatusMixin:
         return {d.client_id for d, _ in self.online_devices()}
 
     def traffic_by_profile(self) -> list[tuple]:
-        """[(client, rx, tx)] за календарный месяц. Админ первым, остальные по
-        имени — тот же порядок, что в списке клиентов."""
+        """[(client, rx, tx, rf)] за календарный месяц. Админ первым, остальные
+        по имени — тот же порядок, что в списке клиентов. rf — (rx, tx) РФ-части
+        под строкой профиля или None, если строка ему не положена."""
+        by = self.db.rf_by_client()
         out = []
         for c in self.db.list_clients(admin_first_tg=config.ADMIN_ID):
             t = self.db.get_client_traffic(c.id)
-            out.append((c, int(t["rx_month"]), int(t["tx_month"])))
+            rf = by.get(c.id, (0, 0))
+            out.append((c, int(t["rx_month"]), int(t["tx_month"]),
+                        rf if self.rf_client_visible(c, rf) else None))
         return out
 
     def traffic_by_device(self, client_id: int) -> list[tuple]:
-        """[(device, rx, tx)] за месяц по устройствам профиля — по одной строке
-        на устройство (list_devices сам решает, какую из пары показать)."""
-        return [(d, int(d.traffic.rx_month), int(d.traffic.tx_month))
+        """[(device, rx, tx, rf)] за месяц по устройствам профиля — по одной
+        строке на устройство (list_devices сам решает, какую из пары показать);
+        rf — как у профилей."""
+        owner = self.db.get_client(client_id)
+        return [(d, int(d.traffic.rx_month), int(d.traffic.tx_month),
+                 _dev_rf(d) if self.rf_device_visible(d, owner) else None)
                 for d in self.db.list_devices(client_id)]
+
+    # ── РФ-доступ в потреблении (концепт «учёт РФ-трафика», этап 2) ──────────
+    # Строка РФ показывается там, где она осмысленна: профилю — если ему
+    # разрешён РФ-доступ и функция на сервере развёрнута (routing_client_visible)
+    # или за месяц уже что-то прошло (разрешение сняли, а байты остались);
+    # устройству — если владельцу так же разрешён и оно не шлюз, или у него
+    # самого РФ > 0. Одно правило на карточки, списки и экран РФ-доступа: без
+    # шлюзов у админа не было бы вечного «0 ГБ».
+
+    def rf_client_visible(self, client, rf: tuple[int, int] | None = None) -> bool:
+        if client is None:
+            return False
+        if rf is None:
+            t = self.db.get_client_rf(client.id)
+            rf = (int(t["rx"]), int(t["tx"]))
+        return rf[0] + rf[1] > 0 or self.routing_client_visible(client)
+
+    def rf_device_visible(self, dev, owner=None) -> bool:
+        if getattr(dev, "is_gateway", False):
+            return False
+        rx, tx = _dev_rf(dev)
+        if rx + tx > 0:
+            return True
+        if owner is None:
+            owner = self.db.get_client(dev.client_id)
+        return self.routing_client_visible(owner)
+
+    def rf_device_card(self, dev) -> Optional[tuple[int, int]]:
+        """(rx, tx) для строки РФ в карточке устройства у админа или None."""
+        return _dev_rf(dev) if self.rf_device_visible(dev) else None
+
+    def rf_by_profile(self) -> list[tuple]:
+        """[(client, rx, tx)] РФ за месяц — только профили, которым строка положена."""
+        by = self.db.rf_by_client()
+        out = []
+        for c in self.db.list_clients(admin_first_tg=config.ADMIN_ID):
+            rf = by.get(c.id, (0, 0))
+            if self.rf_client_visible(c, rf):
+                out.append((c, rf[0], rf[1]))
+        return out
+
+    def rf_by_device(self, client_id: int) -> list[tuple]:
+        """[(device, rx, tx)] РФ за месяц по устройствам профиля — только те, кому
+        строка положена; шлюзы не показываются никогда."""
+        owner = self.db.get_client(client_id)
+        return [(d, *_dev_rf(d)) for d in self.db.list_devices(client_id)
+                if self.rf_device_visible(d, owner)]
+
+    def rf_screen_data(self) -> dict:
+        """Экран «РФ-доступ за месяц»: итог сервера, строки профилей, «вне
+        профилей» (итог минус сумма по всем устройствам: удалённые устройства и
+        первые минуты новых, до синхронизации счётчиков) и дата начала учёта —
+        только если учёт начался в текущем месяце (иначе месяц полный)."""
+        tot = self.rf_month_total()
+        rows = self.rf_by_profile()
+        devs = self.db.get_total_month_rf()
+        outside = max(0, int(tot["rx"]) + int(tot["tx"]) - int(devs["rx"]) - int(devs["tx"]))
+        since = ""
+        if tot.get("since"):
+            try:
+                started = timeutil.parse_iso(tot["since"])
+                now = timeutil.now()
+                if (started.year, started.month) == (now.year, now.month):
+                    since = timeutil.to_iso(started)
+            except ValueError:
+                since = ""
+        return {"rx": int(tot["rx"]), "tx": int(tot["tx"]), "rows": rows,
+                "outside": outside, "since": since}
 
     # ── экран «Сервер» и подготовка переезда ────────────────────────────────
 

@@ -248,3 +248,40 @@ def test_limit_changed_notice_uses_arrow():
     from awgbot.bot import texts
     assert texts.limit_changed_notice(1, 2) == "Максимальное количество устройств для тебя изменено: 1 → 2."
     assert texts.limit_changed_notice(2, 0).endswith("2 → без ограничения.")
+
+
+# ── РФ-доступ: строки добавились, кнопки — нет (концепт «учёт РФ-трафика», этап 2) ──
+
+async def test_rf_lines_do_not_change_buttons_on_admin_screens(services, fake_bot, make_active_client):
+    """Строка РФ — только текст: карточки профиля и устройства и разбивка
+    потребления с ней несут те же кнопки, что без неё. Лишняя кнопка сдвинула
+    бы раскладку, к которой админ привык, и сломала бы пагинацию."""
+    from aiogram.filters import CommandObject
+    # РФ-доступ профилю не разрешён: до байтов строк РФ нет, после — есть
+    c = make_active_client("Ксюша", tg_id=6400)
+    dc = services.add_device(c.id, "Телефон")
+
+    async def buttons():
+        out = []
+        cb, nav = _cb(fake_bot, ADMIN)
+        await ah.client_open(cb, ClientCB(action="open", client_id=c.id), services)
+        out.append([s for s in nav.sent if s[0] == "edit_text"][-1])
+        cb, nav = _cb(fake_bot, ADMIN)
+        await ah.admin_device_open(cb, DeviceCB(action="open", device_id=dc.device_id), services)
+        out.append([s for s in nav.sent if s[0] == "edit_text"][-1])
+        for payload in ("traffic", f"traffic-{c.id}"):
+            services.db.set_nav_message_id(ADMIN, None)
+            m = _msg(fake_bot, ADMIN, f"/start {payload}")
+            await ah.admin_start(m, services, FakeState(),
+                                 command=CommandObject(prefix="/", command="start", args=payload))
+            out.append([s for s in m.sent if s[0] == "answer"][-1])
+        texts_ = [t for _, t, _ in out]
+        kbs = [[(b.text, b.callback_data) for row in mk.inline_keyboard for b in row] for _, _, mk in out]
+        return texts_, kbs
+
+    texts0, before = await buttons()
+    services.db.rf_add_bulk([(dc.device_id, 1024 ** 3, 1024 ** 3)])
+    texts1, after = await buttons()
+    assert not any("🇷🇺" in t for t in texts0), texts0
+    assert all("🇷🇺" in t for t in texts1), "строка РФ не появилась — сравнение ничего не проверяет"
+    assert after == before, "строка РФ поменяла кнопки на экранах админа"
