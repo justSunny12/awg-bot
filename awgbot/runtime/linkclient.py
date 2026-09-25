@@ -24,7 +24,12 @@ linkclient.py — сторона шлюза для канала ВПС ↔ шл�
 `ack`, уведомление человеку в чат агента), `lists` — фиды локальной сети
 (`apply_lan_feeds`, ответ `lists_ack`; `lists_ok` — у шлюза уже те же,
 запас своего скачивания отсчитывается от конца сессии), `role` — несёт ли слот
-трафик, `ask snap` — просьба о полном снимке. Неизвестный вид
+трафик, `ask snap` — просьба о полном снимке, `own_set` — канон своих
+списков, общих для всех шлюзов (`apply_own_lists`, ответ `own_ack`; концепт
+«синхронизация своих списков»). В обратную сторону, кроме снимка, — свои
+правки этих списков (`own_ev`): после кнопки в чате сразу (`own_changed`), а
+правки мимо агента находит сверка файлов на тике монитора (`own_tick`).
+Неизвестный вид
 пропускается с записью в журнал: новый ВПС со старым агентом не рвёт сессию.
 Повтор отсекают нонсы сессии (gwlink, proto 2): hello несёт наш нонс, первое
 сообщение сервера — его; дальше подписываем нонсом сервера, проверяем своим.
@@ -40,7 +45,7 @@ import random
 import subprocess
 
 from awgbot.core import config
-from awgbot.domain import gwservices, gwsnapshot
+from awgbot.domain import gwownlists, gwservices, gwsnapshot
 from awgbot.util import gwlink
 
 log = logging.getLogger(__name__)
@@ -144,10 +149,15 @@ class LinkClient:
                 getattr(self.services, "services_applied_hash", lambda: ""))
             self._seq += 1
             self._svc_sent = None
-            hello = gwlink.pack(self._channel_key(), "hello",
-                                {"proto": gwlink.PROTO, "agent": config.INSTALLED_VERSION,
-                                 "lists_hash": lists_hash, "svc_hash": svc_hash,
-                                 "nonce": gwlink.nonce_b64(self._cn)},
+            hello_body = {"proto": gwlink.PROTO, "agent": config.INSTALLED_VERSION,
+                          "lists_hash": lists_hash, "svc_hash": svc_hash,
+                          "nonce": gwlink.nonce_b64(self._cn)}
+            # отпечаток применённого канона своих списков: само поле говорит
+            # серверу, что агент синхронизацию знает (без него канон не шлётся)
+            own_hash = getattr(self.services, "own_applied_hash", None)
+            if own_hash is not None:
+                hello_body["own_hash"] = await asyncio.to_thread(own_hash)
+            hello = gwlink.pack(self._channel_key(), "hello", hello_body,
                                 seq=self._seq, pad=gwlink.PAD_DELTA)
             writer.write(hello)
             await writer.drain()
@@ -169,6 +179,7 @@ class LinkClient:
             await self.push_services(force=True)
             await self.flush_applied()
             await self._maybe_installed()
+            await self.push_own()
             await self._maybe_claim()
             while True:
                 try:
@@ -353,6 +364,64 @@ class LinkClient:
         self._svc_sent = digest
         return await self._send("svc", {"items": items}, pad=gwlink.PAD_SNAP)
 
+    # ── свои списки, общие для всех шлюзов (концепт «синхронизация своих списков») ──
+
+    async def push_own(self) -> bool:
+        """Свои правки (pending) — серверу пачками по MAX_EVENTS; пусто — ничего."""
+        if self._writer is None:
+            return False
+        get = getattr(self.services, "own_pending_events", None)
+        if get is None:
+            return False
+        run, events = await asyncio.to_thread(get)
+        if not events:
+            return False
+        sent = False
+        for i in range(0, len(events), gwownlists.MAX_EVENTS):
+            if not await self._send("own_ev", {"run": run, "ev": events[i:i + gwownlists.MAX_EVENTS]},
+                                    pad=gwlink.PAD_SNAP):
+                return sent
+            sent = True
+        return sent
+
+    async def _apply_own(self, msg: dict) -> None:
+        """Канон от сервера: применить и отчитаться; пропущен по правилам
+        сверки — вместо ack уходят свои правки, следующий канон придёт с ними."""
+        apply = getattr(self.services, "apply_own_lists", None)
+        if apply is None:
+            return
+        result = await asyncio.to_thread(apply, msg)
+        if result.get("skipped"):
+            await self.push_own()
+            return
+        await self._send("own_ack", {"ok": bool(result.get("ok")), "hash": str(result.get("hash") or "")[:64],
+                                     "n": int(result.get("n") or 0),
+                                     "error": str(result.get("error") or "")[:300]},
+                         pad=gwlink.PAD_DELTA)
+
+    async def own_tick(self) -> None:
+        """После тика монитора: сверка файлов (правка мимо агента) → правки
+        серверу; отложенный канон (обвязка обновилась) → применить."""
+        reconcile = getattr(self.services, "own_reconcile", None)
+        if reconcile is None:
+            return
+        # сверка — и без канала: правка мимо агента должна лечь в pending сразу,
+        # чтобы панель честно показала «ждут синхронизации», а не «синхронизированы»
+        changed = await asyncio.to_thread(reconcile)
+        if self._writer is None:
+            return
+        if changed:
+            await self.push_own()
+        retry = getattr(self.services, "own_retry", None)
+        if retry is not None:
+            result = await asyncio.to_thread(retry)
+            if result:
+                await self._send("own_ack", {"ok": bool(result.get("ok")),
+                                             "hash": str(result.get("hash") or "")[:64],
+                                             "n": int(result.get("n") or 0),
+                                             "error": str(result.get("error") or "")[:300]},
+                                 pad=gwlink.PAD_DELTA)
+
     async def _apply_peer_services(self, msg: dict) -> None:
         apply = getattr(self.services, "apply_peer_services", None)
         if apply is None:
@@ -442,6 +511,9 @@ class LinkClient:
             return
         if msg.get("t") == "peer_svc":
             await self._apply_peer_services(msg)
+            return
+        if msg.get("t") == "own_set":
+            await self._apply_own(msg)
             return
         if msg.get("t") == "applied_ack":
             await self._applied_acked(msg)
@@ -538,6 +610,8 @@ async def on_tick(services) -> None:
     await client.push()
     with contextlib.suppress(Exception):
         await client.retry_peer_services()
+    with contextlib.suppress(Exception):
+        await client.own_tick()
 
 
 async def poke(services) -> None:
@@ -566,6 +640,19 @@ async def report_applied(services, ok: bool, error: str = "", fp: str = "") -> N
     if client is not None and client._writer is not None:
         with contextlib.suppress(Exception):
             await client.flush_applied()
+
+
+async def own_changed(services) -> None:
+    """Кнопка своих списков в чате агента: сверка сразу и правки серверу, если
+    канал жив; нет — уйдут при подключении. Всё, что человек сделал руками,
+    уходит по каналу немедленно (решение §13 концепта)."""
+    reconcile = getattr(services, "own_reconcile", None)
+    if reconcile is None:
+        return
+    changed = await asyncio.to_thread(reconcile)
+    client = _client
+    if changed and client is not None and client._writer is not None:
+        await client.push_own()
 
 
 async def services_changed(services) -> None:

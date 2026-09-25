@@ -416,3 +416,31 @@ def test_a_red_services_check_sends_neither_plumbing_nor_lan_alerts(svc, monkeyp
         notes += svc.monitor_tick()
     assert notes == [], f"проверка сервисов соседей подняла уведомление: {[n.text for n in notes]}"
     assert "🔴 SMB подсетей других шлюзов" in texts.gateway_health(st), "в мониторе проверку видно"
+
+
+# ── свои списки: проверка группы «own» (концепт «синхронизация своих списков» §7.1) ──
+
+def test_a_red_own_lists_check_sends_neither_plumbing_nor_lan_alerts(svc, monkeypatch):
+    """Свои списки не применились (dnsmasq отверг канон) — 🔴 в мониторе, но
+    не авария: доступ квартиры держат прежние файлы. Ни «Обвязка шлюза
+    неисправна», ни «Локальная сеть без VPN» — сколько бы тиков ни держалось."""
+    from awgbot.bot import texts
+    from tests.unit.test_gateway import _quiet_status
+    env = {"LAN_MODE": "1", "LINK_CHANNEL": "1"}
+    monkeypatch.setattr(gwguard, "lan_mode", lambda: True)
+    monkeypatch.setattr(gwguard, "unit_env", lambda k: env.get(k, ""))
+    monkeypatch.setattr(gwguard, "lan_domain_has_sync", lambda: True)
+    svc.db.set_state("gw_own_err", "dnsmasq --test отверг свои списки — откатываю")
+    info, checks = svc.own_status()
+    red = [c for c in checks if c.ok is False]
+    assert red and red[0].group == "own" and info["state"] == "failed", checks
+    st = _quiet_status(checks=[GwCheck("MASQUERADE", True)] + checks,
+                       lan={"subnet": "192.168.68.0/24", "own": info})
+    monkeypatch.setattr(svc, "status", lambda: st)
+    monkeypatch.setattr(svc, "uplink_policy_heal", lambda: [])
+    notes = []
+    for _ in range(6):
+        notes += svc.monitor_tick()
+    assert notes == [], f"проверка своих списков подняла уведомление: {[n.text for n in notes]}"
+    assert "🔴 свои списки — не применились: dnsmasq --test отверг" in texts.gateway_health(st), \
+        texts.gateway_health(st)

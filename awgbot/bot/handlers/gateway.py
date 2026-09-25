@@ -530,15 +530,39 @@ async def gw_lan_domain_received(message: Message, state: FSMContext, services):
     await state.clear()
     ok, out = await call(services.lan_domains, kind, domains)
     await cleanup_content(message.bot, services, message.chat.id)
-    await message.answer(texts.gateway_lan_result(ok, out))
+    await message.answer(texts.gateway_lan_result(ok, out, await _own_sync_tail(services, ok, out)))
     # назад — в свои списки, откуда пришли: с новым доменом уже в кнопках
     await send_menu(message, services, *await _lan_list_screen(services, message.chat.id))
+
+
+async def _own_sync_tail(services, ok: bool, out: str) -> str:
+    """После правки списка: сверка и отправка серверу сразу (концепт
+    «синхронизация своих списков» §13); хвост итога — куда уйдёт правка."""
+    from awgbot.runtime import linkclient
+    if not ok or not any(w in out for w in ("добавлен", "убран")):
+        return ""
+    active = getattr(services, "own_active", None)
+    if active is None or not await call(active):
+        return ""
+    await linkclient.own_changed(services)
+    return "online" if linkclient.online() else "offline"
+
+
+async def _own_info(services) -> dict:
+    status = getattr(services, "own_status", None)
+    if status is None:
+        return {}
+    info, _checks = await call(status)
+    if not info.get("active"):
+        from awgbot.infra import gwguard
+        info["no_channel"] = gwguard.lan_mode() and gwguard.unit_env("LINK_CHANNEL") != "1"
+    return info
 
 
 async def _lan_list_screen(services, chat_id: int):
     from awgbot.bot import paging
     items = await call(services.lan_own_lists)
-    return (texts.gateway_lan_own_text(items),
+    return (texts.gateway_lan_own_text(items, await _own_info(services)),
             kb.gateway_lan_list_kb(items, page=paging.page_of(chat_id, "lanlist")))
 
 
@@ -562,16 +586,19 @@ async def gw_lan_remove(cb: CallbackQuery, callback_data: GwCB, services):
         return
     kind, dom = items[idx]
     if callback_data.action == "lan_rm":
-        await edit_nav(cb, services, texts.gateway_lan_rm_ask(dom, kind), kb.gateway_lan_rm_confirm(idx, kind, dom))
+        shared = bool((await _own_info(services)).get("active"))
+        await edit_nav(cb, services, texts.gateway_lan_rm_ask(dom, kind, shared),
+                       kb.gateway_lan_rm_confirm(idx, kind, dom))
         await cb.answer()
         return
     ok, out = await call(services.lan_domains, "del", [dom])
+    tail = await _own_sync_tail(services, ok, out)
     try:
-        await cb.answer(texts.gateway_lan_result(ok, out)[:180], show_alert=not ok)
+        await cb.answer(texts.gateway_lan_result(ok, out, tail)[:180], show_alert=not ok)
     except TelegramBadRequest:
         # скрипт ждал блокировку списков дольше, чем Telegram держит нажатие —
         # итог сообщением, а не всплывашкой
-        await ask_tracked(cb.message, services, texts.gateway_lan_result(ok, out))
+        await ask_tracked(cb.message, services, texts.gateway_lan_result(ok, out, tail))
     await edit_nav(cb, services, *await _lan_list_screen(services, cb.message.chat.id))
 
 

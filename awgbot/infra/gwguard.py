@@ -806,6 +806,20 @@ def dns_local(name: str, qtype: str = "PTR") -> Optional[list[str]]:
     return [ln.strip() for ln in proc.stdout.decode(errors="replace").splitlines() if ln.strip()]
 
 
+OWN_LISTS_NEW = "/var/lib/awg-gw/own-lists.new"   # файл для `sync` — собирает агент из канона
+DNSMASQ_D = "/etc/dnsmasq.d"
+
+
+def lan_domain_has_sync() -> bool:
+    """Скрипт своих списков умеет `sync` (метка в шапке): без неё обвязка
+    старого образца — канон применять нечем, нужен реассерт."""
+    try:
+        with open(LAN_DOMAIN_SCRIPT, encoding="utf-8", errors="replace") as f:
+            return "# awg-lan-domain: sync" in f.read(8192)
+    except OSError:
+        return False
+
+
 def run_lan_domain(cmd: str, domains: list[str], timeout: int = 150) -> tuple[bool, str]:
     """Свои списки: add | ru | del | list | sync. (ok, вывод). Таймаут дольше,
     чем скрипт ждёт блокировку (120 с): иначе отказ «занято» не доходил бы."""

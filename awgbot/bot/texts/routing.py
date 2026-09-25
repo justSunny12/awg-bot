@@ -239,6 +239,32 @@ def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> s
     return head + "\n\n" + note
 
 
+def own_lists_line(own: dict, name: str = "", agent_bot: dict | None = None) -> str:
+    """Свои списки шлюзов в карточке слота — только числа (концепт
+    «синхронизация своих списков» §7.2); что с ними на шлюзе — отдельной
+    строкой после пустой, только если не «применены»."""
+    vpn, ru = int(own.get("vpn") or 0), int(own.get("ru") or 0)
+    head = ("📋 Свои списки шлюзов: пусто" if not vpn and not ru
+            else f"📋 Свои списки шлюзов: {vpn} в туннель, {ru} напрямую")
+    state = own.get("state", "")
+    gw = f" {name}" if name else ""
+    if state == "applied":
+        return head
+    if state == "old_agent":
+        me = agent_bot or {}
+        bot = (f' (бот: <a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>)'
+               if me.get("username") else "")
+        note = f"⚠️ Для синхронизации необходимо обновить шлюз{gw}{bot}"
+    elif state == "failed":
+        err = own.get("error") or ""
+        note = f"⚠️ Шлюз{gw} отказался принимать" + (f": {_e(err)}" if err else "")
+    elif state == "offline":
+        note = f"⏳ Уйдут на шлюз{gw}, когда он выйдет на связь"
+    else:
+        note = f"⏳ Отправлены на шлюз{gw}"
+    return head + "\n\n" + note
+
+
 def gateway_card_text(state: dict, states: list) -> str:
     gw, dev = state["gateway"], state.get("device")
     name = f"«{_e(dev.name)}»" if dev is not None else f"слот {gw.id}"
@@ -264,6 +290,8 @@ def gateway_card_text(state: dict, states: list) -> str:
         home += "\nУстройства админа достают до них через этот линк."
     if gw.lan_mode:
         home += "\n\n🏠 За шлюзом — без VPN: включено"
+        if state.get("own_lists"):
+            home += "\n" + own_lists_line(state["own_lists"], name, state.get("agent_bot"))
     if state.get("peer_nets"):
         # подсеть этого шлюза — цель, куда пускают из-за других (функция B);
         # выключено — строки нет вовсе

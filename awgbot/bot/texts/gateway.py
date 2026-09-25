@@ -24,7 +24,7 @@ def _gw_health_summary(checks) -> str:
     broken = [c for c in checks if c.ok is False]
     # «не проверено» у сервисов соседей (нет avahi на шлюзе без NAS) — штатно,
     # в сводку панели не идёт; на экране монитора строка остаётся
-    unknown = [c for c in checks if c.ok is None and getattr(c, "group", "") != "svc"]
+    unknown = [c for c in checks if c.ok is None and getattr(c, "group", "") not in ("svc", "own")]
     if broken:
         return f"🔴 проблем: {len(broken)} — " + ", ".join(c.name for c in broken[:4])
     if unknown:
@@ -115,7 +115,7 @@ def gateway_panel(st) -> str:
         parts.append(f"{pad}DNS: апстрим {_e(lan.get('resolver', ''))}")
         # списки — своей группой (вычитка 3.1.0)
         parts += ["", f"📋 Списки: {_lists_counts(lan)} ({_lists_updated_short(lan.get('updated_at') or '')})"]
-        parts.append(f"{pad}Свои списки: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую")
+        parts.append(f"{pad}{own_lists_short(lan)}")
         svc = lan.get("svc") or {}
         if svc.get("active"):
             # SMB подсетей шлюзов (концепт «сервисы соседних сетей»): работают
@@ -208,7 +208,7 @@ def gateway_lan_text(st) -> str:
             f"DNS — апстрим <code>{_e(lan.get('resolver', '') or '?')}</code> через аплинк\n\n"
             f"Трафик с роутера: {_packets(lan.get('lan_pkts'))}\n\n"
             f"Списки: {_lists_counts(lan)} ({_lists_updated_short(lan.get('updated_at') or '')})\n"
-            f"Свои списки: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую"
+            f"{own_lists_short(lan)}"
             + (("\n\n" + smb_line(lan["svc"]))
                if (lan.get("svc") or {}).get("active") else ""))
 
@@ -219,25 +219,82 @@ def gateway_lan_ask_domain(kind: str) -> str:
             "<code>example.com</code>. Домен накрывает и все поддомены.")
 
 
-def gateway_lan_rm_ask(domain: str, kind: str) -> str:
+def own_lists_short(lan: dict) -> str:
+    """Строка своих списков в панели и на экране локальной сети: пометка «(для
+    всех шлюзов)» — только когда синхронизация действует; хвост — состояние,
+    если есть что сказать (концепт «синхронизация своих списков» §7.1)."""
+    own = lan.get("own") or {}
+    head = f"Свои списки: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую"
+    if not own.get("active"):
+        return head
+    head = head.replace("Свои списки:", "Свои списки (для всех шлюзов):", 1)
+    state = own.get("state", "")
+    if state in ("pending", "no_link", "stale_server"):
+        return head + " · ⏳ ждут синхронизации"
+    if state in ("failed", "old_script"):
+        return head + " · ⚠️ не применились (🌡 Монитор здоровья)"
+    return head
+
+
+def own_lists_state_line(own: dict) -> str:
+    """Строка состояния на экране «Свои списки» — только при расхождении."""
+    from .fmt import plural_ru
+    state = own.get("state", "")
+    n = int(own.get("pending") or 0)
+    n_word = f"{n} " + plural_ru(n, "правка", "правки", "правок")
+    if state == "no_link":
+        return f"⏳ Ждут синхронизации: {n_word} — нет связи с сервером AWG"
+    if state in ("pending", "stale_server"):
+        return f"⏳ Ждут синхронизации: {n_word} — сервер AWG ещё не ответил"
+    if state in ("failed", "old_script"):
+        return f"⚠️ Не применились: {_e(own.get('err') or 'скрипт старого образца, обвязка перевыставляется')}"
+    if state == "rejected" and own.get("rej"):
+        d, why = own["rej"][0]
+        return f"⚠️ Сервер AWG не принял: <code>{_e(d)}</code> — {_e(why)}"
+    return ""
+
+
+def gateway_lan_rm_ask(domain: str, kind: str, shared: bool = False) -> str:
     where = "напрямую" if kind == "ru" else "в туннель"
     return (f"➖ <b>Убрать <code>{_e(domain)}</code> из своих списков?</b>\n\n"
-            f"Сейчас домен идёт {where}; после удаления — как решат общие списки.")
+            f"Сейчас домен идёт {where}; после удаления — как решат списки."
+            + (" Домен уберётся на всех шлюзах." if shared else ""))
 
 
-def gateway_lan_own_text(items: list[tuple[str, str]]) -> str:
+def gateway_lan_own_text(items: list[tuple[str, str]], own: dict | None = None) -> str:
     """Сами домены — кнопками под инфобоксом («➖ домен (📤|🇷🇺)», с
-    листанием); текст только объясняет порядок и значки."""
+    листанием); текст только объясняет порядок и значки. own — состояние
+    синхронизации (services.own_status): абзац про общие списки и строка
+    состояния при расхождении; канала нет — почему списки только этого шлюза."""
+    own = own or {}
+    shared = bool(own.get("active"))
     if not items:
-        return "📋 <b>Свои списки</b>\n\nПока пусто: добавь домены кнопками «➕ В туннель» и «➕ Напрямую»."
-    return ("📋 <b>Свои списки</b>\n\n"
-            "Элементы списка отсортированы: сначала показываются домены с маршрутом напрямую "
-            "(помечены 🇷🇺), затем с маршрутом в туннель (помечены 📤)")
+        text = "📋 <b>Свои списки</b>\n\nПока пусто: добавь домены кнопками «➕ В туннель» и «➕ Напрямую»."
+        if shared:
+            text += " Списки общие для всех шлюзов — добавленное здесь появится и на остальных."
+    else:
+        text = ("📋 <b>Свои списки</b>\n\n"
+                "Элементы списка отсортированы: сначала показываются домены с маршрутом напрямую "
+                "(помечены 🇷🇺), затем с маршрутом в туннель (помечены 📤)")
+        if shared:
+            text += ("\n\nСписки общие для всех шлюзов: добавленное или убранное здесь уходит через "
+                     "сервер AWG на остальные шлюзы — сразу, если они на связи, иначе при подключении. "
+                     "Правки командой <code>awg-bot lan</code> на самом шлюзе уходят в течение "
+                     "нескольких минут.")
+    if shared:
+        line = own_lists_state_line(own)
+        if line:
+            text += "\n\n" + line
+    elif own.get("no_channel"):
+        text += ("\n\nСписки только этого шлюза: для общих нужен канал до сервера AWG — "
+                 "перевыпусти конфигурацию шлюза с сервера AWG и примени её здесь")
+    return text
 
 
-def gateway_lan_result(ok: bool, out: str) -> str:
+def gateway_lan_result(ok: bool, out: str, sync: str = "") -> str:
     """Итог add/ru/del — строки скрипта «домен: добавлен / убран / уже в
-    списке»; служебные строки про адреса в наборе (с отступом) не показываем."""
+    списке»; служебные строки про адреса в наборе (с отступом) не показываем.
+    sync — хвост про синхронизацию: "online" | "offline" | "" (концепт §7.1)."""
     rows = [r for r in out.strip().splitlines() if r and not r.startswith(" ")]
     # десятки доменов за раз переросли бы лимит сообщения, и Telegram отверг
     # бы ответ целиком
@@ -252,7 +309,9 @@ def gateway_lan_result(ok: bool, out: str) -> str:
         rest = len(rows) - len(keep)
         out += f"\n…и ещё {rest} " + plural_ru(rest, "строка", "строки", "строк")
     body = _e(out) if out else ("готово" if ok else "не удалось")
-    return ("✅ " if ok else "⚠️ ") + body
+    tail = {"online": "\nУходит на другие шлюзы через сервер AWG",
+            "offline": "\nУйдёт на другие шлюзы, когда появится связь с сервером AWG"}.get(sync, "")
+    return ("✅ " if ok else "⚠️ ") + body + tail
 
 
 GW_SETTINGS = ("⚙️ <b>Настройки</b>\n\nУведомления, мониторинг, резервное копирование, "
