@@ -315,6 +315,50 @@ async def test_the_slot_card_counts_the_lists_and_follows_the_canon(services, la
     assert note == "⚠️ Шлюз «Pi2» отказался принимать", "висящее двоеточие без ошибки"
 
 
+async def _failed_with(services, fake_bot, error: str) -> str | None:
+    """Канон отправлен на слот 2, шлюз ответил отказом с этим текстом — строка
+    судьбы в карточке."""
+    services.gwlink_own_in(1, "rx", [[1, "d0.com", "vpn", False]])
+    services.gwlink_session_opened(2, "3.1.0", 2)
+    services.gwlink_own_hello_in(2, True)
+    digest = services.gwlink_own_for(services.db.gateway(2))[0]
+    services.gwlink_own_ack_in(2, {"ok": False, "hash": digest, "error": error})
+    return _own_block((await _card(services, fake_bot, 2))[0])[1]
+
+
+async def test_a_breakage_on_the_gateway_is_not_called_a_refusal(services, lan_slots, fake_bot):
+    """Файл своих списков не записался на малине — поломка, не отказ: «Шлюз
+    «X»: непредвиденная ошибка…» без «отказался принимать». Иначе человек ищет
+    плохой домен в списке, а чинить нужно диск шлюза."""
+    note = await _failed_with(services, fake_bot,
+                              "непредвиденная ошибка, файл своих списков не записан: нет места на диске")
+    assert note == ("⚠️ Шлюз «Pi2»: непредвиденная ошибка, файл своих списков не записан: "
+                    "нет места на диске"), note
+
+
+async def test_a_real_refusal_of_the_lists_keeps_its_wording(services, lan_slots, fake_bot):
+    """Отказ скрипта (не поломка) — прежнее «отказался принимать: …»."""
+    note = await _failed_with(services, fake_bot, "скрипт своих списков не ответил за 150 с")
+    assert note == "⚠️ Шлюз «Pi2» отказался принимать: скрипт своих списков не ответил за 150 с", note
+
+
+async def test_a_breakage_text_of_the_lists_is_escaped(services, lan_slots, fake_bot, slots):
+    """Текст с малины и имя устройства — в разметке ВПС экранированы ровно раз."""
+    _, _, pi2 = slots
+    services.rename_device(pi2.id, "Pi & <2>")
+    note = await _failed_with(services, fake_bot, "непредвиденная ошибка, файл своих списков не записан: <i>&")
+    assert note == ("⚠️ Шлюз «Pi &amp; &lt;2&gt;»: непредвиденная ошибка, файл своих списков не записан: "
+                    "&lt;i&gt;&amp;"), note
+
+
+def test_the_lists_breakage_branch_without_a_name_reads_whole():
+    from awgbot.bot.texts.routing import own_lists_line
+    line = own_lists_line({"vpn": 1, "ru": 0, "state": "failed",
+                           "error": "непредвиденная ошибка, файл своих списков не записан: диск только для чтения"})
+    assert line == ("📋 Свои списки: 1 в туннель, 0 напрямую\n⚠️ Шлюз: непредвиденная ошибка, файл своих "
+                    "списков не записан: диск только для чтения"), line
+
+
 async def test_an_agent_that_does_not_know_sync_is_told_to_update_with_a_bot_link(services, lan_slots, fake_bot):
     services.gwlink_session_opened(2, "3.0.2", 2)
     services.gwlink_own_hello_in(2, False)

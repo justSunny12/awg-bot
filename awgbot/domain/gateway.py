@@ -835,6 +835,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     _OWN_PENDING_KEY = "gw_own_pending"      # свои правки, ещё не в каноне: {run, n, ev, sent_at}
     _OWN_FP_KEY = "gw_own_fp"                # отпечаток файлов на момент последней сверки
     _OWN_ERR_KEY = "gw_own_err"              # хвост ошибки последнего применения
+    _OWN_NUDGE_KEY = "gw_own_nudge"          # «отказ с … / просили повтор в …» — просьба к серверу прислать канон снова
     _OWN_REJ_KEY = "gw_own_rej"              # что сервер отверг из последнего пакета: [[домен, причина]]
     _OWN_DEFER_KEY = "gw_own_defer"          # канон, отложенный из-за обвязки старого образца
     _OWN_STALE_SERVER_S = 600                # правки без ответа сервера дольше — «обнови основной бот»
@@ -1010,7 +1011,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             with open(gwguard.OWN_LISTS_NEW, "w", encoding="utf-8") as f:
                 f.write(gwownlists.render_sync(items))
         except OSError as e:
-            return self._own_store(digest, None, False, f"файл для sync не записан: {e}")
+            return self._own_store(digest, None, False,
+                                   f"непредвиденная ошибка, файл своих списков не записан: {gwguard.os_error_text(e)}")
         ok, tail = gwguard.run_lan_domain("sync", [gwguard.OWN_LISTS_NEW])
         if ok:
             # база — то, что реально записано: скрипт мог отбросить хост Endpoint
@@ -1029,7 +1031,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                         f.write("\n".join(new_vpn) + "\n")
                     result["fill"] = gwguard.OWN_FILL_NEW
                 except OSError as e:
-                    log.warning("свои списки: файл для fill не записан: %s", e)
+                    log.warning("свои списки: файл для fill не записан: %s", gwguard.os_error_text(e))
         return result
 
     def own_fill(self, path: str) -> tuple[bool, str]:
@@ -1056,7 +1058,55 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                 self.db.set_state(self._OWN_DEFER_KEY, "")
                 self.db.set_state(self._OWN_FP_KEY, self._own_files_fp())
             self.db.set_state(self._OWN_ERR_KEY, err)
+            self._nudge_note(self._OWN_NUDGE_KEY, err)
         return {"ok": ok, "hash": digest, "n": len((canon or {}).get("items") or {}), "error": err}
+
+    # ── повтор после поломки на шлюзе ───────────────────────────────────────
+    # Сервер за сессию один и тот же канон (записи SMB) второй раз не шлёт.
+    # Отказ из-за поломки на шлюзе (нет места, диск только для чтения) чинят
+    # руками, и после починки шлюз ждал бы переподключения канала. Поэтому
+    # через _NUDGE_AFTER_S после отказа агент сам просит повтор — и дальше
+    # не чаще того же интервала, пока отказ не снят.
+    _NUDGE_AFTER_S = 600
+
+    def _nudge_note(self, key: str, err: str) -> None:
+        """Запомнить время отказа (нового) или снять, если отказа нет."""
+        if not err:
+            self.db.set_state(key, "")
+            return
+        cur = self.db.get_state_json(key, {})
+        if cur.get("err") != err:
+            self.db.set_state(key, json.dumps({"err": err, "since": timeutil.to_iso(timeutil.now()), "asked": ""}))
+
+    def _nudge_due(self, key: str) -> bool:
+        """Пора ли просить повтор: отказ стоит дольше интервала и с прошлой
+        просьбы прошёл интервал. Только для поломки на шлюзе («непредвиденная
+        ошибка…»: нет места, диск только для чтения) — её чинят руками, и после
+        починки то же присланное применится. Отказ по содержимому (проверка
+        строк, dnsmasq --test) или из-за обвязки повтором не лечится, и просьба
+        каждые 10 минут была бы маячком в туннеле."""
+        cur = self.db.get_state_json(key, {})
+        if not str(cur.get("err") or "").startswith("непредвиденная ошибка"):
+            return False
+        now = timeutil.now()
+        try:
+            since = timeutil.parse_iso(cur.get("since") or "")
+            asked = timeutil.parse_iso(cur["asked"]) if cur.get("asked") else None
+        except ValueError:
+            return False
+        if (now - since).total_seconds() < self._NUDGE_AFTER_S:
+            return False
+        if asked is not None and (now - asked).total_seconds() < self._NUDGE_AFTER_S:
+            return False
+        cur["asked"] = timeutil.to_iso(now)
+        self.db.set_state(key, json.dumps(cur))
+        return True
+
+    def own_nudge_due(self) -> bool:
+        return self._nudge_due(self._OWN_NUDGE_KEY)
+
+    def services_nudge_due(self) -> bool:
+        return self._nudge_due(self._SVC_NUDGE_KEY)
 
     def own_retry(self) -> dict | None:
         """Отложенный канон (обвязка была старого образца): скрипт обновился —
@@ -1142,6 +1192,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     _SVC_LOCAL_KEY = "gw_svc_local"          # свой список после обзора, JSON
     _SVC_PEER_KEY = "gw_peer_svc"            # применённый чужой: {"hash", "items"}
     _SVC_PEER_ERR_KEY = "gw_peer_svc_err"    # последняя ошибка применения
+    _SVC_NUDGE_KEY = "gw_peer_svc_nudge"     # как _OWN_NUDGE_KEY, для записей SMB
     _SVC_PENDING_KEY = "gw_peer_svc_pending" # не применённое из-за обвязки: {"hash","items"} — повтор
     _SVC_MISSES = 3                          # обзоров подряд без сервиса — снимаем
 
@@ -1230,13 +1281,14 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         else:
             # второй рубеж перед помощником: файл собран из шаблона, но данные — с ВПС
             if not gwservices.lines_ok(text):
-                return self._svc_store(digest, [], False, "записи SMB не прошли проверку строк")
+                return self._svc_store(digest, [], False, "не пройдена проверка строк")
             try:
                 os.makedirs(os.path.dirname(gwguard.PEER_SERVICES_NEW), mode=0o700, exist_ok=True)
                 with open(gwguard.PEER_SERVICES_NEW, "w", encoding="utf-8") as f:
                     f.write(text)
             except OSError as e:
-                return self._svc_store(digest, [], False, f"файл записей SMB не записан: {e}")
+                return self._svc_store(digest, [], False,
+                                       f"непредвиденная ошибка, файл записей SMB не записан: {gwguard.os_error_text(e)}")
             ok, tail = gwguard.run_lan_services(gwguard.PEER_SERVICES_NEW)
         return self._svc_store(digest, clean_items, ok,
                                "" if ok else (tail or "скрипт записей SMB отказал без объяснений"))
@@ -1248,6 +1300,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                                   json.dumps({"hash": digest, "items": items}, ensure_ascii=False))
                 self.db.set_state(self._SVC_PENDING_KEY, "")
             self.db.set_state(self._SVC_PEER_ERR_KEY, err)
+            self._nudge_note(self._SVC_NUDGE_KEY, err)
         return {"ok": ok, "error": err, "n": len(items)}
 
     def services_retry(self) -> dict | None:

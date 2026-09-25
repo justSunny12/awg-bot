@@ -225,6 +225,8 @@ def _slot_note(state: str, gw: str, agent_bot: dict | None, error: str, purpose:
         bot = _bot_link(agent_bot)
         return f"⚠️ {purpose} необходимо обновить шлюз{gw}" + (f" (бот: {bot})" if bot else "")
     if state == "failed":
+        if error.startswith("непредвиденная ошибка"):
+            return f"⚠️ Шлюз{gw}: {_e(error)}"          # поломка на шлюзе, не отказ
         return f"⚠️ Шлюз{gw} отказался принимать" + (f": {_e(error)}" if error else "")
     return "⏳ Синхронизация с другими шлюзами…"
 

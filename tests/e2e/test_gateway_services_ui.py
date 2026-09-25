@@ -154,6 +154,53 @@ async def test_the_gateway_name_in_the_note_is_escaped_once(services, peers, fak
         f"имя шлюза экранировано дважды: {_svc_note(text)}")
 
 
+async def test_a_breakage_on_the_gateway_is_not_called_a_refusal(services, peers, fake_bot):
+    """Файл записей не записался на малине (диск полон) — это поломка на
+    шлюзе, а не отказ принять записи: карточка пишет «Шлюз «X»: непредвиденная
+    ошибка…», без «отказался принимать», иначе человек ищет, что не так с
+    записями, а чинить нужно диск. Настоящий отказ (dnsmasq) — прежней фразой."""
+    _publish(services)
+    services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error":
+                                             "непредвиденная ошибка, файл записей SMB не записан: "
+                                             "нет места на диске"})
+    text, _ = await _card(services, fake_bot, 2)
+    assert _svc_line(text) == HEAD, _svc_line(text)
+    assert _svc_note(text) == ("⚠️ Шлюз «Pi2»: непредвиденная ошибка, файл записей SMB не записан: "
+                               "нет места на диске"), _svc_note(text)
+    assert "отказался принимать" not in text, f"поломка на шлюзе названа отказом: {text}"
+    services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": "не пройдена проверка строк"})
+    text, _ = await _card(services, fake_bot, 2)
+    assert _svc_note(text) == "⚠️ Шлюз «Pi2» отказался принимать: не пройдена проверка строк", (
+        f"отказ проверки строк потерял «отказался принимать»: {_svc_note(text)}")
+
+
+async def test_a_breakage_text_from_the_gateway_is_escaped(services, peers, fake_bot, slots):
+    """Текст поломки пришёл с малины — чужая строка в разметке ВПС: и она, и
+    имя шлюза экранированы ровно один раз, иначе Telegram отвергнет карточку."""
+    _, _, pi2 = slots
+    services.rename_device(pi2.id, "Pi & <2>")
+    _publish(services)
+    services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error":
+                                             "непредвиденная ошибка, файл записей SMB не записан: <b>&</b>"})
+    text, _ = await _card(services, fake_bot, 2)
+    assert _svc_note(text) == ("⚠️ Шлюз «Pi &amp; &lt;2&gt;»: непредвиденная ошибка, файл записей SMB "
+                               "не записан: &lt;b&gt;&amp;&lt;/b&gt;"), _svc_note(text)
+
+
+@pytest.mark.parametrize("error,note", [
+    ("непредвиденная ошибка, файл записей SMB не записан: нет места на диске",
+     "⚠️ Шлюз: непредвиденная ошибка, файл записей SMB не записан: нет места на диске"),
+    ("dnsmasq: bad option", "⚠️ Шлюз отказался принимать: dnsmasq: bad option"),
+    # «непредвиденная ошибка» не в начале — это чужой текст, а не поломка агента
+    ("rc=1: непредвиденная ошибка", "⚠️ Шлюз отказался принимать: rc=1: непредвиденная ошибка"),
+])
+def test_the_breakage_branch_without_a_name_reads_whole(error, note):
+    """Без имени шлюза фраза поломки целая — «Шлюз: …», без двойного пробела;
+    ветку выбирает только начало текста ошибки."""
+    from awgbot.bot.texts.routing import services_line
+    assert services_line({"own": 0, "peer": 1, "state": "failed", "error": error}) == HEAD + "\n" + note
+
+
 @pytest.mark.parametrize("state,note", [
     ("reissue", "⚠️ Для доступа необходим перевыпуск конфигурации шлюза"),
     ("old_agent", "⚠️ Для доступа необходимо обновить шлюз"),

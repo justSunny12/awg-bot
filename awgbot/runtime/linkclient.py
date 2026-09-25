@@ -449,6 +449,12 @@ class LinkClient:
             if result:
                 await self._send_result("own_ack", result)
                 self._schedule_fill(result)
+        # поломку на шлюзе починили — просим канон снова: own_ev без правок
+        # сбрасывает у сервера «уже слал в этой сессии»
+        nudge = getattr(self.services, "own_nudge_due", None)
+        if nudge is not None and await asyncio.to_thread(nudge):
+            run, _events = await asyncio.to_thread(self.services.own_pending_events)
+            await self._send("own_ev", {"run": run or "-", "ev": []}, pad=gwlink.PAD_DELTA)
 
     async def _apply_peer_services(self, msg: dict) -> None:
         apply = getattr(self.services, "apply_peer_services", None)
@@ -466,9 +472,14 @@ class LinkClient:
         if retry is None or self._writer is None:
             return False
         result = await asyncio.to_thread(retry)
-        if not result:
-            return False
-        return await self._send_result("peer_svc_ack", result)
+        if result:
+            return await self._send_result("peer_svc_ack", result)
+        # поломку на шлюзе починили — свой список серверу заново: по нему он
+        # повторит записи соседей, если прошлый ответ был отказом
+        nudge = getattr(self.services, "services_nudge_due", None)
+        if nudge is not None and await asyncio.to_thread(nudge):
+            return await self.push_services()
+        return False
 
     async def _apply_lists(self, digest: str, z: str) -> None:
         result = await asyncio.to_thread(self.services.apply_lan_feeds, digest, z)

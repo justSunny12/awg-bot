@@ -583,3 +583,146 @@ async def test_records_refused_for_a_missing_helper_reach_dnsmasq_on_the_next_ti
     assert pair.sent.count((2, "peer_svc")) == peer_svc_before, "сервер повторно отвёз те же записи"
     assert len(acks) == 2, f"агент повторил ack: {acks[2:]}"
     assert host.restarts() == 1, "повтор перезапустил dnsmasq соседней сети"
+
+
+# ── повтор после поломки на шлюзе ────────────────────────────────────────────
+
+class _Clock:
+    """Часы обеих сторон: сдвиг в секундах от настоящего момента."""
+
+    def __init__(self, monkeypatch):
+        self.base, self.shift = timeutil.now(), 0.0
+        monkeypatch.setattr(timeutil, "now", lambda: self.base + datetime.timedelta(seconds=self.shift))
+
+
+def _full_disk(monkeypatch, path) -> dict:
+    """Запись файла path() на малине падает ENOSPC, пока state["full"]."""
+    import builtins
+    import errno
+    from awgbot.domain import gateway as gw_mod
+    state = {"full": True}
+    real_open = builtins.open
+
+    def fake_open(p, mode="r", *a, **k):
+        if state["full"] and str(p) == path() and "w" in mode:
+            raise OSError(errno.ENOSPC, "No space left on device", str(p))
+        return real_open(p, mode, *a, **k)
+    monkeypatch.setattr(gw_mod, "open", fake_open, raising=False)
+    return state
+
+
+async def test_records_refused_for_a_full_disk_reach_dnsmasq_after_the_fix(pair, real_agent, monkeypatch):
+    """Диск получателя полон — файл записей не записан, сервер видит
+    «непредвиденная ошибка». Первые десять минут агент молчит; потом (диск
+    почищен) на тике шлёт свой список `svc`, сервер по прошлому отказу
+    повторяет `peer_svc` этому слоту в той же сессии, настоящий помощник
+    ставит записи, ответ ok. Дальше — ни байта.
+
+    Цена ошибки: Finder соседней сети пуст до переподключения канала (дни)
+    при исправном диске; просьба на каждом тике — маячок в туннеле."""
+    s = pair.services
+    acks: list[dict] = []
+    real_ack = s.gwlink_peer_services_ack_in
+    monkeypatch.setattr(s, "gwlink_peer_services_ack_in", lambda slot, body: acks.append(body) or real_ack(slot, body))
+    # свой список получателя на ВПС — по нему видно просьбу агента
+    svcs: list[int] = []
+    real_svc = s.gwlink_services_in
+    monkeypatch.setattr(s, "gwlink_services_in", lambda slot, items: svcs.append(slot) or real_svc(slot, items))
+    monkeypatch.setattr(config, "ROLE", "gateway")         # иначе on_tick не видит клиента
+    clock = _Clock(monkeypatch)
+    _x_known(s)
+    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_NETS,
+                                      "LINK_CHANNEL": "1"})
+    disk = _full_disk(monkeypatch, lambda: gwguard.PEER_SERVICES_NEW)
+    await _up(pair, client, 2)
+    assert await _until(lambda: acks, timeout=5), "на peer_svc агент не ответил"
+    assert acks[0]["ok"] is False and acks[0]["error"] == (
+        "непредвиденная ошибка, файл записей SMB не записан: нет места на диске"), acks[0]
+    assert not host.conf.exists() and host.restarts() == 0
+    assert s.gwlink_services_card(s.db.gateway(2))["state"] == "failed"
+    delivered = pair.sent.count((2, "peer_svc"))
+    assert delivered == 1
+
+    svc_before = svcs.count(2)
+    disk["full"] = False
+    for t in (60, 300, 599):
+        clock.shift = t
+        await linkclient.on_tick(agent)
+        await pair.srv.deliver_all()
+    await asyncio.sleep(0.3)
+    # свои списки в этой сцене не настроены — их трафик не в счёт, считаем SMB
+    assert svcs.count(2) == svc_before and pair.sent.count((2, "peer_svc")) == delivered and len(acks) == 1, (
+        "просьба раньше интервала")
+
+    clock.shift = 600
+    await linkclient.on_tick(agent)
+    assert await _until(lambda: svcs.count(2) == svc_before + 1, timeout=5), "через интервал агент не прислал svc"
+    assert await _until(lambda: len(acks) == 2, timeout=5), "сервер не повторил записи или агент не ответил"
+    assert pair.sent.count((2, "peer_svc")) == delivered + 1, "записи повторены не один раз"
+    assert acks[1]["ok"] is True and acks[1]["hash"] == H_NAS and acks[1]["n"] == 1, acks[1]
+    assert "host-record=naspi5.awg.internal,192.168.1.10" in host.conf.read_text(encoding="utf-8")
+    assert host.restarts() == 1
+    assert s.gwlink_services_card(s.db.gateway(2))["state"] == "applied"
+    assert client._writer is not None, "просьба порвала сессию"
+
+    # после починки — ни просьб, ни повторов (до суток: дальше сосед «молчит» и снимается законно)
+    svc_after, delivered = svcs.count(2), pair.sent.count((2, "peer_svc"))
+    for t in (1200, 1800, 3600, 7200):
+        clock.shift = t
+        await linkclient.on_tick(agent)
+        await pair.srv.deliver_all()
+    await asyncio.sleep(0.3)
+    assert svcs.count(2) == svc_after, f"после починки агент ещё {svcs.count(2) - svc_after} раз прислал svc"
+    assert pair.sent.count((2, "peer_svc")) == delivered and len(acks) == 2, "после починки записи ездят снова"
+    assert host.restarts() == 1, "повтор перезапустил dnsmasq соседней сети"
+
+
+async def test_a_day_of_ticks_with_own_lists_missing_sends_not_a_byte(pair, real_agent, monkeypatch):
+    """Своих списков на шлюзе нет («файлов своих списков нет — раздел не
+    применился») — отказ не поломка, повтор его не вылечит. Сутки тиков
+    (480 по три минуты, часы идут) — ни байта с малины и ни одного own_set с
+    ВПС сверх первого: иначе раз в 10 минут пакет в туннеле, вечно."""
+    s = pair.services
+    monkeypatch.setattr(config, "ROLE", "gateway")         # иначе on_tick не видит клиента
+    clock = _Clock(monkeypatch)
+    own_acks: list[dict] = []
+    real_own = s.gwlink_own_ack_in
+    monkeypatch.setattr(s, "gwlink_own_ack_in", lambda slot, body: own_acks.append(dict(body)) or real_own(slot, body))
+    _x_known(s)
+    host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_NETS,
+                                      "LINK_CHANNEL": "1"})
+    await _up(pair, client, 2)
+    assert await _until(lambda: own_acks and s.gwlink_peer_services_ack(2).get("ok"), timeout=5), (
+        own_acks, s.gwlink_peer_services_ack(2))
+    assert own_acks[0]["ok"] is False and own_acks[0]["error"] == "файлов своих списков нет — раздел не применился", \
+        f"сцена не та: {own_acks[0]}"
+    await pair.srv.deliver_all()
+    await asyncio.sleep(0.3)
+    before_agent, before_srv = client._sent_bytes, len(pair.sent)
+    for i in range(1, 481):
+        clock.shift = i * 180
+        # сосед на связи — иначе через сутки его записи снимаются законно
+        s.db.set_state(s._gwlink_key(s._GWLINK_SEEN_KEY, 1), timeutil.to_iso(timeutil.now()))
+        await linkclient.on_tick(agent)
+        await pair.srv.deliver_all()
+    await asyncio.sleep(0.3)
+    assert client._sent_bytes == before_agent, (
+        f"за сутки при отказе не-поломке агент отправил {client._sent_bytes - before_agent} байт")
+    assert pair.sent[before_srv:] == [], f"сервер повторял: {pair.sent[before_srv:][:6]}"
+    assert len(own_acks) == 1, f"канон переотвечен {len(own_acks) - 1} раз"
+
+
+async def test_a_services_list_after_an_accepted_delivery_does_not_resend_the_records(pair):
+    """`svc` от слота, который прошлые записи принял, — просто его список:
+    повторять ему записи соседей незачем (лишний рестарт dnsmasq квартиры).
+    Ветка отказа — в сквозном сценарии с полным диском выше."""
+    s = pair.services
+    _x_known(s)
+    _y_snap(s)
+    y = await _hello(pair, 2)
+    assert await _next(y, "peer_svc") is not None
+    await y.send("peer_svc_ack", {"ok": True, "hash": H_NAS, "n": 1, "error": ""})
+    assert await _until(lambda: s.gwlink_peer_services_ack(2).get("ok"))
+    await y.send("svc", {"items": []})
+    assert await _next(y, "peer_svc", 0.5) is None, "принятые записи повторены по svc"
+    await y.close()

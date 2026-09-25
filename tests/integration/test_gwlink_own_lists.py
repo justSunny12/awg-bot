@@ -818,3 +818,112 @@ async def test_an_old_server_skips_own_ev_and_the_session_lives_on(pair, pi, mon
     assert c._writer is writer and pair.srv.online(1), "незнакомый старому серверу вид порвал сессию"
     assert pair.ev == [] and _canon(s) == {}
     assert a.own_status()[0]["state"] == "pending"
+
+
+# ── повтор после поломки на шлюзе ────────────────────────────────────────────
+
+class _Clock:
+    """Часы обеих сторон: сдвиг в секундах от настоящего момента."""
+
+    def __init__(self, monkeypatch):
+        import datetime
+        from awgbot.util import timeutil
+        self.base, self.shift, self._td = timeutil.now(), 0.0, datetime.timedelta
+        monkeypatch.setattr(timeutil, "now", lambda: self.base + self._td(seconds=self.shift))
+
+
+def _full_disk(monkeypatch, path) -> dict:
+    """Запись файла path() на малине падает ENOSPC, пока state["full"]."""
+    import builtins
+    import errno
+    from awgbot.domain import gateway as gw_mod
+    state = {"full": True}
+    real_open = builtins.open
+
+    def fake_open(p, mode="r", *a, **k):
+        if state["full"] and str(p) == path() and "w" in mode:
+            raise OSError(errno.ENOSPC, "No space left on device", str(p))
+        return real_open(p, mode, *a, **k)
+    monkeypatch.setattr(gw_mod, "open", fake_open, raising=False)
+    return state
+
+
+async def test_a_canon_refused_for_a_full_disk_lands_after_the_fix_without_a_reconnect(pair, pi, monkeypatch):
+    """Диск малины полон — канон не записан, сервер видит «непредвиденная
+    ошибка». Первые десять минут агент молчит; потом (диск уже почищен) на
+    тике просит канон пустым own_ev, сервер присылает его снова в той же
+    сессии, настоящий sync применяет, ответ ok. Дальше — ни байта.
+
+    Цена ошибки: без просьбы свои списки на шлюзе пусты до переподключения
+    канала (дни) при исправном диске; просьба на каждом тике — маячок."""
+    s = pair.services
+    clock = _Clock(monkeypatch)
+    disk = _full_disk(monkeypatch, lambda: gwguard.OWN_LISTS_NEW)
+    _seed(s, {"news.org": "vpn"})
+    a = pi.agent()
+    c = await pi.up(a)
+    assert await _until(lambda: pair.acks, timeout=5), "на канон агент не ответил"
+    ack = pair.acks[0][1]
+    assert ack["ok"] is False and ack["error"] == (
+        "непредвиденная ошибка, файл своих списков не записан: нет места на диске"), ack
+    assert _card(s, 1)["state"] == "failed" and pi.host.lists() == {}
+    sets, evs = _own_sets(pair, 1), len(pair.ev)
+    assert sets == 1
+
+    # до интервала — тишина, даже если диск уже починили
+    disk["full"] = False
+    for t in (60, 300, 599):
+        clock.shift = t
+        await linkclient.on_tick(a)
+        await pair.srv.deliver_all()
+    await asyncio.sleep(0.3)
+    assert len(pair.ev) == evs and _own_sets(pair, 1) == sets, (
+        f"просьба раньше интервала: ev={pair.ev[evs:]}, own_set={_own_sets(pair, 1) - sets}")
+
+    clock.shift = 600
+    await linkclient.on_tick(a)
+    assert await _until(lambda: len(pair.ev) == evs + 1, timeout=5), "через интервал агент не попросил канон"
+    assert pair.ev[-1][0] == 1 and pair.ev[-1][2] == [], f"просьба — не пустой own_ev: {pair.ev[-1]}"
+    assert await _until(lambda: len(pair.acks) == 2, timeout=5), "сервер не повторил канон или агент не ответил"
+    assert _own_sets(pair, 1) == sets + 1, "канон повторён не один раз"
+    assert pair.acks[1][1]["ok"] is True and pair.acks[1][1]["hash"] == ack["hash"], pair.acks[1]
+    assert pi.host.lists() == {"news.org": "vpn"}, "канон не лёг в файлы"
+    assert _card(s, 1)["state"] == "applied", _card(s, 1)
+    assert c._writer is not None, "просьба порвала сессию"
+
+    # после починки — ни просьб, ни повторов, сколько бы ни прошло
+    if c._fill_task is not None:
+        await asyncio.wait_for(c._fill_task, 10)
+    before_agent, before_srv = c._sent_bytes, len(pair.sent)
+    for t in (1200, 1800, 3600, 86400):
+        clock.shift = t
+        await linkclient.on_tick(a)
+        await pair.srv.deliver_all()
+    await asyncio.sleep(0.3)
+    assert c._sent_bytes == before_agent, f"после починки агент отправил {c._sent_bytes - before_agent} байт"
+    assert pair.sent[before_srv:] == [], f"после починки сервер говорил: {pair.sent[before_srv:]}"
+
+
+async def test_a_disk_still_full_is_asked_again_only_once_per_interval(pair, pi, monkeypatch):
+    """Диск так и не почистили: просьба раз в интервал, каждый раз один
+    повтор канона и тот же отказ — не пакет на каждом тике."""
+    s = pair.services
+    clock = _Clock(monkeypatch)
+    _full_disk(monkeypatch, lambda: gwguard.OWN_LISTS_NEW)
+    _seed(s, {"news.org": "vpn"})
+    a = pi.agent()
+    await pi.up(a)
+    assert await _until(lambda: pair.acks, timeout=5)
+    evs = len(pair.ev)
+    for t in (600, 700, 900, 1199):
+        clock.shift = t
+        await linkclient.on_tick(a)
+        await pair.srv.deliver_all()
+    assert await _until(lambda: len(pair.acks) == 2, timeout=5), "первая просьба не дала повтора"
+    await asyncio.sleep(0.3)
+    assert len(pair.ev) == evs + 1 and len(pair.acks) == 2, (
+        f"за интервал больше одной просьбы: ev={pair.ev[evs:]}, acks={len(pair.acks)}")
+    assert pair.acks[1][1]["ok"] is False
+    clock.shift = 1200
+    await linkclient.on_tick(a)
+    assert await _until(lambda: len(pair.ev) == evs + 2, timeout=5), "через интервал вторая просьба не ушла"
