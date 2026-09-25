@@ -369,18 +369,6 @@ def routing_provision() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def settings_routing_bundle(slot: int = 0) -> InlineKeyboardMarkup:
-    """Экран перед выпуском конфигурации шлюза: одно действие и отмена.
-    Файл уходит в чат с ключом линка внутри — выпуск должен быть осознанным."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="📤 Выпустить файл",
-              callback_data=SetCB(sec="rt", act="do", key="bundle", val=str(slot or "")))
-    kb.button(text="✖️ Отмена", callback_data=(GwSlotCB(action="card", slot=slot).pack() if slot
-                                              else SetCB(sec="rt").pack()))
-    kb.adjust(1)
-    return kb.as_markup()
-
-
 def settings_routing_lists(lists_every: int) -> InlineKeyboardMarkup:
     """Подраздел «Списки»: период — пикером (горячий ключ), плюс принудительное
     обновление: ждать до шести часов, когда источник только что починили,
@@ -412,19 +400,21 @@ def settings_routing_users(clients=(), page: int = 0) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def bundle_menu_kb(slot: int = 0) -> InlineKeyboardMarkup:
-    """«Отмена» на сообщении с бандлом: файл и инструкция уходят из чата (внутри
-    ключ линка), человек возвращается в карточку слота, для которого файл
-    выпускался. Своя кнопка, а не общая с обновлениями: та снимает клавиатуру,
-    оставляя текст."""
+def bundle_menu_kb(slot: int = 0, plain: bool = False) -> InlineKeyboardMarkup:
+    """«В меню» на сообщении с файлом конфигурации: файл (и сообщение над ним)
+    уходят из чата — внутри ключ линка. Шифрованный файл возвращает в карточку
+    слота, для которого выпускался (`bundle_cancel`); файл первого применения
+    (plain) — в главное меню: шлюз уже назначен, отменять нечего (`bundle_menu`).
+    Своя кнопка, а не общая с обновлениями: та снимает клавиатуру, оставляя текст."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="\u2b05\ufe0f Отмена",
-              callback_data=SetCB(sec="rt", act="do", key="bundle_cancel", val=str(slot or "")))
+    kb.button(text="\u2b05\ufe0f В меню",
+              callback_data=SetCB(sec="rt", act="do", key="bundle_menu" if plain else "bundle_cancel",
+                                  val=str(slot or "")))
     return kb.as_markup()
 
 
 def bundle_result_kb(slot: int = 0) -> InlineKeyboardMarkup:
-    """«Назад» под итогом применения конфигурации — в карточку слота."""
+    """«Назад» под уведомлением о настроенном шлюзе — в карточку слота."""
     kb = InlineKeyboardBuilder()
     kb.button(text="\u2b05\ufe0f Назад", callback_data=(GwSlotCB(action="card", slot=slot).pack() if slot
                                                        else SetCB(sec="rt").pack()))

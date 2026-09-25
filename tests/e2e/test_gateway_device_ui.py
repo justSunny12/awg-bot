@@ -108,7 +108,10 @@ async def test_settings_assign_existing_device_goes_the_full_way(services, fake_
     assert _gw_dev_id(services) == pi.id
     assert services.modes == ["--rekey"], "ключи линка новые: устройство линка не знает"
     docs = _docs(msg)
-    assert len(docs) == 1 and "первого применения" in docs[0][1], "открытый файл, руками"
+    assert len(docs) == 1 and docs[0][1] == (
+        "🛰 Файл конфигурации шлюза\nВоспользуйся инструкцией выше для настройки нового шлюза: "
+        "<b>«NASPi»</b>\n\nПосле возврата в меню сообщение с файлом и инструкция удалятся из чата."), \
+        f"открытый файл, руками: {docs}"
     assert any("--install" in s[1] for s in msg.sent if s[0] == "answer"), "инструкция"
     text, markup = await sh._screen("rt", services)
     labels = _labels(markup)
@@ -138,7 +141,8 @@ async def test_settings_change_gateway_rekeys_and_gives_plain_first_run_file(ser
     assert services.db.get_device(pi.id).is_gateway == 0
     assert services.modes == ["--rekey"]
     docs = _docs(nav)
-    assert len(docs) == 1 and "первого применения" in docs[0][1]
+    assert len(docs) == 1 and docs[0][1].startswith("🛰 Файл конфигурации шлюза\n") \
+        and "<b>«phone»</b>" in docs[0][1], docs
     assert not any("GW1:" in (s[1] or "") for s in nav.sent), "токенов в новой схеме нет"
     # Машина ставится с нуля — значит и здесь показывается та же инструкция,
     # что для новой машины: одна команда со своей машины.
@@ -171,7 +175,8 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
     assert services.modes == ["--rekey"]
     assert stored["t"].startswith("123456789:")
     docs = _docs(msg)
-    assert len(docs) == 1 and "первого применения" in docs[0][1]
+    assert len(docs) == 1 and docs[0][1].startswith("🛰 Файл конфигурации шлюза\n") \
+        and "<b>«Шлюз»</b>" in docs[0][1], docs
     instr = [s[1] for s in msg.sent if s[0] == "answer" and "--install" in s[1]]
     assert instr, "инструкция не показана"
     # Копирование и установка склеены: установка на шлюзе вопросов не задаёт,
@@ -183,6 +188,12 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
     assert one.index("scp") < one.index("ssh -t") < one.index("--install")
     # поставка внутри файла: с шлюза в России GitHub без туннеля не достать
     assert "githubusercontent" not in one
+    # команда запускается там, где лежит сохранённый файл; после установки —
+    # одно действие человека: /start боту шлюза (первым он написать не может)
+    assert "<b>со своей машины</b> (из директории с файлом)" in one
+    assert "Установка полностью автоматическая" in one
+    assert "отправь <b>боту шлюза</b> <code>/start</code> — и всё готово 🙂" in one
+    assert one.endswith("После установки файл конфигурации удалится с хоста шлюза сам."), one
 
     # Токен уже есть — второй раз не спрашиваем
     services.db.gateway_delete(1)

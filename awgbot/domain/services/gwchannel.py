@@ -182,8 +182,34 @@ class GwChannelMixin:
                     self._GWLINK_SNAP_REV_KEY, self._GWLINK_SNAP_AT_KEY, self._GWLINK_SNAP_TS_KEY,
                     self._GWLINK_ERROR_KEY, self._GWLINK_ACK_KEY, self._GWLINK_LISTS_KEY,
                     self._GWLINK_SVC_KEY, self._GWLINK_SVC_AT_KEY, self._GWLINK_PEER_SVC_KEY,
-                    self._GWLINK_APPLIED_KEY, self._GWLINK_BUNDLE_MSG_KEY):
+                    self._GWLINK_APPLIED_KEY, self._GWLINK_BUNDLE_MSG_KEY,
+                    self._GWLINK_INSTALL_WAIT_KEY):
             self.db.set_state(self._gwlink_key(key, slot_id), "")
+
+    # ── новый шлюз: файл первого применения выдан, ждём его на связи ─────────
+    _GWLINK_INSTALL_WAIT_KEY = "gwlink_install_wait"
+
+    def gw_install_wait_set(self, slot_id: int) -> None:
+        """Файл первого применения выдан: первый полный снимок слота — это
+        «установщик отработал, агент стоит», админу об этом скажут."""
+        self.db.set_state(self._gwlink_key(self._GWLINK_INSTALL_WAIT_KEY, slot_id),
+                          timeutil.to_iso(timeutil.now()))
+
+    _GWLINK_INSTALL_WAIT_TTL_S = 30 * 24 * 3600
+
+    def gw_install_wait_take(self, slot_id: int) -> bool:
+        """Снять ожидание, если было: True — уведомить админа (один раз).
+        Просроченное (месяц: канал включили много позже установки) — снять молча."""
+        key = self._gwlink_key(self._GWLINK_INSTALL_WAIT_KEY, slot_id)
+        raw = self.db.get_state(key)
+        if not raw:
+            return False
+        self.db.set_state(key, "")
+        try:
+            age = (timeutil.now() - timeutil.parse_iso(raw)).total_seconds()
+        except ValueError:
+            return True
+        return age <= self._GWLINK_INSTALL_WAIT_TTL_S
 
     # ── итог применения конфигурации, пришедший каналом ──────────────────────
     _GWLINK_APPLIED_KEY = "gwlink_applied"       # ok|fail время отпечаток время-у-агента ошибка
@@ -208,13 +234,14 @@ class GwChannelMixin:
         return {"ok": ok, "error": err, "fp": fp, "at": at, "dup": dup}
 
     def gw_bundle_msg_set(self, slot_id: int, chat_id: int, file_id: int, instr_id: int | None,
-                          fp: str = "") -> None:
+                          fp: str = "", plain: bool = False) -> None:
         """Запомнить, где лежит выданный файл и его отпечаток: итог с шлюза
-        заменит файл, «Отмена» уберёт. Итог о другом файле этот не трогает."""
+        уберёт файл, «В меню» тоже. Итог о другом файле этот не трогает.
+        plain — файл первого применения: его убирает выход шлюза на связь."""
         self.db.set_state(self._gwlink_key(self._GWLINK_BUNDLE_MSG_KEY, slot_id),
                           json.dumps({"chat": int(chat_id), "file": int(file_id),
                                       "instr": int(instr_id) if instr_id else None,
-                                      "fp": str(fp or "")[:32]}))
+                                      "fp": str(fp or "")[:32], "plain": bool(plain)}))
 
     @staticmethod
     def bundle_fingerprint(blob: bytes) -> str:

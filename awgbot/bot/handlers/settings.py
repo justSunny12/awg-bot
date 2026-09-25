@@ -119,7 +119,7 @@ async def _screen(sec: str, services, key: str = ""):
                 return "Слоты шлюзов заняты: убери один, чтобы добавить другой.", kb.settings_back("rt")
             return texts.GATEWAY_STANDBY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands), 0)
         return texts.GATEWAY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands), 0)
-    if sec in ("rt_lists", "rt_users", "rt_bundle", "rt_mon"):
+    if sec in ("rt_lists", "rt_users", "rt_mon"):
         # Подразделы существуют только при включённой функции. Колбэк приходит
         # и из старого сообщения — тогда честно говорим, что раздел пуст.
         if not config.ROUTING_ENABLED or not settings.get_bool("app.routing.enabled", False):
@@ -127,18 +127,6 @@ async def _screen(sec: str, services, key: str = ""):
         if sec == "rt_mon":
             info = await call(services.routing_monitor_info)
             return texts.routing_monitor_text(info), kb.settings_routing_monitor(info)
-        if sec == "rt_bundle":
-            # Промежуточный экран: файл уносит ключ линка, выпуск — осознанно.
-            slot = int(key or 0)
-            head = texts.ROUTING_BUNDLE_INTRO
-            if slot:
-                st = await call(services.gateway_state, slot)
-                head = head.replace("Конфигурация шлюза</b>", f"Конфигурация шлюза {texts.slot_short(st)}</b>", 1)
-                # что реально стоит на шлюзе по снимку канала — здесь человек
-                # выпускает файл, здесь же видно, доехал ли прошлый
-                ch = await call(services.gwlink_card, st["gateway"], st.get("handshake_age"))
-                head += texts.channel_drift_block(ch)
-            return head, kb.settings_routing_bundle(slot)
         if sec == "rt_lists":
             info = await call(services.routing_lists_info)
             return texts.routing_lists_text(info), kb.settings_routing_lists(info["every_hours"])
@@ -185,8 +173,9 @@ async def _record(cb: CallbackQuery, text: str, services):
 
 async def send_gw_bundle(message: Message, services, slot: int = 0, instr_id: int | None = None) -> bool:
     """Собрать, зашифровать и отдать конфигурацию слота файлом с кнопкой
-    «Отмена». Одна точка для настроек, назначения шлюза и приёма токена.
-    instr_id — сообщение с инструкцией над файлом: итог с шлюза уберёт оба."""
+    «В меню». Одна точка для карточки, назначения шлюза и приёма токена.
+    instr_id — сообщение над файлом (погасшая карточка): «В меню» и итог
+    применения с шлюза уберут оба."""
     try:
         blob, name = await call(services.gw_bundle_encrypted, slot or None)
     except (ServiceError, OSError) as e:
@@ -230,19 +219,53 @@ async def _drop_bundle_msgs(bot, services, slot_id: int, fp: str = "") -> bool:
 
 
 async def bundle_applied(bot, services, slot_id: int, ok: bool, error: str, fp: str = "") -> None:
-    """Итог применения пришёл каналом: инструкция и файл уходят из чата (файл
-    отслужил, внутри ключ линка), на их месте — итог с «Назад» в карточку.
-    Итог — живое меню чата (прежнее гаснет): «Назад» ведёт дальше, а две
-    клавиатуры рядом — это два пути сразу."""
+    """Итог применения пришёл каналом. Сообщения об итоге нет: его человек уже
+    видел в чате бота шлюза. Применилось — файл отслужил (внутри ключ линка):
+    он и сообщение над ним уходят из чата, на их месте — карточка слота, как
+    по «В меню». Не применилось — файл остаётся: его можно переслать снова.
+    Итог о другом файле (fp не сошёлся) или без файла в чате — только запись."""
+    if not ok:
+        return
     where = await call(services.gw_bundle_msg_get, slot_id)
     chat_id = int(where.get("chat") or config.ADMIN_ID)
-    await _drop_bundle_msgs(bot, services, slot_id, fp)
+    if not await _drop_bundle_msgs(bot, services, slot_id, fp):
+        return
+    await _show_card_anew(bot, services, chat_id, slot_id)
+
+
+async def _show_card_anew(bot, services, chat_id: int, slot_id: int) -> None:
+    """Карточка слота новым сообщением как живое меню чата — без входящего
+    сообщения (по событию канала). Слота уже нет — главная."""
     try:
-        display, _bot = await call(services.gw_bundle_target, slot_id)
-    except (ServiceError, OSError):
-        display = f"слот {slot_id}"
+        st = await call(services.gateway_screen_state, slot_id)
+    except ServiceError:
+        st = None
     await _dismiss_previous_nav(bot, services, chat_id)
-    sent = await bot.send_message(chat_id, texts.gateway_bundle_applied_text(display, ok, error),
+    if st is None:
+        from awgbot.bot.handlers.admin import _panel_parts
+        text, markup = await _panel_parts(services)
+    else:
+        text, markup = texts.gateway_card_text(st, st["states"]), card_kb(st, chat_id)
+    sent = await bot.send_message(chat_id, text, reply_markup=markup)
+    await call(services.db.nav_touch, chat_id, sent.message_id)
+
+
+async def bundle_installed(bot, services, slot_id: int) -> None:
+    """Шлюз, поставленный файлом первого применения, впервые вышел на связь
+    каналом: файл с ключами и токеном и инструкция уходят из чата, админу —
+    «✅ Шлюз … успешно настроен» со ссылкой на бота шлюза и «Назад» в карточку."""
+    where = await call(services.gw_bundle_msg_get, slot_id)
+    chat_id = int(where.get("chat") or config.ADMIN_ID)
+    if where.get("plain"):
+        # шифрованный файл, выпущенный после файла первого применения, — не
+        # этого события: его уберёт итог применения
+        await _drop_bundle_msgs(bot, services, slot_id)
+    try:
+        display, agent_bot = await call(services.gw_bundle_target, slot_id)
+    except (ServiceError, OSError):
+        display, agent_bot = f"слот {slot_id}", {}
+    await _dismiss_previous_nav(bot, services, chat_id)
+    sent = await bot.send_message(chat_id, texts.gateway_installed_text(display, agent_bot),
                                   reply_markup=kb.bundle_result_kb(slot_id))
     await call(services.db.nav_touch, chat_id, sent.message_id)
 
@@ -397,15 +420,19 @@ async def _send_plain_bundle(message: Message, services, slot: int = 0, instr_id
     from aiogram.types import BufferedInputFile
     if slot:
         await _drop_bundle_msgs(message.bot, services, slot)
+    try:
+        display, _bot = await call(services.gw_bundle_target, slot or None)
+    except (ServiceError, OSError):
+        display = f"слот {slot}"
     sent = await message.answer_document(
         BufferedInputFile(blob, filename=name),
-        caption="🛰 Файл первого применения. Скопируй его на машину-шлюз в /root/ — "
-                "установщик найдёт его сам. Внутри ключи и токен агента: после "
-                "установки удали.",
-        reply_markup=kb.bundle_menu_kb(slot))
+        caption=texts.gateway_plain_bundle_caption(display),
+        reply_markup=kb.bundle_menu_kb(slot, plain=True))
     if slot:
         await call(services.gw_bundle_msg_set, slot, message.chat.id, sent.message_id, instr_id,
-                   services.bundle_fingerprint(blob))
+                   services.bundle_fingerprint(blob), True)
+        # первый выход шлюза на связь каналом — «✅ … успешно настроен» админу
+        await call(services.gw_install_wait_set, slot)
 
 
 # ── слоты шлюзов (концепт «резервный шлюз» §6) ───────────────────────────────
@@ -612,8 +639,21 @@ async def gw_slot_router(cb: CallbackQuery, callback_data: GwSlotCB, services):
 
 @router.callback_query(GwSlotCB.filter(F.action == "bundle"))
 async def gw_slot_bundle(cb: CallbackQuery, callback_data: GwSlotCB, services):
-    await cb.answer()
-    await _render(cb, "rt_bundle", services, key=str(callback_data.slot or ""))
+    """«⚙️ Конфигурация шлюза» в карточке: файл сразу, без экрана «что
+    произойдёт». Карточка гаснет и помечается как контент: живым остаётся
+    «В меню» на файле, а «В меню» и приход шлюза на связь уберут её вместе с
+    файлом (send_gw_bundle запоминает обе)."""
+    await cb.answer("Собираю и шифрую…")
+    await _issue_bundle_here(cb, services, int(callback_data.slot or 0))
+
+
+async def _issue_bundle_here(cb: CallbackQuery, services, slot: int) -> None:
+    try:
+        await cb.message.edit_reply_markup(reply_markup=None)
+    except Exception:                                      # noqa: BLE001
+        pass
+    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
+    await send_gw_bundle(cb.message, services, slot, instr_id=cb.message.message_id)
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "home"))
@@ -781,18 +821,10 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
     """Разрешение профилю на РФ-доступ. Верхний слой флага: снимая его, гасим
     эффект, но настройки самого клиента не разрушаем."""
     if callback_data.key == "bundle":
+        # «📤 Выпустить файл» упразднённого экрана «что произойдёт» — на случай
+        # старого сообщения в чате: тот же выпуск с карточки/экрана
         await cb.answer("Собираю и шифрую…")
-        # Экран-инструкция гаснет: живым должно остаться одно меню, и это —
-        # «Отмена» на самом файле. Инструкцию помечаем как контент: возврат в
-        # меню (show_main_menu → cleanup_content) удалит и её, а итог с шлюза
-        # или «Отмена» уберут её вместе с файлом (send_gw_bundle запоминает обе).
-        try:
-            await cb.message.edit_reply_markup(reply_markup=None)
-        except Exception:                                  # noqa: BLE001
-            pass
-        await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
-        await send_gw_bundle(cb.message, services, int(callback_data.val or 0),
-                             instr_id=cb.message.message_id)
+        await _issue_bundle_here(cb, services, int(callback_data.val or 0))
         return
     if callback_data.key == "lists_refresh":
         # Колбэк отвечается ОДИН раз — второй ответ Telegram молча роняет.
@@ -814,20 +846,30 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         await cb.answer("Условная маршрутизация выключена")
         return
     if callback_data.key == "bundle_menu":
-        # кнопка старых сообщений (до 3.1.0): файл уходит из чата, панель — новым
-        try:
-            await cb.message.delete()
-        except Exception:                                  # noqa: BLE001
-            pass
+        # «В меню» под файлом первого применения (и под файлами до 3.1.0): файл
+        # и инструкция над ним уходят из чата, главная — новым сообщением.
+        # Шлюз уже назначен — отменять нечего, потому не карточка, а меню.
+        slot = int(callback_data.val or 0)
+        where = await call(services.gw_bundle_msg_get, slot) if slot else {}
+        ours = bool(where) and int(where.get("file") or 0) == cb.message.message_id
+        for mid in ((where.get("instr") if ours else None), cb.message.message_id):
+            if mid:
+                try:
+                    await cb.bot.delete_message(cb.message.chat.id, int(mid))
+                except Exception:                          # noqa: BLE001
+                    pass
+        if ours:
+            await call(services.gw_bundle_msg_clear, slot)
         await show_main_menu(cb.message, services, "admin")
         await cb.answer()
         return
     if callback_data.key == "bundle_cancel":
-        # «Отмена» под файлом: файл и инструкция уходят из чата (внутри ключ
-        # линка), человек возвращается в карточку слота, для которого выпускал
+        # «В меню» под шифрованным файлом: файл и погасшая карточка над ним
+        # уходят из чата (внутри ключ линка), человек возвращается в карточку
+        # слота, для которого выпускал
         slot = int(callback_data.val or 0)
         where = await call(services.gw_bundle_msg_get, slot) if slot else {}
-        # запись — о последнем файле слота; «Отмена» на прежнем (перевыпуск
+        # запись — о последнем файле слота; «В меню» на прежнем (перевыпуск
         # его не убрал) удаляет только его, инструкцию и запись нового не трогает
         ours = bool(where) and int(where.get("file") or 0) == cb.message.message_id
         for mid in ((where.get("instr") if ours else None), cb.message.message_id):

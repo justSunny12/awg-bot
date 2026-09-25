@@ -397,7 +397,8 @@ async def test_getme_failure_does_not_stop_the_bundle(services, slots, fake_bot)
     msg = await _enter_second_token(services, fake_bot)
     assert [g.id for g in services.db.gateways()] == [1, 2]
     docs = [s for s in msg.sent if s[0] == "document"]
-    assert len(docs) == 1 and "первого применения" in docs[0][1], "бандл не выдан после отказа getMe"
+    assert len(docs) == 1 and docs[0][1].startswith("🛰 Файл конфигурации шлюза\n"), \
+        f"бандл не выдан после отказа getMe: {docs}"
     assert any(s[0] == "answer" and "--install" in s[1] for s in msg.sent), "инструкции нет"
     text, _ = await _card_text(services, fake_bot, 2)
     assert "Бот шлюза" not in text
@@ -409,15 +410,17 @@ def test_bundle_caption_links_the_agent_bot():
     """Файл уходит в чат ВПС, а применять его надо в другом боте: подпись
     говорит, для какого шлюза файл и куда его переслать — ссылкой."""
     got = texts.gateway_bundle_caption("«Pi2» (дом 2)", {"username": "pi2_gw_bot", "name": "Шлюз Pi2"})
-    assert got == ('⚙️ Конфигурация шлюза <b>«Pi2» (дом 2)</b>.\nПерешли файл боту шлюза '
-                   '(<a href="https://t.me/pi2_gw_bot">Шлюз Pi2</a>) — он проверит и применит сам.'), got
+    assert got == ('⚙️ Конфигурация шлюза <b>«Pi2» (дом 2)</b>.\nПерешли это сообщение боту шлюза '
+                   '(<a href="https://t.me/pi2_gw_bot">Шлюз Pi2</a>) — он проверит и применит сам.\n'
+                   "Результат применения конфигурации сообщит бот шлюза.\n\nℹ️ Возврат в меню удалит это сообщение"), got
 
 
 def test_bundle_caption_without_known_bot_has_no_link():
     """getMe ещё не отвечал — без ссылки и без пустых скобок."""
     for bot in ({}, None, {"username": "", "name": "x"}):
         got = texts.gateway_bundle_caption("«Pi2»", bot)
-        assert got == "⚙️ Конфигурация шлюза <b>«Pi2»</b>.\nПерешли файл боту шлюза — он проверит и применит сам.", (bot, got)
+        assert got == ("⚙️ Конфигурация шлюза <b>«Pi2»</b>.\nПерешли это сообщение боту шлюза — "
+                       "он проверит и применит сам.\n" "Результат применения конфигурации сообщит бот шлюза.\n\nℹ️ Возврат в меню удалит это сообщение"), (bot, got)
 
 
 def test_bundle_caption_without_bot_name_shows_username():
@@ -444,12 +447,14 @@ async def test_send_gw_bundle_captions_the_file_with_slot_and_bot(services, slot
     msg = _amsg(fake_bot)
     assert await sh.send_gw_bundle(msg, services, 2) is True
     docs = [s[1] for s in msg.sent if s[0] == "document"]
-    assert docs == ['⚙️ Конфигурация шлюза <b>«Pi2» (дом &lt;2&gt;)</b>.\nПерешли файл боту шлюза '
-                    '(<a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>) — он проверит и применит сам.'], docs
+    assert docs == ['⚙️ Конфигурация шлюза <b>«Pi2» (дом &lt;2&gt;)</b>.\nПерешли это сообщение боту шлюза '
+                    '(<a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>) — он проверит и применит сам.\n'
+                    "Результат применения конфигурации сообщит бот шлюза.\n\nℹ️ Возврат в меню удалит это сообщение"], docs
     msg1 = _amsg(fake_bot)
     assert await sh.send_gw_bundle(msg1, services, 1) is True
     docs1 = [s[1] for s in msg1.sent if s[0] == "document"]
-    assert docs1 == ["⚙️ Конфигурация шлюза <b>«NASPi»</b>.\nПерешли файл боту шлюза — он проверит и применит сам."], \
+    assert docs1 == ["⚙️ Конфигурация шлюза <b>«NASPi»</b>.\nПерешли это сообщение боту шлюза — "
+                     "он проверит и применит сам.\n" "Результат применения конфигурации сообщит бот шлюза.\n\nℹ️ Возврат в меню удалит это сообщение"], \
         "бот слота 2 попал в подпись файла слота 1"
 
 
@@ -543,22 +548,33 @@ async def test_send_gw_bundle_captions_the_bot_from_the_snapshot(services, slots
     msg = _amsg(fake_bot)
     assert await sh.send_gw_bundle(msg, services, 2) is True
     docs = [s[1] for s in msg.sent if s[0] == "document"]
-    assert docs == ['⚙️ Конфигурация шлюза <b>«Pi2»</b>.\nПерешли файл боту шлюза '
-                    '(<a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>) — он проверит и применит сам.'], docs
+    assert docs == ['⚙️ Конфигурация шлюза <b>«Pi2»</b>.\nПерешли это сообщение боту шлюза '
+                    '(<a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>) — он проверит и применит сам.\n'
+                    "Результат применения конфигурации сообщит бот шлюза.\n\nℹ️ Возврат в меню удалит это сообщение"], docs
 
 
 # ── кнопки «Токен бота шлюза» больше нет ─────────────────────────────────────
 
-def test_bundle_screen_has_no_token_button():
-    """Токен задаётся один раз при настройке; экран выпуска файла — только
-    «Выпустить» и «Отмена», для слота и без него."""
+async def test_no_token_button_in_the_card_or_under_the_files(services, slots, fake_bot):
+    """Токен задаётся один раз при настройке. Экрана перед выпуском файла
+    больше нет — файл выпускается из карточки слота; ни в карточке, ни под
+    обоими файлами кнопки токена нет — там только «⬅️ В меню»."""
     from awgbot.bot import keyboards as kbs
-    for slot in (0, 1, 2):
-        mk = kbs.settings_routing_bundle(slot)
-        labels = [b.text for row in mk.inline_keyboard for b in row]
-        assert labels == ["📤 Выпустить файл", "✖️ Отмена"], (slot, labels)
-        datas = [b.callback_data for row in mk.inline_keyboard for b in row]
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    for slot in (1, 2):
+        cb, nav = _acb(fake_bot)
+        await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=slot), services, FakeState())
+        markup = next(s[2] for s in reversed(nav.sent) if s[0] == "edit_text")
+        datas = [b.callback_data for row in markup.inline_keyboard for b in row]
+        labels = [b.text for row in markup.inline_keyboard for b in row]
         assert GwSlotCB(action="token", slot=slot).pack() not in datas, (slot, datas)
+        assert not [t for t in labels if "Токен" in t], (slot, labels)
+    for slot in (0, 1, 2):
+        for plain in (False, True):
+            mk = kbs.bundle_menu_kb(slot, plain=plain)
+            labels = [b.text for row in mk.inline_keyboard for b in row]
+            assert labels == ["⬅️ В меню"], (slot, plain, labels)
 
 
 def _all_routers():

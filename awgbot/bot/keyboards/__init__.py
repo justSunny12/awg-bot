@@ -45,7 +45,7 @@ from .routing import (
     routing_devices, routing_panel, routing_clear_confirm, gateway_device_actions,
     gateway_choose_kind, gateway_pick, gateway_mark_confirm, gateway_new_confirm,
     gateway_remove_confirm, routing_disable_confirm, settings_routing,
-    routing_provision, settings_routing_bundle, settings_routing_lists,
+    routing_provision, settings_routing_lists,
     settings_routing_users, bundle_menu_kb, bundle_result_kb, gateway_list, gateway_card,
     gateway_switch_confirm, gateway_slot_cancel, settings_routing_monitor,
     gateway_lan_confirm, gateway_router_back, gateway_peer_confirm)
@@ -88,7 +88,7 @@ __all__ = [
     "gateway_device_actions", "gateway_choose_kind", "gateway_pick",
     "gateway_mark_confirm", "gateway_new_confirm", "gateway_remove_confirm",
     "routing_disable_confirm", "settings_routing", "routing_provision",
-    "settings_routing_bundle", "settings_routing_lists", "settings_routing_users",
+    "settings_routing_lists", "settings_routing_users",
     "bundle_menu_kb", "bundle_result_kb", "gateway_list", "gateway_card", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_router_back", "gateway_peer_confirm",
     "gateway_slot_cancel", "settings_routing_monitor", "broadcast_mode", "broadcast_targets", "broadcast_cancel",
     "broadcast_confirm", "gateway_panel_kb", "gateway_ssh_kb", "gateway_ssh_port_finisher_kb", "gateway_ssh_confirm_kb", "gateway_settings_kb",

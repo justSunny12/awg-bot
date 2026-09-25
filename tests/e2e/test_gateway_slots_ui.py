@@ -251,7 +251,8 @@ async def test_add_second_slot_as_new_machine_asks_its_own_token(services, slots
     assert [g.id for g in gws] == [1, 2] and services.db.get_device(gws[1].device_id).name == "Шлюз 2"
     assert services.runs[-1][0] == "--apply" and services.runs[-1][1]["LINK_IF"] == "awglink2"
     docs = [s for s in msg.sent if s[0] == "document"]
-    assert len(docs) == 1 and "первого применения" in docs[0][1]
+    assert len(docs) == 1 and docs[0][1].startswith("🛰 Файл конфигурации шлюза\n"), docs
+    assert "<b>«Шлюз 2»</b>" in docs[0][1], "подпись файла первого применения не называет новый шлюз"
     instr = next(s[1] for s in msg.sent if s[0] == "answer" and "--install" in s[1])
     assert "awg-gw-bundle-awglink2.sh" in instr
 
@@ -271,7 +272,8 @@ async def test_add_second_slot_from_my_devices(services, slots, fake_bot):
     cb, nav = _acb(fake_bot)
     await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi2.id, slot=0), services, FakeState())
     assert services.db.gateway_by_device(pi2.id).id == 2
-    assert any(s[0] == "document" and "первого применения" in s[1] for s in nav.sent)
+    assert any(s[0] == "document" and s[1].startswith("🛰 Файл конфигурации шлюза\n")
+               and "<b>«Pi2»</b>" in s[1] for s in nav.sent), nav.sent
 
 
 async def test_remove_standby_and_active(services, slots, fake_bot, monkeypatch):
@@ -309,19 +311,22 @@ async def test_remove_standby_and_active(services, slots, fake_bot, monkeypatch)
     assert "условная маршрутизация выключится" in text
 
 
-async def test_bundle_screen_and_action_are_per_slot(services, slots, fake_bot):
+async def test_bundle_button_and_action_are_per_slot(services, slots, fake_bot):
+    """«⚙️ Конфигурация шлюза» в карточке слота 2 выпускает файл именно
+    слота 2 — сразу, без промежуточного экрана."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     services.db.gateway_update(2, label="дом 2")
-    text, markup = await sh._screen("rt_bundle", services, "2")
-    assert "Конфигурация шлюза «Pi2» (дом 2)" in text
-    datas = [b.callback_data for row in markup.inline_keyboard for b in row]
-    assert SetCB(sec="rt", act="do", key="bundle", val="2").pack() in datas
-    assert GwSlotCB(action="card", slot=2).pack() in datas
     cb, nav = _acb(fake_bot)
-    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle", val="2"), services)
-    docs = [s for s in nav.sent if s[0] == "document"]
-    assert docs and docs[0][1] is not None
+    await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=2), services, FakeState())
+    markup = next(s[2] for s in reversed(nav.sent) if s[0] == "edit_text")
+    datas = {b.text: b.callback_data for row in markup.inline_keyboard for b in row}
+    assert datas.get("⚙️ Конфигурация шлюза") == GwSlotCB(action="bundle", slot=2).pack(), datas
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_bundle(cb, GwSlotCB(action="bundle", slot=2), services)
+    assert not [s for s in nav.sent if s[0] == "edit_text"], "перед файлом снова промежуточный экран"
+    docs = [s[1] for s in nav.sent if s[0] == "document"]
+    assert len(docs) == 1 and docs[0].startswith("⚙️ Конфигурация шлюза <b>«Pi2» (дом 2)</b>."), docs
 
 
 async def test_monitoring_screen_edits_probe_window_and_threshold(services, slots, fake_bot, monkeypatch):

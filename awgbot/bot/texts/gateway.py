@@ -110,7 +110,7 @@ def gateway_panel(st) -> str:
         head_ = "🔴 " + ", ".join(c.name for c in bad[:3]) if bad else "🟢 работает"
         parts += ["", f"🏠 Локальная сеть без VPN: {head_}"]
         where = f"{_e(lan.get('iface', '') or '?')}, <code>{_e(lan.get('addr', '') or '?')}</code>"
-        parts.append(f"{pad}локальная сеть: {where}")
+        parts.append(f"{pad}сеть: {where}")
         parts.append(f"{pad}трафик с роутера: {_packets(lan.get('lan_pkts'))}")
         parts.append(f"{pad}DNS: апстрим {_e(lan.get('resolver', ''))}")
         # списки — своей группой (вычитка 3.1.0)

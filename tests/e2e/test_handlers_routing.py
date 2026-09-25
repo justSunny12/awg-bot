@@ -610,7 +610,7 @@ async def test_bundle_document_carries_menu_button_and_dims_settings(
 
 async def test_bundle_menu_button_deletes_the_file_message(services, fake_bot, monkeypatch):
     """«В меню» на бандле удаляет само сообщение с файлом (внутри ключ линка),
-    а не снимает клавиатуру, как общая кнопка обновлений."""
+    а не снимает клавиатуру, как общая кнопка обновлений; дальше — главная."""
     from awgbot.bot.handlers import settings as sh
     from awgbot.bot.callbacks import SetCB
     from tests.conftest import FakeCallback, FakeMessage
@@ -618,7 +618,7 @@ async def test_bundle_menu_button_deletes_the_file_message(services, fake_bot, m
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle_menu"), services)
-    assert any(r[0] == "delete" for r in fake_bot.records), "сообщение с бандлом не удалено"
+    assert ("delete_message", cfg.ADMIN_ID, msg.message_id) in fake_bot.records, "сообщение с бандлом не удалено"
     assert any(r[0] == "answer" for r in fake_bot.records), "меню не показано"
 
 
@@ -709,11 +709,11 @@ async def test_routing_subsections_render_and_are_empty_when_off(services, monke
     assert "выключена" in text
 
 
-async def test_bundle_button_opens_intro_screen_before_issuing(services, fake_bot, monkeypatch):
-    """«Конфигурация шлюза» не выпускает файл сразу: сначала экран «что
-    произойдёт» с «Выпустить файл» и «Отмена» (назад в раздел)."""
+async def test_bundle_button_in_the_card_issues_the_file_without_an_intro_screen(services, fake_bot, monkeypatch):
+    """«⚙️ Конфигурация шлюза» в карточке слота ведёт на выпуск этого слота, а
+    промежуточного экрана «что произойдёт» больше нет: раздел `rt_bundle`
+    ничего не рисует (из старого сообщения — обычные настройки)."""
     from awgbot.bot.handlers import settings as sh
-    from awgbot.bot.callbacks import SetCB
     from awgbot.bot import keyboards as kb
     from awgbot.core import settings as st
     import awgbot.core.config as cfg
@@ -726,11 +726,9 @@ async def test_bundle_button_opens_intro_screen_before_issuing(services, fake_bo
     markup = kb.gateway_card(state, back_to_list=False)
     btn = [b for row in markup.inline_keyboard for b in row if "Конфигурация" in b.text][0]
     assert btn.callback_data == GwSlotCB(action="bundle", slot=1).pack()
-    text, markup = await sh._screen("rt_bundle", services)
-    assert "Что произойдёт" in text
-    datas = [b.callback_data for row in markup.inline_keyboard for b in row]
-    assert SetCB(sec="rt", act="do", key="bundle").pack() in datas, "нет «Выпустить»"
-    assert SetCB(sec="rt").pack() in datas, "нет «Отмена» назад в раздел"
+    assert not hasattr(kb, "settings_routing_bundle"), "клавиатура упразднённого экрана вернулась"
+    text, _markup = await sh._screen("rt_bundle", services, "1")
+    assert "Что произойдёт" not in text, "промежуточный экран перед выпуском вернулся"
 
 
 # ── админ в ЧУЖОМ разделе: правки уходят тому профилю, чья панель открыта ────

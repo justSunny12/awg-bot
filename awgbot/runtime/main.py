@@ -545,11 +545,15 @@ async def main() -> None:
             # Слушатель канала линка — после слотов: он биндится на адреса их
             # /30, и до миграции юнитов их могло не быть.
             from awgbot.runtime import linkserver
-            from awgbot.bot.handlers.settings import bundle_applied
+            from awgbot.bot.handlers.settings import bundle_applied, bundle_installed
 
             async def _on_applied(slot_id: int, ok: bool, error: str, fp: str = "") -> None:
                 await bundle_applied(bot, services, slot_id, ok, error, fp)
+
+            async def _on_installed(slot_id: int) -> None:
+                await bundle_installed(bot, services, slot_id)
             linkserver.set_on_applied(_on_applied)
+            linkserver.set_on_installed(_on_installed)
             await linkserver.ensure(services)
         except Exception as e:                           # noqa: BLE001
             log.warning("канал линка: слушатель не поднят: %s", e)

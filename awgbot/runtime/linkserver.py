@@ -267,6 +267,8 @@ class LinkServer:
                 await self.deliver(gw.id)
                 # подсети соседей применены — теперь есть куда вести записи
                 await self.deliver_peer_services(gw.id)
+                if kind == "snap":
+                    await self._maybe_installed(gw.id)
             else:
                 # Разрыв нумерации: дельта потерялась или пришла не по порядку.
                 # Просим полный снимок и начинаем счёт заново.
@@ -322,6 +324,20 @@ class LinkServer:
                     log.warning("канал линка: итог применения слота %s не показан: %s", gw.id, e)
             return
         log.info("канал линка: слот %s прислал неизвестное «%s» — игнорирую", gw.id, kind)
+
+    async def _maybe_installed(self, slot_id: int) -> None:
+        """Первый полный снимок после выдачи файла первого применения: шлюз
+        поставлен и на связи — админу «✅ … успешно настроен» (крючок main).
+        Снимок несёт и бота шлюза, потому здесь, а не на hello."""
+        take = getattr(self.services, "gw_install_wait_take", None)
+        if take is None or not await asyncio.to_thread(take, slot_id):
+            return
+        if _on_installed is None:
+            return
+        try:
+            await _on_installed(slot_id)
+        except Exception as e:                            # noqa: BLE001
+            log.warning("канал линка: уведомление о настройке слота %s не показано: %s", slot_id, e)
 
     async def send(self, slot_id: int, kind: str, body: dict | None = None,
                    pad: int = gwlink.PAD_DELTA) -> bool:
@@ -471,6 +487,14 @@ _server: LinkServer | None = None
 
 
 _on_applied = None
+_on_installed = None
+
+
+def set_on_installed(fn) -> None:
+    """Корутина `fn(slot_id)` — сказать админу, что новый шлюз настроен и на
+    связи. Ставит main: у слушателя канала своего бота нет."""
+    global _on_installed
+    _on_installed = fn
 
 
 def set_on_applied(fn) -> None:
