@@ -1,5 +1,5 @@
 """
-Сервисы соседних сетей (концепт «сервисы соседних сетей» §2, §3, §9): общий
+Сервисы соседних сетей: общий
 модуль gwservices — разбор обзора mDNS, чистка недоверенных записей, сборка
 файла dnsmasq — и гистерезис обзора на агенте.
 
@@ -27,7 +27,7 @@ OWN = ["192.168.68.0/24"]
 
 def _line(name="NASPi5", host="NASPi5.local", addr="192.168.68.222", port="445",
           proto="IPv4", kind="=", stype="_smb._tcp") -> str:
-    """Строка `avahi-browse -rtpk` так, как её печатает avahi 0.8 (§13)."""
+    """Строка `avahi-browse -rtpk` так, как её печатает avahi 0.8."""
     return f"{kind};end0;{proto};{name};{stype};local;{host};{addr};{port};"
 
 
@@ -92,14 +92,13 @@ def test_parse_of_empty_output_is_an_empty_list():
 
 
 def test_a_non_ascii_name_falls_back_to_the_host_label():
-    """Имя целиком кириллицей — в Finder будет метка хоста (§10), не пропажа."""
+    """Имя целиком кириллицей — в Finder будет метка хоста, не пропажа."""
     got = gs.parse_avahi(_line(name="Сервер", host="naspi5.local"), OWN)
     assert [r["n"] for r in got] == ["naspi5"], got
 
 
 def test_a_non_ascii_name_and_host_become_the_address_label():
-    """Имя и хост оба вне ASCII: хост — «h-<адрес>» (§3.3), имя — метка хоста
-    (§2.1). Сервер есть в сети — он обязан быть и в Finder соседа, а не
+    """Имя и хост оба вне ASCII: хост — «h-<адрес>», имя — метка хоста. Сервер есть в сети — он обязан быть и в Finder соседа, а не
     исчезнуть молча из-за языка имени."""
     got = gs.parse_avahi(_line(name="Сервер", host="сервер.local", addr="192.168.68.10"), OWN)
     assert got == [{"t": "_smb._tcp", "n": "h-192-168-68-10", "h": "h-192-168-68-10",
@@ -118,7 +117,7 @@ def test_a_non_ascii_name_and_host_become_the_address_label():
 def test_clean_throws_a_bad_record_away_and_keeps_its_neighbours(bad):
     """Запись с кавычкой, запятой, переводом строки, разметкой, кириллицей,
     лишней длиной, чужим типом или адресом вне подсети — выбрасывается целиком,
-    не «чинится»; соседние живут (§9)."""
+    не «чинится»; соседние живут."""
     good = _rec(n="backup", h="backup", a="192.168.1.20")
     got = gs.clean([bad, good], ["192.168.1.0/24"], gs.MAX_PEER)
     assert got == [good], f"{bad!r} прошла чистку или утащила соседа: {got}"
@@ -189,7 +188,7 @@ def test_every_rendered_line_passes_the_whitelist():
 
 
 def test_colliding_host_labels_get_suffixes_and_stay_unique():
-    """Две записи с одной меткой хоста — naspi5 и naspi5-2 (§3.3): иначе два
+    """Две записи с одной меткой хоста — naspi5 и naspi5-2: иначе два
     host-record на одно имя, и Finder ведёт к случайному серверу."""
     items = [_rec(n="a", h="naspi5", a="192.168.1.1"), _rec(n="b", h="naspi5", a="192.168.1.2"),
              _rec(n="c", h="naspi5-2", a="192.168.1.3")]
@@ -234,6 +233,36 @@ def test_version_floor_for_the_card():
     assert gs.version_at_least("3.1.0", (3, 1, 0)) and gs.version_at_least("3.10.2", (3, 1, 0))
     assert not gs.version_at_least("3.0.9", (3, 1, 0))
     assert not gs.version_at_least("", (3, 1, 0)) and not gs.version_at_least("3.1.0-rc1", (3, 1, 0))
+
+
+@pytest.mark.parametrize("ver,floor,ok", [
+    ("3.1.0", (3, 1, 0), True),
+    ("v3.1.0", (3, 1, 0), True),          # тег релиза с «v» — та же версия
+    (" 3.1.0\n", (3, 1, 0), True),        # хвост строки из вывода агента
+    ("3.1.0.2", (3, 1, 0), True),         # хотфикс поверх 3.1.0
+    ("3.1.1", (3, 1, 0), True),
+    ("3.10.0", (3, 1, 0), True),          # по числам, не по строке
+    ("4.0.0", (3, 1, 0), True),
+    ("3.0.9", (3, 1, 0), False),
+    ("3.0.9.9", (3, 1, 0), False),        # хотфикс прежней версии — ещё не она
+    ("3.1", (3, 1, 0), False),            # две цифры — не версия выпуска
+    ("3", (3, 1, 0), False),
+    ("3.1.0-rc1", (3, 1, 0), False),
+    ("3.1.0.2.1", (3, 1, 0), False),
+    ("abc", (3, 1, 0), False),
+    ("", (3, 1, 0), False),
+    (None, (3, 1, 0), False),
+    # порог с хотфиксом: сравнение по длине порога
+    ("3.1.0", (3, 1, 0, 2), False),
+    ("3.1.0.1", (3, 1, 0, 2), False),
+    ("3.1.0.2", (3, 1, 0, 2), True),
+    ("3.1.1", (3, 1, 0, 2), True),
+])
+def test_version_floor_reads_versions_like_the_update_check(ver, floor, ok):
+    """Карточка решает по версии агента, умеет ли он новое. Разбор — тот же,
+    что у проверки обновлений: агент на хотфиксе 3.1.0.2 или с «v» в теге
+    иначе считался бы старым и терял возможности, а «3.1» — новым."""
+    assert gs.version_at_least(ver, floor) is ok, f"{ver!r} ≥ {floor}: ждали {ok}"
 
 
 # ── гистерезис обзора на агенте ──────────────────────────────────────────────
@@ -327,7 +356,7 @@ def test_a_server_back_before_the_third_miss_starts_the_count_over(agent, monkey
 
 
 def test_without_peer_access_the_scan_does_not_touch_mdns_and_clears_the_list(agent, monkeypatch):
-    """Функция работает там, где работает доступ между подсетями (§3.1):
+    """Функция работает там, где работает доступ между подсетями:
     соседей в юните нет — mDNS не трогаем, а прежний список один раз уходит
     пустым, чтобы сервер перестал раздавать его соседям."""
     lan = _Lan(monkeypatch)

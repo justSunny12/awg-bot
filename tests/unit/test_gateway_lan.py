@@ -1,5 +1,5 @@
 """
-Агент шлюза: локальная сеть без VPN (концепт «локальная сеть» §3.5) — блок панели,
+Агент шлюза: локальная сеть без VPN — блок панели,
 проверки монитора здоровья по счётчикам таблицы awg_home, задача списков.
 """
 from __future__ import annotations
@@ -350,7 +350,7 @@ def test_the_lan_screen_names_the_uplink_the_script_reported(svc, monkeypatch, s
     assert f"\nDNS — <code>10.9.1.1</code> через {shown}\n" in out, out
 
 
-# ── сервисы соседних сетей: проверки группы «svc» (концепт «сервисы соседних сетей» §4.2, §7.1) ──
+# ── сервисы соседних сетей: проверки группы «svc» ──
 
 def _svc_on(monkeypatch, *, avahi=True, dig=("naspi5._smb._tcp.awg.internal.",), browse=True):
     import shutil
@@ -396,7 +396,7 @@ def test_services_checks_say_what_the_monitor_should(svc, monkeypatch):
 
 
 def test_no_avahi_is_grey_not_red(svc, monkeypatch):
-    """Малина без NAS и без avahi — нормальное состояние (§12.3): ⚪, не 🔴."""
+    """Малина без NAS и без avahi — нормальное состояние: ⚪, не 🔴."""
     _svc_on(monkeypatch, avahi=False)
     c = {c.name: c for c in svc.services_status()[1]}["SMB этой подсети"]
     assert c.ok is None and c.detail == ("avahi-daemon не запущен: SMB-серверы этой подсети не видны "
@@ -415,7 +415,7 @@ def test_services_add_nothing_where_the_function_does_not_work(svc, monkeypatch)
 
 
 def test_a_red_services_check_sends_neither_plumbing_nor_lan_alerts(svc, monkeypatch):
-    """Соседи, которых нет, — не авария (§4.2): 🔴 группы «svc» видна в
+    """Соседи, которых нет, — не авария: 🔴 группы «svc» видна в
     мониторе, но не поднимает ни «Обвязка шлюза неисправна», ни «Локальная
     сеть без VPN», сколько бы тиков ни держалась."""
     from awgbot.bot import texts
@@ -436,7 +436,7 @@ def test_a_red_services_check_sends_neither_plumbing_nor_lan_alerts(svc, monkeyp
     assert "🔴 SMB подсетей других шлюзов" in texts.gateway_health(st), "в мониторе проверку видно"
 
 
-# ── свои списки: проверка группы «own» (концепт «синхронизация своих списков» §7.1) ──
+# ── свои списки: проверка группы «own» ──
 
 def test_a_red_own_lists_check_sends_neither_plumbing_nor_lan_alerts(svc, monkeypatch):
     """Свои списки не применились (dnsmasq отверг канон) — 🔴 в мониторе, но

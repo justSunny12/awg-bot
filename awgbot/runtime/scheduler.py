@@ -688,7 +688,7 @@ def setup_gateway_scheduler(services, bot):
             log.warning("gw_monitor reschedule: %s", e)
     settings.on_change("app.gateway.monitor_minutes", _gw_monitor_hook)
 
-    # Списки локальной сети без VPN (концепт «локальная сеть» §3.3): фиды через
+    # Списки локальной сети без VPN: фиды через
     # аплинк, раз в 6 ч с джиттером (строго периодический запрос — маячок),
     # первый раз через 3 мин после старта. Без LAN_MODE в юните — холостая.
     async def job_gw_lan_lists():
@@ -704,7 +704,7 @@ def setup_gateway_scheduler(services, bot):
         next_run_time=timeutil.now() + datetime.timedelta(seconds=random.randint(120, 300)),
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
-    # Сервисы соседних сетей (концепт «сервисы соседних сетей»): обзор mDNS
+    # Сервисы соседних сетей: обзор mDNS
     # своей сети раз в 15 мин с джиттером (запрос не покидает сегмент, но пусть
     # не совпадает с тиком монитора), первый — через 2–5 мин; изменился список —
     # уходит серверу каналом. Без доступа между подсетями в юните — холостая.

@@ -463,7 +463,7 @@ async def test_main_menu_hides_issue_row_when_only_device_is_the_gateway(service
     assert "🔗 Ссылка" in labels and "📄 Файл" in labels
 
 
-# ── РФ-доступ за месяц: ссылки traffic_local (концепт «учёт РФ-трафика», этап 2) ──
+# ── РФ-доступ за месяц: ссылки traffic_local ──
 
 _GB = 1024 ** 3
 

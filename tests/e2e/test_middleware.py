@@ -42,7 +42,7 @@ async def test_active_client_gets_client_role(db, make_active_client):
 
 
 async def test_invited_friend_role(services, make_active_client):
-    """Гость (концепт «гость»): роль invited, в client — его собственный
+    """Гость: роль invited, в client — его собственный
     гостевой профиль; имя подтягивается из Telegram при первом сообщении."""
     owner = make_active_client(tg_id=5001)
     dc = services.add_device(owner.id, "d")

@@ -266,7 +266,7 @@ SSH_PORT = int(_net.get("ssh_port", 22))
 SERVER_HOST = _net.get("server_host", "")
 SERVER_PORT = int(_net.get("server_port") or 0)
 
-# ── Условная маршрутизация (концепт «условная маршрутизация») ─────────────────────
+# ── Условная маршрутизация ─────────────────────
 # Топология фичи — холодная (класс 3): имена наборов, цепочки и таблиц вплавлены
 # в реконсиляцию, менять их на горячую нечем. Пороги (потолок списка, свежесть
 # хендшейка) — горячие, читаются через settings.get в точке использования.
@@ -299,7 +299,7 @@ def routing_client_subnets() -> list[tuple[str, str]]:
 ROUTING_HOME_SUBNETS: list[str] = [str(n).strip() for n in (_rt.get("home_subnets") or []) if str(n).strip()]
 ROUTING_TABLE = int(_rt.get("table", 100))
 ROUTING_FWMARK = int(_rt.get("fwmark", 1))
-# Слоты шлюзов (концепт «резервный шлюз»): порты и /30 линков по номеру слота.
+# Слоты шлюзов: порты и /30 линков по номеру слота.
 # Второй порт — не 443 (его держит первый линк); 8443 так же теряется среди
 # QUIC-подобного. Больше двух слотов — смысл только при трёх домах.
 ROUTING_LINK_PORTS: list[int] = [int(p) for p in (_rt.get("link_ports") or [443, 8443])]

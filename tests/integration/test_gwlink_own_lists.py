@@ -1,6 +1,5 @@
 """
-Свои списки, общие для всех шлюзов, по каналу линка (концепт «синхронизация
-своих списков» §2.4–§2.6, §3, §13; план тестов — §11, этап 2): `own_ev` от
+Свои списки, общие для всех шлюзов, по каналу линка: `own_ev` от
 шлюза, слияние в канон на ВПС, `own_set` отправителю и остальным шлюзам сразу,
 `own_ack` назад, `own_hash` в `hello`.
 
@@ -135,7 +134,7 @@ def _card(s, slot: int) -> dict:
 
 async def test_an_edit_goes_back_to_its_sender_and_to_the_other_gateway_at_once_exactly_once(pair):
     """Кнопка на X: сервер сливает правку и сразу отвечает X каноном с его
-    upto, а Y получает тот же канон тоже сразу, без такта живости (§13). Такты
+    upto, а Y получает тот же канон тоже сразу, без такта живости. Такты
     после этого не шлют ничего; правка без изменения канона уходит только
     отправителю — у остальных рестарта dnsmasq ради неё не будет."""
     s = pair.services
@@ -449,6 +448,8 @@ class _Host:
         monkeypatch.setattr(gwguard, "LAN_DOMAIN_SCRIPT", str(self.tool))
         monkeypatch.setattr(gwguard, "DNSMASQ_D", str(self.dns_d))
         monkeypatch.setattr(gwguard, "OWN_LISTS_NEW", str(tmp_path / "lib" / "own-lists.new"))
+        monkeypatch.setattr(gwguard, "OWN_FILL_NEW", str(tmp_path / "lib" / "own-fill.new"))
+        self.bin = bin_dir
         monkeypatch.setattr(gwguard, "unit_state", lambda: {"ActiveState": "active"})
         monkeypatch.setattr(gwguard, "reassert", self._reassert)
 
@@ -711,6 +712,51 @@ async def test_an_old_script_is_reasserted_and_the_canon_lands_on_the_next_tick(
     await asyncio.sleep(0.3)
     assert _own_sets(pair, 1) == sets and len(pair.acks) == 2, "после применения канал не затих"
     assert c._writer is not None
+
+
+async def test_the_answer_goes_at_once_and_the_set_fills_in_the_background(pair, pi):
+    """Настоящий sync и настоящий fill: сервер видит «применены», пока dig по
+    новым «в туннель» ещё идёт; потом адреса и слепок набора на месте.
+    Отказ fill (скрипт без fill) — только журнал: ответ и база прежние."""
+    s = pair.services
+    _seed(s, {"news.org": "vpn", "shop.ru": "ru"})
+    dig = pi.host.bin / "dig"
+    dig.write_text('#!/bin/sh\ncase "$*" in *" news.org "*) /bin/sleep 1; echo 10.3.3.3 ;; '
+                   '*" shop.ru "*) echo 10.1.1.1 ;; esac\n', encoding="utf-8")
+    a = pi.agent()
+    c = await pi.up(a)
+    assert await _until(lambda: _card(s, 1)["state"] == "applied", timeout=5), (_card(s, 1), pair.acks)
+    log = pi.host.log.read_text()
+    assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in log, "«напрямую» не наполнен в sync"
+    assert "lan_vpn4 { 10.3.3.3 }" not in log, "ответ ушёл только после dig — сцена не та или fill синхронный"
+    assert c._fill_task is not None, "fill не запущен после ответа"
+    await asyncio.wait_for(c._fill_task, 10)
+    log = pi.host.log.read_text()
+    assert "nft add element inet awg_home lan_vpn4 { 10.3.3.3 }" in log, "fill не положил адрес в набор"
+    assert log.rindex("nft list set inet awg_home lan_vpn4") > log.index("lan_vpn4 { 10.3.3.3 }"), \
+        "слепок снят до наполнения"
+    assert len(pair.acks) == 1 and pair.acks[0][1]["ok"] is True, pair.acks
+    assert pi.host.lists() == {"news.org": "vpn", "shop.ru": "ru"}
+
+
+async def test_a_failing_fill_leaves_the_answer_and_the_base_alone(pair, pi, caplog):
+    import logging
+    s = pair.services
+    _seed(s, {"news.org": "vpn"})
+    # скрипт, который fill не знает (обвязка на полпути обновления)
+    pi.host.tool.write_text(pi.host.fresh.replace('if [ "$cmd" = "fill" ]; then', 'if false; then')
+                            .replace("sync|fill)", "sync)"), encoding="utf-8")
+    a = pi.agent()
+    with caplog.at_level(logging.INFO, logger="awgbot"):
+        c = await pi.up(a)
+        assert await _until(lambda: _card(s, 1)["state"] == "applied", timeout=5), (_card(s, 1), pair.acks)
+        assert c._fill_task is not None
+        await asyncio.wait_for(c._fill_task, 10)
+    warns = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("набор не пополнен" in m for m in warns), warns
+    assert len(pair.acks) == 1 and pair.acks[0][1]["ok"] is True, pair.acks
+    assert a.own_base()["items"] == {"news.org": "vpn"}
+    assert a.own_status()[0]["state"] == "synced", a.own_status()[0]
 
 
 @pytest.mark.parametrize("seeded", [False, True])

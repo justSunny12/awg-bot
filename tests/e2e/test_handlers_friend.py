@@ -1,4 +1,4 @@
-"""E2E: роутер гостя (роль invited, концепт «гость») — главный экран,
+"""E2E: роутер гостя (роль invited) — главный экран,
 «Мои устройства», карточка, выдача, блокировка с подтверждением, удаление с
 уведомлением владельца, защита от чужого device_id."""
 import pytest
@@ -175,7 +175,7 @@ async def test_guest_help_platform(services, fake_bot, make_active_client):
     assert any(s[0] == "edit_text" for s in nav.sent)
 
 
-# ── РФ-доступ у гостя (концепт «гость») ─────────────────────────────────
+# ── РФ-доступ у гостя ─────────────────────────────────
 
 async def test_guest_main_shows_rf_line_and_button_only_with_owner_permission(
         services, fake_bot, make_active_client, monkeypatch):

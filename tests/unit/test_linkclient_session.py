@@ -648,3 +648,159 @@ async def test_reconcile_never_runs_in_the_middle_of_applying_the_canon(gateway_
     release.set()
     await asyncio.wait_for(asyncio.gather(t_apply, t_tick), 5)
     assert order == ["apply:start", "apply:end", "reconcile"], order
+
+
+# ── fill после own_ack: наполнение набора — фоном ───────────────────────────
+
+def _kinds_sent(client) -> list[str]:
+    return [gwlink.unpack(KEY, x, nonce=SN)["t"] for x in client._writer.written]
+
+
+def _fill_agent(fill_result=(True, "набор lan_vpn4 пополнен: 1 домен")):
+    """Агент, у которого канон применился с новыми «в туннель»; fill ждёт
+    `release` (dig по сотням доменов) и записывает, что и когда звали."""
+    import threading
+    agent = _Agent()
+    agent.release = threading.Event()
+    agent.started = threading.Event()
+    agent.fills: list[str] = []
+    agent.fill_result = fill_result
+    agent.apply_own_lists = lambda msg: {"ok": True, "hash": msg.get("hash", "ab"), "n": 1, "error": "",
+                                         "fill": f"/tmp/fill-{msg.get('hash', 'ab')}"}
+
+    def own_fill(path):
+        agent.fills.append(f"start:{path}")
+        agent.started.set()
+        agent.release.wait(5)
+        agent.fills.append(f"end:{path}")
+        if isinstance(agent.fill_result, Exception):
+            raise agent.fill_result
+        return agent.fill_result
+    agent.own_fill = own_fill
+    return agent
+
+
+async def test_own_ack_goes_before_the_fill_is_done(gateway_role, conf):
+    """Сервер видит «применены» сразу после sync, а не через полчаса dig:
+    канал не ждёт наполнения набора."""
+    agent = _fill_agent()
+    client = _live_client(agent)
+    await asyncio.wait_for(client._apply_own({"hash": "ab"}), 2)
+    assert "own_ack" in _kinds_sent(client), "own_ack ждёт fill"
+    await asyncio.to_thread(agent.started.wait, 5)
+    assert agent.fills == ["start:/tmp/fill-ab"], agent.fills
+    assert client._fill_task is not None and not client._fill_task.done()
+    agent.release.set()
+    await asyncio.wait_for(client._fill_task, 5)
+    assert agent.fills == ["start:/tmp/fill-ab", "end:/tmp/fill-ab"]
+
+
+async def test_a_failed_fill_is_logged_and_changes_nothing_else(gateway_role, conf, caplog):
+    """fill отказал (dig упал, скрипт без fill) — предупреждение в журнал;
+    итог канона уже ушёл «применены», повторного ответа нет."""
+    import logging
+    agent = _fill_agent((False, "usage: awg-lan-domain.sh add|ru|del"))
+    agent.release.set()
+    client = _live_client(agent)
+    with caplog.at_level(logging.INFO, logger="awgbot"):
+        await client._apply_own({"hash": "ab"})
+        await asyncio.wait_for(client._fill_task, 5)
+    assert _kinds_sent(client) == ["own_ack"], _kinds_sent(client)
+    ack = gwlink.unpack(KEY, client._writer.written[0], nonce=SN)
+    assert ack["ok"] is True and "fill" not in ack, f"итог fill или путь уехали серверу: {ack}"
+    warns = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("набор не пополнен" in m and "usage" in m for m in warns), warns
+
+
+async def test_a_successful_fill_is_logged_as_info(gateway_role, conf, caplog):
+    import logging
+    agent = _fill_agent()
+    agent.release.set()
+    client = _live_client(agent)
+    with caplog.at_level(logging.INFO, logger="awgbot"):
+        await client._apply_own({"hash": "ab"})
+        await asyncio.wait_for(client._fill_task, 5)
+    infos = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
+    assert any("пополнен: 1 домен" in m for m in infos), infos
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING], "удачный fill — с предупреждением"
+
+
+async def test_a_fill_that_raises_does_not_break_the_next_one(gateway_role, conf):
+    """Исключение в fill (скрипт пропал) не должно остановить следующий fill:
+    второй ждёт первого и идёт своим ходом."""
+    agent = _fill_agent(RuntimeError("скрипта нет"))
+    agent.release.set()
+    client = _live_client(agent)
+    await client._apply_own({"hash": "a1"})
+    first = client._fill_task
+    agent.fill_result = (True, "ok")
+    await client._apply_own({"hash": "a2"})
+    await asyncio.wait_for(client._fill_task, 5)
+    assert first.done()
+    assert agent.fills[-1] == "end:/tmp/fill-a2", agent.fills
+
+
+async def test_two_canons_in_a_row_fill_one_after_the_other(gateway_role, conf):
+    """Два канона подряд: файл для fill один и тот же — второй fill начинается
+    только после первого, иначе два dig-прохода читали бы полупереписанный файл."""
+    agent = _fill_agent()
+    client = _live_client(agent)
+    await client._apply_own({"hash": "a1"})
+    await asyncio.to_thread(agent.started.wait, 5)
+    await client._apply_own({"hash": "a2"})
+    assert _kinds_sent(client) == ["own_ack", "own_ack"], "второй ответ ждал первый fill"
+    await asyncio.sleep(0.2)
+    assert agent.fills == ["start:/tmp/fill-a1"], f"второй fill пошёл, не дождавшись первого: {agent.fills}"
+    agent.release.set()
+    await asyncio.wait_for(client._fill_task, 5)
+    assert agent.fills == ["start:/tmp/fill-a1", "end:/tmp/fill-a1", "start:/tmp/fill-a2", "end:/tmp/fill-a2"]
+
+
+async def test_no_fill_key_means_no_task(gateway_role, conf):
+    agent = _fill_agent()
+    agent.apply_own_lists = lambda msg: {"ok": True, "hash": "ab", "n": 1, "error": ""}
+    client = _live_client(agent)
+    await client._apply_own({"hash": "ab"})
+    assert client._fill_task is None and agent.fills == []
+    assert _kinds_sent(client) == ["own_ack"]
+
+
+async def test_a_skipped_or_failed_canon_starts_no_fill(gateway_role, conf):
+    """Канон пропущен по правилам сверки — ответа нет, и fill тоже."""
+    agent = _fill_agent()
+    agent.apply_own_lists = lambda msg: {"ok": False, "skipped": "pending", "hash": "ab", "n": 0, "error": ""}
+    agent.own_pending_events = lambda: ("r", [])
+    client = _live_client(agent)
+    await client._apply_own({"hash": "ab"})
+    assert client._fill_task is None and agent.fills == []
+
+
+async def test_the_deferred_canon_on_a_tick_also_fills(gateway_role, conf):
+    """Отложенный канон (обвязка обновилась) применяется на тике — новые «в
+    туннель» так же уходят в fill после ответа."""
+    agent = _fill_agent()
+    agent.release.set()
+    agent.own_reconcile = lambda: False
+    agent.own_unsent = lambda: False
+    agent.own_retry = lambda: {"ok": True, "hash": "cd", "n": 1, "error": "", "fill": "/tmp/fill-cd"}
+    client = _live_client(agent)
+    await client.own_tick()
+    assert _kinds_sent(client) == ["own_ack"]
+    assert client._fill_task is not None
+    await asyncio.wait_for(client._fill_task, 5)
+    assert agent.fills == ["start:/tmp/fill-cd", "end:/tmp/fill-cd"]
+
+
+async def test_stop_lets_go_of_a_running_fill(gateway_role, conf):
+    """Агент останавливается посреди fill: остановка не ждёт dig (поток не
+    прервать) и не падает; задача-обёртка снята."""
+    agent = _fill_agent()
+    client = _live_client(agent)
+    client._task = None
+    await client._apply_own({"hash": "ab"})
+    await asyncio.to_thread(agent.started.wait, 5)
+    t0 = time.monotonic()
+    await asyncio.wait_for(client.stop(), 2)
+    assert time.monotonic() - t0 < 1, "stop ждал fill"
+    assert client._fill_task is None
+    agent.release.set()

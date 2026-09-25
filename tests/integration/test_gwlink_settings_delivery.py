@@ -1,6 +1,5 @@
 """
-Настройки по каналу линка — доставка (концепт «канал линка», этап 2, §3.1,
-§4.5, §4.7, §9.2): сервер решает, что слать, по расхождению снимка с
+Настройки по каналу линка — доставка: сервер решает, что слать, по расхождению снимка с
 выдаваемым; один набор — одна отправка за сессию; новая сессия — новая
 попытка; итог применения возвращается `ack` и ложится в карточку.
 
@@ -111,7 +110,7 @@ def _drifted(services) -> dict:
 # ── что решает сервер ────────────────────────────────────────────────────────
 
 async def test_a_gateway_that_already_has_everything_hears_nothing(services, link):
-    """Миграция (§9.2): канал включили на системе, где всё уже совпадает.
+    """Миграция: канал включили на системе, где всё уже совпадает.
     Настроек не приходит ни сразу, ни тактом живости — «на всякий случай» не
     шлём: шлюз не перезапускает обвязку без причины."""
     gw = await _connect(link, _installed(services))
@@ -178,7 +177,7 @@ async def test_a_new_session_is_a_new_attempt(services, link):
 
 
 async def test_changes_made_while_the_channel_is_down_arrive_when_it_comes_back(services, link):
-    """§4.5: канал лежит — ничего не копится очередью и никуда не шлётся.
+    """канал лежит — ничего не копится очередью и никуда не шлётся.
     Поднялся — последнее желаемое уходит одним сообщением. Пока канал молчит
     меньше суток, бот не гонит человека перевыпускать файл."""
     gw = await _connect(link, _installed(services))
@@ -434,7 +433,7 @@ async def test_a_hanging_restart_does_not_break_the_channel(services, link, pi):
 
 def test_the_reminder_returns_after_a_day_of_silence(services, link):
     """Канал молчит больше суток — ждать его больше нечего: одно тихое
-    напоминание перевыпустить файл (§4.5)."""
+    напоминание перевыпустить файл."""
     gw = services.db.gateway(1)
     services.db.set_state(services._gw_slot_key(services._GW_BUNDLE_DEPS_KEY, 1),
                           services._gw_bundle_deps(gw))

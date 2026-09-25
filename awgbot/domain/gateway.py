@@ -99,7 +99,7 @@ class GwStatus:
     egress_src: str = ""                    # чем доказан: трафик | проба | кэш
     tg_missing: list[str] = field(default_factory=list)   # диапазоны Telegram без маркировки
     mark_status: str = ""                   # шлюзовое устройство: confirmed|unmarked|foreign|unconfirmed
-    lan: dict = field(default_factory=dict) # локальная сеть без VPN (концепт «локальная сеть»): пусто — выключена
+    lan: dict = field(default_factory=dict) # локальная сеть без VPN: пусто — выключена
     ssh: dict = field(default_factory=dict) # порт (факт), владелец, фильтр снаружи, адреса — для панели
     ts: str = ""                            # когда снят (ISO); пусто — живой
 
@@ -536,7 +536,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         return [n for n in want if n not in present]
 
     def peer_nets_check(self, info: dict | None) -> GwCheck | None:
-        """Подсети за другими шлюзами (концепт «локальная сеть», функция B): набор
+        """Подсети за другими шлюзами: набор
         peer_nets4 против PEER_HOME_NETS из юнита. Переменная пустая — проверки
         нет: функции на этом шлюзе нет."""
         missing = self.peer_nets_missing(info)
@@ -558,7 +558,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         ok = self._reassert_throttled(f"не хватало {len(missing)} диапазонов Telegram")
         return len(missing) if ok else 0
 
-    # ── локальная сеть без VPN (концепт «локальная сеть», функция A) ──────────────
+    # ── локальная сеть без VPN ──────────────
     _LAN_LAST_KEY = "gw_lan_counters"       # {"lan": pkts, "dns": pkts, "lan_at": iso, "dns_at": iso}
     _LAN_QUIET_SECONDS = 24 * 3600          # столько без пакетов из LAN — «роутер не заворачивает»
     _LAN_FAILS_KEY = "gw_lan_lists_fails"
@@ -686,11 +686,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                               "списки не загружены: обновление не прошло"))
         # заворот и DNS с роутера — по росту счётчиков
         if home is not None:
-            last = {}
-            try:
-                last = json.loads(self.db.get_state(self._LAN_LAST_KEY) or "{}")
-            except json.JSONDecodeError:
-                last = {}
+            last = self.db.get_state_json(self._LAN_LAST_KEY, {})
             now = timeutil.now()
             cur = {"lan": home["lan_pkts"], "dns": home["dns_pkts"]}
             for key, name, why in (("lan", "трафик с роутера",
@@ -733,7 +729,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     def lan_own_counts_refresh(self) -> None:
         """Обновить в снимке последнего тика счётчики своих списков: панель
         рисуется из снимка, и после правки списка показывала бы прежние числа
-        до следующего тика монитора (вычитка 3.1.0)."""
+        до следующего тика монитора."""
         from awgbot.infra import gwguard
         raw = self.db.get_state(self._SNAPSHOT_KEY)
         if not raw:
@@ -818,11 +814,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     def applied_pending_get(self) -> dict:
         """Итог в очереди; просроченный (сутки без канала) — как пустой: столько
         у файла на сервере никто не ждёт, а сервер без ответа его и не убрал бы."""
-        try:
-            data = json.loads(self.db.get_state(self._APPLIED_PENDING_KEY) or "{}")
-        except json.JSONDecodeError:
-            return {}
-        if not (isinstance(data, dict) and "ok" in data):
+        data = self.db.get_state_json(self._APPLIED_PENDING_KEY, {})
+        if "ok" not in data:
             return {}
         try:
             age = (timeutil.now() - timeutil.parse_iso(str(data.get("at") or ""))).total_seconds()
@@ -833,11 +826,11 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     def applied_pending_clear(self) -> None:
         self.db.set_state(self._APPLIED_PENDING_KEY, "")
 
-    # ── свои списки, общие для всех шлюзов (концепт «синхронизация своих списков») ──
+    # ── свои списки, общие для всех шлюзов ──
     # Не настраивается: действует при режиме без VPN и канале линка. Правки
     # (кнопка, `awg-bot lan`, файл руками) сверкой становятся событиями и уходят
     # серверу; его канон применяется скриптом `sync` — только когда все свои
-    # правки в нём учтены (§2.4 концепта), иначе правки уходят ещё раз.
+    # правки в нём учтены, иначе правки уходят ещё раз.
     _OWN_BASE_KEY = "gw_own_base"            # последний применённый канон: {gen, ver, hash, items}
     _OWN_PENDING_KEY = "gw_own_pending"      # свои правки, ещё не в каноне: {run, n, ev, sent_at}
     _OWN_FP_KEY = "gw_own_fp"                # отпечаток файлов на момент последней сверки
@@ -971,7 +964,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
 
     def apply_own_lists(self, body: dict) -> dict:
         """Канон от сервера → файлы через `sync`: {ok, hash, n, error, skipped}.
-        skipped — канон не применён по правилам §2.4 (правки не учтены, первая
+        skipped — канон не применён по правилам сверки (правки не учтены, первая
         синхронизация, откат сервера): свои правки уходят ещё раз, ack не шлётся."""
         from awgbot.infra import gwguard
         digest = gwlink.clean_hex(body.get("hash"))
@@ -1023,9 +1016,27 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             # база — то, что реально записано: скрипт мог отбросить хост Endpoint
             written = self.own_local()
             canon["items"] = items if written is None else written
+        result = self._own_store(digest, canon if ok else None, ok,
+                                 "" if ok else (tail or "скрипт своих списков отказал без объяснений"))
+        if ok:
             log.info("свои списки: применён канон сервера (%s)", len(canon["items"]))
-        return self._own_store(digest, canon if ok else None, ok,
-                               "" if ok else (tail or "скрипт своих списков отказал без объяснений"))
+            # адреса новых доменов «в туннель» — в набор фоном (клиент канала
+            # зовёт `fill`): dig по каждому не должен держать ни блокировку, ни канал
+            new_vpn = sorted(d for d, k in canon["items"].items() if k == "vpn" and local.get(d) != "vpn")
+            if new_vpn:
+                try:
+                    with open(gwguard.OWN_FILL_NEW, "w", encoding="utf-8") as f:
+                        f.write("\n".join(new_vpn) + "\n")
+                    result["fill"] = gwguard.OWN_FILL_NEW
+                except OSError as e:
+                    log.warning("свои списки: файл для fill не записан: %s", e)
+        return result
+
+    def own_fill(self, path: str) -> tuple[bool, str]:
+        """Адреса новых доменов «в туннель» — в набор lan_vpn4 (режим fill
+        скрипта): долго (dig по каждому), поэтому зовётся фоном после own_ack."""
+        from awgbot.infra import gwguard
+        return gwguard.run_lan_domain("fill", [path], timeout=gwguard.OWN_FILL_TIMEOUT)
 
     def _defer_for_reassert(self, why: str, key: str, payload, noun: str) -> str:
         """Обвязка старого образца (обновление агента положило новые скрипты, а
@@ -1060,13 +1071,11 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             self._reassert_throttled("скрипт своих списков без sync")
             if not gwguard.lan_domain_has_sync():
                 return None
-        try:
-            body = json.loads(raw)
-        except json.JSONDecodeError:
-            self.db.set_state(self._OWN_DEFER_KEY, "")
-            return None
+        body = self.db.get_state_json(self._OWN_DEFER_KEY, {})
         self.db.set_state(self._OWN_DEFER_KEY, "")
-        result = self.apply_own_lists(body if isinstance(body, dict) else {})
+        if not body.get("gen"):
+            return None                               # мусор или пустая запись — применять нечего
+        result = self.apply_own_lists(body)
         return None if result.get("skipped") else result
 
     def own_status(self) -> tuple[dict, list[GwCheck]]:
@@ -1127,7 +1136,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             c.group = "own"
         return info, checks
 
-    # ── сервисы соседних сетей (концепт «сервисы соседних сетей») ────────────
+    # ── сервисы соседних сетей ────────────
     # Не настраивается: работает там и тогда, где работает доступ между
     # подсетями (PEER_HOME_NETS в юните) при режиме без VPN и канале линка.
     _SVC_LOCAL_KEY = "gw_svc_local"          # свой список после обзора, JSON
@@ -1253,12 +1262,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             self._reassert_throttled("помощника сервисов соседей нет")
             if not os.path.exists(gwguard.LAN_SERVICES_SCRIPT):
                 return None
-        try:
-            pending = json.loads(raw)
-        except json.JSONDecodeError:
-            self.db.set_state(self._SVC_PENDING_KEY, "")
-            return None
-        if not isinstance(pending, dict):
+        pending = self.db.get_state_json(self._SVC_PENDING_KEY, {})
+        if not pending:
             self.db.set_state(self._SVC_PENDING_KEY, "")
             return None
         digest = str(pending.get("hash") or "")
@@ -1311,7 +1316,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             c.group = "svc"
         return info, checks
 
-    # ── роль слота и диагностика по каналу (концепт «канал линка», этап 4) ──
+    # ── роль слота и диагностика по каналу ──
     _LINK_ROLE_KEY = "gwlink_role"
 
     def set_link_role(self, active: bool) -> None:
@@ -1323,7 +1328,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         """active | standby | "" — сервер не сообщал (канала нет)."""
         return (self.db.get_state(self._LINK_ROLE_KEY) or "").strip()
 
-    # ── фиды локальной сети по каналу (концепт «канал линка», этап 3) ────────
+    # ── фиды локальной сети по каналу ────────
     _LAN_CHANNEL_HASH_KEY = "gwlink_lists_hash"
     _LAN_CHANNEL_AT_KEY = "gwlink_lists_at"
     # Своё скачивание молчит, пока канал привозит фиды: сервер обновляет их раз
@@ -1576,7 +1581,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                 log.warning("gateway: claim не собран: %s", e)
         return out
 
-    # ── настройки с сервера по каналу (концепт «канал линка», этап 2) ────────
+    # ── настройки с сервера по каналу ────────
     _SETTINGS_HUMAN = {"ADMIN_IPS": "устройства админа", "HOME_SUBNETS": "локальные подсети",
                        "LAN_MODE": "режим «За шлюзом — без VPN»",
                        "PEER_HOME_NETS": "локальные подсети других шлюзов", "RESOLVER": "резолвер"}
@@ -1844,10 +1849,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         значит, обнулился, и дельта — весь текущий. Новый календарный месяц
         начинает итог заново."""
         month = timeutil.now().strftime("%Y-%m")
-        try:
-            acc = json.loads(self.db.get_state(self._TRAFFIC_KEY) or "{}")
-        except (json.JSONDecodeError, ValueError):
-            acc = {}
+        acc = self.db.get_state_json(self._TRAFFIC_KEY, {})
         if acc.get("month") != month:
             acc = {"month": month, "rx": 0, "tx": 0,
                    "last_rx": acc.get("last_rx", 0), "last_tx": acc.get("last_tx", 0)}
@@ -1981,10 +1983,10 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         return st
 
     def gw_snapshot(self) -> dict:
-        """Снимок состояния для канала (концепт «канал линка», §3.5).
+        """Снимок состояния для канала.
 
         Берёт то, что тик уже снял: своего `nft` не зовёт, в сеть не ходит
-        (инвариант §3.5.0.1). Два чтения сверх этого — конфиг линка и
+        (инвариант снимка: без сети). Два чтения сверх этого — конфиг линка и
         `install/awg.lock`, оба локальные и оба по несколько сотен байт.
         """
         from awgbot.domain import gwsnapshot

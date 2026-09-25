@@ -562,7 +562,7 @@ def test_unit_gets_no_new_environment_lines_for_ssh(script):
     assert "SSH_" not in unit and "EnvironmentFile=-$FW_ENV" in unit
 
 
-# ── канал до ВПС (концепт «канал линка»): рубильник в юните ──────────────────
+# ── канал до ВПС: рубильник в юните ──────────────────
 
 def _channel_vars(script: str, **env) -> tuple[str, str]:
     """Прогнать настоящие строки скрипта, которые разбирают значения канала."""
@@ -606,7 +606,7 @@ def test_the_unit_carries_the_channel_lines_so_the_agent_can_read_them(script):
         "локальный файл читается после строк бандла — иначе он не перекроет их")
 
 
-# ── сервисы соседних сетей (концепт «сервисы соседних сетей» §4.3) ───────────
+# ── сервисы соседних сетей ───────────
 
 def _svc_host(tmp_path):
     """Малина для кусков раздела 5: каталоги во временной папке, systemctl и

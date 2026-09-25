@@ -484,7 +484,7 @@ def test_nat_only_form_needs_no_chains_without_tunnel_nets(host_mode, monkeypatc
     assert "hook input" not in text
 
 
-# ── доступ между подсетями за шлюзами (концепт «локальная сеть», функция B) ───────
+# ── доступ между подсетями за шлюзами ───────
 
 def test_forward_between_links_opens_only_with_the_toggle_and_two_links(host_mode, monkeypatch):
     """Транзит линк ↔ линк — по тумблеру и только при двух линках; без наборов
@@ -518,7 +518,7 @@ def test_nat_only_form_closes_links_when_the_toggle_is_off(host_mode, monkeypatc
     assert "chain forward" not in nftguard.render(nftguard.build_spec(["10.9.1.5"]))
 
 
-# ── канал ВПС ↔ шлюз (концепт «канал линка»): одна строка и один набор ───────
+# ── канал ВПС ↔ шлюз: одна строка и один набор ───────
 
 def _links(monkeypatch, tmp_path, **confs):
     """Каталог конфигов awg: имя интерфейса → текст конфига линка."""

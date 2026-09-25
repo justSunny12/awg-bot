@@ -1,5 +1,5 @@
 """
-gateway_link.py — шлюзы условной маршрутизации (концепт «резервный шлюз»):
+gateway_link.py — шлюзы условной маршрутизации:
 слоты, назначение и замена машины, бандл и токен агента по слоту,
 переключение трафика, пинг со шлюза, предпочтительный слот, кто такой бот
 шлюза слота (кэш getMe по отпечатку токена; спрашивает runtime/gwbotme.py).
@@ -50,8 +50,7 @@ class GatewayLinkMixin:
             return False
 
     def gateway_units_migrate(self) -> bool:
-        """Юнит первого линка — на шаблон awg-link@ (концепт «резервный шлюз»
-        §13.3), а шаблон прежней версии — на текущий. Сам по себе переезд
+        """Юнит первого линка — на шаблон awg-link@, а шаблон прежней версии — на текущий. Сам по себе переезд
         случился бы на первом ребуте ВПС (реассерт зовёт юнит); ждать его
         незачем — зовём --reassert явно один раз. Возвращает, был ли переезд."""
         if not config.ROUTING_GW_INTERFACE or not self._link_units_stale():
@@ -227,7 +226,7 @@ class GatewayLinkMixin:
                 log.warning("bundle: конфиг аплинка шлюза не собран: %s", e)
         return env, admin_ips
 
-    # ── «за шлюзом — без VPN» (концепт «локальная сеть», функция A) ───────────────
+    # ── «за шлюзом — без VPN» ───────────────
     def gateway_resolver_addr(self, gw) -> str:
         """Апстрим резолвера малины — свой резолвер ВПС из DNS устройства слота;
         пусто — резолвера нет, малина возьмёт запасной через аплинк."""
@@ -247,7 +246,7 @@ class GatewayLinkMixin:
                 "RESOLVER": self.gateway_resolver_addr(gw) if gw.lan_mode else "",
                 "PEER_HOME_NETS": " ".join(self.gateway_peer_nets(gw.id))}
 
-    # ── доступ между подсетями за шлюзами (концепт «локальная сеть», функция B) ───
+    # ── доступ между подсетями за шлюзами ───
     _PEER_NETS_KEY = "app.routing.peer_nets.enabled"
 
     def peer_nets_enabled(self) -> bool:
@@ -863,10 +862,10 @@ class GatewayLinkMixin:
         else:
             st["ping_ms"] = None
         st["ext_ip"] = self.gateway_external_ip(slot_id)
-        # функция B (концепт «локальная сеть»): пускают ли сюда из-за других шлюзов
+        # функция B: пускают ли сюда из-за других шлюзов
         st["peer_nets_enabled"] = self.peer_nets_enabled()
         st["peer_nets"] = self.gateway_peer_nets(int(slot_id))
-        # канал линка (концепт «канал линка», §7.1): только из state, без запросов
+        # канал линка: только из state, без запросов
         st["channel"] = self.gwlink_card(st["gateway"], st.get("handshake_age"))
         # бот шлюза — ссылкой в чат с ним: username и имя из кэша getMe
         st["agent_bot"] = self.gw_bot_identity(int(slot_id))
@@ -889,7 +888,7 @@ class GatewayLinkMixin:
 
     _GW_BUNDLE_SSH_KEY = "gw_bundle_ssh_allow"
     _GW_BUNDLE_SSH_NOTIFIED_KEY = "gw_bundle_ssh_allow_notified"
-    # Прочие зависимости бандла (концепт «локальная сеть» §4.3): режим без VPN,
+    # Прочие зависимости бандла: режим без VPN,
     # локальные подсети, резолвер. Устройства админа — отдельным ключом выше:
     # у них своё напоминание.
     _GW_BUNDLE_DEPS_KEY = "gw_bundle_deps"
@@ -1083,15 +1082,8 @@ class GatewayLinkMixin:
         return {}
 
     def _gw_bot_identity_cached(self, slot_id: Optional[int]) -> dict:
-        import json
-        raw = self.db.get_state(self._gw_slot_key(self._GW_BOT_ME_KEY, int(slot_id or 1))) or ""
-        if not raw:
-            return {}
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            return {}
-        if not isinstance(data, dict) or data.get("token_id") != self._gw_token_id(slot_id):
+        data = self.db.get_state_json(self._gw_slot_key(self._GW_BOT_ME_KEY, int(slot_id or 1)), {})
+        if data.get("token_id") != self._gw_token_id(slot_id):
             return {}
         return {"username": str(data.get("username") or ""), "name": str(data.get("name") or "")}
 

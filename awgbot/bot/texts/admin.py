@@ -27,7 +27,7 @@ def _traffic_triplet(rx: int, tx: int) -> str:
 
 
 def month_label() -> str:
-    """«09.2026» — текущий месяц в заголовках трафика (вычитка 3.1.0)."""
+    """«09.2026» — текущий месяц в заголовках трафика."""
     return timeutil.now().strftime("%m.%Y")
 
 
@@ -54,7 +54,7 @@ def traffic_profiles_text(rows, bot_username: str = "", total: tuple[int, int] =
 
 
 def rf_profiles_text(data: dict, bot_username: str = "") -> str:
-    """РФ-доступ за месяц по профилям (концепт «учёт РФ-трафика»):
+    """РФ-доступ за месяц по профилям:
     итог сервера, строки профилей (от большего к меньшему) ссылками на
     разбивку по устройствам, «вне профилей» — когда сумма строк не сходится
     с итогом на величину, которую видно."""
@@ -139,7 +139,7 @@ def _hostname() -> str:
 
 def rf_traffic_line(rf: dict, bot_username: str = "") -> str:
     """Вторая строка группы потребления: РФ-часть — то, что сервер выпустил
-    через шлюзы (концепт «учёт РФ-трафика»); подпись — deep-link на экран
+    через шлюзы; подпись — deep-link на экран
     РФ-доступа по профилям."""
     rx, tx = int(rf.get("rx") or 0), int(rf.get("tx") or 0)
     # тот же вид, что rf_line в карточках и списках, подпись — ссылкой
@@ -283,7 +283,6 @@ def client_created_report(name: str, *, device_limit: int, traffic_limit_bytes: 
 
 LIMIT_REACHED = "Достигнут лимит устройств."
 EXTEND_KEEP_QUESTION = "Сохранить неистраченный остаток ({remainder})?"
-
 
 
 TRAFFIC_LIMIT_CLIENT_ASK = (

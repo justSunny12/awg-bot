@@ -1,5 +1,5 @@
 """
-linkclient.py — сторона шлюза для канала ВПС ↔ шлюз (концепт «канал линка»).
+linkclient.py — сторона шлюза для канала ВПС ↔ шлюз.
 
 Коннект устанавливает ТОЛЬКО малина: на ней не появляется ни одного слушающего
 сокета, и механика работает за любым NAT. Ответные пакеты сервера проходят в
@@ -110,6 +110,7 @@ class LinkClient:
         # применение канона своих списков и сверка файлов не пересекаются:
         # сверка посреди `sync` сочла бы правки канона своими
         self._own_lock = asyncio.Lock()
+        self._fill_task: asyncio.Task | None = None   # наполнение набора после sync — фоном
 
     # ── соединение ───────────────────────────────────────────────────────────
 
@@ -353,7 +354,7 @@ class LinkClient:
         await asyncio.to_thread(self.services.applied_pending_clear)
 
     async def push_services(self) -> bool:
-        """Сервисы этой сети — серверу (концепт «сервисы соседних сетей»): при
+        """Сервисы этой сети — серверу: при
         подключении целиком, дальше — когда обзор нашёл изменение (services_changed)."""
         if self._writer is None:
             return False
@@ -371,7 +372,7 @@ class LinkClient:
                                        "error": str(result.get("error") or "")[:300]},
                                 pad=gwlink.PAD_DELTA)
 
-    # ── свои списки, общие для всех шлюзов (концепт «синхронизация своих списков») ──
+    # ── свои списки, общие для всех шлюзов ──
 
     async def push_own(self) -> bool:
         """Свои правки (pending) — серверу пачками по MAX_EVENTS; пусто — ничего."""
@@ -403,6 +404,29 @@ class LinkClient:
             await self.push_own()
             return
         await self._send_result("own_ack", result)
+        self._schedule_fill(result)
+
+    def _schedule_fill(self, result: dict) -> None:
+        """Канон применён и подтверждён — адреса новых доменов «в туннель» в
+        набор фоновой задачей: dig по каждому (до 500) не должен держать ни
+        канал, ни блокировку списков. Итог — в журнал; следующий fill ждёт
+        предыдущего (тот же файл)."""
+        path = result.get("fill")
+        fill = getattr(self.services, "own_fill", None)
+        if not path or fill is None:
+            return
+        prev = self._fill_task
+
+        async def _run() -> None:
+            if prev is not None and not prev.done():
+                with contextlib.suppress(Exception):
+                    await prev
+            ok, tail = await asyncio.to_thread(fill, path)
+            if ok:
+                log.info("свои списки: %s", tail or "набор пополнен")
+            else:
+                log.warning("свои списки: набор не пополнен: %s", tail)
+        self._fill_task = asyncio.create_task(_run())
 
     async def own_tick(self) -> None:
         """После тика монитора: сверка файлов (правка мимо агента) → правки
@@ -424,6 +448,7 @@ class LinkClient:
                 result = await asyncio.to_thread(retry)
             if result:
                 await self._send_result("own_ack", result)
+                self._schedule_fill(result)
 
     async def _apply_peer_services(self, msg: dict) -> None:
         apply = getattr(self.services, "apply_peer_services", None)
@@ -530,6 +555,12 @@ class LinkClient:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+        if self._fill_task is not None and not self._fill_task.done():
+            # поток с dig не прервать; задача-обёртка отпускается, итог — в журнал
+            self._fill_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._fill_task
+        self._fill_task = None
 
 
 _client: LinkClient | None = None
@@ -650,7 +681,7 @@ def _live_client() -> "LinkClient | None":
 async def own_changed(services) -> bool:
     """Кнопка своих списков в чате агента: сверка сразу и правки серверу, если
     канал жив; нет — уйдут при подключении. Всё, что человек сделал руками,
-    уходит по каналу немедленно (решение §13 концепта). True — сверка нашла
+    уходит по каналу немедленно. True — сверка нашла
     новые правки (неотправленные прежние тоже уходят, но хвост в чате — только
     за новые)."""
     reconcile = getattr(services, "own_reconcile", None)
@@ -668,7 +699,7 @@ async def own_changed(services) -> bool:
 
 
 async def services_changed(services) -> None:
-    """Задача обзора (концепт «сервисы соседних сетей»): изменился свой список
+    """Задача обзора: изменился свой список
     — отправить серверу, если канал жив; нет — уйдёт целиком при подключении."""
     scan = getattr(services, "services_scan", None)
     if scan is None:

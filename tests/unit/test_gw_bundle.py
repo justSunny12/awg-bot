@@ -300,7 +300,7 @@ def test_bundle_removes_itself_only_after_a_successful_apply(bundle, tmp_path):
         assert me.exists() == kept, f"rc={rc}: файл {'остался' if me.exists() else 'удалён'}"
 
 
-# ── канал ВПС ↔ шлюз (концепт «канал линка»): рубильник едет бандлом ─────────
+# ── канал ВПС ↔ шлюз: рубильник едет бандлом ─────────
 
 def _channel(text: str) -> tuple[str, str]:
     on = re.search(r'^LINK_CHANNEL="([^"]*)"$', text, re.M)
