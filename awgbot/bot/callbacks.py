@@ -13,7 +13,7 @@ from aiogram.filters.callback_data import CallbackData
 class Menu(CallbackData, prefix="m"):
     """Навигация по меню. action: main|info|refresh|devices|gen_link|gen_qr|
     gen_file|clients|add_client|add_device_choice|add_device_pick|unassigned|
-    expiring|traffic"""
+    expiring|traffic|traffic_local"""
     action: str
 
 

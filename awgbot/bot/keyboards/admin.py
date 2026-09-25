@@ -281,3 +281,16 @@ def traffic_devices_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="\u2b05\ufe0f Назад", callback_data=Menu(action="traffic"))
     return kb.as_markup()
+
+
+def rf_profiles_kb() -> InlineKeyboardMarkup:
+    """Экран РФ-доступа по профилям — как разбивка потребления: одна «В меню»."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="\u2b05\ufe0f В меню", callback_data=Menu(action="main"))
+    return kb.as_markup()
+
+
+def rf_devices_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="\u2b05\ufe0f Назад", callback_data=Menu(action="traffic_local"))
+    return kb.as_markup()

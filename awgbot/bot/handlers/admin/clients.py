@@ -53,7 +53,8 @@ async def _client_card_parts(services, client_id: int):
     if d is None:
         return None
     client, devices = d["client"], d["devices"]
-    text = texts.client_card(client, devices, d["traffic"], d["online"], for_admin=True)
+    text = texts.client_card(client, devices, d["traffic"], d["online"], for_admin=True,
+                             rf=d.get("rf"))
     # Прогресс переезда — последней строкой и ТОЛЬКО админу: клиенту знать про
     # внутреннюю кухню незачем, а карточку он видит в своём варианте.
     if d["progress"] is not None:

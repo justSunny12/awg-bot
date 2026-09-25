@@ -203,7 +203,7 @@ async def _device_card_parts(services, dev):
         slot = st["gateway"].id if st else 0
         return (texts.gateway_device_card(dev, st),
                 kb.gateway_device_actions(dev, back_target=back_target, slot=slot))
-    text = texts.device_card_text(dev, for_admin=True)
+    text = texts.device_card_text(dev, for_admin=True, rf=await call(services.rf_device_card, dev))
     marker = texts.friend_marker(dev)
     if marker:
         text += f"\n\n{marker}"

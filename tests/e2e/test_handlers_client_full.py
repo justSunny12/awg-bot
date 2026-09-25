@@ -357,3 +357,32 @@ async def test_client_cannot_rename_foreign_device(services, fake_bot, make_acti
     # own_device вернул None → ранний выход, device_id в state не записан
     assert "device_id" not in (await st.get_data())
     assert services.db.get_device(dc.device_id).name == "ЧужоеУстройство"
+
+
+# ── РФ-доступ только админу (концепт «учёт РФ-трафика», этап 2) ──────────────
+
+async def test_client_screens_do_not_show_rf_even_when_allowed_and_counted(
+        services, fake_bot, make_active_client):
+    """РФ-часть потребления — сведения для админа. Клиенту с разрешённым
+    РФ-доступом и накопленными байтами карточка устройства и экран подписки
+    те же, что без них: иначе вопросы «что за РФ и почему столько»."""
+    client = make_active_client(tg_id=5100, name="Ксюша")
+    services.db.update_client_fields(client.id, routing_allowed=1)
+    dc = services.add_device(client.id, "Телефон")
+
+    async def screens():
+        cl = _fresh(services, client)
+        cb, nav = _cb(fake_bot, 5100)
+        await ch.device_open(cb, DeviceCB(action="open", device_id=dc.device_id), cl, services)
+        card = last_screen(nav)
+        cb, nav = _cb(fake_bot, 5100)
+        await ch.menu_info(cb, cl, services)
+        return card, last_screen(nav)
+
+    before = await screens()
+    services.db.rf_add_bulk([(dc.device_id, 1024 ** 3, 3 * 1024 ** 3)])
+    services.db.set_state("rf_month_rx", str(1024 ** 3))
+    services.db.set_state("rf_month_tx", str(3 * 1024 ** 3))
+    after = await screens()
+    assert after == before, "экран клиента изменился от РФ-данных"
+    assert all("🇷🇺" not in text for text, _ in after), after
