@@ -579,6 +579,13 @@ resolve() { dig +short +time=3 +tries=1 @127.0.0.1 "$1" A 2>/dev/null | grep -E 
 set_op() {                     # set_op add|delete <набор> <домен> — адреса домена в набор / из набора
     for ip in $(resolve "$3"); do nft "$1" element $TABLE "$2" "{ $ip }" 2>/dev/null || true; done
 }
+fill_set() {                   # fill_set <набор> <файл доменов> — параллельный dig, один nft на все адреса
+    # 8 запросов разом: dnsmasq и апстрим через аплинк держат это легко, а
+    # 500 доменов по одному шли бы минуты; nft — одним вызовом со всем списком
+    _ips="$(xargs -r -P 8 -I{} sh -c 'dig +short +time=3 +tries=1 @127.0.0.1 "$1" A 2>/dev/null' _ {} < "$2" \
+           | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u | paste -sd, -)"
+    [ -n "$_ips" ] && nft add element $TABLE "$1" "{ $_ips }" 2>/dev/null || true
+}
 snapshot_vpn() {               # слепок набора грузится при старте: без него снятый адрес вернулся бы с загрузкой
     nft list set $TABLE lan_vpn4 > "$DUMP/lan_vpn4.nft.tmp" 2>/dev/null && mv -f "$DUMP/lan_vpn4.nft.tmp" "$DUMP/lan_vpn4.nft" || rm -f "$DUMP/lan_vpn4.nft.tmp"
 }
@@ -587,11 +594,10 @@ plural_dom() {                 # 1 домен, 2 домена, 5 доменов,
 }
 if [ "$cmd" = "fill" ]; then
     # без блокировки: файлы dnsmasq не трогаем, только набор и его слепок
-    n=0
-    while read -r d; do
-        valid "$d" || continue
-        set_op add lan_vpn4 "$d"; n=$((n+1))
-    done < "$1"
+    _ok="$(mktemp)"; trap 'rm -f "$_ok"' EXIT
+    while read -r d; do valid "$d" && printf '%s\n' "$d"; done < "$1" > "$_ok"
+    n="$(grep -c . "$_ok")"
+    fill_set lan_vpn4 "$_ok"
     snapshot_vpn
     echo "набор lan_vpn4 пополнен: $n $(plural_dom "$n")"
     exit 0
@@ -693,9 +699,7 @@ done
 # «напрямую» изменилось — набор целиком заново: он маленький и наполняется только отсюда
 if ! cmp -s "$TMPD/want_ru" "$TMPD/before_ru"; then
     nft flush set $TABLE lan_ru4 2>/dev/null || true
-    while read -r d; do
-        [ -n "$d" ] && set_op add lan_ru4 "$d"
-    done < "$TMPD/want_ru"
+    fill_set lan_ru4 "$TMPD/want_ru"
 fi
 if [ "$cmd" = "sync" ]; then
     grep -vxF -f "$TMPD/before_vpn" "$TMPD/want_vpn" 2>/dev/null | sed 's|^|+ |; s|$| (в туннель)|'
