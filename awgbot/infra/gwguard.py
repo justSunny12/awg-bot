@@ -634,7 +634,7 @@ def lan_own_lists() -> tuple[int, int]:
     """(в туннель, напрямую) — персональные списки, строки nftset=."""
     def _count(name: str) -> int:
         try:
-            text = Path(f"/etc/dnsmasq.d/{name}").read_text(encoding="utf-8")
+            text = Path(f"{DNSMASQ_D}/{name}").read_text(encoding="utf-8")
         except OSError:
             return 0
         return sum(1 for ln in text.splitlines() if ln.startswith("nftset="))

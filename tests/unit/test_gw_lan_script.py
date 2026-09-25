@@ -1130,7 +1130,8 @@ def test_a_rejected_config_rolls_back_the_lists_and_the_feed(own_env):
     before = {f: (dns_d / f).read_text() for f in (VPN_USER, RU_USER, FEED)}
     r = _run(tool, {**env, "DNSMASQ_TEST_RC": "1"}, "ru", "shop.ru")
     assert r.returncode == 1, r.stdout + r.stderr
-    assert "откатываю" in r.stderr
+    # эта строка уходит человеку в итог правки и в монитор — «отверг списки»
+    assert "dnsmasq --test отверг списки — откатываю" in r.stderr, r.stderr
     assert "добавлен" not in r.stdout, f"человеку сказано «добавлен» про откаченное: {r.stdout}"
     assert {f: (dns_d / f).read_text() for f in before} == before, "откат вернул не всё"
     assert not list(dns_d.glob("*.prev.awg")), "копии отката остались в conf-dir"

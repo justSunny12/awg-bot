@@ -625,7 +625,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         resolver = gwguard.unit_env("RESOLVER")
         nets_all = gwguard.unit_env("HOME_SUBNETS").split()
         info: dict = {"iface": iface, "addr": addr, "resolver": resolver or "1.1.1.1 (запасной)",
-                      "subnet": nets_all[0] if nets_all else ""}
+                      "subnet": nets_all[0] if nets_all else "",
+                      "uplink": st.get("UPLINK_IF", "")}
         checks: list[GwCheck] = []
         # скрипта списков нет — фиды применить нечем, ни свои, ни из канала
         if not os.path.exists(gwguard.LAN_LISTS_SCRIPT):
@@ -717,9 +718,31 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         return info, checks
 
     def lan_domains(self, cmd: str, domains: list[str]) -> tuple[bool, str]:
-        """Личные списки из чата: add | ru | del. Разбор и денилист — в скрипте."""
+        """Свои списки из чата: add | ru | del. Разбор и денилист — в скрипте.
+        Счётчики в снимке панели — сразу, не ждать тика монитора."""
         from awgbot.infra import gwguard
-        return gwguard.run_lan_domain(cmd, domains)
+        ok, out = gwguard.run_lan_domain(cmd, domains)
+        if ok:
+            self.lan_own_counts_refresh()
+        return ok, out
+
+    def lan_own_counts_refresh(self) -> None:
+        """Обновить в снимке последнего тика счётчики своих списков: панель
+        рисуется из снимка, и после правки списка показывала бы прежние числа
+        до следующего тика монитора (вычитка 3.1.0)."""
+        from awgbot.infra import gwguard
+        raw = self.db.get_state(self._SNAPSHOT_KEY)
+        if not raw:
+            return
+        try:
+            st = GwStatus.from_json(raw)
+        except (json.JSONDecodeError, ValueError, TypeError):
+            return
+        lan = getattr(st, "lan", None)
+        if not lan:
+            return
+        lan["own_vpn"], lan["own_ru"] = gwguard.lan_own_lists()
+        self.db.set_state(self._SNAPSHOT_KEY, st.to_json())
 
     def lan_own_lists(self) -> list[tuple[str, str]]:
         """[(vpn|ru, домен)] из скрипта списков."""

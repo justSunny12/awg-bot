@@ -4,9 +4,10 @@
 шлюза»): карточка гаснет и становится контентом, под файлом — «⬅️ В меню»
 (`bundle_cancel` с номером слота); где лежат файл и карточка над ним —
 запомнено. «В меню» убирает оба и открывает карточку слота. Итог применения
-с шлюза (канал линка, вид `applied`) сообщения в чат не шлёт — его человек
-видел в чате бота шлюза: при любом исходе файл с карточкой уходят и карточка
-слота приходит новым живым меню; итог о другом файле не трогает ничего.
+с шлюза (канал линка, вид `applied`): при любом исходе файл с карточкой
+уходят, админу — уведомление «✅ Конфигурация шлюза … успешно обновлена» или
+«⚠️ … не обновлена: причина» без кнопок, как контент, и следом карточка слота
+новым живым меню; итог о другом файле или без файла в чате не трогает ничего.
 
 Файл первого применения — под инструкцией, с той же «⬅️ В меню»
 (`bundle_cancel`): убирает файл и инструкцию, дальше карточка слота. Агент нового шлюза в первый час
@@ -433,31 +434,35 @@ async def test_menu_on_a_previous_file_removes_only_that_file(services, slots):
 # ── итог применения с шлюза ──────────────────────────────────────────────────
 
 async def test_success_removes_the_file_and_brings_the_slot_card_as_the_live_menu(services, slots):
-    """Шлюз сказал «применено»: файл и карточка над ним уходят, сообщения
-    «применено» нет (его человек видел у бота шлюза) — вместо них карточка
-    слота новым сообщением, и она — живое меню чата; запись стёрта."""
+    """Шлюз сказал «применено»: файл и карточка над ним уходят; админу —
+    «✅ Конфигурация шлюза … успешно обновлена» без кнопок, помеченное
+    контентом (возврат в меню его уберёт), следом карточка слота новым
+    сообщением, и она — живое меню чата; запись стёрта."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     services.db.gateway_update(2, label="дом 2")
     bot = _Bot()
     want_text, want_labels = await _card(services, bot, 2)
     nav, (_c, _m, doc) = await _issue(services, bot, 2)
+    services.db.pop_content_msg_ids(ADMIN)                # что пометила сама выдача — не предмет теста
     await sh.bundle_applied(bot, services, 2, True, "")
     assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), _deleted(bot)
     sent = _sent(bot)
-    assert len(sent) == 1, f"после итога в чат ушло не одно сообщение: {sent}"
-    _, chat, text = sent[0]
-    assert chat == ADMIN
-    assert text == want_text, f"вместо карточки слота 2 показано:\n{text}"
-    mid = max(bot.markups)
+    assert [(r[1], r[2]) for r in sent] == [
+        (ADMIN, "✅ Конфигурация шлюза <b>«Pi2» (дом 2)</b> успешно обновлена"),
+        (ADMIN, want_text)], f"после итога не уведомление и карточка слота 2: {sent}"
+    note_id, mid = sorted(bot.markups)[-2:]
+    assert bot.markups[note_id] is None, "у уведомления об итоге клавиатура — второе живое меню"
+    assert services.db.pop_content_msg_ids(ADMIN) == [note_id], "уведомление не помечено контентом"
     assert [b.text for row in bot.markups[mid].inline_keyboard for b in row] == want_labels
     assert services.gw_bundle_msg_get(2) == {}
     assert services.db.get_nav_message_id(ADMIN) == mid, "карточка не стала живым меню — повиснет вторая клавиатура"
 
 
 async def test_success_for_a_slot_removed_meanwhile_brings_the_main_menu(services, slots):
-    """Слот сняли, пока файл ехал: итог убирает файл и ставит главную, а не
-    карточку, которой нет."""
+    """Слот сняли, пока файл ехал: итог убирает файл, уведомление всё равно
+    приходит (без имени слота — его нет), дальше главная, а не карточка,
+    которой нет."""
     from awgbot.bot.handlers.admin import _panel_parts
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
@@ -467,13 +472,17 @@ async def test_success_for_a_slot_removed_meanwhile_brings_the_main_menu(service
     await sh.bundle_applied(bot, services, 2, True, "")
     assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), _deleted(bot)
     main_text, _ = await _panel_parts(services)
-    assert [r[2] for r in _sent(bot)] == [main_text], "после итога по снятому слоту не главная"
+    sent = [r[2] for r in _sent(bot)]
+    assert len(sent) == 2 and sent[0].startswith("✅ Конфигурация шлюза <b>") \
+        and sent[0].endswith("</b> успешно обновлена"), sent
+    assert sent[1] == main_text, "после итога по снятому слоту не главная"
 
 
 async def test_a_failure_also_removes_the_file_and_brings_the_slot_card(services, slots):
-    """Отказ: файл всё равно отслужил (внутри ключ линка, причину человек
-    видел у бота шлюза) — он и карточка над ним уходят, строки об отказе в
-    чате ВПС нет, карточка слота — новым живым меню: перевыпуск оттуда же."""
+    """Отказ: файл всё равно отслужил (внутри ключ линка) — он и карточка над
+    ним уходят; админу — «⚠️ … не обновлена: причина» с экранированной
+    причиной (иначе Telegram отвергнет уведомление), следом карточка слота
+    новым живым меню: перевыпуск оттуда же."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     bot = _Bot()
@@ -483,7 +492,9 @@ async def test_a_failure_also_removes_the_file_and_brings_the_slot_card(services
     await sh.bundle_applied(bot, services, 2, False, "нет <места> & прав", fp=record["fp"])
     assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), \
         f"после отказа файл с ключом линка остался в чате: удалены {_deleted(bot)}"
-    assert [r[2] for r in _sent(bot)] == [want_text], f"после отказа не карточка слота: {_sent(bot)}"
+    assert [r[2] for r in _sent(bot)] == [
+        "⚠️ Конфигурация шлюза <b>«Pi2»</b> не обновлена: нет &lt;места&gt; &amp; прав",
+        want_text], f"после отказа не уведомление и карточка слота: {_sent(bot)}"
     assert services.db.get_nav_message_id(ADMIN) == max(bot.markups), "карточка не стала живым меню"
     assert services.gw_bundle_msg_get(2) == {}
 
@@ -522,7 +533,8 @@ async def test_a_refused_delete_does_not_hold_back_the_card(services, slots):
     await _issue(services, bot, 2)
     bot.delete_fails = True
     await sh.bundle_applied(bot, services, 2, True, "")
-    assert [r[2] for r in _sent(bot)] == [want_text]
+    assert [r[2] for r in _sent(bot)] == ["✅ Конфигурация шлюза <b>«Pi2»</b> успешно обновлена",
+                                          want_text], _sent(bot)
     assert services.gw_bundle_msg_get(2) == {}
 
 
@@ -571,7 +583,8 @@ async def test_a_result_about_this_file_or_without_fingerprint_removes_it(servic
     await sh.bundle_applied(bot, services, 2, True, "", fp=fp)
     assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), _deleted(bot)
     assert services.gw_bundle_msg_get(2) == {}
-    assert len(_sent(bot)) == 1, _sent(bot)
+    assert len(_sent(bot)) == 2 and _sent(bot)[0][2].startswith("✅ Конфигурация шлюза"), \
+        f"не уведомление и карточка: {_sent(bot)}"
 
 
 async def test_the_fingerprint_on_record_is_the_one_the_gateway_computes(services, slots, monkeypatch):
@@ -712,3 +725,14 @@ def test_installed_text_escapes_names_and_falls_back_to_the_username():
         '<a href="https://t.me/pi_bot">pi_bot</a>')
     for none in ({}, None, {"username": "", "name": "x"}):
         assert texts.gateway_installed_text("«Pi»", none) == "✅ Шлюз <b>«Pi»</b> успешно настроен 🎉", none
+
+
+def test_applied_text_escapes_the_name_and_the_reason_and_has_no_dangling_colon():
+    """Имя слота и причина отказа шлюза — чужой текст: без экранирования
+    Telegram отвергает уведомление. Отказ без причины — без висящего «:»."""
+    assert texts.gateway_bundle_applied_text("«A<B>» (x & y)", True, "игнор") == \
+        "✅ Конфигурация шлюза <b>«A&lt;B&gt;» (x &amp; y)</b> успешно обновлена", "причина в успехе лишняя"
+    assert texts.gateway_bundle_applied_text("«Pi»", False, "") == \
+        "⚠️ Конфигурация шлюза <b>«Pi»</b> не обновлена"
+    assert texts.gateway_bundle_applied_text("«Pi»", False, "<b>rc=1</b>") == \
+        "⚠️ Конфигурация шлюза <b>«Pi»</b> не обновлена: &lt;b&gt;rc=1&lt;/b&gt;"

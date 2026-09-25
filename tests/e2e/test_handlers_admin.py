@@ -2,6 +2,7 @@
 удаление, обещание после перезапуска, окна и финишеры обновления."""
 import pytest
 
+from awgbot.bot import texts
 from awgbot.bot.handlers import admin as admin_h
 from awgbot.bot.callbacks import ClientCB, ConfirmCB, PeriodCB
 from awgbot.core import config
@@ -303,7 +304,7 @@ async def test_panel_shows_zero_rf_line_when_the_feature_is_on(services, fake_bo
     text = await _panel_text(services, fake_bot)
     line = _rf_line(text)
     assert line == "└ 🇷🇺 РФ-доступ: 0 ГБ (↑ 0 ГБ | ↓ 0 ГБ)", text
-    head = [ln for ln in text.splitlines() if "Потребление за месяц (все)" in ln][0]
+    head = [ln for ln in text.splitlines() if f"📊 Трафик за {texts.month_label()}" in ln][0]
     assert text.splitlines().index(line) == text.splitlines().index(head) + 1, \
         "строка РФ не сразу под потреблением"
 
@@ -338,9 +339,10 @@ async def test_panel_rf_line_links_to_the_rf_screen(services, fake_bot, fake_rou
     services.bot_username = "awg_test_bot"
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
     text = await _panel_text(services, fake_bot)
-    lines = [ln for ln in text.splitlines() if ln.startswith("└ 🇷🇺 ")]
-    assert lines and lines[0] == ('└ 🇷🇺 <a href="https://t.me/awg_test_bot?start=traffic_local">'
-                                  'РФ-доступ</a>: 1 ГБ (↑ 1 ГБ | ↓ 0 ГБ)'), text
+    lines = [ln for ln in text.splitlines() if ln.startswith("└ ") and "🇷🇺 РФ-доступ" in ln]
+    # флаг — внутри ссылки: кликается вся подпись «🇷🇺 РФ-доступ»
+    assert lines and lines[0] == ('└ <a href="https://t.me/awg_test_bot?start=traffic_local">'
+                                  '🇷🇺 РФ-доступ</a>: 1 ГБ (↑ 1 ГБ | ↓ 0 ГБ)'), text
     assert "start=traffic\"" in text, "ссылка потребления пропала"
 
 

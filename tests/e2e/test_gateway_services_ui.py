@@ -64,17 +64,18 @@ def _publish(services, peers: str = "192.168.1.0/24", version: str = "3.1.0") ->
     services.gwlink_snapshot_in(2, _snap(peers, version), 1, True)
 
 
-HEAD = "🗂 SMB: в этой подсети — 0, из подсетей других шлюзов — 1"
+HEAD = "🗂 SMB: в этой подсети — 0, из других — 1"
 
 
 def _svc_note(text: str) -> str | None:
-    """Строка о судьбе записей на шлюзе: после строки 🗂 и пустой строки, с
-    ⏳ или ⚠️ в начале; дальше в карточке другие блоки — они не в счёт."""
+    """Строка о судьбе записей на шлюзе: сразу под строкой 🗂, без пустой
+    (вычитка 3.1.0), с ⏳ или ⚠️ в начале; дальше в карточке другие блоки —
+    они не в счёт."""
     lines = text.splitlines()
     i = next((k for k, ln in enumerate(lines) if ln.startswith("🗂")), None)
-    if i is None or i + 2 >= len(lines) or lines[i + 1] != "":
+    if i is None or i + 1 >= len(lines):
         return None
-    return lines[i + 2] if lines[i + 2].startswith(("⏳", "⚠️")) else None
+    return lines[i + 1] if lines[i + 1].startswith(("⏳", "⚠️")) else None
 
 
 async def test_the_slot_card_counts_services_and_follows_their_fate(services, peers, fake_bot):
@@ -84,14 +85,14 @@ async def test_the_slot_card_counts_services_and_follows_their_fate(services, pe
     _publish(services)
     text, labels = await _card(services, fake_bot, 2)
     assert _svc_line(text) == HEAD, text
-    assert _svc_note(text) == "⏳ Отправлены на шлюз «Pi2»", (
+    assert _svc_note(text) == "⏳ Синхронизация с другими шлюзами…", (
         f"записи ушли на шлюз, а карточка молчит, где они: {text}")
     assert "NASPi5" not in text and "naspi5" not in text, "имя с малины на экране ВПС"
     assert labels == labels_before, "строка сервисов добавила или убрала кнопки"
     services.gwlink_peer_services_ack_in(2, {"ok": True, "hash": H_NAS, "n": 1})
     text, _ = await _card(services, fake_bot, 2)
     assert _svc_line(text) == HEAD + ", доступны", _svc_line(text)
-    assert "⏳ Отправлены" not in text and "⚠️ Шлюз" not in text, (
+    assert "⏳ Синхронизация с другими шлюзами" not in text and "⚠️ Шлюз" not in text, (
         f"записи на шлюзе, а карточка всё ещё пишет про их путь: {text}")
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": "<b>dnsmasq</b> & rc=1"})
     text, _ = await _card(services, fake_bot, 2)
@@ -99,7 +100,7 @@ async def test_the_slot_card_counts_services_and_follows_their_fate(services, pe
     assert _svc_note(text) == "⚠️ Шлюз «Pi2» отказался принимать: &lt;b&gt;dnsmasq&lt;/b&gt; &amp; rc=1", (
         f"ошибка шлюза не экранирована или потерялась: {_svc_note(text)}")
     text1, _ = await _card(services, fake_bot, 1)
-    assert _svc_line(text1) == "🗂 SMB: в этой подсети — 1, из подсетей других шлюзов — нет", text1
+    assert _svc_line(text1) == "🗂 SMB: в этой подсети — 1, из других — нет", text1
     assert _svc_note(text1) is None, f"от соседей ничего — сообщать о судьбе нечего: {text1}"
 
 
@@ -145,9 +146,11 @@ async def test_the_gateway_name_in_the_note_is_escaped_once(services, peers, fak
     _, _, pi2 = slots
     services.rename_device(pi2.id, "Pi & <2>")
     _publish(services)
+    # «в пути» имени больше не называет — имя остаётся в отказе шлюза
+    services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": ""})
     text, _ = await _card(services, fake_bot, 2)
     assert "«Pi &amp; &lt;2&gt;»" in text.splitlines()[0], text.splitlines()[0]
-    assert _svc_note(text) == "⏳ Отправлены на шлюз «Pi &amp; &lt;2&gt;»", (
+    assert _svc_note(text) == "⚠️ Шлюз «Pi &amp; &lt;2&gt;» отказался принимать", (
         f"имя шлюза экранировано дважды: {_svc_note(text)}")
 
 
@@ -155,12 +158,12 @@ async def test_the_gateway_name_in_the_note_is_escaped_once(services, peers, fak
     ("reissue", "⚠️ Для доступа необходим перевыпуск конфигурации шлюза"),
     ("old_agent", "⚠️ Для доступа необходимо обновить шлюз"),
     ("failed", "⚠️ Шлюз отказался принимать"),
-    ("pending", "⏳ Отправлены на шлюз"),
+    ("pending", "⏳ Синхронизация с другими шлюзами…"),
 ])
 def test_without_a_name_the_note_does_not_repeat_the_word_gateway(state, note):
     """Имени нет — фраза целая, без «шлюза шлюза» и двойного пробела."""
     from awgbot.bot.texts.routing import services_line
-    assert services_line({"own": 0, "peer": 1, "state": state}) == HEAD + "\n\n" + note
+    assert services_line({"own": 0, "peer": 1, "state": state}) == HEAD + "\n" + note
 
 
 async def test_no_services_anywhere_is_one_short_line(services, peers, fake_bot):
@@ -251,7 +254,7 @@ async def test_agent_panel_and_lan_screen_count_smb_in_one_line(gw_svc, fake_bot
     _peer(gw_svc, ["naspi5", "backup", "Time Machine", "<b>x</b>", "media"])
     panel, panel_labels, lan, lan_labels = await _agent_screens(gw_svc, fake_bot, monkeypatch)
     # своих не нашлось — «не найдены», не «0»
-    line = "🗂 SMB: в этой подсети — не найдены, из подсетей других шлюзов — 5"
+    line = "🗂 SMB: в этой подсети — не найдены, из других — 5"
     assert "\n\n" + line + "\n" in panel, panel
     assert lan.endswith("\n\n" + line), f"строка SMB на экране локальной сети не последней после пустой: {lan}"
     for t in (panel, lan):
@@ -268,12 +271,17 @@ async def test_the_lan_screen_groups_address_traffic_lists_and_smb(gw_svc, fake_
     _peer(gw_svc, ["naspi5"])
     _, _, lan, _ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
     block = ("Интерфейс end0\nадрес <code>192.168.68.222</code>\n"
-             "DNS — апстрим <code>10.9.1.1</code> через аплинк\n\n"
+             "DNS — <code>10.9.1.1</code> через аплинк\n\n"
              "Трафик с роутера: 9 пакетов\n\n"
              "Списки: 3 домена, 4 подсети (ещё не обновлялись)\n"
              "Свои списки: 1 в туннель, 0 напрямую\n\n"
-             "🗂 SMB: в этой подсети — не найдены, из подсетей других шлюзов — 1")
+             "🗂 SMB: в этой подсети — не найдены, из других — 1")
     assert lan.endswith(block), lan
+    # абзац о режиме: синхронизация своих списков и приоритет «напрямую» —
+    # своими строками (вычитка 3.1.0)
+    assert ("остальное — напрямую.\n"
+            "Личные списки синхронизируются между шлюзами, а введённый домен накрывает и все поддомены;\n"
+            "правила «напрямую» приоритетнее правил «в туннель».\n\n") in lan, lan
 
 
 async def test_agent_panel_before_anything_arrived_and_after_an_empty_feed(gw_svc, fake_bot, monkeypatch):
@@ -296,9 +304,9 @@ def test_smb_line_without_avahi_browse_is_not_checked_either():
     вовсе — строка целиком «Сервисы SMB: не найдены / обновляю…»."""
     from awgbot.bot.texts.gateway import smb_line
     assert smb_line({"avahi": True, "browse": False, "own": [], "peer": ["a"], "ever": True}) == \
-        "🗂 SMB: в этой подсети — не найдены, из подсетей других шлюзов — 1"
+        "🗂 SMB: в этой подсети — не найдены, из других — 1"
     assert smb_line({"avahi": True, "browse": True, "own": ["x", "y"], "peer": ["a"], "ever": True}) == \
-        "🗂 SMB: в этой подсети — 2, из подсетей других шлюзов — 1", "свои найдены — число, не «не найдены»"
+        "🗂 SMB: в этой подсети — 2, из других — 1", "свои найдены — число, не «не найдены»"
     assert smb_line({"avahi": True, "browse": True, "own": ["x", "y"], "peer": [], "ever": True}) == \
         "🗂 Сервисы SMB: не найдены", "сервер прислал пустое — без счёта своей подсети"
     assert smb_line({"avahi": True, "browse": True, "own": ["x"], "peer": [], "ever": False}) == \

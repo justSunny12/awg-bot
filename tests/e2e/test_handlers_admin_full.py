@@ -6,6 +6,7 @@
 """
 import pytest
 
+from awgbot.bot import texts
 from awgbot.bot.handlers import admin as ah
 from awgbot.bot.callbacks import AdminSelfCB, ClientCB, ConfirmCB, DelDeviceCB, DeviceCB, ReassignCB
 from awgbot.core import config
@@ -485,7 +486,7 @@ def _rf_total(services, rx: int, tx: int, since: str = ""):
     services.db.set_state("rf_acct_since", since)
 
 
-_OUTSIDE = "Вне профилей: "
+_OUTSIDE = "🧐 <b>Вне профилей:</b> "
 
 
 async def test_rf_screen_shows_outside_as_total_minus_devices(services, fake_bot, make_active_client):
@@ -495,8 +496,8 @@ async def test_rf_screen_shows_outside_as_total_minus_devices(services, fake_bot
     extra = int(0.22 * GB)
     _rf_total(services, GB, GB + extra)
     screen = await _deep(services, fake_bot, "traffic_local")
-    assert screen.startswith("🇷🇺 <b>РФ-доступ за текущий месяц:</b> 2.22 ГБ"), screen
-    assert screen.endswith("\n\nВне профилей: 0.22 ГБ — удалённые устройства и первые минуты новых."), \
+    assert screen.startswith(f"🇷🇺 <b>РФ-доступ за {texts.month_label()}:</b>\n2.22 ГБ"), screen
+    assert screen.endswith("\n\n🧐 <b>Вне профилей:</b> 0.22 ГБ — удалённые устройства и первые минуты новых."), \
         screen
 
 
@@ -511,7 +512,7 @@ async def test_rf_screen_outside_threshold(services, fake_bot, make_active_clien
     screen = await _deep(services, fake_bot, "traffic_local")
     assert (_OUTSIDE in screen) is shown, screen
     if shown:
-        assert "Вне профилей: 0.01 ГБ —" in screen, screen
+        assert _OUTSIDE + "0.01 ГБ —" in screen, screen
 
 
 async def test_rf_screen_hides_outside_when_devices_exceed_total(services, fake_bot, make_active_client):
@@ -536,28 +537,22 @@ async def test_deleted_device_moves_its_rf_into_outside(services, fake_bot, make
     assert _OUTSIDE not in before and "👤 Ксюша: 4 ГБ" in before, before
     services.remove_device(gone.device_id)
     after = await _deep(services, fake_bot, "traffic_local")
-    assert after.startswith("🇷🇺 <b>РФ-доступ за текущий месяц:</b> 4 ГБ"), after
+    assert after.startswith(f"🇷🇺 <b>РФ-доступ за {texts.month_label()}:</b>\n4 ГБ"), after
     assert "👤 Ксюша: 2 ГБ" in after, after
-    assert "Вне профилей: 2 ГБ —" in after, after
+    assert _OUTSIDE + "2 ГБ —" in after, after
 
 
-async def test_rf_screen_shows_start_date_only_in_the_start_month(services, fake_bot):
-    """«Учёт — с …» — только в месяце, когда учёт начался: там итог неполный.
-    В следующих месяцах дата — шум: месяц посчитан целиком."""
-    from datetime import timedelta
+async def test_rf_screen_has_no_start_date_even_in_the_start_month(services, fake_bot):
+    """Строку «Учёт — с …» сняли при вычитке 3.1.0: заголовок — месяц и итог,
+    вторая строка — сразу цифры. Вернётся дата — экран снова разойдётся с
+    экраном трафика по виду шапки."""
     from awgbot.util import timeutil
     now = timeutil.now()
     _rf_total(services, 0, 0, since=timeutil.to_iso(now))
     lines = (await _deep(services, fake_bot, "traffic_local")).split("\n")
-    assert lines[1] == f"Учёт — с {now.strftime('%d.%m')}.", lines
-
-    _rf_total(services, 0, 0, since=timeutil.to_iso(now - timedelta(days=40)))
-    screen = await _deep(services, fake_bot, "traffic_local")
-    assert "Учёт — с" not in screen, screen
-
-    _rf_total(services, 0, 0, since="")
-    screen = await _deep(services, fake_bot, "traffic_local")
-    assert "Учёт — с" not in screen, screen
+    assert lines[:2] == [f"🇷🇺 <b>РФ-доступ за {texts.month_label()}:</b>",
+                         "0 ГБ (↑ 0 ГБ | ↓ 0 ГБ)"], lines
+    assert not any(ln.startswith("Учёт — с") for ln in lines), lines
 
 
 async def test_rf_screen_survives_garbage_in_start_date(services, fake_bot):
@@ -565,4 +560,66 @@ async def test_rf_screen_survives_garbage_in_start_date(services, fake_bot):
     в хендлере (админ жмёт ссылку — и ничего)."""
     _rf_total(services, GB, 0, since="не дата")
     screen = await _deep(services, fake_bot, "traffic_local")
-    assert screen.startswith("🇷🇺 <b>РФ-доступ за текущий месяц:</b> 1 ГБ") and "Учёт — с" not in screen
+    assert screen.startswith(f"🇷🇺 <b>РФ-доступ за {texts.month_label()}:</b>\n1 ГБ") \
+        and "Учёт — с" not in screen, screen
+
+
+# ── шапки и порядок экранов трафика и РФ (вычитка 3.1.0, часть VII) ──────────
+
+def _profile_rows(screen: str) -> list[str]:
+    """Имена профилей на экране по порядку (строки «👤 Имя: …»)."""
+    return [b.split("\n")[0][2:].split(":")[0] for b in screen.split("\n\n") if b.startswith("👤 ")]
+
+
+async def test_traffic_screen_heads_with_the_server_total_and_puts_the_biggest_first(
+        services, fake_bot, make_active_client):
+    """Шапка «Трафик за ММ.ГГГГ» и под ней итог сервера за месяц; профили — от
+    большего к меньшему, равные — в прежнем порядке. Итог не тот — сумма строк
+    не сходится с главной; порядок по созданию — крупный потребитель теряется
+    внизу длинного списка."""
+    a, da = _profile(services, make_active_client, "Алёна", 6401, allowed=False)
+    b, db_ = _profile(services, make_active_client, "Борис", 6402, allowed=False)
+    _profile(services, make_active_client, "Вера", 6403, allowed=False)
+    _profile(services, make_active_client, "Глеб", 6404, allowed=False)
+    services.db.add_traffic_bulk([(da, GB, 0), (db_, GB, 2 * GB)])
+    screen = await _deep(services, fake_bot, "traffic")
+    lines = screen.split("\n")
+    assert lines[:2] == [f"📊 <b>Трафик за {texts.month_label()}:</b>", "4 ГБ (↑ 2 ГБ | ↓ 2 ГБ)"], lines
+    assert _profile_rows(screen) == ["Борис", "Алёна", "Вера", "Глеб"], screen
+
+
+async def test_traffic_devices_screen_heads_with_the_profile_total(
+        services, fake_bot, make_active_client):
+    """Разбивка профиля: «Трафик за ММ.ГГГГ, Имя:» и под ней итог профиля, а не
+    сервера — иначе цифра в шапке не совпадёт со строкой профиля в списке."""
+    c, did = _profile(services, make_active_client, "Ксюша", 6405, allowed=False)
+    other, oid = _profile(services, make_active_client, "Чужой", 6406, allowed=False)
+    services.db.add_traffic_bulk([(did, GB, 2 * GB), (oid, 5 * GB, 5 * GB)])
+    lines = (await _deep(services, fake_bot, f"traffic-{c.id}")).split("\n")
+    assert lines[:2] == [f"📊 <b>Трафик за {texts.month_label()}, Ксюша:</b>",
+                         "3 ГБ (↑ 1 ГБ | ↓ 2 ГБ)"], lines
+
+
+async def test_rf_screen_puts_the_biggest_profile_first(services, fake_bot, fake_routing,
+                                                        make_active_client):
+    """Экран РФ-доступа — тот же порядок, что у трафика: от большего к меньшему,
+    равные — в прежнем порядке."""
+    fake_routing.enabled = True
+    _profile(services, make_active_client, "Алёна", 6407, allowed=True, rf=(GB, 0))
+    _profile(services, make_active_client, "Борис", 6408, allowed=True, rf=(GB, 2 * GB))
+    _profile(services, make_active_client, "Вера", 6409, allowed=True)
+    _profile(services, make_active_client, "Глеб", 6410, allowed=True)
+    _rf_total(services, 2 * GB, 2 * GB)
+    screen = await _deep(services, fake_bot, "traffic_local")
+    assert _profile_rows(screen) == ["Борис", "Алёна", "Вера", "Глеб"], screen
+
+
+async def test_rf_devices_screen_heads_with_the_profile_rf(services, fake_bot, make_active_client):
+    """Разбивка РФ профиля: «РФ-доступ за ММ.ГГГГ, Имя:» и РФ профиля (сумма
+    его устройств), а не итог сервера."""
+    c, did = _profile(services, make_active_client, "Ксюша", 6411, allowed=True, rf=(GB, GB))
+    _profile(services, make_active_client, "Чужой", 6412, allowed=True, rf=(3 * GB, 3 * GB))
+    _rf_total(services, 10 * GB, 10 * GB)
+    lines = (await _deep(services, fake_bot, f"traffic_local-{c.id}")).split("\n")
+    assert lines[:2] == [f"🇷🇺 <b>РФ-доступ за {texts.month_label()}, Ксюша:</b>",
+                         "2 ГБ (↑ 1 ГБ | ↓ 1 ГБ)"], lines

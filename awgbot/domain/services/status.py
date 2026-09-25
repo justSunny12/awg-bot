@@ -154,6 +154,8 @@ class StatusMixin:
             rf = by.get(c.id, (0, 0))
             out.append((c, int(t["rx_month"]), int(t["tx_month"]),
                         rf if self.rf_client_visible(c, rf) else None))
+        # от большего к меньшему (вычитка 3.1.0); при равенстве — прежний порядок
+        out.sort(key=lambda r: -(r[1] + r[2]))
         return out
 
     def traffic_by_device(self, client_id: int) -> list[tuple]:
@@ -203,6 +205,7 @@ class StatusMixin:
             rf = by.get(c.id, (0, 0))
             if self.rf_client_visible(c, rf):
                 out.append((c, rf[0], rf[1]))
+        out.sort(key=lambda r: -(r[1] + r[2]))
         return out
 
     def rf_by_device(self, client_id: int) -> list[tuple]:
@@ -215,23 +218,12 @@ class StatusMixin:
     def rf_screen_data(self) -> dict:
         """Экран «РФ-доступ за месяц»: итог сервера, строки профилей, «вне
         профилей» (итог минус сумма по всем устройствам: удалённые устройства и
-        первые минуты новых, до синхронизации счётчиков) и дата начала учёта —
-        только если учёт начался в текущем месяце (иначе месяц полный)."""
+        первые минуты новых, до синхронизации счётчиков)."""
         tot = self.rf_month_total()
         rows = self.rf_by_profile()
         devs = self.db.get_total_month_rf()
         outside = max(0, int(tot["rx"]) + int(tot["tx"]) - int(devs["rx"]) - int(devs["tx"]))
-        since = ""
-        if tot.get("since"):
-            try:
-                started = timeutil.parse_iso(tot["since"])
-                now = timeutil.now()
-                if (started.year, started.month) == (now.year, now.month):
-                    since = timeutil.to_iso(started)
-            except ValueError:
-                since = ""
-        return {"rx": int(tot["rx"]), "tx": int(tot["tx"]), "rows": rows,
-                "outside": outside, "since": since}
+        return {"rx": int(tot["rx"]), "tx": int(tot["tx"]), "rows": rows, "outside": outside}
 
     # ── экран «Сервер» и подготовка переезда ────────────────────────────────
 

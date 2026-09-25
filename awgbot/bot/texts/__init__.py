@@ -40,7 +40,7 @@ from .migration import (
 from .routing import (
     gateway_device_card, gateway_claim_marked, gateway_claim_already, ROUTING_NAME,
     SETTINGS_ROUTING_ABSENT, routing_lists_block,
-    channel_block, drift_lines, GW_CARD_PAYLOAD, agent_bot_line, gateway_bundle_caption, gateway_plain_bundle_caption, gateway_installed_text, services_line, own_lists_line,
+    channel_block, drift_lines, GW_CARD_PAYLOAD, agent_bot_line, gateway_bundle_caption, gateway_plain_bundle_caption, gateway_installed_text, gateway_bundle_applied_text, services_line, own_lists_line,
     settings_routing_text, settings_routing_gateway_line, GATEWAY_CHOOSE_INTRO,
     GATEWAY_PICK_INTRO, GATEWAY_PICK_EMPTY, gateway_new_ask, gateway_mark_ask,
     gateway_marked, gateway_remove_ask, gateway_removed, ROUTING_PROVISION_INTRO,
@@ -80,7 +80,7 @@ from .client import (
     pause_warning, pause_emergency_code, pause_entered_summary, pause_unavailable,
     pause_limit_exhausted, pause_resume_ask, pause_resumed_self)
 from .admin import (
-    traffic_profiles_text, rf_traffic_line, rf_profiles_text, rf_devices_text, RF_PAYLOAD,
+    traffic_profiles_text, rf_traffic_line, rf_profiles_text, rf_devices_text, RF_PAYLOAD, month_label,
     online_devices_text, traffic_devices_text, expiring_text,
     admin_panel, CLIENT_DELETE_PARTIAL, admin_bootstrap_device, reassign_donor_notice,
     reassign_recipient_notice, reassign_recipient_notice_with_slot,
@@ -135,7 +135,7 @@ __all__ = [
     "migration_generation_pending", "migration_needed", "migration_promoted",
     "migration_promote_restart_failed", "gateway_device_card", "gateway_claim_marked",
     "gateway_claim_already", "ROUTING_NAME", "SETTINGS_ROUTING_ABSENT",
-    "routing_lists_block", "channel_block", "drift_lines", "GW_CARD_PAYLOAD", "agent_bot_line", "gateway_bundle_caption", "gateway_plain_bundle_caption", "gateway_installed_text", "services_line", "own_lists_line", "settings_routing_text",
+    "routing_lists_block", "channel_block", "drift_lines", "GW_CARD_PAYLOAD", "agent_bot_line", "gateway_bundle_caption", "gateway_plain_bundle_caption", "gateway_installed_text", "gateway_bundle_applied_text", "services_line", "own_lists_line", "settings_routing_text",
     "settings_routing_gateway_line", "GATEWAY_CHOOSE_INTRO", "GATEWAY_PICK_INTRO",
     "GATEWAY_PICK_EMPTY", "gateway_new_ask", "gateway_mark_ask", "gateway_marked",
     "gateway_remove_ask", "gateway_removed", "ROUTING_PROVISION_INTRO",
@@ -177,7 +177,7 @@ __all__ = [
     "pause_warning", "pause_emergency_code", "pause_entered_summary",
     "pause_unavailable", "pause_limit_exhausted", "pause_resume_ask",
     "pause_resumed_self", "traffic_profiles_text", "rf_traffic_line", "rf_profiles_text",
-    "rf_devices_text", "RF_PAYLOAD", "online_devices_text",
+    "rf_devices_text", "RF_PAYLOAD", "month_label", "online_devices_text",
     "traffic_devices_text", "expiring_text", "admin_panel", "CLIENT_DELETE_PARTIAL",
     "admin_bootstrap_device", "reassign_donor_notice", "reassign_recipient_notice",
     "reassign_recipient_notice_with_slot", "activated_admin_notice",

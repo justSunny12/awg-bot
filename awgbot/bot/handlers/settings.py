@@ -219,15 +219,22 @@ async def _drop_bundle_msgs(bot, services, slot_id: int, fp: str = "") -> bool:
 
 
 async def bundle_applied(bot, services, slot_id: int, ok: bool, error: str, fp: str = "") -> None:
-    """Итог применения пришёл каналом. Сообщения об итоге нет: его человек уже
-    видел в чате бота шлюза. При любом исходе файл отслужил (внутри ключ
-    линка): он и сообщение над ним уходят из чата, на их месте — карточка
-    слота, как по «В меню»; после отказа файл перевыпускают оттуда же.
-    Итог о другом файле (fp не сошёлся) или без файла в чате — только запись."""
+    """Итог применения пришёл каналом. При любом исходе файл отслужил (внутри
+    ключ линка): он и сообщение над ним уходят из чата; следом уведомление об
+    итоге и карточка слота, как по «В меню» — после отказа файл перевыпускают
+    оттуда же. Итог о другом файле (fp не сошёлся) или без файла в чате —
+    только запись, без уведомления."""
     where = await call(services.gw_bundle_msg_get, slot_id)
     chat_id = int(where.get("chat") or config.ADMIN_ID)
     if not await _drop_bundle_msgs(bot, services, slot_id, fp):
         return
+    # уведомление об итоге — раз чат админа затронут; следом карточка слота
+    try:
+        display, _bot = await call(services.gw_bundle_target, slot_id)
+    except (ServiceError, OSError):
+        display = f"слот {slot_id}"
+    sent = await bot.send_message(chat_id, texts.gateway_bundle_applied_text(display, ok, error))
+    await call(services.db.add_content_msg_id, chat_id, sent.message_id)
     await _show_card_anew(bot, services, chat_id, slot_id)
 
 
