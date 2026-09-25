@@ -530,7 +530,7 @@ async def test_records_refused_for_a_missing_helper_reach_dnsmasq_on_the_next_ti
     своим, карточка — «доступны», повторной доставки нет.
 
     Цена ошибки: Finder соседней сети пуст до переподключения канала (дни), а
-    карточка на ВПС висит «шлюз отказался принимать» при исправной обвязке."""
+    карточка на ВПС висит «шлюз не смог принять записи» при исправной обвязке."""
     from awgbot.bot.texts.routing import services_line
     s = pair.services
     acks: list[dict] = []
@@ -549,7 +549,7 @@ async def test_records_refused_for_a_missing_helper_reach_dnsmasq_on_the_next_ti
     await _up(pair, client, 2)
     assert await _until(lambda: acks, timeout=5), "на peer_svc агент не ответил"
     assert acks[0]["ok"] is False and acks[0]["hash"] == H_NAS, acks
-    assert "скрипта записей SMB нет" in acks[0]["error"], acks
+    assert acks[0]["error"].startswith("отсутствует скрипт — обвязка перевыстав"), acks
     assert len(reasserts) == 1, "без помощника обвязку не перевыставили"
     assert not host.conf.exists() and host.restarts() == 0
     assert pair.srv._sessions[2].svc_have != H_NAS
@@ -613,7 +613,7 @@ def _full_disk(monkeypatch, path) -> dict:
 
 async def test_records_refused_for_a_full_disk_reach_dnsmasq_after_the_fix(pair, real_agent, monkeypatch):
     """Диск получателя полон — файл записей не записан, сервер видит
-    «непредвиденная ошибка». Первые десять минут агент молчит; потом (диск
+    «ошибка записи файла». Первые десять минут агент молчит; потом (диск
     почищен) на тике шлёт свой список `svc`, сервер по прошлому отказу
     повторяет `peer_svc` этому слоту в той же сессии, настоящий помощник
     ставит записи, ответ ok. Дальше — ни байта.
@@ -637,7 +637,7 @@ async def test_records_refused_for_a_full_disk_reach_dnsmasq_after_the_fix(pair,
     await _up(pair, client, 2)
     assert await _until(lambda: acks, timeout=5), "на peer_svc агент не ответил"
     assert acks[0]["ok"] is False and acks[0]["error"] == (
-        "непредвиденная ошибка, файл записей SMB не записан: нет места на диске"), acks[0]
+        "ошибка записи файла: нет места на диске"), acks[0]
     assert not host.conf.exists() and host.restarts() == 0
     assert s.gwlink_services_card(s.db.gateway(2))["state"] == "failed"
     delivered = pair.sent.count((2, "peer_svc"))
@@ -694,8 +694,8 @@ async def test_a_day_of_ticks_with_own_lists_missing_sends_not_a_byte(pair, real
     await _up(pair, client, 2)
     assert await _until(lambda: own_acks and s.gwlink_peer_services_ack(2).get("ok"), timeout=5), (
         own_acks, s.gwlink_peer_services_ack(2))
-    assert own_acks[0]["ok"] is False and own_acks[0]["error"] == "файлов своих списков нет — раздел не применился", \
-        f"сцена не та: {own_acks[0]}"
+    assert own_acks[0]["ok"] is False and own_acks[0]["error"] == (
+        "не найдены файлы своих списков — функционал локальной сети без VPN недоступен"), f"сцена не та: {own_acks[0]}"
     await pair.srv.deliver_all()
     await asyncio.sleep(0.3)
     before_agent, before_srv = client._sent_bytes, len(pair.sent)

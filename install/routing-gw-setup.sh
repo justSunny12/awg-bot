@@ -589,8 +589,8 @@ fill_set() {                   # fill_set <набор> <файл доменов>
 snapshot_vpn() {               # слепок набора грузится при старте: без него снятый адрес вернулся бы с загрузкой
     nft list set $TABLE lan_vpn4 > "$DUMP/lan_vpn4.nft.tmp" 2>/dev/null && mv -f "$DUMP/lan_vpn4.nft.tmp" "$DUMP/lan_vpn4.nft" || rm -f "$DUMP/lan_vpn4.nft.tmp"
 }
-plural_dom() {                 # 1 домен, 2 домена, 5 доменов, 11 доменов
-    case "$1" in *1[0-9]) echo доменов;; *1) echo домен;; *[2-4]) echo домена;; *) echo доменов;; esac
+plural_dom() {                 # адреса 1 домена, 2 доменов, 21 домена
+    case "$1" in *1[0-9]) echo доменов;; *1) echo домена;; *) echo доменов;; esac
 }
 if [ "$cmd" = "fill" ]; then
     # без блокировки: файлы dnsmasq не трогаем, только набор и его слепок
@@ -599,7 +599,7 @@ if [ "$cmd" = "fill" ]; then
     n="$(grep -c . "$_ok")"
     fill_set lan_vpn4 "$_ok"
     snapshot_vpn
-    echo "набор lan_vpn4 пополнен: $n $(plural_dom "$n")"
+    echo "набор lan_vpn4: адреса $n $(plural_dom "$n") взяты в обработку"
     exit 0
 fi
 # одна блокировка со скриптом фидов: он читает ru-user.conf и тоже перезапускает dnsmasq

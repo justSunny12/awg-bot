@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from awgbot.domain.gwchecks import CHECK_GROUPS_QUIET_UNKNOWN
+from awgbot.domain.gwchecks import CHECK_GROUPS_QUIET_UNKNOWN, failure_detail
 
 from .fmt import _e, human_bytes, _updown, _fmt_age, plural_ru
 from .settings import SETTINGS_SVC, SVC_CONFIRM_AWG, ssh_owner_refusal, warnings_block, address_list_line
@@ -247,7 +247,8 @@ def own_lists_state_line(own: dict) -> str:
     if state in ("pending", "stale_server"):
         return f"⏳ Ждут синхронизации: {n_word} — сервер AWG ещё не ответил"
     if state in ("failed", "old_script"):
-        return f"⚠️ Не применились: {_e(own.get('err') or 'скрипт старого образца, обвязка перевыставляется')}"
+        detail = failure_detail("Не применились", own.get("err") or "скрипт старого образца — обвязка перевыставляется")
+        return "⚠️ " + _e(detail[:1].upper() + detail[1:])
     if state == "rejected" and own.get("rej"):
         d, why = own["rej"][0]
         return f"⚠️ Сервер AWG не принял: <code>{_e(d)}</code> — {_e(why)}"

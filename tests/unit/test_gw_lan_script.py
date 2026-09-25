@@ -1464,17 +1464,18 @@ def test_fill_puts_the_addresses_into_lan_vpn4_and_rewrites_the_snapshot(own_env
     # все адреса — одним вызовом nft, отсортированные: 500 доменов по вызову на адрес шли бы минуты
     assert [ln for ln in nft if "add element" in ln] == \
         ["nft add element inet awg_home lan_vpn4 { 10.4.4.4,93.184.216.34,93.184.216.35 }"], nft
-    assert r.stdout.strip() == "набор lan_vpn4 пополнен: 2 домена", r.stdout
+    assert r.stdout.strip() == "набор lan_vpn4: адреса 2 доменов взяты в обработку", r.stdout
     assert not any("lan_ru4" in ln for ln in nft), "fill тронул «напрямую»"
 
 
-@pytest.mark.parametrize("n,word", [(1, "домен"), (2, "домена"), (4, "домена"), (5, "доменов"),
-                                    (11, "доменов"), (12, "доменов"), (21, "домен"), (22, "домена"),
+# родительный падеж после «адреса»: 1, 21, 101 — «домена», остальные (и 11–19) — «доменов»
+@pytest.mark.parametrize("n,word", [(1, "домена"), (2, "доменов"), (4, "доменов"), (5, "доменов"),
+                                    (11, "доменов"), (12, "доменов"), (21, "домена"), (22, "доменов"),
                                     (25, "доменов")])
 def test_fill_names_the_count_in_proper_russian(own_env, tmp_path, n, word):
     tool, dns_d, dump, log, env = own_env
     r = _fill_run(tool, env, tmp_path, "".join(f"site{i}.org\n" for i in range(n)))
-    assert r.returncode == 0 and r.stdout.strip() == f"набор lan_vpn4 пополнен: {n} {word}", r.stdout
+    assert r.returncode == 0 and r.stdout.strip() == f"набор lan_vpn4: адреса {n} {word} взяты в обработку", r.stdout
 
 
 def test_fill_skips_a_foreign_line_and_fills_the_rest(own_env, tmp_path):
@@ -1491,7 +1492,7 @@ def test_fill_skips_a_foreign_line_and_fills_the_rest(own_env, tmp_path):
     r = _fill_run(tool, env, tmp_path, "\n".join(["news.org", *bad, "zeta.com"]) + "\n")
     assert r.returncode == 0, r.stdout + r.stderr
     assert _set(_sets_of(dump), "lan_vpn4") == {"10.3.3.3", "10.5.5.5"}
-    assert "пополнен: 2 домена" in r.stdout, f"чужие строки посчитаны: {r.stdout}"
+    assert "адреса 2 доменов взяты в обработку" in r.stdout, f"чужие строки посчитаны: {r.stdout}"
     assert [ln for ln in _nft(log) if "add element" in ln] == \
         ["nft add element inet awg_home lan_vpn4 { 10.3.3.3,10.5.5.5 }"], _nft(log)
     asked = dig_log.read_text().splitlines()
@@ -1527,7 +1528,7 @@ def test_fill_of_an_empty_file_is_quiet_and_ok(own_env, tmp_path):
     tool, dns_d, dump, log, env = own_env
     r = _fill_run(tool, env, tmp_path, "")
     assert r.returncode == 0, r.stderr
-    assert "пополнен: 0 доменов" in r.stdout, r.stdout
+    assert "адреса 0 доменов взяты в обработку" in r.stdout, r.stdout
     assert not any("add element" in ln for ln in _nft(log))
 
 
@@ -1570,7 +1571,7 @@ def test_fill_puts_an_address_shared_by_two_domains_once(own_env, tmp_path):
     assert adds == ["nft add element inet awg_home lan_vpn4 { 10.4.4.4,10.7.7.7 }"], \
         f"общий адрес не схлопнут или CNAME попал в nft: {adds}"
     assert _set(_sets_of(dump), "lan_vpn4") == {"10.4.4.4", "10.7.7.7"}
-    assert "пополнен: 3 домена" in r.stdout, r.stdout
+    assert "адреса 3 доменов взяты в обработку" in r.stdout, r.stdout
     snap = (dump / "lan_vpn4.nft").read_text()
     assert "10.4.4.4" in snap and "10.7.7.7" in snap, f"слепок не снят после наполнения: {snap}"
 
@@ -1588,7 +1589,7 @@ def test_fill_goes_on_when_one_domain_gets_no_answer(own_env, tmp_path):
     assert _adds(log, "lan_vpn4") == ["nft add element inet awg_home lan_vpn4 { 10.4.4.4,10.5.5.5 }"], _nft(log)
     assert _set(_sets_of(dump), "lan_vpn4") == {"10.4.4.4", "10.5.5.5"}
     assert "connection timed out" not in r.stdout + r.stderr, "текст dig вылез наружу"
-    assert "пополнен: 3 домена" in r.stdout, "счётчик — по отобранным строкам, а не по ответившим"
+    assert "адреса 3 доменов взяты в обработку" in r.stdout, "счётчик — по отобранным строкам, а не по ответившим"
 
 
 def test_fill_resolves_domains_in_parallel(own_env, tmp_path):
@@ -1618,7 +1619,7 @@ def test_fill_with_nothing_selected_does_not_call_nft_add_but_takes_the_snapshot
     _fill(_sets_of(dump), "lan_vpn4", ["10.3.3.3"])
     r = _fill_run(tool, env, tmp_path, "bad name.com\n-x.com\n; rm -rf /\n")
     assert r.returncode == 0, r.stdout + r.stderr
-    assert r.stdout.strip() == "набор lan_vpn4 пополнен: 0 доменов", r.stdout
+    assert r.stdout.strip() == "набор lan_vpn4: адреса 0 доменов взяты в обработку", r.stdout
     assert not any("add element" in ln for ln in _nft(log)), f"nft add вызван без адресов: {_nft(log)}"
     assert not dig_log.exists(), "dig спрошен по чужой строке"
     assert "nft list set inet awg_home lan_vpn4" in _nft(log), "слепок не снят"
@@ -1635,7 +1636,7 @@ def test_fill_survives_a_failing_nft_add_and_still_takes_the_snapshot(own_env, t
     assert r.returncode == 0, r.stdout + r.stderr
     assert "Error" not in r.stderr, "ошибка nft вылезла человеку"
     assert _nft(log)[-1] == "nft list set inet awg_home lan_vpn4", _nft(log)
-    assert "пополнен: 2 домена" in r.stdout
+    assert "адреса 2 доменов взяты в обработку" in r.stdout
 
 
 def test_sync_refills_lan_ru4_with_one_nft_call_after_the_flush(own_env, tmp_path):
