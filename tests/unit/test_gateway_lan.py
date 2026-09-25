@@ -141,7 +141,7 @@ def test_status_carries_lan_block_and_panel_shows_it(svc, monkeypatch):
     assert "🏠 Локальная сеть без VPN: 🟢 работает" in out
     assert "сеть: end0, <code>192.168.68.222</code>" in out and "12 345 пакетов" in out
     assert "локальная сеть: end0" not in out, "подпись строки интерфейса — «сеть:» (вычитка 3.1.0)"
-    assert "DNS: апстрим 10.9.1.1" in out and "резолвер:" not in out, out
+    assert "DNS — <code>10.9.1.1</code> через " in out and "апстрим" not in out, out
     # списки — своей группой после пустой строки, дата обновления — в скобках
     assert "\n\n📋 Списки: 1180 доменов, 412 подсетей (обн. " in out, out
     assert "Свои списки: 2 в туннель, 1 напрямую" in out, out

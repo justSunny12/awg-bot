@@ -112,7 +112,9 @@ def gateway_panel(st) -> str:
         where = f"{_e(lan.get('iface', '') or '?')}, <code>{_e(lan.get('addr', '') or '?')}</code>"
         parts.append(f"{pad}сеть: {where}")
         parts.append(f"{pad}трафик с роутера: {_packets(lan.get('lan_pkts'))}")
-        parts.append(f"{pad}DNS: апстрим {_e(lan.get('resolver', ''))}")
+        # канон — экран локальной сети (вычитка 3.1.0)
+        parts.append(f"{pad}DNS — <code>{_e(lan.get('resolver', '') or '?')}</code> "
+                     f"через {_e(lan.get('uplink', '') or 'аплинк')}")
         # списки — своей группой (вычитка 3.1.0)
         parts += ["", f"📋 Списки: {_lists_counts(lan)} ({_lists_updated_short(lan.get('updated_at') or '')})"]
         parts.append(f"{pad}{own_lists_short(lan)}")
