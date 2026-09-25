@@ -252,8 +252,9 @@ async def bundle_installed(bot, services, slot_id: int) -> None:
     """Агент нового шлюза впервые вышел на связь каналом: админу «✅ Шлюз …
     успешно настроен» со ссылкой на бота шлюза — без кнопок, как контент.
     Файл первого применения и инструкция, если ещё в чате, уходят, и тогда
-    следом новым сообщением идёт главное меню: живой кнопкой была «В меню»
-    на файле. Файл уже убрали — меню выше и так живое, второго не нужно."""
+    следом новым сообщением идёт карточка слота — куда вела «В меню» на файле,
+    единственная живая кнопка. Файл уже убрали — меню выше и так живое,
+    второго не нужно."""
     where = await call(services.gw_bundle_msg_get, slot_id)
     chat_id = int(where.get("chat") or config.ADMIN_ID)
     dropped = False
@@ -268,11 +269,7 @@ async def bundle_installed(bot, services, slot_id: int) -> None:
     sent = await bot.send_message(chat_id, texts.gateway_installed_text(display, agent_bot))
     await call(services.db.add_content_msg_id, chat_id, sent.message_id)
     if dropped:
-        from awgbot.bot.handlers.admin import _panel_parts
-        text, markup = await _panel_parts(services)
-        await _dismiss_previous_nav(bot, services, chat_id)
-        menu = await bot.send_message(chat_id, text, reply_markup=markup)
-        await call(services.db.nav_touch, chat_id, menu.message_id)
+        await _show_card_anew(bot, services, chat_id, slot_id)
 
 
 def _slot_of(callback_data) -> int:
@@ -432,7 +429,7 @@ async def _send_plain_bundle(message: Message, services, slot: int = 0, instr_id
     sent = await message.answer_document(
         BufferedInputFile(blob, filename=name),
         caption=texts.gateway_plain_bundle_caption(display),
-        reply_markup=kb.bundle_menu_kb(slot, plain=True))
+        reply_markup=kb.bundle_menu_kb(slot))
     if slot:
         await call(services.gw_bundle_msg_set, slot, message.chat.id, sent.message_id, instr_id,
                    services.bundle_fingerprint(blob), True)
@@ -849,27 +846,19 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         await cb.answer("Условная маршрутизация выключена")
         return
     if callback_data.key == "bundle_menu":
-        # «В меню» под файлом первого применения (и под файлами до 3.1.0): файл
-        # и инструкция над ним уходят из чата, главная — новым сообщением.
-        # Шлюз уже назначен — отменять нечего, потому не карточка, а меню.
-        slot = int(callback_data.val or 0)
-        where = await call(services.gw_bundle_msg_get, slot) if slot else {}
-        ours = bool(where) and int(where.get("file") or 0) == cb.message.message_id
-        for mid in ((where.get("instr") if ours else None), cb.message.message_id):
-            if mid:
-                try:
-                    await cb.bot.delete_message(cb.message.chat.id, int(mid))
-                except Exception:                          # noqa: BLE001
-                    pass
-        if ours:
-            await call(services.gw_bundle_msg_clear, slot)
+        # кнопка файлов, выданных до 3.1.0: файл уходит из чата, главная — новым
+        try:
+            await cb.message.delete()
+        except Exception:                                  # noqa: BLE001
+            pass
         await show_main_menu(cb.message, services, "admin")
         await cb.answer()
         return
     if callback_data.key == "bundle_cancel":
-        # «В меню» под шифрованным файлом: файл и погасшая карточка над ним
-        # уходят из чата (внутри ключ линка), человек возвращается в карточку
-        # слота, для которого выпускал
+        # «В меню» под файлом (шифрованным или первого применения): файл и
+        # сообщение над ним (погасшая карточка, инструкция) уходят из чата —
+        # внутри ключ линка, — человек возвращается в карточку слота, для
+        # которого выпускал
         slot = int(callback_data.val or 0)
         where = await call(services.gw_bundle_msg_get, slot) if slot else {}
         # запись — о последнем файле слота; «В меню» на прежнем (перевыпуск

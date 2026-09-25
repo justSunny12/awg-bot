@@ -571,10 +571,9 @@ async def test_no_token_button_in_the_card_or_under_the_files(services, slots, f
         assert GwSlotCB(action="token", slot=slot).pack() not in datas, (slot, datas)
         assert not [t for t in labels if "Токен" in t], (slot, labels)
     for slot in (0, 1, 2):
-        for plain in (False, True):
-            mk = kbs.bundle_menu_kb(slot, plain=plain)
-            labels = [b.text for row in mk.inline_keyboard for b in row]
-            assert labels == ["⬅️ В меню"], (slot, plain, labels)
+        mk = kbs.bundle_menu_kb(slot)
+        labels = [b.text for row in mk.inline_keyboard for b in row]
+        assert labels == ["⬅️ В меню"], (slot, labels)
 
 
 def _all_routers():

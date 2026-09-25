@@ -1214,10 +1214,10 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             priv = bundlecrypt.read_privkey(pathlib_read(config.GW_LINK_CONF))
             plain = bundlecrypt.decrypt(blob, priv)
         except (OSError, ValueError) as e:
-            return False, f"бандл не принят: {e}"
+            return False, f"не удалось применить конфигурацию: {e}"
         text = plain.decode(errors="replace")
         if "#__GW_SETUP_BELOW__" not in text or "__LINK_CONF_EOF__" not in text:
-            return False, "бандл не принят: внутри нет маркеров контракта линка"
+            return False, "не удалось применить конфигурацию: внутри нет маркеров контракта линка"
         m = re.search(r'^SERVER_NAME="([^"\n]{1,64})"', text, re.M)
         if m:
             self.db.set_state(self._SERVER_NAME_KEY, m.group(1))

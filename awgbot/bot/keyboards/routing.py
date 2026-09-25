@@ -400,14 +400,12 @@ def settings_routing_users(clients=(), page: int = 0) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def bundle_menu_kb(slot: int = 0, plain: bool = False) -> InlineKeyboardMarkup:
-    """«В меню» на сообщении с файлом конфигурации: файл (и сообщение над ним)
-    уходят из чата — внутри ключ линка. Шифрованный файл возвращает в карточку
-    слота, для которого выпускался (`bundle_cancel`); файл первого применения
-    (plain) — в главное меню: шлюз уже назначен, отменять нечего (`bundle_menu`).
+def bundle_menu_kb(slot: int = 0) -> InlineKeyboardMarkup:
+    """«В меню» на сообщении с файлом конфигурации (шифрованным или первого
+    применения): файл и сообщение над ним уходят из чата — внутри ключ линка,
+    — и открывается карточка слота, из которой файл выпускали (`bundle_cancel`).
     Своя кнопка, а не общая с обновлениями: та снимает клавиатуру, оставляя текст."""
     kb = InlineKeyboardBuilder()
     kb.button(text="\u2b05\ufe0f В меню",
-              callback_data=SetCB(sec="rt", act="do", key="bundle_menu" if plain else "bundle_cancel",
-                                  val=str(slot or "")))
+              callback_data=SetCB(sec="rt", act="do", key="bundle_cancel", val=str(slot or "")))
     return kb.as_markup()

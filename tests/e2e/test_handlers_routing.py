@@ -609,8 +609,9 @@ async def test_bundle_document_carries_menu_button_and_dims_settings(
 
 
 async def test_bundle_menu_button_deletes_the_file_message(services, fake_bot, monkeypatch):
-    """«В меню» на бандле удаляет само сообщение с файлом (внутри ключ линка),
-    а не снимает клавиатуру, как общая кнопка обновлений; дальше — главная."""
+    """«В меню» на бандле до 3.1.0 (`bundle_menu`) удаляет само сообщение с
+    файлом (внутри ключ линка), а не снимает клавиатуру, как общая кнопка
+    обновлений; дальше — главная."""
     from awgbot.bot.handlers import settings as sh
     from awgbot.bot.callbacks import SetCB
     from tests.conftest import FakeCallback, FakeMessage
@@ -618,7 +619,7 @@ async def test_bundle_menu_button_deletes_the_file_message(services, fake_bot, m
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle_menu"), services)
-    assert ("delete_message", cfg.ADMIN_ID, msg.message_id) in fake_bot.records, "сообщение с бандлом не удалено"
+    assert msg.deleted, "сообщение с бандлом не удалено"
     assert any(r[0] == "answer" for r in fake_bot.records), "меню не показано"
 
 
