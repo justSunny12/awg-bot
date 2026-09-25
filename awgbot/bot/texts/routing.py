@@ -208,22 +208,35 @@ def gateway_list_text(states: list, switched_at: str = "", auto_on: bool = True,
     return "\n".join(lines)
 
 
-def services_line(svc: dict) -> str:
-    """Сервисы соседних сетей в карточке слота — только числа (концепт
-    «сервисы соседних сетей» §7.2): сколько SMB в подсети слота, сколько ему
-    раздано из подсетей других шлюзов и что с ними на шлюзе."""
+def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> str:
+    """SMB в карточке слота — только числа (концепт «сервисы соседних сетей»
+    §7.2, вычитка 3.1.0): сколько в подсети слота, сколько ему раздано из
+    подсетей других шлюзов; что с ними на шлюзе — отдельной строкой после
+    пустой, предупреждение — с ⚠️ в начале. name — «имя» шлюза, уже
+    экранированное (как в карточке), agent_bot — ссылка в чат его бота."""
     own, peer = int(svc.get("own") or 0), int(svc.get("peer") or 0)
     if not own and not peer:
-        return "🗂 Сервисы SMB в подсетях шлюзов не найдены"
+        return "🗂 SMB в подсетях шлюзов не найдены"
     if not peer:
-        tail = "нет"
+        return f"🗂 SMB: в этой подсети — {own}, из подсетей других шлюзов — нет"
+    state = svc.get("state", "")
+    head = f"🗂 SMB: в этой подсети — {own}, из подсетей других шлюзов — {peer}"
+    gw = f" {name}" if name else ""
+    if state == "applied":
+        return head + ", доступны"
+    if state == "reissue":
+        note = f"⚠️ Для доступа необходим перевыпуск конфигурации шлюза{gw}"
+    elif state == "old_agent":
+        me = agent_bot or {}
+        bot = (f' (бот: <a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>)'
+               if me.get("username") else "")
+        note = f"⚠️ Для доступа необходимо обновить шлюз{gw}{bot}"
+    elif state == "failed":
+        err = svc.get("error") or ""
+        note = f"⚠️ Шлюз{gw} отказался принимать" + (f": {_e(err)}" if err else "")
     else:
-        state = svc.get("state", "")
-        tail = str(peer) + ", " + (
-            "⚠️ шлюз не принял: " + _e(svc.get("error") or "без подробностей") if state == "failed" else
-            {"applied": "опубликованы на шлюзе", "reissue": "ждут перевыпуска конфигурации шлюза",
-             "old_agent": "агент шлюза их не понимает — обнови его"}.get(state, "уходят на шлюз"))
-    return f"🗂 Сервисы SMB: в этой подсети — {own}, из подсетей других шлюзов — {tail}"
+        note = f"⏳ Отправлены на шлюз{gw}"
+    return head + "\n\n" + note
 
 
 def gateway_card_text(state: dict, states: list) -> str:
@@ -256,7 +269,7 @@ def gateway_card_text(state: dict, states: list) -> str:
         home += ("\n↔️ Доступ из подсетей других шлюзов до "
                  + ", ".join(f"<code>{_e(n)}</code>" for n in nets) + " включён")
         if state.get("services"):
-            home += "\n" + services_line(state["services"])
+            home += "\n" + services_line(state["services"], name, state.get("agent_bot"))
     conflict = next((s for s in others if _nets_overlap(nets, s["gateway"].home_subnets)), None)
     if conflict is not None:
         ov = ", ".join(_e(n) for n in _nets_overlap(nets, conflict["gateway"].home_subnets))
@@ -622,14 +635,17 @@ def gateway_peer_ask(on: bool) -> str:
                 "которых включено «За шлюзом — без VPN»: ровно оно гарантирует, что <b>весь</b> "
                 "трафик подсети идёт через шлюз, с обеих сторон — иначе ответы не найдут дорогу "
                 "назад.\n\n"
-                + "SMB-серверы каждой подсети станут видны в Finder на Mac в подсетях других "
-                "шлюзов: «Сеть» → awg.internal.\n\n"
-                + "После включения перевыпусти конфигурацию каждого шлюза: подсети соседей "
-                "живут и в конфиге линка, а его везёт только файл. Задержка между подсетями "
+                + "На Windows-устройствах SMB-серверы каждой подсети будут доступны по ссылкам вида "
+                "<code>smb://имя.awg.internal</code>.\n"
+                "На устройствах macOS SMB-серверы каждой подсети станут видны в Finder: "
+                "«Сеть» → awg.internal.\n"
+                "Видны только серверы тех подсетей, где на шлюзе запущен avahi-daemon.\n\n"
+                + "После включения перевыпусти конфигурацию каждого шлюза: подсети шлюзов "
+                "живут в конфиге линка, а его везёт только файл. Задержка между подсетями "
                 "складывается из задержек шлюзов до сервера AWG, а связь живёт, пока подняты оба "
                 "линка.\n\nВключить?")
     return ("↔️ <b>Доступ между подсетями за шлюзами</b>\n\n"
-            "Доступ между квартирами закроется сразу. "
+            "Доступ между подсетями шлюзов закроется сразу. "
             + "После выключения необходимо перевыпустить конфигурацию каждого шлюза."
             + "\n\nВыключить?")
 

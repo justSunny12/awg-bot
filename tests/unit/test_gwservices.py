@@ -332,7 +332,7 @@ def test_without_peer_access_the_scan_does_not_touch_mdns_and_clears_the_list(ag
 # помощника awg-lan-services.sh на диске нет. Сервер второй раз за сессию
 # записи не пришлёт — агент обязан сохранить присланное и применить сам, как
 # только помощник появится. Иначе Finder в соседней сети пуст до следующего
-# переподключения канала, а карточка на ВПС навсегда «шлюз не принял».
+# переподключения канала, а карточка на ВПС навсегда «шлюз отказался принимать».
 
 class _Peer:
     """Получатель записей соседей: юнит (режим, подсети), помощник на диске
@@ -361,7 +361,7 @@ class _Peer:
     def _run(self, path: str = "", timeout: int = 90):
         self.runs.append(path)
         if not self.helper.exists():
-            return False, "помощника сервисов нет — обвязка старого образца"
+            return False, "скрипта записей SMB нет — обвязка старого образца"
         if not self.rc_ok:
             return False, self.tail
         if path:
@@ -403,7 +403,7 @@ def test_without_the_helper_and_a_throttled_reassert_the_records_wait(agent, pee
     _throttle(agent)
     res = agent.apply_peer_services(H_NAS, [NAS])
     assert res["ok"] is False and res["n"] == 0, res
-    assert res["error"] == "помощника сервисов нет — обвязка перевыставится в ближайшие минуты", res
+    assert res["error"] == "скрипта записей SMB нет — обвязка перевыставится в ближайшие минуты", res
     assert peer.reasserts == 0, "троттлинг реассерта не сработал"
     assert peer.runs == [] and not peer.conf.exists(), "без помощника тронули dnsmasq"
     assert json.loads(_pending(agent)) == {"hash": H_NAS, "items": [NAS]}, (
@@ -419,7 +419,7 @@ def test_a_reassert_that_did_not_bring_the_helper_keeps_the_records_pending(agen
     agent._last_reassert = time.monotonic() - 3600     # прошлый реассерт давно
     res = agent.apply_peer_services(H_NAS, [NAS])
     assert peer.reasserts == 1
-    assert res["ok"] is False and res["error"] == "помощника сервисов нет — обвязка перевыставляется", res
+    assert res["ok"] is False and res["error"] == "скрипта записей SMB нет — обвязка перевыставляется", res
     assert json.loads(_pending(agent))["hash"] == H_NAS
     assert not peer.conf.exists()
 
@@ -470,6 +470,15 @@ def test_a_refusal_that_is_not_about_the_helper_is_not_retried(agent, peer):
     runs = len(peer.runs)
     assert agent.services_retry() is None
     assert len(peer.runs) == runs, "повтор без очереди звал помощника"
+
+
+def test_a_silent_refusal_still_says_something_to_the_server(agent, peer):
+    """Скрипт записей отказал с пустым выводом — у сервера в карточке всё равно
+    должна быть причина, а не «отказался принимать:» с пустотой."""
+    peer.appear()
+    peer.rc_ok, peer.tail = False, ""
+    res = agent.apply_peer_services(H_NAS, [NAS])
+    assert res["ok"] is False and res["error"] == "скрипт записей SMB отказал без объяснений", res
 
 
 def test_a_pending_record_the_helper_then_refuses_is_dropped_after_one_try(agent, peer):

@@ -1,11 +1,12 @@
 """Сервисы соседних сетей на экранах (концепт «сервисы соседних сетей» §6, §7):
-строка в карточке слота основного бота — только числа и состояние на шлюзе;
-предложение в диалоге доступа между подсетями; у агента — строки панели и
-абзац экрана «Локальная сеть без VPN». Новых кнопок нет.
+строка в карточке слота основного бота — только числа, а состояние на шлюзе —
+отдельной строкой; два предложения в диалоге доступа между подсетями; у агента
+— одна строка SMB в панели и на экране «Локальная сеть без VPN». Новых кнопок
+нет.
 
 Цена ошибки: имя с малины на экране ВПС — чужой текст в разметке сервера;
 неэкранированная ошибка шлюза ломает всю карточку (Telegram отвергает
-сообщение с битой разметкой); «опубликованы», когда шлюз отверг записи, —
+сообщение с битой разметкой); «доступны», когда шлюз отверг записи, —
 человек ищет серверы в Finder, которых там нет.
 """
 from __future__ import annotations
@@ -63,44 +64,109 @@ def _publish(services, peers: str = "192.168.1.0/24", version: str = "3.1.0") ->
     services.gwlink_snapshot_in(2, _snap(peers, version), 1, True)
 
 
+HEAD = "🗂 SMB: в этой подсети — 0, из подсетей других шлюзов — 1"
+
+
+def _svc_note(text: str) -> str | None:
+    """Строка о судьбе записей на шлюзе: после строки 🗂 и пустой строки, с
+    ⏳ или ⚠️ в начале; дальше в карточке другие блоки — они не в счёт."""
+    lines = text.splitlines()
+    i = next((k for k, ln in enumerate(lines) if ln.startswith("🗂")), None)
+    if i is None or i + 2 >= len(lines) or lines[i + 1] != "":
+        return None
+    return lines[i + 2] if lines[i + 2].startswith(("⏳", "⚠️")) else None
+
+
 async def test_the_slot_card_counts_services_and_follows_their_fate(services, peers, fake_bot):
     """Карточка получателя: сколько SMB у него и сколько пришло от соседей, и
-    что с ними — уходят, опубликованы, не приняты. Имена на экран ВПС не идут."""
+    что с ними — отправлены, доступны, не приняты. Имена на экран ВПС не идут."""
     _, labels_before = await _card(services, fake_bot, 2)
     _publish(services)
     text, labels = await _card(services, fake_bot, 2)
-    assert _svc_line(text) == "🗂 Сервисы SMB: в этой подсети — 0, из подсетей других шлюзов — 1, уходят на шлюз", text
+    assert _svc_line(text) == HEAD, text
+    assert _svc_note(text) == "⏳ Отправлены на шлюз «Pi2»", (
+        f"записи ушли на шлюз, а карточка молчит, где они: {text}")
     assert "NASPi5" not in text and "naspi5" not in text, "имя с малины на экране ВПС"
     assert labels == labels_before, "строка сервисов добавила или убрала кнопки"
     services.gwlink_peer_services_ack_in(2, {"ok": True, "hash": H_NAS, "n": 1})
     text, _ = await _card(services, fake_bot, 2)
-    assert _svc_line(text).endswith("из подсетей других шлюзов — 1, опубликованы на шлюзе"), _svc_line(text)
+    assert _svc_line(text) == HEAD + ", доступны", _svc_line(text)
+    assert "⏳ Отправлены" not in text and "⚠️ Шлюз" not in text, (
+        f"записи на шлюзе, а карточка всё ещё пишет про их путь: {text}")
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": "<b>dnsmasq</b> & rc=1"})
     text, _ = await _card(services, fake_bot, 2)
-    assert _svc_line(text).endswith("⚠️ шлюз не принял: &lt;b&gt;dnsmasq&lt;/b&gt; &amp; rc=1"), (
-        f"ошибка шлюза не экранирована: {_svc_line(text)}")
+    assert _svc_line(text) == HEAD, _svc_line(text)
+    assert _svc_note(text) == "⚠️ Шлюз «Pi2» отказался принимать: &lt;b&gt;dnsmasq&lt;/b&gt; &amp; rc=1", (
+        f"ошибка шлюза не экранирована или потерялась: {_svc_note(text)}")
     text1, _ = await _card(services, fake_bot, 1)
-    assert _svc_line(text1) == "🗂 Сервисы SMB: в этой подсети — 1, из подсетей других шлюзов — нет", text1
+    assert _svc_line(text1) == "🗂 SMB: в этой подсети — 1, из подсетей других шлюзов — нет", text1
+    assert _svc_note(text1) is None, f"от соседей ничего — сообщать о судьбе нечего: {text1}"
 
 
-@pytest.mark.parametrize("peers_applied,version,tail", [
-    ("", "3.1.0", "ждут перевыпуска конфигурации шлюза"),
-    ("192.168.1.0/24", "3.0.2", "агент шлюза их не понимает — обнови его"),
+async def test_a_refusal_without_details_has_no_dangling_colon(services, peers, fake_bot):
+    """Шлюз отказал, не объяснив, — «отказался принимать» без двоеточия в
+    конце: висящее «: » читалось бы как обрезанное сообщение."""
+    _publish(services)
+    services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": ""})
+    text, _ = await _card(services, fake_bot, 2)
+    assert _svc_note(text) == "⚠️ Шлюз «Pi2» отказался принимать", text
+
+
+@pytest.mark.parametrize("peers_applied,version,note", [
+    ("", "3.1.0", "⚠️ Для доступа необходим перевыпуск конфигурации шлюза «Pi2»"),
+    ("192.168.1.0/24", "3.0.2", "⚠️ Для доступа необходимо обновить шлюз «Pi2»"),
 ])
 async def test_the_slot_card_says_why_services_are_not_there_yet(services, peers, fake_bot,
-                                                                 peers_applied, version, tail):
-    """Подсети соседей на шлюзе ещё не применены — «ждут перевыпуска»; агент
-    старый — «обнови его». Не «уходят», которые не дойдут никогда."""
+                                                                 peers_applied, version, note):
+    """Подсети соседей на шлюзе ещё не применены — «необходим перевыпуск»;
+    агент старый — «необходимо обновить». Не «отправлены», которые не дойдут
+    никогда. Бот шлюза неизвестен — ссылки в скобках нет."""
     _publish(services, peers=peers_applied, version=version)
     text, _ = await _card(services, fake_bot, 2)
-    line = _svc_line(text)
-    assert line == f"🗂 Сервисы SMB: в этой подсети — 0, из подсетей других шлюзов — 1, {tail}", (
-        f"у соседа сервер есть, а карточка не говорит, почему его нет на шлюзе: {line}")
+    assert _svc_line(text) == HEAD, text
+    assert _svc_note(text) == note, (
+        f"у соседа сервер есть, а карточка не говорит, почему его нет на шлюзе: {text}")
+
+
+async def test_the_update_advice_links_the_gateway_bot_when_it_is_known(services, peers, fake_bot):
+    """Обновлять агент — в чате его бота: известен бот — ссылка на него прямо
+    в совете, имя профиля экранировано (оно из Telegram, не наше)."""
+    _publish(services, version="3.0.2")
+    services.set_gw_bot_identity(2, "pi2_gw_bot", "Шлюз <2> & co")
+    text, _ = await _card(services, fake_bot, 2)
+    assert _svc_note(text) == ('⚠️ Для доступа необходимо обновить шлюз «Pi2» (бот: '
+                               '<a href="https://t.me/pi2_gw_bot">Шлюз &lt;2&gt; &amp; co</a>)'), text
+
+
+async def test_the_gateway_name_in_the_note_is_escaped_once(services, peers, fake_bot, slots):
+    """Имя устройства шлюза — свободный текст админа. В заголовке карточки оно
+    экранировано; в строке о судьбе записей должно быть тем же, а не
+    «&amp;amp;» — иначе человек видит в чате мусор вместо имени."""
+    _, _, pi2 = slots
+    services.rename_device(pi2.id, "Pi & <2>")
+    _publish(services)
+    text, _ = await _card(services, fake_bot, 2)
+    assert "«Pi &amp; &lt;2&gt;»" in text.splitlines()[0], text.splitlines()[0]
+    assert _svc_note(text) == "⏳ Отправлены на шлюз «Pi &amp; &lt;2&gt;»", (
+        f"имя шлюза экранировано дважды: {_svc_note(text)}")
+
+
+@pytest.mark.parametrize("state,note", [
+    ("reissue", "⚠️ Для доступа необходим перевыпуск конфигурации шлюза"),
+    ("old_agent", "⚠️ Для доступа необходимо обновить шлюз"),
+    ("failed", "⚠️ Шлюз отказался принимать"),
+    ("pending", "⏳ Отправлены на шлюз"),
+])
+def test_without_a_name_the_note_does_not_repeat_the_word_gateway(state, note):
+    """Имени нет — фраза целая, без «шлюза шлюза» и двойного пробела."""
+    from awgbot.bot.texts.routing import services_line
+    assert services_line({"own": 0, "peer": 1, "state": state}) == HEAD + "\n\n" + note
 
 
 async def test_no_services_anywhere_is_one_short_line(services, peers, fake_bot):
     text, _ = await _card(services, fake_bot, 2)
-    assert _svc_line(text) == "🗂 Сервисы SMB в подсетях шлюзов не найдены", text
+    assert _svc_line(text) == "🗂 SMB в подсетях шлюзов не найдены", text
+    assert _svc_note(text) is None, f"записей нет — сообщать о судьбе нечего: {text}"
 
 
 async def test_without_peer_access_the_card_has_no_services_line(services, slots, fake_bot, monkeypatch):
@@ -117,11 +183,18 @@ async def test_the_peer_access_dialog_mentions_finder_only_when_turning_on(servi
     peers["app.routing.peer_nets.enabled"] = False
     await sh.gw_slot_peer_ask(cb, services)
     text = _screen(nav)[0]
-    sentence = "SMB-серверы каждой подсети станут видны в Finder на Mac в подсетях других шлюзов: «Сеть» → awg.internal."
-    assert sentence in text and text.index(sentence) < text.index("После включения перевыпусти"), text
+    win = ("На Windows-устройствах SMB-серверы каждой подсети будут доступны по ссылкам вида "
+           "<code>smb://имя.awg.internal</code>.")
+    mac = "На устройствах macOS SMB-серверы каждой подсети станут видны в Finder: «Сеть» → awg.internal."
+    avahi = "Видны только серверы тех подсетей, где на шлюзе запущен avahi-daemon."
+    assert win + "\n" + mac + "\n" + avahi + "\n\n" in text, text
+    assert text.index(win) < text.index("После включения перевыпусти"), "про SMB — до совета о перевыпуске"
+    assert "подсети шлюзов живут в конфиге линка, а его везёт только файл" in text, text
     peers["app.routing.peer_nets.enabled"] = True
     await sh.gw_slot_peer_ask(cb, services)
-    assert "awg.internal" not in _screen(nav)[0], "при выключении про Finder говорить нечего"
+    off = _screen(nav)[0]
+    assert "awg.internal" not in off, "при выключении про Finder говорить нечего"
+    assert "Доступ между подсетями шлюзов закроется сразу." in off, off
 
 
 # ── агент ────────────────────────────────────────────────────────────────────
@@ -171,30 +244,57 @@ async def _agent_screens(svc, fake_bot, monkeypatch):
     return panel, labels(panel_kb), lan, labels(lan_kb)
 
 
-async def test_agent_panel_and_lan_screen_name_neighbour_servers(gw_svc, fake_bot, monkeypatch):
-    """Имена — у агента, в его чате: до трёх, дальше «и ещё N»; имя с малины
-    соседа экранировано. Абзац экрана учит, как дойти по имени."""
+async def test_agent_panel_and_lan_screen_count_smb_in_one_line(gw_svc, fake_bot, monkeypatch):
+    """Панель и экран «Локальная сеть без VPN» — одной строкой SMB с числами
+    после пустой строки; имён и avahi здесь больше нет (они — в мониторе):
+    имя с чужой малины не попадает в разметку вовсе."""
     _peer(gw_svc, ["naspi5", "backup", "Time Machine", "<b>x</b>", "media"])
     panel, panel_labels, lan, lan_labels = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    assert "сервисы соседей: 5 SMB — naspi5, backup, time machine и ещё 2" in panel, panel
-    assert "свои сервисы для соседей: нет" in panel
-    assert "Сервисы соседей: 5 SMB — naspi5, backup, time machine и ещё 2. На Mac они видны в Finder" in lan
-    assert "<code>smb://naspi5.awg.internal</code>" in lan
-    _peer(gw_svc, ["<b>x</b>"])
-    panel, *_ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    assert "&lt;b&gt;x&lt;/b&gt;" in panel and "<b>x</b>" not in panel, "имя с чужой малины не экранировано"
+    line = "🗂 SMB: в этой подсети — 0, из подсетей других шлюзов — 5"
+    assert "\n\n" + line + "\n" in panel, panel
+    assert lan.endswith("\n\n" + line), f"строка SMB на экране локальной сети не последней после пустой: {lan}"
+    for t in (panel, lan):
+        assert "naspi5" not in t and "&lt;b&gt;" not in t and "<b>x</b>" not in t, f"имена соседей на экране: {t}"
+        assert "avahi" not in t, f"про avahi — только в мониторе: {t}"
+    assert "Finder" not in lan, "абзаца про Finder на экране больше нет"
     assert lan_labels == ["📋 Свои списки", "❓ Настройка роутера", "⬅️ В меню"], lan_labels
     assert "🏠 Локальная сеть без VPN" in panel_labels
 
 
-async def test_agent_panel_before_anything_arrived_and_without_avahi(gw_svc, fake_bot, monkeypatch):
+async def test_the_lan_screen_groups_address_traffic_lists_and_smb(gw_svc, fake_bot, monkeypatch):
+    """Экран локальной сети: интерфейс, адрес и DNS — тремя строками; трафик,
+    списки, SMB — своими группами через пустую строку."""
+    _peer(gw_svc, ["naspi5"])
+    _, _, lan, _ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
+    block = ("Интерфейс end0\nадрес <code>192.168.68.222</code>\n"
+             "DNS — апстрим <code>10.9.1.1</code> через аплинк\n\n"
+             "Трафик с роутера: 9 пакетов\n\n"
+             "Списки: 3 домена, 4 подсети (ещё не обновлялись)\n"
+             "Свои списки: 1 в туннель, 0 напрямую\n\n"
+             "🗂 SMB: в этой подсети — 0, из подсетей других шлюзов — 1")
+    assert lan.endswith(block), lan
+
+
+async def test_agent_panel_before_anything_arrived_and_after_an_empty_feed(gw_svc, fake_bot, monkeypatch):
+    """Сервер ещё ничего не присылал — «обновляю…»; прислал пустое — «не
+    найдены». Без avahi свою подсеть не посчитать: «не проверено», а не «0» —
+    ноль читался бы как «серверов нет»; почему — пишет монитор, не панель."""
     panel, *_ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    assert "сервисы соседей: пока не пришли" in panel, panel
+    assert "🗂 SMB: в этой подсети — 0, из подсетей других шлюзов — обновляю…" in panel, panel
     gw_svc.db.set_state("gw_peer_svc", '{"hash": "", "items": []}')
     monkeypatch.setattr(gwguard, "avahi_active", lambda: False)
     panel, *_ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    assert "сервисы соседей: нет" in panel
-    assert "свои сервисы для соседей: avahi-daemon не запущен" in panel
+    assert "🗂 SMB: в этой подсети — не проверено, из подсетей других шлюзов — не найдены" in panel, panel
+    assert "avahi" not in panel, panel
+
+
+def test_smb_line_without_avahi_browse_is_not_checked_either():
+    """Демон есть, а avahi-browse нет — своя подсеть так же не посчитана."""
+    from awgbot.bot.texts.gateway import smb_line
+    assert smb_line({"avahi": True, "browse": False, "own": [], "peer": ["a"], "ever": True}) == \
+        "🗂 SMB: в этой подсети — не проверено, из подсетей других шлюзов — 1"
+    assert smb_line({"avahi": True, "browse": True, "own": ["x", "y"], "peer": [], "ever": True}) == \
+        "🗂 SMB: в этой подсети — 2, из подсетей других шлюзов — не найдены"
 
 
 async def test_agent_screens_are_silent_where_the_function_does_not_work(gw_svc, fake_bot, monkeypatch):
@@ -202,4 +302,4 @@ async def test_agent_screens_are_silent_where_the_function_does_not_work(gw_svc,
     gw_svc.env["PEER_HOME_NETS"] = ""
     _peer(gw_svc, ["naspi5"])
     panel, _, lan, _ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    assert "сервисы соседей" not in panel.lower() and "awg.internal" not in lan, (panel, lan)
+    assert "🗂" not in panel and "🗂" not in lan and "awg.internal" not in lan, (panel, lan)

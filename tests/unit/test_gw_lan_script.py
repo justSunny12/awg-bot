@@ -639,7 +639,7 @@ def test_services_file_is_checked_installed_and_dnsmasq_restarted(svc_env):
     r = go(text)
     assert r.returncode == 0, r.stderr
     assert conf.read_text(encoding="utf-8") == text
-    assert "2 SMB" in r.stdout
+    assert r.stdout.strip() == "записи SMB подсетей других шлюзов применены: 2", r.stdout
     out = log.read_text()
     assert "dnsmasq --test --conf-dir=" in out and out.index("dnsmasq --test") < out.index("systemctl restart dnsmasq"), \
         "конфиг проверен до рестарта"
@@ -661,7 +661,7 @@ def test_a_file_dnsmasq_test_rejects_is_rolled_back(svc_env):
     go, conf, log = svc_env
     conf.write_text(OLD_SVC, encoding="utf-8")
     r = go(_svc_file(), DNSMASQ_TEST_RC="1")
-    assert r.returncode == 1 and "откатываю" in r.stderr
+    assert r.returncode == 1 and "dnsmasq --test отверг записи SMB — откатываю" in r.stderr, r.stderr
     assert conf.read_text(encoding="utf-8") == OLD_SVC, "прежний файл не вернулся"
     assert not (conf.parent / "awg-gw-peer-services.conf.prev.awg").exists(), "копия отката в conf-dir"
 
@@ -670,7 +670,7 @@ def test_a_first_file_dnsmasq_cannot_start_with_is_removed(svc_env, tmp_path):
     go, conf, log = svc_env
     _failing_restart(tmp_path / "bin", log)
     r = go(_svc_file())
-    assert r.returncode == 1
+    assert r.returncode == 1 and "dnsmasq не поднялся с записями SMB — откатываю" in r.stderr, r.stderr
     assert not conf.exists(), "файл, с которым dnsmasq не встал, остался"
 
 
@@ -680,7 +680,7 @@ def test_the_same_file_does_not_restart_dnsmasq(svc_env):
     go(_svc_file())
     n = log.read_text().count("systemctl restart dnsmasq")
     r = go(_svc_file())
-    assert r.returncode == 0 and "без изменений" in r.stdout
+    assert r.returncode == 0 and r.stdout.strip() == "записи SMB подсетей других шлюзов без изменений", r.stdout
     assert log.read_text().count("systemctl restart dnsmasq") == n, "тот же файл — а рестарт был"
 
 
@@ -689,6 +689,7 @@ def test_no_argument_removes_the_file_once(svc_env):
     conf.write_text(OLD_SVC, encoding="utf-8")
     r = go(None)
     assert r.returncode == 0 and not conf.exists()
+    assert r.stdout.strip() == "записи SMB подсетей других шлюзов сняты", r.stdout
     assert log.read_text().count("systemctl restart dnsmasq") == 1
     r = go(None)
     assert r.returncode == 0

@@ -322,8 +322,8 @@ def test_read_failure_keeps_awg_accounting_and_marks_error(services, kernel, dum
     services.poll_traffic()
     assert _total(services) == (10, 20)
 
-    kernel.read_error = "nft не найден — установите пакет nftables"
-    kernel.sync_error = "nft не найден — установите пакет nftables"
+    kernel.read_error = "nft не найден — поставь пакет nftables"
+    kernel.sync_error = "nft не найден — поставь пакет nftables"
     kernel.traffic(d.id, up=1, dn=1)
     dump.put(d, 400, 900)
     with caplog.at_level(logging.INFO, logger="awgbot"):

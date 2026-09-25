@@ -142,28 +142,50 @@ def _probe_layers() -> list[tuple[str, str, str]]:
                     "" if n else "Пустой набор ⇒ на шлюз уйдёт ВСЁ, включая заблокированное."))
 
     # ── 7. учёт РФ-трафика (концепт «учёт РФ-трафика») — только чтение ──
+    out += _probe_rf_acct()
+    return out
+
+
+def _mb(n: int) -> str:
+    """Мегабайты, две цифры после запятой, округление вверх, разряды пробелом
+    (вычитка 3.1.0). Целочисленно: плавающая точка на границе давала лишнюю
+    сотую."""
+    hundredths = -(-int(n) // 10_000)
+    return f"{hundredths // 100:,}".replace(",", " ") + f".{hundredths % 100:02d} МБ"
+
+
+def _probe_rf_acct(pause: float = 3.0) -> list[tuple[str, str, str]]:
+    """Слой учёта: два чтения с паузой — растёт ли итог прямо сейчас."""
+    import time
     from awgbot.infra import rfacct
     try:
         acct = rfacct.read()
     except rfacct.AcctError as e:
-        out.append((_WARN, "Учёт РФ-трафика: не читается", str(e)))
-    else:
-        if acct is None:
-            out.append((_WARN, "Учёт РФ-трафика: таблицы awg_bot_acct нет",
-                        f"Её создаёт первый опрос трафика бота (раз в "
-                        f"{settings.get_int('app.scheduler.traffic_poll_minutes', 5)} мин)."))
-        else:
-            from awgbot.bot.texts.fmt import human_bytes
-            n_dev = sum(1 for k in acct.counters if k.startswith("d") and k.endswith("_up"))
-            up = acct.counters.get(rfacct.COUNTER_UP, 0)
-            dn = acct.counters.get(rfacct.COUNTER_DN, 0)
-            # неполная цепочка — не отказ тракта: трафик идёт, опрос перепишет правила
-            out.append((_OK if acct.rules == 4 else _WARN,
-                        f"Учёт РФ-трафика: {n_dev} устройств, ↑ {human_bytes(up)}, ↓ {human_bytes(dn)} "
-                        "с загрузки таблицы",
-                        "" if acct.rules == 4 else
-                        f"Правил в цепочке {acct.rules}, а нужно 4 — ближайший опрос перепишет."))
-    return out
+        return [(_WARN, "Учёт РФ-трафика: не читается", str(e))]
+    if acct is None:
+        return [(_WARN, "Учёт РФ-трафика: таблицы awg_bot_acct нет",
+                 f"Её создаёт первый опрос трафика бота (раз в "
+                 f"{settings.get_int('app.scheduler.traffic_poll_minutes', 5)} мин).")]
+    n_dev = sum(1 for k in acct.counters if k.startswith("d") and k.endswith("_up"))
+    up = acct.counters.get(rfacct.COUNTER_UP, 0)
+    dn = acct.counters.get(rfacct.COUNTER_DN, 0)
+    grow = ""
+    if pause > 0:
+        time.sleep(pause)
+        try:
+            again = rfacct.read()
+        except rfacct.AcctError:
+            again = None
+        if again is not None:
+            d = (again.counters.get(rfacct.COUNTER_UP, 0) + again.counters.get(rfacct.COUNTER_DN, 0)) - (up + dn)
+            grow = f"; за {pause:g} с итог " + (f"вырос на {_mb(d)}" if d > 0 else "не изменился")
+    # неполная цепочка — не отказ тракта: трафик идёт, опрос перепишет правила
+    from awgbot.bot.texts.fmt import plural_ru
+    return [(_OK if acct.rules == 4 else _WARN,
+             f"Учёт РФ-трафика: {n_dev} {plural_ru(n_dev, 'устройство', 'устройства', 'устройств')}, "
+             f"↑ {_mb(up)}, ↓ {_mb(dn)} с перезагрузки сервера или пересоздания таблицы{grow}",
+             "" if acct.rules == 4 else
+             f"Правил в цепочке {acct.rules}, ждём 4 — ближайший опрос перепишет.")]
 
 
 def main() -> int:

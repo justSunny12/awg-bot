@@ -97,7 +97,7 @@ def rf_traffic_line(rf: dict) -> str:
     rx, tx = int(rf.get("rx") or 0), int(rf.get("tx") or 0)
     line = f"└ 🇷🇺 {ROUTING_NAME}: {human_bytes(rx + tx)} {_updown(rx, tx)}"
     if rf.get("error"):
-        line += " · ⚠️ учёт не идёт"
+        line += " · ⚠️ учёт трафика РФ-доступа не идёт"
     return line
 
 

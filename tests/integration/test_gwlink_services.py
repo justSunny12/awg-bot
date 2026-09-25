@@ -404,7 +404,7 @@ async def _up(pair, client, slot: int) -> None:
 async def test_the_receiver_publishes_neighbour_services_through_the_real_helper(pair, real_agent, monkeypatch):
     """Вся польза функции на получателе: сервисы соседа доехали каналом,
     агент собрал файл, настоящий помощник проверил его белым списком и
-    перезапустил dnsmasq один раз, сервер видит «опубликованы». Повтор тех же
+    перезапустил dnsmasq один раз, сервер видит «доступны». Повтор тех же
     записей dnsmasq не трогает."""
     s = pair.services
     acks: list[dict] = []
@@ -526,10 +526,10 @@ async def test_records_refused_for_a_missing_helper_reach_dnsmasq_on_the_next_ti
     `peer_svc` получил отказ. Сервер в этой сессии второй раз не пришлёт: на
     ближайшем тике, когда помощник уже на месте, агент применяет сохранённое
     сам и отвечает `peer_svc_ack` ok тем же отпечатком. Сервер считает его
-    своим, карточка — «опубликованы на шлюзе», повторной доставки нет.
+    своим, карточка — «доступны», повторной доставки нет.
 
     Цена ошибки: Finder соседней сети пуст до переподключения канала (дни), а
-    карточка на ВПС висит «шлюз не принял» при исправной обвязке."""
+    карточка на ВПС висит «шлюз отказался принимать» при исправной обвязке."""
     from awgbot.bot.texts.routing import services_line
     s = pair.services
     acks: list[dict] = []
@@ -548,7 +548,7 @@ async def test_records_refused_for_a_missing_helper_reach_dnsmasq_on_the_next_ti
     await _up(pair, client, 2)
     assert await _until(lambda: acks, timeout=5), "на peer_svc агент не ответил"
     assert acks[0]["ok"] is False and acks[0]["hash"] == H_NAS, acks
-    assert "помощника сервисов нет" in acks[0]["error"], acks
+    assert "скрипта записей SMB нет" in acks[0]["error"], acks
     assert len(reasserts) == 1, "без помощника обвязку не перевыставили"
     assert not host.conf.exists() and host.restarts() == 0
     assert pair.srv._sessions[2].svc_have != H_NAS
@@ -571,7 +571,7 @@ async def test_records_refused_for_a_missing_helper_reach_dnsmasq_on_the_next_ti
     assert pair.srv._sessions[2].svc_have == H_NAS, "сервер не признал записи применёнными"
     card = s.gwlink_services_card(s.db.gateway(2))
     assert card["state"] == "applied", card
-    assert services_line(card).endswith("опубликованы на шлюзе"), services_line(card)
+    assert services_line(card, "«Pi»").endswith(", доступны"), services_line(card, "«Pi»")
     assert agent.services_applied_hash() == H_NAS
 
     # дальше тишина: ни повторной доставки с ВПС, ни повторного ack с малины

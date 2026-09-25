@@ -1215,7 +1215,7 @@ cmd_post_uninstall() {
     # Снятие адресных drop'ов делает SSH снова открытым для всех — доступ к хосту
     # при этом НЕ теряется (мы только убираем ограничение, а не рвём established).
     # учёт РФ-трафика — таблица без вердиктов, снимаем без вопроса
-    nft delete table inet awg_bot_acct 2>/dev/null && ok "таблица awg_bot_acct снята" || true
+    nft delete table inet awg_bot_acct 2>/dev/null && ok "таблица учёта РФ-трафика (awg_bot_acct) снята" || true
     local fw_rules="/etc/nftables.d/awg-bot-guard.nft"
     local fw_table="inet awg_bot_guard"
     if [[ -f "$fw_rules" ]] || nft list table $fw_table >/dev/null 2>&1; then

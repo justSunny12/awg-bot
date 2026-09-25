@@ -175,7 +175,7 @@ def _nft(args: list[str], stdin: str = "", timeout: int = 15) -> subprocess.Comp
         return subprocess.run(["nft", *args], input=stdin.encode() if stdin else None,
                               capture_output=True, timeout=timeout)
     except FileNotFoundError:
-        raise AcctError("nft не найден — установите пакет nftables")
+        raise AcctError("nft не найден — поставь пакет nftables")
     except subprocess.TimeoutExpired:
         raise AcctError(f"таймаут nft {' '.join(args[:3])}")
     except OSError as e:

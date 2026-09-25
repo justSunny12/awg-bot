@@ -199,7 +199,7 @@ def test_rf_traffic_line_render():
     G = 1024 ** 3
     assert texts.rf_traffic_line({"rx": G, "tx": 3 * G}) == "└ 🇷🇺 РФ-доступ: 4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)"
     assert texts.rf_traffic_line({"rx": 0, "tx": 0, "error": "x"}) == \
-        "└ 🇷🇺 РФ-доступ: 0 ГБ (↑ 0 ГБ | ↓ 0 ГБ) · ⚠️ учёт не идёт"
+        "└ 🇷🇺 РФ-доступ: 0 ГБ (↑ 0 ГБ | ↓ 0 ГБ) · ⚠️ учёт трафика РФ-доступа не идёт"
     st = {"ok": True, "traffic_rx": 1, "traffic_tx": 2}
     assert "└ 🇷🇺" not in texts.admin_panel(st), "строка РФ без данных о ней"
     assert "└ 🇷🇺" not in texts.admin_panel(st, rf={"rx": G, "tx": G, "show": False})

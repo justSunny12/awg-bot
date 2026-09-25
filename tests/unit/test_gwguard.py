@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import subprocess
 
+import pytest
+
 from awgbot.core import config
 from awgbot.infra import gwguard
 
@@ -263,3 +265,16 @@ def test_forward_accepts_without_iptables_is_empty(monkeypatch):
     assert gwguard.forward_accepts() == set()
     _dig(monkeypatch, exc=subprocess.TimeoutExpired(["iptables"], 10))
     assert gwguard.forward_accepts() == set()
+
+
+@pytest.mark.parametrize("exc,msg", [
+    (FileNotFoundError(), "скрипта записей SMB нет — обвязка старого образца"),
+    (subprocess.TimeoutExpired("awg-lan-services.sh", 90), "таймаут установки записей SMB"),
+])
+def test_run_lan_services_turns_a_missing_or_hanging_script_into_a_reason(monkeypatch, exc, msg):
+    """Скрипта записей нет (обвязка до 3.1.0) или он завис — агент не падает, а
+    отдаёт серверу понятную причину: она станет строкой карточки слота."""
+    def run(*a, **k):
+        raise exc
+    monkeypatch.setattr(gwguard.subprocess, "run", run)
+    assert gwguard.run_lan_services("/tmp/x") == (False, msg)

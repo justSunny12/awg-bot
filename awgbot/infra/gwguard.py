@@ -784,9 +784,9 @@ def run_lan_services(path: str = "", timeout: int = 90) -> tuple[bool, str]:
         proc = subprocess.run([LAN_SERVICES_SCRIPT, *([path] if path else [])],
                               capture_output=True, timeout=timeout)
     except FileNotFoundError:
-        return False, "помощника сервисов нет — обвязка старого образца"
+        return False, "скрипта записей SMB нет — обвязка старого образца"
     except subprocess.TimeoutExpired:
-        return False, "таймаут установки записей"
+        return False, "таймаут установки записей SMB"
     except OSError as e:
         return False, str(e)
     tail = (proc.stdout + proc.stderr).decode(errors="replace").strip().splitlines()[-3:]

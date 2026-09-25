@@ -672,6 +672,7 @@ def test_avahi_utils_is_installed_only_next_to_a_running_avahi_daemon(script, tm
     assert len(apt) == 1 and apt[0].endswith(" avahi-utils"), apt
     assert "avahi-daemon" not in apt[0], "демон не ставим: он начал бы объявлять саму малину"
     assert conf.exists(), "при соседях файл записей снят обвязкой"
+    assert "ставлю avahi-utils (обзор SMB-серверов этой подсети для подсетей других шлюзов)" in r.stdout, r.stdout
     assert "dn_changed=0" in r.stdout
 
 
@@ -688,7 +689,8 @@ def test_a_failed_avahi_utils_install_does_not_fail_the_section(script, tmp_path
     """apt упал — остальное работает: раздел 5 не роняет юнит в цикл рестартов."""
     r, log, conf = _run_peer_block(script, tmp_path, peers="192.168.1.0/24", apt_rc="100")
     assert r.returncode == 0 and "dn_changed=0" in r.stdout, (r.returncode, r.stdout, r.stderr)
-    assert "avahi-utils не установился" in r.stdout
+    assert ("avahi-utils не установился — SMB-серверы этой подсети не видны из подсетей других шлюзов, "
+            "остальное работает") in r.stdout, r.stdout
 
 
 def test_the_daemon_itself_is_never_installed(script):
@@ -715,3 +717,27 @@ def test_lan_remove_takes_the_services_file_and_helper_with_it(script, tmp_path)
     assert not (dns_d / "awg-gw-peer-services.conf").exists(), "файл записей соседей пережил снятие"
     assert not helper.exists(), "помощник сервисов пережил снятие"
     assert "systemctl restart dnsmasq" in (tmp_path / "log").read_text()
+
+
+def _plan_line(script: str, **env) -> str:
+    """Режим показа: блок `if [ "$MODE" = "plan" ]` раздела плана, прогнанный
+    под sh; строка про SMB подсетей других шлюзов."""
+    start = script.index('\nif [ "$MODE" = "plan" ]; then\n    say ""\n    say "(режим показа') + 1
+    block = script[start:script.index("\n    exit 0\nfi\n", start) + len("\n    exit 0\nfi\n")]
+    r = subprocess.run(["sh", "-c", _helpers(script) + "\nMODE=plan\n" + block],
+                       capture_output=True, text=True, env={"PATH": "/usr/bin:/bin", **env})
+    assert r.returncode == 0, r.stderr
+    return next(ln.strip() for ln in r.stdout.splitlines() if "SMB подсетей других шлюзов" in ln)
+
+
+@pytest.mark.parametrize("env,state", [
+    ({"PEER_HOME_NETS": "192.168.1.0/24", "LAN_MODE": "1", "LINK_CHANNEL": "1"}, "включены"),
+    ({"PEER_HOME_NETS": "192.168.1.0/24", "LAN_MODE": "1", "LINK_CHANNEL": "0"}, "нет"),
+    ({"PEER_HOME_NETS": "", "LAN_MODE": "1", "LINK_CHANNEL": "1"}, "нет"),
+    ({"PEER_HOME_NETS": "192.168.1.0/24", "LAN_MODE": "0", "LINK_CHANNEL": "1"}, "нет"),
+])
+def test_the_plan_says_whether_peer_smb_will_be_served(script, env, state):
+    """Показ плана до применения: записи SMB соседей возможны только при всех
+    трёх условиях (соседи, режим локальной сети, канал) — иначе «нет», чтобы
+    человек не искал в Finder то, что эта конфигурация не даст."""
+    assert _plan_line(script, **env) == f"SMB подсетей других шлюзов (в Finder: «Сеть» → awg.internal): {state}"

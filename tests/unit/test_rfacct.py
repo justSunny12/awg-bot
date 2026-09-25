@@ -319,7 +319,7 @@ def test_sync_apply_failure_raises_and_is_retried(nft):
     assert rfacct.sync(st, ["awglink"], SUBS, []) is True, "после отказа статика не переписана"
 
 
-@pytest.mark.parametrize("exc, msg", [(FileNotFoundError(), "nft не найден"),
+@pytest.mark.parametrize("exc, msg", [(FileNotFoundError(), "nft не найден — поставь пакет nftables"),
                                       (subprocess.TimeoutExpired("nft", 15), "таймаут"),
                                       (PermissionError("denied"), "denied")])
 def test_nft_missing_or_hanging_becomes_acct_error(monkeypatch, exc, msg):

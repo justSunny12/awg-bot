@@ -112,14 +112,15 @@ def gateway_panel(st) -> str:
         where = f"{_e(lan.get('iface', '') or '?')}, <code>{_e(lan.get('addr', '') or '?')}</code>"
         parts.append(f"{pad}локальная сеть: {where}")
         parts.append(f"{pad}трафик с роутера: {_packets(lan.get('lan_pkts'))}")
-        parts.append(f"{pad}резолвер: апстрим {_e(lan.get('resolver', ''))}")
-        parts.append(f"{pad}списки: {_lists_counts(lan)}; " + _lists_updated(lan.get("updated_at") or ""))
-        parts.append(f"{pad}свои списки: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую")
+        parts.append(f"{pad}DNS: апстрим {_e(lan.get('resolver', ''))}")
+        # списки — своей группой (вычитка 3.1.0)
+        parts += ["", f"📋 Списки: {_lists_counts(lan)} ({_lists_updated_short(lan.get('updated_at') or '')})"]
+        parts.append(f"{pad}Свои списки: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую")
         svc = lan.get("svc") or {}
         if svc.get("active"):
-            # сервисы соседних сетей: работают сами вместе с доступом между подсетями
-            parts.append(f"{pad}сервисы соседей: {_svc_peer_short(svc)}")
-            parts.append(f"{pad}свои сервисы для соседей: {_svc_own_short(svc)}")
+            # SMB подсетей шлюзов (концепт «сервисы соседних сетей»): работают
+            # сами вместе с доступом между подсетями — одной строкой, числами
+            parts += ["", smb_line(svc)]
     parts += ["", f"🌡 Монитор здоровья: {_gw_health_summary(st.checks)}", ""]
     parts.append(f"📊 Потребление за месяц: {human_bytes(st.month_rx + st.month_tx)} "
                  f"{_updown(st.month_rx, st.month_tx)}")
@@ -153,40 +154,6 @@ def gateway_health(st) -> str:
     return "\n".join(lines)
 
 
-def _svc_names(names: list) -> str:
-    """«naspi5, backup и ещё 2» — имена с малины соседа, экранированные."""
-    # в нижнем регистре — так их отдаёт dnsmasq и показывает Finder
-    names = [str(n).lower() for n in names if n]
-    shown = ", ".join(_e(n) for n in names[:3])
-    more = len(names) - 3
-    return shown + (f" и ещё {more}" if more > 0 else "")
-
-
-def _svc_peer_short(svc: dict) -> str:
-    names = svc.get("peer") or []
-    if names:
-        return f"{len(names)} SMB — {_svc_names(names)}"
-    return "нет" if svc.get("ever") else "пока не пришли"
-
-
-def _svc_own_short(svc: dict) -> str:
-    if svc.get("browse") is False:
-        return "нет avahi-browse (пакет avahi-utils)"
-    if svc.get("avahi") is False:
-        return "avahi-daemon не запущен"
-    names = svc.get("own") or []
-    return f"{len(names)} SMB" if names else "нет"
-
-
-def gateway_services_paragraph(svc: dict) -> str:
-    """Абзац экрана «Локальная сеть без VPN»: что видят соседи и как дойти по имени."""
-    hosts = [h for h in (svc.get("peer_hosts") or []) if h]
-    example = f"smb://{_e(hosts[0])}.awg.internal" if hosts else "smb://имя.awg.internal"
-    return (f"Сервисы соседей: {_svc_peer_short(svc)}. На Mac они видны в Finder → «Сеть» → "
-            f"awg.internal; с других устройств — по имени, например <code>{example}</code>. "
-            "Свои SMB-серверы этой сети видны соседям так же.")
-
-
 def _packets(pk) -> str:
     """«1 234 567 пакетов» — с разделителем разрядов и склонением; нет — «нет»."""
     n = int(pk or 0)
@@ -201,16 +168,33 @@ def _lists_counts(lan: dict) -> str:
             + f"{n} " + plural_ru(n, "подсеть", "подсети", "подсетей"))
 
 
-def _lists_updated(raw: str) -> str:
-    """«обновлены <когда>» или «ещё не обновлялись» — целой фразой: иначе
-    склеивалось «обновлены ещё не обновлялись»."""
+def _lists_updated_short(raw: str) -> str:
+    """«обн. <когда>» в скобках после списков; ещё не обновлялись — так и пишем."""
     from awgbot.util import timeutil
     if not raw:
         return "ещё не обновлялись"
     try:
-        return "обновлены " + timeutil.fmt_dt(timeutil.parse_iso(raw))
+        return "обн. " + timeutil.fmt_dt(timeutil.parse_iso(raw))
     except ValueError:
-        return "обновлены ?"
+        return "обн. ?"
+
+
+def smb_line(svc: dict) -> str:
+    """«🗂 SMB: в этой подсети — N, из подсетей других шлюзов — M» (вычитка
+    3.1.0): сервер ещё ничего не присылал — «обновляю…», прислал пустое — «не
+    найдены». Имена и avahi здесь не показываются — только в мониторе."""
+    own = ("не проверено" if svc.get("avahi") is False or svc.get("browse") is False
+           else len(svc.get("own") or []))
+    peers = svc.get("peer") or []
+    if peers:
+        tail = str(len(peers))
+    elif svc.get("ever"):
+        tail = "не найдены"
+    else:
+        tail = "обновляю…"
+    return f"🗂 SMB: в этой подсети — {own}, из подсетей других шлюзов — {tail}"
+
+
 
 
 def gateway_lan_text(st) -> str:
@@ -222,12 +206,13 @@ def gateway_lan_text(st) -> str:
             "маршрутизатора: домены и подсети из списков идут в туннель, остальное — напрямую. "
             "Личные списки: домен накрывает и все поддомены; правила «напрямую» приоритетнее "
             "правил «в туннель».\n\n"
-            f"Интерфейс {_e(lan.get('iface', '') or '?')}, адрес <code>{_e(lan.get('addr', '') or '?')}</code>; "
-            f"резолвер — апстрим <code>{_e(lan.get('resolver', '') or '?')}</code> через аплинк\n"
-            f"Трафик с роутера: {_packets(lan.get('lan_pkts'))}\n"
-            f"Списки: {_lists_counts(lan)}; {_lists_updated(lan.get('updated_at') or '')}\n"
+            f"Интерфейс {_e(lan.get('iface', '') or '?')}\n"
+            f"адрес <code>{_e(lan.get('addr', '') or '?')}</code>\n"
+            f"DNS — апстрим <code>{_e(lan.get('resolver', '') or '?')}</code> через аплинк\n\n"
+            f"Трафик с роутера: {_packets(lan.get('lan_pkts'))}\n\n"
+            f"Списки: {_lists_counts(lan)} ({_lists_updated_short(lan.get('updated_at') or '')})\n"
             f"Свои списки: {lan.get('own_vpn', 0)} в туннель, {lan.get('own_ru', 0)} напрямую"
-            + (("\n\n" + gateway_services_paragraph(lan["svc"]))
+            + (("\n\n" + smb_line(lan["svc"]))
                if (lan.get("svc") or {}).get("active") else ""))
 
 

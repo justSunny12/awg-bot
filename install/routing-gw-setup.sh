@@ -581,7 +581,7 @@ DUMP="${AWG_LAN_DUMP:-/var/lib/awg-gw}"
 DOMAIN='awg\.internal'
 mkdir -p "$DUMP"
 exec 9>"$DUMP/lists.lock"
-if command -v flock >/dev/null 2>&1 && ! flock -w 120 9; then echo "обновление списков ещё идёт" >&2; exit 75; fi
+if command -v flock >/dev/null 2>&1 && ! flock -w 120 9; then echo "обновление списков или записей SMB ещё идёт" >&2; exit 75; fi
 [ "$(id -u)" = "0" ] || { echo "нужен root" >&2; exit 1; }
 # conf-dir Debian подключает ключом из init-скрипта — голый --test файл не видит
 test_conf() { dnsmasq --test "--conf-dir=$D,.dpkg-dist,.dpkg-old,.dpkg-new" >/dev/null 2>&1; }
@@ -590,8 +590,8 @@ rollback() { if [ -f "$CONF.prev.awg" ]; then mv -f "$CONF.prev.awg" "$CONF"; el
 if [ $# -eq 0 ]; then
     [ -f "$CONF" ] || exit 0
     rm -f "$CONF"
-    restart_dnsmasq || { echo "dnsmasq не поднялся после снятия записей: journalctl -u dnsmasq -e" >&2; exit 1; }
-    echo "записи соседей сняты"
+    restart_dnsmasq || { echo "dnsmasq не поднялся после снятия записей SMB: journalctl -u dnsmasq -e" >&2; exit 1; }
+    echo "записи SMB подсетей других шлюзов сняты"
     exit 0
 fi
 SRC="$1"
@@ -608,19 +608,19 @@ if grep -Ev -e '^#.*$' -e '^$' \
     "$SRC" >/dev/null; then
     echo "в файле записей есть строка вне белого списка — не применяю" >&2; exit 2
 fi
-if cmp -s "$SRC" "$CONF" 2>/dev/null; then echo "записи соседей без изменений"; exit 0; fi
+if cmp -s "$SRC" "$CONF" 2>/dev/null; then echo "записи SMB подсетей других шлюзов без изменений"; exit 0; fi
 if [ -f "$CONF" ]; then cp -p "$CONF" "$CONF.prev.awg" 2>/dev/null || true; fi
 install -m 0644 "$SRC" "$CONF"
 if ! test_conf; then
     # демон с плохим файлом не перезапускался — откат без рестарта, кэш сети цел
-    echo "dnsmasq --test отверг записи соседей — откатываю" >&2; rollback; exit 1
+    echo "dnsmasq --test отверг записи SMB — откатываю" >&2; rollback; exit 1
 fi
 if systemctl restart dnsmasq; then
     rm -f "$CONF.prev.awg"
-    echo "записи соседей применены: $(grep -c '^srv-host=' "$CONF") SMB"
+    echo "записи SMB подсетей других шлюзов применены: $(grep -c '^srv-host=' "$CONF")"
     exit 0
 fi
-echo "dnsmasq не поднялся с записями соседей — откатываю" >&2
+echo "dnsmasq не поднялся с записями SMB — откатываю" >&2
 rollback
 systemctl restart dnsmasq || true
 exit 1
@@ -808,7 +808,7 @@ if [ "$MODE" = "plan" ]; then
     say "  0. шлюзовое устройство: ${GATEWAY_PUBKEY:+помечен, конфиг аплинка ставится машине с тем же ключом}${GATEWAY_PUBKEY:-не помечен}"
     say "  4. юнит awg-link-gw.service"
     say "  5. локальная сеть без VPN: ${LAN_MODE:-0} (подсети: ${HOME_SUBNETS:-—}; резолвер: ${RESOLVER:-запасной через аплинк})"
-    say "     сервисы соседних сетей (SMB в Finder через awg.internal): $([ -n "${PEER_HOME_NETS:-}" ] && [ "${LAN_MODE:-0}" = "1" ] && [ "${LINK_CHANNEL:-0}" = "1" ] && echo включены || echo нет)"
+    say "     SMB подсетей других шлюзов (в Finder: «Сеть» → awg.internal): $([ -n "${PEER_HOME_NETS:-}" ] && [ "${LAN_MODE:-0}" = "1" ] && [ "${LINK_CHANNEL:-0}" = "1" ] && echo включены || echo нет)"
     say "     локальные подсети других шлюзов (транзит из линка): ${PEER_HOME_NETS:-—}"
     exit 0
 fi
@@ -1498,9 +1498,9 @@ HOMEEOF
     # бы объявлять малину); соседей нет — записи соседей снять
     if [ -n "${PEER_HOME_NETS:-}" ]; then
         if systemctl is-active --quiet avahi-daemon 2>/dev/null && ! command -v avahi-browse >/dev/null 2>&1; then
-            say "  ставлю avahi-utils (обзор SMB-серверов этой сети для соседей)"
+            say "  ставлю avahi-utils (обзор SMB-серверов этой подсети для подсетей других шлюзов)"
             run "DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold avahi-utils" \
-                || say "  avahi-utils не установился — SMB-серверы этой сети соседям не видны, остальное работает"
+                || say "  avahi-utils не установился — SMB-серверы этой подсети не видны из подсетей других шлюзов, остальное работает"
         fi
     elif [ -f "$PEER_SVC_CONF" ]; then
         run "rm -f $PEER_SVC_CONF"; _dn_changed=1

@@ -140,7 +140,11 @@ def test_status_carries_lan_block_and_panel_shows_it(svc, monkeypatch):
     out = texts.gateway_panel(st)
     assert "🏠 Локальная сеть без VPN: 🟢 работает" in out
     assert "локальная сеть: end0, <code>192.168.68.222</code>" in out and "12 345 пакетов" in out
-    assert "1180 доменов, 412 подсетей" in out and "свои списки: 2 в туннель, 1 напрямую" in out
+    assert "DNS: апстрим 10.9.1.1" in out and "резолвер:" not in out, out
+    # списки — своей группой после пустой строки, дата обновления — в скобках
+    assert "\n\n📋 Списки: 1180 доменов, 412 подсетей (обн. " in out, out
+    assert "Свои списки: 2 в туннель, 1 напрямую" in out, out
+    assert "🗂" not in out, "svc не активен — строки SMB в панели быть не должно"
     st.checks.append(GwCheck("трафик с роутера", False, "пакетов нет", group="lan"))
     assert "🏠 Локальная сеть без VPN: 🔴 трафик с роутера" in texts.gateway_panel(st)
     assert "Локальная сеть без VPN" not in texts.gateway_panel(GwStatus()), "выключено — блока нет"
@@ -356,29 +360,31 @@ def test_services_checks_say_what_the_monitor_should(svc, monkeypatch):
     info, checks = svc.services_status()
     by = {c.name: c for c in checks}
     assert all(c.group == "svc" for c in checks), "своя группа — без уведомлений"
-    assert by["сервисы соседей"].ok is True and by["сервисы соседей"].detail == "2 SMB опубликованы"
-    assert by["обзор сервисов"].ok is True and by["обзор сервисов"].detail == "0 SMB в этой сети"
+    assert by["SMB подсетей других шлюзов"].ok is True and by["SMB подсетей других шлюзов"].detail == "2 SMB доступны"
+    assert by["SMB этой подсети"].ok is True and by["SMB этой подсети"].detail == "0 SMB"
     assert info["active"] and info["peer"] == ["nas0", "nas1"]
     # резолвер не отдаёт — 🔴 с подсказкой; dig не ответил — ⚪, а не «всё хорошо»
     _svc_on(monkeypatch, dig=())
-    c = {c.name: c for c in svc.services_status()[1]}["сервисы соседей"]
-    assert c.ok is False and "резолвер не отдаёт записи соседей" in c.detail
+    c = {c.name: c for c in svc.services_status()[1]}["SMB подсетей других шлюзов"]
+    assert c.ok is False and c.detail == "резолвер не отдаёт записи: journalctl -u dnsmasq -e", c.detail
     _svc_on(monkeypatch, dig=None)
-    assert {c.name: c for c in svc.services_status()[1]}["сервисы соседей"].ok is None
+    c = {c.name: c for c in svc.services_status()[1]}["SMB подсетей других шлюзов"]
+    assert c.ok is None and c.detail == "не проверено: dig не ответил", c.detail
     # ошибка применения — 🔴 с её хвостом
     _peer_applied(svc, err="dnsmasq отверг записи соседей")
-    c = {c.name: c for c in svc.services_status()[1]}["сервисы соседей"]
+    c = {c.name: c for c in svc.services_status()[1]}["SMB подсетей других шлюзов"]
     assert c.ok is False and "записи не применились: dnsmasq отверг" in c.detail
 
 
 def test_no_avahi_is_grey_not_red(svc, monkeypatch):
     """Малина без NAS и без avahi — нормальное состояние (§12.3): ⚪, не 🔴."""
     _svc_on(monkeypatch, avahi=False)
-    c = {c.name: c for c in svc.services_status()[1]}["обзор сервисов"]
-    assert c.ok is None and "avahi-daemon не запущен" in c.detail
+    c = {c.name: c for c in svc.services_status()[1]}["SMB этой подсети"]
+    assert c.ok is None and c.detail == ("avahi-daemon не запущен: SMB-серверы этой подсети не видны "
+                                         "из подсетей других шлюзов"), c.detail
     _svc_on(monkeypatch, browse=False)
-    c = {c.name: c for c in svc.services_status()[1]}["обзор сервисов"]
-    assert c.ok is None and "avahi-utils" in c.detail and "Мастер восстановления" in c.detail
+    c = {c.name: c for c in svc.services_status()[1]}["SMB этой подсети"]
+    assert c.ok is None and c.detail == "нет avahi-browse, пакет avahi-utils (🔧 Мастер восстановления)", c.detail
 
 
 def test_services_add_nothing_where_the_function_does_not_work(svc, monkeypatch):
@@ -408,4 +414,4 @@ def test_a_red_services_check_sends_neither_plumbing_nor_lan_alerts(svc, monkeyp
     for _ in range(6):
         notes += svc.monitor_tick()
     assert notes == [], f"проверка сервисов соседей подняла уведомление: {[n.text for n in notes]}"
-    assert "🔴 сервисы соседей" in texts.gateway_health(st), "в мониторе проверку видно"
+    assert "🔴 SMB подсетей других шлюзов" in texts.gateway_health(st), "в мониторе проверку видно"

@@ -326,9 +326,9 @@ async def test_panel_keeps_rf_line_when_off_but_month_has_rf(services, fake_bot,
 async def test_panel_rf_line_marks_broken_accounting_and_keeps_numbers(services, fake_bot,
                                                                       fake_routing, monkeypatch):
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB, tx=GB,
-              error="nft не найден — установите пакет nftables")
+              error="nft не найден — поставь пакет nftables")
     line = _rf_line(await _panel_text(services, fake_bot))
-    assert line == "└ 🇷🇺 РФ-доступ: 2 ГБ (↑ 1 ГБ | ↓ 1 ГБ) · ⚠️ учёт не идёт"
+    assert line == "└ 🇷🇺 РФ-доступ: 2 ГБ (↑ 1 ГБ | ↓ 1 ГБ) · ⚠️ учёт трафика РФ-доступа не идёт"
     assert "nft" not in line, "текст ошибки ядра в шапке админа"
 
 

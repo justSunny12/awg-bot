@@ -855,8 +855,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                 self.db.set_state(self._SVC_PENDING_KEY,
                                   json.dumps({"hash": digest, "items": clean_items}, ensure_ascii=False))
                 return self._svc_store(digest, [], False,
-                                       "помощника сервисов нет — обвязка перевыставляется"
-                                       if fixed else "помощника сервисов нет — обвязка перевыставится в ближайшие минуты")
+                                       "скрипта записей SMB нет — обвязка перевыставляется"
+                                       if fixed else "скрипта записей SMB нет — обвязка перевыставится в ближайшие минуты")
         if not text:
             ok, tail = gwguard.run_lan_services("")
         else:
@@ -864,7 +864,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             with open(gwguard.PEER_SERVICES_NEW, "w", encoding="utf-8") as f:
                 f.write(text)
             ok, tail = gwguard.run_lan_services(gwguard.PEER_SERVICES_NEW)
-        return self._svc_store(digest, clean_items, ok, "" if ok else (tail or "помощник отказал"))
+        return self._svc_store(digest, clean_items, ok,
+                               "" if ok else (tail or "скрипт записей SMB отказал без объяснений"))
 
     def _svc_store(self, digest: str, items: list, ok: bool, err: str) -> dict:
         with self.db.transaction():
@@ -915,13 +916,14 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         # сначала демон: без него обвязка avahi-utils не ставит, и совет про
         # мастер восстановления на малине без NAS был бы пустым
         if info["avahi"] is False:
-            checks.append(GwCheck("обзор сервисов", None,
-                                  "avahi-daemon не запущен: SMB-серверы этой сети соседям не видны"))
+            checks.append(GwCheck("SMB этой подсети", None,
+                                  "avahi-daemon не запущен: SMB-серверы этой подсети не видны из подсетей "
+                                  "других шлюзов"))
         elif not info["browse"]:
-            checks.append(GwCheck("обзор сервисов", None,
-                                  "нет avahi-browse (пакет avahi-utils): 🔧 Мастер восстановления"))
+            checks.append(GwCheck("SMB этой подсети", None,
+                                  "нет avahi-browse, пакет avahi-utils (🔧 Мастер восстановления)"))
         else:
-            checks.append(GwCheck("обзор сервисов", True, f"{len(own)} SMB в этой сети"))
+            checks.append(GwCheck("SMB этой подсети", True, f"{len(own)} SMB"))
         peer = self.services_peer()
         items = [r for r in (peer.get("items") or []) if isinstance(r, dict)]
         info["peer"] = [r.get("n", "") for r in items]
@@ -929,14 +931,15 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         info["ever"] = bool(peer)
         info["err"] = self.db.get_state(self._SVC_PEER_ERR_KEY) or ""
         if info["err"]:
-            checks.append(GwCheck("сервисы соседей", False, f"записи не применились: {info['err']}"))
+            checks.append(GwCheck("SMB подсетей других шлюзов", False,
+                                  f"записи не применились: {info['err']}"))
         elif items:
             got = gwguard.dns_local(f"_smb._tcp.{gwservices.BROWSE_DOMAIN}", "PTR")
             ok = None if got is None else bool(got)
-            checks.append(GwCheck("сервисы соседей", ok,
-                                  f"{len(items)} SMB опубликованы" if ok else
-                                  ("резолвер не отдаёт записи соседей: journalctl -u dnsmasq -e"
-                                   if ok is False else "dig не ответил")))
+            checks.append(GwCheck("SMB подсетей других шлюзов", ok,
+                                  f"{len(items)} SMB доступны" if ok else
+                                  ("резолвер не отдаёт записи: journalctl -u dnsmasq -e"
+                                   if ok is False else "не проверено: dig не ответил")))
         for c in checks:
             c.group = "svc"
         return info, checks
