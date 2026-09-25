@@ -2,7 +2,9 @@
 дрейф списка устройств админа относительно бандла."""
 from __future__ import annotations
 
+import errno
 import json
+import os
 import subprocess
 
 import pytest
@@ -268,21 +270,21 @@ def test_forward_accepts_without_iptables_is_empty(monkeypatch):
 
 
 @pytest.mark.parametrize("exc,msg", [
-    (FileNotFoundError(), "скрипта записей SMB нет — обвязка старого образца"),
-    (subprocess.TimeoutExpired("awg-lan-services.sh", 90), "таймаут установки записей SMB"),
+    (FileNotFoundError(), "скрипта записей SMB нет — перевыпусти конфигурацию шлюза"),
+    (subprocess.TimeoutExpired("awg-lan-services.sh", 90), "скрипт записей SMB не ответил за 90 с"),
 ])
 def test_run_lan_services_turns_a_missing_or_hanging_script_into_a_reason(monkeypatch, exc, msg):
     """Скрипта записей нет (обвязка до 3.1.0) или он завис — агент не падает, а
-    отдаёт серверу понятную причину: она станет строкой карточки слота."""
+    отдаёт серверу понятную причину: она станет строкой карточки слота. В
+    таймауте — тот срок, что реально ждали, а не константа из текста."""
     def run(*a, **k):
         raise exc
     monkeypatch.setattr(gwguard.subprocess, "run", run)
-    assert gwguard.run_lan_services("/tmp/x") == (False, msg)
+    assert gwguard.run_lan_services("/tmp/x", timeout=90) == (False, msg)
 
 
 @pytest.mark.parametrize("exc,msg", [
-    (FileNotFoundError(), "скрипта своих списков нет — перевыпусти конфигурацию шлюза с сервера AWG "
-                          "и примени её здесь"),
+    (FileNotFoundError(), "скрипта своих списков нет — перевыпусти конфигурацию шлюза"),
     (subprocess.TimeoutExpired("awg-lan-domain.sh", 150), "скрипт своих списков не ответил за 150 с"),
 ])
 def test_run_lan_domain_turns_a_missing_or_hanging_script_into_a_reason(monkeypatch, exc, msg):
@@ -291,7 +293,46 @@ def test_run_lan_domain_turns_a_missing_or_hanging_script_into_a_reason(monkeypa
     def run(*a, **k):
         raise exc
     monkeypatch.setattr(gwguard.subprocess, "run", run)
-    assert gwguard.run_lan_domain("add", ["example.com"]) == (False, msg)
+    assert gwguard.run_lan_domain("add", ["example.com"], timeout=150) == (False, msg)
+
+
+@pytest.mark.parametrize("err,text", [
+    (errno.ENOSPC, "нет места на диске"),
+    (errno.EROFS, "диск только для чтения"),
+    (errno.EACCES, "нет прав на запись"),
+    (errno.EPERM, "нет прав на запись"),
+    (errno.ENOENT, "нет каталога для файла"),
+    (errno.ENOTDIR, "нет каталога для файла"),
+    (errno.EIO, "ошибка ввода-вывода диска"),
+    (errno.EDQUOT, "исчерпана дисковая квота"),
+    (errno.EEXIST, "нет каталога для файла"),          # на месте каталога — файл
+    (errno.EMFILE, "ошибка записи (EMFILE)"),
+    (None, "ошибка записи"),
+    (99999, "ошибка записи"),
+])
+def test_os_error_text_names_the_cause_without_errno_noise(err, text):
+    """Отказ записи файла на шлюзе уходит в карточку слота на ВПС: там нужна
+    причина словами («нет места на диске»), а не «[Errno 28] No space left on
+    device: '/var/lib/…'» с путём малины. Незнакомый код — имя кода, без кода —
+    просто «ошибка записи», без висящих скобок."""
+    e = (OSError(err, os.strerror(err), "/var/lib/awg-gw/own-lists.new") if err is not None
+         else OSError("что-то"))
+    got = gwguard.os_error_text(e)
+    assert got == text, f"errno={err}: {got!r}"
+    assert "/var/lib" not in got and "Errno" not in got, f"сырой текст исключения в причине: {got!r}"
+
+
+def test_os_error_text_reads_the_code_of_real_subclasses(tmp_path):
+    """Настоящие исключения open() — подклассы OSError с errno: разбор по коду,
+    а не по классу. Файл внутри файла — ENOTDIR, как при сломанном каталоге
+    состояния."""
+    blocker = tmp_path / "blocker"; blocker.write_text("x", encoding="utf-8")
+    try:
+        open(blocker / "f", "w")
+    except OSError as e:
+        assert gwguard.os_error_text(e) == "нет каталога для файла", e
+    else:
+        pytest.fail("файл внутри файла открылся на запись")
 
 
 def test_both_list_scripts_wait_longer_than_the_lock(monkeypatch):

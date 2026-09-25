@@ -313,6 +313,12 @@ class LinkServer:
                 for other in list(self._sessions):
                     if other != gw.id:
                         await self.deliver_peer_services(other)
+            # прошлые записи этот слот не принял (поломка на шлюзе) — его
+            # список приходит и как просьба повторить их
+            ack = await asyncio.to_thread(self.services.gwlink_peer_services_ack, gw.id)
+            if ack and not ack.get("ok"):
+                sess.svc_sent = None
+                await self.deliver_peer_services(gw.id)
             return
         if kind == "own_ev":
             # правки своих списков с этого шлюза: слить в канон и раздать —

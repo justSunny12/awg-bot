@@ -652,10 +652,35 @@ def test_an_unwritable_sync_file_refuses_with_a_reason(agent, host, monkeypatch,
     monkeypatch.setattr(gwguard, "OWN_LISTS_NEW", str(blocker / "own-lists.new"))
     host.calls.clear()
     res = agent.apply_own_lists(_canon({"b.com": "vpn"}, ver=2))
-    assert res["ok"] is False and res["error"].startswith("файл для sync не записан: "), res
+    # каталог-«файл»: makedirs отказывает EEXIST — на месте каталога файл
+    assert res["ok"] is False and res["error"] == (
+        "непредвиденная ошибка, файл своих списков не записан: нет каталога для файла"), res
     assert "sync" not in host.calls and host.lists() == {"a.com": "vpn"}
     assert agent.own_base()["ver"] == 1
     assert agent.own_status()[0]["state"] == "failed"
+
+
+def test_a_full_disk_is_named_in_words_without_the_path(agent, host, monkeypatch):
+    """Диск малины полон: в карточку слота на ВПС уходит «нет места на диске»,
+    а не «[Errno 28] No space left on device: '/var/lib/…'» — путь малины
+    человеку на сервере ни к чему, а причина должна читаться сразу."""
+    import builtins
+    import errno
+    from awgbot.domain import gateway as gw_mod
+    _synced(agent, host, {"a.com": "vpn"})
+    real_open = builtins.open
+
+    def full_disk(path, mode="r", *a, **k):
+        # отказываем только файлу для sync — прочее (БД, состояние) пишется как обычно
+        if str(path) == gwguard.OWN_LISTS_NEW and "w" in mode:
+            raise OSError(errno.ENOSPC, "No space left on device", str(path))
+        return real_open(path, mode, *a, **k)
+    monkeypatch.setattr(gw_mod, "open", full_disk, raising=False)
+    host.calls.clear()
+    res = agent.apply_own_lists(_canon({"b.com": "vpn"}, ver=2))
+    assert res["ok"] is False and res["error"] == (
+        "непредвиденная ошибка, файл своих списков не записан: нет места на диске"), res
+    assert "sync" not in host.calls and host.lists() == {"a.com": "vpn"}, "скрипт звался без файла"
 
 
 # ── fill: адреса новых «в туннель» — после sync, фоном ──────────────────────

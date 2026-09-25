@@ -796,9 +796,9 @@ def run_lan_services(path: str = "", timeout: int = LAN_SCRIPT_TIMEOUT) -> tuple
         proc = subprocess.run([LAN_SERVICES_SCRIPT, *([path] if path else [])],
                               capture_output=True, timeout=timeout)
     except FileNotFoundError:
-        return False, "скрипта записей SMB нет — обвязка старого образца"
+        return False, "скрипта записей SMB нет — перевыпусти конфигурацию шлюза"
     except subprocess.TimeoutExpired:
-        return False, "таймаут установки записей SMB"
+        return False, f"скрипт записей SMB не ответил за {timeout} с"
     except OSError as e:
         return False, str(e)
     tail = (proc.stdout + proc.stderr).decode(errors="replace").strip().splitlines()[-3:]
@@ -833,9 +833,25 @@ def run_lan_domain(cmd: str, domains: list[str], timeout: int = LAN_SCRIPT_TIMEO
     try:
         proc = subprocess.run([LAN_DOMAIN_SCRIPT, cmd, *domains], capture_output=True, timeout=timeout)
     except FileNotFoundError:
-        return False, "скрипта своих списков нет — перевыпусти конфигурацию шлюза с сервера AWG и примени её здесь"
+        return False, "скрипта своих списков нет — перевыпусти конфигурацию шлюза"
     except subprocess.TimeoutExpired:
         return False, f"скрипт своих списков не ответил за {timeout} с"
     except (OSError, subprocess.SubprocessError) as e:
         return False, str(e)
     return proc.returncode == 0, (proc.stdout + proc.stderr).decode(errors="replace").strip()
+
+
+_OS_ERRORS = {
+    "ENOSPC": "нет места на диске", "EROFS": "диск только для чтения", "EACCES": "нет прав на запись",
+    "EPERM": "нет прав на запись", "ENOENT": "нет каталога для файла", "EIO": "ошибка ввода-вывода диска",
+    "EDQUOT": "исчерпана дисковая квота", "ENOTDIR": "нет каталога для файла",
+    "EEXIST": "нет каталога для файла",   # на месте каталога — файл
+}
+
+
+def os_error_text(e: OSError) -> str:
+    """Ошибка записи файла — человеческой строкой вместо «[Errno 28] No space
+    left on device: '/var/lib/…'»: причина по коду, остальное человеку ни к чему."""
+    import errno
+    name = errno.errorcode.get(e.errno or 0, "")
+    return _OS_ERRORS.get(name) or (f"ошибка записи ({name})" if name else "ошибка записи")

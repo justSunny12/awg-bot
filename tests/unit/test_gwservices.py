@@ -530,7 +530,7 @@ def test_a_file_outside_the_line_whitelist_never_reaches_the_helper(agent, peer,
     peer.appear()
     monkeypatch.setattr(gs, "render_dnsmasq", lambda items, nets, digest="": "server=/awg.internal/1.1.1.1\n")
     res = agent.apply_peer_services(H_NAS, [NAS])
-    assert res["ok"] is False and res["error"] == "записи SMB не прошли проверку строк", res
+    assert res["ok"] is False and res["error"] == "не пройдена проверка строк", res
     assert peer.runs == [] and not (tmp_path / "lib" / "peer-services.conf.new").exists()
     assert agent.services_applied_hash() == ""
 
@@ -540,8 +540,30 @@ def test_an_unwritable_services_file_refuses_with_a_reason(agent, peer, monkeypa
     blocker = tmp_path / "blocker"; blocker.write_text("x", encoding="utf-8")
     monkeypatch.setattr(gwguard, "PEER_SERVICES_NEW", str(blocker / "peer-services.conf.new"))
     res = agent.apply_peer_services(H_NAS, [NAS])
-    assert res["ok"] is False and res["error"].startswith("файл записей SMB не записан: "), res
+    # каталог-«файл»: makedirs отказывает EEXIST — на месте каталога файл
+    assert res["ok"] is False and res["error"] == (
+        "непредвиденная ошибка, файл записей SMB не записан: нет каталога для файла"), res
     assert peer.runs == [] and not peer.conf.exists()
+
+
+def test_a_full_disk_for_the_services_file_is_named_in_words(agent, peer, monkeypatch):
+    """Диск полон при записи файла SMB: причина словами, без пути малины и
+    «[Errno 28]»; помощник не зовётся — ставить нечего."""
+    import builtins
+    import errno
+    from awgbot.domain import gateway as gw_mod
+    peer.appear()
+    real_open = builtins.open
+
+    def full_disk(path, mode="r", *a, **k):
+        if str(path) == gwguard.PEER_SERVICES_NEW and "w" in mode:
+            raise OSError(errno.ENOSPC, "No space left on device", str(path))
+        return real_open(path, mode, *a, **k)
+    monkeypatch.setattr(gw_mod, "open", full_disk, raising=False)
+    res = agent.apply_peer_services(H_NAS, [NAS])
+    assert res["ok"] is False and res["error"] == (
+        "непредвиденная ошибка, файл записей SMB не записан: нет места на диске"), res
+    assert peer.runs == [] and not peer.conf.exists(), "помощник звался без файла"
 
 
 def test_a_refusal_that_is_not_about_the_helper_is_not_retried(agent, peer):
