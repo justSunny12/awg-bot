@@ -411,11 +411,3 @@ def bundle_menu_kb(slot: int = 0, plain: bool = False) -> InlineKeyboardMarkup:
               callback_data=SetCB(sec="rt", act="do", key="bundle_menu" if plain else "bundle_cancel",
                                   val=str(slot or "")))
     return kb.as_markup()
-
-
-def bundle_result_kb(slot: int = 0) -> InlineKeyboardMarkup:
-    """«Назад» под уведомлением о настроенном шлюзе — в карточку слота."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="\u2b05\ufe0f Назад", callback_data=(GwSlotCB(action="card", slot=slot).pack() if slot
-                                                       else SetCB(sec="rt").pack()))
-    return kb.as_markup()

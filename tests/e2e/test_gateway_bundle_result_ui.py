@@ -5,14 +5,15 @@
 (`bundle_cancel` с номером слота); где лежат файл и карточка над ним —
 запомнено. «В меню» убирает оба и открывает карточку слота. Итог применения
 с шлюза (канал линка, вид `applied`) сообщения в чат не шлёт — его человек
-видел в чате бота шлюза: успех убирает файл с карточкой и ставит карточку
-слота новым живым меню, отказ и итог о другом файле не трогают ничего.
+видел в чате бота шлюза: при любом исходе файл с карточкой уходят и карточка
+слота приходит новым живым меню; итог о другом файле не трогает ничего.
 
 Файл первого применения — под инструкцией, с «⬅️ В меню» (`bundle_menu`):
-убирает файл и инструкцию, дальше главная. Выдача ставит ожидание нового
-шлюза: его первый выход на связь каналом убирает файл с инструкцией и
-приносит «✅ Шлюз … успешно настроен» со ссылкой на бота шлюза и «Назад» в
-карточку.
+убирает файл и инструкцию, дальше главная. Агент нового шлюза в первый час
+после установки говорит каналом «установлен» (вид `installed`): админу —
+«✅ Шлюз … успешно настроен» со ссылкой на бота шлюза, без кнопок, как
+контент; если файл с инструкцией ещё в чате — они уходят и следом главное
+меню новым живым сообщением.
 
 Цена ошибки: файл с ключом линка (или токеном агента) остаётся в чате после
 того, как отслужил; «В меню» уводит не туда или удаляет чужое; итог о
@@ -260,29 +261,6 @@ async def test_the_first_install_file_offers_menu_and_is_remembered(services, sl
         "запись не найдёт файл и инструкцию или не знает, что это файл первого применения"
 
 
-async def test_the_first_install_file_starts_waiting_for_the_new_gateway(services, slots):
-    """Выдача файла первого применения ставит ожидание: первый полный снимок
-    канала слота скажет админу «шлюз настроен». Без ожидания уведомления не
-    будет вовсе; ожидание снимается один раз."""
-    _, pi, pi2 = slots
-    _slot1(services, pi)
-    services.token[2] = TOKEN2
-    assert services.gw_install_wait_take(2) is False, "ожидание стоит до выдачи файла"
-    await _issue_plain(services, _Bot(), pi2)
-    assert services.gw_install_wait_take(2) is True, "файл выдан, а нового шлюза не ждут"
-    assert services.gw_install_wait_take(2) is False, "ожидание снимается не один раз — уведомление повторится"
-    assert services.gw_install_wait_take(1) is False, "ожидание встало не на тот слот"
-
-
-async def test_the_encrypted_file_does_not_wait_for_an_install(services, slots):
-    """Перевыпуск шифрованного файла — не установка: шлюз и так на связи, и
-    «успешно настроен» после каждого переподключения было бы враньём."""
-    _, pi, pi2 = slots
-    _slot1(services, pi); _slot2(services, pi2)
-    await _issue(services, _Bot(), 2)
-    assert services.gw_install_wait_take(2) is False
-
-
 async def test_the_first_install_file_of_a_new_machine_is_remembered_too(services, slots):
     """«Новое устройство» с уже известным токеном — тот же путь выдачи."""
     _, pi, pi2 = slots
@@ -301,7 +279,6 @@ async def test_the_first_install_file_of_a_new_machine_is_remembered_too(service
     assert len(where.pop("fp", "")) == 16, "запись без отпечатка файла"
     assert where == {"chat": ADMIN, "file": doc.message_id, "instr": instr.message_id, "plain": True}, \
         "запись не найдёт файл и инструкцию или не знает, что это файл первого применения"
-    assert services.gw_install_wait_take(2) is True
 
 
 async def test_menu_under_the_first_install_file_removes_it_with_the_instruction(services, slots):
@@ -485,17 +462,34 @@ async def test_success_for_a_slot_removed_meanwhile_brings_the_main_menu(service
     assert [r[2] for r in _sent(bot)] == [main_text], "после итога по снятому слоту не главная"
 
 
-async def test_a_failure_leaves_the_file_in_place_and_says_nothing(services, slots):
-    """Отказ: файл остаётся — его можно переслать снова; в чат ВПС ничего не
-    уходит (причину человек видел у бота шлюза), запись цела."""
+async def test_a_failure_also_removes_the_file_and_brings_the_slot_card(services, slots):
+    """Отказ: файл всё равно отслужил (внутри ключ линка, причину человек
+    видел у бота шлюза) — он и карточка над ним уходят, строки об отказе в
+    чате ВПС нет, карточка слота — новым живым меню: перевыпуск оттуда же."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    bot = _Bot()
+    want_text, _ = await _card(services, bot, 2)
+    nav, (_c, _m, doc) = await _issue(services, bot, 2)
+    record = services.gw_bundle_msg_get(2)
+    await sh.bundle_applied(bot, services, 2, False, "нет <места> & прав", fp=record["fp"])
+    assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), \
+        f"после отказа файл с ключом линка остался в чате: удалены {_deleted(bot)}"
+    assert [r[2] for r in _sent(bot)] == [want_text], f"после отказа не карточка слота: {_sent(bot)}"
+    assert services.db.get_nav_message_id(ADMIN) == max(bot.markups), "карточка не стала живым меню"
+    assert services.gw_bundle_msg_get(2) == {}
+
+
+@pytest.mark.parametrize("ok", [True, False], ids=["ok", "fail"])
+async def test_a_result_about_another_file_is_ignored_whatever_the_outcome(services, slots, ok):
+    """Итог о другом файле — ни успех, ни отказ не трогают лежащий в чате."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     bot = _Bot()
     await _issue(services, bot, 2)
     record = services.gw_bundle_msg_get(2)
-    await sh.bundle_applied(bot, services, 2, False, "нет <места> & прав", fp=record["fp"])
-    assert _deleted(bot) == [], f"отказ убрал файл, который ещё пересылать: {_deleted(bot)}"
-    assert _sent(bot) == [], f"отказ принёс сообщение в чат ВПС: {_sent(bot)}"
+    await sh.bundle_applied(bot, services, 2, ok, "", fp="0" * 16)
+    assert _deleted(bot) == [] and _sent(bot) == [], (_deleted(bot), _sent(bot))
     assert services.gw_bundle_msg_get(2) == record
 
 
@@ -587,10 +581,12 @@ async def test_the_fingerprint_on_record_is_the_one_the_gateway_computes(service
 # ── новый шлюз вышел на связь ────────────────────────────────────────────────
 
 async def test_installed_gateway_removes_the_file_and_says_so_with_its_bot(services, slots):
-    """Шлюз, поставленный файлом первого применения, впервые на связи:
-    файл (ключи и токен агента) и инструкция уходят, админу — «✅ Шлюз …
-    успешно настроен 🎉» со ссылкой на бота шлюза и «⬅️ Назад» в карточку
-    слота; сообщение — живое меню чата, запись стёрта."""
+    """Агент нового шлюза сказал «установлен»: файл (ключи и токен агента) и
+    инструкция уходят; админу — «✅ Шлюз … успешно настроен 🎉» со ссылкой на
+    бота шлюза, без кнопок и помеченное контентом (возврат в меню его уберёт);
+    следом — главное меню новым сообщением, оно и есть живое меню (живой
+    кнопкой до этого была «В меню» на удалённом файле); запись стёрта."""
+    from awgbot.bot.handlers.admin import _panel_parts
     _, pi, pi2 = slots
     _slot1(services, pi)
     services.token[2] = TOKEN2
@@ -598,19 +594,35 @@ async def test_installed_gateway_removes_the_file_and_says_so_with_its_bot(servi
     _nav, instr, (_c, _m, doc) = await _issue_plain(services, bot, pi2)
     services.db.gateway_update(2, label="дом 2")
     services.set_gw_bot_identity(2, "pi2_gw_bot", "Шлюз <Pi2>")
+    services.db.pop_content_msg_ids(ADMIN)                # что пометила сама выдача — не предмет теста
     await sh.bundle_installed(bot, services, 2)
     assert {instr.message_id, doc.message_id} <= set(_deleted(bot)), \
         f"файл с токеном агента или инструкция остались в чате: удалены {_deleted(bot)}"
+    main_text, _ = await _panel_parts(services)
     sent = _sent(bot)
-    assert len(sent) == 1, sent
-    _, chat, text = sent[0]
-    assert chat == ADMIN
-    assert text == ('✅ Шлюз <b>«Pi2» (дом 2)</b> успешно настроен 🎉\n'
-                    '<b>Бот шлюза:</b> <a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>'), text
-    mid = max(bot.markups)
-    assert _buttons(bot.markups[mid]) == [("⬅️ Назад", GwSlotCB(action="card", slot=2).pack())]
-    assert services.db.get_nav_message_id(ADMIN) == mid, "уведомление не стало живым меню"
+    assert [(r[1], r[2]) for r in sent] == [
+        (ADMIN, '✅ Шлюз <b>«Pi2» (дом 2)</b> успешно настроен 🎉\n'
+                '<b>Бот шлюза:</b> <a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>'),
+        (ADMIN, main_text)], sent
+    note_id, menu_id = sorted(bot.markups)[-2:]
+    assert bot.markups[note_id] is None, "у уведомления о настройке клавиатура — второе живое меню"
+    assert bot.markups[menu_id] is not None, "главное меню пришло без кнопок"
+    assert services.db.pop_content_msg_ids(ADMIN) == [note_id], "уведомление не помечено контентом"
+    assert services.db.get_nav_message_id(ADMIN) == menu_id, "живым меню стало не главное меню"
     assert services.gw_bundle_msg_get(2) == {}, "запись о файле пережила настройку шлюза"
+
+
+async def test_installed_gateway_dims_the_previous_live_menu(services, slots):
+    """Главное меню после уведомления гасит прежнее живое меню (кнопки
+    снимаются) — две живые клавиатуры в чате значат два пути сразу."""
+    _, pi, pi2 = slots
+    _slot1(services, pi)
+    services.token[2] = TOKEN2
+    bot = _Bot()
+    await _issue_plain(services, bot, pi2)
+    services.db.nav_touch(ADMIN, 4242)
+    await sh.bundle_installed(bot, services, 2)
+    assert ("edit_markup", ADMIN, 4242) in bot.records, "прежнее живое меню не погашено"
 
 
 async def test_installed_gateway_without_a_known_bot_has_no_bot_line(services, slots):
@@ -622,18 +634,42 @@ async def test_installed_gateway_without_a_known_bot_has_no_bot_line(services, s
     bot = _Bot()
     await _issue_plain(services, bot, pi2)
     await sh.bundle_installed(bot, services, 2)
-    assert [r[2] for r in _sent(bot)] == ["✅ Шлюз <b>«Pi2»</b> успешно настроен 🎉"], _sent(bot)
+    assert _sent(bot)[0][2] == "✅ Шлюз <b>«Pi2»</b> успешно настроен 🎉", _sent(bot)
 
 
 async def test_installed_gateway_without_a_file_in_chat_still_says_so(services, slots):
-    """Файл уже убрали «В меню» — удалять нечего, но о настроенном шлюзе
-    админ узнаёт: ради этого и ждали."""
+    """Файла в чате нет (записи нет) — удалять нечего, но о настроенном шлюзе
+    админ узнаёт: одно уведомление, без кнопок, и никакого нового меню —
+    живое меню выше и так на месте."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     bot = _Bot()
+    services.db.nav_touch(ADMIN, 4242)
     await sh.bundle_installed(bot, services, 2)
     assert _deleted(bot) == [], "удалено то, чего бот не выдавал"
     assert [r[2] for r in _sent(bot)] == ["✅ Шлюз <b>«Pi2»</b> успешно настроен 🎉"], _sent(bot)
+    assert bot.markups[max(bot.markups)] is None
+    assert services.db.get_nav_message_id(ADMIN) == 4242, "живое меню подменено уведомлением"
+    assert not [r for r in bot.records if r[0] == "edit_markup"], "живое меню погашено без замены"
+
+
+async def test_installed_gateway_after_menu_was_pressed_sends_no_second_menu(services, slots):
+    """Файл уже убрали «В меню» (главная пришла тогда) — уведомление одно,
+    второго главного меню нет."""
+    from awgbot.bot.handlers.admin import _panel_parts
+    _, pi, _pi2 = slots
+    _slot1(services, pi)
+    services.token[2] = TOKEN2
+    bot = _Bot()
+    _nav, _instr, (_c, markup, doc) = await _issue_plain(services, bot, _pi2)
+    await sh.routing_action(FakeCallback(message=doc, user_id=ADMIN, bot=bot),
+                            SetCB.unpack(MENU2), services)
+    main_text, _ = await _panel_parts(services)
+    before = len(_sent(bot))
+    await sh.bundle_installed(bot, services, 2)
+    after = [r[2] for r in _sent(bot)][before:]
+    assert after == ["✅ Шлюз <b>«Pi2»</b> успешно настроен 🎉"], after
+    assert main_text not in after
 
 
 async def test_installed_gateway_leaves_an_encrypted_file_issued_after_it(services, slots):

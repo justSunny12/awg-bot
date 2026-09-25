@@ -182,9 +182,12 @@ async def run_gateway() -> None:
     from awgbot.runtime.scheduler import setup_gateway_scheduler
     from awgbot.runtime import preflight
 
+    import os
+    fresh_db = not os.path.exists(config.DB_PATH)   # базы нет — это первый запуск после установки
     db = Database(config.DB_PATH)
     db.init_schema()
     services = GatewayServices(db)
+    services.first_start_note(fresh_db)     # «установлен» серверу — только в первый час
 
     # Шлюз стоит в юрисдикции, где Telegram заблокирован, и ходит к нему через
     # туннель до ВПС — по метке, как всё помеченное на этой машине. Туннель

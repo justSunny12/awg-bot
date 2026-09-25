@@ -185,7 +185,7 @@ async def test_the_peer_access_dialog_mentions_finder_only_when_turning_on(servi
     text = _screen(nav)[0]
     win = ("На Windows-устройствах SMB-серверы каждой подсети будут доступны по пути вида "
            "<code>\\\\имя.awg.internal</code>.")
-    mac = "На устройствах macOS SMB-серверы каждой подсети станут видны в Finder: «Сеть» → awg.internal."
+    mac = "На устройствах macOS — станут видны в Finder: «Сеть» → awg.internal."
     avahi = "Видны только серверы тех подсетей, где на шлюзе запущен avahi-daemon."
     assert win + "\n" + mac + "\n" + avahi + "\n\n" in text, text
     assert text.index(win) < text.index("После включения перевыпусти"), "про SMB — до совета о перевыпуске"

@@ -752,6 +752,35 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         peers = gwguard.unit_env("PEER_HOME_NETS").split()
         return (nets[0] if nets else ""), gwguard.script_status().get("LAN_ADDR", ""), peers
 
+    # ── первый выход на связь после установки — серверу каналом ─────────────
+    _FIRST_START_KEY = "agent_first_start_at"
+    _INSTALLED_SENT_KEY = "gwlink_installed_sent"
+    _INSTALLED_REPORT_WINDOW_S = 3600
+
+    def first_start_note(self, fresh_db: bool) -> None:
+        """Отметить первый запуск агента — только когда базы до этого запуска не
+        было (её создал установщик). Обновлённый со старой версии агент отметки
+        не имеет и не получает: иначе первый запуск после обновления сошёл бы за
+        установку, и админ получил бы «успешно настроен» по каждому шлюзу.
+        Повторные запуски отметку не двигают."""
+        if fresh_db and not self.db.get_state(self._FIRST_START_KEY):
+            self.db.set_state(self._FIRST_START_KEY, timeutil.to_iso(timeutil.now()))
+
+    def installed_report_pending(self) -> bool:
+        """Сказать ли серверу «установлен»: один раз, и только если агент
+        впервые запустился меньше часа назад. Канала в этот час не было —
+        уведомления не будет вовсе: «шлюз настроен» спустя дни только пугает."""
+        if self.db.get_state(self._INSTALLED_SENT_KEY):
+            return False
+        try:
+            age = (timeutil.now() - timeutil.parse_iso(self.db.get_state(self._FIRST_START_KEY) or "")).total_seconds()
+        except ValueError:
+            return False
+        return age <= self._INSTALLED_REPORT_WINDOW_S
+
+    def installed_report_done(self) -> None:
+        self.db.set_state(self._INSTALLED_SENT_KEY, timeutil.to_iso(timeutil.now()))
+
     # ── итог применения файла из чата — серверу каналом ──────────────────────
     _APPLIED_PENDING_KEY = "gwlink_applied_pending"
 

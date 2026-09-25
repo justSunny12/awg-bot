@@ -168,6 +168,7 @@ class LinkClient:
             await self.push(full=True)
             await self.push_services(force=True)
             await self.flush_applied()
+            await self._maybe_installed()
             await self._maybe_claim()
             while True:
                 try:
@@ -384,6 +385,16 @@ class LinkClient:
         await self._send("lists_ack", {"ok": bool(result.get("ok")), "hash": digest,
                                        "error": str(result.get("error") or "")[:300]},
                          pad=gwlink.PAD_DELTA)
+
+    async def _maybe_installed(self) -> None:
+        """Первый выход на связь после установки — серверу «installed»: там по
+        нему уберут файл первого применения из чата и скажут админу, что шлюз
+        настроен. После снимка: серверу нужен бот шлюза из него."""
+        pending = getattr(self.services, "installed_report_pending", None)
+        if pending is None or not await asyncio.to_thread(pending):
+            return
+        if await self._send("installed", {}, pad=gwlink.PAD_DELTA):
+            await asyncio.to_thread(self.services.installed_report_done)
 
     async def _maybe_claim(self) -> None:
         """Шлюз в основном боте не помечен — отправить токен пометки каналом.

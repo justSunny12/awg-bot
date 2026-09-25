@@ -220,12 +220,10 @@ async def _drop_bundle_msgs(bot, services, slot_id: int, fp: str = "") -> bool:
 
 async def bundle_applied(bot, services, slot_id: int, ok: bool, error: str, fp: str = "") -> None:
     """Итог применения пришёл каналом. Сообщения об итоге нет: его человек уже
-    видел в чате бота шлюза. Применилось — файл отслужил (внутри ключ линка):
-    он и сообщение над ним уходят из чата, на их месте — карточка слота, как
-    по «В меню». Не применилось — файл остаётся: его можно переслать снова.
+    видел в чате бота шлюза. При любом исходе файл отслужил (внутри ключ
+    линка): он и сообщение над ним уходят из чата, на их месте — карточка
+    слота, как по «В меню»; после отказа файл перевыпускают оттуда же.
     Итог о другом файле (fp не сошёлся) или без файла в чате — только запись."""
-    if not ok:
-        return
     where = await call(services.gw_bundle_msg_get, slot_id)
     chat_id = int(where.get("chat") or config.ADMIN_ID)
     if not await _drop_bundle_msgs(bot, services, slot_id, fp):
@@ -251,23 +249,30 @@ async def _show_card_anew(bot, services, chat_id: int, slot_id: int) -> None:
 
 
 async def bundle_installed(bot, services, slot_id: int) -> None:
-    """Шлюз, поставленный файлом первого применения, впервые вышел на связь
-    каналом: файл с ключами и токеном и инструкция уходят из чата, админу —
-    «✅ Шлюз … успешно настроен» со ссылкой на бота шлюза и «Назад» в карточку."""
+    """Агент нового шлюза впервые вышел на связь каналом: админу «✅ Шлюз …
+    успешно настроен» со ссылкой на бота шлюза — без кнопок, как контент.
+    Файл первого применения и инструкция, если ещё в чате, уходят, и тогда
+    следом новым сообщением идёт главное меню: живой кнопкой была «В меню»
+    на файле. Файл уже убрали — меню выше и так живое, второго не нужно."""
     where = await call(services.gw_bundle_msg_get, slot_id)
     chat_id = int(where.get("chat") or config.ADMIN_ID)
+    dropped = False
     if where.get("plain"):
         # шифрованный файл, выпущенный после файла первого применения, — не
         # этого события: его уберёт итог применения
-        await _drop_bundle_msgs(bot, services, slot_id)
+        dropped = await _drop_bundle_msgs(bot, services, slot_id)
     try:
         display, agent_bot = await call(services.gw_bundle_target, slot_id)
     except (ServiceError, OSError):
         display, agent_bot = f"слот {slot_id}", {}
-    await _dismiss_previous_nav(bot, services, chat_id)
-    sent = await bot.send_message(chat_id, texts.gateway_installed_text(display, agent_bot),
-                                  reply_markup=kb.bundle_result_kb(slot_id))
-    await call(services.db.nav_touch, chat_id, sent.message_id)
+    sent = await bot.send_message(chat_id, texts.gateway_installed_text(display, agent_bot))
+    await call(services.db.add_content_msg_id, chat_id, sent.message_id)
+    if dropped:
+        from awgbot.bot.handlers.admin import _panel_parts
+        text, markup = await _panel_parts(services)
+        await _dismiss_previous_nav(bot, services, chat_id)
+        menu = await bot.send_message(chat_id, text, reply_markup=markup)
+        await call(services.db.nav_touch, chat_id, menu.message_id)
 
 
 def _slot_of(callback_data) -> int:
@@ -431,8 +436,6 @@ async def _send_plain_bundle(message: Message, services, slot: int = 0, instr_id
     if slot:
         await call(services.gw_bundle_msg_set, slot, message.chat.id, sent.message_id, instr_id,
                    services.bundle_fingerprint(blob), True)
-        # первый выход шлюза на связь каналом — «✅ … успешно настроен» админу
-        await call(services.gw_install_wait_set, slot)
 
 
 # ── слоты шлюзов (концепт «резервный шлюз» §6) ───────────────────────────────
