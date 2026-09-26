@@ -17,6 +17,22 @@ class Menu(CallbackData, prefix="m"):
     action: str
 
 
+class CancelCB(CallbackData, prefix="x"):
+    """«✖️ Отмена» под приглашением к вводу: сбросить диалог и вернуть экран,
+    с которого пришли (kind, ref — экран реестра bot/screens.py)."""
+    kind: str
+    ref: int = 0
+
+
+class PresetCB(CallbackData, prefix="ps"):
+    """Кнопка-пресет числа вместо ввода: kind — что выбираем (devlimit —
+    лимит трафика устройства, pause — дни паузы), ref — объект (устройство,
+    профиль), val — значение; 0 у лимита — без лимита, -1 — «✏️ Другое»."""
+    kind: str
+    ref: int = 0
+    val: int = 0
+
+
 class ClientCB(CallbackData, prefix="c"):
     """Действия над клиентом (админ). action: open|devices|add_device|
     edit_name|edit_limit|edit_traffic|edit_period|extend|resume_pause|delete|
@@ -28,7 +44,8 @@ class ClientCB(CallbackData, prefix="c"):
 class DeviceCB(CallbackData, prefix="d"):
     """Действия над устройством. action: open|connect_menu|gen_link|gen_qr|
     gen_file|gen_guide|reassign|transfer|transfer_yes|reinvite|
-    edit_name|edit_traffic|add|add_self|add_friend"""
+    edit_name|edit_traffic|add|add_self|add_friend (add_self/add_friend —
+    переключатель «для кого» на приглашении ввода имени)"""
     action: str
     device_id: int = 0
 
@@ -68,11 +85,10 @@ class UpdateCB(CallbackData, prefix="upd"):
 
 
 class PauseCB(CallbackData, prefix="pz"):
-    """Приостановка подписки клиентом. action: ask (показать инфо+выбор дней) |
-    pick (выбран пресет дней) | other (ввод своего числа) | confirm (войти в
-    паузу) | resume_ask (спросить про досрочный выход) | resume (выйти
-    досрочно) | cancel (закрыть диалог). ref — id клиента, days — выбранное
-    число дней (для pick/confirm)."""
+    """Приостановка подписки клиентом. action: ask (экран паузы с пресетами
+    дней) | pick (выбран пресет — пауза ставится сразу) | other (ввод своего
+    числа) | resume (снять паузу, без подтверждения) | cancel (назад к
+    подписке). ref — id клиента, days — выбранное число дней (pick)."""
     action: str
     ref: int = 0
     days: int = 0
@@ -111,7 +127,8 @@ class ReassignCB(CallbackData, prefix="ra"):
 
 
 class HelpCB(CallbackData, prefix="h"):
-    """Меню помощи с настройкой. platform: apple|android|windows|mac|skip|root"""
+    """Меню помощи с настройкой. platform: apple|android|windows|mac|skip|root.
+    У гостя те же кнопки: роутер гайдов принимает обе роли."""
     platform: str
 
 
@@ -161,8 +178,9 @@ class SetCB(CallbackData, prefix="set"):
 
 class RoutingCB(CallbackData, prefix="rt"):
     """Условная маршрутизация. action:
-      panel   — открыть раздел клиента (список доменов + вход в устройства);
-      devs    — экран устройств профиля с переключателями (ref = client_id);
+      panel   — раздел профиля: переключатели устройств и вход в сайты;
+      sites   — экран «📋 Сайты» (ref = client_id);
+      devs    — прежний экран устройств (кнопки из старых сообщений → panel);
       dev     — переключить режим ОДНОГО устройства (ref = device_id);
       all     — включить/выключить все устройства профиля (ref = client_id);
       add     — начать ввод доменов;

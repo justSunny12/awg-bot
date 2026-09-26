@@ -70,9 +70,8 @@ def rf_line(rx: int, tx: int, label: str = "") -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Потребление (в UI слово «трафик» заменено на «потребление», чтобы не пугать).
-# Расход — автоформатом human_bytes; лимит — в ГБ с 2 знаками. Клиент/друг видят
-# СУММУ (up+down) без разбивки; админ — тотал + разбивку ↑↓.
+# Трафик. Расход — автоформатом human_bytes; лимит — в ГБ с 2 знаками.
+# Клиент/друг видят СУММУ (up+down) без разбивки; админ — тотал + разбивку ↑↓.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Дубль services.BYTES_PER_GB — НАМЕРЕННО: физическая константа (разойтись не
@@ -92,11 +91,11 @@ def _dev_traffic_line(dev_limit_bytes: int, profile_limit_bytes: int, *, own: bo
     остаётся у дарителя). Когда не ограничивает ни то, ни другое — говорить не
     о чем, и оговорка про лимит профиля только сбивает: лимита нет вовсе."""
     if dev_limit_bytes:
-        return f"Потребление устройства: {gb_str(dev_limit_bytes)}"
+        return f"Лимит трафика устройства: {gb_str(dev_limit_bytes)}"
     if profile_limit_bytes:
         whose = "лимита профиля" if own else "твоего лимита профиля"
-        return f"Потребление устройства не ограничено в рамках {whose}"
-    return "Потребление устройства не ограничено"
+        return f"Трафик устройства — в пределах {whose}"
+    return "Трафик устройства без лимита"
 
 
 def _limit_devices_str(limit: int) -> str:
@@ -130,7 +129,7 @@ def consumption_line(used_sum: int, limit_bytes: int, *, blocked: bool) -> str:
     """Строка потребления устройства у клиента/друга: «8.99 из 50 ГБ (лимит
     устройства)», без своего лимита — «8.99 ГБ». blocked — лимит исчерпан;
     когда снимется, говорит строка блокировок ниже, не эта."""
-    line = f"Потребление за месяц: {used_of_limit(used_sum, limit_bytes, 'лимит устройства')}"
+    line = f"Трафик за месяц: {used_of_limit(used_sum, limit_bytes, 'лимит устройства')}"
     if blocked and limit_bytes:
         line += " — исчерпан"
     return line
@@ -138,7 +137,7 @@ def consumption_line(used_sum: int, limit_bytes: int, *, blocked: bool) -> str:
 
 def consumption_line_admin(rx: int, tx: int, limit_bytes: int) -> str:
     """Строка потребления устройства для админа: то же + разбивка ↑↓."""
-    return (f"Потребление: {used_of_limit(int(rx) + int(tx), limit_bytes, 'лимит устройства')} "
+    return (f"Трафик: {used_of_limit(int(rx) + int(tx), limit_bytes, 'лимит устройства')} "
             f"{_updown(rx, tx)}")
 
 
@@ -152,13 +151,34 @@ def client_total_line(rx: int, tx: int, limit_bytes: int, bonus_bytes: int,
     else:
         base = used_of_limit(total, limit_bytes)
     if for_admin:
-        return f"Потребление профиля за месяц: {base} {_updown(rx, tx)}"
-    return f"Потребление за месяц: {base}"
+        return f"Трафик профиля за месяц: {base} {_updown(rx, tx)}"
+    return f"Трафик за месяц: {base}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Устройства
 # ─────────────────────────────────────────────────────────────────────────────
+
+def device_state(dev, *, for_admin: bool = False) -> str:
+    """Один значок состояния устройства, по приоритету: ⛔ заблокировано
+    (видимой для роли причиной) → ⏳ приглашение другу не принято → 🟢 онлайн
+    → ⚪ офлайн. Для строк списков и кнопок."""
+    from awgbot.core import blocks
+    if getattr(dev, "is_gateway", 0):
+        return "🛰"
+    if blocks.blocked_marker_device(int(getattr(dev, "block_reason", 0)), for_admin=for_admin):
+        return "⛔"
+    friend = getattr(dev, "friend", None)
+    if friend is not None and getattr(friend, "status", None) == "pending":
+        return "⏳"
+    return "🟢" if timeutil.handshake_is_online(getattr(dev, "last_handshake", None)) else "⚪"
+
+
+def details(text: str) -> str:
+    """Свёрнутый абзац «подробнее»: раскрывается нажатием, экран остаётся
+    коротким."""
+    return f"<blockquote expandable>{text}</blockquote>"
+
 
 def device_label(dev, *, for_admin: bool = False) -> str:
     """Имя устройства + звёздочка «создано не ботом» + индикатор онлайна +

@@ -1,18 +1,17 @@
 """
 handlers/routing.py — роутер условной маршрутизации: раздел профиля.
 
-Тумблеры устройств и личный список адресов — для клиента над СВОИМ профилем,
-для админа над ЛЮБЫМ: своим (вход с главной) или чужим (вход из карточки
-профиля при разборе проблемы). Админское разрешение живёт в settings.py.
+Один экран «🇷🇺 РФ-доступ»: переключатели устройств (свои и удерживаемые),
+«Выбрать все», свои сайты — счётчиком и отдельным экраном «📋 Сайты». Для
+клиента и гостя — над СВОИМ профилем, для админа — над любым: своим (вход с
+главной) или чужим (из карточки профиля). Админское разрешение — в settings.py.
 
 Профиль для действия берётся в ОДНОМ месте (_profile): клиент — из контекста,
 чужой id в кнопке он получить не может; админ — из ref кнопки (middleware
-отдаёт ему client=None). Раньше ref у админа учитывали только четыре действия,
-а список адресов правился всегда у него самого, из чьей бы панели он ни жал.
+отдаёт ему client=None).
 
-Ключевое свойство фичи, из которого следует вся простота этих хендлеров: конфиг
-устройства от переключения НЕ меняется. Поэтому тумблер не влечёт ни перевыпуска
-ссылок, ни предупреждений — щёлкнул и щёлкнул.
+Ключевое свойство фичи: конфиг устройства от переключения НЕ меняется —
+тумблер не влечёт ни перевыпуска ссылок, ни предупреждений.
 """
 
 from __future__ import annotations
@@ -26,16 +25,12 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.callbacks import ClientCB, FriendCB, Menu, RoutingCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.handlers.common import (call, ask_tracked, cleanup_content,
-                                        edit, send_menu)
+from awgbot.bot.handlers.common import (call, ask_here, back_to_context, edit, role_of)
 from awgbot.bot.states import RoutingDomains
 
 router = Router(name="routing")
-# Админ тоже пользуется VPN, а middleware отдаёт ему role=admin и client=None.
-# Без него в фильтре у админа не было бы ни мастер-тумблера, ни списка адресов —
-# только право раздавать доступ другим.
-# Гость (invited) — тоже субъект: его переданные устройства, его список
-# адресов.
+# Админ тоже пользуется VPN (middleware отдаёт ему role=admin и client=None);
+# гость (invited) — субъект своих переданных устройств и своего списка.
 router.message.filter(RoleFilter("client", "admin", "invited"))
 router.callback_query.filter(RoleFilter("client", "admin", "invited"))
 
@@ -51,10 +46,8 @@ async def _profile(services, client, ref: int = 0):
 
 
 async def _guard(cb: CallbackQuery, services, client) -> bool:
-    """Фича доступна этому профилю? Проверяем на КАЖДОМ действии, а не только при
-    отрисовке меню: разрешение мог отозвать админ, пока у человека открыт экран
-    со старыми кнопками. Для чужого профиля у админа — та же проверка: без
-    разрешения раздела у профиля нет, и править его нечего."""
+    """Фича доступна этому профилю? Проверяем на КАЖДОМ действии: разрешение
+    мог отозвать админ, пока у человека открыт экран со старыми кнопками."""
     if client is not None and await call(services.routing_client_visible, client):
         return True
     await cb.answer(texts.ROUTING_UNAVAILABLE, show_alert=True)
@@ -62,9 +55,8 @@ async def _guard(cb: CallbackQuery, services, client) -> bool:
 
 
 def _back_target(client, speaker) -> str:
-    """Куда ведёт «Назад» из раздела. Клиент и админ в своём разделе — на
-    главную (карточки админа в списке профилей нет). Админ в чужом — в карточку
-    того профиля, откуда пришёл."""
+    """Куда ведёт «Назад» из раздела: клиент и админ в своём — на главную,
+    гость — на свою главную, админ в чужом — в карточку того профиля."""
     if speaker is None and client.tg_id != config.ADMIN_ID:
         return ClientCB(action="open", client_id=client.id).pack()
     if getattr(client, "is_guest", False):
@@ -73,32 +65,45 @@ def _back_target(client, speaker) -> str:
 
 
 async def panel_view(services, client, back_target: str):
-    """(text, markup) раздела РФ-доступа.
-
-    Вынесено из show_panel, потому что вход бывает не только по колбэку: после
-    приёма адресов возвращаемся в тот же раздел НОВЫМ сообщением — редактировать
-    там нечего."""
-    domains = await call(services.routing_domains, client.id)
+    """(text, markup) раздела РФ-доступа."""
+    devices = await call(services.routing_devices, client.id)
     enabled, total = await call(services.routing_device_counts, client.id)
+    lent_out = await call(services.routing_lent_out, client.id)
+    domains = await call(services.routing_domains, client.id)
     link_ok = await call(services.routing_link_ok)
-    on = enabled > 0
-    text = texts.routing_panel_text(
-        master_on=on, domains=domains,
-        enabled=enabled, total=total, link_ok=link_ok)
     from awgbot.bot import paging
+    text = texts.routing_panel_text(enabled=enabled, total=total, domains=domains,
+                                    lent_out=lent_out, link_ok=link_ok)
     return text, kb.routing_panel(
-        client.id, master_on=on, domains=domains,
-        enabled=enabled, total=total, back_target=back_target,
+        client.id, devices, lent_out=lent_out, enabled=enabled, total=total,
+        n_domains=len(domains), back_target=back_target,
         page=paging.page_of(client.tg_id, "rtpanel", client.id))
 
 
+async def sites_view(services, client):
+    domains = await call(services.routing_domains, client.id)
+    from awgbot.bot import paging
+    return (texts.routing_sites_text(domains),
+            kb.routing_sites(client.id, domains, page=paging.page_of(client.tg_id, "rtsites", client.id)))
+
+
+async def screen_for(services, client, ref: int, kind: str):
+    """Экран реестра: kind = rf | sites; client — говорящий (None у админа),
+    ref — профиль. None — профиля нет или фича ему не выдана."""
+    profile = await _profile(services, client, ref)
+    if profile is None or not await call(services.routing_client_visible, profile):
+        return None
+    if kind == "sites":
+        return await sites_view(services, profile)
+    return await panel_view(services, profile, _back_target(profile, client))
+
+
 async def show_panel(cb: CallbackQuery, services, client, speaker):
-    """Раздел РФ-доступа: переключатель, охват, личный список."""
     text, markup = await panel_view(services, client, _back_target(client, speaker))
     await edit(cb, text, markup)
 
 
-@router.callback_query(RoutingCB.filter(F.action == "panel"))
+@router.callback_query(RoutingCB.filter(F.action.in_(("panel", "devs"))))
 async def routing_panel(cb: CallbackQuery, callback_data: RoutingCB, client, services,
                         state: FSMContext):
     profile = await _profile(services, client, callback_data.ref)
@@ -109,52 +114,17 @@ async def routing_panel(cb: CallbackQuery, callback_data: RoutingCB, client, ser
     await cb.answer()
 
 
-async def devices_view(services, client):
-    """(text, markup) экрана устройств субъекта: свои и удерживаемые с
-    переключателями, свои переданные — строкой без него."""
-    devices = await call(services.routing_devices, client.id)
-    enabled, total = await call(services.routing_device_counts, client.id)
-    lent_out = await call(services.routing_lent_out, client.id)
-    from awgbot.bot import paging
-    return texts.routing_devices_text(enabled, total, lent_out), kb.routing_devices(
-        client.id, devices, lent_out=lent_out,
-        back_target=RoutingCB(action="panel", ref=client.id).pack(),
-        page=paging.page_of(client.tg_id, "rtdevs", client.id))
-
-
 @router.callback_query(RoutingCB.filter(F.action == "lent"))
 async def routing_lent_row(cb: CallbackQuery):
-    """Строка переданного устройства — без действия: управляет держатель."""
     await cb.answer("Этим устройством управляет тот, кому оно передано", show_alert=True)
-
-
-async def _show_devices(cb: CallbackQuery, services, client) -> None:
-    text, markup = await devices_view(services, client)
-    await edit(cb, text, markup)
-
-
-@router.callback_query(RoutingCB.filter(F.action == "devs"))
-async def routing_devices_screen(cb: CallbackQuery, callback_data: RoutingCB, client,
-                                 services):
-    """Экран устройств: переключатели по одному плюс массовое действие."""
-    profile = await _profile(services, client, callback_data.ref)
-    if not await _guard(cb, services, profile):
-        return
-    await _show_devices(cb, services, profile)
-    await cb.answer()
 
 
 @router.callback_query(RoutingCB.filter(F.action == "dev"))
 async def routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
                                 client, services):
-    """Переключить режим на одном устройстве. В ref здесь device_id, а не
-    client_id, — профиль достаём через устройство. Экран перерисовывается на
-    месте."""
+    """Переключить режим на одном устройстве. В ref — device_id; профиль
+    достаём через устройство. Экран перерисовывается на месте."""
     dev = await call(services.db.get_device, callback_data.ref)
-    # Переключает СУБЪЕКТ устройства: держатель, а если
-    # его нет — владелец. Чужое у клиента и своё переданное у владельца — отказ
-    # молча по существу: колбэк мог прийти из старого сообщения, а объяснять
-    # чужой id ответом «нет такого» незачем.
     if dev is None:
         await cb.answer(texts.ROUTING_UNAVAILABLE, show_alert=True)
         return
@@ -163,22 +133,19 @@ async def routing_device_toggle(cb: CallbackQuery, callback_data: RoutingCB,
         await cb.answer(texts.ROUTING_UNAVAILABLE, show_alert=True)
         return
     if client is None and dev.is_lent:
-        # админ из чужой панели: переданным управляет держатель
         await cb.answer("Этим устройством управляет тот, кому оно передано", show_alert=True)
         return
     profile = await _profile(services, client, subject_id)
     if not await _guard(cb, services, profile):
         return
     new_state = await call(services.toggle_routing_device, dev.id)
-    await _show_devices(cb, services, profile)
+    await show_panel(cb, services, profile, client)
     await cb.answer("включено" if new_state else "выключено")
 
 
 @router.callback_query(RoutingCB.filter(F.action == "all"))
 async def routing_all_toggle(cb: CallbackQuery, callback_data: RoutingCB, client, services):
-    """Массовое действие. Направление ВЫВОДИМ из состояния: выключить всё
-    осмысленно, только когда включено уже всё; в остальных случаях полезнее
-    довести набор до полного."""
+    """Массовый выбор: ☑️ — довести до всех; ✅ (включены все) — снять все."""
     profile = await _profile(services, client, callback_data.ref)
     if not await _guard(cb, services, profile):
         return
@@ -186,16 +153,24 @@ async def routing_all_toggle(cb: CallbackQuery, callback_data: RoutingCB, client
     if not total:
         await cb.answer("Устройств пока нет", show_alert=True)
         return
-    # Не «включено ноль», а «включено не всё»: подпись кнопки гласит
-    # «включить все», пока хоть одно выключено, и действие обязано ей
-    # соответствовать.
     turn_on = enabled < total
     await call(services.set_routing_all, profile.id, turn_on)
-    await _show_devices(cb, services, profile)
+    await show_panel(cb, services, profile, client)
     await cb.answer("Включено на всех" if turn_on else "Выключено на всех")
 
 
-# ── Личный список адресов ────────────────────────────────────────────────────
+# ── свои сайты ───────────────────────────────────────────────────────────────
+
+@router.callback_query(RoutingCB.filter(F.action == "sites"))
+async def routing_sites(cb: CallbackQuery, callback_data: RoutingCB, client, services,
+                        state: FSMContext):
+    profile = await _profile(services, client, callback_data.ref)
+    if not await _guard(cb, services, profile):
+        return
+    await state.clear()
+    await edit(cb, *await sites_view(services, profile))
+    await cb.answer()
+
 
 @router.callback_query(RoutingCB.filter(F.action == "add"))
 async def routing_add_start(cb: CallbackQuery, callback_data: RoutingCB, client, services,
@@ -204,53 +179,36 @@ async def routing_add_start(cb: CallbackQuery, callback_data: RoutingCB, client,
     if not await _guard(cb, services, profile):
         return
     await state.set_state(RoutingDomains.value)
-    # Чей список пополняем, помнит диалог: на шаге приёма текста кнопки с id
-    # профиля уже нет, а у админа контекст — не он сам.
-    await state.update_data(rt_client=profile.id)
-    await ask_tracked(cb.message, services, texts.ROUTING_ADD_PROMPT,
-                      reply_markup=kb.reply_cancel())
+    # чей список пополняем, помнит диалог: у админа контекст — не он сам
+    await ask_here(cb, services, state, texts.ROUTING_ADD_PROMPT, "sites", profile.id,
+                   rt_client=profile.id)
     await cb.answer()
 
 
 @router.message(RoutingDomains.value)
 async def routing_add_apply(message: Message, client, services, state: FSMContext):
-    """Приём пачки. Разбор показываем построчно: человек вставляет списком, и
-    молча взять половину — оставить его гадать, почему добавилось меньше.
-
-    Отчёт печатаем НАД разделом и возвращаемся в него же: иначе диалог кончался
-    сообщением без единой кнопки, а приглашение «пришли адреса» так и висело в
-    чате."""
-    ref = int((await state.get_data()).get("rt_client") or 0)
+    """Приём пачки: итог — первой строкой экрана «Сайты», приглашение и
+    вставленный список убираются."""
+    data = await state.get_data()
+    ref = int(data.get("rt_client") or 0)
     profile = await _profile(services, client, ref)
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     await state.clear()
-    # Тот же гвард, что и на кнопках. Здесь его не было, и это была дыра: между
-    # «пришли адреса» и отправкой списка админ мог отозвать разрешение, а
-    # состояние FSM про это не знает — список принимался бы уже у того, кому
-    # фича больше не положена.
+    role = role_of(client)
+    # тот же гвард, что и на кнопках: разрешение могли отозвать во время ввода
     if profile is None or not await call(services.routing_client_visible, profile):
-        await cleanup_content(message.bot, services, message.chat.id)
-        await message.answer(texts.ROUTING_UNAVAILABLE, reply_markup=kb.reply_hide())
+        await back_to_context(message, services, {}, role, client, note="⚠️ " + texts.ROUTING_UNAVAILABLE)
         return
     res = await call(services.routing_add_domains, profile.id, message.text or "")
     report = texts.routing_add_report(res.added, res.rejected, res.over_limit, res.limit)
-
-    # приглашение «пришли адреса» и вставленный список убираем — они отслужили
-    await cleanup_content(message.bot, services, message.chat.id)
-    await message.answer(report, reply_markup=kb.reply_hide())
-    profile = await call(services.db.get_client, profile.id)
-    text, markup = await panel_view(services, profile, _back_target(profile, client))
-    await send_menu(message, services, text, markup)
+    await back_to_context(message, services, data, role, client, note=report)
 
 
 @router.callback_query(RoutingCB.filter(F.action == "del"))
 async def routing_delete(cb: CallbackQuery, callback_data: RoutingCB, client, services):
-    """Удаление по позиции в показанном списке.
-
-    Домен в callback_data не влезает (64 байта на всю строку), поэтому носим
-    индекс и перечитываем список на применении: если он успел измениться в
-    другом окне, границы не сойдутся и мы ничего не удалим молча наугад.
-    """
+    """Удаление по позиции в показанном списке — сразу, итог всплывашкой.
+    Домен в callback_data не влезает (64 байта), поэтому носим индекс и
+    перечитываем список: изменился — ничего не удаляем наугад."""
     profile = await _profile(services, client, callback_data.ref)
     if not await _guard(cb, services, profile):
         return
@@ -258,15 +216,12 @@ async def routing_delete(cb: CallbackQuery, callback_data: RoutingCB, client, se
     idx = callback_data.idx
     if not (0 <= idx < len(domains)):
         await cb.answer("Список изменился — открой заново", show_alert=True)
-        await show_panel(cb, services, profile, client)
+        await edit(cb, *await sites_view(services, profile))
         return
     removed = domains[idx]
     await call(services.routing_remove_domain, profile.id, removed)
-    await cb.answer(f"Удалено: {removed}")
-    # итог — на месте панели и остаётся в чате, панель следом (как у добавления)
-    await edit(cb, texts.routing_domain_removed(removed), None)
-    text, markup = await panel_view(services, profile, _back_target(profile, client))
-    await send_menu(cb.message, services, text, markup, keep_id=cb.message.message_id)
+    await cb.answer(texts.routing_domain_removed(removed))
+    await edit(cb, *await sites_view(services, profile))
 
 
 @router.callback_query(RoutingCB.filter(F.action == "clear"))
@@ -274,7 +229,8 @@ async def routing_clear_ask(cb: CallbackQuery, callback_data: RoutingCB, client,
     profile = await _profile(services, client, callback_data.ref)
     if not await _guard(cb, services, profile):
         return
-    await edit(cb, texts.ROUTING_CLEAR_CONFIRM, kb.routing_clear_confirm(profile.id))
+    n = len(await call(services.routing_domains, profile.id))
+    await edit(cb, texts.routing_clear_ask(n), kb.routing_clear_confirm(profile.id))
     await cb.answer()
 
 
@@ -284,5 +240,8 @@ async def routing_clear_apply(cb: CallbackQuery, callback_data: RoutingCB, clien
     if not await _guard(cb, services, profile):
         return
     n = await call(services.routing_clear_domains, profile.id)
-    await show_panel(cb, services, profile, client)
+    await edit(cb, *await sites_view(services, profile))
     await cb.answer(f"Удалено адресов: {n}" if n else "Список и так был пуст")
+
+
+__all__ = ["router", "panel_view", "sites_view", "screen_for"]

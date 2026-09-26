@@ -133,6 +133,69 @@ async def _track_content(services, sent) -> None:
     await call(services.db.add_content_msg_id, sent.chat.id, sent.message_id)
 
 
+async def ask_here(cb: CallbackQuery, services, state, prompt: str, kind: str,
+                   ref: int = 0, **data) -> None:
+    """Приглашение к вводу НА МЕСТЕ экрана, с инлайн «✖️ Отмена». В FSM-данные
+    кладётся экран-контекст (kind, ref): после ввода или отмены бот рисует его
+    заново (back_to_context). Само приглашение — в служебные: убирается вместе
+    с вводом человека."""
+    await state.update_data(ctx_kind=kind, ctx_ref=int(ref or 0), **data)
+    await edit(cb, prompt, kb.cancel_input(kind, ref))
+    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
+
+
+async def back_to_context(message: Message, services, data: dict, role: str, client=None,
+                          note: str = "") -> None:
+    """После ввода: убрать приглашение и ввод, показать экран-контекст новым
+    сообщением с итогом первой строкой. Экрана нет (объект пропал, старый
+    диалог) — главная роли."""
+    from awgbot.bot import screens
+    await cleanup_content(message.bot, services, message.chat.id)
+    parts = await screens.render(data.get("ctx_kind") or "main", data.get("ctx_ref") or 0,
+                                 services=services, role=role, client=client,
+                                 chat_id=message.chat.id, note=note)
+    if parts is None:
+        parts = await screens.render("main", services=services, role=role, client=client,
+                                     chat_id=message.chat.id, note=note)
+    if parts is None:
+        return
+    await send_menu(message, services, *parts)
+
+
+async def show_screen(message: Message, services, role: str, client, kind: str, ref: int = 0) -> bool:
+    """Экран реестра по ссылке /start <payload>: команду из чата убрать (она
+    служебная), экран — на месте живого меню, как переход по кнопке; новым
+    сообщением — только если меню нет или его не отредактировать. False —
+    такого экрана нет (чужой объект): вызывающий покажет главную."""
+    from awgbot.bot import screens
+    parts = await screens.render(kind, ref, services=services, role=role, client=client,
+                                 chat_id=message.chat.id)
+    if parts is None:
+        return False
+    try:
+        await message.delete()
+    except Exception:                                  # noqa: BLE001
+        pass
+    text, markup = parts
+    nav_id = await call(services.db.get_nav_message_id, message.chat.id)
+    if nav_id is not None:
+        try:
+            await message.bot.edit_message_text(text, chat_id=message.chat.id, message_id=nav_id,
+                                                reply_markup=markup, link_preview_options=NO_PREVIEW)
+            return True
+        except Exception:                             # noqa: BLE001
+            pass
+    await send_menu(message, services, text, markup)
+    return True
+
+
+def role_of(client) -> str:
+    """Роль по записи из middleware: admin (client=None), invited (гость), client."""
+    if client is None:
+        return "admin"
+    return "invited" if getattr(client, "is_guest", False) else "client"
+
+
 async def ask_tracked(message, services, text: str, **kw):
     """Отправить ПРОМЕЖУТОЧНОЕ служебное сообщение (вопрос FSM, переспрос,
     отбивку) и запомнить его id — при возврате в меню cleanup_content его сотрёт.
@@ -211,21 +274,15 @@ def card_is_from_home(chat_id: int | None) -> bool:
 
 async def show_main_menu(message: Message, services, role: str, client=None) -> None:
     """Показать главное меню роли новым сообщением (через send_menu — трекается,
-    гасит прежнее активное). Ленивый импорт ролевых рендереров — общий модуль
-    не тянет хендлеры на уровне модуля."""
+    гасит прежнее активное). Экран — из реестра: у клиента с теми же кнопками
+    РФ-доступа и выдачи, что и по кнопке «В меню»."""
+    from awgbot.bot import screens
     card_from_home(message.chat.id, False)
-    if role == "admin":
-        from awgbot.bot.handlers.admin import _panel_parts
-        text, markup = await _panel_parts(services)
-    elif role == "client":
-        from awgbot.bot.handlers.client import _greeting, _manage_sub
-        text, (used, _) = await _greeting(services, client)
-        markup = kb.client_main(has_devices=used > 0, manage_sub=_manage_sub(client))
-    elif role == "invited":
-        from awgbot.bot.handlers.friend import guest_main_payload
-        text, markup = await guest_main_payload(services, client)
-    else:
+    parts = await screens.render("main", services=services, role=role, client=client,
+                                 chat_id=message.chat.id)
+    if parts is None:
         return
+    text, markup = parts
     # Возврат в меню = конец диалога: убираем все промежуточные служебные
     # сообщения (вопросы FSM, введённые пользователем значения, ссылки/QR).
     await cleanup_content(message.bot, services, message.chat.id)
@@ -251,34 +308,43 @@ async def edit(cb: CallbackQuery, text: str, kb=None) -> None:
         await cb.message.answer(text, reply_markup=kb, link_preview_options=NO_PREVIEW)
 
 
-async def send_link(target: Message, vpn: str, services=None) -> None:
-    """vpn:// строкой в моноширинном блоке (одно нажатие — копирование)."""
-    sent = await target.answer(
-        "🔗 Ссылка для подключения (нажми, чтобы скопировать):\n"
-        f"<code>{vpn}</code>"
-    )
+async def send_link(target: Message, vpn: str, services=None, *, name: str = "",
+                    markup=None) -> Message:
+    """vpn:// в моноширинном блоке (нажатие копирует) и пояснение одним
+    сообщением: ссылка, пустая строка, «☝️ Ссылка для iPhone — …». markup —
+    «⬅️ В меню» под тем же сообщением."""
+    from awgbot.bot import texts
+    text = f"<code>{vpn}</code>"
+    if name:
+        text += "\n\n" + texts.finish_link(name)
+    sent = await target.answer(text, reply_markup=markup, link_preview_options=NO_PREVIEW)
     await _track_content(services, sent)
+    return sent
 
 
-async def send_conf(target: Message, name: str, conf: str, services=None) -> None:
-    """.conf файлом."""
+async def send_conf(target: Message, name: str, conf: str, services=None, *,
+                    markup=None, caption: str = "") -> Message:
+    """.conf файлом; подпись — пояснение выдачи («📄 Для iPhone — …»)."""
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in name) or "config"
     doc = BufferedInputFile(conf.encode("utf-8"), filename=f"{safe}.conf")
-    sent = await target.answer_document(doc, caption="📄 Файл конфигурации")
+    sent = await target.answer_document(doc, caption=caption or "📄 Файл конфигурации",
+                                        reply_markup=markup)
     await _track_content(services, sent)
+    return sent
 
 
-async def send_qr(target: Message, vpn: str, services=None) -> None:
+async def send_qr(target: Message, vpn: str, services=None, *, markup=None,
+                  caption: str = "") -> Message:
     """QR-код для импорта в AmneziaVPN — анимированным GIF (2 кадра серии).
     Шлём как фото/анимацию: Telegram автоплеит в ленте, получателю не нужно
     открывать файл. Двухкадровый QR ещё и нельзя снять одним скриншотом."""
     from awgbot.util import qrgen
     gif = await call(qrgen.vpn_link_to_qr_gif, vpn)
     media = BufferedInputFile(gif, filename="amnezia_qr.gif")
-    sent = await target.answer_animation(
-        media,
-        caption="🔳 QR-код для AmneziaVPN")
+    sent = await target.answer_animation(media, caption=caption or "🔳 QR-код для AmneziaVPN",
+                                         reply_markup=markup)
     await _track_content(services, sent)
+    return sent
 
 
 def own_device(services, client, device_id: int):
@@ -303,17 +369,31 @@ def mine_or_held(services, client, device_id: int):
     return own_device(services, client, device_id) or held_device(services, client, device_id)
 
 
-async def send_device_config(target: Message, services, dev, kind: str) -> None:
+async def send_device_config(target: Message, services, dev, kind: str,
+                             *, finisher=None) -> None:
     """Единая точка «сгенерировать и отправить конфиг устройства».
     kind: link | file | qr | both. Поднимает ServiceError наверх (хендлер решает,
-    как показать)."""
+    как показать).
+
+    finisher — клавиатура «⬅️ В меню»: тогда пояснение («☝️ Ссылка для
+    iPhone — …») и кнопка едут в ОДНОМ сообщении с содержимым, и оно
+    становится живым меню чата. Без finisher — голое содержимое (гайд ведёт
+    дальше сам)."""
+    from awgbot.bot import texts
     cfg = await call(services.generate_config, dev.id)
+    sent = None
     if kind in ("link", "both"):
-        await send_link(target, cfg["vpn"], services)
+        sent = await send_link(target, cfg["vpn"], services,
+                               name=dev.name if finisher else "", markup=finisher)
     if kind in ("file", "both"):
-        await send_conf(target, dev.name, cfg["conf"], services)
+        sent = await send_conf(target, dev.name, cfg["conf"], services, markup=finisher,
+                               caption=texts.finish_file(dev.name) if finisher else "")
     if kind == "qr":
-        await send_qr(target, cfg["vpn"], services)
+        sent = await send_qr(target, cfg["vpn"], services, markup=finisher,
+                             caption=texts.finish_qr(dev.name) if finisher else "")
+    if finisher is not None and sent is not None:
+        await _dismiss_previous_nav(target.bot, services, target.chat.id)
+        await call(services.db.set_nav_message_id, target.chat.id, sent.message_id)
 
 
 async def remove_device_and_notify(bot, services, device_id: int) -> None:
@@ -354,5 +434,5 @@ async def drop_message(cb: CallbackQuery) -> None:
 
 
 __all__ = ["call", "edit", "drop_message", "send_link", "send_conf", "cleanup_content", "ask_tracked",
-           "park_screen", "purge_menus", "dismiss_update_reports", "own_device", "held_device",
-           "mine_or_held", "send_device_config"]
+           "ask_here", "back_to_context", "show_screen", "role_of", "park_screen", "purge_menus", "dismiss_update_reports",
+           "own_device", "held_device", "mine_or_held", "send_device_config"]

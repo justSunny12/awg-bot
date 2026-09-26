@@ -119,6 +119,46 @@ def parse_dt_sec(s: str) -> datetime:
     raise ValueError(f"не дата: {s!r}")
 
 
+def fmt_dt_ui(dt: datetime, ref: Optional[datetime] = None, *, seconds: bool = False) -> str:
+    """Дата и время для экранов: «12.10 18:00». Год — двумя цифрами и только
+    когда он не текущий: «12.10.27 18:00». Секунды — только по просьбе
+    (правка периода админом) и только когда не :00."""
+    dt = dt.astimezone(TZ)
+    date = fmt_date_ui(dt, ref)
+    clock = dt.strftime("%H:%M") + (dt.strftime(":%S") if seconds and dt.second else "")
+    return f"{date} {clock}"
+
+
+def fmt_date_ui(dt: datetime, ref: Optional[datetime] = None) -> str:
+    """Дата для экранов: «12.10», другой год — «12.10.27»."""
+    dt = dt.astimezone(TZ)
+    ref = (ref or now()).astimezone(TZ)
+    return dt.strftime("%d.%m") + ("" if dt.year == ref.year else dt.strftime(".%y"))
+
+
+def fmt_period_ui(start: datetime, end: datetime) -> str:
+    """«12.10.25 → 12.10» — начало и конец периода на экранах."""
+    return f"{fmt_date_ui(start)} → {fmt_date_ui(end)}"
+
+
+def fmt_ago(unix_ts: Optional[int], ref: Optional[datetime] = None) -> str:
+    """Давность последнего подключения словами: «только что» (сейчас онлайн),
+    «5 мин назад», «3 ч назад», «вчера», дальше — дата «12.09»."""
+    if not unix_ts:
+        return "никогда"
+    if handshake_is_online(unix_ts, ref):
+        return "только что"
+    ref = ref or now()
+    age = int(ref.timestamp() - unix_ts)
+    if age < 3600:
+        return f"{max(1, age // 60)} мин назад"
+    if age < 86400:
+        return f"{age // 3600} ч назад"
+    if age < 2 * 86400:
+        return "вчера"
+    return fmt_date_ui(datetime.fromtimestamp(unix_ts, tz=timezone.utc), ref)
+
+
 def first_of_next_month_str() -> str:
     """Дата 1-го числа следующего месяца как «DD.MM.YYYY» (UTC+3). Используется
     для «доступ приостановлен до …»: месячный сброс наступит именно тогда."""
@@ -186,6 +226,19 @@ def fmt_remaining(end: datetime, ref: Optional[datetime] = None) -> str:
     if not parts:
         return "меньше минуты"
     return " ".join(parts)
+
+
+def remaining_brief(end: datetime, ref: Optional[datetime] = None) -> str:
+    """Остаток коротко: «18 дн.», меньше суток — «11 ч», меньше часа — «40
+    мин», истекло — «истекло». Дни — вверх: 2 дня 3 часа → «3 дн.»."""
+    secs = remaining_seconds(end, ref)
+    if secs <= 0:
+        return "истекло"
+    if secs >= 86400:
+        return f"{ceil_days(secs)} дн."
+    if secs >= 3600:
+        return f"{secs // 3600} ч"
+    return f"{max(1, secs // 60)} мин"
 
 
 def fmt_remaining_short(seconds: int) -> str:
@@ -281,6 +334,7 @@ __all__ = [
     "TZ", "now", "now_iso", "to_iso", "parse_iso",
     "add_period", "period_minutes", "remaining_seconds",
     "fmt_dt", "fmt_period", "fmt_remaining", "fmt_remaining_short",
+    "fmt_dt_ui", "fmt_date_ui", "fmt_period_ui", "fmt_ago", "remaining_brief",
     "handshake_is_online", "fmt_handshake",
     "parse_docker_time", "fmt_uptime",
 ]

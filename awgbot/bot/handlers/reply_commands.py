@@ -1,13 +1,11 @@
 """
-handlers/reply_commands.py — reply-команда «Отмена» у поля ввода.
+handlers/reply_commands.py — общие для всех ролей кнопки: «Скрыть» на
+уведомлениях, «✖️ Отмена» под приглашением к вводу (инлайн, CancelCB) и
+reply-кнопка «✖️ Отмена» у поля ввода (старый образец — живёт одну версию для
+чатов, где ввод был открыт в момент обновления).
 
-Одна кнопка «✖️ Отмена» показывается ТОЛЬКО во время текстового ввода (её несёт
-приглашение к вводу). ОТДЕЛЬНЫЙ роутер, зарегистрирован ПЕРВЫМ, фильтр строго по
-точному тексту + StateFilter("*") — бьёт раньше FSM-хендлеров (иначе «Отмена» на
-шаге ввода имени записалась бы как имя). Обычный текст под фильтр не попадает.
-
-Обработка намерения живёт здесь (в хендлере, по SRP); middleware остаётся тонким
-охранником. Возврат в меню делегируется общему диспетчеру show_main_menu.
+ОТДЕЛЬНЫЙ роутер, зарегистрирован ПЕРВЫМ: reply-«Отмена» ловится по точному
+тексту + StateFilter("*") раньше FSM-хендлеров (иначе записалась бы как имя).
 """
 from __future__ import annotations
 
@@ -17,8 +15,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
-from awgbot.bot.callbacks import HideCB
-from awgbot.bot.handlers.common import show_main_menu
+from awgbot.bot.callbacks import CancelCB, HideCB
+from awgbot.bot.handlers.common import edit_nav, show_main_menu
 
 router = Router(name="reply_commands")
 
@@ -35,6 +33,25 @@ async def on_hide(cb: CallbackQuery):
     except Exception:                                 # noqa: BLE001
         pass                                          # уже удалено/бот без прав — не страшно
     await cb.answer()
+
+
+@router.callback_query(CancelCB.filter())
+async def on_cancel_inline(cb: CallbackQuery, callback_data: CancelCB, state: FSMContext,
+                           services, role: str = "", client=None):
+    """«✖️ Отмена» под приглашением к вводу: диалог сброшен, экран-контекст —
+    на месте приглашения, без сообщения-следа. Роль — из middleware, экран —
+    из реестра; нет экрана — главная роли."""
+    from awgbot.bot import screens
+    await state.clear()
+    parts = await screens.render(callback_data.kind, callback_data.ref, services=services,
+                                 role=role, client=client, chat_id=cb.message.chat.id)
+    if parts is None:
+        parts = await screens.render("main", services=services, role=role, client=client,
+                                     chat_id=cb.message.chat.id)
+    await cb.answer()
+    if parts is None:
+        return
+    await edit_nav(cb, services, *parts)
 
 
 @router.message(F.text == kb.BTN_CANCEL, StateFilter("*"))

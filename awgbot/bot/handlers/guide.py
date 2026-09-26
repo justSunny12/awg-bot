@@ -22,9 +22,10 @@ from awgbot.bot import texts
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import DeviceCB, GuideCB, HelpCB
 from awgbot.bot.filters import RoleFilter
-from awgbot.bot.handlers.common import (call, drop_message, own_device,
-                                        send_device_config, show_main_menu, ask_tracked)
-from awgbot.domain.services import BYTES_PER_GB, LimitReached, ServiceError
+from awgbot.bot.handlers.common import (call, drop_message, own_device, held_device,
+                                        send_device_config, show_main_menu, ask_here, ask_tracked,
+                                        back_to_context)
+from awgbot.domain.services import LimitReached, ServiceError
 from awgbot.bot.states import AddDeviceGuide
 
 # Скриншоты гайдов лежат в пакете рядом с кодом (переживают деплой как обычный
@@ -32,8 +33,20 @@ from awgbot.bot.states import AddDeviceGuide
 _GUIDE_ASSETS = Path(__file__).resolve().parents[1].parent / "assets" / "guides"
 
 router = Router(name="guide")
-router.message.filter(RoleFilter("client"))
-router.callback_query.filter(RoleFilter("client"))
+# те же пошаговые гайды — клиенту и гостю; добавить устройство может только клиент
+router.message.filter(RoleFilter("client", "invited"))
+router.callback_query.filter(RoleFilter("client", "invited"))
+
+
+def _guest(client) -> bool:
+    return bool(getattr(client, "is_guest", False))
+
+
+def _device(services, client, device_id: int):
+    """Устройство, которым человек владеет (клиент) или держит (гость)."""
+    if _guest(client):
+        return held_device(services, client, device_id)
+    return own_device(services, client, device_id)
 
 _PLATFORM_GUIDE = {"apple": "apple", "android": "android",
                    "windows": "windows", "mac": "mac"}
@@ -47,19 +60,24 @@ async def _render(cb: CallbackQuery, services, client, guide: str, step: int):
     last = guides.step_count(guide) - 1
     text = guides.step_text(guide, step)
 
+    guest = _guest(client)
     if guides.base_guide(guide) == "connect" and step == 0:
-        devices = await call(services.db.list_devices, client.id)
-        slots = await call(services.device_slots, client.id)
+        if guest:
+            devices = await call(services.db.list_held_devices, client.id)
+            slots = (len(devices), 0)
+        else:
+            devices = await call(services.db.list_devices, client.id)
+            slots = await call(services.device_slots, client.id)
         from awgbot.bot import paging
         await _render_screen(cb, services, text, None,
-                             kb.guide_connect_devices(devices, slots, guide=guide,
+                             kb.guide_connect_devices(devices, slots, guide=guide, guest=guest,
                                                       page=paging.page_of(cb.message.chat.id, "guidedev")))
         return
 
     next_guide = guides.NEXT_GUIDE.get(guide) if step == last else None
     apple_connect_end = (guides.is_apple_connect(guide) and step == last)
     markup = kb.guide_nav(guide, step, last, next_guide=next_guide,
-                          apple_connect_end=apple_connect_end)
+                          apple_connect_end=apple_connect_end, guest=guest)
     img = guides.step_image(guide, step)
     path = (_GUIDE_ASSETS / img) if img else None
     await _render_screen(cb, services, text, path if (path and path.exists()) else None, markup)
@@ -97,19 +115,21 @@ async def _render_screen(cb: CallbackQuery, services, text: str, image_path, mar
 
 
 async def _deliver_and_advance(message: Message, services, client, dev, guide: str):
-    """Показать шаг настройки (step 1) с выбором способа подключения
-    (ссылка/QR/файл) для выбранного устройства. Артефакт выдаёт выбранная кнопка
-    (guide_connect_deliver), затем ведёт на шаг 2 «Подключаемся»."""
+    """Показать шаг настройки (step 1) с рядом выдачи для выбранного
+    устройства. Содержимое выдаёт выбранная кнопка (guide_connect_deliver),
+    затем шаг 2 «Подключаемся»."""
     variant = guide if guides.base_guide(guide) == "connect" else "connect"
-    await message.answer(guides.step_text(variant, 1),
-                         reply_markup=kb.guide_connect_method(dev.id, variant))
+    sent = await message.answer(guides.step_text(variant, 1),
+                                reply_markup=kb.guide_connect_method(dev.id, variant,
+                                                                     guest=_guest(client)))
+    await call(services.db.nav_touch, sent.chat.id, sent.message_id)
 
 
 @router.callback_query(GuideCB.filter(F.kind.in_(("link", "qr", "file"))))
 async def guide_connect_deliver(cb: CallbackQuery, callback_data: GuideCB, services, client):
     """Шаг 1 → выдать артефакт выбранным способом и показать шаг 2 «Подключаемся»
     новым сообщением ПОД выданным конфигом (порядок как раньше при авто-выдаче)."""
-    dev = await call(own_device, services, client, callback_data.dev)
+    dev = await call(_device, services, client, callback_data.dev)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
@@ -121,10 +141,11 @@ async def guide_connect_deliver(cb: CallbackQuery, callback_data: GuideCB, servi
         await cb.answer()
         return
     variant = callback_data.guide
-    await cb.message.answer(
+    sent = await cb.message.answer(
         guides.step_text(variant, 2),
-        reply_markup=kb.guide_connect_done(variant, dev.id,
+        reply_markup=kb.guide_connect_done(variant, dev.id, guest=_guest(client),
                                            apple_end=guides.is_apple_connect(variant)))
+    await call(services.db.nav_touch, sent.chat.id, sent.message_id)
     await cb.answer()
 
 
@@ -133,18 +154,15 @@ async def guide_connect_deliver(cb: CallbackQuery, callback_data: GuideCB, servi
 async def guide_connect_methods(cb: CallbackQuery, callback_data: GuideCB, services, client):
     """Возврат к выбору способа (кнопка «Назад» на шаге 2) — для того же
     устройства. Шаг 1 текстовый, картинки нет → простой edit_text."""
-    dev = await call(own_device, services, client, callback_data.dev)
+    dev = await call(_device, services, client, callback_data.dev)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
+    markup = kb.guide_connect_method(dev.id, callback_data.guide, guest=_guest(client))
     try:
-        await cb.message.edit_text(
-            guides.step_text(callback_data.guide, 1),
-            reply_markup=kb.guide_connect_method(dev.id, callback_data.guide))
+        await cb.message.edit_text(guides.step_text(callback_data.guide, 1), reply_markup=markup)
     except TelegramBadRequest:
-        await cb.message.answer(
-            guides.step_text(callback_data.guide, 1),
-            reply_markup=kb.guide_connect_method(dev.id, callback_data.guide))
+        await cb.message.answer(guides.step_text(callback_data.guide, 1), reply_markup=markup)
     await cb.answer()
 
 
@@ -160,7 +178,7 @@ async def help_launch(cb: CallbackQuery, callback_data: HelpCB, services, client
 
 @router.callback_query(DeviceCB.filter(F.action == "gen_guide"))
 async def guide_pick_device(cb: CallbackQuery, callback_data: DeviceCB, services, client):
-    dev = await call(own_device, services, client, callback_data.device_id)
+    dev = await call(_device, services, client, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
@@ -172,15 +190,17 @@ async def guide_pick_device(cb: CallbackQuery, callback_data: DeviceCB, services
 
 # ── добавление устройства внутри гайда ───────────────────────────────────────
 
-@router.callback_query(GuideCB.filter(F.step == -1))
+@router.callback_query(GuideCB.filter(F.step == -1), RoleFilter("client"))
 async def guide_add_device(cb: CallbackQuery, callback_data: GuideCB, services, client, state: FSMContext):
+    """Новое устройство внутри гайда: только имя (лимит — в карточке, В5),
+    приглашение на месте шага."""
     used, limit = await call(services.device_slots, client.id)
     if limit != 0 and used >= limit:              # 0 = безлимит
         await cb.answer("Лимит устройств исчерпан", show_alert=True)
         return
     await state.set_state(AddDeviceGuide.name)
-    await state.update_data(return_guide=callback_data.guide)
-    await ask_tracked(cb.message, services, "Введи имя нового устройства:", reply_markup=kb.reply_cancel())
+    await ask_here(cb, services, state, texts.add_device_prompt(used, limit, for_friend=False),
+                   "main", return_guide=callback_data.guide)
     await cb.answer()
 
 
@@ -189,39 +209,20 @@ async def guide_add_device_name(message: Message, services, client, state: FSMCo
     name = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not name:
-        await ask_tracked(message, services, "Имя не может быть пустым. Введи ещё раз:")
-        return
-    await state.update_data(dev_name=name)
-    await state.set_state(AddDeviceGuide.traffic)
-    await ask_tracked(message, services, texts.traffic_limit_device_ask(int(client.traffic_limit)),
-                      reply_markup=kb.reply_cancel())
-
-
-@router.message(AddDeviceGuide.traffic, RoleFilter("client"))
-async def guide_add_device_traffic(message: Message, services, client, state: FSMContext):
-    raw = (message.text or "").strip()
-    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit():
-        await ask_tracked(message, services, texts.TRAFFIC_LIMIT_BAD)
+        await ask_tracked(message, services, texts.NAME_EMPTY)
         return
     data = await state.get_data()
-    name = data.get("dev_name")
     return_guide = data.get("return_guide", "connect")
-    tlimit = int(raw) * BYTES_PER_GB
     await state.clear()
     try:
-        created = await call(services.add_device, client.id, name, tlimit)
+        created = await call(services.add_device, client.id, name, 0)
     except (LimitReached, ServiceError) as e:
-        await message.answer(f"Не удалось создать устройство: {e}", reply_markup=kb.reply_hide())
-        await show_main_menu(message, services, "client", client)
+        await back_to_context(message, services, {}, "client", client, note=f"⚠️ {texts._e(str(e))}")
         return
-    dev_count = len(await call(services.db.list_devices, client.id))
     plimit = await call(services.profile_traffic_limit, client.id)
-    await message.answer(
-        texts.device_created_report(name, device_count=dev_count,
-                                    max_devices=client.device_limit,
-                                    dev_limit_bytes=tlimit, profile_limit_bytes=plimit),
-        reply_markup=kb.reply_hide())
+    from awgbot.bot.handlers.common import cleanup_content
+    await cleanup_content(message.bot, services, message.chat.id)
+    await message.answer(texts.device_created(name, plimit))
     dev = await call(services.db.get_device, created.device_id)
     await _deliver_and_advance(message, services, client, dev, return_guide)
 

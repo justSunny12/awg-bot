@@ -51,6 +51,16 @@ FRESH_INSTALL_MARKER = ".fresh-install"   # кладёт установщик а
 log = logging.getLogger("awgbot.main")
 
 
+
+async def _menu_command(bot) -> None:
+    """Меню команд Telegram — одна команда «Меню» (/start) у обеих ролей.
+    Сеть на старте может быть не готова — отказ не фатален."""
+    from aiogram.types import BotCommand
+    try:
+        await bot.set_my_commands([BotCommand(command="start", description="Меню")])
+    except Exception as e:                               # noqa: BLE001
+        log.warning("меню команд не выставлено: %s", e)
+
 async def _notify_migration_needed(bot: Bot, services: Services) -> None:
     """Сообщить админу, что нужен переезд профилей. Условия: манифест поставки
     новее применённого поколения, рычаг переезда настроен (второй интерфейс
@@ -239,6 +249,12 @@ async def run_gateway() -> None:
     from awgbot.bot import paging as _paging
     dp.include_router(_paging.router)              # листание списков — до экранов
     dp.include_router(gateway_handlers.router)
+    from awgbot.bot.handlers import stale as _stale
+
+    async def _gw_main(message, services, role="", client=None):
+        await gateway_handlers._panel(message, services)
+    dp.include_router(_stale.make_router(_gw_main))   # ПОСЛЕДНИМ: кнопка старого меню
+    await _menu_command(bot)
 
     conf_watcher = ConfWatcher(config.CONF_DIR)
     conf_watcher.start()
@@ -392,6 +408,10 @@ async def main() -> None:
     # ловиться здесь, а не общим message-хендлером клиента
     dp.include_router(routing_handlers.router)
     dp.include_router(client_handlers.router)
+    from awgbot.bot.handlers import stale as _stale
+    from awgbot.bot.handlers.common import show_main_menu as _show_main_menu
+    dp.include_router(_stale.make_router(_show_main_menu))   # ПОСЛЕДНИМ: кнопка старого меню
+    await _menu_command(bot)
 
     loop = asyncio.get_running_loop()
 

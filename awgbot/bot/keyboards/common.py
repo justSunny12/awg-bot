@@ -8,7 +8,8 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import config
 from awgbot.core import blocks as _blocks
-from awgbot.bot.callbacks import BlockCB, ClientCB, ConfirmCB, Menu, PeriodCB, HideCB, PageCB
+from awgbot.bot.callbacks import (BlockCB, CancelCB, ClientCB, ConfirmCB, Menu, PeriodCB,
+                                  PresetCB, HideCB, PageCB)
 from awgbot.bot import texts as _texts
 
 
@@ -23,7 +24,9 @@ BTN_CANCEL = "\u2716\ufe0f Отмена"  # ✖️ Отмена
 
 
 def reply_cancel() -> ReplyKeyboardMarkup:
-    """Кнопка «Отмена» у поля ввода — на время текстового ввода."""
+    """Кнопка «Отмена» у поля ввода — на время текстового ввода. Новые диалоги
+    зовут cancel_input (инлайн под приглашением); эта живёт одну версию для
+    экранов, которые ещё не переведены."""
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=BTN_CANCEL)]],
         resize_keyboard=True, is_persistent=True)
@@ -37,7 +40,69 @@ def reply_hide() -> ReplyKeyboardRemove:
 # ── Маркеры состояния и суффиксы для кнопок ────────────────────────────────
 
 def _chk(on: bool) -> str:
-    return "🟢" if on else "🔴"
+    """Тумблер «включено/выключено» на кнопке: ✅ / ☑️ у обеих ролей. Кружки
+    🟢/🔴 остаются состоянию объектов (онлайн, работает), не настройкам."""
+    return "✅" if on else "☑️"
+
+
+def cancel_input(kind: str, ref: int = 0) -> InlineKeyboardMarkup:
+    """«✖️ Отмена» под приглашением к вводу — возврат на экран (kind, ref)
+    реестра экранов без сообщения-следа."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text=BTN_CANCEL, callback_data=CancelCB(kind=kind, ref=ref))
+    return kb.as_markup()
+
+
+def confirm(cancel_cb, do_text: str, do_cb, *, danger: bool = True) -> InlineKeyboardMarkup:
+    """Подтверждение: «⬅️ Отмена» первой, действие второй; разрушительное —
+    красным (style у кнопки, Bot API 9.x; старые клиенты рисуют обычную)."""
+    cancel = InlineKeyboardButton(text="⬅️ Отмена", callback_data=_packed(cancel_cb))
+    kw = {"style": "danger"} if danger else {}
+    do = InlineKeyboardButton(text=do_text, callback_data=_packed(do_cb), **kw)
+    return InlineKeyboardMarkup(inline_keyboard=[[cancel, do]])
+
+
+def _packed(cb) -> str:
+    return cb if isinstance(cb, str) else cb.pack()
+
+
+def select_all_button(selected: int, total: int, cb) -> InlineKeyboardButton:
+    """Массовый выбор: ☑️, пока выбраны не все; ✅, когда все (и когда их
+    отметили по одному) — нажатие на ✅ снимает всё."""
+    mark = "✅" if total and selected >= total else "☑️"
+    return InlineKeyboardButton(text=f"{mark} Выбрать все", callback_data=_packed(cb))
+
+
+# Пресеты лимита трафика устройства, ГБ: не выше лимита профиля; «∞» — только
+# когда у профиля лимита нет (0).
+DEVICE_LIMIT_PRESETS_GB = (10, 50, 100)
+
+
+def device_limit_presets(profile_limit_bytes: int) -> list[int]:
+    """Значения кнопок в ГБ (0 — без лимита). Профиль 100 ГБ → [10, 50, 100];
+    безлимитный → [10, 50, 100, 0]; профиль 5 ГБ, ниже всех пресетов → [5]."""
+    limit_gb = int(profile_limit_bytes or 0) // (1024 ** 3)
+    if not profile_limit_bytes:
+        return [*DEVICE_LIMIT_PRESETS_GB, 0]
+    fit = [g for g in DEVICE_LIMIT_PRESETS_GB if g <= limit_gb]
+    if limit_gb and limit_gb not in fit:
+        fit.append(limit_gb)
+    return fit or [max(1, limit_gb)]
+
+
+def device_limit_kb(ref: int, profile_limit_bytes: int, cancel_cb) -> InlineKeyboardMarkup:
+    """Пресеты лимита устройства по три в ряд, затем «✏️ Другое» и «⬅️ Отмена».
+    ref — id устройства (карточка) или 0 (новое устройство другу)."""
+    kb = InlineKeyboardBuilder()
+    vals = device_limit_presets(profile_limit_bytes)
+    for g in vals:
+        kb.button(text="∞" if g == 0 else f"{g} ГБ",
+                  callback_data=PresetCB(kind="devlimit", ref=ref, val=g))
+    kb.button(text="✏️ Другое", callback_data=PresetCB(kind="devlimit", ref=ref, val=-1))
+    kb.row(InlineKeyboardButton(text="⬅️ Отмена", callback_data=_packed(cancel_cb)))
+    n = len(vals)
+    kb.adjust(*([3] * (n // 3) + ([n % 3] if n % 3 else [])), 1, 1)
+    return kb.as_markup()
 
 
 def _tick(on: bool) -> str:
@@ -197,8 +262,8 @@ def _manual_block_button(target: str, ref: int, mask: int, *, for_admin: bool):
                     else _blocks.ClientBlock.USER)
         has_manual = int(mask) & int(user_bit)
     if has_manual:
-        return ("✅ Разблокировать", BlockCB(target=target, action="menu_unblock", ref=ref))
-    return ("🛑 Заблокировать", BlockCB(target=target, action="menu_block", ref=ref))
+        return ("✅ Разблок", BlockCB(target=target, action="menu_unblock", ref=ref))
+    return ("🛑 Блок", BlockCB(target=target, action="menu_block", ref=ref))
 
 
 def block_pause_choice(client_id: int) -> InlineKeyboardMarkup:

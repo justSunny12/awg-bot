@@ -2,20 +2,27 @@
 
 from __future__ import annotations
 
+import datetime
+
 from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.core.enums import SubStatus, ActivationStatus, FriendStatus
 
 from .fmt import (
-    rf_line,
-    _e, human_bytes, used_of_limit, gb_str, client_total_line, device_label,
-    device_line, client_link, owner_link, holder_link, _n_devices, plural_ru,
+    rf_line, deep_link, details, device_state,
+    _e, human_bytes, used_of_limit, gb, gb_str, client_total_line, device_label,
+    plain_ip, client_link, owner_link, holder_link, owner_name, _n_devices, plural_ru,
     _days_word, _days)
-from .routing import routing_status_line
+from .routing import ROUTING_NAME, routing_status_line
+
+# payload deep-link'ов клиента и гостя (/start <payload>): экран реестра
+SUB_PAYLOAD = "sub"
+RF_PAYLOAD_CLIENT = "rf"
+DEV_PAYLOAD = "dev"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Срок подписки
+# Срок подписки (блок админской карточки — как есть)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def subscription_block(client, *, for_admin: bool = False, show_pause: bool = True) -> str:
@@ -28,17 +35,11 @@ def subscription_block(client, *, for_admin: bool = False, show_pause: bool = Tr
     mask = int(client.block_reason)
     paused = bool(mask & int(blocks.ClientBlock.PAUSED))
     mode = client.pause_mode or ""
-    # видит ли ПОЛЬЗОВАТЕЛЬ эту паузу: самоблок — всегда; админская — только если
-    # блок не тихий (есть видимый ADMIN_NOTIFIED). Админу видно всегда.
     silent_admin = bool(mask & int(blocks.ClientBlock.ADMIN_SILENT)) and \
         not bool(mask & int(blocks.ClientBlock.ADMIN_NOTIFIED))
     pause_visible = paused and (for_admin or mode == "user" or not silent_admin)
 
     if not client.period_end:
-        # бессрочно — либо реально, либо temp (admin_open). Пользователю при
-        # silent-паузе показываем как обычную активную бессрочную «легенду»? Нет:
-        # admin_open зануляет period_end. Если пауза пользователю не видна, покажем
-        # сохранённый конец как обычный период.
         if paused and mode == "admin_open" and not pause_visible and client.pause_saved_end:
             start = timeutil.parse_iso(client.period_start) if client.period_start else None
             end = timeutil.parse_iso(client.pause_saved_end)
@@ -48,25 +49,21 @@ def subscription_block(client, *, for_admin: bool = False, show_pause: bool = Tr
             return f"Статус подписки: {status}\n{body}\nДо истечения: {timeutil.fmt_remaining(end)}"
         status = "🟢 активна" if client.status == SubStatus.ACTIVE else "🔴 истекла"
         if pause_visible and mode == "admin_open":
-            status = "⏸ приостановлено администратором"
+            status = "⏸️ приостановлено администратором"
             return (f"Статус подписки: {status}\n"
                     "Период подписки: временно бессрочный "
                     "(пересчитается при снятии блокировки)")
         return f"Статус подписки: {status}\nПериод подписки: бессрочно"
 
     if not client.period_start:
-        # аномалия данных: period_end есть, period_start — нет (не должно
-        # случаться при нормальной работе, но не показываем голый прочерк)
         status = "🟢 активна" if client.status == SubStatus.ACTIVE else "🔴 истекла"
         return f"Статус подписки: {status}\nПериод подписки: дата начала не определена"
     start = timeutil.parse_iso(client.period_start)
     end = timeutil.parse_iso(client.period_end)
 
     if pause_visible:
-        if mode == "user":
-            status = "⏸ приостановлено пользователем"
-        else:
-            status = "⏸ приостановлено администратором"
+        status = ("⏸️ приостановлено пользователем" if mode == "user"
+                  else "⏸️ приостановлено администратором")
     else:
         status = "🟢 активна" if client.status == SubStatus.ACTIVE else "🔴 истекла"
 
@@ -79,9 +76,6 @@ def subscription_block(client, *, for_admin: bool = False, show_pause: bool = Tr
     lines.append(period_line)
     if not pause_visible:
         lines.append(f"До истечения: {timeutil.fmt_remaining(end)}")
-    # счёт дней паузы против максимума типа (год ×2, месяц ×12); без срока —
-    # дни не сгорают. Другу не показываем — паузой управляет владелец, другу
-    # счётчик бесполезен.
     if show_pause and end:
         bal = int(client.pause_balance_days)
         kind = str(client.period_kind or "")
@@ -90,107 +84,403 @@ def subscription_block(client, *, for_admin: bool = False, show_pause: bool = Tr
         elif kind == "month":
             of = f"/{12 * settings.get_int('pause.monthly_pause_days', 2)}"
         else:
-            of = ""          # день/неделя: не копят, максимум — чужой, не показываем
+            of = ""
         word = "дней" if of else _days_word(bal)
         lines.append(f"Приостановка: доступно {bal}{of} {word}")
     return "\n".join(lines)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Карточка клиента (для админа и для самого клиента)
+# Общие кусочки экранов клиента и гостя
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _link(bot_username: str, payload: str, label: str) -> str:
+    return deep_link(bot_username, payload, label) if bot_username else label
 
-def _guest_consumption(held, donor) -> str:
-    """Потребление по каждому удерживаемому устройству против его лимита —
-    своего, иначе профиля владельца; ни того ни другого — «без ограничений».
-    Одно устройство — в строку, несколько — списком."""
+
+def vpn_status_line(server_ok: bool) -> str:
+    return "🟢 VPN работает" if server_ok else "🔴 VPN не отвечает"
+
+
+def rf_status_short(routing_ok, routing_on: bool, bot_username: str = "") -> str:
+    """«🇷🇺 РФ-доступ 🟢» / «… 🔴 не работает» / «… выключен»; имя — ссылка на
+    экран РФ-доступа. routing_ok=None — функция профилю не выдана: пусто."""
+    if routing_ok is None:
+        return ""
+    label = _link(bot_username, RF_PAYLOAD_CLIENT, f"🇷🇺 {ROUTING_NAME}")
+    if not routing_on:
+        return f"{label} выключен"
+    return f"{label} 🟢" if routing_ok else f"{label} 🔴 не работает"
+
+
+def status_line(server_ok: bool, routing_ok, routing_on: bool, bot_username: str = "") -> str:
+    """Вторая строка главной: VPN и, если выдан, РФ-доступ."""
+    rf = rf_status_short(routing_ok, routing_on, bot_username)
+    return vpn_status_line(server_ok) + (f" · {rf}" if rf else "")
+
+
+def _pause_until(client) -> str:
+    """Дата авто-снятия паузы пользователя: с начала паузы + зарезервированные дни."""
+    if not client.pause_active_since:
+        return ""
+    until = (timeutil.parse_iso(client.pause_active_since)
+             + datetime.timedelta(days=int(client.pause_reserved_days)))
+    return timeutil.fmt_date_ui(until)
+
+
+def subscription_short(client, bot_username: str = "") -> str:
+    """Строка подписки на главной клиента — вся ссылкой на «💳 Подписка»:
+    «💳 Подписка до 12.10», «💳 🟡 истекает 12.10 18:00», «💳 ⏸️ на паузе до
+    01.10», «💳 ⏸️ приостановлена администратором», «💳 🔴 истекла»,
+    «💳 бессрочная». Год — только не текущий."""
+    _, mode, pause_visible = _pause_visibility(client)
+    if pause_visible:
+        if mode == "user":
+            until = _pause_until(client)
+            text = f"💳 ⏸️ на паузе до {until}" if until else "💳 ⏸️ на паузе"
+        else:
+            text = "💳 ⏸️ приостановлена администратором"
+    elif client.status != SubStatus.ACTIVE:
+        text = "💳 🔴 истекла"
+    elif not client.period_end:
+        text = "💳 бессрочная"
+    else:
+        end = timeutil.parse_iso(client.period_end)
+        if client.notified_thresholds:
+            text = f"💳 🟡 истекает {timeutil.fmt_dt_ui(end)}"
+        else:
+            text = f"💳 Подписка до {timeutil.fmt_date_ui(end)}"
+    return _link(bot_username, SUB_PAYLOAD, text)
+
+
+def traffic_short(rx: int, tx: int, limit_bytes: int, bonus_bytes: int = 0) -> str:
+    """«📊 12.3 из 100 ГБ», с бонусом «📊 12.3 из 100(+50) ГБ», без лимита —
+    «📊 12.3 ГБ»; ноль без лимита — пусто (нули не выводим)."""
+    total = int(rx or 0) + int(tx or 0)
+    if limit_bytes:
+        bonus = f"(+{gb(bonus_bytes)})" if bonus_bytes else ""
+        return f"📊 {gb(total)} из {gb(limit_bytes)}{bonus} ГБ"
+    return f"📊 {human_bytes(total)}" if total else ""
+
+
+def held_devices_tail(held) -> str:
+    """Хвост «(+1 от профиля Вася)» к счётчику устройств клиента, который
+    держит чужие; пусто — не держит."""
+    if not held:
+        return ""
+    return f" (+{len(held)} от профиля {owner_link(held[0])})"
+
+
+def devices_short(slots, held=()) -> str:
+    """Строка устройств на главной: «📱 Устройств 2 из 3 (+1 от профиля
+    Вася)»; без лимита — «📱 Устройств: 2»; пока нет — «📱 Можно добавить до 3
+    устройств»."""
+    used, limit = slots
+    tail = held_devices_tail(held)
+    if limit == 0:
+        if not used and not tail:
+            return "📱 Устройств пока нет"
+        return f"📱 Устройств: {used}{tail}"
+    if used == 0 and not tail:
+        return f"📱 Можно добавить до {limit} {plural_ru(limit, 'устройства', 'устройств', 'устройств')}"
+    return f"📱 Устройств {used} из {limit}{tail}"
+
+
+def limit_exhausted_line(used: int, limit: int) -> str:
+    """«Лимит исчерпан: чтобы добавить новое, удали N», N = занято − лимит + 1;
+    пусто, пока место есть."""
+    if not limit or used < limit:
+        return ""
+    n = used - limit + 1
+    return f"Лимит исчерпан: чтобы добавить новое, удали {n}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Главная клиента и гостя
+# ─────────────────────────────────────────────────────────────────────────────
+
+def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
+                    routing_ok: bool = None, held=(), traffic: dict | None = None,
+                    *, routing_on: bool = False, bot_username: str = "") -> str:
+    """Главная клиента — четыре строки: имя; VPN и РФ-доступ; подписка и трафик;
+    устройства. routing_ok=None — РФ-доступ профилю не выдан, его нет вовсе."""
+    lines = [f"👋 {_e(client.name)}",
+             status_line(server_ok, routing_ok, routing_on, bot_username)]
+    sub = subscription_short(client, bot_username)
+    if traffic is not None:
+        tr = traffic_short(traffic["rx_month"], traffic["tx_month"],
+                           client.traffic_limit, client.bonus_bytes)
+        if tr:
+            sub += f" · {tr}"
+    lines.append(sub)
+    if slots is not None:
+        lines.append(devices_short(slots, held))
+    return "\n".join(lines)
+
+
+def _guest_traffic_lines(held, donor) -> list[str]:
+    """«📊 Планшет: 0.8 из 100 ГБ» по каждому удерживаемому — против своего
+    лимита, иначе профиля владельца; без лимитов и без трафика — строки нет."""
     rows = []
     for d in held:
         used = int(d.traffic_rx_month) + int(d.traffic_tx_month)
         limit = int(d.traffic_limit) or int(donor.traffic_limit)
-        if limit:
-            rows.append(f"{used_of_limit(used, limit)} ({_e(d.name)})")
-        else:
-            rows.append(f"{human_bytes(used)} ({_e(d.name)}, без ограничений)")
-    if len(rows) == 1:
-        return f"Потребление за месяц: {rows[0]}"
-    return "Потребление за месяц:\n" + "\n".join(f"• {r}" for r in rows)
+        if not limit and not used:
+            continue
+        rows.append(f"📊 {_e(d.name)}: {used_of_limit(used, limit)}")
+    return rows
 
 
-def greeting_guest(name: str, server_ok: bool, donor, held, routing_ok: bool = None) -> str:
-    """Главный экран гостя: как клиентский, подписка —
-    владельца (без срока: это его дело), потребление — по удерживаемым
-    устройствам, устройств — сколько держит. name — имя гостя из Telegram
-    (client.tg_name, иначе профильное)."""
-    status_block = server_status_client(server_ok)
-    if routing_ok is not None:
-        status_block += "\n" + routing_status_line(routing_ok)
+def greeting_guest(name: str, server_ok: bool, donor, held, routing_ok: bool = None,
+                   *, routing_on: bool = False, bot_username: str = "") -> str:
+    """Главная гостя: имя; VPN и РФ-доступ; подписка владельца (только статус —
+    срок его дело); трафик по устройствам. name — имя из Telegram."""
     held = list(held)
     if donor is None or not held:
-        # устройств нет — профиль живёт (список адресов и история при нём),
-        # подписки показывать нечьей
-        return (f"Привет, {_e(name)}! 👋\n\n{status_block}\n\n{GUEST_NO_DEVICES_LEFT}")
-    owner = f" (владелец: {client_link(donor)})"
-    return (f"Привет, {_e(name)}! 👋\n\n"
-            f"{status_block}\n\n"
-            f"Статус подписки: {subscription_status_only(donor)}{owner}\n\n"
-            f"{_guest_consumption(held, donor)}\n\n"
-            f"У тебя {_n_devices(len(held))}")
+        return f"👋 {_e(name)} · устройств нет — попроси у друга новый код"
+    lines = [f"👋 {_e(name)}",
+             status_line(server_ok, routing_ok, routing_on, bot_username),
+             f"💳 Подписка профиля {client_link(donor)}: {subscription_status_only(donor)}"]
+    lines += _guest_traffic_lines(held, donor)
+    return "\n".join(lines)
 
 
-def held_devices_tail(held) -> str:
-    """Хвост «+ 1 от [Вася]» к строке устройств обычного клиента, который держит
-    чужие; пусто — не держит."""
-    if not held:
-        return ""
-    d = held[0]
-    return f" (+ {len(held)} от {owner_link(d)})"
+def devices_header(used: int, limit: int, held=(), *, guest: bool = False) -> str:
+    """Заголовок «📱 Устройства»: клиент — «· 2 из 3 (+1 от профиля Вася)» и
+    строка «Лимит исчерпан…»; гость — «· 2 · от профиля Вася»."""
+    if guest:
+        n = len(list(held))
+        return f"📱 Устройства · {n} · от профиля {owner_link(held[0])}" if n else "📱 Устройства"
+    head = f"📱 Устройства · {used}" + (f" из {limit}" if limit else "") + held_devices_tail(held)
+    tail = limit_exhausted_line(used, limit)
+    return head + (f"\n{tail}" if tail else "")
 
 
-def _device_limit_line(dev) -> str:
-    """Хвост потребления у переданного устройства: чей лимит его ограничивает."""
-    if dev.traffic_limit:
-        return f"лимит устройства {gb_str(dev.traffic_limit)}"
-    return ""
+def pick_device_header(kind: str) -> str:
+    """«🔗 Ссылка — для какого устройства?» по виду выдачи."""
+    label = {"link": "🔗 Ссылка", "qr": "🔳 QR", "file": "📄 Файл"}[kind]
+    return f"{label} — для какого устройства?"
 
 
-def held_device_card(dev, owner_limit_bytes: int) -> str:
-    """Карточка переданного устройства у ДЕРЖАТЕЛЯ: строка, потребление с
-    указанием, чей лимит, «получено от»; причины блокировки — как у клиента."""
-    from awgbot.core import blocks
+# ─────────────────────────────────────────────────────────────────────────────
+# Карточки устройств у клиента и гостя
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _usage(dev, profile_limit_bytes: int, whose: str) -> str:
+    """«3.2 из 50 ГБ (лимит устройства)» / «3.2 из 100 ГБ (лимит профиля)» /
+    «3.2 ГБ»."""
     used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
-    mask = int(dev.block_reason)
     if dev.traffic_limit:
-        line = used_of_limit(used, dev.traffic_limit, "лимит устройства")
-    elif owner_limit_bytes:
-        line = used_of_limit(used, owner_limit_bytes)         # лимит профиля владельца
-    else:
-        line = used_of_limit(used, 0)
-    parts = [device_line(dev), f"Потребление за месяц: {line}"]
-    reasons = blocks.device_reasons_ru(mask, for_admin=False)
-    if reasons:
-        parts.append("⛔ Заблокировано: " + ", ".join(reasons))
-    parts.append(f"\n👤 Получено от {owner_link(dev)}")
+        return used_of_limit(used, dev.traffic_limit, "лимит устройства")
+    if profile_limit_bytes:
+        return used_of_limit(used, profile_limit_bytes, whose)
+    return human_bytes(used)
+
+
+def _seen(dev) -> str:
+    ago = timeutil.fmt_ago(dev.last_handshake)
+    return "Не подключалось" if ago == "никогда" else f"Был в сети {ago}"
+
+
+def _blocked_line(dev) -> str:
+    from awgbot.core import blocks
+    reasons = blocks.device_reasons_ru(int(dev.block_reason), for_admin=False)
+    return "⛔ Заблокировано: " + ", ".join(reasons) if reasons else ""
+
+
+def device_card_own(dev, profile_limit_bytes: int) -> str:
+    """Карточка своего устройства: «🟢 iPhone · 10.8.1.5» / «Был в сети 2 мин
+    назад · 3.2 из 50 ГБ (лимит устройства)» + блокировка, приглашение,
+    пометка «добавлено не ботом»."""
+    parts = [f"{device_state(dev)} {_e(dev.name)} · {plain_ip(dev.address)}",
+             f"{_seen(dev)} · {_usage(dev, profile_limit_bytes, 'лимит профиля')}"]
+    blocked = _blocked_line(dev)
+    if blocked:
+        parts.append(blocked)
+    if dev.friend_status == FriendStatus.PENDING:
+        parts.append("⏳ Приглашение другу ждёт активации")
+    if not dev.is_managed:
+        parts.append(UNMANAGED_DEVICE_LINE)
     return "\n".join(parts)
 
 
+def device_card_lent(dev, profile_limit_bytes: int) -> str:
+    """Своё переданное — у владельца: кто управляет, чей лимит."""
+    parts = [f"{device_state(dev)} {_e(dev.name)} · {plain_ip(dev.address)} · "
+             f"управляется профилем {holder_link(dev)}",
+             f"{_seen(dev)} · {_usage(dev, profile_limit_bytes, 'лимит твоего профиля')}"]
+    blocked = _blocked_line(dev)
+    if blocked:
+        parts.append(blocked)
+    return "\n".join(parts)
+
+
+def device_card_held(dev, owner_limit_bytes: int) -> str:
+    """Удерживаемое (от друга) — у держателя: от кого, чей лимит."""
+    parts = [f"{device_state(dev)} {_e(dev.name)} · {plain_ip(dev.address)} · "
+             f"от профиля {owner_link(dev)}",
+             f"{_seen(dev)} · {_usage(dev, owner_limit_bytes, f'лимит профиля {_e(owner_name(dev))}')}"]
+    blocked = _blocked_line(dev)
+    if blocked:
+        parts.append(blocked)
+    return "\n".join(parts)
+
+
+def held_device_card(dev, owner_limit_bytes: int) -> str:
+    return device_card_held(dev, owner_limit_bytes)
+
+
 def lent_out_marker(dev) -> str:
-    """Строка в карточке владельца: кому передано."""
+    """Строка в карточке владельца (админ): кому передано."""
     return f"👤 Передано {holder_link(dev)} и управляется им"
 
 
+def friend_marker(dev) -> str:
+    if dev.is_lent:
+        return f"👤 Передано {holder_link(dev)}"
+    if dev.friend_status == FriendStatus.PENDING:
+        return "⏳ Приглашение другу ждёт активации"
+    return ""
+
+
+UNMANAGED_DEVICE_LINE = "✳️ Добавлено не ботом — ссылки нет: удали и добавь заново"
+
+
+# ── удаление, блокировка, передача ───────────────────────────────────────────
+
+def device_delete_ask(dev, *, only: bool = False, lent: bool = False, held: bool = False) -> str:
+    """Вопрос удаления: своё / единственное / переданное (у владельца) /
+    удерживаемое (у держателя)."""
+    name = _e(dev.name)
+    if held:
+        return (f"🗑 Удалить {name}?\n"
+                "Новое устройство можно будет создать только по коду от друга")
+    if lent:
+        return (f"🗑 Удалить {name}?\n"
+                f"У профиля {holder_link(dev)} пропадёт доступ; новое устройство он получит "
+                "только с новым приглашением от тебя")
+    if only:
+        return (f"⚠️ Удалить {name} — единственное устройство?\n"
+                "VPN выключится сразу; если Telegram у тебя только через этот VPN, "
+                "до бота не достучаться")
+    return (f"🗑 Удалить {name}?\n"
+            "Ссылка перестанет работать; решишь добавить устройство снова — ссылка изменится")
+
+
 def device_delete_by_holder_ask(name: str) -> str:
-    return (f"Удалить «{_e(name)}»? Это устройство, переданное другом: после удаления "
-            "доступ с него пропадёт, а создать новое ты не сможешь — только получить "
-            "новый код от друга.")
+    return (f"🗑 Удалить {_e(name)}?\n"
+            "Новое устройство можно будет создать только по коду от друга")
 
 
 def device_delete_by_owner_ask(dev) -> str:
-    return (f"Удалить «{_e(dev.name)}»? Устройство передано "
-            f"{holder_link(dev)}: у него пропадёт доступ с этого "
-            "устройства, а создать новое сам он не сможет — только получить от тебя новый код.")
+    return device_delete_ask(dev, lent=True)
 
+
+def device_deleted(name: str, used: int, limit: int) -> str:
+    """«🗑 MacBook удалено · можно добавить ещё 2» — остаётся в чате."""
+    head = f"🗑 {_e(name)} удалено"
+    free = limit - used
+    if limit == 0 or free <= 0:
+        return head
+    return f"{head} · можно добавить ещё {free}"
+
+
+def block_device_ask(name: str) -> str:
+    return (f"🛑 Заблокировать {_e(name)}?\n"
+            "Перестанет подключаться, пока не разблокируешь. Если Telegram у тебя "
+            "через это устройство и VPN — бот станет недоступен")
+
+
+def transfer_ask(name: str) -> str:
+    n = _e(name)
+    return (f"👤 Передать {n} другу?\n"
+            "Друг получит это подключение; одно подключение на двух устройствах "
+            "работать не будет.\n"
+            f"Если устройство {n} твоё — сначала заведи себе новое")
+
+
+# ── добавление устройства ────────────────────────────────────────────────────
+
+def add_device_prompt(used: int, limit: int, *, for_friend: bool) -> str:
+    slots = f" · {used} из {limit}" if limit else ""
+    if for_friend:
+        return (f"👤 Устройство для друга{slots}{' · займёт твой слот.' if limit else ''}\n"
+                "Как назвать? Имя увидит друг")
+    return f"➕ Новое устройство{slots}\nКак назвать? Например: «iPhone»"
+
+
+def device_created(name: str, profile_limit_bytes: int) -> str:
+    """«✅ iPhone: создано · трафик в пределах 100 ГБ профиля»."""
+    head = f"✅ {_e(name)}: создано"
+    if profile_limit_bytes:
+        return f"{head} · трафик в пределах {gb_str(profile_limit_bytes)} профиля"
+    return head
+
+
+def device_limit_prompt(name: str, profile_limit_bytes: int) -> str:
+    head = f"📊 Лимит трафика устройства {_e(name)}"
+    if profile_limit_bytes:
+        return f"{head} · не больше {gb_str(profile_limit_bytes)} профиля"
+    return head
+
+
+def device_limit_other_prompt(profile_limit_bytes: int) -> str:
+    if profile_limit_bytes:
+        return f"✏️ Число ГБ, не больше {gb(profile_limit_bytes)} — лимита профиля; 0 — по лимиту профиля"
+    return "✏️ Число ГБ, 0 — без лимита"
+
+
+def device_limit_over(profile_limit_bytes: int) -> str:
+    return f"⚠️ Не больше {gb_str(profile_limit_bytes)} — лимита профиля"
+
+
+NUMBER_BAD = "⚠️ Нужно целое число, 0 — без лимита"
+NAME_EMPTY = "⚠️ Имя пустое — пришли ещё раз"
+
+
+def limit_note(old_bytes: int, new_bytes: int) -> str:
+    """Итог правки лимита первой строкой карточки: «✅ Лимит: ∞ → 50 ГБ»."""
+    def _f(b):
+        return gb_str(b) if b else "∞"
+    return f"✅ Лимит: {_f(old_bytes)} → {_f(new_bytes)}"
+
+
+def name_note(old: str, new: str) -> str:
+    return f"✅ Имя устройства: {_e(old)} → {_e(new)}"
+
+
+def device_name_prompt(name: str) -> str:
+    return f"✏️ Новое имя для устройства «{_e(name)}»"
+
+
+# ── приглашение другу ────────────────────────────────────────────────────────
+
+def _invite_link(code: str, bot_username: str) -> str:
+    return f"https://t.me/{bot_username}?start={code}"
+
+
+def friend_invite_message(device_name: str, code: str, bot_username: str) -> str:
+    """Сообщение для пересылки: ссылка и команда, «в боте» — ссылкой на бота."""
+    bot = f'<a href="https://t.me/{bot_username}">в боте</a>' if bot_username else "в боте"
+    return (f"Твоё приглашение для устройства «{_e(device_name)}» 👇\n"
+            f"{_invite_link(code, bot_username)}\n"
+            f"или {bot}: <code>/code {code}</code>")
+
+
+def friend_invite_plain(device_name: str, code: str, bot_username: str) -> str:
+    """То же без разметки — для кнопок «📋 Скопировать» и «📤 Отправить»."""
+    return (f"Твоё приглашение для устройства «{device_name}»: "
+            f"{_invite_link(code, bot_username)} "
+            f"или в TG-боте (@{bot_username}): /code {code}")
+
+
+def finish_friend_invite(device_name: str) -> str:
+    return f"☝️ Отправь приглашение другу — он активирует и получит {_e(device_name)}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Уведомления о переданных устройствах (как были)
+# ─────────────────────────────────────────────────────────────────────────────
 
 def lent_device_deleted_by_holder_notice(dev, used: int, limit: int) -> str:
     """Владельцу: держатель удалил переданное устройство."""
@@ -201,26 +491,21 @@ def lent_device_deleted_by_holder_notice(dev, used: int, limit: int) -> str:
 
 
 def lent_device_deleted_by_admin_notice(dev) -> str:
-    """Держателю: переданное ему устройство удалил администратор."""
     return (f"Устройство «{_e(dev.name)}», которым ты управлял, удалено администратором — "
             "доступ по нему больше не работает.")
 
 
 def lent_device_reassigned_notice(name: str) -> str:
-    """Держателю: администратор перенёс устройство в другой профиль — ключи
-    перевыпущены, прежний конфиг не работает."""
     return (f"Устройство «{_e(name)}», которым ты управлял, перенесено в другой профиль "
             "администратором — доступ по нему у тебя больше не работает.")
 
 
 def lent_device_deleted_by_owner_notice(dev) -> str:
-    """Держателю: владелец удалил переданное ему устройство."""
     return (f"Устройство «{_e(dev.name)}», которым ты управлял, удалено владельцем "
             f"({owner_link(dev)}) — доступ по нему больше не работает.")
 
 
 def _names_list(names: list) -> str:
-    """«A», «B» и «C» — через запятую, перед последним «и»."""
     q = [f"«{_e(n)}»" for n in names]
     if len(q) <= 1:
         return "".join(q)
@@ -228,9 +513,6 @@ def _names_list(names: list) -> str:
 
 
 def friend_device_added(dev, donor, n_held: int, own_slots: tuple | None = None) -> str:
-    """Держателю: ещё одно устройство от того же владельца. Вторая строка —
-    только когда устройств стало больше одного; у обычного клиента — со
-    своими: «2 из 3 устройств + 1 от [Вася]»."""
     head = (f"✅ Устройство «{_e(dev.name)}» от {client_link(donor)} "
             "успешно добавлено.")
     if own_slots is not None:
@@ -243,7 +525,6 @@ def friend_device_added(dev, donor, n_held: int, own_slots: tuple | None = None)
 
 
 def friend_other_donor_refusal(held: list, donor) -> str:
-    """Код от другого владельца при уже удерживаемых устройствах."""
     names = [d.name for d in held]
     one = len(names) == 1
     link = client_link(donor)
@@ -255,7 +536,6 @@ def friend_other_donor_refusal(held: list, donor) -> str:
 
 
 def guest_upgraded(donor, moved: list, limit: int) -> str:
-    """Гость стал владельцем: что перенесено; сверх лимита — честно."""
     lines = [ACTIVATION_OK, "",
              f"Переданные тебе устройства от профиля {client_link(donor)} "
              "перенесены в твой профиль — перенастраивать ничего не нужно, они работают как раньше:"]
@@ -268,7 +548,6 @@ def guest_upgraded(donor, moved: list, limit: int) -> str:
 
 
 def guest_upgraded_donor_notice(moved: list, holder, used: int, limit: int) -> str:
-    """Прежнему владельцу — одним сообщением про все уехавшие."""
     names = [d.name for d in moved]
     one = len(names) == 1
     now = f"У тебя теперь {used} из {limit} устройств" if limit else f"У тебя теперь {_n_devices(used)}"
@@ -283,17 +562,8 @@ def guest_upgraded_admin_tail(donor, moved: list, limit: int) -> str:
             f"лимит подписки {limit if limit else 'без ограничения'}.")
 
 
-GUEST_NO_DEVICES_LEFT = ("Устройств больше нет. Чтобы снова пользоваться VPN, попроси у "
-                         "друга новый код.")
+GUEST_NO_DEVICES_LEFT = "Устройств нет — попроси у друга новый код"
 
-
-def block_device_ask(name: str) -> str:
-    return (f"Заблокировать «{_e(name)}»? Устройство перестанет подключаться, пока ты "
-            "его не разблокируешь.")
-
-
-# Единственный, кому код друга не даётся, — администратор: все устройства
-# сервера и так под его управлением.
 FRIEND_ALREADY_USER = (
     "Ты администратор — принимать чужие устройства незачем: все устройства "
     "сервера и так под твоим управлением 🙂"
@@ -301,108 +571,62 @@ FRIEND_ALREADY_USER = (
 
 
 def friend_activated(device_name: str) -> str:
-    return (f"Готово! Тебе передали устройство «{_e(device_name)}» 🎉\n"
-            "Ниже — панель управления им.")
+    return f"🎉 Тебе передали устройство «{_e(device_name)}»"
 
 
 def friend_activated_host_notice(device_name: str, who: str) -> str:
     return f"👤 Друг ({_e(who)}) активировал устройство «{_e(device_name)}»."
 
 
-# Контекстные «завершители» под выданным контентом (баббл с кнопкой «В меню»).
+# ── пояснения к выдаче (в одном сообщении с содержимым) ──────────────────────
+
 def finish_link(name: str) -> str:
-    return (f"☝️ Вот, держи — ссылка для подключения твоего устройства "
-            f"«{_e(name)}». Вставь её в приложение AmneziaVPN.")
+    return (f"☝️ Ссылка для {_e(name)} — нажми на неё, чтобы скопировать, "
+            "и вставь в AmneziaVPN")
 
 
 def finish_qr(name: str) -> str:
-    return (f"☝️ Вот, держи — QR-код для твоего устройства «{_e(name)}».\n"
-            "В AmneziaVPN: «＋» → «Создать из QR-кода» и наведи камеру на "
-            "анимацию.")
+    return f"🔳 Для {_e(name)} — в AmneziaVPN «＋» → «Создать из QR-кода», наведи камеру"
 
 
 def finish_file(name: str) -> str:
-    return (f"☝️ Вот, держи — файл настроек для твоего устройства «{_e(name)}». "
-            "Импортируй его в приложение AmneziaVPN.")
+    return f"📄 Для {_e(name)} — импортируй файл в AmneziaVPN"
 
 
 def finish_config(kind: str, name: str) -> str:
-    """Завершитель под выданным конфигом по виду выдачи: link | qr | file."""
     return {"link": finish_link, "qr": finish_qr, "file": finish_file}[kind](name)
 
 
-CONNECT_METHOD_ASK = "Как планируешь подключить устройство?"
 FINISH_CLIENT_INVITE = (
     "☝️ Выше — ссылка-приглашение. Перешли её человеку, чтобы он активировал доступ.\n\n"
     "❗️ После возврата в меню это сообщение исчезнет — повторно сгенерировать его "
     "будет можно из профиля клиента, до момента принятия приглашения. Уже "
     "пересланное сообщение останется рабочим."
 )
-FINISH_FRIEND_INVITE = "☝️ Выше — приглашение для друга. Перешли его — друг активирует и получит своё устройство."
 
 
-ADD_FOR_WHOM = (
-    "Для кого создаём устройство?\n\n"
-    "<b>\U0001F4F1 Себе</b> — получишь данные для подключения прямо сейчас.\n"
-    "<b>\U0001F464 Другу</b> — сгенерирую приглашение в бота. Друг активирует его "
-    "и сможет <b>сам</b> получать данные для подключения здесь, в боте — "
-    "тебе не придётся пересылать их ему вручную."
-)
-
-
-def friend_invite_message(device_name: str, code: str, bot_username: str) -> str:
-    link = f"https://t.me/{bot_username}?start={code}"
-    return (f"Приглашение на устройство «{_e(device_name)}» готово 👇\n"
-            "Перешли другу — он активирует и получит управление этим устройством:\n\n"
-            f"{link}\n\n"
-            f"Или пусть отправит боту: <code>/code {code}</code>")
-
-
-def friend_marker(dev) -> str:
-    if dev.is_lent:
-        return f"👤 Передано {holder_link(dev)}"
-    if dev.friend_status == FriendStatus.PENDING:
-        return "⏳ Приглашение другу ждёт активации"
-    return ""
-
-
-TRANSFER_FRIEND_WARNING = (
-    "<blockquote>Передавая устройство другу, ты отдаёшь ему это подключение. "
-    "Пользоваться одним подключением с нескольких устройств одновременно "
-    "нормально не выйдет — каждому нужна своя ссылка.\n"
-    "Если сам пользуешься этим устройством — сначала заведи себе новое.</blockquote>\n"
-    "Передать устройство «{name}» другу?"
-)
-
+# ─────────────────────────────────────────────────────────────────────────────
+# Карточка клиента (админ)
+# ─────────────────────────────────────────────────────────────────────────────
 
 def client_card(client, devices, traffic, online: bool, *, for_admin: bool,
                 rf: tuple[int, int] | None = None) -> str:
-    """Полная карточка: имя, подписка, онлайн, потребление, устройства. rf —
-    РФ-часть под потреблением: только админу и только когда профилю положена
-    (services.client_card_data решает)."""
     head = f"👤 {_e(client.name)}"
     if for_admin and client.activation_status == ActivationStatus.PENDING:
         head += "  ⏳ ждёт активации"
     online_line = "Сейчас: " + ("🟢 онлайн" if online else "🔴 оффлайн")
-
     sub = subscription_block(client, for_admin=for_admin)
-
-    # потребление за месяц: клиенту — сумма, админу — с разбивкой ↑↓; тотал-лимит
     tr = client_total_line(
         traffic["rx_month"], traffic["tx_month"],
         client.traffic_limit, client.bonus_bytes, for_admin=for_admin)
     if for_admin and rf is not None:
         tr += "\n" + rf_line(*rf)
-
     lim = client.device_limit
     limit_line = (f"Устройств: {len(devices)} (без ограничения)" if lim == 0
                   else f"Устройств: {len(devices)} из {lim}")
-
     dev_block = "\n".join("  " + device_label(d, for_admin=for_admin) for d in devices)
-
     limit_and_devs = f"{limit_line}\n{dev_block}" if dev_block else limit_line
     parts = [f"{head}\n{online_line}", sub, tr, limit_and_devs]
-    # причины блокировки клиента (тихий админ-блок пользователю не виден)
     from awgbot.core import blocks
     reasons = blocks.client_reasons_ru(int(client.block_reason), for_admin=for_admin)
     if reasons:
@@ -411,15 +635,10 @@ def client_card(client, devices, traffic, online: bool, *, for_admin: bool,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Приветствие / активация
+# Подписка
 # ─────────────────────────────────────────────────────────────────────────────
 
-
 def _pause_visibility(client, *, for_admin: bool = False) -> tuple:
-    """(paused, mode, pause_visible) — видит ли ПОЛЬЗОВАТЕЛЬ текущую паузу:
-    самоблок — всегда; админская — только если блок не тихий. Админу видно
-    всегда. Общая логика для subscription_status_only/subscription_manage_text
-    и (частично) subscription_block."""
     from awgbot.core import blocks
     mask = int(client.block_reason)
     paused = bool(mask & int(blocks.ClientBlock.PAUSED))
@@ -443,18 +662,16 @@ def _pause_kind_ru(kind: str) -> str:
 
 
 def pause_credit_line(pc) -> str:
-    """Владельцу при продлении — что стало со счётом паузы (вторая строка к
-    «Подписка продлена до …»). Типы, которые не копят, — пусто."""
     if pc is None or pc.kind not in ("year", "month"):
         return ""
     if pc.reason == "expired":
-        return ("⏸ Дни паузы за этот период не начислены: подписка продлена после истечения. "
+        return ("⏸️ Дни паузы за этот период не начислены: подписка продлена после истечения. "
                 f"Доступно {_days(pc.after)}.")
     if pc.reason == "grace":
-        return ("⏸ Дни паузы за этот период не начислены: в прошлом периоде использована "
+        return ("⏸️ Дни паузы за этот период не начислены: в прошлом периоде использована "
                 f"отсрочка. Доступно {_days(pc.after)}.")
     if pc.reason == "cap":
-        return ("⏸ Дни паузы не добавлены: достигнуто максимальное количество для "
+        return ("⏸️ Дни паузы не добавлены: достигнуто максимальное количество для "
                 f"{_pause_kind_ru(pc.kind)} подписки ({pc.cap}).")
     full = (settings.get_int("pause.pause_max_total_days", 28) if pc.kind == "year"
             else settings.get_int("pause.monthly_pause_days", 2))
@@ -462,11 +679,10 @@ def pause_credit_line(pc) -> str:
     note = ("" if not partial
             else " (максимум)" if pc.kind == "year"
             else " (максимум для ежемесячной подписки)")
-    return f"⏸ Дней паузы добавлено: +{pc.added}, доступно {pc.after}{note}."
+    return f"⏸️ Дней паузы добавлено: +{pc.added}, доступно {pc.after}{note}."
 
 
 def pause_credit_admin(pc) -> str:
-    """Админу в финишер продления — то же коротко."""
     if pc is None or pc.kind not in ("year", "month"):
         return ""
     if pc.reason == "expired":
@@ -478,276 +694,210 @@ def pause_credit_admin(pc) -> str:
     return f"Дней паузы: +{pc.added} → {pc.after}" + (" (максимум)" if pc.after == pc.cap else "")
 
 
+def pause_rules_details() -> str:
+    """Свёрнутое «подробнее» о том, как копятся дни паузы."""
+    year_days = settings.get_int("pause.pause_max_total_days", 28)
+    month_days = settings.get_int("pause.monthly_pause_days", 2)
+    return details(f"+{month_days} дн. паузы за своевременное продление на месяц "
+                   f"(до {12 * month_days}), +{year_days} за год (до {2 * year_days})")
+
+
 def pause_balance_line(client) -> str:
-    """«Приостановка подписки: доступно N дней» + как счёт пополняется — всем,
-    кроме бессрочных (им останавливать нечего): и тем, у кого дней нет — пусть
-    видят, за что их дают."""
+    """«⏸️ Пауза: 14 дн. доступно» — всем, кроме бессрочных."""
     if not client.effective_period_end:
         return ""
     bal = int(client.pause_balance_days)
-    year_days = settings.get_int("pause.pause_max_total_days", 28)
-    month_days = settings.get_int("pause.monthly_pause_days", 2)
-    return (f"<b>Приостановка подписки:</b> доступно {bal} {_days_word(bal)}\n"
-            f"<i>+{month_days} {_days_word(month_days)} за каждое своевременное продление "
-            f"на месяц, не более {12 * month_days}</i>\n"
-            f"<i>+{year_days} {_days_word(year_days)} за продление на год, "
-            f"не более {2 * year_days}</i>")
+    return f"⏸️ Пауза: {bal} дн. доступно" if bal else "⏸️ Пауза: дней нет"
 
 
-def subscription_manage_text(client, *, routing_visible: bool) -> str:
-    """Экран «Управлять подпиской» / «Моя подписка»: тип, статус, РФ-доступ,
-    период и остаток срока, счёт дней паузы, лимиты. Потребление — на главной,
-    список устройств — в «Мои устройства»."""
+def _limits_line(client, routing_visible: bool) -> str:
+    parts = [f"{gb_str(client.traffic_limit)} в месяц" if client.traffic_limit else "трафик без лимита",
+             _n_devices(client.device_limit) if client.device_limit else "устройства без лимита"]
+    if routing_visible:
+        parts.append(f"🇷🇺 {ROUTING_NAME}")
+    return "Лимиты: " + " · ".join(parts)
+
+
+def subscription_text(client, *, routing_visible: bool) -> str:
+    """Экран «💳 Подписка»: тип и статус, период и остаток, пауза (счёт или
+    текущая), лимиты. «🇷🇺 РФ-доступ» в лимитах — только когда выдан."""
     paused, mode, pause_visible = _pause_visibility(client)
-    status = "⏳ приостановлена" if pause_visible else subscription_status_only(client, expiring=True)
-    lines = ["<b>Информация о подписке:</b>", "",
-             f"Тип подписки: {subscription_kind_label(client.period_kind)}",
-             f"Статус: {status}",
-             f"РФ-доступ: {'🟢 доступен' if routing_visible else '🔴 не доступен'}"]
+    kind = subscription_kind_label(client.period_kind)
+    if pause_visible:
+        status = "⏸️ на паузе" if mode == "user" else "⏸️ приостановлена администратором"
+    else:
+        status = subscription_status_only(client, expiring=True)
+    lines = [f"💳 Подписка: {kind} · {status}"]
     start = timeutil.parse_iso(client.period_start) if client.period_start else None
     end_iso = client.effective_period_end
     if end_iso:
         end = timeutil.parse_iso(end_iso)
-        period = timeutil.fmt_period(start, end) if start else f"до {timeutil.fmt_dt(end)}"
-        lines.append(f"Период подписки: {period}")
+        period = timeutil.fmt_period_ui(start, end) if start else f"до {timeutil.fmt_dt_ui(end)}"
         if not pause_visible:
-            lines.append(f"До истечения: {timeutil.fmt_remaining(end)}")
-    else:
-        lines.append("Период подписки: " + (f"с {timeutil.fmt_dt(start)} — бессрочно" if start
-                                             else "бессрочно"))
-    pause = pause_balance_line(client)
-    if pause:
-        lines += ["", pause]
-    lines += ["",
-              "Лимит потребления в месяц: " + (gb_str(client.traffic_limit) if client.traffic_limit
-                                               else "без ограничения"),
-              "Лимит устройств: " + (str(client.device_limit) if client.device_limit
-                                     else "без ограничения")]
-    return "\n".join(lines)
+            period += f" · ост. {timeutil.remaining_brief(end)}"
+        lines.append(period)
+        if pause_visible and mode == "user":
+            since = timeutil.parse_iso(client.pause_active_since) if client.pause_active_since else None
+            reserved = int(client.pause_reserved_days)
+            used = timeutil.ceil_days((timeutil.now() - since).total_seconds()) if since else 0
+            used = max(0, min(used, reserved))
+            until = _pause_until(client)
+            lines.append(f"⏸️ на паузе с {timeutil.fmt_date_ui(since) if since else '—'}, до {until} · "
+                         f"израсходовано {used} из {reserved} дн. — снимешь сейчас, остальные вернутся")
+        elif not pause_visible:
+            lines.append(pause_balance_line(client))
+            if str(client.period_kind or "") in ("year", "month"):
+                lines.append(pause_rules_details())
+    lines += ["", _limits_line(client, routing_visible)]
+    return "\n".join(l for l in lines if l is not None)
+
+
+def subscription_manage_text(client, *, routing_visible: bool) -> str:
+    return subscription_text(client, routing_visible=routing_visible)
 
 
 def subscription_status_only(client, *, expiring: bool = False) -> str:
-    """Только статус подписки (без периода/дат — те в «Управлять подпиской»).
-    Для лёгкого инфобокса главного меню клиента. expiring — показывать
-    «🟠 истекает DD.MM HH:MM» с момента, когда человеку ушло первое «истекает
-    через…» (пороги в notified_thresholds); гостю про срок дарителя не говорим."""
+    """Только статус подписки: «🟢 активна», «🟡 истекает 12.10 18:00»,
+    «🔴 истекла», «⏸️ на паузе» / «⏸️ приостановлена администратором»."""
     _, mode, pause_visible = _pause_visibility(client)
     if pause_visible:
-        return "⏸ приостановлено пользователем" if mode == "user" else "⏸ приостановлено администратором"
+        return "⏸️ на паузе" if mode == "user" else "⏸️ приостановлена администратором"
     if client.status != SubStatus.ACTIVE:
         return "🔴 истекла"
     if expiring and client.period_end and client.notified_thresholds:
-        end = timeutil.parse_iso(client.period_end).astimezone(timeutil.TZ)
-        return f"🟠 истекает {end.strftime('%d.%m %H:%M')}"
+        end = timeutil.parse_iso(client.period_end)
+        return f"🟡 истекает {timeutil.fmt_dt_ui(end)}"
     return "🟢 активна"
 
 
 def server_status_client(ok: bool) -> str:
-    return "🟢 VPN-сервер работает нормально" if ok else "🔴 VPN-сервер не отвечает"
+    return vpn_status_line(ok)
 
 
-def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
-                    routing_ok: bool = None, held=(), traffic: dict | None = None) -> str:
-    """Инфобокс главного меню клиента: приветствие, статус сервера (отдельным
-    абзацем сразу после приветствия — пустая строка с обеих сторон), статус
-    подписки (только статус — период/даты в «Управлять подпиской»; «истекает
-    DD.MM HH:MM» — с первого напоминания), потребление за месяц против лимита
-    (traffic — rx_month/tx_month профиля), максимум устройств и текущее
-    количество.
+# ─────────────────────────────────────────────────────────────────────────────
+# Пауза
+# ─────────────────────────────────────────────────────────────────────────────
 
-    routing_ok=None — строки о РФ-шлюзе нет вовсе: админ функцию не разрешил,
-    и рассказывать про механизм тому, кому он недоступен, — шум. Разрешил —
-    строка есть всегда, и в исправном состоянии тоже: она отвечает на вопрос
-    «работает ли», который иначе задаётся заходом в раздел."""
-    status_block = server_status_client(server_ok)
-    if routing_ok is not None:
-        status_block += "\n" + routing_status_line(routing_ok)
-    text = (f"Привет, {_e(client.name)}! 👋\n\n"
-           f"{status_block}\n\n"
-           f"Статус подписки: {subscription_status_only(client, expiring=True)}")
-    if traffic is not None:
-        text += "\n\n" + client_total_line(traffic["rx_month"], traffic["tx_month"],
-                                            client.traffic_limit, client.bonus_bytes,
-                                            for_admin=False)
-    if slots is not None:
-        used, limit = slots
-        tail = held_devices_tail(held)             # «+ 1 от [Вася]» — чужие, которые держит
-        if limit == 0:                             # безлимит
-            text += f"\n\nУстройств добавлено: {used} (без ограничения){tail}."
-        elif used == 0 and not tail:
-            text += f"\n\nВсего можно добавить до {limit} {plural_ru(limit, 'устройства', 'устройств', 'устройств')}. Пока не добавлено ни одного."
-        else:
-            text += f"\n\nУстройств добавлено: {used} из {limit}{tail}."
-    return text
+PAUSE_WARNING_LINE = ("⚠️ На паузе VPN выключен. Снять её можно только здесь — если Telegram "
+                      "у тебя только через этот VPN, снять будет нечем")
 
 
-def device_deleted(name: str, used: int, limit: int) -> str:
-    """Финишер после удаления устройства клиентом: что удалено и сколько теперь
-    можно добавить. Остаётся в чате, меню приходит следом."""
-    head = f"🗑 Устройство «{_e(name)}» удалено."
-    free = limit - used
-    if limit == 0 or free <= 0:
-        return head
-    return head + f" Теперь можно добавить до {free} {plural_ru(free, 'устройства', 'устройств', 'устройств')}."
+def pause_ask(available_days: int, *, email_resume: bool = False) -> str:
+    """Экран паузы: сколько доступно, что происходит, предупреждение — только
+    когда аварийного выхода по почте нет."""
+    lines = [f"⏸️ Пауза — до {available_days} дн.",
+             "Действие подписки приостановится; снимешь раньше — неизрасходованные дни вернутся"]
+    if not email_resume:
+        lines.append(PAUSE_WARNING_LINE)
+    return "\n".join(lines)
 
 
-def device_slots_line(used: int, limit: int) -> str:
-    if limit == 0:                                 # безлимит
-        return f"Устройств добавлено: {used}. Можно добавлять без ограничения."
-    if used == 0:
-        return f"Всего можно добавить до {limit} {plural_ru(limit, 'устройства', 'устройств', 'устройств')}. Пока не добавлено ни одного."
-    if used >= limit:
-        return (f"Устройств добавлено: {used} из {limit}. Лимит исчерпан — "
-                f"чтобы добавить новое, сначала удали одно из существующих.")
-    return f"Устройств добавлено: {used} из {limit}. Можно добавить ещё {limit - used}."
+def pause_other_prompt(available_days: int) -> str:
+    return f"✏️ Дней, 1–{available_days}"
 
 
-DELETE_ONLY_DEVICE_WARNING = (
-    "⚠️ Это твоё <b>единственное</b> устройство.\n\n"
-    "Если удалить — VPN сразу перестанет работать. И, если прямо сейчас ты "
-    "пользуешься Telegram только через этот VPN, ты потеряешь доступ и к боту — "
-    "и не сможешь подключиться заново сам.\n\n"
-    "Точно удалить?"
+def pause_days_bad(available_days: int) -> str:
+    return f"⚠️ Нужно целое число от 1 до {available_days}"
+
+
+def pause_emergency_code(code: str, address: str) -> str:
+    return (f"🆘 Если потеряешь доступ к боту — отправь письмо на <code>{_e(address)}</code> "
+            f"с темой <code>{_e(code)}</code>: пауза снимется сама. Код одноразовый. "
+            "Сохрани адрес и код в заметках")
+
+
+def pause_entered_summary(until: str) -> str:
+    """Итог входа в паузу — остаётся в чате. until — дата авто-возобновления
+    (уже в формате экрана)."""
+    return f"⏸️ Подписка на паузе до {until} — снять раньше можно в «💳 Подписка»"
+
+
+def pause_unavailable() -> str:
+    md = settings.get_int("pause.monthly_pause_days", 2)
+    return ("Пауза сейчас недоступна: на счету нет дней. Годовая подписка даёт "
+            f"{settings.get_int('pause.pause_max_total_days', 28)} дней за период, "
+            f"ежемесячная — по {md} {_days_word(md)} за каждое своевременное продление")
+
+
+def pause_limit_exhausted() -> str:
+    return "Дни паузы на счету закончились — пополнится при продлении подписки"
+
+
+def pause_resumed_self(actual_days: int, new_end) -> str:
+    return (f"▶️ Пауза снята · {actual_days} дн. израсходовано · "
+            f"подписка до {timeutil.fmt_dt_ui(new_end)}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Активация, помощь, коды
+# ─────────────────────────────────────────────────────────────────────────────
+
+HELP_INTRO = "❓ Помощь — какое устройство?"
+ACTIVATION_OK = "🎉 Доступ открыт"
+ACTIVATION_OK_HELP = "🎉 Доступ открыт. Какое у тебя устройство?"
+ACTIVATION_INVALID = "🤔 Такого кода нет — проверь и пришли ещё раз"
+ACTIVATION_ALREADY = "У тебя уже есть доступ"
+
+COLD_START_GREETING = ("👋 Не узнаю тебя. Пришёл по приглашению, а код не подхватился? "
+                       "Отправь: <code>/code КОД</code>")
+
+CODE_NO_ARG = "Отправь код после команды: <code>/code КОД</code>"
+
+INVITE_FORWARD_TEMPLATE = (
+    "Привет! Тебе открыт доступ 😊\n"
+    "Жми ссылку и «Старт» — дальше подскажу\n"
+    "{link}"
 )
 
-DELETE_DEVICE_CONFIRM = (
-    "<blockquote>При удалении устройства его ссылка для подключения станет "
-    "неактивной, и VPN по ней работать перестанет!\n"
-    "Если потом захочешь добавить его снова — ссылка будет новая.</blockquote>\n"
-    "Удалить устройство «{name}»?"
-)
-
-
-HELP_INTRO = "Нужна помощь с настройкой? Выбери своё устройство:"
-
-UNMANAGED_DEVICE_EXPLAIN = (
-    "\n\n<blockquote>Это устройство добавлял не бот — оно появилось в конфиге "
-    "сервера само. Приватный ключ WireGuard хранится только на самом устройстве, "
-    "поэтому выдать ссылку, файл или QR бот не может, и передать его другу — "
-    "тоже.\n"
-    "Удали его и добавь новое через бота: тогда всё это станет доступно.</blockquote>"
-)
+UNMANAGED_DEVICE_EXPLAIN = "\n\n" + UNMANAGED_DEVICE_LINE
 
 UNMANAGED_DEVICE_DIALOG = (
-    "Не помню, чтобы это устройство добавлялось через меня 😳\n"
-    "Значит, пир прописали в конфиг сервера мимо бота. Ссылки для него у меня "
-    "нет и взять её неоткуда.\n"
-    "Удали это устройство и добавь новое через бота."
+    "Это устройство добавлял не бот — ссылки для него нет и взять её неоткуда.\n"
+    "Удали его и добавь новое через бота"
 )
 
 
 def limit_changed_notice(old: int, new: int) -> str:
     def _fmt(v):
-        return "без ограничения" if v == 0 else str(v)
-    return f"Максимальное количество устройств для тебя изменено: {_fmt(old)} → {_fmt(new)}."
+        return "∞" if v == 0 else str(v)
+    return f"Лимит устройств изменён: {_fmt(old)} → {_fmt(new)}"
 
 
-INVITE_FORWARD_TEMPLATE = (
-    "Привет!\n"
-    "Тебе одобрен доступ в свободный интернет 😊\n"
-    "Для получения настроек переходи по ссылке и жми \"СТАРТ\" — расскажу, "
-    "что делать дальше\n"
-    "{link}"
-)
-
-ACTIVATION_OK = "Готово! Доступ активирован. 🎉"
-ACTIVATION_INVALID = (
-    "Не помню такого кода в списках, что-то ты путаешь...\n"
-    "Как найдёшь правильный код — пиши, пообщаемся 🙂"
-)
-ACTIVATION_ALREADY = "У тебя уже есть доступ."
-
-COLD_START_GREETING = (
-    "Привет!\n"
-    "Ой, что-то я тебя не припоминаю 😳\n"
-    "Если ты перешёл по ссылке-приглашению, но код не подхватился (так бывает — "
-    "Telegram иногда не передаёт его с первого раза), просто отправь мне код "
-    "командой <code>/code КОД</code> — сверю по спискам."
-)
-
-CODE_NO_ARG = "Отправь код после команды, вот так: <code>/code твой_код</code>"
-
-
-# ── «Продли на пару недель» (самостоятельная отсрочка) ──────────────────────────
+# ── отсрочка ─────────────────────────────────────────────────────────────────
 
 def grace_activated_client(days: int, end) -> str:
-    return (f"🙏 Готово! Подписка продлена на {days} дн. — до {end}.\n"
-            "Эти дни вычтутся из следующего продления.")
+    """end — дата окончания уже строкой экрана."""
+    return f"🙏 Продлено на {days} дн., до {end} — вычтется из следующего продления"
 
-GRACE_STALE = "Это предложение уже неактуально."
+
+GRACE_STALE = "Это предложение уже неактуально"
+
 
 def grace_activated_admin(name: str, days: int) -> str:
     return f"🙏 Профиль «{_e(name)}» активировал отсрочку на {days} дн."
 
 
-# ── Приостановка: инфобоксы диалога ──────────────────────────────────────────
+# ── совместимость: строки, которыми ещё пользуются экраны админа ─────────────
+# (карточка устройства и «Мои устройства» админа переделываются следующим
+# этапом; до него они зовут эти имена)
 
-def pause_ask(available_days: int) -> str:
-    """Инфобокс перед выбором длительности: сколько доступно и как считается."""
-    return (f"⏸ Подписку можно приостановить максимум на "
-            f"{available_days} {_days_word(available_days)}.\n\n"
-            "Пока подписка на паузе, её срок не тикает. Возобновить можно в любой "
-            "момент. Тогда неиспользованные дни приостановки вернутся обратно — "
-            "их можно будет использовать позже, а израсходуется только фактическое "
-            "количество <i>начатых</i> дней паузы.\n\n"
-            "На сколько дней приостановить?")
-
-
-def pause_warning(days: int) -> str:
-    """Предупреждение перед подтверждением: пауза отключает VPN, а выйти можно
-    только через этот бот. Если Telegram доступен лишь через этот VPN — клиент
-    рискует запереться. (Аварийный e-mail-выход добавит фича 2.)"""
-    return ("⚠️ <b>Прежде, чем мы продолжим:</b>\n\n"
-            "На время паузы VPN отключается. Выйти из приостановки досрочно можно "
-            "только кнопкой «Возобновить» здесь, в этом боте.\n\n"
-            "Если ты заходишь в Telegram <b>только через этот VPN</b>, то после "
-            "постановки на паузу потеряешь доступ и к боту — и не сможешь снять "
-            "паузу сам.\n\n"
-            "Продолжить?")
+def device_slots_line(used: int, limit: int) -> str:
+    if limit == 0:
+        return f"Устройств: {used}"
+    line = f"Устройств {used} из {limit}"
+    tail = limit_exhausted_line(used, limit)
+    return f"{line}\n{tail}" if tail else line
 
 
-def pause_emergency_code(code: str, address: str) -> str:
-    """Аварийный код email-выхода — показывается после входа в паузу, если фича
-    включена. Клиент, заперевшийся без Telegram, шлёт этот код письмом."""
-    return (f"🆘 <b>Аварийный выход без Telegram</b>\n\n"
-            f"Если потеряешь доступ к боту (Telegram только через этот VPN), "
-            f"отправь письмо на <code>{_e(address)}</code>, указав в теме письма "
-            f"только этот код:\n\n<code>{_e(code)}</code>\n\n"
-            f"Доступ восстановится автоматически. Код одноразовый и действует, "
-            f"пока активна приостановка.\n\n"
-            f"<b>Сохрани код и e-mail в заметках на всякий случай.</b>")
+CONNECT_METHOD_ASK = "Как подключить устройство?"
 
+DELETE_ONLY_DEVICE_WARNING = (
+    "⚠️ Удалить единственное устройство?\n"
+    "VPN у профиля выключится сразу; если владелец заходит в Telegram только "
+    "через этот VPN, до бота он не достучится"
+)
 
-def pause_entered_summary(until: str) -> str:
-    """Итог входа в паузу — остаётся в чате как результат действия (промежуточные
-    шаги стираются). until — дата авто-возобновления (DD.MM.YYYY HH:MM)."""
-    return (f"Подписка приостановлена до {until}.\n"
-            "При необходимости можно возобновить досрочно через бота.")
-
-def pause_unavailable() -> str:
-    """Лимит берём из конфига (не хардкод): при смене PAUSE_MAX_TOTAL_DAYS текст
-    иначе называл бы пользователю неверную цифру. Функция (а не константа) —
-    config импортируется лениво, как и в остальных динамических текстах модуля."""
-    md = settings.get_int("pause.monthly_pause_days", 2)
-    return ("Приостановка сейчас недоступна: на счету нет дней. Годовая подписка даёт "
-            f"{settings.get_int('pause.pause_max_total_days', 28)} дней за период, "
-            f"ежемесячная — по {md} {_days_word(md)} за каждое своевременное продление.")
-
-
-def pause_limit_exhausted() -> str:
-    """Годовая подписка, но доступных дней приостановки не осталось."""
-    return "Дни приостановки на счету закончились — пополнится при продлении подписки."
-
-def pause_resume_ask(actual: int, reserved: int) -> str:
-    """Инфобокс подтверждения досрочного выхода из паузы — явно указываем,
-    что спишутся ФАКТИЧЕСКИЕ дни, а не весь зарезервированный остаток."""
-    if reserved:
-        return (f"▶️ Возобновить сейчас? Будет использовано {actual} из "
-                f"{reserved} зарезервированных дней приостановки — "
-                f"неиспользованный остаток вернётся в подписку.")
-    return f"▶️ Возобновить сейчас? Приостановка длилась {actual} дн."
-
-
-def pause_resumed_self(actual_days: int, new_end) -> str:
-    return (f"▶️ Подписка возобновлена. Использовано {actual_days} дн. паузы, "
-            f"активна до {timeutil.fmt_dt(new_end)}.")
+DELETE_DEVICE_CONFIRM = (
+    "🗑 Удалить {name}?\n"
+    "Ссылка перестанет работать; добавить снова — ссылка изменится"
+)

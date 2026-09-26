@@ -7,98 +7,67 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.bot.callbacks import DeviceCB, RoutingCB, SetCB, GwMarkCB, GwSlotCB, Menu
 from awgbot.bot import texts as _texts
 
-from .common import _chk, _tick, _btn_suffix, page_slice, page_nav
+from .common import _chk, _tick, _btn_suffix, page_slice, page_nav, select_all_button, confirm
 from .settings import _back
 
 
-def routing_devices(client_id: int, devices, *, back_target, lent_out=(), page: int = 0) -> InlineKeyboardMarkup:
-    """Экран устройств профиля: по кнопке на устройство, переключение на месте.
-
-    Один вход вместо тумблеров, рассыпанных по карточкам устройств: всё
-    состояние профиля видно разом, а массовое действие лежит тут же первой
-    строкой. Карточку устройства не трогаем — она и без того плотная.
-
-    Первая кнопка одна, а не пара «включить»/«выключить»: пока включено хоть
-    что-то, осмысленное действие ровно одно — выключить всё. Две кнопки, одна из
-    которых всегда холостая, только занимают место.
-    """
+def routing_panel(client_id: int, devices, *, lent_out=(), enabled: int = 0, total: int = 0,
+                  n_domains: int = 0, back_target: str, page: int = 0, **_legacy) -> InlineKeyboardMarkup:
+    """Раздел «🇷🇺 РФ-доступ» одним экраном: переключатели устройств (свои и
+    удерживаемые), «Выбрать все» по правилу массового выбора, добавление
+    сайтов и вход в их список. Переданные — строкой в тексте, без кнопки."""
     kb = InlineKeyboardBuilder()
-    # «Выключить все» показываем, только когда включены ВСЕ. При частичном
-    # включении полезнее «включить все»: доводить набор до полного — обычное
-    # действие, а сбрасывать сделанный выбор — редкое. Та же логика, что на
-    # выборе адресатов объявления.
-    all_on = bool(devices) and all(d.routing_on for d in devices)
-    # Галочки, а не цветные кружки _chk: экран со списком и отметками — это
-    # выбор, и он должен читаться так же, как выбор адресатов объявления.
-    # Кружки оставлены там, где кнопка показывает СОСТОЯНИЕ чего-то одного.
-    kb.button(text="☑️ Выключить все" if all_on else "✅ Включить все",
-              callback_data=RoutingCB(action="all", ref=client_id))
-    rows = [1]
-    # свои переданные — в самом конце, без переключателя: управляет держатель
-    items = [(d, False) for d in devices] + [(d, True) for d in lent_out]
-    chunk, page, prev, nxt = page_slice(items, page, static=2)
-    for _i, (d, out) in chunk:
-        if out:
-            kb.button(text=f"👤 {d.name} — {_texts.holder_name(d)}",
-                      callback_data=RoutingCB(action="lent", ref=d.id))
-        else:
-            mark = "✅" if d.routing_on else "☑️"
-            held = f" — от {_texts.owner_name(d)}" if d.is_lent else ""    # чужое, которое держим
-            kb.button(text=f"{mark} {d.name}{_btn_suffix(d)}{held}",
-                      callback_data=RoutingCB(action="dev", ref=d.id))
+    rows = []
+    chunk, page, prev, nxt = page_slice(list(devices), page, static=4 if devices else 3)
+    for _i, d in chunk:
+        mark = "✅" if d.routing_on else "☑️"
+        held = f" · от профиля {_texts.owner_name(d)}" if d.is_lent else ""
+        kb.button(text=f"{mark} {d.name}{_btn_suffix(d)}{held}",
+                  callback_data=RoutingCB(action="dev", ref=d.id))
         rows.append(1)
-    nav = page_nav(kb, "rtdevs", client_id, page, prev, nxt, RoutingCB(action="devs", ref=client_id).pack())
+    nav = page_nav(kb, "rtpanel", client_id, page, prev, nxt,
+                   RoutingCB(action="panel", ref=client_id).pack())
     if nav:
         rows.append(nav)
+    if devices:
+        kb.add(select_all_button(enabled, total, RoutingCB(action="all", ref=client_id)))
+        rows.append(1)
+    kb.button(text="➕ Сайт", callback_data=RoutingCB(action="add", ref=client_id))
+    kb.button(text=f"📋 Сайты: {n_domains}" if n_domains else "📋 Сайты",
+              callback_data=RoutingCB(action="sites", ref=client_id))
+    rows.append(2)
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
     kb.adjust(*rows, 1)
     return kb.as_markup()
 
 
-def routing_panel(client_id: int, *, master_on: bool, domains: list,
-                  enabled: int = 0, total: int = 0,
-                  back_target: str, page: int = 0) -> InlineKeyboardMarkup:
-    """Раздел «Доступ к РФ-сервисам»: вход в устройства и личный список адресов.
-
-    Первая кнопка не переключает, а ОТКРЫВАЕТ список устройств. Раньше она была
-    тумблером на весь профиль, и включить режим выборочно было негде.
-
-    Список адресов при выключенном режиме не показываем — он не действует, и
-    предлагать редактировать неработающее значит путать."""
+def routing_sites(client_id: int, domains: list, page: int = 0) -> InlineKeyboardMarkup:
+    """«📋 Сайты»: по кнопке «➖» на адрес (номер — по ПОЛНОМУ списку),
+    добавить и очистить, назад — в раздел."""
     kb = InlineKeyboardBuilder()
-    kb.button(text=f"{_chk(master_on)} Устройства: {enabled} из {total}",
-              callback_data=RoutingCB(action="devs", ref=client_id))
-    rows = [1]
-    if master_on:
-        kb.button(text="➕ Добавить адреса", callback_data=RoutingCB(action="add", ref=client_id))
+    rows = []
+    chunk, page, prev, nxt = page_slice(domains, page, static=3 if domains else 2)
+    for i, dom in chunk:
+        kb.button(text=f"➖ {dom}", callback_data=RoutingCB(action="del", ref=client_id, idx=i))
         rows.append(1)
-        # Минус, а не корзина: строка убирает ОДНУ запись из списка — то же
-        # действие, что «➖» в разделе доступа по SSH. Корзина остаётся там,
-        # где сносят всё разом, ниже. Номер в колбэке — по ПОЛНОМУ списку.
-        chunk, page, prev, nxt = page_slice(domains, page, static=4 if domains else 3)
-        for i, dom in chunk:
-            kb.button(text=f"➖ {dom}",
-                      callback_data=RoutingCB(action="del", ref=client_id, idx=i))
-            rows.append(1)
-        nav = page_nav(kb, "rtpanel", client_id, page, prev, nxt,
-                       RoutingCB(action="panel", ref=client_id).pack())
-        if nav:
-            rows.append(nav)
-        if domains:
-            kb.button(text="🗑 Очистить список",
-                      callback_data=RoutingCB(action="clear", ref=client_id))
-            rows.append(1)
-    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_target))
+    nav = page_nav(kb, "rtsites", client_id, page, prev, nxt,
+                   RoutingCB(action="sites", ref=client_id).pack())
+    if nav:
+        rows.append(nav)
+    kb.button(text="➕ Сайт", callback_data=RoutingCB(action="add", ref=client_id))
+    if domains:
+        kb.button(text="🗑 Очистить", callback_data=RoutingCB(action="clear", ref=client_id))
+        rows.append(2)
+    else:
+        rows.append(1)
+    kb.button(text="⬅️ Назад", callback_data=RoutingCB(action="panel", ref=client_id))
     kb.adjust(*rows, 1)
     return kb.as_markup()
 
 
 def routing_clear_confirm(client_id: int) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="🗑 Да, очистить", callback_data=RoutingCB(action="clear_yes", ref=client_id))
-    kb.button(text="⬅️ Отмена", callback_data=RoutingCB(action="panel", ref=client_id))
-    kb.adjust(1, 1)
-    return kb.as_markup()
+    return confirm(RoutingCB(action="sites", ref=client_id), "🗑 Удалить все",
+                   RoutingCB(action="clear_yes", ref=client_id))
 
 
 def gateway_device_actions(dev, back_target: str, slot: int = 0) -> InlineKeyboardMarkup:
