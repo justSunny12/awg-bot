@@ -23,7 +23,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import DeviceCB, GuideCB, HelpCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, drop_message, own_device, held_device,
-                                        send_device_config, show_main_menu, ask_here, ask_tracked,
+                                        send_device_config, ask_here, ask_tracked,
                                         back_to_context)
 from awgbot.domain.services import LimitReached, ServiceError
 from awgbot.bot.states import AddDeviceGuide
@@ -36,6 +36,28 @@ router = Router(name="guide")
 # те же пошаговые гайды — клиенту и гостю; добавить устройство может только клиент
 router.message.filter(RoleFilter("client", "invited"))
 router.callback_query.filter(RoleFilter("client", "invited"))
+
+
+# экран реестра «guide»: ref — вариант шага подключения (отмена ввода имени
+# внутри гайда возвращает на тот же шаг, а не на главную)
+GUIDE_REF = {"connect": 0, "connect_apple": 1}
+GUIDE_BY_REF = {v: k for k, v in GUIDE_REF.items()}
+
+
+async def connect_step0_payload(services, client, ref: int = 0, chat_id: int = 0):
+    """(текст, клавиатура) шага 0 подключения — для реестра экранов."""
+    guide = GUIDE_BY_REF.get(int(ref or 0), "connect")
+    guest = _guest(client)
+    if guest:
+        devices = await call(services.db.list_held_devices, client.id)
+        slots = (len(devices), 0)
+    else:
+        devices = await call(services.db.list_devices, client.id)
+        slots = await call(services.device_slots, client.id)
+    from awgbot.bot import paging
+    return (guides.step_text(guide, 0),
+            kb.guide_connect_devices(devices, slots, guide=guide, guest=guest,
+                                     page=paging.page_of(chat_id or client.tg_id, "guidedev")))
 
 
 def _guest(client) -> bool:
@@ -137,7 +159,7 @@ async def guide_connect_deliver(cb: CallbackQuery, callback_data: GuideCB, servi
     try:
         await send_device_config(cb.message, services, dev, callback_data.kind)
     except ServiceError as e:
-        await cb.message.answer(f"Не удалось выдать конфиг: {e}")
+        await cb.message.answer(f"Не удалось выдать конфиг: {texts._e(str(e))}")
         await cb.answer()
         return
     variant = callback_data.guide
@@ -200,7 +222,7 @@ async def guide_add_device(cb: CallbackQuery, callback_data: GuideCB, services, 
         return
     await state.set_state(AddDeviceGuide.name)
     await ask_here(cb, services, state, texts.add_device_prompt(used, limit, for_friend=False),
-                   "main", return_guide=callback_data.guide)
+                   "guide", GUIDE_REF.get(callback_data.guide, 0), return_guide=callback_data.guide)
     await cb.answer()
 
 

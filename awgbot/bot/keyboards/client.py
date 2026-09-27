@@ -8,7 +8,7 @@ from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMa
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.bot.callbacks import (
     BlockCB, CancelCB, DelDeviceCB, DeviceCB, FriendCB, GraceCB, GuideCB, HelpCB, Menu, PauseCB,
-    PresetCB, RoutingCB)
+    RoutingCB)
 from awgbot.bot import texts as _texts
 
 from .common import (_btn_suffix, append_hide_row, _manual_block_button, confirm, issuable,
@@ -328,8 +328,9 @@ def invite_kb(plain_text: str, link: str) -> InlineKeyboardMarkup:
 
 def help_menu(is_initial: bool = False, *, guest: bool = False) -> InlineKeyboardMarkup:
     """Платформы по две в ряд. is_initial — первый гайд сразу после
-    активации: вместо «В меню» — «✅ Всё умею сам». guest — выход на главную
-    гостя."""
+    активации: вместо «В меню» — «✅ Всё умею сам». guest — тот же выход
+    «✅ Всё умею сам» на главную гостя (его помощь всегда «первая»: сам он
+    устройств не заводит)."""
     kb = InlineKeyboardBuilder()
     kb.button(text="🍎 iPhone / iPad", callback_data=HelpCB(platform="apple"))
     kb.button(text="🤖 Android", callback_data=HelpCB(platform="android"))
@@ -338,7 +339,7 @@ def help_menu(is_initial: bool = False, *, guest: bool = False) -> InlineKeyboar
     if is_initial:
         kb.button(text="✅ Всё умею сам", callback_data=HelpCB(platform="skip"))
     elif guest:
-        kb.button(text="⬅️ В меню", callback_data=FriendCB(action="refresh"))
+        kb.button(text="✅ Всё умею сам", callback_data=FriendCB(action="refresh"))
     else:
         kb.button(text="⬅️ В меню", callback_data=Menu(action="main"))
     kb.adjust(2, 2, 1)

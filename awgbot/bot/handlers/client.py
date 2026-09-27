@@ -34,7 +34,7 @@ from awgbot.bot.handlers.common import (
     send_menu, content_finisher, show_screen)
 from awgbot.domain.services import BYTES_PER_GB, LimitReached, ServiceError
 from awgbot.bot.states import AddDevice, EditDeviceName, EditTrafficLimit, PauseDays
-from awgbot.core.enums import PauseMode, PeriodKind
+from awgbot.core.enums import PauseMode, PeriodKind, SubStatus
 
 router = Router(name="client")
 router.message.filter(RoleFilter("client", "activation"))
@@ -268,6 +268,7 @@ def _pause_flags(client) -> tuple[bool, bool]:
                   or bool(int(client.block_reason) & int(blocks.ClientBlock.PAUSED)))
     paused_user = client.is_paused and client.pause_mode == PauseMode.USER
     can_pause = (not paused_any and bool(client.period_end)
+                 and client.status == SubStatus.ACTIVE
                  and int(client.pause_balance_days) > 0)
     return paused_user, can_pause
 
@@ -348,7 +349,7 @@ async def _issue(cb: CallbackQuery, services, client, dev, kind: str) -> None:
     try:
         await send_device_config(cb.message, services, dev, kind, finisher=kb.to_menu())
     except ServiceError as e:
-        await cb.message.answer(str(e))
+        await cb.message.answer(texts._e(str(e)))
         await _show_main(cb.message, services, client)
     await cb.answer()
 
@@ -458,7 +459,7 @@ async def _apply_device_limit(cb: CallbackQuery, services, client, dev, gb_value
     fresh = await call(services.db.get_device, dev.id)
     text, markup = await device_card_parts(services, client, fresh)
     from awgbot.bot import screens
-    await edit(cb, screens.with_note(text, texts.limit_note(old_b, new_b)), markup)
+    await edit(cb, screens.with_note(text, texts.limit_note(old_b, new_b, plimit)), markup)
     await cb.answer()
 
 
@@ -504,7 +505,7 @@ async def client_edit_traffic_apply(message: Message, client, services, state: F
     new_b = gb_value * BYTES_PER_GB
     await call(services.set_device_traffic_limit, dev.id, new_b)
     await back_to_context(message, services, data, "client", client,
-                          note=texts.limit_note(old_b, new_b))
+                          note=texts.limit_note(old_b, new_b, plimit))
 
 
 @router.callback_query(DeviceCB.filter(F.action == "transfer"))

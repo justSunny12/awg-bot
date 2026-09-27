@@ -47,12 +47,15 @@ GitHub `vX.Y.Z.P — …`.
   `#requires_gw_…` — агенту шлюза. **Строка ставится только той роли, чей
   код релиз меняет.** Только основной бот (клиентская механика, резолвер
   клиентов, переезд, файервол ВПС, `settings.py`, `admin.py`, тексты и
-  клавиатуры основного бота, скрипт линка) — одна строка `main`. Только агент
+  клавиатуры основного бота, реестр экранов `bot/screens.py`, скрипт линка) —
+  одна строка `main`. Только агент
   (`handlers/gateway.py`, `domain/gateway.py`, `domain/gwchecks.py`,
   `infra/gwguard.py`, тексты и
   клавиатуры агента, `runtime/scheduler.py` в части роли gateway) — одна
   строка `gw`. Общий код (`selfupdate.py`, `updates.py`, `common.py`,
-  `main.py`, `awg-bot.sh`, установщик, preflight, `notifier.py`, `db/*`,
+  `handlers/stale.py` — обработчик устаревших кнопок, его включают оба бота,
+  `keyboards/common.py` — тумблеры ✅/☑️ и листание у обеих ролей,
+  `util/timeutil.py`, `main.py`, `awg-bot.sh`, установщик, preflight, `notifier.py`, `db/*`,
   общие тексты) — обе. `install/routing-link-setup.sh` живёт только на ВПС —
   строка `main`.
   `install/routing-gw-setup.sh` едет на малину двумя путями: в конфигурации

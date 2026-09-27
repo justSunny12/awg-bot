@@ -15,6 +15,7 @@ back_to_context), ссылки /start <payload> в текстах, кнопки 
   sub      «💳 Подписка» клиента
   rf       «🇷🇺 РФ-доступ» (ref — id профиля; у клиента и гостя — свой)
   sites    «📋 Сайты» РФ-доступа (ref — id профиля)
+  guide    шаг 0 гайда подключения (ref — вариант: 0 connect, 1 connect_apple)
 
 note — итог только что сделанного: первой строкой экрана, до следующего
 перехода («✅ Имя устройства: A → B»).
@@ -65,6 +66,9 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
         if kind in ("rf", "sites"):
             from awgbot.bot.handlers import routing as rt
             return await rt.screen_for(services, client, client.id, kind)
+        if kind == "guide":
+            from awgbot.bot.handlers import guide as gh
+            return await gh.connect_step0_payload(services, client, ref, chat_id)
         return None
     if role == "invited":
         from awgbot.bot.handlers import friend as fh
@@ -78,6 +82,9 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
         if kind in ("rf", "sites"):
             from awgbot.bot.handlers import routing as rt
             return await rt.screen_for(services, client, client.id, kind)
+        if kind == "guide":
+            from awgbot.bot.handlers import guide as gh
+            return await gh.connect_step0_payload(services, client, ref, chat_id)
         return None
     return None
 

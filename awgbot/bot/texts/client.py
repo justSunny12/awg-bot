@@ -13,7 +13,7 @@ from .fmt import (
     _e, human_bytes, used_of_limit, gb, gb_str, client_total_line, device_label,
     plain_ip, client_link, owner_link, holder_link, owner_name, _n_devices, plural_ru,
     _days_word, _days)
-from .routing import ROUTING_NAME, routing_status_line
+from .routing import ROUTING_NAME
 
 # payload deep-link'ов клиента и гостя (/start <payload>): экран реестра
 SUB_PAYLOAD = "sub"
@@ -218,16 +218,22 @@ def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
     return "\n".join(lines)
 
 
-def _guest_traffic_lines(held, donor) -> list[str]:
+def device_link(dev, bot_username: str = "") -> str:
+    """Имя устройства ссылкой на его карточку (/start dev-<id>)."""
+    return _link(bot_username, f"{DEV_PAYLOAD}-{dev.id}", dev.name)
+
+
+def _guest_traffic_lines(held, donor, bot_username: str = "") -> list[str]:
     """«📊 Планшет: 0.8 из 100 ГБ» по каждому удерживаемому — против своего
-    лимита, иначе профиля владельца; без лимитов и без трафика — строки нет."""
+    лимита, иначе профиля владельца; имя — ссылка на карточку; без лимитов и
+    без трафика — строки нет."""
     rows = []
     for d in held:
         used = int(d.traffic_rx_month) + int(d.traffic_tx_month)
         limit = int(d.traffic_limit) or int(donor.traffic_limit)
         if not limit and not used:
             continue
-        rows.append(f"📊 {_e(d.name)}: {used_of_limit(used, limit)}")
+        rows.append(f"📊 {device_link(d, bot_username)}: {used_of_limit(used, limit)}")
     return rows
 
 
@@ -241,7 +247,7 @@ def greeting_guest(name: str, server_ok: bool, donor, held, routing_ok: bool = N
     lines = [f"👋 {_e(name)}",
              status_line(server_ok, routing_ok, routing_on, bot_username),
              f"💳 Подписка профиля {client_link(donor)}: {subscription_status_only(donor)}"]
-    lines += _guest_traffic_lines(held, donor)
+    lines += _guest_traffic_lines(held, donor, bot_username)
     return "\n".join(lines)
 
 
@@ -283,9 +289,14 @@ def _seen(dev) -> str:
 
 
 def _blocked_line(dev) -> str:
+    """«⛔ Заблокировано владельцем», «⛔ Подписка истекла» — причина без
+    повтора слова «заблокировано»."""
     from awgbot.core import blocks
     reasons = blocks.device_reasons_ru(int(dev.block_reason), for_admin=False)
-    return "⛔ Заблокировано: " + ", ".join(reasons) if reasons else ""
+    if not reasons:
+        return ""
+    head = reasons[0][:1].upper() + reasons[0][1:]
+    return "⛔ " + ", ".join([head] + reasons[1:])
 
 
 def device_card_own(dev, profile_limit_bytes: int) -> str:
@@ -434,14 +445,17 @@ def device_limit_over(profile_limit_bytes: int) -> str:
     return f"⚠️ Не больше {gb_str(profile_limit_bytes)} — лимита профиля"
 
 
-NUMBER_BAD = "⚠️ Нужно целое число, 0 — без лимита"
+NUMBER_BAD = "⚠️ Нужно целое число ГБ"
 NAME_EMPTY = "⚠️ Имя пустое — пришли ещё раз"
 
 
-def limit_note(old_bytes: int, new_bytes: int) -> str:
-    """Итог правки лимита первой строкой карточки: «✅ Лимит: ∞ → 50 ГБ»."""
+def limit_note(old_bytes: int, new_bytes: int, profile_limit_bytes: int = 0) -> str:
+    """Итог правки лимита первой строкой карточки: «✅ Лимит: ∞ → 50 ГБ»; без
+    своего лимита у профиля с лимитом — «по лимиту профиля»."""
     def _f(b):
-        return gb_str(b) if b else "∞"
+        if b:
+            return gb_str(b)
+        return "по лимиту профиля" if profile_limit_bytes else "∞"
     return f"✅ Лимит: {_f(old_bytes)} → {_f(new_bytes)}"
 
 
@@ -468,8 +482,11 @@ def friend_invite_message(device_name: str, code: str, bot_username: str) -> str
 
 
 def friend_invite_plain(device_name: str, code: str, bot_username: str) -> str:
-    """То же без разметки — для кнопок «📋 Скопировать» и «📤 Отправить»."""
-    return (f"Твоё приглашение для устройства «{device_name}»: "
+    """То же без разметки — для кнопок «📋 Скопировать» и «📤 Отправить».
+    Текст копирования — не длиннее 256 знаков (лимит Telegram), поэтому имя
+    устройства режется, а не код в конце."""
+    name = device_name if len(device_name) <= 40 else device_name[:39] + "…"
+    return (f"Твоё приглашение для устройства «{name}»: "
             f"{_invite_link(code, bot_username)} "
             f"или в TG-боте (@{bot_username}): /code {code}")
 

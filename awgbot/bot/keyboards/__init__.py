@@ -64,7 +64,8 @@ from .gateway import (
 __all__ = [
     "BTN_CANCEL", "reply_cancel", "reply_hide", "period_choices", "yes_no", "to_menu",
     "append_hide_row", "hide_only", "block_pause_choice", "block_notify_choice",
-    "block_unblock_reasons", "client_main", "client_devices", "held_device_actions",
+    "block_unblock_reasons", "cancel_input", "confirm", "select_all_button",
+    "device_limit_presets", "device_limit_kb", "client_main", "client_devices", "held_device_actions",
     "lent_out_device_actions", "block_device_confirm", "guest_main", "guest_devices",
     "device_actions", "connect_method_choice",
     "PICK_DEVICE_PROMPT", "GEN_ACTIONS", "gen_kind", "pick_device", "issuable", "confirm_transfer", "help_menu", "friend_finisher", "guest_pick_device", "confirm_delete_device",

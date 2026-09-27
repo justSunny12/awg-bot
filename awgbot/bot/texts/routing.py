@@ -1014,9 +1014,13 @@ ROUTING_SITES_ABOUT = ("Открываются с российского адр�
                        "уже в общем списке")
 
 
+def _short(domain: str, limit: int = 60) -> str:
+    return domain if len(domain) <= limit else domain[:limit - 1] + "…"
+
+
 def routing_domain_removed(domain: str) -> str:
-    """Всплывашка после «➖»."""
-    return f"{domain} убран · применится за минуту"
+    """Всплывашка после «➖» — не длиннее 200 знаков answer(): домен режется."""
+    return f"{_short(domain)} убран · применится за минуту"
 
 
 def _lent_out_lines(lent_out) -> list[str]:
@@ -1059,9 +1063,13 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int)
     и почему; человек вставляет списком, и молча взять половину нельзя."""
     parts = []
     if added:
-        parts.append("✅ Добавлено: " + ", ".join(_e(d) for d in added))
+        shown = ", ".join(_e(_short(d)) for d in added[:5])
+        more = f" и ещё {len(added) - 5}" if len(added) > 5 else ""
+        parts.append(f"✅ Добавлено: {shown}{more}")
     if rejected:
-        parts.append("⚠️ Не добавлено: " + "; ".join(f"{_e(raw)} — {_e(reason)}" for raw, reason in rejected))
+        shown = "; ".join(f"{_e(_short(raw, 40))} — {_e(reason)}" for raw, reason in rejected[:3])
+        more = f"; и ещё {len(rejected) - 3}" if len(rejected) > 3 else ""
+        parts.append(f"⚠️ Не добавлено: {shown}{more}")
     if over_limit:
         parts.append(f"📦 Не поместилось: {over_limit} — в списке максимум {limit} "
                      f"{plural_ru(limit, 'адрес', 'адреса', 'адресов')}")
@@ -1118,12 +1126,12 @@ def routing_granted_holder_notice(donor) -> str:
 
 def routing_revoked_holder_notice(donor) -> str:
     return (f"🇷🇺 РФ-доступ для устройств от профиля {client_link(donor)} больше недоступен 😔\n"
-            "Сайтам, которые ругаются на VPN, теперь придётся его выключать")
+            "Для сайтов, которые ругаются на VPN, теперь придётся его выключать")
 
 
 ROUTING_REVOKED_NOTICE = (
     "🇷🇺 РФ-доступ больше не входит в твою подписку 😔\n"
-    "Сайтам, которые ругаются на VPN, теперь придётся его выключать"
+    "Для сайтов, которые ругаются на VPN, теперь придётся его выключать"
 )
 
 
