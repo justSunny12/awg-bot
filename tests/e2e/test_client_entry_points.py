@@ -164,7 +164,7 @@ async def test_client_link_dev_opens_own_or_held_card_and_refuses_foreign(
     assert services.activate_friend(services.make_device_friendly(held.device_id), tg_id=9114).ok
     foreign = services.add_device(owner.id, "Чужое")
     cl = services.db.get_client(cl.id)
-    for dev_id, head in ((own.device_id, "⚪ Своё · "), (held.device_id, "⚪ Держит · ")):
+    for dev_id, head in ((own.device_id, "⚪ Своё\n"), (held.device_id, "⚪ Держит · ")):
         msg = await _start(services, fake_bot, cl, f"dev-{dev_id}")
         assert _screen(fake_bot, msg).startswith(head)
     msg = await _start(services, fake_bot, cl, f"dev-{foreign.device_id}")
@@ -256,7 +256,7 @@ async def test_client_main_without_devices_offers_adding_and_no_issue_row(
     assert lines[1] == "🔴 VPN не отвечает", "РФ-доступ не выдан — о нём ни слова"
     assert lines[-1] == "📱 Можно добавить до 3 устройств"
     rows = [[b.text for b in r] for r in markup.inline_keyboard]
-    assert rows == [["➕ Устройство"], ["💳 Подписка"], ["❓ Помощь"]], rows
+    assert rows == [["➕ Устройство"], ["💳 Подписка", "❓ Помощь"]], rows
 
 
 async def test_client_main_counts_held_devices_as_having_something_to_issue(

@@ -105,7 +105,7 @@ async def test_own_card_carries_the_issue_row_first(services, fake_bot, make_act
     assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["✏️ Имя", "✏️ Лимит"],
                     ["👤 Другу", "🛑 Блок"], ["🗑 Удалить", "⬅️ Назад"]], rows
     head, usage = text.splitlines()
-    assert head.startswith("⚪ iPhone · ") and usage == "Не подключалось · 0 из 100 ГБ (лимит профиля)", text
+    assert head == "⚪ iPhone" and usage == "Не подключался · 📊 0 из 100 ГБ (лимит профиля)", text
 
 
 async def test_device_connect_menu_bot_vs_app(services, fake_bot, make_active_client):
@@ -211,7 +211,7 @@ async def test_device_limit_preset_applies_in_place_with_the_note(services, fake
     await ch.device_limit_preset(cb, PresetCB(kind="devlimit", ref=dc.device_id, val=10),
                                  cl, services, FakeState())
     text, labels = last_screen(nav)
-    assert text.split("\n\n", 1)[0] == "✅ Лимит: по лимиту профиля → 10 ГБ", text
+    assert text.split("\n\n", 1)[0] == "✅ Лимит: ∞ → 10 ГБ", text
     assert labels[0] == "🔗 Ссылка"
     cb, nav = _cb(fake_bot, 5011)
     await ch.device_limit_preset(cb, PresetCB(kind="devlimit", ref=dc.device_id, val=100),
@@ -257,19 +257,17 @@ async def test_client_card_of_unmanaged_device_explains_the_dead_end(
             assert "gen_" not in (b.callback_data or ""), b.text
 
 
-async def test_add_device_start_when_full_shows_delete(services, fake_bot, make_active_client):
+async def test_add_device_start_when_full_alerts(services, fake_bot, make_active_client):
+    """Кнопки «➕ Устройство» при исчерпанном лимите нет; кнопка старого образца —
+    всплывашка с каноном «удали N», без экрана."""
     client = make_active_client(tg_id=5012, device_limit=1)
     services.add_device(client.id, "occupied")
     cl = _fresh(services, client)
     st = FakeState()
     cb, nav = _cb(fake_bot, 5012)
     await ch.device_add_start(cb, DeviceCB(action="add"), cl, services, st)
-    text, labels = last_screen(nav)
-    assert text == "📱 Лимит исчерпан: чтобы добавить новое, удали 1", text
-    assert labels == ["🗑 occupied", "⬅️ Назад"], \
-        "при полном лимите предлагается удалить существующее, а не имя нового"
-    assert await st.get_state() is None, "ввод имени начат при исчерпанном лимите"
-
+    assert cb.answers[-1] == ("Лимит исчерпан: чтобы добавить новое, удали 1", True)
+    assert not any(s[0] == "edit_text" for s in nav.sent)
 
 async def test_add_device_for_friend_flow(services, fake_bot, make_active_client):
     client = make_active_client(tg_id=5013, device_limit=3)
@@ -353,10 +351,10 @@ async def test_pause_full_cycle(services, fake_bot, make_active_client):
     until = timeutil.fmt_dt_ui(timeutil.parse_iso(fresh.pause_active_since)
                                + __import__("datetime").timedelta(days=7))
     edits = [s for s in nav2.sent if s[0] == "edit_text"]
-    assert edits[-1][1] == f"⏸️ Подписка на паузе до {until} — снять раньше можно в «💳 Подписка»"
+    assert edits[-1][1] == f"⏸️ Подписка на паузе до {until} — снять раньше можно в разделе «💳 Подписка»"
     assert edits[-1][2] is None, "итог — без кнопок, он остаётся следом"
     screen = [s for s in nav2.sent if s[0] == "answer"][-1]
-    assert screen[1].startswith("💳 Подписка: годовая · ⏸️ на паузе") and \
+    assert screen[1].startswith("💳 Подписка: годовая\n") and \
         _rows(screen[2]) == [["▶️ Снять паузу", "⬅️ Назад"]]
     cl2 = _fresh(services, client)
     cb3, nav3 = _cb(fake_bot, 5017)
@@ -428,8 +426,8 @@ async def test_subscription_screen_variants(services, fake_bot, make_active_clie
     services.enter_pause(y.id, 5)
     text, markup = await ch.sub_parts(services, y.id)
     lines = text.splitlines()
-    assert lines[0] == "💳 Подписка: годовая · ⏸️ на паузе"
-    assert lines[2].startswith("⏸️ на паузе с ") and "из 5 дн. — снимешь сейчас, остальные вернутся" in lines[2]
+    assert lines[0] == "💳 Подписка: годовая"
+    assert lines[2].startswith("⏸️ на паузе с ") and "из 5 дн. — неиспользованный остаток вернётся при досрочном возобновлении" in lines[2]
     assert "ост." not in text, "остаток на паузе не тикает"
     assert _rows(markup) == [["▶️ Снять паузу", "⬅️ Назад"]]
 
@@ -463,7 +461,7 @@ async def test_subscription_limits_mention_rf_only_when_granted(services, fake_b
     assert "🇷🇺" not in text and "РФ" not in text, text
     services.set_routing_allowed(c.id, True)
     text, _ = await ch.sub_parts(services, c.id)
-    assert text.splitlines()[-1] == "Лимиты: трафик без лимита · 3 устройства · 🇷🇺 РФ-доступ", text
+    assert text.splitlines()[-1] == "Лимиты: ∞ ГБ в месяц · 3 устройства · 🇷🇺 РФ-доступ", text
 
 
 async def test_pause_ask_unavailable(services, fake_bot, make_active_client):
@@ -573,4 +571,4 @@ async def test_client_screens_do_not_show_rf_even_when_allowed_and_counted(
     assert "🇷🇺" not in card[0], card
     # в подписке «🇷🇺» — только слово в строке лимитов (доступ выдан), без байт
     assert [l for l in sub[0].splitlines() if "🇷🇺" in l] == [
-        "Лимиты: трафик без лимита · 3 устройства · 🇷🇺 РФ-доступ"], sub
+        "Лимиты: ∞ ГБ в месяц · 3 устройства · 🇷🇺 РФ-доступ"], sub

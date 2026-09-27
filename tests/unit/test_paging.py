@@ -178,7 +178,6 @@ SCREENS = {
         _devs(n), "gen_link", back_cb=ClientCB(action="open", client_id=BIG).pack(), page=p,
         render=ClientCB(action="gen_for", client_id=BIG).pack(), ref=BIG),
     "gpick": lambda n, p: kbc.guest_pick_device(_devs(n), "gen_file", page=p),
-    "deldev": lambda n, p: kbc.pick_device_to_delete(_devs(n), page=p),
     "guidedev (можно добавить)": lambda n, p: kbc.guide_connect_devices(
         _devs(n), (0, 0), guide="connect_apple", page=p),
     "guidedev (лимит)": lambda n, p: kbc.guide_connect_devices(

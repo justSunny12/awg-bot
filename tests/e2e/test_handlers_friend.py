@@ -73,9 +73,8 @@ async def test_guest_devices_and_card(services, fake_bot, make_active_client):
     await fh.friend_open(cb, FriendCB(action="open", device_id=dc.device_id), guest, services)
     text, labels = last_screen(nav)
     head, usage = text.splitlines()[:2]
-    assert head.startswith("⚪ Телефон · ") and head.endswith(
-        '· от профиля <a href="tg://user?id=8101">Вася</a>'), head
-    assert usage == "Не подключалось · 0 из 100 ГБ (лимит профиля Вася)", usage
+    assert head == '⚪ Телефон · от профиля <a href="tg://user?id=8101">Вася</a>', head
+    assert usage == "Не подключался · 📊 0 из 100 ГБ (лимит профиля Вася)", usage
     assert labels == ["🔗 Ссылка", "🔳 QR", "📄 Файл", "🛑 Блок", "🗑 Удалить", "⬅️ Назад"], labels
 
 
@@ -202,7 +201,7 @@ async def test_guest_help_uses_the_same_guides_with_guest_exit(services, fake_bo
     await fh.friend_help(cb)
     text, labels = last_screen(nav)
     assert text == "❓ Помощь — какое устройство?"
-    assert labels == ["🍎 iPhone / iPad", "🤖 Android", "🪟 Windows", "🍏 Mac", "✅ Всё умею сам"], labels
+    assert labels == ["🍎 iPhone / iPad", "🤖 Android", "🪟 Windows", "🍏 Mac", "✅ Настрою сам"], labels
     back = nav.sent[-1][2].inline_keyboard[-1][0].callback_data
     assert back == FriendCB(action="refresh").pack()
     cb, nav = _cb(fake_bot, 98107)
@@ -260,7 +259,7 @@ async def test_owner_devices_screen_lists_lent_out_without_toggle(
     await rh.routing_panel(cb, RoutingCB(action="panel", ref=owner.id), owner, services, FakeState())
     text, labels = last_screen(nav)
     assert text.startswith("🇷🇺 РФ-доступ: вкл на всех"), text
-    assert 'Ноутбук — у профиля <a href="tg://user?id=98111">Артём</a>, включает он сам' in text
+    assert 'Ноутбук — у профиля <a href="tg://user?id=98111">Артём</a>, управляет функцией он' in text
     assert not any("Ноутбук" in l for l in labels), labels
     cb, _ = _cb(fake_bot, 8111)
     await rh.routing_lent_row(cb)

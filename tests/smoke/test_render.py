@@ -156,7 +156,7 @@ def test_client_greeting_shows_consumption_and_expiry(services, make_active_clie
         texts.greeting_client(c, True, (3, 4), None, traffic=traffic)
     assert "🟢 активна" in texts.subscription_status_only(c), "срок — только на главной клиента"
     services.db.update_client_fields(c.id, traffic_limit=0)
-    assert " · 📊 24.1 ГБ\n" in texts.greeting_client(
+    assert " · 📊 24.1 из ∞ ГБ\n" in texts.greeting_client(
         services.db.get_client(c.id), True, (3, 4), None, traffic=traffic)
 
 

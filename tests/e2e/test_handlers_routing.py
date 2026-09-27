@@ -103,8 +103,8 @@ async def test_add_domains_reports_each_line(services, make_active_client, fake_
     assert len(out) == 1, "итог — не отдельным сообщением, а первой строкой экрана"
     first, rest = out[0][1].split("\n\n", 1)
     assert first.startswith("✅ Добавлено: bank.com, netflix.com · ⚠️ Не добавлено: сбер.мусор_ — "), first
-    assert first.endswith("применится за минуту, не сработало — переподключись"), first
-    assert rest.startswith("📋 Твои сайты · 2"), "после ввода — экран «Сайты», откуда пришли"
+    assert first.endswith("применится в теч. минуты, не сработало — переподключись"), first
+    assert rest.startswith("📋 Свои сайты · 2"), "после ввода — экран «Сайты», откуда пришли"
     assert set(services.routing_domains(c.id)) == {"bank.com", "netflix.com"}
 
 
@@ -132,10 +132,10 @@ async def test_delete_answers_with_a_popup_and_redraws_sites_in_place(
     c = services.db.get_client(c.id)
     cb, nav = _cb(fake_bot, 78)
     await routing_h.routing_delete(cb, RoutingCB(action="del", ref=c.id, idx=0), c, services)
-    assert cb.answers == [("megafon.ru убран · применится за минуту", False)], cb.answers
+    assert cb.answers == [("megafon.ru убран · применится в теч. минуты", False)], cb.answers
     assert not any(s[0] == "answer" for s in nav.sent), "след в чате вместо всплывашки"
     text, labels = last_screen(nav)
-    assert text.startswith("📋 Твои сайты · 1") and labels[0] == "➖ ozon.ru", (text, labels)
+    assert text.startswith("📋 Свои сайты · 1") and labels[0] == "➖ ozon.ru", (text, labels)
     assert "➖ megafon.ru" not in labels
 
 
@@ -289,7 +289,7 @@ def test_status_line_appears_for_everyone_granted(services, make_active_client):
     ok = services.routing_health_for_client(c)
     assert ok is not None, "разрешено — строка обязана быть, даже при выключенном режиме"
     out = texts.greeting_client(c, True, (1, 3), ok)
-    assert out.splitlines()[1] == "🟢 VPN работает · 🇷🇺 РФ-доступ выключен", out
+    assert out.splitlines()[1] == "🟢 VPN работает · 🇷🇺 РФ-доступ выкл", out
     on = texts.greeting_client(c, True, (1, 3), True, routing_on=True)
     assert on.splitlines()[1] == "🟢 VPN работает · 🇷🇺 РФ-доступ 🟢", on
     broken = texts.greeting_client(c, True, (1, 3), False, routing_on=True)
@@ -328,7 +328,7 @@ def test_client_menu_button_position_and_state(monkeypatch):
     assert ["🇷🇺 РФ-доступ", "💳 Подписка"] in rows, rows
     off = [[b.text for b in row] for row in kb.client_main(
         has_devices=True, routing_visible=False, client_id=1).inline_keyboard]
-    assert ["💳 Подписка"] in off and not any("РФ" in t for r in off for t in r), off
+    assert ["💳 Подписка", "❓ Помощь"] in off and not any("РФ" in t for r in off for t in r), off
 
 
 def test_admin_card_button_above_block(monkeypatch):
@@ -892,7 +892,7 @@ async def test_feature_toggle_blocks_both_editors_and_keeps_device_flags(
     await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=other.id), None,
                                   services, FakeState())
     text, labels = last_screen(nav)
-    assert "Твои сайты: a.ru, b.ru" in text and "📋 Сайты: 2" in labels, (text, labels)
+    assert "Свои сайты: a.ru, b.ru" in text and "📋 Сайты: 2" in labels, (text, labels)
     cb, nav = _admin_cb(fake_bot)
     await routing_h.routing_sites(cb, RoutingCB(action="sites", ref=other.id), None,
                                   services, FakeState())
@@ -1035,5 +1035,5 @@ async def test_device_switch_and_select_all_redraw_the_section_in_place(
     assert cb.answers[-1] == ("Выключено на всех", False)
     text, labels = last_screen(nav)
     assert labels[:3] == ["☑️ iPhone", "☑️ MacBook", "☑️ Выбрать все"], labels
-    assert text.startswith("🇷🇺 РФ-доступ: выключен\nВключишь — банки, госуслуги"), text
+    assert text.startswith("🇷🇺 РФ-доступ: выкл\nВключишь — банки, госуслуги"), text
     assert services.routing_device_counts(c.id) == (0, 2) and a is not None

@@ -327,8 +327,8 @@ def invite_kb(plain_text: str, link: str) -> InlineKeyboardMarkup:
 
 def help_menu(is_initial: bool = False, *, guest: bool = False) -> InlineKeyboardMarkup:
     """Платформы по две в ряд. is_initial — первый гайд сразу после
-    активации: вместо «В меню» — «✅ Всё умею сам». guest — тот же выход
-    «✅ Всё умею сам» на главную гостя (его помощь всегда «первая»: сам он
+    активации: вместо «В меню» — «✅ Настрою сам». guest — тот же выход
+    «✅ Настрою сам» на главную гостя (его помощь всегда «первая»: сам он
     устройств не заводит)."""
     kb = InlineKeyboardBuilder()
     kb.button(text="🍎 iPhone / iPad", callback_data=HelpCB(platform="apple"))
@@ -336,9 +336,9 @@ def help_menu(is_initial: bool = False, *, guest: bool = False) -> InlineKeyboar
     kb.button(text="🪟 Windows", callback_data=HelpCB(platform="windows"))
     kb.button(text="🍏 Mac", callback_data=HelpCB(platform="mac"))
     if is_initial:
-        kb.button(text="✅ Всё умею сам", callback_data=HelpCB(platform="skip"))
+        kb.button(text="✅ Настрою сам", callback_data=HelpCB(platform="skip"))
     elif guest:
-        kb.button(text="✅ Всё умею сам", callback_data=FriendCB(action="refresh"))
+        kb.button(text="✅ Настрою сам", callback_data=FriendCB(action="refresh"))
     else:
         kb.button(text="⬅️ В меню", callback_data=Menu(action="main"))
     kb.adjust(2, 2, 1)

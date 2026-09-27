@@ -80,7 +80,6 @@ CLIENT = {
     "connect_method_choice": lambda: [kbc.connect_method_choice(1, "m:main")],
     "add_device_kb": lambda: [kbc.add_device_kb(for_friend=f) for f in (True, False)],
     "device_created_kb": lambda: [kbc.device_created_kb(1)],
-    "pick_device_to_delete": lambda: [kbc.pick_device_to_delete(DEVS), kbc.pick_device_to_delete(MANY)],
     "invite_kb": lambda: [kbc.invite_kb("Твоё приглашение: https://t.me/b?start=F1", "https://t.me/b?start=F1")],
     "help_menu": lambda: [kbc.help_menu(), kbc.help_menu(is_initial=True), kbc.help_menu(guest=True)],
     "friend_finisher": lambda: [kbc.friend_finisher()],
@@ -286,7 +285,10 @@ def test_main_client_screen_is_four_rows_at_most():
     assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Устройства", "➕ Устройство"],
                     ["🇷🇺 РФ-доступ", "💳 Подписка"], ["❓ Помощь"]], rows
     rows = [[b.text for b in r] for r in kbc.client_main(has_devices=False).inline_keyboard]
-    assert rows == [["➕ Устройство"], ["💳 Подписка"], ["❓ Помощь"]], rows
+    assert rows == [["➕ Устройство"], ["💳 Подписка", "❓ Помощь"]], rows
+    rows = [[b.text for b in r] for r in kbc.client_main(has_devices=True, can_add=False).inline_keyboard]
+    assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Устройства"],
+                    ["💳 Подписка", "❓ Помощь"]], "лимит исчерпан — без «➕ Устройство»"
     callbacks = [b.callback_data for r in kbc.client_main(has_devices=True, routing_visible=True,
                                                           client_id=7).inline_keyboard for b in r]
     assert RoutingCB(action="panel", ref=7).pack() in callbacks

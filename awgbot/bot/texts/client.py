@@ -15,6 +15,10 @@ from .fmt import (
     _days_word, _days)
 from .routing import ROUTING_NAME
 
+# Одна формулировка риска «без VPN не будет Telegram»: блокировка, удаление
+# единственного устройства, пауза
+TELEGRAM_RISK = "Если Telegram у тебя только через этот VPN — до бота не достучаться"
+
 # payload deep-link'ов клиента и гостя (/start <payload>): экран реестра
 SUB_PAYLOAD = "sub"
 RF_PAYLOAD_CLIENT = "rf"
@@ -371,8 +375,7 @@ def device_delete_ask(dev, *, only: bool = False, lent: bool = False, held: bool
                 "только с новым приглашением от тебя")
     if only:
         return (f"⚠️ Удалить {name} — единственное устройство?\n"
-                "VPN выключится сразу; если Telegram у тебя только через этот VPN, "
-                "до бота не достучаться")
+                "VPN выключится сразу. " + TELEGRAM_RISK)
     return (f"🗑 Удалить {name}?\n"
             "Ссылка перестанет работать; решишь добавить устройство снова — ссылка изменится")
 
@@ -397,15 +400,14 @@ def device_deleted(name: str, used: int, limit: int) -> str:
 
 def block_device_ask(name: str) -> str:
     return (f"🛑 Заблокировать {_e(name)}?\n"
-            "Перестанет подключаться, пока не разблокируешь. Если Telegram у тебя "
-            "через это устройство и VPN — бот станет недоступен")
+            "Перестанет подключаться, пока не разблокируешь. " + TELEGRAM_RISK)
 
 
 def transfer_ask(name: str) -> str:
     n = _e(name)
     return (f"👤 Передать {n} другу?\n"
             "Друг получит это подключение; одно подключение на двух устройствах "
-            "работать не будет.\n"
+            "работать не будет\n"
             f"Если устройство {n} твоё — сначала заведи себе новое")
 
 
@@ -436,7 +438,7 @@ def device_limit_prompt(name: str, profile_limit_bytes: int) -> str:
 
 def device_limit_other_prompt(profile_limit_bytes: int) -> str:
     if profile_limit_bytes:
-        return f"✏️ Число ГБ, не больше {gb(profile_limit_bytes)} — лимита профиля; 0 — по лимиту профиля"
+        return f"✏️ Число ГБ, не больше {gb(profile_limit_bytes)} (лимит профиля); 0 — без ограничений в рамках лимита"
     return "✏️ Число ГБ, 0 — без лимита"
 
 
@@ -492,7 +494,7 @@ def friend_invite_plain(device_name: str, code: str, bot_username: str) -> str:
 
 
 def finish_friend_invite(device_name: str) -> str:
-    return f"☝️ Отправь приглашение другу — он активирует и получит {_e(device_name)}"
+    return f"☝️ Отправь приглашение другу — он активирует и получит устройство {_e(device_name)}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -683,20 +685,20 @@ def pause_credit_line(pc) -> str:
         return ""
     if pc.reason == "expired":
         return ("⏸️ Дни паузы за этот период не начислены: подписка продлена после истечения. "
-                f"Доступно {_days(pc.after)}.")
+                f"Доступно {_days(pc.after)}")
     if pc.reason == "grace":
         return ("⏸️ Дни паузы за этот период не начислены: в прошлом периоде использована "
-                f"отсрочка. Доступно {_days(pc.after)}.")
+                f"отсрочка. Доступно {_days(pc.after)}")
     if pc.reason == "cap":
         return ("⏸️ Дни паузы не добавлены: достигнуто максимальное количество для "
-                f"{_pause_kind_ru(pc.kind)} подписки ({pc.cap}).")
+                f"{_pause_kind_ru(pc.kind)} подписки ({pc.cap})")
     full = (settings.get_int("pause.pause_max_total_days", 28) if pc.kind == "year"
             else settings.get_int("pause.monthly_pause_days", 2))
     partial = pc.added < full
     note = ("" if not partial
             else " (максимум)" if pc.kind == "year"
             else " (максимум для ежемесячной подписки)")
-    return f"⏸️ Дней паузы добавлено: +{pc.added}, доступно {pc.after}{note}."
+    return f"⏸️ Дней паузы добавлено: +{pc.added}, доступно {pc.after}{note}"
 
 
 def pause_credit_admin(pc) -> str:
@@ -724,7 +726,7 @@ def pause_balance_line(client) -> str:
     if not client.effective_period_end:
         return ""
     bal = int(client.pause_balance_days)
-    return f"⏸️ Пауза: {bal} дн. доступно" if bal else "⏸️ Пауза: дней нет"
+    return f"⏸️ Пауза: {bal} дн. доступно" if bal else "⏸️ Пауза: 0 дн. доступно"
 
 
 def _limits_line(client, routing_visible: bool) -> str:
@@ -761,7 +763,7 @@ def subscription_text(client, *, routing_visible: bool) -> str:
             used = max(0, min(used, reserved))
             until = _pause_until(client)
             lines.append(f"⏸️ на паузе с {timeutil.fmt_date_ui(since) if since else '—'}, до {until} · "
-                         f"израсходовано {used} из {reserved} дн. — снимешь сейчас, остальные вернутся")
+                         f"израсходовано {used} из {reserved} дн. — неиспользованный остаток вернётся при досрочном возобновлении")
         elif not pause_visible:
             lines.append(pause_balance_line(client))
             if str(client.period_kind or "") in ("year", "month"):
@@ -796,8 +798,7 @@ def server_status_client(ok: bool) -> str:
 # Пауза
 # ─────────────────────────────────────────────────────────────────────────────
 
-PAUSE_WARNING_LINE = ("⚠️ На паузе VPN выключен. Снять её можно только здесь — если Telegram "
-                      "у тебя только через этот VPN, снять будет нечем")
+PAUSE_WARNING_LINE = f"⚠️ На паузе VPN выключен. {TELEGRAM_RISK}, снять паузу будет нечем"
 
 
 def pause_ask(available_days: int, *, email_resume: bool = False) -> str:
@@ -827,7 +828,7 @@ def pause_emergency_code(code: str, address: str) -> str:
 def pause_entered_summary(until: str) -> str:
     """Итог входа в паузу — остаётся в чате. until — дата авто-возобновления
     (уже в формате экрана)."""
-    return f"⏸️ Подписка на паузе до {until} — снять раньше можно в «💳 Подписка»"
+    return f"⏸️ Подписка на паузе до {until} — снять раньше можно в разделе «💳 Подписка»"
 
 
 def pause_unavailable() -> str:
@@ -862,7 +863,7 @@ COLD_START_GREETING = ("👋 Не узнаю тебя. Пришёл по при�
 CODE_NO_ARG = "Отправь код после команды: <code>/code КОД</code>"
 
 INVITE_FORWARD_TEMPLATE = (
-    "Привет! Тебе открыт доступ 😊\n"
+    "Привет! Тебе открыт доступ в свободный интернет 🎉\n"
     "Жми ссылку и «Старт» — дальше подскажу\n"
     "{link}"
 )
@@ -870,8 +871,7 @@ INVITE_FORWARD_TEMPLATE = (
 UNMANAGED_DEVICE_EXPLAIN = "\n\n" + UNMANAGED_DEVICE_LINE
 
 UNMANAGED_DEVICE_DIALOG = (
-    "Это устройство добавлял не бот — ссылки для него нет и взять её неоткуда.\n"
-    "Удали его и добавь новое через бота"
+    "✳️ Добавлено не ботом — ссылки нет: удали и добавь заново"
 )
 
 

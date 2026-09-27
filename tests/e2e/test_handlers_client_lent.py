@@ -29,13 +29,13 @@ async def test_owner_sees_lent_device_with_holder_and_limited_buttons(services, 
     await ch.device_open(cb, DeviceCB(action="open", device_id=dc.device_id), owner, services, FakeState())
     text, labels = last_screen(nav)
     assert text.splitlines()[0].endswith('· управляется профилем <a href="tg://user?id=97100">Артём</a>')
-    assert text.splitlines()[1] == "Не подключалось · 0 из 100 ГБ (лимит твоего профиля)", text
+    assert text.splitlines()[1] == "Не подключался · 📊 0 из 100 ГБ (лимит твоего профиля)", text
     assert labels == ["✏️ Имя", "✏️ Лимит", "🗑 Удалить", "⬅️ Назад"], \
         "у переданного владельцу — только имя, лимит и удаление"
     cb, nav = _cb(fake_bot, 7100)
     await ch.menu_devices(cb, owner, services)
     _, labels = last_screen(nav)
-    assert labels[0] == "⚪ Ноут", labels
+    assert labels[0] == "⚪ Ноут [Артём]", labels
 
 
 async def test_owner_delete_of_lent_device_warns_and_notifies_holder(services, fake_bot,
@@ -124,7 +124,7 @@ async def test_created_for_friend_finisher(services, fake_bot, make_active_clien
     dev = services.db.list_devices(cl.id)[0]
     assert dev.name == "Другу" and dev.traffic_limit == 0 and dev.friend_status == "pending"
     fin = [s for s in typed.sent if s[0] == "answer"][-1]
-    assert fin[1] == "☝️ Отправь приглашение другу — он активирует и получит Другу"
+    assert fin[1] == "☝️ Отправь приглашение другу — он активирует и получит устройство Другу"
     assert [b.text for r in fin[2].inline_keyboard for b in r] == ["⬅️ В меню"]
 
 

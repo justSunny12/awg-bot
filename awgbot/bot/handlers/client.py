@@ -632,13 +632,20 @@ async def device_add_name(message: Message, client, services, state: FSMContext)
     await _create_own(message, services, client, name)
 
 
+async def _limit_note(services, client) -> str:
+    """«⚠️ Лимит исчерпан: чтобы добавить новое, удали N» — лимит кончился, пока
+    человек вводил имя."""
+    used, limit = await call(services.device_slots, client.id)
+    return "⚠️ " + (texts.limit_exhausted_line(used, limit) or texts.LIMIT_REACHED)
+
+
 async def _create_own(message: Message, services, client, name: str) -> None:
     """Своё устройство: без вопроса о лимите (ставится в карточке), сразу
     экран с рядом выдачи."""
     try:
         created = await call(services.add_device, client.id, name, 0)
     except LimitReached:
-        await back_to_context(message, services, {}, "client", client, note="⚠️ " + texts.LIMIT_REACHED)
+        await back_to_context(message, services, {}, "client", client, note=await _limit_note(services, client))
         return
     except ServiceError as e:
         await back_to_context(message, services, {}, "client", client, note=f"⚠️ {texts._e(str(e))}")
@@ -654,7 +661,7 @@ async def _create_for_friend(target: Message, services, client, name: str, tlimi
     try:
         created = await call(services.add_device, client.id, name, tlimit)
     except LimitReached:
-        await back_to_context(target, services, {}, "client", client, note="⚠️ " + texts.LIMIT_REACHED)
+        await back_to_context(target, services, {}, "client", client, note=await _limit_note(services, client))
         return
     except ServiceError as e:
         await back_to_context(target, services, {}, "client", client, note=f"⚠️ {texts._e(str(e))}")

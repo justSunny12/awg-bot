@@ -63,7 +63,7 @@ async def test_activate_client_invite_happy(services, fake_bot):
     shown = [s for s in msg.sent if s[0] == "answer"]
     assert [s[1] for s in shown] == [texts.ACTIVATION_OK_HELP] == ["🎉 Доступ открыт. Какое у тебя устройство?"]
     labels = [b.text for row in shown[0][2].inline_keyboard for b in row]
-    assert labels == ["🍎 iPhone / iPad", "🤖 Android", "🪟 Windows", "🍏 Mac", "✅ Всё умею сам"], labels
+    assert labels == ["🍎 iPhone / iPad", "🤖 Android", "🪟 Windows", "🍏 Mac", "✅ Настрою сам"], labels
     fresh = services.db.get_client_by_tg(8300)
     assert fresh is not None and fresh.activation_status == "active"
     # админу — уведомление об активации
