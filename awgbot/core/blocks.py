@@ -76,9 +76,9 @@ _DEVICE_REASON_RU = {
     DeviceBlock.EXPIRY: "подписка истекла",
     DeviceBlock.TRAFFIC_USER: "исчерпан лимит устройства",
     DeviceBlock.TRAFFIC_CLIENT: "исчерпан лимит профиля",
-    DeviceBlock.ADMIN_SILENT: "заблокировано администратором (тихо)",
-    DeviceBlock.ADMIN_NOTIFIED: "заблокировано администратором",
-    DeviceBlock.USER: "заблокировано владельцем",
+    DeviceBlock.ADMIN_SILENT: "администратором (тихо)",
+    DeviceBlock.ADMIN_NOTIFIED: "администратором",
+    DeviceBlock.USER: "владельцем",
     DeviceBlock.PAUSED: "подписка приостановлена",
 }
 _CLIENT_REASON_RU = {

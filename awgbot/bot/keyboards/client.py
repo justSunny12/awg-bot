@@ -40,29 +40,33 @@ def _menu_issue_row(kb: InlineKeyboardBuilder) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def client_main(has_devices: bool = True, routing_visible: bool = False,
-                client_id: int = 0, **_legacy) -> InlineKeyboardMarkup:
+                client_id: int = 0, can_add: bool = True, **_legacy) -> InlineKeyboardMarkup:
     """Главная клиента: ряд выдачи (когда есть что выдавать), устройства и
-    добавление, РФ-доступ (только когда админ выдал) и подписка, помощь."""
+    добавление (пока есть место в лимите), РФ-доступ (только когда админ
+    выдал) и подписка, помощь. Без РФ-доступа подписка и помощь — одним рядом."""
     kb = InlineKeyboardBuilder()
     rows = []
     if has_devices:
         _menu_issue_row(kb)
         rows.append(3)
         kb.button(text="📱 Устройства", callback_data=Menu(action="devices"))
-        kb.button(text="➕ Устройство", callback_data=DeviceCB(action="add"))
-        rows.append(2)
-    else:
+        n = 1
+        if can_add:
+            kb.button(text="➕ Устройство", callback_data=DeviceCB(action="add"))
+            n = 2
+        rows.append(n)
+    elif can_add:
         kb.button(text="➕ Устройство", callback_data=DeviceCB(action="add"))
         rows.append(1)
     if routing_visible:
         kb.button(text=f"🇷🇺 {_texts.ROUTING_NAME}", callback_data=RoutingCB(action="panel", ref=client_id))
         kb.button(text="💳 Подписка", callback_data=Menu(action="info"))
-        rows.append(2)
+        kb.button(text="❓ Помощь", callback_data=HelpCB(platform="root"))
+        rows += [2, 1]
     else:
         kb.button(text="💳 Подписка", callback_data=Menu(action="info"))
-        rows.append(1)
-    kb.button(text="❓ Помощь", callback_data=HelpCB(platform="root"))
-    rows.append(1)
+        kb.button(text="❓ Помощь", callback_data=HelpCB(platform="root"))
+        rows.append(2)
     kb.adjust(*rows)
     return kb.as_markup()
 
@@ -96,14 +100,18 @@ def guest_main(*, routing_visible: bool = False, client_id: int = 0,
 
 def client_devices(devices, held=(), page: int = 0, render: str = "", *,
                    back=None, add: bool = True) -> InlineKeyboardMarkup:
-    """Список своих устройств; следом — чужие, которые профиль держит, с
-    пометкой «от профиля …». Значок — состояние (⛔ ⏳ 🟢 ⚪)."""
+    """Список своих устройств (переданное другу — с «[имя держателя]»);
+    следом — чужие, которые профиль держит, с пометкой «от профиля …».
+    Значок — состояние (⛔ ⏳ 🟢 ⚪). add — есть место в лимите."""
     kb = InlineKeyboardBuilder()
     rows = [(d, False) for d in devices] + [(d, True) for d in held]
     chunk, page, prev, nxt = page_slice(rows, page, static=2 if add else 1)
     for _i, (d, is_held) in chunk:
-        label = (f"{_dot(d)} {d.name} · от профиля {_texts.owner_name(d)}" if is_held
-                 else f"{_dot(d)} {d.name}{_btn_suffix(d)}")
+        if is_held:
+            label = f"{_dot(d)} {d.name} · от профиля {_texts.owner_name(d)}"
+        else:
+            lent = f" [{_texts.holder_name(d)}]" if getattr(d, "is_lent", False) else ""
+            label = f"{_dot(d)} {d.name}{_btn_suffix(d)}{lent}"
         kb.button(text=label, callback_data=DeviceCB(action="open", device_id=d.id))
     nav = page_nav(kb, "devices", 0, page, prev, nxt, render or Menu(action="devices").pack())
     tail = 0

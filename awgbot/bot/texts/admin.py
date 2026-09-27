@@ -281,7 +281,7 @@ def client_created_report(name: str, *, device_limit: int, traffic_limit_bytes: 
     return (f"✅ Профиль «{_e(name)}» создан ({dev}, {traf}), {sub}.\n"
             "Повторный выпуск приглашения возможен из меню клиента до его активации.")
 
-LIMIT_REACHED = "Достигнут лимит устройств."
+LIMIT_REACHED = "Достигнут лимит устройств"
 EXTEND_KEEP_QUESTION = "Сохранить неистраченный остаток ({remainder})?"
 
 

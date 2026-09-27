@@ -1036,7 +1036,7 @@ def routing_panel_text(*, enabled: int, total: int, domains: list, lent_out=(),
     if not total:
         lines.append(f"{head}: устройств пока нет")
     elif not enabled:
-        lines += [f"{head}: выключен", ROUTING_ABOUT]
+        lines += [f"{head}: выкл", ROUTING_ABOUT]
     else:
         lines.append(f"{head}: вкл на " + ("всех" if enabled >= total else f"{enabled} из {total}"))
         if not link_ok:
@@ -1044,7 +1044,7 @@ def routing_panel_text(*, enabled: int, total: int, domains: list, lent_out=(),
     if domains:
         shown = ", ".join(_e(d) for d in domains[:2])
         more = f" +{len(domains) - 2}" if len(domains) > 2 else ""
-        lines.append(f"Твои сайты: {shown}{more}")
+        lines.append(f"Свои сайты: {shown}{more}")
     lines += _lent_out_lines(lent_out)
     return "\n".join(lines)
 
@@ -1052,10 +1052,10 @@ def routing_panel_text(*, enabled: int, total: int, domains: list, lent_out=(),
 def routing_sites_text(domains: list) -> str:
     """Экран «📋 Сайты»: счётчик и подсказка; сами адреса — кнопками «➖»."""
     if not domains:
-        return ("📋 Твои сайты\n"
+        return ("📋 Свои сайты\n"
                 "Пока пусто. Банки, госуслуги, маркетплейсы — уже в общем списке; "
                 "добавляй то, что пишет «вы не из России»")
-    return f"📋 Твои сайты · {len(domains)}\n{ROUTING_SITES_ABOUT}"
+    return f"📋 Свои сайты · {len(domains)}\n{ROUTING_SITES_ABOUT}"
 
 
 def routing_add_report(added: list, rejected: list, over_limit: int, limit: int) -> str:
@@ -1081,12 +1081,12 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int)
 
 
 def routing_clear_ask(n: int) -> str:
-    return f"🗑 Удалить все твои сайты ({n})? Общий список останется"
+    return f"🗑 Удалить все свои сайты ({n})? Общий список останется"
 
 
 ROUTING_CLEAR_CONFIRM = routing_clear_ask(0)
 
-ROUTING_UNAVAILABLE = "Режим сейчас недоступен — идут работы на стороне сервера. Попробуй позже"
+ROUTING_UNAVAILABLE = "РФ-доступ временно недоступен. Попробуй позже"
 
 
 def routing_gateway_warning(verdict: str, *, at_start: bool) -> str:

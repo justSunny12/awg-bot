@@ -60,9 +60,9 @@ async def main_payload(services, client):
     routing_on = await call(services.routing_profile_on, client.id) if routing_visible else False
     text = texts.greeting_client(client, server_ok, slots, routing_ok, held=held, traffic=traffic,
                                  routing_on=routing_on, bot_username=_bot_username(services))
-    used, _limit = slots
+    used, limit = slots
     markup = kb.client_main(has_devices=used > 0 or bool(held), routing_visible=routing_visible,
-                            client_id=client.id)
+                            client_id=client.id, can_add=not limit or used < limit)
     return text, markup
 
 
@@ -303,7 +303,8 @@ async def devices_payload(services, client, chat_id: int = 0):
     used, limit = await call(services.device_slots, client.id)
     from awgbot.bot import paging
     return (texts.devices_header(used, limit, held),
-            kb.client_devices(devices, held, page=paging.page_of(chat_id or client.tg_id, "devices")))
+            kb.client_devices(devices, held, page=paging.page_of(chat_id or client.tg_id, "devices"),
+                              add=not limit or used < limit))
 
 
 _devices_payload = devices_payload
@@ -576,15 +577,12 @@ async def device_gen(cb: CallbackQuery, callback_data: DeviceCB, client, service
 @router.callback_query(DeviceCB.filter(F.action == "add"))
 async def device_add_start(cb: CallbackQuery, callback_data: DeviceCB, client, services,
                            state: FSMContext):
-    """«➕ Устройство»: лимит исчерпан — список с «🗑», иначе приглашение
-    ввода имени на месте экрана с переключателем «для друга»."""
+    """«➕ Устройство»: приглашение ввода имени на месте экрана с
+    переключателем «для друга». Кнопки нет, пока лимит исчерпан; кнопка
+    старого образца — всплывашка."""
     used, limit = await call(services.device_slots, client.id)
     if limit != 0 and used >= limit:              # 0 = безлимит
-        devices = await call(services.db.list_devices, client.id)
-        from awgbot.bot import paging
-        await edit(cb, "📱 " + texts.limit_exhausted_line(used, limit),
-                   kb.pick_device_to_delete(devices, page=paging.page_of(cb.message.chat.id, "deldev")))
-        await cb.answer()
+        await cb.answer(texts.limit_exhausted_line(used, limit), show_alert=True)
         return
     ctx = "devices" if callback_data.device_id == ADD_FROM_DEVICES else "main"
     await state.set_state(AddDevice.name)

@@ -218,7 +218,7 @@ async def guide_add_device(cb: CallbackQuery, callback_data: GuideCB, services, 
     приглашение на месте шага."""
     used, limit = await call(services.device_slots, client.id)
     if limit != 0 and used >= limit:              # 0 = безлимит
-        await cb.answer("Лимит устройств исчерпан", show_alert=True)
+        await cb.answer(texts.limit_exhausted_line(used, limit), show_alert=True)
         return
     await state.set_state(AddDeviceGuide.name)
     await ask_here(cb, services, state, texts.add_device_prompt(used, limit, for_friend=False),
