@@ -43,3 +43,78 @@ async def test_on_cancel_names_the_dialog(services, fake_bot, make_active_client
         assert any(s[0] == "answer" and s[1] == expected for s in m.sent), (expected, m.sent)
         assert await st.get_state() is None
     assert texts.cancelled(None) == "Отменено."
+
+
+# ── «✖️ Отмена» под приглашением к вводу (инлайн, CancelCB) ─────────────────
+
+async def _prompt_rename(services, fake_bot, cl, dev_id):
+    """Карточка устройства → «✏️ Имя»: приглашение на месте карточки."""
+    from awgbot.bot.callbacks import DeviceCB
+    from awgbot.bot.handlers import client as ch
+    st = FakeState()
+    nav = FakeMessage(chat_id=cl.tg_id, user_id=cl.tg_id, bot=fake_bot)
+    services.db.nav_touch(cl.tg_id, nav.message_id)
+    cb = FakeCallback(message=nav, user_id=cl.tg_id, bot=fake_bot)
+    await ch.device_open(cb, DeviceCB(action="open", device_id=dev_id), cl, services, st)
+    card = nav.sent[-1]
+    await ch.client_device_edit_name_start(cb, DeviceCB(action="edit_name", device_id=dev_id),
+                                            cl, services, st)
+    return st, nav, card
+
+
+async def test_inline_cancel_returns_the_same_screen_in_place(services, fake_bot, make_active_client):
+    """«✖️ Отмена» — тот же экран на месте приглашения, без строки итога и
+    без сообщения-следа; диалог сброшен, имя не тронуто."""
+    from awgbot.bot.callbacks import CancelCB
+    cl = make_active_client(tg_id=703)
+    dev = services.add_device(cl.id, "iPhone")
+    st, nav, card = await _prompt_rename(services, fake_bot, cl, dev.device_id)
+    prompt = nav.sent[-1]
+    assert prompt[1] == "✏️ Новое имя для устройства «iPhone»"
+    btn = prompt[2].inline_keyboard[0][0]
+    assert btn.text == "✖️ Отмена" and CancelCB.unpack(btn.callback_data) == CancelCB(kind="dev", ref=dev.device_id)
+    fake_bot.records.clear()
+    cb = FakeCallback(message=nav, user_id=703, bot=fake_bot)
+    await rc.on_cancel_inline(cb, CancelCB.unpack(btn.callback_data), st, services,
+                              role="client", client=cl)
+    assert nav.sent[-1][0] == "edit_text" and nav.sent[-1][1] == card[1], "экран не тот же"
+    assert [[b.text for b in r] for r in nav.sent[-1][2].inline_keyboard] == \
+        [[b.text for b in r] for r in card[2].inline_keyboard]
+    assert not any(r[0] in ("answer", "send_message") for r in fake_bot.records), "сообщение-след"
+    assert await st.get_state() is None and await st.get_data() == {}
+    assert services.db.get_device(dev.device_id).name == "iPhone"
+    assert cb.answers == [(None, False)]
+
+
+async def test_inline_cancel_unknown_screen_falls_back_to_main(services, fake_bot, make_active_client):
+    """Экрана уже нет (устройство удалили, пока висело приглашение) — главная
+    роли, а не молчащая кнопка."""
+    from awgbot.bot.callbacks import CancelCB
+    cl = make_active_client(tg_id=704)
+    nav = FakeMessage(chat_id=704, user_id=704, bot=fake_bot)
+    cb = FakeCallback(message=nav, user_id=704, bot=fake_bot)
+    await rc.on_cancel_inline(cb, CancelCB(kind="dev", ref=999999), FakeState(), services,
+                              role="client", client=cl)
+    assert nav.sent[-1][0] == "edit_text" and nav.sent[-1][1].startswith("👋 "), nav.sent
+
+
+async def test_screen_restored_by_cancel_is_not_swept_as_a_service_message(
+        services, fake_bot, make_active_client):
+    """Приглашение пишется в служебные (его убирают после ввода). Отмена
+    возвращает на его место живой экран — и он не должен остаться в
+    служебных: иначе следующий возврат на главную удалит живое меню вместе с
+    мусором, и в Telegram оно придёт новым сообщением мимо учёта «одного
+    живого меню»."""
+    from awgbot.bot.callbacks import CancelCB, Menu
+    from awgbot.bot.handlers import client as ch
+    cl = make_active_client(tg_id=705)
+    dev = services.add_device(cl.id, "iPhone")
+    st, nav, _ = await _prompt_rename(services, fake_bot, cl, dev.device_id)
+    cb = FakeCallback(message=nav, user_id=705, bot=fake_bot)
+    await rc.on_cancel_inline(cb, CancelCB(kind="dev", ref=dev.device_id), st, services,
+                              role="client", client=cl)
+    fake_bot.records.clear()
+    cb = FakeCallback(data=Menu(action="main").pack(), message=nav, user_id=705, bot=fake_bot)
+    await ch.menu_main(cb, cl, services, FakeState())
+    deleted = {r[2] for r in fake_bot.records if r[0] == "delete_message"}
+    assert nav.message_id not in deleted, "живой экран удалён как служебное сообщение"

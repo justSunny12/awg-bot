@@ -122,7 +122,7 @@ async def test_admin_device_open_and_connect(services, fake_bot, make_active_cli
     cb, nav = _acb(fake_bot)
     await ah.admin_device_open(cb, DeviceCB(action="open", device_id=dc.device_id), services)
     text, labels = last_screen(nav)
-    assert "d" in text and any("Данные для подключения" in l for l in labels)
+    assert "d" in text and labels[:3] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"], labels
     cb2, nav2 = _acb(fake_bot)
     await ah.admin_device_connect_menu(cb2, DeviceCB(action="connect_menu", device_id=dc.device_id), services)
     _, labels2 = last_screen(nav2)
@@ -373,8 +373,8 @@ async def test_profile_rf_line_follows_one_rule_in_card_list_and_rf_screen(
         assert _rf_lines(card) == [], card
     else:
         assert _rf_lines(card) == [_RF_PREFIX + expect], card
-        head = next(i for i, ln in enumerate(lines) if ln.startswith("Потребление профиля за месяц"))
-        assert lines[head + 1] == _RF_PREFIX + expect, "строка РФ не сразу под потреблением профиля"
+        head = next(i for i, ln in enumerate(lines) if ln.startswith("Трафик профиля за месяц"))
+        assert lines[head + 1] == _RF_PREFIX + expect, "строка РФ не сразу под трафиком профиля"
 
     entry = _entry(await _deep(services, fake_bot, "traffic"), "Ксюша")
     assert _rf_lines(entry) == ([] if expect is None else [_RF_PREFIX + expect]), entry
@@ -395,7 +395,7 @@ async def test_profile_rf_line_follows_one_rule_in_card_list_and_rf_screen(
 ])
 async def test_device_rf_line_follows_one_rule_in_card_list_and_rf_screen(
         services, fake_bot, fake_routing, make_active_client, monkeypatch, enabled, allowed, rf, expect):
-    """Устройство: карточка (под «Потребление»), разбивка потребления профиля
+    """Устройство: карточка (под «Трафик»), разбивка потребления профиля
     и экран РФ профиля — по одному правилу от владельца, состояния функции и
     собственных байт."""
     _rf_feature(monkeypatch, services, fake_routing, enabled)
@@ -407,8 +407,8 @@ async def test_device_rf_line_follows_one_rule_in_card_list_and_rf_screen(
         assert _rf_lines(card) == [], card
     else:
         assert _rf_lines(card) == [_RF_PREFIX + expect], card
-        head = next(i for i, ln in enumerate(lines) if ln.startswith("Потребление:"))
-        assert lines[head + 1] == _RF_PREFIX + expect, "строка РФ не сразу под потреблением"
+        head = next(i for i, ln in enumerate(lines) if ln.startswith("Трафик:"))
+        assert lines[head + 1] == _RF_PREFIX + expect, "строка РФ не сразу под трафиком"
 
     entry = _entry(await _deep(services, fake_bot, f"traffic-{c.id}"), "Телефон")
     assert _rf_lines(entry) == ([] if expect is None else [_RF_PREFIX + expect]), entry

@@ -78,6 +78,21 @@ class NavMixin:
                 (chat_id, json.dumps(ids)),
             )
 
+    def remove_content_msg_id(self, chat_id: int, message_id: int) -> None:
+        """Убрать один id из служебных: приглашение к вводу снова стало живым
+        экраном («✖️ Отмена»), и уборка при возврате в меню не должна его снести."""
+        import json
+        row = self._connection().execute(
+            "SELECT content_msg_ids FROM ui_state WHERE chat_id = ?", (chat_id,)
+        ).fetchone()
+        ids = json.loads(row["content_msg_ids"]) if row and row["content_msg_ids"] else []
+        if message_id not in ids:
+            return
+        ids = [i for i in ids if i != message_id]
+        with self._tx() as cur:
+            cur.execute("UPDATE ui_state SET content_msg_ids = ? WHERE chat_id = ?",
+                        (json.dumps(ids) if ids else None, chat_id))
+
     def pop_content_msg_ids(self, chat_id: int) -> list:
         """Забрать и очистить список id контент-сообщений (для удаления)."""
         import json

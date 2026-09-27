@@ -58,7 +58,12 @@ async def test_activate_client_invite_happy(services, fake_bot):
                       username="newbie", bot=fake_bot)
     await client_h._try_activate(msg, services, created.invite_code)
     from awgbot.bot import texts
-    assert any(s[0] == "answer" and s[1] == texts.ACTIVATION_OK for s in msg.sent)
+    # одно сообщение: «доступ открыт» и сразу выбор платформы для гайда, выход —
+    # «✅ Всё умею сам», а не «⬅️ В меню»
+    shown = [s for s in msg.sent if s[0] == "answer"]
+    assert [s[1] for s in shown] == [texts.ACTIVATION_OK_HELP] == ["🎉 Доступ открыт. Какое у тебя устройство?"]
+    labels = [b.text for row in shown[0][2].inline_keyboard for b in row]
+    assert labels == ["🍎 iPhone / iPad", "🤖 Android", "🪟 Windows", "🍏 Mac", "✅ Всё умею сам"], labels
     fresh = services.db.get_client_by_tg(8300)
     assert fresh is not None and fresh.activation_status == "active"
     # админу — уведомление об активации

@@ -16,7 +16,7 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import CancelCB, HideCB
-from awgbot.bot.handlers.common import edit_nav, show_main_menu
+from awgbot.bot.handlers.common import call, edit_nav, show_main_menu
 
 router = Router(name="reply_commands")
 
@@ -52,6 +52,9 @@ async def on_cancel_inline(cb: CallbackQuery, callback_data: CancelCB, state: FS
     if parts is None:
         return
     await edit_nav(cb, services, *parts)
+    # приглашение снова стало экраном: из служебных долой, иначе уборка при
+    # возврате в меню снесёт живое меню
+    await call(services.db.remove_content_msg_id, cb.message.chat.id, cb.message.message_id)
 
 
 @router.message(F.text == kb.BTN_CANCEL, StateFilter("*"))

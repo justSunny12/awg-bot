@@ -120,8 +120,8 @@ def test_notify_section_layout_cpu_ram_then_disk_temp(monkeypatch):
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
     monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
     rows = _labels(kb.gateway_notify_kb())
-    assert rows[0] == ["🟢 E-mail при недоступности Telegram"]
-    assert rows[1] == ["🟢 Тихие часы"]
+    assert rows[0] == ["✅ E-mail при недоступности Telegram"]
+    assert rows[1] == ["✅ Тихие часы"]
     assert rows[2] == ["Начало: 20:00 МСК", "Конец: 7:00 МСК"]
     assert rows[4] == ["CPU: 80%", "RAM: 80%"]
     assert rows[5] == ["Диск: 80%", "Temp: 75 °C"]
@@ -135,7 +135,7 @@ def test_mon_section_mirrors_main(monkeypatch):
     monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
     rows = _labels(kb.gateway_mon_kb())
     assert rows[:4] == [["Частота опроса: 3 мин"], ["Отсчётов до сработки алерта: 5"],
-                        ["🟢 Алерт простоя линка со звуком 24/7"], ["Порог простоя линка: 300 сек"]]
+                        ["✅ Алерт простоя линка со звуком 24/7"], ["Порог простоя линка: 300 сек"]]
 
 
 async def test_edit_flow_writes_value_and_returns_to_section(svc, fake_bot, monkeypatch):
@@ -170,11 +170,11 @@ def test_backup_switch_hides_the_rest_in_both_bots(monkeypatch):
     from awgbot.core import settings
     monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: False)
-    assert _labels(kb.gateway_backup_kb(False)) == [["🔴 Резервное копирование"], ["⬅️ Назад"]]
-    assert _labels(kb.settings_backup())[0] == ["🔴 Резервное копирование"] and len(kb.settings_backup().inline_keyboard) == 2
+    assert _labels(kb.gateway_backup_kb(False)) == [["☑️ Резервное копирование"], ["⬅️ Назад"]]
+    assert _labels(kb.settings_backup())[0] == ["☑️ Резервное копирование"] and len(kb.settings_backup().inline_keyboard) == 2
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
     rows = _labels(kb.gateway_backup_kb(True))
-    assert rows[0] == ["🟢 Резервное копирование"] and rows[1] == ["🔐 Шифрование: ✅ включено"]
+    assert rows[0] == ["✅ Резервное копирование"] and rows[1] == ["🔐 Шифрование: ✅ включено"]
     assert rows[2] == ["✅ Telegram", "☑️ E-mail"] and ["💾 Создать резервную копию"] in rows
 
 

@@ -1,0 +1,323 @@
+"""Unit: раскладка клавиатур — правила, общие для всех экранов.
+
+- не больше десяти кнопок на экране;
+- в рядах по две (и по три) подписи не длиннее 18 знаков — длиннее
+  Telegram режет их многоточием на телефоне;
+- тумблеры — только ✅/☑️; кружки 🟢/🔴 — состоянию объектов (устройство
+  онлайн), не настройкам;
+- в подтверждениях первая кнопка — «⬅️ Отмена», разрушительное действие —
+  красным;
+- «🏠» нигде: «В меню» — «⬅️ В меню», локальная сеть — не «дом».
+
+Клиентские и гостевые билдеры проверяются на образцовых данных все до
+одного (новый билдер без образца — красный тест). Экраны администратора и
+агента переделываются следующими этапами: их нарушения — списком
+исключений, он пустеет к последнему этапу; исключение, которое больше не
+нужно, тоже красное.
+"""
+from __future__ import annotations
+
+import ast
+import inspect
+import pathlib
+from types import SimpleNamespace
+
+import pytest
+from aiogram.types import InlineKeyboardMarkup
+
+from awgbot.bot.callbacks import (BlockCB, DelDeviceCB, DeviceCB, FriendCB, Menu, RoutingCB)
+from awgbot.bot.keyboards import admin as kba
+from awgbot.bot.keyboards import broadcast as kbb
+from awgbot.bot.keyboards import client as kbc
+from awgbot.bot.keyboards import common as kbm
+from awgbot.bot.keyboards import gateway as kbg
+from awgbot.bot.keyboards import routing as kbr
+from awgbot.bot.keyboards import settings as kbs
+
+pytestmark = pytest.mark.unit
+G = 1024 ** 3
+MAX_LABEL = 18
+
+
+def _dev(i=1, name="iPhone", **kw):
+    base = dict(id=i, name=name, block_reason=0, is_managed=True, is_gateway=0, is_lent=False,
+                friend=None, friend_status=None, routing_on=1, last_handshake=None,
+                holder_client_id=None, owner_name="Вася", owner_tg_name="", holder_name="Коля",
+                holder_tg_name="", address=f"10.8.1.{i + 1}", private_key="k")
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+DEVS = [_dev(1, "iPhone"), _dev(2, "MacBook", routing_on=0),
+        _dev(3, "Планшет", is_lent=True, holder_client_id=9)]
+MANY = [_dev(i, f"Устройство {i}") for i in range(1, 15)]
+HELD = [_dev(4, "Планшет", is_lent=True)]
+BLOCKED = _dev(5, "Ноут", block_reason=int(__import__("awgbot.core.blocks", fromlist=["x"]).DeviceBlock.USER))
+PENDING = _dev(6, "Другу", friend_status="pending", friend=SimpleNamespace(status="pending"))
+UNMANAGED = _dev(7, "Пир", is_managed=False, private_key=None)
+
+# билдер клиента/гостя → варианты разметки на образцовых данных
+CLIENT = {
+    "client_main": lambda: [kbc.client_main(has_devices=h, routing_visible=r, client_id=1)
+                            for h in (True, False) for r in (True, False)],
+    "guest_main": lambda: [kbc.guest_main(routing_visible=r, client_id=1, has_devices=h)
+                           for h in (True, False) for r in (True, False)],
+    "client_devices": lambda: [kbc.client_devices(DEVS, HELD), kbc.client_devices(MANY, HELD),
+                               kbc.client_devices(MANY, page=1), kbc.client_devices([])],
+    "guest_devices": lambda: [kbc.guest_devices(HELD), kbc.guest_devices(MANY)],
+    "device_actions": lambda: [kbc.device_actions(d, is_admin=False, back_target="m:devices")
+                               for d in (DEVS[0], BLOCKED, PENDING, UNMANAGED)],
+    "lent_out_device_actions": lambda: [kbc.lent_out_device_actions(DEVS[2], "m:devices")],
+    "held_device_actions": lambda: [kbc.held_device_actions(HELD[0], "m:devices"),
+                                    kbc.held_device_actions(BLOCKED, "fr:list:0", cb_cls=FriendCB)],
+    "block_device_confirm": lambda: [kbc.block_device_confirm(1), kbc.block_device_confirm(1, guest=True)],
+    "confirm_delete_device": lambda: [kbc.confirm_delete_device(1), kbc.confirm_delete_device(1, guest=True)],
+    "confirm_transfer": lambda: [kbc.confirm_transfer(1)],
+    "unmanaged_device_dialog": lambda: [kbc.unmanaged_device_dialog(7)],
+    "pick_device": lambda: [kbc.pick_device(DEVS, "gen_link"), kbc.pick_device(MANY, "gen_qr")],
+    "guest_pick_device": lambda: [kbc.guest_pick_device(HELD * 2, "gen_file"),
+                                  kbc.guest_pick_device(MANY, "gen_link")],
+    "connect_method_choice": lambda: [kbc.connect_method_choice(1, "m:main")],
+    "add_device_kb": lambda: [kbc.add_device_kb(for_friend=f) for f in (True, False)],
+    "device_created_kb": lambda: [kbc.device_created_kb(1)],
+    "pick_device_to_delete": lambda: [kbc.pick_device_to_delete(DEVS), kbc.pick_device_to_delete(MANY)],
+    "invite_kb": lambda: [kbc.invite_kb("Твоё приглашение: https://t.me/b?start=F1", "https://t.me/b?start=F1")],
+    "help_menu": lambda: [kbc.help_menu(), kbc.help_menu(is_initial=True), kbc.help_menu(guest=True)],
+    "friend_finisher": lambda: [kbc.friend_finisher()],
+    "guide_nav": lambda: [kbc.guide_nav("apple", s, 4, next_guide="connect_apple" if s == 4 else None,
+                                        apple_connect_end=a, guest=g)
+                          for s in (0, 2, 4) for a in (False, True) for g in (False, True)],
+    "guide_connect_method": lambda: [kbc.guide_connect_method(1, "connect", guest=g) for g in (False, True)],
+    "guide_connect_done": lambda: [kbc.guide_connect_done("connect_apple", 1, apple_end=a, guest=g)
+                                   for a in (False, True) for g in (False, True)],
+    "guide_connect_devices": lambda: [kbc.guide_connect_devices(DEVS, (2, 3)),
+                                      kbc.guide_connect_devices(MANY, (14, 0)),
+                                      kbc.guide_connect_devices(HELD, (1, 0), guest=True)],
+    "added_by_admin": lambda: [kbc.added_by_admin(1)],
+    "grace_offer": lambda: [kbc.grace_offer(1, 14)],
+    "subscription_kb": lambda: [kbc.subscription_kb(1, paused_user=p, can_pause=c)
+                                for p in (True, False) for c in (True, False)],
+    "pause_kb": lambda: [kbc.pause_kb(1, n) for n in (1, 5, 7, 14, 28, 56)],
+    # общие помощники, которыми пользуются экраны клиента
+    "cancel_input": lambda: [kbm.cancel_input("dev", 1)],
+    "confirm": lambda: [kbm.confirm(Menu(action="main"), "🗑 Удалить", Menu(action="main"))],
+    "device_limit_kb": lambda: [kbm.device_limit_kb(1, lim, DeviceCB(action="open", device_id=1))
+                                for lim in (0, 5 * G, 30 * G, 100 * G, 500 * G)],
+    "to_menu": lambda: [kbm.to_menu()],
+    "hide_only": lambda: [kbm.hide_only()],
+    # РФ-доступ клиента и гостя
+    "routing_panel": lambda: [kbr.routing_panel(1, d, enabled=e, total=len(d), n_domains=n,
+                                                back_target="m:main")
+                              for d, e in ((DEVS, 1), (DEVS[:2], 2), ([], 0), (MANY, 3))
+                              for n in (0, 5)],
+    "routing_sites": lambda: [kbr.routing_sites(1, doms) for doms in
+                              ([], ["sber.ru", "kinopoisk.ru"], [f"site{i}.ru" for i in range(30)])],
+    "routing_clear_confirm": lambda: [kbr.routing_clear_confirm(1)],
+}
+
+# подтверждения клиента: (разметка, разрушительное ли действие)
+CONFIRMS = [
+    (lambda: kbc.block_device_confirm(1), True),
+    (lambda: kbc.block_device_confirm(1, guest=True), True),
+    (lambda: kbc.confirm_delete_device(1), True),
+    (lambda: kbc.confirm_delete_device(1, guest=True), True),
+    (lambda: kbr.routing_clear_confirm(1), True),
+    (lambda: kbc.confirm_transfer(1), False),
+]
+
+# не клавиатуры — помощники разметки, у них своих экранов нет
+NOT_SCREENS = {"issue_row", "gen_kind", "issuable"}
+
+_CIRCLE_OK_PREFIXES = ("d:open:", "d:gen_", "fr:open:", "fr:gen_")
+
+
+def _buttons(m: InlineKeyboardMarkup):
+    return [b for row in m.inline_keyboard for b in row]
+
+
+def _violations(m: InlineKeyboardMarkup, name: str = "") -> set[str]:
+    out = set()
+    buttons = _buttons(m)
+    if len(buttons) > kbm.MAX_BUTTONS:
+        out.add("больше 10 кнопок")
+    for row in m.inline_keyboard:
+        if len(row) >= 2 and any(len(b.text) > MAX_LABEL for b in row):
+            out.add("длинная подпись в ряду")
+    for b in buttons:
+        if "🏠" in b.text:
+            out.add("🏠")
+        if b.text.startswith(("🟢", "🔴")) and not (b.callback_data or "").startswith(_CIRCLE_OK_PREFIXES):
+            out.add("кружок вместо ✅/☑️")
+    if "confirm" in name and buttons and buttons[0].text != "⬅️ Отмена":
+        out.add("подтверждение не с «Отмены»")
+    return out
+
+
+@pytest.mark.parametrize("name", sorted(CLIENT))
+def test_client_and_guest_keyboards_follow_the_layout_rules(name):
+    for i, markup in enumerate(CLIENT[name]()):
+        assert isinstance(markup, InlineKeyboardMarkup)
+        bad = _violations(markup, name)
+        rows = [[b.text for b in r] for r in markup.inline_keyboard]
+        assert not bad, f"{name} [вариант {i}]: {sorted(bad)} — {rows}"
+
+
+def test_every_client_keyboard_has_a_sample():
+    """Новый билдер клиента без образца здесь — правило никто не проверит."""
+    public = {n for n, f in inspect.getmembers(kbc, inspect.isfunction)
+              if f.__module__ == kbc.__name__ and not n.startswith("_")}
+    missing = public - NOT_SCREENS - set(CLIENT)
+    assert not missing, f"нет образца: {sorted(missing)}"
+
+
+@pytest.mark.parametrize("make, destructive", CONFIRMS)
+def test_confirmations_put_cancel_first_and_paint_destruction_red(make, destructive):
+    buttons = _buttons(make())
+    assert [b.text for b in buttons][0] == "⬅️ Отмена", [b.text for b in buttons]
+    assert len(buttons) == 2 and len(make().inline_keyboard) == 1, "Отмена и действие — одним рядом"
+    assert buttons[0].style is None, "«Отмена» не должна быть красной"
+    assert buttons[1].style == ("danger" if destructive else None)
+
+
+def test_toggle_marks_are_ticks_for_both_roles():
+    """Тумблеры обеих ролей берут значок из одного места: ✅ / ☑️."""
+    assert (kbm._chk(True), kbm._chk(False)) == ("✅", "☑️")
+    assert (kbm._tick(True), kbm._tick(False)) == ("✅", "☑️")
+
+
+def test_the_rule_checker_itself_catches_each_rule():
+    """Сторож проверки: каждое правило на заведомо плохой клавиатуре ловится."""
+    from aiogram.types import InlineKeyboardButton as B
+    def mk(*rows):
+        return InlineKeyboardMarkup(inline_keyboard=[list(r) for r in rows])
+    cb = Menu(action="main").pack()
+    assert _violations(mk(*[[B(text=str(i), callback_data=cb)] for i in range(11)])) == {"больше 10 кнопок"}
+    assert _violations(mk([B(text="x" * 19, callback_data=cb), B(text="y", callback_data=cb)])) == \
+        {"длинная подпись в ряду"}
+    assert _violations(mk([B(text="🏠 В меню", callback_data=cb)])) == {"🏠"}
+    assert _violations(mk([B(text="🟢 Уведомления", callback_data=cb)])) == {"кружок вместо ✅/☑️"}
+    assert _violations(mk([B(text="🟢 iPhone", callback_data=DeviceCB(action="open", device_id=1).pack())])) == set()
+    assert _violations(mk([B(text="🗑 Удалить", callback_data=cb), B(text="⬅️ Отмена", callback_data=cb)]),
+                       "x_confirm") == {"подтверждение не с «Отмены»"}
+
+
+# ── экраны администратора и агента: исключения до своих этапов ───────────────
+
+_ARGS = {"key": "restart", "sec": "mon", "configured": True, "has_secret": True, "muted": False,
+         "back_sec": "mon", "st": {"enabled": True, "raw_allow": ["a.example"]},
+         "action": "restart", "back": "panel", "items": [("ru", "a.ru"), ("vpn", "b.com")],
+         "idx": 0, "kind": "ru", "dom": "a.ru", "val": "1.2.3.4", "label": "1.2.3.4", "slot": 1,
+         "on": True, "healthy": True, "device_id": 3, "has_candidates": True, "enabled": True,
+         "lists_every": 6, "unassigned_count": 0, "client_id": 5,
+         "info": {"probe_seconds": 30, "window": 10, "threshold": 60, "failover": True}}
+
+# (модуль, билдер) → нарушения, которые пока терпим, и до какого этапа
+ADMIN_EXCEPTIONS = {
+    ("admin", "confirm_lower_limit"): ({"подтверждение не с «Отмены»"}, "этап 2"),
+    ("settings", "migration_prepare_confirm"): ({"подтверждение не с «Отмены»"}, "этап 3"),
+    ("settings", "settings_email"): ({"длинная подпись в ряду"}, "этап 3"),
+    ("settings", "settings_firewall"): ({"кружок вместо ✅/☑️"}, "этап 3"),
+    ("gateway", "gateway_email_kb"): ({"длинная подпись в ряду"}, "этап 4"),
+    ("routing", "gateway_mark_confirm"): ({"подтверждение не с «Отмены»"}, "этап 3"),
+    ("routing", "gateway_new_confirm"): ({"подтверждение не с «Отмены»"}, "этап 3"),
+    ("routing", "gateway_remove_confirm"): ({"подтверждение не с «Отмены»"}, "этап 3"),
+    ("routing", "routing_disable_confirm"): ({"кружок вместо ✅/☑️"}, "этап 3"),
+    ("gateway", "gateway_panel_kb"): ({"🏠"}, "этап 4"),
+    ("routing", "gateway_card"): ({"🏠"}, "этап 3"),
+}
+
+_GW_STATE = {"gateway": SimpleNamespace(id=1, lan_mode=1), "device": SimpleNamespace(name="NASPi"),
+             "active": True, "preferred": True}
+_EXTRA = {("gateway", "gateway_panel_kb"): lambda: kbg.gateway_panel_kb(lan=True),
+          ("routing", "gateway_card"): lambda: kbr.gateway_card(_GW_STATE, back_to_list=True)}
+
+
+def _admin_builders():
+    for mod in (kba, kbs, kbg, kbb, kbr):
+        short = mod.__name__.rsplit(".", 1)[-1]
+        for name, fn in inspect.getmembers(mod, inspect.isfunction):
+            if fn.__module__ != mod.__name__ or name.startswith("_") or name in CLIENT:
+                continue
+            if (short, name) in _EXTRA:
+                yield short, name, _EXTRA[(short, name)]
+                continue
+            req = [p.name for p in inspect.signature(fn).parameters.values()
+                   if p.default is inspect.Parameter.empty
+                   and p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD]
+            if all(r in _ARGS for r in req):
+                yield short, name, (lambda fn=fn, req=req: fn(**{r: _ARGS[r] for r in req}))
+
+
+def test_admin_and_agent_keyboards_break_the_rules_only_where_listed():
+    seen = {}
+    for short, name, make in _admin_builders():
+        try:
+            markup = make()
+        except (KeyError, TypeError, ValueError):
+            continue                                    # образца под сигнатуру нет — не судим
+        if isinstance(markup, InlineKeyboardMarkup):
+            seen[(short, name)] = _violations(markup, name)
+    unexpected = {k: v for k, v in seen.items()
+                  if v and v != ADMIN_EXCEPTIONS.get(k, (set(), ""))[0]}
+    assert not unexpected, f"нарушения вне списка исключений: {unexpected}"
+    fixed = [k for k in ADMIN_EXCEPTIONS if k in seen and not seen[k]]
+    assert not fixed, f"исключения больше не нужны — убери из списка: {fixed}"
+    unchecked = [k for k in ADMIN_EXCEPTIONS if k not in seen]
+    assert not unchecked, f"исключения для билдеров, которые не собрались: {unchecked}"
+
+
+def test_no_house_icon_in_keyboard_literals_outside_the_listed_screens():
+    """«🏠» ищем и в исходнике: кнопка может появиться только в ветке, до
+    которой образцы не дошли."""
+    root = pathlib.Path(kbm.__file__).parent
+    found = set()
+    for path in sorted(root.glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and "🏠" in node.value:
+                found.add((path.stem, node.value))
+    assert found == {("gateway", "🏠 Локальная сеть без VPN"), ("routing", "🏠 Локальные подсети")}, found
+
+
+def test_main_client_screen_is_four_rows_at_most():
+    """Главная клиента — ряд выдачи, устройства, РФ-доступ с подпиской,
+    помощь; без устройств — без ряда выдачи."""
+    rows = [[b.text for b in r] for r in kbc.client_main(has_devices=True, routing_visible=True,
+                                                        client_id=1).inline_keyboard]
+    assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Устройства", "➕ Устройство"],
+                    ["🇷🇺 РФ-доступ", "💳 Подписка"], ["❓ Помощь"]], rows
+    rows = [[b.text for b in r] for r in kbc.client_main(has_devices=False).inline_keyboard]
+    assert rows == [["➕ Устройство"], ["💳 Подписка"], ["❓ Помощь"]], rows
+    callbacks = [b.callback_data for r in kbc.client_main(has_devices=True, routing_visible=True,
+                                                          client_id=7).inline_keyboard for b in r]
+    assert RoutingCB(action="panel", ref=7).pack() in callbacks
+    assert DeviceCB(action="add").pack() in callbacks
+
+
+def test_guest_main_rows():
+    rows = [[b.text for b in r] for r in kbc.guest_main(routing_visible=True, client_id=1).inline_keyboard]
+    assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Устройства", "🇷🇺 РФ-доступ"], ["❓ Помощь"]]
+    rows = [[b.text for b in r] for r in kbc.guest_main(has_devices=False).inline_keyboard]
+    assert rows == [["❓ Помощь"]], "без устройств — только помощь"
+
+
+def test_card_rows_follow_the_device_kind():
+    """Карточки: своё — ряд выдачи, имя/лимит, другу/блок, удалить/назад;
+    переданное — имя/лимит, удалить/назад; от друга — выдача, блок/удалить,
+    назад; добавленное не ботом — без ряда выдачи и без «Другу»."""
+    def rows(m):
+        return [[b.text for b in r] for r in m.inline_keyboard]
+    assert rows(kbc.device_actions(DEVS[0], is_admin=False, back_target="m:devices")) == [
+        ["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["✏️ Имя", "✏️ Лимит"], ["👤 Другу", "🛑 Блок"],
+        ["🗑 Удалить", "⬅️ Назад"]]
+    assert rows(kbc.device_actions(PENDING, is_admin=False, back_target="x"))[2] == ["🔁 Приглашение", "🛑 Блок"]
+    assert rows(kbc.device_actions(BLOCKED, is_admin=False, back_target="x"))[2] == ["👤 Другу", "✅ Разблок"]
+    assert rows(kbc.device_actions(UNMANAGED, is_admin=False, back_target="x")) == [
+        ["✏️ Имя", "✏️ Лимит"], ["🛑 Блок"], ["🗑 Удалить", "⬅️ Назад"]]
+    assert rows(kbc.lent_out_device_actions(DEVS[2], "x")) == [["✏️ Имя", "✏️ Лимит"], ["🗑 Удалить", "⬅️ Назад"]]
+    assert rows(kbc.held_device_actions(HELD[0], "x")) == [
+        ["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["🛑 Блок", "🗑 Удалить"], ["⬅️ Назад"]]
+    gen = [b.callback_data for b in _buttons(kbc.held_device_actions(HELD[0], "x", cb_cls=FriendCB))][:3]
+    assert gen == [FriendCB(action=a, device_id=4).pack() for a in ("gen_link", "gen_qr", "gen_file")]
+    deleted = [b.callback_data for b in _buttons(kbc.held_device_actions(HELD[0], "x"))]
+    assert DelDeviceCB(device_id=4, stage="ask").pack() in deleted
+    assert BlockCB(target="dev", action="menu_block", ref=4).pack() in deleted

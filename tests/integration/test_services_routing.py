@@ -1057,7 +1057,7 @@ def test_grant_and_revoke_notify_holders_too(services, make_active_client, fake_
     _lend(services, owner, 9704, "B")
     notes = services.set_routing_allowed(owner.id, True)
     assert [n.tg_id for n in notes] == [704, 9704]
-    assert notes[1].text.startswith('К устройствам, которые тебе передал <a href="tg://user?id=704">Вася</a>')
+    assert notes[1].text.startswith('🇷🇺 К устройствам от профиля <a href="tg://user?id=704">Вася</a> добавлен')
     notes = services.set_routing_allowed(owner.id, False)
     assert [n.tg_id for n in notes] == [704, 9704]
-    assert notes[1].text.startswith('Функция РФ-доступа для устройств от <a href="tg://user?id=704">Вася</a>')
+    assert notes[1].text.startswith('🇷🇺 РФ-доступ для устройств от профиля <a href="tg://user?id=704">Вася</a> больше')

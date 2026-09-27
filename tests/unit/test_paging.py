@@ -187,9 +187,9 @@ SCREENS = {
         {"enabled": True, "raw_allow": [f"u{i:04d}.example" for i in range(n)]}, page=p),
     "fw (фильтр выключен)": lambda n, p: kbs.settings_firewall(
         {"enabled": False, "raw_allow": [f"u{i:04d}.example" for i in range(n)]}, page=p),
-    "rtdevs": lambda n, p: kbr.routing_devices(BIG, _devs(n), back_target=_BACK, page=p),
-    "rtpanel": lambda n, p: kbr.routing_panel(BIG, master_on=True, domains=_doms(n), enabled=1,
-                                              total=2, back_target=_BACK, page=p),
+    "rtpanel": lambda n, p: kbr.routing_panel(BIG, _devs(n), enabled=n // 2, total=n,
+                                              n_domains=5, back_target=_BACK, page=p),
+    "rtsites": lambda n, p: kbr.routing_sites(BIG, _doms(n), page=p),
     "gwpick": lambda n, p: kbr.gateway_pick(_devs(n), slot=2, page=p),
     "rtusers": lambda n, p: kbr.settings_routing_users(_clis(n), page=p),
     "addpick": lambda n, p: kba.pick_client_for_add_device(_clis(n), page=p),

@@ -15,6 +15,9 @@ from .common import (_btn_suffix, append_hide_row, _manual_block_button, confirm
                      page_slice, page_nav)
 
 
+ADD_FROM_DEVICES = 1          # DeviceCB(add, device_id=1): «➕ Устройство» из списка — отмена туда же
+
+
 def _dot(dev) -> str:
     """Значок состояния для кнопки списка: ⛔ / ⏳ / 🟢 / ⚪."""
     return _texts.device_state(dev)
@@ -105,7 +108,7 @@ def client_devices(devices, held=(), page: int = 0, render: str = "", *,
     nav = page_nav(kb, "devices", 0, page, prev, nxt, render or Menu(action="devices").pack())
     tail = 0
     if add:
-        kb.button(text="➕ Устройство", callback_data=DeviceCB(action="add"))
+        kb.button(text="➕ Устройство", callback_data=DeviceCB(action="add", device_id=ADD_FROM_DEVICES))
         tail += 1
     kb.button(text="⬅️ Назад", callback_data=back or Menu(action="main").pack())
     tail += 1

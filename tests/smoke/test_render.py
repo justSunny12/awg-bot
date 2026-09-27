@@ -33,10 +33,10 @@ def test_volumes_are_gigabytes_rounded_to_hundredths():
     assert texts.used_of_limit(int(8.99 * G), 50 * G, "лимит устройства") == "8.99 из 50 ГБ (лимит устройства)"
     assert texts.used_of_limit(int(8.99 * G), 0) == "8.99 ГБ"
     assert texts.consumption_line(int(8.99 * G), 50 * G, blocked=True) == \
-        "Потребление за месяц: 8.99 из 50 ГБ (лимит устройства) — исчерпан"
-    assert texts.consumption_line(8 * M, 0, blocked=False) == "Потребление за месяц: 0.01 ГБ"
+        "Трафик за месяц: 8.99 из 50 ГБ (лимит устройства) — исчерпан"
+    assert texts.consumption_line(8 * M, 0, blocked=False) == "Трафик за месяц: 0.01 ГБ"
     assert texts.client_total_line(G, 2 * G, 50 * G, 10 * G, for_admin=False) == \
-        "Потребление за месяц: 3 из 50 + 10 ГБ до конца месяца"
+        "Трафик за месяц: 3 из 50 + 10 ГБ до конца месяца"
     from awgbot.core import models
     gw = models.Device(id=1, client_id=1, name="Малина", public_key="P", private_key="k",
                        preshared_key="", address="10.8.1.9", block_reason=0, created_at="2026-01-01",
@@ -44,7 +44,7 @@ def test_volumes_are_gigabytes_rounded_to_hundredths():
     assert "Потребление: 11.78 ГБ (↑ 10.95 ГБ | ↓ 0.83 ГБ)" in texts.gateway_device_card(gw), \
         "у шлюза единица дублировалась: «11.79 ГБ ГБ»"
     assert texts.client_total_line(M, 2 * M, 50 * G, 10 * G, for_admin=True) == \
-        "Потребление профиля за месяц: 0.01 из 50 + 10 ГБ до конца месяца (↑ 0.01 ГБ | ↓ 0.01 ГБ)"
+        "Трафик профиля за месяц: 0.01 из 50 + 10 ГБ до конца месяца (↑ 0.01 ГБ | ↓ 0.01 ГБ)"
 
 
 def test_gb_str_and_slots_and_limit_notice():
@@ -76,13 +76,14 @@ def test_device_count_is_a_fraction_everywhere():
 
 
 def test_unlimited_consumption_says_it_in_one_phrase():
-    """Ни лимита устройства, ни лимита профиля — «Потребление не ограничено».
+    """Ни лимита устройства, ни лимита профиля — «Трафик устройства без лимита».
     Прежняя оговорка про рамки лимита профиля намекала на лимит, которого нет."""
     free = texts.device_created_report("П", client_name="В", device_count=1)
-    assert "Потребление устройства не ограничено." in free
+    assert "Трафик устройства без лимита." in free
+    assert "лимита профиля" not in free, "оговорка про лимит профиля, которого нет"
     withprofile = texts.device_created_report("П", client_name="В", device_count=1,
                                               profile_limit_bytes=100 * 1024 ** 3)
-    assert "Потребление устройства не ограничено в рамках лимита профиля." in withprofile
+    assert "Трафик устройства — в пределах лимита профиля." in withprofile
 
 
 # ── клавиатуры без БД ────────────────────────────────────────────────────────
@@ -98,7 +99,7 @@ def test_static_keyboards_build():
     assert _is_markup(kb.grace_offer(1, 14))
     assert _is_markup(kb.block_pause_choice(1))
     assert _is_markup(kb.block_notify_choice("cli", 1, pause_days=0))
-    assert _is_markup(kb.friend_help_menu())
+    assert _is_markup(kb.help_menu(guest=True))
     assert _is_markup(kb.guest_main()) and _is_markup(kb.guest_main(routing_visible=True, client_id=1))
 
 
@@ -107,7 +108,7 @@ def test_added_by_admin_offers_all_three_ways_and_hides():
     в главном меню) и «Скрыть» последней строкой — оно проактивное, человек его
     не заказывал."""
     rows = kb.added_by_admin(7).inline_keyboard
-    assert [b.text for b in rows[0]] == ["🔗 Ссылка", "🔳 QR-код", "📄 Файл"]
+    assert [b.text for b in rows[0]] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"]
     assert len(rows[-1]) == 1 and rows[-1][0].text == "Скрыть"
     assert any("gen_qr" in b.callback_data for b in rows[0]), "QR не выдавался вовсе"
 
@@ -135,23 +136,27 @@ def test_object_renders_do_not_crash(services, make_active_client):
 
 
 def test_client_greeting_shows_consumption_and_expiry(services, make_active_client):
-    """Главный экран клиента: потребление за месяц против лимита (не только в
-    «Управлять подпиской») и «🟠 истекает DD.MM HH:MM» с первого напоминания."""
+    """Главная клиента: подписка и трафик одной строкой против лимита, с
+    первого напоминания — «🟡 истекает 12.10 18:00»; без лимита — просто
+    объём. Уедет строка — человек не видит, сколько осталось, пока не
+    откроет «💳 Подписка»."""
     from awgbot.util import timeutil
     G = 1024 ** 3
     c = make_active_client(name="Тестовый клиент", tg_id=8601, traffic_limit=50 * G)
     traffic = {"rx_month": 20 * G, "tx_month": 4 * G + G // 10}
+    end = timeutil.parse_iso(c.period_end)
     out = texts.greeting_client(c, True, (3, 4), None, traffic=traffic)
-    assert ("Статус подписки: 🟢 активна\n\nПотребление за месяц: 24.1 из 50 ГБ\n\n"
-            "Устройств добавлено: 3 из 4.") in out
+    assert out.splitlines() == [
+        "👋 Тестовый клиент", "🟢 VPN работает",
+        f"💳 Подписка до {timeutil.fmt_date_ui(end)} · 📊 24.1 из 50 ГБ",
+        "📱 Устройств 3 из 4"], out
     services.db.update_client_fields(c.id, notified_thresholds="10080")
     c = services.db.get_client(c.id)
-    end = timeutil.parse_iso(c.period_end).astimezone(timeutil.TZ)
-    assert f"Статус подписки: 🟠 истекает {end.strftime('%d.%m %H:%M')}" in \
+    assert f"💳 🟡 истекает {timeutil.fmt_dt_ui(end)} · 📊 24.1 из 50 ГБ" in \
         texts.greeting_client(c, True, (3, 4), None, traffic=traffic)
     assert "🟢 активна" in texts.subscription_status_only(c), "срок — только на главной клиента"
     services.db.update_client_fields(c.id, traffic_limit=0)
-    assert "Потребление за месяц: 24.1 ГБ\n" in texts.greeting_client(
+    assert " · 📊 24.1 ГБ\n" in texts.greeting_client(
         services.db.get_client(c.id), True, (3, 4), None, traffic=traffic)
 
 

@@ -72,16 +72,52 @@ async def test_guide_method_back_reshows_choice(services, fake_bot, make_active_
 
 
 async def test_guide_add_device_flow(services, fake_bot, make_active_client):
+    """Новое устройство внутри гайда: только имя (лимит ставится в карточке) —
+    приглашение на месте шага; после имени — «✅ Дев: создано» и сразу шаг
+    выбора способа для него. Приглашение и ввод убраны."""
     client = make_active_client(tg_id=6203, device_limit=3)
     cl = services.db.get_client(client.id)
     st = FakeState()
     cb, nav = _cb(fake_bot, 6203)
     await gh.guide_add_device(cb, GuideCB(guide="connect", step=-1), services, cl, st)
+    prompt = [s for s in nav.sent if s[0] == "edit_text"][-1]
+    assert prompt[1] == "➕ Новое устройство · 0 из 3\nКак назвать? Например: «iPhone»"
+    assert [b.text for row in prompt[2].inline_keyboard for b in row] == ["✖️ Отмена"]
     m_name = FakeMessage(text="Дев", chat_id=6203, user_id=6203, bot=fake_bot)
     await gh.guide_add_device_name(m_name, services, cl, st)
-    m_tr = FakeMessage(text="0", chat_id=6203, user_id=6203, bot=fake_bot)
-    await gh.guide_add_device_traffic(m_tr, services, cl, st)
     assert any(d.name == "Дев" for d in services.db.list_devices(client.id))
+    answers = [s for s in m_name.sent if s[0] == "answer"]
+    assert answers[0][1] == "✅ Дев: создано", "вопрос о лимите вместо создания"
+    labels = [b.text for row in answers[-1][2].inline_keyboard for b in row]
+    assert labels[:3] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"], labels
+    deleted = {r[2] for r in fake_bot.records if r[0] == "delete_message"}
+    assert {nav.message_id, m_name.message_id} <= deleted, "приглашение или ввод остались в чате"
+    assert await st.get_state() is None
+
+
+async def test_guide_add_device_cancel_returns_to_the_guide_step(services, fake_bot,
+                                                                 make_active_client):
+    """«✖️ Отмена» на вводе имени внутри гайда — обратно на шаг 0 того же
+    гайда (Apple — своего варианта), а не на главную: человек посреди
+    настройки."""
+    from awgbot.bot.handlers import reply_commands as rc
+    from awgbot.bot.callbacks import CancelCB
+    from awgbot.bot import guides
+    client = make_active_client(tg_id=6206, device_limit=3)
+    services.add_device(client.id, "Старое")
+    cl = services.db.get_client(client.id)
+    st = FakeState()
+    cb, nav = _cb(fake_bot, 6206)
+    await gh.guide_add_device(cb, GuideCB(guide="connect_apple", step=-1), services, cl, st)
+    cancel = CancelCB.unpack(nav.sent[-1][2].inline_keyboard[0][0].callback_data)
+    cb2 = FakeCallback(message=nav, user_id=6206, bot=fake_bot)
+    await rc.on_cancel_inline(cb2, cancel, st, services, role="client", client=cl)
+    text, markup = nav.sent[-1][1], nav.sent[-1][2]
+    assert text == guides.step_text("connect_apple", 0), text
+    labels = [b.text for row in markup.inline_keyboard for b in row]
+    assert "🔗 Старое" in labels and "➕ Устройство" in labels, labels
+    assert await st.get_state() is None and await st.get_data() == {}
+    assert services.db.list_devices(client.id)[0].name == "Старое"
 
 
 async def test_guide_add_device_full_limit(services, fake_bot, make_active_client):

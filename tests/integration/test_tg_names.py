@@ -84,14 +84,14 @@ def test_links_prefer_account_name_and_fall_back_to_profile(services, make_activ
     dc = services.add_device(owner.id, "Тел")
     res = services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=93130)
     dev = services.db.get_device(dc.device_id)
-    assert 'Получено от <a href="tg://user?id=3130">Тестовый клиент</a>' in texts.held_device_card(dev, 0)
+    assert 'от профиля <a href="tg://user?id=3130">Тестовый клиент</a>' in texts.held_device_card(dev, 0)
     services.db.update_client_fields(owner.id, tg_name="Вася Пупкин", tg_username="vasya")
     services.db.update_client_fields(res.holder.id, tg_name="Артём")
     dev = services.db.get_device(dc.device_id)
-    assert 'Получено от <a href="https://t.me/vasya">Вася Пупкин</a>' in texts.held_device_card(dev, 0)
+    assert 'от профиля <a href="https://t.me/vasya">Вася Пупкин</a>' in texts.held_device_card(dev, 0)
     assert texts.lent_out_marker(dev) == '👤 Передано <a href="tg://user?id=93130">Артём</a> и управляется им'
     donor = services.db.get_client(owner.id)
-    assert 'владелец: <a href="https://t.me/vasya">Вася Пупкин</a>' in texts.greeting_guest("Артём", True, donor, [dev])
+    assert 'Подписка профиля <a href="https://t.me/vasya">Вася Пупкин</a>' in texts.greeting_guest("Артём", True, donor, [dev])
 
 
 def test_scheduler_registers_daily_and_startup_refresh(services, db):

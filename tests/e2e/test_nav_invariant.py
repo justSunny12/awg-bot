@@ -114,40 +114,53 @@ async def test_block_pause_dialog_keeps_one_live_menu(services, fake_bot, make_a
 
 
 async def test_client_pause_other_keeps_one_live_menu(services, fake_bot, make_active_client):
+    """«✏️ Другое» на паузе: приглашение — на месте экрана (второго живого
+    меню нет), после ввода — экран подписки новым живым меню, приглашение и
+    ввод убраны."""
     cl = make_active_client(tg_id=6403, period_kind="year")
     st = FakeState()
     cb, screen = _cb(fake_bot, cl.tg_id)
     services.db.nav_touch(cl.tg_id, screen.message_id)
     await ch.pause_other(cb, PauseCB(action="other", ref=cl.id), cl, services, st)
-    assert ("edit_reply_markup", cl.tg_id) in fake_bot.records
+    assert [s[0] for s in screen.sent] == ["edit_text"], "приглашение не на месте экрана"
+    assert [b.text for r in screen.sent[-1][2].inline_keyboard for b in r] == ["✖️ Отмена"]
     typed = _msg(fake_bot, cl.tg_id, "3")
     await ch.pause_other_apply(typed, cl, services, st)
     assert services.db.get_nav_message_id(cl.tg_id) != screen.message_id
+    assert {screen.message_id, typed.message_id} <= _deleted(fake_bot), "приглашение или ввод остались"
+    answers = [s for s in typed.sent if s[0] == "answer"]
+    assert answers[-1][1].startswith("💳 Подписка: годовая · ⏸️ на паузе") and answers[-1][2] is not None
 
 
-async def test_add_device_for_friend_shows_slots_and_parks_screen(services, fake_bot,
-                                                                   make_active_client):
+async def test_add_device_for_friend_shows_slots_in_place(services, fake_bot, make_active_client):
+    """Приглашение «для друга» — на месте экрана, со счётчиком слотов: второе
+    живое меню рядом не появляется."""
     cl = make_active_client(tg_id=6404, device_limit=3)
     services.add_device(cl.id, "Своё")
     st = FakeState()
     cb, screen = _cb(fake_bot, cl.tg_id)
-    await ch.device_add_friend(cb, cl, services, st)
-    assert ("edit_reply_markup", cl.tg_id) in fake_bot.records
-    prompt = [s for s in screen.sent if s[0] == "answer"][-1][1]
+    await ch.device_add_start(cb, DeviceCB(action="add"), cl, services, st)
+    await ch.device_add_for_whom(cb, DeviceCB(action="add_friend"), cl, services, st)
+    assert {s[0] for s in screen.sent} == {"edit_text"}, "экран не заменён приглашением"
+    prompt = screen.sent[-1][1]
     assert "1 из 3" in prompt and "для друга" in prompt
 
 
 # ── переименование своего устройства клиентом: итог и меню следом ────────────
 
 async def test_client_rename_returns_to_menu(services, fake_bot, make_active_client):
+    """После ввода — карточка с итогом первой строкой, одним сообщением, и
+    она — живое меню."""
     cl = make_active_client(tg_id=6405)
     dc = services.add_device(cl.id, "Старое")
-    st = FakeState(); await st.update_data(device_id=dc.device_id)
+    st = FakeState(); await st.update_data(device_id=dc.device_id, ctx_kind="dev", ctx_ref=dc.device_id)
     typed = _msg(fake_bot, cl.tg_id, "Новое")
     await ch.client_device_edit_name_apply(typed, cl, services, st)
     answers = [s for s in typed.sent if s[0] == "answer"]
-    assert "«Старое» → «Новое»" in answers[0][1]
-    assert answers[-1][2] is not None, "после итога нет меню"
+    assert len(answers) == 1, "итог отдельным сообщением"
+    assert answers[0][1].startswith("✅ Имя устройства: Старое → Новое\n\n⚪ Новое · ")
+    assert answers[0][2] is not None, "после итога нет меню"
+    assert services.db.get_nav_message_id(cl.tg_id) != typed.message_id
     assert services.db.get_device(dc.device_id).name == "Новое"
 
 
@@ -212,10 +225,11 @@ async def test_client_delete_last_device_goes_to_main(services, fake_bot, make_a
     await ch.device_delete_confirm(cb, DelDeviceCB(device_id=dc.device_id, stage="confirm"),
                                    cl, services)
     edits = [s for s in screen.sent if s[0] == "edit_text"]
-    assert edits[-1][1] == "🗑 Устройство «Телефон» удалено. Теперь можно добавить до 2 устройств."
+    assert edits[-1][1] == "🗑 Телефон удалено · можно добавить ещё 2"
     assert edits[-1][2] is None
     answers = [s for s in screen.sent if s[0] == "answer"]
-    assert answers and answers[-1][2] is not None and "Устройства" not in answers[-1][1][:40]
+    assert answers and answers[-1][2] is not None and answers[-1][1].startswith("👋 "), \
+        "после последнего — главная, а не пустой список"
 
 
 async def test_client_delete_one_of_two_returns_to_device_list(services, fake_bot,
@@ -227,18 +241,20 @@ async def test_client_delete_one_of_two_returns_to_device_list(services, fake_bo
     await ch.device_delete_confirm(cb, DelDeviceCB(device_id=a.device_id, stage="confirm"),
                                    cl, services)
     edits = [s for s in screen.sent if s[0] == "edit_text"]
-    assert "«A» удалено. Теперь можно добавить до 2 устройств." in edits[-1][1]
+    assert edits[-1][1] == "🗑 A удалено · можно добавить ещё 2"
     answers = [s for s in screen.sent if s[0] == "answer"]
-    assert "Твои устройства" in answers[-1][1]
+    assert answers[-1][1] == "📱 Устройства · 1 из 3"
     labels = [b.text for row in answers[-1][2].inline_keyboard for b in row]
-    assert any("B" in l for l in labels)
+    assert labels[0] == "⚪ B", labels
 
 
-async def test_connect_method_after_creation_says_menu(services, fake_bot, make_active_client):
+async def test_screen_after_creation_says_menu(services, fake_bot, make_active_client):
+    """Экран «✅ …: создано» — выход «⬅️ В меню», не «⬅️ Назад»: возвращаться
+    некуда, приглашение уже убрано."""
     cl = make_active_client(tg_id=6412, device_limit=2)
-    st = FakeState(); await st.update_data(dev_name="Тел", for_friend=False)
-    typed = _msg(fake_bot, cl.tg_id, "0")
-    await ch.device_add_traffic(typed, cl, services, st)
+    st = FakeState(); await st.update_data(for_friend=False)
+    typed = _msg(fake_bot, cl.tg_id, "Тел")
+    await ch.device_add_name(typed, cl, services, st)
     answers = [s for s in typed.sent if s[0] == "answer" and s[2] is not None]
     labels = [b.text for row in answers[-1][2].inline_keyboard for b in row]
     assert "⬅️ В меню" in labels and "⬅️ Назад" not in labels
@@ -246,8 +262,8 @@ async def test_connect_method_after_creation_says_menu(services, fake_bot, make_
 
 def test_limit_changed_notice_uses_arrow():
     from awgbot.bot import texts
-    assert texts.limit_changed_notice(1, 2) == "Максимальное количество устройств для тебя изменено: 1 → 2."
-    assert texts.limit_changed_notice(2, 0).endswith("2 → без ограничения.")
+    assert texts.limit_changed_notice(1, 2) == "Лимит устройств изменён: 1 → 2"
+    assert texts.limit_changed_notice(2, 0) == "Лимит устройств изменён: 2 → ∞", "«∞», не «без ограничения»"
 
 
 # ── РФ-доступ: строки добавились, кнопки — нет ──

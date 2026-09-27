@@ -26,53 +26,57 @@ def _lend(services, owner, friend_tg, name="d", tg_name="Артём"):
 
 
 async def test_guest_main_screen(services, fake_bot, make_active_client):
+    """Главная гостя: имя, VPN, подписка владельца — только статус, ряд выдачи,
+    «Устройства», «Помощь». Без лимитов и без трафика строк трафика нет —
+    нули не выводим."""
     owner = make_active_client(tg_id=8100, name="Вася", device_limit=3)
     _, guest = _lend(services, owner, 98100, "Ноут")
     _, guest = _lend(services, owner, 98100, "Тел")
     msg = FakeMessage(text="/start", chat_id=98100, user_id=98100, bot=fake_bot)
     await fh.friend_start(msg, guest, services)
     _, text, markup = [s for s in msg.sent if s[0] == "answer"][-1]
-    labels = [b.text for row in markup.inline_keyboard for b in row]
-    assert text.startswith("Привет, Артём! 👋")
-    assert "VPN-сервер" in text
-    assert 'Статус подписки: 🟢 активна (владелец: <a href="tg://user?id=8100">Вася</a>)' in text
-    # потребление — по каждому удерживаемому: у владельца лимита нет → без ограничений
-    assert ("Потребление за месяц:\n• 0 ГБ (Ноут, без ограничений)\n• 0 ГБ (Тел, без ограничений)"
-            "\n\nУ тебя 2 устройства") in text
-    assert labels[0] == "📱 Мои устройства" and "❓ Помощь с настройкой" in labels
-    assert {"🔗 Ссылка", "🔳 QR-код", "📄 Файл"} <= set(labels)
+    rows = [[b.text for b in row] for row in markup.inline_keyboard]
+    lines = text.splitlines()
+    assert lines[0] == "👋 Артём" and lines[1].endswith(("VPN работает", "VPN не отвечает")), text
+    assert lines[2] == '💳 Подписка профиля <a href="tg://user?id=8100">Вася</a>: 🟢 активна', text
+    assert len(lines) == 3, "строки трафика при нулях без лимита"
+    assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Устройства"], ["❓ Помощь"]], rows
 
 
 async def test_guest_main_screen_consumption_against_limits(services, fake_bot, make_active_client):
-    """Лимит устройства — свой, иначе профиля владельца; одно устройство — в
-    строку; срок подписки дарителя гостю не показываем даже когда владельцу уже
-    напоминали."""
+    """Лимит устройства — свой, иначе профиля владельца; срок подписки
+    дарителя гостю не показываем даже когда владельцу уже напоминали."""
     G = 1024 ** 3
     owner = make_active_client(tg_id=8107, name="Вася", device_limit=3, traffic_limit=50 * G)
     services.db.update_client_fields(owner.id, notified_thresholds="10080")
     dc, guest = _lend(services, owner, 98107, "Тел")
     services.db.add_traffic_bulk([(dc.device_id, 20 * G, 4 * G + G // 10)])
     text, _ = await fh.guest_main_payload(services, guest)
-    assert "Потребление за месяц: 24.1 из 50 ГБ (Тел)\n\nУ тебя 1 устройство" in text
-    assert "🟢 активна (владелец:" in text and "истекает" not in text
+    assert text.splitlines()[-1] == "📊 Тел: 24.1 из 50 ГБ", text
+    assert ": 🟢 активна" in text and "истекает" not in text
     services.set_device_traffic_limit(dc.device_id, 30 * G)
     text, _ = await fh.guest_main_payload(services, guest)
-    assert "Потребление за месяц: 24.1 из 30 ГБ (Тел)" in text
+    assert text.splitlines()[-1] == "📊 Тел: 24.1 из 30 ГБ", text
 
 
 async def test_guest_devices_and_card(services, fake_bot, make_active_client):
+    """Список и карточка гостя: от кого устройство, чей лимит, ряд выдачи в
+    карточке — «Как подключить?» отдельным экраном больше нет."""
     owner = make_active_client(tg_id=8101, name="Вася", traffic_limit=100 * 1024 ** 3)
     dc, guest = _lend(services, owner, 98101, "Телефон")
     cb, nav = _cb(fake_bot, 98101)
     await fh.friend_list(cb, guest, services)
     text, labels = last_screen(nav)
-    assert "У тебя 1 устройство" in text and labels[0].endswith("Телефон")
+    assert text == '📱 Устройства · 1 · от профиля <a href="tg://user?id=8101">Вася</a>', text
+    assert labels == ["⚪ Телефон", "⬅️ Назад"], labels
     cb, nav = _cb(fake_bot, 98101)
     await fh.friend_open(cb, FriendCB(action="open", device_id=dc.device_id), guest, services)
     text, labels = last_screen(nav)
-    assert "Телефон" in text and "Потребление за месяц: 0 из 100 ГБ" in text
-    assert '👤 Получено от <a href="tg://user?id=8101">Вася</a>' in text
-    assert labels == ["🔌 Данные для подключения", "🛑 Заблокировать", "🗑 Удалить", "⬅️ Назад"]
+    head, usage = text.splitlines()[:2]
+    assert head.startswith("⚪ Телефон · ") and head.endswith(
+        '· от профиля <a href="tg://user?id=8101">Вася</a>'), head
+    assert usage == "Не подключалось · 0 из 100 ГБ (лимит профиля Вася)", usage
+    assert labels == ["🔗 Ссылка", "🔳 QR", "📄 Файл", "🛑 Блок", "🗑 Удалить", "⬅️ Назад"], labels
 
 
 async def test_guest_foreign_device_guarded(services, fake_bot, make_active_client):
@@ -87,22 +91,42 @@ async def test_guest_foreign_device_guarded(services, fake_bot, make_active_clie
 
 
 async def test_guest_gen_from_main_picks_when_several(services, fake_bot, make_active_client):
+    """С главной: несколько устройств — выбор; по устройству — ссылка и
+    пояснение одним сообщением с «⬅️ В меню» на главную гостя."""
     owner = make_active_client(tg_id=8104, device_limit=3)
     a, guest = _lend(services, owner, 98104, "A")
     _, guest = _lend(services, owner, 98104, "B")
     cb, nav = _cb(fake_bot, 98104)
     await fh.friend_gen(cb, FriendCB(action="gen_link"), guest, services)
     text, labels = last_screen(nav)
-    assert "Для какого устройства нужна ссылка?" == text and labels[:2] == ["A", "B"]
+    assert text == "🔗 Ссылка — для какого устройства?" and labels == ["⚪ A", "⚪ B", "⬅️ Назад"], labels
     cb, nav = _cb(fake_bot, 98104)
     await fh.friend_gen(cb, FriendCB(action="gen_link", device_id=a.device_id), guest, services)
-    assert any(s[0] == "answer" and "Ссылка для подключения" in s[1] for s in nav.sent)
+    sent = [s for s in nav.sent if s[0] == "answer"]
+    assert len(sent) == 1, "ссылка и пояснение — одним сообщением"
+    body, markup = sent[0][1], sent[0][2]
+    assert body.startswith("<code>vpn://") and body.endswith(
+        "\n\n☝️ Ссылка для A — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN"), body
+    assert [(b.text, b.callback_data) for row in markup.inline_keyboard for b in row] == [
+        ("⬅️ В меню", FriendCB(action="refresh").pack())]
+    assert services.db.get_nav_message_id(98104) is not None
+
+
+async def test_guest_single_device_is_issued_without_a_pick(services, fake_bot, make_active_client):
+    """Одно устройство — выдача с главной сразу, экрана выбора нет."""
+    owner = make_active_client(tg_id=8108)
+    _, guest = _lend(services, owner, 98108, "Тел")
+    cb, nav = _cb(fake_bot, 98108)
+    await fh.friend_gen(cb, FriendCB(action="gen_qr"), guest, services)
+    assert not any(s[0] == "edit_text" for s in nav.sent), "выбор из одного устройства"
+    assert [s[1] for s in nav.sent if s[0] == "animation"] == [
+        "🔳 Для Тел — в AmneziaVPN «＋» → «Создать из QR-кода», наведи камеру"]
 
 
 async def test_guest_gen_failure_shows_main_screen_not_a_finisher(services, fake_bot,
                                                                  make_active_client, monkeypatch):
-    """Сервер не выдал конфиг: под отказом финишер «☝️ Выше — ссылка» врал бы, а
-    меню под кнопкой уже снято — как у клиента, следом главный экран."""
+    """Сервер не выдал конфиг: пояснение «☝️ Ссылка для …» под отказом врало
+    бы, а меню под кнопкой уже снято — следом главный экран."""
     from awgbot.domain.services import ServiceError
     owner = make_active_client(tg_id=8106)
     dc, guest = _lend(services, owner, 98106, "Тел")
@@ -114,8 +138,8 @@ async def test_guest_gen_failure_shows_main_screen_not_a_finisher(services, fake
     await fh.friend_gen(cb, FriendCB(action="gen_link", device_id=dc.device_id), guest, services)
     answers = [s[1] for s in nav.sent if s[0] == "answer"]
     assert any("Не удалось выдать конфиг" in a for a in answers)
-    assert not any("Выше" in a for a in answers), "финишер под отказом"
-    assert answers[-1].startswith("Привет,"), "главный экран не пришёл"
+    assert not any("☝️" in a for a in answers), "пояснение под отказом"
+    assert answers[-1].startswith("👋 "), "главный экран не пришёл"
 
 
 async def test_guest_block_needs_confirmation(services, fake_bot, make_active_client):
@@ -125,14 +149,14 @@ async def test_guest_block_needs_confirmation(services, fake_bot, make_active_cl
     await fh.friend_block_ask(cb, BlockCB(target="dev", action="menu_block", ref=dc.device_id),
                               guest, services)
     text, labels = last_screen(nav)
-    assert text.startswith("Заблокировать «Тел»?") and labels == ["⬅️ Отмена", "🛑 Заблокировать"]
+    assert text == texts.block_device_ask("Тел") and labels == ["⬅️ Отмена", "🛑 Заблокировать"]
     assert not int(services.db.get_device(dc.device_id).block_reason) & int(DeviceBlock.USER)
     cb, nav = _cb(fake_bot, 98105)
     await fh.friend_block_do(cb, BlockCB(target="dev", action="block", ref=dc.device_id, kind="user"),
                              guest, services)
     assert int(services.db.get_device(dc.device_id).block_reason) & int(DeviceBlock.USER)
-    _, labels = last_screen(nav)
-    assert "✅ Разблокировать" in labels
+    text, labels = last_screen(nav)
+    assert "✅ Разблок" in labels and text.startswith("⛔ Тел"), (text, labels)
 
 
 async def test_guest_delete_notifies_owner_and_empty_guest_keeps_profile(services, fake_bot,
@@ -143,7 +167,8 @@ async def test_guest_delete_notifies_owner_and_empty_guest_keeps_profile(service
     cb, nav = _cb(fake_bot, 98106)
     await fh.friend_delete_ask(cb, DelDeviceCB(device_id=a.device_id, stage="ask"), guest, services)
     text, labels = last_screen(nav)
-    assert text == texts.device_delete_by_holder_ask("A") and "переданное другом" in text
+    assert text == "🗑 Удалить A?\nНовое устройство можно будет создать только по коду от друга"
+    assert labels == ["⬅️ Отмена", "🗑 Удалить"]
     cb, nav = _cb(fake_bot, 98106)
     fake_bot.records.clear()
     await fh.friend_delete_confirm(cb, DelDeviceCB(device_id=a.device_id, stage="confirm"),
@@ -152,27 +177,40 @@ async def test_guest_delete_notifies_owner_and_empty_guest_keeps_profile(service
     assert owner_msgs == ['Устройство «A», ранее переданное <a href="tg://user?id=98106">Артём</a>, '
                           'удалено по его запросу.\nТеперь у тебя 1 из 3 устройств.']
     edits = [s for s in nav.sent if s[0] == "edit_text"]
-    assert edits[-1][1] == "🗑 Устройство «A» удалено." and edits[-1][2] is None
+    assert edits[-1][1] == "🗑 A удалено" and edits[-1][2] is None
     answers = [s for s in nav.sent if s[0] == "answer"]
-    assert "У тебя 1 устройство" in answers[-1][1] and answers[-1][2] is not None
+    assert answers[-1][1].startswith("👋 Артём\n") and answers[-1][2] is not None
     # последнее — профиль остаётся, главный экран объясняет, что дальше
     cb, nav = _cb(fake_bot, 98106)
     await fh.friend_delete_confirm(cb, DelDeviceCB(device_id=b.device_id, stage="confirm"),
                                    guest, services)
     assert services.db.get_client_by_tg(98106) is not None
     answers = [s for s in nav.sent if s[0] == "answer"]
-    assert texts.GUEST_NO_DEVICES_LEFT in answers[-1][1] and "Статус подписки" not in answers[-1][1]
-    assert answers[-1][2] is None, "без устройств кнопкам делать нечего"
+    assert answers[-1][1] == "👋 Артём · устройств нет — попроси у друга новый код"
+    labels = [b.text for row in answers[-1][2].inline_keyboard for b in row]
+    assert labels == ["❓ Помощь"], "без устройств — одна «Помощь», а не пустой экран"
 
 
-async def test_guest_help_platform(services, fake_bot, make_active_client):
+async def test_guest_help_uses_the_same_guides_with_guest_exit(services, fake_bot, make_active_client):
+    """Помощь гостя — те же пошаговые гайды со скриншотами, что у клиента;
+    выход с экрана платформ — «✅ Всё умею сам», а «⬅️ В меню» в шагах — на
+    главную гостя, а не в клиентское меню, которого у него нет."""
+    from awgbot.bot.handlers import guide as gh
     owner = make_active_client(tg_id=8107)
     _, guest = _lend(services, owner, 98107)
     cb, nav = _cb(fake_bot, 98107)
     await fh.friend_help(cb)
+    text, labels = last_screen(nav)
+    assert text == "❓ Помощь — какое устройство?"
+    assert labels == ["🍎 iPhone / iPad", "🤖 Android", "🪟 Windows", "🍏 Mac", "✅ Всё умею сам"], labels
+    back = nav.sent[-1][2].inline_keyboard[-1][0].callback_data
+    assert back == FriendCB(action="refresh").pack()
     cb, nav = _cb(fake_bot, 98107)
-    await fh.friend_help_platform(cb, HelpCB(platform="android"))
-    assert any(s[0] == "edit_text" for s in nav.sent)
+    await gh.help_launch(cb, HelpCB(platform="android"), services, guest)
+    shown = [s for s in nav.sent if s[0] in ("edit_text", "photo", "answer")]
+    assert shown, "гайд гостю не показан"
+    menu = [b for row in shown[-1][2].inline_keyboard for b in row if b.text == "⬅️ В меню"]
+    assert menu and menu[0].callback_data == FriendCB(action="refresh").pack()
 
 
 # ── РФ-доступ у гостя ─────────────────────────────────
@@ -192,38 +230,38 @@ async def test_guest_main_shows_rf_line_and_button_only_with_owner_permission(
 
     services.set_routing_allowed(owner.id, True)
     text, markup = await fh.guest_main_payload(services, guest)
-    labels = [b.text for row in markup.inline_keyboard for b in row]
-    assert "🇷🇺 РФ-доступ:" in text
-    assert labels[1] == "🟢 Доступ к РФ-сервисам", labels
+    rows = [[b.text for b in row] for row in markup.inline_keyboard]
+    assert "🇷🇺 РФ-доступ" in text.splitlines()[1], text
+    assert ["📱 Устройства", "🇷🇺 РФ-доступ"] in rows, rows
 
     # раздел открывается гостю, «Назад» — на его главный экран
     cb, nav = _cb(fake_bot, 98110)
     await rh.routing_panel(cb, RoutingCB(action="panel", ref=guest.id), guest, services, FakeState())
     text, labels = last_screen(nav)
-    assert "РФ-доступ" in text and any("Устройства: 1 из 1" in l for l in labels)
+    assert text.startswith("🇷🇺 РФ-доступ: вкл на всех") and labels[0] == "✅ Тел · от профиля Вася", (text, labels)
     back = nav.sent[-1][2].inline_keyboard[-1][0].callback_data
     assert back == "fr:refresh:0"
 
 
 async def test_owner_devices_screen_lists_lent_out_without_toggle(
         services, fake_bot, make_active_client, monkeypatch):
+    """Переданное — строкой в тексте раздела, без кнопки: включает держатель."""
     from awgbot.core import config
     from awgbot.bot.handlers import routing as rh
     from awgbot.bot.callbacks import RoutingCB
+    from tests.conftest import FakeState
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
     owner = make_active_client(tg_id=8111, name="Вася", device_limit=3)
     services.set_routing_allowed(owner.id, True)
     services.add_device(owner.id, "Своё")
-    lent, _ = _lend(services, owner, 98111, "Ноутбук")
+    _lend(services, owner, 98111, "Ноутбук")
     owner = services.db.get_client(owner.id)
     cb, nav = _cb(fake_bot, 8111)
-    await rh.routing_devices_screen(cb, RoutingCB(action="devs", ref=owner.id), owner, services)
+    await rh.routing_panel(cb, RoutingCB(action="panel", ref=owner.id), owner, services, FakeState())
     text, labels = last_screen(nav)
-    assert "Включено на <b>1</b> из <b>1</b>" in text
-    assert texts.ROUTING_LENT_OUT_NOTE in text
-    assert labels[-2] == "👤 Ноутбук — Артём"
-    rows = nav.sent[-1][2].inline_keyboard
-    assert rows[-2][0].callback_data == f"rt:lent:{lent.device_id}:-1"
+    assert text.startswith("🇷🇺 РФ-доступ: вкл на всех"), text
+    assert 'Ноутбук — у профиля <a href="tg://user?id=98111">Артём</a>, включает он сам' in text
+    assert not any("Ноутбук" in l for l in labels), labels
     cb, _ = _cb(fake_bot, 8111)
     await rh.routing_lent_row(cb)
     assert cb.answers[-1][1] is True

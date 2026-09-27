@@ -135,7 +135,7 @@ async def test_admin_menu_devices(services, fake_bot):
     cb, nav = _acb(fake_bot)
     await ah.admin_menu_devices(cb, services)
     text, labels = last_screen(nav)
-    assert "Устройств добавлено: 1" in text
+    assert "Устройств: 1" in text
     assert any("Ноут" in l for l in labels), "устройство админа не показано"
 
 
@@ -183,8 +183,8 @@ async def test_admin_card_hides_the_reinvite_button(services, make_active_client
     owner = _btn_texts(kb.device_actions(dev, is_admin=False, back_target="x"))
     admin = _btn_texts(kb.device_actions(dev, is_admin=True, back_target="x",
                                          reassign_label="🔀 Передать"))
-    assert any("Перевыдать" in t for t in owner)
-    assert not any("Перевыдать" in t for t in admin)
+    assert "🔁 Приглашение" in owner, owner
+    assert not any("Приглашение" in t for t in admin), admin
 
 
 async def test_unmanaged_device_connect_menu_says_there_is_no_link(
@@ -295,7 +295,7 @@ async def test_devices_breakdown_lists_real_devices_with_traffic(services, make_
 
 
 def test_transfer_buttons_are_split_by_role(services, make_active_client):
-    """Владелец: «Передать другу», без «в другой профиль». Админ: наоборот."""
+    """Владелец: «👤 Другу», без «🔀 Передать» в другой профиль. Админ: наоборот."""
     from awgbot.bot import keyboards as kbs
     c = make_active_client("Профиль Г")
     services.add_device(c.id, "Ноут")
@@ -303,8 +303,8 @@ def test_transfer_buttons_are_split_by_role(services, make_active_client):
     owner = [b.text for row in kbs.device_actions(dev, is_admin=False, back_target="x").inline_keyboard for b in row]
     admin = [b.text for row in kbs.device_actions(dev, is_admin=True, back_target="x",
                                                   reassign_label="🔀 Передать в другой профиль").inline_keyboard for b in row]
-    assert "👤 Передать другу" in owner and "🔀 Передать в другой профиль" not in owner
-    assert "🔀 Передать в другой профиль" in admin and "👤 Передать другу" not in admin
+    assert "👤 Другу" in owner and "🔀 Передать" not in owner
+    assert "🔀 Передать" in admin and "👤 Другу" not in admin
 
 
 # ── онлайн: статус в списке получателей и экран устройств онлайн ─────────────

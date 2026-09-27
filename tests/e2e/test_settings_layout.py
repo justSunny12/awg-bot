@@ -98,23 +98,23 @@ def test_gateway_device_keeps_its_icon_in_the_button_list():
 
     labels = [b.text for row in kb.client_devices([_Dev(), _Phone()]).inline_keyboard
               for b in row]
-    assert any(l.startswith("🛰") for l in labels), labels
-    assert any(l.startswith("📱") for l in labels), labels
+    assert labels[0] == "🛰 Шлюз", labels
+    # у остальных значок — состояние (⛔ ⏳ 🟢 ⚪): не подключалось — офлайн
+    assert labels[1] == "⚪ iPhone", labels
     assert texts.device_emoji(_Dev()) == "🛰", "текстовый список разошёлся с кнопками"
-    # Значок ровно один: кружок онлайна тут пробовали и убрали — два подряд в
-    # каждой строке превращают список в рябь.
-    assert not any("🟢" in l or "🔴" in l for l in labels), labels
+    # Значок ровно один: у шлюза, который онлайн, кружок к 🛰 не добавляется —
+    # два подряд в каждой строке превращают список в рябь.
+    assert not any("🟢" in l for l in labels), labels
 
 
 def test_routing_domain_list_uses_minus_and_a_bin_for_the_whole_list():
     """Минус убирает одну запись — то же, что в разделе доступа по SSH.
     Корзина остаётся там, где сносят всё разом."""
     from awgbot.bot import keyboards as kb
-    markup = kb.routing_panel(1, master_on=True, enabled=1, total=2,
-                              domains=["ozon.ru", "mail.ru"], back_target="menu:main")
+    markup = kb.routing_sites(1, ["ozon.ru", "mail.ru"])
     labels = [b.text for row in markup.inline_keyboard for b in row]
     assert "➖ ozon.ru" in labels and "➖ mail.ru" in labels
-    assert "🗑 Очистить список" in labels
+    assert "🗑 Очистить" in labels
     assert not any(l.startswith("🧹") for l in labels), "метла осталась"
 
 # ── значки состояния: где кружок, где галочка ────────────────────────────────
@@ -133,9 +133,10 @@ def test_lists_of_choices_use_ticks_not_circles():
     assert labels[:2] == ["✅ К1", "☑️ К2"]
     notify = [b.text for row in kb.settings_notify_clients().inline_keyboard for b in row]
     assert all(not l.startswith(("🟢", "🔴")) for l in notify), notify
-    # а вот у переключателей сервиса кружок остаётся
+    # переключатели сервиса — тоже тумблеры ✅/☑️: кружок остаётся состоянию
+    # объектов (онлайн, работает), не настройкам
     rt = [b.text for row in kb.settings_routing(True, []).inline_keyboard for b in row]
-    assert rt[0].startswith("🟢"), rt
+    assert rt[0].startswith("✅"), rt
 
 
 def test_client_list_circle_means_online_not_subscription():
@@ -241,8 +242,8 @@ def test_notify_section_layout_and_profiles_submenu(monkeypatch):
     monkeypatch.setattr(settings, "get_bool", lambda k, d=True: d)
     monkeypatch.setattr(settings, "get_int", lambda k, d=0: d)
     rows = [[b.text for b in r] for r in kbs.settings_notify().inline_keyboard]
-    assert rows[0] == ["🔴 E-mail при недоступности Telegram"]
-    assert rows[1] == ["🟢 Тихие часы"]
+    assert rows[0] == ["☑️ E-mail при недоступности Telegram"]
+    assert rows[1] == ["✅ Тихие часы"]
     assert rows[-2] == ["👥 События профилей"] and rows[-1][0].endswith("Назад")
     assert not any("Активация" in b for r in rows for b in r), "события профилей ушли в подменю"
     sub = [[b.text for b in r] for r in kbs.settings_notify_clients().inline_keyboard]

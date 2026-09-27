@@ -40,7 +40,7 @@ router = Router(name="client")
 router.message.filter(RoleFilter("client", "activation"))
 router.callback_query.filter(RoleFilter("client"))
 
-ADD_FROM_DEVICES = 1          # DeviceCB(add, device_id=1) — «➕ Устройство» из списка устройств
+ADD_FROM_DEVICES = kb.ADD_FROM_DEVICES   # «➕ Устройство» из списка устройств
 
 
 def _bot_username(services) -> str:

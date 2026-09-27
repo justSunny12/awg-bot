@@ -27,7 +27,7 @@ from .client import (
     friend_finisher, guest_pick_device, confirm_delete_device, pick_device_to_delete,
     added_by_admin, unmanaged_device_dialog, guide_nav, guide_connect_method,
     guide_connect_done, guide_connect_devices, grace_offer, subscription_kb, pause_kb,
-    add_device_kb, device_created_kb, invite_kb, issue_row)
+    add_device_kb, device_created_kb, invite_kb, issue_row, ADD_FROM_DEVICES)
 from .admin import (
     admin_add_device_choice, pick_client_for_add_device, admin_main, admin_clients,
     admin_client_actions, admin_client_back, admin_client_device_list,
@@ -71,7 +71,7 @@ __all__ = [
     "PICK_DEVICE_PROMPT", "GEN_ACTIONS", "gen_kind", "pick_device", "issuable", "confirm_transfer", "help_menu", "friend_finisher", "guest_pick_device", "confirm_delete_device",
     "pick_device_to_delete", "added_by_admin", "unmanaged_device_dialog", "guide_nav",
     "guide_connect_method", "guide_connect_done", "guide_connect_devices",
-    "grace_offer", "subscription_kb", "pause_kb", "add_device_kb", "device_created_kb", "invite_kb", "issue_row", "admin_add_device_choice", "pick_client_for_add_device",
+    "grace_offer", "subscription_kb", "pause_kb", "add_device_kb", "device_created_kb", "invite_kb", "issue_row", "ADD_FROM_DEVICES", "admin_add_device_choice", "pick_client_for_add_device",
     "admin_main", "admin_clients", "admin_client_actions", "admin_client_back",
     "admin_client_device_list", "unassigned_devices", "reassign_targets",
     "reassign_addslot", "confirm_lower_limit", "traffic_profiles_kb", "expiring_kb",

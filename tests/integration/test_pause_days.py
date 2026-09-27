@@ -10,7 +10,7 @@ def test_pause_day_choice_and_days(services, fake_awg):
     services.db.set_pause_balance(cid, settings.get_int("pause.pause_max_total_days", 28))
     avail = services.pause_available_days(cid)
     # клавиатура: если avail<14, кнопки «14 дн.» быть не должно
-    labels = [b.text for r in kb.pause_day_choice(cid, avail).inline_keyboard for b in r]
+    labels = [b.text for r in kb.pause_kb(cid, avail).inline_keyboard for b in r]
     if avail < 14:
         assert not any("14 дн." in l for l in labels)
     if avail >= 7:
@@ -54,7 +54,7 @@ def test_pause_counter_shows_balance_of_type_max(services, fake_awg):
 def test_pause_limit_exhausted_text():
     from awgbot.bot import texts
     assert texts.pause_limit_exhausted() == \
-        "Дни приостановки на счету закончились — пополнится при продлении подписки."
+        "Дни паузы на счету закончились — пополнится при продлении подписки"
 
 
 def test_pause_not_capped_by_subscription_remainder(services, fake_awg):
