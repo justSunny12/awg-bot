@@ -15,7 +15,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
-from awgbot.bot.callbacks import CancelCB, HideCB
+from awgbot.bot.callbacks import CancelCB, HideCB, NoteCB
 from awgbot.bot.handlers.common import call, edit_nav, show_main_menu
 
 router = Router(name="reply_commands")
@@ -55,6 +55,43 @@ async def on_cancel_inline(cb: CallbackQuery, callback_data: CancelCB, state: FS
     # приглашение снова стало экраном: из служебных долой, иначе уборка при
     # возврате в меню снесёт живое меню
     await call(services.db.remove_content_msg_id, cb.message.chat.id, cb.message.message_id)
+
+
+@router.callback_query(NoteCB.filter())
+async def on_note_action(cb: CallbackQuery, callback_data: NoteCB, state: FSMContext,
+                         services, role: str = "", client=None):
+    """Кнопка действия на уведомлении: кнопки снимаются (текст остаётся в
+    истории), экран приходит новым живым меню. Роль — из middleware; чужая
+    подсказка (клиентская у админа и наоборот) — главная роли."""
+    from awgbot.bot import screens
+    from awgbot.bot.handlers.common import send_menu, cleanup_content
+    await state.clear()
+    try:
+        await cb.message.edit_reply_markup(reply_markup=None)
+    except Exception:                                 # noqa: BLE001
+        pass
+    kind, ref = callback_data.kind, callback_data.ref
+    if role == "admin" and kind == "gwcfg":
+        # перевыпуск конфигурации слота — файл сразу, как из карточки
+        from awgbot.bot.handlers.settings import send_gw_bundle
+        await cb.answer("Собираю и шифрую…")
+        await send_gw_bundle(cb.message, services, ref)
+        return
+    screen_kind = {"extend": "extend", "unassigned": "unassigned", "sub": "sub"}.get(kind, "main")
+    if role != "admin" and screen_kind in ("extend", "unassigned"):
+        screen_kind = "main"
+    if role == "admin" and screen_kind == "sub":
+        screen_kind = "main"
+    parts = await screens.render(screen_kind, ref, services=services, role=role, client=client,
+                                 chat_id=cb.message.chat.id)
+    if parts is None:
+        parts = await screens.render("main", services=services, role=role, client=client,
+                                     chat_id=cb.message.chat.id)
+    await cb.answer()
+    if parts is None:
+        return
+    await cleanup_content(cb.bot, services, cb.message.chat.id)
+    await send_menu(cb.message, services, *parts)
 
 
 @router.message(F.text == kb.BTN_CANCEL, StateFilter("*"))

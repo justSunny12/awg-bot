@@ -15,8 +15,8 @@ keyboards — инлайн-клавиатуры (aiogram). Callback-data бер�
 from __future__ import annotations
 
 from .common import (
-    BTN_CANCEL, reply_cancel, reply_hide, period_choices, yes_no, to_menu,
-    append_hide_row, hide_only, block_pause_choice, block_notify_choice,
+    BTN_CANCEL, reply_cancel, reply_hide, yes_no, to_menu,
+    append_hide_row, hide_only,
     block_unblock_reasons, cancel_input, confirm, select_all_button,
     device_limit_presets, device_limit_kb)
 from .client import (
@@ -29,11 +29,12 @@ from .client import (
     guide_connect_done, guide_connect_devices, grace_offer, subscription_kb, pause_kb,
     add_device_kb, device_created_kb, invite_kb, issue_row, ADD_FROM_DEVICES)
 from .admin import (
-    admin_add_device_choice, pick_client_for_add_device, admin_main, admin_clients,
-    admin_client_actions, admin_client_back, admin_client_device_list,
-    unassigned_devices, reassign_targets, reassign_addslot, confirm_lower_limit,
-    traffic_profiles_kb, expiring_kb, online_devices_kb, traffic_devices_kb,
-    rf_profiles_kb, rf_devices_kb)
+    admin_main, admin_devices, admin_clients, admin_client_actions, admin_client_back,
+    admin_client_device_list, unassigned_devices, reassign_targets, reassign_addslot,
+    client_edit_kb, client_delete_confirm, presets_kb, devs_limit_kb, traffic_limit_kb,
+    new_profile_devs_kb, new_profile_traffic_kb, period_kb, period_choices, block_pause_kb,
+    block_notify_kb, to_menu_kb, traffic_profiles_kb, expiring_kb, online_devices_kb,
+    traffic_devices_kb, gateway_card_button, client_state_icon, DEVS_PRESETS, TRAFFIC_PRESETS)
 from .settings import (
     settings_root, settings_back, settings_server, private_dns_choices,
     private_dns_offer_kb, migration_prepare_confirm, migration_generation_pending,
@@ -51,7 +52,7 @@ from .routing import (
     gateway_switch_confirm, gateway_slot_cancel, settings_routing_monitor,
     gateway_lan_confirm, gateway_router_back, gateway_peer_confirm)
 from .broadcast import (
-    broadcast_mode, broadcast_targets, broadcast_cancel, broadcast_confirm)
+    broadcast_mode, broadcast_targets, broadcast_days_kb, broadcast_cancel, broadcast_confirm)
 from .gateway import (
     gateway_panel_kb, gateway_settings_kb, gateway_notify_kb, gateway_mon_kb,
     gateway_backup_kb, gateway_email_kb, gateway_email_forget_confirm,
@@ -62,8 +63,8 @@ from .gateway import (
     gateway_ssh_kb, gateway_ssh_port_finisher_kb, gateway_ssh_confirm_kb)
 
 __all__ = [
-    "BTN_CANCEL", "reply_cancel", "reply_hide", "period_choices", "yes_no", "to_menu",
-    "append_hide_row", "hide_only", "block_pause_choice", "block_notify_choice",
+    "BTN_CANCEL", "reply_cancel", "reply_hide", "yes_no", "to_menu",
+    "append_hide_row", "hide_only",
     "block_unblock_reasons", "cancel_input", "confirm", "select_all_button",
     "device_limit_presets", "device_limit_kb", "client_main", "client_devices", "held_device_actions",
     "lent_out_device_actions", "block_device_confirm", "guest_main", "guest_devices",
@@ -71,11 +72,11 @@ __all__ = [
     "PICK_DEVICE_PROMPT", "GEN_ACTIONS", "gen_kind", "pick_device", "issuable", "confirm_transfer", "help_menu", "friend_finisher", "guest_pick_device", "confirm_delete_device",
     "added_by_admin", "unmanaged_device_dialog", "guide_nav",
     "guide_connect_method", "guide_connect_done", "guide_connect_devices",
-    "grace_offer", "subscription_kb", "pause_kb", "add_device_kb", "device_created_kb", "invite_kb", "issue_row", "ADD_FROM_DEVICES", "admin_add_device_choice", "pick_client_for_add_device",
-    "admin_main", "admin_clients", "admin_client_actions", "admin_client_back",
+    "grace_offer", "subscription_kb", "pause_kb", "add_device_kb", "device_created_kb", "invite_kb", "issue_row", "ADD_FROM_DEVICES",
+    "admin_main", "period_choices", "admin_devices", "client_edit_kb", "client_delete_confirm", "presets_kb", "devs_limit_kb", "traffic_limit_kb", "new_profile_devs_kb", "new_profile_traffic_kb", "period_kb", "block_pause_kb", "block_notify_kb", "to_menu_kb", "gateway_card_button", "client_state_icon", "DEVS_PRESETS", "TRAFFIC_PRESETS", "broadcast_days_kb", "admin_clients", "admin_client_actions", "admin_client_back",
     "admin_client_device_list", "unassigned_devices", "reassign_targets",
-    "reassign_addslot", "confirm_lower_limit", "traffic_profiles_kb", "expiring_kb",
-    "online_devices_kb", "traffic_devices_kb", "rf_profiles_kb", "rf_devices_kb",
+    "reassign_addslot", "traffic_profiles_kb", "expiring_kb",
+    "online_devices_kb", "traffic_devices_kb",
     "settings_root", "settings_back",
     "settings_server", "private_dns_choices", "private_dns_offer_kb",
     "migration_prepare_confirm", "migration_generation_pending", "settings_firewall", "ssh_port_finisher",

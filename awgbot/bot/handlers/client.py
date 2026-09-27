@@ -123,7 +123,7 @@ async def _try_activate(message: Message, services, code: str):
     handle = f"@{u.username}" if u.username else (u.full_name or str(u.id))
     if settings.get_bool("notifications.client_events.activation", True):
         await notify_one(message.bot, config.ADMIN_ID,
-                         texts.activated_admin_notice(res.client.name, handle))
+                         texts.activated_admin_notice(res.client, handle, _bot_username(services)))
 
 
 async def _activate_friend(message: Message, services, code: str):
@@ -197,11 +197,11 @@ async def take_code_as_member(message: Message, services, client, code: str) -> 
             used, limit = await call(services.device_slots, up.donor.id)
             await notify_one(message.bot, up.donor.tg_id,
                              texts.guest_upgraded_donor_notice(up.moved, new, used, limit))
-        admin_text = (texts.activated_admin_notice(new.name, handle)
+        admin_text = (texts.activated_admin_notice(new, handle, _bot_username(services))
                       + texts.guest_upgraded_admin_tail(up.donor, up.moved, new.device_limit))
     else:
         await message.answer(texts.ACTIVATION_OK)
-        admin_text = texts.activated_admin_notice(new.name, handle)
+        admin_text = texts.activated_admin_notice(new, handle, _bot_username(services))
     await _show_main(message, services, new)
     if settings.get_bool("notifications.client_events.activation", True):
         await notify_one(message.bot, config.ADMIN_ID, admin_text)
@@ -820,7 +820,7 @@ async def grace_take(cb: CallbackQuery, callback_data: GraceCB, client, services
     await edit(cb, texts.grace_activated_client(grace_days, timeutil.fmt_date_ui(new_end)), None)
     if settings.get_bool("notifications.client_events.grace", True):
         await notify_one(cb.message.bot, config.ADMIN_ID,
-                         texts.grace_activated_admin(client.name, grace_days))
+                         texts.grace_activated_admin(texts.profile_link(client, _bot_username(services)), grace_days))
     await cb.answer("Продлено")
 
 

@@ -11,6 +11,7 @@ from awgbot.core import config
 from awgbot.infra import awg
 from awgbot.infra import routing
 from awgbot.core.enums import FriendStatus
+from awgbot.domain.services.base import _e
 from awgbot.domain.services.types import Notification
 
 
@@ -19,14 +20,12 @@ log = logging.getLogger("awgbot.services")
 
 # Пир, которого нет в БД. Создавать пиры больше некому, кроме бота, — значит это
 # либо ручная правка конфига, либо чужое вмешательство. Тревога, а не находка.
-_TXT_UNKNOWN_PEER = (
-    "🚨 В конфиге сервера пир, которого нет в базе: {ip}.\n\n"
-    "Пиры создаёт только бот — значит это ручная правка конфига или чужое "
-    "вмешательство. Пир помещён в карантин («Устройства без профиля»): "
-    "проверь и либо привяжи к профилю, либо удали.")
+_TXT_UNKNOWN_PEER = ("🚨 Чужой пир в конфиге сервера: {ip} — в карантине. Пиры создаёт "
+                     "только бот: это ручная правка конфига или чужое вмешательство")
 # Пир исчез из конфига, а запись в БД осталась: сам бот так не удаляет —
 # он снимает пира и строку разом. Значит конфиг правили мимо бота.
-_TXT_PEER_GONE = ("Устройство «{name}» клиента «{client}» пропало из конфига сервера — бот его не удалял. Запись убрана, чтобы база сошлась с сервером.")
+_TXT_PEER_GONE = ("Устройство «{name}» профиля {client} пропало из конфига сервера — бот его "
+                  "не удалял. Запись убрана, чтобы база сошлась с сервером")
 
 _TXT_FRIEND_DEVICE_GONE = ("Устройство, которым ты управлял, удалено владельцем — "
                            "доступ по нему больше не работает.")
@@ -149,7 +148,7 @@ class ReconcileMixin:
                 if client and not client.is_service:
                     notifications.append(Notification(
                         config.ADMIN_ID,
-                        _TXT_PEER_GONE.format(name=dev.name, client=client.name)))
+                        _TXT_PEER_GONE.format(name=_e(dev.name), client=self.cl_link(client))))
                 if friend_tg:
                     notifications.append(Notification(friend_tg, _TXT_FRIEND_DEVICE_GONE))
             else:
@@ -173,7 +172,8 @@ class ReconcileMixin:
             # force_sound: это событие безопасности, а не информационная строка.
             # Тихие часы для него — не та цена, которую стоит платить за сон.
             notifications.append(Notification(
-                config.ADMIN_ID, _TXT_UNKNOWN_PEER.format(ip=ip), force_sound=True))
+                config.ADMIN_ID, _TXT_UNKNOWN_PEER.format(ip=ip), force_sound=True,
+                action=("unassigned", 0)))
         return notifications
 
     # ── Реконсиляция блокировок после рестарта контейнера ────────────────────

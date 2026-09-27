@@ -16,6 +16,10 @@ back_to_context), ссылки /start <payload> в текстах, кнопки 
   rf       «🇷🇺 РФ-доступ» (ref — id профиля; у клиента и гостя — свой)
   sites    «📋 Сайты» РФ-доступа (ref — id профиля)
   guide    шаг 0 гайда подключения (ref — вариант: 0 connect, 1 connect_apple)
+  админ:   cl (карточка профиля), edit («✏️ Изменить»), clients, extend
+           (экран продления), dev, devices («📱 Мои устройства»), online,
+           expiring, unassigned, traffic, traffic_dev (ref — профиль), gw
+           (карточка слота), upd (раздел обновлений)
 
 note — итог только что сделанного: первой строкой экрана, до следующего
 перехода («✅ Имя устройства: A → B»).
@@ -44,12 +48,40 @@ async def render(kind: str, ref: int = 0, *, services, role: str, client=None,
 
 async def _render(kind: str, ref: int, services, role: str, client, chat_id: int):
     if role == "admin":
+        from awgbot.bot.handlers.admin import panel, clients, devices
         if kind == "main":
-            from awgbot.bot.handlers.admin.panel import _panel_parts
-            return await _panel_parts(services)
+            return await panel._panel_parts(services)
         if kind in ("rf", "sites"):
             from awgbot.bot.handlers import routing as rt
             return await rt.screen_for(services, None, ref, kind)
+        if kind == "cl":
+            return await clients.client_card_parts(services, ref)
+        if kind == "edit":
+            return await clients.client_edit_parts(services, ref)
+        if kind == "clients":
+            return await clients.clients_screen(services, chat_id)
+        if kind == "extend":
+            return await clients.extend_screen(services, ref)
+        if kind == "dev":
+            dev = services.db.get_device(ref)
+            return None if dev is None else await devices.device_card_parts(services, dev)
+        if kind == "devices":
+            return await devices.my_devices_parts(services, chat_id)
+        if kind == "online":
+            return await panel.online_screen(services)
+        if kind == "expiring":
+            return await panel.expiring_screen(services)
+        if kind == "unassigned":
+            return await panel.unassigned_screen(services)
+        if kind == "traffic":
+            return await panel.traffic_profiles_screen(services)
+        if kind == "traffic_dev":
+            return await panel.traffic_devices_screen(services, ref)
+        if kind == "gw":
+            return await panel.gateway_card_screen(services, ref, chat_id)
+        if kind == "upd":
+            from awgbot.bot.handlers.settings import _screen
+            return await _screen("upd", services)
         return None
     if role == "client":
         from awgbot.bot.handlers import client as ch

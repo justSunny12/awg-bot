@@ -1,8 +1,9 @@
 """
 handlers/admin/devices.py — устройства глазами администратора.
 
-Добавление устройства профилю, устройства профиля и выдача конфигов, устройства
-без профиля, карточка устройства, перепривязка, переименование, удаление.
+«📱 Мои устройства», устройство профилю (только имя), карточка устройства с
+рядом выдачи, лимит пресетами, перенос в другой профиль, переименование,
+удаление, устройства без профиля.
 """
 
 from __future__ import annotations
@@ -14,17 +15,45 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from awgbot.bot.callbacks import ClientCB, DelDeviceCB, DeviceCB, Menu, ReassignCB
-from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, drop_message,
-                                        remove_device_and_notify, send_device_config,
-                                        content_finisher)
+from awgbot.bot.callbacks import ClientCB, DelDeviceCB, DeviceCB, Menu, PresetCB, ReassignCB
+from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_here, ask_tracked, back_to_context,
+                                        cleanup_content, drop_message, remove_device_and_notify,
+                                        send_device_config, send_menu)
 from awgbot.bot.notifier import notify_one
-from awgbot.domain.services import BYTES_PER_GB, ServiceError
-from awgbot.bot.states import AdminAddDevice, EditDeviceName
-from awgbot.bot.handlers.admin.panel import _main_menu_markup, _return_panel
+from awgbot.domain.services import BYTES_PER_GB, LimitReached, ServiceError
+from awgbot.bot.states import AdminAddDevice, EditDeviceName, EditTrafficLimit
+from awgbot.bot.handlers.admin.panel import _return_panel, _bot
 
 router = Router(name="admin.devices")
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Мои устройства (админ — такой же пользователь VPN)
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def my_devices_parts(services, chat_id: int = 0):
+    ac = await call(services.admin_client)
+    if ac is None:
+        await call(services.ensure_admin_client)
+        ac = await call(services.admin_client)
+    devices = await call(services.db.list_devices, ac.id)
+    used, limit = await call(services.device_slots, ac.id)
+    from awgbot.bot import paging
+    return (texts.my_devices_header(len(devices), limit),
+            kb.admin_devices(devices, page=paging.page_of(chat_id, "devices"),
+                             can_add=not limit or used < limit))
+
+
+@router.callback_query(Menu.filter(F.action == "devices"))
+async def admin_menu_devices(cb: CallbackQuery, services, state: FSMContext):
+    await state.clear()
+    await edit(cb, *await my_devices_parts(services, cb.message.chat.id))
+    await cb.answer()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Устройство профилю: одно имя, лимит — в карточке
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.callback_query(ClientCB.filter(F.action == "add_device"))
 async def admin_add_device_start(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
@@ -32,13 +61,13 @@ async def admin_add_device_start(cb: CallbackQuery, callback_data: ClientCB, ser
     if client is None:
         await cb.answer("Профиль не найден", show_alert=True)
         return
-    used, limit = await call(services.device_slots, callback_data.client_id)
+    used, limit = await call(services.device_slots, client.id)
     if limit != 0 and used >= limit:              # 0 = безлимит
-        await cb.answer(f"У профиля исчерпан лимит ({used} из {limit})", show_alert=True)
+        await cb.answer(texts.limit_exhausted_line(used, limit), show_alert=True)
         return
     await state.set_state(AdminAddDevice.name)
-    await state.update_data(client_id=callback_data.client_id)
-    await ask_tracked(cb.message, services, f"Введи имя устройства для профиля «{client.name}»:", reply_markup=kb.reply_cancel())
+    await ask_here(cb, services, state, texts.add_device_prompt_admin(client, used, limit),
+                   "cl", client.id, client_id=client.id)
     await cb.answer()
 
 
@@ -47,187 +76,235 @@ async def admin_add_device_name(message: Message, services, state: FSMContext):
     name = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not name:
-        await ask_tracked(message, services, "Имя не может быть пустым. Введи ещё раз:")
-        return
-    await state.update_data(dev_name=name)
-    await state.set_state(AdminAddDevice.traffic)
-    data = await state.get_data()
-    plimit = await call(services.profile_traffic_limit, data["client_id"])
-    await ask_tracked(message, services, texts.traffic_limit_device_ask(plimit), reply_markup=kb.reply_cancel())
-
-
-@router.message(AdminAddDevice.traffic)
-async def admin_add_device_traffic(message: Message, services, state: FSMContext):
-    raw = (message.text or "").strip()
-    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit():
-        await ask_tracked(message, services, texts.TRAFFIC_LIMIT_BAD)
+        await ask_tracked(message, services, texts.NAME_EMPTY)
         return
     data = await state.get_data()
-    name = data.get("dev_name")
-    client_id = data["client_id"]
-    tlimit = int(raw) * BYTES_PER_GB
     await state.clear()
+    client = await call(services.db.get_client, data.get("client_id"))
+    if client is None:
+        await back_to_context(message, services, {}, "admin")
+        return
     try:
-        created = await call(services.add_device, client_id, name, tlimit)
+        created = await call(services.add_device, client.id, name, 0)
+    except LimitReached:
+        used, limit = await call(services.device_slots, client.id)
+        await back_to_context(message, services, data, "admin",
+                              note="⚠️ " + (texts.limit_exhausted_line(used, limit) or texts.LIMIT_REACHED))
+        return
     except ServiceError as e:
-        await message.answer(f"Не удалось создать устройство: {e}", reply_markup=kb.reply_hide())
-        await _return_panel(message, services)
+        await back_to_context(message, services, data, "admin", note=f"⚠️ {texts._e(str(e))}")
         return
-    client = await call(services.db.get_client, client_id)
-    dev_count = len(await call(services.db.list_devices, client_id)) if client else 0
-    plimit = await call(services.profile_traffic_limit, client_id) if client else 0
-    await message.answer(
-        texts.device_created_report(name, client_name=client.name if client else None,
-                                    device_count=dev_count,
-                                    max_devices=client.device_limit if client else 0,
-                                    dev_limit_bytes=tlimit, profile_limit_bytes=plimit),
-        reply_markup=kb.reply_hide())
-    # уведомляем клиента — тем же принципом, что при переназначении устройства.
-    # Себе админ устройство добавляет другим путём (AdminSelfCB), уведомлять
-    # его о собственном действии незачем.
-    if client and client.tg_id and client.tg_id != config.ADMIN_ID:
-        used, limit = await call(services.device_slots, client_id)
-        await notify_one(
-            message.bot, client.tg_id,
-            texts.reassign_recipient_notice(name, used, limit),
-            reply_markup=kb.added_by_admin(created.device_id))
-    await _return_panel(message, services)
+    # клиенту — уведомление с рядом выдачи; себе админ добавляет иначе
+    if client.tg_id and client.tg_id != config.ADMIN_ID:
+        used, limit = await call(services.device_slots, client.id)
+        await notify_one(message.bot, client.tg_id,
+                         texts.reassign_recipient_notice(name, used, limit),
+                         reply_markup=kb.added_by_admin(created.device_id))
+    await back_to_context(message, services, data, "admin",
+                          note=texts.device_created_admin(name, client, _bot(services)))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Выдача конфига клиента (админ) — выбор устройства
+# Карточка устройства, выдача
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.callback_query(ClientCB.filter(F.action == "gen_for"))
-async def admin_gen_for(cb: CallbackQuery, callback_data: ClientCB, services):
-    devices = kb.issuable(await call(services.db.list_devices, callback_data.client_id))
-    if not devices:
-        await cb.answer("У профиля нет устройств", show_alert=True)
-        return
-    back = ClientCB(action="open", client_id=callback_data.client_id).pack()
-    from awgbot.bot import paging
-    await edit(cb, "Выбери устройство:", kb.pick_device(
-        devices, "gen_link", back_cb=back, render=cb.data, ref=callback_data.client_id,
-        page=paging.page_of(cb.message.chat.id, "pick", callback_data.client_id)))
-    await cb.answer()
-
-
-@router.callback_query(ClientCB.filter(F.action == "devices"))
-async def admin_client_devices(cb: CallbackQuery, callback_data: ClientCB, services):
-    devices = await call(services.db.list_devices, callback_data.client_id)
-    if not devices:
-        markup = kb.admin_client_device_list([], callback_data.client_id)
-        await edit(cb, "У этого профиля нет устройств.", markup)
-        await cb.answer()
-        return
-    lines = "\n".join(texts.device_line(d) for d in devices)
-    from awgbot.bot import paging
-    await edit(cb, f"📋 Устройства профиля:\n{lines}",
-               kb.admin_client_device_list(
-                   devices, callback_data.client_id,
-                   page=paging.page_of(cb.message.chat.id, "clidevs", callback_data.client_id)))
-    await cb.answer()
-
-
-# админ генерирует ссылку/QR/файл для любого устройства (без проверки владения)
-@router.callback_query(DeviceCB.filter(F.action.in_(kb.GEN_ACTIONS)))
-async def admin_dev_gen(cb: CallbackQuery, callback_data: DeviceCB, services):
-    """Один обработчик на три вида выдачи: раньше их было три одинаковых."""
-    dev = await call(services.db.get_device, callback_data.device_id)
-    if dev is None:
-        await cb.answer("Устройство не найдено", show_alert=True)
-        return
-    kind = kb.gen_kind(callback_data.action)
-    await drop_message(cb)                           # убрать «Как подключить» — не висеть над ссылкой
-    try:
-        await send_device_config(cb.message, services, dev, kind)
-    except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
-        await _return_panel(cb.message, services)
-        return
-    await content_finisher(cb.message, services, texts.finish_config(kind, dev.name), "admin")
-    await cb.answer()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Устройства без клиента → открыть, привязать, реставрировать
-# ─────────────────────────────────────────────────────────────────────────────
-
-@router.callback_query(Menu.filter(F.action == "unassigned"))
-async def unassigned_list(cb: CallbackQuery, services):
-    service_id = await call(services.db.get_service_client_id)
-    devices = await call(services.db.list_devices, service_id)
-    if not devices:
-        await edit_nav(cb, services, "Устройств без профиля нет.", await _main_menu_markup(services))
-    else:
-        from awgbot.bot import paging
-        await edit(cb, "📦 Устройства без профиля:", kb.unassigned_devices(
-            devices, page=paging.page_of(cb.message.chat.id, "unassigned")))
-    await cb.answer()
-
-
-async def _device_back_target_and_label(services, dev) -> tuple[str, str]:
-    """Вычисляет (back_target, reassign_label) ИЗ ПРИНАДЛЕЖНОСТИ устройства —
-    не тащим контекст «откуда пришли» через цепочку колбэков, поэтому карточка
-    корректна независимо от точки входа (свои устройства / устройства клиента /
-    устройства без клиента)."""
+async def _back_target(services, dev) -> str:
+    """«Назад» — из принадлежности устройства: без профиля, свои, профиль."""
     service_id = await call(services.db.get_service_client_id)
     if dev.client_id == service_id:
-        return Menu(action="unassigned").pack(), "🔀 Передать в другой профиль"
+        return Menu(action="unassigned").pack()
     admin_own = await call(services.admin_client)
     if admin_own and dev.client_id == admin_own.id:
-        return Menu(action="main").pack(), "🔀 Передать в другой профиль"
-    return (ClientCB(action="devices", client_id=dev.client_id).pack(),
-            "🔀 Передать в другой профиль")
+        return Menu(action="devices").pack()
+    return ClientCB(action="open", client_id=dev.client_id).pack()
+
+
+async def device_card_parts(services, dev):
+    """(текст, клавиатура) карточки устройства для админа; шлюз — карточка
+    слота."""
+    if dev.is_gateway:
+        gw = await call(services.db.gateway_by_device, dev.id)
+        slot = gw.id if gw is not None else 0
+        if slot:
+            from awgbot.bot.handlers.admin.panel import gateway_card_screen
+            return await gateway_card_screen(services, slot)
+        return texts.gateway_device_card(dev, None), kb.gateway_card_button(0)
+    client = await call(services.db.get_client, dev.client_id)
+    plimit = int(client.traffic_limit) if client else 0
+    service_id = await call(services.db.get_service_client_id)
+    text = texts.admin_device_card(dev, client if dev.client_id != service_id else None,
+                                   rf=await call(services.rf_device_card, dev),
+                                   profile_limit_bytes=plimit, bot_username=_bot(services))
+    return text, kb.device_actions(dev, is_admin=True, back_target=await _back_target(services, dev),
+                                   reassign_label="🔀 Передать")
+
+
+_device_card_parts = device_card_parts
 
 
 @router.callback_query(DeviceCB.filter(F.action == "open"))
-async def admin_device_open(cb: CallbackQuery, callback_data: DeviceCB, services):
+async def admin_device_open(cb: CallbackQuery, callback_data: DeviceCB, services, state: FSMContext):
+    await state.clear()
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    await edit(cb, *await _device_card_parts(services, dev))
+    await edit(cb, *await device_card_parts(services, dev))
     await cb.answer()
 
 
-async def _device_card_parts(services, dev):
-    """(текст, клавиатура) карточки устройства для админа; «Назад» и подпись
-    привязки — из принадлежности устройства. Шлюз — своя карточка."""
-    back_target, reassign_label = await _device_back_target_and_label(services, dev)
-    if dev.is_gateway:
-        # состояние слота: роль (несёт трафик / резерв) и пинг — лениво,
-        # пустой кэш заполняется при первом открытии карточки
-        st = await call(services.gateway_state_for_device, dev.id)
-        slot = st["gateway"].id if st else 0
-        return (texts.gateway_device_card(dev, st),
-                kb.gateway_device_actions(dev, back_target=back_target, slot=slot))
-    text = texts.device_card_text(dev, for_admin=True, rf=await call(services.rf_device_card, dev))
-    marker = texts.friend_marker(dev)
-    if marker:
-        text += f"\n\n{marker}"
-    return text, kb.device_actions(dev, is_admin=True, back_target=back_target,
-                                   reassign_label=reassign_label)
-
-
 @router.callback_query(DeviceCB.filter(F.action == "connect_menu"))
-async def admin_device_connect_menu(cb: CallbackQuery, callback_data: DeviceCB, services):
-    """«Как планируешь подключить устройство?» — назад к карточке этого же
-    устройства."""
+async def admin_device_connect_menu(cb: CallbackQuery, callback_data: DeviceCB, services, state: FSMContext):
+    """Кнопка старого образца — карточка с рядом выдачи."""
+    await admin_device_open(cb, callback_data, services, state)
+
+
+@router.callback_query(DeviceCB.filter(F.action.in_(kb.GEN_ACTIONS)))
+async def admin_dev_gen(cb: CallbackQuery, callback_data: DeviceCB, services):
+    """Ссылка / QR / файл любого устройства — одним сообщением с «⬅️ В меню»."""
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
     if not dev.private_key:
-        # пир, подхваченный с сервера: ссылки нет и взять её неоткуда
         await edit(cb, texts.UNMANAGED_DEVICE_DIALOG, kb.unmanaged_device_dialog(dev.id))
         await cb.answer()
         return
-    back = DeviceCB(action="open", device_id=dev.id).pack()
-    await edit(cb, texts.CONNECT_METHOD_ASK, kb.connect_method_choice(dev.id, back))
+    await drop_message(cb)
+    try:
+        await send_device_config(cb.message, services, dev, kb.gen_kind(callback_data.action),
+                                 finisher=kb.to_menu())
+    except ServiceError as e:
+        await cb.message.answer(f"⚠️ {texts._e(str(e))}")
+        await _return_panel(cb.message, services)
     await cb.answer()
 
+
+@router.callback_query(ClientCB.filter(F.action == "devices"))
+async def admin_client_devices(cb: CallbackQuery, callback_data: ClientCB, services):
+    """Устройства профиля отдельным экраном — когда в карточку не влезли."""
+    client = await call(services.db.get_client, callback_data.client_id)
+    if client is None:
+        await cb.answer("Профиль не найден", show_alert=True)
+        return
+    devices = await call(services.db.list_devices, client.id)
+    used, limit = await call(services.device_slots, client.id)
+    from awgbot.bot import paging
+    await edit(cb, f"📱 Устройства профиля {texts._e(client.name)} · {used}" + (f" из {limit}" if limit else ""),
+               kb.admin_client_device_list(devices, client.id,
+                                           page=paging.page_of(cb.message.chat.id, "clidevs", client.id)))
+    await cb.answer()
+
+
+@router.callback_query(ClientCB.filter(F.action == "gen_for"))
+async def admin_gen_for(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
+    """Кнопка старого образца «Выдать конфиг» — карточка профиля."""
+    from awgbot.bot.handlers.admin.clients import client_open
+    await client_open(cb, callback_data, services, state)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Имя и лимит устройства
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.callback_query(DeviceCB.filter(F.action == "edit_name"))
+async def device_edit_name_start(cb: CallbackQuery, callback_data: DeviceCB, services, state: FSMContext):
+    dev = await call(services.db.get_device, callback_data.device_id)
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
+        return
+    await state.set_state(EditDeviceName.value)
+    await ask_here(cb, services, state, texts.device_name_prompt(dev.name), "dev", dev.id, device_id=dev.id)
+    await cb.answer()
+
+
+@router.message(EditDeviceName.value)
+async def device_edit_name_apply(message: Message, services, state: FSMContext):
+    name = (message.text or "").strip()
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
+    if not name:
+        await ask_tracked(message, services, texts.NAME_EMPTY)
+        return
+    data = await state.get_data()
+    await state.clear()
+    old_dev = await call(services.db.get_device, data.get("device_id"))
+    if old_dev is None:
+        await back_to_context(message, services, {}, "admin")
+        return
+    try:
+        await call(services.rename_device, old_dev.id, name)
+    except ServiceError as e:
+        await back_to_context(message, services, data, "admin", note=f"⚠️ {texts._e(str(e))}")
+        return
+    await back_to_context(message, services, data, "admin", note=texts.name_note(old_dev.name, name))
+
+
+@router.callback_query(DeviceCB.filter(F.action == "edit_traffic"))
+async def edit_device_traffic_start(cb: CallbackQuery, callback_data: DeviceCB, services, state: FSMContext):
+    dev = await call(services.db.get_device, callback_data.device_id)
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
+        return
+    await state.clear()
+    plimit = await call(services.profile_traffic_limit, dev.client_id)
+    await edit(cb, texts.device_limit_prompt(dev.name, plimit),
+               kb.device_limit_kb(dev.id, plimit, DeviceCB(action="open", device_id=dev.id)))
+    await cb.answer()
+
+
+async def _apply_device_limit(services, dev, gb_value: int) -> tuple[str, bool]:
+    plimit = await call(services.profile_traffic_limit, dev.client_id)
+    if plimit and gb_value * BYTES_PER_GB > plimit:
+        return texts.device_limit_over(plimit), False
+    old_b = int(dev.traffic_limit)
+    new_b = gb_value * BYTES_PER_GB
+    await call(services.set_device_traffic_limit, dev.id, new_b)
+    return texts.limit_note(old_b, new_b, plimit), True
+
+
+@router.callback_query(PresetCB.filter(F.kind == "devlimit"))
+async def device_limit_preset(cb: CallbackQuery, callback_data: PresetCB, services, state: FSMContext):
+    dev = await call(services.db.get_device, callback_data.ref)
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
+        return
+    if callback_data.val < 0:
+        plimit = await call(services.profile_traffic_limit, dev.client_id)
+        await state.set_state(EditTrafficLimit.value)
+        await ask_here(cb, services, state, texts.device_limit_other_prompt(plimit), "dev", dev.id,
+                       kind="device", dev_ref=dev.id)
+        await cb.answer()
+        return
+    note, ok = await _apply_device_limit(services, dev, int(callback_data.val))
+    if not ok:
+        await cb.answer(note, show_alert=True)
+        return
+    from awgbot.bot import screens
+    fresh = await call(services.db.get_device, dev.id)
+    text, markup = await device_card_parts(services, fresh)
+    await edit(cb, screens.with_note(text, note), markup)
+    await cb.answer()
+
+
+async def apply_device_limit_typed(message: Message, services, state: FSMContext, data: dict,
+                                   gb_value: int) -> None:
+    """Ввод «✏️ Другое» для лимита устройства (общий приёмник — в clients.py)."""
+    dev = await call(services.db.get_device, data.get("dev_ref"))
+    if dev is None:
+        await state.clear()
+        await back_to_context(message, services, {}, "admin")
+        return
+    note, ok = await _apply_device_limit(services, dev, gb_value)
+    if not ok:
+        await ask_tracked(message, services, note)
+        return
+    await state.clear()
+    await back_to_context(message, services, data, "admin", note=note)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Перенос в другой профиль
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.callback_query(DeviceCB.filter(F.action == "reassign"))
 async def device_reassign_start(cb: CallbackQuery, callback_data: DeviceCB, services):
@@ -235,29 +312,27 @@ async def device_reassign_start(cb: CallbackQuery, callback_data: DeviceCB, serv
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    clients = await call(services.db.list_clients)              # без служебного, с админом
-    # исключаем текущего клиента устройства — перепривязывать на него же незачем
-    clients = [c for c in clients if c.id != dev.client_id]
+    clients = [c for c in await call(services.db.list_clients) if c.id != dev.client_id]
     if not clients:
-        await cb.answer("Нет других профилей для привязки", show_alert=True)
+        await cb.answer("Нет других профилей", show_alert=True)
         return
     from awgbot.bot import paging
-    await edit(cb, "К какому профилю привязать устройство?",
-               kb.reassign_targets(callback_data.device_id, clients,
-                                   page=paging.page_of(cb.message.chat.id, "reassign", callback_data.device_id)))
+    await edit(cb, texts.reassign_ask(dev),
+               kb.reassign_targets(dev.id, clients,
+                                   page=paging.page_of(cb.message.chat.id, "reassign", dev.id)))
     await cb.answer()
 
 
 @router.callback_query(ReassignCB.filter(F.stage == "go"))
 async def device_reassign_apply(cb: CallbackQuery, callback_data: ReassignCB, services):
-    """Привязка: если у клиента есть слот — сразу; иначе спрашиваем про слот."""
-    has_slot = await call(services.has_free_slot, callback_data.client_id)
-    if not has_slot:
+    """Есть место — сразу; иначе вопрос про слот."""
+    if not await call(services.has_free_slot, callback_data.client_id):
         client = await call(services.db.get_client, callback_data.client_id)
-        limit = client.device_limit if client else "?"
-        kbd = kb.reassign_addslot(callback_data.device_id, callback_data.client_id)
-        await edit(cb, f"У профиля лимит устройств исчерпан ({limit} из {limit}).\n"
-                       f"Добавить слот под это устройство?", kbd)
+        if client is None:
+            await cb.answer("Профиль не найден", show_alert=True)
+            return
+        await edit(cb, texts.reassign_slot_ask(client, _bot(services)),
+                   kb.reassign_addslot(callback_data.device_id, callback_data.client_id))
         await cb.answer()
         return
     await _do_reassign(cb, services, callback_data.device_id, callback_data.client_id, add_slot=False)
@@ -269,9 +344,8 @@ async def device_reassign_slot_yes(cb: CallbackQuery, callback_data: ReassignCB,
 
 
 @router.callback_query(ReassignCB.filter(F.stage == "slot_no"))
-async def device_reassign_slot_no(cb: CallbackQuery, callback_data: ReassignCB, services):
-    await edit_nav(cb, services, "Отменено — устройство не привязано.", await _main_menu_markup(services))
-    await cb.answer()
+async def device_reassign_slot_no(cb: CallbackQuery, callback_data: ReassignCB, services, state: FSMContext):
+    await admin_device_open(cb, DeviceCB(action="open", device_id=callback_data.device_id), services, state)
 
 
 async def _do_reassign(cb, services, device_id, client_id, *, add_slot: bool):
@@ -280,8 +354,6 @@ async def _do_reassign(cb, services, device_id, client_id, *, add_slot: bool):
     except ServiceError as e:
         await cb.answer(str(e), show_alert=True)
         return
-    await edit_nav(cb, services, "✅ Устройство привязано к профилю.", await _main_menu_markup(services))
-    # уведомляем ПОЛУЧАТЕЛЯ (с обогащением, если добавлен слот)
     rec = info["recipient"]
     if rec["tg_id"]:
         is_admin_rec = rec["tg_id"] == config.ADMIN_ID
@@ -292,102 +364,67 @@ async def _do_reassign(cb, services, device_id, client_id, *, add_slot: bool):
             note = texts.reassign_recipient_notice(info["name"], rec["count"], rec["limit"],
                                                    recipient_is_admin=is_admin_rec)
         await notify_one(cb.bot, rec["tg_id"], note)
-    # уведомляем ДОНОРА (если он реальный клиент с tg — не служебный)
     donor = info["donor"]
     if donor and donor["tg_id"]:
         await notify_one(cb.bot, donor["tg_id"],
                          texts.reassign_donor_notice(info["name"], donor["count"], donor["limit"]))
-    # держатель переданного устройства теряет его: переезд к другому владельцу
     if info.get("holder_tg"):
         await notify_one(cb.bot, info["holder_tg"], texts.lent_device_reassigned_notice(info["name"]))
-    await cb.answer()
-
-
-@router.callback_query(DeviceCB.filter(F.action == "edit_name"))
-async def device_edit_name_start(cb: CallbackQuery, callback_data: DeviceCB, services, state: FSMContext):
-    await state.set_state(EditDeviceName.value)
-    await state.update_data(device_id=callback_data.device_id)
-    await ask_tracked(cb.message, services, "Введи новое имя устройства:", reply_markup=kb.reply_cancel())
-    await cb.answer()
-
-
-@router.message(EditDeviceName.value)
-async def device_edit_name_apply(message: Message, services, state: FSMContext):
-    name = (message.text or "").strip()
-    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not name:
-        await ask_tracked(message, services, "Имя не может быть пустым:")
+    await cb.answer("Перенесено")
+    # итог первой строкой карточки устройства на новом месте
+    from awgbot.bot import screens
+    dev = await call(services.db.get_device, device_id)
+    client = await call(services.db.get_client, client_id)
+    if dev is None:
+        await edit_nav(cb, services, texts.reassigned_note(info["name"], client, _bot(services)),
+                       kb.to_menu_kb())
         return
-    data = await state.get_data()
-    await state.clear()
-    old_dev = await call(services.db.get_device, data["device_id"])
-    old_name = old_dev.name if old_dev else "?"
-    try:
-        await call(services.rename_device, data["device_id"], name)
-    except ServiceError as e:
-        await message.answer(str(e), reply_markup=kb.reply_hide())
-        await _return_panel(message, services)
-        return
-    await message.answer(f"✅ Устройство переименовано: «{old_name}» → «{name}».",
-                         reply_markup=kb.reply_hide())
-    await _return_panel(message, services)
+    text, markup = await device_card_parts(services, dev)
+    await edit(cb, screens.with_note(text, texts.reassigned_note(info["name"], client, _bot(services))), markup)
 
 
-@router.callback_query(Menu.filter(F.action == "add_device_choice"))
-async def admin_add_device_choice(cb: CallbackQuery, services):
-    """«Добавить устройство» из главного меню — сначала спрашиваем, кому:
-    себе или конкретному клиенту."""
-    await edit(cb, "Кому добавить устройство?", kb.admin_add_device_choice())
-    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
-    await cb.answer()
-
-
-@router.callback_query(Menu.filter(F.action == "add_device_pick"))
-async def admin_add_device_pick(cb: CallbackQuery, services):
-    """Список клиентов для «Добавить устройство → другому клиенту». Дальше —
-    тот же FSM-флоу, что и из карточки клиента (ClientCB add_device уже
-    обрабатывается admin_add_device_start)."""
-    clients = await call(services.db.list_clients, exclude_tg=config.ADMIN_ID)
-    if not clients:
-        await cb.answer("Профилей пока нет", show_alert=True)
-        return
-    from awgbot.bot import paging
-    await edit(cb, "Кому из профилей добавить устройство?",
-               kb.pick_client_for_add_device(clients, page=paging.page_of(cb.message.chat.id, "addpick")))
-    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
-    await cb.answer()
-
+# ─────────────────────────────────────────────────────────────────────────────
+# Удаление
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.callback_query(DelDeviceCB.filter(F.stage == "ask"))
 async def admin_del_ask(cb: CallbackQuery, callback_data: DelDeviceCB, services):
-    """Усиленный поток удаления (из списков устройств) — админская версия.
-    Ownership не проверяем: админ управляет любыми устройствами."""
     dev = await call(services.db.get_device, callback_data.device_id)
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
+    client = await call(services.db.get_client, dev.client_id)
     only = await call(services.is_only_device, dev.id)
-    if only:
-        await edit(cb, texts.DELETE_ONLY_DEVICE_WARNING,
-                   kb.confirm_delete_device(dev.id, only=True))
-    else:
-        await edit(cb, texts.DELETE_DEVICE_CONFIRM.format(name=texts._e(dev.name)),
-                   kb.confirm_delete_device(dev.id, only=False))
+    await edit(cb, texts.admin_device_delete_ask(dev, client, only=only, bot_username=_bot(services)),
+               kb.confirm_delete_device(dev.id))
     await cb.answer()
 
 
 @router.callback_query(DelDeviceCB.filter(F.stage == "confirm"))
 async def admin_del_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, services):
-    _dev = await call(services.db.get_device, callback_data.device_id)
-    _dname = _dev.name if _dev else "?"
-    _cl = await call(services.db.get_client, _dev.client_id) if _dev else None
-    _cname = _cl.name if _cl else None
+    dev = await call(services.db.get_device, callback_data.device_id)
+    if dev is None:
+        await cb.answer("Устройство не найдено", show_alert=True)
+        return
+    client = await call(services.db.get_client, dev.client_id)
+    back = await _back_target(services, dev)
     try:
-        await remove_device_and_notify(cb.bot, services, callback_data.device_id)
+        await remove_device_and_notify(cb.bot, services, dev.id)
     except ServiceError as e:
         await cb.answer(str(e), show_alert=True)
         return
-    txt = (f"🗑 Устройство «{_dname}» (профиль «{_cname}») удалено."
-           if _cname else f"🗑 Устройство «{_dname}» удалено.")
-    await edit_nav(cb, services, txt, await _main_menu_markup(services))
     await cb.answer()
+    await edit(cb, texts.device_deleted_note(dev, client, _bot(services)), None)
+    # следом — откуда пришли: свои устройства, профиль или «без профиля»
+    from awgbot.bot import screens
+    kind, ref = ("devices", 0)
+    if back.startswith(Menu.__prefix__ + ":unassigned"):
+        kind = "unassigned"
+    elif back.startswith(ClientCB.__prefix__ + ":"):
+        kind, ref = "cl", dev.client_id
+    parts = await screens.render(kind, ref, services=services, role="admin", chat_id=cb.message.chat.id)
+    if parts is None:
+        await _return_panel(cb.message, services, keep_id=cb.message.message_id)
+        return
+    await cleanup_content(cb.bot, services, cb.message.chat.id)
+    await send_menu(cb.message, services, *parts, keep_id=cb.message.message_id)

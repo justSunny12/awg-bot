@@ -1,8 +1,10 @@
 """
-handlers/admin/clients.py — профили (клиенты) глазами администратора.
+handlers/admin/clients.py — профили глазами администратора.
 
-Список, карточка, создание с инвайтом, имя / лимиты / период, продление с
-остатком, перевыпуск инвайта, удаление, вывод из приостановки.
+Список, карточка, подменю «✏️ Изменить», создание пресетами с приглашением,
+имя / лимиты / период с итогом первой строкой, продление с тумблером остатка,
+удаление, новое приглашение, снятие паузы. Ввод текста — на месте экрана
+(ask_here), возврат — в экран-контекст (back_to_context).
 """
 
 from __future__ import annotations
@@ -15,59 +17,65 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from awgbot.bot.callbacks import ClientCB, ConfirmCB, DeviceCB, Menu, PeriodCB
-from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_tracked, remove_device_and_notify,
-                                        send_menu, content_finisher)
+from awgbot.bot.callbacks import ClientCB, Menu, PeriodCB, PresetCB
+from awgbot.bot.handlers.common import (call, edit, ask_here, ask_tracked, back_to_context,
+                                        cleanup_content, remove_device_and_notify, send_menu,
+                                        content_finisher)
 from awgbot.bot.notifier import notify_one, send_notifications
 from awgbot.domain.services import BYTES_PER_GB, ServiceError
 from awgbot.bot.states import CreateClient, EditLimit, EditName, EditPeriod, EditTrafficLimit
-from awgbot.bot.handlers.admin.panel import (_expiring_screen, _extend_picker, _main_menu_markup,
-                                             _panel_parts, _return_panel)
+from awgbot.bot.handlers.admin.panel import (expiring_screen, _panel_parts, _return_panel, _bot)
 
 router = Router(name="admin.clients")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Клиенты: список / карточка
+# Список / карточка / «✏️ Изменить»
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.callback_query(Menu.filter(F.action == "clients"))
-async def clients_list(cb: CallbackQuery, services):
-    # Профиль админа СКРЫТ: весь его функционал всегда есть на главной (свои
-    # устройства, конфиги, РФ-доступ), а карточка была урезана до тех же кнопок.
-    # Строка в списке дублировала главную и путала, кто тут кем управляет.
-    await cb.answer()
+async def clients_screen(services, chat_id: int = 0):
     clients = await call(services.db.list_clients, exclude_tg=config.ADMIN_ID)
-    if not clients:
-        await edit_nav(cb, services, "Профилей пока нет.", await _main_menu_markup(services))
-    else:
-        online = await call(services.online_client_ids)
-        from awgbot.bot import paging
-        await edit(cb, "👥 Профили:", kb.admin_clients(
-            clients, online, page=paging.page_of(cb.message.chat.id, "clients")))
+    online = await call(services.online_client_ids)
+    from awgbot.bot import paging
+    n_online = sum(1 for c in clients if c.id in online)
+    return (texts.profiles_header(len(clients), n_online),
+            kb.admin_clients(clients, online, page=paging.page_of(chat_id, "clients")))
 
 
-async def _client_card_parts(services, client_id: int):
+@router.callback_query(Menu.filter(F.action == "clients"))
+async def clients_list(cb: CallbackQuery, services, state: FSMContext):
+    # Профиль админа скрыт: его устройства и РФ-доступ — на главной.
+    await state.clear()
+    await cb.answer()
+    await edit(cb, *await clients_screen(services, cb.message.chat.id))
+
+
+async def client_card_parts(services, client_id: int):
     """(текст, клавиатура) карточки профиля или None — профиля нет."""
-    d = await call(services.client_card_data, client_id)     # один хоп вместо восьми
+    d = await call(services.client_card_data, client_id)
     if d is None:
         return None
-    client, devices = d["client"], d["devices"]
-    text = texts.client_card(client, devices, d["traffic"], d["online"], for_admin=True,
-                             rf=d.get("rf"))
-    # Прогресс переезда — последней строкой и ТОЛЬКО админу: клиенту знать про
-    # внутреннюю кухню незачем, а карточку он видит в своём варианте.
-    if d["progress"] is not None:
-        line = texts.migration_profile_line(*d["progress"])
-        if line:
-            text += "\n\n" + line
-    return text, kb.admin_client_actions(
-        client, has_devices=bool(devices), is_admin_owner=client.tg_id == config.ADMIN_ID,
-        routing_visible=d["rt_visible"], routing_on=d["rt_on"])
+    client = d["client"]
+    if d.get("rt_visible"):
+        d["rt_counts"] = await call(services.routing_device_counts, client_id)
+    return (texts.admin_client_card(d, _bot(services)),
+            kb.admin_client_actions(client, d["devices"],
+                                    is_admin_owner=client.tg_id == config.ADMIN_ID,
+                                    routing_visible=d["rt_visible"]))
+
+
+_client_card_parts = client_card_parts
+
+
+async def client_edit_parts(services, client_id: int):
+    client = await call(services.db.get_client, client_id)
+    if client is None:
+        return None
+    return texts.client_edit_text(client), kb.client_edit_kb(client_id)
 
 
 async def _show_client_card(cb: CallbackQuery, services, client_id: int):
-    parts = await _client_card_parts(services, client_id)
+    parts = await client_card_parts(services, client_id)
     if parts is None:
         await cb.answer("Профиль не найден", show_alert=True)
         return
@@ -75,19 +83,31 @@ async def _show_client_card(cb: CallbackQuery, services, client_id: int):
 
 
 @router.callback_query(ClientCB.filter(F.action == "open"))
-async def client_open(cb: CallbackQuery, callback_data: ClientCB, services):
+async def client_open(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
+    await state.clear()
     await cb.answer()
     await _show_client_card(cb, services, callback_data.client_id)
 
 
+@router.callback_query(ClientCB.filter(F.action == "edit"))
+async def client_edit(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
+    await state.clear()
+    parts = await client_edit_parts(services, callback_data.client_id)
+    if parts is None:
+        await cb.answer("Профиль не найден", show_alert=True)
+        return
+    await edit(cb, *parts)
+    await cb.answer()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Создание клиента (FSM: имя → лимит → период)
+# Новый профиль: имя → устройства → трафик → срок (пресетами)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.callback_query(Menu.filter(F.action == "add_client"))
 async def add_client_start(cb: CallbackQuery, services, state: FSMContext):
     await state.set_state(CreateClient.name)
-    await ask_tracked(cb.message, services, "Введи имя нового профиля:", reply_markup=kb.reply_cancel())
+    await ask_here(cb, services, state, texts.NEW_PROFILE_NAME, "main")
     await cb.answer()
 
 
@@ -96,11 +116,36 @@ async def add_client_name(message: Message, services, state: FSMContext):
     name = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not name:
-        await ask_tracked(message, services, "Имя не может быть пустым. Введи ещё раз:")
+        await ask_tracked(message, services, texts.NAME_EMPTY)
         return
     await state.update_data(name=name)
     await state.set_state(CreateClient.limit)
-    await ask_tracked(message, services, "Сколько устройств разрешить профилю? Число, например 3 (0 — без ограничения)", reply_markup=kb.reply_cancel())
+    await cleanup_content(message.bot, services, message.chat.id)
+    await send_menu(message, services, texts.new_profile_devs(name), kb.new_profile_devs_kb())
+
+
+@router.callback_query(PresetCB.filter(F.kind == "new_devs"), CreateClient.limit)
+async def add_client_devs_preset(cb: CallbackQuery, callback_data: PresetCB, services, state: FSMContext):
+    data = await state.get_data()
+    name = data.get("name") or ""
+    if callback_data.val < 0:
+        await ask_here(cb, services, state, texts.OTHER_NUMBER_PROMPT, "main")
+        await cb.answer()
+        return
+    await _devs_chosen(cb.message, services, state, name, int(callback_data.val), via_cb=cb)
+
+
+async def _devs_chosen(message: Message, services, state: FSMContext, name: str, limit: int,
+                       via_cb: CallbackQuery | None = None) -> None:
+    await state.update_data(limit=limit)
+    await state.set_state(CreateClient.traffic)
+    text, markup = texts.new_profile_traffic(name, limit), kb.new_profile_traffic_kb()
+    if via_cb is not None:
+        await edit(via_cb, text, markup)
+        await via_cb.answer()
+        return
+    await cleanup_content(message.bot, services, message.chat.id)
+    await send_menu(message, services, text, markup)
 
 
 @router.message(CreateClient.limit)
@@ -108,11 +153,34 @@ async def add_client_limit(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not raw.isdigit():
-        await ask_tracked(message, services, "Введи число (0 — без ограничения):")
+        await ask_tracked(message, services, texts.NUMBER_BAD)
         return
-    await state.update_data(limit=int(raw))
-    await state.set_state(CreateClient.traffic)
-    await ask_tracked(message, services, texts.TRAFFIC_LIMIT_CLIENT_ASK, reply_markup=kb.reply_cancel())
+    name = (await state.get_data()).get("name") or ""
+    await _devs_chosen(message, services, state, name, int(raw))
+
+
+@router.callback_query(PresetCB.filter(F.kind == "new_traffic"), CreateClient.traffic)
+async def add_client_traffic_preset(cb: CallbackQuery, callback_data: PresetCB, services, state: FSMContext):
+    data = await state.get_data()
+    if callback_data.val < 0:
+        await ask_here(cb, services, state, texts.OTHER_NUMBER_PROMPT, "main")
+        await cb.answer()
+        return
+    await _traffic_chosen(cb.message, services, state, data, int(callback_data.val), via_cb=cb)
+
+
+async def _traffic_chosen(message: Message, services, state: FSMContext, data: dict, gb_value: int,
+                          via_cb: CallbackQuery | None = None) -> None:
+    await state.update_data(traffic_gb=gb_value)
+    name, limit = data.get("name") or "", int(data.get("limit") or 0)
+    text = texts.new_profile_period(name, limit, gb_value)
+    markup = kb.period_kb("create")
+    if via_cb is not None:
+        await edit(via_cb, text, markup)
+        await via_cb.answer()
+        return
+    await cleanup_content(message.bot, services, message.chat.id)
+    await send_menu(message, services, text, markup)
 
 
 @router.message(CreateClient.traffic)
@@ -120,17 +188,9 @@ async def add_client_traffic(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not raw.isdigit():
-        await ask_tracked(message, services, texts.TRAFFIC_LIMIT_BAD)
+        await ask_tracked(message, services, texts.NUMBER_BAD)
         return
-    await state.update_data(traffic_gb=int(raw))
-    # снимаем реплай-«Отмена» (текстовый ввод закончен) — иначе виснет поверх
-    # инлайн-экрана выбора периода. «Принято» неинформативно — трекаем на удаление.
-    _accepted = await message.answer("Принято.", reply_markup=kb.reply_hide())
-    await call(services.db.add_content_msg_id, _accepted.chat.id, _accepted.message_id)
-    # выбор периода — промежуточный шаг; трекаем, чтобы content_finisher
-    # убрал его при возврате в меню (вместе с вводом пользователя).
-    _period = await message.answer("Выбери срок подписки:", reply_markup=kb.period_choices("create"))
-    await call(services.db.add_content_msg_id, _period.chat.id, _period.message_id)
+    await _traffic_chosen(message, services, state, await state.get_data(), int(raw))
 
 
 @router.callback_query(PeriodCB.filter(F.ctx == "create"))
@@ -141,46 +201,62 @@ async def add_client_period(cb: CallbackQuery, callback_data: PeriodCB, services
     traffic_gb = data.get("traffic_gb")
     await state.clear()
     if not name or limit is None or traffic_gb is None:  # limit/traffic=0 валидны
-        # Протухший диалог (рестарт бота / старые кнопки): гасим ЭТИ кнопки и
-        # возвращаем в панель — юзер не остаётся с мёртвым выбором периода.
         await cb.answer("Диалог устарел — открой создание профиля заново", show_alert=True)
         try:
             await cb.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except Exception:                              # noqa: BLE001
             pass
         await _return_panel(cb.message, services)
         return
     try:
-        created = await call(services.create_client, name, limit, callback_data.kind,
-                             traffic_gb * BYTES_PER_GB)
+        created = await call(services.create_client, name, int(limit), callback_data.kind,
+                             int(traffic_gb) * BYTES_PER_GB)
     except ServiceError as e:
         await cb.answer(str(e), show_alert=True)
         return
-    # получаем username бота для ссылки
-    me = await cb.bot.me()
-    link = f"https://t.me/{me.username}?start={created.invite_code}"
-    # ссылка-приглашение — транзиентная (переслал и забыл): трекаем на удаление
-    sent_link = await cb.message.answer(texts.INVITE_FORWARD_TEMPLATE.format(link=link))
-    await call(services.db.add_content_msg_id, sent_link.chat.id, sent_link.message_id)
-    # финишер — констатирующий РЕЗУЛЬТАТ (остаётся): что за профиль создан.
-    report = texts.client_created_report(
-        name, device_limit=limit,
-        traffic_limit_bytes=traffic_gb * BYTES_PER_GB,
-        period_kind=callback_data.kind, period_end=created.period_end)
-    await content_finisher(cb.message, services, report, "admin")
+    client = await call(services.db.get_client, created.client_id)
     await cb.answer()
+    try:
+        await cb.message.delete()
+    except Exception:                                  # noqa: BLE001
+        pass
+    await _send_invite(cb.message, services, client, created.invite_code)
+    await cb.message.answer(texts.profile_created_note(client, int(limit), int(traffic_gb),
+                                                       created.period_end, _bot(services)))
+    parts = await client_card_parts(services, client.id)
+    if parts is not None:
+        await send_menu(cb.message, services, *parts)
+
+
+async def _send_invite(message: Message, services, client, code: str) -> None:
+    """Приглашение с кнопками «📤 Отправить» и «📋 Скопировать» — служебное
+    (уберётся при возврате в меню; пересланное остаётся у получателя)."""
+    bot = _bot(services) or (await message.bot.me()).username
+    link = f"https://t.me/{bot}?start={code}"
+    sent = await message.answer(texts.invite_plain(link), reply_markup=kb.invite_kb(texts.invite_plain(link), link))
+    await call(services.db.add_content_msg_id, sent.chat.id, sent.message_id)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Редактирование клиента: имя / лимит
+# Имя / лимиты / период — с возвратом в «✏️ Изменить»
 # ─────────────────────────────────────────────────────────────────────────────
+
+async def _client_or_alert(cb: CallbackQuery, services, client_id: int):
+    client = await call(services.db.get_client, client_id)
+    if client is None:
+        await cb.answer("Профиль не найден", show_alert=True)
+    return client
 
 
 @router.callback_query(ClientCB.filter(F.action == "edit_name"))
 async def edit_name_start(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
+    client = await _client_or_alert(cb, services, callback_data.client_id)
+    if client is None:
+        return
+    is_admin = client.tg_id == config.ADMIN_ID
     await state.set_state(EditName.value)
-    await state.update_data(client_id=callback_data.client_id)
-    await ask_tracked(cb.message, services, "Введи новое имя профиля:", reply_markup=kb.reply_cancel())
+    await ask_here(cb, services, state, texts.client_name_prompt(client),
+                   "cl" if is_admin else "edit", client.id, client_id=client.id)
     await cb.answer()
 
 
@@ -189,24 +265,61 @@ async def edit_name_apply(message: Message, services, state: FSMContext):
     name = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not name:
-        await ask_tracked(message, services, "Имя не может быть пустым:")
+        await ask_tracked(message, services, texts.NAME_EMPTY)
         return
     data = await state.get_data()
     await state.clear()
-    old = await call(services.db.get_client, data["client_id"])
-    old_name = old.name if old else "?"
-    await call(services.db.update_client_fields, data["client_id"], name=name)
-    await message.answer(f"✅ Профиль переименован: «{old_name}» → «{name}».",
-                         reply_markup=kb.reply_hide())
-    await _return_panel(message, services)
+    old = await call(services.db.get_client, data.get("client_id"))
+    if old is None:
+        await back_to_context(message, services, {}, "admin")
+        return
+    await call(services.db.update_client_fields, old.id, name=name)
+    await back_to_context(message, services, data, "admin", note=texts.client_name_note(old.name, name))
 
 
 @router.callback_query(ClientCB.filter(F.action == "edit_limit"))
 async def edit_limit_start(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
-    await state.set_state(EditLimit.value)
-    await state.update_data(client_id=callback_data.client_id)
-    await ask_tracked(cb.message, services, "Введи новый лимит устройств. Число (0 — без ограничения):", reply_markup=kb.reply_cancel())
+    client = await _client_or_alert(cb, services, callback_data.client_id)
+    if client is None:
+        return
+    await state.clear()
+    used = await call(services.db.count_devices, client.id)
+    await edit(cb, texts.devs_limit_prompt(client, used), kb.devs_limit_kb(client.id))
     await cb.answer()
+
+
+async def _apply_devs_limit(cb_or_msg, services, client, new_limit: int, *, via_cb: CallbackQuery | None,
+                            data: dict | None = None) -> None:
+    """Применить лимит устройств: без подтверждения, итог первой строкой
+    «✏️ Изменить», клиенту — уведомление."""
+    old_limit = int(client.device_limit)
+    used = await call(services.db.count_devices, client.id)
+    await call(services.db.update_client_fields, client.id, device_limit=new_limit)
+    note = texts.devs_limit_note(old_limit, new_limit, used)
+    if client.tg_id and old_limit != new_limit and client.tg_id != config.ADMIN_ID:
+        await notify_one(cb_or_msg.bot, client.tg_id, texts.limit_changed_notice(old_limit, new_limit))
+    if via_cb is not None:
+        from awgbot.bot import screens
+        text, markup = await client_edit_parts(services, client.id)
+        await edit(via_cb, screens.with_note(text, note), markup)
+        await via_cb.answer()
+        return
+    await back_to_context(cb_or_msg, services, data or {"ctx_kind": "edit", "ctx_ref": client.id},
+                          "admin", note=note)
+
+
+@router.callback_query(PresetCB.filter(F.kind == "cli_devs"))
+async def edit_limit_preset(cb: CallbackQuery, callback_data: PresetCB, services, state: FSMContext):
+    client = await _client_or_alert(cb, services, callback_data.ref)
+    if client is None:
+        return
+    if callback_data.val < 0:
+        await state.set_state(EditLimit.value)
+        await ask_here(cb, services, state, texts.OTHER_NUMBER_PROMPT, "edit", client.id,
+                       client_id=client.id)
+        await cb.answer()
+        return
+    await _apply_devs_limit(cb, services, client, int(callback_data.val), via_cb=cb)
 
 
 @router.message(EditLimit.value)
@@ -214,211 +327,255 @@ async def edit_limit_apply(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not raw.isdigit():
-        await ask_tracked(message, services, "Введи число (0 — без ограничения):")
+        await ask_tracked(message, services, texts.NUMBER_BAD)
         return
     data = await state.get_data()
-    client_id = data["client_id"]
-    new_limit = int(raw)
-    client = await call(services.db.get_client, client_id)
+    await state.clear()
+    client = await call(services.db.get_client, data.get("client_id"))
     if client is None:
-        await state.clear()
-        await message.answer("Профиль не найден.")
+        await back_to_context(message, services, {}, "admin")
         return
-    count = await call(services.db.count_devices, client_id)
-    # Понижение лимита НИЖЕ текущего числа устройств: предупреждаем и спрашиваем.
-    # Не блокируем (админ вправе «заморозить» добавление), но честно показываем
-    # последствие, чтобы не создавать «3 из 2» вслепую.
-    if new_limit != 0 and new_limit < count:
-        await state.update_data(pending_limit=new_limit)
-        _acc = await message.answer("Принято.", reply_markup=kb.reply_hide())
-        await call(services.db.add_content_msg_id, _acc.chat.id, _acc.message_id)
-        await message.answer(
-            f"У профиля сейчас {count} "
-            f"{texts.plural_ru(count, 'устройство', 'устройства', 'устройств')}, "
-            f"а ты выставляешь лимит {new_limit}.\n\n"
-            "Существующие устройства продолжат работать, но добавить новые "
-            f"профиль не сможет, пока их не станет меньше {new_limit}. "
-            "Отображаться будет как превышение (например «3 из 2»).\n\n"
-            "Применить такой лимит?",
-            reply_markup=kb.confirm_lower_limit())
-        return
-    await state.clear()
-    await _apply_limit(message, services, client, new_limit)
+    await _apply_devs_limit(message, services, client, int(raw), via_cb=None, data=data)
 
-
-async def _apply_limit(message, services, client, new_limit: int, *, via_edit=None):
-    """Применить лимит и отчитаться. Итог — на месте вопроса (via_edit — колбэк
-    подтверждения) либо новым сообщением; панель следом. Раньше подтверждение
-    переписывалось в «Готово.» с кнопками меню уже ПОСЛЕ присланной панели, и
-    та оставалась в чате мёртвой — живое меню висело над ней."""
-    old_limit = client.device_limit
-    await call(services.db.update_client_fields, client.id, device_limit=new_limit)
-    old_s = "без ограничения" if not old_limit else str(old_limit)
-    new_s = "без ограничения" if not new_limit else str(new_limit)
-    done = f"✅ Лимит устройств профиля «{texts._e(client.name)}» изменён: {old_s} → {new_s}."
-    if via_edit is not None:
-        await edit(via_edit, done, None)
-    else:
-        await message.answer(done, reply_markup=kb.reply_hide())
-    if client.tg_id and old_limit != new_limit:
-        await notify_one(message.bot, client.tg_id,
-                         texts.limit_changed_notice(old_limit, new_limit))
-    await _return_panel(message, services,
-                        keep_id=via_edit.message.message_id if via_edit is not None else None)
-
-
-@router.callback_query(ConfirmCB.filter(F.action == "lower_limit"))
-async def edit_limit_confirm(cb: CallbackQuery, callback_data: ConfirmCB, services, state: FSMContext):
-    data = await state.get_data()
-    client_id = data.get("client_id")
-    new_limit = data.get("pending_limit")
-    await state.clear()
-    if not callback_data.yes:
-        await edit_nav(cb, services, "Отменено — лимит не изменён.", await _main_menu_markup(services))
-        await cb.answer()
-        return
-    client = await call(services.db.get_client, client_id)
-    if client is None or new_limit is None:
-        await cb.answer("Диалог устарел, начни заново", show_alert=True)
-        return
-    await cb.answer()
-    await _apply_limit(cb.message, services, client, new_limit, via_edit=cb)
-
-
-# ── Редактирование лимита потребления (админ: клиент-тотал и устройство) ──────
 
 @router.callback_query(ClientCB.filter(F.action == "edit_traffic"))
-async def edit_client_traffic_start(cb: CallbackQuery, callback_data: ClientCB,
-                                    services, state: FSMContext):
-    await state.set_state(EditTrafficLimit.value)
-    await state.update_data(kind="client", ref=callback_data.client_id)
-    await ask_tracked(cb.message, services, texts.TRAFFIC_LIMIT_CLIENT_ASK, reply_markup=kb.reply_cancel())
+async def edit_client_traffic_start(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
+    client = await _client_or_alert(cb, services, callback_data.client_id)
+    if client is None:
+        return
+    await state.clear()
+    await edit(cb, texts.traffic_limit_prompt(client), kb.traffic_limit_kb(client.id))
     await cb.answer()
 
 
-@router.callback_query(DeviceCB.filter(F.action == "edit_traffic"))
-async def edit_device_traffic_start(cb: CallbackQuery, callback_data: DeviceCB,
-                                    state: FSMContext, services):
-    dev = await call(services.db.get_device, callback_data.device_id)
-    await state.set_state(EditTrafficLimit.value)
-    await state.update_data(kind="device", ref=callback_data.device_id)
-    plimit = await call(services.profile_traffic_limit, dev.client_id) if dev else 0
-    await ask_tracked(cb.message, services, texts.traffic_limit_device_ask(plimit), reply_markup=kb.reply_cancel())
-    await cb.answer()
+async def _apply_traffic_limit(cb_or_msg, services, client, gb_value: int, *, via_cb: CallbackQuery | None,
+                               data: dict | None = None) -> None:
+    old_b = int(client.traffic_limit)
+    new_b = gb_value * BYTES_PER_GB
+    await call(services.set_client_traffic_limit, client.id, new_b)
+    note = texts.traffic_limit_note(old_b, new_b)
+    if via_cb is not None:
+        from awgbot.bot import screens
+        text, markup = await client_edit_parts(services, client.id)
+        await edit(via_cb, screens.with_note(text, note), markup)
+        await via_cb.answer()
+        return
+    await back_to_context(cb_or_msg, services, data or {"ctx_kind": "edit", "ctx_ref": client.id},
+                          "admin", note=note)
+
+
+@router.callback_query(PresetCB.filter(F.kind == "cli_traffic"))
+async def edit_traffic_preset(cb: CallbackQuery, callback_data: PresetCB, services, state: FSMContext):
+    client = await _client_or_alert(cb, services, callback_data.ref)
+    if client is None:
+        return
+    if callback_data.val < 0:
+        await state.set_state(EditTrafficLimit.value)
+        await ask_here(cb, services, state, texts.OTHER_NUMBER_PROMPT, "edit", client.id,
+                       kind="client", client_id=client.id)
+        await cb.answer()
+        return
+    await _apply_traffic_limit(cb, services, client, int(callback_data.val), via_cb=cb)
 
 
 @router.message(EditTrafficLimit.value)
 async def edit_traffic_apply(message: Message, services, state: FSMContext):
+    """Ввод лимита профиля или устройства («✏️ Другое»)."""
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not raw.isdigit():
-        await ask_tracked(message, services, texts.TRAFFIC_LIMIT_BAD)
+        await ask_tracked(message, services, texts.NUMBER_BAD)
         return
     data = await state.get_data()
-    kind = data.get("kind")
-    ref = data.get("ref")
+    if data.get("kind") == "device":
+        from awgbot.bot.handlers.admin.devices import apply_device_limit_typed
+        await apply_device_limit_typed(message, services, state, data, int(raw))
+        return
     await state.clear()
-    limit_bytes = int(raw) * BYTES_PER_GB
-    if kind == "client":
-        cl = await call(services.db.get_client, ref)
-        old_b = int(cl.traffic_limit) if cl else 0
-        await call(services.set_client_traffic_limit, ref, limit_bytes)
-        old_s = "без ограничения" if not old_b else texts.gb_str(old_b)
-        new_s = "без ограничения" if not limit_bytes else texts.gb_str(limit_bytes)
-        cname = cl.name if cl else "?"
-        await message.answer(
-            f"✅ Профиль «{cname}»: лимит потребления {old_s} → {new_s}.",
-            reply_markup=kb.reply_hide())
-    elif kind == "device":
-        dev = await call(services.db.get_device, ref)
-        old_b = int(dev.traffic_limit) if dev else 0
-        await call(services.set_device_traffic_limit, ref, limit_bytes)
-        old_s = "без ограничения" if not old_b else texts.gb_str(old_b)
-        new_s = "без ограничения" if not limit_bytes else texts.gb_str(limit_bytes)
-        cl = await call(services.db.get_client, dev.client_id) if dev else None
-        cname = cl.name if cl else "?"
-        await message.answer(
-            f"✅ Устройство «{dev.name if dev else '?'}» (профиль «{cname}»): "
-            f"лимит потребления {old_s} → {new_s}.",
-            reply_markup=kb.reply_hide())
-    await _return_panel(message, services)
+    client = await call(services.db.get_client, data.get("client_id"))
+    if client is None:
+        await back_to_context(message, services, {}, "admin")
+        return
+    await _apply_traffic_limit(message, services, client, int(raw), via_cb=None, data=data)
+
+
+# ── период вручную ───────────────────────────────────────────────────────────
+
+@router.callback_query(ClientCB.filter(F.action == "edit_period"))
+async def edit_period_start(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
+    client = await _client_or_alert(cb, services, callback_data.client_id)
+    if client is None:
+        return
+    await state.set_state(EditPeriod.start)
+    await ask_here(cb, services, state, texts.period_start_prompt(client), "edit", client.id,
+                   client_id=client.id)
+    await cb.answer()
+
+
+@router.message(EditPeriod.start)
+async def edit_period_start_apply(message: Message, services, state: FSMContext):
+    raw = (message.text or "").strip()
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
+    data = await state.get_data()
+    client = await call(services.db.get_client, data.get("client_id"))
+    if client is None:
+        await state.clear()
+        await back_to_context(message, services, {}, "admin")
+        return
+    if raw == "-":
+        new_start = client.period_start and timeutil.parse_iso(client.period_start)
+        if new_start is None:
+            await ask_tracked(message, services, texts.PERIOD_NO_START)
+            return
+    else:
+        try:
+            new_start = timeutil.parse_dt_sec(raw)
+        except ValueError:
+            await ask_tracked(message, services, texts.PERIOD_BAD)
+            return
+    await state.update_data(new_start=timeutil.to_iso(new_start))
+    await state.set_state(EditPeriod.end)
+    await ask_tracked(message, services, texts.period_end_prompt(client))
+
+
+@router.message(EditPeriod.end)
+async def edit_period_end_apply(message: Message, services, state: FSMContext):
+    raw = (message.text or "").strip()
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
+    data = await state.get_data()
+    client = await call(services.db.get_client, data.get("client_id"))
+    if client is None:
+        await state.clear()
+        await back_to_context(message, services, {}, "admin")
+        return
+    if raw == "-":
+        new_end = client.period_end and timeutil.parse_iso(client.period_end)
+    elif raw == "0":
+        new_end = None
+    else:
+        try:
+            new_end = timeutil.parse_dt_sec(raw)
+        except ValueError:
+            await ask_tracked(message, services, texts.PERIOD_BAD)
+            return
+    await state.clear()
+    saved_start = data.get("new_start")
+    new_start = timeutil.parse_iso(saved_start) if saved_start else None
+    if new_start is None:
+        await back_to_context(message, services, data, "admin", note="⚠️ " + texts.PERIOD_NO_START)
+        return
+    try:
+        s, e, notes = await call(services.set_subscription_dates, client.id, new_start, new_end)
+    except ServiceError as ex:
+        await back_to_context(message, services, data, "admin", note=f"⚠️ {texts._e(str(ex))}")
+        return
+    await send_notifications(message.bot, notes)
+    await back_to_context(message, services, data, "admin", note=texts.period_changed_note(s, e))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Перевыпуск инвайта / удаление клиента
+# Новое приглашение / удаление
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.callback_query(ClientCB.filter(F.action == "regen_invite"))
 async def regen_invite(cb: CallbackQuery, callback_data: ClientCB, services):
+    client = await _client_or_alert(cb, services, callback_data.client_id)
+    if client is None:
+        return
     try:
-        code = await call(services.regenerate_invite, callback_data.client_id)
+        code = await call(services.regenerate_invite, client.id)
     except ServiceError as e:
         await cb.answer(str(e), show_alert=True)
         return
-    me = await cb.bot.me()
-    link = f"https://t.me/{me.username}?start={code}"
-    sent = await cb.message.answer(texts.INVITE_FORWARD_TEMPLATE.format(link=link))
-    await call(services.db.add_content_msg_id, sent.chat.id, sent.message_id)
-    await content_finisher(cb.message, services, texts.FINISH_CLIENT_INVITE, "admin")
-    await cb.answer("Новый инвайт создан")
+    await cb.answer("Новое приглашение")
+    try:
+        await cb.message.delete()
+    except Exception:                                  # noqa: BLE001
+        pass
+    await _send_invite(cb.message, services, client, code)
+    await content_finisher(cb.message, services, texts.invite_finisher(client, _bot(services)), "admin")
 
 
 @router.callback_query(ClientCB.filter(F.action == "delete"))
 async def client_delete_confirm(cb: CallbackQuery, callback_data: ClientCB, services):
-    client = await call(services.db.get_client, callback_data.client_id)
-    name = client.name if client else "?"
-    await edit(cb, f"Удалить профиль «{texts._e(name)}» вместе со всеми его устройствами?",
-               kb.yes_no("del_client", ref=callback_data.client_id))
+    client = await _client_or_alert(cb, services, callback_data.client_id)
+    if client is None:
+        return
+    devices = await call(services.db.list_devices, client.id)
+    lent = [d for d in devices if getattr(d, "is_lent", False)]
+    await edit(cb, texts.client_delete_ask(client, devices, lent), kb.client_delete_confirm(client.id))
     await cb.answer()
 
 
-@router.callback_query(ConfirmCB.filter(F.action == "del_client"))
-async def client_delete_apply(cb: CallbackQuery, callback_data: ConfirmCB, services):
-    if not callback_data.yes:
-        await _show_client_card(cb, services, callback_data.ref)
-        await cb.answer("Отменено")
+@router.callback_query(ClientCB.filter(F.action == "delete_yes"))
+async def client_delete_apply(cb: CallbackQuery, callback_data: ClientCB, services):
+    target = await _client_or_alert(cb, services, callback_data.client_id)
+    if target is None:
         return
-    # снять устройства с сервера, затем удалить клиента (каскад в БД).
-    # remove_device_and_notify: друзья переданных устройств получают
-    target = await call(services.db.get_client, callback_data.ref)
-    if target is not None and target.tg_id == config.ADMIN_ID:
+    if target.tg_id == config.ADMIN_ID:
         await cb.answer("Профиль администратора нельзя удалить", show_alert=True)
         return
-    # уведомление, что доступ прекращён (просто remove_device его терял).
-    _vname = target.name if target else "?"
-    devices = await call(services.db.list_devices, callback_data.ref)
+    devices = await call(services.db.list_devices, target.id)
     failed: list[str] = []
     for d in devices:
         try:
             await remove_device_and_notify(cb.bot, services, d.id)
         except ServiceError:
             failed.append(d.name)
-    # Пир не снялся с сервера — профиль НЕ удаляем. Удалить запись, оставив пир
-    # живым, значит: доступ у человека продолжает работать, а запись, по которой
-    # его можно найти, исчезла. Из двух неполных состояний это строго худшее, и
-    # молчать о нём нельзя — соседний поток (удаление одного устройства) на том
-    # же отказе останавливается и показывает причину.
+    # Пир не снялся с сервера — профиль НЕ удаляем: доступ работал бы, а
+    # записи, по которой его найти, не стало бы.
     if failed:
         await edit(cb, texts.CLIENT_DELETE_PARTIAL.format(
-            name=texts._e(_vname),
-            devices=texts._e(", ".join(failed))),
-            kb.admin_client_back(callback_data.ref))
+            name=texts._e(target.name), devices=texts._e(", ".join(failed))),
+            kb.admin_client_back(target.id))
         await cb.answer("Сервер не ответил — ничего не удалено", show_alert=True)
         return
-    await call(services.db.delete_client, callback_data.ref)
-    await edit_nav(cb, services,
-                   f"🗑 Профиль «{_vname}» удалён (устройств удалено: {len(devices)}).",
-                   await _main_menu_markup(services))
+    await call(services.db.delete_client, target.id)
+    await cb.answer()
+    await edit(cb, texts.client_deleted_note(target.name, len(devices)), None)
+    await send_menu(cb.message, services, *await clients_screen(services, cb.message.chat.id),
+                    keep_id=cb.message.message_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Продление: срок сразу, «сохранить остаток» тумблером
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def extend_screen(services, client_id: int, *, keep: bool = True, cancel_to=None):
+    """Экран продления или None — профиля нет."""
+    client = await call(services.db.get_client, client_id)
+    if client is None:
+        return None
+    from awgbot.domain.services import SECONDS_PER_DAY
+    cut_days = int(client.grace_pending_cut) // SECONDS_PER_DAY
+    remainder = await call(services.remaining_for, client_id)
+    return (texts.extend_text(client, cut_days, _bot(services)),
+            kb.period_kb("extend", client_id, min_days=cut_days, keep=keep,
+                         has_remainder=remainder > 0, cancel_cb=cancel_to))
+
+
+_extend_picker = extend_screen
+
+
+@router.callback_query(ClientCB.filter(F.action == "extend"))
+async def extend_start(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
+    return_to = (await state.get_data()).get("return_to")
+    screen = await extend_screen(
+        services, callback_data.client_id,
+        cancel_to=Menu(action="expiring").pack() if return_to == "expiring" else None)
+    if screen is None:
+        await cb.answer("Профиль не найден", show_alert=True)
+        return
+    await edit(cb, *screen)
     await cb.answer()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Продление (период → при остатке спрашиваем сохранение)
-# ─────────────────────────────────────────────────────────────────────────────
-
-@router.callback_query(ClientCB.filter(F.action == "extend"))
-async def extend_start(cb: CallbackQuery, callback_data: ClientCB, services):
-    screen = await _extend_picker(services, callback_data.client_id)
+@router.callback_query(PeriodCB.filter((F.ctx == "extend") & (F.kind == "keep_tgl")))
+async def extend_keep_toggle(cb: CallbackQuery, callback_data: PeriodCB, services, state: FSMContext):
+    return_to = (await state.get_data()).get("return_to")
+    screen = await extend_screen(
+        services, callback_data.ref, keep=bool(callback_data.keep),
+        cancel_to=Menu(action="expiring").pack() if return_to == "expiring" else None)
     if screen is None:
         await cb.answer("Профиль не найден", show_alert=True)
         return
@@ -428,45 +585,16 @@ async def extend_start(cb: CallbackQuery, callback_data: ClientCB, services):
 
 @router.callback_query(PeriodCB.filter(F.ctx == "extend"))
 async def extend_period_chosen(cb: CallbackQuery, callback_data: PeriodCB, services, state: FSMContext):
-    client_id = callback_data.ref
-    remainder = await call(services.remaining_for, client_id)
-    # для «Бессрочно» вопрос об остатке бессмыслен (прибавлять некуда) — сразу
-    if remainder > 0 and callback_data.kind != "never":
-        # спросим про сохранение остатка; период запомним в FSM
-        await state.update_data(extend_kind=callback_data.kind, extend_client=client_id)
-        await edit(cb, texts.EXTEND_KEEP_QUESTION.format(
-            remainder=timeutil.fmt_remaining_short(remainder)),
-            kb.yes_no("keep", ref=client_id))
-    else:
-        return_to = (await state.get_data()).get("return_to")
-        await state.clear()
-        await _do_extend(cb, services, client_id, callback_data.kind, keep=False,
-                         return_to=return_to)
-    await cb.answer()
-
-
-@router.callback_query(ConfirmCB.filter(F.action == "keep"))
-async def extend_keep_answer(cb: CallbackQuery, callback_data: ConfirmCB, services, state: FSMContext):
-    data = await state.get_data()
-    kind = data.get("extend_kind")
-    client_id = data.get("extend_client") or callback_data.ref
-    return_to = data.get("return_to")
+    """Срок выбран — продление сразу; остаток — по тумблеру в колбэке."""
+    return_to = (await state.get_data()).get("return_to")
     await state.clear()
-    if not kind:
-        await cb.answer("Диалог прерван, начни заново", show_alert=True)
-        return
-    await _do_extend(cb, services, client_id, kind, keep=callback_data.yes, return_to=return_to)
-    await cb.answer()
-
-
-_PERIOD_ACC = {"day": "день", "week": "неделю", "month": "месяц", "year": "год"}
+    keep = bool(callback_data.keep) and callback_data.kind != "never"
+    await _do_extend(cb, services, callback_data.ref, callback_data.kind, keep=keep, return_to=return_to)
 
 
 async def _do_extend(cb, services, client_id, kind, keep: bool, return_to: str | None = None):
-    """Итог продления — ИНФОСООБЩЕНИЕМ на месте диалога (остаётся в чате), меню
-    следом со своим обычным текстом: раньше текст итога садился в само меню и
-    дублировал уведомление. return_to="expiring" — назад в список истекающих,
-    пока он не пуст; опустел — в меню."""
+    """Итог — след в чате двумя строками, следом — откуда пришли: список
+    истекающих (пока не пуст) или карточка профиля."""
     try:
         result = await call(services.extend_period, client_id, kind, keep)
     except ServiceError as e:
@@ -474,139 +602,27 @@ async def _do_extend(cb, services, client_id, kind, keep: bool, return_to: str |
         return
     await send_notifications(cb.bot, result.notifications)
     fresh = await call(services.db.get_client, client_id)
-    name = fresh.name if fresh else "?"
-    if result.new_end is None:
-        done = (f"✅ Период подписки профиля {name} успешно изменён.\n"
-                "<b>Подписка теперь бессрочная.</b>")
-    else:
-        done = (f"✅ Подписка профиля {name} продлена на 1 {_PERIOD_ACC.get(kind, kind)}, "
-                f"до {timeutil.fmt_dt(result.new_end)}")
-        pause_line = texts.pause_credit_admin(result.pause)
-        if pause_line:
-            done += f"\n{pause_line}"
-    await edit(cb, done, None)
-    keep = cb.message.message_id
+    await cb.answer("Продлено")
+    await edit(cb, texts.extended_note(fresh, kind, result.new_end, result.pause, _bot(services)), None)
+    keep_id = cb.message.message_id
     if return_to == "expiring" and await call(services.expiring_subscriptions):
-        await send_menu(cb.message, services, *await _expiring_screen(services), keep_id=keep)
+        await send_menu(cb.message, services, *await expiring_screen(services), keep_id=keep_id)
         return
-    await send_menu(cb.message, services, *await _panel_parts(services), keep_id=keep)
-
-
-# ── Изменить период вручную (лечит дедлок бессрочной подписки) ────────────────
-
-@router.callback_query(ClientCB.filter(F.action == "edit_period"))
-async def edit_period_start(cb: CallbackQuery, callback_data: ClientCB,
-                            services, state: FSMContext):
-    client = await call(services.db.get_client, callback_data.client_id)
-    if client is None:
-        await cb.answer("Профиль не найден", show_alert=True)
+    parts = await client_card_parts(services, client_id)
+    if parts is None:
+        await send_menu(cb.message, services, *await _panel_parts(services), keep_id=keep_id)
         return
-    cur_start = client.period_start
-    cur_txt = timeutil.fmt_dt_sec(timeutil.parse_iso(cur_start)) if cur_start else "—"
-    await state.set_state(EditPeriod.start)
-    await state.update_data(client_id=client.id)
-    await ask_tracked(cb.message, services,
-        f"Выбери новую дату начала подписки (или отправь «-», чтобы оставить "
-        f"текущую: {cur_txt})\nФормат ввода: DD.MM.YYYY HH:MM:SS (время можно опустить — будет 00:00:00)",
-        reply_markup=kb.reply_cancel())
-    await cb.answer()
+    await send_menu(cb.message, services, *parts, keep_id=keep_id)
 
 
-@router.message(EditPeriod.start)
-async def edit_period_start_apply(message: Message, services, state: FSMContext):
-    raw = (message.text or "").strip()
-    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    data = await state.get_data()
-    client = await call(services.db.get_client, data["client_id"])
-    if client is None:
-        await state.clear()
-        await message.answer("Профиль не найден.", reply_markup=kb.reply_hide())
-        return
-    if raw == "-":
-        # оставить текущую дату начала
-        new_start = client.period_start and timeutil.parse_iso(client.period_start)
-        if new_start is None:
-            await ask_tracked(message, services, "У профиля нет текущей даты начала — нельзя оставить "
-                                 "«как есть». Введи дату (DD.MM.YYYY, время можно добавить):",
-                                 reply_markup=kb.reply_cancel())
-            return
-    else:
-        try:
-            new_start = timeutil.parse_dt_sec(raw)
-        except ValueError:
-            await ask_tracked(message, services, "Не разобрал дату. Формат: DD.MM.YYYY HH:MM:SS, время можно опустить. "
-                                 "Попробуй ещё раз (или «-» — оставить текущую):",
-                                 reply_markup=kb.reply_cancel())
-            return
-    await state.update_data(new_start=timeutil.to_iso(new_start))
-    cur_end = client.period_end
-    cur_txt = timeutil.fmt_dt_sec(timeutil.parse_iso(cur_end)) if cur_end else "бессрочно"
-    await state.set_state(EditPeriod.end)
-    await ask_tracked(message, services,
-        f"Выбери новую дату окончания подписки (текущая: {cur_txt}).\n"
-        f"«-» — оставить как есть, «0» — сделать бессрочной.\n"
-        f"Формат ввода: DD.MM.YYYY HH:MM:SS (время можно опустить — будет 00:00:00)",
-        reply_markup=kb.reply_cancel())
-
-
-@router.message(EditPeriod.end)
-async def edit_period_end_apply(message: Message, services, state: FSMContext):
-    raw = (message.text or "").strip()
-    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    data = await state.get_data()
-    client = await call(services.db.get_client, data["client_id"])
-    if client is None:
-        await state.clear()
-        await message.answer("Профиль не найден.", reply_markup=kb.reply_hide())
-        return
-    # семантика: «-» оставить текущую (может быть None=бессрочно), «0» → бессрочно,
-    # иначе — распарсить дату. Различаем «оставить» и «сделать бессрочным» флагом.
-    if raw == "-":
-        new_end = client.period_end and timeutil.parse_iso(client.period_end)  # None если уже бессрочно
-    elif raw == "0":
-        new_end = None                       # сделать бессрочной
-    else:
-        try:
-            new_end = timeutil.parse_dt_sec(raw)
-        except ValueError:
-            await ask_tracked(message, services, "Не разобрал дату. Формат: DD.MM.YYYY HH:MM:SS, время можно опустить. "
-                                 "«-» — оставить, «0» — бессрочно. Попробуй ещё раз:",
-                                 reply_markup=kb.reply_cancel())
-            return
-    await state.clear()
-    saved_start = data.get("new_start")
-    new_start = timeutil.parse_iso(saved_start) if saved_start else None
-    if new_start is None:
-        await message.answer("Дата начала не задана — начни заново.",
-                             reply_markup=kb.reply_hide())
-        await _return_panel(message, services)
-        return
-    try:
-        s, e, notes = await call(services.set_subscription_dates, client.id, new_start, new_end)
-    except ServiceError as ex:
-        await message.answer(str(ex), reply_markup=kb.reply_hide())
-        await _return_panel(message, services)
-        return
-    await send_notifications(message.bot, notes)
-    end_txt = timeutil.fmt_dt_sec(e) if e else "бессрочно"
-    await message.answer(
-        f"✅ Период подписки профиля {client.name} успешно изменён.\n"
-        f"Новый период: {timeutil.fmt_dt_sec(s)} - {end_txt}",
-        reply_markup=kb.reply_hide())
-    await _return_panel(message, services)
-
-
-# ── Админ выводит клиента из приостановки («в отпуск») ───────────────────────
+# ── админ снимает паузу клиента ──────────────────────────────────────────────
 
 @router.callback_query(ClientCB.filter(F.action == "resume_pause"))
 async def admin_resume_pause(cb: CallbackQuery, callback_data: ClientCB, services):
-    """Ручной вывод клиента из клиентской паузы. Тот же exit_pause, что у клиента:
-    списывает фактические дни (ceil), возвращает неиспользованный остаток в
-    period_end, снимает PAUSED-каскад с устройств. Запасной выход из deadlock,
-    когда клиент заперся в паузе (Telegram только через этот VPN)."""
-    client = await call(services.db.get_client, callback_data.client_id)
+    """Запасной выход из клиентской паузы (клиент заперся: Telegram только через
+    этот VPN). Тот же exit_pause, что у клиента."""
+    client = await _client_or_alert(cb, services, callback_data.client_id)
     if client is None:
-        await cb.answer("Профиль не найден", show_alert=True)
         return
     ok, actual, new_end, notes = await call(services.exit_pause, client.id, auto=False)
     if not ok:
@@ -614,12 +630,8 @@ async def admin_resume_pause(cb: CallbackQuery, callback_data: ClientCB, service
         await _show_client_card(cb, services, client.id)
         return
     await send_notifications(cb.bot, notes)
-    end_txt = timeutil.fmt_dt(new_end) if new_end else "бессрочно"
-    await cb.answer("Возобновлено")
-    # итог — на месте карточки и остаётся в чате, карточка — следом (как у
-    # продления и переезда: живое меню всегда последним сообщением)
-    await edit(cb, f"▶️ Профиль «{texts._e(client.name)}» выведен из приостановки.\n"
-                   f"Списано дней: {actual}. Новый срок: {end_txt}.", None)
-    parts = await _client_card_parts(services, client.id)
+    await cb.answer("Пауза снята")
+    await edit(cb, texts.resumed_note(client, actual, new_end, _bot(services)), None)
+    parts = await client_card_parts(services, client.id)
     if parts is not None:
         await send_menu(cb.message, services, *parts, keep_id=cb.message.message_id)

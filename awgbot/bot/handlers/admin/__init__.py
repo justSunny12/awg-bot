@@ -30,33 +30,33 @@ from awgbot.bot.handlers.admin import (blocks, broadcast, clients, devices, gate
                                        selfops, updates)
 from awgbot.bot.handlers.admin.panel import (
     _panel_parts, restore_panel_after_restart,
-    admin_start, admin_document, admin_expiring, admin_traffic_profiles, admin_main_menu,
-    refresh_status)
+    admin_start, admin_document, admin_expiring, admin_traffic_profiles, admin_online,
+    unassigned_list, admin_main_menu, refresh_status, uitree_probe, parse_link)
 from awgbot.bot.handlers.admin.clients import (
-    clients_list, client_open, add_client_start, add_client_name, add_client_limit,
-    add_client_traffic, add_client_period, edit_name_start, edit_name_apply, edit_limit_start,
-    edit_limit_apply, edit_limit_confirm, edit_client_traffic_start, edit_device_traffic_start,
-    edit_traffic_apply, regen_invite, client_delete_confirm, client_delete_apply, extend_start,
-    extend_period_chosen, extend_keep_answer, edit_period_start, edit_period_start_apply,
-    edit_period_end_apply, admin_resume_pause)
+    clients_list, client_open, client_edit, add_client_start, add_client_name, add_client_limit,
+    add_client_traffic, add_client_period, add_client_devs_preset, add_client_traffic_preset,
+    edit_name_start, edit_name_apply, edit_limit_start, edit_limit_preset, edit_limit_apply,
+    edit_client_traffic_start, edit_traffic_preset, edit_traffic_apply, regen_invite,
+    client_delete_confirm, client_delete_apply, extend_start, extend_keep_toggle,
+    extend_period_chosen, edit_period_start, edit_period_start_apply, edit_period_end_apply,
+    admin_resume_pause, client_card_parts, client_edit_parts, clients_screen)
 from awgbot.bot.handlers.admin.devices import (
-    admin_add_device_start, admin_add_device_name, admin_add_device_traffic, admin_gen_for,
-    admin_client_devices, admin_dev_gen, unassigned_list, admin_device_open,
-    admin_device_connect_menu, device_reassign_start, device_reassign_apply,
-    device_reassign_slot_yes, device_reassign_slot_no, device_edit_name_start,
-    device_edit_name_apply, admin_add_device_choice, admin_add_device_pick, admin_del_ask,
-    admin_del_confirm)
+    admin_menu_devices, admin_add_device_start, admin_add_device_name, admin_gen_for,
+    admin_client_devices, admin_dev_gen, admin_device_open, admin_device_connect_menu,
+    device_reassign_start, device_reassign_apply, device_reassign_slot_yes,
+    device_reassign_slot_no, device_edit_name_start, device_edit_name_apply,
+    edit_device_traffic_start, device_limit_preset, admin_del_ask, admin_del_confirm,
+    device_card_parts, my_devices_parts)
 from awgbot.bot.handlers.admin.gateway import has_gw_token, gateway_claim_message
 from awgbot.bot.handlers.admin.updates import update_install, update_menu, update_mute
-from awgbot.bot.handlers.admin.selfops import (
-    self_devices, self_gen_pick, self_add_start, self_add_name, self_add_traffic,
-    admin_menu_devices)
+from awgbot.bot.handlers.admin.selfops import self_devices, self_gen_pick, self_add_start, self_add_name
 from awgbot.bot.handlers.admin.blocks import (
-    admin_block_menu, admin_block_pause_no, admin_block_pause_yes, admin_block_pause_days,
+    admin_block_menu, admin_block_pause_no, admin_block_pause_yes,
     admin_unblock_menu, admin_block_do, admin_unblock_do, admin_block_cancel)
 from awgbot.bot.handlers.admin.broadcast import (
-    broadcast_pick, broadcast_mode, broadcast_toggle, broadcast_toggle_all, broadcast_next,
-    broadcast_days, broadcast_receive, broadcast_cancel_h, broadcast_send)
+    broadcast_pick, broadcast_mode, broadcast_extend_toggle, broadcast_toggle, broadcast_toggle_all,
+    broadcast_next, broadcast_days, broadcast_days_preset, broadcast_receive, broadcast_cancel_h,
+    broadcast_send)
 
 router = Router(name="admin")
 router.message.filter(RoleFilter("admin"))
@@ -74,42 +74,29 @@ router.include_router(blocks.router)
 router.include_router(broadcast.router)
 
 __all__ = [
-    "router",
-    # помощники панели: runtime/main.py (после рестарта) и handlers/common.py
-    "_panel_parts", "restore_panel_after_restart",
-    # panel
-    "admin_start", "admin_document", "admin_expiring", "admin_traffic_profiles",
-    "admin_main_menu", "refresh_status",
-    # clients
-    "clients_list", "client_open", "add_client_start", "add_client_name", "add_client_limit",
-    "add_client_traffic", "add_client_period", "edit_name_start", "edit_name_apply",
-    "edit_limit_start", "edit_limit_apply", "edit_limit_confirm", "edit_client_traffic_start",
-    "edit_device_traffic_start", "edit_traffic_apply", "regen_invite", "client_delete_confirm",
-    "client_delete_apply", "extend_start", "extend_period_chosen", "extend_keep_answer",
-    "edit_period_start", "edit_period_start_apply", "edit_period_end_apply",
-    "admin_resume_pause",
-    # devices
-    "admin_add_device_start", "admin_add_device_name", "admin_add_device_traffic",
-    "admin_gen_for", "admin_client_devices", "admin_dev_gen", "unassigned_list",
-    "admin_device_open", "admin_device_connect_menu", "device_reassign_start",
-    "device_reassign_apply", "device_reassign_slot_yes", "device_reassign_slot_no",
-    "device_edit_name_start", "device_edit_name_apply", "admin_add_device_choice",
-    "admin_add_device_pick", "admin_del_ask", "admin_del_confirm",
-    # gateway
+    "router", "_panel_parts", "restore_panel_after_restart", "parse_link",
+    "admin_start", "admin_document", "admin_expiring", "admin_traffic_profiles", "admin_online",
+    "unassigned_list", "admin_main_menu", "refresh_status", "uitree_probe",
+    "clients_list", "client_open", "client_edit", "add_client_start", "add_client_name",
+    "add_client_limit", "add_client_traffic", "add_client_period", "add_client_devs_preset",
+    "add_client_traffic_preset", "edit_name_start", "edit_name_apply", "edit_limit_start",
+    "edit_limit_preset", "edit_limit_apply", "edit_client_traffic_start", "edit_traffic_preset",
+    "edit_traffic_apply", "regen_invite", "client_delete_confirm", "client_delete_apply",
+    "extend_start", "extend_keep_toggle", "extend_period_chosen", "edit_period_start",
+    "edit_period_start_apply", "edit_period_end_apply", "admin_resume_pause",
+    "client_card_parts", "client_edit_parts", "clients_screen",
+    "admin_menu_devices", "admin_add_device_start", "admin_add_device_name", "admin_gen_for",
+    "admin_client_devices", "admin_dev_gen", "admin_device_open", "admin_device_connect_menu",
+    "device_reassign_start", "device_reassign_apply", "device_reassign_slot_yes",
+    "device_reassign_slot_no", "device_edit_name_start", "device_edit_name_apply",
+    "edit_device_traffic_start", "device_limit_preset", "admin_del_ask", "admin_del_confirm",
+    "device_card_parts", "my_devices_parts",
     "has_gw_token", "gateway_claim_message",
-    # updates
     "update_install", "update_menu", "update_mute",
-    # selfops
-    "self_devices", "self_gen_pick", "self_add_start", "self_add_name", "self_add_traffic",
-    "admin_menu_devices",
-    # blocks
+    "self_devices", "self_gen_pick", "self_add_start", "self_add_name",
     "admin_block_menu", "admin_block_pause_no", "admin_block_pause_yes",
-    "admin_block_pause_days", "admin_unblock_menu", "admin_block_do", "admin_unblock_do",
-    "admin_block_cancel",
-    # broadcast (модульное состояние рассылки — _BC_SETTLE_SECONDS, _bc_preview,
-    # _bc_render_tasks, _last_broadcast_at — НАРОЧНО не реэкспортируется: подмена
-    # атрибута пакета не меняет глобал подмодуля; тесты патчат admin.broadcast)
-    "broadcast_pick", "broadcast_mode", "broadcast_toggle", "broadcast_toggle_all",
-    "broadcast_next", "broadcast_days", "broadcast_receive", "broadcast_cancel_h",
-    "broadcast_send",
+    "admin_unblock_menu", "admin_block_do", "admin_unblock_do", "admin_block_cancel",
+    "broadcast_pick", "broadcast_mode", "broadcast_extend_toggle", "broadcast_toggle",
+    "broadcast_toggle_all", "broadcast_next", "broadcast_days", "broadcast_days_preset",
+    "broadcast_receive", "broadcast_cancel_h", "broadcast_send",
 ]

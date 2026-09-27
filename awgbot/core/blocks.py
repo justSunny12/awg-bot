@@ -84,10 +84,10 @@ _DEVICE_REASON_RU = {
 _CLIENT_REASON_RU = {
     ClientBlock.EXPIRY: "подписка истекла",
     ClientBlock.TRAFFIC_CLIENT: "исчерпан лимит потребления",
-    ClientBlock.ADMIN_SILENT: "заблокирован администратором (тихо)",
-    ClientBlock.ADMIN_NOTIFIED: "заблокирован администратором",
-    ClientBlock.USER: "заблокирован владельцем",
-    ClientBlock.PAUSED: "приостановлено пользователем",
+    ClientBlock.ADMIN_SILENT: "администратором (тихо)",
+    ClientBlock.ADMIN_NOTIFIED: "администратором",
+    ClientBlock.USER: "владельцем",
+    ClientBlock.PAUSED: "на паузе",
 }
 
 # Что скрывать от пользователя (клиент/друг) — тихий админ-блок.

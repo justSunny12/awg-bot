@@ -123,6 +123,25 @@ async def _paced(items, fn) -> list:
     return await asyncio.gather(*(one(i) for i in items), return_exceptions=True)
 
 
+# подписи кнопок действия по подсказке Notification.action
+ACTION_LABELS = {"extend": "⏱ Продлить", "gwcfg": "📤 Конфигурация",
+                 "unassigned": "📦 Без профиля", "sub": "💳 Подписка"}
+
+
+def action_markup(action):
+    """Кнопка действия над «Скрыть» по подсказке уведомления; без подсказки
+    или с незнакомой — одна «Скрыть»."""
+    if not action or action[0] not in ACTION_LABELS:
+        return kb.hide_only()
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from awgbot.bot.callbacks import NoteCB
+    b = InlineKeyboardBuilder()
+    b.button(text=ACTION_LABELS[action[0]],
+             callback_data=NoteCB(kind=action[0], ref=int(action[1] if len(action) > 1 else 0)))
+    b.adjust(1)
+    return kb.append_hide_row(b)
+
+
 async def send_notifications(bot, notifications) -> None:
     items = [n for n in (notifications or []) if n.tg_id]
     if not items:
@@ -132,7 +151,7 @@ async def send_notifications(bot, notifications) -> None:
 
     async def one(n):
         silent = False if getattr(n, "force_sound", False) else quiet_silent
-        markup = getattr(n, "reply_markup", None) or kb.hide_only()
+        markup = getattr(n, "reply_markup", None) or action_markup(getattr(n, "action", ()))
         await _send(bot, n.tg_id, n.text, markup, silent,
                     critical=bool(getattr(n, "critical", False)),
                     on_sent=getattr(n, "on_sent", None))

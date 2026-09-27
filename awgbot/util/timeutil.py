@@ -322,6 +322,14 @@ def parse_docker_time(s: str) -> Optional[datetime]:
         return None
 
 
+def brief_units(text: str) -> str:
+    """«5 дней 3 часа 10 минут» → «5 д 3 ч 10 мин» — для шапки панели."""
+    import re
+    text = re.sub(r"\b(дней|дня|день)\b", "д", text)
+    text = re.sub(r"\b(часов|часа|час)\b", "ч", text)
+    return re.sub(r"\b(минут|минуты|минута)\b", "мин", text)
+
+
 def fmt_uptime(started: Optional[datetime]) -> str:
     """Аптайм от started до сейчас: «5 дней 3 часа» (дни+часы)."""
     if started is None:
@@ -334,7 +342,7 @@ __all__ = [
     "TZ", "now", "now_iso", "to_iso", "parse_iso",
     "add_period", "period_minutes", "remaining_seconds",
     "fmt_dt", "fmt_period", "fmt_remaining", "fmt_remaining_short",
-    "fmt_dt_ui", "fmt_date_ui", "fmt_period_ui", "fmt_ago", "remaining_brief",
+    "fmt_dt_ui", "fmt_date_ui", "fmt_period_ui", "fmt_ago", "remaining_brief", "brief_units",
     "handshake_is_online", "fmt_handshake",
     "parse_docker_time", "fmt_uptime",
 ]

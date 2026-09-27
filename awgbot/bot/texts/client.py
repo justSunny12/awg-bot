@@ -862,12 +862,6 @@ COLD_START_GREETING = ("👋 Не узнаю тебя. Пришёл по при�
 
 CODE_NO_ARG = "Отправь код после команды: <code>/code КОД</code>"
 
-INVITE_FORWARD_TEMPLATE = (
-    "Привет! Тебе открыт доступ в свободный интернет 🎉\n"
-    "Жми ссылку и «Старт» — дальше подскажу\n"
-    "{link}"
-)
-
 UNMANAGED_DEVICE_EXPLAIN = "\n\n" + UNMANAGED_DEVICE_LINE
 
 UNMANAGED_DEVICE_DIALOG = (
@@ -891,8 +885,9 @@ def grace_activated_client(days: int, end) -> str:
 GRACE_STALE = "Это предложение уже неактуально"
 
 
-def grace_activated_admin(name: str, days: int) -> str:
-    return f"🙏 Профиль «{_e(name)}» активировал отсрочку на {days} дн."
+def grace_activated_admin(link: str, days: int) -> str:
+    """link — имя профиля ссылкой (texts.profile_link)."""
+    return f"🙏 {link}: взята отсрочка на {days} дн."
 
 
 # ── совместимость: строки, которыми ещё пользуются экраны админа ─────────────

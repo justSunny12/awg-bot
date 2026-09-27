@@ -82,10 +82,9 @@ class GatewayLinkMixin:
             log.info("gateway: порт линка слота %s — %s (был %s)", g.id, port, g.link_port)
             notes.append(Notification(
                 config.ADMIN_ID,
-                f"🛰 Порт линка шлюза {self._gw_display_h(g)} на сервере AWG теперь {port} (был "
-                f"{g.link_port}). Шлюз об этом не знает — перевыпусти конфигурацию шлюза "
-                f"(Условная маршрутизация → {self._gw_display_h(g)} → Конфигурация шлюза) и "
-                "примени её на той стороне, иначе линк не поднимется."))
+                f"🛰 {self._gw_link(g)}: порт линка теперь {port} (был {g.link_port}) — "
+                "шлюз не знает. Перевыпусти конфигурацию и примени её на той стороне, "
+                "иначе линк не поднимется", action=("gwcfg", int(g.id))))
         if changed:
             self._gw_firewall_refresh()
         return notes
@@ -163,6 +162,13 @@ class GatewayLinkMixin:
         когда шлюз лёг."""
         import html
         return html.escape(self._gw_display(gw), quote=False)
+
+    def _gw_link(self, gw) -> str:
+        """Имя шлюза в уведомлении — ссылка на карточку слота (gw-<слот>)."""
+        slot = int(getattr(gw, "id", 0) or 0)
+        if not slot or not self.bot_username:
+            return self._gw_display_h(gw)
+        return f'<a href="https://t.me/{self.bot_username}?start=gw-{slot}">{self._gw_display_h(gw)}</a>'
 
     def gateway_next_slot(self) -> tuple[int, str, int, str]:
         """(номер, интерфейс, порт, /30) для нового слота. Отказ при потолке
@@ -960,7 +966,7 @@ class GatewayLinkMixin:
                 self.db.set_state(key, "")
                 return True, Notification(
                     config.ADMIN_ID,
-                    f"✅ Конфигурация шлюза {self._gw_display_h(g)} актуализирована")
+                    f"✅ {self._gw_link(g)}: конфигурация актуализирована")
             return True, None
         # подпись — по самим строкам: settings_hash знает только ключи канала, и
         # смена подсетей соседей (едут файлом) не давала бы нового напоминания
@@ -972,9 +978,8 @@ class GatewayLinkMixin:
         what = "; ".join(drift_lines(pending, html=True))
         return True, Notification(
             config.ADMIN_ID,
-            f"🛰 Конфигурация шлюза {self._gw_display_h(g)} неактуальна: {what}. "
-            f"Перевыпусти конфигурацию (Условная маршрутизация → {self._gw_display_h(g)} → "
-            "Конфигурация шлюза) и примени её на шлюзе.")
+            f"🛰 {self._gw_link(g)}: конфигурация неактуальна — {what}. "
+            "Перевыпусти её и примени на шлюзе", action=("gwcfg", int(g.id)))
 
     def gw_bundle_drift_notes(self) -> list[Notification]:
         """Напоминания о перевыпуске конфигурации шлюзов. Есть снимок канала —
@@ -1008,10 +1013,10 @@ class GatewayLinkMixin:
             self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, g.id), cur)
             notes.append(Notification(
                 config.ADMIN_ID,
-                f"🛰 Список твоих устройств изменился, а файервол шлюза {self._gw_display_h(g)} "
-                "знает прежний: новые устройства не достанут до шлюза и его локальной сети "
-                "через туннель.\n\nПеревыпусти конфигурацию шлюза (Условная маршрутизация → "
-                f"{self._gw_display_h(g)} → Конфигурация шлюза) и примени её на шлюзе."))
+                f"🛰 {self._gw_link(g)}: список твоих устройств изменился, а файервол шлюза "
+                "знает прежний — новые устройства не достанут до шлюза и его локальной сети "
+                "через туннель. Перевыпусти конфигурацию и примени её на шлюзе",
+                action=("gwcfg", int(g.id))))
         # прочие зависимости: режим без VPN, подсети, резолвер — своим текстом
         for g in self.db.gateways():
             if g.id in by_snapshot:
@@ -1026,9 +1031,8 @@ class GatewayLinkMixin:
             what = ", ".join(self._gw_deps_changed(sent, cur)) or "настройки шлюза"
             notes.append(Notification(
                 config.ADMIN_ID,
-                f"🛰 Конфигурация шлюза {self._gw_display_h(g)} неактуальна: изменились {what}. "
-                f"Перевыпусти её (Условная маршрутизация → {self._gw_display_h(g)} → "
-                "Конфигурация шлюза) и примени на шлюзе."))
+                f"🛰 {self._gw_link(g)}: конфигурация неактуальна — изменились {what}. "
+                "Перевыпусти её и примени на шлюзе", action=("gwcfg", int(g.id))))
         return notes
 
     # Маркер контракта как ОТДЕЛЬНАЯ СТРОКА. Тот же текст встречается в бандле и

@@ -26,17 +26,28 @@ class CancelCB(CallbackData, prefix="x"):
 
 class PresetCB(CallbackData, prefix="ps"):
     """Кнопка-пресет числа вместо ввода: kind — что выбираем (devlimit —
-    лимит трафика устройства, pause — дни паузы), ref — объект (устройство,
-    профиль), val — значение; 0 у лимита — без лимита, -1 — «✏️ Другое»."""
+    лимит трафика устройства; cli_devs / cli_traffic — лимиты профиля;
+    new_devs / new_traffic — шаги нового профиля; bc_days — дни продления в
+    объявлении), ref — объект (устройство, профиль), val — значение; 0 у
+    лимита — без лимита, -1 — «✏️ Другое»."""
     kind: str
     ref: int = 0
     val: int = 0
 
 
+class NoteCB(CallbackData, prefix="nt"):
+    """Кнопка действия на уведомлении (Notification.action): kind — extend
+    (продлить профиль ref), gwcfg (выпустить конфигурацию слота ref),
+    unassigned (устройства без профиля), sub (подписка клиента). Нажатие
+    снимает кнопки с уведомления и открывает экран новым живым меню."""
+    kind: str
+    ref: int = 0
+
+
 class ClientCB(CallbackData, prefix="c"):
-    """Действия над клиентом (админ). action: open|devices|add_device|
-    edit_name|edit_limit|edit_traffic|edit_period|extend|resume_pause|delete|
-    regen_invite|gen_for"""
+    """Действия над клиентом (админ). action: open|edit (подменю «✏️
+    Изменить»)|devices|add_device|edit_name|edit_limit|edit_traffic|
+    edit_period|extend|resume_pause|delete|delete_yes|regen_invite|gen_for"""
     action: str
     client_id: int = 0
 
@@ -51,11 +62,15 @@ class DeviceCB(CallbackData, prefix="d"):
 
 
 class PeriodCB(CallbackData, prefix="p"):
-    """Выбор длительности периода. kind: day|week|month|year.
-    ctx — контекст (create|extend), ref — id клиента при extend."""
+    """Выбор длительности периода. kind: day|week|month|year|never; keep_tgl —
+    тумблер «сохранить остаток» на том же экране.
+    ctx — контекст (create|extend), ref — id клиента при extend, keep —
+    сохранить неистраченный остаток (1 по умолчанию); в колбэке, а не в FSM:
+    переживает рестарт."""
     kind: str
     ctx: str = ""
     ref: int = 0
+    keep: int = 1
 
 
 class GraceCB(CallbackData, prefix="gc"):
@@ -200,11 +215,12 @@ class RoutingCB(CallbackData, prefix="rt"):
 
 class BroadcastCB(CallbackData, prefix="bc"):
     """Броадкаст объявления. action:
-      pick   — открыть выбор режима (единственный вход, с главной админа);
-      mode   — режим выбран: ref 0 — простое, 1 — с продлением подписки;
+      pick   — экран адресатов (единственный вход, с главной админа);
+      ext    — тумблер «☑️/✅ С продлением подписки» на нём;
+      mode   — прежний выбор режима (кнопка старого образца → pick);
       tgl    — отметить/снять один профиль (ref = client_id);
-      all    — отметить/снять всех;
-      next   — перейти к вводу текста;
+      all    — отметить/снять всех (правило массового выбора);
+      next   — дальше: дни продления (пресетами) или ввод текста;
       send   — подтвердить отправку подготовленного;
       cancel — выйти, сбросив состояние.
 

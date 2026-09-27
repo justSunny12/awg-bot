@@ -432,6 +432,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     # update_to_notify сам учитывает mute и «ровно один раз на версию».
     async def job_update_check():
         try:
+            await asyncio.to_thread(services.update_scan)     # шапка: «⬆️ Доступна vX»
             nxt = await asyncio.to_thread(services.update_to_notify)
             if nxt is not None:
                 await notify_update_available(bot, services, nxt)
@@ -743,6 +744,7 @@ def setup_gateway_scheduler(services, bot):
 
     async def job_update_check():
         try:
+            await asyncio.to_thread(services.update_scan)
             nxt = await asyncio.to_thread(services.update_to_notify)
             if nxt is not None:
                 await notify_update_available(bot, services, nxt)

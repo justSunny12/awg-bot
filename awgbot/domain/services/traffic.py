@@ -14,7 +14,6 @@ from awgbot.infra import awg, rfacct
 from awgbot.core.blocks import DeviceBlock, ClientBlock
 from awgbot.core.enums import SubStatus, ActivationStatus, PeriodKind, FriendStatus
 from awgbot.domain.services.types import BYTES_PER_GB, Notification
-from awgbot.domain.services.base import _e
 from awgbot.domain.services.blocks import _friend_blocked_text
 
 
@@ -24,10 +23,10 @@ log = logging.getLogger("awgbot.services")
 # Тексты уведомлений (сухие, без слов про оплату — ТЗ 6.5).
 _MONTH_CUT_MINUTES = 30 * 24 * 60             # порог, который месяцу не показываем
 
-_TXT_EXPIRED_CLIENT = "Срок действия подписки истёк. Доступ приостановлен."
-_TXT_EXPIRING_CLIENT = "Внимание: подписка истекает через {label}."
-_TXT_EXPIRING_ADMIN = "Клиент «{name}»: подписка истекает через {label}."
-_TXT_EXPIRED_ADMIN = "Клиент «{name}»: подписка истекла, доступ приостановлен."
+_TXT_EXPIRED_CLIENT = "🔴 Подписка истекла — доступ приостановлен"
+_TXT_EXPIRING_CLIENT = "⏳ Подписка истекает через {label}"
+_TXT_EXPIRING_ADMIN = "⏳ {name}: подписка истекает через {label}"     # name — ссылка
+_TXT_EXPIRED_ADMIN = "🔴 {name}: подписка истекла, доступ приостановлен"
 
 # ── Тексты месячного сброса лимитов ──────────────────────────────────────────
 
@@ -58,48 +57,46 @@ def _reset_friend_text(device_lines: list[str]) -> str:
 # ── Тексты уведомлений о потреблении (ТЗ 7-8) ────────────────────────────────
 
 
-def _dev_warn_text(name: str, pct: int) -> str:
-    return (f"⚠️ Устройство «{_e(name)}»: израсходовано ~{pct}% месячного лимита "
-            "потребления.")
+# link — имя устройства ссылкой на его карточку (self.dev_link), name — имя
+# профиля ссылкой (self.cl_link): построены домашним помощником base.py
+
+def _dev_warn_text(link: str, pct: int) -> str:
+    return f"⚠️ Устройство {link}: израсходовано ~{pct}% месячного лимита"
 
 
-def _dev_over_text(name: str, until: str) -> str:
-    return (f"🔴 Устройство «{_e(name)}»: месячный лимит потребления исчерпан. "
-            f"Доступ приостановлен до {until} или пока лимит не увеличат.")
+def _dev_over_text(link: str, until: str) -> str:
+    return (f"🔴 Устройство {link}: месячный лимит исчерпан. "
+            f"Доступ приостановлен до {until} или пока лимит не увеличат")
 
 
-def _friend_dev_over_host_text(name: str, until: str) -> str:
-    return (f"🔴 Устройство «{_e(name)}» (передано другу): лимит потребления "
-            f"исчерпан, доступ приостановлен до {until}.")
+def _friend_dev_over_host_text(link: str, until: str) -> str:
+    return (f"🔴 Устройство {link} (передано другу): лимит исчерпан, "
+            f"доступ приостановлен до {until}")
 
 
 def _cli_warn_text(pct: int) -> str:
-    return f"⚠️ Израсходовано ~{pct}% месячного лимита потребления по всем устройствам."
+    return f"⚠️ Израсходовано ~{pct}% месячного лимита по всем устройствам"
 
 
 def _cli_bonus_text(bonus_gb: int, until: str) -> str:
-    return (f"📈 Месячный лимит потребления исчерпан. Тебе добавлено "
-            f"{bonus_gb} ГБ до конца месяца — это разово, больше в этом месяце "
-            "квота не увеличится. Лимит обновится "
-            f"{until}.")
+    return (f"📈 Месячный лимит исчерпан. Добавлено {bonus_gb} ГБ до конца месяца — "
+            f"разово, больше в этом месяце квота не вырастет. Лимит обновится {until}")
 
 
 def _cli_bonus_admin_text(name: str, bonus_gb: int) -> str:
-    return (f"📈 Клиенту «{_e(name)}» исчерпан лимит — выдано {bonus_gb} ГБ "
-            "до конца месяца (разово).")
+    return f"📈 {name}: лимит исчерпан — выдано {bonus_gb} ГБ до конца месяца (разово)"
 
 
 def _cli_over_text(until: str) -> str:
-    return (f"🔴 Дополнительная квота исчерпана. Доступ ко всем устройствам "
-            f"приостановлен до {until}.")
+    return f"🔴 Дополнительная квота исчерпана. Доступ ко всем устройствам приостановлен до {until}"
 
 
 def _cli_over_admin_text(name: str) -> str:
-    return f"🔴 Клиент «{_e(name)}» исчерпал лимит и доп.квоту — доступ приостановлен."
+    return f"🔴 {name}: исчерпан лимит и доп. квота — доступ приостановлен"
 
 
 def _admin_self_over_text() -> str:
-    return "🔴 Твой месячный лимит потребления исчерпан (уведомление, доступ не тронут)."
+    return "🔴 Твой месячный лимит исчерпан (уведомление, доступ не тронут)"
 
 
 class TrafficMixin:
@@ -356,20 +353,20 @@ class TrafficMixin:
                                            and dev.friend_tg_id)
                           # хозяину: спец-текст с пометкой «друг», если устройство
                           # передано; другу — обычный текст про его устройство
-                          host_text = (_friend_dev_over_host_text(dev.name, until)
-                                       if is_friend_dev else _dev_over_text(dev.name, until))
+                          host_text = (_friend_dev_over_host_text(self.dev_link(dev), until)
+                                       if is_friend_dev else _dev_over_text(self.dev_link(dev), until))
                           notes.append(Notification(client.tg_id, host_text))
                           if is_friend_dev:
                               notes.append(Notification(
-                                  dev.friend_tg_id, _dev_over_text(dev.name, until)))
+                                  dev.friend_tg_id, _dev_over_text(self.dev_link(dev), until)))
                           self.db.add_traffic_notified(client.id, over_marker)
                   elif used >= dlim * warn_pct // 100:
                       if warn_marker not in sent:
                           notes.append(Notification(
-                              client.tg_id, _dev_warn_text(dev.name, warn_pct)))
+                              client.tg_id, _dev_warn_text(self.dev_link(dev), warn_pct)))
                           if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
                               notes.append(Notification(
-                                  dev.friend_tg_id, _dev_warn_text(dev.name, warn_pct)))
+                                  dev.friend_tg_id, _dev_warn_text(self.dev_link(dev), warn_pct)))
                           self.db.add_traffic_notified(client.id, warn_marker)
 
               # ── тотал клиента ──
@@ -402,7 +399,7 @@ class TrafficMixin:
                           _cli_bonus_text(settings.get_int("limits.traffic_bonus_gb", 100), until)))
                       if settings.get_bool("notifications.client_events.bonus", True):
                           notes.append(Notification(
-                              admin_id, _cli_bonus_admin_text(client.name, settings.get_int("limits.traffic_bonus_gb", 100))))
+                              admin_id, _cli_bonus_admin_text(self.cl_link(client), settings.get_int("limits.traffic_bonus_gb", 100))))
                       self.db.add_traffic_notified(client.id, "bonus")
                   else:
                       # доп.квота уже выдавалась и тоже исчерпана → блок всех устройств
@@ -414,11 +411,11 @@ class TrafficMixin:
                               self._device_set_block(dev.id, DeviceBlock.TRAFFIC_CLIENT, twins)
                               if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
                                   notes.append(Notification(
-                                      dev.friend_tg_id, _dev_over_text(dev.name, until)))
+                                      dev.friend_tg_id, _dev_over_text(self.dev_link(dev), until)))
                           notes.append(Notification(client.tg_id, _cli_over_text(until)))
                           if settings.get_bool("notifications.client_events.over_limit", True):
                               notes.append(Notification(
-                                  admin_id, _cli_over_admin_text(client.name)))
+                                  admin_id, _cli_over_admin_text(self.cl_link(client))))
                           self.db.add_traffic_notified(client.id, "cli_over")
               elif total >= effective * warn_pct // 100:
                   if "cli80" not in sent and not is_admin_client:
@@ -490,7 +487,8 @@ class TrafficMixin:
                       if client.tg_id:
                           notifications.append(Notification(client.tg_id, _TXT_EXPIRED_CLIENT))
                       notifications.append(Notification(
-                          config.ADMIN_ID, _TXT_EXPIRED_ADMIN.format(name=client.name)))
+                          config.ADMIN_ID, _TXT_EXPIRED_ADMIN.format(name=self.cl_link(client)),
+                          action=("extend", client.id)))
                       notifications.extend(friend_notes)   # друзьям — доступ приостановлен
                   continue
 
@@ -518,10 +516,12 @@ class TrafficMixin:
                                      and not client.grace_used)
                       notifications.append(Notification(
                           client.tg_id, _TXT_EXPIRING_CLIENT.format(label=tightest_label),
-                          grace_offer_client_id=client.id if grace_offer else 0))
+                          grace_offer_client_id=client.id if grace_offer else 0,
+                          action=("sub", 0)))
                   notifications.append(Notification(
                       config.ADMIN_ID,
-                      _TXT_EXPIRING_ADMIN.format(name=client.name, label=tightest_label)))
+                      _TXT_EXPIRING_ADMIN.format(name=self.cl_link(client), label=tightest_label),
+                      action=("extend", client.id)))
                   # помечаем ВСЕ пересечённые отправленными (включая пропущенные крупные)
                   for th_min, _ in crossed:
                       self.db.add_notified(client.id, th_min)

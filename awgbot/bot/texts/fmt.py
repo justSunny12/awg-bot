@@ -15,6 +15,56 @@ def deep_link(bot_username: str, payload: str, label: str) -> str:
     return f'<a href="https://t.me/{bot_username}?start={payload}">{_e(label)}</a>'
 
 
+def profile_link(client, bot_username: str) -> str:
+    """Имя профиля — ссылка на его карточку у админа (/start cl-<id>)."""
+    if client is None:
+        return "?"
+    return deep_link(bot_username, f"cl-{int(client.id)}", client.name)
+
+
+def admin_device_link(dev, bot_username: str) -> str:
+    """Имя устройства — ссылка на его карточку у админа (/start dev-<id>)."""
+    return deep_link(bot_username, f"dev-{int(dev.id)}", dev.name)
+
+
+# ── дерево вложенных строк ───────────────────────────────────────────────────
+# Знаки ветвления одни на весь бот: «├─» — не последняя ветка уровня, «└─» —
+# последняя, «│» — продолжение уровня. TREE_STYLE — вариант знаков на время
+# выбора пользователем (full — с «─», bare — без, flat — плоский список 3.1.0).
+TREE_STYLE = "full"
+_TREE = {"full": ("├─ ", "└─ ", "│  ", "   "),
+         "bare": ("├ ", "└ ", "│ ", "  "),
+         "flat": ("", "", "", "")}
+
+
+def tree(rows, style: str = "") -> str:
+    """rows — [(строка, [вложенные строки])]. Дерево знаками ветвления; в
+    плоском варианте записи через пустую строку, вложенные — с «└ »."""
+    style = style or TREE_STYLE
+    mid, last, cont, blank = _TREE.get(style, _TREE["full"])
+    rows = list(rows)
+    if style == "flat":
+        chunks = []
+        for line, subs in rows:
+            chunks.append("\n".join([line] + [f"└ {x}" for x in subs]))
+        return "\n\n".join(chunks)
+    out = []
+    for i, (line, subs) in enumerate(rows):
+        is_last = i == len(rows) - 1
+        out.append((last if is_last else mid) + line)
+        pad = blank if is_last else cont
+        for j, sub in enumerate(subs):
+            out.append(pad + (last if j == len(subs) - 1 else mid) + sub)
+    return "\n".join(out)
+
+
+def sub_line(text: str, style: str = "") -> str:
+    """Одна вложенная строка под записью («└─ 🇷🇺 РФ-доступ: …») — в главной
+    и карточках, тем же знаком, что и дерево."""
+    style = style or TREE_STYLE
+    return ("└ " if style == "flat" else _TREE.get(style, _TREE["full"])[1]) + text
+
+
 def _e(s) -> str:
     """Экранирование пользовательских строк (имён) для HTML parse_mode."""
     return html.escape(str(s))
@@ -61,12 +111,23 @@ def _updown(rx: int, tx: int) -> str:
     return f"(↑ {human_bytes(rx)} | ↓ {human_bytes(tx)})"
 
 
-def rf_line(rx: int, tx: int, label: str = "") -> str:
-    """Строка РФ-части под строкой потребления (карточки, списки, главная):
-    «└ 🇷🇺 РФ-доступ: 7.1 ГБ (↑ 0.7 ГБ | ↓ 6.4 ГБ)». label — готовая подпись
-    вместо «🇷🇺 РФ-доступ» (ссылкой на экран РФ; флаг — часть ссылки)."""
+def rf_value(rx: int, tx: int, *, arrows: bool = True) -> str:
+    """«7.1 ГБ (↑0.7 ↓6.4)» — объём РФ-части; без стрелок — только сумма."""
+    total = human_bytes(int(rx) + int(tx))
+    return f"{total} {updown_brief(rx, tx)}" if arrows else total
+
+
+def updown_brief(rx: int, tx: int) -> str:
+    """«(↑1.2 ↓11.1)» — разбивка без единиц: единица уже стоит у суммы."""
+    return f"(↑{gb(rx)} ↓{gb(tx)})"
+
+
+def rf_line(rx: int, tx: int, label: str = "", *, arrows: bool = True) -> str:
+    """Вложенная строка РФ-части под строкой трафика (карточки, главная):
+    «└─ 🇷🇺 РФ-доступ: 7.1 ГБ (↑0.7 ↓6.4)». label — готовая подпись вместо
+    «🇷🇺 РФ-доступ» (ссылкой на экран трафика; флаг — часть ссылки)."""
     from .routing import ROUTING_NAME
-    return f"└ {label or f'🇷🇺 {ROUTING_NAME}'}: {human_bytes(int(rx) + int(tx))} {_updown(rx, tx)}"
+    return sub_line(f"{label or f'🇷🇺 {ROUTING_NAME}'}: {rf_value(rx, tx, arrows=arrows)}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -69,6 +69,21 @@ class SelfUpdateMixin:
         except updates.UpdateError:
             return None
 
+    _AVAILABLE_KEY = "update_available_tag"
+
+    def update_scan(self):
+        """Периодическая проверка: запомнить цель обновления (тег или пусто)
+        независимо от того, включены ли уведомления, — шапка панели читает
+        ключ без сетевого запроса. Возвращает Release или None."""
+        nxt = self.update_next()
+        self.db.set_state(self._AVAILABLE_KEY, nxt.tag if nxt is not None else "")
+        return nxt
+
+    def update_available_tag(self) -> str:
+        """Тег последней найденной версии (для строки «⬆️ Доступна vX»); пусто —
+        обновляться не на что или ещё не проверяли."""
+        return self.db.get_state(self._AVAILABLE_KEY) or ""
+
     def update_to_notify(self):
         """Для планировщика/старта: вернуть Release, о котором НАДО уведомить, и
         пометить его как уведомлённый (ровно один раз на версию). None, если
@@ -82,7 +97,7 @@ class SelfUpdateMixin:
             return None
         if self.updates_muted():
             return None
-        nxt = self.update_next()
+        nxt = self.update_scan()
         if nxt is None:
             return None
         if self.db.get_state(self._NOTIFIED_KEY) == nxt.tag:

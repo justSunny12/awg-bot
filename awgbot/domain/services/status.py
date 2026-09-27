@@ -61,6 +61,9 @@ class StatusMixin:
             "can_issue": n_issuable > 0,
             "rt_visible": rt_visible,
             "rt_on": bool(ac and rt_visible and self.routing_profile_on(ac.id)),
+            # «🛰 Шлюзы» на главной — когда шлюзы есть или их можно добавить
+            "gateways": bool(self.db.gateways()) or settings.get_bool("app.routing.enabled", False),
+            "update_tag": self.update_available_tag(),
         }
 
     def online_ref(self) -> datetime.datetime:
@@ -128,15 +131,16 @@ class StatusMixin:
     # ── онлайн: кто подключён прямо сейчас ───────────────────────────────────
 
     def online_devices(self) -> list[tuple]:
-        """[(устройство, имя профиля)] с живым хендшейком — по ВСЕМ профилям,
-        включая админа. Порядок: по имени профиля, внутри — по имени устройства."""
+        """[(устройство, профиль или None)] с живым хендшейком — по ВСЕМ
+        профилям, включая админа; шлюзы — вверху, дальше по имени профиля и
+        устройства."""
         ref = self.online_ref()
         devs = [d for d in self.db.list_all_devices()
                 if timeutil.handshake_is_online(d.traffic.last_handshake, ref)]
-        names = {c.id: c.name for c in self.db.list_clients(include_service=True)}
+        clients = {c.id: c for c in self.db.list_clients(include_service=True)}
         devs.sort(key=lambda d: (0 if d.is_gateway else 1,
-                                 names.get(d.client_id, "").lower(), d.name.lower()))
-        return [(d, names.get(d.client_id, "")) for d in devs]
+                                 getattr(clients.get(d.client_id), "name", "").lower(), d.name.lower()))
+        return [(d, clients.get(d.client_id)) for d in devs]
 
     def online_client_ids(self) -> set[int]:
         """Профили, у которых онлайн хотя бы одно устройство."""
