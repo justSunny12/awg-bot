@@ -312,18 +312,6 @@ def device_created_kb(device_id: int) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def pick_device_to_delete(devices, page: int = 0) -> InlineKeyboardMarkup:
-    """Лимит исчерпан: тот же список с «🗑»."""
-    kb = InlineKeyboardBuilder()
-    chunk, page, prev, nxt = page_slice(devices, page, static=1)
-    for _i, d in chunk:
-        kb.button(text=f"🗑 {d.name}", callback_data=DelDeviceCB(device_id=d.id, stage="ask"))
-    nav = page_nav(kb, "deldev", 0, page, prev, nxt, DeviceCB(action="add").pack())
-    kb.button(text="⬅️ Назад", callback_data=Menu(action="devices"))
-    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
-    return kb.as_markup()
-
-
 def invite_kb(plain_text: str, link: str) -> InlineKeyboardMarkup:
     """Под приглашением другу: «📤 Отправить» — выбор чата (t.me/share) с тем
     же текстом, «📋 Скопировать» — текст в буфер."""
