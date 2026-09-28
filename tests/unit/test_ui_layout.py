@@ -276,16 +276,21 @@ def test_stage2_admin_keyboards_follow_the_layout_rules(name):
         assert not bad, f"{name} [вариант {i}]: {sorted(bad)} — {rows}"
 
 
-def test_admin_main_is_eight_buttons_with_gateways_by_condition():
-    """Главная админа — восемь кнопок; «🛰 Шлюзы» — только когда шлюзы есть
-    или их можно добавить, иначе «⚙️ Настройки» одна в ряду."""
+def test_admin_main_is_eight_buttons_with_gateways_always():
+    """Главная админа — восемь кнопок; «🛰 Шлюзы» — всегда: это единственный
+    вход и к развёртыванию РФ-доступа, и к его включению — спрячь её, и
+    функцию на новом сервере не найти."""
+    full = [["📱 Мои устройства", "🇷🇺 РФ-доступ"], ["👥 Профили", "➕ Профиль"],
+            ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление", "🔄 Обновить"]]
     rows = [[b.text for b in r] for r in kba.admin_main(gateways=True, routing_visible=True,
                                                        self_client_id=1).inline_keyboard]
-    assert rows == [["📱 Мои устройства", "🇷🇺 РФ-доступ"], ["👥 Профили", "➕ Профиль"],
-                    ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление", "🔄 Обновить"]], rows
+    assert rows == full, rows
     rows = [[b.text for b in r] for r in kba.admin_main().inline_keyboard]
-    assert rows == [["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"], ["⚙️ Настройки"],
+    assert rows == [["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"], ["🛰 Шлюзы", "⚙️ Настройки"],
                     ["📢 Объявление", "🔄 Обновить"]], rows
+    rows = [[b.text for b in r] for r in kba.admin_main(gateways=False, routing_visible=True,
+                                                       self_client_id=1).inline_keyboard]
+    assert rows == full, "параметр gateways больше ничего не прячет"
 
 
 @pytest.mark.parametrize("n", [1, 3, 5])
@@ -333,24 +338,35 @@ _ARGS = {"key": "restart", "sec": "mon", "configured": True, "has_secret": True,
          "lists_every": 6, "unassigned_count": 0, "client_id": 5,
          "info": {"probe_seconds": 30, "window": 10, "threshold": 60, "failover": True}}
 
-# (модуль, билдер) → нарушения, которые пока терпим, и до какого этапа
+# (модуль, билдер) → нарушения, которые терпим, и почему: «этап N» — до
+# своего этапа; «макет …» — так нарисовано в утверждённом макете экрана
 ADMIN_EXCEPTIONS = {
-    ("settings", "migration_prepare_confirm"): ({"подтверждение не с «Отмены»"}, "этап 3"),
-    ("settings", "settings_email"): ({"длинная подпись в ряду"}, "этап 3"),
-    ("settings", "settings_firewall"): ({"кружок вместо ✅/☑️"}, "этап 3"),
+    ("settings", "migration_prepare_confirm"): ({"подтверждение не с «Отмены»"},
+                                                "макет «Порт или подсеть»: действие первым, отмена рядом со «Свой порт»"),
+    ("settings", "settings_notify"): ({"длинная подпись в ряду"},
+                                      "макет «Уведомления»: «☑️ Аварии на e-mail» в ряду с «👥 События»"),
     ("gateway", "gateway_email_kb"): ({"длинная подпись в ряду"}, "этап 4"),
-    ("routing", "gateway_mark_confirm"): ({"подтверждение не с «Отмены»"}, "этап 3"),
-    ("routing", "gateway_new_confirm"): ({"подтверждение не с «Отмены»"}, "этап 3"),
-    ("routing", "gateway_remove_confirm"): ({"подтверждение не с «Отмены»"}, "этап 3"),
-    ("routing", "routing_disable_confirm"): ({"кружок вместо ✅/☑️"}, "этап 3"),
+    ("routing", "routing_disable_confirm"): ({"кружок вместо ✅/☑️"}, "макет: «🔴 Выключить» — действие, не тумблер"),
+    ("routing", "settings_routing_lists"): ({"кружок вместо ✅/☑️"},
+                                            "макет «Параметры»: «🔴 Выключить РФ-доступ» — действие, не тумблер"),
+    ("routing", "routing_params_kb"): ({"кружок вместо ✅/☑️"},
+                                       "макет «Параметры»: «🔴 Выключить РФ-доступ» — действие, не тумблер"),
     ("gateway", "gateway_panel_kb"): ({"🏠"}, "этап 4"),
-    ("routing", "gateway_card"): ({"🏠"}, "этап 3"),
 }
 
-_GW_STATE = {"gateway": SimpleNamespace(id=1, lan_mode=1), "device": SimpleNamespace(name="NASPi"),
+_GW_STATE = {"gateway": SimpleNamespace(id=1, lan_mode=1), "device": SimpleNamespace(id=7, name="NASPi"),
              "active": True, "preferred": True}
+_GW_STANDBY = {"gateway": SimpleNamespace(id=2, lan_mode=0), "device": SimpleNamespace(id=8, name="Pi4"),
+               "active": False, "preferred": False}
 _EXTRA = {("gateway", "gateway_panel_kb"): lambda: kbg.gateway_panel_kb(lan=True),
-          ("routing", "gateway_card"): lambda: kbr.gateway_card(_GW_STATE, back_to_list=True)}
+          ("routing", "gateway_card"): lambda: kbr.gateway_card(_GW_STANDBY, back_to_list=True),
+          ("routing", "gateways_kb"): lambda: kbr.gateways_kb([_GW_STATE, _GW_STANDBY], peer_nets_on=False),
+          ("routing", "gateway_list"): lambda: kbr.gateway_list([_GW_STATE, _GW_STANDBY], can_add=False,
+                                                                failover_on=True, peer_nets_on=True),
+          ("routing", "gateway_edit_kb"): lambda: kbr.gateway_edit_kb(_GW_STATE, two_slots=True),
+          ("routing", "routing_params_kb"): lambda: kbr.routing_params_kb(
+              {"probe_seconds": 30, "window": 10, "availability": 50}, 6),
+          ("settings", "migration_confirm"): lambda: kbs.migration_confirm("finish")}
 
 
 def _admin_builders():
@@ -396,7 +412,7 @@ def test_no_house_icon_in_keyboard_literals_outside_the_listed_screens():
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and "🏠" in node.value:
                 found.add((path.stem, node.value))
-    assert found == {("gateway", "🏠 Локальная сеть без VPN"), ("routing", "🏠 Локальные подсети")}, found
+    assert found == {("gateway", "🏠 Локальная сеть без VPN")}, found
 
 
 def test_main_client_screen_is_four_rows_at_most():

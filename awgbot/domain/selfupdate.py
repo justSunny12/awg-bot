@@ -65,19 +65,29 @@ class SelfUpdateMixin:
         с учётом обязательных ступеней и потолка поколения при идущем переезде.
         Сетевые ошибки гасим в None — фоновая задача/кнопка от них не падают."""
         try:
-            return updates.next_release(max_generation=self._generation_ceiling())
+            rel = updates.next_release(max_generation=self._generation_ceiling())
         except updates.UpdateError:
+            self.update_scan_failed = True
             return None
+        self.update_scan_failed = False
+        return rel
 
     _AVAILABLE_KEY = "update_available_tag"
 
     def update_scan(self):
         """Периодическая проверка: запомнить цель обновления (тег или пусто)
         независимо от того, включены ли уведомления, — шапка панели читает
-        ключ без сетевого запроса. Возвращает Release или None."""
+        ключ без сетевого запроса. Возвращает Release или None. Сетевой сбой
+        прежний тег не стирает: «актуальна» и «не проверилось» — разное;
+        признак — update_scan_failed."""
+        self.update_scan_failed = False
         nxt = self.update_next()
+        if self.update_scan_failed:                       # сеть: прежний тег не трогаем
+            return None
         self.db.set_state(self._AVAILABLE_KEY, nxt.tag if nxt is not None else "")
         return nxt
+
+    update_scan_failed = False
 
     def update_available_tag(self) -> str:
         """Тег последней найденной версии (для строки «⬆️ Доступна vX»); пусто —

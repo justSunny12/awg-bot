@@ -9,6 +9,8 @@ from .fmt import _e
 # Лимит сообщения Telegram — 4096 символов. Changelog кладём в сворачиваемую
 # цитату; если тело релиза + шапка не влезают, режем тело по границе строки.
 _TG_LIMIT = 4096
+CHANGELOG_URL = "https://github.com/justSunny12/awg-bot/blob/main/docs/CHANGELOG.md"
+CHANGELOG_LINK = f'<a href="{CHANGELOG_URL}">Весь список изменений — на GitHub</a>'
 
 
 def _changelog_block(body: str, header: str) -> str:
@@ -20,7 +22,7 @@ def _changelog_block(body: str, header: str) -> str:
     body = (body or "").strip()
     if not body:
         return ""
-    tail = "\n…\n(изменения обрезаны)"
+    tail = "\n…\n" + CHANGELOG_LINK
     # бюджет под содержимое цитаты = лимит − шапка − теги − запас на хвост
     budget = _TG_LIMIT - len(header) - len("<blockquote expandable></blockquote>") \
         - len(tail) - 16
@@ -38,6 +40,13 @@ def _changelog_block(body: str, header: str) -> str:
             used += add
         inner = _e("\n".join(kept)) + tail
     return f"<blockquote expandable>{inner}</blockquote>"
+
+
+def changelog_details(body: str, header: str = "", header_len: int = 200) -> str:
+    """Список изменений под «подробнее» — для экрана раздела обновлений;
+    обрезка по лимиту Telegram с хвостом-ссылкой на журнал. header — настоящая
+    шапка экрана (бюджет считается от неё), иначе — запас header_len."""
+    return _changelog_block(body, header or " " * header_len)
 
 
 def _ver(v: str) -> str:
@@ -60,7 +69,9 @@ def _skipped_block(tag: str, skipped) -> str:
     shown = skipped[-10:]
     lines = []
     for r in shown:
-        label = _ver(r.tag) + (f" — {r.title}" if r.title else "")
+        title = (r.title or "").strip()
+        title = title if len(title) <= 60 else title[:59] + "…"
+        label = _ver(r.tag) + (f" — {title}" if title else "")
         lines.append(f"• <a href=\"{_e(f'{repo}/releases/tag/{r.tag}')}\">{_e(label)}</a>")
     if len(skipped) > len(shown):
         lines.insert(0, f"• … ещё {len(skipped) - len(shown)}")
@@ -110,7 +121,7 @@ def update_failed(reason: str) -> str:
 def update_applied(tag: str, body: str) -> str:
     """Итог успешного self-update (после рестарта): остаётся в истории.
     Changelog установленной версии — под катом, как в уведомлении."""
-    header = f"✅ Бот успешно обновлен до {_e(tag)}\nСписок изменений:\n"
+    header = f"✅ Обновлено до {_e(_ver(tag))}\n"
     return header + _changelog_block(body, header)
 
 

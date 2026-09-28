@@ -102,19 +102,22 @@ def test_setup_new_machine_creates_device_and_rekeys(gw, services):
 
 
 def test_gateway_state_reflects_bundle_and_link(gw, services, monkeypatch):
+    """Экран «Шлюзы» и строка слота читают состояние, а не догадку: шлюза нет —
+    «Шлюз не назначен»; назначен, но линк не отвечает — не зелёный; ожил —
+    «🟢 Активен»."""
     admin, phone, pi = gw
     from awgbot.bot import texts
     assert services.gateway_state()["device"] is None
-    assert "не назначен" in texts.settings_routing_gateway_line(services.gateway_state())
+    assert texts.gateways_text([]).endswith("\nШлюз не назначен")
     _slot1(services, pi.device_id)
     monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: "down")
     monkeypatch.setattr(services, "routing_link_ok", lambda: False)
     st = services.gateway_state()
     assert st["device"].id == pi.device_id and not st["link_ok"]
-    line = texts.settings_routing_gateway_line(st)
-    assert "NASPi" in line and ("жду" in line or "не отвечает" in line)
+    line = texts.slot_line(services.gateway_states()[0])
+    assert "NASPi" in line and "🟢" not in line and "Активен" in line, line
     monkeypatch.setattr(services, "routing_link_ok", lambda: True)
-    assert "работает" in texts.settings_routing_gateway_line(services.gateway_state())
+    assert "NASPi — 🟢 Активен" in texts.slot_line(services.gateway_states()[0])
 
 
 def test_unique_index_forbids_two_preferred_slots(gw, services):

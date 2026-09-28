@@ -101,7 +101,7 @@ async def test_private_dns_offer_comes_with_three_decisions(sent):
     assert tg_id == config.ADMIN_ID
     assert "10.8.1.1" in text and "через раз" in text and "переезд" in text.lower()
     labels = [b.text for row in markup.inline_keyboard for b in row]
-    assert any("сейчас" in l for l in labels) and any("следующем переезде" in l for l in labels) \
+    assert any("сейчас" in l for l in labels) and any("При переезде" in l for l in labels) \
         and any("Не нужно" in l for l in labels)
 
 

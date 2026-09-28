@@ -359,6 +359,15 @@ async def main() -> None:
     services = Services(db)
     services.ensure_admin_client()          # админ — тоже пользователь VPN
     services.migrate_pause_balances()       # v2.22.0: счёт дней паузы — разово
+    # 3.2.0: расписания «никогда» у основного бота больше нет — проверка идёт
+    # всегда ради строки «⬆️ Доступна vX»; прежнее never → «месяц» и
+    # выключенные уведомления (у агента never ещё действует)
+    if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
+        try:
+            settings.set_value("updates.poll_schedule", "month")
+        except settings.SettingsWriteError as e:
+            log.warning("updates.poll_schedule=never не переписано: %s", e)
+        services.mute_updates()
     # Сессии канала линка прошлого процесса мертвы вместе с его сокетами: без
     # сброса карточка слота зажгла бы «на связи» у шлюза, который ещё не
     # переподключился. До поллинга — чтобы ни один экран их не увидел.

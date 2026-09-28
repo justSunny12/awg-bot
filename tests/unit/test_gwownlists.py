@@ -770,7 +770,7 @@ def test_missing_files_refuse_the_canon(agent, host):
     (host.dns_d / VPN_USER).unlink()
     res = agent.apply_own_lists(_canon({}, ver=2))
     assert res["ok"] is False and res["error"] == (
-        "не найдены файлы своих списков — функционал локальной сети без VPN недоступен"), res
+        "не найдены файлы своих списков — VPN-транзит недоступен"), res
     assert agent.own_base()["ver"] == 1
 
 

@@ -620,6 +620,8 @@ class GatewayLinkMixin:
 
     def gateway_set_label(self, slot_id: int, label: str) -> None:
         label = " ".join(str(label).split())[:20].strip()
+        if label in ("-", "—"):                           # «—» — убрать подпись
+            label = ""
         self._gw_slot(slot_id)
         self.db.gateway_update(slot_id, label=label)
 
@@ -632,7 +634,7 @@ class GatewayLinkMixin:
         text = (raw or "").strip()
         if gw.lan_mode and (not text or text in ("-", "—")):
             # без подсети скрипт обвязки не найдёт свой интерфейс — бандл ушёл бы в отказ
-            raise ServiceError("включён режим «За шлюзом — без VPN»: сначала выключи его, потом убирай подсети")
+            raise ServiceError("включён VPN-транзит: сначала выключи его, потом убирай подсети")
         kept: list[str] = []
         rejected: list[tuple[str, str]] = []
         if text and text not in ("-", "—"):
@@ -657,6 +659,11 @@ class GatewayLinkMixin:
                     continue
                 if str(net) not in kept:
                     kept.append(str(net))
+            if not kept:
+                # ни одной годной подсети — прежние не трогаем: иначе опечатка
+                # стирала бы список и обходила запрет при VPN-транзите
+                why = "; ".join(f"{raw[:40]} — {reason}" for raw, reason in rejected[:3])
+                raise ServiceError(f"не принято: {why}")
         self.db.gateway_update(gw.id, home_subnets=kept)
         conflict = None
         for g in self.db.gateways():
@@ -919,7 +926,7 @@ class GatewayLinkMixin:
     @staticmethod
     def _gw_deps_changed(before: str, after: str) -> list[str]:
         """Что именно разошлось — для напоминания своим текстом."""
-        names = {"lan": "состояние функции «За шлюзом — без VPN»", "nets": "локальные подсети",
+        names = {"lan": "VPN-транзит", "nets": "локальные подсети",
                  "resolver": "резолвер сервера", "peer": "локальные подсети других шлюзов"}
         b = dict(x.split("=", 1) for x in before.split(";") if "=" in x)
         a = dict(x.split("=", 1) for x in after.split(";") if "=" in x)

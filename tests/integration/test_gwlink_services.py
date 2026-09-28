@@ -572,7 +572,7 @@ async def test_records_refused_for_a_missing_helper_reach_dnsmasq_on_the_next_ti
     assert pair.srv._sessions[2].svc_have == H_NAS, "сервер не признал записи применёнными"
     card = s.gwlink_services_card(s.db.gateway(2))
     assert card["state"] == "applied", card
-    assert services_line(card, "«Pi»").endswith(", доступны"), services_line(card, "«Pi»")
+    assert services_line(card, "Pi") == "🗂 SMB: извне — 1 · 🟢 доступны", services_line(card, "Pi")
     assert agent.services_applied_hash() == H_NAS
 
     # дальше тишина: ни повторной доставки с ВПС, ни повторного ack с малины
@@ -695,7 +695,7 @@ async def test_a_day_of_ticks_with_own_lists_missing_sends_not_a_byte(pair, real
     assert await _until(lambda: own_acks and s.gwlink_peer_services_ack(2).get("ok"), timeout=5), (
         own_acks, s.gwlink_peer_services_ack(2))
     assert own_acks[0]["ok"] is False and own_acks[0]["error"] == (
-        "не найдены файлы своих списков — функционал локальной сети без VPN недоступен"), f"сцена не та: {own_acks[0]}"
+        "не найдены файлы своих списков — VPN-транзит недоступен"), f"сцена не та: {own_acks[0]}"
     await pair.srv.deliver_all()
     await asyncio.sleep(0.3)
     before_agent, before_srv = client._sent_bytes, len(pair.sent)

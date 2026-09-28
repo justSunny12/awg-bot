@@ -194,15 +194,14 @@ def test_settings_screen_lists_clients_only_when_enabled():
                              routing_allowed=i % 2)
                for i in (1, 2)]
 
-    # корень раздела: при выключенной функции — ни подразделов, ни профилей
-    off = [b.text for row in kb.settings_routing(False).inline_keyboard for b in row]
-    assert not any("Доступность" in t for t in off)
-    assert any(t.startswith("☑️") and "РФ-доступ" in t for t in off), off
+    # «Шлюзы» при выключенной функции — только «Включить» и выход
+    off = [b.text for row in kb.gateways_kb((), enabled=False).inline_keyboard for b in row]
+    assert off == ["✅ Включить", "⬅️ В меню"], off
 
-    # при включённой — подраздел «Доступность пользователям», профили в НЁМ
-    on = [b.text for row in kb.settings_routing(True).inline_keyboard for b in row]
-    assert any("Доступность пользователям" in t for t in on)
-    assert not any("К1" in t or "К2" in t for t in on), "профили не в корне"
+    # при включённой — «👥 Кому доступен», профили в НЁМ
+    on = [b.text for row in kb.gateways_kb(()).inline_keyboard for b in row]
+    assert "👥 Кому доступен" in on
+    assert not any("К1" in t or "К2" in t for t in on), "профили не на экране «Шлюзы»"
     users = [b.text for row in kb.settings_routing_users(clients).inline_keyboard
              for b in row]
     assert "✅ К1" in users and "☑️ К2" in users    # кружок = состояние разрешения
@@ -428,8 +427,12 @@ async def test_settings_section_is_always_shown_but_its_content_depends_on_provi
     from awgbot.bot.handlers import settings as sh
     from awgbot.core import config
 
+    # вход — «🛰 Шлюзы» на главной, всегда; в корне настроек его больше нет
+    from awgbot.bot.callbacks import SetCB
+    main = [b for row in kb.admin_main().inline_keyboard for b in row]
+    assert any(b.text == "🛰 Шлюзы" and b.callback_data == SetCB(sec="rt").pack() for b in main)
     labels = [b.text for row in kb.settings_root().inline_keyboard for b in row]
-    assert any("РФ-доступ" in l for l in labels), labels
+    assert not any("РФ-доступ" in l for l in labels), labels
 
     monkeypatch.setattr(config, "ROUTING_ENABLED", False)
     monkeypatch.setattr(services, "routing_provisioned", lambda: False)
@@ -641,8 +644,10 @@ def test_routing_lists_info_reports_count_age_and_period(services, monkeypatch):
     assert info["count"] == 2 and info["every_hours"] == 12
     assert 7000 <= info["age_seconds"] <= 7300
     from awgbot.bot import texts
-    line = texts.routing_lists_block(info)
-    assert "2 записей" in line and "2 ч назад" in line and "период 12 ч" in line
+    info["sources"] = 3
+    line = texts.routing_params_text({"probe_seconds": 30, "window": 10, "availability": 50, "need": 5,
+                                      "standby_minutes": 10, "interval_minutes": 30}, info).split("\n")[2]
+    assert line.startswith("Списки: 2 ") and " из 3 источников, 2 ч назад · раз в 12 ч" in line, line
 
 
 async def test_routing_lists_info_and_controls(services, fake_bot, monkeypatch):
@@ -671,31 +676,37 @@ async def test_routing_lists_info_and_controls(services, fake_bot, monkeypatch):
     assert len(cb.answers) == 1 and "7 записей" in (cb.answers[0][0] or "")
 
 def test_routing_section_buttons_depend_on_gateway():
-    """Раздел маршрутизации: выключатель, действия со шлюзом и два подраздела
-    при включённой функции; без шлюза — «Назначить шлюз» вместо конфигурации,
-    смены и снятия; при выключенной — только выключатель. Переключатели
-    профилей и пикер периода в корне не живут — они в своих подразделах."""
+    """«🛰 Шлюзы»: слоты кнопками («⭐» у предпочтительного), при одном —
+    «➕ Резерв» рядом; при двух — «▶️ Переключить на <резерв>» и тумблеры;
+    без шлюза — «🛰 Назначить»; «Кому доступен» и «Параметры» при включённой
+    функции всегда, «⬅️ В меню» — последней."""
     from types import SimpleNamespace
     from awgbot.bot import keyboards as kb
+    from awgbot.bot.callbacks import GwSlotCB
     one = [{"gateway": SimpleNamespace(id=1), "device": SimpleNamespace(name="NASPi"),
-            "active": True, "link_ok": True, "preferred": True, "issued_at": "", "handshake_age": 3}]
-    on = [b.text for row in kb.settings_routing(True, one).inline_keyboard for b in row]
-    assert on[:5] == ["✅ РФ-доступ", "🛰 Шлюз: NASPi", "➕ Резервный шлюз",
-                      "📋 Списки маршрутизации", "👥 Доступность пользователям"], on
-    assert not any("шифр" in t for t in on), "приписки про шифрование — не для UI"
-    two = one + [{"gateway": SimpleNamespace(id=2), "device": SimpleNamespace(name="Pi2"),
-                  "active": False, "link_ok": True, "preferred": False, "issued_at": "", "handshake_age": 5}]
-    many = [b.text for row in kb.settings_routing(True, two).inline_keyboard for b in row]
-    assert many[:4] == ["✅ РФ-доступ", "🛰 Шлюзы: 2",
-                        "📋 Списки маршрутизации", "👥 Доступность пользователям"], many
-    no_gw = [b.text for row in kb.settings_routing(True, []).inline_keyboard for b in row]
-    assert no_gw[:4] == ["✅ РФ-доступ", "🛰 Назначить шлюз",
-                         "📋 Списки маршрутизации", "👥 Доступность пользователям"], no_gw
-    off = [b.text for row in kb.settings_routing(False).inline_keyboard for b in row]
-    assert len(off) == 2 and "РФ-доступ" in off[0]      # выключатель + назад
+            "active": True, "link_ok": True, "preferred": False, "issued_at": "", "handshake_age": 3}]
+    rows = [[b.text for b in row] for row in kb.gateways_kb(one).inline_keyboard]
+    assert rows == [["NASPi", "➕ Резерв"], ["👥 Кому доступен", "⚙️ Параметры"], ["⬅️ В меню"]], rows
+    rows = [[b.text for b in row] for row in kb.gateways_kb(one, can_add=False).inline_keyboard]
+    assert rows[0] == ["NASPi"], "потолок слотов — без «➕ Резерв»"
+    two = [dict(one[0], preferred=True),
+           {"gateway": SimpleNamespace(id=2), "device": SimpleNamespace(name="Pi4"),
+            "active": False, "link_ok": True, "preferred": False, "issued_at": "", "handshake_age": 5}]
+    markup = kb.gateways_kb(two, can_add=False, failover_on=True, peer_nets_on=False)
+    rows = [[b.text for b in row] for row in markup.inline_keyboard]
+    assert rows == [["⭐ NASPi", "Pi4"], ["▶️ Переключить на Pi4"], ["✅ Автопереключение", "☑️ Связь подсетей"],
+                    ["👥 Кому доступен", "⚙️ Параметры"], ["⬅️ В меню"]], rows
+    assert markup.inline_keyboard[1][0].callback_data == GwSlotCB(action="switch_ask", slot=2, val="l").pack(), \
+        "со списка: отмена подтверждения вернёт в «Шлюзы»"
+    assert [b.callback_data for b in markup.inline_keyboard[0]] == [
+        GwSlotCB(action="card", slot=1).pack(), GwSlotCB(action="card", slot=2).pack()]
+    rows = [[b.text for b in row] for row in kb.gateways_kb([]).inline_keyboard]
+    assert rows == [["🛰 Назначить"], ["👥 Кому доступен", "⚙️ Параметры"], ["⬅️ В меню"]], rows
+    off = [b.text for row in kb.gateways_kb((), enabled=False).inline_keyboard for b in row]
+    assert off == ["✅ Включить", "⬅️ В меню"]
 
-    lists = [b.text for row in kb.settings_routing_lists(6).inline_keyboard for b in row]
-    assert "🔘 6 ч" in lists and any("Обновить" in t for t in lists)
+    params = [b.text for row in kb.settings_routing_lists(6).inline_keyboard for b in row]
+    assert "🔄 Списки: 6 ч" in params and "⬇️ Обновить списки" in params
 
 
 async def test_routing_subsections_render_and_are_empty_when_off(services, monkeypatch):
@@ -704,16 +715,22 @@ async def test_routing_subsections_render_and_are_empty_when_off(services, monke
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
     monkeypatch.setattr(settings, "get_bool", lambda k, d=False: True)
     monkeypatch.setattr(services, "routing_lists_info",
-                        lambda: {"count": 3, "updated_at": None, "age_seconds": None,
+                        lambda: {"count": 3, "updated_at": None, "age_seconds": 7200,
                                  "every_hours": 12, "sources": 2})
     monkeypatch.setattr(services, "routing_grantable_clients", lambda: [])
-    text, markup = await sh._screen("rt_lists", services)
-    assert "3 записей" in text and "12 ч" in text
+    monkeypatch.setattr(services, "routing_monitor_info", lambda: {
+        "probe_seconds": 30, "window": 10, "availability": 50, "need": 5,
+        "standby_minutes": 10, "interval_minutes": 30})
+    # старые подразделы «Списки» и «Мониторинг» ведут в «⚙️ Параметры»
+    for sec in ("rt_lists", "rt_mon", "rt_params"):
+        text, markup = await sh._screen(sec, services)
+        assert text.startswith("⚙️ Параметры РФ-доступа\n"), (sec, text)
+        assert "Списки: 3 записи из 2 источников, 2 ч назад · раз в 12 ч" in text.split("\n"), text
     text, markup = await sh._screen("rt_users", services)
-    assert "Доступность" in text
+    assert text.startswith("👥 Кому доступен РФ-доступ (тебе — всегда)"), text
     monkeypatch.setattr(settings, "get_bool", lambda k, d=False: False)
     text, markup = await sh._screen("rt_lists", services)
-    assert "выключена" in text
+    assert text == "🇷🇺 РФ-доступ выключен — раздел пуст, пока он не включён", text
 
 
 async def test_bundle_button_in_the_card_issues_the_file_without_an_intro_screen(services, fake_bot, monkeypatch):
@@ -957,8 +974,8 @@ async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
     cb, nav = _cb(fake_bot, config.ADMIN_ID)
     await sh.toggle(cb, SetCB(sec="rt", act="toggle", key="app.routing.enabled"), services)
     text, labels = last_screen(nav)
-    assert "Выключить РФ-доступ для всех?" in text
-    assert "🔴 Да, выключить" in labels and "⬅️ Отмена" in labels
+    assert text.startswith("🔴 Выключить РФ-доступ для всех?"), text
+    assert labels == ["⬅️ Отмена", "🔴 Выключить"], labels
     assert state["app.routing.enabled"] is True
 
     # подтверждение — выключено, раздел перерисован

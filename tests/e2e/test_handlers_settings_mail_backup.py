@@ -94,7 +94,11 @@ async def test_email_forget_needs_confirmation_and_toggle_resume(services, fake_
     assert store["email.resume_enabled"] is False
     await sh.email_action(cb, SetCB(sec="email", act="do", key="forget!"), services, FakeState())
     assert services.email_account() is None
-    assert any("Почта отключена" in t for kind, t, _ in msg.sent if kind == "answer")
+    # итог — всплывашкой, раздел перерисован на месте: «ящик не подключён»
+    assert cb.answers[-1][0] == "✅ Почта отключена", cb.answers
+    assert not any(kind == "answer" for kind, _t, _ in msg.sent), "лишнее сообщение в чате"
+    last = [t for kind, t, _ in msg.sent if kind == "edit_text"][-1]
+    assert last.startswith("✉️ E-mail · ящик не подключён"), last
 
 
 # ── бэкап на почту и запасной канал для критичных алертов ────────────────────
@@ -122,7 +126,7 @@ async def test_backup_channel_email_requires_mailbox_and_encryption(services, fa
     monkeypatch.setattr(services, "email_send_backup", lambda paths: mailed.append(paths))
     await sh.do_action(cb, SetCB(sec="backup", act="do", key="now"), services)
     assert mailed == [["/tmp/a.enc", "/tmp/b.enc"]]
-    assert any("отправлена на ящик" in t and "box@icloud.com" in t for kind, t, _ in msg.sent if kind == "answer")
+    assert any(t == "📨 Бэкап отправлен на box@icloud.com" for kind, t, _ in msg.sent if kind == "answer"), msg.sent
 
 
 async def test_email_fallback_toggle_offers_setup_without_mailbox(services, fake_bot, monkeypatch):
@@ -176,12 +180,14 @@ async def test_backup_passphrase_flow_deletes_messages_and_requires_match(servic
     from tests.conftest import FakeCallback, FakeMessage, FakeState
     import awgbot.core.config as cfg
     _email_store(monkeypatch)
-    rows = [[b.text for b in r] for r in kbs.settings_backup(False).inline_keyboard]
-    assert rows[1] == ["🔐 Шифрование: 🔴 выключено"], rows
+    text, markup = await sh._screen("backup", services)
+    assert text.split("\n")[0] == "💾 Бэкапы · ✅ вкл · 🔓 без шифрования", text
+    assert [b.text for b in markup.inline_keyboard[0]] == ["✅ Автобэкапы", "🔐 Шифрование"]
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await sh.do_action(cb, SetCB(sec="backup", act="do", key="enc"), services)
-    assert any("Шифрование резервных копий" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    assert any(t.startswith("🔐 Шифрование бэкапов · 🔴 выключено") for kind, t, _ in msg.sent
+               if kind == "edit_text"), msg.sent
     state = FakeState()
     await sh.backup_passphrase_start(cb, state, services)
     m = lambda t: FakeMessage(text=t, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
@@ -196,7 +202,11 @@ async def test_backup_passphrase_flow_deletes_messages_and_requires_match(servic
     deletes = [r for r in fake_bot.records if r[0] == "delete"]
     assert len(deletes) >= 4, "сообщения с фразой должны удаляться"
     assert not any("correct horse" in t for kind, t, _ in ok.sent), "фраза не должна печататься обратно"
-    assert [[b.text for b in r] for r in kbs.settings_backup(True).inline_keyboard][1] == ["🔐 Шифрование: ✅ включено"]
+    # итог — первой строкой раздела «Бэкапы», в заголовке — «фраза задана»
+    section = [t for kind, t, _ in ok.sent if kind == "answer"][-1]
+    assert section.startswith("✅ Фраза задана — следующие копии уйдут шифрованными\n\n"
+                              "💾 Бэкапы · ✅ вкл · 🔐 фраза задана"), section
+    assert kbs.settings_backup(True).inline_keyboard[0][1].text == "🔐 Шифрование"
 
 
 # ── ♻️ восстановление из файла в чате ────────────────────────────────────────
@@ -224,7 +234,8 @@ async def test_backup_file_in_chat_offers_restore_and_confirm_launches(services,
     state = FakeState()
     await ah.admin_document(msg, services, state)
     sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and "бэкап настроек бота и сервиса от 09.09.2026 10:30" in sent[-1] and "Важно!" in sent[-1]
+    assert sent and sent[-1] == ("♻️ Бэкап от 09.09 10:30 — восстановить?\n"
+                                 "Всё вернётся к тому моменту: профили, устройства, подписки, ключи шифрования"), sent
     # в копии вся база — сообщение с ней из чата убираем, как и присланный токен
     assert msg.deleted
     launched = []

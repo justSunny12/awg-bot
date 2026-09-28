@@ -306,7 +306,7 @@ def test_home_table_keeps_its_sets_across_reasserts(script):
 
 
 def test_resolver_goes_upstream_through_the_uplink(script):
-    sec = script.split('step "5. Локальная сеть без VPN"', 1)[1]
+    sec = script.split('step "5. VPN-транзит"', 1)[1]
     assert "printf 'server=%s@%s\\n' \"$_upstream\" \"$UPLINK_IF\"" in sec, "без @iface запрос ушёл бы линком"
     assert '_upstream="${RESOLVER:-1.1.1.1}"' in sec, "без резолвера ВПС — запасной, но тоже через аплинк"
     assert "bind-dynamic" in sec and "listen-address=127.0.0.1,%s" in sec and "no-hosts" in sec
@@ -333,14 +333,14 @@ def test_lan_section_never_kills_the_script_after_the_unit_is_enabled(script):
     """Юнит уже включён (раздел 4) и перезапускается до победы: exit 1 в разделе 5
     крутил бы его в цикле каждые 10 с с daemon-reload и пересборкой guard.
     Отказ — в LAN_ERROR и в статус, его покажет агент."""
-    sec = script.split('step "5. Локальная сеть без VPN"', 1)[1].split('write_status "up"', 1)[0]
+    sec = script.split('step "5. VPN-транзит"', 1)[1].split('write_status "up"', 1)[0]
     assert "exit 1" not in sec and "if lan_apply; then" in sec
     assert 'LAN_ERROR=%s' in script and "lan_fail" in sec
     assert 'port53_busy' in sec and "Pi-hole" in sec, "проверка :53 до установки, с честным отказом"
 
 
 def test_lan_mode_off_removes_its_own_and_rollback_too(script):
-    sec = script.split('step "5. Локальная сеть без VPN"', 1)[1]
+    sec = script.split('step "5. VPN-транзит"', 1)[1]
     off = sec.split('if [ "$LAN_MODE" = "1" ]; then', 1)[1].split("\nelse\n", 1)[1].split("\nfi\n", 1)[0]
     assert "lan_remove" in off and "lan_apply" not in off
     rollback = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
@@ -371,7 +371,7 @@ def test_unit_and_status_carry_the_lan_variables(script):
         assert line in unit, line
     assert "LAN=%s\\nLAN_IF=%s\\nLAN_ADDR=%s" in script
     plan = script.split('if [ "$MODE" = "plan" ]; then\n    say ""', 1)[1].split("exit 0", 1)[0]
-    assert "5. локальная сеть без VPN" in plan
+    assert "5. VPN-транзит" in plan
 
 
 def test_embedded_scripts_parse(script, tmp_path):
@@ -497,7 +497,7 @@ def test_the_rollback_copy_is_removed_only_after_a_successful_restart(lists_env)
 def _ovr_fragment(script: str) -> str:
     """Кусок lan_apply от уборки /etc/default/dnsmasq до сборки оверрайда
     включительно — то, что уедет на малину, без правки."""
-    sec = script.split('step "5. Локальная сеть без VPN"', 1)[1]
+    sec = script.split('step "5. VPN-транзит"', 1)[1]
     start = sec.index("    if grep -qs '^# awg-bot: резолвер только для локальной сети'")
     end = sec.index('    rm -f "$_ovr_want"\n', start) + len('    rm -f "$_ovr_want"\n')
     return sec[start:end]

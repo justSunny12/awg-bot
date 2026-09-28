@@ -220,7 +220,8 @@ async def test_restart_awg_from_settings(services, fake_bot, monkeypatch):
     assert any(s[0] == "edit_text" and "Перезапустить AWG?" in s[1] for s in nav.sent)
     await sh.do_action(cb, SetCB(sec="svc", act="do", key="awg!"), services)
     assert restarted == [1]
-    assert any(s[0] == "edit_text" and "перезапущен" in s[1] for s in nav.sent)
+    last = [s for s in nav.sent if s[0] == "edit_text"][-1]
+    assert last[1].startswith("✅ AWG перезапущен\n\n🔧 Сервис"), "итог — первой строкой раздела «Сервис»"
 
 
 async def test_restart_bot_from_settings_needs_confirmation(services, fake_bot, monkeypatch):

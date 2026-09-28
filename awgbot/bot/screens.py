@@ -84,6 +84,9 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
             return await panel.migration_overview_screen(services)
         if kind == "migration_cl":
             return await panel.migration_client_screen(services, ref)
+        if kind == "gwedit":
+            from awgbot.bot.handlers import settings as sh
+            return await sh.gateway_edit_screen(services, ref)
         if kind == "upd":
             from awgbot.bot.handlers.settings import _screen
             return await _screen("upd", services)

@@ -263,7 +263,10 @@ async def test_removing_by_button_answers_with_the_sync_tail(gw, host, fake_bot,
 
 # ── основной бот: карточка слота ─────────────────────────────────────────────
 
-LAN_ON = "🏠 За шлюзом — без VPN: включено"
+def _lan_on_index(lines: list[str]) -> int | None:
+    """Строка подсетей с включённым VPN-транзитом: «🗺 … · 🔀 VPN-транзит ✅»."""
+    return next((k for k, ln in enumerate(lines)
+                 if ln.startswith("🗺 ") and ln.endswith(" · 🔀 VPN-транзит ✅")), None)
 
 
 async def _card(services, fake_bot, slot: int):
@@ -273,12 +276,12 @@ async def _card(services, fake_bot, slot: int):
 
 
 def _own_block(text: str) -> tuple[str | None, str | None]:
-    """(строка 📋 сразу после «без VPN: включено», строка судьбы сразу под ней —
-    без пустой, вычитка 3.1.0)."""
+    """(строка 📋 сразу после строки подсетей с «🔀 VPN-транзит ✅», строка
+    судьбы сразу под ней — без пустой, вычитка 3.1.0)."""
     lines = text.splitlines()
-    if LAN_ON not in lines:
+    i = _lan_on_index(lines)
+    if i is None:
         return None, None
-    i = lines.index(LAN_ON)
     head = lines[i + 1] if i + 1 < len(lines) and lines[i + 1].startswith("📋") else None
     note = (lines[i + 2] if head and i + 2 < len(lines)
             and lines[i + 2].startswith(("⏳", "⚠️")) else None)
@@ -383,56 +386,51 @@ async def test_without_lan_mode_the_card_has_no_own_lists_line(services, lan_slo
     assert "📋 Свои списки" not in text, text
 
 
-def _gap_after_note(text: str) -> list[str]:
-    """Строки между строкой судьбы своих списков и следующим непустым блоком."""
+def _after_note(text: str) -> str:
+    """Строка сразу под строкой судьбы своих списков."""
     lines = text.splitlines()
-    i = lines.index(LAN_ON) + 2
+    i = _lan_on_index(lines) + 2
     assert lines[i].startswith(("⏳", "⚠️")), text
-    j = i + 1
-    while j < len(lines) and lines[j] == "":
-        j += 1
-    return lines[i + 1:j]
+    return lines[i + 1]
 
 
 @pytest.mark.parametrize("peer_access", [True, False])
-async def test_the_own_lists_note_is_closed_by_exactly_one_empty_line(services, slots, fake_bot,
-                                                                      monkeypatch, peer_access):
-    """Под строкой судьбы своих списков — ровно одна пустая строка перед
-    следующим блоком: и перед «↔️ Доступ из подсетей…», и когда доступа между
-    подсетями нет и дальше идут «Конфигурация выпущена…»/пинг. Две пустые
-    строки подряд в карточке — дыра посреди экрана, одна отсутствующая —
-    состояние слипается со следующим блоком."""
+async def test_the_own_lists_note_is_followed_by_the_next_block_without_a_gap(services, slots, fake_bot,
+                                                                              monkeypatch, peer_access):
+    """Карточка — плотный список строк без пустых: под строкой судьбы своих
+    списков сразу «↔️ Связь подсетей ✅» (связь включена) или «подробнее».
+    Пустая строка посреди карточки — дыра на экране."""
     store = _peer_conf(monkeypatch)
     _two_lan_slots(services, slots)
     store["app.routing.peer_nets.enabled"] = peer_access
     text, _ = await _card(services, fake_bot, 2)
     assert _own_block(text)[1], f"строки судьбы нет — проверять нечего: {text}"
-    assert _gap_after_note(text) == [""], f"под строкой судьбы не одна пустая строка:\n{text}"
+    assert "" not in text.splitlines(), f"пустая строка посреди карточки:\n{text}"
+    after = _after_note(text)
     if peer_access:
-        after = text.splitlines()[text.splitlines().index(LAN_ON) + 4]
-        assert after.startswith("↔️"), text
+        assert after == "↔️ Связь подсетей ✅", text
+    else:
+        assert after.startswith("<blockquote"), text
 
 
-async def test_the_overlap_warning_is_also_separated_from_the_own_lists_note(services, slots, fake_bot,
-                                                                            monkeypatch):
-    """Подсети слотов пересекаются, доступа между подсетями нет: под строкой
-    судьбы своих списков сразу идёт «⚠️ … пересекается…». Между ними — ровно
-    одна пустая строка; без неё два предупреждения слипаются в одно."""
+async def test_the_overlap_warning_follows_the_own_lists_note_on_its_own_line(services, slots, fake_bot,
+                                                                              monkeypatch):
+    """Подсети слотов пересекаются, связи подсетей нет: под строкой судьбы
+    своих списков сразу своей строкой «⚠️ … пересекается…» — два
+    предупреждения не слипаются в одно."""
     store = _peer_conf(monkeypatch)
     _two_lan_slots(services, slots)
     services.gateway_set_home_subnets(2, "192.168.1.0/24")
     store["app.routing.peer_nets.enabled"] = False
     text, _ = await _card(services, fake_bot, 2)
     assert _own_block(text)[1], f"строки судьбы нет — проверять нечего: {text}"
-    lines = text.splitlines()
-    i = lines.index(LAN_ON) + 2
-    assert lines[i + 1] == "" and "пересекается" in lines[i + 2], \
-        f"между строкой судьбы и предупреждением о пересечении не одна пустая строка:\n{text}"
+    after = _after_note(text)
+    assert after.startswith("⚠️ 192.168.1.0/24 пересекается с подсетью «NASPi»: "), text
 
 
 async def test_the_own_lists_line_is_not_drawn_when_sync_is_off(services, slots, fake_bot, monkeypatch):
     """Карточка отдала «off» (синхронизация у слота не действует): строки
-    «📋 Свои списки» с нулями нет, и пустая строка под ней не появляется."""
+    «📋 Свои списки» с нулями нет."""
     store = _peer_conf(monkeypatch)
     _two_lan_slots(services, slots)
     store["app.routing.peer_nets.enabled"] = True
@@ -440,14 +438,13 @@ async def test_the_own_lists_line_is_not_drawn_when_sync_is_off(services, slots,
     text, _ = await _card(services, fake_bot, 2)
     assert "📋" not in text, text
     lines = text.splitlines()
-    assert lines[lines.index(LAN_ON) + 1].startswith("↔️"), f"под режимом без VPN лишняя строка:\n{text}"
+    assert lines[_lan_on_index(lines) + 1] == "↔️ Связь подсетей ✅", f"под подсетями лишняя строка:\n{text}"
 
 
 async def test_applied_own_lists_are_followed_by_peer_access_without_a_gap(services, slots, fake_bot,
                                                                           monkeypatch):
-    """Канон на шлюзе применён — строки судьбы нет, и «↔️ Доступ из подсетей…»
-    идёт сразу под «📋 Свои списки», без пустой строки: пропуск нужен только
-    чтобы отделить строку состояния, иначе в карточке висит дыра."""
+    """Канон на шлюзе применён — строки судьбы нет, и «↔️ Связь подсетей ✅»
+    идёт сразу под «📋 Свои списки»."""
     store = _peer_conf(monkeypatch)
     _two_lan_slots(services, slots)
     store["app.routing.peer_nets.enabled"] = True
@@ -458,10 +455,10 @@ async def test_applied_own_lists_are_followed_by_peer_access_without_a_gap(servi
     services.gwlink_own_ack_in(2, {"ok": True, "hash": digest, "n": 1})
     text, _ = await _card(services, fake_bot, 2)
     lines = text.splitlines()
-    i = lines.index(LAN_ON)
+    i = _lan_on_index(lines)
     assert lines[i + 1] == "📋 Свои списки: 1 в туннель, 0 напрямую", text
-    assert lines[i + 2].startswith("↔️ Доступ из подсетей других шлюзов"), \
-        f"между применёнными списками и доступом из подсетей лишняя строка:\n{text}"
+    assert lines[i + 2] == "↔️ Связь подсетей ✅", \
+        f"между применёнными списками и связью подсетей лишняя строка:\n{text}"
 
 
 # ── панель агента после правки своих списков (вычитка 3.1.0) ─────────────────

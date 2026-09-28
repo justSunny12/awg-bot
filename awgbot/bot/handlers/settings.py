@@ -21,7 +21,7 @@ from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import GatewayToken, GatewayHome, GatewayLabel, MigrationPort, SshPort
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.notifier import send_notifications
-from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu, card_is_from_home,
+from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu, card_is_from_home, card_from_home,
                                         _dismiss_previous_nav,
                                         ask_tracked, cleanup_content)
 from awgbot.domain.services import ServiceError
@@ -36,6 +36,12 @@ router.callback_query.filter(RoleFilter("admin"))
 
 
 # ── рендер экранов ───────────────────────────────────────────────────────────
+class _CachedTarget:
+    """Цель обновления по сохранённому тегу — для перерисовки раздела без сети."""
+    def __init__(self, tag: str):
+        self.tag, self.body, self.skipped = tag, "", ()
+
+
 async def _screen(sec: str, services, key: str = ""):
     """(text, markup) для раздела sec.
 
@@ -46,7 +52,7 @@ async def _screen(sec: str, services, key: str = ""):
     ничего не стоит.
     """
     if sec == "notify":
-        return texts.SETTINGS_NOTIFY, kb.settings_notify()
+        return texts.settings_notify_text(), kb.settings_notify()
     if sec == "ncl":
         return texts.SETTINGS_NOTIFY_CLIENTS, kb.settings_notify_clients()
     if sec == "email":
@@ -56,7 +62,7 @@ async def _screen(sec: str, services, key: str = ""):
                                           await call(services.email_resume_address)),
                 kb.settings_email(acc is not None))
     if sec == "subs":
-        return texts.SETTINGS_SUBS, kb.settings_subs()
+        return texts.settings_subs_text(), kb.settings_subs()
     if sec == "srv":
         d = await call(services.server_screen)
         offer = (d.get("private_dns") or {}).get("mode") == "public"
@@ -78,35 +84,41 @@ async def _screen(sec: str, services, key: str = ""):
         return texts.settings_firewall_text(st), kb.settings_firewall(
             st, page=paging.page_of(config.ADMIN_ID, "fw"))
     if sec == "mon":
-        return texts.SETTINGS_MON, kb.settings_mon()
+        return texts.settings_mon_text(), kb.settings_mon()
     if sec == "backup":
-        return texts.SETTINGS_BACKUP, kb.settings_backup(await call(services.backup_encryption_enabled))
+        enc = await call(services.backup_encryption_enabled)
+        return (texts.settings_backup_text(enc, str(settings.get("app.scheduler.backup_channel", "telegram") or "")),
+                kb.settings_backup(enc))
     if sec == "svc":
         d = await call(services.svc_screen_data)          # один хоп вместо четырёх
         return (texts.settings_svc_text(d["state"], d["progress"], d["available"]),
                 kb.settings_svc(d["state"], available=d["available"], orphans=d["orphans"]))
     if sec == "upd":
-        return texts.settings_upd_text(), kb.settings_updates(await call(services.updates_muted))
+        # проверка — при открытии раздела; «никогда» из старого конфига —
+        # «месяц» и уведомления выкл (расписания «никогда» больше нет)
+        if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
+            try:
+                await call(settings.set_value, "updates.poll_schedule", "month")
+            except settings.SettingsWriteError:
+                pass
+            await call(services.mute_updates)
+        if key == "cached":
+            # тумблер и цикл: без похода в сеть, по тегу последней проверки
+            tag = await call(services.update_available_tag)
+            found = _CachedTarget(tag) if tag else None
+            blocked = ""
+        else:
+            found = await call(services.update_scan)
+            blocked = await call(services.update_block_reason, found) if found is not None else ""
+        return (texts.settings_upd_text(None, found, blocked,
+                                        scan_failed=bool(getattr(services, "update_scan_failed", False))),
+                kb.settings_updates(await call(services.updates_muted),
+                                    target_tag=found.tag if found is not None else "", blocked=blocked))
     if sec == "rt":
-        if not config.ROUTING_ENABLED and not await call(services.routing_provisioned):
-            # Обвязки ещё нет — раздел и есть место, где её разворачивают.
-            return texts.ROUTING_PROVISION_INTRO, kb.routing_provision()
-        if not config.ROUTING_ENABLED:
-            # Кнопку в этом случае не рисуем вовсе, но колбэк приходит и из
-            # старого сообщения в истории чата. Открыть раздел, которого нет,
-            # значит показать переключатели, ничего не делающие.
-            return texts.SETTINGS_ROUTING_ABSENT, kb.settings_back()
-        on = settings.get_bool("app.routing.enabled", False)
-        status = await call(services.routing_status)
-        text = texts.settings_routing_text(on, status)
-        states = await call(services.gateway_states) if on else []
-        if on:
-            text += texts.settings_routing_gateway_block(states)
-        return text, kb.settings_routing(on, states,
-                                         can_add=len(states) < config.ROUTING_GATEWAYS_MAX)
+        return await gateways_screen(services)
     if sec == "rt_gw":
         if not config.ROUTING_ENABLED or not settings.get_bool("app.routing.enabled", False):
-            return texts.SETTINGS_ROUTING_SUBOFF, kb.settings_back()
+            return texts.SETTINGS_ROUTING_SUBOFF, kb.settings_back("rt")
         cands = await call(services.gateway_candidates)
         slot = int(key or 0)
         states = await call(services.gateway_states)
@@ -120,22 +132,43 @@ async def _screen(sec: str, services, key: str = ""):
                 return "Слоты шлюзов заняты: убери один, чтобы добавить другой.", kb.settings_back("rt")
             return texts.GATEWAY_STANDBY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands), 0)
         return texts.GATEWAY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands), 0)
-    if sec in ("rt_lists", "rt_users", "rt_mon"):
+    if sec in ("rt_lists", "rt_users", "rt_mon", "rt_params"):
         # Подразделы существуют только при включённой функции. Колбэк приходит
         # и из старого сообщения — тогда честно говорим, что раздел пуст.
         if not config.ROUTING_ENABLED or not settings.get_bool("app.routing.enabled", False):
-            return texts.SETTINGS_ROUTING_SUBOFF, kb.settings_back()
-        if sec == "rt_mon":
+            return texts.SETTINGS_ROUTING_SUBOFF, kb.settings_back("rt")
+        if sec in ("rt_mon", "rt_lists", "rt_params"):
             info = await call(services.routing_monitor_info)
-            return texts.routing_monitor_text(info), kb.settings_routing_monitor(info)
-        if sec == "rt_lists":
-            info = await call(services.routing_lists_info)
-            return texts.routing_lists_text(info), kb.settings_routing_lists(info["every_hours"])
+            lists = await call(services.routing_lists_info)
+            return texts.routing_params_text(info, lists), kb.routing_params_kb(info, lists["every_hours"])
         clients = await call(services.routing_grantable_clients)
         from awgbot.bot import paging
         return texts.routing_users_text(), kb.settings_routing_users(
             clients, page=paging.page_of(config.ADMIN_ID, "rtusers"))
-    return texts.SETTINGS_ROOT, kb.settings_root()
+    return texts.settings_root_text(), kb.settings_root()
+
+
+async def gateways_screen(services):
+    """Экран «🛰 Шлюзы» с главной: не развёрнуто / спит до перезапуска /
+    выключено / слоты со строками состояния."""
+    if not config.ROUTING_ENABLED and not await call(services.routing_provisioned):
+        return texts.ROUTING_PROVISION_INTRO, kb.gateways_kb((), provisioned=False)
+    if not config.ROUTING_ENABLED:
+        # обвязка есть, интерфейс линка читается при старте — до перезапуска
+        # функция спит; колбэк приходит и из старого сообщения
+        return texts.SETTINGS_ROUTING_ABSENT, kb.gateways_kb((), awake=False)
+    if not settings.get_bool("app.routing.enabled", False):
+        return texts.GATEWAYS_OFF, kb.gateways_kb((), enabled=False)
+    states = await call(services.gateway_states)
+    status = await call(services.routing_status)
+    switched = await call(services.db.get_state, services._RT_SWITCHED_KEY)
+    auto = settings.get_bool("app.routing.failover.enabled", True)
+    peer = await call(services.gateway_peer_nets_info) if len(states) > 1 else None
+    lists = await call(services.routing_lists_info) if states else None
+    text = texts.gateways_text(states, status=status, switched_at=switched or "", auto_on=auto,
+                               peer_info=peer, lists=lists)
+    return text, kb.gateways_kb(states, can_add=len(states) < config.ROUTING_GATEWAYS_MAX,
+                                failover_on=auto, peer_nets_on=(peer["enabled"] if peer else None))
 
 
 async def _render(cb: CallbackQuery, sec: str, services, key: str = ""):
@@ -337,7 +370,8 @@ async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services,
         await cb.answer()
         await state.set_state(GatewayToken.value)
         await state.update_data(gw_device_id=callback_data.device_id, gw_slot=slot)
-        await core.ask(cb, services, texts.gateway_ask_token(token_slot), kb.settings_cancel("rt_gw"))
+        await core.ask(cb, services, texts.gateway_ask_token(token_slot),
+                       kb.settings_cancel("rt_gw", str(slot or "")))
         return
     await cb.answer("Назначаю…")
     await edit(cb, "🛰 Назначаю шлюз…", None)
@@ -346,11 +380,15 @@ async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services,
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "new_ask"))
-async def gateway_new_ask(cb: CallbackQuery, callback_data: GwMarkCB, services):
-    await cb.answer()
+async def gateway_new_ask(cb: CallbackQuery, callback_data: GwMarkCB, services, state: FSMContext):
+    """Новый слот — сразу к выпуску, без подтверждения; замена машины —
+    с подтверждением: прежняя потеряет линк."""
     slot = _slot_of(callback_data)
-    n = slot or (len(await call(services.db.gateways)) + 1)
-    await edit(cb, texts.gateway_new_ask(n), kb.gateway_new_confirm(slot))
+    if not slot:
+        await gateway_new_yes(cb, callback_data, services, state)
+        return
+    await cb.answer()
+    await edit(cb, texts.gateway_new_ask(slot), kb.gateway_new_confirm(slot))
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "new_yes"))
@@ -364,9 +402,12 @@ async def gateway_new_yes(cb: CallbackQuery, callback_data: GwMarkCB, services, 
         await cb.answer()
         await state.set_state(GatewayToken.value)
         await state.update_data(gw_slot=slot)
-        await core.ask(cb, services, texts.gateway_ask_token(token_slot), kb.settings_cancel("rt_gw"))
+        await core.ask(cb, services, texts.gateway_ask_token(token_slot),
+                       kb.settings_cancel("rt_gw", str(slot or "")))
         return
     await cb.answer("Создаю устройство и ключи…")
+    await edit(cb, "🛰 Создаю устройство и ключи…", None)       # экран выбора отслужил
+    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
     await _gateway_new_go(cb.message, services, slot)
 
 
@@ -405,7 +446,7 @@ async def _gateway_mark_go(message: Message, services, device_id: int, slot: int
     try:
         res = await call(services.gateway_setup, device_id, rekey=True, slot_id=slot or None)
     except ServiceError as e:
-        await message.answer(f"⚠️ {texts._e(str(e))}")
+        await send_menu(message, services, f"⚠️ {texts._e(str(e))}", kb.settings_back("rt"))
         return
     instr = await message.answer(texts.gateway_install_instructions(res["device"],
                                                                     services.bundle_name(res["gateway"]),
@@ -419,7 +460,7 @@ async def _gateway_new_go(message: Message, services, slot: int = 0) -> None:
     try:
         res = await call(services.gateway_setup, None, slot_id=slot or None)
     except ServiceError as e:
-        await message.answer(f"⚠️ {texts._e(str(e))}")
+        await send_menu(message, services, f"⚠️ {texts._e(str(e))}", kb.settings_back("rt"))
         return
     instr = await message.answer(texts.gateway_install_instructions(res["device"],
                                                                     services.bundle_name(res["gateway"]),
@@ -472,18 +513,13 @@ async def _render_card(cb: CallbackQuery, services, slot: int) -> None:
 
 
 async def _render_list(cb: CallbackQuery, services) -> None:
-    states = await call(services.gateway_states)
-    switched = await call(services.db.get_state, services._RT_SWITCHED_KEY)
-    auto = settings.get_bool("app.routing.failover.enabled", True)
-    peer = await call(services.gateway_peer_nets_info)
-    await edit(cb, texts.gateway_list_text(states, switched or "", auto, peer),
-               kb.gateway_list(states, can_add=len(states) < config.ROUTING_GATEWAYS_MAX,
-                               failover_on=auto, peer_nets_on=peer["enabled"]))
+    await edit(cb, *await gateways_screen(services))
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "list"))
 async def gw_slot_list(cb: CallbackQuery, services, state: FSMContext):
     await state.clear()
+    card_from_home(cb.message.chat.id, False)      # с «Шлюзов» «Назад» карточки ведёт сюда
     await _render_list(cb, services)
     await cb.answer()
 
@@ -515,7 +551,7 @@ async def gw_slot_failover(cb: CallbackQuery, services):
 
 @router.callback_query(GwSlotCB.filter(F.action == "peer_ask"))
 async def gw_slot_peer_ask(cb: CallbackQuery, services):
-    """Доступ между подсетями за шлюзами:
+    """«↔️ Связь подсетей»:
     диалог на месте списка. Включить можно и до того, как слоты готовы —
     инфобокс скажет, чего не хватает."""
     on = not await call(services.peer_nets_enabled)
@@ -532,8 +568,18 @@ async def gw_slot_peer_yes(cb: CallbackQuery, services):
         await cb.answer(str(e), show_alert=True)
         return
     await _render_list(cb, services)
-    await cb.answer("Доступ между подсетями " + ("включён" if on else "выключен")
-                    + ": перевыпусти конфигурации шлюзов", show_alert=True)
+    await cb.answer(("Подсети связаны" if on else "Связь подсетей выключена")
+                    + ": перевыпусти конфигурацию каждого шлюза", show_alert=True)
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "edit"))
+async def gw_slot_edit(cb: CallbackQuery, callback_data: GwSlotCB, services, state: FSMContext):
+    await state.clear()
+    st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
+    if st is None:
+        return
+    await edit(cb, texts.gateway_edit_text(st), kb.gateway_edit_kb(st, two_slots=len(st["states"]) > 1))
+    await cb.answer()
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "pref"))
@@ -544,9 +590,11 @@ async def gw_slot_pref(cb: CallbackQuery, callback_data: GwSlotCB, services):
         await cb.answer("Такого слота нет", show_alert=True)
         return
     await call(services.gateway_set_preferred, None if gw.preferred else gw.id)
-    await _render_card(cb, services, gw.id)
+    st = await _slot_state(cb, services, gw.id, lazy_ping=False)
+    if st is not None:
+        await edit(cb, texts.gateway_edit_text(st), kb.gateway_edit_kb(st, two_slots=len(st["states"]) > 1))
     dev = await call(services.db.get_device, gw.device_id)
-    await cb.answer("Предпочтительный: " + ("снят" if gw.preferred else (dev.name if dev else "этот шлюз")))
+    await cb.answer(("Предпочтительный: " + ("снят" if gw.preferred else (dev.name if dev else "этот шлюз")))[:190])
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "ping"))
@@ -583,7 +631,7 @@ async def gw_slot_switch_ask(cb: CallbackQuery, callback_data: GwSlotCB, service
     current = next((x for x in st["states"] if x.get("active")), None)
     healthy = bool(st.get("link_ok"))
     await edit(cb, texts.gateway_switch_ask(st, current, healthy),
-               kb.gateway_switch_confirm(st["gateway"].id, healthy))
+               kb.gateway_switch_confirm(st["gateway"].id, healthy, from_list=callback_data.val == "l"))
     await cb.answer()
 
 
@@ -592,16 +640,19 @@ async def gw_slot_switch_yes(cb: CallbackQuery, callback_data: GwSlotCB, service
     try:
         gw = await call(services.gateway_switch, callback_data.slot, manual=True)
     except ServiceError as e:
-        await cb.answer(str(e), show_alert=True)
+        await cb.answer(str(e)[:190], show_alert=True)
         return
-    await _render_card(cb, services, gw.id)
+    if callback_data.val == "l":
+        await _render_list(cb, services)
+    else:
+        await _render_card(cb, services, gw.id)
     st = await call(services.gateway_screen_state, gw.id, lazy_ping=False)
-    await cb.answer(f"Трафик идёт через {st['display']}".replace("«", "").replace("»", ""))
+    await cb.answer(f"Трафик идёт через {st['display']}".replace("«", "").replace("»", "")[:190])
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "lan_ask"))
 async def gw_slot_lan_ask(cb: CallbackQuery, callback_data: GwSlotCB, services):
-    """«За шлюзом — без VPN»: диалог на месте карточки.
+    """«🔀 VPN-транзит»: диалог на месте карточки.
     Без локальной подсети включать нечего — alert, не диалог."""
     st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
     if st is None:
@@ -633,7 +684,7 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
     if online and await call(services.peer_nets_enabled):
         # режим доедет каналом, а подсети соседей меняются у обоих шлюзов и
         # живут в конфиге линка — это только файлом
-        tail += "; для доступа между подсетями перевыпусти конфигурации шлюзов"
+        tail += "; для связи подсетей перевыпусти конфигурации шлюзов"
     await cb.answer(("Включено: " if on else "Выключено: ") + tail, show_alert=True)
 
 
@@ -643,9 +694,12 @@ async def gw_slot_router(cb: CallbackQuery, callback_data: GwSlotCB, services):
     if st is None:
         return
     gw = st["gateway"]
-    await edit(cb, texts.gateway_router_text(texts.slot_short(st), gw.home_subnets[0] if gw.home_subnets else "",
-                                             peer_nets=st.get("peer_nets") or []),
-               kb.gateway_router_back(gw.id))
+    tab = callback_data.val or "mt"
+    dev = st.get("device")
+    title = (dev.name if dev is not None else f"слот {gw.id}") + (f", {gw.label}" if gw.label else "")
+    await edit(cb, texts.gateway_router_text(title, gw.home_subnets[0] if gw.home_subnets else "",
+                                             peer_nets=st.get("peer_nets") or [], tab=tab),
+               kb.gateway_router_kb(gw.id, tab))
     await cb.answer()
 
 
@@ -693,36 +747,70 @@ async def gateway_home_received(message: Message, state: FSMContext, services):
         return
     await state.clear()
     await cleanup_content(message.bot, services, message.chat.id)
-    await message.answer(texts.gateway_home_report(res, st))
-    await send_menu(message, services, texts.gateway_card_text(st, st["states"]),
+    from awgbot.bot import screens
+    await send_menu(message, services,
+                    screens.with_note(texts.gateway_card_text(st, st["states"]), texts.gateway_home_report(res, st)),
                     card_kb(st, message.chat.id))
+
+
+async def gateway_edit_screen(services, slot: int):
+    """(текст, клавиатура) подэкрана «✏️ Изменить» слота — для реестра экранов."""
+    try:
+        st = await call(services.gateway_screen_state, slot, lazy_ping=False)
+    except ServiceError:
+        return None
+    return texts.gateway_edit_text(st), kb.gateway_edit_kb(st, two_slots=len(st["states"]) > 1)
+
+
+@router.callback_query(GwSlotCB.filter(F.action == "name"))
+async def gw_slot_name(cb: CallbackQuery, callback_data: GwSlotCB, services, state: FSMContext):
+    """«✏️ Имя» слота — переименование устройства-шлюза с возвратом в
+    «✏️ Изменить» (общий приём EditDeviceName в handlers/admin/devices.py)."""
+    from awgbot.bot.states import EditDeviceName
+    from awgbot.bot.handlers.common import ask_here
+    st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
+    if st is None:
+        return
+    dev = st.get("device")
+    if dev is None:
+        await cb.answer("Устройство слота не найдено", show_alert=True)
+        return
+    await state.set_state(EditDeviceName.value)
+    await ask_here(cb, services, state, texts.device_name_prompt(dev.name), "gwedit", st["gateway"].id,
+                   device_id=dev.id)
+    await cb.answer()
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "label"))
 async def gw_slot_label(cb: CallbackQuery, callback_data: GwSlotCB, services, state: FSMContext):
+    from awgbot.bot.handlers.common import ask_here
     st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
     if st is None:
         return
     await state.set_state(GatewayLabel.value)
-    await state.update_data(gw_slot=st["gateway"].id)
-    await core.ask(cb, services, texts.gateway_label_text(st), kb.gateway_slot_cancel(st["gateway"].id))
+    await ask_here(cb, services, state, texts.gateway_label_text(st), "gwedit", st["gateway"].id,
+                   gw_slot=st["gateway"].id)
     await cb.answer()
 
 
 @router.message(GatewayLabel.value)
 async def gateway_label_received(message: Message, state: FSMContext, services):
-    slot = int((await state.get_data()).get("gw_slot") or 0)
+    from awgbot.bot.handlers.common import back_to_context
+    data = await state.get_data()
+    slot = int(data.get("gw_slot") or 0)
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
+    gw = await call(services.db.gateway, slot)
+    old = gw.label if gw is not None else ""
     try:
         await call(services.gateway_set_label, slot, message.text or "")
-        st = await call(services.gateway_screen_state, slot, lazy_ping=False)
+        gw = await call(services.db.gateway, slot)
     except ServiceError as e:
         await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
         return
     await state.clear()
-    await cleanup_content(message.bot, services, message.chat.id)
-    await send_menu(message, services, texts.gateway_card_text(st, st["states"]),
-                    card_kb(st, message.chat.id))
+    new = gw.label if gw is not None else ""
+    note = f"✅ Подпись: {texts._e(old) or '—'} → {texts._e(new) or '—'}"
+    await back_to_context(message, services, data, "admin", note=note)
 
 
 async def _remove_ask(cb: CallbackQuery, services, slot: int) -> None:
@@ -765,11 +853,14 @@ async def gw_slot_remove_yes(cb: CallbackQuery, callback_data: GwSlotCB, service
     await cb.answer("Убираю…")
     prev = await call(services.gateway_remove, callback_data.slot or None)
     if prev is None:
-        await edit(cb, "Шлюз и так не назначен.", kb.settings_back())
+        await edit(cb, "Шлюз и так не назначен", kb.settings_back("rt"))
         return
     states = await call(services.gateway_states)
     now_active = next((x for x in states if x.get("active")), None)
-    await edit(cb, texts.gateway_removed(prev, now_active), kb.settings_back())
+    from awgbot.bot import screens
+    card_from_home(cb.message.chat.id, False)
+    text, markup = await gateways_screen(services)
+    await edit(cb, screens.with_note(text, texts.gateway_removed(prev, now_active)), markup)
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "remove_yes"))
@@ -781,6 +872,12 @@ async def gateway_remove_yes(cb: CallbackQuery, callback_data: GwMarkCB, service
 @router.callback_query(SetCB.filter(F.act == "open"))
 async def open_section(cb: CallbackQuery, callback_data: SetCB, services, state: FSMContext):
     await state.clear()
+    if callback_data.sec == "rt":
+        card_from_home(cb.message.chat.id, False)
+    if callback_data.sec == "upd":
+        await cb.answer("Проверяю…")                     # раздел ходит к списку релизов
+        await _render(cb, callback_data.sec, services, callback_data.key or "")
+        return
     await _render(cb, callback_data.sec, services, callback_data.key or "")
     await cb.answer()
 
@@ -790,24 +887,33 @@ async def open_section(cb: CallbackQuery, callback_data: SetCB, services, state:
 async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
     key = callback_data.key
     if callback_data.sec == "upd" and key == "notify":
-        # уведомления об обновлениях = мьют в БД (не YAML). never-расписание не
-        # даёт включить (проверяем перед снятием мьюта).
-        if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
-            await cb.answer("Сначала выбери расписание проверки (не «никогда»).", show_alert=True)
-            return
+        # уведомления об обновлениях = мьют в БД (не YAML); проверка по
+        # расписанию идёт в любом случае — ради строки «⬆️ Доступна vX»
         muted = await call(services.updates_muted)
         if muted:
             await call(services.unmute_updates)
         else:
             await call(services.mute_updates)
-        await _render(cb, callback_data.sec, services)
-        await cb.answer()
+        await cb.answer("Уведомления " + ("включены" if muted else "выключены"))
+        await _render(cb, "upd", services, "cached")
         return
     if key == "app.routing.enabled" and settings.get_bool(key, False):
         # Выключение бьёт по всем, кому фича разрешена, — только через
         # подтверждение; включение — сразу.
         await edit(cb, texts.ROUTING_DISABLE_CONFIRM, kb.routing_disable_confirm())
         await cb.answer()
+        return
+
+    if callback_data.sec == "rt_mon" and key == "app.routing.failover.enabled":
+        # тумблер из «Мониторинга» 3.1.0: теперь он на экране «Шлюзы»
+        new = not settings.get_bool(key, True)
+        try:
+            await call(settings.set_value, key, new)
+        except settings.SettingsWriteError as e:
+            await cb.answer(str(e), show_alert=True)
+            return
+        await _render(cb, "rt", services)
+        await cb.answer("Автопереключение " + ("включено" if new else "выключено"))
         return
 
     async def _after_set(k):
@@ -832,6 +938,9 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
 async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
     """Разрешение профилю на РФ-доступ. Верхний слой флага: снимая его, гасим
     эффект, но настройки самого клиента не разрушаем."""
+    if callback_data.key == "provision":
+        await _routing_provision(cb, services)
+        return
     if callback_data.key == "bundle":
         # «📤 Выпустить файл» упразднённого экрана «что произойдёт» — на случай
         # старого сообщения в чате: тот же выпуск с карточки/экрана
@@ -843,8 +952,9 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         # Обновление занимает секунды, спиннер на кнопке их покрывает; итог —
         # числом в ответе, а свежесть видна в перерисованном блоке «Списки».
         n = await call(services.routing_update_lists, True)
-        await _render(cb, "rt_lists", services)
-        await cb.answer(f"В базовом наборе {n} записей.")
+        await _render(cb, "rt_params", services)
+        from awgbot.bot.texts.fmt import plural_ru
+        await cb.answer(f"Списки обновлены: {n} {plural_ru(int(n), 'запись', 'записи', 'записей')}")
         return
     if callback_data.key == "off!":
         # подтверждённое выключение фичи целиком (см. toggle)
@@ -892,6 +1002,16 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
             return
         await send_menu(cb.message, services, texts.gateway_card_text(st, st["states"]),
                         card_kb(st, cb.message.chat.id))
+        return
+    if callback_data.key == "allow_all":
+        # правило массового выбора: ☑️ — выдать всем, ✅ — снять со всех
+        clients = await call(services.routing_grantable_clients)
+        target = not all(c.routing_allowed for c in clients)
+        for c in clients:
+            if bool(c.routing_allowed) != target:
+                await send_notifications(cb.bot, await call(services.set_routing_allowed, c.id, target))
+        await _render(cb, "rt_users", services)
+        await cb.answer("РФ-доступ " + ("разрешён всем" if target else "снят со всех"))
         return
     if callback_data.key != "allow":
         await cb.answer("Действие недоступно.", show_alert=True)
@@ -964,7 +1084,7 @@ async def ssh_port_ask(cb: CallbackQuery, state: FSMContext, services):
         await cb.answer()
         return
     await state.set_state(SshPort.value)
-    await core.ask(cb, services, texts.SSH_PORT_ASK, kb.settings_cancel("fw"))
+    await core.ask(cb, services, texts.ssh_port_ask(st.get("ssh_port")), kb.settings_cancel("fw"))
     await cb.answer()
 
 
@@ -1005,10 +1125,9 @@ async def ssh_port_received(message: Message, state: FSMContext, services):
         await send_menu(message, services, texts.ssh_owner_refusal(st, e.listening), kb.settings_back("fw"))
         return
     except ServiceError as e:
-        await message.answer(f"⚠️ Порт не изменён: {texts._e(str(e))}")
+        await core.after_input(message, services, HOOKS, "fw", f"⚠️ Порт не изменён: {texts._e(str(e))}")
     else:
-        await message.answer(texts.ssh_port_changed(old, port), reply_markup=kb.hide_only())
-    await core.after_input(message, services, HOOKS, "fw")
+        await core.after_input(message, services, HOOKS, "fw", texts.ssh_port_changed(old, port))
 
 
 @router.callback_query(SetCB.filter((F.sec == "fw") & (F.act == "do")
@@ -1023,7 +1142,8 @@ async def ssh_port_finisher_action(cb: CallbackQuery, callback_data: SetCB, stat
         pass
     if callback_data.key == "port_retry":
         await state.set_state(SshPort.value)
-        await send_menu(cb.message, services, texts.SSH_PORT_ASK, kb.settings_cancel("fw"))
+        st = await call(services.firewall_screen)
+        await send_menu(cb.message, services, texts.ssh_port_ask(st.get("ssh_port")), kb.settings_cancel("fw"))
     else:
         await send_menu(cb.message, services, *await _screen("fw", services))
     await cb.answer()
@@ -1079,7 +1199,7 @@ async def _routing_provision(cb: CallbackQuery, services) -> None:
     try:
         tail = await call(services.routing_provision)
     except ServiceError as e:
-        await cb.message.answer(texts.routing_provision_failed(str(e)))
+        await send_menu(cb.message, services, texts.routing_provision_failed(str(e)), kb.settings_back("rt"))
         return
     sent = await cb.message.answer(texts.routing_provisioned(tail))
     # Интерфейс линка читается при старте: без рестарта функция останется
@@ -1100,7 +1220,7 @@ async def _firewall_action(cb: CallbackQuery, callback_data: SetCB, services) ->
     try:
         if key == "on":
             await call(services.firewall_enable)
-            await cb.answer("Фильтр включён")
+            await cb.answer(texts.FIREWALL_ON_ALERT, show_alert=True)
         elif key == "off":
             await call(services.firewall_disable)
             await cb.answer("Фильтр снят")
@@ -1126,7 +1246,7 @@ async def _firewall_action(cb: CallbackQuery, callback_data: SetCB, services) ->
                 return
             entry = allow[idx]
             await call(services.firewall_allow_remove, entry)
-            await cb.answer(f"{entry} убран")
+            await cb.answer(f"{entry} убран"[:190])
         else:
             await cb.answer("Действие недоступно", show_alert=True)
             return
@@ -1145,6 +1265,56 @@ _RT_MON_PICKS = {
     "window": ("app.routing.failover.window_samples", ("5", "10", "20")),
     "avail": ("app.routing.failover.min_availability", ("25", "50", "75")),
 }
+
+
+# ── кнопки-циклы: значение переставляется на следующее из ряда ──────────────
+_CYCLES = {
+    "email.poll_interval_sec": kb.EMAIL_POLL_CYCLE,
+    "email.resume_code_len": kb.EMAIL_CODE_CYCLE,
+    "updates.poll_schedule": kb.UPDATE_SCHEDULE_CYCLE,
+    "app.routing.probe_seconds": (30, 45, 60),
+    "app.routing.failover.window_samples": (5, 10, 20),
+    "app.routing.failover.min_availability": (25, 50, 75),
+    "app.routing.lists_refresh_hours": (6, 12, 24),
+}
+
+
+def _next_in_cycle(key: str, current) -> object:
+    """Следующее значение ряда; значение вне ряда (из конфига руками) —
+    ближайшее большее, за последним — первое."""
+    values = list(_CYCLES[key])
+    try:
+        cur = type(values[0])(current)
+    except (ValueError, TypeError):
+        return values[0]
+    if cur in values:
+        return values[(values.index(cur) + 1) % len(values)]
+    if isinstance(cur, (int, float)):
+        bigger = [v for v in values if v > cur]
+        return bigger[0] if bigger else values[0]
+    return values[0]
+
+
+@router.callback_query(SetCB.filter(F.act == "cycle"))
+async def cycle(cb: CallbackQuery, callback_data: SetCB, services):
+    """Цикл вместо ввода: опрос почты, длина кода, расписание проверки
+    обновлений, канал бэкапа, параметры РФ-доступа. Итог — всплывашкой."""
+    key = callback_data.key
+    if key == "app.scheduler.backup_channel":
+        cur = str(settings.get(key, "telegram") or "telegram").lower()
+        await core.set_backup_channel(cb, services, HOOKS, "email" if cur == "telegram" else "telegram")
+        return
+    if key not in _CYCLES:
+        await cb.answer("Кнопка устарела — открой раздел заново", show_alert=True)
+        return
+    new = _next_in_cycle(key, settings.get(key, _CYCLES[key][0]))
+    try:
+        await call(settings.set_value, key, new)
+    except settings.SettingsWriteError as e:
+        await cb.answer(str(e), show_alert=True)
+        return
+    await cb.answer(texts.cycle_toast(key, new))
+    await _render(cb, callback_data.sec, services, "cached" if callback_data.sec == "upd" else "")
 
 
 @router.callback_query(SetCB.filter(F.act == "pick"))
@@ -1241,13 +1411,13 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
 
     if key == "pending":
         rows = await call(services.migration_pending)
-        await edit(cb, texts.migration_pending_text(rows), kb.settings_back())
+        await edit(cb, texts.migration_pending_text(rows), kb.settings_back("svc"))
         await cb.answer()
         return
 
     if key == "orphans":
         rows = await call(services.migration_orphan_rows)    # имена одним проходом
-        await edit(cb, texts.migration_orphans_text(rows), kb.settings_back())
+        await edit(cb, texts.migration_orphans_text(rows), kb.settings_back("svc"))
         await cb.answer()
         return
 
@@ -1365,17 +1535,16 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
                    kb.svc_confirm(key))
         await cb.answer()
         return
-    if key == "awg!":                                  # рестарт AWG
-        await cb.answer("Перезапускаю AWG…")
+    if key == "awg!":                                  # рестарт AWG — итог первой строкой раздела
+        await cb.answer("Перезапускаю AWG…")           # ответ сразу: рестарт может идти долго
         try:
             await call(services.restart_service)
-            # клавиатура — полным рендером раздела: голый settings_svc() терял
-            # бы кнопки переезда до следующего захода в раздел
-            await edit(cb, "✅ AmneziaWG перезапущен, блокировки восстановлены.",
-                       (await _screen("svc", services))[1])
+            note = texts.SVC_AWG_RESTARTED
         except Exception as e:                         # noqa: BLE001
-            await edit(cb, f"⚠️ Ошибка перезапуска AWG: {e}",
-                       (await _screen("svc", services))[1])
+            note = f"⚠️ Ошибка перезапуска AWG: {texts._e(str(e))}"
+        from awgbot.bot import screens
+        text, markup = await _screen("svc", services)
+        await edit(cb, screens.with_note(text, note), markup)
         return
     if key == "bot!":                                  # рестарт бота
         await cb.answer("Перезапускаю бота…")
@@ -1385,18 +1554,7 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
         await call(services.set_restart_wait, cb.message.chat.id, cb.message.message_id)
         await call(services.restart_bot)
         return
-    if key == "check":                                 # проверить обновление сейчас
+    if key == "check":                                 # старая кнопка: раздел проверяет сам
         await cb.answer("Проверяю…")
-        nxt = await call(services.update_next)
-        blocked = await call(services.update_block_reason, nxt) if nxt is not None else ""
-        if nxt is None:
-            await edit(cb, texts.update_current_ok(config.INSTALLED_VERSION),
-                       kb.settings_updates(await call(services.updates_muted)))
-        elif blocked:
-            # Кнопку «Обновить» не показываем: она бы вела в отказ.
-            await edit(cb, texts.update_blocked(nxt.tag, blocked),
-                       kb.settings_updates(await call(services.updates_muted)))
-        else:
-            await edit(cb, texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body, nxt.skipped),
-                       kb.update_admin_available())
+        await _render(cb, "upd", services)
         return

@@ -112,7 +112,7 @@ class MigrationMixin:
         if self.migration_running():
             return "переезд уже идёт"
         if self.migration_available():
-            return ("второй интерфейс уже поднят — начни переезд в «Обслуживании» "
+            return ("второй интерфейс уже поднят — начни переезд в «🔧 Сервис» "
                     "или отмени его")
         return ""
 

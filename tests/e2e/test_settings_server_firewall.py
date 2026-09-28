@@ -1,5 +1,5 @@
 """
-Разделы «🖥 Сервер» и «🛡 Файервол» в настройках (docs/ROADMAP.md, п.8).
+Разделы «🖥 Сервер AWG» и «🛡 SSH-доступ» в настройках (docs/ROADMAP.md, п.8).
 
 Это то, что раньше спрашивал установщик и делал CLI. Правки уезжают в новые
 ссылки, а включение фильтра может запереть SSH — оба экрана обязаны говорить
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from awgbot.bot import texts
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot.handlers import settings as sh
 from awgbot.bot.handlers import settingscore as core
@@ -37,15 +38,19 @@ async def test_server_screen_shows_what_goes_into_new_links(services, fake_bot, 
         "subnet": "10.8.1.0/24", "kernel": "3.1.20260812", "generation": 1,
         "migration_blocked": ""})
     text, markup = await sh._screen("srv", services)
-    assert "vpn.example.org" in text and "Сервер 1" in text and "3.1.20260812" in text
-    assert "поколение 1" in text
-    assert "новым" in text and "переездом профилей" in text, "цена правки названа"
-    labels = _labels(markup)
-    assert "✏️ Доменное имя" in labels and "✏️ DNS клиентов" in labels and "✏️ MTU" in labels
-    assert "✏️ Имя сервера" in labels
-    assert "🚚 Сменить порт или подсеть" in labels
-    assert not any(l.startswith("✏️") and "порт" in l.lower() for l in labels), \
-        "порт не правится как обычная настройка"
+    lines = text.split("\n")
+    assert lines[:4] == ["🖥 Сервер AWG · ядро 3.1.20260812, gen1",
+                         "vpn.example.org · имя сервера: «Сервер 1»",
+                         "DNS 10.8.1.1 · MTU 1376 · keepalive 25-35",
+                         "awg0 · порт 51820 · 10.8.1.0/24"], lines
+    assert "новые ссылки" in text and "переездом" in text, "цена правки названа"
+    rows = [[b.text for b in r] for r in markup.inline_keyboard]
+    assert rows == [["✏️ Домен", "✏️ Имя"], ["✏️ DNS", "✏️ MTU"], ["🚚 Порт, подсеть"], ["⬅️ Назад"]], rows
+    keys = [SetCB.unpack(b.callback_data).key for r in markup.inline_keyboard[:2] for b in r]
+    assert keys == ["app.network.server_host", "app.client_config.server_name",
+                    "app.client_config.dns1", "app.client_config.mtu"], keys
+    assert SetCB.unpack(markup.inline_keyboard[2][0].callback_data) == SetCB(sec="mig_prep", act="open"), \
+        "порт и подсеть — переездом, не обычной правкой"
 
 
 async def test_server_screen_says_when_there_is_no_domain(services, fake_bot, monkeypatch):
@@ -56,7 +61,8 @@ async def test_server_screen_says_when_there_is_no_domain(services, fake_bot, mo
         "keepalive": "25-35", "iface": "awg0", "port": 45871, "port_conf": 45871,
         "subnet": "10.8.1.0/24", "kernel": "", "generation": 1, "migration_blocked": ""})
     text, _ = await sh._screen("srv", services)
-    assert "Доменное имя: не задано" in text and "203.0.113.10" in text
+    assert text.split("\n")[1] == "домена нет, в ссылках IP 203.0.113.10 · имя сервера: «Сервер 1»", text
+    assert text.startswith("🖥 Сервер AWG · ядро не определено, gen1\n"), text
 
 
 async def test_server_screen_flags_a_port_mismatch(services, fake_bot, monkeypatch):
@@ -119,11 +125,12 @@ async def test_firewall_screen_offers_enable_and_lists_addresses(services, fake_
     text, markup = await sh._screen("fw", services)
     assert "Порт SSH: 22" in text and "2 адреса — редактируемый список ниже" in text
     assert "203.0.113.7" not in text, "список — кнопками, не в инфобоксе"
-    assert "Доступ по SSH" in text, "заголовок раздела не обновлён"
+    assert text.startswith("<b>🛡 SSH-доступ</b>"), "заголовок раздела не по новому имени"
     assert "таймер" not in text.lower(), "из чата таймера нет — текст не должен его обещать"
-    labels = _labels(markup)
-    assert "🟢 Включить фильтр" in labels and "➕ Добавить адрес" in labels
-    assert "➖ 203.0.113.7" in labels and "➖ home.example.org" in labels
+    rows = [[b.text for b in r] for r in markup.inline_keyboard]
+    assert rows == [["🅿️ Порт", "➕ Адрес"], ["➖ 203.0.113.7"], ["➖ home.example.org"],
+                    ["☑️ Фильтр снаружи"], ["⬅️ Назад"]], rows
+    assert SetCB.unpack(markup.inline_keyboard[3][0].callback_data).key == "on"
 
 
 async def test_no_addresses_means_no_enable_button(services, fake_bot, monkeypatch):
@@ -134,7 +141,9 @@ async def test_no_addresses_means_no_enable_button(services, fake_bot, monkeypat
     assert not any("фильтр" in l.lower() for l in _labels(markup))
     monkeypatch.setattr(services, "firewall_screen", lambda: _fw(enabled=True))
     _, markup = await sh._screen("fw", services)
-    assert "🔴 Выключить фильтр" in _labels(markup), "выключить можно и без адресов"
+    assert "✅ Фильтр снаружи" in _labels(markup), "выключить можно и без адресов"
+    btn = next(b for r in markup.inline_keyboard for b in r if b.text == "✅ Фильтр снаружи")
+    assert SetCB.unpack(btn.callback_data).key == "off"
 
 
 async def test_enable_applies_at_once_and_cli_timer_buttons_still_work(services, fake_bot, monkeypatch):
@@ -147,8 +156,11 @@ async def test_enable_applies_at_once_and_cli_timer_buttons_still_work(services,
     cb, nav = _acb(fake_bot)
     await sh.do_action(cb, SetCB(sec="fw", act="do", key="on"), services)
     assert calls == ["on"]
-    assert not any(s[0] == "answer" for s in nav.sent), "никаких «проверь вход» — применено и всё"
-    assert any("Фильтр включён" in str(a) for a in cb.answers), cb.answers
+    assert not any(s[0] == "answer" for s in nav.sent), "никаких отдельных сообщений — применено и всё"
+    # предупреждение о подмене адреса роутером — alert: его нельзя пропустить
+    assert cb.answers[0] == (texts.FIREWALL_ON_ALERT, True), cb.answers
+    assert texts.FIREWALL_ON_ALERT.startswith("Фильтр включён: снаружи — только адреса из списка")
+    assert "Проверь вход новым подключением" in texts.FIREWALL_ON_ALERT
     cb, nav = _acb(fake_bot)
     await sh.do_action(cb, SetCB(sec="fw", act="do", key="confirm"), services)
     assert calls == ["on", "confirm"]
@@ -247,7 +259,7 @@ async def test_server_screen_hides_the_migration_button_while_one_runs(services,
     text, markup = await sh._screen("srv", services)
     assert "нельзя" in text and "поколение 2" in text
     labels = _labels(markup)
-    assert not any("Сменить порт" in l for l in labels)
+    assert not any("Порт" in l for l in labels), labels
 
 
 async def test_prepare_screen_names_the_cohort_and_the_cost(services, fake_bot, monkeypatch):
@@ -255,11 +267,12 @@ async def test_prepare_screen_names_the_cohort_and_the_cost(services, fake_bot, 
         "iface": "awg0", "port": 45871, "subnet": "10.8.1.0/24",
         "clients": 3, "devices": 7, "want_port": want_port, "blocked": ""})
     text, markup = await sh._screen("mig_prep", services)
-    assert "45871" in text and "10.8.1.0/24" in text
-    assert "7" in text and "3" in text, "размер когорты не назван"
+    assert text.startswith("🚚 Порт или подсеть · сейчас awg0, 45871, 10.8.1.0/24 → новый интерфейс, "
+                           "случайный высокий порт, свободная подсеть · в переезд войдут 7 устройств у 3 "
+                           "профилей (были онлайн за 2 недели)"), text
     assert "отмена безопасна" in text.lower() and "финал" in text.lower()
-    labels = _labels(markup)
-    assert "🚚 Поднять второй интерфейс" in labels and "✏️ Изменить порт" in labels
+    rows = [[b.text for b in r] for r in markup.inline_keyboard]
+    assert rows == [["🚚 Поднять интерфейс"], ["✏️ Свой порт", "✖️ Отмена"]], rows
 
 
 async def test_prepare_runs_and_restarts(services, fake_bot, monkeypatch):
@@ -273,7 +286,8 @@ async def test_prepare_runs_and_restarts(services, fake_bot, monkeypatch):
     await sh.do_action(cb, SetCB(sec="mig_prep", act="do", key="go", val="443"), services)
     assert calls == [443, "wait", "restart"]
     said = [s[1] for s in nav.sent if s[0] == "answer"]
-    assert said and "awg1" in said[-1] and "Начать переезд" in said[-1]
+    assert said and said[-1] == ("✅ Второй интерфейс поднят: awg1, 10.9.1.0/24, порт 443 · перезапускаю "
+                                 "бота — после этого 🔧 Сервис → 🚚 Начать переезд"), said
 
 
 async def test_prepare_failure_does_not_restart(services, fake_bot, monkeypatch):
@@ -290,21 +304,30 @@ async def test_prepare_failure_does_not_restart(services, fake_bot, monkeypatch)
     assert said and "занят" in said[-1] and "не тронут" in said[-1]
 
 
-async def test_maintenance_mentions_migration_only_with_its_button(services, fake_bot, monkeypatch):
-    """Без кнопки разговор о переезде — это рассказ о механизме, которого в
-    этом экране не видно."""
+async def test_maintenance_mentions_migration_only_while_it_runs(services, fake_bot, monkeypatch):
+    """«🔧 Сервис»: о переезде текст говорит, только когда он идёт, — с
+    прогрессом одной строкой; настроен, но не идёт — одна кнопка «Начать»,
+    без рассказа о механизме."""
+    from types import SimpleNamespace as NS
     monkeypatch.setattr(services, "svc_screen_data",
                         lambda: {"state": "", "available": False, "progress": None, "orphans": 0})
     text, markup = await sh._screen("svc", services)
-    assert "Переезд" not in text
-    assert not any("переезд" in b.text.lower()
-                   for row in markup.inline_keyboard for b in row)
+    assert text == "🔧 Сервис\nПерезапуск AWG рвёт соединения на секунды, перезапуск бота — нет", text
+    assert not any("переезд" in b.text.lower() for row in markup.inline_keyboard for b in row)
 
     monkeypatch.setattr(services, "svc_screen_data",
                         lambda: {"state": "", "available": True, "progress": None, "orphans": 0})
     text, markup = await sh._screen("svc", services)
-    assert "Переезд профилей" in text
-    assert any("переезд" in b.text.lower() for row in markup.inline_keyboard for b in row)
+    assert "ереезд" not in text
+    assert "🚚 Начать переезд" in _labels(markup)
+
+    progress = NS(clients_done=11, clients_total=12, devices_done=18, devices_total=20)
+    monkeypatch.setattr(services, "svc_screen_data",
+                        lambda: {"state": "running", "available": True, "progress": progress, "orphans": 0})
+    text, markup = await sh._screen("svc", services)
+    assert text.split("\n")[-1] == ("🚚 Переезд идёт: 11/12 профилей, 18/20 устройств · выдаются только "
+                                    "новые конфиги, отмена безопасна"), text
+    assert _labels(markup)[2:5] == ["👥 Кто не переехал", "✅ Завершить", "↩️ Отменить"]
 
 
 # ── свой DNS-резолвер из раздела «Сервер AWG» ────────────────────────────────
@@ -320,13 +343,15 @@ async def test_public_dns_is_named_and_the_resolver_is_offered(services, monkeyp
     monkeypatch.setattr(services, "server_screen", lambda: _srv(
         {"mode": "public", "dns1": "1.1.1.1", "dns2": "1.0.0.1", "target": "10.8.1.1", "decision": ""}))
     text, markup = await sh._screen("srv", services)
-    assert "публичный" in text and "🔒 Свой DNS-резолвер" in _labels(markup)
+    assert "DNS 1.1.1.1, 1.0.0.1 — публичный · MTU" in text
+    rows = [[b.text for b in r] for r in markup.inline_keyboard]
+    assert rows[2] == ["🔒 Свой резолвер", "🚚 Порт, подсеть"], rows
 
     monkeypatch.setattr(services, "server_screen", lambda: _srv(
         {"mode": "public", "dns1": "1.1.1.1", "dns2": "1.0.0.1", "target": "10.8.1.1",
          "decision": "pending"}))
     text, _ = await sh._screen("srv", services)
-    assert "при следующем переезде станет свой" in text
+    assert "— публичный; при переезде станет свой · MTU" in text
 
 
 async def test_private_dns_is_named_and_nothing_is_offered(services, monkeypatch):
@@ -334,7 +359,7 @@ async def test_private_dns_is_named_and_nothing_is_offered(services, monkeypatch
         {"mode": "private", "dns1": "10.8.1.1", "dns2": "10.8.1.1", "target": "10.8.1.1",
          "decision": ""}))
     text, markup = await sh._screen("srv", services)
-    assert "свой резолвер на сервере" in text and "🔒 Свой DNS-резолвер" not in _labels(markup)
+    assert "DNS 1.1.1.1, 1.0.0.1 — свой резолвер · MTU" in text and "🔒 Свой резолвер" not in _labels(markup)
 
 
 async def test_dns_screen_explains_and_offers_three_ways(services, monkeypatch):
@@ -344,8 +369,8 @@ async def test_dns_screen_explains_and_offers_three_ways(services, monkeypatch):
     text, markup = await sh._screen("dns", services)
     assert "10.8.1.1" in text and "DoH" in text and "переезд" in text.lower()
     labels = _labels(markup)
-    assert "🚚 Переехать сейчас" in labels and "⏳ При следующем переезде" in labels \
-        and "Не нужно" in labels and "⬅️ Назад" in labels
+    assert labels == ["🚚 Переехать сейчас", "⏳ При переезде", "Не нужно", "⬅️ Назад"], labels
+    assert text.startswith("🔒 Свой DNS-резолвер · сейчас публичный\nСвой — 10.8.1.1: "), text
 
     monkeypatch.setattr(services, "migration_blocked_reason", lambda: "идёт переезд")
     _, markup = await sh._screen("dns", services)
@@ -353,7 +378,7 @@ async def test_dns_screen_explains_and_offers_three_ways(services, monkeypatch):
 
 
 @pytest.mark.parametrize("key, decision, expect", [
-    ("later", "pending", "следующий переезд"),
+    ("later", "pending", "Следующий переезд профилей"),
     ("never", "dismissed", "публичный DNS"),
 ])
 async def test_later_and_never_record_the_decision(services, fake_bot, monkeypatch, key, decision, expect):
@@ -374,9 +399,9 @@ async def test_now_records_pending_and_opens_the_migration_preparation(services,
     await sh.private_dns_action(cb, SetCB(sec="dns", act="do", key="now"), services, FakeState())
     assert services.private_dns_decision() == "pending"
     shown = [s for s in nav.sent if s[0] == "edit_text"]
-    assert shown and "Смена порта или подсети" in shown[-1][1]
-    assert "свой резолвер" in shown[-1][1], "подготовка называет, что DNS станет своим"
-    assert "🚚 Поднять второй интерфейс" in _labels(shown[-1][2])
+    assert shown and shown[-1][1].startswith("🚚 Порт или подсеть · сейчас awg0")
+    assert "DNS клиентов — свой резолвер" in shown[-1][1], "подготовка называет, что DNS станет своим"
+    assert "🚚 Поднять интерфейс" in _labels(shown[-1][2])
 
 
 async def test_now_while_a_migration_runs_explains_and_stays(services, fake_bot, monkeypatch):
@@ -401,12 +426,15 @@ async def test_port_button_is_first_and_opens_the_prompt(services, fake_bot, mon
     from awgbot.bot.states import SshPort
     monkeypatch.setattr(services, "firewall_screen", lambda: _fw())
     _, markup = await sh._screen("fw", services)
-    assert _labels(markup)[0] == "🅿️ Изменить порт"
+    assert _labels(markup)[0] == "🅿️ Порт"
     cb, nav = _acb(fake_bot)
     st = FakeState()
     await sh.ssh_port_ask(cb, st, services)
     assert await st.get_state() == SshPort.value.state
-    assert any("Порт SSH" in s[1] for s in nav.sent if s[0] == "edit_text"), nav.sent
+    prompt = [s for s in nav.sent if s[0] == "edit_text"][-1]
+    assert prompt[1].startswith("🅿️ Порт SSH · сейчас 22 · 1–65535."), "приглашение — с текущим портом"
+    assert "Проброс на роутере" not in prompt[1], "про роутер — только у шлюза"
+    assert _labels(prompt[2]) == ["✖️ Отмена"]
 
 
 async def test_busy_port_is_refused_with_retry_and_back(services, fake_bot, monkeypatch):
@@ -424,7 +452,7 @@ async def test_busy_port_is_refused_with_retry_and_back(services, fake_bot, monk
     sent = [s for s in msg.sent if s[0] == "answer" and "порт 8443 уже занят процессом" in s[1]]
     assert sent, msg.sent
     assert "<code>nginx</code>" in sent[0][1]
-    assert _labels(sent[0][2]) == ["✏️ Изменить порт", "⬅️ Назад"]
+    assert _labels(sent[0][2]) == ["✏️ Другой порт", "⬅️ Назад"]
     keys = [SetCB.unpack(b.callback_data).key for row in sent[0][2].inline_keyboard for b in row]
     assert keys == ["port_retry", "port_back"]
 
@@ -449,12 +477,12 @@ async def test_finisher_buttons_reopen_the_prompt_or_the_section(services, fake_
     await sh.ssh_port_finisher_action(cb, SetCB(sec="fw", act="do", key="port_retry"), st, services)
     assert await st.get_state() == SshPort.value.state
     assert ("edit_reply_markup", ADMIN) in fake_bot.records, "финишер остаётся, клавиатура — «Скрыть»"
-    assert any(s[0] == "answer" and "Порт SSH" in s[1] for s in nav.sent)
+    assert any(s[0] == "answer" and s[1].startswith("🅿️ Порт SSH · сейчас 22") for s in nav.sent)
     cb, nav = _acb(fake_bot)
     st = FakeState()
     await sh.ssh_port_finisher_action(cb, SetCB(sec="fw", act="do", key="port_back"), st, services)
     assert await st.get_state() is None
-    assert any(s[0] == "answer" and "Доступ по SSH" in s[1] for s in nav.sent)
+    assert any(s[0] == "answer" and s[1].startswith("<b>🛡 SSH-доступ</b>") for s in nav.sent)
 
 
 async def test_free_port_is_applied_and_the_section_is_redrawn(services, fake_bot, monkeypatch):
@@ -469,8 +497,9 @@ async def test_free_port_is_applied_and_the_section_is_redrawn(services, fake_bo
     await sh.ssh_port_received(msg, st, services)
     assert changed == [2222] and await st.get_state() is None
     texts_sent = [s[1] for s in msg.sent if s[0] == "answer"]
-    assert any("22 → <b>2222</b>" in t for t in texts_sent)
-    assert any("Порт SSH: 2222" in t for t in texts_sent), "раздел перерисован с новым портом"
+    assert len(texts_sent) == 1, "итог — первой строкой раздела, не отдельным сообщением"
+    assert texts_sent[0].startswith("✅ Порт SSH: 22 → 2222. "), texts_sent
+    assert "Порт SSH: 2222" in texts_sent[0], "раздел перерисован с новым портом"
 
 
 async def test_bad_port_is_asked_again_and_refusal_from_sshd_is_shown(services, fake_bot, monkeypatch):
@@ -489,8 +518,9 @@ async def test_bad_port_is_asked_again_and_refusal_from_sshd_is_shown(services, 
     assert any("от 1 до 65535" in s[1] for s in msg.sent if s[0] == "answer")
     msg = FakeMessage(text="2222", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await sh.ssh_port_received(msg, st, services)
-    assert any("Порт не изменён" in s[1] and "Bad configuration" in s[1]
-               for s in msg.sent if s[0] == "answer")
+    sections = [s[1] for s in msg.sent if s[0] == "answer"]
+    assert sections and sections[-1].startswith("⚠️ Порт не изменён: sshd -t: Bad configuration option\n"), \
+        "отказ sshd — первой строкой раздела"
 
 
 async def test_same_port_is_a_finisher_not_a_refusal(services, fake_bot, monkeypatch):
@@ -507,7 +537,7 @@ async def test_same_port_is_a_finisher_not_a_refusal(services, fake_bot, monkeyp
     assert not touched and await st.get_state() is None
     sent = [s for s in msg.sent if s[0] == "answer" and "не изменился" in s[1] and "(22)" in s[1]]
     assert sent, msg.sent
-    assert _labels(sent[0][2]) == ["✏️ Изменить порт", "⬅️ Назад"]
+    assert _labels(sent[0][2]) == ["✏️ Другой порт", "⬅️ Назад"]
 
 
 async def test_foreign_owner_refuses_on_the_button_and_the_screen_warns_about_drift(services, fake_bot, monkeypatch):

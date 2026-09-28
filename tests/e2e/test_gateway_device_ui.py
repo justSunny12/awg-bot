@@ -80,15 +80,15 @@ def _docs(nav):
 
 
 async def test_settings_assign_existing_device_goes_the_full_way(services, fake_bot, gwsetup):
-    """Без шлюза раздел предлагает «Назначить шлюз» → выбор вида → из моих
+    """Без шлюза «Шлюзы» предлагают «🛰 Назначить» → выбор вида → из моих
     устройств → подтверждение → токен агента → пометка с новыми ключами линка,
     файл первого применения и инструкция: устройство линка не знает, поэтому
     путь всегда полный, как у нового устройства."""
     _, phone, pi = gwsetup
     text, markup = await sh._screen("rt", services)
     labels = _labels(markup)
-    assert "🛰 Назначить шлюз" in labels and "⚙️ Конфигурация шлюза" not in labels
-    assert "не назначен" in text
+    assert labels[0] == "🛰 Назначить" and "📤 Конфигурация" not in labels, labels
+    assert text.endswith("\nШлюз не назначен"), text
     _, markup = await sh._screen("rt_gw", services)
     assert _labels(markup)[:2] == ["📱 Из моих устройств", "➕ Новое устройство"]
     cb, nav = _acb(fake_bot)
@@ -97,11 +97,11 @@ async def test_settings_assign_existing_device_goes_the_full_way(services, fake_
     assert any("NASPi" in l for l in labels) and any("phone" in l for l in labels)
     cb, nav = _acb(fake_bot)
     await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=pi.id), services)
-    assert any("станет шлюзом" in s[1] for s in nav.sent if s[0] == "edit_text")
+    assert any(s[1].startswith("🛰 NASPi станет шлюзом?") for s in nav.sent if s[0] == "edit_text")
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi.id), services, st)
-    assert any("Токен бота шлюза" in s[1] for s in nav.sent if s[0] == "edit_text"), "сначала токен"
+    assert any(s[1].startswith("🤖 Токен бота шлюза — ") for s in nav.sent if s[0] == "edit_text"), "сначала токен"
     assert _gw_dev_id(services) is None
     msg = _amsg(fake_bot, "123456789:AA-token-value-long-enough-here")
     await sh.gateway_token_received(msg, st, services)
@@ -115,8 +115,10 @@ async def test_settings_assign_existing_device_goes_the_full_way(services, fake_
     assert any("--install" in s[1] for s in msg.sent if s[0] == "answer"), "инструкция"
     text, markup = await sh._screen("rt", services)
     labels = _labels(markup)
-    assert "🛰 Шлюз: NASPi" in labels and "➕ Резервный шлюз" in labels
-    assert "🛰 Назначить шлюз" not in labels and "NASPi" in text and "жду" in text
+    assert labels[0].endswith("NASPi") and labels[1] == "➕ Резерв", labels
+    assert "🛰 Назначить" not in labels
+    assert "NASPi — 🟡 Активен, проверка связи" in text or "NASPi — 🔴 Активен" in text, \
+        "новый шлюз ещё не поднялся — не зелёный"
 
 
 async def test_settings_change_gateway_rekeys_and_gives_plain_first_run_file(services, fake_bot, gwsetup):
@@ -126,7 +128,8 @@ async def test_settings_change_gateway_rekeys_and_gives_plain_first_run_file(ser
     _slot1(services, pi.id)
     cb, nav = _acb(fake_bot)
     await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=phone.id, slot=1), services)
-    assert any("Сейчас шлюз — «NASPi»" in s[1] for s in nav.sent if s[0] == "edit_text")
+    assert any("\nСейчас шлюз — NASPi: прежняя машина потеряет линк сама" in s[1]
+               for s in nav.sent if s[0] == "edit_text"), nav.sent
     # Со сменой ключей файл едет открытым и ставится с нуля — значит нужен
     # токен агента, как и для новой машины.
     st = FakeState()
@@ -158,14 +161,12 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
     monkeypatch.setattr(services, "gw_bot_token", lambda slot=None: stored.get("t", ""))
     monkeypatch.setattr(services, "set_gw_bot_token",
                         lambda t, slot=None: stored.__setitem__("t", t))
-    cb, nav = _acb(fake_bot)
-    await sh.gateway_new_ask(cb, GwMarkCB(action="new_ask"), services)
-    assert any("Новое устройство" in s[1] for s in nav.sent if s[0] == "edit_text")
-
+    # новый слот — сразу к токену, без промежуточного подтверждения
     st = FakeState()
     cb, nav = _acb(fake_bot)
-    await sh.gateway_new_yes(cb, GwMarkCB(action="new_yes"), services, st)
-    assert any("Токен бота шлюза" in s[1] for s in nav.sent if s[0] == "edit_text")
+    await sh.gateway_new_ask(cb, GwMarkCB(action="new_ask"), services, st)
+    assert not any("Новое устройство" in s[1] for s in nav.sent if s[0] == "edit_text"), "лишнее подтверждение"
+    assert any(s[1].startswith("🤖 Токен бота шлюза — ") for s in nav.sent if s[0] == "edit_text")
     assert _gw_dev_id(services) is None, "без токена ничего не создаём"
 
     msg = _amsg(fake_bot, "123456789:AA-token-value-long-enough-here")
@@ -213,20 +214,20 @@ async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup
     text, markup = next((s[1], s[2]) for s in nav.sent if s[0] == "edit_text")
     # устройство-шлюз открывает карточку своего слота (отдельной карточки
     # устройства-шлюза больше нет)
-    assert text.startswith("🛰 <b>Шлюз «NASPi»</b>\n"), text
+    assert "NASPi — " in text.split("\n")[0] and "📡 awglink:443" in text, text
     labels = _labels(markup)
-    assert "🛑 Снять шлюз" in labels and "⚙️ Конфигурация шлюза" in labels, labels
-    assert labels[-2] == "📡 Пинг" and labels[-1] == "⬅️ Назад", "пинг — последним перед «Назад»"
+    assert "📤 Конфигурация" in labels and labels[-2:] == ["✏️ Изменить", "⬅️ Назад"], labels
     assert not any("Удалить" in l or "Заблокировать" in l or "подключения" in l for l in labels)
     cb, nav = _acb(fake_bot)
     await sh.gateway_remove_ask(cb, GwMarkCB(action="remove_ask"), services)
-    assert any("перестанет быть шлюзом" in s[1] for s in nav.sent if s[0] == "edit_text")
+    assert any(s[1].startswith("🛑 NASPi — больше не шлюз?") for s in nav.sent if s[0] == "edit_text")
     cb, nav = _acb(fake_bot)
     await sh.gateway_remove_yes(cb, GwMarkCB(action="remove_yes"), services)
     assert _gw_dev_id(services) is None
     assert services.modes == ["--rekey"]
     assert not any("GW1:" in (s[1] or "") for s in nav.sent)
-    assert any("больше не шлюз" in s[1] for s in nav.sent if s[0] == "edit_text")
+    assert any(s[1].startswith("🛑 NASPi больше не шлюз · РФ-доступ выключен") for s in nav.sent
+               if s[0] == "edit_text")
     cb, nav = _acb(fake_bot)
     await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi.id), services, FakeState())
     _, markup = next((s[1], s[2]) for s in nav.sent if s[0] == "edit_text")
@@ -234,7 +235,10 @@ async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup
     # повторное снятие — сообщение, а не падение
     cb, nav = _acb(fake_bot)
     await sh.gateway_remove_yes(cb, GwMarkCB(action="remove_yes"), services)
-    assert any("и так не назначен" in s[1] for s in nav.sent if s[0] == "edit_text")
+    shown = [s for s in nav.sent if s[0] == "edit_text"]
+    assert shown and "и так не назначен" in shown[-1][1]
+    back = shown[-1][2].inline_keyboard[-1][0]
+    assert back.text == "⬅️ Назад" and back.callback_data == SetCB(sec="rt").pack(), "назад — в «Шлюзы»"
 
 
 async def test_forwarded_claim_is_fallback_only(services, fake_bot, gwsetup):

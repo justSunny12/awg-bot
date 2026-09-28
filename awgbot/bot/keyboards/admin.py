@@ -23,8 +23,7 @@ from .common import (_btn_suffix, _manual_block_button, page_slice, page_nav, co
 def admin_main(*, gateways: bool = False, routing_visible: bool = False,
                self_client_id: int = 0, **_legacy) -> InlineKeyboardMarkup:
     """Восемь кнопок: свои устройства и РФ-доступ (когда выдан), профили и
-    новый профиль, шлюзы (когда есть или их можно добавить) и настройки,
-    объявление и обновление."""
+    новый профиль, шлюзы и настройки, объявление и обновление."""
     kb = InlineKeyboardBuilder()
     rows = []
     kb.button(text="📱 Мои устройства", callback_data=Menu(action="devices"))
@@ -36,13 +35,11 @@ def admin_main(*, gateways: bool = False, routing_visible: bool = False,
     kb.button(text="👥 Профили", callback_data=Menu(action="clients"))
     kb.button(text="➕ Профиль", callback_data=Menu(action="add_client"))
     rows.append(2)
-    if gateways:
-        kb.button(text="🛰 Шлюзы", callback_data=SetCB(sec="rt"))
-        kb.button(text="⚙️ Настройки", callback_data=SetCB(sec="root"))
-        rows.append(2)
-    else:
-        kb.button(text="⚙️ Настройки", callback_data=SetCB(sec="root"))
-        rows.append(1)
+    # «🛰 Шлюзы» — всегда: это и вход к развёртыванию РФ-доступа, и к его
+    # включению, других входов у функции нет
+    kb.button(text="🛰 Шлюзы", callback_data=SetCB(sec="rt"))
+    kb.button(text="⚙️ Настройки", callback_data=SetCB(sec="root"))
+    rows.append(2)
     kb.button(text="📢 Объявление", callback_data=BroadcastCB(action="pick"))
     kb.button(text="🔄 Обновить", callback_data=Menu(action="refresh"))
     rows.append(2)

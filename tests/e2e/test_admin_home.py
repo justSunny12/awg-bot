@@ -59,7 +59,8 @@ def _expiring(services, make_active_client, name, tg_id, days=2):
 
 async def test_quiet_home_has_only_what_is_always_there(services, fake_bot, fake_routing):
     """Нечего сказать — нет строк «Истекают», «Без профиля», «Доступна»,
-    «Переезд»; кнопок восемь без «🛰 Шлюзы» (шлюзов нет, функция выключена)."""
+    «Переезд»; кнопок восемь, «🛰 Шлюзы» на месте и без шлюзов: через неё
+    РФ-доступ разворачивают и включают."""
     fake_routing.enabled = False
     services.db.set_state("online_count", "0")
     lines, rows = await _home(services, fake_bot)
@@ -73,7 +74,7 @@ async def test_quiet_home_has_only_what_is_always_there(services, fake_bot, fake
     assert "" not in lines, "пустая строка-разделитель без временных строк"
     for word in ("Истекают", "Без профиля", "Доступна", "Переезд"):
         assert word not in joined, f"строка «{word}» без повода:\n{joined}"
-    assert rows == [["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"], ["⚙️ Настройки"],
+    assert rows == [["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"], ["🛰 Шлюзы", "⚙️ Настройки"],
                     ["📢 Объявление", "🔄 Обновить"]], rows
 
 
@@ -148,20 +149,19 @@ def test_home_first_line_is_host_status_and_short_uptime():
     assert texts.admin_panel({"ok": False}).split("\n")[0].endswith(" · 🔴 не отвечает")
 
 
-@pytest.mark.parametrize("gateways, enabled, shown", [
-    (False, False, False), (False, True, True), (True, False, True)])
-async def test_gateways_button_by_condition(services, fake_bot, fake_routing, make_active_client,
-                                            gateways, enabled, shown):
-    """«🛰 Шлюзы» — когда шлюзы есть или условная маршрутизация включена (их
-    можно добавить); иначе «⚙️ Настройки» одна в ряду."""
+@pytest.mark.parametrize("gateways, enabled", [(False, False), (False, True), (True, False)])
+async def test_gateways_button_is_always_there(services, fake_bot, fake_routing, make_active_client,
+                                               gateways, enabled):
+    """«🛰 Шлюзы» — всегда, рядом с «⚙️ Настройки»: без шлюзов и при
+    выключенной функции это единственный вход к её развёртыванию и
+    включению."""
     fake_routing.enabled = enabled
     if gateways:
         services.ensure_admin_client()
         pi = services.add_device(services.admin_client().id, "NASPi")
         services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30")
     _, rows = await _home(services, fake_bot)
-    assert (["🛰 Шлюзы", "⚙️ Настройки"] in rows) is shown, rows
-    assert (["⚙️ Настройки"] in rows) is not shown, rows
+    assert ["🛰 Шлюзы", "⚙️ Настройки"] in rows, rows
     assert sum(len(r) for r in rows) <= 8 and all(len(r) <= 2 for r in rows), rows
 
 
@@ -223,8 +223,9 @@ async def test_link_gw_opens_the_slot_card_and_a_missing_slot_says_so(services, 
     pi = services.add_device(services.admin_client().id, "NASPi")
     services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
     _, text, labels = await _open(services, fake_bot, "gw-1")
-    assert text.startswith("🛰 <b>Шлюз «NASPi»</b>"), text
-    assert labels[-1] == "⬅️ Назад"
+    head = text.split("\n", 1)[0]
+    assert "NASPi — " in head and "Активен" in head, text
+    assert "✏️ Изменить" in labels and labels[-1] == "⬅️ Назад", labels
     _, text, _ = await _open(services, fake_bot, "gw-9")
     assert text.startswith("🛰 Такого шлюза больше нет"), text
 

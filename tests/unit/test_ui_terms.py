@@ -37,23 +37,27 @@ TERMS = {
 ALLOWED = {
     ("guides.py", "дом", "проспект Абая, дом 8"):
         "адрес в форме Apple ID — это адрес, а не термин",
-    ("texts/routing.py", "квартир", "Роутер квартиры заворачивает"):
-        "экран «без VPN» шлюза — до этапа 3",
-    ("texts/routing.py", "квартир", "трафик квартиры"):
-        "подтверждение выключения «без VPN» — до этапа 3",
-    ("texts/routing.py", "дом", "«дом 2»"):
-        "подпись слота шлюза — до этапа 3",
-    ("texts/gateway.py", "квартир", "Адреса для входа снаружи"):
-        "экран SSH-доступа агента — до этапа 4",
     ("texts/gateway.py", "потребление", "📊 Потребление за месяц"):
         "панель агента — до этапа 4",
     ("texts/routing.py", "потребление", "Потребление: "):
-        "карточка устройства-шлюза у админа — до этапа 3",
-    ("texts/migration.py", "потребление", "история потребления"):
-        "переезд профилей — до этапа 3",
-    ("keyboards/settings.py", "потребление", "Превышение лимита потребления"):
-        "уведомления в настройках админа — до этапа 3",
+        "карточка устройства-шлюза у админа (без слота) — до переделки карточки устройства",
 }
+
+# Прежние имена функций шлюза в текстах, которые видит человек: «VPN-транзит»
+# вместо «За шлюзом — без VPN» / «Локальная сеть без VPN», «Связь подсетей»
+# вместо «Доступ между подсетями». Основной бот переименован целиком; агент
+# шлюза — своим этапом.
+OLD_NAMES = {
+    "без VPN": re.compile(r"без VPN", re.I),
+    "За шлюзом": re.compile(r"за шлюзом", re.I),
+    "между подсетями": re.compile(r"между подсетями", re.I),
+}
+OLD_NAMES_ALLOWED = {
+    ("texts/gateway.py", "без VPN", "Локальная сеть без VPN"): "экран «Локальная сеть» агента — до этапа 4",
+    ("keyboards/gateway.py", "без VPN", "🏠 Локальная сеть без VPN"): "кнопка панели агента — до этапа 4",
+}
+MAIN_FILES = (sorted((ROOT / "texts").glob("*.py")) + sorted((ROOT / "keyboards").glob("*.py"))
+              + sorted((ROOT / "handlers").rglob("*.py")))
 
 
 def _literals(path: pathlib.Path):
@@ -121,3 +125,40 @@ def test_the_scan_actually_sees_literals(tmp_path):
 def test_the_word_dom_is_matched_as_a_word(word, hit):
     """«дом» — словом: «домен» в текстах про DNS — не нарушение."""
     assert bool(TERMS["дом"].search(word)) is hit
+
+
+def _old_name_hits():
+    out = []
+    for path in MAIN_FILES:
+        rel = path.relative_to(ROOT).as_posix()
+        for value, line in _literals(path):
+            for term, rx in OLD_NAMES.items():
+                if rx.search(value):
+                    out.append((rel, term, value, line))
+    return out
+
+
+def test_main_bot_texts_call_the_gateway_functions_by_their_new_names():
+    """«VPN-транзит» и «Связь подсетей» — везде, где их видит админ: в
+    карточке, диалогах, всплывашках и отказах. Одна строка со старым именем —
+    и человек ищет в интерфейсе функцию, которой там больше нет."""
+    bad = [f"{rel}:{line} «{term}»: {value[:90]!r}" for rel, term, value, line in _old_name_hits()
+           if not any(rel == f and term == t and part in value for (f, t, part) in OLD_NAMES_ALLOWED)]
+    assert not bad, "старые имена функций:\n" + "\n".join(bad)
+
+
+def test_every_old_name_exception_still_points_at_a_real_string():
+    hits = _old_name_hits()
+    stale = [key for key in OLD_NAMES_ALLOWED
+             if not any(rel == key[0] and term == key[1] and key[2] in value for rel, term, value, _ in hits)]
+    assert not stale, f"исключения без строк: {stale}"
+
+
+def test_the_old_name_scan_sees_handlers_and_fstrings(tmp_path):
+    """Сторож: всплывашки живут в обработчиках f-строками — сканер обязан их
+    видеть, иначе зелёный прогон ничего не значит."""
+    tmp = tmp_path / "probe.py"
+    tmp.write_text('async def h(cb, on):\n    await cb.answer(f"Доступ между подсетями {on}")\n',
+                   encoding="utf-8")
+    assert any(OLD_NAMES["между подсетями"].search(v) for v, _ in _literals(tmp))
+    assert any(p.name == "settings.py" and p.parent.name == "handlers" for p in MAIN_FILES)

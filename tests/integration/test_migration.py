@@ -799,7 +799,7 @@ async def test_start_only_asks_and_does_not_change_issue_yet(services, mig, fake
     await coro
     assert services.migration_running() is False, "переезд начался без подтверждения"
     shown = [t for kind, t, _ in msg.sent if kind == "edit_text"]
-    assert shown and "Начать переезд профилей?" in shown[0]
+    assert shown and shown[0].startswith("🚚 Начать переезд?"), shown
 
 
 async def test_start_confirmation_names_the_cohort_before_it_is_frozen(

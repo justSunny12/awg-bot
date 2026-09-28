@@ -142,20 +142,20 @@ def test_gateway_apply_report_is_human_text(tmp_path, monkeypatch):
 
 
 def test_apply_report_names_the_local_network_result():
-    """Бандл включил режим без VPN: отчёт применения обязан сказать, встал ли он
+    """Бандл включил VPN-транзит: отчёт применения обязан сказать, встал ли он
     и на каком интерфейсе, — или почему нет. Иначе человек идёт настраивать
     роутер под сеть, которую скрипт так и не поднял."""
     from awgbot.bot import texts
     base = {"GW_STATUS": "confirmed", "LINK": "up"}
     ok = texts.gateway_apply_report({**base, "LAN": "1", "LAN_IF": "end0", "LAN_ADDR": "192.168.68.222"})
-    assert ok == "Линк поднят, шлюз подтверждён, локальная сеть без VPN: применена (end0, 192.168.68.222).", ok
+    assert ok == "Линк поднят, шлюз подтверждён, VPN-транзит: применён (end0, 192.168.68.222).", ok
     bad = texts.gateway_apply_report({**base, "LAN": "1", "LAN_ERROR": "порт 53 занят: pihole-FTL"})
-    assert "локальная сеть без VPN: не применена — порт 53 занят: pihole-FTL" in bad, bad
-    assert "применена (" not in bad
+    assert "VPN-транзит: не применён — порт 53 занят: pihole-FTL" in bad, bad
+    assert "применён (" not in bad
     bare = texts.gateway_apply_report({**base, "LAN": "1"})
-    assert bare.endswith("локальная сеть без VPN: применена."), "без интерфейса — без пустых скобок"
+    assert bare.endswith("VPN-транзит: применён."), "без интерфейса — без пустых скобок"
     for off in ({**base, "LAN": "0"}, base):
-        assert "локальная сеть" not in texts.gateway_apply_report(off), "режим выключен — строки нет"
+        assert "VPN-транзит" not in texts.gateway_apply_report(off), "режим выключен — строки нет"
 
 
 def test_client_subnet_from_conf_or_unit(tmp_path, monkeypatch):

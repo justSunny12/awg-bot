@@ -54,6 +54,22 @@ def _known_bot(services, slot=2):
     services.set_gw_bot_identity(slot, "pi2_gw_bot", "Шлюз <Pi2>")
 
 
+def _with_agent(plain: str, agent: str = AGENT) -> str:
+    """Карточка без бота → с ботом: строка «Бот шлюза» — последней строкой
+    содержимого, под ней только «подробнее» (если есть)."""
+    lines = plain.split("\n")
+    if lines[-1].startswith("<blockquote"):
+        return "\n".join(lines[:-1] + [agent, lines[-1]])
+    return plain + "\n" + agent
+
+
+def _ends_with_agent(text: str, agent: str = AGENT) -> bool:
+    lines = text.split("\n")
+    if lines[-1].startswith("<blockquote"):
+        lines = lines[:-1]
+    return lines[-1] == agent
+
+
 async def _card_text(services, fake_bot, slot):
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=slot), services, FakeState())
@@ -63,7 +79,7 @@ async def _card_text(services, fake_bot, slot):
 # ── «Бот шлюза» в карточках ──────────────────────────────────────────────────
 
 async def test_slot_card_ends_with_the_agent_bot_link(services, slots, fake_bot):
-    """Строка — последней, после пустой строки, и больше ничего в карточке не
+    """Строка — последней перед «подробнее» и больше ничего в карточке не
     меняет: ни текста выше, ни кнопок."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
@@ -71,7 +87,7 @@ async def test_slot_card_ends_with_the_agent_bot_link(services, slots, fake_bot)
     assert "Бот шлюза" not in plain, "без ответа getMe строки быть не должно"
     _known_bot(services, 2)
     text, labels = await _card_text(services, fake_bot, 2)
-    assert text == plain + "\n\n" + AGENT, "строка «Бот шлюза» не последней или карточка изменилась выше"
+    assert text == _with_agent(plain), "строка «Бот шлюза» не последней или карточка изменилась выше"
     assert labels == plain_labels, "кнопки карточки от бота шлюза меняться не должны"
     other, _ = await _card_text(services, fake_bot, 1)
     assert "Бот шлюза" not in other, "бот слота 2 попал в карточку слота 1"
@@ -100,7 +116,7 @@ async def test_gateway_device_card_ends_with_the_agent_bot_link(services, slots,
     assert "Бот шлюза" not in plain
     _known_bot(services, 2)
     text, labels = await _open()
-    assert text == plain + "\n\n" + AGENT, "в карточке устройства строка не последней или сдвинула остальное"
+    assert text == _with_agent(plain), "в карточке устройства строка не последней или сдвинула остальное"
     assert labels == plain_labels
 
 
@@ -137,7 +153,7 @@ async def test_start_gw_opens_the_slot_card_in_place_of_the_menu(services, slots
     edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
     assert edits, "карточка не встала на место меню"
     shown = edits[-1][2]
-    assert shown.startswith("🛰 <b>Шлюз «Pi2»</b>") and shown.endswith("\n\n" + AGENT), shown
+    assert shown.startswith("🛰 Pi2 — ") and _ends_with_agent(shown), shown
     assert not [s for s in msg.sent if s[0] == "answer"], "карточка ушла новым сообщением при живом меню"
 
 
@@ -162,7 +178,7 @@ async def test_start_gw_without_an_active_menu_sends_the_card(services, slots, f
     msg = _amsg(fake_bot, "/start gw-1")
     await ah.admin_start(msg, services, FakeState(), command=_cmd("gw-1"))
     sent = [s[1] for s in msg.sent if s[0] == "answer"]
-    assert sent and "Шлюз «NASPi»" in sent[-1], sent
+    assert sent and "NASPi — " in sent[-1].split("\n")[0] and "📡 awglink:443" in sent[-1], sent
 
 
 async def test_start_gw_for_a_missing_slot_does_not_break(services, slots, fake_bot):
@@ -255,18 +271,32 @@ async def test_start_gw_card_keeps_the_home_exit_after_ping(services, slots, fak
     assert _back(markup) == HOME, "после пинга «Назад» перестало вести на главную"
 
 
+async def _card_again_via(services, fake_bot, markup, text="⬅️ Назад"):
+    """Нажать «Назад» с подэкрана карточки и получить клавиатуру карточки."""
+    btn = next(b for r in markup.inline_keyboard for b in r if b.text == text)
+    assert btn.callback_data == GwSlotCB(action="card", slot=2).pack(), btn.callback_data
+    cb, nav = _cb_in(fake_bot)
+    await sh.gw_slot_card(cb, GwSlotCB.unpack(btn.callback_data), services, FakeState())
+    return _last_markup(nav, ("edit_text",))
+
+
 async def test_start_gw_card_keeps_the_home_exit_after_preferred_toggle(services, slots, fake_bot):
-    """Галочка предпочтительного — тоже перерисовка карточки по её кнопке."""
+    """Галочка «⭐ При старте» живёт в «✏️ Изменить»; вернувшись оттуда в
+    карточку, человек, пришедший с главной, уходит «Назад» на главную."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     await _deeplink(services, fake_bot)
     cb, nav = _cb_in(fake_bot)
+    await sh.gw_slot_edit(cb, GwSlotCB(action="edit", slot=2), services, FakeState())
+    cb, nav = _cb_in(fake_bot)
     await sh.gw_slot_pref(cb, GwSlotCB(action="pref", slot=2), services)
-    assert _back(_last_markup(nav, ("edit_text",))) == HOME, "после галочки «Назад» перестало вести на главную"
+    markup = await _card_again_via(services, fake_bot, _last_markup(nav, ("edit_text",)))
+    assert _back(markup) == HOME, "после галочки «Назад» перестало вести на главную"
 
 
 async def test_start_gw_card_keeps_the_home_exit_after_label_input(services, slots, fake_bot):
-    """Подпись введена — карточка приходит заново сообщением, выход тот же."""
+    """Подпись введена — «✏️ Изменить» приходит заново сообщением; из него в
+    карточку, и выход тот же."""
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     await _deeplink(services, fake_bot)
@@ -275,14 +305,15 @@ async def test_start_gw_card_keeps_the_home_exit_after_label_input(services, slo
     await sh.gw_slot_label(cb, GwSlotCB(action="label", slot=2), services, st)
     msg = _amsg(fake_bot, "дача")
     await sh.gateway_label_received(msg, st, services)
-    assert _back(_last_markup(msg, ("answer",))) == HOME, "после ввода подписи «Назад» перестало вести на главную"
+    markup = await _card_again_via(services, fake_bot, _last_markup(msg, ("answer",)))
+    assert _back(markup) == HOME, "после ввода подписи «Назад» перестало вести на главную"
 
 
 async def test_start_gw_card_keeps_the_home_exit_after_label_cancel(services, slots, fake_bot):
-    """Открыл подпись и передумал — «✖️ Отмена» возвращает в ту же карточку;
-    выход с неё должен остаться на главную, как после ввода подписи. Отмена
-    шлёт тот же GwSlotCB(card), что и кнопка списка, — если пометка
-    снимается и тут, человек, пришедший с главной, уходит «Назад» в список."""
+    """Открыл подпись и передумал — «✖️ Отмена» возвращает в «✏️ Изменить»,
+    оттуда — в ту же карточку; выход с неё должен остаться на главную."""
+    from awgbot.bot.callbacks import CancelCB
+    from awgbot.bot.handlers import reply_commands as rc
     _, pi, pi2 = slots
     _slot1(services, pi); _slot2(services, pi2)
     await _deeplink(services, fake_bot)
@@ -292,9 +323,14 @@ async def test_start_gw_card_keeps_the_home_exit_after_label_cancel(services, sl
     cancel = _last_markup(nav, ("edit_text", "answer")).inline_keyboard[0][0]
     assert cancel.text == "✖️ Отмена"
     cb2, nav2 = _cb_in(fake_bot)
-    await sh.gw_slot_card(cb2, GwSlotCB.unpack(cancel.callback_data), services, st)
-    assert _back(_last_markup(nav2, ("edit_text",))) == HOME, \
-        "отмена ввода подписи увела выход карточки с главной в список"
+    await rc.on_cancel_inline(cb2, CancelCB.unpack(cancel.callback_data), st, services, role="admin")
+    edited = [r for r in fake_bot.records if r[0] == "edit_message_text"]
+    shown = [s for s in nav2.sent if s[0] == "edit_text"]
+    assert shown or edited, "отмена ничего не нарисовала"
+    markup = shown[-1][2] if shown else edited[-1][3]
+    assert await st.get_state() is None
+    markup = await _card_again_via(services, fake_bot, markup)
+    assert _back(markup) == HOME, "отмена ввода подписи увела выход карточки с главной в список"
 
 
 async def test_card_opened_from_the_list_goes_back_to_the_list(services, slots, fake_bot):
@@ -385,7 +421,7 @@ async def test_token_input_fills_the_card_link_end_to_end(services, slots, fake_
         session=types.SimpleNamespace(close=_async(None))))
     await _enter_second_token(services, fake_bot)
     text, _ = await _card_text(services, fake_bot, 2)
-    assert text.endswith("\n\n" + AGENT), text
+    assert _ends_with_agent(text), text
 
 
 async def test_getme_failure_does_not_stop_the_bundle(services, slots, fake_bot):
@@ -511,7 +547,7 @@ async def test_slot_card_links_the_bot_from_the_channel_snapshot(services, slots
     assert services.token == {}, "сцена этого теста — слот без токена на сервере"
     _snapshot_bot(services, 2, "pi2_gw_bot", "Шлюз <Pi2>")
     text, labels = await _card_text(services, fake_bot, 2)
-    assert text.endswith("\n\n" + AGENT), f"карточка без ссылки на бота из снимка:\n{text}"
+    assert _ends_with_agent(text), f"карточка без ссылки на бота из снимка:\n{text}"
     other, _ = await _card_text(services, fake_bot, 1)
     assert "Бот шлюза" not in other, "бот из снимка слота 2 попал в карточку слота 1"
 
@@ -524,7 +560,7 @@ async def test_slot_card_link_follows_the_snapshot_delta(services, slots, fake_b
     _snapshot_bot(services, 2, "pi2_gw_bot", "Шлюз <Pi2>")
     _snapshot_bot(services, 2, "pi2_gw_bot", "Новое имя", rev=2, full=False)
     text, _ = await _card_text(services, fake_bot, 2)
-    assert text.endswith('Бот шлюза: <a href="https://t.me/pi2_gw_bot">Новое имя</a>'), text
+    assert _ends_with_agent(text, 'Бот шлюза: <a href="https://t.me/pi2_gw_bot">Новое имя</a>'), text
     _snapshot_bot(services, 2, "", "", rev=3, full=False)
     text, _ = await _card_text(services, fake_bot, 2)
     assert "Бот шлюза" not in text, "пустой username в снимке, а ссылка осталась"
@@ -536,7 +572,7 @@ async def test_token_answer_wins_over_the_snapshot_in_the_card(services, slots, 
     _snapshot_bot(services, 2, "snap_bot", "Из снимка")
     _known_bot(services, 2)
     text, _ = await _card_text(services, fake_bot, 2)
-    assert text.endswith("\n\n" + AGENT) and "snap_bot" not in text, text
+    assert _ends_with_agent(text) and "snap_bot" not in text, text
 
 
 async def test_send_gw_bundle_captions_the_bot_from_the_snapshot(services, slots, fake_bot):

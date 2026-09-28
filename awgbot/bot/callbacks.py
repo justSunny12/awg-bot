@@ -250,11 +250,13 @@ class GwSlotCB(CallbackData, prefix="gws"):
       home|label — ввод домашних подсетей / подписи (FSM);
       remove_ask|remove_yes — убрать слот; bundle — конфигурация слота;
       failover — тумблер автопереключения;
-      lan_ask|lan_yes — «за шлюзом — без VPN» с подтверждением;
-      router — экран настройки роутера;
-      peer_ask|peer_yes — доступ между подсетями за шлюзами с подтверждением."""
+      lan_ask|lan_yes — «🔀 VPN-транзит» с подтверждением;
+      router — рецепт роутера (val — вкладка: mt|ow);
+      edit — подэкран «✏️ Изменить»;
+      peer_ask|peer_yes — связь подсетей с подтверждением."""
     action: str
     slot: int = 0
+    val: str = ""
 
 
 class PageCB(CallbackData, prefix="pg", sep="|"):

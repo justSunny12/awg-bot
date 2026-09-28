@@ -546,15 +546,16 @@ def test_fresh_standby_shows_link_check_until_three_good(two, services):
     from awgbot.bot import texts
     admin, g1, g2 = two
     st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
-    assert texts.slot_status(st) == "⏳ <b>[Резерв]</b>, проверка связи…"
+    assert texts.slot_status(st) == "🟡 Резерв, проверка связи"
     _settle(services)
     st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
-    assert texts.slot_status(st) == "🟢 <b>[Резерв]</b>"
+    assert texts.slot_status(st) == "🟢 Резерв"
     services.probe[2] = "down"
     for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
-    assert texts.slot_status(st).startswith("🔴 <b>[Резерв]</b>, ") and "мин" in texts.slot_status(st)
+    assert texts.slot_status(st).startswith("🔴 Резерв, ") and texts.slot_status(st).endswith(" мин"), \
+        texts.slot_status(st)
 
 
 def test_first_tick_lays_slot_policy_before_probing(two, services, monkeypatch):

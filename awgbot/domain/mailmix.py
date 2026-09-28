@@ -124,7 +124,7 @@ class MailMixin:
             raise mail.MailError("ящик не настроен")
         if not self.backup_encryption_enabled():
             raise mail.MailError("бэкап без шифрования по почте не отправляется — "
-                                 "задай парольную фразу в 💾 Резервное копирование → 🔐 Шифрование")
+                                 "задай парольную фразу: 💾 Бэкапы → 🔐 Шифрование")
         import os
         att = []
         for p in paths:

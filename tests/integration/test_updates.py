@@ -281,7 +281,9 @@ def test_changelog_truncated_when_huge():
     body = "\n".join(f"пункт номер {i} с некоторым текстом" for i in range(600))
     msg = texts.update_available("v1.2.0", body)
     assert len(msg) <= 4096
-    assert "обрезаны" in msg
+    # хвост обрезки — ссылка на полный журнал, а не тупик «(изменения обрезаны)»
+    assert "обрезаны" not in msg and f'<a href="{texts.CHANGELOG_URL}">Весь список изменений — на GitHub</a>' in msg
+    assert texts.CHANGELOG_URL == "https://github.com/justSunny12/awg-bot/blob/main/docs/CHANGELOG.md"
     assert msg.count("<blockquote") == 1 and msg.count("</blockquote>") == 1
 
 
@@ -298,7 +300,7 @@ def test_confirm_applied_update_success(services, monkeypatch):
     services.db.set_state("update_pending", "v1.1.1")
     note = services.confirm_applied_update()
     assert note is not None
-    assert "успешно обновлен до v1.1.1" in note.text
+    assert note.text.startswith("✅ Обновлено до v1.1.1\n"), note.text
     assert "<blockquote expandable>" in note.text          # changelog под катом
     assert note.reply_markup is not None                   # кнопка «В меню»
     assert services.confirm_applied_update() is None       # флаг стёрт — однократно

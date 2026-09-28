@@ -440,10 +440,10 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         subnet = html.escape((st.lan or {}).get("subnet", "") or "", quote=False)
         notes += self._streak_alert(
             "lan", bool(lan_broken), streak,
-            "⚠️ Локальная сеть без VPN: "
+            "⚠️ VPN-транзит: "
             + "; ".join(f"{html.escape(c.name, quote=False)} — {html.escape(c.detail, quote=False)}"
                         for c in lan_broken[:3]),
-            f"✅ Локальная сеть без VPN ({host}" + (f", <code>{subnet}</code>" if subnet else "")
+            f"✅ VPN-транзит ({host}" + (f", <code>{subnet}</code>" if subnet else "")
             + ") снова в порядке", critical=False)
 
         notes += self._streak_alert(              # не критично: стреляет только на ребуте
@@ -978,12 +978,12 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         upto = body.get("upto") if isinstance(body.get("upto"), (list, tuple)) else ["", 0]
         self.own_rejected_in(body.get("rej"))
         if not gwguard.lan_mode():
-            return self._own_store(digest, None, False, "режим «За шлюзом — без VPN» на шлюзе выключен")
+            return self._own_store(digest, None, False, "VPN-транзит на шлюзе выключен")
         base = self.own_base()
         local = self.own_local()
         if local is None:
             return self._own_store(digest, None, False,
-                                   "не найдены файлы своих списков — функционал локальной сети без VPN недоступен")
+                                   "не найдены файлы своих списков — VPN-транзит недоступен")
         # первая синхронизация или откат сервера: весь свой список — событиями
         # init, один раз; когда сервер их разберёт (upto покроет), канон применится.
         # Список пуст — отправлять нечего, канон применяется сразу: иначе такой
@@ -1260,7 +1260,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         from awgbot.infra import gwguard
         digest = gwlink.clean_hex(digest)
         if not gwguard.lan_mode():
-            return self._svc_store(digest, [], False, "режим «За шлюзом — без VPN» на шлюзе выключен")
+            return self._svc_store(digest, [], False, "VPN-транзит на шлюзе выключен")
         peers = gwguard.unit_env("PEER_HOME_NETS").split()
         clean_items = gwservices.clean(items, peers, gwservices.MAX_PEER) if peers else []
         text = gwservices.render_dnsmasq(clean_items, gwguard.unit_env("HOME_SUBNETS").split(), digest)
@@ -1429,7 +1429,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         import zlib
         from awgbot.infra import gwguard
         if not gwguard.lan_mode():
-            return {"ok": False, "error": "режим «За шлюзом — без VPN» на шлюзе выключен"}
+            return {"ok": False, "error": "VPN-транзит на шлюзе выключен"}
         if not os.path.exists(gwguard.LAN_LISTS_SCRIPT):
             return {"ok": False, "error": "скрипта списков нет — примени конфигурацию шлюза"}
         if len(packed_b64 or "") > self._LAN_FEED_MAX:
@@ -1637,7 +1637,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
 
     # ── настройки с сервера по каналу ────────
     _SETTINGS_HUMAN = {"ADMIN_IPS": "устройства админа", "HOME_SUBNETS": "локальные подсети",
-                       "LAN_MODE": "режим «За шлюзом — без VPN»",
+                       "LAN_MODE": "VPN-транзит",
                        "PEER_HOME_NETS": "локальные подсети других шлюзов", "RESOLVER": "резолвер"}
 
     def apply_link_settings(self, raw: dict) -> dict:

@@ -1,4 +1,5 @@
-"""E2E: раскладка настроек и значки — порядок разделов, кнопки правок,
+"""E2E: раскладка настроек и значки — корень в два столбца, разделы и их выход,
+кнопки правок,
 порядок фильтров роутера настроек, галочки против кружков, значок шлюза."""
 import pytest
 
@@ -28,30 +29,54 @@ def _labels(markup):
 
 # ── раскладка корня настроек ─────────────────────────────────────────────────
 
-def test_settings_root_order_and_names():
-    """Порядок — от того, что трогают при настройке сервера, к тому, что
-    трогают раз в полгода. Мониторинг и бэкапы уехали в «Обслуживание»: корень
-    распух до десяти строк, а открывают их не ради настройки, а когда чинят."""
+def test_settings_root_is_ten_buttons_in_two_columns():
+    """Корень — десять кнопок парами: слева то, что трогают при настройке
+    сервера, справа — реже; «⬅️ В меню» в паре с «⬆️ Обновления». РФ-доступа
+    в корне нет — он живёт на главной («🛰 Шлюзы»), второй вход раздваивал бы
+    одно и то же место."""
     from awgbot.bot import keyboards as kb
-    rows = [b.text for row in kb.settings_root().inline_keyboard for b in row]
-    assert rows == ["🔔 Уведомления", "🖥 Сервер AWG", "🛡 Доступ по SSH",
-                    "🇷🇺 РФ-доступ", "✉️ E-mail", "💳 Параметры подписок",
-                    "🔄 Обслуживание", "⬆️ Обновления бота", "⬅️ В меню"]
+    from awgbot.bot.callbacks import Menu
+    markup = kb.settings_root()
+    rows = [[b.text for b in r] for r in markup.inline_keyboard]
+    assert rows == [["🔔 Уведомления", "🖥 Сервер AWG"], ["🛡 SSH-доступ", "✉️ E-mail"],
+                    ["💳 Подписки", "💾 Бэкапы"], ["🩺 Мониторинг", "🔧 Сервис"],
+                    ["⬆️ Обновления", "⬅️ В меню"]], rows
+    datas = [b.callback_data for r in markup.inline_keyboard for b in r]
+    assert datas == [SetCB(sec=s).pack() for s in ("notify", "srv", "fw", "email", "subs", "backup",
+                                                  "mon", "svc", "upd")] + [Menu(action="main").pack()]
+    assert not any("РФ" in t or "Шлюз" in t for r in rows for t in r)
 
 
-def test_maintenance_holds_monitoring_and_backups_first():
+@pytest.mark.parametrize("migration, available, orphans, expected", [
+    ("", False, 0, [["🔁 Перезапуск AWG", "🔁 Перезапуск бота"], ["⬅️ Назад"]]),
+    ("", True, 0, [["🔁 Перезапуск AWG", "🔁 Перезапуск бота"], ["🚚 Начать переезд"], ["⬅️ Назад"]]),
+    ("", True, 2, [["🔁 Перезапуск AWG", "🔁 Перезапуск бота"], ["🚚 Начать переезд"],
+                   ["⚠️ Переехавшие после отмены: 2"], ["⬅️ Назад"]]),
+    ("running", True, 0, [["🔁 Перезапуск AWG", "🔁 Перезапуск бота"], ["👥 Кто не переехал"],
+                          ["✅ Завершить", "↩️ Отменить"], ["⬅️ Назад"]]),
+])
+def test_service_section_offers_restarts_and_migration_by_state(migration, available, orphans, expected):
+    """«🔧 Сервис»: перезапуски парой; переезд — по состоянию: идёт — кто не
+    переехал, завершить, отменить; нет — начать (если настроен) и
+    переехавшие после отмены (если есть). Лишняя кнопка переезда при
+    ненастроенном переезде упиралась бы в отказ."""
     from awgbot.bot import keyboards as kb
-    rows = [b.text for row in kb.settings_svc().inline_keyboard for b in row]
-    assert rows[:4] == ["📊 Мониторинг", "💾 Резервное копирование",
-                        "🔄 Перезапустить AWG", "🔄 Перезапустить бота"]
+    rows = [[b.text for b in r] for r in kb.settings_svc(migration, available=available,
+                                                          orphans=orphans).inline_keyboard]
+    assert rows == expected, rows
 
 
-def test_moved_sections_return_to_maintenance():
-    """Выход из раздела обязан вести туда, откуда в него вошли, — иначе
-    «Назад» выбрасывает в корень, и человек ищет, где он был."""
+def test_sections_moved_to_the_root_return_to_the_root():
+    """Мониторинг и бэкапы теперь в корне: «Назад» из них — в корень, иначе
+    человек попадает в раздел, из которого не входил."""
     from awgbot.bot import keyboards as kb
-    for markup in (kb.settings_mon(), kb.settings_backup()):
-        assert markup.inline_keyboard[-1][0].callback_data == SetCB(sec="svc").pack()
+    for markup in (kb.settings_mon(), kb.settings_backup(), kb.settings_svc(), kb.settings_subs(),
+                   kb.settings_notify(), kb.settings_updates(False), kb.settings_email(True)):
+        back = markup.inline_keyboard[-1][0]
+        assert back.text == "⬅️ Назад" and back.callback_data == SetCB(sec="root").pack(), back
+    back = kb.settings_notify_clients().inline_keyboard[-1][0]
+    assert back.callback_data == SetCB(sec="notify").pack(), "«События» — назад в «Уведомления»"
+
 
 def test_every_edit_button_points_at_a_known_setting():
     """Опечатка в ключе кнопки превращает её в «Эта настройка недоступна», и
@@ -60,7 +85,8 @@ def test_every_edit_button_points_at_a_known_setting():
     from awgbot.bot.callbacks import SetCB
     known = set(texts.SETTINGS_TEXT) | set(texts.SETTINGS_BOUNDS)
     markups = [kb.settings_server(), kb.settings_firewall({"raw_allow": ["1.2.3.4"]}),
-               kb.settings_mon(), kb.settings_subs(), kb.settings_notify()]
+               kb.settings_mon(), kb.settings_subs(), kb.settings_notify(), kb.settings_email(True),
+               kb.settings_backup()]
     checked = 0
     for m in markups:
         for row in m.inline_keyboard:
@@ -70,8 +96,8 @@ def test_every_edit_button_points_at_a_known_setting():
                 cb = SetCB.unpack(b.callback_data)
                 if cb.act != "edit":
                     continue
-                if (cb.sec, cb.key) == ("fw", "port"):
-                    continue                       # свой хендлер ssh_port_ask (проверен ниже)
+                if (cb.sec, cb.key) in (("fw", "port"), ("backup", "backup_when")):
+                    continue                       # свои ветки ввода (порт SSH, день и час бэкапа)
                 checked += 1
                 assert cb.key in known, f"кнопка «{b.text}» ведёт в несуществующий ключ {cb.key}"
     assert checked >= 8, "проверять оказалось нечего — тест устарел"
@@ -133,10 +159,15 @@ def test_lists_of_choices_use_ticks_not_circles():
     assert labels[:2] == ["✅ К1", "☑️ К2"]
     notify = [b.text for row in kb.settings_notify_clients().inline_keyboard for b in row]
     assert all(not l.startswith(("🟢", "🔴")) for l in notify), notify
-    # переключатели сервиса — тоже тумблеры ✅/☑️: кружок остаётся состоянию
+    # переключатели «Шлюзов» — тоже тумблеры ✅/☑️: кружок остаётся состоянию
     # объектов (онлайн, работает), не настройкам
-    rt = [b.text for row in kb.settings_routing(True, []).inline_keyboard for b in row]
-    assert rt[0].startswith("✅"), rt
+    from types import SimpleNamespace as NS
+    states = [{"gateway": NS(id=i), "device": NS(name=n), "active": i == 1, "preferred": i == 1}
+              for i, n in ((1, "NASPi"), (2, "Pi4"))]
+    rt = [b.text for row in kb.gateways_kb(states, failover_on=False, peer_nets_on=True).inline_keyboard
+          for b in row]
+    assert "☑️ Автопереключение" in rt and "✅ Связь подсетей" in rt, rt
+    assert not any(t.startswith(("🟢", "🔴")) for t in rt), rt
 
 
 def test_client_list_circle_means_online_not_subscription():
@@ -240,14 +271,22 @@ def _first_matching_handler(router, cb_data) -> str:
     return ""
 
 def test_notify_section_layout_and_profiles_submenu(monkeypatch):
+    """«🔔 Уведомления»: тумблеры ✅/☑️, границы тихих часов и пороги — только
+    у включённого; «Аварии на e-mail» и «👥 События» — парой; события
+    профилей — в подменю по два в ряд."""
     from awgbot.bot import keyboards as kbs
     from awgbot.core import settings
     monkeypatch.setattr(settings, "get_bool", lambda k, d=True: d)
     monkeypatch.setattr(settings, "get_int", lambda k, d=0: d)
     rows = [[b.text for b in r] for r in kbs.settings_notify().inline_keyboard]
-    assert rows[0] == ["☑️ E-mail при недоступности Telegram"]
-    assert rows[1] == ["✅ Тихие часы"]
-    assert rows[-2] == ["👥 События профилей"] and rows[-1][0].endswith("Назад")
-    assert not any("Активация" in b for r in rows for b in r), "события профилей ушли в подменю"
+    assert rows == [["✅ Тихие часы"], ["С 20:00", "До 07:00"], ["✅ Алерты хоста"],
+                    ["CPU 80%", "RAM 80%", "Диск 80%"], ["☑️ Аварии на e-mail", "👥 События"],
+                    ["⬅️ Назад"]], rows
+    monkeypatch.setattr(settings, "get_bool", lambda k, d=True: False)
+    rows = [[b.text for b in r] for r in kbs.settings_notify().inline_keyboard]
+    assert rows == [["☑️ Тихие часы"], ["☑️ Алерты хоста"], ["☑️ Аварии на e-mail", "👥 События"],
+                    ["⬅️ Назад"]], "выключено — без границ и порогов"
+    monkeypatch.setattr(settings, "get_bool", lambda k, d=True: d)
     sub = [[b.text for b in r] for r in kbs.settings_notify_clients().inline_keyboard]
-    assert sub[0] == ["✅ Активация профиля"] and len(sub) == 5
+    assert sub == [["✅ Активация", "✅ Отсрочка"], ["✅ Лимит исчерпан", "✅ Бонусный объём"],
+                   ["⬅️ Назад"]], sub

@@ -24,6 +24,17 @@ def _host_ok(v: str) -> bool:
     return bool(v) and " " not in v and "." in v
 
 
+def _host_port(v: str) -> tuple[str, int] | None:
+    """«imap.example.com:993» → (host, port); без порта или с плохим — None."""
+    v = v.strip()
+    if ":" not in v:
+        return None
+    host, _, port = v.rpartition(":")
+    if not _host_ok(host) or not _port_ok(port):
+        return None
+    return host, int(port)
+
+
 def _port_ok(v: str) -> bool:
     return v.strip().isdigit() and 1 <= int(v.strip()) <= 65535
 
@@ -71,13 +82,21 @@ def register(router, *, cancel_kb, done) -> dict:
                               + texts.email_ask_password(addr), reply_markup=cancel_kb())
             return
         await state.set_state(EmailSetup.imap_host)
-        await ask_tracked(message, services, texts.EMAIL_ASK_IMAP_HOST, reply_markup=cancel_kb())
+        await ask_tracked(message, services, texts.EMAIL_ASK_IMAP, reply_markup=cancel_kb())
 
     @router.message(EmailSetup.imap_host)
     async def imap_host(message: Message, state: FSMContext, services):
+        """Сервер и порт одной строкой; голое имя (старый диалог) — порт
+        следующим шагом."""
         await _track(message, services)
         v = (message.text or "").strip()
-        if not _host_ok(v):
+        hp = _host_port(v)
+        if hp is not None:
+            await state.update_data(imap_host=hp[0], imap_port=hp[1])
+            await state.set_state(EmailSetup.smtp_host)
+            await ask_tracked(message, services, texts.EMAIL_ASK_SMTP, reply_markup=cancel_kb())
+            return
+        if ":" in v or not _host_ok(v):                  # «host:99999» — переспрос, не имя
             await ask_tracked(message, services, texts.EMAIL_BAD_HOST); return
         await state.update_data(imap_host=v)
         await state.set_state(EmailSetup.imap_port)
@@ -91,13 +110,20 @@ def register(router, *, cancel_kb, done) -> dict:
             await ask_tracked(message, services, texts.EMAIL_BAD_PORT); return
         await state.update_data(imap_port=int(v))
         await state.set_state(EmailSetup.smtp_host)
-        await ask_tracked(message, services, texts.EMAIL_ASK_SMTP_HOST, reply_markup=cancel_kb())
+        await ask_tracked(message, services, texts.EMAIL_ASK_SMTP, reply_markup=cancel_kb())
 
     @router.message(EmailSetup.smtp_host)
     async def smtp_host(message: Message, state: FSMContext, services):
         await _track(message, services)
         v = (message.text or "").strip()
-        if not _host_ok(v):
+        hp = _host_port(v)
+        if hp is not None:
+            await state.update_data(smtp_host=hp[0], smtp_port=hp[1])
+            await state.set_state(EmailSetup.password)
+            addr = (await state.get_data()).get("email_address", "")
+            await ask_tracked(message, services, texts.email_ask_password(addr), reply_markup=cancel_kb())
+            return
+        if ":" in v or not _host_ok(v):
             await ask_tracked(message, services, texts.EMAIL_BAD_HOST); return
         await state.update_data(smtp_host=v)
         await state.set_state(EmailSetup.smtp_port)

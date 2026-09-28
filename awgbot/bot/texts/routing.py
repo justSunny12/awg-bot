@@ -6,7 +6,8 @@ from awgbot.util import timeutil
 from awgbot.domain.services.gwchannel import drift_lines   # строки расхождения рисует домен
 from awgbot.domain.gwchecks import WRITE_ERROR
 
-from .fmt import _e, human_bytes, _updown, plain_ip, client_link, holder_link, plural_ru
+from .fmt import _e, human_bytes, _updown, updown_brief, plain_ip, client_link, holder_link, plural_ru, details
+from .updates import _ver
 
 
 # ── шлюз условной маршрутизации ──────────────────────────────────────────────
@@ -89,14 +90,6 @@ def gateway_claim_already(dev) -> str:
 
 # ── слоты шлюзов ───────────────────────────────
 
-def slot_name(state, star: bool = False) -> str:
-    """«NASPi» (10.8.1.5), дом 1 — имя с адресом и подписью; star — ⭐ перед
-    именем у предпочтительного."""
-    dev, gw = state.get("device"), state.get("gateway")
-    name = f"«{_e(dev.name)}» ({plain_ip(dev.address)})" if dev is not None else f"шлюз {gw.id}"
-    pre = "⭐ " if star and state.get("preferred") else ""
-    return pre + name + (f", {_e(gw.label)}" if gw is not None and gw.label else "")
-
 
 def slot_short(state) -> str:
     """«NASPi» (дом 1) — для уведомлений и кнопок."""
@@ -108,105 +101,6 @@ def slot_short(state) -> str:
 def _slot_down_mins(state) -> int:
     from awgbot.core import settings as _settings
     return max(1, int(state.get("down_ticks", 0)) * _settings.get_int("app.routing.probe_seconds", 30) // 60)
-
-
-def slot_status(state) -> str:
-    """Состояние слота: кружок и роль тегом, уточнение — после запятой:
-    «🟢 <b>[Активен]</b>», «⏳ <b>[Резерв]</b>, проверка связи»,
-    «🔴 <b>[Резерв]</b>, не отвечает 14 мин»."""
-    tag = "<b>[Активен]</b>" if state.get("active") else "<b>[Резерв]</b>"
-    if state.get("link_ok"):
-        return f"{_slot_dot(state)} {tag}"
-    if state.get("unavailable"):
-        # хендшейк свежий, а наружу не пройти — лежит не линк, а выход в
-        # интернет за шлюзом; иначе — молчит сам шлюз
-        age = state.get("handshake_age")
-        what = "нет доступа в интернет" if age is not None and age <= 300 else "не отвечает"
-        return f"🔴 {tag}, {what} {_slot_down_mins(state)} мин"
-    # окно ещё не набрало ни порога неудач, ни трёх хороших подряд: после
-    # назначения, после отвала — связь проверяется; часы вместо «жду хендшейка»
-    return f"⏳ {tag}, проверка связи…"
-
-
-def settings_routing_gateway_line(state: dict) -> str:
-    """Одно состояние вместо инструкции: нет шлюза → назначить; выпущен бандл,
-    хендшейка после него нет → жду; линк жив → работает; иначе не отвечает."""
-    dev = state.get("device")
-    if dev is None:
-        return "\n🛰 Шлюз не назначен. Назначь устройство шлюзом — конфигурация выпустится сразу."
-    head = f"\n🛰 Шлюз: «{_e(dev.name)}» ({plain_ip(dev.address)}) — "
-    if state.get("link_ok"):
-        return head + "🟢 работает."
-    issued = state.get("issued_at") or ""
-    age = state.get("handshake_age")
-    if issued and (age is None or age > 300):
-        return head + "⏳ конфигурация выпущена, жду хендшейка от шлюза."
-    return head + "🔴 не отвечает."
-
-
-def settings_routing_gateway_block(states: list) -> str:
-    """Блок шлюзов в разделе: ноль, один или несколько слотов."""
-    if not states:
-        return settings_routing_gateway_line({"device": None})
-    if len(states) == 1:
-        return (settings_routing_gateway_line(states[0])
-                + "\nРезервного шлюза нет: если этот перестанет отвечать, российские "
-                  "сервисы откроются с зарубежного адреса.")
-    lines = ["\n🛰 Шлюзы:"]
-    for st in states:
-        lines.append(f"{slot_name(st, star=True)} — {slot_status(st)}")
-    return "\n".join(lines)
-
-
-def peer_nets_line(info: dict) -> str:
-    """Строка состояния функции B на экране «Шлюзы»."""
-    st = info.get("state", "off")
-    if st == "off":
-        return "↔️ Доступ между подсетями за шлюзами выключен"
-    who = info.get("who") or []
-    if st == "no_lan":
-        return ("↔️ Доступ между подсетями за шлюзами включён, но у " + ", ".join(_e(w) for w in who)
-                + " не включено «За шлюзом — без VPN» — без этого ответы не найдут дорогу назад")
-    if st == "no_nets":
-        return ("↔️ Доступ между подсетями за шлюзами включён, но у " + ", ".join(_e(w) for w in who)
-                + " локальные подсети не заданы — задай их в карточке шлюза")
-    if st == "overlap":
-        nets = ", ".join(_e(n) for n in info.get("nets") or [])
-        return (f"↔️ Доступ между подсетями за шлюзами включён, но недоступен: подсети "
-                f"{_e(who[0])} и {_e(who[1])} пересекаются ({nets}). Смени локальную подсеть "
-                "одного из шлюзов.")
-    # 192.168.1.0/24 («NASPi», дом 1) — подпись через запятую, без вложенных скобок
-    pairs = " ↔ ".join(f"{', '.join(_e(n) for n in nets)} («{_e(name)}»{', ' + _e(label) if label else ''})"
-                       for name, label, nets in info.get("pairs_named") or [])
-    return f"↔️ Доступ между подсетями за шлюзами включён: {pairs}"
-
-
-def gateway_list_text(states: list, switched_at: str = "", auto_on: bool = True,
-                      peer_info: dict | None = None) -> str:
-    lines = ["🛰 <b>Шлюзы</b>", "",
-             "Трафик несёт один шлюз, второй ждёт в резерве. Когда активный перестаёт "
-             "отвечать, а резерв в порядке, бот перекладывает трафик сам — и остаётся на "
-             "нём: вернуть на прежний можно из его карточки.", ""]
-    for st in states:
-        lines.append(f"{slot_name(st, star=True)} — {slot_status(st)}")
-    pref = next((st for st in states if st.get("preferred")), None)
-    lines.append("")
-    if pref is not None:
-        lines.append(f"⭐ Предпочтительный при холодном старте: {slot_short(pref)}.")
-    else:
-        lines.append("Предпочтительный не выбран: при холодном старте трафик берёт первый шлюз.")
-    if not auto_on:
-        lines.append("🔁 <b>Автопереключение выключено:</b> при отказе активного шлюза бот "
-                     "выключит РФ-доступ, а не переключит его на резервный шлюз.")
-    if peer_info is not None and len(states) > 1:
-        lines.append(peer_nets_line(peer_info))
-    if switched_at:
-        try:
-            when = timeutil.fmt_dt(timeutil.parse_iso(switched_at))
-            lines.append(f"Последнее переключение: {when}, автоматически.")
-        except ValueError:
-            pass
-    return "\n".join(lines)
 
 
 def _bot_link(agent_bot: dict | None) -> str:
@@ -232,20 +126,186 @@ def _slot_note(state: str, gw: str, agent_bot: dict | None, error: str, purpose:
     return "⏳ Синхронизация с другими шлюзами…"
 
 
+def _ago(seconds) -> str:
+    s = int(seconds or 0)
+    if s < 60:
+        return "только что"
+    if s < 3600:
+        return f"{s // 60} мин назад"
+    if s < 86400:
+        return f"{s // 3600} ч назад"
+    return f"{s // 86400} дн назад"
+
+
+ROUTER_IP_PLACEHOLDER = "АДРЕС_ШЛЮЗА"
+
+
+def _nets_overlap(a: list, b: list) -> list:
+    from awgbot.util import nets
+    return nets.overlap(a, b)
+
+
+# ── Условная маршрутизация ─────────────────────
+
+ROUTING_NAME = "РФ-доступ"
+
+
+# ── слоты: имя и состояние ───────────────────────────────────────────────────
+
+def slot_name(state, star: bool = False) -> str:
+    """«NASPi, дача» — имя устройства и подпись; star — «⭐» у
+    предпочтительного, «🛰» у остальных не рисуется здесь (заголовок карточки
+    ставит его сам)."""
+    dev, gw = state.get("device"), state.get("gateway")
+    name = _e(dev.name) if dev is not None else f"слот {gw.id}"
+    pre = "⭐ " if star and state.get("preferred") else ""
+    return pre + name + (f", {_e(gw.label)}" if gw is not None and gw.label else "")
+
+
+def slot_status(state) -> str:
+    """«🟢 Активен» / «🟢 Резерв» / «🟡 Резерв, проверка связи» /
+    «🔴 Резерв, не отвечает 14 мин»."""
+    role = "Активен" if state.get("active") else "Резерв"
+    if state.get("link_ok"):
+        return f"🟢 {role}"
+    if state.get("unavailable"):
+        age = state.get("handshake_age")
+        what = "нет доступа в интернет" if age is not None and age <= 300 else "не отвечает"
+        return f"🔴 {role}, {what} {_slot_down_mins(state)} мин"
+    return f"🟡 {role}, проверка связи"
+
+
+def slot_ref(state) -> str:
+    """Имя шлюза для фраз («упадёт NASPi», «останется в резерве»): только имя
+    устройства, без подписи и адреса."""
+    dev, gw = state.get("device"), state.get("gateway")
+    return _e(dev.name) if dev is not None else f"слот {gw.id}"
+
+
+def _slot_ping_tail(state) -> str:
+    ms = state.get("ping_ms")
+    if ms is None:
+        cached = state.get("ping")
+        ms = cached[0] if cached else None
+    return f" · {ping_fmt(ms)}" if ms is not None else ""
+
+
+def slot_line(state, star: bool = True) -> str:
+    """Строка слота на экране «Шлюзы»: «⭐ NASPi — 🟢 Активен · 43 мс»; при
+    одном слоте звезды нет — выбирать не из чего."""
+    return f"{slot_name(state, star=star)} — {slot_status(state)}{_slot_ping_tail(state)}"
+
+
+def peer_nets_line(info: dict) -> str:
+    """Строка «↔️ Связь подсетей» на экране «Шлюзы» — во всех состояниях."""
+    st = info.get("state", "off")
+    if st == "off":
+        return "↔️ Связь подсетей: выключена"
+    def _plain(w: str) -> str:
+        return _e(str(w).replace("«", "").replace("»", ""))
+    who = ", ".join(_plain(w) for w in info.get("who") or [])
+    if st == "no_lan":
+        return (f"↔️ Связь подсетей не работает: у {who} выключен «VPN-транзит» — "
+                "без него ответы не найдут дорогу назад")
+    if st == "no_nets":
+        return f"↔️ Связь подсетей не работает: у {who} не заданы подсети — «🗺 Подсети» в карточке шлюза"
+    if st == "overlap":
+        nets = ", ".join(_e(n) for n in info.get("nets") or [])
+        w = info.get("who") or ["?", "?"]
+        return (f"↔️ Связь подсетей не работает: подсети {_plain(w[0])} и {_plain(w[1])} пересекаются "
+                f"({nets}) — смени подсеть одного из шлюзов")
+    pairs = " ↔ ".join(f"{', '.join(_e(n) for n in nets)} ({_e(name)}{', ' + _e(label) if label else ''})"
+                       for name, label, nets in info.get("pairs_named") or [])
+    return f"↔️ Связь подсетей: {pairs}"
+
+
+GATEWAYS_ABOUT = ("трафик несёт один шлюз, второй ждёт в резерве; активный перестал отвечать, а "
+                  "резерв жив — бот перекладывает трафик сам и остаётся на нём, вернуть можно кнопкой")
+ROUTING_PROVISION_INTRO = ("🇷🇺 РФ-доступ не развёрнут\n"
+                           "Кнопка поставит dnsmasq, перехват DNS клиентов, NAT и маршруты, линк до "
+                           "будущего шлюза — до минуты. Шлюз назначается следующим шагом")
+SETTINGS_ROUTING_ABSENT = ("🇷🇺 Обвязка развёрнута, функция ждёт перезапуска бота: "
+                           "⚙️ → 🔧 Сервис → 🔁 Перезапуск бота")
+GATEWAYS_OFF = "🛰 Шлюзы · 🇷🇺 РФ-доступ выключен · разрешения и списки сохранены"
+SETTINGS_ROUTING_SUBOFF = "🇷🇺 РФ-доступ выключен — раздел пуст, пока он не включён"
+GATEWAYS_AUTO_OFF = ("⚠️ Автопереключение выключено: при падении активного шлюза РФ-доступ "
+                     "выключится, а не перейдёт на резерв")
+
+
+def _fmt_n(n: int) -> str:
+    return f"{int(n):,}".replace(",", " ")
+
+
+def _lists_tail(info: dict | None) -> str:
+    """«списки 41 200, 2 ч назад» — для строки экрана «Шлюзы»; не обновлялись
+    — без числа."""
+    if not info:
+        return ""
+    age = info.get("age_seconds")
+    if age is None:
+        return "списки ещё не обновлялись"
+    return f"списки {_fmt_n(info.get('count', 0))}, {_ago(age)}"
+
+
+def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str = "",
+                  auto_on: bool = True, peer_info: dict | None = None,
+                  lists: dict | None = None) -> str:
+    """Экран «🛰 Шлюзы» при включённой функции: заголовок с состоянием,
+    строки слотов, переключение и списки, связь подсетей, «подробнее»."""
+    ok, reason = status
+    head = f"🛰 Шлюзы · 🇷🇺 {ROUTING_NAME} " + ("🟢" if ok else f"🔴 не работает: {_e(reason)}")
+    lines = [head]
+    if not states:
+        lines.append("Шлюз не назначен")
+        return "\n".join(lines)
+    lines += [slot_line(st, star=len(states) > 1) for st in states]
+    tail = []
+    if len(states) > 1 and switched_at:
+        try:
+            tail.append(f"Переключение: {timeutil.fmt_dt_ui(timeutil.parse_iso(switched_at))}, авто")
+        except ValueError:
+            pass
+    lt = _lists_tail(lists)
+    if lt:
+        tail.append(lt)
+    if tail:
+        line = " · ".join(tail)
+        lines.append(line[0].upper() + line[1:])
+    if len(states) == 1:
+        lines.append(f"Резерва нет: упадёт {slot_ref(states[0])} — РФ-сервисы станут открываться "
+                     "с зарубежного адреса")
+    else:
+        if peer_info is not None:
+            lines.append(peer_nets_line(peer_info))
+        if not auto_on:
+            lines.append(GATEWAYS_AUTO_OFF)
+        lines.append(details(GATEWAYS_ABOUT))
+        lines.append("⭐ — предпочтительный при холодном старте")
+    return "\n".join(lines)
+
+
+def gateway_list_text(states: list, switched_at: str = "", auto_on: bool = True,
+                      peer_info: dict | None = None) -> str:
+    """Прежнее имя экрана «Шлюзы»."""
+    return gateways_text(states, switched_at=switched_at, auto_on=auto_on, peer_info=peer_info)
+
+
+# ── карточка слота ───────────────────────────────────────────────────────────
+
 def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> str:
-    """SMB в карточке слота — только числа: сколько в подсети слота, сколько ему раздано из подсетей других
-    шлюзов; что с ними на шлюзе — строкой сразу под ней. name — «имя» шлюза,
-    уже экранированное (как в карточке), agent_bot — ссылка в чат его бота."""
+    """«🗂 SMB: свои — 1, извне — 2 · 🟢 доступны»; нулевая часть не выводится,
+    обе нулевые — «🗂 SMB: не найдены»; что с ними на шлюзе — строкой под ней."""
     own, peer = int(svc.get("own") or 0), int(svc.get("peer") or 0)
     if not own and not peer:
-        return "🗂 SMB в подсетях шлюзов не найдены"
+        return "🗂 SMB: не найдены"
+    parts = ([f"свои — {own}"] if own else []) + ([f"извне — {peer}"] if peer else [])
+    head = "🗂 SMB: " + ", ".join(parts)
     if not peer:
-        return f"🗂 SMB: в этой подсети — {own}, из других — нет"
+        return head
     state = svc.get("state", "")
-    head = f"🗂 SMB: в этой подсети — {own}, из других — {peer}"
     gw = f" {name}" if name else ""
     if state == "applied":
-        return head + ", доступны"
+        return head + " · 🟢 доступны"
     if state == "reissue":
         note = f"⚠️ Для доступа необходим перевыпуск конфигурации шлюза{gw}"
     else:
@@ -254,8 +314,8 @@ def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> s
 
 
 def own_lists_line(own: dict, name: str = "", agent_bot: dict | None = None) -> str:
-    """Свои списки в карточке слота — только числа; что с ними на шлюзе — строкой сразу под ней, только
-    если не «применены»."""
+    """«📋 Свои списки: 5 в туннель, 1 напрямую» / «пусто»; что с ними на
+    шлюзе — строкой сразу под ней, только если не «применены»."""
     vpn, ru = int(own.get("vpn") or 0), int(own.get("ru") or 0)
     head = ("📋 Свои списки: пусто" if not vpn and not ru
             else f"📋 Свои списки: {vpn} в туннель, {ru} напрямую")
@@ -270,504 +330,462 @@ def own_lists_line(own: dict, name: str = "", agent_bot: dict | None = None) -> 
     return head + "\n" + note
 
 
-def gateway_card_text(state: dict, states: list) -> str:
-    gw, dev = state["gateway"], state.get("device")
-    name = f"«{_e(dev.name)}»" if dev is not None else f"слот {gw.id}"
-    head = f"🛰 <b>Шлюз {name}" + (f", {_e(gw.label)}" if gw.label else "") + "</b>\n"
-    age = state.get("handshake_age")
-    if age is None or age > 300:
-        hs = "🔴 хендшейка нет"
-    else:
-        ago = f"{int(age)} с" if age < 60 else f"{int(age) // 60} мин"
-        hs = f"🟢 хендшейк {ago} назад"
-    link = f"Линк {_e(gw.link_if)}, порт {gw.link_port}"
-    others = [s for s in states if s["gateway"].id != gw.id]
-    # статус и линк — одной строкой, хендшейк — отдельной: две даты в одной
-    # строке читались хуже
-    body = f"\n{slot_status(state)}. {link}\n{hs}"
-    if state.get("active") and state.get("unavailable"):
-        body += "\nРФ-доступ выключен: российские сервисы открываются с зарубежного адреса."
-    body += "\n" + ext_ip_line(state.get("ext_ip"))
-    nets = gw.home_subnets
-    home = ("\n\n🏠 Локальные подсети: "
-            + (", ".join(f"<code>{_e(n)}</code>" for n in nets) if nets else "не заданы"))
-    if nets:
-        home += "\nУстройства админа достают до них через этот линк."
-    # блок «свои списки» со строкой состояния закрывается пустой строкой перед
-    # тем, что идёт следом («↔️ Доступ…», предупреждение о пересечении)
-    gap_after_lists = False
-    if gw.lan_mode:
-        home += "\n\n🏠 За шлюзом — без VPN: включено"
-        own = state.get("own_lists") or {}
-        if own and own.get("state") != "off":
-            home += "\n" + own_lists_line(own, name, state.get("agent_bot"))
-            gap_after_lists = own.get("state") != "applied"
-    if state.get("peer_nets"):
-        # подсеть этого шлюза — цель, куда пускают из-за других (функция B);
-        # выключено — строки нет вовсе
-        if gap_after_lists:
-            home += "\n"
-            gap_after_lists = False
-        home += ("\n↔️ Доступ из подсетей других шлюзов до "
-                 + ", ".join(f"<code>{_e(n)}</code>" for n in nets))
-        if state.get("services"):
-            home += "\n" + services_line(state["services"], name, state.get("agent_bot"))
-    conflict = next((s for s in others if _nets_overlap(nets, s["gateway"].home_subnets)), None)
-    if conflict is not None:
-        if gap_after_lists:
-            home += "\n"
-        ov = ", ".join(_e(n) for n in _nets_overlap(nets, conflict["gateway"].home_subnets))
-        first = min([state] + others, key=lambda s: (0 if s.get("preferred") else 1, s["gateway"].id))
-        route = ("маршрут достаётся ему, а " if first["gateway"].id != gw.id else "")
-        home += (f"\n⚠️ <code>{ov}</code> пересекается с подсетью {slot_short(conflict)}: {route}доступ без VPN "
-                 "между устройствами за этими шлюзами недоступен, пока подсети пересекаются.")
-    issued = state.get("issued_at") or ""
-    tail = ""
-    if issued:
-        try:
-            tail += f"\n\nКонфигурация выпущена {timeutil.fmt_dt(timeutil.parse_iso(issued))}."
-        except ValueError:
-            pass
-    tail += ("\n" if tail else "\n\n") + ping_line(state.get("ping_ms"))
-    chan = channel_block(state.get("channel"), state.get("link_ok"))
-    agent = agent_bot_line(state)
-    return (head + body + home + tail + (("\n\n" + chan) if chan else "")
-            + (("\n\n" + agent) if agent else ""))
-
-
-def _ago(seconds) -> str:
-    s = int(seconds or 0)
-    if s < 60:
-        return "только что"
-    if s < 3600:
-        return f"{s // 60} мин назад"
-    if s < 86400:
-        return f"{s // 3600} ч назад"
-    return f"{s // 86400} дн назад"
-
-
-def channel_block(ch: dict | None, server_ok) -> str:
-    """Четыре строки канала в карточке слота:
-    связь, код на той стороне, сверка конфигурации, выход наружу.
-
-    Всё, что пришло с малины, — недоверенные данные: только через _e.
-    Снимка нет — говорим, что сказать нечего, а не рисуем «всё сошлось»."""
+def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
+    """Канал в карточке: (строка «🔗 Упр. канал …», предупреждения открытыми
+    строками, «выход наружу» для «подробнее»). Всё, что пришло с малины, —
+    недоверенные данные: только через _e."""
     if not ch:
-        return ""
+        return "", [], ""
     if not ch.get("ever"):
-        return ("🔗 Канал до шлюза: ещё не поднимался — перевыпусти конфигурацию шлюза "
-                "и примени её на той стороне")
-    lines = []
+        return ("🔗 Упр. канал: ещё не поднимался — перевыпусти конфигурацию шлюза и примени её "
+                "на той стороне", [], "")
     if ch.get("online"):
-        lines.append("🔗 Канал до шлюза: 🟢 на связи")
+        head = "🔗 Упр. канал 🟢"
     else:
         seen = ch.get("seen") or ""
         when = ""
         if seen:
             try:
-                when = ", последний раз " + timeutil.fmt_dt(timeutil.parse_iso(seen))
+                when = " с " + timeutil.fmt_dt_ui(timeutil.parse_iso(seen))
             except ValueError:
                 when = ""
-        lines.append(f"🔗 Канал до шлюза: ⚪ нет связи{when}")
+        head = f"🔗 Упр. канал ⚪ нет связи{when}"
+    warns: list[str] = []
+    egress = ""
     if ch.get("has_snap"):
-        agent = _e(str(ch.get("agent") or "?"))
+        agent = _e(str(ch.get("agent") or "?")[:32])          # строка со шлюза — с пределом
+        head += f" · {_ver(agent)}"
         gen, mine = ch.get("awg_gen"), ch.get("awg_gen_mine")
-        gen_note = ""
         if gen is not None and mine is not None and gen != mine:
-            gen_note = f" · ⚠️ поколение AWG {gen}, у сервера {mine}"
-        lines.append(f"🤖 Версия агента: {agent}{gen_note}")
+            warns.append(f"⚠️ Поколение AWG на шлюзе {gen}, у сервера {mine}")
         drift = ch.get("drift") or []
         stale = "" if ch.get("online") else f" (по снимку {_ago(ch.get('age'))})"
         if not ch.get("has_bundle"):
-            lines.append("⚙️ Конфигурация: шлюз ещё не сообщал")
+            head += " · ⚙️ конфиг: шлюз ещё не сообщал"
         elif drift:
             ack = ch.get("ack") or {}
             n = len(drift)
             n_items = f"{n} " + plural_ru(n, "пункт", "пункта", "пунктов")
             if ch.get("online") and ack and not ack.get("ok"):
-                lines.append("⚠️ Шлюз не применил настройки с сервера: "
+                warns.append("⚠️ Шлюз не применил настройки с сервера: "
                              f"{_e(ack.get('error') or 'ошибка')} — вернул прежние")
             elif ch.get("online") and ch.get("drift_bundle") and not ch.get("drift_channel"):
-                lines.append("⚠️ Локальные подсети других шлюзов неактуальны — они едут только "
+                warns.append("⚠️ Локальные подсети других шлюзов неактуальны — они едут только "
                              "файлом: перевыпусти конфигурацию шлюза")
             elif ch.get("online"):
-                tail = ("; локальные подсети других шлюзов — только перевыпуском файла"
+                tail = ("; подсети других шлюзов — только перевыпуском файла"
                         if ch.get("drift_bundle") else "")
-                lines.append(f"⏳ Конфигурация на шлюзе расходится с выданной ({n_items}) "
-                             f"— изменения уходят каналом и применятся сами{tail}")
+                warns.append(f"⏳ Конфигурация на шлюзе расходится с выданной ({n_items}) — "
+                             f"изменения уходят каналом и применятся сами{tail}")
             else:
                 items = "\n".join(f"   • {d}" for d in drift_lines(ch.get("drift_items") or [], html=True))
-                when = f", по снимку {_ago(ch.get('age'))}"       # ветка — канал не на связи
-                lines.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}{when}):\n{items}")
+                warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}, по снимку "
+                             f"{_ago(ch.get('age'))}):\n{items}")
         else:
-            lines.append(f"✅ Конфигурация шлюза актуальна{stale}")
-        # обвязка не того образца — только файлом: канал её не переставит
+            head += f" · ✅ конфиг актуален{stale}"
         gen_hint = {"old": "⚠️ Обвязка шлюза старого образца — перевыпусти файл конфигурации и примени его на шлюзе",
                     "none": "⚠️ Обвязка шлюза не развёрнута — примени файл конфигурации на шлюзе"}
         if ch.get("has_bundle") and ch.get("plumbing_gen") in gen_hint:
-            lines.append(gen_hint[ch["plumbing_gen"]])
+            warns.append(gen_hint[ch["plumbing_gen"]])
         gw_ok = ch.get("egress_gw")
         mark = {True: "есть", False: "нет", None: "не знает"}
-        lines.append(f"🌐 Выход наружу: сервер — {mark[bool(server_ok)]}, "
-                     f"шлюз — {mark[gw_ok if isinstance(gw_ok, bool) else None]}")
-    # Часы малины разошлись с сервером: каналу они не нужны, а TLS к Telegram
-    # и GitHub, расписаниям и срокам — нужны; канал единственный, кто может
-    # это заметить и сказать.
+        egress = (f"выход наружу: сервер — {mark[bool(server_ok)]}, "
+                  f"шлюз — {mark[gw_ok if isinstance(gw_ok, bool) else None]}")
     skew = ch.get("clock_skew")
     if isinstance(skew, int) and abs(skew) >= 120:
         side = "спешат" if skew > 0 else "отстают"
-        lines.append(f"⏱ Часы шлюза {side} на {abs(skew) // 60} мин — проверь синхронизацию "
-                     "времени на шлюзе (TLS и расписания от неё зависят)")
+        warns.append(f"⏱ Часы шлюза {side} на {abs(skew) // 60} мин — проверь синхронизацию времени "
+                     "(TLS и расписания от неё зависят)")
     pn = ch.get("peer_nets") or {}
     if isinstance(pn, dict) and pn and not pn.get("ok"):
-        # Единственный вердикт, который едет с шлюза, — ради этой строки: тумблер
-        # доступа между подсетями включён на ВПС, и без неё отказ беспричинен.
-        miss = ", ".join(_e(str(n)) for n in (pn.get("missing") or [])[:8]) or "подсетей"
-        lines.append(f"⚠️ Доступ между подсетями: на шлюзе в таблице нет {miss}"
-                     " — перевыпусти конфигурацию шлюза и примени её")
+        miss = ", ".join(_e(str(n)[:18]) for n in (pn.get("missing") or [])[:8]) or "подсетей"
+        warns.append(f"⚠️ Связь подсетей: на шлюзе нет {miss} — перевыпусти конфигурацию шлюза и "
+                     "примени её на той стороне")
     lists = ch.get("lists") or {}
     if lists and not lists.get("ok"):
-        lines.append(f"⚠️ Шлюз не принял фиды локальной сети: {_e(lists.get('error') or 'ошибка')}"
+        warns.append(f"⚠️ Шлюз не принял фиды локальной сети: {_e(lists.get('error') or 'ошибка')}"
                      " — пока качает их сам")
     err = ch.get("error") or ""
     if err and not ch.get("online"):
-        lines.append(f"Последний обрыв: {_e(err)}")
+        warns.append(f"Последний обрыв: {_e(err)}")
+    return head, warns, egress
+
+
+def channel_block(ch: dict | None, server_ok) -> str:
+    """Канал одним блоком: строка и предупреждения (прежнее имя)."""
+    head, warns, _egress = channel_lines(ch, server_ok)
+    return "\n".join([head] + warns) if head else ""
+
+
+def _gw_traffic(dev) -> str:
+    rx, tx = int(dev.traffic_rx_month), int(dev.traffic_tx_month)
+    if rx + tx <= 0:
+        return ""
+    # стрелки — со стороны шлюза: его исходящее — это tx сервера
+    return f" · 📊 {human_bytes(rx + tx)} {updown_brief(tx, rx)}"
+
+
+def gateway_card_text(state: dict, states: list) -> str:
+    """Карточка слота: заголовок со значком («⭐» у предпочтительного, «🛰» у
+    остальных), линк, адрес и трафик, упр. канал, подсети и VPN-транзит,
+    свои списки, связь подсетей, SMB, бот шлюза; предупреждения открытыми
+    строками; редкое — под «подробнее»."""
+    gw, dev = state["gateway"], state.get("device")
+    name = f"«{_e(dev.name)}»" if dev is not None else f"слот {gw.id}"
+    two = len(states) > 1
+    lines = [f"{'⭐' if state.get('preferred') and two else '🛰'} {slot_name(state)} — {slot_status(state)}"]
+    age = state.get("handshake_age")
+    if age is None or age > 300:
+        hs = "хендшейка нет"
+    else:
+        hs = "хендшейк " + (f"{int(age)} с" if age < 60 else f"{int(age) // 60} мин")
+    lines.append(f"📡 {_e(gw.link_if)}:{gw.link_port} · {hs}{_slot_ping_tail(state)}")
+    ip = state.get("ext_ip")
+    lines.append(("🌐 " + (plain_ip(ip) if ip else "адрес не определён"))
+                 + (_gw_traffic(dev) if dev is not None else ""))
+    if state.get("active") and state.get("unavailable"):
+        lines.append("🔴 РФ-доступ выключен: российские сервисы открываются с зарубежного адреса")
+    ch_head, ch_warns, egress = channel_lines(state.get("channel"), state.get("link_ok"))
+    if ch_head:
+        lines.append(ch_head)
+    lines += ch_warns
+    nets = gw.home_subnets
+    nets_s = ", ".join(_e(n) for n in nets[:6]) + (f" и ещё {len(nets) - 6}" if len(nets) > 6 else "") \
+        if nets else "подсети не заданы"
+    lines.append(f"🗺 {nets_s} · 🔀 VPN-транзит " + ("✅" if gw.lan_mode else "☑️"))
+    if gw.lan_mode:
+        own = state.get("own_lists") or {}
+        if own and own.get("state") != "off":
+            lines.append(own_lists_line(own, name, state.get("agent_bot")))
+    if state.get("peer_nets"):
+        lines.append("↔️ Связь подсетей ✅")
+        if state.get("services"):
+            lines.append(services_line(state["services"], name, state.get("agent_bot")))
+    others = [s for s in states if s["gateway"].id != gw.id]
+    conflict = next((s for s in others if _nets_overlap(nets, s["gateway"].home_subnets)), None)
+    if conflict is not None:
+        ov = ", ".join(_e(n) for n in _nets_overlap(nets, conflict["gateway"].home_subnets))
+        first = min([state] + others, key=lambda s: (0 if s.get("preferred") else 1, s["gateway"].id))
+        route = "маршрут достаётся ему, " if first["gateway"].id != gw.id else ""
+        lines.append(f"⚠️ {ov} пересекается с подсетью «{slot_ref(conflict)}»: {route}связь подсетей между "
+                     "этими шлюзами не работает, пока они пересекаются")
+    agent = agent_bot_line(state)
+    if agent:
+        lines.append(agent)
+    more = []
+    if egress:
+        more.append(egress)
+    issued = state.get("issued_at") or ""
+    if issued:
+        try:
+            more.append(f"конфигурация выпущена {timeutil.fmt_dt_ui(timeutil.parse_iso(issued))}")
+        except ValueError:
+            pass
+    if nets:
+        more.append("устройства админа достают до подсети через линк")
+    if state.get("preferred") and two:
+        more.append("предпочтительный при холодном старте")
+    if more:
+        lines.append(details(" · ".join(more)))
     return "\n".join(lines)
 
+
+def gateway_edit_text(state: dict) -> str:
+    return f"✏️ {slot_ref(state)} — изменить"
+
+
+# ── диалоги слота ────────────────────────────────────────────────────────────
 
 def _reissue_or_channel(online: bool, what: str) -> str:
     """Хвост диалога: при живом канале изменение доедет само, без файла."""
     if online:
-        return (f"{what} шлюз получит по каналу и применит сам — перевыпускать "
-                "конфигурацию не нужно; итог придёт в чат бота шлюза.")
-    return f"{what} потребует перевыпустить конфигурацию шлюза и применить её."
+        return f"{what} шлюз получит по каналу и применит сам; итог придёт в чат бота шлюза"
+    return f"{what} потребует перевыпустить конфигурацию шлюза и применить её"
 
 
 def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
-    """Диалог «за шлюзом — без VPN»: что произойдёт,
-    что потребуется от человека, чем это грозит."""
-    name = slot_short(state)
+    """Диалог «🔀 VPN-транзит»: что произойдёт, что нужно от человека, чем грозит."""
+    name = slot_ref(state)
     online = bool((state.get("channel") or {}).get("online"))
     if on:
-        warn = ("" if resolver else
-                "\n\n⚠️ Свой резолвер на сервере не настроен (⚙️ Настройки → Приватный DNS): "
-                "шлюз будет резолвить через 1.1.1.1 по туннелю — без защиты от DoH и без "
-                "общего кэша. Крайне рекомендуется настроить эту функцию для повышения "
-                "отказоустойчивости.")
-        return (f"🏠 <b>За шлюзом — без VPN: {name}</b>\n\n"
-                "Роутер квартиры заворачивает весь трафик локальной сети на шлюз, а шлюз "
-                "маршрутизирует его сам: заблокированное — в туннель AWG, остальное — напрямую "
-                "со своего IP-адреса. На устройствах в подсети шлюза VPN включать не нужно — "
-                "все сайты будут открываться.\n\n"
-                "Что потребуется от тебя: настроить роутер по рецепту (покажу после включения) "
-                "— маршрутизацию всего трафика в шлюз со статическим локальным IP, DNS = адрес "
-                "шлюза. Без этого функция не заработает.\n\n"
-                "Что изменится: шлюз становится точкой отказа квартиры — его падение оставит "
-                "квартиру без интернета вовсе, резервный шлюз здесь не поможет.\n\n"
-                f"{_reissue_or_channel(online, 'Включение')}{warn}\n\n"
-                "Включить?")
-    return (f"🏠 <b>За шлюзом — без VPN: {name}</b>\n\n"
-            "Шлюз перестанет маршрутизировать трафик квартиры, доступ между подсетями для "
-            "этого шлюза также выключится. "
-            + _reissue_or_channel(online, "Выключение")
-            + " Списки и резолвер на шлюзе снимутся, свои списки останутся в файлах.\n\n"
-            "⚠️ <b>Чтобы устройства за шлюзом не остались без доступа в Интернет, сначала "
-            "отключи маршрутизацию всего трафика в шлюз на роутере!</b>\n\n"
-            "Выключить функцию?")
+        lines = [f"🔀 VPN-транзит на {name} — включить?",
+                 "Роутер отдаёт весь трафик сети шлюзу, шлюз делит: заблокированное — в туннель, "
+                 "остальное — напрямую. VPN на устройствах в сети становится не нужен",
+                 "Нужно от тебя: настроить роутер по рецепту — покажу после включения",
+                 "⚠️ Шлюз станет точкой отказа: упадёт — сеть без интернета, резерв не поможет"]
+        if not resolver:
+            lines.append("⚠️ Свой резолвер не настроен: шлюз пойдёт на 1.1.1.1 через туннель, без "
+                         "защиты от DoH — лучше настроить (⚙️ → 🖥 Сервер AWG)")
+        if not online:
+            lines.append("Потребует перевыпустить конфигурацию шлюза и применить её")
+        return "\n".join(lines)
+    return "\n".join([
+        f"🔀 VPN-транзит на {name} — выключить?",
+        "⚠️ Сначала убери на роутере маршрутизацию всего трафика на шлюз — иначе сеть останется без интернета",
+        f"Связь подсетей для {name} выключится; списки и резолвер снимутся, свои списки останутся"
+        + ("" if online else ". " + _reissue_or_channel(False, "Выключение")),
+    ])
 
 
-GATEWAY_LAN_NO_SUBNET = ("Сначала необходимо задать локальную подсеть шлюза: без этого работать "
-                         "не будет. Наиболее частые варианты: 192.168.1.0/24, 192.168.0.0/24.")
+GATEWAY_LAN_NO_SUBNET = "Сначала задай подсеть шлюза («🗺 Подсети»): без неё работать не будет"
 
 
-ROUTER_IP_PLACEHOLDER = "АДРЕС_ШЛЮЗА"
+ROUTER_TABS = (("mt", "MikroTik"), ("ow", "OpenWrt"))
 
 
-def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list | None = None) -> str:
-    """❓ Настройка роутера: требования и два рецепта
-    с подставленной подсетью. Адрес шлюза в подсети знает только он сам:
-    основной бот показывает плейсхолдер и отсылает в панель агента, агент
-    подставляет настоящий. peer_nets — локальные подсети других шлюзов при
-    включённом доступе между подсетями: сам роутер отвечает со своего адреса
-    по основной таблице, мимо заворота, и без маршрута до соседей его ответ
-    ушёл бы провайдеру."""
+def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list | None = None,
+                        tab: str = "mt") -> str:
+    """❓ Роутер — вкладками: требования одной строкой, подробно — под
+    «подробнее», рецепт выбранной вкладки. Адрес шлюза в подсети знает
+    только он сам: основной бот показывает плейсхолдер."""
     net = net or "192.168.1.0/24"
     gw_ip = _e(gw_ip) if gw_ip else ROUTER_IP_PLACEHOLDER
     peers = [str(p) for p in (peer_nets or []) if p]
-    mt_peer = "".join(f"/ip route add dst-address={_e(p)} gateway={gw_ip}\n" for p in peers)
-    ow_peer = "".join(f"ip route add {_e(p)} via {gw_ip}\n" for p in peers)
+    head = (f"❓ Роутер для {_e(title)} · {_e(net)} · шлюз {gw_ip}\n"
+            "Весь трафик сети, кроме шлюза и локального, — на шлюз; DNS по DHCP — шлюз; "
+            "ускорение и IPv6 — выключить; асимметричный путь — разрешить")
+    req = details("• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес "
+                  "шлюза (policy-based routing);\n"
+                  "• разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — "
+                  "правило выше drop invalid;\n"
+                  "• аппаратное ускорение (fasttrack, flow offloading) выключено;\n"
+                  "• DHCP раздаёт DNS = адрес шлюза; у шлюза статический адрес;\n"
+                  "• IPv6 в локальной сети выключен (RA/DHCPv6): резолвер шлюза AAAA не отдаёт, "
+                  "но адрес v6 от роутера увёл бы трафик мимо туннеля")
+    recipes = []
+    if tab in ("ow", "all"):
+        ow_peer = "".join(f"ip route add {_e(p)} via {gw_ip}\n" for p in peers)
+        recipes.append("<b>OpenWrt</b>\n"
+                  "<pre>echo '200 vpn' &gt;&gt; /etc/iproute2/rt_tables\n"
+                  f"ip route add default via {gw_ip} table vpn\n"
+                  f"ip rule add from {gw_ip} priority 100 lookup main\n"
+                  f"ip rule add from {_e(net)} to {_e(net)} priority 110 lookup main\n"
+                  f"ip rule add from {_e(net)} priority 120 lookup vpn\n"
+                  f"iptables -I FORWARD 1 -s {_e(net)} ! -d {_e(net)} -j ACCEPT\n"
+                  "uci set firewall.@defaults[0].flow_offloading_hw='0'\n"
+                  "uci set firewall.@defaults[0].flow_offloading='0'\n"
+                  f"{ow_peer}"
+                  f"uci add_list dhcp.lan.dhcp_option='6,{gw_ip}'\n"
+                  "uci commit</pre>\n"
+                  "Порядок важен: сначала исключается сам шлюз, затем трафик внутри сети, потом всё "
+                  "остальное уходит на шлюз. Закрепить: ip rule/route — в /etc/rc.local, "
+                  "iptables — в /etc/firewall.user")
+    if tab in ("mt", "all"):
+        mt_peer = "".join(f"/ip route add dst-address={_e(p)} gateway={gw_ip}\n" for p in peers)
+        recipes.insert(0, "<b>MikroTik RouterOS 7</b>\n"
+                  "<pre>/routing table add disabled=no fib name=antiblock\n"
+                  "/ip firewall mangle\n"
+                  f"add action=accept chain=prerouting comment=anti-loop src-address={gw_ip}\n"
+                  "add action=mark-routing chain=prerouting comment=all-LAN-via-gw \\\n"
+                  f"    new-routing-mark=antiblock passthrough=no src-address={_e(net)} dst-address=!{_e(net)}\n"
+                  f"/ip route add dst-address=0.0.0.0/0 gateway={gw_ip} routing-table=antiblock\n"
+                  "/ip firewall filter\n"
+                  f"add action=accept chain=forward comment=asym-via-gw src-address={_e(net)} dst-address=!{_e(net)}\n"
+                  f"{mt_peer}"
+                  f"/ip dhcp-server network set [find] dns-server={gw_ip}</pre>\n"
+                  "Правило asym-via-gw — выше drop invalid; fasttrack выключить")
+    recipe = "\n\n".join(recipes)
     peer_note = ("" if not peers else
-                 "\n\n<b>Доступ между подсетями</b>: сам роутер отвечает со своего адреса по основной "
-                 "таблице, мимо заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен "
-                 "маршрут до них через шлюз (строки выше с " + ", ".join(f"<code>{_e(p)}</code>" for p in peers)
-                 + "). Устройства за роутером в этом не нуждаются: их ответ заворачивается.")
-    where = ("" if gw_ip != ROUTER_IP_PLACEHOLDER else
-             ". Адрес шлюза в ней — в панели бота шлюза (строка «локальная сеть»); ниже он — "
-             f"<code>{ROUTER_IP_PLACEHOLDER}</code>.")
-    return (f"❓ <b>Настройка роутера: {_e(title)}</b>\n\n"
-            "Требования, без которых функция не работает:\n"
-            "• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес шлюза "
-            "(policy-based routing);\n"
-            "• разрешён асимметричный путь: ответ от шлюза к устройству идёт мимо роутера — правило "
-            "выше <code>drop invalid</code>;\n"
-            "• аппаратное ускорение (fasttrack, flow offloading) выключено;\n"
-            "• DHCP раздаёт DNS = адрес шлюза; у шлюза статический адрес;\n"
-            "• IPv6 в локальной сети выключен (RA/DHCPv6): резолвер шлюза AAAA не отдаёт, "
-            "но адрес v6 от роутера увёл бы трафик мимо туннеля.\n\n"
-            f"Подсеть: <code>{_e(net)}</code>{where}\n\n"
-            "<b>MikroTik RouterOS 7</b>\n"
-            "<pre>/routing table add disabled=no fib name=antiblock\n"
-            "/ip firewall mangle\n"
-            f"add action=accept chain=prerouting comment=anti-loop src-address={gw_ip}\n"
-            "add action=mark-routing chain=prerouting comment=all-LAN-via-gw \\\n"
-            f"    new-routing-mark=antiblock passthrough=no src-address={_e(net)} dst-address=!{_e(net)}\n"
-            f"/ip route add dst-address=0.0.0.0/0 gateway={gw_ip} routing-table=antiblock\n"
-            "/ip firewall filter\n"
-            f"add action=accept chain=forward comment=asym-via-gw src-address={_e(net)} dst-address=!{_e(net)}\n"
-            f"{mt_peer}"
-            f"/ip dhcp-server network set [find] dns-server={gw_ip}</pre>\n"
-            "Правило asym-via-gw — выше drop invalid; fasttrack выключить.\n\n"
-            "<b>OpenWrt</b>\n"
-            "<pre>echo '200 vpn' &gt;&gt; /etc/iproute2/rt_tables\n"
-            f"ip route add default via {gw_ip} table vpn\n"
-            f"ip rule add from {gw_ip} priority 100 lookup main\n"
-            f"ip rule add from {_e(net)} to {_e(net)} priority 110 lookup main\n"
-            f"ip rule add from {_e(net)} priority 120 lookup vpn\n"
-            f"iptables -I FORWARD 1 -s {_e(net)} ! -d {_e(net)} -j ACCEPT\n"
-            "uci set firewall.@defaults[0].flow_offloading_hw='0'\n"
-            "uci set firewall.@defaults[0].flow_offloading='0'\n"
-            f"{ow_peer}"
-            f"uci add_list dhcp.lan.dhcp_option='6,{gw_ip}'\n"
-            "uci commit</pre>\n"
-            "Порядок приоритетов важен: сначала исключается сам шлюз, затем трафик внутри сети, "
-            "потом всё остальное уходит на шлюз. Закрепить: ip rule/route — в /etc/rc.local, "
-            "iptables — в /etc/firewall.user." + peer_note)
-
-
-GATEWAY_STANDBY_CHOOSE_INTRO = (
-    "🛰 <b>Резервный шлюз</b>\n\nКогда основной шлюз перестанет отвечать, РФ-доступ "
-    "будет работать через резервный.\n\n"
-    "Шлюзом можно назначить одно из твоих уже созданных в боте устройств или "
-    "создать новое.\n\n"
-    "Для резервного шлюза поднимется второй линк — свои ключи, свой порт. Первый "
-    "файл конфигурации необходимо будет применить в SSH устройства вручную.")
-
-
-def gateway_replace_intro(state: dict) -> str:
-    dev = state.get("device")
-    name = f"«{_e(dev.name)}»" if dev is not None else f"слот {state['gateway'].id}"
-    role = ("Слот резервный: трафик клиентов не затронут." if not state.get("active")
-            else "Это активный шлюз: на время замены трафик переложится на резерв, "
-                 "если он жив, иначе российские сервисы будут открываться с зарубежного "
-                 "адреса, пока новое устройство не поднимется.")
-    return (f"🔁 <b>Заменить устройство: {name}</b>\n\n{role}\n\n"
-            "Шлюзом можно назначить одно из твоих уже созданных в боте устройств или "
-            "создать новое.\n\n"
-            "Ключи линка этого слота сменятся: прежняя машина потеряет линк сама.")
-
-
-def gateway_mark_ask(dev, prev, *, standby: bool = False, replace_state=None) -> str:
-    head = (f"🛰 Устройство «{_e(dev.name)}» ({plain_ip(dev.address)}) станет шлюзом: "
-            "перестанет учитываться в лимитах, удалить, заблокировать и выпустить "
-            "ссылку/QR/файл по нему станет нельзя.")
-    if prev is not None:
-        head += (f"\n\nСейчас шлюз — «{_e(prev.name)}». Ключи линка сменятся: прежняя машина "
-                 "потеряет линк сама, а на новой необходимо будет применить конфигурацию "
-                 "в SSH устройства.")
-    elif standby:
-        head += ("\n\nСлот резервный: поднимется второй линк со своими ключами, первый файл "
-                 "конфигурации необходимо будет применить в SSH устройства вручную. Трафик "
-                 "клиентов не будет затронут.")
-    else:
-        head += ("\n\nКлючи линка выпустятся заново, первый файл конфигурации необходимо "
-                 "будет применить в SSH устройства вручную.")
-    if replace_state is not None and replace_state.get("active"):
-        head += "\n\nЭто активный слот: на время замены трафик переложится на резерв, если он жив."
-    return head + "\n\nПосле подтверждения сразу выпущу конфигурацию для бота шлюза."
-
-
-def gateway_marked(dev, rekeyed: bool, bundle_name: str = "awg-gw-bundle.sh") -> str:
-    if rekeyed:
-        return (f"🛰 «{_e(dev.name)}» ({plain_ip(dev.address)}) назначен шлюзом, ключи линка новые.\n\n"
-                "Файл ниже — <b>первое применение, руками</b>: скопируй его на машину и выполни\n"
-                f"<code>sudo sh {_e(bundle_name)}</code>\n"
-                "После этого бот шлюза появится в чате, и дальше всё через него. Файл после "
-                "применения удалится сам.")
-    return (f"🛰 «{_e(dev.name)}» ({plain_ip(dev.address)}) назначен шлюзом. "
-            "Файл конфигурации ниже — перешли его боту шлюза.")
-
-
-def gateway_new_ask(slot: int = 1) -> str:
-    name = "Шлюз" if slot <= 1 else f"Шлюз {slot}"
-    return (f"➕ <b>Новое устройство</b>\n\nБот создаст устройство «{name}» в твоём профиле, "
-            "выпустит ключи линка и отдаст файл конфигурации.\n\n"
-            "Первый файл конфигурации необходимо будет применить в SSH устройства вручную: "
-            "у бота шлюза там ещё нет доступа к Telegram. Дальше всё через чат-бота шлюза. "
-            "Если в слоте уже была машина, она потеряет линк сама.")
-
-
-def gateway_ask_token(slot: int = 1) -> str:
-    head = ("🤖 <b>Токен бота шлюза</b>" if slot <= 1 else "🤖 <b>Токен бота резервного шлюза</b>")
-    why = ("У шлюза свой бот: другое устройство не должно знать токен этого." if slot <= 1 else
-           "У каждого шлюза свой бот: два агента на одном токене перехватывали бы "
-           "сообщения друг у друга, а другое устройство не должно знать токен этого бота.")
-    return (f"{head}\n\n{why} Создай "
-            + ("второго" if slot <= 1 else "ещё одного")
-            + " бота у @BotFather и пришли сюда его токен — строка вида <code>123456789:AA…</code>.\n\n"
-            "Он уедет внутрь первого файла конфигурации, и установка на шлюзе пройдёт "
-            "полностью автоматически. Бот запомнит токен: переустановишь агент на "
-            "устройстве — файл выпустится заново без похода в BotFather.")
+                 "\nСвязь подсетей: сам роутер отвечает со своего адреса по основной таблице, мимо "
+                 "заворота, — чтобы он был достижим из подсетей других шлюзов, ему нужен маршрут до "
+                 "них через шлюз (строки с " + ", ".join(f"<code>{_e(p)}</code>" for p in peers)
+                 + "). Устройствам за роутером это не нужно")
+    return f"{head}\n{req}\n{recipe}{peer_note}"
 
 
 def gateway_switch_ask(target: dict, current, healthy: bool) -> str:
-    who = slot_short(target)
-    cur = slot_short(current) if current else "прежний шлюз"
+    who = slot_ref(target)
+    cur = slot_ref(current) if current else "прежний шлюз"
     if healthy:
-        return (f"▶️ <b>Переключить трафик на {who}?</b>\n\n"
-                "Российские сервисы у всех включённых профилей начнут выходить с адреса этой "
-                "сети. Исходящий адрес сменится — приложения могут попросить войти заново.\n\n"
-                f"{cur} останется в резерве. Автоматически бот обратно не вернёт.")
-    return (f"⚠️ <b>{who} не отвечает уже {_slot_down_mins(target)} мин.</b>\n\n"
-            "Переключить трафик на шлюз, через который наружу сейчас не пройти? Российские "
-            "сервисы у всех включённых профилей перестанут открываться, пока он не оживёт — "
-            "или до ручного переключения на живой шлюз.")
-
-
-def _nets_overlap(a: list, b: list) -> list:
-    from awgbot.util import nets
-    return nets.overlap(a, b)
+        return (f"▶️ Переключить трафик на {who}?\n"
+                "РФ-сервисы у всех начнут выходить с адреса этой сети — приложения могут попросить "
+                f"войти заново. {cur} останется в резерве, обратно бот сам не вернёт")
+    return (f"⚠️ {who} не отвечает {_slot_down_mins(target)} мин — точно переключаем?\n"
+            "РФ-сервисы у всех перестанут работать, пока он не оживёт")
 
 
 def gateway_peer_ask(on: bool) -> str:
-    """Диалог тумблера функции B."""
+    """Диалог тумблера «↔️ Связь подсетей»."""
     if on:
-        return ("↔️ <b>Доступ между подсетями за шлюзами</b>\n\n"
-                "Устройства из локальной подсети одного шлюза смогут ходить в локальную подсеть "
-                "другого по настоящим адресам — без включённого VPN, через AWG шлюза. Только твои "
-                "локальные сети: клиентам VPN в них хода нет. Работает только между шлюзами, у "
-                "которых включено «За шлюзом — без VPN»: ровно оно гарантирует, что <b>весь</b> "
-                "трафик подсети идёт через шлюз, с обеих сторон — иначе ответы не найдут дорогу "
-                "назад.\n\n"
-                + "На Windows-устройствах SMB-серверы каждой подсети будут доступны по пути вида "
-                "<code>\\\\имя.awg.internal</code>.\n"
-                "На устройствах macOS — станут видны в Finder: «Сеть» → awg.internal.\n"
-                "Видны только серверы тех подсетей, где на шлюзе запущен avahi-daemon.\n\n"
-                + "После включения перевыпусти конфигурацию каждого шлюза: подсети шлюзов "
-                "живут в конфиге линка, а его везёт только файл. Задержка между подсетями "
-                "складывается из задержек шлюзов до сервера AWG, а связь живёт, пока подняты оба "
-                "линка.\n\nВключить?")
-    return ("↔️ <b>Доступ между подсетями за шлюзами</b>\n\n"
-            "Доступ между подсетями шлюзов закроется сразу. "
-            + "После выключения необходимо перевыпустить конфигурацию каждого шлюза."
-            + "\n\nВыключить?")
+        return "\n".join([
+            "↔️ Связь подсетей — включить?",
+            "Устройства из подсети одного шлюза достанут до подсети другого по настоящим адресам, "
+            "через AWG. Только твои локальные сети и только между шлюзами с «VPN-транзит»",
+            "SMB-серверы подсетей: на Windows — <code>\\\\имя.awg.internal</code>, на macOS — в Finder: "
+            "«Сеть» → awg.internal",
+            "После включения перевыпусти конфигурацию каждого шлюза: подсети шлюзов живут в конфиге "
+            "линка, а его везёт только файл",
+            details("«VPN-транзит» гарантирует, что весь трафик подсети идёт через шлюз с обеих сторон, "
+                    "иначе ответы не найдут дорогу назад · SMB-серверы видны только с тех подсетей, где на "
+                    "шлюзе запущен avahi-daemon · задержка складывается из задержек шлюзов до сервера AWG; "
+                    "связь живёт, пока подняты оба линка"),
+        ])
+    return ("↔️ Связь подсетей — выключить?\n"
+            "Подсети шлюзов перестанут видеть друг друга сразу. Потом перевыпусти конфигурацию "
+            "каждого шлюза")
 
 
 def gateway_home_text(state: dict) -> str:
     gw = state["gateway"]
     nets = gw.home_subnets
     cur = ", ".join(f"<code>{_e(n)}</code>" for n in nets) if nets else "не заданы"
-    lan = ("По первой подсети из списка агент шлюза настроит всё необходимое для работы "
-           "без VPN (резолвер, маскарад).\n\n" if gw.lan_mode else "")
+    lines = [f"🗺 Подсети {slot_ref(state)} · сейчас {cur}",
+             "Пришли подсети через пробел: <code>192.168.2.0/24</code>; «-» — убрать все. "
+             "Доступ через туннель — только твоим устройствам"]
+    if gw.lan_mode:
+        lines.append("Первая — для VPN-транзита")
     if state.get("peer_nets_enabled"):
-        lan += ("При включённом доступе между подсетями <u>локальные подсети шлюзов не должны "
-                "пересекаться</u>.\n\n")
-    return (f"🏠 <b>Локальные подсети {slot_short(state)}</b>\n\n"
-            "Подсети за этим шлюзом, до которых твои устройства должны доставать через "
-            "туннель — NAS, роутер, локальные сервисы. Доступ через туннель разрешён только "
-            f"для твоих устройств.\n\n{lan}"
-            f"Сейчас: {cur}\n\n"
-            "Пришли подсети через пробел или с новой строки, например "
-            "<code>192.168.2.0/24</code>. «-» — убрать все.")
+        lines.append("При связанных подсетях подсети шлюзов не должны пересекаться")
+    return "\n".join(lines)
 
 
 def gateway_home_report(res: dict, state: dict) -> str:
+    """Итог правки подсетей — первыми строками карточки."""
     parts = []
     kept = res.get("kept") or []
-    parts.append("🏠 Локальные подсети " + slot_short(state) + ": "
-                 + (", ".join(_e(n) for n in kept) if kept else "убраны"))
-    if res.get("rejected"):
-        parts.append("⚠️ Не принято:\n" + "\n".join(f"• <code>{_e(raw)}</code> — {_e(why)}" for raw, why in res["rejected"]))
+    shown = ", ".join(_e(n) for n in kept[:8]) + (f" и ещё {len(kept) - 8}" if len(kept) > 8 else "")
+    parts.append(f"✅ Подсети {slot_ref(state)}: " + (shown if kept else "убраны"))
+    rejected = res.get("rejected") or []
+    if rejected:
+        shown = "; ".join(f"<code>{_e(raw[:40])}</code> — {_e(why)}" for raw, why in rejected[:3])
+        more = f"; и ещё {len(rejected) - 3}" if len(rejected) > 3 else ""
+        parts.append(f"⚠️ Не принято: {shown}{more}")
     conflict = res.get("conflict")
     if conflict is not None:
         ov = ", ".join(f"<code>{_e(n)}</code>" for n in _nets_overlap(kept, conflict.home_subnets)) or "подсеть"
         who = _e(res["conflict_name"]) if res.get("conflict_name") else f"шлюза №{conflict.id}"
         parts.append(f"⚠️ {ov} пересекается с подсетью {who}: маршрут достаётся предпочтительному "
-                     "(при равенстве — первому), а доступ без VPN между устройствами за этими "
-                     "шлюзами недоступен, пока подсети пересекаются.")
+                     "(при равенстве — первому), связь подсетей между этими шлюзами не работает, пока "
+                     "они пересекаются")
     elif res.get("peer_others"):
         parts.append("Подсети попадут в конфигурацию остальных шлюзов: перевыпусти её для "
-                     + ", ".join(_e(w) for w in res["peer_others"]) + " и примени на той стороне.")
-    return "\n\n".join(parts)
+                     + ", ".join(_e(w) for w in res["peer_others"]) + " и примени на той стороне")
+    return "\n".join(parts)
 
 
 def gateway_label_text(state: dict) -> str:
-    return (f"✏️ <b>Подпись шлюза {slot_short(state)}</b>\n\n"
-            "Короткая подпись места — «дом 2», «дача». Показывается рядом с именем "
-            "устройства в списках и уведомлениях, чтобы однозначно его "
-            "идентифицировать.\nДо 20 символов; «—» — убрать.")
+    return (f"✏️ Подпись {slot_ref(state)} — место одним-двумя словами: «дача», «офис». "
+            "До 20 знаков, «—» — убрать")
 
 
 def gateway_remove_ask(dev, *, state=None, other=None) -> str:
     """Три варианта: резервный; активный при живом резерве; последний."""
-    gw = state["gateway"] if state else None
-    link = f"Линк {_e(gw.link_if)} снимается, машина потеряет его сама." if gw and gw.id != 1 \
-        else "Ключи линка сменятся, машина потеряет линк сама."
+    name = _e(dev.name)
     if state and not state.get("active") and other is not None:
-        return (f"🛑 «{_e(dev.name)}» перестанет быть резервным шлюзом.\n\n{link} Трафик "
-                f"клиентов не затронут — он идёт через {slot_short(other)}. Резерва больше не "
-                f"будет: если {slot_short(other)} перестанет отвечать, российские сервисы "
-                "откроются с зарубежного адреса.\nУстройство станет обычным: лимиты, "
-                "блокировки, ссылки — как у всех.")
+        return (f"🛑 {name} — больше не резерв?\n"
+                f"Линк снимется; трафик идёт через {slot_ref(other)}, резерва не будет. "
+                "Устройство станет обычным")
     if state and state.get("active") and other is not None:
-        return (f"🛑 «{_e(dev.name)}» перестанет быть шлюзом.\n\nТрафик клиентов перейдёт на "
-                f"{slot_short(other)} прямо сейчас — исходящий адрес сменится, приложения могут "
-                f"попросить войти заново. {link}\n\nУстройство станет обычным: лимиты, "
-                "блокировки, ссылки — как у всех.")
-    return (f"🛑 «{_e(dev.name)}» перестанет быть шлюзом.\n\nКлючи линка сменятся, машина "
-            "потеряет линк сама; РФ-доступ выключится до назначения нового "
-            "шлюза.\nУстройство станет обычным: лимиты, блокировки, ссылки — как у всех.")
+        return (f"🛑 {name} — больше не шлюз?\n"
+                f"Трафик сразу перейдёт на {slot_ref(other)} — адрес сменится, приложения могут "
+                "попросить войти заново. Линк снимется; устройство станет обычным")
+    return (f"🛑 {name} — больше не шлюз?\n"
+            "Ключи линка сменятся; РФ-доступ выключится до назначения нового. Устройство станет обычным")
 
 
 def gateway_removed(dev, now_active=None) -> str:
     if now_active is not None:
-        return (f"🛑 «{_e(dev.name)}» больше не шлюз, линк слота снят.\n\n"
-                f"Трафик идёт через {slot_short(now_active)}; резерва теперь нет.")
-    return (f"🛑 «{_e(dev.name)}» больше не шлюз, ключи линка сменены, РФ-доступ "
-            "выключен.\n\nЧтобы назначить новый шлюз, включи "
-            "функцию тумблером в разделе «🇷🇺 РФ-доступ».")
+        return f"🛑 {_e(dev.name)} больше не шлюз · трафик идёт через {slot_ref(now_active)}, резерва нет"
+    return (f"🛑 {_e(dev.name)} больше не шлюз · РФ-доступ выключен до назначения нового — "
+            "«🛰 Шлюзы» на главной")
 
 
-# ── Условная маршрутизация ─────────────────────
+# ── назначение шлюза ─────────────────────────────────────────────────────────
 
-ROUTING_NAME = "РФ-доступ"
+GATEWAY_CHOOSE_INTRO = ("🛰 Назначить шлюз — одно из твоих устройств или новое. Для шлюза поднимется "
+                        "отдельный линк со своим ключом и портом; первый файл конфигурации применяется "
+                        "на машине руками")
+GATEWAY_STANDBY_CHOOSE_INTRO = ("🛰 Резервный шлюз — когда основной перестанет отвечать, РФ-доступ "
+                                "будет работать через него. Одно из твоих устройств или новое; линк — "
+                                "свой, первый файл конфигурации применяется руками")
+GATEWAY_PICK_INTRO = "🛰 Из моих устройств — выбери, какое станет шлюзом. Обычным устройством оно быть перестанет"
+GATEWAY_PICK_EMPTY = "🛰 У профиля админа нет устройств, выпущенных ботом — назначь новое"
 
 
-SETTINGS_ROUTING_ABSENT = (
-    "<b>🇷🇺 РФ-доступ</b>\n\n"
-    "Обвязка развёрнута, но функция ещё спит: имя интерфейса линка читается "
-    "при старте, а бот с тех пор не перезапускался.\n\n"
-    "Перезапусти его — ⚙️ Настройки → 🔄 Обслуживание → «Перезапустить бота» "
-    "— и раздел откроется целиком: назначение шлюза, списки, доступность "
-    "профилям."
-)
+def gateway_replace_intro(state: dict) -> str:
+    name = slot_ref(state)
+    role = ("Слот резервный: трафик клиентов не затронут" if not state.get("active")
+            else "Активный слот: на время замены трафик уйдёт на резерв, если он жив")
+    return (f"🔁 Заменить машину {name}? Ключи линка сменятся — прежняя потеряет линк сама. {role}. "
+            "Одно из твоих устройств или новое")
+
+
+def gateway_mark_ask(dev, prev, *, standby: bool = False, replace_state=None) -> str:
+    head = (f"🛰 {_e(dev.name)} станет шлюзом? Выйдет из лимитов; удалить, заблокировать, выдать "
+            "ссылку будет нельзя. Ключи линка — новые, файл первого применения выпущу сразу")
+    if prev is not None:
+        head += f"\nСейчас шлюз — {_e(prev.name)}: прежняя машина потеряет линк сама"
+    if replace_state is not None and replace_state.get("active"):
+        head += "\nАктивный слот: на время замены трафик уйдёт на резерв, если он жив"
+    return head
+
+
+def gateway_marked(dev, rekeyed: bool, bundle_name: str = "awg-gw-bundle.sh") -> str:
+    if rekeyed:
+        return (f"🛰 {_e(dev.name)} назначен шлюзом, ключи линка новые\n"
+                f"Файл ниже — первое применение, руками: скопируй на машину и выполни "
+                f"<code>sudo sh {_e(bundle_name)}</code>. Дальше — через бота шлюза")
+    return f"🛰 {_e(dev.name)} назначен шлюзом — файл конфигурации ниже, перешли его боту шлюза"
+
+
+def gateway_new_ask(slot: int = 1) -> str:
+    name = "Шлюз" if slot <= 1 else f"Шлюз {slot}"
+    return (f"➕ Новое устройство «{name}» в твоём профиле: выпущу ключи линка и файл первого "
+            "применения. Если в слоте была машина, она потеряет линк сама")
+
+
+def gateway_ask_token(slot: int = 1) -> str:
+    who = "шлюза" if slot <= 1 else f"шлюза {slot}"
+    return (f"🤖 Токен бота {who} — создай бота у @BotFather и пришли токен <code>123456789:AA…</code>. "
+            "Уедет в файл первого применения; сообщение удалю")
+
+
+def routing_provisioned(tail: str) -> str:
+    return ("✅ Обвязка развёрнута, линк до шлюза поднят, функция включена\n"
+            "Перезапускаю бота — интерфейс линка читается при старте. После этого назначь шлюз: "
+            "«🛰 Шлюзы» на главной"
+            + (f"\n<pre>{_e(tail[-700:])}</pre>" if tail else ""))
+
+
+# ── параметры и доступ ───────────────────────────────────────────────────────
+
+def routing_params_text(info: dict, lists: dict) -> str:
+    """«⚙️ Параметры РФ-доступа»: проверка живости и списки одной строкой
+    каждая, объяснение — под «подробнее»."""
+    cnt, src = int(lists.get("count", 0)), int(lists.get("sources", 0))
+    age = lists.get("age_seconds")
+    if age is None:
+        lists_line = f"Списки: ещё не обновлялись · раз в {lists.get('every_hours', 6)} ч"
+    else:
+        lists_line = (f"Списки: {_fmt_n(cnt)} {plural_ru(cnt, 'запись', 'записи', 'записей')} из "
+                      f"{src} {plural_ru(src, 'источника', 'источников', 'источников')}, {_ago(age)} · "
+                      f"раз в {lists.get('every_hours', 6)} ч")
+    need = int(info["need"])
+    return "\n".join([
+        "⚙️ Параметры РФ-доступа",
+        f"Проверка живости: такт {info['probe_seconds']} с · окно {info['window']} · "
+        f"порог {info['availability']}% ({need} {plural_ru(need, 'неудача', 'неудачи', 'неудач')} из {info['window']})",
+        lists_line,
+        details("наружу зонд ходит не каждый такт — трафик клиентов сам доказывает путь, без него "
+                "зонд реже (защита от поведенческих блокировок) · резерв зондируется раз в "
+                f"{info['standby_minutes']} мин · второе автопереключение не раньше чем через "
+                f"{info['interval_minutes']} мин · окно живёт в памяти бота и после перезапуска "
+                "копится заново"),
+    ])
+
+
+def routing_users_text() -> str:
+    return ("👥 Кому доступен РФ-доступ (тебе — всегда)\n"
+            "владельцы устройств управляют настройкой на них сами")
+
+
+ROUTING_DISABLE_CONFIRM = ("🔴 Выключить РФ-доступ для всех? Российские сервисы снова будут ругаться "
+                           "на VPN; разрешения и списки сохранятся")
 
 
 def routing_lists_block(info: dict) -> str:
-    """Строка о списках: записей, возраст, период. Возраст числом, а не
-    «недавно»: разница между «час назад» и «шесть дней назад» — это разница
-    между живыми источниками и застывшим кэшем."""
-    age = info.get("age_seconds")
-    if age is None:
-        when = "ещё не обновлялись"
-    elif age < 3600:
-        when = f"обновлены {age // 60} мин назад"
-    elif age < 86400:
-        when = f"обновлены {age // 3600} ч назад"
-    else:
-        when = f"обновлены {age // 86400} дн назад"
-    return (f"\n📋 Списки: {info.get('count', 0)} записей из "
-            f"{info.get('sources', 0)} источников, {when}; "
-            f"период {info.get('every_hours', 6)} ч.")
+    """Прежняя строка о списках — для старых экранов."""
+    return "\n" + _lists_tail(info).capitalize()
 
 
 def gateway_bundle_applied_text(display: str, ok: bool, error: str = "") -> str:
@@ -812,57 +830,6 @@ def gateway_plain_bundle_caption(display: str) -> str:
             "После возврата в меню сообщение с файлом и инструкция удалятся из чата.")
 
 
-def settings_routing_text(enabled: bool, status: tuple) -> str:
-    """Экран «Условная маршрутизация» в настройках.
-
-    Показывает и состояние выключателя, и работоспособность инфраструктуры —
-    это разные вещи: функция может быть включена, но не работать, если шлюз
-    недоступен, и админ должен видеть, что именно из двух не так."""
-    ok, reason = status
-    head = ("<b>🇷🇺 РФ-доступ</b>\n\n"
-            "Российские сервисы, ругающиеся на VPN, открываются с российского "
-            "адреса, остальное — как обычно. Ссылки и QR-коды у пользователей "
-            "не меняются.\n")
-    if not ok and enabled:
-        head += f"\n⚠️ Не работает: {_e(reason)}\n"
-    if not enabled:
-        return head + "\nФункция выключена. Включи, чтобы выдавать доступ профилям."
-    return head + ("\n<b>Конфигурация шлюза</b> — файлом для бота шлюза;\n"
-                   "<b>Списки маршрутизации</b> — что именно идёт через российский адрес;\n"
-                   "<b>Доступность пользователей</b> — кому разрешён доступ к функции.\n")
-
-
-GATEWAY_CHOOSE_INTRO = ("🛰 <b>Шлюз</b>\n\nШлюз — устройство, используемое для "
-                        "РФ-доступа: через его внешний IP будет осуществляться выход в сеть "
-                        "по заданным РФ-маршрутам.\nШлюзом можно назначить одно из твоих уже "
-                        "созданных в боте устройств или создать новое.\n\n"
-                        "Для шлюза поднимется отдельный линк со своим ключом и портом. Первый "
-                        "файл конфигурации необходимо будет применить в SSH устройства вручную.")
-GATEWAY_PICK_INTRO = ("🛰 <b>Из моих устройств</b>\n\nВыбери устройство, которое станет шлюзом.\n"
-                      "<b>Важно!</b> Использовать его как обычное клиентское устройство станет "
-                      "невозможным!")
-GATEWAY_PICK_EMPTY = "🛰 У профиля админа нет устройств, выпущенных ботом. Назначь новую машину."
-ROUTING_PROVISION_INTRO = (
-    "<b>🇷🇺 РФ-доступ</b>\n\nФункция ещё не развёрнута на этом "
-    "сервере.\n\nРоссийские сервисы, которые ругаются на зарубежный адрес, "
-    "будут открываться через шлюз с российским адресом; всё "
-    "остальное пойдёт как шло. Конфиги у людей при этом не меняются.\n\n"
-    "По кнопке ниже бот сделает то, что раньше делалось тремя командами в SSH:\n"
-    "• поставит dnsmasq и настроит перехват DNS клиентов;\n"
-    "• поднимет NAT и маршруты для их трафика;\n"
-    "• создаст линк-туннель до будущего шлюза и закрепит всё от перезагрузки.\n\n"
-    "Это займёт до минуты. Шлюз назначается следующим шагом — сначала обвязка.")
-
-
-def routing_provisioned(tail: str) -> str:
-    return ("✅ Обвязка развёрнута, линк до шлюза поднят, функция включена.\n\n"
-            "Перезапускаю бота — интерфейс линка читается при старте. После "
-            "этого назначь шлюз: раздел «🇷🇺 РФ-доступ» → "
-            "«🛰 Назначить шлюз». До назначения шлюза ничего не меняется: "
-            "маркировать трафик некуда, все ходят как ходили."
-            + (f"\n\n<pre>{_e(tail[-700:])}</pre>" if tail else ""))
-
-
 def routing_provision_failed(reason: str) -> str:
     return ("⚠️ Обвязка не развёрнута.\n\n<pre>" + _e(str(reason)[-900:]) + "</pre>\n\n"
             "Ничего наполовину не осталось: следующий запуск начнёт с того же места. "
@@ -893,46 +860,6 @@ def gateway_install_instructions(dev, bundle_name: str = "awg-gw-bundle.sh",
             "Когда установка закончится, отправь <b>боту шлюза</b> <code>/start</code> — "
             "и всё готово 🙂\n\n"
             "После установки файл конфигурации удалится с хоста шлюза сам.")
-
-
-SETTINGS_ROUTING_SUBOFF = ("<b>🇷🇺 РФ-доступ</b>\n\nФункция выключена — "
-                           "этот раздел пуст, пока она не включена.")
-
-
-def routing_monitor_text(info: dict) -> str:
-    """⚙️ Настройки → Условная маршрутизация → Мониторинг и резервирование."""
-    return ("📡 <b>Мониторинг и резервирование</b>\n\n"
-            f"Живость активного шлюза бот меряет каждые {info['probe_seconds']} с — это такт. "
-            "Наружу зонд при этом идёт не каждый раз: вернувшийся через линк трафик "
-            "клиентов доказывает путь наружу сам, а когда через линк не ходит никто — "
-            "интервал зондирования увеличивается, чтобы не получить блокировку ТСПУ "
-            "провайдера по поведенческому определению.\n\n"
-            f"Недоступность считается по скользящему окну последних {info['window']} замеров: "
-            f"если неуспешных в нём не меньше {info['need']} (доступность ниже "
-            f"{info['availability']} %), РФ-доступ выключается, а при живом "
-            "резерве трафик переходит на него в тот же такт.\n\n"
-            f"Резервный шлюз зондируется наружу редко — раз в {info['standby_minutes']} мин, "
-            "между зондами живость по хендшейку линка. Второе автоматическое переключение "
-            f"раньше чем через {info['interval_minutes']} мин после первого не делается.\n\n"
-            f"Сейчас: такт {info['probe_seconds']} с, окно {info['window']} замеров "
-            f"(≈ {info['window_minutes']} мин), порог {info['availability']} % "
-            f"({info['need']} неуспешных из {info['window']}). Окно живёт в памяти бота и "
-            "после перезапуска копится заново.")
-
-
-def routing_lists_text(info: dict) -> str:
-    return ("<b>📋 Списки маршрутизации</b>\n\n"
-            "Домены российских сервисов, которым нужен российский адрес. "
-            "Обновляются автоматически по периоду; принудительно — кнопкой."
-            + routing_lists_block(info))
-
-
-def routing_users_text() -> str:
-    return ("<b>👥 Доступность пользователям</b>\n\n"
-            "Отметь профили, которым разрешён доступ к функции. Включает и "
-            "настраивает её пользователь самостоятельно у себя в профиле.\n\n"
-            "<i>Тебе доступ разрешён по умолчанию — нужно только включить её в "
-            "профиле.</i>")
 
 
 def routing_status_line(ok: bool) -> str:
@@ -1106,13 +1033,6 @@ def routing_gateway_warning(verdict: str, *, at_start: bool) -> str:
     return ""
 
 # Подтверждение выключения фичи целиком (общая настройка, не профиль).
-ROUTING_DISABLE_CONFIRM = (
-    "⚠️ <b>Выключить РФ-доступ для всех?</b>\n\n"
-    "РФ-доступ перестанет работать у всех профилей, которым он разрешён: "
-    "российские сайты и приложения снова будут ругаться на VPN.\n"
-    "Разрешения профилей и их списки адресов сохранятся — при включении всё "
-    "вернётся как было."
-)
 
 # Владельцу профиля — админ выдал/отозвал разрешение на РФ-доступ.
 ROUTING_GRANTED_NOTICE = (

@@ -1391,10 +1391,10 @@ cmd_lan() {
     local dom="/usr/local/sbin/awg-lan-domain.sh" lists="/usr/local/sbin/awg-lan-lists.sh"
     case "${1:-}" in
         add|ru|del|list)
-            [[ -x "$dom" ]] || die "локальная сеть без VPN на этом шлюзе не включена (нет $dom) — включи её в основном боте и примени конфигурацию"
+            [[ -x "$dom" ]] || die "VPN-транзит на этом шлюзе не включён (нет $dom) — включи его в основном боте («🛰 Шлюзы» → слот → «🔀 VPN-транзит») и примени конфигурацию"
             exec "$dom" "$@" ;;
         update)
-            [[ -x "$lists" ]] || die "локальная сеть без VPN на этом шлюзе не включена (нет $lists)"
+            [[ -x "$lists" ]] || die "VPN-транзит на этом шлюзе не включён (нет $lists)"
             exec "$lists" ;;
         *) die "usage: awg-bot lan add|ru|del <домен…> | list | update" ;;
     esac
@@ -1453,8 +1453,8 @@ awg-bot — управление установленным ботом.
                              allow <ip…> | deny <ip…> | off | rollback
   awg-bot ssh <cmd>          шлюз: доступ по SSH (порт — факт от sshd, фильтр снаружи):
                              status | port <N> | allow <ip|cidr|имя…> | deny … | on | off
-  awg-bot routing-doctor     где рвётся условная маршрутизация (только чтение)
-  awg-bot lan <cmd>          шлюз, локальная сеть без VPN: add|ru|del <домен…> — свои списки
+  awg-bot routing-doctor     где рвётся РФ-доступ (только чтение)
+  awg-bot lan <cmd>          шлюз, VPN-транзит: add|ru|del <домен…> — свои списки
                              (в туннель / напрямую / убрать), list, update — обновить фиды
   awg-bot gw-bundle [--link IF]  пересобрать бандл для шлюза (ключи не меняются);
                              --link — линк другого слота (резервный шлюз)

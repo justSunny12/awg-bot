@@ -151,11 +151,14 @@ async def test_edit_flow_writes_value_and_returns_to_section(svc, fake_bot, monk
     assert any("Частота опроса" in t for kind, t, _ in msg.sent if kind == "edit_text")
     bad = FakeMessage(text="0", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_receive_value(bad, state, svc)
-    assert written == {} and any("диапазоне" in t for kind, t, _ in bad.sent)
+    assert written == {} and any("⚠️ Нужно целое число 1–1440 мин" in t for kind, t, _ in bad.sent)
     good = FakeMessage(text="5", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_receive_value(good, state, svc)
     assert written == {"app.gateway.monitor_minutes": 5}
-    assert any("Мониторинг" in t for kind, t, _ in good.sent if kind == "answer")
+    # итог ввода — первой строкой раздела, отдельного сообщения нет
+    sections = [t for kind, t, _ in good.sent if kind == "answer" and "Мониторинг" in t]
+    assert len(sections) == 1 and sections[0].startswith("✅ Частота опроса: ") \
+        and sections[0].split("\n", 1)[0].endswith(" → 5 мин"), good.sent
 
 
 async def test_backup_without_key_explains_instead_of_leaking(svc, fake_bot, monkeypatch):
@@ -167,11 +170,15 @@ async def test_backup_without_key_explains_instead_of_leaking(svc, fake_bot, mon
 
 
 def test_backup_switch_hides_the_rest_in_both_bots(monkeypatch):
+    """Автобэкапы выключены — остаётся тумблер: канал, расписание и «сделать
+    сейчас» без включённых бэкапов ничего не значат. У основного бота
+    «🔐 Шифрование» остаётся и при выключенных: фраза нужна для
+    восстановления шифрованных копий."""
     from awgbot.core import settings
     monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: False)
     assert _labels(kb.gateway_backup_kb(False)) == [["☑️ Резервное копирование"], ["⬅️ Назад"]]
-    assert _labels(kb.settings_backup())[0] == ["☑️ Резервное копирование"] and len(kb.settings_backup().inline_keyboard) == 2
+    assert _labels(kb.settings_backup()) == [["☑️ Автобэкапы", "🔐 Шифрование"], ["⬅️ Назад"]], _labels(kb.settings_backup())
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
     rows = _labels(kb.gateway_backup_kb(True))
     assert rows[0] == ["✅ Резервное копирование"] and rows[1] == ["🔐 Шифрование: ✅ включено"]
@@ -183,7 +190,7 @@ async def test_gateway_passphrase_flow(svc, fake_bot):
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     state = FakeState()
     await gh.gw_encryption(cb, svc, state)
-    assert any("Шифрование резервных копий" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    assert any(t.startswith("🔐 Шифрование бэкапов") for kind, t, _ in msg.sent if kind == "edit_text")
     await gh.gw_encryption_set(cb, svc, state)
     m = lambda t: FakeMessage(text=t, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_passphrase_first(m("correct horse battery"), state, svc)
@@ -202,7 +209,8 @@ async def test_gateway_email_section_and_channel_offer(svc, fake_bot, monkeypatc
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_section(cb, GwCB(action="email"), svc, FakeState())
     txt = [t for kind, t, _ in msg.sent if kind == "edit_text"][-1]
-    assert "Ящик не подключён" in txt and "конфигурации шлюза" in txt and "приостановки" not in txt
+    assert txt.startswith("✉️ E-mail · ящик не подключён") and "конфигурации шлюза" in txt, txt
+    assert "паузы" not in txt and "Аварийный выход" not in txt, "аварийного выхода у агента нет"
     await gh.gw_backup_channel(cb, GwCB(action="bk_ch", val="email"), svc)
     assert any("Почта не настроена" in t for kind, t, _ in msg.sent if kind == "edit_text")
     await gh.gw_toggle(cb, GwCB(action="tgl", val="notifications.email_fallback"), svc)

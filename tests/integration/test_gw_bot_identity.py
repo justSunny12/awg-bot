@@ -436,7 +436,10 @@ def test_card_and_bundle_caption_link_the_bot_from_the_snapshot(two_slots, monke
     link = '<a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>'
     st = s.gateway_screen_state(2, lazy_ping=False)
     card = texts.gateway_card_text(st, [st])
-    assert card.endswith("\n\nБот шлюза: " + link), card
+    lines = card.split("\n")
+    assert "Бот шлюза: " + link in lines, card
+    tail = lines[lines.index("Бот шлюза: " + link) + 1:]
+    assert all(ln.startswith("<blockquote") for ln in tail), f"после строки бота — только «подробнее»: {card}"
     display, bot = s.gw_bundle_target(2)
     assert f"боту шлюза ({link})" in texts.gateway_bundle_caption(display, bot), "подпись файла без ссылки"
     s.set_gw_bot_token(TOKEN2, 2)

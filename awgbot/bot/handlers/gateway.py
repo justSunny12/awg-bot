@@ -602,7 +602,7 @@ async def gw_lan_router(cb: CallbackQuery, services):
     net, addr, peers = await call(services.lan_router_params)
     # «Назад» — на экран локальной сети, откуда пришли: с клавиатурой того экрана
     # рецепт читался бы как сам экран «Локальная сеть»
-    await edit_nav(cb, services, texts.gateway_router_text(socket.gethostname(), net, addr, peer_nets=peers),
+    await edit_nav(cb, services, texts.gateway_router_text(socket.gethostname(), net, addr, peer_nets=peers, tab="all"),
                    kb.gateway_back_kb("lan"))
     await cb.answer()
 

@@ -56,16 +56,15 @@ async def ask(cb: CallbackQuery, services, prompt: str, markup) -> None:
     await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
 
 
-async def after_input(message: Message, services, hooks: Hooks, sec: str) -> None:
-    """Раздел после ТЕКСТОВОГО ввода — новым сообщением через send_menu.
-
-    Голый message.answer оставлял в чате два живых экрана: приглашение «введи
-    значение» с кнопкой «Отмена» и новый раздел, а нав-указатель так и стоял на
-    приглашении — следующий переход гасил не то. Служебное убираем: само
-    приглашение, ввод человека, переспросы (всё это трекается); в чате
-    остаются финишер «изменено: было → стало» и раздел."""
+async def after_input(message: Message, services, hooks: Hooks, sec: str, note: str = "") -> None:
+    """Раздел после ТЕКСТОВОГО ввода — новым сообщением через send_menu; итог
+    ввода («✅ Частота опроса: 3 → 5 мин») — первой строкой раздела, а не
+    отдельным сообщением. Служебное убираем: приглашение, ввод человека,
+    переспросы (всё это трекается)."""
+    from awgbot.bot.screens import with_note
     await cleanup_content(message.bot, services, message.chat.id)
-    await send_menu(message, services, *await hooks.screen(services, sec))
+    text, markup = await hooks.screen(services, sec)
+    await send_menu(message, services, with_note(text, note), markup)
 
 
 # ── ввод значения ────────────────────────────────────────────────────────────
@@ -73,15 +72,22 @@ async def after_input(message: Message, services, hooks: Hooks, sec: str) -> Non
 async def start_edit(cb: CallbackQuery, services, hooks: Hooks, state: FSMContext,
                      key: str, sec: str) -> bool:
     """Открыть ввод значения key; False — ключ неизвестен (старая клавиатура)."""
-    if key not in texts.SETTINGS_BOUNDS and key not in texts.SETTINGS_TEXT:
+    if key not in texts.SETTINGS_BOUNDS and key not in texts.SETTINGS_TEXT and key != "backup_when":
         await cb.answer("Эта настройка недоступна.", show_alert=True)
         return False
     await state.set_state(SettingsInput.value)
     await state.update_data(key=key, sec=sec)
     if key == "email.resume_address":
         prompt = texts.email_ask_resume_address(await call(services.email_resume_address))
+    elif key == "backup_when":
+        prompt = texts.BACKUP_WHEN_PROMPT.format(day=settings.get_int("app.scheduler.backup_day", 1),
+                                                 hour=settings.get_int("app.scheduler.backup_hour", 12))
+    elif key == "app.client_config.dns1":
+        d1 = str(settings.get(key, "") or "")
+        d2 = str(settings.get("app.client_config.dns2", "") or "")
+        prompt = texts.settings_prompt(key, f"{d1}, {d2}" if d2 and d2 != d1 else d1)
     else:
-        prompt = texts.settings_prompt(key)
+        prompt = texts.settings_prompt(key, settings.get(key, None))
     await ask(cb, services, prompt, hooks.cancel_kb(sec))
     await cb.answer()
     return True
@@ -145,9 +151,8 @@ async def _receive_text(message: Message, state: FSMContext, services, hooks: Ho
             await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
             return
         await state.clear()
-        await message.answer(texts.settings_ssh_allow_added(
-            [x for x in after if x not in before] or [raw]))
-        await after_input(message, services, hooks, sec)
+        await after_input(message, services, hooks, sec,
+                          texts.settings_ssh_allow_added([x for x in after if x not in before] or [raw]))
         return
     else:
         ok, err = _validate_server_value(key, raw)
@@ -179,8 +184,31 @@ async def _receive_text(message: Message, state: FSMContext, services, hooks: Ho
         await after_input(message, services, hooks, sec)
         return
     await state.clear()
-    await message.answer(texts.settings_changed(key, old, shown_new))
-    await after_input(message, services, hooks, sec)
+    await after_input(message, services, hooks, sec, texts.settings_changed(key, old, shown_new))
+
+
+async def _receive_backup_when(message: Message, state: FSMContext, services, hooks: Hooks,
+                               sec: str) -> None:
+    """«1 12» — день месяца и час автобэкапа одним приглашением."""
+    parts = (message.text or "").split()
+    try:
+        day, hour = int(parts[0]), int(parts[1])
+        if not (1 <= day <= 28 and 0 <= hour <= 23):
+            raise ValueError
+    except (ValueError, IndexError):
+        await ask_tracked(message, services, texts.BACKUP_WHEN_BAD)
+        return
+    old = (settings.get_int("app.scheduler.backup_day", 1), settings.get_int("app.scheduler.backup_hour", 12))
+    try:
+        await call(settings.set_value, "app.scheduler.backup_day", day)
+        await call(settings.set_value, "app.scheduler.backup_hour", hour)
+    except settings.SettingsWriteError as e:
+        await state.clear()
+        await after_input(message, services, hooks, sec, f"⚠️ {texts._e(str(e))}")
+        return
+    await state.clear()
+    await after_input(message, services, hooks, sec,
+                      f"✅ Автобэкап: {old[0]}-е, {old[1]:02d}:00 → {day}-е, {hour:02d}:00")
 
 
 async def receive_value(message: Message, state: FSMContext, services, hooks: Hooks,
@@ -190,6 +218,9 @@ async def receive_value(message: Message, state: FSMContext, services, hooks: Ho
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if key in texts.SETTINGS_TEXT:
         await _receive_text(message, state, services, hooks, key, sec)
+        return
+    if key == "backup_when":
+        await _receive_backup_when(message, state, services, hooks, sec)
         return
     if key not in texts.SETTINGS_BOUNDS:      # рассинхрон state (не должен случаться)
         await state.clear()
@@ -213,8 +244,7 @@ async def receive_value(message: Message, state: FSMContext, services, hooks: Ho
         await after_input(message, services, hooks, sec)
         return
     await state.clear()
-    await message.answer(texts.settings_changed(key, old, val))
-    await after_input(message, services, hooks, sec)
+    await after_input(message, services, hooks, sec, texts.settings_changed(key, old, val))
 
 
 # ── тумблер ──────────────────────────────────────────────────────────────────
@@ -294,7 +324,7 @@ async def set_backup_channel(cb: CallbackQuery, services, hooks: Hooks, val: str
         await cb.answer(str(e), show_alert=True)
         return
     await hooks.render(cb, services, "backup")
-    await cb.answer()
+    await cb.answer(texts.cycle_toast("app.scheduler.backup_channel", val))
 
 
 async def passphrase_start(cb: CallbackQuery, services, hooks: Hooks, state: FSMContext) -> None:
@@ -315,6 +345,14 @@ async def _take_secret_message(message: Message) -> str:
 
 # ── почта ────────────────────────────────────────────────────────────────────
 
+async def _render_with_note(cb: CallbackQuery, services, hooks: Hooks, sec: str, note: str) -> None:
+    """Раздел на месте кнопки с итогом первой строкой."""
+    from awgbot.bot.handlers.common import edit
+    from awgbot.bot.screens import with_note
+    text, markup = await hooks.screen(services, sec)
+    await edit(cb, with_note(text, note), markup)
+
+
 async def email_action(cb: CallbackQuery, services, hooks: Hooks, state: FSMContext,
                        key: str) -> bool:
     """setup | check | test | forget | forget!. False — ключ не наш."""
@@ -329,22 +367,23 @@ async def email_action(cb: CallbackQuery, services, hooks: Hooks, state: FSMCont
         await cb.answer()
         return True
     if key == "check":
+        # колбэк отвечаем сразу (IMAP-вход может идти дольше лимита ответа),
+        # итог — первой строкой раздела
         await cb.answer("Проверяю…")
         ok, detail = await call(services.email_check)
-        await hooks.render(cb, services, "email")
-        if not ok:
-            await cb.message.answer(texts.email_check_failed(detail))
+        await _render_with_note(cb, services, hooks, "email",
+                                texts.EMAIL_CHECK_OK if ok else f"🔴 {texts._e(detail)}")
         return True
     if key == "test":
         await cb.answer("Отправляю…")
         try:
             await call(services.email_send_test)
         except mail.MailError as e:
-            await cb.message.answer(f"🔴 {e}")
+            await _render_with_note(cb, services, hooks, "email", f"🔴 {texts._e(str(e))}")
             return True
         acc = await call(services.email_account)
-        await cb.message.answer(texts.email_test_sent(acc.login if acc else ""),
-                                reply_markup=kb.hide_only())
+        await _render_with_note(cb, services, hooks, "email",
+                                "✅ " + texts.email_test_sent(acc.login if acc else ""))
         return True
     if key == "forget":
         await edit(cb, texts.EMAIL_FORGET_CONFIRM, hooks.email_forget_kb())
@@ -352,9 +391,8 @@ async def email_action(cb: CallbackQuery, services, hooks: Hooks, state: FSMCont
         return True
     if key == "forget!":
         await call(services.email_forget)
-        await cb.message.answer(texts.EMAIL_FORGOTTEN)
         await hooks.render(cb, services, "email")
-        await cb.answer()
+        await cb.answer(texts.EMAIL_FORGOTTEN)
         return True
     return False
 
@@ -395,8 +433,7 @@ def register(router, hooks: Hooks, *, default_sec: str = "root") -> dict:
             return
         await state.clear()
         await call(services.backup_set_passphrase, phrase)
-        await message.answer(texts.BACKUP_PASSPHRASE_SET)
-        await after_input(message, services, hooks, "backup")
+        await after_input(message, services, hooks, "backup", texts.BACKUP_PASSPHRASE_SET)
 
     async def _email_done(message: Message, services):
         await after_input(message, services, hooks, "email")

@@ -344,7 +344,7 @@ GW_CONFIRM_BOT_RESTART = ("🔁 <b>Перезапустить бота?</b>\n\n�
 GW_BOT_RESTARTING = "🔄 Бот перезапускается — вернётся через несколько секунд."
 
 GW_BUNDLE_NOT_OURS = ("Это не конфигурация шлюза — файл не принят. Её выпускает основной "
-                      "бот: «🇷🇺 РФ-доступ» → «Конфигурация шлюза».")
+                      "бот: «🛰 Шлюзы» → слот → «📤 Конфигурация».")
 GW_BUNDLE_PASSPHRASE_QUESTION = (
     "🔐 <b>В конфигурации — парольная фраза шифрования бэкапов, и она отличается "
     "от заданной на шлюзе.</b>\n\nПерезаписать фразу шлюза фразой с сервера AWG? Прежние "
@@ -405,9 +405,9 @@ def gateway_apply_report(st: dict) -> str:
     if st.get("LAN") == "1":
         err = st.get("LAN_ERROR") or ""
         if err:
-            lines.append(f"локальная сеть без VPN: не применена — {err}")
+            lines.append(f"VPN-транзит: не применён — {err}")
         else:
-            lines.append("локальная сеть без VPN: применена"
+            lines.append("VPN-транзит: применён"
                          + (f" ({st.get('LAN_IF')}, {st.get('LAN_ADDR')})" if st.get("LAN_IF") else ""))
     if not lines:
         return ""
@@ -422,8 +422,10 @@ def gateway_op_result(title: str, ok: bool, detail: str) -> str:
 
 def awg_restart_warning_body(gateway: bool) -> str:
     """Слово в слово предупреждение экрана «Перезапустить AWG» — у ролей оно разное."""
-    src = GW_CONFIRM_RESTART if gateway else SVC_CONFIRM_AWG
-    return src.split("\n\n", 1)[1]
+    if gateway:
+        return GW_CONFIRM_RESTART.split("\n\n", 1)[1]
+    # у основного бота подтверждение однострочное: «🔁 Перезапустить AWG? <цена>»
+    return SVC_CONFIRM_AWG.split("? ", 1)[-1]
 
 
 def gateway_bundle_received(link_changed: bool) -> str:
@@ -475,8 +477,7 @@ def gateway_ssh_text(st: dict) -> str:
         lines.append("Из локальных сетей других шлюзов: открыт для "
                      + ", ".join(f"<code>{_e(n)}</code>" for n in peers[:3]))
     else:
-        lines.append("При включении функции «Доступ между подсетями» будет открыт доступ "
-                     "из локальных подсетей других шлюзов")
+        lines.append("Когда подсети связаны, SSH откроется и из подсетей других шлюзов")
     lines.append("")
     allow = st.get("allow") or []
     if not st.get("new_plumbing"):
@@ -539,7 +540,7 @@ def gateway_ssh_port_changed(old: int, new: int) -> str:
 
 
 GW_SSH_ALLOW_ASK = ("➕ <b>Адреса для входа снаружи</b>\n\nПришли IP, подсеть или имя DynDNS "
-                    "(можно несколько через пробел). Только IPv4: за роутером квартиры v6-проброса "
+                    "(можно несколько через пробел). Только IPv4: проброса IPv6 через роутер "
                     "нет. Имя буду резолвить сам и следить за сменой адреса.")
 
 

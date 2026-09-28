@@ -29,10 +29,22 @@ async def test_section_offers_provisioning_before_anything_exists(services, fake
     monkeypatch.setattr(config, "ROUTING_ENABLED", False)
     monkeypatch.setattr(services, "routing_provisioned", lambda: False)
     text, markup = await sh._screen("rt", services)
-    assert "не развёрнута" in text
+    assert text.startswith("🇷🇺 РФ-доступ не развёрнут\n"), text
     assert "dnsmasq" in text and "линк" in text, "сказано, что именно сделает кнопка"
-    labels = [b.text for row in markup.inline_keyboard for b in row]
-    assert "🚀 Развернуть" in labels
+    rows = [[b.text for b in row] for row in markup.inline_keyboard]
+    assert rows == [["🚀 Развернуть"], ["⬅️ В меню"]], "одно действие и выход — больше тут делать нечего"
+    assert SetCB.unpack(markup.inline_keyboard[0][0].callback_data) == SetCB(sec="rt", act="do", key="provision")
+
+
+async def test_provisioned_but_asleep_says_how_to_wake_and_offers_only_the_exit(services, monkeypatch):
+    """Обвязка есть, но интерфейс линка читается при старте — до перезапуска
+    функция спит: экран говорит, где перезапустить, и не предлагает кнопок,
+    которые ничего не сделают."""
+    monkeypatch.setattr(config, "ROUTING_ENABLED", False)
+    monkeypatch.setattr(services, "routing_provisioned", lambda: True)
+    text, markup = await sh._screen("rt", services)
+    assert text == "🇷🇺 Обвязка развёрнута, функция ждёт перезапуска бота: ⚙️ → 🔧 Сервис → 🔁 Перезапуск бота"
+    assert [[b.text for b in row] for row in markup.inline_keyboard] == [["⬅️ В меню"]]
 
 
 async def test_provisioning_restarts_the_bot_after_success(services, fake_bot, monkeypatch):
@@ -42,12 +54,17 @@ async def test_provisioning_restarts_the_bot_after_success(services, fake_bot, m
     monkeypatch.setattr(services, "routing_provision", lambda: calls.append("go") or "хвост вывода")
     monkeypatch.setattr(services, "set_restart_wait", lambda c, m: calls.append("wait"))
     monkeypatch.setattr(services, "restart_bot", lambda: calls.append("restart"))
+    # кнопка «🚀 Развернуть» по порядку фильтров попадает в routing_action
+    # (sec="rt", act="do") — он и обязан её обработать, а не промолчать
+    from tests.e2e.test_settings_layout import _first_matching_handler
+    assert _first_matching_handler(sh.router, SetCB(sec="rt", act="do", key="provision")) == "routing_action"
     cb, nav = _acb(fake_bot)
-    await sh.do_action(cb, SetCB(sec="rt", act="do", key="provision"), services)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="provision"), services)
     assert calls == ["go", "wait", "restart"]
+    assert cb.answers == [("Разворачиваю…", False)], "ответ на колбэк — ровно один"
     done = [s[1] for s in nav.sent if s[0] == "answer"]
-    assert done and "Обвязка развёрнута" in done[-1]
-    assert "Назначить шлюз" in done[-1], "следующий шаг назван"
+    assert done and done[-1].startswith("✅ Обвязка развёрнута")
+    assert "назначь шлюз: «🛰 Шлюзы» на главной" in done[-1], "следующий шаг и где его искать названы"
 
 
 async def test_provisioning_failure_shows_the_reason_and_does_not_restart(services, fake_bot, monkeypatch):

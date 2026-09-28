@@ -552,7 +552,7 @@ def test_lan_checks_alert_separately_and_quietly(svc, monkeypatch):
     notes = []
     for _ in range(5):
         notes += svc.monitor_tick()
-    assert len(notes) == 1 and "Локальная сеть без VPN" in notes[0].text and not notes[0].critical
+    assert len(notes) == 1 and "⚠️ VPN-транзит: трафик с роутера" in notes[0].text and not notes[0].critical
     assert not any("Обвязка шлюза неисправна" in n.text for n in notes)
 
 

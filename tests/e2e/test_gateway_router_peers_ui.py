@@ -1,7 +1,7 @@
-"""Экраны «❓ Настройка роутера» при доступе между подсетями за шлюзами: у
-основного бота (карточка слота) подсети соседей берутся из состояния слота,
-у агента — из юнита обвязки вместе с адресом шлюза. В обоих рецепт получает
-маршруты до соседей только тогда, когда доступ реально включён."""
+"""Рецепт роутера при связанных подсетях: у основного бота («❓ Роутер» в
+карточке слота, вкладками) подсети соседей берутся из состояния слота, у
+агента — из юнита обвязки вместе с адресом шлюза. В обоих рецепт получает
+маршруты до соседей только тогда, когда связь реально включена."""
 from __future__ import annotations
 
 import pytest
@@ -19,7 +19,7 @@ from tests.e2e.test_gateway_slots_ui import _acb, _peer_conf, _screen, _slot1, _
 
 pytestmark = pytest.mark.e2e
 slots = _slots_ui.slots
-NOTE = "<b>Доступ между подсетями</b>"
+NOTE = "Связь подсетей: сам роутер"
 
 
 # ── основной бот: карточка слота ─────────────────────────────────────────────
@@ -32,9 +32,9 @@ def _two_lan_slots(services, slots):
     services.db.gateway_update(1, lan_mode=1); services.db.gateway_update(2, lan_mode=1)
 
 
-async def _router(services, fake_bot, slot):
+async def _router(services, fake_bot, slot, tab="mt"):
     cb, nav = _acb(fake_bot)
-    await sh.gw_slot_router(cb, GwSlotCB(action="router", slot=slot), services)
+    await sh.gw_slot_router(cb, GwSlotCB(action="router", slot=slot, val=tab), services)
     return _screen(nav)
 
 
@@ -47,9 +47,11 @@ async def test_slot_router_recipe_routes_to_the_other_gateways_lan(services, slo
     store["app.routing.peer_nets.enabled"] = True
     text, labels = await _router(services, fake_bot, 1)
     assert f"/ip route add dst-address=192.168.68.0/24 gateway={ROUTER_IP_PLACEHOLDER}" in text, text
-    assert f"ip route add 192.168.68.0/24 via {ROUTER_IP_PLACEHOLDER}" in text, text
     assert NOTE in text and "dst-address=192.168.1.0/24 gateway=" not in text
-    assert labels == ["⬅️ Назад"], labels
+    assert labels == ["✅ MikroTik", "OpenWrt", "⬅️ Назад"], labels
+    text, _ = await _router(services, fake_bot, 1, "ow")
+    assert f"ip route add 192.168.68.0/24 via {ROUTER_IP_PLACEHOLDER}" in text, text
+    assert NOTE in text
     text2, _ = await _router(services, fake_bot, 2)
     assert f"/ip route add dst-address=192.168.1.0/24 gateway={ROUTER_IP_PLACEHOLDER}" in text2, text2
     assert "dst-address=192.168.68.0/24 gateway=" not in text2
@@ -61,8 +63,9 @@ async def test_slot_router_recipe_without_peer_access_has_no_peer_routes(service
     нужен."""
     _peer_conf(monkeypatch)
     _two_lan_slots(services, slots)
-    text, _ = await _router(services, fake_bot, 1)
-    assert NOTE not in text and "192.168.68.0/24" not in text, text
+    for tab in ("mt", "ow"):
+        text, _ = await _router(services, fake_bot, 1, tab)
+        assert NOTE not in text and "192.168.68.0/24" not in text, text
 
 
 # ── агент: экран «Локальная сеть» → «Настройка роутера» ─────────────────────
@@ -90,7 +93,10 @@ async def test_agent_router_recipe_routes_to_peers_via_its_own_address(gw_svc, f
     через плейсхолдер; «Назад» — на экран локальной сети."""
     text, markup = await _lan_router(gw_svc, fake_bot, monkeypatch,
                                      ("192.168.1.0/24", "192.168.1.2", ["192.168.68.0/24", "10.20.0.0/16"]))
-    assert "Настройка роутера: naspi" in text
+    assert text.startswith("❓ Роутер для naspi · 192.168.1.0/24 · шлюз 192.168.1.2\n"), text
+    # у агента вкладок нет — оба рецепта обязаны быть на экране, иначе
+    # владелец OpenWrt остаётся без команд вовсе
+    assert "<b>MikroTik RouterOS 7</b>" in text and "<b>OpenWrt</b>" in text, "рецепт OpenWrt у агента пропал"
     for p in ("192.168.68.0/24", "10.20.0.0/16"):
         assert f"/ip route add dst-address={p} gateway=192.168.1.2" in text, text
         assert f"ip route add {p} via 192.168.1.2" in text, text
@@ -101,6 +107,6 @@ async def test_agent_router_recipe_routes_to_peers_via_its_own_address(gw_svc, f
 
 async def test_agent_router_recipe_without_peers(gw_svc, fake_bot, monkeypatch):
     text, _ = await _lan_router(gw_svc, fake_bot, monkeypatch, ("192.168.1.0/24", "192.168.1.2", []))
-    assert NOTE not in text, "абзац про доступ между подсетями без соседей"
+    assert NOTE not in text, "абзац про связь подсетей без соседей"
     assert [ln for ln in text.splitlines() if ln.startswith("/ip route add")] == \
         ["/ip route add dst-address=0.0.0.0/0 gateway=192.168.1.2 routing-table=antiblock"], text

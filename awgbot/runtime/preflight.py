@@ -156,14 +156,13 @@ def _firewall_warnings(services) -> list[str]:
     if not nftguard.enabled():
         return ["файервол хоста не под управлением бота: SSH из туннеля не "
                 "фильтруется по устройствам админа. Включить — ⚙️ Настройки → "
-                "🛡 Файервол (правила применяются с таймером отката, "
-                "подтверждение придёт сюда же)"]
+                "🛡 SSH-доступ → «✅ Фильтр снаружи»"]
     out: list[str] = []
     spec = nftguard.build_spec(services.db.admin_device_addresses(config.ADMIN_ID))
     if spec.ssh_open:
         out.append("список адресов для SSH пуст — хост открыт для всех адресов "
                    "(вход только по ключам). Добавить свои — ⚙️ Настройки → "
-                   "🛡 Файервол → «➕ Добавить адрес»")
+                   "🛡 SSH-доступ → «➕ Адрес»")
     if spec.unresolved:
         out.append("firewall.ssh_allow: не резолвятся " + ", ".join(spec.unresolved))
     if not spec.udp_ports and not awg_in_container():
