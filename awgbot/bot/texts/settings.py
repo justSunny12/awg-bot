@@ -120,8 +120,15 @@ EMAIL_ASK_SMTP_PORT = "Порт SMTP (STARTTLS), обычно 587:"
 EMAIL_BAD_ADDRESS = "⚠️ Не похоже на адрес почты — пришли адрес вида box@example.com"
 EMAIL_BAD_PORT = "⚠️ Нужен номер порта от 1 до 65535"
 EMAIL_BAD_HOST = "⚠️ Нужно имя сервера и порт: <code>imap.example.com:993</code>"
-EMAIL_FORGET_CONFIRM = ("🗑 Отключить почту?\nЛогин, пароль и серверы будут стёрты; аварийный "
-                        "выход из паузы перестанет работать")
+def email_forget_confirm(gateway: bool = False) -> str:
+    """У агента аварийного выхода из паузы нет — по почте у него бэкапы и
+    аварийные алерты."""
+    tail = ("бэкапы и аварийные алерты по почте перестанут уходить" if gateway
+            else "аварийный выход из паузы перестанет работать")
+    return f"🗑 Отключить почту?\nЛогин, пароль и серверы будут стёрты; {tail}"
+
+
+EMAIL_FORGET_CONFIRM = email_forget_confirm()
 EMAIL_FORGOTTEN = "✅ Почта отключена"
 
 
@@ -173,7 +180,8 @@ def settings_mon_text() -> str:
     from awgbot.core import settings as s
     loud = s.get_bool("app.monitoring.service_failure_alert_loud", True)
     return (f"🩺 Мониторинг · опрос раз в {s.get_int('app.scheduler.monitor_minutes', 3)} мин · "
-            f"алерт после {s.get_int('app.monitoring.alert_streak', 5)} плохих замеров · "
+            f"алерт после {s.get_int('app.monitoring.alert_streak', 5)} "
+            f"{plural_ru(s.get_int('app.monitoring.alert_streak', 5), 'плохого замера', 'плохих замеров', 'плохих замеров')} · "
             f"простой AWG дольше {s.get_int('app.monitoring.service_failure_alert_minutes', 5)} мин — "
             + ("со звуком круглые сутки" if loud else "по правилам тихих часов"))
 
@@ -200,12 +208,15 @@ def settings_backup_text(encryption: bool = False, channel: str = "telegram") ->
 SETTINGS_BACKUP = "💾 Бэкапы\nВосстановить — пришли боту файл бэкапа (.tgz.enc)"
 
 
-def restore_offer(created_at_iso: str, iface_warning: str = "") -> str:
+def restore_offer(created_at_iso: str, iface_warning: str = "", gateway: bool = False) -> str:
     """iface_warning — тело предупреждения экрана «Перезапустить AWG» своей
-    роли; добавляется, только если восстановление затронет интерфейсы."""
+    роли; добавляется, только если восстановление затронет интерфейсы.
+    gateway — у агента в копии нет профилей: конфиги линка и туннеля,
+    настройки, свои списки."""
     when = timeutil.fmt_dt_ui(timeutil.parse_iso(created_at_iso)) if created_at_iso else "?"
-    text = (f"♻️ Бэкап от {when} — восстановить?\n"
-            "Всё вернётся к тому моменту: профили, устройства, подписки, ключи шифрования")
+    what = ("конфиги линка и туннеля, настройки, свои списки" if gateway
+            else "профили, устройства, подписки, ключи шифрования")
+    text = f"♻️ Бэкап от {when} — восстановить?\nВсё вернётся к тому моменту: {what}"
     return text + (f"\n\n{iface_warning}" if iface_warning else "")
 
 
@@ -224,12 +235,16 @@ def restore_done(created_at_iso: str) -> str:
 
 EMAIL_NOT_CONFIGURED = ("✉️ Почта не настроена — нужен подключённый ящик: ⚙️ Настройки → ✉️ E-mail. "
                         "Настроить сейчас?")
-BACKUP_NEEDS_ENCRYPTION = ("По почте уходят только шифрованные копии: в базе приватные ключи "
-                           "устройств. Задай фразу — 🔐 Шифрование")
+def backup_needs_encryption(gateway: bool = False) -> str:
+    keys = "в копии приватные ключи линка и туннеля" if gateway else "в базе приватные ключи устройств"
+    return f"По почте уходят только шифрованные копии: {keys}. Задай фразу — 🔐 Шифрование"
 
 
-def backup_encryption_text(mode: str) -> str:
-    """Экран «Шифрование»: состояние и правила."""
+BACKUP_NEEDS_ENCRYPTION = backup_needs_encryption()
+
+
+def backup_encryption_text(mode: str, gateway: bool = False) -> str:
+    """Экран «Шифрование»: состояние и правила. gateway — «вне шлюза»."""
     if mode == "passphrase":
         state = "✅ фраза задана"
     elif mode == "key":
@@ -237,7 +252,7 @@ def backup_encryption_text(mode: str) -> str:
     else:
         state = "🔴 выключено — копии уходят открытыми и по почте не отправляются"
     return (f"🔐 Шифрование бэкапов · {state}\n"
-            "Фразу знаешь только ты — храни вне сервера, без неё бэкап не открыть"
+            f"Фразу знаешь только ты — храни вне {'шлюза' if gateway else 'сервера'}, без неё бэкап не открыть"
             + details("Бот принимает фразу сообщением, тут же удаляет и никогда не показывает обратно. "
                       "Смена фразы не перешифровывает старые копии: они открываются прежней — не "
                       "выбрасывай её, пока они нужны"))
@@ -323,7 +338,7 @@ SETTINGS_BOUNDS = {
     "app.scheduler.backup_hour": (0, 23, "Час автобэкапа", "ч"),
     # агент шлюза
     "app.gateway.monitor_minutes": (1, 1440, "Частота опроса", "мин"),
-    "app.gateway.handshake_max_age": (60, 86400, "Порог простоя линка", "с"),
+    "app.gateway.handshake_max_age": (1, 1440, "Линк молчит дольше", "мин"),   # хранится в секундах
     "app.gateway.temp_alert_c": (40, 100, "Порог температуры", "°C"),
     # MTU — в новые ссылки. 1280 — минимум IPv6, 1500 — Ethernet без запаса на
     # заголовки туннеля; выше него пакеты начинают фрагментироваться.

@@ -1,15 +1,18 @@
-"""Свои списки, общие для всех шлюзов, на экранах: у агента — состояние хвостом строки
-панели и экрана локальной сети, абзац и строка состояния на экране
-«📋 Свои списки», «на всех шлюзах» в подтверждении удаления, хвост итога
-правки; у основного бота — строка числами в карточке слота и судьба канона
-на шлюзе отдельной строкой. Новых кнопок нет.
+"""Свои списки, общие для всех шлюзов, на экранах: у агента — состояние хвостом
+«свои: …» в строке «📋 Списки» панели и строкой «Свои списки: …» на экране
+«🔀 VPN-транзит», абзац о синхронизации — под «подробнее», строка состояния —
+открыто, «➖» — сразу со всплывашкой («Убран на всех шлюзах» при общих
+списках), итог ввода — первыми строками экрана; у основного бота — строка
+числами в карточке слота и судьба канона на шлюзе отдельной строкой.
 
 Цена ошибки: «синхронизированы», когда правка лежит без канала, — человек
 ждёт домен на соседнем шлюзе, а он не придёт; «уходит на другие шлюзы», когда
-канала нет, — то же; «уберётся на всех» без синхронизации — лишний страх;
+канала нет, — то же; «убран на всех» без синхронизации — лишний страх;
 неэкранированная ошибка шлюза — Telegram отвергает всю карточку.
 """
 from __future__ import annotations
+
+import json
 
 import pytest
 
@@ -45,6 +48,10 @@ def gw(tmp_path, monkeypatch, host):
     monkeypatch.setattr(linkclient, "_client", None)
     d = Database(tmp_path / "gw.db"); d.init_schema()
     svc = GatewayServices(d)
+    # экран «🔀 VPN-транзит» рисуется из снимка тика; тика не было — снимок
+    # с локальной сетью, а не живые пробы хоста (ip, awg — не на этой машине)
+    real = svc.cached_status
+    monkeypatch.setattr(svc, "cached_status", lambda max_age: real(max_age) or _lan(svc.own_status()[0]))
     yield svc
     d.close()
 
@@ -67,31 +74,39 @@ async def _panel_and_lan(svc, fake_bot, monkeypatch):
     return panel, lan, (labels(pkb), labels(lkb))
 
 
+def _panel_own(text: str) -> str:
+    """Хвост «свои: …» строки «📋 Списки: …» панели."""
+    line = next(ln for ln in text.splitlines() if ln.startswith("📋 Списки: "))
+    return line[line.index("свои: "):]
+
+
 def _own_line(text: str) -> str:
-    return next(ln.strip() for ln in text.splitlines() if "Свои списки" in ln)
+    """Строка «Свои списки: …» экрана «🔀 VPN-транзит»."""
+    return next(ln.strip() for ln in text.splitlines() if ln.startswith("Свои списки: "))
 
 
 async def test_the_panel_line_says_the_lists_are_shared_and_how_they_stand(gw, host, fake_bot, monkeypatch):
-    """Строка одна и та же с синхронизацией и без (пометку «для всех шлюзов»
-    сняли при вычитке 3.1.0); хвост — ждут или не применились, и только когда
-    синхронизация действует. Кнопок столько же, сколько без неё."""
+    """Строка одна и та же с синхронизацией и без; хвост — ждут или не
+    применились, и только когда синхронизация действует. Кнопок столько же,
+    сколько без неё. Значок здоровья в хвосте — 🩺, как у кнопки."""
     host.env["LINK_CHANNEL"] = "0"
     panel, lan, labels0 = await _panel_and_lan(gw, fake_bot, monkeypatch)
-    assert _own_line(panel) == _own_line(lan) == "Свои списки: 4 в туннель, 1 напрямую", panel
+    assert _panel_own(panel) == "свои: 4 в туннель, 1 напрямую", panel
+    assert _own_line(lan) == "Свои списки: 4 в туннель, 1 напрямую", lan
     host.env["LINK_CHANNEL"] = "1"
     _synced(gw, host, {"a.com": "vpn"})
     panel, lan, labels = await _panel_and_lan(gw, fake_bot, monkeypatch)
-    assert _own_line(panel) == _own_line(lan) == "Свои списки: 4 в туннель, 1 напрямую", panel
-    assert labels == labels0, "синхронизация добавила или убрала кнопки"
+    assert _panel_own(panel) == "свои: 4 в туннель, 1 напрямую", panel
+    assert _own_line(lan) == "Свои списки: 4 в туннель, 1 напрямую", lan
+    assert labels[0] == labels0[0], "синхронизация добавила или убрала кнопки панели"
     host.write(vpn=["a.com", "b.com"])
     gw.own_reconcile()
     panel, lan, _ = await _panel_and_lan(gw, fake_bot, monkeypatch)
-    assert _own_line(panel) == "Свои списки: 4 в туннель, 1 напрямую · ⏳ ждут синхронизации", panel
-    assert _own_line(lan) == _own_line(panel)
+    assert _panel_own(panel) == "свои: 4 в туннель, 1 напрямую · ⏳ ждут синхронизации", panel
+    assert _own_line(lan) == "Свои списки: 4 в туннель, 1 напрямую · ⏳ ждут синхронизации", lan
     gw.db.set_state("gw_own_err", "dnsmasq отверг")
     panel, _, _ = await _panel_and_lan(gw, fake_bot, monkeypatch)
-    assert _own_line(panel) == ("Свои списки: 4 в туннель, 1 напрямую · "
-                                "⚠️ не применились (🌡 Монитор здоровья)"), panel
+    assert _panel_own(panel) == "свои: 4 в туннель, 1 напрямую · ⚠️ не применились (🩺 Здоровье)", panel
 
 
 async def _own_screen(svc, fake_bot):
@@ -101,67 +116,95 @@ async def _own_screen(svc, fake_bot):
     return msg.sent[-1][1], [b.text for row in msg.sent[-1][2].inline_keyboard for b in row]
 
 
-SHARED = ("Списки общие для всех шлюзов: добавленное или убранное здесь уходит через сервер AWG на "
-          "остальные шлюзы — сразу, если они на связи, иначе при подключении. Правки командой "
-          "<code>awg-bot lan</code> на самом шлюзе уходят в течение нескольких минут.")
+async def _own_screen_parts(svc, fake_bot):
+    """(текст, клавиатура) — когда нужен настоящий callback_data кнопки."""
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_lan_list(cb, svc, FakeState())
+    return msg.sent[-1][1], msg.sent[-1][2]
+
+
 ONLY_HERE = ("Списки применятся только для этого шлюза: для синхронизации нужен канал до сервера "
              "AWG — перевыпусти конфигурацию шлюза с сервера AWG и примени её здесь")
+SYNC_ABOUT = ("свои списки синхронизируются между шлюзами: добавленное или убранное здесь уходит "
+              "через сервер AWG на остальные шлюзы — сразу, если они на связи, иначе при подключении")
+
+
+def _open_lines(text: str) -> list[str]:
+    """Строки экрана до свёрнутого «подробнее»."""
+    assert text.count("<blockquote expandable>") == 1, text
+    return text.split("<blockquote expandable>", 1)[0].splitlines()
 
 
 async def test_the_own_lists_screen_explains_sharing_and_shows_the_state(gw, host, fake_bot):
+    """Абзац о синхронизации — под «подробнее» (он нужен раз, а экран читают
+    часто); строка состояния — открыто и только при расхождении."""
     _synced(gw, host, {"a.com": "vpn", "b.ru": "ru"})
     text, labels = await _own_screen(gw, fake_bot)
-    assert text.endswith("\n\n" + SHARED), f"абзаца про общие списки нет последним: {text}"
-    assert labels == ["➕ В туннель", "➕ Напрямую", "➖ b.ru (🇷🇺)", "➖ a.com (📤)", "⬅️ Назад"], labels
-    # правка ждёт, канала нет — строка состояния под абзацем
+    assert SYNC_ABOUT in text.split("<blockquote expandable>", 1)[1], f"абзаца о синхронизации нет: {text}"
+    assert not any(ln.startswith(("⏳", "⚠️")) for ln in _open_lines(text)), "расхождения нет — строки нет"
+    assert labels == ["➕ В туннель", "➕ Напрямую", "➖ 🇷🇺 b.ru", "➖ 🌍 a.com",
+                      "❓ Роутер", "⬅️ В меню"], labels
+    # правка ждёт, канала нет — строка состояния открыто
     host.write(vpn=["a.com", "c.com"], ru=["b.ru"])
     gw.own_reconcile()
     gw.channel.online = False
     text, labels2 = await _own_screen(gw, fake_bot)
-    assert text.endswith(SHARED + "\n\n⏳ Ждут синхронизации: 1 правка — нет связи с сервером AWG"), text
+    assert "⏳ Ждут синхронизации: 1 правка — нет связи с сервером AWG" in _open_lines(text), text
     assert len(labels2) == len(labels) + 1, "строка состояния сама по себе кнопок не добавляет"
     gw.channel.online = True
     text, _ = await _own_screen(gw, fake_bot)
-    assert text.endswith("⏳ Ждут синхронизации: 1 правка — сервер AWG ещё не ответил"), text
-    gw.db.set_state("gw_own_err", "dnsmasq <b>отверг</b>")
-    text, _ = await _own_screen(gw, fake_bot)
-    assert text.endswith("⚠️ Не применились: dnsmasq &lt;b&gt;отверг&lt;/b&gt;"), text
+    assert "⏳ Ждут синхронизации: 1 правка — сервер AWG ещё не ответил" in _open_lines(text), text
     # поломка на шлюзе — отдельной фразой, без второго двоеточия подряд
     gw.db.set_state("gw_own_err", "ошибка записи файла: нет места на диске")
     text, _ = await _own_screen(gw, fake_bot)
-    assert text.endswith("⚠️ Не удалось применить. Ошибка записи файла: нет места на диске"), text
+    assert "⚠️ Не удалось применить. Ошибка записи файла: нет места на диске" in _open_lines(text), text
+
+
+async def test_a_refusal_on_the_gateway_keeps_the_accepted_wording_and_is_escaped(gw, host, fake_bot):
+    """Отказ (не поломка) — строка 3.1.0 дословно: «⚠️ Не применились: …»;
+    «Не удалось применить» — только у поломки записи файла, так их и различают
+    при чтении. Ошибка с малины экранирована — иначе Telegram отвергает экран."""
+    _synced(gw, host, {"a.com": "vpn"})
+    gw.db.set_state("gw_own_err", "dnsmasq <b>отверг</b>")
+    text, _ = await _own_screen(gw, fake_bot)
+    assert "⚠️ Не применились: dnsmasq &lt;b&gt;отверг&lt;/b&gt;" in _open_lines(text), text
+
+
+async def test_a_rejected_domain_is_named_on_the_screen(gw, host, fake_bot):
+    """Сервер не принял домен — строка «⚠️ Сервер AWG не принял: `домен` —
+    причина» открыто: иначе человек ждёт домен на соседях, а его нет."""
+    _synced(gw, host, {"a.com": "vpn"})
+    gw.db.set_state(gw._OWN_REJ_KEY, json.dumps([["bad.example", "максимум 500 доменов"]]))
+    text, _ = await _own_screen(gw, fake_bot)
+    assert "⚠️ Сервер AWG не принял: <code>bad.example</code> — максимум 500 доменов" in _open_lines(text), text
 
 
 async def test_an_empty_shared_list_says_it_will_appear_everywhere(gw, host, fake_bot):
+    """Пустой список — «Пока пусто…» и открытой строкой, что списки общие:
+    иначе первое же добавление на одном шлюзе удивляет на другом."""
     _synced(gw, host, {})
     text, labels = await _own_screen(gw, fake_bot)
-    assert text == ("📋 <b>Свои списки</b>\n\nПока пусто: добавь домены кнопками «➕ В туннель» и «➕ Напрямую».\n"
-                    "Списки общие для всех шлюзов — добавленное здесь появится и на остальных."), text
-    assert labels == ["➕ В туннель", "➕ Напрямую", "⬅️ Назад"]
+    lines = _open_lines(text)
+    i = lines.index("Пока пусто: добавь домены кнопками «➕ В туннель» и «➕ Напрямую»")
+    assert lines[i + 1] == "Списки общие для всех шлюзов — добавленное здесь появится и на остальных", lines
+    assert labels == ["➕ В туннель", "➕ Напрямую", "❓ Роутер", "⬅️ В меню"]
+    # без синхронизации пусто — но «общие для всех» было бы неправдой
+    host.env["LINK_CHANNEL"] = "0"
+    text, _ = await _own_screen(gw, fake_bot)
+    assert "Пока пусто: добавь домены кнопками «➕ В туннель» и «➕ Напрямую»" in _open_lines(text)
+    assert "общие для всех шлюзов" not in text, text
 
 
 async def test_without_the_channel_the_screen_says_the_lists_are_local(gw, host, fake_bot):
     host.env["LINK_CHANNEL"] = ""
     host.write(vpn=["a.com"])
     text, _ = await _own_screen(gw, fake_bot)
-    assert text.endswith("\n\n" + ONLY_HERE), text
+    assert ONLY_HERE in _open_lines(text), text
     assert "общие для всех шлюзов" not in text
     host.env["LAN_MODE"] = "0"
     text, _ = await _own_screen(gw, fake_bot)
-    assert ONLY_HERE not in text and "общие" not in text, "режим выключен — про канал говорить нечего"
-
-
-@pytest.mark.parametrize("channel,tail", [("1", "\nДомен уберётся на всех шлюзах."), ("0", "")])
-async def test_the_remove_dialog_warns_about_all_gateways_only_when_shared(gw, host, fake_bot, channel, tail):
-    host.env["LINK_CHANNEL"] = channel
-    host.write(ru=["shop.ru"])
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_remove(cb, GwCB(action="lan_rm", val="0"), gw)
-    text = msg.sent[-1][1]
-    assert text == ("➖ <b>Убрать <code>shop.ru</code> из своих списков?</b>\n\n"
-                    "Сейчас домен идёт напрямую; после удаления — как решат списки." + tail), text
-    assert [b.text for row in msg.sent[-1][2].inline_keyboard for b in row] == ["⬅️ Отмена", "➖ Убрать"]
+    assert ONLY_HERE not in text, "режим выключен — про канал говорить нечего"
 
 
 def _online(svc, monkeypatch, tmp_path) -> _Wire:
@@ -189,14 +232,71 @@ def _add_via_script(svc, host, monkeypatch, out_word: str = "добавлен"):
     monkeypatch.setattr(svc, "lan_domains", lambda cmd, domains: lan_domains(cmd, domains))
 
 
+@pytest.mark.parametrize("channel,online,toast", [
+    ("1", True, "Убран на всех шлюзах\nshop.ru: убран\nИзменения синхронизируются с другими шлюзами"),
+    ("1", False, "Убран на всех шлюзах\nshop.ru: убран\n"
+                 "Изменения синхронизируются с другими шлюзами, когда появится связь с сервером AWG"),
+    ("0", False, "shop.ru: убран")])
+async def test_minus_removes_at_once_and_warns_about_all_gateways_only_when_shared(
+        gw, host, fake_bot, monkeypatch, tmp_path, channel, online, toast):
+    """«➖» — без подтверждения: домен убран тем же нажатием, всплывашка —
+    итог с хвостом синхронизации, «Убран на всех шлюзах» — первой строкой и
+    только когда списки общие (без синхронизации это был бы лишний страх)."""
+    _synced(gw, host, {"shop.ru": "ru", "a.com": "vpn"})
+    host.env["LINK_CHANNEL"] = channel
+    if online:
+        _online(gw, monkeypatch, tmp_path)
+    _add_via_script(gw, host, monkeypatch, out_word="убран")
+    text, labels = await _own_screen(gw, fake_bot)
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    _text, markup = await _own_screen_parts(gw, fake_bot)
+    btn = next(b for row in markup.inline_keyboard for b in row if b.text == "➖ 🇷🇺 shop.ru")
+    # кнопка без метки (номер один) — не наша: список мог измениться, соседа не трогаем
+    await gh.gw_lan_remove(cb, GwCB(action="lan_rm", val=btn.callback_data.split(":")[-1].split(".")[0]), gw)
+    assert host.lists() == {"shop.ru": "ru", "a.com": "vpn"} and cb.answers[-1][0].startswith("Список изменился")
+    cb.answers.clear()
+    await gh.gw_lan_remove(cb, GwCB.unpack(btn.callback_data), gw)
+    assert host.lists() == {"a.com": "vpn"}, "домен не убран тем же нажатием"
+    assert cb.answers == [(toast, False)], cb.answers
+    shown = [b.text for row in msg.sent[-1][2].inline_keyboard for b in row]
+    assert "➖ 🇷🇺 shop.ru" not in shown and "➖ 🌍 a.com" in shown, shown
+
+
+async def test_a_slow_script_result_comes_as_a_message(gw, host, fake_bot, monkeypatch):
+    """Скрипт ответил дольше, чем Telegram держит нажатие, — всплывашку уже
+    не показать: итог приходит сообщением, экран всё равно перерисован."""
+    from aiogram.exceptions import TelegramBadRequest
+    _synced(gw, host, {"shop.ru": "ru"})
+    host.env["LINK_CHANNEL"] = "0"
+    _add_via_script(gw, host, monkeypatch, out_word="убран")
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+
+    class _LateCallback(FakeCallback):
+        async def answer(self, text=None, show_alert=False, **kw):
+            raise TelegramBadRequest(method=None, message="query is too old and response timeout expired")
+    cb = _LateCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    from awgbot.bot.keyboards.gateway import lan_own_tag
+    await gh.gw_lan_remove(cb, GwCB(action="lan_rm", val=f"0.{lan_own_tag('ru', 'shop.ru')}"), gw)
+    answers = [s[1] for s in msg.sent if s[0] == "answer"]
+    assert answers == ["✅ shop.ru: убран"], msg.sent
+    assert msg.sent[-1][0] == "edit_text" and msg.sent[-1][1].startswith("🔀 VPN-транзит"), msg.sent[-1]
+
+
 async def _type_domain(svc, fake_bot, kind: str, text: str) -> str:
+    """Ввод домена: итог — первыми строками экрана «🔀 VPN-транзит» (одним
+    сообщением); возвращает итог без экрана."""
     st = FakeState()
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_lan_ask(cb, GwCB(action=kind), svc, st)
     reply = FakeMessage(text=text, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_lan_domain_received(reply, st, svc)
-    return next(s[1] for s in reply.sent if s[0] == "answer" and s[1].startswith(("✅", "⚠️")))
+    answers = [s[1] for s in reply.sent if s[0] == "answer"]
+    assert len(answers) == 1, f"итог отдельным сообщением: {answers}"
+    note, _, screen = answers[0].partition("\n\n")
+    assert note.startswith(("✅", "⚠️")) and screen.startswith("🔀 VPN-транзит"), answers[0]
+    return note
 
 
 async def test_a_button_edit_leaves_at_once_and_says_so(gw, host, fake_bot, monkeypatch, tmp_path):
@@ -210,6 +310,25 @@ async def test_a_button_edit_leaves_at_once_and_says_so(gw, host, fake_bot, monk
     msgs = wire.messages(gwlink.channel_key(PRIV))
     assert [m["t"] for m in msgs] == ["own_ev"], f"правка не ушла серверу сразу: {msgs}"
     assert [e[1:3] for e in msgs[0]["ev"]] == [["example.com", "vpn"]]
+
+
+async def test_the_typed_domain_is_already_a_button_on_the_screen_below(gw, host, fake_bot, monkeypatch):
+    """После ввода экран под итогом — уже с новым доменом кнопкой: человек
+    видит результат там же, где будет его убирать."""
+    _synced(gw, host, {"a.com": "vpn"})
+    host.env["LINK_CHANNEL"] = "0"
+    _add_via_script(gw, host, monkeypatch)
+    st = FakeState()
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_lan_ask(cb, GwCB(action="lan_ru"), gw, st)
+    assert msg.sent[-1][1] == ("➕ Напрямую · пришли домены через пробел: <code>example.com</code> — "
+                               "накрывает и поддомены"), msg.sent[-1][1]
+    assert [b.text for row in msg.sent[-1][2].inline_keyboard for b in row] == ["✖️ Отмена"]
+    reply = FakeMessage(text="shop.ru", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    await gh.gw_lan_domain_received(reply, st, gw)
+    _, _, markup = next(s for s in reply.sent if s[0] == "answer")
+    assert "➖ 🇷🇺 shop.ru" in [b.text for row in markup.inline_keyboard for b in row]
 
 
 async def test_without_a_channel_the_edit_waits_and_the_result_says_when_it_leaves(gw, host, fake_bot, monkeypatch):
@@ -255,8 +374,10 @@ async def test_removing_by_button_answers_with_the_sync_tail(gw, host, fake_bot,
     _add_via_script(gw, host, monkeypatch, out_word="убран")
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_remove(cb, GwCB(action="lan_rm!", val="0"), gw)
-    assert cb.answers[-1] == ("✅ a.com: убран\nИзменения синхронизируются с другими шлюзами", False), cb.answers
+    from awgbot.bot.keyboards.gateway import lan_own_tag
+    await gh.gw_lan_remove(cb, GwCB(action="lan_rm!", val=f"0.{lan_own_tag('vpn', 'a.com')}"), gw)
+    assert cb.answers[-1] == ("Убран на всех шлюзах\na.com: убран\nИзменения синхронизируются с другими шлюзами",
+                              False), cb.answers
     msgs = wire.messages(gwlink.channel_key(PRIV))
     assert [e[1:3] for m in msgs for e in m["ev"]] == [["a.com", "del"]], msgs
 
@@ -511,14 +632,14 @@ async def test_the_panel_shows_new_counts_right_after_an_edit(gw, host, fake_bot
     _script_edits(host, monkeypatch)
     _old_snapshot(gw)
     before = await _panel_from_snapshot(gw, fake_bot)
-    assert _own_line(before) == "Свои списки: 4 в туннель, 1 напрямую", before
+    assert _panel_own(before) == "свои: 4 в туннель, 1 напрямую", before
     result = await _type_domain(gw, fake_bot, "lan_add", "example.com")
     assert result.startswith("✅"), result
     after = await _panel_from_snapshot(gw, fake_bot)
-    assert _own_line(after) == "Свои списки: 3 в туннель, 1 напрямую", after
-    assert "192.168.68.222" in after, "правка списка затёрла остальной снимок панели"
+    assert _panel_own(after) == "свои: 3 в туннель, 1 напрямую", after
+    assert "9 пакетов с роутера" in after, "правка списка затёрла остальной снимок панели"
     await _type_domain(gw, fake_bot, "lan_ru", "shop.ru")
-    assert _own_line(await _panel_from_snapshot(gw, fake_bot)) == "Свои списки: 3 в туннель, 2 напрямую"
+    assert _panel_own(await _panel_from_snapshot(gw, fake_bot)) == "свои: 3 в туннель, 2 напрямую"
 
 
 async def test_a_failed_edit_leaves_the_panel_counts_as_they_were(gw, host, fake_bot, monkeypatch):

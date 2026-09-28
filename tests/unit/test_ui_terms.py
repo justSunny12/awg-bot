@@ -37,27 +37,31 @@ TERMS = {
 ALLOWED = {
     ("guides.py", "дом", "проспект Абая, дом 8"):
         "адрес в форме Apple ID — это адрес, а не термин",
-    ("texts/gateway.py", "потребление", "📊 Потребление за месяц"):
-        "панель агента — до этапа 4",
     ("texts/routing.py", "потребление", "Потребление: "):
         "карточка устройства-шлюза у админа (без слота) — до переделки карточки устройства",
 }
 
-# Прежние имена функций шлюза в текстах, которые видит человек: «VPN-транзит»
-# вместо «За шлюзом — без VPN» / «Локальная сеть без VPN», «Связь подсетей»
-# вместо «Доступ между подсетями». Основной бот переименован целиком; агент
-# шлюза — своим этапом.
+# Прежние имена функций и разделов в текстах, которые видит человек:
+# «VPN-транзит» вместо «За шлюзом — без VPN» / «Локальная сеть без VPN»,
+# «Связь подсетей» вместо «Доступ между подсетями», «🛡 SSH-доступ» вместо
+# «Доступ по SSH», «🔧 Восстановить» вместо «Мастер восстановления», «🩺
+# Здоровье» вместо «Монитор здоровья»; «Обслуживания» нет ни у одной роли.
+# Обе роли переименованы целиком — исключений нет.
 OLD_NAMES = {
     "без VPN": re.compile(r"без VPN", re.I),
     "За шлюзом": re.compile(r"за шлюзом", re.I),
     "между подсетями": re.compile(r"между подсетями", re.I),
+    "Доступ по SSH": re.compile(r"доступ по ssh", re.I),
+    "Мастер восстановления": re.compile(r"мастер восстановления", re.I),
+    "Монитор здоровья": re.compile(r"монитор здоровья", re.I),
+    "Обслуживание": re.compile(r"обслуживани", re.I),
 }
-OLD_NAMES_ALLOWED = {
-    ("texts/gateway.py", "без VPN", "Локальная сеть без VPN"): "экран «Локальная сеть» агента — до этапа 4",
-    ("keyboards/gateway.py", "без VPN", "🏠 Локальная сеть без VPN"): "кнопка панели агента — до этапа 4",
-}
+OLD_NAMES_ALLOWED: dict = {}
+# детали проверок здоровья агента собираются в домене — человек читает их на
+# экране «🩺 Здоровье» так же, как тексты бота
 MAIN_FILES = (sorted((ROOT / "texts").glob("*.py")) + sorted((ROOT / "keyboards").glob("*.py"))
-              + sorted((ROOT / "handlers").rglob("*.py")))
+              + sorted((ROOT / "handlers").rglob("*.py"))
+              + [ROOT.parent / "domain" / n for n in ("gateway.py", "gwssh.py", "gwchecks.py")])
 
 
 def _literals(path: pathlib.Path):
@@ -130,7 +134,7 @@ def test_the_word_dom_is_matched_as_a_word(word, hit):
 def _old_name_hits():
     out = []
     for path in MAIN_FILES:
-        rel = path.relative_to(ROOT).as_posix()
+        rel = path.relative_to(ROOT.parent).as_posix()
         for value, line in _literals(path):
             for term, rx in OLD_NAMES.items():
                 if rx.search(value):
@@ -145,6 +149,29 @@ def test_main_bot_texts_call_the_gateway_functions_by_their_new_names():
     bad = [f"{rel}:{line} «{term}»: {value[:90]!r}" for rel, term, value, line in _old_name_hits()
            if not any(rel == f and term == t and part in value for (f, t, part) in OLD_NAMES_ALLOWED)]
     assert not bad, "старые имена функций:\n" + "\n".join(bad)
+
+
+def test_the_old_name_scan_reaches_the_agent_domain_strings(tmp_path):
+    """Сторож: домен агента в скане — там детали проверок здоровья вида
+    «(🔧 Восстановить)», которые человек читает на экране."""
+    assert any(p.name == "gwssh.py" and p.parent.name == "domain" for p in MAIN_FILES)
+    assert all(p.is_file() for p in MAIN_FILES), [p for p in MAIN_FILES if not p.is_file()]
+    tmp = tmp_path / "probe.py"
+    tmp.write_text('X = "реассерт не прошёл (🔧 Мастер восстановления)"\n', encoding="utf-8")
+    assert any(OLD_NAMES["Мастер восстановления"].search(v) for v, _ in _literals(tmp))
+
+
+def test_the_sshd_config_head_points_at_the_real_buttons():
+    """Шапка, которую бот пишет в sshd_config хоста, говорит человеку, где
+    менять порт: «раздел → кнопка». Указывает на старые названия — человек
+    на хосте ищет в боте раздел и кнопку, которых нет."""
+    from awgbot.bot import keyboards as kb
+    from awgbot.infra import sshd
+    labels = {b.text for row in kb.gateway_settings_kb().inline_keyboard for b in row}
+    labels |= {b.text for row in kb.gateway_ssh_kb({"new_plumbing": True}).inline_keyboard for b in row}
+    head = sshd.OUR_HEAD.splitlines()[0]
+    assert "«🛡 SSH-доступ»" in head and "«🅿️ Порт»" in head, head
+    assert {"🛡 SSH-доступ", "🅿️ Порт"} <= labels, labels
 
 
 def test_every_old_name_exception_still_points_at_a_real_string():

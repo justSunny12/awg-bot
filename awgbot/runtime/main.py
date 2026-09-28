@@ -204,6 +204,13 @@ async def run_gateway() -> None:
     db.init_schema()
     services = GatewayServices(db)
     services.first_start_note(fresh)        # «установлен» серверу — только в первый час
+    if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
+        # 3.2.0: расписания «никогда» нет и у агента — «месяц» и выключенные уведомления
+        try:
+            settings.set_value("updates.poll_schedule", "month")
+        except settings.SettingsWriteError as e:
+            log.warning("updates.poll_schedule=never не переписано: %s", e)
+        services.mute_updates()
     with contextlib.suppress(OSError):
         os.remove(marker)
 
@@ -361,7 +368,7 @@ async def main() -> None:
     services.migrate_pause_balances()       # v2.22.0: счёт дней паузы — разово
     # 3.2.0: расписания «никогда» у основного бота больше нет — проверка идёт
     # всегда ради строки «⬆️ Доступна vX»; прежнее never → «месяц» и
-    # выключенные уведомления (у агента never ещё действует)
+    # выключенные уведомления (у агента — то же при его старте)
     if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
         try:
             settings.set_value("updates.poll_schedule", "month")

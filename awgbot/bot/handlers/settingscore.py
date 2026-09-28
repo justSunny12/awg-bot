@@ -43,9 +43,16 @@ class Hooks:
     email_forget_kb: Callable[[], object]
     render: Callable[[CallbackQuery, object, str], Awaitable[None]]
     screen: Callable[[object, str], Awaitable[tuple]]
+    gateway: bool = False        # тексты про почту и шифрование — по роли
 
 
 _TOGGLE_DEFAULTS = {"notifications.email_fallback": False}
+# ключи, которые человек видит в одних единицах, а конфиг хранит в других:
+# ключ → множитель (ввод × множитель = значение в конфиге)
+_SCALE = {"app.gateway.handshake_max_age": 60}
+# умолчания для приглашения, когда ключа в конфиге ещё нет (значение в единицах конфига)
+_DEFAULTS = {"app.gateway.handshake_max_age": 300, "app.gateway.monitor_minutes": 3,
+             "app.gateway.temp_alert_c": 75}
 
 
 async def ask(cb: CallbackQuery, services, prompt: str, markup) -> None:
@@ -87,7 +94,10 @@ async def start_edit(cb: CallbackQuery, services, hooks: Hooks, state: FSMContex
         d2 = str(settings.get("app.client_config.dns2", "") or "")
         prompt = texts.settings_prompt(key, f"{d1}, {d2}" if d2 and d2 != d1 else d1)
     else:
-        prompt = texts.settings_prompt(key, settings.get(key, None))
+        cur = settings.get(key, _DEFAULTS.get(key))
+        if key in _SCALE and cur is not None:
+            cur = max(1, -(-int(cur) // _SCALE[key]))       # вверх: 90 с — «2 мин»
+        prompt = texts.settings_prompt(key, cur)
     await ask(cb, services, prompt, hooks.cancel_kb(sec))
     await cb.answer()
     return True
@@ -235,9 +245,12 @@ async def receive_value(message: Message, state: FSMContext, services, hooks: Ho
     except ValueError:
         await ask_tracked(message, services, texts.settings_bad_value(key))
         return
-    old = settings.get(key, None)
+    old = settings.get(key, _DEFAULTS.get(key))
+    scale = _SCALE.get(key, 1)
+    if scale != 1 and old is not None:
+        old = max(1, -(-int(old) // scale))
     try:
-        await call(settings.set_value, key, val)
+        await call(settings.set_value, key, val * scale)
     except settings.SettingsWriteError as e:
         await state.clear()
         await message.answer(str(e))
@@ -316,7 +329,7 @@ async def set_backup_channel(cb: CallbackQuery, services, hooks: Hooks, val: str
             await cb.answer()
             return
         if not await call(services.backup_encryption_enabled):
-            await cb.answer(texts.BACKUP_NEEDS_ENCRYPTION, show_alert=True)
+            await cb.answer(texts.backup_needs_encryption(hooks.gateway), show_alert=True)
             return
     try:
         await call(settings.set_value, "app.scheduler.backup_channel", val)
@@ -386,7 +399,7 @@ async def email_action(cb: CallbackQuery, services, hooks: Hooks, state: FSMCont
                                 "✅ " + texts.email_test_sent(acc.login if acc else ""))
         return True
     if key == "forget":
-        await edit(cb, texts.EMAIL_FORGET_CONFIRM, hooks.email_forget_kb())
+        await edit(cb, texts.email_forget_confirm(hooks.gateway), hooks.email_forget_kb())
         await cb.answer()
         return True
     if key == "forget!":

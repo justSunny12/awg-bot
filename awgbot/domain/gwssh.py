@@ -411,7 +411,7 @@ class GwSshMixin:
             ok = held == port
             checks.append(GwCheck("порт SSH", ok, "" if ok else
                                   f"sshd слушает {port}, таблица держит {held or '?'}: "
-                                  "реассерт не прошёл (🔧 Мастер восстановления)"))
+                                  "реассерт не прошёл (🔧 Восстановить)"))
         if gwguard.read_env().get("SSH_FILTER") == "1" and info is not None:
             if "ssh_in" not in info["chains"]:
                 checks.append(GwCheck("фильтр SSH снаружи", False,
@@ -421,5 +421,5 @@ class GwSshMixin:
                 ok = table_ports.get("input") == (port if port is not None else held)
                 checks.append(GwCheck("фильтр SSH снаружи", ok, "" if ok else
                                       "включён, а перехода на цепочку ssh_in в таблице нет "
-                                      "(🔧 Мастер восстановления)"))
+                                      "(🔧 Восстановить)"))
         return checks

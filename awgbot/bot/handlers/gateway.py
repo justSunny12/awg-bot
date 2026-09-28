@@ -1,8 +1,10 @@
 """
 handlers/gateway.py — панель и операции агента шлюза (роль gateway, только админ).
 
-Этап 1 — панель; этап 2 — доктор, рестарт линка и реассерт (через
-подтверждение), приём шифрованного бандла файлом. Пробы и операции блокирующие
+Панель, «🩺 Здоровье», «🔧 Восстановить» (реассерт через подтверждение),
+экран «🔀 VPN-транзит» со своими списками и рецептом роутера, настройки агента
+(перезапуски AWG и бота — в их корне, через подтверждение), «🛡 SSH-доступ»,
+обновления, приём шифрованного бандла файлом. Пробы и операции блокирующие
 (subprocess) — через call, как всё синхронное в проекте.
 """
 from __future__ import annotations
@@ -69,10 +71,11 @@ async def _panel(target, services, cb: CallbackQuery | None = None, fresh: bool 
     история ведётся для /start."""
     st = await _status(services, fresh)
     lan = bool(getattr(st, "lan", None))
+    tag = await call(services.update_available_tag)
     if cb is not None:
-        await edit_nav(cb, services, texts.gateway_panel(st), kb.gateway_panel_kb(lan))
+        await edit_nav(cb, services, texts.gateway_panel(st, tag), kb.gateway_panel_kb(lan))
     else:
-        await send_menu(target, services, texts.gateway_panel(st), kb.gateway_panel_kb(lan),
+        await send_menu(target, services, texts.gateway_panel(st, tag), kb.gateway_panel_kb(lan),
                         keep_id=keep_id)
 
 
@@ -92,7 +95,7 @@ async def restore_panel_after_restart(bot, services) -> None:
     from awgbot.bot.handlers.common import _dismiss_previous_nav
     await _dismiss_previous_nav(bot, services, chat_id)
     st = await _status(services, fresh=False)
-    sent = await bot.send_message(chat_id, texts.gateway_panel(st),
+    sent = await bot.send_message(chat_id, texts.gateway_panel(st, await call(services.update_available_tag)),
                                   reply_markup=kb.gateway_panel_kb(bool(getattr(st, "lan", None))))
     await call(services.db.nav_touch, chat_id, sent.message_id)
 
@@ -111,7 +114,7 @@ async def send_first_panel(bot, services) -> None:
         return
     try:
         st = await _status(services, fresh=False)
-        sent = await bot.send_message(config.ADMIN_ID, texts.gateway_panel(st),
+        sent = await bot.send_message(config.ADMIN_ID, texts.gateway_panel(st, await call(services.update_available_tag)),
                                       reply_markup=kb.gateway_panel_kb(bool(getattr(st, "lan", None))))
     except Exception:                                  # noqa: BLE001
         return                                         # диалога ещё нет
@@ -147,20 +150,20 @@ async def gw_health(cb: CallbackQuery, services):
     await cb.answer("Проверяю…")
     await call(services.invalidate_static)               # монитор здоровья — всё живьём
     st = await call(services.status)
-    await edit_nav(cb, services, texts.gateway_health(st), kb.gateway_back_kb())
+    await edit_nav(cb, services, texts.gateway_health(st), kb.gateway_health_kb())
 
 
 @router.callback_query(GwCB.filter(F.action == "settings"))
 async def gw_settings(cb: CallbackQuery, services, state: FSMContext):
     await state.clear()
-    await edit_nav(cb, services, texts.GW_SETTINGS, kb.gateway_settings_kb())
+    await edit_nav(cb, services, texts.gw_settings_text(), kb.gateway_settings_kb())
     await cb.answer()
 
 
 @router.callback_query(GwCB.filter(F.action == "maint"))
-async def gw_maint(cb: CallbackQuery, services):
-    await edit_nav(cb, services, texts.GW_MAINT, kb.gateway_maint_kb())
-    await cb.answer()
+async def gw_maint(cb: CallbackQuery, services, state: FSMContext):
+    """«Обслуживание» из старого меню — теперь корень настроек."""
+    await gw_settings(cb, services, state)
 
 
 # ── разделы настроек: уведомления / мониторинг / резервное копирование ───────
@@ -177,13 +180,19 @@ def _ssh_section(services):
     return texts.gateway_ssh_text(st), kb.gateway_ssh_kb(st, page=paging.page_of(config.ADMIN_ID, "gwssh"))
 
 
+def _backup_section(services):
+    from awgbot.core import settings as _settings
+    enc = services.backup_encryption_enabled()
+    return (texts.settings_backup_text(enc, str(_settings.get("app.scheduler.backup_channel", "telegram") or "")),
+            kb.gateway_backup_kb(enc))
+
+
 _SECTIONS = {
-    "notify": lambda services: (texts.GW_SETTINGS_NOTIFY, kb.gateway_notify_kb()),
+    "notify": lambda services: (texts.gw_settings_notify_text(), kb.gateway_notify_kb()),
     "ssh": _ssh_section,
     "email": _email_section,
-    "mon": lambda services: (texts.GW_SETTINGS_MON, kb.gateway_mon_kb()),
-    "backup": lambda services: (texts.SETTINGS_BACKUP,
-                                kb.gateway_backup_kb(services.backup_encryption_enabled())),
+    "mon": lambda services: (texts.gw_settings_mon_text(), kb.gateway_mon_kb()),
+    "backup": _backup_section,
 }
 
 
@@ -203,6 +212,7 @@ HOOKS = core.Hooks(
     email_forget_kb=kb.gateway_email_forget_confirm,
     render=_render,
     screen=_section,
+    gateway=True,
 )
 
 
@@ -217,7 +227,8 @@ async def gw_section(cb: CallbackQuery, callback_data: GwCB, services, state: FS
 async def gw_encryption(cb: CallbackQuery, services, state: FSMContext):
     await state.clear()
     mode = await call(services.backup_encryption_mode)
-    await edit_nav(cb, services, texts.backup_encryption_text(mode), kb.gateway_encryption_kb(bool(mode)))
+    await edit_nav(cb, services, texts.backup_encryption_text(mode, gateway=True),
+                   kb.gateway_encryption_kb(bool(mode)))
     await cb.answer()
 
 
@@ -230,7 +241,7 @@ def _section_of(key: str) -> str:
     if (key.startswith("quiet_hours.") or key.startswith("resource_alerts.")
             or key.startswith("notifications.") or key == "app.gateway.temp_alert_c"):
         return "notify"
-    if key.startswith("app.scheduler.backup_"):
+    if key == "backup_when" or key.startswith("app.scheduler.backup_"):
         return "backup"
     return "mon"
 
@@ -258,6 +269,31 @@ async def gw_backup_channel(cb: CallbackQuery, callback_data: GwCB, services):
     await core.set_backup_channel(cb, services, HOOKS, callback_data.val)
 
 
+@router.callback_query(GwCB.filter(F.action == "cyc"))
+async def gw_cycle(cb: CallbackQuery, callback_data: GwCB, services):
+    """Кнопка-цикл: канал бэкапа (с проверками почты и шифрования) и
+    расписание проверки обновлений; итог — всплывашкой."""
+    from awgbot.core import settings
+    key = callback_data.val
+    if key == "app.scheduler.backup_channel":
+        cur = str(settings.get(key, "telegram") or "telegram").lower()
+        await core.set_backup_channel(cb, services, HOOKS, "email" if cur == "telegram" else "telegram")
+        return
+    if key == "updates.poll_schedule":
+        cur = str(settings.get(key, "day")).lower()
+        cyc = list(kb.UPDATE_SCHEDULE_CYCLE)
+        new = cyc[(cyc.index(cur) + 1) % len(cyc)] if cur in cyc else cyc[0]
+        try:
+            await call(settings.set_value, key, new)
+        except settings.SettingsWriteError as e:
+            await cb.answer(str(e), show_alert=True)
+            return
+        await cb.answer(texts.cycle_toast(key, new))
+        await _updates_screen(cb, services, scan=False)
+        return
+    await cb.answer("Кнопка устарела — открой раздел заново", show_alert=True)
+
+
 # ── ✉️ E-mail у агента: ящик из бандла или руками, проверка, отключение ─────
 
 _EMAIL_KEYS = {"em_setup": "setup", "em_check": "check", "em_test": "test",
@@ -267,6 +303,43 @@ _EMAIL_KEYS = {"em_setup": "setup", "em_check": "check", "em_test": "test",
 @router.callback_query(GwCB.filter(F.action.in_(set(_EMAIL_KEYS))))
 async def gw_email_action(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
     await core.email_action(cb, services, HOOKS, state, _EMAIL_KEYS[callback_data.action])
+
+
+# ── бандл файлом ─────────────────────────────────────────────────────────────
+
+@router.message(F.document)
+async def gw_bundle_document(message: Message, services, state: FSMContext):
+    doc = message.document
+    from awgbot.bot.handlers import restore as rs
+    if rs.looks_like_backup(doc):                     # резервная копия, не конфигурация
+        await rs.offer_restore(message, services, state, gateway=True)
+        return
+    if doc.file_size and doc.file_size > _BUNDLE_MAX_BYTES:
+        await message.answer(texts.GW_BUNDLE_NOT_OURS)
+        return
+    buf = io.BytesIO()
+    await message.bot.download(doc, destination=buf)
+    blob = buf.getvalue()
+    # Формат проверяем ДО предложения применить, расшифровку — только при
+    # применении: чужой файл отбивается сразу, а ключ линка читается один раз.
+    if not blob.startswith(bundlecrypt.MAGIC):
+        await message.answer(texts.GW_BUNDLE_NOT_OURS)
+        return
+    # Файл у нас в памяти — в чате ему делать нечего. Основной бот свою копию
+    # убирает по «В меню», а пересланная жила в переписке с агентом вечно:
+    # внутри ключ линка, токен агента, фраза шифрования копий, пароль почты.
+    await forget_secret(message)
+    await state.update_data(bundle=base64.b64encode(blob).decode())
+    # осмотр до вопроса: изменится ли конфиг линка — от этого зависит, будет
+    # ли обрыв и нужно ли о нём предупреждать. Не расшифровался — скажем при
+    # применении, там текст ошибки полный.
+    info = await call(services.inspect_bundle, blob)
+    link_changed = bool(info.get("link_changed", True)) if info.get("ok") else True
+    # Вопрос «применить?» — новое живое меню; прежнюю панель удаляем целиком:
+    # без кнопок над итогом применения она только занимала бы экран.
+    await drop_previous_nav(message.bot, services, message.chat.id)
+    await send_menu(message, services, texts.gateway_bundle_received(link_changed),
+                    kb.gateway_bundle_kb())
 
 
 # Ввод значения, парольная фраза и мастер почты — общие обработчики сообщений.
@@ -299,9 +372,9 @@ async def gw_ssh_port_ask(cb: CallbackQuery, callback_data: GwCB, services, stat
             await cb.message.edit_reply_markup(reply_markup=kb.hide_only())
         except Exception:                                 # noqa: BLE001
             pass
-        await send_menu(cb.message, services, texts.GW_SSH_PORT_ASK, kb.gateway_cancel_kb("ssh"))
+        await send_menu(cb.message, services, texts.gw_ssh_port_ask(st.get("port")), kb.gateway_cancel_kb("ssh"))
     else:
-        await core.ask(cb, services, texts.GW_SSH_PORT_ASK, kb.gateway_cancel_kb("ssh"))
+        await core.ask(cb, services, texts.gw_ssh_port_ask(st.get("port")), kb.gateway_cancel_kb("ssh"))
     await cb.answer()
 
 
@@ -359,10 +432,9 @@ async def gw_ssh_port_received(message: Message, state: FSMContext, services):
                         kb.gateway_back_kb("ssh"))
         return
     except ServiceError as e:
-        await message.answer(f"⚠️ Порт не изменён: {texts._e(str(e))}")
+        await core.after_input(message, services, HOOKS, "ssh", f"⚠️ Порт не изменён: {texts._e(str(e))}")
     else:
-        await message.answer(texts.gateway_ssh_port_changed(old, port), reply_markup=kb.hide_only())
-    await core.after_input(message, services, HOOKS, "ssh")
+        await core.after_input(message, services, HOOKS, "ssh", texts.gateway_ssh_port_changed(old, port))
 
 
 @router.callback_query(GwCB.filter(F.action == "ssh_add"))
@@ -386,18 +458,18 @@ async def gw_ssh_allow_received(message: Message, state: FSMContext, services):
     await state.clear()
     new = [x for x in after if x not in before]
     gone = [x for x in before if x not in after]          # схлопнуто в добавленную подсеть
-    await message.answer(texts.gateway_ssh_allow_added(new, gone) if new or gone
-                         else texts.GW_SSH_ALLOW_ALREADY)
-    await core.after_input(message, services, HOOKS, "ssh")
+    await core.after_input(message, services, HOOKS, "ssh",
+                           texts.gateway_ssh_allow_added(new, gone) if new or gone else texts.GW_SSH_ALLOW_ALREADY)
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"ssh_del", "ssh_del!", "ssh_on", "ssh_on!",
                                                   "ssh_off", "ssh_off!"})))
 async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
-    """Удаление адреса, включение и выключение фильтра — с подтверждения
-    («Отмена» первой): всё это меняет, кто попадёт на шлюз снаружи."""
+    """Удаление адреса, включение и выключение фильтра — сразу, без
+    подтверждений: всё отменяется той же кнопкой. Включение фильтра —
+    с предупреждением всплывашкой."""
     await state.clear()
-    act = callback_data.action
+    act = callback_data.action.rstrip("!")
     try:
         if act == "ssh_del":
             allow = (await call(services.ssh_screen)).get("allow") or []
@@ -405,32 +477,11 @@ async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state:
             if not 0 <= idx < len(allow):
                 await cb.answer("Список изменился — открой раздел заново", show_alert=True)
             else:
-                await edit_nav(cb, services, texts.gateway_ssh_del_ask(allow[idx]),
-                               kb.gateway_ssh_confirm_kb("ssh_del!", str(idx), "➖ Убрать"))
-                await cb.answer()
-                return
-        elif act == "ssh_del!":
-            allow = (await call(services.ssh_screen)).get("allow") or []
-            idx = int(callback_data.val) if callback_data.val.isdigit() else -1
-            if not 0 <= idx < len(allow):
-                await cb.answer("Список изменился — открой раздел заново", show_alert=True)
-            else:
                 await call(services.ssh_allow_remove, allow[idx])
-                await cb.answer(f"{allow[idx]} убран")
+                await cb.answer(f"{texts.short_name(allow[idx])} убран")
         elif act == "ssh_on":
-            st = await call(services.ssh_screen)
-            await edit_nav(cb, services, texts.gateway_ssh_filter_on_ask(st["port"]),
-                           kb.gateway_ssh_confirm_kb("ssh_on!", "", "🟢 Включить"))
-            await cb.answer()
-            return
-        elif act == "ssh_on!":
             await call(services.ssh_filter_on)
-            await cb.answer("Фильтр включён")
-        elif act == "ssh_off":
-            await edit_nav(cb, services, texts.GW_SSH_FILTER_OFF_ASK,
-                           kb.gateway_ssh_confirm_kb("ssh_off!", "", "🔴 Выключить"))
-            await cb.answer()
-            return
+            await cb.answer(texts.GW_SSH_FILTER_ON_ALERT, show_alert=True)
         else:
             await call(services.ssh_filter_off)
             await cb.answer(texts.GW_SSH_FILTER_OFF, show_alert=True)
@@ -440,8 +491,8 @@ async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state:
 
 
 _CONFIRM = {
-    "restart": (lambda: texts.GW_CONFIRM_RESTART, "maint"),
-    "botrestart": (lambda: texts.GW_CONFIRM_BOT_RESTART, "maint"),
+    "restart": (lambda: texts.GW_CONFIRM_RESTART, "settings"),
+    "botrestart": (lambda: texts.GW_CONFIRM_BOT_RESTART, "settings"),
     "reassert": (lambda: texts.GW_CONFIRM_REASSERT, "panel"),
 }
 
@@ -449,6 +500,8 @@ _CONFIRM = {
 @router.callback_query(GwCB.filter(F.action.in_(set(_CONFIRM))))
 async def gw_confirm(cb: CallbackQuery, callback_data: GwCB, services):
     text_fn, back = _CONFIRM[callback_data.action]
+    if callback_data.val in ("panel", "health"):           # откуда пришли — туда и отмена
+        back = callback_data.val
     await edit_nav(cb, services, text_fn(), kb.gateway_confirm_kb(callback_data.action, back))
     await cb.answer()
 
@@ -462,7 +515,7 @@ async def gw_execute(cb: CallbackQuery, callback_data: GwCB, services):
     else:
         await cb.answer("Восстанавливаю…")
         ok, detail = await call(services.reassert)
-        title = "Мастер восстановления"
+        title = "Восстановление"
         # снимок с новым состоянием — на ВПС сейчас, а не через тик
         from awgbot.runtime import linkclient
         await linkclient.poke(services)
@@ -495,19 +548,35 @@ async def gw_hide(cb: CallbackQuery):
     await cb.answer()
 
 
-# ── локальная сеть без VPN ────────────────────────
+# ── 🔀 VPN-транзит: один экран со своими списками ────────────────────────────
 
-async def _lan_screen(services):
+async def _own_info(services) -> dict:
+    info, _checks = await call(services.own_status)
+    return info
+
+
+async def _lan_screen(services, chat_id: int):
+    """(текст, клавиатура) экрана «🔀 VPN-транзит»: факты, списки, свои
+    домены кнопками."""
+    from awgbot.bot import paging
     st = await _status(services, fresh=False)
-    return texts.gateway_lan_text(st), kb.gateway_lan_kb()
+    items = await call(services.lan_own_lists)
+    return (texts.gateway_lan_text(st, items, await _own_info(services)),
+            kb.gateway_lan_kb(items, page=paging.page_of(chat_id, "lanlist")))
 
 
-@router.callback_query(GwCB.filter(F.action == "lan"))
+@router.callback_query(GwCB.filter(F.action.in_({"lan", "lan_list"})))
 async def gw_lan(cb: CallbackQuery, services, state: FSMContext):
     await state.clear()
+    # сообщение под кнопкой — экран, а не служебное: приглашение к вводу
+    # (core.ask) записало его в служебные, уборка снесла бы живое меню
+    await call(services.db.remove_content_msg_id, cb.message.chat.id, cb.message.message_id)
     await cleanup_content(cb.message.bot, services, cb.message.chat.id)
-    await edit_nav(cb, services, *await _lan_screen(services))
+    await edit_nav(cb, services, *await _lan_screen(services, cb.message.chat.id))
     await cb.answer()
+
+
+gw_lan_list = gw_lan
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"lan_add", "lan_ru"})))
@@ -515,7 +584,7 @@ async def gw_lan_ask(cb: CallbackQuery, callback_data: GwCB, services, state: FS
     kind = callback_data.action.split("_", 1)[1]
     await state.set_state(GatewayLanDomain.value)
     await state.update_data(kind=kind)
-    await core.ask(cb, services, texts.gateway_lan_ask_domain(kind), kb.gateway_cancel_kb("lan_list"))
+    await core.ask(cb, services, texts.gateway_lan_ask_domain(kind), kb.gateway_cancel_kb("lan"))
     await cb.answer()
 
 
@@ -525,14 +594,17 @@ async def gw_lan_domain_received(message: Message, state: FSMContext, services):
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     domains = [t for t in (message.text or "").split() if t]
     if not domains:
-        await ask_tracked(message, services, "⚠️ Пришли хотя бы один домен.")
+        await ask_tracked(message, services, "⚠️ Пришли хотя бы один домен")
         return
     await state.clear()
     ok, out = await call(services.lan_domains, kind, domains)
     await cleanup_content(message.bot, services, message.chat.id)
-    await message.answer(texts.gateway_lan_result(ok, out, await _own_sync_tail(services, ok, out)))
-    # назад — в свои списки, откуда пришли: с новым доменом уже в кнопках
-    await send_menu(message, services, *await _lan_list_screen(services, message.chat.id))
+    # итог — первыми строками экрана, с новым доменом уже в кнопках
+    from awgbot.bot import screens
+    text, markup = await _lan_screen(services, message.chat.id)
+    note = texts.gateway_lan_result(ok, out, await _own_sync_tail(services, ok, out),
+                                    budget=texts.note_budget(text))
+    await send_menu(message, services, screens.with_note(text, note), markup)
 
 
 async def _own_sync_tail(services, ok: bool, out: str) -> str:
@@ -546,64 +618,44 @@ async def _own_sync_tail(services, ok: bool, out: str) -> str:
     return "online" if linkclient.online() else "offline"
 
 
-async def _own_info(services) -> dict:
-    info, _checks = await call(services.own_status)
-    return info
-
-
-async def _lan_list_screen(services, chat_id: int):
-    from awgbot.bot import paging
-    items = await call(services.lan_own_lists)
-    return (texts.gateway_lan_own_text(items, await _own_info(services)),
-            kb.gateway_lan_list_kb(items, page=paging.page_of(chat_id, "lanlist")))
-
-
-@router.callback_query(GwCB.filter(F.action == "lan_list"))
-async def gw_lan_list(cb: CallbackQuery, services, state: FSMContext):
-    await state.clear()
-    await edit_nav(cb, services, *await _lan_list_screen(services, cb.message.chat.id))
-    await cb.answer()
-
-
 @router.callback_query(GwCB.filter(F.action.in_({"lan_rm", "lan_rm!"})))
 async def gw_lan_remove(cb: CallbackQuery, callback_data: GwCB, services):
-    """«➖ домен» из своих списков: сначала подтверждение («Отмена» первой),
-    затем удаление. Номер — по отсортированному списку; список успел
-    измениться — переспрос, не чужой домен."""
+    """«➖ домен» — сразу, без подтверждения: всплывашка с итогом («Убран на
+    всех шлюзах» при общих списках); скрипт ответил дольше, чем Telegram
+    держит нажатие, — итог сообщением. Номер — по отсортированному списку;
+    список успел измениться — переспрос, не чужой домен."""
     items = kb.lan_own_sorted(await call(services.lan_own_lists))
     num, _dot, tag = (callback_data.val or "").partition(".")
     idx = int(num) if num.isdigit() else -1
-    if not 0 <= idx < len(items) or (tag and tag != kb.lan_own_tag(*items[idx])):
-        await cb.answer("Список изменился — открой его заново", show_alert=True)
+    if not 0 <= idx < len(items) or tag != kb.lan_own_tag(*items[idx]):   # без метки — не наша кнопка
+        await cb.answer("Список изменился — открой раздел заново", show_alert=True)
+        await edit_nav(cb, services, *await _lan_screen(services, cb.message.chat.id))
         return
-    kind, dom = items[idx]
-    if callback_data.action == "lan_rm":
-        shared = bool((await _own_info(services)).get("active"))
-        await edit_nav(cb, services, texts.gateway_lan_rm_ask(dom, kind, shared),
-                       kb.gateway_lan_rm_confirm(idx, kind, dom))
-        await cb.answer()
-        return
+    _kind, dom = items[idx]
+    shared = bool((await _own_info(services)).get("active"))
     ok, out = await call(services.lan_domains, "del", [dom])
     tail = await _own_sync_tail(services, ok, out)
     try:
-        await cb.answer(texts.gateway_lan_result(ok, out, tail)[:180], show_alert=not ok)
+        if ok:
+            await cb.answer(texts.gateway_lan_removed_toast(dom, shared, tail))
+        else:
+            import html as _html
+            await cb.answer(_html.unescape(texts.gateway_lan_result(ok, out, tail))[:180], show_alert=True)
     except TelegramBadRequest:
-        # скрипт ждал блокировку списков дольше, чем Telegram держит нажатие —
-        # итог сообщением, а не всплывашкой
         await ask_tracked(cb.message, services, texts.gateway_lan_result(ok, out, tail))
-    await edit_nav(cb, services, *await _lan_list_screen(services, cb.message.chat.id))
+    await edit_nav(cb, services, *await _lan_screen(services, cb.message.chat.id))
 
 
 @router.callback_query(GwCB.filter(F.action == "lan_router"))
-async def gw_lan_router(cb: CallbackQuery, services):
-    """Рецепт роутера — тот же текст, что у основного бота, с подсетью и
-    адресом этого шлюза (их знает только он)."""
+async def gw_lan_router(cb: CallbackQuery, callback_data: GwCB, services):
+    """Рецепт роутера вкладками — тот же текст, что у основного бота, с
+    подсетью и настоящим адресом этого шлюза."""
     import socket
     net, addr, peers = await call(services.lan_router_params)
-    # «Назад» — на экран локальной сети, откуда пришли: с клавиатурой того экрана
-    # рецепт читался бы как сам экран «Локальная сеть»
-    await edit_nav(cb, services, texts.gateway_router_text(socket.gethostname(), net, addr, peer_nets=peers, tab="all"),
-                   kb.gateway_back_kb("lan"))
+    tab = callback_data.val if callback_data.val in ("mt", "ow") else "mt"
+    await edit_nav(cb, services,
+                   texts.gateway_router_text(socket.gethostname(), net, addr, peer_nets=peers, tab=tab),
+                   kb.gateway_lan_router_kb(tab))
     await cb.answer()
 
 
@@ -618,43 +670,6 @@ async def _lan_lists_soon(services, bot, delay: float = 60.0) -> None:
             await send_notifications(bot, notes)
     except Exception as e:                                # noqa: BLE001
         log.warning("gateway: первые списки после бандла: %s", e)
-
-
-# ── бандл файлом ─────────────────────────────────────────────────────────────
-
-@router.message(F.document)
-async def gw_bundle_document(message: Message, services, state: FSMContext):
-    doc = message.document
-    from awgbot.bot.handlers import restore as rs
-    if rs.looks_like_backup(doc):                     # резервная копия, не конфигурация
-        await rs.offer_restore(message, services, state, gateway=True)
-        return
-    if doc.file_size and doc.file_size > _BUNDLE_MAX_BYTES:
-        await message.answer(texts.GW_BUNDLE_NOT_OURS)
-        return
-    buf = io.BytesIO()
-    await message.bot.download(doc, destination=buf)
-    blob = buf.getvalue()
-    # Формат проверяем ДО предложения применить, расшифровку — только при
-    # применении: чужой файл отбивается сразу, а ключ линка читается один раз.
-    if not blob.startswith(bundlecrypt.MAGIC):
-        await message.answer(texts.GW_BUNDLE_NOT_OURS)
-        return
-    # Файл у нас в памяти — в чате ему делать нечего. Основной бот свою копию
-    # убирает по «В меню», а пересланная жила в переписке с агентом вечно:
-    # внутри ключ линка, токен агента, фраза шифрования копий, пароль почты.
-    await forget_secret(message)
-    await state.update_data(bundle=base64.b64encode(blob).decode())
-    # осмотр до вопроса: изменится ли конфиг линка — от этого зависит, будет
-    # ли обрыв и нужно ли о нём предупреждать. Не расшифровался — скажем при
-    # применении, там текст ошибки полный.
-    info = await call(services.inspect_bundle, blob)
-    link_changed = bool(info.get("link_changed", True)) if info.get("ok") else True
-    # Вопрос «применить?» — новое живое меню; прежнюю панель удаляем целиком:
-    # без кнопок над итогом применения она только занимала бы экран.
-    await drop_previous_nav(message.bot, services, message.chat.id)
-    await send_menu(message, services, texts.gateway_bundle_received(link_changed),
-                    kb.gateway_bundle_kb())
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"apply!", "apply_ow!", "apply_keep!"})))
@@ -794,67 +809,69 @@ async def gw_update_mute(cb: CallbackQuery, services):
 
 # ── раздел обновлений: ручная точка входа (уведомление могло прийти до тебя) ──
 
-async def _updates_screen(cb: CallbackQuery, services):
-    from awgbot.core import config
+async def _updates_screen(cb: CallbackQuery, services, scan: bool = True):
+    """Раздел обновлений: scan — сходить к списку релизов (при открытии);
+    иначе — по тегу последней проверки, без сети."""
+    from awgbot.core import settings
+    if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
+        try:
+            await call(settings.set_value, "updates.poll_schedule", "month")
+        except settings.SettingsWriteError:
+            pass
+        await call(services.mute_updates)
+    if scan:
+        found = await call(services.update_scan)
+    else:
+        tag = await call(services.update_available_tag)
+        found = _CachedTarget(tag) if tag else None
     muted = await call(services.updates_muted)
-    await edit_nav(cb, services, texts.settings_upd_text(config.INSTALLED_VERSION),
-                   kb.gateway_updates_kb(muted))
+    await edit_nav(cb, services,
+                   texts.settings_upd_text(config.INSTALLED_VERSION, found, "",
+                                           scan_failed=bool(getattr(services, "update_scan_failed", False))),
+                   kb.gateway_updates_kb(muted, target_tag=found.tag if found is not None else ""))
+
+
+class _CachedTarget:
+    def __init__(self, tag: str):
+        self.tag, self.body, self.skipped = tag, "", ()
 
 
 @router.callback_query(GwCB.filter(F.action == "updates"))
 async def gw_updates_screen(cb: CallbackQuery, services):
-    await _updates_screen(cb, services)
-    await cb.answer()
+    await cb.answer("Проверяю…")
+    await _updates_screen(cb, services, scan=True)
 
 
 @router.callback_query(GwCB.filter(F.action == "upd_toggle"))
 async def gw_updates_toggle(cb: CallbackQuery, services):
-    from awgbot.core import settings
-    # как у основного: при расписании «никогда» включить уведомления нельзя —
-    # проверять нечему, и тумблер «вкл» обещал бы то, чего не будет
-    if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
-        await cb.answer("Сначала выбери расписание проверки (не «никогда»).",
-                        show_alert=True)
-        return
-    if await call(services.updates_muted):
+    muted = await call(services.updates_muted)
+    if muted:
         await call(services.unmute_updates)
     else:
         await call(services.mute_updates)
-    await _updates_screen(cb, services)
-    await cb.answer()
+    await cb.answer("Уведомления " + ("включены" if muted else "выключены"))
+    await _updates_screen(cb, services, scan=False)
 
 
 @router.callback_query(GwCB.filter(F.action == "upd_sched"))
 async def gw_updates_sched(cb: CallbackQuery, callback_data: GwCB, services):
-    """Пикер расписания: пишется в conf горячо, задача перевешивается хуком
-    settings.on_change в скедулере агента; «никогда» — авто-мьют уведомлений."""
+    """Старый пикер расписания из сообщений 3.1.0: пишется горячо; «никогда»
+    больше нет — становится «месяц»."""
     from awgbot.core import settings
-    opt = callback_data.val
-    if opt not in ("day", "week", "month", "never"):
-        await cb.answer("Нет такого варианта.", show_alert=True)
-        return
+    opt = callback_data.val if callback_data.val in ("day", "week", "month") else "month"
     try:
         await call(settings.set_value, "updates.poll_schedule", opt)
     except settings.SettingsWriteError as e:
         await cb.answer(str(e), show_alert=True)
         return
-    if opt == "never":
+    if callback_data.val == "never":                       # «никогда» 3.1.0 = тишина
         await call(services.mute_updates)
-    await _updates_screen(cb, services)
-    await cb.answer()
+    await cb.answer(texts.cycle_toast("updates.poll_schedule", opt))
+    await _updates_screen(cb, services, scan=False)
 
 
 @router.callback_query(GwCB.filter(F.action == "upd_check"))
 async def gw_updates_check(cb: CallbackQuery, services):
-    """Проверить сейчас: есть ступень — показать с кнопкой «Обновить» (тот же
-    UpdateCB, что и в уведомлении); нет — сказать, что версия актуальна."""
-    from awgbot.core import config
+    """Старая кнопка «Проверить сейчас»: раздел проверяет сам при открытии."""
     await cb.answer("Проверяю…")
-    nxt = await call(services.update_next)
-    if nxt is None:
-        await edit_nav(cb, services, texts.update_current_ok(config.INSTALLED_VERSION),
-                       kb.gateway_updates_kb(await call(services.updates_muted)))
-        return
-    await edit_nav(cb, services,
-                   texts.update_admin_available(config.INSTALLED_VERSION, nxt.tag, nxt.body, nxt.skipped),
-                   kb.gateway_update_available_kb())
+    await _updates_screen(cb, services, scan=True)

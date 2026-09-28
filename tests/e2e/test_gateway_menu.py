@@ -38,18 +38,24 @@ def _labels(markup):
 
 
 def test_main_menu_layout():
-    assert _labels(kb.gateway_panel_kb()) == [["🔄 Статус", "🌡 Монитор здоровья"],
-                                              ["🔧 Мастер восстановления"], ["⚙️ Настройки"]]
-    # Зеркало основного бота: мониторинг и бэкапы — внутри «Обслуживания».
-    assert _labels(kb.gateway_settings_kb()) == [["🔔 Уведомления"], ["✉️ E-mail"],
-                                                 ["🛡 Доступ по SSH"], ["🔄 Обслуживание"],
-                                                 ["⬆️ Обновления бота"], ["⬅️ В меню"]]
-    assert _labels(kb.gateway_maint_kb()) == [["📊 Мониторинг"], ["💾 Резервное копирование"],
-                                              ["🔁 Перезапустить AWG"], ["🔁 Перезапустить бота"],
-                                              ["⬅️ Назад"]]
-    # Выход из перенесённых разделов ведёт туда, откуда в них вошли
+    """Панель — пять кнопок в три ряда (VPN-транзит — только когда включён),
+    корень настроек в два столбца без «Обслуживания»: мониторинг, бэкапы и
+    перезапуски — прямо в корне. Съехала раскладка — человек ищет раздел,
+    которого на старом месте нет."""
+    assert _labels(kb.gateway_panel_kb()) == [["🩺 Здоровье", "🔧 Восстановить"],
+                                              ["🔄 Обновить", "⚙️ Настройки"]]
+    assert _labels(kb.gateway_panel_kb(True)) == [["🩺 Здоровье", "🔧 Восстановить"],
+                                                  ["🔀 VPN-транзит"],
+                                                  ["🔄 Обновить", "⚙️ Настройки"]]
+    assert _labels(kb.gateway_settings_kb()) == [["🔔 Уведомления", "✉️ E-mail"],
+                                                 ["🛡 SSH-доступ", "🩺 Мониторинг"],
+                                                 ["💾 Бэкапы", "⬆️ Обновления"],
+                                                 ["🔁 Перезапуск AWG", "🔁 Перезапуск бота"],
+                                                 ["⬅️ В меню"]]
+    assert _labels(kb.gateway_health_kb()) == [["🔧 Восстановить", "⬅️ В меню"]]
+    # из разделов, бывших в «Обслуживании», назад — в корень настроек
     for markup in (kb.gateway_mon_kb(), kb.gateway_backup_kb()):
-        assert markup.inline_keyboard[-1][0].callback_data == GwCB(action="maint").pack()
+        assert markup.inline_keyboard[-1][0].callback_data == GwCB(action="settings").pack()
 
 
 def test_updates_back_leads_to_settings(monkeypatch):
@@ -70,7 +76,7 @@ async def test_start_uses_the_tick_snapshot_and_refresh_probes_live(svc, fake_bo
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_refresh(cb, svc, FakeState())
     assert svc.probes == 2
-    assert any("РФ-шлюз (pi)" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    assert any(t.startswith("🛰 pi · ") for kind, t, _ in msg.sent if kind == "edit_text")
 
 
 async def test_stale_snapshot_falls_back_to_live(svc, fake_bot):
@@ -95,7 +101,8 @@ async def test_bot_restart_is_confirmed_then_promised_and_kept(svc, fake_bot):
     assert svc.db.get_state("restart_wait") == ""
     edited = [r for r in fake_bot.records if r[0] == "edit_message_text"]
     assert edited and texts.BOT_RESTARTED in str(edited[-1])
-    assert any(r[0] == "send_message" and "РФ-шлюз" in str(r) for r in fake_bot.records)
+    assert any(r[0] == "send_message" and str(r[2]).startswith("🛰 pi · ") for r in fake_bot.records), \
+        "панель после перезапуска не пришла"
 
 
 async def test_health_screen_is_live(svc, fake_bot):
@@ -103,7 +110,7 @@ async def test_health_screen_is_live(svc, fake_bot):
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_health(cb, svc)
     assert svc.probes == 1
-    assert any("Монитор здоровья" in t for kind, t, _ in msg.sent if kind == "edit_text")
+    assert any(t.startswith("🩺 Здоровье pi · ") for kind, t, _ in msg.sent if kind == "edit_text")
 
 
 async def test_hide_button_deletes_the_notification(svc, fake_bot):
@@ -116,26 +123,34 @@ async def test_hide_button_deletes_the_notification(svc, fake_bot):
 
 
 def test_notify_section_layout_cpu_ram_then_disk_temp(monkeypatch):
+    """Тихие часы с границами, алерты с четырьмя порогами парами, аварии на
+    e-mail — в одном ряду с «Назад»; событий клиентов у шлюза нет."""
     from awgbot.core import settings
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
     monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
     rows = _labels(kb.gateway_notify_kb())
-    assert rows[0] == ["✅ E-mail при недоступности Telegram"]
-    assert rows[1] == ["✅ Тихие часы"]
-    assert rows[2] == ["Начало: 20:00 МСК", "Конец: 7:00 МСК"]
-    assert rows[4] == ["CPU: 80%", "RAM: 80%"]
-    assert rows[5] == ["Диск: 80%", "Temp: 75 °C"]
-    assert rows[-1] == ["⬅️ Назад"]
+    assert rows == [["✅ Тихие часы"], ["С 20:00", "До 07:00"], ["✅ Алерты"],
+                    ["CPU 80%", "RAM 80%"], ["Диск 80%", "75 °C"],
+                    ["✅ Аварии на e-mail", "⬅️ Назад"]], rows
     assert not any("клиент" in b.lower() for row in rows for b in row), "события клиентов у шлюза лишние"
+    # выключенные тихие часы и алерты — без границ и порогов
+    monkeypatch.setattr(settings, "get_bool", lambda key, default=True: False)
+    assert _labels(kb.gateway_notify_kb()) == [["☑️ Тихие часы"], ["☑️ Алерты"],
+                                               ["☑️ Аварии на e-mail", "⬅️ Назад"]]
 
 
 def test_mon_section_mirrors_main(monkeypatch):
+    """Порог молчания линка — в минутах (хранится в секундах): «300 сек» в
+    подписи человек переводил в уме, а ввод просил секунды."""
     from awgbot.core import settings
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
     monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
     rows = _labels(kb.gateway_mon_kb())
-    assert rows[:4] == [["Частота опроса: 3 мин"], ["Отсчётов до сработки алерта: 5"],
-                        ["✅ Алерт простоя линка со звуком 24/7"], ["Порог простоя линка: 300 сек"]]
+    assert rows == [["⏱ Опрос: 3 мин", "🔢 Замеров: 5"], ["⏳ Линк: 5 мин", "✅ Звук 24/7"],
+                    ["⬅️ Назад"]], rows
+    assert texts.gw_settings_mon_text() == (
+        "🩺 Мониторинг\nОпрос раз в 3 мин · алерт после 5 плохих замеров подряд · "
+        "линк молчит дольше 5 мин — со звуком круглые сутки")
 
 
 async def test_edit_flow_writes_value_and_returns_to_section(svc, fake_bot, monkeypatch):
@@ -170,19 +185,21 @@ async def test_backup_without_key_explains_instead_of_leaking(svc, fake_bot, mon
 
 
 def test_backup_switch_hides_the_rest_in_both_bots(monkeypatch):
-    """Автобэкапы выключены — остаётся тумблер: канал, расписание и «сделать
-    сейчас» без включённых бэкапов ничего не значат. У основного бота
-    «🔐 Шифрование» остаётся и при выключенных: фраза нужна для
-    восстановления шифрованных копий."""
+    """Автобэкапы выключены — остаются тумблер и «🔐 Шифрование» (фраза нужна
+    и для восстановления шифрованных копий): канал, расписание и «сделать
+    сейчас» без включённых бэкапов ничего не значат. Раскладка агента — та же,
+    что у основного бота."""
     from awgbot.core import settings
     monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
+    monkeypatch.setattr(settings, "get", lambda key, default=None: default)
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: False)
-    assert _labels(kb.gateway_backup_kb(False)) == [["☑️ Резервное копирование"], ["⬅️ Назад"]]
-    assert _labels(kb.settings_backup()) == [["☑️ Автобэкапы", "🔐 Шифрование"], ["⬅️ Назад"]], _labels(kb.settings_backup())
+    assert _labels(kb.gateway_backup_kb(False)) == [["☑️ Автобэкапы", "🔐 Шифрование"], ["⬅️ Назад"]]
+    assert _labels(kb.settings_backup()) == _labels(kb.gateway_backup_kb(False))
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
     rows = _labels(kb.gateway_backup_kb(True))
-    assert rows[0] == ["✅ Резервное копирование"] and rows[1] == ["🔐 Шифрование: ✅ включено"]
-    assert rows[2] == ["✅ Telegram", "☑️ E-mail"] and ["💾 Создать резервную копию"] in rows
+    assert rows == [["✅ Автобэкапы", "🔐 Шифрование"], ["📨 Куда: Telegram", "📆 1-е, 12:00"],
+                    ["💾 Сделать сейчас"], ["⬅️ Назад"]], rows
+    assert rows == _labels(kb.settings_backup(True)), "раскладка агента разошлась с основным ботом"
 
 
 async def test_gateway_passphrase_flow(svc, fake_bot):

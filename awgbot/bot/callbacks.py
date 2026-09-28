@@ -280,7 +280,7 @@ class GwCB(CallbackData, prefix="gw"):
       backup!, restore!|restore_drop, em_setup|em_check|em_test|em_forget(!);
       apply!|apply_ow!|apply_keep!|drop — принять/отклонить бандл;
       upd_toggle|upd_check|upd_sched (val — вариант расписания);
-      lan — локальная сеть без VPN; lan_add|lan_ru —
+      lan — экран «🔀 VPN-транзит» (lan_list — прежнее имя); lan_add|lan_ru —
       ввод доменов в личные списки, lan_list — свои списки (домены кнопками,
       с листанием), lan_rm|lan_rm! (val — номер) — убрать домен с подтверждения.
       ssh — раздел «Доступ по SSH», ssh_port|ssh_add|ssh_del (val — номер)|

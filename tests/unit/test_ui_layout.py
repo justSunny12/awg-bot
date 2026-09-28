@@ -345,13 +345,13 @@ ADMIN_EXCEPTIONS = {
                                                 "макет «Порт или подсеть»: действие первым, отмена рядом со «Свой порт»"),
     ("settings", "settings_notify"): ({"длинная подпись в ряду"},
                                       "макет «Уведомления»: «☑️ Аварии на e-mail» в ряду с «👥 События»"),
-    ("gateway", "gateway_email_kb"): ({"длинная подпись в ряду"}, "этап 4"),
+    ("gateway", "gateway_notify_kb"): ({"длинная подпись в ряду"},
+                                       "макет «Уведомления» агента: «☑️ Аварии на e-mail» в ряду с «⬅️ Назад»"),
     ("routing", "routing_disable_confirm"): ({"кружок вместо ✅/☑️"}, "макет: «🔴 Выключить» — действие, не тумблер"),
     ("routing", "settings_routing_lists"): ({"кружок вместо ✅/☑️"},
                                             "макет «Параметры»: «🔴 Выключить РФ-доступ» — действие, не тумблер"),
     ("routing", "routing_params_kb"): ({"кружок вместо ✅/☑️"},
                                        "макет «Параметры»: «🔴 Выключить РФ-доступ» — действие, не тумблер"),
-    ("gateway", "gateway_panel_kb"): ({"🏠"}, "этап 4"),
 }
 
 _GW_STATE = {"gateway": SimpleNamespace(id=1, lan_mode=1), "device": SimpleNamespace(id=7, name="NASPi"),
@@ -412,7 +412,7 @@ def test_no_house_icon_in_keyboard_literals_outside_the_listed_screens():
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and "🏠" in node.value:
                 found.add((path.stem, node.value))
-    assert found == {("gateway", "🏠 Локальная сеть без VPN")}, found
+    assert found == set(), found
 
 
 def test_main_client_screen_is_four_rows_at_most():

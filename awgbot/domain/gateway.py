@@ -53,6 +53,18 @@ def _run(argv: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
     return subprocess.run(argv, capture_output=True, timeout=timeout)
 
 
+def _dur_short(seconds) -> str:
+    """«40 с» / «12 мин» / «3 ч» / «2 д» — возраст хендшейка в здоровье."""
+    v = int(seconds or 0)
+    if v < 90:
+        return f"{v} с"
+    if v < 5400:
+        return f"{v // 60} мин"
+    if v < 2 * 86400:
+        return f"{v // 3600} ч"
+    return f"{v // 86400} д"
+
+
 def _out(proc) -> str:
     return proc.stdout.decode(errors="replace")
 
@@ -463,8 +475,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             st.temp >= settings.get_int("app.gateway.temp_alert_c", 75)
         notes += self._streak_alert(
             "temp", temp_bad, streak,
-            f"🌡 SoC {st.temp:.0f}°C — перегрев." if st.temp is not None else "",
-            "✅ Температура SoC в норме.")
+            f"🌡 Процессор {st.temp:.0f} °C — перегрев." if st.temp is not None else "",
+            "✅ Температура процессора в норме.")
 
         # алерты хоста — общим тумблером и порогами с основным ботом
         if settings.get_bool("resource_alerts.enabled", True):
@@ -690,7 +702,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             now = timeutil.now()
             cur = {"lan": home["lan_pkts"], "dns": home["dns_pkts"]}
             for key, name, why in (("lan", "трафик с роутера",
-                                     "роутер не маршрутизирует трафик на шлюз (❓ Настройка роутера)"),
+                                     "роутер не маршрутизирует трафик на шлюз (❓ Роутер)"),
                                     ("dns", "DNS с роутера",
                                      "DHCP роутера раздаёт не адрес шлюза")):
                 prev = int(last.get(key, -1))
@@ -706,7 +718,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                         quiet = 0.0
                     ok = quiet < self._LAN_QUIET_SECONDS
                     detail = "" if ok else (f"пакетов из локальной сети нет с "
-                                            f"{timeutil.fmt_dt(timeutil.parse_iso(at)) if at else '?'}: {why}")
+                                            f"{timeutil.fmt_dt_ui(timeutil.parse_iso(at)) if at else '?'}: {why}")
                 info[f"{key}_pkts"] = cur[key]
                 last[key] = cur[key]
                 last[f"{key}_at"] = at
@@ -1348,7 +1360,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                                   "других шлюзов"))
         elif not info["browse"]:
             checks.append(GwCheck("SMB этой подсети", None,
-                                  "нет avahi-browse, пакет avahi-utils (🔧 Мастер восстановления)"))
+                                  "нет avahi-browse, пакет avahi-utils (🔧 Восстановить)"))
         else:
             checks.append(GwCheck("SMB этой подсети", True, f"{len(own)} SMB"))
         peer = self.services_peer()
@@ -1499,7 +1511,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                                  "⚠️ Списки локальной сети не обновились дважды подряд: "
                                  + (html.escape(tail, quote=False) or "без подробностей")
                                  + "\nФиды — через аплинк; проверь "
-                                 "монитор здоровья.", critical=False)]
+                                 "🩺 Здоровье.", critical=False)]
         return []
 
     # ── операции с кнопки (этап 2) ───────────────────────────────────────────
@@ -1844,7 +1856,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         фразы отказ, открытые ключи в чат и на почту не уезжают."""
         if not self.backup_encryption_enabled():
             raise ServiceError("резервная копия шлюза только шифрованная: задай парольную "
-                               "фразу в ⚙️ Настройки → 💾 Резервное копирование → 🔐 Шифрование")
+                               "фразу в ⚙️ Настройки → 💾 Бэкапы → 🔐 Шифрование")
         extra: list[tuple[str, bytes]] = []
         for p in sorted(glob.glob(os.path.join(config.GW_CONF_DIR, "*.conf"))):
             try:
@@ -1979,7 +1991,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         except Exception as e:                            # noqa: BLE001
             log.warning("gateway: ssh status: %s", e)
         ok_link = st.link_up and st.handshake_age is not None
-        checks.append(GwCheck("линк", ok_link, "" if ok_link else
+        checks.append(GwCheck("линк", ok_link, f"хендшейк {_dur_short(st.handshake_age)}" if ok_link else
                               ("интерфейс лежит" if not st.link_up else "хендшейка не было")))
         # Живьём, без кэша: кэш на 10 минут показывал «модуль: ?» и «ядро без
         # модуля» всё время после обновления модуля — снимок середины операции.

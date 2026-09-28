@@ -363,12 +363,12 @@ def _days(n: int) -> str:
 
 
 def _fmt_age(seconds) -> str:
-    """Человекочитаемый возраст данных: «40 сек» / «3 мин» / «2 ч назад»."""
+    """Человекочитаемый возраст данных: «40 с» / «3 мин» / «2 ч назад»."""
     if seconds is None:
         return ""
     s = int(seconds)
     if s < 90:
-        return f"{s} сек назад"
+        return f"{s} с назад"
     if s < 5400:
         return f"{s // 60} мин назад"
     return f"{s // 3600} ч назад"

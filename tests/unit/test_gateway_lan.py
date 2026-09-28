@@ -137,20 +137,30 @@ def test_status_carries_lan_block_and_panel_shows_it(svc, monkeypatch):
                   lan={"iface": "end0", "addr": "192.168.68.222", "resolver": "10.9.1.1", "domains": 1180,
                        "nets": 412, "updated_at": "2026-09-20T10:00:00+05:00",
                        "own_vpn": 2, "own_ru": 1, "lan_pkts": 12345})
-    out = texts.gateway_panel(st)
-    assert "🏠 Локальная сеть без VPN: 🟢 работает" in out
-    assert "сеть: end0, <code>192.168.68.222</code>" in out and "12 345 пакетов" in out
-    assert "локальная сеть: end0" not in out, "подпись строки интерфейса — «сеть:» (вычитка 3.1.0)"
-    assert "DNS — <code>10.9.1.1</code> через " in out and "апстрим" not in out, out
-    # списки — своей группой после пустой строки, дата обновления — в скобках
-    assert "\n\n📋 Списки: 1180 доменов, 412 подсетей (обн. " in out, out
-    assert "Свои списки: 2 в туннель, 1 напрямую" in out, out
-    assert "🗂" not in out, "svc не активен — строки SMB в панели быть не должно"
+    lines = texts.gateway_panel(st).splitlines()
+    # VPN-транзит — строкой состояния с трафиком, списки — одной строкой со
+    # своими; числа с разрядами; время обновления, адрес и DNS — на экране
+    # «🔀 VPN-транзит», не на панели
+    assert "🔀 VPN-транзит 🟢 · 12 345 пакетов с роутера" in lines, lines
+    assert "📋 Списки: 1 180 доменов, 412 подсетей · свои: 2 в туннель, 1 напрямую" in lines, lines
+    assert not any("192.168.68.222" in ln or ln.startswith("DNS") or "обн." in ln for ln in lines), lines
+    assert not any(ln.startswith("🗂") for ln in lines), "svc не активен — строки SMB в панели быть не должно"
     st.checks.append(GwCheck("трафик с роутера", False, "пакетов нет", group="lan"))
-    assert "🏠 Локальная сеть без VPN: 🔴 трафик с роутера" in texts.gateway_panel(st)
-    assert "Локальная сеть без VPN" not in texts.gateway_panel(GwStatus()), "выключено — блока нет"
+    lines = texts.gateway_panel(st).splitlines()
+    assert "🔀 VPN-транзит 🔴 трафик с роутера · 12 345 пакетов с роутера" in lines, lines
     # снимок переживает JSON
     assert GwStatus.from_json(st.to_json()).lan["addr"] == "192.168.68.222"
+
+
+def test_without_vpn_transit_the_panel_has_no_transit_lists_or_smb_lines():
+    """VPN-транзит выключен — ни «🔀», ни «📋», ни «🗂», и кнопки нет: про
+    функцию, которой на шлюзе нет, панель не говорит."""
+    from awgbot.bot import keyboards as kb, texts
+    st = GwStatus(link_up=True, handshake_age=5.0)
+    lines = texts.gateway_panel(st).splitlines()
+    assert not any(ln.startswith(("🔀", "📋", "🗂")) for ln in lines), lines
+    labels = [b.text for row in kb.gateway_panel_kb(bool(st.lan)).inline_keyboard for b in row]
+    assert "🔀 VPN-транзит" not in labels and len(labels) == 4, labels
 
 
 def test_lists_job_warns_after_two_failures_only(svc, monkeypatch):
@@ -347,7 +357,7 @@ def test_the_lan_screen_names_the_uplink_the_script_reported(svc, monkeypatch, s
     info, _ = svc.lan_status()
     assert info["uplink"] == status.get("UPLINK_IF", ""), info
     out = texts.gateway_lan_text(GwStatus(link_up=True, lan=info))
-    assert f"\nDNS — <code>10.9.1.1</code> через {shown}\n" in out, out
+    assert f"DNS — 10.9.1.1 через {shown}" in out.splitlines(), out
 
 
 # ── сервисы соседних сетей: проверки группы «svc» ──
@@ -403,7 +413,7 @@ def test_no_avahi_is_grey_not_red(svc, monkeypatch):
                                          "из подсетей других шлюзов"), c.detail
     _svc_on(monkeypatch, browse=False)
     c = {c.name: c for c in svc.services_status()[1]}["SMB этой подсети"]
-    assert c.ok is None and c.detail == "нет avahi-browse, пакет avahi-utils (🔧 Мастер восстановления)", c.detail
+    assert c.ok is None and c.detail == "нет avahi-browse, пакет avahi-utils (🔧 Восстановить)", c.detail
 
 
 def test_services_add_nothing_where_the_function_does_not_work(svc, monkeypatch):

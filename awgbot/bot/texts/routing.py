@@ -538,7 +538,7 @@ def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list |
     """❓ Роутер — вкладками: требования одной строкой, подробно — под
     «подробнее», рецепт выбранной вкладки. Адрес шлюза в подсети знает
     только он сам: основной бот показывает плейсхолдер."""
-    net = net or "192.168.1.0/24"
+    net = net or "ПОДСЕТЬ"
     gw_ip = _e(gw_ip) if gw_ip else ROUTER_IP_PLACEHOLDER
     peers = [str(p) for p in (peer_nets or []) if p]
     head = (f"❓ Роутер для {_e(title)} · {_e(net)} · шлюз {gw_ip}\n"

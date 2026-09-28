@@ -145,7 +145,7 @@ _GEN_HEAD_RE = re.compile(r"auto-?generated|managed by|do not edit", re.IGNORECA
 # Своя шапка: мы судим о владельце по шапке чужого файла — и сами оставляем
 # такую же метку, чтобы другой инструмент (и человек) видел, кто держит порт.
 # Только про порт: остальное в файле бот не трогает и не генерирует.
-OUR_HEAD = ("# Port managed by awg-bot (Telegram bot: «Доступ по SSH» → «Изменить порт»).\n"
+OUR_HEAD = ("# Port managed by awg-bot (Telegram bot: «🛡 SSH-доступ» → «🅿️ Порт»).\n"
             "# Change the SSH port in the bot, not here: it keeps the host firewall on this port.\n"
             "# Other settings in this file are not touched by awg-bot.\n")
 _OUR_HEAD_RE = re.compile(r"awg-bot", re.IGNORECASE)

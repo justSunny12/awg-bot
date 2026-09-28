@@ -2,8 +2,7 @@
 строка в карточке слота основного бота — «🗂 SMB: свои — N, извне — M»
 (нулевая часть не выводится), а состояние на шлюзе — строкой сразу под ней;
 строка про SMB в диалоге «↔️ Связь подсетей»; у агента
-— одна строка SMB в панели и на экране «Локальная сеть без VPN». Новых кнопок
-нет.
+— одна строка SMB в панели и на экране «🔀 VPN-транзит». Новых кнопок нет.
 
 Цена ошибки: имя с малины на экране ВПС — чужой текст в разметке сервера;
 неэкранированная ошибка шлюза ломает всю карточку (Telegram отвергает
@@ -293,6 +292,9 @@ async def _agent_screens(svc, fake_bot, monkeypatch):
     monkeypatch.setattr(shutil, "which", lambda n, *a, **k: "/usr/bin/avahi-browse" if n == "avahi-browse" else real(n, *a, **k))
     info, _ = svc.services_status()
     monkeypatch.setattr(svc, "cached_status", lambda max_age: _lan_status(info))
+    # свои списки здесь не предмет: один домен, синхронизация не действует
+    monkeypatch.setattr(svc, "lan_own_lists", lambda: [("vpn", "a.com")])
+    monkeypatch.setattr(svc, "own_status", lambda: ({"active": False, "state": "off"}, []))
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_panel(cb, svc, FakeState())
@@ -303,74 +305,82 @@ async def _agent_screens(svc, fake_bot, monkeypatch):
     return panel, labels(panel_kb), lan, labels(lan_kb)
 
 
+def _lines(text: str) -> list[str]:
+    return text.splitlines()
+
+
 async def test_agent_panel_and_lan_screen_count_smb_in_one_line(gw_svc, fake_bot, monkeypatch):
-    """Панель и экран «Локальная сеть без VPN» — одной строкой SMB с числами
-    после пустой строки; имён и avahi здесь больше нет (они — в мониторе):
-    имя с чужой малины не попадает в разметку вовсе."""
+    """Панель и экран «🔀 VPN-транзит» — одной строкой «🗂 SMB» с числами:
+    своих не нашлось — нулевая часть не выводится («свои — 0» читается как
+    поломка); имён и avahi здесь нет (они — в здоровье): имя с чужой малины
+    не попадает в разметку вовсе."""
     _peer(gw_svc, ["naspi5", "backup", "Time Machine", "<b>x</b>", "media"])
     panel, panel_labels, lan, lan_labels = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    # своих не нашлось — «не найдены», не «0»
-    line = "🗂 SMB: в этой подсети — не найдены, из других — 5"
-    assert "\n\n" + line + "\n" in panel, panel
-    assert lan.endswith("\n\n" + line), f"строка SMB на экране локальной сети не последней после пустой: {lan}"
+    line = "🗂 SMB: извне — 5"
+    # на панели — сразу под строкой списков, на экране — под своими списками
+    p = _lines(panel)
+    assert p[p.index(line) - 1].startswith("📋 Списки: "), panel
+    lan_lines = _lines(lan)
+    assert lan_lines[lan_lines.index(line) - 1].startswith("Свои списки: "), lan
     for t in (panel, lan):
         assert "naspi5" not in t and "&lt;b&gt;" not in t and "<b>x</b>" not in t, f"имена соседей на экране: {t}"
-        assert "avahi" not in t, f"про avahi — только в мониторе: {t}"
-    assert "Finder" not in lan, "абзаца про Finder на экране больше нет"
-    assert lan_labels == ["📋 Свои списки", "❓ Настройка роутера", "⬅️ В меню"], lan_labels
-    assert "🏠 Локальная сеть без VPN" in panel_labels
+        assert "avahi" not in t, f"про avahi — только в здоровье: {t}"
+    assert "Finder" not in lan, "абзаца про Finder на экране нет"
+    assert lan_labels == ["➕ В туннель", "➕ Напрямую", "➖ 🌍 a.com", "❓ Роутер", "⬅️ В меню"], lan_labels
+    assert "🔀 VPN-транзит" in panel_labels
 
 
 async def test_the_lan_screen_groups_address_traffic_lists_and_smb(gw_svc, fake_bot, monkeypatch):
-    """Экран локальной сети: интерфейс, адрес и DNS — тремя строками; трафик,
-    списки, SMB — своими группами через пустую строку."""
+    """Экран «🔀 VPN-транзит»: состояние, интерфейс с адресом и трафиком одной
+    строкой, DNS, списки со временем обновления, свои списки, SMB — подряд,
+    без пустых строк; объяснение — под «подробнее» последним."""
     _peer(gw_svc, ["naspi5"])
     _, _, lan, _ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    block = ("Интерфейс end0\nадрес <code>192.168.68.222</code>\n"
-             "DNS — <code>10.9.1.1</code> через аплинк\n\n"
-             "Трафик с роутера: 9 пакетов\n\n"
-             "Списки: 3 домена, 4 подсети (ещё не обновлялись)\n"
-             "Свои списки: 1 в туннель, 0 напрямую\n\n"
-             "🗂 SMB: в этой подсети — не найдены, из других — 1")
-    assert lan.endswith(block), lan
-    # абзац о режиме: синхронизация своих списков и приоритет «напрямую» —
-    # своими строками (вычитка 3.1.0)
-    assert ("остальное — напрямую.\n"
-            "Личные списки синхронизируются между шлюзами, а введённый домен накрывает и все поддомены;\n"
-            "правила «напрямую» приоритетнее правил «в туннель».\n\n") in lan, lan
+    head = ("🔀 VPN-транзит · 🟢 работает\n"
+            "end0 · 192.168.68.222 · 9 пакетов с роутера\n"
+            "DNS — 10.9.1.1 через аплинк\n"
+            "📋 Списки: 3 домена, 4 подсети (ещё не обновлялись)\n"
+            "Свои списки: 1 в туннель, 0 напрямую\n"
+            "🗂 SMB: извне — 1\n")
+    assert lan.startswith(head), lan
+    assert lan.endswith("</blockquote>") and lan.count("<blockquote expandable>") == 1, lan
+    about = lan.split("<blockquote expandable>", 1)[1]
+    assert "свои списки синхронизируются между шлюзами" in about and \
+        "правила «напрямую» приоритетнее правил «в туннель»" in about, about
+    assert "Личные" not in lan, "«Личные» → «Свои» во всех строках"
 
 
 async def test_agent_panel_before_anything_arrived_and_after_an_empty_feed(gw_svc, fake_bot, monkeypatch):
     """Записей от других шлюзов нет — строка целиком про сервисы: сервер ещё
-    ничего не присылал — «обновляю…», прислал пустое — «не найдены». Счёт
-    «в этой подсети — 0, из других — …» без соседей читался бы как сломанный;
-    почему своих не видно (нет avahi) — пишет монитор, не панель."""
+    ничего не присылал — «обновляю…», прислал пустое — «не найдены»; почему
+    своих не видно (нет avahi) — пишет здоровье, не панель."""
     panel, *_ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    assert "\n🗂 Сервисы SMB: обновляю…\n" in panel, panel
+    assert "🗂 SMB: обновляю…" in _lines(panel), panel
     gw_svc.db.set_state("gw_peer_svc", '{"hash": "", "items": []}')
     monkeypatch.setattr(gwguard, "avahi_active", lambda: False)
     panel, *_ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    assert "\n🗂 Сервисы SMB: не найдены\n" in panel, panel
+    assert "🗂 SMB: не найдены" in _lines(panel), panel
     assert "avahi" not in panel, panel
 
 
-def test_smb_line_without_avahi_browse_is_not_checked_either():
-    """Демон есть, а avahi-browse нет — своя подсеть не посчитана: «не
-    найдены», а не «0». Без записей соседей своя подсеть в строку не идёт
-    вовсе — строка целиком «Сервисы SMB: не найдены / обновляю…»."""
+@pytest.mark.parametrize("svc, line", [
+    ({"own": ["x"], "peer": ["a", "b"], "ever": True}, "🗂 SMB: свои — 1, извне — 2"),
+    ({"own": ["x", "y"], "peer": [], "ever": True}, "🗂 SMB: свои — 2"),
+    ({"own": [], "peer": ["a"], "ever": True}, "🗂 SMB: извне — 1"),
+    ({"own": [], "peer": [], "ever": True}, "🗂 SMB: не найдены"),
+    ({"own": [], "peer": [], "ever": False}, "🗂 SMB: обновляю…"),
+    ({"avahi": True, "browse": False, "own": [], "peer": ["a"], "ever": True}, "🗂 SMB: извне — 1"),
+], ids=["both", "own-only", "peer-only", "none", "not-yet", "no-browse"])
+def test_smb_line_does_not_print_zeros_on_the_agent_either(svc, line):
+    """Как в карточке слота: нулевая часть не выводится, обе нулевые — «не
+    найдены», сервер ещё ничего не присылал — «обновляю…»; avahi-browse нет —
+    своя подсеть не посчитана и в строку не идёт."""
     from awgbot.bot.texts.gateway import smb_line
-    assert smb_line({"avahi": True, "browse": False, "own": [], "peer": ["a"], "ever": True}) == \
-        "🗂 SMB: в этой подсети — не найдены, из других — 1"
-    assert smb_line({"avahi": True, "browse": True, "own": ["x", "y"], "peer": ["a"], "ever": True}) == \
-        "🗂 SMB: в этой подсети — 2, из других — 1", "свои найдены — число, не «не найдены»"
-    assert smb_line({"avahi": True, "browse": True, "own": ["x", "y"], "peer": [], "ever": True}) == \
-        "🗂 Сервисы SMB: не найдены", "сервер прислал пустое — без счёта своей подсети"
-    assert smb_line({"avahi": True, "browse": True, "own": ["x"], "peer": [], "ever": False}) == \
-        "🗂 Сервисы SMB: обновляю…", "сервер ещё ничего не присылал"
+    assert smb_line(svc) == line
 
 
 async def test_agent_screens_are_silent_where_the_function_does_not_work(gw_svc, fake_bot, monkeypatch):
-    """Соседей в юните нет — ни строк панели, ни абзаца: функции нет."""
+    """Соседей в юните нет — ни строк панели, ни экрана: функции нет."""
     gw_svc.env["PEER_HOME_NETS"] = ""
     _peer(gw_svc, ["naspi5"])
     panel, _, lan, _ = await _agent_screens(gw_svc, fake_bot, monkeypatch)

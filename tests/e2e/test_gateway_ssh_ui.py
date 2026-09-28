@@ -1,5 +1,6 @@
-"""Раздел «🛡 Доступ по SSH» агента: экран, порт (тот же / занят / чужой
-владелец / успех), адреса, фильтр с подтверждением, финишеры, панель."""
+"""Раздел «🛡 SSH-доступ» агента: экран, порт (тот же / занят / чужой
+владелец / успех), адреса, фильтр — сразу, без подтверждений (включение —
+с предупреждением всплывашкой), финишеры, панель."""
 from __future__ import annotations
 
 import pytest
@@ -99,9 +100,14 @@ async def test_section_shows_port_tunnel_lan_outside_and_buttons(svc, fake_bot):
     assert "Из локальной сети: открыт всегда" in text
     assert "фильтр выключен" in text and "home2.dyn.example" in text and "203.0.113.10" in text
     assert "⚠️ Не резолвится: home2.dyn.example" in text
+    assert text.startswith("<b>🛡 SSH-доступ</b>"), text
     labels = _labels(nav.sent[-1][2])
-    assert labels == ["🅿️ Изменить порт", "➕ Добавить адрес", "➖ home2.dyn.example",
-                      "➖ 203.0.113.7", "🟢 Включить фильтр", "⬅️ Назад"]
+    assert labels == ["🅿️ Порт", "➕ Адрес", "➖ home2.dyn.example",
+                      "➖ 203.0.113.7", "☑️ Фильтр снаружи", "⬅️ Назад"]
+    rows = [[b.text for b in r] for r in nav.sent[-1][2].inline_keyboard]
+    assert rows[0] == ["🅿️ Порт", "➕ Адрес"], "порт и адрес — одним рядом"
+    back = nav.sent[-1][2].inline_keyboard[-1][0]
+    assert GwCB.unpack(back.callback_data).action == "settings", "«Назад» — в корень настроек"
 
 
 async def test_section_under_omv_names_the_owner_and_old_plumbing_hides_the_filter(svc, fake_bot):
@@ -123,20 +129,20 @@ async def test_section_under_omv_names_the_owner_and_old_plumbing_hides_the_filt
     old = _scr(new_plumbing=False)
     assert "перевыпуска конфигурации шлюза" in texts.gateway_ssh_text(old)
     assert not any("фильтр" in l.lower() for l in _labels(kb.gateway_ssh_kb(old)))
-    assert "🔴 Выключить фильтр" in _labels(kb.gateway_ssh_kb(_scr(filter=True)))
+    assert "✅ Фильтр снаружи" in _labels(kb.gateway_ssh_kb(_scr(filter=True)))
 
 
 def test_panel_line_and_apply_report():
     assert texts.gateway_ssh_panel_line({"port": 2222, "owner": "omv", "filter": True, "allow": 2,
                                          "new_plumbing": True}) \
-        == "🛡 SSH: порт 2222 (OMV) · снаружи: фильтр, 2 адреса"
+        == "🛡 SSH 2222 (OMV), фильтр: 2 адреса"
     assert texts.gateway_ssh_panel_line({"port": 22, "owner": "", "filter": False, "allow": 0,
-                                         "new_plumbing": True}) == "🛡 SSH: порт 22 · снаружи: открыт"
+                                         "new_plumbing": True}) == "🛡 SSH 22, открыт"
     assert "старого образца" in texts.gateway_ssh_panel_line({"port": 22, "new_plumbing": False})
     assert texts.gateway_ssh_panel_line({}) == ""
     st = GwStatus(link_up=True, handshake_age=1.0)
     st.ssh = {"port": 22, "owner": "", "filter": False, "allow": 0, "new_plumbing": True}
-    assert "🛡 SSH: порт 22" in texts.gateway_panel(st)
+    assert "🛡 SSH 22" in texts.gateway_panel(st)
     assert "SSH" not in texts.gateway_panel(GwStatus(link_up=True, handshake_age=1.0)), \
         "снимок старого агента без поля ssh — панель без строки"
 
@@ -148,11 +154,13 @@ async def test_port_prompt_then_same_and_busy_are_finishers(svc, fake_bot):
     st = FakeState()
     await gh.gw_ssh_port_ask(cb, GwCB(action="ssh_port"), svc, st)
     assert await st.get_state() == SshPort.value.state
-    assert any("Порт SSH" in t and "роутере" in t for k, t, _ in nav.sent if k == "edit_text")
+    # приглашение называет текущий порт — вспоминать его не нужно
+    assert any(t.startswith("🅿️ Порт SSH · сейчас 22 · 1–65535") and "роутере" in t
+               for k, t, _ in nav.sent if k == "edit_text"), nav.sent
     msg = FakeMessage(text="22", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await gh.gw_ssh_port_received(msg, st, svc)
     sent = [s for s in msg.sent if s[0] == "answer" and "не изменился" in s[1]]
-    assert sent and _labels(sent[0][2]) == ["✏️ Изменить порт", "⬅️ Назад"]
+    assert sent and _labels(sent[0][2]) == ["✏️ Другой порт", "⬅️ Назад"]
     assert await st.get_state() is None and not svc.calls
     svc.busy = "nginx"
     await st.set_state(SshPort.value)
@@ -170,8 +178,11 @@ async def test_port_change_success_and_sshd_refusal(svc, fake_bot, monkeypatch):
     await gh.gw_ssh_port_received(msg, st, svc)
     assert ("change", 2222) in svc.calls
     texts_sent = [s[1] for s in msg.sent if s[0] == "answer"]
-    assert any("22 → <b>2222</b>" in t and "шлюз:2222" in t for t in texts_sent)
-    assert any("Порт SSH: 2222" in t for t in texts_sent), "раздел перерисован"
+    # итог — первой строкой раздела, одним сообщением, а не отдельным
+    assert len(texts_sent) == 1, texts_sent
+    head, rest = texts_sent[0].split("\n", 1)
+    assert head.startswith("✅ Порт SSH: 22 → 2222.") and "шлюз:2222" in head, head
+    assert rest.lstrip("\n").startswith("<b>🛡 SSH-доступ</b>") and "Порт SSH: 2222" in rest, "раздел не перерисован"
 
     def boom(p):
         raise ServiceError("sshd -t: Bad configuration option")
@@ -245,7 +256,7 @@ async def test_finisher_buttons_reopen_prompt_or_section(svc, fake_bot):
     cb, nav = _cb(fake_bot)
     await gh.gw_ssh_port_back(cb, svc, st)
     assert await st.get_state() is None
-    assert any(k == "answer" and "Доступ по SSH" in t for k, t, _ in nav.sent)
+    assert any(k == "answer" and t.startswith("<b>🛡 SSH-доступ</b>") for k, t, _ in nav.sent)
 
 
 # ── адреса и фильтр ──────────────────────────────────────────────────────────
@@ -263,18 +274,22 @@ async def test_allow_add_and_remove(svc, fake_bot):
     await gh.gw_ssh_allow_received(msg, st, svc)
     assert any("добавлено <code>home2.dyn.example</code>" in s[1] for s in msg.sent if s[0] == "answer")
     assert await st.get_state() is None
-    cb, nav = _cb(fake_bot)
-    await gh.gw_ssh_action(cb, GwCB(action="ssh_del", val="0"), svc, FakeState())
-    assert ("remove", "home2.dyn.example") not in svc.calls, "удаление — с подтверждения"
-    text = [t for k, t, _ in nav.sent if k == "edit_text"][-1]
-    assert "Убрать <code>home2.dyn.example</code>" in text
-    assert _labels(nav.sent[-1][2]) == ["⬅️ Отмена", "➖ Убрать"]
+    # «➖» — сразу, без подтверждения: удаление отменяется тем же «➕ Адрес»
     cb, nav = _cb(fake_bot)
     await gh.gw_ssh_action(cb, GwCB(action="ssh_del!", val="0"), svc, FakeState())
-    assert ("remove", "home2.dyn.example") in svc.calls and any("убран" in str(a) for a in cb.answers)
+    assert svc.calls == [("remove", "home2.dyn.example")], svc.calls
+    assert cb.answers == [("home2.dyn.example убран", False)], cb.answers
+    assert "➖ home2.dyn.example" not in _labels(nav.sent[-1][2]), "раздел не перерисован"
+    # старая кнопка без «!» из сообщений 3.1.0 — тоже сразу
+    svc.screen["allow"] = ["203.0.113.7"]
     cb, nav = _cb(fake_bot)
-    await gh.gw_ssh_action(cb, GwCB(action="ssh_del", val="7"), svc, FakeState())
-    assert any("Список изменился" in str(a) for a in cb.answers)
+    await gh.gw_ssh_action(cb, GwCB(action="ssh_del", val="0"), svc, FakeState())
+    assert svc.calls[-1] == ("remove", "203.0.113.7")
+    cb, nav = _cb(fake_bot)
+    n = len(svc.calls)
+    await gh.gw_ssh_action(cb, GwCB(action="ssh_del!", val="7"), svc, FakeState())
+    assert len(svc.calls) == n, "по устаревшему номеру что-то убрано"
+    assert cb.answers[0] == ("Список изменился — открой раздел заново", True)
 
 
 async def test_adding_covered_addresses_reports_the_merge(svc, fake_bot, monkeypatch):
@@ -289,24 +304,33 @@ async def test_adding_covered_addresses_reports_the_merge(svc, fake_bot, monkeyp
                for s in msg.sent if s[0] == "answer"), msg.sent
 
 
-async def test_filter_on_and_off_need_confirmation(svc, fake_bot):
+async def test_filter_on_and_off_are_immediate_and_on_warns_with_an_alert(svc, fake_bot):
+    """Тумблер «Фильтр снаружи» — сразу: включение с предупреждением alert-ом
+    (роутер, подменяющий адрес при пробросе, делает фильтр по адресам
+    бесполезным — человек должен проверить вход новым подключением),
+    выключение — «Фильтр снят: снаружи SSH открыт всем». Раздел перерисован
+    с новым состоянием тумблера."""
+    cb, nav = _cb(fake_bot)
+    await gh.gw_section(cb, GwCB(action="ssh"), svc, FakeState())
+    tgl = next(b for row in nav.sent[-1][2].inline_keyboard for b in row if b.text == "☑️ Фильтр снаружи")
+    cb, nav = _cb(fake_bot)
+    await gh.gw_ssh_action(cb, GwCB.unpack(tgl.callback_data), svc, FakeState())
+    assert svc.calls == [("on",)] and svc.screen["filter"] is True
+    assert cb.answers == [(texts.GW_SSH_FILTER_ON_ALERT, True)], cb.answers
+    assert texts.GW_SSH_FILTER_ON_ALERT == (
+        "Фильтр включён: снаружи — только список и сервер. Проверь вход новым подключением; "
+        "если роутер подменяет адрес при пробросе, фильтр по адресам не сработает")
+    assert len(texts.GW_SSH_FILTER_ON_ALERT) <= 200, "alert Telegram — до 200 знаков"
+    tgl = next(b for row in nav.sent[-1][2].inline_keyboard for b in row if b.text == "✅ Фильтр снаружи")
+    cb, nav = _cb(fake_bot)
+    await gh.gw_ssh_action(cb, GwCB.unpack(tgl.callback_data), svc, FakeState())
+    assert svc.calls[-1] == ("off",) and svc.screen["filter"] is False
+    assert cb.answers == [("Фильтр снят: снаружи SSH открыт всем", True)], cb.answers
+    assert "☑️ Фильтр снаружи" in _labels(nav.sent[-1][2])
+    # старые кнопки без «!» из сообщений 3.1.0 — тоже сразу
     cb, nav = _cb(fake_bot)
     await gh.gw_ssh_action(cb, GwCB(action="ssh_on"), svc, FakeState())
-    assert ("on",) not in svc.calls
-    text = [t for k, t, _ in nav.sent if k == "edit_text"][-1]
-    assert "Включить фильтр снаружи?" in text and "подменяет адрес" in text
-    assert _labels(nav.sent[-1][2]) == ["⬅️ Отмена", "🟢 Включить"]
-    cb, nav = _cb(fake_bot)
-    await gh.gw_ssh_action(cb, GwCB(action="ssh_on!"), svc, FakeState())
-    assert ("on",) in svc.calls and svc.screen["filter"] is True
-    cb, nav = _cb(fake_bot)
-    await gh.gw_ssh_action(cb, GwCB(action="ssh_off"), svc, FakeState())
-    assert ("off",) not in svc.calls, "выключение — тоже с подтверждения"
-    text = [t for k, t, _ in nav.sent if k == "edit_text"][-1]
-    assert "Выключить фильтр снаружи?" in text and _labels(nav.sent[-1][2]) == ["⬅️ Отмена", "🔴 Выключить"]
-    cb, nav = _cb(fake_bot)
-    await gh.gw_ssh_action(cb, GwCB(action="ssh_off!"), svc, FakeState())
-    assert ("off",) in svc.calls and any("открыт всем" in str(a) for a in cb.answers)
+    assert svc.calls[-1] == ("on",)
 
 
 async def test_filter_on_refusal_from_old_plumbing_is_an_alert(svc, fake_bot, monkeypatch):
@@ -407,10 +431,6 @@ async def test_address_list_pages_and_removal_from_page_two_hits_the_right_entry
 
     cb, nav = _cb(fake_bot)
     await gh.gw_ssh_action(cb, data, svc, FakeState())
-    ask = [t for k, t, _ in nav.sent if k == "edit_text"][-1]
-    assert entry in ask, f"подтверждение спрашивает не про {entry}: {ask}"
-    go = [b for row in nav.sent[-1][2].inline_keyboard for b in row if b.text == "➖ Убрать"][0]
-    await gh.gw_ssh_action(cb, GwCB.unpack(go.callback_data), svc, FakeState())
     assert svc.calls == [("remove", entry)], f"убран не тот адрес: {svc.calls}"
 
 

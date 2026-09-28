@@ -75,20 +75,24 @@ def test_apply_bundle_remembers_server_name(svc, monkeypatch, tmp_path):
     assert ok and svc.db.get_state(GatewayServices._SERVER_NAME_KEY) == "awg-srv"
 
 
-def test_panel_text_mirrors_the_main_bot_layout():
+def test_panel_text_mirrors_the_main_bot_layout(monkeypatch):
+    """Панель — по строке на тему: имя, роль и аптайм; линк; железо; здоровье
+    с трафиком за месяц; свежесть курсивом. Модуль и ядра — на экране
+    здоровья, не здесь."""
+    from awgbot.runtime import linkclient
+    monkeypatch.setattr(linkclient, "enabled", lambda: False)
     st = GwStatus(link_up=True, handshake_age=69.0, cpu=4.0, temp=59.0, ram=51.0,
                   ram_free_mb=999, disk=58.0, disk_free_gb=100.0, smart="OK",
                   throttled={"raw": 0, "now": [], "ever": []}, uptime_seconds=17 * 86400 + 20 * 3600,
                   hostname="NASPi", server_name="awg-srv",
                   checks=[GwCheck("линк", True)], month_rx=10 * 1024 ** 3, month_tx=175 * 1024 ** 3)
     out = texts.gateway_panel(st)
-    for needle in ("🛰 <b>РФ-шлюз (NASPi)</b>", "🖥 Сервер: 🟢 работает", "⬆️ Аптайм: 17 дней 20 часов",
-                   "📡 Линк до awg-srv: 🟢 хендшейк 69 с назад", "📈 CPU: 4%, 59°C",
-                   "RAM: 51%, свободно 999 МБ", "Диск: 58%, свободно 100 ГБ, SMART: OK",
-                   "Питание: ОК", "<i>(обновлено только что)</i>", "🌡 Монитор здоровья: ✅ проблем не выявлено",
-                   "📊 Потребление за месяц: 185 ГБ (↑ 10 ГБ | ↓ 175 ГБ)"):
-        assert needle in out, needle
-    assert "Внешний IP" not in out and "Модуль awg" not in out and "Ядра" not in out
+    assert out == ("🛰 NASPi · 🟢 линк поднят · 17 д 20 ч\n"
+                   "📡 Линк до awg-srv 🟢 69 с\n"
+                   "📈 CPU 4% 59 °C · RAM 51% · диск 58% · питание ОК\n"
+                   "🩺 Здоровье ✅ · 📊 185 ГБ (↑10 ↓175)\n"
+                   "<i>обновлено только что</i>"), out
+    assert "Модуль awg" not in out and "ядер" not in out
 
 
 def test_panel_health_line_counts_problems():
@@ -101,9 +105,11 @@ def test_health_screen_carries_module_and_kernels():
     st = GwStatus(checks=[GwCheck("ядра", True)], module_version="1.0.2026", srcversion="ABCDEF1234",
                   kernels_total=1, throttled={"raw": 0, "now": [], "ever": ["недонапряжение случалось"]})
     out = texts.gateway_health(st)
-    assert "Модуль awg: 1.0.2026, srcversion ABCDEF12…\nЗагружаемых ядер: 1" in out
-    assert "Питание: ОК (с загрузки: недонапряжение случалось)" in out
-    assert "Проблем не выявлено." in out
+    assert out == ("🩺 Здоровье шлюза · ✅ проблем нет\n"
+                   "✅ ядра\n"
+                   "Железо: питание ОК (с загрузки: недонапряжение случалось)\n"
+                   "Модуль awg 1.0.2026 · srcversion ABCDEF12… · ядер 1"), out
+    assert "Восстановить" not in out, "проблем нет — совет про восстановление лишний"
 
 
 def test_root_block_device_strips_partition(tmp_path):
@@ -185,5 +191,9 @@ def test_bundle_link_change_detection_and_received_text(svc, monkeypatch, tmp_pa
         return bc.encrypt(plain, bc.read_privkey(conf.read_text()))
     assert svc.inspect_bundle(bundle(link))["link_changed"] is False
     assert svc.inspect_bundle(bundle(link + "MTU = 1300\n"))["link_changed"] is True
-    assert "не перезапустится" in texts.gateway_bundle_received(False)
-    assert "Интерфейс линка опустится" in texts.gateway_bundle_received(True)
+    assert texts.gateway_bundle_received(False) == (
+        "📦 Конфигурация с сервера AWG\n"
+        "Конфиг линка не изменился — линк не перезапустится; правила переставятся")
+    assert texts.gateway_bundle_received(True) == (
+        "📦 Конфигурация с сервера AWG\n"
+        "Линк перезапустится — РФ-доступ у всех прервётся на секунды; правила переставятся")

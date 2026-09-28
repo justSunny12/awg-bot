@@ -479,19 +479,25 @@ async def test_a_switch_reaches_both_agents_once(services, two, monkeypatch):
 
 def test_the_agent_panel_names_the_role_only_while_the_channel_is_up(monkeypatch):
     """Роль из прошлой сессии могла смениться без нас — при оборванном канале
-    её не показываем вовсе, а не выдаём старую за текущую."""
-    from awgbot.bot.texts.gateway import channel_panel_line
+    её не показываем вовсе, а не выдаём старую за текущую: первая строка
+    панели говорит о линке. Канал — хвостом строки линка, без роли."""
+    from awgbot.bot.texts.gateway import channel_panel_line, gateway_panel
+    from awgbot.domain.gateway import GwStatus
+
+    def head():
+        return gateway_panel(GwStatus(link_up=True, handshake_age=5.0, hostname="pi")).splitlines()[0]
     monkeypatch.setattr(linkclient, "enabled", lambda: True)
     monkeypatch.setattr(linkclient, "online", lambda: True)
     monkeypatch.setattr(linkclient, "role", lambda: "active")
-    assert channel_panel_line() == "🔗 Канал до сервера AWG: 🟢 на связи · несёт трафик"
+    assert head() == "🛰 pi · 🟢 несёт трафик" and channel_panel_line() == "🔗 упр. канал 🟢"
     monkeypatch.setattr(linkclient, "role", lambda: "standby")
-    assert channel_panel_line() == "🔗 Канал до сервера AWG: 🟢 на связи · в резерве"
+    assert head() == "🛰 pi · 🟢 в резерве"
     monkeypatch.setattr(linkclient, "role", lambda: "")
-    assert channel_panel_line() == "🔗 Канал до сервера AWG: 🟢 на связи"
+    assert head() == "🛰 pi · 🟢 линк поднят"
     monkeypatch.setattr(linkclient, "online", lambda: False)
     monkeypatch.setattr(linkclient, "role", lambda: "active")
-    assert channel_panel_line() == "🔗 Канал до сервера AWG: ⚪ нет связи"
+    assert head() == "🛰 pi · 🟢 линк поднят", "связи нет — роль прошлой сессии не показывается"
+    assert channel_panel_line() == "🔗 упр. канал ⚪ нет связи"
 
 
 # ── диагностики по каналу нет ────────────────────────────────────────────────

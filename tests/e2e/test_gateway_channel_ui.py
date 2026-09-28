@@ -382,17 +382,17 @@ def test_the_agent_panel_shows_the_channel_only_when_the_bundle_turned_it_on(mon
 
     monkeypatch.setattr(linkclient, "enabled", lambda: False)
     assert channel_panel_line() == ""
-    assert "Канал до сервера AWG" not in texts.gateway_panel(GwStatus(link_up=True, handshake_age=5.0))
+    assert "упр. канал" not in texts.gateway_panel(GwStatus(link_up=True, handshake_age=5.0))
 
     monkeypatch.setattr(linkclient, "enabled", lambda: True)
     monkeypatch.setattr(linkclient, "online", lambda: False)
-    assert channel_panel_line() == "🔗 Канал до сервера AWG: ⚪ нет связи"
+    monkeypatch.setattr(linkclient, "role", lambda: "")
+    assert channel_panel_line() == "🔗 упр. канал ⚪ нет связи"
     monkeypatch.setattr(linkclient, "online", lambda: True)
-    assert channel_panel_line() == "🔗 Канал до сервера AWG: 🟢 на связи"
+    assert channel_panel_line() == "🔗 упр. канал 🟢"
     panel = texts.gateway_panel(GwStatus(link_up=True, handshake_age=5.0, server_name="awg-srv"))
-    assert "🔗 Канал до сервера AWG: 🟢 на связи" in panel
-    assert panel.index("📡 Линк до awg-srv") < panel.index("🔗 Канал до сервера AWG"), (
-        "строка канала стоит рядом со строкой линка — они про один и тот же путь")
+    # канал — хвостом строки линка: они про один и тот же путь
+    assert "📡 Линк до awg-srv 🟢 5 с · 🔗 упр. канал 🟢" in panel.splitlines(), panel
 
 
 # ── этап 4: тумблеры при живом канале ────────────────────────────────────────

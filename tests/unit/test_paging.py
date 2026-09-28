@@ -160,7 +160,7 @@ _BACK = Menu(action="main").pack()
 # (client.py: cb.data пункта меню; selfops.py: AdminSelfCB; devices.py:
 # ClientCB gen_for с id профиля). Каждая функция — (n, page) → клавиатура.
 SCREENS = {
-    "lanlist": lambda n, p: kbg.gateway_lan_list_kb(
+    "lanlist": lambda n, p: kbg.gateway_lan_kb(
         [("ru" if i % 3 == 0 else "vpn", d) for i, d in enumerate(_doms(n))], page=p),
     "gwssh (новая обвязка)": lambda n, p: kbg.gateway_ssh_kb(
         {"allow": [f"u{i:04d}.dyn.example" for i in range(n)], "new_plumbing": True, "filter": bool(n)}, page=p),

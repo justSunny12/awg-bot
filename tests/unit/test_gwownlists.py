@@ -949,7 +949,7 @@ def test_waiting_lists_do_not_reach_the_panel_summary(agent, host):
     agent.channel.online = False
     _, checks = agent.own_status()
     st = GwStatus(link_up=True, handshake_age=5.0, checks=[GwCheck("MASQUERADE", True)] + checks)
-    assert "🌡 Монитор здоровья: ✅ проблем не выявлено" in texts.gateway_panel(st), texts.gateway_panel(st)
+    assert "🩺 Здоровье ✅" in texts.gateway_panel(st).splitlines(), texts.gateway_panel(st)
     assert "⚪ свои списки — ждут синхронизации (1 правка): нет связи с сервером AWG" in texts.gateway_health(st)
 
 

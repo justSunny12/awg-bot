@@ -68,7 +68,7 @@ async def test_slot_router_recipe_without_peer_access_has_no_peer_routes(service
         assert NOTE not in text and "192.168.68.0/24" not in text, text
 
 
-# ── агент: экран «Локальная сеть» → «Настройка роутера» ─────────────────────
+# ── агент: экран «🔀 VPN-транзит» → «❓ Роутер» ───────────────────────────────
 
 @pytest.fixture()
 def gw_svc(tmp_path):
@@ -76,31 +76,41 @@ def gw_svc(tmp_path):
     return GatewayServices(d)
 
 
-async def _lan_router(gw_svc, fake_bot, monkeypatch, params):
+async def _lan_router(gw_svc, fake_bot, monkeypatch, params, tab=""):
     import socket
     monkeypatch.setattr(socket, "gethostname", lambda: "naspi")
     monkeypatch.setattr(gw_svc, "lan_router_params", lambda: params)
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_router(cb, gw_svc)
+    await gh.gw_lan_router(cb, GwCB(action="lan_router", val=tab), gw_svc)
     kind, text, markup = msg.sent[-1]
     assert kind == "edit_text", msg.sent
     return text, markup
 
 
+def _tab_labels(markup) -> list[str]:
+    return [b.text for row in markup.inline_keyboard for b in row]
+
+
 async def test_agent_router_recipe_routes_to_peers_via_its_own_address(gw_svc, fake_bot, monkeypatch):
     """Агент знает свой адрес в подсети: маршрут до соседей — через него, не
-    через плейсхолдер; «Назад» — на экран локальной сети."""
-    text, markup = await _lan_router(gw_svc, fake_bot, monkeypatch,
-                                     ("192.168.1.0/24", "192.168.1.2", ["192.168.68.0/24", "10.20.0.0/16"]))
+    через плейсхолдер; рецепт — вкладками, как у основного бота (по умолчанию
+    MikroTik, вкладка OpenWrt — свои команды); «Назад» — на экран
+    «🔀 VPN-транзит»."""
+    peers = ("192.168.1.0/24", "192.168.1.2", ["192.168.68.0/24", "10.20.0.0/16"])
+    text, markup = await _lan_router(gw_svc, fake_bot, monkeypatch, peers)
     assert text.startswith("❓ Роутер для naspi · 192.168.1.0/24 · шлюз 192.168.1.2\n"), text
-    # у агента вкладок нет — оба рецепта обязаны быть на экране, иначе
-    # владелец OpenWrt остаётся без команд вовсе
-    assert "<b>MikroTik RouterOS 7</b>" in text and "<b>OpenWrt</b>" in text, "рецепт OpenWrt у агента пропал"
+    assert _tab_labels(markup) == ["✅ MikroTik", "OpenWrt", "⬅️ Назад"], _tab_labels(markup)
     for p in ("192.168.68.0/24", "10.20.0.0/16"):
         assert f"/ip route add dst-address={p} gateway=192.168.1.2" in text, text
-        assert f"ip route add {p} via 192.168.1.2" in text, text
+        assert f"ip route add {p} via 192.168.1.2" not in text, "команды OpenWrt на вкладке MikroTik"
     assert NOTE in text and ROUTER_IP_PLACEHOLDER not in text
+    ow = next(b for row in markup.inline_keyboard for b in row if b.text == "OpenWrt")
+    text, markup = await _lan_router(gw_svc, fake_bot, monkeypatch, peers, GwCB.unpack(ow.callback_data).val)
+    assert _tab_labels(markup) == ["MikroTik", "✅ OpenWrt", "⬅️ Назад"], _tab_labels(markup)
+    for p in ("192.168.68.0/24", "10.20.0.0/16"):
+        assert f"ip route add {p} via 192.168.1.2" in text, text
+    assert "/ip route add" not in text, "команды MikroTik на вкладке OpenWrt"
     back = markup.inline_keyboard[-1][0]
     assert back.callback_data == GwCB(action="lan").pack(), back.callback_data
 
