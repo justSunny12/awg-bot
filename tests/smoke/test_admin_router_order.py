@@ -71,13 +71,5 @@ def test_every_fsm_message_handler_is_listed():
     здесь его порядок относительно admin_start никто не сторожит."""
     order = _flat("message")
     unlisted = (set(order) - {g for _, g in _MESSAGE_PAIRS}
-                - {"admin_start", "admin_document", "uitree_probe"})
+                - {"admin_start", "admin_document"})
     assert not unlisted, sorted(unlisted)
-
-
-def test_commands_precede_every_fsm_input_handler():
-    """Команды (/start, скрытая /uitree) — раньше всех обработчиков ввода:
-    иначе команда посреди диалога ушла бы именем профиля или числом."""
-    order = _flat("message")
-    fsm = [order.index(g) for _, g in _MESSAGE_PAIRS if g != "gateway_claim_message"]
-    assert order.index("uitree_probe") < min(fsm), order

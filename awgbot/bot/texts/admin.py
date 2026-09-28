@@ -1,4 +1,4 @@
-"""Экраны администратора: панель, списки, трафик деревом, карточки профиля и устройства, создание и продление профилей, привязка устройств."""
+"""Экраны администратора: панель, списки, трафик списком, карточки профиля и устройства, создание и продление профилей, привязка устройств."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from awgbot.core.enums import ActivationStatus, SubStatus
 
 from .fmt import (
     _e, human_bytes, gb, gb_str, _limit_devices_str, device_state, plain_ip, _fmt_age,
-    rf_line, rf_value, updown_brief, tree, profile_link, admin_device_link,
+    rf_line, rf_value, updown_brief, tree, sub_line, profile_link, admin_device_link,
     holder_link, _n_devices, plural_ru, _BYTES_PER_GB)
 from .fmt import deep_link as _deep_link
 from .routing import routing_status_line, routing_admin_status_line, ROUTING_NAME
@@ -180,7 +180,7 @@ def unassigned_text(n: int) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Трафик деревом (общий трафик ведущий, РФ — веткой под каждым)
+# Трафик списком (общий трафик ведущий, РФ — вложенной строкой под записью)
 # ─────────────────────────────────────────────────────────────────────────────
 
 _OUTSIDE = "🧐 Вне профилей: {v} — удалённые устройства и первые минуты новых"
@@ -195,43 +195,40 @@ def _rf_sub(rf) -> list[str]:
 
 def traffic_profiles_text(rows, bot_username: str = "", total: tuple[int, int] = (0, 0),
                           rf_total: tuple[int, int] | None = None, outside: int = 0) -> str:
-    """«📊 Трафик за 09.26:», итог, дерево: РФ-итог первой веткой, профили по
-    убыванию общего трафика (нулевые не выводятся) со своей РФ-веткой,
-    «🧐 Вне профилей» — под РФ-итогом и только при ненулевом значении."""
-    head = f"📊 Трафик за {month_label()}:\n{_total(*total)}"
-    branches = []
+    """«📊 Трафик за 09.26: <итог>», под шапкой — РФ-итог и «🧐 Вне профилей»
+    (только при ненулевых значениях), затем профили по убыванию общего трафика
+    (нулевые не выводятся) со своей РФ-строкой."""
+    head = [f"📊 Трафик за {month_label()}: {_total(*total)}"]
     if rf_total and int(rf_total[0]) + int(rf_total[1]) > 0:
+        head.append(sub_line(f"🇷🇺 {ROUTING_NAME}: {rf_value(*rf_total)}"))
         # «Вне профилей» — часть РФ-итога (удалённые устройства и первые минуты
-        # новых), поэтому веткой под ним, а не отдельной записью
-        sub = [_OUTSIDE.format(v=human_bytes(outside))] if int(outside or 0) >= _BYTES_PER_GB // 100 else []
-        branches.append((f"🇷🇺 {ROUTING_NAME}: {rf_value(*rf_total)}", sub))
+        # новых), поэтому под шапкой, а не записью среди профилей
+        if int(outside or 0) >= _BYTES_PER_GB // 100:
+            head.append(sub_line(_OUTSIDE.format(v=human_bytes(outside))))
+    branches = []
     live = [(c, rx, tx, rf) for c, rx, tx, rf in rows if int(rx) + int(tx) > 0]
     for c, rx, tx, rf in live[:_LIST_CAP]:
         branches.append((f"👤 {_deep_link(bot_username, f'{TRAFFIC_PAYLOAD}-{c.id}', c.name)}: "
                          f"{_total(rx, tx)}", _rf_sub(rf)))
     if len(live) > _LIST_CAP:
         branches.append((f"… и ещё {len(live) - _LIST_CAP}", []))
-    if not branches:
-        return head + "\nТрафика за месяц ещё нет"
-    return head + "\n" + tree(branches)
+    return "\n".join(head) + "\n\n" + (tree(branches) if branches else "Трафика за месяц ещё нет")
 
 
 def traffic_devices_text(client, rows, total: tuple[int, int] = (0, 0),
                          rf_total: tuple[int, int] | None = None, bot_username: str = "") -> str:
-    """«📊 Трафик за 09.26, [Ксюша]:» — то же по устройствам профиля."""
-    head = f"📊 Трафик за {month_label()}, {profile_link(client, bot_username)}:\n{_total(*total)}"
-    branches = []
+    """«📊 Трафик за 09.26, [Ксюша]: <итог>» — то же по устройствам профиля."""
+    head = [f"📊 Трафик за {month_label()}, {profile_link(client, bot_username)}: {_total(*total)}"]
     if rf_total and int(rf_total[0]) + int(rf_total[1]) > 0:
-        branches.append((f"🇷🇺 {ROUTING_NAME}: {rf_value(*rf_total)}", []))
+        head.append(sub_line(f"🇷🇺 {ROUTING_NAME}: {rf_value(*rf_total)}"))
+    branches = []
     live = [r for r in sorted(rows, key=lambda r: -(int(r[1]) + int(r[2]))) if int(r[1]) + int(r[2]) > 0]
     for d, rx, tx, rf in live[:_LIST_CAP]:
         branches.append((f"{device_state(d, for_admin=True)} {_e(d.name)}: {_total(rx, tx)}",
                          _rf_sub(rf)))
     if len(live) > _LIST_CAP:
         branches.append((f"… и ещё {len(live) - _LIST_CAP}", []))
-    if not branches:
-        return head + "\nТрафика за месяц ещё нет"
-    return head + "\n" + tree(branches)
+    return "\n".join(head) + "\n\n" + (tree(branches) if branches else "Трафика за месяц ещё нет")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

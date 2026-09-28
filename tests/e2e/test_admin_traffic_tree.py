@@ -1,21 +1,14 @@
-"""E2E: экраны трафика админа деревом — «📊 Трафик за ММ.ГГ» (A03) и трафик
+"""E2E: экраны трафика админа списком — «📊 Трафик за ММ.ГГ» (A03) и трафик
 профиля (A04), слитые с прежними экранами РФ-доступа; строка РФ в карточках
-профиля и устройства; ссылки /start traffic…/traffic_local… на эти экраны;
-скрытая команда /uitree.
+профиля и устройства; ссылки /start traffic…/traffic_local… на эти экраны.
 
-Цена ошибки: РФ-итог не первой веткой или профили не по убыванию — крупный
+Цена ошибки: РФ-итог не под шапкой или профили не по убыванию — крупный
 потребитель теряется внизу; нулевые строки — шум, за которым не видно
-живого; «└─» не у последней ветки — дерево читается как оборванное; старая
+живого; вложенная строка без «└ » читается как соседняя запись; старая
 ссылка из истории чата (traffic_local…) ведёт в исключение вместо экрана.
 """
-import datetime
-
 import pytest
-from aiogram import Bot, Dispatcher
-from aiogram.client.session.base import BaseSession
 from aiogram.filters import CommandObject
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import Chat, Message, Update, User
 
 from awgbot.bot import texts
 from awgbot.bot.callbacks import ClientCB, DeviceCB, Menu
@@ -83,33 +76,23 @@ def _profile(services, make_active_client, name, tg_id, *, traffic=(0, 0), rf=(0
     return services.db.get_client(c.id), dc.device_id
 
 
-# ── знаки дерева ─────────────────────────────────────────────────────────────
+# ── плоский список ───────────────────────────────────────────────────────────
 
-def test_tree_marks_the_last_branch_and_continues_under_the_others():
-    """«├─» — не последняя ветка, «└─» — последняя; под не последней —
-    «│», под последней — пробелы той же ширины. Перепутай — вложенная строка
-    РФ читается как ветка соседнего профиля."""
-    out = fmt.tree([("A", ["a1"]), ("B", []), ("C", ["c1", "c2"])], style="full")
-    assert out.split("\n") == ["├─ A", "│  └─ a1", "├─ B", "└─ C", "   ├─ c1", "   └─ c2"], out
-
-
-def test_tree_variants_for_the_choice_and_a_single_nested_line_follow_the_style():
-    rows = [("A", ["a1"]), ("B", ["b1"])]
-    assert fmt.tree(rows, style="bare").split("\n") == ["├ A", "│ └ a1", "└ B", "  └ b1"]
-    assert fmt.tree(rows, style="flat") == "A\n└ a1\n\nB\n└ b1", "плоский список 3.1.0 — через пустую строку"
-    assert fmt.tree([], style="full") == ""
-    assert fmt.sub_line("x", style="full") == "└─ x"
-    assert fmt.sub_line("x", style="flat") == "└ x"
-    assert fmt.TREE_STYLE == "full", "знак по умолчанию — «├─ / └─ / │»"
+def test_list_separates_entries_with_a_blank_line_and_nests_with_the_same_mark():
+    """Записи через пустую строку, вложенные — «└ » сразу под своей записью;
+    одиночная вложенная строка (карточки, главная) — тем же знаком."""
+    assert fmt.tree([("A", ["a1"]), ("B", []), ("C", ["c1", "c2"])]) == "A\n└ a1\n\nB\n\nC\n└ c1\n└ c2"
+    assert fmt.tree([]) == ""
+    assert fmt.sub_line("x") == "└ x"
 
 
 # ── A03: трафик по профилям ──────────────────────────────────────────────────
 
 async def test_traffic_tree_leads_with_rf_total_then_profiles_by_size(
         services, fake_bot, fake_routing, make_active_client, monkeypatch):
-    """Раскладка A03: шапка и итог сервера, РФ-итог первой веткой, профили по
-    убыванию общего трафика с РФ-веткой под своей записью, последняя ветка —
-    «└─», под ней вложенная строка отступлена пробелами."""
+    """Раскладка A03: шапка с итогом сервера одной строкой, под ней РФ-итог,
+    профили по убыванию общего трафика через пустую строку, РФ-строка — под
+    своей записью."""
     _rf_feature(monkeypatch, services, fake_routing, True)
     services.bot_username = "awg_test_bot"
     kolya, _ = _profile(services, make_active_client, "Коля", 7101, traffic=(0, GB), rf=(0, GB))
@@ -122,14 +105,16 @@ async def test_traffic_tree_leads_with_rf_total_then_profiles_by_size(
     def link(c):
         return f'<a href="https://t.me/awg_test_bot?start=traffic-{c.id}">{c.name}</a>'
     assert text.split("\n") == [
-        f"📊 Трафик за {texts.month_label()}:",
-        "17 ГБ (↑3 ↓14)",
-        f"├─ {RF}: 4 ГБ (↑1 ↓3)",
-        f"├─ 👤 {link(ksu)}: 12 ГБ (↑2 ↓10)",
-        f"│  └─ {RF}: 3 ГБ",
-        f"├─ 👤 {link(petya)}: 4 ГБ (↑1 ↓3)",
-        f"└─ 👤 {link(kolya)}: 1 ГБ (↑0 ↓1)",
-        f"   └─ {RF}: 1 ГБ",
+        f"📊 Трафик за {texts.month_label()}: 17 ГБ (↑3 ↓14)",
+        f"└ {RF}: 4 ГБ (↑1 ↓3)",
+        "",
+        f"👤 {link(ksu)}: 12 ГБ (↑2 ↓10)",
+        f"└ {RF}: 3 ГБ",
+        "",
+        f"👤 {link(petya)}: 4 ГБ (↑1 ↓3)",
+        "",
+        f"👤 {link(kolya)}: 1 ГБ (↑0 ↓1)",
+        f"└ {RF}: 1 ГБ",
     ], text
     assert (labels, cbs) == (["⬅️ В меню"], [Menu(action="main").pack()])
 
@@ -146,28 +131,29 @@ async def test_traffic_tree_drops_zero_profiles_zero_rf_and_zero_outside(
     assert "Молчун" not in text, "профиль без трафика в списке"
     assert RF not in text, f"нулевая РФ-строка выведена:\n{text}"
     assert "Вне профилей" not in text, text
-    assert text.split("\n")[2:] == ["└─ 👤 Ксюша: 2 ГБ (↑1 ↓1)"], text
+    assert text.split("\n")[1:] == ["", "👤 Ксюша: 2 ГБ (↑1 ↓1)"], text
 
 
 async def test_traffic_tree_without_any_traffic_says_so(services, fake_bot):
     services.ensure_admin_client()
     text, _, _ = await _deep(services, fake_bot, "traffic")
-    assert text.split("\n") == [f"📊 Трафик за {texts.month_label()}:", "0 ГБ",
+    assert text.split("\n") == [f"📊 Трафик за {texts.month_label()}: 0 ГБ", "",
                                 "Трафика за месяц ещё нет"], text
 
 
 async def test_outside_profiles_nests_under_the_rf_total(services, fake_bot, make_active_client):
     """«🧐 Вне профилей» — итог РФ сервера минус устройства — часть РФ-итога:
-    веткой под ним, а не отдельной записью среди профилей (иначе его читают
+    под шапкой вслед за ним, а не записью среди профилей (иначе его читают
     как ещё один профиль)."""
     _profile(services, make_active_client, "Коля", 7121, traffic=(GB, GB), rf=(GB, 0))
     _rf_total(services, GB, GB)
     text, _, _ = await _deep(services, fake_bot, "traffic")
-    assert text.split("\n")[2:] == [
-        f"├─ {RF}: 2 ГБ (↑1 ↓1)",
-        "│  └─ 🧐 Вне профилей: 1 ГБ — удалённые устройства и первые минуты новых",
-        "└─ 👤 Коля: 2 ГБ (↑1 ↓1)",
-        f"   └─ {RF}: 1 ГБ",
+    assert text.split("\n")[1:] == [
+        f"└ {RF}: 2 ГБ (↑1 ↓1)",
+        "└ 🧐 Вне профилей: 1 ГБ — удалённые устройства и первые минуты новых",
+        "",
+        "👤 Коля: 2 ГБ (↑1 ↓1)",
+        f"└ {RF}: 1 ГБ",
     ], text
 
 
@@ -192,14 +178,15 @@ async def test_deleted_device_moves_its_rf_into_outside(services, fake_bot, make
     services.db.rf_add_bulk([(gone.device_id, GB, GB)])
     _rf_total(services, 2 * GB, 2 * GB)
     before, _, _ = await _deep(services, fake_bot, "traffic")
-    assert "Вне профилей" not in before and f"   └─ {RF}: 4 ГБ" in before, before
+    assert "Вне профилей" not in before and f"└ {RF}: 4 ГБ" in before, before
     services.remove_device(gone.device_id)
     after, _, _ = await _deep(services, fake_bot, "traffic")
-    assert after.split("\n")[2:] == [
-        f"├─ {RF}: 4 ГБ (↑2 ↓2)",
-        "│  └─ 🧐 Вне профилей: 2 ГБ — удалённые устройства и первые минуты новых",
-        "└─ 👤 Ксюша: 2 ГБ (↑1 ↓1)",
-        f"   └─ {RF}: 2 ГБ",
+    assert after.split("\n")[1:] == [
+        f"└ {RF}: 4 ГБ (↑2 ↓2)",
+        "└ 🧐 Вне профилей: 2 ГБ — удалённые устройства и первые минуты новых",
+        "",
+        "👤 Ксюша: 2 ГБ (↑1 ↓1)",
+        f"└ {RF}: 2 ГБ",
     ], after
 
 
@@ -207,9 +194,9 @@ async def test_deleted_device_moves_its_rf_into_outside(services, fake_bot, make
 
 async def test_profile_traffic_tree_sorts_devices_and_drops_zeros(
         services, fake_bot, fake_routing, make_active_client, monkeypatch):
-    """A04: шапка с именем профиля, итог профиля (а не сервера), РФ профиля
-    первой веткой, устройства по убыванию трафика с РФ-веткой; устройство без
-    трафика и нулевая РФ-ветка не выводятся; «⬅️ Назад» — на A03."""
+    """A04: шапка с именем профиля и итогом профиля (а не сервера), под ней
+    РФ профиля, устройства по убыванию трафика с РФ-строкой; устройство без
+    трафика и нулевая РФ-строка не выводятся; «⬅️ Назад» — на A03."""
     _rf_feature(monkeypatch, services, fake_routing, True)
     c, mac = _profile(services, make_active_client, "Ксюша", 7131, traffic=(GB, GB), rf=(0, 0),
                       device="MacBook")
@@ -220,12 +207,13 @@ async def test_profile_traffic_tree_sorts_devices_and_drops_zeros(
     _profile(services, make_active_client, "Чужой", 7132, traffic=(9 * GB, 9 * GB))
     text, labels, cbs = await _deep(services, fake_bot, f"traffic-{c.id}")
     assert text.split("\n") == [
-        f"📊 Трафик за {texts.month_label()}, Ксюша:",
-        "8 ГБ (↑2 ↓6)",
-        f"├─ {RF}: 3 ГБ (↑1 ↓2)",
-        "├─ ⚪ iPhone: 6 ГБ (↑1 ↓5)",
-        f"│  └─ {RF}: 3 ГБ",
-        "└─ ⚪ MacBook: 2 ГБ (↑1 ↓1)",
+        f"📊 Трафик за {texts.month_label()}, Ксюша: 8 ГБ (↑2 ↓6)",
+        f"└ {RF}: 3 ГБ (↑1 ↓2)",
+        "",
+        "⚪ iPhone: 6 ГБ (↑1 ↓5)",
+        f"└ {RF}: 3 ГБ",
+        "",
+        "⚪ MacBook: 2 ГБ (↑1 ↓1)",
     ], text
     assert idle and "Планшет" not in text
     assert (labels, cbs) == (["⬅️ Назад"], [Menu(action="traffic").pack()])
@@ -233,7 +221,7 @@ async def test_profile_traffic_tree_sorts_devices_and_drops_zeros(
     cb, nav = _acb(fake_bot)
     await ah.admin_traffic_profiles(cb, services)
     back, _ = last_screen(nav)
-    assert back.startswith(f"📊 Трафик за {texts.month_label()}:\n"), back
+    assert back.startswith(f"📊 Трафик за {texts.month_label()}: "), back
 
 
 @pytest.fixture()
@@ -258,10 +246,10 @@ async def test_gateway_gets_no_rf_branch_and_stays_out_of_the_profile_rf(
     admin, _, _ = rf_gateway
     text, _, _ = await _deep(services, fake_bot, f"traffic-{admin.id}")
     lines = text.split("\n")
-    assert lines[2] == f"├─ {RF}: 2 ГБ (↑1 ↓1)", text
-    i = lines.index("├─ 🛰 NASPi: 6 ГБ (↑3 ↓3)")
-    assert RF not in lines[i + 1], f"РФ-ветка под шлюзом:\n{text}"
-    assert lines[-2:] == ["└─ ⚪ phone: 2 ГБ (↑1 ↓1)", f"   └─ {RF}: 2 ГБ"], text
+    assert lines[1] == f"└ {RF}: 2 ГБ (↑1 ↓1)", text
+    i = lines.index("🛰 NASPi: 6 ГБ (↑3 ↓3)")
+    assert RF not in lines[i + 1], f"РФ-строка под шлюзом:\n{text}"
+    assert lines[-2:] == ["⚪ phone: 2 ГБ (↑1 ↓1)", f"└ {RF}: 2 ГБ"], text
 
 
 # ── ссылки на экраны трафика ─────────────────────────────────────────────────
@@ -277,7 +265,7 @@ async def test_both_home_links_open_the_traffic_tree_and_remove_the_command(
     await ah.admin_start(msg, services, FakeState(), command=_cmd(payload))
     assert msg.deleted, "команда /start осталась в чате"
     edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
-    assert edits and edits[-1][2].startswith(f"📊 Трафик за {texts.month_label()}:\n"), edits
+    assert edits and edits[-1][2].startswith(f"📊 Трафик за {texts.month_label()}: "), edits
     assert not any(kind == "answer" for kind, _, _ in msg.sent), "второе меню вместо правки живого"
 
 
@@ -286,7 +274,7 @@ async def test_both_home_links_open_the_traffic_tree_and_remove_the_command(
 async def test_profile_links_open_the_profile_traffic(services, fake_bot, make_active_client, fmt_):
     c, _ = _profile(services, make_active_client, "Ксюша", 7142, traffic=(GB, GB))
     text, labels, _ = await _deep(services, fake_bot, fmt_.format(id=c.id))
-    assert text.startswith(f"📊 Трафик за {texts.month_label()}, Ксюша:\n"), text
+    assert text.startswith(f"📊 Трафик за {texts.month_label()}, Ксюша: "), text
     assert labels == ["⬅️ Назад"]
 
 
@@ -313,7 +301,7 @@ async def test_old_rf_back_button_opens_the_traffic_tree(services, fake_bot):
 
 # ── строка РФ в карточках — прежнее правило ─────────────────────────────────
 
-_PFX = f"└─ {RF}: "
+_PFX = f"└ {RF}: "
 
 
 def _rf_lines(text: str) -> list[str]:
@@ -342,10 +330,10 @@ async def _device_card(services, bot, device_id: int) -> str:
 async def test_profile_rf_line_in_the_card_and_the_tree(
         services, fake_bot, fake_routing, make_active_client, monkeypatch,
         enabled, allowed, rf, card, branch):
-    """Карточка профиля: «└─ 🇷🇺 РФ-доступ» сразу под строкой трафика — при
+    """Карточка профиля: «└ 🇷🇺 РФ-доступ» сразу под строкой трафика — при
     прежних условиях (разрешён и функция включена, или за месяц было). «0 ГБ»
     при включённой функции — ровно та подсказка, что маркировка не работает.
-    В дереве трафика нулевой РФ-ветки нет."""
+    В списке трафика нулевой РФ-строки нет."""
     _rf_feature(monkeypatch, services, fake_routing, enabled)
     c, _ = _profile(services, make_active_client, "Ксюша", 7151, traffic=(GB, GB), rf=rf,
                     allowed=allowed)
@@ -358,9 +346,9 @@ async def test_profile_rf_line_in_the_card_and_the_tree(
         head = next(i for i, ln in enumerate(lines) if ln.startswith("📊 "))
         assert lines[head + 1] == _PFX + card, "строка РФ не сразу под трафиком профиля"
     tree_text, _, _ = await _deep(services, fake_bot, "traffic")
-    subs = [ln for ln in tree_text.splitlines() if ln.endswith(f"{RF}: {branch}") and "└─" in ln]
+    subs = [ln for ln in tree_text.splitlines() if ln == f"└ {RF}: {branch}"]
     if branch is None:
-        assert not [ln for ln in tree_text.splitlines() if ln.startswith("   └─ ")], tree_text
+        assert not [ln for ln in tree_text.splitlines() if ln.startswith(f"└ {RF}")], tree_text
     else:
         assert subs, tree_text
 
@@ -374,7 +362,7 @@ async def test_profile_rf_line_in_the_card_and_the_tree(
 ])
 async def test_device_rf_line_in_the_card(services, fake_bot, fake_routing, make_active_client,
                                           monkeypatch, enabled, allowed, rf, card):
-    """Карточка устройства: «└─ 🇷🇺 РФ-доступ» под строкой «Был в сети … ·
+    """Карточка устройства: «└ 🇷🇺 РФ-доступ» под строкой «Был в сети … ·
     трафик» — по тому же правилу от владельца."""
     _rf_feature(monkeypatch, services, fake_routing, enabled)
     _, did = _profile(services, make_active_client, "Ксюша", 7152, rf=rf, allowed=allowed)
@@ -400,7 +388,7 @@ async def test_rf_lines_stay_in_cards_when_the_routing_self_check_fails(
 
 async def test_no_rf_lines_on_a_server_without_the_feature(services, fake_bot, fake_routing):
     """Админу РФ-доступ разрешён всегда; без функции на сервере вечное «0 ГБ»
-    в его карточке и в дереве — шум про то, чего нет."""
+    в его карточке и в списке — шум про то, чего нет."""
     fake_routing.enabled = False
     services.ensure_admin_client()
     admin = services.admin_client()
@@ -409,59 +397,3 @@ async def test_no_rf_lines_on_a_server_without_the_feature(services, fake_bot, f
     assert _rf_lines(await _client_card(services, fake_bot, admin.id)) == []
     assert RF not in (await _deep(services, fake_bot, "traffic"))[0]
     assert RF not in (await _deep(services, fake_bot, f"traffic-{admin.id}"))[0]
-
-
-# ── /uitree ──────────────────────────────────────────────────────────────────
-
-async def test_uitree_sends_two_messages_with_three_variants_and_restores_the_style(
-        services, fake_bot, make_active_client):
-    """Тестовая команда выбора знаков: два сообщения (общий трафик и первый
-    профиль), в каждом по три варианта; после неё знаки экранов — прежние,
-    иначе все деревья бота остались бы в последнем, «плоском» варианте."""
-    fmt.TREE_STYLE = "full"
-    _profile(services, make_active_client, "Ксюша", 7161, traffic=(GB, GB), rf=(GB, 0))
-    msg = _amsg(fake_bot, "/uitree")
-    await ah.uitree_probe(msg, services)
-    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert len(sent) == 2, sent
-    for text in sent:
-        for title in ("1) ├─ └─ │", "2) ├ └ │", "3) плоский список"):
-            assert f"<b>{title}</b>" in text, text
-    assert sent[0].count("📊 Трафик за") == 3 and sent[1].count(", Ксюша:") == 3
-    assert fmt.TREE_STYLE == "full", "команда оставила чужой вариант знаков"
-
-
-class _Session(BaseSession):
-    def __init__(self):
-        super().__init__()
-        self.calls = []
-
-    async def make_request(self, bot, method, timeout=None):
-        self.calls.append(method)
-        return Message(message_id=len(self.calls) + 100, date=datetime.datetime.now(),
-                       chat=Chat(id=ADMIN, type="private"), text="ok")
-
-    async def stream_content(self, *a, **k):              # pragma: no cover
-        raise AssertionError("скачиваний нет")
-        yield b""
-
-    async def close(self):
-        pass
-
-
-@pytest.mark.parametrize("role, replies", [("admin", 2), ("client", 0), ("invited", 0)])
-async def test_uitree_answers_only_the_admin(services, make_active_client, monkeypatch, role, replies):
-    """Команда скрытая и только для админа: клиенту или гостю — ни слова (для
-    них это чужой трафик — утечка)."""
-    _profile(services, make_active_client, "Ксюша", 7162, traffic=(GB, GB))
-    monkeypatch.setattr(ah.router, "_parent_router", None)
-    dp = Dispatcher(storage=MemoryStorage())
-    dp["services"] = services
-    dp.include_router(ah.router)
-    session = _Session()
-    bot = Bot("42:DUMMY", session=session)
-    msg = Message(message_id=7, date=datetime.datetime.now(), chat=Chat(id=ADMIN, type="private"),
-                  text="/uitree", **{"from": User(id=ADMIN, is_bot=False, first_name="A")})
-    await dp.feed_update(bot, Update(update_id=1, message=msg), role=role)
-    sends = [m for m in session.calls if type(m).__name__ == "SendMessage"]
-    assert len(sends) == replies, [type(m).__name__ for m in session.calls]

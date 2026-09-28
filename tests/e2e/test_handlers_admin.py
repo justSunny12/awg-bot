@@ -313,7 +313,7 @@ def _rf_world(services, fake_routing, monkeypatch, *, enabled, rx=0, tx=0, error
 
 
 def _rf_line(text: str):
-    lines = [ln for ln in text.splitlines() if ln.startswith("└─ 🇷🇺 РФ-доступ:")]
+    lines = [ln for ln in text.splitlines() if ln.startswith("└ 🇷🇺 РФ-доступ:")]
     return lines[0] if lines else None
 
 
@@ -321,11 +321,11 @@ async def test_panel_shows_zero_rf_line_when_the_feature_is_on(services, fake_bo
                                                               monkeypatch):
     """Функция включена — строка всегда, и «0 ГБ» тоже: ровно тогда видно, что
     маркировка не работает, хотя люди пользуются. Ветка под трафиком — знаком
-    «└─», без стрелок: разбивка ↑↓ живёт на экране «Трафик»."""
+    «└», без стрелок: разбивка ↑↓ живёт на экране «Трафик»."""
     _rf_world(services, fake_routing, monkeypatch, enabled=True)
     text = await _panel_text(services, fake_bot)
     line = _rf_line(text)
-    assert line == "└─ 🇷🇺 РФ-доступ: 0 ГБ", text
+    assert line == "└ 🇷🇺 РФ-доступ: 0 ГБ", text
     head = [ln for ln in text.splitlines() if f"📊 Трафик за {texts.month_label()}" in ln][0]
     assert text.splitlines().index(line) == text.splitlines().index(head) + 1, \
         "строка РФ не сразу под трафиком"
@@ -343,7 +343,7 @@ async def test_panel_keeps_rf_line_when_off_but_month_has_rf(services, fake_bot,
     """Выключили в середине месяца — накопленное не пропадает с главной."""
     _rf_world(services, fake_routing, monkeypatch, enabled=False, rx=GB, tx=3 * GB)
     line = _rf_line(await _panel_text(services, fake_bot))
-    assert line == "└─ 🇷🇺 РФ-доступ: 4 ГБ", line
+    assert line == "└ 🇷🇺 РФ-доступ: 4 ГБ", line
 
 
 async def test_panel_rf_line_marks_broken_accounting_and_keeps_numbers(services, fake_bot,
@@ -351,7 +351,7 @@ async def test_panel_rf_line_marks_broken_accounting_and_keeps_numbers(services,
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB, tx=GB,
               error="nft не найден — поставь пакет nftables")
     line = _rf_line(await _panel_text(services, fake_bot))
-    assert line == "└─ 🇷🇺 РФ-доступ: 2 ГБ · ⚠️ учёт по РФ-доступу не ведётся", line
+    assert line == "└ 🇷🇺 РФ-доступ: 2 ГБ · ⚠️ учёт по РФ-доступу не ведётся", line
     assert "nft" not in line, "текст ошибки ядра в шапке админа"
 
 
@@ -362,9 +362,9 @@ async def test_panel_rf_line_links_to_the_rf_screen(services, fake_bot, fake_rou
     services.bot_username = "awg_test_bot"
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
     text = await _panel_text(services, fake_bot)
-    lines = [ln for ln in text.splitlines() if ln.startswith("└─ ") and "🇷🇺 РФ-доступ" in ln]
+    lines = [ln for ln in text.splitlines() if ln.startswith("└ ") and "🇷🇺 РФ-доступ" in ln]
     # флаг — внутри ссылки: кликается вся подпись «🇷🇺 РФ-доступ»
-    assert lines and lines[0] == ('└─ <a href="https://t.me/awg_test_bot?start=traffic">'
+    assert lines and lines[0] == ('└ <a href="https://t.me/awg_test_bot?start=traffic">'
                                   '🇷🇺 РФ-доступ</a>: 1 ГБ'), text
     assert text.count("start=traffic\"") == 2, "строка трафика и РФ-ветка — обе на экран «Трафик»"
 
@@ -376,7 +376,7 @@ async def test_panel_rf_line_is_plain_text_without_bot_username(services, fake_b
     services.bot_username = ""
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
     line = _rf_line(await _panel_text(services, fake_bot))
-    assert line == "└─ 🇷🇺 РФ-доступ: 1 ГБ", line
+    assert line == "└ 🇷🇺 РФ-доступ: 1 ГБ", line
 
 
 async def test_client_and_guest_home_do_not_change_with_rf_data(services, fake_bot, fake_routing,

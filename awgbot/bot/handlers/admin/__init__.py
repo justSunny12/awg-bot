@@ -10,7 +10,7 @@ handlers/admin — роутер администратора: пакет роу�
 сообщениях и колбэках), внутрь включены подроутеры:
 
   panel      панель, /start с deep-link'ами, онлайн, истекающие, без профиля,
-             трафик деревом, обновить статус, скрытая /uitree
+             трафик списком, обновить статус
   clients    профили: список, карточка, создание, имя/лимиты/период/продление/удаление
   devices    устройства: добавление профилю, выдача, без профиля, карточка, перенос
   gateway    пометка шлюза по пересланному сообщению агента
@@ -33,7 +33,7 @@ from awgbot.bot.handlers.admin import (blocks, broadcast, clients, devices, gate
 from awgbot.bot.handlers.admin.panel import (
     _panel_parts, restore_panel_after_restart,
     admin_start, admin_document, admin_expiring, admin_traffic_profiles, admin_online,
-    unassigned_list, admin_main_menu, refresh_status, uitree_probe, parse_link)
+    unassigned_list, admin_main_menu, refresh_status, parse_link)
 from awgbot.bot.handlers.admin.clients import (
     clients_list, client_open, client_edit, add_client_start, add_client_name, add_client_limit,
     add_client_traffic, add_client_period, add_client_devs_preset, add_client_traffic_preset,
@@ -78,7 +78,7 @@ router.include_router(broadcast.router)
 __all__ = [
     "router", "_panel_parts", "restore_panel_after_restart", "parse_link",
     "admin_start", "admin_document", "admin_expiring", "admin_traffic_profiles", "admin_online",
-    "unassigned_list", "admin_main_menu", "refresh_status", "uitree_probe",
+    "unassigned_list", "admin_main_menu", "refresh_status",
     "clients_list", "client_open", "client_edit", "add_client_start", "add_client_name",
     "add_client_limit", "add_client_traffic", "add_client_period", "add_client_devs_preset",
     "add_client_traffic_preset", "edit_name_start", "edit_name_apply", "edit_limit_start",

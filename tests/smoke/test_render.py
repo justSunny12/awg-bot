@@ -201,10 +201,10 @@ def test_rf_traffic_line_render():
     """Вложенная строка РФ под трафиком на главной: объём без ↑↓ (разбивка —
     на экране «Трафик»); суффикс — только при ошибке учёта."""
     G = 1024 ** 3
-    assert texts.rf_traffic_line({"rx": G, "tx": 3 * G}) == "└─ 🇷🇺 РФ-доступ: 4 ГБ"
+    assert texts.rf_traffic_line({"rx": G, "tx": 3 * G}) == "└ 🇷🇺 РФ-доступ: 4 ГБ"
     assert texts.rf_traffic_line({"rx": 0, "tx": 0, "error": "x"}) == \
-        "└─ 🇷🇺 РФ-доступ: 0 ГБ · ⚠️ учёт по РФ-доступу не ведётся"
+        "└ 🇷🇺 РФ-доступ: 0 ГБ · ⚠️ учёт по РФ-доступу не ведётся"
     st = {"ok": True, "traffic_rx": 1, "traffic_tx": 2}
     assert "🇷🇺 РФ-доступ:" not in texts.admin_panel(st), "строка РФ без данных о ней"
     assert "🇷🇺 РФ-доступ:" not in texts.admin_panel(st, rf={"rx": G, "tx": G, "show": False})
-    assert "└─ 🇷🇺 РФ-доступ: 2 ГБ" in texts.admin_panel(st, rf={"rx": G, "tx": G, "show": True})
+    assert "└ 🇷🇺 РФ-доступ: 2 ГБ" in texts.admin_panel(st, rf={"rx": G, "tx": G, "show": True})

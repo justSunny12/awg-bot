@@ -27,42 +27,21 @@ def admin_device_link(dev, bot_username: str) -> str:
     return deep_link(bot_username, f"dev-{int(dev.id)}", dev.name)
 
 
-# ── дерево вложенных строк ───────────────────────────────────────────────────
-# Знаки ветвления одни на весь бот: «├─» — не последняя ветка уровня, «└─» —
-# последняя, «│» — продолжение уровня. TREE_STYLE — вариант знаков на время
-# выбора пользователем (full — с «─», bare — без, flat — плоский список 3.1.0).
-TREE_STYLE = "full"
-_TREE = {"full": ("├─ ", "└─ ", "│  ", "   "),
-         "bare": ("├ ", "└ ", "│ ", "  "),
-         "flat": ("", "", "", "")}
+# ── вложенные строки ─────────────────────────────────────────────────────────
+# Экраны-списки — плоские: записи через пустую строку, вложенная строка под
+# записью — со знаком включения «└ » (то же в карточках и на главной).
+_SUB = "└ "
 
 
-def tree(rows, style: str = "") -> str:
-    """rows — [(строка, [вложенные строки])]. Дерево знаками ветвления; в
-    плоском варианте записи через пустую строку, вложенные — с «└ »."""
-    style = style or TREE_STYLE
-    mid, last, cont, blank = _TREE.get(style, _TREE["full"])
-    rows = list(rows)
-    if style == "flat":
-        chunks = []
-        for line, subs in rows:
-            chunks.append("\n".join([line] + [f"└ {x}" for x in subs]))
-        return "\n\n".join(chunks)
-    out = []
-    for i, (line, subs) in enumerate(rows):
-        is_last = i == len(rows) - 1
-        out.append((last if is_last else mid) + line)
-        pad = blank if is_last else cont
-        for j, sub in enumerate(subs):
-            out.append(pad + (last if j == len(subs) - 1 else mid) + sub)
-    return "\n".join(out)
+def tree(rows) -> str:
+    """rows — [(строка, [вложенные строки])]: записи через пустую строку,
+    вложенные — с «└ » сразу под своей записью."""
+    return "\n\n".join("\n".join([line] + [_SUB + x for x in subs]) for line, subs in rows)
 
 
-def sub_line(text: str, style: str = "") -> str:
-    """Одна вложенная строка под записью («└─ 🇷🇺 РФ-доступ: …») — в главной
-    и карточках, тем же знаком, что и дерево."""
-    style = style or TREE_STYLE
-    return ("└ " if style == "flat" else _TREE.get(style, _TREE["full"])[1]) + text
+def sub_line(text: str) -> str:
+    """Одна вложенная строка под записью («└ 🇷🇺 РФ-доступ: …»)."""
+    return _SUB + text
 
 
 def _e(s) -> str:
@@ -124,7 +103,7 @@ def updown_brief(rx: int, tx: int) -> str:
 
 def rf_line(rx: int, tx: int, label: str = "", *, arrows: bool = True) -> str:
     """Вложенная строка РФ-части под строкой трафика (карточки, главная):
-    «└─ 🇷🇺 РФ-доступ: 7.1 ГБ (↑0.7 ↓6.4)». label — готовая подпись вместо
+    «└ 🇷🇺 РФ-доступ: 7.1 ГБ (↑0.7 ↓6.4)». label — готовая подпись вместо
     «🇷🇺 РФ-доступ» (ссылкой на экран трафика; флаг — часть ссылки)."""
     from .routing import ROUTING_NAME
     return sub_line(f"{label or f'🇷🇺 {ROUTING_NAME}'}: {rf_value(rx, tx, arrows=arrows)}")
