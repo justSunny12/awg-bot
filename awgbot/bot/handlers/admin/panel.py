@@ -213,29 +213,35 @@ async def admin_start(message: Message, services, state: FSMContext,
 @router.message(Command("uitree"))
 async def uitree_probe(message: Message, services):
     """Скрытая команда этапа: два сообщения с тремя вариантами знаков дерева
-    на живых данных — общий трафик и трафик первого профиля. После выбора
-    пользователем команда и лишние варианты убираются."""
+    на живых данных — общий трафик и трафик первого профиля. Данные берутся
+    заранее, рендер — без await: глобальный стиль дерева переключается только
+    синхронно. После выбора пользователем команда и лишние варианты убираются."""
     from awgbot.bot.texts import fmt
     rows = await call(services.traffic_by_profile)
     tot = await call(services.db.get_total_month_traffic)
     rf = await call(services.rf_screen_data)
     rf_total = (rf["rx"], rf["tx"]) if await call(services.rf_line_visible) else None
     first = next((c for c, rx, tx, _rf in rows if rx + tx > 0), rows[0][0] if rows else None)
+    one = None
+    if first is not None:
+        drows = await call(services.traffic_by_device, first.id)
+        t = await call(services.db.get_client_traffic, first.id)
+        crf = await call(services.db.get_client_rf, first.id)
+        one = (drows, (int(t["rx_month"]), int(t["tx_month"])),
+               crf if await call(services.rf_client_visible, first, crf) else None)
     out_all, out_one = [], []
-    for style, title in (("full", "1) ├─ └─ │"), ("bare", "2) ├ └ │"), ("flat", "3) плоский список")):
-        fmt.TREE_STYLE = style
-        out_all.append(f"<b>{title}</b>\n" + texts.traffic_profiles_text(
-            rows, _bot(services), (int(tot["rx"]), int(tot["tx"])), rf_total=rf_total,
-            outside=rf.get("outside", 0)))
-        if first is not None:
-            drows = await call(services.traffic_by_device, first.id)
-            t = await call(services.db.get_client_traffic, first.id)
-            crf = await call(services.db.get_client_rf, first.id)
-            out_one.append(f"<b>{title}</b>\n" + texts.traffic_devices_text(
-                first, drows, (int(t["rx_month"]), int(t["tx_month"])),
-                rf_total=crf if await call(services.rf_client_visible, first, crf) else None,
-                bot_username=_bot(services)))
-    fmt.TREE_STYLE = "full"
+    keep = fmt.TREE_STYLE
+    try:
+        for style, title in (("full", "1) ├─ └─ │"), ("bare", "2) ├ └ │"), ("flat", "3) плоский список")):
+            fmt.TREE_STYLE = style
+            out_all.append(f"<b>{title}</b>\n" + texts.traffic_profiles_text(
+                rows, _bot(services), (int(tot["rx"]), int(tot["tx"])), rf_total=rf_total,
+                outside=rf.get("outside", 0)))
+            if one is not None:
+                out_one.append(f"<b>{title}</b>\n" + texts.traffic_devices_text(
+                    first, one[0], one[1], rf_total=one[2], bot_username=_bot(services)))
+    finally:
+        fmt.TREE_STYLE = keep
     await message.answer("\n\n".join(out_all))
     if out_one:
         await message.answer("\n\n".join(out_one))

@@ -279,7 +279,8 @@ def test_gateway_unreachable_disables_marking_and_alerts_admin_once(
 
     notes = _fail_until_announced(services, fake_routing)
     assert fake_routing.marking is False
-    assert len(notes) == 1 and "недоступен" in notes[0].text
+    assert len(notes) == 1 and notes[0].text.startswith("🔴 Шлюз"), notes[0].text
+    assert "не отвечает" in notes[0].text and not notes[0].action, "у «шлюз лёг» кнопки нет"
     assert services.routing_liveness_tick() == []       # повтор — молчим
 
     _settle(services, fake_routing)

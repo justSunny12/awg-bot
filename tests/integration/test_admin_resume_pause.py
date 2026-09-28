@@ -13,7 +13,7 @@ def test_admin_resume_pause_button_and_exit(services, fake_awg):
     c = services.db.get_client(cid)
     assert int(c.block_reason) & int(ClientBlock.PAUSED)
     labels = [b.text for r in kb.admin_client_actions(c).inline_keyboard for b in r]
-    assert "▶️ Вывести из приостановки" in labels
+    assert labels[0] == "▶️ Снять паузу", "снятие паузы — условным рядом первым"
     ok, actual, new_end, _ = services.exit_pause(cid, auto=False)
     c2 = services.db.get_client(cid)
     assert not (int(c2.block_reason) & int(ClientBlock.PAUSED))

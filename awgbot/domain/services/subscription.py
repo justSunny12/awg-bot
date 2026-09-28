@@ -173,7 +173,7 @@ class SubscriptionMixin:
             fresh = self.db.get_client(client_id)
             notifications.extend(self._block_client(fresh))
             if client.tg_id:
-                notifications.append(Notification(client.tg_id, _TXT_EXPIRED_CLIENT))
+                notifications.append(Notification(client.tg_id, _TXT_EXPIRED_CLIENT, action=("sub", 0)))
         return new_start, new_end, notifications
 
 

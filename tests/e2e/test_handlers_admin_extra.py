@@ -1,7 +1,7 @@
-"""E2E: добор веток роутера админа — понижение лимита с подтверждением,
-продление, выдача файла, блок с приостановкой (FSM дней), личные qr/file,
-выбор устройства для добавления, карточка пира без приватного ключа,
-deep-links панели (потребление, онлайн, истекающие).
+"""E2E: добор веток роутера админа — лимит устройств пресетами без
+подтверждения, продление, выдача файла, блок устройства, личные qr/file,
+устройство профилю, «Мои устройства», карточка пира без приватного ключа.
+Главная, ссылки и трафик — test_admin_home.py и test_admin_traffic_tree.py.
 
 Объявления — test_handlers_broadcast.py; почта и бэкапы из чата —
 test_handlers_settings_mail_backup.py; раскладка настроек — test_settings_layout.py.
@@ -11,7 +11,7 @@ import pytest
 
 from awgbot.bot import texts
 from awgbot.bot.handlers import admin as ah
-from awgbot.bot.callbacks import AdminSelfCB, BlockCB, ClientCB, ConfirmCB, DeviceCB
+from awgbot.bot.callbacks import AdminSelfCB, BlockCB, ClientCB, DeviceCB
 from awgbot.core import config
 from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
@@ -29,40 +29,68 @@ def _amsg(bot, text=""):
     return FakeMessage(text=text, chat_id=ADMIN, user_id=ADMIN, bot=bot)
 
 
-# ── понижение лимита ниже числа устройств ────────────────────────────────────
-async def test_edit_limit_lower_confirm_yes(services, fake_bot, make_active_client):
+# ── понижение лимита ниже числа устройств — без подтверждения ──────────────
+async def test_lowering_the_device_limit_by_preset_applies_at_once_with_a_warning(
+        services, fake_bot, make_active_client):
+    """Лимит ниже числа устройств — без диалога подтверждения: «✏️ Изменить»
+    с итогом первой строкой «✅ Устройств: 5 → 1 · ⚠️ сейчас 2 из 1 — …».
+    Потеряй строку ⚠️ — админ не узнает, что профиль теперь не сможет добавить
+    ни одного устройства; верни подтверждение — лишний шаг на каждое изменение."""
+    from awgbot.bot.callbacks import PresetCB
     client = make_active_client(tg_id=6300, device_limit=5)
     services.add_device(client.id, "a")
     services.add_device(client.id, "b")
-    st = FakeState()
     cb, nav = _acb(fake_bot)
-    await ah.edit_limit_start(cb, ClientCB(action="edit_limit", client_id=client.id), services, st)
-    await ah.edit_limit_apply(_amsg(fake_bot, "1"), services, st)   # 1 < 2 → диалог подтверждения
-    assert (await st.get_data())["pending_limit"] == 1
+    await ah.edit_limit_start(cb, ClientCB(action="edit_limit", client_id=client.id), services, FakeState())
+    text, labels = last_screen(nav)
+    assert text == f"🔢 Лимит устройств профиля {client.name} · сейчас 5, занято 2", text
+    assert labels == ["1", "2", "3", "5", "10", "∞", "✏️ Другое", "⬅️ Отмена"], labels
+
     cb2, nav2 = _acb(fake_bot)
-    await ah.edit_limit_confirm(cb2, ConfirmCB(action="lower_limit", ref=client.id, yes=True), services, st)
-    assert services.db.get_client(client.id).device_limit == 1
+    await ah.edit_limit_preset(cb2, PresetCB(kind="cli_devs", ref=client.id, val=1), services, FakeState())
+    assert services.db.get_client(client.id).device_limit == 1, "лимит не применён сразу"
+    text2, labels2 = last_screen(nav2)
+    first = text2.splitlines()[0]
+    assert first == "✅ Устройств: 5 → 1 · ⚠️ сейчас 2 из 1 — новые не добавить, пока не станет меньше", text2
+    assert "✏️ Лимит устр-в" in labels2, "после пресета — не «✏️ Изменить»"
+    notes = [r for r in fake_bot.records if r[0] == "send_message" and r[1] == 6300]
+    assert len(notes) == 1, "клиент должен узнать о новом лимите ровно одним уведомлением"
 
 
-async def test_edit_limit_lower_confirm_no(services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=6301, device_limit=5)
+async def test_typed_device_limit_returns_to_edit_with_the_note(services, fake_bot, make_active_client):
+    """«✏️ Другое» → число → «✏️ Изменить» новым сообщением с итогом первой
+    строкой; повышение — без строки ⚠️."""
+    from awgbot.bot.callbacks import PresetCB
+    client = make_active_client(tg_id=6301, device_limit=2)
     services.add_device(client.id, "a")
-    services.add_device(client.id, "b")
     st = FakeState()
-    await st.update_data(client_id=client.id, pending_limit=1)
     cb, nav = _acb(fake_bot)
-    await ah.edit_limit_confirm(cb, ConfirmCB(action="lower_limit", ref=client.id, yes=False), services, st)
-    assert services.db.get_client(client.id).device_limit == 5   # не изменён
+    await ah.edit_limit_preset(cb, PresetCB(kind="cli_devs", ref=client.id, val=-1), services, st)
+    text, labels = last_screen(nav)
+    assert text == texts.OTHER_NUMBER_PROMPT and labels == ["✖️ Отмена"], (text, labels)
+    bad = _amsg(fake_bot, "много")
+    await ah.edit_limit_apply(bad, services, st)
+    assert [s[1] for s in bad.sent if s[0] == "answer"] == [texts.NUMBER_BAD_LIMIT]
+    assert services.db.get_client(client.id).device_limit == 2, "мусор применился как лимит"
+    ok = _amsg(fake_bot, "7")
+    await ah.edit_limit_apply(ok, services, st)
+    assert services.db.get_client(client.id).device_limit == 7
+    shown = [s for s in ok.sent if s[0] == "answer"]
+    assert shown and shown[-1][1].splitlines()[0] == "✅ Устройств: 2 → 7", shown[-1][1]
+    assert shown[-1][1].splitlines()[2].startswith(f"✏️ {client.name} — изменить"), shown[-1][1]
+    assert "⚠️" not in shown[-1][1]
+    assert await st.get_data() == {}, "диалог не закрыт"
 
 
 # ── продление / файл ─────────────────────────────────────────────────────────
 async def test_extend_start_renders(services, fake_bot, make_active_client):
     client = make_active_client(tg_id=6303, period_kind="year")
     cb, nav = _acb(fake_bot)
-    await ah.extend_start(cb, ClientCB(action="extend", client_id=client.id), services)
-    _, labels = last_screen(nav)
-    assert any("год" in l.lower() for l in labels), "нет выбора срока"
-    assert any("Отмена" in l for l in labels), "диалог выбора срока — не тупик"
+    await ah.extend_start(cb, ClientCB(action="extend", client_id=client.id), services, FakeState())
+    text, labels = last_screen(nav)
+    assert text.startswith(f"⏱ Продление: {client.name}\nСейчас до "), text
+    assert labels[:5] == ["День", "Неделя", "Месяц", "Год", "∞"], labels
+    assert labels[-1] == "⬅️ Отмена", "диалог выбора срока — не тупик"
 
 
 async def test_admin_dev_file(services, fake_bot, make_active_client):
@@ -73,38 +101,17 @@ async def test_admin_dev_file(services, fake_bot, make_active_client):
     assert any(s[0] == "document" for s in nav.sent)
 
 
-# ── блок клиента с приостановкой (FSM дней) ──────────────────────────────────
-async def test_block_client_pause_flow(services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=6305, period_kind="year")
-    cb, nav = _acb(fake_bot)
-    await ah.admin_block_menu(cb, BlockCB(target="cli", action="menu_block", ref=client.id))
-    assert any(s[0] == "edit_text" for s in nav.sent)      # спросили про приостановку
-    st = FakeState()
-    cb2, nav2 = _acb(fake_bot)
-    await ah.admin_block_pause_yes(cb2, BlockCB(target="cli", action="pause_yes", ref=client.id), st, services)
-    assert (await st.get_data())["block_client"] == client.id
-    m_days = _amsg(fake_bot, "7")
-    await ah.admin_block_pause_days(m_days, services, st)
-    assert await st.get_data() == {}                        # FSM закрыт
-    assert any(s[0] == "answer" for s in m_days.sent)       # показан выбор уведомления
-    # ветка «без приостановки»
-    cb3, nav3 = _acb(fake_bot)
-    await ah.admin_block_pause_no(cb3, BlockCB(target="cli", action="pause_no", ref=client.id))
-    assert any(s[0] == "edit_text" for s in nav3.sent)
-
-
 async def test_block_menu_device_branch(services, fake_bot, make_active_client):
     client = make_active_client(tg_id=6306)
     dc = services.add_device(client.id, "d")
     cb, nav = _acb(fake_bot)
-    await ah.admin_block_menu(cb, BlockCB(target="dev", action="menu_block", ref=dc.device_id))
+    await ah.admin_block_menu(cb, BlockCB(target="dev", action="menu_block", ref=dc.device_id), services)
     text, labels = last_screen(nav)
-    assert "заблокировать" in text.lower()
-    assert any("уведомлением" in l for l in labels) and any("Тихо" in l for l in labels)
-    assert any("Отмена" in l for l in labels), "меню блокировки — не тупик"
+    assert text == "🛑 Как заблокировать d?", text
+    assert labels == ["🔔 С уведомлением", "🔕 Тихо", "⬅️ Отмена"], labels
 
 
-# ── личные qr/file, выбор устройства ─────────────────────────────────────────
+# ── личные qr/file, устройство профилю ───────────────────────────────────────
 async def test_self_gen_qr_file_pickers(services, fake_bot):
     services.ensure_admin_client()
     ac = services.admin_client()
@@ -117,26 +124,55 @@ async def test_self_gen_qr_file_pickers(services, fake_bot):
             or any("d" in l for l in labels), "устройство не предложено к выбору"
 
 
-async def test_add_device_choice_and_pick(services, fake_bot, make_active_client):
-    make_active_client(tg_id=6307, name="Клиент-6307")
+async def test_add_device_to_a_profile_asks_only_the_name_and_returns_to_the_card(
+        services, fake_bot, make_active_client):
+    """«➕ Устройство» в карточке профиля: одно имя → карточка профиля новым
+    сообщением с итогом первой строкой; владельцу — уведомление с рядом выдачи.
+    Экрана «Кому добавить» больше нет — устройство профилю добавляется из его
+    карточки."""
+    client = make_active_client(tg_id=6307, name="Клиент-6307", device_limit=3)
+    st = FakeState()
     cb, nav = _acb(fake_bot)
-    await ah.admin_add_device_choice(cb, services)
-    _, labels = last_screen(nav)
-    assert len([l for l in labels if "Назад" not in l]) >= 2, "выбор «кому» без вариантов"
-    cb2, nav2 = _acb(fake_bot)
-    await ah.admin_add_device_pick(cb2, services)
-    _, labels2 = last_screen(nav2)
-    assert any("Клиент" in l for l in labels2), "профиль не предложен для добавления устройства"
+    await ah.admin_add_device_start(cb, ClientCB(action="add_device", client_id=client.id), services, st)
+    text, labels = last_screen(nav)
+    assert text == "➕ Устройство профилю Клиент-6307 · 0 из 3\nКак назвать?", text
+    assert labels == ["✖️ Отмена"], labels
+    msg = _amsg(fake_bot, "Планшет")
+    await ah.admin_add_device_name(msg, services, st)
+    assert [d.name for d in services.db.list_devices(client.id)] == ["Планшет"]
+    shown = [s for s in msg.sent if s[0] == "answer"]
+    assert shown and shown[-1][1].startswith("✅ Планшет: создано для профиля Клиент-6307\n\n👤 "), \
+        shown[-1][1]
+    owner_notes = [r for r in fake_bot.records if r[0] == "send_message" and r[1] == 6307]
+    assert len(owner_notes) == 1 and "Планшет" in owner_notes[0][2]
+
+
+async def test_add_device_to_a_full_profile_is_refused_with_how_many_to_delete(
+        services, fake_bot, make_active_client):
+    client = make_active_client(tg_id=6308, device_limit=1)
+    services.add_device(client.id, "a")
+    st = FakeState()
+    cb, nav = _acb(fake_bot)
+    await ah.admin_add_device_start(cb, ClientCB(action="add_device", client_id=client.id), services, st)
+    assert len(cb.answers) == 1 and cb.answers[0][1] is True, cb.answers
+    assert cb.answers[0][0].startswith("Достигнут лимит") and "1 из 1" in cb.answers[0][0], cb.answers
+    assert await st.get_state() is None, "ввод имени открыт при исчерпанном лимите"
 
 
 async def test_admin_menu_devices(services, fake_bot):
+    """«📱 Мои устройства · 1, без лимита»; шлюз — вверху с «[шлюз]»."""
     services.ensure_admin_client()
-    services.add_device(services.admin_client().id, "Ноут")
+    ac = services.admin_client()
+    services.add_device(ac.id, "Ноут")
+    pi = services.add_device(ac.id, "NASPi")
+    services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30")
     cb, nav = _acb(fake_bot)
-    await ah.admin_menu_devices(cb, services)
+    await ah.admin_menu_devices(cb, services, FakeState())
     text, labels = last_screen(nav)
-    assert "Устройств: 1" in text
-    assert any("Ноут" in l for l in labels), "устройство админа не показано"
+    assert text == "📱 Мои устройства · 2, без лимита", text
+    assert labels[0] == "🛰 NASPi [шлюз]", labels
+    assert any(l.endswith(" Ноут") for l in labels[1:]), labels
+    assert labels[-2:] == ["➕ Устройство", "⬅️ Назад"], labels
 
 
 # ── регресс: у устройства без ключа не должно остаться тупиковых кнопок ───────
@@ -187,9 +223,10 @@ async def test_admin_card_hides_the_reinvite_button(services, make_active_client
     assert not any("Приглашение" in t for t in admin), admin
 
 
-async def test_unmanaged_device_connect_menu_says_there_is_no_link(
+async def test_unmanaged_device_card_and_issue_say_there_is_no_link(
         services, fake_bot):
-    """Карточка «как подключить» для такого пира честно говорит: ссылки нет."""
+    """Пир без приватного ключа: карточка говорит «ссылки нет», ряда выдачи в
+    ней нет, а кнопка старого образца выдачи отвечает тем же диалогом."""
     from awgbot.bot import texts
 
     svc = services.db.get_service_client_id()
@@ -197,101 +234,16 @@ async def test_unmanaged_device_connect_menu_says_there_is_no_link(
                                     private_key=None)
     cb, nav = _acb(fake_bot)
     await ah.admin_device_connect_menu(cb, DeviceCB(action="connect_menu", device_id=did),
-                                       services)
-    shown = [r[1] for r in nav.sent if r[0] == "edit_text"]
-    assert texts.UNMANAGED_DEVICE_DIALOG in shown
+                                       services, FakeState())
+    text, labels = last_screen(nav)
+    assert "✳️ Добавлено не ботом — ссылки нет" in text, text
+    assert not {"🔗 Ссылка", "🔳 QR", "📄 Файл"} & set(labels), labels
+    cb2, nav2 = _acb(fake_bot)
+    await ah.admin_dev_gen(cb2, DeviceCB(action="gen_link", device_id=did), services)
+    assert texts.UNMANAGED_DEVICE_DIALOG in [r[1] for r in nav2.sent if r[0] == "edit_text"]
 
 def _btn_texts(markup):
     return [b.text for row in markup.inline_keyboard for b in row]
-
-
-# ── потребление за месяц: ссылки из панели ───────────────────────────────────
-
-def _cmd(args):
-    from aiogram.filters import CommandObject
-    return CommandObject(prefix="/", command="start", args=args)
-
-
-async def test_panel_traffic_line_is_a_deep_link(services, fake_bot):
-    from awgbot.bot import texts
-    out = texts.admin_panel({"ok": True, "traffic_rx": 1, "traffic_tx": 2},
-                            bot_username="awg_test_bot")
-    label = f"📊 Трафик за {texts.month_label()}"
-    assert f'href="https://t.me/awg_test_bot?start=traffic">{label}</a>' in out, out
-    assert f"{label}</a>: 0.01 ГБ (↑ 0.01 ГБ | ↓ 0.01 ГБ)" in out, out
-
-
-async def test_start_traffic_opens_profiles_and_removes_the_command(
-        services, make_active_client, fake_bot):
-    from awgbot.bot.handlers import admin as ah
-    from tests.conftest import FakeMessage, FakeState
-    import awgbot.core.config as cfg
-    services.bot_username = "awg_test_bot"
-    c = make_active_client("Профиль А")
-    msg = FakeMessage(text="/start traffic", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic"))
-    assert any(r[0] == "delete" for r in fake_bot.records), "команда /start traffic не удалена"
-    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and sent[-1].startswith(f"📊 <b>Трафик за {texts.month_label()}:</b>\n"), sent
-    assert f'👤 <a href="https://t.me/awg_test_bot?start=traffic-{c.id}">Профиль А</a>' in sent[-1]
-
-
-async def test_start_traffic_replaces_the_active_menu_in_place(services, make_active_client, fake_bot):
-    """Экран потребления встаёт НА МЕСТО панели (редактированием), а не под ней."""
-    from awgbot.bot.handlers import admin as ah
-    from tests.conftest import FakeMessage, FakeState
-    import awgbot.core.config as cfg
-    services.db.set_nav_message_id(cfg.ADMIN_ID, 777)
-    msg = FakeMessage(text="/start traffic", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic"))
-    edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
-    assert edits and f"📊 <b>Трафик за {texts.month_label()}:</b>" in edits[-1][2], edits
-    assert not any(kind == "answer" for kind, _, _ in msg.sent), "экран ушёл новым сообщением"
-
-
-async def test_start_traffic_client_opens_devices_and_back_leads_to_profiles(
-        services, make_active_client, fake_bot):
-    from awgbot.bot.handlers import admin as ah
-    from awgbot.bot.callbacks import Menu
-    from tests.conftest import FakeCallback, FakeMessage, FakeState
-    import awgbot.core.config as cfg
-    c = make_active_client("Профиль Б")
-    msg = FakeMessage(text=f"/start traffic-{c.id}", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await ah.admin_start(msg, services, FakeState(), command=_cmd(f"traffic-{c.id}"))
-    sent = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
-    assert sent and sent[-1][0].startswith(
-        f"📊 <b>Трафик за {texts.month_label()}, Профиль Б:</b>\n"), sent
-    back = [b for row in sent[-1][1].inline_keyboard for b in row]
-    assert back and back[0].callback_data == Menu(action="traffic").pack()
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await ah.admin_traffic_profiles(cb, services)
-    assert any(f"📊 <b>Трафик за {texts.month_label()}:</b>" in t
-               for kind, t, _ in msg.sent if kind == "edit_text")
-
-
-async def test_plain_start_still_purges_and_shows_panel(services, fake_bot):
-    from awgbot.bot.handlers import admin as ah
-    from tests.conftest import FakeMessage, FakeState
-    import awgbot.core.config as cfg
-    msg = FakeMessage(text="/start", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await ah.admin_start(msg, services, FakeState(), command=_cmd(None))
-    assert any("Панель администратора" in t for kind, t, _ in msg.sent if kind == "answer")
-
-
-async def test_devices_breakdown_lists_real_devices_with_traffic(services, make_active_client, fake_bot):
-    """Регресс: с реальными устройствами экран падал на поле трафика (в бою —
-    AttributeError, в тесте профиль был без устройств)."""
-    from awgbot.bot.handlers import admin as ah
-    from tests.conftest import FakeMessage, FakeState
-    import awgbot.core.config as cfg
-    c = make_active_client("Профиль В")
-    services.add_device(c.id, "Телефон")
-    dev = services.db.list_devices(c.id)[0]
-    services.db.add_traffic_bulk([(dev.id, 3 * 1024 ** 2, 5 * 1024 ** 2)])
-    msg = FakeMessage(text=f"/start traffic-{c.id}", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await ah.admin_start(msg, services, FakeState(), command=_cmd(f"traffic-{c.id}"))
-    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and "🔴 Телефон: 0.01 ГБ (↑ 0.01 ГБ | ↓ 0.01 ГБ)" in sent[-1]
 
 
 def test_transfer_buttons_are_split_by_role(services, make_active_client):
@@ -321,31 +273,10 @@ def test_broadcast_targets_mark_subscription_only_in_extend_mode(services, make_
     rows = [services.db.get_client(c.id) for c in (a, b, v)]
     def labels(extend):
         return [btn.text for row in kbs.broadcast_targets(rows, set(), extend=extend).inline_keyboard
-                for btn in row if btn.text.startswith(("✅", "☑️")) and "все" not in btn.text]
+                for btn in row if btn.callback_data.startswith("bc:tgl:")]
     assert labels(False) == ["☑️ Анна", "☑️ Борис", "☑️ Вера"]
-    assert labels(True) == ["☑️ Анна", "☑️ Борис ∞", "☑️ Вера ⛔ 01.09.2026"]
-
-
-async def test_online_link_opens_the_list_of_online_devices(services, make_active_client, fake_bot, monkeypatch):
-    from awgbot.bot import texts
-    from awgbot.bot.handlers import admin as ah
-    from tests.conftest import FakeMessage, FakeState
-    from awgbot.util import timeutil
-    import awgbot.core.config as cfg
-    out = texts.admin_panel({"ok": True, "online_count": 2}, bot_username="awg_test_bot")
-    assert 'href="https://t.me/awg_test_bot?start=online">📶 Устройств онлайн</a>: 2' in out
-    c = make_active_client("Профиль Д")
-    services.add_device(c.id, "iPhone 16 Pro"); services.add_device(c.id, "Старый ноут")
-    on, off = services.db.list_devices(c.id)
-    monkeypatch.setattr(timeutil, "handshake_is_online", lambda hs: hs == "on")
-    monkeypatch.setattr(services, "online_devices",
-                        lambda: [(d, "Профиль Д") for d in services.db.list_devices(c.id) if d.id == on.id])
-    msg = FakeMessage(text="/start online", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await ah.admin_start(msg, services, FakeState(), command=_cmd("online"))
-    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and "📶 <b>Устройства онлайн (1):</b>" in sent[-1]
-    assert f"📱 iPhone 16 Pro (Профиль Д) — {texts.plain_ip(on.address)}" in sent[-1] and "Старый ноут" not in sent[-1]
-    assert f"<code>{on.address}</code>" in sent[-1], "адрес ушёл голым — Telegram сделает из него ссылку"
+    # год текущий — в дате его нет
+    assert labels(True) == ["☑️ Анна", "☑️ Борис ∞", "☑️ Вера ⛔ 01.09"]
 
 
 def test_device_line_format_and_plain_ip(services, make_active_client):
@@ -358,69 +289,12 @@ def test_device_line_format_and_plain_ip(services, make_active_client):
     assert texts.plain_ip("10.9.1.2") == "<code>10.9.1.2</code>"
 
 
-def test_list_screens_separate_entries_with_a_blank_line(services, make_active_client):
-    from awgbot.bot import texts
-    a = make_active_client("А", tg_id=1101); b = make_active_client("Б", tg_id=1102)
-    out = texts.traffic_profiles_text([(a, 1, 1, None), (b, 2, 2, None)], "bot")
-    assert "\n\n👤 " in out and out.count("\n\n") == 2
-
-
-# ── истекающие подписки: панель, экран, продление с возвратом ────────────────
-
-async def test_expiring_line_is_conditional_and_linked(services, make_active_client, fake_bot):
-    from awgbot.bot import texts
-    assert "Истекающие" not in texts.admin_panel({"ok": True}, bot_username="b", expiring=0)
-    out = texts.admin_panel({"ok": True}, bot_username="b", expiring=2)
-    assert out.endswith('<b><a href="https://t.me/b?start=expiring">⏳ Истекающие подписки</a>: 2</b>')
-
-
-async def test_expiring_screen_and_extend_returns_to_it_or_menu(services, make_active_client, fake_bot):
-    import datetime as dt
-    from awgbot.bot.handlers import admin as ah
-    from awgbot.bot.callbacks import PeriodCB, Menu
-    from awgbot.util import timeutil
-    from tests.conftest import FakeCallback, FakeMessage, FakeState
-    import awgbot.core.config as cfg
-    services.bot_username = "b"
-    now = timeutil.now()
-    c = make_active_client("Скоро", tg_id=3001)
-    services.db.update_client_fields(c.id, period_start=timeutil.to_iso(now - dt.timedelta(days=20)),
-                                     period_end=timeutil.to_iso(now + dt.timedelta(days=3)), period_kind="month")
-    msg = FakeMessage(text="/start expiring", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    state = FakeState()
-    await ah.admin_start(msg, services, state, command=_cmd("expiring"))
-    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and "⏳ <b>Истекающие подписки:</b>" in sent[-1]
-    assert "👤 Скоро — осталось 2 дня 23 часа" in sent[-1] and "Период подписки: " in sent[-1]
-    assert f'?start=extend-{c.id}">Продлить?</a>' in sent[-1]
-    # «Продлить?» → выбор срока с отменой обратно в список (активное меню
-    # сбрасываем, чтобы экран ушёл ответом, а не правкой — так видна клавиатура)
-    services.db.set_nav_message_id(cfg.ADMIN_ID, None)
-    await ah.admin_start(msg, services, state, command=_cmd(f"extend-{c.id}"))
-    sent = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
-    assert "На какой срок продлить?" in sent[-1][0]
-    cancel = [b for row in sent[-1][1].inline_keyboard for b in row if "Отмена" in b.text][0]
-    assert cancel.callback_data == Menu(action="expiring").pack()
-    assert (await state.get_data())["return_to"] == "expiring"
-    # продление на год: остатка нет вопроса? остаток есть → вопрос; отвечаем «нет»
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await ah.extend_period_chosen(cb, PeriodCB(kind="year", ctx="extend", ref=c.id), services, state)
-    from awgbot.bot.callbacks import ConfirmCB
-    await ah.extend_keep_answer(cb, ConfirmCB(action="keep", ref=c.id, yes=False), services, state)
-    edits = [t for kind, t, _ in msg.sent if kind == "edit_text"]
-    assert any(t.startswith("✅ Подписка профиля Скоро продлена на 1 год, до ")
-               for t in edits), "итог не остался инфосообщением"
-    answers = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert "Панель администратора" in answers[-1], "после продления не вернулись в меню (список опустел)"
-    assert "продлена на" not in answers[-1], "меню дублирует инфосообщение"
-
-
 # ── шлюз не предлагается под ссылку/QR/файл ──────────────────────────────────
 async def test_gateway_is_not_offered_for_link_qr_file(services, fake_bot):
-    """Сервис выдачу шлюзу отвергает; но кнопки главного меню «Ссылка/QR/Файл»
-    и «Выдать конфиг» из карточки профиля всё равно ставили его в список —
-    клик вёл в алерт. Теперь в пикерах его нет, а профиль с одним шлюзом
-    считается без устройств."""
+    """Сервис выдачу шлюзу отвергает; кнопки старого образца «Ссылка/QR/Файл»
+    ставили его в список — клик вёл в алерт. В пикере его нет, а профиль с
+    одним шлюзом считается без устройств. Старая «Выдать конфиг» профиля
+    открывает карточку профиля — выдача там рядом с каждым устройством."""
     services.ensure_admin_client()
     ac = services.admin_client()
     pi = services.add_device(ac.id, "NASPi")
@@ -429,190 +303,35 @@ async def test_gateway_is_not_offered_for_link_qr_file(services, fake_bot):
         cb, nav = _acb(fake_bot)
         await ah.self_gen_pick(cb, AdminSelfCB(action=action), services)
         assert any("добавь устройство" in a.lower() for a, _ in cb.answers if a), "шлюз сошёл за устройство"
-    cb, nav = _acb(fake_bot)
-    await ah.admin_gen_for(cb, ClientCB(action="gen_for", client_id=ac.id), services)
-    assert any("нет устройств" in a.lower() for a, _ in cb.answers if a)
-    phone = services.add_device(ac.id, "phone")
+    services.add_device(ac.id, "phone")
     cb, nav = _acb(fake_bot)
     await ah.self_gen_pick(cb, AdminSelfCB(action="gen_link"), services)
     _, labels = last_screen(nav)
     assert any("phone" in l for l in labels) and not any("NASPi" in l for l in labels)
     cb, nav = _acb(fake_bot)
-    await ah.admin_gen_for(cb, ClientCB(action="gen_for", client_id=ac.id), services)
-    _, labels = last_screen(nav)
-    assert any("phone" in l for l in labels) and not any("NASPi" in l for l in labels)
-    assert phone.device_id != pi.device_id
+    await ah.admin_gen_for(cb, ClientCB(action="gen_for", client_id=ac.id), services, FakeState())
+    text, _ = last_screen(nav)
+    assert text.startswith("👤 "), f"старая «Выдать конфиг» не привела в карточку: {text}"
 
 
-async def test_main_menu_hides_issue_row_when_only_device_is_the_gateway(services, fake_bot):
-    """Шлюз в «Моих устройствах» виден, но ряд «Ссылка/QR-код/Файл» без
-    выдаваемого устройства — пустое обещание; появляется с первым обычным."""
-    from tests.conftest import FakeState
-    services.ensure_admin_client()
-    ac = services.admin_client()
-    pi = services.add_device(ac.id, "NASPi")
-    services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30")
+async def test_device_limit_other_asks_a_number_and_returns_to_the_card(
+        services, fake_bot, make_active_client):
+    """«✏️ Другое» у лимита устройства: ввод на месте экрана с «✖️ Отмена»,
+    число выше лимита профиля — переспрос, в пределах — карточка устройства
+    с итогом первой строкой. Не откроется ввод — лимит вне пресетов не задать."""
+    from awgbot.bot.callbacks import PresetCB
+    client = make_active_client(tg_id=6309, traffic_limit=50 * 1024 ** 3)
+    dc = services.add_device(client.id, "Тел")
+    st = FakeState()
     cb, nav = _acb(fake_bot)
-    await ah.admin_main_menu(cb, services, FakeState())
-    _, labels = last_screen(nav)
-    assert "📱 Мои устройства" in labels and "🔗 Ссылка" not in labels
-    services.add_device(ac.id, "phone")
-    cb, nav = _acb(fake_bot)
-    await ah.admin_main_menu(cb, services, FakeState())
-    _, labels = last_screen(nav)
-    assert "🔗 Ссылка" in labels and "📄 Файл" in labels
-
-
-# ── РФ-доступ за месяц: ссылки traffic_local ──
-
-_GB = 1024 ** 3
-
-
-def _rf_client(services, make_active_client, name, tg_id, *, rf=(0, 0)):
-    """Профиль с разрешённым РФ-доступом и одним устройством; rf — (↑, ↓)
-    устройства за месяц, как их накопил бы опрос."""
-    c = make_active_client(name, tg_id=tg_id)
-    services.db.update_client_fields(c.id, routing_allowed=1)
-    dc = services.add_device(c.id, "Телефон")
-    if any(rf):
-        services.db.rf_add_bulk([(dc.device_id, *rf)])
-    return c, dc
-
-
-async def test_start_traffic_local_opens_rf_profiles_and_removes_the_command(
-        services, make_active_client, fake_bot):
-    """«РФ-доступ» с главной ведёт на экран по профилям, а не в потребление
-    (payload начинается с «traffic»): перепутай развилку — админ увидит не тот
-    экран. Команда /start из чата убирается, имя профиля — ссылка дальше."""
-    from awgbot.bot.callbacks import Menu
-    services.bot_username = "awg_test_bot"
-    c, _ = _rf_client(services, make_active_client, "Ксюша", 2101, rf=(_GB, 2 * _GB))
-    services.db.set_state("rf_month_rx", str(_GB))
-    services.db.set_state("rf_month_tx", str(2 * _GB))
-    msg = _amsg(fake_bot, "/start traffic_local")
-    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic_local"))
-    assert any(r[0] == "delete" for r in fake_bot.records), "команда /start traffic_local не удалена"
-    sent = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
-    assert sent, "экран не пришёл"
-    text, markup = sent[-1]
-    assert text.startswith(f"🇷🇺 <b>РФ-доступ за {texts.month_label()}:</b>\n3 ГБ (↑ 1 ГБ | ↓ 2 ГБ)"), text
-    assert "📊" not in text, "открылся экран трафика вместо РФ"
-    assert (f'👤 <a href="https://t.me/awg_test_bot?start=traffic_local-{c.id}">Ксюша</a>: '
-            "3 ГБ (↑ 1 ГБ | ↓ 2 ГБ)") in text, text
-    buttons = [b for row in markup.inline_keyboard for b in row]
-    assert [(b.text, b.callback_data) for b in buttons] == [("⬅️ В меню", Menu(action="main").pack())]
-
-
-async def test_start_traffic_local_replaces_the_active_menu_in_place(
-        services, make_active_client, fake_bot):
-    """Экран РФ встаёт на место панели редактированием: иначе в чате два живых
-    меню, и «В меню» старой панели ведёт мимо."""
-    services.db.set_nav_message_id(ADMIN, 777)
-    msg = _amsg(fake_bot, "/start traffic_local")
-    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic_local"))
-    edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
-    assert edits and f"РФ-доступ за {texts.month_label()}:" in edits[-1][2], edits
-    assert not any(kind == "answer" for kind, _, _ in msg.sent), "экран ушёл новым сообщением"
-    assert any(r[0] == "delete" for r in fake_bot.records), "команда не удалена"
-
-
-async def test_start_traffic_local_client_opens_devices_and_back_leads_to_rf_profiles(
-        services, make_active_client, fake_bot):
-    """Имя профиля на экране РФ → разбивка по его устройствам; «Назад» — на
-    экран РФ по профилям, а не в обычное потребление."""
-    from awgbot.bot.callbacks import Menu
-    from awgbot.bot.handlers.admin.panel import admin_rf_profiles
-    c, _ = _rf_client(services, make_active_client, "Ксюша", 2102, rf=(_GB, 3 * _GB))
-    msg = _amsg(fake_bot, f"/start traffic_local-{c.id}")
-    await ah.admin_start(msg, services, FakeState(), command=_cmd(f"traffic_local-{c.id}"))
-    assert any(r[0] == "delete" for r in fake_bot.records), "команда не удалена"
-    sent = [(t, m) for kind, t, m in msg.sent if kind == "answer"]
-    assert sent, "экран не пришёл"
-    text, markup = sent[-1]
-    assert text.startswith(f"🇷🇺 <b>РФ-доступ за {texts.month_label()}, Ксюша:</b>\n"
-                           "4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)"), text
-    assert "🔴 Телефон: 4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)" in text, text
-    buttons = [b for row in markup.inline_keyboard for b in row]
-    assert [(b.text, b.callback_data) for b in buttons] == \
-        [("⬅️ Назад", Menu(action="traffic_local").pack())], "«Назад» ведёт не на экран РФ"
-    cb = FakeCallback(message=msg, user_id=ADMIN, bot=fake_bot)
-    await admin_rf_profiles(cb, services)
-    back = [t for kind, t, _ in msg.sent if kind == "edit_text"]
-    assert back and back[-1].startswith(f"🇷🇺 <b>РФ-доступ за {texts.month_label()}:</b>"), back
-
-
-async def test_rf_link_from_the_traffic_list_goes_back_to_the_traffic_list(
-        services, make_active_client, fake_bot):
-    """Строка РФ под профилем в списке трафика — ссылка «…-t» на ту же разбивку
-    РФ, но «Назад» оттуда — обратно в список трафика, а не на экран РФ-доступа:
-    иначе админ, пришедший из трафика, теряет место и попадает в чужой экран."""
-    from awgbot.bot.callbacks import Menu
-    services.bot_username = "awg_test_bot"
-    c, _ = _rf_client(services, make_active_client, "Ксюша", 2103, rf=(_GB, 3 * _GB))
-
-    # список трафика: подпись «🇷🇺 РФ-доступ» целиком (с флагом) — ссылка с -t
-    msg = _amsg(fake_bot, "/start traffic")
-    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic"))
-    listing = [t for kind, t, _ in msg.sent if kind == "answer"][-1]
-    assert (f'└ <a href="https://t.me/awg_test_bot?start=traffic_local-{c.id}-t">🇷🇺 РФ-доступ</a>: '
-            "4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)") in listing, listing
-
-    # переход по ней: тот же экран РФ профиля, что с экрана РФ-доступа; живое
-    # меню забываем — экран придёт новым сообщением, и видны его кнопки
-    services.db.set_nav_message_id(ADMIN, None)
-    msg_t = _amsg(fake_bot, f"/start traffic_local-{c.id}-t")
-    await ah.admin_start(msg_t, services, FakeState(), command=_cmd(f"traffic_local-{c.id}-t"))
-    shown = [(t, m) for kind, t, m in msg_t.sent if kind == "answer"]
-    assert shown, "экран РФ профиля по ссылке с -t не отрисован"
-    text, markup = shown[-1]
-    assert text.startswith(f"🇷🇺 <b>РФ-доступ за {texts.month_label()}, Ксюша:</b>\n"
-                           "4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)"), text
-    assert "🔴 Телефон: 4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)" in text, text
-    assert any(r[0] == "delete" for r in fake_bot.records), "команда не удалена"
-    buttons = [b for row in markup.inline_keyboard for b in row]
-    assert [(b.text, b.callback_data) for b in buttons] == \
-        [("⬅️ Назад", Menu(action="traffic").pack())], "«Назад» из РФ профиля ведёт не в список трафика"
-
-    # «Назад» — список трафика по профилям, не экран РФ
-    cb = FakeCallback(message=msg_t, user_id=ADMIN, bot=fake_bot)
-    await ah.admin_traffic_profiles(cb, services)
-    back = [t for kind, t, _ in msg_t.sent if kind == "edit_text"]
-    assert back and back[-1].startswith(f"📊 <b>Трафик за {texts.month_label()}:</b>"), back
-
-
-@pytest.mark.parametrize("payload", ["traffic_local-abc-t", "traffic_local--t", "traffic_local-t"])
-async def test_rf_link_with_a_broken_t_suffix_falls_back_to_the_panel(services, fake_bot, payload):
-    """Суффикс «-t» без числового id — не ссылка бота: обычная панель, а не
-    исключение разбора или экран РФ с чужим профилем."""
-    msg = _amsg(fake_bot, f"/start {payload}")
-    await ah.admin_start(msg, services, FakeState(), command=_cmd(payload))
-    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and "Панель администратора" in sent[-1], sent
-    assert not any(t.startswith("🇷🇺") for t in sent), sent
-
-
-async def test_rf_link_with_t_for_a_missing_profile_says_not_found(services, fake_bot):
-    msg = _amsg(fake_bot, "/start traffic_local-999999-t")
-    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic_local-999999-t"))
-    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and sent[-1] == "Профиль не найден.", sent
-
-
-async def test_start_traffic_local_for_missing_profile_says_not_found(services, fake_bot):
-    """Ссылка из старого экрана на удалённый профиль — внятный ответ, а не
-    пустой экран или исключение в хендлере; команда всё равно убирается."""
-    msg = _amsg(fake_bot, "/start traffic_local-999999")
-    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic_local-999999"))
-    assert any(r[0] == "delete" for r in fake_bot.records), "команда не удалена"
-    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and sent[-1] == "Профиль не найден.", sent
-
-
-async def test_start_traffic_local_with_garbage_suffix_falls_back_to_the_panel(services, fake_bot):
-    """«traffic_local-abc» — не ссылка бота: обычный /start с панелью, а не
-    экран РФ с чужим id."""
-    msg = _amsg(fake_bot, "/start traffic_local-abc")
-    await ah.admin_start(msg, services, FakeState(), command=_cmd("traffic_local-abc"))
-    sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and "Панель администратора" in sent[-1], sent
-    assert not any(t.startswith("🇷🇺") for t in sent)
+    await ah.device_limit_preset(cb, PresetCB(kind="devlimit", ref=dc.device_id, val=-1), services, st)
+    text, labels = last_screen(nav)
+    assert labels == ["✖️ Отмена"], (text, labels)
+    over = _amsg(fake_bot, "70")
+    await ah.edit_traffic_apply(over, services, st)
+    assert int(services.db.get_device(dc.device_id).traffic_limit) == 0, "лимит выше профиля принят"
+    ok = _amsg(fake_bot, "20")
+    await ah.edit_traffic_apply(ok, services, st)
+    assert int(services.db.get_device(dc.device_id).traffic_limit) == 20 * 1024 ** 3
+    shown = [s for s in ok.sent if s[0] == "answer"]
+    assert shown and "Тел" in shown[-1][1].split("\n\n")[1], shown

@@ -288,22 +288,19 @@ def test_set_subscription_dates_forever(services, fake_awg):
     assert e is None                        # отчёт покажет «бессрочно»
 
 
-def test_client_created_report_variants():
-    """Констатирующий результат создания: лимиты + срок, без секунд в дате."""
+def test_profile_created_note_variants(make_active_client):
+    """След создания профиля: «✅ Имя: 3 устройства, 100 ГБ в месяц, подписка
+    до …» — дата без секунд и без года, если он текущий; безлимиты — «∞»."""
     from awgbot.bot import texts
     from awgbot.util import timeutil
     from datetime import datetime
-    end = datetime(2027, 3, 15, 14, 30, 45, tzinfo=timeutil.TZ)
-    r = texts.client_created_report("X", device_limit=3, traffic_limit_bytes=50 * 1024**3,
-                                    period_kind="year", period_end=end)
-    assert "до 3 устройств" in r and "до 50 ГБ" in r
-    assert "подписка на год до 15.03.2027 14:30" in r and ":45" not in r   # без секунд
-    assert "Повторный выпуск приглашения" in r
-    # безлимиты + бессрочно
-    r2 = texts.client_created_report("Y", device_limit=0, traffic_limit_bytes=0,
-                                     period_kind="never", period_end=None)
-    assert "количество устройств не ограничено" in r2
-    assert "потребление не ограничено" in r2 and "бессрочная подписка" in r2
+    c = make_active_client(name="X", tg_id=6310)
+    end = datetime(timeutil.now().year, 3, 15, 14, 30, 45, tzinfo=timeutil.TZ)
+    r = texts.profile_created_note(c, 3, 50, end, "awg_test_bot")
+    assert r == (f'✅ <a href="https://t.me/awg_test_bot?start=cl-{c.id}">X</a>: '
+                 "3 устройства, 50 ГБ в месяц, подписка до 15.03 14:30"), r
+    r2 = texts.profile_created_note(c, 0, 0, None)
+    assert r2 == "✅ X: ∞ устройств, ∞ ГБ в месяц, бессрочная подписка", r2
 
 
 def test_server_screen_reads_live_settings_not_startup_constants(services, monkeypatch):

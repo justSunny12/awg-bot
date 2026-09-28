@@ -61,17 +61,16 @@ def test_plural_ru_agrees():
 
 def test_device_count_is_a_fraction_everywhere():
     """Счётчик устройств читается одинаково у админа и у владельца профиля:
-    дробь m/n, безлимит — ∞. Расхождение форматов между двумя сообщениями об
+    «m из n», безлимит — ∞. Расхождение форматов между двумя сообщениями об
     одном и том же событии заставляет сверять их глазами."""
     admin = texts.device_created_report("Pi4", client_name="Админ", device_count=6,
                                         max_devices=0)
     owner = texts.reassign_recipient_notice("Pi4", 6, 0, recipient_is_admin=True)
     assert "Количество устройств: 6" in admin
-    assert "Теперь у тебя 6/∞ подключённых устройств." in owner
+    assert owner.endswith("Теперь у тебя 6 из ∞ устройств"), owner
     # с лимитом — тот же вид, число вместо ∞
-    assert "Теперь у тебя 1/5 подключённых устройств." in \
-        texts.reassign_recipient_notice("Тел", 1, 5)
-    # после дроби слова не склоняем: «1/5 подключённое устройство» — брак
+    assert texts.reassign_recipient_notice("Тел", 1, 5).endswith("Теперь у тебя 1 из 5 устройств")
+    # после «из» слово не склоняем по первому числу: «1 из 5 подключённое устройство» — брак
     assert "подключённое" not in texts.reassign_donor_notice("Тел", 1, 5)
 
 
@@ -97,8 +96,8 @@ def test_static_keyboards_build():
     assert _is_markup(kb.yes_no("keep", ref=1))
     assert _is_markup(kb.period_choices("extend", ref=1, min_days=7))
     assert _is_markup(kb.grace_offer(1, 14))
-    assert _is_markup(kb.block_pause_choice(1))
-    assert _is_markup(kb.block_notify_choice("cli", 1, pause_days=0))
+    assert _is_markup(kb.block_pause_kb(1))
+    assert _is_markup(kb.block_notify_kb("cli", 1, pause_days=0))
     assert _is_markup(kb.help_menu(guest=True))
     assert _is_markup(kb.guest_main()) and _is_markup(kb.guest_main(routing_visible=True, client_id=1))
 
@@ -180,7 +179,7 @@ def test_object_keyboards_build(services, make_active_client):
     assert _is_markup(kb.device_actions(dev, is_admin=True, back_target="cli",
                                         reassign_label="Передать"))
     assert _is_markup(kb.admin_client_actions(client))
-    assert _is_markup(kb.admin_main(0))
+    assert _is_markup(kb.admin_main())
 
 
 def test_admin_client_keyboard_has_no_dangerous_buttons():
@@ -191,21 +190,21 @@ def test_admin_client_keyboard_has_no_dangerous_buttons():
     class _C:
         id = 1; activation_status = "active"; block_reason = 0
         tg_id = config.ADMIN_ID
-    m = kb.admin_client_actions(_C(), has_devices=True, is_admin_owner=True)
+    m = kb.admin_client_actions(_C(), is_admin_owner=True)
     labels = " ".join(b.text for row in m.inline_keyboard for b in row)
-    for forbidden in ("Удалить", "Лимит", "Продлить", "лок"):   # блок/Блок/…
+    for forbidden in ("Удалить", "Лимит", "Продлить", "лок", "Изменить"):   # блок/Блок/…
         assert forbidden not in labels, f"кнопка '{forbidden}' не должна быть у админ-клиента"
-    assert "Имя" in labels and "Устройства" in labels
+    assert "✏️ Имя" in labels and "➕ Устройство" in labels
 
 
 def test_rf_traffic_line_render():
-    """Вторая строка группы потребления: объём и
-    ↑↓ — как у обычного потребления; суффикс — только при ошибке учёта."""
+    """Вложенная строка РФ под трафиком на главной: объём без ↑↓ (разбивка —
+    на экране «Трафик»); суффикс — только при ошибке учёта."""
     G = 1024 ** 3
-    assert texts.rf_traffic_line({"rx": G, "tx": 3 * G}) == "└ 🇷🇺 РФ-доступ: 4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)"
+    assert texts.rf_traffic_line({"rx": G, "tx": 3 * G}) == "└─ 🇷🇺 РФ-доступ: 4 ГБ"
     assert texts.rf_traffic_line({"rx": 0, "tx": 0, "error": "x"}) == \
-        "└ 🇷🇺 РФ-доступ: 0 ГБ (↑ 0 ГБ | ↓ 0 ГБ) · ⚠️ учёт трафика РФ-доступа не идёт"
+        "└─ 🇷🇺 РФ-доступ: 0 ГБ · ⚠️ учёт по РФ-доступу не ведётся"
     st = {"ok": True, "traffic_rx": 1, "traffic_tx": 2}
-    assert "└ 🇷🇺" not in texts.admin_panel(st), "строка РФ без данных о ней"
-    assert "└ 🇷🇺" not in texts.admin_panel(st, rf={"rx": G, "tx": G, "show": False})
-    assert "└ 🇷🇺 РФ-доступ: 2 ГБ" in texts.admin_panel(st, rf={"rx": G, "tx": G, "show": True})
+    assert "🇷🇺 РФ-доступ:" not in texts.admin_panel(st), "строка РФ без данных о ней"
+    assert "🇷🇺 РФ-доступ:" not in texts.admin_panel(st, rf={"rx": G, "tx": G, "show": False})
+    assert "└─ 🇷🇺 РФ-доступ: 2 ГБ" in texts.admin_panel(st, rf={"rx": G, "tx": G, "show": True})

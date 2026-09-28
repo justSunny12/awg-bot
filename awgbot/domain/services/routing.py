@@ -110,8 +110,6 @@ class RoutingMixin:
         return (f"🔴 Шлюз{who} отвечает, но интернета за ним нет "
                 f"— проверь аплинк и NAT на самом шлюзе.{tail}\n" + self._rt_effect_line())
 
-    _TXT_RT_GW_UP = "🟢 Шлюз условной маршрутизации снова в строю."
-
     _RT_LINK_IF = "awglink"
 
     def routing_provisioned(self) -> bool:
@@ -1352,8 +1350,7 @@ class RoutingMixin:
         return (f"🔴 {self._gw_link(active)} перестал отвечать через {mins} мин после "
                 "переключения на него. Второе переключение подряд не делаю: проблема выглядит "
                 "системной. " + self._rt_effect_line()
-                + "\n\nПереключить принудительно можно в карточке шлюза "
-                "(⚙️ Настройки → Условная маршрутизация → Шлюзы).")
+                + "\n\nПереключить принудительно можно в карточке шлюза")
 
     def _txt_rt_standby_also_down(self, dead) -> str:
         names = ", ".join(self._gw_link(g) for g in dead)

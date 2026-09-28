@@ -47,7 +47,8 @@ class NoteCB(CallbackData, prefix="nt"):
 class ClientCB(CallbackData, prefix="c"):
     """Действия над клиентом (админ). action: open|edit (подменю «✏️
     Изменить»)|devices|add_device|edit_name|edit_limit|edit_traffic|
-    edit_period|extend|resume_pause|delete|delete_yes|regen_invite|gen_for"""
+    edit_period|extend|extend_exp (из списка истекающих)|resume_pause|delete|delete_yes|
+    regen_invite|gen_for"""
     action: str
     client_id: int = 0
 

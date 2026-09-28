@@ -332,27 +332,20 @@ def test_client_menu_button_position_and_state(monkeypatch):
 
 
 def test_admin_card_button_above_block(monkeypatch):
-    """В карточке профиля кнопка стоит НАД «Заблокировать»: это настройка,
-    а не карательное действие."""
+    """В карточке профиля «🇷🇺 РФ-доступ» стоит в одном ряду с «🛑 Блок» и
+    слева от него: это настройка, а не карательное действие. Без кружка —
+    состояние режима на экране раздела и строкой карточки."""
     from awgbot.core import models
     from awgbot.bot import keyboards as kb
     c = models.Client(id=7, tg_id=500, name="Клиент", device_limit=1, block_reason=0,
                       is_service=0, activation_status="active", invite_code=None,
                       created_at="2026-01-01", routing_allowed=1)
-    labels = [b.text for row in kb.admin_client_actions(
-        c, has_devices=True, routing_visible=True,
-        routing_on=True).inline_keyboard for b in row]
-    rt = next(i for i, t in enumerate(labels) if "РФ-сервисам" in t)
-    blk = next(i for i, t in enumerate(labels) if "Блок" in t)
-    assert rt < blk, labels
-    assert labels[rt].startswith("✅"), "тумблер — ✅/☑️"
-
-    # Состояние ВЫВОДИТСЯ из устройств, поэтому клавиатура его получает
-    # параметром, а не читает из профиля: колонки под него больше нет.
-    off = [b.text for row in kb.admin_client_actions(
-        c, has_devices=True, routing_visible=True,
-        routing_on=False).inline_keyboard for b in row]
-    assert next(x for x in off if "РФ-сервисам" in x).startswith("☑️")
+    rows = [[b.text for b in row] for row in kb.admin_client_actions(
+        c, routing_visible=True).inline_keyboard]
+    assert ["🇷🇺 РФ-доступ", "🛑 Блок"] in rows, rows
+    hidden = [b.text for row in kb.admin_client_actions(c, routing_visible=False).inline_keyboard
+              for b in row]
+    assert not any("РФ" in t for t in hidden) and "🛑 Блок" in hidden, hidden
 
 
 # ── режим — свойство профиля, не устройства ──────────────────────────────────
@@ -377,21 +370,15 @@ def test_device_card_has_no_routing_toggle(monkeypatch):
 
 
 def test_admin_main_has_routing_under_devices(monkeypatch):
-    """У админа кнопка в главном меню — сразу под «Мои устройства»: он такой же
-    пользователь VPN, и режим ему нужен там же, где остальным."""
-    from awgbot.core import config
+    """У админа «🇷🇺 РФ-доступ» — в одном ряду с «📱 Мои устройства», без
+    кружка: он такой же пользователь VPN, и режим ему нужен там же, где
+    остальным. Не выдан — кнопки нет, «Мои устройства» одна в ряду."""
     from awgbot.bot import keyboards as kb
-    monkeypatch.setattr(config, "ROUTING_ENABLED", True)
-    labels = [b.text for row in kb.admin_main(
-        0, self_has_devices=True, routing_visible=True, routing_on=True,
-        self_client_id=2).inline_keyboard for b in row]
-    assert "✅ Доступ к РФ-сервисам" in labels
-    assert labels.index("✅ Доступ к РФ-сервисам") == labels.index("📱 Мои устройства") + 1
-
-    # не разрешена — кнопки нет вовсе
-    off = [b.text for row in kb.admin_main(0, self_has_devices=True).inline_keyboard
-           for b in row]
-    assert not any("РФ" in t for t in off)
+    rows = [[b.text for b in row] for row in kb.admin_main(
+        routing_visible=True, self_client_id=2).inline_keyboard]
+    assert rows[0] == ["📱 Мои устройства", "🇷🇺 РФ-доступ"], rows
+    off = [[b.text for b in row] for row in kb.admin_main().inline_keyboard]
+    assert off[0] == ["📱 Мои устройства"] and not any("РФ" in t for r in off for t in r), off
 
 
 async def test_add_domains_without_dialog_context_lands_on_main_with_the_report(

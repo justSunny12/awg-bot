@@ -151,14 +151,17 @@ def test_client_list_circle_means_online_not_subscription():
             self.activation_status, self.status = act, status
             self.block_reason = 0
 
+    from awgbot.core.blocks import ClientBlock
     clients = [_C(1, "Онлайн"), _C(2, "Офлайн"),
                _C(3, "Ждёт", act=ActivationStatus.PENDING),
-               _C(4, "Истёк", status=SubStatus.EXPIRED)]
-    labels = [b.text for row in kb.admin_clients(clients, online_ids={1, 4}).inline_keyboard
+               _C(4, "Истёк", status=SubStatus.EXPIRED),
+               _C(5, "Блок"), _C(6, "Пауза")]
+    clients[4].block_reason = int(ClientBlock.ADMIN_SILENT) | int(ClientBlock.PAUSED)
+    clients[5].block_reason = int(ClientBlock.PAUSED)
+    labels = [b.text for row in kb.admin_clients(clients, online_ids={1, 4, 5, 6}).inline_keyboard
               for b in row]
-    assert labels[0].startswith("🟢") and labels[1].startswith("🔴")
-    assert labels[2].startswith("⏳")
-    assert labels[3].startswith("🟢"), "истёкший, но подключённый — всё равно онлайн"
+    assert labels[:6] == ["🟢 Онлайн", "⚪ Офлайн", "⏳ Ждёт", "🟢 Истёк", "⛔ Блок", "⏸️ Пауза"], \
+        "один значок по приоритету: ⛔ блок → ⏸️ пауза → ⏳ не активирован → 🟢 онлайн → ⚪ нет"
 
 # ── порядок фильтров в роутере настроек ──────────────────────────────────────
 

@@ -361,11 +361,19 @@ def expiring_kb(rows=()) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     items = list(rows)[:MAX_BUTTONS - 1]
     for c, _secs in items:
-        kb.button(text=f"⏱ {c.name}"[:18], callback_data=ClientCB(action="extend", client_id=c.id))
+        name = c.name if len(c.name) <= 15 else c.name[:14] + "…"
+        kb.button(text=f"⏱ {name}", callback_data=ClientCB(action="extend_exp", client_id=c.id))
     n = len(items)
     kb.button(text="⬅️ В меню", callback_data=Menu(action="main"))
     kb.adjust(*([2] * (n // 2) + ([1] if n % 2 else [])), 1)
     return kb.as_markup()
+
+
+def to_client_card(client_id: int) -> InlineKeyboardMarkup:
+    """Одна кнопка «⬅️ В карточку» — завершитель под приглашением профиля."""
+    b = InlineKeyboardBuilder()
+    b.button(text="⬅️ В карточку", callback_data=ClientCB(action="open", client_id=client_id))
+    return b.as_markup()
 
 
 def gateway_card_button(slot: int) -> InlineKeyboardMarkup:

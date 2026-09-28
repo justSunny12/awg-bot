@@ -58,7 +58,7 @@ def _reset_friend_text(device_lines: list[str]) -> str:
 
 
 # link — имя устройства ссылкой на его карточку (self.dev_link), name — имя
-# профиля ссылкой (self.cl_link): построены домашним помощником base.py
+# профиля ссылкой (self.cl_link): строит помощник в base.py
 
 def _dev_warn_text(link: str, pct: int) -> str:
     return f"⚠️ Устройство {link}: израсходовано ~{pct}% месячного лимита"
@@ -485,7 +485,8 @@ class TrafficMixin:
                       friend_notes = self._block_client(client)
                       self.db.update_client_fields(client.id, status=SubStatus.EXPIRED)
                       if client.tg_id:
-                          notifications.append(Notification(client.tg_id, _TXT_EXPIRED_CLIENT))
+                          notifications.append(Notification(client.tg_id, _TXT_EXPIRED_CLIENT,
+                                                            action=("sub", 0)))
                       notifications.append(Notification(
                           config.ADMIN_ID, _TXT_EXPIRED_ADMIN.format(name=self.cl_link(client)),
                           action=("extend", client.id)))

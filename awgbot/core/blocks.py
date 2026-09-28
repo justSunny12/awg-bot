@@ -83,7 +83,7 @@ _DEVICE_REASON_RU = {
 }
 _CLIENT_REASON_RU = {
     ClientBlock.EXPIRY: "подписка истекла",
-    ClientBlock.TRAFFIC_CLIENT: "исчерпан лимит потребления",
+    ClientBlock.TRAFFIC_CLIENT: "исчерпан лимит трафика",
     ClientBlock.ADMIN_SILENT: "администратором (тихо)",
     ClientBlock.ADMIN_NOTIFIED: "администратором",
     ClientBlock.USER: "владельцем",

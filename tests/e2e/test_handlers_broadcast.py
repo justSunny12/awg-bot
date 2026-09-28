@@ -42,13 +42,15 @@ def test_client_card_has_no_announcement_button(services, make_active_client):
 def test_main_menu_entry_opens_target_picker():
     """Кнопка с главной ведёт на выбор адресатов, а не сразу на ввод текста."""
     from awgbot.bot import keyboards as kb
-    data = _btn_data(kb.admin_main(0), "Объявление")
+    data = _btn_data(kb.admin_main(), "Объявление")
     assert data == "bc:pick:0"
 
 
 def test_target_picker_marks_selection_and_offers_bulk():
-    """Отметки видны на самих кнопках, а массовое действие меняет смысл:
-    отмечено всё — осмысленно только снять."""
+    """Отметки — на самих кнопках; «Отметить всех» по правилу массового
+    выбора: ☑️, пока отмечены не все; ✅, когда все — в том числе отмеченные
+    по одному. Тумблер «С продлением» — первым рядом, «⬅️ Отмена» — первой
+    в последнем ряду."""
     from awgbot.core import models
     from awgbot.bot import keyboards as kb
 
@@ -58,21 +60,16 @@ def test_target_picker_marks_selection_and_offers_bulk():
                              invite_code=None, created_at="2026-01-01")
 
     clients = [_c(1), _c(2)]
-    none = kb.broadcast_targets(clients, set())
-    labels_none = _btn_texts(none)
-    assert labels_none[0].endswith("Отметить все")
-    # проверяем строки профилей, а не кнопку массового действия — она сама
-    # начинается с галочки и под фильтр «отмечено» попала бы ложно
-    assert "☑️ К1" in labels_none and "☑️ К2" in labels_none
-    assert not any(l.startswith("✅ К1") for l in labels_none)
+    labels_none = _btn_texts(kb.broadcast_targets(clients, set()))
+    assert labels_none == ["☑️ С продлением подписки", "☑️ Отметить всех", "☑️ К1", "☑️ К2",
+                           "⬅️ Отмена", "➡️ Далее"], labels_none
 
-    some = kb.broadcast_targets(clients, {1})
-    labels = _btn_texts(some)
-    assert "✅ К1" in labels and "☑️ К2" in labels
-    assert labels[0].endswith("Отметить все")        # отмечено не всё
+    labels = _btn_texts(kb.broadcast_targets(clients, {1}))
+    assert labels[1:4] == ["☑️ Отметить всех", "✅ К1", "☑️ К2"], labels
 
-    every = kb.broadcast_targets(clients, {1, 2})
-    assert _btn_texts(every)[0].endswith("Снять все")
+    every = _btn_texts(kb.broadcast_targets(clients, {1, 2}))
+    assert every[1] == "✅ Отметить всех", "все отмечены по одному — массовая кнопка обязана стать ✅"
+    assert _btn_texts(kb.broadcast_targets(clients, set(), extend=True))[0] == "✅ С продлением подписки"
 
 
 def test_broadcast_cancel_clears_the_input_state():
@@ -178,9 +175,9 @@ async def test_photos_without_text_get_a_real_preview_not_a_demand(
     assert len(albums) == 1, "превью-альбом не построен без текста"
     assert [m.media for m in albums[0][2]] == ["FILE1", "FILE2"]
     said = [t for m in msgs for kind, t, _ in m.sent if kind == "answer"]
-    confirm = [t for t in said if "Отправляем?" in t]
+    confirm = [t for t in said if t.startswith("👆 Так увидят получатели")]
     assert len(confirm) == 1, said
-    assert "Текста в нём нет" in confirm[0], "блок молчит про пустой текст"
+    assert "✍️ Текста нет — уйдут только картинки" in confirm[0], "блок молчит про пустой текст"
     assert not any("Пришли текст" in t for t in said), \
         "второй шаг вернулся: бот требует текст, который мог ещё не доехать"
 
@@ -345,7 +342,8 @@ async def test_broadcast_album_with_caption_is_one_action(
     assert media[0].caption == "Переезд начался"
     confirms = [t for m in (first, second) for kind, t, mk in m.sent
                 if kind == "answer" and mk is not None]
-    assert confirms and "Отправляем?" in confirms[-1], "нет блока подтверждения"
+    assert confirms and confirms[-1].startswith("👆 Так увидят получатели · 1 адресат: профиль Ксюша"), \
+        "нет блока подтверждения"
     ids = (await state.get_data())["preview_ids"]
     assert len(ids) == 3, "в preview_ids не альбом плюс блок подтверждения"
 
@@ -409,7 +407,7 @@ async def test_broadcast_refuses_caption_over_limit_and_keeps_the_draft(
     said = " ".join(t for _, t, _ in msg.sent)
     assert str(cfg.TG_CAPTION_MAX) in said and str(cfg.TG_CAPTION_MAX + 1) in said, \
         "не названы ни лимит, ни фактическая длина"
-    assert "Отправляем?" not in said, "показано превью сверх лимита"
+    assert "Так увидят получатели" not in said, "показано превью сверх лимита"
     assert (await state.get_data())["photos"] == ["FILE1"], "черновик потерян"
 
     # тот же текст БЕЗ картинок в лимит укладывается — лимита два, и они разные
@@ -418,7 +416,7 @@ async def test_broadcast_refuses_caption_over_limit_and_keeps_the_draft(
     msg2 = FakeMessage(text=long_text, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID,
                        bot=fake_bot)
     await admin_h.broadcast_receive(msg2, state2, services)
-    assert any("Отправляем?" in t for _, t, _ in msg2.sent)
+    assert any(t.startswith("👆 Так увидят получатели") for _, t, _ in msg2.sent)
 
 
 async def test_broadcast_send_revalidates_the_limit(services, make_active_client,
@@ -572,42 +570,26 @@ def _cl(name, tg_name=""):
 
 
 def test_broadcast_report_wording_by_shape():
-    """Четыре формы отчёта — только ФАКТ доставки, со ссылкой «выше»: само
-    объявление остаётся в чате предыдущим сообщением, и пересказывать его
-    (текст, вложения) значит удваивать каждую рассылку в истории. Число
-    адресатов называем, только когда в рассылку вошли друзья: без них оно
-    равно числу профилей и уже видно из перечисления."""
+    """Отчёт — только ФАКТ доставки: кому (профили поимённо, про держателей —
+    только если они среди адресатов) и сколько адресатов. Само объявление
+    остаётся в чате строкой выше; пересказывать его — удваивать рассылку."""
     from awgbot.bot import texts as T
 
     n, k = _cl("Наташа"), _cl("Ксюша")
-    one = T.broadcast_report([n], False, 1, 0)
-    assert one == "✅ Объявление выше доставлено владельцу профиля Наташа"
-    assert "адресат" not in one
-
-    one_fr = T.broadcast_report([n], True, 2, 0)
-    assert ("владельцу профиля Наташа и тем, с кем он поделился устройствами: "
-            "всего 2 адресата.") in one_fr
-
-    many = T.broadcast_report([n, k], False, 2, 0)
-    assert many == "✅ Объявление выше доставлено владельцам профилей Наташа, Ксюша"
-
-    many_fr = T.broadcast_report([n, k], True, 4, 0)
-    assert ("владельцам профилей Наташа, Ксюша и тем, с кем они поделились "
-            "устройствами: всего 4 адресата.") in many_fr
-
-    with_tg = T.broadcast_report([_cl("Наташа", tg_name="Ната")], True, 2, 0)
-    assert with_tg.startswith('✅ Объявление выше доставлено владельцу профиля Наташа '
-                              '(<a href="tg://user?id=100">Ната</a>) и тем, с кем он поделился '
-                              'устройствами: всего 2 адресата.')
-    for r in (one, one_fr, many, many_fr):
-        assert "Текст объявления" not in r and "картинк" not in r, \
-            "отчёт снова пересказывает объявление"
+    assert T.broadcast_report([n], False, 1, 0) == "✅ Доставлено: профиль Наташа — 1 адресат"
+    assert T.broadcast_report([n], True, 2, 0) == \
+        "✅ Доставлено: профиль Наташа и те, с кем он делится устройствами — 2 адресата"
+    assert T.broadcast_report([n, k], False, 2, 0) == "✅ Доставлено: профили Наташа, Ксюша — 2 адресата"
+    assert T.broadcast_report([n, k], True, 5, 0) == \
+        "✅ Доставлено: профили Наташа, Ксюша и те, с кем они делятся устройствами — 5 адресатов"
 
 
-def test_broadcast_report_declines_recipient_word():
+def test_broadcast_report_links_profile_names():
+    """Имена профилей в отчёте — ссылки на их карточки (cl-<id>)."""
     from awgbot.bot import texts as T
-    assert "всего 1 адресат." in T.broadcast_report([_cl("А")], True, 1, 0)
-    assert "всего 5 адресатов." in T.broadcast_report([_cl("А")], True, 5, 0)
+    n = _cl("Наташа")
+    r = T.broadcast_report([n], False, 1, 0, bot_username="awg_test_bot")
+    assert f'<a href="https://t.me/awg_test_bot?start=cl-{n.id}">Наташа</a>' in r, r
 
 
 def test_broadcast_report_does_not_hide_failures():
@@ -615,7 +597,7 @@ def test_broadcast_report_does_not_hide_failures():
     больше неоткуда."""
     from awgbot.bot import texts as T
     r = T.broadcast_report([_cl("А")], True, 3, 2)
-    assert "⚠️ Не доставлено 2 адресатам" in r
+    assert r.split("\n")[1] == "⚠️ не доставлено 2 — бот заблокирован или аккаунт удалён", r
 
 
 async def test_send_leaves_report_and_opens_panel_separately(
@@ -650,6 +632,6 @@ async def test_send_leaves_report_and_opens_panel_separately(
 
     answers = [s for s in nav.sent if s[0] == "answer"]
     report = answers[0]
-    assert report[1].startswith("✅ Объявление выше доставлено владельцу профиля Наташа")
+    assert report[1] == "✅ Доставлено: профиль Наташа — 1 адресат", report[1]
     assert "Текст объявления" not in report[1], "отчёт дублирует текст"
     assert answers[-1][2] is not None, "у панели должна быть клавиатура"

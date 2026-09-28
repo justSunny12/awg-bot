@@ -152,7 +152,8 @@ def test_the_ssh_path_is_skipped_while_the_channel_covers_the_slot(services, slo
     assert services.gw_bundle_drift_notes() == [], "канал на связи, а бот гонит перевыпускать"
     _channel_silent_for(services, 30)
     notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1 and "Список твоих устройств изменился" in notes[0].text
+    assert len(notes) == 1 and "список твоих устройств изменился" in notes[0].text
+    assert notes[0].action == ("gwcfg", 1)
     assert services.gw_bundle_drift_notes() == []
 
 

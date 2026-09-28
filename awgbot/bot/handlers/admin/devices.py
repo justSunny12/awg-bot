@@ -63,7 +63,7 @@ async def admin_add_device_start(cb: CallbackQuery, callback_data: ClientCB, ser
         return
     used, limit = await call(services.device_slots, client.id)
     if limit != 0 and used >= limit:              # 0 = безлимит
-        await cb.answer(texts.limit_exhausted_line(used, limit), show_alert=True)
+        await cb.answer(f"{texts.LIMIT_REACHED}: {used} из {limit}", show_alert=True)
         return
     await state.set_state(AdminAddDevice.name)
     await ask_here(cb, services, state, texts.add_device_prompt_admin(client, used, limit),
@@ -87,9 +87,7 @@ async def admin_add_device_name(message: Message, services, state: FSMContext):
     try:
         created = await call(services.add_device, client.id, name, 0)
     except LimitReached:
-        used, limit = await call(services.device_slots, client.id)
-        await back_to_context(message, services, data, "admin",
-                              note="⚠️ " + (texts.limit_exhausted_line(used, limit) or texts.LIMIT_REACHED))
+        await back_to_context(message, services, data, "admin", note="⚠️ " + texts.LIMIT_REACHED)
         return
     except ServiceError as e:
         await back_to_context(message, services, data, "admin", note=f"⚠️ {texts._e(str(e))}")
@@ -135,8 +133,7 @@ async def device_card_parts(services, dev):
     text = texts.admin_device_card(dev, client if dev.client_id != service_id else None,
                                    rf=await call(services.rf_device_card, dev),
                                    profile_limit_bytes=plimit, bot_username=_bot(services))
-    return text, kb.device_actions(dev, is_admin=True, back_target=await _back_target(services, dev),
-                                   reassign_label="🔀 Передать")
+    return text, kb.device_actions(dev, is_admin=True, back_target=await _back_target(services, dev))
 
 
 _device_card_parts = device_card_parts
@@ -272,7 +269,7 @@ async def device_limit_preset(cb: CallbackQuery, callback_data: PresetCB, servic
         plimit = await call(services.profile_traffic_limit, dev.client_id)
         await state.set_state(EditTrafficLimit.value)
         await ask_here(cb, services, state, texts.device_limit_other_prompt(plimit), "dev", dev.id,
-                       kind="device", dev_ref=dev.id)
+                       target="device", dev_ref=dev.id)
         await cb.answer()
         return
     note, ok = await _apply_device_limit(services, dev, int(callback_data.val))

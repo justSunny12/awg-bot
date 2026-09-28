@@ -84,20 +84,21 @@ class SelfUpdateMixin:
         обновляться не на что или ещё не проверяли."""
         return self.db.get_state(self._AVAILABLE_KEY) or ""
 
-    def update_to_notify(self):
+    def update_to_notify(self, scanned=...):
         """Для планировщика/старта: вернуть Release, о котором НАДО уведомить, и
         пометить его как уведомлённый (ровно один раз на версию). None, если
         уведомления заглушены, расписание «никогда», обновлять не на что, или про
         эту версию уже уведомляли. Проверка «никогда» здесь, а не только в UI —
         инвариант держится и при ручной правке conf/updates.yaml. Помечаем ДО
         отправки — «не более одного раза» важнее, чем «гарантированно доставить»
-        (миссы закрывает ручная кнопка)."""
+        (миссы закрывает ручная кнопка). scanned — итог уже сделанного update_scan,
+        чтобы за такт не ходить к списку релизов дважды."""
         from awgbot.core import settings
         if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
             return None
         if self.updates_muted():
             return None
-        nxt = self.update_scan()
+        nxt = self.update_scan() if scanned is ... else scanned   # планировщик уже сходил
         if nxt is None:
             return None
         if self.db.get_state(self._NOTIFIED_KEY) == nxt.tag:

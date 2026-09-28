@@ -29,12 +29,9 @@ _MESSAGE_PAIRS = [
     ("admin_start", "edit_period_start_apply"),
     ("admin_start", "edit_period_end_apply"),
     ("admin_start", "admin_add_device_name"),
-    ("admin_start", "admin_add_device_traffic"),
     ("admin_start", "device_edit_name_apply"),
     ("admin_start", "gateway_claim_message"),
     ("admin_start", "self_add_name"),
-    ("admin_start", "self_add_traffic"),
-    ("admin_start", "admin_block_pause_days"),
     ("admin_start", "broadcast_days"),
     ("admin_start", "broadcast_receive"),
 ]
@@ -73,5 +70,14 @@ def test_every_fsm_message_handler_is_listed():
     """Новый FSM-обработчик ввода обязан попасть в перечень пар: без строки
     здесь его порядок относительно admin_start никто не сторожит."""
     order = _flat("message")
-    unlisted = set(order) - {g for _, g in _MESSAGE_PAIRS} - {"admin_start", "admin_document"}
+    unlisted = (set(order) - {g for _, g in _MESSAGE_PAIRS}
+                - {"admin_start", "admin_document", "uitree_probe"})
     assert not unlisted, sorted(unlisted)
+
+
+def test_commands_precede_every_fsm_input_handler():
+    """Команды (/start, скрытая /uitree) — раньше всех обработчиков ввода:
+    иначе команда посреди диалога ушла бы именем профиля или числом."""
+    order = _flat("message")
+    fsm = [order.index(g) for _, g in _MESSAGE_PAIRS if g != "gateway_claim_message"]
+    assert order.index("uitree_probe") < min(fsm), order

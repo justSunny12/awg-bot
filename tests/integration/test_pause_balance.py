@@ -133,7 +133,7 @@ def test_credit_reasons_and_notifications(services, make_active_client):
     m = make_active_client("M", tg_id=7570, period_kind="month")
     r = services.extend_period(m.id, "month", keep_remainder=False)
     own = [n.text for n in r.notifications if n.tg_id == 7570][0]
-    assert own.startswith("Подписка продлена до ") and own.endswith(
+    assert own.startswith("✅ Подписка продлена до ") and own.endswith(
         "\n⏸️ Дней паузы добавлено: +2, доступно 4")
     assert texts.pause_credit_admin(r.pause) == "Дней паузы: +2 → 4"
 

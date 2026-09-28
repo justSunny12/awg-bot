@@ -3,9 +3,10 @@ keyboards — инлайн-клавиатуры (aiogram). Callback-data бер�
 
 Пакет разрезан по экранам:
 
-  common     reply-клавиатура, маркеры состояния, период, да/нет, блокировки
+  common     reply-клавиатура, маркеры состояния, листание, да/нет, блокировки
   client     меню клиента и гостя, карточка устройства, выдача, гайды, пауза
-  admin      меню администратора, профили, устройства без клиента, списки
+  admin      меню администратора, профили, период и лимиты пресетами,
+             устройства без профиля, списки
   routing    условная маршрутизация и шлюз (сторона основного бота)
   settings   экран «⚙️ Настройки», обновления, переезд
   broadcast  объявления пользователям
@@ -34,7 +35,7 @@ from .admin import (
     client_edit_kb, client_delete_confirm, presets_kb, devs_limit_kb, traffic_limit_kb,
     new_profile_devs_kb, new_profile_traffic_kb, period_kb, period_choices, block_pause_kb,
     block_notify_kb, to_menu_kb, traffic_profiles_kb, expiring_kb, online_devices_kb,
-    traffic_devices_kb, gateway_card_button, client_state_icon, DEVS_PRESETS, TRAFFIC_PRESETS)
+    traffic_devices_kb, gateway_card_button, to_client_card, client_state_icon, DEVS_PRESETS, TRAFFIC_PRESETS)
 from .settings import (
     settings_root, settings_back, settings_server, private_dns_choices,
     private_dns_offer_kb, migration_prepare_confirm, migration_generation_pending,
@@ -73,7 +74,7 @@ __all__ = [
     "added_by_admin", "unmanaged_device_dialog", "guide_nav",
     "guide_connect_method", "guide_connect_done", "guide_connect_devices",
     "grace_offer", "subscription_kb", "pause_kb", "add_device_kb", "device_created_kb", "invite_kb", "issue_row", "ADD_FROM_DEVICES",
-    "admin_main", "period_choices", "admin_devices", "client_edit_kb", "client_delete_confirm", "presets_kb", "devs_limit_kb", "traffic_limit_kb", "new_profile_devs_kb", "new_profile_traffic_kb", "period_kb", "block_pause_kb", "block_notify_kb", "to_menu_kb", "gateway_card_button", "client_state_icon", "DEVS_PRESETS", "TRAFFIC_PRESETS", "broadcast_days_kb", "admin_clients", "admin_client_actions", "admin_client_back",
+    "admin_main", "period_choices", "admin_devices", "client_edit_kb", "client_delete_confirm", "presets_kb", "devs_limit_kb", "traffic_limit_kb", "new_profile_devs_kb", "new_profile_traffic_kb", "period_kb", "block_pause_kb", "block_notify_kb", "to_menu_kb", "gateway_card_button", "to_client_card", "client_state_icon", "DEVS_PRESETS", "TRAFFIC_PRESETS", "broadcast_days_kb", "admin_clients", "admin_client_actions", "admin_client_back",
     "admin_client_device_list", "unassigned_devices", "reassign_targets",
     "reassign_addslot", "traffic_profiles_kb", "expiring_kb",
     "online_devices_kb", "traffic_devices_kb",

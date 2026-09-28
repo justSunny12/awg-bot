@@ -140,8 +140,7 @@ def guest_devices(devices, page: int = 0) -> InlineKeyboardMarkup:
 # Карточки устройств
 # ─────────────────────────────────────────────────────────────────────────────
 
-def device_actions(dev, *, is_admin: bool, back_target: str,
-                    reassign_label: str = None) -> InlineKeyboardMarkup:
+def device_actions(dev, *, is_admin: bool, back_target: str, **_legacy) -> InlineKeyboardMarkup:
     """Карточка устройства — для любого пути входа. Ряд выдачи — только у
     созданных ботом (у пира без приватного ключа выдавать нечего); затем имя и
     лимит, передача (владельцу — другу, админу — в другой профиль) и блок,
@@ -163,7 +162,7 @@ def device_actions(dev, *, is_admin: bool, back_target: str,
         elif fstatus == "pending":
             kb.button(text="🔁 Приглашение", callback_data=DeviceCB(action="reinvite", device_id=dev.id))
             mid += 1
-    elif reassign_label:
+    else:
         kb.button(text="🔀 Передать", callback_data=DeviceCB(action="reassign", device_id=dev.id))
         mid += 1
     bt, bcb = _manual_block_button("dev", dev.id, int(dev.block_reason), for_admin=is_admin)

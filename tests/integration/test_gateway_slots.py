@@ -681,7 +681,8 @@ def test_slot_port_follows_the_live_link_config(services, make_active_client, mo
     (tmp_path / "awglink.conf").write_text("[Interface]\nAddress = 10.99.99.1/30\nListenPort = 443\n")
     notes = services.gateway_sync_link_ports()
     assert services.db.gateway(1).link_port == 443 and refreshed == [1]
-    assert len(notes) == 1 and "443" in notes[0].text and "перевыпусти" in notes[0].text
+    assert len(notes) == 1 and "443" in notes[0].text and "Перевыпусти конфигурацию" in notes[0].text
+    assert notes[0].action == ("gwcfg", 1), "под напоминанием нет кнопки «📤 Конфигурация»"
     assert services.gateway_sync_link_ports() == [], "второй раз — тишина"
 
 

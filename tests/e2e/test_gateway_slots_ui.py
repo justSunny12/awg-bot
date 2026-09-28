@@ -299,12 +299,13 @@ async def test_remove_standby_and_active(services, slots, fake_bot, monkeypatch)
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_remove_yes(cb, GwSlotCB(action="remove_yes", slot=1), services)
     assert services.active_gateway().id == 2 and services.runs[-1][0] == "--rekey"
-    # «Не шлюз?» из карточки устройства ведёт в то же подтверждение
+    # устройство-шлюз из «Моих устройств» открывает карточку своего слота
     cb, nav = _acb(fake_bot)
-    await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi2.id), services)
+    await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi2.id), services, FakeState())
     text, labels = _screen(nav)
-    assert "<b>[Активен]</b> — несёт трафик РФ-доступа" in text and "Пинг с " in text and "Внешний IP" in text
-    assert "🛰 Карточка шлюза" in labels and labels[-2] == "📡 Пинг"
+    assert text.startswith("🛰 <b>Шлюз «Pi2»</b>\n") and "<b>[Активен]</b>" in text, text
+    assert "Пинг с " in text and "Внешний IP" in text
+    assert "🛑 Снять шлюз" in labels and labels[-2] == "📡 Пинг", labels
     cb, nav = _acb(fake_bot)
     await sh.gateway_remove_ask(cb, GwMarkCB(action="remove_ask", device_id=pi2.id), services)
     text, _ = _screen(nav)

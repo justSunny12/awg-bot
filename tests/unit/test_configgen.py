@@ -82,16 +82,6 @@ def test_generate_embedded_conf_has_no_mtu():
     assert "MTU = " not in embedded
 
 
-def test_traffic_limit_device_ask_enrichment():
-    """п.2: с лимитом профиля показываем N ГБ; безлимит — скобку опускаем."""
-    from awgbot.bot import texts
-    unlimited = texts.traffic_limit_device_ask(0)
-    assert "в пределах лимита профиля" not in unlimited
-    assert unlimited.endswith("без ограничения.")
-    limited = texts.traffic_limit_device_ask(50 * 1024**3)
-    assert "в пределах лимита профиля: 50 ГБ" in limited
-
-
 def test_device_created_report_variants():
     """Отчёт создания устройства: имя профиля только для админа, «для друга» у
     гостевого, трафик и счётчик по согласованной форме."""

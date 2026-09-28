@@ -204,16 +204,18 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
 
 
 async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup):
-    """«Убрать шлюз» / «Не шлюз?»: флаг снят, ключи сменены, маршрутизация
-    выключена; карточка снова обычная."""
+    """Устройство-шлюз открывает карточку слота; «Убрать шлюз»: флаг снят,
+    ключи сменены, маршрутизация выключена; карточка устройства снова обычная."""
     _, phone, pi = gwsetup
     _slot1(services, pi.id)
     cb, nav = _acb(fake_bot)
-    await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi.id), services)
+    await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi.id), services, FakeState())
     text, markup = next((s[1], s[2]) for s in nav.sent if s[0] == "edit_text")
-    assert "🛰" in text and "шлюз условной маршрутизации" in text
+    # устройство-шлюз открывает карточку своего слота (отдельной карточки
+    # устройства-шлюза больше нет)
+    assert text.startswith("🛰 <b>Шлюз «NASPi»</b>\n"), text
     labels = _labels(markup)
-    assert "🛑 Не шлюз?" in labels and "⚙️ Конфигурация шлюза" in labels and "✏️ Имя" in labels
+    assert "🛑 Снять шлюз" in labels and "⚙️ Конфигурация шлюза" in labels, labels
     assert labels[-2] == "📡 Пинг" and labels[-1] == "⬅️ Назад", "пинг — последним перед «Назад»"
     assert not any("Удалить" in l or "Заблокировать" in l or "подключения" in l for l in labels)
     cb, nav = _acb(fake_bot)
@@ -226,7 +228,7 @@ async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup
     assert not any("GW1:" in (s[1] or "") for s in nav.sent)
     assert any("больше не шлюз" in s[1] for s in nav.sent if s[0] == "edit_text")
     cb, nav = _acb(fake_bot)
-    await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi.id), services)
+    await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi.id), services, FakeState())
     _, markup = next((s[1], s[2]) for s in nav.sent if s[0] == "edit_text")
     assert any("Удалить" in b.text for row in markup.inline_keyboard for b in row)
     # повторное снятие — сообщение, а не падение

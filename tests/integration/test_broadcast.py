@@ -137,7 +137,7 @@ def test_empty_selection_yields_nobody(services, make_active_client):
 
 
 def test_friends_clause_only_when_friends_exist(services, make_active_client):
-    """Про гостевой доступ упоминаем ТОЛЬКО когда друзья реально есть.
+    """Про держателей устройств упоминаем ТОЛЬКО когда они реально есть.
 
     Предупреждение на каждом объявлении перестаёт читаться ровно к тому разу,
     когда оно важно.
@@ -147,29 +147,28 @@ def test_friends_clause_only_when_friends_exist(services, make_active_client):
 
     solo = make_active_client(name="Один", tg_id=6001)
     assert services.db.broadcast_has_friends([solo.id], cfg.ADMIN_ID) is False
-
-    prompt = texts.broadcast_prompt([solo], False)
-    assert "Получит: <b>Один</b> — владелец профиля." in prompt
-    assert "поделил" not in prompt
+    preview = texts.broadcast_preview("текст", 1, [solo], False)
+    assert preview.startswith("👆 Так увидят получатели · 1 адресат: профиль Один\n\n"), preview
+    assert "делится" not in preview
 
     dc = services.add_device(solo.id, "Телефон")
     code = services.make_device_friendly(dc.device_id)
     services.activate_friend(code, tg_id=6099)
     assert services.db.broadcast_has_friends([solo.id], cfg.ADMIN_ID) is True
+    preview2 = texts.broadcast_preview("текст", 2, [solo], True)
+    assert "2 адресата: профиль Один и те, с кем он делится устройствами" in preview2, preview2
 
-    prompt2 = texts.broadcast_prompt([solo], True)
-    assert "Получат: <b>Один</b> — владелец профиля и те, с кем он поделился" in prompt2
 
-
-def test_audience_names_the_account_when_it_differs(services, make_active_client):
-    """Профильное имя даёт админ, а кто это в Telegram — имя аккаунта ссылкой
-    следом; совпадают — без дубля."""
+def test_audience_names_are_profile_links(services, make_active_client):
+    """Имена отмеченных профилей в приглашении к тексту и превью — ссылки на
+    карточки (cl-<id>): к подтверждению легко забыть, кого отметил, а
+    ссылка сразу показывает, кто это."""
     from awgbot.bot import texts
     c = make_active_client(name="Один", tg_id=6002)
-    services.db.update_client_fields(c.id, tg_name="Иван", tg_username="ivan")
-    c = services.db.get_client(c.id)
-    assert 'Получит: <b>Один</b> (<a href="https://t.me/ivan">Иван</a>) — владелец профиля' \
-        in texts.broadcast_prompt([c], False)
+    link = f'<a href="https://t.me/awg_test_bot?start=cl-{c.id}">Один</a>'
+    assert texts.broadcast_prompt([c], False, bot_username="awg_test_bot").startswith(
+        f"📢 Текст для профиля {link}\n")
+    assert link in texts.broadcast_preview("т", 1, [c], False, bot_username="awg_test_bot")
 
 
 def test_audience_wording_matches_number_of_profiles(make_active_client):
@@ -177,7 +176,7 @@ def test_audience_wording_matches_number_of_profiles(make_active_client):
     from awgbot.bot import texts
     k = make_active_client(name="Ксюша", tg_id=6003)
     d = make_active_client(name="Дима", tg_id=6004)
-    one = texts.broadcast_prompt([k], False)
-    many = texts.broadcast_prompt([k, d], False)
-    assert "владелец профиля" in one and "владельцы этих профилей" in many
-    assert "Получит:" in one and "Получат:" in many
+    assert texts.broadcast_prompt([k], False).startswith("📢 Текст для профиля Ксюша\n")
+    assert texts.broadcast_prompt([k, d], False).startswith("📢 Текст для профилей: Ксюша, Дима\n")
+    assert "с кем он делится" in texts.broadcast_preview("т", 2, [k], True)
+    assert "с кем они делятся" in texts.broadcast_preview("т", 3, [k, d], True)

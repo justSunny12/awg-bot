@@ -160,11 +160,12 @@ def fmt_ago(unix_ts: Optional[int], ref: Optional[datetime] = None) -> str:
 
 
 def first_of_next_month_str() -> str:
-    """Дата 1-го числа следующего месяца как «DD.MM.YYYY» (UTC+3). Используется
-    для «доступ приостановлен до …»: месячный сброс наступит именно тогда."""
+    """Дата 1-го числа следующего месяца для экранов: «01.10», в декабре —
+    «01.01.27» (год — только не текущий). Используется для «доступ
+    приостановлен до …»: месячный сброс наступит именно тогда."""
     n = now().astimezone(TZ)
     year, month = (n.year + 1, 1) if n.month == 12 else (n.year, n.month + 1)
-    return f"01.{month:02d}.{year}"
+    return fmt_date_ui(datetime(year, month, 1, tzinfo=TZ), n)
 
 
 def ceil_days(delta_seconds: float) -> int:

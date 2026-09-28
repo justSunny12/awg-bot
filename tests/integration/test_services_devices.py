@@ -182,4 +182,4 @@ def test_client_card_renders_when_a_device_has_a_handshake(services, make_active
 
     rows = services.online_devices()
     assert [d.id for d, _ in rows] == [dc.device_id]
-    assert "онлайн (1)" in texts.online_devices_text(rows)
+    assert texts.online_devices_text(rows).startswith("📶 Онлайн: 1\n\n")

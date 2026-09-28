@@ -9,7 +9,7 @@ from awgbot.core.enums import ActivationStatus, SubStatus
 from .fmt import (
     _e, human_bytes, gb, gb_str, _limit_devices_str, device_state, plain_ip, _fmt_age,
     rf_line, rf_value, updown_brief, tree, profile_link, admin_device_link,
-    client_link, holder_link, _n_devices, plural_ru, _BYTES_PER_GB)
+    holder_link, _n_devices, plural_ru, _BYTES_PER_GB)
 from .fmt import deep_link as _deep_link
 from .routing import routing_status_line, routing_admin_status_line, ROUTING_NAME
 
@@ -100,6 +100,8 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         counters.append(_deep_link(bot_username, UNASSIGNED_PAYLOAD, f"📦 Без профиля: {unassigned}"))
     if counters:
         lines.append(" · ".join(counters))
+    # строка трафика — вход на экран «Трафик», поэтому стоит и при нуле;
+    # РФ-ветка при включённой функции тоже: нулём видно, что маркировка не работает
     if st.get("traffic_rx") is not None:
         rx, tx = int(st["traffic_rx"]), int(st["traffic_tx"])
         label = _deep_link(bot_username, TRAFFIC_PAYLOAD, f"📊 Трафик за {month_label()}")
@@ -130,6 +132,13 @@ def migration_line(p) -> str:
 # Списки с эмодзи в начале строк: подряд строки сливаются, а межстрочный
 # интервал Telegram не настраивает. Единственный рычаг — пустая строка.
 _LIST_SEP = "\n\n"
+# Экран — не отчёт: длинный список режется, хвост — счётчиком; иначе текст
+# упёрся бы в 4096 знаков Telegram примерно на трёх десятках записей
+_LIST_CAP = 25
+
+
+def _more(n: int) -> str:
+    return f"{_LIST_SEP}… и ещё {n - _LIST_CAP}" if n > _LIST_CAP else ""
 
 
 def online_devices_text(rows, bot_username: str = "") -> str:
@@ -140,14 +149,15 @@ def online_devices_text(rows, bot_username: str = "") -> str:
     if not rows:
         return head + _LIST_SEP + "Сейчас никто не подключён"
     items = []
-    for d, c in rows:
+    for d, c in rows[:_LIST_CAP]:
         if getattr(d, "is_gateway", 0):
             items.append(f"🛰 {admin_device_link(d, bot_username)} [шлюз] · {plain_ip(d.address)}")
             continue
-        who = profile_link(c, bot_username) if c is not None else "?"
+        who = ("без профиля" if c is None or getattr(c, "is_service", 0)
+               else profile_link(c, bot_username))
         items.append(f"{device_state(d, for_admin=True)} {admin_device_link(d, bot_username)} · "
                      f"{who} · {plain_ip(d.address)}")
-    return head + _LIST_SEP + _LIST_SEP.join(items)
+    return head + _LIST_SEP + _LIST_SEP.join(items) + _more(len(rows))
 
 
 def expiring_text(rows, bot_username: str = "") -> str:
@@ -156,11 +166,11 @@ def expiring_text(rows, bot_username: str = "") -> str:
     if not rows:
         return head + _LIST_SEP + "Истекающих подписок нет"
     items = []
-    for c, _secs in rows:
+    for c, _secs in rows[:_LIST_CAP]:
         end = timeutil.parse_iso(c.period_end)
         items.append(f"{profile_link(c, bot_username)} — {timeutil.remaining_brief(end)}, "
                      f"до {timeutil.fmt_dt_ui(end)}")
-    return head + _LIST_SEP + _LIST_SEP.join(items)
+    return head + _LIST_SEP + _LIST_SEP.join(items) + _more(len(rows))
 
 
 def unassigned_text(n: int) -> str:
@@ -187,18 +197,20 @@ def traffic_profiles_text(rows, bot_username: str = "", total: tuple[int, int] =
                           rf_total: tuple[int, int] | None = None, outside: int = 0) -> str:
     """«📊 Трафик за 09.26:», итог, дерево: РФ-итог первой веткой, профили по
     убыванию общего трафика (нулевые не выводятся) со своей РФ-веткой,
-    «Вне профилей» — последней и только при ненулевом значении."""
+    «🧐 Вне профилей» — под РФ-итогом и только при ненулевом значении."""
     head = f"📊 Трафик за {month_label()}:\n{_total(*total)}"
     branches = []
     if rf_total and int(rf_total[0]) + int(rf_total[1]) > 0:
-        branches.append((f"🇷🇺 {ROUTING_NAME}: {rf_value(*rf_total)}", []))
-    for c, rx, tx, rf in rows:
-        if int(rx) + int(tx) <= 0:
-            continue
+        # «Вне профилей» — часть РФ-итога (удалённые устройства и первые минуты
+        # новых), поэтому веткой под ним, а не отдельной записью
+        sub = [_OUTSIDE.format(v=human_bytes(outside))] if int(outside or 0) >= _BYTES_PER_GB // 100 else []
+        branches.append((f"🇷🇺 {ROUTING_NAME}: {rf_value(*rf_total)}", sub))
+    live = [(c, rx, tx, rf) for c, rx, tx, rf in rows if int(rx) + int(tx) > 0]
+    for c, rx, tx, rf in live[:_LIST_CAP]:
         branches.append((f"👤 {_deep_link(bot_username, f'{TRAFFIC_PAYLOAD}-{c.id}', c.name)}: "
                          f"{_total(rx, tx)}", _rf_sub(rf)))
-    if int(outside or 0) >= _BYTES_PER_GB // 100:
-        branches.append((_OUTSIDE.format(v=human_bytes(outside)), []))
+    if len(live) > _LIST_CAP:
+        branches.append((f"… и ещё {len(live) - _LIST_CAP}", []))
     if not branches:
         return head + "\nТрафика за месяц ещё нет"
     return head + "\n" + tree(branches)
@@ -211,11 +223,12 @@ def traffic_devices_text(client, rows, total: tuple[int, int] = (0, 0),
     branches = []
     if rf_total and int(rf_total[0]) + int(rf_total[1]) > 0:
         branches.append((f"🇷🇺 {ROUTING_NAME}: {rf_value(*rf_total)}", []))
-    for d, rx, tx, rf in sorted(rows, key=lambda r: -(int(r[1]) + int(r[2]))):
-        if int(rx) + int(tx) <= 0:
-            continue
+    live = [r for r in sorted(rows, key=lambda r: -(int(r[1]) + int(r[2]))) if int(r[1]) + int(r[2]) > 0]
+    for d, rx, tx, rf in live[:_LIST_CAP]:
         branches.append((f"{device_state(d, for_admin=True)} {_e(d.name)}: {_total(rx, tx)}",
                          _rf_sub(rf)))
+    if len(live) > _LIST_CAP:
+        branches.append((f"… и ещё {len(live) - _LIST_CAP}", []))
     if not branches:
         return head + "\nТрафика за месяц ещё нет"
     return head + "\n" + tree(branches)
@@ -235,8 +248,8 @@ def _admin_usage(dev, profile_limit_bytes: int) -> str:
     rx, tx = int(dev.traffic_rx_month), int(dev.traffic_tx_month)
     limit = int(dev.traffic_limit) or int(profile_limit_bytes or 0)
     whose = "" if dev.traffic_limit else (" (профиль)" if profile_limit_bytes else "")
-    if rx + tx == 0:
-        return f"0 из {gb(limit)} ГБ{whose}" if limit else "0 ГБ"
+    if rx + tx == 0:                              # нули на экранах админа не выводим
+        return f"лимит {gb(limit)} ГБ{whose}" if limit else ""
     base = _total(rx, tx)
     return f"{base} из {gb(limit)}{whose}" if limit else base
 
@@ -250,9 +263,10 @@ def admin_device_card(dev, client, *, rf=None, profile_limit_bytes: int = 0,
     who = profile_link(client, bot_username) if client is not None and not getattr(client, "is_service", 0) else "без профиля"
     ago = timeutil.fmt_ago(dev.last_handshake)
     seen = "Не подключался" if ago == "никогда" else f"Был в сети {ago}"
+    usage = _admin_usage(dev, profile_limit_bytes)
     parts = [f"{device_state(dev, for_admin=True)} {_e(dev.name)} · {plain_ip(dev.address)} · {who}",
-             f"{seen} · {_admin_usage(dev, profile_limit_bytes)}"]
-    if rf is not None and int(rf[0]) + int(rf[1]) > 0:
+             f"{seen} · 📊 {usage}" if usage else seen]
+    if rf is not None:                            # ноль тоже — см. карточку профиля
         parts.append(rf_line(*rf, arrows=False))
     reasons = blocks.device_reasons_ru(int(dev.block_reason), for_admin=True)
     if reasons:
@@ -362,10 +376,14 @@ def admin_client_card(d: dict, bot_username: str = "") -> str:
     """Карточка профиля у админа (данные — services.client_card_data)."""
     from awgbot.core import blocks
     client, devices = d["client"], d["devices"]
-    lines = [f"👤 {client_link(client)} · " + ("🟢 онлайн" if d["online"] else "⚪ офлайн")]
+    from .fmt import tg_link
+    name = tg_link(client.name, client.tg_id, getattr(client, "tg_username", ""))
+    lines = [f"👤 {name} · " + ("🟢 онлайн" if d["online"] else "⚪ офлайн")]
     if client.activation_status == ActivationStatus.PENDING:
         lines.append("⏳ ждёт активации")
-    reasons = blocks.client_reasons_ru(int(client.block_reason), for_admin=True)
+    # только ручные блокировки: истечение и пауза видны в строке подписки
+    manual = int(client.block_reason) & int(blocks.CLIENT_MANUAL)
+    reasons = blocks.client_reasons_ru(manual, for_admin=True)
     if reasons:
         lines.append("⛔ Заблокирован: " + ", ".join(reasons))
     lines.append(_sub_line(client))
@@ -378,15 +396,15 @@ def admin_client_card(d: dict, bot_username: str = "") -> str:
     lines.append(devs + _rf_short(bool(d.get("rt_visible")), enabled, total))
     t = d["traffic"]
     rx, tx = int(t["rx_month"]), int(t["tx_month"])
-    arrows = f" {updown_brief(rx, tx)}" if rx + tx else ""
-    if client.traffic_limit:
-        bonus = f"(+{gb(client.bonus_bytes)})" if client.bonus_bytes else ""
-        lines.append(f"📊 {gb(rx + tx)} из {gb(client.traffic_limit)}{bonus} ГБ{arrows}")
-    elif rx + tx:
-        lines.append(f"📊 {human_bytes(rx + tx)}{arrows}")
-    rf = d.get("rf")
-    if rf is not None and int(rf[0]) + int(rf[1]) > 0:
-        lines.append(rf_line(*rf, arrows=False))
+    if rx + tx:                                   # нули на экранах админа не выводим
+        if client.traffic_limit:
+            bonus = f"(+{gb(client.bonus_bytes)})" if client.bonus_bytes else ""
+            lines.append(f"📊 {gb(rx + tx)} из {gb(client.traffic_limit)}{bonus} ГБ {updown_brief(rx, tx)}")
+        else:
+            lines.append(f"📊 {human_bytes(rx + tx)} {updown_brief(rx, tx)}")
+    rf = d.get("rf")                              # None — строка не положена; ноль при
+    if rf is not None:                            # включённой функции показываем: так
+        lines.append(rf_line(*rf, arrows=False))  # видно, что маркировка не работает
     if d.get("progress") is not None:
         done, live, total_d = d["progress"]
         if live:
@@ -439,7 +457,7 @@ def traffic_limit_note(old_b: int, new_b: int) -> str:
 
 
 OTHER_NUMBER_PROMPT = "✏️ Число, 0 — без лимита"
-NUMBER_BAD = "⚠️ Нужно целое число, 0 — без лимита"
+NUMBER_BAD_LIMIT = "⚠️ Нужно целое число, 0 — без лимита"
 NAME_EMPTY = "⚠️ Имя пустое — пришли ещё раз"
 
 
@@ -637,27 +655,8 @@ def activated_admin_notice(client_or_name, who: str, bot_username: str = "") -> 
     return f"🎉 {name}: доступ активирован ({_e(who)})"
 
 
-def client_created_report(name: str, *, device_limit: int, traffic_limit_bytes: int,
-                          period_kind, period_end) -> str:
-    """Отчёт о созданном профиле (совместимость: CLI и старые тесты)."""
-    dev = f"до {device_limit} устройств" if device_limit else "количество устройств не ограничено"
-    traf = f"до {gb_str(traffic_limit_bytes)}" if traffic_limit_bytes else "трафик не ограничен"
-    if period_end is None:
-        sub = "бессрочная подписка"
-    else:
-        sub = f"подписка до {timeutil.fmt_dt_ui(period_end)}"
-    return f"✅ Профиль «{_e(name)}» создан ({dev}, {traf}), {sub}"
-
-
 LIMIT_REACHED = "Достигнут лимит устройств"
-EXTEND_KEEP_QUESTION = "Сохранить неистраченный остаток ({remainder})?"
 TRAFFIC_LIMIT_CLIENT_ASK = OTHER_NUMBER_PROMPT
 
 
-def traffic_limit_device_ask(profile_limit_bytes: int) -> str:
-    if profile_limit_bytes and int(profile_limit_bytes) > 0:
-        return f"✏️ Число ГБ, не больше {gb(profile_limit_bytes)} (лимит профиля); 0 — по лимиту профиля"
-    return "✏️ Число ГБ, 0 — без лимита"
-
-
-TRAFFIC_LIMIT_BAD = NUMBER_BAD
+TRAFFIC_LIMIT_BAD = NUMBER_BAD_LIMIT

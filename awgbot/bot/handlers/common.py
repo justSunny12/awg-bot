@@ -223,15 +223,19 @@ async def cleanup_content(bot, services, chat_id: int) -> None:
     await delete_many(bot, chat_id, ids)
 
 
-async def content_finisher(message: Message, services, text: str, role: str) -> None:
+async def content_finisher(message: Message, services, text: str, role: str,
+                           markup=None) -> None:
     """Компактный баббл-«завершитель» ПОД выданным контентом: контекстный текст
     (что выше и что делать) + одна кнопка «В меню». Становится активным
-    нав-сообщением (гасит прежнее). Кнопка ведёт в меню роли мутацией.
+    нав-сообщением (гасит прежнее). Кнопка ведёт в меню роли мутацией; markup —
+    свой выход (например, «⬅️ В карточку» после нового приглашения).
 
     Модель: [контент-бабблы] → [этот завершитель с «В меню»]. Меню-простыню
     после контента не вываливаем — только выход."""
     from awgbot.bot import keyboards as _kb
-    if role == "invited":
+    if markup is not None:
+        pass
+    elif role == "invited":
         markup = _kb.friend_finisher()
     else:
         markup = _kb.to_menu()                     # Menu(action="main") — admin/client

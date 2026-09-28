@@ -122,12 +122,16 @@ CONFIRMS = [
     (lambda: kbc.confirm_delete_device(1, guest=True), True),
     (lambda: kbr.routing_clear_confirm(1), True),
     (lambda: kbc.confirm_transfer(1), False),
+    # администратор
+    (lambda: kba.client_delete_confirm(1), True),
+    (lambda: kba.reassign_addslot(1, 2), False),
 ]
 
 # не клавиатуры — помощники разметки, у них своих экранов нет
 NOT_SCREENS = {"issue_row", "gen_kind", "issuable"}
 
-_CIRCLE_OK_PREFIXES = ("d:open:", "d:gen_", "fr:open:", "fr:gen_")
+# кружок — состояние объекта: устройство или профиль онлайн
+_CIRCLE_OK_PREFIXES = ("d:open:", "d:gen_", "fr:open:", "fr:gen_", "c:open:")
 
 
 def _buttons(m: InlineKeyboardMarkup):
@@ -200,6 +204,125 @@ def test_the_rule_checker_itself_catches_each_rule():
                        "x_confirm") == {"подтверждение не с «Отмены»"}
 
 
+# ── экраны администратора этапа 2: по правилам, без исключений ──────────────
+
+def _cli(i=1, name="Ксюша", **kw):
+    from awgbot.core.enums import ActivationStatus
+    base = dict(id=i, name=name, tg_id=100 + i, block_reason=0,
+                activation_status=ActivationStatus.ACTIVE, period_end=None, status="active",
+                effective_period_end=None)
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def _card(n_devices, **kw):
+    from awgbot.core.blocks import ClientBlock
+    from awgbot.core.enums import ActivationStatus
+    extra = {}
+    if kw.pop("paused", False):
+        extra["block_reason"] = int(ClientBlock.PAUSED)
+    if kw.pop("pending", False):
+        extra["activation_status"] = ActivationStatus.PENDING
+    return kba.admin_client_actions(_cli(**extra), MANY[:n_devices], **kw)
+
+
+CLIS = [_cli(i, f"Профиль {i}") for i in range(1, 15)]
+
+ADMIN = {
+    "admin_main": lambda: [kba.admin_main(gateways=g, routing_visible=r, self_client_id=1)
+                           for g in (True, False) for r in (True, False)],
+    "admin_client_actions": lambda: [_card(n, routing_visible=r, paused=p, pending=q)
+                                     for n in (0, 1, 3, 5, 14) for r in (True, False)
+                                     for p in (True, False) for q in (True, False)]
+                                    + [kba.admin_client_actions(_cli(tg_id=1), DEVS, is_admin_owner=True,
+                                                                routing_visible=True)],
+    "client_edit_kb": lambda: [kba.client_edit_kb(1)],
+    "client_delete_confirm": lambda: [kba.client_delete_confirm(1)],
+    "devs_limit_kb": lambda: [kba.devs_limit_kb(1)],
+    "traffic_limit_kb": lambda: [kba.traffic_limit_kb(1)],
+    "new_profile_devs_kb": lambda: [kba.new_profile_devs_kb()],
+    "new_profile_traffic_kb": lambda: [kba.new_profile_traffic_kb()],
+    "period_kb": lambda: [kba.period_kb("extend", 1, keep=k, has_remainder=h, min_days=m)
+                          for k in (True, False) for h in (True, False) for m in (0, 7, 30)]
+                         + [kba.period_kb("create")],
+    "block_pause_kb": lambda: [kba.block_pause_kb(1)],
+    "block_notify_kb": lambda: [kba.block_notify_kb(t, 1, d) for t in ("cli", "dev") for d in (-1, 0)],
+    "expiring_kb": lambda: [kba.expiring_kb([(c, 3600) for c in CLIS[:n]]) for n in (0, 1, 2, 9, 14)]
+                           + [kba.expiring_kb([(_cli(1, "Очень-очень длинное имя профиля"), 60)] * 2)],
+    "admin_devices": lambda: [kba.admin_devices(d, can_add=a) for d in (DEVS, MANY, []) for a in (True, False)],
+    "admin_client_device_list": lambda: [kba.admin_client_device_list(MANY, 1)],
+    "unassigned_devices": lambda: [kba.unassigned_devices(MANY)],
+    "reassign_targets": lambda: [kba.reassign_targets(1, CLIS)],
+    "reassign_addslot": lambda: [kba.reassign_addslot(1, 2)],
+    "to_menu_kb": lambda: [kba.to_menu_kb()],
+    "traffic_devices_kb": lambda: [kba.traffic_devices_kb()],
+    "admin_clients": lambda: [kba.admin_clients(CLIS, {1, 2}), kba.admin_clients([])],
+    "broadcast_targets": lambda: [kbb.broadcast_targets(CLIS[:n], set(range(1, k + 1)), extend=e)
+                                  for n in (0, 2, 14) for k in (0, 2) for e in (True, False)],
+    "broadcast_days_kb": lambda: [kbb.broadcast_days_kb()],
+    "broadcast_confirm": lambda: [kbb.broadcast_confirm()],
+    "broadcast_cancel": lambda: [kbb.broadcast_cancel()],
+}
+
+
+@pytest.mark.parametrize("name", sorted(ADMIN))
+def test_stage2_admin_keyboards_follow_the_layout_rules(name):
+    """Главная, профили, карточки, продление, лимиты, блокировка, списки и
+    объявление администратора — по общим правилам: ≤10 кнопок, короткие
+    подписи в рядах, ✅/☑️ у тумблеров, «Отмена» первой, без «🏠»."""
+    for i, markup in enumerate(ADMIN[name]()):
+        bad = _violations(markup, name)
+        rows = [[b.text for b in r] for r in markup.inline_keyboard]
+        assert not bad, f"{name} [вариант {i}]: {sorted(bad)} — {rows}"
+
+
+def test_admin_main_is_eight_buttons_with_gateways_by_condition():
+    """Главная админа — восемь кнопок; «🛰 Шлюзы» — только когда шлюзы есть
+    или их можно добавить, иначе «⚙️ Настройки» одна в ряду."""
+    rows = [[b.text for b in r] for r in kba.admin_main(gateways=True, routing_visible=True,
+                                                       self_client_id=1).inline_keyboard]
+    assert rows == [["📱 Мои устройства", "🇷🇺 РФ-доступ"], ["👥 Профили", "➕ Профиль"],
+                    ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление", "🔄 Обновить"]], rows
+    rows = [[b.text for b in r] for r in kba.admin_main().inline_keyboard]
+    assert rows == [["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"], ["⚙️ Настройки"],
+                    ["📢 Объявление", "🔄 Обновить"]], rows
+
+
+@pytest.mark.parametrize("n", [1, 3, 5])
+def test_profile_card_fits_ten_buttons_with_every_conditional_row(n):
+    """Карточка профиля при 1, 3 и 5 устройствах — не больше десяти кнопок и
+    с условными рядами (пауза, приглашение, РФ-доступ) тоже; не влезли —
+    одной кнопкой «📱 Устройства: N»."""
+    for paused in (False, True):
+        for pending in (False, True):
+            m = _card(n, routing_visible=True, paused=paused, pending=pending)
+            labels = [b.text for b in _buttons(m)]
+            assert len(labels) <= kbm.MAX_BUTTONS, labels
+            listed = [l for l in labels if l.startswith("⚪ Устройство")]
+            assert listed == [] and f"📱 Устройства: {n}" in labels or len(listed) == n, labels
+            assert ("▶️ Снять паузу" in labels) is paused and ("🔁 Новое приглашение" in labels) is pending
+            assert labels[-2:] == ["➕ Устройство", "⬅️ Назад"], labels
+
+
+def test_profile_card_rows():
+    """[⏱ Продлить] [✏️ Изменить] / [🇷🇺 РФ-доступ] [🛑 Блок] / устройства /
+    [➕ Устройство] [⬅️ Назад]; условные ряды — сверху."""
+    rows = [[b.text for b in r] for r in _card(1, routing_visible=True).inline_keyboard]
+    assert rows == [["⏱ Продлить", "✏️ Изменить"], ["🇷🇺 РФ-доступ", "🛑 Блок"],
+                    ["⚪ Устройство 1"], ["➕ Устройство", "⬅️ Назад"]], rows
+    rows = [[b.text for b in r] for r in _card(1, paused=True, pending=True).inline_keyboard]
+    assert rows[:3] == [["▶️ Снять паузу"], ["🔁 Новое приглашение"], ["⏱ Продлить", "✏️ Изменить"]], rows
+    assert rows[3] == ["🛑 Блок"], "без РФ-доступа «Блок» один в ряду"
+    rows = [[b.text for b in r] for r in _card(5, routing_visible=True).inline_keyboard]
+    assert ["📱 Устройства: 5"] in rows, rows
+
+
+def test_edit_submenu_rows():
+    rows = [[b.text for b in r] for r in kba.client_edit_kb(1).inline_keyboard]
+    assert rows == [["✏️ Имя", "✏️ Период"], ["✏️ Лимит устр-в", "✏️ Трафик"],
+                    ["🗑 Удалить профиль"], ["⬅️ Назад"]], rows
+
+
 # ── экраны администратора и агента: исключения до своих этапов ───────────────
 
 _ARGS = {"key": "restart", "sec": "mon", "configured": True, "has_secret": True, "muted": False,
@@ -212,7 +335,6 @@ _ARGS = {"key": "restart", "sec": "mon", "configured": True, "has_secret": True,
 
 # (модуль, билдер) → нарушения, которые пока терпим, и до какого этапа
 ADMIN_EXCEPTIONS = {
-    ("admin", "confirm_lower_limit"): ({"подтверждение не с «Отмены»"}, "этап 2"),
     ("settings", "migration_prepare_confirm"): ({"подтверждение не с «Отмены»"}, "этап 3"),
     ("settings", "settings_email"): ({"длинная подпись в ряду"}, "этап 3"),
     ("settings", "settings_firewall"): ({"кружок вместо ✅/☑️"}, "этап 3"),

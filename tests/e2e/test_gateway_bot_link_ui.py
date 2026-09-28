@@ -94,7 +94,7 @@ async def test_gateway_device_card_ends_with_the_agent_bot_link(services, slots,
 
     async def _open():
         cb, nav = _acb(fake_bot)
-        await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi2.id), services)
+        await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi2.id), services, FakeState())
         return _screen(nav)
     plain, plain_labels = await _open()
     assert "Бот шлюза" not in plain

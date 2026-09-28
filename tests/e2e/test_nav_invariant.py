@@ -11,7 +11,7 @@ from awgbot.core import config
 from awgbot.bot.handlers import admin as ah
 from awgbot.bot.handlers import client as ch
 from awgbot.bot.handlers import settings as sh
-from awgbot.bot.callbacks import BlockCB, ClientCB, ConfirmCB, DeviceCB, PauseCB, SetCB
+from awgbot.bot.callbacks import BlockCB, ClientCB, DeviceCB, PauseCB, SetCB
 from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
@@ -76,41 +76,37 @@ async def test_settings_bad_input_is_tracked_reask(services, fake_bot):
     assert typed.message_id in ids and len(ids) >= 2, "переспрос и ввод не трекаются"
 
 
-# ── понижение лимита: итог на месте вопроса, панель следом ───────────────────
+# ── понижение лимита: итог на месте экрана, живое меню одно ─────────────────
 
-async def test_lower_limit_confirm_result_then_panel(services, fake_bot, make_active_client):
+async def test_lower_limit_preset_result_in_place(services, fake_bot, make_active_client):
+    """Пресет лимита ниже числа устройств — без диалога: «✏️ Изменить» с итогом
+    первой строкой встаёт на место экрана пресетов, живое меню то же."""
+    from awgbot.bot.callbacks import PresetCB
     client = make_active_client(tg_id=6401, device_limit=5, name="Вася")
     services.add_device(client.id, "a"); services.add_device(client.id, "b")
-    st = FakeState(); await st.update_data(client_id=client.id, pending_limit=1)
-    cb, question = _cb(fake_bot, ADMIN)
-    services.db.nav_touch(ADMIN, question.message_id)
-    fake_bot.records.clear()
-    await ah.edit_limit_confirm(cb, ConfirmCB(action="lower_limit", ref=client.id, yes=True),
-                                services, st)
-    edits = [s for s in question.sent if s[0] == "edit_text"]
-    assert edits and "Лимит устройств профиля «Вася» изменён: 5 → 1" in edits[-1][1]
-    assert edits[-1][2] is None, "итог — без кнопок"
-    answers = [s for s in question.sent if s[0] == "answer"]
-    assert "Панель администратора" in answers[-1][1] and answers[-1][2] is not None
-    assert services.db.get_nav_message_id(ADMIN) != question.message_id
-    assert ("edit_markup", ADMIN, question.message_id) not in fake_bot.records, \
-        "панель гасили после отправки — живое меню оказывалось выше"
-
-
-# ── блокировка с приостановкой: прежний экран гаснет, вопросы трекаются ──────
-
-async def test_block_pause_dialog_keeps_one_live_menu(services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=6402, device_limit=5)
-    st = FakeState()
     cb, screen = _cb(fake_bot, ADMIN)
     services.db.nav_touch(ADMIN, screen.message_id)
-    await ah.admin_block_pause_yes(cb, BlockCB(target="cli", action="pause_yes", ref=client.id),
-                                   st, services)
-    assert ("edit_reply_markup", ADMIN) in fake_bot.records, "у «Да/Нет» живые кнопки"
-    typed = _msg(fake_bot, ADMIN, "7")
-    await ah.admin_block_pause_days(typed, services, st)
-    assert services.db.get_nav_message_id(ADMIN) != screen.message_id
-    assert typed.message_id in _deleted(fake_bot) or typed.message_id in set(services.db.pop_content_msg_ids(ADMIN))
+    fake_bot.records.clear()
+    await ah.edit_limit_preset(cb, PresetCB(kind="cli_devs", ref=client.id, val=1), services, FakeState())
+    assert [s[0] for s in screen.sent] == ["edit_text"], "итог ушёл новым сообщением"
+    assert screen.sent[-1][1].startswith("✅ Устройств: 5 → 1 · ⚠️ сейчас 2 из 1"), screen.sent[-1][1]
+    assert screen.sent[-1][2] is not None, "после итога нет меню"
+    assert services.db.get_nav_message_id(ADMIN) == screen.message_id
+    assert not [r for r in fake_bot.records if r[0] == "send_message" and r[1] == ADMIN]
+
+
+# ── блокировка с приостановкой: шаги на месте экрана, без ввода ─────────────
+
+async def test_block_pause_dialog_keeps_one_live_menu(services, fake_bot, make_active_client):
+    """«⏸️ Да» → «Уведомить владельца?» на месте того же экрана; ввода дней нет —
+    ни состояния FSM, ни служебных сообщений."""
+    client = make_active_client(tg_id=6402, device_limit=5)
+    cb, screen = _cb(fake_bot, ADMIN)
+    services.db.nav_touch(ADMIN, screen.message_id)
+    await ah.admin_block_pause_yes(cb, BlockCB(target="cli", action="pause_yes", ref=client.id))
+    assert [s[0] for s in screen.sent] == ["edit_text"], "шаг ушёл новым сообщением"
+    assert services.db.get_nav_message_id(ADMIN) == screen.message_id
+    assert services.db.pop_content_msg_ids(ADMIN) == [], "появились служебные сообщения ввода"
 
 
 async def test_client_pause_other_keeps_one_live_menu(services, fake_bot, make_active_client):
@@ -174,7 +170,7 @@ async def test_admin_resume_pause_result_then_card(services, fake_bot, make_acti
     services.db.nav_touch(ADMIN, card.message_id)
     await ah.admin_resume_pause(cb, ClientCB(action="resume_pause", client_id=cl.id), services)
     edits = [s for s in card.sent if s[0] == "edit_text"]
-    assert edits and "выведен из приостановки" in edits[-1][1] and edits[-1][2] is None
+    assert edits and edits[-1][1].startswith(f"▶️ {cl.name}: пауза снята · ") and edits[-1][2] is None
     answers = [s for s in card.sent if s[0] == "answer"]
     assert answers and answers[-1][2] is not None, "карточка не пришла следом"
     assert services.db.get_nav_message_id(ADMIN) != card.message_id
@@ -276,14 +272,16 @@ async def test_rf_lines_do_not_change_buttons_on_admin_screens(services, fake_bo
     # РФ-доступ профилю не разрешён: до байтов строк РФ нет, после — есть
     c = make_active_client("Ксюша", tg_id=6400)
     dc = services.add_device(c.id, "Телефон")
+    # без трафика профиля нет в дереве — и сравнивать было бы нечего
+    services.db.add_traffic_bulk([(dc.device_id, 1024 ** 3, 1024 ** 3)])
 
     async def buttons():
         out = []
         cb, nav = _cb(fake_bot, ADMIN)
-        await ah.client_open(cb, ClientCB(action="open", client_id=c.id), services)
+        await ah.client_open(cb, ClientCB(action="open", client_id=c.id), services, FakeState())
         out.append([s for s in nav.sent if s[0] == "edit_text"][-1])
         cb, nav = _cb(fake_bot, ADMIN)
-        await ah.admin_device_open(cb, DeviceCB(action="open", device_id=dc.device_id), services)
+        await ah.admin_device_open(cb, DeviceCB(action="open", device_id=dc.device_id), services, FakeState())
         out.append([s for s in nav.sent if s[0] == "edit_text"][-1])
         for payload in ("traffic", f"traffic-{c.id}"):
             services.db.set_nav_message_id(ADMIN, None)

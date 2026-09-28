@@ -153,7 +153,7 @@ async def add_client_limit(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not raw.isdigit():
-        await ask_tracked(message, services, texts.NUMBER_BAD)
+        await ask_tracked(message, services, texts.NUMBER_BAD_LIMIT)
         return
     name = (await state.get_data()).get("name") or ""
     await _devs_chosen(message, services, state, name, int(raw))
@@ -188,7 +188,7 @@ async def add_client_traffic(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not raw.isdigit():
-        await ask_tracked(message, services, texts.NUMBER_BAD)
+        await ask_tracked(message, services, texts.NUMBER_BAD_LIMIT)
         return
     await _traffic_chosen(message, services, state, await state.get_data(), int(raw))
 
@@ -327,7 +327,7 @@ async def edit_limit_apply(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not raw.isdigit():
-        await ask_tracked(message, services, texts.NUMBER_BAD)
+        await ask_tracked(message, services, texts.NUMBER_BAD_LIMIT)
         return
     data = await state.get_data()
     await state.clear()
@@ -372,7 +372,7 @@ async def edit_traffic_preset(cb: CallbackQuery, callback_data: PresetCB, servic
     if callback_data.val < 0:
         await state.set_state(EditTrafficLimit.value)
         await ask_here(cb, services, state, texts.OTHER_NUMBER_PROMPT, "edit", client.id,
-                       kind="client", client_id=client.id)
+                       target="client", client_id=client.id)
         await cb.answer()
         return
     await _apply_traffic_limit(cb, services, client, int(callback_data.val), via_cb=cb)
@@ -384,10 +384,10 @@ async def edit_traffic_apply(message: Message, services, state: FSMContext):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not raw.isdigit():
-        await ask_tracked(message, services, texts.NUMBER_BAD)
+        await ask_tracked(message, services, texts.NUMBER_BAD_LIMIT)
         return
     data = await state.get_data()
-    if data.get("kind") == "device":
+    if data.get("target") == "device":
         from awgbot.bot.handlers.admin.devices import apply_device_limit_typed
         await apply_device_limit_typed(message, services, state, data, int(raw))
         return
@@ -462,7 +462,7 @@ async def edit_period_end_apply(message: Message, services, state: FSMContext):
     saved_start = data.get("new_start")
     new_start = timeutil.parse_iso(saved_start) if saved_start else None
     if new_start is None:
-        await back_to_context(message, services, data, "admin", note="⚠️ " + texts.PERIOD_NO_START)
+        await back_to_context(message, services, data, "admin", note=texts.PERIOD_NO_START)
         return
     try:
         s, e, notes = await call(services.set_subscription_dates, client.id, new_start, new_end)
@@ -493,7 +493,8 @@ async def regen_invite(cb: CallbackQuery, callback_data: ClientCB, services):
     except Exception:                                  # noqa: BLE001
         pass
     await _send_invite(cb.message, services, client, code)
-    await content_finisher(cb.message, services, texts.invite_finisher(client, _bot(services)), "admin")
+    await content_finisher(cb.message, services, texts.invite_finisher(client, _bot(services)), "admin",
+                           markup=kb.to_client_card(client.id))
 
 
 @router.callback_query(ClientCB.filter(F.action == "delete"))
@@ -557,8 +558,12 @@ async def extend_screen(services, client_id: int, *, keep: bool = True, cancel_t
 _extend_picker = extend_screen
 
 
-@router.callback_query(ClientCB.filter(F.action == "extend"))
+@router.callback_query(ClientCB.filter(F.action.in_(("extend", "extend_exp"))))
 async def extend_start(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
+    """extend_exp — из списка истекающих: после продления или отмены —
+    обратно в список, пока он не пуст."""
+    if callback_data.action == "extend_exp":
+        await state.update_data(return_to="expiring")
     return_to = (await state.get_data()).get("return_to")
     screen = await extend_screen(
         services, callback_data.client_id,

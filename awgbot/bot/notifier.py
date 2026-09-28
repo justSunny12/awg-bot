@@ -9,6 +9,11 @@ Flood-контроль Telegram (~30 msg/с на бота): пачки (меся
 алерты) шлём с лёгким пейсингом, а 429 (RetryAfter) не глотаем как прочие
 ошибки — ждём указанное время и повторяем один раз, иначе уведомление молча
 терялось бы именно тогда, когда рассылка большая.
+
+Кнопки под уведомлением: своя клавиатура уведомления, иначе — кнопка действия
+по подсказке Notification.action («⏱ Продлить», «📤 Конфигурация», «📦 Без
+профиля», «💳 Подписка», ACTION_LABELS) над «Скрыть», иначе одна «Скрыть».
+Нажатие разбирает reply_commands.on_note_action.
 """
 
 from __future__ import annotations
@@ -128,14 +133,21 @@ ACTION_LABELS = {"extend": "⏱ Продлить", "gwcfg": "📤 Конфигу
                  "unassigned": "📦 Без профиля", "sub": "💳 Подписка"}
 
 
-def action_markup(action):
+def action_markup(action, base=None):
     """Кнопка действия над «Скрыть» по подсказке уведомления; без подсказки
-    или с незнакомой — одна «Скрыть»."""
+    или с незнакомой — одна «Скрыть». base — своя клавиатура уведомления
+    (например, отсрочка): её кнопки идут первыми, «Скрыть» остаётся одна."""
     if not action or action[0] not in ACTION_LABELS:
-        return kb.hide_only()
+        return base or kb.hide_only()
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from awgbot.bot.callbacks import NoteCB
     b = InlineKeyboardBuilder()
+    from awgbot.bot.callbacks import HideCB
+    hide = HideCB().pack()
+    for row in (base.inline_keyboard if base is not None else []):
+        for btn in row:
+            if btn.callback_data != hide:            # «Скрыть» добавим одну, последней
+                b.add(btn)
     b.button(text=ACTION_LABELS[action[0]],
              callback_data=NoteCB(kind=action[0], ref=int(action[1] if len(action) > 1 else 0)))
     b.adjust(1)
@@ -151,7 +163,7 @@ async def send_notifications(bot, notifications) -> None:
 
     async def one(n):
         silent = False if getattr(n, "force_sound", False) else quiet_silent
-        markup = getattr(n, "reply_markup", None) or action_markup(getattr(n, "action", ()))
+        markup = action_markup(getattr(n, "action", ()), getattr(n, "reply_markup", None))
         await _send(bot, n.tg_id, n.text, markup, silent,
                     critical=bool(getattr(n, "critical", False)),
                     on_sent=getattr(n, "on_sent", None))

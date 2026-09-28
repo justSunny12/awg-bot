@@ -4,7 +4,7 @@ import pytest
 
 from awgbot.bot import texts
 from awgbot.bot.handlers import admin as admin_h
-from awgbot.bot.callbacks import ClientCB, ConfirmCB, PeriodCB
+from awgbot.bot.callbacks import ClientCB, PeriodCB
 from awgbot.core import config
 from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
@@ -39,10 +39,9 @@ async def test_admin_start_shows_panel_and_menu_opens_it_again(services, fake_bo
 async def test_clients_list_with_client(services, make_active_client, fake_bot):
     make_active_client(name="Ося", tg_id=7000)
     cb, nav = _admin_cb(services, fake_bot)
-    await admin_h.clients_list(cb, services)
-    shown = [s for s in nav.sent if s[0] == "edit_text"]
-    assert shown and "Профили" in shown[-1][1]
-    labels = [b.text for row in shown[-1][2].inline_keyboard for b in row]
+    await admin_h.clients_list(cb, services, FakeState())
+    text, labels = last_screen(nav)
+    assert text.startswith("👥 Профили · 1 · онлайн 0"), text
     assert any("Ося" in t for t in labels), "профиль должен быть кнопкой в списке"
     assert cb.answers
 
@@ -56,23 +55,34 @@ async def test_clients_list_hides_admin_profile(services, fake_bot, make_active_
     """
     services.ensure_admin_client()
     cb, nav = _admin_cb(services, fake_bot)
-    await admin_h.clients_list(cb, services)
-    assert any("Профилей пока нет" in s[1] for s in nav.sent if s[0] == "edit_text")
+    await admin_h.clients_list(cb, services, FakeState())
+    text, labels = last_screen(nav)
+    assert text.startswith("👥 Профили · 0"), text
+    assert labels == ["⬅️ Назад"], f"в пустом списке оказались профили: {labels}"
 
     make_active_client(name="Ксюша", tg_id=4242)
     cb2, nav2 = _admin_cb(services, fake_bot)
-    await admin_h.clients_list(cb2, services)
-    shown = "".join(s[1] for s in nav2.sent if s[0] == "edit_text")
-    assert "Профили" in shown
+    await admin_h.clients_list(cb2, services, FakeState())
+    text2, labels2 = last_screen(nav2)
+    assert text2.startswith("👥 Профили · 1"), text2
+    assert [l for l in labels2 if "Ксюша" in l], labels2
 
 
 async def test_client_open_card(services, make_active_client, fake_bot):
+    """Карточка: «⏱ Продлить» и «✏️ Изменить» первым рядом; удаление — только
+    в «✏️ Изменить», в карточке его нет (случайное нажатие стоило бы профиля)."""
     client = make_active_client(name="Ким", tg_id=7001)
     cb, nav = _admin_cb(services, fake_bot)
-    await admin_h.client_open(cb, ClientCB(action="open", client_id=client.id), services)
+    await admin_h.client_open(cb, ClientCB(action="open", client_id=client.id), services, FakeState())
     text, labels = last_screen(nav)
     assert "Ким" in text, "карточка без имени профиля"
-    assert any("Удалить" in l for l in labels) and any("Продлить" in l for l in labels)
+    assert labels[:2] == ["⏱ Продлить", "✏️ Изменить"], labels
+    assert not any("Удалить" in l for l in labels), labels
+
+    cb2, nav2 = _admin_cb(services, fake_bot)
+    await admin_h.client_edit(cb2, ClientCB(action="edit", client_id=client.id), services, FakeState())
+    _, edit_labels = last_screen(nav2)
+    assert "🗑 Удалить профиль" in edit_labels, edit_labels
 
 
 # ── создание клиента (FSM: имя → лимит → трафик → период) ─────────────────────
@@ -121,18 +131,29 @@ async def test_client_delete_apply(services, make_active_client, fake_bot):
     services.add_device(client.id, "d")
     cb, nav = _admin_cb(services, fake_bot)
     await admin_h.client_delete_apply(
-        cb, ConfirmCB(action="del_client", ref=client.id, yes=True), services)
+        cb, ClientCB(action="delete_yes", client_id=client.id), services)
     assert services.db.get_client(client.id) is None
     assert any("удал" in s[1].lower() for s in nav.sent if s[0] == "edit_text")
 
 
-async def test_client_delete_cancel_shows_card(services, make_active_client, fake_bot):
+async def test_client_delete_asks_with_cancel_first_and_cancel_keeps_profile(
+        services, make_active_client, fake_bot):
+    """Удаление профиля: первая кнопка — «⬅️ Отмена» (ведёт в «✏️ Изменить»),
+    вторая — «🗑 Удалить». Перепутанный порядок — палец по привычке жмёт
+    правую и сносит профиль вместе со всеми ссылками."""
     client = make_active_client(name="Остаётся", tg_id=7003)
+    services.add_device(client.id, "Тел")
     cb, nav = _admin_cb(services, fake_bot)
-    await admin_h.client_delete_apply(
-        cb, ConfirmCB(action="del_client", ref=client.id, yes=False), services)
-    assert services.db.get_client(client.id) is not None   # не удалён
-    assert cb.answers
+    await admin_h.client_delete_confirm(cb, ClientCB(action="delete", client_id=client.id), services)
+    text, labels = last_screen(nav)
+    assert text.startswith("🗑 Удалить профиль Остаётся?"), text
+    assert "Вместе с 1 устройством" in text, text
+    assert labels == ["⬅️ Отмена", "🗑 Удалить"], labels
+    markup = [s for s in nav.sent if s[0] == "edit_text"][-1][2]
+    cancel = markup.inline_keyboard[0][0].callback_data
+    assert cancel == ClientCB(action="edit", client_id=client.id).pack(), \
+        "отмена удаления должна возвращать в «✏️ Изменить»"
+    assert services.db.get_client(client.id) is not None   # вопрос ничего не удалил
 
 
 def test_period_choices_has_cancel_both_contexts():
@@ -269,7 +290,7 @@ async def test_menu_button_dismisses_every_other_update_window(services, fake_bo
     assert services.pop_update_reports() == [], "история не очищена"
 
 
-# ── РФ-часть потребления на главной ──────
+# ── РФ-часть трафика на главной ──────
 
 GB = 1024 ** 3
 
@@ -292,21 +313,22 @@ def _rf_world(services, fake_routing, monkeypatch, *, enabled, rx=0, tx=0, error
 
 
 def _rf_line(text: str):
-    lines = [ln for ln in text.splitlines() if ln.startswith("└ 🇷🇺 РФ-доступ:")]
+    lines = [ln for ln in text.splitlines() if ln.startswith("└─ 🇷🇺 РФ-доступ:")]
     return lines[0] if lines else None
 
 
 async def test_panel_shows_zero_rf_line_when_the_feature_is_on(services, fake_bot, fake_routing,
                                                               monkeypatch):
     """Функция включена — строка всегда, и «0 ГБ» тоже: ровно тогда видно, что
-    маркировка не работает, хотя люди пользуются."""
+    маркировка не работает, хотя люди пользуются. Ветка под трафиком — знаком
+    «└─», без стрелок: разбивка ↑↓ живёт на экране «Трафик»."""
     _rf_world(services, fake_routing, monkeypatch, enabled=True)
     text = await _panel_text(services, fake_bot)
     line = _rf_line(text)
-    assert line == "└ 🇷🇺 РФ-доступ: 0 ГБ (↑ 0 ГБ | ↓ 0 ГБ)", text
+    assert line == "└─ 🇷🇺 РФ-доступ: 0 ГБ", text
     head = [ln for ln in text.splitlines() if f"📊 Трафик за {texts.month_label()}" in ln][0]
     assert text.splitlines().index(line) == text.splitlines().index(head) + 1, \
-        "строка РФ не сразу под потреблением"
+        "строка РФ не сразу под трафиком"
 
 
 async def test_panel_hides_rf_line_when_off_and_nothing_counted(services, fake_bot, fake_routing,
@@ -321,7 +343,7 @@ async def test_panel_keeps_rf_line_when_off_but_month_has_rf(services, fake_bot,
     """Выключили в середине месяца — накопленное не пропадает с главной."""
     _rf_world(services, fake_routing, monkeypatch, enabled=False, rx=GB, tx=3 * GB)
     line = _rf_line(await _panel_text(services, fake_bot))
-    assert line == "└ 🇷🇺 РФ-доступ: 4 ГБ (↑ 1 ГБ | ↓ 3 ГБ)"
+    assert line == "└─ 🇷🇺 РФ-доступ: 4 ГБ", line
 
 
 async def test_panel_rf_line_marks_broken_accounting_and_keeps_numbers(services, fake_bot,
@@ -329,21 +351,22 @@ async def test_panel_rf_line_marks_broken_accounting_and_keeps_numbers(services,
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB, tx=GB,
               error="nft не найден — поставь пакет nftables")
     line = _rf_line(await _panel_text(services, fake_bot))
-    assert line == "└ 🇷🇺 РФ-доступ: 2 ГБ (↑ 1 ГБ | ↓ 1 ГБ) · ⚠️ учёт трафика РФ-доступа не идёт"
+    assert line == "└─ 🇷🇺 РФ-доступ: 2 ГБ · ⚠️ учёт по РФ-доступу не ведётся", line
     assert "nft" not in line, "текст ошибки ядра в шапке админа"
 
 
 async def test_panel_rf_line_links_to_the_rf_screen(services, fake_bot, fake_routing, monkeypatch):
-    """Этап 2: «РФ-доступ» на главной — ссылка на экран по профилям. Пропадёт
-    ссылка — до разбивки РФ по людям админ из главной не доберётся."""
+    """«РФ-доступ» на главной — ссылка на тот же экран «Трафик», что и строка
+    трафика (экраны РФ слиты с ним). Пропадёт ссылка — до разбивки РФ по людям
+    админ из главной не доберётся."""
     services.bot_username = "awg_test_bot"
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
     text = await _panel_text(services, fake_bot)
-    lines = [ln for ln in text.splitlines() if ln.startswith("└ ") and "🇷🇺 РФ-доступ" in ln]
+    lines = [ln for ln in text.splitlines() if ln.startswith("└─ ") and "🇷🇺 РФ-доступ" in ln]
     # флаг — внутри ссылки: кликается вся подпись «🇷🇺 РФ-доступ»
-    assert lines and lines[0] == ('└ <a href="https://t.me/awg_test_bot?start=traffic_local">'
-                                  '🇷🇺 РФ-доступ</a>: 1 ГБ (↑ 1 ГБ | ↓ 0 ГБ)'), text
-    assert "start=traffic\"" in text, "ссылка потребления пропала"
+    assert lines and lines[0] == ('└─ <a href="https://t.me/awg_test_bot?start=traffic">'
+                                  '🇷🇺 РФ-доступ</a>: 1 ГБ'), text
+    assert text.count("start=traffic\"") == 2, "строка трафика и РФ-ветка — обе на экран «Трафик»"
 
 
 async def test_panel_rf_line_is_plain_text_without_bot_username(services, fake_bot, fake_routing,
@@ -353,7 +376,7 @@ async def test_panel_rf_line_is_plain_text_without_bot_username(services, fake_b
     services.bot_username = ""
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
     line = _rf_line(await _panel_text(services, fake_bot))
-    assert line == "└ 🇷🇺 РФ-доступ: 1 ГБ (↑ 1 ГБ | ↓ 0 ГБ)", line
+    assert line == "└─ 🇷🇺 РФ-доступ: 1 ГБ", line
 
 
 async def test_client_and_guest_home_do_not_change_with_rf_data(services, fake_bot, fake_routing,
@@ -381,4 +404,4 @@ async def test_client_and_guest_home_do_not_change_with_rf_data(services, fake_b
     services.db.rf_add_bulk([(dc.device_id, GB, 2 * GB), (lent.device_id, GB, GB)])
     after = await homes()
     assert after == before, "главная клиента или гостя изменилась от РФ-данных"
-    assert all("учёт" not in t and "└ 🇷🇺" not in t for t in after)
+    assert all("учёт" not in t and "🇷🇺 РФ-доступ:" not in t for t in after)

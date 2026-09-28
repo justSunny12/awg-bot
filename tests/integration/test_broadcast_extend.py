@@ -103,19 +103,19 @@ def test_owners_only_recipients(services, make_active_client):
 
 
 def test_header_variants_and_reserve(services, make_active_client):
-    """Шапка: активной — «увеличена на N дней» и старая → новая; истёкшей —
+    """Шапка: активной — «продлена на N дней» и старая → новая; истёкшей —
     «с текущей даты» и новая; бессрочной — пусто. Резерв в лимите — по самой
     длинной шапке, без тегов."""
     a = make_active_client("Ксюша", tg_id=8060)
     e = _expire(services, make_active_client("Вера", tg_id=8061))
     u = make_active_client("Антон", tg_id=8062, period_kind="never")
     plan = {x.client.id: x for x in services.extension_plan([a.id, e.id, u.id], 1)}
-    old, new = timeutil.fmt_date(plan[a.id].old_end), timeutil.fmt_date(plan[a.id].new_end)
+    old, new = timeutil.fmt_date_ui(plan[a.id].old_end), timeutil.fmt_date_ui(plan[a.id].new_end)
     assert texts.extension_header(1, plan[a.id]) == (
-        f"<b>Длительность твоей подписки увеличена на 1 день 🙂\n{old} → {new}</b>")
+        f"<b>Подписка продлена на 1 день 🙂\n{old} → {new}</b>")
     assert texts.extension_header(5, plan[e.id]) == (
-        "<b>К длительности твоей подписки добавлено 5 дней с текущей даты 🙂\n"
-        f"Теперь срок подписки: до {timeutil.fmt_date(plan[e.id].new_end)}</b>")
+        "<b>К твоей подписке добавлено 5 дней с текущей даты 🙂\n"
+        f"Теперь срок подписки: до {timeutil.fmt_date_ui(plan[e.id].new_end)}</b>")
     assert texts.extension_header(5, plan[u.id]) == ""
     assert texts.announcement_text("", "текст") == "текст"
     assert texts.announcement_text("<b>шапка</b>", "") == "<b>шапка</b>"
@@ -123,9 +123,11 @@ def test_header_variants_and_reserve(services, make_active_client):
     r = texts.extension_reserve()
     assert 70 <= r <= 110, r
     prompt = texts.broadcast_prompt([a], False, extend_days=10)
-    assert prompt.startswith("✅ Принято: перед отправкой уведомления подписка адресата будет продлена на <b>10 дней</b>")
-    assert f"без них — {4096 - r} символов, с ними — {1024 - r}" in prompt
-    assert "адресатов" in texts.broadcast_prompt([a, e], False, extend_days=2)
+    assert prompt.startswith("📢 Текст для профиля Ксюша · продление на 10 дней\n"), prompt
+    assert f"без картинок — до {4096 - r} знаков, с картинками — до {1024 - r}" in prompt, \
+        "лимит в приглашении не учитывает шапку продления"
+    assert texts.broadcast_prompt([a, e], False, extend_days=2).startswith(
+        "📢 Текст для профилей: Ксюша, Вера · продление на 2 дня")
 
 
 def test_days_prompt_and_preview_footer(services, make_active_client):
@@ -133,22 +135,12 @@ def test_days_prompt_and_preview_footer(services, make_active_client):
     u = make_active_client("Антон", tg_id=8071, period_kind="never")
     e = _expire(services, make_active_client("Вера", tg_id=8072))
     plan = services.extension_plan([a.id, u.id, e.id], 10)
-    p = texts.broadcast_days_prompt(plan)
-    assert "Выбранные адресаты:\n• <b>Антон</b> (∞, без продления)\n• <b>Вера</b>\n• <b>Ксюша</b>" in p
-    assert p.endswith("На какое количество дней им необходимо продлить подписку? (1–365)")
-    solo = texts.broadcast_days_prompt(plan[2:])
-    assert "Адресат уведомления — <b>Ксюша</b>." in solo and "ему необходимо" in solo
-    pv = texts.broadcast_preview("<b>шапка</b>\n\nтекст", 3, [a, u, e], False, (10, plan))
-    assert "Будет отправлено <b>3</b> людям, их подписка будет продлена на <b>10 дней</b>:" in pv
-    assert "• <b>Антон</b>: ∞ — без продления" in pv
-    by = {x.client.id: x for x in plan}
-    assert f"• <b>Вера</b>: ⛔ {timeutil.fmt_date(by[e.id].old_end)} → {timeutil.fmt_date(by[e.id].new_end)}" in pv
-    assert f"• <b>Ксюша</b>: {timeutil.fmt_date(by[a.id].old_end)} → {timeutil.fmt_date(by[a.id].new_end)}" in pv
-    assert "Получит" not in pv and pv.endswith("Отправляем?")
-    one = texts.broadcast_preview("t", 1, [a], False, (3, plan[2:]))
-    assert "Будет отправлено <b>1</b> человеку, его подписка будет продлена на <b>3 дня</b>:" in one
-    rep = texts.broadcast_report([a, u], False, 1, 1, (10, plan[:1] + plan[2:]))
-    assert rep.startswith("✅ Объявление выше доставлено владельцам профилей Ксюша, Антон; "
-                          "подписка продлена на 10 дней (Антон — бессрочная, без продления).")
-    assert rep.endswith("⚠️ Не доставлено 1 адресату — заблокировали бота или удалили аккаунт; "
-                        "подписка ему всё равно продлена.")
+    assert texts.broadcast_days_prompt(plan) == (
+        "📢 Профили для продления подписки: Антон (∞, без продления), Вера, Ксюша\n"
+        "На сколько дней продлеваем?")
+    foot = texts.broadcast_preview("т", 3, extension=(10, plan))
+    lines = foot.split("\n")
+    assert lines[0] == "👆 Так увидят получатели · 3 адресата · продление на <b>10 дней</b>:", foot
+    assert lines[1] == "• Антон: ∞ — без продления", foot
+    assert lines[2].startswith("• Вера: ⛔ "), "истёкшая — со знаком «⛔» (продлится от сегодня)"
+    assert lines[3].startswith("• Ксюша: ") and "⛔" not in lines[3]
