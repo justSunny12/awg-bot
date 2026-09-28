@@ -7,6 +7,7 @@ import textwrap
 import pytest
 
 from awgbot.core import settings
+from tests.conftest import restore_settings
 
 
 @pytest.fixture
@@ -30,9 +31,7 @@ def sched_conf(tmp_path, monkeypatch):
     (tmp_path / "updates.yaml").write_text("poll_hour: 10\npoll_minute: 0\n", encoding="utf-8")
     settings.init(tmp_path)
     yield tmp_path
-    settings._on_change.clear()
-    from awgbot.core import config
-    settings.init(config.CONF_DIR)
+    restore_settings()      # во временную копию conf, не в conf/ репозитория
 
 
 def _build_scheduler(services, db):
@@ -118,6 +117,4 @@ def test_unknown_poll_schedule_behaves_as_day_without_rewriting_yaml(tmp_path, s
         assert job.trigger.jitter == 1800
         assert 'poll_schedule: "hour"' in (tmp_path / "updates.yaml").read_text(encoding="utf-8")
     finally:
-        settings._on_change.clear()
-        from awgbot.core import config
-        settings.init(config.CONF_DIR)
+        restore_settings()

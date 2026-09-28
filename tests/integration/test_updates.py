@@ -346,8 +346,8 @@ def test_update_to_notify_respects_never_schedule(services, monkeypatch, tmp_pat
         assert services.updates_muted() is False        # мьют НЕ включён
         assert services.update_to_notify() is None      # но never глушит
     finally:
-        from awgbot.core import config
-        st.init(config.CONF_DIR)
+        from tests.conftest import restore_settings
+        restore_settings()
 
 
 def test_hotfix_version_has_a_fourth_digit():

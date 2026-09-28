@@ -6,6 +6,7 @@ import textwrap
 import pytest
 
 from awgbot.core import settings
+from tests.conftest import restore_settings
 
 
 @pytest.fixture
@@ -23,9 +24,7 @@ def conf(tmp_path):
         "quiet_hours_enabled: true\nquiet_hours_start: 20\nquiet_hours_end: 7\n", encoding="utf-8")
     settings.init(tmp_path)
     yield tmp_path
-    settings._on_change.clear()
-    from awgbot.core import config
-    settings.init(config.CONF_DIR)
+    restore_settings()      # во временную копию conf, не в conf/ репозитория
 
 
 def test_quiet_hours_bounds_are_defined():

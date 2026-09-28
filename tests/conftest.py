@@ -51,6 +51,30 @@ _settings.init(_CONF_COPY)
 from awgbot.infra import awglock as _awglock        # noqa: E402
 _awglock.STATE_PATH = _CONF_COPY / "awg.state"
 
+# Каталог conf рабочего дерева — запоминаем при загрузке conftest, до любых
+# подмен config.CONF_DIR и перезагрузок модуля config в тестах.
+_REPO_CONF = pathlib.Path(_config.CONF_DIR).resolve()
+# строковые формы для сторожа: в teardown ФС не трогаем — тест мог подменить
+# Path.stat/os.readlink, и его monkeypatch к этому моменту ещё не откатан
+_REPO_CONF_NAMES = {os.path.abspath(str(_config.CONF_DIR)), str(_REPO_CONF)}
+
+
+def restore_settings() -> None:
+    """Вернуть горячий кэш настроек во временную копию conf.
+
+    Тест, который переключал settings.init на свой tmp, обязан звать это в
+    finally/teardown — а НЕ settings.init(config.CONF_DIR): иначе следующий
+    тест того же процесса, дошедший до set_value, перепишет conf/ репозитория.
+    """
+    _settings._on_change.clear()
+    _settings.init(_CONF_COPY)
+
+
+def _repo_conf_digest() -> dict[str, str]:
+    import hashlib
+    return {f.name: hashlib.sha256(f.read_bytes()).hexdigest()
+            for f in sorted(_REPO_CONF.glob("*.yaml"))}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Интеграционные фикстуры: временная БД, фейковый awg-слой, Services
@@ -491,6 +515,35 @@ def mig(monkeypatch, services, fake_awg):
 # зависимо от сети и с токеноподобной строкой наружу. Любой запрос настоящей
 # сессии падает сетевой ошибкой: для кода это «Telegram не ответил», и путь
 # отказа у всех таких мест обязан это переживать.
+@pytest.fixture(autouse=True)
+def _settings_never_on_repo_conf():
+    """Сторож: после теста кэш настроек не смотрит в conf/ рабочего дерева.
+
+    Иначе следующий тест процесса (под xdist — любой), пишущий настройку,
+    молча правит conf/app.yaml репозитория. Виновника роняем сразу и
+    возвращаем кэш в копию, чтобы не заразить соседей.
+    """
+    yield
+    cur = _settings._conf_dir
+    if cur is not None and os.path.abspath(str(cur)) in _REPO_CONF_NAMES:
+        restore_settings()
+        pytest.fail("тест оставил settings на conf/ репозитория — "
+                    "возвращай кэш через tests.conftest.restore_settings()")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _repo_conf_untouched():
+    """Сторож на сессию: файлы conf/*.yaml репозитория после прогона те же.
+
+    Ловит запись в conf/ любым путём, не только через кэш settings.
+    """
+    before = _repo_conf_digest()
+    yield
+    after = _repo_conf_digest()
+    changed = sorted(n for n in before.keys() | after.keys() if before.get(n) != after.get(n))
+    assert not changed, f"прогон тестов изменил conf/ репозитория: {changed}"
+
+
 @pytest.fixture(autouse=True)
 def _no_telegram_network(monkeypatch):
     from aiogram.client.session.aiohttp import AiohttpSession

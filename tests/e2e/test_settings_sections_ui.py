@@ -462,7 +462,7 @@ async def test_never_from_an_old_config_becomes_month_and_mute_at_startup(servic
     # вернуть кэш настроек туда, где он был до теста, — во временную копию
     # conf из conftest, а не в config.CONF_DIR: иначе следующие тесты процесса
     # писали бы настройки в conf/ рабочего дерева
-    from tests.conftest import _CONF_COPY
+    from tests.conftest import restore_settings
     monkeypatch.setattr(config, "validate", lambda: None)
     monkeypatch.setattr(preflight, "check_fatal", lambda: None)
     monkeypatch.setattr(config, "CONF_DIR", tmp_path)
@@ -477,8 +477,7 @@ async def test_never_from_an_old_config_becomes_month_and_mute_at_startup(servic
         assert "never" not in (tmp_path / "updates.yaml").read_text(encoding="utf-8")
         assert services.updates_muted()
     finally:
-        settings._on_change.clear()
-        settings.init(_CONF_COPY)
+        restore_settings()
 
 
 async def test_a_huge_changelog_is_cut_with_a_link_to_the_full_journal(services, fake_bot, upd):

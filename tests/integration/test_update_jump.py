@@ -90,7 +90,8 @@ def current_on_floor_host(floor_host, monkeypatch):
     yield cfg, conf, data
     monkeypatch.delenv("AWG_BOT_CONF_DIR"); monkeypatch.delenv("AWG_BOT_DATA_DIR")
     importlib.reload(c)
-    settings.init(c.CONF_DIR)
+    from tests.conftest import restore_settings
+    restore_settings()      # во временную копию conf, не в conf/ репозитория
 
 
 def test_current_code_opens_and_migrates_the_floor_database(current_on_floor_host):

@@ -5,6 +5,7 @@ import textwrap
 import pytest
 
 from awgbot.core import settings
+from tests.conftest import restore_settings
 
 
 @pytest.fixture
@@ -26,12 +27,11 @@ def conf(tmp_path):
         "quiet_hours_enabled: true\nquiet_hours_start: 20\n", encoding="utf-8")
     settings.init(tmp_path)
     yield tmp_path
-    settings._on_change.clear()
     # ВАЖНО: этот фикстур переинициализировал ГЛОБАЛЬНЫЙ settings на tmp_path.
-    # Вернуть его на репозиторный conf/, иначе последующие тесты (мигрированные
-    # чтения через settings.get) увидят удалённый tmp и свалятся на дефолты.
-    from awgbot.core import config
-    settings.init(config.CONF_DIR)
+    # Вернуть его во временную копию conf (не в conf/ репозитория: иначе
+    # следующий тест процесса с set_value перепишет рабочее дерево), иначе
+    # последующие чтения через settings.get увидят удалённый tmp.
+    restore_settings()
 
 
 def test_get_dotted_and_types(conf):
@@ -134,11 +134,12 @@ def test_broken_yaml_keeps_previous_values(conf):
 def test_broken_yaml_at_init_skipped(tmp_path):
     (tmp_path / "good.yaml").write_text("x: 1\n", encoding="utf-8")
     (tmp_path / "bad.yaml").write_text("x: [broken", encoding="utf-8")
-    settings.init(tmp_path)                        # не падает
-    assert settings.get("good.x") == 1
-    assert settings.get("bad.x", "dflt") == "dflt"
-    from awgbot.core import config
-    settings.init(config.CONF_DIR)                 # восстановить для остальных
+    try:
+        settings.init(tmp_path)                    # не падает
+        assert settings.get("good.x") == 1
+        assert settings.get("bad.x", "dflt") == "dflt"
+    finally:
+        restore_settings()                         # восстановить для остальных
 
 
 def test_set_value_creates_missing_file(tmp_path):
@@ -146,12 +147,13 @@ def test_set_value_creates_missing_file(tmp_path):
     не роняет KeyError — создаёт файл и пишет значение."""
     (tmp_path / "app.yaml").write_text("x: 1\n", encoding="utf-8")
     settings.init(tmp_path)
-    assert not (tmp_path / "notifications.yaml").exists()
-    settings.set_value("notifications.client_events.activation", False)   # не падает
-    assert (tmp_path / "notifications.yaml").exists()
-    assert settings.get_bool("notifications.client_events.activation") is False
-    from awgbot.core import config
-    settings.init(config.CONF_DIR)
+    try:
+        assert not (tmp_path / "notifications.yaml").exists()
+        settings.set_value("notifications.client_events.activation", False)   # не падает
+        assert (tmp_path / "notifications.yaml").exists()
+        assert settings.get_bool("notifications.client_events.activation") is False
+    finally:
+        restore_settings()
 
 
 def test_set_value_on_duplicated_key_says_so_instead_of_traceback(tmp_path):
@@ -166,12 +168,11 @@ def test_set_value_on_duplicated_key_says_so_instead_of_traceback(tmp_path):
     (tmp_path / "app.yaml").write_text(
         "routing:\n  enabled: true\nrouting:\n  enabled: false\n", encoding="utf-8")
     settings.init(tmp_path)
-
-    with pytest.raises(settings.SettingsWriteError) as ei:
-        settings.set_value("app.routing.enabled", True)
-    msg = str(ei.value)
-    assert "app.yaml" in msg
-    assert len(msg) <= 200, "не влезет в alert Telegram (лимит 200)"
-
-    from awgbot.core import config
-    settings.init(config.CONF_DIR)
+    try:
+        with pytest.raises(settings.SettingsWriteError) as ei:
+            settings.set_value("app.routing.enabled", True)
+        msg = str(ei.value)
+        assert "app.yaml" in msg
+        assert len(msg) <= 200, "не влезет в alert Telegram (лимит 200)"
+    finally:
+        restore_settings()

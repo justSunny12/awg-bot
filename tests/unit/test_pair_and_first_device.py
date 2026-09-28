@@ -131,6 +131,10 @@ def test_first_device_prints_the_link_and_saves_the_conf(monkeypatch, tmp_path, 
     db_file = tmp_path / "bot.db"
     db_file.write_text("", encoding="utf-8")
     monkeypatch.setattr(config, "DB_PATH", db_file)
+    # main() зовёт settings.init(config.CONF_DIR) — пусть это будет временная
+    # копия conf, иначе кэш останется на conf/ репозитория для соседних тестов
+    from tests.conftest import _CONF_COPY
+    monkeypatch.setattr(config, "CONF_DIR", _CONF_COPY)
 
     class _Dev:
         id, name, address, private_key = 7, "Админ", "10.8.1.2", "priv"
