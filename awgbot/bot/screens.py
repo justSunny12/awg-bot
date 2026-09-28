@@ -55,7 +55,8 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
             from awgbot.bot.handlers import routing as rt
             return await rt.screen_for(services, None, ref, kind)
         if kind == "cl":
-            return await clients.client_card_parts(services, ref)
+            parts = await clients.client_card_parts(services, ref)
+            return parts if parts is not None else await panel._panel_parts(services)
         if kind == "edit":
             return await clients.client_edit_parts(services, ref)
         if kind == "clients":
@@ -79,6 +80,10 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
             return await panel.traffic_devices_screen(services, ref)
         if kind == "gw":
             return await panel.gateway_card_screen(services, ref, chat_id)
+        if kind == "migration":
+            return await panel.migration_overview_screen(services)
+        if kind == "migration_cl":
+            return await panel.migration_client_screen(services, ref)
         if kind == "upd":
             from awgbot.bot.handlers.settings import _screen
             return await _screen("upd", services)

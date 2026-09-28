@@ -82,8 +82,8 @@ class GatewayLinkMixin:
             log.info("gateway: порт линка слота %s — %s (был %s)", g.id, port, g.link_port)
             notes.append(Notification(
                 config.ADMIN_ID,
-                f"🛰 {self._gw_link(g)}: порт линка теперь {port} (был {g.link_port}) — "
-                "шлюз не знает. Перевыпусти конфигурацию и примени её на той стороне, "
+                f"🛰 {self._gw_link(g)}: порт линка изменён на {port} (был {g.link_port}) — "
+                f"шлюз не знает. {self._gw_reissue_link(g)} конфигурацию и примени её на той стороне, "
                 "иначе линк не поднимется", action=("gwcfg", int(g.id))))
         if changed:
             self._gw_firewall_refresh()
@@ -162,6 +162,17 @@ class GatewayLinkMixin:
         когда шлюз лёг."""
         import html
         return html.escape(self._gw_display(gw), quote=False)
+
+    def _gw_reissue_link(self, gw, label: str = "Перевыпусти") -> str:
+        """«Перевыпусти» — ссылка, по которой бот сразу отдаёт файл
+        конфигурации слота (gwcfg-<слот>); без username — простой текст."""
+        slot = int(getattr(gw, "id", 0) or 0)
+        return self._link(f"gwcfg-{slot}", label) if slot else label
+
+    def _gw_card_link(self, gw, label: str = "в карточке шлюза") -> str:
+        """Ссылка на карточку слота с произвольной подписью."""
+        slot = int(getattr(gw, "id", 0) or 0)
+        return self._link(f"gw-{slot}", label) if slot else label
 
     def _gw_link(self, gw) -> str:
         """Имя шлюза в уведомлении — ссылка на карточку слота (gw-<слот>)."""
@@ -979,7 +990,7 @@ class GatewayLinkMixin:
         return True, Notification(
             config.ADMIN_ID,
             f"🛰 {self._gw_link(g)}: конфигурация неактуальна — {what}. "
-            "Перевыпусти её и примени на шлюзе", action=("gwcfg", int(g.id)))
+            f"{self._gw_reissue_link(g)} и примени на шлюзе", action=("gwcfg", int(g.id)))
 
     def gw_bundle_drift_notes(self) -> list[Notification]:
         """Напоминания о перевыпуске конфигурации шлюзов. Есть снимок канала —
@@ -1014,8 +1025,8 @@ class GatewayLinkMixin:
             notes.append(Notification(
                 config.ADMIN_ID,
                 f"🛰 {self._gw_link(g)}: список твоих устройств изменился, а файервол шлюза "
-                "знает прежний — новые устройства не достанут до шлюза и его локальной сети "
-                "через туннель. Перевыпусти конфигурацию и примени её на шлюзе",
+                "не в курсе — новые устройства не достанут до шлюза и его локальной сети "
+                f"через туннель. {self._gw_reissue_link(g, 'Перевыпусти конфигурацию')} и примени её на той стороне",
                 action=("gwcfg", int(g.id))))
         # прочие зависимости: режим без VPN, подсети, резолвер — своим текстом
         for g in self.db.gateways():
@@ -1032,7 +1043,7 @@ class GatewayLinkMixin:
             notes.append(Notification(
                 config.ADMIN_ID,
                 f"🛰 {self._gw_link(g)}: конфигурация неактуальна — изменились {what}. "
-                "Перевыпусти её и примени на шлюзе", action=("gwcfg", int(g.id))))
+                f"{self._gw_reissue_link(g)} и примени на шлюзе", action=("gwcfg", int(g.id))))
         return notes
 
     # Маркер контракта как ОТДЕЛЬНАЯ СТРОКА. Тот же текст встречается в бандле и

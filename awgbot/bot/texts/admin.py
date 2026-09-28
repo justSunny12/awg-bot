@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import datetime
+
 from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.core.enums import ActivationStatus, SubStatus
 
 from .fmt import (
     _e, human_bytes, gb, gb_str, _limit_devices_str, device_state, plain_ip, _fmt_age,
-    rf_line, rf_value, updown_brief, tree, sub_line, profile_link, admin_device_link,
+    rf_line, rf_value, updown_brief, tree, sub_line, profile_link, admin_device_link, access_status_line,
     holder_link, _n_devices, plural_ru, _BYTES_PER_GB)
 from .fmt import deep_link as _deep_link
 from .routing import routing_status_line, routing_admin_status_line, ROUTING_NAME
@@ -57,9 +59,10 @@ def rf_traffic_line(rf: dict, bot_username: str = "") -> str:
     """Вложенная строка РФ-части под трафиком на главной: подпись — ссылка на
     экран «Трафик»; сбой учёта — хвостом."""
     rx, tx = int(rf.get("rx") or 0), int(rf.get("tx") or 0)
-    line = rf_line(rx, tx, label=_rf_label(bot_username), arrows=False)
+    label = _rf_label(bot_username) if rx + tx else f"🇷🇺 {ROUTING_NAME}"   # пустой экран не открываем
+    line = rf_line(rx, tx, label=label, arrows=False)
     if rf.get("error"):
-        line += " · ⚠️ учёт по РФ-доступу не ведётся"
+        line += " · ⚠️ учёт трафика РФ-доступа не идёт"
     return line
 
 
@@ -88,41 +91,105 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     elif st.get("age_seconds") is None:
         lines.append("📈 Метрики: ещё нет замера")
     if routing_info is not None:
-        lines.append(routing_admin_status_line(routing_info, bot_username))
+        rt_line = routing_admin_status_line(routing_info, bot_username)
+        if rt_line:                                   # «выключен» без шлюзов — строки нет
+            lines.append(rt_line)
     elif routing_ok is not None:
         lines.append(routing_status_line(routing_ok))
+
+    def _counter(payload: str, label: str, n: int) -> str:
+        # нулевой счётчик — без ссылки: за ней пустой экран
+        return _deep_link(bot_username, payload, label) if n else label
     counters = []
     if st.get("online_count") is not None:
-        counters.append(_deep_link(bot_username, ONLINE_PAYLOAD, f"📶 Онлайн: {st['online_count']}"))
+        counters.append(_counter(ONLINE_PAYLOAD, f"📶 Онлайн: {st['online_count']}", int(st["online_count"])))
     if expiring:
-        counters.append(_deep_link(bot_username, EXPIRING_PAYLOAD, f"⏳ Истекают: {expiring}"))
+        counters.append(_counter(EXPIRING_PAYLOAD, f"⏳ Истекают: {expiring}", expiring))
     if unassigned:
-        counters.append(_deep_link(bot_username, UNASSIGNED_PAYLOAD, f"📦 Без профиля: {unassigned}"))
+        counters.append(_counter(UNASSIGNED_PAYLOAD, f"📦 Без профиля: {unassigned}", unassigned))
     if counters:
         lines.append(" · ".join(counters))
-    # строка трафика — вход на экран «Трафик», поэтому стоит и при нуле;
-    # РФ-ветка при включённой функции тоже: нулём видно, что маркировка не работает
+    # строка трафика стоит и при нуле, но ссылкой — только когда экрану есть
+    # что показать; РФ-строка при включённой функции тоже: нулём видно, что
+    # маркировка не работает
     if st.get("traffic_rx") is not None:
         rx, tx = int(st["traffic_rx"]), int(st["traffic_tx"])
-        label = _deep_link(bot_username, TRAFFIC_PAYLOAD, f"📊 Трафик за {month_label()}")
+        label = _counter(TRAFFIC_PAYLOAD, f"📊 Трафик за {month_label()}", rx + tx)
         lines.append(f"{label}: {human_bytes(rx + tx)}")
         if rf and rf.get("show"):
             lines.append(rf_traffic_line(rf, bot_username))
+    tail = []
     if update_tag:
         tag = update_tag if str(update_tag).startswith("v") else f"v{update_tag}"
-        lines.append(_deep_link(bot_username, UPD_PAYLOAD, f"⬆️ Доступна {tag}"))
-    mig = migration_line(migration)
+        tail.append(_deep_link(bot_username, UPD_PAYLOAD, f"⬆️ Доступна {tag}") + " — "
+                    + f'<a href="{release_url(tag)}">список изменений</a>')
+    mig = migration_line(migration, bot_username)
     if mig:
-        lines.append(mig)
+        tail.append(mig)
+    if tail:                                          # временные строки — отдельным блоком
+        lines.append("")
+        lines.extend(tail)
     return "\n".join(lines)
 
 
-def migration_line(p) -> str:
-    """«🚚 Переезд: 11/12 профилей, 18/20 устройств» — пока идёт переезд."""
+def release_url(tag: str) -> str:
+    """Страница релиза на GitHub — список изменений версии."""
+    from awgbot.core import config
+    repo = getattr(config, "UPDATES_REPO", "") or "justSunny12/awg-bot"
+    return f"https://github.com/{repo}/releases/tag/{tag}"
+
+
+MIGRATION_PAYLOAD = "migration"   # /start migration[-<id>] — обзор переезда и профиль в нём
+
+
+def migration_line(p, bot_username: str = "") -> str:
+    """«🚚 Переезд: 11/12 профилей, 18/20 устройств» — пока идёт переезд;
+    «🚚 Переезд» — ссылка на обзор."""
     if p is None or getattr(p, "clients_total", 0) == 0:
         return ""
-    return (f"🚚 Переезд: {p.clients_done}/{p.clients_total} профилей, "
+    label = _deep_link(bot_username, MIGRATION_PAYLOAD, "🚚 Переезд")
+    return (f"{label}: {p.clients_done}/{p.clients_total} профилей, "
             f"{p.devices_done}/{p.devices_total} устройств")
+
+
+def _mig_dot(done: int, total: int) -> str:
+    return "🟢" if total and done >= total else "🔴"
+
+
+def migration_overview_text(d: dict, bot_username: str = "") -> str:
+    """Обзор переезда: параметры одной строкой (только то, что меняется), затем
+    профили — не переехавшие целиком сверху, по убыванию оставшегося; имя не
+    переехавшего — ссылка на его экран переезда."""
+    params = []
+    for key, label in (("port", "порт"), ("subnet", "подсеть"), ("generation", "awg")):
+        old, new = d.get(key) or ("", "")
+        if old and new and str(old) != str(new):
+            fmt_ = (lambda v: f"gen{v}") if key == "generation" else str
+            params.append(f"{label}: {fmt_(old)} → {fmt_(new)}")
+    head = "🚚 Переезд" + (f" ({', '.join(params)})" if params else "")
+    rows = sorted(d.get("rows") or [], key=lambda r: -(int(r[2]) - int(r[1])))
+    if not rows:
+        return head + "\n\nПереезжать некому"
+    items = []
+    for c, done, total in rows:
+        name = (_e(c.name) if done >= total
+                else _deep_link(bot_username, f"{MIGRATION_PAYLOAD}-{int(c.id)}", c.name))
+        items.append(f"{_mig_dot(done, total)} {name}: {done}/{total} устройств")
+    return head + _LIST_SEP + _LIST_SEP.join(items)
+
+
+def migration_client_text(client, rows, bot_username: str = "") -> str:
+    """Переезд одного профиля: «🚚 Переезд: [Ксюша], 1/3 устройств» и устройства
+    с датой последнего подключения. rows — [(устройство, переехало, unix-время
+    последнего подключения)]."""
+    done = sum(1 for _d, moved, _t in rows if moved)
+    head = f"🚚 Переезд: {profile_link(client, bot_username)}, {done}/{len(rows)} устройств"
+    items = []
+    for dev, moved, ts in rows:
+        seen = (timeutil.fmt_dt_ui(datetime.datetime.fromtimestamp(int(ts), tz=datetime.timezone.utc))
+                if ts else "не подключалось")
+        items.append(f"{'🟢' if moved else '🔴'} {_e(dev.name)} — последний коннект: {seen}")
+    return head + (_LIST_SEP + "\n".join(items) if items else "")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -200,7 +267,7 @@ def traffic_profiles_text(rows, bot_username: str = "", total: tuple[int, int] =
     (нулевые не выводятся) со своей РФ-строкой."""
     head = [f"📊 Трафик за {month_label()}: {_total(*total)}"]
     if rf_total and int(rf_total[0]) + int(rf_total[1]) > 0:
-        head.append(sub_line(f"🇷🇺 {ROUTING_NAME}: {rf_value(*rf_total)}"))
+        head.append(sub_line(f"🇷🇺 {ROUTING_NAME} (все): {rf_value(*rf_total)}"))
         # «Вне профилей» — часть РФ-итога (удалённые устройства и первые минуты
         # новых), поэтому под шапкой, а не записью среди профилей
         if int(outside or 0) >= _BYTES_PER_GB // 100:
@@ -220,7 +287,7 @@ def traffic_devices_text(client, rows, total: tuple[int, int] = (0, 0),
     """«📊 Трафик за 09.26, [Ксюша]: <итог>» — то же по устройствам профиля."""
     head = [f"📊 Трафик за {month_label()}, {profile_link(client, bot_username)}: {_total(*total)}"]
     if rf_total and int(rf_total[0]) + int(rf_total[1]) > 0:
-        head.append(sub_line(f"🇷🇺 {ROUTING_NAME}: {rf_value(*rf_total)}"))
+        head.append(sub_line(f"🇷🇺 {ROUTING_NAME} (все): {rf_value(*rf_total)}"))
     branches = []
     live = [r for r in sorted(rows, key=lambda r: -(int(r[1]) + int(r[2]))) if int(r[1]) + int(r[2]) > 0]
     for d, rx, tx, rf in live[:_LIST_CAP]:
@@ -241,14 +308,15 @@ def my_devices_header(n: int, limit: int) -> str:
 
 
 def _admin_usage(dev, profile_limit_bytes: int) -> str:
-    """«3.2 ГБ (↑0.4 ↓2.8) из 50» / «… из 100 (профиль)» / «3.2 ГБ (↑0.4 ↓2.8)»."""
+    """«3.2 из 50 ГБ (↑0.4 ↓2.8)» / «3.2 из 100 ГБ (↑0.4 ↓2.8), лимит профиля» /
+    «3.2 ГБ (↑0.4 ↓2.8)»; ноль — «0 из 50 ГБ» / «0 ГБ»."""
     rx, tx = int(dev.traffic_rx_month), int(dev.traffic_tx_month)
     limit = int(dev.traffic_limit) or int(profile_limit_bytes or 0)
-    whose = "" if dev.traffic_limit else (" (профиль)" if profile_limit_bytes else "")
-    if rx + tx == 0:                              # нули на экранах админа не выводим
-        return f"лимит {gb(limit)} ГБ{whose}" if limit else ""
-    base = _total(rx, tx)
-    return f"{base} из {gb(limit)}{whose}" if limit else base
+    whose = "" if dev.traffic_limit else (", лимит профиля" if profile_limit_bytes else "")
+    arrows = f" {updown_brief(rx, tx)}" if rx + tx else ""
+    if limit:
+        return f"{gb(rx + tx)} из {gb(limit)} ГБ{arrows}{whose}"
+    return f"{human_bytes(rx + tx)}{arrows}"
 
 
 def admin_device_card(dev, client, *, rf=None, profile_limit_bytes: int = 0,
@@ -260,30 +328,36 @@ def admin_device_card(dev, client, *, rf=None, profile_limit_bytes: int = 0,
     who = profile_link(client, bot_username) if client is not None and not getattr(client, "is_service", 0) else "без профиля"
     ago = timeutil.fmt_ago(dev.last_handshake)
     seen = "Не подключался" if ago == "никогда" else f"Был в сети {ago}"
-    usage = _admin_usage(dev, profile_limit_bytes)
     parts = [f"{device_state(dev, for_admin=True)} {_e(dev.name)} · {plain_ip(dev.address)} · {who}",
-             f"{seen} · 📊 {usage}" if usage else seen]
+             f"{seen} · 📊 {_admin_usage(dev, profile_limit_bytes)}"]
     if rf is not None:                            # ноль тоже — см. карточку профиля
         parts.append(rf_line(*rf, arrows=False))
+    extra = []                                    # состояния — отдельным блоком
     reasons = blocks.device_reasons_ru(int(dev.block_reason), for_admin=True)
     if reasons:
-        parts.append("⛔ Заблокировано: " + ", ".join(reasons))
+        extra.append("⛔ Заблокировано: " + ", ".join(reasons))
     if getattr(dev, "is_lent", False):
-        parts.append(f"👤 Передано {holder_link(dev)}")
+        extra.append(f"👤 Передано {holder_link(dev)}")
     elif getattr(dev, "friend_status", None) == "pending":
-        parts.append("⏳ Приглашение другу ждёт активации")
+        extra.append("⏳ приглашение другу ждёт активации")
     if not dev.is_managed:
-        parts.append("✳️ Добавлено не ботом — ссылки нет")
+        extra.append("✳️ Добавлено не ботом — ссылки нет")
+    if extra:
+        parts.append("")
+        parts.extend(extra)
     return "\n".join(parts)
 
 
 def admin_device_delete_ask(dev, client, *, only: bool, bot_username: str = "") -> str:
     name = _e(dev.name)
+    owned = client is not None and not getattr(client, "is_service", 0)
+    who = f" ({profile_link(client, bot_username)})" if owned else ""
+    head = f"🗑 Удалить устройство «{name}»{who}?"
     if only and client is not None:
-        return (f"⚠️ У профиля {profile_link(client, bot_username)} это единственное устройство. "
+        return (f"{head}\n⚠️ Это единственное устройство профиля. "
                 "VPN выключится сразу; если владелец использует Telegram только через этот "
                 "VPN, до бота он не достучится")
-    return f"🗑 Удалить {name}?\nСсылка перестанет работать; добавить снова — ссылка изменится"
+    return f"{head}\nСсылка перестанет работать; при повторном добавлении устройства ссылка изменится"
 
 
 def device_deleted_note(dev, client, bot_username: str = "") -> str:
@@ -291,21 +365,43 @@ def device_deleted_note(dev, client, bot_username: str = "") -> str:
     return f"🗑 {_e(dev.name)} удалено{who}"
 
 
-def reassign_ask(dev) -> str:
-    return f"🔀 {_e(dev.name)} — в какой профиль?"
+def _owner_tail(client, bot_username: str = "") -> str:
+    """« ([Коля])» — владелец устройства ссылкой; без профиля — пусто."""
+    if client is None or getattr(client, "is_service", 0):
+        return ""
+    return f" ({profile_link(client, bot_username)})"
 
 
-def reassign_slot_ask(client, bot_username: str = "") -> str:
+def reassign_ask(dev, client=None, bot_username: str = "") -> str:
+    return f"🔀 Перенос устройства «{_e(dev.name)}»{_owner_tail(client, bot_username)} — в какой профиль?"
+
+
+def reassign_slot_ask(client, bot_username: str = "", used: int | None = None) -> str:
+    """used — занято сейчас: лимит могли понизить ниже числа устройств."""
     lim = client.device_limit
-    return f"📱 У профиля {profile_link(client, bot_username)} лимит {lim} из {lim} — добавить слот?"
+    return (f"📱 У профиля {profile_link(client, bot_username)} исчерпан лимит устройств "
+            f"({lim if used is None else used} из {lim}) — добавить слот?")
 
 
-def reassigned_note(name: str, client, bot_username: str = "") -> str:
-    return f"✅ {_e(name)} → профиль {profile_link(client, bot_username)}"
+def limit_reached_line(used: int, limit: int) -> str:
+    """«Достигнут лимит устройств: чтобы добавить новое, удали N» — N считает
+    от занятого сверх лимита."""
+    n = max(1, int(used) - int(limit) + 1)
+    return f"{LIMIT_REACHED}: чтобы добавить новое, удали {n}"
 
 
-def block_device_ask_admin(name: str) -> str:
-    return f"🛑 Как заблокировать {_e(name)}?"
+def reassigned_note(name: str, client, bot_username: str = "", donor=None) -> str:
+    """«✅ устройство «iPhone» перенесено: [Коля] → [Ксюша]»; прежний владелец
+    не передан — «… перенесено в профиль [Ксюша]»."""
+    to = profile_link(client, bot_username)
+    if donor is None:
+        return f"✅ устройство «{_e(name)}» перенесено в профиль {to}"
+    src = "без профиля" if getattr(donor, "is_service", 0) else profile_link(donor, bot_username)
+    return f"✅ устройство «{_e(name)}» перенесено: {src} → {to}"
+
+
+def block_device_ask_admin(name: str, client=None, bot_username: str = "") -> str:
+    return f"🛑 Блокировка {_e(name)}{_owner_tail(client, bot_username)}. Уведомить владельца?"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -346,9 +442,9 @@ def _sub_line(client) -> str:
             dt = (timeutil.parse_iso(client.pause_active_since)
                   + datetime.timedelta(days=int(client.pause_reserved_days)))
             until = f" до {timeutil.fmt_date_ui(dt)}"
-        return f"💳 ⏸️ на паузе{until} (пауза клиента)"
+        return f"💳 ⏸️ на паузе{until}"
     if paused:
-        return "💳 ⏸️ приостановлена (блокировка)"
+        return "💳 ⏸️ приостановлена администратором"
     if not client.period_end:
         return "💳 бессрочная"
     end = timeutil.parse_iso(client.period_end)
@@ -378,11 +474,15 @@ def admin_client_card(d: dict, bot_username: str = "") -> str:
     lines = [f"👤 {name} · " + ("🟢 онлайн" if d["online"] else "⚪ офлайн")]
     if client.activation_status == ActivationStatus.PENDING:
         lines.append("⏳ ждёт активации")
-    # только ручные блокировки: истечение и пауза видны в строке подписки
+    # ручная блокировка — «⛔»; истечение, пауза и исчерпанный трафик — «🟡»
+    # строкой состояния доступа (та же у клиента)
     manual = int(client.block_reason) & int(blocks.CLIENT_MANUAL)
     reasons = blocks.client_reasons_ru(manual, for_admin=True)
     if reasons:
         lines.append("⛔ Заблокирован: " + ", ".join(reasons))
+    access = access_status_line(client)
+    if access:
+        lines.append(access)
     lines.append(_sub_line(client))
     pause = _pause_of(client)
     if pause and client.period_end:
@@ -393,18 +493,21 @@ def admin_client_card(d: dict, bot_username: str = "") -> str:
     lines.append(devs + _rf_short(bool(d.get("rt_visible")), enabled, total))
     t = d["traffic"]
     rx, tx = int(t["rx_month"]), int(t["tx_month"])
-    if rx + tx:                                   # нули на экранах админа не выводим
-        if client.traffic_limit:
-            bonus = f"(+{gb(client.bonus_bytes)})" if client.bonus_bytes else ""
-            lines.append(f"📊 {gb(rx + tx)} из {gb(client.traffic_limit)}{bonus} ГБ {updown_brief(rx, tx)}")
-        else:
-            lines.append(f"📊 {human_bytes(rx + tx)} {updown_brief(rx, tx)}")
+    arrows = f" {updown_brief(rx, tx)}" if rx + tx else ""
+    if client.traffic_limit:
+        bonus = f"(+{gb(client.bonus_bytes)})" if client.bonus_bytes else ""
+        lines.append(f"📊 {gb(rx + tx)} из {gb(client.traffic_limit)}{bonus} ГБ{arrows}")
+    elif rx + tx:
+        lines.append(f"📊 {human_bytes(rx + tx)}{arrows}")
+    else:
+        lines.append("📊 0 ГБ (∞)")
     rf = d.get("rf")                              # None — строка не положена; ноль при
     if rf is not None:                            # включённой функции показываем: так
         lines.append(rf_line(*rf, arrows=False))  # видно, что маркировка не работает
     if d.get("progress") is not None:
         done, live, total_d = d["progress"]
-        if live:
+        if live:                                  # временное — отдельным блоком
+            lines.append("")
             lines.append(f"🚚 Переезд: {done} из {live} живых устройств")
     return "\n".join(lines)
 
@@ -480,16 +583,16 @@ _PERIOD_ACC = {"day": "день", "week": "неделю", "month": "месяц",
 
 def extended_note(client, kind: str, new_end, pause, bot_username: str = "") -> str:
     """След продления двумя строками: «✅ [Ксюша]: подписка продлена на месяц,»
-    ⏎ «→ 12.11 18:00 · паузы +2 → 6»."""
+    ⏎ «→ 12.11 18:00 · дней паузы +2 → 6»."""
     who = profile_link(client, bot_username)
     if new_end is None:
         return f"✅ {who}: подписка теперь бессрочная"
     tail = f"→ {timeutil.fmt_dt_ui(new_end)}"
     if pause is not None and getattr(pause, "kind", None) in ("year", "month"):
         if getattr(pause, "reason", None) in ("expired", "grace", "cap"):
-            tail += f" · паузы без начисления, доступно {pause.after}"
+            tail += f" · дни паузы не начислены, доступно {pause.after}"
         else:
-            tail += f" · паузы +{pause.added} → {pause.after}"
+            tail += f" · дней паузы +{pause.added} → {pause.after}"
     return f"✅ {who}: подписка продлена на {_PERIOD_ACC.get(kind, kind)},\n{tail}"
 
 
@@ -516,17 +619,21 @@ def period_changed_note(start, end) -> str:
 
 
 def block_client_ask(client, bot_username: str = "") -> str:
-    return (f"🛑 Блокировка профиля {profile_link(client, bot_username)}\n"
-            "Приостановить подписку на время блокировки?")
+    return (f"🛑 Блокировка профиля {_e(client.name)}\n"
+            "Поставить подписку на паузу на время блокировки?")
 
 
 BLOCK_NOTIFY_ASK = "Уведомить владельца профиля?"
 
 
-def blocked_toast(name: str, *, silent: bool, profile: bool) -> str:
-    what = "Профиль" if profile else "Устройство"
-    verb = "заблокирован" if profile else "заблокировано"
-    return f"🛑 {what} {name} {verb}" + (" (тихо)" if silent else "")
+def blocked_toast(name: str, *, silent: bool, profile: bool, owner: str = "") -> str:
+    """Всплывашка — простой текст: «🛑 Профиль Ксюша заблокирован» /
+    «🛑 Устройство «iPhone» (Петя) заблокировано»."""
+    if profile:
+        head = f"🛑 Профиль {name} заблокирован"
+    else:
+        head = f"🛑 Устройство «{name}»" + (f" ({owner})" if owner else "") + " заблокировано"
+    return head + (" (тихо)" if silent else "")
 
 
 def client_delete_ask(client, devices, lent: list) -> str:
@@ -537,7 +644,7 @@ def client_delete_ask(client, devices, lent: list) -> str:
         word = plural_ru(n, "устройством", "устройствами", "устройствами")
         lines.append(f"Вместе с {n} {word} — {'его ссылка перестанет' if n == 1 else 'их ссылки перестанут'} работать" + (";" if lent else ""))
     for dev in lent:
-        lines.append(f"профиль {holder_link(dev)} потеряет доступ к переданному устройству {_e(dev.name)}")
+        lines.append(f"профиль {holder_link(dev)} потеряет доступ к переданному устройству «{_e(dev.name)}»")
     return "\n".join(lines)
 
 
@@ -553,8 +660,8 @@ CLIENT_DELETE_PARTIAL = (
 
 
 def resumed_note(client, actual: int, new_end, bot_username: str = "") -> str:
-    end = timeutil.fmt_dt_ui(new_end) if new_end else "бессрочно"
-    return f"▶️ {profile_link(client, bot_username)}: пауза снята · {actual} дн. списано · подписка до {end}"
+    sub = f"подписка до {timeutil.fmt_dt_ui(new_end)}" if new_end else "подписка бессрочная"
+    return f"▶️ {profile_link(client, bot_username)}: пауза снята · {actual} дн. списано · {sub}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -625,7 +732,7 @@ def admin_bootstrap_device(address: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _slots_phrase(count: int, limit: int) -> str:
-    return f"Теперь у тебя {count} из {_limit_devices_str(limit)} устройств"
+    return f"Теперь у тебя {count} из {limit} устройств" if limit else f"Теперь у тебя {_n_devices(count)}"
 
 
 def reassign_donor_notice(name: str, count: int, limit: int) -> str:
@@ -641,7 +748,7 @@ def reassign_recipient_notice(name: str, count: int, limit: int, *,
 def reassign_recipient_notice_with_slot(name: str, count: int, limit: int, *,
                                         recipient_is_admin: bool = False) -> str:
     tail = "" if recipient_is_admin else " администратором"
-    return (f"Устройство «{_e(name)}» добавлено в твой профиль{tail}, тебе также добавлен слот.\n"
+    return (f"Устройство «{_e(name)}» добавлено в твой профиль{tail}, максимальное количество устройств увеличено.\n"
             + _slots_phrase(count, limit))
 
 

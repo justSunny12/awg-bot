@@ -47,7 +47,7 @@ def test_main_menu_entry_opens_target_picker():
 
 
 def test_target_picker_marks_selection_and_offers_bulk():
-    """Отметки — на самих кнопках; «Отметить всех» по правилу массового
+    """Отметки — на самих кнопках; «Выбрать все» по правилу массового
     выбора: ☑️, пока отмечены не все; ✅, когда все — в том числе отмеченные
     по одному. Тумблер «С продлением» — первым рядом, «⬅️ Отмена» — первой
     в последнем ряду."""
@@ -61,14 +61,14 @@ def test_target_picker_marks_selection_and_offers_bulk():
 
     clients = [_c(1), _c(2)]
     labels_none = _btn_texts(kb.broadcast_targets(clients, set()))
-    assert labels_none == ["☑️ С продлением подписки", "☑️ Отметить всех", "☑️ К1", "☑️ К2",
+    assert labels_none == ["☑️ С продлением подписки", "☑️ Выбрать все", "☑️ К1", "☑️ К2",
                            "⬅️ Отмена", "➡️ Далее"], labels_none
 
     labels = _btn_texts(kb.broadcast_targets(clients, {1}))
-    assert labels[1:4] == ["☑️ Отметить всех", "✅ К1", "☑️ К2"], labels
+    assert labels[1:4] == ["☑️ Выбрать все", "✅ К1", "☑️ К2"], labels
 
     every = _btn_texts(kb.broadcast_targets(clients, {1, 2}))
-    assert every[1] == "✅ Отметить всех", "все отмечены по одному — массовая кнопка обязана стать ✅"
+    assert every[1] == "✅ Выбрать все", "все отмечены по одному — массовая кнопка обязана стать ✅"
     assert _btn_texts(kb.broadcast_targets(clients, set(), extend=True))[0] == "✅ С продлением подписки"
 
 

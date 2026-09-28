@@ -124,7 +124,7 @@ async def test_created_for_friend_finisher(services, fake_bot, make_active_clien
     dev = services.db.list_devices(cl.id)[0]
     assert dev.name == "Другу" and dev.traffic_limit == 0 and dev.friend_status == "pending"
     fin = [s for s in typed.sent if s[0] == "answer"][-1]
-    assert fin[1] == "☝️ Отправь приглашение другу — он активирует и получит устройство Другу"
+    assert fin[1] == "☝️ Отправь приглашение другу — он активирует и получит устройство «Другу»"
     assert [b.text for r in fin[2].inline_keyboard for b in r] == ["⬅️ В меню"]
 
 

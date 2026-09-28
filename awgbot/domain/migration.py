@@ -425,6 +425,59 @@ class MigrationMixin:
             out.append((client.name if client else "?", old.name))
         return out
 
+    def migration_overview(self) -> dict:
+        """Экран обзора переезда: что меняется (порт, подсеть, поколение ядра —
+        только известное) и профили когорты — [(client, переехало, живых)]."""
+        from awgbot.core import settings
+        from awgbot.infra import awglock
+        d = {"port": ("", ""), "subnet": ("", ""), "generation": ("", ""), "rows": []}
+        new_if = config.MIGRATION_INTERFACE
+        if new_if:
+            try:
+                new_port = int(awg.read_server_params(iface=new_if)["listen_port"])
+                d["port"] = (int(config.SERVER_PORT or settings.get_int("app.network.server_port", 0)), new_port)
+            except (awg.AwgError, KeyError, TypeError, ValueError):
+                pass
+        if config.MIGRATION_SUBNET_PREFIX:
+            d["subnet"] = (config.SUBNET_PREFIX, config.MIGRATION_SUBNET_PREFIX)
+        applied, target = awglock.applied_generation(), awglock.target_generation()
+        if target > applied:
+            d["generation"] = (applied, target)
+        cohort = self.db.cohort_ids()
+        if not cohort:
+            return d
+        twins = self.db.twins_by_origin()
+        by_id = {x.id: x for x in self.db.list_all_devices()}
+        per: dict[int, list[bool]] = {}
+        for old_id in cohort:
+            old = by_id.get(old_id)
+            if old is None:
+                continue
+            twin = by_id.get(twins.get(old_id, -1))
+            per.setdefault(old.client_id, []).append(bool(twin and twin.last_handshake))
+        for cid, flags in per.items():
+            client = self.db.get_client(cid)
+            if client is not None:
+                d["rows"].append((client, sum(flags), len(flags)))
+        return d
+
+    def migration_client_devices(self, client_id: int) -> list[tuple]:
+        """Переезд одного профиля: [(старое устройство, переехало, unix-время
+        последнего подключения двойника, иначе старой строки)]."""
+        cohort = self.db.cohort_ids()
+        twins = self.db.twins_by_origin()
+        devices = [x for x in self.db.list_all_devices() if x.client_id == client_id]
+        by_id = {x.id: x for x in devices}
+        out = []
+        for old in devices:
+            if old.id not in cohort:
+                continue
+            twin = by_id.get(twins.get(old.id, -1))
+            moved = bool(twin and twin.last_handshake)
+            ts = (twin.last_handshake if moved else old.last_handshake) or 0
+            out.append((old, moved, int(ts or 0)))
+        return out
+
     def migration_client_progress(self, client_id: int) -> tuple[int, int, int]:
         """(переехало, живых в когорте, всего устройств) для одного профиля.
 

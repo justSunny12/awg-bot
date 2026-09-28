@@ -15,11 +15,11 @@ BROADCAST_EMPTY = ("Так не пойдёт: жду текст объявлен
 
 def broadcast_targets_text(selected: int, extend: bool) -> str:
     """Экран адресатов: «📢 Объявление · отмечено 2»; с продлением — кто
-    получит и что значат ∞ и ⛔ у имён."""
+    получит и что значат ∞ и 🟡 у имён."""
     if extend:
         return (f"📢 Объявление с продлением · отмечено {selected}\n"
                 "Получат только владельцы профилей с подпиской\n"
-                "∞ — бессрочная (не продлится), ⛔ — истекла (продлится от текущего времени)")
+                "∞ — бессрочная (не продлится), 🟡 — истекла (продлится от текущего времени)")
     return (f"📢 Объявление · отмечено {selected}\n"
             "Получат владельцы и те, с кем они делятся устройствами")
 
@@ -36,13 +36,13 @@ BROADCAST_DAYS_BAD = "⚠️ Нужно целое число от 1 до 365"
 
 def subscription_mark(c) -> str:
     """Хвост к имени профиля в выборе адресатов с продлением: « ∞» — бессрочная,
-    « ⛔ DD.MM.YYYY» — истекла тогда-то; активной — ничего."""
+    « 🟡 DD.MM» — истекла тогда-то; активной — ничего."""
     end = c.effective_period_end
     if not end:
         return " ∞"
     dt = timeutil.parse_iso(end)
     if c.status == "expired" or dt <= timeutil.now():
-        return f" ⛔ {timeutil.fmt_date_ui(dt)}"
+        return f" 🟡 {timeutil.fmt_date_ui(dt)}"
     return ""
 
 
@@ -100,7 +100,7 @@ def _extension_footer(days: int, plan, n: int, bot_username: str = "") -> str:
             lines.append(f"• {profile_link(e.client, bot_username)}: ∞ — без продления")
             continue
         old, new = timeutil.fmt_date_ui(e.old_end), timeutil.fmt_date_ui(e.new_end)
-        lines.append(f"• {profile_link(e.client, bot_username)}: {'⛔ ' if e.from_now else ''}{old} → {new}")
+        lines.append(f"• {profile_link(e.client, bot_username)}: {'🟡 ' if e.from_now else ''}{old} → {new}")
     return "\n".join(lines)
 
 

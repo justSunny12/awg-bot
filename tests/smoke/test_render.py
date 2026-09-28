@@ -61,13 +61,15 @@ def test_plural_ru_agrees():
 
 def test_device_count_is_a_fraction_everywhere():
     """Счётчик устройств читается одинаково у админа и у владельца профиля:
-    «m из n», безлимит — ∞. Расхождение форматов между двумя сообщениями об
-    одном и том же событии заставляет сверять их глазами."""
+    «m из n», безлимит — просто число («6 из ∞» читается как опечатка).
+    Расхождение форматов между двумя сообщениями об одном и том же событии
+    заставляет сверять их глазами."""
     admin = texts.device_created_report("Pi4", client_name="Админ", device_count=6,
                                         max_devices=0)
     owner = texts.reassign_recipient_notice("Pi4", 6, 0, recipient_is_admin=True)
     assert "Количество устройств: 6" in admin
-    assert owner.endswith("Теперь у тебя 6 из ∞ устройств"), owner
+    assert owner.endswith("Теперь у тебя 6 устройств"), owner
+    assert "∞" not in owner, "безлимит — без «из ∞»"
     # с лимитом — тот же вид, число вместо ∞
     assert texts.reassign_recipient_notice("Тел", 1, 5).endswith("Теперь у тебя 1 из 5 устройств")
     # после «из» слово не склоняем по первому числу: «1 из 5 подключённое устройство» — брак
@@ -182,28 +184,13 @@ def test_object_keyboards_build(services, make_active_client):
     assert _is_markup(kb.admin_main())
 
 
-def test_admin_client_keyboard_has_no_dangerous_buttons():
-    """Карточка собственного профиля админа: без удаления/лимита/продления/
-    блокировки — этого над собой не делают."""
-    from awgbot.core import config
-
-    class _C:
-        id = 1; activation_status = "active"; block_reason = 0
-        tg_id = config.ADMIN_ID
-    m = kb.admin_client_actions(_C(), is_admin_owner=True)
-    labels = " ".join(b.text for row in m.inline_keyboard for b in row)
-    for forbidden in ("Удалить", "Лимит", "Продлить", "лок", "Изменить"):   # блок/Блок/…
-        assert forbidden not in labels, f"кнопка '{forbidden}' не должна быть у админ-клиента"
-    assert "✏️ Имя" in labels and "➕ Устройство" in labels
-
-
 def test_rf_traffic_line_render():
     """Вложенная строка РФ под трафиком на главной: объём без ↑↓ (разбивка —
     на экране «Трафик»); суффикс — только при ошибке учёта."""
     G = 1024 ** 3
     assert texts.rf_traffic_line({"rx": G, "tx": 3 * G}) == "└ 🇷🇺 РФ-доступ: 4 ГБ"
     assert texts.rf_traffic_line({"rx": 0, "tx": 0, "error": "x"}) == \
-        "└ 🇷🇺 РФ-доступ: 0 ГБ · ⚠️ учёт по РФ-доступу не ведётся"
+        "└ 🇷🇺 РФ-доступ: 0 ГБ · ⚠️ учёт трафика РФ-доступа не идёт"
     st = {"ok": True, "traffic_rx": 1, "traffic_tx": 2}
     assert "🇷🇺 РФ-доступ:" not in texts.admin_panel(st), "строка РФ без данных о ней"
     assert "🇷🇺 РФ-доступ:" not in texts.admin_panel(st, rf={"rx": G, "tx": G, "show": False})

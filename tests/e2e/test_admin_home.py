@@ -64,9 +64,13 @@ async def test_quiet_home_has_only_what_is_always_there(services, fake_bot, fake
     services.db.set_state("online_count", "0")
     lines, rows = await _home(services, fake_bot)
     assert lines[0].startswith("🛠 <b>") and "🔴 не отвечает" not in lines[0], lines
-    assert lines[-2] == _link("online", "📶 Онлайн: 0"), lines
-    assert lines[-1] == f"{_link('traffic', f'📊 Трафик за {texts.month_label()}')}: 0 ГБ", lines
+    # нули — без ссылок: за ними пустые экраны
+    assert lines[-2] == "📶 Онлайн: 0", lines
+    assert lines[-1] == f"📊 Трафик за {texts.month_label()}: 0 ГБ", lines
     joined = "\n".join(lines)
+    assert "<a " not in joined, f"ссылка на пустой экран:\n{joined}"
+    assert "РФ-доступ" not in joined, f"строка РФ-доступа без шлюзов и без функции:\n{joined}"
+    assert "" not in lines, "пустая строка-разделитель без временных строк"
     for word in ("Истекают", "Без профиля", "Доступна", "Переезд"):
         assert word not in joined, f"строка «{word}» без повода:\n{joined}"
     assert rows == [["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"], ["⚙️ Настройки"],
@@ -95,7 +99,9 @@ async def test_home_shows_available_update_from_the_periodic_check(services, fak
     assert services.update_to_notify() is None, "уведомления выключены — уведомлять нечего"
     assert services.update_available_tag() == "v3.2.0", "проверка не записала найденную версию"
     lines, _ = await _home(services, fake_bot)
-    assert _link("upd", "⬆️ Доступна v3.2.0") in lines, lines
+    upd = (_link("upd", "⬆️ Доступна v3.2.0") + " — "
+           '<a href="https://github.com/justSunny12/awg-bot/releases/tag/v3.2.0">список изменений</a>')
+    assert lines[-2:] == ["", upd], lines
 
     monkeypatch.setattr(services, "update_next", lambda: None)
     services.update_scan()
@@ -104,13 +110,36 @@ async def test_home_shows_available_update_from_the_periodic_check(services, fak
 
 
 def test_update_tag_without_v_gets_it_and_migration_line_goes_last():
-    """Тег без «v» — с ней; «🚚 Переезд» — последней строкой и только пока
-    идёт переезд."""
+    """Тег без «v» — с ней, и в подписи, и в адресе страницы релиза;
+    временные строки — отдельным блоком через пустую строку; «🚚 Переезд» —
+    последней, ссылкой на обзор и только пока идёт переезд."""
     mig = SimpleNamespace(clients_total=12, clients_done=11, devices_total=20, devices_done=18)
     out = texts.admin_panel({"ok": True}, update_tag="3.2.0", migration=mig).split("\n")
-    assert out[-2:] == ["⬆️ Доступна v3.2.0", "🚚 Переезд: 11/12 профилей, 18/20 устройств"], out
+    rel = '<a href="https://github.com/justSunny12/awg-bot/releases/tag/v3.2.0">список изменений</a>'
+    assert out[-3:] == ["", f"⬆️ Доступна v3.2.0 — {rel}",
+                        "🚚 Переезд: 11/12 профилей, 18/20 устройств"], out
+    out = texts.admin_panel({"ok": True}, update_tag="v3.2.0", migration=mig,
+                            bot_username=BOT).split("\n")
+    assert out[-3:] == ["", f"{_link('upd', '⬆️ Доступна v3.2.0')} — {rel}",
+                        f"{_link('migration', '🚚 Переезд')}: 11/12 профилей, 18/20 устройств"], out
+    # один переезд, без обновления — тоже отдельным блоком
+    out = texts.admin_panel({"ok": True}, migration=mig).split("\n")
+    assert out[-2:] == ["", "🚚 Переезд: 11/12 профилей, 18/20 устройств"], out
     done = SimpleNamespace(clients_total=0, clients_done=0, devices_total=0, devices_done=0)
     assert "Переезд" not in texts.admin_panel({"ok": True}, migration=done)
+    assert texts.release_url("v3.2.0") == "https://github.com/justSunny12/awg-bot/releases/tag/v3.2.0"
+
+
+def test_home_routing_line_is_silent_without_gateways():
+    """«🇷🇺 РФ-доступ: 🔴 выключен» без единого шлюза — шум: сказать нечего,
+    добавить шлюз можно в «🛰 Шлюзы». С шлюзом, который не отвечает, — строка
+    нужна: иначе админ не узнает, что РФ-доступ лёг."""
+    assert texts.routing_admin_status_line({"ok": False, "active": "", "standby": []}) == ""
+    down = texts.routing_admin_status_line({"ok": False, "active": "NASPi", "active_slot": 1,
+                                            "standby": []})
+    assert down.startswith("🇷🇺 РФ-доступ: 🔴 выключен") and "NASPi" in down, down
+    out = texts.admin_panel({"ok": True}, routing_info={"ok": False, "active": "", "standby": []})
+    assert "РФ-доступ" not in out, out
 
 
 def test_home_first_line_is_host_status_and_short_uptime():

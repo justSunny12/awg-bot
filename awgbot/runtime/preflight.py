@@ -272,7 +272,7 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
         try:
             ok, reason = services.routing_status()
             if not ok:
-                warns.append(f"условная маршрутизация не поднимется ({reason}) — "
+                warns.append(f"РФ-доступ не поднимется ({reason}) — "
                              "российский IP у пользователей работать не будет, "
                              "остальное не затронуто")
             else:

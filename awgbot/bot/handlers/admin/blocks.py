@@ -53,7 +53,10 @@ async def admin_block_menu(cb: CallbackQuery, callback_data: BlockCB, services):
         if dev is None:
             await cb.answer("Устройство не найдено", show_alert=True)
             return
-        await edit(cb, texts.block_device_ask_admin(dev.name), kb.block_notify_kb("dev", dev.id))
+        owner = await call(services.db.get_client, dev.client_id)
+        await edit(cb, texts.block_device_ask_admin(dev.name, None if owner is None or owner.is_service else owner,
+                                                   _bot(services)),
+                   kb.block_notify_kb("dev", dev.id))
     await cb.answer()
 
 
@@ -107,10 +110,14 @@ async def admin_block_do(cb: CallbackQuery, callback_data: BlockCB, services):
         bit = _KIND_TO_DEV["notified" if notify else "silent"]
         notes = await call(services.block_device_manual, callback_data.ref, bit, notify)
         obj = await call(services.db.get_device, callback_data.ref)
+    owner = ""
+    if callback_data.target != "cli" and obj is not None:
+        oc = await call(services.db.get_client, obj.client_id)
+        owner = oc.name if oc is not None and not oc.is_service else ""
     await send_notifications(cb.bot, notes)
     await _rerender_after_block(cb, services, callback_data.target, callback_data.ref)
     await cb.answer(texts.blocked_toast(obj.name if obj else "", silent=not notify,
-                                        profile=callback_data.target == "cli"))
+                                        profile=callback_data.target == "cli", owner=owner))
 
 
 async def _do_unblock(cb, services, target: str, ref: int, kind: str):

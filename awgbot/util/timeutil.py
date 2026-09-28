@@ -137,7 +137,10 @@ def fmt_date_ui(dt: datetime, ref: Optional[datetime] = None) -> str:
 
 
 def fmt_period_ui(start: datetime, end: datetime) -> str:
-    """«12.10.25 → 12.10» — начало и конец периода на экранах."""
+    """«12.09 → 12.10» — начало и конец периода на экранах; границы в разных
+    годах — год у обеих: «12.10.25 → 12.10.26»."""
+    if start.year != end.year:
+        return f"{start.strftime('%d.%m.%y')} → {end.strftime('%d.%m.%y')}"
     return f"{fmt_date_ui(start)} → {fmt_date_ui(end)}"
 
 

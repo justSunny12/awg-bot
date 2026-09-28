@@ -34,7 +34,7 @@ def settings_root() -> InlineKeyboardMarkup:
     # где её разворачивают. Прежде кнопка появлялась только после правки
     # app.yaml руками — то есть ровно после того, как человек уже сделал всё
     # сам в SSH.
-    kb.button(text="🇷🇺 Условная маршрутизация", callback_data=SetCB(sec="rt"))
+    kb.button(text="🇷🇺 РФ-доступ", callback_data=SetCB(sec="rt"))
     kb.button(text="✉️ E-mail", callback_data=SetCB(sec="email"))
     kb.button(text="💳 Параметры подписок", callback_data=SetCB(sec="subs"))
     kb.button(text="🔄 Обслуживание", callback_data=SetCB(sec="svc"))
@@ -226,7 +226,7 @@ def settings_email(configured: bool) -> InlineKeyboardMarkup:
         kb.button(text="🗑 Отключить", callback_data=SetCB(sec="email", act="do", key="forget"))
         rows += [2, 2]
         on = s.get_bool("email.resume_enabled", True)
-        kb.button(text=f"{_chk(on)} Аварийный выход из приостановки",
+        kb.button(text=f"{_chk(on)} Аварийный выход из паузы",
                   callback_data=SetCB(sec="email", act="toggle", key="email.resume_enabled"))
         rows.append(1)
         if on:

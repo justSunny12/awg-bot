@@ -53,8 +53,8 @@ async def self_gen_pick(cb: CallbackQuery, callback_data: AdminSelfCB, services)
 async def self_add_start(cb: CallbackQuery, services, state: FSMContext):
     ac = await _self(services)
     used, limit = await call(services.device_slots, ac.id)
-    if limit != 0 and used >= limit:
-        await cb.answer(texts.limit_exhausted_line(used, limit), show_alert=True)
+    if limit != 0 and used >= limit:              # у профиля админа лимита нет; страховка
+        await cb.answer(texts.limit_reached_line(used, limit), show_alert=True)
         return
     await state.set_state(AdminSelfAddDevice.name)
     await ask_here(cb, services, state, texts.add_device_prompt(used, limit, for_friend=False), "devices")

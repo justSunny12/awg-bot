@@ -125,7 +125,7 @@ async def test_client_pause_other_keeps_one_live_menu(services, fake_bot, make_a
     assert services.db.get_nav_message_id(cl.tg_id) != screen.message_id
     assert {screen.message_id, typed.message_id} <= _deleted(fake_bot), "приглашение или ввод остались"
     answers = [s for s in typed.sent if s[0] == "answer"]
-    assert answers[-1][1].startswith("💳 Подписка: годовая\n") and answers[-1][2] is not None
+    assert answers[-1][1].startswith("🟡 доступ приостановлен\n💳 Подписка: годовая\n") and answers[-1][2] is not None
 
 
 async def test_add_device_for_friend_shows_slots_in_place(services, fake_bot, make_active_client):

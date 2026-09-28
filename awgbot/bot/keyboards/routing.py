@@ -273,7 +273,7 @@ def settings_routing(enabled: bool, states=(), *, can_add: bool = True) -> Inlin
     два и больше — список.
     """
     kb = InlineKeyboardBuilder()
-    kb.button(text=f"{_chk(enabled)} Условная маршрутизация",
+    kb.button(text=f"{_chk(enabled)} РФ-доступ",
               callback_data=SetCB(sec="rt", act="toggle", key="app.routing.enabled"))
     if enabled:
         states = list(states)

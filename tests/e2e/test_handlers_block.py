@@ -116,7 +116,7 @@ async def _pick(services, bot, client_id, pause: str):
     cb, nav = _admin_cb(bot)
     await admin_h.admin_block_menu(cb, BlockCB(target="cli", action="menu_block", ref=client_id), services)
     text, labels = _labels(nav)
-    assert text.split("\n")[1] == "Приостановить подписку на время блокировки?", text
+    assert text.split("\n")[1] == "Поставить подписку на паузу на время блокировки?", text
     assert labels == ["⏸️ Да", "▶️ Нет", "⬅️ Отмена"], labels
     step = admin_h.admin_block_pause_yes if pause == "yes" else admin_h.admin_block_pause_no
     cb2, nav2 = _admin_cb(bot)

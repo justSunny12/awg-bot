@@ -53,7 +53,7 @@ async def test_device_transfer_ask(services, fake_bot, make_active_client):
     await ch.device_transfer_ask(cb, DeviceCB(action="transfer", device_id=dc.device_id), cl, services)
     text, labels = last_screen(nav)
     assert text == ("👤 Передать d другу?\nДруг получит это подключение; одно подключение на двух "
-                    "устройствах работать не будет\nЕсли устройство d твоё — сначала заведи себе новое")
+                    "устройствах работать не будет\nЕсли устройство «d» твоё — сначала заведи себе новое")
     assert labels == ["⬅️ Отмена", "👤 Передать"], "«Отмена» — первой"
     assert nav.sent[-1][2].inline_keyboard[0][1].style is None, "передача — не разрушительное действие"
     assert services.db.get_device(dc.device_id).friend_status is None, "вопрос ничего не передаёт"
@@ -82,7 +82,7 @@ async def test_device_add_friend_presets_then_invite_with_share_and_copy(
     await ch.device_add_name(typed, cl, services, st)
     assert services.db.list_devices(client.id) == [], "устройство создано до выбора лимита"
     shown = [s for s in typed.sent if s[0] == "answer"][-1]
-    assert shown[1] == "📊 Лимит трафика устройства Планшет · не больше 100 ГБ профиля"
+    assert shown[1] == "📊 Лимит трафика устройства «Планшет» · не больше 100 ГБ профиля"
     assert [b.text for r in shown[2].inline_keyboard for b in r] == [
         "10 ГБ", "50 ГБ", "100 ГБ", "✏️ Другое", "⬅️ Отмена"], "∞ — только у безлимитного"
 
@@ -104,7 +104,7 @@ async def test_device_add_friend_presets_then_invite_with_share_and_copy(
     q = parse_qs(urlparse(share.url).query)
     assert share.url.startswith("https://t.me/share/url?") and q["url"] == [f"https://t.me/test_bot?start={code}"]
     assert q["text"] == [plain]
-    assert finisher[1] == "☝️ Отправь приглашение другу — он активирует и получит устройство Планшет"
+    assert finisher[1] == "☝️ Отправь приглашение другу — он активирует и получит устройство «Планшет»"
     assert [b.text for r in finisher[2].inline_keyboard for b in r] == ["⬅️ В меню"]
 
 

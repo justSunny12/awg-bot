@@ -63,8 +63,29 @@ async def admin_add_device_start(cb: CallbackQuery, callback_data: ClientCB, ser
         return
     used, limit = await call(services.device_slots, client.id)
     if limit != 0 and used >= limit:              # 0 = безлимит
-        await cb.answer(f"{texts.LIMIT_REACHED}: {used} из {limit}", show_alert=True)
+        # как при переносе: предложить слот, а не отказать
+        await edit(cb, texts.reassign_slot_ask(client, _bot(services), used=used), kb.add_device_addslot(client.id))
+        await cb.answer()
         return
+    await state.set_state(AdminAddDevice.name)
+    await ask_here(cb, services, state, texts.add_device_prompt_admin(client, used, limit),
+                   "cl", client.id, client_id=client.id)
+    await cb.answer()
+
+
+@router.callback_query(ClientCB.filter(F.action == "add_device_slot"))
+async def admin_add_device_slot(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
+    """«➕ Слот и добавить»: лимит профиля +1, затем ввод имени."""
+    client = await call(services.db.get_client, callback_data.client_id)
+    if client is None:
+        await cb.answer("Профиль не найден", show_alert=True)
+        return
+    used, limit = await call(services.device_slots, client.id)
+    if limit != 0 and used >= limit:
+        await call(services.db.update_client_fields, client.id, device_limit=used + 1)
+        if client.tg_id and client.tg_id != config.ADMIN_ID:
+            await notify_one(cb.bot, client.tg_id, texts.limit_changed_notice(limit, used + 1))
+        limit = used + 1
     await state.set_state(AdminAddDevice.name)
     await ask_here(cb, services, state, texts.add_device_prompt_admin(client, used, limit),
                    "cl", client.id, client_id=client.id)
@@ -87,7 +108,8 @@ async def admin_add_device_name(message: Message, services, state: FSMContext):
     try:
         created = await call(services.add_device, client.id, name, 0)
     except LimitReached:
-        await back_to_context(message, services, data, "admin", note="⚠️ " + texts.LIMIT_REACHED)
+        used, limit = await call(services.device_slots, client.id)
+        await back_to_context(message, services, data, "admin", note="⚠️ " + texts.limit_reached_line(used, limit))
         return
     except ServiceError as e:
         await back_to_context(message, services, data, "admin", note=f"⚠️ {texts._e(str(e))}")
@@ -314,7 +336,8 @@ async def device_reassign_start(cb: CallbackQuery, callback_data: DeviceCB, serv
         await cb.answer("Нет других профилей", show_alert=True)
         return
     from awgbot.bot import paging
-    await edit(cb, texts.reassign_ask(dev),
+    owner = await call(services.db.get_client, dev.client_id)
+    await edit(cb, texts.reassign_ask(dev, None if owner is None or owner.is_service else owner, _bot(services)),
                kb.reassign_targets(dev.id, clients,
                                    page=paging.page_of(cb.message.chat.id, "reassign", dev.id)))
     await cb.answer()
@@ -346,6 +369,8 @@ async def device_reassign_slot_no(cb: CallbackQuery, callback_data: ReassignCB, 
 
 
 async def _do_reassign(cb, services, device_id, client_id, *, add_slot: bool):
+    before = await call(services.db.get_device, device_id)
+    donor_client = await call(services.db.get_client, before.client_id) if before is not None else None
     try:
         info = await call(services.reassign_device, device_id, client_id, add_slot)
     except ServiceError as e:
@@ -372,12 +397,12 @@ async def _do_reassign(cb, services, device_id, client_id, *, add_slot: bool):
     from awgbot.bot import screens
     dev = await call(services.db.get_device, device_id)
     client = await call(services.db.get_client, client_id)
+    note = texts.reassigned_note(info["name"], client, _bot(services), donor=donor_client)
     if dev is None:
-        await edit_nav(cb, services, texts.reassigned_note(info["name"], client, _bot(services)),
-                       kb.to_menu_kb())
+        await edit_nav(cb, services, note, kb.to_menu_kb())
         return
     text, markup = await device_card_parts(services, dev)
-    await edit(cb, screens.with_note(text, texts.reassigned_note(info["name"], client, _bot(services))), markup)
+    await edit(cb, screens.with_note(text, note), markup)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

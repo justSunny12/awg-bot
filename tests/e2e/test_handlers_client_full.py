@@ -183,7 +183,7 @@ async def test_edit_device_traffic_flow(services, fake_bot, make_active_client):
     await ch.client_edit_device_traffic(cb, DeviceCB(action="edit_traffic", device_id=dc.device_id),
                                         cl, services, st)
     text, labels = last_screen(nav)
-    assert text == "📊 Лимит трафика устройства d"
+    assert text == "📊 Лимит трафика устройства «d»"
     assert labels == ["10 ГБ", "50 ГБ", "100 ГБ", "∞", "✏️ Другое", "⬅️ Отмена"], labels
     cb, nav = _cb(fake_bot, 5006)
     await ch.device_limit_preset(cb, PresetCB(kind="devlimit", ref=dc.device_id, val=-1),
@@ -354,8 +354,9 @@ async def test_pause_full_cycle(services, fake_bot, make_active_client):
     assert edits[-1][1] == f"⏸️ Подписка на паузе до {until} — снять раньше можно в разделе «💳 Подписка»"
     assert edits[-1][2] is None, "итог — без кнопок, он остаётся следом"
     screen = [s for s in nav2.sent if s[0] == "answer"][-1]
-    assert screen[1].startswith("💳 Подписка: годовая\n") and \
-        _rows(screen[2]) == [["▶️ Снять паузу", "⬅️ Назад"]]
+    # своя пауза видна клиенту — строка состояния доступа над подпиской
+    assert screen[1].startswith("🟡 доступ приостановлен\n💳 Подписка: годовая\n"), screen[1]
+    assert _rows(screen[2]) == [["▶️ Снять паузу", "⬅️ Назад"]]
     cl2 = _fresh(services, client)
     cb3, nav3 = _cb(fake_bot, 5017)
     await ch.pause_resume(cb3, PauseCB(action="resume", ref=client.id), cl2, services)
@@ -409,8 +410,11 @@ async def test_subscription_screen_variants(services, fake_bot, make_active_clie
     text, markup = await ch.sub_parts(services, y.id)
     lines = text.splitlines()
     assert lines[0] == "💳 Подписка: годовая · 🟢 активна"
-    assert lines[1] == (f"{timeutil.fmt_date_ui(start)} → {timeutil.fmt_date_ui(end)} · "
+    assert lines[1] == (f"{timeutil.fmt_period_ui(start, end)} · "
                         f"ост. {timeutil.remaining_brief(end)}")
+    if start.year != end.year:
+        assert lines[1].startswith(start.strftime("%d.%m.%y") + " → "), \
+            "годовая через границу года — год у начала тоже, иначе даты не читаются"
     assert lines[2] == "⏸️ Пауза: 28 дн. доступно"
     assert lines[3].startswith("<blockquote expandable>+2 дн. паузы")
     assert lines[-1] == "Лимиты: 50 ГБ в месяц · 4 устройства"
@@ -426,8 +430,9 @@ async def test_subscription_screen_variants(services, fake_bot, make_active_clie
     services.enter_pause(y.id, 5)
     text, markup = await ch.sub_parts(services, y.id)
     lines = text.splitlines()
-    assert lines[0] == "💳 Подписка: годовая"
-    assert lines[2].startswith("⏸️ на паузе с ") and "из 5 дн. — неиспользованный остаток вернётся при досрочном возобновлении" in lines[2]
+    assert lines[0] == "🟡 доступ приостановлен", "своя пауза — строка состояния доступа над подпиской"
+    assert lines[1] == "💳 Подписка: годовая"
+    assert lines[3].startswith("⏸️ на паузе с ") and "из 5 дн. — неиспользованный остаток вернётся при досрочном возобновлении" in lines[3]
     assert "ост." not in text, "остаток на паузе не тикает"
     assert _rows(markup) == [["▶️ Снять паузу", "⬅️ Назад"]]
 
@@ -436,9 +441,17 @@ async def test_subscription_screen_variants(services, fake_bot, make_active_clie
     services.enter_admin_pause(a.id, 0)
     services._client_set_block(a.id, ClientBlock.PAUSED)
     text, markup = await ch.sub_parts(services, a.id)
-    assert text.splitlines()[0].startswith("💳 Подписка: годовая · ⏸️ приостановлен")
-    assert "администратором" in text.splitlines()[0]
+    assert text.splitlines()[0] == "🟡 доступ приостановлен", text
+    assert text.splitlines()[1] == "💳 Подписка: годовая · ⏸️ приостановлена администратором", text
     assert _rows(markup) == [["⬅️ Назад"]], "кнопка паузы/снятия при паузе администратора"
+
+    # тихая пауза администратора клиенту не видна — ни строки доступа, ни паузы
+    q = make_active_client(tg_id=5036, period_kind="year")
+    services.enter_admin_pause(q.id, 0)
+    services._client_set_block(q.id, ClientBlock.PAUSED | ClientBlock.ADMIN_SILENT)
+    text, _ = await ch.sub_parts(services, q.id)
+    assert "🟡" not in text and "приостановлен" not in text, \
+        f"тихая пауза выдала себя клиенту: {text}"
 
     # бессрочная — без паузы и без остатка
     n = make_active_client(tg_id=5033, period_kind="never")

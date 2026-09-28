@@ -23,7 +23,7 @@ log = logging.getLogger("awgbot.services")
 
 
 _TXT_RT_INFRA_BAD = (
-    "🚨 Условная маршрутизация не применяется:\n<code>{err}</code>\n\n"
+    "🚨 РФ-доступ не работает:\n<code>{err}</code>\n\n"
     "Если речь о dnsmasq — у клиентов сейчас нет DNS вообще, и выглядит это как "
     "«интернет работает через раз»: уже отрезолвленное ходит, новое — нет. "
     "Проверь <code>systemctl status dnsmasq</code> и "
@@ -80,7 +80,7 @@ class RoutingMixin:
     # ищут в аплинке и NAT, где её нет.
     def _txt_rt_bundle_hint(self, gw=None) -> str:
         where = "" if gw is not None else " (<code>awg-bot gw-bundle</code>)"
-        return ("\n\n<i>Если началось сразу после обновления — перевыпусти конфигурацию шлюза"
+        return ("\n\n<i>Если проблема возникла сразу после обновления — перевыпусти конфигурацию шлюза"
                 f"{where} и примени её на той стороне: набор обфускации линка обязан "
                 "совпадать, иначе хендшейк не проходит</i>")
 
@@ -92,9 +92,9 @@ class RoutingMixin:
         шло мимо. Раньше, в упразднённой обратной модели, тот же отвал означал
         «у людей пропал интернет» — и текст был другой.
         """
-        return ("Условная маршрутизация выключена: российские сервисы временно "
+        return ("РФ-доступ выключен: российские сервисы временно "
                 "открываются с зарубежного адреса и могут ругаться. Всё остальное и так "
-                "шло мимо шлюза — на него это не влияет.")
+                "шло мимо шлюза — на него это не влияет")
 
     def _txt_rt_gw_down(self, active=None, also=()) -> str:
         """also — резервные слоты, которые тоже лежат: их строка идёт сразу за
@@ -651,7 +651,7 @@ class RoutingMixin:
                 return []
             self.db.set_state(self._RT_INFRA_ANNOUNCED, "0")
             return [Notification(config.ADMIN_ID,
-                                 "🟢 Условная маршрутизация снова применяется.")]
+                                 "🟢 РФ-доступ снова работает")]
         if announced:
             return []
         self.db.set_state(self._RT_INFRA_ANNOUNCED, "1")
@@ -1309,7 +1309,7 @@ class RoutingMixin:
             return []
         if len(dead) == len(slots) and len(slots) > 1:
             names = " и ".join(self._gw_display_h(g) for g in slots)
-            return [f"Шлюзы условной маршрутизации {names} не отвечают.\n"
+            return [f"Шлюзы РФ-доступа {names} не отвечают.\n"
                     + self._rt_effect_line()]
         out = []
         for g in dead:
@@ -1334,9 +1334,9 @@ class RoutingMixin:
                 "Исходящий адрес у клиентов сменился — российские приложения могут "
                 f"попросить войти заново. Останусь на {self._gw_display_h(new)} и после того, как "
                 f"{self._gw_display_h(prev) if prev else 'прежний'} оживёт; вернуть трафик "
-                "обратно можно в карточке шлюза")
+                f"обратно можно {self._gw_card_link(new)}.")
         if verdict == routing.PROBE_NO_PATH:
-            head += "\n\nТуннель до него жив — проверь аплинк и NAT на самом шлюзе."
+            head += "\n\nТуннель до него жив — проверь аплинк и NAT на самом шлюзе"
         else:
             head += self._txt_rt_bundle_hint(prev)
         return head
@@ -1350,7 +1350,7 @@ class RoutingMixin:
         return (f"🔴 {self._gw_link(active)} перестал отвечать через {mins} мин после "
                 "переключения на него. Второе переключение подряд не делаю: проблема выглядит "
                 "системной. " + self._rt_effect_line()
-                + "\n\nПереключить принудительно можно в карточке шлюза")
+                + f"\n\nПереключить принудительно можно {self._gw_card_link(active)}")
 
     def _txt_rt_standby_also_down(self, dead) -> str:
         names = ", ".join(self._gw_link(g) for g in dead)
@@ -1363,5 +1363,5 @@ class RoutingMixin:
                 f"резерва сейчас нет. Клиенты не затронуты: {via}")
 
     def _txt_rt_standby_up(self, g, active) -> str:
-        via = f" Трафик идёт через {self._gw_display_h(active)}" if active else ""
-        return f"🟢 Резервный шлюз {self._gw_link(g)} снова отвечает — остаётся в резерве.{via}"
+        via = f". Трафик идёт через {self._gw_display_h(active)}" if active else ""
+        return f"🟢 Резервный шлюз {self._gw_link(g)} снова отвечает — остаётся в резерве{via}"

@@ -34,7 +34,7 @@ async def test_on_cancel_names_the_dialog(services, fake_bot, make_active_client
     client = make_active_client(tg_id=702)
     cl = services.db.get_client(client.id)
     for st_obj, expected in ((AddDevice.name, "Добавление устройства отменено."),
-                             (PauseDays.value, "Приостановка подписки отменена."),
+                             (PauseDays.value, "Пауза подписки отменена."),
                              (Broadcast.days, "Объявление отменено.")):
         st = FakeState()
         await st.set_state(st_obj)

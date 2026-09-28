@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import blocks as _blocks
 from awgbot.core import config
@@ -158,44 +158,35 @@ def admin_clients(clients, online_ids=(), page: int = 0) -> InlineKeyboardMarkup
     return kb.as_markup()
 
 
-def admin_client_actions(client, devices=(), *, is_admin_owner: bool = False,
-                         routing_visible: bool = False, **_legacy) -> InlineKeyboardMarkup:
+def admin_client_actions(client, devices=(), *, routing_visible: bool = False,
+                         **_legacy) -> InlineKeyboardMarkup:
     """Карточка профиля: условные ряды (снять паузу, новое приглашение), затем
     [⏱ Продлить] [✏️ Изменить] / [🇷🇺 РФ-доступ] [🛑 Блок] / устройства по
     одному, пока влезают в десятку, иначе [📱 Устройства: N] / [➕ Устройство]
-    [⬅️ Назад]. Профиль админа: только имя, РФ-доступ и устройства."""
+    [⬅️ Назад]. У профиля админа карточки нет."""
     kb = InlineKeyboardBuilder()
     rows = []
     devices = _sorted_devices(devices)
-    if is_admin_owner:
-        kb.button(text="✏️ Имя", callback_data=ClientCB(action="edit_name", client_id=client.id))
-        if routing_visible:
-            kb.button(text=f"🇷🇺 {_texts.ROUTING_NAME}", callback_data=RoutingCB(action="panel", ref=client.id))
-            rows.append(2)
-        else:
-            rows.append(1)
-        fixed = sum(rows) + 2
-    else:
-        # пауза блокировкой «до снятия» — не пауза: снимается вместе с блоком
-        if (int(client.block_reason) & int(_blocks.ClientBlock.PAUSED)
-                and getattr(client, "pause_mode", None) != PauseMode.ADMIN_OPEN):
-            kb.button(text="▶️ Снять паузу", callback_data=ClientCB(action="resume_pause", client_id=client.id))
-            rows.append(1)
-        if client.activation_status == ActivationStatus.PENDING:
-            kb.button(text="🔁 Новое приглашение", callback_data=ClientCB(action="regen_invite", client_id=client.id))
-            rows.append(1)
-        kb.button(text="⏱ Продлить", callback_data=ClientCB(action="extend", client_id=client.id))
-        kb.button(text="✏️ Изменить", callback_data=ClientCB(action="edit", client_id=client.id))
+    # пауза блокировкой «до снятия» — не пауза: снимается вместе с блоком
+    if (int(client.block_reason) & int(_blocks.ClientBlock.PAUSED)
+            and getattr(client, "pause_mode", None) != PauseMode.ADMIN_OPEN):
+        kb.button(text="▶️ Снять паузу", callback_data=ClientCB(action="resume_pause", client_id=client.id))
+        rows.append(1)
+    if client.activation_status == ActivationStatus.PENDING:
+        kb.button(text="🔁 Новое приглашение", callback_data=ClientCB(action="regen_invite", client_id=client.id))
+        rows.append(1)
+    kb.button(text="⏱ Продлить", callback_data=ClientCB(action="extend", client_id=client.id))
+    kb.button(text="✏️ Изменить", callback_data=ClientCB(action="edit", client_id=client.id))
+    rows.append(2)
+    bt, bcb = _manual_block_button("cli", client.id, int(client.block_reason), for_admin=True)
+    if routing_visible:
+        kb.button(text=f"🇷🇺 {_texts.ROUTING_NAME}", callback_data=RoutingCB(action="panel", ref=client.id))
+        kb.button(text=bt, callback_data=bcb)
         rows.append(2)
-        bt, bcb = _manual_block_button("cli", client.id, int(client.block_reason), for_admin=True)
-        if routing_visible:
-            kb.button(text=f"🇷🇺 {_texts.ROUTING_NAME}", callback_data=RoutingCB(action="panel", ref=client.id))
-            kb.button(text=bt, callback_data=bcb)
-            rows.append(2)
-        else:
-            kb.button(text=bt, callback_data=bcb)
-            rows.append(1)
-        fixed = sum(rows) + 2
+    else:
+        kb.button(text=bt, callback_data=bcb)
+        rows.append(1)
+    fixed = sum(rows) + 2
     room = MAX_BUTTONS - fixed
     if len(devices) <= room:
         for d in devices:
@@ -205,7 +196,7 @@ def admin_client_actions(client, devices=(), *, is_admin_owner: bool = False,
         kb.button(text=f"📱 Устройства: {len(devices)}", callback_data=ClientCB(action="devices", client_id=client.id))
         rows.append(1)
     kb.button(text="➕ Устройство", callback_data=ClientCB(action="add_device", client_id=client.id))
-    kb.button(text="⬅️ Назад", callback_data=Menu(action="clients") if not is_admin_owner else Menu(action="main"))
+    kb.button(text="⬅️ Назад", callback_data=Menu(action="clients"))
     rows.append(2)
     kb.adjust(*rows)
     return kb.as_markup()
@@ -254,12 +245,18 @@ def presets_kb(kind: str, ref: int, values, cancel_cb) -> InlineKeyboardMarkup:
     for v in vals:
         kb.button(text=_preset_label(kind, v), callback_data=PresetCB(kind=kind, ref=ref, val=v))
     kb.button(text="✏️ Другое", callback_data=PresetCB(kind=kind, ref=ref, val=-1))
-    n = len(vals)
-    rows = [3] * (n // 3) + ([n % 3] if n % 3 else [])
-    kb.adjust(*rows, 1)
     cancel = cancel_cb if isinstance(cancel_cb, str) else cancel_cb.pack()
     label = "✖️ Отмена" if cancel.startswith(CancelCB.__prefix__ + ":") else "⬅️ Отмена"
-    kb.row(InlineKeyboardButton(text=label, callback_data=cancel))
+    kb.button(text=label, callback_data=cancel)
+    # по три в ряд вместе с «Другое»; отмена — в последний ряд, если там есть
+    # место, иначе своим рядом
+    n = len(vals) + 1
+    rows = [3] * (n // 3) + ([n % 3] if n % 3 else [])
+    if rows[-1] < 3:
+        rows[-1] += 1
+    else:
+        rows.append(1)
+    kb.adjust(*rows)
     return kb.as_markup()
 
 
@@ -296,7 +293,7 @@ def period_kb(ctx: str, ref: int = 0, *, min_days: int = 0, keep: bool = True,
     n = len(kinds)
     rows += [2] * (n // 2) + ([1] if n % 2 else [])
     if "never" in config.PERIOD_CHOICES:
-        kb.button(text="∞" if ctx == "extend" else "∞ Бессрочно",
+        kb.button(text="∞",
                   callback_data=PeriodCB(kind="never", ctx=ctx, ref=ref, keep=0))
         rows.append(1)
     if ctx == "extend" and has_remainder:
@@ -378,6 +375,20 @@ def to_client_card(client_id: int) -> InlineKeyboardMarkup:
     b.button(text="⬅️ На главную", callback_data=Menu(action="main"))
     b.adjust(2)
     return b.as_markup()
+
+
+def migration_back_kb() -> InlineKeyboardMarkup:
+    """Экран переезда профиля: назад — в обзор переезда."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Назад", callback_data=Menu(action="migration"))
+    return kb.as_markup()
+
+
+def add_device_addslot(client_id: int) -> InlineKeyboardMarkup:
+    """Лимит профиля исчерпан при добавлении устройства админом: «⬅️ Отмена»
+    — в карточку, «➕ Слот и добавить» — лимит +1 и ввод имени."""
+    return confirm(ClientCB(action="open", client_id=client_id), "➕ Слот и добавить",
+                   ClientCB(action="add_device_slot", client_id=client_id), danger=False)
 
 
 def gateway_card_button(slot: int) -> InlineKeyboardMarkup:

@@ -53,15 +53,13 @@ async def clients_list(cb: CallbackQuery, services, state: FSMContext):
 async def client_card_parts(services, client_id: int):
     """(текст, клавиатура) карточки профиля или None — профиля нет."""
     d = await call(services.client_card_data, client_id)
-    if d is None:
+    if d is None or d["client"].tg_id == config.ADMIN_ID:   # у профиля админа карточки нет
         return None
     client = d["client"]
     if d.get("rt_visible"):
         d["rt_counts"] = await call(services.routing_device_counts, client_id)
     return (texts.admin_client_card(d, _bot(services)),
-            kb.admin_client_actions(client, d["devices"],
-                                    is_admin_owner=client.tg_id == config.ADMIN_ID,
-                                    routing_visible=d["rt_visible"]))
+            kb.admin_client_actions(client, d["devices"], routing_visible=d["rt_visible"]))
 
 
 _client_card_parts = client_card_parts
@@ -77,6 +75,11 @@ async def client_edit_parts(services, client_id: int):
 async def _show_client_card(cb: CallbackQuery, services, client_id: int):
     parts = await client_card_parts(services, client_id)
     if parts is None:
+        client = await call(services.db.get_client, client_id)
+        if client is not None and client.tg_id == config.ADMIN_ID:
+            from awgbot.bot.handlers.admin import panel      # профиль админа — главная
+            await edit(cb, *await panel._panel_parts(services))
+            return
         await cb.answer("Профиль не найден", show_alert=True)
         return
     await edit(cb, *parts)

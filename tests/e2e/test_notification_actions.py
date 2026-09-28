@@ -228,13 +228,13 @@ def test_device_limit_notes_link_the_device_without_a_button(services, make_acti
     services.db.add_traffic_bulk([(d.device_id, (warn + 1) * BYTES_PER_GB // 10, 0)])
     notes = [n for n in services.check_traffic_limits() if n.tg_id == 5301]
     assert [n.text for n in notes] == [
-        f"⚠️ Устройство {_link(f'dev-{d.device_id}', 'iPhone')}: израсходовано ~{warn}% месячного лимита"]
+        f"⚠️ Устройство {_link(f'dev-{d.device_id}', '«iPhone»')}: израсходовано ~{warn}% месячного лимита"]
     assert notes[0].action == ()
     assert [n for n in services.check_traffic_limits() if n.tg_id == 5301] == [], "повтор 80%"
     services.db.add_traffic_bulk([(d.device_id, 5 * BYTES_PER_GB, 0)])
     over = [n for n in services.check_traffic_limits() if n.tg_id == 5301]
     assert len(over) == 1 and over[0].text.startswith(
-        f"🔴 Устройство {_link(f'dev-{d.device_id}', 'iPhone')}: месячный лимит исчерпан."), over
+        f"🔴 Устройство {_link(f'dev-{d.device_id}', '«iPhone»')}: месячный лимит исчерпан."), over
     assert over[0].action == ()
 
 
@@ -282,8 +282,62 @@ def test_link_port_note_links_the_slot_and_offers_the_configuration(services, mo
     (tmp_path / "awglink1.conf").write_text("[Interface]\nAddress = 10.99.91.1/30\nListenPort = 5555\n")
     notes = services.gateway_sync_link_ports()
     assert len(notes) == 1, notes
-    assert notes[0].text.startswith(f"🛰 {_link('gw-1', '«NASPi»')}: порт линка теперь 5555 (был {g.link_port})")
+    assert notes[0].text.startswith(f"🛰 {_link('gw-1', '«NASPi»')}: порт линка изменён на 5555 (был {g.link_port})")
+    # «Перевыпусти» — ссылка, по которой бот сразу отдаёт файл слота
+    assert f"{_link('gwcfg-1', 'Перевыпусти')} конфигурацию и примени её на той стороне" in notes[0].text, \
+        notes[0].text
     assert notes[0].action == ("gwcfg", 1)
+
+
+def test_switch_note_links_the_card_where_traffic_can_be_moved_back(services):
+    """«вернуть трафик обратно можно в карточке шлюза» — «в карточке шлюза»
+    ссылкой gw-<слот> нового активного: иначе админ ищет, где это делается."""
+    services.bot_username = BOT
+    a, b = _gw(services, 1, "NASPi"), _gw(services, 2, "Pi4")
+    text = services._txt_rt_switched(a, b, "down")
+    assert f"вернуть трафик обратно можно {_link('gw-2', 'в карточке шлюза')}." in text, text
+    services.bot_username = ""
+    assert "обратно можно в карточке шлюза." in services._txt_rt_switched(a, b, "down")
+
+
+async def test_gwcfg_link_removes_the_command_and_issues_the_slot_configuration(
+        services, fake_bot, monkeypatch):
+    """Переход по «Перевыпусти» (/start gwcfg-<слот>): команда из чата убрана,
+    файл конфигурации слота отдан сразу — без захода в карточку."""
+    from aiogram.filters import CommandObject
+    from awgbot.bot.handlers import admin as ah
+    from awgbot.bot.handlers import settings as sh
+    issued = []
+
+    async def fake_bundle(message, services_, slot=0, instr_id=None):
+        issued.append((message.chat.id, slot))
+        return True
+    monkeypatch.setattr(sh, "send_gw_bundle", fake_bundle)
+    services.ensure_admin_client()
+    msg = FakeMessage(text="/start gwcfg-2", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
+    await ah.admin_start(msg, services, FakeState(),
+                         command=CommandObject(prefix="/", command="start", args="gwcfg-2"))
+    assert issued == [(ADMIN, 2)], issued
+    assert msg.deleted, "команда /start gwcfg-2 осталась в чате"
+    assert not [t for k, t, _ in msg.sent if k == "answer"], "вместо файла — ещё и главная"
+
+
+def test_admin_device_over_limit_is_a_notice_only_once(services, make_active_client):
+    """Устройство админа сверх своего лимита не блокируется — админ отрезал
+    бы себе VPN, а с ним и бота; уведомление справочное и одно на месяц."""
+    from awgbot.core.blocks import DeviceBlock
+    services.bot_username = BOT
+    admin = make_active_client("Админ", tg_id=ADMIN, device_limit=0)
+    d = services.add_device(admin.id, "iPhone")
+    services.set_device_traffic_limit(d.device_id, 1 * BYTES_PER_GB)
+    services.db.add_traffic_bulk([(d.device_id, 2 * BYTES_PER_GB, 0)])
+    notes = [n for n in services.check_traffic_limits() if n.tg_id == ADMIN]
+    assert [n.text for n in notes] == [
+        f"🔴 Устройство {_link(f'dev-{d.device_id}', '«iPhone»')}: месячный лимит исчерпан "
+        "(уведомление, доступ не тронут)"], notes
+    dev = services.db.get_device(d.device_id)
+    assert not int(dev.block_reason) & int(DeviceBlock.TRAFFIC_USER), "устройство админа заблокировано"
+    assert [n for n in services.check_traffic_limits() if n.tg_id == ADMIN] == [], "повтор уведомления"
 
 
 # ── периодическая проверка обновлений ────────────────────────────────────────

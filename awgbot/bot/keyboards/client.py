@@ -61,11 +61,11 @@ def client_main(has_devices: bool = True, routing_visible: bool = False,
     if routing_visible:
         kb.button(text=f"🇷🇺 {_texts.ROUTING_NAME}", callback_data=RoutingCB(action="panel", ref=client_id))
         kb.button(text="💳 Подписка", callback_data=Menu(action="info"))
-        kb.button(text="❓ Помощь", callback_data=HelpCB(platform="root"))
+        kb.button(text="❓ Как подключить", callback_data=HelpCB(platform="root"))
         rows += [2, 1]
     else:
         kb.button(text="💳 Подписка", callback_data=Menu(action="info"))
-        kb.button(text="❓ Помощь", callback_data=HelpCB(platform="root"))
+        kb.button(text="❓ Как подключить", callback_data=HelpCB(platform="root"))
         rows.append(2)
     kb.adjust(*rows)
     return kb.as_markup()
@@ -77,7 +77,7 @@ def guest_main(*, routing_visible: bool = False, client_id: int = 0,
     помощь. Без устройств — только помощь."""
     kb = InlineKeyboardBuilder()
     if not has_devices:
-        kb.button(text="❓ Помощь", callback_data=FriendCB(action="help"))
+        kb.button(text="❓ Как подключить", callback_data=FriendCB(action="help"))
         kb.adjust(1)
         return kb.as_markup()
     issue_row(kb, FriendCB)                    # device_id=0: одно — сразу, иначе выбор
@@ -88,7 +88,7 @@ def guest_main(*, routing_visible: bool = False, client_id: int = 0,
         rows.append(2)
     else:
         rows.append(1)
-    kb.button(text="❓ Помощь", callback_data=FriendCB(action="help"))
+    kb.button(text="❓ Как подключить", callback_data=FriendCB(action="help"))
     rows.append(1)
     kb.adjust(*rows)
     return kb.as_markup()
@@ -431,7 +431,7 @@ def added_by_admin(device_id: int) -> InlineKeyboardMarkup:
     """«Устройство добавлено администратором»: ряд выдачи, помощь, «Скрыть»."""
     kb = InlineKeyboardBuilder()
     issue_row(kb, DeviceCB, device_id)
-    kb.button(text="❓ Помощь", callback_data=HelpCB(platform="root"))
+    kb.button(text="❓ Как подключить", callback_data=HelpCB(platform="root"))
     kb.adjust(3, 1)
     return append_hide_row(kb)
 

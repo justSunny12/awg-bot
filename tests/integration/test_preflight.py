@@ -146,7 +146,7 @@ def test_gateway_is_not_probed_while_the_feature_is_off(monkeypatch):
     state["app.routing.enabled"] = True
     warns = preflight.collect_warnings(_routing_svc(probed, rt.PROBE_DOWN))
     assert probed == [1]
-    assert any(w.startswith("шлюз условной маршрутизации не отвечает на старте") for w in warns)
+    assert any(w.startswith("шлюз РФ-доступа не отвечает на старте") for w in warns)
     warns = preflight.collect_warnings(_routing_svc(probed, rt.PROBE_OK))
     assert not any("шлюз" in w for w in warns)
 

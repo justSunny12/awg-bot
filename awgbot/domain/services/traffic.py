@@ -75,7 +75,7 @@ def _friend_dev_over_host_text(link: str, until: str) -> str:
 
 
 def _cli_warn_text(pct: int) -> str:
-    return f"⚠️ Израсходовано ~{pct}% месячного лимита по всем устройствам"
+    return f"⚠️ Израсходовано ~{pct}% месячного лимита профиля (суммарный на все устройства)"
 
 
 def _cli_bonus_text(bonus_gb: int, until: str) -> str:
@@ -88,7 +88,7 @@ def _cli_bonus_admin_text(name: str, bonus_gb: int) -> str:
 
 
 def _cli_over_text(until: str) -> str:
-    return f"🔴 Дополнительная квота исчерпана. Доступ ко всем устройствам приостановлен до {until}"
+    return f"🔴 Дополнительная квота исчерпана. Доступ всех устройств приостановлен до {until}"
 
 
 def _cli_over_admin_text(name: str) -> str:
@@ -97,6 +97,10 @@ def _cli_over_admin_text(name: str) -> str:
 
 def _admin_self_over_text() -> str:
     return "🔴 Твой месячный лимит исчерпан (уведомление, доступ не тронут)"
+
+
+def _admin_dev_over_text(link: str) -> str:
+    return f"🔴 Устройство {link}: месячный лимит исчерпан (уведомление, доступ не тронут)"
 
 
 class TrafficMixin:
@@ -346,6 +350,12 @@ class TrafficMixin:
                   over_marker = f"dev_over:{dev.id}"
                   warn_marker = f"dev80:{dev.id}"
                   if used >= dlim:
+                      if client.tg_id == admin_id:
+                          # устройства админа не блокируем — только справочно
+                          if over_marker not in sent:
+                              notes.append(Notification(admin_id, _admin_dev_over_text(self.dev_link(dev))))
+                              self.db.add_traffic_notified(client.id, over_marker)
+                          continue
                       if not (int(dev.block_reason) & int(DeviceBlock.TRAFFIC_USER)):
                           self._device_set_block(dev.id, DeviceBlock.TRAFFIC_USER, twins)
                       if over_marker not in sent:

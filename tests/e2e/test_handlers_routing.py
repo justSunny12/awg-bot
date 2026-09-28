@@ -197,7 +197,7 @@ def test_settings_screen_lists_clients_only_when_enabled():
     # корень раздела: при выключенной функции — ни подразделов, ни профилей
     off = [b.text for row in kb.settings_routing(False).inline_keyboard for b in row]
     assert not any("Доступность" in t for t in off)
-    assert any(t.startswith("☑️") and "Условная маршрутизация" in t for t in off), off
+    assert any(t.startswith("☑️") and "РФ-доступ" in t for t in off), off
 
     # при включённой — подраздел «Доступность пользователям», профили в НЁМ
     on = [b.text for row in kb.settings_routing(True).inline_keyboard for b in row]
@@ -328,7 +328,7 @@ def test_client_menu_button_position_and_state(monkeypatch):
     assert ["🇷🇺 РФ-доступ", "💳 Подписка"] in rows, rows
     off = [[b.text for b in row] for row in kb.client_main(
         has_devices=True, routing_visible=False, client_id=1).inline_keyboard]
-    assert ["💳 Подписка", "❓ Помощь"] in off and not any("РФ" in t for r in off for t in r), off
+    assert ["💳 Подписка", "❓ Как подключить"] in off and not any("РФ" in t for r in off for t in r), off
 
 
 def test_admin_card_button_above_block(monkeypatch):
@@ -429,7 +429,7 @@ async def test_settings_section_is_always_shown_but_its_content_depends_on_provi
     from awgbot.core import config
 
     labels = [b.text for row in kb.settings_root().inline_keyboard for b in row]
-    assert any("маршрутизация" in l for l in labels), labels
+    assert any("РФ-доступ" in l for l in labels), labels
 
     monkeypatch.setattr(config, "ROUTING_ENABLED", False)
     monkeypatch.setattr(services, "routing_provisioned", lambda: False)
@@ -680,19 +680,19 @@ def test_routing_section_buttons_depend_on_gateway():
     one = [{"gateway": SimpleNamespace(id=1), "device": SimpleNamespace(name="NASPi"),
             "active": True, "link_ok": True, "preferred": True, "issued_at": "", "handshake_age": 3}]
     on = [b.text for row in kb.settings_routing(True, one).inline_keyboard for b in row]
-    assert on[:5] == ["✅ Условная маршрутизация", "🛰 Шлюз: NASPi", "➕ Резервный шлюз",
+    assert on[:5] == ["✅ РФ-доступ", "🛰 Шлюз: NASPi", "➕ Резервный шлюз",
                       "📋 Списки маршрутизации", "👥 Доступность пользователям"], on
     assert not any("шифр" in t for t in on), "приписки про шифрование — не для UI"
     two = one + [{"gateway": SimpleNamespace(id=2), "device": SimpleNamespace(name="Pi2"),
                   "active": False, "link_ok": True, "preferred": False, "issued_at": "", "handshake_age": 5}]
     many = [b.text for row in kb.settings_routing(True, two).inline_keyboard for b in row]
-    assert many[:4] == ["✅ Условная маршрутизация", "🛰 Шлюзы: 2",
+    assert many[:4] == ["✅ РФ-доступ", "🛰 Шлюзы: 2",
                         "📋 Списки маршрутизации", "👥 Доступность пользователям"], many
     no_gw = [b.text for row in kb.settings_routing(True, []).inline_keyboard for b in row]
-    assert no_gw[:4] == ["✅ Условная маршрутизация", "🛰 Назначить шлюз",
+    assert no_gw[:4] == ["✅ РФ-доступ", "🛰 Назначить шлюз",
                          "📋 Списки маршрутизации", "👥 Доступность пользователям"], no_gw
     off = [b.text for row in kb.settings_routing(False).inline_keyboard for b in row]
-    assert len(off) == 2 and "Условная маршрутизация" in off[0]      # выключатель + назад
+    assert len(off) == 2 and "РФ-доступ" in off[0]      # выключатель + назад
 
     lists = [b.text for row in kb.settings_routing_lists(6).inline_keyboard for b in row]
     assert "🔘 6 ч" in lists and any("Обновить" in t for t in lists)
@@ -957,7 +957,7 @@ async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
     cb, nav = _cb(fake_bot, config.ADMIN_ID)
     await sh.toggle(cb, SetCB(sec="rt", act="toggle", key="app.routing.enabled"), services)
     text, labels = last_screen(nav)
-    assert "Выключить условную маршрутизацию для всех?" in text
+    assert "Выключить РФ-доступ для всех?" in text
     assert "🔴 Да, выключить" in labels and "⬅️ Отмена" in labels
     assert state["app.routing.enabled"] is True
 
@@ -965,7 +965,7 @@ async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
     cb, nav = _cb(fake_bot, config.ADMIN_ID)
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="off!"), services)
     assert state["app.routing.enabled"] is False
-    assert cb.answers and "выключена" in cb.answers[0][0]
+    assert cb.answers and "выключен" in cb.answers[0][0]
 
     # выключено → нажатие включает сразу, без вопроса; шлюз тут же замеряется:
     # пока фича спала, о нём молчали (и на старте тоже), лежит — сказать сейчас
@@ -982,7 +982,7 @@ async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
     await sh.toggle(cb, SetCB(sec="rt", act="toggle", key="app.routing.enabled"), services)
     assert state["app.routing.enabled"] is True
     said = [s[1] for s in nav.sent if s[0] == "answer"]
-    assert said and said[-1].startswith("⚠️ шлюз условной маршрутизации не отвечает при включении"), said
+    assert said and said[-1].startswith("⚠️ шлюз РФ-доступа не отвечает при включении"), said
 
     # шлюз отвечает — молчим
     await sh.routing_action(_cb(fake_bot, config.ADMIN_ID)[0],

@@ -635,7 +635,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         # скрипта списков нет — фиды применить нечем, ни свои, ни из канала
         if not os.path.exists(gwguard.LAN_LISTS_SCRIPT):
             checks.append(GwCheck("скрипт списков", False,
-                                  "скрипт обновления списков условной маршрутизации не найден — "
+                                  "скрипт обновления списков РФ-доступа не найден — "
                                   "перевыпусти конфигурацию шлюза"))
         # скрипт обвязки не смог применить раздел — причина в статусе, а не «перевыпусти»
         err = st.get("LAN_ERROR", "")

@@ -35,7 +35,7 @@ def test_settings_root_order_and_names():
     from awgbot.bot import keyboards as kb
     rows = [b.text for row in kb.settings_root().inline_keyboard for b in row]
     assert rows == ["🔔 Уведомления", "🖥 Сервер AWG", "🛡 Доступ по SSH",
-                    "🇷🇺 Условная маршрутизация", "✉️ E-mail", "💳 Параметры подписок",
+                    "🇷🇺 РФ-доступ", "✉️ E-mail", "💳 Параметры подписок",
                     "🔄 Обслуживание", "⬆️ Обновления бота", "⬅️ В меню"]
 
 

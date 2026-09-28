@@ -405,12 +405,12 @@ def test_main_client_screen_is_four_rows_at_most():
     rows = [[b.text for b in r] for r in kbc.client_main(has_devices=True, routing_visible=True,
                                                         client_id=1).inline_keyboard]
     assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Устройства", "➕ Устройство"],
-                    ["🇷🇺 РФ-доступ", "💳 Подписка"], ["❓ Помощь"]], rows
+                    ["🇷🇺 РФ-доступ", "💳 Подписка"], ["❓ Как подключить"]], rows
     rows = [[b.text for b in r] for r in kbc.client_main(has_devices=False).inline_keyboard]
-    assert rows == [["➕ Устройство"], ["💳 Подписка", "❓ Помощь"]], rows
+    assert rows == [["➕ Устройство"], ["💳 Подписка", "❓ Как подключить"]], rows
     rows = [[b.text for b in r] for r in kbc.client_main(has_devices=True, can_add=False).inline_keyboard]
     assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Устройства"],
-                    ["💳 Подписка", "❓ Помощь"]], "лимит исчерпан — без «➕ Устройство»"
+                    ["💳 Подписка", "❓ Как подключить"]], "лимит исчерпан — без «➕ Устройство»"
     callbacks = [b.callback_data for r in kbc.client_main(has_devices=True, routing_visible=True,
                                                           client_id=7).inline_keyboard for b in r]
     assert RoutingCB(action="panel", ref=7).pack() in callbacks
@@ -419,9 +419,9 @@ def test_main_client_screen_is_four_rows_at_most():
 
 def test_guest_main_rows():
     rows = [[b.text for b in r] for r in kbc.guest_main(routing_visible=True, client_id=1).inline_keyboard]
-    assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Устройства", "🇷🇺 РФ-доступ"], ["❓ Помощь"]]
+    assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Устройства", "🇷🇺 РФ-доступ"], ["❓ Как подключить"]]
     rows = [[b.text for b in r] for r in kbc.guest_main(has_devices=False).inline_keyboard]
-    assert rows == [["❓ Помощь"]], "без устройств — только помощь"
+    assert rows == [["❓ Как подключить"]], "без устройств — только помощь"
 
 
 def test_card_rows_follow_the_device_kind():

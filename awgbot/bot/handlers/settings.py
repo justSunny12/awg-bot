@@ -855,7 +855,7 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
             return
         await call(services.reconcile_routing)
         await _render(cb, "rt", services)
-        await cb.answer("Условная маршрутизация выключена")
+        await cb.answer("РФ-доступ выключен")
         return
     if callback_data.key == "bundle_menu":
         # кнопка файлов, выданных до 3.1.0: файл уходит из чата, главная — новым

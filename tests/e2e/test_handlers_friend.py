@@ -40,7 +40,7 @@ async def test_guest_main_screen(services, fake_bot, make_active_client):
     assert lines[0] == "👋 Артём" and lines[1].endswith(("VPN работает", "VPN не отвечает")), text
     assert lines[2] == '💳 Подписка профиля <a href="tg://user?id=8100">Вася</a>: 🟢 активна', text
     assert len(lines) == 3, "строки трафика при нулях без лимита"
-    assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Устройства"], ["❓ Помощь"]], rows
+    assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Устройства"], ["❓ Как подключить"]], rows
 
 
 async def test_guest_main_screen_consumption_against_limits(services, fake_bot, make_active_client):
@@ -187,7 +187,7 @@ async def test_guest_delete_notifies_owner_and_empty_guest_keeps_profile(service
     answers = [s for s in nav.sent if s[0] == "answer"]
     assert answers[-1][1] == "👋 Артём · устройств нет — попроси у друга новый код"
     labels = [b.text for row in answers[-1][2].inline_keyboard for b in row]
-    assert labels == ["❓ Помощь"], "без устройств — одна «Помощь», а не пустой экран"
+    assert labels == ["❓ Как подключить"], "без устройств — одна «Как подключить», а не пустой экран"
 
 
 async def test_guest_help_uses_the_same_guides_with_guest_exit(services, fake_bot, make_active_client):

@@ -38,7 +38,7 @@ def _probe_layers() -> list[tuple[str, str, str]]:
     # ── 0. включена ли фича вообще ──
     if not config.ROUTING_GW_INTERFACE:
         return [(_WARN, "Фича спит: gw_interface пуст",
-                 "Это штатное состояние, если условная маршрутизация не нужна.")]
+                 "Это штатное состояние, если РФ-доступ не нужен.")]
     out.append((_OK, f"Интерфейс линка: {config.ROUTING_GW_INTERFACE}", ""))
 
     # ── 1. обвяз на месте ──
@@ -189,7 +189,7 @@ def _probe_rf_acct(pause: float = 3.0) -> list[tuple[str, str, str]]:
 
 
 def main() -> int:
-    print("Диагностика условной маршрутизации. Слои снизу вверх;")
+    print("Диагностика РФ-доступа. Слои снизу вверх;")
     print("первый СБОЙ — и есть место ремонта.\n")
     bad = 0
     try:

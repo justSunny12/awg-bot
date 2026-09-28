@@ -133,6 +133,19 @@ async def traffic_devices_screen(services, client_id: int):
 _traffic_devices_screen = traffic_devices_screen
 
 
+async def migration_overview_screen(services):
+    d = await call(services.migration_overview)
+    return texts.migration_overview_text(d, _bot(services)), kb.to_menu_kb()
+
+
+async def migration_client_screen(services, client_id: int):
+    client = await call(services.db.get_client, client_id)
+    if client is None:
+        return None
+    rows = await call(services.migration_client_devices, client_id)
+    return texts.migration_client_text(client, rows, _bot(services)), kb.migration_back_kb()
+
+
 async def gateway_card_screen(services, slot: int, chat_id: int | None = None):
     """Карточка слота по ссылке с главной: «Назад» с неё — на главную."""
     from awgbot.domain.services import ServiceError
@@ -158,6 +171,9 @@ def _payload_id(payload: str, head: str) -> int | None:
     return int(rest) if rest.isdigit() else None
 
 
+GWCFG_PAYLOAD = "gwcfg"          # /start gwcfg-<слот> — перевыпуск конфигурации слота
+
+
 def parse_link(payload: str) -> tuple[str, int] | None:
     """Ссылка шапки и уведомлений → (вид экрана реестра, ref) или None."""
     if payload == texts.ONLINE_PAYLOAD:
@@ -170,8 +186,11 @@ def parse_link(payload: str) -> tuple[str, int] | None:
         return "upd", 0
     if payload in (texts.TRAFFIC_PAYLOAD, texts.RF_PAYLOAD):
         return "traffic", 0
+    if payload == texts.MIGRATION_PAYLOAD:
+        return "migration", 0
     for head, kind in ((texts.TRAFFIC_PAYLOAD, "traffic_dev"), (texts.RF_PAYLOAD, "traffic_dev"),
-                       ("extend", "extend"), (texts.GW_CARD_PAYLOAD, "gw"), ("cl", "cl"), ("dev", "dev")):
+                       ("extend", "extend"), (texts.GW_CARD_PAYLOAD, "gw"), ("cl", "cl"), ("dev", "dev"),
+                       (texts.MIGRATION_PAYLOAD, "migration_cl"), (GWCFG_PAYLOAD, "gwcfg")):
         ref = _payload_id(payload, head)
         if ref is not None:
             return kind, ref
@@ -188,6 +207,15 @@ async def _traffic_deep_link(message: Message, services, payload: str,
     kind, ref = link
     if kind == "extend" and state is not None:
         await state.update_data(return_to="expiring")
+    if kind == "gwcfg":
+        # «Перевыпусти» из уведомления — файл конфигурации слота сразу
+        from awgbot.bot.handlers.settings import send_gw_bundle
+        try:
+            await message.delete()
+        except Exception:                             # noqa: BLE001
+            pass
+        await send_gw_bundle(message, services, ref)
+        return True
     if not await show_screen(message, services, "admin", None, kind, ref):
         await _return_panel(message, services)
     return True
@@ -207,6 +235,12 @@ async def admin_start(message: Message, services, state: FSMContext,
     # /start — «начать заново»: все прошлые меню из чата долой, не только кнопки
     await purge_menus(message.bot, services, message.chat.id)
     await _return_panel(message, services)
+
+
+@router.callback_query(Menu.filter(F.action == "migration"))
+async def admin_migration_overview(cb: CallbackQuery, services):
+    await edit_nav(cb, services, *await migration_overview_screen(services))
+    await cb.answer()
 
 
 @router.message(F.document, StateFilter(None))

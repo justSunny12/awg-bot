@@ -256,7 +256,43 @@ async def test_client_main_without_devices_offers_adding_and_no_issue_row(
     assert lines[1] == "🔴 VPN не отвечает", "РФ-доступ не выдан — о нём ни слова"
     assert lines[-1] == "📱 Можно добавить до 3 устройств"
     rows = [[b.text for b in r] for r in markup.inline_keyboard]
-    assert rows == [["➕ Устройство"], ["💳 Подписка", "❓ Помощь"]], rows
+    assert rows == [["➕ Устройство"], ["💳 Подписка", "❓ Как подключить"]], rows
+
+
+async def test_client_main_access_line_above_the_subscription(
+        services, fake_bot, make_active_client, monkeypatch):
+    """Доступ приостановлен — строка «🟡» над подпиской: человек видит, почему
+    VPN не работает, до того как пишет админу. Истекшая — «💳 🔴 истекла
+    ДД.ММ» с датой; исчерпанный трафик — своей формулировкой."""
+    from awgbot.core.blocks import ClientBlock
+    monkeypatch.setattr(services, "server_ok_cached", lambda: True)
+    cl = make_active_client(tg_id=9134, name="Ксюша")
+    services.db.update_client_fields(cl.id, period_end="2026-09-24T00:00:00+03:00", status="expired")
+    lines = (await ch.main_payload(services, services.db.get_client(cl.id)))[0].splitlines()
+    i = next(k for k, ln in enumerate(lines) if "💳" in ln)
+    assert lines[i - 1] == "🟡 доступ приостановлен", lines
+    assert lines[i].startswith("💳 🔴 истекла 24.09"), lines
+
+    tr = make_active_client(tg_id=9135, name="Петя", traffic_limit=10 * G)
+    services._client_set_block(tr.id, ClientBlock.TRAFFIC_CLIENT)
+    lines = (await ch.main_payload(services, services.db.get_client(tr.id)))[0].splitlines()
+    i = next(k for k, ln in enumerate(lines) if "💳" in ln)
+    assert lines[i - 1] == "🟡 исчерпан лимит трафика за месяц", lines
+
+
+async def test_client_main_hides_a_silent_admin_pause(services, fake_bot, make_active_client, monkeypatch):
+    """Тихая пауза администратора клиенту не видна — ни «🟡», ни паузы: тихо
+    значит тихо. Активному клиенту строки «🟡» нет вовсе."""
+    from awgbot.core.blocks import ClientBlock
+    monkeypatch.setattr(services, "server_ok_cached", lambda: True)
+    ok = make_active_client(tg_id=9136, name="Ксюша")
+    text, _ = await ch.main_payload(services, services.db.get_client(ok.id))
+    assert "🟡" not in text, text
+    q = make_active_client(tg_id=9137, name="Петя")
+    services.enter_admin_pause(q.id, 0)
+    services._client_set_block(q.id, ClientBlock.PAUSED | ClientBlock.ADMIN_SILENT)
+    text, _ = await ch.main_payload(services, services.db.get_client(q.id))
+    assert "🟡" not in text and "приостановлен" not in text, text
 
 
 async def test_client_main_counts_held_devices_as_having_something_to_issue(

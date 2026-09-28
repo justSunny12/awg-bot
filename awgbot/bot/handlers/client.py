@@ -636,7 +636,7 @@ async def _limit_note(services, client) -> str:
     """«⚠️ Лимит исчерпан: чтобы добавить новое, удали N» — лимит кончился, пока
     человек вводил имя."""
     used, limit = await call(services.device_slots, client.id)
-    return "⚠️ " + (texts.limit_exhausted_line(used, limit) or texts.LIMIT_REACHED)
+    return "⚠️ " + (texts.limit_exhausted_line(used, limit) or "Лимит исчерпан")
 
 
 async def _create_own(message: Message, services, client, name: str) -> None:

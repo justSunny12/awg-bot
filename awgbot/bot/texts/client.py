@@ -9,7 +9,7 @@ from awgbot.util import timeutil
 from awgbot.core.enums import SubStatus, ActivationStatus, FriendStatus
 
 from .fmt import (
-    rf_line, deep_link, details, device_state,
+    rf_line, deep_link, details, device_state, access_status_line,
     _e, used_of_limit, gb, gb_str, client_total_line, device_label,
     client_link, owner_link, holder_link, owner_name, _n_devices, plural_ru,
     _days_word, _days)
@@ -145,7 +145,8 @@ def subscription_short(client, bot_username: str = "") -> str:
         else:
             text = "💳 ⏸️ приостановлена администратором"
     elif client.status != SubStatus.ACTIVE:
-        text = "💳 🔴 истекла"
+        end = timeutil.parse_iso(client.period_end) if client.period_end else None
+        text = f"💳 🔴 истекла {timeutil.fmt_date_ui(end)}" if end else "💳 🔴 истекла"
     elif not client.period_end:
         text = "💳 бессрочная"
     else:
@@ -210,6 +211,10 @@ def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
     устройства. routing_ok=None — РФ-доступ профилю не выдан, его нет вовсе."""
     lines = [f"👋 {_e(client.name)}",
              status_line(server_ok, routing_ok, routing_on, bot_username)]
+    paused, _, pause_visible = _pause_visibility(client)
+    access = access_status_line(client)
+    if access and (pause_visible or not paused):   # тихая пауза админа клиенту не видна
+        lines.append(access)
     sub = subscription_short(client, bot_username)
     if traffic is not None:
         tr = traffic_short(traffic["rx_month"], traffic["tx_month"],
@@ -314,7 +319,7 @@ def device_card_own(dev, profile_limit_bytes: int) -> str:
     if blocked:
         parts.append(blocked)
     if dev.friend_status == FriendStatus.PENDING:
-        parts.append("⏳ Приглашение другу ждёт активации")
+        parts.append("⏳ приглашение другу ждёт активации")
     if not dev.is_managed:
         parts.append(UNMANAGED_DEVICE_LINE)
     return "\n".join(parts)
@@ -353,7 +358,7 @@ def friend_marker(dev) -> str:
     if dev.is_lent:
         return f"👤 Передано {holder_link(dev)}"
     if dev.friend_status == FriendStatus.PENDING:
-        return "⏳ Приглашение другу ждёт активации"
+        return "⏳ приглашение другу ждёт активации"
     return ""
 
 
@@ -408,7 +413,7 @@ def transfer_ask(name: str) -> str:
     return (f"👤 Передать {n} другу?\n"
             "Друг получит это подключение; одно подключение на двух устройствах "
             "работать не будет\n"
-            f"Если устройство {n} твоё — сначала заведи себе новое")
+            f"Если устройство «{n}» твоё — сначала заведи себе новое")
 
 
 # ── добавление устройства ────────────────────────────────────────────────────
@@ -430,7 +435,7 @@ def device_created(name: str, profile_limit_bytes: int) -> str:
 
 
 def device_limit_prompt(name: str, profile_limit_bytes: int) -> str:
-    head = f"📊 Лимит трафика устройства {_e(name)}"
+    head = f"📊 Лимит трафика устройства «{_e(name)}»"
     if profile_limit_bytes:
         return f"{head} · не больше {gb_str(profile_limit_bytes)} профиля"
     return head
@@ -494,7 +499,7 @@ def friend_invite_plain(device_name: str, code: str, bot_username: str) -> str:
 
 
 def finish_friend_invite(device_name: str) -> str:
-    return f"☝️ Отправь приглашение другу — он активирует и получит устройство {_e(device_name)}"
+    return f"☝️ Отправь приглашение другу — он активирует и получит устройство «{_e(device_name)}»"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -698,7 +703,7 @@ def pause_credit_line(pc) -> str:
     note = ("" if not partial
             else " (максимум)" if pc.kind == "year"
             else " (максимум для ежемесячной подписки)")
-    return f"⏸️ Дней паузы добавлено: +{pc.added}, доступно {pc.after}{note}"
+    return f"⏸️ Дней паузы +{pc.added} → {pc.after}{note}"
 
 
 def pause_credit_admin(pc) -> str:
@@ -742,12 +747,14 @@ def subscription_text(client, *, routing_visible: bool) -> str:
     текущая), лимиты. «🇷🇺 РФ-доступ» в лимитах — только когда выдан."""
     paused, mode, pause_visible = _pause_visibility(client)
     kind = subscription_kind_label(client.period_kind)
+    access = access_status_line(client)
+    lines = [access] if access and (pause_visible or not paused) else []
     if pause_visible and mode == "user":
-        lines = [f"💳 Подписка: {kind}"]          # «на паузе» — строкой ниже, без повтора
+        lines.append(f"💳 Подписка: {kind}")          # «на паузе» — строкой ниже, без повтора
     elif pause_visible:
-        lines = [f"💳 Подписка: {kind} · ⏸️ приостановлена администратором"]
+        lines.append(f"💳 Подписка: {kind} · ⏸️ приостановлена администратором")
     else:
-        lines = [f"💳 Подписка: {kind} · {subscription_status_only(client, expiring=True)}"]
+        lines.append(f"💳 Подписка: {kind} · {subscription_status_only(client, expiring=True)}")
     start = timeutil.parse_iso(client.period_start) if client.period_start else None
     end_iso = client.effective_period_end
     if end_iso:

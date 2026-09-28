@@ -79,7 +79,7 @@ _DEVICE_REASON_RU = {
     DeviceBlock.ADMIN_SILENT: "администратором (тихо)",
     DeviceBlock.ADMIN_NOTIFIED: "администратором",
     DeviceBlock.USER: "владельцем",
-    DeviceBlock.PAUSED: "подписка приостановлена",
+    DeviceBlock.PAUSED: "подписка на паузе",
 }
 _CLIENT_REASON_RU = {
     ClientBlock.EXPIRY: "подписка истекла",

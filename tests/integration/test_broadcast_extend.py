@@ -142,5 +142,5 @@ def test_days_prompt_and_preview_footer(services, make_active_client):
     lines = foot.split("\n")
     assert lines[0] == "👆 Так увидят получатели · 3 адресата · продление на <b>10 дней</b>:", foot
     assert lines[1] == "• Антон: ∞ — без продления", foot
-    assert lines[2].startswith("• Вера: ⛔ "), "истёкшая — со знаком «⛔» (продлится от сегодня)"
+    assert lines[2].startswith("• Вера: 🟡 "), "истёкшая — со знаком «🟡» (продлится от сегодня)"
     assert lines[3].startswith("• Ксюша: ") and "⛔" not in lines[3]

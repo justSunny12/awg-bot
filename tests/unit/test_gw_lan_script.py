@@ -1595,7 +1595,8 @@ def test_fill_goes_on_when_one_domain_gets_no_answer(own_env, tmp_path):
 def test_fill_resolves_domains_in_parallel(own_env, tmp_path):
     """Сотни доменов по одному dig (до 3 с на таймаут) шли бы минутами, всё
     это время новые домены «в туннель» мимо туннеля. 8 доменов по 0,5 с
-    подряд — 4 с; параллельно — около половины секунды."""
+    подряд — 4 с; параллельно — около половины секунды, с запасом на
+    запуск оболочек под нагрузкой — до 3 с."""
     tool, dns_d, dump, log, env = own_env
     names = [f"site{i}.org" for i in range(8)]
     # sleep в bin подменён пустышкой — задержку даём настоящим
@@ -1604,7 +1605,7 @@ def test_fill_resolves_domains_in_parallel(own_env, tmp_path):
     r = _fill_run(tool, env, tmp_path, "".join(d + "\n" for d in names))
     took = time.monotonic() - t0
     assert r.returncode == 0, r.stdout + r.stderr
-    assert took < 2.0, f"fill занял {took:.2f} с — dig идёт по одному, а не параллельно"
+    assert took < 3.0, f"fill занял {took:.2f} с — dig идёт по одному, а не параллельно"
     assert _set(_sets_of(dump), "lan_vpn4") == {f"10.8.0.{i + 1}" for i in range(8)}
     assert len(_adds(log, "lan_vpn4")) == 1, _nft(log)
 

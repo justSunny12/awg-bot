@@ -1,11 +1,11 @@
 """E2E: объявление — один экран адресатов с тумблером «С продлением
-подписки» и «Отметить всех», дни продления пресетами [1] [3] [7], превью с
+подписки» и «Выбрать все», дни продления пресетами [1] [3] [7], превью с
 шапкой, отправка: сначала продление, потом рассылка, шапка у каждого своя,
 бессрочному — без шапки.
 
 Цена ошибки: не активировавший профиль останется отмеченным при продлении —
 объявление некуда доставить, а отчёт соврёт; бессрочному уйдёт строка
-«продлена» — неправда; «✅ Отметить всех» не снимет отметки — разошлёшь не
+«продлена» — неправда; «✅ Выбрать все» не снимет отметки — разошлёшь не
 тем.
 """
 import datetime
@@ -41,7 +41,7 @@ async def test_entry_is_the_targets_screen_with_the_extend_toggle(services, make
     text, labels = await _press(admin_h.broadcast_pick, fake_bot, state, services)
     assert text == ("📢 Объявление · отмечено 0\n"
                     "Получат владельцы и те, с кем они делятся устройствами"), text
-    assert labels == ["☑️ С продлением подписки", "☑️ Отметить всех", "☑️ Анна", "☑️ Ждёт",
+    assert labels == ["☑️ С продлением подписки", "☑️ Выбрать все", "☑️ Анна", "☑️ Ждёт",
                       "⬅️ Отмена", "➡️ Далее"], labels
     assert await state.get_state() == "Broadcast:targets"
 
@@ -61,7 +61,7 @@ async def test_entry_is_the_targets_screen_with_the_extend_toggle(services, make
 
 async def test_mark_all_by_hand_turns_bulk_on_and_bulk_on_clears_everything(
         services, make_active_client, fake_bot):
-    """Правило массового выбора: все отмечены по одному — «✅ Отметить всех»;
+    """Правило массового выбора: все отмечены по одному — «✅ Выбрать все»;
     нажатие на ✅ снимает все отметки; на ☑️ — отмечает всех."""
     a = make_active_client("Анна", tg_id=9102)
     b = make_active_client("Борис", tg_id=9103)
@@ -71,15 +71,15 @@ async def test_mark_all_by_hand_turns_bulk_on_and_bulk_on_clears_everything(
     text, labels = await _press(admin_h.broadcast_toggle, fake_bot, BroadcastCB(action="tgl", ref=b.id),
                                 state, services)
     assert text.startswith("📢 Объявление · отмечено 2"), text
-    assert labels[1:4] == ["✅ Отметить всех", "✅ Анна", "✅ Борис"], labels
+    assert labels[1:4] == ["✅ Выбрать все", "✅ Анна", "✅ Борис"], labels
 
     text, labels = await _press(admin_h.broadcast_toggle_all, fake_bot, state, services)
     assert (await state.get_data())["targets"] == [], "✅ не сняла отметки"
-    assert labels[1:4] == ["☑️ Отметить всех", "☑️ Анна", "☑️ Борис"], labels
+    assert labels[1:4] == ["☑️ Выбрать все", "☑️ Анна", "☑️ Борис"], labels
 
     text, labels = await _press(admin_h.broadcast_toggle_all, fake_bot, state, services)
     assert sorted((await state.get_data())["targets"]) == sorted([a.id, b.id])
-    assert labels[1] == "✅ Отметить всех"
+    assert labels[1] == "✅ Выбрать все"
 
 
 async def test_next_without_targets_refuses(services, make_active_client, fake_bot):
@@ -110,8 +110,17 @@ async def test_next_asks_days_by_presets_and_refuses_only_unlimited(services, ma
         return f'<a href="https://t.me/awg_test_bot?start=cl-{c.id}">{c.name}</a>'
     assert text == (f"📢 Профили для продления подписки: {link(a)}, {link(u)} (∞, без продления)\n"
                     "На сколько дней продлеваем?"), text
-    assert labels == ["1 дн.", "3 дн.", "7 дн.", "✏️ Другое", "⬅️ Отмена"], labels
+    assert labels == ["1 дн.", "3 дн.", "7 дн.", "✏️ Другое", "✖️ Отмена", "⬅️ Назад"], labels
     assert await state.get_state() == "Broadcast:days"
+    # раскладка: пресеты рядом, «Другое» с отменой, «Назад» к адресатам своим рядом —
+    # иначе «Назад» из дней выбросит из объявления вместе с отметками
+    from awgbot.bot import keyboards as kbs
+    markup = kbs.broadcast_days_kb()
+    rows = [[b.text for b in r] for r in markup.inline_keyboard]
+    assert rows == [["1 дн.", "3 дн.", "7 дн."], ["✏️ Другое", "✖️ Отмена"], ["⬅️ Назад"]], rows
+    assert markup.inline_keyboard[2][0].callback_data == BroadcastCB(action="targets").pack(), \
+        "«⬅️ Назад» из дней обязан вести к адресатам, а не отменять объявление"
+    assert markup.inline_keyboard[1][1].callback_data == BroadcastCB(action="cancel").pack()
 
 
 async def test_days_preset_moves_to_the_text_prompt(services, make_active_client, fake_bot):

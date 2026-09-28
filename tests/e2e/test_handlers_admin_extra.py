@@ -11,6 +11,7 @@ import pytest
 
 from awgbot.bot import texts
 from awgbot.bot.handlers import admin as ah
+from awgbot.bot.handlers.admin import devices as admin_devices
 from awgbot.bot.callbacks import AdminSelfCB, BlockCB, ClientCB, DeviceCB
 from awgbot.core import config
 from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
@@ -102,12 +103,16 @@ async def test_admin_dev_file(services, fake_bot, make_active_client):
 
 
 async def test_block_menu_device_branch(services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=6306)
+    """Вопрос о блокировке устройства называет владельца ссылкой — одноимённые
+    устройства разных профилей («iPhone») иначе не различить."""
+    client = make_active_client("Петя", tg_id=6306)
+    services.bot_username = "awg_test_bot"
     dc = services.add_device(client.id, "d")
     cb, nav = _acb(fake_bot)
     await ah.admin_block_menu(cb, BlockCB(target="dev", action="menu_block", ref=dc.device_id), services)
     text, labels = last_screen(nav)
-    assert text == "🛑 Как заблокировать d?", text
+    assert text == (f'🛑 Блокировка d (<a href="https://t.me/awg_test_bot?start=cl-{client.id}">Петя</a>). '
+                    "Уведомить владельца?"), text
     assert labels == ["🔔 С уведомлением", "🔕 Тихо", "⬅️ Отмена"], labels
 
 
@@ -147,16 +152,107 @@ async def test_add_device_to_a_profile_asks_only_the_name_and_returns_to_the_car
     assert len(owner_notes) == 1 and "Планшет" in owner_notes[0][2]
 
 
-async def test_add_device_to_a_full_profile_is_refused_with_how_many_to_delete(
+async def test_add_device_to_a_full_profile_offers_a_slot_instead_of_refusing(
         services, fake_bot, make_active_client):
-    client = make_active_client(tg_id=6308, device_limit=1)
+    """Лимит исчерпан — не всплывашка-отказ, а экран «добавить слот?» с
+    «⬅️ Отмена» в карточку и «➕ Слот и добавить». Отказ заставлял идти в
+    «✏️ Изменить», поднимать лимит и возвращаться — три экрана на одно
+    устройство; ввод имени при полном лимите кончался бы ошибкой сервиса."""
+    client = make_active_client("Коля", tg_id=6308, device_limit=1)
+    services.bot_username = "awg_test_bot"
     services.add_device(client.id, "a")
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await ah.admin_add_device_start(cb, ClientCB(action="add_device", client_id=client.id), services, st)
-    assert len(cb.answers) == 1 and cb.answers[0][1] is True, cb.answers
-    assert cb.answers[0][0].startswith("Достигнут лимит") and "1 из 1" in cb.answers[0][0], cb.answers
+    assert not any(alert for _, alert in cb.answers), f"всплывашка вместо экрана: {cb.answers}"
+    text, _ = last_screen(nav)
+    assert text == (f'📱 У профиля <a href="https://t.me/awg_test_bot?start=cl-{client.id}">Коля</a> '
+                    "исчерпан лимит устройств (1 из 1) — добавить слот?"), text
+    markup = [s for s in nav.sent if s[0] == "edit_text"][-1][2]
+    rows = [[(b.text, b.callback_data) for b in r] for r in markup.inline_keyboard]
+    assert rows == [[("⬅️ Отмена", ClientCB(action="open", client_id=client.id).pack()),
+                     ("➕ Слот и добавить", ClientCB(action="add_device_slot", client_id=client.id).pack())]], rows
     assert await st.get_state() is None, "ввод имени открыт при исчерпанном лимите"
+    assert services.db.get_client(client.id).device_limit == 1, "лимит поднят без согласия"
+
+
+async def test_add_slot_raises_the_limit_notifies_the_owner_once_and_asks_the_name(
+        services, fake_bot, make_active_client):
+    """«➕ Слот и добавить»: лимит = занято + 1, владельцу — «Лимит устройств
+    изменён: 1 → 2» ровно одно сообщение, дальше ввод имени и устройство
+    создаётся. Без уведомления клиент увидит чужой слот молча; без ввода
+    имени кнопка ничего не добавляет."""
+    client = make_active_client("Коля", tg_id=6309, device_limit=1)
+    services.add_device(client.id, "a")
+    st = FakeState()
+    cb, nav = _acb(fake_bot)
+    await admin_devices.admin_add_device_slot(cb, ClientCB(action="add_device_slot", client_id=client.id), services, st)
+    assert services.db.get_client(client.id).device_limit == 2
+    notes = [r[2] for r in fake_bot.records if r[0] == "send_message" and r[1] == 6309]
+    assert notes == [texts.limit_changed_notice(1, 2)], notes
+    assert notes[0] == "Лимит устройств изменён: 1 → 2"
+    assert await st.get_state() == "AdminAddDevice:name"
+    text, labels = last_screen(nav)
+    assert text == "➕ Устройство профилю Коля · 1 из 2\nКак назвать?", text
+    msg = _amsg(fake_bot, "Планшет")
+    await ah.admin_add_device_name(msg, services, st)
+    assert sorted(d.name for d in services.db.list_devices(client.id)) == ["a", "Планшет"]
+
+
+async def test_add_slot_pressed_twice_raises_the_limit_only_once(
+        services, fake_bot, make_active_client):
+    """Повторное нажатие (или два окна) — лимит уже не исчерпан: второй раз
+    лимит не растёт и владелец второго уведомления не получает."""
+    client = make_active_client(tg_id=6310, device_limit=1)
+    services.add_device(client.id, "a")
+    for _ in range(2):
+        cb, _ = _acb(fake_bot)
+        await admin_devices.admin_add_device_slot(cb, ClientCB(action="add_device_slot", client_id=client.id),
+                                       services, FakeState())
+    assert services.db.get_client(client.id).device_limit == 2, "двойное нажатие дало два слота"
+    notes = [r for r in fake_bot.records if r[0] == "send_message" and r[1] == 6310]
+    assert len(notes) == 1, notes
+
+
+async def test_limit_race_while_typing_the_name_says_how_many_to_delete(
+        services, fake_bot, make_active_client):
+    """Пока админ вводил имя, слот заняли — заметка «⚠️ Достигнут лимит
+    устройств: чтобы добавить новое, удали N», устройство не создано.
+    Без заметки админ решит, что устройство добавилось."""
+    client = make_active_client(tg_id=6311, device_limit=2)
+    services.add_device(client.id, "a")
+    st = FakeState()
+    cb, _ = _acb(fake_bot)
+    await ah.admin_add_device_start(cb, ClientCB(action="add_device", client_id=client.id), services, st)
+    assert await st.get_state() == "AdminAddDevice:name"
+    services.add_device(client.id, "b")                   # гонка: слот занят
+    msg = _amsg(fake_bot, "Планшет")
+    await ah.admin_add_device_name(msg, services, st)
+    assert "Планшет" not in [d.name for d in services.db.list_devices(client.id)]
+    shown = " ".join(t or "" for kind, t, _ in msg.sent if kind in ("answer", "edit_text"))
+    assert "⚠️ Достигнут лимит устройств: чтобы добавить новое, удали 1" in shown, shown
+
+
+async def test_self_add_over_a_limit_says_how_many_to_delete(services, fake_bot):
+    """Своему профилю админ лимит обычно не ставит, но если стоит и занят —
+    всплывашка той же строкой «Достигнут лимит устройств: … удали N», ввод
+    имени не открывается."""
+    services.ensure_admin_client()
+    ac = services.admin_client()
+    services.add_device(ac.id, "phone")
+    services.db.update_client_fields(ac.id, device_limit=1)
+    st = FakeState()
+    cb, _ = _acb(fake_bot)
+    await ah.self_add_start(cb, services, st)
+    assert cb.answers == [("Достигнут лимит устройств: чтобы добавить новое, удали 1", True)], cb.answers
+    assert await st.get_state() is None
+
+
+def test_limit_reached_line_counts_what_to_delete():
+    """N — сколько удалить, чтобы добавить одно: при занятом сверх лимита
+    (лимит понижен) — больше единицы."""
+    assert texts.limit_reached_line(3, 3) == "Достигнут лимит устройств: чтобы добавить новое, удали 1"
+    assert texts.limit_reached_line(5, 3).endswith("удали 3")
 
 
 async def test_admin_menu_devices(services, fake_bot):
@@ -264,7 +360,7 @@ def test_transfer_buttons_are_split_by_role(services, make_active_client):
 def test_broadcast_targets_mark_subscription_only_in_extend_mode(services, make_active_client):
     """Онлайн-кружков в выборе адресатов нет (не онлайн — прочитает потом). В
     режиме с продлением справа от имени — состояние подписки: ∞ бессрочная,
-    ⛔ и дата — истекла; активной — ничего."""
+    🟡 и дата — истекла; активной — ничего."""
     from awgbot.bot import keyboards as kbs
     a = make_active_client("Анна", tg_id=1001)
     b = make_active_client("Борис", tg_id=1002, period_kind="never")
@@ -276,7 +372,7 @@ def test_broadcast_targets_mark_subscription_only_in_extend_mode(services, make_
                 for btn in row if btn.callback_data.startswith("bc:tgl:")]
     assert labels(False) == ["☑️ Анна", "☑️ Борис", "☑️ Вера"]
     # год текущий — в дате его нет
-    assert labels(True) == ["☑️ Анна", "☑️ Борис ∞", "☑️ Вера ⛔ 01.09"]
+    assert labels(True) == ["☑️ Анна", "☑️ Борис ∞", "☑️ Вера 🟡 01.09"]
 
 
 def test_device_line_format_and_plain_ip(services, make_active_client):
@@ -294,7 +390,7 @@ async def test_gateway_is_not_offered_for_link_qr_file(services, fake_bot):
     """Сервис выдачу шлюзу отвергает; кнопки старого образца «Ссылка/QR/Файл»
     ставили его в список — клик вёл в алерт. В пикере его нет, а профиль с
     одним шлюзом считается без устройств. Старая «Выдать конфиг» профиля
-    открывает карточку профиля — выдача там рядом с каждым устройством."""
+    открывает карточку профиля, а у профиля админа карточки нет — главная."""
     services.ensure_admin_client()
     ac = services.admin_client()
     pi = services.add_device(ac.id, "NASPi")
@@ -308,10 +404,11 @@ async def test_gateway_is_not_offered_for_link_qr_file(services, fake_bot):
     await ah.self_gen_pick(cb, AdminSelfCB(action="gen_link"), services)
     _, labels = last_screen(nav)
     assert any("phone" in l for l in labels) and not any("NASPi" in l for l in labels)
+    # у профиля админа карточки нет — старая кнопка ведёт на главную
     cb, nav = _acb(fake_bot)
     await ah.admin_gen_for(cb, ClientCB(action="gen_for", client_id=ac.id), services, FakeState())
     text, _ = last_screen(nav)
-    assert text.startswith("👤 "), f"старая «Выдать конфиг» не привела в карточку: {text}"
+    assert text.startswith("🛠 "), f"старая «Выдать конфиг» у профиля админа не привела на главную: {text}"
 
 
 async def test_device_limit_other_asks_a_number_and_returns_to_the_card(

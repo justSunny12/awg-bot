@@ -22,6 +22,7 @@ pytestmark = pytest.mark.e2e
 ADMIN = config.ADMIN_ID
 GB = 1024 ** 3
 RF = "🇷🇺 РФ-доступ"
+RF_ALL = "🇷🇺 РФ-доступ (все)"          # итог под шапкой — отличается от строки записи
 
 
 def _cmd(args):
@@ -106,7 +107,7 @@ async def test_traffic_tree_leads_with_rf_total_then_profiles_by_size(
         return f'<a href="https://t.me/awg_test_bot?start=traffic-{c.id}">{c.name}</a>'
     assert text.split("\n") == [
         f"📊 Трафик за {texts.month_label()}: 17 ГБ (↑3 ↓14)",
-        f"└ {RF}: 4 ГБ (↑1 ↓3)",
+        f"└ {RF_ALL}: 4 ГБ (↑1 ↓3)",
         "",
         f"👤 {link(ksu)}: 12 ГБ (↑2 ↓10)",
         f"└ {RF}: 3 ГБ",
@@ -149,7 +150,7 @@ async def test_outside_profiles_nests_under_the_rf_total(services, fake_bot, mak
     _rf_total(services, GB, GB)
     text, _, _ = await _deep(services, fake_bot, "traffic")
     assert text.split("\n")[1:] == [
-        f"└ {RF}: 2 ГБ (↑1 ↓1)",
+        f"└ {RF_ALL}: 2 ГБ (↑1 ↓1)",
         "└ 🧐 Вне профилей: 1 ГБ — удалённые устройства и первые минуты новых",
         "",
         "👤 Коля: 2 ГБ (↑1 ↓1)",
@@ -178,11 +179,11 @@ async def test_deleted_device_moves_its_rf_into_outside(services, fake_bot, make
     services.db.rf_add_bulk([(gone.device_id, GB, GB)])
     _rf_total(services, 2 * GB, 2 * GB)
     before, _, _ = await _deep(services, fake_bot, "traffic")
-    assert "Вне профилей" not in before and f"└ {RF}: 4 ГБ" in before, before
+    assert "Вне профилей" not in before and f"└ {RF_ALL}: 4 ГБ" in before, before
     services.remove_device(gone.device_id)
     after, _, _ = await _deep(services, fake_bot, "traffic")
     assert after.split("\n")[1:] == [
-        f"└ {RF}: 4 ГБ (↑2 ↓2)",
+        f"└ {RF_ALL}: 4 ГБ (↑2 ↓2)",
         "└ 🧐 Вне профилей: 2 ГБ — удалённые устройства и первые минуты новых",
         "",
         "👤 Ксюша: 2 ГБ (↑1 ↓1)",
@@ -208,7 +209,7 @@ async def test_profile_traffic_tree_sorts_devices_and_drops_zeros(
     text, labels, cbs = await _deep(services, fake_bot, f"traffic-{c.id}")
     assert text.split("\n") == [
         f"📊 Трафик за {texts.month_label()}, Ксюша: 8 ГБ (↑2 ↓6)",
-        f"└ {RF}: 3 ГБ (↑1 ↓2)",
+        f"└ {RF_ALL}: 3 ГБ (↑1 ↓2)",
         "",
         "⚪ iPhone: 6 ГБ (↑1 ↓5)",
         f"└ {RF}: 3 ГБ",
@@ -246,7 +247,7 @@ async def test_gateway_gets_no_rf_branch_and_stays_out_of_the_profile_rf(
     admin, _, _ = rf_gateway
     text, _, _ = await _deep(services, fake_bot, f"traffic-{admin.id}")
     lines = text.split("\n")
-    assert lines[1] == f"└ {RF}: 2 ГБ (↑1 ↓1)", text
+    assert lines[1] == f"└ {RF_ALL}: 2 ГБ (↑1 ↓1)", text
     i = lines.index("🛰 NASPi: 6 ГБ (↑3 ↓3)")
     assert RF not in lines[i + 1], f"РФ-строка под шлюзом:\n{text}"
     assert lines[-2:] == ["⚪ phone: 2 ГБ (↑1 ↓1)", f"└ {RF}: 2 ГБ"], text

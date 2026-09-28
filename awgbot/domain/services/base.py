@@ -24,9 +24,13 @@ class ServicesBase:
         return f'<a href="https://t.me/{self.bot_username}?start={payload}">{_e(label)}</a>'
 
     def cl_link(self, client) -> str:
-        """Имя профиля — ссылка на его карточку у админа (cl-<id>)."""
+        """Имя профиля — ссылка на его карточку у админа (cl-<id>); у профиля
+        самого админа карточки нет — простым текстом."""
+        from awgbot.core import config
         if client is None:
             return "?"
+        if getattr(client, "tg_id", 0) == config.ADMIN_ID:
+            return _e(client.name)
         return self._link(f"cl-{int(client.id)}", client.name)
 
     def dev_link(self, dev) -> str:
@@ -34,7 +38,7 @@ class ServicesBase:
         у клиента и гостя — своё или удерживаемое."""
         if dev is None:
             return "?"
-        return self._link(f"dev-{int(dev.id)}", dev.name)
+        return self._link(f"dev-{int(dev.id)}", f"«{dev.name}»")
 
     def __init__(self, db):
         self.db = db

@@ -309,7 +309,7 @@ async def test_remove_standby_and_active(services, slots, fake_bot, monkeypatch)
     cb, nav = _acb(fake_bot)
     await sh.gateway_remove_ask(cb, GwMarkCB(action="remove_ask", device_id=pi2.id), services)
     text, _ = _screen(nav)
-    assert "условная маршрутизация выключится" in text
+    assert "РФ-доступ выключится" in text
 
 
 async def test_bundle_button_and_action_are_per_slot(services, slots, fake_bot):

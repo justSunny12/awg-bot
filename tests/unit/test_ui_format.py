@@ -58,9 +58,19 @@ def test_seconds_only_on_request_and_only_when_not_zero():
 
 
 def test_period_is_start_arrow_end_with_the_same_year_rule():
+    """Границы в разных годах — год у обеих: «12.10.25 → 12.10» читается как
+    «до 12.10 этого года», и годовую подписку примут за истекающую."""
     now_year = t.now().year
     start, end = _dt(now_year - 1, 10, 12), _dt(now_year, 10, 12)
-    assert t.fmt_period_ui(start, end) == f"12.10.{(now_year - 1) % 100:02d} → 12.10"
+    yy0, yy1 = f"{(now_year - 1) % 100:02d}", f"{now_year % 100:02d}"
+    assert t.fmt_period_ui(start, end) == f"12.10.{yy0} → 12.10.{yy1}"
+    # начало в текущем году, конец в следующем — тоже оба с годом
+    start, end = _dt(now_year, 10, 12), _dt(now_year + 1, 10, 12)
+    assert t.fmt_period_ui(start, end) == f"12.10.{yy1} → 12.10.{(now_year + 1) % 100:02d}", \
+        "год у начала не должен теряться, даже если это текущий год"
+    # оба в текущем году — без года
+    start, end = _dt(now_year, 1, 12), _dt(now_year, 10, 12)
+    assert t.fmt_period_ui(start, end) == "12.01 → 12.10"
 
 
 @pytest.mark.parametrize("raw, parsed", [

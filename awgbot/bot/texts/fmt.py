@@ -16,9 +16,13 @@ def deep_link(bot_username: str, payload: str, label: str) -> str:
 
 
 def profile_link(client, bot_username: str) -> str:
-    """Имя профиля — ссылка на его карточку у админа (/start cl-<id>)."""
+    """Имя профиля — ссылка на его карточку у админа (/start cl-<id>); у
+    профиля самого админа карточки нет — простым текстом."""
+    from awgbot.core import config
     if client is None:
         return "?"
+    if getattr(client, "tg_id", 0) == config.ADMIN_ID:
+        return _e(client.name)
     return deep_link(bot_username, f"cl-{int(client.id)}", client.name)
 
 
@@ -42,6 +46,21 @@ def tree(rows) -> str:
 def sub_line(text: str) -> str:
     """Одна вложенная строка под записью («└ 🇷🇺 РФ-доступ: …»)."""
     return _SUB + text
+
+
+def access_status_line(client) -> str:
+    """Строка состояния доступа над строкой подписки — у админа в карточке
+    профиля, у клиента на главной и в «💳 Подписка»: истечение и пауза —
+    «🟡 доступ приостановлен», исчерпанный лимит трафика (после доп. квоты) —
+    «🟡 исчерпан лимит трафика за месяц»; ручная блокировка — не здесь."""
+    from awgbot.core import blocks
+    from awgbot.core.enums import SubStatus
+    mask = int(getattr(client, "block_reason", 0) or 0)
+    if mask & int(blocks.ClientBlock.TRAFFIC_CLIENT):
+        return "🟡 исчерпан лимит трафика за месяц"
+    if mask & int(blocks.ClientBlock.PAUSED) or getattr(client, "status", None) != SubStatus.ACTIVE:
+        return "🟡 доступ приостановлен"
+    return ""
 
 
 def _e(s) -> str:

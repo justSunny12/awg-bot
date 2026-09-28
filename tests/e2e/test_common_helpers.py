@@ -60,4 +60,4 @@ async def test_show_main_menu_invited(services, fake_bot, make_active_client):
     _, text, markup = shown[-1]
     assert "💳 Подписка профиля" in text, text
     labels = [b.text for row in markup.inline_keyboard for b in row]
-    assert labels[:3] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"] and "❓ Помощь" in labels, labels
+    assert labels[:3] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"] and "❓ Как подключить" in labels, labels

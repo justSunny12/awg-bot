@@ -351,7 +351,7 @@ async def test_panel_rf_line_marks_broken_accounting_and_keeps_numbers(services,
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB, tx=GB,
               error="nft не найден — поставь пакет nftables")
     line = _rf_line(await _panel_text(services, fake_bot))
-    assert line == "└ 🇷🇺 РФ-доступ: 2 ГБ · ⚠️ учёт по РФ-доступу не ведётся", line
+    assert line == "└ 🇷🇺 РФ-доступ: 2 ГБ · ⚠️ учёт трафика РФ-доступа не идёт", line
     assert "nft" not in line, "текст ошибки ядра в шапке админа"
 
 
@@ -361,12 +361,32 @@ async def test_panel_rf_line_links_to_the_rf_screen(services, fake_bot, fake_rou
     админ из главной не доберётся."""
     services.bot_username = "awg_test_bot"
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
+    services.ensure_admin_client()
+    dev = services.add_device(services.admin_client().id, "phone")
+    services.db.add_traffic_bulk([(dev.device_id, GB, GB)])
     text = await _panel_text(services, fake_bot)
     lines = [ln for ln in text.splitlines() if ln.startswith("└ ") and "🇷🇺 РФ-доступ" in ln]
     # флаг — внутри ссылки: кликается вся подпись «🇷🇺 РФ-доступ»
     assert lines and lines[0] == ('└ <a href="https://t.me/awg_test_bot?start=traffic">'
                                   '🇷🇺 РФ-доступ</a>: 1 ГБ'), text
     assert text.count("start=traffic\"") == 2, "строка трафика и РФ-ветка — обе на экран «Трафик»"
+
+
+async def test_panel_zero_traffic_and_zero_rf_are_plain_text(services, fake_bot, fake_routing,
+                                                            monkeypatch):
+    """Нулевой итог — строка стоит, но не ссылкой: за ней пустой экран. Каждая
+    строка решает сама — трафик нулевой, а РФ нет — ссылка только у РФ."""
+    services.bot_username = "awg_test_bot"
+    _rf_world(services, fake_routing, monkeypatch, enabled=True)
+    text = await _panel_text(services, fake_bot)
+    assert "start=traffic" not in text, f"ссылка на пустой экран трафика:\n{text}"
+    assert f"📊 Трафик за {texts.month_label()}: 0 ГБ" in text.splitlines(), text
+    assert "└ 🇷🇺 РФ-доступ: 0 ГБ" in text.splitlines(), text
+    _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
+    text = await _panel_text(services, fake_bot)
+    assert text.count("start=traffic\"") == 1, text
+    assert f"📊 Трафик за {texts.month_label()}: 0 ГБ" in text.splitlines(), \
+        "нулевой трафик сервера стал ссылкой из-за РФ"
 
 
 async def test_panel_rf_line_is_plain_text_without_bot_username(services, fake_bot, fake_routing,
