@@ -128,7 +128,7 @@ async def test_settings_change_gateway_rekeys_and_gives_plain_first_run_file(ser
     _slot1(services, pi.id)
     cb, nav = _acb(fake_bot)
     await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=phone.id, slot=1), services)
-    assert any("\nСейчас шлюз — NASPi: прежняя машина потеряет линк сама" in s[1]
+    assert any("\nСейчас шлюз — NASPi: прежнее устройство потеряет линк само" in s[1]
                for s in nav.sent if s[0] == "edit_text"), nav.sent
     # Со сменой ключей файл едет открытым и ставится с нуля — значит нужен
     # токен агента, как и для новой машины.

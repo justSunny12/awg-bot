@@ -61,7 +61,7 @@ async def test_server_screen_says_when_there_is_no_domain(services, fake_bot, mo
         "keepalive": "25-35", "iface": "awg0", "port": 45871, "port_conf": 45871,
         "subnet": "10.8.1.0/24", "kernel": "", "generation": 1, "migration_blocked": ""})
     text, _ = await sh._screen("srv", services)
-    assert text.split("\n")[1] == "домена нет, в ссылках IP 203.0.113.10 · имя сервера: «Сервер 1»", text
+    assert text.split("\n")[1] == "Домена нет, в ссылках IP 203.0.113.10 · имя сервера: «Сервер 1»", text
     assert text.startswith("🖥 Сервер AWG · ядро не определено, gen1\n"), text
 
 
@@ -269,13 +269,14 @@ async def test_prepare_screen_names_the_cohort_and_the_cost(services, fake_bot, 
     text, markup = await sh._screen("mig_prep", services)
     assert text.startswith("🚚 Порт или подсеть · сейчас awg0, 45871, 10.8.1.0/24 → новый интерфейс, "
                            "случайный высокий порт, свободная подсеть · в переезд войдут 7 устройств у 3 "
-                           "профилей (были онлайн за 2 недели)"), text
-    assert "отмена безопасна" in text.lower() and "финал" in text.lower()
+                           "профилей (были онлайн за 2 недели; у остальных доступ пропадёт после окончания "
+                           "переезда — до перенастройки устройств)"), text
+    assert "отмена безопасна" in text.lower() and "при завершении" in text.lower()
     rows = [[b.text for b in r] for r in markup.inline_keyboard]
     assert rows == [["🚚 Поднять интерфейс"], ["✏️ Свой порт", "✖️ Отмена"]], rows
 
 
-async def test_prepare_runs_and_restarts(services, fake_bot, monkeypatch):
+async def test_prepare_runs_and_offers_a_restart(services, fake_bot, monkeypatch):
     calls: list = []
     monkeypatch.setattr(services, "migration_prepare",
                         lambda port=None: calls.append(port) or
@@ -284,10 +285,11 @@ async def test_prepare_runs_and_restarts(services, fake_bot, monkeypatch):
     monkeypatch.setattr(services, "restart_bot", lambda: calls.append("restart"))
     cb, nav = _acb(fake_bot)
     await sh.do_action(cb, SetCB(sec="mig_prep", act="do", key="go", val="443"), services)
-    assert calls == [443, "wait", "restart"]
-    said = [s[1] for s in nav.sent if s[0] == "answer"]
-    assert said and said[-1] == ("✅ Второй интерфейс поднят: awg1, 10.9.1.0/24, порт 443 · перезапускаю "
-                                 "бота — после этого 🔧 Сервис → 🚚 Начать переезд"), said
+    assert calls == [443], "перезапуск — только по кнопке"
+    said = [s for s in nav.sent if s[0] == "answer"]
+    assert said and said[-1][1] == ("✅ Второй интерфейс поднят: awg1, 10.9.1.0/24, порт 443 · после перезапуска "
+                                    "бота: 🔧 Сервис → 🚚 Начать переезд"), said
+    assert [[b.text for b in row] for row in said[-1][2].inline_keyboard] == [["🔁 Перезапустить сейчас"], ["⬅️ Позже"]]
 
 
 async def test_prepare_failure_does_not_restart(services, fake_bot, monkeypatch):
@@ -312,7 +314,7 @@ async def test_maintenance_mentions_migration_only_while_it_runs(services, fake_
     monkeypatch.setattr(services, "svc_screen_data",
                         lambda: {"state": "", "available": False, "progress": None, "orphans": 0})
     text, markup = await sh._screen("svc", services)
-    assert text == "🔧 Сервис\nПерезапуск AWG рвёт соединения на секунды, перезапуск бота — нет", text
+    assert text == "🔧 Сервис\nПерезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей", text
     assert not any("переезд" in b.text.lower() for row in markup.inline_keyboard for b in row)
 
     monkeypatch.setattr(services, "svc_screen_data",

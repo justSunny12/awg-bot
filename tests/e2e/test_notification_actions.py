@@ -284,7 +284,7 @@ def test_link_port_note_links_the_slot_and_offers_the_configuration(services, mo
     assert len(notes) == 1, notes
     assert notes[0].text.startswith(f"🛰 {_link('gw-1', '«NASPi»')}: порт линка изменён на 5555 (был {g.link_port})")
     # «Перевыпусти» — ссылка, по которой бот сразу отдаёт файл слота
-    assert f"{_link('gwcfg-1', 'Перевыпусти')} конфигурацию и примени её на той стороне" in notes[0].text, \
+    assert f"{_link('gwcfg-1', 'Перевыпусти')} конфигурацию шлюза" in notes[0].text, \
         notes[0].text
     assert notes[0].action == ("gwcfg", 1)
 

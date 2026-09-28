@@ -80,7 +80,7 @@ async def start_edit(cb: CallbackQuery, services, hooks: Hooks, state: FSMContex
                      key: str, sec: str) -> bool:
     """Открыть ввод значения key; False — ключ неизвестен (старая клавиатура)."""
     if key not in texts.SETTINGS_BOUNDS and key not in texts.SETTINGS_TEXT and key != "backup_when":
-        await cb.answer("Эта настройка недоступна.", show_alert=True)
+        await cb.answer("Эта настройка недоступна", show_alert=True)
         return False
     await state.set_state(SettingsInput.value)
     await state.update_data(key=key, sec=sec)
@@ -320,7 +320,7 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
 async def set_backup_channel(cb: CallbackQuery, services, hooks: Hooks, val: str) -> None:
     """telegram | email; почта — только с настроенным ящиком и шифрованием."""
     if val not in ("telegram", "email"):
-        await cb.answer("Нет такого варианта.", show_alert=True)
+        await cb.answer("Нет такого варианта", show_alert=True)
         return
     if val == "email":
         if not await call(services.email_configured):
@@ -427,7 +427,7 @@ def register(router, hooks: Hooks, *, default_sec: str = "root") -> dict:
         phrase = await _take_secret_message(message)
         if len(phrase) < MIN_PASSPHRASE_LEN:
             await ask_tracked(message, services,
-                              f"⚠️ Фраза короче {MIN_PASSPHRASE_LEN} символов. Пришли другую.")
+                              f"⚠️ Фраза короче {MIN_PASSPHRASE_LEN} символов. Пришли другую")
             return
         await state.update_data(passphrase=phrase)
         await state.set_state(BackupPassphrase.second)

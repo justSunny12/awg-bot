@@ -125,7 +125,7 @@ async def _own_screen_parts(svc, fake_bot):
 
 
 ONLY_HERE = ("Списки применятся только для этого шлюза: для синхронизации нужен канал до сервера "
-             "AWG — перевыпусти конфигурацию шлюза с сервера AWG и примени её здесь")
+             "AWG — перевыпусти конфигурацию шлюза с сервера AWG")
 SYNC_ABOUT = ("свои списки синхронизируются между шлюзами: добавленное или убранное здесь уходит "
               "через сервер AWG на остальные шлюзы — сразу, если они на связи, иначе при подключении")
 
@@ -480,7 +480,7 @@ def test_the_lists_breakage_branch_without_a_name_reads_whole():
     from awgbot.bot.texts.routing import own_lists_line
     line = own_lists_line({"vpn": 1, "ru": 0, "state": "failed",
                            "error": "ошибка записи файла: диск только для чтения"})
-    assert line == ("📋 Свои списки: 1 в туннель, 0 напрямую\n⚠️ Шлюз: ошибка записи файла: "
+    assert line == ("📋 Свои списки: 1 в туннель\n⚠️ Шлюз: ошибка записи файла: "
                     "диск только для чтения"), line
 
 
@@ -577,7 +577,7 @@ async def test_applied_own_lists_are_followed_by_peer_access_without_a_gap(servi
     text, _ = await _card(services, fake_bot, 2)
     lines = text.splitlines()
     i = _lan_on_index(lines)
-    assert lines[i + 1] == "📋 Свои списки: 1 в туннель, 0 напрямую", text
+    assert lines[i + 1] == "📋 Свои списки: 1 в туннель", text
     assert lines[i + 2] == "↔️ Связь подсетей ✅", \
         f"между применёнными списками и связью подсетей лишняя строка:\n{text}"
 

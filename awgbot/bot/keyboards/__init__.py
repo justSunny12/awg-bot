@@ -37,7 +37,7 @@ from .admin import (
     block_notify_kb, to_menu_kb, traffic_profiles_kb, expiring_kb, online_devices_kb,
     traffic_devices_kb, gateway_card_button, to_client_card, migration_back_kb, add_device_addslot, client_state_icon, DEVS_PRESETS, TRAFFIC_PRESETS)
 from .settings import (
-    settings_root, settings_back, settings_server, private_dns_choices,
+    settings_root, settings_back, restart_now_or_later, settings_server, private_dns_choices,
     private_dns_offer_kb, migration_prepare_confirm, migration_generation_pending,
     settings_firewall, ssh_port_finisher, settings_notify, CLIENT_EVENT_LABELS, settings_notify_clients,
     email_poll_label, email_code_label, backup_when_label, UPDATE_SCHEDULE_CYCLE, UPDATE_SCHEDULE_LABELS, EMAIL_POLL_CYCLE, EMAIL_CODE_CYCLE,
@@ -79,7 +79,7 @@ __all__ = [
     "admin_client_device_list", "unassigned_devices", "reassign_targets",
     "reassign_addslot", "traffic_profiles_kb", "expiring_kb",
     "online_devices_kb", "traffic_devices_kb",
-    "settings_root", "settings_back",
+    "settings_root", "settings_back", "restart_now_or_later",
     "settings_server", "private_dns_choices", "private_dns_offer_kb",
     "migration_prepare_confirm", "migration_generation_pending", "settings_firewall", "ssh_port_finisher",
     "settings_notify", "CLIENT_EVENT_LABELS", "settings_notify_clients", "email_poll_label", "email_code_label", "backup_when_label", "UPDATE_SCHEDULE_CYCLE", "UPDATE_SCHEDULE_LABELS", "EMAIL_POLL_CYCLE", "EMAIL_CODE_CYCLE",

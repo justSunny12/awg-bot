@@ -324,7 +324,7 @@ async def test_home_subnets_and_label_inputs(services, slots, fake_bot):
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_label(cb, GwSlotCB(action="label", slot=2), services, st)
     text, _ = _screen(nav)
-    assert text == ("✏️ Подпись Pi2 — место одним-двумя словами: «дача», «офис». До 20 знаков, «—» — убрать")
+    assert text == ("✏️ Подпись Pi2 — место одним-двумя словами: «дача», «офис». До 20 символов, «—» — убрать")
     msg = _amsg(fake_bot, "дача")
     await sh.gateway_label_received(msg, st, services)
     assert services.db.gateway(2).label == "дача"
@@ -393,7 +393,7 @@ async def test_replacing_a_machine_still_asks_first(services, slots, fake_bot):
     _, pi, _ = slots
     _slot1(services, pi)
     text, markup = await sh._screen("rt_gw", services, "1")
-    assert text.startswith("🔁 Заменить машину NASPi? Ключи линка сменятся"), text
+    assert text.startswith("🔁 Заменить устройство NASPi? Ключи линка сменятся"), text
     back = markup.inline_keyboard[-1][0]
     assert back.text == "⬅️ Назад" and back.callback_data == GwSlotCB(action="edit", slot=1).pack()
     cb, nav = _acb(fake_bot)
@@ -433,7 +433,7 @@ async def test_remove_standby_and_active(services, slots, fake_bot, monkeypatch)
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_remove_ask(cb, GwSlotCB(action="remove_ask", slot=2), services)
     text, labels = _screen(nav)
-    assert text == ("🛑 Pi2 — больше не резерв?\nЛинк снимется; трафик идёт через NASPi, резерва не будет. "
+    assert text == ("🛑 Pi2 — больше не резерв?\nЛинк снимется; трафик пойдёт через NASPi, резерва не будет. "
                     "Устройство станет обычным"), text
     assert labels == ["⬅️ Отмена", "🛑 Снять"]
     markup = next(s[2] for s in reversed(nav.sent) if s[0] == "edit_text")
@@ -467,8 +467,7 @@ async def test_remove_standby_and_active(services, slots, fake_bot, monkeypatch)
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_remove_yes(cb, GwSlotCB(action="remove_yes", slot=2), services)
     text, labels = _screen(nav)
-    assert text.startswith("🛑 Pi2 больше не шлюз · РФ-доступ выключен до назначения нового — "
-                           "«🛰 Шлюзы» на главной\n\n"), text
+    assert text.startswith("🛑 Pi2 больше не шлюз · РФ-доступ выключен до назначения нового\n\n"), text
     assert "🛰 Назначить" in labels
 
 
@@ -489,7 +488,7 @@ async def test_bundle_button_and_action_are_per_slot(services, slots, fake_bot):
     assert ("edit_reply_markup", ADMIN) in fake_bot.records or any(s[0] == "edit_reply_markup" for s in nav.sent), \
         "карточка над файлом не погасла"
     docs = [s[1] for s in nav.sent if s[0] == "document"]
-    assert len(docs) == 1 and docs[0].startswith("⚙️ Конфигурация шлюза <b>«Pi2» (дача)</b>."), docs
+    assert len(docs) == 1 and docs[0].startswith("📤 Конфигурация шлюза <b>«Pi2» (дача)</b>."), docs
 
 
 async def test_params_screen_cycles_probe_window_threshold_and_lists(services, slots, fake_bot, monkeypatch):
@@ -530,7 +529,7 @@ async def test_params_screen_cycles_probe_window_threshold_and_lists(services, s
     monkeypatch.setattr(services, "routing_update_lists", lambda force=False: 41200)
     cb, nav = _acb(fake_bot)
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="lists_refresh"), services)
-    assert cb.answers == [("Списки обновлены: 41200 записей", False)], cb.answers
+    assert cb.answers == [("Списки обновлены: 41 200 записей", False)], cb.answers
     assert _screen(nav)[0].startswith("⚙️ Параметры РФ-доступа")
 
 
@@ -598,12 +597,12 @@ async def test_admin_status_line_names_the_active_gateway_and_the_standby(servic
     assert _admin_line(services) == "🇷🇺 РФ-доступ: 🟠 работает (NASPi), резерв не отвечает"
 
     monkeypatch.setattr(services, "routing_link_ok", lambda: False)
-    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🔴 выключен — NASPi, Pi2 не отвечают"
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🔴 недоступен — NASPi, Pi2 не отвечают"
     services._rt_window_reset(2); services.db.set_state("routing_gw_2_up_streak", "3")
-    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🔴 выключен, NASPi не отвечает, резерв жив"
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🔴 недоступен, NASPi не отвечает, резерв жив"
 
     services.db.gateway_delete(2)
-    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🔴 выключен, NASPi не отвечает"
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🔴 недоступен, NASPi не отвечает"
 
 
 async def test_client_status_line_has_two_states_only():
@@ -639,16 +638,16 @@ async def test_lan_mode_needs_a_subnet_then_asks_and_toggles(services, slots, fa
     text, labels = _screen(nav)
     lines = text.split("\n")
     assert lines[0] == "🔀 VPN-транзит на NASPi — включить?", lines
-    assert "⚠️ Шлюз станет точкой отказа: упадёт — сеть без интернета, резерв не поможет" in lines
+    assert "⚠️ Шлюз станет точкой отказа: упадёт — подсеть без интернета, резерв не поможет" in lines
     assert any(l.startswith("⚠️ Свой резолвер не настроен") for l in lines), "без резолвера — предупреждение"
-    assert lines[-1] == "Потребует перевыпустить конфигурацию шлюза и применить её", "канала нет — файлом"
+    assert lines[-1] == "Потребуется перевыпуск конфигурации шлюза", "канала нет — файлом"
     assert labels == ["⬅️ Отмена", "✅ Включить"]
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1), services)
     assert services.db.gateway(1).lan_mode == 1
     text, labels = _screen(nav)
     assert "🗺 192.168.68.0/24 · 🔀 VPN-транзит ✅" in text.split("\n"), text
     assert "✅ VPN-транзит" in labels and "❓ Роутер" in labels
-    assert cb.answers[-1] == ("Включено: перевыпусти конфигурацию шлюза", True), cb.answers
+    assert cb.answers[-1] == ("VPN-транзит включён: перевыпусти конфигурацию шлюза", True), cb.answers
     # выключение — с предупреждением про роутер
     monkeypatch.setattr(services, "gateway_resolver_addr", lambda gw: "10.9.1.1")
     cb, nav = _acb(fake_bot)
@@ -774,7 +773,7 @@ async def test_peer_nets_toggle_has_a_dialog_and_shows_state_in_the_list(service
     text, labels = _screen(nav)
     lines = text.split("\n")
     assert lines[0] == "↔️ Связь подсетей — включить?" and labels == ["⬅️ Отмена", "✅ Включить"]
-    assert "только между шлюзами с «VPN-транзит»" in text and "\\\\имя.awg.internal" in text
+    assert "только между шлюзами с включённым VPN-транзитом" in text and "\\\\имя.awg.internal" in text
     assert lines[-1].startswith("<blockquote") and "avahi-daemon" in lines[-1], "условие avahi — под «подробнее»"
     markup = next(s[2] for s in reversed(nav.sent) if s[0] == "edit_text")
     assert markup.inline_keyboard[0][0].callback_data == GwSlotCB(action="list").pack(), "Отмена — в «Шлюзы»"
@@ -804,7 +803,7 @@ async def test_peer_nets_toggle_has_a_dialog_and_shows_state_in_the_list(service
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_peer_ask(cb, services)
     assert _screen(nav)[0] == ("↔️ Связь подсетей — выключить?\nПодсети шлюзов перестанут видеть друг друга "
-                               "сразу. Потом перевыпусти конфигурацию каждого шлюза")
+                               "сразу. Необходим перевыпуск конфигурации каждого шлюза")
     await sh.gw_slot_peer_yes(cb, services)
     assert store["app.routing.peer_nets.enabled"] is False
     assert cb.answers[-1] == ("Связь подсетей выключена: перевыпусти конфигурацию каждого шлюза", True)
@@ -829,7 +828,7 @@ def _peer_line_state(services, state):
 
 @pytest.mark.parametrize("state, enabled, line", [
     ("off", False, "↔️ Связь подсетей: выключена"),
-    ("no_lan", True, "↔️ Связь подсетей не работает: у Pi2 выключен «VPN-транзит» — без него ответы не "
+    ("no_lan", True, "↔️ Связь подсетей не работает: у Pi2 выключен VPN-транзит — без него ответы не "
                      "найдут дорогу назад"),
     ("no_nets", True, "↔️ Связь подсетей не работает: у Pi2 не заданы подсети — «🗺 Подсети» в карточке шлюза"),
     ("overlap", True, "↔️ Связь подсетей не работает: подсети NASPi и Pi2 пересекаются ({nets}) — "
@@ -949,4 +948,4 @@ async def test_who_has_access_uses_select_all_both_ways(services, slots, fake_bo
     cb, nav = _acb(fake_bot)
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_all"), services)
     assert not services.db.get_client(a.id).routing_allowed and not services.db.get_client(b.id).routing_allowed
-    assert cb.answers[-1][0] == "РФ-доступ снят со всех"
+    assert cb.answers[-1][0] == "РФ-доступ не разрешён никому"

@@ -38,8 +38,7 @@ from .migration import (
     migration_cancel_confirm, migration_hello, migration_ready, migration_orphans_text,
     migration_cancelled, migration_finished, migration_prepare_intro,
     MIGRATION_ASK_PORT, migration_prepared, migration_prepare_failed,
-    migration_generation_pending, migration_needed, migration_promoted,
-    migration_promote_restart_failed)
+    migration_generation_pending, migration_needed, migration_promoted)
 from .routing import (
     gateway_device_card, gateway_claim_marked, gateway_claim_already, ROUTING_NAME,
     SETTINGS_ROUTING_ABSENT, routing_lists_block, GATEWAYS_OFF, GATEWAYS_ABOUT, GATEWAYS_AUTO_OFF,
@@ -160,7 +159,7 @@ __all__ = [
     "migration_cancelled", "migration_finished", "migration_prepare_intro",
     "MIGRATION_ASK_PORT", "migration_prepared", "migration_prepare_failed",
     "migration_generation_pending", "migration_needed", "migration_promoted",
-    "migration_promote_restart_failed", "gateway_device_card", "gateway_claim_marked",
+    "gateway_device_card", "gateway_claim_marked",
     "gateway_claim_already", "ROUTING_NAME", "SETTINGS_ROUTING_ABSENT",
     "routing_lists_block", "channel_block", "drift_lines", "GW_CARD_PAYLOAD", "agent_bot_line", "gateway_bundle_caption", "gateway_plain_bundle_caption", "gateway_installed_text", "gateway_bundle_applied_text",
     "GATEWAY_CHOOSE_INTRO", "GATEWAY_PICK_INTRO",

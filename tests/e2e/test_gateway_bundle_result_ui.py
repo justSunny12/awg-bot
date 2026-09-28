@@ -173,7 +173,7 @@ async def test_the_file_caption_says_where_to_forward_and_that_menu_removes_it(s
     _slot1(services, pi); _slot2(services, pi2)
     services.db.gateway_update(2, label="дом 2")
     _nav, (caption, _m, _doc) = await _issue(services, _Bot(), 2)
-    assert caption == ("⚙️ Конфигурация шлюза <b>«Pi2» (дом 2)</b>.\n"
+    assert caption == ("📤 Конфигурация шлюза <b>«Pi2» (дом 2)</b>.\n"
                        "Перешли это сообщение боту шлюза — он проверит и применит сам.\n"
                        "Результат применения конфигурации сообщит бот шлюза.\n\n"
                        "ℹ️ Возврат в меню удалит это сообщение"), caption

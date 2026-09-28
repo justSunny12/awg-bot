@@ -35,6 +35,16 @@ def settings_root() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def restart_now_or_later() -> InlineKeyboardMarkup:
+    """Под итогом развёртывания обвязки и подъёма интерфейса переезда: бот
+    читает их при старте — перезапуск сейчас или позже (⚙️ → 🔧 Сервис)."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔁 Перезапустить сейчас", callback_data=SetCB(sec="svc", act="do", key="bot!"))
+    kb.button(text="⬅️ Позже", callback_data=Menu(action="main"))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
 def settings_back(sec_to: str = "root") -> InlineKeyboardMarkup:
     """Одна кнопка «Назад» — для экранов-отбивок внутри настроек."""
     kb = InlineKeyboardBuilder()
@@ -231,7 +241,7 @@ def email_poll_label(seconds: int) -> str:
 
 def email_code_label(n: int) -> str:
     n = int(n)
-    word = "знака" if n in (2, 3, 4) else "знаков"
+    word = "символа" if n in (2, 3, 4) else "символов"
     return f"🔢 Код: {n} {word}"
 
 
@@ -323,10 +333,6 @@ def settings_mon() -> InlineKeyboardMarkup:
 
 # ── 💾 Бэкапы ────────────────────────────────────────────────────────────────
 
-def _enc_label(enabled: bool) -> str:
-    return "🔐 Шифрование: " + ("✅ включено" if enabled else "🔴 выключено")
-
-
 def _day_label(day: int) -> str:
     """«1-е», «2-е», «3-е», «7-е» — число месяца с окончанием."""
     d = int(day)
@@ -334,7 +340,7 @@ def _day_label(day: int) -> str:
 
 
 def backup_when_label(day: int, hour: int) -> str:
-    return f"📆 {_day_label(day)}, {int(hour):02d}:00"
+    return f"✏️ {_day_label(day)}, {int(hour):02d}:00"
 
 
 def settings_backup(encryption: bool = False) -> InlineKeyboardMarkup:

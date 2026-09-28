@@ -38,18 +38,20 @@ async def test_section_offers_provisioning_before_anything_exists(services, fake
 
 async def test_provisioned_but_asleep_says_how_to_wake_and_offers_only_the_exit(services, monkeypatch):
     """Обвязка есть, но интерфейс линка читается при старте — до перезапуска
-    функция спит: экран говорит, где перезапустить, и не предлагает кнопок,
-    которые ничего не сделают."""
+    функция спит: экран предлагает перезапустить сейчас или позже и не
+    предлагает кнопок, которые ничего не сделают."""
     monkeypatch.setattr(config, "ROUTING_ENABLED", False)
     monkeypatch.setattr(services, "routing_provisioned", lambda: True)
     text, markup = await sh._screen("rt", services)
-    assert text == "🇷🇺 Обвязка развёрнута, функция ждёт перезапуска бота: ⚙️ → 🔧 Сервис → 🔁 Перезапуск бота"
-    assert [[b.text for b in row] for row in markup.inline_keyboard] == [["⬅️ В меню"]]
+    assert text == "🇷🇺 Обвязка развёрнута, функция ждёт перезапуска бота"
+    assert [[b.text for b in row] for row in markup.inline_keyboard] == [["🔁 Перезапустить сейчас"], ["⬅️ Позже"]]
+    assert SetCB.unpack(markup.inline_keyboard[0][0].callback_data) == SetCB(sec="svc", act="do", key="bot!")
 
 
-async def test_provisioning_restarts_the_bot_after_success(services, fake_bot, monkeypatch):
+async def test_provisioning_offers_a_restart_after_success(services, fake_bot, monkeypatch):
     """Интерфейс линка читается при старте: без перезапуска функция осталась бы
-    спящей, а раздел — тем же экраном «не развёрнута»."""
+    спящей — итог предлагает перезапустить сейчас или позже, сам бот не
+    перезапускается (момент выбирает человек)."""
     calls = []
     monkeypatch.setattr(services, "routing_provision", lambda: calls.append("go") or "хвост вывода")
     monkeypatch.setattr(services, "set_restart_wait", lambda c, m: calls.append("wait"))
@@ -60,11 +62,12 @@ async def test_provisioning_restarts_the_bot_after_success(services, fake_bot, m
     assert _first_matching_handler(sh.router, SetCB(sec="rt", act="do", key="provision")) == "routing_action"
     cb, nav = _acb(fake_bot)
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="provision"), services)
-    assert calls == ["go", "wait", "restart"]
+    assert calls == ["go"], "перезапуск — только по кнопке"
     assert cb.answers == [("Разворачиваю…", False)], "ответ на колбэк — ровно один"
-    done = [s[1] for s in nav.sent if s[0] == "answer"]
-    assert done and done[-1].startswith("✅ Обвязка развёрнута")
-    assert "назначь шлюз: «🛰 Шлюзы» на главной" in done[-1], "следующий шаг и где его искать названы"
+    done = [s for s in nav.sent if s[0] == "answer"]
+    assert done and done[-1][1].startswith("✅ Обвязка развёрнута")
+    assert "назначь шлюз — «🛰 Шлюзы» на главной" in done[-1][1], "следующий шаг и где его искать названы"
+    assert [[b.text for b in row] for row in done[-1][2].inline_keyboard] == [["🔁 Перезапустить сейчас"], ["⬅️ Позже"]]
 
 
 async def test_provisioning_failure_shows_the_reason_and_does_not_restart(services, fake_bot, monkeypatch):

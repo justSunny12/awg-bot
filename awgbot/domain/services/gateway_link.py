@@ -83,7 +83,7 @@ class GatewayLinkMixin:
             notes.append(Notification(
                 config.ADMIN_ID,
                 f"🛰 {self._gw_link(g)}: порт линка изменён на {port} (был {g.link_port}) — "
-                f"шлюз не знает. {self._gw_reissue_link(g)} конфигурацию и примени её на той стороне, "
+                f"шлюз не знает. {self._gw_reissue_link(g)} конфигурацию шлюза, "
                 "иначе линк не поднимется", action=("gwcfg", int(g.id))))
         if changed:
             self._gw_firewall_refresh()
@@ -472,7 +472,7 @@ class GatewayLinkMixin:
             return {"status": "already", "device": dev, "gateway": mine}
         if slot is not None and slot.device_id != dev.id:
             raise ServiceError(f"в слоте этого линка уже назначен {self._gw_display(slot)}. "
-                               "Заменить устройство можно в карточке шлюза (🔁 Заменить устройство)")
+                               "Заменить устройство можно в карточке шлюза: «✏️ Изменить» → «🔁 Заменить»")
         if slot is None:
             # слотов нет вовсе (линк поднят обвязкой, шлюз ещё не назначали):
             # заводим первый слот на этом устройстве, ключи линка уже общие
@@ -997,7 +997,7 @@ class GatewayLinkMixin:
         return True, Notification(
             config.ADMIN_ID,
             f"🛰 {self._gw_link(g)}: конфигурация неактуальна — {what}. "
-            f"{self._gw_reissue_link(g)} и примени на шлюзе", action=("gwcfg", int(g.id)))
+            f"{self._gw_reissue_link(g)} конфигурацию шлюза", action=("gwcfg", int(g.id)))
 
     def gw_bundle_drift_notes(self) -> list[Notification]:
         """Напоминания о перевыпуске конфигурации шлюзов. Есть снимок канала —
@@ -1033,7 +1033,7 @@ class GatewayLinkMixin:
                 config.ADMIN_ID,
                 f"🛰 {self._gw_link(g)}: список твоих устройств изменился, а файервол шлюза "
                 "не в курсе — новые устройства не достанут до шлюза и его локальной сети "
-                f"через туннель. {self._gw_reissue_link(g, 'Перевыпусти конфигурацию')} и примени её на той стороне",
+                f"через туннель. {self._gw_reissue_link(g, 'Перевыпусти конфигурацию шлюза')}",
                 action=("gwcfg", int(g.id))))
         # прочие зависимости: режим без VPN, подсети, резолвер — своим текстом
         for g in self.db.gateways():
@@ -1050,7 +1050,7 @@ class GatewayLinkMixin:
             notes.append(Notification(
                 config.ADMIN_ID,
                 f"🛰 {self._gw_link(g)}: конфигурация неактуальна — изменились {what}. "
-                f"{self._gw_reissue_link(g)} и примени на шлюзе", action=("gwcfg", int(g.id))))
+                f"{self._gw_reissue_link(g)} конфигурацию шлюза", action=("gwcfg", int(g.id))))
         return notes
 
     # Маркер контракта как ОТДЕЛЬНАЯ СТРОКА. Тот же текст встречается в бандле и

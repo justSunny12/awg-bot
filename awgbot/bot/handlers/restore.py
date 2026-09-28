@@ -50,7 +50,7 @@ async def run_restore(cb: CallbackQuery, services, state) -> None:
     raw = data.get("restore_plain")
     await state.clear()
     if not raw:
-        await cb.answer("Файла в памяти нет — пришли его заново.", show_alert=True)
+        await cb.answer("Файла в памяти нет — пришли его заново", show_alert=True)
         return
     await cb.answer()
     path = await call(services.prepare_restore, base64.b64decode(raw))

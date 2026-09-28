@@ -113,7 +113,7 @@ async def test_address_list_prompt_shows_the_current_entries(services, fake_bot,
     await sh.edit_value(cb, SetCB(sec="fw", act="edit", key="app.firewall.ssh_allow"), FakeState(), services)
     text, _ = _last_edit(nav)
     first = text.split("\n")[0]
-    assert first == ("✏️ Адреса для SSH · сейчас 203.0.113.1, 203.0.113.2, 203.0.113.3, 203.0.113.4, "
+    assert first == ("➕ Адреса для SSH-доступа · сейчас 203.0.113.1, 203.0.113.2, 203.0.113.3, 203.0.113.4, "
                      "203.0.113.5 и ещё 2"), first
     assert "[" not in text and "'" not in text
 
@@ -132,7 +132,7 @@ async def test_email_section_puts_state_in_the_head_and_servers_in_one_line(serv
     assert lines[2] == "🆘 Аварийный выход из паузы: код на box@icloud.com", lines
     assert _rows(markup) == [["🔍 Проверить", "📨 Тест-письмо"], ["✏️ Сменить ящик", "🗑 Отключить"],
                              ["✅ Аварийный выход"], ["✉️ Адрес для кода", "⏱ Опрос: 1 мин"],
-                             ["🔢 Код: 8 знаков"], ["⬅️ Назад"]], _rows(markup)
+                             ["🔢 Код: 8 символов"], ["⬅️ Назад"]], _rows(markup)
     store["email.resume_enabled"] = False
     text, markup = await sh._screen("email", services)
     assert text.split("\n")[2] == "🆘 Аварийный выход из паузы выключен"
@@ -231,7 +231,7 @@ async def test_check_and_test_mail_put_the_result_on_top_of_the_section(services
 
 @pytest.mark.parametrize("key, start, seq, label, toast", [
     ("email.poll_interval_sec", 60, [300, 900, 60], "⏱ Опрос: {m} мин", "Опрос: {m} мин"),
-    ("email.resume_code_len", 8, [12, 6, 8], "🔢 Код: {v} знаков", "Код: {v} знаков"),
+    ("email.resume_code_len", 8, [12, 6, 8], "🔢 Код: {v} символов", "Код: {v} символов"),
 ])
 async def test_email_cycles_go_round_and_write_the_value(services, fake_bot, store, key, start, seq, label, toast):
     """Опрос 1 → 5 → 15 мин и длина кода 6 → 8 → 12 — по кругу; значение
@@ -274,7 +274,7 @@ async def test_backup_section_lines_and_rows(services, fake_bot, store):
     text, markup = await sh._screen("backup", services)
     assert text == ("💾 Бэкапы · ✅ вкл · 🔓 без шифрования\nКаждое 1-е число в 12:00 → в этот чат\n"
                     "Восстановить — пришли боту файл бэкапа (.tgz.enc)"), text
-    assert _rows(markup) == [["✅ Автобэкапы", "🔐 Шифрование"], ["📨 Куда: Telegram", "📆 1-е, 12:00"],
+    assert _rows(markup) == [["✅ Автобэкапы", "🔐 Шифрование"], ["📨 Куда: Telegram", "✏️ 1-е, 12:00"],
                              ["💾 Сделать сейчас"], ["⬅️ Назад"]]
     store["app.scheduler.backup_enabled"] = False
     text, _ = await sh._screen("backup", services)
@@ -307,7 +307,7 @@ async def test_backup_channel_cycle_checks_mailbox_and_encryption(services, fake
 
 
 async def test_backup_day_and_hour_in_one_input(services, fake_bot, store):
-    """«📆 1-е, 12:00» → одно приглашение «день и час»; «5 9» — день и час
+    """«✏️ 1-е, 12:00» → одно приглашение «день и час»; «5 9» — день и час
     записаны, итог первой строкой раздела, расписание и кнопка — новые."""
     store["app.scheduler.backup_day"], store["app.scheduler.backup_hour"] = 1, 12
     _, markup = await sh._screen("backup", services)
@@ -316,7 +316,7 @@ async def test_backup_day_and_hour_in_one_input(services, fake_bot, store):
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await sh.edit_value(cb, SetCB.unpack(when.callback_data), st, services)
-    assert _last_edit(nav)[0] == ("✏️ День и час автобэкапа · сейчас 1-е, 12:00 · пришли два числа: "
+    assert _last_edit(nav)[0] == ("✏️ День и час автобэкапа · сейчас 1-го в 12:00 · пришли два числа: "
                                   "<code>1 12</code>")
     msg = _msg(fake_bot, "5 9")
     await sh.receive_value(msg, st, services)
@@ -326,7 +326,7 @@ async def test_backup_day_and_hour_in_one_input(services, fake_bot, store):
     lines = answers[0][1].split("\n")
     assert lines[0] == "✅ Автобэкап: 1-е, 12:00 → 5-е, 09:00", lines
     assert "Каждое 5-е число в 09:00 → в этот чат" in lines
-    assert "📆 5-е, 09:00" in [b for r in _rows(answers[0][2]) for b in r]
+    assert "✏️ 5-е, 09:00" in [b for r in _rows(answers[0][2]) for b in r]
     assert await st.get_state() is None
 
 
@@ -482,16 +482,16 @@ async def test_never_from_an_old_config_becomes_month_and_mute_at_startup(servic
 
 async def test_a_huge_changelog_is_cut_with_a_link_to_the_full_journal(services, fake_bot, upd):
     """Список изменений не влез в сообщение — обрезан по строке, хвост —
-    ссылка на журнал на GitHub, а не тупик «(изменения обрезаны)»; раздел
-    целиком в лимите Telegram."""
+    ссылка на страницу релиза на GitHub (не на журнал целиком и не на diff),
+    а не тупик «(изменения обрезаны)»; раздел целиком в лимите Telegram."""
     upd["next"] = _release("v3.3.1", body="\n".join(f"- пункт номер {i} с подробным текстом" for i in range(600)),
                            skipped=[_release("v3.3.0", body="x" * 300, title="Т" * 200)])
     text, _ = await sh._screen("upd", services)
     assert len(text) <= 4096, len(text)
     assert text.count("<blockquote") == 1 and text.endswith(
-        f'…\n<a href="{texts.CHANGELOG_URL}">Весь список изменений — на GitHub</a></blockquote>'), text[-200:]
+        f'…\n<a href="{texts.release_url("v3.3.1")}">Весь список изменений — на GitHub</a></blockquote>'), text[-200:]
     assert "обрезаны" not in text
-    assert "Т" * 59 + "…" in text and "Т" * 60 not in text, "заголовок пропущенной ступени не обрезан до 60"
+    assert "v3.3.0" not in text and "Вместе с ней" not in text, "пропущенные версии не перечисляются"
     upd["next"] = _release("v3.3.1", body="- один пункт")
     text, _ = await sh._screen("upd", services)
     assert "GitHub" not in text, "влезло — ссылки на журнал не нужно"
@@ -524,7 +524,7 @@ async def test_notify_subs_and_monitoring_texts_follow_the_values(services, fake
                   "pause.monthly_pause_days": 2})
     text, markup = await sh._screen("subs", services)
     assert text.split("\n")[:3] == ["💳 Подписки — правила для всех", "Бонус 50 ГБ при исчерпании · отсрочка 7 дн.",
-                                    "пауза: год +28 (до 56), месяц +2 (до 24)"], text
+                                    "Пауза: год +28 (до 56), месяц +2 (до 24)"], text
     assert _rows(markup) == [["📈 Бонус: 50 ГБ", "🙏 Отсрочка: 7 дн."], ["⏸️ Год: 28 дн.", "⏸️ Месяц: 2 дн."],
                              ["⬅️ Назад"]]
     store.update({"app.scheduler.monitor_minutes": 3, "app.monitoring.alert_streak": 5,

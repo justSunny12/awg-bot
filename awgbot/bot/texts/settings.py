@@ -60,7 +60,7 @@ def settings_subs_text() -> str:
     return "\n".join([
         "💳 Подписки — правила для всех",
         f"Бонус {bonus} ГБ при исчерпании · отсрочка {grace} дн.",
-        f"пауза: год +{year} (до {2 * year}), месяц +{month} (до {12 * month})",
+        f"Пауза: год +{year} (до {2 * year}), месяц +{month} (до {12 * month})",
         details("Действуют с момента правки и на уже выданные подписки тоже.\n"
                 "• Бонус — сколько трафика добавляется профилю разово, когда он упёрся в лимит.\n"
                 "• Отсрочка — сколько дней после окончания подписки профиль ещё работает: "
@@ -246,11 +246,11 @@ BACKUP_NEEDS_ENCRYPTION = backup_needs_encryption()
 def backup_encryption_text(mode: str, gateway: bool = False) -> str:
     """Экран «Шифрование»: состояние и правила. gateway — «вне шлюза»."""
     if mode == "passphrase":
-        state = "✅ фраза задана"
+        state = "🔐 фраза задана"
     elif mode == "key":
-        state = "✅ случайный ключ (перенесён из env)"
+        state = "🔐 случайный ключ (перенесён из env)"
     else:
-        state = "🔴 выключено — копии уходят открытыми и по почте не отправляются"
+        state = "🔓 выключено — копии уходят открытыми и по почте не отправляются"
     return (f"🔐 Шифрование бэкапов · {state}\n"
             f"Фразу знаешь только ты — храни вне {'шлюза' if gateway else 'сервера'}, без неё бэкап не открыть"
             + details("Бот принимает фразу сообщением, тут же удаляет и никогда не показывает обратно. "
@@ -258,11 +258,11 @@ def backup_encryption_text(mode: str, gateway: bool = False) -> str:
                       "выбрасывай её, пока они нужны"))
 
 
-BACKUP_ASK_PASSPHRASE = "🔐 Парольная фраза — не короче 8 знаков; сообщение удалю сразу после приёма"
+BACKUP_ASK_PASSPHRASE = "🔐 Парольная фраза — не короче 8 символов; сообщение удалю сразу после приёма"
 BACKUP_ASK_PASSPHRASE_AGAIN = "Повтори фразу ещё раз — так исключим опечатку"
 BACKUP_PASSPHRASE_MISMATCH = "⚠️ Фразы не совпали — начнём заново: пришли фразу"
 BACKUP_PASSPHRASE_SET = "✅ Фраза задана — следующие копии уйдут шифрованными"
-BACKUP_WHEN_PROMPT = "✏️ День и час автобэкапа · сейчас {day}-е, {hour:02d}:00 · пришли два числа: <code>1 12</code>"
+BACKUP_WHEN_PROMPT = "✏️ День и час автобэкапа · сейчас {day}-го в {hour:02d}:00 · пришли два числа: <code>1 12</code>"
 BACKUP_WHEN_BAD = "⚠️ Нужны два числа: день месяца 1–28 и час 0–23, например <code>1 12</code>"
 
 
@@ -279,7 +279,7 @@ SVC_AWG_RESTARTED = "✅ AWG перезапущен"
 
 def settings_svc_text(state: str, progress=None, available: bool = False) -> str:
     """«🔧 Сервис»: цена перезапусков одной строкой; переезд — только когда идёт."""
-    lines = ["🔧 Сервис", "Перезапуск AWG рвёт соединения на секунды, перезапуск бота — нет"]
+    lines = ["🔧 Сервис", "Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей"]
     if state:
         p = progress
         nums = (f" {p.clients_done}/{p.clients_total} профилей, {p.devices_done}/{p.devices_total} устройств"
@@ -295,22 +295,19 @@ SETTINGS_SVC = "🔧 Сервис"
 
 def settings_upd_text(installed: str | None = None, target=None, blocked: str = "",
                       scan_failed: bool = False) -> str:
-    """«⬆️ Обновления · v3.1.0 · 🟢 актуальна» или цель обновления с
-    пропущенными ступенями и списком изменений под «подробнее»; блок —
-    строкой «⛔ … недоступно: …»."""
+    """«⬆️ Обновления · v3.1.0 · 🟢 актуальна» или цель обновления со
+    списком изменений под «подробнее»; блок — строкой «⛔ … недоступно: …»."""
     from awgbot.core import config
-    from .updates import _skipped_block, changelog_details
+    from .updates import changelog_details
     cur = _ver(installed if installed is not None else config.INSTALLED_VERSION)
     if target is None:
         return f"⬆️ Обновления · {_e(cur)} · " + ("⚪ проверка не удалась" if scan_failed else "🟢 актуальна")
     lines = [f"⬆️ Обновления · {_e(cur)} → {_e(_ver(target.tag))}"]
-    skipped = _skipped_block(target.tag, getattr(target, "skipped", ()))
-    if skipped:
-        lines.append(skipped.rstrip("\n"))
     if blocked:
         lines.append(f"⛔ Обновление до {_e(_ver(target.tag))} сейчас недоступно: {_e(blocked)}")
     header = "\n".join(lines) + "\n"
-    body = changelog_details(getattr(target, "body", "") or "", header=header)   # бюджет — от настоящей шапки
+    body = changelog_details(getattr(target, "body", "") or "", header=header,   # бюджет — от настоящей шапки
+                             tag=str(target.tag))
     if body:
         lines.append(body)
     return "\n".join(lines)
@@ -333,7 +330,7 @@ SETTINGS_BOUNDS = {
     "app.monitoring.alert_streak": (1, 100, "Замеров до алерта", ""),
     "app.monitoring.service_failure_alert_minutes": (1, 1440, "Порог простоя", "мин"),
     "email.poll_interval_sec": (60, 3600, "Опрос почты", "с"),
-    "email.resume_code_len": (6, 16, "Длина кода", "знаков"),
+    "email.resume_code_len": (6, 16, "Длина кода", "символов"),
     "app.scheduler.backup_day": (1, 28, "День автобэкапа", ""),
     "app.scheduler.backup_hour": (0, 23, "Час автобэкапа", "ч"),
     # агент шлюза
@@ -353,7 +350,7 @@ SETTINGS_TEXT = {
     "app.network.server_host": ("Домен", "домен или IP — попадёт в новые ссылки"),
     "app.client_config.server_name": ("Имя сервера", "видно клиенту в приложении"),
     "app.client_config.dns1": ("DNS клиентов", "один или два адреса через запятую"),
-    "app.firewall.ssh_allow": ("Адреса для SSH", "IP, подсеть или имя DynDNS; можно несколько"),
+    "app.firewall.ssh_allow": ("Адреса для SSH-доступа", "IP, подсеть или имя DynDNS; можно несколько"),
 }
 
 
@@ -395,15 +392,15 @@ PRIVATE_DNS_WHAT = (
 def private_dns_offer(target: str) -> str:
     """Экран решения (и инфобокс при старте): что даёт и как перейти."""
     return (f"🔒 Свой DNS-резолвер · сейчас публичный\n"
-            f"Свой — {_e(target)}: РФ-доступ у всех, запросы не уходят третьим лицам, защита от "
-            "обхода через DoH. Цена — переезд профилей"
+            f"Свой — {_e(target)}: меньшие задержки, запросы не уходят третьим лицам, защита от "
+            "обхода через DoH. Цена — переезд профилей при включении"
             + details(PRIVATE_DNS_WHAT))
 
 
 PRIVATE_DNS_LATER = ("⏳ Следующий переезд профилей — ручной или при смене поколения ядра — "
-                     "перевыпустит конфиги уже со своим резолвером. Передумать можно в «🖥 Сервер AWG»")
-PRIVATE_DNS_DISMISSED = ("Оставляю публичный DNS. Кнопка «🔒 Свой резолвер» в «🖥 Сервер AWG» "
-                         "остаётся — передумать можно в любой момент")
+                     "перевыпустит конфиги уже со своим резолвером. Отменить правки можно в «🖥 Сервер AWG»")
+PRIVATE_DNS_DISMISSED = ("Оставляю публичный DNS. Кнопка «🔒 Свой резолвер» остаётся — передумать "
+                         "можно в любой момент")
 
 
 def settings_server_text(d: dict) -> str:
@@ -416,7 +413,7 @@ def settings_server_text(d: dict) -> str:
     lines = [
         f"🖥 Сервер AWG · ядро {kernel}{gen}",
         (f"{_e(host)} · имя сервера: «{_e(d['name'])}»" if _looks_like_domain(host)
-         else f"домена нет, в ссылках IP {_e(host)} · имя сервера: «{_e(d['name'])}»"),
+         else f"Домена нет, в ссылках IP {_e(host)} · имя сервера: «{_e(d['name'])}»"),
         f"DNS {_e(d['dns'])}{dns_note} · MTU {d['mtu']} · keepalive {_e(str(d['keepalive']))}",
         f"{_e(d['iface'])} · порт {d['port']} · {_e(d['subnet'])}",
     ]
@@ -429,9 +426,9 @@ def settings_server_text(d: dict) -> str:
     if blocked:
         warns.append(f"🚚 Сменить порт или подсеть сейчас нельзя: {_e(blocked)}")
     lines += warns
-    lines.append(details("Правки уходят только в новые ссылки: выданные конфиги несут то, с чем их "
-                         "выдали. Порт и подсеть меняются переездом: у устройств появляются двойники, "
-                         "люди переносят конфиги, когда им удобно"))
+    lines.append(details("Правки уходят только в новые ссылки: старые несут те параметры, с которыми "
+                         "их выдали. Порт и подсеть меняются переездом: у устройств появляются двойники, "
+                         "пользователи перевыпускают конфиги, когда им удобно"))
     return "\n".join(lines)
 
 
@@ -449,8 +446,8 @@ def address_list_line(n: int, tail: str = "") -> str:
     """Список адресов в инфобокс не выносится — он редактируется кнопками
     под ним; здесь только число и отсылка."""
     if not n:
-        return "Адреса для входа снаружи (фильтр): не заданы" + tail
-    return (f"Адреса для входа снаружи (фильтр): {n} "
+        return "Адреса для SSH-доступа (фильтр): не заданы" + tail
+    return (f"Адреса для SSH-доступа (фильтр): {n} "
             + plural_ru(n, "адрес", "адреса", "адресов") + " — редактируемый список ниже")
 
 
@@ -520,9 +517,9 @@ def ssh_owner_refusal(st: dict, listening: int | None, place: str = "серве�
 
 def ssh_port_ask(current: int | None = None, gateway: bool = False) -> str:
     cur = f" · сейчас {current}" if current else ""
-    tail = " Проброс на роутере поправь сам" if gateway else ""
+    tail = ". Проброс на роутере поправь сам" if gateway else ""
     return (f"🅿️ Порт SSH{cur} · 1–65535. Занятый порт не возьму; текущие сеансы не рвутся — "
-            f"проверь вход новым подключением.{tail}")
+            f"проверь вход новым подключением{tail}")
 
 
 SSH_PORT_ASK = ssh_port_ask()
@@ -564,11 +561,19 @@ def settings_prompt(key: str, current=None) -> str:
         else:
             shown = str(current) if current not in (None, "", []) else ""
         cur = f" · сейчас {_e(shown)}" if shown else ""
-        return f"✏️ {_e(label)}{cur}\n{_e(hint)}"
+        icon = "➕" if key == "app.firewall.ssh_allow" else "✏️"      # эмодзи кнопки «➕ Адрес»
+        return f"{icon} {_e(label)}{cur}\n{_e(hint)}"
     lo, hi, label, unit = SETTINGS_BOUNDS[key]
-    u = f" {unit}" if unit else ""
+    u = unit_suffix(unit)
     cur = f" · сейчас {current}{u}" if current is not None else ""
     return f"✏️ {_e(label)}{cur} · {lo}–{hi}"
+
+
+def unit_suffix(unit: str) -> str:
+    """Единица после числа: «%» вплотную, остальные через пробел."""
+    if not unit:
+        return ""
+    return unit if unit == "%" else f" {unit}"
 
 
 def settings_changed(key: str, old, new) -> str:
@@ -577,30 +582,29 @@ def settings_changed(key: str, old, new) -> str:
         label, unit = SETTINGS_TEXT[key][0], ""
     else:
         _lo, _hi, label, unit = SETTINGS_BOUNDS[key]
-        unit = f" {unit}" if unit else ""
+        unit = unit_suffix(unit)
     old_s = _e(str(old)) if old not in (None, "", []) else "—"
     return f"✅ {_e(label)}: {old_s} → {_e(str(new))}{unit}"
 
 
 def settings_ssh_allow_added(entries: list) -> str:
     # адреса — моноширинным: жирный адрес Telegram превращает в ссылку
-    return ("✅ Адреса для SSH: добавлено "
+    return ("✅ Адреса для SSH-доступа: добавлено "
             + ", ".join(f"<code>{_e(x)}</code>" for x in entries))
 
 
 def settings_bad_value(key: str) -> str:
     lo, hi, _label, unit = SETTINGS_BOUNDS[key]
-    u = f" {unit}" if unit else ""
-    return f"⚠️ Нужно целое число {lo}–{hi}{u}"
+    return f"⚠️ Нужно целое число {lo}–{hi}{unit_suffix(unit)}"
 
 
 def cycle_toast(key: str, value) -> str:
-    """Всплывашка после кнопки-цикла: «Опрос: 5 мин», «Код: 12 знаков»,
+    """Всплывашка после кнопки-цикла: «Опрос: 5 мин», «Код: 12 символов»,
     «Проверка: неделя», «Куда: E-mail»."""
     if key == "email.poll_interval_sec":
         return f"Опрос: {int(value) // 60} мин"
     if key == "email.resume_code_len":
-        return f"Код: {value} знаков"
+        return f"Код: {value} символов"
     if key == "updates.poll_schedule":
         from awgbot.bot.keyboards.settings import UPDATE_SCHEDULE_LABELS
         return f"Проверка: {UPDATE_SCHEDULE_LABELS.get(str(value), value)}"

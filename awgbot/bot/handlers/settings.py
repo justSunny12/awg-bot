@@ -125,11 +125,11 @@ async def _screen(sec: str, services, key: str = ""):
         if slot:
             st = next((x for x in states if x["gateway"].id == slot), None)
             if st is None:
-                return "Такого слота шлюза нет.", kb.settings_back("rt")
+                return "Такого слота шлюза нет", kb.settings_back("rt")
             return texts.gateway_replace_intro(st), kb.gateway_choose_kind(bool(cands), slot)
         if states:
             if len(states) >= config.ROUTING_GATEWAYS_MAX:
-                return "Слоты шлюзов заняты: убери один, чтобы добавить другой.", kb.settings_back("rt")
+                return "Слоты шлюзов заняты: убери один, чтобы добавить другой", kb.settings_back("rt")
             return texts.GATEWAY_STANDBY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands), 0)
         return texts.GATEWAY_CHOOSE_INTRO, kb.gateway_choose_kind(bool(cands), 0)
     if sec in ("rt_lists", "rt_users", "rt_mon", "rt_params"):
@@ -388,7 +388,11 @@ async def gateway_new_ask(cb: CallbackQuery, callback_data: GwMarkCB, services, 
         await gateway_new_yes(cb, callback_data, services, state)
         return
     await cb.answer()
-    await edit(cb, texts.gateway_new_ask(slot), kb.gateway_new_confirm(slot))
+    st = next((s for s in await call(services.gateway_states) if s["gateway"].id == slot), None)
+    prev = st.get("device") if st else None
+    await edit(cb, texts.gateway_new_ask(slot, prev_name=prev.name if prev else "",
+                                         active=bool(st and st.get("active"))),
+               kb.gateway_new_confirm(slot))
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "new_yes"))
@@ -680,12 +684,12 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
         return
     await _render_card(cb, services, callback_data.slot)
     online = bool((st.get("channel") or {}).get("online"))
-    tail = "шлюз применит сам по каналу" if online else "перевыпусти конфигурацию шлюза"
+    tail = "применится автоматически по управляющему каналу" if online else "перевыпусти конфигурацию шлюза"
     if online and await call(services.peer_nets_enabled):
         # режим доедет каналом, а подсети соседей меняются у обоих шлюзов и
         # живут в конфиге линка — это только файлом
-        tail += "; для связи подсетей перевыпусти конфигурации шлюзов"
-    await cb.answer(("Включено: " if on else "Выключено: ") + tail, show_alert=True)
+        tail += "; для связи подсетей перевыпусти конфигурацию каждого шлюза"
+    await cb.answer(("VPN-транзит включён: " if on else "VPN-транзит выключен: ") + tail, show_alert=True)
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "router"))
@@ -705,7 +709,7 @@ async def gw_slot_router(cb: CallbackQuery, callback_data: GwSlotCB, services):
 
 @router.callback_query(GwSlotCB.filter(F.action == "bundle"))
 async def gw_slot_bundle(cb: CallbackQuery, callback_data: GwSlotCB, services):
-    """«⚙️ Конфигурация шлюза» в карточке: файл сразу, без экрана «что
+    """«📤 Конфигурация» в карточке: файл сразу, без экрана «что
     произойдёт». Карточка гаснет и помечается как контент: живым остаётся
     «В меню» на файле, а «В меню» и итог применения с шлюза уберут её вместе
     с файлом (send_gw_bundle запоминает обе)."""
@@ -954,7 +958,8 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         n = await call(services.routing_update_lists, True)
         await _render(cb, "rt_params", services)
         from awgbot.bot.texts.fmt import plural_ru
-        await cb.answer(f"Списки обновлены: {n} {plural_ru(int(n), 'запись', 'записи', 'записей')}")
+        await cb.answer(f"Списки обновлены: {int(n):,} ".replace(",", " ")
+                        + plural_ru(int(n), 'запись', 'записи', 'записей'))
         return
     if callback_data.key == "off!":
         # подтверждённое выключение фичи целиком (см. toggle)
@@ -1011,10 +1016,10 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
             if bool(c.routing_allowed) != target:
                 await send_notifications(cb.bot, await call(services.set_routing_allowed, c.id, target))
         await _render(cb, "rt_users", services)
-        await cb.answer("РФ-доступ " + ("разрешён всем" if target else "снят со всех"))
+        await cb.answer("РФ-доступ " + ("разрешён всем" if target else "не разрешён никому"))
         return
     if callback_data.key != "allow":
-        await cb.answer("Действие недоступно.", show_alert=True)
+        await cb.answer("Действие недоступно", show_alert=True)
         return
     client = await call(services.db.get_client, int(callback_data.val or 0))
     if client is None:
@@ -1057,7 +1062,7 @@ async def private_dns_action(cb: CallbackQuery, callback_data: SetCB, services, 
         await edit(cb, texts.PRIVATE_DNS_DISMISSED, kb.settings_back("srv"))
         await cb.answer()
         return
-    await cb.answer("Действие недоступно.", show_alert=True)
+    await cb.answer("Действие недоступно", show_alert=True)
 
 
 # ── ввод порта для переезда ──────────────────────────────────────────────────
@@ -1093,7 +1098,7 @@ async def ssh_port_received(message: Message, state: FSMContext, services):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not raw.isdigit() or not 1 <= int(raw) <= 65535:
-        await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535. Попробуй ещё раз.")
+        await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535, попробуй ещё раз")
         return
     port = int(raw)
     if port == int((await call(services.firewall_screen)).get("ssh_port") or 0):
@@ -1160,20 +1165,16 @@ async def _migration_prepare(cb: CallbackQuery, services, want_port: str = "") -
     интерфейса читается при старте, без рестарта рычаг не появится."""
     await cb.answer("Поднимаю интерфейс…")
     await edit(cb, "🚚 Поднимаю второй интерфейс: ключи, порт, обфускация, "
-                   "автозагрузка. Это несколько секунд.", None)
+                   "автозагрузка. Это несколько секунд", None)
     try:
         res = await call(services.migration_prepare,
                          int(want_port) if str(want_port).isdigit() else None)
     except Exception as e:                                # noqa: BLE001
         await cb.message.answer(texts.migration_prepare_failed(str(e)))
         return
-    sent = await cb.message.answer(texts.migration_prepared(res))
-    await call(services.set_restart_wait, sent.chat.id, sent.message_id)
-    try:
-        await call(services.restart_bot)
-    except OSError as e:
-        log.warning("после подготовки переезда не удалось перезапустить бота: %s", e)
-        await cb.message.answer(texts.migration_promote_restart_failed())
+    # перезапуск — по кнопке: бот читает интерфейсы при старте, а момент
+    # выбирает человек («⬅️ Позже» — раздел напомнит)
+    await send_menu(cb.message, services, texts.migration_prepared(res), kb.restart_now_or_later())
 
 
 @router.message(MigrationPort.value)
@@ -1181,7 +1182,7 @@ async def migration_port_received(message: Message, state: FSMContext, services)
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     if not raw.isdigit() or not 1 <= int(raw) <= 65535:
-        await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535. Попробуй ещё раз.")
+        await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535, попробуй ещё раз")
         return
     await state.clear()
     d = await call(services.migration_prepare_data, int(raw))
@@ -1195,20 +1196,15 @@ async def _routing_provision(cb: CallbackQuery, services) -> None:
     состояние хоста, поэтому: сразу сказать, что идём, и показать итог."""
     await cb.answer("Разворачиваю…")
     await edit(cb, "🚀 Разворачиваю обвязку: dnsmasq, NAT, маршруты, линк. "
-                   "Это до минуты — не нажимай ничего.", None)
+                   "Это до минуты — не нажимай ничего", None)
     try:
         tail = await call(services.routing_provision)
     except ServiceError as e:
         await send_menu(cb.message, services, texts.routing_provision_failed(str(e)), kb.settings_back("rt"))
         return
-    sent = await cb.message.answer(texts.routing_provisioned(tail))
-    # Интерфейс линка читается при старте: без рестарта функция останется
-    # спящей, а раздел — тем же экраном «не развёрнута».
-    await call(services.set_restart_wait, sent.chat.id, sent.message_id)
-    try:
-        await call(services.restart_bot)
-    except OSError as e:
-        log.warning("после развёртывания не удалось перезапустить бота: %s", e)
+    # Интерфейс линка читается при старте: без рестарта функция спит, экран
+    # «🛰 Шлюзы» так и скажет — перезапуск по кнопке, сейчас или позже.
+    await send_menu(cb.message, services, texts.routing_provisioned(tail), kb.restart_now_or_later())
 
 
 async def _firewall_action(cb: CallbackQuery, callback_data: SetCB, services) -> None:
@@ -1322,7 +1318,7 @@ async def pick(cb: CallbackQuery, callback_data: SetCB, services):
     if callback_data.sec == "rt" and callback_data.key == "lists":
         hours = callback_data.val
         if hours not in ("3", "6", "12", "24"):
-            await cb.answer("Нет такого варианта.", show_alert=True)
+            await cb.answer("Нет такого варианта", show_alert=True)
             return
         try:
             await call(settings.set_value, "app.routing.lists_refresh_hours", int(hours))
@@ -1337,7 +1333,7 @@ async def pick(cb: CallbackQuery, callback_data: SetCB, services):
         # такт переставляет задачу планировщика сам (см. scheduler.HOT)
         setting, allowed = _RT_MON_PICKS[callback_data.key]
         if callback_data.val not in allowed:
-            await cb.answer("Нет такого варианта.", show_alert=True)
+            await cb.answer("Нет такого варианта", show_alert=True)
             return
         try:
             await call(settings.set_value, setting, int(callback_data.val))
@@ -1380,7 +1376,7 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
     """
     key = callback_data.key
     if not await call(services.migration_available):
-        await cb.answer("Переезд не настроен: пустые ключи в app.yaml.", show_alert=True)
+        await cb.answer("Переезд не настроен: пустые ключи в app.yaml", show_alert=True)
         return
     # Сторож состояния. Колбэк приходит и из СТАРОГО сообщения в истории чата
     # (тот же класс, что у раздела маршрутизации): «finish!» с прошлогоднего
@@ -1388,12 +1384,12 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
     # заархивировал ровно то, что отмена сохранила.
     running = await call(services.migration_running)
     if key in ("pending", "finish", "cancel", "finish!", "cancel!") and not running:
-        await cb.answer("Переезд сейчас не идёт — экран устарел.", show_alert=True)
+        await cb.answer("Переезд сейчас не идёт — экран устарел", show_alert=True)
         return
     if key in ("start", "start!") and running:
         # зеркальная половина сторожа: «start!» со старого подтверждения,
         # нажатый уже во время переезда, пересобрал бы выдачу вслепую
-        await cb.answer("Переезд уже идёт — экран устарел.", show_alert=True)
+        await cb.answer("Переезд уже идёт — экран устарел", show_alert=True)
         return
 
     if key == "start":
@@ -1456,14 +1452,8 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
             # поэтому рестарт здесь не косметика: без него бот продолжит считать
             # основным погашенный интерфейс и родит следующее устройство на нём.
             dns = (await call(services.private_dns_info))
-            sent = await cb.message.answer(texts.migration_promoted(
-                promoted, dns["dns1"] if dns["mode"] == "private" else ""))
-            await call(services.set_restart_wait, sent.chat.id, sent.message_id)
-            try:
-                await call(services.restart_bot)
-            except OSError as e:                       # systemd недоступен
-                log.warning("после переезда не удалось перезапустить бота: %s", e)
-                await cb.message.answer(texts.migration_promote_restart_failed())
+            await send_menu(cb.message, services, texts.migration_promoted(
+                promoted, dns["dns1"] if dns["mode"] == "private" else ""), kb.restart_now_or_later())
         return
 
     if key == "cancel!":
@@ -1472,7 +1462,7 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
         await _record(cb, texts.migration_cancelled(moved), services)
         return
 
-    await cb.answer("Действие недоступно.", show_alert=True)
+    await cb.answer("Действие недоступно", show_alert=True)
 
 # ── ♻️ Восстановление из файла в чате ────────────────────────────────────────
 @router.callback_query(SetCB.filter((F.sec == "backup") & (F.act == "do") & (F.key.in_({"restore!", "restore_drop"}))))
@@ -1494,7 +1484,7 @@ async def backup_passphrase_start(cb: CallbackQuery, state: FSMContext, services
 @router.callback_query(SetCB.filter((F.sec == "email") & (F.act == "do")))
 async def email_action(cb: CallbackQuery, callback_data: SetCB, services, state: FSMContext):
     if not await core.email_action(cb, services, HOOKS, state, callback_data.key):
-        await cb.answer("Действие недоступно.", show_alert=True)
+        await cb.answer("Действие недоступно", show_alert=True)
 
 
 # Ввод значения, парольная фраза и мастер почты — общие обработчики сообщений.
@@ -1548,7 +1538,7 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
         return
     if key == "bot!":                                  # рестарт бота
         await cb.answer("Перезапускаю бота…")
-        await edit(cb, "🔄 Бот перезапускается — вернётся через несколько секунд.", None)
+        await edit(cb, "🔁 Бот перезапускается — вернётся через несколько секунд", None)
         # Запоминаем ДО рестарта: обещание вернуться исполняет новый процесс,
         # подменяя это же сообщение панелью.
         await call(services.set_restart_wait, cb.message.chat.id, cb.message.message_id)

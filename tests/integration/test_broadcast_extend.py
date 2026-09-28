@@ -124,7 +124,7 @@ def test_header_variants_and_reserve(services, make_active_client):
     assert 70 <= r <= 110, r
     prompt = texts.broadcast_prompt([a], False, extend_days=10)
     assert prompt.startswith("📢 Текст для профиля Ксюша · продление на 10 дней\n"), prompt
-    assert f"без картинок — до {4096 - r} знаков, с картинками — до {1024 - r}" in prompt, \
+    assert f"без картинок — до {4096 - r} символов, с картинками — до {1024 - r}" in prompt, \
         "лимит в приглашении не учитывает шапку продления"
     assert texts.broadcast_prompt([a, e], False, extend_days=2).startswith(
         "📢 Текст для профилей: Ксюша, Вера · продление на 2 дня")

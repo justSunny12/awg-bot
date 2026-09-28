@@ -248,7 +248,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                 checks.append(GwCheck("маскарад в аплинк", masq,
                                       "" if masq else f"нет masquerade в {uplink}: пакеты агента "
                                       "уходят в туннель с локальным адресом — перевыпусти "
-                                      "конфигурацию шлюза с сервера AWG и примени её здесь"))
+                                      "конфигурацию шлюза с сервера AWG"))
         else:
             checks.append(GwCheck("политика аплинка", None, "аплинк не найден"))
         return checks
@@ -468,15 +468,15 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         notes += self._streak_alert(
             "power", under_now, 2,
             "⚠️ Питание Pi: " + "; ".join((st.throttled or {}).get("now", [])) +
-            ". Классика тихой смерти — проверь блок питания.",
-            "✅ Питание Pi в норме.")
+            ". Классика тихой смерти — проверь блок питания",
+            "✅ Питание Pi в норме")
 
         temp_bad = None if st.temp is None else \
             st.temp >= settings.get_int("app.gateway.temp_alert_c", 75)
         notes += self._streak_alert(
             "temp", temp_bad, streak,
-            f"🌡 Процессор {st.temp:.0f} °C — перегрев." if st.temp is not None else "",
-            "✅ Температура процессора в норме.")
+            f"🌡 Процессор {st.temp:.0f} °C — перегрев" if st.temp is not None else "",
+            "✅ Температура процессора в норме")
 
         # алерты хоста — общим тумблером и порогами с основным ботом
         if settings.get_bool("resource_alerts.enabled", True):
@@ -486,8 +486,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                     val >= settings.get_int(f"resource_alerts.thresholds_percent.{name}", 80)
                 notes += self._streak_alert(
                     name, bad, streak,
-                    f"📈 {label} шлюза: {val:.0f}{unit} — выше порога." if val is not None else "",
-                    f"✅ {label} шлюза снова в норме.")
+                    f"📈 {label} шлюза: {val:.0f}{unit} — выше порога" if val is not None else "",
+                    f"✅ {label} шлюза снова в норме")
 
         return notes
 
@@ -532,7 +532,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         return GwCheck("маршрут к GitHub", not missing,
                        "" if not missing else
                        "обвязка без маршрута GitHub в аплинк — агент не сможет обновляться; "
-                       "перевыпусти конфигурацию шлюза с сервера AWG и примени её здесь")
+                       "перевыпусти конфигурацию шлюза с сервера AWG")
 
     @staticmethod
     def peer_nets_missing(info: dict | None) -> list[str] | None:
@@ -556,8 +556,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             return None
         return GwCheck("локальные подсети других шлюзов", not missing,
                        "" if not missing else
-                       f"в таблице нет {', '.join(missing)}; перевыпусти конфигурацию шлюза с сервера AWG "
-                       "и примени её здесь")
+                       f"в таблице нет {', '.join(missing)}; перевыпусти конфигурацию шлюза с сервера AWG")
 
     def tg_mark_ensure(self, missing: list[str] | None = None) -> int:
         """Таблицу правит только скрипт: недостающее восстанавливаем рестартом
@@ -648,7 +647,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         if not os.path.exists(gwguard.LAN_LISTS_SCRIPT):
             checks.append(GwCheck("скрипт списков", False,
                                   "скрипт обновления списков РФ-доступа не найден — "
-                                  "перевыпусти конфигурацию шлюза"))
+                                  "перевыпусти конфигурацию шлюза с сервера AWG"))
         # скрипт обвязки не смог применить раздел — причина в статусе, а не «перевыпусти»
         err = st.get("LAN_ERROR", "")
         if err:

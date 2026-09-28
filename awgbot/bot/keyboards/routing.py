@@ -84,7 +84,11 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
         kb.button(text="🚀 Развернуть", callback_data=SetCB(sec="rt", act="do", key="provision"))
         rows.append(1)
     elif not awake:
-        pass
+        kb.button(text="🔁 Перезапустить сейчас", callback_data=SetCB(sec="svc", act="do", key="bot!"))
+        kb.button(text="⬅️ Позже", callback_data=Menu(action="main"))
+        rows += [1, 1]
+        kb.adjust(*rows)
+        return kb.as_markup()
     elif not enabled:
         kb.button(text="✅ Включить", callback_data=SetCB(sec="rt", act="toggle", key="app.routing.enabled"))
         rows.append(1)

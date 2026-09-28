@@ -186,7 +186,7 @@ async def test_backup_passphrase_flow_deletes_messages_and_requires_match(servic
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await sh.do_action(cb, SetCB(sec="backup", act="do", key="enc"), services)
-    assert any(t.startswith("🔐 Шифрование бэкапов · 🔴 выключено") for kind, t, _ in msg.sent
+    assert any(t.startswith("🔐 Шифрование бэкапов · 🔓 выключено") for kind, t, _ in msg.sent
                if kind == "edit_text"), msg.sent
     state = FakeState()
     await sh.backup_passphrase_start(cb, state, services)

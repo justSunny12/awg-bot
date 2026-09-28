@@ -89,11 +89,11 @@ def test_off_line_links_every_named_gateway():
     идут разбираться."""
     both = texts.routing_admin_status_line(
         _info(ok=False, standby=[{"name": "Pi2", "slot": 2, "state": "dead"}]), BOT)
-    assert both.startswith("🇷🇺 РФ-доступ: 🔴 выключен — ") and both.endswith(" не отвечают"), both
+    assert both.startswith("🇷🇺 РФ-доступ: 🔴 недоступен — ") and both.endswith(" не отвечают"), both
     assert _hrefs(both) == [(_card(1), "NASPi"), (_card(2), "Pi2")], both
     one = texts.routing_admin_status_line(
         _info(ok=False, standby=[{"name": "Pi2", "slot": 2, "state": "alive"}]), BOT)
-    assert one == (f'🇷🇺 РФ-доступ: 🔴 выключен, <a href="{_card(1)}">NASPi</a> не отвечает, '
+    assert one == (f'🇷🇺 РФ-доступ: 🔴 недоступен, <a href="{_card(1)}">NASPi</a> не отвечает, '
                    f'<a href="{_card(2)}">резерв</a> жив'), one
 
 
@@ -112,7 +112,7 @@ def test_without_username_the_line_stays_plain():
         "🇷🇺 РФ-доступ: 🟢 работает (NASPi), резерв жив"
     assert texts.routing_admin_status_line(
         _info(ok=False, standby=[{"name": "Pi2", "slot": 2, "state": "dead"}]), "") == \
-        "🇷🇺 РФ-доступ: 🔴 выключен — NASPi, Pi2 не отвечают"
+        "🇷🇺 РФ-доступ: 🔴 недоступен — NASPi, Pi2 не отвечают"
 
 
 def test_without_slot_numbers_there_is_nothing_to_link():

@@ -119,7 +119,7 @@ def _how_to(text_max: int, caption_max: int) -> str:
     from .fmt import details
     return ("Форматирование Telegram сохранится; можно вложить до "
             f"{config.TG_ALBUM_MAX} изображений.\n"
-            + details(f"без картинок — до {text_max} знаков, с картинками — до {caption_max}"))
+            + details(f"без картинок — до {text_max} символов, с картинками — до {caption_max}"))
 
 
 def broadcast_prompt(clients: list, with_friends: bool = False, *,

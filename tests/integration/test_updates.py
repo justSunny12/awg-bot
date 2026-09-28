@@ -247,27 +247,25 @@ def test_new_version_notifies_even_after_previous_notified(services, monkeypatch
 
 # ── усечение changelog под лимит Telegram ────────────────────────────────────
 
-def test_skipped_steps_are_links_to_their_release_pages():
-    """Прыжок через ступени: каждая пропущенная версия — ссылка на свою
-    страницу релиза (changelog); ссылки на diff кода нет — админу нужен
-    changelog, а не исходники; хвост длиннее десяти — свёрнут в «ещё N». Всё
-    вместе — под лимит Telegram."""
+def test_skipped_steps_are_not_listed_and_the_tail_links_the_release():
+    """Прыжок через ступени: старшая версия включает правки младших, поэтому
+    пропущенные версии не перечисляются (skipped принимается и игнорируется);
+    хвост обрезанного списка — ссылка на страницу релиза цели, не на журнал
+    целиком и не на diff кода — админ читает релиз, а не исходники."""
     def rel(i):
         return updates.Release(tag=f"v1.{i}.0", version=(1, i, 0), body="", asset_url=None,
                                sha256=None, title=f"шаг {i}")
     text = texts.update_available("v1.3.0", "- x", installed="1.1.0", skipped=(rel(2),))
-    assert f'href="https://github.com/{cfg.UPDATES_REPO}/releases/tag/v1.2.0">v1.2.0 — шаг 2</a>' in text
-    assert "/compare/" not in text, "ссылка на diff кода пугает, а не помогает"
+    assert "v1.2.0" not in text and "Вместе с ней" not in text and "/compare/" not in text
     assert "Список изменений" in text and "- x" in text
+    assert 'href' not in text, "короткий список — без ссылок"
 
-    many = texts.update_available("v1.20.0", "- y" * 10, installed="1.1.0",
+    many = texts.update_available("v1.20.0", "- y\n" * 2000, installed="1.1.0",
                                   skipped=tuple(rel(i) for i in range(2, 20)))
-    assert "ещё 8" in many and "v1.19.0" in many and "v1.9.0" not in many
-    assert len(many) <= 4096
-
-    assert 'href' not in texts.update_available("v1.2.0", "- x", installed="1.1.0")
+    assert len(many) <= 4096 and "v1.19.0" not in many
+    assert f'href="https://github.com/{cfg.UPDATES_REPO}/releases/tag/v1.20.0">Весь список изменений — на GitHub</a>' in many
     admin = texts.update_admin_available("1.1.0", "v1.3.0", "- x", skipped=(rel(2),))
-    assert "releases/tag/v1.2.0" in admin
+    assert "v1.2.0" not in admin
 
 
 def test_changelog_fits_untruncated():
@@ -282,8 +280,8 @@ def test_changelog_truncated_when_huge():
     msg = texts.update_available("v1.2.0", body)
     assert len(msg) <= 4096
     # хвост обрезки — ссылка на полный журнал, а не тупик «(изменения обрезаны)»
-    assert "обрезаны" not in msg and f'<a href="{texts.CHANGELOG_URL}">Весь список изменений — на GitHub</a>' in msg
-    assert texts.CHANGELOG_URL == "https://github.com/justSunny12/awg-bot/blob/main/docs/CHANGELOG.md"
+    assert "обрезаны" not in msg and f'<a href="{texts.release_url("v1.2.0")}">Весь список изменений — на GitHub</a>' in msg
+    assert texts.release_url("v1.2.0") == f"https://github.com/{cfg.UPDATES_REPO}/releases/tag/v1.2.0"
     assert msg.count("<blockquote") == 1 and msg.count("</blockquote>") == 1
 
 

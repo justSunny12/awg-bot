@@ -115,10 +115,10 @@ def _bot_link(agent_bot: dict | None) -> str:
 def _slot_note(state: str, gw: str, agent_bot: dict | None, error: str, purpose: str, what: str) -> str:
     """Строка состояния под записями SMB / своими списками в карточке слота —
     общие ветки: обновить шлюз (со ссылкой на бота), отказ шлюза, ожидание.
-    purpose — «Для доступа» / «Для синхронизации», what — «записи» / «списки»."""
+    purpose — «Необходимо» / «Для синхронизации необходимо», what — «записи» / «списки»."""
     if state == "old_agent":
         bot = _bot_link(agent_bot)
-        return f"⚠️ {purpose} необходимо обновить шлюз{gw}" + (f" (бот: {bot})" if bot else "")
+        return f"⚠️ {purpose} обновить шлюз{gw}" + (f" (бот: {bot})" if bot else "")
     if state == "failed":
         if error.startswith(WRITE_ERROR):
             return f"⚠️ Шлюз{gw}: {_e(error)}"          # поломка на шлюзе, не отказ
@@ -205,7 +205,7 @@ def peer_nets_line(info: dict) -> str:
         return _e(str(w).replace("«", "").replace("»", ""))
     who = ", ".join(_plain(w) for w in info.get("who") or [])
     if st == "no_lan":
-        return (f"↔️ Связь подсетей не работает: у {who} выключен «VPN-транзит» — "
+        return (f"↔️ Связь подсетей не работает: у {who} выключен VPN-транзит — "
                 "без него ответы не найдут дорогу назад")
     if st == "no_nets":
         return f"↔️ Связь подсетей не работает: у {who} не заданы подсети — «🗺 Подсети» в карточке шлюза"
@@ -224,8 +224,7 @@ GATEWAYS_ABOUT = ("трафик несёт один шлюз, второй жд�
 ROUTING_PROVISION_INTRO = ("🇷🇺 РФ-доступ не развёрнут\n"
                            "Кнопка поставит dnsmasq, перехват DNS клиентов, NAT и маршруты, линк до "
                            "будущего шлюза — до минуты. Шлюз назначается следующим шагом")
-SETTINGS_ROUTING_ABSENT = ("🇷🇺 Обвязка развёрнута, функция ждёт перезапуска бота: "
-                           "⚙️ → 🔧 Сервис → 🔁 Перезапуск бота")
+SETTINGS_ROUTING_ABSENT = "🇷🇺 Обвязка развёрнута, функция ждёт перезапуска бота"
 GATEWAYS_OFF = "🛰 Шлюзы · 🇷🇺 РФ-доступ выключен · разрешения и списки сохранены"
 SETTINGS_ROUTING_SUBOFF = "🇷🇺 РФ-доступ выключен — раздел пуст, пока он не включён"
 GATEWAYS_AUTO_OFF = ("⚠️ Автопереключение выключено: при падении активного шлюза РФ-доступ "
@@ -307,9 +306,9 @@ def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> s
     if state == "applied":
         return head + " · 🟢 доступны"
     if state == "reissue":
-        note = f"⚠️ Для доступа необходим перевыпуск конфигурации шлюза{gw}"
+        note = f"⚠️ Необходим перевыпуск конфигурации шлюза{gw}"
     else:
-        note = _slot_note(state, gw, agent_bot, svc.get("error") or "", "Для доступа", "записи")
+        note = _slot_note(state, gw, agent_bot, svc.get("error") or "", "Необходимо", "записи")
     return head + "\n" + note
 
 
@@ -317,8 +316,8 @@ def own_lists_line(own: dict, name: str = "", agent_bot: dict | None = None) -> 
     """«📋 Свои списки: 5 в туннель, 1 напрямую» / «пусто»; что с ними на
     шлюзе — строкой сразу под ней, только если не «применены»."""
     vpn, ru = int(own.get("vpn") or 0), int(own.get("ru") or 0)
-    head = ("📋 Свои списки: пусто" if not vpn and not ru
-            else f"📋 Свои списки: {vpn} в туннель, {ru} напрямую")
+    parts = ([f"{vpn} в туннель"] if vpn else []) + ([f"{ru} напрямую"] if ru else [])
+    head = "📋 Свои списки: " + (", ".join(parts) if parts else "пусто")   # нулевая часть не выводится
     state = own.get("state", "")
     gw = f" {name}" if name else ""
     if state == "applied":
@@ -326,7 +325,7 @@ def own_lists_line(own: dict, name: str = "", agent_bot: dict | None = None) -> 
     if state == "offline":
         note = f"⏳ Синхронизируется со шлюзом{gw}, когда он выйдет на связь"
     else:
-        note = _slot_note(state, gw, agent_bot, own.get("error") or "", "Для синхронизации", "списки")
+        note = _slot_note(state, gw, agent_bot, own.get("error") or "", "Для синхронизации необходимо", "списки")
     return head + "\n" + note
 
 
@@ -337,8 +336,7 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
     if not ch:
         return "", [], ""
     if not ch.get("ever"):
-        return ("🔗 Упр. канал: ещё не поднимался — перевыпусти конфигурацию шлюза и примени её "
-                "на той стороне", [], "")
+        return ("🔗 Упр. канал: ещё не поднимался — перевыпусти конфигурацию шлюза", [], "")
     if ch.get("online"):
         head = "🔗 Упр. канал 🟢"
     else:
@@ -370,10 +368,10 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
                 warns.append("⚠️ Шлюз не применил настройки с сервера: "
                              f"{_e(ack.get('error') or 'ошибка')} — вернул прежние")
             elif ch.get("online") and ch.get("drift_bundle") and not ch.get("drift_channel"):
-                warns.append("⚠️ Локальные подсети других шлюзов неактуальны — они едут только "
-                             "файлом: перевыпусти конфигурацию шлюза")
+                warns.append("⚠️ Локальные подсети других шлюзов неактуальны — перевыпусти "
+                             "конфигурацию шлюза")
             elif ch.get("online"):
-                tail = ("; подсети других шлюзов — только перевыпуском файла"
+                tail = ("; для подсетей других шлюзов перевыпусти конфигурацию шлюза"
                         if ch.get("drift_bundle") else "")
                 warns.append(f"⏳ Конфигурация на шлюзе расходится с выданной ({n_items}) — "
                              f"изменения уходят каналом и применятся сами{tail}")
@@ -382,9 +380,9 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
                 warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}, по снимку "
                              f"{_ago(ch.get('age'))}):\n{items}")
         else:
-            head += f" · ✅ конфиг актуален{stale}"
-        gen_hint = {"old": "⚠️ Обвязка шлюза старого образца — перевыпусти файл конфигурации и примени его на шлюзе",
-                    "none": "⚠️ Обвязка шлюза не развёрнута — примени файл конфигурации на шлюзе"}
+            head += f" · 🟢 конфиг актуален{stale}"
+        gen_hint = {"old": "⚠️ Обвязка шлюза старого образца — перевыпусти файл конфигурации",
+                    "none": "⚠️ Обвязка шлюза не развёрнута — перевыпусти файл конфигурации"}
         if ch.get("has_bundle") and ch.get("plumbing_gen") in gen_hint:
             warns.append(gen_hint[ch["plumbing_gen"]])
         gw_ok = ch.get("egress_gw")
@@ -399,8 +397,7 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
     pn = ch.get("peer_nets") or {}
     if isinstance(pn, dict) and pn and not pn.get("ok"):
         miss = ", ".join(_e(str(n)[:18]) for n in (pn.get("missing") or [])[:8]) or "подсетей"
-        warns.append(f"⚠️ Связь подсетей: на шлюзе нет {miss} — перевыпусти конфигурацию шлюза и "
-                     "примени её на той стороне")
+        warns.append(f"⚠️ Связь подсетей: на шлюзе нет {miss} — перевыпусти конфигурацию шлюза")
     lists = ch.get("lists") or {}
     if lists and not lists.get("ok"):
         warns.append(f"⚠️ Шлюз не принял фиды локальной сети: {_e(lists.get('error') or 'ошибка')}"
@@ -444,7 +441,7 @@ def gateway_card_text(state: dict, states: list) -> str:
     lines.append(("🌐 " + (plain_ip(ip) if ip else "адрес не определён"))
                  + (_gw_traffic(dev) if dev is not None else ""))
     if state.get("active") and state.get("unavailable"):
-        lines.append("🔴 РФ-доступ выключен: российские сервисы открываются с зарубежного адреса")
+        lines.append("🔴 РФ-доступ недоступен: российские сервисы открываются с зарубежного адреса")
     ch_head, ch_warns, egress = channel_lines(state.get("channel"), state.get("link_ok"))
     if ch_head:
         lines.append(ch_head)
@@ -464,10 +461,12 @@ def gateway_card_text(state: dict, states: list) -> str:
     others = [s for s in states if s["gateway"].id != gw.id]
     conflict = next((s for s in others if _nets_overlap(nets, s["gateway"].home_subnets)), None)
     if conflict is not None:
-        ov = ", ".join(_e(n) for n in _nets_overlap(nets, conflict["gateway"].home_subnets))
+        ov_nets = _nets_overlap(nets, conflict["gateway"].home_subnets)
+        ov = ", ".join(_e(n) for n in ov_nets)
+        verb = "пересекается" if len(ov_nets) == 1 else "пересекаются"
         first = min([state] + others, key=lambda s: (0 if s.get("preferred") else 1, s["gateway"].id))
         route = "маршрут достаётся ему, " if first["gateway"].id != gw.id else ""
-        lines.append(f"⚠️ {ov} пересекается с подсетью «{slot_ref(conflict)}»: {route}связь подсетей между "
+        lines.append(f"⚠️ {ov} {verb} с подсетью «{slot_ref(conflict)}»: {route}связь подсетей между "
                      "этими шлюзами не работает, пока они пересекаются")
     agent = agent_bot_line(state)
     if agent:
@@ -500,7 +499,7 @@ def _reissue_or_channel(online: bool, what: str) -> str:
     """Хвост диалога: при живом канале изменение доедет само, без файла."""
     if online:
         return f"{what} шлюз получит по каналу и применит сам; итог придёт в чат бота шлюза"
-    return f"{what} потребует перевыпустить конфигурацию шлюза и применить её"
+    return f"{what} потребует перевыпуска конфигурации шлюза"
 
 
 def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
@@ -512,12 +511,12 @@ def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
                  "Роутер отдаёт весь трафик сети шлюзу, шлюз делит: заблокированное — в туннель, "
                  "остальное — напрямую. VPN на устройствах в сети становится не нужен",
                  "Нужно от тебя: настроить роутер по рецепту — покажу после включения",
-                 "⚠️ Шлюз станет точкой отказа: упадёт — сеть без интернета, резерв не поможет"]
+                 "⚠️ Шлюз станет точкой отказа: упадёт — подсеть без интернета, резерв не поможет"]
         if not resolver:
             lines.append("⚠️ Свой резолвер не настроен: шлюз пойдёт на 1.1.1.1 через туннель, без "
                          "защиты от DoH — лучше настроить (⚙️ → 🖥 Сервер AWG)")
         if not online:
-            lines.append("Потребует перевыпустить конфигурацию шлюза и применить её")
+            lines.append("Потребуется перевыпуск конфигурации шлюза")
         return "\n".join(lines)
     return "\n".join([
         f"🔀 VPN-транзит на {name} — выключить?",
@@ -595,7 +594,7 @@ def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list |
 
 def gateway_switch_ask(target: dict, current, healthy: bool) -> str:
     who = slot_ref(target)
-    cur = slot_ref(current) if current else "прежний шлюз"
+    cur = slot_ref(current) if current else "Прежний шлюз"
     if healthy:
         return (f"▶️ Переключить трафик на {who}?\n"
                 "РФ-сервисы у всех начнут выходить с адреса этой сети — приложения могут попросить "
@@ -610,7 +609,7 @@ def gateway_peer_ask(on: bool) -> str:
         return "\n".join([
             "↔️ Связь подсетей — включить?",
             "Устройства из подсети одного шлюза достанут до подсети другого по настоящим адресам, "
-            "через AWG. Только твои локальные сети и только между шлюзами с «VPN-транзит»",
+            "через AWG. Только твои локальные сети и только между шлюзами с включённым VPN-транзитом",
             "SMB-серверы подсетей: на Windows — <code>\\\\имя.awg.internal</code>, на macOS — в Finder: "
             "«Сеть» → awg.internal",
             "После включения перевыпусти конфигурацию каждого шлюза: подсети шлюзов живут в конфиге "
@@ -621,7 +620,7 @@ def gateway_peer_ask(on: bool) -> str:
                     "связь живёт, пока подняты оба линка"),
         ])
     return ("↔️ Связь подсетей — выключить?\n"
-            "Подсети шлюзов перестанут видеть друг друга сразу. Потом перевыпусти конфигурацию "
+            "Подсети шлюзов перестанут видеть друг друга сразу. Необходим перевыпуск конфигурации "
             "каждого шлюза")
 
 
@@ -633,9 +632,9 @@ def gateway_home_text(state: dict) -> str:
              "Пришли подсети через пробел: <code>192.168.2.0/24</code>; «-» — убрать все. "
              "Доступ через туннель — только твоим устройствам"]
     if gw.lan_mode:
-        lines.append("Первая — для VPN-транзита")
+        lines.append("<b>VPN-транзит</b> будет работать для первой подсети в списке")
     if state.get("peer_nets_enabled"):
-        lines.append("При связанных подсетях подсети шлюзов не должны пересекаться")
+        lines.append("<b>Связать</b> можно только не пересекающиеся подсети")
     return "\n".join(lines)
 
 
@@ -652,20 +651,22 @@ def gateway_home_report(res: dict, state: dict) -> str:
         parts.append(f"⚠️ Не принято: {shown}{more}")
     conflict = res.get("conflict")
     if conflict is not None:
-        ov = ", ".join(f"<code>{_e(n)}</code>" for n in _nets_overlap(kept, conflict.home_subnets)) or "подсеть"
+        ov_nets = _nets_overlap(kept, conflict.home_subnets)
+        ov = ", ".join(f"<code>{_e(n)}</code>" for n in ov_nets) or "подсеть"
+        verb = "пересекаются" if len(ov_nets) > 1 else "пересекается"
         who = _e(res["conflict_name"]) if res.get("conflict_name") else f"шлюза №{conflict.id}"
-        parts.append(f"⚠️ {ov} пересекается с подсетью {who}: маршрут достаётся предпочтительному "
+        parts.append(f"⚠️ {ov} {verb} с подсетью {who}: маршрут достаётся предпочтительному "
                      "(при равенстве — первому), связь подсетей между этими шлюзами не работает, пока "
                      "они пересекаются")
     elif res.get("peer_others"):
-        parts.append("Подсети попадут в конфигурацию остальных шлюзов: перевыпусти её для "
-                     + ", ".join(_e(w) for w in res["peer_others"]) + " и примени на той стороне")
+        parts.append("Подсети попадут в конфигурацию остальных шлюзов: необходим перевыпуск для "
+                     + ", ".join(_e(w) for w in res["peer_others"]))
     return "\n".join(parts)
 
 
 def gateway_label_text(state: dict) -> str:
     return (f"✏️ Подпись {slot_ref(state)} — место одним-двумя словами: «дача», «офис». "
-            "До 20 знаков, «—» — убрать")
+            "До 20 символов, «—» — убрать")
 
 
 def gateway_remove_ask(dev, *, state=None, other=None) -> str:
@@ -673,7 +674,7 @@ def gateway_remove_ask(dev, *, state=None, other=None) -> str:
     name = _e(dev.name)
     if state and not state.get("active") and other is not None:
         return (f"🛑 {name} — больше не резерв?\n"
-                f"Линк снимется; трафик идёт через {slot_ref(other)}, резерва не будет. "
+                f"Линк снимется; трафик пойдёт через {slot_ref(other)}, резерва не будет. "
                 "Устройство станет обычным")
     if state and state.get("active") and other is not None:
         return (f"🛑 {name} — больше не шлюз?\n"
@@ -686,8 +687,7 @@ def gateway_remove_ask(dev, *, state=None, other=None) -> str:
 def gateway_removed(dev, now_active=None) -> str:
     if now_active is not None:
         return f"🛑 {_e(dev.name)} больше не шлюз · трафик идёт через {slot_ref(now_active)}, резерва нет"
-    return (f"🛑 {_e(dev.name)} больше не шлюз · РФ-доступ выключен до назначения нового — "
-            "«🛰 Шлюзы» на главной")
+    return f"🛑 {_e(dev.name)} больше не шлюз · РФ-доступ выключен до назначения нового"
 
 
 # ── назначение шлюза ─────────────────────────────────────────────────────────
@@ -698,15 +698,15 @@ GATEWAY_CHOOSE_INTRO = ("🛰 Назначить шлюз — одно из тв
 GATEWAY_STANDBY_CHOOSE_INTRO = ("🛰 Резервный шлюз — когда основной перестанет отвечать, РФ-доступ "
                                 "будет работать через него. Одно из твоих устройств или новое; линк — "
                                 "свой, первый файл конфигурации применяется руками")
-GATEWAY_PICK_INTRO = "🛰 Из моих устройств — выбери, какое станет шлюзом. Обычным устройством оно быть перестанет"
-GATEWAY_PICK_EMPTY = "🛰 У профиля админа нет устройств, выпущенных ботом — назначь новое"
+GATEWAY_PICK_INTRO = "📱 Из моих устройств — выбери, какое станет шлюзом. Обычным устройством оно быть перестанет"
+GATEWAY_PICK_EMPTY = "📱 У профиля админа нет устройств, выпущенных ботом — назначь новое"
 
 
 def gateway_replace_intro(state: dict) -> str:
     name = slot_ref(state)
     role = ("Слот резервный: трафик клиентов не затронут" if not state.get("active")
-            else "Активный слот: на время замены трафик уйдёт на резерв, если он жив")
-    return (f"🔁 Заменить машину {name}? Ключи линка сменятся — прежняя потеряет линк сама. {role}. "
+            else "Активный слот: трафик уйдёт на резерв, если он жив")
+    return (f"🔁 Заменить устройство {name}? Ключи линка сменятся — прежнее потеряет линк само. {role}. "
             "Одно из твоих устройств или новое")
 
 
@@ -714,9 +714,9 @@ def gateway_mark_ask(dev, prev, *, standby: bool = False, replace_state=None) ->
     head = (f"🛰 {_e(dev.name)} станет шлюзом? Выйдет из лимитов; удалить, заблокировать, выдать "
             "ссылку будет нельзя. Ключи линка — новые, файл первого применения выпущу сразу")
     if prev is not None:
-        head += f"\nСейчас шлюз — {_e(prev.name)}: прежняя машина потеряет линк сама"
+        head += f"\nСейчас шлюз — {_e(prev.name)}: прежнее устройство потеряет линк само"
     if replace_state is not None and replace_state.get("active"):
-        head += "\nАктивный слот: на время замены трафик уйдёт на резерв, если он жив"
+        head += "\nАктивный слот: трафик уйдёт на резерв, если он жив"
     return head
 
 
@@ -728,21 +728,27 @@ def gateway_marked(dev, rekeyed: bool, bundle_name: str = "awg-gw-bundle.sh") ->
     return f"🛰 {_e(dev.name)} назначен шлюзом — файл конфигурации ниже, перешли его боту шлюза"
 
 
-def gateway_new_ask(slot: int = 1) -> str:
+def gateway_new_ask(slot: int = 1, prev_name: str = "", active: bool = False) -> str:
+    """Замена машины слота новым устройством — те же строки, что при выборе
+    из своих: кто сейчас в слоте и что будет с трафиком."""
     name = "Шлюз" if slot <= 1 else f"Шлюз {slot}"
-    return (f"➕ Новое устройство «{name}» в твоём профиле: выпущу ключи линка и файл первого "
-            "применения. Если в слоте была машина, она потеряет линк сама")
+    text = f"➕ Новое устройство «{name}» в твоём профиле: выпущу ключи линка и файл первого применения"
+    if prev_name:
+        text += f"\nСейчас шлюз — {_e(prev_name)}: прежнее устройство потеряет линк само"
+    if active:
+        text += "\nАктивный слот: трафик уйдёт на резерв, если он жив"
+    return text
 
 
 def gateway_ask_token(slot: int = 1) -> str:
     who = "шлюза" if slot <= 1 else f"шлюза {slot}"
     return (f"🤖 Токен бота {who} — создай бота у @BotFather и пришли токен <code>123456789:AA…</code>. "
-            "Уедет в файл первого применения; сообщение удалю")
+            "Уедет в файл первого применения; сообщение с токеном сразу удалю")
 
 
 def routing_provisioned(tail: str) -> str:
     return ("✅ Обвязка развёрнута, линк до шлюза поднят, функция включена\n"
-            "Перезапускаю бота — интерфейс линка читается при старте. После этого назначь шлюз: "
+            "Интерфейс линка читается при старте: после перезапуска бота назначь шлюз — "
             "«🛰 Шлюзы» на главной"
             + (f"\n<pre>{_e(tail[-700:])}</pre>" if tail else ""))
 
@@ -776,7 +782,7 @@ def routing_params_text(info: dict, lists: dict) -> str:
 
 def routing_users_text() -> str:
     return ("👥 Кому доступен РФ-доступ (тебе — всегда)\n"
-            "владельцы устройств управляют настройкой на них сами")
+            "Владельцы устройств управляют настройкой на них сами")
 
 
 ROUTING_DISABLE_CONFIRM = ("🔴 Выключить РФ-доступ для всех? Российские сервисы снова будут ругаться "
@@ -817,7 +823,7 @@ def gateway_bundle_caption(display: str, agent_bot: dict | None) -> str:
     who = "боту шлюза"
     if me.get("username"):
         who += f' (<a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>)'
-    return (f"⚙️ Конфигурация шлюза <b>{_e(display)}</b>.\n"
+    return (f"📤 Конфигурация шлюза <b>{_e(display)}</b>.\n"
             f"Перешли это сообщение {who} — он проверит и применит сам.\n"
             "Результат применения конфигурации сообщит бот шлюза.\n\n"
             "ℹ️ Возврат в меню удалит это сообщение")
@@ -907,7 +913,7 @@ def routing_admin_status_line(info: dict, bot_username: str = "") -> str:
     alive = [s for s in standby if s["state"] == "alive"]
     if not names and not alive:
         return ""                                     # шлюзов нет — строке нечего сказать
-    line = f"🇷🇺 {ROUTING_NAME}: 🔴 выключен"
+    line = f"🇷🇺 {ROUTING_NAME}: 🔴 недоступен"
     if len(names) == 1:
         line += f", {_link(*names[0])} не отвечает"
     elif names:

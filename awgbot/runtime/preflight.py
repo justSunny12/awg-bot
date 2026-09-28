@@ -134,7 +134,7 @@ def collect_warnings_gateway(services=None) -> list[str]:
             else:
                 warns.append("таблицы awg_gw_guard нет — обвязка старого образца (iptables): "
                              "шлюз открыт клиентам туннеля; перевыпусти конфигурацию "
-                             "шлюза с сервера AWG и примени её здесь")
+                             "шлюза с сервера AWG")
     except Exception as e:                       # noqa: BLE001
         log.warning("preflight(gw): таблица: %s", e)
     return warns

@@ -114,8 +114,8 @@ async def test_a_refusal_without_details_has_no_dangling_colon(services, peers, 
 
 
 @pytest.mark.parametrize("peers_applied,version,note", [
-    ("", "3.1.0", "⚠️ Для доступа необходим перевыпуск конфигурации шлюза «Pi2»"),
-    ("192.168.1.0/24", "3.0.2", "⚠️ Для доступа необходимо обновить шлюз «Pi2»"),
+    ("", "3.1.0", "⚠️ Необходим перевыпуск конфигурации шлюза «Pi2»"),
+    ("192.168.1.0/24", "3.0.2", "⚠️ Необходимо обновить шлюз «Pi2»"),
 ])
 async def test_the_slot_card_says_why_services_are_not_there_yet(services, peers, fake_bot,
                                                                  peers_applied, version, note):
@@ -135,7 +135,7 @@ async def test_the_update_advice_links_the_gateway_bot_when_it_is_known(services
     _publish(services, version="3.0.2")
     services.set_gw_bot_identity(2, "pi2_gw_bot", "Шлюз <2> & co")
     text, _ = await _card(services, fake_bot, 2)
-    assert _svc_note(text) == ('⚠️ Для доступа необходимо обновить шлюз «Pi2» (бот: '
+    assert _svc_note(text) == ('⚠️ Необходимо обновить шлюз «Pi2» (бот: '
                                '<a href="https://t.me/pi2_gw_bot">Шлюз &lt;2&gt; &amp; co</a>)'), text
 
 
@@ -199,8 +199,8 @@ def test_the_breakage_branch_without_a_name_reads_whole(error, note):
 
 
 @pytest.mark.parametrize("state,note", [
-    ("reissue", "⚠️ Для доступа необходим перевыпуск конфигурации шлюза"),
-    ("old_agent", "⚠️ Для доступа необходимо обновить шлюз"),
+    ("reissue", "⚠️ Необходим перевыпуск конфигурации шлюза"),
+    ("old_agent", "⚠️ Необходимо обновить шлюз"),
     ("failed", "⚠️ Шлюз не смог принять записи"),
     ("pending", "⏳ Синхронизация с другими шлюзами…"),
 ])
@@ -340,7 +340,7 @@ async def test_the_lan_screen_groups_address_traffic_lists_and_smb(gw_svc, fake_
             "end0 · 192.168.68.222 · 9 пакетов с роутера\n"
             "DNS — 10.9.1.1 через аплинк\n"
             "📋 Списки: 3 домена, 4 подсети (ещё не обновлялись)\n"
-            "Свои списки: 1 в туннель, 0 напрямую\n"
+            "Свои списки: 1 в туннель\n"
             "🗂 SMB: извне — 1\n")
     assert lan.startswith(head), lan
     assert lan.endswith("</blockquote>") and lan.count("<blockquote expandable>") == 1, lan

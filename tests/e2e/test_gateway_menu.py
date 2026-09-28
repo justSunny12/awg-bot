@@ -197,7 +197,7 @@ def test_backup_switch_hides_the_rest_in_both_bots(monkeypatch):
     assert _labels(kb.settings_backup()) == _labels(kb.gateway_backup_kb(False))
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
     rows = _labels(kb.gateway_backup_kb(True))
-    assert rows == [["✅ Автобэкапы", "🔐 Шифрование"], ["📨 Куда: Telegram", "📆 1-е, 12:00"],
+    assert rows == [["✅ Автобэкапы", "🔐 Шифрование"], ["📨 Куда: Telegram", "✏️ 1-е, 12:00"],
                     ["💾 Сделать сейчас"], ["⬅️ Назад"]], rows
     assert rows == _labels(kb.settings_backup(True)), "раскладка агента разошлась с основным ботом"
 

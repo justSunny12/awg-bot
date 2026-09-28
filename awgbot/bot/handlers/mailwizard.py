@@ -149,7 +149,7 @@ def register(router, *, cancel_kb, done) -> dict:
         except Exception:                                # noqa: BLE001
             pass
         if not pw:
-            await ask_tracked(message, services, "⚠️ Пароль пустой. Пришли пароль ещё раз.")
+            await ask_tracked(message, services, "⚠️ Пароль пустой. Пришли пароль ещё раз")
             return
         await _finish(message, state, services, pw)
 

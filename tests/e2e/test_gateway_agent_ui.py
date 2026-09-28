@@ -394,7 +394,7 @@ async def test_backup_section_is_the_main_bot_layout(svc, fake_bot, store):
     text, markup = _last_edit(nav)
     assert text.splitlines()[:2] == ["💾 Бэкапы · ✅ вкл · 🔓 без шифрования",
                                      "Каждое 1-е число в 12:00 → в этот чат"], text
-    assert _rows(markup) == [["✅ Автобэкапы", "🔐 Шифрование"], ["📨 Куда: Telegram", "📆 1-е, 12:00"],
+    assert _rows(markup) == [["✅ Автобэкапы", "🔐 Шифрование"], ["📨 Куда: Telegram", "✏️ 1-е, 12:00"],
                              ["💾 Сделать сейчас"], ["⬅️ Назад"]]
     assert GwCB.unpack(markup.inline_keyboard[-1][0].callback_data).action == "settings"
 
@@ -436,17 +436,17 @@ async def test_an_unknown_cycle_key_is_refused(svc, fake_bot, store):
 
 
 async def test_backup_day_and_hour_in_one_input(svc, fake_bot, store):
-    """«📆 1-е, 12:00» → одно приглашение «день и час»; «5 9» — записано,
+    """«✏️ 1-е, 12:00» → одно приглашение «день и час»; «5 9» — записано,
     итог первой строкой раздела, кнопка — новая; «31 12» — переспрос."""
     store.update({"app.scheduler.backup_enabled": True, "app.scheduler.backup_day": 1,
                   "app.scheduler.backup_hour": 12})
     cb, nav = _acb(fake_bot)
     await gh.gw_section(cb, GwCB(action="backup"), svc, FakeState())
-    when = GwCB.unpack(_button(_last_edit(nav)[1], "📆 1-е, 12:00").callback_data)
+    when = GwCB.unpack(_button(_last_edit(nav)[1], "✏️ 1-е, 12:00").callback_data)
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await gh.gw_edit(cb, when, svc, st)
-    assert _last_edit(nav)[0] == ("✏️ День и час автобэкапа · сейчас 1-е, 12:00 · пришли два числа: "
+    assert _last_edit(nav)[0] == ("✏️ День и час автобэкапа · сейчас 1-го в 12:00 · пришли два числа: "
                                   "<code>1 12</code>")
     bad = _msg(fake_bot, "31 12")
     await gh.gw_receive_value(bad, st, svc)
@@ -457,7 +457,7 @@ async def test_backup_day_and_hour_in_one_input(svc, fake_bot, store):
     assert (store["app.scheduler.backup_day"], store["app.scheduler.backup_hour"]) == (5, 9)
     answers = [s for s in msg.sent if s[0] == "answer"]
     assert len(answers) == 1 and answers[0][1].split("\n")[0] == "✅ Автобэкап: 1-е, 12:00 → 5-е, 09:00"
-    assert "📆 5-е, 09:00" in [b for r in _rows(answers[0][2]) for b in r]
+    assert "✏️ 5-е, 09:00" in [b for r in _rows(answers[0][2]) for b in r]
     assert answers[0][1].split("\n", 2)[2].startswith("💾 Бэкапы"), "итог — не в разделе бэкапов"
 
 

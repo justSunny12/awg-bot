@@ -132,13 +132,13 @@ def test_update_tag_without_v_gets_it_and_migration_line_goes_last():
 
 
 def test_home_routing_line_is_silent_without_gateways():
-    """«🇷🇺 РФ-доступ: 🔴 выключен» без единого шлюза — шум: сказать нечего,
+    """«🇷🇺 РФ-доступ: 🔴 недоступен» без единого шлюза — шум: сказать нечего,
     добавить шлюз можно в «🛰 Шлюзы». С шлюзом, который не отвечает, — строка
     нужна: иначе админ не узнает, что РФ-доступ лёг."""
     assert texts.routing_admin_status_line({"ok": False, "active": "", "standby": []}) == ""
     down = texts.routing_admin_status_line({"ok": False, "active": "NASPi", "active_slot": 1,
                                             "standby": []})
-    assert down.startswith("🇷🇺 РФ-доступ: 🔴 выключен") and "NASPi" in down, down
+    assert down.startswith("🇷🇺 РФ-доступ: 🔴 недоступен") and "NASPi" in down, down
     out = texts.admin_panel({"ok": True}, routing_info={"ok": False, "active": "", "standby": []})
     assert "РФ-доступ" not in out, out
 

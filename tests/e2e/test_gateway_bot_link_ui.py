@@ -446,7 +446,7 @@ def test_bundle_caption_links_the_agent_bot():
     """Файл уходит в чат ВПС, а применять его надо в другом боте: подпись
     говорит, для какого шлюза файл и куда его переслать — ссылкой."""
     got = texts.gateway_bundle_caption("«Pi2» (дом 2)", {"username": "pi2_gw_bot", "name": "Шлюз Pi2"})
-    assert got == ('⚙️ Конфигурация шлюза <b>«Pi2» (дом 2)</b>.\nПерешли это сообщение боту шлюза '
+    assert got == ('📤 Конфигурация шлюза <b>«Pi2» (дом 2)</b>.\nПерешли это сообщение боту шлюза '
                    '(<a href="https://t.me/pi2_gw_bot">Шлюз Pi2</a>) — он проверит и применит сам.\n'
                    "Результат применения конфигурации сообщит бот шлюза.\n\nℹ️ Возврат в меню удалит это сообщение"), got
 
@@ -455,7 +455,7 @@ def test_bundle_caption_without_known_bot_has_no_link():
     """getMe ещё не отвечал — без ссылки и без пустых скобок."""
     for bot in ({}, None, {"username": "", "name": "x"}):
         got = texts.gateway_bundle_caption("«Pi2»", bot)
-        assert got == ("⚙️ Конфигурация шлюза <b>«Pi2»</b>.\nПерешли это сообщение боту шлюза — "
+        assert got == ("📤 Конфигурация шлюза <b>«Pi2»</b>.\nПерешли это сообщение боту шлюза — "
                        "он проверит и применит сам.\n" "Результат применения конфигурации сообщит бот шлюза.\n\nℹ️ Возврат в меню удалит это сообщение"), (bot, got)
 
 
@@ -483,13 +483,13 @@ async def test_send_gw_bundle_captions_the_file_with_slot_and_bot(services, slot
     msg = _amsg(fake_bot)
     assert await sh.send_gw_bundle(msg, services, 2) is True
     docs = [s[1] for s in msg.sent if s[0] == "document"]
-    assert docs == ['⚙️ Конфигурация шлюза <b>«Pi2» (дом &lt;2&gt;)</b>.\nПерешли это сообщение боту шлюза '
+    assert docs == ['📤 Конфигурация шлюза <b>«Pi2» (дом &lt;2&gt;)</b>.\nПерешли это сообщение боту шлюза '
                     '(<a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>) — он проверит и применит сам.\n'
                     "Результат применения конфигурации сообщит бот шлюза.\n\nℹ️ Возврат в меню удалит это сообщение"], docs
     msg1 = _amsg(fake_bot)
     assert await sh.send_gw_bundle(msg1, services, 1) is True
     docs1 = [s[1] for s in msg1.sent if s[0] == "document"]
-    assert docs1 == ["⚙️ Конфигурация шлюза <b>«NASPi»</b>.\nПерешли это сообщение боту шлюза — "
+    assert docs1 == ["📤 Конфигурация шлюза <b>«NASPi»</b>.\nПерешли это сообщение боту шлюза — "
                      "он проверит и применит сам.\n" "Результат применения конфигурации сообщит бот шлюза.\n\nℹ️ Возврат в меню удалит это сообщение"], \
         "бот слота 2 попал в подпись файла слота 1"
 
@@ -584,7 +584,7 @@ async def test_send_gw_bundle_captions_the_bot_from_the_snapshot(services, slots
     msg = _amsg(fake_bot)
     assert await sh.send_gw_bundle(msg, services, 2) is True
     docs = [s[1] for s in msg.sent if s[0] == "document"]
-    assert docs == ['⚙️ Конфигурация шлюза <b>«Pi2»</b>.\nПерешли это сообщение боту шлюза '
+    assert docs == ['📤 Конфигурация шлюза <b>«Pi2»</b>.\nПерешли это сообщение боту шлюза '
                     '(<a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>) — он проверит и применит сам.\n'
                     "Результат применения конфигурации сообщит бот шлюза.\n\nℹ️ Возврат в меню удалит это сообщение"], docs
 

@@ -1216,9 +1216,10 @@ def test_promotion_is_skipped_when_the_new_port_cannot_be_read(services, mig,
 
 async def test_promotion_ui_tells_and_restarts(services, mig, fake_bot,
                                               make_active_client, monkeypatch):
-    """Вторая половина промоушена: сказать и перезапустить. Выпади рестарт —
-    бот продолжит считать основным погашенный интерфейс, и каждое НОВОЕ
-    устройство родится на мёртвом. Внешне при этом всё зелёное."""
+    """Вторая половина промоушена: сказать и предложить перезапуск кнопками
+    «сейчас / позже». Без рестарта бот продолжит считать основным погашенный
+    интерфейс, и каждое НОВОЕ устройство родится на мёртвом — поэтому кнопка
+    стоит прямо под итогом, а сам бот не перезапускается без спроса."""
     from awgbot.bot.callbacks import SetCB
     from awgbot.bot.handlers import settings as sh
     from awgbot.core import settings
@@ -1239,17 +1240,11 @@ async def test_promotion_ui_tells_and_restarts(services, mig, fake_bot,
     cb = FakeCallback(message=nav, user_id=config.ADMIN_ID, bot=fake_bot)
     await sh.migration_action(cb, SetCB(sec="mig", act="do", key="finish!"), services)
 
-    said = [s[1] for s in nav.sent if s[0] == "answer"]
-    assert any("основным интерфейсом стал" in t for t in said), said
-    assert [c_[0] for c_ in calls] == ["wait", "restart"], "обещание рестарта не исполнено"
-
-
-def test_promotion_survives_a_failing_restart(services, mig, make_active_client, monkeypatch):
-    """Перезапуск не вышел — переезд всё равно завершён, а админу говорят, что
-    сделать руками: иначе он останется с ботом на погашенном интерфейсе и без
-    единой подсказки."""
-    from awgbot.bot import texts
-    assert "awg-bot restart" in texts.migration_promote_restart_failed()
+    said = [s for s in nav.sent if s[0] == "answer"]
+    assert any("основным интерфейсом стал" in s[1] for s in said), said
+    assert calls == [], "перезапуск — только по кнопке"
+    last = [s for s in said if "основным интерфейсом стал" in s[1]][-1]
+    assert [[b.text for b in row] for row in last[2].inline_keyboard] == [["🔁 Перезапустить сейчас"], ["⬅️ Позже"]]
 
 
 def test_write_state_failure_does_not_pretend_it_worked(tmp_path, monkeypatch, caplog):

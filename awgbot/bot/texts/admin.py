@@ -133,10 +133,8 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
 
 
 def release_url(tag: str) -> str:
-    """Страница релиза на GitHub — список изменений версии."""
-    from awgbot.core import config
-    repo = getattr(config, "UPDATES_REPO", "") or "justSunny12/awg-bot"
-    return f"https://github.com/{repo}/releases/tag/{tag}"
+    from .updates import release_url as _release_url
+    return _release_url(tag)
 
 
 MIGRATION_PAYLOAD = "migration"   # /start migration[-<id>] — обзор переезда и профиль в нём
