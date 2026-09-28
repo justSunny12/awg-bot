@@ -455,7 +455,8 @@ def gateway_apply_report(st: dict) -> str:
         lines.append("шлюз не подтверждён")
     if st.get("SSH_FILTER") == "1":
         n = int(st.get("SSH_ALLOW_COUNT") or 0)
-        lines.append(f"фильтр SSH снаружи: включён, {n} " + plural_ru(n, "адрес", "адреса", "адресов"))
+        lines.append("фильтр SSH снаружи: включён, " + (f"{n} " + plural_ru(n, "адрес", "адреса", "адресов")
+                                                           if n else "только сервер AWG"))
     elif st.get("SSH_FILTER") == "0":
         lines.append("фильтр SSH снаружи: выключен")
     if st.get("LAN") == "1":

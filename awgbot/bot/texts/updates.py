@@ -103,7 +103,7 @@ def update_blocked(tag: str, reason: str) -> str:
 
 def update_wait(tag: str) -> str:
     """Единственное сообщение на время обновления (цепочка до него стёрта)."""
-    return f"⏳ Обновление до {_e(tag)}, дождись завершения."
+    return f"⏳ Обновление до {_e(tag)}, дождись завершения"
 
 
 def update_failed(reason: str) -> str:

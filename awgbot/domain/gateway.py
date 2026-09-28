@@ -426,7 +426,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             "link", hs_bad, settings.get_int("app.gateway.link_alert_streak", 2),
             "🚨 Линк до сервера AWG мёртв: хендшейка нет дольше допустимого. РФ-доступ "
             "у клиентов не работает.",
-            "✅ Линк до сервера AWG ожил, хендшейк свежий.",
+            "✅ Линк до сервера AWG ожил, хендшейк свежий",
             loud=settings.get_bool("app.gateway.link_alert_loud", True))
 
         # Лежащий домашний канал для РФ-доступа равносилен лежащему линку —
@@ -460,9 +460,9 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
 
         notes += self._streak_alert(              # не критично: стреляет только на ребуте
             "kernels", bool(st.kernels_missing), streak,
-            "⚠️ Ядра без модуля awg: " + ", ".join(st.kernels_missing[:4]) +
-            ". Ребут в такое ядро оставит шлюз без туннелей.",
-            "✅ Все установленные ядра покрыты модулем awg.", critical=False)
+            "⚠️ Ядра без модуля awg: " + ", ".join(html.escape(k, quote=False) for k in st.kernels_missing[:4]) +
+            ". Ребут в такое ядро оставит шлюз без туннелей",
+            "✅ Все установленные ядра покрыты модулем awg", critical=False)
 
         under_now = bool(st.throttled and st.throttled.get("now"))
         notes += self._streak_alert(
