@@ -101,7 +101,7 @@ def test_restore_reports_only_changed_interfaces(services, monkeypatch, tmp_path
     assert services.inspect_backup(arc(b"[Interface]\nA\n"), "b.tgz")["ifaces_changed"] == []
     assert services.inspect_backup(arc(b"[Interface]\nB\n"), "b.tgz")["ifaces_changed"] == ["awg1"]
     warn = texts.awg_restart_warning_body(False)
-    assert warn.startswith("Все соединения оборвутся на секунды")
+    assert warn.startswith("Все соединения оборвутся на несколько секунд")
     assert texts.restore_offer("2026-09-09T10:00:00+03:00", warn).endswith(warn)
     assert warn not in texts.restore_offer("2026-09-09T10:00:00+03:00")
     assert texts.awg_restart_warning_body(True).startswith("Линк опустится и поднимется")
