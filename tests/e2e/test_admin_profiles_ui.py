@@ -292,7 +292,8 @@ async def test_regen_invite_sends_share_buttons_and_leads_back_to_the_card(
     assert _labels(sent[-2][1]) == ["📤 Отправить", "📋 Скопировать"], sent
     assert sent[-1][0] == "☝️ Приглашение для профиля Ждёт — работает до активации", sent[-1]
     back = [(b.text, b.callback_data) for r in sent[-1][1].inline_keyboard for b in r]
-    assert back == [("⬅️ В карточку", ClientCB(action="open", client_id=created.client_id).pack())], back
+    assert back == [("👤 В карточку", ClientCB(action="open", client_id=created.client_id).pack()),
+                    ("⬅️ На главную", Menu(action="main").pack())], back
 
 
 async def test_deleting_a_profile_leaves_a_note_and_opens_profiles(services, fake_bot, make_active_client):

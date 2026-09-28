@@ -6,7 +6,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import blocks as _blocks
 from awgbot.core import config
-from awgbot.core.enums import ActivationStatus
+from awgbot.core.enums import ActivationStatus, PauseMode
 from awgbot.bot.callbacks import (
     AdminSelfCB, BlockCB, CancelCB, ClientCB, DeviceCB, GwSlotCB, Menu, PeriodCB, PresetCB,
     ReassignCB, RoutingCB, SetCB, BroadcastCB)
@@ -176,7 +176,9 @@ def admin_client_actions(client, devices=(), *, is_admin_owner: bool = False,
             rows.append(1)
         fixed = sum(rows) + 2
     else:
-        if int(client.block_reason) & int(_blocks.ClientBlock.PAUSED):
+        # пауза блокировкой «до снятия» — не пауза: снимается вместе с блоком
+        if (int(client.block_reason) & int(_blocks.ClientBlock.PAUSED)
+                and getattr(client, "pause_mode", None) != PauseMode.ADMIN_OPEN):
             kb.button(text="▶️ Снять паузу", callback_data=ClientCB(action="resume_pause", client_id=client.id))
             rows.append(1)
         if client.activation_status == ActivationStatus.PENDING:
@@ -370,9 +372,11 @@ def expiring_kb(rows=()) -> InlineKeyboardMarkup:
 
 
 def to_client_card(client_id: int) -> InlineKeyboardMarkup:
-    """Одна кнопка «⬅️ В карточку» — завершитель под приглашением профиля."""
+    """«👤 В карточку» и «⬅️ На главную» — завершитель под приглашением профиля."""
     b = InlineKeyboardBuilder()
-    b.button(text="⬅️ В карточку", callback_data=ClientCB(action="open", client_id=client_id))
+    b.button(text="👤 В карточку", callback_data=ClientCB(action="open", client_id=client_id))
+    b.button(text="⬅️ На главную", callback_data=Menu(action="main"))
+    b.adjust(2)
     return b.as_markup()
 
 
