@@ -119,17 +119,12 @@ _RESOLVE_TTL = 15 * 60
 # ограниченно в отдельном потоке: не ответил вовремя — это ровно тот случай,
 # на который рассчитан возврат прошлого значения, «DNS молчит».
 _RESOLVE_TIMEOUT = 3.0
-_resolve_pool = futures.ThreadPoolExecutor(max_workers=2,
-                                           thread_name_prefix="nft-resolve")
 
 
 def _getaddrinfo_timed(host: str):
-    """getaddrinfo с потолком ожидания. Просроченный вызов бросаем на произвол:
-    поток отвиснет сам, а его результат никому не нужен — кэш пишет вызывающий,
-    и гонки за него нет."""
-    fut = _resolve_pool.submit(socket.getaddrinfo, host, None,
-                               proto=socket.IPPROTO_TCP)
-    return fut.result(timeout=_RESOLVE_TIMEOUT)
+    """getaddrinfo с потолком ожидания — общая реализация (util/nets)."""
+    from awgbot.util.nets import getaddrinfo_timed
+    return getaddrinfo_timed(host, timeout=_RESOLVE_TIMEOUT)
 
 
 def classify(entry: str) -> tuple[str, str]:

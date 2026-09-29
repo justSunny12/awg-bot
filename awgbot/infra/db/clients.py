@@ -175,6 +175,15 @@ class ClientsMixin:
             (client_id,)).fetchone()
         return int(row["n"])
 
+    def client_mask_apply(self, client_id: int, or_bits: int = 0, and_bits: int = -1) -> int:
+        """block_reason клиента = (block_reason | or_bits) & and_bits одним UPDATE;
+        возвращает новую маску."""
+        with self._tx() as cur:
+            cur.execute("UPDATE clients SET block_reason = (block_reason | ?) & ? WHERE id = ?",
+                        (int(or_bits), int(and_bits), int(client_id)))
+            row = cur.execute("SELECT block_reason FROM clients WHERE id = ?", (int(client_id),)).fetchone()
+        return int(row["block_reason"]) if row else 0
+
     def update_client_fields(self, client_id: int, **fields) -> None:
         """Точечное обновление полей клиента с маршрутизацией по нормализованным
         таблицам. Ленивые таблицы (grace/pause) создаются строкой при первой

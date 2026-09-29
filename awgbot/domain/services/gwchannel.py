@@ -571,13 +571,20 @@ class GwChannelMixin:
         # В state — момент СЛЕДУЮЩЕГО похода, с джиттером ±40 %: «прошло шесть
         # часов» внутри тика давало метроном с разбросом в минуты, а это семь
         # одних и тех же адресов по часам.
+        # Гейт по моменту — всегда, даже пока файла ещё нет: иначе при 404 или
+        # коротком фиде поход к GitHub шёл каждый тик (429 не за горами).
+        # Неудача — повтор через полчаса с джиттером, а не через шесть.
         nxt = self.db.get_state(self._LAN_FEEDS_AT_KEY) or ""
-        if not force and nxt.isdigit() and now < int(nxt) and self.gwlink_lan_feeds():
+        if not force and nxt.isdigit() and now < int(nxt):
             return False
         self.db.set_state(self._LAN_FEEDS_AT_KEY, str(now + int(every * random.uniform(0.6, 1.4))))
+
+        def retry_soon() -> None:
+            self.db.set_state(self._LAN_FEEDS_AT_KEY, str(now + int(1800 * random.uniform(0.6, 1.4))))
         body, err, _code = routing.fetch(self._LAN_DOMAINS_URL, timeout=60)
         if body is None or len(re.findall(r"(?m)^ipset=/", body)) < 10:
             log.warning("канал линка: фид доменов локальной сети не получен (%s)", err or "короткий")
+            retry_soon()
             return False
         nets: list[str] = []
         for svc in self._LAN_SERVICES:
@@ -591,18 +598,25 @@ class GwChannelMixin:
             nets += re.findall(r'"ipv4Prefix"\s*:\s*"(\d+\.\d+\.\d+\.\d+/\d+)"', goog)
         if not nets:
             log.warning("канал линка: подсети локальной сети не получены ни из одного источника")
+            retry_soon()
             return False
         nets_text = "\n".join(sorted(set(nets))) + "\n"
         from awgbot.util import gwlink
         digest = gwlink.feeds_hash(body, nets_text)
-        if digest == self.gwlink_lan_feeds().get("hash"):
+        if digest == self.gwlink_lan_feeds_digest():
             return False
         path = self._lan_feeds_path()
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"hash": digest, "domains": body, "nets": nets_text,
-                                   "fetched_at": timeutil.to_iso(timeutil.now())},
-                                  ensure_ascii=False), encoding="utf-8")
-        tmp.replace(path)
+        try:
+            tmp.write_text(json.dumps({"hash": digest, "domains": body, "nets": nets_text,
+                                       "fetched_at": timeutil.to_iso(timeutil.now())},
+                                      ensure_ascii=False), encoding="utf-8")
+            tmp.replace(path)
+        except OSError as e:
+            # запись не удалась (нет места) — это не повод обрывать блок тика
+            log.warning("канал линка: фиды локальной сети не записаны: %s", e)
+            retry_soon()
+            return False
         log.info("канал линка: фиды локальной сети обновлены")
         return True
 

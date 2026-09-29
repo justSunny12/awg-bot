@@ -589,6 +589,25 @@ class GatewayLinkMixin:
         return {"gateway": gw, "device": self.db.get_device(dev.id), "previous": prev,
                 "created": created, "rekeyed": rekey, "routing_reset": routing_reset}
 
+    def _slot_forget(self, slot_id: int) -> None:
+        """Всё состояние слота — в БД и в памяти — одним списком. Раньше его
+        чистили три ручных перечня, и новый слот с тем же номером наследовал
+        хвосты: ложное «снова отвечает», «лежит» до 5 минут, ложное
+        «конфигурация актуализирована»."""
+        sid = int(slot_id)
+        for key in (self._GW_BUNDLE_ISSUED_KEY, self._GW_BUNDLE_SSH_KEY, self._GW_BUNDLE_SSH_NOTIFIED_KEY,
+                    self._GW_BUNDLE_DEPS_KEY, self._GW_BUNDLE_DEPS_NOTIFIED_KEY,
+                    self._GW_DRIFT_NOTIFIED_KEY, self._GW_BOT_ME_KEY):
+            self.db.set_state(self._gw_slot_key(key, sid), "")
+        for key in self._rt_keys(sid):                     # стрик и «объявлен»
+            self.db.set_state(key, "")
+        if (self.db.get_state(self._RT_HOLD_KEY) or "") == str(sid):
+            self.db.set_state(self._RT_HOLD_KEY, "")
+        self._gw_ping_forget(sid)
+        self._standby_forget(sid)
+        self._rt_window_reset(sid)                         # окно замеров живости
+        self.gwlink_forget(sid)                            # снимок и сессия канала
+
     def gateway_remove(self, slot_id: Optional[int] = None) -> Optional[object]:
         """Убрать слот: активный при живом другом слоте — трафик на него;
         последний — условную маршрутизацию выключить. Линк слота: первый —
@@ -601,19 +620,13 @@ class GatewayLinkMixin:
         others = [g for g in self.db.gateways() if g.id != gw.id]
         active = self.active_gateway()
         # трафик — на другой слот ДО удаления строки: иначе «активный» уже
-        # вычислится как первый оставшийся, и маршрут в ядре не переложится
+        # вычислится как первый оставшийся, и маршрут в ядре не переложится.
+        # На живой резерв, если такой есть: мёртвый держался бы удержанием.
         if others and active is not None and active.id == gw.id:
-            self.gateway_switch(others[0].id, manual=True)
+            target = next((g for g in others if not self._rt_unavailable(g.id)), others[0])
+            self.gateway_switch(target.id, manual=True)
         self.db.gateway_delete(gw.id)
-        for key in (self._GW_BUNDLE_ISSUED_KEY, self._GW_BUNDLE_SSH_KEY, self._GW_BUNDLE_SSH_NOTIFIED_KEY,
-                    self._GW_BUNDLE_DEPS_KEY, self._GW_BUNDLE_DEPS_NOTIFIED_KEY):
-            self.db.set_state(self._gw_slot_key(key, gw.id), "")
-        if (self.db.get_state(self._RT_HOLD_KEY) or "") == str(gw.id):
-            self.db.set_state(self._RT_HOLD_KEY, "")
-        self._gw_ping_forget(gw.id)
-        self._standby_forget(gw.id)
-        self.gwlink_forget(gw.id)          # снимок и сессия канала — вместе со слотом
-        self.db.set_state(self._gw_slot_key(self._GW_BOT_ME_KEY, gw.id), "")
+        self._slot_forget(gw.id)
         if not others:
             try:
                 settings.set_value("app.routing.enabled", False)
@@ -1187,9 +1200,10 @@ class GatewayLinkMixin:
             except FileNotFoundError:
                 pass
             lines.append(f"{key}={token}")
-            with open(path, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines) + "\n")
-            os.chmod(path, 0o600)
+            # атомарно: усечение с последующей записью при ENOSPC оставляло
+            # пустой env — и основной бот не стартовал
+            from awgbot.util.fsatomic import write_private
+            write_private(path, "\n".join(lines) + "\n")
         except OSError as e:
             raise ServiceError(f"не записать {path}: {e}")
 

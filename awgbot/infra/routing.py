@@ -1109,14 +1109,12 @@ def resolve_a(domain: str, timeout: float = 3.0) -> list[str]:
     чужой адрес. Эффект заперт в наборе одного профиля и снимается удалением
     домена из его списка, но безобидным его называть больше нельзя.
     """
+    from concurrent import futures
+    from awgbot.util.nets import getaddrinfo_timed
     try:
-        socket.setdefaulttimeout(timeout)
-        info = socket.getaddrinfo(domain, None, family=socket.AF_INET,
-                                  type=socket.SOCK_STREAM)
-    except (OSError, UnicodeError):
+        info = getaddrinfo_timed(domain, timeout=timeout, family=socket.AF_INET)
+    except (OSError, UnicodeError, futures.TimeoutError):
         return []
-    finally:
-        socket.setdefaulttimeout(None)
     return sorted({i[4][0] for i in info})
 
 

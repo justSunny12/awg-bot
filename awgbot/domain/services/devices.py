@@ -69,9 +69,17 @@ class DevicesMixin:
                 self.db.delete_device(device_id, archive_reason=None)  # откат, не архивируем
                 raise ServiceError(f"Не удалось применить конфиг на сервере: {e}")
 
-        # если клиент сейчас истёкший — новое устройство тоже блокируем (EXPIRY)
-        if not client.is_service and client.status == SubStatus.EXPIRED:
-            self._device_set_block(device_id, DeviceBlock.EXPIRY)
+        # Блокировки профиля — на новое устройство сразу: биты ClientBlock и
+        # DeviceBlock выровнены по значению (кроме TRAFFIC_USER — он про само
+        # устройство). Раньше наследовалась только EXPIRY, и при исчерпанном
+        # лимите, паузе или ручном блоке новое устройство работало.
+        if not client.is_service:
+            mask = int(client.block_reason) & ~int(DeviceBlock.TRAFFIC_USER)
+            if client.status == SubStatus.EXPIRED:
+                mask |= int(DeviceBlock.EXPIRY)
+            for bit in DeviceBlock:
+                if bit and mask & int(bit):
+                    self._device_set_block(device_id, bit)
 
         # Профилю разрешён РФ-доступ — новое устройство сразу в режиме: человеку
         # обещано «включено для всех твоих устройств», и новое — не исключение
@@ -283,6 +291,59 @@ class DevicesMixin:
         if client is None:
             raise ServiceError("Клиент не найден")
         donor = self.db.get_client(dev.client_id)          # прежний владелец
+        # Перевыпуск ключей — ВНЕ транзакции ниже: сервер транзакцией не
+        # откатывается, и отказ на второй строке пары оставлял бы новый пир на
+        # сервере при старой БД (сверка удалила бы устройство и посадила бы
+        # «чужой пир» в карантин). Не удалась перепривязка — ключ возвращаем.
+        rekeyed = False
+        if dev.holder_client_id is not None and dev.holder_client_id != new_client_id:
+            if client.device_limit != 0 and not add_slot \
+                    and self.db.count_devices(new_client_id) >= client.device_limit:
+                raise LimitReached("У клиента нет свободного слота — привязка отклонена")
+            backup = self._rekey_snapshot(dev)
+            self.rekey_device(dev.id)
+            rekeyed = True
+        try:
+            new_limit, slot_bumped = self._reassign_tx(dev, client, new_client_id, add_slot)
+        except Exception:
+            if rekeyed:
+                self._rekey_restore(backup)
+            raise
+        # счётчики ПОСЛЕ перепривязки (живой COUNT — уже актуальны)
+        donor_count = self.db.count_devices(donor.id) if donor else 0
+        recip_count = self.db.count_devices(new_client_id)
+        return {
+            "name": dev.name,
+            "added_slot": slot_bumped,
+            "donor": None if (donor is None or donor.is_service) else {
+                "tg_id": donor.tg_id, "count": donor_count, "limit": donor.device_limit,
+            },
+            "recipient": {
+                "tg_id": client.tg_id, "count": recip_count, "limit": new_limit,
+            },
+            # прежний держатель (если был и не стал владельцем) — ему сказать
+            "holder_tg": (dev.holder_tg_id
+                          if dev.holder_client_id not in (None, new_client_id) else None),
+        }
+
+    def _rekey_snapshot(self, dev) -> list[tuple]:
+        return [(p.id, p.public_key, p.private_key, p.preshared_key, p.address, awg.iface_of(p.iface))
+                for p in self._device_pair(dev)]
+
+    def _rekey_restore(self, backup: list[tuple]) -> None:
+        """Вернуть прежние ключи пары после неудачной перепривязки."""
+        for dev_id, pub, priv, psk, address, iface in backup:
+            cur = self.db.get_device(dev_id)
+            try:
+                if cur is not None and cur.public_key != pub:
+                    awg.remove_peer(cur.public_key, iface=iface)
+                awg.add_peer(pub, psk, address, iface=iface)
+            except awg.AwgError as e:
+                log.warning("reassign_device: прежний ключ устройства %s не вернулся: %s", dev_id, e)
+            self.db.update_device_fields(dev_id, public_key=pub, private_key=priv)
+
+    def _reassign_tx(self, dev, client, new_client_id: int, add_slot: bool) -> tuple[int, bool]:
+        """Перепривязка одной транзакцией; возвращает (лимит получателя, поднят ли слот)."""
         with self.db.transaction():
             new_limit = client.device_limit
             # add_slot поднимает лимит, НО безлимит (0) не трогаем: протухшая
@@ -301,11 +362,6 @@ class DevicesMixin:
             # Парно: перенеси одну строку — и пара разорвётся между профилями,
             # старый пир останется у донора, а завершение переезда сольёт
             # трафик и заархивирует устройство не тому человеку.
-            if dev.holder_client_id is not None and dev.holder_client_id != new_client_id:
-                # Прежний держатель теряет не только управление, но и ДОСТУП:
-                # ключи перевыпускаются (имя и адрес те же), его конфиг мёртв.
-                # Внутри транзакции: не поднялся новый пир — БД не тронута.
-                self.rekey_device(dev.id)
             for peer in self._device_pair(dev):
                 self.db.reassign_device(peer.id, new_client_id)
                 # Держатель снимается всегда: устройство переехало к другому
@@ -314,19 +370,4 @@ class DevicesMixin:
                 # правило руками админа. Стал владельцем сам — держать нечего.
                 if dev.holder_client_id is not None:
                     self.db.set_device_holder(peer.id, None)
-        # счётчики ПОСЛЕ перепривязки (живой COUNT — уже актуальны)
-        donor_count = self.db.count_devices(donor.id) if donor else 0
-        recip_count = self.db.count_devices(new_client_id)
-        return {
-            "name": dev.name,
-            "added_slot": slot_bumped,
-            "donor": None if (donor is None or donor.is_service) else {
-                "tg_id": donor.tg_id, "count": donor_count, "limit": donor.device_limit,
-            },
-            "recipient": {
-                "tg_id": client.tg_id, "count": recip_count, "limit": new_limit,
-            },
-            # прежний держатель (если был и не стал владельцем) — ему сказать
-            "holder_tg": (dev.holder_tg_id
-                          if dev.holder_client_id not in (None, new_client_id) else None),
-        }
+        return new_limit, slot_bumped

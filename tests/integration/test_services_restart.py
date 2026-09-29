@@ -50,6 +50,10 @@ def test_resource_alert_fires_after_streak_and_recovers(services, fake_awg):
     # алерт ровно на достижении стрика, ни раньше, ни дважды
     assert all(n == [] for n in fired[:-1])
     assert len(fired[-1]) == 1 and "CPU" in fired[-1][0].text
+    # не доставлено (Telegram лежит) — следующий тик скажет то же самое
+    again = services.check_resource_alerts(dict(hi))
+    assert len(again) == 1 and again[0].text == fired[-1][0].text
+    again[0].on_sent()                                   # доставлено — взведён
     # держится выше — повторно не спамит
     assert services.check_resource_alerts(dict(hi)) == []
     # вернулось в норму на streak замеров подряд → один «отбой»
@@ -57,6 +61,8 @@ def test_resource_alert_fires_after_streak_and_recovers(services, fake_awg):
     rec = [services.check_resource_alerts(dict(lo)) for _ in range(streak)]
     assert all(n == [] for n in rec[:-1])
     assert len(rec[-1]) == 1 and "норм" in rec[-1][0].text.lower()
+    rec[-1][0].on_sent()
+    assert services.db.get_state("res_alert_cpu") == "0"
 
 
 def test_resource_alert_none_metric_does_not_move_counters(services, fake_awg):
@@ -83,7 +89,10 @@ def test_refresh_status_now_writes_state(services, monkeypatch):
     monkeypatch.setattr(awg, "container_started_at", lambda: "2026-01-01T00:00:00Z")
     services.db.set_state("last_server_ok", "0")          # было «лежит»
     services.refresh_status_now()
-    assert services.db.get_state("last_server_ok") == "1"  # обновилось на «жив»
+    assert services.db.get_state("server_ok_view") == "1"  # показ обновился на «жив»
+    assert services.db.get_state("last_server_ok") == "0", (
+        "ключ монитора перезаписан кнопкой — скачок 🔴/🟢 он больше не увидит")
+    assert services.server_status_cached()["ok"] is True
     from awgbot.runtime import hostmetrics
     snap = hostmetrics.get_host_metrics(services.db)
     assert snap is not None and "cpu" in snap             # метрики записаны

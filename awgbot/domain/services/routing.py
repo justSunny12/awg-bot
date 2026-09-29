@@ -74,6 +74,7 @@ class RoutingMixin:
     # полном отказе. Одиночный плохой замер и так не шум: внутри него зонд
     # делает две попытки к двум целям с таймаутом 4 с.
     _RT_ANNOUNCED_KEY = "routing_link_announced"
+    _RT_LISTS_NEXT_KEY = "routing_lists_next"       # момент следующего похода за списками (с джиттером)
     # Подсказка про бандл — не украшение. Обфускация линка симметрична: не сойдись
     # H1..H4/S1..S4 у сторон, хендшейка не будет вовсе. Отказ громкий (вот эта
     # самая тревога), но причина со стороны ВПС не видна, и без строки ниже её
@@ -718,13 +719,20 @@ class RoutingMixin:
         now = int(time.time())
         every = int(settings.get("app.routing.lists_refresh_hours", 6)) * 3600
         if not force:
-            last = self.db.get_state(self._RT_LISTS_KEY)
             cached = len(self._routing_read_cache("home_domains"))
             # по расписанию ИЛИ немедленно, если кэш пуст: без списков режим не
             # действует вовсе, и ждать следующего окна незачем — в том числе на
-            # старте бота, где эта же ветка и срабатывает
-            if last and now - int(last) < every and cached > 0:
+            # старте бота, где эта же ветка и срабатывает. Момент СЛЕДУЮЩЕГО
+            # похода — с джиттером ±40 %: «шесть часов с прошлого» внутри тика
+            # давало метроном (правило проекта: сетевые задачи не по часам).
+            nxt = self.db.get_state(self._RT_LISTS_NEXT_KEY) or ""
+            last = self.db.get_state(self._RT_LISTS_KEY)
+            if not nxt.isdigit() and last:
+                nxt = str(int(last) + every)               # прежняя схема: один раз без джиттера
+            if nxt.isdigit() and now < int(nxt) and cached > 0:
                 return cached
+        import random
+        self.db.set_state(self._RT_LISTS_NEXT_KEY, str(now + int(every * random.uniform(0.6, 1.4))))
         try:
             # СКАЧИВАНИЕ — СНАРУЖИ ЗАМКА. Источники с таймаутом по 15 с, а под
             # замком ждёт тик живости: держать его на это время значило бы
@@ -1080,7 +1088,8 @@ class RoutingMixin:
         # держать на это время БД или реконсиляцию значило бы менять один отказ
         # на другой.
         results: dict = {}
-        if engaged and slots and not hasattr(self, "_rt_tick"):
+        first_tick = not hasattr(self, "_rt_tick")
+        if engaged and slots and first_tick:
             # ПЕРВЫЙ такт: таблицы и правила слотов — до зондов. Без правила по
             # метке зонд резерва ушёл бы через основную таблицу ВПС и «прошёл»,
             # даже если линк мёртв.
@@ -1098,9 +1107,14 @@ class RoutingMixin:
         # которое меняется раз в неделю.
         self._rt_tick = getattr(self, "_rt_tick", -1) + 1
         last_verdict = getattr(self, "_rt_last_verdict", None)
-        if engaged and (verdict != last_verdict or self._rt_tick % 10 == 0):
-            self._ensure_gateway_policy()
-        self._rt_last_verdict = verdict
+        self._rt_last_verdict = verdict                   # ДО вызова: отказ ниже не должен повторяться каждый такт
+        if engaged and not first_tick and (verdict != last_verdict or self._rt_tick % 10 == 0):
+            try:
+                self._ensure_gateway_policy()
+            except routing.RoutingError as e:
+                # линк одного слота опущен — обвязка слотов не доведена, но такт
+                # (окно, стрики, переключение, алерты) обязан идти дальше
+                log.warning("routing_liveness_tick: обвязка слотов не доведена: %s", e)
 
         was_on = self.db.get_state(self._RT_LINK_KEY) == "1"
         notes: list[Notification] = []

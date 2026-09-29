@@ -78,7 +78,7 @@ def poll_once(acc: MailAccount, on_code: Callable[[str], bool]) -> int:
         return 0
     accepted = 0
     ctx = ssl.create_default_context()
-    conn = imaplib.IMAP4_SSL(acc.imap_host, acc.imap_port, ssl_context=ctx)
+    conn = imaplib.IMAP4_SSL(acc.imap_host, acc.imap_port, ssl_context=ctx, timeout=30)
     try:
         conn.login(acc.login, acc.password)
         for mbox in _MAILBOXES:

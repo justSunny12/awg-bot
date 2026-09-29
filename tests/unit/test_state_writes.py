@@ -43,7 +43,8 @@ def test_resource_alert_streak_semantics_survive_the_cap(services, fake_awg):
     hi = {"cpu": 95, "ram": 10, "disk": 10}
     lo = {"cpu": 10, "ram": 10, "disk": 10}
     for _ in range(streak * 3):                          # долго высоко: счётчик не «переполняется»
-        services.check_resource_alerts(dict(hi))
+        for n in services.check_resource_alerts(dict(hi)):
+            n.on_sent()                                  # «взведён» — по факту доставки
     assert services.db.get_state("res_alert_cpu") == "1"
     rec = [services.check_resource_alerts(dict(lo)) for _ in range(streak)]
     assert all(r == [] for r in rec[:-1]) and len(rec[-1]) == 1

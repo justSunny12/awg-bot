@@ -148,14 +148,16 @@ class DatabaseCore:
             if key in self._HOT_STATE_KEYS:
                 self._hot_state[key] = value
             return False
-        if key in self._HOT_STATE_KEYS:
-            self._hot_state.pop(key, None)
         with self._tx() as cur:
             cur.execute(
                 """INSERT INTO server_state (key, value) VALUES (?, ?)
                    ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
                 (key, value),
             )
+        if key in self._HOT_STATE_KEYS:
+            # ПОСЛЕ записи: сброс до неё давал другому потоку положить в кэш
+            # старое значение, и двойники не рождались до следующей записи
+            self._hot_state[key] = value
         return True
 
     def migration_visibility_running(self) -> bool:

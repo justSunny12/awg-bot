@@ -376,44 +376,19 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     # ── гистерезис ───────────────────────────────────────────────────────────
 
     def _armer(self, key: str, value: str):
-        """Отложенная отметка «алерт показан» — её ставит рассылка по факту
-        доставки (Notification.on_sent)."""
-        def _mark() -> None:
-            self.db.set_state(f"gwst_armed_{key}", value)
-        return _mark
+        """Отложенная отметка «алерт показан» — по факту доставки (domain/alerts)."""
+        from awgbot.domain import alerts
+        return alerts.armer(self.db, f"gwst_armed_{key}", value)
 
     def _streak_alert(self, key: str, bad: bool | None, streak: int,
                       on_text: str, off_text: str, loud: bool = True,
                       critical: bool = True) -> list[Notification]:
-        """Обобщение паттерна ресурс-алертов: алерт после N плохих замеров
-        ПОДРЯД, отбой после N хороших. None не двигает счётчики: «не смог
-        посмотреть» — не норма и не отказ."""
-        if bad is None:
-            return []
-        hi = int(self.db.get_state(f"gwst_hi_{key}") or 0)
-        lo = int(self.db.get_state(f"gwst_lo_{key}") or 0)
-        armed = self.db.get_state(f"gwst_armed_{key}") == "1"
-        notes: list[Notification] = []
-        # Потолок на пороге: выше него счётчик ничего не решает, а без потолка
-        # каждый спокойный тик был бы записью на SD-карту.
-        # «Взведён» переключаем только ПОСЛЕ доставки. Запись до отправки давала
-        # одинокий отбой: сеть у шлюза падает вместе с линком, алерт не улетал,
-        # а «✅ ожил» приходил первым и единственным словом — беда выглядела
-        # так, будто её не было. Не дошло — следующий тик скажет то же самое.
-        if bad:
-            hi, lo = min(hi + 1, streak), 0
-            if hi >= streak and not armed:
-                notes.append(Notification(config.ADMIN_ID, on_text, force_sound=loud,
-                                          critical=critical,
-                                          on_sent=self._armer(key, "1")))
-        else:
-            lo, hi = min(lo + 1, streak), 0
-            if lo >= streak and armed:
-                notes.append(Notification(config.ADMIN_ID, off_text,
-                                          on_sent=self._armer(key, "0")))
-        self.db.set_state(f"gwst_hi_{key}", str(hi))
-        self.db.set_state(f"gwst_lo_{key}", str(lo))
-        return notes
+        """Гистерезис по стрикам — общий с основным ботом (domain/alerts):
+        алерт после N плохих замеров подряд, отбой после N хороших, «взведён»
+        — по факту доставки."""
+        from awgbot.domain import alerts
+        return alerts.streak_alert(self.db, (f"gwst_hi_{key}", f"gwst_lo_{key}", f"gwst_armed_{key}"),
+                                   bad, streak, on_text, off_text, loud=loud, critical=critical)
 
     # ── тик монитора ─────────────────────────────────────────────────────────
 

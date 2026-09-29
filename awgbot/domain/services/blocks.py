@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+import logging
+
 from awgbot.core import config
 from awgbot.infra import awg
 from awgbot.core.blocks import DeviceBlock, ClientBlock
@@ -42,6 +44,8 @@ def _manual_client_blocked() -> str:
 def _manual_client_unblocked() -> str:
     return "🟢 Твой доступ восстановлен."
 
+log = logging.getLogger("awgbot.services")
+
 
 class BlocksMixin:
     # ── Блокировки (битовые маски причин) ────────────────────────────────────
@@ -77,48 +81,45 @@ class BlocksMixin:
         dev = self.db.get_device(device_id)
         if dev is None or dev.is_gateway:
             return                                # шлюз не блокируется ни одной причиной
-        new_mask = int(dev.block_reason) | int(bit)
-        if new_mask == int(dev.block_reason):
+        if int(dev.block_reason) & int(bit):
             return
         for peer in self._device_pair(dev, twins):
-            self.db.update_device_fields(peer.id, block_reason=new_mask)
+            # атомарно: check_expiry и продление из двух потоков теряли бит
+            self.db.device_mask_apply(peer.id, or_bits=int(bit))
             try:
                 awg.block_ip(peer.address)      # идемпотентно
-            except awg.AwgError:
-                pass
+            except awg.AwgError as e:
+                # DROP не встал при записанном бите — доложит сверка в тике
+                log.warning("block: DROP %s не наложен: %s", peer.address, e)
 
     def _device_clear_block(self, device_id: int, bit: DeviceBlock, twins: Optional[dict] = None) -> None:
         """Снять причину (бит). Если не осталось причин — снять DROP."""
         dev = self.db.get_device(device_id)
         if dev is None:
             return
-        new_mask = int(dev.block_reason) & ~int(bit)
-        if new_mask == int(dev.block_reason):
+        if not int(dev.block_reason) & int(bit):
             return
         for peer in self._device_pair(dev, twins):
-            self.db.update_device_fields(peer.id, block_reason=new_mask)
+            new_mask = self.db.device_mask_apply(peer.id, and_bits=~int(bit))
             if new_mask == 0:
                 try:
                     awg.unblock_ip(peer.address)   # идемпотентно
-                except awg.AwgError:
-                    pass
+                except awg.AwgError as e:
+                    log.warning("unblock: DROP %s не снят: %s", peer.address, e)
 
     def _client_set_block(self, client_id: int, bit: ClientBlock) -> None:
         """Установить причину блокировки клиента (только маска клиента; физически
         трафик режется по устройствам — этим занимается вызывающий код)."""
-        c = self.db.get_client(client_id)
-        if c is None:
+        if self.db.get_client(client_id) is None:
             return
-        self.db.update_client_fields(
-            client_id, block_reason=int(c.block_reason) | int(bit))
+        self.db.client_mask_apply(client_id, or_bits=int(bit))
 
     def _client_clear_block(self, client_id: int, bit: ClientBlock) -> None:
         c = self.db.get_client(client_id)
         if c is None:
             return
         old_mask = int(c.block_reason)
-        new_mask = old_mask & ~int(bit)
-        self.db.update_client_fields(client_id, block_reason=new_mask)
+        new_mask = self.db.client_mask_apply(client_id, and_bits=~int(bit))
         # эпизод бана завершён (клиент полностью разблокирован) → в аудит
         if old_mask and new_mask == 0:
             self.db.archive_block(client_id, old_mask, "unblocked")

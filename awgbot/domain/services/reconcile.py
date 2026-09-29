@@ -178,21 +178,39 @@ class ReconcileMixin:
 
     # ── Реконсиляция блокировок после рестарта контейнера ────────────────────
 
-    def reconcile_blocks(self) -> None:
-        """iptables-DROP'ы эфемерны — после рестарта переналагаем их на всех,
-        у кого block_reason != 0 в БД (любая причина блокировки). Один
-        `iptables -S` вместо -C на каждое устройство; block_ip сам идемпотентен."""
+    def reconcile_blocks(self, prune: bool = False) -> int:
+        """iptables-DROP'ы эфемерны — переналагаем их на всех, у кого
+        block_reason != 0 в БД (любая причина). Один `iptables -S` вместо -C
+        на каждое устройство; block_ip сам идемпотентен. С prune — и обратно:
+        DROP у устройства без причины снимается (разовый отказ iptables при
+        разблокировке иначе держал бы продлённого до рестарта). Чужие DROP
+        (карантин неизвестных пиров, не наши адреса) не трогаем. Возвращает
+        число исправлений."""
         try:
             present = awg.blocked_ips()
         except awg.AwgError:
             present = set()
+            prune = False                          # не с чем сверять — только наложить
+        fixed = 0
         for address in self.db.blocked_addresses():
             if address in present:
                 continue
             try:
                 awg.block_ip(address)
-            except awg.AwgError:
-                pass
+                fixed += 1
+            except awg.AwgError as e:
+                log.warning("reconcile_blocks: DROP %s не наложен: %s", address, e)
+        if prune:
+            blocked = set(self.db.blocked_addresses())
+            for dev in self.db.list_all_devices():
+                if dev.address in present and dev.address not in blocked and not dev.is_gateway:
+                    try:
+                        awg.unblock_ip(dev.address)
+                        fixed += 1
+                        log.warning("reconcile_blocks: лишний DROP %s снят", dev.address)
+                    except awg.AwgError as e:
+                        log.warning("reconcile_blocks: лишний DROP %s не снят: %s", dev.address, e)
+        return fixed
 
     def reconcile_ssh_access(self) -> None:
         """SSH-к-хосту из туннеля — только устройствам админа. Единственная

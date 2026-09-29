@@ -369,41 +369,23 @@ class StatusMixin:
             "ram": (settings.get_int("resource_alerts.thresholds_percent.ram", 80), "RAM", "🧠"),
             "disk": (settings.get_int("resource_alerts.thresholds_percent.disk", 80), "Диск", "💽"),
         }
+        from awgbot.domain import alerts
         notes: list[Notification] = []
-        # Одна транзакция на тик и счётчики с ПОТОЛКОМ: стрик выше порога
-        # ничего не решает (сравнения только «>= порога»), а без потолка
-        # счётчик нормы рос бы вечно и каждый тик был бы записью на диск.
-        # В спокойном состоянии (норма, стрик набран) тик не пишет ничего.
+        # Одна транзакция на тик; гистерезис общий с агентом (domain/alerts):
+        # «взведён» ставится по факту доставки, иначе при недоступном Telegram
+        # алерт терялся, а потом приходил одинокий отбой.
         with self.db.transaction():
           for key, (threshold, label, icon) in thresholds.items():
             value = metrics.get(key)
             if value is None:
                 continue                       # нет данных — счётчики не трогаем
-            hi_key = f"res_hi_{key}"           # подряд-превышений
-            lo_key = f"res_lo_{key}"           # подряд-нормы
-            armed_key = f"res_alert_{key}"     # "1" ⇔ алерт активен
-            hi = int(self.db.get_state(hi_key) or 0)
-            lo = int(self.db.get_state(lo_key) or 0)
-            armed = self.db.get_state(armed_key) == "1"
-            if value >= threshold:
-                hi, lo = min(hi + 1, streak_n), 0
-                if hi >= streak_n and not armed:
-                    self.db.set_state(armed_key, "1")
-                    notes.append(Notification(
-                        config.ADMIN_ID,
-                        f"⚠️ {icon} Высокая загрузка: {label} {value:.0f}% "
-                        f"(порог {threshold}%, держится ≥{streak_n} замеров).",
-                        critical=True))
-            else:
-                lo, hi = min(lo + 1, streak_n), 0
-                if lo >= streak_n and armed:
-                    self.db.set_state(armed_key, "0")
-                    notes.append(Notification(
-                        config.ADMIN_ID,
-                        f"✅ {icon} {label} вернулся в норму: {value:.0f}% "
-                        f"(ниже порога {threshold}%)."))
-            self.db.set_state(hi_key, str(hi))
-            self.db.set_state(lo_key, str(lo))
+            notes += alerts.streak_alert(
+                self.db, (f"res_hi_{key}", f"res_lo_{key}", f"res_alert_{key}"),
+                bad=value >= threshold, streak=streak_n,
+                on_text=(f"⚠️ {icon} Высокая загрузка: {label} {value:.0f}% "
+                         f"(порог {threshold}%, держится ≥{streak_n} замеров)."),
+                off_text=f"✅ {icon} {label} вернулся в норму: {value:.0f}% (ниже порога {threshold}%).",
+                critical=True)
         return notes
 
     def server_status_cached(self) -> dict:
@@ -412,7 +394,9 @@ class StatusMixin:
         железа (CPU/RAM/диск) монитор снимает ЛОКАЛЬНО (co-located) — hostmetrics. Возраст
         метрик показываем в инфобоксе (обновляет монитор каждый тик, локально)."""
         from awgbot.runtime import hostmetrics
-        ok_raw = self.db.get_state("last_server_ok")
+        ok_raw = self.db.get_state("server_ok_view")
+        if ok_raw is None:
+            ok_raw = self.db.get_state("last_server_ok")
         ok = None if ok_raw is None else (ok_raw == "1")
         started = timeutil.parse_docker_time(self.db.get_state("container_started_at") or "")
         uptime = timeutil.fmt_uptime(started) if started else None
@@ -451,10 +435,11 @@ class StatusMixin:
         вызывающий."""
         from awgbot.runtime import hostmetrics
         ok = self.server_ok()
-        self.db.set_state("last_server_ok", "1" if ok else "0")
-        started = awg.service_started_at()
-        if started:
-            self.db.set_state("container_started_at", started)
+        # Только показ: last_server_ok принадлежит монитору (по нему он видит
+        # скачок 🔴/🟢), а метку старта ведёт детект рестарта — прямая запись
+        # глушила и уведомление, и переналожение DROP после рестарта.
+        self.db.set_state("server_ok_view", "1" if ok else "0")
+        self.detect_and_handle_restart()
         hostmetrics.collect_and_store(self.db)
         return self.poll_traffic() if ok else []
 

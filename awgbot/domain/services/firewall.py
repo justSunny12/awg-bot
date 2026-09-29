@@ -198,9 +198,10 @@ class FirewallMixin:
         """Тик: порт sshd ≠ conf → при чужом владельце следовать (conf →
         хук пересобирает таблицу), иначе — предупредить один раз на значение."""
         from awgbot.domain.services import Notification
-        from awgbot.infra import sshd
+        from awgbot.infra import nftguard, sshd
         d = self.ssh_port_drift()
-        if not d["drift"]:
+        if not d["drift"] or not nftguard.enabled():
+            # фильтр выключен — никакой порт не заперт, предупреждать не о чем
             if self.db.get_state(self._SSH_DRIFT_KEY):
                 self.db.set_state(self._SSH_DRIFT_KEY, "")
             return []

@@ -9,10 +9,13 @@ selfupdate.py — самообновление бота из GitHub-релизо
 """
 from __future__ import annotations
 
+import logging
 import time
 
 from awgbot.core import config
 from awgbot.infra import updates
+
+log = logging.getLogger("awgbot.selfupdate")
 
 
 class SelfUpdateMixin:
@@ -45,6 +48,22 @@ class SelfUpdateMixin:
         """Выключить автоуведомления и стартовую проверку об обновлениях.
         Ручная проверка «Обновление бота» продолжает работать."""
         self.db.set_state(self._MUTE_KEY, "1")
+
+    def normalize_update_schedule(self) -> bool:
+        """3.2.0: расписания «никогда» больше нет ни у одной роли — проверка
+        идёт всегда ради строки «⬆️ Доступна vX». Прежнее never (старый conf,
+        правка руками) → «месяц» и выключенные уведомления. Одно место на старт
+        обеих ролей и на открытие раздела; планировщик never не знает вовсе.
+        Возвращает, была ли перезапись."""
+        from awgbot.core import settings
+        if str(settings.get("updates.poll_schedule", "day")).lower() != "never":
+            return False
+        try:
+            settings.set_value("updates.poll_schedule", "month")
+        except settings.SettingsWriteError as e:
+            log.warning("updates.poll_schedule=never не переписано: %s", e)
+        self.mute_updates()
+        return True
 
     def unmute_updates(self) -> None:
         """Включить автоуведомления об обновлениях обратно."""

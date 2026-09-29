@@ -410,12 +410,9 @@ def unit_set_env(values: dict[str, str]) -> str:
 
 
 def _write_private(path: Path, text: str) -> None:
-    """Файл с секретом: 0600 с первого байта, а не chmod после записи."""
-    import os
-    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.chmod(path, 0o600)
+    """Файл с секретом: 0600 с первого байта, атомарно (util/fsatomic)."""
+    from awgbot.util.fsatomic import write_private
+    write_private(path, text)
 
 
 def _daemon_reload() -> None:

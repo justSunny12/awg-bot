@@ -130,8 +130,8 @@ class BackupCryptoMixin:
             from awgbot.infra import gwguard
             add_file(gwguard.FW_ENV, "awg-gw/firewall.env")
             # личные списки локальной сети без VPN — тоже данные человека
-            for name in ("awg-gw-vpn-user.conf", "awg-gw-ru-user.conf"):
-                add_file(f"/etc/dnsmasq.d/{name}", f"awg-gw/lan/{name}")
+            for name in gwguard.OWN_LIST_FILES:
+                add_file(os.path.join(gwguard.DNSMASQ_D, name), f"awg-gw/lan/{name}")
             return extra
         # сервер: конфиг awg-интерфейса (единственная копия вне сервера)
         from awgbot.infra import awg

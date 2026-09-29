@@ -224,6 +224,15 @@ class DevicesMixin:
             (client_id, floor)).fetchone()
         return row is not None
 
+    def device_mask_apply(self, device_id: int, or_bits: int = 0, and_bits: int = -1) -> int:
+        """block_reason = (block_reason | or_bits) & and_bits — одним UPDATE:
+        чтение-изменение-запись из двух потоков теряло бит. Возвращает новую маску."""
+        with self._tx() as cur:
+            cur.execute("UPDATE devices SET block_reason = (block_reason | ?) & ? WHERE id = ?",
+                        (int(or_bits), int(and_bits), int(device_id)))
+            row = cur.execute("SELECT block_reason FROM devices WHERE id = ?", (int(device_id),)).fetchone()
+        return int(row["block_reason"]) if row else 0
+
     def blocked_addresses(self) -> list[str]:
         """Адреса устройств с любой причиной блокировки — для реконсиляции DROP."""
         return [r["address"] for r in self._connection().execute(

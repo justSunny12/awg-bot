@@ -259,6 +259,8 @@ def test_port_drift_warns_once_when_the_bot_owns_the_config(services, fw, sshd_o
     monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
     assert services.ssh_port_drift_notes() == []
     sshd_owner_fake["listening"] = [2222]
+    assert services.ssh_port_drift_notes() == [], "фильтр выключен — никакой порт не заперт, тревога ложная"
+    store["app.firewall.enabled"] = True
     notes = services.ssh_port_drift_notes()
     assert len(notes) == 1 and "слушает порт 2222" in notes[0].text and "держит 22" in notes[0].text
     assert notes[0].critical is True
@@ -275,6 +277,7 @@ def test_port_drift_is_followed_when_a_foreign_owner_sets_it(services, fw, sshd_
     from awgbot.infra import sshd
     store, _ = fw
     store["app.network.ssh_port"] = 22
+    store["app.firewall.enabled"] = True
     monkeypatch.setattr(settings, "get_int", lambda k, d=0: int(store.get(k, d)))
     sshd_owner_fake["owner"] = sshd.SshdOwner("generator", "", None, "managed by ansible", ["/etc/ssh/sshd_config"])
     sshd_owner_fake["listening"] = [2222]

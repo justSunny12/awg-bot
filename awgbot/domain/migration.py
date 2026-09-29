@@ -165,6 +165,9 @@ class MigrationMixin:
         try:
             settings.set_value("app.docker.migration_interface", new_if)
             settings.set_value("app.docker.migration_subnet_prefix", new_prefix)
+            # как делает установщик: на новом интерфейсе сервер на .1, пул с .2
+            if int(config.IP_HOST_START) < 2:
+                settings.set_value("app.network.ip_host_start", 2)
         except Exception as e:                            # noqa: BLE001
             raise ServiceErrorMigration(f"ключи переезда не записаны в app.yaml: {e}")
         log.info("переезд: поднят %s (%s.0/24, порт %s)", new_if, new_prefix, got_port)
@@ -316,10 +319,12 @@ class MigrationMixin:
         iface = config.MIGRATION_INTERFACE
         with awg.mutation_lock:
             occupied_live = awg.read_occupied_ips(iface)
+            # Второй интерфейс ставит awg-server-init.sh: сервер на .1 всегда,
+            # даже если у первого (докерная раскладка) он на .0 и ip_host_start=1
             ip = self.db.allocate_ip(
                 subnet_prefix=config.MIGRATION_SUBNET_PREFIX,
                 occupied_extra=occupied_live,
-                start_host=config.IP_HOST_START,
+                start_host=max(int(config.IP_HOST_START), 2),
                 end_host=config.IP_HOST_END,
             )
             priv, pub = awg.gen_keypair()
@@ -337,12 +342,14 @@ class MigrationMixin:
             except sqlite3.IntegrityError as e:
                 raise ServiceErrorMigration(f"конфликт адресов: {e}")
             self.db.update_device_fields(new_id, routing_on=int(dev.routing_on))
-            self._inherit_friend(dev, new_id)
             try:
                 awg.add_peer(pub, psk, ip, iface=iface)
             except awg.AwgError:
                 self.db.delete_device(new_id, archive_reason=None)   # откат, не архив
                 raise
+            # Инвайт-код переносится ПОСЛЕ пира: раньше он стирался у оригинала
+            # до add_peer, и откат оставлял ссылку друга мёртвой
+            self._inherit_friend(dev, new_id)
         if int(dev.block_reason) != 0:
             try:
                 awg.block_ip(ip)
