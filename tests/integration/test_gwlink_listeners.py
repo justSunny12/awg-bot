@@ -375,3 +375,22 @@ async def test_a_handler_exception_closes_the_session_and_keeps_the_listener(ser
     gw2 = await _hello(srv)                    # новая сессия принимается как ни в чём не бывало
     monkeypatch.undo()
     await gw2.close()
+
+
+async def test_a_retry_ack_lets_the_same_settings_go_out_again_in_this_session(services, two):
+    """Агент ответил «юнит ещё стартует» (retry): набор в этой сессии
+    считался отправленным навсегда, а с keepalive сессии живут днями —
+    временный отказ становился долгим. Отметка снимается, доставка повторится."""
+    srv, binds, port = two
+    await srv.ensure()
+    gw = await _hello(srv)
+    assert await gw.role()
+    await _until(lambda: services.gwlink_session(1))
+    srv._sessions[1].sent_hash = "abc"
+    await gw.send("ack", {"ok": False, "changed": ["LAN_MODE"], "error": "юнит обвязки ещё стартует"})
+    await asyncio.sleep(0.2)
+    assert srv._sessions[1].sent_hash == "abc", "обычный отказ снял отметку — набор ушёл бы по кругу"
+    await gw.send("ack", {"ok": False, "changed": ["LAN_MODE"], "error": "юнит обвязки ещё стартует", "retry": True})
+    await _until(lambda: srv._sessions[1].sent_hash == "")
+    assert services.gwlink_ack(1)["ok"] is False
+    await gw.close()

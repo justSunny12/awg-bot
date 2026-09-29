@@ -339,3 +339,19 @@ def test_the_port_fact_is_taken_under_the_lock_and_handed_to_the_checks(svc, hos
     svc.__dict__.pop("_ssh_fact", None)
     svc.ssh_reconcile(host.info())
     assert svc.__dict__.get("_ssh_fact") == (22, [22]), svc.__dict__.get("_ssh_fact")
+
+
+def test_filter_off_puts_the_file_back_on_a_real_refusal(svc, host, monkeypatch):
+    """Выключение при занятом замке писало SSH_FILTER=0 и получало отказ:
+    тумблер показывал «выключен», а таблица фильтровала до следующего реассерта."""
+    from awgbot.domain.services import ServiceError
+    gwguard.write_env(SSH_FILTER="1")
+    monkeypatch.setattr(svc, "reassert_guarded", lambda why, timeout=None: (False, svc.BUSY_APPLYING))
+    with pytest.raises(ServiceError, match="применяется"):
+        svc.ssh_filter_off()
+    assert gwguard.read_env().get("SSH_FILTER") == "1", "файл говорит «выключен», таблица фильтрует"
+    monkeypatch.setattr(svc, "reassert_guarded",
+                        lambda why, timeout=None: (False, f"юнит обвязки {gwguard.TIMEOUT_MARK} 90 с"))
+    with pytest.raises(ServiceError, match="дольше обычного"):
+        svc.ssh_filter_off()
+    assert gwguard.read_env().get("SSH_FILTER") == "0", "по таймауту юнит доработает с файлом"

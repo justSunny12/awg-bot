@@ -46,6 +46,9 @@ import threading  # noqa: E402
 
 # Бандл из чата и настройки из канала применяются одним и тем же скриптом через
 # тот же юнит — вперемешку они переписывали бы юнит друг другу посреди прогона.
+# Прочие рестарты юнита (тик, «Восстановить», SSH) идут через reassert_guarded:
+# под этим замком без ожидания, отказ словами. Между процессами (ручной запуск,
+# юнит, systemd-run) прогоны разводит flock самого скрипта обвязки.
 _APPLY_LOCK = threading.Lock()
 
 
@@ -617,6 +620,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     BUSY_APPLYING = ("обвязка сейчас применяется (конфигурация или настройки с сервера AWG) — "
                      "повтори через минуту")
     BUSY_ACTIVATING = "юнит обвязки ещё стартует — повтори через минуту"
+    STILL_APPLYING = "обвязка всё ещё применяет настройки — итог в 🩺 Здоровье через несколько минут"
 
     def reassert_guarded(self, why: str, *, timeout: int | None = None) -> tuple[bool, str]:
         """Единственный путь к рестарту юнита обвязки — для тика, кнопки
@@ -1797,7 +1801,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         # включение режима без VPN стоит на apt минуты, рестарт убил бы dpkg.
         with _APPLY_LOCK:
             if self._unit_settled(120) == "activating":
-                return {"ok": False, "changed": changed, "error": self.BUSY_ACTIVATING}
+                return {"ok": False, "changed": changed, "error": self.BUSY_ACTIVATING, "retry": True}
             try:
                 before = gwguard.unit_set_env({k: want[k] for k in changed})
             except (OSError, gwguard.GwGuardError) as e:
@@ -1810,7 +1814,13 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                 # systemctl не дождался, а юнит ещё работает: откатный рестарт
                 # сейчас — ещё один рестарт идущего задания. Ждём, чем кончится.
                 log.warning("gateway: настройки с сервера применяются дольше обычного: %s", err)
-                ok = self._unit_settled(300) == "active"
+                state = self._unit_settled(300)
+                if state == "activating":
+                    # всё ещё работает (apt ждёт замок dpkg у OMV): откат поверх —
+                    # то самое, от чего эта ветка защищает; юнит доработает сам,
+                    # снимок покажет серверу итог, и тот повторит доставку
+                    return {"ok": False, "changed": changed, "error": self.STILL_APPLYING, "retry": True}
+                ok = state == "active"
                 err = err if not ok else ""
             if ok:
                 self.invalidate_static()

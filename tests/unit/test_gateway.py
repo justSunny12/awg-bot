@@ -823,3 +823,39 @@ def test_feeds_from_the_channel_are_fresh_only_with_a_recent_server_word(svc, mo
     assert svc.lan_feeds_from_channel_fresh() is False, "сокет открыт, сервер молчит 13 часов — не свежий"
     svc.db.set_state(svc._LAN_CHANNEL_AT_KEY, str(int(_t.time()) - 3600))
     assert svc.lan_feeds_from_channel_fresh() is True, "запас от последнего контакта не учтён"
+
+
+def test_channel_settings_refuse_without_a_rollback_when_the_unit_never_settles(svc, monkeypatch, tmp_path):
+    """Юнит и через 600 + 300 с в activating (apt ждёт замок dpkg у OMV):
+    откат с рестартом поверх — то, от чего ветка защищает. Отказ словами,
+    новые значения в юните остаются, серверу — «повтори» (retry)."""
+    from awgbot.infra import gwguard
+    from awgbot.util import gwlink
+    unit = tmp_path / "awg-link-gw.service"
+    unit.write_text('[Service]\nEnvironment=LAN_MODE=0\nEnvironment="HOME_SUBNETS="\n'
+                    'Environment=RESOLVER=\nEnvironment="ADMIN_IPS="\n', encoding="utf-8")
+    monkeypatch.setattr(gwguard, "unit_path", lambda: unit)
+    monkeypatch.setattr(gwguard, "_daemon_reload", lambda: None)
+    states = iter(["active"])
+    monkeypatch.setattr(gwguard, "unit_state", lambda: {"ActiveState": next(states, "activating")})
+    restarts: list[int] = []
+    monkeypatch.setattr(gwguard, "reassert", lambda timeout=90: restarts.append(timeout) or
+                        (False, f"юнит обвязки {gwguard.TIMEOUT_MARK} {timeout} с"))
+    monkeypatch.setattr(gw.time, "sleep", lambda s: None)
+    monkeypatch.setattr(gw.time, "monotonic", _fake_clock())
+    want = {k: "" for k in gwlink.SETTINGS_KEYS}
+    want.update({"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24", "RESOLVER": "10.9.1.1"})
+    res = svc.apply_link_settings(want)
+    assert res["ok"] is False and res.get("retry") is True and res["error"] == svc.STILL_APPLYING
+    assert restarts == [600], f"откат поверх идущего задания: {restarts}"
+    assert "HOME_SUBNETS=192.168.68.0/24" in unit.read_text(encoding="utf-8")
+
+
+def _fake_clock():
+    """monotonic, который идёт на 10 с за вызов: ожидания «до N секунд» кончаются сразу."""
+    t = [0.0]
+
+    def now():
+        t[0] += 10.0
+        return t[0]
+    return now
