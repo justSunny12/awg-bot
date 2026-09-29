@@ -188,6 +188,9 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                 rt_src_notes += await asyncio.to_thread(services.gw_bundle_drift_notes)
                 if rt_src_notes:
                     await send_notifications(bot, rt_src_notes)
+                # полная сверка доставки по каналу — на тике монитора, фоном
+                from awgbot.runtime import linkserver
+                await linkserver.monitor_tick(services)
             except Exception as e:                       # noqa: BLE001
                 log.warning("reconcile_routing: %s", e)
             # свой резолвер клиентов: у людей с приватным DNS в конфиге это
@@ -359,9 +362,9 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         try:
             # Слушатель канала линка — здесь же: слот могли завести или снять,
             # а привязка к адресу /30 существует, только пока поднят линк.
-            # Вызов дешёвый: состав слотов совпал — сразу выход.
+            # Такт: слушатели, мёртвые сессии, роль; полная доставка — реже и фоном.
             from awgbot.runtime import linkserver
-            await linkserver.ensure(services)
+            await linkserver.liveness_tick(services)
         except Exception as e:                        # noqa: BLE001
             log.warning("канал линка: слушатель не перевешен: %s", e)
         try:

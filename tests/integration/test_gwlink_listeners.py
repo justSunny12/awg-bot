@@ -331,3 +331,47 @@ async def test_consecutive_deltas_never_make_the_server_ask_for_a_full_snapshot(
     asks = [m for m in got if m.get("t") == "ask"]
     assert asks == [], f"сервер попросил снимок без разрыва нумерации: {asks}"
     await gw.close()
+
+
+async def test_a_dead_link_takes_its_session_down_on_the_liveness_tick(services, two, monkeypatch):
+    """Малина пропала молча (питание): сокет без keepalive жил бы до TCP-таймаута,
+    карточка «на связи», напоминания глушатся. Хендшейк линка старше двойного
+    порога — сессию снимаем и запись закрываем."""
+    from awgbot.infra import routing
+    from awgbot.core import config as _c
+    srv, binds, port = two
+    await srv.ensure()
+    gw = await _hello(srv)
+    assert await gw.role()
+    await _until(lambda: services.gwlink_session(1))
+    monkeypatch.setattr(_c, "ROUTING_GW_INTERFACE", "awglink")
+    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": 100)
+    assert await srv.sweep_dead() == 0 and srv.online(1)
+    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": 1200)
+    assert await srv.sweep_dead() == 1
+    assert not srv.online(1) and services.gwlink_session(1) == {}, "сессия снята, а запись осталась"
+    assert await asyncio.wait_for(gw.reader.read(), 2) == b""
+    await gw.close()
+
+
+async def test_a_handler_exception_closes_the_session_and_keeps_the_listener(services, two, monkeypatch):
+    """Исключение обработчика после проверки подписи роняло задачу сессии без
+    записи и без слова в state; слушатель живёт, сессия закрыта, ошибка записана."""
+    srv, binds, port = two
+    await srv.ensure()
+    gw = await _hello(srv)
+    assert await gw.role()
+    await _until(lambda: services.gwlink_session(1))
+
+    async def boom(g, sess, msg):
+        raise RuntimeError("сломанный обработчик")
+    monkeypatch.setattr(srv, "_handle", boom)
+    await gw.send("snap", {"rev": 1})
+    await _until(lambda: 1 not in srv._sessions)
+    assert await asyncio.wait_for(gw.reader.read(), 2) == b""
+    assert srv._bound, "слушатель упал вместе с сессией"
+    assert "не обработано" in (services.db.get_state("gwlink_error_1") or "")
+    await gw.close()
+    gw2 = await _hello(srv)                    # новая сессия принимается как ни в чём не бывало
+    monkeypatch.undo()
+    await gw2.close()

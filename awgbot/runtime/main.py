@@ -535,6 +535,24 @@ async def main() -> None:
     except Exception as e:                               # noqa: BLE001
         log.warning("restore_panel_after_restart: %s", e)
 
+    # Крючки канала линка — ДО планировщика и слушателя: агент, подключившийся
+    # во время старта, шлёт applied/installed сразу, и без крючка итог
+    # применения и «шлюз настроен» терялись бы навсегда (ack уходит, повтора
+    # не будет, файл с ключом остаётся в чате).
+    try:
+        from awgbot.runtime import linkserver as _linkserver
+        from awgbot.bot.handlers.settings import bundle_applied, bundle_installed
+
+        async def _on_applied(slot_id: int, ok: bool, error: str, fp: str = "") -> None:
+            await bundle_applied(bot, services, slot_id, ok, error, fp)
+
+        async def _on_installed(slot_id: int) -> None:
+            await bundle_installed(bot, services, slot_id)
+        _linkserver.set_on_applied(_on_applied)
+        _linkserver.set_on_installed(_on_installed)
+    except Exception as e:                               # noqa: BLE001
+        log.warning("канал линка: крючки не поставлены: %s", e)
+
     watcher.ensure_watching()
     scheduler.start()
     log.info("Бот запущен")
@@ -592,15 +610,6 @@ async def main() -> None:
             # Слушатель канала линка — после слотов: он биндится на адреса их
             # /30, и до миграции юнитов их могло не быть.
             from awgbot.runtime import linkserver
-            from awgbot.bot.handlers.settings import bundle_applied, bundle_installed
-
-            async def _on_applied(slot_id: int, ok: bool, error: str, fp: str = "") -> None:
-                await bundle_applied(bot, services, slot_id, ok, error, fp)
-
-            async def _on_installed(slot_id: int) -> None:
-                await bundle_installed(bot, services, slot_id)
-            linkserver.set_on_applied(_on_applied)
-            linkserver.set_on_installed(_on_installed)
             await linkserver.ensure(services)
         except Exception as e:                           # noqa: BLE001
             log.warning("канал линка: слушатель не поднят: %s", e)

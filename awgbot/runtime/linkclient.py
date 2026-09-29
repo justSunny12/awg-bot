@@ -47,6 +47,7 @@ import ipaddress
 import logging
 import random
 import subprocess
+import time
 
 from awgbot.core import config
 from awgbot.domain import gwownlists, gwservices, gwsnapshot
@@ -58,6 +59,7 @@ DEFAULT_PORT = gwlink.DEFAULT_PORT
 # 5 с → 15 → 45 → 135 → 300, каждый шаг × uniform(0.6, 1.4). Потолок пять минут:
 # линк лежит редко и надолго, а долбиться в него чаще незачем.
 _BACKOFF = (5, 15, 45, 135, 300)
+SEND_TIMEOUT = 30       # с — drain не дождался: ВПС не читает, сессия мёртвая
 
 
 def enabled() -> bool:
@@ -108,6 +110,7 @@ class LinkClient:
         self._link_ok: bool | None = None     # линк на прошлом тике — ловим восстановление
         self._cn = b""                        # наш нонс: им сервер подписывает нам
         self._sn = b""                        # нонс сервера: им подписываем мы
+        self._wake = asyncio.Event()          # будит бэкофф: линк восстановился — подключаться сразу
         # применение канона своих списков и сверка файлов не пересекаются:
         # сверка посреди `sync` сочла бы правки канона своими
         self._own_lock = asyncio.Lock()
@@ -141,6 +144,9 @@ class LinkClient:
         # системного, минуты, и бэкофф считал бы не то.
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(host, port, limit=gwlink.MAX_LINE), timeout=20)
+        # keepalive ядра: полуоткрытая сессия после жёсткого ребута ВПС иначе
+        # висит днями — переподключения ждать не от чего
+        gwlink.tcp_keepalive(writer)
         self._seq = 0
         self._rev = 0
         self._prev = {}
@@ -179,6 +185,7 @@ class LinkClient:
             self._sn = gwlink.nonce_from(msg.get("nonce"))
             last_seq: int | None = int(msg.get("seq") or 0)
             self._confirmed = True
+            self.services.channel.last_word = time.time()
             self._writer = writer
             self._set_online(True)
             await self._handle(msg)
@@ -203,13 +210,17 @@ class LinkClient:
                     log.warning("канал линка: сообщение с ВПС отвергнуто — %s", e)
                     break
                 last_seq = int(msg.get("seq") or 0)
+                self.services.channel.last_word = time.time()   # слово сервера: сессия свежая
                 await self._handle(msg)
         finally:
             self._writer = None
             self._set_online(False)
-            # запас на своё скачивание фидов отсчитывается от конца сессии
-            with contextlib.suppress(Exception):
-                await asyncio.to_thread(self.services.lan_feeds_touch)
+            # Запас на своё скачивание фидов отсчитывается от конца сессии — но
+            # только настоящей: отвергнутый коннект (старый ключ, чужой слот)
+            # продлевал бы запас каждым стуком, и фиды застывали навсегда.
+            if self._confirmed:
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(self.services.lan_feeds_touch)
             with contextlib.suppress(Exception):
                 writer.close()
                 await writer.wait_closed()
@@ -237,7 +248,25 @@ class LinkClient:
                 self._confirmed = False
             delay = _BACKOFF[min(attempt, len(_BACKOFF) - 1)] * random.uniform(0.6, 1.4)
             attempt += 1
-            await asyncio.sleep(delay)
+            # Спим с побудкой: восстановление линка (on_tick) будит сразу и
+            # обнуляет шаг — иначе канал поднимался до 7 минут после возврата ВПС.
+            if await self._sleep_or_wake(delay):
+                attempt = 0
+
+    async def _sleep_or_wake(self, delay: float) -> bool:
+        """Спать delay секунд или до побудки; True — разбудили раньше срока."""
+        self._wake.clear()
+        sleeper = asyncio.ensure_future(asyncio.sleep(delay))
+        waker = asyncio.ensure_future(self._wake.wait())
+        try:
+            done, _pending = await asyncio.wait({sleeper, waker}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for t in (sleeper, waker):
+                if not t.done():
+                    t.cancel()
+        if sleeper in done:
+            sleeper.result()                  # исключение сна — наружу, как у обычного sleep
+        return waker in done
 
     # ── отправка ─────────────────────────────────────────────────────────────
 
@@ -249,12 +278,16 @@ class LinkClient:
         line = gwlink.pack(self._channel_key(), kind, body, seq=self._seq, pad=pad, nonce=self._sn)
         try:
             writer.write(line)
-            await writer.drain()
+            await asyncio.wait_for(writer.drain(), SEND_TIMEOUT)
             self._sent_bytes += len(line)
             self._io(tx=len(line))
             return True
-        except (ConnectionError, OSError) as e:
-            log.info("канал линка: отправка «%s» не прошла (%s)", kind, e)
+        except (ConnectionError, OSError, asyncio.TimeoutError) as e:
+            why = f"не ушло за {SEND_TIMEOUT} с" if isinstance(e, asyncio.TimeoutError) else str(e)
+            log.info("канал линка: отправка «%s» не прошла (%s)", kind, why)
+            if isinstance(e, asyncio.TimeoutError):
+                with contextlib.suppress(Exception):
+                    writer.transport.abort()               # сессия мёртвая — рвём, бэкофф поднимет
             return False
 
     async def push(self, *, full: bool = False) -> bool:
@@ -642,11 +675,13 @@ async def on_tick(services) -> None:
     if link_ok is not None:
         was = client._link_ok
         client._link_ok = link_ok
-        if was is False and link_ok and client._writer is not None:
-            log.info("канал линка: линк восстановился — переподключаюсь")
-            with contextlib.suppress(Exception):
-                client._writer.close()
-            return
+        if was is False and link_ok:
+            if client._writer is not None:
+                log.info("канал линка: линк восстановился — переподключаюсь")
+                with contextlib.suppress(Exception):
+                    client._writer.close()
+                return
+            client._wake.set()                            # бэкофф спит — будим, шаг с нуля
     await client.push()
     for step in (client.retry_peer_services, client.own_tick):
         try:

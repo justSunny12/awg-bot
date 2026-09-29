@@ -137,6 +137,39 @@ def pack(key: bytes, kind: str, body: dict | None = None, *,
     return (PREFIX + _b64u(raw) + "." + _b64u(mac) + "\n").encode()
 
 
+def _reject_constant(name: str):
+    raise ValueError(f"недопустимая константа {name}")
+
+
+# TCP keepalive внутри туннеля: без него полуоткрытая сессия после жёсткого
+# ребута ВПС висит у агента днями (в простое канал сам не шлёт ни байта — это
+# инвариант, keepalive ядра его не нарушает: это не прикладной байт, а сигнатуры
+# в линке от него нет — пакеты и так идут по PersistentKeepalive линка).
+KEEPALIVE_IDLE = 20 * 60        # с — молчание до первой пробы
+KEEPALIVE_INTERVAL = 60         # с — между пробами
+KEEPALIVE_COUNT = 3             # проб без ответа — сокет мёртв (~23 мин)
+
+
+def tcp_keepalive(writer, *, idle: int = KEEPALIVE_IDLE, interval: int = KEEPALIVE_INTERVAL,
+                  count: int = KEEPALIVE_COUNT) -> bool:
+    """Включить keepalive на сокете StreamWriter; False — не вышло (не Linux,
+    нет сокета). Ошибка не рвёт сессию: без keepalive канал работает как прежде."""
+    import socket
+    extra = getattr(writer, "get_extra_info", None)
+    sock = extra("socket") if extra is not None else None
+    if sock is None:
+        return False
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        for name, value in (("TCP_KEEPIDLE", idle), ("TCP_KEEPINTVL", interval), ("TCP_KEEPCNT", count)):
+            opt = getattr(socket, name, None)
+            if opt is not None:
+                sock.setsockopt(socket.IPPROTO_TCP, opt, int(value))
+        return True
+    except OSError:
+        return False
+
+
 def unpack(key: bytes, line: bytes | str, *, now: float | None = None,
            last_seq: int | None = None, nonce: bytes = b"") -> dict:
     """Разобрать и проверить строку. ProtocolError — чужая подпись (в том
@@ -160,8 +193,11 @@ def unpack(key: bytes, line: bytes | str, *, now: float | None = None,
     if not hmac.compare_digest(mac, want):
         raise ProtocolError("подпись не сходится — не этот шлюз или чужая сессия")
     try:
-        data = json.loads(raw.decode())
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        # Infinity/NaN — не JSON, а int() на них бросает; число в 4300+ цифр —
+        # ValueError из самого разбора; вложенность — RecursionError. Всё это
+        # приходит только со стороны с ключом, но ронять сессию исключением незачем.
+        data = json.loads(raw.decode(), parse_constant=_reject_constant)
+    except (ValueError, RecursionError, UnicodeDecodeError) as e:
         raise ProtocolError("сообщение повреждено") from e
     if not isinstance(data, dict) or not isinstance(data.get("t"), str):
         raise ProtocolError("сообщение без вида")

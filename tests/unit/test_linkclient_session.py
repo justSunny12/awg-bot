@@ -804,3 +804,28 @@ async def test_stop_lets_go_of_a_running_fill(gateway_role, conf):
     assert time.monotonic() - t0 < 1, "stop ждал fill"
     assert client._fill_task is None
     agent.release.set()
+
+
+async def test_the_feed_grace_is_extended_only_by_a_real_session(vps, monkeypatch):
+    """lan_feeds_touch в finally каждой попытки продлевал 12-часовой запас и на
+    отвергнутых сессиях (старый ключ, чужой слот): фиды застывали навсегда."""
+    vps.hangs_up(); vps.hangs_up(); vps.answers(); vps.hangs_up()
+    agent = _Agent()
+    _delays(monkeypatch, stop_after=4)
+    with pytest.raises(asyncio.CancelledError):
+        await linkclient.LinkClient(agent)._run()
+    assert agent.touched == 1, f"запас продлён {agent.touched} раз — считаются и отвергнутые сессии"
+    assert agent.channel.last_word > 0, "слово сервера не отмечено"
+
+
+async def test_link_recovery_wakes_the_backoff_and_resets_the_step(vps, monkeypatch):
+    """Бэкофф спит до 5 минут; линк вернулся — on_tick будит его, и следующая
+    попытка идёт сразу и с малого шага."""
+    c = linkclient.LinkClient(_Agent())
+    monkeypatch.setattr(linkclient.random, "uniform", lambda lo, hi: 1.0)
+    loop = asyncio.get_running_loop()
+    loop.call_later(0.05, c._wake.set)
+    t0 = loop.time()
+    assert await c._sleep_or_wake(30) is True
+    assert loop.time() - t0 < 1, "побудка не прервала сон"
+    assert await c._sleep_or_wake(0.01) is False

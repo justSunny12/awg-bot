@@ -174,17 +174,70 @@ class LinkServer:
                 return gw
         return None
 
-    async def _drop(self, slot_id: int) -> None:
+    async def _drop(self, slot_id: int, *, record: bool = False) -> None:
+        """Снять сессию слота. record — записать закрытие в БД: снятая отсюда
+        сессия из своего finally этого не сделает (её уже нет в словаре)."""
         sess = self._sessions.pop(slot_id, None)
         if sess is None:
             return
         await self._close_session(sess)
+        if record and (sess.hello or sess.took_over):
+            await asyncio.to_thread(self.services.gwlink_session_closed, slot_id)
 
     @staticmethod
     async def _close_session(sess: "_Session") -> None:
+        # close ждёт сдачи буфера: обесточенная малина держала бы закрытие до
+        # TCP-таймаута — 5 с и abort
         with contextlib.suppress(Exception):
             sess.writer.close()
-            await sess.writer.wait_closed()
+            try:
+                await asyncio.wait_for(sess.writer.wait_closed(), 5)
+            except asyncio.TimeoutError:
+                sess.writer.transport.abort()
+
+    SEND_TIMEOUT = 30      # с — drain не дождался: сессия мёртвая (малина без питания, агент в apt)
+    DEAD_LINK_FACTOR = 2   # хендшейк линка старше handshake_max_age × столько — сессии не быть
+
+    async def sweep_dead(self) -> int:
+        """Снять сессии слотов, чей линк по данным такта мёртв: без keepalive
+        сессия пропавшего шлюза не закрывалась никогда — карточка «на связи»,
+        напоминания глушатся, SMB соседа раздаётся дольше суток. Возвращает
+        число снятых."""
+        if not config.ROUTING_GW_INTERFACE:
+            return 0
+        from awgbot.infra import routing
+        max_age = settings.get_int("app.gateway.handshake_max_age", 300) * self.DEAD_LINK_FACTOR
+        dropped = 0
+        for slot_id in list(self._sessions):
+            gw = await asyncio.to_thread(self.services.db.gateway, slot_id)
+            if gw is None:
+                continue
+            try:
+                age = await asyncio.to_thread(routing.link_handshake_age, gw.link_if)
+            except Exception:                             # noqa: BLE001
+                continue
+            if age is not None and age <= max_age:
+                continue
+            log.info("канал линка: линк слота %s мёртв (хендшейк %s) — снимаю сессию", slot_id,
+                     "не было" if age is None else f"{age} с назад")
+            await self._drop(slot_id, record=True)
+            dropped += 1
+        return dropped
+
+    async def send_roles(self) -> None:
+        """Такт живости: только роль (сменилась — сказать), без сверки всего."""
+        for slot_id in list(self._sessions):
+            try:
+                await self.send_role(slot_id)
+            except Exception as e:                        # noqa: BLE001
+                log.warning("канал линка: роль слоту %s: %s", slot_id, e)
+
+    def deliver_soon(self) -> None:
+        """Доставка отдельной задачей: такт живости не ждёт drain и сверки."""
+        task = self.__dict__.get("_deliver_task")
+        if task is not None and not task.done():
+            return
+        self.__dict__["_deliver_task"] = asyncio.get_running_loop().create_task(self.deliver_all())
 
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peer = writer.get_extra_info("peername") or ("", 0)
@@ -210,6 +263,7 @@ class LinkServer:
         # подписью: голый TCP с адреса шлюза (любой процесс на малине, контейнер
         # за маскарадом) раньше рвал настоящую сессию и оставлял «на связи» в БД.
         sess = _Session(writer, key)
+        gwlink.tcp_keepalive(writer)
         last_seq: int | None = None
         registered = False
         try:
@@ -240,7 +294,8 @@ class LinkServer:
             registered = True
             if old is not None:
                 await self._close_session(old)            # прежняя уходит, её finally «закрытие» не пишет
-            await self._handle(gw, sess, msg)
+            if not await self._handle_safe(gw, sess, msg):
+                return
             while True:
                 try:
                     line = await reader.readline()
@@ -268,7 +323,8 @@ class LinkServer:
                     await asyncio.to_thread(self.services.gwlink_note_error, gw.id, str(e))
                     break
                 last_seq = int(msg.get("seq") or 0)
-                await self._handle(gw, sess, msg)
+                if not await self._handle_safe(gw, sess, msg):
+                    break
         except (asyncio.IncompleteReadError, ConnectionError, OSError) as e:
             log.info("канал линка: сессия слота %s закрыта (%s)", gw.id, e)
         finally:
@@ -284,6 +340,22 @@ class LinkServer:
                 writer.close()
 
     # ── разбор сообщений ─────────────────────────────────────────────────────
+
+    async def _handle_safe(self, gw, sess: _Session, msg: dict) -> bool:
+        """Исключение обработчика (после проверки подписи — только от стороны с
+        ключом) — в журнал и отказ сессии, а не падение задачи слушателя."""
+        try:
+            await self._handle(gw, sess, msg)
+            return True
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:                            # noqa: BLE001
+            kind = repr(str(msg.get("t"))[:32])
+            log.warning("канал линка: слот %s — сообщение %s не обработано: %s", gw.id, kind, e)
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(self.services.gwlink_note_error, gw.id,
+                                        f"сообщение {kind} не обработано")
+            return False
 
     async def _handle(self, gw, sess: _Session, msg: dict) -> None:
         kind = msg.get("t")
@@ -409,7 +481,7 @@ class LinkServer:
                 except Exception as e:                    # noqa: BLE001
                     log.warning("канал линка: итог применения слота %s не показан: %s", gw.id, e)
             return
-        log.info("канал линка: слот %s прислал неизвестное «%s» — игнорирую", gw.id, kind)
+        log.info("канал линка: слот %s прислал неизвестное %s — игнорирую", gw.id, repr(str(kind)[:32]))
 
     async def send(self, slot_id: int, kind: str, body: dict | None = None,
                    pad: int = gwlink.PAD_DELTA) -> bool:
@@ -427,12 +499,18 @@ class LinkServer:
         line = gwlink.pack(sess.key, kind, body, seq=sess.seq, pad=pad, nonce=sess.cn)
         try:
             sess.writer.write(line)
-            await sess.writer.drain()
+            # drain без предела ждал TCP-сдачи обесточенной малины ~15 минут
+            # внутри такта живости — автомат переключения стоял
+            await asyncio.wait_for(sess.writer.drain(), self.SEND_TIMEOUT)
             self._io(slot_id, tx=len(line))
             return True
-        except (ConnectionError, OSError) as e:
-            log.info("канал линка: слот %s не принял «%s» (%s)", slot_id, kind, e)
-            await self._drop(slot_id)
+        except (ConnectionError, OSError, asyncio.TimeoutError) as e:
+            why = f"не принял за {self.SEND_TIMEOUT} с" if isinstance(e, asyncio.TimeoutError) else str(e)
+            log.info("канал линка: слот %s не принял «%s» (%s)", slot_id, kind, why)
+            if self._sessions.get(slot_id) is sess:      # не снять новую сессию вместо этой
+                await self._drop(slot_id, record=True)
+            else:
+                await self._close_session(sess)
             return False
 
     def online(self, slot_id: int) -> bool:
@@ -626,6 +704,31 @@ async def ensure(services) -> LinkServer | None:
     await _server.ensure()
     await _server.deliver_all()
     return _server
+
+
+async def liveness_tick(services) -> None:
+    """Такт живости (30 с): слушатели по слотам, мёртвые сессии долой, роль —
+    и только каждый четвёртый такт полная сверка доставки в отдельной задаче:
+    ~20 запросов к БД на сессию каждые 30 с ради редкого расхождения — лишнее."""
+    global _server
+    if config.ROLE == "gateway":
+        return
+    if _server is None:
+        _server = LinkServer(services)
+    await _server.ensure()
+    await _server.sweep_dead()
+    await _server.send_roles()
+    n = _server.__dict__.get("_ticks", 0) + 1
+    _server.__dict__["_ticks"] = n
+    if n % 4 == 0:
+        _server.deliver_soon()
+
+
+async def monitor_tick(services) -> None:
+    """Тик монитора (минуты): полная сверка доставки отдельной задачей."""
+    if config.ROLE == "gateway" or _server is None:
+        return
+    _server.deliver_soon()
 
 
 def current() -> LinkServer | None:

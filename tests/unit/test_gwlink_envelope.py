@@ -247,3 +247,25 @@ def test_clean_hex_passes_only_lowercase_hex_up_to_the_limit(raw, limit, want):
     hex, отбрасывается, длина — не больше предела."""
     from awgbot.util.gwlink import clean_hex
     assert clean_hex(raw, limit) == want
+
+
+def _signed(key: bytes, raw: bytes) -> bytes:
+    """Подписанная строка с произвольным телом — как её собрал бы владелец ключа."""
+    import hashlib
+    import hmac as _hmac
+    mac = _hmac.new(key, raw, hashlib.sha256).digest()[:20]
+    return (gwlink.PREFIX + gwlink._b64u(raw) + "." + gwlink._b64u(mac) + "\n").encode()
+
+
+@pytest.mark.parametrize("raw", [
+    b'{"t": "snap", "seq": Infinity}',
+    b'{"t": "snap", "seq": 1, "ts": NaN}',
+    b'{"t": "snap", "seq": ' + b"9" * 5000 + b"}",
+    b"[" * 100000 + b"]" * 100000,
+])
+def test_json_that_is_valid_but_hostile_is_only_a_protocol_error(key, raw):
+    """После проверки подписи разбор мог бросить ValueError (Infinity в int,
+    число в 5000 цифр) или RecursionError (вложенность) — и уронить задачу
+    сессии. Только от стороны с ключом, но исключение всё равно не наружу."""
+    with pytest.raises(gwlink.ProtocolError):
+        gwlink.unpack(key, _signed(key, raw))
