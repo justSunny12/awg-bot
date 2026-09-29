@@ -96,16 +96,6 @@ def fmt_dt(dt: datetime) -> str:
     return dt.strftime("%d.%m.%Y %H:%M")
 
 
-def fmt_date(dt: datetime) -> str:
-    """DD.MM.YYYY (в UTC+3) — для сроков подписки в объявлениях."""
-    return dt.astimezone(TZ).strftime("%d.%m.%Y")
-
-
-def fmt_dt_sec(dt: datetime) -> str:
-    """DD.MM.YYYY HH:MM:SS (в UTC+3) — для ручной правки периода админом."""
-    return dt.astimezone(TZ).strftime("%d.%m.%Y %H:%M:%S")
-
-
 def parse_dt_sec(s: str) -> datetime:
     """«DD.MM.YYYY HH:MM:SS», «DD.MM.YYYY HH:MM» или «DD.MM.YYYY» (недостающее
     время — нули) → aware-datetime в UTC+3. Бросает ValueError при неверном
@@ -142,6 +132,33 @@ def fmt_period_ui(start: datetime, end: datetime) -> str:
     if start.year != end.year:
         return f"{start.strftime('%d.%m.%y')} → {end.strftime('%d.%m.%y')}"
     return f"{fmt_date_ui(start)} → {fmt_date_ui(end)}"
+
+
+def age_short(seconds) -> str:
+    """Возраст коротко: «40 с» / «12 мин» / «3 ч» / «12 дн 1 ч». Единицы одни
+    на всех: хендшейк линка, снимок, списки, часы шлюза."""
+    v = max(0, int(seconds or 0))
+    if v < 90:
+        return f"{v} с"
+    if v < 5400:
+        return f"{v // 60} мин"
+    if v < 2 * 86400:
+        return f"{v // 3600} ч"
+    d, rest = divmod(v, 86400)
+    h = rest // 3600
+    return f"{d} дн {h} ч" if h else f"{d} дн"
+
+
+def age_ago(seconds) -> str:
+    """«40 с назад» / «12 мин назад» / «3 ч назад» / «2 дн назад» — age_short
+    с «назад»; меньше секунды — «только что», None — пусто (возраст
+    неизвестен)."""
+    if seconds is None:
+        return ""
+    v = int(seconds)
+    if v < 1:
+        return "только что"
+    return age_short(v) + " назад"
 
 
 def fmt_ago(unix_ts: Optional[int], ref: Optional[datetime] = None) -> str:
@@ -327,9 +344,10 @@ def parse_docker_time(s: str) -> Optional[datetime]:
 
 
 def brief_units(text: str) -> str:
-    """«5 дней 3 часа 10 минут» → «5 д 3 ч 10 мин» — для шапки панели."""
+    """«5 дней 3 часа 10 минут» → «5 дн 3 ч 10 мин» — для шапки панели;
+    единицы те же, что у age_short."""
     import re
-    text = re.sub(r"\b(дней|дня|день)\b", "д", text)
+    text = re.sub(r"\b(дней|дня|день)\b", "дн", text)
     text = re.sub(r"\b(часов|часа|час)\b", "ч", text)
     return re.sub(r"\b(минут|минуты|минута)\b", "мин", text)
 

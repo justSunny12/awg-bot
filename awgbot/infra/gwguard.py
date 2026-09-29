@@ -738,19 +738,6 @@ def forward_accepts() -> set[str]:
     return out
 
 
-def resolve_via_local(name: str = "github.com") -> Optional[bool]:
-    """Резолвит ли dnsmasq через аплинк: один запрос к 127.0.0.1. None — dig нет."""
-    try:
-        proc = subprocess.run(["dig", "+short", "+time=3", "+tries=1", "@127.0.0.1", name, "A"],
-                              capture_output=True, timeout=15)
-    except FileNotFoundError:
-        return None
-    except (OSError, subprocess.SubprocessError):
-        return False
-    out = proc.stdout.decode(errors="replace")
-    return proc.returncode == 0 and bool(re.search(r"^\d+\.\d+\.\d+\.\d+$", out, re.M))
-
-
 def iface_for_subnet(net: str) -> Optional[tuple[str, str]]:
     """(интерфейс, адрес) с адресом из подсети — тем же правилом, что
     lan_iface_for в скрипте обвязки; None — нет или не прочиталось."""

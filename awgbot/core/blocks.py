@@ -138,13 +138,8 @@ def blocked_marker_device(mask: int, *, for_admin: bool) -> str:
     return "🛑 " if m != 0 else ""
 
 
-def blocked_marker_client(mask: int, *, for_admin: bool) -> str:
-    m = int(mask) if for_admin else visible_to_user_client(mask)
-    return "🛑 " if m != 0 else ""
-
-
 __all__ = ["DeviceBlock", "ClientBlock", "DEVICE_MANUAL", "CLIENT_MANUAL",
            "DEVICE_TRAFFIC_ANY", "has", "add", "clear",
            "visible_to_user_device", "visible_to_user_client",
            "device_reasons_ru", "client_reasons_ru",
-           "blocked_marker_device", "blocked_marker_client"]
+           "blocked_marker_device"]

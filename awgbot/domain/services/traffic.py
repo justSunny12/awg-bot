@@ -321,15 +321,12 @@ class TrafficMixin:
               # лимит по одной дал бы человеку двойную квоту.
               devices = self.db.list_devices(client.id, all_rows=True)
               sent = client.traffic_notified          # уже в объекте — без запроса
-              by_id = {d.id: d for d in devices}
-              # id старых строк, у которых есть двойник, — их расход учитывается
-              # в проходе по двойнику, отдельно не судим
-              paired_old = {d.twin_of for d in devices if d.twin_of is not None}
-
               # шлюз условной маршрутизации в лимитах не участвует: ни своим,
               # ни в сумме профиля (его трафик — весь РФ-трафик клиентов)
               devices = [d for d in devices if not d.is_gateway]
               by_id = {d.id: d for d in devices}
+              # id старых строк, у которых есть двойник, — их расход учитывается
+              # в проходе по двойнику, отдельно не судим
               paired_old = {d.twin_of for d in devices if d.twin_of is not None}
 
               # ── лимиты устройств (независимо от клиентского) ──

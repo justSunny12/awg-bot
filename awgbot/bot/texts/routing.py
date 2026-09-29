@@ -126,17 +126,6 @@ def _slot_note(state: str, gw: str, agent_bot: dict | None, error: str, purpose:
     return "⏳ Синхронизация с другими шлюзами…"
 
 
-def _ago(seconds) -> str:
-    s = int(seconds or 0)
-    if s < 60:
-        return "только что"
-    if s < 3600:
-        return f"{s // 60} мин назад"
-    if s < 86400:
-        return f"{s // 3600} ч назад"
-    return f"{s // 86400} дн назад"
-
-
 ROUTER_IP_PLACEHOLDER = "АДРЕС_ШЛЮЗА"
 
 
@@ -243,7 +232,7 @@ def _lists_tail(info: dict | None) -> str:
     age = info.get("age_seconds")
     if age is None:
         return "списки ещё не обновлялись"
-    return f"списки {_fmt_n(info.get('count', 0))}, {_ago(age)}"
+    return f"списки {_fmt_n(info.get('count', 0))}, {timeutil.age_ago(age)}"
 
 
 def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str = "",
@@ -357,7 +346,7 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
         if gen is not None and mine is not None and gen != mine:
             warns.append(f"⚠️ Поколение AWG на шлюзе {gen}, у сервера {mine}")
         drift = ch.get("drift") or []
-        stale = "" if ch.get("online") else f" (по снимку {_ago(ch.get('age'))})"
+        stale = "" if ch.get("online") else f" (по снимку {timeutil.age_ago(ch.get('age'))})"
         if not ch.get("has_bundle"):
             head += " · ⚙️ конфиг: шлюз ещё не сообщал"
         elif drift:
@@ -378,7 +367,7 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
             else:
                 items = "\n".join(f"   • {d}" for d in drift_lines(ch.get("drift_items") or [], html=True))
                 warns.append(f"⚠️ Конфигурация на шлюзе расходится с выданной ({n_items}, по снимку "
-                             f"{_ago(ch.get('age'))}):\n{items}")
+                             f"{timeutil.age_ago(ch.get('age'))}):\n{items}")
         else:
             head += f" · 🟢 конфиг актуален{stale}"
         gen_hint = {"old": "⚠️ Обвязка шлюза старого образца — перевыпусти файл конфигурации",
@@ -764,7 +753,7 @@ def routing_params_text(info: dict, lists: dict) -> str:
         lists_line = f"Списки: ещё не обновлялись · раз в {lists.get('every_hours', 6)} ч"
     else:
         lists_line = (f"Списки: {_fmt_n(cnt)} {plural_ru(cnt, 'запись', 'записи', 'записей')} из "
-                      f"{src} {plural_ru(src, 'источника', 'источников', 'источников')}, {_ago(age)} · "
+                      f"{src} {plural_ru(src, 'источника', 'источников', 'источников')}, {timeutil.age_ago(age)} · "
                       f"раз в {lists.get('every_hours', 6)} ч")
     need = int(info["need"])
     return "\n".join([

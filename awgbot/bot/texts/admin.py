@@ -9,7 +9,7 @@ from awgbot.util import timeutil
 from awgbot.core.enums import ActivationStatus, SubStatus
 
 from .fmt import (
-    _e, human_bytes, gb, gb_str, _limit_devices_str, device_state, plain_ip, _fmt_age,
+    _e, human_bytes, gb, gb_str, _limit_devices_str, device_state, plain_ip,
     rf_line, rf_value, updown_brief, tree, sub_line, profile_link, admin_device_link, access_status_line,
     holder_link, _n_devices, plural_ru, _BYTES_PER_GB)
 from .fmt import deep_link as _deep_link
@@ -84,7 +84,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         def _p(v):
             return f"{v:.0f}%" if v is not None else "?"
         metrics = f"📈 CPU {_p(st.get('cpu'))} · RAM {_p(st.get('ram'))} · диск {_p(st.get('disk'))}"
-        age = _fmt_age(st.get("age_seconds"))
+        age = timeutil.age_ago(st.get("age_seconds"))
         if age:
             metrics += f" · {age}"
         lines.append(metrics)

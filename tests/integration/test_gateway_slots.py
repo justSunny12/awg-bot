@@ -246,7 +246,7 @@ def test_ping_cache_is_invalidated_when_the_host_falls(two, services, monkeypatc
     monkeypatch.setattr(routing, "ping_peer", lambda iface="", **k: 43)
     monkeypatch.setattr(routing, "link_peer_endpoint", lambda iface="": "198.51.100.7" if iface == "awglink2" else None)
     assert services.gateway_ping(2) == 43 and services.gateway_ping_cached(2)[0] == 43
-    assert services.gateway_ping_lazy(2) == 43
+    assert services.gateway_screen_state(2)["ping_ms"] == 43
     assert services.gateway_external_ip(2) == "198.51.100.7" and services.gateway_external_ip(1) is None
     _settle(services)
     services.probe[2] = "down"
@@ -256,7 +256,8 @@ def test_ping_cache_is_invalidated_when_the_host_falls(two, services, monkeypatc
     monkeypatch.setattr(routing, "ping_peer", lambda iface="", **k: None)
     assert services.gateway_ping(2) is None
     monkeypatch.setattr(routing, "ping_peer", lambda iface="", **k: 1200)
-    assert services.gateway_ping_lazy(2) == 1200
+    services._gw_ping_forget(2)
+    assert services.gateway_screen_state(2)["ping_ms"] == 1200
     from awgbot.bot import texts
     assert texts.ping_fmt(43) == "43 мс" and texts.ping_fmt(1200) == "1,2 с"
 

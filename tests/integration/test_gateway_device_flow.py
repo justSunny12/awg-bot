@@ -107,12 +107,12 @@ def test_gateway_state_reflects_bundle_and_link(gw, services, monkeypatch):
     «🟢 Активен»."""
     admin, phone, pi = gw
     from awgbot.bot import texts
-    assert services.gateway_state()["device"] is None
+    assert services.gateway_states() == []
     assert texts.gateways_text([]).endswith("\nШлюз не назначен")
     _slot1(services, pi.device_id)
     monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: "down")
     monkeypatch.setattr(services, "routing_link_ok", lambda: False)
-    st = services.gateway_state()
+    st = services.gateway_states()[0]
     assert st["device"].id == pi.device_id and not st["link_ok"]
     line = texts.slot_line(services.gateway_states()[0])
     assert "NASPi" in line and "🟢" not in line and "Активен" in line, line

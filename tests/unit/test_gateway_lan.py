@@ -27,7 +27,6 @@ def _lan_on(monkeypatch, *, home=None, active=True, up=True, status=None, own=(2
     monkeypatch.setattr(gwguard, "unit_env", lambda k: {"RESOLVER": "10.9.1.1", "HOME_SUBNETS": "192.168.68.0/24"}.get(k, ""))
     monkeypatch.setattr(gwguard, "script_status", lambda: status or {"LAN_IF": "end0", "LAN_ADDR": "192.168.68.222"})
     monkeypatch.setattr(gwguard, "dnsmasq_active", lambda: active)
-    monkeypatch.setattr(gwguard, "resolve_via_local", lambda name="github.com": up)
     # апстрим — по статистике dnsmasq: отвечает / все запросы без ответа / dig нет
     monkeypatch.setattr(gwguard, "upstream_stats",
                         lambda: None if up is None else {"10.9.1.1#53": (10, 0 if up else 10)})
@@ -220,8 +219,6 @@ class _Stats:
     def __init__(self, monkeypatch, sent=0, failed=0):
         self.value: dict | None = {"10.9.1.1#53": (sent, failed)}
         monkeypatch.setattr(gwguard, "upstream_stats", lambda: self.value)
-        monkeypatch.setattr(gwguard, "resolve_via_local", lambda name="github.com":
-                            pytest.fail("апстрим проверен живым запросом наружу"))
 
     def set(self, sent, failed):
         self.value = {"10.9.1.1#53": (sent, failed)}

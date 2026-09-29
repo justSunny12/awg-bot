@@ -115,20 +115,19 @@ def test_online_list_and_counter_agree_until_the_next_poll(services, fake_awg, m
     services.poll_traffic()
     assert services.db.get_state("online_count") == "1"
     assert [d.id for d, _ in services.online_devices()] == [dc.device_id]
-    assert services.client_is_online(client.id) is True
+    assert services.client_card_data(client.id)["online"] is True
 
     # через 2,5 минуты после опроса (нового опроса не было): по «сейчас»
     # хендшейку 350 с — оффлайн, по моменту опроса — по-прежнему онлайн
     import datetime as _dt
     monkeypatch.setattr(timeutil, "now", lambda: t0 + _dt.timedelta(seconds=150))
     assert [d.id for d, _ in services.online_devices()] == [dc.device_id]
-    assert services.client_is_online(client.id) is True
     assert services.client_card_data(client.id)["online"] is True
 
     # опросчик встал: опрос старше порога — данные протухли, честный оффлайн
     monkeypatch.setattr(timeutil, "now", lambda: t0 + _dt.timedelta(seconds=400))
     assert services.online_devices() == []
-    assert services.client_is_online(client.id) is False
+    assert services.client_card_data(client.id)["online"] is False
 
 
 def test_status_refresh_repolls_peers(services, fake_awg, make_active_client, monkeypatch):

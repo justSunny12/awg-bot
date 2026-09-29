@@ -193,10 +193,6 @@ def drop_slot_policy(slot_id: int, iface: str = "") -> None:
     _host(["ip", "route", "flush", "table", str(slot_table(slot_id))], check=False)
 
 
-def link_present(iface: str) -> bool:
-    return bool(iface) and _host_ok(["ip", "link", "show", iface])
-
-
 def _check_host_tools() -> None:
     """Инструменты есть И ядро реально умеет то, что от него потребуется.
 

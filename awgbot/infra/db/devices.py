@@ -210,20 +210,6 @@ class DevicesMixin:
             (client_id,)).fetchone()
         return int(row["n"])
 
-    def client_has_online_device(self, client_id: int, threshold_seconds: int,
-                                 ref_ts: Optional[int] = None) -> bool:
-        """Есть ли у профиля устройство с хендшейком свежее порога — одним
-        индексным запросом, без выборки всех устройств. ref_ts — момент, от
-        которого считать порог (последний опрос пиров, см. services.online_ref);
-        пусто — сейчас."""
-        import time as _t
-        floor = int(ref_ts if ref_ts is not None else _t.time()) - int(threshold_seconds)
-        row = self._connection().execute(
-            "SELECT 1 FROM devices d JOIN device_traffic t ON t.device_id = d.id "
-            "WHERE d.client_id = ? AND t.last_handshake IS NOT NULL AND t.last_handshake >= ? LIMIT 1",
-            (client_id, floor)).fetchone()
-        return row is not None
-
     def device_mask_apply(self, device_id: int, or_bits: int = 0, and_bits: int = -1) -> int:
         """block_reason = (block_reason | or_bits) & and_bits — одним UPDATE:
         чтение-изменение-запись из двух потоков теряло бит. Возвращает новую маску."""

@@ -105,13 +105,13 @@ async def test_the_panel_names_the_role_by_the_channel(svc, fake_bot, monkeypatc
     роль неизвестна, первая строка говорит о линке."""
     st = GwStatus(link_up=True, handshake_age=40.0, hostname="naspi", uptime_seconds=12 * 86400)
     text, _ = await _panel(svc, fake_bot, st)
-    assert text.splitlines()[0] == "🛰 naspi · 🟢 линк поднят · 12 д", text
+    assert text.splitlines()[0] == "🛰 naspi · 🟢 линк поднят · 12 дн", text
     monkeypatch.setattr(linkclient, "enabled", lambda: True)
     monkeypatch.setattr(linkclient, "online", lambda: True)
     for role, head in (("active", "🟢 несёт трафик"), ("standby", "🟢 в резерве")):
         monkeypatch.setattr(linkclient, "role", lambda role=role: role)
         text, _ = await _panel(svc, fake_bot, st)
-        assert text.splitlines()[:2] == [f"🛰 naspi · {head} · 12 д", "📡 Линк до сервера AWG 🟢 40 с · 🔗 упр. канал 🟢"], text
+        assert text.splitlines()[:2] == [f"🛰 naspi · {head} · 12 дн", "📡 Линк до сервера AWG 🟢 40 с · 🔗 упр. канал 🟢"], text
     monkeypatch.setattr(linkclient, "online", lambda: False)
     text, _ = await _panel(svc, fake_bot, GwStatus(hostname="naspi"))
     assert text.splitlines()[0] == "🛰 naspi · 🔴 линк лежит", "связи нет — роль по линку"

@@ -6,7 +6,6 @@ import pytest
 from awgbot.core.blocks import DeviceBlock
 from awgbot.domain.services import LimitReached, ServiceError
 from awgbot.infra import awg
-from awgbot.util import timeutil
 
 pytestmark = pytest.mark.integration
 
@@ -41,14 +40,6 @@ def test_is_only_device_and_count_unassigned(services, make_active_client):
     svc = services.db.get_service_client_id()
     services.db.create_device(svc, "app", "PUBX", "PSK", "10.8.0.40")
     assert services.count_unassigned_devices() == 1
-
-
-def test_client_is_online_by_handshake(services, make_active_client):
-    client = make_active_client(tg_id=1105)
-    dc = services.add_device(client.id, "d")
-    assert services.client_is_online(client.id) is False
-    services.db.update_device_fields(dc.device_id, last_handshake=int(timeutil.now().timestamp()))
-    assert services.client_is_online(client.id) is True
 
 
 def test_ensure_admin_client_idempotent(services):
@@ -142,22 +133,6 @@ def test_reassign_from_service_donor_is_none(services, fake_awg, make_active_cli
     b = make_active_client(tg_id=1118, device_limit=3)
     res = services.reassign_device(did, b.id)
     assert res["donor"] is None
-
-
-def test_preview_exit_pause_states(services, fake_awg, make_active_client):
-    client = make_active_client(tg_id=1119, period_kind="year")
-    assert services.preview_exit_pause(client.id) is None
-    ok, reserved, _, _ = services.enter_pause(client.id)
-    assert ok
-    actual, rsv = services.preview_exit_pause(client.id)
-    assert rsv == reserved and actual >= 0
-
-
-def test_preview_exit_pause_admin_open(services, fake_awg, make_active_client):
-    client = make_active_client(tg_id=1120, period_kind="year")
-    services.enter_admin_pause(client.id, 0)
-    actual, rsv = services.preview_exit_pause(client.id)
-    assert rsv == 0
 
 
 def test_restart_service_reapplies_blocks(services, fake_awg, make_active_client, monkeypatch):

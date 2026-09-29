@@ -77,18 +77,6 @@ def _bundle_argv(path: str) -> list[str]:
     return ["sh", path, "--apply"]
 
 
-def _dur_short(seconds) -> str:
-    """«40 с» / «12 мин» / «3 ч» / «2 д» — возраст хендшейка в здоровье."""
-    v = int(seconds or 0)
-    if v < 90:
-        return f"{v} с"
-    if v < 5400:
-        return f"{v // 60} мин"
-    if v < 2 * 86400:
-        return f"{v // 3600} ч"
-    return f"{v // 86400} д"
-
-
 def _out(proc) -> str:
     return proc.stdout.decode(errors="replace")
 
@@ -2099,7 +2087,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         except Exception as e:                            # noqa: BLE001
             log.warning("gateway: ssh status: %s", e)
         ok_link = st.link_up and st.handshake_age is not None
-        checks.append(GwCheck("линк", ok_link, f"хендшейк {_dur_short(st.handshake_age)}" if ok_link else
+        checks.append(GwCheck("линк", ok_link, f"хендшейк {timeutil.age_short(st.handshake_age)}" if ok_link else
                               ("интерфейс лежит" if not st.link_up else "хендшейка не было")))
         # Живьём, без кэша: кэш на 10 минут показывал «модуль: ?» и «ядро без
         # модуля» всё время после обновления модуля — снимок середины операции.

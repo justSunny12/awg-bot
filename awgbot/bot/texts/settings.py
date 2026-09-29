@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from awgbot.util import timeutil
-from .fmt import _e, _fmt_age, plural_ru, details
+from .fmt import _e, plural_ru, details
 from .updates import _ver
 
 
@@ -90,7 +90,7 @@ def settings_email_text(acc, last_check: tuple, resume_on=None, resume_addr: str
                 f"Почта нужна {what}. Портов на хосте не открывается — бот сам ходит на почтовый сервер")
     state, iso, detail = last_check
     if state == "ok":
-        when = _fmt_age((timeutil.now() - timeutil.parse_iso(iso)).total_seconds()) if iso else ""
+        when = timeutil.age_ago((timeutil.now() - timeutil.parse_iso(iso)).total_seconds()) if iso else ""
         status = f"🟢 проверено {when}".rstrip()
     elif state == "fail":
         status = f"🔴 {_e(detail)}"

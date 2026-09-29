@@ -866,13 +866,6 @@ class GatewayLinkMixin:
         at = self.__dict__.get("_gw_ping_failed", {}).get(int(slot_id))
         return at is not None and time.monotonic() - at < self._GW_PING_FAIL_TTL
 
-    def gateway_ping_lazy(self, slot_id: int) -> Optional[int]:
-        """Для экранов: из кэша, а без него — замер (первое открытие экрана)."""
-        cached = self.gateway_ping_cached(slot_id)
-        if cached is not None:
-            return cached[0]
-        return self.gateway_ping(slot_id)
-
     # ── состояние для экранов ────────────────────────────────────────────────
     def gateway_states(self) -> list[dict]:
         """По слоту: gateway, device, active, preferred, link_ok, handshake_age,
@@ -932,24 +925,8 @@ class GatewayLinkMixin:
                 "active_slot": active.id if active is not None else 0,
                 "standby": standby}
 
-    def gateway_state(self, slot_id: Optional[int] = None) -> dict:
-        """Состояние одного слота (по умолчанию первого) — экраны раздела.
-        Без слотов: {'device': None, 'gateway': None}."""
-        states = self.gateway_states()
-        if not states:
-            return {"device": None, "gateway": None, "issued_at": "", "link_ok": False,
-                    "handshake_age": None, "active": False, "preferred": False, "ping": None,
-                    "unavailable": False, "down_ticks": 0, "up_ticks": 0, "display": ""}
-        if slot_id:
-            for st in states:
-                if st["gateway"].id == slot_id:
-                    return st
-            raise ServiceError("такого слота шлюза нет")
-        first = self.gateway_first_slot()
-        return next(st for st in states if st["gateway"].id == first.id)
-
     def gateway_screen_state(self, slot_id: int, *, lazy_ping: bool = True) -> dict:
-        """Состояние слота для карточек: к gateway_state — пинг (лениво: пустой
+        """Состояние слота для карточек: к строке gateway_states — пинг (лениво: пустой
         кэш заполняется замером при первом открытии экрана), подпись активного
         и состояния всех слотов для соседних строк."""
         states = self.gateway_states()
@@ -978,12 +955,6 @@ class GatewayLinkMixin:
         st["services"] = self.gwlink_services_card(st["gateway"])
         st["own_lists"] = self.gwlink_own_card(st["gateway"])
         return st
-
-    def gateway_state_for_device(self, device_id: int) -> Optional[dict]:
-        gw = self.db.gateway_by_device(device_id)
-        if gw is None:
-            return None
-        return self.gateway_screen_state(gw.id)
 
     def gateway_uplink_conf(self, dev) -> str:
         """Конфиг аплинка шлюза для бандла: обычный клиентский .conf устройства

@@ -409,23 +409,6 @@ class SubscriptionMixin:
                 self.db.update_client_fields(client_id, period_end=None)
         return days
 
-    def preview_exit_pause(self, client_id: int):
-        """Read-only предпросчёт для диалога подтверждения возобновления:
-        сколько дней пауза УЖЕ длилась (спишется при выходе) против
-        зарезервированных. Ничего не меняет в БД. Возвращает (actual, reserved)
-        или None, если клиент не на паузе."""
-        client = self.db.get_client(client_id)
-        if client is None or not client.pause_active_since:
-            return None
-        mode = client.pause_mode or PauseMode.USER
-        since = timeutil.parse_iso(client.pause_active_since)
-        now = timeutil.now()
-        actual = timeutil.ceil_days((now - since).total_seconds())
-        if mode == PauseMode.ADMIN_OPEN:
-            return actual, 0          # бессрочная админ-пауза — резерва вперёд не было
-        reserved = int(client.pause_reserved_days)
-        return max(0, min(actual, reserved)), reserved
-
     def exit_pause(self, client_id: int, *, auto: bool):
         """Выход из приостановки (любой режим). auto=True — по истечении срока
         (только user/admin_fixed). Пересчитывает фактическую длительность, правит

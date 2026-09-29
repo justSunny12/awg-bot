@@ -215,14 +215,6 @@ class StatusMixin:
         out.sort(key=lambda r: -(r[1] + r[2]))
         return out
 
-    def rf_by_device(self, client_id: int) -> list[tuple]:
-        """[(device, rx, tx)] РФ за месяц по устройствам профиля — только те, кому
-        строка положена; шлюзы не показываются никогда."""
-        owner = self.db.get_client(client_id)
-        enabled = self.rf_enabled()
-        return [(d, *_dev_rf(d)) for d in self.db.list_devices(client_id)
-                if self.rf_device_visible(d, owner, enabled)]
-
     def rf_screen_data(self) -> dict:
         """Экран «РФ-доступ за месяц»: итог сервера, строки профилей, «вне
         профилей» (итог минус сумма по всем устройствам: удалённые устройства и
@@ -310,12 +302,6 @@ class StatusMixin:
         при задании лимита устройства."""
         c = self.db.get_client(client_id)
         return int(c.traffic_limit) if c else 0
-
-    def client_is_online(self, client_id: int) -> bool:
-        """Онлайн ли хоть одно устройство профиля — одним индексным запросом."""
-        return self.db.client_has_online_device(
-            client_id, settings.get_int("app.online_handshake_seconds", 300),
-            ref_ts=int(self.online_ref().timestamp()))
 
     def device_slots(self, client_id: int) -> tuple[int, int]:
         """(добавлено, лимит) — для подсветки «M из N»."""

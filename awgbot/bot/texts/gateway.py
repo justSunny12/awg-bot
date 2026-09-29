@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from awgbot.domain.gwchecks import CHECK_GROUPS_QUIET_UNKNOWN, failure_detail
+from awgbot.util import timeutil
 
-from .fmt import _e, human_bytes, updown_brief, _fmt_age, plural_ru
+from .fmt import _e, human_bytes, updown_brief, plural_ru
 from .settings import SVC_CONFIRM_AWG, ssh_owner_refusal, warnings_block, address_list_line, ssh_port_ask
 
 
@@ -26,20 +27,8 @@ def _gw_link_short(st) -> str:
         return "📡 Линк 🟡 хендшейка не было"
     from awgbot.core import settings as s
     if st.handshake_age <= s.get_int("app.gateway.handshake_max_age", 300):
-        return f"📡 Линк 🟢 {_dur(st.handshake_age)}"
-    return f"📡 Линк 🟡 {_dur(st.handshake_age)}"
-
-
-def _dur(seconds) -> str:
-    """«40 с» / «12 мин» / «3 ч» / «2 д» — сколько молчит линк."""
-    v = int(seconds or 0)
-    if v < 90:
-        return f"{v} с"
-    if v < 5400:
-        return f"{v // 60} мин"
-    if v < 2 * 86400:
-        return f"{v // 3600} ч"
-    return f"{v // 86400} д"
+        return f"📡 Линк 🟢 {timeutil.age_short(st.handshake_age)}"
+    return f"📡 Линк 🟡 {timeutil.age_short(st.handshake_age)}"
 
 
 def _uniq(names) -> list[str]:
@@ -141,7 +130,7 @@ def gateway_panel(st, update_tag: str = "") -> str:
         health += f" · 📊 {human_bytes(traffic)} {updown_brief(st.month_rx, st.month_tx)}"
     parts.append(health)
     age = st.age_seconds()
-    fresh = _fmt_age(age) if age is not None and age >= 1 else "только что"
+    fresh = timeutil.age_ago(age) if age is not None else "только что"
     parts.append(f"<i>обновлено {fresh}</i>")
     return "\n".join(parts)
 
