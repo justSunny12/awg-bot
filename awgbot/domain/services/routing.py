@@ -489,7 +489,7 @@ class RoutingMixin:
         # которое меняется нажатием тумблера. Один `ipset save` даёт состав
         # всех наборов; пишем только те, что разошлись. Не удалось прочитать —
         # пересобираем всё, как прежде.
-        live = routing.snapshot_sets()
+        live = routing.snapshot_sets(only=[routing.src_set(cid) for cid in known_ids])
         for cid in known_ids:
             # src-набор наш — перезаписываем целиком (у выключенного профиля он
             # станет пустым, и это ровно то, что нужно); набор назначений только

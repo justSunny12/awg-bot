@@ -693,3 +693,133 @@ def test_apply_bundle_refuses_a_file_older_than_the_applied_one(svc, monkeypatch
     ok, _ = svc.apply_bundle(bc.encrypt(body(None), mine))
     assert ok and len(ran) == 3, "файл без метки должен применяться"
     assert svc.db.get_state("gw_bundle_issued_at") == "1800000001"
+
+
+# ── реассерт под общим замком: кнопка, SSH-пути, канал ───────────────────────
+
+def test_reassert_guarded_refuses_while_applying_and_while_the_unit_starts(svc, monkeypatch):
+    """Кнопка «Восстановить» и пути SSH раньше дёргали юнит мимо замка: параллельно
+    с файлом конфигурации (apt под OMV) — dpkg interrupted. Теперь отказ словами."""
+    calls, unit = _reassert_host(svc, monkeypatch)
+    assert gw._APPLY_LOCK.acquire(blocking=False)
+    try:
+        ok, err = svc.reassert_guarded("тест")
+    finally:
+        gw._APPLY_LOCK.release()
+    assert ok is False and err == svc.BUSY_APPLYING and calls == []
+    unit["ActiveState"] = "activating"
+    ok, err = svc.reassert_guarded("тест")
+    assert ok is False and err == svc.BUSY_ACTIVATING and calls == []
+    unit["ActiveState"] = "active"
+    assert svc.reassert_guarded("тест") == (True, "") and calls == [1]
+    assert svc.reassert() == (True, "") and calls == [1, 1], "кнопка ходит тем же путём"
+
+
+def test_run_turns_a_timeout_into_a_refusal_not_an_exception(monkeypatch):
+    """TimeoutExpired из тика или хендлера ронял их молча: теперь код 124 и
+    причина в stderr — вызывающий показывает отказ."""
+    import subprocess as sp
+
+    def slow(argv, capture_output=True, timeout=10):
+        raise sp.TimeoutExpired(argv, timeout)
+    monkeypatch.setattr(sp, "run", slow)
+    proc = gw._run(["sleep", "99"], timeout=7)
+    assert proc.returncode == 124 and gw.TIMEOUT_MARK in proc.stderr.decode() and "7 с" in proc.stderr.decode()
+
+
+def test_bundle_runs_under_systemd_run_when_available(monkeypatch):
+    """Таймаут Python убивает только sh, а apt под ним работал бы сиротой в
+    cgroup агента — и рестарт агента убил бы его посреди dpkg. Есть systemd-run —
+    скрипт идёт транзиентным юнитом; нет — как раньше."""
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/systemd-run" if name == "systemd-run" else None)
+    argv = gw._bundle_argv("/root/b.sh")
+    assert argv[0] == "systemd-run" and "--wait" in argv and "--collect" in argv and "--pipe" in argv
+    assert argv[-3:] == ["sh", "/root/b.sh", "--apply"]
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert gw._bundle_argv("/root/b.sh") == ["sh", "/root/b.sh", "--apply"]
+
+
+def test_a_bundle_timeout_is_reported_with_advice(svc, monkeypatch, tmp_path):
+    import base64, os
+    from awgbot.util import bundlecrypt as bc
+    mine = base64.b64encode(os.urandom(32)).decode()
+    conf = tmp_path / "awglink.conf"
+    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
+    import tempfile
+    monkeypatch.setattr(tempfile, "mkstemp", lambda **kw: (os.open(str(tmp_path / "b.sh"), os.O_RDWR | os.O_CREAT),
+                                                          str(tmp_path / "b.sh")))
+    monkeypatch.setattr(gw, "_run", lambda a, timeout=10: subprocess.CompletedProcess(a, 124, b"", "не уложилось в 600 с".encode()))
+    ok, msg = svc.apply_bundle(bc.encrypt(b"#!/bin/sh\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n", mine))
+    assert ok is False and "10 минут" in msg and "Здоровье" in msg
+
+
+def test_masquerade_on_a_moved_default_route_is_flagged_and_reasserted(svc, monkeypatch):
+    """OMV собрал bridge: маршрут по умолчанию ушёл на br0, masquerade клиентов
+    стоит на end0 — РФ-доступ у всех молчит, а зонд с адреса устройства
+    проходит. Проверка красная, тик перевыставляет обвязку."""
+    import subprocess as sp
+    from awgbot.infra import gwguard
+    monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
+    run = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []})
+    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
+    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    monkeypatch.setattr(gwguard, "uplink_interface", lambda: "awg0")
+    monkeypatch.setattr(gwguard, "uplink_policy", lambda i: {"rule": True, "route": True})
+    monkeypatch.setattr(gwguard, "default_route_dev", lambda: "br0")   # masquerade у подставки: end0, awg0
+    checks = {c.name: c for c in svc.plumbing_checks()}
+    assert checks["маскарад клиентов"].ok is False and "br0" in checks["маскарад клиентов"].detail
+    assert svc.__dict__.get("_masq_stale") is True
+    monkeypatch.setattr(gwguard, "default_route_dev", lambda: "end0")
+    checks = {c.name: c for c in svc.plumbing_checks()}
+    assert checks["маскарад клиентов"].ok is True and svc.__dict__.get("_masq_stale") is False
+    # тик: красная проверка → реассерт (под замком и с интервалом)
+    reasserts: list[str] = []
+    monkeypatch.setattr(svc, "status", lambda: _quiet_status())
+    monkeypatch.setattr(svc, "uplink_policy_heal", lambda: [])
+    monkeypatch.setattr(svc, "tg_mark_ensure", lambda missing=None: 0)
+    monkeypatch.setattr(svc, "_reassert_throttled", lambda why: reasserts.append(why) or True)
+    svc.__dict__["_masq_stale"] = True
+    svc.monitor_tick()
+    assert reasserts and "маскарад" in reasserts[0]
+    svc.monitor_tick()
+    assert len(reasserts) == 1, "флаг не сброшен — реассерт на каждом тике"
+
+
+def test_channel_settings_wait_out_a_slow_unit_instead_of_restarting_over_it(svc, monkeypatch, tmp_path):
+    """systemctl restart не дождался (600 с), а юнит ещё в activating (apt):
+    откатный рестарт поверх — ещё один рестарт идущего задания. Ждём, чем
+    кончится: active — успех, иначе откат."""
+    from awgbot.infra import gwguard
+    from awgbot.util import gwlink
+    unit = tmp_path / "awg-link-gw.service"
+    unit.write_text('[Service]\nEnvironment=LAN_MODE=0\nEnvironment="HOME_SUBNETS="\n'
+                    'Environment=RESOLVER=\nEnvironment="PEER_HOME_NETS="\nEnvironment="ADMIN_IPS="\n',
+                    encoding="utf-8")
+    monkeypatch.setattr(gwguard, "unit_path", lambda: unit)
+    monkeypatch.setattr(gwguard, "_daemon_reload", lambda: None)
+    states = iter(["active", "activating", "activating", "active"])
+    monkeypatch.setattr(gwguard, "unit_state", lambda: {"ActiveState": next(states, "active")})
+    monkeypatch.setattr(gwguard, "reassert", lambda timeout=90: (False, f"юнит обвязки {gwguard.TIMEOUT_MARK} {timeout} с"))
+    monkeypatch.setattr(gw.time, "sleep", lambda s: None)
+    want = {k: "" for k in gwlink.SETTINGS_KEYS}
+    want.update({"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24", "RESOLVER": "10.9.1.1"})
+    res = svc.apply_link_settings(want)
+    assert res["ok"] is True, res
+    assert 'HOME_SUBNETS=192.168.68.0/24' in unit.read_text(encoding="utf-8"), "новые значения откатились"
+
+
+def test_feeds_from_the_channel_are_fresh_only_with_a_recent_server_word(svc, monkeypatch):
+    """Открытый сокет — ещё не живой сервер (полуоткрытая сессия после жёсткого
+    ребута ВПС): свежей считается сессия со словом сервера за 12 часов."""
+    import time as _t
+    svc.db.set_state(svc._LAN_CHANNEL_HASH_KEY, "abc")
+    svc.channel.online = True
+    svc.channel.last_word = _t.time() - 60
+    assert svc.lan_feeds_from_channel_fresh() is True
+    svc.channel.last_word = _t.time() - 13 * 3600
+    assert svc.lan_feeds_from_channel_fresh() is False, "сокет открыт, сервер молчит 13 часов — не свежий"
+    svc.db.set_state(svc._LAN_CHANNEL_AT_KEY, str(int(_t.time()) - 3600))
+    assert svc.lan_feeds_from_channel_fresh() is True, "запас от последнего контакта не учтён"

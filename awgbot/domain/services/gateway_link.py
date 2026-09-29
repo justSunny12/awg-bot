@@ -29,8 +29,11 @@ class GatewayLinkMixin:
 
     def _run_link_script(self, mode: str, env: dict | None = None) -> None:
         import subprocess
-        proc = subprocess.run(["sh", self._link_script(), mode], capture_output=True,
-                              timeout=120, env={**os.environ, **(env or {})})
+        try:
+            proc = subprocess.run(["sh", self._link_script(), mode], capture_output=True,
+                                  timeout=120, env={**os.environ, **(env or {})})
+        except subprocess.TimeoutExpired:
+            raise ServiceError(f"скрипт линка ({mode}) не уложился в 120 с")
         if proc.returncode != 0:
             raise ServiceError(f"скрипт линка ({mode}) не отработал: "
                                + proc.stderr.decode(errors="replace").strip()[-200:])

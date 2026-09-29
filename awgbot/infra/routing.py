@@ -472,13 +472,29 @@ def parse_ipset_save(text: str) -> dict[str, set[str]]:
     return sets
 
 
-def snapshot_sets() -> Optional[dict[str, set[str]]]:
-    """Состав всех наборов одним exec; None — не смогли прочитать (тогда
-    вызывающий пересобирает всё безусловно, как раньше)."""
-    proc = _host(["ipset", "save"], check=False, timeout=_PROBE_TIMEOUT)
+def snapshot_sets(only: Optional[list[str]] = None) -> Optional[dict[str, set[str]]]:
+    """Состав наборов; None — не смогли прочитать (тогда вызывающий
+    пересобирает всё безусловно, как раньше). С only — имена всех наборов
+    (ipset list -n) и состав только перечисленных: полный `ipset save` каждый
+    тик вычитывал тысячи адресов доменных наборов ради имён и src."""
+    if only is None:
+        proc = _host(["ipset", "save"], check=False, timeout=_PROBE_TIMEOUT)
+        if proc.returncode != 0:
+            return None
+        return parse_ipset_save(proc.stdout.decode(errors="replace"))
+    proc = _host(["ipset", "list", "-n"], check=False, timeout=_PROBE_TIMEOUT)
     if proc.returncode != 0:
         return None
-    return parse_ipset_save(proc.stdout.decode(errors="replace"))
+    sets: dict[str, set[str]] = {n.strip(): set() for n in proc.stdout.decode(errors="replace").splitlines()
+                                 if n.strip()}
+    for name in only:
+        if name not in sets:
+            continue
+        one = _host(["ipset", "save", name], check=False, timeout=_PROBE_TIMEOUT)
+        if one.returncode != 0:
+            return None
+        sets.update(parse_ipset_save(one.stdout.decode(errors="replace")))
+    return sets
 
 
 

@@ -162,16 +162,13 @@ def test_client_subnet_from_conf_or_unit(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.8.1.0/24")
     assert gwguard.client_subnet() == "10.8.1.0/24"
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "")
-    monkeypatch.setattr(config, "GW_UNIT", "awg-link-gw.service")
-    real = Path.read_text
-
-    def fake_read(self, *a, **k):
-        if str(self) == "/etc/systemd/system/awg-link-gw.service":
-            return "[Service]\nEnvironment=LINK_IF=awglink\nEnvironment=CLIENT_SUBNET=10.8.1.0/24\n"
-        return real(self, *a, **k)
-    monkeypatch.setattr(Path, "read_text", fake_read)
+    unit = tmp_path / "awg-link-gw.service"
+    unit.write_text("[Service]\nEnvironment=LINK_IF=awglink\nEnvironment=CLIENT_SUBNET=10.8.1.0/24\n",
+                    encoding="utf-8")
+    monkeypatch.setattr(gwguard, "unit_path", lambda: unit)
+    gwguard._unit_cache = None
     assert gwguard.client_subnet() == "10.8.1.0/24", "подсеть приезжает в юните из бандла"
-    monkeypatch.setattr(Path, "read_text", lambda self, *a, **k: (_ for _ in ()).throw(OSError()))
+    unit.unlink()
     assert gwguard.client_subnet() == ""
 
 

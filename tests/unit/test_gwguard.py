@@ -91,10 +91,8 @@ def test_unit_admin_ips_reads_the_bundle_value(tmp_path, monkeypatch):
     unit = tmp_path / "awg-link-gw.service"
     unit.write_text('[Service]\nEnvironment=LINK_IF=awglink\nEnvironment="ADMIN_IPS=10.9.1.2 10.9.1.3"\n',
                     encoding="utf-8")
-    import pathlib
-    real = pathlib.Path.read_text
-    monkeypatch.setattr(pathlib.Path, "read_text",
-                        lambda self, *a, **k: real(unit, *a, **k) if str(self).endswith("awg-link-gw.service") else real(self, *a, **k))
+    monkeypatch.setattr(gwguard, "unit_path", lambda: unit)
+    gwguard._unit_cache = None
     assert gwguard.unit_admin_ips() == ["10.9.1.2", "10.9.1.3"]
 
 
@@ -366,3 +364,47 @@ def test_the_peer_services_file_is_where_the_helper_writes_it():
     assert gwguard.PEER_SERVICES_CONF == f"{gwguard.DNSMASQ_D}/awg-gw-peer-services.conf"
     assert 'CONF="$D/awg-gw-peer-services.conf"' in script
     assert 'PEER_SVC_CONF="$DNSMASQ_D/awg-gw-peer-services.conf"' in script
+
+
+def test_unit_text_is_cached_by_mtime_and_size(tmp_path, monkeypatch):
+    """За тик юнит читали регуляркой больше десяти раз; кэш по mtime и размеру
+    отдаёт тот же текст без чтения и обновляется после перезаписи."""
+    unit = tmp_path / "awg-link-gw.service"
+    unit.write_text("[Service]\nEnvironment=LAN_MODE=1\n", encoding="utf-8")
+    monkeypatch.setattr(gwguard, "unit_path", lambda: unit)
+    gwguard._unit_cache = None
+    assert gwguard.unit_env("LAN_MODE") == "1"
+    reads = []
+    real = type(unit).read_text
+    monkeypatch.setattr(type(unit), "read_text", lambda self, *a, **k: reads.append(1) or real(self, *a, **k))
+    assert gwguard.unit_env("LAN_MODE") == "1" and reads == [], "повторное чтение без смены файла"
+    unit.write_text("[Service]\nEnvironment=LAN_MODE=0\n", encoding="utf-8")
+    os.utime(unit, (1_700_000_000, 1_700_000_000))
+    assert gwguard.unit_env("LAN_MODE") == "0" and reads == [1]
+    unit.unlink()
+    assert gwguard.unit_env("LAN_MODE") == "" and gwguard.client_subnet() == ""
+
+
+def test_uplink_interface_comes_from_the_script_status_before_autodetect(monkeypatch):
+    """Аплинк решил скрипт обвязки при применении: три exec автодетекта на
+    каждый тик — лишние. Мусор в файле статуса — автодетект как раньше."""
+    monkeypatch.setattr(config, "GW_UPLINK_IF", "")
+    monkeypatch.setattr(gwguard, "script_status", lambda: {"UPLINK_IF": "awg0"})
+    monkeypatch.setattr(gwguard, "_awg", lambda args: (_ for _ in ()).throw(AssertionError("автодетект пошёл")))
+    assert gwguard.uplink_interface() == "awg0"
+    monkeypatch.setattr(gwguard, "script_status", lambda: {"UPLINK_IF": "x y; rm"})
+    monkeypatch.setattr(gwguard, "_awg", lambda args: "awglink awg1" if args == ["show", "interfaces"] else "")
+    assert gwguard.uplink_interface() == "awg1"
+
+
+def test_default_route_dev_reads_ip_json(monkeypatch):
+    monkeypatch.setattr(gwguard, "_ip_json", lambda args: [{"dst": "default", "dev": "br0", "gateway": "192.168.1.1"}]
+                        if args == ["route", "show", "default"] else [])
+    assert gwguard.default_route_dev() == "br0"
+    monkeypatch.setattr(gwguard, "_ip_json", lambda args: [])
+    assert gwguard.default_route_dev() == ""
+
+
+def test_is_timeout_recognises_only_the_timeout_refusal():
+    assert gwguard.is_timeout(f"юнит обвязки {gwguard.TIMEOUT_MARK} 90 с")
+    assert not gwguard.is_timeout("systemctl не запустился: нет") and not gwguard.is_timeout("")

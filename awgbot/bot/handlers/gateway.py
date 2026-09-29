@@ -149,7 +149,7 @@ async def gw_refresh(cb: CallbackQuery, services, state: FSMContext):
 async def gw_health(cb: CallbackQuery, services):
     await cb.answer("Проверяю…")
     await call(services.invalidate_static)               # монитор здоровья — всё живьём
-    st = await call(services.status)
+    st = await call(services.snapshot)         # с сохранением: панель и здоровье из одного момента
     await edit_nav(cb, services, texts.gateway_health(st), kb.gateway_health_kb())
 
 

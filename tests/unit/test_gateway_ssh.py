@@ -313,3 +313,29 @@ def test_screen_peer_nets_empty_when_the_set_is_empty_absent_or_unreadable(svc, 
         raise gwguard.GwGuardError("nft: нет доступа")
     monkeypatch.setattr(gwguard, "table_info", _broken)
     assert svc.ssh_screen()["peer_nets"] == []
+
+
+def test_filter_on_keeps_the_file_when_the_reassert_only_timed_out(svc, host, monkeypatch):
+    """Юнит не уложился в срок, но работает и, скорее всего, поставит таблицу
+    уже с фильтром: откат файла оставлял «фильтр выключен» в файле при
+    включённом в таблице. Отказ — словами, файл — с фильтром."""
+    from awgbot.domain.services import ServiceError
+    monkeypatch.setattr(gwguard, "reassert",
+                        lambda: host.acts.append(("reassert",)) or (False, f"юнит обвязки {gwguard.TIMEOUT_MARK} 90 с"))
+    with pytest.raises(ServiceError, match="дольше обычного"):
+        svc.ssh_filter_on()
+    assert gwguard.read_env().get("SSH_FILTER") == "1", "файл откачен по таймауту"
+    monkeypatch.setattr(gwguard, "reassert", lambda: host.acts.append(("reassert",)) or (False, "nft: syntax error"))
+    gwguard.write_env(SSH_FILTER="0")
+    with pytest.raises(ServiceError, match="не перевыставлена"):
+        svc.ssh_filter_on()
+    assert gwguard.read_env().get("SSH_FILTER") == "0", "настоящий отказ — откат нужен"
+
+
+def test_the_port_fact_is_taken_under_the_lock_and_handed_to_the_checks(svc, host):
+    """Факт порта, снятый до замка, при смене порта из чата в тот же момент
+    откатывал порт и врал «правили мимо бота»: теперь его снимает реконсайл
+    под замком и оставляет проверкам и панели."""
+    svc.__dict__.pop("_ssh_fact", None)
+    svc.ssh_reconcile(host.info())
+    assert svc.__dict__.get("_ssh_fact") == (22, [22]), svc.__dict__.get("_ssh_fact")

@@ -36,6 +36,7 @@ class ChannelState:
 
     def __init__(self) -> None:
         self.online = False                      # шлюз: сессия с ВПС открыта
+        self.last_word = 0.0                     # шлюз: time.time() последнего подписанного слова сервера
         self.traffic: dict[int, ChannelTraffic] = {}
 
     def account(self, slot_id: int, rx: int = 0, tx: int = 0) -> None:

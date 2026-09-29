@@ -77,6 +77,7 @@ class GwChannelMixin:
     # ── сессия ───────────────────────────────────────────────────────────────
 
     def gwlink_session_opened(self, slot_id: int, agent: str, proto: int) -> None:
+        agent = " ".join(str(agent or "").split())[:32]     # одна строка: state и журнал по строкам
         now = timeutil.to_iso(timeutil.now())
         self.db.set_state(self._gwlink_key(self._GWLINK_SESSION_KEY, slot_id),
                           f"since={now} agent={agent} proto={int(proto)}")

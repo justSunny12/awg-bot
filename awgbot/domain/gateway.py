@@ -49,8 +49,29 @@ import threading  # noqa: E402
 _APPLY_LOCK = threading.Lock()
 
 
+TIMEOUT_MARK = "не уложилось в"
+
+
 def _run(argv: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
-    return subprocess.run(argv, capture_output=True, timeout=timeout)
+    """subprocess.run с таймаутом, который не бросает: отказ по времени — тот
+    же отказ (код 124, причина в stderr), иначе исключение из тика или хендлера
+    роняло бы их молча."""
+    try:
+        return subprocess.run(argv, capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(argv, 124, b"", f"{TIMEOUT_MARK} {timeout} с".encode())
+
+
+def _bundle_argv(path: str) -> list[str]:
+    """Скрипт применения — под systemd-run вне cgroup агента: таймаут Python
+    убивает только sh, а apt под ним работал бы сиротой в нашем cgroup, и
+    рестарт агента (обновление) убил бы его посреди dpkg. Нет systemd-run —
+    как раньше."""
+    import shutil
+    if shutil.which("systemd-run"):
+        return ["systemd-run", "--wait", "--collect", "--pipe", "--quiet",
+                "--unit", f"awg-gw-apply-{int(time.time())}", "sh", path, "--apply"]
+    return ["sh", path, "--apply"]
 
 
 def _dur_short(seconds) -> str:
@@ -254,6 +275,20 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                                       "конфигурацию шлюза с сервера AWG"))
         else:
             checks.append(GwCheck("политика аплинка", None, "аплинк не найден"))
+        # Маскарад клиентов привязан к интерфейсу маршрута по умолчанию на
+        # момент применения. Переехал маршрут (OMV собрал bridge или bond) —
+        # правило стоит на прежнем интерфейсе, РФ-доступ у всех молчит, а зонд
+        # с адреса устройства проходит. Ловим по факту и перевыставляем обвязку
+        # (скрипт берёт интерфейс заново).
+        info = self.__dict__.get("_guard_info")
+        wan = gwguard.default_route_dev()
+        if info is not None and wan and wan not in (uplink, config.GW_LINK_IF):
+            masq_ifaces = info.get("masq_ifaces", set())
+            ok = not masq_ifaces or wan in masq_ifaces
+            self.__dict__["_masq_stale"] = not ok
+            checks.append(GwCheck("маскарад клиентов", ok,
+                                  "" if ok else f"маршрут по умолчанию через {wan}, а masquerade "
+                                  "клиентов стоит в другом интерфейсе — агент перевыставит обвязку"))
         return checks
 
     def _unit_enabled(self) -> bool:
@@ -405,6 +440,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         except Exception as e:                          # noqa: BLE001
             log.warning("gateway: uplink_policy_heal: %s", e)
             fixed = []
+        if self.__dict__.pop("_masq_stale", False):
+            self._reassert_throttled("маскарад клиентов не на интерфейсе маршрута по умолчанию")
         # Реконсайл SSH прошёл внутри status() — до проверок, чтобы снимок не
         # называл «реассерт не прошёл» то, что ещё не пробовали; уведомления
         # оттуда забираем здесь.
@@ -577,29 +614,42 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     _LAN_QUIET_SECONDS = 24 * 3600          # столько без пакетов из LAN — «роутер не заворачивает»
     _LAN_FAILS_KEY = "gw_lan_lists_fails"
 
+    BUSY_APPLYING = ("обвязка сейчас применяется (конфигурация или настройки с сервера AWG) — "
+                     "повтори через минуту")
+    BUSY_ACTIVATING = "юнит обвязки ещё стартует — повтори через минуту"
+
+    def reassert_guarded(self, why: str, *, timeout: int | None = None) -> tuple[bool, str]:
+        """Единственный путь к рестарту юнита обвязки — для тика, кнопки
+        «Восстановить», путей SSH и настроек с сервера.
+
+        Под замком применения без ожидания: идёт применение (файл конфигурации
+        из чата, настройки из канала) — включение режима без VPN минуты стоит
+        на apt, и рестарт юнита посреди него убил бы dpkg. Юнит уже в
+        activating — то же самое, только запущено извне. Отказ — словами:
+        вызывающий сам решает, откатывать ли своё. Отметка времени общая с
+        троттлингом тика."""
+        from awgbot.infra import gwguard
+        if not _APPLY_LOCK.acquire(blocking=False):
+            return False, self.BUSY_APPLYING
+        try:
+            if gwguard.unit_state().get("ActiveState") == "activating":
+                return False, self.BUSY_ACTIVATING
+            self._last_reassert = time.monotonic()
+            ok, err = gwguard.reassert() if timeout is None else gwguard.reassert(timeout=timeout)
+        finally:
+            _APPLY_LOCK.release()
+        if not ok:
+            log.warning("gateway: реассерт обвязки не удался (%s): %s", why, err)
+        return ok, err
+
     def _reassert_throttled(self, why: str) -> bool:
         """Рестарт юнита обвязки не чаще раза в 10 минут (общий троттлинг с
         tg_mark_ensure): скрипт идемпотентен, вернёт и guard, и awg_home."""
-        from awgbot.infra import gwguard
         if time.monotonic() - self._last_reassert < self._REASSERT_MIN_INTERVAL:
             return False
-        # Идёт применение (бандл из чата, настройки из канала) — не трогаем:
-        # включение режима без VPN минуты стоит на apt, таблицы awg_home в это
-        # время ещё нет, и рестарт юнита посреди него убил бы dpkg. Юнит уже
-        # в activating — то же самое, только запущено извне.
-        if not _APPLY_LOCK.acquire(blocking=False):
-            return False
-        try:
-            if gwguard.unit_state().get("ActiveState") == "activating":
-                return False
-            self._last_reassert = time.monotonic()
-            ok, err = gwguard.reassert()
-        finally:
-            _APPLY_LOCK.release()
+        ok, _err = self.reassert_guarded(why)
         if ok:
             log.warning("gateway: обвязка перевыставлена: %s", why)
-        else:
-            log.warning("gateway: реассерт обвязки не удался (%s): %s", why, err)
         return ok
 
     def _upstream_verdict(self) -> bool | None:
@@ -1450,7 +1500,11 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         их сам и везёт, когда они меняются; неизменные фиды — это не повод
         лезть на GitHub с адреса квартиры. Канал оборван — запас 12 часов от
         последнего контакта, дальше агент снова качает сам."""
-        if self.channel.online and self.lan_feeds_applied_hash():
+        # Открытый сокет — ещё не живой сервер: после жёсткого ребута ВПС
+        # сессия у агента висит полуоткрытой. Свежей считаем сессию, в которой
+        # сервер сказал хоть слово за последние 12 часов.
+        if (self.channel.online and self.lan_feeds_applied_hash()
+                and time.time() - self.channel.last_word < self._LAN_CHANNEL_FRESH_S):
             return True
         raw = self.db.get_state(self._LAN_CHANNEL_AT_KEY) or ""
         return raw.isdigit() and time.time() - int(raw) < self._LAN_CHANNEL_FRESH_S
@@ -1565,10 +1619,9 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
 
     def reassert(self) -> tuple[bool, str]:
         """Полный реассерт: рестарт юнита шлюза — тот зовёт gw-скрипт, который
-        идемпотентно переставляет правила и переподнимает линк."""
-        proc = _run(["systemctl", "restart", config.GW_UNIT], timeout=90)
-        ok = proc.returncode == 0
-        return ok, "" if ok else proc.stderr.decode(errors="replace").strip()[-300:]
+        идемпотентно переставляет правила и переподнимает линк. Под общим
+        замком применения: параллельно с файлом конфигурации не дёргаем."""
+        return self.reassert_guarded("кнопка «Восстановить»")
 
     _BACKUP_B64_RE = re.compile(r'^BACKUP_B64="([A-Za-z0-9+/=]+)"', re.M)
 
@@ -1673,8 +1726,13 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                 f.write(plain)
             # 600, как у настроек из канала: первое включение режима без VPN
             # ставит dnsmasq через apt, на малине это минуты
-            proc = _run(["sh", path, "--apply"], timeout=600)
+            proc = _run(_bundle_argv(path), timeout=600)
             out = (_out(proc) + proc.stderr.decode(errors="replace")).strip()
+            if proc.returncode == 124:
+                # sh убит по таймауту, а скрипт (apt) ещё работает — под
+                # systemd-run вне нашего cgroup он доработает сам
+                out += ("\nприменение не уложилось в 10 минут — обвязка ещё работает, "
+                        "проверь 🩺 Здоровье через несколько минут")
             tail = "\n".join(out.splitlines()[-6:])
             return proc.returncode == 0, tail
         finally:
@@ -1733,14 +1791,27 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         changed = [k for k in gwlink.SETTINGS_KEYS if want[k] != current[k]]
         if not changed:
             return {"ok": True, "changed": [], "error": ""}
+        # Замок — с ожиданием: файл конфигурации из чата и настройки из канала
+        # применяются друг за другом, не вперемешку. Юнит в activating (запущен
+        # извне: загрузка, тик) — ждём, пока доработает, а не перезапускаем поверх:
+        # включение режима без VPN стоит на apt минуты, рестарт убил бы dpkg.
         with _APPLY_LOCK:
+            if self._unit_settled(120) == "activating":
+                return {"ok": False, "changed": changed, "error": self.BUSY_ACTIVATING}
             try:
                 before = gwguard.unit_set_env({k: want[k] for k in changed})
             except (OSError, gwguard.GwGuardError) as e:
                 return {"ok": False, "changed": changed, "error": f"юнит не переписан ({e})"}
             # Запас на включение режима без VPN: скрипт ставит dnsmasq через apt,
             # а на малине это минуты, не секунды.
+            self._last_reassert = time.monotonic()
             ok, err = gwguard.reassert(timeout=600)
+            if not ok and gwguard.is_timeout(err):
+                # systemctl не дождался, а юнит ещё работает: откатный рестарт
+                # сейчас — ещё один рестарт идущего задания. Ждём, чем кончится.
+                log.warning("gateway: настройки с сервера применяются дольше обычного: %s", err)
+                ok = self._unit_settled(300) == "active"
+                err = err if not ok else ""
             if ok:
                 self.invalidate_static()
                 return {"ok": True, "changed": changed, "error": ""}
@@ -1751,6 +1822,18 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             except (OSError, gwguard.GwGuardError) as e2:
                 log.warning("gateway: откат юнита не удался: %s", e2)
             return {"ok": False, "changed": changed, "error": err or "обвязка не применилась"}
+
+    @staticmethod
+    def _unit_settled(limit: float) -> str:
+        """Подождать выхода юнита обвязки из activating (до limit секунд, опрос
+        раз в 5 с); вернуть итоговое ActiveState («activating» — не дождались)."""
+        from awgbot.infra import gwguard
+        deadline = time.monotonic() + limit
+        state = gwguard.unit_state().get("ActiveState", "")
+        while state == "activating" and time.monotonic() < deadline:
+            time.sleep(5)
+            state = gwguard.unit_state().get("ActiveState", "")
+        return state
 
     def link_settings_note(self, result: dict) -> str:
         """Текст уведомления в чат агента о настройках, пришедших по каналу."""
@@ -1988,10 +2071,11 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         return ver, cov, smart
 
     def status(self) -> GwStatus:
-        """Живой снимок: линк, монитор здоровья, железо. Панель по /start берёт
-        снимок тика (cached_status), живьём ходят «Статус», «Монитор здоровья»
-        и сам тик; редко меняющееся (модуль, ядра, SMART) — из кэша, который
-        кнопки сбрасывают через invalidate_static()."""
+        """Живой снимок: линк, монитор здоровья, железо — сбор без сохранения.
+        Снаружи (кнопки «Статус», «Монитор здоровья», тик) ходят через
+        snapshot(): он же сохраняет снимок для панели, иначе панель и здоровье
+        показывали разные моменты. Редко меняющееся (модуль, ядра, SMART) — из
+        кэша, который кнопки сбрасывают через invalidate_static()."""
         from awgbot.runtime import hostmetrics
         st = GwStatus()
         st.link_up, st.handshake_age, st.rx, st.tx = self.link_status()
@@ -2007,12 +2091,15 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         if peer_check is not None:
             checks.append(peer_check)
         try:
-            # Порт sshd — один `ss` на тик: реконсайл, проверки и панель берут
-            # этот снимок. Реассерт внутри реконсайла — перечитать таблицу.
-            fact = self.ssh_port_fact()
+            # Порт sshd — один `ss` на тик, и снимается ПОД замком SSH внутри
+            # реконсайла: снятый до замка факт при смене порта из чата в тот же
+            # момент откатывал бы порт и врал «правили мимо бота». Проверки и
+            # панель берут тот же факт. Реассерт внутри реконсайла — перечитать таблицу.
             before = self._ssh_last_reassert
+            self.__dict__.pop("_ssh_fact", None)
             self.__dict__.setdefault("_ssh_pending", []).extend(
-                self.ssh_reconcile(self._guard_info, fact))
+                self.ssh_reconcile(self._guard_info))
+            fact = self.__dict__.pop("_ssh_fact", None) or self.ssh_port_fact()
             if self._ssh_last_reassert != before:
                 from awgbot.infra import gwguard
                 try:

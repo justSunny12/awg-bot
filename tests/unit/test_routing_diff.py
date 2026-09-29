@@ -202,10 +202,32 @@ def test_routing_apply_passes_live_snapshot(services, make_active_client, fake_r
     orig = routing.replace_members
     monkeypatch.setattr(routing, "replace_members",
                         lambda name, kind, members, current=None: (seen.append({"name": name, "current": current}), orig(name, kind, members, current))[1])
-    monkeypatch.setattr(routing, "snapshot_sets", lambda: {routing.src_set(c.id): {"10.0.0.1"}})
+    monkeypatch.setattr(routing, "snapshot_sets", lambda only=None: {routing.src_set(c.id): {"10.0.0.1"}})
     services.reconcile_routing()
     assert any(s["name"] == routing.src_set(c.id) and s["current"] == {"10.0.0.1"} for s in seen)
     seen.clear()
-    monkeypatch.setattr(routing, "snapshot_sets", lambda: None)   # снимок не прочитался
+    monkeypatch.setattr(routing, "snapshot_sets", lambda only=None: None)   # снимок не прочитался
     services.reconcile_routing()
     assert all(s["current"] is None for s in seen), "без снимка — безусловная перезапись, как раньше"
+
+
+def test_snapshot_sets_only_reads_the_named_sets_and_lists_the_rest(monkeypatch):
+    """Полный `ipset save` каждый тик вычитывал тысячи адресов доменных наборов
+    ради имён и src: с only — имена одним exec и состав только перечисленных."""
+    calls: list[list[str]] = []
+
+    def host(args, **kw):
+        calls.append(list(args))
+        if args == ["ipset", "list", "-n"]:
+            return _cp(0, "vpn_u3\nrt_src_u3\nrt_src_u7\nrt_src_u3_tmp\n")
+        if args[:2] == ["ipset", "save"]:
+            name = args[2]
+            return _cp(0, "\n".join(l for l in IPSET_SAVE.splitlines() if f" {name} " in l) + "\n")
+        return _cp(1)
+    monkeypatch.setattr(routing, "_host", host)
+    sets = routing.snapshot_sets(only=["rt_src_u3", "rt_src_u9"])
+    assert sets["rt_src_u3"] == {"10.9.1.5", "10.9.1.6"} and sets["vpn_u3"] == set()
+    assert "rt_src_u9" not in sets and ["ipset", "save", "rt_src_u9"] not in calls
+    assert ["ipset", "save"] not in calls, "полный save всё ещё зовётся"
+    monkeypatch.setattr(routing, "_host", lambda args, **kw: _cp(1))
+    assert routing.snapshot_sets(only=["rt_src_u3"]) is None

@@ -307,11 +307,35 @@ def server_host() -> str:
     return m.group(1).rsplit(":", 1)[0].strip("[]")
 
 
+_unit_cache: tuple[tuple[int, int], str] | None = None
+
+
+def unit_text() -> str:
+    """Текст юнита обвязки с кэшем по mtime и размеру: за тик его читали
+    больше десяти раз регуляркой, а перезапись из потока канала посреди тика
+    давала снимок из двух версий. Нет файла — пусто."""
+    global _unit_cache
+    p = unit_path()
+    try:
+        st = p.stat()
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        _unit_cache = None
+        return ""
+    if _unit_cache is not None and _unit_cache[0] == key:
+        return _unit_cache[1]
+    try:
+        text = p.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    _unit_cache = (key, text)
+    return text
+
+
 def unit_admin_ips() -> list[str]:
     """ADMIN_IPS из юнита — что приехало в бандле (устройства админа)."""
-    try:
-        text = Path(f"/etc/systemd/system/{config.GW_UNIT}").read_text(encoding="utf-8")
-    except OSError:
+    text = unit_text()
+    if not text:
         return []
     m = re.search(r'^Environment="?ADMIN_IPS=([^"\n]*)"?', text, re.M)
     return [t for t in (m.group(1).split() if m else []) if t]
@@ -413,6 +437,15 @@ def unit_restore(text: str) -> None:
     _daemon_reload()
 
 
+TIMEOUT_MARK = "не отработал за"
+
+
+def is_timeout(err: str) -> bool:
+    """Отказ реассерта по времени: юнит ещё работает, а не отказал — откатывать
+    файлы и перезапускать его поверх нельзя."""
+    return TIMEOUT_MARK in (err or "")
+
+
 def reassert(timeout: int = 90) -> tuple[bool, str]:
     """Перевыставить таблицу: рестарт юнита — тот зовёт скрипт с окружением
     бандла. Линк скрипт не трогает, если конфиг не менялся."""
@@ -420,7 +453,7 @@ def reassert(timeout: int = 90) -> tuple[bool, str]:
         proc = subprocess.run(["systemctl", "restart", config.GW_UNIT],
                               capture_output=True, timeout=timeout)
     except subprocess.TimeoutExpired:
-        return False, f"юнит обвязки не отработал за {timeout} с"
+        return False, f"юнит обвязки {TIMEOUT_MARK} {timeout} с"
     except OSError as e:
         # systemctl нет или не запустился — тот же отказ: вызывающий обязан
         # откатить юнит, а не оставить новые значения без таблицы под ними
@@ -452,11 +485,15 @@ def _endpoint_host(iface: str) -> str:
 
 
 def uplink_interface() -> str:
-    """Клиентский туннель к ВПС. Задан в conf — он; иначе не-линк интерфейс с
-    тем же хостом Endpoint, что у линка (тот же ВПС), иначе единственный
-    не-линк интерфейс."""
+    """Клиентский туннель к ВПС. Задан в conf — он; иначе то, что решил
+    скрипт обвязки при применении (файл статуса; без трёх exec на тик);
+    иначе не-линк интерфейс с тем же хостом Endpoint, что у линка (тот же
+    ВПС), иначе единственный не-линк интерфейс."""
     if config.GW_UPLINK_IF:
         return config.GW_UPLINK_IF
+    from_script = script_status().get("UPLINK_IF", "").strip()
+    if from_script and re.fullmatch(r"[A-Za-z0-9_.-]{1,15}", from_script):
+        return from_script
     names = [n for n in _awg(["show", "interfaces"]).split() if n != config.GW_LINK_IF]
     link_host = _endpoint_host(config.GW_LINK_IF)
     same = [n for n in names if link_host and _endpoint_host(n) == link_host]
@@ -512,6 +549,15 @@ def _ip_json(args: list[str]) -> list:
         return []
 
 
+def default_route_dev() -> str:
+    """Интерфейс маршрута по умолчанию основной таблицы; пусто — не узнать."""
+    for r in _ip_json(["route", "show", "default"]):
+        dev = str(r.get("dev") or "")
+        if dev:
+            return dev
+    return ""
+
+
 def _fwmark_of(rule: dict) -> int:
     """Метка правила из `ip -j rule`: «0x1», с маской — «0x1/0xff» (чужие
     правила на той же машине); нечитаемое — 0, а не исключение на весь тик."""
@@ -554,9 +600,8 @@ def client_subnet() -> str:
     вшил бандл. Установщику спрашивать её незачем."""
     if config.GW_CLIENT_SUBNET:
         return config.GW_CLIENT_SUBNET
-    try:
-        text = Path(f"/etc/systemd/system/{config.GW_UNIT}").read_text(encoding="utf-8")
-    except OSError:
+    text = unit_text()
+    if not text:
         return ""
     m = re.search(r'^Environment="?CLIENT_SUBNET=([0-9./]+)"?', text, re.M)
     return m.group(1) if m else ""
@@ -579,9 +624,8 @@ LAN_SCRIPT_TIMEOUT = 150
 
 def unit_env(key: str) -> str:
     """Значение Environment=KEY=… из юнита обвязки — что приехало в бандле."""
-    try:
-        text = Path(f"/etc/systemd/system/{config.GW_UNIT}").read_text(encoding="utf-8")
-    except OSError:
+    text = unit_text()
+    if not text:
         return ""
     m = re.search(rf'^Environment="?{re.escape(key)}=([^"\n]*)"?', text, re.M)
     return (m.group(1) if m else "").strip()

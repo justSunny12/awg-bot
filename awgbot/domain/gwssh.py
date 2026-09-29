@@ -208,7 +208,7 @@ class GwSshMixin:
             if busy:
                 raise ServiceError(f"порт {port} уже занят процессом {busy}")
             gwguard.write_env(SSH_PORT=str(port))
-            ok, err = gwguard.reassert()
+            ok, err = self.reassert_guarded("порт SSH")
             if not ok:
                 gwguard.write_env(SSH_PORT=str(old))
                 raise ServiceError(f"таблица не перевыставлена: {err}")
@@ -217,7 +217,7 @@ class GwSshMixin:
                     log.info("sshd: %s", line)
             except sshd.SshdError as e:
                 gwguard.write_env(SSH_PORT=str(old))
-                gwguard.reassert()
+                self.reassert_guarded("откат порта SSH")
                 raise ServiceError(str(e))
             self.db.set_state(self._SSH_PORT_SEEN_KEY, str(port))
             return old
@@ -273,7 +273,13 @@ class GwSshMixin:
                 raise ServiceError("обвязка шлюза старого образца: перевыпусти конфигурацию "
                                    "шлюза с сервера AWG")
             gwguard.write_env(SSH_FILTER="1")
-            ok, err = gwguard.reassert()
+            ok, err = self.reassert_guarded("фильтр SSH снаружи")
+            if not ok and gwguard.is_timeout(err):
+                # юнит ещё работает и, скорее всего, поставит таблицу уже с
+                # фильтром: откат файла оставил бы «фильтр выключен» в файле
+                # при включённом в таблице
+                raise ServiceError("обвязка перевыставляется дольше обычного — фильтр включится, "
+                                   "когда она доработает; проверь 🩺 Здоровье через минуту")
             if not ok:
                 gwguard.write_env(SSH_FILTER="0")
                 raise ServiceError(f"таблица не перевыставлена: {err}")
@@ -283,7 +289,7 @@ class GwSshMixin:
         from awgbot.infra import gwguard
         with self._ssh_lock:
             gwguard.write_env(SSH_FILTER="0")
-            ok, err = gwguard.reassert()
+            ok, err = self.reassert_guarded("фильтр SSH снаружи выключен")
             if not ok:
                 raise ServiceError(f"таблица не перевыставлена: {err}")
 
@@ -346,6 +352,7 @@ class GwSshMixin:
         with self._ssh_lock:
             env = gwguard.read_env()
             port, _ports = fact if fact is not None else self.ssh_port_fact(env)
+            self.__dict__["_ssh_fact"] = (port, _ports)   # снят под замком — им же живут проверки и панель
             if port is not None:
                 cur = env.get("SSH_PORT", "")
                 if str(port) != cur:
@@ -358,7 +365,7 @@ class GwSshMixin:
                         # Пустой файл и порт 22 — первый тик после обновления на
                         # машине «как сегодня»: таблица и так на 22, реассерт лишний.
                         if cur or port != 22:
-                            ok, err = gwguard.reassert()
+                            ok, err = self.reassert_guarded("порт sshd изменился")
                             self._ssh_last_reassert = time.monotonic()
                             if not ok:
                                 log.warning("gateway: реассерт после смены порта sshd: %s", err)
@@ -383,7 +390,7 @@ class GwSshMixin:
                     if info and held is not None and held != port \
                             and time.monotonic() - self._ssh_last_reassert >= self._SSH_REASSERT_RETRY:
                         # файл верный, таблица нет — прошлый реассерт не прошёл
-                        ok, err = gwguard.reassert()
+                        ok, err = self.reassert_guarded("таблица не на порту sshd")
                         self._ssh_last_reassert = time.monotonic()
                         log.warning("gateway: таблица держит порт %s, sshd на %s — реассерт %s",
                                     held, port, "прошёл" if ok else f"не прошёл: {err}")
