@@ -56,7 +56,8 @@ GitHub `vX.Y.Z.P — …`.
   `handlers/stale.py` — обработчик устаревших кнопок, его включают оба бота,
   `keyboards/common.py` — тумблеры ✅/☑️ и листание у обеих ролей,
   `util/timeutil.py`, `main.py`, `awg-bot.sh`, установщик, preflight, `notifier.py`, `db/*`,
-  общие тексты) — обе. `install/routing-link-setup.sh` живёт только на ВПС —
+  `domain/backupcrypto.py` — состав копии по роли, `tools/snapshot.py` —
+  снимок для `awg-bot backup` и `restore`, общие тексты) — обе. `install/routing-link-setup.sh` живёт только на ВПС —
   строка `main`.
   `install/routing-gw-setup.sh` едет на малину двумя путями: в конфигурации
   шлюза (бандле) с ВПС и обновлением самого агента — оно переустанавливает
@@ -138,7 +139,10 @@ GitHub `vX.Y.Z.P — …`.
    `docs/CHANGELOG.md` (шапка по §2), закоммитить: `vX.Y.Z.P: <заголовок>`.
 4. Собрать поставку: `bash build_release.sh <каталог>`; убедиться, что в
    `awg-bot.tgz` лежит `awgbot/__version__.py` с новым номером и есть
-   `install/awg-bot-install.sh`.
+   `install/awg-bot-install.sh`, а владелец файлов в архиве — root
+   (`tar tvzf <каталог>/awg-bot.tgz | head`): сборка пишет его сама
+   (`--owner=0` у GNU tar, `--uid 0` у bsdtar), и другой uid в архиве значит,
+   что `tar` сборки не принял ни одного из этих флагов.
 5. Тег `vX.Y.Z.P`; `git push origin main vX.Y.Z.P`; при сетевом отказе — до
    трёх попыток с паузой; проверить `git ls-remote origin main vX.Y.Z.P`
    (один и тот же коммит).

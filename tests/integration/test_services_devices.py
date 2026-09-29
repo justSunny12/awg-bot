@@ -202,3 +202,16 @@ def test_addresses_trusted_by_gateways_are_not_reissued(services, make_active_cl
     services.db.set_state("gw_bundle_ssh_allow_1", "")
     c = services.add_device(other.id, "d3")
     assert c.address == a.address, "после смены списка адрес снова свободен"
+
+
+def test_addresses_from_the_gateway_snapshot_are_reserved_too(services, make_active_client, monkeypatch):
+    """Канал доставляет ADMIN_IPS без файла: снимок обвязки — то, чему шлюз
+    доверяет на самом деле, и эти адреса тоже не выдаются заново."""
+    client = make_active_client(device_limit=5)
+    pi = services.add_device(client.id, "pi")
+    services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
+    monkeypatch.setattr(services, "gwlink_snapshot",
+                        lambda slot_id: {"admin_ips": "10.8.1.3 10.8.1.4"} if slot_id == 1 else {})
+    assert services.gateway_trusted_ips() == {"10.8.1.3", "10.8.1.4"}
+    d = services.add_device(client.id, "d2")
+    assert d.address == "10.8.1.5", d.address

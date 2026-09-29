@@ -199,3 +199,33 @@ def test_the_keepalive_the_bundle_carries_survives_the_link_script(services, slo
                        env={"PATH": "/usr/bin:/bin", "LINK_KEEPALIVE": env["LINK_KEEPALIVE"]})
     assert r.returncode == 0, r.stderr
     assert r.stdout == "25", f"скрипт линка превратил {env['LINK_KEEPALIVE']!r} в {r.stdout!r}"
+
+
+def test_home_subnets_take_only_the_three_private_ranges(services, fake_awg, fake_routing,
+                                                          make_active_client, monkeypatch):
+    """Подсеть уходит в ip route replace основной таблицы ВПС: публичная или
+    служебная (198.18/15, 192.0.2/24 — для is_private они «частные») уронила
+    бы доступ к серверу с этих адресов. Плюс границы: не уже /30 (шире трёх
+    диапазонов не бывает), без пересечений в одном списке; снятая подсеть
+    убирается из маршрутов."""
+    from awgbot.infra import routing
+    admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
+    pi = services.add_device(admin.id, "NASPi")
+    services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
+    bad = {"8.8.8.0/24": "частная", "198.18.0.0/15": "частная", "192.0.2.0/24": "частная",
+           "100.64.0.0/10": "частная", "127.0.0.0/8": "частная", "192.168.1.5/32": "один адрес",
+           "10.0.0.0/7": "частная"}
+    res = services.gateway_set_home_subnets(1, "192.168.1.0/24 " + " ".join(bad))
+    assert res["kept"] == ["192.168.1.0/24"]
+    reasons = {tok: why for tok, why in res["rejected"]}
+    for tok, want in bad.items():
+        assert want in reasons.get(tok, ""), (tok, reasons.get(tok))
+    res = services.gateway_set_home_subnets(1, "192.168.1.0/24 192.168.0.0/16 172.16.5.0/24")
+    assert res["kept"] == ["192.168.1.0/24", "172.16.5.0/24"]
+    assert any("пересекается" in why for _t, why in res["rejected"])
+    dropped = []
+    monkeypatch.setattr(routing, "drop_home_routes", lambda pairs: dropped.extend(pairs))
+    monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
+    monkeypatch.setattr(services, "_ensure_gateway_policy", lambda: None)
+    services.gateway_set_home_subnets(1, "172.16.5.0/24")
+    assert dropped == [("192.168.1.0/24", "awglink")], dropped

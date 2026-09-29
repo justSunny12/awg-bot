@@ -1632,7 +1632,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         if "#__GW_SETUP_BELOW__" not in text or "__LINK_CONF_EOF__" not in text:
             return False, "не удалось применить конфигурацию: внутри нет маркеров контракта линка"
         # Старый файл из истории чата расшифровывается тем же ключом: отказываем
-        # выпуску старее уже применённого (метка ISSUED_AT в шапке с 3.2.0)
+        # выпуску старее уже применённого (метка ISSUED_AT в шапке; файлы прежних
+        # выпусков без метки применяются как раньше)
         issued = self._bundle_issued_at(text)
         applied = int(self.db.get_state(self._BUNDLE_ISSUED_KEY) or 0)
         if issued and applied and issued < applied:

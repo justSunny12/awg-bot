@@ -155,6 +155,10 @@ class GatewayLinkMixin:
         for g in self.db.gateways():
             raw = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, g.id)) or ""
             out.update(x for x in raw.split() if x)
+            # и то, что реально стоит в обвязке по снимку канала: файл мог быть
+            # выдан и не применён, а канал — доставить список без файла
+            snap = self.gwlink_snapshot(g.id) if hasattr(self, "gwlink_snapshot") else {}
+            out.update(x for x in str(snap.get("admin_ips") or "").split() if x)
         return out
 
     def _gw_name(self, gw) -> str:
@@ -640,6 +644,9 @@ class GatewayLinkMixin:
         self._gw_slot(slot_id)
         self.db.gateway_update(slot_id, label=label)
 
+    _PRIVATE_NETS = tuple(__import__("ipaddress").ip_network(n)
+                          for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+
     def gateway_set_home_subnets(self, slot_id: int, raw: str) -> dict:
         """Разбор пачки подсетей: IPv4, не клиентская, не подсеть линка.
         Возвращает {'kept': [...], 'rejected': [(строка, причина)], 'conflict':
@@ -664,17 +671,15 @@ class GatewayLinkMixin:
                 if net.version != 4:
                     rejected.append((tok, "только IPv4"))
                     continue
-                if (not net.is_private or net.is_loopback or net.is_link_local or net.is_multicast
-                        or net.is_reserved or net.is_unspecified or str(net).startswith("0.")):
+                if not any(net.subnet_of(p) for p in self._PRIVATE_NETS):
                     # публичный адрес ушёл бы в ip route replace основной таблицы ВПС:
-                    # SSH и клиенты с этого адреса отвалились бы, UDP линка — в линк
+                    # SSH и клиенты с этого адреса отвалились бы, UDP линка — в линк.
+                    # Ровно три частных диапазона: is_private считает частными и
+                    # служебные (198.18/15, 192.0.2/24), а им в маршрутах не место.
                     rejected.append((tok, "нужна частная подсеть: 10.0.0.0/8, 172.16.0.0/12 или 192.168.0.0/16"))
                     continue
                 if net.prefixlen > 30:
                     rejected.append((tok, "это один адрес, а нужна подсеть"))
-                    continue
-                if net.prefixlen < 8:
-                    rejected.append((tok, "слишком широкая: не шире /8"))
                     continue
                 if any(net.overlaps(ipaddress.ip_network(k)) for k in kept):
                     # nft отвергает пересечения внутри interval-набора: соседний
