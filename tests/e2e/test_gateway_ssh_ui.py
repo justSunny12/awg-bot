@@ -135,14 +135,14 @@ async def test_section_under_omv_names_the_owner_and_old_plumbing_hides_the_filt
 def test_panel_line_and_apply_report():
     assert texts.gateway_ssh_panel_line({"port": 2222, "owner": "omv", "filter": True, "allow": 2,
                                          "new_plumbing": True}) \
-        == "🛡 SSH 2222 (OMV), фильтр: 2 адреса"
+        == "🛡 SSH :2222 (OMV), фильтр: 2 адреса"
     assert texts.gateway_ssh_panel_line({"port": 22, "owner": "", "filter": False, "allow": 0,
-                                         "new_plumbing": True}) == "🛡 SSH 22, открыт"
+                                         "new_plumbing": True}) == "🛡 SSH :22, открыт"
     assert "старого образца" in texts.gateway_ssh_panel_line({"port": 22, "new_plumbing": False})
     assert texts.gateway_ssh_panel_line({}) == ""
     st = GwStatus(link_up=True, handshake_age=1.0)
     st.ssh = {"port": 22, "owner": "", "filter": False, "allow": 0, "new_plumbing": True}
-    assert "🛡 SSH 22" in texts.gateway_panel(st)
+    assert "🛡 SSH :22, открыт" in texts.gateway_panel(st).splitlines()
     assert "SSH" not in texts.gateway_panel(GwStatus(link_up=True, handshake_age=1.0)), \
         "снимок старого агента без поля ssh — панель без строки"
 
@@ -377,12 +377,12 @@ def test_section_text_names_held_addresses_lan_and_caps_the_list():
     text = texts.gateway_ssh_text(_scr(allow=many))
     assert "20 адресов — редактируемый список ниже" in text and "h1.dyn.example" not in text, \
         "список в инфобокс не выносится — он кнопками ниже"
-    # весь список — кнопками, но не больше десяти на экране: остальное листается
+    # весь список — кнопками, но не больше десяти рядов на экране: остальное листается
     seen: list[str] = []
     for page in range(10):
         markup = kb.gateway_ssh_kb(_scr(allow=many), page=page)
         labels = _labels(markup)
-        assert len(labels) <= kbc.MAX_BUTTONS, f"страница {page}: {len(labels)} кнопок"
+        assert len(markup.inline_keyboard) <= kbc.MAX_ROWS, f"страница {page}: {len(markup.inline_keyboard)} рядов"
         seen += [t.removeprefix("➖ ") for t in labels if t.startswith("➖")]
         if kbc.NEXT_LABEL not in labels:
             break
@@ -413,7 +413,8 @@ async def test_address_list_pages_and_removal_from_page_two_hits_the_right_entry
     cb, nav = _cb(fake_bot)
     await gh.gw_section(cb, GwCB(action="ssh"), svc, FakeState())
     first = _labels(nav.sent[-1][2])
-    assert len(first) <= kbc.MAX_BUTTONS and kbc.NEXT_LABEL in first and kbc.PREV_LABEL not in first, first
+    assert len(nav.sent[-1][2].inline_keyboard) <= kbc.MAX_ROWS, first
+    assert kbc.NEXT_LABEL in first and kbc.PREV_LABEL not in first, first
 
     # страница запомнена листанием — экран раздела рисует её
     paging.remember(ADMIN, "gwssh", 0, 1)
@@ -421,7 +422,7 @@ async def test_address_list_pages_and_removal_from_page_two_hits_the_right_entry
     await gh.gw_section(cb, GwCB(action="ssh"), svc, FakeState())
     markup = nav.sent[-1][2]
     second = _labels(markup)
-    assert kbc.PREV_LABEL in second and len(second) <= kbc.MAX_BUTTONS, second
+    assert kbc.PREV_LABEL in second and len(markup.inline_keyboard) <= kbc.MAX_ROWS, second
     rm = [b for row in markup.inline_keyboard for b in row if b.text.startswith("➖")]
     assert rm and rm[0].text != "➖ " + many[0], "вторая страница показывает начало списка"
     target = rm[0]
@@ -435,7 +436,7 @@ async def test_address_list_pages_and_removal_from_page_two_hits_the_right_entry
 
 
 PEER_LINE = "Из локальных сетей других шлюзов: открыт для "
-PEER_OFF_LINE = "Когда подсети связаны, SSH откроется и из подсетей других шлюзов"
+PEER_OFF_LINE = "Когда подсети связаны, SSH доступен и из подсетей других шлюзов"
 
 
 def test_section_names_peer_nets_or_says_how_to_get_them():

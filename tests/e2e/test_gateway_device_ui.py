@@ -191,7 +191,7 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
     assert "githubusercontent" not in one
     # команда запускается там, где лежит сохранённый файл; после установки —
     # одно действие человека: /start боту шлюза (первым он написать не может)
-    assert "<b>со своей машины</b> (из директории с файлом)" in one
+    assert "<b>со своего компьютера</b> (из директории с файлом)" in one
     assert "Установка полностью автоматическая" in one
     assert "отправь <b>боту шлюза</b> <code>/start</code> — и всё готово 🙂" in one
     assert one.endswith("После установки файл конфигурации удалится с хоста шлюза сам."), one
@@ -300,7 +300,7 @@ async def test_agent_reports_status_in_words_and_claims_only_when_unmarked(fake_
     nav = await _agent_apply(fake_bot, monkeypatch,
                              {"GW_STATUS": "confirmed", "UPLINK": "installed", "LINK": "up"})
     results = [s[1] for s in nav.sent if s[0] == "edit_text"]
-    assert any("Аплинк обновлён и поднят, линк поднят, шлюз подтверждён." in t for t in results), results
+    assert any("Аплинк обновлён и поднят, линк поднят, шлюз подтверждён</code>" in t for t in results), results
     assert not any("хвост вывода" in t for t in results), "при успехе — отчёт, не хвост"
     assert not any("GW1:" in (s[1] or "") for s in nav.sent)
     nav = await _agent_apply(fake_bot, monkeypatch, {"GW_STATUS": "unmarked"})

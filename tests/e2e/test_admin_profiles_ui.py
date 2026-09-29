@@ -70,24 +70,25 @@ async def test_card_lines(services, fake_bot, make_active_client):
 
 async def test_card_collapses_devices_that_do_not_fit_and_lists_them_separately(
         services, fake_bot, make_active_client):
-    """Устройств больше, чем влезает в десять кнопок, — одна «📱 Устройства:
+    """Устройств больше, чем влезает в десять рядов, — одна «📱 Устройства:
     N», за ней — отдельный экран со всеми."""
     from awgbot.core.blocks import ClientBlock
     c = make_active_client("Ксюша", tg_id=4102, device_limit=0)
-    for i in range(5):
+    for i in range(7):
         services.add_device(c.id, f"Тел {i}")
     services.db.update_client_fields(c.id, routing_allowed=1)
     services._client_set_block(c.id, ClientBlock.PAUSED)
     cb, nav = _acb(fake_bot)
     await ah.client_open(cb, ClientCB(action="open", client_id=c.id), services, FakeState())
     _, labels = last_screen(nav)
-    assert len(labels) <= 10, labels
-    assert labels[0] == "▶️ Снять паузу" and "📱 Устройства: 5" in labels, labels
+    rows = [s for s in nav.sent if s[0] == "edit_text"][-1][2].inline_keyboard
+    assert len(rows) <= 10, labels
+    assert labels[0] == "▶️ Снять паузу" and "📱 Устройства: 7" in labels, labels
     cb2, nav2 = _acb(fake_bot)
     await ah.admin_client_devices(cb2, ClientCB(action="devices", client_id=c.id), services)
     text, labels2 = last_screen(nav2)
-    assert text == "📱 Устройства профиля Ксюша · 5", text
-    assert [l for l in labels2 if "Тел" in l] == [f"⚪ Тел {i}" for i in range(5)], labels2
+    assert text == "📱 Устройства профиля Ксюша · 7", text
+    assert [l for l in labels2 if "Тел" in l] == [f"⚪ Тел {i}" for i in range(7)], labels2
     assert labels2[-2:] == ["➕ Устройство", "⬅️ Назад"]
 
 

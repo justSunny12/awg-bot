@@ -8,6 +8,10 @@ hostmetrics.py — локальные метрики железа co-located х�
 Формат хранения в server_state (ключ host_metrics) совместим с прежним:
 {"cpu": float|None, "ram": float|None, "disk": float|None, "ts": iso} — инфобокс
 и ресурс-алерты (services.check_resource_alerts) работают без изменений.
+
+Питание (read_pi_throttled) — только на Raspberry Pi: модель из
+/proc/device-tree/model (is_raspberry_pi); на другом устройстве питания нет
+ни в строках, ни в алертах.
 """
 from __future__ import annotations
 
@@ -204,6 +208,24 @@ def _read_throttled_sysfs(path: str = _THROTTLED_SYSFS) -> int | None:
         return None
 
 
+_PI_MODEL = "/proc/device-tree/model"
+
+
+def is_raspberry_pi() -> bool:
+    """Малина ли это: по модели из device-tree (один раз за процесс). Не Pi —
+    питание не смотрим вовсе: ни строк, ни алертов."""
+    global _is_pi
+    if _is_pi is None:
+        try:
+            _is_pi = "raspberry pi" in pathlib.Path(_PI_MODEL).read_bytes().decode(errors="replace").lower()
+        except OSError:
+            _is_pi = False
+    return _is_pi
+
+
+_is_pi: bool | None = None
+
+
 def read_pi_throttled() -> dict | None:
     """Состояние питания/троттлинга Raspberry Pi через vcgencmd.
 
@@ -212,6 +234,8 @@ def read_pi_throttled() -> dict | None:
     Недонапряжение — классическая тихая смерть Pi: внешне работает, под
     нагрузкой виснет, и связать это с блоком питания неоткуда.
     """
+    if not is_raspberry_pi():
+        return None
     raw = _read_throttled_sysfs()
     if raw is None:
         import subprocess

@@ -95,7 +95,7 @@ def collect_warnings_gateway(services=None) -> list[str]:
     warns += _service_autostart_warning()
     if not os.path.exists(_c.GW_LINK_CONF):
         warns.append(f"нет конфига линка {_c.GW_LINK_CONF} — линк не поднимется; "
-                     f"шлюз ставится бандлом с сервера AWG (routing-link-setup.sh --bundle)")
+                     f"шлюз ставится файлом конфигурации с сервера AWG (routing-link-setup.sh --bundle)")
     import subprocess
     rc = subprocess.run(["systemctl", "is-enabled", _c.GW_UNIT],
                         capture_output=True).returncode

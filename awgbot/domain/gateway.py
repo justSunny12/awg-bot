@@ -198,11 +198,12 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
                 ok = client_subnet in nets
                 checks.append(GwCheck(
                     "MASQUERADE/изоляция", ok,
-                    "" if ok else f"{client_subnet} нет в tunnel_nets4 — "
-                    "бандл собран под другую подсеть"))
+                    "" if ok else f"{client_subnet} нет в tunnel_nets4 — конфигурация шлюза "
+                    "выпущена под другую подсеть, перевыпусти её с сервера AWG"))
             else:
                 checks.append(GwCheck("MASQUERADE/изоляция", None,
-                                      "подсеть клиентов неизвестна (нет бандла) — проверка выключена"))
+                                      "подсеть клиентов неизвестна (нет конфигурации с сервера AWG) — "
+                                      "проверка выключена"))
             missing_chains = [c for c in gwguard.CHAINS if c not in info["chains"]]
             checks.append(GwCheck("цепочки таблицы", not missing_chains,
                                   "" if not missing_chains else
@@ -424,8 +425,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         hs_bad = not self.link_ok(st)
         notes += self._streak_alert(
             "link", hs_bad, settings.get_int("app.gateway.link_alert_streak", 2),
-            "🚨 Линк до сервера AWG мёртв: хендшейка нет дольше допустимого. РФ-доступ "
-            "у клиентов не работает.",
+            "🚨 Линк до сервера AWG мёртв: хендшейка нет дольше допустимого"
+            + self._rf_note(". РФ-доступ у клиентов не работает"),
             "✅ Линк до сервера AWG ожил, хендшейк свежий",
             loud=settings.get_bool("app.gateway.link_alert_loud", True))
 
@@ -435,9 +436,9 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         notes += self._streak_alert(
             "egress", st.egress_ok is False,
             settings.get_int("app.gateway.egress_alert_streak", 2),
-            "⚠️ Шлюз не выходит наружу: канал не отвечает. РФ-доступ "
-            "через шлюз не работает.",
-            f"✅ Канал шлюза {host} снова отвечает")
+            "⚠️ Шлюз не выходит наружу: канал не отвечает"
+            + self._rf_note(". РФ-доступ через шлюз не работает"),
+            f"✅ Шлюз {host} снова выходит наружу")
 
         broken = [c for c in st.checks if c.ok is False and c.group not in CHECK_GROUPS_SOFT]
         notes += self._streak_alert(
@@ -467,9 +468,9 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         under_now = bool(st.throttled and st.throttled.get("now"))
         notes += self._streak_alert(
             "power", under_now, 2,
-            "⚠️ Питание Pi: " + "; ".join((st.throttled or {}).get("now", [])) +
+            "⚠️ Питание шлюза: " + "; ".join((st.throttled or {}).get("now", [])) +
             ". Классика тихой смерти — проверь блок питания",
-            "✅ Питание Pi в норме")
+            "✅ Питание шлюза в норме")
 
         temp_bad = None if st.temp is None else \
             st.temp >= settings.get_int("app.gateway.temp_alert_c", 75)
@@ -1179,7 +1180,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         elif n and waited > self._OWN_STALE_SERVER_S:
             info["state"] = "stale_server"
             checks.append(GwCheck("свои списки", None,
-                                  f"сервер AWG не отвечает на правки {int(waited // 60)} мин: обнови основной бот"))
+                                  f"сервер AWG не отвечает на правки {int(waited // 60)} мин: обнови бот сервера AWG"))
         elif n:
             info["state"] = "pending"
             checks.append(GwCheck("свои списки", None, f"ждут синхронизации ({n_word}): сервер AWG ещё не ответил"))
@@ -1384,14 +1385,48 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     # ── роль слота и диагностика по каналу ──
     _LINK_ROLE_KEY = "gwlink_role"
 
-    def set_link_role(self, active: bool) -> None:
-        """Роль этого шлюза, как её видит сервер: несёт он трафик или в резерве.
-        Сам агент узнать её не может — решает автомат переключения на ВПС."""
+    _LINK_STANDBY_KEY = "gwlink_standby"
+    _LINK_SLOT_NAME_KEY = "gwlink_slot_name"
+
+    def set_link_role(self, active: bool, standby=None, name=None) -> None:
+        """Роль этого шлюза, как её видит сервер: несёт он трафик или в резерве;
+        standby — есть ли другой шлюз (для честных хвостов про синхронизацию и
+        РФ-доступ), name — имя слота на сервере (заголовок рецепта роутера).
+        Сам агент узнать это не может — решает автомат переключения на ВПС.
+        Старый сервер шлёт только active — тогда прочее не трогаем."""
         self.db.set_state(self._LINK_ROLE_KEY, "active" if active else "standby")
+        if standby is not None:
+            self.db.set_state(self._LINK_STANDBY_KEY, "1" if standby else "0")
+        if name is not None:
+            self.db.set_state(self._LINK_SLOT_NAME_KEY, str(name)[:80])
 
     def link_role(self) -> str:
         """active | standby | "" — сервер не сообщал (канала нет)."""
         return (self.db.get_state(self._LINK_ROLE_KEY) or "").strip()
+
+    def link_standby_known(self):
+        """True — другой шлюз есть, False — нет, None — сервер не говорил."""
+        raw = self.db.get_state(self._LINK_STANDBY_KEY)
+        return None if raw is None or raw == "" else raw == "1"
+
+    def link_slot_name(self) -> str:
+        return (self.db.get_state(self._LINK_SLOT_NAME_KEY) or "").strip()
+
+    def carries_traffic(self) -> bool:
+        """Шлюз сейчас несёт трафик клиентов: сервер назначил его активным и
+        линк жив по последнему снимку. Только тогда предупреждаем, что
+        РФ-доступ прервётся."""
+        if self.link_role() != "active":
+            return False
+        st = self.cached_status(900)
+        return bool(st is not None and self.link_ok(st))
+
+    def _rf_note(self, text: str) -> str:
+        """Хвост «РФ-доступ … не работает» к алерту — только если шлюз нёс
+        трафик и резерва, на который сервер мог переключиться, нет."""
+        if self.link_role() == "active" and self.link_standby_known() is not True:
+            return text
+        return ""
 
     # ── фиды локальной сети по каналу ────────
     _LAN_CHANNEL_HASH_KEY = "gwlink_lists_hash"
@@ -1700,7 +1735,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         what = ", ".join(self._SETTINGS_HUMAN.get(k, k) for k in result.get("changed") or [])
         err = html.escape(str(result.get("error") or "ошибка"), quote=False)
         if result.get("ok"):
-            return f"⚙️ Сервер AWG прислал новые настройки шлюза — применены: {what}."
+            return f"⚙️ Сервер AWG прислал новые настройки шлюза — применены: {what}"
         if not result.get("changed"):
             # отвергнуты ещё на проверке значений — ничего не менялось, и
             # «вернул прежние» было бы неправдой

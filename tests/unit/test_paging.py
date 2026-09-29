@@ -1,10 +1,10 @@
 """
-Листание длинных списков кнопками: правило «не больше десяти кнопок на
-экране» (keyboards.common.page_slice/page_nav), упаковка PageCB в 64 байта
+Листание длинных списков кнопками: правило «не больше десяти рядов кнопок
+на экране» (keyboards.common.page_slice/page_nav), упаковка PageCB в 64 байта
 Telegram и роутер листания (bot/paging.py), который запоминает страницу и
 заново отдаёт диспетчеру колбэк экрана.
 
-Цена ошибки: экран, переросший десять кнопок, — ровно то, от чего правило
+Цена ошибки: экран, переросший десять рядов, — ровно то, от чего правило
 вводили; элемент, до которого листанием не дойти, — профиль или адрес,
 который нельзя открыть или убрать; кнопка, чья упаковка переросла 64 байта,
 роняет построение всего экрана (aiogram поднимает ValueError), и раздел
@@ -33,7 +33,7 @@ from awgbot.bot.keyboards import routing as kbr
 from awgbot.bot.keyboards import settings as kbs
 from awgbot.core.enums import ActivationStatus
 
-MAX = kbm.MAX_BUTTONS
+MAX = kbm.MAX_ROWS
 
 
 # ── page_slice ───────────────────────────────────────────────────────────────
@@ -53,15 +53,16 @@ def _walk(n: int, static: int):
 
 @pytest.mark.parametrize("static", range(0, 8))
 @pytest.mark.parametrize("n", [0, 1, 2, 5, 7, 8, 9, 10, 11, 12, 17, 25, 40])
-def test_every_page_fits_ten_buttons_and_the_pages_cover_the_whole_list(static, n):
-    """Сумма «постоянные + элементы + листание» ни на одной странице не больше
-    десяти, и листанием доступен каждый элемент ровно один раз, с номером по
-    полному списку — по нему удаляют и переключают."""
+def test_every_page_fits_ten_rows_and_the_pages_cover_the_whole_list(static, n):
+    """Сумма рядов «постоянные + элементы (по одному в ряду) + ряд листания»
+    ни на одной странице не больше десяти, и листанием доступен каждый
+    элемент ровно один раз, с номером по полному списку — по нему удаляют и
+    переключают."""
     items, pages = _walk(n, static)
     seen = []
     for chunk, page, prev, nxt in pages:
-        total = static + len(chunk) + int(prev) + int(nxt)
-        assert total <= MAX, f"static={static}, n={n}, страница {page}: {total} кнопок"
+        total = static + len(chunk) + int(prev or nxt)      # обе стрелки — один ряд
+        assert total <= MAX, f"static={static}, n={n}, страница {page}: {total} рядов"
         seen += chunk
     assert seen == list(enumerate(items)), "элементы потеряны, повторены или номер не по полному списку"
 
@@ -74,14 +75,17 @@ def test_a_list_that_fits_has_no_pages():
     assert kbm.page_slice([], 5, static=3) == ([], 0, False, False), "пустой список — пустая страница 0"
 
 
-def test_one_over_the_room_turns_on_paging_with_room_for_both_arrows():
+def test_one_over_the_room_turns_on_paging_with_one_row_for_the_arrows():
+    """Не влезло на один — страницы, и под обе стрелки уходит ровно один ряд:
+    отдай им два, и на странице окажется на элемент меньше, чем позволяет
+    правило; не отдай ни одного — экран перерастёт десять рядов."""
     items = list(range(MAX - 3 + 1))                 # на один больше, чем влезает
     chunk, page, prev, nxt = kbm.page_slice(items, 0, static=3)
     assert (page, prev, nxt) == (0, False, True)
-    assert len(chunk) == MAX - 3 - 2, "на страницу — место под обе стрелки"
+    assert len(chunk) == MAX - 3 - 1, "на страницу — место под один ряд стрелок"
     chunk, page, prev, nxt = kbm.page_slice(items, 1, static=3)
     assert (page, prev, nxt) == (1, True, False)
-    assert [i for i, _ in chunk] == list(range(MAX - 3 - 2, len(items)))
+    assert [i for i, _ in chunk] == list(range(MAX - 3 - 1, len(items)))
 
 
 @pytest.mark.parametrize("asked", [3, 50, 10**6])
@@ -123,7 +127,7 @@ def test_page_nav_without_neighbours_draws_nothing():
     assert [b.text for row in kb.as_markup().inline_keyboard for b in row] == [kbm.NEXT_LABEL]
 
 
-# ── все экраны с листанием: десять кнопок и 64 байта ────────────────────────
+# ── все экраны с листанием: десять рядов и 64 байта ─────────────────────────
 
 # id с запасом — семь цифр: живые базы до этого не дорастут, а упаковка
 # кнопки листания несёт id в двух местах (ref и внутри back)
@@ -207,14 +211,16 @@ def _buttons(markup):
 
 @pytest.mark.parametrize("screen", sorted(SCREENS))
 @pytest.mark.parametrize("n", [0, 1, 6, 9, 10, 11, 23])
-def test_each_paged_screen_keeps_ten_buttons_and_reaches_every_item(screen, n):
-    """Реальные клавиатуры, а не арифметика: сколько кнопок легло на экран и
+def test_each_paged_screen_keeps_ten_rows_and_reaches_every_item(screen, n):
+    """Реальные клавиатуры, а не арифметика: сколько рядов легло на экран и
     доходит ли листание (по страницам из самих стрелок) до каждого элемента."""
     build = SCREENS[screen]
     page, found, turns = 0, [], 0
     while True:
-        buttons = _buttons(build(n, page))
-        assert len(buttons) <= MAX, f"{screen}, {n} эл., стр. {page}: {len(buttons)} кнопок"
+        markup = build(n, page)
+        buttons = _buttons(markup)
+        rows = [[b.text for b in r] for r in markup.inline_keyboard]
+        assert len(rows) <= MAX, f"{screen}, {n} эл., стр. {page}: {len(rows)} рядов — {rows}"
         found += [f"u{i:04d}" for i in range(n) if any(f"u{i:04d}" in b.text for b in buttons)]
         nxt = [b for b in buttons if b.text == kbm.NEXT_LABEL]
         if not nxt:
@@ -224,6 +230,43 @@ def test_each_paged_screen_keeps_ten_buttons_and_reaches_every_item(screen, n):
         assert turns < 100, "листание не кончается"
     assert sorted(found) == [f"u{i:04d}" for i in range(n)], (
         f"{screen}: до части элементов не долистать или они повторяются")
+
+
+@pytest.mark.parametrize("screen", sorted(SCREENS))
+def test_a_long_list_fills_the_page_up_to_exactly_ten_rows(screen):
+    """Обратная сторона правила: постоянные ряды экрана посчитаны не с
+    запасом. Завысь static у экрана — и длинный список листается страницами
+    по три-четыре элемента, хотя место есть; каждая лишняя страница — лишнее
+    нажатие у человека с длинным списком."""
+    for page in (0, 1):
+        rows = SCREENS[screen](23, page).inline_keyboard
+        assert len(rows) == MAX, (
+            f"{screen}, стр. {page}: {len(rows)} рядов — место под список не использовано: "
+            f"{[[b.text for b in r] for r in rows]}")
+
+
+def test_the_vpn_transit_screen_lists_seven_domains_per_page():
+    """«🔀 VPN-транзит»: ряд «➕ В туннель | ➕ Напрямую», ряд «❓ Роутер |
+    ⬅️ В меню», ряд листания — и семь доменов «➖» на странице. 23 своих
+    домена — четыре страницы 7 + 7 + 7 + 2, каждый домен ровно на одной;
+    восемь без листания помещаются целиком."""
+    doms = [("vpn", d) for d in _doms(23)]
+    per_page, seen = [], []
+    for page in range(4):
+        rows = kbg.gateway_lan_kb(doms, page=page).inline_keyboard
+        minus = [b.text for r in rows for b in r if b.text.startswith("➖")]
+        per_page.append(len(minus))
+        seen += minus
+        assert [b.text for b in rows[0]] == ["➕ В туннель", "➕ Напрямую"], rows[0]
+        assert [b.text for b in rows[-1]] == ["❓ Роутер", "⬅️ В меню"], rows[-1]
+    assert per_page == [7, 7, 7, 2], f"доменов по страницам: {per_page}"
+    assert len(set(seen)) == 23, "домены повторяются или потеряны между страницами"
+    # без листания ряд стрелок не нужен — целиком влезают восемь
+    rows = kbg.gateway_lan_kb(doms[:8]).inline_keyboard
+    assert not any(b.text in (kbm.PREV_LABEL, kbm.NEXT_LABEL) for r in rows for b in r), (
+        "восемь доменов влезают целиком — стрелки лишние")
+    rows = kbg.gateway_lan_kb(doms[:9]).inline_keyboard
+    assert any(b.text == kbm.NEXT_LABEL for r in rows for b in r), "девятый домен не влез бы без листания"
 
 
 @pytest.mark.parametrize("screen", sorted(SCREENS))

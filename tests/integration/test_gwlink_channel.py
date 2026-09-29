@@ -718,8 +718,9 @@ class _Agent:
     def lan_feeds_applied_hash(self) -> str:
         return ""                      # фидов локальной сети из канала не применяли
 
-    def set_link_role(self, active: bool) -> None:
+    def set_link_role(self, active: bool, standby=None, name=None) -> None:
         self.role = active
+        self.role_words = (standby, name)
 
 
 async def test_the_real_client_and_the_real_server_agree_on_the_wire(

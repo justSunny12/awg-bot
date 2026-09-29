@@ -105,3 +105,83 @@ def test_throttled_word_is_read_from_sysfs_before_vcgencmd(tmp_path):
     assert hm._read_throttled_sysfs(str(tmp_path / "nope")) is None
     p.write_text("garbage\n")
     assert hm._read_throttled_sysfs(str(p)) is None
+
+
+# ── питание — только на Raspberry Pi ─────────────────────────────────────────
+
+@pytest.fixture()
+def model(tmp_path, monkeypatch):
+    """Подставной /proc/device-tree/model; кэш «Pi ли это» сброшен на тест."""
+    p = tmp_path / "model"
+    monkeypatch.setattr(hm, "_PI_MODEL", str(p))
+    monkeypatch.setattr(hm, "_is_pi", None)
+    return p
+
+
+@pytest.mark.parametrize("raw, pi", [
+    (b"Raspberry Pi 4 Model B Rev 1.4\x00", True),
+    (b"Raspberry Pi 5 Model B Rev 1.0\x00", True),
+    (b"RASPBERRY PI Compute Module 4\x00", True),
+    (b"Radxa ROCK 5B\x00", False),
+    (b"\xff\xfe\x00", False),
+])
+def test_a_raspberry_pi_is_told_by_the_device_tree_model(model, raw, pi):
+    """Модель из device-tree — единственный признак малины: vcgencmd бывает
+    и на других платах, а sysfs троттлинга — не на всех прошивках."""
+    model.write_bytes(raw)
+    assert hm.is_raspberry_pi() is pi
+
+
+def test_no_device_tree_means_not_a_pi_and_the_answer_is_kept(model):
+    """Нет файла (x86, ВМ) — не Pi; ответ запоминается на процесс: модель
+    платы не меняется, а тик монитора не должен читать файл каждый раз."""
+    assert hm.is_raspberry_pi() is False
+    model.write_bytes(b"Raspberry Pi 4 Model B\x00")
+    assert hm.is_raspberry_pi() is False, "ответ перечитан — кэша нет"
+
+
+def test_off_a_pi_power_is_not_read_at_all(model, monkeypatch):
+    """Не Pi — питание не смотрим вовсе: ни sysfs, ни vcgencmd. Иначе агент
+    на обычном сервере рисовал бы «питание ОК», которое ничем не проверено,
+    или алертил бы по случайному файлу."""
+    import subprocess
+
+    def forbidden(*a, **k):
+        raise AssertionError("не Pi, а питание всё равно читают")
+    monkeypatch.setattr(hm, "_read_throttled_sysfs", forbidden)
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    model.write_bytes(b"Generic x86 board\x00")
+    assert hm.read_pi_throttled() is None
+
+
+def test_on_a_pi_power_is_read_and_decoded(model, monkeypatch):
+    model.write_bytes(b"Raspberry Pi 4 Model B Rev 1.4\x00")
+    monkeypatch.setattr(hm, "_read_throttled_sysfs", lambda: 0x50001)
+    assert hm.read_pi_throttled() == {"raw": 0x50001, "now": ["недонапряжение"],
+                                      "ever": ["недонапряжение случалось", "троттлинг случался"]}
+
+
+def test_on_a_pi_without_sysfs_a_failing_vcgencmd_means_unknown(model, monkeypatch):
+    """Pi без файла в sysfs и без vcgencmd (или vcgencmd упал) — «нечем
+    посмотреть» (None), а не «питание ОК»."""
+    import subprocess
+
+    def boom(*a, **k):
+        raise FileNotFoundError("vcgencmd")
+    model.write_bytes(b"Raspberry Pi 3 Model B\x00")
+    monkeypatch.setattr(hm, "_read_throttled_sysfs", lambda: None)
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert hm.read_pi_throttled() is None
+
+
+def test_without_a_power_reading_the_gateway_screens_say_nothing_about_power():
+    """Не Pi — ни на панели, ни на экране здоровья слова «питание» нет:
+    непроверенное «питание ОК» — ложное спокойствие."""
+    from awgbot.bot import texts
+    from awgbot.domain.gateway import GwStatus
+    st = GwStatus(link_up=True, handshake_age=5.0, cpu=10.0, ram=20.0, disk=30.0, disk_free_gb=50.0,
+                  throttled=None)
+    assert "питание" not in texts.gateway_panel(st).lower()
+    assert "питание" not in texts.gateway_health(st).lower()
+    st.throttled = {"raw": 0, "now": [], "ever": []}
+    assert "питание ОК" in texts.gateway_panel(st), "на Pi строка питания есть"

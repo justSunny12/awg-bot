@@ -91,30 +91,30 @@ def gateway_panel(st, update_tag: str = "") -> str:
     parts = [f"🛰 {host} · {_gw_role(st)}{up}"]
     chan = channel_panel_line()
     link = _gw_link_short(st)
-    if st.server_name:
-        link = link.replace("📡 Линк", f"📡 Линк до {_e(st.server_name)}", 1)
+    # всегда «Линк до …»: голое «Линк» читается как сетевой интерфейс
+    link = link.replace("📡 Линк", f"📡 Линк до {_e(st.server_name or 'сервера AWG')}", 1)
     parts.append(link + (f" · {chan}" if chan else ""))
     mark = getattr(st, "mark_status", "") or ""
     if mark and mark != "confirmed":
         # Статусы производит ровно один источник — routing-gw-setup.sh:
         # unmarked | confirmed | foreign | unconfirmed. Токен пометки при живом
         # канале агент отправляет сам — просить переслать сообщение незачем.
-        unmarked = ("⚠️ Шлюз в основном боте не назначен — запрос ушёл по каналу"
+        unmarked = ("⚠️ Шлюз в боте сервера AWG не назначен — запрос ушёл по упр. каналу"
                     if linkclient.online() else
-                    "⚠️ Шлюз в основном боте не назначен, канала нет — перешли ему сообщение из отчёта")
+                    "⚠️ Шлюз в боте сервера AWG не назначен, упр. канала нет — перешли ему сообщение из отчёта")
         parts.append({"unmarked": unmarked,
                       "foreign": "⚠️ Шлюз этого слота — другое устройство, линк лежит",
-                      "unconfirmed": "⚠️ Аплинк этой машины не найден — шлюз не подтверждён"}
+                      "unconfirmed": "⚠️ Аплинк этого устройства не найден — шлюз не подтверждён"}
                      .get(mark, f"⚠️ Пометка: {_e(mark)}"))
     if update_tag:
         tag = update_tag if str(update_tag).startswith("v") else f"v{update_tag}"
-        parts.append(f"⬆️ Доступна {_e(tag)}")
+        parts.append(f"<b>⬆️ Доступна {_e(tag)}</b>")
     ssh_line = gateway_ssh_panel_line(getattr(st, "ssh", None) or {})
     if ssh_line:
         parts.append(ssh_line)
     hw = []
     if st.cpu is not None:
-        hw.append(f"CPU {st.cpu:.0f}%" + (f" {st.temp:.0f} °C" if st.temp is not None else ""))
+        hw.append(f"CPU {st.cpu:.0f}%" + (f" | {st.temp:.0f} °C" if st.temp is not None else ""))
     elif st.temp is not None:
         hw.append(f"{st.temp:.0f} °C")
     if st.ram is not None:
@@ -130,7 +130,8 @@ def gateway_panel(st, update_tag: str = "") -> str:
         bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
         state = "🔴 " + ", ".join(_uniq(c.name for c in bad)[:3]) if bad else "🟢"
         parts.append(f"🔀 VPN-транзит {state} · {_packets(lan.get('lan_pkts'))} с роутера")
-        parts.append(f"📋 Списки: {_lists_counts(lan)} · {own_lists_short(lan)}")
+        own = own_lists_short(lan)                     # своих нет — хвоста нет
+        parts.append(f"📋 Списки: {_lists_counts(lan)}" + (f" · {own}" if own else ""))
         svc = lan.get("svc") or {}
         if svc.get("active"):
             parts.append(smb_line(svc))
@@ -169,7 +170,7 @@ def gateway_health(st) -> str:
             power += " (с загрузки: " + "; ".join(ever) + ")"
         hw.append(f"питание {power}")
     if hw:
-        lines.append("Железо: " + " · ".join(hw))
+        lines.append(" · ".join(hw))
     ver = st.module_version or "?"
     src = f" · srcversion {st.srcversion[:8]}…" if st.srcversion else ""
     lines.append(f"Модуль awg {_e(ver)}{_e(src)} · ядер {st.kernels_total}")
@@ -234,26 +235,27 @@ def gateway_lan_text(st, items=None, own: dict | None = None) -> str:
     bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
     state = "🔴 " + ", ".join(_uniq(c.name for c in bad)[:3]) if bad else "🟢 работает"
     lines = [f"🔀 VPN-транзит · {state}",
-             f"{_e(lan.get('iface', '') or '?')} · {_e(lan.get('addr', '') or '?')} · "
+             f"<code>{_e(lan.get('iface', '') or '?')}</code> · <code>{_e(lan.get('addr', '') or '?')}</code> · "
              f"{_packets(lan.get('lan_pkts'))} с роутера",
-             f"DNS — {_e(lan.get('resolver', '') or '?')} через {_e(lan.get('uplink', '') or 'аплинк')}",
+             f"DNS — <code>{_e(lan.get('resolver', '') or '?')}</code> через "
+             f"<code>{_e(lan.get('uplink', '') or 'аплинк')}</code>",
              f"📋 Списки: {_lists_counts(lan)} ({_lists_updated_short(lan.get('updated_at') or '')})",
              own_lists_short(lan, plain=True)]
     if (lan.get("svc") or {}).get("active"):
         lines.append(smb_line(lan["svc"]))
     shared = bool(own.get("active"))
-    if items is not None and not items:
-        lines.append("Пока пусто: добавь домены кнопками «➕ В туннель» и «➕ Напрямую»")
-        if shared:
-            lines.append("Списки общие для всех шлюзов — добавленное здесь появится и на остальных")
+    about = LAN_ABOUT
+    if items is not None and not items:                 # подсказки пустого списка — под «подробнее»
+        about = ("добавь домены кнопками «➕ В туннель» и «➕ Напрямую»"
+                 + (" · списки общие для всех шлюзов — добавленное здесь появится и на остальных"
+                    if shared else "") + " · " + about)
     if shared:
         line = own_lists_state_line(own)
         if line:
             lines.append(line)
     elif own.get("no_channel"):
-        lines.append("Списки применятся только для этого шлюза: для синхронизации нужен канал до "
-                     "сервера AWG — перевыпусти конфигурацию шлюза с сервера AWG")
-    lines.append(details(LAN_ABOUT))
+        lines.append(SYNC_TAILS["no_channel"].replace("Изменения применятся", "Списки применятся"))
+    lines.append(details(about))
     return "\n".join(lines)
 
 
@@ -268,6 +270,8 @@ def own_lists_short(lan: dict, plain: bool = False) -> str:
     own = lan.get("own") or {}
     v, r = int(lan.get("own_vpn", 0) or 0), int(lan.get("own_ru", 0) or 0)
     parts = ([f"{v} в туннель"] if v else []) + ([f"{r} напрямую"] if r else [])
+    if not parts and not plain:
+        return ""                                      # в панели пустой хвост не рисуется
     head = ("Свои списки: " if plain else "свои: ") + (", ".join(parts) if parts else "пусто")
     if not own.get("active"):
         return head
@@ -297,13 +301,21 @@ def own_lists_state_line(own: dict) -> str:
     return ""
 
 
-def gateway_lan_removed_toast(domain: str, shared: bool, sync: str) -> str:
-    """Всплывашка после «➖»: «Убран на всех шлюзах» первой строкой при общих
-    списках, итог и хвост синхронизации."""
-    head = "Убран на всех шлюзах\n" if shared else ""
-    tail = {"online": "\nИзменения синхронизируются с другими шлюзами",
-            "offline": "\nИзменения синхронизируются с другими шлюзами, когда появится связь с сервером AWG"}.get(sync, "")
-    return f"{head}{short_name(domain)}: убран{tail}"
+SYNC_TAILS = {
+    "online": "Изменения синхронизируются с другими шлюзами",
+    "offline": "Изменения будут синхронизированы с другими шлюзами, когда появится связь с сервером AWG",
+    "no_channel": ("Изменения применятся только для этого шлюза: для синхронизации нужен упр. канал "
+                   "до сервера AWG — перевыпусти конфигурацию шлюза"),
+}
+
+
+def gateway_lan_removed_toast(domain: str, shared: bool = False, sync: str = "") -> str:
+    """Всплывашка после «➖»: итог и хвост синхронизации — только когда он
+    правдив (другого шлюза нет — хвоста нет; shared оставлен для вызовов)."""
+    tail = SYNC_TAILS.get(sync, "")
+    # всплывашка — не длиннее 200 знаков: домен уступает место хвосту
+    limit = min(80, 200 - len(": убран") - (len(tail) + 1 if tail else 0))
+    return f"{short_name(domain, limit)}: убран" + (f"\n{tail}" if tail else "")
 
 
 def short_name(name: str, limit: int = 80) -> str:
@@ -338,9 +350,8 @@ def gateway_lan_result(ok: bool, out: str, sync: str = "", budget: int = 3300) -
         rest = len(rows) - len(keep)
         out += f"\n…и ещё {rest} " + plural_ru(rest, "строка", "строки", "строк")
     body = _e(out) if out else ("готово" if ok else "не удалось")
-    tail = {"online": "\nИзменения синхронизируются с другими шлюзами",
-            "offline": "\nИзменения синхронизируются с другими шлюзами, когда появится связь с сервером AWG"}.get(sync, "")
-    return ("✅ " if ok else "⚠️ ") + body + tail
+    tail = SYNC_TAILS.get(sync, "")
+    return ("✅ " if ok else "⚠️ ") + body + (f"\n{tail}" if tail else "")
 
 
 def gw_settings_text() -> str:
@@ -358,13 +369,13 @@ def gw_settings_notify_text() -> str:
     else:
         lines.append("Тихие часы выключены — уведомления со звуком круглые сутки")
     if s.get_bool("resource_alerts.enabled", True):
-        lines.append(f"Алерты: CPU {s.get_int('resource_alerts.thresholds_percent.cpu', 80)}% · "
+        lines.append(f"Алерты хоста: CPU {s.get_int('resource_alerts.thresholds_percent.cpu', 80)}% · "
                      f"RAM {s.get_int('resource_alerts.thresholds_percent.ram', 80)}% · "
                      f"диск {s.get_int('resource_alerts.thresholds_percent.disk', 80)}% · "
                      f"{s.get_int('app.gateway.temp_alert_c', 75)} °C")
     else:
-        lines.append("Алерты выключены")
-    lines.append(details("аварии на e-mail — только когда Telegram недоступен: линк, выход наружу, "
+        lines.append("Алерты хоста выключены")
+    lines.append(details("Аварии на e-mail — только когда Telegram недоступен: линк, выход наружу, "
                          "обвязка, питание, перегрев, перегруз"))
     return "\n".join(lines)
 
@@ -378,8 +389,8 @@ def gw_settings_mon_text() -> str:
     loud = s.get_bool("app.gateway.link_alert_loud", True)
     from awgbot.bot.keyboards.gateway import link_minutes
     mins = link_minutes(s.get_int("app.gateway.handshake_max_age", 300))
-    return (f"🩺 Мониторинг\nОпрос раз в {s.get_int('app.gateway.monitor_minutes', 3)} мин · алерт после "
-            f"{_streak(s.get_int('app.monitoring.alert_streak', 5))} подряд · линк молчит дольше "
+    return (f"🩺 Мониторинг · опрос раз в {s.get_int('app.gateway.monitor_minutes', 3)} мин · алерт после "
+            f"{_streak(s.get_int('app.monitoring.alert_streak', 5))} · линк молчит дольше "
             f"{mins} мин — " + ("со звуком круглые сутки" if loud else "по правилам тихих часов"))
 
 
@@ -392,15 +403,26 @@ def host_rebooted(hostname: str, who: str) -> str:
     return f"⚠️ Хост {_e(hostname)} был перезагружен.\n✅ Запуск {_e(who)} успешен"
 
 
-GW_CONFIRM_RESTART = "🔁 Перезапустить AWG? Линк опустится и поднимется — РФ-доступ у всех прервётся на секунды"
-GW_CONFIRM_REASSERT = ("🔧 Восстановить шлюз?\nЮнит переставит правила (маскарад, изоляция, метка) и "
-                       "переподнимет линк — РФ-доступ прервётся на секунды")
-GW_CONFIRM_BOT_RESTART = "🔁 Перезапустить бота? Вернётся через несколько секунд; линк не трогается"
+def gw_confirm_restart(carries: bool = True) -> str:
+    """carries — шлюз сейчас несёт трафик и линк жив: только тогда честно
+    предупреждать, что РФ-доступ прервётся."""
+    return ("🔁 Перезапустить AWG? Линк опустится и поднимется"
+            + (" — РФ-доступ у всех прервётся на секунды" if carries else ""))
+
+
+def gw_confirm_reassert(carries: bool = True) -> str:
+    return ("🔧 Восстановить шлюз?\nЮнит переставит правила (маскарад, изоляция, метка) и "
+            "переподнимет линк" + (" — РФ-доступ прервётся на секунды" if carries else ""))
+
+
+GW_CONFIRM_RESTART = gw_confirm_restart()
+GW_CONFIRM_REASSERT = gw_confirm_reassert()
+GW_CONFIRM_BOT_RESTART = "🔁 Перезапустить бота? Вернётся через несколько секунд; без влияния на пользователей"
 GW_BOT_RESTARTING = "🔁 Бот перезапускается — вернётся через несколько секунд"
 
 
-GW_BUNDLE_NOT_OURS = ("Это не конфигурация шлюза — файл не принят. Её выпускает основной "
-                      "бот: «🛰 Шлюзы» → слот → «📤 Конфигурация»")
+GW_BUNDLE_NOT_OURS = ("Это не конфигурация шлюза — файл не принят. Файлы конфигурации выпускает "
+                      "бот сервера AWG: «🛰 Шлюзы» → карточка шлюза → «📤 Конфигурация»")
 GW_BUNDLE_PASSPHRASE_QUESTION = (
     "🔐 <b>В конфигурации — парольная фраза шифрования бэкапов, и она отличается "
     "от заданной на шлюзе.</b>\n\nПерезаписать фразу шлюза фразой с сервера AWG? Прежние "
@@ -410,25 +432,25 @@ GW_BUNDLE_PASSPHRASE_QUESTION = (
 
 def gateway_claim_via_channel_text(status: str) -> str:
     """Токен пометки ушёл серверу по каналу — пересылать ничего не нужно."""
-    head = ("🛰 <b>Шлюз в основном боте не назначен.</b>" if status == "unmarked" else
-            "⚠️ <b>Аплинк этой машины не найден.</b> Подтвердить шлюз нечем: подними аплинк "
+    head = _claim_head(status)
+    return (head + "\n\nЗапрос на назначение отправлен серверу AWG по управляющему каналу: "
+            "бот сервера AWG найдёт это устройство по ключу и перевыпустит файл конфигурации — "
+            "отправь его сюда")
+
+
+def _claim_head(status: str) -> str:
+    return ("🛰 <b>Шлюз в боте сервера AWG не назначен.</b>" if status == "unmarked" else
+            "⚠️ <b>Аплинк этого устройства не найден.</b> Подтвердить шлюз нечем: подними аплинк "
             "и примени конфигурацию ещё раз." if status == "unconfirmed" else
-            "⚠️ <b>Шлюз этого слота — другое устройство.</b> Линк на этой машине лежит: "
-            "смени шлюз в основном боте: «🛰 Шлюзы» → карточка шлюза → «✏️ Изменить» → «🔁 Заменить».")
-    return (head + "\n\nЗапрос на назначение отправлен серверу AWG по каналу конфигурации: "
-            "основной бот найдёт это устройство по ключу и выпустит конфигурацию — её примени "
-            "здесь ещё раз.")
+            "⚠️ <b>Шлюз этого слота — другое устройство.</b> Линк на этом устройстве лежит: "
+            "смени шлюз в боте сервера AWG: «🛰 Шлюзы» → карточка шлюза → «✏️ Изменить» → «🔁 Заменить».")
 
 
 def gateway_claim_forward_text(token: str, status: str) -> str:
-    head = ("🛰 <b>Шлюз в основном боте не назначен.</b>" if status == "unmarked" else
-            "⚠️ <b>Аплинк этой машины не найден.</b> Подтвердить шлюз нечем: подними аплинк "
-            "и примени конфигурацию ещё раз." if status == "unconfirmed" else
-            "⚠️ <b>Шлюз этого слота — другое устройство.</b> Линк на этой машине лежит: "
-            "смени шлюз в основном боте: «🛰 Шлюзы» → карточка шлюза → «✏️ Изменить» → «🔁 Заменить».")
+    head = _claim_head(status)
     return (head + "\n\nКанал конфигурации сервера AWG недоступен. Перешли это сообщение "
-            "основному боту как есть: он найдёт это устройство по ключу, назначит его шлюзом "
-            f"и выпустит конфигурацию; её примени здесь ещё раз.\n\n<code>{_e(token)}</code>")
+            "боту сервера AWG как есть: он найдёт это устройство по ключу, назначит его шлюзом "
+            f"и перевыпустит файл конфигурации — отправь его сюда\n\n<code>{_e(token)}</code>")
 
 
 def gateway_apply_report(st: dict) -> str:
@@ -445,12 +467,12 @@ def gateway_apply_report(st: dict) -> str:
     elif link == "foreign":
         lines.append("линк лежит: шлюз этого слота — другое устройство")
     elif link == "unconfirmed":
-        lines.append("линк не тронут: аплинк этой машины не найден")
+        lines.append("линк не тронут: аплинк этого устройства не найден")
     gs = st.get("GW_STATUS", "")
     if gs == "confirmed":
         lines.append("шлюз подтверждён")
     elif gs == "unmarked":
-        lines.append("шлюз в основном боте не назначен")
+        lines.append("шлюз в боте сервера AWG не назначен")
     elif gs == "unconfirmed":
         lines.append("шлюз не подтверждён")
     if st.get("SSH_FILTER") == "1":
@@ -469,7 +491,7 @@ def gateway_apply_report(st: dict) -> str:
     if not lines:
         return ""
     text = ", ".join(lines)
-    return text[0].upper() + text[1:] + "."
+    return text[0].upper() + text[1:]
 
 
 def gateway_op_result(title: str, ok: bool, detail: str) -> str:
@@ -477,17 +499,18 @@ def gateway_op_result(title: str, ok: bool, detail: str) -> str:
     return head + (f"\n<code>{_e(detail)}</code>" if detail else "")
 
 
-def awg_restart_warning_body(gateway: bool) -> str:
+def awg_restart_warning_body(gateway: bool, carries: bool = True) -> str:
     """Слово в слово предупреждение экрана «Перезапустить AWG» — у ролей оно разное."""
     # у обеих ролей подтверждение однострочное: «🔁 Перезапустить AWG? <цена>»
-    src = GW_CONFIRM_RESTART if gateway else SVC_CONFIRM_AWG
+    src = gw_confirm_restart(carries) if gateway else SVC_CONFIRM_AWG
     return src.split("? ", 1)[-1]
 
 
-def gateway_bundle_received(link_changed: bool) -> str:
+def gateway_bundle_received(link_changed: bool, carries: bool = True) -> str:
     if link_changed:
         return ("📦 Конфигурация с сервера AWG\n"
-                "Линк перезапустится — РФ-доступ у всех прервётся на секунды; правила переставятся")
+                "Линк перезапустится" + (" — РФ-доступ у всех прервётся на секунды" if carries else "")
+                + "; правила переставятся")
     return ("📦 Конфигурация с сервера AWG\n"
             "Конфиг линка не изменился — линк не перезапустится; правила переставятся")
 
@@ -508,7 +531,7 @@ def gateway_ssh_text(st: dict) -> str:
     port = st.get("port")
     lines = ["<b>🛡 SSH-доступ</b>", ""]
     if st.get("sshd_down"):
-        lines.append(f"⚪ sshd не запущен. Порт в таблице: {port}.")
+        lines.append(f"⚪ sshd не запущен. Порт в таблице: {port}")
     elif st.get("owner") == "omv":
         lines.append(f"Порт SSH: {port} — <b>контролирует OMV</b> <i>(в его UI: Службы → SSH)</i>. "
                      "Бот следит за портом и держит фильтр на нём.")
@@ -531,7 +554,7 @@ def gateway_ssh_text(st: dict) -> str:
         lines.append("Из локальных сетей других шлюзов: открыт для "
                      + ", ".join(f"<code>{_e(n)}</code>" for n in peers[:3]))
     else:
-        lines.append("Когда подсети связаны, SSH откроется и из подсетей других шлюзов")
+        lines.append("Когда подсети связаны, SSH доступен и из подсетей других шлюзов")
     lines.append("")
     allow = st.get("allow") or []
     if not st.get("new_plumbing"):
@@ -588,10 +611,10 @@ def gateway_ssh_owner_refusal(st: dict, listening: int | None) -> str:
 
 def gateway_ssh_port_changed(old: int, new: int) -> str:
     return (f"✅ Порт SSH: {old} → {new}. Текущие сеансы не рвутся — проверь вход новым подключением "
-            f"на порт {new}; проброс на роутере поправь сам: снаружи &lt;любой порт&gt; → шлюз:{new}")
+            f"на порт {new}; проброс порта на роутере (при наличии) поправь сам: снаружи &lt;любой порт&gt; → шлюз:{new}")
 
 
-GW_SSH_ALLOW_ASK = ("➕ Адреса для SSH-доступа · пришли IP, подсеть или имя DynDNS через пробел. "
+GW_SSH_ALLOW_ASK = ("➕ Адреса для SSH-доступа · пришли IP, подсеть или доменное имя через пробел. "
                     "Только IPv4: проброса IPv6 через роутер нет; имя буду резолвить сам")
 
 
@@ -639,4 +662,4 @@ def gateway_ssh_panel_line(ssh: dict) -> str:
             else "фильтр: только сервер AWG"
     else:
         outside = "открыт"
-    return f"🛡 SSH {port}{who}, {outside}"
+    return f"🛡 SSH :{port}{who}, {outside}"

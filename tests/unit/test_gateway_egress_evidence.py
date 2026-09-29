@@ -210,13 +210,13 @@ def test_egress_alert_fires_on_a_failed_probe_and_is_cleared_by_return_traffic(a
 
     agent.forbidden = True                        # дальше живёт только улика
     agent.tx += _Agent.STEP
-    assert not _texts(agent.svc.monitor_tick(), "снова отвечает"), "отбой раньше стрика"
+    assert not _texts(agent.svc.monitor_tick(), "снова выходит наружу"), "отбой раньше стрика"
     agent.tx += _Agent.STEP
-    off = [n for n in agent.svc.monitor_tick() if "снова отвечает" in n.text]
+    off = [n for n in agent.svc.monitor_tick() if "снова выходит наружу" in n.text]
     assert len(off) == 1, "улика не погасила алерт: человек остался с ложной тревогой"
     off[0].on_sent()
     agent.tx += _Agent.STEP
-    assert not _texts(agent.svc.monitor_tick(), "снова отвечает"), "отбой повторился"
+    assert not _texts(agent.svc.monitor_tick(), "снова выходит наружу"), "отбой повторился"
 
 
 def _texts(notes, needle: str) -> list[str]:
@@ -282,3 +282,60 @@ def test_client_traffic_on_top_of_the_channel_still_counts(agent):
     d_rx, d_tx = _channel(agent, tx=_Agent.STEP, msgs=3)
     c = agent.tick(rx=d_rx, tx=d_tx + _Agent.STEP)
     assert c.ok is True and agent.status.egress_src == "трафик"
+
+
+# ── хвост «РФ-доступ … не работает» — только когда это правда ────────────────
+
+# (роль от сервера, есть ли другой шлюз по словам сервера, нужен ли хвост)
+_RF_CASES = [
+    ("active", None, True),        # несёт трафик, про резерв сервер не говорил (старый сервер)
+    ("active", False, True),       # несёт трафик, другого шлюза нет
+    ("active", True, False),       # есть резерв — сервер переключит, РФ-доступ жив
+    ("standby", False, False),     # резерв трафика не несёт
+    ("", None, False),             # сервер роль не сообщал
+]
+
+
+def _tell_role(svc, role: str, standby) -> None:
+    if role:
+        svc.set_link_role(role == "active", standby=standby, name="NASPi")
+
+
+@pytest.mark.parametrize("role, standby, rf", _RF_CASES)
+def test_the_egress_alert_mentions_rf_access_only_when_this_gateway_carries_it_alone(
+        agent, role, standby, rf):
+    """«РФ-доступ через шлюз не работает» — громкое слово: человек бросает
+    дела. У резерва, у шлюза, за которым стоит резерв, и у шлюза без роли от
+    сервера оно ложь — трафик идёт или пойдёт другим путём. Сам алерт при этом
+    обязан прийти в любом случае."""
+    _tell_role(agent.svc, role, standby)
+    agent.probe_ms = None
+    agent.svc.monitor_tick()
+    notes = [n.text for n in agent.svc.monitor_tick() if "не выходит наружу" in n.text]
+    assert len(notes) == 1, f"алерт о выходе наружу не пришёл: {notes}"
+    assert notes[0].startswith("⚠️ Шлюз не выходит наружу: канал не отвечает"), notes[0]
+    assert ("РФ-доступ" in notes[0]) is rf, (
+        f"роль {role!r}, резерв {standby!r}: хвост про РФ-доступ {'потерян' if rf else 'лишний'} — {notes[0]!r}")
+    if rf:
+        assert notes[0].endswith(". РФ-доступ через шлюз не работает"), notes[0]
+
+
+@pytest.mark.parametrize("role, standby, rf", _RF_CASES)
+def test_the_dead_link_alert_mentions_rf_access_only_when_this_gateway_carries_it_alone(
+        agent, monkeypatch, role, standby, rf):
+    """То же для алерта «линк мёртв»: без хвоста — у резерва и там, где сервер
+    сказал, что другой шлюз есть; сам алерт — всегда."""
+    _tell_role(agent.svc, role, standby)
+    monkeypatch.setattr(agent.svc, "link_status", lambda: (True, None, agent.rx, agent.tx))
+    notes: list[str] = []
+    for _ in range(4):
+        for n in agent.svc.monitor_tick():
+            if "Линк до сервера AWG мёртв" in n.text:
+                notes.append(n.text)
+                n.on_sent()                       # рассылка доложила о доставке
+    assert len(notes) == 1, f"алерт о мёртвом линке должен прийти ровно один раз: {notes}"
+    assert notes[0].startswith("🚨 Линк до сервера AWG мёртв: хендшейка нет дольше допустимого"), notes[0]
+    assert ("РФ-доступ" in notes[0]) is rf, (
+        f"роль {role!r}, резерв {standby!r}: хвост про РФ-доступ {'потерян' if rf else 'лишний'} — {notes[0]!r}")
+    if rf:
+        assert notes[0].endswith(". РФ-доступ у клиентов не работает"), notes[0]

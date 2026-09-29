@@ -129,13 +129,13 @@ def test_notify_section_layout_cpu_ram_then_disk_temp(monkeypatch):
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
     monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
     rows = _labels(kb.gateway_notify_kb())
-    assert rows == [["✅ Тихие часы"], ["С 20:00", "До 07:00"], ["✅ Алерты"],
+    assert rows == [["✅ Тихие часы"], ["С 20:00", "До 07:00"], ["✅ Алерты хоста"],
                     ["CPU 80%", "RAM 80%"], ["Диск 80%", "75 °C"],
                     ["✅ Аварии на e-mail", "⬅️ Назад"]], rows
     assert not any("клиент" in b.lower() for row in rows for b in row), "события клиентов у шлюза лишние"
     # выключенные тихие часы и алерты — без границ и порогов
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: False)
-    assert _labels(kb.gateway_notify_kb()) == [["☑️ Тихие часы"], ["☑️ Алерты"],
+    assert _labels(kb.gateway_notify_kb()) == [["☑️ Тихие часы"], ["☑️ Алерты хоста"],
                                                ["☑️ Аварии на e-mail", "⬅️ Назад"]]
 
 
@@ -149,7 +149,7 @@ def test_mon_section_mirrors_main(monkeypatch):
     assert rows == [["⏱ Опрос: 3 мин", "🔢 Замеров: 5"], ["⏳ Линк: 5 мин", "✅ Звук 24/7"],
                     ["⬅️ Назад"]], rows
     assert texts.gw_settings_mon_text() == (
-        "🩺 Мониторинг\nОпрос раз в 3 мин · алерт после 5 плохих замеров подряд · "
+        "🩺 Мониторинг · опрос раз в 3 мин · алерт после 5 плохих замеров · "
         "линк молчит дольше 5 мин — со звуком круглые сутки")
 
 

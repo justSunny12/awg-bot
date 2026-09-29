@@ -517,7 +517,7 @@ def ssh_owner_refusal(st: dict, listening: int | None, place: str = "серве�
 
 def ssh_port_ask(current: int | None = None, gateway: bool = False) -> str:
     cur = f" · сейчас {current}" if current else ""
-    tail = ". Проброс на роутере поправь сам" if gateway else ""
+    tail = ". Проброс порта на роутере (при наличии) поправь сам" if gateway else ""
     return (f"🅿️ Порт SSH{cur} · 1–65535. Занятый порт не возьму; текущие сеансы не рвутся — "
             f"проверь вход новым подключением{tail}")
 

@@ -18,7 +18,7 @@ def routing_panel(client_id: int, devices, *, lent_out=(), enabled: int = 0, tot
     сайтов и вход в их список. Переданные — строкой в тексте, без кнопки."""
     kb = InlineKeyboardBuilder()
     rows = []
-    chunk, page, prev, nxt = page_slice(list(devices), page, static=4 if devices else 3)
+    chunk, page, prev, nxt = page_slice(list(devices), page, static=3 if devices else 2)
     for _i, d in chunk:
         mark = "✅" if d.routing_on else "☑️"
         held = f" · от профиля {_texts.owner_name(d)}" if d.is_lent else ""
@@ -46,7 +46,7 @@ def routing_sites(client_id: int, domains: list, page: int = 0) -> InlineKeyboar
     добавить и очистить, назад — в раздел."""
     kb = InlineKeyboardBuilder()
     rows = []
-    chunk, page, prev, nxt = page_slice(domains, page, static=3 if domains else 2)
+    chunk, page, prev, nxt = page_slice(domains, page, static=2)
     for i, dom in chunk:
         kb.button(text=f"➖ {dom}", callback_data=RoutingCB(action="del", ref=client_id, idx=i))
         rows.append(1)

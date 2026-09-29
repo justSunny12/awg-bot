@@ -58,7 +58,7 @@ class _Agent:
     def lan_feeds_touch(self, digest: str = "") -> None:
         self.touched += 1
 
-    def set_link_role(self, active: bool) -> None:
+    def set_link_role(self, active: bool, standby=None, name=None) -> None:
         self.roles.append(active)
 
     # для on_tick: что показал последний тик монитора
@@ -281,7 +281,7 @@ async def test_the_session_mark_follows_the_session(vps):
     agent = _Agent()
     client = linkclient.LinkClient(agent)
     seen: list = []
-    agent.set_link_role = lambda a: seen.append(agent.channel.online)
+    agent.set_link_role = lambda *a: seen.append(agent.channel.online)
     vps.answers()
     await client._connect_once()
     assert seen == [True], "во время сессии признак не выставлен"

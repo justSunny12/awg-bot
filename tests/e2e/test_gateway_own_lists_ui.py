@@ -1,8 +1,8 @@
 """Свои списки, общие для всех шлюзов, на экранах: у агента — состояние хвостом
 «свои: …» в строке «📋 Списки» панели и строкой «Свои списки: …» на экране
 «🔀 VPN-транзит», абзац о синхронизации — под «подробнее», строка состояния —
-открыто, «➖» — сразу со всплывашкой («Убран на всех шлюзах» при общих
-списках), итог ввода — первыми строками экрана; у основного бота — строка
+открыто, «➖» — сразу со всплывашкой (итог и хвост синхронизации — только
+когда он правдив), итог ввода — первыми строками экрана; у основного бота — строка
 числами в карточке слота и судьба канона на шлюзе отдельной строкой.
 
 Цена ошибки: «синхронизированы», когда правка лежит без канала, — человек
@@ -124,8 +124,14 @@ async def _own_screen_parts(svc, fake_bot):
     return msg.sent[-1][1], msg.sent[-1][2]
 
 
-ONLY_HERE = ("Списки применятся только для этого шлюза: для синхронизации нужен канал до сервера "
-             "AWG — перевыпусти конфигурацию шлюза с сервера AWG")
+ONLY_HERE = ("Списки применятся только для этого шлюза: для синхронизации нужен упр. канал до сервера "
+             "AWG — перевыпусти конфигурацию шлюза")
+SYNCED = "Изменения синхронизируются с другими шлюзами"
+LATER = "Изменения будут синхронизированы с другими шлюзами, когда появится связь с сервером AWG"
+LOCAL = ("Изменения применятся только для этого шлюза: для синхронизации нужен упр. канал до сервера "
+         "AWG — перевыпусти конфигурацию шлюза")
+EMPTY_HINT = "добавь домены кнопками «➕ В туннель» и «➕ Напрямую»"
+SHARED_HINT = "списки общие для всех шлюзов — добавленное здесь появится и на остальных"
 SYNC_ABOUT = ("свои списки синхронизируются между шлюзами: добавленное или убранное здесь уходит "
               "через сервер AWG на остальные шлюзы — сразу, если они на связи, иначе при подключении")
 
@@ -181,19 +187,26 @@ async def test_a_rejected_domain_is_named_on_the_screen(gw, host, fake_bot):
 
 
 async def test_an_empty_shared_list_says_it_will_appear_everywhere(gw, host, fake_bot):
-    """Пустой список — «Пока пусто…» и открытой строкой, что списки общие:
-    иначе первое же добавление на одном шлюзе удивляет на другом."""
+    """Пустой список — подсказки «добавь домены кнопками…» и «списки общие
+    для всех шлюзов» под «подробнее», первыми: иначе первое же добавление на
+    одном шлюзе удивляет на другом, а открытыми строками они занимали экран,
+    который и так пуст."""
     _synced(gw, host, {})
     text, labels = await _own_screen(gw, fake_bot)
-    lines = _open_lines(text)
-    i = lines.index("Пока пусто: добавь домены кнопками «➕ В туннель» и «➕ Напрямую»")
-    assert lines[i + 1] == "Списки общие для всех шлюзов — добавленное здесь появится и на остальных", lines
+    assert not any("Пока пусто" in ln for ln in _open_lines(text)), text
+    about = text.split("<blockquote expandable>", 1)[1]
+    assert about.startswith(f"{EMPTY_HINT} · {SHARED_HINT} · "), about
     assert labels == ["➕ В туннель", "➕ Напрямую", "❓ Роутер", "⬅️ В меню"]
     # без синхронизации пусто — но «общие для всех» было бы неправдой
     host.env["LINK_CHANNEL"] = "0"
     text, _ = await _own_screen(gw, fake_bot)
-    assert "Пока пусто: добавь домены кнопками «➕ В туннель» и «➕ Напрямую»" in _open_lines(text)
+    about = text.split("<blockquote expandable>", 1)[1]
+    assert about.startswith(f"{EMPTY_HINT} · "), about
     assert "общие для всех шлюзов" not in text, text
+    # не пусто — подсказки для пустого списка нет
+    _synced(gw, host, {"a.com": "vpn"})
+    text, _ = await _own_screen(gw, fake_bot)
+    assert EMPTY_HINT not in text, text
 
 
 async def test_without_the_channel_the_screen_says_the_lists_are_local(gw, host, fake_bot):
@@ -232,18 +245,27 @@ def _add_via_script(svc, host, monkeypatch, out_word: str = "добавлен"):
     monkeypatch.setattr(svc, "lan_domains", lambda cmd, domains: lan_domains(cmd, domains))
 
 
-@pytest.mark.parametrize("channel,online,toast", [
-    ("1", True, "Убран на всех шлюзах\nshop.ru: убран\nИзменения синхронизируются с другими шлюзами"),
-    ("1", False, "Убран на всех шлюзах\nshop.ru: убран\n"
-                 "Изменения синхронизируются с другими шлюзами, когда появится связь с сервером AWG"),
-    ("0", False, "shop.ru: убран")])
-async def test_minus_removes_at_once_and_warns_about_all_gateways_only_when_shared(
-        gw, host, fake_bot, monkeypatch, tmp_path, channel, online, toast):
+@pytest.mark.parametrize("channel,online,others,toast", [
+    ("1", True, None, "shop.ru: убран\n" + SYNCED),
+    ("1", False, None, "shop.ru: убран\n" + LATER),
+    ("0", False, None, "shop.ru: убран\n" + LOCAL),
+    ("1", True, True, "shop.ru: убран\n" + SYNCED),
+    ("0", False, True, "shop.ru: убран\n" + LOCAL),     # другой шлюз есть, а канала нет
+    # сервер сказал, что другого шлюза нет, — про синхронизацию говорить не с кем
+    ("1", True, False, "shop.ru: убран"),
+    ("1", False, False, "shop.ru: убран"),
+    ("0", False, False, "shop.ru: убран")])
+async def test_minus_removes_at_once_with_an_honest_sync_tail(
+        gw, host, fake_bot, monkeypatch, tmp_path, channel, online, others, toast):
     """«➖» — без подтверждения: домен убран тем же нажатием, всплывашка —
-    итог с хвостом синхронизации, «Убран на всех шлюзах» — первой строкой и
-    только когда списки общие (без синхронизации это был бы лишний страх)."""
+    итог и хвост синхронизации, только когда он правдив: «синхронизируются»
+    при живом канале, «будут синхронизированы» — без связи, «применятся
+    только для этого шлюза» — без канала, и ничего, когда сервер сказал, что
+    другого шлюза нет. Первой строки «Убран на всех шлюзах» больше нет."""
     _synced(gw, host, {"shop.ru": "ru", "a.com": "vpn"})
     host.env["LINK_CHANNEL"] = channel
+    if others is not None:
+        gw.set_link_role(True, standby=others, name="NASPi")
     if online:
         _online(gw, monkeypatch, tmp_path)
     _add_via_script(gw, host, monkeypatch, out_word="убран")
@@ -279,7 +301,7 @@ async def test_a_slow_script_result_comes_as_a_message(gw, host, fake_bot, monke
     from awgbot.bot.keyboards.gateway import lan_own_tag
     await gh.gw_lan_remove(cb, GwCB(action="lan_rm", val=f"0.{lan_own_tag('ru', 'shop.ru')}"), gw)
     answers = [s[1] for s in msg.sent if s[0] == "answer"]
-    assert answers == ["✅ shop.ru: убран"], msg.sent
+    assert answers == ["✅ shop.ru: убран\n" + LOCAL], msg.sent
     assert msg.sent[-1][0] == "edit_text" and msg.sent[-1][1].startswith("🔀 VPN-транзит"), msg.sent[-1]
 
 
@@ -335,19 +357,41 @@ async def test_without_a_channel_the_edit_waits_and_the_result_says_when_it_leav
     _synced(gw, host, {"a.com": "vpn"})
     _add_via_script(gw, host, monkeypatch)
     result = await _type_domain(gw, fake_bot, "lan_ru", "shop.ru")
-    assert result == ("✅ shop.ru: добавлен\n"
-                      "Изменения синхронизируются с другими шлюзами, когда появится связь с сервером AWG"), result
+    assert result == "✅ shop.ru: добавлен\n" + LATER, result
     assert gw.own_status()[0]["pending"] == 1, "правка без канала не легла в очередь"
 
 
-@pytest.mark.parametrize("word,channel", [("уже в списке", "1"), ("добавлен", "0")])
-async def test_no_tail_when_nothing_changed_or_nothing_is_shared(gw, host, fake_bot, monkeypatch, word, channel):
+@pytest.mark.parametrize("word,channel,others", [
+    ("уже в списке", "1", None),        # ничего не изменилось
+    ("уже в списке", "0", None),        # и без канала: «изменения применятся здесь» — а изменений нет
+    ("добавлен", "1", False),           # сервер: другого шлюза нет
+    ("добавлен", "0", False),
+])
+async def test_no_tail_when_nothing_changed_or_there_is_no_other_gateway(
+        gw, host, fake_bot, monkeypatch, word, channel, others):
+    """Хвост о синхронизации — только когда есть что и с кем
+    синхронизировать: «уже в списке» ничего не меняет, а единственному
+    шлюзу («другого нет» — слово сервера) синхронизироваться не с кем."""
     # «уже в списке» — домен действительно уже есть: файлы после правки те же
     _synced(gw, host, {"a.com": "vpn", **({"example.com": "vpn"} if word == "уже в списке" else {})})
     host.env["LINK_CHANNEL"] = channel
+    if others is not None:
+        gw.set_link_role(True, standby=others, name="NASPi")
     _add_via_script(gw, host, monkeypatch, out_word=word)
     result = await _type_domain(gw, fake_bot, "lan_add", "example.com")
     assert result == f"✅ example.com: {word}", result
+
+
+async def test_without_the_channel_the_result_says_the_edit_stays_here(gw, host, fake_bot, monkeypatch):
+    """Канала нет (старая конфигурация шлюза), а про другие шлюзы сервер не
+    говорил: итог честно предупреждает, что правка останется на этом шлюзе и
+    что чинится это перевыпуском конфигурации, — иначе человек ждёт домен на
+    соседнем шлюзе."""
+    _synced(gw, host, {"a.com": "vpn"})
+    host.env["LINK_CHANNEL"] = "0"
+    _add_via_script(gw, host, monkeypatch)
+    result = await _type_domain(gw, fake_bot, "lan_add", "example.com")
+    assert result == "✅ example.com: добавлен\n" + LOCAL, result
 
 
 async def test_already_listed_gives_no_tail_but_still_sends_earlier_unsent_edits(
@@ -376,8 +420,7 @@ async def test_removing_by_button_answers_with_the_sync_tail(gw, host, fake_bot,
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     from awgbot.bot.keyboards.gateway import lan_own_tag
     await gh.gw_lan_remove(cb, GwCB(action="lan_rm!", val=f"0.{lan_own_tag('vpn', 'a.com')}"), gw)
-    assert cb.answers[-1] == ("Убран на всех шлюзах\na.com: убран\nИзменения синхронизируются с другими шлюзами",
-                              False), cb.answers
+    assert cb.answers[-1] == ("a.com: убран\n" + SYNCED, False), cb.answers
     msgs = wire.messages(gwlink.channel_key(PRIV))
     assert [e[1:3] for m in msgs for e in m["ev"]] == [["a.com", "del"]], msgs
 

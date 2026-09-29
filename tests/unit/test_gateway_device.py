@@ -127,11 +127,11 @@ def test_gateway_apply_report_is_human_text(tmp_path, monkeypatch):
     db = Database(tmp_path / "gw.db"); db.init_schema()
     svc = GatewayServices(db)
     cases = {
-        ("confirmed", "installed", "up"): "Аплинк обновлён и поднят, линк поднят, шлюз подтверждён.",
-        ("confirmed", "unchanged", "up"): "Аплинк без изменений, линк поднят, шлюз подтверждён.",
-        ("foreign", "", "foreign"): "Линк лежит: шлюз этого слота — другое устройство.",
-        ("unconfirmed", "", "unconfirmed"): "Линк не тронут: аплинк этой машины не найден, шлюз не подтверждён.",
-        ("unmarked", "", ""): "Шлюз в основном боте не назначен.",
+        ("confirmed", "installed", "up"): "Аплинк обновлён и поднят, линк поднят, шлюз подтверждён",
+        ("confirmed", "unchanged", "up"): "Аплинк без изменений, линк поднят, шлюз подтверждён",
+        ("foreign", "", "foreign"): "Линк лежит: шлюз этого слота — другое устройство",
+        ("unconfirmed", "", "unconfirmed"): "Линк не тронут: аплинк этого устройства не найден, шлюз не подтверждён",
+        ("unmarked", "", ""): "Шлюз в боте сервера AWG не назначен",
     }
     for (gs, up, link), expect in cases.items():
         st = {k: v for k, v in (("GW_STATUS", gs), ("UPLINK", up), ("LINK", link)) if v}
@@ -148,12 +148,12 @@ def test_apply_report_names_the_local_network_result():
     from awgbot.bot import texts
     base = {"GW_STATUS": "confirmed", "LINK": "up"}
     ok = texts.gateway_apply_report({**base, "LAN": "1", "LAN_IF": "end0", "LAN_ADDR": "192.168.68.222"})
-    assert ok == "Линк поднят, шлюз подтверждён, VPN-транзит: применён (end0, 192.168.68.222).", ok
+    assert ok == "Линк поднят, шлюз подтверждён, VPN-транзит: применён (end0, 192.168.68.222)", ok
     bad = texts.gateway_apply_report({**base, "LAN": "1", "LAN_ERROR": "порт 53 занят: pihole-FTL"})
     assert "VPN-транзит: не применён — порт 53 занят: pihole-FTL" in bad, bad
     assert "применён (" not in bad
     bare = texts.gateway_apply_report({**base, "LAN": "1"})
-    assert bare.endswith("VPN-транзит: применён."), "без интерфейса — без пустых скобок"
+    assert bare.endswith("VPN-транзит: применён"), "без интерфейса — без пустых скобок"
     for off in ({**base, "LAN": "0"}, base):
         assert "VPN-транзит" not in texts.gateway_apply_report(off), "режим выключен — строки нет"
 

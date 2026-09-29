@@ -105,7 +105,7 @@ def client_devices(devices, held=(), page: int = 0, render: str = "", *,
     Значок — состояние (⛔ ⏳ 🟢 ⚪). add — есть место в лимите."""
     kb = InlineKeyboardBuilder()
     rows = [(d, False) for d in devices] + [(d, True) for d in held]
-    chunk, page, prev, nxt = page_slice(rows, page, static=2 if add else 1)
+    chunk, page, prev, nxt = page_slice(rows, page, static=1)
     for _i, (d, is_held) in chunk:
         if is_held:
             label = f"{_dot(d)} {d.name} · от профиля {_texts.owner_name(d)}"
@@ -414,7 +414,7 @@ def guide_connect_devices(devices, slots, guide: str = "connect", page: int = 0,
     can_add = (not guest) and (limit == 0 or used < limit)
     if can_add:
         kb.button(text="➕ Устройство", callback_data=GuideCB(guide=guide, step=-1))
-    chunk, page, prev, nxt = page_slice(issuable(devices), page, static=2 if can_add else 1)
+    chunk, page, prev, nxt = page_slice(issuable(devices), page, static=2 if can_add else 1)   # ряды
     for _i, d in chunk:
         kb.button(text=f"🔗 {d.name}", callback_data=DeviceCB(action="gen_guide", device_id=d.id))
     nav = page_nav(kb, "guidedev", 0, page, prev, nxt, GuideCB(guide=guide, step=0).pack())

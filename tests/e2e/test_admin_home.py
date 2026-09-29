@@ -100,7 +100,7 @@ async def test_home_shows_available_update_from_the_periodic_check(services, fak
     assert services.update_to_notify() is None, "уведомления выключены — уведомлять нечего"
     assert services.update_available_tag() == "v3.2.0", "проверка не записала найденную версию"
     lines, _ = await _home(services, fake_bot)
-    upd = (_link("upd", "⬆️ Доступна v3.2.0") + " — "
+    upd = ("<b>" + _link("upd", "⬆️ Доступна v3.2.0") + "</b> — "
            '<a href="https://github.com/justSunny12/awg-bot/releases/tag/v3.2.0">список изменений</a>')
     assert lines[-2:] == ["", upd], lines
 
@@ -117,11 +117,11 @@ def test_update_tag_without_v_gets_it_and_migration_line_goes_last():
     mig = SimpleNamespace(clients_total=12, clients_done=11, devices_total=20, devices_done=18)
     out = texts.admin_panel({"ok": True}, update_tag="3.2.0", migration=mig).split("\n")
     rel = '<a href="https://github.com/justSunny12/awg-bot/releases/tag/v3.2.0">список изменений</a>'
-    assert out[-3:] == ["", f"⬆️ Доступна v3.2.0 — {rel}",
+    assert out[-3:] == ["", f"<b>⬆️ Доступна v3.2.0</b> — {rel}",
                         "🚚 Переезд: 11/12 профилей, 18/20 устройств"], out
     out = texts.admin_panel({"ok": True}, update_tag="v3.2.0", migration=mig,
                             bot_username=BOT).split("\n")
-    assert out[-3:] == ["", f"{_link('upd', '⬆️ Доступна v3.2.0')} — {rel}",
+    assert out[-3:] == ["", f"<b>{_link('upd', '⬆️ Доступна v3.2.0')}</b> — {rel}",
                         f"{_link('migration', '🚚 Переезд')}: 11/12 профилей, 18/20 устройств"], out
     # один переезд, без обновления — тоже отдельным блоком
     out = texts.admin_panel({"ok": True}, migration=mig).split("\n")

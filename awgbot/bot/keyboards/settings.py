@@ -146,7 +146,7 @@ def settings_firewall(st: dict, page: int = 0) -> InlineKeyboardMarkup:
     # разделитель полей — двоеточие, и любой IPv6 ломал бы упаковку.
     allow = list(st.get("raw_allow", []) or [])
     toggle = bool(st.get("enabled")) or bool(allow)
-    chunk, page, prev, nxt = page_slice(allow, page, static=4 if toggle else 3)
+    chunk, page, prev, nxt = page_slice(allow, page, static=3 if toggle else 2)
     for i, entry in chunk:
         kb.button(text=f"➖ {entry}", callback_data=SetCB(sec="fw", act="do", key="del", val=str(i)))
     nav = page_nav(kb, "fw", 0, page, prev, nxt, SetCB(sec="fw").pack())

@@ -30,7 +30,8 @@ hello сервер не шлёт ничего.
 такте живости (`deliver_all` из `ensure`) сверяется локально, что разошлось,
 и по сети уходит только это — настройки (`deliver`), фиды локальной сети
 (`deliver_lists`), записи SMB соседних сетей (`deliver_peer_services`), канон
-своих списков (`deliver_own`), роль слота (`send_role`). Один и тот же набор
+своих списков (`deliver_own`), роль слота (`send_role`: активен ли, есть ли
+другой слот с устройством, имя слота). Один и тот же набор
 за сессию повторно не уходит. Полный снимок сервер просит сам (`ask snap`) —
 только при разрыве нумерации дельт; по запросу человека ничего у шлюза не
 спрашивается, диагностики по каналу нет.
@@ -89,7 +90,7 @@ class _Session:
         self.svc_sent: str | None = None # отпечаток записей соседей, ушедший в этой сессии
         self.own_have: str | None = None # отпечаток канона своих списков у шлюза; None — агент синхронизацию не знает
         self.own_sent: str | None = None # отпечаток канона, ушедший в этой сессии
-        self.role_sent: bool | None = None
+        self.role_sent: dict | None = None
         # вытеснила сессию, прошедшую hello: запись «на связи» в БД — её, и
         # закрыть её обязана эта, даже если сама до hello не дойдёт
         self.took_over = False
@@ -506,6 +507,19 @@ class LinkServer:
         log.info("канал линка: слоту %s уходят свои списки (%s)", slot_id, len(body.get("items") or []))
         return await self.send(slot_id, "own_set", body, pad=gwlink.PAD_SNAP)
 
+    def _slot_words(self, slot_id: int) -> dict:
+        """(standby, name) по базе, без опроса интерфейсов: приветствие не
+        должно ждать exec на каждый слот."""
+        standby, name = False, ""
+        for g in self.services.db.gateways():
+            dev = self.services.db.get_device(g.device_id) if g.device_id else None
+            if g.id == slot_id:
+                if dev is not None:
+                    name = dev.name + (f", {g.label}" if getattr(g, "label", "") else "")
+            elif dev is not None:
+                standby = True
+        return {"standby": standby, "name": name}
+
     async def send_role(self, slot_id: int) -> bool:
         """Сказать агенту, активный он или резерв, — только при смене. Сам он
         этого знать не может: решает автомат переключения здесь, на ВПС."""
@@ -514,10 +528,13 @@ class LinkServer:
             return False                      # до hello не отправится — и пометить нельзя
         active = await asyncio.to_thread(self.services.active_gateway)
         is_active = active is not None and active.id == slot_id
-        if sess.role_sent == is_active:
+        # вместе с ролью — есть ли другой шлюз и как слот назван у сервера:
+        # агенту это нужно для честных хвостов и заголовка рецепта роутера
+        payload = {"active": is_active, **await asyncio.to_thread(self._slot_words, slot_id)}
+        if sess.role_sent == payload:
             return False
-        sess.role_sent = is_active
-        return await self.send(slot_id, "role", {"active": is_active})
+        sess.role_sent = payload
+        return await self.send(slot_id, "role", payload)
 
     async def deliver_all(self) -> None:
         """Такт живости: у каждой живой сессии проверить, нечего ли доставить.

@@ -531,7 +531,7 @@ def test_nothing_to_change_does_not_wait_for_the_lock(svc, unit):
 def test_the_note_names_what_changed_in_human_words(svc):
     ok = svc.link_settings_note({"ok": True, "changed": ["HOME_SUBNETS", "ADMIN_IPS"], "error": ""})
     assert ok == ("⚙️ Сервер AWG прислал новые настройки шлюза — применены: "
-                  "локальные подсети, устройства админа.")
+                  "локальные подсети, устройства админа")
     fail = svc.link_settings_note({"ok": False, "changed": ["RESOLVER"], "error": "exit 1"})
     assert "резолвер" in fail and "не применились: exit 1" in fail and "Вернул прежние" in fail
     rejected = svc.link_settings_note({"ok": False, "changed": [], "error": "LAN_MODE: недопустимое значение"})

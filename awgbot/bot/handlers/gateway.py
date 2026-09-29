@@ -338,7 +338,8 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
     # Вопрос «применить?» — новое живое меню; прежнюю панель удаляем целиком:
     # без кнопок над итогом применения она только занимала бы экран.
     await drop_previous_nav(message.bot, services, message.chat.id)
-    await send_menu(message, services, texts.gateway_bundle_received(link_changed),
+    await send_menu(message, services,
+                    texts.gateway_bundle_received(link_changed, await call(services.carries_traffic)),
                     kb.gateway_bundle_kb())
 
 
@@ -490,10 +491,10 @@ async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state:
     await _render(cb, services, "ssh")
 
 
-_CONFIRM = {
-    "restart": (lambda: texts.GW_CONFIRM_RESTART, "settings"),
-    "botrestart": (lambda: texts.GW_CONFIRM_BOT_RESTART, "settings"),
-    "reassert": (lambda: texts.GW_CONFIRM_REASSERT, "panel"),
+_CONFIRM = {                                          # текст(несёт трафик) и куда ведёт «Отмена»
+    "restart": (texts.gw_confirm_restart, "settings"),
+    "botrestart": (lambda carries: texts.GW_CONFIRM_BOT_RESTART, "settings"),
+    "reassert": (texts.gw_confirm_reassert, "panel"),
 }
 
 
@@ -502,7 +503,8 @@ async def gw_confirm(cb: CallbackQuery, callback_data: GwCB, services):
     text_fn, back = _CONFIRM[callback_data.action]
     if callback_data.val in ("panel", "health"):           # откуда пришли — туда и отмена
         back = callback_data.val
-    await edit_nav(cb, services, text_fn(), kb.gateway_confirm_kb(callback_data.action, back))
+    await edit_nav(cb, services, text_fn(await call(services.carries_traffic)),
+                   kb.gateway_confirm_kb(callback_data.action, back))
     await cb.answer()
 
 
@@ -608,11 +610,21 @@ async def gw_lan_domain_received(message: Message, state: FSMContext, services):
 
 
 async def _own_sync_tail(services, ok: bool, out: str) -> str:
-    """После правки списка: сверка и отправка серверу сразу; хвост итога — куда уйдёт правка.
+    """После правки списка: сверка и отправка серверу сразу; хвост итога — куда
+    уйдёт правка, и только когда это правда: другого шлюза нет (сервер сказал)
+    — хвоста нет; канала нет, а шлюзы есть — «применятся только здесь».
     Изменилось ли что-то, решает сверка файлов, а не слова вывода скрипта."""
     from awgbot.runtime import linkclient
-    if not ok or not await call(services.own_active):
+    if not ok:
         return ""
+    others = await call(services.link_standby_known)      # True / False / None — сервер не говорил
+    if others is False:
+        return ""
+    info = await _own_info(services)
+    if not info.get("active"):
+        # без канала сверки с сервером нет — об изменении говорит сам скрипт
+        changed = any(r.rstrip().endswith((": добавлен", ": убран")) for r in out.splitlines())
+        return "no_channel" if info.get("no_channel") and changed else ""
     if not await linkclient.own_changed(services):
         return ""
     return "online" if linkclient.online() else "offline"
@@ -632,12 +644,11 @@ async def gw_lan_remove(cb: CallbackQuery, callback_data: GwCB, services):
         await edit_nav(cb, services, *await _lan_screen(services, cb.message.chat.id))
         return
     _kind, dom = items[idx]
-    shared = bool((await _own_info(services)).get("active"))
     ok, out = await call(services.lan_domains, "del", [dom])
     tail = await _own_sync_tail(services, ok, out)
     try:
         if ok:
-            await cb.answer(texts.gateway_lan_removed_toast(dom, shared, tail))
+            await cb.answer(texts.gateway_lan_removed_toast(dom, sync=tail))
         else:
             import html as _html
             await cb.answer(_html.unescape(texts.gateway_lan_result(ok, out, tail))[:180], show_alert=True)
@@ -654,7 +665,8 @@ async def gw_lan_router(cb: CallbackQuery, callback_data: GwCB, services):
     net, addr, peers = await call(services.lan_router_params)
     tab = callback_data.val if callback_data.val in ("mt", "ow") else "mt"
     await edit_nav(cb, services,
-                   texts.gateway_router_text(socket.gethostname(), net, addr, peer_nets=peers, tab=tab),
+                   texts.gateway_router_text(await call(services.link_slot_name) or socket.gethostname(),
+                                             net, addr, peer_nets=peers, tab=tab),
                    kb.gateway_lan_router_kb(tab))
     await cb.answer()
 
@@ -754,7 +766,7 @@ async def gw_update_install(cb: CallbackQuery, services):
     Итог пришлёт уже новый процесс (report_update_result на старте)."""
     nxt = await call(services.update_next)
     if nxt is None:
-        await cb.answer("Обновлять не на что — версия актуальна", show_alert=True)
+        await cb.answer("Текущая версия актуальна", show_alert=True)
         return
     await cb.answer("Запускаю обновление…")
     chat_id = cb.message.chat.id

@@ -919,7 +919,7 @@ def test_status_says_why_edits_wait(agent, host):
     agent._own_pending_set(p)
     info, c = _checks(agent)
     assert info["state"] == "stale_server" and c.ok is None
-    assert c.detail == "сервер AWG не отвечает на правки 11 мин: обнови основной бот", c.detail
+    assert c.detail == "сервер AWG не отвечает на правки 11 мин: обнови бот сервера AWG", c.detail
 
 
 def test_status_names_what_the_server_refused_and_the_monitor_escapes_it(agent, host):

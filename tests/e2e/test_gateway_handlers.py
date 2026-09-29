@@ -52,11 +52,18 @@ class _DlBot(FakeBot):
         destination.write(self.blob)
 
 
+def _carrying(svc, carries: bool) -> None:
+    """Несёт ли шлюз трафик: роль от сервера и живой линк в снимке тика."""
+    svc.set_link_role(carries, standby=False, name="NASPi")
+    svc.cached_status = lambda max_age: GwStatus(link_up=True, handshake_age=5.0)
+
+
 async def test_restart_needs_confirmation(svc, fake_bot):
     """«🔁 Перезапуск AWG» сам ничего не рвёт — только показывает цену одной
     строкой; «Отмена» первой и возвращает в настройки, откуда пришли."""
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
+    _carrying(svc, True)
     await gh.gw_confirm(cb, GwCB(action="restart"), svc)
     assert svc.restarted == 0
     kind, text, markup = msg.sent[-1]
@@ -105,6 +112,26 @@ async def test_our_bundle_waits_for_confirmation_then_applies(svc):
     await gh.gw_bundle_apply(cb, GwCB(action="apply!"), svc, state)
     assert svc.applied == [blob]
     assert (await state.get_data()) == {}, "бандл остался в памяти после применения"
+
+
+@pytest.mark.parametrize("carries, second", [
+    (True, "Линк перезапустится — РФ-доступ у всех прервётся на секунды; правила переставятся"),
+    (False, "Линк перезапустится; правила переставятся"),
+])
+async def test_the_bundle_question_warns_about_rf_access_only_on_the_carrying_gateway(svc, carries, second):
+    """Вопрос «применить?» перед сменой конфига линка: у шлюза, который несёт
+    трафик, — цена для всех клиентов; у резерва прерываться нечему, и
+    громкое «РФ-доступ у всех прервётся» только пугает."""
+    priv = base64.b64encode(os.urandom(32)).decode()
+    blob = bc.encrypt(b"#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n", priv)
+    bot = _DlBot(blob)
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
+    msg.document = _Doc(len(blob))
+    _carrying(svc, carries)
+    await gh.gw_bundle_document(msg, svc, FakeState())
+    question = msg.sent[-1][1]
+    assert question.splitlines() == ["📦 Конфигурация с сервера AWG", second], question
+    assert svc.applied == []
 
 
 async def test_oversized_document_is_not_downloaded(svc):
@@ -355,7 +382,11 @@ async def test_own_lists_screen_shows_domains_as_buttons_direct_first(svc, fake_
     assert "Пока пусто" not in msg.sent[-1][1]
     monkeypatch.setattr(svc, "lan_own_lists", lambda: [])
     await gh.gw_lan_list(cb, svc, FakeState())
-    assert "Пока пусто: добавь домены кнопками «➕ В туннель» и «➕ Напрямую»" in msg.sent[-1][1]
+    empty = msg.sent[-1][1]
+    # подсказка пустого списка — под «подробнее», открытой строки «Пока пусто» нет
+    assert "Пока пусто" not in empty, empty
+    about = empty[empty.index("<blockquote expandable>"):]
+    assert "добавь домены кнопками «➕ В туннель» и «➕ Напрямую»" in about, empty
     assert _own_lists_labels(msg) == ["➕ В туннель", "➕ Напрямую", "❓ Роутер", "⬅️ В меню"]
 
 
@@ -697,7 +728,7 @@ async def test_a_claim_goes_through_the_channel_when_it_comes_up_in_time(tmp_pat
     answers, waited = await _apply_with_claim(tmp_path, monkeypatch, online)
     claim = [a for a in answers if "не назначен" in a]
     assert len(claim) == 1, answers
-    assert "отправлен серверу AWG по каналу" in claim[0], claim[0]
+    assert "отправлен серверу AWG по управляющему каналу" in claim[0], claim[0]
     assert "AWGGW-DUMMY-TOKEN" not in claim[0] and "Перешли" not in claim[0], "токен в чате при живом канале"
     assert waited <= 3.0, f"ждали канал {waited} с — дольше обещанных трёх"
 
@@ -708,6 +739,27 @@ async def test_a_claim_falls_back_to_forwarding_when_the_channel_stays_down(tmp_
     answers, waited = await _apply_with_claim(tmp_path, monkeypatch, lambda: False)
     claim = [a for a in answers if "не назначен" in a]
     assert len(claim) == 1, answers
-    assert "Перешли это сообщение основному боту" in claim[0] and "AWGGW-DUMMY-TOKEN" in claim[0], claim[0]
-    assert "по каналу конфигурации:" not in claim[0]
+    assert "Перешли это сообщение боту сервера AWG" in claim[0] and "AWGGW-DUMMY-TOKEN" in claim[0], claim[0]
+    assert "по управляющему каналу:" not in claim[0]
     assert 2.5 <= waited <= 3.0, f"канал ждали {waited} с вместо трёх"
+
+
+@pytest.mark.parametrize("carries, tail", [(True, " — РФ-доступ у всех прервётся на секунды"), (False, "")])
+async def test_a_gateway_backup_that_touches_the_link_warns_about_rf_access_only_when_carrying(
+        svc, monkeypatch, carries, tail):
+    """Бэкап агента, который меняет конфиг линка: вопрос «восстановить?»
+    предупреждает, что линк опустится, — а про РФ-доступ только у шлюза,
+    который сейчас несёт трафик."""
+    from awgbot.bot.handlers import restore as rs
+    monkeypatch.setattr(svc, "inspect_backup", lambda blob, name: {
+        "ok": True, "plain": b"x", "created_at": "2026-09-09T10:00:00+03:00", "ifaces_changed": ["awglink"]})
+    _carrying(svc, carries)
+
+    class _Backup(_Doc):
+        file_name = "awg-bot-gw.tgz.enc"
+    bot = _DlBot(b"archive")
+    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=bot)
+    msg.document = _Backup(100)
+    assert await rs.offer_restore(msg, svc, FakeState(), gateway=True) is True
+    offer = msg.sent[-1][1]
+    assert offer.endswith("\n\nЛинк опустится и поднимется" + tail), offer

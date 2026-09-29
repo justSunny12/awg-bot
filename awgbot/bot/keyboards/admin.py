@@ -13,7 +13,7 @@ from awgbot.bot.callbacks import (
 from awgbot.bot import texts as _texts
 
 from .common import (_btn_suffix, _manual_block_button, page_slice, page_nav, confirm,
-                     MAX_BUTTONS)
+                     MAX_ROWS)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ def _sorted_devices(devices) -> list:
 def admin_devices(devices, page: int = 0, *, can_add: bool = True) -> InlineKeyboardMarkup:
     """«📱 Мои устройства» админа: список (шлюзы вверху), добавить, назад."""
     kb = InlineKeyboardBuilder()
-    chunk, page, prev, nxt = page_slice(_sorted_devices(devices), page, static=2 if can_add else 1)
+    chunk, page, prev, nxt = page_slice(_sorted_devices(devices), page, static=1)
     for _i, d in chunk:
         kb.button(text=_dev_label(d), callback_data=DeviceCB(action="open", device_id=d.id))
     nav = page_nav(kb, "devices", 0, page, prev, nxt, Menu(action="devices").pack())
@@ -83,7 +83,7 @@ def admin_devices(devices, page: int = 0, *, can_add: bool = True) -> InlineKeyb
 def admin_client_device_list(devices, client_id: int, page: int = 0) -> InlineKeyboardMarkup:
     """Устройства профиля — когда в карточку они не влезли."""
     kb = InlineKeyboardBuilder()
-    chunk, page, prev, nxt = page_slice(_sorted_devices(devices), page, static=2)
+    chunk, page, prev, nxt = page_slice(_sorted_devices(devices), page, static=1)
     for _i, d in chunk:
         kb.button(text=_dev_label(d), callback_data=DeviceCB(action="open", device_id=d.id))
     nav = page_nav(kb, "clidevs", client_id, page, prev, nxt,
@@ -183,8 +183,8 @@ def admin_client_actions(client, devices=(), *, routing_visible: bool = False,
     else:
         kb.button(text=bt, callback_data=bcb)
         rows.append(1)
-    fixed = sum(rows) + 2
-    room = MAX_BUTTONS - fixed
+    fixed = len(rows) + 1                  # ряды: уже собранные плюс «➕ Устройство / ⬅️ Назад»
+    room = MAX_ROWS - fixed
     if len(devices) <= room:
         for d in devices:
             kb.button(text=_dev_label(d), callback_data=DeviceCB(action="open", device_id=d.id))
@@ -355,7 +355,7 @@ def traffic_devices_kb() -> InlineKeyboardMarkup:
 def expiring_kb(rows=()) -> InlineKeyboardMarkup:
     """«⏱ Имя» по два в ряд — продлить прямо из списка; в меню."""
     kb = InlineKeyboardBuilder()
-    items = list(rows)[:MAX_BUTTONS - 1]
+    items = list(rows)[:2 * (MAX_ROWS - 1)]     # по два в ряд, ряд «В меню»
     for c, _secs in items:
         name = c.name if len(c.name) <= 15 else c.name[:14] + "…"
         kb.button(text=f"⏱ {name}", callback_data=ClientCB(action="extend_exp", client_id=c.id))

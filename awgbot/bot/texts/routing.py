@@ -694,7 +694,7 @@ def gateway_removed(dev, now_active=None) -> str:
 
 GATEWAY_CHOOSE_INTRO = ("🛰 Назначить шлюз — одно из твоих устройств или новое. Для шлюза поднимется "
                         "отдельный линк со своим ключом и портом; первый файл конфигурации применяется "
-                        "на машине руками")
+                        "на устройстве руками")
 GATEWAY_STANDBY_CHOOSE_INTRO = ("🛰 Резервный шлюз — когда основной перестанет отвечать, РФ-доступ "
                                 "будет работать через него. Одно из твоих устройств или новое; линк — "
                                 "свой, первый файл конфигурации применяется руками")
@@ -723,7 +723,7 @@ def gateway_mark_ask(dev, prev, *, standby: bool = False, replace_state=None) ->
 def gateway_marked(dev, rekeyed: bool, bundle_name: str = "awg-gw-bundle.sh") -> str:
     if rekeyed:
         return (f"🛰 {_e(dev.name)} назначен шлюзом, ключи линка новые\n"
-                f"Файл ниже — первое применение, руками: скопируй на машину и выполни "
+                f"Файл ниже — первое применение, руками: скопируй на устройство и выполни "
                 f"<code>sudo sh {_e(bundle_name)}</code>. Дальше — через бота шлюза")
     return f"🛰 {_e(dev.name)} назначен шлюзом — файл конфигурации ниже, перешли его боту шлюза"
 
@@ -858,7 +858,7 @@ def gateway_install_instructions(dev, bundle_name: str = "awg-gw-bundle.sh",
     """
     reset = "\nРФ-доступ у устройства снят: шлюзу он не нужен." if routing_reset else ""
     return (f"🛰 Шлюзом назначен «{_e(dev.name)}» ({plain_ip(dev.address)}).{reset}\n\n"
-            "Сохрани файл ниже и выполни <b>со своей машины</b> (из директории с файлом) "
+            "Сохрани файл ниже и выполни <b>со своего компьютера</b> (из директории с файлом) "
             "одну команду — она скопирует его на шлюз и сразу поставит агента:\n\n"
             f"<code>scp {_e(bundle_name)} root@ШЛЮЗ:/root/ &amp;&amp; \\\n"
             f"  ssh -t root@ШЛЮЗ 'sudo sh /root/{_e(bundle_name)} --install'</code>\n\n"

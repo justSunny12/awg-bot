@@ -121,7 +121,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     tail = []
     if update_tag:
         tag = update_tag if str(update_tag).startswith("v") else f"v{update_tag}"
-        tail.append(_deep_link(bot_username, UPD_PAYLOAD, f"⬆️ Доступна {tag}") + " — "
+        tail.append("<b>" + _deep_link(bot_username, UPD_PAYLOAD, f"⬆️ Доступна {tag}") + "</b> — "
                     + f'<a href="{release_url(tag)}">список изменений</a>')
     mig = migration_line(migration, bot_username)
     if mig:

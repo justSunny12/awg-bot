@@ -440,6 +440,29 @@ async def test_the_role_reaches_the_agent_right_after_hello(services, link, pi):
     assert pi["agent"].link_role() == "active"
 
 
+async def test_the_role_brings_the_slot_name_and_whether_another_gateway_exists(
+        services, link, pi, make_active_client):
+    """Вместе с ролью агент узнаёт у сервера имя слота (заголовок рецепта
+    роутера) и есть ли другой шлюз (честные хвосты про синхронизацию и
+    РФ-доступ). Появился второй шлюз или подпись у слота — агент узнаёт это
+    ближайшим тактом живости, один раз, а не при следующем переподключении."""
+    agent = pi["agent"]
+    await _up(services, pi)
+    await _until(lambda: agent.link_role())
+    assert (agent.link_role(), agent.link_standby_known(), agent.link_slot_name()) == \
+        ("active", False, "NASPi"), "слот один — другого шлюза нет, имя слота — имя устройства"
+
+    other = make_active_client(name="Сосед", tg_id=777001, device_limit=0)
+    dev = services.add_device(other.id, "Pi2")
+    services.db.gateway_add(dev.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
+    services.db.gateway_update(1, label="дача")
+    await link.deliver_all()
+    await _until(lambda: agent.link_standby_known() is True and agent.link_slot_name() == "NASPi, дача")
+    assert agent.link_standby_known() is True, "второй шлюз появился, а агент считает себя единственным"
+    assert agent.link_slot_name() == "NASPi, дача", "подпись слота не доехала до агента"
+    assert agent.link_role() == "active"
+
+
 async def test_a_switch_reaches_both_agents_once(services, two, monkeypatch):
     """Переключение слота доезжает до обоих агентов тактом живости: прежний
     активный узнаёт, что он теперь резерв, новый — что несёт трафик. И ровно
@@ -459,10 +482,15 @@ async def test_a_switch_reaches_both_agents_once(services, two, monkeypatch):
         host, port = srv._bound[0]
         a = _Gw(*await asyncio.open_connection(host, port), key=KEY)
         await a.send("hello", {"proto": gwlink.PROTO, "agent": "3.4.0"})
-        assert (await _next(a, "role"))["active"] is True
+        role_a = await _next(a, "role")
+        assert role_a["active"] is True
+        # у каждого слота — своё имя и знание, что другой шлюз есть
+        assert (role_a.get("standby"), role_a.get("name")) == (True, "NASPi"), role_a
         b = _Gw(*await asyncio.open_connection(host, port), key=KEY)
         await b.send("hello", {"proto": gwlink.PROTO, "agent": "3.4.0"})
-        assert (await _next(b, "role"))["active"] is False
+        role_b = await _next(b, "role")
+        assert role_b["active"] is False
+        assert (role_b.get("standby"), role_b.get("name")) == (True, "Pi2"), role_b
 
         services.gateway_switch(2, manual=True)
         await srv.deliver_all()

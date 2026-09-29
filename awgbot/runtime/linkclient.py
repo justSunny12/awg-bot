@@ -24,7 +24,8 @@ linkclient.py — сторона шлюза для канала ВПС ↔ шл�
 уведомление человеку в чат агента), `lists` — фиды локальной сети
 (`apply_lan_feeds`, ответ `lists_ack`; `lists_ok` — у шлюза уже те же, запас
 своего скачивания отсчитывается от конца сессии), `role` — несёт ли слот
-трафик, `ask snap` — просьба о полном снимке, `peer_svc` — записи SMB
+трафик (`active`), есть ли другой слот с устройством (`standby`) и имя слота
+(`name`; старый сервер шлёт только `active`), `ask snap` — просьба о полном снимке, `peer_svc` — записи SMB
 соседних сетей (`apply_peer_services`, ответ `peer_svc_ack`), `own_set` —
 канон своих списков, общих для всех шлюзов (`apply_own_lists`, ответ
 `own_ack`), `applied_ack` — подтверждение итога применения файла. В обратную
@@ -532,7 +533,8 @@ class LinkClient:
             await self._apply_settings(msg.get("values"))
             return
         if msg.get("t") == "role":
-            await asyncio.to_thread(self.services.set_link_role, bool(msg.get("active")))
+            await asyncio.to_thread(self.services.set_link_role, bool(msg.get("active")),
+                                    msg.get("standby"), msg.get("name"))
             return
         if msg.get("t") == "lists_ok":
             # сервер при подключении подтвердил: у нас те же фиды, что у него

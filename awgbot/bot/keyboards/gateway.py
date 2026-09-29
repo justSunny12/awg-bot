@@ -54,12 +54,12 @@ def lan_own_tag(kind: str, dom: str) -> str:
 
 def gateway_lan_kb(items=(), page: int = 0) -> InlineKeyboardMarkup:
     """Экран «🔀 VPN-транзит»: добавить в туннель / напрямую, свои домены
-    кнопками «➖ 🇷🇺|🌍 домен» (листание, не больше десяти на экране), рецепт
+    кнопками «➖ 🇷🇺|🌍 домен» (листание, не больше десяти рядов на экране), рецепт
     роутера и в меню. val — номер в отсортированном списке, не домен (64 байта)."""
     kb = InlineKeyboardBuilder()
     kb.button(text="➕ В туннель", callback_data=GwCB(action="lan_add"))
     kb.button(text="➕ Напрямую", callback_data=GwCB(action="lan_ru"))
-    chunk, page, prev, nxt = page_slice(lan_own_sorted(list(items)), page, static=4)
+    chunk, page, prev, nxt = page_slice(lan_own_sorted(list(items)), page, static=2)
     for i, (kind, dom) in chunk:
         kb.button(text=f"➖ {'🇷🇺' if kind == 'ru' else '🌍'} {dom}",
                   callback_data=GwCB(action="lan_rm", val=f"{i}.{lan_own_tag(kind, dom)}"))
@@ -118,7 +118,7 @@ def gateway_notify_kb() -> InlineKeyboardMarkup:
                   callback_data=GwCB(action="edit", val="quiet_hours.quiet_hours_end"))
         rows.append(2)
     ra = s.get_bool("resource_alerts.enabled", True)
-    kb.button(text=f"{_chk(ra)} Алерты", callback_data=GwCB(action="tgl", val="resource_alerts.enabled"))
+    kb.button(text=f"{_chk(ra)} Алерты хоста", callback_data=GwCB(action="tgl", val="resource_alerts.enabled"))
     rows.append(1)
     if ra:
         kb.button(text=f"CPU {s.get_int('resource_alerts.thresholds_percent.cpu', 80)}%",
@@ -227,7 +227,7 @@ def gateway_ssh_kb(st: dict, page: int = 0) -> InlineKeyboardMarkup:
     kb.button(text="🅿️ Порт", callback_data=GwCB(action="ssh_port"))
     kb.button(text="➕ Адрес", callback_data=GwCB(action="ssh_add"))
     toggle = bool(st.get("new_plumbing"))
-    chunk, page, prev, nxt = page_slice(list(st.get("allow") or []), page, static=4 if toggle else 3)
+    chunk, page, prev, nxt = page_slice(list(st.get("allow") or []), page, static=3 if toggle else 2)
     for i, entry in chunk:
         kb.button(text=f"➖ {entry}", callback_data=GwCB(action="ssh_del!", val=str(i)))
     nav = page_nav(kb, "gwssh", 0, page, prev, nxt, GwCB(action="ssh").pack())

@@ -224,3 +224,69 @@ def test_the_role_told_by_the_server_is_remembered(svc):
     assert svc.link_role() == "active"
     svc.set_link_role(False)
     assert svc.link_role() == "standby"
+
+
+def test_the_server_also_tells_whether_another_gateway_exists_and_the_slot_name(svc):
+    """С ролью сервер говорит, есть ли другой шлюз и как назван слот: по
+    первому агент решает, честен ли хвост «синхронизируются с другими
+    шлюзами» и «РФ-доступ прервётся», по второму — заголовок рецепта роутера.
+    Не сказал — «не знаю» (None), а не «нет»: иначе хвосты пропали бы у всех
+    агентов при старом сервере."""
+    assert svc.link_standby_known() is None, "сервер не говорил — это «не знаю», а не «нет»"
+    assert svc.link_slot_name() == ""
+    svc.set_link_role(True, standby=False, name="NASPi, дача")
+    assert (svc.link_role(), svc.link_standby_known(), svc.link_slot_name()) == ("active", False, "NASPi, дача")
+    svc.set_link_role(False, standby=True, name="NASPi")
+    assert (svc.link_role(), svc.link_standby_known(), svc.link_slot_name()) == ("standby", True, "NASPi")
+
+
+def test_a_role_from_an_old_server_keeps_what_was_said_before(svc):
+    """Старый сервер шлёт только active: прежние слова о резерве и имени не
+    стираются — иначе каждое переподключение к нему сбрасывало бы их в «не
+    знаю» и хвосты мигали бы."""
+    svc.set_link_role(True, standby=True, name="NASPi")
+    svc.set_link_role(False)
+    assert svc.link_role() == "standby"
+    assert svc.link_standby_known() is True and svc.link_slot_name() == "NASPi", (
+        "роль без standby/name стёрла сказанное раньше")
+
+
+def test_a_very_long_slot_name_is_cut_before_it_lands_in_the_state(svc):
+    """Имя слота приходит с ВПС и рисуется заголовком: сотня килобайт в нём —
+    не повод раздувать базу малины и ронять экран о лимит Telegram."""
+    svc.set_link_role(True, standby=False, name="Я" * 10_000)
+    assert 0 < len(svc.link_slot_name()) <= 80, len(svc.link_slot_name())
+
+
+def _snap(svc, *, link_up: bool, hs: float | None, age: float = 0.0) -> None:
+    """Снимок последнего тика монитора: линк и возраст хендшейка."""
+    from awgbot.domain.gateway import GwStatus
+    from awgbot.util import timeutil
+    import datetime
+    ts = timeutil.now() - datetime.timedelta(seconds=age)
+    st = GwStatus(link_up=link_up, handshake_age=hs, ts=timeutil.to_iso(ts))
+    svc.db.set_state(svc._SNAPSHOT_KEY, st.to_json())
+
+
+@pytest.mark.parametrize("role, link_up, hs, age, carries", [
+    ("active", True, 20.0, 0, True),            # активный, линк живой
+    ("active", True, None, 0, False),           # активный, хендшейка нет — трафик уже не идёт
+    ("active", False, 20.0, 0, False),          # интерфейс лежит
+    ("active", True, 20.0, 3600, False),        # снимок старше 15 минут — не знаем
+    ("standby", True, 20.0, 0, False),          # резерв: трафик клиентов не на нём
+    ("", True, 20.0, 0, False),                 # сервер роль не сообщал
+])
+def test_carries_traffic_only_as_the_active_slot_with_a_live_link(svc, role, link_up, hs, age, carries):
+    """«РФ-доступ у всех прервётся» в подтверждениях перезапуска — только у
+    шлюза, который сейчас несёт трафик. У резерва или при мёртвом линке эта
+    строка пугает зря: прерываться нечему."""
+    if role:
+        svc.set_link_role(role == "active")
+    _snap(svc, link_up=link_up, hs=hs, age=age)
+    assert svc.carries_traffic() is carries
+
+
+def test_carries_traffic_without_any_snapshot_is_false(svc):
+    """Монитор ещё не тикал (свежий старт) — не знаем, значит не пугаем."""
+    svc.set_link_role(True)
+    assert svc.carries_traffic() is False

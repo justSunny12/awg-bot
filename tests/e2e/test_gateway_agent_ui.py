@@ -111,17 +111,17 @@ async def test_the_panel_names_the_role_by_the_channel(svc, fake_bot, monkeypatc
     for role, head in (("active", "🟢 несёт трафик"), ("standby", "🟢 в резерве")):
         monkeypatch.setattr(linkclient, "role", lambda role=role: role)
         text, _ = await _panel(svc, fake_bot, st)
-        assert text.splitlines()[:2] == [f"🛰 naspi · {head} · 12 д", "📡 Линк 🟢 40 с · 🔗 упр. канал 🟢"], text
+        assert text.splitlines()[:2] == [f"🛰 naspi · {head} · 12 д", "📡 Линк до сервера AWG 🟢 40 с · 🔗 упр. канал 🟢"], text
     monkeypatch.setattr(linkclient, "online", lambda: False)
     text, _ = await _panel(svc, fake_bot, GwStatus(hostname="naspi"))
     assert text.splitlines()[0] == "🛰 naspi · 🔴 линк лежит", "связи нет — роль по линку"
 
 
 @pytest.mark.parametrize("mark, online, warn", [
-    ("unmarked", True, "⚠️ Шлюз в основном боте не назначен — запрос ушёл по каналу"),
-    ("unmarked", False, "⚠️ Шлюз в основном боте не назначен, канала нет — перешли ему сообщение из отчёта"),
+    ("unmarked", True, "⚠️ Шлюз в боте сервера AWG не назначен — запрос ушёл по упр. каналу"),
+    ("unmarked", False, "⚠️ Шлюз в боте сервера AWG не назначен, упр. канала нет — перешли ему сообщение из отчёта"),
     ("foreign", True, "⚠️ Шлюз этого слота — другое устройство, линк лежит"),
-    ("unconfirmed", False, "⚠️ Аплинк этой машины не найден — шлюз не подтверждён"),
+    ("unconfirmed", False, "⚠️ Аплинк этого устройства не найден — шлюз не подтверждён"),
 ])
 async def test_warnings_are_own_lines_at_the_top_not_in_the_tail(svc, fake_bot, monkeypatch, mark, online, warn):
     """Предупреждение — своей строкой сразу под именем и линком, выше SSH,
@@ -148,7 +148,7 @@ async def test_the_panel_says_a_new_version_is_available_from_the_last_check(svc
     svc.db.set_state("update_available_tag", "3.2.0")
     st = GwStatus(link_up=True, handshake_age=40.0, hostname="naspi")
     lines = (await _panel(svc, fake_bot, st))[0].splitlines()
-    assert lines[2] == "⬆️ Доступна v3.2.0", lines
+    assert lines[2] == "<b>⬆️ Доступна v3.2.0</b>", "строка новой версии — жирным, третьей строкой: " + str(lines)
     svc.db.set_state("update_available_tag", "")
     text, _ = await _panel(svc, fake_bot, st)
     assert "Доступна" not in text
@@ -161,10 +161,10 @@ async def test_start_and_menu_show_the_new_version_line_too(svc, fake_bot, monke
     monkeypatch.setattr(svc, "cached_status", lambda max_age: GwStatus(link_up=True, handshake_age=5.0))
     msg = FakeMessage(chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await gh.gw_start(msg, svc, FakeState())
-    assert "⬆️ Доступна v3.2.0" in msg.sent[-1][1].splitlines(), msg.sent[-1][1]
+    assert "<b>⬆️ Доступна v3.2.0</b>" in msg.sent[-1][1].splitlines(), msg.sent[-1][1]
     cb, nav = _acb(fake_bot)
     await gh.gw_panel(cb, svc, FakeState())
-    assert "⬆️ Доступна v3.2.0" in _last_edit(nav)[0].splitlines()
+    assert "<b>⬆️ Доступна v3.2.0</b>" in _last_edit(nav)[0].splitlines()
 
 
 async def test_the_panel_has_five_buttons_with_transit_and_four_without(svc, fake_bot):
@@ -186,6 +186,19 @@ async def test_the_panel_has_five_buttons_with_transit_and_four_without(svc, fak
     text, markup = await _panel(svc, fake_bot, GwStatus(link_up=True, handshake_age=40.0))
     assert _rows(markup) == [["🩺 Здоровье", "🔧 Восстановить"], ["🔄 Обновить", "⚙️ Настройки"]]
     assert not any(ln.startswith(("🔀", "📋", "🗂")) for ln in text.splitlines()), text
+
+
+async def test_no_own_domains_means_no_own_tail_on_the_panel_but_a_line_on_the_screen(svc, fake_bot):
+    """Своих доменов нет — хвост «· свои: пусто» в строке «📋 Списки» панели
+    не рисуется (нули не выводим); на экране «🔀 VPN-транзит» строка «Свои
+    списки: пусто» остаётся — там человек их и заводит."""
+    lan = {"iface": "eth0", "addr": "192.168.1.10", "resolver": "10.8.0.1", "domains": 41200, "nets": 12,
+           "updated_at": "", "own_vpn": 0, "own_ru": 0, "lan_pkts": 5}
+    st = GwStatus(link_up=True, handshake_age=40.0, lan=lan)
+    lines = (await _panel(svc, fake_bot, st))[0].splitlines()
+    assert "📋 Списки: 41 200 доменов, 12 подсетей" in lines, lines
+    assert not any("свои" in ln for ln in lines), lines
+    assert "Свои списки: пусто" in texts.gateway_lan_text(st, []).splitlines()
 
 
 async def test_the_smb_line_is_on_the_panel_only_with_subnet_link(svc, fake_bot):
@@ -223,7 +236,7 @@ async def test_health_is_live_and_offers_recovery_and_the_menu(svc, fake_bot):
         "🩺 Здоровье naspi · 🔴 проблем: 1",
         "✅ линк — хендшейк 40 с",
         "🔴 обвязка — нет цепочки",
-        "Железо: RAM свободно 1 234 МБ · диск свободно 98 ГБ, SMART ОК · питание ОК",
+        "RAM свободно 1 234 МБ · диск свободно 98 ГБ, SMART ОК · питание ОК",
         "Модуль awg 1.0.20250915 · srcversion 1a2b3c4d… · ядер 3",
         "«🔧 Восстановить» переставит правила и переподнимет линк"], text
     assert _rows(markup) == [["🔧 Восстановить", "⬅️ В меню"]]
@@ -251,6 +264,7 @@ async def test_recovery_asks_first_with_cancel_first_and_cancel_returns_to_the_p
     async def _poke(services):
         return None
     monkeypatch.setattr(linkclient, "poke", _poke)
+    _carrying(svc)
     cb, nav = _acb(fake_bot)
     await gh.gw_confirm(cb, GwCB(action="reassert"), svc)
     text, markup = _last_edit(nav)
@@ -264,12 +278,20 @@ async def test_recovery_asks_first_with_cancel_first_and_cancel_returns_to_the_p
     assert any(k == "edit_text" and t.startswith("✅ <b>Восстановление: готово</b>") for k, t, _ in nav.sent), nav.sent
 
 
+def _carrying(svc, role: str = "active", link_up: bool = True) -> None:
+    """Сервер сказал роль, последний тик монитора видел линк живым или нет."""
+    svc.set_link_role(role == "active", standby=False, name="NASPi")
+    svc.cached_status = lambda max_age: GwStatus(link_up=link_up, handshake_age=40.0 if link_up else None,
+                                                 hostname="naspi")
+
+
 @pytest.mark.parametrize("action, text", [
     ("restart", "🔁 Перезапустить AWG? Линк опустится и поднимется — РФ-доступ у всех прервётся на секунды"),
-    ("botrestart", "🔁 Перезапустить бота? Вернётся через несколько секунд; линк не трогается"),
+    ("botrestart", "🔁 Перезапустить бота? Вернётся через несколько секунд; без влияния на пользователей"),
 ])
 async def test_restarts_ask_first_and_cancel_returns_to_settings(svc, fake_bot, action, text):
     """Перезапуски — из корня настроек, «Отмена» первой и назад — туда же."""
+    _carrying(svc)
     cb, nav = _acb(fake_bot)
     await gh.gw_confirm(cb, GwCB(action=action), svc)
     shown, markup = _last_edit(nav)
@@ -277,6 +299,27 @@ async def test_restarts_ask_first_and_cancel_returns_to_settings(svc, fake_bot, 
     assert _rows(markup) == [["⬅️ Отмена", "🔁 Перезапустить"]]
     assert [GwCB.unpack(b.callback_data).action for r in markup.inline_keyboard for b in r] == \
         ["settings", f"{action}!"]
+
+
+@pytest.mark.parametrize("role, link_up", [("standby", True), ("active", False)])
+@pytest.mark.parametrize("action, text", [
+    ("restart", "🔁 Перезапустить AWG? Линк опустится и поднимется"),
+    ("reassert", "🔧 Восстановить шлюз?\nЮнит переставит правила (маскарад, изоляция, метка) и "
+                 "переподнимет линк"),
+    ("botrestart", "🔁 Перезапустить бота? Вернётся через несколько секунд; без влияния на пользователей"),
+])
+async def test_a_gateway_not_carrying_traffic_is_not_threatened_with_rf_access_loss(
+        svc, fake_bot, role, link_up, action, text):
+    """Резерв или шлюз с мёртвым линком трафик клиентов не несёт: «РФ-доступ
+    у всех прервётся» у него — ложная тревога, из-за которой человек
+    откладывает нужный перезапуск. Подтверждение то же, без этого хвоста."""
+    _carrying(svc, role=role, link_up=link_up)
+    cb, nav = _acb(fake_bot)
+    await gh.gw_confirm(cb, GwCB(action=action), svc)
+    shown, markup = _last_edit(nav)
+    assert shown == text, shown
+    assert "РФ-доступ" not in shown
+    assert _rows(markup)[0][0] == "⬅️ Отмена"
 
 
 def test_the_bundle_question_puts_cancel_first():
@@ -310,13 +353,13 @@ async def test_notify_section_text_follows_the_values(svc, fake_bot, store):
     await gh.gw_section(cb, GwCB(action="notify"), svc, FakeState())
     text, _ = _last_edit(nav)
     assert text.splitlines()[:3] == ["🔔 Уведомления", "Тихие часы 20:00–07:00 МСК — без звука, кроме аварий",
-                                     "Алерты: CPU 80% · RAM 80% · диск 80% · 75 °C"], text
-    assert "аварии на e-mail — только когда Telegram недоступен" in text
+                                     "Алерты хоста: CPU 80% · RAM 80% · диск 80% · 75 °C"], text
+    assert "Аварии на e-mail — только когда Telegram недоступен" in text
     store.update({"quiet_hours.quiet_hours_enabled": False, "resource_alerts.enabled": False})
     await gh.gw_section(cb, GwCB(action="notify"), svc, FakeState())
     text, _ = _last_edit(nav)
     assert text.splitlines()[1:3] == ["Тихие часы выключены — уведомления со звуком круглые сутки",
-                                      "Алерты выключены"], text
+                                      "Алерты хоста выключены"], text
 
 
 async def test_monitoring_link_threshold_is_minutes_on_screen_and_seconds_in_the_config(svc, fake_bot, store):
@@ -666,24 +709,28 @@ async def test_a_huge_domain_input_result_still_fits_one_message(svc, fake_bot, 
     assert "\n\n🔀 VPN-транзит" in text, "экран под итогом потерялся"
 
 
-def test_a_long_domain_does_not_eat_the_sync_tail_of_the_toast():
-    """Домен длиной в сотню знаков обрезается сам, а «Убран на всех шлюзах»
-    и хвост синхронизации остаются: всплывашка — до 200 знаков."""
+@pytest.mark.parametrize("sync", ["online", "offline", "no_channel"])
+def test_a_long_domain_does_not_eat_the_sync_tail_of_the_toast(sync):
+    """Домен длиной в сотню знаков обрезается сам, а хвост синхронизации
+    остаётся целиком: всплывашка — до 200 знаков, и Telegram режет хвост
+    первым — как раз ту строку, ради которой её читают."""
     dom = "a" * 150 + ".example.com"
-    toast = texts.gateway_lan_removed_toast(dom, True, "offline")
+    toast = texts.gateway_lan_removed_toast(dom, sync=sync)
     assert len(toast) <= 200, len(toast)
-    assert toast.startswith("Убран на всех шлюзах\n") and toast.endswith(
-        "\nИзменения синхронизируются с другими шлюзами, когда появится связь с сервером AWG"), toast
-    assert texts.gateway_lan_removed_toast("sber.ru", False, "") == "sber.ru: убран"
+    assert toast.endswith("\n" + texts.SYNC_TAILS[sync]), toast
+    assert "Убран на всех шлюзах" not in toast, "первая строка «Убран на всех шлюзах» снята"
+    assert texts.gateway_lan_removed_toast("sber.ru") == "sber.ru: убран"
+    assert texts.gateway_lan_removed_toast("sber.ru", True, "") == "sber.ru: убран", (
+        "shared больше ничего не добавляет — хвост решает только sync")
 
 
 def test_the_monitoring_text_declines_the_streak(store):
     store.update({"app.monitoring.alert_streak": 1, "app.gateway.monitor_minutes": 3,
                   "app.gateway.handshake_max_age": 300, "app.gateway.link_alert_loud": False})
     text = texts.gw_settings_mon_text()
-    assert "алерт после 1 плохого замера подряд" in text and "по правилам тихих часов" in text, text
+    assert "алерт после 1 плохого замера ·" in text and "по правилам тихих часов" in text, text
     store["app.monitoring.alert_streak"] = 5
-    assert "алерт после 5 плохих замеров подряд" in texts.gw_settings_mon_text()
+    assert "алерт после 5 плохих замеров ·" in texts.gw_settings_mon_text()
 
 
 def test_many_added_addresses_are_capped_in_the_result():
@@ -696,16 +743,16 @@ def test_many_added_addresses_are_capped_in_the_result():
 
 def test_free_disk_space_is_tenths_when_small_and_grouped_when_large():
     st = GwStatus(disk_free_gb=0.4)
-    assert "Железо: диск свободно 0.4 ГБ" in texts.gateway_health(st).splitlines()
+    assert "диск свободно 0.4 ГБ" in texts.gateway_health(st).splitlines()
     st = GwStatus(disk_free_gb=1234.4, smart="OK")
-    assert "Железо: диск свободно 1 234 ГБ, SMART OK" in texts.gateway_health(st).splitlines()
+    assert "диск свободно 1 234 ГБ, SMART OK" in texts.gateway_health(st).splitlines()
 
 
 @pytest.mark.parametrize("age, limit, line", [
-    (40, 300, "📡 Линк 🟢 40 с"),
-    (720, 300, "📡 Линк 🟡 12 мин"),
-    (720, 900, "📡 Линк 🟢 12 мин"),
-    (3 * 3600, 300, "📡 Линк 🟡 3 ч"),
+    (40, 300, "📡 Линк до сервера AWG 🟢 40 с"),
+    (720, 300, "📡 Линк до сервера AWG 🟡 12 мин"),
+    (720, 900, "📡 Линк до сервера AWG 🟢 12 мин"),
+    (3 * 3600, 300, "📡 Линк до сервера AWG 🟡 3 ч"),
 ])
 def test_the_link_line_turns_yellow_by_the_configured_threshold(store, age, limit, line):
     """🟡 — по тому же порогу, по которому монитор шлёт алерт о молчании

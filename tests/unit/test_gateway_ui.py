@@ -89,7 +89,7 @@ def test_panel_text_mirrors_the_main_bot_layout(monkeypatch):
     out = texts.gateway_panel(st)
     assert out == ("🛰 NASPi · 🟢 линк поднят · 17 д 20 ч\n"
                    "📡 Линк до awg-srv 🟢 69 с\n"
-                   "📈 CPU 4% 59 °C · RAM 51% · диск 58% · питание ОК\n"
+                   "📈 CPU 4% | 59 °C · RAM 51% · диск 58% · питание ОК\n"
                    "🩺 Здоровье ✅ · 📊 185 ГБ (↑10 ↓175)\n"
                    "<i>обновлено только что</i>"), out
     assert "Модуль awg" not in out and "ядер" not in out
@@ -107,7 +107,7 @@ def test_health_screen_carries_module_and_kernels():
     out = texts.gateway_health(st)
     assert out == ("🩺 Здоровье шлюза · ✅ проблем нет\n"
                    "✅ ядра\n"
-                   "Железо: питание ОК (с загрузки: недонапряжение случалось)\n"
+                   "питание ОК (с загрузки: недонапряжение случалось)\n"
                    "Модуль awg 1.0.2026 · srcversion ABCDEF12… · ядер 1"), out
     assert "Восстановить" not in out, "проблем нет — совет про восстановление лишний"
 
@@ -197,3 +197,8 @@ def test_bundle_link_change_detection_and_received_text(svc, monkeypatch, tmp_pa
     assert texts.gateway_bundle_received(True) == (
         "📦 Конфигурация с сервера AWG\n"
         "Линк перезапустится — РФ-доступ у всех прервётся на секунды; правила переставятся")
+    # резерв или мёртвый линк: трафика на шлюзе нет — прерываться нечему
+    assert texts.gateway_bundle_received(True, carries=False) == (
+        "📦 Конфигурация с сервера AWG\n"
+        "Линк перезапустится; правила переставятся")
+    assert texts.gateway_bundle_received(False, carries=False) == texts.gateway_bundle_received(False)

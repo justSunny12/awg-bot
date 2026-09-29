@@ -1,6 +1,6 @@
 """Unit: раскладка клавиатур — правила, общие для всех экранов.
 
-- не больше десяти кнопок на экране;
+- не больше десяти рядов кнопок на экране;
 - в рядах по две (и по три) подписи не длиннее 18 знаков — длиннее
   Telegram режет их многоточием на телефоне;
 - тумблеры — только ✅/☑️; кружки 🟢/🔴 — состоянию объектов (устройство
@@ -141,8 +141,8 @@ def _buttons(m: InlineKeyboardMarkup):
 def _violations(m: InlineKeyboardMarkup, name: str = "") -> set[str]:
     out = set()
     buttons = _buttons(m)
-    if len(buttons) > kbm.MAX_BUTTONS:
-        out.add("больше 10 кнопок")
+    if len(m.inline_keyboard) > kbm.MAX_ROWS:
+        out.add("больше 10 рядов")
     for row in m.inline_keyboard:
         if len(row) >= 2 and any(len(b.text) > MAX_LABEL for b in row):
             out.add("длинная подпись в ряду")
@@ -194,7 +194,10 @@ def test_the_rule_checker_itself_catches_each_rule():
     def mk(*rows):
         return InlineKeyboardMarkup(inline_keyboard=[list(r) for r in rows])
     cb = Menu(action="main").pack()
-    assert _violations(mk(*[[B(text=str(i), callback_data=cb)] for i in range(11)])) == {"больше 10 кнопок"}
+    assert _violations(mk(*[[B(text=str(i), callback_data=cb)] for i in range(11)])) == {"больше 10 рядов"}
+    # десять рядов по две кнопки — двадцать кнопок, но правило про ряды
+    assert _violations(mk(*[[B(text=str(i), callback_data=cb), B(text="x", callback_data=cb)]
+                            for i in range(10)])) == set()
     assert _violations(mk([B(text="x" * 19, callback_data=cb), B(text="y", callback_data=cb)])) == \
         {"длинная подпись в ряду"}
     assert _violations(mk([B(text="🏠 В меню", callback_data=cb)])) == {"🏠"}
@@ -268,7 +271,7 @@ ADMIN = {
 @pytest.mark.parametrize("name", sorted(ADMIN))
 def test_stage2_admin_keyboards_follow_the_layout_rules(name):
     """Главная, профили, карточки, продление, лимиты, блокировка, списки и
-    объявление администратора — по общим правилам: ≤10 кнопок, короткие
+    объявление администратора — по общим правилам: ≤10 рядов, короткие
     подписи в рядах, ✅/☑️ у тумблеров, «Отмена» первой, без «🏠»."""
     for i, markup in enumerate(ADMIN[name]()):
         bad = _violations(markup, name)
@@ -293,20 +296,28 @@ def test_admin_main_is_eight_buttons_with_gateways_always():
     assert rows == full, "параметр gateways больше ничего не прячет"
 
 
-@pytest.mark.parametrize("n", [1, 3, 5])
-def test_profile_card_fits_ten_buttons_with_every_conditional_row(n):
-    """Карточка профиля при 1, 3 и 5 устройствах — не больше десяти кнопок и
-    с условными рядами (пауза, приглашение, РФ-доступ) тоже; не влезли —
-    одной кнопкой «📱 Устройства: N»."""
+@pytest.mark.parametrize("n", [1, 3, 5, 6, 8, 14])
+def test_profile_card_fits_ten_rows_with_every_conditional_row(n):
+    """Карточка профиля при любом числе устройств — не больше десяти рядов и
+    с условными рядами (пауза, приглашение, РФ-доступ) тоже. Устройства
+    списком, пока влезают по рядам; не влезли — одной кнопкой «📱 Устройства:
+    N». Сворачивать раньше, чем кончились ряды, — лишний экран на пути к
+    устройству."""
     for paused in (False, True):
         for pending in (False, True):
-            m = _card(n, routing_visible=True, paused=paused, pending=pending)
-            labels = [b.text for b in _buttons(m)]
-            assert len(labels) <= kbm.MAX_BUTTONS, labels
-            listed = [l for l in labels if l.startswith("⚪ Устройство")]
-            assert listed == [] and f"📱 Устройства: {n}" in labels or len(listed) == n, labels
-            assert ("▶️ Снять паузу" in labels) is paused and ("🔁 Новое приглашение" in labels) is pending
-            assert labels[-2:] == ["➕ Устройство", "⬅️ Назад"], labels
+            for routing in (False, True):
+                m = _card(n, routing_visible=routing, paused=paused, pending=pending)
+                rows = [[b.text for b in r] for r in m.inline_keyboard]
+                labels = [t for r in rows for t in r]
+                assert len(rows) <= kbm.MAX_ROWS, rows
+                listed = [l for l in labels if l.startswith("⚪ Устройство")]
+                if listed:
+                    assert len(listed) == n, rows
+                else:
+                    assert f"📱 Устройства: {n}" in labels, rows
+                    assert len(rows) - 1 + n > kbm.MAX_ROWS, f"свёрнуто, хотя {n} устройств влезали: {rows}"
+                assert ("▶️ Снять паузу" in labels) is paused and ("🔁 Новое приглашение" in labels) is pending
+                assert rows[-1] == ["➕ Устройство", "⬅️ Назад"], rows
 
 
 def test_profile_card_rows():
@@ -318,8 +329,24 @@ def test_profile_card_rows():
     rows = [[b.text for b in r] for r in _card(1, paused=True, pending=True).inline_keyboard]
     assert rows[:3] == [["▶️ Снять паузу"], ["🔁 Новое приглашение"], ["⏱ Продлить", "✏️ Изменить"]], rows
     assert rows[3] == ["🛑 Блок"], "без РФ-доступа «Блок» один в ряду"
-    rows = [[b.text for b in r] for r in _card(5, routing_visible=True).inline_keyboard]
-    assert ["📱 Устройства: 5"] in rows, rows
+    # счёт по рядам: пять устройств при всех условных рядах — ровно десять рядов
+    rows = [[b.text for b in r] for r in _card(5, routing_visible=True, paused=True, pending=True).inline_keyboard]
+    assert len(rows) == 10 and ["📱 Устройства: 5"] not in rows, rows
+    # шестое уже не влезает — сворачиваются все
+    rows = [[b.text for b in r] for r in _card(6, routing_visible=True, paused=True, pending=True).inline_keyboard]
+    assert ["📱 Устройства: 6"] in rows and not any(r[0].startswith("⚪ Устройство") for r in rows), rows
+
+
+@pytest.mark.parametrize("n, shown", [(0, 0), (1, 1), (17, 17), (18, 18), (19, 18), (40, 18)])
+def test_expiring_list_takes_up_to_nine_rows_of_two(n, shown):
+    """«Истекают»: по два профиля в ряд и ряд «В меню» — до восемнадцати
+    профилей в десяти рядах; дальше — не больше, чтобы экран не перерос
+    правило."""
+    rows = kba.expiring_kb([(_cli(i + 1, f"Профиль {i + 1}"), 3600) for i in range(n)]).inline_keyboard
+    names = [b.text for r in rows for b in r if b.text.startswith("⏱ ")]
+    assert len(names) == shown, (n, len(names))
+    assert len(rows) <= kbm.MAX_ROWS, len(rows)
+    assert all(len(r) <= 2 for r in rows), [[b.text for b in r] for r in rows]
 
 
 def test_edit_submenu_rows():

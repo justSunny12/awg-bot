@@ -183,4 +183,4 @@ def test_a_fresh_machine_without_the_uplink_config_does_not_invent_an_uplink(scr
     assert r.returncode == 0, r.stderr
     assert "UPLINK_STATE=none UPLINK_IF=" in r.stdout and "UPLINK_IF=awg0" not in r.stdout, r.stdout
     assert not _touches_uplink(calls), calls
-    assert "аплинка этой машины не видно" in r.stdout
+    assert "аплинка этого устройства не видно" in r.stdout

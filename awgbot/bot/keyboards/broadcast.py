@@ -21,7 +21,7 @@ def broadcast_targets(clients, selected, *, extend: bool = False, page: int = 0)
     kb.button(text=("✅" if extend else "☑️") + " С продлением подписки", callback_data=BroadcastCB(action="ext"))
     kb.button(text=("✅" if all_on else "☑️") + " Выбрать все", callback_data=BroadcastCB(action="all"))
     rows = [1, 1]
-    chunk, page, prev, nxt = page_slice(clients, page, static=4)
+    chunk, page, prev, nxt = page_slice(clients, page, static=3)
     for _i, c in chunk:
         mark = "✅" if c.id in selected else "☑️"
         sub = _texts.subscription_mark(c) if extend else ""
