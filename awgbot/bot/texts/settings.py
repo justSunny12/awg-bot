@@ -40,9 +40,8 @@ def settings_notify_text() -> str:
                      f"диск {s.get_int('resource_alerts.thresholds_percent.disk', 80)}%")
     else:
         lines.append("Алерты хоста выключены")
-    lines.append(details("Аварии на e-mail — когда Telegram недоступен; уходит только то, что "
-                         "бьёт по всем: падение VPN-сервиса, шлюз, перегруз хоста. Остальное "
-                         "по почте не дублируется"))
+    lines.append(details("Аварии на e-mail — только когда Telegram недоступен: падение VPN-сервиса, "
+                         "шлюз, перегруз хоста"))
     return "\n".join(lines)
 
 

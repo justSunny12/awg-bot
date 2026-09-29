@@ -970,7 +970,7 @@ if [ "$MODE" = "plan" ]; then
     say "     (с туннеля на шлюз: сервер AWG по линку; полный доступ — ADMIN_IPS=${ADMIN_IPS:-—})"
     say "     SSH снаружи (порт $SSH_PORT): фильтр $([ "$SSH_FILTER" = 1 ] && echo включён || echo выключен); адреса: ${SSH_ALLOW:-—}"
     say "  3. снятие прежних правил iptables ($FWD_CHAIN, MASQUERADE, метки)"
-    say "  0. шлюзовое устройство: ${GATEWAY_PUBKEY:+помечен, конфиг аплинка ставится машине с тем же ключом}${GATEWAY_PUBKEY:-не помечен}"
+    say "  0. шлюзовое устройство: ${GATEWAY_PUBKEY:+помечен, конфиг аплинка ставится устройству с тем же ключом}${GATEWAY_PUBKEY:-не помечен}"
     say "  4. юнит awg-link-gw.service"
     say "  5. VPN-транзит: ${LAN_MODE:-0} (подсети: ${HOME_SUBNETS:-—}; резолвер: ${RESOLVER:-запасной через аплинк})"
     say "     SMB подсетей других шлюзов (в Finder: «Сеть» → awg.internal): $([ -n "${PEER_HOME_NETS:-}" ] && [ "${LAN_MODE:-0}" = "1" ] && [ "${LINK_CHANNEL:-0}" = "1" ] && echo включены || echo нет)"
@@ -1001,7 +1001,7 @@ else
     if [ -z "$UPLINK_IF" ] && [ -z "$_others" ] && [ -n "$UPLINK_B64" ] \
        && [ ! -f "$HOST_CONF_DIR/${UPLINK_IF_DEFAULT}.conf" ]; then
         UPLINK_IF="$UPLINK_IF_DEFAULT"
-        say "  чистая машина: аплинк $UPLINK_IF ставится из бандла"
+        say "  чистое устройство: аплинк $UPLINK_IF ставится из файла конфигурации"
     fi
     if [ -n "$UPLINK_IF" ]; then
         say "  это помеченный шлюз: аплинк $UPLINK_IF"
@@ -1041,7 +1041,7 @@ else
                     UPLINK_STATE="unchanged"
                 else
                     UPLINK_STATE="installed"
-                    say "  конфиг аплинка обновлён из бандла (Table = off, политика по метке $TG_MARK → таблица $UPLINK_TABLE)"
+                    say "  конфиг аплинка обновлён из файла конфигурации (Table = off, политика по метке $TG_MARK → таблица $UPLINK_TABLE)"
                     _bak=""
                     if [ -f "$_dst" ]; then
                         _bak="$_dst.bak-$(date +%Y%m%d%H%M%S)"
@@ -1064,7 +1064,7 @@ else
                     run "systemctl enable awg-quick@$UPLINK_IF 2>/dev/null || true"
                 fi
             else
-                say "  конфиг аплинка в бандле не разобрался — не трогаю"
+                say "  конфиг аплинка в файле конфигурации не разобрался — не трогаю"
             fi
             rm -f "$_tmp" "$_tmp.conf"
         fi
@@ -1246,7 +1246,7 @@ say "  MASQUERADE $CLIENT_SUBNET и $LINK_CIDR → $WAN_IF: российские
 say "  локальный адрес; с адреса линка ходит зонд живости с сервера AWG."
 say "  Изоляция: клиентам из туннеля закрыты все приватные сети (NAS, роутер,"
 say "  docker, link-local), остальное — транзит наружу."
-say "  Защита шлюза: с адресов туннеля на саму машину пускаем только сервер AWG по"
+say "  Защита шлюза: с адресов туннеля на само устройство пускаем только сервер AWG по"
 say "  линку ($LINK_PEER: SSH, ICMP); устройствам админа открыто всё, включая"
 say "  локальную сеть; прочее дропается."
 say "  Метки Telegram ($TG_MARK): агенту нужен Telegram через сервер AWG."

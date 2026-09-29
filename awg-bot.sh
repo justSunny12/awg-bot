@@ -622,8 +622,8 @@ cmd_reconfigure() {
             fi
             apply_gw_bundle "$bundle"
         elif [[ -z "$(env_get BOT_TOKEN)" ]]; then
-            die "нет файла первого применения. Выпусти его в основном боте
-  (⚙️ Настройки → 🇷🇺 РФ-доступ → 🛰 Назначить шлюз → ➕ Новое устройство),
+            die "нет файла первого применения. Выпусти его в боте сервера AWG
+  («🛰 Шлюзы» → «🛰 Назначить» → «➕ Новое устройство»),
   скопируй сюда и запусти его — поставка агента внутри, GitHub не нужен:
     scp awg-gw-bundle.sh root@ЭТОТ_ХОСТ:/root/
     sudo sh /root/awg-gw-bundle.sh --install"
@@ -805,7 +805,7 @@ ensure_host_autostart() {
            && ! cmp -s "$INSTALL_DIR/install/routing-gw-setup.sh" "$_rgs"; then
             install -m 0755 "$INSTALL_DIR/install/routing-gw-setup.sh" "$_rgs" \
                 && ok "обновлена копия обвязки в $_rgs (её выполняет юнит при загрузке)" \
-                || warn "не удалось обновить $_rgs — обвязка останется по версии времён бандла"
+                || warn "не удалось обновить $_rgs — обвязка останется по версии времён файла конфигурации"
         fi
         return 0
     fi
@@ -1391,7 +1391,7 @@ cmd_lan() {
     local dom="/usr/local/sbin/awg-lan-domain.sh" lists="/usr/local/sbin/awg-lan-lists.sh"
     case "${1:-}" in
         add|ru|del|list)
-            [[ -x "$dom" ]] || die "VPN-транзит на этом шлюзе не включён (нет $dom) — включи его в основном боте: «🛰 Шлюзы» → карточка шлюза → «☑️ VPN-транзит» (без канала — перевыпусти конфигурацию шлюза)"
+            [[ -x "$dom" ]] || die "VPN-транзит на этом шлюзе не включён (нет $dom) — включи его в боте сервера AWG: «🛰 Шлюзы» → карточка шлюза → «☑️ VPN-транзит» (без канала — перевыпусти конфигурацию шлюза)"
             exec "$dom" "$@" ;;
         update)
             [[ -x "$lists" ]] || die "VPN-транзит на этом шлюзе не включён (нет $lists)"
@@ -1456,7 +1456,7 @@ awg-bot — управление установленным ботом.
   awg-bot routing-doctor     где рвётся РФ-доступ (только чтение)
   awg-bot lan <cmd>          шлюз, VPN-транзит: add|ru|del <домен…> — свои списки
                              (в туннель / напрямую / убрать), list, update — обновить фиды
-  awg-bot gw-bundle [--link IF]  пересобрать бандл для шлюза (ключи не меняются);
+  awg-bot gw-bundle [--link IF]  пересобрать файл конфигурации шлюза (ключи не меняются);
                              --link — линк другого слота (резервный шлюз)
   awg-bot awg <cmd>          ядро AmneziaWG по манифесту поставки (install/awg.lock):
                              status | install | reload | prune | plan

@@ -290,7 +290,7 @@ def test_script_installs_uplink_on_a_fresh_machine(script):
     """Новая машина: аплинков нет — ставим из бандла под именем по умолчанию;
     машина с чужим аплинком в эту ветку не попадает."""
     step0 = script.split('step "0. Шлюзовое устройство"', 1)[1].split('# ── 1. конфиг и подъём', 1)[0]
-    fresh = step0.split("чистая машина", 1)[0].rsplit("if ", 1)[1]
+    fresh = step0.split("чистое устройство", 1)[0].rsplit("if ", 1)[1]
     assert '[ -z "$UPLINK_IF" ]' in fresh and '[ -z "$_others" ]' in fresh and '[ -n "$UPLINK_B64" ]' in fresh
     assert '! -f "$HOST_CONF_DIR/${UPLINK_IF_DEFAULT}.conf"' in fresh
     assert 'UPLINK_IF="$UPLINK_IF_DEFAULT"' in step0

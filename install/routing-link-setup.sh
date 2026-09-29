@@ -346,7 +346,7 @@ if [ "${1:-}" = "--install" ]; then
     sed -n '/^#__AWG_BOT_TGZ_BELOW__$/,/^#__AWG_BOT_TGZ_END__$/p' "$_self" | sed '1d;$d' \
         | base64 -d > "$_src/awg-bot.tgz" 2>/dev/null || true
     [ -s "$_src/awg-bot.tgz" ] || { rm -rf "$_src"; \
-        echo "в этом файле нет поставки: он собран без неё (awg-bot gw-bundle). Выпусти конфигурацию из основного бота."; exit 1; }
+        echo "в этом файле нет поставки: он собран без неё (awg-bot gw-bundle). Выпусти конфигурацию шлюза в боте сервера AWG."; exit 1; }
     tar xzf "$_src/awg-bot.tgz" -C "$_src" || { rm -rf "$_src"; echo "поставка внутри файла не распаковалась"; exit 1; }
     [ -f "$_src/install/awg-bot-install.sh" ] || { rm -rf "$_src"; echo "в поставке нет установщика — не та поставка?"; exit 1; }
     exec bash "$_src/install/awg-bot-install.sh" --skip-verify --role gateway --bundle "$_self"
@@ -362,7 +362,7 @@ mkdir -p "$DEST"
 sed -n '/^#__GW_SETUP_BELOW__$/,$p' "$0" | tail -n +2 > "$DEST/routing-gw-setup.sh"
 # Конвейер прячет отказ sed за кодом tail: пустой скрипт обвязки затем
 # исполнился бы «успешно», а юнит реассерта остался бы с пустым файлом.
-[ -s "$DEST/routing-gw-setup.sh" ] || { echo "бандл повреждён: скрипт обвязки не извлёкся"; exit 1; }
+[ -s "$DEST/routing-gw-setup.sh" ] || { echo "файл конфигурации повреждён: скрипт обвязки не извлёкся"; exit 1; }
 chmod 0755 "$DEST/routing-gw-setup.sh"
 
 BODYEOF
@@ -398,9 +398,9 @@ print_gw_instructions() {
     say "И там:"
     say "    sudo sh ~/$(basename "$GW_BUNDLE_OUT")"
     say "    rm ~/$(basename "$GW_BUNDLE_OUT")          # внутри приватный ключ"
-    say "(агента этот бандл не ставит: поставку везёт только файл из основного бота)"
+    say "(агента этот файл не ставит: поставку везёт только файл конфигурации из бота сервера AWG)"
     say ""
-    say "Пересобрать бандл позже (ключи НЕ меняются): LINK_IF=$LINK_IF $0 --bundle"
+    say "Пересобрать файл конфигурации позже (ключи НЕ меняются): LINK_IF=$LINK_IF $0 --bundle"
 }
 
 if [ "$MODE" = "bundle" ]; then
@@ -489,7 +489,7 @@ if [ -f "$CONF" ] && [ "$MODE" = "apply" ]; then
         say "Интерфейс $LINK_IF поднят — делать нечего."
         say "Состояние:  awg show $LINK_IF"
         say "Конфиг для шлюза: $GW_CONF_OUT"
-        say "Пересобрать бандл:  $0 --bundle"
+        say "Пересобрать файл конфигурации:  $0 --bundle"
     else
         say "Интерфейс $LINK_IF НЕ поднят. Поднять из существующего конфига:"
         say "    awg-quick up $LINK_IF"
@@ -526,7 +526,7 @@ if [ "$MODE" = "plan" ]; then
     say "  3. iptables -t nat -I POSTROUTING -s $CLIENT_SUBNET -o $LINK_IF -j ACCEPT"
     say "  4. юнит awg-link.service + enable"
     say "  5. записать конфигурацию шлюза в $GW_CONF_OUT"
-    say "  6. собрать бандл для шлюза в $GW_BUNDLE_OUT"
+    say "  6. собрать файл конфигурации шлюза в $GW_BUNDLE_OUT"
     exit 0
 fi
 
