@@ -214,7 +214,7 @@ async def routing_delete(cb: CallbackQuery, callback_data: RoutingCB, client, se
         return
     domains = await call(services.routing_domains, profile.id)
     idx = callback_data.idx
-    if not (0 <= idx < len(domains)):
+    if not (0 <= idx < len(domains)) or callback_data.tag != kb.entry_tag(domains[idx]):
         await cb.answer("Список изменился — открой раздел заново", show_alert=True)
         await edit(cb, *await sites_view(services, profile))
         return

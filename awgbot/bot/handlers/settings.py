@@ -1234,8 +1234,9 @@ async def _firewall_action(cb: CallbackQuery, callback_data: SetCB, services) ->
             # Список мог измениться с момента отрисовки: тогда честно скажем,
             # а не удалим соседа по сдвинувшемуся номеру.
             allow = (await call(services.firewall_screen)).get("raw_allow", [])
-            idx = int(val) if val.isdigit() else -1
-            if not 0 <= idx < len(allow):
+            num, _dot, tag = (val or "").partition(".")
+            idx = int(num) if num.isdigit() else -1
+            if not 0 <= idx < len(allow) or tag != kb.entry_tag(allow[idx]):   # без метки — не наша кнопка
                 await cb.answer("Список изменился — открой раздел заново", show_alert=True)
                 text, markup = await _screen("fw", services)
                 await edit(cb, text, markup)

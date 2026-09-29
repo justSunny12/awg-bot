@@ -6,6 +6,7 @@
 """
 import pytest
 
+from awgbot.bot import keyboards as kb
 from awgbot.bot.handlers import routing as routing_h
 from awgbot.bot.callbacks import RoutingCB
 from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
@@ -131,7 +132,8 @@ async def test_delete_answers_with_a_popup_and_redraws_sites_in_place(
     services.routing_add_domains(c.id, "megafon.ru\nozon.ru")
     c = services.db.get_client(c.id)
     cb, nav = _cb(fake_bot, 78)
-    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=c.id, idx=0), c, services)
+    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=c.id, idx=0,
+                                                 tag=kb.entry_tag("megafon.ru")), c, services)
     assert cb.answers == [("megafon.ru убран · применится в теч. минуты", False)], cb.answers
     assert not any(s[0] == "answer" for s in nav.sent), "след в чате вместо всплывашки"
     text, labels = last_screen(nav)
@@ -143,8 +145,8 @@ async def test_delete_removes_selected_domain(services, make_active_client, fake
     c = _allowed_client(services, make_active_client, 79)
     services.routing_add_domains(c.id, "a.com b.com")
     cb, _ = _cb(fake_bot, 79)
-    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=c.id, idx=0),
-                                   c, services)
+    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=c.id, idx=0,
+                                                 tag=kb.entry_tag("a.com")), c, services)
     assert services.routing_domains(c.id) == ["b.com"]
 
 
@@ -784,8 +786,8 @@ async def test_admin_edits_foreign_list_not_his_own(services, make_active_client
     admin, other = await _foreign_setup(services, make_active_client, monkeypatch)
 
     cb, _ = _admin_cb(fake_bot)
-    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=other.id, idx=0),
-                                   None, services)
+    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=other.id, idx=0,
+                                                 tag=kb.entry_tag("a.ru")), None, services)
     assert services.routing_domains(other.id) == ["b.ru"]
     assert services.routing_domains(admin.id) == []
 
@@ -823,8 +825,8 @@ async def test_admin_own_list_without_ref_and_client_cannot_reach_foreign(
 
     other = services.db.get_client(other.id)
     cb, _ = _cb(fake_bot, other.tg_id)
-    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=admin.id, idx=0),
-                                   other, services)
+    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=admin.id, idx=0,
+                                                 tag=kb.entry_tag("a.ru")), other, services)
     assert services.routing_domains(admin.id) == ["mine.ru"], "клиент удалил у админа"
     assert services.routing_domains(other.id) == ["b.ru"]
 
@@ -885,8 +887,8 @@ async def test_feature_toggle_blocks_both_editors_and_keeps_device_flags(
                                   FakeState())
     assert cb.answers and cb.answers[0][1] is True
     cb, nav = _admin_cb(fake_bot)
-    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=other.id, idx=0),
-                                   None, services)
+    await routing_h.routing_delete(cb, RoutingCB(action="del", ref=other.id, idx=0,
+                                                 tag=kb.entry_tag("a.ru")), None, services)
     assert cb.answers and cb.answers[0][1] is True
     assert services.routing_domains(other.id) == ["a.ru", "b.ru"]
 
@@ -1041,3 +1043,28 @@ async def test_device_switch_and_select_all_redraw_the_section_in_place(
     assert labels[:3] == ["☑️ iPhone", "☑️ MacBook", "☑️ Выбрать все"], labels
     assert text.startswith("🇷🇺 РФ-доступ: выкл\nВключишь — банки, госуслуги"), text
     assert services.routing_device_counts(c.id) == (0, 2) and a is not None
+
+
+async def test_delete_with_a_stale_tag_does_not_remove_a_neighbour(
+        services, make_active_client, fake_bot):
+    """Кнопка из старого сообщения: номер тот же, а запись под ним уже другая.
+    Метка записи в колбэке отличает «тот самый адрес» от соседа."""
+    c = _allowed_client(services, make_active_client, 78)
+    services.routing_add_domains(c.id, "a.com b.com")
+    for tag in ("", kb.entry_tag("b.com"), "deadbeef"):
+        cb, _ = _cb(fake_bot, 78)
+        await routing_h.routing_delete(cb, RoutingCB(action="del", ref=c.id, idx=0, tag=tag),
+                                       c, services)
+        assert services.routing_domains(c.id) == ["a.com", "b.com"], tag
+        assert cb.answers[0][1] is True, tag
+
+
+def test_delete_buttons_carry_the_entry_tag(services, make_active_client):
+    """Кнопка «➖» несёт номер и метку записи, а сама метка влезает в 64 байта
+    колбэка вместе с остальными полями."""
+    c = _allowed_client(services, make_active_client, 78)
+    services.routing_add_domains(c.id, "very-long-subdomain-name.example-company.co.uk")
+    m = kb.routing_sites(c.id, services.routing_domains(c.id))
+    packed = [b.callback_data for row in m.inline_keyboard for b in row if b.text.startswith("➖")]
+    assert packed and all(len(p.encode()) <= 64 for p in packed), packed
+    assert packed[0].endswith(":" + kb.entry_tag("very-long-subdomain-name.example-company.co.uk"))

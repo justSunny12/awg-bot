@@ -276,20 +276,24 @@ async def test_allow_add_and_remove(svc, fake_bot):
     assert await st.get_state() is None
     # «➖» — сразу, без подтверждения: удаление отменяется тем же «➕ Адрес»
     cb, nav = _cb(fake_bot)
-    await gh.gw_ssh_action(cb, GwCB(action="ssh_del!", val="0"), svc, FakeState())
+    tag = kb.entry_tag("home2.dyn.example")
+    await gh.gw_ssh_action(cb, GwCB(action="ssh_del!", val=f"0.{tag}"), svc, FakeState())
     assert svc.calls == [("remove", "home2.dyn.example")], svc.calls
     assert cb.answers == [("home2.dyn.example убран", False)], cb.answers
     assert "➖ home2.dyn.example" not in _labels(nav.sent[-1][2]), "раздел не перерисован"
-    # старая кнопка без «!» из сообщений 3.1.0 — тоже сразу
+    # старая кнопка из сообщений 3.1.0 — без метки записи: номер один мог
+    # сменить хозяина, поэтому отказ, а не удаление соседа
     svc.screen["allow"] = ["203.0.113.7"]
-    cb, nav = _cb(fake_bot)
-    await gh.gw_ssh_action(cb, GwCB(action="ssh_del", val="0"), svc, FakeState())
-    assert svc.calls[-1] == ("remove", "203.0.113.7")
-    cb, nav = _cb(fake_bot)
     n = len(svc.calls)
-    await gh.gw_ssh_action(cb, GwCB(action="ssh_del!", val="7"), svc, FakeState())
-    assert len(svc.calls) == n, "по устаревшему номеру что-то убрано"
-    assert cb.answers[0] == ("Список изменился — открой раздел заново", True)
+    for val in ("0", "7", "0.deadbeef"):
+        cb, nav = _cb(fake_bot)
+        await gh.gw_ssh_action(cb, GwCB(action="ssh_del", val=val), svc, FakeState())
+        assert len(svc.calls) == n, f"по устаревшей кнопке {val!r} что-то убрано"
+        assert cb.answers[0] == ("Список изменился — открой раздел заново", True)
+    cb, nav = _cb(fake_bot)
+    await gh.gw_ssh_action(cb, GwCB(action="ssh_del", val=f"0.{kb.entry_tag('203.0.113.7')}"),
+                           svc, FakeState())
+    assert svc.calls[-1] == ("remove", "203.0.113.7")
 
 
 async def test_adding_covered_addresses_reports_the_merge(svc, fake_bot, monkeypatch):
@@ -428,7 +432,9 @@ async def test_address_list_pages_and_removal_from_page_two_hits_the_right_entry
     target = rm[0]
     entry = target.text.removeprefix("➖ ")
     data = GwCB.unpack(target.callback_data)
-    assert int(data.val) == many.index(entry), "номер кнопки — не по полному списку"
+    num, _dot, tag = data.val.partition(".")
+    assert int(num) == many.index(entry), "номер кнопки — не по полному списку"
+    assert tag == kb.entry_tag(entry), "метка записи — не своей записи"
 
     cb, nav = _cb(fake_bot)
     await gh.gw_ssh_action(cb, data, svc, FakeState())

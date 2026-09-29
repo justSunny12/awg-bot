@@ -48,6 +48,9 @@ class AccessMiddleware(BaseMiddleware):
         user: User | None = data.get("event_from_user")
         if user is None:
             return None                                   # нет пользователя — дроп
+        chat = data.get("event_chat")
+        if chat is not None and getattr(chat, "type", "private") != "private":
+            return None                                   # группы и каналы: экраны и файлы туда не ходят
 
         uid = user.id
 

@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.bot.callbacks import RoutingCB, SetCB, GwMarkCB, GwSlotCB, Menu
 from awgbot.bot import texts as _texts
 
-from .common import _tick, _btn_suffix, page_slice, page_nav, select_all_button, confirm
+from .common import _tick, _btn_suffix, page_slice, page_nav, select_all_button, confirm, entry_tag
 from .settings import _cycle
 
 
@@ -48,7 +48,7 @@ def routing_sites(client_id: int, domains: list, page: int = 0) -> InlineKeyboar
     rows = []
     chunk, page, prev, nxt = page_slice(domains, page, static=2)
     for i, dom in chunk:
-        kb.button(text=f"➖ {dom}", callback_data=RoutingCB(action="del", ref=client_id, idx=i))
+        kb.button(text=f"➖ {dom}", callback_data=RoutingCB(action="del", ref=client_id, idx=i, tag=entry_tag(dom)))
         rows.append(1)
     nav = page_nav(kb, "rtsites", client_id, page, prev, nxt,
                    RoutingCB(action="sites", ref=client_id).pack())

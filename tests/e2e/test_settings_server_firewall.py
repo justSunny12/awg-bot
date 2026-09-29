@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from awgbot.bot import texts
+from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot.handlers import settings as sh
 from awgbot.bot.handlers import settingscore as core
@@ -204,7 +205,8 @@ async def test_removing_an_address_by_its_number(services, fake_bot, monkeypatch
                         lambda: _fw(raw_allow=["203.0.113.7", "2001:db8::1"]))
     monkeypatch.setattr(services, "firewall_allow_remove", lambda e: removed.append(e))
     cb, nav = _acb(fake_bot)
-    await sh.do_action(cb, SetCB(sec="fw", act="do", key="del", val="1"), services)
+    tag = kb.entry_tag("2001:db8::1")
+    await sh.do_action(cb, SetCB(sec="fw", act="do", key="del", val=f"1.{tag}"), services)
     assert removed == ["2001:db8::1"]
 
 
@@ -214,10 +216,11 @@ async def test_stale_list_does_not_remove_a_neighbour(services, fake_bot, monkey
     removed: list = []
     monkeypatch.setattr(services, "firewall_screen", lambda: _fw(raw_allow=["203.0.113.7"]))
     monkeypatch.setattr(services, "firewall_allow_remove", lambda e: removed.append(e))
-    cb, nav = _acb(fake_bot)
-    await sh.do_action(cb, SetCB(sec="fw", act="do", key="del", val="5"), services)
-    assert removed == []
-    assert any("изменился" in (a[0] or "") for a in cb.answers)
+    for val in ("5", "0", "0.deadbeef"):          # вне списка, без метки, чужая метка
+        cb, nav = _acb(fake_bot)
+        await sh.do_action(cb, SetCB(sec="fw", act="do", key="del", val=val), services)
+        assert removed == [], val
+        assert any("изменился" in (a[0] or "") for a in cb.answers), val
 
 
 async def test_unknown_action_is_refused_and_screen_survives(services, fake_bot, monkeypatch):

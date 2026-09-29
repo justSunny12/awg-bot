@@ -314,6 +314,13 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
     if rs.looks_like_backup(doc):                     # резервная копия, не конфигурация
         await rs.offer_restore(message, services, state, gateway=True)
         return
+    name = (getattr(doc, "file_name", "") or "").lower()
+    if name.startswith("awg-gw-bundle") and name.endswith(".sh"):
+        # открытый файл первого применения: внутри ключи линка и аплинка,
+        # токен агента — в чате ему не место, а применяют его на устройстве
+        await forget_secret(message)
+        await message.answer(texts.GW_FIRST_RUN_FILE)
+        return
     if doc.file_size and doc.file_size > _BUNDLE_MAX_BYTES:
         await message.answer(texts.GW_BUNDLE_NOT_OURS)
         return
@@ -323,6 +330,10 @@ async def gw_bundle_document(message: Message, services, state: FSMContext):
     # Формат проверяем ДО предложения применить, расшифровку — только при
     # применении: чужой файл отбивается сразу, а ключ линка читается один раз.
     if not blob.startswith(bundlecrypt.MAGIC):
+        if blob.startswith(b"#!/bin/sh") and b"awg-gw-bundle" in blob[:4096]:
+            await forget_secret(message)
+            await message.answer(texts.GW_FIRST_RUN_FILE)
+            return
         await message.answer(texts.GW_BUNDLE_NOT_OURS)
         return
     # Файл у нас в памяти — в чате ему делать нечего. Основной бот свою копию
@@ -474,8 +485,9 @@ async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state:
     try:
         if act == "ssh_del":
             allow = (await call(services.ssh_screen)).get("allow") or []
-            idx = int(callback_data.val) if callback_data.val.isdigit() else -1
-            if not 0 <= idx < len(allow):
+            num, _dot, tag = (callback_data.val or "").partition(".")
+            idx = int(num) if num.isdigit() else -1
+            if not 0 <= idx < len(allow) or tag != kb.entry_tag(allow[idx]):
                 await cb.answer("Список изменился — открой раздел заново", show_alert=True)
             else:
                 await call(services.ssh_allow_remove, allow[idx])

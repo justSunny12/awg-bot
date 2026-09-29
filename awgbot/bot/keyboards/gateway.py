@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import settings
 from awgbot.bot.callbacks import UpdateCB, GwCB
 
-from .common import _chk, page_slice, page_nav
+from .common import _chk, page_slice, page_nav, entry_tag
 from .settings import backup_when_label, UPDATE_SCHEDULE_LABELS
 
 
@@ -229,7 +229,7 @@ def gateway_ssh_kb(st: dict, page: int = 0) -> InlineKeyboardMarkup:
     toggle = bool(st.get("new_plumbing"))
     chunk, page, prev, nxt = page_slice(list(st.get("allow") or []), page, static=3 if toggle else 2)
     for i, entry in chunk:
-        kb.button(text=f"➖ {entry}", callback_data=GwCB(action="ssh_del!", val=str(i)))
+        kb.button(text=f"➖ {entry}", callback_data=GwCB(action="ssh_del!", val=f"{i}.{entry_tag(entry)}"))
     nav = page_nav(kb, "gwssh", 0, page, prev, nxt, GwCB(action="ssh").pack())
     rows = [2, *([1] * len(chunk)), *([nav] if nav else [])]
     if toggle:

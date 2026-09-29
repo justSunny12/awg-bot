@@ -16,7 +16,7 @@ keyboards — инлайн-клавиатуры (aiogram). Callback-data бер�
 from __future__ import annotations
 
 from .common import (
-    BTN_CANCEL, reply_cancel, reply_hide, yes_no, to_menu,
+    BTN_CANCEL, entry_tag, reply_cancel, reply_hide, yes_no, to_menu,
     append_hide_row, hide_only,
     block_unblock_reasons, cancel_input, confirm, select_all_button,
     device_limit_presets, device_limit_kb)
@@ -65,7 +65,7 @@ from .gateway import (
     gateway_ssh_kb, gateway_ssh_port_finisher_kb)
 
 __all__ = [
-    "BTN_CANCEL", "reply_cancel", "reply_hide", "yes_no", "to_menu",
+    "BTN_CANCEL", "entry_tag", "reply_cancel", "reply_hide", "yes_no", "to_menu",
     "append_hide_row", "hide_only",
     "block_unblock_reasons", "cancel_input", "confirm", "select_all_button",
     "device_limit_presets", "device_limit_kb", "client_main", "client_devices", "held_device_actions",

@@ -212,6 +212,7 @@ class RoutingCB(CallbackData, prefix="rt"):
     action: str
     ref: int = 0
     idx: int = -1
+    tag: str = ""          # метка записи (entry_tag) для del: номер один соседа не спасёт
 
 
 class BroadcastCB(CallbackData, prefix="bc"):

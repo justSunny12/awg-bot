@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import settings
 from awgbot.bot.callbacks import Menu, UpdateCB, SetCB, GwCB, HideCB
 
-from .common import _chk, _tick, page_slice, page_nav
+from .common import _chk, _tick, page_slice, page_nav, entry_tag
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ def settings_firewall(st: dict, page: int = 0) -> InlineKeyboardMarkup:
     toggle = bool(st.get("enabled")) or bool(allow)
     chunk, page, prev, nxt = page_slice(allow, page, static=3 if toggle else 2)
     for i, entry in chunk:
-        kb.button(text=f"➖ {entry}", callback_data=SetCB(sec="fw", act="do", key="del", val=str(i)))
+        kb.button(text=f"➖ {entry}", callback_data=SetCB(sec="fw", act="do", key="del", val=f"{i}.{entry_tag(entry)}"))
     nav = page_nav(kb, "fw", 0, page, prev, nxt, SetCB(sec="fw").pack())
     rows = [2, *([1] * len(chunk)), *([nav] if nav else [])]
     if st.get("enabled"):

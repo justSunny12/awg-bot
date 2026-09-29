@@ -84,3 +84,20 @@ async def test_no_user_dropped(db):
 
     result = await mw(handler, _msg(), {})               # нет event_from_user
     assert result is None
+
+
+async def test_group_and_channel_events_are_dropped(db):
+    """Бот работает только в личке: экраны и файлы конфигураций в группу
+    уходить не должны, даже если написал админ."""
+    from aiogram.types import Chat
+    mw = AccessMiddleware(db)
+
+    async def handler(event, data):
+        return "HANDLED"
+
+    user = User.model_construct(id=config.ADMIN_ID, is_bot=False, first_name="A")
+    for kind in ("group", "supergroup", "channel"):
+        chat = Chat.model_construct(id=-100, type=kind)
+        assert await mw(handler, _msg(), {"event_from_user": user, "event_chat": chat}) is None, kind
+    chat = Chat.model_construct(id=config.ADMIN_ID, type="private")
+    assert await mw(handler, _msg(), {"event_from_user": user, "event_chat": chat}) == "HANDLED"
