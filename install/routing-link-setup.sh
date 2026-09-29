@@ -267,6 +267,16 @@ emit_gw_bundle() {
         fi
     fi
 
+    # Хост Endpoint: адрес ВПС мог смениться (новый IP, домен, ВПС за 1:1 NAT
+    # с приватным адресом на интерфейсе) — правим по network.server_host из
+    # настроек бота (ENDPOINT_HOST), как порт.
+    if [ -n "${ENDPOINT_HOST:-}" ] && [ -f "$GW_CONF_OUT" ] \
+        && ! grep -qE "^Endpoint = ${ENDPOINT_HOST}:[0-9]+\$" "$GW_CONF_OUT"; then
+        say "Endpoint в $GW_CONF_OUT отстал от network.server_host=$ENDPOINT_HOST — правлю"
+        sed "s/^Endpoint = .*:\([0-9][0-9]*\)\$/Endpoint = $ENDPOINT_HOST:\1/" "$GW_CONF_OUT" > "$GW_CONF_OUT.tmp" \
+            && mv "$GW_CONF_OUT.tmp" "$GW_CONF_OUT"
+    fi
+
     # AllowedIPs пира ВПС зависит от подсетей за другими шлюзами, а те меняются
     # после --apply: правим строку в источнике при каждой сборке, как порт.
     _want="AllowedIPs = $(gw_allowed_ips)"
@@ -361,8 +371,10 @@ fi
 # прописывает СЕБЯ в systemd-юнит по собственному пути: запущенный из /tmp, он
 # оставил бы юнит, указывающий на удалённый файл. Обнаружилось бы это только
 # после ребута и выглядело бы как «шлюз сам отвалился».
-DEST="/opt/awg-gw"
-mkdir -p "$DEST"
+# Временный каталог в /root (0700, не tmpfs): скрипт обвязки кладёт себя в
+# /usr/local/sbin сам, а в /opt/awg-gw оставалась вторая копия ключа линка
+# и устаревший скрипт, которых никто не читал.
+DEST="$(mktemp -d /root/awg-gw-apply.XXXXXX)"
 
 sed -n '/^#__GW_SETUP_BELOW__$/,$p' "$0" | tail -n +2 > "$DEST/routing-gw-setup.sh"
 # Конвейер прячет отказ sed за кодом tail: пустой скрипт обвязки затем
@@ -382,6 +394,8 @@ chmod 0600 "$DEST/link.conf"
 # чтобы не полагаться на память человека. Отказ — файл остаётся для повтора.
 "$DEST/routing-gw-setup.sh" "${1:---apply}" "$DEST/link.conf"
 _rc=$?
+rm -rf "$DEST"
+[ "$_rc" -eq 0 ] && rm -rf /opt/awg-gw 2>/dev/null   # остаток прежних выпусков: копия ключа
 [ "$_rc" -eq 0 ] && rm -f -- "$0" 2>/dev/null
 exit "$_rc"
 TAILEOF
@@ -551,6 +565,9 @@ rnd() {   # $1=min $2=max
 }
 JC=$(rnd 3 10);    JMIN=$(rnd 8 15);   JMAX=$(rnd 40 70)
 S1=$(rnd 15 150);  S2=$(rnd 15 150);   S3=$(rnd 15 150);  S4=$(rnd 15 150)
+# S1 + 56 == S2 ломает разбор рукопожатия (длина init совпадает с response) —
+# переизбираем S2, как делает awg-server-init.sh; иначе ~0,4 % линков не встают
+while [ $((S1 + 56)) -eq "$S2" ]; do S2=$(rnd 15 150); done
 # H1..H4 берём из НЕПЕРЕСЕКАЮЩИХСЯ полос: одинаковые или пересекающиеся
 # значения ломают распознавание типов пакетов, а близкие к штатным 1..4 сводят
 # смысл обфускации на нет.

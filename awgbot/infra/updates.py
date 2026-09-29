@@ -293,8 +293,10 @@ def apply(blob: bytes) -> None:
         # транзиентный юнит вне нашего cgroup; --collect уберёт его после выхода.
         # Имя уникальное — повторный запуск не упадёт об «unit already exists».
         unit = f"awg-bot-selfupdate-{int(time.time())}-{os.getpid()}"
+        # AWG_UPDATE_CLEANUP: post_update уберёт архив (только из /tmp) —
+        # иначе поставка на десятки мегабайт оставалась после каждого обновления
         subprocess.Popen(
-            ["systemd-run", "--collect", "--quiet",
+            ["systemd-run", "--collect", "--quiet", f"--setenv=AWG_UPDATE_CLEANUP={path}",
              f"--unit={unit}", _AWG_BOT_BIN, "update", path],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, close_fds=True)
@@ -303,7 +305,8 @@ def apply(blob: bytes) -> None:
         subprocess.Popen(
             [_AWG_BOT_BIN, "update", path],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
+            stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
+            env={**os.environ, "AWG_UPDATE_CLEANUP": path})
 
 
 def release_body(tag: str) -> str:

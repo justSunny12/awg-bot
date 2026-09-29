@@ -113,6 +113,8 @@ address=/mozilla.cloudflare-dns.com/
 address=/one.one.one.one/
 address=/dns.google/
 address=/dns.quad9.net/
+address=/dns.nextdns.io/
+address=/firefox.dns.nextdns.io/
 address=/dns.adguard-dns.com/
 address=/doh.opendns.com/
 EOF
@@ -205,8 +207,11 @@ EOF
 restart_service() {
     # Синтаксис — ДО рестарта: dnsmasq падает на любом повторе однократного
     # ключа между файлами, а упавший демон = все клиенты без DNS.
+    # с conf-dir, как запускает юнит Debian: голый --test не читает
+    # /etc/dnsmasq.d, и повтор однократного ключа между файлами проходил
+    # проверку, а рестарт падал — DNS у клиентов лежал до отката
     if [[ "$PLAN" -eq 0 ]] && command -v dnsmasq >/dev/null 2>&1 \
-            && ! out="$(dnsmasq --test 2>&1)"; then
+            && ! out="$(dnsmasq --test --conf-dir="$DNSMASQ_CONF_DIR",.dpkg-dist,.dpkg-old,.dpkg-new 2>&1)"; then
         log "конфиг dnsmasq не прошёл проверку: $out"
         rollback_conf
         die "конфиг резолвера отклонён dnsmasq — см. выше; прежний возвращён"

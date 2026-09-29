@@ -345,7 +345,9 @@ def test_lan_mode_off_removes_its_own_and_rollback_too(script):
     assert "lan_remove" in off and "lan_apply" not in off
     rollback = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
     assert "lan_remove" in rollback
-    fn = script.split("lan_remove() {", 1)[1].split("\n}", 1)[0]
+    wrapper = script.split("lan_remove() {", 1)[1].split("\n}", 1)[0]
+    assert "lists.lock" in wrapper and "_lan_remove_locked" in wrapper, "снятие режима — не под блокировкой списков"
+    fn = script.split("_lan_remove_locked() {", 1)[1].split("\n}", 1)[0]
     assert "for _f in awg-gw-vpn-user.conf awg-gw-ru-user.conf" in fn \
         and 'mv -f $DNSMASQ_D/$_f $LAN_DUMP/restore/$_f' in fn, \
         "личные списки — данные человека: в restore/, откуда их вернёт следующее включение, не rm"
@@ -525,16 +527,18 @@ def ovr_env(script, tmp_path):
     return go, ovr, default, unit, log
 
 
-def test_the_dnsmasq_override_starts_after_the_uplink_and_drops_the_resolvconf_hook(ovr_env):
-    """dnsmasq, стартовавший раньше awg0, оставался без апстрима
-    `server=…@awg0` до ручного рестарта (так было на живых малинах). Хук
-    resolvconf Debian вписал бы 127.0.0.1 системным резолвером малины — её
-    собственный DNS зависел бы от аплинка."""
+def test_the_dnsmasq_override_has_no_ordering_against_the_uplink_and_drops_the_resolvconf_hook(ovr_env):
+    """After=/Wants=awg-quick@аплинк в оверрайде dnsmasq давали цикл
+    упорядочивания (dnsmasq Before=nss-lookup.target, awg-quick@ After=него):
+    systemd выкидывал из цикла произвольную единицу — в худшем случае сам
+    аплинк, и устройство оставалось без Telegram. Перечитывание после подъёма
+    аплинка — ExecStartPost в оверрайде самого аплинка. Хук resolvconf Debian
+    вписал бы 127.0.0.1 системным резолвером — её DNS зависел бы от аплинка."""
     go, ovr, default, unit, log = ovr_env
     r = go(UPLINK_IF="awg0")
     assert r.returncode == 0, r.stderr
     text = ovr.read_text()
-    assert "[Unit]\nAfter=awg-quick@awg0.service\nWants=awg-quick@awg0.service\n" in text, text
+    assert "After=" not in text and "Wants=" not in text and "[Unit]" not in text, text
     assert "[Service]\nRestart=on-failure\nRestartSec=5\n" in text
     assert "ExecStartPost=\nExecStop=\n" in text, "хук resolvconf из юнита не снят"
     assert "systemctl daemon-reload" in log.read_text() and "changed=1" in r.stdout
@@ -559,8 +563,8 @@ def test_an_unchanged_override_is_not_rewritten_and_does_not_reload(ovr_env):
     r = go(UPLINK_IF="awg0")
     assert "changed=0" in r.stdout, "неизменный оверрайд посчитан изменением"
     assert "daemon-reload" not in log.read_text()
-    r = go(UPLINK_IF="awg1")                      # сменился аплинк — оверрайд обязан переехать
-    assert "awg-quick@awg1.service" in ovr.read_text() and "changed=1" in r.stdout
+    r = go(UPLINK_IF="awg1")                      # аплинка в оверрайде нет — смена его имени ничего не меняет
+    assert "awg-quick@" not in ovr.read_text() and "changed=0" in r.stdout
 
 
 def test_the_old_dnsmasq_except_line_is_removed_and_nothing_else(ovr_env):

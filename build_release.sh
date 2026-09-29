@@ -70,7 +70,7 @@ build_bot() {
     install -m 0644 "$ROOT/install/awg.lock" "$s/install/"
     install -m 0755 "$ROOT/awg-bot.sh" "$s/"                        # единый инструмент — в корне
     install -m 0755 "$ROOT/run.sh" "$s/"                            # форграунд-запуск, документирован как ./run.sh
-    cp "$ROOT/awg-bot.service" "$ROOT/requirements.txt" "$ROOT/.env.example" "$s/"
+    cp "$ROOT/requirements.txt" "$ROOT/.env.example" "$s/"         # юнит пишет install_unit, файла в поставке нет
     cp "$ROOT/docs/README-bot.md" "$s/README.md"
     _targz "$s" "$OUT/awg-bot.tgz"; rm -rf "$s"
     log "awg-bot.tgz: $(_count "$OUT/awg-bot.tgz") файлов (установщик внутри: install/awg-bot-install.sh)"
@@ -82,7 +82,8 @@ build_project() {
     ( cd "$ROOT" && tar $TAR_FLAGS -czf "$tmp" \
         --exclude='./.git' --exclude='*/__pycache__' --exclude='*.pyc' \
         --exclude='./data' --exclude='*.db' --exclude='./.pytest_cache' \
-        --exclude='./venv' --exclude='./dist' . )
+        --exclude='./venv' --exclude='./.venv' --exclude='./.venv-next' --exclude='./.claude' \
+        --exclude='./.mcp.json' --exclude='./dist' . )
     cp -f "$tmp" "$OUT/awg-bot-project.tgz"; rm -f "$tmp"
     log "awg-bot-project.tgz: $(_count "$OUT/awg-bot-project.tgz") файлов"
 }

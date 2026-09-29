@@ -325,6 +325,19 @@ lan_iface_for() {              # $1 = подсеть a.b.c.d/n → «iface addr�
         $2 != "lo" && $2 !~ /^(awg|docker|veth|br-)/ { split($4, q, "/"); if (int(ip2n(q[1])/h) == want) { print $2, q[1]; exit } }'
 }
 lan_remove() {                 # снять всё своё; личные списки — в $LAN_DUMP/restore (данные человека)
+    _lan_lock=0
+    if [ -d "$LAN_DUMP" ] && command -v flock >/dev/null 2>&1; then
+        exec 8>"$LAN_DUMP/lists.lock"
+        if flock -w 120 8; then _lan_lock=1; else
+            say "  списки ещё обновляются — снимаю режим, не дождавшись"
+        fi
+    fi
+    _lan_remove_locked; _rc=$?
+    [ "$_lan_lock" = "1" ] && flock -u 8
+    [ -d "$LAN_DUMP" ] && command -v flock >/dev/null 2>&1 && exec 8>&-
+    return $_rc
+}
+_lan_remove_locked() {
     _changed=0
     for _f in "$DNSMASQ_D/awg-gw-base.conf" "$DNSMASQ_D/awg-gw-doh.conf" "$DNSMASQ_D/awg-gw-vpn-feed.conf" "$PEER_SVC_CONF"; do
         [ -f "$_f" ] && { run "rm -f $_f"; _changed=1; }
@@ -499,21 +512,29 @@ fi
 if [ -n "$FROM" ]; then
     cat "$FROM/nets.lst" >> "$NETS" 2>/dev/null || { echo "подсети: нет $FROM/nets.lst" >&2; rc=1; }
 else
+    nets_rc=0
     for svc in $SUBNET_SERVICES; do
         curl -sf --max-time 60 "$ITDOG/Subnets/IPv4/${svc}.lst" >> "$NETS" 2>/dev/null \
-            || { echo "подсети: $svc не скачался" >&2; rc=1; }
+            || { echo "подсети: $svc не скачался" >&2; rc=1; nets_rc=1; }
         echo >> "$NETS"
     done
     curl -sf --max-time 60 "$GOOG_URL" 2>/dev/null \
         | grep -oE '"ipv4Prefix":[[:space:]]*"[0-9./]+"' \
         | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+' >> "$NETS" \
-        || { echo "подсети: goog.json не скачался" >&2; rc=1; }
+        || { echo "подсети: goog.json не скачался" >&2; rc=1; nets_rc=1; }
 fi
 elems="$(grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$' "$NETS" | sort -u | paste -sd, -)"
 if [ -n "$elems" ]; then
-    # одной транзакцией: между flush и add окна нет
-    printf 'flush set %s lan_vpn_nets4\nadd element %s lan_vpn_nets4 { %s }\n' "$TABLE" "$TABLE" "$elems" \
-        | nft -f - || { echo "подсети: nft отклонил набор" >&2; rc=1; }
+    if [ "${nets_rc:-0}" = "0" ]; then
+        # одной транзакцией: между flush и add окна нет
+        printf 'flush set %s lan_vpn_nets4\nadd element %s lan_vpn_nets4 { %s }\n' "$TABLE" "$TABLE" "$elems" \
+            | nft -f - || { echo "подсети: nft отклонил набор" >&2; rc=1; }
+    else
+        # один из фидов не скачался: только ДОБАВИТЬ — flush стёр бы подсети
+        # сервиса, чей фид не пришёл, до следующего похода
+        printf 'add element %s lan_vpn_nets4 { %s }\n' "$TABLE" "$elems" \
+            | nft -f - || { echo "подсети: nft отклонил набор" >&2; rc=1; }
+    fi
 fi
 
 # ── слепки: при старте таблица пуста, пока агент не сходит за фидами
@@ -861,8 +882,11 @@ lan_ipv4() {
 # отработал «успешно», не поставив ни одного правила.
 detect_container() {
     if [ -n "${CONTAINER:-}" ]; then printf '%s' "$CONTAINER"; return 0; fi
-    for n in $(docker ps --format '{{.Names}}' 2>/dev/null); do
-        if docker exec "$n" sh -c 'command -v awg' >/dev/null 2>&1; then
+    command -v docker >/dev/null 2>&1 || return 0
+    # с пределом времени: зависший docker на загрузке держал бы юнит, а за ним
+    # (After=awg-link-gw) и агента
+    for n in $(timeout 10 docker ps --format '{{.Names}}' 2>/dev/null); do
+        if timeout 10 docker exec "$n" sh -c 'command -v awg' >/dev/null 2>&1; then
             printf '%s' "$n"; return 0
         fi
     done
@@ -870,7 +894,9 @@ detect_container() {
 }
 detect_wan() {
     [ -n "${WAN_IF:-}" ] && { printf '%s' "$WAN_IF"; return; }
-    ip route show default 2>/dev/null | awk '/^default/{print $5; exit}'
+    # токен после dev: формы «default via X dev Y», «default dev Y», с nhid —
+    # позиция колонки плавает, имя нет
+    ip route show default 2>/dev/null | awk '/^default/{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}'
 }
 
 MODE="plan"; SRC_CONF=""
@@ -955,7 +981,7 @@ if [ "$MODE" = "rollback" ]; then
     legacy_cleanup
     lan_remove
     if command -v iptables >/dev/null 2>&1; then
-        for _i in "$LINK_IF" $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | grep -E '^(awg|end|eth|br|wl)'); do
+        for _i in "$LINK_IF" $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | sed 's/@.*//' | grep -v '^lo$'); do
             for _d in -i -o; do
                 while iptables -w -C FORWARD $_d "$_i" -j ACCEPT 2>/dev/null; do
                     run "iptables -w -D FORWARD $_d $_i -j ACCEPT"
@@ -1027,13 +1053,18 @@ else
         # отказов за десять секунд (DNS ещё не резолвит Endpoint) — и юнит
         # сдаётся навсегда, малина остаётся без Telegram и без списков.
         # Снимаем лимит и перезапускаем до победы.
+        # ExecStartPost: dnsmasq (апстрим server=…@аплинк) перечитывается после
+        # подъёма аплинка отсюда, а не через After=/Wants= в drop-in dnsmasq —
+        # то давало цикл упорядочивания с nss-lookup.target, и systemd выкидывал
+        # из него произвольную единицу (в худшем случае — сам аплинк).
         _ovr="/etc/systemd/system/awg-quick@$UPLINK_IF.service.d"
-        if [ ! -f "$_ovr/awg-gw.conf" ]; then
+        _ovr_txt="$(printf '[Unit]\nStartLimitIntervalSec=0\n\n[Service]\nRestart=on-failure\nRestartSec=10\nExecStartPost=-/bin/systemctl --no-block try-restart dnsmasq.service\n')"
+        if [ "$(cat "$_ovr/awg-gw.conf" 2>/dev/null)" != "$_ovr_txt" ]; then
             run "mkdir -p $_ovr"
-            run "printf '[Unit]\nStartLimitIntervalSec=0\n\n[Service]\nRestart=on-failure\nRestartSec=10\n' > $_ovr/awg-gw.conf"
+            run "printf '[Unit]\nStartLimitIntervalSec=0\n\n[Service]\nRestart=on-failure\nRestartSec=10\nExecStartPost=-/bin/systemctl --no-block try-restart dnsmasq.service\n' > $_ovr/awg-gw.conf"
             run "systemctl daemon-reload"
         else
-            say "  оверрайд awg-quick@$UPLINK_IF (перезапуск до победы) уже есть"
+            say "  оверрайд awg-quick@$UPLINK_IF (перезапуск до победы, dnsmasq после подъёма) уже есть"
         fi
         if [ -n "$UPLINK_B64" ]; then
             # временный каталог тут ни к чему: файл живёт рядом с
@@ -1463,6 +1494,7 @@ fi
 # ── 4. автозапуск ────────────────────────────────────────────────────────────
 step "4. Автозапуск"
 SELF="$(install_self)"
+_unit_old="$(cat "$UNIT" 2>/dev/null || true)"
 cat > "$UNIT" <<UNITEOF
 [Unit]
 Description=awg-bot: линк до сервера AWG и изоляция клиентов (шлюз)
@@ -1498,8 +1530,13 @@ Environment=LINK_CHANNEL_PORT=$LINK_CHANNEL_PORT
 EnvironmentFile=-$FW_ENV
 # Зовём этот же скрипт: он идемпотентен, источник истины один.
 ExecStart=$SELF --apply $HOST_CONF_DIR/$LINK_IF.conf
+# Полный прогон (apt, dnsmasq, nft) на загрузке идёт минуты — oneshot без
+# предела времени висел бы на зависшем docker или apt вечно.
+TimeoutStartSec=15min
 Restart=on-failure
-RestartSec=10
+# 60, не 10: при постоянном отказе (нет конфига, чужой :53) полный прогон
+# каждые десять секунд — это сотни apt/nft в час
+RestartSec=60
 
 [Install]
 WantedBy=multi-user.target
@@ -1509,8 +1546,12 @@ UNITEOF
 # мог его прочитать. Секрета в юните больше нет, права держим строгими:
 # юнит читает только systemd.
 chmod 0600 "$UNIT"
-run "systemctl daemon-reload"
-run "systemctl enable awg-link-gw.service"
+if [ "$_unit_old" = "$(cat "$UNIT")" ]; then
+    say "  юнит без изменений — daemon-reload не нужен"
+else
+    run "systemctl daemon-reload"
+fi
+systemctl is-enabled -q awg-link-gw.service 2>/dev/null || run "systemctl enable awg-link-gw.service"
 # ── 5. локальная сеть: «за шлюзом — без VPN» ─
 # Роутер заворачивает весь трафик локальной сети на малину, малина делит его
 # сама: заблокированное — по метке аплинка в туннель, остальное — напрямую.
@@ -1527,6 +1568,23 @@ step "5. VPN-транзит"
 LAN_ERROR=""
 lan_fail() { LAN_ERROR="$1"; say "  ОШИБКА: $1"; return 1; }
 lan_apply() {                  # отказ — return 1 с LAN_ERROR: юнит уже включён, ронять скрипт нельзя
+    # Под lists.lock: скрипт фидов и свои списки пишут те же файлы и
+    # перезапускают dnsmasq — выключение режима посреди скачивания иначе
+    # получало фид обратно и nftset в таблицу, которой уже нет.
+    [ -d "$LAN_DUMP" ] || mkdir -p "$LAN_DUMP" 2>/dev/null || true
+    _lan_lock=0
+    if [ -d "$LAN_DUMP" ] && command -v flock >/dev/null 2>&1; then
+        exec 8>"$LAN_DUMP/lists.lock"
+        if flock -w 120 8; then _lan_lock=1; else
+            exec 8>&-
+            lan_fail "списки локальной сети ещё обновляются — не дождался за 2 минуты"; return 1
+        fi
+    fi
+    _lan_apply_locked; _rc=$?
+    [ "$_lan_lock" = "1" ] && { flock -u 8; exec 8>&-; }
+    return $_rc
+}
+_lan_apply_locked() {
     _net="${HOME_SUBNETS%% *}"
     [ -n "$_net" ] || { lan_fail "LAN_MODE=1 без локальной подсети — задай её в боте и перевыпусти конфигурацию"; return 1; }
     _r="$(lan_iface_for "$_net")"; LAN_IF="${_r%% *}"; LAN_ADDR="${_r#* }"; [ "$LAN_ADDR" = "$_r" ] && LAN_ADDR=""
@@ -1541,6 +1599,13 @@ lan_apply() {                  # отказ — return 1 с LAN_ERROR: юнит 
     lan_migrate_manual
     _upstream="${RESOLVER:-1.1.1.1}"
     [ -n "$RESOLVER" ] || say "  резолвера сервера AWG нет — апстрим 1.1.1.1 через аплинк (без защиты от DoH и общего кэша)"
+    # Имена Endpoint аплинка и линка — через DNS роутера, мимо туннеля: DNS
+    # устройства = оно само (так требует рецепт роутера), и имя иначе
+    # резолвилось бы только через ещё не поднятый туннель — взаимная
+    # блокировка на загрузке (awg-quick@ ждёт резолва бесконечно).
+    _ep_dns="$(ip route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="via"){print $(i+1); exit}}')"
+    _ep_names="$(for _c in "$HOST_CONF_DIR/$UPLINK_IF.conf" "$HOST_CONF_DIR/$LINK_IF.conf"; do
+        sed -n 's/^Endpoint *= *\(.*\):[0-9][0-9]*$/\1/p' "$_c" 2>/dev/null; done | grep -Ev '^[0-9.]+$|^\[' | sort -u)"
     _dn_changed=0
     run "mkdir -p $DNSMASQ_D $LAN_DUMP"
     # ── конфиги dnsmasq ДО установки пакета: первый старт демона сразу с нашим
@@ -1555,6 +1620,9 @@ lan_apply() {                  # отказ — return 1 с LAN_ERROR: юнит 
         printf 'no-resolv\nno-hosts\n'
         # апстрим ЧЕРЕЗ АПЛИНК: без @iface запрос ушёл бы линком с адресом линка
         printf 'server=%s@%s\n' "$_upstream" "$UPLINK_IF"
+        if [ -n "$_ep_dns" ]; then
+            for _n in $_ep_names; do printf 'server=/%s/%s\n' "$_n" "$_ep_dns"; done
+        fi
         dn_set_elsewhere '^cache-size=' || printf 'cache-size=10000\n'
         printf 'stop-dns-rebind\nrebind-localhost-ok\n'
         # IPv6 в квартире выключить с малины нельзя (RA раздаёт роутер, networkd
@@ -1620,9 +1688,9 @@ DOHEOF
     _ovr_want="$(mktemp)"
     {
         printf '# awg-bot (шлюз): оверрайд dnsmasq под локальную сеть без VPN.\n'
-        if [ -n "${UPLINK_IF:-}" ]; then
-            printf '[Unit]\nAfter=awg-quick@%s.service\nWants=awg-quick@%s.service\n' "$UPLINK_IF" "$UPLINK_IF"
-        fi
+        # без After=/Wants=awg-quick@аплинк: у dnsmasq штатно Before=nss-lookup.target,
+        # у awg-quick@ After=nss-lookup.target — цикл; перечитывание после
+        # подъёма аплинка делает ExecStartPost в оверрайде самого аплинка
         printf '[Service]\nRestart=on-failure\nRestartSec=5\n'
         if systemctl cat dnsmasq.service 2>/dev/null | grep -q 'start-resolvconf'; then
             printf 'ExecStartPost=\nExecStop=\n'
@@ -1637,12 +1705,15 @@ DOHEOF
     # dnsmasq и dig (наполнение набора после ручного добавления домена)
     if ! command -v dnsmasq >/dev/null 2>&1 || ! command -v dig >/dev/null 2>&1; then
         say "  ставлю dnsmasq и dnsutils"
+        _had_dnsmasq=0; command -v dnsmasq >/dev/null 2>&1 && _had_dnsmasq=1
         run "apt-get update -q >/dev/null 2>&1 || true"
         # confdef/confold — на вопрос о конфигах отвечать самим, без терминала
         # (юнит его не даёт); Lock::Timeout — OMV мог держать dpkg своим apt
         run "DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o DPkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold dnsmasq dnsutils" \
             || { lan_fail "dnsmasq не установился — смотри вывод apt выше"; return 1; }
-        run "touch $DNSMASQ_MARK"
+        # метка «dnsmasq ставили мы» — только если его не было: ставили один
+        # dnsutils ради dig — выключение режима иначе гасило бы чужой dnsmasq
+        [ "$_had_dnsmasq" = "1" ] || run "touch $DNSMASQ_MARK"
         _dn_changed=1
     fi
     # ── sysctl: rp_filter loose на LAN

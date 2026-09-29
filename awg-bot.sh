@@ -193,12 +193,17 @@ ensure_python() {
     if detect_python; then log "Python: $PYBIN ($("$PYBIN" -V 2>&1))"; return; fi
     warn "не найден Python 3.12+ (нужен для StrEnum)."
     if command -v apt-get >/dev/null 2>&1 && confirm "Установить python3.12 через apt?" y; then
-        apt-get update
-        if ! apt-get install -y python3.12 python3.12-venv 2>/dev/null; then
-            log "нет в штатных репозиториях — подключаю deadsnakes PPA…"
-            apt-get install -y software-properties-common
-            add-apt-repository -y ppa:deadsnakes/ppa; apt-get update
-            apt-get install -y python3.12 python3.12-venv
+        apt-get update -q || true
+        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=120 python3.12 python3.12-venv 2>/dev/null; then
+            # deadsnakes — PPA Ubuntu: на Debian он писал битый источник в apt
+            if [[ "$(. /etc/os-release 2>/dev/null; printf '%s' "${ID:-}")" == "ubuntu" ]]; then
+                log "нет в штатных репозиториях — подключаю deadsnakes PPA…"
+                apt-get install -y -o DPkg::Lock::Timeout=120 software-properties-common
+                add-apt-repository -y ppa:deadsnakes/ppa; apt-get update -q || true
+                apt-get install -y -o DPkg::Lock::Timeout=120 python3.12 python3.12-venv
+            else
+                die "в репозиториях этой системы нет Python 3.12: нужен Debian 13 (trixie) или Ubuntu 22.04+"
+            fi
         fi
         detect_python || die "python3.12 так и не появился — поставьте вручную."
         log "Python: $PYBIN"
@@ -206,9 +211,25 @@ ensure_python() {
         die "поставьте Python 3.12+ вручную и повторите."
     fi
 }
+ensure_venv_ready() {
+    # Модуль venv (ensurepip) — ДО применения файла конфигурации: тот удаляет
+    # себя после успеха, и отказ venv после него повторить нечем (trixie без
+    # python3-venv, /tmp на tmpfs).
+    "$PYBIN" -c 'import ensurepip' >/dev/null 2>&1 && return 0
+    command -v apt-get >/dev/null 2>&1 || die "у $PYBIN нет модуля venv (ensurepip) — поставь python3-venv и повтори"
+    local ver; ver="$("$PYBIN" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
+    log "нет модуля venv у $PYBIN — ставлю python${ver}-venv…"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o DPkg::Lock::Timeout=120 "python${ver}-venv" >/dev/null 2>&1 \
+        || DEBIAN_FRONTEND=noninteractive apt-get install -y -q -o DPkg::Lock::Timeout=120 python3-venv >/dev/null 2>&1 \
+        || die "python3-venv не установился — без него venv не собрать"
+    "$PYBIN" -c 'import ensurepip' >/dev/null 2>&1 || die "ensurepip так и не появился — поставь python3-venv вручную"
+}
 
 # ── apply-runtime: venv + юнит + валидация (общее для first-run и update) ─────
 build_venv() {
+    if [[ "${AWG_VENV_FRESH:-}" == "1" && -x "$INSTALL_DIR/venv/bin/python" ]]; then
+        log "venv только что собран обновлением — пропускаю"; return 0   # slogic-9: не дважды
+    fi
     if [[ ! -x "$INSTALL_DIR/venv/bin/python" ]]; then
         log "создаю venv ($PYBIN)…"; "$PYBIN" -m venv "$INSTALL_DIR/venv"
     fi
@@ -637,6 +658,10 @@ cmd_reconfigure() {
         # юнит — то же самое, теми же функциями. Ядро awg — по манифесту
         # поставки, обеим ролям одинаково.
         ensure_awg_kernel
+        # Python и модуль venv — ДО файла первого применения: он удаляет себя
+        # после успеха, и отказ venv после него было бы нечем повторить.
+        ensure_python
+        ensure_venv_ready
         # Файл первого применения приезжает с ВПС и несёт всё: ключи линка,
         # конфиг аплинка, список устройств админа, токен агента и ADMIN_ID.
         # Поэтому у роли gateway вопросов нет вовсе — есть файл или его нет.
@@ -660,7 +685,6 @@ cmd_reconfigure() {
     scp awg-gw-bundle.sh root@ЭТОТ_ХОСТ:/root/
     sudo sh /root/awg-gw-bundle.sh --install"
         fi
-        ensure_python
         build_venv
         mkdir -p "$DATA_DIR"; chmod 700 "$DATA_DIR"
         seed_conf
@@ -886,6 +910,16 @@ ensure_host_autostart() {
             && ok "обновлена копия обвязки в $_rhs (её выполняет юнит при загрузке)" \
             || warn "не удалось обновить $_rhs — после ребута обвязка встанет по старой версии"
     fi
+    # Та же копия у скрипта линка: её выполняет awg-link@ при загрузке и
+    # --reassert/--down из юнита; освежал её только --apply/--rekey, и правки
+    # этих режимов не доезжали до ребута.
+    local _rls="/usr/local/sbin/routing-link-setup.sh"
+    if [[ -f "$_rls" && -f "$INSTALL_DIR/install/routing-link-setup.sh" ]] \
+       && ! cmp -s "$INSTALL_DIR/install/routing-link-setup.sh" "$_rls"; then
+        install -m 0755 "$INSTALL_DIR/install/routing-link-setup.sh" "$_rls" \
+            && ok "обновлена копия скрипта линка в $_rls (её выполняет юнит линка при загрузке)" \
+            || warn "не удалось обновить $_rls — после ребута линк встанет по старой версии"
+    fi
     # Юнит и таймер списков из прежних версий: скрипт удалён, списки обновляет
     # сам бот; остаток падал при каждой загрузке.
     local stale=0 u
@@ -1041,15 +1075,21 @@ cmd_post_update() {
         rm -f "$ENV_FILE" 2>/dev/null || true
         rm -rf "$CONF_DIR" 2>/dev/null || true
         warn "данные удалены — потребуется reconfigure перед стартом."
+        trap - EXIT                            # это итог по запросу, не отказ: ловушке нечего спасать
         die "запусти: sudo awg-bot reconfigure"
     fi
 
-    systemctl start "$SERVICE"; sleep 1
-    if systemctl is-active --quiet "$SERVICE"; then
-        ok "$SERVICE перезапущен."
+    if [[ -n "${AWG_UPDATE_THEN_BUNDLE:-}" && -f "$AWG_UPDATE_THEN_BUNDLE" ]]; then
+        # применение файла конфигурации ниже само перезапустит сервис
         prune_old_kernel_builds
     else
-        warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+        systemctl start "$SERVICE"; sleep 1
+        if systemctl is-active --quiet "$SERVICE"; then
+            ok "$SERVICE перезапущен."
+            prune_old_kernel_builds
+        else
+            warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+        fi
     fi
     trap - EXIT
     ok "Обновление завершено."
@@ -1059,6 +1099,7 @@ cmd_post_update() {
     # файл теперь, новым кодом (AWG_UPDATE_THEN_BUNDLE ставит установщик).
     if [[ -n "${AWG_UPDATE_THEN_BUNDLE:-}" && -f "$AWG_UPDATE_THEN_BUNDLE" ]]; then
         log "применяю конфигурацию шлюза из $AWG_UPDATE_THEN_BUNDLE…"
+        export AWG_VENV_FRESH=1               # venv только что собран — reconfigure не собирает второй раз
         exec "$SELF_PATH" reconfigure --role gateway --bundle "$AWG_UPDATE_THEN_BUNDLE"
     fi
 }
@@ -1130,7 +1171,7 @@ cmd_restore() {
     # кладутся и интерфейсы переподнимаются сами, итог — маркером для бота.
     local yes=0
     if [[ "${1:-}" == "--yes" ]]; then yes=1; shift; fi
-    local tgz
+    local tgz orig="${1:-}"
     if [[ -n "${1:-}" ]]; then tgz="$1"; [[ -f "$tgz" ]] || die "не найден: $tgz"
     else
         [[ -d "$BACKUP_DIR" ]] || die "нет каталога снимков $BACKUP_DIR — укажи путь: awg-bot restore <tgz>"
@@ -1149,6 +1190,9 @@ cmd_restore() {
         tgz="$tmp/snapshot.tgz"
     fi
     tar xzf "$tgz" -C "$tmp" || { rm -rf "$tmp"; die "не удалось распаковать снимок"; }
+    # расшифрованная копия из чата (restore-pending.tgz) распакована — открытый
+    # архив с ключами и базой в каталоге снимков больше не нужен
+    [[ "$(basename "$orig")" == "restore-pending.tgz" ]] && rm -f -- "$orig"
     # раскладка копии из чата — с каталогом state/, старого снимка — без него
     local src="$tmp"; [[ -d "$tmp/state" ]] && src="$tmp/state"
     # чужую копию не разворачиваем: метка роли внутри архива против роли здесь
@@ -1183,7 +1227,18 @@ cmd_restore() {
     # базой — SQLite в лучшем случае отбросит их по несовпадению соли, в худшем
     # доложит из них страницы в файл, которому они не родня.
     rm -f "$DATA_DIR"/*.db-wal "$DATA_DIR"/*.db-shm 2>/dev/null || true
-    find "$src" -maxdepth 1 -name '*.db' -exec cp -a {} "$DATA_DIR/" \; 2>/dev/null || true
+    # через временный файл и mv: оборванная копия базы в рабочем пути с маркером
+    # «восстановлено» — худший исход; не легла — прежняя база цела, сервис вверх
+    local dbf dbt
+    for dbf in "$src"/*.db; do
+        [[ -f "$dbf" ]] || continue
+        dbt="$DATA_DIR/.restore-$(basename "$dbf").tmp"
+        if ! { cp -a "$dbf" "$dbt" && mv -f "$dbt" "$DATA_DIR/$(basename "$dbf")"; }; then
+            rm -f "$dbt"; rm -rf "$tmp"
+            systemctl start "$SERVICE" 2>/dev/null || true
+            die "база из копии не легла в $DATA_DIR — восстановление прервано, сервис поднят на прежней базе; снимок ДО: $pre"
+        fi
+    done
     # Настройки и env — только то, что отличается: не трогаем неизменившееся
     if [[ -d "$src/conf" ]]; then
         mkdir -p "$CONF_DIR"

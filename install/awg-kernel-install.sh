@@ -258,14 +258,27 @@ step_deps() {
         # Ubuntu/Debian: linux-headers-<release>; Raspberry Pi OS: заголовки
         # идут пакетом на «вкус» ядра (…+rpt-rpi-v8 → linux-headers-rpi-v8),
         # у старых образов — raspberrypi-kernel-headers.
-        local flavour="${krel##*+rpt-}"
-        local cand
-        for cand in "linux-headers-$krel" "linux-headers-$flavour" raspberrypi-kernel-headers; do
+        # Raspberry Pi OS: пакет ВАРИАНТА (linux-headers-rpi-v8/-2712) тянет
+        # заголовки и к следующим ядрам — после обновления ядра через OMV DKMS
+        # соберёт модуль сам; версионный linux-headers-<release> — одноразовый,
+        # и после ребута на новом ядре модуля бы не было. Debian/Ubuntu —
+        # версионный, затем метапакет архитектуры.
+        local flavour="${krel##*+rpt-}" cands cand
+        if [[ "$krel" == *+rpt-* ]]; then
+            cands=("linux-headers-$flavour" "linux-headers-$krel" raspberrypi-kernel-headers)
+        else
+            cands=("linux-headers-$krel" "linux-headers-$(dpkg --print-architecture 2>/dev/null || echo amd64)")
+        fi
+        for cand in "${cands[@]}"; do
             if apt-cache show "$cand" >/dev/null 2>&1; then pkgs+=("$cand"); break; fi
         done
     fi
     log "зависимости: ${pkgs[*]}"
-    run env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${pkgs[@]}"
+    # update — чтобы кандидат нашёлся на свежем образе; Lock::Timeout — OMV
+    # мог держать dpkg своим apt, и самообновление падало «ядро не собралось»
+    run env DEBIAN_FRONTEND=noninteractive apt-get update -q || true
+    run env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        -o DPkg::Lock::Timeout=120 "${pkgs[@]}"
     [[ "$PLAN" -eq 1 ]] || [[ -e "/lib/modules/$krel/build/Makefile" ]] \
         || die "нет заголовков для ядра $krel (/lib/modules/$krel/build) — модуль не собрать; поставь их и повтори"
 }

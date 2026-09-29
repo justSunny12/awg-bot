@@ -188,19 +188,16 @@ def test_bundle_embeds_the_gw_script_byte_for_byte(bundle, tmp_path):
     assert r.stdout == GW.read_text(encoding="utf-8")
 
 
-def test_bundle_installs_to_a_stable_path(bundle):
-    """Скрипт настройки прописывает СЕБЯ в systemd-юнит по своему пути.
-
-    Разложи его во временный каталог — юнит будет указывать на файл, которого
-    после уборки нет. Автозапуск умрёт молча и обнаружится только после ребута,
-    выглядя как «шлюз сам отвалился».
-    """
-    assert 'DEST="/opt/awg-gw"' in bundle
-    # временный каталог есть только у --install (поставка распаковывается во
-    # временный, установщик его убирает); сам скрипт обвязки — в постоянный
-    body = bundle.split("# Раскладываем в ПОСТОЯННЫЙ каталог", 1)[1].split("#__GW_SETUP_BELOW__", 1)[0]
-    assert "mktemp" not in body, "временный каталог ломает автозапуск"
+def test_bundle_unpacks_into_a_private_temp_dir_and_sweeps_it(bundle):
+    """Скрипт обвязки кладёт себя в /usr/local/sbin сам (install_self) — юнит
+    ссылается туда, а не на каталог распаковки. Постоянный /opt/awg-gw оставлял
+    вторую копию ключа линка и устаревший скрипт, которых никто не читал:
+    теперь временный каталог в /root (0700, не tmpfs) и уборка после прогона."""
+    assert 'DEST="$(mktemp -d /root/awg-gw-apply.XXXXXX)"' in bundle
+    assert 'DEST="/opt/awg-gw"' not in bundle
     assert re.search(r'^"\$DEST/routing-gw-setup\.sh" ', bundle, re.M)
+    tail = bundle.split("_rc=$?", 1)[1]
+    assert 'rm -rf "$DEST"' in tail and "rm -rf /opt/awg-gw" in tail
 
 
 @pytest.mark.parametrize("argv, expect", [([], "--apply"), (["--rollback"], "--rollback")])
@@ -289,15 +286,17 @@ def test_bundle_removes_itself_only_after_a_successful_apply(bundle, tmp_path):
     end = next(i for i, l in enumerate(lines) if l.startswith("exit "))
     tail = "\n".join(lines[start:end + 1])
     assert bundle.index("\n#__GW_SETUP_BELOW__\n") > bundle.index('exit "$_rc"'), "данные — после exit"
-    dest = tmp_path / "dest"; dest.mkdir()
+    dest = tmp_path / "dest"
     fake = dest / "routing-gw-setup.sh"
     for rc, kept in ((0, False), (1, True)):
+        dest.mkdir(exist_ok=True)
         fake.write_text(f"#!/bin/sh\nexit {rc}\n", encoding="utf-8"); fake.chmod(0o755)
         me = tmp_path / f"bundle{rc}.sh"
         me.write_text(f'#!/bin/sh\nDEST="{dest}"\n{tail}\necho НЕ_ИСПОЛНЯЕТСЯ\n', encoding="utf-8")
         r = subprocess.run(["sh", str(me)], capture_output=True, text=True)
         assert r.returncode == rc and "НЕ_ИСПОЛНЯЕТСЯ" not in r.stdout
         assert me.exists() == kept, f"rc={rc}: файл {'остался' if me.exists() else 'удалён'}"
+        assert not dest.exists(), "каталог распаковки с ключом линка остался"
 
 
 # ── канал ВПС ↔ шлюз: рубильник едет бандлом ─────────
@@ -378,7 +377,24 @@ def test_bundle_body_and_bundle_mode_write_secrets_under_umask_077(bundle):
     cat > и chmod файл с ключом был 0644. И режим --bundle правит
     /root/gw-<if>.conf через tmp+mv — без umask файл выходил 0644."""
     body = bundle.split("#__GW_SETUP_BELOW__", 1)[0]
-    assert body.index("umask 077") < body.index('mkdir -p "$DEST"')
+    assert body.index("umask 077") < body.index('DEST="$(mktemp -d')
     src = (Path(__file__).resolve().parents[2] / "install" / "routing-link-setup.sh").read_text(encoding="utf-8")
     mode = src.split('if [ "$MODE" = "bundle" ]; then', 1)[1]
     assert mode.lstrip().startswith("umask 077")
+
+
+def test_link_obfuscation_avoids_the_s1_plus_56_collision(bundle):
+    """S1 + 56 == S2 ломает разбор рукопожатия (длина init совпадает с
+    response): ~0,4 % линков молча не вставали. Генератор переизбирает S2."""
+    src = (Path(__file__).resolve().parents[2] / "install" / "routing-link-setup.sh").read_text(encoding="utf-8")
+    assert 'while [ $((S1 + 56)) -eq "$S2" ]; do S2=$(rnd 15 150); done' in src
+
+
+def test_bundle_mode_refreshes_the_endpoint_host_from_settings(bundle):
+    """ВПС за 1:1 NAT или со сменившимся адресом: первый глобальный адрес
+    интерфейса — не то, куда шлюзу стучаться. network.server_host из настроек
+    бота едет в скрипт как ENDPOINT_HOST, и --bundle правит хост, как порт."""
+    src = (Path(__file__).resolve().parents[2] / "install" / "routing-link-setup.sh").read_text(encoding="utf-8")
+    fn = src.split("emit_gw_bundle() {", 1)[1]
+    assert 'if [ -n "${ENDPOINT_HOST:-}" ]' in fn and "Endpoint = $ENDPOINT_HOST:" in fn
+    assert fn.index('if [ -n "${ENDPOINT_HOST:-}" ]') < fn.index("AllowedIPs пира ВПС зависит")

@@ -770,3 +770,17 @@ def test_feeds_sent_over_the_channel_are_not_client_demand(two, services, fake_r
         services.routing_liveness_tick()
     assert probes.count(1) == 0, f"фиды по каналу вызвали {probes.count(1)} зондов наружу"
     assert services.active_gateway().id == 1
+
+
+def test_slot_env_carries_the_endpoint_host_from_settings(services, monkeypatch):
+    """network.server_host задан — скрипт линка получает ENDPOINT_HOST и не
+    берёт первый глобальный адрес интерфейса (за 1:1 NAT он приватный)."""
+    from types import SimpleNamespace
+    from awgbot.core import config as _c
+    gw = SimpleNamespace(link_if="awglink", link_port=443, link_cidr="10.99.99.0/30")
+    monkeypatch.setattr(_c, "SERVER_HOST", "vpn.example.org")
+    assert services._slot_env(gw)["ENDPOINT_HOST"] == "vpn.example.org"
+    monkeypatch.setattr(_c, "SERVER_HOST", "")
+    assert "ENDPOINT_HOST" not in services._slot_env(gw)
+    monkeypatch.setattr(_c, "SERVER_HOST", "bad host;rm")
+    assert "ENDPOINT_HOST" not in services._slot_env(gw), "мусор из настроек ушёл в окружение скрипта"

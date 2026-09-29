@@ -174,3 +174,16 @@ def test_dist_archive_is_owned_by_root():
     with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
         owners = {(m.uid, m.gid, m.uname, m.gname) for m in tar.getmembers()}
     assert owners == {(0, 0, "root", "root")}, owners
+
+
+def test_dist_and_release_carry_no_unit_file():
+    """Юнит пишет install_unit по конфигу хоста; файл-образец в поставке был
+    докерным и по §12 README копировался руками — на host-режиме не стартовал."""
+    blob = dist.archive(ROOT)
+    with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
+        names = tar.getnames()
+    assert "./awg-bot.service" not in names and "awg-bot.service" not in dist._ENTRIES
+    assert not (ROOT / "awg-bot.service").exists()
+    build = (ROOT / "build_release.sh").read_text(encoding="utf-8")
+    assert "awg-bot.service" not in build.split("build_bot() {", 1)[1].split("\n}\n", 1)[0]
+    assert "--exclude='./.venv'" in build and "--exclude='./.claude'" in build

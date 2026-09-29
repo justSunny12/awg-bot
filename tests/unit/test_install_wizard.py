@@ -398,3 +398,30 @@ def test_bundle_trusted_checks_owner_and_mode(script, tmp_path):
     assert check(0o644, me) == 0
     assert check(0o666, me) == 1, "файл, открытый на запись всем, принят"
     assert check(0o620, me) == 1, "файл, открытый на запись группе, принят"
+
+
+def test_python_and_venv_are_ready_before_the_first_application_file_runs(script):
+    """Файл первого применения удаляет себя после успеха: отказ venv после него
+    (trixie без python3-venv, /tmp на tmpfs) повторить было нечем."""
+    gw = script.split('if [[ "$role" == "gateway" ]]; then', 1)[1].split("\n    fi\n", 1)[0]
+    assert gw.index("ensure_python") < gw.index("ensure_venv_ready") < gw.index("apply_gw_bundle")
+    fn = script.split("ensure_venv_ready() {", 1)[1].split("\n}\n", 1)[0]
+    assert "import ensurepip" in fn and "python3-venv" in fn
+    py = script.split("ensure_python() {", 1)[1].split("\n}\n", 1)[0]
+    assert 'ID:-}")" == "ubuntu"' in py, "deadsnakes снова ставится на Debian"
+    assert "DPkg::Lock::Timeout=120" in py
+
+
+def test_update_with_a_configuration_file_does_not_start_or_build_twice(script):
+    post = script.split("cmd_post_update() {", 1)[1].split("\n}\n", 1)[0]
+    assert "export AWG_VENV_FRESH=1" in post
+    venv = script.split("build_venv() {", 1)[1].split("\n}\n", 1)[0]
+    assert 'AWG_VENV_FRESH:-}" == "1"' in venv
+    wipe = post.split('warn "удаляю данные и настройки по твоему запросу…"', 1)[1].split("\n    fi\n", 1)[0]
+    assert "trap - EXIT" in wipe, "«удалить данные» заканчивалось ловушкой «обновление прервалось»"
+
+
+def test_the_link_script_copy_on_the_server_is_refreshed_by_updates(script):
+    fn = script.split("ensure_host_autostart() {", 1)[1].split("\n}\n", 1)[0]
+    assert '_rls="/usr/local/sbin/routing-link-setup.sh"' in fn
+    assert 'install -m 0755 "$INSTALL_DIR/install/routing-link-setup.sh" "$_rls"' in fn

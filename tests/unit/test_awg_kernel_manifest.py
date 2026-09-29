@@ -514,8 +514,13 @@ def test_old_builds_are_pruned_only_when_no_generation_change_is_pending(
 
 def test_prune_runs_after_a_successful_start(bot_sh):
     post = bot_sh.split("cmd_post_update() {", 1)[1].split("\n}\n", 1)[0]
-    assert post.index('systemctl is-active --quiet "$SERVICE"') < post.index("prune_old_kernel_builds"), \
+    plain = post.split('systemctl start "$SERVICE"; sleep 1', 1)[1]
+    assert plain.index('systemctl is-active --quiet "$SERVICE"') < plain.index("prune_old_kernel_builds"), \
         "уборка раньше успешного старта"
+    # обновление с файлом конфигурации: сервис перезапустит reconfigure — второго
+    # старта здесь нет, уборка идёт сразу
+    bundled = post.split("AWG_UPDATE_THEN_BUNDLE:-}\" && -f \"$AWG_UPDATE_THEN_BUNDLE\" ]]; then", 1)[1].split("else", 1)[0]
+    assert "prune_old_kernel_builds" in bundled and "systemctl start" not in bundled
 
 
 def test_installer_writes_topology_even_for_a_pre_existing_server(bot_sh):
@@ -655,3 +660,21 @@ def test_reload_brings_the_interfaces_back_when_the_module_swap_fails(kernel):
     fn = body.split("reload_fail() {", 1)[1].split("\n    }\n", 1)[0]
     assert 'for i in $ifaces; do run awg-quick up "$i"' in fn and "die " in fn
     assert body.count("|| reload_fail ") == 2, "и rmmod, и modprobe должны вести в reload_fail"
+
+
+def test_headers_come_from_the_flavour_package_on_raspberry_pi(kernel):
+    """linux-headers-rpi-v8 тянет заголовки и к следующим ядрам: после
+    обновления ядра через OMV DKMS соберёт модуль сам; версионный пакет —
+    одноразовый, и после ребута модуля не было бы."""
+    body = kernel.split("step_deps() {", 1)[1].split("\n}\n", 1)[0]
+    assert 'if [[ "$krel" == *+rpt-* ]]; then' in body
+    rpi = body.split('if [[ "$krel" == *+rpt-* ]]; then', 1)[1].split("else", 1)[0]
+    assert rpi.index('"linux-headers-$flavour"') < rpi.index('"linux-headers-$krel"')
+    assert "DPkg::Lock::Timeout=120" in body and "apt-get update -q || true" in body
+
+
+def test_kernel_updater_hands_the_archive_path_to_post_update_for_cleanup():
+    from awgbot.infra import updates as up
+    src = (ROOT / "awgbot" / "infra" / "updates.py").read_text(encoding="utf-8")
+    assert "--setenv=AWG_UPDATE_CLEANUP=" in src and '"AWG_UPDATE_CLEANUP": path' in src
+    assert up  # модуль импортируется

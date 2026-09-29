@@ -235,3 +235,11 @@ def test_stale_client_route_is_removed(migrate):
     assert "$AWG_IF" in body
 
 
+
+
+def test_foreign_hooks_are_checked_before_the_bot_is_stopped():
+    """Отказ на шаге 3 из-за чужих хуков оставлял бота остановленным с шага 1."""
+    src = (Path(__file__).resolve().parents[2] / "install" / "awg-host-migrate.sh").read_text(encoding="utf-8")
+    step1 = src.split('step "1. Останавливаем бота"', 1)[1].split('step "2.', 1)[0]
+    assert step1.index("PostUp|PostDown") < step1.index('run "systemctl stop $BOT_SERVICE"')
+    assert "бота не останавливаю" in step1

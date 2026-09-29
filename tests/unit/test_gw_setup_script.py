@@ -731,7 +731,8 @@ def test_lan_remove_takes_the_services_file_and_helper_with_it(script, tmp_path)
         (dns_d / f).write_text("x\n", encoding="utf-8")
     sbin = tmp_path / "sbin"; sbin.mkdir()
     helper = sbin / "awg-lan-services.sh"; helper.write_text("#!/bin/sh\n", encoding="utf-8")
-    fn = re.search(r"^lan_remove\(\) \{.*?^\}$", script, re.S | re.M).group(0)
+    fn = "\n".join(re.search(rf"^{name}\(\) \{{.*?^\}}$", script, re.S | re.M).group(0)
+                   for name in ("lan_remove", "_lan_remove_locked"))
     t = tmp_path
     prog = (_helpers(script) + f'\nMODE=apply\nDNSMASQ_D="{dns_d}"\nLAN_DUMP="{t}/dump"\n'
             f'DNSMASQ_OVR="{t}/none.conf"\nDNSMASQ_MARK="{t}/none.mark"\nHOME_TABLE="inet awg_home"\n'
@@ -775,3 +776,74 @@ def test_previous_guard_table_is_loaded_before_the_link_comes_up(script):
     step1 = script.split('step "1. Конфиг и подъём $LINK_IF"', 1)[1].split('step "1a.', 1)[0]
     assert step1.index('nft -f $GUARD_FILE') < step1.index('run "$AWG_QUICK up $LINK_IF"')
     assert 'if [ -f "$GUARD_FILE" ]' in step1
+
+
+def test_wan_interface_is_the_token_after_dev(script, tmp_path):
+    """«default via X dev Y», «default dev Y», с nhid — колонка плавает, имя нет."""
+    fn = script.split("detect_wan() {", 1)[1].split("\n}", 1)[0]
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir()
+    for line in ("default via 192.168.1.1 dev br0 proto dhcp metric 100",
+                 "default dev ppp0 scope link",
+                 "default nhid 12 via 10.0.0.1 dev bond0 proto static"):
+        (bin_dir / "ip").write_text(f'#!/bin/sh\necho "{line}"\n', encoding="utf-8")
+        (bin_dir / "ip").chmod(0o755)
+        r = subprocess.run(["sh", "-c", "detect_wan() {" + fn + "\n}\ndetect_wan"], capture_output=True,
+                           text=True, env={"PATH": f"{bin_dir}:/usr/bin:/bin"})
+        assert r.stdout.strip() == line.split(" dev ")[1].split()[0], (line, r.stdout)
+
+
+def test_the_uplink_unit_override_restarts_dnsmasq_and_is_rewritten_when_it_differs(script):
+    """Оверрайд awg-quick@аплинк: перезапуск до победы плюс перечитывание dnsmasq
+    после подъёма (вместо After=/Wants= в drop-in dnsmasq, дававших цикл);
+    файл сверяется по содержимому, а не «уже есть» — прежние хосты получают новый."""
+    step0 = script.split('step "0. Шлюзовое устройство"', 1)[1].split("write_status() {", 1)[0]
+    assert "ExecStartPost=-/bin/systemctl --no-block try-restart dnsmasq.service" in step0
+    assert '"$(cat "$_ovr/awg-gw.conf" 2>/dev/null)" != "$_ovr_txt"' in step0
+    assert 'if [ ! -f "$_ovr/awg-gw.conf" ]' not in step0, "оверрайд по-прежнему пишется только раз"
+
+
+def test_lan_mode_takes_the_lists_lock_and_marks_dnsmasq_only_when_it_installed_it(script):
+    """Выключение режима посреди скачивания фидов возвращало фид и nftset в
+    снятую таблицу — режим включается и снимается под lists.lock; метка
+    «dnsmasq ставили мы» — только если его не было до apt (ради dig ставили и
+    dnsutils, и выключение режима гасило чужой dnsmasq)."""
+    apply_wrap = script.split("lan_apply() {", 1)[1].split("\n}", 1)[0]
+    assert "lists.lock" in apply_wrap and "_lan_apply_locked" in apply_wrap
+    body = script.split("_lan_apply_locked() {", 1)[1].split('# ── sysctl: rp_filter loose на LAN', 1)[0]
+    assert '_had_dnsmasq=0; command -v dnsmasq >/dev/null 2>&1 && _had_dnsmasq=1' in body
+    assert '[ "$_had_dnsmasq" = "1" ] || run "touch $DNSMASQ_MARK"' in body
+
+
+def test_endpoint_names_resolve_through_the_router_not_the_tunnel(script):
+    """DNS устройства = оно само (рецепт роутера), апстрим dnsmasq — через
+    аплинк: имя Endpoint резолвилось бы только через ещё не поднятый туннель —
+    взаимная блокировка на загрузке. Имена — через DNS роутера."""
+    body = script.split("_lan_apply_locked() {", 1)[1].split("filter-AAAA", 1)[0]
+    assert "_ep_dns=" in body and 'if($i=="via")' in body
+    assert "_ep_names=" in body and "Endpoint" in body
+    assert "printf 'server=/%s/%s\\n' \"$_n\" \"$_ep_dns\"" in body
+
+
+def test_subnet_feeds_are_only_added_when_one_source_failed(script):
+    """Сбой одного фида подсетей давал rc=1, но flush set + add из скачавшегося —
+    подсети сервиса пропадали до следующего похода. Неполное скачивание — только add."""
+    lists = script.split("cat > \"$LAN_LISTS.new\" <<'LISTSEOF'", 1)[1].split("LISTSEOF", 1)[0]
+    assert "nets_rc=1" in lists
+    assert lists.index('if [ "${nets_rc:-0}" = "0" ]; then') < lists.index("flush set %s lan_vpn_nets4")
+    branch = lists.split("else\n        # один из фидов не скачался", 1)[1].split("\n    fi\n", 1)[0]
+    assert "flush set" not in branch and "add element" in branch
+
+
+def test_the_link_unit_has_a_start_timeout_and_a_calmer_restart(script):
+    unit = script.split("cat > \"$UNIT\" <<UNITEOF", 1)[1].split("UNITEOF", 1)[0]
+    assert "TimeoutStartSec=15min" in unit and "RestartSec=60" in unit
+    assert '_unit_old="$(cat "$UNIT" 2>/dev/null || true)"' in script
+    assert 'if [ "$_unit_old" = "$(cat "$UNIT")" ]; then' in script, "daemon-reload на каждом прогоне"
+    assert 'systemctl is-enabled -q awg-link-gw.service 2>/dev/null || run "systemctl enable awg-link-gw.service"' in script
+
+
+def test_container_detection_is_bounded_and_rollback_clears_accepts_on_every_interface(script):
+    fn = script.split("detect_container() {", 1)[1].split("\n}", 1)[0]
+    assert "command -v docker >/dev/null 2>&1 || return 0" in fn and "timeout 10 docker" in fn
+    rb = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
+    assert "sed 's/@.*//' | grep -v '^lo$'" in rb and "grep -E '^(awg|end|eth|br|wl)'" not in rb

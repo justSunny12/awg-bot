@@ -28,7 +28,7 @@ def test_restore_snapshots_current_state_first(script):
     body = _restore(script)
     assert "prerestore" in body, "снимок текущего состояния не делается"
     snap = body.index("prerestore")
-    overwrite = body.index('cp -a {} "$DATA_DIR/"')
+    overwrite = body.index('mv -f "$dbt" "$DATA_DIR/$(basename "$dbf")"')
     assert snap < overwrite, "снимок обязан быть ДО перезаписи"
 
 
@@ -52,7 +52,7 @@ def test_restore_removes_stale_wal(script):
     """
     body = _restore(script)
     assert "db-wal" in body and "db-shm" in body
-    assert body.index("db-wal") < body.index('cp -a {} "$DATA_DIR/"')
+    assert body.index("db-wal") < body.index('mv -f "$dbt" "$DATA_DIR/$(basename "$dbf")"')
 
 
 def _func(script: str, name: str) -> str:
@@ -78,7 +78,7 @@ def test_restore_reads_the_interface_dir_before_swapping_the_config(script):
     """awgdir из app.yaml — до подмены conf: иначе копия сама выбирала бы,
     куда положить свои конфиги интерфейсов."""
     body = _restore(script)
-    assert body.index('awgdir="$(awg_conf_dir)"') < body.index('cp -a {} "$DATA_DIR/"')
+    assert body.index('awgdir="$(awg_conf_dir)"') < body.index('mv -f "$dbt" "$DATA_DIR/$(basename "$dbf")"')
     assert body.count('awgdir="$(awg_conf_dir)"') == 1
 
 
@@ -111,3 +111,21 @@ def test_lan_lists_from_a_copy_are_checked_line_by_line(script, tmp_path):
         bad.write_text(f"nftset=/ok.ru/inet#awg_home#lan_ru4\n{bad_line}\n", encoding="utf-8")
         r = run(good, bad)
         assert r.returncode == 1 and "WARN" in r.stdout, (bad_line, r.stdout)
+
+
+def test_restore_copies_the_database_through_a_temp_file_and_aborts_on_failure(script):
+    """Оборванная копия базы в рабочем пути с маркером «восстановлено» — худший
+    исход: через временный файл и mv, отказ — прежняя база цела, сервис вверх."""
+    body = _restore(script)
+    assert 'dbt="$DATA_DIR/.restore-$(basename "$dbf").tmp"' in body
+    fail = body.split('mv -f "$dbt" "$DATA_DIR/$(basename "$dbf")"', 1)[1].split("done", 1)[0]
+    assert 'systemctl start "$SERVICE"' in fail and "восстановление прервано" in fail
+    assert body.index("восстановление прервано") < body.index("restore-done.json"), "маркер при отказе"
+
+
+def test_restore_removes_the_decrypted_chat_copy_after_unpacking(script):
+    """Копия из чата расшифровывается в restore-pending.tgz (открытая база и
+    ключи в каталоге снимков) — после распаковки файл больше не нужен."""
+    body = _restore(script)
+    assert 'restore-pending.tgz" ]] && rm -f -- "$orig"' in body
+    assert body.index("tar xzf") < body.index('rm -f -- "$orig"') < body.index("prerestore")

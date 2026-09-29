@@ -105,8 +105,14 @@ class GatewayLinkMixin:
 
     @staticmethod
     def _slot_env(gw) -> dict:
-        """Окружение скрипта линка для слота: имя интерфейса, порт, /30."""
-        return {"LINK_IF": gw.link_if, "LINK_PORT": str(gw.link_port), "LINK_CIDR": gw.link_cidr}
+        """Окружение скрипта линка для слота: имя интерфейса, порт, /30 и хост
+        Endpoint из настроек (network.server_host), если задан: без него скрипт
+        берёт первый глобальный адрес интерфейса — за 1:1 NAT это приватный."""
+        env = {"LINK_IF": gw.link_if, "LINK_PORT": str(gw.link_port), "LINK_CIDR": gw.link_cidr}
+        host = str(config.SERVER_HOST or "").strip()
+        if host and re.fullmatch(r"[A-Za-z0-9.-]{1,253}", host):
+            env["ENDPOINT_HOST"] = host
+        return env
 
     # ── слоты ────────────────────────────────────────────────────────────────
     _RT_ACTIVE_KEY = "routing_active_gateway"

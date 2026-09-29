@@ -169,6 +169,9 @@ if [[ "$PIPED" -eq 1 && -z "${1:-}" ]]; then
         || { rm -rf "$SRC_ROOT"; die "не скачалась поставка ($TGZ_URL)"; }
     tar xzf "$SRC_ROOT/awg-bot.tgz" -C "$SRC_ROOT" --no-same-owner \
         || { rm -rf "$SRC_ROOT"; die "архив не распаковался — скачан не тот файл?"; }
+    # уборка при любом отказе отсюда и до передачи управления: «Отмена» в меню
+    # и die ниже оставляли /tmp/awg-bot-install.* с поставкой навсегда
+    trap '[[ $? -eq 0 ]] || case "$SRC_ROOT" in /tmp/awg-bot-install.*) rm -rf "$SRC_ROOT" ;; esac' EXIT
     [[ -f "$SRC_ROOT/awgbot/__main__.py" && -f "$SRC_ROOT/awg-bot.sh" ]] \
         || { rm -rf "$SRC_ROOT"; die "в архиве нет ожидаемого дерева — не та поставка?"; }
     TGZ="$SRC_ROOT/awg-bot.tgz"

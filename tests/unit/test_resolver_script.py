@@ -248,3 +248,22 @@ def test_dropin_is_not_rewritten_when_it_already_matches(host):
 def test_dropin_mode_does_nothing_without_a_resolver(host):
     out = host.run("dropin")
     assert out.returncode == 0 and _dropin(host) == ""
+
+
+def test_doh_lists_are_the_same_in_all_three_scripts():
+    """Три копии списка DoH расходились (nextdns только у шлюза): домен, не
+    попавший в список резолвера ВПС, уходил бы мимо наборов."""
+    import re as _re
+    root = Path(__file__).resolve().parents[2] / "install"
+    lists = {}
+    for name in ("awg-resolver-setup.sh", "routing-host-setup.sh", "routing-gw-setup.sh"):
+        text = (root / name).read_text(encoding="utf-8")
+        lists[name] = sorted(set(_re.findall(r"^address=/([^/]+)/$", text, _re.M)))
+    assert lists["awg-resolver-setup.sh"] == lists["routing-host-setup.sh"] == lists["routing-gw-setup.sh"], lists
+
+
+def test_dnsmasq_test_reads_the_conf_dir_like_the_unit_does():
+    """Голый --test не читает /etc/dnsmasq.d: повтор однократного ключа между
+    файлами проходил проверку, а рестарт падал — DNS у клиентов лежал."""
+    src = (Path(__file__).resolve().parents[2] / "install" / "awg-resolver-setup.sh").read_text(encoding="utf-8")
+    assert 'dnsmasq --test --conf-dir="$DNSMASQ_CONF_DIR",.dpkg-dist,.dpkg-old,.dpkg-new' in src
