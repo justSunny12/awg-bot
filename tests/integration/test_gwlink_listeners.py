@@ -208,12 +208,12 @@ async def test_a_session_that_did_say_hello_is_remembered_as_contact(services, t
     assert services.db.get_state("gwlink_seen_1") != "2026-01-01T00:00:00+03:00"
 
 
-async def test_a_rejected_newcomer_does_not_leave_the_old_session_on_record(services, two):
-    """Малина перезагрузилась, старая сессия висит полуоткрытой; новая
-    вытесняет её и тут же отвергается (чужая подпись). Живых сессий
-    нет — и запись о сессии в БД обязана это знать: иначе карточка горит
-    «на связи» (хендшейк линка свежий, малина-то жива), а напоминания
-    перевыпустить файл молчат, пока канал «покрывает» слот."""
+async def test_a_rejected_newcomer_does_not_displace_the_live_session(services, two):
+    """Коннект с чужой подписью (любой процесс на малине, контейнер за
+    маскарадом) раньше вытеснял настоящую сессию до проверки hello и рвал
+    канал живому шлюзу. Теперь вытесняет только прошедший hello: чужой
+    коннект закрывается, живая сессия и её запись в БД — на месте; уходит
+    сессия — уходит и запись."""
     srv, binds, port = two
     await srv.ensure()
     old = await _hello(srv)
@@ -222,12 +222,13 @@ async def test_a_rejected_newcomer_does_not_leave_the_old_session_on_record(serv
     other = gwlink.channel_key(base64.b64encode(os.urandom(32)).decode())
     new = await _hello(srv, key=other)
     assert await asyncio.wait_for(new.reader.read(), 2) == b"", "сервер не закрыл чужой коннект"
+    await asyncio.sleep(0.2)
+    assert srv.online(1) is True and srv._sessions[1].hello, "чужой коннект вытеснил живую сессию"
+    assert services.gwlink_session(1), "запись живой сессии стёрта чужим коннектом"
+    await old.close()
     await _until(lambda: 1 not in srv._sessions)
     await asyncio.sleep(0.2)
-    assert srv.online(1) is False
-    assert services.gwlink_session(1) == {}, (
-        "живых сессий нет, а в БД осталась запись вытесненной — канал «на связи» навсегда")
-    await old.close()
+    assert services.gwlink_session(1) == {}, "сессия ушла, а запись осталась — канал «на связи» навсегда"
     await new.close()
 
 

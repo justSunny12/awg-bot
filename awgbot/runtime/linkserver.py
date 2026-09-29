@@ -46,6 +46,7 @@ hello сервер не шлёт ничего.
 from __future__ import annotations
 
 import asyncio
+import time
 import contextlib
 import json
 import logging
@@ -53,6 +54,8 @@ import logging
 from awgbot.core import config, settings
 from awgbot.domain import gwownlists, gwservices, gwsnapshot
 from awgbot.util import gwlink
+
+HELLO_TIMEOUT = 15       # с: первое слово шлюза, иначе коннект отбрасывается без вытеснения живой сессии
 
 log = logging.getLogger(__name__)
 
@@ -106,6 +109,7 @@ class LinkServer:
         self.services = services
         self._servers: dict[tuple[str, int], asyncio.AbstractServer] = {}
         self._sessions: dict[int, _Session] = {}
+        self._rejected_at: dict[str, float] = {}     # чужие коннекты: когда последний раз писали в журнал
 
     def _io(self, slot_id: int, rx: int = 0, tx: int = 0) -> None:
         """Счёт байтов канала по слоту поверх счётчиков линка (services.channel).
@@ -174,6 +178,10 @@ class LinkServer:
         sess = self._sessions.pop(slot_id, None)
         if sess is None:
             return
+        await self._close_session(sess)
+
+    @staticmethod
+    async def _close_session(sess: "_Session") -> None:
         with contextlib.suppress(Exception):
             sess.writer.close()
             await sess.writer.wait_closed()
@@ -183,8 +191,12 @@ class LinkServer:
         local = writer.get_extra_info("sockname") or ("", 0)
         gw = self._slot_for(str(local[0]), str(peer[0]))
         if gw is None:
-            log.warning("канал линка: коннект %s → %s не принадлежит ни одному слоту",
-                        peer[0], local[0])
+            # клиент туннеля в цикле открывает TCP на адрес линка — журнал не заливаем
+            now = time.monotonic()
+            if now - self._rejected_at.get(str(peer[0]), 0.0) > 600:
+                self._rejected_at[str(peer[0])] = now
+                log.warning("канал линка: коннект %s → %s не принадлежит ни одному слоту",
+                            peer[0], local[0])
             writer.close()
             return
         try:
@@ -194,13 +206,41 @@ class LinkServer:
             log.warning("канал линка: ключ слота %s не прочитан: %s", gw.id, e)
             writer.close()
             return
-        old = self._sessions.get(gw.id)
-        await self._drop(gw.id)                           # вторая сессия вытесняет первую
+        # Живую сессию слота вытесняет только коннект, прошедший hello с
+        # подписью: голый TCP с адреса шлюза (любой процесс на малине, контейнер
+        # за маскарадом) раньше рвал настоящую сессию и оставлял «на связи» в БД.
         sess = _Session(writer, key)
-        sess.took_over = bool(old and (old.hello or old.took_over))
-        self._sessions[gw.id] = sess
         last_seq: int | None = None
+        registered = False
         try:
+            try:
+                line = await asyncio.wait_for(reader.readline(), HELLO_TIMEOUT)
+            except asyncio.TimeoutError:
+                log.info("канал линка: слот %s не прислал hello за %s с", gw.id, HELLO_TIMEOUT)
+                return
+            except ValueError:
+                log.warning("канал линка: слот %s прислал строку сверх предела до hello", gw.id)
+                return
+            if not line:
+                return
+            self._io(gw.id, rx=len(line))
+            try:
+                msg = gwlink.unpack(key, line, last_seq=None, nonce=b"")
+                if msg.get("t") != "hello":
+                    raise gwlink.ProtocolError("сообщение до hello")
+                sess.cn = gwlink.nonce_from(msg.get("nonce"))
+            except gwlink.ProtocolError as e:
+                log.warning("канал линка: слот %s — %s", gw.id, e)
+                await asyncio.to_thread(self.services.gwlink_note_error, gw.id, str(e))
+                return
+            last_seq = int(msg.get("seq") or 0)
+            old = self._sessions.get(gw.id)
+            sess.took_over = bool(old and (old.hello or old.took_over))
+            self._sessions[gw.id] = sess                  # синхронно: без await между проверкой и записью
+            registered = True
+            if old is not None:
+                await self._close_session(old)            # прежняя уходит, её finally «закрытие» не пишет
+            await self._handle(gw, sess, msg)
             while True:
                 try:
                     line = await reader.readline()
@@ -232,7 +272,7 @@ class LinkServer:
         except (asyncio.IncompleteReadError, ConnectionError, OSError) as e:
             log.info("канал линка: сессия слота %s закрыта (%s)", gw.id, e)
         finally:
-            if self._sessions.get(gw.id) is sess:
+            if registered and self._sessions.get(gw.id) is sess:
                 self._sessions.pop(gw.id, None)
                 # «Последний раз на связи» — только для сессии, которая была:
                 # отвергнутый на подписи (чужой ключ, чужая сессия) коннект не освежает
