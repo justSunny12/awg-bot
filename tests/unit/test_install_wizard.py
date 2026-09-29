@@ -314,7 +314,7 @@ def test_gateway_install_without_a_bundle_says_exactly_what_to_do(script):
     body = script.split('if [[ "$role" == "gateway" ]]; then', 1)[1].split("\n    fi\n", 1)[0]
     stop = body.split('elif [[ -z "$(env_get BOT_TOKEN)" ]]; then', 1)[1].split("fi", 1)[0]
     assert "scp awg-gw-bundle.sh" in stop and "--install" in stop
-    assert "Назначить шлюз" in stop
+    assert "«🛰 Назначить»" in stop
 
 
 def test_bundle_secrets_are_read_as_data_not_executed(script):
