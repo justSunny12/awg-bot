@@ -87,11 +87,11 @@ async def pair(services, make_active_client, monkeypatch):
     ev: list[tuple[int, str, list]] = []
     real_in = services.gwlink_own_in
     monkeypatch.setattr(services, "gwlink_own_in",
-                        lambda slot, run, events: ev.append((slot, run, list(events))) or real_in(slot, run, events))
+                        lambda slot, run, events: (real_in(slot, run, events), ev.append((slot, run, list(events))))[0])
     acks: list[tuple[int, dict]] = []
     real_ack = services.gwlink_own_ack_in
     monkeypatch.setattr(services, "gwlink_own_ack_in",
-                        lambda slot, body: acks.append((slot, dict(body))) or real_ack(slot, body))
+                        lambda slot, body: (real_ack(slot, body), acks.append((slot, dict(body))))[0])
     p = types.SimpleNamespace(srv=srv, queue=queue, services=services, sent=sent, port=port, ev=ev, acks=acks)
     try:
         yield p
@@ -109,6 +109,7 @@ async def _hello(p, slot: int, own_hash: str | None = "", agent: str = "3.1.0") 
         body["own_hash"] = own_hash
     await gw.send("hello", body)
     assert await _until(lambda: p.services.gwlink_session(slot)), "hello не принят"
+    assert await _next(gw, "role") is not None, "сервер не назвал роль после hello"
     return gw
 
 
@@ -633,7 +634,7 @@ async def test_an_offline_edit_and_a_restart_reach_the_canon_on_connect(pair, pi
     runs = [run for sl, run, _ in pair.ev if sl == 1]
     assert len(runs) == 1 and runs[0] != old_run, f"правка ушла не под новой меткой запуска: {runs}, прежняя {old_run}"
     assert pi.host.restarts() == restarts, "канон с той же правкой перезапустил dnsmasq"
-    assert _card(s, 1)["state"] == "applied"
+    assert await _until(lambda: _card(s, 1)["state"] == "applied", timeout=5), _card(s, 1)
 
 
 async def test_a_restored_agent_copy_does_not_bring_back_a_deleted_domain(pair, pi):

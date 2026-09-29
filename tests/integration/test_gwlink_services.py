@@ -107,6 +107,9 @@ async def _hello(p, slot: int, svc_hash: str = "", agent: str = "3.1.0") -> _Gw:
     gw = _Gw(*await asyncio.open_connection(host, port, limit=8 * gwlink.MAX_LINE), key=KEY)
     await gw.send("hello", {"proto": gwlink.PROTO, "agent": agent, "lists_hash": "", "svc_hash": svc_hash})
     assert await _until(lambda: p.services.gwlink_session(slot)), "hello не принят"
+    # первое слово сервера — роль; отпечатки have сервер выставляет после
+    # записи сессии, и без этого ожидания тест читал их раньше
+    assert await _next(gw, "role") is not None, "сервер не назвал роль после hello"
     return gw
 
 
@@ -410,7 +413,7 @@ async def test_the_receiver_publishes_neighbour_services_through_the_real_helper
     s = pair.services
     acks: list[dict] = []
     real_ack = s.gwlink_peer_services_ack_in
-    monkeypatch.setattr(s, "gwlink_peer_services_ack_in", lambda slot, body: acks.append(body) or real_ack(slot, body))
+    monkeypatch.setattr(s, "gwlink_peer_services_ack_in", lambda slot, body: (real_ack(slot, body), acks.append(body))[0])
     _x_known(s)
     host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_NETS,
                                       "LINK_CHANNEL": "1"})
@@ -535,7 +538,7 @@ async def test_records_refused_for_a_missing_helper_reach_dnsmasq_on_the_next_ti
     s = pair.services
     acks: list[dict] = []
     real_ack = s.gwlink_peer_services_ack_in
-    monkeypatch.setattr(s, "gwlink_peer_services_ack_in", lambda slot, body: acks.append(body) or real_ack(slot, body))
+    monkeypatch.setattr(s, "gwlink_peer_services_ack_in", lambda slot, body: (real_ack(slot, body), acks.append(body))[0])
     monkeypatch.setattr(config, "ROLE", "gateway")
     _x_known(s)
     host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_NETS,
@@ -623,11 +626,11 @@ async def test_records_refused_for_a_full_disk_reach_dnsmasq_after_the_fix(pair,
     s = pair.services
     acks: list[dict] = []
     real_ack = s.gwlink_peer_services_ack_in
-    monkeypatch.setattr(s, "gwlink_peer_services_ack_in", lambda slot, body: acks.append(body) or real_ack(slot, body))
+    monkeypatch.setattr(s, "gwlink_peer_services_ack_in", lambda slot, body: (real_ack(slot, body), acks.append(body))[0])
     # свой список получателя на ВПС — по нему видно просьбу агента
     svcs: list[int] = []
     real_svc = s.gwlink_services_in
-    monkeypatch.setattr(s, "gwlink_services_in", lambda slot, items: svcs.append(slot) or real_svc(slot, items))
+    monkeypatch.setattr(s, "gwlink_services_in", lambda slot, items: (real_svc(slot, items), svcs.append(slot))[0])
     monkeypatch.setattr(config, "ROLE", "gateway")         # иначе on_tick не видит клиента
     clock = _Clock(monkeypatch)
     _x_known(s)
@@ -687,7 +690,7 @@ async def test_a_day_of_ticks_with_own_lists_missing_sends_not_a_byte(pair, real
     clock = _Clock(monkeypatch)
     own_acks: list[dict] = []
     real_own = s.gwlink_own_ack_in
-    monkeypatch.setattr(s, "gwlink_own_ack_in", lambda slot, body: own_acks.append(dict(body)) or real_own(slot, body))
+    monkeypatch.setattr(s, "gwlink_own_ack_in", lambda slot, body: (real_own(slot, body), own_acks.append(dict(body)))[0])
     _x_known(s)
     host, agent, client = real_agent({"LAN_MODE": "1", "HOME_SUBNETS": Y_NETS, "PEER_HOME_NETS": X_NETS,
                                       "LINK_CHANNEL": "1"})

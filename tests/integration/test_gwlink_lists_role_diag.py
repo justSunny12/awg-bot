@@ -129,6 +129,7 @@ async def _hello(srv, lists_hash: str = "") -> _Gw:
     host, port = srv._bound[0]
     gw = _Gw(*await asyncio.open_connection(host, port, limit=8 * gwlink.MAX_LINE), key=KEY)
     await gw.send("hello", {"proto": gwlink.PROTO, "agent": "3.4.0", "lists_hash": lists_hash})
+    assert await _next(gw, "role") is not None, "сервер не назвал роль после hello"
     return gw
 
 

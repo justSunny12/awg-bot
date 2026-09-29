@@ -27,6 +27,10 @@ def host(tmp_path):
     (bin_dir / "apt-get").write_text(
         '#!/bin/sh\necho "apt-get $*" >> "$JOURNAL"\necho "dnsmasq.service enabled" >> "$UNITS"\n',
         encoding="utf-8")
+    # verify зовёт dig @адрес: настоящий слал UDP в 10.8.1.1 с машины
+    # разработчика и ждал 3 с на каждый тест
+    (bin_dir / "dig").write_text('#!/bin/sh\necho "dig $*" >> "$JOURNAL"\necho 93.184.216.34\n',
+                                 encoding="utf-8")
     (bin_dir / "sed").write_text(
         '#!/bin/sh\nif /usr/bin/sed --version >/dev/null 2>&1; then exec /usr/bin/sed "$@"; fi\n'
         'if [ "$1" = "-i" ]; then shift; exec /usr/bin/sed -i "" "$@"; fi\nexec /usr/bin/sed "$@"\n',

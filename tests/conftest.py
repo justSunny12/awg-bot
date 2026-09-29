@@ -42,6 +42,8 @@ import pathlib                                      # noqa: E402
 import shutil as _shutil                            # noqa: E402
 import tempfile as _tempfile                        # noqa: E402
 _CONF_COPY = pathlib.Path(_tempfile.mkdtemp(prefix="awg-bot-conf-"))
+import atexit as _atexit                            # noqa: E402
+_atexit.register(_shutil.rmtree, _CONF_COPY, True)  # иначе тысячи каталогов в $TMPDIR
 for _f in pathlib.Path(_config.CONF_DIR).glob("*.yaml"):
     _shutil.copy2(_f, _CONF_COPY / _f.name)
 _settings.init(_CONF_COPY)
@@ -244,7 +246,7 @@ def fake_routing(monkeypatch, tmp_path):
     _set("fetch", lambda url, timeout=15: (None, "заглушка: источник не настроен", 0))
     _set("destroy_set", lambda name: state.sets.pop(name, None))
     _set("list_sets", lambda: sorted(state.sets))
-    _set("snapshot_sets", lambda: {k: set(v) for k, v in state.sets.items()})
+    _set("snapshot_sets", lambda only=None: {k: set(v) for k, v in state.sets.items()})
     # Сигнатура ровно как у настоящей: был период двух моделей, и заглушка
     # принимала лишний mark_in_set. Лишний параметр в двойнике опаснее, чем
     # кажется, — он делает зелёным вызов, который в бою упал бы на TypeError.
@@ -515,6 +517,17 @@ def mig(monkeypatch, services, fake_awg):
 # зависимо от сети и с токеноподобной строкой наружу. Любой запрос настоящей
 # сессии падает сетевой ошибкой: для кода это «Telegram не ответил», и путь
 # отказа у всех таких мест обязан это переживать.
+@pytest.fixture(autouse=True)
+def _argon2_is_cheap_in_tests(monkeypatch):
+    """argon2id MODERATE — ~256 МБ и сотни мс на каждую фразу: в прогоне это
+    гигабайты памяти на десяти воркерах и самые долгие тесты. В тестах — MIN;
+    боевые константы проверяет tests/unit/test_secrets_params.py по исходнику."""
+    from nacl import pwhash
+    from awgbot.util import secrets_util as _su
+    monkeypatch.setattr(_su, "_OPS", pwhash.argon2id.OPSLIMIT_MIN)
+    monkeypatch.setattr(_su, "_MEM", pwhash.argon2id.MEMLIMIT_MIN)
+
+
 @pytest.fixture(autouse=True)
 def _settings_never_on_repo_conf():
     """Сторож: после теста кэш настроек не смотрит в conf/ рабочего дерева.
