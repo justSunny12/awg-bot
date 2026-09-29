@@ -326,9 +326,15 @@ def test_bundle_secrets_are_read_as_data_not_executed(script):
 
 
 def test_bundle_is_searched_where_scp_puts_it(script):
+    """Только /root (куда кладёт копирование из инструкции бота) и дом
+    вызвавшего: файл исполняется от root, а токен агента и ADMIN_ID из него
+    уходят в env — подложенный в /tmp или в каталог вызова чужой файл
+    привязал бы агента к чужому боту."""
     body = script.split("find_gw_bundle() {", 1)[1].split("\n}\n", 1)[0]
     assert "/root/awg-gw-bundle.sh" in body, "инструкция бота кладёт файл именно туда"
-    assert "SUDO_USER" in body and '$PWD/awg-gw-bundle.sh' in body
+    assert "SUDO_USER" in body and "getent passwd" in body
+    assert "/tmp/" not in body and "$PWD" not in body, "автопоиск снова смотрит в общедоступные места"
+    assert body.count("bundle_trusted") == 2, "владелец и права не проверяются и у найденного, и у явного"
     assert '[[ -n "$GW_BUNDLE" ]]' in body, "явный --bundle важнее поиска"
 
 
@@ -357,3 +363,38 @@ def test_install_from_the_bundle_leaves_the_first_start_marker_where_the_agent_l
     assert f': > "$DATA_DIR/{main.FRESH_INSTALL_MARKER}"' in ok_branch, ok_branch
     assert 'DATA_DIR="/var/lib/awg-bot"' in script
     assert "Environment=AWG_BOT_DATA_DIR=$DATA_DIR" in script, "база агента — не в том каталоге, где метка"
+
+
+def test_bundle_trusted_checks_owner_and_mode(script, tmp_path):
+    """Файл исполняется от root: принимаем только свой (root или вызвавшего
+    через sudo) и закрытый от записи группе и прочим."""
+    import getpass
+    import os
+    import subprocess
+    body = script.split("bundle_trusted() {", 1)[1].split("\n}\n", 1)[0]
+    fn = "bundle_trusted() {" + body + "\n}\n"
+    # GNU stat -c нет на macOS: подставка с той же семантикой на python
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir()
+    (bin_dir / "stat").write_text(
+        "#!/bin/sh\nexec python3 -c 'import os, sys\nst = os.stat(sys.argv[2])\n"
+        "print(st.st_uid if sys.argv[1] == \"%u\" else oct(st.st_mode & 0o777)[2:])' \"$2\" \"$3\"\n",
+        encoding="utf-8")
+    (bin_dir / "stat").chmod(0o755)
+    f = tmp_path / "awg-gw-bundle.sh"; f.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    def check(mode: int, sudo_user: str | None) -> int:
+        f.chmod(mode)
+        env = {"PATH": f"{bin_dir}:/usr/bin:/bin"}
+        if sudo_user is not None:
+            env["SUDO_USER"] = sudo_user
+        return subprocess.run(["bash", "-c", fn + f'bundle_trusted "{f}"'], env=env,
+                              capture_output=True, text=True, timeout=10).returncode
+
+    me = getpass.getuser()
+    if os.geteuid() == 0:
+        pytest.skip("под root владелец файла — root, различать нечего")
+    assert check(0o600, None) == 1, "файл не root и не вызвавшего принят"
+    assert check(0o600, me) == 0
+    assert check(0o644, me) == 0
+    assert check(0o666, me) == 1, "файл, открытый на запись всем, принят"
+    assert check(0o620, me) == 1, "файл, открытый на запись группе, принят"

@@ -290,6 +290,7 @@ emit_gw_bundle() {
 # awg-gw-bundle.sh — сторона ШЛЮЗА условной маршрутизации, одним файлом.
 #
 # Собран на ВПС: $(date '+%Y-%m-%d %H:%M %z')
+# ISSUED_AT: $(date +%s)
 # Контракт линка: $LINK_CONTRACT
 #
 # ВНУТРИ ПРИВАТНЫЙ КЛЮЧ И PSK. Файл секретный: права 600, после установки удалить.
@@ -321,7 +322,7 @@ HDREOF
         printf 'LAN_MODE="%s"\nexport LAN_MODE\n' "$(printf '%s' "${LAN_MODE:-0}" | tr -cd '01' | cut -c1)"
         printf 'HOME_SUBNETS="%s"\nexport HOME_SUBNETS\n' "$(printf '%s' "${HOME_SUBNETS:-}" | tr -cd '0-9./ ')"
         printf 'RESOLVER="%s"\nexport RESOLVER\n' "$(printf '%s' "${RESOLVER:-}" | tr -cd '0-9.')"
-        printf 'PEER_HOME_NETS="%s"\nexport PEER_HOME_NETS\n' "$PEER_HOME_NETS"
+        printf 'PEER_HOME_NETS="%s"\nexport PEER_HOME_NETS\n' "$(printf '%s' "${PEER_HOME_NETS:-}" | tr -cd '0-9./ ')"
         # Имя ВПС — для панели агента («Линк до …»): на шлюзе взять его неоткуда.
         printf 'SERVER_NAME="%s"\n' "$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9._-' | cut -c1-64)"
         # Канал ВПС ↔ шлюз внутри линка: включается
@@ -331,6 +332,7 @@ HDREOF
         printf 'LINK_CHANNEL_PORT="%s"\nexport LINK_CHANNEL_PORT\n' "$(printf '%s' "${LINK_CHANNEL_PORT:-8787}" | tr -cd '0-9' | cut -c1-5)"
         cat <<'BODYEOF'
 set -e
+umask 077     # внутри приватный ключ и PSK: всё, что кладём, — только root
 [ "$(id -u)" = "0" ] || { echo "нужен root: sudo sh $0"; exit 1; }
 
 # --install: поставить агента ИЗ ЭТОГО ЖЕ файла. Поставка вшита ниже базой64
@@ -404,6 +406,7 @@ print_gw_instructions() {
 }
 
 if [ "$MODE" = "bundle" ]; then
+    umask 077     # /root/gw-<if>.conf правится через tmp+mv: без umask файл выходил 0644
     emit_gw_bundle
     print_gw_instructions
     exit 0

@@ -964,7 +964,7 @@ if [ "$MODE" = "plan" ]; then
     say "(режим показа — добавь: --apply <файл-конфига-с-сервера-AWG>)"
     say ""
     say "Будет сделано:"
-    say "  1. конфиг → $HOST_CONF_DIR/$LINK_IF.conf, awg-quick up хостовыми утилитами"
+    say "  1. конфиг → $HOST_CONF_DIR/$LINK_IF.conf, прежняя таблица защиты, awg-quick up хостовыми утилитами"
     say "  2. таблица nft $GUARD_TABLE: MASQUERADE $CLIENT_SUBNET → $WAN_IF, изоляция"
     say "     клиентов от приватных сетей, метки Telegram и GitHub → аплинк, защита шлюза от туннеля"
     say "     (с туннеля на шлюз: сервер AWG по линку; полный доступ — ADMIN_IPS=${ADMIN_IPS:-—})"
@@ -1022,6 +1022,10 @@ else
             # временный каталог тут ни к чему: файл живёт рядом с
             # прочим состоянием шлюза и сразу удаляется
             _tmp="$GW_ETC/uplink.new"
+            # внутри приватный ключ и PSK: файл только root, и уходит при любом
+            # выходе (set -e не даёт дойти до rm -f внизу)
+            _um="$(umask)"; umask 077
+            trap 'rm -f "$_tmp" "$_tmp.conf"' EXIT
             printf '%s' "$UPLINK_B64" | base64 -d > "$_tmp" 2>/dev/null || : > "$_tmp"
             if grep -q '^PrivateKey' "$_tmp"; then
                 # PostUp/PostDown — ВНУТРИ [Interface], сразу за Table = off:
@@ -1048,15 +1052,19 @@ else
                         run "cp -p $_dst $_bak"
                     fi
                     run "install -m 600 $_tmp.conf $_dst"
+                    run "systemctl stop awg-quick@$UPLINK_IF 2>/dev/null || true"
                     run "$AWG_QUICK down $UPLINK_IF 2>/dev/null || true"
+                    # Поднимаем ЮНИТОМ, а не голым awg-quick: иначе юнит на
+                    # старте (Wants у обвязки) натыкался на «already exists»
+                    # и с Restart=on-failure перезапускался каждые 10 с без предела.
                     # Аплинк — связь самого агента с Telegram. Не поднялся —
                     # немедленно назад на прежний конфиг, иначе шлюз режет себе
                     # связь и чинить его придётся руками.
-                    if ! "$AWG_QUICK" up "$UPLINK_IF"; then
+                    if ! systemctl start "awg-quick@$UPLINK_IF"; then
                         say "  ОШИБКА: аплинк с новым конфигом не поднялся — откатываю на прежний"
                         if [ -n "$_bak" ]; then
                             run "cp -p $_bak $_dst"
-                            run "$AWG_QUICK up $UPLINK_IF || true"
+                            run "systemctl start awg-quick@$UPLINK_IF || true"
                         fi
                         rm -f "$_tmp" "$_tmp.conf"
                         exit 1
@@ -1067,6 +1075,7 @@ else
                 say "  конфиг аплинка в файле конфигурации не разобрался — не трогаю"
             fi
             rm -f "$_tmp" "$_tmp.conf"
+            trap - EXIT; umask "$_um"
         fi
     elif [ -n "$_others" ]; then
         say "  ВНИМАНИЕ: конфигурация слота ($LINK_IF) выпущена ДРУГОМУ устройству"
@@ -1152,6 +1161,13 @@ else
         if [ -n "$CONTAINER" ]; then
             run "docker exec $CONTAINER awg-quick down $LINK_IF 2>/dev/null || true"
         fi
+    fi
+    # Таблица защиты — ДО подъёма линка. Свежая собирается на шаге 2 по подсети
+    # линка у ядра, а между up и nft -f клиенты сервера AWG доходили бы до
+    # самого устройства (SSH, OMV). Прежняя таблица с прошлого прогона держит
+    # окно закрытым — свежая ляжет поверх (у самого первого прогона файла нет).
+    if [ -f "$GUARD_FILE" ]; then
+        run "nft -f $GUARD_FILE || echo '  прежняя таблица защиты не загрузилась — свежая встанет после подъёма'"
     fi
     run "$AWG_QUICK up $LINK_IF"
 fi

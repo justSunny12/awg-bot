@@ -122,6 +122,11 @@ class _Machine:
         awg.write_text(f'#!/bin/sh\necho "awg-quick $*" >> "{self.log}"\n', encoding="utf-8")
         awg.chmod(0o755)
         self.awg = awg
+        # аплинк поднимается юнитом: systemctl — такая же подставка с журналом
+        self.bin = tmp_path / "bin"; self.bin.mkdir()
+        sc = self.bin / "systemctl"
+        sc.write_text(f'#!/bin/sh\necho "systemctl $*" >> "{self.log}"\n', encoding="utf-8")
+        sc.chmod(0o755)
         if uplink:
             (self.conf_dir / f"{uplink}.conf").write_text("[Interface]\nPrivateKey = OLD==\n", encoding="utf-8")
 
@@ -138,7 +143,8 @@ TG_MARK=0x1; UPLINK_TABLE=100; UPLINK_IF_DEFAULT=awg0; UPLINK_IF=""
 GATEWAY_PUBKEY="{PUB}"; GATEWAY_PREV_PUBKEY=""; UPLINK_B64="{uplink_b64}"
 GW_FOREIGN=0; GW_UNCONFIRMED=0
 '''
-        r = _sh(prelude + _step0(script) + '\necho "UPLINK_STATE=$UPLINK_STATE UPLINK_IF=$UPLINK_IF"\n', {})
+        r = _sh(prelude + _step0(script) + '\necho "UPLINK_STATE=$UPLINK_STATE UPLINK_IF=$UPLINK_IF"\n',
+                {"PATH": f"{self.bin}:/usr/bin:/bin"})
         return r, [ln for ln in self.log.read_text(encoding="utf-8").splitlines() if ln]
 
 
@@ -146,7 +152,7 @@ def _touches_uplink(calls: list[str]) -> list[str]:
     """Вызовы, трогающие сам аплинк: подъём/спуск интерфейса и установка его
     конфига. Оверрайд юнита awg-quick@ (перезапуск до победы) сюда не входит."""
     return [c for c in calls if c.startswith("awg-quick ") or c.startswith("RUN install")
-            or c.startswith("RUN cp") or "/awg-quick " in c]
+            or c.startswith("RUN cp") or "/awg-quick " in c or "systemctl start awg-quick@" in c]
 
 
 def test_a_reassert_without_the_uplink_config_leaves_the_uplink_alone(script, tmp_path):
@@ -170,8 +176,24 @@ def test_the_bundle_still_installs_a_changed_uplink_config(script, tmp_path):
     assert r.returncode == 0, r.stderr + r.stdout
     assert "UPLINK_STATE=installed" in r.stdout, r.stdout
     assert any(c.startswith("RUN install -m 600") and c.endswith("/awg0.conf") for c in calls), calls
-    assert "awg-quick up awg0" in calls, f"аплинк не переподнят с новым конфигом: {calls}"
+    # ЮНИТОМ, не голым awg-quick: иначе awg-quick@ на старте натыкался на
+    # «already exists» и с Restart=on-failure перезапускался каждые 10 с
+    assert "systemctl start awg-quick@awg0" in calls, f"аплинк не переподнят юнитом: {calls}"
+    assert "awg-quick up awg0" not in calls, f"аплинк поднят мимо юнита: {calls}"
     assert not list(pi.etc.glob("uplink.new*")), "временный конфиг аплинка с ключом остался на диске"
+
+
+def test_the_uplink_config_is_written_under_umask_077_and_swept_on_any_exit(script):
+    """Внутри uplink.new приватный ключ и PSK: файл создаётся под umask 077,
+    а ловушка EXIT убирает его и при выходе по set -e (раньше при отказе
+    он оставался в /etc/awg-gw с правами 0644 навсегда)."""
+    body = _step0(script)
+    i = body.index('_tmp="$GW_ETC/uplink.new"')
+    j = body.index("base64 -d", i)
+    between = body[i:j]
+    assert "umask 077" in between, "umask не выставлен до записи uplink.new"
+    assert "trap 'rm -f \"$_tmp\" \"$_tmp.conf\"' EXIT" in between, "нет ловушки на уборку"
+    assert 'trap - EXIT; umask "$_um"' in body, "ловушка и umask не сняты после раздела"
 
 
 def test_a_fresh_machine_without_the_uplink_config_does_not_invent_an_uplink(script, tmp_path):

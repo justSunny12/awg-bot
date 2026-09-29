@@ -362,3 +362,23 @@ def test_junk_in_the_channel_port_does_not_reach_the_gateway(tmp_path):
                                       "LINK_CHANNEL": "да"})
     on, port = _channel(out)
     assert port == "9099" and on == "", "в бандл уехало непроверенное значение"
+
+
+def test_bundle_stamps_the_issue_time(bundle):
+    """Метка выпуска — по ней агент отличит свежий файл от старого из истории
+    чата: ключ у обоих один, расшифруются оба."""
+    m = re.search(r"^# ISSUED_AT: (\d{10})$", bundle, re.M)
+    assert m, "нет метки ISSUED_AT в шапке"
+    import time
+    assert abs(int(m.group(1)) - time.time()) < 3600
+
+
+def test_bundle_body_and_bundle_mode_write_secrets_under_umask_077(bundle):
+    """Тело файла первого применения кладёт link.conf и скрипт обвязки: между
+    cat > и chmod файл с ключом был 0644. И режим --bundle правит
+    /root/gw-<if>.conf через tmp+mv — без umask файл выходил 0644."""
+    body = bundle.split("#__GW_SETUP_BELOW__", 1)[0]
+    assert body.index("umask 077") < body.index('mkdir -p "$DEST"')
+    src = (Path(__file__).resolve().parents[2] / "install" / "routing-link-setup.sh").read_text(encoding="utf-8")
+    mode = src.split('if [ "$MODE" = "bundle" ]; then', 1)[1]
+    assert mode.lstrip().startswith("umask 077")

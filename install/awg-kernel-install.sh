@@ -177,8 +177,15 @@ if [[ "$MODE" == "reload" ]]; then
     # Все интерфейсы вниз — иначе rmmod откажет. Порядок подъёма — тот же, что
     # был: у клиентского и линка свои PostUp, и они друг от друга не зависят.
     for i in $ifaces; do run awg-quick down "$i" || warn "$i: не опущен"; done
-    if [[ -n "$cur_loaded" ]]; then run rmmod "$MODULE" || die "rmmod: модуль занят — что-то держит интерфейс"; fi
-    run modprobe "$MODULE" || die "modprobe $MODULE не прошёл"
+    # Отказ на подмене модуля — интерфейсы обратно и только потом ошибка:
+    # иначе они лежат, а юниты awg-quick@ показывают active (exited).
+    reload_fail() {
+        local i
+        for i in $ifaces; do run awg-quick up "$i" || warn "$i: не поднят — awg-quick up $i"; done
+        die "$1"
+    }
+    if [[ -n "$cur_loaded" ]]; then run rmmod "$MODULE" || reload_fail "rmmod: модуль занят — что-то держит интерфейс; интерфейсы подняты обратно"; fi
+    run modprobe "$MODULE" || reload_fail "modprobe $MODULE не прошёл; интерфейсы подняты обратно на прежнем модуле"
     for i in $ifaces; do run awg-quick up "$i" || warn "$i: не поднят — awg-quick up $i"; done
     ok "работает $(loaded_module); интерфейсы: ${ifaces:-нет}"
     exit 0
@@ -312,6 +319,10 @@ step_module() {
     fi
     local built=0
     for k in $(kernels_with_headers); do
+        # Сначала СБОРКА, потом снятие прежней версии: отказ сборки (нет
+        # заголовков, апстрим сломал цель) оставлял ядро без модуля вовсе —
+        # ни старого, ни нового, и после ребута modprobe не находил ничего.
+        run dkms build -m "$MODULE" -v "$mtag" -k "$k" || die "сборка модуля под ядро $k не прошла — смотри /var/lib/dkms/$MODULE/$mtag/build/make.log; прежний модуль на месте"
         # Прежняя версия под этим ядром снимается (uninstall, не remove: её
         # дерево остаётся для отката), иначе два .ko претендуют на одно место.
         local old
@@ -319,7 +330,6 @@ step_module() {
             [[ "$old" == "$mtag" ]] && continue
             run dkms uninstall -m "$MODULE" -v "$old" -k "$k" || warn "$old под $k не снят"
         done
-        run dkms build -m "$MODULE" -v "$mtag" -k "$k" || die "сборка модуля под ядро $k не прошла — смотри /var/lib/dkms/$MODULE/$mtag/build/make.log"
         run dkms install -m "$MODULE" -v "$mtag" -k "$k" --force || die "установка модуля под ядро $k не прошла"
         built=$((built + 1))
     done
@@ -332,8 +342,11 @@ step_module() {
 }
 
 step_deps
-[[ "$need_tools" -eq 1 ]] && step_tools
+# Модуль — раньше тулз: не собрался модуль — тулзы остаются прежними, и хост
+# не оказывается с новыми утилитами при старом модуле (несовпадение поколений
+# роняет хендшейк).
 [[ "$need_mod"   -eq 1 ]] && step_module
+[[ "$need_tools" -eq 1 ]] && step_tools
 [[ "$PLAN" -eq 1 ]] && { log "план показан, ничего не менялось"; exit 0; }
 
 cur_loaded="$(loaded_module)"

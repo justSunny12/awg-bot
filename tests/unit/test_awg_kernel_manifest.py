@@ -631,3 +631,27 @@ def test_update_rewrites_a_resolver_config_whose_daemon_is_down(tmp_path):
         dnsmasq_active=False)
     assert proc.returncode == 0 and journal.strip() == "RESOLVER install 10.8.1.1"
     assert "переписываю" in proc.stdout
+
+
+def test_kernel_builds_the_new_module_before_removing_the_previous_one(kernel):
+    """Отказ сборки после uninstall оставлял ядро без модуля вовсе: ни старого,
+    ни нового — после ребута modprobe не находил ничего."""
+    loop = kernel.split("for k in $(kernels_with_headers); do", 1)[1].split("\n    done\n", 1)[0]
+    assert loop.index("dkms build") < loop.index("dkms uninstall") < loop.index("dkms install")
+
+
+def test_module_is_built_before_the_tools_are_replaced(kernel):
+    """Не собрался модуль — тулзы прежние: новые утилиты при старом модуле
+    роняют хендшейк (поколения параметров не совпадают)."""
+    calls = [ln for ln in kernel.splitlines() if ln.startswith("[[ \"$need_")]
+    assert [c.split("&& ")[1] for c in calls][:2] == ["step_module", "step_tools"], calls
+
+
+def test_reload_brings_the_interfaces_back_when_the_module_swap_fails(kernel):
+    """rmmod/modprobe отказали — интерфейсы обратно, потом ошибка: иначе они
+    лежат, а awg-quick@ показывают active (exited)."""
+    body = kernel.split('if [[ "$MODE" == "reload" ]]; then', 1)[1].split("\nfi\n", 1)[0]
+    assert "reload_fail() {" in body
+    fn = body.split("reload_fail() {", 1)[1].split("\n    }\n", 1)[0]
+    assert 'for i in $ifaces; do run awg-quick up "$i"' in fn and "die " in fn
+    assert body.count("|| reload_fail ") == 2, "и rmmod, и modprobe должны вести в reload_fail"

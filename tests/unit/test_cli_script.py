@@ -370,3 +370,46 @@ def test_roles_do_not_touch_each_others_plumbing(tmp_path, script):
                                gw_copy=_DELIVERY_GW,
                                host_copy="#!/bin/sh\n# версия времён установки\n")
     assert (sbin / "routing-host-setup.sh").read_text(encoding="utf-8") == "#!/bin/sh\n# версия времён установки\n"
+
+
+def test_update_stops_the_service_only_when_nothing_can_fail_anymore(script):
+    """Распаковка, проверка состава и сборка ядра — до systemctl stop: отказ
+    там раньше оставлял сервис остановленным. Дальше — ловушка и прежний код
+    в стороне, а не под ножом: отказ копирования возвращает его."""
+    upd = _extract_func(script, "cmd_update")
+    stop = upd.index('systemctl stop "$SERVICE"')
+    assert upd.index("tar xzf") < stop and upd.index("awg-kernel-install.sh") < stop
+    assert "--no-same-owner" in upd and 'chown -R root:root "$src"' in upd, "владелец из архива — uid сборочной машины"
+    assert stop < upd.index("trap update_rescue EXIT") < upd.index('cp -a "$src"/.')
+    assert upd.index("trap - EXIT") < upd.index('exec "$INSTALL_DIR/awg-bot.sh" __post_update')
+    assert "systemctl start" not in upd, "поднимать сервис после отказа — дело ловушки"
+
+
+def test_update_rescue_puts_the_previous_code_back_and_starts_the_service(script, tmp_path):
+    import subprocess
+    inst = tmp_path / "opt"; inst.mkdir()
+    (inst / "venv").mkdir(); (inst / "venv" / "keep").write_text("", encoding="utf-8")
+    prev = inst / ".prev-code"; prev.mkdir()
+    (prev / "awg-bot.sh").write_text("old", encoding="utf-8")
+    (prev / ".env.example").write_text("old", encoding="utf-8")
+    (inst / "awg-bot.sh").write_text("new-half", encoding="utf-8")
+    upd_tmp = tmp_path / "upd"; upd_tmp.mkdir()
+    log = tmp_path / "log"
+    prog = (
+        f'INSTALL_DIR="{inst}"; SERVICE=awg-bot; UPDATE_PREV="{prev}"; UPDATE_TMP="{upd_tmp}"\n'
+        'warn() { echo "WARN $*"; }\n'
+        f'systemctl() {{ echo "systemctl $*" >> "{log}"; }}\n'
+        + _extract_func(script, "update_rescue")
+        + "\nfalse; update_rescue; echo RC=$?\n"
+    )
+    r = subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=10,
+                       env={"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0, r.stderr
+    assert (inst / "awg-bot.sh").read_text(encoding="utf-8") == "old", "прежний код не вернулся"
+    assert (inst / ".env.example").exists() and (inst / "venv" / "keep").exists()
+    assert not prev.exists() and not upd_tmp.exists()
+    assert log.read_text(encoding="utf-8").strip() == "systemctl start awg-bot"
+    # без отказа ловушка молчит
+    r = subprocess.run(["bash", "-c", prog.replace("\nfalse; update_rescue", "\ntrue; update_rescue")],
+                       capture_output=True, text=True, timeout=10, env={"PATH": "/usr/bin:/bin"})
+    assert "WARN" not in r.stdout

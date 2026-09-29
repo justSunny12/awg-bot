@@ -33,6 +33,14 @@ TAR_FLAGS=""
 for _f in --no-xattrs --no-mac-metadata; do
     tar "$_f" -cf /dev/null -T /dev/null 2>/dev/null && TAR_FLAGS="$TAR_FLAGS $_f"
 done
+# Владелец в архиве — root. tar от root распаковывает с владельцем из архива,
+# и код в /opt получал бы uid машины, где собрали: на хосте с таким же uid он
+# был бы доступен на запись чужому пользователю. GNU и bsdtar — разные флаги.
+if tar --owner=0 --group=0 -cf /dev/null -T /dev/null 2>/dev/null; then
+    TAR_FLAGS="$TAR_FLAGS --owner=0 --group=0"
+elif tar --uid 0 --gid 0 -cf /dev/null -T /dev/null 2>/dev/null; then
+    TAR_FLAGS="$TAR_FLAGS --uid 0 --gid 0"
+fi
 
 _targz() {  # _targz STAGE_DIR OUT_TGZ — собрать во временном, затем копировать
     local tmp; tmp="$(mktemp -u).tgz"

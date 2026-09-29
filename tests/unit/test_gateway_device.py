@@ -227,7 +227,8 @@ def test_script_installs_uplink_only_to_the_machine_with_that_key(script):
     assert "GW_FOREIGN=1" in step0, "чужой шлюз → линк не поднимаем"
     assert '/^Table = off$/ {' in step0, "PostUp вставляется в [Interface], а не в конец файла"
     assert "ip route replace default dev %%i table" in step0
-    assert 'if ! "$AWG_QUICK" up "$UPLINK_IF"' in step0 and "откатываю на прежний" in step0
+    assert 'if ! systemctl start "awg-quick@$UPLINK_IF"' in step0 and "откатываю на прежний" in step0
+    assert '"$AWG_QUICK" up "$UPLINK_IF"' not in step0, "аплинк снова поднимается мимо юнита awg-quick@"
     assert "cmp -s" in step0, "неизменившийся конфиг аплинка не переподнимаем"
     assert 'printf \'GW_STATUS=%s' in step0, "решение пишется для агента"
 

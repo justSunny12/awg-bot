@@ -508,16 +508,31 @@ print_map() {  # print_map "active"|"failed"
 
 # ── reconfigure ──────────────────────────────────────────────────────────────
 # ── роль gateway: файл первого применения ────────────────────────────────────
+bundle_trusted() {  # bundle_trusted FILE → 0: владелец root или вызвавший, без записи группе/прочим
+    # Файл исполняется от root, а токен агента и ADMIN_ID из него уходят в env:
+    # подложенный чужим пользователем файл привязал бы агента к чужому боту.
+    local uid mode own
+    uid="$(stat -c '%u' "$1" 2>/dev/null)" || return 1
+    mode="$(stat -c '%a' "$1" 2>/dev/null)" || return 1
+    own="$(id -u "${SUDO_USER:-root}" 2>/dev/null || echo 0)"
+    [[ "$uid" == "0" || "$uid" == "$own" ]] || return 1
+    [[ $(( 8#$mode & 8#022 )) -eq 0 ]]
+}
 find_gw_bundle() {  # печатает путь к бандлу или пусто
-    local c
+    local c home=""
+    [[ -n "${SUDO_USER:-}" ]] && home="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)"
     if [[ -n "$GW_BUNDLE" ]]; then
         [[ -f "$GW_BUNDLE" ]] || die "файла нет: $GW_BUNDLE"
+        bundle_trusted "$GW_BUNDLE" \
+            || die "файл $GW_BUNDLE должен принадлежать root или ${SUDO_USER:-root} и быть закрыт для остальных: chmod 600 $GW_BUNDLE"
         printf '%s' "$GW_BUNDLE"; return 0
     fi
-    # Порядок не случаен: /root — то, куда кладёт scp из инструкции бота;
-    # каталог вызвавшего — для тех, кто копировал под своим пользователем.
-    for c in /root/awg-gw-bundle.sh "$PWD/awg-gw-bundle.sh"              "${SUDO_USER:+/home/$SUDO_USER/awg-gw-bundle.sh}"              /tmp/awg-gw-bundle.sh; do
-        [[ -n "$c" && -f "$c" ]] && { printf '%s' "$c"; return 0; }
+    # Только каталоги, куда кладёт scp из инструкции бота (/root) или сам
+    # админ под своим пользователем. Ни /tmp, ни каталог вызова: туда кладёт кто угодно.
+    for c in /root/awg-gw-bundle.sh "${home:+$home/awg-gw-bundle.sh}"; do
+        [[ -n "$c" && -f "$c" ]] || continue
+        bundle_trusted "$c" && { printf '%s' "$c"; return 0; }
+        warn "$c пропущен: владелец не root/${SUDO_USER:-root} или файл открыт на запись другим"
     done
     return 0
 }
@@ -733,35 +748,46 @@ cmd_update() {
     fi
 
     ensure_python
-    log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
 
+    # Всё, что может отказать, — ДО остановки сервиса: распаковка, проверка
+    # состава, сборка ядра. Пока это идёт, работает прежний код, и любой отказ
+    # ничего не ломает — сервис даже не трогали.
     local tmp; tmp="$(mktemp -d)"
     log "распаковываю новый код…"
-    tar xzf "$tgz" -C "$tmp"
+    # --no-same-owner: архив несёт uid машины, где его собрали; код в /opt — только root
+    tar xzf "$tgz" -C "$tmp" --no-same-owner || { rm -rf "$tmp"; die "архив не распаковался: $tgz"; }
     local main; main="$(find "$tmp" -maxdepth 3 -type f -path '*/awgbot/__main__.py' | head -n1)"
     [[ -n "$main" ]] || { rm -rf "$tmp"; die "в архиве нет awgbot/ — не та поставка?"; }
     local src; src="$(dirname "$(dirname "$main")")"
+    chown -R root:root "$src"
 
     # ЯДРО — ДО подмены кода. Версия AmneziaWG прибита к поставке, значит её
     # надо собрать; а собирать надо ПЕРВЫМ делом, пока на диске рабочая
     # установка: не собралось (нет заголовков, апстрим переименовал цель) —
-    # откатываемся целиком, поднимаем сервис и сообщаем причину. Иначе хост
-    # остался бы с новым кодом и старым ядром, то есть в состоянии, которого
-    # мы нигде не проверяем.
+    # ничего не подменяем и сообщаем причину. Иначе хост остался бы с новым
+    # кодом и старым ядром, то есть в состоянии, которого мы нигде не проверяем.
     if [[ -f "$src/install/awg.lock" ]]; then
         log "AmneziaWG: версия из поставки — собираю до подмены кода…"
         if ! AWG_LOCK="$src/install/awg.lock" bash "$src/install/awg-kernel-install.sh" install; then
             rm -rf "$tmp"
-            systemctl start "$SERVICE" 2>/dev/null || true
-            die "ядро AmneziaWG из поставки не собралось — код НЕ подменён, версия прежняя, сервис поднят обратно"
+            die "ядро AmneziaWG из поставки не собралось — код НЕ подменён, версия прежняя, сервис не трогали"
         fi
     fi
 
-    # заменить код, сохранив venv (данные/конфиг живут в /etc и /var — их не касаемся)
-    find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name venv -exec rm -rf {} +
-    cp -a "$src"/. "$INSTALL_DIR"/
-    rm -rf "$tmp"
+    log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
+    # Старый код — в сторону, а не под нож: отказ копирования (кончилось место,
+    # битый архив) возвращает его на место и поднимает сервис. Ловушка — сразу
+    # после остановки: с этого момента любой выход не по плану = откат.
+    UPDATE_PREV="$INSTALL_DIR/.prev-code"; UPDATE_TMP="$tmp"
+    rm -rf "$UPDATE_PREV"; mkdir -p "$UPDATE_PREV"
+    trap update_rescue EXIT
+    find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name venv ! -name .prev-code -exec mv -t "$UPDATE_PREV" {} + \
+        || die "прежний код не отодвинулся — обновление отменено"
+    cp -a "$src"/. "$INSTALL_DIR"/ || die "новый код не лёг целиком — возвращаю прежний"
     chmod +x "$INSTALL_DIR/awg-bot.sh" 2>/dev/null || true
+    [[ -x "$INSTALL_DIR/awg-bot.sh" && -f "$INSTALL_DIR/awgbot/__main__.py" ]] || die "новый код лёг не полностью — возвращаю прежний"
+    trap - EXIT
+    rm -rf "$UPDATE_PREV" "$tmp"
 
     # Дальше — руками НОВОГО скрипта, а не этого.
     #
@@ -776,6 +802,19 @@ cmd_update() {
     # продолжать читать с диска файл, который сменился под ним, — отдельный
     # способ получить мусор в разборе оставшегося хвоста.
     exec "$INSTALL_DIR/awg-bot.sh" __post_update "$wipe"
+}
+
+update_rescue() {  # ловушка первой половины обновления: прежний код назад, сервис вверх
+    local rc=$?
+    [[ "$rc" -eq 0 ]] && return 0
+    warn "обновление прервалось (код $rc) — возвращаю прежний код и поднимаю сервис"
+    if [[ -n "${UPDATE_PREV:-}" && -d "$UPDATE_PREV" ]]; then
+        find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 ! -name venv ! -name .prev-code -exec rm -rf {} + 2>/dev/null || true
+        ( shopt -s dotglob; mv "$UPDATE_PREV"/* "$INSTALL_DIR"/ 2>/dev/null ) || true
+        rm -rf "$UPDATE_PREV"
+    fi
+    [[ -n "${UPDATE_TMP:-}" ]] && rm -rf "$UPDATE_TMP"
+    systemctl start "$SERVICE" 2>/dev/null || true
 }
 
 # ── host-режим: интерфейс на автозагрузке, мусор прежних версий — долой ───────
@@ -1026,23 +1065,38 @@ prune_old_kernel_builds() {
 }
 
 # ── backup / restore (снимок состояния: БД + conf + env) ─────────────────────
-cmd_backup() {
-    require_root
-    mkdir -p "$BACKUP_DIR"; chmod 700 "$BACKUP_DIR"
-    local ts out; ts="$(date +%Y%m%d-%H%M%S)"; out="$BACKUP_DIR/awg-bot-state-$ts.tgz"
+snapshot_state() {  # snapshot_state OUT — снимок состояния той же раскладкой, что копия из чата
+    # Сборщик один на все случаи (копия из чата, awg-bot backup, снимок перед
+    # восстановлением): три сборки с разным составом однажды дали снимок «до
+    # восстановления» без конфигов интерфейсов. БД — через backup API SQLite:
+    # cp -a на работающем боте терял WAL, то есть последние транзакции.
+    ( cd "$INSTALL_DIR" \
+        && export AWG_BOT_ENV="$ENV_FILE" AWG_BOT_CONF_DIR="$CONF_DIR" AWG_BOT_DATA_DIR="$DATA_DIR" \
+        && ./venv/bin/python -m tools.snapshot --out "$1" ) && return 0
+    # Код установки не отвечает (сломан conf, который и восстанавливают) —
+    # запасной снимок средствами shell: база после чекпоинта WAL, conf, env.
+    warn "сборщик снимка не отработал — снимаю запасной снимок (БД, конфиг, секреты; без конфигов интерфейсов)"
     local tmp; tmp="$(mktemp -d)"; mkdir -p "$tmp/state"
-    [[ -d "$DATA_DIR" ]] && find "$DATA_DIR" -maxdepth 1 -name '*.db' -exec cp -a {} "$tmp/state/" \; 2>/dev/null || true
+    local db
+    for db in "$DATA_DIR"/*.db; do
+        [[ -f "$db" ]] || continue
+        ( cd "$INSTALL_DIR" && ./venv/bin/python -c 'import sqlite3, sys
+c = sqlite3.connect(sys.argv[1]); c.execute("PRAGMA wal_checkpoint(TRUNCATE)"); c.close()' "$db" 2>/dev/null ) \
+            || warn "$(basename "$db"): чекпоинт WAL не прошёл — копия может быть без последних записей"
+        cp -a "$db" "$tmp/state/"
+    done
     [[ -d "$CONF_DIR" ]] && cp -a "$CONF_DIR" "$tmp/state/conf" 2>/dev/null || true
     [[ -f "$ENV_FILE" ]] && cp -a "$ENV_FILE" "$tmp/state/env" 2>/dev/null || true
-    # конфиги awg-интерфейсов — та же раскладка, что у копии из чата (awg/)
-    local awgdir; awgdir="$(awg_conf_dir)"
-    if compgen -G "$awgdir/*.conf" >/dev/null; then
-        mkdir -p "$tmp/awg"; cp -a "$awgdir"/*.conf "$tmp/awg/" 2>/dev/null || true
-    fi
-    # метка внутри архива — та же, что у копии из чата: роль и время снятия
-    local role="main"; [[ "$(yaml_get "$CONF_DIR/app.yaml" role)" == "gateway" ]] && role="gw"
+    local role="main"; [[ "$(yaml_get "$CONF_DIR/app.yaml" role 2>/dev/null)" == "gateway" ]] && role="gw"
     printf '{"role": "%s", "created_at": "%s", "hostname": "%s"}\n' "$role" "$(date -Iseconds)" "$(hostname)" > "$tmp/state/backup-meta.json"
-    ( cd "$tmp" && tar czf "$out" . ); chmod 600 "$out"; rm -rf "$tmp"
+    ( cd "$tmp" && tar czf "$1" . ) || { rm -rf "$tmp"; return 1; }
+    chmod 600 "$1"; rm -rf "$tmp"
+}
+cmd_backup() {
+    require_root; require_installed
+    mkdir -p "$BACKUP_DIR"; chmod 700 "$BACKUP_DIR"
+    local ts out; ts="$(date +%Y%m%d-%H%M%S)"; out="$BACKUP_DIR/awg-bot-state-$ts.tgz"
+    snapshot_state "$out" || die "снимок не снялся — смотри вывод выше"
     ok "снимок состояния: $out"
     log "в нём БД, конфиг, секреты и конфиги awg-интерфейсов — храни как чувствительный."
 }
@@ -1098,13 +1152,15 @@ cmd_restore() {
     # три дня состояния исчезли без следа.
     local pre; pre="$BACKUP_DIR/awg-bot-prerestore-$(date +%Y%m%d-%H%M%S).tgz"
     mkdir -p "$BACKUP_DIR"; chmod 700 "$BACKUP_DIR"
-    local ptmp; ptmp="$(mktemp -d)"; mkdir -p "$ptmp/state"
-    [[ -d "$DATA_DIR" ]] && find "$DATA_DIR" -maxdepth 1 -name '*.db' -exec cp -a {} "$ptmp/state/" \; 2>/dev/null || true
-    [[ -d "$CONF_DIR" ]] && cp -a "$CONF_DIR" "$ptmp/state/conf" 2>/dev/null || true
-    [[ -f "$ENV_FILE" ]] && cp -a "$ENV_FILE" "$ptmp/state/env" 2>/dev/null || true
-    ( cd "$ptmp/state" && tar czf "$pre" . ); chmod 600 "$pre"; rm -rf "$ptmp"
+    if ! snapshot_state "$pre"; then
+        rm -rf "$tmp"; systemctl start "$SERVICE" 2>/dev/null || true
+        die "снимок ДО восстановления не снялся — восстановление отменено, сервис поднят"
+    fi
     ok "снимок ДО восстановления: $pre"
     log "передумал — вернуться: awg-bot restore $pre"
+    # Каталог конфигов интерфейсов — по ТЕКУЩЕМУ app.yaml, до его подмены:
+    # иначе копия сама выбирала бы, куда положить свои конфиги.
+    local awgdir; awgdir="$(awg_conf_dir)"
     mkdir -p "$DATA_DIR" "$CONF_DIR"
     # Журналы WAL/SHM принадлежат ЗАМЕНЯЕМОМУ файлу БД. Оставь их рядом с чужой
     # базой — SQLite в лучшем случае отбросит их по несовпадению соли, в худшем
@@ -1126,12 +1182,19 @@ cmd_restore() {
     # Конфиги awg-интерфейсов — отдельным вопросом: они с приватными ключами,
     # и на живом хосте их подмена рвёт коннекты. Поднимать — руками после.
     if compgen -G "$tmp/awg/*.conf" >/dev/null; then
-        local awgdir; awgdir="$(awg_conf_dir)"
-        # только ИЗМЕНИВШИЕСЯ конфиги: тот же файл — интерфейс не трогаем
-        local c i changed=""
+        # только ИЗМЕНИВШИЕСЯ конфиги: тот же файл — интерфейс не трогаем.
+        # Конфиг с ДРУГИМИ хуками (PreUp/PostUp/PreDown/PostDown) сам не
+        # поднимаем: awg-quick исполняет их от root, а копия из чата — это
+        # файл, который прислали. Класть — кладём, поднимать — руками.
+        local c i changed="" hooked=""
         for c in "$tmp/awg"/*.conf; do
             i="$(basename "$c" .conf)"
-            cmp -s "$c" "$awgdir/$i.conf" 2>/dev/null || changed="$changed $i"
+            cmp -s "$c" "$awgdir/$i.conf" 2>/dev/null && continue
+            changed="$changed $i"
+            if ! cmp -s <(grep -E '^(Pre|Post)(Up|Down) *=' "$c" 2>/dev/null) \
+                        <(grep -E '^(Pre|Post)(Up|Down) *=' "$awgdir/$i.conf" 2>/dev/null); then
+                hooked="$hooked $i"
+            fi
         done
         if [[ -z "$changed" ]]; then
             log "конфиги awg-интерфейсов не изменились с момента копии — не трогаю."
@@ -1141,6 +1204,10 @@ cmd_restore() {
                 mkdir -p "$awgdir"
                 for i in $changed; do
                     cp -a "$tmp/awg/$i.conf" "$awgdir/$i.conf"; chmod 600 "$awgdir/$i.conf"
+                    case " $hooked " in *" $i "*)
+                        warn "$i: в копии другие хуки Pre/Post — положен, но не поднят: проверь и подними руками (awg-quick up $i)"
+                        continue ;;
+                    esac
                     if [[ "$yes" -eq 1 && -d "/sys/class/net/$i" ]]; then
                         # из чата: переподнять здесь же — руками некому
                         awg-quick down "$i" >/dev/null 2>&1 || true
@@ -1176,7 +1243,7 @@ cmd_restore() {
     # человека. Режим на машине применён (есть базовый конфиг dnsmasq) — кладём в
     # conf-dir и перечитываем демон; ещё нет — откладываем в /var/lib/awg-gw/restore,
     # скрипт обвязки подхватит их при первом включении режима.
-    if compgen -G "$tmp/awg-gw/lan/*-user.conf" >/dev/null; then
+    if compgen -G "$tmp/awg-gw/lan/*-user.conf" >/dev/null && lan_lists_sane "$tmp"/awg-gw/lan/*-user.conf; then
         if [[ -f /etc/dnsmasq.d/awg-gw-base.conf ]]; then
             cp -a "$tmp"/awg-gw/lan/*-user.conf /etc/dnsmasq.d/ && chmod 644 /etc/dnsmasq.d/awg-gw-*-user.conf
             systemctl restart dnsmasq >/dev/null 2>&1 \
@@ -1193,6 +1260,20 @@ cmd_restore() {
     rm -rf "$tmp"
     systemctl start "$SERVICE" 2>/dev/null || true; sleep 1
     systemctl is-active --quiet "$SERVICE" && ok "восстановлено, $SERVICE запущен." || warn "$SERVICE не активен — journalctl -u $SERVICE -e"
+}
+
+lan_lists_sane() {  # lan_lists_sane FILE… → 0, если в файлах только строки личных списков
+    # Файлы уходят в conf-dir dnsmasq, а там строка conf-file=/dhcp-script= —
+    # исполнение от root. В личном списке допустимы только nftset= наших
+    # наборов (как пишет awg-lan-domain sync) и комментарии.
+    local f re='^(#.*|nftset=/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})/(4#)?inet#awg_home#lan_(vpn|ru)4)?$'
+    for f in "$@"; do
+        if grep -Ev "$re" "$f" | grep -q .; then
+            warn "$(basename "$f"): в копии строка не вида nftset=/домен/… — личные списки не восстановлены"
+            return 1
+        fi
+    done
+    return 0
 }
 
 # ── uninstall (self-removal через отсоединённый пост-хук) ─────────────────────

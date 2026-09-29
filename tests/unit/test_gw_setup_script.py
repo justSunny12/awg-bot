@@ -767,3 +767,11 @@ def test_the_plan_says_whether_peer_smb_will_be_served(script, env, state):
     трёх условиях (соседи, режим локальной сети, канал) — иначе «нет», чтобы
     человек не искал в Finder то, что эта конфигурация не даст."""
     assert _plan_line(script, **env) == f"SMB подсетей других шлюзов (в Finder: «Сеть» → awg.internal): {state}"
+
+
+def test_previous_guard_table_is_loaded_before_the_link_comes_up(script):
+    """Между awg-quick up и nft -f свежей таблицы клиенты сервера AWG доходили
+    бы до самого устройства; прежняя таблица держит окно закрытым."""
+    step1 = script.split('step "1. Конфиг и подъём $LINK_IF"', 1)[1].split('step "1a.', 1)[0]
+    assert step1.index('nft -f $GUARD_FILE') < step1.index('run "$AWG_QUICK up $LINK_IF"')
+    assert 'if [ -f "$GUARD_FILE" ]' in step1

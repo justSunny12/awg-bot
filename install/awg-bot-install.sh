@@ -163,7 +163,7 @@ if [[ "$PIPED" -eq 1 && -z "${1:-}" ]]; then
     log "качаю поставку: $TGZ_URL"
     curl -fsSL --retry 3 -o "$SRC_ROOT/awg-bot.tgz" "$TGZ_URL" \
         || { rm -rf "$SRC_ROOT"; die "не скачалась поставка ($TGZ_URL)"; }
-    tar xzf "$SRC_ROOT/awg-bot.tgz" -C "$SRC_ROOT" \
+    tar xzf "$SRC_ROOT/awg-bot.tgz" -C "$SRC_ROOT" --no-same-owner \
         || { rm -rf "$SRC_ROOT"; die "архив не распаковался — скачан не тот файл?"; }
     [[ -f "$SRC_ROOT/awgbot/__main__.py" && -f "$SRC_ROOT/awg-bot.sh" ]] \
         || { rm -rf "$SRC_ROOT"; die "в архиве нет ожидаемого дерева — не та поставка?"; }
@@ -375,13 +375,15 @@ if [[ -n "$SRC_ROOT" ]]; then
     verify_archive "$TGZ" "$SRC_ROOT"
     log "раскладываю код в ${INSTALL_DIR}…"
     ( shopt -s dotglob; cp -a "$SRC_ROOT"/. "$INSTALL_DIR"/ )
+    chown -R root:root "$INSTALL_DIR"      # архив несёт uid машины, где собран
     # Установщик остаётся в /opt вместе с остальной поставкой: основной бот
     # собирает из своей установки поставку для шлюза (файл первого применения
     # везёт её с собой — с шлюза в России GitHub без туннеля не достать), и
     # без установщика внутри та была бы неполной. Обновление и так кладёт его.
 else
     log "распаковываю код в ${INSTALL_DIR}…"
-    tar xzf "$TGZ" -C "$INSTALL_DIR"
+    tar xzf "$TGZ" -C "$INSTALL_DIR" --no-same-owner
+    chown -R root:root "$INSTALL_DIR"      # архив несёт uid машины, где собран
     # архив может содержать один верхний каталог — нормализуем
     if [[ ! -f "$INSTALL_DIR/awgbot/__main__.py" ]]; then
         sub="$(ls -d "$INSTALL_DIR"/*/ 2>/dev/null | head -n1 || true)"
