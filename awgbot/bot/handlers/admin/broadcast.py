@@ -206,7 +206,15 @@ async def broadcast_days(message: Message, state: FSMContext, services):
 # больше нечего. (Долгие паузы здесь были костылём вокруг чужой ошибки: падал
 # разбор подписи, терялся её апдейт, и казалось, что альбом «доезжает».)
 _BC_SETTLE_SECONDS = 1.5
-_bc_locks: dict[int, asyncio.Lock] = {}
+_bc_locks: dict[tuple[int, int], asyncio.Lock] = {}   # (чат, цикл событий) → замок: Lock привязан к циклу
+
+
+def _bc_lock(chat_id: int) -> asyncio.Lock:
+    key = (int(chat_id), id(asyncio.get_running_loop()))
+    lock = _bc_locks.get(key)
+    if lock is None:
+        lock = _bc_locks[key] = asyncio.Lock()
+    return lock
 _bc_render_tasks: dict[int, asyncio.Task] = {}
 
 
@@ -233,11 +241,13 @@ async def broadcast_receive(message: Message, state: FSMContext, services):
     # Единственность живой таски даёт вторая отмена — атомарная пара
     # cancel+create в самом конце.
     _bc_cancel_render(chat_id)
-    # Своё сообщение админа — в уборку: иначе после отмены оно остаётся висеть,
-    # а вместе с ним и весь набранный черновик объявления.
-    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    lock = _bc_locks.setdefault(chat_id, asyncio.Lock())
+    lock = _bc_lock(chat_id)
     async with lock:
+        # Своё сообщение админа — в уборку: иначе после отмены оно остаётся
+        # висеть, а вместе с ним и весь набранный черновик объявления. Под
+        # замком: список id читается и пишется целиком, и параллельные апдейты
+        # альбома теряли друг друга — снимки оставались в чате.
+        await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
         data = await state.get_data()
         photos: list = list(data.get("photos") or ())
         draft: dict = {}
@@ -288,7 +298,7 @@ async def _bc_preview(message: Message, state: FSMContext, services):
     разосланного, и по два живых блока подтверждения.
     """
     chat_id = message.chat.id
-    lock = _bc_locks.setdefault(chat_id, asyncio.Lock())
+    lock = _bc_lock(chat_id)
     async with lock:
         data = await state.get_data()
         if not data.get("targets"):

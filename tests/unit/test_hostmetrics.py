@@ -185,3 +185,24 @@ def test_without_a_power_reading_the_gateway_screens_say_nothing_about_power():
     assert "питание" not in texts.gateway_health(st).lower()
     st.throttled = {"raw": 0, "now": [], "ever": []}
     assert "питание ОК" in texts.gateway_panel(st), "на Pi строка питания есть"
+
+
+def test_smart_verdict_comes_from_the_exit_code_not_from_the_word_failed(monkeypatch):
+    """Ошибка открытия устройства тоже печатает «failed» — здоровый диск
+    показывался как SMART FAIL. Вердикт — по битам кода возврата smartctl."""
+    import shutil
+    import subprocess
+    monkeypatch.setattr(hm, "root_block_device", lambda: "/dev/sda")
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/sbin/smartctl")
+    for rc, want in ((0, "OK"), (8, "FAIL"), (2, None), (1, None), (4, None), (32, "OK"), (40, "FAIL")):
+        monkeypatch.setattr(subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(
+            argv, rc, b"Smartctl open device: /dev/sda failed: Permission denied\n", b""))
+        assert hm.read_smart_health() == want, rc
+
+
+def test_dev_root_is_resolved_through_sysfs(monkeypatch, tmp_path):
+    m = tmp_path / "mounts"; m.write_text("/dev/root / ext4 rw 0 0\n", encoding="utf-8")
+    monkeypatch.setattr(hm, "_resolve_dev_root", lambda: "/dev/nvme0n1p2")
+    assert hm.root_block_device(str(m)) == "/dev/nvme0n1"
+    monkeypatch.setattr(hm, "_resolve_dev_root", lambda: "")
+    assert hm.root_block_device(str(m)) == ""

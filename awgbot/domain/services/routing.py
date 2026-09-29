@@ -288,6 +288,38 @@ class RoutingMixin:
                     else texts.routing_revoked_holder_notice(client)))
         return notes
 
+    def set_routing_allowed_many(self, client_ids, allowed: bool) -> list["Notification"]:
+        """«Выбрать все»: флаг у всех, одна реконсиляция (и один перезапуск
+        dnsmasq) вместо полной реконсиляции на каждый профиль — 15 профилей
+        давали 15 рестартов и сброс DNS-кэша всем."""
+        from awgbot.bot import texts                   # ленивый, как в соседних миксинах
+        notes: list[Notification] = []
+        changed_clients = []
+        with self.db.transaction():
+            for cid in client_ids:
+                client = self.db.get_client(cid)
+                if client is None or bool(client.routing_allowed) == bool(allowed):
+                    continue
+                self.db.update_client_fields(cid, routing_allowed=1 if allowed else 0)
+                if allowed:
+                    self.db.set_owner_devices_routing(cid, True)
+                changed_clients.append(client)
+        if changed_clients:
+            self.reconcile_routing()
+        for client in changed_clients:
+            if client.tg_id:
+                notes.append(Notification(client.tg_id, texts.ROUTING_GRANTED_NOTICE if allowed
+                                          else texts.ROUTING_REVOKED_NOTICE))
+            seen: set[int] = set()
+            for dev in self.db.list_lent_out_devices(client.id):
+                if dev.holder_tg_id and dev.holder_tg_id not in seen:
+                    seen.add(dev.holder_tg_id)
+                    notes.append(Notification(
+                        dev.holder_tg_id,
+                        texts.routing_granted_holder_notice(client) if allowed
+                        else texts.routing_revoked_holder_notice(client)))
+        return notes
+
     def set_routing_all(self, client_id: int, on: bool) -> int:
         """Массовое включение/выключение по всему профилю. Возвращает, сколько
         устройств изменилось.

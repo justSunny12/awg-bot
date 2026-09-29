@@ -130,6 +130,12 @@ def root_block_device(mounts: str = "/proc/mounts") -> str:
                 parts = line.split()
                 if len(parts) >= 2 and parts[1] == "/" and parts[0].startswith("/dev/"):
                     dev = parts[0]
+                    if dev == "/dev/root":
+                        # ядро показывает корень как /dev/root: настоящее имя —
+                        # через номер устройства в sysfs (…/block/8:2 → sda2)
+                        dev = _resolve_dev_root() or ""
+                        if not dev:
+                            return ""
                     m = re.match(r"^(/dev/(?:mmcblk\d+|nvme\d+n\d+))p\d+$", dev)
                     if m:
                         return m.group(1)
@@ -137,6 +143,16 @@ def root_block_device(mounts: str = "/proc/mounts") -> str:
     except OSError:
         pass
     return ""
+
+
+def _resolve_dev_root() -> str:
+    try:
+        st = os.stat("/")
+        major, minor = os.major(st.st_dev), os.minor(st.st_dev)
+        name = os.path.basename(os.path.realpath(f"/sys/dev/block/{major}:{minor}"))
+        return f"/dev/{name}" if name and name != f"{major}:{minor}" else ""
+    except OSError:
+        return ""
 
 
 def read_smart_health(dev: str | None = None) -> str | None:
@@ -150,15 +166,16 @@ def read_smart_health(dev: str | None = None) -> str | None:
         return None
     try:
         proc = subprocess.run(["smartctl", "-H", dev], capture_output=True, timeout=15)
-        out = proc.stdout.decode(errors="replace")
     except Exception:                                  # noqa: BLE001
         return None
-    low = out.lower()
-    if "passed" in low or "smart health status: ok" in low:
-        return "OK"
-    if "failed" in low:
-        return "FAIL"
-    return None
+    # Вердикт — по битам кода возврата smartctl, не по слову «failed» в
+    # выводе: ошибка открытия устройства тоже пишет «failed», и панель
+    # показывала SMART FAIL здоровому диску. Биты 0–2: нечем смотреть;
+    # бит 3: диск сам сообщает FAILING; иначе — прошёл.
+    rc = int(proc.returncode)
+    if rc < 0 or rc & 0b111:
+        return None
+    return "FAIL" if rc & 0b1000 else "OK"
 
 
 def read_disk_percent(path: str = "/") -> float | None:

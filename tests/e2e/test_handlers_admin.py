@@ -415,7 +415,7 @@ async def test_client_and_guest_home_do_not_change_with_rf_data(services, fake_b
         m1 = FakeMessage(text="/start", chat_id=6100, user_id=6100, bot=fake_bot)
         await client_h.start_client(m1, services.db.get_client(owner.id), services, FakeState())
         m2 = FakeMessage(text="/start", chat_id=96100, user_id=96100, bot=fake_bot)
-        await fh.friend_start(m2, res.holder, services)
+        await fh.friend_start(m2, res.holder, services, FakeState())
         return ([s[1] for s in m1.sent if s[0] == "answer"][-1],
                 [s[1] for s in m2.sent if s[0] == "answer"][-1])
 

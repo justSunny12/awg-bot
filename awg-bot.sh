@@ -1314,11 +1314,16 @@ cmd_restore() {
     # из туннеля) — данные человека, бандл их не восстановит. Юнит обвязки
     # подхватит файл при следующем реассерте (агент сверяет порт по тику).
     if [[ -f "$tmp/awg-gw/firewall.env" ]]; then
-        if cmp -s "$tmp/awg-gw/firewall.env" /etc/awg-gw/firewall.env 2>/dev/null; then
+        # SSH_PORT из копии не переносим: порт — факт этого устройства (под OMV
+        # его задаёт OMV), агент снимет его на первом тике; из копии его
+        # значение давало таблицу на старом порту и ложное «порт изменился»
+        local fw_new="$tmp/awg-gw/firewall.env.restore"
+        { grep -v '^SSH_PORT=' "$tmp/awg-gw/firewall.env"; grep '^SSH_PORT=' /etc/awg-gw/firewall.env 2>/dev/null; } > "$fw_new" || true
+        if cmp -s "$fw_new" /etc/awg-gw/firewall.env 2>/dev/null; then
             log "firewall.env шлюза не изменился с момента копии — не трогаю"
         else
             mkdir -p /etc/awg-gw
-            cp -a "$tmp/awg-gw/firewall.env" /etc/awg-gw/firewall.env; chmod 644 /etc/awg-gw/firewall.env
+            cp -a "$fw_new" /etc/awg-gw/firewall.env; chmod 644 /etc/awg-gw/firewall.env
             if systemctl is-enabled awg-link-gw.service >/dev/null 2>&1; then
                 systemctl restart awg-link-gw.service >/dev/null 2>&1 \
                     && ok "firewall.env шлюза восстановлен, обвязка перевыставлена" \

@@ -470,13 +470,6 @@ def settings_updates(muted: bool, target_tag: str = "", blocked: str = "") -> In
     return kb.as_markup()
 
 
-def settings_cancel(sec: str, key: str = "") -> InlineKeyboardMarkup:
-    """Отмена ввода значения — вернуться в раздел sec (key — его параметр,
-    например слот) без изменений."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="✖️ Отмена", callback_data=SetCB(sec=sec, key=key))
-    return kb.as_markup()
-
 
 def update_notify() -> InlineKeyboardMarkup:
     """Кнопки уведомления о новой версии: Обновить / Скрыть / Не уведомлять.

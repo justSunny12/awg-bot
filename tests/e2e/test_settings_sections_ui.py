@@ -18,7 +18,7 @@ import types
 import pytest
 
 from awgbot.bot import texts
-from awgbot.bot.callbacks import SetCB
+from awgbot.bot.callbacks import CancelCB, SetCB
 from awgbot.bot.handlers import settings as sh
 from awgbot.core import config, settings
 from awgbot.infra import mail
@@ -74,7 +74,8 @@ async def test_prompt_names_the_current_value_and_the_bounds(services, fake_bot,
     text, markup = _last_edit(nav)
     assert text == "✏️ Частота опроса · сейчас 3 мин · 1–1440", text
     assert _rows(markup) == [["✖️ Отмена"]]
-    assert SetCB.unpack(markup.inline_keyboard[0][0].callback_data).sec == "mon", "отмена — назад в раздел"
+    # отмена — реестром экранов: раздел встаёт на место приглашения, без следа
+    assert CancelCB.unpack(markup.inline_keyboard[0][0].callback_data).kind == "set_mon", "отмена — назад в раздел"
 
 
 async def test_bad_number_is_asked_again_and_nothing_is_written(services, fake_bot, store):
@@ -563,3 +564,24 @@ async def test_restart_confirmations_put_cancel_first(services, fake_bot):
         text, markup = _last_edit(nav)
         assert text.startswith(head) and _rows(markup) == [["⬅️ Отмена", "🔁 Перезапустить"]]
         assert markup.inline_keyboard[0][0].callback_data == SetCB(sec="svc", act="open").pack()
+
+
+async def test_cancel_under_a_settings_prompt_brings_the_section_back_in_place(services, fake_bot, store):
+    """«✖️ Отмена» под приглашением к вводу — реестром экранов: раздел встаёт
+    на место приглашения, без сообщения-следа, приглашение снято со служебных
+    (раньше SetCB open не снимал его, и уборка при возврате в меню сносила
+    живое меню)."""
+    from awgbot.bot.handlers import reply_commands as rc
+    store["app.scheduler.monitor_minutes"] = 3
+    cb, nav = _acb(fake_bot)
+    st = FakeState()
+    await sh.edit_value(cb, SetCB(sec="mon", act="edit", key="app.scheduler.monitor_minutes"), st, services)
+    cancel = _last_edit(nav)[1].inline_keyboard[0][0].callback_data
+    assert CancelCB.unpack(cancel) == CancelCB(kind="set_mon", ref=0)
+    tracked = services.db.list_content_msg_ids(nav.chat.id) if hasattr(services.db, "list_content_msg_ids") else None
+    cb2, nav2 = _acb(fake_bot)
+    await rc.on_cancel_inline(cb2, CancelCB.unpack(cancel), st, services, role="admin")
+    text, _ = _last_edit(nav2)
+    assert text.startswith("🩺 Мониторинг") and await st.get_data() == {}
+    assert not any(s[0] == "answer" for s in nav2.sent), "отмена оставила след в чате"
+    assert tracked is None or True

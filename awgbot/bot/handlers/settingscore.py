@@ -32,13 +32,11 @@ from awgbot.bot.handlers.common import call, ask_tracked, cleanup_content, send_
 class Hooks:
     """Чем роли различаются.
 
-    cancel_kb(sec)        — «Отмена» на приглашении к вводу (ведёт в раздел sec);
     email_offer_kb(sec)   — «почта не настроена»: назад в sec / настроить;
     email_forget_kb()     — подтверждение отключения ящика;
     render(cb, services, sec) — перерисовать раздел на месте кнопки;
     screen(services, sec) — (text, markup) раздела, для показа новым сообщением.
     """
-    cancel_kb: Callable[[str], object]
     email_offer_kb: Callable[[str], object]
     email_forget_kb: Callable[[], object]
     render: Callable[[CallbackQuery, object, str], Awaitable[None]]
@@ -55,12 +53,13 @@ _DEFAULTS = {"app.gateway.handshake_max_age": 300, "app.gateway.monitor_minutes"
              "app.gateway.temp_alert_c": 75}
 
 
-async def ask(cb: CallbackQuery, services, prompt: str, markup) -> None:
-    """Приглашение к вводу — на месте экрана и в служебные: после ответа оно
-    отслужило и убирается вместе с вводом (см. after_input)."""
-    from awgbot.bot.handlers.common import edit
-    await edit(cb, prompt, markup)
-    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
+async def ask(cb: CallbackQuery, services, state: FSMContext, prompt: str, sec: str) -> None:
+    """Приглашение к вводу — на месте экрана, в служебные, с «✖️ Отмена»
+    реестра экранов (CancelCB): отмена возвращает раздел sec на место
+    приглашения и снимает его со служебных — уборка при возврате в меню
+    иначе сносила живое меню. Одна схема с остальными приглашениями бота."""
+    from awgbot.bot.handlers.common import ask_here
+    await ask_here(cb, services, state, prompt, f"set_{sec}")
 
 
 async def after_input(message: Message, services, hooks: Hooks, sec: str, note: str = "") -> None:
@@ -98,7 +97,7 @@ async def start_edit(cb: CallbackQuery, services, hooks: Hooks, state: FSMContex
         if key in _SCALE and cur is not None:
             cur = max(1, -(-int(cur) // _SCALE[key]))       # вверх: 90 с — «2 мин»
         prompt = texts.settings_prompt(key, cur)
-    await ask(cb, services, prompt, hooks.cancel_kb(sec))
+    await ask(cb, services, state, prompt, sec)
     await cb.answer()
     return True
 
@@ -190,8 +189,7 @@ async def _receive_text(message: Message, state: FSMContext, services, hooks: Ho
         await call(settings.set_value, key, raw)
     except settings.SettingsWriteError as e:
         await state.clear()
-        await message.answer(str(e))
-        await after_input(message, services, hooks, sec)
+        await after_input(message, services, hooks, sec, f"⚠️ {texts._e(str(e))}")
         return
     await state.clear()
     await after_input(message, services, hooks, sec, texts.settings_changed(key, old, shown_new))
@@ -253,8 +251,7 @@ async def receive_value(message: Message, state: FSMContext, services, hooks: Ho
         await call(settings.set_value, key, val * scale)
     except settings.SettingsWriteError as e:
         await state.clear()
-        await message.answer(str(e))
-        await after_input(message, services, hooks, sec)
+        await after_input(message, services, hooks, sec, f"⚠️ {texts._e(str(e))}")
         return
     await state.clear()
     await after_input(message, services, hooks, sec, texts.settings_changed(key, old, val))
@@ -343,7 +340,7 @@ async def set_backup_channel(cb: CallbackQuery, services, hooks: Hooks, val: str
 async def passphrase_start(cb: CallbackQuery, services, hooks: Hooks, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(BackupPassphrase.first)
-    await ask(cb, services, texts.BACKUP_ASK_PASSPHRASE, hooks.cancel_kb("backup"))
+    await ask(cb, services, state, texts.BACKUP_ASK_PASSPHRASE, "backup")
     await cb.answer()
 
 
@@ -376,7 +373,7 @@ async def email_action(cb: CallbackQuery, services, hooks: Hooks, state: FSMCont
         await state.set_state(EmailSetup.address)
         acc = await call(services.email_account)
         prompt = texts.email_ask_address_change(acc.login) if acc else texts.EMAIL_ASK_ADDRESS
-        await ask(cb, services, prompt, hooks.cancel_kb("email"))
+        await ask(cb, services, state, prompt, "email")
         await cb.answer()
         return True
     if key == "check":
@@ -432,7 +429,7 @@ def register(router, hooks: Hooks, *, default_sec: str = "root") -> dict:
         await state.update_data(passphrase=phrase)
         await state.set_state(BackupPassphrase.second)
         await ask_tracked(message, services, texts.BACKUP_ASK_PASSPHRASE_AGAIN,
-                          reply_markup=hooks.cancel_kb("backup"))
+                          reply_markup=kb.cancel_input("set_backup"))
 
     @router.message(BackupPassphrase.second)
     async def passphrase_second_h(message: Message, state: FSMContext, services):
@@ -442,7 +439,7 @@ def register(router, hooks: Hooks, *, default_sec: str = "root") -> dict:
             await state.set_state(BackupPassphrase.first)
             await state.update_data(passphrase="")
             await ask_tracked(message, services, texts.BACKUP_PASSPHRASE_MISMATCH,
-                              reply_markup=hooks.cancel_kb("backup"))
+                              reply_markup=kb.cancel_input("set_backup"))
             return
         await state.clear()
         await call(services.backup_set_passphrase, phrase)
@@ -451,7 +448,7 @@ def register(router, hooks: Hooks, *, default_sec: str = "root") -> dict:
     async def _email_done(message: Message, services):
         await after_input(message, services, hooks, "email")
 
-    mw = mailwizard.register(router, cancel_kb=lambda: hooks.cancel_kb("email"),
+    mw = mailwizard.register(router, cancel_kb=lambda: kb.cancel_input("set_email"),
                              done=_email_done)
     return {"receive_value": receive_value_h, "passphrase_first": passphrase_first_h,
             "passphrase_second": passphrase_second_h, **mw}

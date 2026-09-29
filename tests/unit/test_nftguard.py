@@ -605,3 +605,15 @@ def test_without_link_interfaces_the_channel_rule_is_not_widened(host_mode, monk
     text = nftguard.render(bare)
     assert "tcp dport 8787" not in text, "правило канала без интерфейсов линков открыто с любого интерфейса"
     assert "@link_peers4 tcp dport" not in text
+
+
+def test_ufw_status_is_asked_without_a_locale(monkeypatch):
+    """Бот без LANG, но ufw мог перевести «Status: active» — LC_ALL=C."""
+    seen = {}
+
+    def run(argv, **kw):
+        seen["env"] = kw.get("env")
+        return subprocess.CompletedProcess(argv, 0, b"Status: active\n", b"")
+    monkeypatch.setattr(subprocess, "run", run)
+    assert nftguard.ufw_active() is True
+    assert seen["env"]["LC_ALL"] == "C"

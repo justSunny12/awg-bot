@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from typing import Optional
 
 from awgbot.core import config
@@ -613,6 +614,9 @@ class GatewayLinkMixin:
         self._standby_forget(sid)
         self._rt_window_reset(sid)                         # окно замеров живости
         self.gwlink_forget(sid)                            # снимок и сессия канала
+        # токен бота снятого устройства: новый слот с тем же номером иначе увёз
+        # бы его в файл первого применения — два агента на одном токене
+        self.forget_gw_bot_token(sid)
 
     def gateway_remove(self, slot_id: Optional[int] = None) -> Optional[object]:
         """Убрать слот: активный при живом другом слоте — трафик на него;
@@ -812,6 +816,7 @@ class GatewayLinkMixin:
 
     def _gw_ping_forget(self, slot_id: int) -> None:
         self.db.set_state(f"{self._GW_PING_KEY}_{int(slot_id)}", "")
+        self.__dict__.get("_gw_ping_failed", {}).pop(int(slot_id), None)
 
     def _gw_cached(self, key: str, slot_id: int) -> Optional[tuple[str, str]]:
         raw = self.db.get_state(f"{key}_{int(slot_id)}") or ""
@@ -839,17 +844,27 @@ class GatewayLinkMixin:
         c = self._gw_cached(self._GW_PING_KEY, slot_id)
         return (int(c[0]), c[1]) if c else None
 
+    _GW_PING_FAIL_TTL = 300                   # с — отказ пинга помним: карточка не ждёт ping -c 3 на каждом открытии
+
     def gateway_ping(self, slot_id: int) -> Optional[int]:
         """Пинг с ВПС ДО шлюза: ICMP по линку на адрес шлюза, медиана трёх.
-        Успех — в кэш; отказ — кэш снят, None."""
+        Успех — в кэш; отказ — кэш снят, None, и отказ помнится
+        (_GW_PING_FAIL_TTL): при лежащем шлюзе каждое открытие карточки иначе
+        стоило ip addr и ping -c 3 -W 2 — секунды спиннера."""
         gw = self._gw_slot(slot_id)
         ms = routing.ping_peer(gw.link_if)
         if ms is None:
             self.db.set_state(f"{self._GW_PING_KEY}_{gw.id}", "")
+            self.__dict__.setdefault("_gw_ping_failed", {})[int(gw.id)] = time.monotonic()
             return None
+        self.__dict__.setdefault("_gw_ping_failed", {}).pop(int(gw.id), None)
         self.db.set_state(f"{self._GW_PING_KEY}_{gw.id}",
                           f"{int(ms)} {timeutil.to_iso(timeutil.now())}")
         return int(ms)
+
+    def gateway_ping_failed_recently(self, slot_id: int) -> bool:
+        at = self.__dict__.get("_gw_ping_failed", {}).get(int(slot_id))
+        return at is not None and time.monotonic() - at < self._GW_PING_FAIL_TTL
 
     def gateway_ping_lazy(self, slot_id: int) -> Optional[int]:
         """Для экранов: из кэша, а без него — замер (первое открытие экрана)."""
@@ -947,7 +962,7 @@ class GatewayLinkMixin:
         cached = st.get("ping")
         if cached is not None:
             st["ping_ms"] = cached[0]
-        elif lazy_ping:
+        elif lazy_ping and not self.gateway_ping_failed_recently(slot_id):
             st["ping_ms"] = self.gateway_ping(slot_id)
         else:
             st["ping_ms"] = None
@@ -1186,6 +1201,29 @@ class GatewayLinkMixin:
         канала не в счёт: ответ по токену точнее и переживает смену агента)."""
         return [g.id for g in self.db.gateways()
                 if self.gw_bot_token(g.id) and not self._gw_bot_identity_cached(g.id)]
+
+    def forget_gw_bot_token(self, slot_id: Optional[int] = None) -> None:
+        """Убрать токен бота слота из env (снятие слота) и память getMe."""
+        path = self._env_path()
+        key = self._gw_token_env(slot_id)
+        try:
+            with open(path, encoding="utf-8") as f:
+                lines = [ln for ln in f.read().splitlines() if not ln.startswith(key + "=")]
+        except FileNotFoundError:
+            return
+        except OSError as e:
+            log.warning("gateway_remove: токен слота %s не убран из env: %s", slot_id, e)
+            return
+        try:
+            from awgbot.util.fsatomic import write_private
+            write_private(path, "\n".join(lines) + "\n")
+        except OSError as e:
+            log.warning("gateway_remove: токен слота %s не убран из env: %s", slot_id, e)
+        try:
+            from awgbot.runtime import gwbotme
+            gwbotme.forget(int(slot_id or 1))
+        except Exception:                                 # noqa: BLE001
+            pass
 
     def set_gw_bot_token(self, token: str, slot_id: Optional[int] = None) -> None:
         """Запомнить токен агента. Хранение осознанное: без него перевыпуск

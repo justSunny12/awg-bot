@@ -190,7 +190,7 @@ async def test_friend_code_through_start_still_activates_for_a_client(
 
 async def _guest_start(services, fake_bot, guest, payload):
     msg = FakeMessage(text=f"/start {payload}", chat_id=guest.tg_id, user_id=guest.tg_id, bot=fake_bot)
-    await fh.friend_start_with_code(msg, _cmd(payload), guest, services)
+    await fh.friend_start_with_code(msg, _cmd(payload), guest, services, FakeState())
     return [s for s in msg.sent if s[0] == "answer"]
 
 

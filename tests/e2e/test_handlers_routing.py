@@ -9,6 +9,7 @@ import pytest
 from awgbot.bot import keyboards as kb
 from awgbot.bot.handlers import routing as routing_h
 from awgbot.bot.callbacks import RoutingCB
+from awgbot.core import config
 from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
 pytestmark = pytest.mark.e2e
@@ -674,8 +675,10 @@ async def test_routing_lists_info_and_controls(services, fake_bot, monkeypatch):
     cb.answers.clear()
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="lists_refresh"), services)
     assert forced == [True], "«обновить сейчас» не форсирует обновление"
-    # ровно один ответ на колбэк: второй Telegram не показывает
-    assert len(cb.answers) == 1 and "7 записей" in (cb.answers[0][0] or "")
+    # ответ колбэку — сразу (скачивание идёт секунды, колбэк протухал), итог —
+    # первой строкой перерисованного раздела; ровно один ответ на колбэк
+    assert cb.answers == [("Обновляю списки…", False)], cb.answers
+    assert "✅ Списки обновлены: 7 записей" in last_screen(msg)[0]
 
 def test_routing_section_buttons_depend_on_gateway():
     """«🛰 Шлюзы»: слоты кнопками («⭐» у предпочтительного), при одном —
@@ -993,9 +996,10 @@ async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
     monkeypatch.setattr(services.db, "gateways", lambda: [SimpleNamespace(id=1)])
     monkeypatch.setattr(services, "routing_status", lambda: (True, ""))
 
-    async def _no_render(cb, sec, services_):        # раздел рисует полную карточку шлюза — не о нём тест
+    async def _no_render(cb, sec, services_, key=""):  # раздел рисует полную карточку шлюза — не о нём тест
         pass
     monkeypatch.setattr(sh, "_render", _no_render)
+    monkeypatch.setattr(sh, "_render_nav", _no_render)
     monkeypatch.setattr(services, "routing_probe", lambda: rt.PROBE_DOWN)
     cb, nav = _cb(fake_bot, config.ADMIN_ID)
     await sh.toggle(cb, SetCB(sec="rt", act="toggle", key="app.routing.enabled"), services)
@@ -1068,3 +1072,19 @@ def test_delete_buttons_carry_the_entry_tag(services, make_active_client):
     packed = [b.callback_data for row in m.inline_keyboard for b in row if b.text.startswith("➖")]
     assert packed and all(len(p.encode()) <= 64 for p in packed), packed
     assert packed[0].endswith(":" + kb.entry_tag("very-long-subdomain-name.example-company.co.uk"))
+
+
+async def test_sites_page_is_remembered_per_viewer_not_per_profile(services, make_active_client, fake_bot, monkeypatch):
+    """Админ листает чужой список из своего чата: страницу помнит смотрящий.
+    Раньше ключом был tg_id профиля — админ и клиент листали одну «страницу»."""
+    from awgbot.bot import paging
+    monkeypatch.setattr(paging, "_pages", {})
+    c = _allowed_client(services, make_active_client, 78)
+    services.routing_add_domains(c.id, " ".join(f"site{i}.example" for i in range(15)))
+    paging.remember(config.ADMIN_ID, "rtsites", c.id, 1)
+    _, admin_view = await routing_h.sites_view(services, c, config.ADMIN_ID)
+    _, own_view = await routing_h.sites_view(services, c, c.tg_id)
+    admin_labels = [b.text for row in admin_view.inline_keyboard for b in row]
+    own_labels = [b.text for row in own_view.inline_keyboard for b in row]
+    assert admin_labels != own_labels, "страница админа и клиента одна на двоих"
+    assert own_labels[0] == "➖ site0.example" and admin_labels[0] != "➖ site0.example"

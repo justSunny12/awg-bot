@@ -25,6 +25,11 @@ RETRY_SECONDS = 10 * 60
 _next_try: dict[int, float] = {}
 
 
+def forget(slot_id: int) -> None:
+    """Слот снят: пауза после отказа getMe к новому слоту с тем же номером не относится."""
+    _next_try.pop(int(slot_id), None)
+
+
 async def refresh(services, slot_id: int) -> bool:
     """Спросить Telegram о боте слота и запомнить. False — токена нет или
     Telegram не ответил (ошибка в журнал, не наружу)."""

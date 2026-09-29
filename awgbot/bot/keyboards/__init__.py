@@ -43,7 +43,7 @@ from .settings import (
     email_poll_label, email_code_label, backup_when_label, UPDATE_SCHEDULE_CYCLE, UPDATE_SCHEDULE_LABELS, EMAIL_POLL_CYCLE, EMAIL_CODE_CYCLE,
     settings_email, email_forget_confirm, settings_subs, settings_mon, settings_backup,
     backup_encryption_kb, restore_confirm, email_setup_offer, settings_svc,
-    svc_confirm, migration_confirm, settings_updates, settings_cancel, update_notify,
+    svc_confirm, migration_confirm, settings_updates, update_notify,
     update_admin_available, migration_needed, update_done_menu)
 from .routing import (
     routing_panel, routing_sites, routing_clear_confirm, gateways_kb, gateway_edit_kb, gateway_router_kb, routing_params_kb,
@@ -51,14 +51,14 @@ from .routing import (
     gateway_remove_confirm, routing_disable_confirm, settings_routing,
     routing_provision, settings_routing_lists,
     settings_routing_users, bundle_menu_kb, gateway_list, gateway_card,
-    gateway_switch_confirm, gateway_slot_cancel, settings_routing_monitor,
+    gateway_switch_confirm, settings_routing_monitor,
     gateway_lan_confirm, gateway_router_back, gateway_peer_confirm)
 from .broadcast import (
     broadcast_mode, broadcast_targets, broadcast_days_kb, broadcast_cancel, broadcast_confirm)
 from .gateway import (
     gateway_panel_kb, gateway_settings_kb, gateway_notify_kb, gateway_mon_kb,
     gateway_backup_kb, gateway_email_kb, gateway_email_forget_confirm,
-    gateway_email_offer, gateway_encryption_kb, gateway_cancel_kb, gateway_health_kb, gateway_lan_router_kb,
+    gateway_email_offer, gateway_encryption_kb, gateway_health_kb, gateway_lan_router_kb,
     gateway_updates_kb, gateway_confirm_kb, gateway_bundle_kb,
     gateway_bundle_passphrase_kb, gateway_back_kb, gateway_update_available_kb,
     gateway_lan_kb, lan_own_sorted, lan_own_tag, link_minutes,
@@ -86,18 +86,18 @@ __all__ = [
     "settings_email", "email_forget_confirm", "settings_subs", "settings_mon",
     "settings_backup", "backup_encryption_kb", "restore_confirm", "email_setup_offer",
     "settings_svc", "svc_confirm", "migration_confirm", "settings_updates",
-    "settings_cancel", "update_notify", "update_admin_available", "migration_needed",
+ "update_notify", "update_admin_available", "migration_needed",
     "update_done_menu", "routing_panel", "routing_sites", "routing_clear_confirm",
     "gateways_kb", "gateway_edit_kb", "gateway_router_kb", "routing_params_kb", "gateway_choose_kind", "gateway_pick",
     "gateway_mark_confirm", "gateway_new_confirm", "gateway_remove_confirm",
     "routing_disable_confirm", "settings_routing", "routing_provision",
     "settings_routing_lists", "settings_routing_users",
     "bundle_menu_kb", "gateway_list", "gateway_card", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_router_back", "gateway_peer_confirm",
-    "gateway_slot_cancel", "settings_routing_monitor", "broadcast_mode", "broadcast_targets", "broadcast_cancel",
+ "settings_routing_monitor", "broadcast_mode", "broadcast_targets", "broadcast_cancel",
     "broadcast_confirm", "gateway_panel_kb", "gateway_ssh_kb", "gateway_ssh_port_finisher_kb", "gateway_settings_kb", "gateway_health_kb", "gateway_lan_router_kb",
     "gateway_notify_kb", "gateway_mon_kb", "gateway_backup_kb", "gateway_email_kb",
     "gateway_email_forget_confirm", "gateway_email_offer", "gateway_encryption_kb",
-    "gateway_cancel_kb", "gateway_updates_kb",
+ "gateway_updates_kb",
     "gateway_confirm_kb", "gateway_bundle_kb", "gateway_bundle_passphrase_kb",
     "gateway_back_kb", "gateway_update_available_kb", "gateway_lan_kb",
     "lan_own_sorted", "lan_own_tag", "link_minutes",

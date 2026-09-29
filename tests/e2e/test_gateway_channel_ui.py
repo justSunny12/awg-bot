@@ -441,7 +441,7 @@ async def test_the_peer_toggle_always_asks_for_a_reissue_even_with_a_live_channe
     await sh.gw_slot_peer_ask(cb, services)
     text = _screen(nav)[0]
     assert "перевыпусти" in text and "по каналу" not in text
-    await sh.gw_slot_peer_yes(cb, services)
+    await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes"), services)
     assert store["app.routing.peer_nets.enabled"] is True
     assert cb.answers[-1] == ("Подсети связаны: перевыпусти конфигурацию каждого шлюза", True)
 

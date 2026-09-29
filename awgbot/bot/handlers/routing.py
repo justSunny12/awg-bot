@@ -64,7 +64,7 @@ def _back_target(client, speaker) -> str:
     return Menu(action="main").pack()
 
 
-async def panel_view(services, client, back_target: str):
+async def panel_view(services, client, back_target: str, viewer_chat: int | None = None):
     """(text, markup) раздела РФ-доступа."""
     devices = await call(services.routing_devices, client.id)
     enabled, total = await call(services.routing_device_counts, client.id)
@@ -77,14 +77,17 @@ async def panel_view(services, client, back_target: str):
     return text, kb.routing_panel(
         client.id, devices, lent_out=lent_out, enabled=enabled, total=total,
         n_domains=len(domains), back_target=back_target,
-        page=paging.page_of(client.tg_id, "rtpanel", client.id))
+        page=paging.page_of(viewer_chat or client.tg_id, "rtpanel", client.id))
 
 
-async def sites_view(services, client):
+async def sites_view(services, client, viewer_chat: int | None = None):
+    """viewer_chat — чат смотрящего: страницу помнит он, а не профиль (админ
+    листает чужой список из своего чата)."""
     domains = await call(services.routing_domains, client.id)
     from awgbot.bot import paging
     return (texts.routing_sites_text(domains),
-            kb.routing_sites(client.id, domains, page=paging.page_of(client.tg_id, "rtsites", client.id)))
+            kb.routing_sites(client.id, domains,
+                             page=paging.page_of(viewer_chat or client.tg_id, "rtsites", client.id)))
 
 
 async def screen_for(services, client, ref: int, kind: str):
@@ -93,9 +96,10 @@ async def screen_for(services, client, ref: int, kind: str):
     profile = await _profile(services, client, ref)
     if profile is None or not await call(services.routing_client_visible, profile):
         return None
+    viewer = client.tg_id if client is not None else config.ADMIN_ID   # страницу помнит смотрящий
     if kind == "sites":
-        return await sites_view(services, profile)
-    return await panel_view(services, profile, _back_target(profile, client))
+        return await sites_view(services, profile, viewer)
+    return await panel_view(services, profile, _back_target(profile, client), viewer)
 
 
 async def show_panel(cb: CallbackQuery, services, client, speaker):
@@ -168,7 +172,7 @@ async def routing_sites(cb: CallbackQuery, callback_data: RoutingCB, client, ser
     if not await _guard(cb, services, profile):
         return
     await state.clear()
-    await edit(cb, *await sites_view(services, profile))
+    await edit(cb, *await sites_view(services, profile, cb.message.chat.id))
     await cb.answer()
 
 
@@ -216,12 +220,12 @@ async def routing_delete(cb: CallbackQuery, callback_data: RoutingCB, client, se
     idx = callback_data.idx
     if not (0 <= idx < len(domains)) or callback_data.tag != kb.entry_tag(domains[idx]):
         await cb.answer("Список изменился — открой раздел заново", show_alert=True)
-        await edit(cb, *await sites_view(services, profile))
+        await edit(cb, *await sites_view(services, profile, cb.message.chat.id))
         return
     removed = domains[idx]
     await call(services.routing_remove_domain, profile.id, removed)
     await cb.answer(texts.routing_domain_removed(removed))
-    await edit(cb, *await sites_view(services, profile))
+    await edit(cb, *await sites_view(services, profile, cb.message.chat.id))
 
 
 @router.callback_query(RoutingCB.filter(F.action == "clear"))
@@ -240,7 +244,7 @@ async def routing_clear_apply(cb: CallbackQuery, callback_data: RoutingCB, clien
     if not await _guard(cb, services, profile):
         return
     n = await call(services.routing_clear_domains, profile.id)
-    await edit(cb, *await sites_view(services, profile))
+    await edit(cb, *await sites_view(services, profile, cb.message.chat.id))
     await cb.answer(f"Удалено адресов: {n}" if n else "Список и так был пуст")
 
 

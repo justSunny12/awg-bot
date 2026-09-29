@@ -64,7 +64,8 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
         if kind == "extend":
             return await clients.extend_screen(services, ref)
         if kind == "dev":
-            dev = services.db.get_device(ref)
+            from awgbot.bot.handlers.common import call
+            dev = await call(services.db.get_device, ref)
             return None if dev is None else await devices.device_card_parts(services, dev)
         if kind == "devices":
             return await devices.my_devices_parts(services, chat_id)
@@ -73,7 +74,7 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
         if kind == "expiring":
             return await panel.expiring_screen(services)
         if kind == "unassigned":
-            return await panel.unassigned_screen(services)
+            return await panel.unassigned_screen(services, chat_id)
         if kind == "traffic":
             return await panel.traffic_profiles_screen(services)
         if kind == "traffic_dev":
@@ -90,6 +91,12 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
         if kind == "upd":
             from awgbot.bot.handlers.settings import _screen
             return await _screen("upd", services)
+        if kind.startswith("set_"):
+            # раздел настроек (set_<раздел>): «✖️ Отмена» под приглашением к
+            # вводу возвращает его на место приглашения (ref — параметр
+            # раздела, например слот)
+            from awgbot.bot.handlers.settings import _screen
+            return await _screen(kind[4:], services, str(ref or ""))
         return None
     if role == "client":
         from awgbot.bot.handlers import client as ch
@@ -98,8 +105,8 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
         if kind == "devices":
             return await ch.devices_payload(services, client, chat_id)
         if kind == "dev":
-            from awgbot.bot.handlers.common import mine_or_held
-            dev = mine_or_held(services, client, ref)
+            from awgbot.bot.handlers.common import call, mine_or_held
+            dev = await call(mine_or_held, services, client, ref)
             return None if dev is None else await ch.device_card_parts(services, client, dev)
         if kind == "sub":
             return await ch.sub_parts(services, client.id)
@@ -109,6 +116,11 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
         if kind == "guide":
             from awgbot.bot.handlers import guide as gh
             return await gh.connect_step0_payload(services, client, ref, chat_id)
+        return None
+    if role == "gateway":
+        from awgbot.bot.handlers import gateway as gwh
+        if kind.startswith("set_"):
+            return await gwh._section(services, kind[4:])
         return None
     if role == "invited":
         from awgbot.bot.handlers import friend as fh

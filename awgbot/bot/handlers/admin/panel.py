@@ -9,6 +9,7 @@ handlers/admin/panel.py — панель администратора.
 
 from __future__ import annotations
 
+from awgbot.core import config
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from aiogram import F, Router
@@ -96,12 +97,12 @@ async def online_screen(services):
 _online_screen = online_screen
 
 
-async def unassigned_screen(services):
+async def unassigned_screen(services, chat_id: int = 0):
     service_id = await call(services.db.get_service_client_id)
     devices = await call(services.db.list_devices, service_id)
     from awgbot.bot import paging
     return (texts.unassigned_text(len(devices)),
-            kb.unassigned_devices(devices, page=paging.page_of(0, "unassigned")))
+            kb.unassigned_devices(devices, page=paging.page_of(chat_id or config.ADMIN_ID, "unassigned")))
 
 
 async def traffic_profiles_screen(services):
@@ -275,7 +276,7 @@ async def admin_online(cb: CallbackQuery, services):
 
 @router.callback_query(Menu.filter(F.action == "unassigned"))
 async def unassigned_list(cb: CallbackQuery, services):
-    await edit_nav(cb, services, *await unassigned_screen(services))
+    await edit_nav(cb, services, *await unassigned_screen(services, cb.message.chat.id))
     await cb.answer()
 
 

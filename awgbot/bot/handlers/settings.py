@@ -16,12 +16,13 @@ from awgbot.core import config
 from awgbot.core import settings
 from awgbot.bot import texts
 from awgbot.bot import keyboards as kb
+from awgbot.bot import screens
 from awgbot.bot.callbacks import GwMarkCB, GwSlotCB, SetCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import GatewayToken, GatewayHome, GatewayLabel, MigrationPort, SshPort
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.notifier import send_notifications
-from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu, card_is_from_home, card_from_home,
+from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu, card_is_from_home, card_from_home, ask_here, edit_nav,
                                         _dismiss_previous_nav,
                                         ask_tracked, cleanup_content)
 from awgbot.domain.services import ServiceError
@@ -171,14 +172,21 @@ async def _render(cb: CallbackQuery, sec: str, services, key: str = ""):
     await edit(cb, text, markup)
 
 
+async def _render_nav(cb: CallbackQuery, sec: str, services, key: str = ""):
+    """Раздел после диалога settingscore — через edit_nav: запасной путь edit()
+    (сообщение удалено или слишком старое) шлёт новое, и оно обязано стать
+    живым меню, иначе в чате два меню."""
+    text, markup = await _screen(sec, services, key)
+    await edit_nav(cb, services, text, markup)
+
+
 # Общая механика диалогов настроек (ввод, фраза, бэкап, почта, тумблер) — в
 # settingscore; здесь только то, чем основной бот отличается: колбэки и
 # клавиатуры.
 HOOKS = core.Hooks(
-    cancel_kb=kb.settings_cancel,
     email_offer_kb=kb.email_setup_offer,
     email_forget_kb=kb.email_forget_confirm,
-    render=lambda cb, services, sec: _render(cb, sec, services),
+    render=lambda cb, services, sec: _render_nav(cb, sec, services),
     screen=lambda services, sec: _screen(sec, services),
 )
 
@@ -359,14 +367,14 @@ async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services,
     первого применения едет открытым и ставится руками, поэтому нужен токен
     агента слота. Та же дорога, что у нового устройства."""
     slot = _slot_of(callback_data)
-    states = await call(services.gateway_states)
-    token_slot = slot or (len(states) + 1)
+    # номер нового слота — первый свободный, как его выдаст gateway_setup:
+    # «число слотов + 1» после снятия слота 1 при живом 2 давало токен не тому слоту
+    token_slot = slot or (await call(services.gateway_next_slot))[0]
     if not await call(services.gw_bot_token, token_slot):
         await cb.answer()
         await state.set_state(GatewayToken.value)
         await state.update_data(gw_device_id=callback_data.device_id, gw_slot=slot)
-        await core.ask(cb, services, texts.gateway_ask_token(token_slot),
-                       kb.settings_cancel("rt_gw", str(slot or "")))
+        await ask_here(cb, services, state, texts.gateway_ask_token(token_slot), "set_rt_gw", slot or 0)
         return
     await cb.answer("Назначаю…")
     await edit(cb, "🛰 Назначаю шлюз…", None)
@@ -396,13 +404,12 @@ async def gateway_new_yes(cb: CallbackQuery, callback_data: GwMarkCB, services, 
     уедет внутрь файла первого применения, и установка на шлюзе не задаст ни
     одного вопроса. Токен уже есть — идём сразу к выпуску."""
     slot = _slot_of(callback_data)
-    token_slot = slot or (len(await call(services.db.gateways)) + 1)
+    token_slot = slot or (await call(services.gateway_next_slot))[0]
     if not await call(services.gw_bot_token, token_slot):
         await cb.answer()
         await state.set_state(GatewayToken.value)
         await state.update_data(gw_slot=slot)
-        await core.ask(cb, services, texts.gateway_ask_token(token_slot),
-                       kb.settings_cancel("rt_gw", str(slot or "")))
+        await ask_here(cb, services, state, texts.gateway_ask_token(token_slot), "set_rt_gw", slot or 0)
         return
     await cb.answer("Создаю устройство и ключи…")
     await edit(cb, "🛰 Создаю устройство и ключи…", None)       # экран выбора отслужил
@@ -419,7 +426,7 @@ async def gateway_token_received(message: Message, state: FSMContext, services):
         pass                            # непринятый тоже: секрет есть секрет
     data = await state.get_data()
     slot = int(data.get("gw_slot") or 0)
-    token_slot = slot or (len(await call(services.db.gateways)) + 1)
+    token_slot = slot or (await call(services.gateway_next_slot))[0]
     try:
         await call(services.set_gw_bot_token, token, token_slot)
     except ServiceError as e:
@@ -559,8 +566,10 @@ async def gw_slot_peer_ask(cb: CallbackQuery, services):
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "peer_yes"))
-async def gw_slot_peer_yes(cb: CallbackQuery, services):
-    on = not await call(services.peer_nets_enabled)
+async def gw_slot_peer_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
+    # цель из кнопки; старая кнопка без цели (сообщение прежнего выпуска) — «не текущее»
+    on = (callback_data.val == "1") if callback_data.val in ("0", "1") \
+        else not await call(services.peer_nets_enabled)
     try:
         await call(services.set_peer_nets, on)
     except settings.SettingsWriteError as e:
@@ -671,7 +680,11 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
     st = await _slot_state(cb, services, callback_data.slot, lazy_ping=False)
     if st is None:
         return
-    on = not st["gateway"].lan_mode
+    on = (callback_data.val == "1") if callback_data.val in ("0", "1") else not st["gateway"].lan_mode
+    if on == bool(st["gateway"].lan_mode):
+        await cb.answer("Уже " + ("включено" if on else "выключено"))
+        await _render_card(cb, services, callback_data.slot)
+        return
     try:
         await call(services.gateway_set_lan_mode, callback_data.slot, on)
     except ServiceError as e:
@@ -728,9 +741,9 @@ async def gw_slot_home(cb: CallbackQuery, callback_data: GwSlotCB, services, sta
         return
     await state.set_state(GatewayHome.value)
     await state.update_data(gw_slot=st["gateway"].id)
-    # приглашение — в служебные (core.ask): после ответа оно отслужило и
-    # убирается вместе с вводом; голый edit оставлял его в чате навсегда
-    await core.ask(cb, services, texts.gateway_home_text(st), kb.gateway_slot_cancel(st["gateway"].id))
+    # приглашение — в служебные (ask_here): после ответа оно отслужило и
+    # убирается вместе с вводом; «✖️ Отмена» возвращает карточку слота на место
+    await ask_here(cb, services, state, texts.gateway_home_text(st), "gw", st["gateway"].id)
     await cb.answer()
 
 
@@ -950,11 +963,15 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         # Колбэк отвечается ОДИН раз — второй ответ Telegram молча роняет.
         # Обновление занимает секунды, спиннер на кнопке их покрывает; итог —
         # числом в ответе, а свежесть видна в перерисованном блоке «Списки».
+        # ответ — сразу: скачивание идёт секунды, и к концу колбэк протухал
+        # (всплывашка терялась); итог — первой строкой перерисованного раздела
+        await cb.answer("Обновляю списки…")
         n = await call(services.routing_update_lists, True)
-        await _render(cb, "rt_params", services)
         from awgbot.bot.texts.fmt import plural_ru
-        await cb.answer(f"Списки обновлены: {int(n):,} ".replace(",", " ")
-                        + plural_ru(int(n), 'запись', 'записи', 'записей'))
+        note = (f"✅ Списки обновлены: {int(n):,} ".replace(",", " ")
+                + plural_ru(int(n), 'запись', 'записи', 'записей'))
+        text, markup = await _screen("rt_params", services)
+        await edit(cb, screens.with_note(text, note), markup)
         return
     if callback_data.key == "off!":
         # подтверждённое выключение фичи целиком (см. toggle)
@@ -1004,14 +1021,15 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
                         card_kb(st, cb.message.chat.id))
         return
     if callback_data.key == "allow_all":
-        # правило массового выбора: ☑️ — выдать всем, ✅ — снять со всех
+        # правило массового выбора: ☑️ — выдать всем, ✅ — снять со всех;
+        # ответ колбэку — сразу (операция долгая: реконсиляция + dnsmasq),
+        # одной реконсиляцией на всех, а не по профилю
         clients = await call(services.routing_grantable_clients)
         target = not all(c.routing_allowed for c in clients)
-        for c in clients:
-            if bool(c.routing_allowed) != target:
-                await send_notifications(cb.bot, await call(services.set_routing_allowed, c.id, target))
-        await _render(cb, "rt_users", services)
         await cb.answer("РФ-доступ " + ("разрешён всем" if target else "не разрешён никому"))
+        notes = await call(services.set_routing_allowed_many, [c.id for c in clients], target)
+        await send_notifications(cb.bot, notes)
+        await _render(cb, "rt_users", services)
         return
     if callback_data.key != "allow":
         await cb.answer("Действие недоступно", show_alert=True)
@@ -1067,7 +1085,7 @@ async def private_dns_action(cb: CallbackQuery, callback_data: SetCB, services, 
 @router.callback_query(SetCB.filter((F.sec == "mig_prep") & (F.act == "edit")))
 async def migration_port_ask(cb: CallbackQuery, state: FSMContext, services):
     await state.set_state(MigrationPort.value)
-    await core.ask(cb, services, texts.MIGRATION_ASK_PORT, kb.settings_cancel("mig_prep"))
+    await ask_here(cb, services, state, texts.MIGRATION_ASK_PORT, "set_mig_prep")
     await cb.answer()
 
 
@@ -1084,7 +1102,7 @@ async def ssh_port_ask(cb: CallbackQuery, state: FSMContext, services):
         await cb.answer()
         return
     await state.set_state(SshPort.value)
-    await core.ask(cb, services, texts.ssh_port_ask(st.get("ssh_port")), kb.settings_cancel("fw"))
+    await ask_here(cb, services, state, texts.ssh_port_ask(st.get("ssh_port")), "set_fw")
     await cb.answer()
 
 
@@ -1143,7 +1161,7 @@ async def ssh_port_finisher_action(cb: CallbackQuery, callback_data: SetCB, stat
     if callback_data.key == "port_retry":
         await state.set_state(SshPort.value)
         st = await call(services.firewall_screen)
-        await send_menu(cb.message, services, texts.ssh_port_ask(st.get("ssh_port")), kb.settings_cancel("fw"))
+        await send_menu(cb.message, services, texts.ssh_port_ask(st.get("ssh_port")), kb.cancel_input("set_fw"))
     else:
         await send_menu(cb.message, services, *await _screen("fw", services))
     await cb.answer()

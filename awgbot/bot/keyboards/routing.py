@@ -243,14 +243,15 @@ def gateway_remove_confirm(slot: int = 0) -> InlineKeyboardMarkup:
 
 def gateway_lan_confirm(slot: int, on: bool) -> InlineKeyboardMarkup:
     """Подтверждение «🔀 VPN-транзит»: «Отмена» первой."""
+    # цель — в колбэке: «не текущее» на втором нажатии выключало только что включённое
     return confirm(GwSlotCB(action="card", slot=slot), "✅ Включить" if on else "☑️ Выключить",
-                   GwSlotCB(action="lan_yes", slot=slot), danger=False)
+                   GwSlotCB(action="lan_yes", slot=slot, val="1" if on else "0"), danger=False)
 
 
 def gateway_peer_confirm(on: bool) -> InlineKeyboardMarkup:
     """Подтверждение «↔️ Связь подсетей»: «Отмена» первой, назад — в «Шлюзы»."""
     return confirm(GwSlotCB(action="list"), "✅ Включить" if on else "☑️ Выключить",
-                   GwSlotCB(action="peer_yes"), danger=False)
+                   GwSlotCB(action="peer_yes", val="1" if on else "0"), danger=False)
 
 
 def gateway_router_kb(slot: int, tab: str = "mt") -> InlineKeyboardMarkup:
@@ -277,13 +278,6 @@ def gateway_switch_confirm(slot: int, healthy: bool, from_list: bool = False) ->
                    "▶️ Переключить" if healthy else "▶️ Всё равно",
                    GwSlotCB(action="switch_yes", slot=slot, val=src), danger=not healthy)
 
-
-def gateway_slot_cancel(slot: int, to_edit: bool = False) -> InlineKeyboardMarkup:
-    """Отмена ввода — назад в карточку слота (подсети) или в «✏️ Изменить»
-    (имя, подпись)."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="✖️ Отмена", callback_data=GwSlotCB(action="edit" if to_edit else "card", slot=slot))
-    return kb.as_markup()
 
 
 def routing_disable_confirm() -> InlineKeyboardMarkup:

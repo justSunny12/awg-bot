@@ -754,7 +754,8 @@ def remove() -> list[str]:
 
 def ufw_active() -> bool:
     try:
-        out = subprocess.run(["ufw", "status"], capture_output=True, timeout=10).stdout
+        out = subprocess.run(["ufw", "status"], capture_output=True, timeout=10,
+                             env={**os.environ, "LC_ALL": "C"}).stdout        # «Status: active» без перевода
     except (OSError, subprocess.SubprocessError):
         return False
     return b"Status: active" in out

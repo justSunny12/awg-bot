@@ -253,11 +253,6 @@ def gateway_ssh_port_finisher_kb() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def gateway_cancel_kb(sec: str) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="✖️ Отмена", callback_data=GwCB(action=sec))
-    return kb.as_markup()
-
 
 def gateway_updates_kb(muted: bool, target_tag: str = "") -> InlineKeyboardMarkup:
     """Раздел обновлений агента — как у основного: «⬆️ Обновить до vX» при

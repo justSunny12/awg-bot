@@ -355,3 +355,14 @@ def test_filter_off_puts_the_file_back_on_a_real_refusal(svc, host, monkeypatch)
     with pytest.raises(ServiceError, match="дольше обычного"):
         svc.ssh_filter_off()
     assert gwguard.read_env().get("SSH_FILTER") == "0", "по таймауту юнит доработает с файлом"
+
+
+def test_a_stopped_sshd_is_a_quiet_unknown_not_a_forever_unchecked_panel_line(svc, host):
+    """SSH выключен в OMV — штатно: проверка «порт SSH» с ok=None уходит в
+    тихую группу, и панель не пишет «⚪ не проверено: порт SSH» навсегда."""
+    from awgbot.bot.texts.gateway import _gw_health_summary
+    host.listening = []
+    checks = svc.ssh_checks(host.info())
+    port = next(c for c in checks if c.name == "порт SSH")
+    assert port.ok is None and port.group == "ssh"
+    assert _gw_health_summary(checks) == "✅"

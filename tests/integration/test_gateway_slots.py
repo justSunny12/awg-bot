@@ -784,3 +784,31 @@ def test_slot_env_carries_the_endpoint_host_from_settings(services, monkeypatch)
     assert "ENDPOINT_HOST" not in services._slot_env(gw)
     monkeypatch.setattr(_c, "SERVER_HOST", "bad host;rm")
     assert "ENDPOINT_HOST" not in services._slot_env(gw), "мусор из настроек ушёл в окружение скрипта"
+
+
+def test_removing_a_slot_forgets_its_bot_token_and_the_ping_memory(two, services, monkeypatch, tmp_path):
+    """Токен снятого устройства уезжал в файл первого применения нового слота с
+    тем же номером — два агента на одном токене; и память отказа пинга — тоже."""
+    env = tmp_path / "env"
+    env.write_text("BOT_TOKEN=DUMMY\nGW_BOT_TOKEN=111:AAA\nGW_BOT_TOKEN_2=222:BBB\n", encoding="utf-8")
+    monkeypatch.setenv("AWG_BOT_ENV", str(env))
+    assert services.gw_bot_token(2) == "222:BBB"
+    services.gateway_remove(2)
+    assert services.gw_bot_token(2) == "" and services.gw_bot_token(1) == "111:AAA"
+    assert "GW_BOT_TOKEN_2" not in env.read_text(encoding="utf-8")
+
+
+def test_a_failed_ping_is_remembered_and_the_card_does_not_ping_again_at_once(two, services, monkeypatch):
+    """При лежащем шлюзе каждое открытие карточки стоило ip addr и ping -c 3 —
+    секунды спиннера; отказ помнится пять минут."""
+    from awgbot.infra import routing as rt
+    calls = []
+    monkeypatch.setattr(rt, "ping_peer", lambda iface="": calls.append(iface) or None)
+    st = services.gateway_screen_state(2, lazy_ping=True)
+    assert st["ping_ms"] is None and calls == ["awglink2"]
+    st = services.gateway_screen_state(2, lazy_ping=True)
+    assert st["ping_ms"] is None and calls == ["awglink2"], "карточка снова ждала ping -c 3"
+    monkeypatch.setattr(rt, "ping_peer", lambda iface="": calls.append(iface) or 12)
+    services._gw_ping_forget(2)                            # снятие/смена слота — память долой
+    st = services.gateway_screen_state(2, lazy_ping=True)
+    assert st["ping_ms"] == 12 and calls == ["awglink2", "awglink2"]

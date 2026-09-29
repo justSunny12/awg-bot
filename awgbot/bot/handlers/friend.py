@@ -86,10 +86,12 @@ _card_payload = card_payload
 
 
 @router.message(CommandStart(deep_link=True))
-async def friend_start_with_code(message: Message, command: CommandObject, client, services):
+async def friend_start_with_code(message: Message, command: CommandObject, client, services,
+                                 state: FSMContext):
     """/start {payload} у гостя: ссылка на экран (РФ-доступ, устройство), ещё
     одно устройство от того же владельца или переход во владельцы."""
     from awgbot.bot.handlers.client import parse_link, take_code_as_member
+    await state.clear()                       # иначе текст после «➕ Сайт» ушёл бы в routing_add_apply
     payload = (command.args or "").strip()
     link = parse_link(payload)
     if link is not None:
@@ -100,8 +102,9 @@ async def friend_start_with_code(message: Message, command: CommandObject, clien
 
 
 @router.message(Command("code"))
-async def friend_code(message: Message, command: CommandObject, client, services):
+async def friend_code(message: Message, command: CommandObject, client, services, state: FSMContext):
     from awgbot.bot.handlers.client import take_code_as_member
+    await state.clear()
     code = (command.args or "").strip()
     if not code:
         await message.answer(texts.CODE_NO_ARG)
@@ -110,7 +113,8 @@ async def friend_code(message: Message, command: CommandObject, client, services
 
 
 @router.message(CommandStart())
-async def friend_start(message: Message, client, services):
+async def friend_start(message: Message, client, services, state: FSMContext):
+    await state.clear()
     await purge_menus(message.bot, services, message.chat.id)   # /start = заново
     await show_guest_main(message, services, client)
 

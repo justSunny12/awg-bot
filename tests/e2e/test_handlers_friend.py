@@ -7,7 +7,7 @@ from awgbot.bot import texts
 from awgbot.bot.handlers import friend as fh
 from awgbot.bot.callbacks import BlockCB, DelDeviceCB, FriendCB, HelpCB
 from awgbot.core.blocks import DeviceBlock
-from tests.conftest import FakeCallback, FakeMessage, last_screen
+from tests.conftest import FakeCallback, FakeMessage, FakeState, last_screen
 
 pytestmark = pytest.mark.e2e
 
@@ -33,7 +33,7 @@ async def test_guest_main_screen(services, fake_bot, make_active_client):
     _, guest = _lend(services, owner, 98100, "Ноут")
     _, guest = _lend(services, owner, 98100, "Тел")
     msg = FakeMessage(text="/start", chat_id=98100, user_id=98100, bot=fake_bot)
-    await fh.friend_start(msg, guest, services)
+    await fh.friend_start(msg, guest, services, FakeState())
     _, text, markup = [s for s in msg.sent if s[0] == "answer"][-1]
     rows = [[b.text for b in row] for row in markup.inline_keyboard]
     lines = text.splitlines()
@@ -289,3 +289,16 @@ async def test_holder_toggles_held_device_owner_cannot(services, fake_bot, make_
     cb, _ = _cb(fake_bot, config.ADMIN_ID)
     await rh.routing_device_toggle(cb, RoutingCB(action="dev", ref=dc.device_id), None, services)
     assert cb.answers[-1][1] is True and services.db.get_device(dc.device_id).routing_on == 0
+
+
+async def test_start_and_code_reset_the_dialog_of_a_guest(services, fake_bot, make_active_client):
+    """У гостя /start и /code не сбрасывали FSM: текст после «➕ Сайт» уходил в
+    добавление домена вместо ответа на команду."""
+    owner = make_active_client(tg_id=8150, name="Вася", device_limit=3)
+    _, guest = _lend(services, owner, 98150, "Ноут")
+    st = FakeState()
+    await st.set_state("Routing:domain")
+    await st.update_data(ctx_kind="sites", ctx_ref=1)
+    msg = FakeMessage(text="/start", chat_id=98150, user_id=98150, bot=fake_bot)
+    await fh.friend_start(msg, guest, services, st)
+    assert await st.get_state() is None and await st.get_data() == {}

@@ -10,6 +10,7 @@ import os
 
 import pytest
 
+from awgbot.bot import texts
 from awgbot.bot.callbacks import DeviceCB, GwMarkCB, GwSlotCB, SetCB
 from awgbot.bot.handlers import admin as ah
 from awgbot.bot.handlers import settings as sh
@@ -529,8 +530,9 @@ async def test_params_screen_cycles_probe_window_threshold_and_lists(services, s
     monkeypatch.setattr(services, "routing_update_lists", lambda force=False: 41200)
     cb, nav = _acb(fake_bot)
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="lists_refresh"), services)
-    assert cb.answers == [("Списки обновлены: 41 200 записей", False)], cb.answers
-    assert _screen(nav)[0].startswith("⚙️ Параметры РФ-доступа")
+    assert cb.answers == [("Обновляю списки…", False)], cb.answers
+    text = _screen(nav)[0]
+    assert text.startswith("✅ Списки обновлены: 41 200 записей\n\n⚙️ Параметры РФ-доступа"), text
 
 
 async def test_params_turn_off_asks_first_and_returns_to_params(services, slots, fake_bot, monkeypatch):
@@ -777,7 +779,7 @@ async def test_peer_nets_toggle_has_a_dialog_and_shows_state_in_the_list(service
     assert lines[-1].startswith("<blockquote") and "avahi-daemon" in lines[-1], "условие avahi — под «подробнее»"
     markup = next(s[2] for s in reversed(nav.sent) if s[0] == "edit_text")
     assert markup.inline_keyboard[0][0].callback_data == GwSlotCB(action="list").pack(), "Отмена — в «Шлюзы»"
-    await sh.gw_slot_peer_yes(cb, services)
+    await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes", val="1"), services)
     assert store["app.routing.peer_nets.enabled"] is True
     assert cb.answers[-1] == ("Подсети связаны: перевыпусти конфигурацию каждого шлюза", True)
     text, labels = _screen(nav)
@@ -804,7 +806,7 @@ async def test_peer_nets_toggle_has_a_dialog_and_shows_state_in_the_list(service
     await sh.gw_slot_peer_ask(cb, services)
     assert _screen(nav)[0] == ("↔️ Связь подсетей — выключить?\nПодсети шлюзов перестанут видеть друг друга "
                                "сразу. Необходим перевыпуск конфигурации каждого шлюза")
-    await sh.gw_slot_peer_yes(cb, services)
+    await sh.gw_slot_peer_yes(cb, GwSlotCB(action="peer_yes"), services)
     assert store["app.routing.peer_nets.enabled"] is False
     assert cb.answers[-1] == ("Связь подсетей выключена: перевыпусти конфигурацию каждого шлюза", True)
     cb, nav = _acb(fake_bot)
@@ -949,3 +951,54 @@ async def test_who_has_access_uses_select_all_both_ways(services, slots, fake_bo
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_all"), services)
     assert not services.db.get_client(a.id).routing_allowed and not services.db.get_client(b.id).routing_allowed
     assert cb.answers[-1][0] == "РФ-доступ не разрешён никому"
+
+
+async def test_allow_all_reconciles_once_and_answers_first(services, slots, fake_bot, make_active_client, monkeypatch):
+    """«Выбрать все» по одному профилю давал полную реконсиляцию и перезапуск
+    dnsmasq на каждый (15 профилей — 15 сбросов DNS-кэша всем) и отвечал
+    колбэку в конце — протухший колбэк, всплывашка терялась."""
+    a = make_active_client("Аня", tg_id=4111, device_limit=1)
+    b = make_active_client("Боря", tg_id=4112, device_limit=1)
+    n = {"reconcile": 0}
+    monkeypatch.setattr(services, "reconcile_routing", lambda: n.__setitem__("reconcile", n["reconcile"] + 1))
+    cb, nav = _acb(fake_bot)
+    await sh.routing_action(cb, SetCB(sec="rt", act="do", key="allow_all"), services)
+    assert services.db.get_client(a.id).routing_allowed and services.db.get_client(b.id).routing_allowed
+    assert n["reconcile"] == 1, f"реконсиляций на два профиля: {n['reconcile']}"
+    assert cb.answers == [("РФ-доступ разрешён всем", False)], cb.answers
+
+
+async def test_transit_confirmation_carries_the_target_state(services, slots, fake_bot, monkeypatch):
+    """«Включить/Выключить» без цели брало «не текущее»: двойное нажатие
+    выключало только что включённое. Цель едет в кнопке; старая кнопка без
+    цели (сообщение прежнего выпуска) — по-старому."""
+    _, pi, _pi2 = slots
+    _slot1(services, pi)
+    calls = []
+    monkeypatch.setattr(services, "gateway_set_lan_mode", lambda slot, on: calls.append((slot, on)) or {})
+    services.gateway_set_home_subnets(1, "192.168.1.0/24")
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan_ask(cb, GwSlotCB(action="lan_ask", slot=1), services)
+    yes = _screen(nav)[1]
+    markup = next(s[2] for s in reversed(nav.sent) if s[0] == "edit_text")
+    packed = [b.callback_data for row in markup.inline_keyboard for b in row]
+    assert GwSlotCB(action="lan_yes", slot=1, val="1").pack() in packed, packed
+    assert "Включить" in yes[-1] or "Включить" in " ".join(yes)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="1"), services)
+    assert calls == [(1, True)]
+    # второе нажатие той же кнопки (цель «включить», а режим уже включён) — ничего не переключает
+    services.db.gateway_update(1, lan_mode=1)
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1, val="1"), services)
+    assert calls == [(1, True)] and cb.answers[0][0] == "Уже включено"
+
+
+async def test_the_new_slot_number_comes_from_the_service(services, slots, fake_bot, monkeypatch):
+    """«Число слотов + 1» после снятия слота 1 при живом 2 давало токен слоту 3,
+    а сервис заводит первый свободный — токен уезжал не тому слоту."""
+    monkeypatch.setattr(services, "gateway_next_slot", lambda: (7, "awglink7", 9443, "10.99.99.24/30"))
+    st = FakeState()
+    cb, nav = _acb(fake_bot)
+    await sh.gateway_new_yes(cb, GwMarkCB(action="new_yes", slot=0), services, st)
+    assert _screen(nav)[0] == texts.gateway_ask_token(7)

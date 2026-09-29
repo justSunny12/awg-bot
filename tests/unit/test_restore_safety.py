@@ -130,3 +130,11 @@ def test_restore_removes_the_decrypted_chat_copy_after_unpacking(script):
     assert 'restore-pending.tgz" ]] && rm -f -- "$orig"' in body
     # после укладки базы и до маркера: при отказе файл остаётся для повтора
     assert body.index('mv -f "$dbt"') < body.index('rm -f -- "$orig"') < body.index("restore-done.json")
+
+
+def test_restore_does_not_carry_the_ssh_port_of_the_copy(script):
+    """Порт sshd — факт устройства (под OMV его задаёт OMV): SSH_PORT из копии
+    давал таблицу на старом порту и ложное «порт изменился (задал OMV)»."""
+    body = _restore(script)
+    assert "grep -v '^SSH_PORT=' \"$tmp/awg-gw/firewall.env\"" in body
+    assert body.index("grep -v '^SSH_PORT='") < body.index("cp -a \"$fw_new\" /etc/awg-gw/firewall.env")

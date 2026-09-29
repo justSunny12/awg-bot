@@ -27,7 +27,7 @@ from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
 from awgbot.bot.states import GatewayLanDomain
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers import settingscore as core
-from awgbot.bot.handlers.common import (call, edit_nav, send_menu, cleanup_content, purge_menus,
+from awgbot.bot.handlers.common import (call, edit_nav, send_menu, cleanup_content, purge_menus, ask_here,
                                         dismiss_update_reports, forget_secret, ask_tracked,
                                         drop_previous_nav)
 from awgbot.bot.states import SshPort, GwSshAllow
@@ -207,7 +207,6 @@ async def _render(cb: CallbackQuery, services, sec: str) -> None:
 # Общая механика диалогов настроек — в settingscore; здесь только колбэки и
 # клавиатуры агента.
 HOOKS = core.Hooks(
-    cancel_kb=kb.gateway_cancel_kb,
     email_offer_kb=kb.gateway_email_offer,
     email_forget_kb=kb.gateway_email_forget_confirm,
     render=_render,
@@ -384,9 +383,10 @@ async def gw_ssh_port_ask(cb: CallbackQuery, callback_data: GwCB, services, stat
             await cb.message.edit_reply_markup(reply_markup=kb.hide_only())
         except Exception:                                 # noqa: BLE001
             pass
-        await send_menu(cb.message, services, texts.gw_ssh_port_ask(st.get("port")), kb.gateway_cancel_kb("ssh"))
+        await state.update_data(ctx_kind="set_ssh", ctx_ref=0)
+        await send_menu(cb.message, services, texts.gw_ssh_port_ask(st.get("port")), kb.cancel_input("set_ssh"))
     else:
-        await core.ask(cb, services, texts.gw_ssh_port_ask(st.get("port")), kb.gateway_cancel_kb("ssh"))
+        await ask_here(cb, services, state, texts.gw_ssh_port_ask(st.get("port")), "set_ssh")
     await cb.answer()
 
 
@@ -452,7 +452,7 @@ async def gw_ssh_port_received(message: Message, state: FSMContext, services):
 @router.callback_query(GwCB.filter(F.action == "ssh_add"))
 async def gw_ssh_allow_ask(cb: CallbackQuery, services, state: FSMContext):
     await state.set_state(GwSshAllow.value)
-    await core.ask(cb, services, texts.GW_SSH_ALLOW_ASK, kb.gateway_cancel_kb("ssh"))
+    await ask_here(cb, services, state, texts.GW_SSH_ALLOW_ASK, "set_ssh")
     await cb.answer()
 
 
@@ -598,7 +598,7 @@ async def gw_lan_ask(cb: CallbackQuery, callback_data: GwCB, services, state: FS
     kind = callback_data.action.split("_", 1)[1]
     await state.set_state(GatewayLanDomain.value)
     await state.update_data(kind=kind)
-    await core.ask(cb, services, texts.gateway_lan_ask_domain(kind), kb.gateway_cancel_kb("lan"))
+    await ask_here(cb, services, state, texts.gateway_lan_ask_domain(kind), "set_lan")
     await cb.answer()
 
 
