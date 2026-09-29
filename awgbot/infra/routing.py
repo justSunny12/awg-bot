@@ -671,6 +671,13 @@ def ensure_home_routes(pairs=None) -> None:
         _host(["ip", "route", "replace", net, "dev", iface])
 
 
+def drop_home_routes(pairs) -> None:
+    """Снять маршруты убранных подсетей: [(подсеть, интерфейс)]. Нет маршрута —
+    не ошибка (ip route del на отсутствующем даёт код 2)."""
+    for net, iface in pairs:
+        _host(["ip", "route", "del", net, "dev", iface], check=False)
+
+
 # ── Наблюдение за состоянием (только чтение; для диагностики) ────────────────
 
 def rule_present() -> bool:
@@ -1127,9 +1134,11 @@ def write_dnsmasq_conf(text: str, path: str = None) -> bool:
     конфиг-файлы — новые директивы ipset= через reload не подхватываются.
     """
     path = path or config.ROUTING_DNSMASQ_CONF
+    old: str | None = None
     try:
         with open(path, "r", encoding="utf-8") as f:
-            if f.read() == text:
+            old = f.read()
+            if old == text:
                 return False
     except FileNotFoundError:
         pass
@@ -1144,6 +1153,15 @@ def write_dnsmasq_conf(text: str, path: str = None) -> bool:
     except OSError as e:
         raise RoutingError(f"Не записать {path}: {e}")
 
+    # Синтаксис — до рестарта, с conf-dir (голый --test файлы каталога не читает):
+    # битая строка иначе роняла бы DNS всем клиентам до следующего удачного скачивания
+    test = subprocess.run(["dnsmasq", "--test", "--conf-dir=" + DNSMASQ_CONF_DIR],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+    if test.returncode != 0:
+        _restore_text(path, old)
+        raise RoutingError("dnsmasq отверг конфиг списков (файл возвращён): "
+                           + (test.stderr or test.stdout).decode(errors="replace").strip()[-300:])
+
     proc = subprocess.run(
         ["systemctl", "restart", config.ROUTING_DNSMASQ_SERVICE],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
@@ -1151,6 +1169,22 @@ def write_dnsmasq_conf(text: str, path: str = None) -> bool:
         raise RoutingError(
             "Не перезапустить dnsmasq: " + proc.stderr.decode(errors="replace").strip())
     return True
+
+
+DNSMASQ_CONF_DIR = "/etc/dnsmasq.d,.dpkg-dist,.dpkg-old,.dpkg-new"
+
+
+def _restore_text(path: str, old) -> None:
+    """Вернуть прежний файл после отказа проверки (None — файла не было)."""
+    try:
+        if old is None:
+            os.unlink(path)
+        else:
+            with open(path + ".tmp", "w", encoding="utf-8") as f:
+                f.write(old)
+            os.replace(path + ".tmp", path)
+    except OSError as e:
+        log.warning("routing: прежний конфиг списков не возвращён: %s", e)
 
 
 __all__ = [

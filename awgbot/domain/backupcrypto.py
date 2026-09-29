@@ -71,6 +71,82 @@ class BackupCryptoMixin:
     def backup_role() -> str:
         return "gw" if config.ROLE == "gateway" else "main"
 
+    @staticmethod
+    def db_snapshot_bytes(path) -> bytes | None:
+        """Содержимое БД целиком, включая незачекпоинченный WAL: backup API
+        SQLite снимает согласованную копию и на работающем боте. Побайтовое
+        чтение файла отдавало базу без последних транзакций (устройства без
+        ключей после восстановления). Нет файла — None."""
+        import os
+        import sqlite3
+        import tempfile
+        path = str(path)
+        if not os.path.exists(path):
+            return None
+        fd, tmp = tempfile.mkstemp(prefix=".snap-", suffix=".db", dir=os.path.dirname(path) or None)
+        os.close(fd)
+        try:
+            src = sqlite3.connect(path)
+            try:
+                dst = sqlite3.connect(tmp)
+                try:
+                    src.backup(dst)
+                finally:
+                    dst.close()
+            finally:
+                src.close()
+            with open(tmp, "rb") as f:
+                return f.read()
+        finally:
+            for suffix in ("", "-journal", "-wal", "-shm"):
+                try:
+                    os.unlink(tmp + suffix)
+                except OSError:
+                    pass
+
+    def backup_extra(self) -> list[tuple[str, bytes]]:
+        """Что кладём в копию сверх БД/conf/env — по роли. Один список на все
+        случаи: копия из чата, `awg-bot backup` и снимок перед восстановлением
+        (tools/snapshot.py) — иначе снимок «до восстановления» шёл без конфигов
+        интерфейсов, и «вернуться» возвращало базу, а не устройства."""
+        import glob
+        import os
+        extra: list[tuple[str, bytes]] = []
+
+        def add_file(path: str, name: str) -> None:
+            try:
+                with open(path, "rb") as f:
+                    extra.append((name, f.read()))
+            except OSError:
+                pass
+
+        if config.ROLE == "gateway" or getattr(self, "GATEWAY_ROLE", False):
+            # все конфиги awg-интерфейсов шлюза (приватные ключи линка и туннеля —
+            # единственная копия вне этой машины)
+            for p in sorted(glob.glob(os.path.join(config.GW_CONF_DIR, "*.conf"))):
+                add_file(p, f"awg/{os.path.basename(p)}")
+            # локальное состояние файервола (порт, адреса снаружи, доверенные из
+            # туннеля) — данные человека, бандл их не восстановит
+            from awgbot.infra import gwguard
+            add_file(gwguard.FW_ENV, "awg-gw/firewall.env")
+            # личные списки локальной сети без VPN — тоже данные человека
+            for name in ("awg-gw-vpn-user.conf", "awg-gw-ru-user.conf"):
+                add_file(f"/etc/dnsmasq.d/{name}", f"awg-gw/lan/{name}")
+            return extra
+        # сервер: конфиг awg-интерфейса (единственная копия вне сервера)
+        from awgbot.infra import awg
+        try:
+            conf = awg.read_file(config.CONF_PATH)
+            extra.append((f"awg/{config.AWG_INTERFACE}.conf", conf.encode("utf-8")))
+        except awg.AwgError:
+            pass
+        # линки шлюзов: без них новая машина не соберёт ни один бандл и не
+        # примет ни одну сессию канала — восстановление кончалось бы переустановкой шлюзов
+        for gw in self.db.gateways():
+            add_file(f"/root/gw-{gw.link_if}.conf", f"root/gw-{gw.link_if}.conf")
+            add_file(os.path.join(config.AWG_DIR, f"{gw.link_if}.conf"), f"awg/{gw.link_if}.conf")
+        return extra
+
     def build_backup_archive(self, extra: list[tuple[str, bytes]] | None = None) -> bytes:
         import glob
         import io
@@ -92,9 +168,12 @@ class BackupCryptoMixin:
                     "hostname": socket.gethostname(), "version": config.INSTALLED_VERSION}
             add(self.META_NAME, json.dumps(meta, ensure_ascii=False).encode(), 0o644)
             try:
-                add("state/bot.db", config.DB_PATH.read_bytes())
-            except OSError:
-                pass
+                raw_db = self.db_snapshot_bytes(config.DB_PATH)
+            except Exception as e:                    # noqa: BLE001 — sqlite3.Error, OSError
+                log.warning("копия: БД не снялась (%s) — архив без state/bot.db", e)
+                raw_db = None
+            if raw_db is not None:
+                add("state/bot.db", raw_db)
             for p in sorted(glob.glob(os.path.join(str(config.CONF_DIR), "*.yaml"))):
                 try:
                     add(f"state/conf/{os.path.basename(p)}", open(p, "rb").read(), 0o644)
@@ -146,6 +225,10 @@ class BackupCryptoMixin:
         from awgbot.util import secrets_util
         plain = blob
         encrypted = filename.endswith(".enc") or (getattr(secrets_util, "MAGIC", None) and blob.startswith(secrets_util.MAGIC))
+        if not encrypted and config.ROLE == "gateway":
+            # копия шлюза всегда шифрованная (make_backup): открытый архив здесь
+            # ничему легитимному не служит, а restore раскладывает его от root
+            return {"ok": False, "error": "на шлюзе принимаются только шифрованные копии (.tgz.enc)"}
         if encrypted:
             kw = self.backup_enc_kwargs()
             if kw is None:

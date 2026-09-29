@@ -68,8 +68,9 @@ def test_backup_meta_is_inside_the_archive_and_restore_is_role_bound(services, m
     # копия агента на основном — отказ; и наоборот
     assert not services.inspect_backup(_archive_with_meta("gw"), "b.tgz")["ok"]
     monkeypatch.setattr(cfg, "ROLE", "gateway")
-    assert services.inspect_backup(_archive_with_meta("gw"), "b.tgz")["ok"]
-    assert "основного бота" in services.inspect_backup(_archive_with_meta("main"), "b.tgz")["error"]
+    # на шлюзе открытая копия не принимается вовсе: restore раскладывает её от root
+    gw_info = services.inspect_backup(_archive_with_meta("gw"), "b.tgz")
+    assert not gw_info["ok"] and "шифрованные" in gw_info["error"], gw_info
 
 
 def test_inspect_backup_encrypted_needs_the_right_phrase(services, monkeypatch, tmp_path):
@@ -105,3 +106,54 @@ def test_restore_reports_only_changed_interfaces(services, monkeypatch, tmp_path
     assert texts.restore_offer("2026-09-09T10:00:00+03:00", warn).endswith(warn)
     assert warn not in texts.restore_offer("2026-09-09T10:00:00+03:00")
     assert texts.awg_restart_warning_body(True).startswith("Линк опустится и поднимется")
+
+
+def test_db_snapshot_carries_transactions_still_in_the_wal(tmp_path):
+    """Бот пишет в WAL; побайтовое чтение bot.db отдавало базу без последних
+    транзакций — устройство без ключа после восстановления. backup API снимает
+    согласованную копию и при открытом писателе."""
+    import sqlite3
+    from awgbot.domain.backupcrypto import BackupCryptoMixin
+    path = tmp_path / "bot.db"
+    w = sqlite3.connect(path)
+    w.execute("PRAGMA journal_mode=WAL")
+    w.execute("CREATE TABLE t (v TEXT)")
+    w.commit()
+    w.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    w.execute("INSERT INTO t VALUES ('in-wal')")
+    w.commit()                                   # лежит в bot.db-wal, писатель открыт
+    raw = BackupCryptoMixin.db_snapshot_bytes(path)
+    assert raw and raw[:16] == b"SQLite format 3\x00"
+    assert b"in-wal" not in path.read_bytes(), "тест не воспроизводит WAL — строка уже в файле"
+    snap = tmp_path / "snap.db"
+    snap.write_bytes(raw)
+    assert sqlite3.connect(snap).execute("SELECT v FROM t").fetchall() == [("in-wal",)]
+    w.close()
+    assert not [p for p in tmp_path.iterdir() if p.name.startswith(".snap-")], "временный файл снимка остался"
+    assert BackupCryptoMixin.db_snapshot_bytes(tmp_path / "nope.db") is None
+
+
+def test_backup_extra_depends_on_the_role(services, make_active_client, monkeypatch, tmp_path):
+    """Один список «что сверх БД» на копию из чата, awg-bot backup и снимок
+    перед восстановлением: у сервера — конфиг интерфейса и линки слотов, у
+    шлюза — все конфиги интерфейсов, firewall.env и личные списки."""
+    from awgbot.infra import awg, gwguard
+    monkeypatch.setattr(awg, "read_file", lambda p: "[Interface]\nPrivateKey = DUMMY\n")
+    awgdir = tmp_path / "awg"; awgdir.mkdir()
+    (awgdir / "awglink.conf").write_text("link", encoding="utf-8")
+    monkeypatch.setattr(cfg, "AWG_DIR", str(awgdir))
+    dev = services.add_device(make_active_client(device_limit=3).id, "pi")
+    services.db.gateway_add(dev.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
+    names = [n for n, _ in services.backup_extra()]
+    assert f"awg/{cfg.AWG_INTERFACE}.conf" in names and "awg/awglink.conf" in names, names
+    assert not any(n.startswith("awg-gw/") for n in names)
+
+    monkeypatch.setattr(cfg, "ROLE", "gateway")
+    gwdir = tmp_path / "gw"; gwdir.mkdir()
+    for n in ("awg0.conf", "awglink.conf"):
+        (gwdir / n).write_text(n, encoding="utf-8")
+    monkeypatch.setattr(cfg, "GW_CONF_DIR", str(gwdir))
+    fw = tmp_path / "firewall.env"; fw.write_text("ADMIN_IPS_EXTRA=\n", encoding="utf-8")
+    monkeypatch.setattr(gwguard, "FW_ENV", str(fw))
+    names = [n for n, _ in services.backup_extra()]
+    assert names[:2] == ["awg/awg0.conf", "awg/awglink.conf"] and "awg-gw/firewall.env" in names, names

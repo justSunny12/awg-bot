@@ -146,6 +146,17 @@ class GatewayLinkMixin:
     def _gw_slot_key(self, key: str, slot_id: int) -> str:
         return f"{key}_{int(slot_id)}"
 
+    def gateway_trusted_ips(self) -> set[str]:
+        """Адреса из последнего выданного ADMIN_IPS каждого слота: шлюзы доверяют
+        адресу, а не устройству (admin4 в таблице). Освободившийся адрес админа
+        нельзя отдать следующему устройству любого клиента, пока список у шлюзов
+        не сменится — иначе чужой клиент получит доступ к малине и её сети."""
+        out: set[str] = set()
+        for g in self.db.gateways():
+            raw = self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, g.id)) or ""
+            out.update(x for x in raw.split() if x)
+        return out
+
     def _gw_name(self, gw) -> str:
         dev = self.db.get_device(gw.device_id)
         return dev.name if dev is not None else f"слот {gw.id}"
@@ -353,7 +364,7 @@ class GatewayLinkMixin:
         """Имя файла первого применения для слота — как его кладёт скрипт."""
         return "awg-gw-bundle.sh" if gw.link_if == "awglink" else f"awg-gw-bundle-{gw.link_if}.sh"
 
-    def _gw_bundle_build(self, gw) -> tuple[bytes, str]:
+    def _gw_bundle_build(self, gw, with_mail: bool = True) -> tuple[bytes, str]:
         """Собрать бандл слота скриптом линка (ключи не меняются) и дополнить
         почтой, фразой бэкапов, токеном агента. Возвращает (открытый текст,
         приватный ключ линка слота)."""
@@ -364,7 +375,11 @@ class GatewayLinkMixin:
             priv = bundlecrypt.read_privkey(f.read())
         with open(self._bundle_path(gw), "rb") as f:
             plain = f.read()
-        plain = self._bundle_with_mail(plain)
+        if with_mail:
+            # почту и фразу бэкапов везёт только шифрованный бандл: открытому
+            # файлу первого применения они не нужны (--install их не читает),
+            # а утечка файла отдавала бы ящик и ключ ко всем копиям сервера
+            plain = self._bundle_with_mail(plain)
         plain = self._bundle_with_agent(plain, gw.id)
         self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_KEY, gw.id), " ".join(admin_ips))
         self.db.set_state(self._gw_slot_key(self._GW_BUNDLE_SSH_NOTIFIED_KEY, gw.id), "")
@@ -405,7 +420,7 @@ class GatewayLinkMixin:
         с шлюза неоткуда (наступили на чистой машине 19.09.2026). Шифрованный
         бандл для чата поставку не везёт: у той машины агент уже стоит."""
         gw = self._gw_slot(slot_id)
-        plain, _ = self._gw_bundle_build(gw)
+        plain, _ = self._gw_bundle_build(gw, with_mail=False)
         return self._bundle_with_dist(plain), self.bundle_name(gw)
 
     _DIST_BEGIN = b"#__AWG_BOT_TGZ_BELOW__\n"
@@ -649,6 +664,23 @@ class GatewayLinkMixin:
                 if net.version != 4:
                     rejected.append((tok, "только IPv4"))
                     continue
+                if (not net.is_private or net.is_loopback or net.is_link_local or net.is_multicast
+                        or net.is_reserved or net.is_unspecified or str(net).startswith("0.")):
+                    # публичный адрес ушёл бы в ip route replace основной таблицы ВПС:
+                    # SSH и клиенты с этого адреса отвалились бы, UDP линка — в линк
+                    rejected.append((tok, "нужна частная подсеть: 10.0.0.0/8, 172.16.0.0/12 или 192.168.0.0/16"))
+                    continue
+                if net.prefixlen > 30:
+                    rejected.append((tok, "это один адрес, а нужна подсеть"))
+                    continue
+                if net.prefixlen < 8:
+                    rejected.append((tok, "слишком широкая: не шире /8"))
+                    continue
+                if any(net.overlaps(ipaddress.ip_network(k)) for k in kept):
+                    # nft отвергает пересечения внутри interval-набора: соседний
+                    # шлюз не принял бы guard.nft с такими PEER_HOME_NETS
+                    rejected.append((tok, "пересекается с другой подсетью в списке"))
+                    continue
                 if any(net.overlaps(ipaddress.ip_network(s, strict=False))
                        for s, _i in config.routing_client_subnets()):
                     rejected.append((tok, "это клиентская подсеть AWG"))
@@ -664,7 +696,14 @@ class GatewayLinkMixin:
                 # стирала бы список и обходила запрет при VPN-транзите
                 why = "; ".join(f"{raw[:40]} — {reason}" for raw, reason in rejected[:3])
                 raise ServiceError(f"не принято: {why}")
+        gone = [s for s in (gw.home_subnets or []) if s not in kept]
         self.db.gateway_update(gw.id, home_subnets=kept)
+        if gone and config.ROUTING_GW_INTERFACE:
+            # убранная подсеть иначе остаётся в ядре до ребута
+            try:
+                routing.drop_home_routes([(s, gw.link_if) for s in gone])
+            except routing.RoutingError as e:
+                log.warning("gateway_set_home_subnets: старые маршруты не сняты: %s", e)
         conflict = None
         for g in self.db.gateways():
             if g.id != gw.id and self._nets_overlap(kept, g.home_subnets):   # и вложенность

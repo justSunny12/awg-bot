@@ -183,3 +183,22 @@ def test_client_card_renders_when_a_device_has_a_handshake(services, make_active
     rows = services.online_devices()
     assert [d.id for d, _ in rows] == [dc.device_id]
     assert texts.online_devices_text(rows).startswith("📶 Онлайн: 1\n\n")
+
+
+def test_addresses_trusted_by_gateways_are_not_reissued(services, make_active_client):
+    """Шлюзы доверяют адресу, а не устройству: пока в выданном ADMIN_IPS слота
+    стоит освободившийся адрес админа, новое устройство любого клиента его
+    получить не должно — иначе чужой клиент попадёт в локальную сеть."""
+    client = make_active_client(device_limit=5)
+    a = services.add_device(client.id, "d1")
+    pi = services.add_device(client.id, "pi")
+    services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
+    services.db.set_state("gw_bundle_ssh_allow_1", a.address + " 10.8.1.9")
+    services.remove_device(a.device_id)                       # адрес освободился в БД
+    other = make_active_client(name="Другой", tg_id=1001, device_limit=5)
+    assert services.gateway_trusted_ips() == {a.address, "10.8.1.9"}
+    b = services.add_device(other.id, "d2")
+    assert b.address not in {a.address, "10.8.1.9"}
+    services.db.set_state("gw_bundle_ssh_allow_1", "")
+    c = services.add_device(other.id, "d3")
+    assert c.address == a.address, "после смены списка адрес снова свободен"

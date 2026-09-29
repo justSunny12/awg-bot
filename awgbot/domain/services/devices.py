@@ -43,9 +43,11 @@ class DevicesMixin:
         with awg.mutation_lock:
             # аллокация: занятые из БД + из живого конфига (учёт чужих пиров)
             occupied_live = awg.read_occupied_ips()
+            # плюс адреса, которым ещё доверяют шлюзы (выданные ADMIN_IPS)
+            trusted = self.gateway_trusted_ips() if hasattr(self, "gateway_trusted_ips") else set()
             ip = self.db.allocate_ip(
                 subnet_prefix=config.SUBNET_PREFIX,
-                occupied_extra=occupied_live,
+                occupied_extra=set(occupied_live) | trusted,
                 start_host=config.IP_HOST_START,
                 end_host=config.IP_HOST_END,
             )

@@ -22,7 +22,6 @@ from pathlib import Path
 
 import pytest
 
-from awgbot.domain import gateway as gw
 from awgbot.domain.gateway import GatewayServices
 from awgbot.infra.db import Database
 
@@ -61,7 +60,8 @@ def backup(tmp_path, monkeypatch):
         if p.startswith("/etc/dnsmasq.d/"):
             path = dnsmasq / p[len("/etc/dnsmasq.d/"):]
         return real_open(path, *a, **kw)
-    monkeypatch.setattr(gw, "open", _open, raising=False)
+    from awgbot.domain import backupcrypto as bc          # состав копии живёт там
+    monkeypatch.setattr(bc, "open", _open, raising=False)
 
     def members() -> dict[str, bytes]:
         from awgbot.util import secrets_util
@@ -135,8 +135,11 @@ class _Pi:
         frag = (_restore_fragment()
                 .replace("/etc/dnsmasq.d", str(self.dnsmasq))
                 .replace("/var/lib/awg-gw", str(self.state)))
+        # проверка строк списков — боевая функция из того же скрипта
+        src = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
+        sane = "lan_lists_sane() {" + src.split("lan_lists_sane() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"
         prog = ('ok(){ echo "OK $*"; }\nwarn(){ echo "WARN $*"; }\nlog(){ echo "LOG $*"; }\n'
-                f'tmp="{self.tmp}"\nset -e\n' + frag + 'echo DONE\n')
+                f'tmp="{self.tmp}"\nset -e\n' + sane + frag + 'echo DONE\n')
         return subprocess.run(["bash", "-c", prog], capture_output=True, text=True, timeout=30,
                               env={"PATH": f"{self.bin}:/usr/bin:/bin"})
 

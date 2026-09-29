@@ -94,7 +94,7 @@ def test_only_the_first_application_file_carries_it(monkeypatch, svc):
     from types import SimpleNamespace
     gw = SimpleNamespace(id=1, link_if="awglink")
     monkeypatch.setattr(svc, "_gw_slot", lambda slot_id=None: gw)
-    monkeypatch.setattr(svc, "_gw_bundle_build", lambda g: (_HEAD + _MARK, "K"))
+    monkeypatch.setattr(svc, "_gw_bundle_build", lambda g, with_mail=True: (_HEAD + _MARK, "K"))
     monkeypatch.setattr("awgbot.util.bundlecrypt.encrypt", lambda plain, priv: plain)
     plain, _ = svc.gw_bundle_plain()
     enc, _ = svc.gw_bundle_encrypted()
@@ -165,3 +165,12 @@ def test_instructions_do_not_send_the_gateway_to_github():
     src = (ROOT / "awg-bot.sh").read_text(encoding="utf-8")
     stop = src.split("нет файла первого применения", 1)[1].split('"', 1)[0]
     assert "--install" in stop and "githubusercontent" not in stop
+
+
+def test_dist_archive_is_owned_by_root():
+    """tar от root распаковывает с владельцем из архива: uid машины, где
+    собрали, сделал бы код в /opt чужим и доступным на запись."""
+    blob = dist.archive(ROOT)
+    with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
+        owners = {(m.uid, m.gid, m.uname, m.gname) for m in tar.getmembers()}
+    assert owners == {(0, 0, "root", "root")}, owners

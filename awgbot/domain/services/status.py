@@ -344,13 +344,7 @@ class StatusMixin:
         сервера). Задан секрет — файл шифруется целиком (*.tgz.enc), иначе
         уходит открытым (в разделе это видно красным). Разворачивается
         `awg-bot restore <файл>` на любом хосте."""
-        extra: list[tuple[str, bytes]] = []
-        try:
-            conf = awg.read_file(config.CONF_PATH)
-            extra.append((f"awg/{config.AWG_INTERFACE}.conf", conf.encode("utf-8")))
-        except awg.AwgError:
-            pass
-        return self.write_backup_archive("main", extra)
+        return self.write_backup_archive("main", self.backup_extra())
 
     # ── Статус сервера (мониторинг) ──────────────────────────────────────────
 

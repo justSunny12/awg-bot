@@ -11,7 +11,12 @@ pytestmark = pytest.mark.integration
 def _patch_sources(monkeypatch, tmp_path, *, db_bytes=b"SQLITE-DATA", with_db=True):
     dbp = tmp_path / "src_bot.db"          # отдельно от файла db-фикстуры (tmp_path/bot.db)
     if with_db:
-        dbp.write_bytes(db_bytes)
+        # настоящая база с меткой: копия снимается backup API SQLite, не побайтово
+        import sqlite3
+        c = sqlite3.connect(dbp)
+        c.execute("CREATE TABLE marker (v TEXT)")
+        c.execute("INSERT INTO marker VALUES (?)", (db_bytes.decode(),))
+        c.commit(); c.close()
     monkeypatch.setattr(config, "DB_PATH", dbp)
     monkeypatch.setattr(config, "BACKUP_DIR", tmp_path / "backups")
 
@@ -41,7 +46,7 @@ def test_make_backup_is_one_archive_with_everything(services, fake_awg, monkeypa
     paths = services.make_backup()
     assert len(paths) == 1 and paths[0].endswith(".tgz")             # без секрета — открытый
     files = _names(open(paths[0], "rb").read())
-    assert files["state/bot.db"] == b"DBDATA"
+    assert files["state/bot.db"].startswith(b"SQLite format 3") and b"DBDATA" in files["state/bot.db"]
     assert files["state/conf/app.yaml"] == b"a: 1\n" and "state/conf/email.yaml" in files
     assert files["state/env"] == b"BOT_TOKEN=t\n"
     assert files[f"awg/{config.AWG_INTERFACE}.conf"].startswith(b"[Interface]")
@@ -55,7 +60,7 @@ def test_make_backup_encrypted_roundtrips(services, fake_awg, monkeypatch, tmp_p
     blob = open(paths[0], "rb").read()
     assert secrets_util.inspect_mode(blob) == "passphrase"
     files = _names(secrets_util.decrypt(blob, passphrase="correct horse"))
-    assert files["state/bot.db"] == b"SECRET-DB"
+    assert b"SECRET-DB" in files["state/bot.db"]
 
 
 def test_make_backup_without_db_still_packs_the_rest(services, fake_awg, monkeypatch, tmp_path):

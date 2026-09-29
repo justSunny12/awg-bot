@@ -35,10 +35,14 @@ def install_root() -> Path:
     return Path(awgbot.__file__).resolve().parent.parent
 
 
-def _skip_cache(info: tarfile.TarInfo):
+def _tar_filter(info: tarfile.TarInfo):
     parts = info.name.split("/")
     if "__pycache__" in parts or info.name.endswith(".pyc"):
         return None
+    # владелец — root: tar от root распаковывает с владельцем из архива, и код
+    # в /opt получал бы uid машины, где собрали (там он был бы чужому доступен)
+    info.uid = info.gid = 0
+    info.uname = info.gname = "root"
     return info
 
 
@@ -58,7 +62,7 @@ def archive(root: Path | None = None) -> bytes:
         for name in _ENTRIES:
             p = root / name
             if p.exists():
-                tar.add(p, arcname=f"./{name}", filter=_skip_cache)
+                tar.add(p, arcname=f"./{name}", filter=_tar_filter)
     _cache[key] = buf.getvalue()
     return _cache[key]
 

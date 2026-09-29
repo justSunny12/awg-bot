@@ -663,3 +663,33 @@ def test_a_reassert_does_not_hold_the_apply_lock(svc, monkeypatch):
         svc._reassert_throttled("x")
     assert gw._APPLY_LOCK.acquire(blocking=False), "исключение в реассерте оставило замок занятым"
     gw._APPLY_LOCK.release()
+
+
+def test_apply_bundle_refuses_a_file_older_than_the_applied_one(svc, monkeypatch, tmp_path):
+    """Старый файл из истории чата расшифровывается тем же ключом и откатил
+    бы линк на прежние параметры. Метка выпуска в шапке: старее применённой —
+    отказ с подсказкой перевыпустить; без метки (файлы до 3.2.0) — как раньше."""
+    import base64, os
+    from awgbot.util import bundlecrypt as bc
+    mine = base64.b64encode(os.urandom(32)).decode()
+    conf = tmp_path / "awglink.conf"
+    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
+    ran = []
+    monkeypatch.setattr(svc, "_apply_bundle_run", lambda plain: ran.append(plain) or (True, "Готово"))
+
+    def body(issued):
+        head = f"#!/bin/sh\n# ISSUED_AT: {issued}\n" if issued else "#!/bin/sh\n"
+        return (head + "#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n").encode()
+
+    ok, _ = svc.apply_bundle(bc.encrypt(body(1_800_000_000), mine))
+    assert ok and len(ran) == 1
+    assert svc.db.get_state("gw_bundle_issued_at") == "1800000000"
+    ok, msg = svc.apply_bundle(bc.encrypt(body(1_700_000_000), mine))
+    assert not ok and len(ran) == 1, msg
+    assert "старее" in msg and "перевыпусти конфигурацию шлюза с сервера AWG" in msg
+    ok, _ = svc.apply_bundle(bc.encrypt(body(1_800_000_001), mine))
+    assert ok and len(ran) == 2
+    ok, _ = svc.apply_bundle(bc.encrypt(body(None), mine))
+    assert ok and len(ran) == 3, "файл без метки должен применяться"
+    assert svc.db.get_state("gw_bundle_issued_at") == "1800000001"

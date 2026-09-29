@@ -230,7 +230,13 @@ def parse_domain_list(text: str) -> list[str]:
         else:
             dom = line
         dom = dom.strip().lower().strip(".")
-        if not dom or "/" in dom or " " in dom or dom in seen:
+        if not dom or dom in seen:
+            continue
+        try:
+            dom = normalize(dom)                  # то же правило, что у личных доменов
+        except ValueError:
+            continue                              # HTML вместо списка, мусорные метки — мимо конфига
+        if dom in seen:
             continue
         seen.add(dom)
         out.append(dom)

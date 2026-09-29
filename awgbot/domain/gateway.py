@@ -136,6 +136,8 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
     снимки); клиентские таблицы просто пустуют, и городить отдельную схему ради
     их отсутствия — усложнение без выгоды."""
 
+    GATEWAY_ROLE = True          # состав копии — шлюзовой и без оглядки на config.ROLE
+
     def __init__(self, db):
         self.db = db
         # канал до ВПС: открыта ли сессия и байты через линк — пишет
@@ -1629,6 +1631,15 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         text = plain.decode(errors="replace")
         if "#__GW_SETUP_BELOW__" not in text or "__LINK_CONF_EOF__" not in text:
             return False, "не удалось применить конфигурацию: внутри нет маркеров контракта линка"
+        # Старый файл из истории чата расшифровывается тем же ключом: отказываем
+        # выпуску старее уже применённого (метка ISSUED_AT в шапке с 3.2.0)
+        issued = self._bundle_issued_at(text)
+        applied = int(self.db.get_state(self._BUNDLE_ISSUED_KEY) or 0)
+        if issued and applied and issued < applied:
+            from datetime import datetime
+            when = timeutil.fmt_dt_ui(datetime.fromtimestamp(issued, tz=timeutil.TZ))
+            return False, (f"эта конфигурация выпущена {when} — старее уже применённой; "
+                           "перевыпусти конфигурацию шлюза с сервера AWG")
         m = re.search(r'^SERVER_NAME="([^"\n]{1,64})"', text, re.M)
         if m:
             self.db.set_state(self._SERVER_NAME_KEY, m.group(1))
@@ -1640,7 +1651,17 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
             except ValueError as e:
                 log.warning("gateway: фраза из бандла не принята: %s", e)
         with _APPLY_LOCK:
-            return self._apply_bundle_run(plain)
+            ok, out = self._apply_bundle_run(plain)
+        if ok and issued:
+            self.db.set_state(self._BUNDLE_ISSUED_KEY, str(issued))
+        return ok, out
+
+    _BUNDLE_ISSUED_KEY = "gw_bundle_issued_at"
+
+    @staticmethod
+    def _bundle_issued_at(text: str) -> int:
+        m = re.search(r"^# ISSUED_AT: (\d{9,11})$", text, re.M)
+        return int(m.group(1)) if m else 0
 
     @staticmethod
     def _apply_bundle_run(plain: bytes) -> tuple[bool, str]:
@@ -1891,27 +1912,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         if not self.backup_encryption_enabled():
             raise ServiceError("резервная копия шлюза только шифрованная: задай парольную "
                                "фразу в ⚙️ Настройки → 💾 Бэкапы → 🔐 Шифрование")
-        extra: list[tuple[str, bytes]] = []
-        for p in sorted(glob.glob(os.path.join(config.GW_CONF_DIR, "*.conf"))):
-            try:
-                extra.append((f"awg/{os.path.basename(p)}", open(p, "rb").read()))
-            except OSError:
-                pass
-        # Локальное состояние файервола (порт, адреса снаружи, доверенные из
-        # туннеля) — данные человека, бандл их не восстановит.
-        from awgbot.infra import gwguard
-        try:
-            extra.append(("awg-gw/firewall.env", open(gwguard.FW_ENV, "rb").read()))
-        except OSError:
-            pass
-        # Личные списки локальной сети без VPN — тоже данные человека: набраны
-        # руками в чате агента, и замена малины без копии теряла бы их.
-        for name in ("awg-gw-vpn-user.conf", "awg-gw-ru-user.conf"):
-            try:
-                extra.append((f"awg-gw/lan/{name}", open(f"/etc/dnsmasq.d/{name}", "rb").read()))
-            except OSError:
-                pass
-        return self.write_backup_archive("gw", extra, require_encryption=True)
+        return self.write_backup_archive("gw", self.backup_extra(), require_encryption=True)
 
     def _apply_bundle_mail(self, text: str) -> bool:
         """MAIL_B64 из бандла → настройки почты агента (креды в БД, серверы в
