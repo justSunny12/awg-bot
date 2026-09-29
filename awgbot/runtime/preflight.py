@@ -96,10 +96,7 @@ def collect_warnings_gateway(services=None) -> list[str]:
     if not os.path.exists(_c.GW_LINK_CONF):
         warns.append(f"нет конфига линка {_c.GW_LINK_CONF} — линк не поднимется; "
                      f"шлюз ставится файлом конфигурации с сервера AWG (routing-link-setup.sh --bundle)")
-    import subprocess
-    rc = subprocess.run(["systemctl", "is-enabled", _c.GW_UNIT],
-                        capture_output=True).returncode
-    if rc != 0:
+    if _unit_enabled(_c.GW_UNIT) != "enabled":
         warns.append(f"юнит {_c.GW_UNIT} не включён — после ребута обвязка "
                      f"шлюза не восстановится")
     # Спрашиваем gwguard, а не конфиг: подсеть клиентов приезжает в бандле и

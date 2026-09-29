@@ -19,6 +19,7 @@ def test_channel_hooks_are_set_before_the_scheduler_and_the_listener_start():
     настроен» терялись бы, файл с ключом оставался в чате."""
     src = (ROOT / "main.py").read_text(encoding="utf-8")
     assert src.index("set_on_applied(") < src.index("scheduler.start()") < src.index("linkserver.ensure(services)")
+    assert src.index("gateway_units_migrate") < src.index("scheduler.start()"), "планировщик раньше миграции юнитов слотов"
     assert src.count("set_on_applied(") == 1 and src.count("set_on_installed(") == 1
 
 

@@ -204,13 +204,7 @@ async def run_gateway() -> None:
     db.init_schema()
     services = GatewayServices(db)
     services.first_start_note(fresh)        # «установлен» серверу — только в первый час
-    if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
-        # 3.2.0: расписания «никогда» нет и у агента — «месяц» и выключенные уведомления
-        try:
-            settings.set_value("updates.poll_schedule", "month")
-        except settings.SettingsWriteError as e:
-            log.warning("updates.poll_schedule=never не переписано: %s", e)
-        services.mute_updates()
+    services.normalize_update_schedule()    # прежнее never → «месяц» и уведомления выкл
     with contextlib.suppress(OSError):
         os.remove(marker)
 
@@ -281,7 +275,7 @@ async def run_gateway() -> None:
     _notifier.set_email_fallback(_mail_fallback)
 
     try:
-        warns = preflight.collect_warnings_gateway(services)
+        warns = await asyncio.to_thread(preflight.collect_warnings_gateway, services)
         if warns:
             from awgbot.bot.notifier import notify_one
             await notify_one(bot, config.ADMIN_ID, preflight.format_warnings(warns))
@@ -345,6 +339,10 @@ async def run_gateway() -> None:
         from awgbot.runtime import linkclient
         await linkclient.shutdown()
         log.info("Останавливаюсь…")
+        with contextlib.suppress(Exception):
+            await bot.session.close()
+        with contextlib.suppress(Exception):
+            db.close()
 
 
 async def main() -> None:
@@ -366,15 +364,7 @@ async def main() -> None:
     services = Services(db)
     services.ensure_admin_client()          # админ — тоже пользователь VPN
     services.migrate_pause_balances()       # v2.22.0: счёт дней паузы — разово
-    # 3.2.0: расписания «никогда» у основного бота больше нет — проверка идёт
-    # всегда ради строки «⬆️ Доступна vX»; прежнее never → «месяц» и
-    # выключенные уведомления (у агента — то же при его старте)
-    if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
-        try:
-            settings.set_value("updates.poll_schedule", "month")
-        except settings.SettingsWriteError as e:
-            log.warning("updates.poll_schedule=never не переписано: %s", e)
-        services.mute_updates()
+    services.normalize_update_schedule()    # прежнее never → «месяц» и уведомления выкл
     # Сессии канала линка прошлого процесса мертвы вместе с его сокетами: без
     # сброса карточка слота зажгла бы «на связи» у шлюза, который ещё не
     # переподключился. До поллинга — чтобы ни один экран их не увидел.
@@ -498,17 +488,9 @@ async def main() -> None:
     # «дождись завершения» и отчитаться админу («успешно обновлен…» + changelog
     # с кнопкой «В меню» / «не применилось»). Флаги стираются однократно.
     try:
-        wait = await asyncio.to_thread(services.pop_update_wait)
-        note = await asyncio.to_thread(services.confirm_applied_update)
-        if wait is not None:                             # прибрать «дождись» всегда
-            try:
-                await bot.delete_message(chat_id=wait[0], message_id=wait[1])
-            except Exception:                           # noqa: BLE001
-                pass
-        if note is not None:
-            await send_notifications(bot, [note])
+        await report_update_result(bot, services)       # тот же финишер, что у агента
     except Exception as e:                               # noqa: BLE001
-        log.warning("confirm_applied_update: %s", e)
+        log.warning("report_update_result: %s", e)
 
     # Поставка привезла ядро нового поколения — переезд профилей обязателен, и
     # сказать об этом надо при КАЖДОМ старте, пока он не начат: пропустить такое
@@ -554,7 +536,6 @@ async def main() -> None:
         log.warning("канал линка: крючки не поставлены: %s", e)
 
     watcher.ensure_watching()
-    scheduler.start()
     log.info("Бот запущен")
 
     # ── после старта поллинга: всё, без чего первый апдейт обслуживается ──
@@ -562,6 +543,10 @@ async def main() -> None:
     # списки маршрутизации (HTTP, до 15 с на источник), зонд шлюза и вход по
     # IMAP в замечаниях, четыре запроса к Bot API за именем. Бот отвечает через
     # пару секунд, а это догоняет в фоне; сбой любого шага — в лог, не наружу.
+    # Планировщик стартует ОТСЮДА, после обязательных шагов (SSH из туннеля,
+    # юниты слотов): раньше он шёл параллельно и первые тики делали ту же
+    # работу дважды, а слушатель канала биндился до миграции юнитов.
+    # Списки и реконсиляцию маршрутизации делает первый тик монитора сам.
     async def _after_start() -> None:
         try:
             await asyncio.to_thread(services.reconcile_ssh_access)  # SSH из туннеля: set устройств админа
@@ -585,14 +570,9 @@ async def main() -> None:
         except Exception as e:                           # noqa: BLE001
             log.warning("слоты шлюзов на старте: %s", e)
         try:
-            # Списки условной маршрутизации — на старте, а не руками до него.
-            # Метод сам решает, пора ли обновлять; при пустом кэше делает это
-            # немедленно: без списков режим не действует вовсе. Пока качаются,
-            # действуют прежние правила — это не отказ.
-            await asyncio.to_thread(services.routing_update_lists)
-            await asyncio.to_thread(services.reconcile_routing)
+            scheduler.start()
         except Exception as e:                           # noqa: BLE001
-            log.warning("routing на старте: %s", e)
+            log.warning("планировщик не запущен: %s", e)
         try:
             await _sync_bot_identity(bot, db)
         except Exception as e:                           # noqa: BLE001
@@ -629,7 +609,14 @@ async def main() -> None:
         log.info("стартовые фоновые задачи завершены")
 
     after_start = asyncio.create_task(_after_start())
-    after_start.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+    def _after_start_done(t: asyncio.Task) -> None:
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc is not None:                              # rlogic-15: не глотать молча
+            log.warning("стартовые фоновые задачи прервались: %r", exc)
+    after_start.add_done_callback(_after_start_done)
 
     try:
         # long-poll 50 с вместо дефолтных 10: впятеро меньше холостых

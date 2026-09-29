@@ -139,6 +139,13 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             restarted = await asyncio.to_thread(services.detect_and_handle_restart)
             if restarted:
                 log.info("Обнаружен рестарт контейнера — блокировки переналожены")
+            else:
+                # сверка DROP ↔ БД в обе стороны по одному iptables -S: разовый
+                # отказ iptables при (раз)блокировке иначе держался до рестарта
+                try:
+                    await asyncio.to_thread(services.reconcile_blocks, True)
+                except Exception as e:                   # noqa: BLE001
+                    log.warning("reconcile_blocks: %s", e)
             # пер-пирный SSH-к-хосту: реассерт каждый тик — дёшево и гарантирует
             # сходимость (удаление админ-устройства, переиспользование его IP,
             # рестарт контейнера уберут/вернут правила в пределах одного цикла).
@@ -159,7 +166,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             # детектим по StartedAt), поэтому дёргать container_pid каждый тик
             # незачем — только при рестарте или если наблюдатель умер.
             if watcher is not None and (restarted or not watcher.alive()):
-                watcher.ensure_watching()
+                await asyncio.to_thread(watcher.ensure_watching)
             # условная маршрутизация: реассерт наборов/правил + рубильник
             # деградации. Реассерт каждый тик по той же причине, что и у SSH —
             # правила эфемерны, а сходимость должна наступать в пределах цикла
@@ -288,9 +295,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                            minute=0, timezone=_TZ)
 
     def _trig_backup():
+        # джиттер: почта и файл в чат ровно в 12:00:00 первого числа — маячок
         return CronTrigger(day=settings.get_int("app.scheduler.backup_day", 1),
                            hour=settings.get_int("app.scheduler.backup_hour", 12),
-                           minute=0, timezone=_TZ)
+                           minute=0, jitter=BACKUP_JITTER, timezone=_TZ)
 
     def _trig_purge():
         return CronTrigger(hour=settings.get_int("app.history.purge_hour", 3), minute=0, timezone=_TZ)
@@ -442,13 +450,9 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         except Exception as e:                        # noqa: BLE001
             log.warning("update_check: %s", e)
 
-    _uc_trig = update_check_trigger()
-    scheduler.add_job(job_update_check,
-                      _uc_trig or CronTrigger(hour=10, minute=0, timezone=_TZ),
+    scheduler.add_job(job_update_check, update_check_trigger(),
                       id="update_check", max_instances=1, coalesce=True,
                       misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
-    if _uc_trig is None:                              # «никогда» — job есть, но спит
-        scheduler.pause_job("update_check")
     scheduler.add_job(job_update_check, "date", run_date=now, id="update_check_startup",
                       max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
 
@@ -486,8 +490,6 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             continue                        # job не зарегистрирован — перевешивать нечего
         settings.on_change(_key, _make_reschedule(_job_id, _factory))
 
-    # update_check — особый: poll_schedule=never → триггер None → job на паузу;
-    # иначе reschedule (сам снимет паузу, если была). Три ключа ведут сюда.
     def _hook_firewall(key, value):
         # правка firewall.* или network.ssh_port в conf (руками или через
         # awg-bot firewall …) — таблица пересобирается сразу, без рестарта
@@ -501,14 +503,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     settings.on_change("app.routing.peer_nets", _hook_firewall)
 
     def _hook_update_check(key, value):
+        # три ключа ведут сюда; расписания «никогда» нет — только перевесить
         try:
-            trig = update_check_trigger()
-            if trig is None:
-                scheduler.pause_job("update_check")
-                log.info("проверка обновлений выключена (never)")
-            else:
-                scheduler.reschedule_job("update_check", trigger=trig)
-                log.info("расписание проверки обновлений обновлено (%s=%s)", key, value)
+            scheduler.reschedule_job("update_check", trigger=update_check_trigger())
+            log.info("расписание проверки обновлений обновлено (%s=%s)", key, value)
         except Exception as e:                            # noqa: BLE001
             log.warning("reschedule update_check (%s): %s", key, e)
 
@@ -601,30 +599,40 @@ async def monthly_backup(services, bot, log_tag: str) -> None:
                 sent_by_mail = True
             except Exception as e:               # noqa: BLE001
                 log.warning("%s: на почту не ушёл, шлю в Telegram: %s", log_tag, e)
+        delivered = sent_by_mail
         if not sent_by_mail:
             for p in paths:
                 try:
                     await bot.send_document(config.ADMIN_ID, FSInputFile(p))
+                    delivered = True
                 except Exception as e:               # noqa: BLE001
                     log.warning("%s: отправка %s: %s", log_tag, p, e)
-        await asyncio.to_thread(db.set_state, "last_backup", ym)
+        if delivered:
+            await asyncio.to_thread(db.set_state, "last_backup", ym)
+        else:
+            # архив собран, наружу не ушёл (Telegram через лежащий линк):
+            # «сделан» не ставим — повтор на следующем старте или по крону
+            log.warning("%s: копия %s собрана, но не доставлена — повторю", log_tag, ym)
     except Exception as e:                       # noqa: BLE001
         log.warning("%s: %s", log_tag, e)
 
 
 _UPDATE_JITTER = 1800          # ±полчаса к проверке обновлений: не ровно в 10:00
+BACKUP_JITTER = 1800           # ±полчаса к месячной копии — по той же причине
 
 
 def update_check_trigger():
-    """Триггер проверки обновлений по updates.poll_schedule (day|week|month|never),
-    never → None. Время — poll_hour:minute, неизвестное расписание — как day.
+    """Триггер проверки обновлений по updates.poll_schedule (day|week|month).
+    Время — poll_hour:minute, неизвестное расписание — как day; прежнее never
+    планировщик читает как month (нормализует старт и раздел — домен,
+    normalize_update_schedule): проверка идёт всегда ради «⬆️ Доступна vX».
     Одна фабрика на обе роли: у основного бота была своя копия без джиттера, и
     он ходил на GitHub ровно в назначенную секунду — маячок по расписанию."""
     sch = str(settings.get("updates.poll_schedule", "day")).lower()
     h = settings.get_int("updates.poll_hour", 10)
     m = settings.get_int("updates.poll_minute", 0)
     if sch == "never":
-        return None
+        sch = "month"
     if sch == "week":
         return CronTrigger(day_of_week=0, hour=h, minute=m, jitter=_UPDATE_JITTER, timezone=config.TZ)
     if sch == "month":
@@ -633,16 +641,12 @@ def update_check_trigger():
 
 
 def gateway_update_check_hook(scheduler):
-    """Хук settings.on_change для задачи update_check агента: «никогда» —
-    пауза, иначе перевесить на новый триггер. Модульная функция, а не
-    замыкание, чтобы её можно было проверить фейковым планировщиком."""
+    """Хук settings.on_change для задачи update_check агента: перевесить на
+    новый триггер. Модульная функция, а не замыкание, чтобы её можно было
+    проверить фейковым планировщиком."""
     def _hook(_key, _value):
         try:
-            trig = update_check_trigger()
-            if trig is None:
-                scheduler.pause_job("update_check")
-            else:
-                scheduler.reschedule_job("update_check", trigger=trig)
+            scheduler.reschedule_job("update_check", trigger=update_check_trigger())
         except Exception as e:                            # noqa: BLE001
             log.warning("gw update_check reschedule: %s", e)
     return _hook
@@ -732,10 +736,17 @@ def setup_gateway_scheduler(services, bot):
     def _trig_gw_backup():
         return CronTrigger(day=settings.get_int("app.scheduler.backup_day", 1),
                            hour=settings.get_int("app.scheduler.backup_hour", 12),
-                           minute=0, timezone=config.TZ)
+                           minute=0, jitter=BACKUP_JITTER, timezone=config.TZ)
 
     scheduler.add_job(job_gw_backup, _trig_gw_backup(), id="gw_backup", max_instances=1,
                       coalesce=True, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
+    # E7: догон на старте, как у основного бота — малина, выключенная 1-го в
+    # 12:00, иначе теряла месячную копию; первая копия после установки ждала бы
+    # до двух месяцев. Через минуты, не сразу: линк и почта ещё поднимаются.
+    scheduler.add_job(job_gw_backup, "date",
+                      run_date=timeutil.now() + datetime.timedelta(seconds=random.randint(60, 300)),
+                      id="gw_backup_catchup", max_instances=1,
+                      misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
     def _gw_backup_hook(_key=None, _val=None):
         try:
@@ -754,13 +765,9 @@ def setup_gateway_scheduler(services, bot):
         except Exception as e:                        # noqa: BLE001
             log.warning("gw update_check: %s", e)
 
-    trig = update_check_trigger()
-    scheduler.add_job(job_update_check,
-                      trig or CronTrigger(hour=10, minute=0, timezone=config.TZ),
+    scheduler.add_job(job_update_check, update_check_trigger(),
                       id="update_check", max_instances=1, coalesce=True,
                       misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
-    if trig is None:
-        scheduler.pause_job("update_check")
     scheduler.add_job(job_update_check, "date", run_date=timeutil.now(),
                       id="update_check_startup", max_instances=1,
                       misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)

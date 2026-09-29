@@ -119,6 +119,7 @@ class LinkClient:
         # применение канона своих списков и сверка файлов не пересекаются:
         # сверка посреди `sync` сочла бы правки канона своими
         self._own_lock = asyncio.Lock()
+        self._push_lock = asyncio.Lock()
         self._fill_task: asyncio.Task | None = None   # наполнение набора после sync — фоном
 
     # ── соединение ───────────────────────────────────────────────────────────
@@ -155,6 +156,7 @@ class LinkClient:
         self._seq = 0
         self._rev = 0
         self._prev = {}
+        self._parts = {}                      # части фидов прошлой сессии — не наши
         self._confirmed = False
         self._cn, self._sn = gwlink.new_nonce(), b""
         log.info("канал линка: подключился к %s:%s", host, port)
@@ -297,7 +299,13 @@ class LinkClient:
 
     async def push(self, *, full: bool = False) -> bool:
         """Отправить снимок или дельту. Дельта пуста — не уходит НИЧЕГО: это
-        обычное состояние канала на дни, а не особый случай."""
+        обычное состояние канала на дни, а не особый случай. По одному:
+        два push вперемешку (тик и poke) завершались в обратном порядке, и
+        сервер держал устаревшее состояние до следующего тика."""
+        async with self._push_lock:
+            return await self._push(full=full)
+
+    async def _push(self, *, full: bool = False) -> bool:
         if self._writer is None:
             return False
         try:

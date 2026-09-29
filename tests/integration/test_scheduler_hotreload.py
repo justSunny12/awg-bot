@@ -83,8 +83,9 @@ def test_backup_cron_reschedules(sched_conf, services, db, monkeypatch):
     assert len(calls) == 1 and calls[0][0] == "backup"
 
 
-def test_update_schedule_variants_and_never_pause(sched_conf, services, db, monkeypatch):
-    """poll_schedule: week/month → reschedule; never → pause_job."""
+def test_update_schedule_variants_and_never_is_month(sched_conf, services, db, monkeypatch):
+    """poll_schedule: week/month → reschedule; never из старого conf — как
+    month, паузы у планировщика больше нет (проверка идёт ради «⬆️ Доступна vX»)."""
     scheduler = _build_scheduler(services, db)
     resched, paused = [], []
     monkeypatch.setattr(scheduler, "reschedule_job",
@@ -96,7 +97,8 @@ def test_update_schedule_variants_and_never_pause(sched_conf, services, db, monk
     assert [j for j, _ in resched] == ["update_check"] * 2
     assert "day_of_week" in resched[0][1]           # week — по дню недели
     settings.set_value("updates.poll_schedule", "never")
-    assert paused == ["update_check"]               # never — пауза, не reschedule
+    assert paused == [] and len(resched) == 3 and resched[2][1] == resched[1][1], (
+        "never обязан читаться как month, а не ставить задачу на паузу")
 
 
 def test_unknown_poll_schedule_behaves_as_day_without_rewriting_yaml(tmp_path, services, db):

@@ -70,6 +70,7 @@ class AwgWatcher:
         self._timer: Optional[threading.Timer] = None
         self._lock = threading.Lock()
         self._mtimes: dict[str, float] = {}
+        self._inotify_failed = False                 # inotify не поднялся: не перепривязывать каждый тик
         self._net_stop = threading.Event()
         self._net_thread: Optional[threading.Thread] = None
 
@@ -90,9 +91,13 @@ class AwgWatcher:
         path = awg.watch_root()
         if path is None:
             return
-        if (path == self._path and self._observer is not None
-                and self._observer.is_alive()):
+        if path == self._path and (self._inotify_failed or (self._observer is not None
+                                                            and self._observer.is_alive())):
+            # тот же путь: либо наблюдатель жив, либо inotify тут не работает и
+            # держит только mtime-сетка — переписывать её базу каждый тик значило
+            # глотать чужую правку конфига за ≤10 с до тика
             return
+        self._inotify_failed = False
         self._stop_observer()
         if not os.path.isdir(path):
             log.warning("Путь наблюдения недоступен: %s", path)
@@ -106,6 +111,7 @@ class AwgWatcher:
             self._observer = obs
             log.info("Вотчдог подключён к %s", path)
         except Exception as e:                       # noqa: BLE001
+            self._inotify_failed = True
             log.warning("Не удалось запустить inotify (работает mtime-сетка): %s", e)
         if self._net_thread is None:
             self._net_thread = threading.Thread(

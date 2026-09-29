@@ -72,22 +72,9 @@ def read_cpu_percent() -> float | None:
 
 
 def read_ram_percent() -> float | None:
-    """Занятость RAM, %: 100 × (1 − MemAvailable/MemTotal) из /proc/meminfo."""
-    total = avail = None
-    try:
-        with open("/proc/meminfo", encoding="ascii") as f:
-            for line in f:
-                if line.startswith("MemTotal:"):
-                    total = int(line.split()[1])
-                elif line.startswith("MemAvailable:"):
-                    avail = int(line.split()[1])
-                if total is not None and avail is not None:
-                    break
-    except OSError:
-        return None
-    if not total or avail is None:
-        return None
-    return round(100.0 * (1 - avail / total), 1)
+    """Занятость RAM, % — тот же разбор, что у read_ram()."""
+    r = read_ram()
+    return None if r is None else r[0]
 
 
 def read_ram() -> tuple[float, int] | None:
@@ -175,15 +162,9 @@ def read_smart_health(dev: str | None = None) -> str | None:
 
 
 def read_disk_percent(path: str = "/") -> float | None:
-    """Занятость диска, % (корневая ФС): statvfs, доля занятых блоков."""
-    try:
-        st = os.statvfs(path)
-    except OSError:
-        return None
-    if st.f_blocks <= 0:
-        return None
-    used = st.f_blocks - st.f_bfree
-    return round(100.0 * used / st.f_blocks, 1)
+    """Занятость диска, % — тот же разбор, что у read_disk()."""
+    r = read_disk(path)
+    return None if r is None else r[0]
 
 
 # Биты get_throttled, значимые для живучести шлюза (официальная карта Raspberry

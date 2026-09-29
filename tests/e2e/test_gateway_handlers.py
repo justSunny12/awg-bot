@@ -258,23 +258,24 @@ async def test_gateway_schedule_picker_mirrors_the_main_bot(svc, fake_bot, monke
     assert not svc.updates_muted()
 
 
-def test_gateway_update_check_hook_pauses_on_never_and_reschedules_otherwise(monkeypatch):
+def test_gateway_update_check_hook_reschedules_and_reads_never_as_month(monkeypatch):
     from awgbot.core import settings
     from awgbot.runtime import scheduler as sch
     calls = []
 
     class FakeSched:
         def pause_job(self, jid): calls.append(("pause", jid))
-        def reschedule_job(self, jid, trigger=None): calls.append(("resched", jid, type(trigger).__name__))
+        def reschedule_job(self, jid, trigger=None): calls.append(("resched", jid, str(trigger)))
 
     hook = sch.gateway_update_check_hook(FakeSched())
     store = {"updates.poll_schedule": "never"}
     monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
     hook("updates.poll_schedule", "never")
-    assert calls[-1] == ("pause", "update_check")
+    assert calls[-1][0] == "resched" and "day='1'" in calls[-1][2], calls[-1]   # never — как месяц
     store["updates.poll_schedule"] = "week"
     hook("updates.poll_schedule", "week")
-    assert calls[-1][0] == "resched" and calls[-1][2] == "CronTrigger"
+    assert calls[-1][0] == "resched" and "day_of_week" in calls[-1][2]
+    assert not any(c[0] == "pause" for c in calls), "паузы у проверки обновлений больше нет"
 
 
 # ── первая панель после установки ────────────────────────────────────────────

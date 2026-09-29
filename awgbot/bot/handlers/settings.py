@@ -96,12 +96,7 @@ async def _screen(sec: str, services, key: str = ""):
     if sec == "upd":
         # проверка — при открытии раздела; «никогда» из старого конфига —
         # «месяц» и уведомления выкл (расписания «никогда» больше нет)
-        if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
-            try:
-                await call(settings.set_value, "updates.poll_schedule", "month")
-            except settings.SettingsWriteError:
-                pass
-            await call(services.mute_updates)
+        await call(services.normalize_update_schedule)
         if key == "cached":
             # тумблер и цикл: без похода в сеть, по тегу последней проверки
             tag = await call(services.update_available_tag)

@@ -836,13 +836,7 @@ async def gw_update_mute(cb: CallbackQuery, services):
 async def _updates_screen(cb: CallbackQuery, services, scan: bool = True):
     """Раздел обновлений: scan — сходить к списку релизов (при открытии);
     иначе — по тегу последней проверки, без сети."""
-    from awgbot.core import settings
-    if str(settings.get("updates.poll_schedule", "day")).lower() == "never":
-        try:
-            await call(settings.set_value, "updates.poll_schedule", "month")
-        except settings.SettingsWriteError:
-            pass
-        await call(services.mute_updates)
+    await call(services.normalize_update_schedule)   # прежнее never → «месяц» и уведомления выкл
     if scan:
         found = await call(services.update_scan)
     else:

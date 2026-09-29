@@ -32,9 +32,9 @@ def test_read_ram_percent_missing_file(monkeypatch):
 def test_read_disk_percent(monkeypatch):
     import os
     class _St:
-        f_blocks = 1000; f_bfree = 400
+        f_blocks = 1000; f_bfree = 400; f_bavail = 380; f_frsize = 4096
     monkeypatch.setattr(os, "statvfs", lambda p: _St())
-    assert hm.read_disk_percent("/") == 60.0         # (1000-400)/1000
+    assert hm.read_disk_percent("/") == 60.0         # (1000-400)/1000 — тот же разбор, что у read_disk()
 
 
 def test_read_disk_percent_error(monkeypatch):

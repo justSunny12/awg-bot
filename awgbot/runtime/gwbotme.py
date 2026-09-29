@@ -37,6 +37,13 @@ async def refresh(services, slot_id: int) -> bool:
     try:
         me = await bot.get_me()
     except Exception as e:                                # noqa: BLE001
+        from aiogram.exceptions import TelegramUnauthorizedError
+        if isinstance(e, TelegramUnauthorizedError):
+            # токен отозван: сеть тут ни при чём, повтор бесполезен до нового
+            # токена (set_gw_bot_token зовёт refresh явно)
+            log.warning("бот шлюза слота %s: токен не принят Telegram (%s) — до смены токена не спрашиваю", slot_id, e)
+            _next_try[int(slot_id)] = float("inf")
+            return False
         log.info("бот шлюза слота %s: getMe не прошёл (%s)", slot_id, e)
         _next_try[int(slot_id)] = time.monotonic() + RETRY_SECONDS
         return False
