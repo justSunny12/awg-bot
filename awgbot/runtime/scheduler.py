@@ -740,9 +740,9 @@ def setup_gateway_scheduler(services, bot):
 
     scheduler.add_job(job_gw_backup, _trig_gw_backup(), id="gw_backup", max_instances=1,
                       coalesce=True, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
-    # E7: догон на старте, как у основного бота — малина, выключенная 1-го в
-    # 12:00, иначе теряла месячную копию; первая копия после установки ждала бы
-    # до двух месяцев. Через минуты, не сразу: линк и почта ещё поднимаются.
+    # E7: догон на старте, как у основного бота — устройство, выключенное 1-го
+    # в 12:00, иначе теряло месячную копию (первый прогон только помечает
+    # месяц, копии не делает). Через минуты, не сразу: линк и почта ещё поднимаются.
     scheduler.add_job(job_gw_backup, "date",
                       run_date=timeutil.now() + datetime.timedelta(seconds=random.randint(60, 300)),
                       id="gw_backup_catchup", max_instances=1,

@@ -58,7 +58,8 @@ GitHub `vX.Y.Z.P — …`.
   `util/timeutil.py`, `main.py`, `awg-bot.sh`, установщик, preflight, `notifier.py`, `db/*`,
   `domain/backupcrypto.py` — состав копии по роли, `tools/snapshot.py` —
   снимок для `awg-bot backup` и `restore`, общие тексты) — обе. `install/routing-link-setup.sh` живёт только на ВПС —
-  строка `main`.
+  строка `main` (его копию в `/usr/local/sbin`, которую выполняет юнит
+  `awg-link@<if>` при загрузке, `awg-bot update` на ВПС тоже освежает).
   `install/routing-gw-setup.sh` едет на малину двумя путями: в конфигурации
   шлюза (бандле) с ВПС и обновлением самого агента — оно переустанавливает
   копию в `/usr/local/sbin`, которую выполняет юнит при загрузке (README §9).
@@ -142,7 +143,14 @@ GitHub `vX.Y.Z.P — …`.
    `install/awg-bot-install.sh`, а владелец файлов в архиве — root
    (`tar tvzf <каталог>/awg-bot.tgz | head`): сборка пишет его сама
    (`--owner=0` у GNU tar, `--uid 0` у bsdtar), и другой uid в архиве значит,
-   что `tar` сборки не принял ни одного из этих флагов.
+   что `tar` сборки не принял ни одного из этих флагов. Файла юнита
+   `awg-bot.service` в поставке нет: юнит пишет установщик (`install_unit` в
+   `awg-bot.sh`) и переписывает его на каждом `update`. Состав поставки
+   задан дважды — `build_bot` в `build_release.sh` и `_ENTRIES` в
+   `awgbot/util/dist.py` — и меняется синхронно. Полный архив проекта
+   `awg-bot-project.tgz` в релиз не идёт; в него не попадают `.git`, данные,
+   локальные окружения (`venv`, `.venv`, `.venv-next`) и служебные файлы
+   разработки.
 5. Тег `vX.Y.Z.P`; `git push origin main vX.Y.Z.P`; при сетевом отказе — до
    трёх попыток с паузой; проверить `git ls-remote origin main vX.Y.Z.P`
    (один и тот же коммит).

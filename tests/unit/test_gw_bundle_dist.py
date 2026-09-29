@@ -186,4 +186,4 @@ def test_dist_and_release_carry_no_unit_file():
     assert not (ROOT / "awg-bot.service").exists()
     build = (ROOT / "build_release.sh").read_text(encoding="utf-8")
     assert "awg-bot.service" not in build.split("build_bot() {", 1)[1].split("\n}\n", 1)[0]
-    assert "--exclude='./.venv'" in build and "--exclude='./.claude'" in build
+    assert "git archive" in build.split("build_project() {", 1)[1], "полный проект снова пакуется из рабочего дерева"

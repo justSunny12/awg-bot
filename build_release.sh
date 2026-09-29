@@ -10,7 +10,10 @@
 #
 # Артефакты (в ./dist по умолчанию):
 #   awg-bot.tgz          продукт целиком: код, установщик, скрипты обвязки
-#   awg-bot-project.tgz  полный проект для разработки (с тестами)
+#                        (файла юнита нет — его пишет install_unit в awg-bot.sh;
+#                        состав синхронно с _ENTRIES в awgbot/util/dist.py)
+#   awg-bot-project.tgz  полный проект для разработки (с тестами; без .git,
+#                        данных и локальных окружений)
 #
 # Запуск:  ./build_release.sh [OUT_DIR]
 set -euo pipefail
@@ -78,13 +81,9 @@ build_bot() {
 
 # ── полный проект (dev) ──────────────────────────────────────────────────────
 build_project() {
-    local tmp; tmp="$(mktemp -u).tgz"
-    ( cd "$ROOT" && tar $TAR_FLAGS -czf "$tmp" \
-        --exclude='./.git' --exclude='*/__pycache__' --exclude='*.pyc' \
-        --exclude='./data' --exclude='*.db' --exclude='./.pytest_cache' \
-        --exclude='./venv' --exclude='./.venv' --exclude='./.venv-next' --exclude='./.claude' \
-        --exclude='./.mcp.json' --exclude='./dist' . )
-    cp -f "$tmp" "$OUT/awg-bot-project.tgz"; rm -f "$tmp"
+    # Ровно то, что в репозитории (git archive): окружения, кэши и служебные
+    # файлы разработки в архив не попадают, каким бы именем они ни назывались
+    ( cd "$ROOT" && git archive --format=tar.gz --prefix=./ -o "$OUT/awg-bot-project.tgz" HEAD )
     log "awg-bot-project.tgz: $(_count "$OUT/awg-bot-project.tgz") файлов"
 }
 

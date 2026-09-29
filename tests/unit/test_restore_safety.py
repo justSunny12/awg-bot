@@ -128,4 +128,5 @@ def test_restore_removes_the_decrypted_chat_copy_after_unpacking(script):
     ключи в каталоге снимков) — после распаковки файл больше не нужен."""
     body = _restore(script)
     assert 'restore-pending.tgz" ]] && rm -f -- "$orig"' in body
-    assert body.index("tar xzf") < body.index('rm -f -- "$orig"') < body.index("prerestore")
+    # после укладки базы и до маркера: при отказе файл остаётся для повтора
+    assert body.index('mv -f "$dbt"') < body.index('rm -f -- "$orig"') < body.index("restore-done.json")

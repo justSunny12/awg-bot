@@ -22,7 +22,7 @@
 #   2) удалить прошлую установку вместе с данными и настройками, затем чистая
 #      установка (второе подтверждение): код, /etc/awg-bot, /var/lib/awg-bot; у
 #      шлюза — ещё `routing-gw-setup.sh --rollback`, /etc/awg-gw, /var/lib/awg-gw,
-#      /opt/awg-gw и скрипты в /usr/local/sbin (аплинк НЕ трогается — это связь
+#      /opt/awg-gw (остаток прежних выпусков) и скрипты в /usr/local/sbin (аплинк НЕ трогается — это связь
 #      агента с Telegram); у ВПС — ВСЁ, что поставил бот: линки до шлюзов и
 #      обвязка условной маршрутизации (их же --rollback), резолвер клиентов,
 #      интерфейсы awg со всеми пирами, контейнер docker-режима, таблицы
@@ -49,7 +49,9 @@
 # и обязана ехать вместе с ней: иначе на хосте выполнялся бы установщик из
 # ветки main, а код ставился бы из релиза, и эти двое разъезжались бы молча.
 # В режиме трубы этот файл делает ровно три вещи: качает, проверяет sha256 и
-# запускает установщик из распакованного архива.
+# запускает установщик из распакованного архива. Отказ до передачи управления
+# (скачивание, sha256, состав) и ненулевой код установщика убирают временный
+# каталог /tmp/awg-bot-install.*.
 #
 # Аргументы после `-s --`:
 #   … | sudo bash -s -- --role gateway
@@ -188,11 +190,12 @@ if [[ "$PIPED" -eq 1 && -z "${1:-}" ]]; then
     bash "$SRC_ROOT/install/awg-bot-install.sh" --skip-verify ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}
     __rc=$?
     set -e
-    if [[ "$__rc" -ne 0 ]]; then
-        case "$SRC_ROOT" in
-            /tmp/awg-bot-install.*) rm -rf "$SRC_ROOT" && log "убрал временный каталог: $SRC_ROOT" ;;
-        esac
-    fi
+    # Установщик вернулся — каталог больше никому не нужен: отказ, «Отмена»
+    # в меню (код 0) или обновление, которое уже отработало (post_update убирает
+    # архив сам). При любом коде: раньше «Отмена» оставляла поставку в /tmp навсегда.
+    case "$SRC_ROOT" in
+        /tmp/awg-bot-install.*) [[ -d "$SRC_ROOT" ]] && rm -rf "$SRC_ROOT" && log "убрал временный каталог: $SRC_ROOT" ;;
+    esac
     exit "$__rc"
 elif [[ -z "${1:-}" && -n "$UNPACK_ROOT" && -f "$UNPACK_ROOT/awgbot/__main__.py" && -f "$UNPACK_ROOT/awg-bot.sh" ]]; then
     SRC_ROOT="$UNPACK_ROOT"
@@ -235,8 +238,9 @@ wipe_previous() {
     if [[ "$role" == "gateway" ]]; then
         [[ -x /usr/local/sbin/routing-gw-setup.sh ]] \
             && sh /usr/local/sbin/routing-gw-setup.sh --rollback >/dev/null 2>&1 || true
-        # /opt/awg-gw — куда файл конфигурации кладёт скрипт обвязки и link.conf
-        # с приватным ключом линка: без него «снесено с настройками» было бы неправдой
+        # /opt/awg-gw — остаток прежних выпусков: там лежали скрипт обвязки и
+        # link.conf с приватным ключом линка (теперь файл раскладывается во
+        # временный каталог); без него «снесено с настройками» было бы неправдой
         rm -rf /etc/awg-gw /var/lib/awg-gw /opt/awg-gw
         rm -f /usr/local/sbin/routing-gw-setup.sh /usr/local/sbin/awg-lan-lists.sh \
               /usr/local/sbin/awg-lan-domain.sh /usr/local/sbin/awg-lan-services.sh
