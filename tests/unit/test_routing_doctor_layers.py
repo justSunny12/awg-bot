@@ -27,15 +27,15 @@ def _cp(stdout=b"", returncode=0):
 def healthy(monkeypatch):
     """Все слои зелёные — чтобы тест менял ровно одну переменную."""
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
-    monkeypatch.setattr(routing, "self_check", lambda force=False: (True, "ок"))
-    monkeypatch.setattr(routing, "link_peer_address", lambda: "10.99.99.2")
-    monkeypatch.setattr(routing, "table_route", lambda: "default dev awglink")
-    monkeypatch.setattr(routing, "rule_present", lambda: True)
-    monkeypatch.setattr(routing, "mss_clamp_present", lambda: True)
-    monkeypatch.setattr(routing, "probe_gateway", lambda *a, **k: routing.PROBE_OK)
-    monkeypatch.setattr(routing, "last_probe_latency_ms", lambda: 40)
-    monkeypatch.setattr(routing, "hook_present", lambda: True)
-    monkeypatch.setattr(routing, "list_sets", lambda: [])
+    monkeypatch.setattr(routing.selfcheck, "self_check", lambda force=False: (True, "ок"))
+    monkeypatch.setattr(routing.probes, "link_peer_address", lambda: "10.99.99.2")
+    monkeypatch.setattr(routing.policy, "table_route", lambda: "default dev awglink")
+    monkeypatch.setattr(routing.policy, "rule_present", lambda: True)
+    monkeypatch.setattr(routing.policy, "mss_clamp_present", lambda: True)
+    monkeypatch.setattr(routing.probes, "probe_gateway", lambda *a, **k: routing.PROBE_OK)
+    monkeypatch.setattr(routing.probes, "last_probe_latency_ms", lambda: 40)
+    monkeypatch.setattr(routing.policy, "hook_present", lambda: True)
+    monkeypatch.setattr(routing.sets, "list_sets", lambda: [])
 
 
 def _link_row(rows):
@@ -43,7 +43,7 @@ def _link_row(rows):
 
 
 def test_fresh_handshake_is_green(healthy, monkeypatch):
-    monkeypatch.setattr(routing, "link_handshake_age", lambda: 42)
+    monkeypatch.setattr(routing.probes, "link_handshake_age", lambda: 42)
     assert _link_row(doc._probe_layers())[0] == doc._OK
 
 
@@ -53,7 +53,7 @@ def test_stale_handshake_is_a_failure_not_a_green_line(healthy, monkeypatch):
     Прежде слой красил зелёным всё, где хендшейк просто существует, и человек
     шёл чинить шлюз вместо стороны, которая молчит.
     """
-    monkeypatch.setattr(routing, "link_handshake_age", lambda: 12551)
+    monkeypatch.setattr(routing.probes, "link_handshake_age", lambda: 12551)
     row = _link_row(doc._probe_layers())
     assert row[0] == doc._BAD, "протухший хендшейк обязан быть отказом"
     assert "шлюз" in row[2].lower(), "нужно назвать, где чинить"
@@ -61,7 +61,7 @@ def test_stale_handshake_is_a_failure_not_a_green_line(healthy, monkeypatch):
 
 def test_short_blip_does_not_redden_a_working_link(healthy, monkeypatch):
     """Порог с запасом: короткий провал связи не должен краснить исправный линк."""
-    monkeypatch.setattr(routing, "link_handshake_age", lambda: 200)
+    monkeypatch.setattr(routing.probes, "link_handshake_age", lambda: 200)
     assert _link_row(doc._probe_layers())[0] == doc._OK
 
 
@@ -90,8 +90,8 @@ def test_route_pointing_away_from_awg_is_a_failure(monkeypatch):
             return _cp(f"{config.ROUTING_DNSMASQ_SERVICE}.service enabled".encode())
         return _cp()
 
-    monkeypatch.setattr(routing, "_host", fake_host)
-    monkeypatch.setattr(routing, "_host_ok", lambda args: True)
+    monkeypatch.setattr(routing.base, "_host", fake_host)
+    monkeypatch.setattr(routing.base, "_host_ok", lambda args: True)
     with pytest.raises(routing.RoutingUnavailable, match="мимо awg0"):
         routing._check_static_plumbing()
 
@@ -107,8 +107,8 @@ def test_connected_route_through_awg_passes(monkeypatch):
             return _cp(f"{config.ROUTING_DNSMASQ_SERVICE}.service enabled".encode())
         return _cp()
 
-    monkeypatch.setattr(routing, "_host", fake_host)
-    monkeypatch.setattr(routing, "_host_ok", lambda args: True)
+    monkeypatch.setattr(routing.base, "_host", fake_host)
+    monkeypatch.setattr(routing.base, "_host_ok", lambda args: True)
     routing._check_static_plumbing()          # не бросает
 
 
@@ -186,9 +186,9 @@ def selfcheck_env(monkeypatch):
 
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
-    monkeypatch.setattr(routing, "_check_host_tools", lambda: None)
-    monkeypatch.setattr(routing, "_check_static_plumbing", lambda: None)
-    monkeypatch.setattr(routing, "_host_ok", host_ok)
+    monkeypatch.setattr(routing.selfcheck, "_check_host_tools", lambda: None)
+    monkeypatch.setattr(routing.selfcheck, "_check_static_plumbing", lambda: None)
+    monkeypatch.setattr(routing.base, "_host_ok", host_ok)
     from awgbot.infra import awg as _awg
     monkeypatch.setattr(_awg, "in_container", lambda: False)
     routing.invalidate_self_check()
@@ -214,7 +214,7 @@ def test_negative_verdict_rechecks_itself(selfcheck_env, monkeypatch):
     assert selfcheck_env.calls == was
 
     selfcheck_env.up = True
-    monkeypatch.setattr(routing, "_selfcheck_at",
+    monkeypatch.setattr(routing.selfcheck, "_selfcheck_at",
                         routing._selfcheck_at - routing._SELFCHECK_BAD_TTL - 1)
     ok, why = routing.self_check()
     assert ok is True and why == "ок"
@@ -228,7 +228,7 @@ def test_positive_verdict_is_not_rechecked(selfcheck_env, monkeypatch):
     assert routing.self_check()[0] is True
     was = selfcheck_env.calls
 
-    monkeypatch.setattr(routing, "_selfcheck_at",
+    monkeypatch.setattr(routing.selfcheck, "_selfcheck_at",
                         routing._selfcheck_at - routing._SELFCHECK_BAD_TTL * 10)
     for _ in range(5):
         routing.self_check()
@@ -255,19 +255,19 @@ def test_negative_verdict_backs_off_up_to_the_cap(selfcheck_env, monkeypatch):
     for i, ttl in enumerate(expected, start=1):
         assert routing._selfcheck_bad_streak == i
         was = selfcheck_env.calls
-        monkeypatch.setattr(routing, "_selfcheck_at", routing._selfcheck_at - ttl + 5)
+        monkeypatch.setattr(routing.selfcheck, "_selfcheck_at", routing._selfcheck_at - ttl + 5)
         routing.self_check()
         assert selfcheck_env.calls == was, f"перепроверили раньше бэкоффа {ttl} с"
-        monkeypatch.setattr(routing, "_selfcheck_at", routing._selfcheck_at - 6)
+        monkeypatch.setattr(routing.selfcheck, "_selfcheck_at", routing._selfcheck_at - 6)
         routing.self_check()
         assert selfcheck_env.calls > was, f"не перепроверили по истечении {ttl} с"
     # починили снаружи, дождались потолка — «ок», стрик обнулён
     selfcheck_env.up = True
-    monkeypatch.setattr(routing, "_selfcheck_at", routing._selfcheck_at - 301)
+    monkeypatch.setattr(routing.selfcheck, "_selfcheck_at", routing._selfcheck_at - 301)
     assert routing.self_check()[0] is True and routing._selfcheck_bad_streak == 0
     # снова сломалось — отсчёт с минуты, а invalidate обнуляет стрик
     selfcheck_env.up = False
-    monkeypatch.setattr(routing, "_selfcheck_at", 0.0)
+    monkeypatch.setattr(routing.selfcheck, "_selfcheck_at", 0.0)
     routing.invalidate_self_check()
     assert routing.self_check()[0] is False and routing._selfcheck_bad_streak == 1
     routing.invalidate_self_check()

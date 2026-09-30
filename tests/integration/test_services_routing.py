@@ -370,7 +370,7 @@ def test_lists_update_fills_the_cache(services, fake_routing, monkeypatch, tmp_p
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     monkeypatch.setattr(config, "ROUTING_LISTS_HOME_URLS",
                         ["http://x/outside", "http://x/ru-blocklist"])
-    monkeypatch.setattr(infra_routing, "fetch", lambda url, timeout=15: ((
+    monkeypatch.setattr(infra_routing.feeds, "fetch", lambda url, timeout=15: ((
         "ipset=/gosuslugi.ru/other_set\n#комментарий\n" if "outside" in url
         else "ozon.ru\nsberbank.ru\n"), "", 200))
 
@@ -389,7 +389,7 @@ def test_lists_update_survives_dead_source(services, fake_routing, monkeypatch):
     from awgbot.core import config
     from awgbot.infra import routing as infra_routing
     monkeypatch.setattr(config, "ROUTING_LISTS_HOME_URLS", ["http://dead/list"])
-    monkeypatch.setattr(infra_routing, "fetch",
+    monkeypatch.setattr(infra_routing.feeds, "fetch",
                         lambda url, timeout=60: (None, "HTTP Error 429: Too Many Requests", 429))
     services._routing_write_cache("tun_domains", ["ozon.ru"])
     services.routing_update_lists(force=True)
@@ -445,7 +445,7 @@ def test_failed_resolve_does_not_break_the_add(
     from awgbot.infra import routing
     import pytest
     monkey = pytest.MonkeyPatch()
-    monkey.setattr(routing, "resolve_a", lambda dom, timeout=3.0: [])
+    monkey.setattr(routing.feeds, "resolve_a", lambda dom, timeout=3.0: [])
     try:
         c = make_active_client()
         res = services.routing_add_domains(c.id, "unresolvable.invalid")
@@ -564,7 +564,7 @@ def test_failure_does_not_burn_the_refresh_window(services, fake_routing, monkey
     services.db.set_state(services._RT_SRC_N + services._routing_src_key(url), "480")
     every = int(st.get("app.routing.lists_refresh_hours", 6)) * 3600
 
-    monkeypatch.setattr(infra_rt, "fetch", lambda u, timeout=15: (
+    monkeypatch.setattr(infra_rt.feeds, "fetch", lambda u, timeout=15: (
         None, "HTTP Error 429: Too Many Requests", 429))
     services.routing_update_lists()
     stamp = int(services.db.get_state(services._RT_LISTS_KEY))
@@ -577,7 +577,7 @@ def test_failure_does_not_burn_the_refresh_window(services, fake_routing, monkey
     stamp = int(services.db.get_state(services._RT_LISTS_KEY))
     assert every - (int(_t.time()) - stamp) == every
 
-    monkeypatch.setattr(infra_rt, "fetch",
+    monkeypatch.setattr(infra_rt.feeds, "fetch",
                         lambda u, timeout=15: ("sberbank.ru\n", "", 200))
     services.routing_update_lists(force=True)
     stamp = int(services.db.get_state(services._RT_LISTS_KEY))
@@ -769,7 +769,7 @@ def test_empty_home_cache_forces_a_refresh(services, monkeypatch):
 
     fetched: list = []
     from awgbot.infra import routing as infra_rt
-    monkeypatch.setattr(infra_rt, "fetch", lambda url: fetched.append(url) or ("", "", 200))
+    monkeypatch.setattr(infra_rt.feeds, "fetch", lambda url: fetched.append(url) or ("", "", 200))
 
     services._routing_write_cache("tun_domains", [])
     services.db.set_state(services._RT_LISTS_KEY, str(int(_t.time())))
@@ -821,7 +821,7 @@ def test_failed_reconcile_reaches_the_admin_once(services, fake_routing, monkeyp
     def boom(text, path=None):
         raise _rt.RoutingError("Не перезапустить dnsmasq: job failed")
 
-    monkeypatch.setattr(_rt, "write_dnsmasq_conf", boom)
+    monkeypatch.setattr(_rt.feeds, "write_dnsmasq_conf", boom)
     services.reconcile_routing()
 
     notes = services.routing_infra_alerts()
@@ -846,7 +846,7 @@ def test_recovered_reconcile_is_reported_too(services, fake_routing, monkeypatch
             raise _rt.RoutingError("Не перезапустить dnsmasq: job failed")
         return ok_write(text, path)
 
-    monkeypatch.setattr(_rt, "write_dnsmasq_conf", maybe_boom)
+    monkeypatch.setattr(_rt.feeds, "write_dnsmasq_conf", maybe_boom)
     services.reconcile_routing()
     assert len(services.routing_infra_alerts()) == 1
 

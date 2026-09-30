@@ -146,7 +146,7 @@ def test_provisioning_writes_the_interface_and_enables_the_feature(services, mon
 
     monkeypatch.setattr(subprocess, "run", lambda argv, **kw: CP())
     monkeypatch.setattr(sh.settings, "set_value", lambda k, v: written.__setitem__(k, v) or [k])
-    monkeypatch.setattr(infra_routing, "invalidate_self_check",
+    monkeypatch.setattr(infra_routing.selfcheck, "invalidate_self_check",
                         lambda *a, **k: invalidated.append(1))
     services.routing_provision()
     assert written["app.routing.gw_interface"] == services._RT_LINK_IF

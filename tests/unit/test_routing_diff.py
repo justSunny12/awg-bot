@@ -45,7 +45,7 @@ MANGLE_S = (
 
 
 def test_parse_chain_rules_is_structural(monkeypatch):
-    monkeypatch.setattr(routing, "_MARK", "0x1/0xffffffff")
+    monkeypatch.setattr(routing.marking, "_MARK", "0x1/0xffffffff")
     assert routing.parse_chain_rules(MANGLE_S, "AWGBOT_RT") == [
         ("rt_src_u3", "vpn_u3"), ("rt_src_u7", "vpn_u7")]
     assert routing.parse_chain_rules("-N AWGBOT_RT\n", "AWGBOT_RT") == [], "пустая цепочка"
@@ -67,7 +67,7 @@ def test_parse_nat_exempt():
 
 def _host_recorder(monkeypatch):
     calls: list[list[str]] = []
-    monkeypatch.setattr(routing, "_host", lambda args, **kw: calls.append(list(args)) or _cp())
+    monkeypatch.setattr(routing.base, "_host", lambda args, **kw: calls.append(list(args)) or _cp())
     return calls
 
 
@@ -115,9 +115,9 @@ def test_ensure_set_skips_exec_when_known(monkeypatch):
 
 
 def test_snapshot_sets_none_on_failure(monkeypatch):
-    monkeypatch.setattr(routing, "_host", lambda args, **kw: _cp(1))
+    monkeypatch.setattr(routing.base, "_host", lambda args, **kw: _cp(1))
     assert routing.snapshot_sets() is None
-    monkeypatch.setattr(routing, "_host", lambda args, **kw: _cp(0, IPSET_SAVE))
+    monkeypatch.setattr(routing.base, "_host", lambda args, **kw: _cp(0, IPSET_SAVE))
     assert routing.snapshot_sets()["rt_src_u3"] == {"10.9.1.5", "10.9.1.6"}
 
 
@@ -131,8 +131,8 @@ def _mangle_recorder(monkeypatch, listing):
         if args[:1] == ["-S"]:
             return _cp(1) if listing is None else _cp(0, listing)
         return _cp()
-    monkeypatch.setattr(routing, "_mangle", fake)
-    monkeypatch.setattr(routing, "_MARK", "0x1/0xffffffff")
+    monkeypatch.setattr(routing.marking, "_mangle", fake)
+    monkeypatch.setattr(routing.marking, "_MARK", "0x1/0xffffffff")
     monkeypatch.setattr(config, "ROUTING_CHAIN", "AWGBOT_RT")
     monkeypatch.setattr(config, "ROUTING_SET_SRC_PREFIX", "rt_src_u")
     monkeypatch.setattr(config, "ROUTING_SET_USER_PREFIX", "vpn_u")
@@ -184,8 +184,8 @@ def test_nat_exempt_skips_rebuild_when_addresses_match(monkeypatch):
         if "-S" in args:
             return _cp(0, "-N AWGBOT_RTNAT\n-A AWGBOT_RTNAT -s 10.8.1.5/32 -j ACCEPT\n")
         return _cp()
-    monkeypatch.setattr(routing, "_cont", cont)
-    monkeypatch.setattr(routing, "_cont_ok", lambda args: True)
+    monkeypatch.setattr(routing.base, "_cont", cont)
+    monkeypatch.setattr(routing.base, "_cont_ok", lambda args: True)
     routing.sync_nat_exempt(["10.8.1.5"])
     assert not any("-F" in a or "-A" in a for a in seen), "состав тот же — цепочку не трогаем"
     seen.clear()
@@ -200,13 +200,13 @@ def test_routing_apply_passes_live_snapshot(services, make_active_client, fake_r
     services.routing_add_domains(c.id, "bank.com")           # профиль известен → есть src-набор
     seen: list[dict] = []
     orig = routing.replace_members
-    monkeypatch.setattr(routing, "replace_members",
+    monkeypatch.setattr(routing.sets, "replace_members",
                         lambda name, kind, members, current=None: (seen.append({"name": name, "current": current}), orig(name, kind, members, current))[1])
-    monkeypatch.setattr(routing, "snapshot_sets", lambda only=None: {routing.src_set(c.id): {"10.0.0.1"}})
+    monkeypatch.setattr(routing.sets, "snapshot_sets", lambda only=None: {routing.src_set(c.id): {"10.0.0.1"}})
     services.reconcile_routing()
     assert any(s["name"] == routing.src_set(c.id) and s["current"] == {"10.0.0.1"} for s in seen)
     seen.clear()
-    monkeypatch.setattr(routing, "snapshot_sets", lambda only=None: None)   # снимок не прочитался
+    monkeypatch.setattr(routing.sets, "snapshot_sets", lambda only=None: None)   # снимок не прочитался
     services.reconcile_routing()
     assert all(s["current"] is None for s in seen), "без снимка — безусловная перезапись, как раньше"
 
@@ -224,10 +224,10 @@ def test_snapshot_sets_only_reads_the_named_sets_and_lists_the_rest(monkeypatch)
             name = args[2]
             return _cp(0, "\n".join(l for l in IPSET_SAVE.splitlines() if f" {name} " in l) + "\n")
         return _cp(1)
-    monkeypatch.setattr(routing, "_host", host)
+    monkeypatch.setattr(routing.base, "_host", host)
     sets = routing.snapshot_sets(only=["rt_src_u3", "rt_src_u9"])
     assert sets["rt_src_u3"] == {"10.9.1.5", "10.9.1.6"} and sets["vpn_u3"] == set()
     assert "rt_src_u9" not in sets and ["ipset", "save", "rt_src_u9"] not in calls
     assert ["ipset", "save"] not in calls, "полный save всё ещё зовётся"
-    monkeypatch.setattr(routing, "_host", lambda args, **kw: _cp(1))
+    monkeypatch.setattr(routing.base, "_host", lambda args, **kw: _cp(1))
     assert routing.snapshot_sets(only=["rt_src_u3"]) is None

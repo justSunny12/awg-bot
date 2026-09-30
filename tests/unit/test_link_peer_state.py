@@ -47,7 +47,7 @@ def _dump(*peers: tuple) -> bytes:
 @pytest.fixture()
 def awg(monkeypatch):
     host = _Awg()
-    monkeypatch.setattr(routing, "_host", host)
+    monkeypatch.setattr(routing.base, "_host", host)
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
     return host
 

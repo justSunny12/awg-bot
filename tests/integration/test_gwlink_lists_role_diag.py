@@ -62,7 +62,7 @@ def two(services, make_active_client, monkeypatch):
     monkeypatch.setattr(services, "_rt_standby_interval", lambda: 0)
     monkeypatch.setattr(services, "_rt_window_size", lambda: 10)
     switched: list[str] = []
-    monkeypatch.setattr(routing, "switch_active", lambda iface: switched.append(iface))
+    monkeypatch.setattr(routing.marking, "switch_active", lambda iface: switched.append(iface))
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: None)
     services.probe, services.switched = probe, switched
     return services
@@ -91,7 +91,7 @@ class _Net:
                 return self.body[url], "", 200
             return None, "404", 404
 
-        monkeypatch.setattr(routing, "fetch", fetch)
+        monkeypatch.setattr(routing.feeds, "fetch", fetch)
 
 
 @pytest.fixture()

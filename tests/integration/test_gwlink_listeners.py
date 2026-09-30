@@ -345,9 +345,9 @@ async def test_a_dead_link_takes_its_session_down_on_the_liveness_tick(services,
     assert await gw.role()
     await _until(lambda: services.gwlink_session(1))
     monkeypatch.setattr(_c, "ROUTING_GW_INTERFACE", "awglink")
-    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": 100)
+    monkeypatch.setattr(routing.probes, "link_handshake_age", lambda iface="": 100)
     assert await srv.sweep_dead() == 0 and srv.online(1)
-    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": 1200)
+    monkeypatch.setattr(routing.probes, "link_handshake_age", lambda iface="": 1200)
     assert await srv.sweep_dead() == 1
     assert not srv.online(1) and services.gwlink_session(1) == {}, "сессия снята, а запись осталась"
     assert await asyncio.wait_for(gw.reader.read(), 2) == b""

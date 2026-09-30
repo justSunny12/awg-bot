@@ -897,9 +897,9 @@ def test_marking_hook_covers_every_client_subnet(monkeypatch):
         elif args[0] == "-D":
             present.discard(line)
 
-    monkeypatch.setattr(rt, "_host_ok", host_ok)
-    monkeypatch.setattr(rt, "_mangle", mangle)
-    monkeypatch.setattr(rt, "ensure_policy", lambda: None)
+    monkeypatch.setattr(rt.base, "_host_ok", host_ok)
+    monkeypatch.setattr(rt.marking, "_mangle", mangle)
+    monkeypatch.setattr(rt.policy, "ensure_policy", lambda: None)
 
     rt.set_marking_enabled(True)
     subnets = {a[a.index("-s") + 1] for a in added}
@@ -923,7 +923,7 @@ def test_partial_hook_set_counts_as_absent(monkeypatch):
     monkeypatch.setattr(config, "AWG_INTERFACE", "awg0")
     monkeypatch.setattr(config, "MIGRATION_INTERFACE", "awg1")
     monkeypatch.setattr(config, "MIGRATION_SUBNET_PREFIX", "10.9.1")
-    monkeypatch.setattr(rt, "_host_ok",
+    monkeypatch.setattr(rt.base, "_host_ok",
                         lambda args: "10.8.1.0/24" in " ".join(args))
     assert rt._hook_present() is False
 

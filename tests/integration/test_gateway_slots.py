@@ -28,7 +28,7 @@ def two(services, fake_awg, fake_routing, make_active_client, monkeypatch):
     monkeypatch.setattr(services, "_rt_standby_interval", lambda: 0)   # зонд резерва каждый такт
     monkeypatch.setattr(services, "_rt_window_size", lambda: 10)        # боевое окно: 10 замеров, порог 5
     switched = []
-    monkeypatch.setattr(routing, "switch_active", lambda iface: switched.append(iface))
+    monkeypatch.setattr(routing.marking, "switch_active", lambda iface: switched.append(iface))
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: None)
     services.probe, services.switched = probe, switched
     return admin, g1, g2
@@ -243,8 +243,8 @@ def test_manual_switch_ignores_thresholds_and_the_interval(two, services):
 
 def test_ping_cache_is_invalidated_when_the_host_falls(two, services, monkeypatch):
     admin, g1, g2 = two
-    monkeypatch.setattr(routing, "ping_peer", lambda iface="", **k: 43)
-    monkeypatch.setattr(routing, "link_peer_endpoint", lambda iface="": "198.51.100.7" if iface == "awglink2" else None)
+    monkeypatch.setattr(routing.probes, "ping_peer", lambda iface="", **k: 43)
+    monkeypatch.setattr(routing.probes, "link_peer_endpoint", lambda iface="": "198.51.100.7" if iface == "awglink2" else None)
     assert services.gateway_ping(2) == 43 and services.gateway_ping_cached(2)[0] == 43
     assert services.gateway_screen_state(2)["ping_ms"] == 43
     assert services.gateway_external_ip(2) == "198.51.100.7" and services.gateway_external_ip(1) is None
@@ -253,9 +253,9 @@ def test_ping_cache_is_invalidated_when_the_host_falls(two, services, monkeypatc
     for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     assert services.gateway_ping_cached(2) is None, "хост упал — пинг устарел"
-    monkeypatch.setattr(routing, "ping_peer", lambda iface="", **k: None)
+    monkeypatch.setattr(routing.probes, "ping_peer", lambda iface="", **k: None)
     assert services.gateway_ping(2) is None
-    monkeypatch.setattr(routing, "ping_peer", lambda iface="", **k: 1200)
+    monkeypatch.setattr(routing.probes, "ping_peer", lambda iface="", **k: 1200)
     services._gw_ping_forget(2)
     assert services.gateway_screen_state(2)["ping_ms"] == 1200
     from awgbot.bot import texts
@@ -334,7 +334,7 @@ def test_standby_is_probed_rarely_and_lives_by_handshake_in_between(two, service
     probes = []
     monkeypatch.setattr(services, "_probe_slot", lambda g, active=False: probes.append(g.id) or "ok")
     ages = {"awglink2": 30}
-    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": ages.get(iface))
+    monkeypatch.setattr(routing.probes, "link_handshake_age", lambda iface="": ages.get(iface))
     for _ in range(services._RT_UP_STREAK + 2):
         services.routing_liveness_tick()
     assert probes.count(2) == 1, "резерв зондирован один раз, дальше — по хендшейку"
@@ -454,7 +454,7 @@ def test_idle_link_with_a_stale_handshake_falls_without_a_probe(two, services, f
     fake_routing.link_rx_step = fake_routing.link_tx_step = 0
     probes = _probe_log(services, monkeypatch)
     ages = {"awglink": 600, "awglink2": 30}
-    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": ages.get(iface))
+    monkeypatch.setattr(routing.probes, "link_handshake_age", lambda iface="": ages.get(iface))
     for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     assert probes.count(1) == 0, "протухший хендшейк — приговор без зонда"
@@ -574,7 +574,7 @@ def test_standby_needs_a_fresh_handshake_even_when_its_probe_passes(two, service
     нагрузку не примет и кандидатом не считается."""
     admin, g1, g2 = two
     monkeypatch.setattr(services, "_rt_standby_interval", lambda: 5)
-    monkeypatch.setattr(routing, "link_handshake_age", lambda iface="": None)
+    monkeypatch.setattr(routing.probes, "link_handshake_age", lambda iface="": None)
     for _ in range(services._RT_UP_STREAK):
         services.routing_liveness_tick()
     st = next(x for x in services.gateway_states() if x["gateway"].id == 2)
@@ -589,7 +589,7 @@ def test_link_changes_refresh_the_host_firewall_and_clear_the_hold(services, mak
     admin = make_active_client(name="Админ", tg_id=ADMIN, device_limit=0)
     pi = services.add_device(admin.id, "NASPi"); pi2 = services.add_device(admin.id, "Pi2")
     monkeypatch.setattr(services, "_run_link_script", lambda mode, env=None: None)
-    monkeypatch.setattr(routing, "switch_active", lambda iface: None)
+    monkeypatch.setattr(routing.marking, "switch_active", lambda iface: None)
     refreshed = []
     monkeypatch.setattr(services, "_gw_firewall_refresh", lambda: refreshed.append(1))
     services.gateway_setup(pi.device_id)
@@ -731,7 +731,7 @@ def _channel_on_link(services, monkeypatch, *, rx: int = 0, tx: int = 0, msgs: i
         chan["rx"] += rx + msgs * _WG_SEGMENT
         chan["tx"] += tx + msgs * _WG_SEGMENT
         return {**st, "rx": st["rx"] + chan["rx"], "tx": st["tx"] + chan["tx"]}
-    monkeypatch.setattr(routing, "link_peer_state", link_peer_state)
+    monkeypatch.setattr(routing.probes, "link_peer_state", link_peer_state)
 
 
 def test_channel_replies_are_not_return_traffic_of_the_clients(two, services, fake_routing, monkeypatch):
@@ -803,12 +803,12 @@ def test_a_failed_ping_is_remembered_and_the_card_does_not_ping_again_at_once(tw
     секунды спиннера; отказ помнится пять минут."""
     from awgbot.infra import routing as rt
     calls = []
-    monkeypatch.setattr(rt, "ping_peer", lambda iface="": calls.append(iface) or None)
+    monkeypatch.setattr(rt.probes, "ping_peer", lambda iface="": calls.append(iface) or None)
     st = services.gateway_screen_state(2, lazy_ping=True)
     assert st["ping_ms"] is None and calls == ["awglink2"]
     st = services.gateway_screen_state(2, lazy_ping=True)
     assert st["ping_ms"] is None and calls == ["awglink2"], "карточка снова ждала ping -c 3"
-    monkeypatch.setattr(rt, "ping_peer", lambda iface="": calls.append(iface) or 12)
+    monkeypatch.setattr(rt.probes, "ping_peer", lambda iface="": calls.append(iface) or 12)
     services._gw_ping_forget(2)                            # снятие/смена слота — память долой
     st = services.gateway_screen_state(2, lazy_ping=True)
     assert st["ping_ms"] == 12 and calls == ["awglink2", "awglink2"]

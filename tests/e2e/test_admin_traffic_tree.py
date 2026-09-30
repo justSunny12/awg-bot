@@ -381,7 +381,7 @@ async def test_rf_lines_stay_in_cards_when_the_routing_self_check_fails(
     «0 ГБ» у профиля и устройства остаются — как строка на главной."""
     from awgbot.infra import routing as infra_routing
     _rf_feature(monkeypatch, services, fake_routing, True)
-    monkeypatch.setattr(infra_routing, "available", lambda: False)
+    monkeypatch.setattr(infra_routing.selfcheck, "available", lambda: False)
     c, did = _profile(services, make_active_client, "Ксюша", 7153)
     assert _rf_lines(await _client_card(services, fake_bot, c.id)) == [_PFX + "0 ГБ"], "строка профиля пропала"
     assert _rf_lines(await _device_card(services, fake_bot, did)) == [_PFX + "0 ГБ"], "строка устройства пропала"

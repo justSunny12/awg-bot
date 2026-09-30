@@ -213,7 +213,7 @@ def test_nat_exempt_is_a_noop_on_host(monkeypatch):
 
     monkeypatch.setattr(config, "AWG_RUNTIME", "host")
     called: list = []
-    monkeypatch.setattr(routing, "_cont", lambda *a, **k: called.append(a))
+    monkeypatch.setattr(routing.base, "_cont", lambda *a, **k: called.append(a))
 
     routing.sync_nat_exempt(["10.8.1.5", "10.8.1.6"])
     assert called == [], "на хосте в контейнер ходить незачем"
@@ -224,9 +224,9 @@ def test_nat_exempt_still_builds_the_chain_in_docker_mode(monkeypatch):
 
     monkeypatch.setattr(config, "AWG_RUNTIME", "docker")
     seen: list[list[str]] = []
-    monkeypatch.setattr(routing, "_cont",
+    monkeypatch.setattr(routing.base, "_cont",
                         lambda args, **k: seen.append(list(args)) or _cp())
-    monkeypatch.setattr(routing, "_cont_ok", lambda args: True)
+    monkeypatch.setattr(routing.base, "_cont_ok", lambda args: True)
 
     routing.sync_nat_exempt(["10.8.1.5"])
     flat = [" ".join(a) for a in seen]
@@ -256,8 +256,8 @@ def test_static_plumbing_does_not_inspect_docker_on_host(monkeypatch):
             return _cp(f"{config.ROUTING_DNSMASQ_SERVICE}.service enabled".encode())
         return _cp()
 
-    monkeypatch.setattr(routing, "_host", fake_host)
-    monkeypatch.setattr(routing, "_host_ok", lambda args: True)
+    monkeypatch.setattr(routing.base, "_host", fake_host)
+    monkeypatch.setattr(routing.base, "_host_ok", lambda args: True)
     routing._check_static_plumbing()
 
     assert not any(a and a[0] == "docker" for a in seen), \

@@ -217,7 +217,10 @@ def fake_routing(monkeypatch, tmp_path):
         return changed
 
     def _set(name, fn):
-        monkeypatch.setattr(routing, name, fn, raising=False)
+        # подмена — на ту часть пакета, где имя определено: соседи зовут его
+        # через объект модуля, и пакетный routing.X читает оттуда же
+        part = next((m for m in routing._PARTS if name in vars(m)), routing.base)
+        monkeypatch.setattr(part, name, fn, raising=False)
 
     # Горячий выключатель функции (settings) и работоспособность инфраструктуры
     # (self_check) — разные слои, но в тестах ими удобно управлять одним флагом:
@@ -232,7 +235,7 @@ def fake_routing(monkeypatch, tmp_path):
 
     monkeypatch.setattr(_settings, "get_bool", _get_bool)
 
-    monkeypatch.setattr(routing, "mutation_lock", threading.RLock(), raising=False)
+    monkeypatch.setattr(routing.base, "mutation_lock", threading.RLock(), raising=False)
     _set("self_check", lambda force=False: (state.enabled, "ок" if state.enabled else "выключена"))
     _set("available", lambda: state.enabled)
     _set("replace_members", replace_members)

@@ -67,9 +67,9 @@ def slots(services, fake_awg, fake_routing, make_active_client, monkeypatch):
         pings["n"] += 1
         return 43 if iface == "awglink2" else 61
     from awgbot.infra import routing as rt
-    monkeypatch.setattr(rt, "ping_peer", _ping)
-    monkeypatch.setattr(rt, "link_peer_endpoint", lambda iface="": "198.51.100.7" if iface == "awglink2" else "203.0.113.10")
-    monkeypatch.setattr(rt, "switch_active", lambda iface: None)
+    monkeypatch.setattr(rt.probes, "ping_peer", _ping)
+    monkeypatch.setattr(rt.probes, "link_peer_endpoint", lambda iface="": "198.51.100.7" if iface == "awglink2" else "203.0.113.10")
+    monkeypatch.setattr(rt.marking, "switch_active", lambda iface: None)
     services.runs, services.probe, services.pings, services.token = runs, probe, pings, token
     return admin, services.db.get_device(pi.device_id), services.db.get_device(pi2.device_id)
 

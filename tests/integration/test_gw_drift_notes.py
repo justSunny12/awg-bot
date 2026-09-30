@@ -225,7 +225,7 @@ def test_home_subnets_take_only_the_three_private_ranges(services, fake_awg, fak
     assert res["kept"] == ["192.168.1.0/24", "172.16.5.0/24"]
     assert any("пересекается" in why for _t, why in res["rejected"])
     dropped = []
-    monkeypatch.setattr(routing, "drop_home_routes", lambda pairs: dropped.extend(pairs))
+    monkeypatch.setattr(routing.marking, "drop_home_routes", lambda pairs: dropped.extend(pairs))
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
     monkeypatch.setattr(services, "_ensure_gateway_policy", lambda: None)
     services.gateway_set_home_subnets(1, "172.16.5.0/24")
