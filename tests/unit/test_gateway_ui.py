@@ -87,7 +87,7 @@ def test_panel_text_mirrors_the_main_bot_layout(monkeypatch):
                   hostname="NASPi", server_name="awg-srv",
                   checks=[GwCheck("линк", True)], month_rx=10 * 1024 ** 3, month_tx=175 * 1024 ** 3)
     out = texts.gateway_panel(st)
-    assert out == ("🛰 <b>NASPi</b> · 🟢 линк поднят · 17 дн 20 ч\n"
+    assert out == ("🛰 <b>NASPi</b> · 🟢 линк поднят · 17 дн 20 ч\n\n"
                    "📡 Линк до awg-srv 🟢 69 с\n"
                    "📈 CPU 4% | 59 °C · RAM 51% · диск 58% · питание ОК\n"
                    "🩺 Здоровье ✅ · 📊 185 ГБ (↑10 ↓175)\n"

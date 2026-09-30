@@ -301,7 +301,7 @@ def test_panel_renders_on_a_dead_gateway():
     нужнее всего."""
     from awgbot.bot import texts
     out = texts.gateway_panel(GwStatus())
-    assert out.splitlines()[:2] == ["🛰 <b>шлюз</b> · 🔴 линк лежит", "📡 Линк до сервера AWG 🔴 интерфейс лежит"], out
+    assert out.splitlines()[:3] == ["🛰 <b>шлюз</b> · 🔴 линк лежит", "", "📡 Линк до сервера AWG 🔴 интерфейс лежит"], out
     # трафика нет — «📊 0» не выводится (нули не выводим)
     assert "📊" not in out, out
 
@@ -862,3 +862,17 @@ def _fake_clock():
         t[0] += 10.0
         return t[0]
     return now
+
+
+def test_module_label_is_the_built_tag_not_the_modinfo_version(svc, monkeypatch):
+    """Монитор агента называет тег собранного модуля, как экран сервера на ВПС:
+    строка version из modinfo у тегов 0827…0906 одна и та же и о собранном не
+    говорит. Тега нет — остаётся строка modinfo."""
+    from awgbot.infra import awglock
+    monkeypatch.setattr(awglock, "built_module_tag", lambda: "v3.1.20260906")
+    monkeypatch.setattr(awglock, "module_tag", lambda: "v3.1.20260812")
+    assert svc.module_label("3.1.20260812") == "v3.1.20260906"
+    monkeypatch.setattr(awglock, "built_module_tag", lambda: "")
+    assert svc.module_label("3.1.20260812") == "v3.1.20260812", "собирали не мы — тег манифеста"
+    monkeypatch.setattr(awglock, "module_tag", lambda: "")
+    assert svc.module_label("3.1.20260812") == "3.1.20260812"

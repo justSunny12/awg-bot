@@ -212,6 +212,15 @@ class MonitorMixin:
         self.__dict__["_static_cache"] = (time.monotonic(), ver, cov, smart)
         return ver, cov, smart
 
+    @staticmethod
+    def module_label(modinfo_version: str) -> str:
+        """Что назвать модулем на экранах: ТЕГ собранного модуля, как на экране
+        сервера ВПС — version.h апстрим бампает не на каждый выпуск
+        (0827…0906 несут «3.1.20260812»); тега нет — строка modinfo.
+        srcversion рядом остаётся: он различает сборки."""
+        from awgbot.infra import awglock
+        return awglock.built_module_tag() or awglock.module_tag() or modinfo_version
+
     def status(self) -> GwStatus:
         """Живой снимок: линк, монитор здоровья, железо — сбор без сохранения.
         Снаружи (кнопки «Статус», «Монитор здоровья», тик) ходят через
@@ -262,6 +271,7 @@ class MonitorMixin:
         # модуля» всё время после обновления модуля — снимок середины операции.
         (st.module_version, st.srcversion), (st.kernels_missing, st.kernels_total), smart = \
             self._static()
+        st.module_version = self.module_label(st.module_version)
         checks.append(GwCheck("ядра", not st.kernels_missing,
                               "" if not st.kernels_missing else
                               "без модуля awg: " + ", ".join(st.kernels_missing)))

@@ -78,7 +78,7 @@ def _gw_role(st, chan: dict) -> str:
 
 
 def gateway_panel(st, update_tag: str = "", chan: dict | None = None) -> str:
-    """Панель агента по строкам: имя и роль, линк и канал, предупреждения,
+    """Панель агента по строкам: имя, роль и аптайм, пустая строка, линк и канал, предупреждения,
     SSH, железо, VPN-транзит и списки, SMB, здоровье и трафик, свежесть.
     chan — состояние канала (linkclient.view()); None — спросить самим."""
     from awgbot.util import timeutil
@@ -86,7 +86,7 @@ def gateway_panel(st, update_tag: str = "", chan: dict | None = None) -> str:
     host = _e(st.hostname) if st.hostname else "шлюз"
     up = f" · {timeutil.brief_units(timeutil.fmt_remaining_short(int(st.uptime_seconds)))}" \
         if st.uptime_seconds is not None else ""
-    parts = [f"🛰 <b>{host}</b> · {_gw_role(st, chan)}{up}"]
+    parts = [f"🛰 <b>{host}</b> · {_gw_role(st, chan)}{up}", ""]      # шапка — отдельно от остального
     chan_line = channel_panel_line(chan)
     link = _gw_link_short(st)
     # всегда «Линк до …»: голое «Линк» читается как сетевой интерфейс
@@ -215,10 +215,10 @@ def smb_line(svc: dict) -> str:
 
 
 LAN_ABOUT = ("роутер маршрутизирует весь трафик локальной сети сюда, шлюз маршрутизирует: домены и "
-             "подсети из списков — в туннель, остальное — напрямую · свои списки синхронизируются "
+             "подсети из списков — в туннель, остальное — напрямую;\nсвои списки синхронизируются "
              "между шлюзами: добавленное или убранное здесь уходит через сервер AWG на остальные "
-             "шлюзы — сразу, если они на связи, иначе при подключении · введённый домен накрывает и "
-             "все поддомены; правила «напрямую» приоритетнее правил «в туннель» · сначала показаны "
+             "шлюзы — сразу, если они на связи, иначе при подключении;\nвведённый домен накрывает и "
+             "все поддомены; правила «напрямую» приоритетнее правил «в туннель»;\nсначала показаны "
              "домены напрямую (🇷🇺), затем в туннель (🌍)")
 
 
@@ -245,8 +245,8 @@ def gateway_transit_text(st, items=None, own: dict | None = None) -> str:
     about = LAN_ABOUT
     if items is not None and not items:                 # подсказки пустого списка — под «подробнее»
         about = ("добавь домены кнопками «➕ В туннель» и «➕ Напрямую»"
-                 + (" · списки общие для всех шлюзов — добавленное здесь появится и на остальных"
-                    if shared else "") + " · " + about)
+                 + (";\nсписки общие для всех шлюзов — добавленное здесь появится и на остальных"
+                    if shared else "") + ";\n" + about)
     if shared:
         line = own_lists_state_line(own)
         if line:
@@ -259,7 +259,7 @@ def gateway_transit_text(st, items=None, own: dict | None = None) -> str:
 
 def gateway_transit_ask_domain(kind: str) -> str:
     head = {"add": "➕ <b>В туннель</b>", "ru": "➕ <b>Напрямую</b>"}[kind]
-    return f"{head} · пришли домены через пробел: <code>example.com</code> — накрывает и поддомены"
+    return f"{head}\n\nПришли домены через пробел: <code>example.com</code> — накрывает и поддомены"
 
 
 def own_lists_short(lan: dict, plain: bool = False) -> str:
@@ -621,7 +621,7 @@ def gateway_ssh_port_changed(old: int, new: int) -> str:
             f"на порт {new}; проброс порта на роутере (при наличии) поправь сам: снаружи &lt;любой порт&gt; → шлюз:{new}")
 
 
-GW_SSH_ALLOW_ASK = ("➕ <b>Адреса для SSH-доступа</b> · пришли IP, подсеть или доменное имя через пробел. "
+GW_SSH_ALLOW_ASK = ("➕ <b>Адреса для SSH-доступа</b>\n\nПришли IP, подсеть или доменное имя через пробел. "
                     "Только IPv4: проброса IPv6 через роутер нет; имя буду резолвить сам")
 
 

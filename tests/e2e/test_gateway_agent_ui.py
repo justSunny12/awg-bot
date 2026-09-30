@@ -111,7 +111,7 @@ async def test_the_panel_names_the_role_by_the_channel(svc, fake_bot, monkeypatc
     for role, head in (("active", "🟢 несёт трафик"), ("standby", "🟢 в резерве")):
         monkeypatch.setattr(linkclient, "role", lambda role=role: role)
         text, _ = await _panel(svc, fake_bot, st)
-        assert text.splitlines()[:2] == [f"🛰 <b>naspi</b> · {head} · 12 дн", "📡 Линк до сервера AWG 🟢 40 с · 🔗 упр. канал 🟢"], text
+        assert text.splitlines()[:3] == [f"🛰 <b>naspi</b> · {head} · 12 дн", "", "📡 Линк до сервера AWG 🟢 40 с · 🔗 упр. канал 🟢"], text
     monkeypatch.setattr(linkclient, "online", lambda: False)
     text, _ = await _panel(svc, fake_bot, GwStatus(hostname="naspi"))
     assert text.splitlines()[0] == "🛰 <b>naspi</b> · 🔴 линк лежит", "связи нет — роль по линку"
@@ -131,7 +131,7 @@ async def test_warnings_are_own_lines_at_the_top_not_in_the_tail(svc, fake_bot, 
     st = GwStatus(link_up=True, handshake_age=40.0, hostname="naspi", cpu=12.0, mark_status=mark,
                   ssh={"port": 22, "owner": "", "filter": False, "allow": 0, "new_plumbing": True})
     lines = (await _panel(svc, fake_bot, st))[0].splitlines()
-    assert lines[2] == warn, lines
+    assert lines[3] == warn, lines
     ssh = next(i for i, ln in enumerate(lines) if ln.startswith("🛡 SSH"))
     assert lines.index(warn) < ssh < next(i for i, ln in enumerate(lines) if ln.startswith("📈")), lines
 
@@ -148,7 +148,7 @@ async def test_the_panel_says_a_new_version_is_available_from_the_last_check(svc
     svc.db.set_state("update_available_tag", "3.2.0")
     st = GwStatus(link_up=True, handshake_age=40.0, hostname="naspi")
     lines = (await _panel(svc, fake_bot, st))[0].splitlines()
-    assert lines[2] == "<b>⬆️ Доступна v3.2.0</b>", "строка новой версии — жирным, третьей строкой: " + str(lines)
+    assert lines[3] == "<b>⬆️ Доступна v3.2.0</b>", "строка новой версии — жирным, после шапки, пустой строки и линка: " + str(lines)
     svc.db.set_state("update_available_tag", "")
     text, _ = await _panel(svc, fake_bot, st)
     assert "Доступна" not in text
@@ -759,7 +759,7 @@ def test_the_link_line_turns_yellow_by_the_configured_threshold(store, age, limi
     линка, а не по своим трём минутам: иначе панель желтеет раньше алерта или
     зеленеет, когда алерт уже пришёл."""
     store["app.gateway.handshake_max_age"] = limit
-    assert texts.gateway_panel(GwStatus(link_up=True, handshake_age=float(age))).splitlines()[1] == line
+    assert texts.gateway_panel(GwStatus(link_up=True, handshake_age=float(age))).splitlines()[2] == line
 
 
 def test_the_freshness_line_says_seconds_short(monkeypatch):

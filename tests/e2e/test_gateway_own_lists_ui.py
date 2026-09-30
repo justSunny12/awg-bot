@@ -195,13 +195,13 @@ async def test_an_empty_shared_list_says_it_will_appear_everywhere(gw, host, fak
     text, labels = await _own_screen(gw, fake_bot)
     assert not any("Пока пусто" in ln for ln in _open_lines(text)), text
     about = text.split("<blockquote expandable>", 1)[1]
-    assert about.startswith(f"{EMPTY_HINT} · {SHARED_HINT} · "), about
+    assert about.startswith(f"{EMPTY_HINT};\n{SHARED_HINT};\n"), about
     assert labels == ["➕ В туннель", "➕ Напрямую", "❓ Роутер", "⬅️ В меню"]
     # без синхронизации пусто — но «общие для всех» было бы неправдой
     host.env["LINK_CHANNEL"] = "0"
     text, _ = await _own_screen(gw, fake_bot)
     about = text.split("<blockquote expandable>", 1)[1]
-    assert about.startswith(f"{EMPTY_HINT} · "), about
+    assert about.startswith(f"{EMPTY_HINT};\n"), about
     assert "общие для всех шлюзов" not in text, text
     # не пусто — подсказки для пустого списка нет
     _synced(gw, host, {"a.com": "vpn"})
@@ -344,7 +344,7 @@ async def test_the_typed_domain_is_already_a_button_on_the_screen_below(gw, host
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_transit_ask(cb, GwCB(action="lan_ru"), gw, st)
-    assert msg.sent[-1][1] == ("➕ <b>Напрямую</b> · пришли домены через пробел: <code>example.com</code> — "
+    assert msg.sent[-1][1] == ("➕ <b>Напрямую</b>\n\nПришли домены через пробел: <code>example.com</code> — "
                                "накрывает и поддомены"), msg.sent[-1][1]
     assert [b.text for row in msg.sent[-1][2].inline_keyboard for b in row] == ["✖️ Отмена"]
     reply = FakeMessage(text="shop.ru", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)

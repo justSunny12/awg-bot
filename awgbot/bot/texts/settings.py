@@ -21,7 +21,7 @@ SETTINGS_ROOT = "⚙️ <b>Настройки</b>"
 
 # ── 🔔 Уведомления ───────────────────────────────────────────────────────────
 
-SETTINGS_NOTIFY_CLIENTS = "👥 <b>О чём сообщать</b>:"
+SETTINGS_NOTIFY_CLIENTS = "👥 <b>О чём сообщать:</b>"
 
 
 def settings_notify_text() -> str:
