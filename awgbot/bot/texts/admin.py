@@ -66,13 +66,13 @@ def rf_traffic_line(rf: dict, bot_username: str = "") -> str:
 def admin_panel(st: dict, routing_ok: bool = None, migration=None,
                 bot_username: str = "", expiring: int = 0, routing_info: dict = None,
                 rf: dict = None, unassigned: int = 0, update_tag: str = "") -> str:
-    """Шапка главной: сервер и аптайм одной строкой, метрики, РФ-доступ, счётчики
-    ссылками, трафик с РФ-веткой, доступное обновление и переезд — только когда
-    есть что сказать."""
+    """Шапка главной: сервер и аптайм одной строкой, пустая строка, метрики,
+    РФ-доступ, счётчики и трафик со ссылками на значении, РФ-ветка, доступное
+    обновление и переезд — только когда есть что сказать."""
     if st.get("ok") is None:
         dot = "…"
     elif st["ok"]:
-        dot = "🟢 работает" + (f" {timeutil.brief_units(st['uptime'])}" if st.get("uptime") else "")
+        dot = "🟢 работает" + (f" · {timeutil.brief_units(st['uptime'])}" if st.get("uptime") else "")
     else:
         dot = "🔴 не отвечает"
     host = _e(_hostname() or "AWG")
@@ -83,7 +83,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         metrics = f"📈 CPU {_p(st.get('cpu'))} · RAM {_p(st.get('ram'))} · диск {_p(st.get('disk'))}"
         age = timeutil.age_ago(st.get("age_seconds"))
         if age:
-            metrics += f" · {age}"
+            metrics += f" · <i>{age}</i>"
         lines.append(metrics)
     elif st.get("age_seconds") is None:
         lines.append("📈 Метрики: ещё нет замера")
@@ -94,16 +94,19 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     elif routing_ok is not None:
         lines.append(routing_status_line(routing_ok))
 
-    def _counter(payload: str, label: str, n: int) -> str:
-        # нулевой счётчик — без ссылки: за ней пустой экран
-        return _deep_link(bot_username, payload, label) if n else label
+    def _counter(payload: str, label: str, value: str, n: int) -> str:
+        # ссылка — на значении; нулевой счётчик — без ссылки: за ней пустой экран
+        return f"{label}: " + (_deep_link(bot_username, payload, value) if n else value)
     counters = []
     if st.get("online_count") is not None:
-        counters.append(_counter(ONLINE_PAYLOAD, f"📶 Онлайн: {st['online_count']}", int(st["online_count"])))
+        n = int(st["online_count"])
+        # «3 (7 устройств)» — профили онлайн и их устройства; ноль — просто «0»
+        value = f"{int(st.get('online_profiles') or 0)} ({_n_devices(n)})" if n else "0"
+        counters.append(_counter(ONLINE_PAYLOAD, "📶 Онлайн", value, n))
     if expiring:
-        counters.append(_counter(EXPIRING_PAYLOAD, f"⏳ Истекают: {expiring}", expiring))
+        counters.append(_counter(EXPIRING_PAYLOAD, "⏳ Истекают", str(expiring), expiring))
     if unassigned:
-        counters.append(_counter(UNASSIGNED_PAYLOAD, f"📦 Без профиля: {unassigned}", unassigned))
+        counters.append(_counter(UNASSIGNED_PAYLOAD, "📦 Без профиля", str(unassigned), unassigned))
     if counters:
         lines.append(" · ".join(counters))
     # строка трафика стоит и при нуле, но ссылкой — только когда экрану есть
@@ -111,8 +114,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     # маркировка не работает
     if st.get("traffic_rx") is not None:
         rx, tx = int(st["traffic_rx"]), int(st["traffic_tx"])
-        label = _counter(TRAFFIC_PAYLOAD, f"📊 Трафик за {month_label()}", rx + tx)
-        lines.append(f"{label}: {human_bytes(rx + tx)}")
+        lines.append(_counter(TRAFFIC_PAYLOAD, f"📊 Трафик за {month_label()}", human_bytes(rx + tx), rx + tx))
         if rf and rf.get("show"):
             lines.append(rf_traffic_line(rf, bot_username))
     tail = []
@@ -126,6 +128,8 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     if tail:                                          # временные строки — отдельным блоком
         lines.append("")
         lines.extend(tail)
+    if len(lines) > 1:                                # шапка — отдельной строкой от остального
+        lines.insert(1, "")
     return "\n".join(lines)
 
 

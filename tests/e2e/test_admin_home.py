@@ -71,7 +71,7 @@ async def test_quiet_home_has_only_what_is_always_there(services, fake_bot, fake
     joined = "\n".join(lines)
     assert "<a " not in joined, f"ссылка на пустой экран:\n{joined}"
     assert "РФ-доступ" not in joined, f"строка РФ-доступа без шлюзов и без функции:\n{joined}"
-    assert "" not in lines, "пустая строка-разделитель без временных строк"
+    assert lines[1] == "" and "" not in lines[2:], "пустая строка — только после шапки, без временных строк"
     for word in ("Истекают", "Без профиля", "Доступна", "Переезд"):
         assert word not in joined, f"строка «{word}» без повода:\n{joined}"
     assert rows == [["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"], ["🛰 Шлюзы", "⚙️ Настройки"],
@@ -86,8 +86,8 @@ async def test_home_counters_line_links_expiring_and_unassigned(services, fake_b
     services.db.create_device(svc, "чужой", "PUBU", "PSK", "10.8.0.70")
     services.db.set_state("online_count", "7")
     lines, _ = await _home(services, fake_bot)
-    assert (" · ".join([_link("online", "📶 Онлайн: 7"), _link("expiring", "⏳ Истекают: 1"),
-                        _link("unassigned", "📦 Без профиля: 1")])) in lines, lines
+    assert (" · ".join(["📶 Онлайн: " + _link("online", "0 (7 устройств)"), "⏳ Истекают: " + _link("expiring", "1"),
+                        "📦 Без профиля: " + _link("unassigned", "1")])) in lines, lines
 
 
 async def test_home_shows_available_update_from_the_periodic_check(services, fake_bot, monkeypatch):
@@ -145,7 +145,7 @@ def test_home_routing_line_is_silent_without_gateways():
 
 def test_home_first_line_is_host_status_and_short_uptime():
     out = texts.admin_panel({"ok": True, "uptime": "12 дней 4 часа"})
-    assert out.split("\n")[0].endswith(" · 🟢 работает 12 дн 4 ч"), out
+    assert out.split("\n")[0].endswith(" · 🟢 работает · 12 дн 4 ч"), out
     assert texts.admin_panel({"ok": False}).split("\n")[0].endswith(" · 🔴 не отвечает")
 
 

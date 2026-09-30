@@ -417,12 +417,16 @@ class StatusMixin:
         uptime = timeutil.fmt_uptime(started) if started else None
         online_raw = self.db.get_state("online_count")
         online = int(online_raw) if online_raw is not None else None
+        # профили онлайн — из того же источника, что и список по ссылке
+        # (online_devices): цифра в панели и список не расходятся
+        profiles = (len({c.id for _d, c in self.online_devices() if c is not None and not getattr(c, "is_service", 0)})
+                    if online else 0)
         cpu = ram = disk = age_seconds = None
         snap = hostmetrics.get_host_metrics(self.db)
         if snap:
             cpu, ram, disk = snap.get("cpu"), snap.get("ram"), snap.get("disk")
             age_seconds = snap.get("age_seconds")
-        return {"ok": ok, "uptime": uptime, "online_count": online,
+        return {"ok": ok, "uptime": uptime, "online_count": online, "online_profiles": profiles,
                 "cpu": cpu, "ram": ram, "disk": disk, "age_seconds": age_seconds}
 
     def server_ok(self) -> bool:
