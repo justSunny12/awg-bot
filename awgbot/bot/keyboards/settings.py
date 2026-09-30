@@ -483,15 +483,6 @@ def update_notify() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def update_admin_available() -> InlineKeyboardMarkup:
-    """Старые сообщения проверки с «Обновить / Назад»: назад — в раздел."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬆️ Обновить", callback_data=UpdateCB(action="install"))
-    kb.button(text="⬅️ Назад", callback_data=SetCB(sec="upd"))
-    kb.adjust(2)
-    return kb.as_markup()
-
-
 def migration_needed() -> InlineKeyboardMarkup:
     """Инфобокс «нужен переезд»: сразу к подтверждению старта и «Скрыть».
     Скрыть — не «отложить навсегда»: сообщение приходит при каждом старте,

@@ -62,9 +62,6 @@ async def client_card_parts(services, client_id: int):
             kb.admin_client_actions(client, d["devices"], routing_visible=d["rt_visible"]))
 
 
-_client_card_parts = client_card_parts
-
-
 async def client_edit_parts(services, client_id: int):
     client = await call(services.db.get_client, client_id)
     if client is None:
@@ -556,9 +553,6 @@ async def extend_screen(services, client_id: int, *, keep: bool = True, cancel_t
     return (texts.extend_text(client, cut_days, _bot(services)),
             kb.period_kb("extend", client_id, min_days=cut_days, keep=keep,
                          has_remainder=remainder > 0, cancel_cb=cancel_to))
-
-
-_extend_picker = extend_screen
 
 
 @router.callback_query(ClientCB.filter(F.action.in_(("extend", "extend_exp"))))

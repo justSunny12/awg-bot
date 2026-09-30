@@ -44,13 +44,6 @@ def b64d(text: str) -> bytes:
 # Ключ шифрования бэкапов
 # ─────────────────────────────────────────────────────────────────────────────
 
-def gen_random_key() -> bytes:
-    """Случайный 32-байтный ключ SecretBox. Из интерфейса режим 'R' больше не
-    заводится (только фраза), но ключ, записанный прежней схемой, в БД старых
-    установок остаётся — тест расшифровки таким ключом держим."""
-    return utils.random(KEY_SIZE)
-
-
 def derive_key(passphrase: str, salt: bytes) -> bytes:
     """Ключ SecretBox из пассфразы и соли (argon2id)."""
     return pwhash.argon2id.kdf(KEY_SIZE, passphrase.encode("utf-8"), salt,
@@ -117,6 +110,6 @@ def decrypt(blob: bytes, *, key: bytes | None = None,
 __all__ = [
     "MAGIC", "KEY_SIZE",
     "b64d",
-    "gen_random_key", "derive_key",
+    "derive_key",
     "encrypt", "decrypt", "inspect_mode",
 ]

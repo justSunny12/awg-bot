@@ -143,61 +143,8 @@ def gb_str(num_bytes: int) -> str:
     return f"{gb(num_bytes)} ГБ"
 
 
-def _dev_traffic_line(dev_limit_bytes: int, profile_limit_bytes: int, *, own: bool) -> str:
-    """Строка о лимите потребления устройства для отчёта о создании.
-    Свой лимит устройства → показываем его; иначе потребление ограничено лишь
-    лимитом профиля («твоего», когда устройство создано для друга — лимит
-    остаётся у дарителя). Когда не ограничивает ни то, ни другое — говорить не
-    о чем, и оговорка про лимит профиля только сбивает: лимита нет вовсе."""
-    if dev_limit_bytes:
-        return f"Лимит трафика устройства: {gb_str(dev_limit_bytes)}"
-    if profile_limit_bytes:
-        whose = "лимита профиля" if own else "твоего лимита профиля"
-        return f"Трафик устройства — в пределах {whose}"
-    return "Трафик устройства без лимита"
-
-
 def _limit_devices_str(limit: int) -> str:
     return "∞" if not limit else str(limit)
-
-
-def _device_count_line(device_count: int, max_devices: int) -> str:
-    if not max_devices:
-        return f"Количество устройств: {device_count}"
-    return f"Количество устройств: {device_count}/{max_devices}"
-
-
-def device_created_report(dev_name: str, *, client_name: str = None,
-                          device_count: int = 0, max_devices: int = 0,
-                          dev_limit_bytes: int = 0, profile_limit_bytes: int = 0,
-                          for_friend: bool = False) -> str:
-    """Отчёт о создании устройства: имя, потребление, счётчик. client_name —
-    только для админа (у клиента один профиль); for_friend — «создано для
-    друга», лимит — «твоего» профиля."""
-    head = f"✅ Устройство «{_e(dev_name)}» создано"
-    if client_name:
-        head += f" для профиля «{_e(client_name)}»"
-    elif for_friend:
-        head += " для друга"
-    return (head + ".\n"
-            + _dev_traffic_line(dev_limit_bytes, profile_limit_bytes, own=not for_friend) + ".\n"
-            + _device_count_line(device_count, max_devices))
-
-
-def consumption_line(used_sum: int, limit_bytes: int, *, blocked: bool) -> str:
-    """Строка потребления устройства у клиента/друга: «8.99 из 50 ГБ (лимит
-    устройства)», без своего лимита — «8.99 ГБ». blocked — лимит исчерпан;
-    когда снимется, говорит строка блокировок ниже, не эта."""
-    line = f"Трафик за месяц: {used_of_limit(used_sum, limit_bytes, 'лимит устройства')}"
-    if blocked and limit_bytes:
-        line += " — исчерпан"
-    return line
-
-
-def consumption_line_admin(rx: int, tx: int, limit_bytes: int) -> str:
-    """Строка потребления устройства для админа: то же + разбивка ↑↓."""
-    return (f"Трафик: {used_of_limit(int(rx) + int(tx), limit_bytes, 'лимит устройства')} "
-            f"{_updown(rx, tx)}")
 
 
 def client_total_line(rx: int, tx: int, limit_bytes: int, bonus_bytes: int,
@@ -263,35 +210,6 @@ def plain_ip(addr: str) -> str:
     return f"<code>{_e(str(addr or ''))}</code>"
 
 
-def device_line(dev) -> str:
-    """Строка устройства для списка: индикатор, имя (IP), последний коннект."""
-    last = timeutil.fmt_handshake(dev.last_handshake)
-    return f"{device_label(dev)} ({plain_ip(dev.address)}), последний коннект: {last}"
-
-
-def device_card_text(dev, *, for_admin: bool, rf: tuple[int, int] | None = None) -> str:
-    """Карточка одного устройства: строка + потребление + причины блокировки.
-    Причины фильтруются по роли: тихий админ-блок пользователю не показывается
-    (для него устройство выглядит рабочим). rf — РФ-часть под потреблением,
-    только админу и только когда строка устройству положена (services.rf_device_card)."""
-    from awgbot.core import blocks
-    parts = [device_line(dev)]
-    mask = int(dev.block_reason)
-    traffic_blocked = bool(mask & int(blocks.DEVICE_TRAFFIC_ANY))
-    if for_admin:
-        parts.append(consumption_line_admin(
-            dev.traffic_rx_month, dev.traffic_tx_month, dev.traffic_limit))
-        if rf is not None:
-            parts.append(rf_line(*rf))
-    else:
-        used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
-        parts.append(consumption_line(used, dev.traffic_limit, blocked=traffic_blocked))
-    reasons = blocks.device_reasons_ru(mask, for_admin=for_admin)
-    if reasons:
-        parts.append("⛔ Заблокировано: " + ", ".join(reasons))
-    return "\n".join(parts)
-
-
 # ── Ссылки на людей ─────────────────────────────────────────────────────────
 
 def tg_link(name: str, tg_id, username: str = "") -> str:
@@ -329,17 +247,6 @@ def owner_link(dev) -> str:
 
 def holder_link(dev) -> str:
     return tg_link(holder_name(dev), dev.holder_tg_id, dev.holder_tg_username)
-
-
-def client_label(c, *, bold: bool = True) -> str:
-    """Профиль в списках объявления: имя профиля (его дал админ), а если у
-    аккаунта своё имя — оно ссылкой в скобках: «Ксюша ([Ксения])». В подсказке
-    и превью имя жирным, в отчёте — обычным."""
-    head = f"<b>{_e(c.name)}</b>" if bold else _e(c.name)
-    tg = getattr(c, "tg_name", "") or ""
-    if tg and tg != c.name:
-        return f"{head} ({client_link(c)})"
-    return head
 
 
 def _n_devices(n: int) -> str:

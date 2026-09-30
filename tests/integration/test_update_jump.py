@@ -125,7 +125,7 @@ def test_current_code_validates_the_floor_conf_and_serves_screens(current_on_flo
     assert screen["subnet"] == "10.8.1.0/24" and screen["iface"] == cfg.AWG_INTERFACE
     assert screen["port_conf"] == 51820 and screen["host"] == "203.0.113.10"
     assert settings.get_bool("firewall.enabled", False) is False, "ключей firewall.* в conf v2.10 нет — дефолт"
-    assert services.device_slots(services.db.list_clients()[0].id) == (1, 3)
+    assert services.device_quota(services.db.list_clients()[0].id) == (1, 3)
     db.close()
 
 

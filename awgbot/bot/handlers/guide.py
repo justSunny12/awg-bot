@@ -53,7 +53,7 @@ async def connect_step0_payload(services, client, ref: int = 0, chat_id: int = 0
         slots = (len(devices), 0)
     else:
         devices = await call(services.db.list_devices, client.id)
-        slots = await call(services.device_slots, client.id)
+        slots = await call(services.device_quota, client.id)
     from awgbot.bot import paging
     return (guides.step_text(guide, 0),
             kb.guide_connect_devices(devices, slots, guide=guide, guest=guest,
@@ -89,7 +89,7 @@ async def _render(cb: CallbackQuery, services, client, guide: str, step: int):
             slots = (len(devices), 0)
         else:
             devices = await call(services.db.list_devices, client.id)
-            slots = await call(services.device_slots, client.id)
+            slots = await call(services.device_quota, client.id)
         from awgbot.bot import paging
         await _render_screen(cb, services, text, None,
                              kb.guide_connect_devices(devices, slots, guide=guide, guest=guest,
@@ -216,7 +216,7 @@ async def guide_pick_device(cb: CallbackQuery, callback_data: DeviceCB, services
 async def guide_add_device(cb: CallbackQuery, callback_data: GuideCB, services, client, state: FSMContext):
     """Новое устройство внутри гайда: только имя (лимит — в карточке, В5),
     приглашение на месте шага."""
-    used, limit = await call(services.device_slots, client.id)
+    used, limit = await call(services.device_quota, client.id)
     if limit != 0 and used >= limit:              # 0 = безлимит
         await cb.answer(texts.limit_exhausted_line(used, limit), show_alert=True)
         return

@@ -148,7 +148,7 @@ async def test_gateway_update_install_runs_the_shared_updater(svc, fake_bot, mon
     """«Обновить» у агента: следующая ступень → «дождись» → apply_update. Та же
     механика, что у клиентской роли, — sha256 и запуск вне cgroup внутри."""
     import types
-    nxt = types.SimpleNamespace(tag="v9.9.9", body="", skipped=())
+    nxt = types.SimpleNamespace(tag="v9.9.9", body="")
     applied = []
     monkeypatch.setattr(svc, "update_next", lambda: nxt)
     monkeypatch.setattr(svc, "apply_update", lambda r: applied.append(r.tag))
@@ -164,7 +164,7 @@ async def test_update_failure_message_can_be_hidden(svc, fake_bot, monkeypatch):
     следом: отказ не итог ступени, держать его в истории незачем, а меню под
     кнопкой уже удалено."""
     import types
-    nxt = types.SimpleNamespace(tag="v9.9.9", body="", skipped=())
+    nxt = types.SimpleNamespace(tag="v9.9.9", body="")
     monkeypatch.setattr(svc, "update_next", lambda: nxt)
 
     def boom(r):
@@ -221,7 +221,7 @@ async def test_gateway_updates_screen_and_manual_check(svc, fake_bot, monkeypatc
     assert "актуальн" in [t for k, t, _ in msg.sent if k == "edit_text"][-1].lower()
 
     monkeypatch.setattr(svc, "update_next",
-                        lambda: types.SimpleNamespace(tag="v9.9.9", body="заметки", skipped=()))
+                        lambda: types.SimpleNamespace(tag="v9.9.9", body="заметки"))
     await gh.gw_updates_check(cb, svc)
     kind, text, markup = [x for x in msg.sent if x[0] == "edit_text"][-1]
     assert "v9.9.9" in text and markup is not None, "нет кнопки «Обновить»"
@@ -332,7 +332,7 @@ async def test_panel_offers_the_lan_screen_only_when_enabled(svc, fake_bot, monk
     await gh.gw_panel(cb, svc, FakeState())
     labels = [b.text for row in msg.sent[-1][2].inline_keyboard for b in row]
     assert "🔀 VPN-транзит" in labels
-    await gh.gw_lan(cb, svc, FakeState())
+    await gh.gw_transit(cb, svc, FakeState())
     text, markup = msg.sent[-1][1], msg.sent[-1][2]
     assert text.startswith("🔀 VPN-транзит · 🟢 работает") and "end0" in text \
         and "Свои списки: 1 в туннель" in text, text
@@ -348,10 +348,10 @@ async def test_domain_input_goes_to_the_script_and_the_prompt_is_cleaned(svc, fa
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     st = FakeState()
-    await gh.gw_lan_ask(cb, GwCB(action="lan_ru"), svc, st)
+    await gh.gw_transit_ask(cb, GwCB(action="lan_ru"), svc, st)
     assert "Напрямую" in msg.sent[-1][1] and await st.get_state() is not None
     reply = FakeMessage(text="Example.com shop.ru", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_domain_received(reply, st, svc)
+    await gh.gw_transit_domain_received(reply, st, svc)
     assert calls == [("ru", ["Example.com", "shop.ru"])], "разбор — в скрипте, бот передаёт как есть"
     assert await st.get_state() is None
     deleted = [r[2] for r in fake_bot.records if r[0] == "delete_message"]
@@ -375,14 +375,14 @@ async def test_own_lists_screen_shows_domains_as_buttons_direct_first(svc, fake_
                         lambda: [("vpn", "zeta.com"), ("ru", "shop.ru"), ("vpn", "alpha.com"), ("ru", "bank.ru")])
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_list(cb, svc, FakeState())
+    await gh.gw_transit(cb, svc, FakeState())
     assert _own_lists_labels(msg) == [
         "➕ В туннель", "➕ Напрямую",
         "➖ 🇷🇺 bank.ru", "➖ 🇷🇺 shop.ru", "➖ 🌍 alpha.com", "➖ 🌍 zeta.com",
         "❓ Роутер", "⬅️ В меню"], _own_lists_labels(msg)
     assert "Пока пусто" not in msg.sent[-1][1]
     monkeypatch.setattr(svc, "lan_own_lists", lambda: [])
-    await gh.gw_lan_list(cb, svc, FakeState())
+    await gh.gw_transit(cb, svc, FakeState())
     empty = msg.sent[-1][1]
     # подсказка пустого списка — под «подробнее», открытой строки «Пока пусто» нет
     assert "Пока пусто" not in empty, empty
@@ -407,10 +407,10 @@ async def test_removing_an_own_domain_is_immediate_and_removes_exactly_that_one(
     monkeypatch.setattr(svc, "lan_domains", _del)
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_list(cb, svc, FakeState())
+    await gh.gw_transit(cb, svc, FakeState())
     btn = next(b for row in msg.sent[-1][2].inline_keyboard for b in row if b.text == "➖ 🌍 alpha.com")
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_remove(cb, GwCB.unpack(btn.callback_data), svc)
+    await gh.gw_transit_remove(cb, GwCB.unpack(btn.callback_data), svc)
     assert calls == [("del", ["alpha.com"])], f"убран не тот домен: {calls}"
     assert cb.answers == [("alpha.com: убран", False)], cb.answers
     labels = _own_lists_labels(msg)
@@ -427,7 +427,7 @@ async def test_a_stale_remove_button_does_not_touch_anything(svc, fake_bot, monk
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     for action, val in (("lan_rm", "5"), ("lan_rm", ""), ("lan_rm", "x"), ("lan_rm!", "5")):
-        await gh.gw_lan_remove(cb, GwCB(action=action, val=val), svc)
+        await gh.gw_transit_remove(cb, GwCB(action=action, val=val), svc)
     assert calls == [], f"по устаревшей кнопке что-то удалено: {calls}"
     assert cb.answers[-1] == ("Список изменился — открой раздел заново", True)
 
@@ -446,11 +446,11 @@ async def test_a_button_pressed_after_the_list_changed_does_not_remove_a_neighbo
     monkeypatch.setattr(svc, "lan_domains", lambda cmd, domains: calls.append((cmd, domains)) or (True, ""))
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_list(cb, svc, FakeState())
+    await gh.gw_transit(cb, svc, FakeState())
     btn = next(b for row in msg.sent[-1][2].inline_keyboard for b in row if b.text == "➖ 🌍 beta.com")
     own.insert(0, ("vpn", "alpha.com"))                 # появился раньше по алфавиту
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_remove(cb, GwCB.unpack(btn.callback_data), svc)
+    await gh.gw_transit_remove(cb, GwCB.unpack(btn.callback_data), svc)
     assert ("del", ["alpha.com"]) not in calls, (
         "нажали «➖ beta.com», а убран alpha.com — соседний домен")
     assert calls == [], f"по кнопке устаревшего экрана что-то убрано: {calls}"
@@ -468,10 +468,10 @@ async def test_a_failed_removal_is_an_alert_and_the_domain_stays(svc, fake_bot, 
     monkeypatch.setattr(svc, "lan_domains", lambda cmd, domains: (False, "awg-lan-domain.sh: занято <lock>"))
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_list(cb, svc, FakeState())
+    await gh.gw_transit(cb, svc, FakeState())
     btn = next(b for row in msg.sent[-1][2].inline_keyboard for b in row if b.text == "➖ 🇷🇺 shop.ru")
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_remove(cb, GwCB.unpack(btn.callback_data), svc)
+    await gh.gw_transit_remove(cb, GwCB.unpack(btn.callback_data), svc)
     assert cb.answers == [("⚠️ awg-lan-domain.sh: занято <lock>", True)], cb.answers
     assert "➖ 🇷🇺 shop.ru" in _own_lists_labels(msg)
 

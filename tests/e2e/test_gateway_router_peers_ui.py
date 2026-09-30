@@ -82,7 +82,7 @@ async def _lan_router(gw_svc, fake_bot, monkeypatch, params, tab=""):
     monkeypatch.setattr(gw_svc, "lan_router_params", lambda: params)
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_router(cb, GwCB(action="lan_router", val=tab), gw_svc)
+    await gh.gw_transit_router(cb, GwCB(action="lan_router", val=tab), gw_svc)
     kind, text, markup = msg.sent[-1]
     assert kind == "edit_text", msg.sent
     return text, markup

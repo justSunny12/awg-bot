@@ -299,7 +299,7 @@ async def _agent_screens(svc, fake_bot, monkeypatch):
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_panel(cb, svc, FakeState())
     panel, panel_kb = msg.sent[-1][1], msg.sent[-1][2]
-    await gh.gw_lan(cb, svc, FakeState())
+    await gh.gw_transit(cb, svc, FakeState())
     lan, lan_kb = msg.sent[-1][1], msg.sent[-1][2]
     labels = lambda m: [b.text for row in m.inline_keyboard for b in row]   # noqa: E731
     return panel, labels(panel_kb), lan, labels(lan_kb)

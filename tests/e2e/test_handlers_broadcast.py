@@ -35,7 +35,7 @@ def test_client_card_has_no_announcement_button(services, make_active_client):
     client = services.db.get_client(c.id)
 
     for owner in (True, False):
-        labels = _btn_texts(kb.admin_client_actions(client, is_admin_owner=owner))
+        labels = _btn_texts(kb.admin_client_actions(client))
         assert not any("Объявление" in x for x in labels), owner
 
 

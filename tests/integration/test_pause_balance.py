@@ -135,24 +135,20 @@ def test_credit_reasons_and_notifications(services, make_active_client):
     own = [n.text for n in r.notifications if n.tg_id == 7570][0]
     assert own.startswith("✅ Подписка продлена до ") and own.endswith(
         "\n⏸️ Дней паузы +2 → 4")
-    assert texts.pause_credit_admin(r.pause) == "Дней паузы: +2 → 4"
 
     services.db.set_pause_balance(m.id, 23)
     r = services.extend_period(m.id, "month", keep_remainder=False)
     assert r.pause.after == 24 and texts.pause_credit_line(r.pause) == \
         "⏸️ Дней паузы +1 → 24 (максимум для ежемесячной подписки)"
-    assert texts.pause_credit_admin(r.pause) == "Дней паузы: +1 → 24 (максимум)"
     r = services.extend_period(m.id, "month", keep_remainder=False)
     assert texts.pause_credit_line(r.pause) == ("⏸️ Дни паузы не добавлены: достигнуто максимальное "
                                                 "количество для ежемесячной подписки (24)")
-    assert texts.pause_credit_admin(r.pause) == "Дней паузы: не добавлены — максимум ежемесячной (24)"
 
     services.db.update_client_fields(m.id, status="expired", period_end="2026-09-01T00:00:00+03:00")
     services.db.set_pause_balance(m.id, 4)
     r = services.extend_period(m.id, "month", keep_remainder=False)
     assert texts.pause_credit_line(r.pause) == ("⏸️ Дни паузы за этот период не начислены: подписка "
                                                 "продлена после истечения. Доступно 4 дня")
-    assert texts.pause_credit_admin(r.pause) == "Дней паузы: не начислены — после истечения, доступно 4"
     services.db.update_client_fields(m.id, grace_used=1)
     services.db.set_pause_balance(m.id, 1)
     r = services.extend_period(m.id, "month", keep_remainder=False)
@@ -171,7 +167,7 @@ def test_credit_reasons_and_notifications(services, make_active_client):
     assert own == "Подписка теперь бессрочная 🎉" and texts.pause_credit_line(r.pause) == ""
     d = make_active_client("D", tg_id=7572, period_kind="day")
     r = services.extend_period(d.id, "week", keep_remainder=False)
-    assert texts.pause_credit_line(r.pause) == "" and texts.pause_credit_admin(r.pause) == ""
+    assert texts.pause_credit_line(r.pause) == ""
 
 
 def test_parse_dates_without_time():

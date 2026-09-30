@@ -345,23 +345,6 @@ def device_card_held(dev, owner_limit_bytes: int) -> str:
     return "\n".join(parts)
 
 
-def held_device_card(dev, owner_limit_bytes: int) -> str:
-    return device_card_held(dev, owner_limit_bytes)
-
-
-def lent_out_marker(dev) -> str:
-    """Строка в карточке владельца (админ): кому передано."""
-    return f"👤 Передано {holder_link(dev)} и управляется им"
-
-
-def friend_marker(dev) -> str:
-    if dev.is_lent:
-        return f"👤 Передано {holder_link(dev)}"
-    if dev.friend_status == FriendStatus.PENDING:
-        return "⏳ приглашение другу ждёт активации"
-    return ""
-
-
 UNMANAGED_DEVICE_LINE = "✳️ Добавлено не ботом — ссылки нет: удали и добавь заново"
 
 
@@ -383,15 +366,6 @@ def device_delete_ask(dev, *, only: bool = False, lent: bool = False, held: bool
                 "VPN выключится сразу. " + TELEGRAM_RISK)
     return (f"🗑 Удалить {name}?\n"
             "Ссылка перестанет работать; решишь добавить устройство снова — ссылка изменится")
-
-
-def device_delete_by_holder_ask(name: str) -> str:
-    return (f"🗑 Удалить {_e(name)}?\n"
-            "Новое устройство можно будет создать только по коду от друга")
-
-
-def device_delete_by_owner_ask(dev) -> str:
-    return device_delete_ask(dev, lent=True)
 
 
 def device_deleted(name: str, used: int, limit: int) -> str:
@@ -617,10 +591,6 @@ def finish_file(name: str) -> str:
     return f"📄 Для {_e(name)} — импортируй файл в AmneziaVPN"
 
 
-def finish_config(kind: str, name: str) -> str:
-    return {"link": finish_link, "qr": finish_qr, "file": finish_file}[kind](name)
-
-
 FINISH_CLIENT_INVITE = (
     "☝️ Выше — ссылка-приглашение. Перешли её человеку, чтобы он активировал доступ.\n\n"
     "❗️ После возврата в меню это сообщение исчезнет — повторно сгенерировать его "
@@ -706,18 +676,6 @@ def pause_credit_line(pc) -> str:
     return f"⏸️ Дней паузы +{pc.added} → {pc.after}{note}"
 
 
-def pause_credit_admin(pc) -> str:
-    if pc is None or pc.kind not in ("year", "month"):
-        return ""
-    if pc.reason == "expired":
-        return f"Дней паузы: не начислены — после истечения, доступно {pc.after}"
-    if pc.reason == "grace":
-        return f"Дней паузы: не начислены — отсрочка, доступно {pc.after}"
-    if pc.reason == "cap":
-        return f"Дней паузы: не добавлены — максимум {_pause_kind_ru(pc.kind)} ({pc.cap})"
-    return f"Дней паузы: +{pc.added} → {pc.after}" + (" (максимум)" if pc.after == pc.cap else "")
-
-
 def pause_rules_details() -> str:
     """Свёрнутое «подробнее» о том, как копятся дни паузы."""
     year_days = settings.get_int("pause.pause_max_total_days", 28)
@@ -779,10 +737,6 @@ def subscription_text(client, *, routing_visible: bool) -> str:
     return "\n".join(l for l in lines if l is not None)
 
 
-def subscription_manage_text(client, *, routing_visible: bool) -> str:
-    return subscription_text(client, routing_visible=routing_visible)
-
-
 def subscription_status_only(client, *, expiring: bool = False) -> str:
     """Только статус подписки: «🟢 активна», «🟡 истекает 12.10 18:00»,
     «🔴 истекла», «⏸️ на паузе» / «⏸️ приостановлена администратором»."""
@@ -795,10 +749,6 @@ def subscription_status_only(client, *, expiring: bool = False) -> str:
         end = timeutil.parse_iso(client.period_end)
         return f"🟡 истекает {timeutil.fmt_dt_ui(end)}"
     return "🟢 активна"
-
-
-def server_status_client(ok: bool) -> str:
-    return vpn_status_line(ok)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -895,18 +845,6 @@ GRACE_STALE = "Это предложение уже неактуально"
 def grace_activated_admin(link: str, days: int) -> str:
     """link — имя профиля ссылкой (texts.profile_link)."""
     return f"🙏 {link}: взята отсрочка на {days} дн."
-
-
-# ── совместимость: строки, которыми ещё пользуются экраны админа ─────────────
-# (карточка устройства и «Мои устройства» админа переделываются следующим
-# этапом; до него они зовут эти имена)
-
-def device_slots_line(used: int, limit: int) -> str:
-    if limit == 0:
-        return f"Устройств: {used}"
-    line = f"Устройств {used} из {limit}"
-    tail = limit_exhausted_line(used, limit)
-    return f"{line}\n{tail}" if tail else line
 
 
 CONNECT_METHOD_ASK = "Как подключить устройство?"

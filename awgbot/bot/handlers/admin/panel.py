@@ -18,7 +18,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import Menu
-from awgbot.bot.handlers.common import (call, edit_nav, purge_menus, cleanup_content, send_menu, card_from_home,
+from awgbot.bot.handlers.common import (call, edit_nav, purge_menus, cleanup_content, send_menu, card_from_main,
                                         _dismiss_previous_nav, show_screen)
 from awgbot.bot.notifier import send_notifications
 
@@ -86,15 +86,9 @@ async def expiring_screen(services):
     return texts.expiring_text(rows, _bot(services)), kb.expiring_kb(rows)
 
 
-_expiring_screen = expiring_screen
-
-
 async def online_screen(services):
     devs = await call(services.online_devices)
     return texts.online_devices_text(devs, _bot(services)), kb.online_devices_kb()
-
-
-_online_screen = online_screen
 
 
 async def unassigned_screen(services, chat_id: int = 0):
@@ -115,9 +109,6 @@ async def traffic_profiles_screen(services):
             kb.traffic_profiles_kb())
 
 
-_traffic_profiles_screen = traffic_profiles_screen
-
-
 async def traffic_devices_screen(services, client_id: int):
     client = await call(services.db.get_client, client_id)
     if client is None:
@@ -131,12 +122,9 @@ async def traffic_devices_screen(services, client_id: int):
             kb.traffic_devices_kb())
 
 
-_traffic_devices_screen = traffic_devices_screen
-
-
 async def migration_overview_screen(services):
     d = await call(services.migration_overview)
-    return texts.migration_overview_text(d, _bot(services)), kb.to_menu_kb()
+    return texts.migration_overview_text(d, _bot(services)), kb.to_menu()
 
 
 async def migration_client_screen(services, client_id: int):
@@ -155,11 +143,8 @@ async def gateway_card_screen(services, slot: int, chat_id: int | None = None):
         st = await call(services.gateway_screen_state, slot)
     except ServiceError:
         return "🛰 Такого шлюза больше нет — слот снят", kb.settings_back("rt")
-    card_from_home(chat_id, True)
+    card_from_main(chat_id, True)
     return texts.gateway_card_text(st, st["states"]), card_kb(st, chat_id)
-
-
-_gateway_card_screen = gateway_card_screen
 
 
 def _payload_id(payload: str, head: str) -> int | None:
@@ -284,7 +269,7 @@ async def unassigned_list(cb: CallbackQuery, services):
 async def admin_main_menu(cb: CallbackQuery, services, state: FSMContext):
     await cb.answer()                                  # спиннер гаснет сразу
     await state.clear()
-    card_from_home(cb.message.chat.id, False)          # с главной карточка открывается заново
+    card_from_main(cb.message.chat.id, False)          # с главной карточка открывается заново
     await cleanup_content(cb.bot, services, cb.message.chat.id)
     await edit_nav(cb, services, *await _panel_parts(services))
 

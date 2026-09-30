@@ -198,7 +198,7 @@ async def test_no_own_domains_means_no_own_tail_on_the_panel_but_a_line_on_the_s
     lines = (await _panel(svc, fake_bot, st))[0].splitlines()
     assert "📋 Списки: 41 200 доменов, 12 подсетей" in lines, lines
     assert not any("свои" in ln for ln in lines), lines
-    assert "Свои списки: пусто" in texts.gateway_lan_text(st, []).splitlines()
+    assert "Свои списки: пусто" in texts.gateway_transit_text(st, []).splitlines()
 
 
 async def test_the_smb_line_is_on_the_panel_only_with_subnet_link(svc, fake_bot):
@@ -510,7 +510,7 @@ async def test_backup_day_and_hour_in_one_input(svc, fake_bot, store):
 def upd(svc, monkeypatch, store):
     """Проверка обновлений без сети: счётчик походов к списку релизов."""
     from awgbot.infra import updates
-    scene = {"next": types.SimpleNamespace(tag="v3.2.1", body="- пункт", skipped=(), title=""),
+    scene = {"next": types.SimpleNamespace(tag="v3.2.1", body="- пункт", title=""),
              "fail": False, "calls": 0}
 
     def _next(max_generation=None):
@@ -678,7 +678,7 @@ async def test_an_unknown_router_tab_falls_back_to_mikrotik(svc, fake_bot, monke
     monkeypatch.setattr(socket, "gethostname", lambda: "naspi")
     monkeypatch.setattr(svc, "lan_router_params", lambda: ("192.168.1.0/24", "192.168.1.2", []))
     cb, nav = _acb(fake_bot)
-    await gh.gw_lan_router(cb, GwCB(action="lan_router", val="zz"), svc)
+    await gh.gw_transit_router(cb, GwCB(action="lan_router", val="zz"), svc)
     text, markup = _last_edit(nav)
     assert _rows(markup)[0] == ["✅ MikroTik", "OpenWrt"], _rows(markup)
     assert "/ip route add" in text, text
@@ -699,9 +699,9 @@ async def test_a_huge_domain_input_result_still_fits_one_message(svc, fake_bot, 
     monkeypatch.setattr(svc, "own_active", lambda: False)
     st = FakeState()
     cb, nav = _acb(fake_bot)
-    await gh.gw_lan_ask(cb, GwCB(action="lan_add"), svc, st)
+    await gh.gw_transit_ask(cb, GwCB(action="lan_add"), svc, st)
     reply = _msg(fake_bot, " ".join(doms))
-    await gh.gw_lan_domain_received(reply, st, svc)
+    await gh.gw_transit_domain_received(reply, st, svc)
     text = next(s[1] for s in reply.sent if s[0] == "answer")
     visible = html.unescape(re.sub(r"<[^>]+>", "", text))
     assert len(visible) <= 4096, len(visible)
@@ -715,12 +715,12 @@ def test_a_long_domain_does_not_eat_the_sync_tail_of_the_toast(sync):
     остаётся целиком: всплывашка — до 200 знаков, и Telegram режет хвост
     первым — как раз ту строку, ради которой её читают."""
     dom = "a" * 150 + ".example.com"
-    toast = texts.gateway_lan_removed_toast(dom, sync=sync)
+    toast = texts.gateway_transit_removed_toast(dom, sync=sync)
     assert len(toast) <= 200, len(toast)
     assert toast.endswith("\n" + texts.SYNC_TAILS[sync]), toast
     assert "Убран на всех шлюзах" not in toast, "первая строка «Убран на всех шлюзах» снята"
-    assert texts.gateway_lan_removed_toast("sber.ru") == "sber.ru: убран"
-    assert texts.gateway_lan_removed_toast("sber.ru", True, "") == "sber.ru: убран", (
+    assert texts.gateway_transit_removed_toast("sber.ru") == "sber.ru: убран"
+    assert texts.gateway_transit_removed_toast("sber.ru", True, "") == "sber.ru: убран", (
         "shared больше ничего не добавляет — хвост решает только sync")
 
 

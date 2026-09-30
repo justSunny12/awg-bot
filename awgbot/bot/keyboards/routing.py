@@ -12,7 +12,7 @@ from .settings import _cycle
 
 
 def routing_panel(client_id: int, devices, *, lent_out=(), enabled: int = 0, total: int = 0,
-                  n_domains: int = 0, back_target: str, page: int = 0, **_legacy) -> InlineKeyboardMarkup:
+                  n_domains: int = 0, back_target: str, page: int = 0) -> InlineKeyboardMarkup:
     """Раздел «🇷🇺 РФ-доступ» одним экраном: переключатели устройств (свои и
     удерживаемые), «Выбрать все» по правилу массового выбора, добавление
     сайтов и вход в их список. Переданные — строкой в тексте, без кнопки."""
@@ -131,18 +131,7 @@ def gateways_kb(states, *, enabled: bool = True, provisioned: bool = True, awake
     return kb.as_markup()
 
 
-def gateway_list(states, *, can_add: bool, failover_on: bool,
-                 peer_nets_on: bool | None = None) -> InlineKeyboardMarkup:
-    """Прежнее имя экрана «Шлюзы»."""
-    return gateways_kb(states, can_add=can_add, failover_on=failover_on, peer_nets_on=peer_nets_on)
-
-
-def settings_routing(enabled: bool, states=(), *, can_add: bool = True) -> InlineKeyboardMarkup:
-    """Прежний раздел настроек — теперь экран «Шлюзы»."""
-    return gateways_kb(states, enabled=enabled, can_add=can_add)
-
-
-def gateway_card(state, *, back_to_list: bool, back_home: bool = False) -> InlineKeyboardMarkup:
+def gateway_card(state, *, back_to_list: bool, back_main: bool = False) -> InlineKeyboardMarkup:
     """Карточка слота: у резервного — «▶️ Сделать активным» первым рядом;
     [📤 Конфигурация] [📡 Пинг] / [✅ VPN-транзит] [🗺 Подсети] / [❓ Роутер]
     [✏️ Изменить] / [⬅️ Назад]. Без VPN-транзита — без «❓ Роутер»."""
@@ -164,7 +153,7 @@ def gateway_card(state, *, back_to_list: bool, back_home: bool = False) -> Inlin
     else:
         kb.button(text="✏️ Изменить", callback_data=GwSlotCB(action="edit", slot=gw.id))
         rows.append(1)
-    if back_home:
+    if back_main:
         back = Menu(action="main").pack()
     else:
         back = GwSlotCB(action="list").pack() if back_to_list else SetCB(sec="rt").pack()
@@ -266,10 +255,6 @@ def gateway_router_kb(slot: int, tab: str = "mt") -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def gateway_router_back(slot: int) -> InlineKeyboardMarkup:
-    return gateway_router_kb(slot)
-
-
 def gateway_switch_confirm(slot: int, healthy: bool, from_list: bool = False) -> InlineKeyboardMarkup:
     """Ручное переключение: «Отмена» первой — туда, откуда пришли (список или
     карточка); у лежащего резерва — «Всё равно»."""
@@ -305,15 +290,6 @@ def settings_routing_monitor(info: dict) -> InlineKeyboardMarkup:
     """Прежний подраздел — теперь «⚙️ Параметры»."""
     from awgbot.core import settings as _settings
     return routing_params_kb(info, int(_settings.get("app.routing.lists_refresh_hours", 6)))
-
-
-def settings_routing_lists(lists_every: int) -> InlineKeyboardMarkup:
-    """Прежний подраздел — теперь «⚙️ Параметры»."""
-    from awgbot.core import settings as _settings
-    info = {"probe_seconds": _settings.get_int("app.routing.probe_seconds", 30),
-            "window": _settings.get_int("app.routing.failover.window_samples", 10),
-            "availability": _settings.get_int("app.routing.failover.min_availability", 50)}
-    return routing_params_kb(info, lists_every)
 
 
 def routing_provision() -> InlineKeyboardMarkup:

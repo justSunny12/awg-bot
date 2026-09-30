@@ -213,7 +213,7 @@ LAN_ABOUT = ("роутер маршрутизирует весь трафик л
              "домены напрямую (🇷🇺), затем в туннель (🌍)")
 
 
-def gateway_lan_text(st, items=None, own: dict | None = None) -> str:
+def gateway_transit_text(st, items=None, own: dict | None = None) -> str:
     """Экран «🔀 VPN-транзит»: состояние, факты, списки, свои списки, SMB,
     объяснение под «подробнее», состояние синхронизации открыто. items —
     свои домены (для «пока пусто»), own — состояние синхронизации
@@ -248,7 +248,7 @@ def gateway_lan_text(st, items=None, own: dict | None = None) -> str:
     return "\n".join(lines)
 
 
-def gateway_lan_ask_domain(kind: str) -> str:
+def gateway_transit_ask_domain(kind: str) -> str:
     head = {"add": "➕ В туннель", "ru": "➕ Напрямую"}[kind]
     return f"{head} · пришли домены через пробел: <code>example.com</code> — накрывает и поддомены"
 
@@ -298,7 +298,7 @@ SYNC_TAILS = {
 }
 
 
-def gateway_lan_removed_toast(domain: str, shared: bool = False, sync: str = "") -> str:
+def gateway_transit_removed_toast(domain: str, shared: bool = False, sync: str = "") -> str:
     """Всплывашка после «➖»: итог и хвост синхронизации — только когда он
     правдив (другого шлюза нет — хвоста нет; shared оставлен для вызовов)."""
     tail = SYNC_TAILS.get(sync, "")
@@ -322,7 +322,7 @@ def note_budget(screen_text: str, reserve: int = 300) -> int:
     return max(400, 4096 - len(visible) - reserve)
 
 
-def gateway_lan_result(ok: bool, out: str, sync: str = "", budget: int = 3300) -> str:
+def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 3300) -> str:
     """Итог add/ru/del — строки скрипта «домен: добавлен / убран / уже в
     списке»; служебные строки про адреса в наборе (с отступом) не показываем.
     sync — хвост про синхронизацию: "online" | "offline" | "". budget —

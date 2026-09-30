@@ -23,8 +23,8 @@ def test_has_free_slot_variants(services, make_active_client):
 def test_device_slots_and_remaining(services, make_active_client):
     client = make_active_client(tg_id=1102, device_limit=3, period_kind="year")
     services.add_device(client.id, "d")
-    assert services.device_slots(client.id) == (1, 3)
-    assert services.device_slots(999999) == (0, 0)
+    assert services.device_quota(client.id) == (1, 3)
+    assert services.device_quota(999999) == (0, 0)
     assert services.remaining_for(client.id) > 0
     never = make_active_client(tg_id=1103, period_kind="never")
     assert services.remaining_for(never.id) == 0

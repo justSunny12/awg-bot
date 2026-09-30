@@ -1002,3 +1002,18 @@ async def test_the_new_slot_number_comes_from_the_service(services, slots, fake_
     cb, nav = _acb(fake_bot)
     await sh.gateway_new_yes(cb, GwMarkCB(action="new_yes", slot=0), services, st)
     assert _screen(nav)[0] == texts.gateway_ask_token(7)
+
+
+async def test_removal_warns_when_the_bot_token_stayed_in_env(services, slots, fake_bot, monkeypatch):
+    """Запись env не удалась — токен снятого устройства остался; итог снятия
+    говорит об этом, иначе новый слот с тем же номером увезёт его в файл
+    первого применения (два агента на одном токене)."""
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    _settled(services)
+    monkeypatch.setattr(services, "gw_bot_token", lambda slot_id=None: "222:BBB" if slot_id == 2 else "")
+    cb, nav = _acb(fake_bot)
+    await sh.gw_slot_remove_yes(cb, GwSlotCB(action="remove_yes", slot=2), services)
+    text, _ = _screen(nav)
+    assert text.startswith("🛑 Pi2 больше не шлюз · трафик идёт через NASPi, резерва нет\n"
+                           + texts.GW_TOKEN_NOT_FORGOTTEN + "\n\n🛰 Шлюзы · "), text

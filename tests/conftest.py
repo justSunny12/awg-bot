@@ -177,7 +177,7 @@ def fake_routing(monkeypatch, tmp_path):
     # маршрутизацию молча шли с пустым базовым списком.
     _cache = tmp_path / "routing-cache"
     _cache.mkdir()
-    (_cache / "routing-home_domains.lst").write_text("gosuslugi.ru\n", encoding="utf-8")
+    (_cache / "routing-tun_domains.lst").write_text("gosuslugi.ru\n", encoding="utf-8")
     monkeypatch.setattr(_config, "DATA_DIR", _cache)
 
     state = types.SimpleNamespace(

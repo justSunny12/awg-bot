@@ -272,12 +272,6 @@ def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str 
     return "\n".join(lines)
 
 
-def gateway_list_text(states: list, switched_at: str = "", auto_on: bool = True,
-                      peer_info: dict | None = None) -> str:
-    """Прежнее имя экрана «Шлюзы»."""
-    return gateways_text(states, switched_at=switched_at, auto_on=auto_on, peer_info=peer_info)
-
-
 # ── карточка слота ───────────────────────────────────────────────────────────
 
 def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> str:
@@ -397,12 +391,6 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
     return head, warns, egress
 
 
-def channel_block(ch: dict | None, server_ok) -> str:
-    """Канал одним блоком: строка и предупреждения (прежнее имя)."""
-    head, warns, _egress = channel_lines(ch, server_ok)
-    return "\n".join([head] + warns) if head else ""
-
-
 def _gw_traffic(dev) -> str:
     rx, tx = int(dev.traffic_rx_month), int(dev.traffic_tx_month)
     if rx + tx <= 0:
@@ -489,6 +477,16 @@ def _reissue_or_channel(online: bool, what: str) -> str:
     if online:
         return f"{what} шлюз получит по каналу и применит сам; итог придёт в чат бота шлюза"
     return f"{what} потребует перевыпуска конфигурации шлюза"
+
+
+def already_state(on: bool) -> str:
+    """Всплывашка на повторное нажатие «Включить/Выключить» с той же целью."""
+    return "Уже включено" if on else "Уже выключено"
+
+
+GW_TOKEN_NOT_FORGOTTEN = ("⚠️ Токен бота этого устройства не убран из env бота сервера — "
+                          "убери строку GW_BOT_TOKEN слота руками, иначе новый слот с тем же "
+                          "номером получит его в файле первого применения")
 
 
 def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
@@ -709,14 +707,6 @@ def gateway_mark_ask(dev, prev, *, standby: bool = False, replace_state=None) ->
     return head
 
 
-def gateway_marked(dev, rekeyed: bool, bundle_name: str = "awg-gw-bundle.sh") -> str:
-    if rekeyed:
-        return (f"🛰 {_e(dev.name)} назначен шлюзом, ключи линка новые\n"
-                f"Файл ниже — первое применение, руками: скопируй на устройство и выполни "
-                f"<code>sudo sh {_e(bundle_name)}</code>. Дальше — через бота шлюза")
-    return f"🛰 {_e(dev.name)} назначен шлюзом — файл конфигурации ниже, перешли его боту шлюза"
-
-
 def gateway_new_ask(slot: int = 1, prev_name: str = "", active: bool = False) -> str:
     """Замена машины слота новым устройством — те же строки, что при выборе
     из своих: кто сейчас в слоте и что будет с трафиком."""
@@ -776,11 +766,6 @@ def routing_users_text() -> str:
 
 ROUTING_DISABLE_CONFIRM = ("🔴 Выключить РФ-доступ для всех? Российские сервисы снова будут ругаться "
                            "на VPN; разрешения и списки сохранятся")
-
-
-def routing_lists_block(info: dict) -> str:
-    """Прежняя строка о списках — для старых экранов."""
-    return "\n" + _lists_tail(info).capitalize()
 
 
 def gateway_bundle_applied_text(display: str, ok: bool, error: str = "") -> str:
@@ -952,7 +937,7 @@ def _lent_out_lines(lent_out) -> list[str]:
 
 
 def routing_panel_text(*, enabled: int, total: int, domains: list, lent_out=(),
-                       link_ok: bool = True, **_legacy) -> str:
+                       link_ok: bool = True) -> str:
     """Экран «🇷🇺 РФ-доступ»: охват первой строкой, свои сайты второй; на всех
     выключено — объяснение открытым текстом; переданные — строкой без кнопки."""
     head = f"🇷🇺 {ROUTING_NAME}"
@@ -1054,7 +1039,3 @@ ROUTING_REVOKED_NOTICE = (
 
 ROUTING_LENT_OUT_NOTE = "Переданными устройствами управляют те, кому они переданы"
 
-
-def routing_devices_text(enabled: int, total: int, lent_out=()) -> str:
-    """Прежний экран устройств — теперь это сам раздел."""
-    return routing_panel_text(enabled=enabled, total=total, domains=[], lent_out=lent_out)

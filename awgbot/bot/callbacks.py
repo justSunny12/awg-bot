@@ -125,14 +125,6 @@ class BlockCB(CallbackData, prefix="bl"):
     days: int = -1
 
 
-class ConfirmCB(CallbackData, prefix="y"):
-    """Да/Нет диалог. action — что подтверждаем, ref — id объекта,
-    yes — ответ."""
-    action: str
-    ref: int = 0
-    yes: bool = False
-
-
 class ReassignCB(CallbackData, prefix="ra"):
     """Привязка устройства без профиля к клиенту. device_id → client_id.
     stage: go — привязать (проверив слот); slot_yes/slot_no — ответ на вопрос

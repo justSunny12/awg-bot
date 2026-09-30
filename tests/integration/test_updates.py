@@ -53,8 +53,6 @@ def test_target_is_the_latest_and_skipped_steps_are_listed(monkeypatch):
     ])
     nxt = updates.next_release()
     assert nxt is not None and nxt.tag == "v1.3.0"
-    assert [r.tag for r in nxt.skipped] == ["v1.2.0"]
-    assert nxt.skipped[0].title == "середина"
 
 
 def test_requires_lowers_the_target_to_the_mandatory_step(monkeypatch):
@@ -70,10 +68,10 @@ def test_requires_lowers_the_target_to_the_mandatory_step(monkeypatch):
     ]
     _patch_releases(monkeypatch, rel)
     nxt = updates.next_release()
-    assert nxt.tag == "v1.2.0" and nxt.skipped == ()
+    assert nxt.tag == "v1.2.0"
     monkeypatch.setattr(cfg, "INSTALLED_VERSION", "1.2.0")
     nxt = updates.next_release()
-    assert nxt.tag == "v1.4.0" and [r.tag for r in nxt.skipped] == ["v1.3.0"]
+    assert nxt.tag == "v1.4.0"
 
 
 def test_requires_chain_is_followed_one_link_at_a_time(monkeypatch):
@@ -249,23 +247,16 @@ def test_new_version_notifies_even_after_previous_notified(services, monkeypatch
 
 def test_skipped_steps_are_not_listed_and_the_tail_links_the_release():
     """Прыжок через ступени: старшая версия включает правки младших, поэтому
-    пропущенные версии не перечисляются (skipped принимается и игнорируется);
-    хвост обрезанного списка — ссылка на страницу релиза цели, не на журнал
+    пропущенные версии не перечисляются; хвост обрезанного списка — ссылка на страницу релиза цели, не на журнал
     целиком и не на diff кода — админ читает релиз, а не исходники."""
-    def rel(i):
-        return updates.Release(tag=f"v1.{i}.0", version=(1, i, 0), body="", asset_url=None,
-                               sha256=None, title=f"шаг {i}")
-    text = texts.update_available("v1.3.0", "- x", installed="1.1.0", skipped=(rel(2),))
+    text = texts.update_available("v1.3.0", "- x", installed="1.1.0")
     assert "v1.2.0" not in text and "Вместе с ней" not in text and "/compare/" not in text
     assert "Список изменений" in text and "- x" in text
     assert 'href' not in text, "короткий список — без ссылок"
 
-    many = texts.update_available("v1.20.0", "- y\n" * 2000, installed="1.1.0",
-                                  skipped=tuple(rel(i) for i in range(2, 20)))
+    many = texts.update_available("v1.20.0", "- y\n" * 2000, installed="1.1.0")
     assert len(many) <= 4096 and "v1.19.0" not in many
     assert f'href="https://github.com/{cfg.UPDATES_REPO}/releases/tag/v1.20.0">Весь список изменений — на GitHub</a>' in many
-    admin = texts.update_admin_available("1.1.0", "v1.3.0", "- x", skipped=(rel(2),))
-    assert "v1.2.0" not in admin
 
 
 def test_changelog_fits_untruncated():
@@ -400,10 +391,7 @@ def test_gateway_skips_main_only_releases_to_its_own(monkeypatch):
         _release_json("v1.4.0", body="#all_bots", digest_hex="d" * 64),
     ])
     assert updates.next_release("gateway").tag == "v1.4.0"
-    assert [r.tag for r in updates.next_release("gateway").skipped] == ["v1.3.0"], \
-        "чужой #main_bot релиз в пропущенных не числится"
     assert updates.next_release("client").tag == "v1.4.0"
-    assert [r.tag for r in updates.next_release("client").skipped] == ["v1.2.0"]
 
 
 def test_role_with_nothing_addressed_is_up_to_date(monkeypatch):

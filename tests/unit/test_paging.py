@@ -164,7 +164,7 @@ _BACK = Menu(action="main").pack()
 # (client.py: cb.data пункта меню; selfops.py: AdminSelfCB; devices.py:
 # ClientCB gen_for с id профиля). Каждая функция — (n, page) → клавиатура.
 SCREENS = {
-    "lanlist": lambda n, p: kbg.gateway_lan_kb(
+    "lanlist": lambda n, p: kbg.gateway_transit_kb(
         [("ru" if i % 3 == 0 else "vpn", d) for i, d in enumerate(_doms(n))], page=p),
     "gwssh (новая обвязка)": lambda n, p: kbg.gateway_ssh_kb(
         {"allow": [f"u{i:04d}.dyn.example" for i in range(n)], "new_plumbing": True, "filter": bool(n)}, page=p),
@@ -253,7 +253,7 @@ def test_the_vpn_transit_screen_lists_seven_domains_per_page():
     doms = [("vpn", d) for d in _doms(23)]
     per_page, seen = [], []
     for page in range(4):
-        rows = kbg.gateway_lan_kb(doms, page=page).inline_keyboard
+        rows = kbg.gateway_transit_kb(doms, page=page).inline_keyboard
         minus = [b.text for r in rows for b in r if b.text.startswith("➖")]
         per_page.append(len(minus))
         seen += minus
@@ -262,10 +262,10 @@ def test_the_vpn_transit_screen_lists_seven_domains_per_page():
     assert per_page == [7, 7, 7, 2], f"доменов по страницам: {per_page}"
     assert len(set(seen)) == 23, "домены повторяются или потеряны между страницами"
     # без листания ряд стрелок не нужен — целиком влезают восемь
-    rows = kbg.gateway_lan_kb(doms[:8]).inline_keyboard
+    rows = kbg.gateway_transit_kb(doms[:8]).inline_keyboard
     assert not any(b.text in (kbm.PREV_LABEL, kbm.NEXT_LABEL) for r in rows for b in r), (
         "восемь доменов влезают целиком — стрелки лишние")
-    rows = kbg.gateway_lan_kb(doms[:9]).inline_keyboard
+    rows = kbg.gateway_transit_kb(doms[:9]).inline_keyboard
     assert any(b.text == kbm.NEXT_LABEL for r in rows for b in r), "девятый домен не влез бы без листания"
 
 

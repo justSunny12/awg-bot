@@ -177,12 +177,11 @@ def test_profile_cards_have_no_routing_controls(monkeypatch):
     client = models.Client(id=5, tg_id=1, name="Профиль", device_limit=0,
                            block_reason=0, is_service=0, activation_status="active",
                            invite_code=None, created_at="2026-01-01")
-    for is_owner in (True, False):
-        markup = kb.admin_client_actions(client, has_devices=True,
-                                         is_admin_owner=is_owner)
+    for _ in (True, False):
+        markup = kb.admin_client_actions(client, [])
         labels = [b.text for row in markup.inline_keyboard for b in row]
         assert not any("РФ-доступ" in t for t in labels), \
-            f"кнопка осталась в карточке при is_admin_owner={is_owner}"
+            "кнопка осталась в карточке профиля"
 
 
 def test_settings_screen_lists_clients_only_when_enabled():
@@ -710,7 +709,8 @@ def test_routing_section_buttons_depend_on_gateway():
     off = [b.text for row in kb.gateways_kb((), enabled=False).inline_keyboard for b in row]
     assert off == ["✅ Включить", "⬅️ В меню"]
 
-    params = [b.text for row in kb.settings_routing_lists(6).inline_keyboard for b in row]
+    params = [b.text for row in kb.routing_params_kb(
+        {"probe_seconds": 30, "window": 10, "availability": 50}, 6).inline_keyboard for b in row]
     assert "🔄 Списки: 6 ч" in params and "⬇️ Обновить списки" in params
 
 

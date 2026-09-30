@@ -71,34 +71,16 @@ def _ver(v: str) -> str:
     return v if v.startswith("v") else f"v{v}"
 
 
-def update_available(tag: str, body: str, installed: str | None = None,
-                     skipped=()) -> str:
+def update_available(tag: str, body: str, installed: str | None = None) -> str:
     """Уведомление о доступной новой версии — цели обновления. Тело — её
     changelog; пропущенные ступени не перечисляются: старшая версия включает
-    правки младших (skipped принимается для совместимости вызовов)."""
+    правки младших."""
     from awgbot.core import config
     cur = _ver(installed if installed is not None else config.INSTALLED_VERSION)
     header = (f"Текущая версия бота {_e(cur)}.\n"
               f"Доступна новая версия: {_e(_ver(tag))}\n"
               "Список изменений:\n")
     return header + _changelog_block(body, header, tag)
-
-
-def update_current_ok(installed: str) -> str:
-    """Админ-проверка: обновляться не на что."""
-    return f"Текущая версия бота ({_e(_ver(installed))}) актуальна"
-
-
-def update_admin_available(installed: str, tag: str, body: str, skipped=()) -> str:
-    """Админ-проверка: доступно обновление до цели."""
-    header = (f"Текущая версия бота {_e(_ver(installed))}.\n"
-              f"Доступно обновление до {_e(_ver(tag))}\n"
-              "Список изменений:\n")
-    return header + _changelog_block(body, header, tag)
-
-
-def update_blocked(tag: str, reason: str) -> str:
-    return (f"⛔️ Обновление до {_e(_ver(tag))} сейчас недоступно: {_e(reason)}")
 
 
 def update_wait(tag: str) -> str:

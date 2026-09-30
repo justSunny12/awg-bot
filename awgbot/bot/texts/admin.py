@@ -14,6 +14,7 @@ from .fmt import (
     holder_link, _n_devices, plural_ru, _BYTES_PER_GB)
 from .fmt import deep_link as _deep_link
 from .routing import routing_status_line, routing_admin_status_line, ROUTING_NAME
+from .updates import release_url
 
 
 RF_PAYLOAD = "traffic_local"     # /start traffic_local[-<id>] — прежние ссылки на экраны РФ
@@ -130,11 +131,6 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
         lines.append("")
         lines.extend(tail)
     return "\n".join(lines)
-
-
-def release_url(tag: str) -> str:
-    from .updates import release_url as _release_url
-    return _release_url(tag)
 
 
 MIGRATION_PAYLOAD = "migration"   # /start migration[-<id>] — обзор переезда и профиль в нём

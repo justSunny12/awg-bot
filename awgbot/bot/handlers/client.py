@@ -52,7 +52,7 @@ def _bot_username(services) -> str:
 async def main_payload(services, client):
     """(текст, клавиатура) главной клиента."""
     server_ok = await call(services.server_ok_cached)     # 0 exec: статус из state
-    slots = await call(services.device_slots, client.id)
+    slots = await call(services.device_quota, client.id)
     routing_ok = await call(services.routing_health_for_client, client)
     held = await call(services.db.list_held_devices, client.id)
     traffic = await call(services.db.get_client_traffic, client.id)
@@ -172,7 +172,7 @@ async def take_code_as_member(message: Message, services, client, code: str) -> 
                 await message.answer(texts.ACTIVATION_INVALID)
             return
         holder = res.holder
-        own_slots = None if holder.is_guest else await call(services.device_slots, holder.id)
+        own_slots = None if holder.is_guest else await call(services.device_quota, holder.id)
         dev = await call(services.db.get_device, res.device_id)
         await message.answer(texts.friend_device_added(dev, res.donor, len(res.held), own_slots))
         if holder.is_guest:
@@ -194,7 +194,7 @@ async def take_code_as_member(message: Message, services, client, code: str) -> 
     if up is not None and up.moved:
         await message.answer(texts.guest_upgraded(up.donor, up.moved, new.device_limit))
         if up.donor is not None and up.donor.tg_id:
-            used, limit = await call(services.device_slots, up.donor.id)
+            used, limit = await call(services.device_quota, up.donor.id)
             await notify_one(message.bot, up.donor.tg_id,
                              texts.guest_upgraded_donor_notice(up.moved, new, used, limit))
         admin_text = (texts.activated_admin_notice(new, handle, _bot_username(services))
@@ -284,9 +284,6 @@ async def sub_parts(services, client_id: int):
             kb.subscription_kb(client.id, paused_user=paused_user, can_pause=can_pause))
 
 
-_info_parts = sub_parts
-
-
 @router.callback_query(Menu.filter(F.action == "info"))
 async def menu_info(cb: CallbackQuery, client, services):
     parts = await sub_parts(services, client.id)
@@ -300,14 +297,11 @@ async def menu_info(cb: CallbackQuery, client, services):
 async def devices_payload(services, client, chat_id: int = 0):
     devices = await call(services.db.list_devices, client.id)
     held = await call(services.db.list_held_devices, client.id)
-    used, limit = await call(services.device_slots, client.id)
+    used, limit = await call(services.device_quota, client.id)
     from awgbot.bot import paging
     return (texts.devices_header(used, limit, held),
             kb.client_devices(devices, held, page=paging.page_of(chat_id or client.tg_id, "devices"),
                               add=not limit or used < limit))
-
-
-_devices_payload = devices_payload
 
 
 @router.callback_query(Menu.filter(F.action == "devices"))
@@ -369,9 +363,6 @@ async def device_card_parts(services, client, dev):
         return texts.device_card_lent(dev, int(client.traffic_limit)), kb.lent_out_device_actions(dev, back)
     return (texts.device_card_own(dev, int(client.traffic_limit)),
             kb.device_actions(dev, is_admin=False, back_target=back))
-
-
-_device_card_parts = device_card_parts
 
 
 @router.callback_query(DeviceCB.filter(F.action == "open"))
@@ -580,7 +571,7 @@ async def device_add_start(cb: CallbackQuery, callback_data: DeviceCB, client, s
     """«➕ Устройство»: приглашение ввода имени на месте экрана с
     переключателем «для друга». Кнопки нет, пока лимит исчерпан; кнопка
     старого образца — всплывашка."""
-    used, limit = await call(services.device_slots, client.id)
+    used, limit = await call(services.device_quota, client.id)
     if limit != 0 and used >= limit:              # 0 = безлимит
         await cb.answer(texts.limit_exhausted_line(used, limit), show_alert=True)
         return
@@ -635,7 +626,7 @@ async def device_add_name(message: Message, client, services, state: FSMContext)
 async def _limit_note(services, client) -> str:
     """«⚠️ Лимит исчерпан: чтобы добавить новое, удали N» — лимит кончился, пока
     человек вводил имя."""
-    used, limit = await call(services.device_slots, client.id)
+    used, limit = await call(services.device_quota, client.id)
     return "⚠️ " + (texts.limit_exhausted_line(used, limit) or "Лимит исчерпан")
 
 
@@ -768,7 +759,7 @@ async def device_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
     await cb.answer()
     if by_holder:
         if dev.owner_tg_id:
-            used, limit = await call(services.device_slots, dev.client_id)
+            used, limit = await call(services.device_quota, dev.client_id)
             await notify_one(cb.bot, dev.owner_tg_id,
                              texts.lent_device_deleted_by_holder_notice(dev, used, limit))
         await edit(cb, f"🗑 {texts._e(dev.name)} удалено", None)
@@ -778,7 +769,7 @@ async def device_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
     # итог — на месте вопроса и остаётся в чате; следом — «Устройства», а если
     # удалили последнее — главная
     devices = await call(services.db.list_devices, client.id)
-    used, limit = await call(services.device_slots, client.id)
+    used, limit = await call(services.device_quota, client.id)
     await edit(cb, texts.device_deleted(dev.name, used, limit), None)
     if not devices and not await call(services.db.list_held_devices, client.id):
         await _show_main(cb.message, services, client)
@@ -886,9 +877,6 @@ async def _show_sub(cb, client, services):
     parts = await sub_parts(services, client.id)
     if parts is not None:
         await edit(cb, *parts)
-
-
-_show_info = _show_sub
 
 
 @router.callback_query(PauseCB.filter(F.action == "ask"))

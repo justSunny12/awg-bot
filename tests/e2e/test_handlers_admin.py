@@ -159,12 +159,12 @@ async def test_client_delete_asks_with_cancel_first_and_cancel_keeps_profile(
 def test_period_choices_has_cancel_both_contexts():
     """Баг-фикс: диалог выбора срока не тупик — есть кнопка отмены."""
     from awgbot.bot import keyboards as kb
-    ext = [b.text for r in kb.period_choices("extend", ref=7).inline_keyboard for b in r]
-    cre = [b.text for r in kb.period_choices("create").inline_keyboard for b in r]
+    ext = [b.text for r in kb.period_kb("extend", ref=7).inline_keyboard for b in r]
+    cre = [b.text for r in kb.period_kb("create").inline_keyboard for b in r]
     assert any("Отмена" in t for t in ext)
     assert any("Отмена" in t for t in cre)
     # extend-отмена ведёт к карточке клиента, create — в меню
-    ext_cb = [b.callback_data for r in kb.period_choices("extend", ref=7).inline_keyboard
+    ext_cb = [b.callback_data for r in kb.period_kb("extend", ref=7).inline_keyboard
               for b in r if "Отмена" in b.text][0]
     assert ext_cb == "c:open:7"
 

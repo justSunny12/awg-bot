@@ -5,32 +5,6 @@ from __future__ import annotations
 from .fmt import _e, plural_ru
 
 
-def migration_panel_line(p) -> str:
-    """Строка прогресса переезда для инфобокса админа. Пустая — переезд не идёт.
-
-    Идёт ПОСЛЕДНЕЙ группой намеренно: это временное состояние, и постоянные
-    строки статуса оно смещать не должно.
-    """
-    if p is None or p.clients_total == 0:
-        return ""
-    return (f"🚚 Процесс миграции: {p.clients_done}/{p.clients_total} клиентов "
-            f"({p.devices_done}/{p.devices_total} устройств)")
-
-
-def migration_profile_line(done: int, live: int, total: int) -> str:
-    """Строка прогресса в карточке профиля. ТОЛЬКО для админа.
-
-    «Всего устройств» опускаем, когда оно совпадает с числом живых: одинаковые
-    числа рядом читаются как ошибка, а не как уточнение.
-    """
-    if live == 0:
-        return ""
-    line = f"🚚 Процесс миграции: {done}/{live} живых устройств."
-    if total != live:
-        line += f" Всего устройств: {total}"
-    return line
-
-
 def migration_started(res) -> str:
     """Итог включения рычага."""
     if not res.started:

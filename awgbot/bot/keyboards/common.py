@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from aiogram.types import (
-    InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup,
-    ReplyKeyboardRemove)
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import blocks as _blocks
-from awgbot.bot.callbacks import (BlockCB, CancelCB, ConfirmCB, Menu, PresetCB, HideCB, PageCB)
-from awgbot.bot import texts as _texts
+from awgbot.bot.callbacks import (BlockCB, CancelCB, Menu, PresetCB, HideCB, PageCB)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -19,15 +16,6 @@ from awgbot.bot import texts as _texts
 # ─────────────────────────────────────────────────────────────────────────────
 
 BTN_CANCEL = "\u2716\ufe0f Отмена"  # ✖️ Отмена
-
-
-def reply_cancel() -> ReplyKeyboardMarkup:
-    """Кнопка «Отмена» у поля ввода — на время текстового ввода. Новые диалоги
-    зовут cancel_input (инлайн под приглашением); эта живёт одну версию для
-    экранов, которые ещё не переведены."""
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=BTN_CANCEL)]],
-        resize_keyboard=True, is_persistent=True)
 
 
 def reply_hide() -> ReplyKeyboardRemove:
@@ -121,7 +109,6 @@ def _tick(on: bool) -> str:
 # входит в десятку. Подписи намеренно словами, а не «◀️ Назад»: та ведёт на
 # другой экран.
 MAX_ROWS = 10
-MAX_BUTTONS = MAX_ROWS      # прежнее имя
 PREV_LABEL = "◀️ Пред. страница"
 NEXT_LABEL = "След. страница ▶️"
 
@@ -177,24 +164,9 @@ def _btn_suffix(dev) -> str:
     return "" if dev.is_managed else " *"
 
 
-def _dev_emoji(d) -> str:
-    """Иконка типа устройства — та же, что в текстовых списках (см.
-    texts.device_emoji): своя копия здесь про шлюз и про непринятый инвайт не
-    знала."""
-    return _texts.device_emoji(d)
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Да/Нет
 # ─────────────────────────────────────────────────────────────────────────────
-
-def yes_no(action: str, ref: int = 0) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="Да", callback_data=ConfirmCB(action=action, ref=ref, yes=True))
-    kb.button(text="Нет", callback_data=ConfirmCB(action=action, ref=ref, yes=False))
-    kb.adjust(2)
-    return kb.as_markup()
-
 
 def to_menu() -> InlineKeyboardMarkup:
     """Одна кнопка «В меню» — завершитель под контентом (admin/client)."""

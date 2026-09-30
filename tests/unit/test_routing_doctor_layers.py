@@ -163,7 +163,7 @@ def test_list_download_happens_outside_the_mutation_lock():
     lock = src.rindex("with routing.mutation_lock")
     assert src.index("routing.fetch") < lock, "скачивание не должно держать замок"
     # запись результата — наоборот, под замком
-    assert lock < src.index('_routing_write_cache("home_domains"')
+    assert lock < src.index('_routing_write_cache("tun_domains"')
 
 
 # ── кэш самопроверки: «не работает» обязан перепроверяться ────────────────────

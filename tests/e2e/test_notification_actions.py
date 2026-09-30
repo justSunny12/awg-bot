@@ -352,7 +352,7 @@ async def test_update_check_job_records_the_tag_with_notifications_muted_and_ask
 
     def update_next():
         asked.append(1)
-        return SimpleNamespace(tag="v3.2.0", body="", skipped=())
+        return SimpleNamespace(tag="v3.2.0", body="")
     monkeypatch.setattr(services, "update_next", update_next)
     services.mute_updates()
     bot = RecordingBot()

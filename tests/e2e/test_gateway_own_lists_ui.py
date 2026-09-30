@@ -68,7 +68,7 @@ async def _panel_and_lan(svc, fake_bot, monkeypatch):
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_panel(cb, svc, FakeState())
     panel, pkb = msg.sent[-1][1], msg.sent[-1][2]
-    await gh.gw_lan(cb, svc, FakeState())
+    await gh.gw_transit(cb, svc, FakeState())
     lan, lkb = msg.sent[-1][1], msg.sent[-1][2]
     labels = lambda m: [b.text for row in m.inline_keyboard for b in row]   # noqa: E731
     return panel, lan, (labels(pkb), labels(lkb))
@@ -112,7 +112,7 @@ async def test_the_panel_line_says_the_lists_are_shared_and_how_they_stand(gw, h
 async def _own_screen(svc, fake_bot):
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_list(cb, svc, FakeState())
+    await gh.gw_transit(cb, svc, FakeState())
     return msg.sent[-1][1], [b.text for row in msg.sent[-1][2].inline_keyboard for b in row]
 
 
@@ -120,7 +120,7 @@ async def _own_screen_parts(svc, fake_bot):
     """(текст, клавиатура) — когда нужен настоящий callback_data кнопки."""
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_list(cb, svc, FakeState())
+    await gh.gw_transit(cb, svc, FakeState())
     return msg.sent[-1][1], msg.sent[-1][2]
 
 
@@ -275,10 +275,10 @@ async def test_minus_removes_at_once_with_an_honest_sync_tail(
     _text, markup = await _own_screen_parts(gw, fake_bot)
     btn = next(b for row in markup.inline_keyboard for b in row if b.text == "➖ 🇷🇺 shop.ru")
     # кнопка без метки (номер один) — не наша: список мог измениться, соседа не трогаем
-    await gh.gw_lan_remove(cb, GwCB(action="lan_rm", val=btn.callback_data.split(":")[-1].split(".")[0]), gw)
+    await gh.gw_transit_remove(cb, GwCB(action="lan_rm", val=btn.callback_data.split(":")[-1].split(".")[0]), gw)
     assert host.lists() == {"shop.ru": "ru", "a.com": "vpn"} and cb.answers[-1][0].startswith("Список изменился")
     cb.answers.clear()
-    await gh.gw_lan_remove(cb, GwCB.unpack(btn.callback_data), gw)
+    await gh.gw_transit_remove(cb, GwCB.unpack(btn.callback_data), gw)
     assert host.lists() == {"a.com": "vpn"}, "домен не убран тем же нажатием"
     assert cb.answers == [(toast, False)], cb.answers
     shown = [b.text for row in msg.sent[-1][2].inline_keyboard for b in row]
@@ -299,7 +299,7 @@ async def test_a_slow_script_result_comes_as_a_message(gw, host, fake_bot, monke
             raise TelegramBadRequest(method=None, message="query is too old and response timeout expired")
     cb = _LateCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     from awgbot.bot.keyboards.gateway import lan_own_tag
-    await gh.gw_lan_remove(cb, GwCB(action="lan_rm", val=f"0.{lan_own_tag('ru', 'shop.ru')}"), gw)
+    await gh.gw_transit_remove(cb, GwCB(action="lan_rm", val=f"0.{lan_own_tag('ru', 'shop.ru')}"), gw)
     answers = [s[1] for s in msg.sent if s[0] == "answer"]
     assert answers == ["✅ shop.ru: убран\n" + LOCAL], msg.sent
     assert msg.sent[-1][0] == "edit_text" and msg.sent[-1][1].startswith("🔀 VPN-транзит"), msg.sent[-1]
@@ -311,9 +311,9 @@ async def _type_domain(svc, fake_bot, kind: str, text: str) -> str:
     st = FakeState()
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_ask(cb, GwCB(action=kind), svc, st)
+    await gh.gw_transit_ask(cb, GwCB(action=kind), svc, st)
     reply = FakeMessage(text=text, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_domain_received(reply, st, svc)
+    await gh.gw_transit_domain_received(reply, st, svc)
     answers = [s[1] for s in reply.sent if s[0] == "answer"]
     assert len(answers) == 1, f"итог отдельным сообщением: {answers}"
     note, _, screen = answers[0].partition("\n\n")
@@ -343,12 +343,12 @@ async def test_the_typed_domain_is_already_a_button_on_the_screen_below(gw, host
     st = FakeState()
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_ask(cb, GwCB(action="lan_ru"), gw, st)
+    await gh.gw_transit_ask(cb, GwCB(action="lan_ru"), gw, st)
     assert msg.sent[-1][1] == ("➕ Напрямую · пришли домены через пробел: <code>example.com</code> — "
                                "накрывает и поддомены"), msg.sent[-1][1]
     assert [b.text for row in msg.sent[-1][2].inline_keyboard for b in row] == ["✖️ Отмена"]
     reply = FakeMessage(text="shop.ru", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_lan_domain_received(reply, st, gw)
+    await gh.gw_transit_domain_received(reply, st, gw)
     _, _, markup = next(s for s in reply.sent if s[0] == "answer")
     assert "➖ 🇷🇺 shop.ru" in [b.text for row in markup.inline_keyboard for b in row]
 
@@ -419,7 +419,7 @@ async def test_removing_by_button_answers_with_the_sync_tail(gw, host, fake_bot,
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     from awgbot.bot.keyboards.gateway import lan_own_tag
-    await gh.gw_lan_remove(cb, GwCB(action="lan_rm!", val=f"0.{lan_own_tag('vpn', 'a.com')}"), gw)
+    await gh.gw_transit_remove(cb, GwCB(action="lan_rm!", val=f"0.{lan_own_tag('vpn', 'a.com')}"), gw)
     assert cb.answers[-1] == ("a.com: убран\n" + SYNCED, False), cb.answers
     msgs = wire.messages(gwlink.channel_key(PRIV))
     assert [e[1:3] for m in msgs for e in m["ev"]] == [["a.com", "del"]], msgs

@@ -325,7 +325,7 @@ def test_counters_agree_with_the_lists_they_head(gw, services):
         services.db.update_device_fields(dev_id, last_handshake=now)
 
     devices = services.db.list_devices(admin.id)
-    used, _limit = services.device_slots(admin.id)
+    used, _limit = services.device_quota(admin.id)
     assert used == len(devices), "счётчик слотов разошёлся со списком устройств"
 
     rows = services.online_devices()

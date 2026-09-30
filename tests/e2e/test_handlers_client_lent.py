@@ -81,7 +81,7 @@ async def test_client_holder_sees_foreign_device_after_own(services, fake_bot, m
     # удаление держателем: строгий текст, владельцу — уведомление, список следом
     cb, nav = _cb(fake_bot, 7103)
     await ch.device_delete_ask(cb, DelDeviceCB(device_id=dc.device_id, stage="ask"), holder, services)
-    assert last_screen(nav)[0] == texts.device_delete_by_holder_ask("Чужое")
+    assert last_screen(nav)[0] == texts.device_delete_ask(services.db.get_device(dc.device_id), held=True)
     cb, nav = _cb(fake_bot, 7103)
     fake_bot.records.clear()
     await ch.device_delete_confirm(cb, DelDeviceCB(device_id=dc.device_id, stage="confirm"),

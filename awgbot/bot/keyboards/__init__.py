@@ -16,14 +16,14 @@ keyboards — инлайн-клавиатуры (aiogram). Callback-data бер�
 from __future__ import annotations
 
 from .common import (
-    BTN_CANCEL, entry_tag, reply_cancel, reply_hide, yes_no, to_menu,
+    BTN_CANCEL, entry_tag, reply_hide, to_menu,
     append_hide_row, hide_only,
     block_unblock_reasons, cancel_input, confirm, select_all_button,
     device_limit_presets, device_limit_kb)
 from .client import (
     client_main, client_devices, held_device_actions, lent_out_device_actions,
     block_device_confirm, guest_main, guest_devices, device_actions,
-    connect_method_choice, PICK_DEVICE_PROMPT,
+    PICK_DEVICE_PROMPT,
     GEN_ACTIONS, gen_kind, pick_device, issuable, confirm_transfer, help_menu,
     friend_finisher, guest_pick_device, confirm_delete_device,
     added_by_admin, unmanaged_device_dialog, guide_nav, guide_connect_method,
@@ -33,8 +33,8 @@ from .admin import (
     admin_main, admin_devices, admin_clients, admin_client_actions, admin_client_back,
     admin_client_device_list, unassigned_devices, reassign_targets, reassign_addslot,
     client_edit_kb, client_delete_confirm, presets_kb, devs_limit_kb, traffic_limit_kb,
-    new_profile_devs_kb, new_profile_traffic_kb, period_kb, period_choices, block_pause_kb,
-    block_notify_kb, to_menu_kb, traffic_profiles_kb, expiring_kb, online_devices_kb,
+    new_profile_devs_kb, new_profile_traffic_kb, period_kb, block_pause_kb,
+    block_notify_kb, traffic_profiles_kb, expiring_kb, online_devices_kb,
     traffic_devices_kb, gateway_card_button, to_client_card, migration_back_kb, add_device_addslot, client_state_icon, DEVS_PRESETS, TRAFFIC_PRESETS)
 from .settings import (
     settings_root, settings_back, restart_now_or_later, settings_server, private_dns_choices,
@@ -44,38 +44,34 @@ from .settings import (
     settings_email, email_forget_confirm, settings_subs, settings_mon, settings_backup,
     backup_encryption_kb, restore_confirm, email_setup_offer, settings_svc,
     svc_confirm, migration_confirm, settings_updates, update_notify,
-    update_admin_available, migration_needed, update_done_menu)
+    migration_needed, update_done_menu)
 from .routing import (
     routing_panel, routing_sites, routing_clear_confirm, gateways_kb, gateway_edit_kb, gateway_router_kb, routing_params_kb,
     gateway_choose_kind, gateway_pick, gateway_mark_confirm, gateway_new_confirm,
-    gateway_remove_confirm, routing_disable_confirm, settings_routing,
-    routing_provision, settings_routing_lists,
-    settings_routing_users, bundle_menu_kb, gateway_list, gateway_card,
+    gateway_remove_confirm, routing_disable_confirm, routing_provision, settings_routing_users, bundle_menu_kb, gateway_card,
     gateway_switch_confirm, settings_routing_monitor,
-    gateway_lan_confirm, gateway_router_back, gateway_peer_confirm)
+    gateway_lan_confirm, gateway_peer_confirm)
 from .broadcast import (
     broadcast_mode, broadcast_targets, broadcast_days_kb, broadcast_cancel, broadcast_confirm)
 from .gateway import (
     gateway_panel_kb, gateway_settings_kb, gateway_notify_kb, gateway_mon_kb,
     gateway_backup_kb, gateway_email_kb, gateway_email_forget_confirm,
-    gateway_email_offer, gateway_encryption_kb, gateway_health_kb, gateway_lan_router_kb,
+    gateway_email_offer, gateway_encryption_kb, gateway_health_kb, gateway_transit_router_kb,
     gateway_updates_kb, gateway_confirm_kb, gateway_bundle_kb,
-    gateway_bundle_passphrase_kb, gateway_back_kb, gateway_update_available_kb,
-    gateway_lan_kb, lan_own_sorted, lan_own_tag, link_minutes,
+    gateway_bundle_passphrase_kb, gateway_back_kb, gateway_transit_kb, lan_own_sorted, lan_own_tag, link_minutes,
     gateway_ssh_kb, gateway_ssh_port_finisher_kb)
 
 __all__ = [
-    "BTN_CANCEL", "entry_tag", "reply_cancel", "reply_hide", "yes_no", "to_menu",
+    "BTN_CANCEL", "entry_tag", "reply_hide", "to_menu",
     "append_hide_row", "hide_only",
     "block_unblock_reasons", "cancel_input", "confirm", "select_all_button",
     "device_limit_presets", "device_limit_kb", "client_main", "client_devices", "held_device_actions",
     "lent_out_device_actions", "block_device_confirm", "guest_main", "guest_devices",
-    "device_actions", "connect_method_choice",
-    "PICK_DEVICE_PROMPT", "GEN_ACTIONS", "gen_kind", "pick_device", "issuable", "confirm_transfer", "help_menu", "friend_finisher", "guest_pick_device", "confirm_delete_device",
+    "device_actions", "PICK_DEVICE_PROMPT", "GEN_ACTIONS", "gen_kind", "pick_device", "issuable", "confirm_transfer", "help_menu", "friend_finisher", "guest_pick_device", "confirm_delete_device",
     "added_by_admin", "unmanaged_device_dialog", "guide_nav",
     "guide_connect_method", "guide_connect_done", "guide_connect_devices",
     "grace_offer", "subscription_kb", "pause_kb", "add_device_kb", "device_created_kb", "invite_kb", "issue_row", "ADD_FROM_DEVICES",
-    "admin_main", "period_choices", "admin_devices", "client_edit_kb", "client_delete_confirm", "presets_kb", "devs_limit_kb", "traffic_limit_kb", "new_profile_devs_kb", "new_profile_traffic_kb", "period_kb", "block_pause_kb", "block_notify_kb", "to_menu_kb", "gateway_card_button", "to_client_card", "migration_back_kb", "add_device_addslot", "client_state_icon", "DEVS_PRESETS", "TRAFFIC_PRESETS", "broadcast_days_kb", "admin_clients", "admin_client_actions", "admin_client_back",
+    "admin_main", "admin_devices", "client_edit_kb", "client_delete_confirm", "presets_kb", "devs_limit_kb", "traffic_limit_kb", "new_profile_devs_kb", "new_profile_traffic_kb", "period_kb", "block_pause_kb", "block_notify_kb", "gateway_card_button", "to_client_card", "migration_back_kb", "add_device_addslot", "client_state_icon", "DEVS_PRESETS", "TRAFFIC_PRESETS", "broadcast_days_kb", "admin_clients", "admin_client_actions", "admin_client_back",
     "admin_client_device_list", "unassigned_devices", "reassign_targets",
     "reassign_addslot", "traffic_profiles_kb", "expiring_kb",
     "online_devices_kb", "traffic_devices_kb",
@@ -86,19 +82,19 @@ __all__ = [
     "settings_email", "email_forget_confirm", "settings_subs", "settings_mon",
     "settings_backup", "backup_encryption_kb", "restore_confirm", "email_setup_offer",
     "settings_svc", "svc_confirm", "migration_confirm", "settings_updates",
- "update_notify", "update_admin_available", "migration_needed",
+ "update_notify", "migration_needed",
     "update_done_menu", "routing_panel", "routing_sites", "routing_clear_confirm",
     "gateways_kb", "gateway_edit_kb", "gateway_router_kb", "routing_params_kb", "gateway_choose_kind", "gateway_pick",
     "gateway_mark_confirm", "gateway_new_confirm", "gateway_remove_confirm",
-    "routing_disable_confirm", "settings_routing", "routing_provision",
-    "settings_routing_lists", "settings_routing_users",
-    "bundle_menu_kb", "gateway_list", "gateway_card", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_router_back", "gateway_peer_confirm",
+    "routing_disable_confirm", "routing_provision",
+    "settings_routing_users",
+    "bundle_menu_kb", "gateway_card", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_peer_confirm",
  "settings_routing_monitor", "broadcast_mode", "broadcast_targets", "broadcast_cancel",
-    "broadcast_confirm", "gateway_panel_kb", "gateway_ssh_kb", "gateway_ssh_port_finisher_kb", "gateway_settings_kb", "gateway_health_kb", "gateway_lan_router_kb",
+    "broadcast_confirm", "gateway_panel_kb", "gateway_ssh_kb", "gateway_ssh_port_finisher_kb", "gateway_settings_kb", "gateway_health_kb", "gateway_transit_router_kb",
     "gateway_notify_kb", "gateway_mon_kb", "gateway_backup_kb", "gateway_email_kb",
     "gateway_email_forget_confirm", "gateway_email_offer", "gateway_encryption_kb",
  "gateway_updates_kb",
     "gateway_confirm_kb", "gateway_bundle_kb", "gateway_bundle_passphrase_kb",
-    "gateway_back_kb", "gateway_update_available_kb", "gateway_lan_kb",
+    "gateway_back_kb", "gateway_transit_kb",
     "lan_own_sorted", "lan_own_tag", "link_minutes",
 ]

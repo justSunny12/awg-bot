@@ -82,32 +82,6 @@ def test_generate_embedded_conf_has_no_mtu():
     assert "MTU = " not in embedded
 
 
-def test_device_created_report_variants():
-    """Отчёт создания устройства: имя профиля только для админа, «для друга» у
-    гостевого, трафик и счётчик по согласованной форме."""
-    from awgbot.bot import texts
-    GB = 1024**3
-    # админ, свой лимит устройства
-    r = texts.device_created_report("Ноут", client_name="Вася", device_count=2,
-                                    max_devices=5, dev_limit_bytes=50*GB, profile_limit_bytes=100*GB)
-    assert r == ("✅ Устройство «Ноут» создано для профиля «Вася».\n"
-                 "Лимит трафика устройства: 50 ГБ.\nКоличество устройств: 2/5")
-    # без лимита устройства, профиль с лимитом
-    r2 = texts.device_created_report("Тел", device_count=3, max_devices=5, profile_limit_bytes=100*GB)
-    assert r2 == ("✅ Устройство «Тел» создано.\n"
-                  "Трафик устройства — в пределах лимита профиля.\n"
-                  "Количество устройств: 3/5")
-    # для друга — «твоего» лимита
-    r3 = texts.device_created_report("Тел", device_count=3, max_devices=5,
-                                     profile_limit_bytes=100*GB, for_friend=True)
-    assert r3 == ("✅ Устройство «Тел» создано для друга.\n"
-                  "Трафик устройства — в пределах твоего лимита профиля.\n"
-                  "Количество устройств: 3/5")
-    # ничего не ограничивает, устройств без лимита
-    r4 = texts.device_created_report("П", device_count=1, max_devices=0)
-    assert r4 == "✅ Устройство «П» создано.\nТрафик устройства без лимита.\nКоличество устройств: 1"
-
-
 def test_pause_available_wording():
     """Приостановка показывает доступные (оставшиеся) дни, не использованные."""
     # 21 использовано из 28 → доступно 7

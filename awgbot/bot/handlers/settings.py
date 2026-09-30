@@ -22,7 +22,7 @@ from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import GatewayToken, GatewayHome, GatewayLabel, MigrationPort, SshPort
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.notifier import send_notifications
-from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu, card_is_from_home, card_from_home, ask_here, edit_nav,
+from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu, card_is_from_main, card_from_main, ask_here, edit_nav,
                                         _dismiss_previous_nav,
                                         ask_tracked, cleanup_content)
 from awgbot.domain.services import ServiceError
@@ -40,7 +40,7 @@ router.callback_query.filter(RoleFilter("admin"))
 class _CachedTarget:
     """Цель обновления по сохранённому тегу — для перерисовки раздела без сети."""
     def __init__(self, tag: str):
-        self.tag, self.body, self.skipped = tag, "", ()
+        self.tag, self.body = tag, ""
 
 
 async def _screen(sec: str, services, key: str = ""):
@@ -506,9 +506,9 @@ async def _slot_state(cb: CallbackQuery, services, slot: int, *, lazy_ping: bool
 
 def card_kb(st: dict, chat_id: int | None) -> InlineKeyboardMarkup:
     """Клавиатура карточки слота: выход на главную, если карточку открыли
-    ссылкой оттуда (common.card_from_home), иначе в список или раздел."""
+    ссылкой оттуда (common.card_from_main), иначе в список или раздел."""
     return kb.gateway_card(st, back_to_list=len(st["states"]) > 1,
-                           back_home=card_is_from_home(chat_id))
+                           back_main=card_is_from_main(chat_id))
 
 
 async def _render_card(cb: CallbackQuery, services, slot: int) -> None:
@@ -525,7 +525,7 @@ async def _render_list(cb: CallbackQuery, services) -> None:
 @router.callback_query(GwSlotCB.filter(F.action == "list"))
 async def gw_slot_list(cb: CallbackQuery, services, state: FSMContext):
     await state.clear()
-    card_from_home(cb.message.chat.id, False)      # с «Шлюзов» «Назад» карточки ведёт сюда
+    card_from_main(cb.message.chat.id, False)      # с «Шлюзов» «Назад» карточки ведёт сюда
     await _render_list(cb, services)
     await cb.answer()
 
@@ -618,10 +618,10 @@ async def gw_slot_ping(cb: CallbackQuery, callback_data: GwSlotCB, services):
     st["ping_ms"] = ms
     text = cb.message.text or cb.message.caption or ""
     if "Это устройство — шлюз" in text or "последний коннект" in text:
-        from awgbot.bot.handlers.admin.devices import _device_card_parts
+        from awgbot.bot.handlers.admin.devices import device_card_parts
         dev = await call(services.db.get_device, gw.device_id)
         if dev is not None:
-            await edit(cb, *await _device_card_parts(services, dev))
+            await edit(cb, *await device_card_parts(services, dev))
     else:
         await edit(cb, texts.gateway_card_text(st, st["states"]), card_kb(st, cb.message.chat.id))
     await cb.answer(texts.ping_line(ms).replace("<code>", "").replace("</code>", "") if ms is not None
@@ -682,7 +682,7 @@ async def gw_slot_lan_yes(cb: CallbackQuery, callback_data: GwSlotCB, services):
         return
     on = (callback_data.val == "1") if callback_data.val in ("0", "1") else not st["gateway"].lan_mode
     if on == bool(st["gateway"].lan_mode):
-        await cb.answer("Уже " + ("включено" if on else "выключено"))
+        await cb.answer(texts.already_state(on))
         await _render_card(cb, services, callback_data.slot)
         return
     try:
@@ -870,9 +870,12 @@ async def gw_slot_remove_yes(cb: CallbackQuery, callback_data: GwSlotCB, service
     states = await call(services.gateway_states)
     now_active = next((x for x in states if x.get("active")), None)
     from awgbot.bot import screens
-    card_from_home(cb.message.chat.id, False)
+    card_from_main(cb.message.chat.id, False)
     text, markup = await gateways_screen(services)
-    await edit(cb, screens.with_note(text, texts.gateway_removed(prev, now_active)), markup)
+    note = texts.gateway_removed(prev, now_active)
+    if await call(services.gw_bot_token, callback_data.slot or None):
+        note += "\n" + texts.GW_TOKEN_NOT_FORGOTTEN        # запись env не удалась — журнал молчать не должен
+    await edit(cb, screens.with_note(text, note), markup)
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "remove_yes"))
@@ -885,7 +888,7 @@ async def gateway_remove_yes(cb: CallbackQuery, callback_data: GwMarkCB, service
 async def open_section(cb: CallbackQuery, callback_data: SetCB, services, state: FSMContext):
     await state.clear()
     if callback_data.sec == "rt":
-        card_from_home(cb.message.chat.id, False)
+        card_from_main(cb.message.chat.id, False)
     if callback_data.sec == "upd":
         await cb.answer("Проверяю…")                     # раздел ходит к списку релизов
         await _render(cb, callback_data.sec, services, callback_data.key or "")

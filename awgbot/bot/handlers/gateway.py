@@ -24,7 +24,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.core import config
 from awgbot.bot import texts
 from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
-from awgbot.bot.states import GatewayLanDomain
+from awgbot.bot.states import GatewayTransitDomain
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.handlers.common import (call, edit_nav, send_menu, cleanup_content, purge_menus, ask_here,
@@ -569,41 +569,38 @@ async def _own_info(services) -> dict:
     return info
 
 
-async def _lan_screen(services, chat_id: int):
+async def _transit_screen(services, chat_id: int):
     """(текст, клавиатура) экрана «🔀 VPN-транзит»: факты, списки, свои
     домены кнопками."""
     from awgbot.bot import paging
     st = await _status(services, fresh=False)
     items = await call(services.lan_own_lists)
-    return (texts.gateway_lan_text(st, items, await _own_info(services)),
-            kb.gateway_lan_kb(items, page=paging.page_of(chat_id, "lanlist")))
+    return (texts.gateway_transit_text(st, items, await _own_info(services)),
+            kb.gateway_transit_kb(items, page=paging.page_of(chat_id, "lanlist")))
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"lan", "lan_list"})))
-async def gw_lan(cb: CallbackQuery, services, state: FSMContext):
+async def gw_transit(cb: CallbackQuery, services, state: FSMContext):
     await state.clear()
     # сообщение под кнопкой — экран, а не служебное: приглашение к вводу
     # (core.ask) записало его в служебные, уборка снесла бы живое меню
     await call(services.db.remove_content_msg_id, cb.message.chat.id, cb.message.message_id)
     await cleanup_content(cb.message.bot, services, cb.message.chat.id)
-    await edit_nav(cb, services, *await _lan_screen(services, cb.message.chat.id))
+    await edit_nav(cb, services, *await _transit_screen(services, cb.message.chat.id))
     await cb.answer()
-
-
-gw_lan_list = gw_lan
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"lan_add", "lan_ru"})))
-async def gw_lan_ask(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
+async def gw_transit_ask(cb: CallbackQuery, callback_data: GwCB, services, state: FSMContext):
     kind = callback_data.action.split("_", 1)[1]
-    await state.set_state(GatewayLanDomain.value)
+    await state.set_state(GatewayTransitDomain.value)
     await state.update_data(kind=kind)
-    await ask_here(cb, services, state, texts.gateway_lan_ask_domain(kind), "set_lan")
+    await ask_here(cb, services, state, texts.gateway_transit_ask_domain(kind), "set_lan")
     await cb.answer()
 
 
-@router.message(GatewayLanDomain.value)
-async def gw_lan_domain_received(message: Message, state: FSMContext, services):
+@router.message(GatewayTransitDomain.value)
+async def gw_transit_domain_received(message: Message, state: FSMContext, services):
     kind = (await state.get_data()).get("kind") or "add"
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
     domains = [t for t in (message.text or "").split() if t]
@@ -615,8 +612,8 @@ async def gw_lan_domain_received(message: Message, state: FSMContext, services):
     await cleanup_content(message.bot, services, message.chat.id)
     # итог — первыми строками экрана, с новым доменом уже в кнопках
     from awgbot.bot import screens
-    text, markup = await _lan_screen(services, message.chat.id)
-    note = texts.gateway_lan_result(ok, out, await _own_sync_tail(services, ok, out),
+    text, markup = await _transit_screen(services, message.chat.id)
+    note = texts.gateway_transit_result(ok, out, await _own_sync_tail(services, ok, out),
                                     budget=texts.note_budget(text))
     await send_menu(message, services, screens.with_note(text, note), markup)
 
@@ -643,7 +640,7 @@ async def _own_sync_tail(services, ok: bool, out: str) -> str:
 
 
 @router.callback_query(GwCB.filter(F.action.in_({"lan_rm", "lan_rm!"})))
-async def gw_lan_remove(cb: CallbackQuery, callback_data: GwCB, services):
+async def gw_transit_remove(cb: CallbackQuery, callback_data: GwCB, services):
     """«➖ домен» — сразу, без подтверждения: всплывашка с итогом («Убран на
     всех шлюзах» при общих списках); скрипт ответил дольше, чем Telegram
     держит нажатие, — итог сообщением. Номер — по отсортированному списку;
@@ -653,24 +650,24 @@ async def gw_lan_remove(cb: CallbackQuery, callback_data: GwCB, services):
     idx = int(num) if num.isdigit() else -1
     if not 0 <= idx < len(items) or tag != kb.lan_own_tag(*items[idx]):   # без метки — не наша кнопка
         await cb.answer("Список изменился — открой раздел заново", show_alert=True)
-        await edit_nav(cb, services, *await _lan_screen(services, cb.message.chat.id))
+        await edit_nav(cb, services, *await _transit_screen(services, cb.message.chat.id))
         return
     _kind, dom = items[idx]
     ok, out = await call(services.lan_domains, "del", [dom])
     tail = await _own_sync_tail(services, ok, out)
     try:
         if ok:
-            await cb.answer(texts.gateway_lan_removed_toast(dom, sync=tail))
+            await cb.answer(texts.gateway_transit_removed_toast(dom, sync=tail))
         else:
             import html as _html
-            await cb.answer(_html.unescape(texts.gateway_lan_result(ok, out, tail))[:180], show_alert=True)
+            await cb.answer(_html.unescape(texts.gateway_transit_result(ok, out, tail))[:180], show_alert=True)
     except TelegramBadRequest:
-        await ask_tracked(cb.message, services, texts.gateway_lan_result(ok, out, tail))
-    await edit_nav(cb, services, *await _lan_screen(services, cb.message.chat.id))
+        await ask_tracked(cb.message, services, texts.gateway_transit_result(ok, out, tail))
+    await edit_nav(cb, services, *await _transit_screen(services, cb.message.chat.id))
 
 
 @router.callback_query(GwCB.filter(F.action == "lan_router"))
-async def gw_lan_router(cb: CallbackQuery, callback_data: GwCB, services):
+async def gw_transit_router(cb: CallbackQuery, callback_data: GwCB, services):
     """Рецепт роутера вкладками — тот же текст, что у основного бота, с
     подсетью и настоящим адресом этого шлюза."""
     import socket
@@ -679,7 +676,7 @@ async def gw_lan_router(cb: CallbackQuery, callback_data: GwCB, services):
     await edit_nav(cb, services,
                    texts.gateway_router_text(await call(services.link_slot_name) or socket.gethostname(),
                                              net, addr, peer_nets=peers, tab=tab),
-                   kb.gateway_lan_router_kb(tab))
+                   kb.gateway_transit_router_kb(tab))
     await cb.answer()
 
 
@@ -851,7 +848,7 @@ async def _updates_screen(cb: CallbackQuery, services, scan: bool = True):
 
 class _CachedTarget:
     def __init__(self, tag: str):
-        self.tag, self.body, self.skipped = tag, "", ()
+        self.tag, self.body = tag, ""
 
 
 @router.callback_query(GwCB.filter(F.action == "updates"))

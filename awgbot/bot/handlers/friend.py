@@ -73,16 +73,10 @@ async def devices_payload(services, client, chat_id: int = 0):
             kb.guest_devices(devs, page=paging.page_of(chat_id or client.tg_id, "gdevices")))
 
 
-_devices_payload = devices_payload
-
-
 async def card_payload(services, dev):
     owner = await call(services.db.get_client, dev.client_id)
     return (texts.device_card_held(dev, int(owner.traffic_limit) if owner else 0),
             kb.held_device_actions(dev, FriendCB(action="list").pack(), cb_cls=FriendCB))
-
-
-_card_payload = card_payload
 
 
 @router.message(CommandStart(deep_link=True))
@@ -251,7 +245,7 @@ async def friend_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
         return
     await cb.answer()
     if dev.owner_tg_id:
-        used, limit = await call(services.device_slots, dev.client_id)
+        used, limit = await call(services.device_quota, dev.client_id)
         await notify_one(cb.bot, dev.owner_tg_id,
                          texts.lent_device_deleted_by_holder_notice(dev, used, limit))
     await edit(cb, f"🗑 {texts._e(dev.name)} удалено", None)

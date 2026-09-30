@@ -205,17 +205,6 @@ async def ask_tracked(message, services, text: str, **kw):
     return sent
 
 
-async def park_screen(cb: CallbackQuery, services) -> None:
-    """Экран под кнопкой отслужил, дальше — текстовый ввод: снять с него кнопки
-    и записать в служебные (уборка при возврате в меню). Иначе пока человек
-    печатает, в чате два живых экрана: этот и приглашение к вводу."""
-    try:
-        await cb.message.edit_reply_markup(reply_markup=None)
-    except Exception:                                  # noqa: BLE001
-        pass
-    await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
-
-
 async def cleanup_content(bot, services, chat_id: int) -> None:
     """Удалить ранее выданные контент-сообщения (ссылка/QR/файл + инструкции) —
     вызывается при возврате в меню, чтобы чат не захламлялся секретами."""
@@ -268,11 +257,11 @@ async def edit_nav(cb: CallbackQuery, services, text, markup) -> None:
 _card_home: set[int] = set()
 
 
-def card_from_home(chat_id: int | None, yes: bool) -> None:
+def card_from_main(chat_id: int | None, yes: bool) -> None:
     (_card_home.add if yes else _card_home.discard)(chat_id)
 
 
-def card_is_from_home(chat_id: int | None) -> bool:
+def card_is_from_main(chat_id: int | None) -> bool:
     return chat_id in _card_home
 
 
@@ -281,7 +270,7 @@ async def show_main_menu(message: Message, services, role: str, client=None) -> 
     гасит прежнее активное). Экран — из реестра: у клиента с теми же кнопками
     РФ-доступа и выдачи, что и по кнопке «В меню»."""
     from awgbot.bot import screens
-    card_from_home(message.chat.id, False)
+    card_from_main(message.chat.id, False)
     parts = await screens.render("main", services=services, role=role, client=client,
                                  chat_id=message.chat.id)
     if parts is None:
@@ -438,5 +427,5 @@ async def drop_message(cb: CallbackQuery) -> None:
 
 
 __all__ = ["call", "edit", "drop_message", "send_link", "send_conf", "cleanup_content", "ask_tracked",
-           "ask_here", "back_to_context", "show_screen", "role_of", "park_screen", "purge_menus", "dismiss_update_reports",
+           "ask_here", "back_to_context", "show_screen", "role_of", "purge_menus", "dismiss_update_reports",
            "own_device", "held_device", "mine_or_held", "send_device_config"]

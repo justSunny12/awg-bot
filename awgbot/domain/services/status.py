@@ -303,7 +303,7 @@ class StatusMixin:
         c = self.db.get_client(client_id)
         return int(c.traffic_limit) if c else 0
 
-    def device_slots(self, client_id: int) -> tuple[int, int]:
+    def device_quota(self, client_id: int) -> tuple[int, int]:
         """(добавлено, лимит) — для подсветки «M из N»."""
         client = self.db.get_client(client_id)
         if client is None:

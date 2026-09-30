@@ -32,9 +32,6 @@ def test_volumes_are_gigabytes_rounded_to_hundredths():
     assert texts.used_of_limit(512 * M, 50 * G) == "0.5 из 50 ГБ"
     assert texts.used_of_limit(int(8.99 * G), 50 * G, "лимит устройства") == "8.99 из 50 ГБ (лимит устройства)"
     assert texts.used_of_limit(int(8.99 * G), 0) == "8.99 ГБ"
-    assert texts.consumption_line(int(8.99 * G), 50 * G, blocked=True) == \
-        "Трафик за месяц: 8.99 из 50 ГБ (лимит устройства) — исчерпан"
-    assert texts.consumption_line(8 * M, 0, blocked=False) == "Трафик за месяц: 0.01 ГБ"
     assert texts.client_total_line(G, 2 * G, 50 * G, 10 * G, for_admin=False) == \
         "Трафик за месяц: 3 из 50 + 10 ГБ до конца месяца"
     from awgbot.core import models
@@ -49,7 +46,6 @@ def test_volumes_are_gigabytes_rounded_to_hundredths():
 
 def test_gb_str_and_slots_and_limit_notice():
     assert "ГБ" in texts.gb_str(5 * 1024 ** 3)
-    assert texts.device_slots_line(2, 3)
     assert texts.limit_changed_notice(0, 10 * 1024 ** 3)
 
 
@@ -64,27 +60,13 @@ def test_device_count_is_a_fraction_everywhere():
     «m из n», безлимит — просто число («6 из ∞» читается как опечатка).
     Расхождение форматов между двумя сообщениями об одном и том же событии
     заставляет сверять их глазами."""
-    admin = texts.device_created_report("Pi4", client_name="Админ", device_count=6,
-                                        max_devices=0)
     owner = texts.reassign_recipient_notice("Pi4", 6, 0, recipient_is_admin=True)
-    assert "Количество устройств: 6" in admin
     assert owner.endswith("Теперь у тебя 6 устройств"), owner
     assert "∞" not in owner, "безлимит — без «из ∞»"
     # с лимитом — тот же вид, число вместо ∞
     assert texts.reassign_recipient_notice("Тел", 1, 5).endswith("Теперь у тебя 1 из 5 устройств")
     # после «из» слово не склоняем по первому числу: «1 из 5 подключённое устройство» — брак
     assert "подключённое" not in texts.reassign_donor_notice("Тел", 1, 5)
-
-
-def test_unlimited_consumption_says_it_in_one_phrase():
-    """Ни лимита устройства, ни лимита профиля — «Трафик устройства без лимита».
-    Прежняя оговорка про рамки лимита профиля намекала на лимит, которого нет."""
-    free = texts.device_created_report("П", client_name="В", device_count=1)
-    assert "Трафик устройства без лимита." in free
-    assert "лимита профиля" not in free, "оговорка про лимит профиля, которого нет"
-    withprofile = texts.device_created_report("П", client_name="В", device_count=1,
-                                              profile_limit_bytes=100 * 1024 ** 3)
-    assert "Трафик устройства — в пределах лимита профиля." in withprofile
 
 
 # ── клавиатуры без БД ────────────────────────────────────────────────────────
@@ -95,8 +77,7 @@ def _is_markup(m):
 def test_static_keyboards_build():
     assert _is_markup(kb.hide_only())
     assert _is_markup(kb.help_menu(is_initial=True))
-    assert _is_markup(kb.yes_no("keep", ref=1))
-    assert _is_markup(kb.period_choices("extend", ref=1, min_days=7))
+    assert _is_markup(kb.period_kb("extend", ref=1, min_days=7))
     assert _is_markup(kb.grace_offer(1, 14))
     assert _is_markup(kb.block_pause_kb(1))
     assert _is_markup(kb.block_notify_kb("cli", 1, pause_days=0))
@@ -122,14 +103,12 @@ def test_block_unblock_reasons_lists_active_bits():
 # ── объект-рендеры на живых доменных объектах ────────────────────────────────
 def test_object_renders_do_not_crash(services, make_active_client):
     client = make_active_client(name="Смок", tg_id=8500, traffic_limit=100 * 1024 ** 3)
-    dc = services.add_device(client.id, "Устройство")
-    dev = services.db.get_device(dc.device_id)
+    services.add_device(client.id, "Устройство")
     client = services.db.get_client(client.id)
     devices = services.db.list_devices(client.id)
     traffic = services.db.get_client_traffic(client.id)
 
     for for_admin in (True, False):
-        assert texts.device_card_text(dev, for_admin=for_admin)
         assert texts.subscription_block(client, for_admin=for_admin)
         assert texts.client_card(client, devices, traffic, online=False, for_admin=for_admin)
 
@@ -167,7 +146,7 @@ def test_friend_panel_and_admin_panel_render(services, make_active_client):
     services.activate_friend(services.make_device_friendly(dc.device_id), tg_id=98501)
     dev = services.db.get_device(dc.device_id)
     host = services.db.get_client(owner.id)
-    assert texts.held_device_card(dev, int(host.traffic_limit))
+    assert texts.device_card_held(dev, int(host.traffic_limit))
     assert texts.greeting_guest("Артём", True, host, [dev])
     # статусный блок админ-панели из state (метрик железа нет — рендер обязан пережить)
     st = services.server_status_cached()
@@ -178,8 +157,7 @@ def test_object_keyboards_build(services, make_active_client):
     client = make_active_client(tg_id=8502)
     dc = services.add_device(client.id, "d")
     dev = services.db.get_device(dc.device_id)
-    assert _is_markup(kb.device_actions(dev, is_admin=True, back_target="cli",
-                                        reassign_label="Передать"))
+    assert _is_markup(kb.device_actions(dev, is_admin=True, back_target="cli"))
     assert _is_markup(kb.admin_client_actions(client))
     assert _is_markup(kb.admin_main())
 

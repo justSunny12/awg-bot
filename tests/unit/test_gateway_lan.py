@@ -353,7 +353,7 @@ def test_the_lan_screen_names_the_uplink_the_script_reported(svc, monkeypatch, s
     _lan_on(monkeypatch, home=_home(), status=status)
     info, _ = svc.lan_status()
     assert info["uplink"] == status.get("UPLINK_IF", ""), info
-    out = texts.gateway_lan_text(GwStatus(link_up=True, lan=info))
+    out = texts.gateway_transit_text(GwStatus(link_up=True, lan=info))
     assert f"DNS — <code>10.9.1.1</code> через <code>{shown}</code>" in out.splitlines(), out
 
 

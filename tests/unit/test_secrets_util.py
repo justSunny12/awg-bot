@@ -1,5 +1,6 @@
 """Unit: awgbot.util.secrets_util — argon2id, SecretBox (крипто бэкапов)."""
 import pytest
+from nacl import utils as nacl_utils
 from nacl.exceptions import CryptoError
 
 from awgbot.util import secrets_util as su
@@ -9,9 +10,9 @@ pytestmark = pytest.mark.unit
 
 # ── шифрование бэкапов: случайный ключ ───────────────────────────────────────
 def test_decrypt_random_wrong_key_fails():
-    blob = su.encrypt(b"x", key=su.gen_random_key())
+    blob = su.encrypt(b"x", key=nacl_utils.random(32))
     with pytest.raises(CryptoError):
-        su.decrypt(blob, key=su.gen_random_key())
+        su.decrypt(blob, key=nacl_utils.random(32))
 
 
 # ── шифрование бэкапов: пассфраза (соль в файле) ─────────────────────────────
@@ -40,7 +41,7 @@ def test_encrypt_requires_exactly_one_secret():
     with pytest.raises(ValueError):
         su.encrypt(b"x")                                       # ни key, ни passphrase
     with pytest.raises(ValueError):
-        su.encrypt(b"x", key=su.gen_random_key(), passphrase="p")
+        su.encrypt(b"x", key=nacl_utils.random(32), passphrase="p")
 
 
 def test_inspect_mode_rejects_foreign_blob():
@@ -49,9 +50,9 @@ def test_inspect_mode_rejects_foreign_blob():
 
 
 def test_decrypt_mode_mismatch_needs_right_secret():
-    blob_r = su.encrypt(b"x", key=su.gen_random_key())
+    blob_r = su.encrypt(b"x", key=nacl_utils.random(32))
     with pytest.raises(ValueError):
         su.decrypt(blob_r, passphrase="p")                    # random-файл, дали пассфразу
     blob_p = su.encrypt(b"x", passphrase="p")
     with pytest.raises(ValueError):
-        su.decrypt(blob_p, key=su.gen_random_key())           # passphrase-файл, дали ключ
+        su.decrypt(blob_p, key=nacl_utils.random(32))           # passphrase-файл, дали ключ

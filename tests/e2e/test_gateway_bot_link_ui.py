@@ -375,11 +375,11 @@ async def test_start_gw_single_slot_card_also_goes_home(services, slots, fake_bo
 
 
 def test_card_keyboard_back_targets():
-    """Сама клавиатура: back_home главнее списка, без него — как раньше."""
+    """Сама клавиатура: back_main главнее списка, без него — как раньше."""
     from awgbot.bot import keyboards as kb
     gw = types.SimpleNamespace(id=2, device_id=0, preferred=0, lan_mode=0, label="")
     st = {"gateway": gw, "states": [{}, {}], "active": False, "preferred": False}
-    assert _back(kb.gateway_card(st, back_to_list=True, back_home=True)) == HOME
+    assert _back(kb.gateway_card(st, back_to_list=True, back_main=True)) == HOME
     assert _back(kb.gateway_card(st, back_to_list=True)) == LIST
     assert _back(kb.gateway_card(st, back_to_list=False)) == SetCB(sec="rt").pack()
 

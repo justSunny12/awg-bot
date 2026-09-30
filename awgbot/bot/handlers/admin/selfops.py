@@ -52,7 +52,7 @@ async def self_gen_pick(cb: CallbackQuery, callback_data: AdminSelfCB, services)
 @router.callback_query(AdminSelfCB.filter(F.action == "add"))
 async def self_add_start(cb: CallbackQuery, services, state: FSMContext):
     ac = await _self(services)
-    used, limit = await call(services.device_slots, ac.id)
+    used, limit = await call(services.device_quota, ac.id)
     if limit != 0 and used >= limit:              # у профиля админа лимита нет; страховка
         await cb.answer(texts.limit_reached_line(used, limit), show_alert=True)
         return

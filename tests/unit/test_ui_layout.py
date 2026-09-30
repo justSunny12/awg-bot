@@ -77,7 +77,6 @@ CLIENT = {
     "pick_device": lambda: [kbc.pick_device(DEVS, "gen_link"), kbc.pick_device(MANY, "gen_qr")],
     "guest_pick_device": lambda: [kbc.guest_pick_device(HELD * 2, "gen_file"),
                                   kbc.guest_pick_device(MANY, "gen_link")],
-    "connect_method_choice": lambda: [kbc.connect_method_choice(1, "m:main")],
     "add_device_kb": lambda: [kbc.add_device_kb(for_friend=f) for f in (True, False)],
     "device_created_kb": lambda: [kbc.device_created_kb(1)],
     "invite_kb": lambda: [kbc.invite_kb("Твоё приглашение: https://t.me/b?start=F1", "https://t.me/b?start=F1")],
@@ -237,8 +236,7 @@ ADMIN = {
     "admin_client_actions": lambda: [_card(n, routing_visible=r, paused=p, pending=q)
                                      for n in (0, 1, 3, 5, 14) for r in (True, False)
                                      for p in (True, False) for q in (True, False)]
-                                    + [kba.admin_client_actions(_cli(tg_id=1), DEVS, is_admin_owner=True,
-                                                                routing_visible=True)],
+                                    + [kba.admin_client_actions(_cli(tg_id=1), DEVS, routing_visible=True)],
     "client_edit_kb": lambda: [kba.client_edit_kb(1)],
     "client_delete_confirm": lambda: [kba.client_delete_confirm(1)],
     "devs_limit_kb": lambda: [kba.devs_limit_kb(1)],
@@ -257,7 +255,6 @@ ADMIN = {
     "unassigned_devices": lambda: [kba.unassigned_devices(MANY)],
     "reassign_targets": lambda: [kba.reassign_targets(1, CLIS)],
     "reassign_addslot": lambda: [kba.reassign_addslot(1, 2)],
-    "to_menu_kb": lambda: [kba.to_menu_kb()],
     "traffic_devices_kb": lambda: [kba.traffic_devices_kb()],
     "admin_clients": lambda: [kba.admin_clients(CLIS, {1, 2}), kba.admin_clients([])],
     "broadcast_targets": lambda: [kbb.broadcast_targets(CLIS[:n], set(range(1, k + 1)), extend=e)
@@ -375,8 +372,6 @@ ADMIN_EXCEPTIONS = {
     ("gateway", "gateway_notify_kb"): ({"длинная подпись в ряду"},
                                        "макет «Уведомления» агента: «☑️ Аварии на e-mail» в ряду с «⬅️ Назад»"),
     ("routing", "routing_disable_confirm"): ({"кружок вместо ✅/☑️"}, "макет: «🔴 Выключить» — действие, не тумблер"),
-    ("routing", "settings_routing_lists"): ({"кружок вместо ✅/☑️"},
-                                            "макет «Параметры»: «🔴 Выключить РФ-доступ» — действие, не тумблер"),
     ("routing", "routing_params_kb"): ({"кружок вместо ✅/☑️"},
                                        "макет «Параметры»: «🔴 Выключить РФ-доступ» — действие, не тумблер"),
 }
@@ -388,8 +383,6 @@ _GW_STANDBY = {"gateway": SimpleNamespace(id=2, lan_mode=0), "device": SimpleNam
 _EXTRA = {("gateway", "gateway_panel_kb"): lambda: kbg.gateway_panel_kb(lan=True),
           ("routing", "gateway_card"): lambda: kbr.gateway_card(_GW_STANDBY, back_to_list=True),
           ("routing", "gateways_kb"): lambda: kbr.gateways_kb([_GW_STATE, _GW_STANDBY], peer_nets_on=False),
-          ("routing", "gateway_list"): lambda: kbr.gateway_list([_GW_STATE, _GW_STANDBY], can_add=False,
-                                                                failover_on=True, peer_nets_on=True),
           ("routing", "gateway_edit_kb"): lambda: kbr.gateway_edit_kb(_GW_STATE, two_slots=True),
           ("routing", "routing_params_kb"): lambda: kbr.routing_params_kb(
               {"probe_seconds": 30, "window": 10, "availability": 50}, 6),

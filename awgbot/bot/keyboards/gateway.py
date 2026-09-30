@@ -52,7 +52,7 @@ def lan_own_tag(kind: str, dom: str) -> str:
     return hashlib.sha1(f"{kind} {dom}".encode()).hexdigest()[:8]
 
 
-def gateway_lan_kb(items=(), page: int = 0) -> InlineKeyboardMarkup:
+def gateway_transit_kb(items=(), page: int = 0) -> InlineKeyboardMarkup:
     """Экран «🔀 VPN-транзит»: добавить в туннель / напрямую, свои домены
     кнопками «➖ 🇷🇺|🌍 домен» (листание, не больше десяти рядов на экране), рецепт
     роутера и в меню. val — номер в отсортированном списке, не домен (64 байта)."""
@@ -314,7 +314,7 @@ def gateway_back_kb(sec: str = "") -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def gateway_lan_router_kb(tab: str = "mt") -> InlineKeyboardMarkup:
+def gateway_transit_router_kb(tab: str = "mt") -> InlineKeyboardMarkup:
     """Рецепт роутера вкладками; назад — на экран «🔀 VPN-транзит»."""
     from awgbot.bot.texts.routing import ROUTER_TABS
     kb = InlineKeyboardBuilder()
@@ -324,11 +324,3 @@ def gateway_lan_router_kb(tab: str = "mt") -> InlineKeyboardMarkup:
     kb.adjust(len(ROUTER_TABS), 1)
     return kb.as_markup()
 
-
-def gateway_update_available_kb() -> InlineKeyboardMarkup:
-    """Старые сообщения ручной проверки: Обновить + назад в раздел."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬆️ Обновить", callback_data=UpdateCB(action="install"))
-    kb.button(text="⬅️ Назад", callback_data=GwCB(action="updates"))
-    kb.adjust(1, 1)
-    return kb.as_markup()

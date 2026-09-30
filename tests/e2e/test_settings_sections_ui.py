@@ -347,8 +347,8 @@ async def test_backup_day_and_hour_bad_input_is_asked_again(services, fake_bot, 
 
 # ── ⬆️ Обновления ────────────────────────────────────────────────────────────
 
-def _release(tag, body="- пункт", skipped=(), title=""):
-    return types.SimpleNamespace(tag=tag, body=body, skipped=skipped, title=title)
+def _release(tag, body="- пункт", title=""):
+    return types.SimpleNamespace(tag=tag, body=body, title=title)
 
 
 @pytest.fixture()
@@ -485,8 +485,7 @@ async def test_a_huge_changelog_is_cut_with_a_link_to_the_full_journal(services,
     """Список изменений не влез в сообщение — обрезан по строке, хвост —
     ссылка на страницу релиза на GitHub (не на журнал целиком и не на diff),
     а не тупик «(изменения обрезаны)»; раздел целиком в лимите Telegram."""
-    upd["next"] = _release("v3.3.1", body="\n".join(f"- пункт номер {i} с подробным текстом" for i in range(600)),
-                           skipped=[_release("v3.3.0", body="x" * 300, title="Т" * 200)])
+    upd["next"] = _release("v3.3.1", body="\n".join(f"- пункт номер {i} с подробным текстом" for i in range(600)))
     text, _ = await sh._screen("upd", services)
     assert len(text) <= 4096, len(text)
     assert text.count("<blockquote") == 1 and text.endswith(

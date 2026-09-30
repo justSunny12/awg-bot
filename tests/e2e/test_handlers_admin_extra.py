@@ -288,8 +288,7 @@ async def test_unmanaged_device_offers_no_dead_restore_button(services, fake_bot
     dev = services.db.get_device(did)
     assert not dev.is_managed
 
-    markups = [kb.device_actions(dev, is_admin=True, back_target="x",
-                                 reassign_label="🔀 Передать"),
+    markups = [kb.device_actions(dev, is_admin=True, back_target="x"),
                kb.unmanaged_device_dialog(did)]
     for m in markups:
         for row in m.inline_keyboard:
@@ -313,8 +312,7 @@ async def test_admin_card_hides_the_reinvite_button(services, make_active_client
     assert dev.friend_status == "pending"
 
     owner = _btn_texts(kb.device_actions(dev, is_admin=False, back_target="x"))
-    admin = _btn_texts(kb.device_actions(dev, is_admin=True, back_target="x",
-                                         reassign_label="🔀 Передать"))
+    admin = _btn_texts(kb.device_actions(dev, is_admin=True, back_target="x"))
     assert "🔁 Приглашение" in owner, owner
     assert not any("Приглашение" in t for t in admin), admin
 
@@ -349,8 +347,7 @@ def test_transfer_buttons_are_split_by_role(services, make_active_client):
     services.add_device(c.id, "Ноут")
     dev = services.db.list_devices(c.id)[0]
     owner = [b.text for row in kbs.device_actions(dev, is_admin=False, back_target="x").inline_keyboard for b in row]
-    admin = [b.text for row in kbs.device_actions(dev, is_admin=True, back_target="x",
-                                                  reassign_label="🔀 Передать в другой профиль").inline_keyboard for b in row]
+    admin = [b.text for row in kbs.device_actions(dev, is_admin=True, back_target="x").inline_keyboard for b in row]
     assert "👤 Другу" in owner and "🔀 Передать" not in owner
     assert "🔀 Передать" in admin and "👤 Другу" not in admin
 
@@ -373,16 +370,6 @@ def test_broadcast_targets_mark_subscription_only_in_extend_mode(services, make_
     assert labels(False) == ["☑️ Анна", "☑️ Борис", "☑️ Вера"]
     # год текущий — в дате его нет
     assert labels(True) == ["☑️ Анна", "☑️ Борис ∞", "☑️ Вера 🟡 01.09"]
-
-
-def test_device_line_format_and_plain_ip(services, make_active_client):
-    from awgbot.bot import texts
-    c = make_active_client("Профиль Е")
-    services.add_device(c.id, "iPhone 16 Pro")
-    dev = services.db.list_devices(c.id)[0]
-    line = texts.device_line(dev)
-    assert line.startswith(f"🔴 iPhone 16 Pro ({texts.plain_ip(dev.address)}), последний коннект: ")
-    assert texts.plain_ip("10.9.1.2") == "<code>10.9.1.2</code>"
 
 
 # ── шлюз не предлагается под ссылку/QR/файл ──────────────────────────────────

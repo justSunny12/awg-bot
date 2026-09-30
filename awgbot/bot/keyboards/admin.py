@@ -12,7 +12,7 @@ from awgbot.bot.callbacks import (
     ReassignCB, RoutingCB, SetCB, BroadcastCB)
 from awgbot.bot import texts as _texts
 
-from .common import (_btn_suffix, _manual_block_button, page_slice, page_nav, confirm,
+from .common import (_btn_suffix, _manual_block_button, page_slice, page_nav, confirm, to_menu,
                      MAX_ROWS)
 
 
@@ -21,7 +21,7 @@ from .common import (_btn_suffix, _manual_block_button, page_slice, page_nav, co
 # ─────────────────────────────────────────────────────────────────────────────
 
 def admin_main(*, gateways: bool = False, routing_visible: bool = False,
-               self_client_id: int = 0, **_legacy) -> InlineKeyboardMarkup:
+               self_client_id: int = 0) -> InlineKeyboardMarkup:
     """Восемь кнопок: свои устройства и РФ-доступ (когда выдан), профили и
     новый профиль, шлюзы и настройки, объявление и обновление."""
     kb = InlineKeyboardBuilder()
@@ -155,8 +155,7 @@ def admin_clients(clients, online_ids=(), page: int = 0) -> InlineKeyboardMarkup
     return kb.as_markup()
 
 
-def admin_client_actions(client, devices=(), *, routing_visible: bool = False,
-                         **_legacy) -> InlineKeyboardMarkup:
+def admin_client_actions(client, devices=(), *, routing_visible: bool = False) -> InlineKeyboardMarkup:
     """Карточка профиля: условные ряды (снять паузу, новое приглашение), затем
     [⏱ Продлить] [✏️ Изменить] / [🇷🇺 РФ-доступ] [🛑 Блок] / устройства по
     одному, пока влезают в десятку, иначе [📱 Устройства: N] / [➕ Устройство]
@@ -306,11 +305,6 @@ def period_kb(ctx: str, ref: int = 0, *, min_days: int = 0, keep: bool = True,
     return kb.as_markup()
 
 
-def period_choices(ctx: str, ref: int = 0, min_days: int = 0, cancel_to=None) -> InlineKeyboardMarkup:
-    """Совместимость: прежнее имя выбора срока."""
-    return period_kb(ctx, ref, min_days=min_days, cancel_cb=cancel_to)
-
-
 # ── блокировка профиля и устройства ─────────────────────────────────────────
 
 def block_pause_kb(client_id: int) -> InlineKeyboardMarkup:
@@ -336,14 +330,8 @@ def block_notify_kb(target: str, ref: int, pause_days: int = -1) -> InlineKeyboa
 
 # ── списки главной ───────────────────────────────────────────────────────────
 
-def to_menu_kb() -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ В меню", callback_data=Menu(action="main"))
-    return kb.as_markup()
-
-
-traffic_profiles_kb = to_menu_kb
-online_devices_kb = to_menu_kb
+traffic_profiles_kb = to_menu
+online_devices_kb = to_menu
 
 
 def traffic_devices_kb() -> InlineKeyboardMarkup:

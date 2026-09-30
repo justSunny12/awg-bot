@@ -84,7 +84,7 @@ class GatewayLabel(StatesGroup):
     value = State()
 
 
-class GatewayLanDomain(StatesGroup):
+class GatewayTransitDomain(StatesGroup):
     """Агент шлюза: домены в личные списки локальной сети без VPN. В данных — kind: add | ru | del."""
     value = State()
 

@@ -40,7 +40,7 @@ def _menu_issue_row(kb: InlineKeyboardBuilder) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def client_main(has_devices: bool = True, routing_visible: bool = False,
-                client_id: int = 0, can_add: bool = True, **_legacy) -> InlineKeyboardMarkup:
+                client_id: int = 0, can_add: bool = True) -> InlineKeyboardMarkup:
     """Главная клиента: ряд выдачи (когда есть что выдавать), устройства и
     добавление (пока есть место в лимите), РФ-доступ (только когда админ
     выдал) и подписка, помощь. Без РФ-доступа подписка и помощь — одним рядом."""
@@ -72,7 +72,7 @@ def client_main(has_devices: bool = True, routing_visible: bool = False,
 
 
 def guest_main(*, routing_visible: bool = False, client_id: int = 0,
-               has_devices: bool = True, **_legacy) -> InlineKeyboardMarkup:
+               has_devices: bool = True) -> InlineKeyboardMarkup:
     """Главная гостя: выдача, устройства, РФ-доступ (при фиче у владельца),
     помощь. Без устройств — только помощь."""
     kb = InlineKeyboardBuilder()
@@ -140,7 +140,7 @@ def guest_devices(devices, page: int = 0) -> InlineKeyboardMarkup:
 # Карточки устройств
 # ─────────────────────────────────────────────────────────────────────────────
 
-def device_actions(dev, *, is_admin: bool, back_target: str, **_legacy) -> InlineKeyboardMarkup:
+def device_actions(dev, *, is_admin: bool, back_target: str) -> InlineKeyboardMarkup:
     """Карточка устройства — для любого пути входа. Ряд выдачи — только у
     созданных ботом (у пира без приватного ключа выдавать нечего); затем имя и
     лимит, передача (владельцу — другу, админу — в другой профиль) и блок,
@@ -270,17 +270,6 @@ def guest_pick_device(devices, action: str, page: int = 0) -> InlineKeyboardMark
     nav = page_nav(kb, "gpick", 0, page, prev, nxt, FriendCB(action=action).pack())
     kb.button(text="⬅️ Назад", callback_data=FriendCB(action="refresh"))
     kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
-    return kb.as_markup()
-
-
-def connect_method_choice(device_id: int, back_target: str,
-                          back_label: str = "⬅️ Назад") -> InlineKeyboardMarkup:
-    """Ряд выдачи под отдельным вопросом — у экранов админа, которые ещё не
-    переведены на ряд в карточке."""
-    kb = InlineKeyboardBuilder()
-    issue_row(kb, DeviceCB, device_id)
-    kb.row(InlineKeyboardButton(text=back_label, callback_data=back_target))
-    kb.adjust(3, 1)
     return kb.as_markup()
 
 

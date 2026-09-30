@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 
 import pytest
+from nacl import utils as nacl_utils
 
 import awgbot.core.config as cfg
 from awgbot.domain.backupcrypto import MIN_PASSPHRASE_LEN
@@ -21,8 +22,7 @@ def test_passphrase_lives_in_db(services):
 def test_random_key_of_the_old_scheme_yields_to_passphrase(services):
     """Случайный ключ, перенесённый в БД до v2.10.0, продолжает действовать,
     пока не задана фраза."""
-    from awgbot.util import secrets_util
-    key = secrets_util.gen_random_key()
+    key = nacl_utils.random(32)
     services.db.set_state(services._BK_KEY_KEY, base64.b64encode(key).decode())
     assert services.backup_encryption_mode() == "key" and services.backup_enc_kwargs() == {"key": key}
     services.backup_set_passphrase("correct horse battery")

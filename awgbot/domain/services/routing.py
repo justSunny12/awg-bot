@@ -510,7 +510,7 @@ class RoutingMixin:
         # списки подсетей были про заграницу (Cloudflare, Google, Telegram) и
         # ушли вместе с обратной моделью. Российских подсетей сопровождаемого
         # источника не существует, поэтому здесь их нет.
-        base_domains = list(self._routing_read_cache("home_domains"))
+        base_domains = list(self._routing_read_cache("tun_domains"))
 
         # плечо контейнера: выпустить трафик включённых устройств
         # немаскараженным, иначе на хосте их не отличить от остальных
@@ -568,7 +568,17 @@ class RoutingMixin:
     # исходник отдельно от результата — единственный способ пересобрать состав
     # при появлении нового профиля, не выкачивая всё заново.
     def _routing_cache(self, kind: str):
-        return config.DATA_DIR / f"routing-{kind}.lst"
+        path = config.DATA_DIR / f"routing-{kind}.lst"
+        if kind == "tun_domains" and not path.exists():
+            # прежнее имя кэша — переносим, чтобы до первого обновления списков
+            # туннель не остался без доменов
+            old = config.DATA_DIR / "routing-home_domains.lst"
+            try:
+                if old.exists():
+                    old.rename(path)
+            except OSError as e:
+                log.warning("routing: кэш %s не перенесён: %s", old, e)
+        return path
 
     def _routing_write_cache(self, kind: str, items) -> None:
         path = self._routing_cache(kind)
@@ -751,7 +761,7 @@ class RoutingMixin:
         now = int(time.time())
         every = int(settings.get("app.routing.lists_refresh_hours", 6)) * 3600
         if not force:
-            cached = len(self._routing_read_cache("home_domains"))
+            cached = len(self._routing_read_cache("tun_domains"))
             # по расписанию ИЛИ немедленно, если кэш пуст: без списков режим не
             # действует вовсе, и ждать следующего окна незачем — в том числе на
             # старте бота, где эта же ветка и срабатывает. Момент СЛЕДУЮЩЕГО
@@ -785,8 +795,8 @@ class RoutingMixin:
 
             with routing.mutation_lock:
                 if home:
-                    self._routing_write_cache("home_domains", sorted(set(home)))
-                size = len(self._routing_read_cache("home_domains"))
+                    self._routing_write_cache("tun_domains", sorted(set(home)))
+                size = len(self._routing_read_cache("tun_domains"))
                 # Неудача не должна съедать окно целиком: 429 живёт минуты, а
                 # окно — часы, и следующая попытка пришлась бы на давно
                 # разошедшийся лимит. Пока доборы не исчерпаны, метку сдвигаем
@@ -800,7 +810,7 @@ class RoutingMixin:
                 return size
         except routing.RoutingError as e:
             log.warning("routing_update_lists: %s", e)
-            return len(self._routing_read_cache("home_domains"))
+            return len(self._routing_read_cache("tun_domains"))
 
     def routing_lists_info(self) -> dict:
         """Состояние списков для чата: сколько записей, когда обновлялись,
@@ -810,7 +820,7 @@ class RoutingMixin:
         raw = self.db.get_state(self._RT_LISTS_KEY)
         updated_at = int(raw) if raw and raw.isdigit() else None
         return {
-            "count": len(self._routing_read_cache("home_domains")),
+            "count": len(self._routing_read_cache("tun_domains")),
             "updated_at": updated_at,
             "age_seconds": (int(time.time()) - updated_at) if updated_at else None,
             "every_hours": int(settings.get("app.routing.lists_refresh_hours", 6)),

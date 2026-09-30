@@ -547,26 +547,24 @@ async def test_a_healthy_neighbour_subnets_verdict_draws_nothing(services, slot,
 def test_the_neighbour_subnets_line_escapes_what_the_gateway_sent():
     """Имена подсетей приехали с чужой машины: разметка в них ломает сообщение
     целиком, и карточка не рисуется вовсе."""
-    from awgbot.bot.texts.routing import channel_block
     ch = {"ever": True, "online": True, "has_snap": True, "has_bundle": True,
           "peer_nets": {"ok": False, "missing": ["<b>1.2.3.0/24</b>", "&x"]}}
-    out = channel_block(ch, True)
+    out = _channel_block(ch, True)
     assert "<b>1.2.3.0/24</b>" not in out
     assert "&lt;b&gt;1.2.3.0/24&lt;/b&gt;, &amp;x" in out
 
 
 def test_the_neighbour_subnets_line_names_at_most_eight_and_survives_an_empty_list():
-    from awgbot.bot.texts.routing import channel_block
     many = [f"192.168.{i}.0/24" for i in range(12)]
     ch = {"ever": True, "online": True, "has_snap": True, "has_bundle": True,
           "peer_nets": {"ok": False, "missing": many}}
-    out = channel_block(ch, True)
+    out = _channel_block(ch, True)
     assert "192.168.7.0/24" in out and "192.168.8.0/24" not in out, "список не ограничен восемью"
     ch["peer_nets"] = {"ok": False, "missing": ["1" * 40]}
-    assert "1" * 18 in channel_block(ch, True) and "1" * 19 not in channel_block(ch, True), \
+    assert "1" * 18 in _channel_block(ch, True) and "1" * 19 not in _channel_block(ch, True), \
         "элемент списка с малины не ограничен"
     ch["peer_nets"] = {"ok": False, "missing": []}
-    assert "⚠️ Связь подсетей: на шлюзе нет подсетей — " in channel_block(ch, True), (
+    assert "⚠️ Связь подсетей: на шлюзе нет подсетей — " in _channel_block(ch, True), (
         "пустой список отказа — строка без предмета")
 
 
@@ -575,9 +573,8 @@ def test_the_clock_line_warns_about_the_clock_not_about_the_channel(skew, side):
     """Канал от часов больше не зависит: строка, обещающая, что «канал
     перестанет принимать сообщения», послала бы человека чинить то, что не
     сломается, и промолчала бы о том, что сломается — TLS и расписания."""
-    from awgbot.bot.texts.routing import channel_block
     ch = {"ever": True, "online": True, "has_snap": True, "has_bundle": True, "clock_skew": skew}
-    out = channel_block(ch, True)
+    out = _channel_block(ch, True)
     line = next((x for x in out.splitlines() if x.startswith("⏱ Часы шлюза")), "")
     assert line, f"расхождение {skew} с не показано"
     assert f"{side} на {abs(skew) // 60} мин" in line
@@ -587,6 +584,12 @@ def test_the_clock_line_warns_about_the_clock_not_about_the_channel(skew, side):
 
 
 def test_a_small_clock_drift_draws_nothing():
-    from awgbot.bot.texts.routing import channel_block
     ch = {"ever": True, "online": True, "has_snap": True, "has_bundle": True, "clock_skew": 119}
-    assert "Часы шлюза" not in channel_block(ch, True), "дрожь в пару минут подана как проблема"
+    assert "Часы шлюза" not in _channel_block(ch, True), "дрожь в пару минут подана как проблема"
+
+
+def _channel_block(ch, server_ok):
+    """Строка канала и предупреждения одним блоком — как их склеивает карточка."""
+    from awgbot.bot.texts.routing import channel_lines
+    head, warns, _egress = channel_lines(ch, server_ok)
+    return "\n".join([head] + warns) if head else ""

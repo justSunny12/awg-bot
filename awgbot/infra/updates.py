@@ -78,8 +78,7 @@ class Release:
     body: str                   # тело релиза (changelog этой версии, без заголовка)
     asset_url: Optional[str]    # API-URL ассета-поставки (для octet-stream)
     sha256: Optional[str]       # эталонный sha256 из assets[].digest (hex)
-    title: str = ""             # заголовок релиза без тега — для списка пропущенных
-    skipped: tuple = ()         # ступени между установленной и этой (Release, по возрастанию)
+    title: str = ""             # заголовок релиза без тега
 
     def awg_generation(self) -> int:
         """Поколение AmneziaWG этой поставки; 0 — не объявлено."""
@@ -193,7 +192,7 @@ def next_release(role: Optional[str] = None,
     main) и 2.4.7 (gw) идёт на 2.4.7. Минимум роли (`#requires_<роль>_X`) у
     любого из пропускаемых релизов, которого установленная версия не достигла,
     опускает цель до ближайшего релиза роли не ниже него; у той ступени может
-    быть свой минимум — цепочка. В `skipped` — всё, что перепрыгнули.
+    быть свой минимум — цепочка.
 
     max_generation — потолок поколения AmneziaWG (идёт переезд: поставка дальше
     его цели недопустима, профили на трёх интерфейсах мигрировать нечем); релизы
@@ -245,9 +244,7 @@ def pick_target(installed: tuple, releases: list, role: str,
         if lowered is None or lowered.version == target.version:
             break
         target = lowered
-    import dataclasses
-    skipped = tuple(r for r in newer if r.version < target.version)
-    return dataclasses.replace(target, skipped=skipped)
+    return target
 
 
 def download_asset(release: Release) -> bytes:

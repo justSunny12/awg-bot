@@ -376,7 +376,7 @@ def test_lists_update_fills_the_cache(services, fake_routing, monkeypatch, tmp_p
 
     services.routing_update_lists(force=True)
     # оба формата разобраны, чужое имя набора отброшено, дубликатов нет
-    assert services._routing_read_cache("home_domains") == [
+    assert services._routing_read_cache("tun_domains") == [
         "gosuslugi.ru", "ozon.ru", "sberbank.ru"]
 
 
@@ -391,9 +391,9 @@ def test_lists_update_survives_dead_source(services, fake_routing, monkeypatch):
     monkeypatch.setattr(config, "ROUTING_LISTS_HOME_URLS", ["http://dead/list"])
     monkeypatch.setattr(infra_routing, "fetch",
                         lambda url, timeout=60: (None, "HTTP Error 429: Too Many Requests", 429))
-    services._routing_write_cache("home_domains", ["ozon.ru"])
+    services._routing_write_cache("tun_domains", ["ozon.ru"])
     services.routing_update_lists(force=True)
-    assert services._routing_read_cache("home_domains") == ["ozon.ru"]
+    assert services._routing_read_cache("tun_domains") == ["ozon.ru"]
 
 
 def test_monitor_enables_marking_when_ready(services, fake_routing):
@@ -560,7 +560,7 @@ def test_failure_does_not_burn_the_refresh_window(services, fake_routing, monkey
     url = "http://x/list"
     monkeypatch.setattr(config, "ROUTING_ENABLED", True)
     monkeypatch.setattr(config, "ROUTING_LISTS_HOME_URLS", [url])
-    services._routing_write_cache("home_domains", ["ozon.ru"])
+    services._routing_write_cache("tun_domains", ["ozon.ru"])
     services.db.set_state(services._RT_SRC_N + services._routing_src_key(url), "480")
     every = int(st.get("app.routing.lists_refresh_hours", 6)) * 3600
 
@@ -771,13 +771,13 @@ def test_empty_home_cache_forces_a_refresh(services, monkeypatch):
     from awgbot.infra import routing as infra_rt
     monkeypatch.setattr(infra_rt, "fetch", lambda url: fetched.append(url) or ("", "", 200))
 
-    services._routing_write_cache("home_domains", [])
+    services._routing_write_cache("tun_domains", [])
     services.db.set_state(services._RT_LISTS_KEY, str(int(_t.time())))
     services.routing_update_lists()
     assert fetched, "ранний выход по расписанию при пустом кэше"
 
     fetched.clear()
-    services._routing_write_cache("home_domains", ["ozon.ru"])
+    services._routing_write_cache("tun_domains", ["ozon.ru"])
     services.db.set_state(services._RT_LISTS_KEY, str(int(_t.time())))
     services.routing_update_lists()
     assert fetched == [], "качаем вне расписания при полном кэше"
@@ -1062,3 +1062,16 @@ def test_grant_and_revoke_notify_holders_too(services, make_active_client, fake_
     notes = services.set_routing_allowed(owner.id, False)
     assert [n.tg_id for n in notes] == [704, 9704]
     assert notes[1].text.startswith('🇷🇺 РФ-доступ для устройств от профиля <a href="tg://user?id=704">Вася</a> больше')
+
+
+def test_the_old_cache_name_is_carried_over_once(services):
+    """Кэш РФ-списков переименован (home_domains → tun_domains): файл прежнего
+    имени переносится при первом обращении, иначе до обновления списков
+    туннель остался бы без доменов."""
+    from awgbot.core import config
+    new = config.DATA_DIR / "routing-tun_domains.lst"
+    new.unlink(missing_ok=True)
+    old = config.DATA_DIR / "routing-home_domains.lst"
+    old.write_text("ozon.ru\n", encoding="utf-8")
+    assert services._routing_read_cache("tun_domains") == ["ozon.ru"]
+    assert new.exists() and not old.exists()
