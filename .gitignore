@@ -42,3 +42,4 @@ Thumbs.db
 
 # локальный рабочий документ аудита
 docs/PERF-AUDIT.md
+.venv*
