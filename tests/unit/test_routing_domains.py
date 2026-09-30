@@ -447,3 +447,25 @@ def test_external_ip_comes_from_the_link_peer_endpoint(monkeypatch):
     none = "priv\tpub\t443\toff\nPEER=\tPSK=\t(none)\t0.0.0.0/0\t0\t0\t0\t25\n"
     monkeypatch.setattr(routing.base, "_host", lambda argv, **k: subprocess.CompletedProcess(argv, 0, none.encode(), b""))
     assert routing.link_peer_endpoint("awglink2") is None
+
+
+def test_ensure_policy_with_slots_sets_each_slot_policy(monkeypatch):
+    """Регресс 3.1.0.19: после разбиения infra/routing на пакет параметр slots
+    затенил одноимённый модуль, и такт живости падал каждые 30 с на «'list'
+    object has no attribute 'ensure_slot_policy'» — окно замеров не наполнялось,
+    резерв навсегда «проверяется». Сюда — настоящая функция со списком слотов."""
+    from awgbot.infra import routing
+    calls = []
+
+    class _Proc:
+        stdout = b""
+
+    monkeypatch.setattr(routing.base, "_host", lambda args, **kw: calls.append(list(args)) or _Proc())
+    monkeypatch.setattr(routing.base, "_host_ok", lambda args: False)
+    monkeypatch.setattr(routing.marking, "_rule_present", lambda: True)
+    monkeypatch.setattr(routing.marking, "ensure_route", lambda iface="": None)
+    monkeypatch.setattr(routing.marking, "ensure_home_routes", lambda pairs=None: None)
+    monkeypatch.setattr(routing.policy, "ensure_mss_clamp", lambda iface="": None)
+    routing.ensure_policy("awglink", slots=[(1, "awglink", []), (2, "awglink2", ["192.168.68.0/24"])])
+    tables = [a[a.index("table") + 1] for a in calls if a[:3] == ["ip", "route", "replace"] and "table" in a]
+    assert tables == [str(routing.slot_table(1)), str(routing.slot_table(2))], calls

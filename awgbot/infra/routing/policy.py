@@ -7,6 +7,7 @@ from typing import Optional
 from awgbot.core import config
 
 from . import base, marking
+from . import slots as slotpolicy       # параметр ensure_policy тоже зовётся slots
 from .base import log
 
 # ── Наблюдение за состоянием (только чтение; для диагностики) ────────────────
@@ -114,7 +115,7 @@ def ensure_policy(active_iface: str = "", slots=()) -> None:
         pairs = [(net, iface) for _sid, iface, nets in slots for net in nets]
         marking.ensure_home_routes(pairs)
         for sid, iface, _nets in slots:
-            slots.ensure_slot_policy(sid, iface)
+            slotpolicy.ensure_slot_policy(sid, iface)
             ensure_mss_clamp(iface)
     else:
         marking.ensure_home_routes()
