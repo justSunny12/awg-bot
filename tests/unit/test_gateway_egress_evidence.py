@@ -38,7 +38,7 @@ class _Agent:
         self.probe_ms: float | None = 42.0
         self.probes: list[float | None] = []
         self.forbidden = False          # зонд запрещён — вызов обязан упасть
-        monkeypatch.setattr(gw.time, "monotonic", lambda: self.now)
+        monkeypatch.setattr(gw.base.time, "monotonic", lambda: self.now)
         monkeypatch.setattr(svc, "link_status", lambda: (True, 5.0, self.rx, self.tx))
         monkeypatch.setattr(svc, "plumbing_checks", lambda: [])
         monkeypatch.setattr(svc, "tg_mark_missing", lambda info=None: [])
@@ -185,8 +185,8 @@ def test_counters_going_backwards_are_a_link_restart_not_an_outage(agent):
 def test_zero_idle_multiplier_brings_the_probe_back_to_every_tick(agent, monkeypatch):
     """Рычаг на случай разбора в бою: 0 в конфигурации возвращает прежнее
     поведение — зонд каждым тиком, даже когда через линк никто не ходит."""
-    real = gw.settings.get
-    monkeypatch.setattr(gw.settings, "get", lambda k, d=None:
+    real = gw.egress.settings.get
+    monkeypatch.setattr(gw.egress.settings, "get", lambda k, d=None:
                         0 if k == "app.gateway.egress_idle_multiplier" else real(k, d))
     for _ in range(4):
         agent.tick()

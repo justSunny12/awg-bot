@@ -57,9 +57,8 @@ class _Disk:
             if self.full and str(p) == path() and "w" in mode:
                 raise OSError(errno.ENOSPC, "No space left on device", str(p))
             return real_open(p, mode, *a, **k)
-        monkeypatch.setattr(gw_mod, "open", fake_open, raising=False)
-
-
+        monkeypatch.setattr(gw_mod.ownlists, "open", fake_open, raising=False)
+        monkeypatch.setattr(gw_mod.peersvc, "open", fake_open, raising=False)
 @pytest.fixture()
 def clock(monkeypatch):
     return _Clock(monkeypatch)

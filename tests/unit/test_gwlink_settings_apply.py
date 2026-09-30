@@ -480,7 +480,7 @@ def test_the_bundle_waits_for_channel_settings_to_finish(svc, unit, tmp_path, mo
     monkeypatch.setattr(tempfile, "mkstemp", lambda **kw: (
         os.open(str(tmp_path / "b.sh"), os.O_RDWR | os.O_CREAT), str(tmp_path / "b.sh")))
     bundle_ran = threading.Event()
-    monkeypatch.setattr(gwmod, "_run", lambda a, timeout=10: bundle_ran.set() or _cp(0, b"ok"))
+    monkeypatch.setattr(gwmod.base, "_run", lambda a, timeout=10: bundle_ran.set() or _cp(0, b"ok"))
 
     unit.gate = threading.Event()
     results: dict = {}

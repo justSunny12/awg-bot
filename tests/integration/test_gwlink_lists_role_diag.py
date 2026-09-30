@@ -300,7 +300,7 @@ async def pi(services, link, tmp_path, monkeypatch):
     monkeypatch.setattr(gwguard, "run_lan_lists",
                         lambda timeout=600, from_dir="": lists_runs.append(from_dir) or (True, ""))
     ran: list[list[str]] = []
-    monkeypatch.setattr(gwmod, "_run", lambda a, timeout=10: ran.append(list(a)) or
+    monkeypatch.setattr(gwmod.base, "_run", lambda a, timeout=10: ran.append(list(a)) or
                         subprocess.CompletedProcess(a, 0, stdout=b"journal line\n", stderr=b""))
     conf = tmp_path / "awglink.conf"
     conf.write_text(f"[Interface]\nPrivateKey = {PRIV}\n", encoding="utf-8")

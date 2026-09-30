@@ -23,7 +23,7 @@ def test_month_traffic_accumulates_across_counter_resets(svc, monkeypatch):
     from awgbot.util import timeutil
     import datetime as dt
     t = [dt.datetime(2026, 9, 5, 12, 0, tzinfo=timeutil.TZ)]
-    monkeypatch.setattr(gw.timeutil, "now", lambda: t[0])
+    monkeypatch.setattr(gw.base.timeutil, "now", lambda: t[0])
     assert svc._account_traffic(100, 10) == (100, 10)      # первый замер — весь счётчик
     assert svc._account_traffic(160, 25) == (160, 25)      # +60 / +15
     assert svc._account_traffic(20, 5) == (180, 30)        # счётчик обнулился: +20 / +5
@@ -66,7 +66,7 @@ def test_apply_bundle_remembers_server_name(svc, monkeypatch, tmp_path):
     plain = ("#!/bin/sh\nSERVER_NAME=\"awg-srv\"\n#__GW_SETUP_BELOW__\n"
              "__LINK_CONF_EOF__\n").encode()
     blob = bc.encrypt(plain, bc.read_privkey(conf.read_text()))
-    monkeypatch.setattr(gw, "_run", lambda argv, timeout=10: type("P", (), {
+    monkeypatch.setattr(gw.base, "_run", lambda argv, timeout=10: type("P", (), {
         "returncode": 0, "stdout": b"ok", "stderr": b""})())
     import os, tempfile
     monkeypatch.setattr(tempfile, "mkstemp", lambda **kw: (
@@ -136,7 +136,7 @@ def test_bundle_passphrase_is_applied_only_when_allowed(svc, monkeypatch, tmp_pa
     b64 = base64.b64encode(json.dumps({"passphrase": "phrase-from-vps"}).encode()).decode()
     plain = (f"#!/bin/sh\nBACKUP_B64=\"{b64}\"\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n").encode()
     blob = bc.encrypt(plain, bc.read_privkey(conf.read_text()))
-    monkeypatch.setattr(gw, "_run", lambda argv, timeout=10: type("P", (), {"returncode": 0, "stdout": b"ok", "stderr": b""})())
+    monkeypatch.setattr(gw.base, "_run", lambda argv, timeout=10: type("P", (), {"returncode": 0, "stdout": b"ok", "stderr": b""})())
     monkeypatch.setattr(tempfile, "mkstemp", lambda **kw: (
         os.open(str(tmp_path / "b.sh"), os.O_RDWR | os.O_CREAT), str(tmp_path / "b.sh")))
     info = svc.inspect_bundle(blob)

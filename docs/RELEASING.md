@@ -49,7 +49,7 @@ GitHub `vX.Y.Z.P — …`.
   клиентов, переезд, файервол ВПС, `settings.py`, `admin.py`, тексты и
   клавиатуры основного бота, реестр экранов `bot/screens.py`, скрипт линка) —
   одна строка `main`. Только агент
-  (`handlers/gateway.py`, `domain/gateway.py`, `domain/gwchecks.py`,
+  (`handlers/gateway.py`, `domain/gateway/`, `domain/gwchecks.py`,
   `infra/gwguard.py`, тексты и
   клавиатуры агента, `runtime/scheduler.py` в части роли gateway) — одна
   строка `gw`. Общий код (`selfupdate.py`, `updates.py`, `common.py`,

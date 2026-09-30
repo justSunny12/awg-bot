@@ -109,7 +109,7 @@ def test_gateway_mark_outcome(tmp_path, monkeypatch):
     from awgbot.infra.db import Database
     db = Database(tmp_path / "gw.db"); db.init_schema()
     svc = GatewayServices(db)
-    monkeypatch.setattr(gw, "pathlib_read", lambda p: "[Interface]\nPrivateKey = " + PRIV + "\n")
+    monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "[Interface]\nPrivateKey = " + PRIV + "\n")
     monkeypatch.setattr(gwguard, "uplink_pubkey", lambda: ("awg0", PUB))
     # не помечен → claim (запасной путь); помечен другой → claim; свой → тишина
     for status, expect in (("unmarked", True), ("foreign", True), ("unconfirmed", True), ("confirmed", False)):

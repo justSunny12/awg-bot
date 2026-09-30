@@ -559,7 +559,8 @@ def test_a_full_disk_for_the_services_file_is_named_in_words(agent, peer, monkey
         if str(path) == gwguard.PEER_SERVICES_NEW and "w" in mode:
             raise OSError(errno.ENOSPC, "No space left on device", str(path))
         return real_open(path, mode, *a, **k)
-    monkeypatch.setattr(gw_mod, "open", full_disk, raising=False)
+    monkeypatch.setattr(gw_mod.ownlists, "open", full_disk, raising=False)
+    monkeypatch.setattr(gw_mod.peersvc, "open", full_disk, raising=False)
     res = agent.apply_peer_services(H_NAS, [NAS])
     assert res["ok"] is False and res["error"] == (
         "ошибка записи файла: нет места на диске"), res

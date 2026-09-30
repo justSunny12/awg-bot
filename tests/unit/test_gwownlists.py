@@ -675,7 +675,8 @@ def test_a_full_disk_is_named_in_words_without_the_path(agent, host, monkeypatch
         if str(path) == gwguard.OWN_LISTS_NEW and "w" in mode:
             raise OSError(errno.ENOSPC, "No space left on device", str(path))
         return real_open(path, mode, *a, **k)
-    monkeypatch.setattr(gw_mod, "open", full_disk, raising=False)
+    monkeypatch.setattr(gw_mod.ownlists, "open", full_disk, raising=False)
+    monkeypatch.setattr(gw_mod.peersvc, "open", full_disk, raising=False)
     host.calls.clear()
     res = agent.apply_own_lists(_canon({"b.com": "vpn"}, ver=2))
     assert res["ok"] is False and res["error"] == (

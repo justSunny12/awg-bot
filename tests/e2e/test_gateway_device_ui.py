@@ -285,7 +285,7 @@ async def _agent_apply(fake_bot, monkeypatch, tmp_path, status: dict):
     from awgbot.infra.db import Database
     monkeypatch.setattr(gwguard, "script_status", lambda: status)
     monkeypatch.setattr(gwguard, "uplink_pubkey", lambda: ("awg0", "K="))
-    monkeypatch.setattr(gw, "pathlib_read", lambda p: "[Interface]\nPrivateKey = " + PRIV + "\n")
+    monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "[Interface]\nPrivateKey = " + PRIV + "\n")
     real_sleep = asyncio.sleep
 
     async def _no_wait(_s):                       # ожидание канала после пометки — без секунд

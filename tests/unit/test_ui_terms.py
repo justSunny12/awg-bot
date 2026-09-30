@@ -64,7 +64,8 @@ OLD_NAMES_ALLOWED: dict = {}
 # экране «🩺 Здоровье» так же, как тексты бота
 MAIN_FILES = (sorted((ROOT / "texts").glob("*.py")) + sorted((ROOT / "keyboards").glob("*.py"))
               + sorted((ROOT / "handlers").rglob("*.py"))
-              + [ROOT.parent / "domain" / n for n in ("gateway.py", "gwssh.py", "gwchecks.py")])
+              + [ROOT.parent / "domain" / n for n in ("gwssh.py", "gwchecks.py")]
+              + sorted((ROOT.parent / "domain" / "gateway").glob("*.py")))
 
 
 def _literals(path: pathlib.Path):

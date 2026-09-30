@@ -75,7 +75,7 @@ class _Agent:
         self.conf.write_text(f"# awg-bot: контракт линка 1\n[Interface]\nPrivateKey = {PRIV}\n",
                              encoding="utf-8")
 
-        monkeypatch.setattr(gw.time, "monotonic", lambda: self.now)
+        monkeypatch.setattr(gw.base.time, "monotonic", lambda: self.now)
         monkeypatch.setattr(config, "GW_LINK_CONF", str(self.conf))
         monkeypatch.setattr(config, "INSTALLED_VERSION", "3.1.0")
         monkeypatch.setattr(gwsnapshot, "boot_id", lambda: "b" * 36)

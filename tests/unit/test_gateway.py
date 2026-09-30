@@ -131,7 +131,7 @@ def test_one_good_measurement_resets_the_bad_streak(svc):
 # ── пробы ────────────────────────────────────────────────────────────────────
 
 def test_versions_parses_modinfo(svc, monkeypatch):
-    monkeypatch.setattr(gw, "_run", lambda a, timeout=10: _cp(0,
+    monkeypatch.setattr(gw.base, "_run", lambda a, timeout=10: _cp(0,
         "filename: /x\nversion:        3.1.20260812\nsrcversion:     ABCDEF\n"))
     assert svc.versions() == ("3.1.20260812", "ABCDEF")
 
@@ -148,7 +148,7 @@ def test_link_status_reads_freshest_handshake(svc, monkeypatch):
                           f"PUB1\t(none)\t1.2.3.4:1\t10.9.1.0/24\t{int(now-40)}\t1000\t2000\t25\n")
         return _cp(1)
 
-    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(gw.base, "_run", run)
     up, age, rx, tx = svc.link_status()
     assert up and 35 <= age <= 60 and rx == 1000 and tx == 2000
 
@@ -198,9 +198,9 @@ def test_plumbing_reads_the_guard_table(svc, monkeypatch):
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
     run = _guard_run({"tunnel_nets4": ["10.9.1.0/24", "10.99.99.0/30"],
                       "tg_nets4": list(GatewayServices.TG_RANGES)})
-    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(gw.base, "_run", run)
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
-    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
     checks = {c.name: c for c in svc.plumbing_checks()}
     assert checks["MASQUERADE/изоляция"].ok is True
     assert checks["цепочки таблицы"].ok is True
@@ -214,9 +214,9 @@ def test_plumbing_flags_foreign_subnet_and_missing_table(svc, monkeypatch):
     import subprocess as sp
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
     run = _guard_run({"tunnel_nets4": ["10.8.1.0/24"], "tg_nets4": []}, chains=("input",))
-    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(gw.base, "_run", run)
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
-    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
     checks = {c.name: c for c in svc.plumbing_checks()}
     assert checks["MASQUERADE/изоляция"].ok is False, "бандл под другую подсеть"
     assert checks["цепочки таблицы"].ok is False
@@ -232,9 +232,9 @@ def test_masquerade_check_disabled_without_subnet_is_unknown_not_ok(svc, monkeyp
     import subprocess as sp
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "")
     run = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []})
-    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(gw.base, "_run", run)
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
-    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
     checks = {c.name: c for c in svc.plumbing_checks()}
     assert checks["MASQUERADE/изоляция"].ok is None
 
@@ -245,9 +245,9 @@ def test_docker_drop_policy_on_forward_is_reported(svc, monkeypatch):
     import subprocess as sp
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
     run = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []}, fwd_policy="drop")
-    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(gw.base, "_run", run)
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
-    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
     checks = {c.name: c for c in svc.plumbing_checks()}
     assert checks["политика FORWARD"].ok is False
 
@@ -317,7 +317,7 @@ def test_apply_bundle_rejects_wrong_key_and_foreign_content(svc, monkeypatch, tm
     conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
     monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
     ran = []
-    monkeypatch.setattr(gw, "_run", lambda a, timeout=10: ran.append(a) or _cp(0, "ok"))
+    monkeypatch.setattr(gw.base, "_run", lambda a, timeout=10: ran.append(a) or _cp(0, "ok"))
 
     ok, msg = svc.apply_bundle(bc.encrypt(b"#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__", theirs))
     assert not ok and "ключ" in msg and ran == [], "чужой бандл дошёл до запуска"
@@ -337,7 +337,7 @@ def test_apply_bundle_runs_our_bundle_and_removes_the_file(svc, monkeypatch, tmp
                         "mkstemp", lambda **kw: (os.open(str(tmp_path / "b.sh"), os.O_RDWR | os.O_CREAT),
                                                  str(tmp_path / "b.sh")))
     ran = []
-    monkeypatch.setattr(gw, "_run", lambda a, timeout=10: ran.append(a) or _cp(0, "Готово"))
+    monkeypatch.setattr(gw.base, "_run", lambda a, timeout=10: ran.append(a) or _cp(0, "Готово"))
     body = b"#!/bin/sh\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n"
     ok, msg = svc.apply_bundle(bc.encrypt(body, mine))
     assert ok and "Готово" in msg
@@ -398,9 +398,9 @@ def test_plumbing_reports_uplink_policy(svc, monkeypatch):
     from awgbot.infra import gwguard
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
     run = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []})
-    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(gw.base, "_run", run)
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
-    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
     monkeypatch.setattr(gwguard, "uplink_interface", lambda: "awg0")
     monkeypatch.setattr(gwguard, "uplink_policy", lambda i: {"rule": True, "route": False})
     checks = {c.name: c for c in svc.plumbing_checks()}
@@ -411,7 +411,7 @@ def test_plumbing_reports_uplink_policy(svc, monkeypatch):
     assert checks["маскарад в аплинк"].ok is True, "masquerade в awg0 стоит"
     # без маскарада в аплинк агент на чистой машине нем — проверка это видит
     run = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []}, masq=("end0",))
-    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(gw.base, "_run", run)
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
     checks = {c.name: c for c in svc.plumbing_checks()}
     assert checks["маскарад в аплинк"].ok is False and "перевыпусти конфигурацию" in checks["маскарад в аплинк"].detail
@@ -429,9 +429,9 @@ def test_tick_reuses_uplink_probe_for_heal(svc, monkeypatch):
     from awgbot.infra import gwguard
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
     run = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []})
-    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(gw.base, "_run", run)
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
-    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
     calls = {"iface": 0, "policy": 0, "ensure": []}
 
     def iface():
@@ -467,9 +467,9 @@ def test_unit_enabled_is_cached_until_invalidated(svc, monkeypatch):
         if list(argv)[:2] == ["systemctl", "is-enabled"]:
             seen.append(1)
         return base(argv, timeout, **kw)
-    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(gw.base, "_run", run)
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
-    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
     monkeypatch.setattr(gwguard, "uplink_interface", lambda: "")
     svc.plumbing_checks(); svc.plumbing_checks()
     assert len(seen) == 1, "юнит спрашивали на каждый вызов"
@@ -505,8 +505,8 @@ def test_egress_probe_targets_in_parallel(svc, monkeypatch):
         if host == "slow":
             gate.wait(5); raise OSError("timeout")
         return _Conn()
-    monkeypatch.setattr(gw.socket, "create_connection", connect)
-    monkeypatch.setattr(gw.settings, "get", lambda k, d=None: ["slow", "fast"] if k.endswith("egress_targets") else d)
+    monkeypatch.setattr(gw.egress.socket, "create_connection", connect)
+    monkeypatch.setattr(gw.egress.settings, "get", lambda k, d=None: ["slow", "fast"] if k.endswith("egress_targets") else d)
     try:
         assert svc.egress_probe() is not None
         assert not gate.is_set(), "ждали медленную цель"
@@ -515,7 +515,7 @@ def test_egress_probe_targets_in_parallel(svc, monkeypatch):
 
     def all_dead(addr, timeout=3.0):
         raise OSError("down")
-    monkeypatch.setattr(gw.socket, "create_connection", all_dead)
+    monkeypatch.setattr(gw.egress.socket, "create_connection", all_dead)
     assert svc.egress_probe() is None
 
 
@@ -577,9 +577,9 @@ def _forward(svc, monkeypatch, iptables_s: str, policy: str = "drop"):
                 raise FileNotFoundError("iptables")
             return _cp(0, iptables_s)
         return base(argv, timeout)
-    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(gw.base, "_run", run)
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
-    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
     return {c.name: c for c in svc.plumbing_checks()}["политика FORWARD"]
 
 
@@ -753,7 +753,7 @@ def test_a_bundle_timeout_is_reported_with_advice(svc, monkeypatch, tmp_path):
     import tempfile
     monkeypatch.setattr(tempfile, "mkstemp", lambda **kw: (os.open(str(tmp_path / "b.sh"), os.O_RDWR | os.O_CREAT),
                                                           str(tmp_path / "b.sh")))
-    monkeypatch.setattr(gw, "_run", lambda a, timeout=10: subprocess.CompletedProcess(a, 124, b"", "не уложилось в 600 с".encode()))
+    monkeypatch.setattr(gw.base, "_run", lambda a, timeout=10: subprocess.CompletedProcess(a, 124, b"", "не уложилось в 600 с".encode()))
     ok, msg = svc.apply_bundle(bc.encrypt(b"#!/bin/sh\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n", mine))
     assert ok is False and "10 минут" in msg and "Здоровье" in msg
 
@@ -766,9 +766,9 @@ def test_masquerade_on_a_moved_default_route_is_flagged_and_reasserted(svc, monk
     from awgbot.infra import gwguard
     monkeypatch.setattr(config, "GW_CLIENT_SUBNET", "10.9.1.0/24")
     run = _guard_run({"tunnel_nets4": ["10.9.1.0/24"], "tg_nets4": []})
-    monkeypatch.setattr(gw, "_run", run)
+    monkeypatch.setattr(gw.base, "_run", run)
     monkeypatch.setattr(sp, "run", lambda argv, **kw: run(argv))
-    monkeypatch.setattr(gw, "pathlib_read", lambda p: "1\n")
+    monkeypatch.setattr(gw.base, "pathlib_read", lambda p: "1\n")
     monkeypatch.setattr(gwguard, "uplink_interface", lambda: "awg0")
     monkeypatch.setattr(gwguard, "uplink_policy", lambda i: {"rule": True, "route": True})
     monkeypatch.setattr(gwguard, "default_route_dev", lambda: "br0")   # masquerade у подставки: end0, awg0
@@ -806,7 +806,7 @@ def test_channel_settings_wait_out_a_slow_unit_instead_of_restarting_over_it(svc
     states = iter(["active", "activating", "activating", "active"])
     monkeypatch.setattr(gwguard, "unit_state", lambda: {"ActiveState": next(states, "active")})
     monkeypatch.setattr(gwguard, "reassert", lambda timeout=90: (False, f"юнит обвязки {gwguard.TIMEOUT_MARK} {timeout} с"))
-    monkeypatch.setattr(gw.time, "sleep", lambda s: None)
+    monkeypatch.setattr(gw.base.time, "sleep", lambda s: None)
     want = {k: "" for k in gwlink.SETTINGS_KEYS}
     want.update({"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24", "RESOLVER": "10.9.1.1"})
     res = svc.apply_link_settings(want)
@@ -844,8 +844,8 @@ def test_channel_settings_refuse_without_a_rollback_when_the_unit_never_settles(
     restarts: list[int] = []
     monkeypatch.setattr(gwguard, "reassert", lambda timeout=90: restarts.append(timeout) or
                         (False, f"юнит обвязки {gwguard.TIMEOUT_MARK} {timeout} с"))
-    monkeypatch.setattr(gw.time, "sleep", lambda s: None)
-    monkeypatch.setattr(gw.time, "monotonic", _fake_clock())
+    monkeypatch.setattr(gw.base.time, "sleep", lambda s: None)
+    monkeypatch.setattr(gw.base.time, "monotonic", _fake_clock())
     want = {k: "" for k in gwlink.SETTINGS_KEYS}
     want.update({"LAN_MODE": "1", "HOME_SUBNETS": "192.168.68.0/24", "RESOLVER": "10.9.1.1"})
     res = svc.apply_link_settings(want)

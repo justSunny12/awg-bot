@@ -293,7 +293,7 @@ def test_unit_starts_after_the_uplink(script):
 def test_github_goes_into_the_uplink_like_telegram(script):
     """Агент обновляется с GitHub, а в юрисдикции шлюза он без туннеля
     недоступен: та же метка → та же политика → аплинк. Список — тот же, что у
-    агента (domain/gateway.py GH_RANGES)."""
+    агента (domain/gateway/tgmark.py GH_RANGES)."""
     import re
     from awgbot.domain.gateway import GatewayServices
     m = re.search(r'^GH_NETS="([^"]+)"$', script, re.M)

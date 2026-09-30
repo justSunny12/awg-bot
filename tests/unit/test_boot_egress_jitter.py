@@ -33,8 +33,8 @@ def test_egress_check_in_snapshot(db, monkeypatch):
     # Зонд наружу теперь идёт не каждым тиком: в простое такт растягивается, и
     # второй снимок подряд жил бы кэшем вердикта. Здесь проверяется сама
     # проверка в снимке, поэтому растяжку снимаем штатным рычагом — множителем 0.
-    real = gw.settings.get
-    monkeypatch.setattr(gw.settings, "get", lambda k, d=None:
+    real = gw.egress.settings.get
+    monkeypatch.setattr(gw.egress.settings, "get", lambda k, d=None:
                         0 if k == "app.gateway.egress_idle_multiplier" else real(k, d))
     monkeypatch.setattr(svc, "link_status", lambda: (True, 5.0, 0, 0))
     monkeypatch.setattr(svc, "plumbing_checks", lambda: [])
