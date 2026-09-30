@@ -328,15 +328,6 @@ def _host_autostart_warnings() -> list[str]:
         warns.append(f"интерфейс {config.AWG_INTERFACE} не включён на автозагрузку "
                      f"({unit}: {state}) — после ребута туннели не поднимутся. "
                      f"Исправить: systemctl enable {unit}")
-    # Остаток прежних версий: списки теперь обновляет сам бот, а юнит с
-    # таймером указывает на удалённый скрипт и падает при каждой загрузке.
-    stale = [u for u in ("awg-bot-lists.timer", "awg-bot-lists.service")
-             if _unit_enabled(u) in ("enabled", "static", "failed", "linked")]
-    if stale:
-        warns.append("остались юниты старых версий: " + ", ".join(stale) +
-                     " — списки обновляет сам бот. Убрать: "
-                     "systemctl disable --now awg-bot-lists.timer awg-bot-lists.service; "
-                     "rm -f /etc/systemd/system/awg-bot-lists.*; systemctl daemon-reload")
     return warns
 
 

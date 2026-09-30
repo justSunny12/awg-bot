@@ -83,40 +83,6 @@ def test_link_subnet_is_masqueraded_too(script):
 
 # ── скрипт не должен умирать молча ───────────────────────────────────────────
 
-def test_container_detection_always_returns_zero(script):
-    """Функция обязана завершаться успехом, даже не найдя контейнер.
-
-    Без явного `return 0` она отдаёт статус последней команды цикла — неудачного
-    `docker exec` на последнем контейнере. Присваивание из подстановки получает
-    ненулевой статус, и при set -e скрипт умирает МОЛЧА, не дойдя даже до
-    сообщения об ошибке. Ровно так он и «отработал», не поставив ни правила.
-    """
-    fn = script.split("detect_container() {", 1)[1].split("\n}", 1)[0]
-    assert fn.rstrip().endswith("return 0"), "detect_container может вернуть ненулевой статус"
-
-
-def test_missing_container_is_not_an_error(script, tmp_path):
-    """Контейнер шлюзу больше не нужен: линк поднимают хостовые утилиты.
-
-    Требование его наличия делало скрипт неработоспособным ровно там, куда мы и
-    идём — на шлюзе без Amnezia: detect_container без docker молча отдаёт пусто.
-    """
-    fn = re.search(r"^detect_container\(\) \{.*?^\}$", script, re.S | re.M).group(0)
-    r = _sh(fn + "\nset -e\nc=$(detect_container)\necho \"[$c]\"")     # docker в PATH нет
-    assert r.returncode == 0 and r.stdout.strip() == "[]", r.stderr
-    r = _sh(fn + "\nCONTAINER=given\ndetect_container")                  # явный — без поиска
-    assert r.stdout == "given"
-
-
-def test_container_commands_are_guarded(script):
-    """`docker exec` зовётся только когда контейнер найден."""
-    for i, line in enumerate(script.splitlines()):
-        if "docker exec $CONTAINER" in line:
-            preceding = "\n".join(script.splitlines()[max(0, i - 3):i])
-            assert '[ -n "$CONTAINER" ]' in preceding, \
-                f"незащищённый docker exec в строке {i + 1}"
-
-
 def test_same_or_unchanged_config_is_not_reinstalled(script, tmp_path):
     """Повторный прогон «поверх» уже установленного конфига — обычное дело.
 
@@ -842,8 +808,40 @@ def test_the_link_unit_has_a_start_timeout_and_a_calmer_restart(script):
     assert 'systemctl is-enabled -q awg-link-gw.service 2>/dev/null || run "systemctl enable awg-link-gw.service"' in script
 
 
-def test_container_detection_is_bounded_and_rollback_clears_accepts_on_every_interface(script):
-    fn = script.split("detect_container() {", 1)[1].split("\n}", 1)[0]
-    assert "command -v docker >/dev/null 2>&1 || return 0" in fn and "timeout 10 docker" in fn
+def test_rollback_clears_accepts_on_every_interface(script):
     rb = script.split('MODE" = "rollback"', 1)[1].split("exit 0", 1)[0]
     assert "sed 's/@.*//' | grep -v '^lo$'" in rb and "grep -E '^(awg|end|eth|br|wl)'" not in rb
+
+
+def test_bundle_values_are_taken_by_form(script):
+    """Значения из бандла и env идут в nft, юнит и sh -c: подсеть клиентов,
+    адреса админа и имя линка проходят фильтр формы, LAN_MODE — только 0/1;
+    поиска контейнера прежней схемы больше нет."""
+    assert "detect_container" not in script and "docker exec" not in script and "docker ps" not in script
+    assert "CLIENT_SUBNET=\"$(printf '%s' \"${CLIENT_SUBNET:-10.8.1.0/24}\" | tr -cd '0-9./')\"" in script
+    assert "ADMIN_IPS=\"$(printf '%s' \"$ADMIN_IPS\" | tr -cd '0-9./ ')\"" in script
+    assert "LINK_IF=\"$(printf '%s' \"${LINK_IF:-awglink}\" | tr -cd 'A-Za-z0-9_.-' | cut -c1-15)\"" in script
+    assert '[ "${LAN_MODE:-0}" = "1" ] && LAN_MODE=1 || LAN_MODE=0' in script
+    out = _sh('LAN_MODE=yes; [ "${LAN_MODE:-0}" = "1" ] && LAN_MODE=1 || LAN_MODE=0; echo "$LAN_MODE"')
+    assert out.stdout.strip() == "0"
+
+
+def test_the_feed_filter_takes_domains_by_segment_and_subnets_not_shorter_than_8(script):
+    """`nftset=/#/…` у dnsmasq значит «все домены», «0.0.0.0/1» — полсети: битый
+    или подменённый фид не должен увести в туннель всё."""
+    lists = script.split("<<'LISTSEOF'", 1)[1].split("LISTSEOF", 1)[0]
+    m = re.search(r"grep -Ei '(\^\(#\.\*\|nftset=.*?)' \"\$TMP\"", lists)
+    assert m, "фильтр фида не найден"
+    rx = re.compile(m.group(1).replace("\\\\", "\\"), re.I)
+    for good in ("nftset=/gosuslugi.ru/inet#awg_home#lan_vpn4", "nftset=/a.b.xn--p1ai/c.ru/inet#awg_home#lan_vpn4",
+                 "# comment"):
+        assert rx.match(good), good
+    for bad in ("nftset=/#/inet#awg_home#lan_vpn4", "nftset=/./inet#awg_home#lan_vpn4",
+                "nftset=/ru/inet#awg_home#lan_vpn4", "nftset=/-a.ru/inet#awg_home#lan_vpn4",
+                "server=/x.ru/1.1.1.1"):
+        assert not rx.match(bad), bad
+    m = re.search(r"grep -E '(\^\[0-9\]\+.*?)' \"\$NETS\"", lists)
+    assert m, "фильтр подсетей не найден"
+    rx = re.compile(m.group(1).replace("\\\\", "\\"))
+    assert rx.match("10.0.0.0/8") and rx.match("203.0.113.0/24") and rx.match("1.2.3.4/32")
+    assert not rx.match("0.0.0.0/1") and not rx.match("128.0.0.0/7") and not rx.match("1.2.3.4/33")

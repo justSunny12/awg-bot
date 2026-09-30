@@ -500,7 +500,7 @@ def _ovr_fragment(script: str) -> str:
     """Кусок lan_apply от уборки /etc/default/dnsmasq до сборки оверрайда
     включительно — то, что уедет на малину, без правки."""
     sec = script.split('step "5. VPN-транзит"', 1)[1]
-    start = sec.index("    if grep -qs '^# awg-bot: резолвер только для локальной сети'")
+    start = sec.index("    # /etc/default/dnsmasq НЕ трогаем: DNSMASQ_EXCEPT init-скрипт Debian")
     end = sec.index('    rm -f "$_ovr_want"\n', start) + len('    rm -f "$_ovr_want"\n')
     return sec[start:end]
 
@@ -565,34 +565,6 @@ def test_an_unchanged_override_is_not_rewritten_and_does_not_reload(ovr_env):
     assert "daemon-reload" not in log.read_text()
     r = go(UPLINK_IF="awg1")                      # аплинка в оверрайде нет — смена его имени ничего не меняет
     assert "awg-quick@" not in ovr.read_text() and "changed=0" in r.stdout
-
-
-def test_the_old_dnsmasq_except_line_is_removed_and_nothing_else(ovr_env):
-    """DNSMASQ_EXCEPT=lo init-скрипт Debian превращает в except-interface=lo, а
-    тот перекрывает listen-address: dnsmasq переставал слушать 127.0.0.1, и
-    проверка апстрима была вечно красной. Свою прежнюю строку убираем, чужие
-    строки файла — не трогаем."""
-    go, ovr, default, unit, log = ovr_env
-    default.write_text("ENABLED=1\nCONFIG_DIR=/etc/dnsmasq.d,.dpkg-dist\n"
-                       "\n# awg-bot: резолвер только для локальной сети, системный DNS малины не трогать\n"
-                       "DNSMASQ_EXCEPT=lo\n", encoding="utf-8")
-    r = go(UPLINK_IF="awg0")
-    assert r.returncode == 0, r.stderr
-    text = default.read_text()
-    assert "DNSMASQ_EXCEPT" not in text and "awg-bot" not in text, text
-    assert "ENABLED=1\n" in text and "CONFIG_DIR=/etc/dnsmasq.d,.dpkg-dist\n" in text, "снесли чужое"
-    log.write_text("", encoding="utf-8")
-    before = default.read_text()
-    go(UPLINK_IF="awg0")
-    assert default.read_text() == before, "второй проход снова правил файл"
-
-
-def test_a_foreign_dnsmasq_except_line_is_left_alone(ovr_env):
-    """Строку без нашей пометки поставил человек — это его решение."""
-    go, ovr, default, unit, log = ovr_env
-    default.write_text("DNSMASQ_EXCEPT=lo\n", encoding="utf-8")
-    go(UPLINK_IF="awg0")
-    assert default.read_text() == "DNSMASQ_EXCEPT=lo\n"
 
 
 def test_a_missing_default_file_is_not_created(ovr_env):

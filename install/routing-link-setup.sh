@@ -64,7 +64,7 @@
 
 set -e
 
-LINK_IF="${LINK_IF:-awglink}"
+LINK_IF="$(printf '%s' "${LINK_IF:-awglink}" | tr -cd 'A-Za-z0-9_.-' | cut -c1-15)"
 # 443 ПО УМОЛЧАНИЮ, а не характерный для туннелей порт: UDP на 443 неотличим от
 # QUIC и теряется в общем потоке, тогда как 51830 сам себя объявляет VPN. Порт —
 # первое, что видит DPI, и менять его дороже, чем выбрать сразу. Занят чем-то
@@ -153,7 +153,7 @@ case "${1:-}" in
     --rollback) MODE="rollback" ;;
     --bundle)   MODE="bundle" ;;
     ""|--plan)  MODE="plan" ;;
-    -h|--help)  sed -n '2,50p' "$0"; exit 0 ;;
+    -h|--help)  awk 'NR>1 && !/^#/{exit} NR>1' "$0"; exit 0 ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
 esac
 

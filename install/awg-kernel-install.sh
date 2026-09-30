@@ -67,7 +67,7 @@ die()  { printf '%s[awg:ОШИБКА]%s %s\n' "$c_err" "$c_off" "$*" >&2; exit 1
 MODE="${1:-status}"
 case "$MODE" in
     status|install|reload|plan|prune) ;;
-    -h|--help|help) sed -n '2,41p' "$0"; exit 0 ;;
+    -h|--help|help) awk 'NR>1 && !/^#/{exit} NR>1' "$0"; exit 0 ;;
     *) die "неизвестная команда: $MODE (status | install | reload | prune | plan)" ;;
 esac
 PLAN=0; [[ "$MODE" == "plan" ]] && PLAN=1

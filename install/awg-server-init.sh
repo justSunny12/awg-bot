@@ -35,7 +35,7 @@ PSK_FILE="$AWG_QUICK_DIR/wireguard_psk.key"
 SYSCTL_FILE="/etc/sysctl.d/99-awg-bot.conf"
 
 PLAN=0; [[ "${1:-}" == "--plan" ]] && PLAN=1
-[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { sed -n '2,26p' "$0"; exit 0; }
+[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && { awk 'NR>1 && !/^#/{exit} NR>1' "$0"; exit 0; }
 die() { printf '[awg-server:ОШИБКА] %s\n' "$*" >&2; exit 1; }
 say() { printf '[awg-server] %s\n' "$*" >&2; }
 [[ "$PLAN" -eq 1 || "${EUID:-$(id -u)}" -eq 0 ]] || die "нужен root"

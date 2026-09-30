@@ -5,13 +5,11 @@
 #
 # КОНТЕКСТ. Линк поднимается ХОСТОВЫМИ awg/awg-quick — модуль ядра amneziawg
 # живёт на хосте, и версия утилит обязана совпадать с ним. Контейнер Amnezia
-# шлюзу не нужен вовсе: в образе были только бинарники. Если он ещё жив, скрипт
-# лишь снимет линк, поднятый прежней схемой.
+# шлюзу не нужен вовсе: в образе были только бинарники.
 #
 # Интерфейс выхода и каталог конфигов ОПРЕДЕЛЯЮТСЯ сами — переопределяются
-# переменными WAN_IF / HOST_CONF_DIR (и CONTAINER, если автопоиск ошибся).
-# WAN_IF — токен после dev в маршруте по умолчанию; контейнер ищется, только
-# если есть docker, и каждый вызов docker ограничен 10 с.
+# переменными WAN_IF / HOST_CONF_DIR. WAN_IF — токен после dev в маршруте по
+# умолчанию.
 #
 # ЧТО ДЕЛАЕТ:
 #   1) кладёт конфиг линка, грузит прежнюю таблицу защиты (если есть — окно
@@ -100,9 +98,9 @@
 # работали (исключение — ACCEPT из п.3a). Политика INPUT для локальной сети
 # остаётся accept. avahi-daemon не ставит (он начал бы объявлять малину) —
 # только avahi-utils рядом с уже запущенным демоном и только при канале линка.
-# /etc/default/dnsmasq не трогает: прежняя строка
-# DNSMASQ_EXCEPT=lo глушила 127.0.0.1 (except-interface=lo), а файл, созданный
-# до пакета, ронял dpkg; свою строку прежних выпусков — убирает.
+# /etc/default/dnsmasq не трогает: DNSMASQ_EXCEPT init-скрипт Debian превращает
+# в except-interface, а тот перекрывает listen-address; файл, созданный до
+# пакета, ронял бы dpkg.
 #
 # ОКРУЖЕНИЕ. Первую группу вшивает в себя бандл и закрепляет юнит awg-link-gw
 # строками Environment= — значения приезжают с ВПС и меняются перевыпуском
@@ -142,7 +140,7 @@
 # В юните их нет — дефолт в скрипте, переопределяются окружением при ручном
 # запуске: TG_MARK (метка трафика в туннель, 0x1), UPLINK_TABLE (таблица
 # политики «метка → аплинк», 100), UPLINK_IF (имя аплинка на чистой машине,
-# пока его не найти по ключу, awg0), WAN_IF, HOST_CONF_DIR, CONTAINER.
+# пока его не найти по ключу, awg0), WAN_IF, HOST_CONF_DIR.
 # Вторую группу юнит читает строкой EnvironmentFile=-/etc/awg-gw/firewall.env —
 # это локальное состояние шлюза, его пишут агент и awg-bot (разделы файервола и
 # доступа по SSH), перевыпуск бандла его не трогает: ADMIN_IPS_EXTRA
@@ -167,11 +165,15 @@
 
 set -e
 
-LINK_IF="${LINK_IF:-awglink}"
+LINK_IF="$(printf '%s' "${LINK_IF:-awglink}" | tr -cd 'A-Za-z0-9_.-' | cut -c1-15)"
 # Боевое значение приезжает из БАНДЛА (export перед запуском) и закрепляется в
 # юните строкой Environment: на шлюзе нет app.yaml, и после ребута юнит обязан
 # реассертить ту подсеть, с которой бандл собирали, а не хардкод-дефолт.
-CLIENT_SUBNET="${CLIENT_SUBNET:-10.8.1.0/24}"
+CLIENT_SUBNET="$(printf '%s' "${CLIENT_SUBNET:-10.8.1.0/24}" | tr -cd '0-9./')"
+case "$CLIENT_SUBNET" in
+    [0-9]*.[0-9]*.[0-9]*.[0-9]*/[0-9]*) ;;
+    *) say "ОШИБКА: CLIENT_SUBNET не подсеть: $CLIENT_SUBNET"; exit 1 ;;
+esac
 FWD_CHAIN="AWGLINK_FWD"                  # прежняя цепочка iptables — только снятие
 UNIT="/etc/systemd/system/awg-link-gw.service"
 SYSCTL_CONF="/etc/sysctl.d/99-awgbot-gw.conf"
@@ -199,7 +201,8 @@ PRIVATE_NETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/
 # бандл); юнит всегда задаёт его, пусть и пустым, а SSH_ALLOW из firewall.env
 # к этому моменту уже в окружении (EnvironmentFile) — это список снаружи.
 ADMIN_IPS="${ADMIN_IPS-${SSH_ALLOW:-}}"
-ADMIN_IPS_EXTRA="${ADMIN_IPS_EXTRA:-}"
+ADMIN_IPS="$(printf '%s' "$ADMIN_IPS" | tr -cd '0-9./ ')"
+ADMIN_IPS_EXTRA="$(printf '%s' "${ADMIN_IPS_EXTRA:-}" | tr -cd '0-9./ ')"
 # Старое имя SSH_ALLOW отработало выше как ADMIN_IPS; дальше SSH_ALLOW — список
 # адресов СНАРУЖИ из firewall.env, и бандловое значение ему не должно достаться.
 SSH_ALLOW=""; SSH_ALLOW_RESOLVED=""; SSH_FILTER=""
@@ -236,7 +239,7 @@ LAN_LISTS="/usr/local/sbin/awg-lan-lists.sh"
 LAN_DOMAIN="/usr/local/sbin/awg-lan-domain.sh"
 LAN_SERVICES="/usr/local/sbin/awg-lan-services.sh"      # записи сервисов соседних сетей → dnsmasq
 PEER_SVC_CONF="$DNSMASQ_D/awg-gw-peer-services.conf"
-LAN_MODE="${LAN_MODE:-0}"
+[ "${LAN_MODE:-0}" = "1" ] && LAN_MODE=1 || LAN_MODE=0
 # Канал до ВПС: 1 — агент держит сессию внутри линка. Значения из бандла, у
 # старых бандлов их нет — тогда канала нет, и это рабочее состояние.
 LINK_CHANNEL="$(printf '%s' "${LINK_CHANNEL:-0}" | tr -cd '01' | cut -c1)"
@@ -490,7 +493,8 @@ if get_domains && [ -s "$TMP" ]; then
     # Только директивы нашего набора и комментарии: HTTP 200 с HTML (заглушка
     # провайдера, страница блокировки) иначе уехал бы в conf-dir и уронил бы
     # dnsmasq на «bad option» — квартира без DNS до следующего удачного фида.
-    grep -E '^(#.*|nftset=/[^/[:space:]]+(/[^/[:space:]]+)*/inet#awg_home#lan_vpn4)$' "$TMP" > "$TMP2"
+    # сегмент — только имя домена: `#` или `.` у dnsmasq значат «все домены»
+    grep -Ei '^(#.*|nftset=(/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59}))+/inet#awg_home#lan_vpn4)$' "$TMP" > "$TMP2"
     mv "$TMP2" "$TMP"
     feed_ok=0
     if [ "$(grep -c '^nftset=' "$TMP")" -lt 10 ]; then
@@ -543,7 +547,8 @@ else
         | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+' >> "$NETS" \
         || { echo "подсети: goog.json не скачался" >&2; rc=1; nets_rc=1; }
 fi
-elems="$(grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$' "$NETS" | sort -u | paste -sd, -)"
+# префикс не короче /8: «0.0.0.0/1» из битого фида увёл бы в туннель полсети
+elems="$(grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/([89]|[12][0-9]|3[0-2])$' "$NETS" | sort -u | paste -sd, -)"
 if [ -n "$elems" ]; then
     if [ "${nets_rc:-0}" = "0" ]; then
         # одной транзакцией: между flush и add окна нет
@@ -888,30 +893,9 @@ lan_ipv4() {
         | awk '!seen[$0]++' | paste -sd, - | sed 's/,/, /g'
 }
 
-# Контейнер, интерфейс выхода и каталог конфигов ОПРЕДЕЛЯЮТСЯ, а не задаются
-# дефолтом: чужие имена в поставке — источник тихих ошибок «скрипт отработал, но
-# не там». Любое можно переопределить переменной окружения.
-# Контейнер шлюзу БОЛЬШЕ НЕ НУЖЕН: линк поднимает хостовой awg-quick, а в образе
-# Amnezia были только бинарники. Ищем его исключительно чтобы подчистить линк,
-# поднятый прежней, контейнерной схемой. Не нашли — не беда.
-#
-# `return 0` в конце обязателен. Без него функция отдаёт статус последней команды
-# цикла, а это неудачный `docker exec` на последнем контейнере. Присваивание
-# CONTAINER="$(detect_container)" получает ненулевой статус, и при set -e скрипт
-# умирает МОЛЧА — не дойдя даже до строки с сообщением об ошибке. Ровно так он и
-# отработал «успешно», не поставив ни одного правила.
-detect_container() {
-    if [ -n "${CONTAINER:-}" ]; then printf '%s' "$CONTAINER"; return 0; fi
-    command -v docker >/dev/null 2>&1 || return 0
-    # с пределом времени: зависший docker на загрузке держал бы юнит, а за ним
-    # (After=awg-link-gw) и агента
-    for n in $(timeout 10 docker ps --format '{{.Names}}' 2>/dev/null); do
-        if timeout 10 docker exec "$n" sh -c 'command -v awg' >/dev/null 2>&1; then
-            printf '%s' "$n"; return 0
-        fi
-    done
-    return 0
-}
+# Интерфейс выхода и каталог конфигов ОПРЕДЕЛЯЮТСЯ, а не задаются дефолтом:
+# чужие имена в поставке — источник тихих ошибок «скрипт отработал, но не
+# там». Любое можно переопределить переменной окружения.
 detect_wan() {
     [ -n "${WAN_IF:-}" ] && { printf '%s' "$WAN_IF"; return; }
     # токен после dev: формы «default via X dev Y», «default dev Y», с nhid —
@@ -924,7 +908,7 @@ case "${1:-}" in
     --apply)    MODE="apply"; SRC_CONF="${2:-}" ;;
     --rollback) MODE="rollback" ;;
     ""|--plan)  MODE="plan" ;;
-    -h|--help)  sed -n '2,80p' "$0"; exit 0 ;;
+    -h|--help)  awk 'NR>1 && !/^#/{exit} NR>1' "$0"; exit 0 ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
 esac
 
@@ -972,15 +956,12 @@ install_self() {
 # раз модуль есть). Контейнер для линка не нужен: там были только бинарники.
 AWG_QUICK="$(command -v awg-quick || true)"
 AWG_BIN="$(command -v awg || true)"
-# Отсутствие контейнера — НЕ ошибка: он тут только для подчистки прежней схемы.
-CONTAINER="$(detect_container)"
 WAN_IF="$(detect_wan)"
 [ -n "$WAN_IF" ] || { say "ОШИБКА: не определил интерфейс выхода. Укажи: WAN_IF=eth0 $0 ..."; exit 1; }
 HOST_CONF_DIR="${HOST_CONF_DIR:-/etc/amnezia/amneziawg}"
 
 say "Параметры (определены автоматически, переопределяются переменными):"
 say "  интерфейс линка    : $LINK_IF"
-say "  контейнер          : ${CONTAINER:-нет (и не нужен)}"
 say "  конфиг на хосте    : $HOST_CONF_DIR/$LINK_IF.conf"
 say "  клиенты сервера AWG: $CLIENT_SUBNET"
 say "  выход в интернет   : $WAN_IF"
@@ -992,9 +973,6 @@ if [ "$MODE" = "rollback" ]; then
     LINK_CIDR_PRE="$(link_cidr_of "$LINK_IF")"
     run "systemctl disable --now awg-link-gw.service 2>/dev/null || true"
     run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
-    if [ -n "$CONTAINER" ]; then
-        run "docker exec $CONTAINER awg-quick down $LINK_IF 2>/dev/null || true"
-    fi
     # подсеть линка — пока интерфейс ещё жив (до down он выше уже снят, но
     # адрес мог остаться в старом iptables-правиле — снимаем по нему)
     LINK_CIDR="${LINK_CIDR_PRE:-$(link_cidr_of "$LINK_IF")}"
@@ -1225,10 +1203,6 @@ else
     if ip link show "$LINK_IF" >/dev/null 2>&1; then
         say "  интерфейс уже поднят — перезапускаю, чтобы подхватить конфиг"
         run "$AWG_QUICK down $LINK_IF 2>/dev/null || true"
-        # и в контейнере тоже: линк мог быть поднят прежней версией скрипта
-        if [ -n "$CONTAINER" ]; then
-            run "docker exec $CONTAINER awg-quick down $LINK_IF 2>/dev/null || true"
-        fi
     fi
     # Таблица защиты — ДО подъёма линка. Свежая собирается на шаге 2 по подсети
     # линка у ядра, а между up и nft -f клиенты сервера AWG доходили бы до
@@ -1687,18 +1661,10 @@ DOHEOF
         fi
         _dn_changed=1
     done
-    # /etc/default/dnsmasq НЕ трогаем. Прежняя строка DNSMASQ_EXCEPT=lo init-скрипт
-    # Debian превращает в except-interface=lo, а тот по man перекрывает
-    # listen-address: dnsmasq переставал слушать 127.0.0.1, и проверка апстрима
-    # была вечно красной. А на чистой малине файл, созданный до установки
-    # пакета, — его conffile: dpkg без терминала падает на вопросе о нём.
-    # Свою прежнюю строку, если осталась, убираем.
-    if grep -qs '^# awg-bot: резолвер только для локальной сети' "$DNSMASQ_DEFAULT"; then
-        _tmp="$(mktemp)"
-        grep -v -e '^# awg-bot: резолвер только для локальной сети' -e '^DNSMASQ_EXCEPT=lo$' \
-            "$DNSMASQ_DEFAULT" > "$_tmp" && run "install -m 0644 $_tmp $DNSMASQ_DEFAULT"
-        rm -f "$_tmp"; _dn_changed=1
-    fi
+    # /etc/default/dnsmasq НЕ трогаем: DNSMASQ_EXCEPT init-скрипт Debian
+    # превращает в except-interface, а тот по man перекрывает listen-address;
+    # на чистой малине файл, созданный до установки пакета, — его conffile:
+    # dpkg без терминала падает на вопросе о нём.
     # Оверрайд юнита: перезапуск при отказе; старт ПОСЛЕ аплинка — апстрим
     # server=…@<аплинк> привязывается к интерфейсу, и dnsmasq, стартовавший
     # раньше awg0 (так и было на живых малинах), оставался без апстрима до

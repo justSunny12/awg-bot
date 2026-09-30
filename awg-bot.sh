@@ -37,7 +37,7 @@
 #                          прогоном) — venv только что собран, второй раз не
 #                          собирается.
 #   update [<tgz>]        обновить код/зависимости/юнит из архива (по умолчанию —
-#                          awg-bot-update.tgz рядом; conf/env/данные не трогаются,
+#                          awg-bot.tgz рядом; conf/env/данные не трогаются,
 #                          если явно не согласиться на их удаление). Распаковка
 #                          (--no-same-owner, код — root), проверка состава и сборка
 #                          ядра — ДО остановки сервиса; прежний код отодвигается в
@@ -782,23 +782,19 @@ cmd_reconfigure() {
 
 # ── update ───────────────────────────────────────────────────────────────────
 locate_tgz() {  # locate_tgz DEFAULT_NAME EXPLICIT → печатает путь или пусто
-    # Имён два: awg-bot-update.tgz — как называл архив самообновлятор прежних
-    # версий, awg-bot.tgz — как называется АССЕТ РЕЛИЗА. Человек, скачавший
-    # поставку руками, получает второе, и `awg-bot update` без аргумента
-    # отвечал ему «не найден awg-bot-update.tgz», хотя архив лежит рядом.
-    local name="$1" explicit="${2:-}" n d
+    # Имя по умолчанию — как у ассета релиза (awg-bot.tgz): его человек и
+    # скачивает руками; ищем в текущем каталоге и рядом со скриптом.
+    local name="$1" explicit="${2:-}" d
     if [[ -n "$explicit" ]]; then [[ -f "$explicit" ]] && { echo "$explicit"; return; }; die "архив не найден: $explicit"; fi
-    for n in "$name" "awg-bot.tgz"; do
-        for d in "$(pwd)" "$SELF_DIR"; do
-            [[ -f "$d/$n" ]] && { echo "$d/$n"; return; }
-        done
+    for d in "$(pwd)" "$SELF_DIR"; do
+        [[ -f "$d/$name" ]] && { echo "$d/$name"; return; }
     done
     return 0
 }
 cmd_update() {
     require_root; require_installed
-    local tgz; tgz="$(locate_tgz "awg-bot-update.tgz" "${1:-}")"
-    [[ -n "$tgz" ]] || die "не найден awg-bot-update.tgz (в текущем каталоге или рядом со скриптом); укажи путь: awg-bot update <tgz>"
+    local tgz; tgz="$(locate_tgz "awg-bot.tgz" "${1:-}")"
+    [[ -n "$tgz" ]] || die "не найден awg-bot.tgz (в текущем каталоге или рядом со скриптом); укажи путь: awg-bot update <tgz>"
     log "обновление из: $tgz"
 
     local wipe=0
@@ -941,15 +937,6 @@ ensure_host_autostart() {
             && ok "обновлена копия скрипта линка в $_rls (её выполняет юнит линка при загрузке)" \
             || warn "не удалось обновить $_rls — после ребута линк встанет по старой версии"
     fi
-    # Юнит и таймер списков из прежних версий: скрипт удалён, списки обновляет
-    # сам бот; остаток падал при каждой загрузке.
-    local stale=0 u
-    for u in awg-bot-lists.timer awg-bot-lists.service; do
-        [[ -e "/etc/systemd/system/$u" ]] || continue
-        systemctl disable --now "$u" >/dev/null 2>&1 || true
-        rm -f "/etc/systemd/system/$u"; stale=1
-    done
-    [[ "$stale" -eq 1 ]] && { systemctl daemon-reload; ok "юниты awg-bot-lists прежних версий убраны."; }
     return 0
 }
 
@@ -1000,13 +987,11 @@ ensure_awg_generation() {
     want="$(lock_get AWG_GENERATION)"; [[ "$want" =~ ^[0-9]+$ ]] || return 0
     applied="$(awg_state_get AWG_GENERATION_APPLIED)"
     if [[ -z "$applied" ]]; then
-        # Файла состояния нет — обновление приехало с версии старше манифеста
-        # (первую установку файлом снабжает ensure_awg_server). Все домантифестные
-        # установки — первое поколение по определению; усыновить поколение
-        # поставки нельзя: обновления прыгают через ступени, и хост с v2.9 на
-        # gen-2 поставке получил бы «переехал», не переезжая.
-        applied=1
-        awg_state_set AWG_GENERATION_APPLIED "$applied"
+        # Файл состояния заводит первая установка (ensure_awg_server), а
+        # обновления с версий без него минимум поставки уже не пропускает:
+        # пустое значение — повреждённый файл, переезд по нему не объявляем.
+        warn "в $AWG_STATE нет AWG_GENERATION_APPLIED — проверка поколения AmneziaWG пропущена"
+        return 0
     fi
     [[ "$want" -gt "$applied" ]] || return 0
 
@@ -1624,7 +1609,7 @@ awg-bot — управление установленным ботом.
   awg-bot stop               остановить сервис
   awg-bot restart            перезапустить сервис
   awg-bot reconfigure        перенастроить топологию/секреты (wizard)
-  awg-bot update [tgz]       обновить код из архива (по умолч. awg-bot-update.tgz)
+  awg-bot update [tgz]       обновить код из архива (по умолч. awg-bot.tgz рядом)
   awg-bot backup             снимок БД, конфига, секретов и конфигов интерфейсов
   awg-bot restore [tgz]      восстановить из снимка (по умолч. — самый свежий)
   awg-bot logs               журнал сервиса (follow)

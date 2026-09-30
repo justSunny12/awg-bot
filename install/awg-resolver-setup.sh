@@ -51,8 +51,8 @@ DNSMASQ_SERVICE="${DNSMASQ_SERVICE:-dnsmasq}"
 UPSTREAMS="${UPSTREAMS:-1.1.1.1 1.0.0.1}"
 DROPIN_DIR="${DROPIN_DIR:-/etc/systemd/system/${DNSMASQ_SERVICE}.service.d}"
 DROPIN="$DROPIN_DIR/awgbot-resolver.conf"
-# Прежний конфиг обвязки: однократные ключи и наши адреса из него уходят при
-# усыновлении, остальное (адрес перехвата) не трогаем.
+# Конфиг обвязки условной маршрутизации: его файл не наш, при сверке
+# однократных ключей пропускается.
 ROUTING_BASE_CONF="${ROUTING_BASE_CONF:-/etc/dnsmasq.d/awgbot-base.conf}"
 DNSMASQ_MAIN_CONF="${DNSMASQ_MAIN_CONF:-/etc/dnsmasq.conf}"
 DNSMASQ_CONF_DIR="${DNSMASQ_CONF_DIR:-/etc/dnsmasq.d}"
@@ -149,27 +149,6 @@ rollback_conf() {  # вернуть прежний конфиг (или снят
     systemctl restart "$DNSMASQ_SERVICE" 2>/dev/null || true
 }
 
-adopt_routing_conf() {  # adopt_routing_conf ADDR… — конфиг обвязки под наш режим
-    # Однократные ключи (bind-interfaces, cache-size) из файла обвязки уходят:
-    # их место решает set_elsewhere при записи нашего; адреса, которые слушаем
-    # мы, из её файла тоже уходят — один адрес в одном файле.
-    [[ -f "$ROUTING_BASE_CONF" ]] || return 0
-    local a changed=""
-    if grep -q '^bind-interfaces$' "$ROUTING_BASE_CONF"; then
-        run "sed -i '/^bind-interfaces$/d' '$ROUTING_BASE_CONF'"; changed=1
-    fi
-    if grep -q '^cache-size=' "$ROUTING_BASE_CONF"; then
-        run "sed -i '/^cache-size=/d' '$ROUTING_BASE_CONF'"; changed=1
-    fi
-    for a in "$@"; do
-        if grep -qx "listen-address=$a" "$ROUTING_BASE_CONF"; then
-            run "sed -i '/^listen-address=${a//./\\.}$/d' '$ROUTING_BASE_CONF'"; changed=1
-        fi
-    done
-    [[ -n "$changed" ]] && log "конфиг обвязки $ROUTING_BASE_CONF приведён под резолвер бота"
-    return 0
-}
-
 ensure_package() {
     if systemctl list-unit-files 2>/dev/null | grep -q "^${DNSMASQ_SERVICE}\.service"; then
         return 0
@@ -251,7 +230,6 @@ case "$MODE" in
         # shellcheck disable=SC2086 — список адресов через пробел намеренно
         has_addr "$ADDR" $have || have="$have $ADDR"
         write_conf $have
-        adopt_routing_conf $have
         ensure_package
         write_dropin || true          # daemon-reload сделает restart_service
         restart_service
@@ -265,7 +243,6 @@ case "$MODE" in
         have="$(listen_addrs)"
         has_addr "$ADDR" $have && { log "уже слушаем $ADDR"; exit 0; }
         write_conf $have "$ADDR"
-        adopt_routing_conf "$ADDR"
         write_dropin || true          # daemon-reload сделает restart_service
         restart_service
         verify "$ADDR"
@@ -300,5 +277,5 @@ case "$MODE" in
         [[ -f "$RESOLVER_CONF" && "$active" -eq 1 ]]
         ;;
     *)
-        sed -n '2,41p' "$0"; exit 2 ;;
+        awk 'NR>1 && !/^#/{exit} NR>1' "$0"; exit 2 ;;
 esac

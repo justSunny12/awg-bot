@@ -105,7 +105,7 @@ case "${1:-}" in
     --rollback)     MODE="rollback" ;;
     --install-unit) MODE="unit" ;;
     ""|--plan)      MODE="plan" ;;
-    -h|--help)      sed -n '2,38p' "$0"; exit 0 ;;
+    -h|--help)      awk 'NR>1 && !/^#/{exit} NR>1' "$0"; exit 0 ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
 esac
 

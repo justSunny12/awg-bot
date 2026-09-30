@@ -44,7 +44,7 @@ case "${1:-}" in
     --apply)    MODE="apply" ;;
     --rollback) MODE="rollback" ;;
     ""|--plan)  MODE="plan" ;;
-    -h|--help)  sed -n '2,27p' "$0"; exit 0 ;;
+    -h|--help)  awk 'NR>1 && !/^#/{exit} NR>1' "$0"; exit 0 ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
 esac
 

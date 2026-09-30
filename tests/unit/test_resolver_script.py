@@ -173,24 +173,6 @@ def test_syntax_is_checked_before_restart_and_a_bad_config_is_rolled_back(host):
     assert host.log().count("systemctl daemon-reload") == 1
 
 
-def test_adopting_the_routing_config_drops_bind_interfaces(host):
-    """Прежний конфиг обвязки держал bind-interfaces и cache-size — однократные
-    ключи переезжают в наш файл (обвязка своё больше не пишет), адрес перехвата
-    обвязки остаётся у неё, наши адреса из её файла уходят."""
-    base = host.confd / "awgbot-base.conf"
-    base.write_text("bind-interfaces\nlisten-address=10.255.53.1\nlisten-address=10.9.1.1\n"
-                    "no-resolv\ncache-size=10000\n", encoding="utf-8")
-    assert host.run("install", "10.9.1.1").returncode == 0
-    text = base.read_text(encoding="utf-8")
-    assert "bind-interfaces" not in text and "listen-address=10.255.53.1" in text
-    assert "listen-address=10.9.1.1" not in text, "один адрес — в одном файле"
-    assert "cache-size" not in text, "cache-size dnsmasq принимает один раз на все файлы"
-    ours = host.conf()
-    assert "bind-interfaces" in ours and "cache-size=10000" in ours, "ключи переехали к нам"
-    assert host.run("add", "10.255.53.1").returncode == 0
-    assert "listen-address=10.255.53.1" not in base.read_text(encoding="utf-8")
-
-
 def test_plan_changes_nothing_and_needs_no_root(host):
     r = subprocess.run(["bash", str(SCRIPT), "plan", "10.8.1.1"], capture_output=True, text=True,
                        env={"PATH": "/usr/bin:/bin", "RESOLVER_CONF": str(host.dir / "r.conf"),
