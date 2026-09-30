@@ -90,9 +90,9 @@ def gateway_claim_already(dev) -> str:
 
 
 def slot_short(state) -> str:
-    """«NASPi» (дом 1) — для уведомлений и кнопок."""
+    """«NASPi (дом 1)» — для уведомлений и кнопок."""
     dev, gw = state.get("device"), state.get("gateway")
-    name = f"«{_e(dev.name)}»" if dev is not None else f"слот {gw.id}"
+    name = _e(dev.name) if dev is not None else f"слот {gw.id}"
     return name + (f" ({_e(gw.label)})" if gw is not None and gw.label else "")
 
 

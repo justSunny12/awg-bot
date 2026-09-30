@@ -383,7 +383,7 @@ async def test_add_second_slot_as_new_machine_asks_its_own_token(services, slots
     assert services.runs[-1][0] == "--apply" and services.runs[-1][1]["LINK_IF"] == "awglink2"
     docs = [s for s in msg.sent if s[0] == "document"]
     assert len(docs) == 1 and docs[0][1].startswith("🛰 Файл конфигурации шлюза\n"), docs
-    assert "<b>«Шлюз 2»</b>" in docs[0][1], "подпись файла первого применения не называет новый шлюз"
+    assert "<b>Шлюз 2</b>" in docs[0][1], "подпись файла первого применения не называет новый шлюз"
     instr = next(s[1] for s in msg.sent if s[0] == "answer" and "--install" in s[1])
     assert "awg-gw-bundle-awglink2.sh" in instr
 
@@ -422,7 +422,7 @@ async def test_add_second_slot_from_my_devices(services, slots, fake_bot):
     await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi2.id, slot=0), services, FakeState())
     assert services.db.gateway_by_device(pi2.id).id == 2
     assert any(s[0] == "document" and s[1].startswith("🛰 Файл конфигурации шлюза\n")
-               and "<b>«Pi2»</b>" in s[1] for s in nav.sent), nav.sent
+               and "<b>Pi2</b>" in s[1] for s in nav.sent), nav.sent
 
 
 async def test_remove_standby_and_active(services, slots, fake_bot, monkeypatch):
@@ -489,7 +489,7 @@ async def test_bundle_button_and_action_are_per_slot(services, slots, fake_bot):
     assert ("edit_reply_markup", ADMIN) in fake_bot.records or any(s[0] == "edit_reply_markup" for s in nav.sent), \
         "карточка над файлом не погасла"
     docs = [s[1] for s in nav.sent if s[0] == "document"]
-    assert len(docs) == 1 and docs[0].startswith("📤 Конфигурация шлюза <b>«Pi2» (дача)</b>."), docs
+    assert len(docs) == 1 and docs[0].startswith("📤 Конфигурация шлюза <b>Pi2 (дача)</b>."), docs
 
 
 async def test_params_screen_cycles_probe_window_threshold_and_lists(services, slots, fake_bot, monkeypatch):
@@ -747,7 +747,7 @@ def test_peer_nets_are_derived_only_between_lan_mode_slots(services, slots, monk
     assert services.gateway_peer_nets(1) == [] and services.gateway_peer_nets(2) == []
     assert services.gateway_peer_nets_info()["state"] == "overlap"
     res = services.gateway_set_home_subnets(2, "192.168.68.0/24")
-    assert res["conflict"] is None and res["peer_others"] == ["«NASPi»"], "кому перевыпускать"
+    assert res["conflict"] is None and res["peer_others"] == ["NASPi"], "кому перевыпускать"
     assert services.gateway_peer_nets(1) == ["192.168.68.0/24"]
     env, _ = services._gw_bundle_env(services.db.gateway(1))
     assert env["PEER_HOME_NETS"] == "192.168.68.0/24"

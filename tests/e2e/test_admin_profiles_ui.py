@@ -200,8 +200,9 @@ async def test_period_end_zero_makes_it_unlimited(services, fake_bot, make_activ
 # ── новый профиль ────────────────────────────────────────────────────────────
 
 async def test_new_profile_name_presets_invite_note_and_card(services, fake_bot):
-    """Имя → три шага пресетами → приглашение с «📤 Отправить» / «📋
-    Скопировать», след «✅ Имя: …» и карточка профиля живым меню."""
+    """Имя → три шага пресетами → приглашение одним сообщением-меню: текст для
+    пересылки, черта, сводка профиля без ссылки на карточку; «📤 / 📋» несут
+    только текст приглашения, ниже выходы в карточку и на главную."""
     services.ensure_admin_client()
     st = FakeState()
     cb, nav = _acb(fake_bot)
@@ -231,14 +232,15 @@ async def test_new_profile_name_presets_invite_note_and_card(services, fake_bot)
     await ah.add_client_period(cb4, PeriodCB(kind="month", ctx="create"), services, st)
     c = next(x for x in services.db.list_clients(include_service=False) if x.name == "Ксюша")
     assert (c.device_limit, int(c.traffic_limit), c.period_kind) == (3, 100 * G, "month")
-    sent = _answers(nav4)
-    invite, note, card = sent[-3], sent[-2], sent[-1]
-    assert "https://t.me/test_bot?start=" in invite[0], invite
-    assert _labels(invite[1]) == ["📤 Отправить", "📋 Скопировать"], _labels(invite[1])
+    invite = _answers(nav4)[-1]
     end = timeutil.parse_iso(c.period_end)
-    assert note[0] == f"✅ Ксюша: 3 устройства, 100 ГБ в месяц, подписка до {timeutil.fmt_dt_ui(end)}", note
-    assert note[1] is None, "след без кнопок"
-    assert card[0].startswith("👤 ") and card[1] is not None, "карточка профиля не пришла живым меню"
+    assert invite[0].startswith("Привет! ") and "https://t.me/test_bot?start=" in invite[0], invite
+    assert invite[0].endswith("\n—\n☝️ Приглашение с индивидуальным кодом для нового профиля:\n"
+                              f"Ксюша — 3 устройства · 100 ГБ в месяц · → {timeutil.fmt_date_ui(end)}"), invite[0]
+    assert "start=cl-" not in invite[0], "имя без ссылки: в карточку ведёт кнопка"
+    assert _labels(invite[1]) == ["📤 Отправить", "📋 Скопировать", "👤 В карточку", "⬅️ На главную"], _labels(invite[1])
+    copy = next(b for r in invite[1].inline_keyboard for b in r if b.copy_text is not None)
+    assert copy.copy_text.text.startswith("Привет! ") and "☝️" not in copy.copy_text.text, "копируется только приглашение"
     assert services.db.get_nav_message_id(ADMIN) not in (None, nav4.message_id)
     assert await st.get_data() == {}
 
@@ -284,15 +286,17 @@ async def test_new_profile_with_a_stale_dialog_does_not_create_anything(services
 
 async def test_regen_invite_sends_share_buttons_and_leads_back_to_the_card(
         services, fake_bot):
-    """Новое приглашение: сообщение с «📤 / 📋» и финишер «☝️ Приглашение
-    для профиля … — работает до активации» с выходом в карточку профиля."""
+    """Новое приглашение — то же одно сообщение-меню со сводкой «☝️ Новое
+    приглашение…» и выходами в карточку профиля и на главную."""
     created = services.create_client("Ждёт", 1, "year")
     cb, nav = _acb(fake_bot)
     await ah.regen_invite(cb, ClientCB(action="regen_invite", client_id=created.client_id), services)
-    sent = _answers(nav)
-    assert _labels(sent[-2][1]) == ["📤 Отправить", "📋 Скопировать"], sent
-    assert sent[-1][0] == "☝️ Приглашение для профиля Ждёт — работает до активации", sent[-1]
-    back = [(b.text, b.callback_data) for r in sent[-1][1].inline_keyboard for b in r]
+    text, markup = _answers(nav)[-1]
+    end = timeutil.parse_iso(services.db.get_client(created.client_id).period_end)
+    assert text.endswith("\n—\n☝️ Новое приглашение с индивидуальным кодом для профиля:\n"
+                         f"Ждёт — 1 устройство · ∞ ГБ в месяц · → {timeutil.fmt_date_ui(end)}"), text
+    assert _labels(markup) == ["📤 Отправить", "📋 Скопировать", "👤 В карточку", "⬅️ На главную"], _labels(markup)
+    back = [(b.text, b.callback_data) for r in markup.inline_keyboard[1:] for b in r]
     assert back == [("👤 В карточку", ClientCB(action="open", client_id=created.client_id).pack()),
                     ("⬅️ На главную", Menu(action="main").pack())], back
 

@@ -348,6 +348,20 @@ def test_an_ack_is_stored_as_json_with_foreign_fields_cleaned(pair):
     assert set(s.gwlink_peer_services_ack(1)) == set(ack), "два ответа хранятся разными форматами"
 
 
+async def test_a_hello_with_the_current_hash_counts_as_an_acknowledgement(pair):
+    """Агент назвал в hello отпечаток текущего канона: канон ему не едет, а
+    карточка обязана показать «применены», а не ждать ответа вечно — прежний
+    ответ мог быть потерян или лежать в старом формате (после 3.2.0 не читается)."""
+    s = pair.services
+    _seed(s, {"news.org": "vpn"})
+    digest, _body = s.gwlink_own_for(s.db.gateway(1))
+    s.db.set_state(s._gwlink_key(s._GWLINK_OWN_ACK_KEY, 1), "ok deadbeef 2026-09-01T00:00:00")
+    assert _card(s, 1)["state"] != "applied"
+    await _hello(pair, 1, own_hash=digest)
+    assert await _until(lambda: _card(s, 1)["state"] == "applied", timeout=5), _card(s, 1)
+    assert _own_sets(pair, 1) == 0, "канон, который у шлюза уже есть, ехать не должен"
+
+
 def test_an_ack_in_the_old_text_format_reads_as_no_answer(pair):
     """После обновления сервера в state лежит строка прежнего формата: она
     читается как «ответа нет» (карточка — ждём), а не ломает карточку."""

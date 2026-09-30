@@ -610,6 +610,9 @@ class LinkServer:
         if not await asyncio.to_thread(self.services.gwlink_snapshot, gw.id):
             return False
         digest, items = await asyncio.to_thread(fn, gw)
+        if digest and digest == sess.svc_have:      # у шлюза уже это — считается подтверждением
+            await asyncio.to_thread(self.services.gwlink_peer_services_hello_ack, gw.id, digest)
+            return False
         if digest == sess.svc_have or digest == sess.svc_sent:
             return False
         sess.svc_sent = digest                     # метка ДО отправки — см. deliver()
@@ -629,7 +632,10 @@ class LinkServer:
         if gw is None or not gw.lan_mode:
             return False
         digest, body = await asyncio.to_thread(fn, gw)
-        if digest == sess.own_have or digest == sess.own_sent:
+        if digest == sess.own_have:                 # у шлюза уже этот канон — считается подтверждением
+            await asyncio.to_thread(self.services.gwlink_own_hello_ack, gw.id, digest)
+            return False
+        if digest == sess.own_sent:
             return False
         sess.own_sent = digest
         log.info("канал линка: слоту %s уходят свои списки (%s)", slot_id, len(body.get("items") or []))

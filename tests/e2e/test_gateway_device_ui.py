@@ -110,7 +110,7 @@ async def test_settings_assign_existing_device_goes_the_full_way(services, fake_
     docs = _docs(msg)
     assert len(docs) == 1 and docs[0][1] == (
         "🛰 Файл конфигурации шлюза\nВоспользуйся инструкцией выше для настройки нового шлюза: "
-        "<b>«NASPi»</b>\n\nПосле возврата в меню сообщение с файлом и инструкция удалятся из чата."), \
+        "<b>NASPi</b>\n\nПосле возврата в меню сообщение с файлом и инструкция удалятся из чата."), \
         f"открытый файл, руками: {docs}"
     assert any("--install" in s[1] for s in msg.sent if s[0] == "answer"), "инструкция"
     text, markup = await sh._screen("rt", services)
@@ -145,7 +145,7 @@ async def test_settings_change_gateway_rekeys_and_gives_plain_first_run_file(ser
     assert services.modes == ["--rekey"]
     docs = _docs(nav)
     assert len(docs) == 1 and docs[0][1].startswith("🛰 Файл конфигурации шлюза\n") \
-        and "<b>«phone»</b>" in docs[0][1], docs
+        and "<b>phone</b>" in docs[0][1], docs
     assert not any("GW1:" in (s[1] or "") for s in nav.sent), "токенов в новой схеме нет"
     # Машина ставится с нуля — значит и здесь показывается та же инструкция,
     # что для новой машины: одна команда со своей машины.
@@ -177,7 +177,7 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
     assert stored["t"].startswith("123456789:")
     docs = _docs(msg)
     assert len(docs) == 1 and docs[0][1].startswith("🛰 Файл конфигурации шлюза\n") \
-        and "<b>«Шлюз»</b>" in docs[0][1], docs
+        and "<b>Шлюз</b>" in docs[0][1], docs
     instr = [s[1] for s in msg.sent if s[0] == "answer" and "--install" in s[1]]
     assert instr, "инструкция не показана"
     # Копирование и установка склеены: установка на шлюзе вопросов не задаёт,

@@ -306,7 +306,7 @@ def test_startup_warnings_name_the_slot(two, services):
     assert len(warns) == 1 and warns[0].startswith("Резервный шлюз") and "Pi2" in warns[0]
     services.probe[1] = "down"
     warns = services.routing_startup_warnings()
-    assert len(warns) == 1 and "«NASPi» и «Pi2» не отвечают" in warns[0], "оба лежат — одной строкой"
+    assert len(warns) == 1 and "NASPi и Pi2 не отвечают" in warns[0], "оба лежат — одной строкой"
     services.probe[2] = "ok"
     warns = services.routing_startup_warnings()
     assert len(warns) == 1 and warns[0].startswith("Шлюз РФ-доступа") and "NASPi" in warns[0]

@@ -682,14 +682,6 @@ def new_profile_period(name: str, devs: int, gb_limit: int) -> str:
     return f"➕ <b>{_e(name)}</b> · {d} · {t} — срок подписки?"
 
 
-def profile_created_note(client, device_limit: int, traffic_gb: int, period_end,
-                         bot_username: str = "") -> str:
-    d = _n_devices(device_limit) if device_limit else "∞ устройств"
-    t = f"{traffic_gb} ГБ в месяц" if traffic_gb else "∞ ГБ в месяц"
-    sub = f"подписка до {timeutil.fmt_dt_ui(period_end)}" if period_end else "бессрочная подписка"
-    return f"✅ {profile_link(client, bot_username)}: {d}, {t}, {sub}"
-
-
 INVITE_FORWARD_TEMPLATE = (
     "Привет! Тебе открыт доступ в свободный интернет 🎉\n"
     "Жми ссылку и «Старт» — дальше подскажу\n"
@@ -701,8 +693,17 @@ def invite_plain(link: str) -> str:
     return INVITE_FORWARD_TEMPLATE.format(link=link)
 
 
-def invite_finisher(client, bot_username: str = "") -> str:
-    return f"☝️ Приглашение для профиля {profile_link(client, bot_username)} — работает до активации"
+def invite_screen(link: str, client, *, new: bool = True) -> str:
+    """Приглашение одним сообщением: текст для пересылки (его же несут кнопки
+    «📤 Отправить» / «📋 Скопировать»), черта, чьё оно — имя без ссылки (в
+    карточку ведёт кнопка), лимиты и срок. new — только что созданный профиль."""
+    d = _n_devices(client.device_limit) if client.device_limit else "∞ устройств"
+    t = f"{gb_str(client.traffic_limit)} в месяц" if client.traffic_limit else "∞ ГБ в месяц"
+    end = client.effective_period_end
+    till = f"→ {timeutil.fmt_date_ui(timeutil.parse_iso(end))}" if end else "бессрочно"
+    head = ("☝️ Приглашение с индивидуальным кодом для нового профиля:" if new
+            else "☝️ Новое приглашение с индивидуальным кодом для профиля:")
+    return f"{invite_plain(link)}\n—\n{head}\n{_e(client.name)} — {d} · {t} · {till}"
 
 
 def add_device_prompt_admin(client, used: int, limit: int) -> str:

@@ -344,6 +344,15 @@ def expiring_kb(rows=()) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def invite_menu(plain_text: str, link: str, client_id: int) -> InlineKeyboardMarkup:
+    """Под приглашением профиля одним сообщением: «📤 Отправить» и «📋 Скопировать»
+    несут только текст приглашения (не сводку под чертой), ниже — «👤 В карточку»
+    и «⬅️ На главную»."""
+    from .client import invite_kb
+    rows = invite_kb(plain_text, link).inline_keyboard + to_client_card(client_id).inline_keyboard
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def to_client_card(client_id: int) -> InlineKeyboardMarkup:
     """«👤 В карточку» и «⬅️ На главную» — завершитель под приглашением профиля."""
     b = InlineKeyboardBuilder()

@@ -264,14 +264,14 @@ def test_gateway_notes_link_the_slot_card_and_have_no_button(services):
     services.bot_username = BOT
     a, b = _gw(services, 1, "NASPi"), _gw(services, 2, "Pi4")
     down = services._txt_rt_gw_down(a)
-    assert down.startswith(f"🔴 Шлюз {_link('gw-1', '«NASPi»')} не отвечает."), down
+    assert down.startswith(f"🔴 Шлюз {_link('gw-1', 'NASPi')} не отвечает."), down
     switched = services._txt_rt_switched(a, b, "down")
-    assert switched.startswith(f"🔁 Шлюз переключён: {_link('gw-1', '«NASPi»')} не отвечает, "
-                               f"трафик идёт через {_link('gw-2', '«Pi4»')}."), switched
+    assert switched.startswith(f"🔁 Шлюз переключён: {_link('gw-1', 'NASPi')} не отвечает, "
+                               f"трафик идёт через {_link('gw-2', 'Pi4')}."), switched
     assert services._txt_rt_standby_down(b, a, 4).startswith(
-        f"⚠️ Резервный шлюз {_link('gw-2', '«Pi4»')} не отвечает уже "), "резерв лёг — без ссылки"
+        f"⚠️ Резервный шлюз {_link('gw-2', 'Pi4')} не отвечает уже "), "резерв лёг — без ссылки"
     services.bot_username = ""
-    assert services._txt_rt_gw_down(a).startswith("🔴 Шлюз «NASPi» не отвечает.")
+    assert services._txt_rt_gw_down(a).startswith("🔴 Шлюз NASPi не отвечает.")
 
 
 def test_link_port_note_links_the_slot_and_offers_the_configuration(services, monkeypatch, tmp_path):
@@ -283,7 +283,7 @@ def test_link_port_note_links_the_slot_and_offers_the_configuration(services, mo
     (tmp_path / "awglink1.conf").write_text("[Interface]\nAddress = 10.99.91.1/30\nListenPort = 5555\n")
     notes = services.gateway_sync_link_ports()
     assert len(notes) == 1, notes
-    assert notes[0].text.startswith(f"🛰 {_link('gw-1', '«NASPi»')}: порт линка изменён на 5555 (был {g.link_port})")
+    assert notes[0].text.startswith(f"🛰 {_link('gw-1', 'NASPi')}: порт линка изменён на 5555 (был {g.link_port})")
     # «Перевыпусти» — ссылка, по которой бот сразу отдаёт файл слота
     assert f"{_link('gwcfg-1', 'Перевыпусти')} конфигурацию шлюза" in notes[0].text, \
         notes[0].text

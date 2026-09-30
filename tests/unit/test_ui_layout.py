@@ -80,6 +80,7 @@ CLIENT = {
     "add_device_kb": lambda: [kbc.add_device_kb(for_friend=f) for f in (True, False)],
     "device_created_kb": lambda: [kbc.device_created_kb(1)],
     "invite_kb": lambda: [kbc.invite_kb("Твоё приглашение: https://t.me/b?start=F1", "https://t.me/b?start=F1")],
+    "invite_menu": lambda: [kba.invite_menu("Привет! https://t.me/b?start=F1", "https://t.me/b?start=F1", 7)],
     "help_menu": lambda: [kbc.help_menu(), kbc.help_menu(is_initial=True), kbc.help_menu(guest=True)],
     "friend_finisher": lambda: [kbc.friend_finisher()],
     "guide_nav": lambda: [kbc.guide_nav("apple", s, 4, next_guide="connect_apple" if s == 4 else None,

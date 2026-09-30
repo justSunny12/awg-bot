@@ -173,7 +173,7 @@ async def test_the_file_caption_says_where_to_forward_and_that_menu_removes_it(s
     _slot1(services, pi); _slot2(services, pi2)
     services.db.gateway_update(2, label="дом 2")
     _nav, (caption, _m, _doc) = await _issue(services, _Bot(), 2)
-    assert caption == ("📤 Конфигурация шлюза <b>«Pi2» (дом 2)</b>.\n"
+    assert caption == ("📤 Конфигурация шлюза <b>Pi2 (дом 2)</b>.\n"
                        "Перешли это сообщение боту шлюза — он проверит и применит сам.\n"
                        "Результат применения конфигурации сообщит бот шлюза.\n\n"
                        "ℹ️ Возврат в меню удалит это сообщение"), caption
@@ -253,7 +253,7 @@ async def test_the_first_install_file_offers_menu_and_is_remembered(services, sl
     nav, instr, (caption, markup, doc) = await _issue_plain(services, _Bot(), pi2)
     assert _buttons(markup) == [("⬅️ В меню", CANCEL2)], _buttons(markup)
     assert caption == ("🛰 Файл конфигурации шлюза\n"
-                       "Воспользуйся инструкцией выше для настройки нового шлюза: <b>«Pi2»</b>\n\n"
+                       "Воспользуйся инструкцией выше для настройки нового шлюза: <b>Pi2</b>\n\n"
                        "После возврата в меню сообщение с файлом и инструкция удалятся из чата."), caption
     where = services.gw_bundle_msg_get(2)
     assert len(where.pop("fp", "")) == 16, "запись без отпечатка файла"
@@ -273,7 +273,7 @@ async def test_the_first_install_file_of_a_new_machine_is_remembered_too(service
     assert len(nav.docs) == 1, nav.sent
     caption, markup, doc = nav.docs[0]
     assert _buttons(markup) == [("⬅️ В меню", CANCEL2)], _buttons(markup)
-    assert "<b>«Шлюз 2»</b>" in caption, caption
+    assert "<b>Шлюз 2</b>" in caption, caption
     instr = next(s[3] for s in nav.sent if s[0] == "answer" and "--install" in s[1])
     where = services.gw_bundle_msg_get(2)
     assert len(where.pop("fp", "")) == 16, "запись без отпечатка файла"
@@ -449,7 +449,7 @@ async def test_success_removes_the_file_and_brings_the_slot_card_as_the_live_men
     assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), _deleted(bot)
     sent = _sent(bot)
     assert [(r[1], r[2]) for r in sent] == [
-        (ADMIN, "✅ Конфигурация шлюза <b>«Pi2» (дом 2)</b> успешно обновлена"),
+        (ADMIN, "✅ Конфигурация шлюза <b>Pi2 (дом 2)</b> успешно обновлена"),
         (ADMIN, want_text)], f"после итога не уведомление и карточка слота 2: {sent}"
     note_id, mid = sorted(bot.markups)[-2:]
     assert bot.markups[note_id] is None, "у уведомления об итоге клавиатура — второе живое меню"
@@ -493,7 +493,7 @@ async def test_a_failure_also_removes_the_file_and_brings_the_slot_card(services
     assert {nav.message_id, doc.message_id} <= set(_deleted(bot)), \
         f"после отказа файл с ключом линка остался в чате: удалены {_deleted(bot)}"
     assert [r[2] for r in _sent(bot)] == [
-        "⚠️ Конфигурация шлюза <b>«Pi2»</b> не обновлена: нет &lt;места&gt; &amp; прав",
+        "⚠️ Конфигурация шлюза <b>Pi2</b> не обновлена: нет &lt;места&gt; &amp; прав",
         want_text], f"после отказа не уведомление и карточка слота: {_sent(bot)}"
     assert services.db.get_nav_message_id(ADMIN) == max(bot.markups), "карточка не стала живым меню"
     assert services.gw_bundle_msg_get(2) == {}
@@ -533,7 +533,7 @@ async def test_a_refused_delete_does_not_hold_back_the_card(services, slots):
     await _issue(services, bot, 2)
     bot.delete_fails = True
     await sh.bundle_applied(bot, services, 2, True, "")
-    assert [r[2] for r in _sent(bot)] == ["✅ Конфигурация шлюза <b>«Pi2»</b> успешно обновлена",
+    assert [r[2] for r in _sent(bot)] == ["✅ Конфигурация шлюза <b>Pi2</b> успешно обновлена",
                                           want_text], _sent(bot)
     assert services.gw_bundle_msg_get(2) == {}
 
@@ -621,7 +621,7 @@ async def test_installed_gateway_removes_the_file_and_says_so_with_its_bot(servi
         f"файл с токеном агента или инструкция остались в чате: удалены {_deleted(bot)}"
     sent = _sent(bot)
     assert [(r[1], r[2]) for r in sent] == [
-        (ADMIN, '✅ Шлюз <b>«Pi2» (дом 2)</b> успешно настроен 🎉\n'
+        (ADMIN, '✅ Шлюз <b>Pi2 (дом 2)</b> успешно настроен 🎉\n'
                 '<b>Бот шлюза:</b> <a href="https://t.me/pi2_gw_bot">Шлюз &lt;Pi2&gt;</a>'),
         (ADMIN, want_text)], sent
     note_id, card_id = sorted(bot.markups)[-2:]
@@ -655,7 +655,7 @@ async def test_installed_gateway_without_a_known_bot_has_no_bot_line(services, s
     bot = _Bot()
     await _issue_plain(services, bot, pi2)
     await sh.bundle_installed(bot, services, 2)
-    assert _sent(bot)[0][2] == "✅ Шлюз <b>«Pi2»</b> успешно настроен 🎉", _sent(bot)
+    assert _sent(bot)[0][2] == "✅ Шлюз <b>Pi2</b> успешно настроен 🎉", _sent(bot)
 
 
 async def test_installed_gateway_without_a_file_in_chat_still_says_so(services, slots):
@@ -668,7 +668,7 @@ async def test_installed_gateway_without_a_file_in_chat_still_says_so(services, 
     services.db.nav_touch(ADMIN, 4242)
     await sh.bundle_installed(bot, services, 2)
     assert _deleted(bot) == [], "удалено то, чего бот не выдавал"
-    assert [r[2] for r in _sent(bot)] == ["✅ Шлюз <b>«Pi2»</b> успешно настроен 🎉"], _sent(bot)
+    assert [r[2] for r in _sent(bot)] == ["✅ Шлюз <b>Pi2</b> успешно настроен 🎉"], _sent(bot)
     assert bot.markups[max(bot.markups)] is None
     assert services.db.get_nav_message_id(ADMIN) == 4242, "живое меню подменено уведомлением"
     assert not [r for r in bot.records if r[0] == "edit_markup"], "живое меню погашено без замены"
@@ -688,7 +688,7 @@ async def test_installed_gateway_after_menu_was_pressed_sends_no_second_menu(ser
     before = len(_sent(bot))
     await sh.bundle_installed(bot, services, 2)
     after = [r[2] for r in _sent(bot)][before:]
-    assert after == ["✅ Шлюз <b>«Pi2»</b> успешно настроен 🎉"], after
+    assert after == ["✅ Шлюз <b>Pi2</b> успешно настроен 🎉"], after
     assert services.db.get_nav_message_id(ADMIN) == nav_before, "живое меню подменено"
 
 
@@ -711,28 +711,28 @@ async def test_installed_gateway_leaves_an_encrypted_file_issued_after_it(servic
     assert not {nav.message_id, doc.message_id} & gone, \
         f"уведомление о настройке убрало шифрованный файл, который ещё пересылать: {gone}"
     assert services.gw_bundle_msg_get(2) == record, "уведомление о настройке стёрло запись о шифрованном файле"
-    assert [r[2] for r in _sent(bot)] == ["✅ Шлюз <b>«Pi2»</b> успешно настроен 🎉"], _sent(bot)
+    assert [r[2] for r in _sent(bot)] == ["✅ Шлюз <b>Pi2</b> успешно настроен 🎉"], _sent(bot)
 
 
 def test_installed_text_escapes_names_and_falls_back_to_the_username():
     """Имя слота и имя бота задаёт человек: `<` и `&` без экранирования
     Telegram отвергает, и уведомление не дошло бы вовсе. Бот без имени —
     подписан своим username."""
-    got = texts.gateway_installed_text("«A<B>» (x & y)", {"username": "b_bot", "name": "Шлюз <Pi2> & co"})
-    assert got == ('✅ Шлюз <b>«A&lt;B&gt;» (x &amp; y)</b> успешно настроен 🎉\n'
+    got = texts.gateway_installed_text("A<B> (x & y)", {"username": "b_bot", "name": "Шлюз <Pi2> & co"})
+    assert got == ('✅ Шлюз <b>A&lt;B&gt; (x &amp; y)</b> успешно настроен 🎉\n'
                    '<b>Бот шлюза:</b> <a href="https://t.me/b_bot">Шлюз &lt;Pi2&gt; &amp; co</a>'), got
-    assert texts.gateway_installed_text("«Pi»", {"username": "pi_bot"}).endswith(
+    assert texts.gateway_installed_text("Pi", {"username": "pi_bot"}).endswith(
         '<a href="https://t.me/pi_bot">pi_bot</a>')
     for none in ({}, None, {"username": "", "name": "x"}):
-        assert texts.gateway_installed_text("«Pi»", none) == "✅ Шлюз <b>«Pi»</b> успешно настроен 🎉", none
+        assert texts.gateway_installed_text("Pi", none) == "✅ Шлюз <b>Pi</b> успешно настроен 🎉", none
 
 
 def test_applied_text_escapes_the_name_and_the_reason_and_has_no_dangling_colon():
     """Имя слота и причина отказа шлюза — чужой текст: без экранирования
     Telegram отвергает уведомление. Отказ без причины — без висящего «:»."""
-    assert texts.gateway_bundle_applied_text("«A<B>» (x & y)", True, "игнор") == \
-        "✅ Конфигурация шлюза <b>«A&lt;B&gt;» (x &amp; y)</b> успешно обновлена", "причина в успехе лишняя"
-    assert texts.gateway_bundle_applied_text("«Pi»", False, "") == \
-        "⚠️ Конфигурация шлюза <b>«Pi»</b> не обновлена"
-    assert texts.gateway_bundle_applied_text("«Pi»", False, "<b>rc=1</b>") == \
-        "⚠️ Конфигурация шлюза <b>«Pi»</b> не обновлена: &lt;b&gt;rc=1&lt;/b&gt;"
+    assert texts.gateway_bundle_applied_text("A<B> (x & y)", True, "игнор") == \
+        "✅ Конфигурация шлюза <b>A&lt;B&gt; (x &amp; y)</b> успешно обновлена", "причина в успехе лишняя"
+    assert texts.gateway_bundle_applied_text("Pi", False, "") == \
+        "⚠️ Конфигурация шлюза <b>Pi</b> не обновлена"
+    assert texts.gateway_bundle_applied_text("Pi", False, "<b>rc=1</b>") == \
+        "⚠️ Конфигурация шлюза <b>Pi</b> не обновлена: &lt;b&gt;rc=1&lt;/b&gt;"

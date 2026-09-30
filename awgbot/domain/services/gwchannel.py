@@ -295,6 +295,20 @@ class GwChannelMixin:
     def gwlink_own_ack_in(self, slot_id: int, body: dict) -> None:
         self._gwlink_ack_put(self._GWLINK_OWN_ACK_KEY, slot_id, body)
 
+    def gwlink_hello_ack_in(self, key: str, slot_id: int, digest: str) -> None:
+        """Агент назвал в hello отпечаток, совпавший с каноном: доставка не нужна,
+        и это подтверждение — иначе карточка ждала бы ответа вечно (прежний ответ
+        потерян или записан в старом формате). Пишется, только если записанный
+        ответ о другом отпечатке."""
+        if self._gwlink_ack_get(key, slot_id).get("hash") != digest:
+            self._gwlink_ack_put(key, slot_id, {"ok": True, "hash": digest, "n": 0, "error": ""})
+
+    def gwlink_own_hello_ack(self, slot_id: int, digest: str) -> None:
+        self.gwlink_hello_ack_in(self._GWLINK_OWN_ACK_KEY, slot_id, digest)
+
+    def gwlink_peer_services_hello_ack(self, slot_id: int, digest: str) -> None:
+        self.gwlink_hello_ack_in(self._GWLINK_PEER_SVC_KEY, slot_id, digest)
+
     def gwlink_own_ack(self, slot_id: int) -> dict:
         return self._gwlink_ack_get(self._GWLINK_OWN_ACK_KEY, slot_id)
 

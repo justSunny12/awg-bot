@@ -77,9 +77,9 @@ class SlotsMixin:
         return dev.name if dev is not None else f"слот {gw.id}"
 
     def _gw_display(self, gw) -> str:
-        """«Имя» (подпись) — сырое, для данных, которые экранирует слой текстов."""
+        """«Pi4 (ЕК-22П10)» — имя и подпись, сырое: экранирует слой текстов."""
         name = self._gw_name(gw)
-        return f"«{name}»" + (f" ({gw.label})" if gw.label else "")
+        return name + (f" ({gw.label})" if gw.label else "")
 
     def _gw_display_h(self, gw) -> str:
         """То же для текста, который уходит сообщением как HTML прямо отсюда.

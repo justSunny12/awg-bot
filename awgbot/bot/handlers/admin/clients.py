@@ -19,8 +19,7 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import ClientCB, Menu, PeriodCB, PresetCB
 from awgbot.bot.handlers.common import (call, edit, ask_here, ask_tracked, back_to_context,
-                                        cleanup_content, send_menu,
-                                        content_finisher)
+                                        cleanup_content, send_menu)
 from awgbot.bot.notifier import notify_one, send_notifications
 from awgbot.domain.services import BYTES_PER_GB, ServiceError
 from awgbot.bot.states import CreateClient, EditLimit, EditName, EditPeriod, EditTrafficLimit
@@ -220,21 +219,17 @@ async def add_client_period(cb: CallbackQuery, callback_data: PeriodCB, services
         await cb.message.delete()
     except Exception:                                  # noqa: BLE001
         pass
-    await _send_invite(cb.message, services, client, created.invite_code)
-    await cb.message.answer(texts.profile_created_note(client, int(limit), int(traffic_gb),
-                                                       created.period_end, _bot(services)))
-    parts = await client_card_parts(services, client.id)
-    if parts is not None:
-        await send_menu(cb.message, services, *parts)
+    await _invite_menu(cb.message, services, client, created.invite_code, new=True)
 
 
-async def _send_invite(message: Message, services, client, code: str) -> None:
-    """Приглашение с кнопками «📤 Отправить» и «📋 Скопировать» — служебное
-    (уберётся при возврате в меню; пересланное остаётся у получателя)."""
+async def _invite_menu(message: Message, services, client, code: str, *, new: bool) -> None:
+    """Приглашение одним сообщением-меню: текст для пересылки, черта, сводка
+    профиля; кнопки отправки и копирования несут только текст приглашения,
+    выходы — в карточку и на главную (сообщение при этом перерисовывается)."""
     bot = _bot(services) or (await message.bot.me()).username
     link = f"https://t.me/{bot}?start={code}"
-    sent = await message.answer(texts.invite_plain(link), reply_markup=kb.invite_kb(texts.invite_plain(link), link))
-    await call(services.db.add_content_msg_id, sent.chat.id, sent.message_id)
+    await send_menu(message, services, texts.invite_screen(link, client, new=new),
+                    kb.invite_menu(texts.invite_plain(link), link, client.id))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -491,9 +486,7 @@ async def regen_invite(cb: CallbackQuery, callback_data: ClientCB, services):
         await cb.message.delete()
     except Exception:                                  # noqa: BLE001
         pass
-    await _send_invite(cb.message, services, client, code)
-    await content_finisher(cb.message, services, texts.invite_finisher(client, _bot(services)), "admin",
-                           markup=kb.to_client_card(client.id))
+    await _invite_menu(cb.message, services, client, code, new=False)
 
 
 @router.callback_query(ClientCB.filter(F.action == "delete"))
