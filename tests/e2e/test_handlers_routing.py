@@ -665,6 +665,7 @@ async def test_routing_lists_info_and_controls(services, fake_bot, monkeypatch):
     monkeypatch.setattr(services, "routing_update_lists", lambda force=False: forced.append(force) or 7)
     async def noop_render(cb, sec, services_): pass
     monkeypatch.setattr(sh, "_render", noop_render)
+    monkeypatch.setattr(sh.sections, "_render", noop_render)
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
 
@@ -999,7 +1000,8 @@ async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
     async def _no_render(cb, sec, services_, key=""):  # раздел рисует полную карточку шлюза — не о нём тест
         pass
     monkeypatch.setattr(sh, "_render", _no_render)
-    monkeypatch.setattr(sh, "_render_nav", _no_render)
+    monkeypatch.setattr(sh.sections, "_render", _no_render)
+    monkeypatch.setattr(sh.render, "_render_nav", _no_render)
     monkeypatch.setattr(services, "routing_probe", lambda: rt.PROBE_DOWN)
     cb, nav = _cb(fake_bot, config.ADMIN_ID)
     await sh.toggle(cb, SetCB(sec="rt", act="toggle", key="app.routing.enabled"), services)

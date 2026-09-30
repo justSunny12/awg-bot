@@ -192,7 +192,7 @@ def test_the_old_name_scan_sees_handlers_and_fstrings(tmp_path):
     tmp.write_text('async def h(cb, on):\n    await cb.answer(f"Доступ между подсетями {on}")\n',
                    encoding="utf-8")
     assert any(OLD_NAMES["между подсетями"].search(v) for v, _ in _literals(tmp))
-    assert any(p.name == "settings.py" and p.parent.name == "handlers" for p in MAIN_FILES)
+    assert any(p.name == "sections.py" and p.parent.name == "settings" for p in MAIN_FILES)
 
 
 def test_terminal_strings_of_scripts_follow_the_terms():
