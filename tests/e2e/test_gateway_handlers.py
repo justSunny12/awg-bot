@@ -148,7 +148,7 @@ async def test_gateway_update_install_runs_the_shared_updater(svc, fake_bot, mon
     """«Обновить» у агента: следующая ступень → «дождись» → apply_update. Та же
     механика, что у клиентской роли, — sha256 и запуск вне cgroup внутри."""
     import types
-    nxt = types.SimpleNamespace(tag="v9.9.9", body="")
+    nxt = types.SimpleNamespace(tag="v9.9.9", body="", awg_generation=lambda: 0)
     applied = []
     monkeypatch.setattr(svc, "update_next", lambda: nxt)
     monkeypatch.setattr(svc, "apply_update", lambda r: applied.append(r.tag))
@@ -164,7 +164,7 @@ async def test_update_failure_message_can_be_hidden(svc, fake_bot, monkeypatch):
     следом: отказ не итог ступени, держать его в истории незачем, а меню под
     кнопкой уже удалено."""
     import types
-    nxt = types.SimpleNamespace(tag="v9.9.9", body="")
+    nxt = types.SimpleNamespace(tag="v9.9.9", body="", awg_generation=lambda: 0)
     monkeypatch.setattr(svc, "update_next", lambda: nxt)
 
     def boom(r):
@@ -267,7 +267,7 @@ def test_gateway_update_check_hook_reschedules_and_reads_never_as_month(monkeypa
         def pause_job(self, jid): calls.append(("pause", jid))
         def reschedule_job(self, jid, trigger=None): calls.append(("resched", jid, str(trigger)))
 
-    hook = sch.gateway_update_check_hook(FakeSched())
+    hook = sch.update_check_hook(FakeSched())
     store = {"updates.poll_schedule": "never"}
     monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
     hook("updates.poll_schedule", "never")

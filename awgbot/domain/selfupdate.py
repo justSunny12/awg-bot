@@ -78,6 +78,11 @@ class SelfUpdateMixin:
             return None                                   # роль без переезда
         return awglock.target_generation() if running else None
 
+    def clear_update_pending(self) -> None:
+        """Обновление не взлетело до апдейтера — снять флаг, иначе следующий
+        старт принесёт ложное «не применилось»."""
+        self.db.set_state("update_pending", "")
+
     def update_next(self):
         """Цель обновления (updates.Release) или None: последний релиз для роли
         с учётом обязательных ступеней и потолка поколения при идущем переезде.

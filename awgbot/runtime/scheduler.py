@@ -294,12 +294,6 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                            hour=settings.get_int("app.scheduler.monthly_reset_hour", 0),
                            minute=0, timezone=_TZ)
 
-    def _trig_backup():
-        # джиттер: почта и файл в чат ровно в 12:00:00 первого числа — маячок
-        return CronTrigger(day=settings.get_int("app.scheduler.backup_day", 1),
-                           hour=settings.get_int("app.scheduler.backup_hour", 12),
-                           minute=0, jitter=BACKUP_JITTER, timezone=_TZ)
-
     def _trig_purge():
         return CronTrigger(hour=settings.get_int("app.history.purge_hour", 3), minute=0, timezone=_TZ)
 
@@ -312,8 +306,8 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         "app.scheduler.migration_watch_seconds": ("migration_watch", _trig_migration_watch),
         "app.scheduler.monthly_reset_day": ("monthly", _trig_monthly),
         "app.scheduler.monthly_reset_hour": ("monthly", _trig_monthly),
-        "app.scheduler.backup_day": ("backup", _trig_backup),
-        "app.scheduler.backup_hour": ("backup", _trig_backup),
+        "app.scheduler.backup_day": ("backup", backup_trigger),
+        "app.scheduler.backup_hour": ("backup", backup_trigger),
         "app.history.purge_hour": ("purge_history", _trig_purge),
     }
 
@@ -327,7 +321,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                       id="monthly", max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
     scheduler.add_job(job_monthly, "date", run_date=now, id="monthly_catchup",
                       misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
-    scheduler.add_job(job_backup, _trig_backup(),
+    scheduler.add_job(job_backup, backup_trigger(),
                       id="backup", max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
     scheduler.add_job(job_backup, "date", run_date=now, id="backup_catchup",
                       misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
@@ -438,23 +432,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
             log.warning("email_resume reschedule: %s", e)
     settings.on_change("email.poll_interval_sec", _email_hook)
 
-    # проверка обновлений бота: раз в сутки (по умолчанию 10:00 МСК) + разово на
-    # старте (сразу после апдейта увидим следующую ступень, не дожидаясь утра).
-    # update_to_notify сам учитывает mute и «ровно один раз на версию».
-    async def job_update_check():
-        try:
-            found = await asyncio.to_thread(services.update_scan)   # шапка: «⬆️ Доступна vX»
-            nxt = await asyncio.to_thread(services.update_to_notify, found)
-            if nxt is not None:
-                await notify_update_available(bot, services, nxt)
-        except Exception as e:                        # noqa: BLE001
-            log.warning("update_check: %s", e)
-
-    scheduler.add_job(job_update_check, update_check_trigger(),
-                      id="update_check", max_instances=1, coalesce=True,
-                      misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
-    scheduler.add_job(job_update_check, "date", run_date=now, id="update_check_startup",
-                      max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
+    add_update_check(scheduler, services, bot, run_date=now, tag="update_check")
 
     # имена Telegram-аккаунтов: разово на старте (после обновления они пусты у
     # всех) и раз в сутки для тех, кто давно не писал; в сеть — с джиттером
@@ -501,17 +479,6 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     settings.on_change("app.network.ssh_port", _hook_firewall)
     # доступ между подсетями за шлюзами: форвардинг линк ↔ линк — в той же таблице
     settings.on_change("app.routing.peer_nets", _hook_firewall)
-
-    def _hook_update_check(key, value):
-        # три ключа ведут сюда; расписания «никогда» нет — только перевесить
-        try:
-            scheduler.reschedule_job("update_check", trigger=update_check_trigger())
-            log.info("расписание проверки обновлений обновлено (%s=%s)", key, value)
-        except Exception as e:                            # noqa: BLE001
-            log.warning("reschedule update_check (%s): %s", key, e)
-
-    for _k in ("updates.poll_schedule", "updates.poll_hour", "updates.poll_minute"):
-        settings.on_change(_k, _hook_update_check)
 
     return scheduler
 
@@ -640,16 +607,51 @@ def update_check_trigger():
     return CronTrigger(hour=h, minute=m, jitter=_UPDATE_JITTER, timezone=config.TZ)
 
 
-def gateway_update_check_hook(scheduler):
-    """Хук settings.on_change для задачи update_check агента: перевесить на
-    новый триггер. Модульная функция, а не замыкание, чтобы её можно было
-    проверить фейковым планировщиком."""
-    def _hook(_key, _value):
+def update_check_hook(scheduler):
+    """Хук settings.on_change для задачи update_check: перевесить на новый
+    триггер (три ключа ведут сюда; расписания «никогда» нет). Модульная
+    функция, а не замыкание, чтобы её можно было проверить фейковым
+    планировщиком."""
+    def _hook(key, value):
         try:
             scheduler.reschedule_job("update_check", trigger=update_check_trigger())
+            log.info("расписание проверки обновлений обновлено (%s=%s)", key, value)
         except Exception as e:                            # noqa: BLE001
-            log.warning("gw update_check reschedule: %s", e)
+            log.warning("reschedule update_check (%s): %s", key, e)
     return _hook
+
+
+def add_update_check(scheduler, services, bot, *, run_date, tag: str) -> None:
+    """Проверка обновлений — одна на обе роли: по расписанию (update_check_trigger,
+    с джиттером) и разово на старте (сразу после апдейта увидим следующую
+    ступень, не дожидаясь утра); смена расписания из чата или руками в conf —
+    перевешивание без рестарта. update_to_notify сам учитывает mute и «ровно
+    один раз на версию». tag — префикс записи журнала."""
+    async def job_update_check():
+        try:
+            found = await asyncio.to_thread(services.update_scan)   # шапка: «⬆️ Доступна vX»
+            nxt = await asyncio.to_thread(services.update_to_notify, found)
+            if nxt is not None:
+                await notify_update_available(bot, services, nxt)
+        except Exception as e:                        # noqa: BLE001
+            log.warning("%s: %s", tag, e)
+
+    scheduler.add_job(job_update_check, update_check_trigger(),
+                      id="update_check", max_instances=1, coalesce=True,
+                      misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
+    scheduler.add_job(job_update_check, "date", run_date=run_date, id="update_check_startup",
+                      max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
+    hook = update_check_hook(scheduler)
+    for key in ("updates.poll_schedule", "updates.poll_hour", "updates.poll_minute"):
+        settings.on_change(key, hook)
+
+
+def backup_trigger():
+    """Месячная копия обеих ролей: день/час из настроек, джиттер — почта и файл
+    в чат ровно в 12:00:00 первого числа были бы маячком."""
+    return CronTrigger(day=settings.get_int("app.scheduler.backup_day", 1),
+                       hour=settings.get_int("app.scheduler.backup_hour", 12),
+                       minute=0, jitter=BACKUP_JITTER, timezone=config.TZ)
 
 
 def setup_gateway_scheduler(services, bot):
@@ -733,12 +735,7 @@ def setup_gateway_scheduler(services, bot):
     async def job_gw_backup():
         await monthly_backup(services, bot, "gw backup")
 
-    def _trig_gw_backup():
-        return CronTrigger(day=settings.get_int("app.scheduler.backup_day", 1),
-                           hour=settings.get_int("app.scheduler.backup_hour", 12),
-                           minute=0, jitter=BACKUP_JITTER, timezone=config.TZ)
-
-    scheduler.add_job(job_gw_backup, _trig_gw_backup(), id="gw_backup", max_instances=1,
+    scheduler.add_job(job_gw_backup, backup_trigger(), id="gw_backup", max_instances=1,
                       coalesce=True, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
     # E7: догон на старте, как у основного бота — устройство, выключенное 1-го
     # в 12:00, иначе теряло месячную копию (первый прогон только помечает
@@ -750,30 +747,12 @@ def setup_gateway_scheduler(services, bot):
 
     def _gw_backup_hook(_key=None, _val=None):
         try:
-            scheduler.reschedule_job("gw_backup", trigger=_trig_gw_backup())
+            scheduler.reschedule_job("gw_backup", trigger=backup_trigger())
         except Exception as e:                            # noqa: BLE001
             log.warning("gw_backup reschedule: %s", e)
     for key in ("app.scheduler.backup_day", "app.scheduler.backup_hour"):
         settings.on_change(key, _gw_backup_hook)
 
-    async def job_update_check():
-        try:
-            found = await asyncio.to_thread(services.update_scan)
-            nxt = await asyncio.to_thread(services.update_to_notify, found)
-            if nxt is not None:
-                await notify_update_available(bot, services, nxt)
-        except Exception as e:                        # noqa: BLE001
-            log.warning("gw update_check: %s", e)
-
-    scheduler.add_job(job_update_check, update_check_trigger(),
-                      id="update_check", max_instances=1, coalesce=True,
-                      misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
-    scheduler.add_job(job_update_check, "date", run_date=timeutil.now(),
-                      id="update_check_startup", max_instances=1,
-                      misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
-    # смена расписания из чата или руками в conf — применяется без рестарта
-    hook = gateway_update_check_hook(scheduler)
-    for key in ("updates.poll_schedule", "updates.poll_hour", "updates.poll_minute"):
-        settings.on_change(key, hook)
+    add_update_check(scheduler, services, bot, run_date=timeutil.now(), tag="gw update_check")
     scheduler.start()
     return scheduler

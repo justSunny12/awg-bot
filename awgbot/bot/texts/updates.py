@@ -83,6 +83,19 @@ def update_available(tag: str, body: str, installed: str | None = None) -> str:
     return header + _changelog_block(body, header, tag)
 
 
+UPDATE_NOTHING = "Обновлять не на что — версия актуальна"
+UPDATE_STARTING = "Запускаю обновление…"
+UPDATES_MUTED_TOAST = "Уведомления об обновлениях выключены"
+
+
+def update_blocked_toast(reason: str) -> str:
+    return f"Нельзя: {reason}"
+
+
+def updates_notify_toast(*, enabled: bool) -> str:
+    return "Уведомления " + ("включены" if enabled else "выключены")
+
+
 def update_wait(tag: str) -> str:
     """Единственное сообщение на время обновления (цепочка до него стёрта)."""
     return f"⏳ Обновление до {_e(tag)}, дождись завершения"

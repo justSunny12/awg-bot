@@ -27,8 +27,9 @@ from awgbot.bot.callbacks import GwCB, UpdateCB
 from awgbot.bot.states import GatewayTransitDomain
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers import settingscore as core
+from awgbot.bot.handlers import updates_flow
 from awgbot.bot.handlers.common import (call, edit_nav, send_menu, send_menu_to, cleanup_content, purge_menus,
-                                        ask_here, dismiss_update_reports, forget_secret, ask_tracked,
+                                        ask_here, forget_secret, ask_tracked,
                                         drop_previous_nav)
 from awgbot.bot.states import SshPort, GwSshAllow
 from awgbot.domain.gwssh import SshOwnerRefusal
@@ -754,63 +755,24 @@ async def gw_bundle_drop(cb: CallbackQuery, services, state: FSMContext):
 
 # ── самообновление агента (этап 3) — та же механика, что у клиентской роли ────
 
+async def _panel_after_update(message, services):
+    await _panel(message, services, keep_id=message.message_id)
+
+
 @router.callback_query(UpdateCB.filter(F.action == "install"))
 async def gw_update_install(cb: CallbackQuery, services):
-    """Скачать следующую ступень, сверить sha256, запустить апдейтер вне cgroup.
-    Итог пришлёт уже новый процесс (report_update_result на старте)."""
-    nxt = await call(services.update_next)
-    if nxt is None:
-        await cb.answer("Текущая версия актуальна", show_alert=True)
-        return
-    await cb.answer("Запускаю обновление…")
-    chat_id = cb.message.chat.id
-    await cleanup_content(cb.bot, services, chat_id)
-    try:
-        await cb.message.delete()
-    except Exception:                                 # noqa: BLE001
-        pass
-    wait = await cb.bot.send_message(chat_id, texts.update_wait(nxt.tag))
-    await call(services.set_update_wait, chat_id, wait.message_id)
-    try:
-        await call(services.apply_update, nxt)
-    except Exception as e:                            # noqa: BLE001
-        await call(services.pop_update_wait)
-        await call(services.db.set_state, "update_pending", "")
-        try:
-            await wait.delete()
-        except Exception:                             # noqa: BLE001
-            pass
-        # отказ — финишер со «Скрыть», панель следом: меню под кнопкой уже
-        # удалено, оставить человека без него нельзя
-        await cb.bot.send_message(chat_id, texts.update_failed(str(e)),
-                                  reply_markup=kb.hide_only())
-        await _panel(cb.message, services)
+    """«Обновить» — общий поток обеих ролей (updates_flow.install)."""
+    await updates_flow.install(cb, services, return_panel=_panel)
 
 
 @router.callback_query(UpdateCB.filter(F.action == "menu"))
 async def gw_update_menu(cb: CallbackQuery, services, state: FSMContext):
-    """«В меню» на итоге обновления: текст остаётся, кнопка снимается, панель —
-    новым сообщением."""
-    await cb.answer()
-    await state.clear()
-    try:
-        await cb.message.edit_reply_markup(reply_markup=None)
-    except Exception:                                 # noqa: BLE001
-        pass
-    # и у всех прочих окон обновления тоже — живой должна быть одна кнопка
-    await dismiss_update_reports(cb.bot, services,
-                                 keep=(cb.message.chat.id, cb.message.message_id))
-    await _panel(cb.message, services, keep_id=cb.message.message_id)
+    await updates_flow.menu(cb, services, state, return_panel=_panel_after_update)
 
 
 @router.callback_query(UpdateCB.filter(F.action == "mute"))
 async def gw_update_mute(cb: CallbackQuery, services):
-    await call(services.mute_updates)
-    await cb.answer("Уведомления об обновлениях выключены")
-    try:
-        await cb.message.delete()
-    except Exception:                                 # noqa: BLE001
-        pass
+    await updates_flow.mute(cb, services)
 
 
 # ── раздел обновлений: ручная точка входа (уведомление могло прийти до тебя) ──
@@ -823,17 +785,12 @@ async def _updates_screen(cb: CallbackQuery, services, scan: bool = True):
         found = await call(services.update_scan)
     else:
         tag = await call(services.update_available_tag)
-        found = _CachedTarget(tag) if tag else None
+        found = updates_flow.CachedTarget(tag) if tag else None
     muted = await call(services.updates_muted)
     await edit_nav(cb, services,
                    texts.settings_upd_text(config.INSTALLED_VERSION, found, "",
                                            scan_failed=bool(getattr(services, "update_scan_failed", False))),
                    kb.gateway_updates_kb(muted, target_tag=found.tag if found is not None else ""))
-
-
-class _CachedTarget:
-    def __init__(self, tag: str):
-        self.tag, self.body = tag, ""
 
 
 @router.callback_query(GwCB.filter(F.action == "updates"))
@@ -844,12 +801,7 @@ async def gw_updates_screen(cb: CallbackQuery, services):
 
 @router.callback_query(GwCB.filter(F.action == "upd_toggle"))
 async def gw_updates_toggle(cb: CallbackQuery, services):
-    muted = await call(services.updates_muted)
-    if muted:
-        await call(services.unmute_updates)
-    else:
-        await call(services.mute_updates)
-    await cb.answer("Уведомления " + ("включены" if muted else "выключены"))
+    await updates_flow.toggle_mute(cb, services)
     await _updates_screen(cb, services, scan=False)
 
 
@@ -857,15 +809,9 @@ async def gw_updates_toggle(cb: CallbackQuery, services):
 async def gw_updates_sched(cb: CallbackQuery, callback_data: GwCB, services):
     """Старый пикер расписания из сообщений 3.1.0: пишется горячо; «никогда»
     больше нет — становится «месяц»."""
-    from awgbot.core import settings
-    opt = callback_data.val if callback_data.val in ("day", "week", "month") else "month"
-    try:
-        await call(settings.set_value, "updates.poll_schedule", opt)
-    except settings.SettingsWriteError as e:
-        await cb.answer(str(e), show_alert=True)
+    if not await updates_flow.set_schedule(cb, services, callback_data.val):
         return
-    if callback_data.val == "never":                       # «никогда» 3.1.0 = тишина
-        await call(services.mute_updates)
+    opt = callback_data.val if callback_data.val in ("day", "week", "month") else "month"
     await cb.answer(texts.cycle_toast("updates.poll_schedule", opt))
     await _updates_screen(cb, services, scan=False)
 

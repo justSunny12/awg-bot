@@ -21,6 +21,7 @@ from awgbot.bot.callbacks import GwMarkCB, GwSlotCB, SetCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.states import GatewayToken, GatewayHome, GatewayLabel, MigrationPort, SshPort
 from awgbot.bot.handlers import settingscore as core
+from awgbot.bot.handlers import updates_flow
 from awgbot.bot.notifier import send_notifications
 from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu, card_is_from_main, card_from_main, ask_here, edit_nav,
                                         ask_tracked, cleanup_content)
@@ -37,12 +38,6 @@ router.callback_query.filter(RoleFilter("admin"))
 
 
 # ── рендер экранов ───────────────────────────────────────────────────────────
-class _CachedTarget:
-    """Цель обновления по сохранённому тегу — для перерисовки раздела без сети."""
-    def __init__(self, tag: str):
-        self.tag, self.body = tag, ""
-
-
 async def _screen(sec: str, services, key: str = ""):
     """(text, markup) для раздела sec.
 
@@ -101,7 +96,7 @@ async def _screen(sec: str, services, key: str = ""):
         if key == "cached":
             # тумблер и цикл: без похода в сеть, по тегу последней проверки
             tag = await call(services.update_available_tag)
-            found = _CachedTarget(tag) if tag else None
+            found = updates_flow.CachedTarget(tag) if tag else None
             blocked = ""
         else:
             found = await call(services.update_scan)
@@ -900,14 +895,7 @@ async def open_section(cb: CallbackQuery, callback_data: SetCB, services, state:
 async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
     key = callback_data.key
     if callback_data.sec == "upd" and key == "notify":
-        # уведомления об обновлениях = мьют в БД (не YAML); проверка по
-        # расписанию идёт в любом случае — ради строки «⬆️ Доступна vX»
-        muted = await call(services.updates_muted)
-        if muted:
-            await call(services.unmute_updates)
-        else:
-            await call(services.mute_updates)
-        await cb.answer("Уведомления " + ("включены" if muted else "выключены"))
+        await updates_flow.toggle_mute(cb, services)
         await _render(cb, "upd", services, "cached")
         return
     if key == "app.routing.enabled" and settings.get_bool(key, False):
@@ -1362,14 +1350,8 @@ async def pick(cb: CallbackQuery, callback_data: SetCB, services):
         await core.set_backup_channel(cb, services, HOOKS, callback_data.val)
         return
     if callback_data.sec == "upd" and callback_data.key == "sched":
-        opt = callback_data.val
-        try:
-            await call(settings.set_value, "updates.poll_schedule", opt)
-        except settings.SettingsWriteError as e:
-            await cb.answer(str(e), show_alert=True)
+        if not await updates_flow.set_schedule(cb, services, callback_data.val):
             return
-        if opt == "never":                      # никогда → авто-мьют уведомлений
-            await call(services.mute_updates)
     await _render(cb, callback_data.sec, services)
     await cb.answer()
 
