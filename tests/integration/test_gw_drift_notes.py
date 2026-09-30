@@ -18,6 +18,7 @@ import pytest
 
 from awgbot.core import config, settings
 from awgbot.util import timeutil
+from tests.conftest import SH
 
 pytestmark = pytest.mark.integration
 
@@ -195,7 +196,7 @@ def test_the_keepalive_the_bundle_carries_survives_the_link_script(services, slo
     script = (Path(__file__).resolve().parents[2] / "install" / "routing-link-setup.sh").read_text(encoding="utf-8")
     head = script.split('LINK_KEEPALIVE="${LINK_KEEPALIVE', 1)[1].split("\nesac\n", 1)[0]
     prog = '_cfg_keepalive=""\nLINK_KEEPALIVE="${LINK_KEEPALIVE' + head + '\nesac\nprintf "%s" "$LINK_KEEPALIVE"'
-    r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
+    r = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                        env={"PATH": "/usr/bin:/bin", "LINK_KEEPALIVE": env["LINK_KEEPALIVE"]})
     assert r.returncode == 0, r.stderr
     assert r.stdout == "25", f"скрипт линка превратил {env['LINK_KEEPALIVE']!r} в {r.stdout!r}"

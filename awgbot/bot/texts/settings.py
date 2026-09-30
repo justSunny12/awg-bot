@@ -605,7 +605,7 @@ def cycle_toast(key: str, value) -> str:
     if key == "email.resume_code_len":
         return f"Код: {value} символов"
     if key == "updates.poll_schedule":
-        from awgbot.bot.keyboards.settings import UPDATE_SCHEDULE_LABELS
+        from awgbot.bot.keyboards.rolekb import UPDATE_SCHEDULE_LABELS
         return f"Проверка: {UPDATE_SCHEDULE_LABELS.get(str(value), value)}"
     if key == "app.scheduler.backup_channel":
         return "Куда: " + ("E-mail" if str(value) == "email" else "Telegram")

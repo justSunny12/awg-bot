@@ -360,7 +360,11 @@ _ARGS = {"key": "restart", "sec": "mon", "configured": True, "has_secret": True,
          "idx": 0, "kind": "ru", "dom": "a.ru", "val": "1.2.3.4", "label": "1.2.3.4", "slot": 1,
          "on": True, "healthy": True, "device_id": 3, "has_candidates": True, "enabled": True,
          "lists_every": 6, "unassigned_count": 0, "client_id": 5,
-         "info": {"probe_seconds": 30, "window": 10, "threshold": 60, "failover": True}}
+         "info": {"probe_seconds": 30, "window": 10, "threshold": 60, "failover": True, "availability": 50},
+         # билдеры списков и пресетов — образцы под их параметры
+         "client": _cli(1), "clients": [_cli(1), _cli(2)], "devices": DEVS, "target": "dev", "ref": 1,
+         "ctx": "extend", "values": [10, 50, 100], "cancel_cb": "m:main", "selected": set(),
+         "seconds": 60, "n": 8, "day": 1, "hour": 12, "c": _cli(1), "online_ids": set()}
 
 # (модуль, билдер) → нарушения, которые терпим, и почему: «этап N» — до
 # своего этапа; «макет …» — так нарисовано в утверждённом макете экрана
@@ -386,10 +390,15 @@ _EXTRA = {("gateway", "gateway_panel_kb"): lambda: kbg.gateway_panel_kb(lan=True
           ("routing", "gateway_edit_kb"): lambda: kbr.gateway_edit_kb(_GW_STATE, two_slots=True),
           ("routing", "routing_params_kb"): lambda: kbr.routing_params_kb(
               {"probe_seconds": 30, "window": 10, "availability": 50}, 6),
-          ("settings", "migration_confirm"): lambda: kbs.migration_confirm("finish")}
+          ("settings", "migration_confirm"): lambda: kbs.migration_confirm("finish"),
+          ("routing", "gateway_pick"): lambda: kbr.gateway_pick(
+              [SimpleNamespace(id=7, name="NASPi", address="10.8.1.5")])}
 
 
 def _admin_builders():
+    """(модуль, имя, сборщик) для всех публичных функций модулей; без образца
+    под сигнатуру сборщик поднимает LookupError — сторож ниже такое не
+    пропускает молча."""
     for mod in (kba, kbs, kbg, kbb, kbr):
         short = mod.__name__.rsplit(".", 1)[-1]
         for name, fn in inspect.getmembers(mod, inspect.isfunction):
@@ -401,19 +410,27 @@ def _admin_builders():
             req = [p.name for p in inspect.signature(fn).parameters.values()
                    if p.default is inspect.Parameter.empty
                    and p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD]
-            if all(r in _ARGS for r in req):
-                yield short, name, (lambda fn=fn, req=req: fn(**{r: _ARGS[r] for r in req}))
+            missing = [r for r in req if r not in _ARGS]
+            if missing:
+                def _no_sample(missing=missing):
+                    raise LookupError(f"нет образца для параметров {missing}")
+                yield short, name, _no_sample
+                continue
+            yield short, name, (lambda fn=fn, req=req: fn(**{r: _ARGS[r] for r in req}))
 
 
 def test_admin_and_agent_keyboards_break_the_rules_only_where_listed():
     seen = {}
+    unsampled = {}
     for short, name, make in _admin_builders():
         try:
             markup = make()
-        except (KeyError, TypeError, ValueError):
-            continue                                    # образца под сигнатуру нет — не судим
+        except (KeyError, TypeError, ValueError, LookupError) as e:
+            unsampled[(short, name)] = f"{type(e).__name__}: {e}"
+            continue
         if isinstance(markup, InlineKeyboardMarkup):
             seen[(short, name)] = _violations(markup, name)
+    assert not unsampled, f"билдеры без образца — сторож их не проверяет: {unsampled}"
     unexpected = {k: v for k, v in seen.items()
                   if v and v != ADMIN_EXCEPTIONS.get(k, (set(), ""))[0]}
     assert not unexpected, f"нарушения вне списка исключений: {unexpected}"

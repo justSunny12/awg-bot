@@ -8,6 +8,7 @@ from awgbot.core import settings
 from awgbot.bot.callbacks import Menu, UpdateCB, SetCB, GwCB, HideCB
 
 from .common import paged_rows, _chk, _tick, entry_tag, confirm
+from . import rolekb
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -54,6 +55,28 @@ def settings_back(sec_to: str = "root") -> InlineKeyboardMarkup:
 
 def _back(sec_to: str = "root") -> InlineKeyboardButton:
     return InlineKeyboardButton(text="⬅️ Назад", callback_data=SetCB(sec=sec_to).pack())
+
+
+def _role(sec: str) -> rolekb.RoleCB:
+    """Адаптер колбэков основного бота для общих клавиатур: раздел sec."""
+    return rolekb.RoleCB(
+        toggle=lambda key: SetCB(sec=sec, act="toggle", key=key),
+        edit=lambda key: SetCB(sec=sec, act="edit", key=key),
+        cycle=lambda key: SetCB(sec=sec, act="cycle", key=key),
+        actions={"encryption": SetCB(sec="backup", act="do", key="enc"),
+                 "encryption_set": SetCB(sec="backup", act="do", key="enc_set"),
+                 "backup_now": SetCB(sec="backup", act="do", key="now"),
+                 "email_setup": SetCB(sec="email", act="do", key="setup"),
+                 "email_check": SetCB(sec="email", act="do", key="check"),
+                 "email_test": SetCB(sec="email", act="do", key="test"),
+                 "email_forget": SetCB(sec="email", act="do", key="forget"),
+                 "updates_notify": SetCB(sec="upd", act="toggle", key="notify"),
+                 "port_retry": SetCB(sec="fw", act="do", key="port_retry"),
+                 "port_back": SetCB(sec="fw", act="do", key="port_back")},
+        back=lambda to: SetCB(sec=to))
+
+
+_ROLE = _role("fw")
 
 
 def _cycle(sec: str, key: str, label: str) -> InlineKeyboardButton:
@@ -160,45 +183,17 @@ def settings_firewall(st: dict, page: int = 0) -> InlineKeyboardMarkup:
 
 
 def ssh_port_finisher() -> InlineKeyboardMarkup:
-    """Финишер «порт не изменился / не выполнена»: другой порт или назад в
-    раздел; нажатие оставляет финишер с одной «Скрыть»."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="✏️ Другой порт", callback_data=SetCB(sec="fw", act="do", key="port_retry"))
-    kb.button(text="⬅️ Назад", callback_data=SetCB(sec="fw", act="do", key="port_back"))
-    kb.adjust(2)
-    return kb.as_markup()
+    return rolekb.port_finisher_kb(_ROLE)
 
 
 # ── 🔔 Уведомления ───────────────────────────────────────────────────────────
 
 def settings_notify() -> InlineKeyboardMarkup:
-    """Тихие часы и их границы, алерты хоста и пороги, аварии на e-mail и
-    события профилей — в две колонки, границы только при включённом."""
+    """Тихие часы и их границы, алерты хоста и пороги (общие с агентом —
+    rolekb.notify_rows), аварии на e-mail и события профилей."""
     s = settings
     kb = InlineKeyboardBuilder()
-    rows = []
-    qh = s.get_bool("quiet_hours.quiet_hours_enabled", True)
-    kb.button(text=f"{_chk(qh)} Тихие часы",
-              callback_data=SetCB(sec="notify", act="toggle", key="quiet_hours.quiet_hours_enabled"))
-    rows.append(1)
-    if qh:
-        kb.button(text=f"С {s.get_int('quiet_hours.quiet_hours_start', 20):02d}:00",
-                  callback_data=SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_start"))
-        kb.button(text=f"До {s.get_int('quiet_hours.quiet_hours_end', 7):02d}:00",
-                  callback_data=SetCB(sec="notify", act="edit", key="quiet_hours.quiet_hours_end"))
-        rows.append(2)
-    ra = s.get_bool("resource_alerts.enabled", True)
-    kb.button(text=f"{_chk(ra)} Алерты хоста",
-              callback_data=SetCB(sec="notify", act="toggle", key="resource_alerts.enabled"))
-    rows.append(1)
-    if ra:
-        kb.button(text=f"CPU {s.get_int('resource_alerts.thresholds_percent.cpu', 80)}%",
-                  callback_data=SetCB(sec="notify", act="edit", key="resource_alerts.thresholds_percent.cpu"))
-        kb.button(text=f"RAM {s.get_int('resource_alerts.thresholds_percent.ram', 80)}%",
-                  callback_data=SetCB(sec="notify", act="edit", key="resource_alerts.thresholds_percent.ram"))
-        kb.button(text=f"Диск {s.get_int('resource_alerts.thresholds_percent.disk', 80)}%",
-                  callback_data=SetCB(sec="notify", act="edit", key="resource_alerts.thresholds_percent.disk"))
-        rows.append(3)
+    rows = rolekb.notify_rows(kb, _role("notify"), temp=False)
     ef = s.get_bool("notifications.email_fallback", False)
     kb.button(text=f"{_chk(ef)} Аварии на e-mail",
               callback_data=SetCB(sec="notify", act="toggle", key="notifications.email_fallback"))
@@ -243,20 +238,11 @@ def email_code_label(n: int) -> str:
 
 
 def settings_email(configured: bool) -> InlineKeyboardMarkup:
-    """Почтовый канал: проверка и тест, смена и отключение, аварийный выход из
-    паузы с адресом и циклами опроса и длины кода."""
+    """Почтовый канал (общая часть с агентом — rolekb.email_kb) плюс аварийный
+    выход из паузы с адресом и циклами опроса и длины кода."""
     s = settings
-    kb = InlineKeyboardBuilder()
-    rows: list[int] = []
-    if not configured:
-        kb.button(text="✉️ Подключить ящик", callback_data=SetCB(sec="email", act="do", key="setup"))
-        rows.append(1)
-    else:
-        kb.button(text="🔍 Проверить", callback_data=SetCB(sec="email", act="do", key="check"))
-        kb.button(text="📨 Тест-письмо", callback_data=SetCB(sec="email", act="do", key="test"))
-        kb.button(text="✏️ Сменить ящик", callback_data=SetCB(sec="email", act="do", key="setup"))
-        kb.button(text="🗑 Отключить", callback_data=SetCB(sec="email", act="do", key="forget"))
-        rows += [2, 2]
+
+    def _resume(kb, rows):
         on = s.get_bool("email.resume_enabled", True)
         kb.button(text=f"{_chk(on)} Аварийный выход",
                   callback_data=SetCB(sec="email", act="toggle", key="email.resume_enabled"))
@@ -269,9 +255,7 @@ def settings_email(configured: bool) -> InlineKeyboardMarkup:
             kb.add(_cycle("email", "email.resume_code_len",
                           email_code_label(s.get_int("email.resume_code_len", 8))))
             rows += [2, 1]
-    kb.adjust(*rows)
-    kb.row(_back())
-    return kb.as_markup()
+    return rolekb.email_kb(_role("email"), configured, extra=_resume)
 
 
 def email_forget_confirm() -> InlineKeyboardMarkup:
@@ -279,12 +263,7 @@ def email_forget_confirm() -> InlineKeyboardMarkup:
 
 
 def email_setup_offer(back_sec: str) -> InlineKeyboardMarkup:
-    """«Почта не настроена» — настроить сейчас или вернуться в раздел."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ Назад", callback_data=SetCB(sec=back_sec))
-    kb.button(text="✉️ Настроить почту", callback_data=SetCB(sec="email", act="do", key="setup"))
-    kb.adjust(2)
-    return kb.as_markup()
+    return rolekb.email_offer_kb(_role("email"), back_sec)
 
 
 # ── 💳 Подписки ──────────────────────────────────────────────────────────────
@@ -326,48 +305,12 @@ def settings_mon() -> InlineKeyboardMarkup:
 
 # ── 💾 Бэкапы ────────────────────────────────────────────────────────────────
 
-def _day_label(day: int) -> str:
-    """«1-е», «2-е», «3-е», «7-е» — число месяца с окончанием."""
-    d = int(day)
-    return f"{d}-е"
-
-
-def backup_when_label(day: int, hour: int) -> str:
-    return f"✏️ {_day_label(day)}, {int(hour):02d}:00"
-
-
 def settings_backup(encryption: bool = False) -> InlineKeyboardMarkup:
-    """Автобэкапы тумблером и «🔐 Шифрование» — всегда (фраза нужна и для
-    восстановления шифрованных копий); включены — канал циклом, день и час
-    одной кнопкой, «сделать сейчас»."""
-    s = settings
-    kb = InlineKeyboardBuilder()
-    on = s.get_bool("app.scheduler.backup_enabled", True)
-    kb.button(text=f"{_chk(on)} Автобэкапы",
-              callback_data=SetCB(sec="backup", act="toggle", key="app.scheduler.backup_enabled"))
-    kb.button(text="🔐 Шифрование", callback_data=SetCB(sec="backup", act="do", key="enc"))
-    rows = [2]
-    if on:
-        ch = str(s.get("app.scheduler.backup_channel", "telegram") or "telegram").lower()
-        kb.add(_cycle("backup", "app.scheduler.backup_channel",
-                      "📨 Куда: " + ("E-mail" if ch == "email" else "Telegram")))
-        kb.button(text=backup_when_label(s.get_int("app.scheduler.backup_day", 1),
-                                         s.get_int("app.scheduler.backup_hour", 12)),
-                  callback_data=SetCB(sec="backup", act="edit", key="backup_when"))
-        kb.button(text="💾 Сделать сейчас", callback_data=SetCB(sec="backup", act="do", key="now"))
-        rows += [2, 1]
-    kb.adjust(*rows)
-    kb.row(_back())
-    return kb.as_markup()
+    return rolekb.backup_kb(_role("backup"), encryption)
 
 
 def backup_encryption_kb(has_secret: bool) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="✏️ Сменить фразу" if has_secret else "🔑 Задать фразу",
-              callback_data=SetCB(sec="backup", act="do", key="enc_set"))
-    kb.button(text="⬅️ Назад", callback_data=SetCB(sec="backup"))
-    kb.adjust(1)
-    return kb.as_markup()
+    return rolekb.encryption_kb(_role("backup"), has_secret)
 
 
 def restore_confirm(gateway: bool = False) -> InlineKeyboardMarkup:
@@ -424,30 +367,8 @@ def migration_confirm(key: str) -> InlineKeyboardMarkup:
 
 # ── ⬆️ Обновления ────────────────────────────────────────────────────────────
 
-UPDATE_SCHEDULE_CYCLE = ("day", "week", "month")
-UPDATE_SCHEDULE_LABELS = {"day": "день", "week": "неделя", "month": "месяц"}
-
-
 def settings_updates(muted: bool, target_tag: str = "", blocked: str = "") -> InlineKeyboardMarkup:
-    """target_tag — найденная цель обновления (кнопка «⬆️ Обновить до vX»,
-    если не заблокирована); «Уведомлять» — мьют в БД; «Проверка» — цикл
-    день → неделя → месяц."""
-    s = settings
-    kb = InlineKeyboardBuilder()
-    rows = []
-    if target_tag and not blocked:
-        tag = target_tag if str(target_tag).startswith("v") else f"v{target_tag}"
-        kb.button(text=f"⬆️ Обновить до {tag}", callback_data=UpdateCB(action="install"))
-        rows.append(1)
-    sched = str(s.get("updates.poll_schedule", "day")).lower()
-    if sched not in UPDATE_SCHEDULE_LABELS:
-        sched = "month"
-    kb.button(text=f"{_chk(not muted)} Уведомлять", callback_data=SetCB(sec="upd", act="toggle", key="notify"))
-    kb.add(_cycle("upd", "updates.poll_schedule", f"📅 Проверка: {UPDATE_SCHEDULE_LABELS[sched]}"))
-    rows.append(2)
-    kb.adjust(*rows)
-    kb.row(_back())
-    return kb.as_markup()
+    return rolekb.updates_kb(_role("upd"), muted, target_tag, blocked)
 
 
 

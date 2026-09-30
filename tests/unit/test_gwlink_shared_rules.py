@@ -22,6 +22,7 @@ from awgbot.domain import gwsnapshot
 from awgbot.domain.services.gwchannel import GwChannelMixin
 from awgbot.runtime import linkclient, linkserver
 from awgbot.util import gwlink
+from tests.conftest import SH
 
 pytestmark = pytest.mark.unit
 
@@ -31,7 +32,7 @@ LINK_SETUP = ROOT / "install" / "routing-link-setup.sh"
 
 
 def _sh(prog: str, **env) -> str:
-    r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
+    r = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                        env={"PATH": "/usr/bin:/bin", **env})
     assert r.returncode == 0, r.stderr
     return r.stdout

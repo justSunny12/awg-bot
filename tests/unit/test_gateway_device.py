@@ -15,6 +15,7 @@ from awgbot.core import config
 from awgbot.domain import configgen
 from awgbot.infra import gwguard
 from awgbot.util import gwsign
+from tests.conftest import SH
 
 ROOT = Path(__file__).resolve().parents[2]
 PRIV = base64.b64encode(os.urandom(32)).decode()
@@ -258,7 +259,7 @@ def test_bundle_header_carries_gateway_fields(tmp_path):
     (tmp_path / "linkconf").mkdir(); (tmp_path / "linkconf" / "awglink.conf").write_text("[Interface]\nListenPort = 443\nPrivateKey = X==\n", encoding="utf-8")
     out = tmp_path / "b.sh"
     up = base64.b64encode(b"[Interface]\nTable = off\n").decode()
-    r = subprocess.run(["sh", str(inst / "routing-link-setup.sh"), "--bundle"], cwd=tmp_path,
+    r = subprocess.run([SH, str(inst / "routing-link-setup.sh"), "--bundle"], cwd=tmp_path,
                        capture_output=True, text=True,
                        env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "CONF_DIR": str(tmp_path / "linkconf"),
                             "GW_CONF_OUT": str(conf), "GW_BUNDLE_OUT": str(out),
@@ -375,7 +376,7 @@ def test_gateway_conf_allowed_ips_carry_peer_subnets_and_bundle_refreshes_them(t
     env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "CONF_DIR": str(tmp_path / "linkconf"),
            "GW_CONF_OUT": str(conf), "GW_BUNDLE_OUT": str(out), "CLIENT_SUBNET": "10.9.1.0/24",
            "PEER_HOME_NETS": "192.168.1.0/24 192.168.2.0/24; rm -rf /"}
-    r = subprocess.run(["sh", str(inst / "routing-link-setup.sh"), "--bundle"], cwd=tmp_path,
+    r = subprocess.run([SH, str(inst / "routing-link-setup.sh"), "--bundle"], cwd=tmp_path,
                        capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
     assert "AllowedIPs = 10.9.1.0/24, 10.99.99.0/30, 192.168.1.0/24, 192.168.2.0/24\n" in conf.read_text(encoding="utf-8")
@@ -384,6 +385,6 @@ def test_gateway_conf_allowed_ips_carry_peer_subnets_and_bundle_refreshes_them(t
     assert "AllowedIPs = 10.9.1.0/24, 10.99.99.0/30, 192.168.1.0/24, 192.168.2.0/24" in text
     # без чужих подсетей — как раньше
     env["PEER_HOME_NETS"] = ""
-    subprocess.run(["sh", str(inst / "routing-link-setup.sh"), "--bundle"], cwd=tmp_path,
+    subprocess.run([SH, str(inst / "routing-link-setup.sh"), "--bundle"], cwd=tmp_path,
                    capture_output=True, text=True, env=env)
     assert "AllowedIPs = 10.9.1.0/24, 10.99.99.0/30\n" in conf.read_text(encoding="utf-8")

@@ -17,6 +17,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.conftest import SH
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ["routing-gw-setup.sh", "routing-host-setup.sh", "routing-link-setup.sh"]
@@ -42,7 +43,7 @@ def test_install_self_copies_to_a_permanent_place_and_returns_that_path(name, tm
     me = tmp_path / "tmp-extract" / name
     me.parent.mkdir(); me.write_text("#!/bin/sh\n", encoding="utf-8")
 
-    r = subprocess.run(["sh", "-c", fn + "\ninstall_self", str(me)],
+    r = subprocess.run([SH, "-c", fn + "\ninstall_self", str(me)],
                        capture_output=True, text=True,
                        env={"PATH": f"{shim}:/usr/bin:/bin"})
     assert r.returncode == 0, r.stderr

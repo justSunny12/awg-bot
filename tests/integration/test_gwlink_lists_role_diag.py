@@ -37,6 +37,7 @@ from awgbot.runtime import linkclient, linkserver
 from awgbot.util import gwlink
 from tests.integration.test_gwlink_channel import _Gw, _free_port, _until
 from tests.unit.test_gwlink_settings_apply import UNIT_TEXT, _Unit
+from tests.conftest import SH
 
 pytestmark = pytest.mark.integration
 
@@ -172,7 +173,7 @@ def test_the_server_goes_for_feeds_exactly_where_the_gateway_script_would(servic
              if ln.startswith(("ITDOG=", "DOMAINS_URL=", "SUBNET_SERVICES=", "GOOG_URL="))]
     prog = "\n".join(lines) + ('\nprintf "%s\\n" "$DOMAINS_URL" "$GOOG_URL"'
                               '\nfor s in $SUBNET_SERVICES; do printf "%s\\n" "$ITDOG/Subnets/IPv4/$s.lst"; done')
-    r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    r = subprocess.run([SH, "-c", prog], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
     assert r.returncode == 0, r.stderr
     gateway_urls = set(r.stdout.split())
     net = _Net(monkeypatch)

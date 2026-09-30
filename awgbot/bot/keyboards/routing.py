@@ -274,12 +274,6 @@ def routing_params_kb(info: dict, lists_every: int) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def settings_routing_monitor(info: dict) -> InlineKeyboardMarkup:
-    """Прежний подраздел — теперь «⚙️ Параметры»."""
-    from awgbot.core import settings as _settings
-    return routing_params_kb(info, int(_settings.get("app.routing.lists_refresh_hours", 6)))
-
-
 def routing_provision() -> InlineKeyboardMarkup:
     """Экран «функция не развёрнута»: одно действие и в меню."""
     return gateways_kb((), provisioned=False)

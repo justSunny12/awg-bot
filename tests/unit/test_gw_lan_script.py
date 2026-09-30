@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 import pytest
+from tests.conftest import SH
 
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh"
 
@@ -34,7 +35,7 @@ def _fake(bin_dir: Path, name: str, body: str) -> None:
 
 
 def _sh(prog: str, *, env: dict, cwd=None) -> subprocess.CompletedProcess:
-    return subprocess.run(["sh", "-c", prog], capture_output=True, text=True, env=env, cwd=cwd)
+    return subprocess.run([SH, "-c", prog], capture_output=True, text=True, env=env, cwd=cwd)
 
 
 # ── интерфейс и адрес малины — из локальной подсети ──────────────────────────
@@ -80,7 +81,7 @@ def domain_env(script, tmp_path):
 
 
 def _run(tool, env, *args):
-    return subprocess.run(["sh", str(tool), *args], capture_output=True, text=True, env=env)
+    return subprocess.run([SH, str(tool), *args], capture_output=True, text=True, env=env)
 
 
 def test_domain_tool_adds_resolves_and_fills_the_set(domain_env):
@@ -151,7 +152,7 @@ def lists_env(script, tmp_path):
 def test_lists_convert_feed_subtract_exceptions_and_load_subnets(lists_env):
     tool, dns_d, dump, log, env = lists_env
     (dns_d / "awg-gw-ru-user.conf").write_text("nftset=/shop.ru/inet#awg_home#lan_ru4\n", encoding="utf-8")
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
     feed = (dns_d / "awg-gw-vpn-feed.conf").read_text()
     assert "nftset=/youtube.com/googlevideo.com/inet#awg_home#lan_vpn4" in feed, "ipset= → nftset= в наш набор"
@@ -174,7 +175,7 @@ def test_lists_roll_back_a_feed_that_dnsmasq_rejects(lists_env):
     квартира не остаётся без DNS."""
     tool, dns_d, dump, log, env = lists_env
     (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env={**env, "DNSMASQ_TEST_RC": "1"})
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env={**env, "DNSMASQ_TEST_RC": "1"})
     assert r.returncode == 1 and "откатываю" in r.stderr
     assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n"
     assert "systemctl restart dnsmasq" not in log.read_text()
@@ -183,7 +184,7 @@ def test_lists_roll_back_a_feed_that_dnsmasq_rejects(lists_env):
 def test_lists_refuse_a_suspiciously_short_feed(lists_env, tmp_path):
     tool, dns_d, dump, log, env = lists_env
     (tmp_path / "feeds" / "domains").write_text("<html>blocked</html>\n", encoding="utf-8")
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 1 and "подозрительно короткий" in r.stderr
     assert not (dns_d / "awg-gw-vpn-feed.conf").exists()
 
@@ -191,16 +192,16 @@ def test_lists_refuse_a_suspiciously_short_feed(lists_env, tmp_path):
 def test_lists_restart_dnsmasq_only_when_the_feed_changed(lists_env):
     """Рестарт роняет кэш всей сети — вхолостую его не делаем."""
     tool, dns_d, dump, log, env = lists_env
-    subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     n = log.read_text().count("systemctl restart dnsmasq")
-    subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert log.read_text().count("systemctl restart dnsmasq") == n, "фид тот же — рестарта нет"
 
 
 def test_lists_report_a_failed_feed_but_keep_going(lists_env):
     tool, dns_d, dump, log, env = lists_env
     env = {**env, "AWG_LAN_DOMAINS_URL": "https://nowhere.invalid/x.lst"}
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 1 and "фид не скачался" in r.stderr
     assert "flush set" in log.read_text(), "подсети залиты, несмотря на отказ доменов"
     assert "rc=1" in (dump / "lists.status").read_text()
@@ -228,7 +229,7 @@ def test_channel_feeds_are_used_without_a_single_download(channel_env):
     на GitHub, ни в Google. Проверки те же, что для скачанного."""
     tool, dns_d, dump, log, env, _feed = channel_env
     (dns_d / "awg-gw-ru-user.conf").write_text("nftset=/shop.ru/inet#awg_home#lan_ru4\n", encoding="utf-8")
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
     text = log.read_text()
     assert "curl" not in text, f"при фидах из канала скрипт ходил в сеть: {text}"
@@ -247,7 +248,7 @@ def test_a_broken_channel_feed_is_refused_like_a_downloaded_one(channel_env):
     tool, dns_d, dump, log, env, feed = channel_env
     (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
     (feed / "domains.lst").write_text("<html>blocked</html>\n", encoding="utf-8")
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 1 and "подозрительно короткий" in r.stderr
     assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n"
     assert "curl" not in log.read_text(), "отказ фида из канала не повод идти за ним в сеть"
@@ -256,7 +257,7 @@ def test_a_broken_channel_feed_is_refused_like_a_downloaded_one(channel_env):
 def test_a_channel_feed_that_dnsmasq_rejects_is_rolled_back(channel_env):
     tool, dns_d, dump, log, env, _feed = channel_env
     (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env={**env, "DNSMASQ_TEST_RC": "1"})
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env={**env, "DNSMASQ_TEST_RC": "1"})
     assert r.returncode == 1 and "откатываю" in r.stderr
     assert (dns_d / "awg-gw-vpn-feed.conf").read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n"
     assert "systemctl restart dnsmasq" not in log.read_text()
@@ -268,7 +269,7 @@ def test_a_missing_channel_feed_is_named_as_such(channel_env):
     tool, dns_d, dump, log, env, feed = channel_env
     (feed / "domains.lst").unlink()
     (feed / "nets.lst").unlink()
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 1
     assert "фида нет в" in r.stderr and "привозит канал" in r.stderr
     assert "не скачался" not in r.stderr
@@ -277,7 +278,7 @@ def test_a_missing_channel_feed_is_named_as_such(channel_env):
 
 def test_without_the_channel_the_script_downloads_and_says_so(lists_env):
     tool, dns_d, dump, log, env = lists_env
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
     assert "source=net\n" in (dump / "lists.status").read_text()
 
@@ -379,7 +380,7 @@ def test_unit_and_status_carry_the_lan_variables(script):
 def test_embedded_scripts_parse(script, tmp_path):
     for var, tag in (("LAN_LISTS", "LISTSEOF"), ("LAN_DOMAIN", "DOMEOF")):
         f = tmp_path / f"{var}.sh"; f.write_text(_heredoc(script, var, tag), encoding="utf-8")
-        r = subprocess.run(["sh", "-n", str(f)], capture_output=True, text=True)
+        r = subprocess.run([SH, "-n", str(f)], capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
 
 
@@ -414,7 +415,7 @@ def test_lists_wait_for_the_lock_and_say_busy_with_code_75(lists_env):
     bin_dir = Path(env["PATH"].split(":", 1)[0])
     _fake(bin_dir, "flock", f'echo "flock $*" >> {log}\nexit 1\n')       # блокировку держит другой
     (dns_d / "awg-gw-vpn-feed.conf").write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 75, f"занятая блокировка выдана за {r.returncode}: {r.stderr}"
     assert "обновление уже идёт" in r.stderr
     text = log.read_text()
@@ -428,7 +429,7 @@ def test_lists_run_normally_once_the_lock_is_taken(lists_env):
     tool, dns_d, dump, log, env = lists_env
     bin_dir = Path(env["PATH"].split(":", 1)[0])
     _fake(bin_dir, "flock", f'echo "flock $*" >> {log}\nexit 0\n')
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
     assert "systemctl restart dnsmasq" in log.read_text()
 
@@ -438,7 +439,7 @@ def test_lists_check_the_feed_with_the_same_conf_dir_as_debian(lists_env):
     dnsmasq.conf: голый `dnsmasq --test` наш фид не видел вовсе и одобрял
     любой мусор, после которого рестарт оставлял квартиру без DNS."""
     tool, dns_d, dump, log, env = lists_env
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
     tests = [ln for ln in log.read_text().splitlines() if ln.startswith("dnsmasq --test")]
     assert tests == [f"dnsmasq --test --conf-dir={dns_d},.dpkg-dist,.dpkg-old,.dpkg-new"], (
@@ -463,7 +464,7 @@ def test_a_feed_dnsmasq_cannot_start_with_is_rolled_back(lists_env):
     feed = dns_d / "awg-gw-vpn-feed.conf"
     feed.write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
     _failing_restart(Path(env["PATH"].split(":", 1)[0]), log)
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 1, f"отказ рестарта выдан за успех: rc={r.returncode}"
     assert "не поднялся с новым фидом" in r.stderr and "откатываю" in r.stderr
     assert feed.read_text() == "nftset=/old.org/inet#awg_home#lan_vpn4\n", "прежний фид не вернулся"
@@ -478,7 +479,7 @@ def test_a_first_feed_dnsmasq_cannot_start_with_is_removed(lists_env):
     dnsmasq без фида лучше, чем лежащий dnsmasq с фидом."""
     tool, dns_d, dump, log, env = lists_env
     _failing_restart(Path(env["PATH"].split(":", 1)[0]), log)
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 1
     assert not (dns_d / "awg-gw-vpn-feed.conf").exists(), "фид, с которым демон не встал, остался"
 
@@ -487,7 +488,7 @@ def test_the_rollback_copy_is_removed_only_after_a_successful_restart(lists_env)
     tool, dns_d, dump, log, env = lists_env
     feed = dns_d / "awg-gw-vpn-feed.conf"
     feed.write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
     assert "nftset=/x.com/inet#awg_home#lan_vpn4" in feed.read_text()
     assert not (dns_d / "awg-gw-vpn-feed.conf.prev.awg").exists(), (
@@ -606,7 +607,7 @@ def svc_env(script, tmp_path):
         if text is not None:
             new.write_text(text, encoding="utf-8")
             args = [str(new)]
-        return subprocess.run(["sh", str(tool), *args], capture_output=True, text=True,
+        return subprocess.run([SH, str(tool), *args], capture_output=True, text=True,
                               env={**env, **extra})
     return go, dns_d / "awg-gw-peer-services.conf", log
 
@@ -690,7 +691,7 @@ def test_an_empty_file_and_a_non_root_run_are_refused(svc_env):
 def test_embedded_services_helper_parses(script, tmp_path):
     f = tmp_path / "svc.sh"
     f.write_text(_heredoc(script, "LAN_SERVICES", "SVCEOF"), encoding="utf-8")
-    r = subprocess.run(["sh", "-n", str(f)], capture_output=True, text=True)
+    r = subprocess.run([SH, "-n", str(f)], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
 
 
@@ -1702,7 +1703,7 @@ def test_downloaded_feed_source_is_kept_before_subtraction(lists_env):
     фид после вычитания — убранное «напрямую» в фид бы не вернулось."""
     tool, dns_d, dump, log, env = lists_env
     (dns_d / RU_USER).write_text(_ru_line("shop.ru") + "\n", encoding="utf-8")
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
     src = (dump / "vpn-feed.src").read_text()
     assert _vpn_line("shop.ru") + "\n" in src, "исходник сохранён уже после вычитания"
@@ -1715,7 +1716,7 @@ def test_downloaded_feed_source_is_kept_before_subtraction(lists_env):
 def test_channel_feed_source_is_kept_before_subtraction(channel_env):
     tool, dns_d, dump, log, env, _feed = channel_env
     (dns_d / RU_USER).write_text(_ru_line("shop.ru") + "\n", encoding="utf-8")
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
     src = (dump / "vpn-feed.src").read_text()
     assert _vpn_line("shop.ru") + "\n" in src and _vpn_line("chan0.org") + "\n" in src, src
@@ -1741,7 +1742,7 @@ def test_an_exception_removed_after_a_feed_run_returns_to_that_feed(script, list
     убрал исключение — shop.ru снова в фиде, не дожидаясь новых фидов."""
     tool, dns_d, dump, log, env = lists_env
     (dns_d / RU_USER).write_text(_ru_line("shop.ru") + "\n", encoding="utf-8")
-    assert subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env).returncode == 0
+    assert subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env).returncode == 0
     assert "shop.ru" not in (dns_d / FEED).read_text()
     dtool, denv = _domain_tool_beside(script, lists_env, tmp_path)
     r = _run(dtool, denv, "del", "shop.ru")
@@ -1755,11 +1756,11 @@ def test_a_refused_short_feed_is_not_applied_later_by_an_exception_change(script
     изменение «напрямую» не должно поставить отвергнутый фид в обход этой
     проверки: исходник обязан соответствовать применённому фиду."""
     tool, dns_d, dump, log, env, feed = channel_env
-    assert subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env).returncode == 0
+    assert subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env).returncode == 0
     good = (dns_d / FEED).read_text()
     assert good.count("nftset=") >= 10
     (feed / "domains.lst").write_text("ipset=/cut1.org/vpn_domains\nipset=/cut2.org/vpn_domains\n", encoding="utf-8")
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 1 and "подозрительно короткий" in r.stderr
     assert (dns_d / FEED).read_text() == good
     dtool, denv = _domain_tool_beside(script, channel_env, tmp_path)
@@ -1835,7 +1836,7 @@ def test_the_feed_rollback_copy_is_outside_the_conf_dir_during_the_restart(lists
     tool, dns_d, dump, log, env = lists_env
     (dns_d / FEED).write_text("nftset=/old.org/inet#awg_home#lan_vpn4\n", encoding="utf-8")
     snap = _snapshot_restart(env, log)
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
     (confdir, rb), = _snapshots(snap)
     assert _no_copies(confdir), f"при рестарте dnsmasq в conf-dir лежала копия: {confdir}"
@@ -1849,7 +1850,7 @@ def test_a_failed_feed_restart_restores_the_feed_from_rollback(lists_env):
     old = "nftset=/old.org/inet#awg_home#lan_vpn4\n"
     (dns_d / FEED).write_text(old, encoding="utf-8")
     snap = _snapshot_restart(env, log, fails=1)
-    r = subprocess.run(["sh", str(tool)], capture_output=True, text=True, env=env)
+    r = subprocess.run([SH, str(tool)], capture_output=True, text=True, env=env)
     assert r.returncode == 1 and "откатываю" in r.stderr, (r.returncode, r.stderr)
     assert (dns_d / FEED).read_text() == old, "прежний фид не вернулся из rollback/"
     shots = _snapshots(snap)

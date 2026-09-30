@@ -22,6 +22,9 @@ import pytest
 pytestmark = pytest.mark.unit
 
 ROOT = pathlib.Path(__file__).resolve().parents[2] / "awgbot" / "bot"
+REPO = pathlib.Path(__file__).resolve().parents[2]
+SCRIPTS = [REPO / "awg-bot.sh"] + sorted((REPO / "install").glob("*.sh"))
+_SAY = re.compile(r"^\s*(?:say|log|warn|die|ok|step|echo|printf|info|err)\b")
 FILES = (sorted((ROOT / "texts").glob("*.py")) + sorted((ROOT / "keyboards").glob("*.py"))
          + [ROOT / "guides.py"])
 
@@ -189,3 +192,17 @@ def test_the_old_name_scan_sees_handlers_and_fstrings(tmp_path):
                    encoding="utf-8")
     assert any(OLD_NAMES["между подсетями"].search(v) for v, _ in _literals(tmp))
     assert any(p.name == "settings.py" and p.parent.name == "handlers" for p in MAIN_FILES)
+
+
+def test_terminal_strings_of_scripts_follow_the_terms():
+    """Те же термины — в строках скриптов поставки, которые печатаются человеку
+    (say/log/warn/die/echo/printf); комментарии не в счёт."""
+    found = []
+    for path in SCRIPTS:
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if line.lstrip().startswith("#") or not _SAY.match(line):
+                continue
+            for name, rx in TERMS.items():
+                if rx.search(line):
+                    found.append((path.name, i, name, line.strip()[:80]))
+    assert found == [], found

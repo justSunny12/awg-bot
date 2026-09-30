@@ -12,12 +12,13 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.conftest import SH
 
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-gw-setup.sh"
 
 
 def _sh(prog: str, *, path: str = "/usr/bin:/bin") -> subprocess.CompletedProcess:
-    return subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
+    return subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                           env={"PATH": path})
 
 
@@ -536,7 +537,7 @@ def _channel_vars(script: str, **env) -> tuple[str, str]:
              if ln.startswith("LINK_CHANNEL") or ln.startswith('case "$LINK_CHANNEL_PORT"')]
     assert len(lines) == 3, f"строки разбора канала изменились: {lines}"
     prog = "\n".join(lines) + '\nprintf "%s|%s" "$LINK_CHANNEL" "$LINK_CHANNEL_PORT"'
-    out = subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
+    out = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                          env={"PATH": "/usr/bin:/bin", **env})
     assert out.returncode == 0, out.stderr
     return tuple(out.stdout.split("|"))
@@ -619,7 +620,7 @@ def _run_peer_block(script, tmp_path, *, peers: str, avahi_rc="0", browse=False,
     prog = (_helpers(script) + f'\nMODE=apply\nPEER_SVC_CONF="{conf}"\nPEER_HOME_NETS="{peers}"\n'
             f'LINK_CHANNEL="{link_channel}"\n'
             "_dn_changed=0\n" + _peer_block(script) + '\necho "dn_changed=$_dn_changed"\n')
-    r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
+    r = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                        env={"PATH": str(bin_dir), "AVAHI_RC": avahi_rc, "APT_RC": apt_rc,
                             "APT_UPDATE_RC": apt_update_rc})
     return r, log.read_text(), conf
@@ -705,7 +706,7 @@ def test_lan_remove_takes_the_services_file_and_helper_with_it(script, tmp_path)
             f'HOME_FILE="{t}/home.nft"\nLAN_SYSCTL="{t}/sysctl.conf"\nLAN_LISTS="{sbin}/awg-lan-lists.sh"\n'
             f'LAN_DOMAIN="{sbin}/awg-lan-domain.sh"\nLAN_SERVICES="{helper}"\n'
             f'PEER_SVC_CONF="{dns_d}/awg-gw-peer-services.conf"\n' + fn + "\nlan_remove\n")
-    r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True, env={"PATH": str(bin_dir)})
+    r = subprocess.run([SH, "-c", prog], capture_output=True, text=True, env={"PATH": str(bin_dir)})
     assert r.returncode == 0, r.stderr
     assert not (dns_d / "awg-gw-peer-services.conf").exists(), "файл записей соседей пережил снятие"
     assert not helper.exists(), "помощник сервисов пережил снятие"
@@ -717,7 +718,7 @@ def _plan_line(script: str, **env) -> str:
     под sh; строка про SMB подсетей других шлюзов."""
     start = script.index('\nif [ "$MODE" = "plan" ]; then\n    say ""\n    say "(режим показа') + 1
     block = script[start:script.index("\n    exit 0\nfi\n", start) + len("\n    exit 0\nfi\n")]
-    r = subprocess.run(["sh", "-c", _helpers(script) + "\nMODE=plan\n" + block],
+    r = subprocess.run([SH, "-c", _helpers(script) + "\nMODE=plan\n" + block],
                        capture_output=True, text=True, env={"PATH": "/usr/bin:/bin", **env})
     assert r.returncode == 0, r.stderr
     return next(ln.strip() for ln in r.stdout.splitlines() if "SMB подсетей других шлюзов" in ln)
@@ -753,7 +754,7 @@ def test_wan_interface_is_the_token_after_dev(script, tmp_path):
                  "default nhid 12 via 10.0.0.1 dev bond0 proto static"):
         (bin_dir / "ip").write_text(f'#!/bin/sh\necho "{line}"\n', encoding="utf-8")
         (bin_dir / "ip").chmod(0o755)
-        r = subprocess.run(["sh", "-c", "detect_wan() {" + fn + "\n}\ndetect_wan"], capture_output=True,
+        r = subprocess.run([SH, "-c", "detect_wan() {" + fn + "\n}\ndetect_wan"], capture_output=True,
                            text=True, env={"PATH": f"{bin_dir}:/usr/bin:/bin"})
         assert r.stdout.strip() == line.split(" dev ")[1].split()[0], (line, r.stdout)
 

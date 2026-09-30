@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.conftest import SH
 
 ROOT = Path(__file__).resolve().parents[2]
 LINK = ROOT / "install" / "routing-link-setup.sh"
@@ -58,7 +59,7 @@ def _emit_bundle(d: Path, *, conf_text: str = _CONF, env: dict | None = None) ->
             "ADMIN_IPS": "10.8.1.2 10.8.1.3; rm -rf /"}      # мусор обязан отсеяться
     penv.update(env or {})
     r = subprocess.run(
-        ["sh", str(inst / "routing-link-setup.sh"), "--bundle"],
+        [SH, str(inst / "routing-link-setup.sh"), "--bundle"],
         cwd=d, capture_output=True, text=True, errors="replace", env=penv)
     assert r.returncode == 0, r.stderr
     assert out.exists(), r.stdout
@@ -74,7 +75,7 @@ def bundle(tmp_path_factory) -> str:
 
 def test_bundle_is_valid_shell(bundle, tmp_path):
     f = tmp_path / "b.sh"; f.write_text(bundle, encoding="utf-8")
-    r = subprocess.run(["sh", "-n", str(f)], capture_output=True, text=True)
+    r = subprocess.run([SH, "-n", str(f)], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
 
 
@@ -182,7 +183,7 @@ def test_bundle_embeds_the_gw_script_byte_for_byte(bundle, tmp_path):
     """Вложенный скрипт извлекается тем же sed, что и на шлюзе."""
     f = tmp_path / "b.sh"; f.write_text(bundle, encoding="utf-8")
     r = subprocess.run(
-        ["sh", "-c", f"sed -n '/^#__GW_SETUP_BELOW__$/,$p' {f} | tail -n +2"],
+        [SH, "-c", f"sed -n '/^#__GW_SETUP_BELOW__$/,$p' {f} | tail -n +2"],
         capture_output=True, text=True)
     assert r.returncode == 0
     assert r.stdout == GW.read_text(encoding="utf-8")
@@ -209,7 +210,7 @@ def test_bundle_defaults_to_apply_and_passes_rollback_through(bundle, tmp_path, 
     dest = tmp_path / "dest"; dest.mkdir()
     fake = dest / "routing-gw-setup.sh"
     fake.write_text('#!/bin/sh\necho "$1"\n', encoding="utf-8"); fake.chmod(0o755)
-    r = subprocess.run(["sh", "-c", f'DEST="{dest}"; {handoff}', "bundle", *argv],
+    r = subprocess.run([SH, "-c", f'DEST="{dest}"; {handoff}', "bundle", *argv],
                        capture_output=True, text=True)
     assert r.returncode == 0 and r.stdout.strip() == expect
 
@@ -260,7 +261,7 @@ def test_mail_line_lands_before_the_marker_line_not_inside_sed(bundle, services,
     m = re.search(r"^MAIL_B64=.*\n^BACKUP_B64=.*\n#__GW_SETUP_BELOW__$", text, re.M)
     assert m, "строки почты и фразы должны стоять прямо перед строкой-маркером"
     f = tmp_path / "b.sh"; f.write_text(text)
-    extracted = subprocess.run(["sh", "-c", f"sed -n '/^#__GW_SETUP_BELOW__$/,$p' {f} | tail -n +2"],
+    extracted = subprocess.run([SH, "-c", f"sed -n '/^#__GW_SETUP_BELOW__$/,$p' {f} | tail -n +2"],
                                capture_output=True, text=True).stdout
     assert extracted.strip() and "MAIL_B64" not in extracted, "скрипт обвязки извлекается целиком и без наших строк"
     assert '[ -s "$DEST/routing-gw-setup.sh" ]' in text, "бандл обязан отказать на пустом скрипте"
@@ -293,7 +294,7 @@ def test_bundle_removes_itself_only_after_a_successful_apply(bundle, tmp_path):
         fake.write_text(f"#!/bin/sh\nexit {rc}\n", encoding="utf-8"); fake.chmod(0o755)
         me = tmp_path / f"bundle{rc}.sh"
         me.write_text(f'#!/bin/sh\nDEST="{dest}"\n{tail}\necho НЕ_ИСПОЛНЯЕТСЯ\n', encoding="utf-8")
-        r = subprocess.run(["sh", str(me)], capture_output=True, text=True)
+        r = subprocess.run([SH, str(me)], capture_output=True, text=True)
         assert r.returncode == rc and "НЕ_ИСПОЛНЯЕТСЯ" not in r.stdout
         assert me.exists() == kept, f"rc={rc}: файл {'остался' if me.exists() else 'удалён'}"
         assert not dest.exists(), "каталог распаковки с ключом линка остался"

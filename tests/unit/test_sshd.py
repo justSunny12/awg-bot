@@ -155,6 +155,7 @@ def test_nobody_listening_after_restart_rolls_back_and_restarts_again(cfg, monke
     before = main.read_text()
     host = _Host(listening=False)
     monkeypatch.setattr(sshd.subprocess, "run", host)
+    monkeypatch.setattr(sshd.time, "sleep", lambda s: None)   # ожидание слушателя — без реальных секунд
     with pytest.raises(sshd.SshdError, match="никто не слушает"):
         sshd.set_port(2222)
     assert main.read_text() == before

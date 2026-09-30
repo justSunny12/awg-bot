@@ -199,21 +199,25 @@ def test_probe_retries_absorb_a_lost_packet(monkeypatch):
 def test_probe_targets_are_tried_in_parallel(monkeypatch):
     """Цели независимы: последовательный обход в худшем случае держал поток
     2 × N × 4 с. Одна попытка ходит ко всем разом, первый успех — ответ."""
-    import threading, time
+    import threading
     from awgbot.infra import routing
     from awgbot.core import config
     monkeypatch.setattr(config, "ROUTING_GW_INTERFACE", "awglink")
     seen = []
+    gate = threading.Event()                       # «медленная» цель висит, пока тест не отпустит
 
     def slow(h, p, t, mark=None):
         seen.append((h, threading.get_ident()))
-        time.sleep(0.2 if h == "slow" else 0.0)
+        if h == "slow":
+            gate.wait(5)
         return h == "fast"
     monkeypatch.setattr(routing, "_tcp_probe", slow)
-    t0 = time.monotonic()
-    assert routing.probe_gateway(["slow", "fast"], attempts=1) == routing.PROBE_OK
-    assert time.monotonic() - t0 < 0.15, "ждали медленную цель, хотя быстрая уже ответила"
-    assert len({tid for _, tid in seen}) == 2, "цели ходили в одном потоке — последовательно"
+    try:
+        assert routing.probe_gateway(["slow", "fast"], attempts=1) == routing.PROBE_OK
+        assert not gate.is_set(), "ждали медленную цель, хотя быстрая уже ответила"
+        assert len({tid for _, tid in seen}) == 2, "цели ходили в одном потоке — последовательно"
+    finally:
+        gate.set()
 
 
 # ── диагностика тракта ───────────────────────────────────────────────────────

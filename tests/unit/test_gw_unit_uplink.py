@@ -19,6 +19,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.conftest import SH
 
 pytestmark = pytest.mark.unit
 
@@ -48,7 +49,7 @@ def _step0(script: str) -> str:
 
 
 def _sh(prog: str, env: dict) -> subprocess.CompletedProcess:
-    return subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
+    return subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                           env={"PATH": "/usr/bin:/bin", **env}, timeout=30)
 
 

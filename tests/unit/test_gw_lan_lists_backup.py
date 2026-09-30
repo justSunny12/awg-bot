@@ -24,6 +24,7 @@ import pytest
 
 from awgbot.domain.gateway import GatewayServices
 from awgbot.infra.db import Database
+from tests.conftest import SH
 
 pytestmark = pytest.mark.unit
 
@@ -218,7 +219,7 @@ def _enable(tmp_path: Path) -> tuple[subprocess.CompletedProcess, Path, Path]:
     prog = ('set -e\nrun(){ sh -c "$*"; }\n'
             f'DNSMASQ_D="{dnsmasq}"\nLAN_DUMP="{dump}"\n_dn_changed=0\n'
             + _lan_lists_loop() + 'echo "changed=$_dn_changed"\n')
-    r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True, timeout=30,
+    r = subprocess.run([SH, "-c", prog], capture_output=True, text=True, timeout=30,
                        env={"PATH": "/usr/bin:/bin"})
     return r, dnsmasq, dump
 

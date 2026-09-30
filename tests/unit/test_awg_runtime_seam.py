@@ -14,6 +14,7 @@ import pytest
 
 from awgbot.core import config
 from awgbot.infra import awg
+from tests.conftest import SH
 
 pytestmark = pytest.mark.unit
 
@@ -53,8 +54,8 @@ def test_host_mode_runs_the_command_as_is(monkeypatch, calls):
 
 def test_stdin_variant_switches_too(monkeypatch, calls):
     monkeypatch.setattr(config, "AWG_RUNTIME", "host")
-    awg._exec_i(["sh", "-c", "cat > /x"], input_data=b"data")
-    assert calls[0] == ["sh", "-c", "cat > /x"]
+    awg._exec_i([SH, "-c", "cat > /x"], input_data=b"data")
+    assert calls[0] == [SH, "-c", "cat > /x"]
 
 
 def test_mode_is_read_at_call_time_not_at_import(monkeypatch, calls):

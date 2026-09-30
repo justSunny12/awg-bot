@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from awgbot.util import dist
+from tests.conftest import SH
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -130,7 +131,7 @@ def _fake_bundle(tmp_path, with_dist: bool) -> Path:
 
 def test_install_mode_unpacks_and_hands_over_to_the_installer(tmp_path):
     f = _fake_bundle(tmp_path, with_dist=True)
-    r = subprocess.run(["sh", str(f), "--install"], capture_output=True, text=True,
+    r = subprocess.run([SH, str(f), "--install"], capture_output=True, text=True,
                        env={"PATH": "/usr/bin:/bin"})
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == f"INSTALLER --skip-verify --role gateway --bundle {f}", \
@@ -141,7 +142,7 @@ def test_install_mode_without_distribution_says_so(tmp_path):
     """Бандл из `awg-bot gw-bundle` поставки не везёт — честный отказ, а не
     пустой архив."""
     f = _fake_bundle(tmp_path, with_dist=False)
-    r = subprocess.run(["sh", str(f), "--install"], capture_output=True, text=True,
+    r = subprocess.run([SH, str(f), "--install"], capture_output=True, text=True,
                        env={"PATH": "/usr/bin:/bin"})
     assert r.returncode == 1 and "нет поставки" in r.stdout
 
@@ -150,9 +151,9 @@ def test_plain_run_ignores_the_embedded_distribution(tmp_path):
     """Обычный запуск (установщик зовёт `sh bundle`): поставка после exit не
     исполняется и в скрипт обвязки не попадает."""
     f = _fake_bundle(tmp_path, with_dist=True)
-    r = subprocess.run(["sh", str(f)], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+    r = subprocess.run([SH, str(f)], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
     assert r.returncode == 0 and r.stdout.strip() == "APPLY-MODE"
-    tail = subprocess.run(["sh", "-c", f"sed -n '/^#__GW_SETUP_BELOW__$/,$p' '{f}' | tail -n +2"],
+    tail = subprocess.run([SH, "-c", f"sed -n '/^#__GW_SETUP_BELOW__$/,$p' '{f}' | tail -n +2"],
                           capture_output=True, text=True).stdout
     assert "AWG_BOT_TGZ" not in tail and tail.strip().endswith("echo gw-setup")
 

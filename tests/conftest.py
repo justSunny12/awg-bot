@@ -40,6 +40,7 @@ from awgbot.core import settings as _settings       # noqa: E402
 # молча правил бы conf/app.yaml в рабочем дереве. Один раз это уже случилось.
 import pathlib                                      # noqa: E402
 import shutil as _shutil                            # noqa: E402
+SH = _shutil.which("dash") or "sh"                   # на малине sh — dash: проверяем им, где он есть
 import tempfile as _tempfile                        # noqa: E402
 _CONF_COPY = pathlib.Path(_tempfile.mkdtemp(prefix="awg-bot-conf-"))
 import atexit as _atexit                            # noqa: E402

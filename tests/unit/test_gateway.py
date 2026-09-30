@@ -493,7 +493,8 @@ def test_monitor_tick_is_a_single_commit(svc, monkeypatch):
 def test_egress_probe_targets_in_parallel(svc, monkeypatch):
     """Две цели — разом: первый ответ и есть результат, медленную не ждём;
     все молчат — None."""
-    import time as _t
+    import threading
+    gate = threading.Event()                       # «медленная» цель висит, пока тест не отпустит
 
     class _Conn:
         def __enter__(self): return self
@@ -502,13 +503,15 @@ def test_egress_probe_targets_in_parallel(svc, monkeypatch):
     def connect(addr, timeout=3.0):
         host, _ = addr
         if host == "slow":
-            _t.sleep(0.3); raise OSError("timeout")
+            gate.wait(5); raise OSError("timeout")
         return _Conn()
     monkeypatch.setattr(gw.socket, "create_connection", connect)
     monkeypatch.setattr(gw.settings, "get", lambda k, d=None: ["slow", "fast"] if k.endswith("egress_targets") else d)
-    t0 = _t.monotonic()
-    assert svc.egress_probe() is not None
-    assert _t.monotonic() - t0 < 0.2, "ждали медленную цель"
+    try:
+        assert svc.egress_probe() is not None
+        assert not gate.is_set(), "ждали медленную цель"
+    finally:
+        gate.set()
 
     def all_dead(addr, timeout=3.0):
         raise OSError("down")

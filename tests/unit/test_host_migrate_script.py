@@ -12,10 +12,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.conftest import SH
 
 
 def _sh(prog: str, *, stdin: str = "", path: str = "/usr/bin:/bin") -> subprocess.CompletedProcess:
-    return subprocess.run(["sh", "-c", prog], input=stdin, capture_output=True, text=True,
+    return subprocess.run([SH, "-c", prog], input=stdin, capture_output=True, text=True,
                           env={"PATH": path})
 
 

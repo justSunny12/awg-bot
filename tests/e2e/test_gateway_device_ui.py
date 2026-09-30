@@ -275,35 +275,43 @@ def test_gateway_mark_rules(services, gwsetup, make_active_client):
     assert [d.id for d in services.gateway_candidates()] == [pi.id], "текущий шлюз в кандидатах не нужен"
 
 
-async def _agent_apply(fake_bot, monkeypatch, status: dict):
+async def _agent_apply(fake_bot, monkeypatch, tmp_path, status: dict):
+    import asyncio
     from awgbot.bot.handlers import gateway as gh
     from awgbot.bot.callbacks import GwCB
     from awgbot.domain import gateway as gw
     from awgbot.domain.gateway import GatewayServices, GwStatus
     from awgbot.infra import gwguard
     from awgbot.infra.db import Database
-    import tempfile, pathlib as _pl
     monkeypatch.setattr(gwguard, "script_status", lambda: status)
     monkeypatch.setattr(gwguard, "uplink_pubkey", lambda: ("awg0", "K="))
     monkeypatch.setattr(gw, "pathlib_read", lambda p: "[Interface]\nPrivateKey = " + PRIV + "\n")
-    db = Database(_pl.Path(tempfile.mkdtemp()) / "gw.db"); db.init_schema()
+    real_sleep = asyncio.sleep
+
+    async def _no_wait(_s):                       # ожидание канала после пометки — без секунд
+        await real_sleep(0)
+    monkeypatch.setattr(gh.asyncio, "sleep", _no_wait)
+    db = Database(tmp_path / f"gw-{status.get('GW_STATUS', 'x')}.db"); db.init_schema()
     svc = GatewayServices(db)
     monkeypatch.setattr(svc, "apply_bundle", lambda blob, ow=False: (True, "хвост вывода скрипта"))
     monkeypatch.setattr(svc, "status", lambda: GwStatus())
     cb, nav = _acb(fake_bot)
     st = FakeState(); await st.update_data(bundle=base64.b64encode(b"x").decode())
-    await gh.gw_bundle_apply(cb, GwCB(action="apply"), svc, st)
+    try:
+        await gh.gw_bundle_apply(cb, GwCB(action="apply"), svc, st)
+    finally:
+        db.close()
     return nav
 
 
-async def test_agent_reports_status_in_words_and_claims_only_when_unmarked(fake_bot, monkeypatch):
-    nav = await _agent_apply(fake_bot, monkeypatch,
+async def test_agent_reports_status_in_words_and_claims_only_when_unmarked(fake_bot, monkeypatch, tmp_path):
+    nav = await _agent_apply(fake_bot, monkeypatch, tmp_path,
                              {"GW_STATUS": "confirmed", "UPLINK": "installed", "LINK": "up"})
     results = [s[1] for s in nav.sent if s[0] == "edit_text"]
     assert any("Аплинк обновлён и поднят, линк поднят, шлюз подтверждён</code>" in t for t in results), results
     assert not any("хвост вывода" in t for t in results), "при успехе — отчёт, не хвост"
     assert not any("GW1:" in (s[1] or "") for s in nav.sent)
-    nav = await _agent_apply(fake_bot, monkeypatch, {"GW_STATUS": "unmarked"})
+    nav = await _agent_apply(fake_bot, monkeypatch, tmp_path, {"GW_STATUS": "unmarked"})
     claims = [s for s in nav.sent if s[0] == "answer" and "GW1:" in s[1]]
     assert len(claims) == 1 and claims[0][2] is not None and "перешли" in claims[0][1].lower()
 

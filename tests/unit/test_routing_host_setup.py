@@ -13,6 +13,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.conftest import SH
 
 SCRIPT = Path(__file__).resolve().parents[2] / "install" / "routing-host-setup.sh"
 
@@ -29,7 +30,7 @@ def _render_unit(script: str, tmp_path, runtime: str) -> str:
         'install_self(){ printf "/usr/local/sbin/routing-host-setup.sh"; }',
         f'AWG_RUNTIME="{runtime}"', "MODE=unit", block,
     ])
-    r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
+    r = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                        env={"PATH": "/usr/bin:/bin"})
     assert r.returncode == 0, r.stderr
     return unit.read_text(encoding="utf-8")
@@ -295,7 +296,7 @@ def _params(script: str, tmp_path, *, dns1: str, dns2: str, resolver_addrs=()) -
     prog = (f'_APP_YAML="{app}"\nRESOLVER_CONF="{rconf}"\n' + block
             + '\nprintf "USE_DUMMY=%s\\nDNS_ADDR=%s\\nFACADE=%s\\nREFERENCED=%s\\n" '
               '"$USE_DUMMY" "$DNS_ADDR" "$CLIENT_DNS_FACADE" "$DUMMY_REFERENCED"')
-    r = subprocess.run(["sh", "-c", prog], capture_output=True, text=True,
+    r = subprocess.run([SH, "-c", prog], capture_output=True, text=True,
                        env={"PATH": "/usr/bin:/bin"})
     assert r.returncode == 0, r.stderr
     return dict(line.split("=", 1) for line in r.stdout.strip().splitlines())
@@ -342,7 +343,7 @@ def _rollback(script: str, tmp_path, *, referenced: bool) -> str:
         'DNSMASQ_SERVICE=dnsmasq', 'DNS_IF=awgdns0',
         f'DUMMY_REFERENCED={"1" if referenced else ""}', 'MODE=rollback',
     ])
-    r = subprocess.run(["sh", "-c", prelude + "\n" + block], capture_output=True, text=True,
+    r = subprocess.run([SH, "-c", prelude + "\n" + block], capture_output=True, text=True,
                        env={"PATH": "/usr/bin:/bin"})
     assert r.returncode == 0, r.stderr
     return r.stdout

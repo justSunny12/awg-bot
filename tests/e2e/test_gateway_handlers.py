@@ -764,3 +764,17 @@ async def test_a_gateway_backup_that_touches_the_link_warns_about_rf_access_only
     assert await rs.offer_restore(msg, svc, FakeState(), gateway=True) is True
     offer = msg.sent[-1][1]
     assert offer.endswith("\n\nЛинк опустится и поднимется" + tail), offer
+
+
+async def test_gateway_scheduler_registers_its_jobs(svc, fake_bot):
+    """Планировщик агента: тик монитора, списки и записи соседей, месячная
+    копия с догоном, проверка обновлений с разовым запуском на старте — по
+    именам задач; выпасть одной из них молча нельзя."""
+    from awgbot.runtime import scheduler as sch
+    s = sch.setup_gateway_scheduler(svc, fake_bot)
+    try:
+        ids = {j.id for j in s.get_jobs()}
+    finally:
+        s.shutdown(wait=False)
+    assert {"gw_monitor", "gw_lan_lists", "gw_lan_services", "gw_backup", "gw_backup_catchup",
+            "update_check", "update_check_startup"} <= ids, ids

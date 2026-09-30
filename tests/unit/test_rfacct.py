@@ -13,6 +13,7 @@ import pytest
 
 from awgbot.infra import rfacct
 from awgbot.infra.rfacct import AcctState
+from tests.conftest import SH
 
 pytestmark = pytest.mark.unit
 
@@ -86,7 +87,7 @@ def test_private_nets_match_the_gateway_setup_script():
     локальным подсетям (или наоборот терять его)."""
     script = (ROOT / "install" / "routing-gw-setup.sh").read_text(encoding="utf-8")
     line = next(ln for ln in script.splitlines() if ln.startswith("PRIVATE_NETS="))
-    r = subprocess.run(["sh", "-c", f'{line}\nprintf "%s" "$PRIVATE_NETS"'],
+    r = subprocess.run([SH, "-c", f'{line}\nprintf "%s" "$PRIVATE_NETS"'],
                        capture_output=True, text=True, check=True)
     assert sorted(r.stdout.split()) == sorted(rfacct.PRIVATE_NETS), \
         "PRIVATE_NETS учёта разошёлся с install/routing-gw-setup.sh"
