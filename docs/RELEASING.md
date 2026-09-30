@@ -57,7 +57,13 @@ GitHub `vX.Y.Z.P — …`.
   `keyboards/common.py` — тумблеры ✅/☑️ и листание у обеих ролей,
   `util/timeutil.py`, `main.py`, `awg-bot.sh`, установщик, preflight, `notifier.py`, `db/*`,
   `domain/backupcrypto.py` — состав копии по роли, `tools/snapshot.py` —
-  снимок для `awg-bot backup` и `restore`, общие тексты) — обе. `install/routing-link-setup.sh` живёт только на ВПС —
+  снимок для `awg-bot backup` и `restore`, `handlers/updates_flow.py` и
+  `handlers/settingscore.py` — шаги обновления и настроек у обеих ролей,
+  `handlers/hide.py` — «Скрыть», `domain/evidence.py` — улики живости,
+  `infra/hostmetrics.py`, `infra/detach.py`, `infra/nftjson.py`,
+  `infra/systemd.py`, `infra/bootid.py`, `util/kvfile.py`, `util/nets.py`,
+  общие тексты) — обе. `handlers/devcore.py` (шаги диалогов устройства) —
+  только `main`. `install/routing-link-setup.sh` живёт только на ВПС —
   строка `main` (его копию в `/usr/local/sbin`, которую выполняет юнит
   `awg-link@<if>` при загрузке, `awg-bot update` на ВПС тоже освежает).
   `install/routing-gw-setup.sh` едет на малину двумя путями: в конфигурации

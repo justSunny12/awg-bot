@@ -30,7 +30,8 @@
 #   5) обфускация линка — S2 переизбирается, пока S1 + 56 = S2 (длины init и
 #      response совпали бы, рукопожатие не разбиралось).
 #
-# ОКРУЖЕНИЕ: LINK_IF (awglink; у второго слота — awglink2), LINK_PORT (443),
+# ОКРУЖЕНИЕ: LINK_IF (awglink; у второго слота — awglink2; остаются только
+# [A-Za-z0-9_.-], не длиннее 15 символов), LINK_PORT (443),
 # LINK_CIDR — /30 линка, из него выводятся LINK_VPS_ADDR и LINK_GW_ADDR,
 # ENDPOINT_HOST (бот передаёт network.server_host в --apply и --bundle: адрес
 # ВПС сменился или на интерфейсе приватный адрес за 1:1 NAT — строка Endpoint

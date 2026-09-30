@@ -275,16 +275,24 @@ awgbot/
              enums, models, blocks   доменные типы, битмаски блокировок
   util/      timeutil   время UTC+3, форматтеры, формат даты Amnezia
              qrgen      QR/GIF; secrets_util  argon2id/SecretBox (крипто бэкапов)
+             nets       подсети: нормализация, разбор, пересечение
+             kvfile     файлы KEY=VALUE (env, состояние)
   infra/     db/        SQLite (per-thread): ядро, схема и миграции, миксины по темам
              awg        ЕДИНСТВЕННЫЙ слой команд к awg (host | docker exec)
              routing    команды условной маршрутизации: ipset/iptables/ip/dnsmasq
              updates    релизы репозитория, сверка sha256
              email_resume  IMAP/SMTP аварийного email-выхода из паузы
+             hostmetrics  локальные метрики железа (/proc + statvfs)
+             nftjson    nft с таймаутом, разбор элементов наборов
+             systemd    systemctl is-active / is-enabled
+             detach     отсоединённый запуск (обновление, восстановление, перезапуск)
+             bootid     boot_id ядра (перезагрузка хоста, холодный старт)
   domain/    services/  бизнес-логика (склейка db+awg+configgen+routing) — пакет
                         миксинов по областям: blocks, clients, devices, subscription,
                         traffic, reconcile, firewall, gateway_link, routing, status
              configgen  генерация vpn:// и .conf (кодек формата приложения)
              routing    чистая логика: нормализация доменов, генерация dnsmasq
+             evidence   улики живости: активный слот на ВПС, выход наружу у агента
   bot/       texts, keyboards, guides   презентация
              filters, middleware, callbacks, states   glue aiogram
              notifier   рассылка уведомлений (пейсинг + RetryAfter)
@@ -296,7 +304,6 @@ awgbot/
              watcher      inotify-вотчдог awg0.conf (дебаунс)
              conf_watcher горячая перечитка conf/*.yaml
              routing_doctor  диагностика маршрутизации по слоям
-             hostmetrics  локальные метрики железа (/proc + statvfs)
   assets/    guides/      скриншоты пошаговых гайдов (смена региона App Store)
 
 tools/       restore_backup  расшифровка архива резервной копии на любой машине
