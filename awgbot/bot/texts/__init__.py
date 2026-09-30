@@ -39,10 +39,11 @@ from .migration import (
     migration_cancelled, migration_finished, migration_prepare_intro,
     MIGRATION_ASK_PORT, migration_prepared, migration_prepare_failed,
     migration_generation_pending, migration_needed, migration_promoted)
+from awgbot.domain.services.gwchannel import drift_lines   # строки расхождения рисует домен
 from .routing import (
     gateway_device_card, gateway_claim_marked, gateway_claim_already, ROUTING_NAME,
     SETTINGS_ROUTING_ABSENT, GATEWAYS_OFF, GATEWAYS_ABOUT, GATEWAYS_AUTO_OFF,
-    channel_lines, drift_lines, GW_CARD_PAYLOAD, agent_bot_line, gateway_bundle_caption,
+    channel_lines, GW_CARD_PAYLOAD, agent_bot_line, gateway_bundle_caption,
     gateway_plain_bundle_caption, gateway_installed_text, gateway_bundle_applied_text,
     GATEWAY_CHOOSE_INTRO, GATEWAY_PICK_INTRO, GATEWAY_PICK_EMPTY, gateway_new_ask, gateway_mark_ask,
     gateway_remove_ask, gateway_removed, ROUTING_PROVISION_INTRO,
