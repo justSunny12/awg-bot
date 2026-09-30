@@ -249,3 +249,23 @@ def test_dnsmasq_test_reads_the_conf_dir_like_the_unit_does():
     файлами проходил проверку, а рестарт падал — DNS у клиентов лежал."""
     src = (Path(__file__).resolve().parents[2] / "install" / "awg-resolver-setup.sh").read_text(encoding="utf-8")
     assert 'dnsmasq --test --conf-dir="$DNSMASQ_CONF_DIR",.dpkg-dist,.dpkg-old,.dpkg-new' in src
+
+
+def test_adopting_the_routing_config_drops_bind_interfaces(host):
+    """Конфиг обвязки держал bind-interfaces и cache-size (маршрутизацию
+    включили при публичном DNS) — однократные ключи переезжают в наш файл,
+    адрес перехвата обвязки остаётся у неё, наши адреса из её файла уходят.
+    Иначе после переезда на свой резолвер dnsmasq падал бы на «illegal
+    repeated keyword» — без DNS у всех клиентов."""
+    base = host.confd / "awgbot-base.conf"
+    base.write_text("bind-interfaces\nlisten-address=10.255.53.1\nlisten-address=10.9.1.1\n"
+                    "no-resolv\ncache-size=10000\n", encoding="utf-8")
+    assert host.run("install", "10.9.1.1").returncode == 0
+    text = base.read_text(encoding="utf-8")
+    assert "bind-interfaces" not in text and "listen-address=10.255.53.1" in text
+    assert "listen-address=10.9.1.1" not in text, "один адрес — в одном файле"
+    assert "cache-size" not in text, "cache-size dnsmasq принимает один раз на все файлы"
+    ours = host.conf()
+    assert "bind-interfaces" in ours and "cache-size=10000" in ours, "ключи переехали к нам"
+    assert host.run("add", "10.255.53.1").returncode == 0
+    assert "listen-address=10.255.53.1" not in base.read_text(encoding="utf-8")
