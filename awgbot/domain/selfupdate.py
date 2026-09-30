@@ -10,7 +10,6 @@ selfupdate.py — самообновление бота из GitHub-релизо
 from __future__ import annotations
 
 import logging
-import time
 
 from awgbot.core import config
 from awgbot.infra import updates
@@ -251,23 +250,13 @@ class SelfUpdateMixin:
             return None
 
     def restart_bot(self) -> None:
-        """Перезапустить сам сервис бота. Как и self-update, запускаем рестарт
+        """Перезапустить сам сервис бота. Как и self-update, рестарт идёт
         ОТДЕЛЬНО от нашего процесса (systemd-run вне cgroup), иначе `systemctl
-        restart` убьёт нас на середине команды. Без systemd-run — падаем в
-        обычный рестарт через выход (systemd поднимет по Restart=always)."""
-        import shutil
-        import subprocess
-        if shutil.which("systemd-run"):
-            subprocess.Popen(
-                ["systemd-run", "--collect", "--quiet",
-                 f"--unit=awg-bot-restart-{int(time.time())}",
-                 "systemctl", "restart", "awg-bot"],
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, close_fds=True)
-        else:
-            subprocess.Popen(["systemctl", "restart", "awg-bot"],
-                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
+        restart` убьёт нас на середине команды; без systemd-run — та же
+        команда в новой сессии, best effort (юнит поднимет нас по
+        Restart=on-failure)."""
+        from awgbot.infra.detach import spawn_detached
+        spawn_detached(["systemctl", "restart", "awg-bot"], unit_prefix="awg-bot-restart")
 
 
 def _notification(*args, **kwargs):

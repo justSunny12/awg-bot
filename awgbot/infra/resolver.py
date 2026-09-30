@@ -124,9 +124,5 @@ def probe(addr: str, timeout: float = 2.0, name: str = "example.com", port: int 
 
 def service_active(service: str = "dnsmasq") -> Optional[bool]:
     """Жив ли юнит dnsmasq; None — systemctl недоступен (не тот хост)."""
-    try:
-        proc = subprocess.run(["systemctl", "is-active", "--quiet", service],
-                              capture_output=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return proc.returncode == 0
+    from awgbot.infra import systemd
+    return systemd.is_active(service)

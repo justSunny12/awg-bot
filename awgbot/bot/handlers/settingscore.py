@@ -291,10 +291,14 @@ async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
     """«Бэкап сейчас»: в почту, если канал — почта, иначе файлами в чат."""
     from awgbot.infra import mail
     await cb.answer("Готовлю резервную копию…")
+    from awgbot.domain.backupcrypto import BackupKeyMissing
     try:
         paths = await call(services.make_backup)
+    except BackupKeyMissing:
+        await cb.message.answer(texts.GW_BACKUP_NO_KEY)
+        return
     except Exception as e:                            # noqa: BLE001
-        await cb.message.answer(texts.GW_BACKUP_NO_KEY if "шифрован" in str(e) else f"⚠️ {e}")
+        await cb.message.answer(f"⚠️ {e}")
         return
     if await call(services.backup_channel) == "email":
         try:
@@ -445,8 +449,8 @@ def register(router, hooks: Hooks, *, default_sec: str = "root") -> dict:
         await call(services.backup_set_passphrase, phrase)
         await after_input(message, services, hooks, "backup", texts.BACKUP_PASSPHRASE_SET)
 
-    async def _email_done(message: Message, services):
-        await after_input(message, services, hooks, "email")
+    async def _email_done(message: Message, services, note: str = ""):
+        await after_input(message, services, hooks, "email", note)
 
     mw = mailwizard.register(router, cancel_kb=lambda: kb.cancel_input("set_email"),
                              done=_email_done)

@@ -23,11 +23,11 @@ from awgbot.bot.states import GatewayToken, GatewayHome, GatewayLabel, Migration
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.notifier import send_notifications
 from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu, card_is_from_main, card_from_main, ask_here, edit_nav,
-                                        _dismiss_previous_nav,
                                         ask_tracked, cleanup_content)
 from awgbot.domain.services import ServiceError
 from awgbot.util import bundlecrypt
 from awgbot.domain.gwssh import SshOwnerRefusal
+from awgbot.bot.handlers.common import send_menu_to
 
 log = logging.getLogger("awgbot.settings")
 
@@ -292,14 +292,12 @@ async def _show_card_anew(bot, services, chat_id: int, slot_id: int) -> None:
         st = await call(services.gateway_screen_state, slot_id)
     except ServiceError:
         st = None
-    await _dismiss_previous_nav(bot, services, chat_id)
     if st is None:
         from awgbot.bot.handlers.admin import _panel_parts
         text, markup = await _panel_parts(services)
     else:
         text, markup = texts.gateway_card_text(st, st["states"]), card_kb(st, chat_id)
-    sent = await bot.send_message(chat_id, text, reply_markup=markup)
-    await call(services.db.nav_touch, chat_id, sent.message_id)
+    await send_menu_to(bot, services, chat_id, text, markup)
 
 
 async def bundle_installed(bot, services, slot_id: int) -> None:

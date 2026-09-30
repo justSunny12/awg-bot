@@ -31,6 +31,8 @@ import json
 import subprocess
 from dataclasses import dataclass, field
 from typing import Optional
+from awgbot.infra import nftjson
+from awgbot.util import nets
 
 TABLE_FAMILY = "inet"
 TABLE_NAME = "awg_bot_acct"
@@ -70,20 +72,6 @@ def counter_names(device_id: int) -> tuple[str, str]:
     return f"d{int(device_id)}_up", f"d{int(device_id)}_dn"
 
 
-def _ifs(names: list[str]) -> str:
-    return "{ " + ", ".join(f'"{n}"' for n in names) + " }"
-
-
-def _nets(nets) -> list[str]:
-    out: list[str] = []
-    for n in nets or []:
-        try:
-            s = str(ipaddress.IPv4Network(str(n).strip(), strict=False))
-        except ValueError:
-            continue
-        if s not in out:
-            out.append(s)
-    return out
 
 
 def _addr(a: str) -> str:
@@ -97,7 +85,7 @@ def render_static(links: list[str], subnets: list[str]) -> str:
     """Неизменяемая при опросе часть: таблица, наборы, цепочка и правила. Без
     `delete table`: именованные счётчики и карты переживают `flush chain`."""
     links = [str(x) for x in links if x]
-    subs = _nets(subnets)
+    subs = nets.normalize(subnets)
     priv = ", ".join(PRIVATE_NETS)
     lines = [f"add table {TABLE}",
              f"add set {TABLE} {SET_CLIENTS} {{ type ipv4_addr; flags interval; }}",
@@ -114,7 +102,7 @@ def render_static(links: list[str], subnets: list[str]) -> str:
               f"add chain {TABLE} {CHAIN} {{ type filter hook forward priority filter + 10; policy accept; }}",
               f"flush chain {TABLE} {CHAIN}"]
     if links and subs:
-        ifs = _ifs(links)
+        ifs = nftjson.ifs(links)
         lines += [
             f"add rule {TABLE} {CHAIN} oifname {ifs} ip saddr @{SET_CLIENTS} ip daddr != @{SET_PRIVATE} counter name \"{COUNTER_UP}\"",
             f"add rule {TABLE} {CHAIN} oifname {ifs} ip saddr @{SET_CLIENTS} ip daddr != @{SET_PRIVATE} counter name ip saddr map @{MAP_UP}",
@@ -178,28 +166,7 @@ def render_devices(state: Optional[AcctState], devices: list[tuple[int, str]]) -
 
 
 def _nft(args: list[str], stdin: str = "", timeout: int = 15) -> subprocess.CompletedProcess:
-    try:
-        return subprocess.run(["nft", *args], input=stdin.encode() if stdin else None,
-                              capture_output=True, timeout=timeout)
-    except FileNotFoundError:
-        raise AcctError("nft не найден — поставь пакет nftables")
-    except subprocess.TimeoutExpired:
-        raise AcctError(f"таймаут nft {' '.join(args[:3])}")
-    except OSError as e:
-        raise AcctError(str(e))
-
-
-def _elem_key(el) -> str:
-    if isinstance(el, str):
-        return el
-    if isinstance(el, dict):
-        if "prefix" in el:
-            return f"{el['prefix']['addr']}/{el['prefix']['len']}"
-        if "elem" in el:
-            return _elem_key(el["elem"].get("val") if isinstance(el["elem"], dict) else el["elem"])
-        if "val" in el:
-            return _elem_key(el["val"])
-    return str(el)
+    return nftjson.run(args, timeout=timeout, stdin=stdin, error=AcctError)
 
 
 def parse(doc: dict) -> Optional[AcctState]:
@@ -223,10 +190,10 @@ def parse(doc: dict) -> Optional[AcctState]:
                 continue
             for el in m.get("elem", []) or []:
                 if isinstance(el, list) and len(el) == 2:
-                    target[_elem_key(el[0])] = str(el[1])
+                    target[nftjson.elem_str(el[0])] = str(el[1])
                 elif isinstance(el, dict) and "elem" in el and isinstance(el["elem"], dict):
                     inner = el["elem"]
-                    target[_elem_key(inner.get("val"))] = str(inner.get("val_obj") or inner.get("obj") or "")
+                    target[nftjson.elem_str(inner.get("val"))] = str(inner.get("val_obj") or inner.get("obj") or "")
         elif "rule" in item and item["rule"].get("table") == TABLE_NAME:
             st.rules += 1
     return st if seen_table else None

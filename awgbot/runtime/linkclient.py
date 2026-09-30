@@ -166,17 +166,14 @@ class LinkClient:
             # ушёл бы без нонса сервера, и тот оборвал бы сессию.
             lists_hash = await asyncio.to_thread(self.services.lan_feeds_applied_hash)
             # отпечаток применённых записей соседей — сервер не повезёт то же самое
-            svc_hash = await asyncio.to_thread(
-                getattr(self.services, "services_applied_hash", lambda: ""))
+            svc_hash = await asyncio.to_thread(self.services.services_applied_hash)
             self._seq += 1
             hello_body = {"proto": gwlink.PROTO, "agent": config.INSTALLED_VERSION,
                           "lists_hash": lists_hash, "svc_hash": svc_hash,
                           "nonce": gwlink.nonce_b64(self._cn)}
             # отпечаток применённого канона своих списков: само поле говорит
             # серверу, что агент синхронизацию знает (без него канон не шлётся)
-            own_hash = getattr(self.services, "own_applied_hash", None)
-            if own_hash is not None:
-                hello_body["own_hash"] = await asyncio.to_thread(own_hash)
+            hello_body["own_hash"] = await asyncio.to_thread(self.services.own_applied_hash)
             hello = gwlink.pack(self._channel_key(), "hello", hello_body,
                                 seq=self._seq, pad=gwlink.PAD_DELTA)
             writer.write(hello)
@@ -381,10 +378,7 @@ class LinkClient:
         пропала бы вместе с ней. Повтор сервер отличает по отпечатку и времени."""
         if self._writer is None:
             return False
-        get = getattr(self.services, "applied_pending_get", None)
-        if get is None:
-            return False
-        pending = await asyncio.to_thread(get)
+        pending = await asyncio.to_thread(self.services.applied_pending_get)
         if not pending:
             return False
         return await self._send("applied", {"ok": bool(pending.get("ok")), "error": pending.get("error") or "",
@@ -394,10 +388,7 @@ class LinkClient:
     async def _applied_acked(self, msg: dict) -> None:
         """Сервер принял итог: очередь пуста. Подтверждение на другой файл
         (очередь успели перезаписать) очередь не трогает."""
-        get = getattr(self.services, "applied_pending_get", None)
-        if get is None:
-            return
-        pending = await asyncio.to_thread(get)
+        pending = await asyncio.to_thread(self.services.applied_pending_get)
         if not pending:
             return
         if str(pending.get("fp") or "") != str(msg.get("fp") or "") or \
@@ -410,10 +401,7 @@ class LinkClient:
         подключении целиком, дальше — когда обзор нашёл изменение (services_changed)."""
         if self._writer is None:
             return False
-        get = getattr(self.services, "services_local", None)
-        if get is None:
-            return False
-        items = await asyncio.to_thread(get)
+        items = await asyncio.to_thread(self.services.services_local)
         return await self._send("svc", {"items": items}, pad=gwlink.PAD_SNAP)
 
     async def _send_result(self, kind: str, result: dict, digest: str | None = None) -> bool:
@@ -430,10 +418,7 @@ class LinkClient:
         """Свои правки (pending) — серверу пачками по MAX_EVENTS; пусто — ничего."""
         if self._writer is None:
             return False
-        get = getattr(self.services, "own_pending_events", None)
-        if get is None:
-            return False
-        run, events = await asyncio.to_thread(get)
+        run, events = await asyncio.to_thread(self.services.own_pending_events)
         if not events:
             return False
         sent = False
@@ -447,11 +432,8 @@ class LinkClient:
     async def _apply_own(self, msg: dict) -> None:
         """Канон от сервера: применить и отчитаться; пропущен по правилам
         сверки — вместо ack уходят свои правки, следующий канон придёт с ними."""
-        apply = getattr(self.services, "apply_own_lists", None)
-        if apply is None:
-            return
         async with self._own_lock:
-            result = await asyncio.to_thread(apply, msg)
+            result = await asyncio.to_thread(self.services.apply_own_lists, msg)
         if result.get("skipped"):
             await self.push_own()
             return
@@ -464,8 +446,8 @@ class LinkClient:
         канал, ни блокировку списков. Итог — в журнал; следующий fill ждёт
         предыдущего (тот же файл)."""
         path = result.get("fill")
-        fill = getattr(self.services, "own_fill", None)
-        if not path or fill is None:
+        fill = self.services.own_fill
+        if not path:
             return
         prev = self._fill_task
 
@@ -483,9 +465,7 @@ class LinkClient:
     async def own_tick(self) -> None:
         """После тика монитора: сверка файлов (правка мимо агента) → правки
         серверу; отложенный канон (обвязка обновилась) → применить."""
-        reconcile = getattr(self.services, "own_reconcile", None)
-        if reconcile is None:
-            return
+        reconcile = self.services.own_reconcile
         # сверка — и без канала: правка мимо агента должна лечь в pending сразу,
         # чтобы панель честно показала «ждут синхронизации», а не «синхронизированы»
         async with self._own_lock:
@@ -494,42 +474,35 @@ class LinkClient:
             return
         if changed or await asyncio.to_thread(self.services.own_unsent):
             await self.push_own()
-        retry = getattr(self.services, "own_retry", None)
-        if retry is not None:
-            async with self._own_lock:
-                result = await asyncio.to_thread(retry)
-            if result:
-                await self._send_result("own_ack", result)
-                self._schedule_fill(result)
+        async with self._own_lock:
+            result = await asyncio.to_thread(self.services.own_retry)
+        if result:
+            await self._send_result("own_ack", result)
+            self._schedule_fill(result)
         # поломку на шлюзе починили — просим канон снова: own_ev без правок
         # сбрасывает у сервера «уже слал в этой сессии»
-        nudge = getattr(self.services, "own_nudge_due", None)
-        if nudge is not None and await asyncio.to_thread(nudge):
+        if await asyncio.to_thread(self.services.own_nudge_due):
             run, _events = await asyncio.to_thread(self.services.own_pending_events)
             await self._send("own_ev", {"run": run or "-", "ev": []}, pad=gwlink.PAD_DELTA)
 
     async def _apply_peer_services(self, msg: dict) -> None:
-        apply = getattr(self.services, "apply_peer_services", None)
-        if apply is None:
-            return
         digest = str(msg.get("hash") or "")[:64]
         items = msg.get("items") if isinstance(msg.get("items"), list) else []
-        result = await asyncio.to_thread(apply, digest, items[:gwservices.MAX_PEER * 2])
+        result = await asyncio.to_thread(self.services.apply_peer_services, digest,
+                                         items[:gwservices.MAX_PEER * 2])
         await self._send_result("peer_svc_ack", result, digest)
 
     async def retry_peer_services(self) -> bool:
         """Отложенное применение записей соседей (помощника не было): помощник
         появился — применить и отчитаться серверу тем же отпечатком."""
-        retry = getattr(self.services, "services_retry", None)
-        if retry is None or self._writer is None:
+        if self._writer is None:
             return False
-        result = await asyncio.to_thread(retry)
+        result = await asyncio.to_thread(self.services.services_retry)
         if result:
             return await self._send_result("peer_svc_ack", result)
         # поломку на шлюзе починили — свой список серверу заново: по нему он
         # повторит записи соседей, если прошлый ответ был отказом
-        nudge = getattr(self.services, "services_nudge_due", None)
-        if nudge is not None and await asyncio.to_thread(nudge):
+        if await asyncio.to_thread(self.services.services_nudge_due):
             return await self.push_services()
         return False
 
@@ -543,8 +516,7 @@ class LinkClient:
         """Первый выход на связь после установки — серверу «installed»: там по
         нему уберут файл первого применения из чата и скажут админу, что шлюз
         настроен. После снимка: серверу нужен бот шлюза из него."""
-        pending = getattr(self.services, "installed_report_pending", None)
-        if pending is None or not await asyncio.to_thread(pending):
+        if not await asyncio.to_thread(self.services.installed_report_pending):
             return
         if await self._send("installed", {}, pad=gwlink.PAD_DELTA):
             await asyncio.to_thread(self.services.installed_report_done)
@@ -728,10 +700,7 @@ async def report_applied(services, ok: bool, error: str = "", fp: str = "") -> N
     сразу, если канал жив, иначе — первым делом при подключении. fp —
     отпечаток файла (sha256 шифрованного, первые 16 знаков): сервер сверит
     его с выданным и не уберёт из чата чужой или более новый файл."""
-    setter = getattr(services, "applied_pending_set", None)
-    if setter is None:
-        return
-    await asyncio.to_thread(setter, ok, error, fp)
+    await asyncio.to_thread(services.applied_pending_set, ok, error, fp)
     client = _live_client()
     if client is not None:
         with contextlib.suppress(Exception):
@@ -750,9 +719,7 @@ async def own_changed(services) -> bool:
     уходит по каналу немедленно. True — сверка нашла
     новые правки (неотправленные прежние тоже уходят, но хвост в чате — только
     за новые)."""
-    reconcile = getattr(services, "own_reconcile", None)
-    if reconcile is None:
-        return False
+    reconcile = services.own_reconcile
     client = _client
     if client is not None:
         async with client._own_lock:
@@ -767,10 +734,7 @@ async def own_changed(services) -> bool:
 async def services_changed(services) -> None:
     """Задача обзора: изменился свой список
     — отправить серверу, если канал жив; нет — уйдёт целиком при подключении."""
-    scan = getattr(services, "services_scan", None)
-    if scan is None:
-        return
-    changed = await asyncio.to_thread(scan)
+    changed = await asyncio.to_thread(services.services_scan)
     client = _live_client()
     if changed and client is not None:
         await client.push_services()

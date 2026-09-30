@@ -69,6 +69,15 @@ async def drop_previous_nav(bot, services, chat_id: int) -> None:
     await call(services.db.set_nav_message_id, chat_id, None)
 
 
+async def send_menu_to(bot, services, chat_id: int, text, markup) -> None:
+    """Меню/нав-экран НОВЫМ сообщением без входящего Message — по событию
+    (старт после рестарта, канал линка, первая панель агента); прежнее
+    активное гасится, как в send_menu."""
+    await _dismiss_previous_nav(bot, services, chat_id)
+    sent = await bot.send_message(chat_id, text, reply_markup=markup, link_preview_options=NO_PREVIEW)
+    await call(services.db.nav_touch, chat_id, sent.message_id)
+
+
 async def send_menu(message: Message, services, text, markup, keep_id=None) -> None:
     """Показать меню/нав-экран НОВЫМ сообщением, погасив предыдущее активное.
     Единая точка показа — держит инвариант «одно живое меню в чате».

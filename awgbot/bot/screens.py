@@ -30,6 +30,10 @@ note — итог только что сделанного: первой стр�
 
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger(__name__)
+
 
 def with_note(text: str, note: str) -> str:
     return f"{note}\n\n{text}" if note else text
@@ -41,7 +45,8 @@ async def render(kind: str, ref: int = 0, *, services, role: str, client=None,
     такого экрана). Ошибок наружу не бросает — вызывающий подставит главную."""
     try:
         parts = await _render(kind, int(ref or 0), services, role, client, chat_id)
-    except Exception:                                  # noqa: BLE001
+    except Exception as e:                             # noqa: BLE001
+        log.warning("screens: экран %s/%s не собрался: %s", kind, ref, e)
         return None
     if parts is None:
         return None

@@ -41,13 +41,13 @@ JSON: {"t": <вид>, "seq": <номер в сессии>, "ts": <unix>, …по
 """
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
 import time
 
 from awgbot.util import bundlecrypt
+from awgbot.util.gwsign import b64u, unb64u
 
 PREFIX = "GL1:"
 PROTO = 2
@@ -75,12 +75,8 @@ def channel_key(link_privkey_b64: str) -> bytes:
                           + bundlecrypt.derive_key(link_privkey_b64)).digest()
 
 
-def _b64u(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).decode().rstrip("=")
 
 
-def _unb64u(text: str) -> bytes:
-    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
 def new_nonce() -> bytes:
@@ -89,13 +85,13 @@ def new_nonce() -> bytes:
 
 
 def nonce_b64(nonce: bytes) -> str:
-    return _b64u(nonce)
+    return b64u(nonce)
 
 
 def nonce_from(text) -> bytes:
     """Нонс из поля сообщения; не той длины или мусор — ProtocolError."""
     try:
-        raw = _unb64u(str(text or ""))
+        raw = unb64u(str(text or ""))
     except (ValueError, TypeError) as e:
         raise ProtocolError("нонс сессии повреждён") from e
     if len(raw) != NONCE_BYTES:
@@ -134,7 +130,7 @@ def pack(key: bytes, kind: str, body: dict | None = None, *,
             if total % pad == 0:
                 break
     mac = hmac.new(key, nonce + raw, hashlib.sha256).digest()[:20]
-    return (PREFIX + _b64u(raw) + "." + _b64u(mac) + "\n").encode()
+    return (PREFIX + b64u(raw) + "." + b64u(mac) + "\n").encode()
 
 
 def _reject_constant(name: str):
@@ -185,8 +181,8 @@ def unpack(key: bytes, line: bytes | str, *, now: float | None = None,
         raise ProtocolError("не сообщение канала")
     head, _, tail = text[len(PREFIX):].partition(".")
     try:
-        raw = _unb64u(head)
-        mac = _unb64u(tail)
+        raw = unb64u(head)
+        mac = unb64u(tail)
     except (ValueError, TypeError) as e:
         raise ProtocolError("сообщение повреждено") from e
     want = hmac.new(key, nonce + raw, hashlib.sha256).digest()[:20]

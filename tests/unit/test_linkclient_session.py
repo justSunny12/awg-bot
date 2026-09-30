@@ -26,6 +26,7 @@ import pytest
 from awgbot.core import config
 from awgbot.domain.channelstate import ChannelState
 from awgbot.infra import gwguard
+from tests.linkstubs import AgentStub
 from awgbot.runtime import linkclient
 from awgbot.util import gwlink
 
@@ -36,7 +37,7 @@ PRIV2 = base64.b64encode(os.urandom(32)).decode()
 KEY = gwlink.channel_key(PRIV)
 
 
-class _Agent:
+class _Agent(AgentStub):
     """Агент шлюза: ровно то, что клиент канала у него спрашивает."""
 
     def __init__(self):

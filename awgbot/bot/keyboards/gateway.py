@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import settings
 from awgbot.bot.callbacks import UpdateCB, GwCB
 
-from .common import _chk, page_slice, page_nav, entry_tag
+from .common import _chk, page_slice, page_nav, entry_tag, confirm
 from .settings import backup_when_label, UPDATE_SCHEDULE_LABELS
 
 
@@ -195,11 +195,7 @@ def gateway_email_kb(configured: bool) -> InlineKeyboardMarkup:
 
 
 def gateway_email_forget_confirm() -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ Отмена", callback_data=GwCB(action="email"))
-    kb.button(text="🗑 Отключить", callback_data=GwCB(action="em_forget!"))
-    kb.adjust(2)
-    return kb.as_markup()
+    return confirm(GwCB(action="email"), "🗑 Отключить", GwCB(action="em_forget!"))
 
 
 def gateway_email_offer(back: str) -> InlineKeyboardMarkup:
@@ -280,19 +276,11 @@ def gateway_confirm_kb(action: str, back: str = "panel") -> InlineKeyboardMarkup
     back — куда возвращает отказ: восстановление живёт на панели,
     перезапуски — в настройках."""
     label = {"reassert": "🔧 Восстановить"}.get(action, "🔁 Перезапустить")
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ Отмена", callback_data=GwCB(action=back))
-    kb.button(text=label, callback_data=GwCB(action=f"{action}!"))
-    kb.adjust(2)
-    return kb.as_markup()
+    return confirm(GwCB(action=back), label, GwCB(action=f"{action}!"))
 
 
 def gateway_bundle_kb() -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ Отмена", callback_data=GwCB(action="drop"))
-    kb.button(text="📦 Применить", callback_data=GwCB(action="apply!"))
-    kb.adjust(2)
-    return kb.as_markup()
+    return confirm(GwCB(action="drop"), "📦 Применить", GwCB(action="apply!"), danger=False)
 
 
 def gateway_bundle_passphrase_kb() -> InlineKeyboardMarkup:

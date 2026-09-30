@@ -17,6 +17,7 @@ from awgbot.util import timeutil
 from awgbot.domain import routing as domain_routing
 from awgbot.domain.services.types import Notification, RoutingAddResult, ServiceError
 from awgbot.domain.services.base import _e
+from awgbot.infra import bootid
 
 
 log = logging.getLogger("awgbot.services")
@@ -1327,26 +1328,21 @@ class RoutingMixin:
             log.warning("routing: холодный старт, слот %s: %s", gw.id, e)
         log.info("routing: холодный старт — трафик через слот %s (%s)", gw.id, gw.link_if)
 
-    _RT_BOOT_KEY = "routing_host_boot_at"      # момент загрузки хоста, виденный ботом
+    _RT_BOOT_KEY = "routing_host_boot_id"      # boot_id хоста, виденный ботом
 
     def _rt_is_cold_start(self) -> bool:
-        """Холодный старт — хост перезагружался с прошлого запуска бота: момент
-        загрузки (сейчас минус аптайм) сдвинулся. Именно момент загрузки, а не
-        последний такт: первый такт живости стартует вместе с планировщиком,
-        раньше этой проверки, и по нему холодный старт не отличить. Нет
-        сохранённого активного — тоже холодный. Момент загрузки запоминается
-        при каждом вызове."""
-        from awgbot.runtime import hostmetrics
-        uptime = hostmetrics.read_uptime_seconds()
+        """Холодный старт — хост перезагружался с прошлого запуска бота:
+        boot_id ядра сменился (свой ключ, не тот, что у hostboot: там метка
+        одноразовая и снимается раньше). Именно загрузка, а не последний такт:
+        первый такт живости стартует вместе с планировщиком, раньше этой
+        проверки, и по нему холодный старт не отличить. Нет сохранённого
+        активного — тоже холодный. boot_id запоминается при каждом вызове."""
+        cur = bootid.read_boot_id()
         stored = self.db.get_state(self._RT_BOOT_KEY) or ""
         cold = not self.db.get_state(self._RT_ACTIVE_KEY)
-        if uptime is not None:
-            boot = int(timeutil.now().timestamp()) - int(uptime)
-            try:
-                cold = cold or not stored or abs(boot - int(stored)) > 120
-            except ValueError:
-                cold = True
-            self.db.set_state(self._RT_BOOT_KEY, str(boot))
+        if cur:
+            cold = cold or not stored or stored != cur
+            self.db.set_state(self._RT_BOOT_KEY, cur)
         return cold
 
     def routing_startup_warnings(self) -> list[str]:

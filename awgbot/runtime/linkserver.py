@@ -598,9 +598,7 @@ class LinkServer:
         sess = self._sessions.get(slot_id)
         if sess is None or not sess.hello:
             return False
-        fn = getattr(self.services, "gwlink_peer_services_for", None)
-        if fn is None:
-            return False
+        fn = self.services.gwlink_peer_services_for
         gw = await asyncio.to_thread(self.services.db.gateway, slot_id)
         if gw is None:
             return False
@@ -624,9 +622,7 @@ class LinkServer:
         sess = self._sessions.get(slot_id)
         if sess is None or not sess.hello or sess.own_have is None:
             return False
-        fn = getattr(self.services, "gwlink_own_for", None)
-        if fn is None:
-            return False
+        fn = self.services.gwlink_own_for
         gw = await asyncio.to_thread(self.services.db.gateway, slot_id)
         if gw is None or not gw.lan_mode:
             return False

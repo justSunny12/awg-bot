@@ -40,6 +40,7 @@ FACT_FIELDS = ("bundle", "link_contract", "plumbing_gen", "mark_status",
 # Поля блока bundle — те же ключи, что везёт бандл в юнит, одной таблицей в
 # util/gwlink: разойдись списки, сверка на ВПС молча не видела бы расхождения.
 from awgbot.util import gwlink as _gwlink  # noqa: E402
+from awgbot.infra import bootid
 BUNDLE_FIELDS = tuple(_gwlink.snap_field(k) for k in _gwlink.BUNDLE_KEYS)
 FIELDS = FACT_FIELDS + ("peer_nets", "egress_ok", "rev", "ts", "boot_id")
 
@@ -70,11 +71,7 @@ def plumbing_gen(info: dict | None) -> str:
 def boot_id() -> str:
     """Разный после перезагрузки: ВПС отличает «агент перезапустился» от
     «малина перезагрузилась», не спрашивая аптайм."""
-    try:
-        with open("/proc/sys/kernel/random/boot_id", encoding="utf-8") as f:
-            return f.read().strip()[:64]
-    except OSError:
-        return ""
+    return bootid.read_boot_id()[:64]
 
 
 _USERNAME_RE = re.compile(r"[A-Za-z0-9_]{1,32}")   # username Telegram — и только он идёт в ссылку

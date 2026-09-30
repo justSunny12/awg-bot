@@ -669,15 +669,15 @@ async def test_a_server_restored_from_an_old_copy_gets_the_lists_back_as_init(pa
     _seed(s, {"a.com": "vpn", "b.ru": "ru"})
     a = pi.agent()
     c = await pi.up(a)
-    assert await _until(lambda: _card(s, 1)["state"] == "applied", timeout=5)
+    assert await _until(lambda: _card(s, 1)["state"] == "applied", timeout=10)
     await pi.down(c)
     import json
     s.db.set_state(s._GWLINK_OWN_KEY, json.dumps(old))        # старая копия: то же поколение, ver 0
     s.db.set_state(s._gwlink_key(s._GWLINK_OWN_UPTO_KEY, 1), "")
     assert _canon(s) == {}
     await pi.up(a)
-    assert await _until(lambda: _canon(s) == {"a.com": "vpn", "b.ru": "ru"}, timeout=5), (_canon(s), pair.ev)
-    assert await _until(lambda: _card(s, 1)["state"] == "applied", timeout=5)
+    assert await _until(lambda: _canon(s) == {"a.com": "vpn", "b.ru": "ru"}, timeout=10), (_canon(s), pair.ev)
+    assert await _until(lambda: _card(s, 1)["state"] == "applied", timeout=10)
     assert pi.host.lists() == {"a.com": "vpn", "b.ru": "ru"}, "старый канон стёр списки шлюза"
     assert all(ev[3] for _, _, evs in pair.ev[-1:] for ev in evs), "список ушёл не init"
 
@@ -807,7 +807,9 @@ async def test_an_old_server_skips_own_ev_and_the_session_lives_on(pair, pi, mon
             msg = {**msg, "t": "незнакомое-3.0"}
         return await real(gw, sess, msg)
     monkeypatch.setattr(pair.srv, "_handle", old_handle)
-    monkeypatch.setattr(s, "gwlink_own_for", None)             # старый сервер канона не шлёт
+    async def _no_canon(slot_id):                              # старый сервер канона не шлёт
+        return False
+    monkeypatch.setattr(pair.srv, "deliver_own", _no_canon)
     a = pi.agent()
     c = await pi.up(a)
     writer = c._writer

@@ -33,6 +33,8 @@ from typing import Optional
 
 from awgbot.core import config
 from awgbot.domain import gwservices
+from awgbot.infra import nftjson, systemd
+from awgbot.util import kvfile
 
 TABLE_FAMILY = "inet"
 TABLE_NAME = "awg_gw_guard"
@@ -46,25 +48,7 @@ class GwGuardError(RuntimeError):
 
 
 def _nft(args: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
-    try:
-        return subprocess.run(["nft", *args], capture_output=True, timeout=timeout)
-    except FileNotFoundError:
-        raise GwGuardError("nft не найден — установите пакет nftables")
-    except subprocess.TimeoutExpired:
-        raise GwGuardError("таймаут nft")
-
-
-def _elem_str(el) -> str:
-    if isinstance(el, str):
-        return el
-    if isinstance(el, dict):
-        if "prefix" in el:
-            return f"{el['prefix']['addr']}/{el['prefix']['len']}"
-        if "elem" in el:
-            return _elem_str(el["elem"].get("val"))
-        if "val" in el:
-            return _elem_str(el["val"])
-    return str(el)
+    return nftjson.run(args, timeout=timeout, error=GwGuardError)
 
 
 def table_info() -> Optional[dict]:
@@ -87,7 +71,7 @@ def table_info() -> Optional[dict]:
     for item in doc.get("nftables", []):
         if "set" in item:
             s = item["set"]
-            sets[s["name"]] = {_elem_str(e) for e in (s.get("elem") or [])}
+            sets[s["name"]] = {nftjson.elem_str(e) for e in (s.get("elem") or [])}
         elif "chain" in item:
             chains.add(item["chain"]["name"])
         elif "rule" in item:
@@ -512,15 +496,7 @@ def uplink_pubkey() -> tuple[str, str]:
 def script_status() -> dict:
     """Что решил скрипт обвязки при последнем применении: GW_STATUS
     unmarked|confirmed|foreign|unconfirmed и ключ помеченного шлюза."""
-    out = {}
-    try:
-        for line in Path(STATUS_FILE).read_text(encoding="utf-8").splitlines():
-            if "=" in line:
-                k, v = line.split("=", 1)
-                out[k.strip()] = v.strip()
-    except OSError:
-        pass
-    return out
+    return kvfile.read(STATUS_FILE)
 
 
 # ── политика «Telegram → аплинк»: ip rule по метке + маршрут в таблице ──────
@@ -693,12 +669,7 @@ def lan_own_lists() -> tuple[int, int]:
 
 
 def dnsmasq_active() -> Optional[bool]:
-    try:
-        proc = subprocess.run(["systemctl", "is-active", "--quiet", "dnsmasq"],
-                              capture_output=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return proc.returncode == 0
+    return systemd.is_active("dnsmasq")
 
 
 def upstream_stats() -> Optional[dict[str, tuple[int, int]]]:
@@ -795,12 +766,7 @@ def avahi_browse_available() -> bool:
 def avahi_active() -> Optional[bool]:
     """Запущен ли avahi-daemon: без него SMB-серверы этой сети соседям не
     видны. None — systemctl не ответил."""
-    try:
-        proc = subprocess.run(["systemctl", "is-active", "--quiet", "avahi-daemon"],
-                              capture_output=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return proc.returncode == 0
+    return systemd.is_active("avahi-daemon")
 
 
 def avahi_browse(timeout: int = 15) -> Optional[str]:

@@ -6,18 +6,14 @@ hostboot.py — «хост перезагружался?» между двумя
 за загрузку, и его сравнение с сохранённым даёт точный ответ.
 """
 from __future__ import annotations
+from awgbot.infra import bootid
 
-import pathlib
 
-_BOOT_ID_PATH = "/proc/sys/kernel/random/boot_id"
 _STATE_KEY = "host_boot_id"
 
 
-def read_boot_id(path: str = _BOOT_ID_PATH) -> str:
-    try:
-        return pathlib.Path(path).read_text(encoding="ascii").strip()
-    except OSError:
-        return ""
+def read_boot_id(path: str = bootid.BOOT_ID_PATH) -> str:
+    return bootid.read_boot_id(path)
 
 
 def reboot_detected(db, boot_id: str | None = None) -> bool:

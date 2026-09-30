@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from awgbot.util import timeutil
+from awgbot.util import nets as nets_util
 from awgbot.domain.services.gwchannel import drift_lines   # строки расхождения рисует домен
 from awgbot.domain.gwchecks import WRITE_ERROR
 
@@ -127,11 +128,6 @@ def _slot_note(state: str, gw: str, agent_bot: dict | None, error: str, purpose:
 
 
 ROUTER_IP_PLACEHOLDER = "АДРЕС_ШЛЮЗА"
-
-
-def _nets_overlap(a: list, b: list) -> list:
-    from awgbot.util import nets
-    return nets.overlap(a, b)
 
 
 # ── Условная маршрутизация ─────────────────────
@@ -436,9 +432,9 @@ def gateway_card_text(state: dict, states: list) -> str:
         if state.get("services"):
             lines.append(services_line(state["services"], name, state.get("agent_bot")))
     others = [s for s in states if s["gateway"].id != gw.id]
-    conflict = next((s for s in others if _nets_overlap(nets, s["gateway"].home_subnets)), None)
+    conflict = next((s for s in others if nets_util.overlap(nets, s["gateway"].home_subnets)), None)
     if conflict is not None:
-        ov_nets = _nets_overlap(nets, conflict["gateway"].home_subnets)
+        ov_nets = nets_util.overlap(nets, conflict["gateway"].home_subnets)
         ov = ", ".join(_e(n) for n in ov_nets)
         verb = "пересекается" if len(ov_nets) == 1 else "пересекаются"
         first = min([state] + others, key=lambda s: (0 if s.get("preferred") else 1, s["gateway"].id))
@@ -638,7 +634,7 @@ def gateway_home_report(res: dict, state: dict) -> str:
         parts.append(f"⚠️ Не принято: {shown}{more}")
     conflict = res.get("conflict")
     if conflict is not None:
-        ov_nets = _nets_overlap(kept, conflict.home_subnets)
+        ov_nets = nets_util.overlap(kept, conflict.home_subnets)
         ov = ", ".join(f"<code>{_e(n)}</code>" for n in ov_nets) or "подсеть"
         verb = "пересекаются" if len(ov_nets) > 1 else "пересекается"
         who = _e(res["conflict_name"]) if res.get("conflict_name") else f"шлюза №{conflict.id}"

@@ -19,6 +19,7 @@ import pytest
 from awgbot.bot import keyboards as kb
 from awgbot.bot import notifier
 from awgbot.bot.callbacks import GraceCB, HideCB, NoteCB
+from awgbot.bot.handlers import hide as hide_h
 from awgbot.bot.handlers import reply_commands as rc
 from awgbot.core import config, settings
 from awgbot.domain.services import BYTES_PER_GB, Notification
@@ -155,7 +156,7 @@ async def test_gwcfg_button_issues_the_slot_configuration(services, fake_bot, mo
 async def test_hide_still_deletes_the_note(services, fake_bot):
     note = FakeMessage(text="x", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     cb = FakeCallback(message=note, user_id=ADMIN, bot=fake_bot)
-    await rc.on_hide(cb)
+    await hide_h.on_hide(cb)
     assert note.deleted and cb.answers
 
 

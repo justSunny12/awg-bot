@@ -19,8 +19,9 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import Menu
 from awgbot.bot.handlers.common import (call, edit_nav, purge_menus, cleanup_content, send_menu, card_from_main,
-                                        _dismiss_previous_nav, show_screen)
+                                        show_screen)
 from awgbot.bot.notifier import send_notifications
+from awgbot.bot.handlers.common import send_menu_to
 
 router = Router(name="admin.panel")
 
@@ -71,12 +72,7 @@ async def restore_panel_after_restart(bot, services) -> None:
                                     message_id=mid, reply_markup=None)
     except Exception:                                  # noqa: BLE001
         pass          # сообщение удалили — отчёт потерян, панель важнее
-    await _dismiss_previous_nav(bot, services, chat_id)
-    from awgbot.bot.handlers.common import NO_PREVIEW
-    text, markup = await _panel_parts(services)
-    sent = await bot.send_message(chat_id, text, reply_markup=markup,
-                                  link_preview_options=NO_PREVIEW)
-    await call(services.db.nav_touch, chat_id, sent.message_id)
+    await send_menu_to(bot, services, chat_id, *await _panel_parts(services))
 
 
 # ── экраны шапки ─────────────────────────────────────────────────────────────

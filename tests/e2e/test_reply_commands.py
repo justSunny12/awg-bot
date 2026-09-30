@@ -1,6 +1,7 @@
 """E2E: reply-команды (handlers/reply_commands.py) — «Скрыть» и «Отмена»."""
 import pytest
 
+from awgbot.bot.handlers import hide as hide_h
 from awgbot.bot.handlers import reply_commands as rc
 from tests.conftest import FakeCallback, FakeMessage, FakeState
 
@@ -10,7 +11,7 @@ pytestmark = pytest.mark.e2e
 async def test_on_hide_deletes_message(services, fake_bot):
     nav = FakeMessage(chat_id=700, user_id=700, bot=fake_bot)
     cb = FakeCallback(message=nav, user_id=700, bot=fake_bot)
-    await rc.on_hide(cb)
+    await hide_h.on_hide(cb)
     assert any(r[0] == "delete" for r in fake_bot.records)
     assert cb.answers
 

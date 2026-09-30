@@ -200,7 +200,7 @@ class DevicesMixin:
                                "у бота нет ссылки, которую можно было бы выдать другу")
         if dev.friend_status == FriendStatus.ACTIVE:
             raise ServiceError("Устройством уже управляет друг")
-        code = self._gen_friend_code()
+        code = self._gen_code("F")
         self.db.set_device_friend(device_id, friend_code=code, friend_status=FriendStatus.PENDING)
         return code
 
@@ -211,7 +211,7 @@ class DevicesMixin:
             raise ServiceError("Устройство не найдено")
         if dev.friend_status != FriendStatus.PENDING:
             raise ServiceError("Перевыдать код можно только для неактивированного приглашения")
-        code = self._gen_friend_code()
+        code = self._gen_code("F")
         self.db.set_device_friend(device_id, friend_code=code, friend_status=FriendStatus.PENDING)
         return code
 

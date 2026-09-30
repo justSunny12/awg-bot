@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Optional
 
 from awgbot.core import config
+from awgbot.util import kvfile
 
 log = logging.getLogger("awgbot.awglock")
 
@@ -51,18 +52,7 @@ _KEY_TARGET = "AWG_GENERATION_TARGET"
 
 
 def _read_kv(path) -> dict:
-    out: dict = {}
-    try:
-        text = Path(path).read_text(encoding="utf-8")
-    except OSError:
-        return out
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        out[k.strip()] = v.strip().strip('"')
-    return out
+    return kvfile.read(path, strip_quotes=True)
 
 
 def lock() -> dict:

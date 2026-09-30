@@ -265,27 +265,26 @@ def test_ping_cache_is_invalidated_when_the_host_falls(two, services, monkeypatc
 # ── холодный старт ───────────────────────────────────────────────────────────
 
 def test_cold_start_prefers_the_preferred_slot_only_when_the_host_rebooted(two, services, monkeypatch):
-    """Холодный старт — по моменту загрузки хоста: первый такт живости стартует
-    раньше этой проверки, и по последнему такту его не отличить."""
-    from awgbot.runtime import hostmetrics
+    """Холодный старт — по boot_id ядра: первый такт живости стартует раньше
+    этой проверки, и по последнему такту его не отличить; аптайм дрожит."""
+    from awgbot.infra import bootid
     admin, g1, g2 = two
     services.db.set_state(services._RT_ACTIVE_KEY, "2")
-    now = int(timeutil.now().timestamp())
-    services.db.set_state(services._RT_BOOT_KEY, str(now - 100000))
+    services.db.set_state(services._RT_BOOT_KEY, "boot-a")
     services.routing_liveness_tick()                       # такт уже был — не помеха
-    # тёплый: тот же момент загрузки — сохранённый активный
-    monkeypatch.setattr(hostmetrics, "read_uptime_seconds", lambda: 100000)
+    # тёплый: тот же boot_id — сохранённый активный
+    monkeypatch.setattr(bootid, "read_boot_id", lambda path=None: "boot-a")
     assert services.routing_cold_start().id == 2 and services.switched == []
-    # холодный: хост поднялся минуту назад — предпочтительный (слот 1), он отвечает
-    monkeypatch.setattr(hostmetrics, "read_uptime_seconds", lambda: 60)
+    # холодный: хост перезагрузился — предпочтительный (слот 1), он отвечает
+    monkeypatch.setattr(bootid, "read_boot_id", lambda path=None: "boot-b")
     assert services.routing_cold_start().id == 1 and services.switched == ["awglink"]
-    assert services.db.get_state(services._RT_BOOT_KEY) == str(int(timeutil.now().timestamp()) - 60)
-    # тот же момент загрузки второй раз — уже тёплый
+    assert services.db.get_state(services._RT_BOOT_KEY) == "boot-b"
+    # тот же boot_id второй раз — уже тёплый
     services.db.set_state(services._RT_ACTIVE_KEY, "2")
     assert services.routing_cold_start().id == 2
 
     def cold():                                            # «хост перезагрузился» заново
-        services.db.set_state(services._RT_BOOT_KEY, str(now - 100000))
+        services.db.set_state(services._RT_BOOT_KEY, "boot-a")
     # холодный, предпочтительный молчит → сохранённый (2) отвечает
     cold(); services.db.set_state(services._RT_ACTIVE_KEY, "2")
     services.probe[1] = "down"

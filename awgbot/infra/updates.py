@@ -30,10 +30,7 @@ import hashlib
 import json
 import os
 import re
-import shutil
-import subprocess
 import tempfile
-import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -108,6 +105,12 @@ class Release:
         if not tags:
             return True
         return "all_bots" in tags or _ROLE_TAG.get(role, "main_bot") in tags
+
+
+def version_at_least(ver: str, floor: tuple[int, ...]) -> bool:
+    """«3.1.0» ≥ (3, 1, 0)? Нечисловое — False (агент не назвал версию)."""
+    parts = parse_version(str(ver or ""))
+    return bool(parts) and tuple(parts[:len(floor)]) >= floor
 
 
 def parse_version(tag: str) -> Optional[tuple]:
@@ -286,24 +289,12 @@ def apply(blob: bytes) -> None:
     except OSError as e:
         raise UpdateError(f"не удалось записать поставку: {e}")
 
-    if shutil.which("systemd-run"):
-        # транзиентный юнит вне нашего cgroup; --collect уберёт его после выхода.
-        # Имя уникальное — повторный запуск не упадёт об «unit already exists».
-        unit = f"awg-bot-selfupdate-{int(time.time())}-{os.getpid()}"
-        # AWG_UPDATE_CLEANUP: post_update уберёт архив (только из /tmp) —
-        # иначе поставка на десятки мегабайт оставалась после каждого обновления
-        subprocess.Popen(
-            ["systemd-run", "--collect", "--quiet", f"--setenv=AWG_UPDATE_CLEANUP={path}",
-             f"--unit={unit}", _AWG_BOT_BIN, "update", path],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, close_fds=True)
-    else:
-        # без systemd-run: хотя бы отвяжемся в новую сессию (best effort)
-        subprocess.Popen(
-            [_AWG_BOT_BIN, "update", path],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
-            env={**os.environ, "AWG_UPDATE_CLEANUP": path})
+    # вне нашего cgroup (infra.detach); AWG_UPDATE_CLEANUP: post_update уберёт
+    # архив (только из /tmp) — иначе поставка на десятки мегабайт оставалась
+    # после каждого обновления
+    from awgbot.infra.detach import spawn_detached
+    spawn_detached([_AWG_BOT_BIN, "update", path], unit_prefix="awg-bot-selfupdate",
+                   env={"AWG_UPDATE_CLEANUP": path})
 
 
 def release_body(tag: str) -> str:

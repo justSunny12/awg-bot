@@ -676,7 +676,7 @@ def test_headers_come_from_the_flavour_package_on_raspberry_pi(kernel):
 def test_kernel_updater_hands_the_archive_path_to_post_update_for_cleanup():
     from awgbot.infra import updates as up
     src = (ROOT / "awgbot" / "infra" / "updates.py").read_text(encoding="utf-8")
-    assert "--setenv=AWG_UPDATE_CLEANUP=" in src and '"AWG_UPDATE_CLEANUP": path' in src
+    assert 'env={"AWG_UPDATE_CLEANUP": path}' in src and "spawn_detached(" in src
     assert up  # модуль импортируется
 
 

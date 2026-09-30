@@ -254,7 +254,7 @@ def _signed(key: bytes, raw: bytes) -> bytes:
     import hashlib
     import hmac as _hmac
     mac = _hmac.new(key, raw, hashlib.sha256).digest()[:20]
-    return (gwlink.PREFIX + gwlink._b64u(raw) + "." + gwlink._b64u(mac) + "\n").encode()
+    return (gwlink.PREFIX + gwlink.b64u(raw) + "." + gwlink.b64u(mac) + "\n").encode()
 
 
 @pytest.mark.parametrize("raw", [

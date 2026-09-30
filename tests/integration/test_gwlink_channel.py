@@ -25,6 +25,7 @@ from awgbot.domain import gwsnapshot
 from awgbot.domain.channelstate import ChannelState
 from awgbot.runtime import linkserver
 from awgbot.util import gwlink, gwsign
+from tests.linkstubs import AgentStub
 
 pytestmark = pytest.mark.integration
 
@@ -700,7 +701,7 @@ def test_a_new_session_starts_the_numbering_over(services):
 
 # ── оба конца сразу ──────────────────────────────────────────────────────────
 
-class _Agent:
+class _Agent(AgentStub):
     """Агент на том конце: отдаёт снимок и токен пометки, больше ничего."""
 
     def __init__(self, snap: dict, token: str = ""):

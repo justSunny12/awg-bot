@@ -40,7 +40,7 @@ def test_verify_tolerates_extra_fields_from_older_agents():
                          separators=(",", ":")).encode()
     import hashlib, hmac
     mac = hmac.new(gwsign._key(PRIV), payload, hashlib.sha256).digest()[:20]
-    token = gwsign.PREFIX + gwsign._b64u(payload) + "." + gwsign._b64u(mac)
+    token = gwsign.PREFIX + gwsign.b64u(payload) + "." + gwsign.b64u(mac)
     assert gwsign.verify(PRIV, token)["pub"] == PUB
 
 

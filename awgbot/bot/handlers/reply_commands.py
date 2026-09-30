@@ -15,24 +15,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
-from awgbot.bot.callbacks import CancelCB, HideCB, NoteCB
+from awgbot.bot.callbacks import CancelCB, NoteCB
 from awgbot.bot.handlers.common import call, edit_nav, show_main_menu
 
 router = Router(name="reply_commands")
-
-
-@router.callback_query(HideCB.filter())
-async def on_hide(cb: CallbackQuery):
-    """«Скрыть» — универсальная последняя кнопка на ЛЮБОМ проактивном
-    уведомлении (см. notifier.py). Роль-агностик: работает для всех (клиент,
-    друг, админ), т.к. это чисто UI-действие над своим же сообщением, доступа
-    к данным не требует. Удаляет само сообщение (не просто прячет клавиатуру —
-    так уведомление реально пропадает из чата, а не висит пустым текстом)."""
-    try:
-        await cb.message.delete()
-    except Exception:                                 # noqa: BLE001
-        pass                                          # уже удалено/бот без прав — не страшно
-    await cb.answer()
 
 
 @router.callback_query(CancelCB.filter())

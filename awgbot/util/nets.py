@@ -24,6 +24,27 @@ def getaddrinfo_timed(host: str, *, timeout: float = RESOLVE_TIMEOUT, family: in
     return fut.result(timeout=timeout)
 
 
+def normalize(nets) -> list[str]:
+    """Подсети строками в каноне («10.9.1.0/24»), без повторов; мусор — мимо."""
+    out: list[str] = []
+    for n in parse(nets):
+        s = str(n)
+        if s not in out:
+            out.append(s)
+    return out
+
+
+def parse(nets) -> list[ipaddress.IPv4Network]:
+    """Подсети объектами; нечитаемые — мимо (strict=False: адрес хоста → сеть)."""
+    out = []
+    for n in nets or []:
+        try:
+            out.append(ipaddress.IPv4Network(str(n).strip(), strict=False))
+        except ValueError:
+            continue
+    return out
+
+
 def overlap(a: list[str], b: list[str]) -> list[str]:
     """Подсети из a, пересекающиеся с какой-либо из b; мусор пропускается."""
     out = []

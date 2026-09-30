@@ -41,6 +41,7 @@ from awgbot.bot.handlers import client as client_handlers
 from awgbot.bot.handlers import friend as friend_handlers
 from awgbot.bot.handlers import guide as guide_handlers
 from awgbot.bot.handlers import routing as routing_handlers
+from awgbot.bot.handlers import hide as _hide
 
 logging.basicConfig(
     level=logging.INFO,
@@ -249,6 +250,7 @@ async def run_gateway() -> None:
     dp.callback_query.outer_middleware(access)  # что шлюзу и нужно
     from awgbot.bot import paging as _paging
     dp.include_router(_paging.router)              # листание списков — до экранов
+    dp.include_router(_hide.make_router())         # «Скрыть» — у обеих ролей
     dp.include_router(gateway_handlers.router)
     from awgbot.bot.handlers import stale as _stale
 
@@ -282,7 +284,7 @@ async def run_gateway() -> None:
     except Exception as e:                               # noqa: BLE001
         log.warning("gateway preflight warnings: %s", e)
 
-    # Итог self-update — тем же путём, что у клиентской роли: убрать «дождись»,
+    # Итог self-update — общий финишер обеих ролей: убрать «дождись»,
     # отчитаться, единственная живая кнопка «В меню».
     try:
         await report_update_result(bot, services)
@@ -405,6 +407,7 @@ async def main() -> None:
 
     from awgbot.bot import paging as _paging
     dp.include_router(_paging.router)              # листание списков — до экранов
+    dp.include_router(_hide.make_router())         # «Скрыть» — у обеих ролей
     dp.include_router(reply_commands_handlers.router)   # ПЕРВЫМ: reply-команды бьют раньше FSM
     dp.include_router(admin_handlers.router)
     dp.include_router(settings_handlers.router)

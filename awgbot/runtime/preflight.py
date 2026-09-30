@@ -6,12 +6,12 @@
     переживаемы). Бегут ДО создания бота; при провале поднимаем PreflightError
     с человекочитаемым текстом в stderr — его видно в `journalctl -u awg-bot`,
     потому что бот ещё не готов слать в чат.
-  • WARNING — не блокируют старт (мало места, контейнер молчит, конфиг с
+  • WARNING — не блокируют старт (мало места, awg не отвечает, конфиг с
     дефолтами). Собираются в список и уходят админу ПЕРВЫМ сообщением после
-    успешного подъёма (см. main: send_startup_warnings).
+    успешного подъёма (main: notify_one с format_warnings).
 
 Каждая проверка обёрнута в try: сам preflight не должен добавлять хрупкости —
-если проверка не смогла отработать (docker временно недоступен и т.п.), это
+если проверка не смогла отработать (awg временно не отвечает и т.п.), это
 максимум WARNING, но не падение бота на ровном месте.
 
 config.validate() (обязательные секреты/топология) остаётся и зовётся отдельно
@@ -299,13 +299,8 @@ def collect_warnings(services, server_ok: bool | None = None) -> list[str]:
 def _unit_enabled(unit: str) -> str:
     """Вывод `systemctl is-enabled` (enabled/disabled/not-found/…), пусто —
     systemctl недоступен."""
-    import subprocess
-    try:
-        proc = subprocess.run(["systemctl", "is-enabled", unit],
-                              capture_output=True, timeout=5)
-        return proc.stdout.decode(errors="replace").strip()
-    except Exception:                            # noqa: BLE001
-        return ""
+    from awgbot.infra import systemd
+    return systemd.enabled_state(unit)
 
 
 def _service_autostart_warning() -> list[str]:

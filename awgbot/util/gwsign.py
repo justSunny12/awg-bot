@@ -37,11 +37,11 @@ def _key(link_privkey_b64: str) -> bytes:
     return hashlib.sha256(b"awgbot-gwsign-v1" + bundlecrypt.derive_key(link_privkey_b64)).digest()
 
 
-def _b64u(data: bytes) -> str:
+def b64u(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode().rstrip("=")
 
 
-def _unb64u(text: str) -> bytes:
+def unb64u(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
@@ -50,7 +50,7 @@ def sign(link_privkey_b64: str, act: str, pub: str, host: str = "") -> str:
                           "nonce": os.urandom(8).hex(), "host": host[:64]},
                          separators=(",", ":"), ensure_ascii=False).encode()
     mac = hmac.new(_key(link_privkey_b64), payload, hashlib.sha256).digest()[:20]
-    return PREFIX + _b64u(payload) + "." + _b64u(mac)
+    return PREFIX + b64u(payload) + "." + b64u(mac)
 
 
 def find_token(text: str) -> str | None:
@@ -65,8 +65,8 @@ def verify(link_privkey_b64: str, text: str, now: float | None = None) -> dict:
     if not m:
         raise ValueError("в сообщении нет токена шлюза")
     try:
-        payload = _unb64u(m.group(1))
-        mac = _unb64u(m.group(2))
+        payload = unb64u(m.group(1))
+        mac = unb64u(m.group(2))
     except (ValueError, TypeError) as e:
         raise ValueError("токен повреждён") from e
     want = hmac.new(_key(link_privkey_b64), payload, hashlib.sha256).digest()[:20]

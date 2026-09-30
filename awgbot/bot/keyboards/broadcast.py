@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.bot.callbacks import BroadcastCB, PresetCB
 from awgbot.bot import texts as _texts
 
-from .common import page_slice, page_nav
+from .common import page_slice, page_nav, confirm
 
 
 def broadcast_targets(clients, selected, *, extend: bool = False, page: int = 0) -> InlineKeyboardMarkup:
@@ -56,11 +56,7 @@ def broadcast_cancel() -> InlineKeyboardMarkup:
 
 
 def broadcast_confirm() -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ Отмена", callback_data=BroadcastCB(action="cancel"))
-    kb.button(text="📢 Отправить", callback_data=BroadcastCB(action="send"))
-    kb.adjust(2)
-    return kb.as_markup()
+    return confirm(BroadcastCB(action="cancel"), "📢 Отправить", BroadcastCB(action="send"), danger=False)
 
 
 def broadcast_mode() -> InlineKeyboardMarkup:

@@ -23,12 +23,12 @@ from aiogram.types import CallbackQuery, Message
 from awgbot.bot import keyboards as kb
 from awgbot.core import config
 from awgbot.bot import texts
-from awgbot.bot.callbacks import GwCB, HideCB, UpdateCB
+from awgbot.bot.callbacks import GwCB, UpdateCB
 from awgbot.bot.states import GatewayTransitDomain
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers import settingscore as core
-from awgbot.bot.handlers.common import (call, edit_nav, send_menu, cleanup_content, purge_menus, ask_here,
-                                        dismiss_update_reports, forget_secret, ask_tracked,
+from awgbot.bot.handlers.common import (call, edit_nav, send_menu, send_menu_to, cleanup_content, purge_menus,
+                                        ask_here, dismiss_update_reports, forget_secret, ask_tracked,
                                         drop_previous_nav)
 from awgbot.bot.states import SshPort, GwSshAllow
 from awgbot.domain.gwssh import SshOwnerRefusal
@@ -79,6 +79,13 @@ async def _panel(target, services, cb: CallbackQuery | None = None, fresh: bool 
                         keep_id=keep_id)
 
 
+async def _panel_parts(services, *, fresh: bool = False):
+    """Текст и клавиатура панели агента — для показа без входящего сообщения."""
+    st = await _status(services, fresh=fresh)
+    return (texts.gateway_panel(st, await call(services.update_available_tag)),
+            kb.gateway_panel_kb(bool(getattr(st, "lan", None))))
+
+
 async def restore_panel_after_restart(bot, services) -> None:
     """Исполнить обещание «вернётся через несколько секунд» — как у основного:
     обещание подменяется отчётом и остаётся в чате, панель — следующим
@@ -92,12 +99,7 @@ async def restore_panel_after_restart(bot, services) -> None:
                                     message_id=mid, reply_markup=None)
     except Exception:                                  # noqa: BLE001
         pass
-    from awgbot.bot.handlers.common import _dismiss_previous_nav
-    await _dismiss_previous_nav(bot, services, chat_id)
-    st = await _status(services, fresh=False)
-    sent = await bot.send_message(chat_id, texts.gateway_panel(st, await call(services.update_available_tag)),
-                                  reply_markup=kb.gateway_panel_kb(bool(getattr(st, "lan", None))))
-    await call(services.db.nav_touch, chat_id, sent.message_id)
+    await send_menu_to(bot, services, chat_id, *await _panel_parts(services))
 
 
 _FIRST_PANEL_KEY = "gw_first_panel_sent"
@@ -113,12 +115,9 @@ async def send_first_panel(bot, services) -> None:
     if await call(services.db.get_state, _FIRST_PANEL_KEY):
         return
     try:
-        st = await _status(services, fresh=False)
-        sent = await bot.send_message(config.ADMIN_ID, texts.gateway_panel(st, await call(services.update_available_tag)),
-                                      reply_markup=kb.gateway_panel_kb(bool(getattr(st, "lan", None))))
+        await send_menu_to(bot, services, config.ADMIN_ID, *await _panel_parts(services))
     except Exception:                                  # noqa: BLE001
         return                                         # диалога ещё нет
-    await call(services.db.nav_touch, config.ADMIN_ID, sent.message_id)
     await call(services.db.set_state, _FIRST_PANEL_KEY, "1")
 
 
@@ -460,8 +459,7 @@ async def gw_ssh_allow_ask(cb: CallbackQuery, services, state: FSMContext):
 async def gw_ssh_allow_received(message: Message, state: FSMContext, services):
     raw = (message.text or "").strip()
     await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    from awgbot.infra import gwguard
-    before = services._ssh_allow_split(await call(gwguard.read_env))
+    before = await call(services.ssh_allow_current)
     try:
         after = await call(services.ssh_allow_add, raw)
     except ServiceError as e:
@@ -547,19 +545,6 @@ async def gw_bot_restart(cb: CallbackQuery, services):
     await edit_nav(cb, services, texts.GW_BOT_RESTARTING, None)
     await call(services.set_restart_wait, cb.message.chat.id, cb.message.message_id)
     await call(services.restart_bot)
-
-
-@router.callback_query(HideCB.filter())
-async def gw_hide(cb: CallbackQuery):
-    """«Скрыть» — последняя кнопка на любом проактивном уведомлении (алерты
-    монитора, предупреждения при старте, «доступна новая версия»). У агента
-    её обработчика не было: каждое нажатие уходило в «not handled», и
-    уведомления было не убрать. Удаляет само сообщение, как у основного."""
-    try:
-        await cb.message.delete()
-    except Exception:                                 # noqa: BLE001
-        pass
-    await cb.answer()
 
 
 # ── 🔀 VPN-транзит: один экран со своими списками ────────────────────────────

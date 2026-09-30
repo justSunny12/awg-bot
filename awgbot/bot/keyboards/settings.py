@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import settings
 from awgbot.bot.callbacks import Menu, UpdateCB, SetCB, GwCB, HideCB
 
-from .common import _chk, _tick, page_slice, page_nav, entry_tag
+from .common import _chk, _tick, page_slice, page_nav, entry_tag, confirm
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -278,11 +278,7 @@ def settings_email(configured: bool) -> InlineKeyboardMarkup:
 
 
 def email_forget_confirm() -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ Отмена", callback_data=SetCB(sec="email"))
-    kb.button(text="🗑 Отключить", callback_data=SetCB(sec="email", act="do", key="forget!"))
-    kb.adjust(2)
-    return kb.as_markup()
+    return confirm(SetCB(sec="email"), "🗑 Отключить", SetCB(sec="email", act="do", key="forget!"))
 
 
 def email_setup_offer(back_sec: str) -> InlineKeyboardMarkup:
@@ -380,15 +376,10 @@ def backup_encryption_kb(has_secret: bool) -> InlineKeyboardMarkup:
 def restore_confirm(gateway: bool = False) -> InlineKeyboardMarkup:
     """«Отмена» первой: восстановление необратимо, промах пальцем не должен
     возвращать всех на неделю назад."""
-    kb = InlineKeyboardBuilder()
     if gateway:
-        kb.button(text="⬅️ Отмена", callback_data=GwCB(action="restore_drop"))
-        kb.button(text="♻️ Восстановить", callback_data=GwCB(action="restore!"))
-    else:
-        kb.button(text="⬅️ Отмена", callback_data=SetCB(sec="backup", act="do", key="restore_drop"))
-        kb.button(text="♻️ Восстановить", callback_data=SetCB(sec="backup", act="do", key="restore!"))
-    kb.adjust(2)
-    return kb.as_markup()
+        return confirm(GwCB(action="restore_drop"), "♻️ Восстановить", GwCB(action="restore!"))
+    return confirm(SetCB(sec="backup", act="do", key="restore_drop"), "♻️ Восстановить",
+                   SetCB(sec="backup", act="do", key="restore!"))
 
 
 # ── 🔧 Сервис ────────────────────────────────────────────────────────────────
@@ -426,20 +417,12 @@ _MIG_CONFIRM_LABEL = {"start": "🚚 Начать", "finish": "✅ Заверш�
 
 def svc_confirm(key: str) -> InlineKeyboardMarkup:
     """Подтверждение перезапуска AWG / бота: «Отмена» первой."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ Отмена", callback_data=SetCB(sec="svc", act="open"))
-    kb.button(text="🔁 Перезапустить", callback_data=SetCB(sec="svc", act="do", key=f"{key}!"))
-    kb.adjust(2)
-    return kb.as_markup()
+    return confirm(SetCB(sec="svc", act="open"), "🔁 Перезапустить", SetCB(sec="svc", act="do", key=f"{key}!"))
 
 
 def migration_confirm(key: str) -> InlineKeyboardMarkup:
     """Подтверждение входа в переезд и обоих выходов: «Отмена» первой."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ Отмена", callback_data=SetCB(sec="svc", act="open"))
-    kb.button(text=_MIG_CONFIRM_LABEL[key], callback_data=SetCB(sec="mig", act="do", key=f"{key}!"))
-    kb.adjust(2)
-    return kb.as_markup()
+    return confirm(SetCB(sec="svc", act="open"), _MIG_CONFIRM_LABEL[key], SetCB(sec="mig", act="do", key=f"{key}!"))
 
 
 # ── ⬆️ Обновления ────────────────────────────────────────────────────────────

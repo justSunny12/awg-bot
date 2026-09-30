@@ -52,7 +52,7 @@ async def test_email_wizard_known_provider_saves_after_live_check(services, fake
     deleted = {r[2] for r in fake_bot.records if r[0] == "delete_message"}
     assert msg.message_id in deleted and addr.message_id in deleted
     section = [x for x in pw.sent if x[0] == "answer"][-1]
-    assert section[2] is not None and "подключён" not in section[1]
+    assert section[2] is not None and section[1].startswith("✅ Ящик "), "итог мастера — первой строкой раздела"
 
 
 async def test_email_wizard_unknown_domain_asks_servers_and_failed_check_saves_nothing(

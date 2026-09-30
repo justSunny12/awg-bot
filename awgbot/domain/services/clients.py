@@ -28,18 +28,11 @@ class ClientsMixin:
     def _gen_code_body(self) -> str:
         return "".join(secrets.choice(self._CODE_ALPHABET) for _ in range(self._CODE_BODY_LEN))
 
-    def _gen_invite(self) -> str:
-        """Клиентский код (префикс C), уникальный среди всех неиспользованных."""
+    def _gen_code(self, prefix: str) -> str:
+        """Код с префиксом (C — клиентский, F — друга), уникальный среди всех
+        неиспользованных кодов обоих видов."""
         while True:
-            code = "C" + self._gen_code_body()
-            if self.db.get_client_by_invite(code) is None \
-               and self.db.get_device_by_friend_code(code) is None:
-                return code
-
-    def _gen_friend_code(self) -> str:
-        """Код друга (префикс F), уникальный среди всех неиспользованных."""
-        while True:
-            code = "F" + self._gen_code_body()
+            code = prefix + self._gen_code_body()
             if self.db.get_client_by_invite(code) is None \
                and self.db.get_device_by_friend_code(code) is None:
                 return code
@@ -50,7 +43,7 @@ class ClientsMixin:
             raise ServiceError(f"Неизвестный период: {period_kind}")
         now = timeutil.now()
         end = None if period_kind == PeriodKind.NEVER else timeutil.add_period(now, period_kind)
-        invite = self._gen_invite()
+        invite = self._gen_code("C")
         cid = self.db.create_client(
             name, device_limit, timeutil.to_iso(now),
             timeutil.to_iso(end) if end else None, invite,
@@ -120,7 +113,7 @@ class ClientsMixin:
             raise ServiceError("Клиент не найден")
         if client.activation_status != ActivationStatus.PENDING:
             raise ServiceError("Клиент уже активирован — инвайт не нужен")
-        code = self._gen_invite()
+        code = self._gen_code("C")
         self.db.update_client_fields(client_id, invite_code=code)
         return code
 
@@ -136,7 +129,7 @@ class ClientsMixin:
             return existing.id
         now = timeutil.now()
         cid = self.db.create_client(
-            "Администратор", 0, timeutil.to_iso(now), None, self._gen_invite(),
+            "Администратор", 0, timeutil.to_iso(now), None, self._gen_code("C"),
         )
         self.db.update_client_fields(
             cid, tg_id=config.ADMIN_ID, activation_status=ActivationStatus.ACTIVE, status=SubStatus.ACTIVE,

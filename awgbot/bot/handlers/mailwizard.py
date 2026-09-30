@@ -40,9 +40,9 @@ def _port_ok(v: str) -> bool:
 
 
 def register(router, *, cancel_kb, done) -> dict:
-    """cancel_kb() → InlineKeyboardMarkup; done(message, services) — корутина,
-    показывающая раздел после завершения. Возвращает обработчики по именам —
-    для тестов."""
+    """cancel_kb() → InlineKeyboardMarkup; done(message, services, note) —
+    корутина, показывающая раздел после завершения с итогом первой строкой.
+    Возвращает обработчики по именам — для тестов."""
 
     async def _track(message: Message, services):
         await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
@@ -55,14 +55,12 @@ def register(router, *, cancel_kb, done) -> dict:
                                smtp_host=data["smtp_host"], smtp_port=int(data["smtp_port"]))
         ok, detail = await call(services.email_check, acc)
         if not ok:
-            await message.answer(texts.email_check_failed(detail))
-            await done(message, services)
+            await done(message, services, texts.email_check_failed(detail))
             return
         await call(services.email_save, acc.login, acc.password, acc.imap_host, acc.imap_port,
                    acc.smtp_host, acc.smtp_port)
         await call(services.email_check)                  # запомнить «проверено сейчас»
-        await message.answer(texts.email_saved(acc.login, detail))
-        await done(message, services)
+        await done(message, services, texts.email_saved(acc.login, detail))
 
     @router.message(EmailSetup.address)
     async def address(message: Message, state: FSMContext, services):

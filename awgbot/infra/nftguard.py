@@ -52,6 +52,7 @@ from pathlib import Path
 from typing import Optional
 
 from awgbot.core import config, settings
+from awgbot.infra import nftjson, systemd
 
 log = logging.getLogger("awgbot.nftguard")
 
@@ -367,10 +368,6 @@ def _nat_exclude_ifs() -> list[str]:
     return out
 
 
-def _ifs(names: list[str]) -> str:
-    return "{ " + ", ".join(f'"{n}"' for n in names) + " }"
-
-
 def _is_v4(a) -> bool:
     try:
         return ipaddress.ip_address(str(a)).version == 4
@@ -414,7 +411,7 @@ def render(spec: GuardSpec) -> str:
         ]
         rule = f"ip saddr @{SET_TUNNEL_NETS} masquerade"
         if spec.nat_exclude_ifs:
-            rule = f"oifname != {_ifs(spec.nat_exclude_ifs)} " + rule
+            rule = f"oifname != {nftjson.ifs(spec.nat_exclude_ifs)} " + rule
         nat_chain.append("        " + rule)
         nat_chain.append("    }")
     if not spec.filter:
@@ -425,7 +422,7 @@ def render(spec: GuardSpec) -> str:
         # место, где транзит линк ↔ линк можно закрыть.
         block: list[str] = []
         if spec.peer_link_block:
-            links = _ifs(spec.peer_link_block)
+            links = nftjson.ifs(spec.peer_link_block)
             block = ["", "    chain forward {",
                      "        type filter hook forward priority filter; policy accept;",
                      f"        iifname {links} oifname {links} drop",
@@ -466,7 +463,7 @@ def render(spec: GuardSpec) -> str:
         # только из интерфейса линка: адрес /30 снаружи подделать можно, а
         # пакет, пришедший с публичного интерфейса, линком быть не может.
         # Клиентам туннеля сюда хода нет — их подсеть в другом наборе.
-        out.append(f"        iifname {_ifs(spec.link_ifs)} ip saddr @{SET_LINK_PEERS} "
+        out.append(f"        iifname {nftjson.ifs(spec.link_ifs)} ip saddr @{SET_LINK_PEERS} "
                    f"tcp dport {int(spec.link_channel_port)} accept")
     if spec.open_tcp:
         out.append(f"        tcp dport {_ports(spec.open_tcp)} accept")
@@ -497,12 +494,12 @@ def render(spec: GuardSpec) -> str:
         if spec.peer_link_ifs:
             # линк ↔ линк: локальные сети за шлюзами друг до друга (функция B);
             # что именно едет, ограничивает AllowedIPs на стороне шлюза
-            links = _ifs(spec.peer_link_ifs)
+            links = nftjson.ifs(spec.peer_link_ifs)
             out.append(f"        iifname {links} oifname {links} accept")
         if spec.tunnel_ifs:
             # пир → пир: только устройствам админа (шлюз, свои устройства);
             # остальным клиентам друг до друга пути нет
-            ifs = _ifs(spec.tunnel_ifs)
+            ifs = nftjson.ifs(spec.tunnel_ifs)
             out.append(f"        iifname {ifs} oifname {ifs} ip saddr @{SET_TUNNEL_ADMIN} accept")
             out.append(f"        iifname {ifs} oifname {ifs} drop")
         if spec.tunnel_nets4:
@@ -517,12 +514,7 @@ def render(spec: GuardSpec) -> str:
 # ── nft: применить, прочитать ────────────────────────────────────────────────
 
 def _nft(args: list[str], timeout: int = 10, check: bool = True) -> subprocess.CompletedProcess:
-    try:
-        proc = subprocess.run(["nft", *args], capture_output=True, timeout=timeout)
-    except FileNotFoundError:
-        raise GuardError("nft не найден — установите пакет nftables")
-    except subprocess.TimeoutExpired:
-        raise GuardError(f"таймаут nft {' '.join(args[:3])}")
+    proc = nftjson.run(args, timeout=timeout, error=GuardError)
     if check and proc.returncode != 0:
         raise GuardError(f"nft {' '.join(args[:3])}: "
                          f"{proc.stderr.decode(errors='replace').strip()}")
@@ -616,21 +608,8 @@ def live_set(name: str) -> Optional[set[str]]:
         if not s:
             continue
         for el in s.get("elem", []) or []:
-            out.add(_elem_str(el))
+            out.add(nftjson.elem_str(el))
     return out
-
-
-def _elem_str(el) -> str:
-    if isinstance(el, str):
-        return el
-    if isinstance(el, dict):
-        if "prefix" in el:
-            return f"{el['prefix']['addr']}/{el['prefix']['len']}"
-        if "elem" in el:                       # {"elem": {"val": ..., ...}}
-            return _elem_str(el["elem"].get("val"))
-        if "val" in el:
-            return _elem_str(el["val"])
-    return str(el)
 
 
 # ── сверка по тику ───────────────────────────────────────────────────────────
@@ -698,9 +677,7 @@ def ensure_persistence() -> list[str]:
 
 
 def rollback_armed() -> bool:
-    rc = subprocess.run(["systemctl", "is-active", "--quiet", f"{ROLLBACK_UNIT}.timer"],
-                        capture_output=True).returncode
-    return rc == 0
+    return systemd.is_active(f"{ROLLBACK_UNIT}.timer") is True
 
 
 def arm_rollback(seconds: int, command: list[str], env: dict) -> None:
@@ -764,12 +741,7 @@ def ufw_active() -> bool:
 def firewalld_active() -> bool:
     """Второй владелец правил на RHEL-семействе; на apt-системах редко, но
     ставится руками."""
-    try:
-        rc = subprocess.run(["systemctl", "is-active", "--quiet", "firewalld"],
-                            capture_output=True, timeout=10).returncode
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return rc == 0
+    return systemd.is_active("firewalld") is True
 
 
 def status(admin_ips) -> dict:

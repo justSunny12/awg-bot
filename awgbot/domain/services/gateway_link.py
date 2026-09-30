@@ -18,6 +18,7 @@ from awgbot.util import timeutil
 from awgbot.infra import routing
 from awgbot.domain import configgen
 from awgbot.domain.services.types import Notification, ServiceError
+from awgbot.util import nets
 
 
 log = logging.getLogger("awgbot.services")
@@ -294,11 +295,6 @@ class GatewayLinkMixin:
     def peer_nets_enabled(self) -> bool:
         return settings.get_bool(self._PEER_NETS_KEY, False)
 
-    @staticmethod
-    def _nets_overlap(a: list[str], b: list[str]) -> list[str]:
-        from awgbot.util import nets
-        return nets.overlap(a, b)
-
     def gateway_peer_nets(self, slot_id: int) -> list[str]:
         """Подсети за другими шлюзами для слота: тумблер включён, у обоих слотов
         включено «за шлюзом — без VPN» (ровно оно гарантирует, что ответ найдёт
@@ -312,7 +308,7 @@ class GatewayLinkMixin:
         for g in self.db.gateways():
             if g.id == me.id or not g.lan_mode:
                 continue
-            bad = set(self._nets_overlap(g.home_subnets, me.home_subnets))
+            bad = set(nets.overlap(g.home_subnets, me.home_subnets))
             for n in g.home_subnets:
                 if n not in bad and n not in out:
                     out.append(n)
@@ -339,7 +335,7 @@ class GatewayLinkMixin:
             return info
         for i, a in enumerate(lan):
             for b in lan[i + 1:]:
-                ov = self._nets_overlap(a.home_subnets, b.home_subnets)
+                ov = nets.overlap(a.home_subnets, b.home_subnets)
                 if ov:
                     info["state"] = "overlap"
                     info["who"] = [self._gw_display(a), self._gw_display(b)]
@@ -737,7 +733,7 @@ class GatewayLinkMixin:
                 log.warning("gateway_set_home_subnets: старые маршруты не сняты: %s", e)
         conflict = None
         for g in self.db.gateways():
-            if g.id != gw.id and self._nets_overlap(kept, g.home_subnets):   # и вложенность
+            if g.id != gw.id and nets.overlap(kept, g.home_subnets):   # и вложенность
                 conflict = g
                 break
         try:

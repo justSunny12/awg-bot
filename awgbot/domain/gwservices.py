@@ -22,6 +22,8 @@ import hashlib
 import ipaddress
 import json
 import re
+from awgbot.util import nets as nets_util
+from awgbot.infra import updates as _updates
 
 SERVICE_TYPES = ("_smb._tcp",)          # пока только SMB: шаблоны файла и помощника завязаны на него
 BROWSE_DOMAIN = "awg.internal"          # зарезервирован ICANN, апстримом не уходит
@@ -51,14 +53,7 @@ LINE_RES = tuple(re.compile(p) for p in (
 ))
 
 
-def _nets(nets) -> list[ipaddress.IPv4Network]:
-    out = []
-    for n in nets or []:
-        try:
-            out.append(ipaddress.IPv4Network(str(n).strip(), strict=False))
-        except ValueError:
-            continue
-    return out
+version_at_least = _updates.version_at_least     # сравнение версий живёт у обновлений
 
 
 def ip_in_nets(addr: str, nets) -> bool:
@@ -66,7 +61,7 @@ def ip_in_nets(addr: str, nets) -> bool:
         ip = ipaddress.IPv4Address(str(addr).strip())
     except ValueError:
         return False
-    return any(ip in n for n in _nets(nets))
+    return any(ip in n for n in nets_util.parse(nets))
 
 
 def _unescape(s: str) -> str:
@@ -181,7 +176,7 @@ def render_dnsmasq(items, own_nets, digest: str = "") -> str:
              f"# hash={digest or feed_hash(items)}",
              f"local=/{d}/"]
     zones = []
-    for n in _nets(own_nets):
+    for n in nets_util.parse(own_nets):
         z = reverse_zone(str(n))
         if z not in zones:
             zones.append(z)
@@ -224,10 +219,3 @@ def lines_ok(text: str) -> bool:
             return False
     return True
 
-
-def version_at_least(ver: str, floor: tuple[int, ...]) -> bool:
-    """«3.1.0» ≥ (3, 1, 0)? Разбор — общий с проверкой обновлений
-    (infra.updates.parse_version); нечисловое — False (агент не назвал версию)."""
-    from awgbot.infra.updates import parse_version
-    parts = parse_version(str(ver or ""))
-    return bool(parts) and tuple(parts[:len(floor)]) >= floor

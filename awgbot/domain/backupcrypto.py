@@ -18,6 +18,10 @@ import time
 from awgbot.core import config
 from awgbot.util import timeutil
 
+
+class BackupKeyMissing(RuntimeError):
+    """Копия требует шифрования, а секрета нет (шлюз: внутри ключи линка)."""
+
 log = logging.getLogger("awgbot.backupcrypto")
 
 MIN_PASSPHRASE_LEN = 8
@@ -194,7 +198,7 @@ class BackupCryptoMixin:
         Возвращает список из одного пути — вызывающие ждут список."""
         enc_kwargs = self.backup_enc_kwargs()
         if enc_kwargs is None and require_encryption:
-            raise RuntimeError("нет секрета шифрования")
+            raise BackupKeyMissing("нет секрета шифрования")
         config.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         stamp = timeutil.now().strftime("%Y%m%d_%H%M%S")
         raw = self.build_backup_archive(extra)
@@ -295,18 +299,9 @@ class BackupCryptoMixin:
         """awg-bot restore --yes — ВНЕ нашего cgroup: он остановит сервис,
         подменит БД/конфиги и запустит бота заново; итог доложит новый процесс
         по маркеру restore-done.json."""
-        import shutil
-        import subprocess
+        from awgbot.infra.detach import spawn_detached
         script = str(config.BASE_DIR / "awg-bot.sh")
-        cmd = ["bash", script, "restore", "--yes", path]
-        if shutil.which("systemd-run"):
-            subprocess.Popen(["systemd-run", "--collect", "--quiet",
-                              f"--unit=awg-bot-restore-{int(time.time())}", *cmd],
-                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, close_fds=True)
-        else:
-            subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
+        spawn_detached(["bash", script, "restore", "--yes", path], unit_prefix="awg-bot-restore")
 
     @staticmethod
     def pop_restore_done() -> dict | None:

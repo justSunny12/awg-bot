@@ -8,6 +8,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.callbacks import GwCB
 from awgbot.bot.handlers import gateway as gh
+from awgbot.bot.handlers import hide as hide_h
 from awgbot.domain.gateway import GatewayServices, GwStatus
 from awgbot.infra.db import Database
 from tests.conftest import FakeCallback, FakeMessage, FakeState
@@ -118,7 +119,7 @@ async def test_hide_button_deletes_the_notification(svc, fake_bot):
     молчала («not handled»)."""
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await gh.gw_hide(cb)
+    await hide_h.on_hide(cb)
     assert any(r[0] == "delete" for r in fake_bot.records), "уведомление не удалено"
 
 

@@ -31,6 +31,7 @@ import threading
 import time
 
 from awgbot.core import config
+from awgbot.infra import gwguard
 from awgbot.domain.services import Notification, ServiceError
 
 log = logging.getLogger("awgbot.gateway")
@@ -98,6 +99,10 @@ class GwSshMixin:
     @staticmethod
     def _ssh_allow_split(env: dict) -> list[str]:
         return [t for t in env.get("SSH_ALLOW", "").split() if t]
+
+    def ssh_allow_current(self) -> list[str]:
+        """Адреса SSH снаружи, как записаны в firewall.env сейчас."""
+        return self._ssh_allow_split(gwguard.read_env())
 
     def ssh_port_fact(self, env: dict | None = None) -> tuple[int | None, list[int]]:
         """(порт, на котором слушает sshd | None — не запущен, все его порты).
