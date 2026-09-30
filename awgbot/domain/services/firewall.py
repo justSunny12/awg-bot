@@ -3,6 +3,7 @@ firewall.py — файервол из чата (README §6b).
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import sys
@@ -96,6 +97,21 @@ class FirewallMixin:
             raise ServiceError(str(e))
         return old
 
+    @contextlib.contextmanager
+    def _own_settings_change(self):
+        """Правка firewall.* из сервиса: таблицу он применит сам, хуку
+        планировщика (settings.on_change) второй раз её не применять."""
+        self.__dict__["_fw_own_change"] = True
+        try:
+            yield
+        finally:
+            self.__dict__["_fw_own_change"] = False
+
+    def firewall_settings_changed_externally(self) -> bool:
+        """Для хука планировщика: правка не наша (руками в conf, awg-bot
+        firewall …) — применить таблицу; свою домен уже применил."""
+        return not self.__dict__.get("_fw_own_change", False)
+
     def firewall_allow_add(self, raw: str) -> list[str]:
         """Добавить адреса в вайтлист SSH. Добавление запереть не может —
         применяем без таймера отката."""
@@ -112,7 +128,8 @@ class FirewallMixin:
             raise ServiceError("пусто: жду адрес, подсеть или имя")
         cur = list(settings.get("app.firewall.ssh_allow", []) or [])
         cur += [e for e in entries if e not in cur]
-        settings.set_value("app.firewall.ssh_allow", cur)
+        with self._own_settings_change():
+            settings.set_value("app.firewall.ssh_allow", cur)
         if nftguard.enabled():
             self.reconcile_ssh_access()
         return cur
@@ -121,7 +138,8 @@ class FirewallMixin:
         """Убрать адрес — сразу, без таймера: из чата любое действие
         отменяется здесь же, а чат от SSH не зависит."""
         cur = [v for v in (settings.get("app.firewall.ssh_allow", []) or []) if v != entry]
-        settings.set_value("app.firewall.ssh_allow", cur)
+        with self._own_settings_change():
+            settings.set_value("app.firewall.ssh_allow", cur)
         from awgbot.infra import nftguard
         if nftguard.enabled():
             self._firewall_apply(rollback=False)
@@ -153,11 +171,13 @@ class FirewallMixin:
         from awgbot.infra import nftguard
         if not (settings.get("app.firewall.ssh_allow", []) or []):
             raise ServiceError("сначала добавь хотя бы один адрес для входа снаружи")
-        settings.set_value("app.firewall.enabled", True)
+        with self._own_settings_change():
+            settings.set_value("app.firewall.enabled", True)
         try:
             self._firewall_apply(rollback=False)
         except nftguard.GuardError as e:
-            settings.set_value("app.firewall.enabled", False)
+            with self._own_settings_change():
+                settings.set_value("app.firewall.enabled", False)
             raise ServiceError(str(e))
 
     def firewall_confirm(self) -> bool:
@@ -170,7 +190,8 @@ class FirewallMixin:
         from awgbot.infra import nftguard
         nftguard.disarm_rollback()
         done = nftguard.remove()
-        settings.set_value("app.firewall.enabled", False)
+        with self._own_settings_change():
+            settings.set_value("app.firewall.enabled", False)
         return done
 
     # ── порт как факт на сервере: сверка, не следование ──────────────────────

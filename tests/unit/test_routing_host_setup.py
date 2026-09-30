@@ -363,3 +363,13 @@ def test_rollback_keeps_the_dummy_and_its_dnsmasq_while_client_configs_point_at_
     # остальное снимается как прежде
     assert "DROP nat PREROUTING" in out and "DROP filter FORWARD" in out
     assert "RUN rm -f /etc/systemd/system/awg-bot-routing.service" in out
+
+
+def test_a_stale_iptables_masquerade_is_dropped_when_the_bot_leads_nat():
+    """Правило прежней схемы стояло выше исключения для линка: клиенты
+    уходили к шлюзу с адресом ВПС. Когда NAT ведёт таблица бота, скрипт
+    снимает его, а не оставляет «рядом»."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[2] / "install" / "routing-host-setup.sh").read_text(encoding="utf-8")
+    branch = src.split("if guard_masquerades; then", 1)[1].split("else", 1)[0]
+    assert 'drop_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE' in branch

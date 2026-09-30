@@ -290,6 +290,9 @@ async def run_gateway() -> None:
         await report_update_result(bot, services)
     except Exception as e:                               # noqa: BLE001
         log.warning("gateway confirm_applied_update: %s", e)
+    # rt-18: очередь общего пула потоков в первые минуты — строкой в журнал
+    from awgbot.runtime import poolprobe
+    asyncio.create_task(poolprobe.run("gateway: "))
 
     # Обещание «вернётся через несколько секунд» после «Перезапустить бота» —
     # исполняет новый процесс, как у основной роли.
@@ -576,6 +579,9 @@ async def main() -> None:
             scheduler.start()
         except Exception as e:                           # noqa: BLE001
             log.warning("планировщик не запущен: %s", e)
+        # rt-18: очередь общего пула потоков в первые минуты — строкой в журнал
+        from awgbot.runtime import poolprobe
+        asyncio.create_task(poolprobe.run())
         try:
             await _sync_bot_identity(bot, db)
         except Exception as e:                           # noqa: BLE001

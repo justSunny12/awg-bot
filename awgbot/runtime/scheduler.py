@@ -440,7 +440,10 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
 
     def _hook_firewall(key, value):
         # правка firewall.* или network.ssh_port в conf (руками или через
-        # awg-bot firewall …) — таблица пересобирается сразу, без рестарта
+        # awg-bot firewall …) — таблица пересобирается сразу, без рестарта;
+        # правку из самого сервиса он уже применил — второй nft -f не нужен
+        if not services.firewall_settings_changed_externally():
+            return
         try:
             services.reconcile_ssh_access()
         except Exception as e:                            # noqa: BLE001

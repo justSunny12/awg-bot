@@ -285,3 +285,17 @@ def test_port_drift_is_followed_when_a_foreign_owner_sets_it(services, fw, sshd_
     assert len(notes) == 1 and "22 → 2222" in notes[0].text and "другой процесс" in notes[0].text
     assert store["app.network.ssh_port"] == 2222, "чужой владелец — следуем, как агент"
     assert notes[0].critical is False
+
+
+def test_own_firewall_changes_do_not_reapply_the_table_from_the_settings_hook(services, monkeypatch):
+    """Кнопки раздела правят firewall.* через сервис, и он же применяет
+    таблицу; хук планировщика на ту же правку применял её второй раз — два
+    nft -f на клик. Свою правку сервис помечает, хук её пропускает."""
+    seen = []
+    from awgbot.core import settings
+    settings.on_change("app.firewall", lambda k, v: seen.append(services.firewall_settings_changed_externally()))
+    assert services.firewall_settings_changed_externally() is True
+    with services._own_settings_change():
+        settings.set_value("app.firewall.ssh_allow", ["203.0.113.7"])
+    settings.set_value("app.firewall.ssh_allow", ["203.0.113.8"])
+    assert seen == [False, True], seen

@@ -479,6 +479,11 @@ guard_masquerades() {
 }
 if guard_masquerades; then
     say "  MASQUERADE ведёт бот (таблица awg_bot_guard) — свои правила не ставлю"
+    # Правило прежней схемы, оставшееся от прогона до появления таблицы бота,
+    # стояло ВЫШЕ исключения для линка: клиенты уходили к шлюзу с адресом ВПС,
+    # и файервол шлюза не узнавал устройства админа (на ВПС 30.09.2026:
+    # 139 226 пакетов на нём при нуле на исключении). Снимаем.
+    drop_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
 else
 ensure_rule nat POSTROUTING -s "$CLIENT_SUBNET" -j MASQUERADE
 # Пир → пир (в тот же awg-интерфейс) НЕ маскарадим. Иначе устройство админа
