@@ -463,7 +463,7 @@ async def test_the_slot_card_counts_the_lists_and_follows_the_canon(services, la
     на шлюзе — уйдёт, отправлен, применён, отказ. Кнопок столько же."""
     head, note = _own_block((await _card(services, fake_bot, 2))[0])
     assert head == "📋 Свои списки: пусто", head
-    assert note == "⏳ Синхронизируется со шлюзом «Pi2», когда он выйдет на связь", note
+    assert note == "⏳ Синхронизируется со шлюзом Pi2, когда он выйдет на связь", note
     services.gwlink_own_in(1, "rx", [[i + 1, f"d{i}.com", "vpn", False] for i in range(5)]
                            + [[6, "shop.ru", "ru", False]])
     services.gwlink_session_opened(2, "3.1.0", 2)
@@ -480,10 +480,10 @@ async def test_the_slot_card_counts_the_lists_and_follows_the_canon(services, la
     assert labels_applied == labels, "строка своих списков добавила или убрала кнопки"
     services.gwlink_own_ack_in(2, {"ok": False, "hash": digest, "error": "<b>dnsmasq</b> & rc=1"})
     _, note = _own_block((await _card(services, fake_bot, 2))[0])
-    assert note == "⚠️ Шлюз «Pi2» не смог принять списки: &lt;b&gt;dnsmasq&lt;/b&gt; &amp; rc=1", note
+    assert note == "⚠️ Шлюз Pi2 не смог принять списки: &lt;b&gt;dnsmasq&lt;/b&gt; &amp; rc=1", note
     services.gwlink_own_ack_in(2, {"ok": False, "hash": digest, "error": ""})
     _, note = _own_block((await _card(services, fake_bot, 2))[0])
-    assert note == "⚠️ Шлюз «Pi2» не смог принять списки", "висящее двоеточие без ошибки"
+    assert note == "⚠️ Шлюз Pi2 не смог принять списки", "висящее двоеточие без ошибки"
 
 
 async def _failed_with(services, fake_bot, error: str) -> str | None:
@@ -502,13 +502,13 @@ async def test_a_breakage_on_the_gateway_is_not_called_a_refusal(services, lan_s
     «X»: ошибка записи файла: …» без «не смог принять». Иначе человек ищет
     плохой домен в списке, а чинить нужно диск шлюза."""
     note = await _failed_with(services, fake_bot, "ошибка записи файла: нет места на диске")
-    assert note == "⚠️ Шлюз «Pi2»: ошибка записи файла: нет места на диске", note
+    assert note == "⚠️ Шлюз Pi2: ошибка записи файла: нет места на диске", note
 
 
 async def test_a_real_refusal_of_the_lists_keeps_its_wording(services, lan_slots, fake_bot):
     """Отказ скрипта (не поломка) — «не смог принять списки: …»."""
     note = await _failed_with(services, fake_bot, "скрипт не ответил за 150 с")
-    assert note == "⚠️ Шлюз «Pi2» не смог принять списки: скрипт не ответил за 150 с", note
+    assert note == "⚠️ Шлюз Pi2 не смог принять списки: скрипт не ответил за 150 с", note
 
 
 async def test_a_breakage_text_of_the_lists_is_escaped(services, lan_slots, fake_bot, slots):
@@ -516,7 +516,7 @@ async def test_a_breakage_text_of_the_lists_is_escaped(services, lan_slots, fake
     _, _, pi2 = slots
     services.rename_device(pi2.id, "Pi & <2>")
     note = await _failed_with(services, fake_bot, "ошибка записи файла: <i>&")
-    assert note == "⚠️ Шлюз «Pi &amp; &lt;2&gt;»: ошибка записи файла: &lt;i&gt;&amp;", note
+    assert note == "⚠️ Шлюз Pi &amp; &lt;2&gt;: ошибка записи файла: &lt;i&gt;&amp;", note
 
 
 def test_the_lists_breakage_branch_without_a_name_reads_whole():
@@ -532,7 +532,7 @@ async def test_an_agent_that_does_not_know_sync_is_told_to_update_with_a_bot_lin
     services.gwlink_own_hello_in(2, False)
     services.set_gw_bot_identity(2, "pi2_gw_bot", "Шлюз <2> & co")
     _, note = _own_block((await _card(services, fake_bot, 2))[0])
-    assert note == ('⚠️ Для синхронизации необходимо обновить шлюз «Pi2» (бот: '
+    assert note == ('⚠️ Для синхронизации необходимо обновить шлюз Pi2 (бот: '
                     '<a href="https://t.me/pi2_gw_bot">Шлюз &lt;2&gt; &amp; co</a>)'), note
 
 
@@ -541,7 +541,7 @@ async def test_an_old_agent_is_recognised_by_its_snapshot_before_any_hello(servi
     services.gwlink_snapshot_in(2, {"bundle": {"lan_mode": "1"}, "agent_version": "3.0.2",
                                     "link_contract": "1", "rev": 1}, 1, True)
     _, note = _own_block((await _card(services, fake_bot, 2))[0])
-    assert note == "⚠️ Для синхронизации необходимо обновить шлюз «Pi2»", note
+    assert note == "⚠️ Для синхронизации необходимо обновить шлюз Pi2", note
 
 
 async def test_without_lan_mode_the_card_has_no_own_lists_line(services, lan_slots, fake_bot):

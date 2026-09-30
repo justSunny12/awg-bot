@@ -97,7 +97,7 @@ async def test_the_slot_card_counts_services_and_follows_their_fate(services, pe
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": "<b>dnsmasq</b> & rc=1"})
     text, _ = await _card(services, fake_bot, 2)
     assert _svc_line(text) == HEAD, _svc_line(text)
-    assert _svc_note(text) == "⚠️ Шлюз «Pi2» не смог принять записи: &lt;b&gt;dnsmasq&lt;/b&gt; &amp; rc=1", (
+    assert _svc_note(text) == "⚠️ Шлюз Pi2 не смог принять записи: &lt;b&gt;dnsmasq&lt;/b&gt; &amp; rc=1", (
         f"ошибка шлюза не экранирована или потерялась: {_svc_note(text)}")
     text1, _ = await _card(services, fake_bot, 1)
     assert _svc_line(text1) == "🗂 SMB: свои — 1", "нулевая часть «извне» не выводится"
@@ -110,12 +110,12 @@ async def test_a_refusal_without_details_has_no_dangling_colon(services, peers, 
     _publish(services)
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": ""})
     text, _ = await _card(services, fake_bot, 2)
-    assert _svc_note(text) == "⚠️ Шлюз «Pi2» не смог принять записи", text
+    assert _svc_note(text) == "⚠️ Шлюз Pi2 не смог принять записи", text
 
 
 @pytest.mark.parametrize("peers_applied,version,note", [
-    ("", "3.1.0", "⚠️ Необходим перевыпуск конфигурации шлюза «Pi2»"),
-    ("192.168.1.0/24", "3.0.2", "⚠️ Необходимо обновить шлюз «Pi2»"),
+    ("", "3.1.0", "⚠️ Необходим перевыпуск конфигурации шлюза Pi2"),
+    ("192.168.1.0/24", "3.0.2", "⚠️ Необходимо обновить шлюз Pi2"),
 ])
 async def test_the_slot_card_says_why_services_are_not_there_yet(services, peers, fake_bot,
                                                                  peers_applied, version, note):
@@ -135,7 +135,7 @@ async def test_the_update_advice_links_the_gateway_bot_when_it_is_known(services
     _publish(services, version="3.0.2")
     services.set_gw_bot_identity(2, "pi2_gw_bot", "Шлюз <2> & co")
     text, _ = await _card(services, fake_bot, 2)
-    assert _svc_note(text) == ('⚠️ Необходимо обновить шлюз «Pi2» (бот: '
+    assert _svc_note(text) == ('⚠️ Необходимо обновить шлюз Pi2 (бот: '
                                '<a href="https://t.me/pi2_gw_bot">Шлюз &lt;2&gt; &amp; co</a>)'), text
 
 
@@ -150,7 +150,7 @@ async def test_the_gateway_name_in_the_note_is_escaped_once(services, peers, fak
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": ""})
     text, _ = await _card(services, fake_bot, 2)
     assert text.splitlines()[0].startswith("🛰 <b>Pi &amp; &lt;2&gt;</b> — "), text.splitlines()[0]
-    assert _svc_note(text) == "⚠️ Шлюз «Pi &amp; &lt;2&gt;» не смог принять записи", (
+    assert _svc_note(text) == "⚠️ Шлюз Pi &amp; &lt;2&gt; не смог принять записи", (
         f"имя шлюза экранировано дважды: {_svc_note(text)}")
 
 
@@ -164,11 +164,11 @@ async def test_a_breakage_on_the_gateway_is_not_called_a_refusal(services, peers
                                              "ошибка записи файла: нет места на диске"})
     text, _ = await _card(services, fake_bot, 2)
     assert _svc_line(text) == HEAD, _svc_line(text)
-    assert _svc_note(text) == "⚠️ Шлюз «Pi2»: ошибка записи файла: нет места на диске", _svc_note(text)
+    assert _svc_note(text) == "⚠️ Шлюз Pi2: ошибка записи файла: нет места на диске", _svc_note(text)
     assert "не смог принять" not in text, f"поломка на шлюзе названа отказом: {text}"
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": "не пройдена проверка строк"})
     text, _ = await _card(services, fake_bot, 2)
-    assert _svc_note(text) == "⚠️ Шлюз «Pi2» не смог принять записи: не пройдена проверка строк", (
+    assert _svc_note(text) == "⚠️ Шлюз Pi2 не смог принять записи: не пройдена проверка строк", (
         f"отказ проверки строк потерял «не смог принять записи»: {_svc_note(text)}")
 
 
@@ -181,7 +181,7 @@ async def test_a_breakage_text_from_the_gateway_is_escaped(services, peers, fake
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error":
                                              "ошибка записи файла: <b>&</b>"})
     text, _ = await _card(services, fake_bot, 2)
-    assert _svc_note(text) == "⚠️ Шлюз «Pi &amp; &lt;2&gt;»: ошибка записи файла: &lt;b&gt;&amp;&lt;/b&gt;", (
+    assert _svc_note(text) == "⚠️ Шлюз Pi &amp; &lt;2&gt;: ошибка записи файла: &lt;b&gt;&amp;&lt;/b&gt;", (
         _svc_note(text))
 
 

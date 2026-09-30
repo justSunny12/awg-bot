@@ -145,7 +145,7 @@ def gateway_card_text(state: dict, states: list) -> str:
     свои списки, связь подсетей, SMB, бот шлюза; предупреждения открытыми
     строками; редкое — под «подробнее»."""
     gw, dev = state["gateway"], state.get("device")
-    name = f"«{_e(dev.name)}»" if dev is not None else f"слот {gw.id}"
+    name = _e(dev.name) if dev is not None else f"слот {gw.id}"     # без кавычек, как в уведомлениях
     two = len(states) > 1
     lines = [f"{'⭐' if state.get('preferred') and two else '🛰'} <b>{slot_name(state)}</b> — {slot_status(state)}"]
     age = state.get("handshake_age")
