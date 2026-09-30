@@ -91,7 +91,7 @@ rm /etc/dnsmasq.d/awgbot-debug.conf && systemctl restart dnsmasq
 ## 2. Переезд клиентского сервера с контейнера Amnezia на хост
 
 **Зачем.** Контейнер работает в своём netns, и из этого растёт вся конструкция
-«два плеча» (`infra/routing.py`, шапка модуля): различать клиентов можно только
+«два плеча» (`infra/routing/`, шапка пакета): различать клиентов можно только
 до чужого MASQUERADE, поэтому в контейнере живут исключения из него, а на хосте
 — всё остальное. Убери контейнер — механизм исчезает целиком:
 
@@ -103,7 +103,7 @@ rm /etc/dnsmasq.d/awgbot-debug.conf && systemctl restart dnsmasq
 - в `awg.py` — `_exec`/`_exec_i`/`_exec_sh`, `container_ips()` с разбором
   bridge-сторон, bridge-интерфейсная логика SSH-цепочки.
 
-Порядка трети сложности `routing.py`.
+Порядка трети сложности `infra/routing/`.
 
 **Совместимость клиентов — не вопрос.** Ключи это обычные Curve25519 и PSK,
 поколения AmneziaWG их не касаются. Сервер уже отдаёт v3-набор (диапазонные
@@ -125,7 +125,7 @@ v1.0.20210914` из контейнера — унаследованная баз
   путём, а не за PID), метка старта (`service_started_at` — на хосте время
   загрузки, потому что цепочки переживают `awg-quick down/up`),
   `host_ssh_targets` (адрес awg0 вместо шлюзов docker-сетей),
-  `restart_server` (`awg-quick`). Контейнерное плечо `routing.py`
+  `restart_server` (`awg-quick`). Контейнерное плечо `infra/routing/`
   (`sync_nat_exempt`, сверка адреса контейнера) в host-режиме выключается.
   `routing-host-setup.sh` и `harden_firewall.sh` читают режим из того же
   `app.yaml`. Появился `install/awg-host-migrate.sh` — перенос сервера с
@@ -150,7 +150,7 @@ v1.0.20210914` из контейнера — унаследованная баз
   `awg-host-migrate.sh` открывает порт и чистит маршрут; `routing-gw-setup.sh`
   ставит `ip_forward` и не зависит от docker.
 
-Затрагивает: `awg.py`, `infra/routing.py`, `routing-host-setup.sh`,
+Затрагивает: `awg.py`, `infra/routing/`, `routing-host-setup.sh`,
 `harden_firewall.sh`, `config.py`, preflight, доктора.
 
 ---

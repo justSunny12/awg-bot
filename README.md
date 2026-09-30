@@ -279,7 +279,9 @@ awgbot/
              kvfile     файлы KEY=VALUE (env, состояние)
   infra/     db/        SQLite (per-thread): ядро, схема и миграции, миксины по темам
              awg        ЕДИНСТВЕННЫЙ слой команд к awg (host | docker exec)
-             routing    команды условной маршрутизации: ipset/iptables/ip/dnsmasq
+             routing/   команды условной маршрутизации: ipset/iptables/ip/dnsmasq — пакет
+                        по разделам: base, selfcheck, slots, sets, marking, policy,
+                        probes, feeds (шапка «два плеча» — в __init__)
              updates    релизы репозитория, сверка sha256
              email_resume  IMAP/SMTP аварийного email-выхода из паузы
              hostmetrics  локальные метрики железа (/proc + statvfs)
@@ -289,15 +291,23 @@ awgbot/
              bootid     boot_id ядра (перезагрузка хоста, холодный старт)
   domain/    services/  бизнес-логика (склейка db+awg+configgen+routing) — пакет
                         миксинов по областям: blocks, clients, devices, subscription,
-                        traffic, reconcile, firewall, gateway_link, routing, status
+                        traffic, reconcile, firewall, gateway_link, routing, status;
+                        routing/ (common, access, reconcile, liveness, coldstart, notes) и
+                        gateway_link/ (common, link, slots, peernets, mark, agentbot) —
+                        сами пакеты, составной миксин собирается в __init__
+             gateway/   механика агента шлюза: base, link, monitor, tgmark, transit,
+                        report, ownlists, peersvc, bundle, egress; GatewayServices в __init__
              configgen  генерация vpn:// и .conf (кодек формата приложения)
              routing    чистая логика: нормализация доменов, генерация dnsmasq
              evidence   улики живости: активный слот на ВПС, выход наружу у агента
-  bot/       texts, keyboards, guides   презентация
+  bot/       texts, keyboards, guides   презентация; texts/routing/ — пакет
+                        (slots, card, dialogs, assign, access)
              filters, middleware, callbacks, states   glue aiogram
              notifier   рассылка уведомлений (пейсинг + RetryAfter)
              handlers/  роутеры client + admin/ (пакет: panel, clients, devices, gateway,
-                        updates, selfops, blocks, broadcast) + friend + routing + settings + …
+                        updates, selfops, blocks, broadcast) + friend + routing + settings/
+                        (пакет: render, gwmark, slots, sections, inputs, cycles, actions;
+                        роутер один — _router) + …
   runtime/   main         сборка и запуск
              preflight    самопроверка окружения на старте (fatal / warning)
              scheduler    APScheduler-задачи (трафик, сроки, монитор, живость шлюза)
