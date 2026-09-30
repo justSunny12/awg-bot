@@ -87,7 +87,7 @@ async def test_card_collapses_devices_that_do_not_fit_and_lists_them_separately(
     cb2, nav2 = _acb(fake_bot)
     await ah.admin_client_devices(cb2, ClientCB(action="devices", client_id=c.id), services)
     text, labels2 = last_screen(nav2)
-    assert text == "📱 Устройства профиля Ксюша · 7", text
+    assert text == "📱 <b>Устройства профиля Ксюша</b> · 7", text
     assert [l for l in labels2 if "Тел" in l] == [f"⚪ Тел {i}" for i in range(7)], labels2
     assert labels2[-2:] == ["➕ Устройство", "⬅️ Назад"]
 
@@ -105,13 +105,13 @@ async def test_edit_screen_shows_current_values(services, fake_bot, make_active_
     c = services.db.get_client(c.id)
     text, labels = await _edit_screen(services, fake_bot, c.id)
     s, e = timeutil.parse_iso(c.period_start), timeutil.parse_iso(c.period_end)
-    assert text == (f"✏️ Ксюша — изменить\nПериод {timeutil.fmt_period_ui(s, e)} · 3 устройства · "
+    assert text == (f"✏️ <b>Ксюша</b> — изменить\nПериод {timeutil.fmt_period_ui(s, e)} · 3 устройства · "
                     "100 ГБ в месяц"), text
     assert labels == ["✏️ Имя", "✏️ Период", "✏️ Лимит устр-в", "✏️ Трафик", "🗑 Удалить профиль",
                       "⬅️ Назад"], labels
     u = make_active_client("Вечный", tg_id=4202, period_kind="never", device_limit=0)
     text, _ = await _edit_screen(services, fake_bot, u.id)
-    assert text == "✏️ Вечный — изменить\nБессрочная · ∞ устройств · ∞ ГБ в месяц", text
+    assert text == "✏️ <b>Вечный</b> — изменить\nБессрочная · ∞ устройств · ∞ ГБ в месяц", text
 
 
 async def test_rename_returns_to_edit_with_the_note_first(services, fake_bot, make_active_client):
@@ -124,7 +124,7 @@ async def test_rename_returns_to_edit_with_the_note_first(services, fake_bot, ma
     services.db.nav_touch(ADMIN, nav.message_id)
     await ah.edit_name_start(cb, ClientCB(action="edit_name", client_id=c.id), services, st)
     text, labels = last_screen(nav)
-    assert text == "✏️ Новое имя для профиля «Ксюша»" and labels == ["✖️ Отмена"], (text, labels)
+    assert text == "✏️ <b>Новое имя для профиля «Ксюша»</b>" and labels == ["✖️ Отмена"], (text, labels)
     empty = _amsg(fake_bot, "  ")
     await ah.edit_name_apply(empty, services, st)
     assert [t for t, _ in _answers(empty)] == [texts.NAME_EMPTY]
@@ -133,7 +133,7 @@ async def test_rename_returns_to_edit_with_the_note_first(services, fake_bot, ma
     assert services.db.get_client(c.id).name == "Ксения"
     shown = _answers(msg)
     assert len(shown) == 1, "итог и экран — одним сообщением"
-    assert shown[0][0].split("\n")[:3] == ["✅ Имя профиля: Ксюша → Ксения", "", "✏️ Ксения — изменить"], shown
+    assert shown[0][0].split("\n")[:3] == ["✅ Имя профиля: Ксюша → Ксения", "", "✏️ <b>Ксения</b> — изменить"], shown
     assert "✏️ Трафик" in _labels(shown[0][1])
     deleted = {r[2] for r in fake_bot.records if r[0] == "delete_message"}
     assert {nav.message_id, empty.message_id, msg.message_id} <= deleted, "приглашение или ввод остались"
@@ -150,7 +150,7 @@ async def test_cancel_from_an_edit_prompt_goes_back_to_edit(services, fake_bot, 
     cb2, nav2 = _acb(fake_bot)
     await rc.on_cancel_inline(cb2, CancelCB.unpack(cancel), st, services, role="admin")
     text, _ = last_screen(nav2)
-    assert text.startswith("✏️ Ксюша — изменить\n"), text
+    assert text.startswith("✏️ <b>Ксюша</b> — изменить\n"), text
     assert services.db.get_client(c.id).name == "Ксюша" and await st.get_data() == {}
 
 
@@ -163,7 +163,7 @@ async def test_period_edit_two_prompts_new_format_and_note(services, fake_bot, m
     cb, nav = _acb(fake_bot)
     await ah.edit_period_start(cb, ClientCB(action="edit_period", client_id=c.id), services, st)
     text, labels = last_screen(nav)
-    assert text.startswith("📅 Начало периода профиля Ксюша · сейчас "), text
+    assert text.startswith("📅 <b>Начало периода профиля Ксюша</b> · сейчас "), text
     assert text.endswith("Введи дату в формате <code>ДД.ММ.ГГГГ ЧЧ:ММ</code> (без времени — 00:00), «-» — не менять")
     assert labels == ["✖️ Отмена"]
     bad = _amsg(fake_bot, "вчера")
@@ -173,7 +173,7 @@ async def test_period_edit_two_prompts_new_format_and_note(services, fake_bot, m
     start = _amsg(fake_bot, f"01.02.{year}")
     await ah.edit_period_start_apply(start, services, st)
     prompt = _answers(start)[-1][0]
-    assert prompt.startswith("📅 Окончание периода профиля Ксюша · сейчас ") and \
+    assert prompt.startswith("📅 <b>Окончание периода профиля Ксюша</b> · сейчас ") and \
         prompt.endswith("Дата в том же формате, «-» — не менять, «0» — бессрочно"), prompt
     end = _amsg(fake_bot, f"01.03.{year} 18:30")
     await ah.edit_period_end_apply(end, services, st)
@@ -182,7 +182,7 @@ async def test_period_edit_two_prompts_new_format_and_note(services, fake_bot, m
     shown = _answers(end)[-1][0]
     yy = str(year)[2:]
     assert shown.split("\n")[0] == f"✅ Период: 01.02.{yy} 00:00 → 01.03.{yy} 18:30", shown
-    assert shown.split("\n")[2].startswith("✏️ Ксюша — изменить"), shown
+    assert shown.split("\n")[2].startswith("✏️ <b>Ксюша</b> — изменить"), shown
 
 
 async def test_period_end_zero_makes_it_unlimited(services, fake_bot, make_active_client):
@@ -207,24 +207,24 @@ async def test_new_profile_name_presets_invite_note_and_card(services, fake_bot)
     cb, nav = _acb(fake_bot)
     await ah.add_client_start(cb, services, st)
     text, labels = last_screen(nav)
-    assert text == "➕ Новый профиль — как назвать?" and labels == ["✖️ Отмена"], (text, labels)
+    assert text == "➕ <b>Новый профиль</b> — как назвать?" and labels == ["✖️ Отмена"], (text, labels)
 
     name = _amsg(fake_bot, "Ксюша")
     await ah.add_client_name(name, services, st)
     text, markup = _answers(name)[-1]
-    assert text == "➕ Ксюша — сколько устройств?", text
+    assert text == "➕ <b>Ксюша</b> — сколько устройств?", text
     assert _labels(markup) == ["1", "2", "3", "5", "10", "∞", "✏️ Другое", "✖️ Отмена"], _labels(markup)
 
     cb2, nav2 = _acb(fake_bot)
     await ah.add_client_devs_preset(cb2, PresetCB(kind="new_devs", val=3), services, st)
     text, labels = last_screen(nav2)
-    assert text.startswith("➕ Ксюша · 3 устройства — трафик в месяц?"), text
+    assert text.startswith("➕ <b>Ксюша</b> · 3 устройства — трафик в месяц?"), text
     assert labels == ["50 ГБ", "100 ГБ", "200 ГБ", "500 ГБ", "∞", "✏️ Другое", "✖️ Отмена"], labels
 
     cb3, nav3 = _acb(fake_bot)
     await ah.add_client_traffic_preset(cb3, PresetCB(kind="new_traffic", val=100), services, st)
     text, labels = last_screen(nav3)
-    assert text == "➕ Ксюша · 3 устройства · 100 ГБ — срок подписки?", text
+    assert text == "➕ <b>Ксюша</b> · 3 устройства · 100 ГБ — срок подписки?", text
     assert labels == ["День", "Неделя", "Месяц", "Год", "∞", "✖️ Отмена"], labels
 
     cb4, nav4 = _acb(fake_bot)
@@ -258,7 +258,7 @@ async def test_new_profile_other_number_comes_back_to_the_flow(services, fake_bo
     assert [t for t, _ in _answers(bad)] == [texts.NUMBER_BAD_LIMIT]
     seven = _amsg(fake_bot, "7")
     await ah.add_client_limit(seven, services, st)
-    assert _answers(seven)[-1][0].startswith("➕ Петя · 7 устройств — трафик в месяц?")
+    assert _answers(seven)[-1][0].startswith("➕ <b>Петя</b> · 7 устройств — трафик в месяц?")
 
     cb2, nav2 = _acb(fake_bot)
     await ah.add_client_traffic_preset(cb2, PresetCB(kind="new_traffic", val=-1), services, st)
@@ -266,7 +266,7 @@ async def test_new_profile_other_number_comes_back_to_the_flow(services, fake_bo
     t = _amsg(fake_bot, "70")
     await ah.add_client_traffic(t, services, st)
     text, markup = _answers(t)[-1]
-    assert text == "➕ Петя · 7 устройств · 70 ГБ — срок подписки?", text
+    assert text == "➕ <b>Петя</b> · 7 устройств · 70 ГБ — срок подписки?", text
     assert "∞" in _labels(markup)
     data = await st.get_data()
     assert (data["limit"], data["traffic_gb"]) == (7, 70)
@@ -305,7 +305,7 @@ async def test_deleting_a_profile_leaves_a_note_and_opens_profiles(services, fak
     note = [s for s in nav.sent if s[0] == "edit_text"][-1]
     assert note[1] == "🗑 Профиль Ксюша удалён · устройств удалено: 1" and note[2] is None, note
     listing = _answers(nav)[-1]
-    assert listing[0].startswith("👥 Профили · 0"), listing
+    assert listing[0].startswith("👥 <b>Профили</b> · 0"), listing
     assert Menu(action="main").pack() in [b.callback_data for r in listing[1].inline_keyboard for b in r]
 
 
@@ -387,9 +387,9 @@ async def test_active_card_has_no_access_line(services, fake_bot, make_active_cl
     assert not any(ln.startswith("🟡") for ln in lines), lines
 
 
-@pytest.mark.parametrize("limit, expected", [(100 * G, "📊 0 из 100 ГБ"), (0, "📊 0 ГБ (∞)")])
+@pytest.mark.parametrize("limit, expected", [(100 * G, "📊 0 из 100 ГБ"), (0, "📊 0 ГБ (безлимит)")])
 async def test_card_zero_traffic_line(services, fake_bot, make_active_client, limit, expected):
-    """Нуль трафика — строка стоит («0 из 100 ГБ» / «0 ГБ (∞)») без стрелок:
+    """Нуль трафика — строка стоит («0 из 100 ГБ» / «0 ГБ (безлимит)») без стрелок:
     пропавшая строка читается как «учёт сломан», а «↑0 ↓0» — шум."""
     c = make_active_client("Ксюша", tg_id=4407, traffic_limit=limit)
     lines, _, _ = await _card(services, fake_bot, c.id)
@@ -538,7 +538,7 @@ async def test_reassign_names_the_device_and_both_profiles(services, fake_bot, m
     cb, nav = _acb(fake_bot)
     await ah.device_reassign_start(cb, DeviceCB(action="reassign", device_id=dc.device_id), services)
     text, _ = last_screen(nav)
-    assert text == f"🔀 Перенос устройства «iPhone» ({_cl(kolya)}) — в какой профиль?", text
+    assert text == f"🔀 <b>Перенос устройства «iPhone»</b> ({_cl(kolya)}) — в какой профиль?", text
     cb, nav = _acb(fake_bot)
     await ah.device_reassign_apply(cb, ReassignCB(device_id=dc.device_id, client_id=ksu.id, stage="go"),
                                    services)
@@ -555,7 +555,7 @@ async def test_reassign_of_an_unassigned_peer_says_without_profile(services, fak
     cb, nav = _acb(fake_bot)
     await ah.device_reassign_start(cb, DeviceCB(action="reassign", device_id=dev_id), services)
     text, _ = last_screen(nav)
-    assert text == "🔀 Перенос устройства «app» — в какой профиль?", text
+    assert text == "🔀 <b>Перенос устройства «app»</b> — в какой профиль?", text
     cb, nav = _acb(fake_bot)
     await ah.device_reassign_apply(cb, ReassignCB(device_id=dev_id, client_id=ksu.id, stage="go"), services)
     shown = [s for s in nav.sent if s[0] == "edit_text"]

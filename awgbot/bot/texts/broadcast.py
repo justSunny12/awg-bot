@@ -17,10 +17,10 @@ def broadcast_targets_text(selected: int, extend: bool) -> str:
     """Экран адресатов: «📢 Объявление · отмечено 2»; с продлением — кто
     получит и что значат ∞ и 🟡 у имён."""
     if extend:
-        return (f"📢 Объявление с продлением · отмечено {selected}\n"
+        return (f"📢 <b>Объявление с продлением</b> · отмечено {selected}\n"
                 "Получат только владельцы профилей с подпиской\n"
                 "∞ — бессрочная (не продлится), 🟡 — истекла (продлится от текущего времени)")
-    return (f"📢 Объявление · отмечено {selected}\n"
+    return (f"📢 <b>Объявление</b> · отмечено {selected}\n"
             "Получат владельцы и те, с кем они делятся устройствами")
 
 
@@ -55,7 +55,7 @@ def broadcast_days_prompt(plan, bot_username: str = "") -> str:
     сколько дней продлеваем?»; бессрочные — с оговоркой."""
     names = ", ".join(profile_link(e.client, bot_username) + (" (∞, без продления)" if e.unlimited else "")
                       for e in plan)
-    return f"📢 Профили для продления подписки: {names}\nНа сколько дней продлеваем?"
+    return f"📢 <b>Профили для продления подписки:</b> {names}\nНа сколько дней продлеваем?"
 
 
 def extension_header(days: int, ext) -> str:
@@ -127,7 +127,7 @@ def broadcast_prompt(clients: list, with_friends: bool = False, *,
     """Приглашение ввести текст: «📢 Текст для профилей: [Ксюша], [Петя]»,
     адресаты поимённо — к подтверждению легко забыть, кого отметил."""
     r = extension_reserve() if extend_days is not None else 0
-    head = "📢 Текст для " + ("профиля " if len(clients) == 1 else "профилей: ") + _names(clients, bot_username)
+    head = "📢 <b>Текст для " + ("профиля</b> " if len(clients) == 1 else "профилей:</b> ") + _names(clients, bot_username)
     if extend_days is not None:
         head += f" · продление на {_days(extend_days)}"
     return head + "\n" + _how_to(config.TG_TEXT_MAX - r, config.TG_CAPTION_MAX - r)
@@ -141,7 +141,7 @@ def broadcast_preview(text: str, n: int, clients: list = (),
     else:
         w = plural_ru(n, "адресат", "адресата", "адресатов")
         foot = f"{n} {w}: {_bc_audience(list(clients), with_friends, bot_username)}"
-    return f"👆 Так увидят получатели · {foot}\n\n{text}"
+    return f"👆 <b>Так увидят получатели</b> · {foot}\n\n{text}"
 
 
 def broadcast_preview_photos(n: int, clients: list = (),
@@ -154,7 +154,7 @@ def broadcast_preview_photos(n: int, clients: list = (),
     else:
         w = plural_ru(n, "адресат", "адресата", "адресатов")
         foot = f"{n} {w}: {_bc_audience(list(clients), with_friends, bot_username)}"
-    head = f"👆 Так увидят получатели · {foot}"
+    head = f"👆 <b>Так увидят получатели</b> · {foot}"
     if not has_text:
         head += "\n✍️ Текста нет — уйдут только картинки. Нужен текст — пришли его сообщением"
     return head

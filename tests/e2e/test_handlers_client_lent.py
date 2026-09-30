@@ -70,7 +70,7 @@ async def test_client_holder_sees_foreign_device_after_own(services, fake_bot, m
     cb, nav = _cb(fake_bot, 7103)
     await ch.menu_devices(cb, holder, services)
     text, labels = last_screen(nav)
-    assert text == '📱 Устройства · 1 из 2 (+1 от профиля <a href="tg://user?id=7102">Вася</a>)', text
+    assert text == '📱 <b>Устройства</b> · 1 из 2 (+1 от профиля <a href="tg://user?id=7102">Вася</a>)', text
     assert labels[:2] == ["⚪ Своё", "⚪ Чужое · от профиля Вася"], labels
     # карточка держателя: выдача, блок, удаление — без имени и лимита
     cb, nav = _cb(fake_bot, 7103)
@@ -90,7 +90,7 @@ async def test_client_holder_sees_foreign_device_after_own(services, fake_bot, m
     assert owner_msgs and "удалено по его запросу" in owner_msgs[0] and "0 из 3" in owner_msgs[0]
     assert services.db.get_client(holder.id) is not None
     edits = [s for s in nav.sent if s[0] == "edit_text"]
-    assert edits[-1][1].endswith("\n\n📱 Устройства · 1 из 2"), "итог — первой строкой списка устройств"
+    assert edits[-1][1].endswith("\n\n📱 <b>Устройства</b> · 1 из 2"), "итог — первой строкой списка устройств"
 
 
 async def test_client_block_own_device_needs_confirmation(services, fake_bot, make_active_client):

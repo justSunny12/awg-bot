@@ -127,7 +127,7 @@ def test_client_greeting_shows_consumption_and_expiry(services, make_active_clie
     end = timeutil.parse_iso(c.period_end)
     out = texts.greeting_client(c, True, (3, 4), None, traffic=traffic)
     assert out.splitlines() == [
-        "👋 Тестовый клиент", "🟢 VPN работает",
+        "👋 <b>Тестовый клиент</b>", "🟢 VPN работает",
         f"💳 Подписка до {timeutil.fmt_date_ui(end)} · 📊 24.1 из 50 ГБ",
         "📱 Устройств 3 из 4"], out
     services.db.update_client_fields(c.id, notified_thresholds="10080")
@@ -136,7 +136,7 @@ def test_client_greeting_shows_consumption_and_expiry(services, make_active_clie
         texts.greeting_client(c, True, (3, 4), None, traffic=traffic)
     assert "🟢 активна" in texts.subscription_status_only(c), "срок — только на главной клиента"
     services.db.update_client_fields(c.id, traffic_limit=0)
-    assert " · 📊 24.1 из ∞ ГБ\n" in texts.greeting_client(
+    assert " · 📊 24.1 ГБ (безлимит)\n" in texts.greeting_client(
         services.db.get_client(c.id), True, (3, 4), None, traffic=traffic)
 
 

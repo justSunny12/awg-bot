@@ -39,7 +39,7 @@ async def test_entry_is_the_targets_screen_with_the_extend_toggle(services, make
     pending = services.create_client("Ждёт", 1, "year", 0)            # не активировал
     state = FakeState()
     text, labels = await _press(admin_h.broadcast_pick, fake_bot, state, services)
-    assert text == ("📢 Объявление · отмечено 0\n"
+    assert text == ("📢 <b>Объявление</b> · отмечено 0\n"
                     "Получат владельцы и те, с кем они делятся устройствами"), text
     assert labels == ["☑️ С продлением подписки", "☑️ Выбрать все", "☑️ Анна", "☑️ Ждёт",
                       "⬅️ Отмена", "➡️ Далее"], labels
@@ -48,7 +48,7 @@ async def test_entry_is_the_targets_screen_with_the_extend_toggle(services, make
     await _press(admin_h.broadcast_toggle, fake_bot, BroadcastCB(action="tgl", ref=pending.client_id),
                  state, services)
     text, labels = await _press(admin_h.broadcast_extend_toggle, fake_bot, state, services)
-    assert text.startswith("📢 Объявление с продлением · отмечено 0\n"
+    assert text.startswith("📢 <b>Объявление с продлением</b> · отмечено 0\n"
                            "Получат только владельцы профилей с подпиской\n"), text
     assert labels[0] == "✅ С продлением подписки"
     assert not any("Ждёт" in l for l in labels), "не активировавший доступ попал в адресаты продления"
@@ -70,7 +70,7 @@ async def test_mark_all_by_hand_turns_bulk_on_and_bulk_on_clears_everything(
     await _press(admin_h.broadcast_toggle, fake_bot, BroadcastCB(action="tgl", ref=a.id), state, services)
     text, labels = await _press(admin_h.broadcast_toggle, fake_bot, BroadcastCB(action="tgl", ref=b.id),
                                 state, services)
-    assert text.startswith("📢 Объявление · отмечено 2"), text
+    assert text.startswith("📢 <b>Объявление</b> · отмечено 2"), text
     assert labels[1:4] == ["✅ Выбрать все", "✅ Анна", "✅ Борис"], labels
 
     text, labels = await _press(admin_h.broadcast_toggle_all, fake_bot, state, services)
@@ -108,7 +108,7 @@ async def test_next_asks_days_by_presets_and_refuses_only_unlimited(services, ma
 
     def link(c):
         return f'<a href="https://t.me/awg_test_bot?start=cl-{c.id}">{c.name}</a>'
-    assert text == (f"📢 Профили для продления подписки: {link(a)}, {link(u)} (∞, без продления)\n"
+    assert text == (f"📢 <b>Профили для продления подписки:</b> {link(a)}, {link(u)} (∞, без продления)\n"
                     "На сколько дней продлеваем?"), text
     assert labels == ["1 дн.", "3 дн.", "7 дн.", "✏️ Другое", "✖️ Отмена", "⬅️ Назад"], labels
     assert await state.get_state() == "Broadcast:days"
@@ -131,7 +131,7 @@ async def test_days_preset_moves_to_the_text_prompt(services, make_active_client
     text, labels = await _press(admin_h.broadcast_days_preset, fake_bot,
                                 PresetCB(kind="bc_days", val=7), state, services)
     assert (await state.get_data())["days"] == 7 and await state.get_state() == "Broadcast:text"
-    assert text.startswith("📢 Текст для профиля Анна · продление на 7 дней\n"), text
+    assert text.startswith("📢 <b>Текст для профиля</b> Анна · продление на 7 дней\n"), text
     assert labels == ["⬅️ Отмена"]
 
 
@@ -154,7 +154,7 @@ async def test_days_other_validates_then_prompts_for_text(services, make_active_
     await admin_h.broadcast_days(ok, state, services)
     assert (await state.get_data())["days"] == 10 and await state.get_state() == "Broadcast:text"
     prompt = [s for s in ok.sent if s[0] == "answer"][-1]
-    assert prompt[1].startswith("📢 Текст для профиля Анна · продление на 10 дней\n"), prompt[1]
+    assert prompt[1].startswith("📢 <b>Текст для профиля</b> Анна · продление на 10 дней\n"), prompt[1]
     assert prompt[2] is not None, "приглашение к тексту без кнопки отмены"
 
 
@@ -168,7 +168,7 @@ async def test_preview_carries_header_and_dates(services, make_active_client, fa
     preview = [s[1] for s in msg.sent if s[0] == "answer"][-1]
     old = timeutil.parse_iso(a.period_end)
     d0, d1 = timeutil.fmt_date_ui(old), timeutil.fmt_date_ui(old + datetime.timedelta(days=10))
-    assert preview.startswith("👆 Так увидят получатели · 1 адресат · продление на <b>10 дней</b>:\n"
+    assert preview.startswith("👆 <b>Так увидят получатели</b> · 1 адресат · продление на <b>10 дней</b>:\n"
                               f"• Анна: {d0} → {d1}\n\n"), preview
     assert preview.endswith(f"<b>Подписка продлена на 10 дней 🙂\n{d0} → {d1}</b>\n\nСпасибо за терпение"), preview
     # подписка ещё не тронута — превью ничего не применяет

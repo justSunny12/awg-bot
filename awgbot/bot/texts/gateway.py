@@ -86,7 +86,7 @@ def gateway_panel(st, update_tag: str = "", chan: dict | None = None) -> str:
     host = _e(st.hostname) if st.hostname else "шлюз"
     up = f" · {timeutil.brief_units(timeutil.fmt_remaining_short(int(st.uptime_seconds)))}" \
         if st.uptime_seconds is not None else ""
-    parts = [f"🛰 {host} · {_gw_role(st, chan)}{up}"]
+    parts = [f"🛰 <b>{host}</b> · {_gw_role(st, chan)}{up}"]
     chan_line = channel_panel_line(chan)
     link = _gw_link_short(st)
     # всегда «Линк до …»: голое «Линк» читается как сетевой интерфейс
@@ -149,7 +149,7 @@ def gateway_health(st) -> str:
     модуль awg — справкой внизу."""
     host = _e(st.hostname) if st.hostname else "шлюза"
     bad = sum(1 for c in st.checks if c.ok is False)
-    lines = [f"🩺 Здоровье {host} · " + ("✅ проблем нет" if not bad else f"🔴 проблем: {bad}")]
+    lines = [f"🩺 <b>Здоровье {host}</b> · " + ("✅ проблем нет" if not bad else f"🔴 проблем: {bad}")]
     for c in st.checks:
         mark = "✅" if c.ok else ("⚪" if c.ok is None else "🔴")
         # детали — с хоста (вывод скрипта, имена интерфейсов): экранируем
@@ -232,7 +232,7 @@ def gateway_transit_text(st, items=None, own: dict | None = None) -> str:
     own = own or lan.get("own") or {}
     bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
     state = "🔴 " + ", ".join(_uniq(c.name for c in bad)[:3]) if bad else "🟢 работает"
-    lines = [f"🔀 VPN-транзит · {state}",
+    lines = [f"🔀 <b>VPN-транзит</b> · {state}",
              f"<code>{_e(lan.get('iface', '') or '?')}</code> · <code>{_e(lan.get('addr', '') or '?')}</code> · "
              f"{_packets(lan.get('lan_pkts'))} с роутера",
              f"DNS — <code>{_e(lan.get('resolver', '') or '?')}</code> через "
@@ -258,7 +258,7 @@ def gateway_transit_text(st, items=None, own: dict | None = None) -> str:
 
 
 def gateway_transit_ask_domain(kind: str) -> str:
-    head = {"add": "➕ В туннель", "ru": "➕ Напрямую"}[kind]
+    head = {"add": "➕ <b>В туннель</b>", "ru": "➕ <b>Напрямую</b>"}[kind]
     return f"{head} · пришли домены через пробел: <code>example.com</code> — накрывает и поддомены"
 
 
@@ -360,7 +360,7 @@ def gw_settings_text() -> str:
 def gw_settings_notify_text() -> str:
     from awgbot.core import settings as s
     from .fmt import details
-    lines = ["🔔 Уведомления"]
+    lines = ["🔔 <b>Уведомления</b>"]
     if s.get_bool("quiet_hours.quiet_hours_enabled", True):
         lines.append(f"Тихие часы {s.get_int('quiet_hours.quiet_hours_start', 20):02d}:00–"
                      f"{s.get_int('quiet_hours.quiet_hours_end', 7):02d}:00 МСК — без звука, кроме аварий")
@@ -387,7 +387,7 @@ def gw_settings_mon_text() -> str:
     loud = s.get_bool("app.gateway.link_alert_loud", True)
     from awgbot.bot.keyboards.gateway import link_minutes
     mins = link_minutes(s.get_int("app.gateway.handshake_max_age", 300))
-    return (f"🩺 Мониторинг · опрос раз в {s.get_int('app.gateway.monitor_minutes', 3)} мин · алерт после "
+    return (f"🩺 <b>Мониторинг</b> · опрос раз в {s.get_int('app.gateway.monitor_minutes', 3)} мин · алерт после "
             f"{_streak(s.get_int('app.monitoring.alert_streak', 5))} · линк молчит дольше "
             f"{mins} мин — " + ("со звуком круглые сутки" if loud else "по правилам тихих часов"))
 
@@ -508,10 +508,10 @@ def awg_restart_warning_body(gateway: bool, carries: bool = True) -> str:
 
 def gateway_bundle_received(link_changed: bool, carries: bool = True) -> str:
     if link_changed:
-        return ("📦 Конфигурация с сервера AWG\n"
+        return ("📦 <b>Конфигурация с сервера AWG</b>\n"
                 "Линк перезапустится" + (" — РФ-доступ у всех прервётся на секунды" if carries else "")
                 + "; правила переставятся")
-    return ("📦 Конфигурация с сервера AWG\n"
+    return ("📦 <b>Конфигурация с сервера AWG</b>\n"
             "Конфиг линка не изменился — линк не перезапустится; правила переставятся")
 
 
@@ -614,7 +614,7 @@ def gateway_ssh_port_changed(old: int, new: int) -> str:
             f"на порт {new}; проброс порта на роутере (при наличии) поправь сам: снаружи &lt;любой порт&gt; → шлюз:{new}")
 
 
-GW_SSH_ALLOW_ASK = ("➕ Адреса для SSH-доступа · пришли IP, подсеть или доменное имя через пробел. "
+GW_SSH_ALLOW_ASK = ("➕ <b>Адреса для SSH-доступа</b> · пришли IP, подсеть или доменное имя через пробел. "
                     "Только IPv4: проброса IPv6 через роутер нет; имя буду резолвить сам")
 
 

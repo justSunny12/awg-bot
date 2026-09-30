@@ -123,11 +123,11 @@ def test_header_variants_and_reserve(services, make_active_client):
     r = texts.extension_reserve()
     assert 70 <= r <= 110, r
     prompt = texts.broadcast_prompt([a], False, extend_days=10)
-    assert prompt.startswith("📢 Текст для профиля Ксюша · продление на 10 дней\n"), prompt
+    assert prompt.startswith("📢 <b>Текст для профиля</b> Ксюша · продление на 10 дней\n"), prompt
     assert f"без картинок — до {4096 - r} символов, с картинками — до {1024 - r}" in prompt, \
         "лимит в приглашении не учитывает шапку продления"
     assert texts.broadcast_prompt([a, e], False, extend_days=2).startswith(
-        "📢 Текст для профилей: Ксюша, Вера · продление на 2 дня")
+        "📢 <b>Текст для профилей:</b> Ксюша, Вера · продление на 2 дня")
 
 
 def test_days_prompt_and_preview_footer(services, make_active_client):
@@ -136,11 +136,11 @@ def test_days_prompt_and_preview_footer(services, make_active_client):
     e = _expire(services, make_active_client("Вера", tg_id=8072))
     plan = services.extension_plan([a.id, u.id, e.id], 10)
     assert texts.broadcast_days_prompt(plan) == (
-        "📢 Профили для продления подписки: Антон (∞, без продления), Вера, Ксюша\n"
+        "📢 <b>Профили для продления подписки:</b> Антон (∞, без продления), Вера, Ксюша\n"
         "На сколько дней продлеваем?")
     foot = texts.broadcast_preview("т", 3, extension=(10, plan))
     lines = foot.split("\n")
-    assert lines[0] == "👆 Так увидят получатели · 3 адресата · продление на <b>10 дней</b>:", foot
+    assert lines[0] == "👆 <b>Так увидят получатели</b> · 3 адресата · продление на <b>10 дней</b>:", foot
     assert lines[1] == "• Антон: ∞ — без продления", foot
     assert lines[2].startswith("• Вера: 🟡 "), "истёкшая — со знаком «🟡» (продлится от сегодня)"
     assert lines[3].startswith("• Ксюша: ") and "⛔" not in lines[3]

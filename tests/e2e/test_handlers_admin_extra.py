@@ -44,7 +44,7 @@ async def test_lowering_the_device_limit_by_preset_applies_at_once_with_a_warnin
     cb, nav = _acb(fake_bot)
     await ah.edit_limit_start(cb, ClientCB(action="edit_limit", client_id=client.id), services, FakeState())
     text, labels = last_screen(nav)
-    assert text == f"🔢 Лимит устройств профиля {client.name} · сейчас 5, занято 2", text
+    assert text == f"🔢 <b>Лимит устройств профиля {client.name}</b> · сейчас 5, занято 2", text
     assert labels == ["1", "2", "3", "5", "10", "∞", "✏️ Другое", "⬅️ Отмена"], labels
 
     cb2, nav2 = _acb(fake_bot)
@@ -78,7 +78,7 @@ async def test_typed_device_limit_returns_to_edit_with_the_note(services, fake_b
     assert services.db.get_client(client.id).device_limit == 7
     shown = [s for s in ok.sent if s[0] == "answer"]
     assert shown and shown[-1][1].splitlines()[0] == "✅ Устройств: 2 → 7", shown[-1][1]
-    assert shown[-1][1].splitlines()[2].startswith(f"✏️ {client.name} — изменить"), shown[-1][1]
+    assert shown[-1][1].splitlines()[2].startswith(f"✏️ <b>{client.name}</b> — изменить"), shown[-1][1]
     assert "⚠️" not in shown[-1][1]
     assert await st.get_data() == {}, "диалог не закрыт"
 
@@ -89,7 +89,7 @@ async def test_extend_start_renders(services, fake_bot, make_active_client):
     cb, nav = _acb(fake_bot)
     await ah.extend_start(cb, ClientCB(action="extend", client_id=client.id), services, FakeState())
     text, labels = last_screen(nav)
-    assert text.startswith(f"⏱ Продление: {client.name}\nСейчас до "), text
+    assert text.startswith(f"⏱ <b>Продление:</b> {client.name}\nСейчас до "), text
     assert labels[:5] == ["День", "Неделя", "Месяц", "Год", "∞"], labels
     assert labels[-1] == "⬅️ Отмена", "диалог выбора срока — не тупик"
 
@@ -111,7 +111,7 @@ async def test_block_menu_device_branch(services, fake_bot, make_active_client):
     cb, nav = _acb(fake_bot)
     await ah.admin_block_menu(cb, BlockCB(target="dev", action="menu_block", ref=dc.device_id), services)
     text, labels = last_screen(nav)
-    assert text == (f'🛑 Блокировка d (<a href="https://t.me/awg_test_bot?start=cl-{client.id}">Петя</a>). '
+    assert text == (f'🛑 <b>Блокировка d</b> (<a href="https://t.me/awg_test_bot?start=cl-{client.id}">Петя</a>). '
                     "Уведомить владельца?"), text
     assert labels == ["🔔 С уведомлением", "🔕 Тихо", "⬅️ Отмена"], labels
 
@@ -140,7 +140,7 @@ async def test_add_device_to_a_profile_asks_only_the_name_and_returns_to_the_car
     cb, nav = _acb(fake_bot)
     await ah.admin_add_device_start(cb, ClientCB(action="add_device", client_id=client.id), services, st)
     text, labels = last_screen(nav)
-    assert text == "➕ Устройство профилю Клиент-6307 · 0 из 3\nКак назвать?", text
+    assert text == "➕ <b>Устройство профилю Клиент-6307</b> · 0 из 3\nКак назвать?", text
     assert labels == ["✖️ Отмена"], labels
     msg = _amsg(fake_bot, "Планшет")
     await ah.admin_add_device_name(msg, services, st)
@@ -193,7 +193,7 @@ async def test_add_slot_raises_the_limit_notifies_the_owner_once_and_asks_the_na
     assert notes[0] == "Лимит устройств изменён: 1 → 2"
     assert await st.get_state() == "AdminAddDevice:name"
     text, labels = last_screen(nav)
-    assert text == "➕ Устройство профилю Коля · 1 из 2\nКак назвать?", text
+    assert text == "➕ <b>Устройство профилю Коля</b> · 1 из 2\nКак назвать?", text
     msg = _amsg(fake_bot, "Планшет")
     await ah.admin_add_device_name(msg, services, st)
     assert sorted(d.name for d in services.db.list_devices(client.id)) == ["a", "Планшет"]
@@ -256,7 +256,7 @@ def test_limit_reached_line_counts_what_to_delete():
 
 
 async def test_admin_menu_devices(services, fake_bot):
-    """«📱 Мои устройства · 1, без лимита»; шлюз — вверху с «[шлюз]»."""
+    """«📱 <b>Мои устройства</b> · 1, без лимита»; шлюз — вверху с «[шлюз]»."""
     services.ensure_admin_client()
     ac = services.admin_client()
     services.add_device(ac.id, "Ноут")
@@ -265,7 +265,7 @@ async def test_admin_menu_devices(services, fake_bot):
     cb, nav = _acb(fake_bot)
     await ah.admin_menu_devices(cb, services, FakeState())
     text, labels = last_screen(nav)
-    assert text == "📱 Мои устройства · 2, без лимита", text
+    assert text == "📱 <b>Мои устройства</b> · 2, без лимита", text
     assert labels[0] == "🛰 NASPi [шлюз]", labels
     assert any(l.endswith(" Ноут") for l in labels[1:]), labels
     assert labels[-2:] == ["➕ Устройство", "⬅️ Назад"], labels

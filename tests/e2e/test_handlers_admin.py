@@ -41,7 +41,7 @@ async def test_clients_list_with_client(services, make_active_client, fake_bot):
     cb, nav = _admin_cb(services, fake_bot)
     await admin_h.clients_list(cb, services, FakeState())
     text, labels = last_screen(nav)
-    assert text.startswith("👥 Профили · 1 · онлайн 0"), text
+    assert text.startswith("👥 <b>Профили</b> · 1 · онлайн 0"), text
     assert any("Ося" in t for t in labels), "профиль должен быть кнопкой в списке"
     assert cb.answers
 
@@ -57,14 +57,14 @@ async def test_clients_list_hides_admin_profile(services, fake_bot, make_active_
     cb, nav = _admin_cb(services, fake_bot)
     await admin_h.clients_list(cb, services, FakeState())
     text, labels = last_screen(nav)
-    assert text.startswith("👥 Профили · 0"), text
+    assert text.startswith("👥 <b>Профили</b> · 0"), text
     assert labels == ["⬅️ Назад"], f"в пустом списке оказались профили: {labels}"
 
     make_active_client(name="Ксюша", tg_id=4242)
     cb2, nav2 = _admin_cb(services, fake_bot)
     await admin_h.clients_list(cb2, services, FakeState())
     text2, labels2 = last_screen(nav2)
-    assert text2.startswith("👥 Профили · 1"), text2
+    assert text2.startswith("👥 <b>Профили</b> · 1"), text2
     assert [l for l in labels2 if "Ксюша" in l], labels2
 
 
@@ -355,10 +355,9 @@ async def test_panel_rf_line_marks_broken_accounting_and_keeps_numbers(services,
     assert "nft" not in line, "текст ошибки ядра в шапке админа"
 
 
-async def test_panel_rf_line_links_to_the_rf_screen(services, fake_bot, fake_routing, monkeypatch):
-    """«РФ-доступ» на главной — ссылка на тот же экран «Трафик», что и строка
-    трафика (экраны РФ слиты с ним). Пропадёт ссылка — до разбивки РФ по людям
-    админ из главной не доберётся."""
+async def test_panel_rf_line_is_plain_text_link_only_on_traffic(services, fake_bot, fake_routing, monkeypatch):
+    """«РФ-доступ» на главной — простым текстом: экраны РФ слиты с экраном
+    «Трафик», и на него ведёт одна ссылка — строка общего трафика над ней."""
     services.bot_username = "awg_test_bot"
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
     services.ensure_admin_client()
@@ -366,16 +365,14 @@ async def test_panel_rf_line_links_to_the_rf_screen(services, fake_bot, fake_rou
     services.db.add_traffic_bulk([(dev.device_id, GB, GB)])
     text = await _panel_text(services, fake_bot)
     lines = [ln for ln in text.splitlines() if ln.startswith("└ ") and "🇷🇺 РФ-доступ" in ln]
-    # флаг — внутри ссылки: кликается вся подпись «🇷🇺 РФ-доступ»
-    assert lines and lines[0] == ('└ <a href="https://t.me/awg_test_bot?start=traffic">'
-                                  '🇷🇺 РФ-доступ</a>: 1 ГБ'), text
-    assert text.count("start=traffic\"") == 2, "строка трафика и РФ-ветка — обе на экран «Трафик»"
+    assert lines and lines[0] == "└ 🇷🇺 РФ-доступ: 1 ГБ", text
+    assert text.count("start=traffic\"") == 1, "на экран «Трафик» — только строка трафика"
 
 
 async def test_panel_zero_traffic_and_zero_rf_are_plain_text(services, fake_bot, fake_routing,
                                                             monkeypatch):
-    """Нулевой итог — строка стоит, но не ссылкой: за ней пустой экран. Каждая
-    строка решает сама — трафик нулевой, а РФ нет — ссылка только у РФ."""
+    """Нулевой итог — строка стоит, но не ссылкой: за ней пустой экран. РФ-строка
+    ссылкой не бывает — трафик нулевой, а РФ нет — ссылок нет вовсе."""
     services.bot_username = "awg_test_bot"
     _rf_world(services, fake_routing, monkeypatch, enabled=True)
     text = await _panel_text(services, fake_bot)
@@ -384,7 +381,7 @@ async def test_panel_zero_traffic_and_zero_rf_are_plain_text(services, fake_bot,
     assert "└ 🇷🇺 РФ-доступ: 0 ГБ" in text.splitlines(), text
     _rf_world(services, fake_routing, monkeypatch, enabled=True, rx=GB)
     text = await _panel_text(services, fake_bot)
-    assert text.count("start=traffic\"") == 1, text
+    assert text.count("start=traffic\"") == 0, text
     assert f"📊 Трафик за {texts.month_label()}: 0 ГБ" in text.splitlines(), \
         "нулевой трафик сервера стал ссылкой из-за РФ"
 

@@ -61,7 +61,7 @@ def test_recipe_head_names_the_gateway_net_and_address_and_drops_the_panel_hint(
     """Шапка — имя, подсеть и адрес шлюза одной строкой; строки «адрес шлюза —
     в панели бота шлюза» больше нет (основной бот показывает плейсхолдер)."""
     got = _recipe("mt", gw="")
-    assert got.startswith(f"❓ Роутер для NASPi · {NET} · шлюз {ROUTER_IP_PLACEHOLDER}\n"), got
+    assert got.startswith(f"❓ <b>Роутер для NASPi</b> · {NET} · шлюз {ROUTER_IP_PLACEHOLDER}\n"), got
     assert "панели" not in got, got
 
 

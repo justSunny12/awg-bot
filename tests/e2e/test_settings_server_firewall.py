@@ -40,7 +40,7 @@ async def test_server_screen_shows_what_goes_into_new_links(services, fake_bot, 
         "migration_blocked": ""})
     text, markup = await sh._screen("srv", services)
     lines = text.split("\n")
-    assert lines[:4] == ["🖥 Сервер AWG · ядро 3.1.20260812, gen1",
+    assert lines[:4] == ["🖥 <b>Сервер AWG</b> · ядро 3.1.20260812, gen1",
                          "vpn.example.org · имя сервера: «Сервер 1»",
                          "DNS 10.8.1.1 · MTU 1376 · keepalive 25-35",
                          "awg0 · порт 51820 · 10.8.1.0/24"], lines
@@ -63,7 +63,7 @@ async def test_server_screen_says_when_there_is_no_domain(services, fake_bot, mo
         "subnet": "10.8.1.0/24", "kernel": "", "generation": 1, "migration_blocked": ""})
     text, _ = await sh._screen("srv", services)
     assert text.split("\n")[1] == "Домена нет, в ссылках IP 203.0.113.10 · имя сервера: «Сервер 1»", text
-    assert text.startswith("🖥 Сервер AWG · ядро не определено, gen1\n"), text
+    assert text.startswith("🖥 <b>Сервер AWG</b> · ядро не определено, gen1\n"), text
 
 
 async def test_server_screen_flags_a_port_mismatch(services, fake_bot, monkeypatch):
@@ -270,7 +270,7 @@ async def test_prepare_screen_names_the_cohort_and_the_cost(services, fake_bot, 
         "iface": "awg0", "port": 45871, "subnet": "10.8.1.0/24",
         "clients": 3, "devices": 7, "want_port": want_port, "blocked": ""})
     text, markup = await sh._screen("mig_prep", services)
-    assert text.startswith("🚚 Порт или подсеть · сейчас awg0, 45871, 10.8.1.0/24 → новый интерфейс, "
+    assert text.startswith("🚚 <b>Порт или подсеть</b> · сейчас awg0, 45871, 10.8.1.0/24 → новый интерфейс, "
                            "случайный высокий порт, свободная подсеть · в переезд войдут 7 устройств у 3 "
                            "профилей (были онлайн за 2 недели; у остальных доступ пропадёт после окончания "
                            "переезда — до перенастройки устройств)"), text
@@ -310,14 +310,14 @@ async def test_prepare_failure_does_not_restart(services, fake_bot, monkeypatch)
 
 
 async def test_maintenance_mentions_migration_only_while_it_runs(services, fake_bot, monkeypatch):
-    """«🔧 Сервис»: о переезде текст говорит, только когда он идёт, — с
+    """«🔧 <b>Сервис</b>»: о переезде текст говорит, только когда он идёт, — с
     прогрессом одной строкой; настроен, но не идёт — одна кнопка «Начать»,
     без рассказа о механизме."""
     from types import SimpleNamespace as NS
     monkeypatch.setattr(services, "svc_screen_data",
                         lambda: {"state": "", "available": False, "progress": None, "orphans": 0})
     text, markup = await sh._screen("svc", services)
-    assert text == "🔧 Сервис\nПерезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей", text
+    assert text == "🔧 <b>Сервис</b>\nПерезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей", text
     assert not any("переезд" in b.text.lower() for row in markup.inline_keyboard for b in row)
 
     monkeypatch.setattr(services, "svc_screen_data",
@@ -375,7 +375,7 @@ async def test_dns_screen_explains_and_offers_three_ways(services, monkeypatch):
     assert "10.8.1.1" in text and "DoH" in text and "переезд" in text.lower()
     labels = _labels(markup)
     assert labels == ["🚚 Переехать сейчас", "⏳ При переезде", "Не нужно", "⬅️ Назад"], labels
-    assert text.startswith("🔒 Свой DNS-резолвер · сейчас публичный\nСвой — 10.8.1.1: "), text
+    assert text.startswith("🔒 <b>Свой DNS-резолвер</b> · сейчас публичный\nСвой — 10.8.1.1: "), text
 
     monkeypatch.setattr(services, "migration_blocked_reason", lambda: "идёт переезд")
     _, markup = await sh._screen("dns", services)
@@ -404,7 +404,7 @@ async def test_now_records_pending_and_opens_the_migration_preparation(services,
     await sh.private_dns_action(cb, SetCB(sec="dns", act="do", key="now"), services, FakeState())
     assert services.private_dns_decision() == "pending"
     shown = [s for s in nav.sent if s[0] == "edit_text"]
-    assert shown and shown[-1][1].startswith("🚚 Порт или подсеть · сейчас awg0")
+    assert shown and shown[-1][1].startswith("🚚 <b>Порт или подсеть</b> · сейчас awg0")
     assert "DNS клиентов — свой резолвер" in shown[-1][1], "подготовка называет, что DNS станет своим"
     assert "🚚 Поднять интерфейс" in _labels(shown[-1][2])
 
@@ -437,7 +437,7 @@ async def test_port_button_is_first_and_opens_the_prompt(services, fake_bot, mon
     await sh.ssh_port_ask(cb, st, services)
     assert await st.get_state() == SshPort.value.state
     prompt = [s for s in nav.sent if s[0] == "edit_text"][-1]
-    assert prompt[1].startswith("🅿️ Порт SSH · сейчас 22 · 1–65535."), "приглашение — с текущим портом"
+    assert prompt[1].startswith("🅿️ <b>Порт SSH</b> · сейчас 22 · 1–65535."), "приглашение — с текущим портом"
     assert "Проброс на роутере" not in prompt[1], "про роутер — только у шлюза"
     assert _labels(prompt[2]) == ["✖️ Отмена"]
 
@@ -482,7 +482,7 @@ async def test_finisher_buttons_reopen_the_prompt_or_the_section(services, fake_
     await sh.ssh_port_finisher_action(cb, SetCB(sec="fw", act="do", key="port_retry"), st, services)
     assert await st.get_state() == SshPort.value.state
     assert ("edit_reply_markup", ADMIN) in fake_bot.records, "финишер остаётся, клавиатура — «Скрыть»"
-    assert any(s[0] == "answer" and s[1].startswith("🅿️ Порт SSH · сейчас 22") for s in nav.sent)
+    assert any(s[0] == "answer" and s[1].startswith("🅿️ <b>Порт SSH</b> · сейчас 22") for s in nav.sent)
     cb, nav = _acb(fake_bot)
     st = FakeState()
     await sh.ssh_port_finisher_action(cb, SetCB(sec="fw", act="do", key="port_back"), st, services)

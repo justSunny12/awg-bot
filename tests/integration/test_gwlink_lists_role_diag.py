@@ -461,7 +461,7 @@ async def test_the_role_brings_the_slot_name_and_whether_another_gateway_exists(
     await link.deliver_all()
     await _until(lambda: agent.link_standby_known() is True and agent.link_slot_name() == "NASPi, дача")
     assert agent.link_standby_known() is True, "второй шлюз появился, а агент считает себя единственным"
-    assert agent.link_slot_name() == "NASPi, дача", "подпись слота не доехала до агента"
+    assert agent.link_slot_name() == "NASPi · дача", "подпись слота не доехала до агента"
     assert agent.link_role() == "active"
 
 
@@ -519,14 +519,14 @@ def test_the_agent_panel_names_the_role_only_while_the_channel_is_up(monkeypatch
     monkeypatch.setattr(linkclient, "enabled", lambda: True)
     monkeypatch.setattr(linkclient, "online", lambda: True)
     monkeypatch.setattr(linkclient, "role", lambda: "active")
-    assert head() == "🛰 pi · 🟢 несёт трафик" and channel_panel_line() == "🔗 упр. канал 🟢"
+    assert head() == "🛰 <b>pi</b> · 🟢 несёт трафик" and channel_panel_line() == "🔗 упр. канал 🟢"
     monkeypatch.setattr(linkclient, "role", lambda: "standby")
-    assert head() == "🛰 pi · 🟢 в резерве"
+    assert head() == "🛰 <b>pi</b> · 🟢 в резерве"
     monkeypatch.setattr(linkclient, "role", lambda: "")
-    assert head() == "🛰 pi · 🟢 линк поднят"
+    assert head() == "🛰 <b>pi</b> · 🟢 линк поднят"
     monkeypatch.setattr(linkclient, "online", lambda: False)
     monkeypatch.setattr(linkclient, "role", lambda: "active")
-    assert head() == "🛰 pi · 🟢 линк поднят", "связи нет — роль прошлой сессии не показывается"
+    assert head() == "🛰 <b>pi</b> · 🟢 линк поднят", "связи нет — роль прошлой сессии не показывается"
     assert channel_panel_line() == "🔗 упр. канал ⚪ нет связи"
 
 

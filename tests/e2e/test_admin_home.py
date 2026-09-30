@@ -201,7 +201,7 @@ async def test_links_open_profile_and_device_cards(services, fake_bot, make_acti
     assert msg.deleted and text.startswith("👤 ") and "Ксюша" in text.split("\n")[0], text
     assert labels[:2] == ["⏱ Продлить", "✏️ Изменить"], labels
     _, text, labels = await _open(services, fake_bot, f"dev-{d.device_id}")
-    assert text.startswith("⚪ iPhone · ") and _link(f"cl-{c.id}", "Ксюша") in text.split("\n")[0], text
+    assert text.startswith("⚪ <b>iPhone</b> · ") and _link(f"cl-{c.id}", "Ксюша") in text.split("\n")[0], text
     assert labels[:3] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"], labels
     for payload in ("cl-999999", "dev-999999"):
         _, text, _ = await _open(services, fake_bot, payload)
@@ -212,7 +212,7 @@ async def test_link_unassigned_lists_foreign_peers(services, fake_bot):
     svc = services.db.get_service_client_id()
     services.db.create_device(svc, "app", "PUBU", "PSK", "10.8.0.70")
     _, text, labels = await _open(services, fake_bot, "unassigned")
-    assert text == "📦 Без профиля: 1 — пир создан мимо бота", text
+    assert text == "📦 <b>Без профиля:</b> 1 — пир создан мимо бота", text
     assert labels == ["app * · 10.8.0.70", "⬅️ В меню"], "«*» — пир добавлен не ботом"
 
 
@@ -224,7 +224,7 @@ async def test_link_gw_opens_the_slot_card_and_a_missing_slot_says_so(services, 
     services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30", slot_id=1)
     _, text, labels = await _open(services, fake_bot, "gw-1")
     head = text.split("\n", 1)[0]
-    assert "NASPi — " in head and "Активен" in head, text
+    assert "NASPi</b> — " in head and "Активен" in head, text
     assert "✏️ Изменить" in labels and labels[-1] == "⬅️ Назад", labels
     _, text, _ = await _open(services, fake_bot, "gw-9")
     assert text.startswith("🛰 Такого шлюза больше нет"), text
@@ -241,7 +241,7 @@ async def test_link_extend_opens_extension_with_cancel_back_to_expiring(services
     msg = FakeMessage(text=f"/start extend-{a.id}", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await ah.admin_start(msg, services, state, command=_cmd(f"extend-{a.id}"))
     text = [t for kind, t, _ in msg.sent if kind == "answer"][-1]
-    assert text.startswith(f"⏱ Продление: {_link(f'cl-{a.id}', 'Аня')}"), text
+    assert text.startswith(f"⏱ <b>Продление:</b> {_link(f'cl-{a.id}', 'Аня')}"), text
     assert (await state.get_data()).get("return_to") == "expiring"
 
 
@@ -262,7 +262,7 @@ async def test_online_list_puts_gateways_first_with_links_and_blank_lines(
     _, text, labels = await _open(services, fake_bot, "online")
     ph, gw = services.db.get_device(phone.device_id), services.db.get_device(pi.device_id)
     assert text.split("\n\n") == [
-        "📶 Онлайн: 2",
+        "📶 <b>Онлайн:</b> 2",
         f"🛰 {_link(f'dev-{gw.id}', 'NASPi')} [шлюз] · <code>{gw.address}</code>",
         f"🟢 {_link(f'dev-{ph.id}', 'iPhone')} · {_link(f'cl-{c.id}', 'Ксюша')} · <code>{ph.address}</code>",
     ], text
@@ -272,7 +272,7 @@ async def test_online_list_puts_gateways_first_with_links_and_blank_lines(
 async def test_online_list_when_nobody_is_connected(services, fake_bot):
     services.ensure_admin_client()
     _, text, _ = await _open(services, fake_bot, "online")
-    assert text == "📶 Онлайн: 0\n\nСейчас никто не подключён", text
+    assert text == "📶 <b>Онлайн:</b> 0\n\nСейчас никто не подключён", text
 
 
 async def test_expiring_list_links_names_and_offers_extend_buttons(services, fake_bot, make_active_client):
@@ -286,7 +286,7 @@ async def test_expiring_list_links_names_and_offers_extend_buttons(services, fak
     await ah.admin_expiring(cb, services, FakeState())
     text, markup = [(s[1], s[2]) for s in cb.message.sent if s[0] == "edit_text"][-1]
     blocks = text.split("\n\n")
-    assert blocks[0] == "⏳ Истекают: 2", text
+    assert blocks[0] == "⏳ <b>Истекают:</b> 2", text
     for block, c in zip(blocks[1:], (a, b)):
         end = timeutil.parse_iso(c.period_end)
         assert block == (f"{_link(f'cl-{c.id}', c.name)} — {timeutil.remaining_brief(end)}, "

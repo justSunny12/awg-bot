@@ -155,7 +155,7 @@ async def test_port_prompt_then_same_and_busy_are_finishers(svc, fake_bot):
     await gh.gw_ssh_port_ask(cb, GwCB(action="ssh_port"), svc, st)
     assert await st.get_state() == SshPort.value.state
     # приглашение называет текущий порт — вспоминать его не нужно
-    assert any(t.startswith("🅿️ Порт SSH · сейчас 22 · 1–65535") and "роутере" in t
+    assert any(t.startswith("🅿️ <b>Порт SSH</b> · сейчас 22 · 1–65535") and "роутере" in t
                for k, t, _ in nav.sent if k == "edit_text"), nav.sent
     msg = FakeMessage(text="22", chat_id=ADMIN, user_id=ADMIN, bot=fake_bot)
     await gh.gw_ssh_port_received(msg, st, svc)

@@ -37,7 +37,7 @@ async def test_guest_takes_second_code_from_the_same_owner(services, fake_bot, m
     answers = [s[1] for s in msg.sent if s[0] == "answer"]
     assert answers[0] == ('✅ Устройство «Ноутбук» от <a href="tg://user?id=6200">Вася</a> успешно добавлено.\n'
                           'Теперь у тебя 2 устройства.')
-    assert answers[-1].startswith("👋 Артём\n") and "💳 Подписка профиля" in answers[-1], \
+    assert answers[-1].startswith("👋 <b>Артём</b>\n") and "💳 Подписка профиля" in answers[-1], \
         "главный экран гостя следом"
     assert services.db.get_device(d2.device_id).holder_client_id == guest.id
     assert any("активировал устройство «Ноутбук»" in t for t in _sent_to(fake_bot, 6200))
@@ -80,7 +80,7 @@ async def test_client_takes_a_foreign_device(services, fake_bot, make_active_cli
     answers = [s[1] for s in msg.sent if s[0] == "answer"]
     assert answers[0] == ('✅ Устройство «Чужое» от <a href="tg://user?id=6204">Вася</a> успешно добавлено.\n'
                           'Теперь у тебя 1 из 2 устройств (+ 1 от <a href="tg://user?id=6204">Вася</a>).')
-    assert answers[-1].startswith("👋 Петя\n"), "главная клиента следом"
+    assert answers[-1].startswith("👋 <b>Петя</b>\n"), "главная клиента следом"
     assert answers[-1].endswith('📱 Устройств 1 из 2 (+1 от профиля <a href="tg://user?id=6204">Вася</a>)')
     # клиентский инвайт клиенту — по-прежнему «уже есть доступ»
     created = services.create_client("Ещё", 1, "year", 0)
@@ -106,7 +106,7 @@ async def test_guest_becomes_owner_with_all_devices(services, fake_bot, make_act
         '• Телефон\n• Ноутбук\n• Планшет\n\n'
         'В твою подписку входит 2 устройства, а перенесено 3 — все они продолжают работать. '
         'Добавить новое получится, когда освободится место в рамках лимита.')
-    assert answers[-1].startswith("👋 Артём\n") and "Помощь" not in answers[0]
+    assert answers[-1].startswith("👋 <b>Артём</b>\n") and "Помощь" not in answers[0]
     assert _sent_to(fake_bot, 6206) == [
         '📤 Устройства «Телефон», «Ноутбук» и «Планшет» перешли к <a href="tg://user?id=96206">Артём</a> — '
         'он активировал собственную подписку, и устройства переехали в его профиль. '

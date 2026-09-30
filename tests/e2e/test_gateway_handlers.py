@@ -130,7 +130,7 @@ async def test_the_bundle_question_warns_about_rf_access_only_on_the_carrying_ga
     _carrying(svc, carries)
     await gh.gw_bundle_document(msg, svc, FakeState())
     question = msg.sent[-1][1]
-    assert question.splitlines() == ["📦 Конфигурация с сервера AWG", second], question
+    assert question.splitlines() == ["📦 <b>Конфигурация с сервера AWG</b>", second], question
     assert svc.applied == []
 
 
@@ -334,7 +334,7 @@ async def test_panel_offers_the_lan_screen_only_when_enabled(svc, fake_bot, monk
     assert "🔀 VPN-транзит" in labels
     await gh.gw_transit(cb, svc, FakeState())
     text, markup = msg.sent[-1][1], msg.sent[-1][2]
-    assert text.startswith("🔀 VPN-транзит · 🟢 работает") and "end0" in text \
+    assert text.startswith("🔀 <b>VPN-транзит</b> · 🟢 работает") and "end0" in text \
         and "Свои списки: 1 в туннель" in text, text
     labels = [b.text for row in markup.inline_keyboard for b in row]
     # обновления списков кнопкой нет: фиды привозит сервер или агент качает сам
@@ -415,7 +415,7 @@ async def test_removing_an_own_domain_is_immediate_and_removes_exactly_that_one(
     assert cb.answers == [("alpha.com: убран", False)], cb.answers
     labels = _own_lists_labels(msg)
     assert "➖ 🌍 alpha.com" not in labels and "➖ 🌍 zeta.com" in labels, labels
-    assert msg.sent[-1][1].startswith("🔀 VPN-транзит"), "после удаления — снова экран VPN-транзита"
+    assert msg.sent[-1][1].startswith("🔀 <b>VPN-транзит"), "после удаления — снова экран VPN-транзита"
 
 
 async def test_a_stale_remove_button_does_not_touch_anything(svc, fake_bot, monkeypatch):

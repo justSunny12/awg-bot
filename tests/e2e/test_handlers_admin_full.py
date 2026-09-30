@@ -70,7 +70,7 @@ async def test_edit_client_traffic_flow(services, fake_bot, make_active_client):
     cb, nav = _acb(fake_bot)
     await ah.edit_client_traffic_start(cb, ClientCB(action="edit_traffic", client_id=client.id), services, st)
     text, labels = last_screen(nav)
-    assert text == f"📊 Трафик профиля {client.name} в месяц · сейчас ∞", text
+    assert text == f"📊 <b>Трафик профиля {client.name} в месяц</b> · сейчас ∞", text
     assert labels == ["50 ГБ", "100 ГБ", "200 ГБ", "500 ГБ", "∞", "✏️ Другое", "⬅️ Отмена"], labels
     cb2, nav2 = _acb(fake_bot)
     await ah.edit_traffic_preset(cb2, PresetCB(kind="cli_traffic", ref=client.id, val=50), services, st)
@@ -221,7 +221,7 @@ async def test_restart_awg_from_settings(services, fake_bot, monkeypatch):
     await sh.do_action(cb, SetCB(sec="svc", act="do", key="awg!"), services)
     assert restarted == [1]
     last = [s for s in nav.sent if s[0] == "edit_text"][-1]
-    assert last[1].startswith("✅ AWG перезапущен\n\n🔧 Сервис"), "итог — первой строкой раздела «Сервис»"
+    assert last[1].startswith("✅ AWG перезапущен\n\n🔧 <b>Сервис</b>"), "итог — первой строкой раздела «Сервис»"
 
 
 async def test_restart_bot_from_settings_needs_confirmation(services, fake_bot, monkeypatch):

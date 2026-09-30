@@ -301,7 +301,7 @@ def test_panel_renders_on_a_dead_gateway():
     нужнее всего."""
     from awgbot.bot import texts
     out = texts.gateway_panel(GwStatus())
-    assert out.splitlines()[:2] == ["🛰 шлюз · 🔴 линк лежит", "📡 Линк до сервера AWG 🔴 интерфейс лежит"], out
+    assert out.splitlines()[:2] == ["🛰 <b>шлюз</b> · 🔴 линк лежит", "📡 Линк до сервера AWG 🔴 интерфейс лежит"], out
     # трафика нет — «📊 0» не выводится (нули не выводим)
     assert "📊" not in out, out
 

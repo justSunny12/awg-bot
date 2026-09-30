@@ -43,13 +43,13 @@ async def _open(services, bot, client_id, state=None, action="extend"):
 
 async def test_extend_screen_offers_periods_keep_toggle_on_by_default_and_cancel_to_card(
         services, fake_bot, make_active_client):
-    """«⏱ Продление: Имя» ⏎ «Сейчас до … · осталось …»; сроки, «∞»,
+    """«⏱ <b>Продление:</b> Имя» ⏎ «Сейчас до … · осталось …»; сроки, «∞»,
     «✅ Сохранить остаток» (по умолчанию включён), «⬅️ Отмена» — в карточку."""
     client = make_active_client(tg_id=7200, period_kind="year")
     _, nav = await _open(services, fake_bot, client.id)
     text, labels = last_screen(nav)
     end = timeutil.parse_iso(services.db.get_client(client.id).period_end)
-    assert text == (f"⏱ Продление: {client.name}\n"
+    assert text == (f"⏱ <b>Продление:</b> {client.name}\n"
                     f"Сейчас до {timeutil.fmt_dt_ui(end)} · осталось {timeutil.remaining_brief(end)}"), text
     assert labels == ["День", "Неделя", "Месяц", "Год", "∞", "✅ Сохранить остаток", "⬅️ Отмена"], labels
     btns = _buttons(nav)
@@ -174,7 +174,7 @@ async def test_extend_from_the_expiring_list_returns_to_it_while_it_is_not_empty
     period = [x for x in _buttons(nav2) if x.text == "Месяц"][0]
     await admin_h.extend_period_chosen(cb2, PeriodCB.unpack(period.callback_data), services, state)
     after = [s[1] for s in nav2.sent if s[0] == "answer"]
-    assert after and after[-1].startswith("⏳ Истекают: 1"), after
+    assert after and after[-1].startswith("⏳ <b>Истекают:</b> 1"), after
     assert "Боря" in after[-1] and "Аня" not in after[-1]
 
     state2 = FakeState()

@@ -10,7 +10,7 @@ from awgbot.core.enums import SubStatus, ActivationStatus, FriendStatus
 
 from .fmt import (
     rf_line, deep_link, details, device_state, access_status_line,
-    _e, used_of_limit, gb, gb_str, client_total_line, device_label,
+    _e, used_of_limit, gb, gb_str, unit_for, amount, volume, client_total_line, device_label,
     client_link, owner_link, holder_link, owner_name, _n_devices, plural_ru,
     _days_word, _days)
 from .routing import ROUTING_NAME
@@ -159,13 +159,14 @@ def subscription_short(client, bot_username: str = "") -> str:
 
 
 def traffic_short(rx: int, tx: int, limit_bytes: int, bonus_bytes: int = 0) -> str:
-    """«📊 12.3 из 100 ГБ», с бонусом «📊 12.3 из 100(+50) ГБ», без лимита —
-    «📊 12.3 из ∞ ГБ»; ноль без лимита — пусто."""
+    """«📊 12.3 из 100 ГБ», с бонусом «📊 12.3 из 100(+50) ГБ», от терабайта —
+    в ТБ; без лимита — «📊 12.3 ГБ (безлимит)», и ноль тоже: «📊 0 ГБ (безлимит)»."""
     total = int(rx or 0) + int(tx or 0)
     if limit_bytes:
-        bonus = f"(+{gb(bonus_bytes)})" if bonus_bytes else ""
-        return f"📊 {gb(total)} из {gb(limit_bytes)}{bonus} ГБ"
-    return f"📊 {gb(total)} из ∞ ГБ" if total else ""
+        unit, ub = unit_for(total, limit_bytes, bonus_bytes)
+        bonus = f"(+{amount(bonus_bytes, ub)})" if bonus_bytes else ""
+        return f"📊 {amount(total, ub)} из {amount(limit_bytes, ub)}{bonus} {unit}"
+    return f"📊 {volume(total)} (безлимит)"
 
 
 def held_devices_tail(held) -> str:
@@ -209,7 +210,7 @@ def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
                     *, routing_on: bool = False, bot_username: str = "") -> str:
     """Главная клиента — четыре строки: имя; VPN и РФ-доступ; подписка и трафик;
     устройства. routing_ok=None — РФ-доступ профилю не выдан, его нет вовсе."""
-    lines = [f"👋 {_e(client.name)}",
+    lines = [f"👋 <b>{_e(client.name)}</b>",
              status_line(server_ok, routing_ok, routing_on, bot_username)]
     paused, _, pause_visible = _pause_visibility(client)
     access = access_status_line(client)
@@ -252,8 +253,8 @@ def greeting_guest(name: str, server_ok: bool, donor, held, routing_ok: bool = N
     срок его дело); трафик по устройствам. name — имя из Telegram."""
     held = list(held)
     if donor is None or not held:
-        return f"👋 {_e(name)} · устройств нет — попроси у друга новый код"
-    lines = [f"👋 {_e(name)}",
+        return f"👋 <b>{_e(name)}</b> · устройств нет — попроси у друга новый код"
+    lines = [f"👋 <b>{_e(name)}</b>",
              status_line(server_ok, routing_ok, routing_on, bot_username),
              f"💳 Подписка профиля {client_link(donor)}: {subscription_status_only(donor)}"]
     lines += _guest_traffic_lines(held, donor, bot_username)
@@ -265,15 +266,15 @@ def devices_header(used: int, limit: int, held=(), *, guest: bool = False) -> st
     строка «Лимит исчерпан…»; гость — «· 2 · от профиля Вася»."""
     if guest:
         n = len(list(held))
-        return f"📱 Устройства · {n} · от профиля {owner_link(held[0])}" if n else "📱 Устройства"
-    head = f"📱 Устройства · {used}" + (f" из {limit}" if limit else "") + held_devices_tail(held)
+        return f"📱 <b>Устройства</b> · {n} · от профиля {owner_link(held[0])}" if n else "📱 <b>Устройства</b>"
+    head = f"📱 <b>Устройства</b> · {used}" + (f" из {limit}" if limit else "") + held_devices_tail(held)
     tail = limit_exhausted_line(used, limit)
     return head + (f"\n{tail}" if tail else "")
 
 
 def pick_device_header(kind: str) -> str:
     """«🔗 Ссылка — для какого устройства?» по виду выдачи."""
-    label = {"link": "🔗 Ссылка", "qr": "🔳 QR", "file": "📄 Файл"}[kind]
+    label = {"link": "🔗 <b>Ссылка</b>", "qr": "🔳 <b>QR</b>", "file": "📄 <b>Файл</b>"}[kind]
     return f"{label} — для какого устройства?"
 
 
@@ -282,15 +283,15 @@ def pick_device_header(kind: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _of_limit(used: int, limit_bytes: int, note: str = "") -> str:
-    """«3.2 из 50 ГБ (лимит устройства)»; без лимита — «3.2 из ∞ ГБ»."""
+    """«3.2 из 50 ГБ (лимит устройства)»; без лимита — «3.2 ГБ (безлимит)»."""
     if not limit_bytes:
-        return f"{gb(used)} из ∞ ГБ"
+        return f"{volume(used)} (безлимит)"
     return used_of_limit(used, limit_bytes, note)
 
 
 def _usage(dev, profile_limit_bytes: int, whose: str) -> str:
     """«📊 3.2 из 50 ГБ (лимит устройства)» / «📊 3.2 из 100 ГБ (лимит
-    профиля)» / «📊 3.2 из ∞ ГБ»."""
+    профиля)» / «📊 3.2 ГБ (безлимит)»."""
     used = int(dev.traffic_rx_month) + int(dev.traffic_tx_month)
     if dev.traffic_limit:
         return "📊 " + used_of_limit(used, dev.traffic_limit, "лимит устройства")
@@ -313,7 +314,7 @@ def device_card_own(dev, profile_limit_bytes: int) -> str:
     """Карточка своего устройства: «🟢 iPhone» / «Был в сети 2 мин назад ·
     📊 3.2 из 50 ГБ (лимит устройства)» + блокировка, приглашение, пометка
     «добавлено не ботом». Адрес устройства — только у админа."""
-    parts = [f"{device_state(dev)} {_e(dev.name)}",
+    parts = [f"{device_state(dev)} <b>{_e(dev.name)}</b>",
              f"{_seen(dev)} · {_usage(dev, profile_limit_bytes, 'лимит профиля')}"]
     blocked = _blocked_line(dev)
     if blocked:
@@ -327,7 +328,7 @@ def device_card_own(dev, profile_limit_bytes: int) -> str:
 
 def device_card_lent(dev, profile_limit_bytes: int) -> str:
     """Своё переданное — у владельца: кто управляет, чей лимит."""
-    parts = [f"{device_state(dev)} {_e(dev.name)} · управляется профилем {holder_link(dev)}",
+    parts = [f"{device_state(dev)} <b>{_e(dev.name)}</b> · управляется профилем {holder_link(dev)}",
              f"{_seen(dev)} · {_usage(dev, profile_limit_bytes, 'лимит твоего профиля')}"]
     blocked = _blocked_line(dev)
     if blocked:
@@ -337,7 +338,7 @@ def device_card_lent(dev, profile_limit_bytes: int) -> str:
 
 def device_card_held(dev, owner_limit_bytes: int) -> str:
     """Удерживаемое (от друга) — у держателя: от кого, чей лимит."""
-    parts = [f"{device_state(dev)} {_e(dev.name)} · от профиля {owner_link(dev)}",
+    parts = [f"{device_state(dev)} <b>{_e(dev.name)}</b> · от профиля {owner_link(dev)}",
              f"{_seen(dev)} · {_usage(dev, owner_limit_bytes, f'лимит профиля {_e(owner_name(dev))}')}"]
     blocked = _blocked_line(dev)
     if blocked:
@@ -400,9 +401,9 @@ def transfer_ask(name: str) -> str:
 def add_device_prompt(used: int, limit: int, *, for_friend: bool) -> str:
     slots = f" · {used} из {limit}" if limit else ""
     if for_friend:
-        return (f"👤 Устройство для друга{slots}{' · займёт твой слот.' if limit else ''}\n"
+        return (f"👤 <b>Устройство для друга</b>{slots}{' · займёт твой слот.' if limit else ''}\n"
                 "Как назвать? Имя увидит друг")
-    return f"➕ Новое устройство{slots}\nКак назвать? Например: «iPhone»"
+    return f"➕ <b>Новое устройство</b>{slots}\nКак назвать? Например: «iPhone»"
 
 
 def device_created(name: str, profile_limit_bytes: int) -> str:
@@ -414,7 +415,7 @@ def device_created(name: str, profile_limit_bytes: int) -> str:
 
 
 def device_limit_prompt(name: str, profile_limit_bytes: int) -> str:
-    head = f"📊 Лимит трафика устройства «{_e(name)}»"
+    head = f"📊 <b>Лимит трафика устройства «{_e(name)}»</b>"
     if profile_limit_bytes:
         return f"{head} · не больше {gb_str(profile_limit_bytes)} профиля"
     return head
@@ -450,7 +451,7 @@ def name_note(old: str, new: str) -> str:
 
 
 def device_name_prompt(name: str) -> str:
-    return f"✏️ Новое имя для устройства «{_e(name)}»"
+    return f"✏️ <b>Новое имя для устройства «{_e(name)}»</b>"
 
 
 # ── приглашение другу ────────────────────────────────────────────────────────
@@ -702,7 +703,7 @@ def _limits_line(client, routing_visible: bool) -> str:
              _n_devices(client.device_limit) if client.device_limit else "∞ устройств"]
     if routing_visible:
         parts.append(f"🇷🇺 {ROUTING_NAME}")
-    return "Лимиты: " + " · ".join(parts)
+    return "Включено в подписку: " + " · ".join(parts)
 
 
 def subscription_text(client, *, routing_visible: bool) -> str:
@@ -713,11 +714,11 @@ def subscription_text(client, *, routing_visible: bool) -> str:
     access = access_status_line(client)
     lines = [access] if access and (pause_visible or not paused) else []
     if pause_visible and mode == "user":
-        lines.append(f"💳 Подписка: {kind}")          # «на паузе» — строкой ниже, без повтора
+        lines.append(f"💳 <b>Подписка:</b> {kind}")          # «на паузе» — строкой ниже, без повтора
     elif pause_visible:
-        lines.append(f"💳 Подписка: {kind} · ⏸️ приостановлена администратором")
+        lines.append(f"💳 <b>Подписка:</b> {kind} · ⏸️ приостановлена администратором")
     else:
-        lines.append(f"💳 Подписка: {kind} · {subscription_status_only(client, expiring=True)}")
+        lines.append(f"💳 <b>Подписка:</b> {kind} · {subscription_status_only(client, expiring=True)}")
     start = timeutil.parse_iso(client.period_start) if client.period_start else None
     end_iso = client.effective_period_end
     if end_iso:
@@ -766,7 +767,7 @@ PAUSE_WARNING_LINE = f"⚠️ На паузе VPN выключен. {TELEGRAM_RI
 def pause_ask(available_days: int, *, email_resume: bool = False) -> str:
     """Экран паузы: сколько доступно, что происходит, предупреждение — только
     когда аварийного выхода по почте нет."""
-    lines = [f"⏸️ Пауза — до {available_days} дн.",
+    lines = [f"⏸️ <b>Пауза</b> — до {available_days} дн.",
              "Действие подписки приостановится; снимешь раньше — неизрасходованные дни вернутся"]
     if not email_resume:
         lines.append(PAUSE_WARNING_LINE)
@@ -813,7 +814,7 @@ def pause_resumed_self(actual_days: int, new_end) -> str:
 # Активация, помощь, коды
 # ─────────────────────────────────────────────────────────────────────────────
 
-HELP_INTRO = "❓ Помощь — какое устройство?"
+HELP_INTRO = "❓ <b>Помощь</b> — какое устройство?"
 ACTIVATION_OK = "🎉 Доступ открыт"
 ACTIVATION_OK_HELP = "🎉 Доступ открыт. Какое у тебя устройство?"
 ACTIVATION_INVALID = "🤔 Такого кода нет — проверь и пришли ещё раз"

@@ -101,7 +101,7 @@ async def test_settings_assign_existing_device_goes_the_full_way(services, fake_
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi.id), services, st)
-    assert any(s[1].startswith("🤖 Токен бота шлюза — ") for s in nav.sent if s[0] == "edit_text"), "сначала токен"
+    assert any(s[1].startswith("🤖 <b>Токен бота шлюза</b> — ") for s in nav.sent if s[0] == "edit_text"), "сначала токен"
     assert _gw_dev_id(services) is None
     msg = _amsg(fake_bot, "123456789:AA-token-value-long-enough-here")
     await sh.gateway_token_received(msg, st, services)
@@ -166,7 +166,7 @@ async def test_settings_new_machine_asks_for_the_agent_token_once(services, fake
     cb, nav = _acb(fake_bot)
     await sh.gateway_new_ask(cb, GwMarkCB(action="new_ask"), services, st)
     assert not any("Новое устройство" in s[1] for s in nav.sent if s[0] == "edit_text"), "лишнее подтверждение"
-    assert any(s[1].startswith("🤖 Токен бота шлюза — ") for s in nav.sent if s[0] == "edit_text")
+    assert any(s[1].startswith("🤖 <b>Токен бота шлюза</b> — ") for s in nav.sent if s[0] == "edit_text")
     assert _gw_dev_id(services) is None, "без токена ничего не создаём"
 
     msg = _amsg(fake_bot, "123456789:AA-token-value-long-enough-here")
@@ -214,7 +214,7 @@ async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup
     text, markup = next((s[1], s[2]) for s in nav.sent if s[0] == "edit_text")
     # устройство-шлюз открывает карточку своего слота (отдельной карточки
     # устройства-шлюза больше нет)
-    assert "NASPi — " in text.split("\n")[0] and "📡 awglink:443" in text, text
+    assert "NASPi</b> — " in text.split("\n")[0] and "📡 awglink:443" in text, text
     labels = _labels(markup)
     assert "📤 Конфигурация" in labels and labels[-2:] == ["✏️ Изменить", "⬅️ Назад"], labels
     assert not any("Удалить" in l or "Заблокировать" in l or "подключения" in l for l in labels)

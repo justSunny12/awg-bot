@@ -691,7 +691,7 @@ async def gw_slot_router(cb: CallbackQuery, callback_data: GwSlotCB, services):
     gw = st["gateway"]
     tab = callback_data.val or "mt"
     dev = st.get("device")
-    title = (dev.name if dev is not None else f"слот {gw.id}") + (f", {gw.label}" if gw.label else "")
+    title = (dev.name if dev is not None else f"слот {gw.id}") + (f" · {gw.label}" if gw.label else "")
     await edit(cb, texts.gateway_router_text(title, gw.home_subnets[0] if gw.home_subnets else "",
                                              peer_nets=st.get("peer_nets") or [], tab=tab),
                kb.gateway_router_kb(gw.id, tab))

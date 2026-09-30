@@ -37,7 +37,7 @@ async def test_add_device_self_full_fsm(services, make_active_client, fake_bot):
     cb, nav = _cb_with_nav(fake_bot, 64)
     await client_h.device_add_start(cb, DeviceCB(action="add"), client, services, state)
     prompt = [s for s in nav.sent if s[0] == "edit_text"][-1]
-    assert prompt[1] == "➕ Новое устройство · 0 из 3\nКак назвать? Например: «iPhone»"
+    assert prompt[1] == "➕ <b>Новое устройство</b> · 0 из 3\nКак назвать? Например: «iPhone»"
     buttons = [b for row in prompt[2].inline_keyboard for b in row]
     assert [b.text for b in buttons] == ["👤 Это для друга", "✖️ Отмена"]
     assert CancelCB.unpack(buttons[1].callback_data).kind == "main"
@@ -75,7 +75,7 @@ async def test_add_device_from_devices_list_cancels_back_to_the_list(
     cb = FakeCallback(message=nav, user_id=66, bot=fake_bot)
     await rc.on_cancel_inline(cb, CancelCB.unpack(cancel.callback_data), state, services,
                               role="client", client=client)
-    assert nav.sent[-1][1].startswith("📱 Устройства · 1 из 3"), \
+    assert nav.sent[-1][1].startswith("📱 <b>Устройства</b> · 1 из 3"), \
         f"отмена увела не в список, а на: {nav.sent[-1][1]!r}"
 
 

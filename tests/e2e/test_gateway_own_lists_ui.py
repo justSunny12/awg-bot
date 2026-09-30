@@ -302,7 +302,7 @@ async def test_a_slow_script_result_comes_as_a_message(gw, host, fake_bot, monke
     await gh.gw_transit_remove(cb, GwCB(action="lan_rm", val=f"0.{lan_own_tag('ru', 'shop.ru')}"), gw)
     answers = [s[1] for s in msg.sent if s[0] == "answer"]
     assert answers == ["✅ shop.ru: убран\n" + LOCAL], msg.sent
-    assert msg.sent[-1][0] == "edit_text" and msg.sent[-1][1].startswith("🔀 VPN-транзит"), msg.sent[-1]
+    assert msg.sent[-1][0] == "edit_text" and msg.sent[-1][1].startswith("🔀 <b>VPN-транзит"), msg.sent[-1]
 
 
 async def _type_domain(svc, fake_bot, kind: str, text: str) -> str:
@@ -317,7 +317,7 @@ async def _type_domain(svc, fake_bot, kind: str, text: str) -> str:
     answers = [s[1] for s in reply.sent if s[0] == "answer"]
     assert len(answers) == 1, f"итог отдельным сообщением: {answers}"
     note, _, screen = answers[0].partition("\n\n")
-    assert note.startswith(("✅", "⚠️")) and screen.startswith("🔀 VPN-транзит"), answers[0]
+    assert note.startswith(("✅", "⚠️")) and screen.startswith("🔀 <b>VPN-транзит"), answers[0]
     return note
 
 
@@ -344,7 +344,7 @@ async def test_the_typed_domain_is_already_a_button_on_the_screen_below(gw, host
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_transit_ask(cb, GwCB(action="lan_ru"), gw, st)
-    assert msg.sent[-1][1] == ("➕ Напрямую · пришли домены через пробел: <code>example.com</code> — "
+    assert msg.sent[-1][1] == ("➕ <b>Напрямую</b> · пришли домены через пробел: <code>example.com</code> — "
                                "накрывает и поддомены"), msg.sent[-1][1]
     assert [b.text for row in msg.sent[-1][2].inline_keyboard for b in row] == ["✖️ Отмена"]
     reply = FakeMessage(text="shop.ru", chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)

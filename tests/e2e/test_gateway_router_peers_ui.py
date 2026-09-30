@@ -99,7 +99,7 @@ async def test_agent_router_recipe_routes_to_peers_via_its_own_address(gw_svc, f
     «🔀 VPN-транзит»."""
     peers = ("192.168.1.0/24", "192.168.1.2", ["192.168.68.0/24", "10.20.0.0/16"])
     text, markup = await _lan_router(gw_svc, fake_bot, monkeypatch, peers)
-    assert text.startswith("❓ Роутер для naspi · 192.168.1.0/24 · шлюз 192.168.1.2\n"), text
+    assert text.startswith("❓ <b>Роутер для naspi</b> · 192.168.1.0/24 · шлюз 192.168.1.2\n"), text
     assert _tab_labels(markup) == ["✅ MikroTik", "OpenWrt", "⬅️ Назад"], _tab_labels(markup)
     for p in ("192.168.68.0/24", "10.20.0.0/16"):
         assert f"/ip route add dst-address={p} gateway=192.168.1.2" in text, text
@@ -123,14 +123,14 @@ async def test_agent_router_recipe_without_peers(gw_svc, fake_bot, monkeypatch):
 
 
 async def test_agent_router_recipe_is_titled_by_the_slot_name_from_the_server(gw_svc, fake_bot, monkeypatch):
-    """Заголовок рецепта — имя слота, каким его знает сервер («NASPi, дача»):
+    """Заголовок рецепта — имя слота, каким его знает сервер («NASPi · дача»):
     по нему человек узнаёт шлюз в боте сервера. Hostname («naspi») — только
     пока сервер имени не сообщал: у двух малин из одного образа он один и тот
     же."""
     params = ("192.168.1.0/24", "192.168.1.2", [])
     text, _ = await _lan_router(gw_svc, fake_bot, monkeypatch, params)
-    assert text.startswith("❓ Роутер для naspi · 192.168.1.0/24 · шлюз 192.168.1.2"), text.splitlines()[0]
-    gw_svc.set_link_role(True, standby=True, name="NASPi, <дача>")
+    assert text.startswith("❓ <b>Роутер для naspi</b> · 192.168.1.0/24 · шлюз 192.168.1.2"), text.splitlines()[0]
+    gw_svc.set_link_role(True, standby=True, name="NASPi · <дача>")
     text, _ = await _lan_router(gw_svc, fake_bot, monkeypatch, params)
-    assert text.startswith("❓ Роутер для NASPi, &lt;дача&gt; · 192.168.1.0/24"), text.splitlines()[0]
+    assert text.startswith("❓ <b>Роутер для NASPi · &lt;дача&gt;</b> · 192.168.1.0/24"), text.splitlines()[0]
     assert "naspi ·" not in text

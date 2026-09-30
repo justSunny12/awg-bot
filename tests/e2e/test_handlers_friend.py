@@ -37,7 +37,7 @@ async def test_guest_main_screen(services, fake_bot, make_active_client):
     _, text, markup = [s for s in msg.sent if s[0] == "answer"][-1]
     rows = [[b.text for b in row] for row in markup.inline_keyboard]
     lines = text.splitlines()
-    assert lines[0] == "👋 Артём" and lines[1].endswith(("VPN работает", "VPN не отвечает")), text
+    assert lines[0] == "👋 <b>Артём</b>" and lines[1].endswith(("VPN работает", "VPN не отвечает")), text
     assert lines[2] == '💳 Подписка профиля <a href="tg://user?id=8100">Вася</a>: 🟢 активна', text
     assert len(lines) == 3, "строки трафика при нулях без лимита"
     assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Устройства"], ["❓ Как подключить"]], rows
@@ -67,13 +67,13 @@ async def test_guest_devices_and_card(services, fake_bot, make_active_client):
     cb, nav = _cb(fake_bot, 98101)
     await fh.friend_list(cb, guest, services)
     text, labels = last_screen(nav)
-    assert text == '📱 Устройства · 1 · от профиля <a href="tg://user?id=8101">Вася</a>', text
+    assert text == '📱 <b>Устройства</b> · 1 · от профиля <a href="tg://user?id=8101">Вася</a>', text
     assert labels == ["⚪ Телефон", "⬅️ Назад"], labels
     cb, nav = _cb(fake_bot, 98101)
     await fh.friend_open(cb, FriendCB(action="open", device_id=dc.device_id), guest, services)
     text, labels = last_screen(nav)
     head, usage = text.splitlines()[:2]
-    assert head == '⚪ Телефон · от профиля <a href="tg://user?id=8101">Вася</a>', head
+    assert head == '⚪ <b>Телефон</b> · от профиля <a href="tg://user?id=8101">Вася</a>', head
     assert usage == "Не подключался · 📊 0 из 100 ГБ (лимит профиля Вася)", usage
     assert labels == ["🔗 Ссылка", "🔳 QR", "📄 Файл", "🛑 Блок", "🗑 Удалить", "⬅️ Назад"], labels
 
@@ -98,7 +98,7 @@ async def test_guest_gen_from_main_picks_when_several(services, fake_bot, make_a
     cb, nav = _cb(fake_bot, 98104)
     await fh.friend_gen(cb, FriendCB(action="gen_link"), guest, services)
     text, labels = last_screen(nav)
-    assert text == "🔗 Ссылка — для какого устройства?" and labels == ["⚪ A", "⚪ B", "⬅️ Назад"], labels
+    assert text == "🔗 <b>Ссылка</b> — для какого устройства?" and labels == ["⚪ A", "⚪ B", "⬅️ Назад"], labels
     cb, nav = _cb(fake_bot, 98104)
     await fh.friend_gen(cb, FriendCB(action="gen_link", device_id=a.device_id), guest, services)
     sent = [s for s in nav.sent if s[0] == "answer"]
@@ -155,7 +155,7 @@ async def test_guest_block_needs_confirmation(services, fake_bot, make_active_cl
                              guest, services)
     assert int(services.db.get_device(dc.device_id).block_reason) & int(DeviceBlock.USER)
     text, labels = last_screen(nav)
-    assert "✅ Разблок" in labels and text.startswith("⛔ Тел"), (text, labels)
+    assert "✅ Разблок" in labels and text.startswith("⛔ <b>Тел</b>"), (text, labels)
 
 
 async def test_guest_delete_notifies_owner_and_empty_guest_keeps_profile(services, fake_bot,
@@ -176,7 +176,7 @@ async def test_guest_delete_notifies_owner_and_empty_guest_keeps_profile(service
     assert owner_msgs == ['Устройство «A», ранее переданное <a href="tg://user?id=98106">Артём</a>, '
                           'удалено по его запросу.\nТеперь у тебя 1 из 3 устройств.']
     edits = [s for s in nav.sent if s[0] == "edit_text"]
-    assert edits[-1][1].startswith("🗑 A удалено\n\n👋 Артём\n") and edits[-1][2] is not None
+    assert edits[-1][1].startswith("🗑 A удалено\n\n👋 <b>Артём</b>\n") and edits[-1][2] is not None
     answers = [s for s in nav.sent if s[0] == "answer"]
     assert not answers, "итог удаления остался отдельным сообщением"
     # последнее — профиль остаётся, главный экран объясняет, что дальше
@@ -185,7 +185,7 @@ async def test_guest_delete_notifies_owner_and_empty_guest_keeps_profile(service
                                    guest, services)
     assert services.db.get_client_by_tg(98106) is not None
     edits = [s for s in nav.sent if s[0] == "edit_text"]
-    assert edits[-1][1].endswith("\n\n👋 Артём · устройств нет — попроси у друга новый код"), edits[-1][1]
+    assert edits[-1][1].endswith("\n\n👋 <b>Артём</b> · устройств нет — попроси у друга новый код"), edits[-1][1]
     labels = [b.text for row in edits[-1][2].inline_keyboard for b in row]
     assert labels == ["❓ Как подключить"], "без устройств — одна «Как подключить», а не пустой экран"
 
@@ -200,7 +200,7 @@ async def test_guest_help_uses_the_same_guides_with_guest_exit(services, fake_bo
     cb, nav = _cb(fake_bot, 98107)
     await fh.friend_help(cb)
     text, labels = last_screen(nav)
-    assert text == "❓ Помощь — какое устройство?"
+    assert text == "❓ <b>Помощь</b> — какое устройство?"
     assert labels == ["🍎 iPhone / iPad", "🤖 Android", "🪟 Windows", "🍏 Mac", "✅ Настрою сам"], labels
     back = nav.sent[-1][2].inline_keyboard[-1][0].callback_data
     assert back == FriendCB(action="refresh").pack()
@@ -237,7 +237,7 @@ async def test_guest_main_shows_rf_line_and_button_only_with_owner_permission(
     cb, nav = _cb(fake_bot, 98110)
     await rh.routing_panel(cb, RoutingCB(action="panel", ref=guest.id), guest, services, FakeState())
     text, labels = last_screen(nav)
-    assert text.startswith("🇷🇺 РФ-доступ: вкл на всех") and labels[0] == "✅ Тел · от профиля Вася", (text, labels)
+    assert text.startswith("🇷🇺 <b>РФ-доступ:</b> вкл на всех") and labels[0] == "✅ Тел · от профиля Вася", (text, labels)
     back = nav.sent[-1][2].inline_keyboard[-1][0].callback_data
     assert back == "fr:refresh:0"
 
@@ -258,7 +258,7 @@ async def test_owner_devices_screen_lists_lent_out_without_toggle(
     cb, nav = _cb(fake_bot, 8111)
     await rh.routing_panel(cb, RoutingCB(action="panel", ref=owner.id), owner, services, FakeState())
     text, labels = last_screen(nav)
-    assert text.startswith("🇷🇺 РФ-доступ: вкл на всех"), text
+    assert text.startswith("🇷🇺 <b>РФ-доступ:</b> вкл на всех"), text
     assert 'Ноутбук — у профиля <a href="tg://user?id=98111">Артём</a>, управляет функцией он' in text
     assert not any("Ноутбук" in l for l in labels), labels
     cb, _ = _cb(fake_bot, 8111)

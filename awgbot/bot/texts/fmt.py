@@ -91,18 +91,44 @@ def gb(num_bytes: int) -> str:
     return _num(n, _BYTES_PER_GB)
 
 
+_BYTES_PER_TB = 1024 ** 4
+
+
+def unit_for(*values: int) -> tuple[str, int]:
+    """Единица по большему из значений: от терабайта — «ТБ», иначе «ГБ»; в
+    паре «использовано из лимита» единица одна на оба числа."""
+    if max((int(v or 0) for v in values), default=0) >= _BYTES_PER_TB:
+        return "ТБ", _BYTES_PER_TB
+    return "ГБ", _BYTES_PER_GB
+
+
+def amount(num_bytes: int, unit_bytes: int) -> str:
+    """Число в единице без подписи: ноль — «0», ненулевая мелочь — «0.01»."""
+    n = int(num_bytes or 0)
+    if 0 < n < unit_bytes // 100:
+        return "0.01"
+    return _num(n, unit_bytes)
+
+
+def volume(num_bytes: int) -> str:
+    """Объём с единицей: «0 ГБ», «0.01 ГБ», «8.99 ГБ», «1.5 ТБ»."""
+    unit, ub = unit_for(num_bytes)
+    return f"{amount(num_bytes, ub)} {unit}"
+
+
 def human_bytes(n: int) -> str:
-    """Объём с единицей — всегда в ГБ: «0 ГБ», «0.01 ГБ», «8.99 ГБ»."""
-    return f"{gb(n)} ГБ"
+    """Объём с единицей (см. volume)."""
+    return volume(n)
 
 
 def used_of_limit(used: int, limit_bytes: int, note: str = "") -> str:
-    """«8.99 из 50 ГБ» (единица одна — не повторяем); без лимита — «8.99 ГБ».
-    note — чей лимит, в скобках: «… (лимит устройства)»; лимит профиля — без
-    пометки."""
+    """«8.99 из 50 ГБ» (единица одна — не повторяем, от терабайта — «ТБ»);
+    без лимита — «8.99 ГБ». note — чей лимит, в скобках: «… (лимит
+    устройства)»; лимит профиля — без пометки."""
     if not limit_bytes:
-        return human_bytes(used)
-    return f"{gb(used)} из {gb(limit_bytes)} ГБ" + (f" ({note})" if note else "")
+        return volume(used)
+    unit, ub = unit_for(used, limit_bytes)
+    return f"{amount(used, ub)} из {amount(limit_bytes, ub)} {unit}" + (f" ({note})" if note else "")
 
 
 def _updown(rx: int, tx: int) -> str:
@@ -139,8 +165,8 @@ _BYTES_PER_GB = 1024 ** 3
 
 
 def gb_str(num_bytes: int) -> str:
-    """Лимит с единицей: «100 ГБ», «0.5 ГБ». 0 трактуется вызывающим как безлимит."""
-    return f"{gb(num_bytes)} ГБ"
+    """Лимит с единицей: «100 ГБ», «0.5 ГБ», «2 ТБ». 0 трактуется вызывающим как безлимит."""
+    return volume(num_bytes)
 
 
 def _limit_devices_str(limit: int) -> str:

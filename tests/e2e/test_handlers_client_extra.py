@@ -75,14 +75,14 @@ async def test_device_add_friend_presets_then_invite_with_share_and_copy(
     await ch.device_add_for_whom(cb, DeviceCB(action="add_friend"), cl, services, st)
     assert (await st.get_data()).get("for_friend") is True
     text, labels = last_screen(nav)
-    assert text == "👤 Устройство для друга · 0 из 3 · займёт твой слот.\nКак назвать? Имя увидит друг"
+    assert text == "👤 <b>Устройство для друга</b> · 0 из 3 · займёт твой слот.\nКак назвать? Имя увидит друг"
     assert labels == ["📱 Это для меня", "✖️ Отмена"]
 
     typed = FakeMessage(text="Планшет", chat_id=5103, user_id=5103, bot=fake_bot)
     await ch.device_add_name(typed, cl, services, st)
     assert services.db.list_devices(client.id) == [], "устройство создано до выбора лимита"
     shown = [s for s in typed.sent if s[0] == "answer"][-1]
-    assert shown[1] == "📊 Лимит трафика устройства «Планшет» · не больше 100 ГБ профиля"
+    assert shown[1] == "📊 <b>Лимит трафика устройства «Планшет»</b> · не больше 100 ГБ профиля"
     assert [b.text for r in shown[2].inline_keyboard for b in r] == [
         "10 ГБ", "50 ГБ", "100 ГБ", "✏️ Другое", "⬅️ Отмена"], "∞ — только у безлимитного"
 
@@ -132,7 +132,7 @@ async def test_pause_cancel_returns_to_subscription(services, fake_bot, make_act
     cb, nav = _cb(fake_bot, 5104)
     await ch.pause_cancel(cb, PauseCB(action="cancel", ref=client.id), cl, services, FakeState())
     text, labels = last_screen(nav)
-    assert text.startswith("💳 Подписка: годовая") and labels == ["⏸️ Пауза", "⬅️ Назад"]
+    assert text.startswith("💳 <b>Подписка:</b> годовая") and labels == ["⏸️ Пауза", "⬅️ Назад"]
     assert not _fresh(services, client).is_paused
     assert cb.answers
 

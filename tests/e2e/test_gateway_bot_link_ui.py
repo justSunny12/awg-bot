@@ -153,7 +153,7 @@ async def test_start_gw_opens_the_slot_card_in_place_of_the_menu(services, slots
     edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
     assert edits, "карточка не встала на место меню"
     shown = edits[-1][2]
-    assert shown.startswith("🛰 Pi2 — ") and _ends_with_agent(shown), shown
+    assert shown.startswith("🛰 <b>Pi2</b> — ") and _ends_with_agent(shown), shown
     assert not [s for s in msg.sent if s[0] == "answer"], "карточка ушла новым сообщением при живом меню"
 
 
@@ -178,7 +178,7 @@ async def test_start_gw_without_an_active_menu_sends_the_card(services, slots, f
     msg = _amsg(fake_bot, "/start gw-1")
     await ah.admin_start(msg, services, FakeState(), command=_cmd("gw-1"))
     sent = [s[1] for s in msg.sent if s[0] == "answer"]
-    assert sent and "NASPi — " in sent[-1].split("\n")[0] and "📡 awglink:443" in sent[-1], sent
+    assert sent and "NASPi</b> — " in sent[-1].split("\n")[0] and "📡 awglink:443" in sent[-1], sent
 
 
 async def test_start_gw_for_a_missing_slot_does_not_break(services, slots, fake_bot):

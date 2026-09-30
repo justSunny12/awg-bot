@@ -99,7 +99,7 @@ async def test_extend_button_strips_the_note_and_opens_extension_as_new_menu(
     assert ("edit_reply_markup", ADMIN) in fake_bot.records, "кнопки с уведомления не сняты"
     assert not [s for s in note.sent if s[0] == "edit_text"], "текст уведомления переписан — история потеряна"
     shown = [(t, m) for kind, t, m in note.sent if kind == "answer"]
-    assert len(shown) == 1 and shown[0][0].startswith("⏱ Продление: Ксюша\n"), shown
+    assert len(shown) == 1 and shown[0][0].startswith("⏱ <b>Продление:</b> Ксюша\n"), shown
     assert ("edit_markup", ADMIN, 4242) in fake_bot.records, "прежнее живое меню не погашено"
     assert services.db.get_nav_message_id(ADMIN) not in (None, 4242, note.message_id)
     assert cb.answers
@@ -110,7 +110,7 @@ async def test_unassigned_button_opens_the_quarantine_list(services, fake_bot):
     services.db.create_device(svc, "чужой", "PUBQ", "PSK", "10.8.0.77")
     _, note = await _press(services, fake_bot, "unassigned", 0)
     shown = [t for kind, t, _ in note.sent if kind == "answer"]
-    assert shown == ["📦 Без профиля: 1 — пир создан мимо бота"], shown
+    assert shown == ["📦 <b>Без профиля:</b> 1 — пир создан мимо бота"], shown
 
 
 async def test_extend_for_a_deleted_profile_falls_back_to_home(services, fake_bot):
@@ -124,7 +124,7 @@ async def test_client_sub_button_opens_the_subscription(services, fake_bot, make
     cl = make_active_client("Вася", tg_id=5102, period_kind="year")
     _, note = await _press(services, fake_bot, "sub", 0, role="client", client=cl, chat=5102)
     shown = [t for kind, t, _ in note.sent if kind == "answer"]
-    assert shown and shown[-1].startswith("💳 Подписка: годовая"), shown
+    assert shown and shown[-1].startswith("💳 <b>Подписка:</b> годовая"), shown
 
 
 async def test_admin_only_hints_never_open_admin_screens_for_a_client(services, fake_bot, make_active_client):

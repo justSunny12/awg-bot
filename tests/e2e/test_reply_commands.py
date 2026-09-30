@@ -71,7 +71,7 @@ async def test_inline_cancel_returns_the_same_screen_in_place(services, fake_bot
     dev = services.add_device(cl.id, "iPhone")
     st, nav, card = await _prompt_rename(services, fake_bot, cl, dev.device_id)
     prompt = nav.sent[-1]
-    assert prompt[1] == "✏️ Новое имя для устройства «iPhone»"
+    assert prompt[1] == "✏️ <b>Новое имя для устройства «iPhone»</b>"
     btn = prompt[2].inline_keyboard[0][0]
     assert btn.text == "✖️ Отмена" and CancelCB.unpack(btn.callback_data) == CancelCB(kind="dev", ref=dev.device_id)
     fake_bot.records.clear()

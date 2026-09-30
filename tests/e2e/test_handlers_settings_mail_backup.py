@@ -98,7 +98,7 @@ async def test_email_forget_needs_confirmation_and_toggle_resume(services, fake_
     assert cb.answers[-1][0] == "✅ Почта отключена", cb.answers
     assert not any(kind == "answer" for kind, _t, _ in msg.sent), "лишнее сообщение в чате"
     last = [t for kind, t, _ in msg.sent if kind == "edit_text"][-1]
-    assert last.startswith("✉️ E-mail · ящик не подключён"), last
+    assert last.startswith("✉️ <b>E-mail</b> · ящик не подключён"), last
 
 
 # ── бэкап на почту и запасной канал для критичных алертов ────────────────────
@@ -181,12 +181,12 @@ async def test_backup_passphrase_flow_deletes_messages_and_requires_match(servic
     import awgbot.core.config as cfg
     _email_store(monkeypatch)
     text, markup = await sh._screen("backup", services)
-    assert text.split("\n")[0] == "💾 Бэкапы · ✅ вкл · 🔓 без шифрования", text
+    assert text.split("\n")[0] == "💾 <b>Бэкапы</b> · ✅ вкл · 🔓 без шифрования", text
     assert [b.text for b in markup.inline_keyboard[0]] == ["✅ Автобэкапы", "🔐 Шифрование"]
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await sh.do_action(cb, SetCB(sec="backup", act="do", key="enc"), services)
-    assert any(t.startswith("🔐 Шифрование бэкапов · 🔓 выключено") for kind, t, _ in msg.sent
+    assert any(t.startswith("🔐 <b>Шифрование бэкапов</b> · 🔓 выключено") for kind, t, _ in msg.sent
                if kind == "edit_text"), msg.sent
     state = FakeState()
     await sh.backup_passphrase_start(cb, state, services)
@@ -205,7 +205,7 @@ async def test_backup_passphrase_flow_deletes_messages_and_requires_match(servic
     # итог — первой строкой раздела «Бэкапы», в заголовке — «фраза задана»
     section = [t for kind, t, _ in ok.sent if kind == "answer"][-1]
     assert section.startswith("✅ Фраза задана — следующие копии уйдут шифрованными\n\n"
-                              "💾 Бэкапы · ✅ вкл · 🔐 фраза задана"), section
+                              "💾 <b>Бэкапы</b> · ✅ вкл · 🔐 фраза задана"), section
     assert kbs.settings_backup(True).inline_keyboard[0][1].text == "🔐 Шифрование"
 
 
@@ -234,7 +234,7 @@ async def test_backup_file_in_chat_offers_restore_and_confirm_launches(services,
     state = FakeState()
     await ah.admin_document(msg, services, state)
     sent = [t for kind, t, _ in msg.sent if kind == "answer"]
-    assert sent and sent[-1] == ("♻️ Бэкап от 09.09 10:30 — восстановить?\n"
+    assert sent and sent[-1] == ("♻️ <b>Бэкап от 09.09 10:30</b> — восстановить?\n"
                                  "Всё вернётся к тому моменту: профили, устройства, подписки, ключи шифрования"), sent
     # в копии вся база — сообщение с ней из чата убираем, как и присланный токен
     assert msg.deleted

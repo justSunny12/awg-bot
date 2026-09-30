@@ -81,7 +81,7 @@ async def test_guide_add_device_flow(services, fake_bot, make_active_client):
     cb, nav = _cb(fake_bot, 6203)
     await gh.guide_add_device(cb, GuideCB(guide="connect", step=-1), services, cl, st)
     prompt = [s for s in nav.sent if s[0] == "edit_text"][-1]
-    assert prompt[1] == "➕ Новое устройство · 0 из 3\nКак назвать? Например: «iPhone»"
+    assert prompt[1] == "➕ <b>Новое устройство</b> · 0 из 3\nКак назвать? Например: «iPhone»"
     assert [b.text for row in prompt[2].inline_keyboard for b in row] == ["✖️ Отмена"]
     m_name = FakeMessage(text="Дев", chat_id=6203, user_id=6203, bot=fake_bot)
     await gh.guide_add_device_name(m_name, services, cl, st)

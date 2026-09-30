@@ -105,16 +105,16 @@ async def test_the_panel_names_the_role_by_the_channel(svc, fake_bot, monkeypatc
     роль неизвестна, первая строка говорит о линке."""
     st = GwStatus(link_up=True, handshake_age=40.0, hostname="naspi", uptime_seconds=12 * 86400)
     text, _ = await _panel(svc, fake_bot, st)
-    assert text.splitlines()[0] == "🛰 naspi · 🟢 линк поднят · 12 дн", text
+    assert text.splitlines()[0] == "🛰 <b>naspi</b> · 🟢 линк поднят · 12 дн", text
     monkeypatch.setattr(linkclient, "enabled", lambda: True)
     monkeypatch.setattr(linkclient, "online", lambda: True)
     for role, head in (("active", "🟢 несёт трафик"), ("standby", "🟢 в резерве")):
         monkeypatch.setattr(linkclient, "role", lambda role=role: role)
         text, _ = await _panel(svc, fake_bot, st)
-        assert text.splitlines()[:2] == [f"🛰 naspi · {head} · 12 дн", "📡 Линк до сервера AWG 🟢 40 с · 🔗 упр. канал 🟢"], text
+        assert text.splitlines()[:2] == [f"🛰 <b>naspi</b> · {head} · 12 дн", "📡 Линк до сервера AWG 🟢 40 с · 🔗 упр. канал 🟢"], text
     monkeypatch.setattr(linkclient, "online", lambda: False)
     text, _ = await _panel(svc, fake_bot, GwStatus(hostname="naspi"))
-    assert text.splitlines()[0] == "🛰 naspi · 🔴 линк лежит", "связи нет — роль по линку"
+    assert text.splitlines()[0] == "🛰 <b>naspi</b> · 🔴 линк лежит", "связи нет — роль по линку"
 
 
 @pytest.mark.parametrize("mark, online, warn", [
@@ -233,7 +233,7 @@ async def test_health_is_live_and_offers_recovery_and_the_menu(svc, fake_bot):
     assert svc.probes == 1 and cb.answers[0][0] == "Проверяю…"
     text, markup = _last_edit(nav)
     assert text.splitlines() == [
-        "🩺 Здоровье naspi · 🔴 проблем: 1",
+        "🩺 <b>Здоровье naspi</b> · 🔴 проблем: 1",
         "✅ линк — хендшейк 40 с",
         "🔴 обвязка — нет цепочки",
         "RAM свободно 1 234 МБ · диск свободно 98 ГБ, SMART ОК · питание ОК",
@@ -244,7 +244,7 @@ async def test_health_is_live_and_offers_recovery_and_the_menu(svc, fake_bot):
     svc.live.checks = [GwCheck("линк", True)]
     await gh.gw_health(cb, svc)
     text, _ = _last_edit(nav)
-    assert text.startswith("🩺 Здоровье naspi · ✅ проблем нет") and "Восстановить" not in text, text
+    assert text.startswith("🩺 <b>Здоровье naspi</b> · ✅ проблем нет") and "Восстановить" not in text, text
 
 
 async def test_health_details_from_the_host_are_escaped(svc, fake_bot):
@@ -335,13 +335,13 @@ async def test_settings_root_is_the_version_and_two_columns(svc, fake_bot, monke
     cb, nav = _acb(fake_bot)
     await gh.gw_settings(cb, svc, FakeState())
     text, markup = _last_edit(nav)
-    assert text == "⚙️ Настройки · v3.1.0"
+    assert text == "⚙️ <b>Настройки</b> · v3.1.0"
     assert _rows(markup) == [["🔔 Уведомления", "✉️ E-mail"], ["🛡 SSH-доступ", "🩺 Мониторинг"],
                              ["💾 Бэкапы", "⬆️ Обновления"], ["🔁 Перезапуск AWG", "🔁 Перезапуск бота"],
                              ["⬅️ В меню"]]
     cb, nav = _acb(fake_bot)
     await gh.gw_maint(cb, svc, FakeState())
-    assert _last_edit(nav)[0] == "⚙️ Настройки · v3.1.0"
+    assert _last_edit(nav)[0] == "⚙️ <b>Настройки</b> · v3.1.0"
 
 
 async def test_notify_section_text_follows_the_values(svc, fake_bot, store):
@@ -352,7 +352,7 @@ async def test_notify_section_text_follows_the_values(svc, fake_bot, store):
     cb, nav = _acb(fake_bot)
     await gh.gw_section(cb, GwCB(action="notify"), svc, FakeState())
     text, _ = _last_edit(nav)
-    assert text.splitlines()[:3] == ["🔔 Уведомления", "Тихие часы 20:00–07:00 МСК — без звука, кроме аварий",
+    assert text.splitlines()[:3] == ["🔔 <b>Уведомления</b>", "Тихие часы 20:00–07:00 МСК — без звука, кроме аварий",
                                      "Алерты хоста: CPU 80% · RAM 80% · диск 80% · 75 °C"], text
     assert "Аварии на e-mail — только когда Telegram недоступен" in text
     store.update({"quiet_hours.quiet_hours_enabled": False, "resource_alerts.enabled": False})
@@ -374,7 +374,7 @@ async def test_monitoring_link_threshold_is_minutes_on_screen_and_seconds_in_the
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await gh.gw_edit(cb, GwCB.unpack(btn.callback_data), svc, st)
-    assert _last_edit(nav)[0] == "✏️ Линк молчит дольше · сейчас 5 мин · 1–1440", _last_edit(nav)[0]
+    assert _last_edit(nav)[0] == "✏️ <b>Линк молчит дольше</b> · сейчас 5 мин · 1–1440", _last_edit(nav)[0]
     msg = _msg(fake_bot, "7")
     await gh.gw_receive_value(msg, st, svc)
     assert store["app.gateway.handshake_max_age"] == 420, "ввод в минутах записан не секундами"
@@ -408,7 +408,7 @@ async def test_link_threshold_absent_in_the_config_reads_as_the_default_five_min
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await gh.gw_edit(cb, GwCB(action="edit", val="app.gateway.handshake_max_age"), svc, st)
-    assert _last_edit(nav)[0] == "✏️ Линк молчит дольше · сейчас 5 мин · 1–1440"
+    assert _last_edit(nav)[0] == "✏️ <b>Линк молчит дольше</b> · сейчас 5 мин · 1–1440"
     msg = _msg(fake_bot, "10")
     await gh.gw_receive_value(msg, st, svc)
     assert store["app.gateway.handshake_max_age"] == 600
@@ -435,7 +435,7 @@ async def test_backup_section_is_the_main_bot_layout(svc, fake_bot, store):
     cb, nav = _acb(fake_bot)
     await gh.gw_section(cb, GwCB(action="backup"), svc, FakeState())
     text, markup = _last_edit(nav)
-    assert text.splitlines()[:2] == ["💾 Бэкапы · ✅ вкл · 🔓 без шифрования",
+    assert text.splitlines()[:2] == ["💾 <b>Бэкапы</b> · ✅ вкл · 🔓 без шифрования",
                                      "Каждое 1-е число в 12:00 → в этот чат"], text
     assert _rows(markup) == [["✅ Автобэкапы", "🔐 Шифрование"], ["📨 Куда: Telegram", "✏️ 1-е, 12:00"],
                              ["💾 Сделать сейчас"], ["⬅️ Назад"]]
@@ -489,7 +489,7 @@ async def test_backup_day_and_hour_in_one_input(svc, fake_bot, store):
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await gh.gw_edit(cb, when, svc, st)
-    assert _last_edit(nav)[0] == ("✏️ День и час автобэкапа · сейчас 1-го в 12:00 · пришли два числа: "
+    assert _last_edit(nav)[0] == ("✏️ <b>День и час автобэкапа</b> · сейчас 1-го в 12:00 · пришли два числа: "
                                   "<code>1 12</code>")
     bad = _msg(fake_bot, "31 12")
     await gh.gw_receive_value(bad, st, svc)
@@ -501,7 +501,7 @@ async def test_backup_day_and_hour_in_one_input(svc, fake_bot, store):
     answers = [s for s in msg.sent if s[0] == "answer"]
     assert len(answers) == 1 and answers[0][1].split("\n")[0] == "✅ Автобэкап: 1-е, 12:00 → 5-е, 09:00"
     assert "✏️ 5-е, 09:00" in [b for r in _rows(answers[0][2]) for b in r]
-    assert answers[0][1].split("\n", 2)[2].startswith("💾 Бэкапы"), "итог — не в разделе бэкапов"
+    assert answers[0][1].split("\n", 2)[2].startswith("💾 <b>Бэкапы"), "итог — не в разделе бэкапов"
 
 
 # ── ⬆️ обновления ────────────────────────────────────────────────────────────
@@ -532,13 +532,13 @@ async def test_opening_updates_checks_right_away(svc, fake_bot, upd):
     await gh.gw_updates_screen(cb, svc)
     assert cb.answers[0][0] == "Проверяю…" and upd["calls"] == 1
     text, markup = _last_edit(nav)
-    assert text.split("\n")[0] == "⬆️ Обновления · v3.2.0 → v3.2.1", text
+    assert text.split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.2.1", text
     assert _rows(markup) == [["⬆️ Обновить до v3.2.1"], ["✅ Уведомлять", "📅 Проверка: день"], ["⬅️ Назад"]]
     assert svc.update_available_tag() == "v3.2.1"
     upd["next"] = None
     await gh.gw_updates_screen(cb, svc)
     text, markup = _last_edit(nav)
-    assert text == "⬆️ Обновления · v3.2.0 · 🟢 актуальна" and _rows(markup)[0] == ["✅ Уведомлять", "📅 Проверка: день"]
+    assert text == "⬆️ <b>Обновления</b> · v3.2.0 · 🟢 актуальна" and _rows(markup)[0] == ["✅ Уведомлять", "📅 Проверка: день"]
 
 
 async def test_a_failed_check_says_so_and_keeps_the_found_version(svc, fake_bot, upd):
@@ -546,7 +546,7 @@ async def test_a_failed_check_says_so_and_keeps_the_found_version(svc, fake_bot,
     await gh.gw_updates_screen(cb, svc)
     upd["fail"] = True
     await gh.gw_updates_screen(cb, svc)
-    assert _last_edit(nav)[0] == "⬆️ Обновления · v3.2.0 · ⚪ проверка не удалась", _last_edit(nav)[0]
+    assert _last_edit(nav)[0] == "⬆️ <b>Обновления</b> · v3.2.0 · ⚪ проверка не удалась", _last_edit(nav)[0]
     assert svc.update_available_tag() == "v3.2.1", "сбой проверки стёр найденную версию"
 
 
@@ -560,7 +560,7 @@ async def test_notify_toggle_and_schedule_cycle_answer_at_once_without_the_netwo
     await gh.gw_updates_toggle(cb, svc)
     assert svc.updates_muted() and cb.answers[0][0] == "Уведомления выключены"
     text, markup = _last_edit(nav)
-    assert text.split("\n")[0] == "⬆️ Обновления · v3.2.0 → v3.2.1" and _rows(markup)[1][0] == "☑️ Уведомлять"
+    assert text.split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.2.1" and _rows(markup)[1][0] == "☑️ Уведомлять"
     assert _rows(markup)[0] == ["⬆️ Обновить до v3.2.1"], "кнопка обновления пропала без сети"
     cyc = GwCB.unpack(_button(markup, "📅 Проверка: день").callback_data)
     assert cyc == GwCB(action="cyc", val="updates.poll_schedule")
@@ -578,7 +578,7 @@ async def test_notify_toggle_and_schedule_cycle_answer_at_once_without_the_netwo
 async def test_the_old_check_button_redraws_the_section_that_checks_itself(svc, fake_bot, upd):
     cb, nav = _acb(fake_bot)
     await gh.gw_updates_check(cb, svc)
-    assert _last_edit(nav)[0].split("\n")[0] == "⬆️ Обновления · v3.2.0 → v3.2.1"
+    assert _last_edit(nav)[0].split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.2.1"
     assert upd["calls"] == 1 and len(cb.answers) == 1
 
 
@@ -706,7 +706,7 @@ async def test_a_huge_domain_input_result_still_fits_one_message(svc, fake_bot, 
     visible = html.unescape(re.sub(r"<[^>]+>", "", text))
     assert len(visible) <= 4096, len(visible)
     assert re.search(r"\n…и ещё \d+ строк", text), text[:300]
-    assert "\n\n🔀 VPN-транзит" in text, "экран под итогом потерялся"
+    assert "\n\n🔀 <b>VPN-транзит" in text, "экран под итогом потерялся"
 
 
 @pytest.mark.parametrize("sync", ["online", "offline", "no_channel"])

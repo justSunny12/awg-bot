@@ -106,7 +106,7 @@ async def test_traffic_tree_leads_with_rf_total_then_profiles_by_size(
     def link(c):
         return f'<a href="https://t.me/awg_test_bot?start=traffic-{c.id}">{c.name}</a>'
     assert text.split("\n") == [
-        f"📊 Трафик за {texts.month_label()}: 17 ГБ (↑3 ↓14)",
+        f"📊 <b>Трафик за {texts.month_label()}:</b> 17 ГБ (↑3 ↓14)",
         f"└ {RF_ALL}: 4 ГБ (↑1 ↓3)",
         "",
         f"👤 {link(ksu)}: 12 ГБ (↑2 ↓10)",
@@ -138,7 +138,7 @@ async def test_traffic_tree_drops_zero_profiles_zero_rf_and_zero_outside(
 async def test_traffic_tree_without_any_traffic_says_so(services, fake_bot):
     services.ensure_admin_client()
     text, _, _ = await _deep(services, fake_bot, "traffic")
-    assert text.split("\n") == [f"📊 Трафик за {texts.month_label()}: 0 ГБ", "",
+    assert text.split("\n") == [f"📊 <b>Трафик за {texts.month_label()}:</b> 0 ГБ", "",
                                 "Трафика за месяц ещё нет"], text
 
 
@@ -208,7 +208,7 @@ async def test_profile_traffic_tree_sorts_devices_and_drops_zeros(
     _profile(services, make_active_client, "Чужой", 7132, traffic=(9 * GB, 9 * GB))
     text, labels, cbs = await _deep(services, fake_bot, f"traffic-{c.id}")
     assert text.split("\n") == [
-        f"📊 Трафик за {texts.month_label()}, Ксюша: 8 ГБ (↑2 ↓6)",
+        f"📊 <b>Трафик за {texts.month_label()}</b>, Ксюша: 8 ГБ (↑2 ↓6)",
         f"└ {RF_ALL}: 3 ГБ (↑1 ↓2)",
         "",
         "⚪ iPhone: 6 ГБ (↑1 ↓5)",
@@ -222,7 +222,7 @@ async def test_profile_traffic_tree_sorts_devices_and_drops_zeros(
     cb, nav = _acb(fake_bot)
     await ah.admin_traffic_profiles(cb, services)
     back, _ = last_screen(nav)
-    assert back.startswith(f"📊 Трафик за {texts.month_label()}: "), back
+    assert back.startswith(f"📊 <b>Трафик за {texts.month_label()}:</b> "), back
 
 
 @pytest.fixture()
@@ -266,7 +266,7 @@ async def test_both_home_links_open_the_traffic_tree_and_remove_the_command(
     await ah.admin_start(msg, services, FakeState(), command=_cmd(payload))
     assert msg.deleted, "команда /start осталась в чате"
     edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
-    assert edits and edits[-1][2].startswith(f"📊 Трафик за {texts.month_label()}: "), edits
+    assert edits and edits[-1][2].startswith(f"📊 <b>Трафик за {texts.month_label()}:</b> "), edits
     assert not any(kind == "answer" for kind, _, _ in msg.sent), "второе меню вместо правки живого"
 
 
@@ -275,7 +275,7 @@ async def test_both_home_links_open_the_traffic_tree_and_remove_the_command(
 async def test_profile_links_open_the_profile_traffic(services, fake_bot, make_active_client, fmt_):
     c, _ = _profile(services, make_active_client, "Ксюша", 7142, traffic=(GB, GB))
     text, labels, _ = await _deep(services, fake_bot, fmt_.format(id=c.id))
-    assert text.startswith(f"📊 Трафик за {texts.month_label()}, Ксюша: "), text
+    assert text.startswith(f"📊 <b>Трафик за {texts.month_label()}</b>, Ксюша: "), text
     assert labels == ["⬅️ Назад"]
 
 
@@ -297,7 +297,7 @@ async def test_old_rf_back_button_opens_the_traffic_tree(services, fake_bot):
     cb.data = Menu(action="traffic_local").pack()
     await ah.admin_traffic_profiles(cb, services)
     text, _ = last_screen(nav)
-    assert text.startswith(f"📊 Трафик за {texts.month_label()}:"), text
+    assert text.startswith(f"📊 <b>Трафик за {texts.month_label()}:</b>"), text
 
 
 # ── строка РФ в карточках — прежнее правило ─────────────────────────────────

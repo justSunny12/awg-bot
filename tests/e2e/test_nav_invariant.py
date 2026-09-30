@@ -51,7 +51,7 @@ async def test_settings_input_moves_nav_and_cleans_prompt(services, fake_bot, mo
     assert prompt.message_id in _deleted(fake_bot), "вопрос остался в чате"
     answers = [s for s in typed.sent if s[0] == "answer"]
     assert len(answers) == 1, "итог ввода — первой строкой раздела, не отдельным сообщением"
-    assert answers[0][1].startswith("✅ Частота опроса: 3 → 5 мин\n\n🩺 Мониторинг"), answers[0][1]
+    assert answers[0][1].startswith("✅ Частота опроса: 3 → 5 мин\n\n🩺 <b>Мониторинг</b>"), answers[0][1]
     assert answers[0][2] is not None, "раздел с кнопками — живое меню"
 
 
@@ -66,7 +66,7 @@ async def test_settings_text_value_finisher_shows_old_and_new(services, fake_bot
     await sh.receive_value(typed, st, services)
     answers = [s for s in typed.sent if s[0] == "answer"]
     assert len(answers) == 1, answers
-    assert answers[0][1].startswith("✅ DNS клиентов: 1.1.1.1, 1.0.0.1 → 10.9.1.1\n\n🖥 Сервер AWG"), answers[0][1]
+    assert answers[0][1].startswith("✅ DNS клиентов: 1.1.1.1, 1.0.0.1 → 10.9.1.1\n\n🖥 <b>Сервер AWG</b>"), answers[0][1]
 
 
 async def test_settings_bad_input_is_tracked_reask(services, fake_bot):
@@ -127,7 +127,7 @@ async def test_client_pause_other_keeps_one_live_menu(services, fake_bot, make_a
     assert services.db.get_nav_message_id(cl.tg_id) != screen.message_id
     assert {screen.message_id, typed.message_id} <= _deleted(fake_bot), "приглашение или ввод остались"
     answers = [s for s in typed.sent if s[0] == "answer"]
-    assert answers[-1][1].startswith("🟡 доступ приостановлен\n💳 Подписка: годовая\n") and answers[-1][2] is not None
+    assert answers[-1][1].startswith("🟡 доступ приостановлен\n💳 <b>Подписка:</b> годовая\n") and answers[-1][2] is not None
 
 
 async def test_add_device_for_friend_shows_slots_in_place(services, fake_bot, make_active_client):
@@ -156,7 +156,7 @@ async def test_client_rename_returns_to_menu(services, fake_bot, make_active_cli
     await ch.client_device_edit_name_apply(typed, cl, services, st)
     answers = [s for s in typed.sent if s[0] == "answer"]
     assert len(answers) == 1, "итог отдельным сообщением"
-    assert answers[0][1].startswith("✅ Имя устройства: Старое → Новое\n\n⚪ Новое\n")
+    assert answers[0][1].startswith("✅ Имя устройства: Старое → Новое\n\n⚪ <b>Новое</b>\n")
     assert answers[0][2] is not None, "после итога нет меню"
     assert services.db.get_nav_message_id(cl.tg_id) != typed.message_id
     assert services.db.get_device(dc.device_id).name == "Новое"
@@ -238,7 +238,7 @@ async def test_client_delete_one_of_two_returns_to_device_list(services, fake_bo
     await ch.device_delete_confirm(cb, DelDeviceCB(device_id=a.device_id, stage="confirm"),
                                    cl, services)
     edits = [s for s in screen.sent if s[0] == "edit_text"]
-    assert edits[-1][1] == "🗑 A удалено · можно добавить ещё 2\n\n📱 Устройства · 1 из 3"
+    assert edits[-1][1] == "🗑 A удалено · можно добавить ещё 2\n\n📱 <b>Устройства</b> · 1 из 3"
     labels = [b.text for row in edits[-1][2].inline_keyboard for b in row]
     assert labels[0] == "⚪ B", labels
 

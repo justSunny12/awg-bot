@@ -129,7 +129,7 @@ async def test_client_link_sub_opens_subscription_in_place_of_the_live_menu(
     cl = make_active_client(tg_id=9110, period_kind="year")
     msg = await _start(services, fake_bot, cl, "sub", nav_id=555)
     edits = [r for r in fake_bot.records if r[0] == "edit_message_text"]
-    assert len(edits) == 1 and edits[0][2].startswith("💳 Подписка: годовая · 🟢 активна"), fake_bot.records
+    assert len(edits) == 1 and edits[0][2].startswith("💳 <b>Подписка:</b> годовая · 🟢 активна"), fake_bot.records
     assert msg.deleted, "команда /start осталась в чате"
     assert not any(s[0] == "answer" for s in msg.sent), "второе меню вместо правки живого"
 
@@ -139,7 +139,7 @@ async def test_client_link_without_live_menu_sends_the_screen(services, fake_bot
     services.db.set_nav_message_id(9111, None)
     msg = await _start(services, fake_bot, cl, "sub")
     shown = [s for s in msg.sent if s[0] == "answer"]
-    assert shown and shown[-1][1].startswith("💳 Подписка:") and shown[-1][2] is not None
+    assert shown and shown[-1][1].startswith("💳 <b>Подписка:</b>") and shown[-1][2] is not None
 
 
 async def test_client_link_rf_opens_the_section_only_when_granted(services, fake_bot, make_active_client):
@@ -150,7 +150,7 @@ async def test_client_link_rf_opens_the_section_only_when_granted(services, fake
     services.set_routing_allowed(cl.id, True)
     cl = services.db.get_client(cl.id)
     msg = await _start(services, fake_bot, cl, "rf")
-    assert _screen(fake_bot, msg).startswith("🇷🇺 РФ-доступ: вкл на всех")
+    assert _screen(fake_bot, msg).startswith("🇷🇺 <b>РФ-доступ:</b> вкл на всех")
 
 
 async def test_client_link_dev_opens_own_or_held_card_and_refuses_foreign(
@@ -164,12 +164,12 @@ async def test_client_link_dev_opens_own_or_held_card_and_refuses_foreign(
     assert services.activate_friend(services.make_device_friendly(held.device_id), tg_id=9114).ok
     foreign = services.add_device(owner.id, "Чужое")
     cl = services.db.get_client(cl.id)
-    for dev_id, head in ((own.device_id, "⚪ Своё\n"), (held.device_id, "⚪ Держит · ")):
+    for dev_id, head in ((own.device_id, "⚪ <b>Своё</b>\n"), (held.device_id, "⚪ <b>Держит</b> · ")):
         msg = await _start(services, fake_bot, cl, f"dev-{dev_id}")
         assert _screen(fake_bot, msg).startswith(head)
     msg = await _start(services, fake_bot, cl, f"dev-{foreign.device_id}")
     shown = _screen(fake_bot, msg)
-    assert shown.startswith("👋 Петя\n") and "Чужое" not in shown, shown
+    assert shown.startswith("👋 <b>Петя</b>\n") and "Чужое" not in shown, shown
     msg = await _start(services, fake_bot, cl, "dev-99999999")
     assert _screen(fake_bot, msg).startswith("👋 ")
 
@@ -199,11 +199,11 @@ async def test_guest_links_open_held_card_and_refuse_foreign(services, fake_bot,
     dc, guest = _lend(services, owner, 99120, "Тел")
     other = services.add_device(owner.id, "Не его")
     shown = await _guest_start(services, fake_bot, guest, f"dev-{dc.device_id}")
-    assert shown[-1][1].startswith("⚪ Тел · "), shown
+    assert shown[-1][1].startswith("⚪ <b>Тел</b> · "), shown
     shown = await _guest_start(services, fake_bot, guest, f"dev-{other.device_id}")
-    assert shown[-1][1].startswith("👋 Артём\n") and "Не его" not in shown[-1][1], shown
+    assert shown[-1][1].startswith("👋 <b>Артём</b>\n") and "Не его" not in shown[-1][1], shown
     shown = await _guest_start(services, fake_bot, guest, "sub")
-    assert shown[-1][1].startswith("👋 Артём\n"), "у гостя своей подписки нет — главная"
+    assert shown[-1][1].startswith("👋 <b>Артём</b>\n"), "у гостя своей подписки нет — главная"
 
 
 async def test_guest_link_rf_opens_the_section_with_owner_permission(services, fake_bot, make_active_client):
@@ -211,7 +211,7 @@ async def test_guest_link_rf_opens_the_section_with_owner_permission(services, f
     _, guest = _lend(services, owner, 99121, "Тел")
     services.set_routing_allowed(owner.id, True)
     shown = await _guest_start(services, fake_bot, guest, "rf")
-    assert shown[-1][1].startswith("🇷🇺 РФ-доступ"), shown
+    assert shown[-1][1].startswith("🇷🇺 <b>РФ-доступ"), shown
     labels = [b.text for r in shown[-1][2].inline_keyboard for b in r]
     assert labels[0] == "✅ Тел · от профиля Вася", labels
 
@@ -239,7 +239,7 @@ async def test_client_main_four_lines_with_devices(services, fake_bot, make_acti
     text, markup = await ch.main_payload(services, cl)
     end = timeutil.parse_iso(cl.period_end)
     lines = text.splitlines()
-    assert lines[0] == "👋 Ксюша"
+    assert lines[0] == "👋 <b>Ксюша</b>"
     assert lines[1].startswith("🟢 VPN работает · 🇷🇺 РФ-доступ"), lines[1]
     assert lines[2] == f"💳 Подписка до {timeutil.fmt_date_ui(end)} · 📊 12.3 из 100 ГБ", lines[2]
     assert lines[3] == "📱 Устройств 1 из 3" and len(lines) == 4

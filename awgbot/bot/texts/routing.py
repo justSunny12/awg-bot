@@ -67,7 +67,7 @@ def gateway_device_card(dev, state=None) -> str:
     online = timeutil.handshake_is_online(dev.last_handshake)
     dot = "🟢" if online else "🔴"
     rx, tx = int(dev.traffic_rx_month), int(dev.traffic_tx_month)
-    head = (f"{dot} 🛰 {_e(dev.name)} ({plain_ip(dev.address)}), последний коннект: {last}\n"
+    head = (f"{dot} 🛰 <b>{_e(dev.name)}</b> ({plain_ip(dev.address)}), последний коннект: {last}\n"
             # стрелки — со стороны шлюза: его исходящее — это tx сервера
             f"Потребление: {human_bytes(rx + tx)} {_updown(tx, rx)}")
     if state is not None:
@@ -138,13 +138,13 @@ ROUTING_NAME = "РФ-доступ"
 # ── слоты: имя и состояние ───────────────────────────────────────────────────
 
 def slot_name(state, star: bool = False) -> str:
-    """«NASPi, дача» — имя устройства и подпись; star — «⭐» у
+    """«NASPi · дача» — имя устройства и подпись; star — «⭐» у
     предпочтительного, «🛰» у остальных не рисуется здесь (заголовок карточки
     ставит его сам)."""
     dev, gw = state.get("device"), state.get("gateway")
     name = _e(dev.name) if dev is not None else f"слот {gw.id}"
     pre = "⭐ " if star and state.get("preferred") else ""
-    return pre + name + (f", {_e(gw.label)}" if gw is not None and gw.label else "")
+    return pre + name + (f" · {_e(gw.label)}" if gw is not None and gw.label else "")
 
 
 def slot_status(state) -> str:
@@ -199,7 +199,7 @@ def peer_nets_line(info: dict) -> str:
         w = info.get("who") or ["?", "?"]
         return (f"↔️ Связь подсетей не работает: подсети {_plain(w[0])} и {_plain(w[1])} пересекаются "
                 f"({nets}) — смени подсеть одного из шлюзов")
-    pairs = " ↔ ".join(f"{', '.join(_e(n) for n in nets)} ({_e(name)}{', ' + _e(label) if label else ''})"
+    pairs = " ↔ ".join(f"{', '.join(_e(n) for n in nets)} ({_e(name)}{' · ' + _e(label) if label else ''})"
                        for name, label, nets in info.get("pairs_named") or [])
     return f"↔️ Связь подсетей: {pairs}"
 
@@ -210,7 +210,7 @@ ROUTING_PROVISION_INTRO = ("🇷🇺 РФ-доступ не развёрнут\n
                            "Кнопка поставит dnsmasq, перехват DNS клиентов, NAT и маршруты, линк до "
                            "будущего шлюза — до минуты. Шлюз назначается следующим шагом")
 SETTINGS_ROUTING_ABSENT = "🇷🇺 Обвязка развёрнута, функция ждёт перезапуска бота"
-GATEWAYS_OFF = "🛰 Шлюзы · 🇷🇺 РФ-доступ выключен · разрешения и списки сохранены"
+GATEWAYS_OFF = "🛰 <b>Шлюзы</b> · 🇷🇺 РФ-доступ выключен · разрешения и списки сохранены"
 SETTINGS_ROUTING_SUBOFF = "🇷🇺 РФ-доступ выключен — раздел пуст, пока он не включён"
 GATEWAYS_AUTO_OFF = ("⚠️ Автопереключение выключено: при падении активного шлюза РФ-доступ "
                      "выключится, а не перейдёт на резерв")
@@ -237,7 +237,7 @@ def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str 
     """Экран «🛰 Шлюзы» при включённой функции: заголовок с состоянием,
     строки слотов, переключение и списки, связь подсетей, «подробнее»."""
     ok, reason = status
-    head = f"🛰 Шлюзы · 🇷🇺 {ROUTING_NAME} " + ("🟢" if ok else f"🔴 не работает: {_e(reason)}")
+    head = f"🛰 <b>Шлюзы</b> · 🇷🇺 {ROUTING_NAME} " + ("🟢" if ok else f"🔴 не работает: {_e(reason)}")
     lines = [head]
     if not states:
         lines.append("Шлюз не назначен")
@@ -403,7 +403,7 @@ def gateway_card_text(state: dict, states: list) -> str:
     gw, dev = state["gateway"], state.get("device")
     name = f"«{_e(dev.name)}»" if dev is not None else f"слот {gw.id}"
     two = len(states) > 1
-    lines = [f"{'⭐' if state.get('preferred') and two else '🛰'} {slot_name(state)} — {slot_status(state)}"]
+    lines = [f"{'⭐' if state.get('preferred') and two else '🛰'} <b>{slot_name(state)}</b> — {slot_status(state)}"]
     age = state.get("handshake_age")
     if age is None or age > 300:
         hs = "хендшейка нет"
@@ -463,7 +463,7 @@ def gateway_card_text(state: dict, states: list) -> str:
 
 
 def gateway_edit_text(state: dict) -> str:
-    return f"✏️ {slot_ref(state)} — изменить"
+    return f"✏️ <b>{slot_ref(state)}</b> — изменить"
 
 
 # ── диалоги слота ────────────────────────────────────────────────────────────
@@ -490,7 +490,7 @@ def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
     name = slot_ref(state)
     online = bool((state.get("channel") or {}).get("online"))
     if on:
-        lines = [f"🔀 VPN-транзит на {name} — включить?",
+        lines = [f"🔀 <b>VPN-транзит на {name}</b> — включить?",
                  "Роутер отдаёт весь трафик сети шлюзу, шлюз маршрутизирует: заблокированное — в туннель, "
                  "остальное — напрямую. VPN на устройствах в сети становится не нужен",
                  "Нужно от тебя: настроить роутер по рецепту — покажу после включения",
@@ -502,7 +502,7 @@ def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
             lines.append("Потребуется перевыпуск конфигурации шлюза")
         return "\n".join(lines)
     return "\n".join([
-        f"🔀 VPN-транзит на {name} — выключить?",
+        f"🔀 <b>VPN-транзит на {name}</b> — выключить?",
         "⚠️ Сначала убери на роутере маршрутизацию всего трафика на шлюз — иначе сеть останется без интернета",
         f"Связь подсетей для {name} выключится; списки и резолвер снимутся, свои списки останутся"
         + ("" if online else ". " + _reissue_or_channel(False, "Выключение")),
@@ -523,7 +523,7 @@ def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list |
     net = net or "ПОДСЕТЬ"
     gw_ip = _e(gw_ip) if gw_ip else ROUTER_IP_PLACEHOLDER
     peers = [str(p) for p in (peer_nets or []) if p]
-    head = (f"❓ Роутер для {_e(title)} · {_e(net)} · шлюз {gw_ip}\n"
+    head = (f"❓ <b>Роутер для {_e(title)}</b> · {_e(net)} · шлюз {gw_ip}\n"
             "Весь трафик сети, кроме шлюза и локального, — на шлюз; DNS по DHCP — шлюз; "
             "ускорение и IPv6 — выключить; асимметричный путь — разрешить")
     req = details("• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес "
@@ -590,7 +590,7 @@ def gateway_peer_ask(on: bool) -> str:
     """Диалог тумблера «↔️ Связь подсетей»."""
     if on:
         return "\n".join([
-            "↔️ Связь подсетей — включить?",
+            "↔️ <b>Связь подсетей</b> — включить?",
             "Устройства из подсети одного шлюза достанут до подсети другого по настоящим адресам, "
             "через AWG. Только твои локальные сети и только между шлюзами с включённым VPN-транзитом",
             "SMB-серверы подсетей: на Windows — <code>\\\\имя.awg.internal</code>, на macOS — в Finder: "
@@ -602,7 +602,7 @@ def gateway_peer_ask(on: bool) -> str:
                     "шлюзе запущен avahi-daemon · задержка складывается из задержек шлюзов до сервера AWG; "
                     "связь живёт, пока подняты оба линка"),
         ])
-    return ("↔️ Связь подсетей — выключить?\n"
+    return ("↔️ <b>Связь подсетей</b> — выключить?\n"
             "Подсети шлюзов перестанут видеть друг друга сразу. Необходим перевыпуск конфигурации "
             "каждого шлюза")
 
@@ -611,7 +611,7 @@ def gateway_home_text(state: dict) -> str:
     gw = state["gateway"]
     nets = gw.home_subnets
     cur = ", ".join(f"<code>{_e(n)}</code>" for n in nets) if nets else "не заданы"
-    lines = [f"🗺 Подсети {slot_ref(state)} · сейчас {cur}",
+    lines = [f"🗺 <b>Подсети {slot_ref(state)}</b> · сейчас {cur}",
              "Пришли подсети через пробел: <code>192.168.2.0/24</code>; «-» — убрать все. "
              "Доступ через туннель — только твоим устройствам"]
     if gw.lan_mode:
@@ -648,7 +648,7 @@ def gateway_home_report(res: dict, state: dict) -> str:
 
 
 def gateway_label_text(state: dict) -> str:
-    return (f"✏️ Подпись {slot_ref(state)} — место одним-двумя словами: «дача», «офис». "
+    return (f"✏️ <b>Подпись {slot_ref(state)}</b> — место одним-двумя словами: «дача», «офис». "
             "До 20 символов, «—» — убрать")
 
 
@@ -675,13 +675,13 @@ def gateway_removed(dev, now_active=None) -> str:
 
 # ── назначение шлюза ─────────────────────────────────────────────────────────
 
-GATEWAY_CHOOSE_INTRO = ("🛰 Назначить шлюз — одно из твоих устройств или новое. Для шлюза поднимется "
+GATEWAY_CHOOSE_INTRO = ("🛰 <b>Назначить шлюз</b> — одно из твоих устройств или новое. Для шлюза поднимется "
                         "отдельный линк со своим ключом и портом; первый файл конфигурации применяется "
                         "на устройстве руками")
-GATEWAY_STANDBY_CHOOSE_INTRO = ("🛰 Резервный шлюз — когда основной перестанет отвечать, РФ-доступ "
+GATEWAY_STANDBY_CHOOSE_INTRO = ("🛰 <b>Резервный шлюз</b> — когда основной перестанет отвечать, РФ-доступ "
                                 "будет работать через него. Одно из твоих устройств или новое; линк — "
                                 "свой, первый файл конфигурации применяется руками")
-GATEWAY_PICK_INTRO = "📱 Из моих устройств — выбери, какое станет шлюзом. Обычным устройством оно быть перестанет"
+GATEWAY_PICK_INTRO = "📱 <b>Из моих устройств</b> — выбери, какое станет шлюзом. Обычным устройством оно быть перестанет"
 GATEWAY_PICK_EMPTY = "📱 У профиля админа нет устройств, выпущенных ботом — назначь новое"
 
 
@@ -717,7 +717,7 @@ def gateway_new_ask(slot: int = 1, prev_name: str = "", active: bool = False) ->
 
 def gateway_ask_token(slot: int = 1) -> str:
     who = "шлюза" if slot <= 1 else f"шлюза {slot}"
-    return (f"🤖 Токен бота {who} — создай бота у @BotFather и пришли токен <code>123456789:AA…</code>. "
+    return (f"🤖 <b>Токен бота {who}</b> — создай бота у @BotFather и пришли токен <code>123456789:AA…</code>. "
             "Уедет в файл первого применения; сообщение с токеном сразу удалю")
 
 
@@ -743,7 +743,7 @@ def routing_params_text(info: dict, lists: dict) -> str:
                       f"раз в {lists.get('every_hours', 6)} ч")
     need = int(info["need"])
     return "\n".join([
-        "⚙️ Параметры РФ-доступа",
+        "⚙️ <b>Параметры РФ-доступа</b>",
         f"Проверка живости: такт {info['probe_seconds']} с · окно {info['window']} · "
         f"порог {info['availability']}% ({need} {plural_ru(need, 'неудача', 'неудачи', 'неудач')} из {info['window']})",
         lists_line,
@@ -756,7 +756,7 @@ def routing_params_text(info: dict, lists: dict) -> str:
 
 
 def routing_users_text() -> str:
-    return ("👥 Кому доступен РФ-доступ (тебе — всегда)\n"
+    return ("👥 <b>Кому доступен РФ-доступ</b> (тебе — всегда)\n"
             "Владельцы устройств управляют настройкой на них сами")
 
 
@@ -908,7 +908,7 @@ ROUTING_ABOUT = (
 ROUTING_ABOUT_OFF = ROUTING_ABOUT
 
 ROUTING_ADD_PROMPT = (
-    "➕ Сайты с российского адреса\n"
+    "➕ <b>Сайты с российского адреса</b>\n"
     "Пришли адреса — по одному в строке или через запятую, можно ссылками. "
     "Добавляй то, что пишет «вы не из России»"
 )
@@ -936,19 +936,19 @@ def routing_panel_text(*, enabled: int, total: int, domains: list, lent_out=(),
                        link_ok: bool = True) -> str:
     """Экран «🇷🇺 РФ-доступ»: охват первой строкой, свои сайты второй; на всех
     выключено — объяснение открытым текстом; переданные — строкой без кнопки."""
-    head = f"🇷🇺 {ROUTING_NAME}"
+    head = f"🇷🇺 <b>{ROUTING_NAME}:</b>"
     lines = []
     if not total:
-        lines.append(f"{head}: устройств пока нет")
+        lines.append(f"{head} устройств пока нет")
     elif not enabled:
-        lines += [f"{head}: выкл", ROUTING_ABOUT]
+        lines += [f"{head} выкл", ROUTING_ABOUT]
     else:
-        lines.append(f"{head}: вкл на " + ("всех" if enabled >= total else f"{enabled} из {total}"))
+        lines.append(f"{head} вкл на " + ("всех" if enabled >= total else f"{enabled} из {total}"))
         if not link_ok:
             lines.append("🔴 временно недоступен")
     if domains:
         shown = ", ".join(_e(d) for d in domains[:2])
-        more = f" +{len(domains) - 2}" if len(domains) > 2 else ""
+        more = f" [+{len(domains) - 2}]" if len(domains) > 2 else ""
         lines.append(f"Свои сайты: {shown}{more}")
     lines += _lent_out_lines(lent_out)
     return "\n".join(lines)
@@ -957,10 +957,10 @@ def routing_panel_text(*, enabled: int, total: int, domains: list, lent_out=(),
 def routing_sites_text(domains: list) -> str:
     """Экран «📋 Сайты»: счётчик и подсказка; сами адреса — кнопками «➖»."""
     if not domains:
-        return ("📋 Свои сайты\n"
+        return ("📋 <b>Свои сайты</b>\n"
                 "Тут пока пусто. Банки, госуслуги, маркетплейсы — уже в общем списке; "
                 "добавляй то, что пишет «вы не из России»")
-    return f"📋 Свои сайты · {len(domains)}\n{ROUTING_SITES_ABOUT}"
+    return f"📋 <b>Свои сайты</b> · {len(domains)}\n{ROUTING_SITES_ABOUT}"
 
 
 def routing_add_report(added: list, rejected: list, over_limit: int, limit: int) -> str:

@@ -149,7 +149,7 @@ async def test_the_gateway_name_in_the_note_is_escaped_once(services, peers, fak
     # «в пути» имени больше не называет — имя остаётся в отказе шлюза
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": ""})
     text, _ = await _card(services, fake_bot, 2)
-    assert text.splitlines()[0].startswith("🛰 Pi &amp; &lt;2&gt; — "), text.splitlines()[0]
+    assert text.splitlines()[0].startswith("🛰 <b>Pi &amp; &lt;2&gt;</b> — "), text.splitlines()[0]
     assert _svc_note(text) == "⚠️ Шлюз «Pi &amp; &lt;2&gt;» не смог принять записи", (
         f"имя шлюза экранировано дважды: {_svc_note(text)}")
 
@@ -336,7 +336,7 @@ async def test_the_lan_screen_groups_address_traffic_lists_and_smb(gw_svc, fake_
     без пустых строк; объяснение — под «подробнее» последним."""
     _peer(gw_svc, ["naspi5"])
     _, _, lan, _ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    head = ("🔀 VPN-транзит · 🟢 работает\n"
+    head = ("🔀 <b>VPN-транзит</b> · 🟢 работает\n"
             "<code>end0</code> · <code>192.168.68.222</code> · 9 пакетов с роутера\n"
             "DNS — <code>10.9.1.1</code> через <code>аплинк</code>\n"
             "📋 Списки: 3 домена, 4 подсети (ещё не обновлялись)\n"

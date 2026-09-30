@@ -72,7 +72,7 @@ async def test_prompt_names_the_current_value_and_the_bounds(services, fake_bot,
     st = FakeState()
     await sh.edit_value(cb, SetCB(sec="mon", act="edit", key="app.scheduler.monitor_minutes"), st, services)
     text, markup = _last_edit(nav)
-    assert text == "✏️ Частота опроса · сейчас 3 мин · 1–1440", text
+    assert text == "✏️ <b>Частота опроса</b> · сейчас 3 мин · 1–1440", text
     assert _rows(markup) == [["✖️ Отмена"]]
     # отмена — реестром экранов: раздел встаёт на место приглашения, без следа
     assert CancelCB.unpack(markup.inline_keyboard[0][0].callback_data).kind == "set_mon", "отмена — назад в раздел"
@@ -102,7 +102,7 @@ async def test_input_result_is_the_first_line_of_the_section(services, fake_bot,
     assert len(answers) == 1, "итог и раздел — одно сообщение"
     text, markup = answers[0][1], answers[0][2]
     assert text.split("\n")[0] == "✅ Частота опроса: 3 → 5 мин", text
-    assert text.split("\n")[2].startswith("🩺 Мониторинг · опрос раз в 5 мин"), "раздел — с новым значением"
+    assert text.split("\n")[2].startswith("🩺 <b>Мониторинг</b> · опрос раз в 5 мин"), "раздел — с новым значением"
     assert "⏱ Опрос: 5 мин" in [b for r in _rows(markup) for b in r]
 
 
@@ -114,7 +114,7 @@ async def test_address_list_prompt_shows_the_current_entries(services, fake_bot,
     await sh.edit_value(cb, SetCB(sec="fw", act="edit", key="app.firewall.ssh_allow"), FakeState(), services)
     text, _ = _last_edit(nav)
     first = text.split("\n")[0]
-    assert first == ("➕ Адреса для SSH-доступа · сейчас 203.0.113.1, 203.0.113.2, 203.0.113.3, 203.0.113.4, "
+    assert first == ("➕ <b>Адреса для SSH-доступа</b> · сейчас 203.0.113.1, 203.0.113.2, 203.0.113.3, 203.0.113.4, "
                      "203.0.113.5 и ещё 2"), first
     assert "[" not in text and "'" not in text
 
@@ -123,12 +123,12 @@ async def test_address_list_prompt_shows_the_current_entries(services, fake_bot,
 
 async def test_email_section_puts_state_in_the_head_and_servers_in_one_line(services, fake_bot, store):
     text, markup = await sh._screen("email", services)
-    assert text.startswith("✉️ E-mail · ящик не подключён\n"), text
+    assert text.startswith("✉️ <b>E-mail</b> · ящик не подключён\n"), text
     assert _rows(markup) == [["✉️ Подключить ящик"], ["⬅️ Назад"]]
     _mailbox(services)
     text, markup = await sh._screen("email", services)
     lines = text.split("\n")
-    assert lines[0] == "✉️ E-mail · ⚪ ещё не проверялось", lines
+    assert lines[0] == "✉️ <b>E-mail</b> · ⚪ ещё не проверялось", lines
     assert lines[1] == "box@icloud.com · IMAP imap.mail.me.com:993 · SMTP smtp.mail.me.com:587", lines
     assert lines[2] == "🆘 Аварийный выход из паузы: код на box@icloud.com", lines
     assert _rows(markup) == [["🔍 Проверить", "📨 Тест-письмо"], ["✏️ Сменить ящик", "🗑 Отключить"],
@@ -207,18 +207,18 @@ async def test_check_and_test_mail_put_the_result_on_top_of_the_section(services
     await sh.email_action(cb, SetCB(sec="email", act="do", key="check"), services, FakeState())
     assert cb.answers[0][0] == "Проверяю…"
     text, _ = _last_edit(nav)
-    assert text.startswith("🟢 Вход по IMAP и SMTP прошёл\n\n✉️ E-mail · "), text
+    assert text.startswith("🟢 Вход по IMAP и SMTP прошёл\n\n✉️ <b>E-mail</b> · "), text
     monkeypatch.setattr(services, "email_check", lambda acc=None: (False, "IMAP: <auth> отказ"))
     cb, nav = _acb(fake_bot)
     await sh.email_action(cb, SetCB(sec="email", act="do", key="check"), services, FakeState())
-    assert _last_edit(nav)[0].startswith("🔴 IMAP: &lt;auth&gt; отказ\n\n✉️ E-mail · "), "причина — экранированной"
+    assert _last_edit(nav)[0].startswith("🔴 IMAP: &lt;auth&gt; отказ\n\n✉️ <b>E-mail</b> · "), "причина — экранированной"
 
     sent = []
     monkeypatch.setattr(services, "email_send_test", lambda: sent.append(1))
     cb, nav = _acb(fake_bot)
     await sh.email_action(cb, SetCB(sec="email", act="do", key="test"), services, FakeState())
     assert sent == [1] and cb.answers[0][0] == "Отправляю…"
-    assert _last_edit(nav)[0].startswith("✅ Письмо ушло на box@icloud.com — проверь входящие\n\n✉️ E-mail"), \
+    assert _last_edit(nav)[0].startswith("✅ Письмо ушло на box@icloud.com — проверь входящие\n\n✉️ <b>E-mail</b>"), \
         _last_edit(nav)[0]
 
     def boom():
@@ -226,7 +226,7 @@ async def test_check_and_test_mail_put_the_result_on_top_of_the_section(services
     monkeypatch.setattr(services, "email_send_test", boom)
     cb, nav = _acb(fake_bot)
     await sh.email_action(cb, SetCB(sec="email", act="do", key="test"), services, FakeState())
-    assert _last_edit(nav)[0].startswith("🔴 SMTP 535 &lt;bad&gt;\n\n✉️ E-mail"), _last_edit(nav)[0]
+    assert _last_edit(nav)[0].startswith("🔴 SMTP 535 &lt;bad&gt;\n\n✉️ <b>E-mail</b>"), _last_edit(nav)[0]
     assert len(cb.answers) == 1, "ответ на колбэк — ровно один"
 
 
@@ -273,13 +273,13 @@ async def test_an_unknown_cycle_key_is_refused(services, fake_bot, store):
 async def test_backup_section_lines_and_rows(services, fake_bot, store):
     store["app.scheduler.backup_day"], store["app.scheduler.backup_hour"] = 1, 12
     text, markup = await sh._screen("backup", services)
-    assert text == ("💾 Бэкапы · ✅ вкл · 🔓 без шифрования\nКаждое 1-е число в 12:00 → в этот чат\n"
+    assert text == ("💾 <b>Бэкапы</b> · ✅ вкл · 🔓 без шифрования\nКаждое 1-е число в 12:00 → в этот чат\n"
                     "Восстановить — пришли боту файл бэкапа (.tgz.enc)"), text
     assert _rows(markup) == [["✅ Автобэкапы", "🔐 Шифрование"], ["📨 Куда: Telegram", "✏️ 1-е, 12:00"],
                              ["💾 Сделать сейчас"], ["⬅️ Назад"]]
     store["app.scheduler.backup_enabled"] = False
     text, _ = await sh._screen("backup", services)
-    assert text == ("💾 Бэкапы · ☑️ выкл · 🔓 без шифрования\n"
+    assert text == ("💾 <b>Бэкапы</b> · ☑️ выкл · 🔓 без шифрования\n"
                     "Восстановить — пришли боту файл бэкапа (.tgz.enc)"), "выключены — без расписания"
 
 
@@ -317,7 +317,7 @@ async def test_backup_day_and_hour_in_one_input(services, fake_bot, store):
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await sh.edit_value(cb, SetCB.unpack(when.callback_data), st, services)
-    assert _last_edit(nav)[0] == ("✏️ День и час автобэкапа · сейчас 1-го в 12:00 · пришли два числа: "
+    assert _last_edit(nav)[0] == ("✏️ <b>День и час автобэкапа</b> · сейчас 1-го в 12:00 · пришли два числа: "
                                   "<code>1 12</code>")
     msg = _msg(fake_bot, "5 9")
     await sh.receive_value(msg, st, services)
@@ -377,7 +377,7 @@ async def test_opening_updates_checks_right_away(services, fake_bot, upd):
     await sh.open_section(cb, SetCB(sec="upd", act="open"), services, FakeState())
     assert cb.answers[0][0] == "Проверяю…" and upd["calls"] == 1
     text, markup = _last_edit(nav)
-    assert text.split("\n")[0] == "⬆️ Обновления · v3.2.0 → v3.3.1", text
+    assert text.split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.3.1", text
     assert _rows(markup) == [["⬆️ Обновить до v3.3.1"], ["✅ Уведомлять", "📅 Проверка: день"], ["⬅️ Назад"]]
     assert services.update_available_tag() == "v3.3.1"
 
@@ -387,13 +387,13 @@ async def test_nothing_to_update_and_a_failed_check_are_different(services, fake
     тег и говорит об этом шапкой, а не зелёным «актуальна»."""
     upd["next"] = None
     text, markup = await sh._screen("upd", services)
-    assert text == "⬆️ Обновления · v3.2.0 · 🟢 актуальна" and services.update_available_tag() == ""
+    assert text == "⬆️ <b>Обновления</b> · v3.2.0 · 🟢 актуальна" and services.update_available_tag() == ""
     assert not any(t.startswith("⬆️") for r in _rows(markup) for t in r)
     upd["next"] = _release("v3.3.1")
     await sh._screen("upd", services)
     upd["fail"] = True
     text, _ = await sh._screen("upd", services)
-    assert text == "⬆️ Обновления · v3.2.0 · ⚪ проверка не удалась", text
+    assert text == "⬆️ <b>Обновления</b> · v3.2.0 · ⚪ проверка не удалась", text
     assert services.update_available_tag() == "v3.3.1", "сбой проверки стёр найденную версию"
 
 
@@ -415,7 +415,7 @@ async def test_notify_toggle_and_schedule_cycle_answer_at_once_without_the_netwo
     await sh.toggle(cb, SetCB(sec="upd", act="toggle", key="notify"), services)
     assert services.updates_muted() and cb.answers[0][0] == "Уведомления выключены"
     text, markup = _last_edit(nav)
-    assert text.split("\n")[0] == "⬆️ Обновления · v3.2.0 → v3.3.1" and _rows(markup)[1][0] == "☑️ Уведомлять"
+    assert text.split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.3.1" and _rows(markup)[1][0] == "☑️ Уведомлять"
     seen = []
     for word in ("неделя", "месяц", "день", "неделя"):
         cb, nav = _acb(fake_bot)
@@ -501,7 +501,7 @@ async def test_the_old_check_button_just_redraws_the_section(services, fake_bot,
     """«Проверить» из прежнего сообщения — тот же раздел, проверяющий сам."""
     cb, nav = _acb(fake_bot)
     await sh.do_action(cb, SetCB(sec="upd", act="do", key="check"), services)
-    assert _last_edit(nav)[0].split("\n")[0] == "⬆️ Обновления · v3.2.0 → v3.3.1"
+    assert _last_edit(nav)[0].split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.3.1"
     assert len(cb.answers) == 1
 
 
@@ -514,7 +514,7 @@ async def test_notify_subs_and_monitoring_texts_follow_the_values(services, fake
                   "resource_alerts.thresholds_percent.disk": 80})
     text, _ = await sh._screen("notify", services)
     lines = text.split("\n")
-    assert lines[:3] == ["🔔 Уведомления", "Тихие часы 22:00–06:00 МСК — без звука, кроме аварий",
+    assert lines[:3] == ["🔔 <b>Уведомления</b>", "Тихие часы 22:00–06:00 МСК — без звука, кроме аварий",
                          "Алерты хоста: CPU 90% · RAM 80% · диск 80%"], lines
     assert lines[3].startswith("<blockquote"), "про аварии на e-mail — под «подробнее»"
     store["quiet_hours.quiet_hours_enabled"] = False
@@ -523,7 +523,7 @@ async def test_notify_subs_and_monitoring_texts_follow_the_values(services, fake
     store.update({"limits.traffic_bonus_gb": 50, "grace.grace_days": 7, "pause.pause_max_total_days": 28,
                   "pause.monthly_pause_days": 2})
     text, markup = await sh._screen("subs", services)
-    assert text.split("\n")[:3] == ["💳 Подписки — правила для всех", "Бонус 50 ГБ при исчерпании · отсрочка 7 дн.",
+    assert text.split("\n")[:3] == ["💳 <b>Подписки</b> — правила для всех", "Бонус 50 ГБ при исчерпании · отсрочка 7 дн.",
                                     "Пауза: год +28 (до 56), месяц +2 (до 24)"], text
     assert _rows(markup) == [["📈 Бонус: 50 ГБ", "🙏 Отсрочка: 7 дн."], ["⏸️ Год: 28 дн.", "⏸️ Месяц: 2 дн."],
                              ["⬅️ Назад"]]
@@ -531,7 +531,7 @@ async def test_notify_subs_and_monitoring_texts_follow_the_values(services, fake
                   "app.monitoring.service_failure_alert_minutes": 5,
                   "app.monitoring.service_failure_alert_loud": False})
     text, markup = await sh._screen("mon", services)
-    assert text == ("🩺 Мониторинг · опрос раз в 3 мин · алерт после 5 плохих замеров · простой AWG "
+    assert text == ("🩺 <b>Мониторинг</b> · опрос раз в 3 мин · алерт после 5 плохих замеров · простой AWG "
                     "дольше 5 мин — по правилам тихих часов"), text
     assert _rows(markup) == [["⏱ Опрос: 3 мин", "🔢 Замеров: 5"], ["⏳ Простой: 5 мин", "☑️ Звук 24/7"],
                              ["⬅️ Назад"]]
@@ -540,20 +540,20 @@ async def test_notify_subs_and_monitoring_texts_follow_the_values(services, fake
 async def test_root_screen_says_the_version(services, fake_bot, monkeypatch):
     monkeypatch.setattr(config, "INSTALLED_VERSION", "3.1.0")
     text, markup = await sh._screen("root", services)
-    assert text == "⚙️ Настройки · v3.1.0"
+    assert text == "⚙️ <b>Настройки</b> · v3.1.0"
     assert sum(len(r) for r in markup.inline_keyboard) == 10 and all(len(r) == 2 for r in markup.inline_keyboard)
 
 
 async def test_awg_restart_result_is_the_first_line_of_the_service_section(services, fake_bot, monkeypatch):
     """Перезапуск AWG — ответ на кнопку сразу («Перезапускаю AWG…»), итог —
-    первой строкой «🔧 Сервис»; ошибка — там же, экранированной."""
+    первой строкой «🔧 <b>Сервис</b>»; ошибка — там же, экранированной."""
     def boom():
         raise RuntimeError("docker: <no such container>")
     monkeypatch.setattr(services, "restart_service", boom)
     cb, nav = _acb(fake_bot)
     await sh.do_action(cb, SetCB(sec="svc", act="do", key="awg!"), services)
     assert cb.answers == [("Перезапускаю AWG…", False)]
-    assert _last_edit(nav)[0].startswith("⚠️ Ошибка перезапуска AWG: docker: &lt;no such container&gt;\n\n🔧 Сервис")
+    assert _last_edit(nav)[0].startswith("⚠️ Ошибка перезапуска AWG: docker: &lt;no such container&gt;\n\n🔧 <b>Сервис</b>")
 
 
 async def test_restart_confirmations_put_cancel_first(services, fake_bot):
@@ -581,6 +581,6 @@ async def test_cancel_under_a_settings_prompt_brings_the_section_back_in_place(s
     cb2, nav2 = _acb(fake_bot)
     await rc.on_cancel_inline(cb2, CancelCB.unpack(cancel), st, services, role="admin")
     text, _ = _last_edit(nav2)
-    assert text.startswith("🩺 Мониторинг") and await st.get_data() == {}
+    assert text.startswith("🩺 <b>Мониторинг</b>") and await st.get_data() == {}
     assert not any(s[0] == "answer" for s in nav2.sent), "отмена оставила след в чате"
     assert tracked is None or True

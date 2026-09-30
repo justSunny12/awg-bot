@@ -154,9 +154,9 @@ def test_limit_exhausted_asks_to_delete_enough(used, limit, line):
 
 
 def test_devices_header_carries_the_exhausted_line():
-    assert texts.devices_header(5, 3) == ("📱 Устройства · 5 из 3\n"
+    assert texts.devices_header(5, 3) == ("📱 <b>Устройства</b> · 5 из 3\n"
                                           "Лимит исчерпан: чтобы добавить новое, удали 3")
-    assert texts.devices_header(2, 3) == "📱 Устройства · 2 из 3"
+    assert texts.devices_header(2, 3) == "📱 <b>Устройства</b> · 2 из 3"
 
 
 # ── пресеты лимита устройства ────────────────────────────────────────────────
@@ -195,3 +195,18 @@ def test_parse_link_tells_screens_from_codes(payload, link):
     уходят в активацию как раньше."""
     from awgbot.bot.handlers.client import parse_link
     assert parse_link(payload) == link
+
+
+def test_volumes_switch_to_terabytes_from_a_terabyte():
+    """Объёмы от терабайта — в ТБ, единица одна на пару «из»; ниже — ГБ, как
+    было; безлимит — «0 ГБ (безлимит)», а не пусто."""
+    from awgbot.bot import texts
+    from awgbot.bot.texts import client as tc
+    TB, GB = 1024 ** 4, 1024 ** 3
+    assert texts.human_bytes(2 * TB) == "2 ТБ" and texts.human_bytes(500 * GB) == "500 ГБ"
+    assert texts.gb_str(int(1.5 * TB)) == "1.5 ТБ"
+    assert texts.used_of_limit(TB // 2, 2 * TB) == "0.5 из 2 ТБ"
+    assert texts.used_of_limit(3 * GB, 2 * TB) == "0 из 2 ТБ" or texts.used_of_limit(3 * GB, 2 * TB) == "0.01 из 2 ТБ"
+    assert texts.used_of_limit(3 * GB, 50 * GB) == "3 из 50 ГБ"
+    assert tc.traffic_short(0, 0, 0) == "📊 0 ГБ (безлимит)"
+    assert tc.traffic_short(TB, TB, 4 * TB) == "📊 2 из 4 ТБ"

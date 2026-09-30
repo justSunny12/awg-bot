@@ -87,7 +87,7 @@ def test_panel_text_mirrors_the_main_bot_layout(monkeypatch):
                   hostname="NASPi", server_name="awg-srv",
                   checks=[GwCheck("линк", True)], month_rx=10 * 1024 ** 3, month_tx=175 * 1024 ** 3)
     out = texts.gateway_panel(st)
-    assert out == ("🛰 NASPi · 🟢 линк поднят · 17 дн 20 ч\n"
+    assert out == ("🛰 <b>NASPi</b> · 🟢 линк поднят · 17 дн 20 ч\n"
                    "📡 Линк до awg-srv 🟢 69 с\n"
                    "📈 CPU 4% | 59 °C · RAM 51% · диск 58% · питание ОК\n"
                    "🩺 Здоровье ✅ · 📊 185 ГБ (↑10 ↓175)\n"
@@ -105,7 +105,7 @@ def test_health_screen_carries_module_and_kernels():
     st = GwStatus(checks=[GwCheck("ядра", True)], module_version="1.0.2026", srcversion="ABCDEF1234",
                   kernels_total=1, throttled={"raw": 0, "now": [], "ever": ["недонапряжение случалось"]})
     out = texts.gateway_health(st)
-    assert out == ("🩺 Здоровье шлюза · ✅ проблем нет\n"
+    assert out == ("🩺 <b>Здоровье шлюза</b> · ✅ проблем нет\n"
                    "✅ ядра\n"
                    "питание ОК (с загрузки: недонапряжение случалось)\n"
                    "Модуль awg 1.0.2026 · srcversion ABCDEF12… · ядер 1"), out
@@ -192,13 +192,13 @@ def test_bundle_link_change_detection_and_received_text(svc, monkeypatch, tmp_pa
     assert svc.inspect_bundle(bundle(link))["link_changed"] is False
     assert svc.inspect_bundle(bundle(link + "MTU = 1300\n"))["link_changed"] is True
     assert texts.gateway_bundle_received(False) == (
-        "📦 Конфигурация с сервера AWG\n"
+        "📦 <b>Конфигурация с сервера AWG</b>\n"
         "Конфиг линка не изменился — линк не перезапустится; правила переставятся")
     assert texts.gateway_bundle_received(True) == (
-        "📦 Конфигурация с сервера AWG\n"
+        "📦 <b>Конфигурация с сервера AWG</b>\n"
         "Линк перезапустится — РФ-доступ у всех прервётся на секунды; правила переставятся")
     # резерв или мёртвый линк: трафика на шлюзе нет — прерываться нечему
     assert texts.gateway_bundle_received(True, carries=False) == (
-        "📦 Конфигурация с сервера AWG\n"
+        "📦 <b>Конфигурация с сервера AWG</b>\n"
         "Линк перезапустится; правила переставятся")
     assert texts.gateway_bundle_received(False, carries=False) == texts.gateway_bundle_received(False)

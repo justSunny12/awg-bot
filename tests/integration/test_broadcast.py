@@ -148,7 +148,7 @@ def test_friends_clause_only_when_friends_exist(services, make_active_client):
     solo = make_active_client(name="Один", tg_id=6001)
     assert services.db.broadcast_has_friends([solo.id], cfg.ADMIN_ID) is False
     preview = texts.broadcast_preview("текст", 1, [solo], False)
-    assert preview.startswith("👆 Так увидят получатели · 1 адресат: профиль Один\n\n"), preview
+    assert preview.startswith("👆 <b>Так увидят получатели</b> · 1 адресат: профиль Один\n\n"), preview
     assert "делится" not in preview
 
     dc = services.add_device(solo.id, "Телефон")
@@ -167,7 +167,7 @@ def test_audience_names_are_profile_links(services, make_active_client):
     c = make_active_client(name="Один", tg_id=6002)
     link = f'<a href="https://t.me/awg_test_bot?start=cl-{c.id}">Один</a>'
     assert texts.broadcast_prompt([c], False, bot_username="awg_test_bot").startswith(
-        f"📢 Текст для профиля {link}\n")
+        f"📢 <b>Текст для профиля</b> {link}\n")
     assert link in texts.broadcast_preview("т", 1, [c], False, bot_username="awg_test_bot")
 
 
@@ -176,7 +176,7 @@ def test_audience_wording_matches_number_of_profiles(make_active_client):
     from awgbot.bot import texts
     k = make_active_client(name="Ксюша", tg_id=6003)
     d = make_active_client(name="Дима", tg_id=6004)
-    assert texts.broadcast_prompt([k], False).startswith("📢 Текст для профиля Ксюша\n")
-    assert texts.broadcast_prompt([k, d], False).startswith("📢 Текст для профилей: Ксюша, Дима\n")
+    assert texts.broadcast_prompt([k], False).startswith("📢 <b>Текст для профиля</b> Ксюша\n")
+    assert texts.broadcast_prompt([k, d], False).startswith("📢 <b>Текст для профилей:</b> Ксюша, Дима\n")
     assert "с кем он делится" in texts.broadcast_preview("т", 2, [k], True)
     assert "с кем они делятся" in texts.broadcast_preview("т", 3, [k, d], True)

@@ -38,15 +38,15 @@ async def test_menu_main_and_info_and_devices(services, fake_bot, make_active_cl
     cb, nav = _cb(fake_bot, 5000)
     await ch.menu_main(cb, cl, services, FakeState())
     text, labels = last_screen(nav)
-    assert text.startswith("👋 Клиент\n") and "📱 Устройства" in labels, (text, labels)
+    assert text.startswith("👋 <b>Клиент</b>\n") and "📱 Устройства" in labels, (text, labels)
     cb, nav = _cb(fake_bot, 5000)
     await ch.menu_info(cb, cl, services)
     text, labels = last_screen(nav)
-    assert text.startswith("💳 Подписка: годовая · 🟢 активна") and labels == ["⏸️ Пауза", "⬅️ Назад"]
+    assert text.startswith("💳 <b>Подписка:</b> годовая · 🟢 активна") and labels == ["⏸️ Пауза", "⬅️ Назад"]
     cb, nav = _cb(fake_bot, 5000)
     await ch.menu_devices(cb, cl, services)
     text, labels = last_screen(nav)
-    assert text == "📱 Устройства · 1 из 3" and labels == ["⚪ d", "➕ Устройство", "⬅️ Назад"], labels
+    assert text == "📱 <b>Устройства</b> · 1 из 3" and labels == ["⚪ d", "➕ Устройство", "⬅️ Назад"], labels
     assert cb.answers
 
 
@@ -69,7 +69,7 @@ async def test_menu_gen_empty_vs_present(services, fake_bot, make_active_client)
     cb3, nav3 = _cb(fake_bot, 5001)
     await ch.menu_gen_pick(cb3, Menu(action="gen_link"), cl, services)
     text, labels = last_screen(nav3)
-    assert text == "🔗 Ссылка — для какого устройства?" and labels == ["⚪ d", "⚪ e", "⬅️ Назад"]
+    assert text == "🔗 <b>Ссылка</b> — для какого устройства?" and labels == ["⚪ d", "⚪ e", "⬅️ Назад"]
 
 
 async def test_device_open_own_foreign_app(services, fake_bot, make_active_client):
@@ -105,7 +105,7 @@ async def test_own_card_carries_the_issue_row_first(services, fake_bot, make_act
     assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["✏️ Имя", "✏️ Лимит"],
                     ["👤 Другу", "🛑 Блок"], ["🗑 Удалить", "⬅️ Назад"]], rows
     head, usage = text.splitlines()
-    assert head == "⚪ iPhone" and usage == "Не подключался · 📊 0 из 100 ГБ (лимит профиля)", text
+    assert head == "⚪ <b>iPhone</b>" and usage == "Не подключался · 📊 0 из 100 ГБ (лимит профиля)", text
 
 
 async def test_device_connect_menu_bot_vs_app(services, fake_bot, make_active_client):
@@ -183,7 +183,7 @@ async def test_edit_device_traffic_flow(services, fake_bot, make_active_client):
     await ch.client_edit_device_traffic(cb, DeviceCB(action="edit_traffic", device_id=dc.device_id),
                                         cl, services, st)
     text, labels = last_screen(nav)
-    assert text == "📊 Лимит трафика устройства «d»"
+    assert text == "📊 <b>Лимит трафика устройства «d»</b>"
     assert labels == ["10 ГБ", "50 ГБ", "100 ГБ", "∞", "✏️ Другое", "⬅️ Отмена"], labels
     cb, nav = _cb(fake_bot, 5006)
     await ch.device_limit_preset(cb, PresetCB(kind="devlimit", ref=dc.device_id, val=-1),
@@ -315,7 +315,7 @@ async def test_client_block_unblock_own_device(services, fake_bot, make_active_c
     await ch.client_block_device(cb, BlockCB(target="dev", action="menu_block", ref=dc.device_id), cl, services)
     assert int(services.db.get_device(dc.device_id).block_reason) & int(DeviceBlock.USER)
     text, labels = last_screen(nav)
-    assert "✅ Разблок" in labels and text.startswith("⛔ d"), (text, labels)
+    assert "✅ Разблок" in labels and text.startswith("⛔ <b>d</b>"), (text, labels)
     cb2, nav2 = _cb(fake_bot, 5015)
     await ch.client_unblock_device(cb2, BlockCB(target="dev", action="menu_unblock", ref=dc.device_id), cl, services)
     assert int(services.db.get_device(dc.device_id).block_reason) & int(DeviceBlock.USER) == 0
@@ -341,7 +341,7 @@ async def test_pause_full_cycle(services, fake_bot, make_active_client):
     cb, nav = _cb(fake_bot, 5017)
     await ch.pause_ask(cb, PauseCB(action="ask", ref=client.id), cl, services, FakeState())
     text, labels = last_screen(nav)
-    assert text.startswith("⏸️ Пауза — до 28 дн.\n") and labels == [
+    assert text.startswith("⏸️ <b>Пауза</b> — до 28 дн.\n") and labels == [
         "7 дн.", "14 дн.", "28 дн.", "✏️ Другое", "⬅️ Отмена"], labels
     assert not _fresh(services, client).is_paused, "экран паузы уже поставил паузу"
     cb2, nav2 = _cb(fake_bot, 5017)
@@ -355,7 +355,7 @@ async def test_pause_full_cycle(services, fake_bot, make_active_client):
     assert edits[-1][2] is None, "итог — без кнопок, он остаётся следом"
     screen = [s for s in nav2.sent if s[0] == "answer"][-1]
     # своя пауза видна клиенту — строка состояния доступа над подпиской
-    assert screen[1].startswith("🟡 доступ приостановлен\n💳 Подписка: годовая\n"), screen[1]
+    assert screen[1].startswith("🟡 доступ приостановлен\n💳 <b>Подписка:</b> годовая\n"), screen[1]
     assert _rows(screen[2]) == [["▶️ Снять паузу", "⬅️ Назад"]]
     cl2 = _fresh(services, client)
     cb3, nav3 = _cb(fake_bot, 5017)
@@ -396,7 +396,7 @@ async def test_pause_warning_only_without_mail_escape(services, fake_bot, make_a
     cb, nav = _cb(fake_bot, 5024)
     await ch.pause_ask(cb, PauseCB(action="ask", ref=client.id), cl, services, FakeState())
     text = last_screen(nav)[0]
-    assert "⚠️" not in text and text.startswith("⏸️ Пауза — до 28 дн."), text
+    assert "⚠️" not in text and text.startswith("⏸️ <b>Пауза</b> — до 28 дн."), text
 
 
 async def test_subscription_screen_variants(services, fake_bot, make_active_client):
@@ -409,7 +409,7 @@ async def test_subscription_screen_variants(services, fake_bot, make_active_clie
     start, end = timeutil.parse_iso(c.period_start), timeutil.parse_iso(c.period_end)
     text, markup = await ch.sub_parts(services, y.id)
     lines = text.splitlines()
-    assert lines[0] == "💳 Подписка: годовая · 🟢 активна"
+    assert lines[0] == "💳 <b>Подписка:</b> годовая · 🟢 активна"
     assert lines[1] == (f"{timeutil.fmt_period_ui(start, end)} · "
                         f"ост. {timeutil.remaining_brief(end)}")
     if start.year != end.year:
@@ -417,13 +417,13 @@ async def test_subscription_screen_variants(services, fake_bot, make_active_clie
             "годовая через границу года — год у начала тоже, иначе даты не читаются"
     assert lines[2] == "⏸️ Пауза: 28 дн. доступно"
     assert lines[3].startswith("<blockquote expandable>+2 дн. паузы")
-    assert lines[-1] == "Лимиты: 50 ГБ в месяц · 4 устройства"
+    assert lines[-1] == "Включено в подписку: 50 ГБ в месяц · 4 устройства"
     assert _rows(markup) == [["⏸️ Пауза", "⬅️ Назад"]]
 
     # истекает — жёлтый кружок и дата со временем
     services.db.update_client_fields(y.id, notified_thresholds="10080")
     text, _ = await ch.sub_parts(services, y.id)
-    assert text.splitlines()[0] == f"💳 Подписка: годовая · 🟡 истекает {timeutil.fmt_dt_ui(end)}"
+    assert text.splitlines()[0] == f"💳 <b>Подписка:</b> годовая · 🟡 истекает {timeutil.fmt_dt_ui(end)}"
     services.db.update_client_fields(y.id, notified_thresholds="")
 
     # своя пауза
@@ -431,7 +431,7 @@ async def test_subscription_screen_variants(services, fake_bot, make_active_clie
     text, markup = await ch.sub_parts(services, y.id)
     lines = text.splitlines()
     assert lines[0] == "🟡 доступ приостановлен", "своя пауза — строка состояния доступа над подпиской"
-    assert lines[1] == "💳 Подписка: годовая"
+    assert lines[1] == "💳 <b>Подписка:</b> годовая"
     assert lines[3].startswith("⏸️ на паузе с ") and "из 5 дн. — неиспользованный остаток вернётся при досрочном возобновлении" in lines[3]
     assert "ост." not in text, "остаток на паузе не тикает"
     assert _rows(markup) == [["▶️ Снять паузу", "⬅️ Назад"]]
@@ -442,7 +442,7 @@ async def test_subscription_screen_variants(services, fake_bot, make_active_clie
     services._client_set_block(a.id, ClientBlock.PAUSED)
     text, markup = await ch.sub_parts(services, a.id)
     assert text.splitlines()[0] == "🟡 доступ приостановлен", text
-    assert text.splitlines()[1] == "💳 Подписка: годовая · ⏸️ приостановлена администратором", text
+    assert text.splitlines()[1] == "💳 <b>Подписка:</b> годовая · ⏸️ приостановлена администратором", text
     assert _rows(markup) == [["⬅️ Назад"]], "кнопка паузы/снятия при паузе администратора"
 
     # тихая пауза администратора клиенту не видна — ни строки доступа, ни паузы
@@ -456,7 +456,7 @@ async def test_subscription_screen_variants(services, fake_bot, make_active_clie
     # бессрочная — без паузы и без остатка
     n = make_active_client(tg_id=5033, period_kind="never")
     text, markup = await ch.sub_parts(services, n.id)
-    assert text.splitlines()[0] == "💳 Подписка: бессрочная · 🟢 активна"
+    assert text.splitlines()[0] == "💳 <b>Подписка:</b> бессрочная · 🟢 активна"
     assert "Пауза" not in text and "ост." not in text
     assert _rows(markup) == [["⬅️ Назад"]]
 
@@ -474,7 +474,7 @@ async def test_subscription_limits_mention_rf_only_when_granted(services, fake_b
     assert "🇷🇺" not in text and "РФ" not in text, text
     services.set_routing_allowed(c.id, True)
     text, _ = await ch.sub_parts(services, c.id)
-    assert text.splitlines()[-1] == "Лимиты: ∞ ГБ в месяц · 3 устройства · 🇷🇺 РФ-доступ", text
+    assert text.splitlines()[-1] == "Включено в подписку: ∞ ГБ в месяц · 3 устройства · 🇷🇺 РФ-доступ", text
 
 
 async def test_pause_ask_unavailable(services, fake_bot, make_active_client):
@@ -514,12 +514,12 @@ async def test_help_root_and_skip(services, fake_bot, make_active_client):
     cb, nav = _cb(fake_bot, 5021)
     await ch.help_root(cb)
     text, labels = last_screen(nav)
-    assert text == "❓ Помощь — какое устройство?"
+    assert text == "❓ <b>Помощь</b> — какое устройство?"
     assert labels == ["🍎 iPhone / iPad", "🤖 Android", "🪟 Windows", "🍏 Mac", "⬅️ В меню"], labels
     cb2, nav2 = _cb(fake_bot, 5021)
     await ch.help_skip(cb2, cl, services)
     assert cb2.answers
-    assert last_screen(nav2)[0].startswith("👋 Клиент\n"), "«Всё умею сам» возвращает на главную"
+    assert last_screen(nav2)[0].startswith("👋 <b>Клиент</b>\n"), "«Всё умею сам» возвращает на главную"
 
 
 async def test_client_renames_own_device(services, fake_bot, make_active_client, monkeypatch):
@@ -584,4 +584,4 @@ async def test_client_screens_do_not_show_rf_even_when_allowed_and_counted(
     assert "🇷🇺" not in card[0], card
     # в подписке «🇷🇺» — только слово в строке лимитов (доступ выдан), без байт
     assert [l for l in sub[0].splitlines() if "🇷🇺" in l] == [
-        "Лимиты: ∞ ГБ в месяц · 3 устройства · 🇷🇺 РФ-доступ"], sub
+        "Включено в подписку: ∞ ГБ в месяц · 3 устройства · 🇷🇺 РФ-доступ"], sub

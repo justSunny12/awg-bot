@@ -643,7 +643,7 @@ class LinkServer:
             dev = self.services.db.get_device(g.device_id) if g.device_id else None
             if g.id == slot_id:
                 if dev is not None:
-                    name = dev.name + (f", {g.label}" if getattr(g, "label", "") else "")
+                    name = dev.name + (f" · {g.label}" if getattr(g, "label", "") else "")
             elif dev is not None:
                 standby = True
         return {"standby": standby, "name": name}

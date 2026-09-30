@@ -52,7 +52,7 @@ async def test_panel_opens_when_allowed(services, make_active_client, fake_bot):
     cb, nav = _cb(fake_bot, 71)
     await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=c.id), c, services, FakeState())
     text, labels = last_screen(nav)
-    assert text.startswith("🇷🇺 РФ-доступ: вкл на всех"), text
+    assert text.startswith("🇷🇺 <b>РФ-доступ:</b> вкл на всех"), text
     # переключатель устройства — прямо на экране раздела, без промежуточного
     assert labels[0] == "✅ Телефон", labels
     assert labels[1:] == ["✅ Выбрать все", "➕ Сайт", "📋 Сайты", "⬅️ Назад"], labels
@@ -106,7 +106,7 @@ async def test_add_domains_reports_each_line(services, make_active_client, fake_
     first, rest = out[0][1].split("\n\n", 1)
     assert first.startswith("✅ Добавлено: bank.com, netflix.com · ⚠️ Не добавлено: сбер.мусор_ — "), first
     assert first.endswith("применится в теч. минуты, не сработало — переподключись"), first
-    assert rest.startswith("📋 Свои сайты · 2"), "после ввода — экран «Сайты», откуда пришли"
+    assert rest.startswith("📋 <b>Свои сайты</b> · 2"), "после ввода — экран «Сайты», откуда пришли"
     assert set(services.routing_domains(c.id)) == {"bank.com", "netflix.com"}
 
 
@@ -138,7 +138,7 @@ async def test_delete_answers_with_a_popup_and_redraws_sites_in_place(
     assert cb.answers == [("megafon.ru убран · применится в теч. минуты", False)], cb.answers
     assert not any(s[0] == "answer" for s in nav.sent), "след в чате вместо всплывашки"
     text, labels = last_screen(nav)
-    assert text.startswith("📋 Свои сайты · 1") and labels[0] == "➖ ozon.ru", (text, labels)
+    assert text.startswith("📋 <b>Свои сайты</b> · 1") and labels[0] == "➖ ozon.ru", (text, labels)
     assert "➖ megafon.ru" not in labels
 
 
@@ -267,7 +267,7 @@ async def test_admin_panel_opens_without_client_in_context(services, make_active
     cb, nav = _cb(fake_bot, config.ADMIN_ID)
     await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=0), None, services, FakeState())
     text, labels = last_screen(nav)
-    assert text.startswith("🇷🇺 РФ-доступ") and "➕ Сайт" in labels and "📋 Сайты" in labels, (text, labels)
+    assert text.startswith("🇷🇺 <b>РФ-доступ") and "➕ Сайт" in labels and "📋 Сайты" in labels, (text, labels)
     assert nav.sent[-1][2].inline_keyboard[-1][0].callback_data == "m:main"
 
 
@@ -729,10 +729,10 @@ async def test_routing_subsections_render_and_are_empty_when_off(services, monke
     # старые подразделы «Списки» и «Мониторинг» ведут в «⚙️ Параметры»
     for sec in ("rt_lists", "rt_mon", "rt_params"):
         text, markup = await sh._screen(sec, services)
-        assert text.startswith("⚙️ Параметры РФ-доступа\n"), (sec, text)
+        assert text.startswith("⚙️ <b>Параметры РФ-доступа</b>\n"), (sec, text)
         assert "Списки: 3 записи из 2 источников, 2 ч назад · раз в 12 ч" in text.split("\n"), text
     text, markup = await sh._screen("rt_users", services)
-    assert text.startswith("👥 Кому доступен РФ-доступ (тебе — всегда)"), text
+    assert text.startswith("👥 <b>Кому доступен РФ-доступ</b> (тебе — всегда)"), text
     monkeypatch.setattr(settings, "get_bool", lambda k, d=False: False)
     text, markup = await sh._screen("rt_lists", services)
     assert text == "🇷🇺 РФ-доступ выключен — раздел пуст, пока он не включён", text
@@ -1031,7 +1031,7 @@ async def test_device_switch_and_select_all_redraw_the_section_in_place(
     await routing_h.routing_device_toggle(cb, RoutingCB(action="dev", ref=b.device_id), c, services)
     assert cb.answers[-1] == ("выключено", False)
     text, labels = last_screen(nav)
-    assert text.startswith("🇷🇺 РФ-доступ: вкл на 1 из 2"), text
+    assert text.startswith("🇷🇺 <b>РФ-доступ:</b> вкл на 1 из 2"), text
     assert labels[:3] == ["✅ iPhone", "☑️ MacBook", "☑️ Выбрать все"], labels
     assert not any(s[0] == "answer" for s in nav.sent), "экран не на месте"
 
@@ -1045,7 +1045,7 @@ async def test_device_switch_and_select_all_redraw_the_section_in_place(
     assert cb.answers[-1] == ("Выключено на всех", False)
     text, labels = last_screen(nav)
     assert labels[:3] == ["☑️ iPhone", "☑️ MacBook", "☑️ Выбрать все"], labels
-    assert text.startswith("🇷🇺 РФ-доступ: выкл\nВключишь — банки, госуслуги"), text
+    assert text.startswith("🇷🇺 <b>РФ-доступ:</b> выкл\nВключишь — банки, госуслуги"), text
     assert services.routing_device_counts(c.id) == (0, 2) and a is not None
 
 

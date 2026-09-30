@@ -77,7 +77,7 @@ async def test_start_uses_the_tick_snapshot_and_refresh_probes_live(svc, fake_bo
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_refresh(cb, svc, FakeState())
     assert svc.probes == 2
-    assert any(t.startswith("🛰 pi · ") for kind, t, _ in msg.sent if kind == "edit_text")
+    assert any(t.startswith("🛰 <b>pi</b> · ") for kind, t, _ in msg.sent if kind == "edit_text")
 
 
 async def test_stale_snapshot_falls_back_to_live(svc, fake_bot):
@@ -102,7 +102,7 @@ async def test_bot_restart_is_confirmed_then_promised_and_kept(svc, fake_bot):
     assert svc.db.get_state("restart_wait") == ""
     edited = [r for r in fake_bot.records if r[0] == "edit_message_text"]
     assert edited and texts.BOT_RESTARTED in str(edited[-1])
-    assert any(r[0] == "send_message" and str(r[2]).startswith("🛰 pi · ") for r in fake_bot.records), \
+    assert any(r[0] == "send_message" and str(r[2]).startswith("🛰 <b>pi</b> · ") for r in fake_bot.records), \
         "панель после перезапуска не пришла"
 
 
@@ -111,7 +111,7 @@ async def test_health_screen_is_live(svc, fake_bot):
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_health(cb, svc)
     assert svc.probes == 1
-    assert any(t.startswith("🩺 Здоровье pi · ") for kind, t, _ in msg.sent if kind == "edit_text")
+    assert any(t.startswith("🩺 <b>Здоровье pi</b> · ") for kind, t, _ in msg.sent if kind == "edit_text")
 
 
 async def test_hide_button_deletes_the_notification(svc, fake_bot):
@@ -150,7 +150,7 @@ def test_mon_section_mirrors_main(monkeypatch):
     assert rows == [["⏱ Опрос: 3 мин", "🔢 Замеров: 5"], ["⏳ Линк: 5 мин", "✅ Звук 24/7"],
                     ["⬅️ Назад"]], rows
     assert texts.gw_settings_mon_text() == (
-        "🩺 Мониторинг · опрос раз в 3 мин · алерт после 5 плохих замеров · "
+        "🩺 <b>Мониторинг</b> · опрос раз в 3 мин · алерт после 5 плохих замеров · "
         "линк молчит дольше 5 мин — со звуком круглые сутки")
 
 
@@ -208,7 +208,7 @@ async def test_gateway_passphrase_flow(svc, fake_bot):
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     state = FakeState()
     await gh.gw_encryption(cb, svc, state)
-    assert any(t.startswith("🔐 Шифрование бэкапов") for kind, t, _ in msg.sent if kind == "edit_text")
+    assert any(t.startswith("🔐 <b>Шифрование бэкапов") for kind, t, _ in msg.sent if kind == "edit_text")
     await gh.gw_encryption_set(cb, svc, state)
     m = lambda t: FakeMessage(text=t, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_passphrase_first(m("correct horse battery"), state, svc)
@@ -227,7 +227,7 @@ async def test_gateway_email_section_and_channel_offer(svc, fake_bot, monkeypatc
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_section(cb, GwCB(action="email"), svc, FakeState())
     txt = [t for kind, t, _ in msg.sent if kind == "edit_text"][-1]
-    assert txt.startswith("✉️ E-mail · ящик не подключён") and "конфигурации шлюза" in txt, txt
+    assert txt.startswith("✉️ <b>E-mail</b> · ящик не подключён") and "конфигурации шлюза" in txt, txt
     assert "паузы" not in txt and "Аварийный выход" not in txt, "аварийного выхода у агента нет"
     await gh.gw_backup_channel(cb, GwCB(action="bk_ch", val="email"), svc)
     assert any("Почта не настроена" in t for kind, t, _ in msg.sent if kind == "edit_text")

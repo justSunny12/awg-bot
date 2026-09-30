@@ -207,7 +207,7 @@ async def admin_client_devices(cb: CallbackQuery, callback_data: ClientCB, servi
     devices = await call(services.db.list_devices, client.id)
     used, limit = await call(services.device_quota, client.id)
     from awgbot.bot import paging
-    await edit(cb, f"📱 Устройства профиля {texts._e(client.name)} · {used}" + (f" из {limit}" if limit else ""),
+    await edit(cb, texts.client_devices_header(client, used, limit),
                kb.admin_client_device_list(devices, client.id,
                                            page=paging.page_of(cb.message.chat.id, "clidevs", client.id)))
     await cb.answer()

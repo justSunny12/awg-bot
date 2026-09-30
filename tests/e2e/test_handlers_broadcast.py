@@ -175,7 +175,7 @@ async def test_photos_without_text_get_a_real_preview_not_a_demand(
     assert len(albums) == 1, "превью-альбом не построен без текста"
     assert [m.media for m in albums[0][2]] == ["FILE1", "FILE2"]
     said = [t for m in msgs for kind, t, _ in m.sent if kind == "answer"]
-    confirm = [t for t in said if t.startswith("👆 Так увидят получатели")]
+    confirm = [t for t in said if t.startswith("👆 <b>Так увидят получатели</b>")]
     assert len(confirm) == 1, said
     assert "✍️ Текста нет — уйдут только картинки" in confirm[0], "блок молчит про пустой текст"
     assert not any("Пришли текст" in t for t in said), \
@@ -342,7 +342,7 @@ async def test_broadcast_album_with_caption_is_one_action(
     assert media[0].caption == "Переезд начался"
     confirms = [t for m in (first, second) for kind, t, mk in m.sent
                 if kind == "answer" and mk is not None]
-    assert confirms and confirms[-1].startswith("👆 Так увидят получатели · 1 адресат: профиль Ксюша"), \
+    assert confirms and confirms[-1].startswith("👆 <b>Так увидят получатели</b> · 1 адресат: профиль Ксюша"), \
         "нет блока подтверждения"
     ids = (await state.get_data())["preview_ids"]
     assert len(ids) == 3, "в preview_ids не альбом плюс блок подтверждения"
@@ -416,7 +416,7 @@ async def test_broadcast_refuses_caption_over_limit_and_keeps_the_draft(
     msg2 = FakeMessage(text=long_text, chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID,
                        bot=fake_bot)
     await admin_h.broadcast_receive(msg2, state2, services)
-    assert any(t.startswith("👆 Так увидят получатели") for _, t, _ in msg2.sent)
+    assert any(t.startswith("👆 <b>Так увидят получатели</b>") for _, t, _ in msg2.sent)
 
 
 async def test_broadcast_send_revalidates_the_limit(services, make_active_client,
