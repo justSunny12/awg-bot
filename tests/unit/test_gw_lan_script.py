@@ -88,24 +88,24 @@ def test_domain_tool_adds_resolves_and_fills_the_set(domain_env):
     tool, dns_d, log, env = domain_env
     r = _run(tool, env, "add", "https://www.Example.com/path", "not a domain")
     assert r.returncode == 0, r.stderr
-    assert "example.com: добавлен" in r.stdout and "не похоже на домен" in r.stdout
+    assert "<code>example.com</code>: добавлен" in r.stdout and "не похоже на домен" in r.stdout
     assert (dns_d / "awg-gw-vpn-user.conf").read_text() == "nftset=/example.com/inet#awg_home#lan_vpn4\n"
     text = log.read_text()
     assert "systemctl restart dnsmasq" in text, "именно restart: SIGHUP конфиги не перечитывает"
     assert "nft add element inet awg_home lan_vpn4 { 93.184.216.34 }" in text
     assert "2 адрес(а) в наборе lan_vpn4" in r.stdout
-    assert "example.com: уже в списке" in _run(tool, env, "add", "example.com").stdout
+    assert "<code>example.com</code>: уже в списке" in _run(tool, env, "add", "example.com").stdout
 
 
 def test_domain_tool_moves_between_lists_and_deletes(domain_env):
     tool, dns_d, log, env = domain_env
     _run(tool, env, "add", "shop.ru")
     r = _run(tool, env, "ru", "shop.ru")                      # напрямую → уходит из туннельного
-    assert "shop.ru: добавлен" in r.stdout
+    assert "<code>shop.ru</code>: добавлен" in r.stdout
     assert "shop.ru" not in (dns_d / "awg-gw-vpn-user.conf").read_text()
     assert (dns_d / "awg-gw-ru-user.conf").read_text().strip() == "nftset=/shop.ru/inet#awg_home#lan_ru4"
     assert _run(tool, env, "list").stdout.strip() == "ru shop.ru"
-    assert "shop.ru: убран" in _run(tool, env, "del", "shop.ru").stdout
+    assert "<code>shop.ru</code>: убран" in _run(tool, env, "del", "shop.ru").stdout
     assert _run(tool, env, "list").stdout.strip() == ""
     assert "в списках нет" in _run(tool, env, "del", "shop.ru").stdout
 
@@ -984,7 +984,7 @@ def test_buttons_accept_exactly_what_the_canon_accepts(own_env, locale):
     lines = set(r.stdout.splitlines())
     disagree = []
     for d, ok in _DOMAIN_EXAMPLES.items():
-        took = f"{d}: добавлен" in lines
+        took = f"<code>{d}</code>: добавлен" in lines
         refused = f"{d}: не похоже на домен, пропущен" in lines
         assert took != refused, f"{d}: ни принят, ни отвергнут: {r.stdout}"
         if took != ok:
@@ -1152,7 +1152,7 @@ def test_leaving_direct_refills_lan_ru4_from_the_remaining_list(own_env):
     r = _run(tool, env, "del", "bank.ru")
     assert r.returncode == 0, r.stderr
     assert _set(_sets_of(dump), "lan_ru4") == {"10.1.1.1"}, "адрес убранного домена остался в lan_ru4"
-    assert r.stdout.strip() == "bank.ru: убран", r.stdout
+    assert r.stdout.strip() == "<code>bank.ru</code>: убран", r.stdout
     nft = _nft(log)
     assert "nft flush set inet awg_home lan_ru4" in nft, nft
     assert "nft add element inet awg_home lan_ru4 { 10.1.1.1 }" in nft, "оставшийся домен не вернулся в набор"
@@ -1269,7 +1269,7 @@ def test_a_repeated_add_changes_nothing(own_env):
     tool, dns_d, dump, log, env = own_env
     _own(dns_d, vpn=["news.org"])
     r = _run(tool, env, "add", "news.org")
-    assert r.returncode == 0 and "news.org: уже в списке" in r.stdout
+    assert r.returncode == 0 and "<code>news.org</code>: уже в списке" in r.stdout
     assert _log(log) == "", f"повтор без изменений — а рестарт или наборы тронуты: {_log(log)}"
 
 

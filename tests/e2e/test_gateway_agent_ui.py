@@ -695,7 +695,7 @@ async def test_a_huge_domain_input_result_still_fits_one_message(svc, fake_bot, 
         "iface": "eth0", "addr": "192.168.1.10", "domains": 1, "nets": 1, "lan_pkts": 1}))
     doms = [f"very-long-subdomain-name-{i:04d}.example-shop.com" for i in range(400)]
     monkeypatch.setattr(svc, "lan_own_lists", lambda: [("vpn", d) for d in doms[:10]])
-    monkeypatch.setattr(svc, "lan_domains", lambda cmd, domains: (True, "\n".join(f"{d}: добавлен" for d in domains)))
+    monkeypatch.setattr(svc, "lan_domains", lambda cmd, domains: (True, "\n".join(f"<code>{d}</code>: добавлен" for d in domains)))
     monkeypatch.setattr(svc, "own_active", lambda: False)
     st = FakeState()
     cb, nav = _acb(fake_bot)

@@ -699,18 +699,18 @@ else
         valid "$d" || { echo "$d: не похоже на домен, пропущен"; continue; }
         if [ "$cmd" = "del" ]; then
             if in_list "$d" vpn || in_list "$d" ru; then
-                drop_from "$d" vpn; drop_from "$d" ru; say "$d: убран"
+                drop_from "$d" vpn; drop_from "$d" ru; say "<code>$d</code>: убран"
             else
-                echo "$d: в списках нет"
+                echo "<code>$d</code>: в списках нет"
             fi
             continue
         fi
-        [ -n "$deny" ] && [ "$d" = "$deny" ] && { echo "$d: это хост сервера — его добавить нельзя"; continue; }
+        [ -n "$deny" ] && [ "$d" = "$deny" ] && { echo "<code>$d</code>: это хост сервера — его добавить нельзя"; continue; }
         if [ "$cmd" = "add" ]; then k=vpn; other=ru; set_="lan_vpn4"; else k=ru; other=vpn; set_="lan_ru4"; fi
-        in_list "$d" "$k" && { echo "$d: уже в списке"; continue; }
+        in_list "$d" "$k" && { echo "<code>$d</code>: уже в списке"; continue; }
         drop_from "$d" "$other"; add_to "$d" "$k"
         added="$added $d:$set_"
-        say "$d: добавлен"
+        say "<code>$d</code>: добавлен"
     done
 fi
 sort -u -o "$TMPD/want_vpn" "$TMPD/want_vpn"; sort -u -o "$TMPD/want_ru" "$TMPD/want_ru"

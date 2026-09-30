@@ -347,25 +347,16 @@ def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 330
     if len(rows) > len(keep):
         rest = len(rows) - len(keep)
         out += f"\n…и ещё {rest} " + plural_ru(rest, "строка", "строки", "строк")
-    body = ("\n".join(_domain_row(r) if ok else _e(r) for r in out.splitlines()) if out
-            else ("готово" if ok else "не удалось"))     # неудача уходит во всплывашку — без HTML
+    # Домены в строках итога скрипт сам обернул в <code> (иначе Telegram делает из
+    # них ссылки): остальное экранируем, свои теги пропускаем. Неудача уходит во
+    # всплывашку, где HTML не работает, — там теги снимаем.
+    if out:
+        body = (_e(out).replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>") if ok
+                else _e(out.replace("<code>", "").replace("</code>", "")))
+    else:
+        body = "готово" if ok else "не удалось"
     tail = SYNC_TAILS.get(sync, "")
     return ("✅ " if ok else "⚠️ ") + body + (f"\n{tail}" if tail else "")
-
-
-# Что скрипт говорит про домен (routing-gw-setup.sh, add/ru/del) — по этим словам
-# строка узнаётся как «домен: исход», и домен уходит в <code>.
-_DOMAIN_OUTCOMES = ("добавлен", "убран", "уже в списке", "в списках нет", "не похоже на домен",
-                    "это хост сервера")
-
-
-def _domain_row(row: str) -> str:
-    """Строка скрипта «домен: исход» — домен моноширинным (иначе Telegram
-    делает из него ссылку), исход текстом; прочие строки — как есть."""
-    head, sep, rest = row.partition(": ")
-    if sep and head and " " not in head and rest.startswith(_DOMAIN_OUTCOMES):
-        return f"<code>{_e(head)}</code>: {_e(rest)}"
-    return _e(row)
 
 
 def gw_settings_text() -> str:

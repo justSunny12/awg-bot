@@ -241,7 +241,7 @@ def _add_via_script(svc, host, monkeypatch, out_word: str = "добавлен"):
             else:
                 cur[d] = "ru" if cmd == "ru" else "vpn"
         host.write([d for d, k in cur.items() if k == "vpn"], [d for d, k in cur.items() if k == "ru"])
-        return True, "\n".join(f"{d}: {out_word}" for d in domains)
+        return True, "\n".join(f"<code>{d}</code>: {out_word}" for d in domains)   # как скрипт
     monkeypatch.setattr(svc, "lan_domains", lambda cmd, domains: lan_domains(cmd, domains))
 
 

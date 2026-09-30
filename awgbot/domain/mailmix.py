@@ -104,6 +104,10 @@ class MailMixin:
         return (self.email_account() is not None
                 and settings.get_bool("email.resume_enabled", True))
 
+    def email_mailbox(self) -> str:
+        """Логин ящика — он же адрес по умолчанию для кода из паузы."""
+        return self.db.get_state(self._MAIL_LOGIN_KEY) or ""
+
     def email_resume_address(self) -> str:
         """Куда клиент шлёт код: алиас из conf, иначе сам ящик."""
         alias = str(settings.get("email.resume_address", "") or "").strip()

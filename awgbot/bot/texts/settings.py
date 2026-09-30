@@ -360,12 +360,11 @@ _ADDRESS_KEYS = {"app.network.server_host", "app.client_config.dns1", "app.firew
 
 def _setting_value(key: str, value) -> str:
     """Значение настройки для экрана: адреса — каждый в <code>, остальное — текстом.
-    Списки и «a, b» через запятую — поэлементно. Слова с пробелом («сам ящик»
-    вместо пустого адреса) адресом не считаются."""
+    Списки и «a, b» через запятую — поэлементно."""
     items = list(value) if isinstance(value, (list, tuple)) else [x.strip() for x in str(value).split(",")]
     items = [str(x) for x in items if str(x).strip()]
     if key in _ADDRESS_KEYS:
-        return ", ".join(f"<code>{_e(x)}</code>" if " " not in x else _e(x) for x in items)
+        return ", ".join(f"<code>{_e(x)}</code>" for x in items)
     return _e(", ".join(items))
 
 
@@ -599,7 +598,8 @@ def settings_changed(key: str, old, new) -> str:
         _lo, _hi, label, unit = SETTINGS_BOUNDS[key]
         unit = unit_suffix(unit)
     old_s = _setting_value(key, old) if old not in (None, "", []) else "—"
-    return f"✅ {_e(label)}: {old_s} → {_setting_value(key, new)}{unit}"
+    new_s = _setting_value(key, new) if new not in (None, "", []) else "—"
+    return f"✅ {_e(label)}: {old_s} → {new_s}{unit}"
 
 
 def settings_ssh_allow_added(entries: list) -> str:

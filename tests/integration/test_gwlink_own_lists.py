@@ -549,7 +549,7 @@ async def test_a_canon_is_applied_by_the_real_script_and_a_button_reaches_the_ot
     assert [e for e in pair.ev if e[0] == 1] == [], "первый шлюз без своих списков прислал правки"
     # кнопка «➕ В туннель»
     ok, out = a.lan_domains("add", ["example.com"])
-    assert ok and "example.com: добавлен" in out, out
+    assert ok and "<code>example.com</code>: добавлен" in out, out
     restarts = pi.host.restarts()
     await linkclient.own_changed(a)
     my = await _next(y, "own_set")

@@ -184,8 +184,9 @@ async def _receive_text(message: Message, state: FSMContext, services, hooks: Ho
         raw = parts[0]
         shown_new = ", ".join(parts)
     elif key == "email.resume_address":
-        old = old or "сам ящик"
-        shown_new = raw or "сам ящик"
+        mailbox = await call(services.email_mailbox)      # без алиаса код идёт на сам ящик
+        old = old or mailbox
+        shown_new = raw or mailbox
     try:
         await call(settings.set_value, key, raw)
     except settings.SettingsWriteError as e:
