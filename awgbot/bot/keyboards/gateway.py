@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import settings
 from awgbot.bot.callbacks import UpdateCB, GwCB
 
-from .common import _chk, page_slice, page_nav, entry_tag, confirm
+from .common import paged_rows, _chk, entry_tag, confirm
 from .settings import backup_when_label, UPDATE_SCHEDULE_LABELS
 
 
@@ -59,14 +59,13 @@ def gateway_transit_kb(items=(), page: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="➕ В туннель", callback_data=GwCB(action="lan_add"))
     kb.button(text="➕ Напрямую", callback_data=GwCB(action="lan_ru"))
-    chunk, page, prev, nxt = page_slice(lan_own_sorted(list(items)), page, static=2)
-    for i, (kind, dom) in chunk:
-        kb.button(text=f"➖ {'🇷🇺' if kind == 'ru' else '🌍'} {dom}",
-                  callback_data=GwCB(action="lan_rm", val=f"{i}.{lan_own_tag(kind, dom)}"))
-    nav = page_nav(kb, "lanlist", 0, page, prev, nxt, GwCB(action="lan").pack())
+    rows = paged_rows(kb, lan_own_sorted(list(items)), page, static=2, screen="lanlist", ref=0,
+                      back=GwCB(action="lan").pack(),
+                      button=lambda i, kd: kb.button(text=f"➖ {'🇷🇺' if kd[0] == 'ru' else '🌍'} {kd[1]}",
+                                                     callback_data=GwCB(action="lan_rm", val=f"{i}.{lan_own_tag(kd[0], kd[1])}")))
     kb.button(text="❓ Роутер", callback_data=GwCB(action="lan_router"))
     kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
-    kb.adjust(2, *([1] * len(chunk)), *([nav] if nav else []), 2)
+    kb.adjust(2, *rows, 2)
     return kb.as_markup()
 
 
@@ -223,11 +222,9 @@ def gateway_ssh_kb(st: dict, page: int = 0) -> InlineKeyboardMarkup:
     kb.button(text="🅿️ Порт", callback_data=GwCB(action="ssh_port"))
     kb.button(text="➕ Адрес", callback_data=GwCB(action="ssh_add"))
     toggle = bool(st.get("new_plumbing"))
-    chunk, page, prev, nxt = page_slice(list(st.get("allow") or []), page, static=3 if toggle else 2)
-    for i, entry in chunk:
-        kb.button(text=f"➖ {entry}", callback_data=GwCB(action="ssh_del!", val=f"{i}.{entry_tag(entry)}"))
-    nav = page_nav(kb, "gwssh", 0, page, prev, nxt, GwCB(action="ssh").pack())
-    rows = [2, *([1] * len(chunk)), *([nav] if nav else [])]
+    rows = [2, *paged_rows(kb, list(st.get("allow") or []), page, static=3 if toggle else 2, screen="gwssh", ref=0,
+                           back=GwCB(action="ssh").pack(),
+                           button=lambda i, entry: kb.button(text=f"➖ {entry}", callback_data=GwCB(action="ssh_del!", val=f"{i}.{entry_tag(entry)}")))]
     if toggle:
         if st.get("filter"):
             kb.button(text="✅ Фильтр снаружи", callback_data=GwCB(action="ssh_off!"))

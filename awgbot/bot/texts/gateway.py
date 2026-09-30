@@ -48,20 +48,28 @@ def _gw_health_summary(checks) -> str:
     return "✅"
 
 
-def channel_panel_line() -> str:
+def _channel_view(chan: dict | None) -> dict:
+    """Состояние канала: аргументом от обработчика; без него — из клиента
+    канала (единственное место, где тексты его спрашивают)."""
+    if chan is not None:
+        return chan
+    from awgbot.runtime import linkclient
+    return linkclient.view()
+
+
+def channel_panel_line(chan: dict | None = None) -> str:
     """Хвост строки линка про упр. канал: «🔗 упр. канал 🟢»; канал не включён
     бандлом — пусто: сказать о нём нечего, а «выключено» читалось бы как поломка."""
-    from awgbot.runtime import linkclient
-    if not linkclient.enabled():
+    chan = _channel_view(chan)
+    if not chan["enabled"]:
         return ""
-    return "🔗 упр. канал " + ("🟢" if linkclient.online() else "⚪ нет связи")
+    return "🔗 упр. канал " + ("🟢" if chan["online"] else "⚪ нет связи")
 
 
-def _gw_role(st) -> str:
+def _gw_role(st, chan: dict) -> str:
     """Роль по каналу: «несёт трафик» / «в резерве»; канала или связи нет —
     состояние линка."""
-    from awgbot.runtime import linkclient
-    role = linkclient.role() if linkclient.enabled() and linkclient.online() else ""
+    role = chan["role"] if chan["enabled"] and chan["online"] else ""
     if role == "active":
         return "🟢 несёт трафик"
     if role:
@@ -69,27 +77,28 @@ def _gw_role(st) -> str:
     return "🟢 линк поднят" if st.link_up else "🔴 линк лежит"
 
 
-def gateway_panel(st, update_tag: str = "") -> str:
+def gateway_panel(st, update_tag: str = "", chan: dict | None = None) -> str:
     """Панель агента по строкам: имя и роль, линк и канал, предупреждения,
-    SSH, железо, VPN-транзит и списки, SMB, здоровье и трафик, свежесть."""
+    SSH, железо, VPN-транзит и списки, SMB, здоровье и трафик, свежесть.
+    chan — состояние канала (linkclient.view()); None — спросить самим."""
     from awgbot.util import timeutil
-    from awgbot.runtime import linkclient
+    chan = _channel_view(chan)
     host = _e(st.hostname) if st.hostname else "шлюз"
     up = f" · {timeutil.brief_units(timeutil.fmt_remaining_short(int(st.uptime_seconds)))}" \
         if st.uptime_seconds is not None else ""
-    parts = [f"🛰 {host} · {_gw_role(st)}{up}"]
-    chan = channel_panel_line()
+    parts = [f"🛰 {host} · {_gw_role(st, chan)}{up}"]
+    chan_line = channel_panel_line(chan)
     link = _gw_link_short(st)
     # всегда «Линк до …»: голое «Линк» читается как сетевой интерфейс
     link = link.replace("📡 Линк", f"📡 Линк до {_e(st.server_name or 'сервера AWG')}", 1)
-    parts.append(link + (f" · {chan}" if chan else ""))
+    parts.append(link + (f" · {chan_line}" if chan_line else ""))
     mark = getattr(st, "mark_status", "") or ""
     if mark and mark != "confirmed":
         # Статусы производит ровно один источник — routing-gw-setup.sh:
         # unmarked | confirmed | foreign | unconfirmed. Токен пометки при живом
         # канале агент отправляет сам — просить переслать сообщение незачем.
         unmarked = ("⚠️ Шлюз в боте сервера AWG не назначен — запрос ушёл по упр. каналу"
-                    if linkclient.online() else
+                    if chan["online"] else
                     "⚠️ Шлюз в боте сервера AWG не назначен, упр. канала нет — перешли ему сообщение из отчёта")
         parts.append({"unmarked": unmarked,
                       "foreign": "⚠️ Шлюз этого слота — другое устройство, линк лежит",

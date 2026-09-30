@@ -8,7 +8,7 @@ from awgbot.bot import texts
 from awgbot.domain import gateway as gw
 from awgbot.domain.gateway import GatewayServices, GwStatus, GwCheck
 from awgbot.infra.db import Database
-from awgbot.runtime import hostmetrics
+from awgbot.infra import hostmetrics
 
 
 @pytest.fixture()

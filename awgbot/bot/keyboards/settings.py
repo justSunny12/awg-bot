@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import settings
 from awgbot.bot.callbacks import Menu, UpdateCB, SetCB, GwCB, HideCB
 
-from .common import _chk, _tick, page_slice, page_nav, entry_tag, confirm
+from .common import paged_rows, _chk, _tick, entry_tag, confirm
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -146,11 +146,8 @@ def settings_firewall(st: dict, page: int = 0) -> InlineKeyboardMarkup:
     # разделитель полей — двоеточие, и любой IPv6 ломал бы упаковку.
     allow = list(st.get("raw_allow", []) or [])
     toggle = bool(st.get("enabled")) or bool(allow)
-    chunk, page, prev, nxt = page_slice(allow, page, static=3 if toggle else 2)
-    for i, entry in chunk:
-        kb.button(text=f"➖ {entry}", callback_data=SetCB(sec="fw", act="do", key="del", val=f"{i}.{entry_tag(entry)}"))
-    nav = page_nav(kb, "fw", 0, page, prev, nxt, SetCB(sec="fw").pack())
-    rows = [2, *([1] * len(chunk)), *([nav] if nav else [])]
+    rows = [2, *paged_rows(kb, allow, page, static=3 if toggle else 2, screen="fw", ref=0, back=SetCB(sec="fw").pack(),
+                           button=lambda i, entry: kb.button(text=f"➖ {entry}", callback_data=SetCB(sec="fw", act="do", key="del", val=f"{i}.{entry_tag(entry)}")))]
     if st.get("enabled"):
         kb.button(text="✅ Фильтр снаружи", callback_data=SetCB(sec="fw", act="do", key="off"))
         rows.append(1)

@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.bot.callbacks import RoutingCB, SetCB, GwMarkCB, GwSlotCB, Menu
 from awgbot.bot import texts as _texts
 
-from .common import _tick, _btn_suffix, page_slice, page_nav, select_all_button, confirm, entry_tag
+from .common import paged_rows, _tick, _btn_suffix, select_all_button, confirm, entry_tag
 from .settings import _cycle
 
 
@@ -17,18 +17,14 @@ def routing_panel(client_id: int, devices, *, lent_out=(), enabled: int = 0, tot
     удерживаемые), «Выбрать все» по правилу массового выбора, добавление
     сайтов и вход в их список. Переданные — строкой в тексте, без кнопки."""
     kb = InlineKeyboardBuilder()
-    rows = []
-    chunk, page, prev, nxt = page_slice(list(devices), page, static=3 if devices else 2)
-    for _i, d in chunk:
+
+    def _entry(_i, d):
         mark = "✅" if d.routing_on else "☑️"
         held = f" · от профиля {_texts.owner_name(d)}" if d.is_lent else ""
         kb.button(text=f"{mark} {d.name}{_btn_suffix(d)}{held}",
                   callback_data=RoutingCB(action="dev", ref=d.id))
-        rows.append(1)
-    nav = page_nav(kb, "rtpanel", client_id, page, prev, nxt,
-                   RoutingCB(action="panel", ref=client_id).pack())
-    if nav:
-        rows.append(nav)
+    rows = paged_rows(kb, list(devices), page, static=3 if devices else 2, screen="rtpanel", ref=client_id,
+                      back=RoutingCB(action="panel", ref=client_id).pack(), button=_entry)
     if devices:
         kb.add(select_all_button(enabled, total, RoutingCB(action="all", ref=client_id)))
         rows.append(1)
@@ -45,15 +41,9 @@ def routing_sites(client_id: int, domains: list, page: int = 0) -> InlineKeyboar
     """«📋 Сайты»: по кнопке «➖» на адрес (номер — по ПОЛНОМУ списку),
     добавить и очистить, назад — в раздел."""
     kb = InlineKeyboardBuilder()
-    rows = []
-    chunk, page, prev, nxt = page_slice(domains, page, static=2)
-    for i, dom in chunk:
-        kb.button(text=f"➖ {dom}", callback_data=RoutingCB(action="del", ref=client_id, idx=i, tag=entry_tag(dom)))
-        rows.append(1)
-    nav = page_nav(kb, "rtsites", client_id, page, prev, nxt,
-                   RoutingCB(action="sites", ref=client_id).pack())
-    if nav:
-        rows.append(nav)
+    rows = paged_rows(kb, domains, page, static=2, screen="rtsites", ref=client_id,
+                      back=RoutingCB(action="sites", ref=client_id).pack(),
+                      button=lambda i, dom: kb.button(text=f"➖ {dom}", callback_data=RoutingCB(action="del", ref=client_id, idx=i, tag=entry_tag(dom))))
     kb.button(text="➕ Сайт", callback_data=RoutingCB(action="add", ref=client_id))
     if domains:
         kb.button(text="🗑 Очистить", callback_data=RoutingCB(action="clear", ref=client_id))
@@ -204,12 +194,10 @@ def gateway_choose_kind(has_candidates: bool, slot: int = 0) -> InlineKeyboardMa
 def gateway_pick(devices, slot: int = 0, page: int = 0) -> InlineKeyboardMarkup:
     """Выбор шлюзового устройства из устройств админа."""
     kb = InlineKeyboardBuilder()
-    chunk, page, prev, nxt = page_slice(devices, page, static=1)
-    for _i, d in chunk:
-        kb.button(text=f"📱 {d.name} ({d.address})",
-                  callback_data=GwMarkCB(action="pick", device_id=d.id, slot=slot))
-    nav = page_nav(kb, "gwpick", slot, page, prev, nxt, GwMarkCB(action="pick_list", slot=slot).pack())
-    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []))
+    rows = paged_rows(kb, devices, page, static=1, screen="gwpick", ref=slot, back=GwMarkCB(action="pick_list", slot=slot).pack(),
+                      button=lambda _i, d: kb.button(text=f"📱 {d.name} ({d.address})",
+                                                     callback_data=GwMarkCB(action="pick", device_id=d.id, slot=slot)))
+    kb.adjust(*rows)
     kb.row(InlineKeyboardButton(text="⬅️ Назад",
                                 callback_data=SetCB(sec="rt_gw", act="open", key=str(slot or "")).pack()))
     return kb.as_markup()
@@ -302,12 +290,10 @@ def settings_routing_users(clients=(), page: int = 0) -> InlineKeyboardMarkup:
     массового выбора; назад — в «Шлюзы»."""
     kb = InlineKeyboardBuilder()
     clients = list(clients)
-    chunk, page, prev, nxt = page_slice(clients, page, static=2 if clients else 1)
-    for _i, c in chunk:
-        kb.button(text=f"{_tick(c.routing_allowed)} {c.name}",
-                  callback_data=SetCB(sec="rt", act="do", key="allow", val=str(c.id)))
-    nav = page_nav(kb, "rtusers", 0, page, prev, nxt, SetCB(sec="rt_users", act="open").pack())
-    rows = [*([1] * len(chunk)), *([nav] if nav else [])]
+    rows = paged_rows(kb, clients, page, static=2 if clients else 1, screen="rtusers", ref=0,
+                      back=SetCB(sec="rt_users", act="open").pack(),
+                      button=lambda _i, c: kb.button(text=f"{_tick(c.routing_allowed)} {c.name}",
+                                                     callback_data=SetCB(sec="rt", act="do", key="allow", val=str(c.id))))
     if clients:
         kb.add(select_all_button(sum(1 for c in clients if c.routing_allowed), len(clients),
                                  SetCB(sec="rt", act="do", key="allow_all")))

@@ -19,6 +19,7 @@ from awgbot.infra import routing
 from awgbot.domain import configgen
 from awgbot.domain.services.types import Notification, ServiceError
 from awgbot.util import nets
+from awgbot.util import gwlink
 
 
 log = logging.getLogger("awgbot.services")
@@ -246,10 +247,9 @@ class GatewayLinkMixin:
         аплинка устройства слота (в окне переезда — двойника, старый ключ
         отдельно), параметры линка слота."""
         admin_ips = self._gw_ssh_allow()
-        from awgbot.runtime import linkserver
         env = {"ADMIN_IPS": " ".join(admin_ips), **self._slot_env(gw), **self._lan_env(gw),
                # порт канала — из того же ключа, на котором слушает linkserver
-               "LINK_CHANNEL_PORT": str(linkserver.channel_port()),
+               "LINK_CHANNEL_PORT": str(gwlink.channel_port()),
                # keepalive линка — тем же значением, что у клиентских пиров: бот
                # читает YAML целиком, а скрипт линка — только awk-ом по строке в
                # двойных кавычках, и `keepalive_seconds: 25` без них у него
@@ -973,9 +973,11 @@ class GatewayLinkMixin:
 
     @staticmethod
     def _gw_deps_changed(before: str, after: str) -> list[str]:
-        """Что именно разошлось — для напоминания своим текстом."""
-        names = {"lan": "VPN-транзит", "nets": "локальные подсети",
-                 "resolver": "резолвер сервера", "peer": "локальные подсети других шлюзов"}
+        """Что именно разошлось — для напоминания; имена — те же, что у
+        расхождения по снимку канала (gwlink.KEY_HUMAN)."""
+        from awgbot.util import gwlink
+        names = {"lan": gwlink.KEY_HUMAN["LAN_MODE"], "nets": gwlink.KEY_HUMAN["HOME_SUBNETS"],
+                 "resolver": gwlink.KEY_HUMAN["RESOLVER"], "peer": gwlink.KEY_HUMAN["PEER_HOME_NETS"]}
         b = dict(x.split("=", 1) for x in before.split(";") if "=" in x)
         a = dict(x.split("=", 1) for x in after.split(";") if "=" in x)
         return [names[k] for k in ("lan", "nets", "resolver", "peer") if b.get(k, "") != a.get(k, "")]

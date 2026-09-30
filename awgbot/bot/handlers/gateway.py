@@ -32,9 +32,9 @@ from awgbot.bot.handlers.common import (call, edit_nav, send_menu, send_menu_to,
                                         ask_here, forget_secret, ask_tracked,
                                         drop_previous_nav)
 from awgbot.bot.states import SshPort, GwSshAllow
-from awgbot.domain.gwssh import SshOwnerRefusal
 from awgbot.domain.services import ServiceError
 from awgbot.util import bundlecrypt
+from awgbot.runtime import linkclient
 
 log = logging.getLogger("awgbot.gateway")
 
@@ -74,16 +74,16 @@ async def _panel(target, services, cb: CallbackQuery | None = None, fresh: bool 
     lan = bool(getattr(st, "lan", None))
     tag = await call(services.update_available_tag)
     if cb is not None:
-        await edit_nav(cb, services, texts.gateway_panel(st, tag), kb.gateway_panel_kb(lan))
+        await edit_nav(cb, services, texts.gateway_panel(st, tag, linkclient.view()), kb.gateway_panel_kb(lan))
     else:
-        await send_menu(target, services, texts.gateway_panel(st, tag), kb.gateway_panel_kb(lan),
+        await send_menu(target, services, texts.gateway_panel(st, tag, linkclient.view()), kb.gateway_panel_kb(lan),
                         keep_id=keep_id)
 
 
 async def _panel_parts(services, *, fresh: bool = False):
     """Текст и клавиатура панели агента — для показа без входящего сообщения."""
     st = await _status(services, fresh=fresh)
-    return (texts.gateway_panel(st, await call(services.update_available_tag)),
+    return (texts.gateway_panel(st, await call(services.update_available_tag), linkclient.view()),
             kb.gateway_panel_kb(bool(getattr(st, "lan", None))))
 
 
@@ -401,52 +401,17 @@ async def gw_ssh_port_back(cb: CallbackQuery, services, state: FSMContext):
     await cb.answer()
 
 
+def _port_dialog(services) -> core.PortDialog:
+    return core.PortDialog(
+        screen=services.ssh_screen, port_key="port", sec="ssh",
+        owner_refusal=lambda st, listening: (texts.gateway_ssh_owner_refusal(st, listening),
+                                             kb.gateway_back_kb("ssh")),
+        finisher_kb=kb.gateway_ssh_port_finisher_kb, changed_text=texts.gateway_ssh_port_changed)
+
+
 @router.message(SshPort.value)
 async def gw_ssh_port_received(message: Message, state: FSMContext, services):
-    raw = (message.text or "").strip()
-    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit() or not 1 <= int(raw) <= 65535:
-        await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535, попробуй ещё раз")
-        return
-    port = int(raw)
-    st = await call(services.ssh_screen)
-    if st.get("owner"):
-        # Чужой владелец — отказ экраном (текст длинный), ввод закрыт.
-        await state.clear()
-        await cleanup_content(message.bot, services, message.chat.id)
-        await send_menu(message, services,
-                        texts.gateway_ssh_owner_refusal(st, None if st.get("sshd_down") else st["port"]),
-                        kb.gateway_back_kb("ssh"))
-        return
-    if not st.get("sshd_down") and port == int(st.get("port") or 0):
-        await state.clear()
-        await cleanup_content(message.bot, services, message.chat.id)
-        await send_menu(message, services, texts.ssh_port_same(port), kb.gateway_ssh_port_finisher_kb())
-        return
-    try:
-        busy = await call(services.ssh_port_busy, port)
-    except ServiceError as e:
-        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
-        return
-    if busy:
-        await state.clear()
-        await cleanup_content(message.bot, services, message.chat.id)
-        await send_menu(message, services, texts.ssh_port_busy(port, "" if busy == "?" else busy),
-                        kb.gateway_ssh_port_finisher_kb())
-        return
-    await state.clear()
-    try:
-        old = await call(services.ssh_port_change, port)
-    except SshOwnerRefusal as e:
-        await cleanup_content(message.bot, services, message.chat.id)
-        st = await call(services.ssh_screen)
-        await send_menu(message, services, texts.gateway_ssh_owner_refusal(st, e.listening),
-                        kb.gateway_back_kb("ssh"))
-        return
-    except ServiceError as e:
-        await core.after_input(message, services, HOOKS, "ssh", f"⚠️ Порт не изменён: {texts._e(str(e))}")
-    else:
-        await core.after_input(message, services, HOOKS, "ssh", texts.gateway_ssh_port_changed(old, port))
+    await core.port_received(message, state, services, HOOKS, _port_dialog(services))
 
 
 @router.callback_query(GwCB.filter(F.action == "ssh_add"))

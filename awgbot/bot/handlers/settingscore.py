@@ -26,6 +26,7 @@ from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
 from awgbot.bot.states import BackupPassphrase, EmailSetup, SettingsInput
 from awgbot.bot.handlers.common import call, ask_tracked, cleanup_content, send_menu
+from awgbot.domain.services import ServiceError
 
 
 @dataclass
@@ -286,6 +287,71 @@ async def toggle_bool(cb: CallbackQuery, services, hooks: Hooks, key: str, sec: 
 
 
 # ── резервные копии ──────────────────────────────────────────────────────────
+
+# ── порт SSH: приём нового значения ──────────────────────────────────────────
+@dataclass
+class PortDialog:
+    """Чем роли различаются в диалоге порта: экран раздела и ключ порта в нём,
+    отказ при чужом владельце sshd_config (текст и клавиатура), финишер «тот
+    же / занят», раздел для итога и текст «порт изменён»."""
+    screen: Callable[[], dict]
+    port_key: str
+    sec: str
+    owner_refusal: Callable[[dict, int | None], tuple]
+    finisher_kb: Callable[[], object]
+    changed_text: Callable[[int, int], str]
+
+
+async def port_received(message: Message, state: FSMContext, services, hooks: Hooks,
+                        spec: PortDialog) -> None:
+    """Ввод порта: число 1–65535; чужой владелец конфига — отказ экраном (гонка:
+    владелец появился между показом и вводом); тот же порт и занятый — не
+    ошибка и не переспрос: диалог закрыт, финишер с выбором; иначе смена с
+    проверками сервиса и итог первой строкой раздела."""
+    from awgbot.infra import sshd
+    from awgbot.domain.gwssh import SshOwnerRefusal
+    raw = (message.text or "").strip()
+    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
+    if not raw.isdigit() or not sshd.valid_port(int(raw)):
+        await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535, попробуй ещё раз")
+        return
+    port = int(raw)
+    st = await call(spec.screen)
+    if st.get("owner"):
+        await state.clear()
+        await cleanup_content(message.bot, services, message.chat.id)
+        await send_menu(message, services,
+                        *spec.owner_refusal(st, None if st.get("sshd_down") else st.get(spec.port_key)))
+        return
+    if not st.get("sshd_down") and port == int(st.get(spec.port_key) or 0):
+        await state.clear()
+        await cleanup_content(message.bot, services, message.chat.id)
+        await send_menu(message, services, texts.ssh_port_same(port), spec.finisher_kb())
+        return
+    try:
+        busy = await call(services.ssh_port_busy, port)
+    except ServiceError as e:
+        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
+        return
+    if busy:
+        await state.clear()
+        await cleanup_content(message.bot, services, message.chat.id)
+        await send_menu(message, services, texts.ssh_port_busy(port, "" if busy == "?" else busy),
+                        spec.finisher_kb())
+        return
+    await state.clear()
+    try:
+        old = await call(services.ssh_port_change, port)
+    except SshOwnerRefusal as e:
+        await cleanup_content(message.bot, services, message.chat.id)
+        st = await call(spec.screen)
+        await send_menu(message, services, *spec.owner_refusal(st, e.listening))
+        return
+    except ServiceError as e:
+        await after_input(message, services, hooks, spec.sec, f"⚠️ Порт не изменён: {texts._e(str(e))}")
+    else:
+        await after_input(message, services, hooks, spec.sec, spec.changed_text(old, port))
+
 
 async def backup_now(cb: CallbackQuery, services, hooks: Hooks) -> None:
     """«Бэкап сейчас»: в почту, если канал — почта, иначе файлами в чат."""

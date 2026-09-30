@@ -28,6 +28,7 @@ from dataclasses import asdict, dataclass, field, fields
 from awgbot.core import config
 from awgbot.core import settings
 from awgbot.util import timeutil
+from awgbot.domain.evidence import EvidenceProbe  # noqa: E402
 
 log = logging.getLogger("awgbot.gateway")
 
@@ -1729,10 +1730,6 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         return out
 
     # ── настройки с сервера по каналу ────────
-    _SETTINGS_HUMAN = {"ADMIN_IPS": "устройства админа", "HOME_SUBNETS": "локальные подсети",
-                       "LAN_MODE": "VPN-транзит",
-                       "PEER_HOME_NETS": "локальные подсети других шлюзов", "RESOLVER": "резолвер"}
-
     def apply_link_settings(self, raw: dict) -> dict:
         """Применить настройки, присланные сервером по каналу.
 
@@ -1810,7 +1807,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
 
     def link_settings_note(self, result: dict) -> str:
         """Текст уведомления в чат агента о настройках, пришедших по каналу."""
-        what = ", ".join(self._SETTINGS_HUMAN.get(k, k) for k in result.get("changed") or [])
+        what = ", ".join(gwlink.KEY_HUMAN.get(k, k) for k in result.get("changed") or [])
         err = html.escape(str(result.get("error") or "ошибка"), quote=False)
         if result.get("ok"):
             return f"⚙️ Сервер AWG прислал новые настройки шлюза — применены: {what}"
@@ -1899,56 +1896,24 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         return self.channel.minus(0, link_rx, link_tx)
 
     def _egress_verdict(self, link_rx: int, link_tx: int) -> tuple[bool, float | None, str]:
-        """(есть ли выход наружу, мс последнего замера, чем доказано).
+        """(есть ли выход наружу, мс последнего замера, чем доказано:
+        трафик | проба | кэш) — domain/evidence.EvidenceProbe, одна механика с
+        сервером. Зонд — коннект с адреса локальной сети к двум фиксированным
+        целям, тик за тиком — ровно тот маячок, про который мы сами пишем
+        «строго периодический коннект — сигнатура»; поэтому сначала улики:
+        вырос tx линка — ответы из интернета дошли и ушли клиентам."""
+        ep = self.__dict__.get("_egress_probe")
+        if ep is None:
+            ep = self.__dict__["_egress_probe"] = EvidenceProbe(self._EGRESS_RETURN_BYTES)
 
-        Зонд — коннект С АДРЕСА КВАРТИРЫ к двум фиксированным целям, тик за
-        тиком: четыре с лишним сотни одинаковых коннектов в сутки, то есть
-        ровно тот маячок, про который мы сами пишем «строго периодический
-        коннект с домашнего адреса — сигнатура для ТСПУ». Поэтому сначала
-        улики, и только потом зонд.
-
-        Вырос tx линка — ответы из интернета дошли и ушли клиентам: путь
-        доказан даром. Вырос rx без tx — клиенты шлют, а обратно тихо: это и
-        есть отказ канала, зондируем немедленно. Не ходит никто — зондируем
-        редко и с джиттером: ждать ответа в простое всё равно некому.
-        """
-        import random
-        # Перезапуск линка — только по СЫРЫМ счётчикам: за вычетом канала они
-        # могут и убывать (накладные взяты с запасом), и такое убывание
-        # сходило бы за перезапуск — зонд каждым тактом, пока идут фиды.
-        last_raw = self.__dict__.get("_egress_raw")
-        self.__dict__["_egress_raw"] = (link_rx, link_tx)
-        restarted = last_raw is not None and (link_rx < last_raw[0] or link_tx < last_raw[1])
-        link_rx, link_tx = self._minus_channel(link_rx, link_tx)
-        seen = self.__dict__.get("_egress_seen")
-        now = time.monotonic()
-        every = self._egress_idle_seconds()
-
-        def _probe() -> tuple[bool, float | None, str]:
+        def _probe() -> tuple[bool, float | None]:
             ms = self.egress_probe()
-            self.__dict__["_egress_seen"] = {
-                "rx": link_rx, "tx": link_tx, "ms": ms, "ok": ms is not None,
-                "next": now + every * random.uniform(0.6, 1.4)}
-            return ms is not None, ms, "проба"
+            return ms is not None, ms
 
-        # Счётчики сбрасывает подъём линка: «ушли вниз» — не отказ канала, а
-        # перезапуск awg-quick, и сравнивать больше не с чем.
-        if seen is None or restarted:
-            return _probe()
-        returned = link_tx - seen["tx"] > self._EGRESS_RETURN_BYTES
-        demand = link_rx - seen["rx"] > self._EGRESS_RETURN_BYTES
-        if returned:
-            # Такт зонда отодвигаем, как после зонда: улика — доказательство
-            # СИЛЬНЕЕ пробы, и после неё ждать столько же честно. Иначе первый
-            # же тик после конца трафика уходил бы зондом, а конец трафика —
-            # это обычный вечер, а не отказ.
-            seen.update(rx=link_rx, tx=link_tx, ok=True,
-                        next=now + every * random.uniform(0.6, 1.4))
-            return True, seen["ms"], "трафик"
-        if demand or every <= 0 or now >= seen.get("next", 0.0):
-            return _probe()
-        seen.update(rx=link_rx, tx=link_tx)
-        return seen["ok"], seen["ms"], "кэш"
+        (ok, ms), src = ep.verdict(link_rx, link_tx, minus=self._minus_channel, probe=_probe,
+                                   every=self._egress_idle_seconds(),
+                                   on_traffic=lambda prev: (True, prev[1]), back_is_rx=False)
+        return ok, ms, {"probe": "проба", "traffic": "трафик", "cache": "кэш"}[src]
 
     @staticmethod
     def _egress_one(host: str, port: int) -> float | None:
@@ -2035,7 +2000,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         self.invalidate_ssh_static()
 
     def _static(self) -> tuple[tuple[str, str], tuple[list[str], int], str | None]:
-        from awgbot.runtime import hostmetrics
+        from awgbot.infra import hostmetrics
         c = self.__dict__.get("_static_cache")
         if c and time.monotonic() - c[0] < self._STATIC_TTL:
             return c[1], c[2], c[3]
@@ -2049,7 +2014,7 @@ class GatewayServices(SelfUpdateMixin, BackupCryptoMixin, MailMixin, GwSshMixin)
         snapshot(): он же сохраняет снимок для панели, иначе панель и здоровье
         показывали разные моменты. Редко меняющееся (модуль, ядра, SMART) — из
         кэша, который кнопки сбрасывают через invalidate_static()."""
-        from awgbot.runtime import hostmetrics
+        from awgbot.infra import hostmetrics
         st = GwStatus()
         st.link_up, st.handshake_age, st.rx, st.tx = self.link_status()
         checks = list(self.plumbing_checks())

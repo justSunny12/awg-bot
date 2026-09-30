@@ -71,7 +71,9 @@ DEFAULT_PORT = gwlink.DEFAULT_PORT
 
 
 def channel_port() -> int:
-    return settings.get_int("app.routing.link_channel_port", gwlink.DEFAULT_PORT)
+    """Порт слушателя — из общего места (gwlink); своё имя оставлено, чтобы
+    тесты подменяли порт слушателю, не трогая бандл и сторож."""
+    return gwlink.channel_port()
 
 
 def vps_address(link_cidr: str) -> str:

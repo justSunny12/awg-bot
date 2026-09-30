@@ -186,7 +186,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
 
             def _monitor_state() -> list:
                 from awgbot.bot import texts
-                from awgbot.runtime import hostmetrics
+                from awgbot.infra import hostmetrics
                 notes = []
                 with db.transaction():
                     prev = db.get_state("last_server_ok")

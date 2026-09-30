@@ -408,7 +408,7 @@ class StatusMixin:
         started_at — детект рестарта, online_count — опросчик трафика, а метрики
         железа (CPU/RAM/диск) монитор снимает ЛОКАЛЬНО (co-located) — hostmetrics. Возраст
         метрик показываем в инфобоксе (обновляет монитор каждый тик, локально)."""
-        from awgbot.runtime import hostmetrics
+        from awgbot.infra import hostmetrics
         ok_raw = self.db.get_state("server_ok_view")
         if ok_raw is None:
             ok_raw = self.db.get_state("last_server_ok")
@@ -448,7 +448,7 @@ class StatusMixin:
         потом читают из state как обычно (0 docker exec на показ). Возвращает
         уведомления опроса (поздравления переезда) — отправить их обязан
         вызывающий."""
-        from awgbot.runtime import hostmetrics
+        from awgbot.infra import hostmetrics
         ok = self.server_ok()
         # Только показ: last_server_ok принадлежит монитору (по нему он видит
         # скачок 🔴/🟢), а метку старта ведёт детект рестарта — прямая запись

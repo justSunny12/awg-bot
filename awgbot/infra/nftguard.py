@@ -354,7 +354,7 @@ def link_channel_port() -> int:
     if not link_ifaces():
         return 0
     from awgbot.util import gwlink
-    return settings.get_int("app.routing.link_channel_port", gwlink.DEFAULT_PORT)
+    return gwlink.channel_port()
 
 
 def _nat_exclude_ifs() -> list[str]:

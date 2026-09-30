@@ -151,6 +151,20 @@ def page_nav(kb: InlineKeyboardBuilder, screen: str, ref: int, page: int,
     return n
 
 
+def paged_rows(kb: InlineKeyboardBuilder, items, page: int, *, static: int, screen: str,
+               ref: int, back: str, button) -> list[int]:
+    """Список с листанием одним вызовом: page_slice → кнопки записей → ряд
+    листания. button(index, item) добавляет кнопку записи (index — номер в
+    ПОЛНОМ списке, для колбэков удаления и переключения). Возвращает ряды для
+    adjust: по одной кнопке на запись и ряд листания, если он есть; хвост
+    экрана вызывающий добавляет сам."""
+    chunk, page, prev, nxt = page_slice(items, page, static)
+    for i, item in chunk:
+        button(i, item)
+    nav = page_nav(kb, screen, ref, page, prev, nxt, back)
+    return [*([1] * len(chunk)), *([nav] if nav else [])]
+
+
 def issuable(devices) -> list:
     """Устройства, которым можно выдать ссылку/QR/файл: все, кроме шлюза —
     его конфиг едет только внутри конфигурации шлюза, сервис такую выдачу

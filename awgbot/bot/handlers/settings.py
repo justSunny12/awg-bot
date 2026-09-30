@@ -27,7 +27,6 @@ from awgbot.bot.handlers.common import (call, edit, send_menu, show_main_menu, c
                                         ask_tracked, cleanup_content)
 from awgbot.domain.services import ServiceError
 from awgbot.util import bundlecrypt
-from awgbot.domain.gwssh import SshOwnerRefusal
 from awgbot.bot.handlers.common import send_menu_to
 
 log = logging.getLogger("awgbot.settings")
@@ -1086,46 +1085,18 @@ async def ssh_port_ask(cb: CallbackQuery, state: FSMContext, services):
     await cb.answer()
 
 
+def _port_dialog(services) -> core.PortDialog:
+    return core.PortDialog(
+        screen=services.firewall_screen, port_key="ssh_port", sec="fw",
+        owner_refusal=lambda st, listening: (
+            texts.ssh_owner_refusal(st, st.get("listening") if listening is None else listening),
+            kb.settings_back("fw")),
+        finisher_kb=kb.ssh_port_finisher, changed_text=texts.ssh_port_changed)
+
+
 @router.message(SshPort.value)
 async def ssh_port_received(message: Message, state: FSMContext, services):
-    raw = (message.text or "").strip()
-    await call(services.db.add_content_msg_id, message.chat.id, message.message_id)
-    if not raw.isdigit() or not 1 <= int(raw) <= 65535:
-        await ask_tracked(message, services, "⚠️ Порт — число от 1 до 65535, попробуй ещё раз")
-        return
-    port = int(raw)
-    if port == int((await call(services.firewall_screen)).get("ssh_port") or 0):
-        # Тот же порт — не ошибка и не «занят»: диалог закрыт, финишер с выбором.
-        await state.clear()
-        await cleanup_content(message.bot, services, message.chat.id)
-        await send_menu(message, services, texts.ssh_port_same(port), kb.ssh_port_finisher())
-        return
-    try:
-        busy = await call(services.ssh_port_busy, port)
-    except ServiceError as e:
-        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
-        return
-    if busy:
-        # Отказ, не переспрос: диалог закрыт, финишер с выбором — другой порт
-        # или раздел.
-        await state.clear()
-        await cleanup_content(message.bot, services, message.chat.id)
-        await send_menu(message, services, texts.ssh_port_busy(port, "" if busy == "?" else busy),
-                        kb.ssh_port_finisher())
-        return
-    await state.clear()
-    try:
-        old = await call(services.ssh_port_change, port)
-    except SshOwnerRefusal as e:
-        # гонка: владелец появился между показом экрана и вводом
-        await cleanup_content(message.bot, services, message.chat.id)
-        st = await call(services.firewall_screen)
-        await send_menu(message, services, texts.ssh_owner_refusal(st, e.listening), kb.settings_back("fw"))
-        return
-    except ServiceError as e:
-        await core.after_input(message, services, HOOKS, "fw", f"⚠️ Порт не изменён: {texts._e(str(e))}")
-    else:
-        await core.after_input(message, services, HOOKS, "fw", texts.ssh_port_changed(old, port))
+    await core.port_received(message, state, services, HOOKS, _port_dialog(services))
 
 
 @router.callback_query(SetCB.filter((F.sec == "fw") & (F.act == "do")

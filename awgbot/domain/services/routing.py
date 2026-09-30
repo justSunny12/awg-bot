@@ -18,6 +18,7 @@ from awgbot.domain import routing as domain_routing
 from awgbot.domain.services.types import Notification, RoutingAddResult, ServiceError
 from awgbot.domain.services.base import _e
 from awgbot.infra import bootid
+from awgbot.domain.evidence import EvidenceProbe
 
 
 log = logging.getLogger("awgbot.services")
@@ -912,7 +913,7 @@ class RoutingMixin:
         роли или удаления слота кэшированный вердикт относится к другому миру."""
         self.__dict__.setdefault("_rt_standby_next", {}).pop(slot_id, None)
         self.__dict__.setdefault("_rt_standby_last", {}).pop(slot_id, None)
-        self.__dict__.setdefault("_rt_active_seen", {}).pop(slot_id, None)
+        self.__dict__.setdefault("_rt_active_probe", {}).pop(slot_id, None)
 
     # Рост rx линка за такт, который НЕ подделать служебным трафиком: keepalive
     # это 32 байта, хендшейк вместе с джанком AmneziaWG (Jc ≤ 10 пакетов по
@@ -926,82 +927,34 @@ class RoutingMixin:
         base = settings.get_int("app.routing.probe_seconds", 30)
         return base * float(settings.get("app.routing.probe_idle_multiplier", 10) or 0)
 
-    def _link_minus_channel(self, slot_id: int, st: dict) -> dict:
-        """Счётчики линка за вычетом канала линка: снимки, ответы и фиды идут
-        тем же линком, и без вычета сходили бы за обратный трафик клиентов —
-        ложная улика ровно тогда, когда канал крутится в переподключениях или
-        везёт фиды."""
-        rx, tx = self.channel.minus(slot_id, st["rx"], st["tx"])
-        return {**st, "rx": rx, "tx": tx}
-
     def _active_verdict(self, gw) -> str:
-        """Живость АКТИВНОГО слота: сначала бесплатные улики, потом зонд.
+        """Живость АКТИВНОГО слота: сначала бесплатные улики, потом зонд
+        (domain/evidence.EvidenceProbe — одна механика с агентом).
 
         Вернувшийся через линк трафик клиентов — прямое доказательство пути
         ВПС → линк → шлюз → интернет → обратно, и оно сильнее зонда: зонд
         проверяет одну цель на 53-м порту, а это настоящие сессии живых людей.
-        Стоит оно при этом ноль пакетов наружу.
-
-        Улик нет — смотрим, есть ли спрос: клиенты шлют в линк (растёт tx), а
-        обратно ничего — это худший случай (аплинк шлюза лёг, форвардинг
-        слетел), и зондируем каждый такт. Не ходит никто — растягиваем такт с
-        джиттером: коннект раз в полминуты с адреса ВПС в одну и ту же цель
-        сам по себе сигнатура, и платить ею за скорость реакции там, где никто
-        не ждёт ответа, незачем. Между зондами живость держит свежесть
-        хендшейка — это локальный exec, наружу не уходит ничего.
+        Улика засчитывается только при живом хендшейке; между зондами живость
+        держит свежесть хендшейка — это локальный exec, наружу не уходит ничего.
         """
-        import random
-        import time as _time
-        seen = self.__dict__.setdefault("_rt_active_seen", {})
+        probes = self.__dict__.setdefault("_rt_active_probe", {})
         st = routing.link_peer_state(gw.link_if)
-        # Перезапуск линка — только по СЫРЫМ счётчикам: за вычетом канала они
-        # могут и убывать (накладные взяты с запасом), и такое убывание
-        # сходило бы за перезапуск — зонд каждым тактом, пока идут фиды.
-        raws = self.__dict__.setdefault("_rt_active_raw", {})
-        last_raw = raws.get(gw.id)
-        restarted = False
-        if st is not None:
-            restarted = last_raw is not None and (st["rx"] < last_raw[0] or st["tx"] < last_raw[1])
-            raws[gw.id] = (st["rx"], st["tx"])
-            st = self._link_minus_channel(gw.id, st)
-        now = _time.monotonic()
-        prev = seen.get(gw.id)
         if st is None:
-            seen.pop(gw.id, None)
+            probes.pop(gw.id, None)
             return self._probe_slot(gw, active=True)
+        ep = probes.get(gw.id)
+        if ep is None:
+            ep = probes[gw.id] = EvidenceProbe(self._RT_RETURN_BYTES)
         fresh = st["age"] is not None and st["age"] <= self._RT_STANDBY_HANDSHAKE_MAX
-        every = self._rt_idle_probe_interval()
-
-        def _probe() -> str:
-            v = self._probe_slot(gw, active=True)
-            seen[gw.id] = {"rx": st["rx"], "tx": st["tx"], "verdict": v,
-                           "next": now + every * random.uniform(0.6, 1.4)}
-            return v
-
-        if prev is None:
-            return _probe()
-        # Счётчики сбрасываются вместе с интерфейсом: линк перезапустили —
-        # прежний замер не с чем сравнивать, и «упало» тут означало бы отвал
-        # шлюза там, где была перезагрузка awg-quick.
-        if restarted:
-            return _probe()
-        returned = st["rx"] - prev["rx"] > self._RT_RETURN_BYTES
-        demand = st["tx"] - prev["tx"] > self._RT_RETURN_BYTES
-        if returned and fresh:
-            # Такт зонда отодвигаем, как после зонда: улика — доказательство
-            # СИЛЬНЕЕ пробы. Иначе первый же тик после конца трафика уходил бы
-            # зондом, а конец трафика — это обычный вечер, а не отказ.
-            prev.update(rx=st["rx"], tx=st["tx"], verdict=routing.PROBE_OK,
-                        next=now + every * random.uniform(0.6, 1.4))
-            return routing.PROBE_OK
-        if demand or every <= 0 or now >= prev.get("next", 0.0):
-            return _probe()
-        prev.update(rx=st["rx"], tx=st["tx"])
-        # Кэшированный «в порядке» живёт ровно до тех пор, пока жив хендшейк:
-        # молчащий шлюз обязан проявиться сам, без зонда.
-        if not fresh:
+        result, src = ep.verdict(
+            st["rx"], st["tx"], minus=lambda rx, tx: self.channel.minus(gw.id, rx, tx),
+            probe=lambda: self._probe_slot(gw, active=True), every=self._rt_idle_probe_interval(),
+            on_traffic=lambda _prev: routing.PROBE_OK, back_is_rx=True, fresh=fresh)
+        if src == "cache" and not fresh:
+            # кэшированный «в порядке» живёт ровно до тех пор, пока жив
+            # хендшейк: молчащий шлюз обязан проявиться сам, без зонда
             return routing.PROBE_DOWN
-        return prev.get("verdict", routing.PROBE_OK)
+        return result
 
     def _probe_slots(self, slots, active) -> dict:
         """Все слоты разом: зонды независимы, а последовательно при лежащем

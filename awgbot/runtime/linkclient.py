@@ -644,6 +644,13 @@ def online() -> bool:
     return _client is not None and _client._writer is not None
 
 
+def view() -> dict:
+    """Состояние канала для текстов панели одним словарём: включён ли бандлом,
+    открыта ли сессия, роль по последнему слову сервера."""
+    en, on = enabled(), online()
+    return {"enabled": en, "online": on, "role": role() if en and on else ""}
+
+
 async def on_tick(services) -> None:
     """После тика монитора: отправить дельту, если что-то действительно
     изменилось. Зовётся из задачи планировщика, а не своим расписанием —

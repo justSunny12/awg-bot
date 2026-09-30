@@ -1,4 +1,4 @@
-"""Unit: awgbot.runtime.hostmetrics — локальное чтение метрик железа.
+"""Unit: awgbot.infra.hostmetrics — локальное чтение метрик железа.
 
 Файлы /proc и statvfs подменяем, чтобы тест был детерминирован и не зависел
 от нагрузки песочницы.
@@ -6,7 +6,7 @@
 
 import pytest
 
-from awgbot.runtime import hostmetrics as hm
+from awgbot.infra import hostmetrics as hm
 
 pytestmark = pytest.mark.unit
 
@@ -94,7 +94,7 @@ def test_get_host_metrics_corrupt(tmp_path):
 def test_throttled_word_is_read_from_sysfs_before_vcgencmd(tmp_path):
     """На Pi 4/5 слово троттлинга лежит в sysfs — файл вместо exec vcgencmd на
     каждый тик; прошивка пишет hex с «0x» и без."""
-    from awgbot.runtime import hostmetrics as hm
+    from awgbot.infra import hostmetrics as hm
     p = tmp_path / "get_throttled"
     p.write_text("0x50005\n")
     assert hm._read_throttled_sysfs(str(p)) == 0x50005

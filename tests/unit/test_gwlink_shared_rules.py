@@ -88,7 +88,7 @@ def test_one_default_port_on_both_ends_and_in_both_scripts(monkeypatch):
     monkeypatch.setattr(settings, "get_int", lambda k, d=None:
                         d if k == "app.routing.link_channel_port" else real(k, d))
     port = gwlink.DEFAULT_PORT
-    assert linkserver.channel_port() == port, "слушатель ВПС без настройки встал на другой порт"
+    assert gwlink.channel_port() == port, "слушатель ВПС без настройки встал на другой порт"
     monkeypatch.setattr(nftguard, "link_ifaces", lambda: ["awglink"])   # линк есть — порт открыт
     assert nftguard.link_channel_port() == port, "файервол ВПС открывает не тот порт, что слушает канал"
     monkeypatch.setattr(gwguard, "unit_env", lambda k: "")

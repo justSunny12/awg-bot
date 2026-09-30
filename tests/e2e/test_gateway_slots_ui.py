@@ -709,7 +709,7 @@ async def test_lan_mode_travels_in_the_bundle_and_reminds_on_change(services, sl
     assert services.gw_bundle_drift_notes() == [], "один раз на расхождение"
     services.gateway_set_lan_mode(1, False)
     notes = services.gw_bundle_drift_notes()
-    assert len(notes) == 1 and "VPN-транзит" in notes[0].text and "резолвер сервера" in notes[0].text
+    assert len(notes) == 1 and "VPN-транзит" in notes[0].text and "резолвер" in notes[0].text
     assert "без VPN" not in notes[0].text
 
 

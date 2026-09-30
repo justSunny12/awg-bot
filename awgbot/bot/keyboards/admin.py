@@ -12,7 +12,7 @@ from awgbot.bot.callbacks import (
     ReassignCB, RoutingCB, SetCB, BroadcastCB)
 from awgbot.bot import texts as _texts
 
-from .common import (_btn_suffix, _manual_block_button, page_slice, page_nav, confirm, to_menu,
+from .common import (paged_rows, _btn_suffix, _manual_block_button, confirm, to_menu,
                      MAX_ROWS)
 
 
@@ -66,56 +66,49 @@ def _sorted_devices(devices) -> list:
 def admin_devices(devices, page: int = 0, *, can_add: bool = True) -> InlineKeyboardMarkup:
     """«📱 Мои устройства» админа: список (шлюзы вверху), добавить, назад."""
     kb = InlineKeyboardBuilder()
-    chunk, page, prev, nxt = page_slice(_sorted_devices(devices), page, static=1)
-    for _i, d in chunk:
-        kb.button(text=_dev_label(d), callback_data=DeviceCB(action="open", device_id=d.id))
-    nav = page_nav(kb, "devices", 0, page, prev, nxt, Menu(action="devices").pack())
+    rows = paged_rows(kb, _sorted_devices(devices), page, static=1, screen="devices", ref=0,
+                      back=Menu(action="devices").pack(),
+                      button=lambda _i, d: kb.button(text=_dev_label(d), callback_data=DeviceCB(action="open", device_id=d.id)))
     tail = 0
     if can_add:
         kb.button(text="➕ Устройство", callback_data=AdminSelfCB(action="add"))
         tail += 1
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
     tail += 1
-    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), tail)
+    kb.adjust(*rows, tail)
     return kb.as_markup()
 
 
 def admin_client_device_list(devices, client_id: int, page: int = 0) -> InlineKeyboardMarkup:
     """Устройства профиля — когда в карточку они не влезли."""
     kb = InlineKeyboardBuilder()
-    chunk, page, prev, nxt = page_slice(_sorted_devices(devices), page, static=1)
-    for _i, d in chunk:
-        kb.button(text=_dev_label(d), callback_data=DeviceCB(action="open", device_id=d.id))
-    nav = page_nav(kb, "clidevs", client_id, page, prev, nxt,
-                   ClientCB(action="devices", client_id=client_id).pack())
+    rows = paged_rows(kb, _sorted_devices(devices), page, static=1, screen="clidevs", ref=client_id,
+                      back=ClientCB(action="devices", client_id=client_id).pack(),
+                      button=lambda _i, d: kb.button(text=_dev_label(d), callback_data=DeviceCB(action="open", device_id=d.id)))
     kb.button(text="➕ Устройство", callback_data=ClientCB(action="add_device", client_id=client_id))
     kb.button(text="⬅️ Назад", callback_data=ClientCB(action="open", client_id=client_id))
-    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 2)
+    kb.adjust(*rows, 2)
     return kb.as_markup()
 
 
 def unassigned_devices(devices, page: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    chunk, page, prev, nxt = page_slice(devices, page, static=1)
-    for _i, d in chunk:
-        kb.button(text=f"{d.name}{_btn_suffix(d)} · {d.address}",
-                  callback_data=DeviceCB(action="open", device_id=d.id))
-    nav = page_nav(kb, "unassigned", 0, page, prev, nxt, Menu(action="unassigned").pack())
+    rows = paged_rows(kb, devices, page, static=1, screen="unassigned", ref=0, back=Menu(action="unassigned").pack(),
+                      button=lambda _i, d: kb.button(text=f"{d.name}{_btn_suffix(d)} · {d.address}",
+                                                     callback_data=DeviceCB(action="open", device_id=d.id)))
     kb.button(text="⬅️ В меню", callback_data=Menu(action="main"))
-    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
+    kb.adjust(*rows, 1)
     return kb.as_markup()
 
 
 def reassign_targets(device_id: int, clients, page: int = 0) -> InlineKeyboardMarkup:
     """«🔀 iPhone — в какой профиль?»; «Назад» — в карточку устройства."""
     kb = InlineKeyboardBuilder()
-    chunk, page, prev, nxt = page_slice(clients, page, static=1)
-    for _i, c in chunk:
-        kb.button(text=c.name, callback_data=ReassignCB(device_id=device_id, client_id=c.id, stage="go"))
-    nav = page_nav(kb, "reassign", device_id, page, prev, nxt,
-                   DeviceCB(action="reassign", device_id=device_id).pack())
+    rows = paged_rows(kb, clients, page, static=1, screen="reassign", ref=device_id,
+                      back=DeviceCB(action="reassign", device_id=device_id).pack(),
+                      button=lambda _i, c: kb.button(text=c.name, callback_data=ReassignCB(device_id=device_id, client_id=c.id, stage="go")))
     kb.button(text="⬅️ Назад", callback_data=DeviceCB(action="open", device_id=device_id))
-    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
+    kb.adjust(*rows, 1)
     return kb.as_markup()
 
 
@@ -145,13 +138,11 @@ def client_state_icon(c, online_ids) -> str:
 def admin_clients(clients, online_ids=(), page: int = 0) -> InlineKeyboardMarkup:
     online = set(online_ids or ())
     kb = InlineKeyboardBuilder()
-    chunk, page, prev, nxt = page_slice(clients, page, static=1)
-    for _i, c in chunk:
-        kb.button(text=f"{client_state_icon(c, online)} {c.name}",
-                  callback_data=ClientCB(action="open", client_id=c.id))
-    nav = page_nav(kb, "clients", 0, page, prev, nxt, Menu(action="clients").pack())
+    rows = paged_rows(kb, clients, page, static=1, screen="clients", ref=0, back=Menu(action="clients").pack(),
+                      button=lambda _i, c: kb.button(text=f"{client_state_icon(c, online)} {c.name}",
+                                                     callback_data=ClientCB(action="open", client_id=c.id)))
     kb.button(text="⬅️ Назад", callback_data=Menu(action="main"))
-    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
+    kb.adjust(*rows, 1)
     return kb.as_markup()
 
 

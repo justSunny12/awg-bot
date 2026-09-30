@@ -301,6 +301,13 @@ KEY_HUMAN = {"ADMIN_IPS": "устройства админа", "HOME_SUBNETS": "
              "PEER_HOME_NETS": "локальные подсети других шлюзов"}
 
 
+def channel_port() -> int:
+    """Порт упр. канала линка из настроек ВПС (одно место для сторожа,
+    сервера канала и бандла)."""
+    from awgbot.core import settings
+    return settings.get_int("app.routing.link_channel_port", DEFAULT_PORT)
+
+
 def snap_field(key: str) -> str:
     return key.lower()
 

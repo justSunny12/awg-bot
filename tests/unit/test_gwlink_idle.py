@@ -24,7 +24,8 @@ from awgbot.domain import gwsnapshot
 from awgbot.domain.gateway import GatewayServices
 from awgbot.infra import awglock, gwguard
 from awgbot.infra.db import Database
-from awgbot.runtime import hostmetrics, linkclient
+from awgbot.infra import hostmetrics
+from awgbot.runtime import linkclient
 from awgbot.util import gwlink
 
 PRIV = base64.b64encode(os.urandom(32)).decode()

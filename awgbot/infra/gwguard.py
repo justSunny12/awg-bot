@@ -32,7 +32,6 @@ from pathlib import Path
 from typing import Optional
 
 from awgbot.core import config
-from awgbot.domain import gwservices
 from awgbot.infra import nftjson, systemd
 from awgbot.util import kvfile
 
@@ -755,7 +754,8 @@ def run_lan_lists(timeout: int = 600, from_dir: str = "") -> tuple[bool, str]:
 
 # ── сервисы соседних сетей ─────────────────
 LAN_SERVICES_SCRIPT = "/usr/local/sbin/awg-lan-services.sh"
-PEER_SERVICES_CONF = f"{DNSMASQ_D}/{gwservices.CONF_NAME}"
+PEER_SERVICES_CONF_NAME = "awg-gw-peer-services.conf"   # файл в /etc/dnsmasq.d на получателе
+PEER_SERVICES_CONF = f"{DNSMASQ_D}/{PEER_SERVICES_CONF_NAME}"
 PEER_SERVICES_NEW = "/var/lib/awg-gw/peer-services.conf.new"
 
 

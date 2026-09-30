@@ -24,12 +24,13 @@ import json
 import re
 from awgbot.util import nets as nets_util
 from awgbot.infra import updates as _updates
+from awgbot.infra import gwguard
 
 SERVICE_TYPES = ("_smb._tcp",)          # пока только SMB: шаблоны файла и помощника завязаны на него
 BROWSE_DOMAIN = "awg.internal"          # зарезервирован ICANN, апстримом не уходит
 MAX_OWN = 32                            # записей у одного слота
 MAX_PEER = 64                           # записей у получателя в сумме
-CONF_NAME = "awg-gw-peer-services.conf" # файл в /etc/dnsmasq.d на получателе
+CONF_NAME = gwguard.PEER_SERVICES_CONF_NAME       # файл в /etc/dnsmasq.d на получателе
 
 _NAME_RE = re.compile(r"[A-Za-z0-9 _-]{1,63}")
 _HOST_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")

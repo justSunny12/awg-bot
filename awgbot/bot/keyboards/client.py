@@ -11,8 +11,7 @@ from awgbot.bot.callbacks import (
     RoutingCB)
 from awgbot.bot import texts as _texts
 
-from .common import (_btn_suffix, append_hide_row, _manual_block_button, confirm, issuable,
-                     page_slice, page_nav)
+from .common import (paged_rows, _btn_suffix, append_hide_row, _manual_block_button, confirm, issuable)
 
 
 ADD_FROM_DEVICES = 1          # DeviceCB(add, device_id=1): «➕ Устройство» из списка — отмена туда же
@@ -104,35 +103,34 @@ def client_devices(devices, held=(), page: int = 0, render: str = "", *,
     следом — чужие, которые профиль держит, с пометкой «от профиля …».
     Значок — состояние (⛔ ⏳ 🟢 ⚪). add — есть место в лимите."""
     kb = InlineKeyboardBuilder()
-    rows = [(d, False) for d in devices] + [(d, True) for d in held]
-    chunk, page, prev, nxt = page_slice(rows, page, static=1)
-    for _i, (d, is_held) in chunk:
+
+    def _entry(_i, item):
+        d, is_held = item
         if is_held:
             label = f"{_dot(d)} {d.name} · от профиля {_texts.owner_name(d)}"
         else:
             lent = f" [{_texts.holder_name(d)}]" if getattr(d, "is_lent", False) else ""
             label = f"{_dot(d)} {d.name}{_btn_suffix(d)}{lent}"
         kb.button(text=label, callback_data=DeviceCB(action="open", device_id=d.id))
-    nav = page_nav(kb, "devices", 0, page, prev, nxt, render or Menu(action="devices").pack())
+    rows = paged_rows(kb, [(d, False) for d in devices] + [(d, True) for d in held], page, static=1,
+                      screen="devices", ref=0, back=render or Menu(action="devices").pack(), button=_entry)
     tail = 0
     if add:
         kb.button(text="➕ Устройство", callback_data=DeviceCB(action="add", device_id=ADD_FROM_DEVICES))
         tail += 1
     kb.button(text="⬅️ Назад", callback_data=back or Menu(action="main").pack())
     tail += 1
-    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), tail)
+    kb.adjust(*rows, tail)
     return kb.as_markup()
 
 
 def guest_devices(devices, page: int = 0) -> InlineKeyboardMarkup:
     """«📱 Устройства» гостя: список, назад — на главный экран гостя."""
     kb = InlineKeyboardBuilder()
-    chunk, page, prev, nxt = page_slice(devices, page, static=1)
-    for _i, d in chunk:
-        kb.button(text=f"{_dot(d)} {d.name}", callback_data=FriendCB(action="open", device_id=d.id))
-    nav = page_nav(kb, "gdevices", 0, page, prev, nxt, FriendCB(action="list").pack())
+    rows = paged_rows(kb, devices, page, static=1, screen="gdevices", ref=0, back=FriendCB(action="list").pack(),
+                      button=lambda _i, d: kb.button(text=f"{_dot(d)} {d.name}", callback_data=FriendCB(action="open", device_id=d.id)))
     kb.button(text="⬅️ Назад", callback_data=FriendCB(action="refresh"))
-    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
+    kb.adjust(*rows, 1)
     return kb.as_markup()
 
 
@@ -251,12 +249,11 @@ def pick_device(devices, action: str, back_cb: str = None, page: int = 0,
     «удали», а не в ошибку. Шлюз не предлагается: его конфиг едет только в
     конфигурации шлюза."""
     kb = InlineKeyboardBuilder()
-    chunk, page, prev, nxt = page_slice(issuable(devices), page, static=1)
-    for _i, d in chunk:
-        kb.button(text=f"{_dot(d)} {d.name}{_btn_suffix(d)}",
-                  callback_data=DeviceCB(action=action, device_id=d.id))
-    nav = page_nav(kb, "pick", ref, page, prev, nxt, render or Menu(action=action).pack())
-    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []))
+    rows = paged_rows(kb, issuable(devices), page, static=1, screen="pick", ref=ref,
+                      back=render or Menu(action=action).pack(),
+                      button=lambda _i, d: kb.button(text=f"{_dot(d)} {d.name}{_btn_suffix(d)}",
+                                                     callback_data=DeviceCB(action=action, device_id=d.id)))
+    kb.adjust(*rows)
     kb.row(InlineKeyboardButton(
         text="⬅️ Назад", callback_data=back_cb or Menu(action="main").pack()))
     return kb.as_markup()
@@ -264,12 +261,10 @@ def pick_device(devices, action: str, back_cb: str = None, page: int = 0,
 
 def guest_pick_device(devices, action: str, page: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    chunk, page, prev, nxt = page_slice(devices, page, static=1)
-    for _i, d in chunk:
-        kb.button(text=f"{_dot(d)} {d.name}", callback_data=FriendCB(action=action, device_id=d.id))
-    nav = page_nav(kb, "gpick", 0, page, prev, nxt, FriendCB(action=action).pack())
+    rows = paged_rows(kb, devices, page, static=1, screen="gpick", ref=0, back=FriendCB(action=action).pack(),
+                      button=lambda _i, d: kb.button(text=f"{_dot(d)} {d.name}", callback_data=FriendCB(action=action, device_id=d.id)))
     kb.button(text="⬅️ Назад", callback_data=FriendCB(action="refresh"))
-    kb.adjust(*([1] * len(chunk)), *([nav] if nav else []), 1)
+    kb.adjust(*rows, 1)
     return kb.as_markup()
 
 
@@ -403,12 +398,11 @@ def guide_connect_devices(devices, slots, guide: str = "connect", page: int = 0,
     can_add = (not guest) and (limit == 0 or used < limit)
     if can_add:
         kb.button(text="➕ Устройство", callback_data=GuideCB(guide=guide, step=-1))
-    chunk, page, prev, nxt = page_slice(issuable(devices), page, static=2 if can_add else 1)   # ряды
-    for _i, d in chunk:
-        kb.button(text=f"🔗 {d.name}", callback_data=DeviceCB(action="gen_guide", device_id=d.id))
-    nav = page_nav(kb, "guidedev", 0, page, prev, nxt, GuideCB(guide=guide, step=0).pack())
+    rows = paged_rows(kb, issuable(devices), page, static=2 if can_add else 1, screen="guidedev", ref=0,
+                      back=GuideCB(guide=guide, step=0).pack(),
+                      button=lambda _i, d: kb.button(text=f"🔗 {d.name}", callback_data=DeviceCB(action="gen_guide", device_id=d.id)))
     kb.row(_menu_button(guest))
-    kb.adjust(*([1] if can_add else []), *([1] * len(chunk)), *([nav] if nav else []), 1)
+    kb.adjust(*([1] if can_add else []), *rows, 1)
     return kb.as_markup()
 
 

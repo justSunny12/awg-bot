@@ -93,6 +93,6 @@ def test_refresh_status_now_writes_state(services, monkeypatch):
     assert services.db.get_state("last_server_ok") == "0", (
         "ключ монитора перезаписан кнопкой — скачок 🔴/🟢 он больше не увидит")
     assert services.server_status_cached()["ok"] is True
-    from awgbot.runtime import hostmetrics
+    from awgbot.infra import hostmetrics
     snap = hostmetrics.get_host_metrics(services.db)
     assert snap is not None and "cpu" in snap             # метрики записаны

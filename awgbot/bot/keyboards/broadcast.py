@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.bot.callbacks import BroadcastCB, PresetCB
 from awgbot.bot import texts as _texts
 
-from .common import page_slice, page_nav, confirm
+from .common import paged_rows, confirm
 
 
 def broadcast_targets(clients, selected, *, extend: bool = False, page: int = 0) -> InlineKeyboardMarkup:
@@ -20,16 +20,12 @@ def broadcast_targets(clients, selected, *, extend: bool = False, page: int = 0)
     all_on = bool(ids) and all(i in selected for i in ids)
     kb.button(text=("✅" if extend else "☑️") + " С продлением подписки", callback_data=BroadcastCB(action="ext"))
     kb.button(text=("✅" if all_on else "☑️") + " Выбрать все", callback_data=BroadcastCB(action="all"))
-    rows = [1, 1]
-    chunk, page, prev, nxt = page_slice(clients, page, static=3)
-    for _i, c in chunk:
+    def _entry(_i, c):
         mark = "✅" if c.id in selected else "☑️"
         sub = _texts.subscription_mark(c) if extend else ""
         kb.button(text=f"{mark} {c.name}{sub}", callback_data=BroadcastCB(action="tgl", ref=c.id))
-        rows.append(1)
-    nav = page_nav(kb, "bcast", 0, page, prev, nxt, BroadcastCB(action="targets").pack())
-    if nav:
-        rows.append(nav)
+    rows = [1, 1, *paged_rows(kb, clients, page, static=3, screen="bcast", ref=0,
+                              back=BroadcastCB(action="targets").pack(), button=_entry)]
     kb.button(text="⬅️ Отмена", callback_data=BroadcastCB(action="cancel"))
     kb.button(text="➡️ Далее", callback_data=BroadcastCB(action="next"))
     kb.adjust(*rows, 2)

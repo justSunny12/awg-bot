@@ -270,8 +270,27 @@ class GwChannelMixin:
         self.db.set_state(self._gwlink_key(key, slot_id), json.dumps(ack, ensure_ascii=False))
         return ack
 
-    def _gwlink_ack_get(self, key: str, slot_id: int) -> dict:
-        return self.db.get_state_json(self._gwlink_key(key, slot_id), {})
+    def _gwlink_ack_get(self, key: str, slot_id: int, *, legacy: bool = False) -> dict:
+        """Ответ слота: JSON одного формата. legacy — у настроек и фидов строки
+        прежних выпусков («ok|fail at err», «ok|fail hash at err») читаются
+        запасной веткой один выпуск; прочим не-JSON — «ответа нет»."""
+        raw = self.db.get_state(self._gwlink_key(key, slot_id)) or ""
+        if raw.startswith("{"):
+            try:
+                return json.loads(raw)
+            except ValueError:
+                return {}
+        if not legacy:
+            return {}
+        parts = raw.split(" ", 3)
+        if len(parts) < 2:
+            return {}
+        ok = parts[0] == "ok"
+        if len(parts) >= 3 and (parts[1] == "-" or all(c in "0123456789abcdef" for c in parts[1])):
+            return {"ok": ok, "hash": "" if parts[1] == "-" else parts[1], "n": 0,
+                    "at": parts[2], "error": parts[3] if len(parts) > 3 else ""}
+        return {"ok": ok, "hash": "", "n": 0, "at": parts[1],
+                "error": " ".join(parts[2:]) if len(parts) > 2 else ""}
 
     def gwlink_own_ack_in(self, slot_id: int, body: dict) -> None:
         self._gwlink_ack_put(self._GWLINK_OWN_ACK_KEY, slot_id, body)
@@ -498,20 +517,13 @@ class GwChannelMixin:
         return self.gwlink_settings_want(gw)
 
     def gwlink_ack_in(self, slot_id: int, body: dict) -> None:
-        """Итог применения на шлюзе: `ok|fail время хэш|ошибка`."""
-        ok = bool(body.get("ok"))
-        err = " ".join(str(body.get("error") or "").split())[:200]
-        self.db.set_state(self._gwlink_key(self._GWLINK_ACK_KEY, slot_id),
-                          f"{'ok' if ok else 'fail'} {timeutil.to_iso(timeutil.now())} {err}".strip())
-        if not ok:
-            log.warning("канал линка: слот %s не применил настройки: %s", slot_id, err)
+        """Итог применения настроек на шлюзе — тем же форматом, что прочие ответы."""
+        ack = self._gwlink_ack_put(self._GWLINK_ACK_KEY, slot_id, body)
+        if not ack["ok"]:
+            log.warning("канал линка: слот %s не применил настройки: %s", slot_id, ack["error"])
 
     def gwlink_ack(self, slot_id: int) -> dict:
-        raw = self.db.get_state(self._gwlink_key(self._GWLINK_ACK_KEY, slot_id)) or ""
-        parts = raw.split(" ", 2)
-        if len(parts) < 2:
-            return {}
-        return {"ok": parts[0] == "ok", "at": parts[1], "error": parts[2] if len(parts) > 2 else ""}
+        return self._gwlink_ack_get(self._GWLINK_ACK_KEY, slot_id, legacy=True)
 
     # ── списки локальной сети по каналу (этап 3) ─────────────────────────────
     # Те же источники, что у скрипта списков на шлюзе (awg-lan-lists.sh): ВПС и
@@ -621,21 +633,11 @@ class GwChannelMixin:
         return True
 
     def gwlink_lists_ack_in(self, slot_id: int, body: dict) -> None:
-        ok = bool(body.get("ok"))
-        digest = "".join(c for c in str(body.get("hash") or "") if c in "0123456789abcdef")[:64]
-        err = " ".join(str(body.get("error") or "").split())[:200]
-        self.db.set_state(self._gwlink_key(self._GWLINK_LISTS_KEY, slot_id),
-                          f"{'ok' if ok else 'fail'} {digest or '-'} "
-                          f"{timeutil.to_iso(timeutil.now())} {err}".strip())
+        self._gwlink_ack_put(self._GWLINK_LISTS_KEY, slot_id, body)
 
     def gwlink_lists(self, slot_id: int) -> dict:
         """Что шлюз ответил на последнюю доставку фидов: ok, hash, at, error."""
-        raw = self.db.get_state(self._gwlink_key(self._GWLINK_LISTS_KEY, slot_id)) or ""
-        parts = raw.split(" ", 3)
-        if len(parts) < 3:
-            return {}
-        return {"ok": parts[0] == "ok", "hash": "" if parts[1] == "-" else parts[1],
-                "at": parts[2], "error": parts[3] if len(parts) > 3 else ""}
+        return self._gwlink_ack_get(self._GWLINK_LISTS_KEY, slot_id, legacy=True)
 
     # ── карточка слота ───────────────────────────────────────────────────────
 
