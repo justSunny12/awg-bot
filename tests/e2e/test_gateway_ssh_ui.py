@@ -99,7 +99,7 @@ async def test_section_shows_port_tunnel_lan_outside_and_buttons(svc, fake_bot):
     assert "Порт SSH: 22" in text and "устройствам админа (3)" in text and "с сервера AWG" in text
     assert "Из локальной сети: открыт всегда" in text
     assert "фильтр выключен" in text and "home2.dyn.example" in text and "203.0.113.10" in text
-    assert "⚠️ Не резолвится: home2.dyn.example" in text
+    assert "⚠️ Не резолвится: <code>home2.dyn.example</code>" in text
     assert text.startswith("<b>🛡 SSH-доступ</b>"), text
     labels = _labels(nav.sent[-1][2])
     assert labels == ["🅿️ Порт", "➕ Адрес", "➖ home2.dyn.example",

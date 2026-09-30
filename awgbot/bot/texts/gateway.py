@@ -347,9 +347,25 @@ def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 330
     if len(rows) > len(keep):
         rest = len(rows) - len(keep)
         out += f"\n…и ещё {rest} " + plural_ru(rest, "строка", "строки", "строк")
-    body = _e(out) if out else ("готово" if ok else "не удалось")
+    body = ("\n".join(_domain_row(r) if ok else _e(r) for r in out.splitlines()) if out
+            else ("готово" if ok else "не удалось"))     # неудача уходит во всплывашку — без HTML
     tail = SYNC_TAILS.get(sync, "")
     return ("✅ " if ok else "⚠️ ") + body + (f"\n{tail}" if tail else "")
+
+
+# Что скрипт говорит про домен (routing-gw-setup.sh, add/ru/del) — по этим словам
+# строка узнаётся как «домен: исход», и домен уходит в <code>.
+_DOMAIN_OUTCOMES = ("добавлен", "убран", "уже в списке", "в списках нет", "не похоже на домен",
+                    "это хост сервера")
+
+
+def _domain_row(row: str) -> str:
+    """Строка скрипта «домен: исход» — домен моноширинным (иначе Telegram
+    делает из него ссылку), исход текстом; прочие строки — как есть."""
+    head, sep, rest = row.partition(": ")
+    if sep and head and " " not in head and rest.startswith(_DOMAIN_OUTCOMES):
+        return f"<code>{_e(head)}</code>: {_e(rest)}"
+    return _e(row)
 
 
 def gw_settings_text() -> str:
@@ -571,7 +587,7 @@ def gateway_ssh_text(st: dict) -> str:
     unresolved = st.get("unresolved") or []
     if unresolved:
         held = st.get("held") or []
-        names = ", ".join(_e(n) for n in unresolved[:_ALLOW_SHOWN])
+        names = ", ".join(f"<code>{_e(n)}</code>" for n in unresolved[:_ALLOW_SHOWN])
         if len(unresolved) > _ALLOW_SHOWN:
             names += f" и ещё {len(unresolved) - _ALLOW_SHOWN}"
         held_s = ", ".join(f"<code>{_e(h)}</code>" for h in held[:_ALLOW_SHOWN])

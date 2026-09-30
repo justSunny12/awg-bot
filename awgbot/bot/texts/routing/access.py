@@ -220,7 +220,7 @@ def routing_panel_text(*, enabled: int, total: int, domains: list, lent_out=(),
         if not link_ok:
             lines.append("🔴 временно недоступен")
     if domains:
-        shown = ", ".join(_e(d) for d in domains[:2])
+        shown = ", ".join(f"<code>{_e(d)}</code>" for d in domains[:2])
         more = f" [+{len(domains) - 2}]" if len(domains) > 2 else ""
         lines.append(f"Свои сайты: {shown}{more}")
     lines += _lent_out_lines(lent_out)
@@ -241,11 +241,11 @@ def routing_add_report(added: list, rejected: list, over_limit: int, limit: int)
     и почему; человек вставляет списком, и молча взять половину нельзя."""
     parts = []
     if added:
-        shown = ", ".join(_e(_short(d)) for d in added[:5])
+        shown = ", ".join(f"<code>{_e(_short(d))}</code>" for d in added[:5])
         more = f" и ещё {len(added) - 5}" if len(added) > 5 else ""
         parts.append(f"✅ Добавлено: {shown}{more}")
     if rejected:
-        shown = "; ".join(f"{_e(_short(raw, 40))} — {_e(reason)}" for raw, reason in rejected[:3])
+        shown = "; ".join(f"<code>{_e(_short(raw, 40))}</code> — {_e(reason)}" for raw, reason in rejected[:3])
         more = f"; и ещё {len(rejected) - 3}" if len(rejected) > 3 else ""
         parts.append(f"⚠️ Не добавлено: {shown}{more}")
     if over_limit:

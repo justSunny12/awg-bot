@@ -79,7 +79,7 @@ def test_mail_settings_travel_in_the_bundle(services, monkeypatch, tmp_path):
 def test_backup_mailed_text_and_subject(services, monkeypatch):
     from awgbot.bot import texts
     from awgbot.util import timeutil
-    assert texts.backup_mailed("a@b.co") == "📨 Бэкап отправлен на a@b.co"
+    assert texts.backup_mailed("a@b.co") == "📨 Бэкап отправлен на <code>a@b.co</code>"
     sent = []
     monkeypatch.setattr(mail, "send_mail", lambda acc, to, subject, body, **kw: sent.append(subject))
     services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)

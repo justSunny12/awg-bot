@@ -126,7 +126,7 @@ async def test_backup_channel_email_requires_mailbox_and_encryption(services, fa
     monkeypatch.setattr(services, "email_send_backup", lambda paths: mailed.append(paths))
     await sh.do_action(cb, SetCB(sec="backup", act="do", key="now"), services)
     assert mailed == [["/tmp/a.enc", "/tmp/b.enc"]]
-    assert any(t == "📨 Бэкап отправлен на box@icloud.com" for kind, t, _ in msg.sent if kind == "answer"), msg.sent
+    assert any(t == "📨 Бэкап отправлен на <code>box@icloud.com</code>" for kind, t, _ in msg.sent if kind == "answer"), msg.sent
 
 
 async def test_email_fallback_toggle_offers_setup_without_mailbox(services, fake_bot, monkeypatch):

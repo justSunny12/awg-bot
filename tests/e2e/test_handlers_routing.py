@@ -104,7 +104,7 @@ async def test_add_domains_reports_each_line(services, make_active_client, fake_
     out = [s for s in msg.sent if s[0] == "answer"]
     assert len(out) == 1, "итог — не отдельным сообщением, а первой строкой экрана"
     first, rest = out[0][1].split("\n\n", 1)
-    assert first.startswith("✅ Добавлено: bank.com, netflix.com · ⚠️ Не добавлено: сбер.мусор_ — "), first
+    assert first.startswith("✅ Добавлено: <code>bank.com</code>, <code>netflix.com</code> · ⚠️ Не добавлено: <code>сбер.мусор_</code> — "), first
     assert first.endswith("применится в теч. минуты, не сработало — переподключись"), first
     assert rest.startswith("📋 <b>Свои сайты</b> · 2"), "после ввода — экран «Сайты», откуда пришли"
     assert set(services.routing_domains(c.id)) == {"bank.com", "netflix.com"}
@@ -396,7 +396,7 @@ async def test_add_domains_without_dialog_context_lands_on_main_with_the_report(
     sent = [s for s in msg.sent if s[0] == "answer"]
     assert len(sent) == 1 and sent[0][2] is not None, sent
     first, rest = sent[0][1].split("\n\n", 1)
-    assert first.startswith("✅ Добавлено: bank.com"), first
+    assert first.startswith("✅ Добавлено: <code>bank.com</code>"), first
     assert rest.startswith("👋 "), "без контекста — главная роли"
     assert services.routing_domains(c.id) == ["bank.com"]
 
@@ -902,7 +902,7 @@ async def test_feature_toggle_blocks_both_editors_and_keeps_device_flags(
     await routing_h.routing_panel(cb, RoutingCB(action="panel", ref=other.id), None,
                                   services, FakeState())
     text, labels = last_screen(nav)
-    assert "Свои сайты: a.ru, b.ru" in text and "📋 Сайты: 2" in labels, (text, labels)
+    assert "Свои сайты: <code>a.ru</code>, <code>b.ru</code>" in text and "📋 Сайты: 2" in labels, (text, labels)
     cb, nav = _admin_cb(fake_bot)
     await routing_h.routing_sites(cb, RoutingCB(action="sites", ref=other.id), None,
                                   services, FakeState())

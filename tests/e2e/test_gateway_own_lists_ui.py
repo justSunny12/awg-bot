@@ -301,7 +301,7 @@ async def test_a_slow_script_result_comes_as_a_message(gw, host, fake_bot, monke
     from awgbot.bot.keyboards.gateway import lan_own_tag
     await gh.gw_transit_remove(cb, GwCB(action="lan_rm", val=f"0.{lan_own_tag('ru', 'shop.ru')}"), gw)
     answers = [s[1] for s in msg.sent if s[0] == "answer"]
-    assert answers == ["✅ shop.ru: убран\n" + LOCAL], msg.sent
+    assert answers == ["✅ <code>shop.ru</code>: убран\n" + LOCAL], msg.sent
     assert msg.sent[-1][0] == "edit_text" and msg.sent[-1][1].startswith("🔀 <b>VPN-транзит"), msg.sent[-1]
 
 
@@ -328,7 +328,7 @@ async def test_a_button_edit_leaves_at_once_and_says_so(gw, host, fake_bot, monk
     wire = _online(gw, monkeypatch, tmp_path)
     _add_via_script(gw, host, monkeypatch)
     result = await _type_domain(gw, fake_bot, "lan_add", "example.com")
-    assert result == "✅ example.com: добавлен\nИзменения синхронизируются с другими шлюзами", result
+    assert result == "✅ <code>example.com</code>: добавлен\nИзменения синхронизируются с другими шлюзами", result
     msgs = wire.messages(gwlink.channel_key(PRIV))
     assert [m["t"] for m in msgs] == ["own_ev"], f"правка не ушла серверу сразу: {msgs}"
     assert [e[1:3] for e in msgs[0]["ev"]] == [["example.com", "vpn"]]
@@ -357,7 +357,7 @@ async def test_without_a_channel_the_edit_waits_and_the_result_says_when_it_leav
     _synced(gw, host, {"a.com": "vpn"})
     _add_via_script(gw, host, monkeypatch)
     result = await _type_domain(gw, fake_bot, "lan_ru", "shop.ru")
-    assert result == "✅ shop.ru: добавлен\n" + LATER, result
+    assert result == "✅ <code>shop.ru</code>: добавлен\n" + LATER, result
     assert gw.own_status()[0]["pending"] == 1, "правка без канала не легла в очередь"
 
 
@@ -379,7 +379,7 @@ async def test_no_tail_when_nothing_changed_or_there_is_no_other_gateway(
         gw.set_link_role(True, standby=others, name="NASPi")
     _add_via_script(gw, host, monkeypatch, out_word=word)
     result = await _type_domain(gw, fake_bot, "lan_add", "example.com")
-    assert result == f"✅ example.com: {word}", result
+    assert result == f"✅ <code>example.com</code>: {word}", result
 
 
 async def test_without_the_channel_the_result_says_the_edit_stays_here(gw, host, fake_bot, monkeypatch):
@@ -391,7 +391,7 @@ async def test_without_the_channel_the_result_says_the_edit_stays_here(gw, host,
     host.env["LINK_CHANNEL"] = "0"
     _add_via_script(gw, host, monkeypatch)
     result = await _type_domain(gw, fake_bot, "lan_add", "example.com")
-    assert result == "✅ example.com: добавлен\n" + LOCAL, result
+    assert result == "✅ <code>example.com</code>: добавлен\n" + LOCAL, result
 
 
 async def test_already_listed_gives_no_tail_but_still_sends_earlier_unsent_edits(
@@ -407,7 +407,7 @@ async def test_already_listed_gives_no_tail_but_still_sends_earlier_unsent_edits
     wire = _online(gw, monkeypatch, tmp_path)
     _add_via_script(gw, host, monkeypatch, out_word="уже в списке")
     result = await _type_domain(gw, fake_bot, "lan_add", "b.com")
-    assert result == "✅ b.com: уже в списке", f"хвост без новых правок: {result!r}"
+    assert result == "✅ <code>b.com</code>: уже в списке", f"хвост без новых правок: {result!r}"
     msgs = wire.messages(gwlink.channel_key(PRIV))
     assert [e[1:3] for m in msgs for e in m["ev"]] == [["b.com", "vpn"]], f"неотправленное не ушло: {msgs}"
 

@@ -97,10 +97,10 @@ def settings_email_text(acc, last_check: tuple, resume_on=None, resume_addr: str
     else:
         status = "⚪ ещё не проверялось"
     lines = [f"✉️ <b>E-mail</b> · {status}",
-             f"{_e(acc.login)} · IMAP <code>{_e(acc.imap_host)}:{acc.imap_port}</code> · SMTP <code>{_e(acc.smtp_host)}:{acc.smtp_port}</code>"]
+             f"<code>{_e(acc.login)}</code> · IMAP <code>{_e(acc.imap_host)}:{acc.imap_port}</code> · SMTP <code>{_e(acc.smtp_host)}:{acc.smtp_port}</code>"]
     if resume_on is not None:
         if resume_on:
-            lines.append(f"🆘 Аварийный выход из паузы: код на {_e(resume_addr or acc.login)}")
+            lines.append(f"🆘 Аварийный выход из паузы: код на <code>{_e(resume_addr or acc.login)}</code>")
         else:
             lines.append("🆘 Аварийный выход из паузы выключен")
     return "\n".join(lines)
@@ -116,7 +116,7 @@ EMAIL_ASK_IMAP_HOST = EMAIL_ASK_IMAP
 EMAIL_ASK_IMAP_PORT = "Порт IMAP (SSL/TLS), обычно 993:"
 EMAIL_ASK_SMTP_HOST = EMAIL_ASK_SMTP
 EMAIL_ASK_SMTP_PORT = "Порт SMTP (STARTTLS), обычно 587:"
-EMAIL_BAD_ADDRESS = "⚠️ Не похоже на адрес почты — пришли адрес вида box@example.com"
+EMAIL_BAD_ADDRESS = "⚠️ Не похоже на адрес почты — пришли адрес вида <code>box@example.com</code>"
 EMAIL_BAD_PORT = "⚠️ Нужен номер порта от 1 до 65535"
 EMAIL_BAD_HOST = "⚠️ Нужно имя сервера и порт: <code>imap.example.com:993</code>"
 def email_forget_confirm(gateway: bool = False) -> str:
@@ -132,20 +132,20 @@ EMAIL_FORGOTTEN = "✅ Почта отключена"
 
 
 def email_test_sent(address: str) -> str:
-    return f"Письмо ушло на {_e(address)} — проверь входящие"
+    return f"Письмо ушло на <code>{_e(address)}</code> — проверь входящие"
 
 
 EMAIL_CHECK_OK = "🟢 Вход по IMAP и SMTP прошёл"
 
 
 def email_ask_address_change(current: str) -> str:
-    return (f"✏️ <b>Смена ящика</b> · сейчас {_e(current)}\n"
+    return (f"✏️ <b>Смена ящика</b> · сейчас <code>{_e(current)}</code>\n"
             "Пришли адрес нового ящика — после проверки входа он заменит текущий; "
             "до этого старый продолжает работать")
 
 
 def email_ask_resume_address(current: str) -> str:
-    return (f"✉️ <b>Адрес для писем с кодом</b> · сейчас {_e(current)}\n"
+    return (f"✉️ <b>Адрес для писем с кодом</b> · сейчас <code>{_e(current)}</code>\n"
             "На него клиент, заперевшийся на паузе, шлёт письмо с кодом. Обычно это сам "
             "ящик; у ящика есть алиас — можно его. Пришли адрес, «-» — сам ящик")
 
@@ -166,7 +166,7 @@ def email_ask_password(address: str) -> str:
 
 
 def email_saved(address: str, detail: str) -> str:
-    return f"✅ Ящик {_e(address)} подключён\n{_e(detail)}"
+    return f"✅ Ящик <code>{_e(address)}</code> подключён\n{_e(detail)}"
 
 
 def email_check_failed(detail: str) -> str:
@@ -266,7 +266,7 @@ BACKUP_WHEN_BAD = "⚠️ Нужны два числа: день месяца 1�
 
 
 def backup_mailed(address: str, n: int = 1) -> str:
-    return f"📨 Бэкап отправлен на {_e(address)}"
+    return f"📨 Бэкап отправлен на <code>{_e(address)}</code>"
 
 
 # ── 🔧 Сервис ────────────────────────────────────────────────────────────────
@@ -354,16 +354,18 @@ SETTINGS_TEXT = {
 
 
 # Настройки-адреса: значения на экране — моноширинным (тап копирует, автоссылки нет).
-_ADDRESS_KEYS = {"app.network.server_host", "app.client_config.dns1", "app.firewall.ssh_allow"}
+_ADDRESS_KEYS = {"app.network.server_host", "app.client_config.dns1", "app.firewall.ssh_allow",
+                 "email.resume_address"}
 
 
 def _setting_value(key: str, value) -> str:
     """Значение настройки для экрана: адреса — каждый в <code>, остальное — текстом.
-    Списки и «a, b» через запятую — поэлементно."""
+    Списки и «a, b» через запятую — поэлементно. Слова с пробелом («сам ящик»
+    вместо пустого адреса) адресом не считаются."""
     items = list(value) if isinstance(value, (list, tuple)) else [x.strip() for x in str(value).split(",")]
     items = [str(x) for x in items if str(x).strip()]
     if key in _ADDRESS_KEYS:
-        return ", ".join(f"<code>{_e(x)}</code>" for x in items)
+        return ", ".join(f"<code>{_e(x)}</code>" if " " not in x else _e(x) for x in items)
     return _e(", ".join(items))
 
 
@@ -425,7 +427,7 @@ def settings_server_text(d: dict) -> str:
     dns_note = _private_dns_note(d.get("private_dns") or {})
     lines = [
         f"🖥 <b>Сервер AWG</b> · ядро {kernel}{gen}",
-        (f"{_e(host)} · имя сервера: «{_e(d['name'])}»" if _looks_like_domain(host)
+        (f"<code>{_e(host)}</code> · имя сервера: «{_e(d['name'])}»" if _looks_like_domain(host)
          else f"Домена нет, в ссылках IP <code>{_e(host)}</code> · имя сервера: «{_e(d['name'])}»"),
         f"DNS {', '.join(f'<code>{_e(x.strip())}</code>' for x in str(d['dns']).split(','))}{dns_note} · MTU {d['mtu']} · keepalive {_e(str(d['keepalive']))}",
         f"{_e(d['iface'])} · порт {d['port']} · <code>{_e(d['subnet'])}</code>",
@@ -490,7 +492,7 @@ def settings_firewall_text(st: dict) -> str:
     lines.append(address_list_line(len(allow)))
     warns: list[str] = []
     if st.get("unresolved"):
-        warns.append("⚠️ Не резолвятся: " + _shown(st["unresolved"], code=False))
+        warns.append("⚠️ Не резолвятся: " + _shown(st["unresolved"]))
     if st.get("drift"):
         warns.append(f"⚠️ sshd слушает порт {st['listening']}, а фильтр держит {st.get('ssh_port')} — "
                      f"вход снаружи и из туннеля закрыт. Нажми «🅿️ Порт» → {st['listening']} "

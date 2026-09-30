@@ -1025,7 +1025,13 @@ ADMIN_ID. Основной бот спрашивает токен шлюза о�
   handlers/client, domain/migration, texts/client, infra/gwguard, infra/awg,
   handlers/gateway, texts/admin, db/schema, infra/nftguard, runtime/linkclient,
   runtime/linkserver, runtime/scheduler, services/gwchannel, texts/gateway,
-  runtime/main, handlers/admin/clients, texts/settings.
+  runtime/main, handlers/admin/clients, texts/settings. Туда же — тесты
+  длиннее 1000 строк (test_gw_lan_script, test_migration, test_handlers_routing,
+  test_services_routing, test_gateway_slots_ui): по файлу на экран или сценарий.
+- **Минимальный приоритет, не воспроизведено (30.09.2026).** Приглашение
+  «➕ Новое устройство · N из M / Как назвать?» один раз осталось в чате после
+  создания устройства; на фикстурах приглашение с CancelCB убирается и по итогу,
+  и по отмене. Ждёт сценария воспроизведения — не чинить вслепую.
 
 - **Ребут-тест ВПС — сделан 07.09.2026, не в тихий час, а заодно с обновлением
   модуля ядра.** Две дыры: `awg1` не поднялся — в докерном режиме интерфейс

@@ -77,7 +77,7 @@ ANDROID = [
     # 1
     "<b>Если на телефоне нет Google Play</b>\n\n"
     "(бывает на некоторых телефонах, например Huawei)\n\n"
-    f"1. Открой в браузере: <code>{RELEASES}</code>\n"
+    f'1. Открой в браузере: <a href="https://{RELEASES}">{RELEASES}</a>\n'
     "2. Пролистай вниз до раздела <b>Assets</b>.\n"
     "3. Скачай файл, в названии которого есть <b>android9+</b> "
     "(заканчивается на .apk).\n"
@@ -92,7 +92,7 @@ ANDROID = [
 WINDOWS = [
     # 0
     "🪟 <b>Настройка на Windows</b>\n\n"
-    f"1. Открой в браузере: <code>{RELEASES}</code>\n"
+    f'1. Открой в браузере: <a href="https://{RELEASES}">{RELEASES}</a>\n'
     "2. Пролистай до раздела <b>Assets</b>.",
     # 1
     "<b>Устанавливаем</b>\n\n"
@@ -109,7 +109,7 @@ WINDOWS = [
 MAC = [
     # 0
     "🍏 <b>Настройка на Mac</b>\n\n"
-    f"1. Открой в браузере: <code>{RELEASES}</code>\n"
+    f'1. Открой в браузере: <a href="https://{RELEASES}">{RELEASES}</a>\n'
     "2. Пролистай до раздела <b>Assets</b>.\n"
     "3. Скачай файл, в названии которого есть <b>macos</b> "
     "(это .zip, внутри установщик .pkg).",

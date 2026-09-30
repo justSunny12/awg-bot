@@ -41,7 +41,7 @@ async def test_server_screen_shows_what_goes_into_new_links(services, fake_bot, 
     text, markup = await sh._screen("srv", services)
     lines = text.split("\n")
     assert lines[:4] == ["🖥 <b>Сервер AWG</b> · ядро 3.1.20260812, gen1",
-                         "vpn.example.org · имя сервера: «Сервер 1»",
+                         "<code>vpn.example.org</code> · имя сервера: «Сервер 1»",
                          "DNS <code>10.8.1.1</code> · MTU 1376 · keepalive 25-35",
                          "awg0 · порт 51820 · <code>10.8.1.0/24</code>"], lines
     assert "новые ссылки" in text and "переездом" in text, "цена правки названа"
