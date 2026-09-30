@@ -73,7 +73,7 @@ async def test_guide_method_back_reshows_choice(services, fake_bot, make_active_
 
 async def test_guide_add_device_flow(services, fake_bot, make_active_client):
     """Новое устройство внутри гайда: только имя (лимит ставится в карточке) —
-    приглашение на месте шага; после имени — «✅ Дев: создано» и сразу шаг
+    приглашение на месте шага; после имени — «✅ Дев создано» и сразу шаг
     выбора способа для него. Приглашение и ввод убраны."""
     client = make_active_client(tg_id=6203, device_limit=3)
     cl = services.db.get_client(client.id)
@@ -87,7 +87,7 @@ async def test_guide_add_device_flow(services, fake_bot, make_active_client):
     await gh.guide_add_device_name(m_name, services, cl, st)
     assert any(d.name == "Дев" for d in services.db.list_devices(client.id))
     answers = [s for s in m_name.sent if s[0] == "answer"]
-    assert answers[0][1] == "✅ Дев: создано", "вопрос о лимите вместо создания"
+    assert answers[0][1] == "✅ Дев создано", "вопрос о лимите вместо создания"
     labels = [b.text for row in answers[-1][2].inline_keyboard for b in row]
     assert labels[:3] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"], labels
     deleted = {r[2] for r in fake_bot.records if r[0] == "delete_message"}

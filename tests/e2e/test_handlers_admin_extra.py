@@ -146,7 +146,7 @@ async def test_add_device_to_a_profile_asks_only_the_name_and_returns_to_the_car
     await ah.admin_add_device_name(msg, services, st)
     assert [d.name for d in services.db.list_devices(client.id)] == ["Планшет"]
     shown = [s for s in msg.sent if s[0] == "answer"]
-    assert shown and shown[-1][1].startswith("✅ Планшет: создано для профиля Клиент-6307\n\n👤 "), \
+    assert shown and shown[-1][1].startswith("✅ Планшет создано для профиля Клиент-6307\n\n👤 "), \
         shown[-1][1]
     owner_notes = [r for r in fake_bot.records if r[0] == "send_message" and r[1] == 6307]
     assert len(owner_notes) == 1 and "Планшет" in owner_notes[0][2]

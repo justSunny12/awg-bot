@@ -368,8 +368,13 @@ def device_delete_ask(dev, *, only: bool = False, lent: bool = False, held: bool
             "Ссылка перестанет работать; решишь добавить устройство снова — ссылка изменится")
 
 
+def device_removed(name: str) -> str:
+    """«🗑 Ноут удалено» — итог держателя первой строкой его экрана."""
+    return f"🗑 {_e(name)} удалено"
+
+
 def device_deleted(name: str, used: int, limit: int) -> str:
-    """«🗑 MacBook удалено · можно добавить ещё 2» — остаётся в чате."""
+    """«🗑 MacBook удалено · можно добавить ещё 2» — первой строкой экрана."""
     head = f"🗑 {_e(name)} удалено"
     free = limit - used
     if limit == 0 or free <= 0:
@@ -401,8 +406,8 @@ def add_device_prompt(used: int, limit: int, *, for_friend: bool) -> str:
 
 
 def device_created(name: str, profile_limit_bytes: int) -> str:
-    """«✅ iPhone: создано · трафик в пределах 100 ГБ профиля»."""
-    head = f"✅ {_e(name)}: создано"
+    """«✅ iPhone создано · трафик в пределах 100 ГБ профиля»."""
+    head = f"✅ {_e(name)} создано"
     if profile_limit_bytes:
         return f"{head} · трафик в пределах {gb_str(profile_limit_bytes)} профиля"
     return head

@@ -223,11 +223,10 @@ async def test_client_delete_last_device_goes_to_main(services, fake_bot, make_a
     await ch.device_delete_confirm(cb, DelDeviceCB(device_id=dc.device_id, stage="confirm"),
                                    cl, services)
     edits = [s for s in screen.sent if s[0] == "edit_text"]
-    assert edits[-1][1] == "🗑 Телефон удалено · можно добавить ещё 2"
-    assert edits[-1][2] is None
-    answers = [s for s in screen.sent if s[0] == "answer"]
-    assert answers and answers[-1][2] is not None and answers[-1][1].startswith("👋 "), \
-        "после последнего — главная, а не пустой список"
+    assert edits[-1][1].startswith("🗑 Телефон удалено · можно добавить ещё 2\n\n👋 "), \
+        "после последнего — итог первой строкой главной, а не пустой список"
+    assert edits[-1][2] is not None
+    assert not any(s[0] == "answer" for s in screen.sent), "итог удаления остался в чате отдельным сообщением"
 
 
 async def test_client_delete_one_of_two_returns_to_device_list(services, fake_bot,
@@ -239,15 +238,13 @@ async def test_client_delete_one_of_two_returns_to_device_list(services, fake_bo
     await ch.device_delete_confirm(cb, DelDeviceCB(device_id=a.device_id, stage="confirm"),
                                    cl, services)
     edits = [s for s in screen.sent if s[0] == "edit_text"]
-    assert edits[-1][1] == "🗑 A удалено · можно добавить ещё 2"
-    answers = [s for s in screen.sent if s[0] == "answer"]
-    assert answers[-1][1] == "📱 Устройства · 1 из 3"
-    labels = [b.text for row in answers[-1][2].inline_keyboard for b in row]
+    assert edits[-1][1] == "🗑 A удалено · можно добавить ещё 2\n\n📱 Устройства · 1 из 3"
+    labels = [b.text for row in edits[-1][2].inline_keyboard for b in row]
     assert labels[0] == "⚪ B", labels
 
 
 async def test_screen_after_creation_says_menu(services, fake_bot, make_active_client):
-    """Экран «✅ …: создано» — выход «⬅️ В меню», не «⬅️ Назад»: возвращаться
+    """Экран «✅ … создано» — выход «⬅️ В меню», не «⬅️ Назад»: возвращаться
     некуда, приглашение уже убрано."""
     cl = make_active_client(tg_id=6412, device_limit=2)
     st = FakeState(); await st.update_data(for_friend=False)

@@ -183,8 +183,10 @@ async def routing_add_start(cb: CallbackQuery, callback_data: RoutingCB, client,
     if not await _guard(cb, services, profile):
         return
     await state.set_state(RoutingDomains.value)
-    # чей список пополняем, помнит диалог: у админа контекст — не он сам
-    await ask_here(cb, services, state, texts.ROUTING_ADD_PROMPT, "sites", profile.id,
+    # чей список пополняем, помнит диалог: у админа контекст — не он сам;
+    # куда вернуться по «Отмене» и итогу — откуда пришли: раздел или «Сайты»
+    origin = "rf" if callback_data.tag == "panel" else "sites"
+    await ask_here(cb, services, state, texts.ROUTING_ADD_PROMPT, origin, profile.id,
                    rt_client=profile.id)
     await cb.answer()
 

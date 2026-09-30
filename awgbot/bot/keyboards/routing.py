@@ -28,7 +28,7 @@ def routing_panel(client_id: int, devices, *, lent_out=(), enabled: int = 0, tot
     if devices:
         kb.add(select_all_button(enabled, total, RoutingCB(action="all", ref=client_id)))
         rows.append(1)
-    kb.button(text="➕ Сайт", callback_data=RoutingCB(action="add", ref=client_id))
+    kb.button(text="➕ Сайт", callback_data=RoutingCB(action="add", ref=client_id, tag="panel"))
     kb.button(text=f"📋 Сайты: {n_domains}" if n_domains else "📋 Сайты",
               callback_data=RoutingCB(action="sites", ref=client_id))
     rows.append(2)

@@ -24,6 +24,7 @@ from awgbot.core import settings
 from awgbot.util import timeutil
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
+from awgbot.bot import screens
 from awgbot.bot.callbacks import (BlockCB, CancelCB, DelDeviceCB, DeviceCB, GraceCB, HelpCB, Menu,
                                   PauseCB, PresetCB)
 from awgbot.bot.filters import RoleFilter
@@ -734,8 +735,8 @@ async def device_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
     if dev.holder_client_id == client.id:
         if not await devcore.delete_by_holder(cb, services, dev):
             return
-        await send_menu(cb.message, services, *await devices_payload(services, client),
-                        keep_id=cb.message.message_id)
+        text, markup = await devices_payload(services, client)
+        await edit(cb, screens.with_note(text, texts.device_removed(dev.name)), markup)
         return
     try:
         if dev.is_lent:
@@ -748,16 +749,16 @@ async def device_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
         await cb.answer(str(e), show_alert=True)
         return
     await cb.answer()
-    # итог — на месте вопроса и остаётся в чате; следом — «Устройства», а если
-    # удалили последнее — главная
+    # итог — первой строкой экрана на месте вопроса, как итог создания:
+    # «Устройства», а если удалили последнее — главная
     devices = await call(services.db.list_devices, client.id)
     used, limit = await call(services.device_quota, client.id)
-    await edit(cb, texts.device_deleted(dev.name, used, limit), None)
+    note = texts.device_deleted(dev.name, used, limit)
     if not devices and not await call(services.db.list_held_devices, client.id):
-        await _show_main(cb.message, services, client)
-        return
-    await send_menu(cb.message, services, *await devices_payload(services, client),
-                    keep_id=cb.message.message_id)
+        text, markup = await main_payload(services, client)
+    else:
+        text, markup = await devices_payload(services, client)
+    await edit(cb, screens.with_note(text, note), markup)
 
 
 # ── помощь (гайды — в handlers/guide.py) ─────────────────────────────────────

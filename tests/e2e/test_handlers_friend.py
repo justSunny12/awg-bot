@@ -176,17 +176,17 @@ async def test_guest_delete_notifies_owner_and_empty_guest_keeps_profile(service
     assert owner_msgs == ['Устройство «A», ранее переданное <a href="tg://user?id=98106">Артём</a>, '
                           'удалено по его запросу.\nТеперь у тебя 1 из 3 устройств.']
     edits = [s for s in nav.sent if s[0] == "edit_text"]
-    assert edits[-1][1] == "🗑 A удалено" and edits[-1][2] is None
+    assert edits[-1][1].startswith("🗑 A удалено\n\n👋 Артём\n") and edits[-1][2] is not None
     answers = [s for s in nav.sent if s[0] == "answer"]
-    assert answers[-1][1].startswith("👋 Артём\n") and answers[-1][2] is not None
+    assert not answers, "итог удаления остался отдельным сообщением"
     # последнее — профиль остаётся, главный экран объясняет, что дальше
     cb, nav = _cb(fake_bot, 98106)
     await fh.friend_delete_confirm(cb, DelDeviceCB(device_id=b.device_id, stage="confirm"),
                                    guest, services)
     assert services.db.get_client_by_tg(98106) is not None
-    answers = [s for s in nav.sent if s[0] == "answer"]
-    assert answers[-1][1] == "👋 Артём · устройств нет — попроси у друга новый код"
-    labels = [b.text for row in answers[-1][2].inline_keyboard for b in row]
+    edits = [s for s in nav.sent if s[0] == "edit_text"]
+    assert edits[-1][1].endswith("\n\n👋 Артём · устройств нет — попроси у друга новый код"), edits[-1][1]
+    labels = [b.text for row in edits[-1][2].inline_keyboard for b in row]
     assert labels == ["❓ Как подключить"], "без устройств — одна «Как подключить», а не пустой экран"
 
 

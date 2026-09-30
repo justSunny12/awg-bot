@@ -49,7 +49,7 @@ async def test_add_device_self_full_fsm(services, make_active_client, fake_bot):
     assert [d.name for d in devs] == ["Ноут"] and devs[0].traffic_limit == 0
     assert await state.get_state() is None, "после имени спрашивают ещё что-то"
     shown = [s for s in typed.sent if s[0] == "answer"]
-    assert shown[-1][1] == "✅ Ноут: создано · трафик в пределах 100 ГБ профиля"
+    assert shown[-1][1] == "✅ Ноут создано · трафик в пределах 100 ГБ профиля"
     rows = [[b.text for b in r] for r in shown[-1][2].inline_keyboard]
     assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["❓ Как подключить", "⬅️ В меню"]], rows
     deleted = {r[2] for r in fake_bot.records if r[0] == "delete_message"}

@@ -227,8 +227,9 @@ async def friend_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
         return
     if not await devcore.delete_by_holder(cb, services, dev):
         return
-    await send_menu(cb.message, services, *await guest_main_payload(services, client),
-                    keep_id=cb.message.message_id)
+    from awgbot.bot import screens
+    text, markup = await guest_main_payload(services, client)
+    await edit(cb, screens.with_note(text, texts.device_removed(dev.name)), markup)
 
 
 # ── помощь: те же гайды, что у клиента (handlers/guide.py) ───────────────────

@@ -251,7 +251,7 @@ async def test_admin_self_devices_and_add(services, fake_bot):
     ac = services.admin_client()
     assert any(d.name == "МойДев" for d in services.db.list_devices(ac.id))
     shown = [s for s in msg.sent if s[0] == "answer"]
-    assert shown and shown[-1][1] == "✅ МойДев: создано", shown
+    assert shown and shown[-1][1] == "✅ МойДев создано", shown
     labels = [b.text for row in shown[-1][2].inline_keyboard for b in row]
     assert labels[:3] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"], "своё устройство — сразу с рядом выдачи"
 

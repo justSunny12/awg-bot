@@ -89,8 +89,8 @@ async def test_client_holder_sees_foreign_device_after_own(services, fake_bot, m
     owner_msgs = [r[2] for r in fake_bot.records if r[0] == "send_message" and r[1] == 7102]
     assert owner_msgs and "удалено по его запросу" in owner_msgs[0] and "0 из 3" in owner_msgs[0]
     assert services.db.get_client(holder.id) is not None
-    answers = [s for s in nav.sent if s[0] == "answer"]
-    assert answers[-1][1] == "📱 Устройства · 1 из 2", "следом — список устройств"
+    edits = [s for s in nav.sent if s[0] == "edit_text"]
+    assert edits[-1][1].endswith("\n\n📱 Устройства · 1 из 2"), "итог — первой строкой списка устройств"
 
 
 async def test_client_block_own_device_needs_confirmation(services, fake_bot, make_active_client):

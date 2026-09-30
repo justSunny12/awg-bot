@@ -50,7 +50,8 @@ async def unblock_device(cb: CallbackQuery, services, dev, card) -> None:
 
 async def delete_by_holder(cb: CallbackQuery, services, dev) -> bool:
     """Держатель удалил переданное устройство сам: владельцу — уведомление
-    с местами, итог на месте вопроса. False — отказ сервиса (ответ дан)."""
+    с местами; итог роль показывает первой строкой своего экрана. False —
+    отказ сервиса (ответ дан)."""
     try:
         await call(services.remove_device, dev.id)          # «удалено владельцем» ему не шлём
     except ServiceError as e:
@@ -61,5 +62,4 @@ async def delete_by_holder(cb: CallbackQuery, services, dev) -> bool:
         used, limit = await call(services.device_quota, dev.client_id)
         await notify_one(cb.bot, dev.owner_tg_id,
                          texts.lent_device_deleted_by_holder_notice(dev, used, limit))
-    await edit(cb, f"🗑 {texts._e(dev.name)} удалено", None)
     return True

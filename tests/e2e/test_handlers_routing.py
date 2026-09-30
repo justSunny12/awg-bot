@@ -1088,3 +1088,19 @@ async def test_sites_page_is_remembered_per_viewer_not_per_profile(services, mak
     own_labels = [b.text for row in own_view.inline_keyboard for b in row]
     assert admin_labels != own_labels, "страница админа и клиента одна на двоих"
     assert own_labels[0] == "➖ site0.example" and admin_labels[0] != "➖ site0.example"
+
+
+async def test_add_site_from_the_panel_returns_to_the_panel(services, fake_bot, make_active_client):
+    """«➕ Сайт» есть и в разделе, и в «Сайтах»: «Отмена» и итог ввода
+    возвращают туда, откуда пришли — с раздела в раздел (кнопка раздела несёт
+    tag="panel"), а не в «Свои сайты»."""
+    c = _allowed_client(services, make_active_client, 79)
+    st = FakeState()
+    cb, nav = _cb(fake_bot, 79)
+    await routing_h.routing_add_start(cb, RoutingCB(action="add", ref=c.id, tag="panel"), c, services, st)
+    data = await st.get_data()
+    assert data.get("ctx_kind") == "rf" and data.get("ctx_ref") == c.id, data
+    st2 = FakeState()
+    cb, nav = _cb(fake_bot, 79)
+    await routing_h.routing_add_start(cb, RoutingCB(action="add", ref=c.id), c, services, st2)
+    assert (await st2.get_data()).get("ctx_kind") == "sites"

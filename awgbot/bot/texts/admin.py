@@ -708,7 +708,7 @@ def add_device_prompt_admin(client, used: int, limit: int) -> str:
 
 
 def device_created_admin(name: str, client, bot_username: str = "") -> str:
-    return f"✅ {_e(name)}: создано для профиля {profile_link(client, bot_username)}"
+    return f"✅ {_e(name)} создано для профиля {profile_link(client, bot_username)}"
 
 
 def admin_bootstrap_device(address: str) -> str:
