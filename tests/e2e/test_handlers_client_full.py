@@ -410,13 +410,13 @@ async def test_subscription_screen_variants(services, fake_bot, make_active_clie
     text, markup = await ch.sub_parts(services, y.id)
     lines = text.splitlines()
     assert lines[0] == "💳 <b>Подписка:</b> годовая · 🟢 активна"
-    assert lines[1] == (f"{timeutil.fmt_period_ui(start, end)} · "
+    assert lines[1] == (f"📅 {timeutil.fmt_period_ui(start, end)} · "
                         f"ост. {timeutil.remaining_brief(end)}")
     if start.year != end.year:
-        assert lines[1].startswith(start.strftime("%d.%m.%y") + " → "), \
+        assert lines[1].startswith("📅 " + start.strftime("%d.%m.%y") + " → "), \
             "годовая через границу года — год у начала тоже, иначе даты не читаются"
-    assert lines[2] == "⏸️ Пауза: 28 дн. доступно"
-    assert lines[3].startswith("<blockquote expandable>+2 дн. паузы")
+    assert lines[2] == "" and lines[3] == "⏸️ Пауза: 28 дн. доступно", "пауза — после пустой строки"
+    assert lines[4].startswith("<blockquote expandable>+2 дн. паузы") and lines[5].startswith("+28 дн. за продление на год")
     assert lines[-1] == "Включено в подписку: 50 ГБ в месяц · 4 устройства"
     assert _rows(markup) == [["⏸️ Пауза", "⬅️ Назад"]]
 
@@ -432,7 +432,7 @@ async def test_subscription_screen_variants(services, fake_bot, make_active_clie
     lines = text.splitlines()
     assert lines[0] == "🟡 доступ приостановлен", "своя пауза — строка состояния доступа над подпиской"
     assert lines[1] == "💳 <b>Подписка:</b> годовая"
-    assert lines[3].startswith("⏸️ на паузе с ") and "из 5 дн. — неиспользованный остаток вернётся при досрочном возобновлении" in lines[3]
+    assert lines[3] == "" and lines[4].startswith("⏸️ на паузе с ") and "из 5 дн. — неиспользованный остаток вернётся при досрочном возобновлении" in lines[4]
     assert "ост." not in text, "остаток на паузе не тикает"
     assert _rows(markup) == [["▶️ Снять паузу", "⬅️ Назад"]]
 

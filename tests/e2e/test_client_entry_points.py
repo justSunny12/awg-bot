@@ -240,9 +240,9 @@ async def test_client_main_four_lines_with_devices(services, fake_bot, make_acti
     end = timeutil.parse_iso(cl.period_end)
     lines = text.splitlines()
     assert lines[0] == "👋 <b>Ксюша</b>"
-    assert lines[1].startswith("🟢 VPN работает · 🇷🇺 РФ-доступ"), lines[1]
-    assert lines[2] == f"💳 Подписка до {timeutil.fmt_date_ui(end)} · 📊 12.3 из 100 ГБ", lines[2]
-    assert lines[3] == "📱 Устройств 1 из 3" and len(lines) == 4
+    assert lines[2].startswith("🟢 VPN работает · 🇷🇺 РФ-доступ"), lines[2]
+    assert lines[3] == f"💳 Подписка до {timeutil.fmt_date_ui(end)} · 📊 12.3 из 100 ГБ", lines[3]
+    assert lines[4] == "📱 Устройств 1 из 3" and len(lines) == 5
     rows = [[b.text for b in r] for r in markup.inline_keyboard]
     assert rows[0] == ["🔗 Ссылка", "🔳 QR", "📄 Файл"] and ["🇷🇺 РФ-доступ", "💳 Подписка"] in rows
 
@@ -253,7 +253,7 @@ async def test_client_main_without_devices_offers_adding_and_no_issue_row(
     monkeypatch.setattr(services, "server_ok_cached", lambda: False)
     text, markup = await ch.main_payload(services, cl)
     lines = text.splitlines()
-    assert lines[1] == "🔴 VPN не отвечает", "РФ-доступ не выдан — о нём ни слова"
+    assert lines[2] == "🔴 VPN не отвечает", "РФ-доступ не выдан — о нём ни слова"
     assert lines[-1] == "📱 Можно добавить до 3 устройств"
     rows = [[b.text for b in r] for r in markup.inline_keyboard]
     assert rows == [["➕ Устройство"], ["💳 Подписка", "❓ Как подключить"]], rows

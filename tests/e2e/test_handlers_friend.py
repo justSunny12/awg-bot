@@ -37,9 +37,9 @@ async def test_guest_main_screen(services, fake_bot, make_active_client):
     _, text, markup = [s for s in msg.sent if s[0] == "answer"][-1]
     rows = [[b.text for b in row] for row in markup.inline_keyboard]
     lines = text.splitlines()
-    assert lines[0] == "👋 <b>Артём</b>" and lines[1].endswith(("VPN работает", "VPN не отвечает")), text
-    assert lines[2] == '💳 Подписка профиля <a href="tg://user?id=8100">Вася</a>: 🟢 активна', text
-    assert len(lines) == 3, "строки трафика при нулях без лимита"
+    assert lines[0] == "👋 <b>Артём</b>" and lines[1] == "" and lines[2].endswith(("VPN работает", "VPN не отвечает")), text
+    assert lines[3] == '💳 Подписка профиля <a href="tg://user?id=8100">Вася</a>: 🟢 активна', text
+    assert len(lines) == 4, "строки трафика при нулях без лимита"
     assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Устройства"], ["❓ Как подключить"]], rows
 
 
@@ -230,7 +230,7 @@ async def test_guest_main_shows_rf_line_and_button_only_with_owner_permission(
     services.set_routing_allowed(owner.id, True)
     text, markup = await fh.guest_main_payload(services, guest)
     rows = [[b.text for b in row] for row in markup.inline_keyboard]
-    assert "🇷🇺 РФ-доступ" in text.splitlines()[1], text
+    assert "🇷🇺 РФ-доступ" in text.splitlines()[2], text
     assert ["📱 Устройства", "🇷🇺 РФ-доступ"] in rows, rows
 
     # раздел открывается гостю, «Назад» — на его главный экран

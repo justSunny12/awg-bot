@@ -290,11 +290,11 @@ def test_status_line_appears_for_everyone_granted(services, make_active_client):
     ok = services.routing_health_for_client(c)
     assert ok is not None, "разрешено — строка обязана быть, даже при выключенном режиме"
     out = texts.greeting_client(c, True, (1, 3), ok)
-    assert out.splitlines()[1] == "🟢 VPN работает · 🇷🇺 РФ-доступ выкл", out
+    assert out.splitlines()[2] == "🟢 VPN работает · 🇷🇺 РФ-доступ выкл", out
     on = texts.greeting_client(c, True, (1, 3), True, routing_on=True)
-    assert on.splitlines()[1] == "🟢 VPN работает · 🇷🇺 РФ-доступ 🟢", on
+    assert on.splitlines()[2] == "🟢 VPN работает · 🇷🇺 РФ-доступ 🟢", on
     broken = texts.greeting_client(c, True, (1, 3), False, routing_on=True)
-    assert broken.splitlines()[1] == "🟢 VPN работает · 🇷🇺 РФ-доступ 🔴 не работает", broken
+    assert broken.splitlines()[2] == "🟢 VPN работает · 🇷🇺 РФ-доступ 🔴 не работает", broken
 
 
 async def test_admin_toggles_client_master(services, make_active_client, fake_bot):

@@ -56,7 +56,7 @@ def _info(ok=True, active="NASPi", active_slot=1, standby=()):
 
 def test_working_line_links_the_active_gateway_to_its_card():
     line = texts.routing_admin_status_line(_info(), BOT)
-    assert line == f'🇷🇺 РФ-доступ: 🟢 работает (<a href="{_card(1)}">NASPi</a>)', line
+    assert line == f'🇷🇺 РФ-доступ: 🟢 работает · <a href="{_card(1)}">NASPi</a>', line
 
 
 def _plain(line: str) -> str:
@@ -73,7 +73,7 @@ def test_standby_word_links_to_the_standby_slot_not_the_active_one():
         line = texts.routing_admin_status_line(
             _info(standby=[{"name": "Pi2", "slot": 2, "state": state}]), BOT)
         assert _hrefs(line) == [(_card(1), "NASPi"), (_card(2), "резерв")], (state, line)
-        assert _plain(line) == f"🇷🇺 РФ-доступ: {dot} работает (NASPi), резерв {tail}", (state, line)
+        assert _plain(line) == f"🇷🇺 РФ-доступ: {dot} работает · NASPi · резерв {tail}", (state, line)
 
 
 def test_active_on_slot_two_links_to_slot_two():
@@ -109,7 +109,7 @@ def test_without_username_the_line_stays_plain():
     без обрывков разметки."""
     assert texts.routing_admin_status_line(
         _info(standby=[{"name": "Pi2", "slot": 2, "state": "alive"}])) == \
-        "🇷🇺 РФ-доступ: 🟢 работает (NASPi), резерв жив"
+        "🇷🇺 РФ-доступ: 🟢 работает · NASPi · резерв жив"
     assert texts.routing_admin_status_line(
         _info(ok=False, standby=[{"name": "Pi2", "slot": 2, "state": "dead"}]), "") == \
         "🇷🇺 РФ-доступ: 🔴 недоступен — NASPi, Pi2 не отвечают"
@@ -120,7 +120,7 @@ def test_without_slot_numbers_there_is_nothing_to_link():
     текст: ссылка «gw-0» открыла бы «не найдено»."""
     line = texts.routing_admin_status_line(
         {"ok": True, "active": "NASPi", "standby": [{"name": "Pi2", "state": "alive"}]}, BOT)
-    assert line == "🇷🇺 РФ-доступ: 🟢 работает (NASPi), резерв жив", line
+    assert line == "🇷🇺 РФ-доступ: 🟢 работает · NASPi · резерв жив", line
 
 
 def test_admin_panel_passes_the_bot_username_to_the_routing_line():

@@ -1020,7 +1020,12 @@ ADMIN_ID. Основной бот спрашивает токен шлюза о�
   сверяет `ISSUED_AT` с датой последней выдачи. (г) Тексты уведомлений
   домена — в одно место, домен не тянет `bot.texts`. (д) Документация:
   дерево модулей в корневом README, «устройство» вместо «машина» в старых
-  разделах README-bot.
+  разделах README-bot. (е) Модули от 500 до 1000 строк — на пакеты, как
+  сделано в 3.2.0 для тех, что были длиннее тысячи (решено 30.09.2026):
+  handlers/client, domain/migration, texts/client, infra/gwguard, infra/awg,
+  handlers/gateway, texts/admin, db/schema, infra/nftguard, runtime/linkclient,
+  runtime/linkserver, runtime/scheduler, services/gwchannel, texts/gateway,
+  runtime/main, handlers/admin/clients, texts/settings.
 
 - **Ребут-тест ВПС — сделан 07.09.2026, не в тихий час, а заодно с обновлением
   модуля ядра.** Две дыры: `awg1` не поднялся — в докерном режиме интерфейс

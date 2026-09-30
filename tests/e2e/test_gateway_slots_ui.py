@@ -135,7 +135,7 @@ async def test_list_and_card_show_roles_preferred_and_ping_lazily(services, slot
     await sh.gw_slot_list(cb, services, FakeState())
     text, labels = _screen(nav)
     assert labels[0] == "⭐ NASPi" and labels[1] == "Pi2", "статус — в тексте, не на кнопке"
-    assert "\nPi2 · дача — 🟢 Резерв" in text, "подпись через « · », без адреса и кавычек"
+    assert "\nPi2 (дача) — 🟢 Резерв" in text, "подпись в скобках, без адреса и кавычек"
     # карточка резерва: пинг измерен лениво при первом открытии
     assert services.pings["n"] == 0
     cb, nav = _acb(fake_bot)
@@ -143,7 +143,7 @@ async def test_list_and_card_show_roles_preferred_and_ping_lazily(services, slot
     text, labels = _screen(nav)
     lines = text.split("\n")
     assert services.pings["n"] == 1
-    assert lines[0] == "🛰 <b>Pi2 · дача</b> — 🟢 Резерв", lines
+    assert lines[0] == "🛰 <b>Pi2 (дача)</b> — 🟢 Резерв", lines
     assert lines[1].startswith("📡 awglink2:8443 · ") and lines[1].endswith(" · 43 мс"), lines
     assert lines[2] == "🌐 <code>198.51.100.7</code>", lines
     assert "🗺 подсети не заданы · 🔀 VPN-транзит ☑️" in lines
@@ -586,17 +586,17 @@ async def test_admin_status_line_names_the_active_gateway_and_the_standby(servic
     оба мертвы — с именами, а не «сервер работает»."""
     _, pi, pi2 = slots
     _slot1(services, pi)
-    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🟢 работает (NASPi)"
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🟢 работает · NASPi"
     services.db.gateway_update(1, label="дом 1")
-    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🟢 работает (NASPi · дом 1)"
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🟢 работает · NASPi (дом 1)"
     services.db.gateway_update(1, label="")
 
     _slot2(services, pi2)
-    assert _admin_line(services).endswith("работает (NASPi), резерв проверяется"), "стрика ещё нет"
+    assert _admin_line(services).endswith("работает · NASPi · резерв проверяется"), "стрика ещё нет"
     services.db.set_state("routing_gw_2_up_streak", "3")
-    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🟢 работает (NASPi), резерв жив"
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🟢 работает · NASPi · резерв жив"
     _push(services, 2, False)
-    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🟠 работает (NASPi), резерв не отвечает"
+    assert _admin_line(services) == "🇷🇺 РФ-доступ: 🟠 работает · NASPi · резерв не отвечает"
 
     monkeypatch.setattr(services, "routing_link_ok", lambda: False)
     assert _admin_line(services) == "🇷🇺 РФ-доступ: 🔴 недоступен — NASPi, Pi2 не отвечают"
@@ -621,7 +621,7 @@ async def test_admin_panel_uses_the_detailed_line(services, slots, monkeypatch):
     assert snap["routing_info"] and snap["routing_info"]["active"] == "NASPi"
     from awgbot.bot import texts
     text = texts.admin_panel(snap["st"], snap["routing_ok"], routing_info=snap["routing_info"])
-    assert "🇷🇺 РФ-доступ: 🟢 работает (NASPi)" in text
+    assert "🇷🇺 РФ-доступ: 🟢 работает · NASPi" in text
 
 
 # ── «🔀 VPN-транзит» ────────────────────────
@@ -789,11 +789,11 @@ async def test_peer_nets_toggle_has_a_dialog_and_shows_state_in_the_list(service
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_list(cb, services, FakeState())
     text, _ = _screen(nav)
-    assert "↔️ Связь подсетей: 192.168.1.0/24 (NASPi) ↔ 192.168.68.0/24 (Pi2)" in text.split("\n"), text
+    assert "↔️ Связь подсетей: NASPi: 192.168.1.0/24 ↔ Pi2: 192.168.68.0/24" in text.split("\n"), text
     services.db.gateway_update(2, label="дача")
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_list(cb, services, FakeState())
-    assert "192.168.68.0/24 (Pi2 · дача)" in _screen(nav)[0], "подпись через « · », без вложенных скобок"
+    assert "Pi2 (дача): 192.168.68.0/24" in _screen(nav)[0], "подпись в скобках, подсети после двоеточия"
     services.db.gateway_update(2, label="")
     # карточка: связь подсетей — одной строкой с галочкой, подсеть — строкой выше
     cb, nav = _acb(fake_bot)
@@ -835,7 +835,7 @@ def _peer_line_state(services, state):
     ("no_nets", True, "↔️ Связь подсетей не работает: у Pi2 не заданы подсети — «🗺 Подсети» в карточке шлюза"),
     ("overlap", True, "↔️ Связь подсетей не работает: подсети NASPi и Pi2 пересекаются ({nets}) — "
                       "смени подсеть одного из шлюзов"),
-    ("ok", True, "↔️ Связь подсетей: 192.168.1.0/24 (NASPi) ↔ 192.168.68.0/24 (Pi2)"),
+    ("ok", True, "↔️ Связь подсетей: NASPi: 192.168.1.0/24 ↔ Pi2: 192.168.68.0/24"),
 ])
 async def test_peer_nets_line_in_every_state(services, slots, monkeypatch, state, enabled, line):
     """Строка связи подсетей на экране «Шлюзы» — во всех пяти состояниях, в

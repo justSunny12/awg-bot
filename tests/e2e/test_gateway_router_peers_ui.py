@@ -123,14 +123,14 @@ async def test_agent_router_recipe_without_peers(gw_svc, fake_bot, monkeypatch):
 
 
 async def test_agent_router_recipe_is_titled_by_the_slot_name_from_the_server(gw_svc, fake_bot, monkeypatch):
-    """Заголовок рецепта — имя слота, каким его знает сервер («NASPi · дача»):
+    """Заголовок рецепта — имя слота, каким его знает сервер («NASPi (дача)»):
     по нему человек узнаёт шлюз в боте сервера. Hostname («naspi») — только
     пока сервер имени не сообщал: у двух малин из одного образа он один и тот
     же."""
     params = ("192.168.1.0/24", "192.168.1.2", [])
     text, _ = await _lan_router(gw_svc, fake_bot, monkeypatch, params)
     assert text.startswith("❓ <b>Роутер для naspi</b> · 192.168.1.0/24 · шлюз 192.168.1.2"), text.splitlines()[0]
-    gw_svc.set_link_role(True, standby=True, name="NASPi · <дача>")
+    gw_svc.set_link_role(True, standby=True, name="NASPi (<дача>)")
     text, _ = await _lan_router(gw_svc, fake_bot, monkeypatch, params)
-    assert text.startswith("❓ <b>Роутер для NASPi · &lt;дача&gt;</b> · 192.168.1.0/24"), text.splitlines()[0]
+    assert text.startswith("❓ <b>Роутер для NASPi (&lt;дача&gt;)</b> · 192.168.1.0/24"), text.splitlines()[0]
     assert "naspi ·" not in text

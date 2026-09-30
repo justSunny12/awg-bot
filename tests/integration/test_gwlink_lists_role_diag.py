@@ -459,9 +459,9 @@ async def test_the_role_brings_the_slot_name_and_whether_another_gateway_exists(
     services.db.gateway_add(dev.device_id, "awglink2", 8443, "10.99.99.4/30", slot_id=2)
     services.db.gateway_update(1, label="дача")
     await link.deliver_all()
-    await _until(lambda: agent.link_standby_known() is True and agent.link_slot_name() == "NASPi, дача")
+    await _until(lambda: agent.link_standby_known() is True and agent.link_slot_name() == "NASPi (дача)")
     assert agent.link_standby_known() is True, "второй шлюз появился, а агент считает себя единственным"
-    assert agent.link_slot_name() == "NASPi · дача", "подпись слота не доехала до агента"
+    assert agent.link_slot_name() == "NASPi (дача)", "подпись слота не доехала до агента"
     assert agent.link_role() == "active"
 
 

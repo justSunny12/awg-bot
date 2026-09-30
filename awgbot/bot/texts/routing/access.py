@@ -136,8 +136,8 @@ GW_CARD_PAYLOAD = "gw"          # «/start gw-<слот>» — карточка 
 
 def routing_admin_status_line(info: dict, bot_username: str = "") -> str:
     """Та же строка в шапке админа — с тем, кто несёт трафик, и состоянием
-    резерва (services.routing_admin_status): один шлюз — «работает (имя)»;
-    два — «…, резерв жив / не отвечает / проверяется», мёртвый резерв красит
+    резерва (services.routing_admin_status): один шлюз — «работает · имя»;
+    два — «… · резерв жив / не отвечает / проверяется», мёртвый резерв красит
     строку в 🟠; выключен — кто именно не отвечает. Имя шлюза и слово
     «резерв» — ссылки в карточку слота (deep-link на себя), когда username
     известен; состояние резерва остаётся текстом."""
@@ -152,12 +152,12 @@ def routing_admin_status_line(info: dict, bot_username: str = "") -> str:
         dot = "🟠" if dead else "🟢"
         line = f"🇷🇺 {ROUTING_NAME}: {dot} работает"
         if active:
-            line += f" ({_link(active, info.get('active_slot'))})"
+            line += f" · {_link(active, info.get('active_slot'))}"
         if standby:
             # ссылка — только на слове «резерв»: состояние остаётся текстом
             st = standby[0]
             tail = {"alive": "жив", "dead": "не отвечает"}.get(st["state"], "проверяется")
-            line += ", " + _link("резерв", st.get("slot")) + " " + tail
+            line += " · " + _link("резерв", st.get("slot")) + " " + tail
         return line
     names = ([(active, info.get("active_slot"))] if active else []) \
         + [(s["name"], s.get("slot")) for s in standby if s["state"] != "alive"]

@@ -208,9 +208,9 @@ def limit_exhausted_line(used: int, limit: int) -> str:
 def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
                     routing_ok: bool = None, held=(), traffic: dict | None = None,
                     *, routing_on: bool = False, bot_username: str = "") -> str:
-    """Главная клиента — четыре строки: имя; VPN и РФ-доступ; подписка и трафик;
-    устройства. routing_ok=None — РФ-доступ профилю не выдан, его нет вовсе."""
-    lines = [f"👋 <b>{_e(client.name)}</b>",
+    """Главная клиента: имя, пустая строка, затем VPN и РФ-доступ; подписка и
+    трафик; устройства. routing_ok=None — РФ-доступ профилю не выдан, его нет вовсе."""
+    lines = [f"👋 <b>{_e(client.name)}</b>", "",
              status_line(server_ok, routing_ok, routing_on, bot_username)]
     paused, _, pause_visible = _pause_visibility(client)
     access = access_status_line(client)
@@ -254,7 +254,7 @@ def greeting_guest(name: str, server_ok: bool, donor, held, routing_ok: bool = N
     held = list(held)
     if donor is None or not held:
         return f"👋 <b>{_e(name)}</b> · устройств нет — попроси у друга новый код"
-    lines = [f"👋 <b>{_e(name)}</b>",
+    lines = [f"👋 <b>{_e(name)}</b>", "",
              status_line(server_ok, routing_ok, routing_on, bot_username),
              f"💳 Подписка профиля {client_link(donor)}: {subscription_status_only(donor)}"]
     lines += _guest_traffic_lines(held, donor, bot_username)
@@ -687,7 +687,7 @@ def pause_rules_details() -> str:
     year_days = settings.get_int("pause.pause_max_total_days", 28)
     month_days = settings.get_int("pause.monthly_pause_days", 2)
     return details(f"+{month_days} дн. паузы за своевременное продление на месяц "
-                   f"(до {12 * month_days}), +{year_days} за год (до {2 * year_days})")
+                   f"(до {12 * month_days} дн.),\n+{year_days} дн. за продление на год (до {2 * year_days} дн.)")
 
 
 def pause_balance_line(client) -> str:
@@ -707,8 +707,8 @@ def _limits_line(client, routing_visible: bool) -> str:
 
 
 def subscription_text(client, *, routing_visible: bool) -> str:
-    """Экран «💳 Подписка»: тип и статус, период и остаток, пауза (счёт или
-    текущая), лимиты. «🇷🇺 РФ-доступ» в лимитах — только когда выдан."""
+    """Экран «💳 Подписка»: тип и статус, период и остаток, после пустой строки —
+    пауза (счёт или текущая), лимиты. «🇷🇺 РФ-доступ» в лимитах — только когда выдан."""
     paused, mode, pause_visible = _pause_visibility(client)
     kind = subscription_kind_label(client.period_kind)
     access = access_status_line(client)
@@ -723,7 +723,7 @@ def subscription_text(client, *, routing_visible: bool) -> str:
     end_iso = client.effective_period_end
     if end_iso:
         end = timeutil.parse_iso(end_iso)
-        period = timeutil.fmt_period_ui(start, end) if start else f"до {timeutil.fmt_dt_ui(end)}"
+        period = "📅 " + (timeutil.fmt_period_ui(start, end) if start else f"до {timeutil.fmt_dt_ui(end)}")
         if not pause_visible and client.status == SubStatus.ACTIVE:
             period += f" · ост. {timeutil.remaining_brief(end)}"
         lines.append(period)
@@ -733,9 +733,11 @@ def subscription_text(client, *, routing_visible: bool) -> str:
             used = timeutil.ceil_days((timeutil.now() - since).total_seconds()) if since else 0
             used = max(0, min(used, reserved))
             until = _pause_until(client)
+            lines.append("")
             lines.append(f"⏸️ на паузе с {timeutil.fmt_date_ui(since) if since else '—'}, до {until} · "
                          f"израсходовано {used} из {reserved} дн. — неиспользованный остаток вернётся при досрочном возобновлении")
         elif not pause_visible:
+            lines.append("")
             lines.append(pause_balance_line(client))
             if str(client.period_kind or "") in ("year", "month"):
                 lines.append(pause_rules_details())

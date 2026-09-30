@@ -135,13 +135,13 @@ ROUTING_NAME = "РФ-доступ"
 # ── слоты: имя и состояние ───────────────────────────────────────────────────
 
 def slot_name(state, star: bool = False) -> str:
-    """«NASPi · дача» — имя устройства и подпись; star — «⭐» у
+    """«NASPi (дача)» — имя устройства и подпись; star — «⭐» у
     предпочтительного, «🛰» у остальных не рисуется здесь (заголовок карточки
     ставит его сам)."""
     dev, gw = state.get("device"), state.get("gateway")
     name = _e(dev.name) if dev is not None else f"слот {gw.id}"
     pre = "⭐ " if star and state.get("preferred") else ""
-    return pre + name + (f" · {_e(gw.label)}" if gw is not None and gw.label else "")
+    return pre + name + (f" ({_e(gw.label)})" if gw is not None and gw.label else "")
 
 
 def slot_status(state) -> str:
@@ -196,13 +196,13 @@ def peer_nets_line(info: dict) -> str:
         w = info.get("who") or ["?", "?"]
         return (f"↔️ Связь подсетей не работает: подсети {_plain(w[0])} и {_plain(w[1])} пересекаются "
                 f"({nets}) — смени подсеть одного из шлюзов")
-    pairs = " ↔ ".join(f"{', '.join(_e(n) for n in nets)} ({_e(name)}{' · ' + _e(label) if label else ''})"
+    pairs = " ↔ ".join(f"{_e(name)}{' (' + _e(label) + ')' if label else ''}: {', '.join(_e(n) for n in nets)}"
                        for name, label, nets in info.get("pairs_named") or [])
     return f"↔️ Связь подсетей: {pairs}"
 
 
-GATEWAYS_ABOUT = ("трафик несёт один шлюз, второй ждёт в резерве; активный перестал отвечать, а "
-                  "резерв жив — бот перекладывает трафик сам и остаётся на нём, вернуть можно кнопкой")
+GATEWAYS_ABOUT = ("трафик несёт один шлюз, второй ждёт в резерве;\nактивный перестал отвечать, а "
+                  "резерв жив — бот перекладывает трафик на резерв и остаётся на нём, вернуть можно кнопкой")
 ROUTING_PROVISION_INTRO = ("🇷🇺 РФ-доступ не развёрнут\n"
                            "Кнопка поставит dnsmasq, перехват DNS клиентов, NAT и маршруты, линк до "
                            "будущего шлюза — до минуты. Шлюз назначается следующим шагом")

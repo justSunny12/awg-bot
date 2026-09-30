@@ -271,7 +271,7 @@ class SlotsMixin:
         def _name(g) -> str:
             dev = self.db.get_device(g.device_id)
             name = dev.name if dev is not None else f"слот {g.id}"
-            return f"{name} · {g.label}" if g.label else name
+            return f"{name} ({g.label})" if g.label else name
 
         standby = []
         for g in slots:
