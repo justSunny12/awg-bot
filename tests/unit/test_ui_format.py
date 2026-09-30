@@ -53,6 +53,10 @@ def test_year_is_taken_in_moscow_time_not_utc():
 
 def test_seconds_only_on_request_and_only_when_not_zero():
     assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0, 42), REF) == "12.10 18:00", "секунды без просьбы"
+    # окончание срока: время — только в текущем месяце
+    assert t.fmt_end_ui(_dt(2026, 10, 12, 18, 0), _dt(2026, 10, 1, 9)) == "12.10 18:00"
+    assert t.fmt_end_ui(_dt(2026, 11, 12, 18, 0), _dt(2026, 10, 1, 9)) == "12.11"
+    assert t.fmt_end_ui(_dt(2027, 10, 12, 18, 0), _dt(2026, 10, 1, 9)) == "12.10.27"
     assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0, 42), REF, seconds=True) == "12.10 18:00:42"
     assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0, 0), REF, seconds=True) == "12.10 18:00", ":00 не пишем"
 

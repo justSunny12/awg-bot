@@ -196,7 +196,7 @@ def peer_nets_line(info: dict) -> str:
         w = info.get("who") or ["?", "?"]
         return (f"↔️ Связь подсетей не работает: подсети {_plain(w[0])} и {_plain(w[1])} пересекаются "
                 f"({nets}) — смени подсеть одного из шлюзов")
-    pairs = " ↔ ".join(f"{_e(name)}{' (' + _e(label) + ')' if label else ''}: {', '.join(f'<code>{_e(n)}</code>' for n in nets)}"
+    pairs = " ↔️ ".join(f"{_e(name)}{' (' + _e(label) + ')' if label else ''}: {', '.join(f'<code>{_e(n)}</code>' for n in nets)}"
                        for name, label, nets in info.get("pairs_named") or [])
     return f"↔️ Связь подсетей: {pairs}"
 
@@ -256,12 +256,12 @@ def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str 
         lines.append(f"Резерва нет: упадёт {slot_ref(states[0])} — РФ-сервисы станут открываться "
                      "с зарубежного адреса")
     else:
+        lines.append(details(GATEWAYS_ABOUT))
         if peer_info is not None:
             lines.append(peer_nets_line(peer_info))
         if not auto_on:
             lines.append(GATEWAYS_AUTO_OFF)
-        lines.append(details(GATEWAYS_ABOUT))
-        lines.append("⭐ — предпочтительный при холодном старте")
+        lines.append(details("⭐ — предпочтительный при холодном старте"))
     return "\n".join(lines)
 
 

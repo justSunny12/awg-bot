@@ -21,7 +21,7 @@ SETTINGS_ROOT = "⚙️ <b>Настройки</b>"
 
 # ── 🔔 Уведомления ───────────────────────────────────────────────────────────
 
-SETTINGS_NOTIFY_CLIENTS = "👥 <b>О чём сообщать</b>"
+SETTINGS_NOTIFY_CLIENTS = "👥 <b>О чём сообщать</b>:"
 
 
 def settings_notify_text() -> str:
@@ -418,16 +418,19 @@ PRIVATE_DNS_DISMISSED = ("Оставляю публичный DNS. Кнопка 
 
 
 def settings_server_text(d: dict) -> str:
-    """Раздел «Сервер»: четыре строки того, что уезжает в новые ссылки, и
-    «подробнее» про переезд."""
+    """Раздел «Сервер»: имя сервера и домен (или IP) заголовком, пустая строка,
+    ядро, DNS, интерфейс — то, что уезжает в новые ссылки, и «подробнее» про
+    переезд."""
     host = d.get("host") or ""
     kernel = _e(d.get("kernel") or "не определено")
     gen = f", gen{d['generation']}" if d.get("generation") else ""
     dns_note = _private_dns_note(d.get("private_dns") or {})
     lines = [
-        f"🖥 <b>Сервер AWG</b> · ядро {kernel}{gen}",
-        (f"<code>{_e(host)}</code> · имя сервера: «{_e(d['name'])}»" if _looks_like_domain(host)
-         else f"Домена нет, в ссылках IP <code>{_e(host)}</code> · имя сервера: «{_e(d['name'])}»"),
+        f"🖥 <b>{_e(d['name'])}</b>"
+        + (f" · <code>{_e(host)}</code>" + ("" if _looks_like_domain(host) else " (домена нет — в ссылках IP)")
+           if host else " · адрес сервера не задан"),
+        "",
+        f"ядро {kernel}{gen}",
         f"DNS {', '.join(f'<code>{_e(x.strip())}</code>' for x in str(d['dns']).split(','))}{dns_note} · MTU {d['mtu']} · keepalive {_e(str(d['keepalive']))}",
         f"{_e(d['iface'])} · порт {d['port']} · <code>{_e(d['subnet'])}</code>",
     ]
@@ -441,7 +444,7 @@ def settings_server_text(d: dict) -> str:
         warns.append(f"🚚 Сменить порт или подсеть сейчас нельзя: {_e(blocked)}")
     lines += warns
     lines.append(details("Правки уходят только в новые ссылки: старые несут те параметры, с которыми "
-                         "их выдали. Порт и подсеть меняются переездом: у устройств появляются двойники, "
+                         "их выдали.\nПорт и подсеть меняются переездом: у устройств появляются двойники, "
                          "пользователи перевыпускают конфиги, когда им удобно"))
     return "\n".join(lines)
 

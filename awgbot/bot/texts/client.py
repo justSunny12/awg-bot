@@ -152,7 +152,7 @@ def subscription_short(client, bot_username: str = "") -> str:
     else:
         end = timeutil.parse_iso(client.period_end)
         if client.notified_thresholds:
-            text = f"💳 🟡 истекает {timeutil.fmt_dt_ui(end)}"
+            text = f"💳 🟡 истекает {timeutil.fmt_end_ui(end)}"
         else:
             text = f"💳 Подписка до {timeutil.fmt_date_ui(end)}"
     return _link(bot_username, SUB_PAYLOAD, text)
@@ -723,7 +723,7 @@ def subscription_text(client, *, routing_visible: bool) -> str:
     end_iso = client.effective_period_end
     if end_iso:
         end = timeutil.parse_iso(end_iso)
-        period = "📅 " + (timeutil.fmt_period_ui(start, end) if start else f"до {timeutil.fmt_dt_ui(end)}")
+        period = "📅 " + (timeutil.fmt_period_ui(start, end) if start else f"до {timeutil.fmt_end_ui(end)}")
         if not pause_visible and client.status == SubStatus.ACTIVE:
             period += f" · ост. {timeutil.remaining_brief(end)}"
         lines.append(period)
@@ -755,7 +755,7 @@ def subscription_status_only(client, *, expiring: bool = False) -> str:
         return "🔴 истекла"
     if expiring and client.period_end and client.notified_thresholds:
         end = timeutil.parse_iso(client.period_end)
-        return f"🟡 истекает {timeutil.fmt_dt_ui(end)}"
+        return f"🟡 истекает {timeutil.fmt_end_ui(end)}"
     return "🟢 активна"
 
 
@@ -809,7 +809,7 @@ def pause_limit_exhausted() -> str:
 
 def pause_resumed_self(actual_days: int, new_end) -> str:
     return (f"▶️ Пауза снята · {actual_days} дн. израсходовано · "
-            f"подписка до {timeutil.fmt_dt_ui(new_end)}")
+            f"подписка до {timeutil.fmt_end_ui(new_end)}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

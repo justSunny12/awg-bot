@@ -50,7 +50,7 @@ async def test_extend_screen_offers_periods_keep_toggle_on_by_default_and_cancel
     text, labels = last_screen(nav)
     end = timeutil.parse_iso(services.db.get_client(client.id).period_end)
     assert text == (f"⏱ <b>Продление:</b> {client.name}\n"
-                    f"Сейчас до {timeutil.fmt_dt_ui(end)} · осталось {timeutil.remaining_brief(end)}"), text
+                    f"Сейчас до {timeutil.fmt_end_ui(end)} · осталось {timeutil.remaining_brief(end)}"), text
     assert labels == ["День", "Неделя", "Месяц", "Год", "∞", "✅ Сохранить остаток", "⬅️ Отмена"], labels
     btns = _buttons(nav)
     assert all(PeriodCB.unpack(b.callback_data).keep == 1 for b in btns[:4]), \
@@ -103,7 +103,7 @@ async def test_period_applies_at_once_leaves_a_two_line_note_and_returns_to_the_
     note = [s[1] for s in nav.sent if s[0] == "edit_text"][-1]
     lines = note.split("\n")
     assert lines[0] == f"✅ {client.name}: подписка продлена на месяц,", note
-    assert lines[1].startswith(f"→ {timeutil.fmt_dt_ui(new_end)}"), note
+    assert lines[1].startswith(f"→ {timeutil.fmt_end_ui(new_end)}"), note
     shown = [s for s in nav.sent if s[0] == "answer"]
     assert shown and shown[-1][1].startswith("👤 "), "после продления — не карточка профиля"
     assert services.db.get_nav_message_id(ADMIN) != nav.message_id, "след остался живым меню"

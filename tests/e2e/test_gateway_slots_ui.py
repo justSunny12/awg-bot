@@ -122,7 +122,7 @@ async def test_section_with_two_slots_lists_them(services, slots):
     lines = text.split("\n")
     assert lines[1] == "⭐ NASPi — 🟢 Активен" and lines[2] == "Pi2 — 🟢 Резерв", lines
     assert "↔️ Связь подсетей: выключена" in lines
-    assert lines[-1] == "⭐ — предпочтительный при холодном старте"
+    assert lines[-1] == "<blockquote expandable>⭐ — предпочтительный при холодном старте</blockquote>"
     assert "Резерва нет" not in text and "«" not in lines[1] + lines[2], "имена без кавычек"
 
 
@@ -189,12 +189,12 @@ async def test_preferred_toggle_moves_and_clears(services, slots, fake_bot):
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_edit(cb, GwSlotCB(action="edit", slot=2), services, FakeState())
     text, labels = _screen(nav)
-    assert text == "✏️ <b>Pi2</b> — изменить" and "⭐ При старте: ☑️" in labels
+    assert text == "✏️ <b>Pi2</b> — изменить:" and "⭐ При старте: ☑️" in labels
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_pref(cb, GwSlotCB(action="pref", slot=2), services)
     assert services.db.gateway(2).preferred == 1 and services.db.gateway(1).preferred == 0
     text, labels = _screen(nav)
-    assert text == "✏️ <b>Pi2</b> — изменить" and "⭐ При старте: ✅" in labels
+    assert text == "✏️ <b>Pi2</b> — изменить:" and "⭐ При старте: ✅" in labels
     assert cb.answers[-1][0] == "Предпочтительный: Pi2"
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_pref(cb, GwSlotCB(action="pref", slot=2), services)
@@ -212,7 +212,7 @@ async def test_edit_screen_offers_name_label_replace_and_remove(services, slots,
     await sh.gw_slot_edit(cb, GwSlotCB(action="edit", slot=1), services, FakeState())
     text, _ = _screen(nav)
     markup = next(s[2] for s in reversed(nav.sent) if s[0] == "edit_text")
-    assert text == "✏️ <b>NASPi</b> — изменить"
+    assert text == "✏️ <b>NASPi</b> — изменить:"
     assert _rows(markup) == [["✏️ Имя", "✏️ Подпись"], ["🔁 Заменить", "🛑 Снять"], ["⬅️ Назад"]], _rows(markup)
     datas = [b.callback_data for r in markup.inline_keyboard for b in r]
     assert datas == [GwSlotCB(action="name", slot=1).pack(), GwSlotCB(action="label", slot=1).pack(),
@@ -242,7 +242,7 @@ async def test_rename_from_the_edit_screen_returns_to_the_edit_screen(services, 
     await dh.device_edit_name_apply(msg, services, st)
     assert services.db.get_device(pi.id).name == "NAS"
     shown = [s[1] for s in msg.sent if s[0] in ("answer", "edit_text")]
-    assert shown and shown[-1] == "✅ Имя устройства: NASPi → NAS\n\n✏️ <b>NAS</b> — изменить", shown
+    assert shown and shown[-1] == "✅ Имя устройства: NASPi → NAS\n\n✏️ <b>NAS</b> — изменить:", shown
     assert await st.get_state() is None
 
 
@@ -312,7 +312,7 @@ async def test_home_subnets_and_label_inputs(services, slots, fake_bot):
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_home(cb, GwSlotCB(action="home", slot=1), services, st)
     text, labels = _screen(nav)
-    assert text.startswith("🗺 <b>Подсети NASPi</b> · сейчас не заданы\n"), text
+    assert text.startswith("🗺 <b>Подсети NASPi</b> · сейчас: не заданы\n"), text
     assert labels == ["✖️ Отмена"]
     msg = _amsg(fake_bot, "192.168.1.0/24 мусор")
     await sh.gateway_home_received(msg, st, services)
@@ -331,7 +331,7 @@ async def test_home_subnets_and_label_inputs(services, slots, fake_bot):
     assert services.db.gateway(2).label == "дача"
     assert await st.get_state() is None
     shown = [s[1] for s in msg.sent if s[0] in ("answer", "edit_text")]
-    assert shown and shown[-1] == "✅ Подпись: — → дача\n\n✏️ <b>Pi2</b> — изменить", "назад в «✏️ Изменить»"
+    assert shown and shown[-1] == "✅ Подпись: — → дача\n\n✏️ <b>Pi2 (дача)</b> — изменить:", "назад в «✏️ Изменить»"
     # «—» — убрать подпись
     st = FakeState()
     cb, nav = _acb(fake_bot)
@@ -789,7 +789,7 @@ async def test_peer_nets_toggle_has_a_dialog_and_shows_state_in_the_list(service
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_list(cb, services, FakeState())
     text, _ = _screen(nav)
-    assert "↔️ Связь подсетей: NASPi: <code>192.168.1.0/24</code> ↔ Pi2: <code>192.168.68.0/24</code>" in text.split("\n"), text
+    assert "↔️ Связь подсетей: NASPi: <code>192.168.1.0/24</code> ↔️ Pi2: <code>192.168.68.0/24</code>" in text.split("\n"), text
     services.db.gateway_update(2, label="дача")
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_list(cb, services, FakeState())
@@ -835,7 +835,7 @@ def _peer_line_state(services, state):
     ("no_nets", True, "↔️ Связь подсетей не работает: у Pi2 не заданы подсети — «🗺 Подсети» в карточке шлюза"),
     ("overlap", True, "↔️ Связь подсетей не работает: подсети NASPi и Pi2 пересекаются ({nets}) — "
                       "смени подсеть одного из шлюзов"),
-    ("ok", True, "↔️ Связь подсетей: NASPi: <code>192.168.1.0/24</code> ↔ Pi2: <code>192.168.68.0/24</code>"),
+    ("ok", True, "↔️ Связь подсетей: NASPi: <code>192.168.1.0/24</code> ↔️ Pi2: <code>192.168.68.0/24</code>"),
 ])
 async def test_peer_nets_line_in_every_state(services, slots, monkeypatch, state, enabled, line):
     """Строка связи подсетей на экране «Шлюзы» — во всех пяти состояниях, в

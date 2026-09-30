@@ -119,6 +119,16 @@ def fmt_dt_ui(dt: datetime, ref: Optional[datetime] = None, *, seconds: bool = F
     return f"{date} {clock}"
 
 
+def fmt_end_ui(dt: datetime, ref: Optional[datetime] = None) -> str:
+    """Дата ОКОНЧАНИЯ срока (подписка, пауза): со временем только в текущем
+    месяце — «12.10 18:00»; дальше время не важно — «12.11», «12.10.27»."""
+    dt = dt.astimezone(TZ)
+    ref = (ref or now()).astimezone(TZ)
+    if (dt.year, dt.month) == (ref.year, ref.month):
+        return fmt_dt_ui(dt, ref)
+    return fmt_date_ui(dt, ref)
+
+
 def fmt_date_ui(dt: datetime, ref: Optional[datetime] = None) -> str:
     """Дата для экранов: «12.10», другой год — «12.10.27»."""
     dt = dt.astimezone(TZ)

@@ -33,7 +33,7 @@ _TXT_EXTENDED_FOREVER = "Подписка теперь бессрочная 🎉
 def _pause_auto_ended_client(actual_days: int, new_end) -> str:
     return (f"▶️ Пауза завершена автоматически (истёк максимальный срок). "
             f"Учтено {actual_days} дн. паузы, подписка активна до "
-            f"{timeutil.fmt_dt_ui(new_end)}")
+            f"{timeutil.fmt_end_ui(new_end)}")
 
 
 def _pause_friend_started(device_name: str) -> str:
@@ -122,7 +122,7 @@ class SubscriptionMixin:
         notifications = pause_exit_notes + friend_unblock_notes
         if client.tg_id:
             msg = (_TXT_EXTENDED_FOREVER if new_end is None
-                   else _TXT_EXTENDED.format(end=timeutil.fmt_dt_ui(new_end)))
+                   else _TXT_EXTENDED.format(end=timeutil.fmt_end_ui(new_end)))
             from awgbot.bot import texts                   # ленивый, как в соседних миксинах
             line = texts.pause_credit_line(pause_credit)   # что стало со счётом паузы
             if line:
@@ -166,7 +166,7 @@ class SubscriptionMixin:
                         dev.friend_tg_id, _friend_unblocked_text(dev.name)))
             if client.tg_id:
                 msg = (_TXT_EXTENDED_FOREVER if new_end is None
-                       else _TXT_EXTENDED.format(end=timeutil.fmt_dt_ui(new_end)))
+                       else _TXT_EXTENDED.format(end=timeutil.fmt_end_ui(new_end)))
                 notifications.append(Notification(client.tg_id, msg))
         elif not was_expired and now_expired:
             # админ поставил прошлую дату → истекло: заблокировать как watchdog

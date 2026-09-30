@@ -879,7 +879,7 @@ async def _enter_pause(cb_or_msg, services, client, days: int, *, via_cb: Callba
         return
     await send_notifications(cb_or_msg.bot, notes)     # друзьям — о постановке
     fresh = await call(services.db.get_client, client.id)
-    until = timeutil.fmt_dt_ui(
+    until = timeutil.fmt_end_ui(
         timeutil.parse_iso(fresh.pause_active_since)
         + datetime.timedelta(days=int(fresh.pause_reserved_days)))
     summary = texts.pause_entered_summary(until)

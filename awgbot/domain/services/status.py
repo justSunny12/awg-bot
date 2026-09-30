@@ -251,9 +251,10 @@ class StatusMixin:
             kernel = ""
         tag = awglock.built_module_tag() or awglock.module_tag()
         if tag:
-            # Строка версии у разных тегов апстрима одинакова, поэтому в UI
-            # показываем тег: только он отвечает на вопрос «что собрано».
-            kernel = f"{tag} ({kernel})" if kernel else tag
+            # Показываем ТЕГ, и только его: version.h апстрим бампает не на
+            # каждый выпуск (v3.1.20260827…0906 несут «3.1.20260812»), так что
+            # строка из modinfo о собранном не говорит — только путает.
+            kernel = tag
         dns1 = g("app.client_config.dns1", config.DNS1)
         dns2 = g("app.client_config.dns2", config.DNS2)
         return {

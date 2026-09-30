@@ -330,5 +330,5 @@ def test_counters_agree_with_the_lists_they_head(gw, services):
 
     rows = services.online_devices()
     head = texts.online_devices_text(rows)
-    assert head.startswith(f"📶 <b>Онлайн:</b> {len(rows)}\n\n"), head
+    assert head.startswith("📶 <b>Онлайн:</b> ") and f"({len(rows)} устройства)\n\n" in head, head
     assert len([d for d, _ in rows]) == 2

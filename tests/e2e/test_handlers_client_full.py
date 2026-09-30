@@ -348,7 +348,7 @@ async def test_pause_full_cycle(services, fake_bot, make_active_client):
     await ch.pause_pick(cb2, PauseCB(action="pick", ref=client.id, days=7), cl, services, FakeState())
     fresh = _fresh(services, client)
     assert fresh.is_paused and int(fresh.pause_reserved_days) == 7
-    until = timeutil.fmt_dt_ui(timeutil.parse_iso(fresh.pause_active_since)
+    until = timeutil.fmt_end_ui(timeutil.parse_iso(fresh.pause_active_since)
                                + __import__("datetime").timedelta(days=7))
     edits = [s for s in nav2.sent if s[0] == "edit_text"]
     assert edits[-1][1] == f"⏸️ Подписка на паузе до {until} — снять раньше можно в разделе «💳 Подписка»"
@@ -423,7 +423,7 @@ async def test_subscription_screen_variants(services, fake_bot, make_active_clie
     # истекает — жёлтый кружок и дата со временем
     services.db.update_client_fields(y.id, notified_thresholds="10080")
     text, _ = await ch.sub_parts(services, y.id)
-    assert text.splitlines()[0] == f"💳 <b>Подписка:</b> годовая · 🟡 истекает {timeutil.fmt_dt_ui(end)}"
+    assert text.splitlines()[0] == f"💳 <b>Подписка:</b> годовая · 🟡 истекает {timeutil.fmt_end_ui(end)}"
     services.db.update_client_fields(y.id, notified_thresholds="")
 
     # своя пауза

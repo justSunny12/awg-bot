@@ -132,7 +132,7 @@ def test_client_greeting_shows_consumption_and_expiry(services, make_active_clie
         "📱 Устройств 3 из 4"], out
     services.db.update_client_fields(c.id, notified_thresholds="10080")
     c = services.db.get_client(c.id)
-    assert f"💳 🟡 истекает {timeutil.fmt_dt_ui(end)} · 📊 24.1 из 50 ГБ" in \
+    assert f"💳 🟡 истекает {timeutil.fmt_end_ui(end)} · 📊 24.1 из 50 ГБ" in \
         texts.greeting_client(c, True, (3, 4), None, traffic=traffic)
     assert "🟢 активна" in texts.subscription_status_only(c), "срок — только на главной клиента"
     services.db.update_client_fields(c.id, traffic_limit=0)

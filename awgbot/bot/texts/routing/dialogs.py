@@ -154,13 +154,13 @@ def gateway_home_text(state: dict) -> str:
     gw = state["gateway"]
     nets = gw.home_subnets
     cur = ", ".join(f"<code>{_e(n)}</code>" for n in nets) if nets else "не заданы"
-    lines = [f"🗺 <b>Подсети {slot_ref(state)}</b> · сейчас {cur}",
+    lines = [f"🗺 <b>Подсети {slot_ref(state)}</b> · сейчас: {cur}", "",
              "Пришли подсети через пробел: <code>192.168.2.0/24</code>; «-» — убрать все. "
              "Доступ через туннель — только твоим устройствам"]
     if gw.lan_mode:
-        lines.append("<b>VPN-транзит</b> будет работать для первой подсети в списке")
+        lines.append("VPN-транзит будет работать для первой подсети в списке")
     if state.get("peer_nets_enabled"):
-        lines.append("<b>Связать</b> можно только непересекающиеся подсети")
+        lines.append("Связать можно только непересекающиеся подсети")
     return "\n".join(lines)
 
 

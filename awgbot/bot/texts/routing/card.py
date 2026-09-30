@@ -207,4 +207,4 @@ def gateway_card_text(state: dict, states: list) -> str:
 
 
 def gateway_edit_text(state: dict) -> str:
-    return f"✏️ <b>{slot_ref(state)}</b> — изменить"
+    return f"✏️ <b>{slot_name(state)}</b> — изменить:"

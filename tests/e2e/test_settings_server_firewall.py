@@ -40,8 +40,8 @@ async def test_server_screen_shows_what_goes_into_new_links(services, fake_bot, 
         "migration_blocked": ""})
     text, markup = await sh._screen("srv", services)
     lines = text.split("\n")
-    assert lines[:4] == ["🖥 <b>Сервер AWG</b> · ядро 3.1.20260812, gen1",
-                         "<code>vpn.example.org</code> · имя сервера: «Сервер 1»",
+    assert lines[:5] == ["🖥 <b>Сервер 1</b> · <code>vpn.example.org</code>", "",
+                         "ядро 3.1.20260812, gen1",
                          "DNS <code>10.8.1.1</code> · MTU 1376 · keepalive 25-35",
                          "awg0 · порт 51820 · <code>10.8.1.0/24</code>"], lines
     assert "новые ссылки" in text and "переездом" in text, "цена правки названа"
@@ -62,8 +62,8 @@ async def test_server_screen_says_when_there_is_no_domain(services, fake_bot, mo
         "keepalive": "25-35", "iface": "awg0", "port": 45871, "port_conf": 45871,
         "subnet": "10.8.1.0/24", "kernel": "", "generation": 1, "migration_blocked": ""})
     text, _ = await sh._screen("srv", services)
-    assert text.split("\n")[1] == "Домена нет, в ссылках IP <code>203.0.113.10</code> · имя сервера: «Сервер 1»", text
-    assert text.startswith("🖥 <b>Сервер AWG</b> · ядро не определено, gen1\n"), text
+    assert text.split("\n")[:3] == ["🖥 <b>Сервер 1</b> · <code>203.0.113.10</code> (домена нет — в ссылках IP)", "",
+                                     "ядро не определено, gen1"], text
 
 
 async def test_server_screen_flags_a_port_mismatch(services, fake_bot, monkeypatch):
@@ -270,8 +270,8 @@ async def test_prepare_screen_names_the_cohort_and_the_cost(services, fake_bot, 
         "iface": "awg0", "port": 45871, "subnet": "10.8.1.0/24",
         "clients": 3, "devices": 7, "want_port": want_port, "blocked": ""})
     text, markup = await sh._screen("mig_prep", services)
-    assert text.startswith("🚚 <b>Порт или подсеть</b> · сейчас awg0, 45871, <code>10.8.1.0/24</code> → новый интерфейс, "
-                           "случайный высокий порт, свободная подсеть · в переезд войдут 7 устройств у 3 "
+    assert text.startswith("🚚 <b>Порт или подсеть</b> · сейчас: awg0, 45871, <code>10.8.1.0/24</code>\n\nНовый интерфейс, "
+                           "случайный высокий порт, свободная подсеть\nВ переезд войдут 7 устройств у 3 "
                            "профилей (были онлайн за 2 недели; у остальных доступ пропадёт после окончания "
                            "переезда — до перенастройки устройств)"), text
     assert "отмена безопасна" in text.lower() and "при завершении" in text.lower()
@@ -404,7 +404,7 @@ async def test_now_records_pending_and_opens_the_migration_preparation(services,
     await sh.private_dns_action(cb, SetCB(sec="dns", act="do", key="now"), services, FakeState())
     assert services.private_dns_decision() == "pending"
     shown = [s for s in nav.sent if s[0] == "edit_text"]
-    assert shown and shown[-1][1].startswith("🚚 <b>Порт или подсеть</b> · сейчас awg0")
+    assert shown and shown[-1][1].startswith("🚚 <b>Порт или подсеть</b> · сейчас: awg0")
     assert "DNS клиентов — свой резолвер" in shown[-1][1], "подготовка называет, что DNS станет своим"
     assert "🚚 Поднять интерфейс" in _labels(shown[-1][2])
 

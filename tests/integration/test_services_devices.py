@@ -182,7 +182,7 @@ def test_client_card_renders_when_a_device_has_a_handshake(services, make_active
 
     rows = services.online_devices()
     assert [d.id for d, _ in rows] == [dc.device_id]
-    assert texts.online_devices_text(rows).startswith("📶 <b>Онлайн:</b> 1\n\n")
+    assert texts.online_devices_text(rows).startswith("📶 <b>Онлайн:</b> 1 (1 устройство)\n\n")
 
 
 def test_addresses_trusted_by_gateways_are_not_reissued(services, make_active_client):

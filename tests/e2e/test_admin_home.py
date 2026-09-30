@@ -262,7 +262,7 @@ async def test_online_list_puts_gateways_first_with_links_and_blank_lines(
     _, text, labels = await _open(services, fake_bot, "online")
     ph, gw = services.db.get_device(phone.device_id), services.db.get_device(pi.device_id)
     assert text.split("\n\n") == [
-        "📶 <b>Онлайн:</b> 2",
+        "📶 <b>Онлайн:</b> 2 (2 устройства)",
         f"🛰 {_link(f'dev-{gw.id}', 'NASPi')} [шлюз] · <code>{gw.address}</code>",
         f"🟢 {_link(f'dev-{ph.id}', 'iPhone')} · {_link(f'cl-{c.id}', 'Ксюша')} · <code>{ph.address}</code>",
     ], text
@@ -290,7 +290,7 @@ async def test_expiring_list_links_names_and_offers_extend_buttons(services, fak
     for block, c in zip(blocks[1:], (a, b)):
         end = timeutil.parse_iso(c.period_end)
         assert block == (f"{_link(f'cl-{c.id}', c.name)} — {timeutil.remaining_brief(end)}, "
-                         f"до {timeutil.fmt_dt_ui(end)}"), block
+                         f"до {timeutil.fmt_end_ui(end)}"), block
     btns = [x for r in markup.inline_keyboard for x in r]
     assert [(x.text, x.callback_data) for x in btns] == [
         ("⏱ Аня", ClientCB(action="extend_exp", client_id=a.id).pack()),

@@ -59,8 +59,8 @@ async def test_card_lines(services, fake_bot, make_active_client):
     c = services.db.get_client(c.id)
     end = timeutil.parse_iso(c.period_end)
     start = timeutil.parse_iso(c.period_start)
-    assert lines[0] == '👤 <a href="tg://user?id=4101">Ксюша</a> · ⚪ офлайн', lines
-    assert lines[1] == (f"💳 🟢 до {timeutil.fmt_dt_ui(end)} · {timeutil.remaining_brief(end)} · "
+    assert lines[0] == '👤 <a href="tg://user?id=4101">Ксюша</a> ⚪ офлайн' and lines[1] == "", lines
+    assert lines[2] == (f"💳 🟢 до {timeutil.fmt_end_ui(end)} · {timeutil.remaining_brief(end)} · "
                         f"месяц, с {timeutil.fmt_date_ui(start)}"), lines
     assert "📱 1 из 3" in lines, lines
     assert "📊 12 из 100 ГБ (↑1 ↓11)" in lines, lines

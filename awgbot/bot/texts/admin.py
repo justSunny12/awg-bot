@@ -204,10 +204,12 @@ def _more(n: int) -> str:
 
 
 def online_devices_text(rows, bot_username: str = "") -> str:
-    """«📶 Онлайн: 7»; записи через пустую строку, шлюзы — вверху, имя устройства
-    — ссылка на карточку, имя профиля — на карточку профиля. rows — [(устройство,
-    профиль или None)]."""
-    head = f"📶 <b>Онлайн:</b> {len(rows)}"
+    """«📶 Онлайн: 3 (7 устройств)» — профили и устройства, как на главной;
+    записи через пустую строку, шлюзы — вверху, имя устройства — ссылка на
+    карточку, имя профиля — на карточку профиля; устройства служебного профиля —
+    «Администратор» текстом. rows — [(устройство, профиль или None)]."""
+    profiles = len({c.id for _d, c in rows if c is not None and not getattr(c, "is_service", 0)})
+    head = "📶 <b>Онлайн:</b> " + (f"{profiles} ({_n_devices(len(rows))})" if rows else "0")
     if not rows:
         return head + _LIST_SEP + "Сейчас никто не подключён"
     items = []
@@ -215,7 +217,7 @@ def online_devices_text(rows, bot_username: str = "") -> str:
         if getattr(d, "is_gateway", 0):
             items.append(f"🛰 {admin_device_link(d, bot_username)} [шлюз] · {plain_ip(d.address)}")
             continue
-        who = ("без профиля" if c is None or getattr(c, "is_service", 0)
+        who = ("без профиля" if c is None else _e(c.name) if getattr(c, "is_service", 0)
                else profile_link(c, bot_username))
         items.append(f"{device_state(d, for_admin=True)} {admin_device_link(d, bot_username)} · "
                      f"{who} · {plain_ip(d.address)}")
@@ -231,7 +233,7 @@ def expiring_text(rows, bot_username: str = "") -> str:
     for c, _secs in rows[:_LIST_CAP]:
         end = timeutil.parse_iso(c.period_end)
         items.append(f"{profile_link(c, bot_username)} — {timeutil.remaining_brief(end)}, "
-                     f"до {timeutil.fmt_dt_ui(end)}")
+                     f"до {timeutil.fmt_end_ui(end)}")
     return head + _LIST_SEP + _LIST_SEP.join(items) + _more(len(rows))
 
 
@@ -455,7 +457,7 @@ def _sub_line(client) -> str:
     if client.status != SubStatus.ACTIVE:
         return f"💳 🔴 истекла {timeutil.fmt_date_ui(end)}{tail}"
     dot = "🟡 истекает" if client.notified_thresholds else "🟢 до"
-    return f"💳 {dot} {timeutil.fmt_dt_ui(end)} · {timeutil.remaining_brief(end)}{tail}"
+    return f"💳 {dot} {timeutil.fmt_end_ui(end)} · {timeutil.remaining_brief(end)}{tail}"
 
 
 def _rf_short(rt_visible: bool, enabled: int, total: int) -> str:
@@ -472,7 +474,7 @@ def admin_client_card(d: dict, bot_username: str = "") -> str:
     client, devices = d["client"], d["devices"]
     from .fmt import tg_link
     name = tg_link(client.name, client.tg_id, getattr(client, "tg_username", ""))
-    lines = [f"👤 {name} · " + ("🟢 онлайн" if d["online"] else "⚪ офлайн")]
+    lines = [f"👤 {name} " + ("🟢 онлайн" if d["online"] else "⚪ офлайн"), ""]
     if client.activation_status == ActivationStatus.PENDING:
         lines.append("⏳ ждёт активации")
     # ручная блокировка — «⛔»; истечение, пауза и исчерпанный трафик — «🟡»
@@ -572,7 +574,7 @@ def extend_text(client, cut_days: int = 0, bot_username: str = "") -> str:
         if client.status != SubStatus.ACTIVE:
             now = f"Сейчас: истекла {timeutil.fmt_date_ui(end)}"
         else:
-            now = f"Сейчас до {timeutil.fmt_dt_ui(end)} · осталось {timeutil.remaining_brief(end)}"
+            now = f"Сейчас до {timeutil.fmt_end_ui(end)} · осталось {timeutil.remaining_brief(end)}"
     lines = [head, now]
     if cut_days > 0:
         lines.append(f"⚠️ Брал отсрочку на {cut_days} дн. — вычтется")
@@ -588,7 +590,7 @@ def extended_note(client, kind: str, new_end, pause, bot_username: str = "") -> 
     who = profile_link(client, bot_username)
     if new_end is None:
         return f"✅ {who}: подписка теперь бессрочная"
-    tail = f"→ {timeutil.fmt_dt_ui(new_end)}"
+    tail = f"→ {timeutil.fmt_end_ui(new_end)}"
     if pause is not None and getattr(pause, "kind", None) in ("year", "month"):
         if getattr(pause, "reason", None) in ("expired", "grace", "cap"):
             tail += f" · дни паузы не начислены, доступно {pause.after}"
@@ -661,7 +663,7 @@ CLIENT_DELETE_PARTIAL = (
 
 
 def resumed_note(client, actual: int, new_end, bot_username: str = "") -> str:
-    sub = f"подписка до {timeutil.fmt_dt_ui(new_end)}" if new_end else "подписка бессрочная"
+    sub = f"подписка до {timeutil.fmt_end_ui(new_end)}" if new_end else "подписка бессрочная"
     return f"▶️ {profile_link(client, bot_username)}: пауза снята · {actual} дн. списано · {sub}"
 
 
