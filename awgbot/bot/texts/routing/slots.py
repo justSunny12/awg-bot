@@ -232,7 +232,8 @@ def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str 
                   auto_on: bool = True, peer_info: dict | None = None,
                   lists: dict | None = None) -> str:
     """Экран «🛰 Шлюзы» при включённой функции: заголовок с состоянием,
-    строки слотов, переключение и списки, связь подсетей, «подробнее»."""
+    строки слотов, переключение и списки, «подробнее», связь подсетей,
+    предупреждение об автопереключении, свёрнутая сноска про ⭐."""
     ok, reason = status
     head = f"🛰 <b>Шлюзы</b> · 🇷🇺 {ROUTING_NAME} " + ("🟢" if ok else f"🔴 не работает: {_e(reason)}")
     lines = [head]
