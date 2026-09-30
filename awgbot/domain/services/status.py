@@ -303,6 +303,35 @@ class StatusMixin:
         c = self.db.get_client(client_id)
         return int(c.traffic_limit) if c else 0
 
+    def service_failure_alerts(self, ok: bool) -> list:
+        """Громкий алерт при НЕПРЕРЫВНОМ простое awg-сервиса ≥ N минут.
+        Состояние простоя держим в state-таблице (переживает рестарт бота):
+        service_down_since — ISO начала текущего простоя; service_alert_sent — «1»,
+        если за этот эпизод громкий алерт уже отправлен. Мигнул вверх → сброс.
+        Возвращает список Notification (0 или 1)."""
+        if ok:
+            if self.db.get_state("service_down_since"):
+                self.db.set_state("service_down_since", "")
+            if self.db.get_state("service_alert_sent"):
+                self.db.set_state("service_alert_sent", "")
+            return []
+        since = self.db.get_state("service_down_since")
+        if not since:
+            self.db.set_state("service_down_since", timeutil.to_iso(timeutil.now()))
+            return []
+        down_secs = (timeutil.now() - timeutil.parse_iso(since)).total_seconds()
+        if (down_secs >= settings.get_int("app.monitoring.service_failure_alert_minutes", 5) * 60
+                and self.db.get_state("service_alert_sent") != "1"):
+            self.db.set_state("service_alert_sent", "1")
+            if settings.get_bool("app.monitoring.service_failure_alert_loud", True):
+                mins = settings.get_int("app.monitoring.service_failure_alert_minutes", 5)
+                return [Notification(
+                    config.ADMIN_ID,
+                    f"🚨 VPN-сервис не поднимается уже более {mins} мин. "
+                    "Требуется вмешательство.",
+                    force_sound=True, critical=True)]
+        return []
+
     def device_quota(self, client_id: int) -> tuple[int, int]:
         """(добавлено, лимит) — для подсветки «M из N»."""
         client = self.db.get_client(client_id)

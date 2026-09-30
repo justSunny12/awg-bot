@@ -282,6 +282,22 @@ class ClientsMixin:
         cur.add(marker)
         self.update_client_fields(client_id, traffic_notified=",".join(sorted(cur)))
 
+    def remove_traffic_notified(self, client_id: int, marker: str) -> None:
+        """Снять одну трафик-метку: уведомление сможет прийти снова после
+        поднятия лимита и повторного исчерпания (идемпотентно)."""
+        cur = self.get_traffic_notified(client_id)
+        if marker not in cur:
+            return
+        cur.discard(marker)
+        self.update_client_fields(client_id, traffic_notified=",".join(sorted(cur)))
+
+    def set_tg_identity(self, client_id: int, name: str, username: str) -> None:
+        """Имя и username Telegram-аккаунта на профиле и момент сверки — одной
+        записью (её делают middleware по входящему сообщению и суточная задача)."""
+        from awgbot.util import timeutil
+        self.update_client_fields(client_id, tg_name=name, tg_username=username,
+                                  tg_name_at=timeutil.now_iso())
+
     def reset_traffic_notified(self, client_id: int) -> None:
         """Сброс трафик-меток (1-го числа, новый месяц)."""
         self.update_client_fields(client_id, traffic_notified="")

@@ -297,8 +297,4 @@ class BlocksMixin:
     def _forget_traffic_marker(self, client_id: int, marker: str) -> None:
         """Снять одну метку трафик-уведомления (чтобы уведомление могло прийти
         снова после поднятия лимита и повторного исчерпания)."""
-        cur = self.db.get_traffic_notified(client_id)
-        if marker in cur:
-            cur.discard(marker)
-            self.db.update_client_fields(
-                client_id, traffic_notified=",".join(sorted(cur)))
+        self.db.remove_traffic_notified(client_id, marker)

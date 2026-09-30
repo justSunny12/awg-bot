@@ -20,9 +20,10 @@ from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_here, ask_trac
                                         cleanup_content, drop_message, remove_device_and_notify,
                                         send_device_config, send_menu)
 from awgbot.bot.notifier import notify_one
-from awgbot.domain.services import BYTES_PER_GB, LimitReached, ServiceError
+from awgbot.domain.services import LimitReached, ServiceError
 from awgbot.bot.states import AdminAddDevice, EditDeviceName, EditTrafficLimit
 from awgbot.bot.handlers.admin.panel import _return_panel, _bot
+from awgbot.bot.handlers import devcore
 
 router = Router(name="admin.devices")
 
@@ -82,7 +83,7 @@ async def admin_add_device_slot(cb: CallbackQuery, callback_data: ClientCB, serv
         return
     used, limit = await call(services.device_quota, client.id)
     if limit != 0 and used >= limit:
-        await call(services.db.update_client_fields, client.id, device_limit=used + 1)
+        await call(services.set_device_limit, client.id, used + 1)
         if client.tg_id and client.tg_id != config.ADMIN_ID:
             await notify_one(cb.bot, client.tg_id, texts.limit_changed_notice(limit, used + 1))
         limit = used + 1
@@ -268,16 +269,6 @@ async def edit_device_traffic_start(cb: CallbackQuery, callback_data: DeviceCB, 
     await cb.answer()
 
 
-async def _apply_device_limit(services, dev, gb_value: int) -> tuple[str, bool]:
-    plimit = await call(services.profile_traffic_limit, dev.client_id)
-    if plimit and gb_value * BYTES_PER_GB > plimit:
-        return texts.device_limit_over(plimit), False
-    old_b = int(dev.traffic_limit)
-    new_b = gb_value * BYTES_PER_GB
-    await call(services.set_device_traffic_limit, dev.id, new_b)
-    return texts.limit_note(old_b, new_b, plimit), True
-
-
 @router.callback_query(PresetCB.filter(F.kind == "devlimit"))
 async def device_limit_preset(cb: CallbackQuery, callback_data: PresetCB, services, state: FSMContext):
     dev = await call(services.db.get_device, callback_data.ref)
@@ -291,7 +282,7 @@ async def device_limit_preset(cb: CallbackQuery, callback_data: PresetCB, servic
                        target="device", dev_ref=dev.id)
         await cb.answer()
         return
-    note, ok = await _apply_device_limit(services, dev, int(callback_data.val))
+    note, ok = await devcore.apply_device_limit(services, dev, int(callback_data.val))
     if not ok:
         await cb.answer(note, show_alert=True)
         return
@@ -310,7 +301,7 @@ async def apply_device_limit_typed(message: Message, services, state: FSMContext
         await state.clear()
         await back_to_context(message, services, {}, "admin")
         return
-    note, ok = await _apply_device_limit(services, dev, gb_value)
+    note, ok = await devcore.apply_device_limit(services, dev, gb_value)
     if not ok:
         await ask_tracked(message, services, note)
         return

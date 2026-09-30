@@ -372,7 +372,7 @@ async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services,
     await cb.answer("Назначаю…")
     await edit(cb, "🛰 Назначаю шлюз…", None)
     await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
-    await _gateway_mark_go(cb.message, services, callback_data.device_id, slot)
+    await _gateway_setup_go(cb.message, services, callback_data.device_id, slot)
 
 
 @router.callback_query(GwMarkCB.filter(F.action == "new_ask"))
@@ -407,7 +407,7 @@ async def gateway_new_yes(cb: CallbackQuery, callback_data: GwMarkCB, services, 
     await cb.answer("Создаю устройство и ключи…")
     await edit(cb, "🛰 Создаю устройство и ключи…", None)       # экран выбора отслужил
     await call(services.db.add_content_msg_id, cb.message.chat.id, cb.message.message_id)
-    await _gateway_new_go(cb.message, services, slot)
+    await _gateway_setup_go(cb.message, services, slot=slot)
 
 
 @router.message(GatewayToken.value)
@@ -434,30 +434,21 @@ async def gateway_token_received(message: Message, state: FSMContext, services):
     # ключей. Куда возвращаться, помнит state.
     device_id = data.get("gw_device_id")
     if device_id:
-        await _gateway_mark_go(message, services, int(device_id), slot)
+        await _gateway_setup_go(message, services, int(device_id), slot)
         return
-    await _gateway_new_go(message, services, slot)
+    await _gateway_setup_go(message, services, slot=slot)
 
 
-async def _gateway_mark_go(message: Message, services, device_id: int, slot: int = 0) -> None:
-    """Назначить шлюзом существующее устройство со сменой ключей и отдать файл
-    первого применения с инструкцией."""
+async def _gateway_setup_go(message: Message, services, device_id: int | None = None,
+                            slot: int = 0) -> None:
+    """Назначить шлюзом существующее устройство (со сменой ключей) или создать
+    устройство «Шлюз»; выпустить файл первого применения и объяснить одну
+    команду на устройстве-шлюзе."""
     try:
-        res = await call(services.gateway_setup, device_id, rekey=True, slot_id=slot or None)
-    except ServiceError as e:
-        await send_menu(message, services, f"⚠️ {texts._e(str(e))}", kb.settings_back("rt"))
-        return
-    instr = await message.answer(texts.gateway_install_instructions(res["device"],
-                                                                    services.bundle_name(res["gateway"]),
-                                                                    routing_reset=res.get("routing_reset", False)))
-    await _send_plain_bundle(message, services, res["gateway"].id, instr.message_id)
-
-
-async def _gateway_new_go(message: Message, services, slot: int = 0) -> None:
-    """Создать устройство «Шлюз», выпустить файл первого применения и объяснить
-    одну команду на машине-шлюзе."""
-    try:
-        res = await call(services.gateway_setup, None, slot_id=slot or None)
+        if device_id is not None:
+            res = await call(services.gateway_setup, device_id, rekey=True, slot_id=slot or None)
+        else:
+            res = await call(services.gateway_setup, None, slot_id=slot or None)
     except ServiceError as e:
         await send_menu(message, services, f"⚠️ {texts._e(str(e))}", kb.settings_back("rt"))
         return

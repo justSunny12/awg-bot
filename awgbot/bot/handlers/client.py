@@ -35,6 +35,7 @@ from awgbot.bot.handlers.common import (
 from awgbot.domain.services import BYTES_PER_GB, LimitReached, ServiceError
 from awgbot.bot.states import AddDevice, EditDeviceName, EditTrafficLimit, PauseDays
 from awgbot.core.enums import PauseMode, PeriodKind, SubStatus
+from awgbot.bot.handlers import devcore
 
 router = Router(name="client")
 router.message.filter(RoleFilter("client", "activation"))
@@ -441,17 +442,14 @@ async def client_edit_device_traffic(cb: CallbackQuery, callback_data: DeviceCB,
 
 
 async def _apply_device_limit(cb: CallbackQuery, services, client, dev, gb_value: int) -> None:
-    plimit = await call(services.profile_traffic_limit, dev.client_id)
-    if plimit and gb_value * BYTES_PER_GB > plimit:
-        await cb.answer(texts.device_limit_over(plimit), show_alert=True)
+    note, ok = await devcore.apply_device_limit(services, dev, gb_value)
+    if not ok:
+        await cb.answer(note, show_alert=True)
         return
-    old_b = int(dev.traffic_limit)
-    new_b = gb_value * BYTES_PER_GB
-    await call(services.set_device_traffic_limit, dev.id, new_b)
     fresh = await call(services.db.get_device, dev.id)
     text, markup = await device_card_parts(services, client, fresh)
     from awgbot.bot import screens
-    await edit(cb, screens.with_note(text, texts.limit_note(old_b, new_b, plimit)), markup)
+    await edit(cb, screens.with_note(text, note), markup)
     await cb.answer()
 
 
@@ -487,17 +485,12 @@ async def client_edit_traffic_apply(message: Message, client, services, state: F
         await state.clear()
         await back_to_context(message, services, {}, "client", client)
         return
-    plimit = await call(services.profile_traffic_limit, dev.client_id)
-    gb_value = int(raw)
-    if plimit and gb_value * BYTES_PER_GB > plimit:
-        await ask_tracked(message, services, texts.device_limit_over(plimit))
+    note, ok = await devcore.apply_device_limit(services, dev, int(raw))
+    if not ok:
+        await ask_tracked(message, services, note)
         return
     await state.clear()
-    old_b = int(dev.traffic_limit)
-    new_b = gb_value * BYTES_PER_GB
-    await call(services.set_device_traffic_limit, dev.id, new_b)
-    await back_to_context(message, services, data, "client", client,
-                          note=texts.limit_note(old_b, new_b, plimit))
+    await back_to_context(message, services, data, "client", client, note=note)
 
 
 @router.callback_query(DeviceCB.filter(F.action == "transfer"))
@@ -510,17 +503,16 @@ async def device_transfer_ask(cb: CallbackQuery, callback_data: DeviceCB, client
     await cb.answer()
 
 
-async def _send_invite(cb: CallbackQuery, services, dev, code: str) -> None:
+async def _send_invite(message: Message, services, dev, code: str) -> None:
     """Приглашение другу: сообщение с кнопками «📤 Отправить» и «📋
     Скопировать», под ним — пояснение с «⬅️ В меню»."""
-    bot = _bot_username(services) or (await cb.bot.me()).username
-    await drop_message(cb)
+    bot = _bot_username(services) or (await message.bot.me()).username
     plain = texts.friend_invite_plain(dev.name, code, bot)
     link = f"https://t.me/{bot}?start={code}"
-    sent = await cb.message.answer(texts.friend_invite_message(dev.name, code, bot),
-                                   reply_markup=kb.invite_kb(plain, link))
+    sent = await message.answer(texts.friend_invite_message(dev.name, code, bot),
+                                reply_markup=kb.invite_kb(plain, link))
     await call(services.db.add_content_msg_id, sent.chat.id, sent.message_id)
-    await content_finisher(cb.message, services, texts.finish_friend_invite(dev.name), "client")
+    await content_finisher(message, services, texts.finish_friend_invite(dev.name), "client")
 
 
 @router.callback_query(DeviceCB.filter(F.action == "transfer_yes"))
@@ -534,7 +526,8 @@ async def device_transfer_do(cb: CallbackQuery, callback_data: DeviceCB, client,
     except ServiceError as e:
         await cb.answer(str(e), show_alert=True)
         return
-    await _send_invite(cb, services, dev, code)
+    await drop_message(cb)
+    await _send_invite(cb.message, services, dev, code)
     await cb.answer()
 
 
@@ -549,7 +542,8 @@ async def device_reinvite(cb: CallbackQuery, callback_data: DeviceCB, client, se
     except ServiceError as e:
         await cb.answer(str(e), show_alert=True)
         return
-    await _send_invite(cb, services, dev, code)
+    await drop_message(cb)
+    await _send_invite(cb.message, services, dev, code)
     await cb.answer()
 
 
@@ -659,14 +653,8 @@ async def _create_for_friend(target: Message, services, client, name: str, tlimi
         return
     code = await call(services.make_device_friendly, created.device_id)
     dev = await call(services.db.get_device, created.device_id)
-    bot = _bot_username(services) or (await target.bot.me()).username
     await cleanup_content(target.bot, services, target.chat.id)
-    plain = texts.friend_invite_plain(dev.name, code, bot)
-    link = f"https://t.me/{bot}?start={code}"
-    sent = await target.answer(texts.friend_invite_message(dev.name, code, bot),
-                               reply_markup=kb.invite_kb(plain, link))
-    await call(services.db.add_content_msg_id, sent.chat.id, sent.message_id)
-    await content_finisher(target, services, texts.finish_friend_invite(dev.name), "client")
+    await _send_invite(target, services, dev, code)
 
 
 @router.callback_query(PresetCB.filter((F.kind == "devlimit") & (F.ref == 0)), AddDevice.traffic)
@@ -743,11 +731,14 @@ async def device_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    by_holder = dev.holder_client_id == client.id
+    if dev.holder_client_id == client.id:
+        if not await devcore.delete_by_holder(cb, services, dev):
+            return
+        await send_menu(cb.message, services, *await devices_payload(services, client),
+                        keep_id=cb.message.message_id)
+        return
     try:
-        if by_holder:
-            await call(services.remove_device, dev.id)      # «удалено владельцем» не про него
-        elif dev.is_lent:
+        if dev.is_lent:
             await call(services.remove_device, dev.id)
             if dev.holder_tg_id:
                 await notify_one(cb.bot, dev.holder_tg_id, texts.lent_device_deleted_by_owner_notice(dev))
@@ -757,15 +748,6 @@ async def device_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
         await cb.answer(str(e), show_alert=True)
         return
     await cb.answer()
-    if by_holder:
-        if dev.owner_tg_id:
-            used, limit = await call(services.device_quota, dev.client_id)
-            await notify_one(cb.bot, dev.owner_tg_id,
-                             texts.lent_device_deleted_by_holder_notice(dev, used, limit))
-        await edit(cb, f"🗑 {texts._e(dev.name)} удалено", None)
-        await send_menu(cb.message, services, *await devices_payload(services, client),
-                        keep_id=cb.message.message_id)
-        return
     # итог — на месте вопроса и остаётся в чате; следом — «Устройства», а если
     # удалили последнее — главная
     devices = await call(services.db.list_devices, client.id)
@@ -817,7 +799,6 @@ async def grace_take(cb: CallbackQuery, callback_data: GraceCB, client, services
 
 # ── ручная блокировка своего устройства ──────────────────────────────────────
 
-from awgbot.core.blocks import DeviceBlock as DeviceBlock
 
 
 async def _blockable(services, client, callback_data: BlockCB):
@@ -847,11 +828,7 @@ async def client_block_device(cb: CallbackQuery, callback_data: BlockCB, client,
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    notes = await call(services.block_device_manual, dev.id, DeviceBlock.USER, True)
-    await send_notifications(cb.bot, notes)
-    dev = await call(services.db.get_device, dev.id)
-    await edit(cb, *await device_card_parts(services, client, dev))
-    await cb.answer("Заблокировано")
+    await devcore.block_device(cb, services, dev, lambda d: device_card_parts(services, client, d))
 
 
 @router.callback_query(BlockCB.filter(F.action == "menu_unblock"))
@@ -861,14 +838,7 @@ async def client_unblock_device(cb: CallbackQuery, callback_data: BlockCB, clien
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    if not (int(dev.block_reason) & int(DeviceBlock.USER)):
-        await cb.answer("Ты не блокировал это устройство", show_alert=True)
-        return
-    notes = await call(services.unblock_device_manual, dev.id, DeviceBlock.USER, True)
-    await send_notifications(cb.bot, notes)
-    dev = await call(services.db.get_device, dev.id)
-    await edit(cb, *await device_card_parts(services, client, dev))
-    await cb.answer("Разблокировано")
+    await devcore.unblock_device(cb, services, dev, lambda d: device_card_parts(services, client, d))
 
 
 # ── пауза подписки ───────────────────────────────────────────────────────────

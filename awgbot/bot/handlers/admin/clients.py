@@ -19,7 +19,7 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import ClientCB, Menu, PeriodCB, PresetCB
 from awgbot.bot.handlers.common import (call, edit, ask_here, ask_tracked, back_to_context,
-                                        cleanup_content, remove_device_and_notify, send_menu,
+                                        cleanup_content, send_menu,
                                         content_finisher)
 from awgbot.bot.notifier import notify_one, send_notifications
 from awgbot.domain.services import BYTES_PER_GB, ServiceError
@@ -293,8 +293,7 @@ async def _apply_devs_limit(cb_or_msg, services, client, new_limit: int, *, via_
     """Применить лимит устройств: без подтверждения, итог первой строкой
     «✏️ Изменить», клиенту — уведомление."""
     old_limit = int(client.device_limit)
-    used = await call(services.db.count_devices, client.id)
-    await call(services.db.update_client_fields, client.id, device_limit=new_limit)
+    used = await call(services.set_device_limit, client.id, new_limit)
     note = texts.devs_limit_note(old_limit, new_limit, used)
     if client.tg_id and old_limit != new_limit and client.tg_id != config.ADMIN_ID:
         await notify_one(cb_or_msg.bot, client.tg_id, texts.limit_changed_notice(old_limit, new_limit))
@@ -516,24 +515,18 @@ async def client_delete_apply(cb: CallbackQuery, callback_data: ClientCB, servic
     if target.tg_id == config.ADMIN_ID:
         await cb.answer("Профиль администратора нельзя удалить", show_alert=True)
         return
-    devices = await call(services.db.list_devices, target.id)
-    failed: list[str] = []
-    for d in devices:
-        try:
-            await remove_device_and_notify(cb.bot, services, d.id)
-        except ServiceError:
-            failed.append(d.name)
-    # Пир не снялся с сервера — профиль НЕ удаляем: доступ работал бы, а
-    # записи, по которой его найти, не стало бы.
-    if failed:
+    res = await call(services.delete_client_with_devices, target.id)
+    if res["failed"]:
         await edit(cb, texts.CLIENT_DELETE_PARTIAL.format(
-            name=texts._e(target.name), devices=texts._e(", ".join(failed))),
+            name=texts._e(target.name), devices=texts._e(", ".join(res["failed"]))),
             kb.admin_client_back(target.id))
         await cb.answer("Сервер не ответил — ничего не удалено", show_alert=True)
         return
-    await call(services.db.delete_client, target.id)
+    for holder_tg, d in res["removed"]:
+        if holder_tg:
+            await notify_one(cb.bot, holder_tg, texts.lent_device_deleted_by_admin_notice(d))
     await cb.answer()
-    await edit(cb, texts.client_deleted_note(target.name, len(devices)), None)
+    await edit(cb, texts.client_deleted_note(target.name, res["n"]), None)
     await send_menu(cb.message, services, *await clients_screen(services, cb.message.chat.id),
                     keep_id=cb.message.message_id)
 

@@ -28,6 +28,32 @@ class ClientsMixin:
     def _gen_code_body(self) -> str:
         return "".join(secrets.choice(self._CODE_ALPHABET) for _ in range(self._CODE_BODY_LEN))
 
+    def set_device_limit(self, client_id: int, new_limit: int) -> int:
+        """Лимит устройств профиля; возвращает занятые места — для итога и
+        уведомления, которые остаются за обработчиком."""
+        used = self.db.count_devices(client_id)
+        self.db.update_client_fields(client_id, device_limit=int(new_limit))
+        return used
+
+    def delete_client_with_devices(self, client_id: int) -> dict:
+        """Удалить профиль вместе с устройствами: {failed: имена устройств,
+        чей пир не снялся, removed: [(tg держателя | None, устройство)], n}.
+        Пир не снялся с сервера — профиль НЕ удаляем: доступ работал бы, а
+        записи, по которой его найти, не стало бы."""
+        devices = self.db.list_devices(client_id)
+        failed: list[str] = []
+        removed: list[tuple] = []
+        for d in devices:
+            try:
+                holder_tg = self.remove_device(d.id)
+            except ServiceError:
+                failed.append(d.name)
+                continue
+            removed.append((holder_tg, d))
+        if not failed:
+            self.db.delete_client(client_id)
+        return {"failed": failed, "removed": removed, "n": len(devices)}
+
     def _gen_code(self, prefix: str) -> str:
         """Код с префиксом (C — клиентский, F — друга), уникальный среди всех
         неиспользованных кодов обоих видов."""

@@ -24,8 +24,8 @@ from awgbot.bot.callbacks import BlockCB, DelDeviceCB, FriendCB
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.common import (call, drop_message, edit, edit_nav, send_device_config,
                                         purge_menus, send_menu, cleanup_content, show_screen)
-from awgbot.bot.notifier import notify_one, send_notifications
 from awgbot.domain.services import ServiceError
+from awgbot.bot.handlers import devcore
 
 router = Router(name="friend")
 router.message.filter(RoleFilter("invited"))
@@ -190,33 +190,20 @@ async def friend_block_ask(cb: CallbackQuery, callback_data: BlockCB, client, se
 
 @router.callback_query(BlockCB.filter(F.action == "block"))
 async def friend_block_do(cb: CallbackQuery, callback_data: BlockCB, client, services):
-    from awgbot.core.blocks import DeviceBlock
     dev = await _held(services, client, callback_data.ref) if callback_data.target == "dev" else None
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    notes = await call(services.block_device_manual, dev.id, DeviceBlock.USER, True)
-    await send_notifications(cb.bot, notes)
-    dev = await call(services.db.get_device, dev.id)
-    await edit(cb, *await card_payload(services, dev))
-    await cb.answer("Заблокировано")
+    await devcore.block_device(cb, services, dev, lambda d: card_payload(services, d))
 
 
 @router.callback_query(BlockCB.filter(F.action == "menu_unblock"))
 async def friend_unblock(cb: CallbackQuery, callback_data: BlockCB, client, services):
-    from awgbot.core.blocks import DeviceBlock
     dev = await _held(services, client, callback_data.ref) if callback_data.target == "dev" else None
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    if not (int(dev.block_reason) & int(DeviceBlock.USER)):
-        await cb.answer("Ты не блокировал это устройство", show_alert=True)
-        return
-    notes = await call(services.unblock_device_manual, dev.id, DeviceBlock.USER, True)
-    await send_notifications(cb.bot, notes)
-    dev = await call(services.db.get_device, dev.id)
-    await edit(cb, *await card_payload(services, dev))
-    await cb.answer("Разблокировано")
+    await devcore.unblock_device(cb, services, dev, lambda d: card_payload(services, d))
 
 
 # ── удаление переданного устройства держателем ──────────────────────────────
@@ -238,17 +225,8 @@ async def friend_delete_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, c
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    try:
-        await call(services.remove_device, dev.id)          # держатель удалил сам —
-    except ServiceError as e:                               # «удалено владельцем» ему не шлём
-        await cb.answer(str(e), show_alert=True)
+    if not await devcore.delete_by_holder(cb, services, dev):
         return
-    await cb.answer()
-    if dev.owner_tg_id:
-        used, limit = await call(services.device_quota, dev.client_id)
-        await notify_one(cb.bot, dev.owner_tg_id,
-                         texts.lent_device_deleted_by_holder_notice(dev, used, limit))
-    await edit(cb, f"🗑 {texts._e(dev.name)} удалено", None)
     await send_menu(cb.message, services, *await guest_main_payload(services, client),
                     keep_id=cb.message.message_id)
 

@@ -34,36 +34,6 @@ from awgbot.domain.services import Notification
 log = logging.getLogger("awgbot.scheduler")
 
 
-def _service_failure_alerts(db, ok: bool) -> list:
-    """Громкий алерт при НЕПРЕРЫВНОМ простое awg-сервиса ≥ N минут.
-    Состояние простоя держим в state-таблице (переживает рестарт бота):
-    service_down_since — ISO начала текущего простоя; service_alert_sent — «1»,
-    если за этот эпизод громкий алерт уже отправлен. Мигнул вверх → сброс.
-    Возвращает список Notification (0 или 1)."""
-    if ok:
-        if db.get_state("service_down_since"):
-            db.set_state("service_down_since", "")
-        if db.get_state("service_alert_sent"):
-            db.set_state("service_alert_sent", "")
-        return []
-    since = db.get_state("service_down_since")
-    if not since:
-        db.set_state("service_down_since", timeutil.to_iso(timeutil.now()))
-        return []
-    down_secs = (timeutil.now() - timeutil.parse_iso(since)).total_seconds()
-    if (down_secs >= settings.get_int("app.monitoring.service_failure_alert_minutes", 5) * 60
-            and db.get_state("service_alert_sent") != "1"):
-        db.set_state("service_alert_sent", "1")
-        if settings.get_bool("app.monitoring.service_failure_alert_loud", True):
-            mins = settings.get_int("app.monitoring.service_failure_alert_minutes", 5)
-            return [Notification(
-                config.ADMIN_ID,
-                f"🚨 VPN-сервис не поднимается уже более {mins} мин. "
-                "Требуется вмешательство.",
-                force_sound=True, critical=True)]
-    return []
-
-
 def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     """Собирает и возвращает планировщик (не запущенный — start() в main)."""
     scheduler = AsyncIOScheduler(timezone=config.TZ)
@@ -228,7 +198,7 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                     if prev != cur:
                         db.set_state("last_server_ok", cur)
                     # (2) устойчивый простой сервиса ≥ N минут → ГРОМКИЙ алерт (один раз)
-                    notes += _service_failure_alerts(db, ok)
+                    notes += services.service_failure_alerts(ok)
                     # (3) метрики железа: co-located — читаем локально (/proc, statvfs),
                     #     снимок в state (инфобокс) + гистерезис ресурс-алертов
                     snap = hostmetrics.collect_and_store(db)
@@ -531,12 +501,7 @@ async def refresh_tg_names(bot, db, max_age_days: int = TG_NAME_MAX_AGE_DAYS) ->
         if not name:
             continue
         uname = (getattr(chat, "username", "") or "").strip()[:64]
-        fields = {"tg_name_at": timeutil.now_iso()}
-        if name != c.tg_name:
-            fields["tg_name"] = name
-        if uname != c.tg_username:
-            fields["tg_username"] = uname
-        await asyncio.to_thread(db.update_client_fields, c.id, **fields)
+        await asyncio.to_thread(db.set_tg_identity, c.id, name, uname)
         done += 1
     return done
 

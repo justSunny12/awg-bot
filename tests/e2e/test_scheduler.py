@@ -1,4 +1,4 @@
-"""E2E: обёртки фоновых задач scheduler.py (замыкания job_* + _service_failure_alerts).
+"""E2E: обёртки фоновых задач scheduler.py (замыкания job_*) и автомат простоя сервиса (services.service_failure_alerts).
 
 Замыкания достаём из собранного планировщика через get_job(id).func и зовём
 напрямую — без реального AsyncIOScheduler.start(). Проверяем guard-логику
@@ -9,7 +9,7 @@ import datetime
 
 import pytest
 
-from awgbot.runtime.scheduler import setup_scheduler, _service_failure_alerts
+from awgbot.runtime.scheduler import setup_scheduler
 from awgbot.core import settings
 from awgbot.infra import awg
 from awgbot.util import timeutil
@@ -90,16 +90,16 @@ async def test_job_expiry_notifies_on_expiry(services, fake_bot, make_active_cli
     assert services.db.get_client(client.id).status == "expired"
 
 
-# ── _service_failure_alerts: гистерезис громкого алерта ──────────────────────
+# ── service_failure_alerts: гистерезис громкого алерта ──────────────────────
 def test_service_failure_alert_after_sustained_downtime(services):
     db = services.db
-    assert _service_failure_alerts(db, ok=True) == []        # всё хорошо — тишина
-    assert _service_failure_alerts(db, ok=False) == []       # первый сбой — только фиксируем
+    assert services.service_failure_alerts(ok=True) == []        # всё хорошо — тишина
+    assert services.service_failure_alerts(ok=False) == []       # первый сбой — только фиксируем
     # перематываем начало простоя за порог
     past = timeutil.now() - datetime.timedelta(minutes=settings.get_int("app.monitoring.service_failure_alert_minutes", 5) + 1)
     db.set_state("service_down_since", timeutil.to_iso(past))
-    alerts = _service_failure_alerts(db, ok=False)
+    alerts = services.service_failure_alerts(ok=False)
     assert len(alerts) == 1 and alerts[0].force_sound is True
-    assert _service_failure_alerts(db, ok=False) == []       # уже отправляли — не спамим
-    assert _service_failure_alerts(db, ok=True) == []        # восстановление — сброс состояния
+    assert services.service_failure_alerts(ok=False) == []       # уже отправляли — не спамим
+    assert services.service_failure_alerts(ok=True) == []        # восстановление — сброс состояния
     assert db.get_state("service_alert_sent") == ""
