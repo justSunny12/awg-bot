@@ -589,7 +589,7 @@ async def test_the_overlap_warning_follows_the_own_lists_note_on_its_own_line(se
     text, _ = await _card(services, fake_bot, 2)
     assert _own_block(text)[1], f"строки судьбы нет — проверять нечего: {text}"
     after = _after_note(text)
-    assert after.startswith("⚠️ 192.168.1.0/24 пересекается с подсетью «NASPi»: "), text
+    assert after.startswith("⚠️ <code>192.168.1.0/24</code> пересекается с подсетью «NASPi»: "), text
 
 
 async def test_the_own_lists_line_is_not_drawn_when_sync_is_off(services, slots, fake_bot, monkeypatch):

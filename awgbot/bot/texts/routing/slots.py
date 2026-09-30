@@ -192,11 +192,11 @@ def peer_nets_line(info: dict) -> str:
     if st == "no_nets":
         return f"↔️ Связь подсетей не работает: у {who} не заданы подсети — «🗺 Подсети» в карточке шлюза"
     if st == "overlap":
-        nets = ", ".join(_e(n) for n in info.get("nets") or [])
+        nets = ", ".join(f"<code>{_e(n)}</code>" for n in info.get("nets") or [])
         w = info.get("who") or ["?", "?"]
         return (f"↔️ Связь подсетей не работает: подсети {_plain(w[0])} и {_plain(w[1])} пересекаются "
                 f"({nets}) — смени подсеть одного из шлюзов")
-    pairs = " ↔ ".join(f"{_e(name)}{' (' + _e(label) + ')' if label else ''}: {', '.join(_e(n) for n in nets)}"
+    pairs = " ↔ ".join(f"{_e(name)}{' (' + _e(label) + ')' if label else ''}: {', '.join(f'<code>{_e(n)}</code>' for n in nets)}"
                        for name, label, nets in info.get("pairs_named") or [])
     return f"↔️ Связь подсетей: {pairs}"
 

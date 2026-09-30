@@ -144,7 +144,7 @@ async def test_list_and_card_show_roles_preferred_and_ping_lazily(services, slot
     lines = text.split("\n")
     assert services.pings["n"] == 1
     assert lines[0] == "🛰 <b>Pi2 (дача)</b> — 🟢 Резерв", lines
-    assert lines[1].startswith("📡 awglink2:8443 · ") and lines[1].endswith(" · 43 мс"), lines
+    assert lines[1].startswith("📡 <code>awglink2:8443</code> · ") and lines[1].endswith(" · 43 мс"), lines
     assert lines[2] == "🌐 <code>198.51.100.7</code>", lines
     assert "🗺 подсети не заданы · 🔀 VPN-транзит ☑️" in lines
     assert labels == ["▶️ Сделать активным", "📤 Конфигурация", "📡 Пинг", "☑️ VPN-транзит", "🗺 Подсети",
@@ -319,8 +319,8 @@ async def test_home_subnets_and_label_inputs(services, slots, fake_bot):
     assert services.db.gateway(1).home_subnets == ["192.168.1.0/24"]
     answers = [s[1] for s in msg.sent if s[0] == "answer"]
     assert len(answers) == 1, f"итог правки — первыми строками карточки, а не отдельным сообщением: {answers}"
-    assert answers[0].startswith("✅ Подсети NASPi: 192.168.1.0/24\n⚠️ Не принято: <code>мусор</code> — "), answers
-    assert "🗺 192.168.1.0/24 · 🔀 VPN-транзит ☑️" in answers[0]
+    assert answers[0].startswith("✅ Подсети NASPi: <code>192.168.1.0/24</code>\n⚠️ Не принято: <code>мусор</code> — "), answers
+    assert "🗺 <code>192.168.1.0/24</code> · 🔀 VPN-транзит ☑️" in answers[0]
     st = FakeState()
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_label(cb, GwSlotCB(action="label", slot=2), services, st)
@@ -459,7 +459,7 @@ async def test_remove_standby_and_active(services, slots, fake_bot, monkeypatch)
     await ah.admin_device_open(cb, DeviceCB(action="open", device_id=pi2.id), services, FakeState())
     text, labels = _screen(nav)
     assert "Pi2</b> — " in text.split("\n")[0] and "Активен" in text.split("\n")[0], text
-    assert "📡 awglink2:8443" in text and "✏️ Изменить" in labels, labels
+    assert "📡 <code>awglink2:8443</code>" in text and "✏️ Изменить" in labels, labels
     # последний — «РФ-доступ выключится»
     cb, nav = _acb(fake_bot)
     await sh.gateway_remove_ask(cb, GwMarkCB(action="remove_ask", device_id=pi2.id), services)
@@ -647,7 +647,7 @@ async def test_lan_mode_needs_a_subnet_then_asks_and_toggles(services, slots, fa
     await sh.gw_slot_lan_yes(cb, GwSlotCB(action="lan_yes", slot=1), services)
     assert services.db.gateway(1).lan_mode == 1
     text, labels = _screen(nav)
-    assert "🗺 192.168.68.0/24 · 🔀 VPN-транзит ✅" in text.split("\n"), text
+    assert "🗺 <code>192.168.68.0/24</code> · 🔀 VPN-транзит ✅" in text.split("\n"), text
     assert "✅ VPN-транзит" in labels and "❓ Роутер" in labels
     assert cb.answers[-1] == ("VPN-транзит включён: перевыпусти конфигурацию шлюза", True), cb.answers
     # выключение — с предупреждением про роутер
@@ -672,7 +672,7 @@ async def test_router_recipe_is_shown_in_tabs(services, slots, fake_bot):
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_router(cb, GwSlotCB(action="router", slot=1), services)
     text, labels = _screen(nav)
-    assert text.startswith("❓ <b>Роутер для NASPi</b> · 192.168.68.0/24 · шлюз АДРЕС_ШЛЮЗА\n"), text
+    assert text.startswith("❓ <b>Роутер для NASPi</b> · <code>192.168.68.0/24</code> · шлюз <code>АДРЕС_ШЛЮЗА</code>\n"), text
     assert "<b>MikroTik RouterOS 7</b>" in text and "<b>OpenWrt</b>" not in text
     assert labels == ["✅ MikroTik", "OpenWrt", "⬅️ Назад"]
     markup = next(s[2] for s in reversed(nav.sent) if s[0] == "edit_text")
@@ -789,17 +789,17 @@ async def test_peer_nets_toggle_has_a_dialog_and_shows_state_in_the_list(service
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_list(cb, services, FakeState())
     text, _ = _screen(nav)
-    assert "↔️ Связь подсетей: NASPi: 192.168.1.0/24 ↔ Pi2: 192.168.68.0/24" in text.split("\n"), text
+    assert "↔️ Связь подсетей: NASPi: <code>192.168.1.0/24</code> ↔ Pi2: <code>192.168.68.0/24</code>" in text.split("\n"), text
     services.db.gateway_update(2, label="дача")
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_list(cb, services, FakeState())
-    assert "Pi2 (дача): 192.168.68.0/24" in _screen(nav)[0], "подпись в скобках, подсети после двоеточия"
+    assert "Pi2 (дача): <code>192.168.68.0/24</code>" in _screen(nav)[0], "подпись в скобках, подсети после двоеточия"
     services.db.gateway_update(2, label="")
     # карточка: связь подсетей — одной строкой с галочкой, подсеть — строкой выше
     cb, nav = _acb(fake_bot)
     await sh.gw_slot_card(cb, GwSlotCB(action="card", slot=2), services, FakeState())
     lines = _screen(nav)[0].split("\n")
-    i = lines.index("🗺 192.168.68.0/24 · 🔀 VPN-транзит ✅")
+    i = lines.index("🗺 <code>192.168.68.0/24</code> · 🔀 VPN-транзит ✅")
     assert "↔️ Связь подсетей ✅" in lines[i + 1:], lines
     # выключение
     cb, nav = _acb(fake_bot)
@@ -835,7 +835,7 @@ def _peer_line_state(services, state):
     ("no_nets", True, "↔️ Связь подсетей не работает: у Pi2 не заданы подсети — «🗺 Подсети» в карточке шлюза"),
     ("overlap", True, "↔️ Связь подсетей не работает: подсети NASPi и Pi2 пересекаются ({nets}) — "
                       "смени подсеть одного из шлюзов"),
-    ("ok", True, "↔️ Связь подсетей: NASPi: 192.168.1.0/24 ↔ Pi2: 192.168.68.0/24"),
+    ("ok", True, "↔️ Связь подсетей: NASPi: <code>192.168.1.0/24</code> ↔ Pi2: <code>192.168.68.0/24</code>"),
 ])
 async def test_peer_nets_line_in_every_state(services, slots, monkeypatch, state, enabled, line):
     """Строка связи подсетей на экране «Шлюзы» — во всех пяти состояниях, в
@@ -848,7 +848,7 @@ async def test_peer_nets_line_in_every_state(services, slots, monkeypatch, state
     _peer_line_state(services, state)
     info = services.gateway_peer_nets_info()
     assert info["state"] == state
-    line = line.format(nets=", ".join(info.get("nets") or []))
+    line = line.format(nets=", ".join(f"<code>{n}</code>" for n in info.get("nets") or []))
     text, _ = await sh._screen("rt", services)
     assert line in text.split("\n"), text
 

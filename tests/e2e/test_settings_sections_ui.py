@@ -114,8 +114,8 @@ async def test_address_list_prompt_shows_the_current_entries(services, fake_bot,
     await sh.edit_value(cb, SetCB(sec="fw", act="edit", key="app.firewall.ssh_allow"), FakeState(), services)
     text, _ = _last_edit(nav)
     first = text.split("\n")[0]
-    assert first == ("➕ <b>Адреса для SSH-доступа</b> · сейчас 203.0.113.1, 203.0.113.2, 203.0.113.3, 203.0.113.4, "
-                     "203.0.113.5 и ещё 2"), first
+    assert first == ("➕ <b>Адреса для SSH-доступа</b> · сейчас <code>203.0.113.1</code>, <code>203.0.113.2</code>, "
+                     "<code>203.0.113.3</code>, <code>203.0.113.4</code>, <code>203.0.113.5</code> и ещё 2"), first
     assert "[" not in text and "'" not in text
 
 
@@ -129,7 +129,7 @@ async def test_email_section_puts_state_in_the_head_and_servers_in_one_line(serv
     text, markup = await sh._screen("email", services)
     lines = text.split("\n")
     assert lines[0] == "✉️ <b>E-mail</b> · ⚪ ещё не проверялось", lines
-    assert lines[1] == "box@icloud.com · IMAP imap.mail.me.com:993 · SMTP smtp.mail.me.com:587", lines
+    assert lines[1] == "box@icloud.com · IMAP <code>imap.mail.me.com:993</code> · SMTP <code>smtp.mail.me.com:587</code>", lines
     assert lines[2] == "🆘 Аварийный выход из паузы: код на box@icloud.com", lines
     assert _rows(markup) == [["🔍 Проверить", "📨 Тест-письмо"], ["✏️ Сменить ящик", "🗑 Отключить"],
                              ["✅ Аварийный выход"], ["✉️ Адрес для кода", "⏱ Опрос: 1 мин"],

@@ -214,7 +214,7 @@ async def test_remove_gateway_from_settings_and_card(services, fake_bot, gwsetup
     text, markup = next((s[1], s[2]) for s in nav.sent if s[0] == "edit_text")
     # устройство-шлюз открывает карточку своего слота (отдельной карточки
     # устройства-шлюза больше нет)
-    assert "NASPi</b> — " in text.split("\n")[0] and "📡 awglink:443" in text, text
+    assert "NASPi</b> — " in text.split("\n")[0] and "📡 <code>awglink:443</code>" in text, text
     labels = _labels(markup)
     assert "📤 Конфигурация" in labels and labels[-2:] == ["✏️ Изменить", "⬅️ Назад"], labels
     assert not any("Удалить" in l or "Заблокировать" in l or "подключения" in l for l in labels)

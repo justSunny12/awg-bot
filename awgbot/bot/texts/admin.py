@@ -154,7 +154,8 @@ def migration_overview_text(d: dict, bot_username: str = "") -> str:
     for key, label in (("port", "порт"), ("subnet", "подсеть"), ("generation", "awg")):
         old, new = d.get(key) or ("", "")
         if old and new and str(old) != str(new):
-            fmt_ = (lambda v: f"gen{v}") if key == "generation" else str
+            fmt_ = ((lambda v: f"gen{v}") if key == "generation"
+                    else (lambda v: f"<code>{_e(str(v))}</code>") if key == "subnet" else str)
             params.append(f"{label}: {fmt_(old)} → {fmt_(new)}")
     head = "🚚 <b>Переезд</b>" + (f" ({', '.join(params)})" if params else "")
     rows = sorted(d.get("rows") or [], key=lambda r: -(int(r[2]) - int(r[1])))
@@ -715,7 +716,7 @@ def device_created_admin(name: str, client, bot_username: str = "") -> str:
 
 def admin_bootstrap_device(address: str) -> str:
     """Сообщение о первом устройстве админа, заведённом ботом самостоятельно."""
-    return ("🔑 Завёл тебе первое устройство «Админ» (" + _e(address) + ").\n\n"
+    return ("🔑 Завёл тебе первое устройство «Админ» (<code>" + _e(address) + "</code>).\n\n"
             "Пиры, созданные в обход бота, теперь попадают в карантин и поднимают "
             "тревогу — значит взять себе доступ «снаружи» больше нельзя, и первое "
             "устройство бот обязан выдать сам. Ссылка ниже: импортируй её в "

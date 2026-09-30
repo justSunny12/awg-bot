@@ -247,7 +247,7 @@ def test_unknown_peer_alarm_offers_the_quarantine(services, fake_awg, monkeypatc
     monkeypatch.setattr(awg, "read_file", lambda path: conf, raising=False)
     monkeypatch.setattr(awg, "read_clients_table", lambda: [], raising=False)
     notes = [n for n in services.reconcile_peers() if n.tg_id == ADMIN]
-    assert len(notes) == 1 and notes[0].text.startswith("🚨 Чужой пир в конфиге сервера: 10.8.0.77"), notes
+    assert len(notes) == 1 and notes[0].text.startswith("🚨 Чужой пир в конфиге сервера: <code>10.8.0.77</code>"), notes
     assert notes[0].action == ("unassigned", 0) and notes[0].force_sound
 
 

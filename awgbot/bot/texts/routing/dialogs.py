@@ -39,7 +39,7 @@ def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
                  "Нужно от тебя: настроить роутер по рецепту — покажу после включения",
                  "⚠️ Шлюз станет точкой отказа: упадёт — подсеть без интернета, резерв не поможет"]
         if not resolver:
-            lines.append("⚠️ Свой резолвер не настроен: шлюз пойдёт на 1.1.1.1 через туннель, без "
+            lines.append("⚠️ Свой резолвер не настроен: шлюз пойдёт на <code>1.1.1.1</code> через туннель, без "
                          "защиты от DoH — рекомендуется настроить (⚙️ → 🖥 Сервер AWG)")
         if not online:
             lines.append("Потребуется перевыпуск конфигурации шлюза")
@@ -66,7 +66,7 @@ def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list |
     net = net or "ПОДСЕТЬ"
     gw_ip = _e(gw_ip) if gw_ip else ROUTER_IP_PLACEHOLDER
     peers = [str(p) for p in (peer_nets or []) if p]
-    head = (f"❓ <b>Роутер для {_e(title)}</b> · {_e(net)} · шлюз {gw_ip}\n"
+    head = (f"❓ <b>Роутер для {_e(title)}</b> · <code>{_e(net)}</code> · шлюз <code>{gw_ip}</code>\n"
             "Весь трафик сети, кроме шлюза и локального, — на шлюз; DNS по DHCP — шлюз; "
             "ускорение и IPv6 — выключить; асимметричный путь — разрешить")
     req = details("• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес "
@@ -168,7 +168,7 @@ def gateway_home_report(res: dict, state: dict) -> str:
     """Итог правки подсетей — первыми строками карточки."""
     parts = []
     kept = res.get("kept") or []
-    shown = ", ".join(_e(n) for n in kept[:8]) + (f" и ещё {len(kept) - 8}" if len(kept) > 8 else "")
+    shown = ", ".join(f"<code>{_e(n)}</code>" for n in kept[:8]) + (f" и ещё {len(kept) - 8}" if len(kept) > 8 else "")
     parts.append(f"✅ Подсети {slot_ref(state)}: " + (shown if kept else "убраны"))
     rejected = res.get("rejected") or []
     if rejected:

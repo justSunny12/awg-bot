@@ -531,7 +531,7 @@ async def test_missing_neighbour_subnets_on_the_gateway_are_named_on_the_card(se
     малины, и едет ради этой строки: без неё отказ функции беспричинен."""
     _snap(services, peer_nets={"ok": False, "missing": ["192.168.70.0/24", "192.168.71.0/24"]})
     text, _ = await _card(services, fake_bot)
-    assert ("⚠️ Связь подсетей: на шлюзе нет 192.168.70.0/24, 192.168.71.0/24"
+    assert ("⚠️ Связь подсетей: на шлюзе нет <code>192.168.70.0/24</code>, <code>192.168.71.0/24</code>"
             " — перевыпусти конфигурацию шлюза") in text.split("\n"), text
 
 
@@ -551,7 +551,7 @@ def test_the_neighbour_subnets_line_escapes_what_the_gateway_sent():
           "peer_nets": {"ok": False, "missing": ["<b>1.2.3.0/24</b>", "&x"]}}
     out = _channel_block(ch, True)
     assert "<b>1.2.3.0/24</b>" not in out
-    assert "&lt;b&gt;1.2.3.0/24&lt;/b&gt;, &amp;x" in out
+    assert "<code>&lt;b&gt;1.2.3.0/24&lt;/b&gt;</code>, <code>&amp;x</code>" in out
 
 
 def test_the_neighbour_subnets_line_names_at_most_eight_and_survives_an_empty_list():

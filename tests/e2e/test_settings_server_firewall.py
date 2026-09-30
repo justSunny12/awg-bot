@@ -42,8 +42,8 @@ async def test_server_screen_shows_what_goes_into_new_links(services, fake_bot, 
     lines = text.split("\n")
     assert lines[:4] == ["🖥 <b>Сервер AWG</b> · ядро 3.1.20260812, gen1",
                          "vpn.example.org · имя сервера: «Сервер 1»",
-                         "DNS 10.8.1.1 · MTU 1376 · keepalive 25-35",
-                         "awg0 · порт 51820 · 10.8.1.0/24"], lines
+                         "DNS <code>10.8.1.1</code> · MTU 1376 · keepalive 25-35",
+                         "awg0 · порт 51820 · <code>10.8.1.0/24</code>"], lines
     assert "новые ссылки" in text and "переездом" in text, "цена правки названа"
     rows = [[b.text for b in r] for r in markup.inline_keyboard]
     assert rows == [["✏️ Домен", "✏️ Имя"], ["✏️ DNS", "✏️ MTU"], ["🚚 Порт, подсеть"], ["⬅️ Назад"]], rows
@@ -62,7 +62,7 @@ async def test_server_screen_says_when_there_is_no_domain(services, fake_bot, mo
         "keepalive": "25-35", "iface": "awg0", "port": 45871, "port_conf": 45871,
         "subnet": "10.8.1.0/24", "kernel": "", "generation": 1, "migration_blocked": ""})
     text, _ = await sh._screen("srv", services)
-    assert text.split("\n")[1] == "Домена нет, в ссылках IP 203.0.113.10 · имя сервера: «Сервер 1»", text
+    assert text.split("\n")[1] == "Домена нет, в ссылках IP <code>203.0.113.10</code> · имя сервера: «Сервер 1»", text
     assert text.startswith("🖥 <b>Сервер AWG</b> · ядро не определено, gen1\n"), text
 
 
@@ -270,7 +270,7 @@ async def test_prepare_screen_names_the_cohort_and_the_cost(services, fake_bot, 
         "iface": "awg0", "port": 45871, "subnet": "10.8.1.0/24",
         "clients": 3, "devices": 7, "want_port": want_port, "blocked": ""})
     text, markup = await sh._screen("mig_prep", services)
-    assert text.startswith("🚚 <b>Порт или подсеть</b> · сейчас awg0, 45871, 10.8.1.0/24 → новый интерфейс, "
+    assert text.startswith("🚚 <b>Порт или подсеть</b> · сейчас awg0, 45871, <code>10.8.1.0/24</code> → новый интерфейс, "
                            "случайный высокий порт, свободная подсеть · в переезд войдут 7 устройств у 3 "
                            "профилей (были онлайн за 2 недели; у остальных доступ пропадёт после окончания "
                            "переезда — до перенастройки устройств)"), text
@@ -290,7 +290,7 @@ async def test_prepare_runs_and_offers_a_restart(services, fake_bot, monkeypatch
     await sh.do_action(cb, SetCB(sec="mig_prep", act="do", key="go", val="443"), services)
     assert calls == [443], "перезапуск — только по кнопке"
     said = [s for s in nav.sent if s[0] == "answer"]
-    assert said and said[-1][1] == ("✅ Второй интерфейс поднят: awg1, 10.9.1.0/24, порт 443 · после перезапуска "
+    assert said and said[-1][1] == ("✅ Второй интерфейс поднят: awg1, <code>10.9.1.0/24</code>, порт 443 · после перезапуска "
                                     "бота: 🔧 Сервис → 🚚 Начать переезд"), said
     assert [[b.text for b in row] for row in said[-1][2].inline_keyboard] == [["🔁 Перезапустить сейчас"], ["⬅️ Позже"]]
 
@@ -348,7 +348,7 @@ async def test_public_dns_is_named_and_the_resolver_is_offered(services, monkeyp
     monkeypatch.setattr(services, "server_screen", lambda: _srv(
         {"mode": "public", "dns1": "1.1.1.1", "dns2": "1.0.0.1", "target": "10.8.1.1", "decision": ""}))
     text, markup = await sh._screen("srv", services)
-    assert "DNS 1.1.1.1, 1.0.0.1 — публичный · MTU" in text
+    assert "DNS <code>1.1.1.1</code>, <code>1.0.0.1</code> — публичный · MTU" in text
     rows = [[b.text for b in r] for r in markup.inline_keyboard]
     assert rows[2] == ["🔒 Свой резолвер", "🚚 Порт, подсеть"], rows
 
@@ -364,7 +364,7 @@ async def test_private_dns_is_named_and_nothing_is_offered(services, monkeypatch
         {"mode": "private", "dns1": "10.8.1.1", "dns2": "10.8.1.1", "target": "10.8.1.1",
          "decision": ""}))
     text, markup = await sh._screen("srv", services)
-    assert "DNS 1.1.1.1, 1.0.0.1 — свой резолвер · MTU" in text and "🔒 Свой резолвер" not in _labels(markup)
+    assert "DNS <code>1.1.1.1</code>, <code>1.0.0.1</code> — свой резолвер · MTU" in text and "🔒 Свой резолвер" not in _labels(markup)
 
 
 async def test_dns_screen_explains_and_offers_three_ways(services, monkeypatch):
@@ -375,7 +375,7 @@ async def test_dns_screen_explains_and_offers_three_ways(services, monkeypatch):
     assert "10.8.1.1" in text and "DoH" in text and "переезд" in text.lower()
     labels = _labels(markup)
     assert labels == ["🚚 Переехать сейчас", "⏳ При переезде", "Не нужно", "⬅️ Назад"], labels
-    assert text.startswith("🔒 <b>Свой DNS-резолвер</b> · сейчас публичный\nСвой — 10.8.1.1: "), text
+    assert text.startswith("🔒 <b>Свой DNS-резолвер</b> · сейчас публичный\nСвой — <code>10.8.1.1</code>: "), text
 
     monkeypatch.setattr(services, "migration_blocked_reason", lambda: "идёт переезд")
     _, markup = await sh._screen("dns", services)

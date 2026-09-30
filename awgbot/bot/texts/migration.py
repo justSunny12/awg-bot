@@ -175,7 +175,7 @@ def migration_finished(removed: int, dropped, failed=()) -> str:
                  + " — вернуть можно повторной настройкой устройства")
     return head + "\nДальше руками на сервере" + details(
         "1. снять старый интерфейс и его юнит;\n"
-        "2. убрать DNAT 1.1.1.1 и закрыть старый порт;\n"
+        "2. убрать DNAT <code>1.1.1.1</code> и закрыть старый порт;\n"
         "3. переключить docker.interface и network.subnet_prefix в app.yaml на новые и перезапустить "
         "бота — без этого вотчдог смотрит на мёртвый конфиг, preflight проверяет снесённый интерфейс, "
         "новые устройства получают адреса из подсети, которой нет;\n"
@@ -192,7 +192,7 @@ def migration_prepare_intro(d: dict) -> str:
     from .fmt import details
     port = f"порт {d['want_port']}" if d.get("want_port") else "случайный высокий порт"
     dns = ", DNS клиентов — свой резолвер" if d.get("private_dns") else ""
-    return (f"🚚 <b>Порт или подсеть</b> · сейчас {_e(d['iface'])}, {d['port']}, {_e(d['subnet'])} → новый интерфейс, "
+    return (f"🚚 <b>Порт или подсеть</b> · сейчас {_e(d['iface'])}, {d['port']}, <code>{_e(d['subnet'])}</code> → новый интерфейс, "
             f"{port}, свободная подсеть{dns} · в переезд "
             f"{plural_ru(d['devices'], 'войдёт', 'войдут', 'войдут')} {d['devices']} "
             f"{plural_ru(d['devices'], 'устройство', 'устройства', 'устройств')} у {d['clients']} "
@@ -211,6 +211,6 @@ MIGRATION_ASK_PORT = ("✏️ <b>Порт нового интерфейса</b> 
 
 
 def migration_prepared(res: dict) -> str:
-    return (f"✅ Второй интерфейс поднят: {_e(res['iface'])}, {_e(res['subnet'])}"
+    return (f"✅ Второй интерфейс поднят: {_e(res['iface'])}, <code>{_e(res['subnet'])}</code>"
             + (f", порт {_e(str(res['port']))}" if res.get("port") else "")
             + " · после перезапуска бота: 🔧 Сервис → 🚚 Начать переезд")

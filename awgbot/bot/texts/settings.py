@@ -97,7 +97,7 @@ def settings_email_text(acc, last_check: tuple, resume_on=None, resume_addr: str
     else:
         status = "⚪ ещё не проверялось"
     lines = [f"✉️ <b>E-mail</b> · {status}",
-             f"{_e(acc.login)} · IMAP {_e(acc.imap_host)}:{acc.imap_port} · SMTP {_e(acc.smtp_host)}:{acc.smtp_port}"]
+             f"{_e(acc.login)} · IMAP <code>{_e(acc.imap_host)}:{acc.imap_port}</code> · SMTP <code>{_e(acc.smtp_host)}:{acc.smtp_port}</code>"]
     if resume_on is not None:
         if resume_on:
             lines.append(f"🆘 Аварийный выход из паузы: код на {_e(resume_addr or acc.login)}")
@@ -153,7 +153,7 @@ def email_ask_resume_address(current: str) -> str:
 def email_provider_line(address: str, provider) -> str:
     if provider:
         imap, ip, smtp, sp = provider
-        return f"Провайдер распознан: IMAP {_e(imap)}:{ip}, SMTP {_e(smtp)}:{sp}"
+        return f"Провайдер распознан: IMAP <code>{_e(imap)}:{ip}</code>, SMTP <code>{_e(smtp)}:{sp}</code>"
     return ""
 
 
@@ -353,6 +353,20 @@ SETTINGS_TEXT = {
 }
 
 
+# Настройки-адреса: значения на экране — моноширинным (тап копирует, автоссылки нет).
+_ADDRESS_KEYS = {"app.network.server_host", "app.client_config.dns1", "app.firewall.ssh_allow"}
+
+
+def _setting_value(key: str, value) -> str:
+    """Значение настройки для экрана: адреса — каждый в <code>, остальное — текстом.
+    Списки и «a, b» через запятую — поэлементно."""
+    items = list(value) if isinstance(value, (list, tuple)) else [x.strip() for x in str(value).split(",")]
+    items = [str(x) for x in items if str(x).strip()]
+    if key in _ADDRESS_KEYS:
+        return ", ".join(f"<code>{_e(x)}</code>" for x in items)
+    return _e(", ".join(items))
+
+
 def _looks_like_domain(host: str) -> bool:
     import ipaddress
     if not host:
@@ -391,7 +405,7 @@ PRIVATE_DNS_WHAT = (
 def private_dns_offer(target: str) -> str:
     """Экран решения (и инфобокс при старте): что даёт и как перейти."""
     return (f"🔒 <b>Свой DNS-резолвер</b> · сейчас публичный\n"
-            f"Свой — {_e(target)}: меньшие задержки, запросы не уходят третьим лицам, защита от "
+            f"Свой — <code>{_e(target)}</code>: меньшие задержки, запросы не уходят третьим лицам, защита от "
             "обхода через DoH. Цена — переезд профилей при включении"
             + details(PRIVATE_DNS_WHAT))
 
@@ -412,9 +426,9 @@ def settings_server_text(d: dict) -> str:
     lines = [
         f"🖥 <b>Сервер AWG</b> · ядро {kernel}{gen}",
         (f"{_e(host)} · имя сервера: «{_e(d['name'])}»" if _looks_like_domain(host)
-         else f"Домена нет, в ссылках IP {_e(host)} · имя сервера: «{_e(d['name'])}»"),
-        f"DNS {_e(d['dns'])}{dns_note} · MTU {d['mtu']} · keepalive {_e(str(d['keepalive']))}",
-        f"{_e(d['iface'])} · порт {d['port']} · {_e(d['subnet'])}",
+         else f"Домена нет, в ссылках IP <code>{_e(host)}</code> · имя сервера: «{_e(d['name'])}»"),
+        f"DNS {', '.join(f'<code>{_e(x.strip())}</code>' for x in str(d['dns']).split(','))}{dns_note} · MTU {d['mtu']} · keepalive {_e(str(d['keepalive']))}",
+        f"{_e(d['iface'])} · порт {d['port']} · <code>{_e(d['subnet'])}</code>",
     ]
     warns = []
     conf_port = d.get("port_conf")
@@ -556,10 +570,10 @@ def settings_prompt(key: str, current=None) -> str:
     if key in SETTINGS_TEXT:
         label, hint = SETTINGS_TEXT[key]
         if isinstance(current, (list, tuple)):
-            shown = ", ".join(str(x) for x in list(current)[:5]) + (f" и ещё {len(current) - 5}" if len(current) > 5 else "")
+            shown = _setting_value(key, list(current)[:5]) + (f" и ещё {len(current) - 5}" if len(current) > 5 else "")
         else:
-            shown = str(current) if current not in (None, "", []) else ""
-        cur = f" · сейчас {_e(shown)}" if shown else ""
+            shown = _setting_value(key, current) if current not in (None, "", []) else ""
+        cur = f" · сейчас {shown}" if shown else ""
         icon = "➕" if key == "app.firewall.ssh_allow" else "✏️"      # эмодзи кнопки «➕ Адрес»
         return f"{icon} <b>{_e(label)}</b>{cur}\n{_e(hint)}"
     lo, hi, label, unit = SETTINGS_BOUNDS[key]
@@ -582,8 +596,8 @@ def settings_changed(key: str, old, new) -> str:
     else:
         _lo, _hi, label, unit = SETTINGS_BOUNDS[key]
         unit = unit_suffix(unit)
-    old_s = _e(str(old)) if old not in (None, "", []) else "—"
-    return f"✅ {_e(label)}: {old_s} → {_e(str(new))}{unit}"
+    old_s = _setting_value(key, old) if old not in (None, "", []) else "—"
+    return f"✅ {_e(label)}: {old_s} → {_setting_value(key, new)}{unit}"
 
 
 def settings_ssh_allow_added(entries: list) -> str:

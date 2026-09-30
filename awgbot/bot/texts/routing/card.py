@@ -119,7 +119,7 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
                      "(TLS и расписания от неё зависят)")
     pn = ch.get("peer_nets") or {}
     if isinstance(pn, dict) and pn and not pn.get("ok"):
-        miss = ", ".join(_e(str(n)[:18]) for n in (pn.get("missing") or [])[:8]) or "подсетей"
+        miss = ", ".join(f"<code>{_e(str(n)[:18])}</code>" for n in (pn.get("missing") or [])[:8]) or "подсетей"
         warns.append(f"⚠️ Связь подсетей: на шлюзе нет {miss} — перевыпусти конфигурацию шлюза")
     lists = ch.get("lists") or {}
     if lists and not lists.get("ok"):
@@ -153,7 +153,7 @@ def gateway_card_text(state: dict, states: list) -> str:
         hs = "хендшейка нет"
     else:
         hs = "хендшейк " + (f"{int(age)} с" if age < 60 else f"{int(age) // 60} мин")
-    lines.append(f"📡 {_e(gw.link_if)}:{gw.link_port} · {hs}{_slot_ping_tail(state)}")
+    lines.append(f"📡 <code>{_e(gw.link_if)}:{gw.link_port}</code> · {hs}{_slot_ping_tail(state)}")
     ip = state.get("ext_ip")
     lines.append(("🌐 " + (plain_ip(ip) if ip else "адрес не определён"))
                  + (_gw_traffic(dev) if dev is not None else ""))
@@ -164,7 +164,7 @@ def gateway_card_text(state: dict, states: list) -> str:
         lines.append(ch_head)
     lines += ch_warns
     nets = gw.home_subnets
-    nets_s = ", ".join(_e(n) for n in nets[:6]) + (f" и ещё {len(nets) - 6}" if len(nets) > 6 else "") \
+    nets_s = ", ".join(f"<code>{_e(n)}</code>" for n in nets[:6]) + (f" и ещё {len(nets) - 6}" if len(nets) > 6 else "") \
         if nets else "подсети не заданы"
     lines.append(f"🗺 {nets_s} · 🔀 VPN-транзит " + ("✅" if gw.lan_mode else "☑️"))
     if gw.lan_mode:
@@ -179,7 +179,7 @@ def gateway_card_text(state: dict, states: list) -> str:
     conflict = next((s for s in others if nets_util.overlap(nets, s["gateway"].home_subnets)), None)
     if conflict is not None:
         ov_nets = nets_util.overlap(nets, conflict["gateway"].home_subnets)
-        ov = ", ".join(_e(n) for n in ov_nets)
+        ov = ", ".join(f"<code>{_e(n)}</code>" for n in ov_nets)
         verb = "пересекается" if len(ov_nets) == 1 else "пересекаются"
         first = min([state] + others, key=lambda s: (0 if s.get("preferred") else 1, s["gateway"].id))
         route = "маршрут достаётся ему, " if first["gateway"].id != gw.id else ""

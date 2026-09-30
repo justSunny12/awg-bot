@@ -178,7 +178,7 @@ async def test_start_gw_without_an_active_menu_sends_the_card(services, slots, f
     msg = _amsg(fake_bot, "/start gw-1")
     await ah.admin_start(msg, services, FakeState(), command=_cmd("gw-1"))
     sent = [s[1] for s in msg.sent if s[0] == "answer"]
-    assert sent and "NASPi</b> — " in sent[-1].split("\n")[0] and "📡 awglink:443" in sent[-1], sent
+    assert sent and "NASPi</b> — " in sent[-1].split("\n")[0] and "📡 <code>awglink:443</code>" in sent[-1], sent
 
 
 async def test_start_gw_for_a_missing_slot_does_not_break(services, slots, fake_bot):

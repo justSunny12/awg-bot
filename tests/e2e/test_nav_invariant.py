@@ -66,7 +66,8 @@ async def test_settings_text_value_finisher_shows_old_and_new(services, fake_bot
     await sh.receive_value(typed, st, services)
     answers = [s for s in typed.sent if s[0] == "answer"]
     assert len(answers) == 1, answers
-    assert answers[0][1].startswith("✅ DNS клиентов: 1.1.1.1, 1.0.0.1 → 10.9.1.1\n\n🖥 <b>Сервер AWG</b>"), answers[0][1]
+    assert answers[0][1].startswith("✅ DNS клиентов: <code>1.1.1.1</code>, <code>1.0.0.1</code> → <code>10.9.1.1</code>\n\n"
+                                    "🖥 <b>Сервер AWG</b>"), answers[0][1]
 
 
 async def test_settings_bad_input_is_tracked_reask(services, fake_bot):
