@@ -73,11 +73,14 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     # пропущенный из-за даунтайма cron 1-го числа навёрстывается при первом же
     # запуске в новом месяце. Первый запуск бота (state пуст) сброс не делает —
     # нечего сбрасывать, просто фиксирует текущий месяц.
-    async def job_monthly():
+    async def job_monthly(catchup: bool = False):
         ym = timeutil.now().strftime("%Y-%m")
         last = await asyncio.to_thread(db.get_state, "last_monthly_reset")
         if last == ym:
             return
+        if catchup and not planned_moment_passed(settings.get_int("app.scheduler.monthly_reset_day", 1),
+                                                 settings.get_int("app.scheduler.monthly_reset_hour", 0)):
+            return                                   # назначенный момент ещё впереди — крон своё сделает
         if last is None:
             await asyncio.to_thread(db.set_state, "last_monthly_reset", ym)   # первый запуск — только фиксация
             return
@@ -89,9 +92,20 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
         except Exception as e:                       # noqa: BLE001
             log.warning("monthly_reset: %s", e)
 
+    async def job_monthly_catchup():
+        await job_monthly(catchup=True)
+
     # ── автобэкап (та же catch-up-схема; тело общее с агентом) ───────────────
+    def _retry_backup():
+        # копия собрана, но не доставлена: повтор через час, пока не уйдёт
+        scheduler.add_job(job_backup, "date", run_date=timeutil.now() + datetime.timedelta(hours=1),
+                          id="backup_retry", replace_existing=True, max_instances=1, **MANDATORY)
+
     async def job_backup():
-        await monthly_backup(services, bot, "backup")
+        await monthly_backup(services, bot, "backup", on_undelivered=_retry_backup)
+
+    async def job_backup_catchup():
+        await monthly_backup(services, bot, "backup", catchup=True, on_undelivered=_retry_backup)
 
     async def job_purge_history():
         """Ежедневно: удалить историю старше ретеншна (батчами). Идемпотентно —
@@ -290,14 +304,13 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
     scheduler.add_job(job_expiry, _trig_expiry(),
                       id="expiry", max_instances=1, coalesce=True,
                       next_run_time=now, misfire_grace_time=config.MISFIRE_GRACE_EXPIRY_SECONDS)
-    scheduler.add_job(job_monthly, _trig_monthly(),
-                      id="monthly", max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
-    scheduler.add_job(job_monthly, "date", run_date=now, id="monthly_catchup",
-                      misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
-    scheduler.add_job(job_backup, backup_trigger(),
-                      id="backup", max_instances=1, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
-    scheduler.add_job(job_backup, "date", run_date=now, id="backup_catchup",
-                      misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+    # Месячный сброс и копия — обязательные (MANDATORY): без допуска по
+    # опозданию, висят в очереди, пока не выполнятся; догон на старте — только
+    # после назначенного момента месяца
+    scheduler.add_job(job_monthly, _trig_monthly(), id="monthly", max_instances=1, **MANDATORY)
+    scheduler.add_job(job_monthly_catchup, "date", run_date=now, id="monthly_catchup", **MANDATORY)
+    scheduler.add_job(job_backup, backup_trigger(), id="backup", max_instances=1, **MANDATORY)
+    scheduler.add_job(job_backup_catchup, "date", run_date=now, id="backup_catchup", **MANDATORY)
     # ── опрос IMAP: аварийный email-выход из приостановки ────────────────────
     async def job_email_resume():
         from awgbot.infra import email_resume
@@ -512,12 +525,33 @@ async def refresh_tg_names(bot, db, max_age_days: int = TG_NAME_MAX_AGE_DAYS) ->
     return done
 
 
-async def monthly_backup(services, bot, log_tag: str) -> None:
+# Обязательные задания: без допуска по опозданию — APScheduler выполнит их,
+# сколько бы они ни ждали (misfire_grace_time=None), а не выбросит как
+# просроченные; накопившиеся запуски схлопываются в один.
+MANDATORY = {"misfire_grace_time": None, "coalesce": True}
+
+
+def planned_moment_passed(day: int, hour: int, ref=None) -> bool:
+    """Назначенный момент этого месяца (день, час; день короче месяца —
+    последний день) уже прошёл? Догон на старте работает только тогда: копия
+    15-го не должна уходить 3-го после рестарта, а крон 15-го — пропускаться."""
+    import calendar
+    now = (ref or timeutil.now()).astimezone(config.TZ)
+    last = calendar.monthrange(now.year, now.month)[1]
+    planned = now.replace(day=max(1, min(int(day), last)), hour=max(0, min(int(hour), 23)),
+                          minute=0, second=0, microsecond=0)
+    return now >= planned
+
+
+async def monthly_backup(services, bot, log_tag: str, *, catchup: bool = False,
+                         on_undelivered=None) -> None:
     """Автобэкап раз в месяц — одно тело на обе роли. Guard по «году-месяцу»:
     защита от двойного запуска и catch-up после даунтайма через границу месяца
-    (задача дополнительно прогоняется на старте). Первый запуск (state пуст)
-    только фиксирует месяц. Канал — почта, если задан и ушло; иначе файлами
-    админу в чат. Вся синхронщина — в потоке, event loop не ждёт ни БД, ни SMTP."""
+    (задача дополнительно прогоняется на старте; catchup=True — только после
+    назначенного момента месяца). Первый запуск (state пуст) только фиксирует
+    месяц. Канал — почта, если задан и ушло; иначе файлами админу в чат.
+    Не доставлено — on_undelivered() ставит повтор. Вся синхронщина — в
+    потоке, event loop не ждёт ни БД, ни SMTP."""
     if not settings.get_bool("app.scheduler.backup_enabled", True):
         return
     db = services.db
@@ -525,6 +559,9 @@ async def monthly_backup(services, bot, log_tag: str) -> None:
     last = await asyncio.to_thread(db.get_state, "last_backup")
     if last == ym:
         return
+    if catchup and not planned_moment_passed(settings.get_int("app.scheduler.backup_day", 1),
+                                             settings.get_int("app.scheduler.backup_hour", 12)):
+        return                                   # назначенный момент ещё впереди — крон своё сделает
     if last is None:
         await asyncio.to_thread(db.set_state, "last_backup", ym)   # первый запуск — только фиксация
         return
@@ -549,8 +586,10 @@ async def monthly_backup(services, bot, log_tag: str) -> None:
             await asyncio.to_thread(db.set_state, "last_backup", ym)
         else:
             # архив собран, наружу не ушёл (Telegram через лежащий линк):
-            # «сделан» не ставим — повтор на следующем старте или по крону
-            log.warning("%s: копия %s собрана, но не доставлена — повторю", log_tag, ym)
+            # «сделан» не ставим — повтор через час, пока не уйдёт
+            log.warning("%s: копия %s собрана, но не доставлена — повторю через час", log_tag, ym)
+            if on_undelivered is not None:
+                on_undelivered()
     except Exception as e:                       # noqa: BLE001
         log.warning("%s: %s", log_tag, e)
 
@@ -703,18 +742,23 @@ def setup_gateway_scheduler(services, bot):
         next_run_time=timeutil.now() + datetime.timedelta(seconds=random.randint(120, 300)),
         misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
 
-    async def job_gw_backup():
-        await monthly_backup(services, bot, "gw backup")
+    def _retry_gw_backup():
+        scheduler.add_job(job_gw_backup, "date", run_date=timeutil.now() + datetime.timedelta(hours=1),
+                          id="gw_backup_retry", replace_existing=True, max_instances=1, **MANDATORY)
 
-    scheduler.add_job(job_gw_backup, backup_trigger(), id="gw_backup", max_instances=1,
-                      coalesce=True, misfire_grace_time=config.MISFIRE_GRACE_CRON_SECONDS)
+    async def job_gw_backup():
+        await monthly_backup(services, bot, "gw backup", on_undelivered=_retry_gw_backup)
+
+    async def job_gw_backup_catchup():
+        await monthly_backup(services, bot, "gw backup", catchup=True, on_undelivered=_retry_gw_backup)
+
+    scheduler.add_job(job_gw_backup, backup_trigger(), id="gw_backup", max_instances=1, **MANDATORY)
     # E7: догон на старте, как у основного бота — устройство, выключенное 1-го
     # в 12:00, иначе теряло месячную копию (первый прогон только помечает
     # месяц, копии не делает). Через минуты, не сразу: линк и почта ещё поднимаются.
-    scheduler.add_job(job_gw_backup, "date",
+    scheduler.add_job(job_gw_backup_catchup, "date",
                       run_date=timeutil.now() + datetime.timedelta(seconds=random.randint(60, 300)),
-                      id="gw_backup_catchup", max_instances=1,
-                      misfire_grace_time=config.MISFIRE_GRACE_INTERVAL_SECONDS)
+                      id="gw_backup_catchup", max_instances=1, **MANDATORY)
 
     def _gw_backup_hook(_key=None, _val=None):
         try:

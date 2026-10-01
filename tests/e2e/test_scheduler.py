@@ -113,3 +113,59 @@ async def test_job_monitor_refreshes_the_view_key_written_by_the_refresh_button(
     monkeypatch.setattr(services, "server_ok", lambda: False)
     await _jobs(services, fake_bot)["monitor"]()
     assert services.server_status_cached()["ok"] is False, "шапка показывает прошлое нажатие «Обновить»"
+
+
+# ── обязательные задания: месячный сброс и копия ─────────────────────────────
+def test_monthly_reset_and_backup_jobs_are_never_dropped(services, fake_bot):
+    """Критичные задания без допуска по опозданию: APScheduler не выбрасывает
+    их как просроченные, сколько бы ни длился старт."""
+    sched = setup_scheduler(services, fake_bot, services.db)
+    for jid in ("monthly", "monthly_catchup", "backup", "backup_catchup"):
+        assert sched.get_job(jid).misfire_grace_time is None, jid
+
+
+def test_planned_moment_of_the_month():
+    import datetime as _dt
+    from awgbot.runtime.scheduler import planned_moment_passed
+    from awgbot.core import config
+    tz = config.TZ
+    assert planned_moment_passed(15, 12, ref=_dt.datetime(2026, 10, 3, 9, tzinfo=tz)) is False
+    assert planned_moment_passed(15, 12, ref=_dt.datetime(2026, 10, 15, 12, 0, tzinfo=tz)) is True
+    assert planned_moment_passed(15, 12, ref=_dt.datetime(2026, 10, 16, 9, tzinfo=tz)) is True
+    assert planned_moment_passed(31, 0, ref=_dt.datetime(2026, 9, 30, 1, tzinfo=tz)) is True, "день короче месяца — последний"
+
+
+async def test_backup_catchup_waits_for_the_planned_day(services, fake_bot, monkeypatch):
+    """Рестарт 3-го при копии 15-го: догон не шлёт копию раньше срока и не
+    помечает месяц сделанным, крон 15-го не пропускается."""
+    from awgbot.runtime import scheduler as sm
+    services.db.set_state("last_backup", "2000-01")
+    services.db.set_state("last_monthly_reset", "2000-01")
+    monkeypatch.setattr(sm, "planned_moment_passed", lambda day, hour, ref=None: False)
+    sched = setup_scheduler(services, fake_bot, services.db)
+    await sched.get_job("backup_catchup").func()
+    assert services.db.get_state("last_backup") == "2000-01", "догон сделал копию раньше назначенного дня"
+    await sched.get_job("monthly_catchup").func()
+    assert services.db.get_state("last_monthly_reset") == "2000-01", "догон сбросил трафик раньше назначенного дня"
+    monkeypatch.setattr(sm, "planned_moment_passed", lambda day, hour, ref=None: True)
+    await sched.get_job("monthly_catchup").func()
+    assert services.db.get_state("last_monthly_reset") == timeutil.now().strftime("%Y-%m")
+
+
+async def test_an_undelivered_backup_is_retried_in_an_hour(services, fake_bot, monkeypatch, tmp_path):
+    """Копия собрана, но не ушла ни почтой, ни в чат: повтор через час, задание
+    обязательное — пока не уйдёт."""
+    p = tmp_path / "b.tgz.enc"; p.write_bytes(b"x")
+    services.db.set_state("last_backup", "2000-01")
+    monkeypatch.setattr(services, "make_backup", lambda: [str(p)])
+    monkeypatch.setattr(services, "backup_channel", lambda: "telegram")
+
+    async def boom(*a, **k):
+        raise RuntimeError("линк лежит")
+
+    monkeypatch.setattr(fake_bot, "send_document", boom, raising=False)
+    sched = setup_scheduler(services, fake_bot, services.db)
+    await sched.get_job("backup").func()
+    retry = sched.get_job("backup_retry")
+    assert retry is not None and retry.misfire_grace_time is None, "повтора нет"
+    assert services.db.get_state("last_backup") == "2000-01", "месяц помечен сделанным без доставки"
