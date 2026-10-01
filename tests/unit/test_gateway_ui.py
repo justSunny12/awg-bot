@@ -105,7 +105,7 @@ def test_health_screen_carries_module_and_kernels():
     st = GwStatus(checks=[GwCheck("ядра", True)], module_version="1.0.2026", srcversion="ABCDEF1234",
                   kernels_total=1, throttled={"raw": 0, "now": [], "ever": ["недонапряжение случалось"]})
     out = texts.gateway_health(st)
-    assert out == ("🩺 <b>Здоровье шлюза</b> · ✅ проблем нет\n"
+    assert out == ("🩺 <b>Здоровье шлюза</b> ✅ проблем нет\n"
                    "✅ ядра\n"
                    "питание ОК (с загрузки: недонапряжение случалось)\n"
                    "Модуль awg 1.0.2026 · srcversion ABCDEF12… · ядер 1"), out

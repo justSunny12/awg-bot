@@ -193,7 +193,7 @@ SETTINGS_MON = "🩺 <b>Мониторинг</b>"
 def settings_backup_text(encryption: bool = False, channel: str = "telegram") -> str:
     from awgbot.core import settings as s
     on = s.get_bool("app.scheduler.backup_enabled", True)
-    head = "💾 <b>Бэкапы</b> · " + ("✅ вкл" if on else "☑️ выкл") + " · " \
+    head = "💾 <b>Бэкапы</b> " + ("✅ вкл" if on else "☑️ выкл") + " · " \
         + ("🔐 фраза задана" if encryption else "🔓 без шифрования")
     lines = [head]
     if on:
@@ -250,7 +250,7 @@ def backup_encryption_text(mode: str, gateway: bool = False) -> str:
         state = "🔐 случайный ключ (перенесён из env)"
     else:
         state = "🔓 выключено — копии уходят открытыми и по почте не отправляются"
-    return (f"🔐 <b>Шифрование бэкапов</b> · {state}\n"
+    return (f"🔐 <b>Шифрование бэкапов</b> {state}\n"
             f"Фразу знаешь только ты — храни вне {'шлюза' if gateway else 'сервера'}, без неё бэкап не открыть"
             + details("Бот принимает фразу сообщением, тут же удаляет и никогда не показывает обратно. "
                       "Смена фразы не перешифровывает старые копии: они открываются прежней — не "
@@ -405,7 +405,7 @@ PRIVATE_DNS_WHAT = (
 
 def private_dns_offer(target: str) -> str:
     """Экран решения (и инфобокс при старте): что даёт и как перейти."""
-    return (f"🔒 <b>Свой DNS-резолвер</b> · сейчас публичный\n"
+    return (f"🔒 <b>Свой DNS-резолвер</b> сейчас публичный\n"
             f"Свой — <code>{_e(target)}</code>: меньшие задержки, запросы не уходят третьим лицам, защита от "
             "обхода через DoH. Цена — переезд профилей при включении"
             + details(PRIVATE_DNS_WHAT))

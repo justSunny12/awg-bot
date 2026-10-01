@@ -336,7 +336,7 @@ async def test_the_lan_screen_groups_address_traffic_lists_and_smb(gw_svc, fake_
     без пустых строк; объяснение — под «подробнее» последним."""
     _peer(gw_svc, ["naspi5"])
     _, _, lan, _ = await _agent_screens(gw_svc, fake_bot, monkeypatch)
-    head = ("🔀 <b>VPN-транзит</b> · 🟢 работает\n"
+    head = ("🔀 <b>VPN-транзит</b> 🟢 работает\n"
             "<code>end0</code> · <code>192.168.68.222</code> · 9 пакетов с роутера\n"
             "DNS — <code>10.9.1.1</code> через <code>аплинк</code>\n"
             "📋 Списки: 3 домена, 4 подсети (ещё не обновлялись)\n"

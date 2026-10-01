@@ -233,7 +233,7 @@ async def test_health_is_live_and_offers_recovery_and_the_menu(svc, fake_bot):
     assert svc.probes == 1 and cb.answers[0][0] == "Проверяю…"
     text, markup = _last_edit(nav)
     assert text.splitlines() == [
-        "🩺 <b>Здоровье naspi</b> · 🔴 проблем: 1",
+        "🩺 <b>Здоровье naspi</b> 🔴 проблем: 1",
         "✅ линк — хендшейк 40 с",
         "🔴 обвязка — нет цепочки",
         "RAM свободно 1 234 МБ · диск свободно 98 ГБ, SMART ОК · питание ОК",
@@ -244,7 +244,7 @@ async def test_health_is_live_and_offers_recovery_and_the_menu(svc, fake_bot):
     svc.live.checks = [GwCheck("линк", True)]
     await gh.gw_health(cb, svc)
     text, _ = _last_edit(nav)
-    assert text.startswith("🩺 <b>Здоровье naspi</b> · ✅ проблем нет") and "Восстановить" not in text, text
+    assert text.startswith("🩺 <b>Здоровье naspi</b> ✅ проблем нет") and "Восстановить" not in text, text
 
 
 async def test_health_details_from_the_host_are_escaped(svc, fake_bot):
@@ -435,7 +435,7 @@ async def test_backup_section_is_the_main_bot_layout(svc, fake_bot, store):
     cb, nav = _acb(fake_bot)
     await gh.gw_section(cb, GwCB(action="backup"), svc, FakeState())
     text, markup = _last_edit(nav)
-    assert text.splitlines()[:2] == ["💾 <b>Бэкапы</b> · ✅ вкл · 🔓 без шифрования",
+    assert text.splitlines()[:2] == ["💾 <b>Бэкапы</b> ✅ вкл · 🔓 без шифрования",
                                      "Каждое 1-е число в 12:00 → в этот чат"], text
     assert _rows(markup) == [["✅ Автобэкапы", "🔐 Шифрование"], ["📨 Куда: Telegram", "✏️ 1-е, 12:00"],
                              ["💾 Сделать сейчас"], ["⬅️ Назад"]]

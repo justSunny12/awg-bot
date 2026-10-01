@@ -334,7 +334,7 @@ async def test_panel_offers_the_lan_screen_only_when_enabled(svc, fake_bot, monk
     assert "🔀 VPN-транзит" in labels
     await gh.gw_transit(cb, svc, FakeState())
     text, markup = msg.sent[-1][1], msg.sent[-1][2]
-    assert text.startswith("🔀 <b>VPN-транзит</b> · 🟢 работает") and "end0" in text \
+    assert text.startswith("🔀 <b>VPN-транзит</b> 🟢 работает") and "end0" in text \
         and "Свои списки: 1 в туннель" in text, text
     labels = [b.text for row in markup.inline_keyboard for b in row]
     # обновления списков кнопкой нет: фиды привозит сервер или агент качает сам

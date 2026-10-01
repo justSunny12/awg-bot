@@ -273,13 +273,13 @@ async def test_an_unknown_cycle_key_is_refused(services, fake_bot, store):
 async def test_backup_section_lines_and_rows(services, fake_bot, store):
     store["app.scheduler.backup_day"], store["app.scheduler.backup_hour"] = 1, 12
     text, markup = await sh._screen("backup", services)
-    assert text == ("💾 <b>Бэкапы</b> · ✅ вкл · 🔓 без шифрования\nКаждое 1-е число в 12:00 → в этот чат\n"
+    assert text == ("💾 <b>Бэкапы</b> ✅ вкл · 🔓 без шифрования\nКаждое 1-е число в 12:00 → в этот чат\n"
                     "Восстановить — пришли боту файл бэкапа (.tgz.enc)"), text
     assert _rows(markup) == [["✅ Автобэкапы", "🔐 Шифрование"], ["📨 Куда: Telegram", "✏️ 1-е, 12:00"],
                              ["💾 Сделать сейчас"], ["⬅️ Назад"]]
     store["app.scheduler.backup_enabled"] = False
     text, _ = await sh._screen("backup", services)
-    assert text == ("💾 <b>Бэкапы</b> · ☑️ выкл · 🔓 без шифрования\n"
+    assert text == ("💾 <b>Бэкапы</b> ☑️ выкл · 🔓 без шифрования\n"
                     "Восстановить — пришли боту файл бэкапа (.tgz.enc)"), "выключены — без расписания"
 
 

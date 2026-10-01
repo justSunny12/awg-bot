@@ -111,7 +111,7 @@ async def test_health_screen_is_live(svc, fake_bot):
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_health(cb, svc)
     assert svc.probes == 1
-    assert any(t.startswith("🩺 <b>Здоровье pi</b> · ") for kind, t, _ in msg.sent if kind == "edit_text")
+    assert any(t.startswith("🩺 <b>Здоровье pi</b> ") for kind, t, _ in msg.sent if kind == "edit_text")
 
 
 async def test_hide_button_deletes_the_notification(svc, fake_bot):

@@ -375,7 +375,7 @@ async def test_dns_screen_explains_and_offers_three_ways(services, monkeypatch):
     assert "10.8.1.1" in text and "DoH" in text and "переезд" in text.lower()
     labels = _labels(markup)
     assert labels == ["🚚 Переехать сейчас", "⏳ При переезде", "Не нужно", "⬅️ Назад"], labels
-    assert text.startswith("🔒 <b>Свой DNS-резолвер</b> · сейчас публичный\nСвой — <code>10.8.1.1</code>: "), text
+    assert text.startswith("🔒 <b>Свой DNS-резолвер</b> сейчас публичный\nСвой — <code>10.8.1.1</code>: "), text
 
     monkeypatch.setattr(services, "migration_blocked_reason", lambda: "идёт переезд")
     _, markup = await sh._screen("dns", services)

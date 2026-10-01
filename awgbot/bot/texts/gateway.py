@@ -149,7 +149,7 @@ def gateway_health(st) -> str:
     модуль awg — справкой внизу."""
     host = _e(st.hostname) if st.hostname else "шлюза"
     bad = sum(1 for c in st.checks if c.ok is False)
-    lines = [f"🩺 <b>Здоровье {host}</b> · " + ("✅ проблем нет" if not bad else f"🔴 проблем: {bad}")]
+    lines = [f"🩺 <b>Здоровье {host}</b> " + ("✅ проблем нет" if not bad else f"🔴 проблем: {bad}")]
     for c in st.checks:
         mark = "✅" if c.ok else ("⚪" if c.ok is None else "🔴")
         # детали — с хоста (вывод скрипта, имена интерфейсов): экранируем
@@ -232,7 +232,7 @@ def gateway_transit_text(st, items=None, own: dict | None = None) -> str:
     own = own or lan.get("own") or {}
     bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
     state = "🔴 " + ", ".join(_uniq(c.name for c in bad)[:3]) if bad else "🟢 работает"
-    lines = [f"🔀 <b>VPN-транзит</b> · {state}",
+    lines = [f"🔀 <b>VPN-транзит</b> {state}",
              f"<code>{_e(lan.get('iface', '') or '?')}</code> · <code>{_e(lan.get('addr', '') or '?')}</code> · "
              f"{_packets(lan.get('lan_pkts'))} с роутера",
              f"DNS — <code>{_e(lan.get('resolver', '') or '?')}</code> через "
