@@ -96,6 +96,12 @@ class MailMixin:
             raise mail.MailError("ящик не настроен")
         mail.send_mail(acc, acc.login, "awg-bot: тестовое письмо",
                        f"Почтовый канал бота работает. {timeutil.now_iso()}")
+        self._email_mark_ok()
+
+    def _email_mark_ok(self) -> None:
+        """Письмо ушло — ящик рабочий: статус проверки обновляется и от
+        отправки, не только от кнопки «Проверить» и автопроверки."""
+        self.db.set_state(self._MAIL_CHECK_KEY, f"ok|{timeutil.now_iso()}")
 
     # ── функции на канале ────────────────────────────────────────────────────
 
@@ -139,6 +145,7 @@ class MailMixin:
         mail.send_mail(acc, acc.login, f"awg-bot-{tag}: резервная копия {stamp}",
                        "Файлы резервной копии во вложении. Расшифровка — restore_backup.py "
                        "с BACKUP_KEY/BACKUP_PASSPHRASE.", attachments=att)
+        self._email_mark_ok()
 
     def email_alert_fallback_enabled(self) -> bool:
         return (settings.get_bool("notifications.email_fallback", False)
@@ -153,4 +160,5 @@ class MailMixin:
         plain = re.sub(r"<[^>]+>", "", text)
         mail.send_mail(acc, acc.login, "awg-bot: критичный алерт (Telegram недоступен)",
                        plain + f"\n\n{timeutil.now_iso()}")
+        self._email_mark_ok()
 

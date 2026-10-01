@@ -123,12 +123,12 @@ async def test_address_list_prompt_shows_the_current_entries(services, fake_bot,
 
 async def test_email_section_puts_state_in_the_head_and_servers_in_one_line(services, fake_bot, store):
     text, markup = await sh._screen("email", services)
-    assert text.startswith("✉️ <b>E-mail</b> · ящик не подключён\n"), text
+    assert text.startswith("✉️ <b>E-mail</b> ящик не подключён\n"), text
     assert _rows(markup) == [["✉️ Подключить ящик"], ["⬅️ Назад"]]
     _mailbox(services)
     text, markup = await sh._screen("email", services)
     lines = text.split("\n")
-    assert lines[0] == "✉️ <b>E-mail</b> · ⚪ ещё не проверялось", lines
+    assert lines[0] == "✉️ <b>E-mail</b> ⚪ ещё не проверялось", lines
     assert lines[1] == "<code>box@icloud.com</code> · IMAP <code>imap.mail.me.com:993</code> · SMTP <code>smtp.mail.me.com:587</code>", lines
     assert lines[2] == "🆘 Аварийный выход из паузы: код на <code>box@icloud.com</code>", lines
     assert _rows(markup) == [["🔍 Проверить", "📨 Тест-письмо"], ["✏️ Сменить ящик", "🗑 Отключить"],
@@ -207,11 +207,11 @@ async def test_check_and_test_mail_put_the_result_on_top_of_the_section(services
     await sh.email_action(cb, SetCB(sec="email", act="do", key="check"), services, FakeState())
     assert cb.answers[0][0] == "Проверяю…"
     text, _ = _last_edit(nav)
-    assert text.startswith("🟢 Вход по IMAP и SMTP прошёл\n\n✉️ <b>E-mail</b> · "), text
+    assert text.startswith("🟢 Вход по IMAP и SMTP прошёл\n\n✉️ <b>E-mail</b> "), text
     monkeypatch.setattr(services, "email_check", lambda acc=None: (False, "IMAP: <auth> отказ"))
     cb, nav = _acb(fake_bot)
     await sh.email_action(cb, SetCB(sec="email", act="do", key="check"), services, FakeState())
-    assert _last_edit(nav)[0].startswith("🔴 IMAP: &lt;auth&gt; отказ\n\n✉️ <b>E-mail</b> · "), "причина — экранированной"
+    assert _last_edit(nav)[0].startswith("🔴 IMAP: &lt;auth&gt; отказ\n\n✉️ <b>E-mail</b> "), "причина — экранированной"
 
     sent = []
     monkeypatch.setattr(services, "email_send_test", lambda: sent.append(1))

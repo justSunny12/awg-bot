@@ -98,7 +98,7 @@ async def test_email_forget_needs_confirmation_and_toggle_resume(services, fake_
     assert cb.answers[-1][0] == "✅ Почта отключена", cb.answers
     assert not any(kind == "answer" for kind, _t, _ in msg.sent), "лишнее сообщение в чате"
     last = [t for kind, t, _ in msg.sent if kind == "edit_text"][-1]
-    assert last.startswith("✉️ <b>E-mail</b> · ящик не подключён"), last
+    assert last.startswith("✉️ <b>E-mail</b> ящик не подключён"), last
 
 
 # ── бэкап на почту и запасной канал для критичных алертов ────────────────────

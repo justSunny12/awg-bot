@@ -86,17 +86,17 @@ def settings_email_text(acc, last_check: tuple, resume_on=None, resume_addr: str
                 if resume_on is not None
                 else "для бэкапов и критичных алертов, когда Telegram недоступен; настройки почты "
                      "приезжают в конфигурации шлюза")
-        return ("✉️ <b>E-mail</b> · ящик не подключён\n"
+        return ("✉️ <b>E-mail</b> ящик не подключён\n"
                 f"Почта нужна {what}. Портов на хосте не открывается — бот сам ходит на почтовый сервер")
     state, iso, detail = last_check
     if state == "ok":
         when = timeutil.age_ago((timeutil.now() - timeutil.parse_iso(iso)).total_seconds()) if iso else ""
-        status = f"🟢 проверено {when}".rstrip()
+        status = f"🟢 <i>{when}</i>" if when else "🟢 проверено"
     elif state == "fail":
         status = f"🔴 {_e(detail)}"
     else:
         status = "⚪ ещё не проверялось"
-    lines = [f"✉️ <b>E-mail</b> · {status}",
+    lines = [f"✉️ <b>E-mail</b> {status}",
              f"<code>{_e(acc.login)}</code> · IMAP <code>{_e(acc.imap_host)}:{acc.imap_port}</code> · SMTP <code>{_e(acc.smtp_host)}:{acc.smtp_port}</code>"]
     if resume_on is not None:
         if resume_on:

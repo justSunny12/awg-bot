@@ -51,7 +51,7 @@ def decrypt(blob: bytes, privkey_b64: str) -> bytes:
     try:
         return SecretBox(derive_key(privkey_b64)).decrypt(blob[len(MAGIC):])
     except CryptoError as e:
-        raise ValueError("бандл не расшифровался — ключ линка не совпадает") from e
+        raise ValueError("не удалось расшифровать файл — ключ линка не совпадает") from e
 
 
 def read_privkey(conf_text: str) -> str:

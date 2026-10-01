@@ -308,7 +308,8 @@ async def test_agent_reports_status_in_words_and_claims_only_when_unmarked(fake_
     nav = await _agent_apply(fake_bot, monkeypatch, tmp_path,
                              {"GW_STATUS": "confirmed", "UPLINK": "installed", "LINK": "up"})
     results = [s[1] for s in nav.sent if s[0] == "edit_text"]
-    assert any("Аплинк обновлён и поднят, линк поднят, шлюз подтверждён</code>" in t for t in results), results
+    assert any(t.startswith("✅ <b>Конфигурация шлюза применена</b>\nАплинк обновлён и поднят · линк поднят · шлюз подтверждён")
+               for t in results), results
     assert not any("хвост вывода" in t for t in results), "при успехе — отчёт, не хвост"
     assert not any("GW1:" in (s[1] or "") for s in nav.sent)
     nav = await _agent_apply(fake_bot, monkeypatch, tmp_path, {"GW_STATUS": "unmarked"})

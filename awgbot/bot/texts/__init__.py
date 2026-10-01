@@ -137,7 +137,7 @@ from .gateway import (
     GW_BACKUP_NO_KEY, host_rebooted, GW_CONFIRM_RESTART, GW_CONFIRM_REASSERT, gw_confirm_restart, gw_confirm_reassert, SYNC_TAILS,
     GW_CONFIRM_BOT_RESTART, GW_BOT_RESTARTING, GW_BUNDLE_NOT_OURS, GW_FIRST_RUN_FILE,
     GW_BUNDLE_PASSPHRASE_QUESTION, gateway_claim_forward_text, gateway_apply_report,
-    gateway_op_result, awg_restart_warning_body, gateway_bundle_received,
+    gateway_op_result, gateway_config_result, awg_restart_warning_body, gateway_bundle_received,
     gateway_ssh_text, gw_ssh_port_ask, gateway_ssh_owner_refusal, gateway_ssh_port_changed,
     GW_SSH_ALLOW_ASK, gateway_ssh_allow_added, GW_SSH_ALLOW_ALREADY, GW_SSH_FILTER_ON_ALERT,
     GW_SSH_FILTER_OFF, gateway_ssh_panel_line)
@@ -209,7 +209,7 @@ __all__ = [
     "GW_SSH_ALLOW_ASK", "gateway_ssh_allow_added", "GW_SSH_ALLOW_ALREADY",
     "GW_SSH_FILTER_OFF",
     "gateway_ssh_panel_line",
-    "gateway_apply_report", "gateway_op_result", "awg_restart_warning_body",
+    "gateway_apply_report", "gateway_op_result", "gateway_config_result", "awg_restart_warning_body",
     "gateway_bundle_received", "HB_SERVER_DOWN", "HB_SERVER_UP", "cancelled",
     "BOT_RESTARTED",
 ]

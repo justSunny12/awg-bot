@@ -461,7 +461,9 @@ def gateway_claim_forward_text(token: str, status: str) -> str:
 
 
 def gateway_apply_report(st: dict) -> str:
-    """Человеческий отчёт применения конфигурации — из статуса скрипта."""
+    """Человеческий отчёт применения конфигурации — из статуса скрипта: аплинк,
+    линк и подтверждение одной строкой через « · », фильтр SSH и VPN-транзит —
+    строками ниже; адреса моноширинным. Готовый HTML."""
     lines = []
     up = st.get("UPLINK", "")
     if up == "installed":
@@ -494,11 +496,32 @@ def gateway_apply_report(st: dict) -> str:
             lines.append(f"VPN-транзит: не применён — {err}")
         else:
             lines.append("VPN-транзит: применён"
-                         + (f" ({st.get('LAN_IF')}, {st.get('LAN_ADDR')})" if st.get("LAN_IF") else ""))
+                         + (f" ({_e(st.get('LAN_IF'))}, <code>{_e(st.get('LAN_ADDR'))}</code>)"
+                            if st.get("LAN_IF") else ""))
     if not lines:
         return ""
-    text = ", ".join(lines)
+    head = [ln for ln in lines if not ln.startswith(("фильтр SSH", "VPN-транзит"))]
+    rest = [ln for ln in lines if ln.startswith(("фильтр SSH", "VPN-транзит"))]
+    text = "\n".join(([" · ".join(head)] if head else []) + rest)
     return text[0].upper() + text[1:]
+
+
+def gateway_config_result(ok: bool, detail: str, mail: tuple = ("", "")) -> str:
+    """Итог применения конфигурации: «✅ Конфигурация шлюза применена» и отчёт
+    строками; отказ — общая маска «🔴 Конфигурация шлюза не применена:» и
+    причина строкой ниже. mail — (ok|fail|"", причина): почта из файла
+    проверена сразу, итог — отдельной строкой."""
+    if ok:
+        # отчёт — готовый HTML из gateway_apply_report (адреса в <code>)
+        lines = ["✅ <b>Конфигурация шлюза применена</b>"] + ([detail] if detail else [])
+    else:
+        lines = ["🔴 <b>Конфигурация шлюза не применена:</b>", _e(detail or "причина не названа")]
+    state, why = mail
+    if state == "ok":
+        lines.append("✉️ Почта из конфигурации принята: IMAP и SMTP отвечают, вход выполнен")
+    elif state == "fail":
+        lines.append(f"✉️ Почта из конфигурации принята, но проверка не прошла: {_e(why)}")
+    return "\n".join(lines)
 
 
 def gateway_op_result(title: str, ok: bool, detail: str) -> str:

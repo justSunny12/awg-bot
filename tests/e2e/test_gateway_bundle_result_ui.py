@@ -37,6 +37,8 @@ pytestmark = pytest.mark.e2e
 slots = _slots_ui.slots
 ADMIN = config.ADMIN_ID
 CANCEL2 = SetCB(sec="rt", act="do", key="bundle_cancel", val="2").pack()
+HOME2 = SetCB(sec="rt", act="do", key="bundle_home", val="2").pack()
+FILE_BUTTONS2 = [("👤 В карточку", CANCEL2), ("⬅️ На главную", HOME2)]
 TOKEN2 = "222222222:BB-second-token-value-long-enough"
 
 
@@ -158,7 +160,7 @@ async def test_the_card_button_issues_the_file_at_once_and_the_card_goes_dark(se
     assert not [s for s in nav.sent if s[0] == "edit_text"], "вместо файла нарисован промежуточный экран"
     assert nav.message_id in services.db.pop_content_msg_ids(ADMIN), \
         "карточка не помечена как контент — возврат в меню её не уберёт"
-    assert _buttons(markup) == [("⬅️ В меню", CANCEL2)], _buttons(markup)
+    assert [b for b in _buttons(markup) if b[1]] == FILE_BUTTONS2, _buttons(markup)
     where = services.gw_bundle_msg_get(2)
     assert len(where.pop("fp", "")) == 16, "запись без отпечатка файла"
     assert where == {"chat": ADMIN, "file": doc.message_id, "instr": nav.message_id, "plain": False}, \
@@ -191,7 +193,7 @@ async def test_a_bundle_button_on_an_old_message_issues_the_same_way(services, s
     await sh.routing_action(cb, SetCB(sec="rt", act="do", key="bundle", val="2"), services)
     assert len(old.docs) == 1, old.sent
     _c, markup, doc = old.docs[0]
-    assert _buttons(markup) == [("⬅️ В меню", CANCEL2)], _buttons(markup)
+    assert [b for b in _buttons(markup) if b[1]] == FILE_BUTTONS2, _buttons(markup)
     assert old.markup_cleared, "старое сообщение над файлом осталось с кнопками"
     where = services.gw_bundle_msg_get(2)
     assert (where["file"], where["instr"]) == (doc.message_id, old.message_id), where
@@ -251,7 +253,7 @@ async def test_the_first_install_file_offers_menu_and_is_remembered(services, sl
     _slot1(services, pi)
     services.token[2] = TOKEN2
     nav, instr, (caption, markup, doc) = await _issue_plain(services, _Bot(), pi2)
-    assert _buttons(markup) == [("⬅️ В меню", CANCEL2)], _buttons(markup)
+    assert [b for b in _buttons(markup) if b[1]] == FILE_BUTTONS2, _buttons(markup)
     assert caption == ("🛰 Файл конфигурации шлюза\n"
                        "Воспользуйся инструкцией выше для настройки нового шлюза: <b>Pi2</b>\n\n"
                        "После возврата в меню сообщение с файлом и инструкция удалятся из чата."), caption
@@ -272,7 +274,7 @@ async def test_the_first_install_file_of_a_new_machine_is_remembered_too(service
     await sh.gateway_new_yes(cb, GwMarkCB(action="new_yes", slot=0), services, FakeState())
     assert len(nav.docs) == 1, nav.sent
     caption, markup, doc = nav.docs[0]
-    assert _buttons(markup) == [("⬅️ В меню", CANCEL2)], _buttons(markup)
+    assert [b for b in _buttons(markup) if b[1]] == FILE_BUTTONS2, _buttons(markup)
     assert "<b>Шлюз 2</b>" in caption, caption
     instr = next(s[3] for s in nav.sent if s[0] == "answer" and "--install" in s[1])
     where = services.gw_bundle_msg_get(2)

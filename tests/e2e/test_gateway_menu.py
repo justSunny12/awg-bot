@@ -227,7 +227,7 @@ async def test_gateway_email_section_and_channel_offer(svc, fake_bot, monkeypatc
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_section(cb, GwCB(action="email"), svc, FakeState())
     txt = [t for kind, t, _ in msg.sent if kind == "edit_text"][-1]
-    assert txt.startswith("✉️ <b>E-mail</b> · ящик не подключён") and "конфигурации шлюза" in txt, txt
+    assert txt.startswith("✉️ <b>E-mail</b> ящик не подключён") and "конфигурации шлюза" in txt, txt
     assert "паузы" not in txt and "Аварийный выход" not in txt, "аварийного выхода у агента нет"
     await gh.gw_backup_channel(cb, GwCB(action="bk_ch", val="email"), svc)
     assert any("Почта не настроена" in t for kind, t, _ in msg.sent if kind == "edit_text")

@@ -93,10 +93,10 @@ class BundleMixin:
             priv = bundlecrypt.read_privkey(base.pathlib_read(config.GW_LINK_CONF))
             plain = bundlecrypt.decrypt(blob, priv)
         except (OSError, ValueError) as e:
-            return False, f"не удалось применить конфигурацию: {e}"
+            return False, str(e)                      # причина — под общей маской «не применена:»
         text = plain.decode(errors="replace")
         if "#__GW_SETUP_BELOW__" not in text or "__LINK_CONF_EOF__" not in text:
-            return False, "не удалось применить конфигурацию: внутри нет маркеров контракта линка"
+            return False, "внутри нет маркеров контракта линка"
         # Старый файл из истории чата расшифровывается тем же ключом: отказываем
         # выпуску старее уже применённого (метка ISSUED_AT в шапке; файлы прежних
         # выпусков без метки применяются как раньше)
@@ -110,7 +110,7 @@ class BundleMixin:
         m = re.search(r'^SERVER_NAME="([^"\n]{1,64})"', text, re.M)
         if m:
             self.db.set_state(self._SERVER_NAME_KEY, m.group(1))
-        self._apply_bundle_mail(text)
+        mail_applied = self._apply_bundle_mail(text)
         phrase = self._bundle_passphrase(text)
         if phrase and (overwrite_passphrase or not self.backup_encryption_enabled()):
             try:
@@ -121,9 +121,25 @@ class BundleMixin:
             ok, out = self._apply_bundle_run(plain)
         if ok and issued:
             self.db.set_state(self._BUNDLE_ISSUED_KEY, str(issued))
+        # Почта приехала — проверяем сразу (вход по IMAP и SMTP), итог — строкой
+        # в сообщении об итоге; иначе ящик висел бы «ещё не проверялось» до
+        # ручной кнопки, а первый бэкап молча ушёл бы в чат
+        if mail_applied:
+            ok_mail, why = self.email_check()
+            self.db.set_state(self._BUNDLE_MAIL_KEY, "ok" if ok_mail else f"fail|{why}")
+        else:
+            self.db.set_state(self._BUNDLE_MAIL_KEY, "")
         return ok, out
 
     _BUNDLE_ISSUED_KEY = "gw_bundle_issued_at"
+    _BUNDLE_MAIL_KEY = "gw_bundle_mail"           # итог проверки почты из последнего файла: ok | fail|почему | пусто
+
+    def bundle_mail_check(self) -> tuple[str, str]:
+        """(ok|fail|"", причина) — что показала проверка почты из последнего
+        применённого файла; пусто — почты в файле не было."""
+        raw = self.db.get_state(self._BUNDLE_MAIL_KEY) or ""
+        state, _sep, why = raw.partition("|")
+        return state, why
 
     @staticmethod
     def _bundle_issued_at(text: str) -> int:

@@ -609,7 +609,11 @@ async def test_no_token_button_in_the_card_or_under_the_files(services, slots, f
     for slot in (0, 1, 2):
         mk = kbs.bundle_menu_kb(slot)
         labels = [b.text for row in mk.inline_keyboard for b in row]
-        assert labels == ["⬅️ В меню"], (slot, labels)
+        assert labels == ["👤 В карточку", "⬅️ На главную"], (slot, labels)
+        mk = kbs.bundle_menu_kb(slot, "pi2_gw_bot")
+        rows = [[b.text for b in row] for row in mk.inline_keyboard]
+        assert rows == [["🤖 Бот шлюза"], ["👤 В карточку", "⬅️ На главную"]], (slot, rows)
+        assert mk.inline_keyboard[0][0].url == "https://t.me/pi2_gw_bot"
 
 
 def _all_routers():

@@ -128,10 +128,10 @@ def test_gateway_apply_report_is_human_text(tmp_path, monkeypatch):
     db = Database(tmp_path / "gw.db"); db.init_schema()
     svc = GatewayServices(db)
     cases = {
-        ("confirmed", "installed", "up"): "Аплинк обновлён и поднят, линк поднят, шлюз подтверждён",
-        ("confirmed", "unchanged", "up"): "Аплинк без изменений, линк поднят, шлюз подтверждён",
+        ("confirmed", "installed", "up"): "Аплинк обновлён и поднят · линк поднят · шлюз подтверждён",
+        ("confirmed", "unchanged", "up"): "Аплинк без изменений · линк поднят · шлюз подтверждён",
         ("foreign", "", "foreign"): "Линк лежит: шлюз этого слота — другое устройство",
-        ("unconfirmed", "", "unconfirmed"): "Линк не тронут: аплинк этого устройства не найден, шлюз не подтверждён",
+        ("unconfirmed", "", "unconfirmed"): "Линк не тронут: аплинк этого устройства не найден · шлюз не подтверждён",
         ("unmarked", "", ""): "Шлюз в боте сервера AWG не назначен",
     }
     for (gs, up, link), expect in cases.items():
@@ -149,7 +149,7 @@ def test_apply_report_names_the_local_network_result():
     from awgbot.bot import texts
     base = {"GW_STATUS": "confirmed", "LINK": "up"}
     ok = texts.gateway_apply_report({**base, "LAN": "1", "LAN_IF": "end0", "LAN_ADDR": "192.168.68.222"})
-    assert ok == "Линк поднят, шлюз подтверждён, VPN-транзит: применён (end0, 192.168.68.222)", ok
+    assert ok == "Линк поднят · шлюз подтверждён\nVPN-транзит: применён (end0, <code>192.168.68.222</code>)", ok
     bad = texts.gateway_apply_report({**base, "LAN": "1", "LAN_ERROR": "порт 53 занят: pihole-FTL"})
     assert "VPN-транзит: не применён — порт 53 занят: pihole-FTL" in bad, bad
     assert "применён (" not in bad

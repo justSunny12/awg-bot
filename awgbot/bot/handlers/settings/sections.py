@@ -129,11 +129,11 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         await show_main_menu(cb.message, services, "admin")
         await cb.answer()
         return
-    if callback_data.key == "bundle_cancel":
-        # «В меню» под файлом (шифрованным или первого применения): файл и
-        # сообщение над ним (погасшая карточка, инструкция) уходят из чата —
-        # внутри ключ линка, — человек возвращается в карточку слота, для
-        # которого выпускал
+    if callback_data.key in ("bundle_cancel", "bundle_home"):
+        # «В карточку» / «На главную» под файлом (шифрованным или первого
+        # применения): файл и сообщение над ним (погасшая карточка, инструкция)
+        # уходят из чата — внутри ключ линка, — человек возвращается в карточку
+        # слота, для которого выпускал, или на главную
         slot = int(callback_data.val or 0)
         where = await call(services.gw_bundle_msg_get, slot) if slot else {}
         # запись — о последнем файле слота; «В меню» на прежнем (Telegram не дал
@@ -150,7 +150,7 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
             st = await call(services.gateway_screen_state, slot) if slot else None
         except ServiceError:
             st = None
-        if st is None:
+        if st is None or callback_data.key == "bundle_home":
             await show_main_menu(cb.message, services, "admin")
             return
         await send_menu(cb.message, services, texts.gateway_card_text(st, st["states"]),
