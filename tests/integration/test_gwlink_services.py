@@ -575,7 +575,7 @@ async def test_records_refused_for_a_missing_helper_reach_dnsmasq_on_the_next_ti
     assert pair.srv._sessions[2].svc_have == H_NAS, "сервер не признал записи применёнными"
     card = s.gwlink_services_card(s.db.gateway(2))
     assert card["state"] == "applied", card
-    assert services_line(card, "Pi") == "🗂 SMB: извне — 1 🟢 доступны", services_line(card, "Pi")
+    assert services_line(card, "Pi") == "🗂 SMB: извне — 1 · 🟢 доступны", services_line(card, "Pi")
     assert agent.services_applied_hash() == H_NAS
 
     # дальше тишина: ни повторной доставки с ВПС, ни повторного ack с малины

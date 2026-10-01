@@ -86,7 +86,7 @@ def gateway_panel(st, update_tag: str = "", chan: dict | None = None) -> str:
     host = _e(st.hostname) if st.hostname else "шлюз"
     up = f" · {timeutil.brief_units(timeutil.fmt_remaining_short(int(st.uptime_seconds)))}" \
         if st.uptime_seconds is not None else ""
-    parts = [f"🛰 <b>{host}</b> · {_gw_role(st, chan)}{up}", ""]      # шапка — отдельно от остального
+    parts = [f"🛰 <b>{host}</b> {_gw_role(st, chan)}{up}", ""]      # шапка — отдельно от остального
     chan_line = channel_panel_line(chan)
     link = _gw_link_short(st)
     # всегда «Линк до …»: голое «Линк» читается как сетевой интерфейс

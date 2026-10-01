@@ -145,8 +145,8 @@ def test_home_routing_line_is_silent_without_gateways():
 
 def test_home_first_line_is_host_status_and_short_uptime():
     out = texts.admin_panel({"ok": True, "uptime": "12 дней 4 часа"})
-    assert out.split("\n")[0].endswith(" · 🟢 работает · 12 дн 4 ч"), out
-    assert texts.admin_panel({"ok": False}).split("\n")[0].endswith(" · 🔴 не отвечает")
+    assert out.split("\n")[0].endswith("</b> 🟢 работает · 12 дн 4 ч"), out
+    assert texts.admin_panel({"ok": False}).split("\n")[0].endswith("</b> 🔴 не отвечает")
 
 
 @pytest.mark.parametrize("gateways, enabled", [(False, False), (False, True), (True, False)])

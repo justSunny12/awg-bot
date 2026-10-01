@@ -76,7 +76,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     else:
         dot = "🔴 не отвечает"
     host = _e(_hostname() or "AWG")
-    lines = [f"🛠 <b>{host}</b> · {dot}"]
+    lines = [f"🛠 <b>{host}</b> {dot}"]
     if st.get("cpu") is not None or st.get("ram") is not None or st.get("disk") is not None:
         def _p(v):
             return f"{v:.0f}%" if v is not None else "?"

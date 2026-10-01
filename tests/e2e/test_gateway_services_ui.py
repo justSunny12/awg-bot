@@ -91,7 +91,7 @@ async def test_the_slot_card_counts_services_and_follows_their_fate(services, pe
     assert labels == labels_before, "строка сервисов добавила или убрала кнопки"
     services.gwlink_peer_services_ack_in(2, {"ok": True, "hash": H_NAS, "n": 1})
     text, _ = await _card(services, fake_bot, 2)
-    assert _svc_line(text) == HEAD + " 🟢 доступны", _svc_line(text)
+    assert _svc_line(text) == HEAD + " · 🟢 доступны", _svc_line(text)
     assert "⏳ Синхронизация с другими шлюзами" not in text and "⚠️ Шлюз" not in text, (
         f"записи на шлюзе, а карточка всё ещё пишет про их путь: {text}")
     services.gwlink_peer_services_ack_in(2, {"ok": False, "hash": H_NAS, "error": "<b>dnsmasq</b> & rc=1"})
@@ -234,7 +234,7 @@ def test_smb_line_does_not_print_zeros(own, peer, line):
     читается как поломка там, где серверов просто нет."""
     from awgbot.bot.texts.routing import services_line
     assert services_line({"own": own, "peer": peer, "state": "applied"}) == (
-        line + (" 🟢 доступны" if peer else ""))
+        line + (" · 🟢 доступны" if peer else ""))
 
 
 async def test_the_peer_access_dialog_mentions_finder_only_when_turning_on(services, peers, fake_bot):

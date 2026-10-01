@@ -77,7 +77,7 @@ async def test_start_uses_the_tick_snapshot_and_refresh_probes_live(svc, fake_bo
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     await gh.gw_refresh(cb, svc, FakeState())
     assert svc.probes == 2
-    assert any(t.startswith("🛰 <b>pi</b> · ") for kind, t, _ in msg.sent if kind == "edit_text")
+    assert any(t.startswith("🛰 <b>pi</b> ") for kind, t, _ in msg.sent if kind == "edit_text")
 
 
 async def test_stale_snapshot_falls_back_to_live(svc, fake_bot):
@@ -102,7 +102,7 @@ async def test_bot_restart_is_confirmed_then_promised_and_kept(svc, fake_bot):
     assert svc.db.get_state("restart_wait") == ""
     edited = [r for r in fake_bot.records if r[0] == "edit_message_text"]
     assert edited and texts.BOT_RESTARTED in str(edited[-1])
-    assert any(r[0] == "send_message" and str(r[2]).startswith("🛰 <b>pi</b> · ") for r in fake_bot.records), \
+    assert any(r[0] == "send_message" and str(r[2]).startswith("🛰 <b>pi</b> ") for r in fake_bot.records), \
         "панель после перезапуска не пришла"
 
 

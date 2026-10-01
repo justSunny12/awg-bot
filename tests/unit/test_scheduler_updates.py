@@ -41,4 +41,4 @@ def test_updates_sections_show_current_version_with_v():
 def test_admin_panel_title_carries_hostname(monkeypatch):
     monkeypatch.setattr(texts.admin, "_HOSTNAME", "vps-1")   # имя хоста кэшируется на процесс
     out = texts.admin_panel({"ok": True})
-    assert out.startswith("🛠 <b>vps-1</b> · 🟢 работает"), out
+    assert out.startswith("🛠 <b>vps-1</b> 🟢 работает"), out
