@@ -777,9 +777,15 @@ def test_slot_env_carries_the_endpoint_host_from_settings(services, monkeypatch)
     берёт первый глобальный адрес интерфейса (за 1:1 NAT он приватный)."""
     from types import SimpleNamespace
     from awgbot.core import config as _c
+    from awgbot.core import settings as _st
+    live = {}
+    monkeypatch.setattr(_st, "get", lambda k, d=None: live.get(k, d))
     gw = SimpleNamespace(link_if="awglink", link_port=443, link_cidr="10.99.99.0/30")
     monkeypatch.setattr(_c, "SERVER_HOST", "vpn.example.org")
     assert services._slot_env(gw)["ENDPOINT_HOST"] == "vpn.example.org"
+    live["app.network.server_host"] = "new.example.org"              # «✏️ Домен» без рестарта
+    assert services._slot_env(gw)["ENDPOINT_HOST"] == "new.example.org", "файл шлюза нёс хост на момент старта"
+    live.clear()
     monkeypatch.setattr(_c, "SERVER_HOST", "")
     assert "ENDPOINT_HOST" not in services._slot_env(gw)
     monkeypatch.setattr(_c, "SERVER_HOST", "bad host;rm")
@@ -812,3 +818,16 @@ def test_a_failed_ping_is_remembered_and_the_card_does_not_ping_again_at_once(tw
     services._gw_ping_forget(2)                            # снятие/смена слота — память долой
     st = services.gateway_screen_state(2, lazy_ping=True)
     assert st["ping_ms"] == 12 and calls == ["awglink2", "awglink2"]
+
+
+def test_cold_start_after_an_update_from_the_boot_time_key_is_warm(two, services, monkeypatch):
+    """Ключ 3.1.0 — метка загрузки (`routing_host_boot_at`); новый — boot_id без
+    переноса. Первый старт после обновления считался холодным, и при удержанном
+    резерве трафик молча уходил на предпочтительный слот."""
+    from awgbot.infra import bootid
+    admin, g1, g2 = two
+    services.db.set_state(services._RT_ACTIVE_KEY, "2")
+    services.db.set_state("routing_host_boot_at", "1700000000")
+    monkeypatch.setattr(bootid, "read_boot_id", lambda path=None: "boot-a")
+    assert services.routing_cold_start().id == 2 and services.switched == [], "обновление принято за ребут"
+    assert services.db.get_state(services._RT_BOOT_KEY) == "boot-a"

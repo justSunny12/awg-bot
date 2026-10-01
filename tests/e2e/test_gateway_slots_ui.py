@@ -1017,3 +1017,17 @@ async def test_removal_warns_when_the_bot_token_stayed_in_env(services, slots, f
     text, _ = _screen(nav)
     assert text.startswith("🛑 Pi2 больше не шлюз · трафик идёт через NASPi, резерва нет\n"
                            + texts.GW_TOKEN_NOT_FORGOTTEN + "\n\n🛰 <b>Шлюзы</b> · "), text
+
+
+async def test_no_free_slot_is_an_alert_not_a_spinning_button(services, slots, fake_bot, monkeypatch):
+    """gateway_next_slot бросает ServiceError (слоты заняты, gateways_max поднят
+    без портов/подсетей): раньше никто не ловил — кнопка крутилась, экрана не было."""
+    from awgbot.domain.services import ServiceError
+    _, pi, pi2 = slots
+    _slot1(services, pi)
+    monkeypatch.setattr(services, "gateway_next_slot", lambda: (_ for _ in ()).throw(ServiceError("свободных слотов нет")))
+    st = FakeState()
+    cb, nav = _acb(fake_bot)
+    await sh.gateway_new_ask(cb, GwMarkCB(action="new_ask", slot=0), services, st)
+    assert cb.answers and cb.answers[-1] == ("свободных слотов нет", True), cb.answers
+    assert await st.get_state() is None

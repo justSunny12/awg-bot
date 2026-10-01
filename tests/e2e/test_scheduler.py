@@ -103,3 +103,13 @@ def test_service_failure_alert_after_sustained_downtime(services):
     assert services.service_failure_alerts(ok=False) == []       # уже отправляли — не спамим
     assert services.service_failure_alerts(ok=True) == []        # восстановление — сброс состояния
     assert db.get_state("service_alert_sent") == ""
+
+
+async def test_job_monitor_refreshes_the_view_key_written_by_the_refresh_button(services, fake_bot, monkeypatch):
+    """«🔄 Обновить» пишет server_ok_view, панель читает его первым; раньше
+    монитор его не трогал, и после первого нажатия шапка замерзала навсегда."""
+    services.db.set_state("last_server_ok", "1")
+    services.db.set_state("server_ok_view", "1")
+    monkeypatch.setattr(services, "server_ok", lambda: False)
+    await _jobs(services, fake_bot)["monitor"]()
+    assert services.server_status_cached()["ok"] is False, "шапка показывает прошлое нажатие «Обновить»"

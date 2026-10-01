@@ -579,3 +579,19 @@ async def test_block_toast_names_the_owner_in_plain_text(services, fake_bot, mak
         await ah.admin_block_do(cb, BlockCB(target="dev", action="block", ref=dc.device_id, kind=kind),
                                 services)
         assert cb.answers[-1][0] == f"🛑 Устройство «iPhone{kind[0]}» (Петя) заблокировано{tail}", cb.answers
+
+
+async def test_deleting_a_profile_with_a_partial_failure_still_tells_the_holders(services, fake_bot,
+                                                                                 make_active_client, monkeypatch):
+    """Снятие одного пира упало — снятые устройства всё равно сняты, и их
+    держатели обязаны узнать: раньше обработчик выходил по отказу до рассылки,
+    и у гостей VPN гас без объяснений."""
+    from types import SimpleNamespace
+    c = make_active_client(tg_id=4190, name="Даритель")
+    dev = SimpleNamespace(name="Планшет", id=777)
+    monkeypatch.setattr(services, "delete_client_with_devices",
+                        lambda cid: {"failed": ["Ноут"], "removed": [(8100, dev)], "n": 1})
+    cb, nav = _acb(fake_bot)
+    await ah.client_delete_apply(cb, ClientCB(action="delete_yes", client_id=c.id), services)
+    assert any(r[0] == "send_message" and r[1] == 8100 for r in fake_bot.records), fake_bot.records
+    assert cb.answers and "не удалён" in cb.answers[-1][0]

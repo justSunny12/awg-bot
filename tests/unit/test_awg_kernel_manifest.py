@@ -517,10 +517,11 @@ def test_prune_runs_after_a_successful_start(bot_sh):
     plain = post.split('systemctl start "$SERVICE"; sleep 1', 1)[1]
     assert plain.index('systemctl is-active --quiet "$SERVICE"') < plain.index("prune_old_kernel_builds"), \
         "уборка раньше успешного старта"
-    # обновление с файлом конфигурации: сервис перезапустит reconfigure — второго
-    # старта здесь нет, уборка идёт сразу
+    # обновление с файлом конфигурации: сервис стартует сразу со старой
+    # конфигурацией (не применится файл — агент всё равно работает), уборка следом
     bundled = post.split("AWG_UPDATE_THEN_BUNDLE:-}\" && -f \"$AWG_UPDATE_THEN_BUNDLE\" ]]; then", 1)[1].split("else", 1)[0]
-    assert "prune_old_kernel_builds" in bundled and "systemctl start" not in bundled
+    assert "prune_old_kernel_builds" in bundled and "systemctl start" in bundled
+    assert bundled.index("systemctl start") < bundled.index("prune_old_kernel_builds")
 
 
 def test_installer_writes_topology_even_for_a_pre_existing_server(bot_sh):

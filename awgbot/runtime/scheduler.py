@@ -197,6 +197,9 @@ def setup_scheduler(services, bot, db, watcher=None) -> AsyncIOScheduler:
                             config.ADMIN_ID, texts.HB_SERVER_UP if ok else texts.HB_SERVER_DOWN))
                     if prev != cur:
                         db.set_state("last_server_ok", cur)
+                    # показ в шапке («🔄 Обновить» пишет server_ok_view) — тоже за
+                    # монитором, иначе после первого нажатия шапка замерзала навсегда
+                    db.set_state("server_ok_view", cur)
                     # (2) устойчивый простой сервиса ≥ N минут → ГРОМКИЙ алерт (один раз)
                     notes += services.service_failure_alerts(ok)
                     # (3) метрики железа: co-located — читаем локально (/proc, statvfs),

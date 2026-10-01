@@ -814,18 +814,22 @@ def test_channel_settings_wait_out_a_slow_unit_instead_of_restarting_over_it(svc
     assert 'HOME_SUBNETS=192.168.68.0/24' in unit.read_text(encoding="utf-8"), "новые значения откатились"
 
 
-def test_feeds_from_the_channel_are_fresh_only_with_a_recent_server_word(svc, monkeypatch):
-    """Открытый сокет — ещё не живой сервер (полуоткрытая сессия после жёсткого
-    ребута ВПС): свежей считается сессия со словом сервера за 12 часов."""
+def test_feeds_from_the_channel_are_fresh_while_the_session_lives(svc, monkeypatch):
+    """Живая сессия — живой сервер (полуоткрытую после ребута ВПС добивает
+    keepalive ядра): фиды из канала свежи, пока сессия жива, сколько бы сервер
+    ни молчал — в здоровой сессии он молчит, роль шлёт только при смене. Канал
+    оборван — запас 12 часов от последнего контакта."""
     import time as _t
     svc.db.set_state(svc._LAN_CHANNEL_HASH_KEY, "abc")
     svc.channel.online = True
-    svc.channel.last_word = _t.time() - 60
-    assert svc.lan_feeds_from_channel_fresh() is True
     svc.channel.last_word = _t.time() - 13 * 3600
-    assert svc.lan_feeds_from_channel_fresh() is False, "сокет открыт, сервер молчит 13 часов — не свежий"
+    assert svc.lan_feeds_from_channel_fresh() is True, "сервер молчит 13 часов в живой сессии — всё ещё свежо"
+    svc.channel.online = False
+    assert svc.lan_feeds_from_channel_fresh() is False, "канала нет и контакта не было"
     svc.db.set_state(svc._LAN_CHANNEL_AT_KEY, str(int(_t.time()) - 3600))
     assert svc.lan_feeds_from_channel_fresh() is True, "запас от последнего контакта не учтён"
+    svc.db.set_state(svc._LAN_CHANNEL_AT_KEY, str(int(_t.time()) - 13 * 3600))
+    assert svc.lan_feeds_from_channel_fresh() is False
 
 
 def test_channel_settings_refuse_without_a_rollback_when_the_unit_never_settles(svc, monkeypatch, tmp_path):
@@ -914,3 +918,25 @@ def test_mail_from_the_bundle_is_checked_and_backups_follow_the_server(svc, monk
     # почты в файле нет — пусто
     svc.apply_bundle(bc.encrypt(b"#!/bin/sh\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n", mine))
     assert svc.bundle_mail_check() == {}
+
+
+def test_an_early_refusal_of_a_bundle_clears_the_mail_note(svc, monkeypatch, tmp_path):
+    """Файл от другого шлюза не расшифровался — под «не применена» не должны
+    висеть «✉️ Почта принята…» от прошлого файла."""
+    import base64, os
+    from awgbot.util import bundlecrypt as bc
+    svc.db.set_state(svc._BUNDLE_MAIL_KEY, '{"state": "ok", "why": "", "backup": true}')
+    mine = base64.b64encode(os.urandom(32)).decode()
+    theirs = base64.b64encode(os.urandom(32)).decode()
+    conf = tmp_path / "awglink.conf"
+    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
+    ok, _ = svc.apply_bundle(bc.encrypt(b"#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__", theirs))
+    assert not ok and svc.bundle_mail_check() == {}
+
+
+def test_a_temporary_refusal_with_retry_is_not_reported_as_a_rollback(svc):
+    """STILL_APPLYING/BUSY_ACTIVATING — юнит ещё работает, отката не было:
+    «Вернул прежние» было бы неправдой."""
+    note = svc.link_settings_note({"ok": False, "changed": ["LAN_MODE"], "error": "ещё применяется", "retry": True})
+    assert note.startswith("⏳") and "Вернул прежние" not in note

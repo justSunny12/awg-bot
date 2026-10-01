@@ -61,6 +61,11 @@ class RoutingColdStartMixin:
         активного — тоже холодный. boot_id запоминается при каждом вызове."""
         cur = bootid.read_boot_id()
         stored = self.db.get_state(self._RT_BOOT_KEY) or ""
+        if not stored and self.db.get_state("routing_host_boot_at"):
+            # обновление с выпуска, где ключом была метка загрузки: хост не
+            # перезагружался — не холодный, иначе трафик с удержанного резерва
+            # молча уходил бы на предпочтительный слот
+            stored = cur
         cold = not self.db.get_state(self._RT_ACTIVE_KEY)
         if cur:
             cold = cold or not stored or stored != cur

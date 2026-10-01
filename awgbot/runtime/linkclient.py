@@ -342,9 +342,10 @@ class LinkClient:
             # один раз за сессию» превращало бы отказ в долгий
             body["retry"] = True
         await self._send("ack", body, pad=gwlink.PAD_DELTA)
-        if result.get("changed") or not result.get("ok"):
+        if (result.get("changed") or not result.get("ok")) and not result.get("retry"):
             # Человек узнаёт о факте в чате агента: применено без его кнопки,
-            # значит сказать обязательно. Пустое применение — тишина.
+            # значит сказать обязательно. Пустое применение — тишина; временный
+            # отказ с повтором — тоже: сервер повторит, итог придёт один раз.
             if _notify is not None:
                 try:
                     await _notify(self.services.link_settings_note(result))

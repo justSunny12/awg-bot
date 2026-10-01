@@ -89,6 +89,7 @@ class BundleMixin:
         линк-конфиг, переподнимет линк и юнит.
         """
         from awgbot.util import bundlecrypt
+        self.db.set_state(self._BUNDLE_MAIL_KEY, "")   # итог по почте — только этого файла
         try:
             priv = bundlecrypt.read_privkey(base.pathlib_read(config.GW_LINK_CONF))
             plain = bundlecrypt.decrypt(blob, priv)
@@ -261,6 +262,10 @@ class BundleMixin:
         err = html.escape(str(result.get("error") or "ошибка"), quote=False)
         if result.get("ok"):
             return f"⚙️ Сервер AWG прислал новые настройки шлюза — применены: {what}"
+        if result.get("retry"):
+            # юнит ещё работает (apt, замок dpkg): отката не было, сервер повторит
+            return (f"⏳ Сервер AWG прислал новые настройки шлюза ({what}) — применяются дольше "
+                    "обычного, сервер повторит доставку сам")
         if not result.get("changed"):
             # отвергнуты ещё на проверке значений — ничего не менялось, и
             # «вернул прежние» было бы неправдой

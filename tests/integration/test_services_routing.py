@@ -570,6 +570,9 @@ def test_failure_does_not_burn_the_refresh_window(services, fake_routing, monkey
     stamp = int(services.db.get_state(services._RT_LISTS_KEY))
     waited = every - (int(_t.time()) - stamp)
     assert 0 < waited <= services._RT_SRC_RETRY_SECS, "повтор отложен на целое окно"
+    # гейт читает момент следующего похода — он тоже обязан открыться через паузу добора
+    nxt = int(services.db.get_state(services._RT_LISTS_NEXT_KEY))
+    assert 0 < nxt - int(_t.time()) <= services._RT_SRC_RETRY_SECS, "гейт открыт лишь через полное окно"
 
     # доборы исчерпаны — торопиться больше некуда, дальше обычным расписанием
     for _ in range(services._RT_SRC_TRIES):

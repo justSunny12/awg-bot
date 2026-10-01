@@ -139,7 +139,8 @@ async def gateway_card_screen(services, slot: int, chat_id: int | None = None):
         st = await call(services.gateway_screen_state, slot)
     except ServiceError:
         return "🛰 Такого шлюза больше нет — слот снят", kb.settings_back("rt")
-    card_from_main(chat_id, True)
+    # пометку «с главной» ставит переход по ссылке (ниже), а не сам экран: его
+    # рисует и «✖️ Отмена» диалогов карточки, и пометка залипала бы навсегда
     return texts.gateway_card_text(st, st["states"]), card_kb(st, chat_id)
 
 
@@ -198,6 +199,8 @@ async def _traffic_deep_link(message: Message, services, payload: str,
             pass
         await send_gw_bundle(message, services, ref)
         return True
+    if kind == "gw":
+        card_from_main(message.chat.id, True)         # «Назад» с карточки — на главную
     if not await show_screen(message, services, "admin", None, kind, ref):
         await _return_panel(message, services)
     return True

@@ -390,6 +390,10 @@ class RoutingReconcileMixin:
                 # так, чтобы гейт открылся через паузу добора.
                 self.db.set_state(self._RT_LISTS_KEY, str(
                     now - every + min(every, self._RT_SRC_RETRY_SECS) if retry else now))
+                if retry:
+                    # гейт читает момент следующего похода, не метку: без этого
+                    # сдвиг метки ничего не открывал, и добор ждал полное окно
+                    self.db.set_state(self._RT_LISTS_NEXT_KEY, str(now + self._RT_SRC_RETRY_SECS))
                 # окружение изменилось нашими руками — прежний вердикт
                 # самопроверки протух
                 routing.invalidate_self_check()

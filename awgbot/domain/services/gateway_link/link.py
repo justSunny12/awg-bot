@@ -99,7 +99,9 @@ class LinkScriptMixin:
         Endpoint из настроек (network.server_host), если задан: без него скрипт
         берёт первый глобальный адрес интерфейса — за 1:1 NAT это приватный."""
         env = {"LINK_IF": gw.link_if, "LINK_PORT": str(gw.link_port), "LINK_CIDR": gw.link_cidr}
-        host = str(config.SERVER_HOST or "").strip()
+        # живое значение, как у клиентских ссылок: после «✏️ Домен» файл шлюза
+        # не должен нести прежний хост до рестарта бота
+        host = str(settings.get("app.network.server_host", config.SERVER_HOST) or "").strip()
         if host and re.fullmatch(r"[A-Za-z0-9.-]{1,253}", host):
             env["ENDPOINT_HOST"] = host
         return env

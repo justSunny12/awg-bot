@@ -1086,7 +1086,9 @@ cmd_post_update() {
     fi
 
     if [[ -n "${AWG_UPDATE_THEN_BUNDLE:-}" && -f "$AWG_UPDATE_THEN_BUNDLE" ]]; then
-        # применение файла конфигурации ниже само перезапустит сервис
+        # сервис — сразу, со старой конфигурацией: не применится файл — агент
+        # всё равно работает; применение файла ниже перезапустит сервис само
+        systemctl start "$SERVICE" || warn "$SERVICE не запустился — journalctl -u $SERVICE -e"
         prune_old_kernel_builds
     else
         systemctl start "$SERVICE"; sleep 1

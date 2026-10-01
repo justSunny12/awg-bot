@@ -64,7 +64,12 @@ async def gateway_mark_yes(cb: CallbackQuery, callback_data: GwMarkCB, services,
     slot = _slot_of(callback_data)
     # номер нового слота — первый свободный, как его выдаст gateway_setup:
     # «число слотов + 1» после снятия слота 1 при живом 2 давало токен не тому слоту
-    token_slot = slot or (await call(services.gateway_next_slot))[0]
+    try:
+        token_slot = slot or (await call(services.gateway_next_slot))[0]
+    except ServiceError as e:                      # слоты заняты, нет портов/подсетей
+        await cb.answer(str(e), show_alert=True)
+        await state.clear()
+        return
     if not await call(services.gw_bot_token, token_slot):
         await cb.answer()
         await state.set_state(GatewayToken.value)
@@ -99,7 +104,12 @@ async def gateway_new_yes(cb: CallbackQuery, callback_data: GwMarkCB, services, 
     уедет внутрь файла первого применения, и установка на шлюзе не задаст ни
     одного вопроса. Токен уже есть — идём сразу к выпуску."""
     slot = _slot_of(callback_data)
-    token_slot = slot or (await call(services.gateway_next_slot))[0]
+    try:
+        token_slot = slot or (await call(services.gateway_next_slot))[0]
+    except ServiceError as e:
+        await cb.answer(str(e), show_alert=True)
+        await state.clear()
+        return
     if not await call(services.gw_bot_token, token_slot):
         await cb.answer()
         await state.set_state(GatewayToken.value)
@@ -121,7 +131,12 @@ async def gateway_token_received(message: Message, state: FSMContext, services):
         pass                            # непринятый тоже: секрет есть секрет
     data = await state.get_data()
     slot = int(data.get("gw_slot") or 0)
-    token_slot = slot or (await call(services.gateway_next_slot))[0]
+    try:
+        token_slot = slot or (await call(services.gateway_next_slot))[0]
+    except ServiceError as e:
+        await state.clear()
+        await ask_tracked(message, services, f"⚠️ {texts._e(str(e))}")
+        return
     try:
         await call(services.set_gw_bot_token, token, token_slot)
     except ServiceError as e:

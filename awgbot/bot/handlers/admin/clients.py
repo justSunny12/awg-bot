@@ -509,15 +509,17 @@ async def client_delete_apply(cb: CallbackQuery, callback_data: ClientCB, servic
         await cb.answer("Профиль администратора нельзя удалить", show_alert=True)
         return
     res = await call(services.delete_client_with_devices, target.id)
+    # снятые устройства сняты в любом случае: их держатели узнают сразу, иначе
+    # при частичном отказе VPN у них просто гаснет без объяснений
+    for holder_tg, d in res["removed"]:
+        if holder_tg:
+            await notify_one(cb.bot, holder_tg, texts.lent_device_deleted_by_admin_notice(d))
     if res["failed"]:
         await edit(cb, texts.CLIENT_DELETE_PARTIAL.format(
             name=texts._e(target.name), devices=texts._e(", ".join(res["failed"]))),
             kb.admin_client_back(target.id))
-        await cb.answer("Сервер не ответил — ничего не удалено", show_alert=True)
+        await cb.answer("Сервер не ответил — профиль не удалён", show_alert=True)
         return
-    for holder_tg, d in res["removed"]:
-        if holder_tg:
-            await notify_one(cb.bot, holder_tg, texts.lent_device_deleted_by_admin_notice(d))
     await cb.answer()
     await edit(cb, texts.client_deleted_note(target.name, res["n"]), None)
     await send_menu(cb.message, services, *await clients_screen(services, cb.message.chat.id),

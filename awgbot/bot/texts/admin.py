@@ -206,8 +206,8 @@ def _more(n: int) -> str:
 def online_devices_text(rows, bot_username: str = "") -> str:
     """«📶 Онлайн: 3 (7 устройств)» — профили и устройства, как на главной;
     записи через пустую строку, шлюзы — вверху, имя устройства — ссылка на
-    карточку, имя профиля — на карточку профиля; устройства служебного профиля —
-    «Администратор» текстом. rows — [(устройство, профиль или None)]."""
+    карточку, имя профиля — на карточку профиля; устройства без профиля (и
+    служебного) — «без профиля». rows — [(устройство, профиль или None)]."""
     profiles = len({c.id for _d, c in rows if c is not None and not getattr(c, "is_service", 0)})
     head = "📶 <b>Онлайн:</b> " + (f"{profiles} ({_n_devices(len(rows))})" if rows else "0")
     if not rows:
@@ -217,7 +217,7 @@ def online_devices_text(rows, bot_username: str = "") -> str:
         if getattr(d, "is_gateway", 0):
             items.append(f"🛰 {admin_device_link(d, bot_username)} [шлюз] · {plain_ip(d.address)}")
             continue
-        who = ("без профиля" if c is None else _e(c.name) if getattr(c, "is_service", 0)
+        who = ("без профиля" if c is None or getattr(c, "is_service", 0)
                else profile_link(c, bot_username))
         items.append(f"{device_state(d, for_admin=True)} {admin_device_link(d, bot_username)} · "
                      f"{who} · {plain_ip(d.address)}")

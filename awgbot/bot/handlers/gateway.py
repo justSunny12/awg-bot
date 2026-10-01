@@ -23,7 +23,7 @@ from aiogram.types import CallbackQuery, Message
 from awgbot.bot import keyboards as kb
 from awgbot.core import config
 from awgbot.bot import texts
-from awgbot.bot.callbacks import GwCB, UpdateCB
+from awgbot.bot.callbacks import CancelCB, GwCB, UpdateCB
 from awgbot.bot.states import GatewayTransitDomain
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers import settingscore as core
@@ -213,6 +213,31 @@ HOOKS = core.Hooks(
     screen=_section,
     gateway=True,
 )
+
+
+@router.callback_query(CancelCB.filter())
+async def gw_cancel_inline(cb: CallbackQuery, callback_data: CancelCB, services, state: FSMContext):
+    """«✖️ Отмена» под приглашением к вводу у агента: диалог сброшен, раздел —
+    на месте приглашения. Общий обработчик (reply_commands) у агента не
+    подключён: без своего кнопка уходила в «устарела», а ввод оставался
+    открытым — следующий текст человека добавлял домен или менял порт."""
+    await state.clear()
+    kind = str(callback_data.kind or "")
+    sec = kind[4:] if kind.startswith("set_") else ""
+    if sec in _SECTIONS:
+        parts = await _section(services, sec)
+    elif sec == "lan":
+        parts = await _transit_screen(services, cb.message.chat.id)
+    else:
+        parts = None
+    await cb.answer()
+    if parts is None:
+        await _panel(cb.message, services)
+        return
+    await edit_nav(cb, services, *parts)
+    # приглашение снова стало экраном: из служебных долой, иначе уборка при
+    # возврате в меню снесёт живое меню
+    await call(services.db.remove_content_msg_id, cb.message.chat.id, cb.message.message_id)
 
 
 @router.callback_query(GwCB.filter(F.action.in_(set(_SECTIONS))))
