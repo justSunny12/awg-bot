@@ -7,7 +7,7 @@ import json
 import re
 import socket
 import time
-from awgbot.core import config
+from awgbot.core import config, settings
 from awgbot.util import timeutil
 from awgbot.domain.services import ServiceError
 from awgbot.util import gwlink  # noqa: E402
@@ -110,7 +110,7 @@ class BundleMixin:
         m = re.search(r'^SERVER_NAME="([^"\n]{1,64})"', text, re.M)
         if m:
             self.db.set_state(self._SERVER_NAME_KEY, m.group(1))
-        mail_applied = self._apply_bundle_mail(text)
+        mail = self._apply_bundle_mail(text)
         phrase = self._bundle_passphrase(text)
         if phrase and (overwrite_passphrase or not self.backup_encryption_enabled()):
             try:
@@ -123,23 +123,31 @@ class BundleMixin:
             self.db.set_state(self._BUNDLE_ISSUED_KEY, str(issued))
         # Почта приехала — проверяем сразу (вход по IMAP и SMTP), итог — строкой
         # в сообщении об итоге; иначе ящик висел бы «ещё не проверялось» до
-        # ручной кнопки, а первый бэкап молча ушёл бы в чат
-        if mail_applied:
+        # ручной кнопки, а первый бэкап молча ушёл бы в чат. Бэкапы ВПС на
+        # почте (backup=email) — свои туда же, но только после удачной проверки
+        # и при включённом шифровании: открытый архив по почте не ездит.
+        note: dict = {}
+        if mail is not None:
             ok_mail, why = self.email_check()
-            self.db.set_state(self._BUNDLE_MAIL_KEY, "ok" if ok_mail else f"fail|{why}")
-        else:
-            self.db.set_state(self._BUNDLE_MAIL_KEY, "")
+            note = {"state": "ok" if ok_mail else "fail", "why": "" if ok_mail else why, "backup": False}
+            if ok_mail and mail.get("backup") == "email" and self.backup_encryption_enabled():
+                settings.set_value("app.scheduler.backup_channel", "email")
+                note["backup"] = True
+        self.db.set_state(self._BUNDLE_MAIL_KEY, json.dumps(note, ensure_ascii=False) if note else "")
         return ok, out
 
     _BUNDLE_ISSUED_KEY = "gw_bundle_issued_at"
-    _BUNDLE_MAIL_KEY = "gw_bundle_mail"           # итог проверки почты из последнего файла: ok | fail|почему | пусто
+    _BUNDLE_MAIL_KEY = "gw_bundle_mail"           # итог по почте из последнего файла: {state, why, backup} | пусто
 
-    def bundle_mail_check(self) -> tuple[str, str]:
-        """(ok|fail|"", причина) — что показала проверка почты из последнего
-        применённого файла; пусто — почты в файле не было."""
+    def bundle_mail_check(self) -> dict:
+        """{state: ok|fail, why, backup} — что показала проверка почты из
+        последнего применённого файла и переключились ли бэкапы на e-mail;
+        пусто — почты в файле не было."""
         raw = self.db.get_state(self._BUNDLE_MAIL_KEY) or ""
-        state, _sep, why = raw.partition("|")
-        return state, why
+        try:
+            return json.loads(raw) if raw else {}
+        except ValueError:
+            return {}
 
     @staticmethod
     def _bundle_issued_at(text: str) -> int:
@@ -305,18 +313,19 @@ class BundleMixin:
                                "фразу в ⚙️ Настройки → 💾 Бэкапы → 🔐 Шифрование")
         return self.write_backup_archive("gw", self.backup_extra(), require_encryption=True)
 
-    def _apply_bundle_mail(self, text: str) -> bool:
-        """MAIL_B64 из бандла → настройки почты агента (креды в БД, серверы в
-        conf). Нет строки — свои настройки не трогаем."""
+    def _apply_bundle_mail(self, text: str):
+        """MAIL_B64 из файла конфигурации → настройки почты агента (креды в БД,
+        серверы в conf). Возвращает принятый словарь (в нём и backup — канал
+        бэкапов ВПС) или None: строки нет или она не принята — своё не трогаем."""
         m = re.search(r'^MAIL_B64="([A-Za-z0-9+/=]+)"', text, re.M)
         if not m:
-            return False
+            return None
         import base64
         try:
             d = json.loads(base64.b64decode(m.group(1)).decode())
             self.email_save(d["login"], d["password"], d["imap_host"], int(d["imap_port"]),
                             d["smtp_host"], int(d["smtp_port"]))
         except Exception as e:                            # noqa: BLE001
-            log.warning("gateway: почта из бандла не принята: %s", e)
-            return False
-        return True
+            log.warning("gateway: почта из файла конфигурации не принята: %s", e)
+            return None
+        return d

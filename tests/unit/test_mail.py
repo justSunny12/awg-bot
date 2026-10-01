@@ -71,7 +71,7 @@ def test_mail_settings_travel_in_the_bundle(services, monkeypatch, tmp_path):
     assert b"p@ss" not in out, "пароль в бандле не открытым текстом"
     gdb = Database(tmp_path / "gw.db"); gdb.init_schema()
     gw = GatewayServices(gdb)
-    assert gw._apply_bundle_mail(out.decode()) is True
+    assert (gw._apply_bundle_mail(out.decode()) or {}).get("login") == "box@icloud.com", "принятый словарь — наружу"
     acc = gw.email_account()
     assert acc and acc.login == "box@icloud.com" and acc.password == "p@ss\"word" and acc.smtp_host == "smtp.mail.me.com"
 

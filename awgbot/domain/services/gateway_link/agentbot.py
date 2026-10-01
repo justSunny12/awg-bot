@@ -156,9 +156,12 @@ class AgentBotMixin:
         lines = b""
         acc = self.email_account()
         if acc is not None:
+            # backup=email — бэкапы ВПС уходят на почту: шлюз, приняв ящик,
+            # переключит свои туда же (при включённом шифровании)
             payload = json.dumps({"login": acc.login, "password": acc.password,
                                   "imap_host": acc.imap_host, "imap_port": acc.imap_port,
-                                  "smtp_host": acc.smtp_host, "smtp_port": acc.smtp_port},
+                                  "smtp_host": acc.smtp_host, "smtp_port": acc.smtp_port,
+                                  "backup": self.backup_channel()},
                                  ensure_ascii=False).encode()
             lines += b'MAIL_B64="' + base64.b64encode(payload) + b'"\n'
         if self.backup_encryption_mode() == "passphrase":

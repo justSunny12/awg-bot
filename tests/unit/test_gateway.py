@@ -876,3 +876,41 @@ def test_module_label_is_the_built_tag_not_the_modinfo_version(svc, monkeypatch)
     assert svc.module_label("3.1.20260812") == "v3.1.20260812", "собирали не мы — тег манифеста"
     monkeypatch.setattr(awglock, "module_tag", lambda: "")
     assert svc.module_label("3.1.20260812") == "3.1.20260812"
+
+
+def test_mail_from_the_bundle_is_checked_and_backups_follow_the_server(svc, monkeypatch, tmp_path):
+    """Почта из файла конфигурации проверяется сразу, а backup=email в ней
+    переключает бэкапы шлюза на почту — но только после удачной проверки и при
+    включённом шифровании; итог виден в bundle_mail_check()."""
+    import base64, json, os
+    from awgbot.core import settings
+    from awgbot.util import bundlecrypt as bc
+    store = {}
+    monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v))
+    monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
+    mine = base64.b64encode(os.urandom(32)).decode()
+    conf = tmp_path / "awglink.conf"
+    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
+    monkeypatch.setattr(svc, "_apply_bundle_run", lambda plain: (True, "ok"))
+    checks = []
+    monkeypatch.setattr(svc, "email_check", lambda acc=None: checks.append(1) or (True, ""))
+    monkeypatch.setattr(svc, "backup_encryption_enabled", lambda: True)
+    mail = base64.b64encode(json.dumps({"login": "box@icloud.com", "password": "pw",
+                                        "imap_host": "imap.mail.me.com", "imap_port": 993,
+                                        "smtp_host": "smtp.mail.me.com", "smtp_port": 587,
+                                        "backup": "email"}).encode()).decode()
+    body = f'#!/bin/sh\nMAIL_B64="{mail}"\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n'.encode()
+    ok, _ = svc.apply_bundle(bc.encrypt(body, mine))
+    assert ok and checks == [1]
+    assert store.get("app.scheduler.backup_channel") == "email"
+    assert svc.bundle_mail_check() == {"state": "ok", "why": "", "backup": True}
+    # проверка не прошла — бэкапы не трогаем
+    monkeypatch.setattr(svc, "email_check", lambda acc=None: (False, "IMAP отверг"))
+    store.pop("app.scheduler.backup_channel")
+    svc.apply_bundle(bc.encrypt(body, mine))
+    assert "app.scheduler.backup_channel" not in store
+    assert svc.bundle_mail_check() == {"state": "fail", "why": "IMAP отверг", "backup": False}
+    # почты в файле нет — пусто
+    svc.apply_bundle(bc.encrypt(b"#!/bin/sh\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n", mine))
+    assert svc.bundle_mail_check() == {}

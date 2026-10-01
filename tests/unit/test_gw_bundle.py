@@ -255,8 +255,12 @@ def test_mail_line_lands_before_the_marker_line_not_inside_sed(bundle, services,
     monkeypatch.setattr(settings, "get_bool", lambda k, d=True: bool(store.get(k, d)))
     services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
     services.backup_set_passphrase("correct horse battery")
+    store["app.scheduler.backup_channel"] = "email"
     out = services._bundle_with_mail(bundle.encode())
     text = out.decode()
+    import base64, json
+    payload = json.loads(base64.b64decode(re.search(r'^MAIL_B64="([^"]+)"', text, re.M).group(1)))
+    assert payload["backup"] == "email", "канал бэкапов ВПС едет шлюзу вместе с почтой"
     assert "sed -n '/^#__GW_SETUP_BELOW__$/,$p'" in text, "sed-выражение повреждено"
     m = re.search(r"^MAIL_B64=.*\n^BACKUP_B64=.*\n#__GW_SETUP_BELOW__$", text, re.M)
     assert m, "строки почты и фразы должны стоять прямо перед строкой-маркером"

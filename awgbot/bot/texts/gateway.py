@@ -506,21 +506,24 @@ def gateway_apply_report(st: dict) -> str:
     return text[0].upper() + text[1:]
 
 
-def gateway_config_result(ok: bool, detail: str, mail: tuple = ("", "")) -> str:
+def gateway_config_result(ok: bool, detail: str, mail: dict | None = None) -> str:
     """Итог применения конфигурации: «✅ Конфигурация шлюза применена» и отчёт
     строками; отказ — общая маска «🔴 Конфигурация шлюза не применена:» и
-    причина строкой ниже. mail — (ok|fail|"", причина): почта из файла
-    проверена сразу, итог — отдельной строкой."""
+    причина строкой ниже. mail — {state: ok|fail, why, backup}: почта из файла
+    проверена сразу, итог — отдельной строкой; backup — бэкапы переключены на
+    e-mail вслед за сервером, об этом ещё строка."""
     if ok:
         # отчёт — готовый HTML из gateway_apply_report (адреса в <code>)
         lines = ["✅ <b>Конфигурация шлюза применена</b>"] + ([detail] if detail else [])
     else:
         lines = ["🔴 <b>Конфигурация шлюза не применена:</b>", _e(detail or "причина не названа")]
-    state, why = mail
-    if state == "ok":
+    mail = mail or {}
+    if mail.get("state") == "ok":
         lines.append("✉️ Почта из конфигурации принята: IMAP и SMTP отвечают, вход выполнен")
-    elif state == "fail":
-        lines.append(f"✉️ Почта из конфигурации принята, но проверка не прошла: {_e(why)}")
+        if mail.get("backup"):
+            lines.append("💾 Бэкапы теперь будут приходить на e-mail")
+    elif mail.get("state") == "fail":
+        lines.append(f"✉️ Почта из конфигурации принята, но проверка не прошла: {_e(mail.get('why') or '')}")
     return "\n".join(lines)
 
 
