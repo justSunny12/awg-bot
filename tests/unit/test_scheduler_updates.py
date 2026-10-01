@@ -34,7 +34,7 @@ async def test_notify_update_available_dismisses_previous_finisher(monkeypatch):
 
 def test_updates_sections_show_current_version_with_v():
     """Голое «2.4.2.12» Telegram рисует ссылкой на IP — версия с буквой v."""
-    assert texts.settings_upd_text("2.4.2.12") == "⬆️ <b>Обновления</b> · v2.4.2.12 · 🟢 актуальна"
+    assert texts.settings_upd_text("2.4.2.12") == "⬆️ <b>Обновления</b> · v2.4.2.12 🟢 актуальна"
     assert "vv" not in texts.settings_upd_text("v2.4.2.12")
 
 

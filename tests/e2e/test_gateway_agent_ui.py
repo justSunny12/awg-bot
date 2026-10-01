@@ -538,7 +538,7 @@ async def test_opening_updates_checks_right_away(svc, fake_bot, upd):
     upd["next"] = None
     await gh.gw_updates_screen(cb, svc)
     text, markup = _last_edit(nav)
-    assert text == "⬆️ <b>Обновления</b> · v3.2.0 · 🟢 актуальна" and _rows(markup)[0] == ["✅ Уведомлять", "📅 Проверка: день"]
+    assert text == "⬆️ <b>Обновления</b> · v3.2.0 🟢 актуальна" and _rows(markup)[0] == ["✅ Уведомлять", "📅 Проверка: день"]
 
 
 async def test_a_failed_check_says_so_and_keeps_the_found_version(svc, fake_bot, upd):
@@ -546,7 +546,7 @@ async def test_a_failed_check_says_so_and_keeps_the_found_version(svc, fake_bot,
     await gh.gw_updates_screen(cb, svc)
     upd["fail"] = True
     await gh.gw_updates_screen(cb, svc)
-    assert _last_edit(nav)[0] == "⬆️ <b>Обновления</b> · v3.2.0 · ⚪ проверка не удалась", _last_edit(nav)[0]
+    assert _last_edit(nav)[0] == "⬆️ <b>Обновления</b> · v3.2.0 ⚪ проверка не удалась", _last_edit(nav)[0]
     assert svc.update_available_tag() == "v3.2.1", "сбой проверки стёр найденную версию"
 
 

@@ -387,13 +387,13 @@ async def test_nothing_to_update_and_a_failed_check_are_different(services, fake
     тег и говорит об этом шапкой, а не зелёным «актуальна»."""
     upd["next"] = None
     text, markup = await sh._screen("upd", services)
-    assert text == "⬆️ <b>Обновления</b> · v3.2.0 · 🟢 актуальна" and services.update_available_tag() == ""
+    assert text == "⬆️ <b>Обновления</b> · v3.2.0 🟢 актуальна" and services.update_available_tag() == ""
     assert not any(t.startswith("⬆️") for r in _rows(markup) for t in r)
     upd["next"] = _release("v3.3.1")
     await sh._screen("upd", services)
     upd["fail"] = True
     text, _ = await sh._screen("upd", services)
-    assert text == "⬆️ <b>Обновления</b> · v3.2.0 · ⚪ проверка не удалась", text
+    assert text == "⬆️ <b>Обновления</b> · v3.2.0 ⚪ проверка не удалась", text
     assert services.update_available_tag() == "v3.3.1", "сбой проверки стёр найденную версию"
 
 

@@ -294,13 +294,13 @@ SETTINGS_SVC = "🔧 <b>Сервис</b>"
 
 def settings_upd_text(installed: str | None = None, target=None, blocked: str = "",
                       scan_failed: bool = False) -> str:
-    """«⬆️ Обновления · v3.1.0 · 🟢 актуальна» или цель обновления со
+    """«⬆️ Обновления · v3.1.0 🟢 актуальна» или цель обновления со
     списком изменений под «подробнее»; блок — строкой «⛔ … недоступно: …»."""
     from awgbot.core import config
     from .updates import changelog_details
     cur = _ver(installed if installed is not None else config.INSTALLED_VERSION)
     if target is None:
-        return f"⬆️ <b>Обновления</b> · {_e(cur)} · " + ("⚪ проверка не удалась" if scan_failed else "🟢 актуальна")
+        return f"⬆️ <b>Обновления</b> · {_e(cur)} " + ("⚪ проверка не удалась" if scan_failed else "🟢 актуальна")
     lines = [f"⬆️ <b>Обновления</b> · {_e(cur)} → {_e(_ver(target.tag))}"]
     if blocked:
         lines.append(f"⛔ Обновление до {_e(_ver(target.tag))} сейчас недоступно: {_e(blocked)}")

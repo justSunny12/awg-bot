@@ -15,7 +15,7 @@ from .slots import _slot_note, _slot_ping_tail, agent_bot_line, slot_name, slot_
 # ── карточка слота ───────────────────────────────────────────────────────────
 
 def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> str:
-    """«🗂 SMB: свои — 1, извне — 2 · 🟢 доступны»; нулевая часть не выводится,
+    """«🗂 SMB: свои — 1, извне — 2 🟢 доступны»; нулевая часть не выводится,
     обе нулевые — «🗂 SMB: не найдены»; что с ними на шлюзе — строкой под ней."""
     own, peer = int(svc.get("own") or 0), int(svc.get("peer") or 0)
     if not own and not peer:
@@ -27,7 +27,7 @@ def services_line(svc: dict, name: str = "", agent_bot: dict | None = None) -> s
     state = svc.get("state", "")
     gw = f" {name}" if name else ""
     if state == "applied":
-        return head + " · 🟢 доступны"
+        return head + " 🟢 доступны"
     if state == "reissue":
         note = f"⚠️ Необходим перевыпуск конфигурации шлюза{gw}"
     else:
