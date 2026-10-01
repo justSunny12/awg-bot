@@ -74,9 +74,8 @@ def gateway_bundle_caption(display: str, agent_bot: dict | None) -> str:
     who = "боту шлюза"
     if me.get("username"):
         who += f' (<a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>)'
-    return (f"📤 Конфигурация шлюза <b>{_e(display)}</b>.\n"
-            f"Перешли это сообщение {who} — он проверит и применит сам.\n"
-            "Результат применения конфигурации сообщит бот шлюза.\n\n"
+    return (f"📤 <b>Конфигурация шлюза {_e(display)}</b>\n"
+            f"Перешли это сообщение {who} — он проверит и применит сам\n\n"
             "ℹ️ Возврат в меню удалит это сообщение")
 
 

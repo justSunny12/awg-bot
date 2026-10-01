@@ -489,7 +489,7 @@ async def test_bundle_button_and_action_are_per_slot(services, slots, fake_bot):
     assert ("edit_reply_markup", ADMIN) in fake_bot.records or any(s[0] == "edit_reply_markup" for s in nav.sent), \
         "карточка над файлом не погасла"
     docs = [s[1] for s in nav.sent if s[0] == "document"]
-    assert len(docs) == 1 and docs[0].startswith("📤 Конфигурация шлюза <b>Pi2 (дача)</b>."), docs
+    assert len(docs) == 1 and docs[0].startswith("📤 <b>Конфигурация шлюза Pi2 (дача)</b>"), docs
 
 
 async def test_params_screen_cycles_probe_window_threshold_and_lists(services, slots, fake_bot, monkeypatch):

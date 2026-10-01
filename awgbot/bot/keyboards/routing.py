@@ -298,17 +298,13 @@ def settings_routing_users(clients=(), page: int = 0) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def bundle_menu_kb(slot: int = 0, bot_username: str = "") -> InlineKeyboardMarkup:
-    """Под файлом конфигурации (шифрованным или первого применения): «🤖 Бот
-    шлюза» — ссылка в чат бота, куда файл пересылают (только когда имя бота
-    известно; саму пересылку кнопка Telegram сделать не может), «👤 В карточку»
-    и «⬅️ На главную» — обе убирают файл и сообщение над ним из чата (внутри
-    ключ линка) и открывают карточку слота или главную (`bundle_cancel`,
-    `bundle_home`)."""
+def bundle_menu_kb(slot: int = 0) -> InlineKeyboardMarkup:
+    """Под файлом конфигурации (шифрованным или первого применения): «🛰 В
+    карточку» и «⬅️ На главную» — обе убирают файл и сообщение над ним из чата
+    (внутри ключ линка) и открывают карточку слота или главную (`bundle_cancel`,
+    `bundle_home`). Переслать файл кнопкой Telegram не даёт — пересылают рукой."""
     kb = InlineKeyboardBuilder()
-    if bot_username:
-        kb.button(text="🤖 Бот шлюза", url=f"https://t.me/{bot_username}")
-    kb.button(text="👤 В карточку", callback_data=SetCB(sec="rt", act="do", key="bundle_cancel", val=str(slot or "")))
+    kb.button(text="🛰 В карточку", callback_data=SetCB(sec="rt", act="do", key="bundle_cancel", val=str(slot or "")))
     kb.button(text="⬅️ На главную", callback_data=SetCB(sec="rt", act="do", key="bundle_home", val=str(slot or "")))
-    kb.adjust(*([1, 2] if bot_username else [2]))
+    kb.adjust(2)
     return kb.as_markup()
