@@ -129,11 +129,22 @@ class BundleMixin:
         # и при включённом шифровании: открытый архив по почте не ездит.
         note: dict = {}
         if mail is not None:
-            ok_mail, why = self.email_check()
+            try:
+                ok_mail, why = self.email_check()
+            except Exception as e:                           # noqa: BLE001 — таймаут IMAP, сеть
+                ok_mail, why = False, str(e)
             note = {"state": "ok" if ok_mail else "fail", "why": "" if ok_mail else why, "backup": False}
-            if ok_mail and mail.get("backup") == "email" and self.backup_encryption_enabled():
-                settings.set_value("app.scheduler.backup_channel", "email")
-                note["backup"] = True
+            # бэкапы — на почту вслед за сервером: только при удачном применении
+            # файла и удачной проверке, при шифровании и включённых автобэкапах,
+            # и только если канал ещё не почта — выбор человека не перебиваем
+            if (ok and ok_mail and mail.get("backup") == "email" and self.backup_encryption_enabled()
+                    and settings.get_bool("app.scheduler.backup_enabled", True)
+                    and str(settings.get("app.scheduler.backup_channel", "telegram") or "").lower() != "email"):
+                try:
+                    settings.set_value("app.scheduler.backup_channel", "email")
+                    note["backup"] = True
+                except Exception as e:                       # noqa: BLE001
+                    log.warning("gateway: канал бэкапов не переключён на почту: %s", e)
         self.db.set_state(self._BUNDLE_MAIL_KEY, json.dumps(note, ensure_ascii=False) if note else "")
         return ok, out
 

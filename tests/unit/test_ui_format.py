@@ -56,6 +56,8 @@ def test_seconds_only_on_request_and_only_when_not_zero():
     # окончание срока: время — только в текущем месяце
     assert t.fmt_end_ui(_dt(2026, 10, 12, 18, 0), _dt(2026, 10, 1, 9)) == "12.10 18:00"
     assert t.fmt_end_ui(_dt(2026, 11, 12, 18, 0), _dt(2026, 10, 1, 9)) == "12.11"
+    assert t.fmt_end_ui(_dt(2026, 10, 1, 3, 0), _dt(2026, 9, 30, 9)) == "01.10 03:00", "стык месяцев: срок завтра — с часом"
+    assert t.fmt_end_ui(_dt(2026, 10, 2, 3, 0), _dt(2026, 9, 30, 9)) == "02.10"
     assert t.fmt_end_ui(_dt(2027, 10, 12, 18, 0), _dt(2026, 10, 1, 9)) == "12.10.27"
     assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0, 42), REF, seconds=True) == "12.10 18:00:42"
     assert t.fmt_dt_ui(_dt(2026, 10, 12, 18, 0, 0), REF, seconds=True) == "12.10 18:00", ":00 не пишем"

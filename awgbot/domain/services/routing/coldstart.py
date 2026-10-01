@@ -25,6 +25,13 @@ class RoutingColdStartMixin:
         preferred = self.preferred_gateway()
         if not self._rt_is_cold_start():
             return saved
+        # Политика слотов — до зондов: после ребута правил слотов ещё нет (их
+        # ставит первый такт живости, а планировщик стартует позже), и зонд
+        # резерва шёл бы по основной таблице ВПС, отвечая «OK» и за мёртвый линк.
+        try:
+            self._ensure_gateway_policy()
+        except routing.RoutingError as e:
+            log.warning("routing_cold_start: обвязка слотов: %s", e)
         if preferred is None:
             return saved
         if not self.routing_engaged():

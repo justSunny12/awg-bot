@@ -808,3 +808,21 @@ async def test_the_agent_bot_rides_the_wire_and_its_rename_arrives_as_a_delta(
         await _until(lambda: services.gw_bot_identity(1).get("name") == "Шлюз квартиры")
     finally:
         await client.stop()
+
+
+async def test_touch_from_a_worker_thread_schedules_delivery_in_the_loop(services, monkeypatch):
+    """Сервисы работают в потоке: touch() переносит запрос доставки в цикл
+    бота, deliver_soon стартует задачу сразу."""
+    import asyncio
+    srv = linkserver.LinkServer(services)
+    assert services.channel_touch == srv.touch
+    srv._loop = asyncio.get_running_loop()
+    done = []
+
+    async def fake_deliver_all():
+        done.append(1)
+
+    monkeypatch.setattr(srv, "deliver_all", fake_deliver_all)
+    await asyncio.to_thread(services._channel_touch)
+    await asyncio.sleep(0.05)
+    assert done == [1], "доставка не запрошена из потока"

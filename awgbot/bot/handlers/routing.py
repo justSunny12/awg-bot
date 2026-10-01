@@ -17,6 +17,7 @@ handlers/routing.py — роутер условной маршрутизации
 from __future__ import annotations
 
 from aiogram import F, Router
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -103,7 +104,8 @@ async def screen_for(services, client, ref: int, kind: str):
 
 
 async def show_panel(cb: CallbackQuery, services, client, speaker):
-    text, markup = await panel_view(services, client, _back_target(client, speaker))
+    viewer = speaker.tg_id if speaker is not None else config.ADMIN_ID   # страницу помнит смотрящий
+    text, markup = await panel_view(services, client, _back_target(client, speaker), viewer)
     await edit(cb, text, markup)
 
 
@@ -189,6 +191,28 @@ async def routing_add_start(cb: CallbackQuery, callback_data: RoutingCB, client,
     await ask_here(cb, services, state, texts.ROUTING_ADD_PROMPT, origin, profile.id,
                    rt_client=profile.id)
     await cb.answer()
+
+
+# Команды во время ввода «➕ Сайт»: роутер маршрутизации стоит раньше клиентского,
+# и /start или /code ушли бы в список сайтов. Сброс ввода и обычная обработка —
+# как у гостя, чей роутер стоит раньше этого.
+@router.message(RoutingDomains.value, CommandStart(deep_link=True), RoleFilter("client"))
+async def routing_input_start_payload(message: Message, command: CommandObject, client, services,
+                                      state: FSMContext):
+    from awgbot.bot.handlers import client as ch
+    await ch.start_client_with_code(message, command, client, services, state)
+
+
+@router.message(RoutingDomains.value, CommandStart(), RoleFilter("client"))
+async def routing_input_start(message: Message, client, services, state: FSMContext):
+    from awgbot.bot.handlers import client as ch
+    await ch.start_client(message, client, services, state)
+
+
+@router.message(RoutingDomains.value, Command("code"), RoleFilter("client"))
+async def routing_input_code(message: Message, command: CommandObject, client, services, state: FSMContext):
+    from awgbot.bot.handlers import client as ch
+    await ch.code_client(message, command, client, services, state)
 
 
 @router.message(RoutingDomains.value)

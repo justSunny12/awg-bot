@@ -121,10 +121,12 @@ def fmt_dt_ui(dt: datetime, ref: Optional[datetime] = None, *, seconds: bool = F
 
 def fmt_end_ui(dt: datetime, ref: Optional[datetime] = None) -> str:
     """Дата ОКОНЧАНИЯ срока (подписка, пауза): со временем только в текущем
-    месяце — «12.10 18:00»; дальше время не важно — «12.11», «12.10.27»."""
+    месяце — «12.10 18:00»; дальше время не важно — «12.11», «12.10.27».
+    Исключение — срок завтра: на стыке месяцев час отключения терять нельзя."""
+    from datetime import timedelta
     dt = dt.astimezone(TZ)
     ref = (ref or now()).astimezone(TZ)
-    if (dt.year, dt.month) == (ref.year, ref.month):
+    if (dt.year, dt.month) == (ref.year, ref.month) or dt.date() <= (ref + timedelta(days=1)).date():
         return fmt_dt_ui(dt, ref)
     return fmt_date_ui(dt, ref)
 

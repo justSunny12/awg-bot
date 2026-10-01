@@ -1106,3 +1106,36 @@ async def test_add_site_from_the_panel_returns_to_the_panel(services, fake_bot, 
     cb, nav = _cb(fake_bot, 79)
     await routing_h.routing_add_start(cb, RoutingCB(action="add", ref=c.id), c, services, st2)
     assert (await st2.get_data()).get("ctx_kind") == "sites"
+
+
+async def test_a_command_during_site_input_resets_the_input_for_a_client(services, fake_bot, make_active_client):
+    """Роутер маршрутизации стоит раньше клиентского: /start во время ввода
+    «➕ Сайт» уходил в список сайтов. Теперь — сброс ввода и главная."""
+    from awgbot.bot.states import RoutingDomains
+    c = make_active_client(tg_id=9301)
+    st = FakeState()
+    await st.set_state(RoutingDomains.value)
+    await st.update_data(rt_client=c.id)
+    msg = FakeMessage(text="/start", chat_id=c.tg_id, user_id=c.tg_id, bot=fake_bot)
+    await routing_h.routing_input_start(msg, c, services, st)
+    assert await st.get_state() is None, "ввод остался открытым"
+    assert any(s[0] == "answer" and str(s[1]).startswith("👋 ") for s in msg.sent), msg.sent
+
+
+async def test_admin_paging_in_a_foreign_profile_section_remembers_the_viewer(services, fake_bot,
+                                                                              make_active_client, monkeypatch):
+    """Страницу раздела РФ-доступа помнит смотрящий: у админа в чужом профиле
+    листание шло без чата смотрящего и не работало («Сайты» правку получили)."""
+    from types import SimpleNamespace
+    seen = {}
+
+    async def fake_panel_view(services_, client, back, viewer_chat=None):
+        seen["viewer"] = viewer_chat
+        return "x", None
+
+    monkeypatch.setattr(routing_h, "panel_view", fake_panel_view)
+    c = make_active_client(tg_id=9302)
+    cb = FakeCallback(message=FakeMessage(chat_id=config.ADMIN_ID, user_id=config.ADMIN_ID, bot=fake_bot),
+                      user_id=config.ADMIN_ID, bot=fake_bot)
+    await routing_h.show_panel(cb, services, c, SimpleNamespace(tg_id=config.ADMIN_ID, id=1))
+    assert seen.get("viewer") == config.ADMIN_ID, seen

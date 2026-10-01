@@ -317,3 +317,15 @@ async def test_delete_client_keeps_profile_when_peer_stays_on_server(
     assert "НЕ удалён" in said and "телефон" in said
 
 
+
+
+async def test_admin_delete_result_is_the_first_line_of_the_next_screen(services, fake_bot, make_active_client):
+    """Итог удаления у админа — первой строкой экрана на месте вопроса, как у
+    владельца и гостя: отдельного следа и второго сообщения с экраном нет."""
+    client = make_active_client(tg_id=6018)
+    d = services.add_device(client.id, "b")
+    cb, nav = _acb(fake_bot)
+    await ah.admin_del_confirm(cb, DelDeviceCB(device_id=d.device_id, stage="confirm"), services)
+    edits = [t for k, t, _ in nav.sent if k == "edit_text"]
+    assert edits and edits[-1].startswith("🗑 b удалено") and "\n\n" in edits[-1], edits
+    assert not [s for s in nav.sent if s[0] == "answer"], "экран пришёл отдельным сообщением"

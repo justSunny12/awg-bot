@@ -84,9 +84,9 @@ async def test_home_counters_line_links_expiring_and_unassigned(services, fake_b
     _expiring(services, make_active_client, "Скоро", 3101)
     svc = services.db.get_service_client_id()
     services.db.create_device(svc, "чужой", "PUBU", "PSK", "10.8.0.70")
-    services.db.set_state("online_count", "7")
     lines, _ = await _home(services, fake_bot)
-    assert (" · ".join(["📶 Онлайн: " + _link("online", "0 (7 устройств)"), "⏳ Истекают: " + _link("expiring", "1"),
+    # онлайн — живьём из устройств с хендшейком, не из счётчика опроса: никого нет — «0» без ссылки
+    assert (" · ".join(["📶 Онлайн: 0", "⏳ Истекают: " + _link("expiring", "1"),
                         "📦 Без профиля: " + _link("unassigned", "1")])) in lines, lines
 
 

@@ -95,6 +95,7 @@ class PeerNetsMixin:
         линк ↔ линк действует сразу); конфигурации шлюзов — перевыпуск, о нём
         напомнит снимок зависимостей."""
         settings.set_value(self._PEER_NETS_KEY, on)
+        self._channel_touch()                              # PEER_HOME_NETS — шлюзам сразу
 
     def gateway_set_lan_mode(self, slot_id: int, on: bool) -> dict:
         """Включить/выключить «за шлюзом — без VPN» у слота. Включение требует
@@ -107,6 +108,7 @@ class PeerNetsMixin:
             raise ServiceError("у слота нет устройства — без аплинка режим без VPN не работает")
         self.db.gateway_update(gw.id, lan_mode=1 if on else 0)
         gw = self.db.gateway(gw.id)
+        self._channel_touch()                              # LAN_MODE — шлюзу сразу
         return {"gateway": gw, "resolver": self.gateway_resolver_addr(gw) if on else ""}
 
     @staticmethod

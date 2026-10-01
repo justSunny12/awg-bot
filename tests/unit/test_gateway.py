@@ -940,3 +940,37 @@ def test_a_temporary_refusal_with_retry_is_not_reported_as_a_rollback(svc):
     «Вернул прежние» было бы неправдой."""
     note = svc.link_settings_note({"ok": False, "changed": ["LAN_MODE"], "error": "ещё применяется", "retry": True})
     assert note.startswith("⏳") and "Вернул прежние" not in note
+
+
+def test_backups_are_not_re_switched_when_the_channel_is_already_email(svc, monkeypatch, tmp_path):
+    """Канал уже e-mail или применение файла не удалось — строки «💾 Бэкапы
+    теперь…» нет; переключение не повторяется и выбор человека не перебивает."""
+    import base64, json, os
+    from awgbot.core import settings
+    from awgbot.util import bundlecrypt as bc
+    store = {"app.scheduler.backup_channel": "email"}
+    monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v))
+    monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
+    mine = base64.b64encode(os.urandom(32)).decode()
+    conf = tmp_path / "awglink.conf"
+    conf.write_text("[Interface]\nPrivateKey = " + mine + "\n", encoding="utf-8")
+    monkeypatch.setattr(config, "GW_LINK_CONF", str(conf))
+    monkeypatch.setattr(svc, "_apply_bundle_run", lambda plain: (True, "ok"))
+    monkeypatch.setattr(svc, "email_check", lambda acc=None: (True, ""))
+    monkeypatch.setattr(svc, "backup_encryption_enabled", lambda: True)
+    mail = base64.b64encode(json.dumps({"login": "box@icloud.com", "password": "pw",
+                                        "imap_host": "imap.mail.me.com", "imap_port": 993,
+                                        "smtp_host": "smtp.mail.me.com", "smtp_port": 587,
+                                        "backup": "email"}).encode()).decode()
+    body = f'#!/bin/sh\nMAIL_B64="{mail}"\n#__GW_SETUP_BELOW__\n__LINK_CONF_EOF__\n'.encode()
+    assert svc.apply_bundle(bc.encrypt(body, mine))[0]
+    assert svc.bundle_mail_check() == {"state": "ok", "why": "", "backup": False}, "уже e-mail — не переключаем"
+    store["app.scheduler.backup_channel"] = "telegram"
+    monkeypatch.setattr(svc, "_apply_bundle_run", lambda plain: (False, "упало"))
+    assert not svc.apply_bundle(bc.encrypt(body, mine))[0]
+    assert svc.bundle_mail_check()["backup"] is False and store["app.scheduler.backup_channel"] == "telegram"
+    # таймаут IMAP не роняет применение
+    monkeypatch.setattr(svc, "_apply_bundle_run", lambda plain: (True, "ok"))
+    monkeypatch.setattr(svc, "email_check", lambda acc=None: (_ for _ in ()).throw(OSError("timed out")))
+    assert svc.apply_bundle(bc.encrypt(body, mine))[0]
+    assert svc.bundle_mail_check()["state"] == "fail" and "timed out" in svc.bundle_mail_check()["why"]

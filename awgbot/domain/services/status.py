@@ -143,8 +143,9 @@ class StatusMixin:
         return [(d, clients.get(d.client_id)) for d in devs]
 
     def online_client_ids(self) -> set[int]:
-        """Профили, у которых онлайн хотя бы одно устройство."""
-        return {d.client_id for d, _ in self.online_devices()}
+        """Профили, у которых онлайн хотя бы одно устройство (служебный — не
+        профиль; админ — такой же пользователь)."""
+        return {c.id for _d, c in self.online_devices() if c is not None and not getattr(c, "is_service", 0)}
 
     def traffic_by_profile(self) -> list[tuple]:
         """[(client, rx, tx, rf)] за календарный месяц. Админ первым, остальные
@@ -416,12 +417,12 @@ class StatusMixin:
         ok = None if ok_raw is None else (ok_raw == "1")
         started = timeutil.parse_docker_time(self.db.get_state("container_started_at") or "")
         uptime = timeutil.fmt_uptime(started) if started else None
-        online_raw = self.db.get_state("online_count")
-        online = int(online_raw) if online_raw is not None else None
-        # профили онлайн — из того же источника, что и список по ссылке
-        # (online_devices): цифра в панели и список не расходятся
-        profiles = (len({c.id for _d, c in self.online_devices() if c is not None and not getattr(c, "is_service", 0)})
-                    if online else 0)
+        # онлайн — живьём на момент показа и из одного источника со списком по
+        # ссылке (online_devices): устройства и профили не расходятся («0 (7)»
+        # или «3 (0)» невозможны); профиль админа — такой же пользователь
+        rows = self.online_devices()
+        online = len(rows)
+        profiles = len({c.id for _d, c in rows if c is not None and not getattr(c, "is_service", 0)})
         cpu = ram = disk = age_seconds = None
         snap = hostmetrics.get_host_metrics(self.db)
         if snap:

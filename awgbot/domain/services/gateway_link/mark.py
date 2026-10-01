@@ -286,6 +286,7 @@ class MarkMixin:
                 raise ServiceError(f"не принято: {why}")
         gone = [s for s in (gw.home_subnets or []) if s not in kept]
         self.db.gateway_update(gw.id, home_subnets=kept)
+        self._channel_touch()                              # HOME_SUBNETS — шлюзам сразу
         if gone and config.ROUTING_GW_INTERFACE:
             # убранная подсеть иначе остаётся в ядре до ребута
             try:

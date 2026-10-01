@@ -132,6 +132,7 @@ class FirewallMixin:
             settings.set_value("app.firewall.ssh_allow", cur)
         if nftguard.enabled():
             self.reconcile_ssh_access()
+        self._channel_touch()                              # ADMIN_IPS — шлюзам сразу
         return cur
 
     def firewall_allow_remove(self, entry: str) -> list[str]:
@@ -143,6 +144,7 @@ class FirewallMixin:
         from awgbot.infra import nftguard
         if nftguard.enabled():
             self._firewall_apply(rollback=False)
+        self._channel_touch()                              # ADMIN_IPS — шлюзам сразу
         return cur
 
     _FW_ROLLBACK_SECONDS = 300

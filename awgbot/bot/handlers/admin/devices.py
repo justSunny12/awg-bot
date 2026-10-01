@@ -18,7 +18,7 @@ from aiogram.types import CallbackQuery, Message
 from awgbot.bot.callbacks import ClientCB, DelDeviceCB, DeviceCB, Menu, PresetCB, ReassignCB
 from awgbot.bot.handlers.common import (call, edit, edit_nav, ask_here, ask_tracked, back_to_context,
                                         cleanup_content, drop_message, remove_device_and_notify,
-                                        send_device_config, send_menu)
+                                        send_device_config)
 from awgbot.bot.notifier import notify_one
 from awgbot.domain.services import LimitReached, ServiceError
 from awgbot.bot.states import AdminAddDevice, EditDeviceName, EditTrafficLimit
@@ -424,9 +424,10 @@ async def admin_del_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, servi
         await cb.answer(str(e), show_alert=True)
         return
     await cb.answer()
-    await edit(cb, texts.device_deleted_note(dev, client, _bot(services)), None)
-    # следом — откуда пришли: свои устройства, профиль или «без профиля»
+    # итог — первой строкой экрана, откуда пришли (как у владельца и гостя):
+    # свои устройства, профиль или «без профиля»
     from awgbot.bot import screens
+    note = texts.device_deleted_note(dev, client, _bot(services))
     kind, ref = ("devices", 0)
     if back.startswith(Menu.__prefix__ + ":unassigned"):
         kind = "unassigned"
@@ -434,7 +435,9 @@ async def admin_del_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, servi
         kind, ref = "cl", dev.client_id
     parts = await screens.render(kind, ref, services=services, role="admin", chat_id=cb.message.chat.id)
     if parts is None:
+        await edit(cb, note, None)
         await _return_panel(cb.message, services, keep_id=cb.message.message_id)
         return
     await cleanup_content(cb.bot, services, cb.message.chat.id)
-    await send_menu(cb.message, services, *parts, keep_id=cb.message.message_id)
+    text, markup = parts
+    await edit(cb, screens.with_note(text, note), markup)

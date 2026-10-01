@@ -831,3 +831,30 @@ def test_cold_start_after_an_update_from_the_boot_time_key_is_warm(two, services
     monkeypatch.setattr(bootid, "read_boot_id", lambda path=None: "boot-a")
     assert services.routing_cold_start().id == 2 and services.switched == [], "обновление принято за ребут"
     assert services.db.get_state(services._RT_BOOT_KEY) == "boot-a"
+
+
+def test_cold_start_puts_slot_policy_before_probing(two, services, monkeypatch):
+    """После ребута правил слотов ещё нет (их ставит первый такт живости, а
+    планировщик стартует позже): без политики зонд резерва шёл бы по основной
+    таблице и отвечал «OK» за мёртвый линк. Холодный старт ставит её сам."""
+    from awgbot.infra import bootid
+    calls = []
+    monkeypatch.setattr(services, "_ensure_gateway_policy", lambda: calls.append(1))
+    services.db.set_state(services._RT_ACTIVE_KEY, "2")
+    services.db.set_state(services._RT_BOOT_KEY, "boot-a")
+    monkeypatch.setattr(bootid, "read_boot_id", lambda path=None: "boot-a")
+    services.routing_cold_start()
+    assert calls == [], "тёплый старт обвязку не трогает"
+    monkeypatch.setattr(bootid, "read_boot_id", lambda path=None: "boot-b")
+    services.routing_cold_start()
+    assert calls == [1], "холодный старт: политика слотов до зондов"
+
+
+def test_chat_edits_of_channel_data_request_delivery_at_once(two, services):
+    """Подсети, режим без VPN, связь подсетей, адреса SSH уезжают шлюзам сразу,
+    а не на следующей сверке через минуты: сервис дёргает channel_touch."""
+    calls = []
+    services.channel_touch = lambda: calls.append(1)
+    services.set_peer_nets(True)
+    services.gateway_set_home_subnets(1, "192.168.50.0/24")
+    assert len(calls) == 2, "правка из чата не запросила доставку каналом"

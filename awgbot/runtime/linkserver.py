@@ -117,6 +117,8 @@ class LinkServer:
 
     def __init__(self, services):
         self.services = services
+        self._loop: asyncio.AbstractEventLoop | None = None   # цикл бота — для touch() из потока
+        services.channel_touch = self.touch
         self._servers: dict[tuple[str, int], asyncio.AbstractServer] = {}
         self._sessions: dict[int, _Session] = {}
         self._rejected_at: dict[str, float] = {}     # чужие коннекты: когда последний раз писали в журнал
@@ -244,10 +246,18 @@ class LinkServer:
 
     def deliver_soon(self) -> None:
         """Доставка отдельной задачей: такт живости не ждёт drain и сверки."""
+        self._loop = asyncio.get_running_loop()
         task = self.__dict__.get("_deliver_task")
         if task is not None and not task.done():
             return
-        self.__dict__["_deliver_task"] = asyncio.get_running_loop().create_task(self.deliver_all())
+        self.__dict__["_deliver_task"] = self._loop.create_task(self.deliver_all())
+
+    def touch(self) -> None:
+        """Правка из чата (сервисы работают в потоке): доставка — сразу, в
+        цикле бота, а не на следующей сверке через минуты."""
+        loop = self._loop
+        if loop is not None and not loop.is_closed():
+            loop.call_soon_threadsafe(self.deliver_soon)
 
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peer = writer.get_extra_info("peername") or ("", 0)
@@ -717,6 +727,7 @@ async def ensure(services) -> LinkServer | None:
         return None
     if _server is None:
         _server = LinkServer(services)
+    _server._loop = asyncio.get_running_loop()
     await _server.ensure()
     await _server.deliver_all()
     return _server

@@ -14,6 +14,19 @@ class ServicesBase:
     # кладёт его после getMe. Пусто — ссылки не рисуются, текст остаётся текстом.
     bot_username: str = ""
     bot_name: str = ""          # имя профиля бота (агент отдаёт его серверу снимком канала)
+    # Доставка каналом сразу после правки из чата (ставит linkserver на ВПС):
+    # адреса SSH, подсети, режим без VPN, связь подсетей не ждут такта сверки.
+    channel_touch = None
+
+    def _channel_touch(self) -> None:
+        fn = getattr(self, "channel_touch", None)
+        if fn is None:
+            return
+        try:
+            fn()
+        except Exception as e:                                # noqa: BLE001
+            import logging
+            logging.getLogger("awgbot.services").warning("канал линка: доставка не запрошена: %s", e)
 
     # ── ссылки в текстах уведомлений: имя объекта — переход на его экран ────
     # (/start <payload>; без username бота — просто имя)
