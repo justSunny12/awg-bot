@@ -7,6 +7,8 @@ from __future__ import annotations
 import datetime
 import logging
 
+import html as _html
+
 from awgbot.core import config
 from awgbot.core import settings
 from awgbot.util import timeutil
@@ -37,21 +39,19 @@ def _gb_limit(num_bytes: int) -> str:
 
 
 def _reset_client_text(total_limit: int, device_lines: list[str]) -> str:
-    """Профилю: сброс + доступный лимит профиля + список лимитных устройств.
-    total_limit>0 — показываем строку профиля; device_lines — уже отфильтрованы
-    (только лимитные)."""
-    parts = ["Начался новый месяц — лимит расхода по твоему профилю сброшен 🙂"]
+    """Профилю: сброс и доступный объём профиля; устройства не перечисляются
+    (device_lines решает только, слать ли уведомление). total_limit>0 — строка
+    объёма."""
+    parts = ["Начался новый месяц — лимиты трафика обнулены 🙂"]
     if total_limit > 0:
-        parts.append(f"Доступный лимит на текущий месяц: {_gb_limit(total_limit)}")
-    if device_lines:
-        parts.append("\nДоступные лимиты по устройствам:\n" + "\n".join(device_lines))
+        parts.append(f"Доступно на текущий месяц: {_gb_limit(total_limit)}")
     return "\n".join(parts)
 
 
 def _reset_friend_text(device_lines: list[str]) -> str:
-    """Другу: сброс + список ЕГО лимитных устройств."""
-    return ("Начался новый месяц — лимиты расхода по твоим устройствам сброшены 🙂\n"
-            "Доступные лимиты на текущий месяц:\n" + "\n".join(device_lines))
+    """Гостю: сброс и ЕГО лимитные устройства списком « · имя — объём» (с вылетом)."""
+    return ("Начался новый месяц — лимиты трафика обнулены 🙂\n"
+            "Доступно на текущий месяц:\n" + "\n".join(f" · {ln}" for ln in device_lines))
 
 
 # ── Тексты уведомлений о потреблении (ТЗ 7-8) ────────────────────────────────
@@ -576,7 +576,7 @@ class TrafficMixin:
                     if lim > 0:               # друг увидит в своём уведомлении
                         friend_devs.setdefault(dev.friend_tg_id, []).append(dev)
                 elif lim > 0:
-                    own_lines.append(f"{dev.name} — {_gb_limit(lim)}")
+                    own_lines.append(f"{_html.escape(dev.name, quote=False)} — {_gb_limit(lim)}")
             # профилю шлём, если есть что показать: лимит профиля ИЛИ лимитные устройства
             total_limit = int(client.traffic_limit)
             if client.tg_id and (total_limit > 0 or own_lines):
@@ -584,6 +584,6 @@ class TrafficMixin:
                     client.tg_id, _reset_client_text(total_limit, own_lines)))
         # друзьям — по их лимитным устройствам
         for friend_tg, devs in friend_devs.items():
-            lines = [f"{d.name} — {_gb_limit(int(d.traffic_limit))}" for d in devs]
+            lines = [f"{_html.escape(d.name, quote=False)} — {_gb_limit(int(d.traffic_limit))}" for d in devs]
             notes.append(Notification(friend_tg, _reset_friend_text(lines)))
         return notes
