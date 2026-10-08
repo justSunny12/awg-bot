@@ -394,3 +394,32 @@ async def test_fakes_and_module_state_start_clean_on_every_shot(tmp_path, frozen
     for i in range(2):
         await harness.take(Shot(f"adm.r{i}", role="admin", start="", data=look), tmp_path, fakes)
     assert seen == [(0, {}, {}), (0, {}, {})], seen
+
+
+# ── сторож полноты: запись вызовов построителей ──────────────────────────────
+
+async def test_builder_calls_are_seen_in_worker_threads_and_only_inside_the_block():
+    """Обработчики зовут построители и через asyncio.to_thread: вызов в
+    потоке засчитывается; вызов до блока и после — нет; повторный вызов не
+    ломает запись."""
+    import asyncio
+    from awgbot.bot.keyboards import admin as kba, common as kbm
+    builders = {"common.hide_only": kbm.hide_only, "admin.admin_main": kba.admin_main,
+                "common.to_menu": kbm.to_menu}
+    kbm.to_menu()
+    with harness.BuilderCalls(builders) as calls:
+        await asyncio.to_thread(kbm.hide_only)
+        kbm.hide_only()
+    kba.admin_main()
+    assert calls.seen == {"common.hide_only"}, calls.seen
+
+
+def test_builder_list_counts_each_builder_once_and_skips_helpers():
+    """Реэкспорт пакета keyboards не удваивает построитель; помощники (метки,
+    теги, срез страницы) и кнопки-одиночки в список не входят."""
+    b = harness.keyboard_builders()
+    assert "settings.settings_root" in b and "gateway.gateway_notify_kb" in b
+    assert not any(k.startswith("__init__") for k in b)
+    for helper in ("common.entry_tag", "common.page_slice", "common.select_all_button", "common.reply_hide",
+                   "rolekb.notify_rows", "settings.email_poll_label"):
+        assert helper not in b, helper

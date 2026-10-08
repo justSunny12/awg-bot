@@ -54,10 +54,13 @@ GitHub `vX.Y.Z.P — …`.
   клавиатуры агента, `runtime/scheduler.py` в части роли gateway) — одна
   строка `gw`. Общий код (`selfupdate.py`, `updates.py`, `common.py`,
   `handlers/stale.py` — обработчик устаревших кнопок, его включают оба бота,
+  `bot/routers.py` — роутеры и диспетчер обеих ролей, `bot/paging.py` —
+  листание списков,
   `keyboards/common.py` — тумблеры ✅/☑️ и листание у обеих ролей,
   `util/timeutil.py`, `main.py`, `awg-bot.sh`, установщик, preflight, `notifier.py`, `db/*`,
   `domain/backupcrypto.py` — состав копии по роли, `tools/snapshot.py` —
-  снимок для `awg-bot backup` и `restore`, `handlers/updates_flow.py` и
+  снимок для `awg-bot backup` и `restore`, `tools/check_backup.py` — сторож
+  схемы копии в `restore`, `handlers/updates_flow.py` и
   `handlers/settingscore.py` — шаги обновления и настроек у обеих ролей,
   `handlers/hide.py` — «Скрыть», `domain/evidence.py` — улики живости,
   `infra/hostmetrics.py`, `infra/detach.py`, `infra/nftjson.py`,

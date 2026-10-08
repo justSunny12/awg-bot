@@ -467,6 +467,78 @@ async def take(shot: base.Shot, tmp: pathlib.Path, fakes=()) -> Record:
             db.close()
 
 
+# ── полнота: какие построители клавиатур вызваны ────────────────────────────
+
+KEYBOARD_MODULES = ("admin", "broadcast", "client", "common", "gateway", "rolekb", "routing", "settings")
+
+
+def keyboard_builders() -> dict[str, object]:
+    """Публичные построители клавиатур: функции модулей awgbot/bot/keyboards/*
+    без подчёркивания, объявленные в своём модуле (реэкспорт пакета не
+    считается дважды) и возвращающие InlineKeyboardMarkup/ReplyKeyboardMarkup
+    по аннотации. Ключ — «модуль.имя»."""
+    import importlib
+    out = {}
+    for short in KEYBOARD_MODULES:
+        mod = importlib.import_module(f"awgbot.bot.keyboards.{short}")
+        for name, fn in inspect.getmembers(mod, inspect.isfunction):
+            if fn.__module__ != mod.__name__ or name.startswith("_"):
+                continue
+            if "KeyboardMarkup" in str(fn.__annotations__.get("return", "")):
+                out[f"{short}.{name}"] = fn
+    return out
+
+
+def unannotated_keyboard_functions() -> list[str]:
+    """Публичные функции модулей клавиатур без аннотации результата: по ним
+    не понять, построитель ли это, — сторож полноты такую пропустил бы."""
+    import importlib
+    out = []
+    for short in KEYBOARD_MODULES:
+        mod = importlib.import_module(f"awgbot.bot.keyboards.{short}")
+        for name, fn in inspect.getmembers(mod, inspect.isfunction):
+            if fn.__module__ == mod.__name__ and not name.startswith("_") and "return" not in fn.__annotations__:
+                out.append(f"{short}.{name}")
+    return out
+
+
+class BuilderCalls:
+    """Какие из функций были вызваны внутри `with`: sys.monitoring (PY_START)
+    на их кодовых объектах — во всех потоках (обработчики зовут построители и
+    через asyncio.to_thread), без накладных расходов на остальной код;
+    после первого вызова событие на этой функции гасится."""
+
+    def __init__(self, functions: dict[str, object]):
+        self.codes = {fn.__code__: key for key, fn in functions.items()}
+        self.seen: set[str] = set()
+        self._tool = None
+
+    def __enter__(self):
+        import sys
+        mon = sys.monitoring
+        self._tool = next(i for i in (4, 3, 2, 0) if mon.get_tool(i) is None)
+        mon.use_tool_id(self._tool, "screens-keyboards")
+
+        def on_start(code, offset):
+            key = self.codes.get(code)
+            if key is not None:
+                self.seen.add(key)
+            return mon.DISABLE
+        mon.register_callback(self._tool, mon.events.PY_START, on_start)
+        for code in self.codes:
+            mon.set_local_events(self._tool, code, mon.events.PY_START)
+        return self
+
+    def __exit__(self, *exc):
+        import sys
+        mon = sys.monitoring
+        for code in self.codes:
+            mon.set_local_events(self._tool, code, 0)
+        mon.register_callback(self._tool, mon.events.PY_START, None)
+        mon.free_tool_id(self._tool)
+        return False
+
+
 # ── сериализация ─────────────────────────────────────────────────────────────
 
 def _button(b) -> str:
@@ -611,5 +683,5 @@ def long_labels(rec: Record) -> set[str]:
             for b in row if len(b.text) > LABEL_MAX}
 
 
-__all__ = ["StubSession", "Record", "Call", "run", "take", "run_builder", "check_step", "serialize",
+__all__ = ["keyboard_builders", "unannotated_keyboard_functions", "BuilderCalls", "StubSession", "Record", "Call", "run", "take", "run_builder", "check_step", "serialize",
            "problems", "html_problems", "plain", "long_labels", "packed", "CallbackData", "BOT_USERNAME"]

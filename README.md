@@ -277,7 +277,8 @@ awgbot/
              qrgen      QR/GIF; secrets_util  argon2id/SecretBox (крипто бэкапов)
              nets       подсети: нормализация, разбор, пересечение
              kvfile     файлы KEY=VALUE (env, состояние)
-  infra/     db/        SQLite (per-thread): ядро, схема и миграции, миксины по темам
+  infra/     db/        SQLite (per-thread): ядро, схема (миграций нет: схема минимума
+                        3.2.0 полная; schema_gap — сторож старой копии), миксины по темам
              awg        ЕДИНСТВЕННЫЙ слой команд к awg (host | docker exec)
              routing/   команды условной маршрутизации: ipset/iptables/ip/dnsmasq — пакет
                         по разделам: base, selfcheck, slots, sets, marking, policy,
@@ -303,12 +304,17 @@ awgbot/
   bot/       texts, keyboards, guides   презентация; texts/routing/ — пакет
                         (slots, card, dialogs, assign, access)
              filters, middleware, callbacks, states   glue aiogram
+             routers    один источник роутеров роли: routers_for (порядок включения),
+                        make_dispatcher (FSM, middleware) — для запуска и тестов
+             paging     листание длинных списков; роутер — фабрика, как «Скрыть» и
+                        устаревшая кнопка (handlers/hide, handlers/stale)
+             screens    реестр экранов для возврата после ввода, ссылок /start, уведомлений
              notifier   рассылка уведомлений (пейсинг + RetryAfter)
              handlers/  роутеры client + admin/ (пакет: panel, clients, devices, gateway,
                         updates, selfops, blocks, broadcast) + friend + routing + settings/
                         (пакет: render, gwmark, slots, sections, inputs, cycles, actions;
                         роутер один — _router) + …
-  runtime/   main         сборка и запуск
+  runtime/   main         сборка и запуск (диспетчер роли — из bot/routers)
              preflight    самопроверка окружения на старте (fatal / warning)
              scheduler    APScheduler-задачи (трафик, сроки, монитор, живость шлюза)
              watcher      inotify-вотчдог awg0.conf (дебаунс)
@@ -317,6 +323,11 @@ awgbot/
   assets/    guides/      скриншоты пошаговых гайдов (смена региона App Store)
 
 tools/       restore_backup  расшифровка архива резервной копии на любой машине
+             snapshot        снимок состояния для `awg-bot backup` и `restore`
+             check_backup    схема базы из копии не ниже минимума 3.2.0 (`awg-bot restore`)
+             firewall, gwssh `awg-bot firewall …` и `awg-bot ssh …` (на шлюзе)
+             pair, first_device  опознание админа по коду и первое устройство в терминале
+             flapwatch.sh    фоновый сторож обрывов связи на ВПС (диагностика руками)
 install/     awg-bot-install.sh      установщик (он же качает поставку из трубы)
              awg.lock                версия AmneziaWG, прибитая к поставке
              awg-kernel-install.sh   сборка ядра и тулз по манифесту
@@ -332,7 +343,7 @@ conf/        *.yaml — конфигурация; run.sh — форграунд-
 
 ## Тесты
 
-Пакет покрыт тестами четырёх уровней (`tests/`, pytest):
+Пакет покрыт тестами пяти уровней (`tests/`, pytest):
 
 ```
 tests/unit/         чистая логика без БД/сети (timeutil, configgen, домены
@@ -342,13 +353,33 @@ tests/smoke/        импорт всего пакета, config.validate(), с�
 tests/integration/  настоящая временная SQLite + фейковый awg-слой (db, services)
 tests/e2e/          сквозные сценарии: жизненный цикл, лимиты трафика,
                     пауза/грейс, мониторинг, маршрутизация
+tests/screens/      эталоны экранов: каждый снимок — через настоящий диспетчер
+                    роли на заглушке сессии Bot API; эталоны admin/client/
+                    guest/gateway.txt
 ```
 
 ```bash
 python3 -m venv venv && ./venv/bin/pip install -r requirements-dev.txt
 ./venv/bin/python -m pytest              # весь набор
-./venv/bin/python -m pytest -m unit      # один уровень (unit|smoke|integration|e2e)
+./venv/bin/python -m pytest -m unit      # один уровень (unit|smoke|integration|e2e|screens)
+./venv/bin/python -m pytest tests/screens --update-screens   # перезаписать эталоны экранов
 ```
+
+Эталоны экранов ловят то, чего не видят тесты, зовущие обработчик напрямую:
+кнопку, потерянную при переносе (порядок роутеров, фильтр, упаковка колбэка),
+— у человека она ушла бы в «Кнопка устарела». Снимок — одно действие
+(нажатие, `/start`, текст, файл или событие без действия человека вроде
+уведомления), запись — всё, что бот после этого сказал Telegram: текст в HTML,
+кнопки рядами с `callback_data`/`url`, всплывашки, правки и удаления. На
+каждом снимке проверяются лимиты Telegram (4096 знаков текста, 1024 подписи,
+64 байта колбэка, 200 знаков всплывашки, не больше 10 рядов кнопок) и
+разметка HTML. Каталог снимков — `tests/screens/shots_<роль>.py`, сравнение —
+по файлу эталона целиком.
+
+Правка текста или клавиатуры: поправить код → `pytest tests/screens
+--update-screens` → дифф `tests/screens/*.txt` идёт в тот же коммит. Он
+показывает каждый задетый экран обеих ролей, и вычитка идёт по нему; без
+перезаписи тест падает с этим же диффом.
 
 Тесты не трогают сервер и Telegram: awg- и routing-слои подменяются in-memory
 фейками, БД — временный файл. Установочные скрипты в CI не гоняются, но их

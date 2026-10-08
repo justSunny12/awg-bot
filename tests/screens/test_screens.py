@@ -14,6 +14,7 @@ Telegram (4096, 64 байта колбэка, 200 знаков всплываш�
 from __future__ import annotations
 
 import difflib
+import inspect
 import pathlib
 
 import pytest
@@ -80,3 +81,30 @@ async def test_a_button_no_screen_takes_is_seen_as_stale(tmp_path, frozen, fakes
     assert f"~ {STALE_BUTTON}" in heads, heads
     assert "- markup off #1" in heads, "у старого сообщения остались живые кнопки"
     assert any(h.startswith("+ send #") for h in heads), "главная не пришла новым сообщением"
+
+
+def test_every_keyboard_function_says_what_it_returns():
+    """Построитель отличается от помощника аннотацией результата; без неё
+    новая клавиатура выпала бы из сторожа полноты молча."""
+    bare = harness.unannotated_keyboard_functions()
+    assert not bare, f"нет аннотации результата: {bare}"
+
+
+async def test_every_keyboard_builder_is_drawn_by_some_shot(tmp_path, frozen, fakes):
+    """Полнота каталога: каждый публичный построитель клавиатур вызван хотя бы
+    одним снимком. Новая клавиатура без снимка — красный тест: её экран
+    никто не видел в эталоне, и рефакторинг унесёт его без следа. Исключение
+    (UNREACHABLE) — только для построителя, которого не рисует ни действие
+    человека, ни событие; исключение, которое не нужно, — тоже красное."""
+    builders = harness.keyboard_builders()
+    with harness.BuilderCalls(builders) as calls:
+        for shot in catalog.SHOTS:
+            await take(shot, tmp_path, fakes)
+    unknown = set(catalog.UNREACHABLE) - set(builders)
+    assert not unknown, f"в UNREACHABLE имена, которых нет среди построителей: {sorted(unknown)}"
+    spare = set(catalog.UNREACHABLE) & calls.seen
+    assert not spare, f"исключение больше не нужно — построитель снят: {sorted(spare)}"
+    missing = sorted(set(builders) - calls.seen - set(catalog.UNREACHABLE))
+    assert not missing, ("построители клавиатур без снимка:\n" + "\n".join(
+        f"  {k} — {(inspect.getdoc(builders[k]) or '').splitlines()[0] if inspect.getdoc(builders[k]) else ''}"
+        for k in missing))
