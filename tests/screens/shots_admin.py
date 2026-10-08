@@ -1169,6 +1169,276 @@ _OUTSIDE = [
 
 SHOTS += _DEVICES + _RF + _PROFILES + _NEW + _SETTINGS + _GATEWAYS + _MIGRATION + _LINKS + _OUTSIDE
 
+
+# ── шаг 3: диалоги до конца, файл копии, события без действия ───────────────
+
+def _archive(role: str = "main", db: bytes | None = None) -> bytes:
+    """Резервная копия как её собирает make_backup: метка роли и даты, база —
+    по желанию (без базы проверять схему нечего)."""
+    import io
+    import tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        def add(name, raw):
+            ti = tarfile.TarInfo(name)
+            ti.size = len(raw)
+            tar.addfile(ti, io.BytesIO(raw))
+        add("state/backup-meta.json",
+            json.dumps({"role": role, "created_at": "2026-09-01T03:00:00+03:00"}).encode())
+        if db is not None:
+            add("state/bot.db", db)
+    return buf.getvalue()
+
+
+def _old_db_bytes() -> bytes:
+    """База со схемой ниже 3.2.0: в clients нет колонки kind."""
+    import os
+    import sqlite3
+    import tempfile
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        con = sqlite3.connect(path)
+        con.executescript("CREATE TABLE clients(id INTEGER PRIMARY KEY, tg_name TEXT);"
+                          "CREATE TABLE devices(id INTEGER PRIMARY KEY, holder_client_id INTEGER);")
+        con.commit()
+        con.close()
+        with open(path, "rb") as f:
+            return f.read()
+    finally:
+        os.remove(path)
+
+
+_BK_OK = _archive()
+_BK_GW = _archive("gw")
+_BK_OLD = _archive(db=_old_db_bytes())
+_BK_NAME = "awg-bot-backup-2026-09-01.tgz"
+
+
+def _restore_ready(services):
+    """Восстановление из файла в чате: раскладка на диск и запуск awg-bot
+    restore — заглушки (они останавливают сервис на хосте)."""
+    who = _people(services)
+    services.prepare_restore = lambda plain: "/nonexistent/DUMMY-restore.tgz"
+    services.launch_restore = lambda path: None
+    return who
+
+
+def _mail_check(ok: bool):
+    """Мастер почты: вход по IMAP и SMTP — без сети (подменены сами проверки
+    протоколов, итог запоминает настоящий email_check), удачный или отказ."""
+    def build(services, mp):
+        from awgbot.infra import mail
+        who = _people(services)
+
+        def imap(acc):
+            if not ok:
+                raise mail.MailError("IMAP: [AUTHENTICATIONFAILED] Invalid credentials")
+        mp.setattr(mail, "check_imap", imap)
+        mp.setattr(mail, "check_smtp", lambda acc: None)
+        return who
+    return build
+
+
+def _ks_expiring(services):
+    """Годовая подписка Ксюши кончается через неделю без часа: порог «7 дней»
+    только что пересечён, отсрочку она ещё не брала."""
+    who = _people(services)
+    services.db.update_client_fields(KS, period_start=_iso(NOW - _dt.timedelta(days=358, hours=1)),
+                                     period_end=_iso(NOW + _dt.timedelta(days=7) - _dt.timedelta(hours=1)))
+    return who
+
+
+def _gw_file_in_chat(plain: bool):
+    """Слот NASPi, в чате админа лежит его файл конфигурации (#40) под
+    погасшей карточкой (#39); plain — файл первого применения."""
+    def build(services, mp):
+        who = _slots(1)(services, mp)
+        services.gw_bundle_msg_set(1, config.ADMIN_ID, 40, 39, "DUMMYFP", plain)
+        return who
+    return build
+
+
+async def _ev_applied(services, bot):
+    from awgbot.bot.handlers.settings import bundle_applied
+    await bundle_applied(bot, services, 1, True, "", "DUMMYFP")
+
+
+async def _ev_applied_fail(services, bot):
+    from awgbot.bot.handlers.settings import bundle_applied
+    await bundle_applied(bot, services, 1, False, "routing-gw-setup.sh: nft: syntax error", "DUMMYFP")
+
+
+async def _ev_installed(services, bot):
+    from awgbot.bot.handlers.settings import bundle_installed
+    await bundle_installed(bot, services, 1)
+
+
+def _upd_pending(tag: str):
+    """Перед рестартом запущено обновление до tag, в чате — «дождись» (#30);
+    тело релиза — без сети."""
+    def build(services, mp):
+        from awgbot.infra import updates
+        who = _people(services)
+        services.db.set_state("update_pending", tag)
+        services.set_update_wait(config.ADMIN_ID, 30)
+        mp.setattr(updates, "release_body", lambda t: "- исправлено одно\n- добавлено другое")
+        return who
+    return build
+
+
+async def _ev_update_result(services, bot):
+    from awgbot.runtime.main import report_update_result
+    await report_update_result(bot, services)
+
+
+async def _ev_update_available(services, bot):
+    import types
+    from awgbot.runtime.scheduler import notify_update_available
+    await notify_update_available(bot, services, types.SimpleNamespace(
+        tag="v1.3.0", body="- исправлено одно\n- добавлено другое"))
+
+
+def _restart_promised(services):
+    """Бот перезапускали по кнопке: обещание «вернётся» — сообщение #25."""
+    who = _people(services)
+    services.set_restart_wait(config.ADMIN_ID, 25)
+    return who
+
+
+async def _ev_restarted(services, bot):
+    from awgbot.bot.handlers.admin.panel import restore_panel_after_restart
+    await restore_panel_after_restart(bot, services)
+
+
+def _restore_done(services):
+    """awg-bot restore отработал и оставил маркер."""
+    who = _people(services)
+    services.pop_restore_done = lambda: {"created_at": "2026-09-01T03:00:00+03:00"}
+    return who
+
+
+async def _ev_restore_done(services, bot):
+    from awgbot.bot.handlers.restore import report_restore_result
+    await report_restore_result(bot, services)
+
+
+async def _ev_expiry(services, bot):
+    """Задача сроков, как её собирает планировщик: уведомления об истечении
+    с кнопкой отсрочки (kb.grace_offer)."""
+    from awgbot.bot import keyboards as kb
+    from awgbot.bot.notifier import send_notifications
+    from awgbot.core import settings
+    notes = services.check_expiry()
+    for n in notes:
+        if getattr(n, "grace_offer_client_id", 0):
+            n.reply_markup = kb.grace_offer(n.grace_offer_client_id, settings.get_int("grace.grace_days", 14))
+    await send_notifications(bot, notes)
+
+
+async def _ev_added_by_admin(services, bot):
+    """Уведомление владельцу о новом устройстве от админа (kb.added_by_admin)."""
+    from awgbot.bot import keyboards as kb
+    from awgbot.bot import texts
+    from awgbot.bot.notifier import notify_one
+    used, limit = services.device_quota(KS)
+    await notify_one(bot, 2001, texts.reassign_recipient_notice("Ноутбук", used, limit),
+                     reply_markup=kb.added_by_admin(LAPTOP))
+
+
+_PERIOD = [("press", ClientCB(action="edit_period", client_id=KS)), ("text", "-")]
+_NEWP = [("press", Menu(action="add_client")), ("text", "Маша")]
+_NEWP_TRAFFIC = _NEWP + [("press", PresetCB(kind="new_devs", val=3))]
+_NEWP_PERIOD = _NEWP_TRAFFIC + [("press", PresetCB(kind="new_traffic", val=100))]
+_BC_TEXT = [("press", BroadcastCB(action="pick")), ("press", BroadcastCB(action="all")),
+            ("press", BroadcastCB(action="next")), ("text", "В субботу с 02:00 до 03:00 — работы на сервере")]
+_BC_EXT_TEXT = [("press", BroadcastCB(action="pick")), ("press", BroadcastCB(action="ext")),
+                ("press", BroadcastCB(action="all")), ("press", BroadcastCB(action="next")),
+                ("press", PresetCB(kind="bc_days", val=7)), ("text", "Неделя в подарок — спасибо, что с нами")]
+_MAIL_KNOWN = [("press", SetCB(sec="email", act="do", key="setup")), ("text", "admin@gmail.com")]
+_MAIL_OWN = [("press", SetCB(sec="email", act="do", key="setup")), ("text", "admin@example.org"),
+             ("text", "imap.example.org:993")]
+_PHRASE = [("press", SetCB(sec="backup", act="do", key="enc_set")), ("text", "DUMMY-passphrase-1234")]
+
+_STEP3 = [
+    # ── диалоги ввода до итога ──────────────────────────────────────────────
+    Shot("adm.cl.period.done", role="admin", steps=_PERIOD + [("text", "15.10.2027")], data=_people,
+         title="период: итог"),
+    Shot("adm.cl.period.forever", role="admin", steps=_PERIOD + [("text", "0")], data=_people,
+         title="период: бессрочно"),
+    Shot("adm.new.traffic", role="admin", steps=_NEWP_TRAFFIC, data=_people, title="новый профиль: трафик"),
+    Shot("adm.new.devs.other", role="admin",
+         steps=_NEWP + [("press", PresetCB(kind="new_devs", val=-1)), ("text", "4")], data=_people,
+         title="новый профиль: своё число устройств — трафик"),
+    Shot("adm.new.period", role="admin", steps=_NEWP_PERIOD, data=_people, title="новый профиль: срок"),
+    Shot("adm.new.invite", role="admin",
+         steps=_NEWP_PERIOD + [("press", PeriodCB(kind="year", ctx="create"))], data=_people,
+         title="новый профиль: приглашение"),
+    Shot("adm.bc.preview.markup", role="admin",
+         steps=_BC_TEXT[:3] + [("text", "В субботу — работы на сервере",
+                                [{"type": "bold", "offset": 12, "length": 17}])],
+         data=_bc_ready, title="превью с разметкой Telegram"),
+    Shot("adm.bc.send", role="admin", steps=_BC_TEXT + [("press", BroadcastCB(action="send"))],
+         data=_bc_ready, title="разослано: объявление и отчёт"),
+    Shot("adm.bc.send.ext", role="admin", steps=_BC_EXT_TEXT + [("press", BroadcastCB(action="send"))],
+         data=_bc_ready, title="разослано с продлением"),
+    Shot("adm.set.email.saved", role="admin", steps=_MAIL_KNOWN + [("text", "DUMMY-app-password")],
+         data=_mail_check(True), title="мастер почты: ящик подключён"),
+    Shot("adm.set.email.refused", role="admin", steps=_MAIL_KNOWN + [("text", "DUMMY-app-password")],
+         data=_mail_check(False), title="мастер почты: вход не прошёл"),
+    Shot("adm.set.email.smtp", role="admin", steps=_MAIL_OWN, data=_mail_check(True),
+         title="мастер почты: SMTP-сервер"),
+    Shot("adm.set.email.password", role="admin", steps=_MAIL_OWN + [("text", "smtp.example.org:465")],
+         data=_mail_check(True), title="мастер почты: пароль своего сервера"),
+    Shot("adm.set.email.own.saved", role="admin",
+         steps=_MAIL_OWN + [("text", "smtp.example.org:465"), ("text", "DUMMY-password")],
+         data=_mail_check(True), title="мастер почты: свой сервер подключён"),
+    Shot("adm.set.backup.enc_set.done", role="admin", steps=_PHRASE + [("text", "DUMMY-passphrase-1234")],
+         data=_people, title="фраза совпала — шифрование включено"),
+    Shot("adm.set.backup.enc_set.mismatch", role="admin", steps=_PHRASE + [("text", "DUMMY-passphrase-9999")],
+         data=_people, title="фраза не совпала — заново"),
+    # ── A190: восстановление из файла в чате ────────────────────────────────
+    Shot("adm.restore", role="admin", steps=[("file", _BK_NAME, _BK_OK)], data=_restore_ready,
+         title="копия в чате: восстановить?"),
+    Shot("adm.restore.yes", role="admin",
+         steps=[("file", _BK_NAME, _BK_OK), ("press", SetCB(sec="backup", act="do", key="restore!"))],
+         data=_restore_ready, title="восстановление запущено"),
+    Shot("adm.restore.drop", role="admin",
+         steps=[("file", _BK_NAME, _BK_OK), ("press", SetCB(sec="backup", act="do", key="restore_drop"))],
+         data=_restore_ready, title="файл отброшен"),
+    Shot("adm.restore.junk", role="admin", steps=[("file", _BK_NAME, b"DUMMY")], data=_restore_ready,
+         title="не резервная копия"),
+    Shot("adm.restore.gw", role="admin", steps=[("file", _BK_NAME, _BK_GW)], data=_restore_ready,
+         title="копия агента шлюза"),
+    Shot("adm.restore.old", role="admin", steps=[("file", _BK_NAME, _BK_OLD)], data=_restore_ready,
+         title="копия со схемой ниже 3.2.0"),
+    # ── события без действия человека ───────────────────────────────────────
+    Shot("adm.ev.gw_applied", role="admin", call=("bundle_applied", _ev_applied),
+         data=_gw_file_in_chat(False), title="A134c: конфигурация шлюза применена"),
+    Shot("adm.ev.gw_applied.fail", role="admin", call=("bundle_applied", _ev_applied_fail),
+         data=_gw_file_in_chat(False), title="A134c: конфигурация шлюза не применилась"),
+    Shot("adm.ev.gw_installed", role="admin", call=("bundle_installed", _ev_installed),
+         data=_gw_file_in_chat(True), title="A146: шлюз настроен"),
+    Shot("adm.ev.upd_available", role="admin", call=("notify_update_available", _ev_update_available),
+         data=_people, title="доступна новая версия"),
+    Shot("adm.ev.upd_done", role="admin", call=("report_update_result", _ev_update_result),
+         data=_upd_pending("v1.2.3"), title="обновлён после рестарта"),
+    Shot("adm.ev.upd_failed", role="admin", call=("report_update_result", _ev_update_result),
+         data=_upd_pending("v1.3.0"), title="обновление не применилось"),
+    Shot("adm.ev.restarted", role="admin", call=("restore_panel_after_restart", _ev_restarted),
+         data=_restart_promised, title="бот вернулся после перезапуска"),
+    Shot("adm.ev.restore_done", role="admin", call=("report_restore_result", _ev_restore_done),
+         data=_restore_done, title="восстановление из копии завершено"),
+    Shot("adm.ev.expired", role="admin", call=("check_expiry", _ev_expiry), data=_br_expired,
+         title="подписка истекла — «⏱ Продлить» админу"),
+    Shot("adm.ev.grace_offer", role="admin", call=("check_expiry", _ev_expiry), data=_ks_expiring,
+         title="подписка истекает — владельцу кнопка отсрочки"),
+    Shot("adm.ev.added_by_admin", role="admin", call=("notify_one", _ev_added_by_admin), data=_people,
+         title="владельцу — новое устройство от админа"),
+]
+
+SHOTS += _STEP3
+
 # у каждого снимка — построитель: он же сбрасывает модульные подмены прежних
 assert all(sh.data is not None for sh in SHOTS), [sh.id for sh in SHOTS if sh.data is None]
 

@@ -12,19 +12,35 @@ GatewayServices, построитель подменяет ему класс н�
 их monkeypatch'ем снимка — подмена откатывается в конце снимка и до
 следующего не доживает.
 
-Файлом (бандл, резервная копия) обвязка пока не умеет — экраны «📦 Получена
-конфигурация», вопрос о фразе, итог применения и предложение восстановления
-сняты только там, куда доходит кнопка без файла.
+Файл конфигурации шлюза — заглушка с подписью формата (bundlecrypt.MAGIC):
+расшифровку и прогон скрипта отвечает `_Host` (inspect_bundle, apply_bundle,
+статус скрипта, итог почты, пометка). Резервные копии — настоящие архивы,
+зашифрованные случайным ключом (`backup_key` в БД): их разбирает настоящий
+inspect_backup — метка роли, схема базы, конфиги интерфейсов. События без
+действия человека (первая панель, обещание перезапуска, итоги обновления и
+восстановления, перезагрузка хоста) — шагом call теми же функциями, что
+зовёт старт агента.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
 import copy
 import datetime as _dt
+import io
 import ipaddress
+import json
+import sqlite3
+import tarfile
+import types
 from dataclasses import dataclass, field
 
 from awgbot.bot import keyboards as kb
+from awgbot.bot import texts
+from awgbot.bot.handlers import gateway as gateway_handlers
+from awgbot.bot.handlers import restore as restore_handlers
+from awgbot.runtime import hostboot
+from awgbot.util import bundlecrypt, secrets_util
 from awgbot.bot.callbacks import CancelCB, GwCB, HideCB, PageCB, UpdateCB
 from awgbot.core import config
 from awgbot.domain.backupcrypto import BackupKeyMissing
@@ -132,6 +148,62 @@ _RELEASE = updates.Release(
          "### Исправлено\n- итог применения конфигурации не терял строку почты\n\n#requires_gw_1.2.0")
 
 
+_APPLY_STATUS = {"UPLINK": "installed", "LINK": "up", "GW_STATUS": "confirmed", "SSH_FILTER": "1",
+                 "SSH_ALLOW_COUNT": "2", "LAN": "1", "LAN_IF": "end0", "LAN_ADDR": "192.168.1.10"}
+
+# ── файлы в чат ──────────────────────────────────────────────────────────────
+
+_BUNDLE = bundlecrypt.MAGIC + b"DUMMY-bundle"          # формат проверяется по подписи
+_BUNDLE_NAME = "awg-gw-NASPi.bin"
+_BACKUP_KEY = b"DUMMY-backup-key-0123456789abcdef"[:32]
+
+
+def _archive(role: str = "gw", *, db: bytes | None = None, iface: bool = False) -> bytes:
+    """Архив резервной копии: метка роли и даты, база, конфиг интерфейса."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        def add(name, raw):
+            ti = tarfile.TarInfo(name)
+            ti.size = len(raw)
+            ti.mtime = int(NOW.timestamp())
+            tar.addfile(ti, io.BytesIO(raw))
+        add("state/backup-meta.json",
+            json.dumps({"role": role, "created_at": "2026-09-14T03:00:00+03:00"}).encode())
+        if db is not None:
+            add("state/bot.db", db)
+        if iface:
+            add("awg/awg0.conf", b"[Interface]\nPrivateKey = DUMMY\nAddress = 10.8.0.2/30\n")
+    return buf.getvalue()
+
+
+def _old_db() -> bytes:
+    """База схемы ниже 3.2.0: в clients нет колонки kind."""
+    con = sqlite3.connect(":memory:")
+    con.executescript("CREATE TABLE clients(id INTEGER PRIMARY KEY, tg_name TEXT);"
+                      "CREATE TABLE devices(id INTEGER PRIMARY KEY, holder_client_id INTEGER);")
+    raw = con.serialize()
+    con.close()
+    return bytes(raw)
+
+
+def _enc(plain: bytes) -> bytes:
+    return secrets_util.encrypt(plain, key=_BACKUP_KEY)
+
+
+_COPY = _enc(_archive())
+_COPY_IFACE = _enc(_archive(iface=True))
+_COPY_MAIN = _enc(_archive("main"))
+_COPY_OLD = _enc(_archive(db=_old_db()))
+_COPY_NAME = "awg-gw-pi-2026-09-14.tgz.enc"
+
+
+async def _no_sleep(_s=0):
+    """Ожидание канала после применения — мгновенно: связи в снимке не будет."""
+
+
+_FAST_ASYNCIO = types.SimpleNamespace(sleep=_no_sleep, get_running_loop=asyncio.get_running_loop)
+
+
 @dataclass
 class _Host:
     """Что агент увидел бы на хосте, если бы это был шлюз."""
@@ -156,6 +228,19 @@ class _Host:
     update_error: str = ""                                 # apply_update падает
     update_tag: str = ""                                   # «⬆️ Доступна vX» с прошлой проверки
     muted: bool = False
+    # файл конфигурации шлюза
+    bundle: dict = field(default_factory=lambda: {"ok": True, "mail": False, "passphrase": False,
+                                                  "passphrase_differs": False, "link_changed": True})
+    apply: tuple = (True, "")                              # итог скрипта применения
+    apply_status: dict = field(default_factory=lambda: dict(_APPLY_STATUS))   # файл статуса скрипта
+    bundle_mail: dict = field(default_factory=dict)        # проверка почты из файла
+    mark: dict = field(default_factory=lambda: {"status": "confirmed", "claim": None})
+    # резервные копии и старт процесса
+    backup_key: bool = False                               # ключ шифрования копий задан
+    restore_done: dict | None = None                       # маркер awg-bot restore
+    update_pending: str = ""                               # перед рестартом шло обновление до …
+    update_wait: bool = False                              # «дождись завершения» — #1
+    restart_wait: bool = False                             # «бот перезапускается» — #1
 
 
 class _Channel:
@@ -341,6 +426,37 @@ class _Agent(GatewayServices):
         if self.h.update_error:
             raise updates.UpdateError(self.h.update_error)
 
+    # ── файл конфигурации шлюза ─────────────────────────────────────────────
+    def inspect_bundle(self, blob):
+        return dict(self.h.bundle)
+
+    def apply_bundle(self, blob, overwrite_passphrase=False):
+        return self.h.apply
+
+    def gateway_apply_report(self):
+        return texts.gateway_apply_report(self.h.apply_status)
+
+    def bundle_mail_check(self):
+        return dict(self.h.bundle_mail)
+
+    def gateway_mark_outcome(self):
+        out = {"uplink": "awg1", "pubkey": "DUMMYPUB=", **self.h.mark}
+        self.db.set_state(self._GW_MARK_KEY, out["status"])
+        return out
+
+    def lan_lists_needed(self):
+        return False
+
+    # ── восстановление ──────────────────────────────────────────────────────
+    def prepare_restore(self, plain):
+        return "/var/lib/awg-bot/backups/restore-pending.tgz"
+
+    def launch_restore(self, path):
+        pass
+
+    def pop_restore_done(self):
+        return self.h.restore_done
+
 
 def _inside(entry: str, net) -> bool:
     try:
@@ -383,13 +499,63 @@ def _agent(**opts):
             services.db.set_state(services._AVAILABLE_KEY, h.update_tag)
         if h.muted:
             services.mute_updates()
+        if h.backup_key:
+            services.db.set_state(services._BK_KEY_KEY, base64.b64encode(_BACKUP_KEY).decode())
+        if h.update_pending:
+            services.db.set_state("update_pending", h.update_pending)
+        if h.update_wait:
+            services.set_update_wait(config.ADMIN_ID, 1)
+        if h.restart_wait:
+            services.set_restart_wait(config.ADMIN_ID, 1)
+        # хост и сеть — мимо: конфиги интерфейсов копии сверяются с пустым
+        # каталогом, тело релиза — из каталога, перезагрузка — «была»,
+        # ожидание канала после применения — мгновенно
+        mp.setattr(config, "GW_CONF_DIR", "/nonexistent/DUMMY-awg-gw")
+        mp.setattr(updates, "release_body", lambda tag: _RELEASE.body)
+        mp.setattr(hostboot, "reboot_detected", lambda db: True)
+        mp.setattr(gateway_handlers, "asyncio", _FAST_ASYNCIO)
         return config.ADMIN_ID, "Админ"
     return build
 
 
-def _shot(id_: str, *, press=(), text=None, conf=None, start=None, title="", **opts) -> Shot:
+def _shot(id_: str, *, press=(), text=None, conf=None, start=None, title="", steps=(), call=None,
+          **opts) -> Shot:
     return Shot(id_, role="gateway", press=press, text=text, conf=conf or {}, start=start,
-                title=title, data=_agent(**opts))
+                title=title, steps=steps, call=call, data=_agent(**opts))
+
+
+def _file(name: str, blob: bytes) -> tuple:
+    return ("file", name, blob)
+
+
+def _p(cb) -> tuple:
+    return ("press", cb)
+
+
+def _t(text: str) -> tuple:
+    return ("text", text)
+
+
+async def _first_panel(services, bot):
+    await gateway_handlers.send_first_panel(bot, services)
+
+
+async def _restart_panel(services, bot):
+    await gateway_handlers.restore_panel_after_restart(bot, services)
+
+
+async def _update_result(services, bot):
+    from awgbot.runtime import main
+    await main.report_update_result(bot, services)
+
+
+async def _restore_result(services, bot):
+    await restore_handlers.report_restore_result(bot, services)
+
+
+async def _rebooted(services, bot):
+    from awgbot.runtime import main
+    await main._announce_reboot(bot, services.db, "агента")
 
 
 def _lan_rm(items, dom: str) -> GwCB:
@@ -563,6 +729,30 @@ SHOTS = [
           text="не адрес", title="мастер: не адрес — переспрос"),
     _shot("gw.set.email.setup.cancel", press=[GwCB(action="email"), GwCB(action="em_setup"),
                                               CancelCB(kind="set_email")], title="мастер: отмена"),
+    _shot("gw.set.email.setup.imap", steps=[_p(GwCB(action="email")), _p(GwCB(action="em_setup")),
+                                            _t("admin@example.org"), _t("imap.example.org:993")],
+          title="мастер: IMAP с портом — дальше SMTP"),
+    _shot("gw.set.email.setup.imap_port", steps=[_p(GwCB(action="email")), _p(GwCB(action="em_setup")),
+                                                 _t("admin@example.org"), _t("imap.example.org")],
+          title="мастер: IMAP без порта — порт отдельным шагом"),
+    _shot("gw.set.email.setup.bad_host", steps=[_p(GwCB(action="email")), _p(GwCB(action="em_setup")),
+                                                _t("admin@example.org"), _t("imap:99999")],
+          title="мастер: не сервер — переспрос"),
+    _shot("gw.set.email.setup.smtp", steps=[_p(GwCB(action="email")), _p(GwCB(action="em_setup")),
+                                            _t("admin@example.org"), _t("imap.example.org:993"),
+                                            _t("smtp.example.org:587")],
+          title="мастер: SMTP — дальше пароль"),
+    _shot("gw.set.email.setup.saved", steps=[_p(GwCB(action="email")), _p(GwCB(action="em_setup")),
+                                             _t("admin@example.org"), _t("imap.example.org:993"),
+                                             _t("smtp.example.org:587"), _t("DUMMY-password")],
+          title="мастер: пароль удалён, вход проверен, ящик сохранён"),
+    _shot("gw.set.email.setup.saved_known", steps=[_p(GwCB(action="email")), _p(GwCB(action="em_setup")),
+                                                   _t("admin@gmail.com"), _t("DUMMY-password")],
+          title="мастер: знакомый провайдер — адрес и пароль"),
+    _shot("gw.set.email.setup.login_failed", steps=[_p(GwCB(action="email")), _p(GwCB(action="em_setup")),
+                                                    _t("admin@gmail.com"), _t("DUMMY-password")],
+          mail_error="IMAP: вход отклонён — нужен пароль приложения",
+          title="мастер: вход не прошёл — ящик не сохранён"),
     _shot("gw.set.email.check", press=[GwCB(action="email"), GwCB(action="em_check")], **_MAIL,
           title="«🔍 Проверить» — итог первой строкой"),
     _shot("gw.set.email.check.fail", press=[GwCB(action="email"), GwCB(action="em_check")], mail=True,
@@ -617,12 +807,12 @@ SHOTS = [
           port_error="sshd не поднялся на 2222 — вернул 22", title="смена не прошла"),
     _shot("gw.ssh.port.owner", press=[GwCB(action="ssh"), GwCB(action="ssh_port")],
           ssh=_ssh(owner="omv", owner_port=22), title="порт под OMV — отказ сразу по кнопке"),
-    # кнопки финишера: ввод в снимке — последнее действие, финишер после него
-    # не нажать; кнопки жмутся на разделе — ответ обработчика тот же
-    _shot("gw.ssh.port.retry", press=[GwCB(action="ssh"), GwCB(action="ssh_port_retry")],
-          title="финишер → «✏️ Другой порт»: финишер со «Скрыть», приглашение новым"),
-    _shot("gw.ssh.port.back", press=[GwCB(action="ssh"), GwCB(action="ssh_port_back")],
-          title="финишер → «⬅️ Назад»: финишер со «Скрыть», раздел новым"),
+    _shot("gw.ssh.port.retry", steps=[_p(GwCB(action="ssh")), _p(GwCB(action="ssh_port")), _t("22"),
+                                      _p(GwCB(action="ssh_port_retry"))],
+          title="финишер после ввода → «✏️ Другой порт»: финишер со «Скрыть», приглашение новым"),
+    _shot("gw.ssh.port.back", steps=[_p(GwCB(action="ssh")), _p(GwCB(action="ssh_port")), _t("8080"),
+                                     _p(GwCB(action="ssh_port_back"))], busy="nginx",
+          title="финишер после ввода → «⬅️ Назад»: финишер со «Скрыть», раздел новым"),
     _shot("gw.ssh.add.ask", press=[GwCB(action="ssh"), GwCB(action="ssh_add")], title="приглашение: адреса"),
     _shot("gw.ssh.add.done", press=[GwCB(action="ssh"), GwCB(action="ssh_add")],
           text="198.51.100.4 home.example.net", ssh=_ssh(filter=True), title="добавлено"),
@@ -688,6 +878,12 @@ SHOTS = [
           text="DUMMY-passphrase", title="первая фраза принята и удалена — повтор"),
     _shot("gw.set.enc.short", press=[GwCB(action="backup"), GwCB(action="enc"), GwCB(action="enc_set")],
           text="DUMMY", title="короткая фраза — переспрос"),
+    _shot("gw.set.enc.saved", steps=[_p(GwCB(action="backup")), _p(GwCB(action="enc")),
+                                     _p(GwCB(action="enc_set")), _t("DUMMY-passphrase"), _t("DUMMY-passphrase")],
+          title="повтор совпал — фраза задана, итог первой строкой бэкапов"),
+    _shot("gw.set.enc.mismatch", steps=[_p(GwCB(action="backup")), _p(GwCB(action="enc")),
+                                        _p(GwCB(action="enc_set")), _t("DUMMY-passphrase"), _t("DUMMY-other")],
+          title="повтор не совпал — заново с первой фразы"),
     _shot("gw.set.enc.cancel", press=[GwCB(action="backup"), GwCB(action="enc"), GwCB(action="enc_set"),
                                       CancelCB(kind="set_backup")], title="«✖️ Отмена» — бэкапы"),
 
@@ -738,6 +934,95 @@ SHOTS = [
     _shot("gw.bundle.drop", press=[GwCB(action="drop")], title="«⬅️ Отмена» — файл отброшен, панель"),
     _shot("gw.restore.nofile", press=[GwCB(action="restore!")], title="восстановить — файла в памяти нет"),
     _shot("gw.restore.drop", press=[GwCB(action="restore_drop")], title="отказ от восстановления"),
+
+    # ── W50–W52 файл конфигурации шлюза ─────────────────────────────────────
+    _shot("gw.bundle.received", steps=[_file(_BUNDLE_NAME, _BUNDLE)],
+          title="файл принят: линк перезапустится, трафик шлюз не несёт"),
+    _shot("gw.bundle.received.carries", steps=[("start", ""), _file(_BUNDLE_NAME, _BUNDLE)], carries=True,
+          tick=_status(), title="шлюз несёт трафик — прежняя панель удалена, предупреждение об обрыве"),
+    _shot("gw.bundle.received.same_link", steps=[_file(_BUNDLE_NAME, _BUNDLE)],
+          bundle={"ok": True, "link_changed": False}, title="конфиг линка тот же — без обрыва"),
+    _shot("gw.bundle.first_run", steps=[_file("awg-gw-bundle.sh", b"#!/bin/sh\n# DUMMY\n")],
+          title="файл первого применения по имени — убран из чата"),
+    _shot("gw.bundle.first_run.renamed", steps=[_file("setup.sh", b"#!/bin/sh\n# awg-gw-bundle DUMMY\n")],
+          title="файл первого применения по содержимому"),
+    _shot("gw.bundle.not_ours", steps=[_file("photo.bin", b"DUMMY")], title="не конфигурация шлюза"),
+    _shot("gw.bundle.too_big", steps=[_file("video.bin", b"\0" * (600 * 1024))],
+          title="крупнее любого файла конфигурации — не скачивается"),
+    _shot("gw.bundle.passphrase", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
+          bundle={"ok": True, "passphrase": True, "passphrase_differs": True, "link_changed": True},
+          title="фраза бэкапов в файле отличается — вопрос"),
+    _shot("gw.bundle.applied", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
+          title="применено: отчёт строками, адреса моноширинным, панель следом"),
+    _shot("gw.bundle.applied.keep", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!")),
+                                           _p(GwCB(action="apply_keep!"))],
+          bundle={"ok": True, "passphrase": True, "passphrase_differs": True, "link_changed": True},
+          apply_status={"UPLINK": "unchanged", "LINK": "up", "GW_STATUS": "confirmed", "SSH_FILTER": "0"},
+          title="«Оставить свою»: аплинк без изменений, фильтр SSH выключен"),
+    _shot("gw.bundle.applied.overwrite", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!")),
+                                                _p(GwCB(action="apply_ow!"))],
+          bundle={"ok": True, "passphrase": True, "passphrase_differs": True, "link_changed": True},
+          apply_status={"LINK": "up", "GW_STATUS": "confirmed", "SSH_FILTER": "1", "SSH_ALLOW_COUNT": "0",
+                        "LAN": "1", "LAN_ERROR": "dnsmasq не установлен"},
+          title="«🔐 Перезаписать»: фильтр только для сервера, VPN-транзит не применён"),
+    _shot("gw.bundle.applied.mail_ok", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
+          bundle_mail={"state": "ok", "backup": True},
+          title="почта из файла проверена, бэкапы переключены на e-mail"),
+    _shot("gw.bundle.applied.mail_fail", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
+          bundle_mail={"state": "fail", "why": "IMAP imap.example.org:993: вход отклонён"},
+          title="почта из файла не прошла проверку"),
+    _shot("gw.bundle.failed", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
+          apply=(False, "routing-gw-setup.sh: аплинк <awg1> не поднялся — откатываю"),
+          title="не применено: общая маска и причина"),
+    _shot("gw.bundle.claim.channel", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
+          channel="active", mark={"status": "unmarked", "claim": "DUMMY-claim-token"},
+          apply_status={"UPLINK": "installed", "LINK": "up", "GW_STATUS": "unmarked"},
+          title="шлюз не назначен, канал на связи — запрос ушёл сам"),
+    _shot("gw.bundle.claim.forward", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
+          mark={"status": "foreign", "claim": "DUMMY-claim-token"},
+          apply_status={"UPLINK": "installed", "LINK": "foreign", "GW_STATUS": "foreign"},
+          title="слот за другим устройством, канала нет — переслать сообщение"),
+    _shot("gw.bundle.claim.unconfirmed", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="apply!"))],
+          mark={"status": "unconfirmed", "claim": "DUMMY-claim-token"},
+          apply_status={"UPLINK": "unchanged", "LINK": "unconfirmed", "GW_STATUS": "unconfirmed"},
+          title="аплинк не найден, канала нет — переслать сообщение"),
+    _shot("gw.bundle.dropped", steps=[_file(_BUNDLE_NAME, _BUNDLE), _p(GwCB(action="drop"))],
+          title="«⬅️ Отмена» после файла — панель"),
+
+    # ── W60 восстановление из копии ─────────────────────────────────────────
+    _shot("gw.restore.offer", steps=[_file(_COPY_NAME, _COPY)], backup_key=True,
+          title="копия шлюза — предложение"),
+    _shot("gw.restore.offer.ifaces", steps=[_file(_COPY_NAME, _COPY_IFACE)], backup_key=True, carries=True,
+          title="копия перезапишет конфиг линка — предупреждение о перезапуске AWG"),
+    _shot("gw.restore.run", steps=[_file(_COPY_NAME, _COPY), _p(GwCB(action="restore!"))], backup_key=True,
+          title="«Восстановить» — кнопки сняты, отчёт пришлёт новый процесс"),
+    _shot("gw.restore.cancel", steps=[_file(_COPY_NAME, _COPY), _p(GwCB(action="restore_drop"))],
+          backup_key=True, title="отказ после файла"),
+    _shot("gw.restore.rejected.plain", steps=[_file("awg-gw-pi-2026-09-14.tgz", _archive())],
+          title="открытый архив — на шлюзе только шифрованные"),
+    _shot("gw.restore.rejected.no_key", steps=[_file(_COPY_NAME, _COPY)],
+          title="шифрованная копия, а фразы здесь нет"),
+    _shot("gw.restore.rejected.garbage", steps=[_file("notes.tgz.enc", b"DUMMY-not-a-backup")], backup_key=True,
+          title="не расшифровалась"),
+    _shot("gw.restore.rejected.not_copy", steps=[_file("notes.tgz.enc", _enc(b"DUMMY-not-a-tar"))],
+          backup_key=True, title="расшифровалась, но не копия awg-bot"),
+    _shot("gw.restore.rejected.main", steps=[_file("awg-bot-2026-09-14.tgz.enc", _COPY_MAIN)], backup_key=True,
+          title="копия основного бота"),
+    _shot("gw.restore.rejected.old_schema", steps=[_file(_COPY_NAME, _COPY_OLD)], backup_key=True,
+          title="схема базы ниже 3.2.0"),
+
+    # ── события старта процесса ─────────────────────────────────────────────
+    _shot("gw.event.first_panel", call=("send_first_panel", _first_panel),
+          title="первый запуск после установки — панель сама"),
+    _shot("gw.event.restarted", call=("restore_panel_after_restart", _restart_panel), restart_wait=True,
+          title="обещание «вернётся через несколько секунд» исполнено, панель следом"),
+    _shot("gw.event.updated", call=("report_update_result", _update_result), update_pending="v1.2.3",
+          update_wait=True, title="обновление применилось: «дождись» убрано, итог со списком изменений"),
+    _shot("gw.event.update_failed", call=("report_update_result", _update_result), update_pending="v1.2.4",
+          update_wait=True, title="обновление не применилось"),
+    _shot("gw.event.restored", call=("report_restore_result", _restore_result),
+          restore_done={"created_at": "2026-09-14T03:00:00+03:00"}, title="восстановлено из копии"),
+    _shot("gw.event.rebooted", call=("_announce_reboot", _rebooted), title="хост перезагружен, агент запущен"),
 
     # ── общее: «Скрыть» на итоге ────────────────────────────────────────────
     _shot("gw.hide", press=[HideCB()], title="«Скрыть» убирает сообщение"),

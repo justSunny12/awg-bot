@@ -507,6 +507,33 @@
 > press pz:ask:2:0
 ~! Дни паузы на счету закончились — пополнится при продлении подписки
 
+### cl.pause.ask.mail — ⏸️ Пауза: почтовый выход есть — без предупреждения
+> press pz:ask:2:0
+= edit #1
+⏸️ <b>Пауза</b> — до 28 дн.
+Действие подписки приостановится; снимешь раньше — неизрасходованные дни вернутся
+  [7 дн. | pz:pick:2:7] [14 дн. | pz:pick:2:14]
+  [28 дн. | pz:pick:2:28]
+  [✏️ Другое | pz:other:2:0] [⬅️ Отмена | pz:cancel:2:0]
+~ (пустой ответ)
+
+### cl.pause.pick.mail — пауза на 7 дней — итог, аварийный код, подписка
+> press pz:pick:2:7
+~ Пауза: 7 дн.
+= edit #1
+⏸️ Подписка на паузе до 22.09 12:00 — снять раньше можно в разделе «💳 Подписка»
++ send #2
+🆘 Если потеряешь доступ к боту — отправь письмо на <code>box@icloud.com</code> с темой <code>DUMMYCODE</code>: пауза снимется сама. Код одноразовый. Сохрани адрес и код в заметках
++ send #3
+🟡 доступ приостановлен
+💳 <b>Подписка:</b> годовая
+📅 15.09.26 → 22.09.27
+
+⏸️ на паузе с 15.09, до 22.09 · израсходовано 0 из 7 дн. — неиспользованный остаток вернётся при досрочном возобновлении
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [▶️ Снять паузу | pz:resume:2:0] [⬅️ Назад | m:main]
+
 ### cl.pause.pick — пауза на 7 дней — итог и подписка
 > press pz:pick:2:7
 ~ Пауза: 7 дн.
@@ -619,14 +646,45 @@
 Включено в подписку: ∞ ГБ в месяц · 3 устройства
   [⏸️ Пауза | pz:ask:2:0] [⬅️ Назад | m:main]
 
-### cl.grace.take — «Продли чуток?» — отсрочка
-> press gc:take:2
-= edit #1
-🙏 Продлено на 14 дн., до 02.10 — вычтется из следующего продления
+### cl.note.expiring — уведомление: подписка истекает, кнопка отсрочки
+> call check_expiry
++ send #2
+⏳ Подписка истекает через 7 дней
+  [Продли чуток? 🙏 (+14 дн.) | gc:take:2]
+  [💳 Подписка | nt:sub:0]
+  [Скрыть | hd]
 + send #1 → чат админ
+⏳ <a href="https://t.me/test_bot?start=cl-2">Вася</a>: подписка истекает через 7 дней
+  [⏱ Продлить | nt:extend:2]
+  [Скрыть | hd]
+
+### cl.grace.take — «Продли чуток?» на уведомлении — отсрочка
+> press gc:take:2
+= edit #2
+🙏 Продлено на 14 дн., до 06.10 — вычтется из следующего продления
++ send #2 → чат админ
 🙏 <a href="https://t.me/test_bot?start=cl-2">Вася</a>: взята отсрочка на 14 дн.
   [Скрыть | hd]
 ~ Продлено
+
+### cl.note.added — уведомление: админ добавил устройство
+> call notify_one
++ send #2
+Устройство «Ноутбук» добавлено в твой профиль администратором.
+Теперь у тебя 2 из 3 устройств
+  [🔗 Ссылка | d:gen_link:2] [🔳 QR | d:gen_qr:2] [📄 Файл | d:gen_file:2]
+  [❓ Как подключить | h:root]
+  [Скрыть | hd]
+
+### cl.note.added.link — 🔗 с уведомления о добавленном
+> press d:gen_link:2
+- delete #2
++ send #3
+<code>vpn://AAAJSXjadVZtbts4EL2Kod-pG0p2YgfIj2y6gJmghRB3-ycKDEZiWtYyJUhymjYIsFfZKyzQe6Q36rwh5VBZbxzYj2-e54MzNPUY5ZXtlLG6aaOT0fVjpL59JvAYXeT0ER1GB6PoYmMsFsIt1AMWMRZLAZgwjAEnDBPAKcMJ4BHggrXHDFk7Y8jaOUPWCg4pWSw4omS14ICS5YIjSqfnkHLKmGMutCp0kzZVp_POVPZSf2cjZ3FO5WrbpaoojP18Ru-QsJ1Tu9Jr_f3srtPNR7PRzM92PKhq2zE7d-xXijGQx5z_pda1Ks29Dr4SczXv1cNC2aL9otb6rOv0pu5atnJ9V2SqNh8bZUrXkSjmWt-ZVt2W-ryq1kY7nusuVdutqIV3Bl2LHjM7or-MupfROosOs-hgx1EbHSsGrHpwbBywS-G4JORix01CLnHcNOQmjjsKuIX3dxxy3t8s5Ly_ech5fyIsRnqHIqxFeo8iLEV6lyKsRfY-w2Lk1JNhNXumyavC-vaPlReGRQ_nywtmrwV-arx5PjAPJs53LtyZ16PnJeE-7ZtBLwt3bjiMXhDu4nAqvSDcUVWW1TddrEzN1mvHO9vhmF9vX3J3_MkJKMfc7DzlpaH9lYULUm9vw0SdkaL0gzKejcU4-a-ibsz9at13EKs9bsh5oHkViY-aM11L6nlzp3J9k2WWet7oth2djvrwb5OY-HcfluDG_DoggKoFGVKKrjpN80R2l0pmL3JaHALQYcX3GKoHgjAvBYEEICYwAUgITAEmBI4ILKA5BoBmBgDNHGDC6RGSEAl4l1AJOJeQCXiXrIN7OQWC_z3nACZE3D_8sCKN4cSDnfWsn1Bwc-YGs42akevrgQaPzPdNMWyoZTi6YFHXcF7Bokb6v061btDFdHtbmtzVtrz6lP71x-kp90pTmEYXzpIuL5k-c-MtU_jazfPBiEc4s3_aoq6MRcInk0TE2MaU0jEttmtXFvKYvklgDSbtS9V2H1R_wgPDptv2P2jH4U9QvfNM06vrFfv2Z5LdB9Kq4Z8FTuqFbdcvc-9KfPlKq5t73QzPxm6D6LQ-4TaCX34KgF8maFyqvCpX90jO3bN8z7XbW6u7lXKHxt37fGr49uwaZVs4W7EDmLdFHT2Rafe4AlJtrP5h1Bt6ZomjpxsyF_pObcvu_H9VrGnzxtT9vf_8z_PPX38__4v3EV_RhW3d44c7tJ5yTyHu-ILqGwQ6evoNQgCkUw</code>
+
+☝️ Ссылка для Ноутбук — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
 
 ### cl.grace.stale — отсрочка неактуальна
 > press gc:take:2
@@ -1298,6 +1356,48 @@ VPN выключится сразу. Если Telegram у тебя только 
   [✏️ Другое | ps:devlimit:0:-1]
   [⬅️ Отмена | x:main:0]
 
+### cl.add.friend.preset — ➕ другу — пресет: приглашение и завершитель
+> press ps:devlimit:0:10
+- delete #3
++ send #4
+Твоё приглашение для устройства «Телефон мамы» 👇
+https://t.me/test_bot?start=FTEST0000002
+или <a href="https://t.me/test_bot">в боте</a>: <code>/code FTEST0000002</code>
+  [📤 Отправить | https://t.me/share/url?url=https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DFTEST0000002&text=%D0%A2%D0%B2%D0%BE%D1%91%20%D0%BF%D1%80%D0%B8%D0%B3%D0%BB%D0%B0%D1%88%D0%B5%D0%BD%D0%B8%D0%B5%20%D0%B4%D0%BB%D1%8F%20%D1%83%D1%81%D1%82%D1%80%D0%BE%D0%B9%D1%81%D1%82%D0%B2%D0%B0%20%C2%AB%D0%A2%D0%B5%D0%BB%D0%B5%D1%84%D0%BE%D0%BD%20%D0%BC%D0%B0%D0%BC%D1%8B%C2%BB%3A%20https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DFTEST0000002%20%D0%B8%D0%BB%D0%B8%20%D0%B2%20TG-%D0%B1%D0%BE%D1%82%D0%B5%20%28%40test_bot%29%3A%20%2Fcode%20FTEST0000002] [📋 Скопировать | copy:Твоё приглашение для устройства «Телефон мамы»: https://t.me/test_bot?start=FTEST0000002 или в TG-боте (@test_bot): /code FTEST0000002]
+! правка удалённого #3
+- markup off #3
++ send #5
+☝️ Отправь приглашение другу — он активирует и получит устройство «Телефон мамы»
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.add.friend.other — ➕ другу — своё число: приглашение
+> press ps:devlimit:0:-1
+= edit #3
+✏️ Число ГБ, не больше 50 (лимит профиля); 0 — без ограничений в рамках лимита
+  [✖️ Отмена | x:main:0]
+~ (пустой ответ)
+
+### cl.add.friend.other.over — ➕ другу — своё число выше лимита профиля
+> text «100»
++ send #5
+⚠️ Не больше 50 ГБ — лимита профиля
+
+### cl.add.friend.other.done — ➕ другу — своё число: приглашение и завершитель
+> text «20»
+- delete #3
+- delete #4
++ send #5
+Твоё приглашение для устройства «Телефон мамы» 👇
+https://t.me/test_bot?start=FTEST0000002
+или <a href="https://t.me/test_bot">в боте</a>: <code>/code FTEST0000002</code>
+  [📤 Отправить | https://t.me/share/url?url=https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DFTEST0000002&text=%D0%A2%D0%B2%D0%BE%D1%91%20%D0%BF%D1%80%D0%B8%D0%B3%D0%BB%D0%B0%D1%88%D0%B5%D0%BD%D0%B8%D0%B5%20%D0%B4%D0%BB%D1%8F%20%D1%83%D1%81%D1%82%D1%80%D0%BE%D0%B9%D1%81%D1%82%D0%B2%D0%B0%20%C2%AB%D0%A2%D0%B5%D0%BB%D0%B5%D1%84%D0%BE%D0%BD%20%D0%BC%D0%B0%D0%BC%D1%8B%C2%BB%3A%20https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DFTEST0000002%20%D0%B8%D0%BB%D0%B8%20%D0%B2%20TG-%D0%B1%D0%BE%D1%82%D0%B5%20%28%40test_bot%29%3A%20%2Fcode%20FTEST0000002] [📋 Скопировать | copy:Твоё приглашение для устройства «Телефон мамы»: https://t.me/test_bot?start=FTEST0000002 или в TG-боте (@test_bot): /code FTEST0000002]
+! правка удалённого #3
+- markup off #3
++ send #6
+☝️ Отправь приглашение другу — он активирует и получит устройство «Телефон мамы»
+  [⬅️ В меню | m:main]
+
 ### cl.help — ❓ Как подключить
 > press h:root
 = edit #1
@@ -1334,8 +1434,7 @@ VPN выключится сразу. Если Telegram у тебя только 
 
 ### cl.guide.apple.2 — гайд apple, шаг 3
 > press g:apple:2:0:
-- delete #1
-+ photo #2
+= media #1
 <b>Шаг 4. Меняем страну на Казахстан</b>
 
 1. Нажми «Изменить страну или регион».
@@ -1347,8 +1446,7 @@ VPN выключится сразу. Если Telegram у тебя только 
 
 ### cl.guide.apple.3 — гайд apple, шаг 4
 > press g:apple:3:0:
-- delete #1
-+ photo #2
+= media #1
 <b>Шаг 5. Заполняем адрес</b>
 
 Откроется форма. Заполни поля, как указано ниже:
@@ -1367,7 +1465,8 @@ VPN выключится сразу. Если Telegram у тебя только 
 
 ### cl.guide.apple.4 — гайд apple, шаг 5
 > press g:apple:4:0:
-= edit #1
+- delete #1
++ send #2
 <b>Шаг 6. Устанавливаем приложение</b>
 
 1. Открой App Store.
@@ -1472,6 +1571,18 @@ VPN выключится сразу. Если Telegram у тебя только 
 
 ✅ Приложение установлено — дальше настройки
   [⬅️ Назад | g:mac:0:0:] [📶 Подключение | g:connect:0:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.apple.back — гайд apple: «Назад» со скриншота на текст
+> press g:apple:0:0:
+- delete #1
++ send #2
+🍎 <b>Настройка на iPhone / iPad</b>
+
+В российском App Store нужного приложения нет — временно переключим магазин на Казахстан.
+После установки можно будет вернуть обратно. Аккаунт и приложения не пострадают 👇
+  [Далее ➡️ | g:apple:1:0:]
   [⬅️ В меню | m:main]
 ~ (пустой ответ)
 
@@ -1837,6 +1948,50 @@ https://www.ya.ru/path
   [➖ ya.ru | rt:del:2:2:e900769e]
   [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
   [⬅️ Назад | rt:panel:2:-1:]
+
+### cl.rf.add.start — /start во время ввода сайтов — главная, не адрес
+> /start
+- delete #1
++ send #3
+👋 <b>Вася</b>
+
+🟢 VPN работает · 🇷🇺 РФ-доступ 🟢
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [🇷🇺 РФ-доступ | rt:panel:2:-1:] [💳 Подписка | m:info]
+  [❓ Как подключить | h:root]
+
+### cl.rf.add.start_sub — /start sub во время ввода сайтов — подписка на месте приглашения
+> /start sub
+- delete #3
+= edit #2
+💳 <b>Подписка:</b> годовая · 🟢 активна
+📅 15.09.26 → 15.09.27 · ост. 365 дн.
+
+⏸️ Пауза: 28 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства · 🇷🇺 РФ-доступ
+  [⏸️ Пауза | pz:ask:2:0] [⬅️ Назад | m:main]
+
+### cl.rf.add.start_sub.back — «Назад» с подписки, открытой ссылкой во время ввода
+> press m:main
+~ (пустой ответ)
+- delete #2
+! правка удалённого #2
+= edit #2
+👋 <b>Вася</b>
+
+🟢 VPN работает · 🇷🇺 РФ-доступ 🟢
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [🇷🇺 РФ-доступ | rt:panel:2:-1:] [💳 Подписка | m:info]
+  [❓ Как подключить | h:root]
 
 ### cl.rf.del — удалить адрес
 > press rt:del:2:0:e753a0ae

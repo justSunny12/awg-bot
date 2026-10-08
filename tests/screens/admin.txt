@@ -3324,3 +3324,434 @@ GW1:RFVNTVk.RFVNTVk»
 
 ℹ️ Возврат в меню удалит это сообщение
   [🛰 В карточку | set:rt:do:bundle_cancel:1] [⬅️ На главную | set:rt:do:bundle_home:1]
+
+### adm.cl.period.done — период: итог
+> text «15.10.2027»
+- delete #1
+- delete #2
+- delete #3
+- delete #4
++ send #5
+✅ Период: 15.09 12:00 → 15.10.27 00:00
+
+✏️ <b>Ксюша</b> — изменить
+Период 15.09.26 → 15.10.27 · 3 устройства · ∞ ГБ в месяц
+  [✏️ Имя | c:edit_name:3] [✏️ Период | c:edit_period:3]
+  [✏️ Лимит устр-в | c:edit_limit:3] [✏️ Трафик | c:edit_traffic:3]
+  [🗑 Удалить профиль | c:delete:3]
+  [⬅️ Назад | c:open:3]
+
+### adm.cl.period.forever — период: бессрочно
+> text «0»
+- delete #1
+- delete #2
+- delete #3
+- delete #4
++ send #5
+✅ Период: 15.09 12:00 → бессрочно
+
+✏️ <b>Ксюша</b> — изменить
+Бессрочная · 3 устройства · ∞ ГБ в месяц
+  [✏️ Имя | c:edit_name:3] [✏️ Период | c:edit_period:3]
+  [✏️ Лимит устр-в | c:edit_limit:3] [✏️ Трафик | c:edit_traffic:3]
+  [🗑 Удалить профиль | c:delete:3]
+  [⬅️ Назад | c:open:3]
+
+### adm.new.traffic — новый профиль: трафик
+> press ps:new_devs:0:3
+= edit #3
+➕ <b>Маша</b> · 3 устройства — трафик в месяц? Общий на все устройства
+  [50 ГБ | ps:new_traffic:0:50] [100 ГБ | ps:new_traffic:0:100] [200 ГБ | ps:new_traffic:0:200]
+  [500 ГБ | ps:new_traffic:0:500] [∞ | ps:new_traffic:0:0] [✏️ Другое | ps:new_traffic:0:-1]
+  [✖️ Отмена | x:main:0]
+~ (пустой ответ)
+
+### adm.new.devs.other — новый профиль: своё число устройств — трафик
+> text «4»
+- delete #3
+- delete #4
+! правка удалённого #3
+- markup off #3
++ send #5
+➕ <b>Маша</b> · 4 устройства — трафик в месяц? Общий на все устройства
+  [50 ГБ | ps:new_traffic:0:50] [100 ГБ | ps:new_traffic:0:100] [200 ГБ | ps:new_traffic:0:200]
+  [500 ГБ | ps:new_traffic:0:500] [∞ | ps:new_traffic:0:0] [✏️ Другое | ps:new_traffic:0:-1]
+  [✖️ Отмена | x:main:0]
+
+### adm.new.period — новый профиль: срок
+> press ps:new_traffic:0:100
+= edit #3
+➕ <b>Маша</b> · 3 устройства · 100 ГБ — срок подписки?
+  [День | p:day:create:0:1] [Неделя | p:week:create:0:1]
+  [Месяц | p:month:create:0:1] [Год | p:year:create:0:1]
+  [∞ | p:never:create:0:0]
+  [✖️ Отмена | x:main:0]
+~ (пустой ответ)
+
+### adm.new.invite — новый профиль: приглашение
+> press p:year:create:0:1
+~ (пустой ответ)
+- delete #3
+! правка удалённого #3
+- markup off #3
++ send #4
+Привет! Тебе открыт доступ в свободный интернет 🎉
+Жми ссылку и «Старт» — дальше подскажу
+https://t.me/test_bot?start=CDUMMY000005
+—
+☝️ Приглашение с индивидуальным кодом для нового профиля:
+Маша — 3 устройства · 100 ГБ в месяц · → 15.09.27
+  [📤 Отправить | https://t.me/share/url?url=https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DCDUMMY000005&text=%D0%9F%D1%80%D0%B8%D0%B2%D0%B5%D1%82%21%20%D0%A2%D0%B5%D0%B1%D0%B5%20%D0%BE%D1%82%D0%BA%D1%80%D1%8B%D1%82%20%D0%B4%D0%BE%D1%81%D1%82%D1%83%D0%BF%20%D0%B2%20%D1%81%D0%B2%D0%BE%D0%B1%D0%BE%D0%B4%D0%BD%D1%8B%D0%B9%20%D0%B8%D0%BD%D1%82%D0%B5%D1%80%D0%BD%D0%B5%D1%82%20%F0%9F%8E%89%0A%D0%96%D0%BC%D0%B8%20%D1%81%D1%81%D1%8B%D0%BB%D0%BA%D1%83%20%D0%B8%20%C2%AB%D0%A1%D1%82%D0%B0%D1%80%D1%82%C2%BB%20%E2%80%94%20%D0%B4%D0%B0%D0%BB%D1%8C%D1%88%D0%B5%20%D0%BF%D0%BE%D0%B4%D1%81%D0%BA%D0%B0%D0%B6%D1%83%0Ahttps%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DCDUMMY000005] [📋 Скопировать | copy:Привет! Тебе открыт доступ в свободный интернет 🎉\nЖми ссылку и «Старт» — дальше подскажу\nhttps://t.me/test_bot?start=CDUMMY000005]
+  [👤 В карточку | c:open:6] [⬅️ На главную | m:main]
+
+### adm.bc.preview.markup — превью с разметкой Telegram
+> text «В субботу — <b>работы на сервере</b>»
++ send #3
+👆 <b>Так увидят получатели</b> · 2 адресата: профили <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>, <a href="https://t.me/test_bot?start=cl-5">Петя</a>
+
+В субботу — <b>работы на сервере</b>
+  [⬅️ Отмена | bc:cancel:0] [📢 Отправить | bc:send:0]
+
+### adm.bc.send — разослано: объявление и отчёт
+> press bc:send:0
+~ Рассылаю…
+- delete #2
+= edit #3
+📢 Рассылаю объявление…
++ send #1 → чат tg 2001
+В субботу с 02:00 до 03:00 — работы на сервере
+  [Скрыть | hd]
++ send #1 → чат tg 2002
+В субботу с 02:00 до 03:00 — работы на сервере
+  [Скрыть | hd]
+= edit #3
+В субботу с 02:00 до 03:00 — работы на сервере
++ send #4
+✅ Доставлено: профили <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>, <a href="https://t.me/test_bot?start=cl-5">Петя</a> — 2 адресата
++ send #5
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.bc.send.ext — разослано с продлением
+> press bc:send:0
+~ Рассылаю…
+- delete #2
+= edit #3
+📢 Рассылаю объявление…
++ send #1 → чат tg 2001
+<b>Подписка продлена на 7 дней 🙂
+15.09.27 → 22.09.27</b>
+
+Неделя в подарок — спасибо, что с нами
+  [Скрыть | hd]
++ send #1 → чат tg 2002
+<b>Подписка продлена на 7 дней 🙂
+17.09 → 24.09</b>
+
+Неделя в подарок — спасибо, что с нами
+  [Скрыть | hd]
+= edit #3
+<b>Подписка продлена на 7 дней 🙂
+17.09 → 24.09</b>
+
+Неделя в подарок — спасибо, что с нами
++ send #4
+✅ Доставлено: профили <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> — 2 адресата · продлено на 7 дней
++ send #5
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.set.email.saved — мастер почты: ящик подключён
+> text «DUMMY-app-password»
+- delete #4
+- delete #1
+- delete #2
+- delete #3
++ send #5
+✅ Ящик <code>admin@gmail.com</code> подключён
+IMAP и SMTP отвечают, вход выполнен
+
+✉️ <b>E-mail</b> 🟢 <i>только что</i>
+<code>admin@gmail.com</code> · IMAP <code>imap.gmail.com:993</code> · SMTP <code>smtp.gmail.com:587</code>
+🆘 Аварийный выход из паузы: код на <code>box@icloud.com</code>
+  [🔍 Проверить | set:email:do:check:] [📨 Тест-письмо | set:email:do:test:]
+  [✏️ Сменить ящик | set:email:do:setup:] [🗑 Отключить | set:email:do:forget:]
+  [✅ Аварийный выход | set:email:toggle:email.resume_enabled:]
+  [✉️ Адрес для кода | set:email:edit:email.resume_address:] [⏱ Опрос: 1 мин | set:email:cycle:email.poll_interval_sec:]
+  [🔢 Код: 8 символов | set:email:cycle:email.resume_code_len:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.email.refused — мастер почты: вход не прошёл
+> text «DUMMY-app-password»
+- delete #4
+- delete #1
+- delete #2
+- delete #3
++ send #5
+🔴 Не подключено: IMAP: [AUTHENTICATIONFAILED] Invalid credentials
+Ничего не сохранено — попробуй ещё раз
+
+✉️ <b>E-mail</b> ящик не подключён
+Почта нужна для аварийного выхода из паузы по коду в письме, бэкапов и критичных алертов. Портов на хосте не открывается — бот сам ходит на почтовый сервер
+  [✉️ Подключить ящик | set:email:do:setup:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.email.smtp — мастер почты: SMTP-сервер
+> text «imap.example.org:993»
++ send #5
+SMTP-сервер и порт: <code>smtp.example.com:587</code>
+  [✖️ Отмена | x:set_email:0]
+
+### adm.set.email.password — мастер почты: пароль своего сервера
+> text «smtp.example.org:465»
++ send #7
+Пароль ящика — сообщение с ним удалю сразу после приёма; вход по IMAP и SMTP проверю до сохранения
+  [✖️ Отмена | x:set_email:0]
+
+### adm.set.email.own.saved — мастер почты: свой сервер подключён
+> text «DUMMY-password»
+- delete #8
+- delete #1
+- delete #2
+- delete #3
+- delete #4
+- delete #5
+- delete #6
+- delete #7
++ send #9
+✅ Ящик <code>admin@example.org</code> подключён
+IMAP и SMTP отвечают, вход выполнен
+
+✉️ <b>E-mail</b> 🟢 <i>только что</i>
+<code>admin@example.org</code> · IMAP <code>imap.example.org:993</code> · SMTP <code>smtp.example.org:465</code>
+🆘 Аварийный выход из паузы: код на <code>box@icloud.com</code>
+  [🔍 Проверить | set:email:do:check:] [📨 Тест-письмо | set:email:do:test:]
+  [✏️ Сменить ящик | set:email:do:setup:] [🗑 Отключить | set:email:do:forget:]
+  [✅ Аварийный выход | set:email:toggle:email.resume_enabled:]
+  [✉️ Адрес для кода | set:email:edit:email.resume_address:] [⏱ Опрос: 1 мин | set:email:cycle:email.poll_interval_sec:]
+  [🔢 Код: 8 символов | set:email:cycle:email.resume_code_len:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.backup.enc_set.done — фраза совпала — шифрование включено
+> text «DUMMY-passphrase-1234»
+- delete #4
+- delete #1
+- delete #3
++ send #5
+✅ Фраза задана — следующие копии уйдут шифрованными
+
+💾 <b>Бэкапы</b> ✅ вкл · 🔐 фраза задана
+Каждое 1-е число в 12:00 → в этот чат
+Восстановить — пришли боту файл бэкапа (.tgz.enc)
+  [✅ Автобэкапы | set:backup:toggle:app.scheduler.backup_enabled:] [🔐 Шифрование | set:backup:do:enc:]
+  [📨 Куда: Telegram | set:backup:cycle:app.scheduler.backup_channel:] [✏️ 1-е, 12:00 | set:backup:edit:backup_when:]
+  [💾 Сделать сейчас | set:backup:do:now:]
+  [⬅️ Назад | set:root:open::]
+
+### adm.set.backup.enc_set.mismatch — фраза не совпала — заново
+> text «DUMMY-passphrase-9999»
+- delete #4
++ send #5
+⚠️ Фразы не совпали — начнём заново: пришли фразу
+  [✖️ Отмена | x:set_backup:0]
+
+### adm.restore — копия в чате: восстановить?
+> file awg-bot-backup-2026-09-01.tgz
+- delete #1
++ send #2
+♻️ <b>Бэкап от 01.09 03:00</b> — восстановить?
+Всё вернётся к тому моменту: профили, устройства, подписки, ключи шифрования
+  [⬅️ Отмена | set:backup:do:restore_drop:] [♻️ Восстановить | set:backup:do:restore!: | красная]
+
+### adm.restore.yes — восстановление запущено
+> press set:backup:do:restore!:
+~ (пустой ответ)
+- markup off #2
++ send #3
+♻️ Восстанавливаю из бэкапа: бот остановится, подменит данные и вернётся через несколько секунд — отчёт пришлёт уже новый процесс
+
+### adm.restore.drop — файл отброшен
+> press set:backup:do:restore_drop:
+- markup off #2
+~ Файл отброшен
+
+### adm.restore.junk — не резервная копия
+> file awg-bot-backup-2026-09-01.tgz
++ send #2
+⚠️ Файл не принят: это не резервная копия awg-bot
+
+### adm.restore.gw — копия агента шлюза
+> file awg-bot-backup-2026-09-01.tgz
++ send #2
+⚠️ Файл не принят: это копия агента шлюза, а здесь основной бот
+
+### adm.restore.old — копия со схемой ниже 3.2.0
+> file awg-bot-backup-2026-09-01.tgz
++ send #2
+⚠️ Файл не принят: копия снята версией ниже 3.2.0 (в таблице clients нет колонки kind) — восстанови её на хосте с 3.2.0, потом обновись
+
+### adm.ev.gw_applied — A134c: конфигурация шлюза применена
+> call bundle_applied
+- delete #39
+- delete #40
++ send #2
+✅ Конфигурация шлюза <b>NASPi</b> успешно обновлена
++ send #3
+🛰 <b>NASPi</b> — 🟢 Активен
+📡 <code>awglink:443</code> · хендшейка нет · 61 мс
+🌐 <code>203.0.113.10</code>
+🔗 Упр. канал: ещё не поднимался — перевыпусти конфигурацию шлюза
+🗺 подсети не заданы · 🔀 VPN-транзит ☑️
+Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
+  [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✏️ Изменить | gws:edit:1:]
+  [⬅️ Назад | set:rt:open::]
+
+### adm.ev.gw_applied.fail — A134c: конфигурация шлюза не применилась
+> call bundle_applied
+- delete #39
+- delete #40
++ send #2
+⚠️ Конфигурация шлюза <b>NASPi</b> не обновлена: routing-gw-setup.sh: nft: syntax error
++ send #3
+🛰 <b>NASPi</b> — 🟢 Активен
+📡 <code>awglink:443</code> · хендшейка нет · 61 мс
+🌐 <code>203.0.113.10</code>
+🔗 Упр. канал: ещё не поднимался — перевыпусти конфигурацию шлюза
+🗺 подсети не заданы · 🔀 VPN-транзит ☑️
+Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
+  [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✏️ Изменить | gws:edit:1:]
+  [⬅️ Назад | set:rt:open::]
+
+### adm.ev.gw_installed — A146: шлюз настроен
+> call bundle_installed
+- delete #39
+- delete #40
++ send #2
+✅ Шлюз <b>NASPi</b> успешно настроен 🎉
+<b>Бот шлюза:</b> <a href="https://t.me/naspi_gw_bot">NASPi</a>
++ send #3
+🛰 <b>NASPi</b> — 🟢 Активен
+📡 <code>awglink:443</code> · хендшейка нет · 61 мс
+🌐 <code>203.0.113.10</code>
+🔗 Упр. канал: ещё не поднимался — перевыпусти конфигурацию шлюза
+🗺 подсети не заданы · 🔀 VPN-транзит ☑️
+Бот шлюза: <a href="https://t.me/naspi_gw_bot">NASPi</a>
+  [📤 Конфигурация | gws:bundle:1:] [📡 Пинг | gws:ping:1:]
+  [☑️ VPN-транзит | gws:lan_ask:1:] [🗺 Подсети | gws:home:1:]
+  [✏️ Изменить | gws:edit:1:]
+  [⬅️ Назад | set:rt:open::]
+
+### adm.ev.upd_available — доступна новая версия
+> call notify_update_available
++ send #2
+Текущая версия бота v1.2.3.
+Доступна новая версия: v1.3.0
+Список изменений:
+<blockquote expandable>- исправлено одно
+- добавлено другое</blockquote>
+  [⬆️ Обновить | upd:install] [Скрыть | hd]
+  [🔕 Не уведомлять об обновлениях | upd:mute]
+
+### adm.ev.upd_done — обновлён после рестарта
+> call report_update_result
+- delete #30
++ send #2
+✅ Обновлено до v1.2.3
+<blockquote expandable>- исправлено одно
+- добавлено другое</blockquote>
+  [⬅️ В меню | upd:menu]
+
+### adm.ev.upd_failed — обновление не применилось
+> call report_update_result
+- delete #30
++ send #2
+⚠️ Обновление до v1.3.0 не применилось — версия осталась 1.2.3. Смотри журнал: journalctl -u awg-bot-selfupdate*
+  [⬅️ В меню | upd:menu]
+
+### adm.ev.restarted — бот вернулся после перезапуска
+> call restore_panel_after_restart
+= edit #25
+✅ Бот успешно перезапущен
++ send #2
+🛠 <b>pi</b> 🟢 · 3 дн
+
+📈 CPU 12% · RAM 41% · диск 23% · <i>только что</i>
+🇷🇺 РФ-доступ: 🟢 работает
+📶 Онлайн: <a href="https://t.me/test_bot?start=online">2 (2 устройства)</a> · ⏳ Истекают: <a href="https://t.me/test_bot?start=expiring">1</a> · 📦 Без профиля: <a href="https://t.me/test_bot?start=unassigned">1</a>
+📊 Трафик за 09.26: <a href="https://t.me/test_bot?start=traffic">6.7 ГБ</a>
+└ 🇷🇺 РФ-доступ: 0.6 ГБ
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Мои устройства | m:devices] [🇷🇺 РФ-доступ | rt:panel:2:-1:]
+  [👥 Профили | m:clients] [➕ Профиль | m:add_client]
+  [🛰 Шлюзы | set:rt:open::] [⚙️ Настройки | set:root:open::]
+  [📢 Объявление | bc:pick:0] [🔄 Обновить | m:refresh]
+
+### adm.ev.restore_done — восстановление из копии завершено
+> call report_restore_result
++ send #2
+✅ Восстановлено из бэкапа от 01.09 03:00
+  [Скрыть | hd]
+
+### adm.ev.expired — подписка истекла — «⏱ Продлить» админу
+> call check_expiry
++ send #1 → чат tg 2002
+🔴 Подписка истекла — доступ приостановлен
+  [💳 Подписка | nt:sub:0]
+  [Скрыть | hd]
++ send #2
+🔴 <a href="https://t.me/test_bot?start=cl-4">Боря</a>: подписка истекла, доступ приостановлен
+  [⏱ Продлить | nt:extend:4]
+  [Скрыть | hd]
+
+### adm.ev.grace_offer — подписка истекает — владельцу кнопка отсрочки
+> call check_expiry
++ send #1 → чат tg 2002
+⏳ Подписка истекает через 7 дней
+  [💳 Подписка | nt:sub:0]
+  [Скрыть | hd]
++ send #2
+⏳ <a href="https://t.me/test_bot?start=cl-4">Боря</a>: подписка истекает через 7 дней
+  [⏱ Продлить | nt:extend:4]
+  [Скрыть | hd]
++ send #1 → чат tg 2001
+⏳ Подписка истекает через 7 дней
+  [Продли чуток? 🙏 (+14 дн.) | gc:take:3]
+  [💳 Подписка | nt:sub:0]
+  [Скрыть | hd]
++ send #3
+⏳ <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>: подписка истекает через 7 дней
+  [⏱ Продлить | nt:extend:3]
+  [Скрыть | hd]
+
+### adm.ev.added_by_admin — владельцу — новое устройство от админа
+> call notify_one
++ send #1 → чат tg 2001
+Устройство «Ноутбук» добавлено в твой профиль администратором.
+Теперь у тебя 2 из 3 устройств
+  [🔗 Ссылка | d:gen_link:4] [🔳 QR | d:gen_qr:4] [📄 Файл | d:gen_file:4]
+  [❓ Как подключить | h:root]
+  [Скрыть | hd]

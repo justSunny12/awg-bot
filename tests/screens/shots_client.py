@@ -12,10 +12,15 @@ from __future__ import annotations
 
 import itertools
 
+from awgbot.bot import keyboards as kb
+from awgbot.bot import texts
 from awgbot.bot.callbacks import (BlockCB, CancelCB, DelDeviceCB, DeviceCB, FriendCB, GraceCB, GuideCB,
                                   HelpCB, HideCB, Menu, NoteCB, PageCB, PauseCB, PresetCB, RoutingCB)
 from awgbot.bot.keyboards.common import entry_tag
+from awgbot.bot.notifier import notify_one, send_notifications
 from awgbot.core.blocks import ClientBlock, DeviceBlock
+from awgbot.core import settings
+from awgbot.infra import email_resume
 from tests.screens.base import CLIENT_TG, Shot, owner
 
 G = 1024 ** 3
@@ -109,6 +114,44 @@ def _admin_paused(services, cid):
 
 def _no_pause_days(services, cid):
     services.db.set_pause_balance(cid, 0)
+
+
+MAIL_CONF = {"email.imap_host": "imap.example.com", "email.smtp_host": "smtp.example.com"}
+
+
+def with_mail(build):
+    """Почта настроена (аварийный выход из паузы включён), код выхода —
+    постоянный: настоящий берётся из secrets и менял бы эталон."""
+    def wrapped(services, mp):
+        services.db.set_state("email_login", "box@example.com")
+        services.db.set_state("email_password", "DUMMY")
+        mp.setattr(email_resume, "generate_code", lambda length=None: "DUMMYCODE")
+        return build(services)
+    return wrapped
+
+
+async def _expiry_tick(services, bot):
+    """Такт проверки сроков, как в планировщике (runtime/scheduler.py,
+    job_expiry): уведомления сервиса и кнопка отсрочки к клиентскому."""
+    notes = services.check_expiry()
+    for n in notes:
+        if getattr(n, "grace_offer_client_id", 0):
+            n.reply_markup = kb.grace_offer(n.grace_offer_client_id, settings.get_int("grace.grace_days", 14))
+    await send_notifications(bot, notes)
+
+
+def _soon(services, cid):
+    """До конца годовой подписки неделя, уведомления о сроке ещё не было."""
+    services.db.update_client_fields(cid, period_start="2025-09-22T12:00:00+03:00",
+                                     period_end="2026-09-22T12:00:00+03:00")
+
+
+async def _added_by_admin(services, bot):
+    """Админ добавил Васе устройство 2: уведомление с рядом выдачи
+    (handlers/admin/devices.py — тем же вызовом)."""
+    used, limit = services.device_quota(2)
+    await notify_one(bot, CLIENT_TG, texts.reassign_recipient_notice("Ноутбук", used, limit),
+                     reply_markup=kb.added_by_admin(2))
 
 
 def stranger(after=None):
@@ -239,11 +282,8 @@ CLIENT_SHOTS = [
     Shot("cl.code.no_arg", role="client", text="/code", data=stranger(), title="незнакомец: /code без кода"),
     Shot("cl.code.activate", role="client", text="/code CTEST0000001", data=stranger(_invite_waiting),
          title="незнакомец: активация командой /code"),
-    # уведомление админу о входе выключено: заглушка сессии пишет все чаты в
-    # одну ленту, и «Скрыть» на нём стало бы живым меню, на котором жмут дальше
     Shot("cl.help.skip", role="client", start="CTEST0000001", press=[HelpCB(platform="skip")],
-         data=stranger(_invite_waiting), conf={"notifications.client_events.activation": False},
-         title="после активации: «✅ Настрою сам»"),
+         data=stranger(_invite_waiting), title="после активации: «✅ Настрою сам»"),
 
     # коды у действующего клиента
     Shot("cl.code.already", role="client", start="CTEST0000002",
@@ -297,6 +337,11 @@ CLIENT_SHOTS = [
          title="⏸️ Пауза: дней меньше пресета"),
     Shot("cl.pause.ask.none", role="client", press=[PauseCB(action="ask", ref=2)],
          data=vasya(["Телефон"], after=_no_pause_days), title="⏸️ Пауза: дней нет — отказ"),
+    Shot("cl.pause.ask.mail", role="client", press=[PauseCB(action="ask", ref=2)],
+         data=with_mail(ONE), conf=MAIL_CONF, title="⏸️ Пауза: почтовый выход есть — без предупреждения"),
+    Shot("cl.pause.pick.mail", role="client", press=[PauseCB(action="ask", ref=2),
+                                                      PauseCB(action="pick", ref=2, days=7)],
+         data=with_mail(ONE), conf=MAIL_CONF, title="пауза на 7 дней — итог, аварийный код, подписка"),
     Shot("cl.pause.pick", role="client", press=[INFO, PauseCB(action="ask", ref=2),
                                                  PauseCB(action="pick", ref=2, days=7)],
          data=ONE, title="пауза на 7 дней — итог и подписка"),
@@ -324,8 +369,16 @@ CLIENT_SHOTS = [
          title="снять паузу, которой нет — отказ"),
 
     # отсрочка из уведомления
-    Shot("cl.grace.take", role="client", press=[GraceCB(action="take", ref=2)],
-         data=vasya(["Телефон"], after=_expiring), title="«Продли чуток?» — отсрочка"),
+    Shot("cl.note.expiring", role="client", call=("check_expiry", _expiry_tick),
+         data=vasya(["Телефон"], after=_soon), title="уведомление: подписка истекает, кнопка отсрочки"),
+    Shot("cl.grace.take", role="client",
+         steps=[("call", _expiry_tick, "check_expiry"), ("press", GraceCB(action="take", ref=2))],
+         data=vasya(["Телефон"], after=_soon), title="«Продли чуток?» на уведомлении — отсрочка"),
+    Shot("cl.note.added", role="client", call=("notify_one", _added_by_admin),
+         data=vasya(["Телефон", "Ноутбук"]), title="уведомление: админ добавил устройство"),
+    Shot("cl.note.added.link", role="client",
+         steps=[("call", _added_by_admin, "notify_one"), ("press", dev("gen_link", 2))],
+         data=vasya(["Телефон", "Ноутбук"]), title="🔗 с уведомления о добавленном"),
     Shot("cl.grace.stale", role="client", press=[GraceCB(action="take", ref=2)],
          data=vasya(["Телефон"], period="month"), title="отсрочка неактуальна"),
 
@@ -490,13 +543,27 @@ CLIENT_SHOTS = [
          data=ONE, title="➕ другу — лимит пресетами"),
     Shot("cl.add.friend.name.capped", role="client", press=[dev("add", 0), dev("add_friend", 0)],
          text="Телефон мамы", data=CAPPED, title="➕ другу — пресеты не выше лимита профиля"),
+    Shot("cl.add.friend.preset", role="client",
+         steps=[("press", dev("add", 0)), ("press", dev("add_friend", 0)), ("text", "Телефон мамы"), ("press", PresetCB(kind="devlimit", val=10))],
+         data=ONE, title="➕ другу — пресет: приглашение и завершитель"),
+    Shot("cl.add.friend.other", role="client",
+         steps=[("press", dev("add", 0)), ("press", dev("add_friend", 0)), ("text", "Телефон мамы"), ("press", PresetCB(kind="devlimit", val=-1))],
+         data=CAPPED, title="➕ другу — своё число: приглашение"),
+    Shot("cl.add.friend.other.over", role="client",
+         steps=[("press", dev("add", 0)), ("press", dev("add_friend", 0)), ("text", "Телефон мамы"), ("press", PresetCB(kind="devlimit", val=-1)), ("text", "100")],
+         data=CAPPED, title="➕ другу — своё число выше лимита профиля"),
+    Shot("cl.add.friend.other.done", role="client",
+         steps=[("press", dev("add", 0)), ("press", dev("add_friend", 0)), ("text", "Телефон мамы"), ("press", PresetCB(kind="devlimit", val=-1)), ("text", "20")],
+         data=CAPPED, title="➕ другу — своё число: приглашение и завершитель"),
     # помощь и гайды
     Shot("cl.help", role="client", press=[HelpCB(platform="root")], data=ONE, title="❓ Как подключить"),
     *[Shot(f"cl.guide.{g}.{s}", role="client",
            press=[HelpCB(platform="root"), HelpCB(platform=g)] if s == 0
            else [GuideCB(guide=g, step=s)],
-           data=ONE, title=f"гайд {g}, шаг {s + 1}")
+           data=ONE, photo=(g == "apple" and s in (2, 3, 4)), title=f"гайд {g}, шаг {s + 1}")
       for g, n in (("apple", 6), ("android", 2), ("windows", 2), ("mac", 2)) for s in range(n)],
+    Shot("cl.guide.apple.back", role="client", press=[GuideCB(guide="apple", step=0)], data=ONE, photo=True,
+         title="гайд apple: «Назад» со скриншота на текст"),
     Shot("cl.guide.connect.0", role="client", press=[GuideCB(guide="connect", step=0)], data=TWO,
          title="подключение, шаг 1: устройства"),
     Shot("cl.guide.connect.0.none", role="client", press=[GuideCB(guide="connect", step=0)], data=owner,
@@ -564,6 +631,16 @@ CLIENT_SHOTS = [
          title="➕ Сайт из «Сайтов» — итог на «Сайтах»"),
     Shot("cl.rf.add.cancel", role="client", press=[rt("sites"), rt("add"), CancelCB(kind="sites", ref=2)],
          data=RF_SITES, title="➕ Сайт — «✖️ Отмена»"),
+    Shot("cl.rf.add.start", role="client",
+         steps=[("press", rt("sites")), ("press", rt("add")), ("start", "")], data=RF_SITES,
+         title="/start во время ввода сайтов — главная, не адрес"),
+    Shot("cl.rf.add.start_sub", role="client",
+         steps=[("start", ""), ("press", rt("sites")), ("press", rt("add")), ("start", "sub")], data=RF_SITES,
+         title="/start sub во время ввода сайтов — подписка на месте приглашения"),
+    Shot("cl.rf.add.start_sub.back", role="client",
+         steps=[("start", ""), ("press", rt("sites")), ("press", rt("add")), ("start", "sub"),
+                ("press", MAIN)], data=RF_SITES,
+         title="«Назад» с подписки, открытой ссылкой во время ввода"),
     Shot("cl.rf.del", role="client",
          press=[rt("sites"), rt("del", idx=0, tag=entry_tag(DOMAINS[0]))], data=RF_SITES,
          title="удалить адрес"),
