@@ -281,14 +281,14 @@ def test_admin_main_is_eight_buttons_with_gateways_always():
     """Главная админа — восемь кнопок; «🛰 Шлюзы» — всегда: это единственный
     вход и к развёртыванию РФ-доступа, и к его включению — спрячь её, и
     функцию на новом сервере не найти."""
-    full = [["📱 Мои устройства", "🇷🇺 РФ-доступ"], ["👥 Профили", "➕ Профиль"],
+    full = [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Мои устройства", "🇷🇺 РФ-доступ"], ["👥 Профили", "➕ Профиль"],
             ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление", "🔄 Обновить"]]
     rows = [[b.text for b in r] for r in kba.admin_main(gateways=True, routing_visible=True,
                                                        self_client_id=1).inline_keyboard]
     assert rows == full, rows
     rows = [[b.text for b in r] for r in kba.admin_main().inline_keyboard]
-    assert rows == [["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"], ["🛰 Шлюзы", "⚙️ Настройки"],
-                    ["📢 Объявление", "🔄 Обновить"]], rows
+    assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"],
+                    ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление", "🔄 Обновить"]], rows
     rows = [[b.text for b in r] for r in kba.admin_main(gateways=False, routing_visible=True,
                                                        self_client_id=1).inline_keyboard]
     assert rows == full, "параметр gateways больше ничего не прячет"

@@ -364,6 +364,11 @@ def gw_settings_text() -> str:
     return settings_root_text()
 
 
+GW_SETTINGS_SVC = ("🔧 <b>Сервис</b>\n"
+                   "Перезапуск AWG переподнимает линк до сервера AWG — РФ-доступ у всех прервётся на секунды; "
+                   "перезапуск бота на трафик не влияет")
+
+
 def gw_settings_notify_text() -> str:
     from awgbot.core import settings as s
     from .fmt import details

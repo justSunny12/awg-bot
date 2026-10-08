@@ -193,6 +193,7 @@ _SECTIONS = {
     "email": _email_section,
     "mon": lambda services: (texts.gw_settings_mon_text(), kb.gateway_mon_kb()),
     "backup": _backup_section,
+    "svc": lambda services: (texts.GW_SETTINGS_SVC, kb.gateway_svc_kb()),
 }
 
 
@@ -493,8 +494,8 @@ async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state:
 
 
 _CONFIRM = {                                          # текст(несёт трафик) и куда ведёт «Отмена»
-    "restart": (texts.gw_confirm_restart, "settings"),
-    "botrestart": (lambda carries: texts.GW_CONFIRM_BOT_RESTART, "settings"),
+    "restart": (texts.gw_confirm_restart, "svc"),
+    "botrestart": (lambda carries: texts.GW_CONFIRM_BOT_RESTART, "svc"),
     "reassert": (texts.gw_confirm_reassert, "panel"),
 }
 

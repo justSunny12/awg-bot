@@ -377,9 +377,9 @@ def test_admin_main_has_routing_under_devices(monkeypatch):
     from awgbot.bot import keyboards as kb
     rows = [[b.text for b in row] for row in kb.admin_main(
         routing_visible=True, self_client_id=2).inline_keyboard]
-    assert rows[0] == ["📱 Мои устройства", "🇷🇺 РФ-доступ"], rows
+    assert rows[1] == ["📱 Мои устройства", "🇷🇺 РФ-доступ"], rows
     off = [[b.text for b in row] for row in kb.admin_main().inline_keyboard]
-    assert off[0] == ["📱 Мои устройства"] and not any("РФ" in t for r in off for t in r), off
+    assert off[1] == ["📱 Мои устройства"] and not any("РФ" in t for r in off for t in r), off
 
 
 async def test_add_domains_without_dialog_context_lands_on_main_with_the_report(

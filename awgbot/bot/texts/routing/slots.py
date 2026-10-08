@@ -96,9 +96,16 @@ def slot_short(state) -> str:
     return name + (f" ({_e(gw.label)})" if gw is not None and gw.label else "")
 
 
-def _slot_down_mins(state) -> int:
+def _slot_down_for(state) -> str:
+    """Сколько слот не отвечает: от момента падения из state («13 дн 4 ч»);
+    момента нет (старый state) — по тактам окна, минутами."""
+    import time as _time
     from awgbot.core import settings as _settings
-    return max(1, int(state.get("down_ticks", 0)) * _settings.get_int("app.routing.probe_seconds", 30) // 60)
+    since = int(state.get("down_since") or 0)
+    if since:
+        return timeutil.age_short(max(90, int(_time.time()) - since))      # не меньше «1 мин»
+    mins = max(1, int(state.get("down_ticks", 0)) * _settings.get_int("app.routing.probe_seconds", 30) // 60)
+    return f"{mins} мин"
 
 
 def _bot_link(agent_bot: dict | None) -> str:
@@ -153,7 +160,7 @@ def slot_status(state) -> str:
     if state.get("unavailable"):
         age = state.get("handshake_age")
         what = "нет доступа в интернет" if age is not None and age <= 300 else "не отвечает"
-        return f"🔴 {role}, {what} {_slot_down_mins(state)} мин"
+        return f"🔴 {role}, {what} {_slot_down_for(state)}"
     return f"🟡 {role}, проверка связи"
 
 
@@ -262,7 +269,6 @@ def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str 
             lines.append(peer_nets_line(peer_info))
         if not auto_on:
             lines.append(GATEWAYS_AUTO_OFF)
-        lines.append(details("⭐ — предпочтительный при холодном старте"))
     return "\n".join(lines)
 
 

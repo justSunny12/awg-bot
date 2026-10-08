@@ -45,6 +45,28 @@ async def my_devices_parts(services, chat_id: int = 0):
                              can_add=not limit or used < limit))
 
 
+@router.callback_query(Menu.filter(F.action.in_(kb.GEN_ACTIONS)))
+async def admin_menu_gen_pick(cb: CallbackQuery, callback_data: Menu, services):
+    """Выдача с главной админа — своим устройствам: одно — сразу, несколько —
+    выбор (кнопки ведут в admin_dev_gen)."""
+    ac = await call(services.admin_client)
+    if ac is None:
+        await call(services.ensure_admin_client)
+        ac = await call(services.admin_client)
+    devices = kb.issuable(list(await call(services.db.list_devices, ac.id)))
+    if not devices:
+        await cb.answer("Сначала добавь устройство", show_alert=True)
+        return
+    if len(devices) == 1:
+        await admin_dev_gen(cb, DeviceCB(action=callback_data.action, device_id=devices[0].id), services)
+        return
+    from awgbot.bot import paging
+    await edit(cb, kb.PICK_DEVICE_PROMPT[callback_data.action],
+               kb.pick_device(devices, callback_data.action, render=cb.data,
+                              page=paging.page_of(cb.message.chat.id, "pick")))
+    await cb.answer()
+
+
 @router.callback_query(Menu.filter(F.action == "devices"))
 async def admin_menu_devices(cb: CallbackQuery, services, state: FSMContext):
     await state.clear()

@@ -60,7 +60,7 @@ def _carrying(svc, carries: bool) -> None:
 
 async def test_restart_needs_confirmation(svc, fake_bot):
     """«🔁 Перезапуск AWG» сам ничего не рвёт — только показывает цену одной
-    строкой; «Отмена» первой и возвращает в настройки, откуда пришли."""
+    строкой; «Отмена» первой и возвращает в «🔧 Сервис», откуда пришли."""
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
     _carrying(svc, True)
@@ -71,7 +71,7 @@ async def test_restart_needs_confirmation(svc, fake_bot):
                     "прервётся на секунды"), text
     buttons = [b for row in markup.inline_keyboard for b in row]
     assert [b.text for b in buttons] == ["⬅️ Отмена", "🔁 Перезапустить"]
-    assert buttons[0].callback_data == GwCB(action="settings").pack(), "отказ увёл не в настройки"
+    assert buttons[0].callback_data == GwCB(action="svc").pack(), "отказ увёл не в «Сервис»"
 
     await gh.gw_execute(cb, GwCB(action="restart!"), svc)
     assert svc.restarted == 1

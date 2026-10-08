@@ -70,19 +70,28 @@ def gateway_transit_kb(items=(), page: int = 0) -> InlineKeyboardMarkup:
 
 
 def gateway_settings_kb() -> InlineKeyboardMarkup:
-    """Корень настроек агента в два столбца; перезапуски — здесь же,
-    «Обслуживания» больше нет."""
+    """Корень настроек агента в два столбца, как у основного бота: перезапуски —
+    в «🔧 Сервис», последние ряды — «Бэкапы | Сервис», «Обновления | В меню»."""
     kb = InlineKeyboardBuilder()
     kb.button(text="🔔 Уведомления", callback_data=GwCB(action="notify"))
     kb.button(text="✉️ E-mail", callback_data=GwCB(action="email"))
     kb.button(text="🛡 SSH-доступ", callback_data=GwCB(action="ssh"))
     kb.button(text="🩺 Мониторинг", callback_data=GwCB(action="mon"))
     kb.button(text="💾 Бэкапы", callback_data=GwCB(action="backup"))
+    kb.button(text="🔧 Сервис", callback_data=GwCB(action="svc"))
     kb.button(text="⬆️ Обновления", callback_data=GwCB(action="updates"))
+    kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
+    kb.adjust(2, 2, 2, 2)
+    return kb.as_markup()
+
+
+def gateway_svc_kb() -> InlineKeyboardMarkup:
+    """«🔧 Сервис» агента: перезапуск AWG (линк) и перезапуск бота, назад в настройки."""
+    kb = InlineKeyboardBuilder()
     kb.button(text="🔁 Перезапуск AWG", callback_data=GwCB(action="restart"))
     kb.button(text="🔁 Перезапуск бота", callback_data=GwCB(action="botrestart"))
-    kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
-    kb.adjust(2, 2, 2, 2, 1)
+    kb.button(text="⬅️ Назад", callback_data=GwCB(action="settings"))
+    kb.adjust(2, 1)
     return kb.as_markup()
 
 

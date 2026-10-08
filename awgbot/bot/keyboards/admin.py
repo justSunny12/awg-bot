@@ -24,8 +24,11 @@ def admin_main(*, gateways: bool = False, routing_visible: bool = False,
                self_client_id: int = 0) -> InlineKeyboardMarkup:
     """Восемь кнопок: свои устройства и РФ-доступ (когда выдан), профили и
     новый профиль, шлюзы и настройки, объявление и обновление."""
+    from .client import _menu_issue_row
     kb = InlineKeyboardBuilder()
     rows = []
+    _menu_issue_row(kb)                      # выдача своим устройствам — первой строкой, как у клиента
+    rows.append(3)
     kb.button(text="📱 Мои устройства", callback_data=Menu(action="devices"))
     if routing_visible:
         kb.button(text=f"🇷🇺 {_texts.ROUTING_NAME}", callback_data=RoutingCB(action="panel", ref=self_client_id))

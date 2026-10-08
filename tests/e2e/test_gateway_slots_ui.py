@@ -122,7 +122,6 @@ async def test_section_with_two_slots_lists_them(services, slots):
     lines = text.split("\n")
     assert lines[1] == "⭐ NASPi — 🟢 Активен" and lines[2] == "Pi2 — 🟢 Резерв", lines
     assert "↔️ Связь подсетей: выключена" in lines
-    assert lines[-1] == "<blockquote expandable>⭐ — предпочтительный при холодном старте</blockquote>"
     assert "Резерва нет" not in text and "«" not in lines[1] + lines[2], "имена без кавычек"
 
 
@@ -1031,3 +1030,25 @@ async def test_no_free_slot_is_an_alert_not_a_spinning_button(services, slots, f
     await sh.gateway_new_ask(cb, GwMarkCB(action="new_ask", slot=0), services, st)
     assert cb.answers and cb.answers[-1] == ("свободных слотов нет", True), cb.answers
     assert await st.get_state() is None
+
+
+async def test_a_long_dead_standby_shows_how_long_it_has_been_down(services, slots, fake_bot):
+    """«не отвечает 5 мин» вторую неделю — ложь окна замеров: момент падения
+    хранится в state, слот показывает «13 дн 4 ч», а оживление его стирает."""
+    import time
+    _, pi, pi2 = slots
+    _slot1(services, pi); _slot2(services, pi2)
+    _settled(services)
+    services.probe[2] = "down"
+    for _ in range(services._rt_fail_need()):
+        services.routing_liveness_tick()
+    since = services.db.get_state("routing_gw_2_down_since")
+    assert since and since.isdigit(), "момент падения не сохранён"
+    services.db.set_state("routing_gw_2_down_since", str(int(time.time()) - 13 * 86400 - 4 * 3600))
+    text, _ = await sh._screen("rt", services)
+    assert "Pi2 — 🔴 Резерв, не отвечает 13 дн 4 ч" in text, text
+    assert "⭐ — предпочтительный" not in text, "сноска про звёздочку убрана"
+    services.probe[2] = "ok"
+    for _ in range(services._rt_window_size()):           # окно замеров очистилось от отказов
+        services.routing_liveness_tick()
+    assert not services.db.get_state("routing_gw_2_down_since"), "ожил — момент падения должен стереться"

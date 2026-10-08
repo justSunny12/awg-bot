@@ -290,7 +290,7 @@ def _carrying(svc, role: str = "active", link_up: bool = True) -> None:
     ("botrestart", "🔁 Перезапустить бота? Вернётся через несколько секунд; без влияния на пользователей"),
 ])
 async def test_restarts_ask_first_and_cancel_returns_to_settings(svc, fake_bot, action, text):
-    """Перезапуски — из корня настроек, «Отмена» первой и назад — туда же."""
+    """Перезапуски — из «🔧 Сервис», «Отмена» первой и назад — туда же."""
     _carrying(svc)
     cb, nav = _acb(fake_bot)
     await gh.gw_confirm(cb, GwCB(action=action), svc)
@@ -298,7 +298,7 @@ async def test_restarts_ask_first_and_cancel_returns_to_settings(svc, fake_bot, 
     assert shown == text
     assert _rows(markup) == [["⬅️ Отмена", "🔁 Перезапустить"]]
     assert [GwCB.unpack(b.callback_data).action for r in markup.inline_keyboard for b in r] == \
-        ["settings", f"{action}!"]
+        ["svc", f"{action}!"]
 
 
 @pytest.mark.parametrize("role, link_up", [("standby", True), ("active", False)])
@@ -337,8 +337,7 @@ async def test_settings_root_is_the_version_and_two_columns(svc, fake_bot, monke
     text, markup = _last_edit(nav)
     assert text == "⚙️ <b>Настройки</b> · v3.1.0"
     assert _rows(markup) == [["🔔 Уведомления", "✉️ E-mail"], ["🛡 SSH-доступ", "🩺 Мониторинг"],
-                             ["💾 Бэкапы", "⬆️ Обновления"], ["🔁 Перезапуск AWG", "🔁 Перезапуск бота"],
-                             ["⬅️ В меню"]]
+                             ["💾 Бэкапы", "🔧 Сервис"], ["⬆️ Обновления", "⬅️ В меню"]]
     cb, nav = _acb(fake_bot)
     await gh.gw_maint(cb, svc, FakeState())
     assert _last_edit(nav)[0] == "⚙️ <b>Настройки</b> · v3.1.0"

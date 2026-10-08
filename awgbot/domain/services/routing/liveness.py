@@ -178,6 +178,13 @@ class RoutingLivenessMixin:
                     ups[k] = up
                     if k is not None and self._rt_unavailable(k):
                         self._gw_ping_forget(k)          # хост недоступен — пинг устарел
+                        # момент падения — в state: окно замеров помнит только
+                        # минуты, а «не отвечает 5 мин» вторую неделю — ложь
+                        if not self.db.get_state(f"routing_gw_{k}_down_since"):
+                            import time as _time
+                            self.db.set_state(f"routing_gw_{k}_down_since", str(int(_time.time())))
+                    elif k is not None and up >= self._RT_UP_STREAK:
+                        self.db.set_state(f"routing_gw_{k}_down_since", "")
                 a_up = ups[akey]
                 # Ручное удержание: админ сам переложил трафик на лежащий шлюз —
                 # значит, так надо, и автомат его не перекладывает обратно.

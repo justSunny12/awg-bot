@@ -55,7 +55,7 @@ from .rolekb import backup_when_label, UPDATE_SCHEDULE_CYCLE, UPDATE_SCHEDULE_LA
 from .broadcast import (
     broadcast_mode, broadcast_targets, broadcast_days_kb, broadcast_cancel, broadcast_confirm)
 from .gateway import (
-    gateway_panel_kb, gateway_settings_kb, gateway_notify_kb, gateway_mon_kb,
+    gateway_panel_kb, gateway_settings_kb, gateway_svc_kb, gateway_notify_kb, gateway_mon_kb,
     gateway_backup_kb, gateway_email_kb, gateway_email_forget_confirm,
     gateway_email_offer, gateway_encryption_kb, gateway_health_kb, gateway_transit_router_kb,
     gateway_updates_kb, gateway_confirm_kb, gateway_bundle_kb,
@@ -91,7 +91,7 @@ __all__ = [
     "settings_routing_users",
     "bundle_menu_kb", "gateway_card", "gateway_switch_confirm", "gateway_lan_confirm", "gateway_peer_confirm",
  "broadcast_mode", "broadcast_targets", "broadcast_cancel",
-    "broadcast_confirm", "gateway_panel_kb", "gateway_ssh_kb", "gateway_ssh_port_finisher_kb", "gateway_settings_kb", "gateway_health_kb", "gateway_transit_router_kb",
+    "broadcast_confirm", "gateway_panel_kb", "gateway_ssh_kb", "gateway_ssh_port_finisher_kb", "gateway_settings_kb", "gateway_svc_kb", "gateway_health_kb", "gateway_transit_router_kb",
     "gateway_notify_kb", "gateway_mon_kb", "gateway_backup_kb", "gateway_email_kb",
     "gateway_email_forget_confirm", "gateway_email_offer", "gateway_encryption_kb",
  "gateway_updates_kb",

@@ -74,8 +74,8 @@ async def test_quiet_home_has_only_what_is_always_there(services, fake_bot, fake
     assert lines[1] == "" and "" not in lines[2:], "пустая строка — только после шапки, без временных строк"
     for word in ("Истекают", "Без профиля", "Доступна", "Переезд"):
         assert word not in joined, f"строка «{word}» без повода:\n{joined}"
-    assert rows == [["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"], ["🛰 Шлюзы", "⚙️ Настройки"],
-                    ["📢 Объявление", "🔄 Обновить"]], rows
+    assert rows == [["🔗 Ссылка", "🔳 QR", "📄 Файл"], ["📱 Мои устройства"], ["👥 Профили", "➕ Профиль"],
+                    ["🛰 Шлюзы", "⚙️ Настройки"], ["📢 Объявление", "🔄 Обновить"]], rows
 
 
 async def test_home_counters_line_links_expiring_and_unassigned(services, fake_bot, make_active_client):
@@ -145,7 +145,7 @@ def test_home_routing_line_is_silent_without_gateways():
 
 def test_home_first_line_is_host_status_and_short_uptime():
     out = texts.admin_panel({"ok": True, "uptime": "12 дней 4 часа"})
-    assert out.split("\n")[0].endswith("</b> 🟢 работает · 12 дн 4 ч"), out
+    assert out.split("\n")[0].endswith("</b> 🟢 · 12 дн 4 ч"), out
     assert texts.admin_panel({"ok": False}).split("\n")[0].endswith("</b> 🔴 не отвечает")
 
 
@@ -162,7 +162,7 @@ async def test_gateways_button_is_always_there(services, fake_bot, fake_routing,
         services.db.gateway_add(pi.device_id, "awglink", 443, "10.99.99.0/30")
     _, rows = await _home(services, fake_bot)
     assert ["🛰 Шлюзы", "⚙️ Настройки"] in rows, rows
-    assert sum(len(r) for r in rows) <= 8 and all(len(r) <= 2 for r in rows), rows
+    assert sum(len(r) for r in rows) <= 11 and all(len(r) <= 3 for r in rows), rows
 
 
 # ── ссылки ───────────────────────────────────────────────────────────────────

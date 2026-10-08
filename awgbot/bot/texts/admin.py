@@ -72,7 +72,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     if st.get("ok") is None:
         dot = "…"
     elif st["ok"]:
-        dot = "🟢 работает" + (f" · {timeutil.brief_units(st['uptime'])}" if st.get("uptime") else "")
+        dot = "🟢" + (f" · {timeutil.brief_units(st['uptime'])}" if st.get("uptime") else "")
     else:
         dot = "🔴 не отвечает"
     host = _e(_hostname() or "AWG")
@@ -454,7 +454,9 @@ def _sub_line(client) -> str:
     kind = _KIND_SHORT.get(str(client.period_kind or ""), "")
     since = f", с {timeutil.fmt_date_ui(timeutil.parse_iso(client.period_start))}" if client.period_start else ""
     tail = f" · {kind}{since}" if kind else since.lstrip(",").strip() and f" · {since[2:]}"
-    if client.status != SubStatus.ACTIVE:
+    if client.status != SubStatus.ACTIVE or timeutil.remaining_seconds(end) <= 0:
+        # срок вышел, а статус ещё не переключён (профиль ждёт активации,
+        # такт истечения не дошёл) — «🟢 до … · истекло» сбивало с толку
         return f"💳 🔴 истекла {timeutil.fmt_date_ui(end)}{tail}"
     dot = "🟡 истекает" if client.notified_thresholds else "🟢 до"
     return f"💳 {dot} {timeutil.fmt_end_ui(end)} · {timeutil.remaining_brief(end)}{tail}"

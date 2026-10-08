@@ -111,7 +111,8 @@ def channel_lines(ch: dict | None, server_ok) -> tuple[str, list[str], str]:
         gw_ok = ch.get("egress_gw")
         mark = {True: "есть", False: "нет", None: "не знает"}
         egress = (f"выход наружу: сервер — {mark[bool(server_ok)]}, "
-                  f"шлюз — {mark[gw_ok if isinstance(gw_ok, bool) else None]}")
+                  f"шлюз — {mark[gw_ok if isinstance(gw_ok, bool) else None]}"
+                  + ("" if ch.get("online") else f" (по снимку {timeutil.age_ago(ch.get('age'))})"))
     skew = ch.get("clock_skew")
     if isinstance(skew, int) and abs(skew) >= 120:
         side = "спешат" if skew > 0 else "отстают"

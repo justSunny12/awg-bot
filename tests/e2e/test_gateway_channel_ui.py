@@ -593,3 +593,16 @@ def _channel_block(ch, server_ok):
     from awgbot.bot.texts.routing import channel_lines
     head, warns, _egress = channel_lines(ch, server_ok)
     return "\n".join([head] + warns) if head else ""
+
+
+def test_the_egress_line_names_the_snapshot_age_when_the_channel_is_down():
+    """Шлюз мёртв вторую неделю, а карточка хранит последний снимок: «выход
+    наружу» без оговорки читался как живой статус."""
+    from awgbot.bot.texts.routing import channel_lines
+    ch = {"ever": True, "online": False, "seen": "", "age": 13 * 86400, "has_snap": True, "has_bundle": True,
+          "egress_gw": True}
+    _, _, egress = channel_lines(ch, False)
+    assert egress.endswith("(по снимку 13 дн назад)"), egress
+    ch["online"] = True
+    _, _, egress = channel_lines(ch, False)
+    assert "по снимку" not in egress, egress

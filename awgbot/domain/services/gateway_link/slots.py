@@ -252,6 +252,7 @@ class SlotsMixin:
                 "gateway": g, "device": dev, "active": is_active, "preferred": bool(g.preferred),
                 "link_ok": link_ok, "handshake_age": age, "unavailable": unavailable,
                 "down_ticks": self._rt_bad_ticks(g.id), "up_ticks": up,
+                "down_since": int(self.db.get_state(f"routing_gw_{g.id}_down_since") or 0),
                 "issued_at": self.db.get_state(self._gw_slot_key(self._GW_BUNDLE_ISSUED_KEY, g.id)) or "",
                 "display": self._gw_display(g),
                 "ping": self.gateway_ping_cached(g.id),

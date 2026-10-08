@@ -6,7 +6,7 @@ from awgbot.util import nets as nets_util
 
 from ..fmt import _e, details
 
-from .slots import ROUTER_IP_PLACEHOLDER, _slot_down_mins, slot_ref
+from .slots import ROUTER_IP_PLACEHOLDER, _slot_down_for, slot_ref
 
 
 # ── диалоги слота ────────────────────────────────────────────────────────────
@@ -125,7 +125,7 @@ def gateway_switch_ask(target: dict, current, healthy: bool) -> str:
         return (f"▶️ Переключить трафик на {who}?\n"
                 "РФ-сервисы у всех начнут выходить с адреса этой сети — приложения могут попросить "
                 f"войти заново. {cur} останется в резерве, обратно бот сам не вернёт")
-    return (f"⚠️ {who} не отвечает {_slot_down_mins(target)} мин — точно переключаем?\n"
+    return (f"⚠️ {who} не отвечает {_slot_down_for(target)} — точно переключаем?\n"
             "РФ-сервисы у всех перестанут работать, пока он не оживёт")
 
 

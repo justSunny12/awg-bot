@@ -144,7 +144,8 @@ def subscription_short(client, bot_username: str = "") -> str:
             text = f"💳 ⏸️ на паузе до {until}" if until else "💳 ⏸️ на паузе"
         else:
             text = "💳 ⏸️ приостановлена администратором"
-    elif client.status != SubStatus.ACTIVE:
+    elif client.status != SubStatus.ACTIVE or (
+            client.period_end and timeutil.remaining_seconds(timeutil.parse_iso(client.period_end)) <= 0):
         end = timeutil.parse_iso(client.period_end) if client.period_end else None
         text = f"💳 🔴 истекла {timeutil.fmt_date_ui(end)}" if end else "💳 🔴 истекла"
     elif not client.period_end:
@@ -751,8 +752,9 @@ def subscription_status_only(client, *, expiring: bool = False) -> str:
     _, mode, pause_visible = _pause_visibility(client)
     if pause_visible:
         return "⏸️ на паузе" if mode == "user" else "⏸️ приостановлена администратором"
-    if client.status != SubStatus.ACTIVE:
-        return "🔴 истекла"
+    if client.status != SubStatus.ACTIVE or (
+            client.period_end and timeutil.remaining_seconds(timeutil.parse_iso(client.period_end)) <= 0):
+        return "🔴 истекла"                      # и по сроку: статус переключает такт, а срок уже вышел
     if expiring and client.period_end and client.notified_thresholds:
         end = timeutil.parse_iso(client.period_end)
         return f"🟡 истекает {timeutil.fmt_end_ui(end)}"
