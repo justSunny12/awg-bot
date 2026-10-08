@@ -1439,6 +1439,76 @@ _STEP3 = [
 
 SHOTS += _STEP3
 
+
+# ── шаг 5: построители клавиатур без снимка ─────────────────────────────────
+
+def _delete_partial(services):
+    """Сервер не снял пир «Ноутбука»: профиль не удаляется, удалось — частично."""
+    from awgbot.domain.services import ServiceError
+    who = _people(services)
+    real = services.remove_device
+
+    def remove(device_id):
+        if device_id == LAPTOP:
+            raise ServiceError("awg: пир не снят")
+        return real(device_id)
+    services.remove_device = remove
+    return who
+
+
+def _gw_dev_no_slot(services, mp):
+    """Устройство-шлюз, для которого слот не находится (двойник шлюза в окне
+    переезда: признак шлюза есть, строки слота по нему нет)."""
+    who = _slots(1)(services, mp)
+    services.db.gateway_by_device = lambda device_id: None
+    return who
+
+
+def _new_generation(available: bool):
+    """Поставка привезла поколение ядра новее применённого; available —
+    второй интерфейс под переезд уже поднят."""
+    def build(services, mp):
+        from awgbot.infra import awglock
+        who = _mig_ready(services, mp) if available else _people(services)
+        mp.setattr(awglock, "generation", lambda: 2)
+        mp.setattr(awglock, "applied_generation", lambda: 1)
+        return who
+    return build
+
+
+async def _ev_migration_needed(services, bot):
+    from awgbot.runtime.main import _notify_migration_needed
+    await _notify_migration_needed(bot, services)
+
+
+def _dns_public(services, mp):
+    """Ядро на хосте, DNS клиентов публичный, решения о своём резолвере нет."""
+    from awgbot.core import settings
+    who = _people(services)
+    mp.setattr(config, "AWG_RUNTIME", "host")
+    settings.set_value("app.client_config.dns1", "1.1.1.1")
+    settings.set_value("app.client_config.dns2", "8.8.8.8")
+    return who
+
+
+async def _ev_private_dns_offer(services, bot):
+    from awgbot.runtime.main import _notify_private_dns_offer
+    await _notify_private_dns_offer(bot, services)
+
+
+SHOTS += [
+    Shot("adm.cl.delete.partial", role="admin", press=[ClientCB(action="delete_yes", client_id=KS)],
+         data=_delete_partial, title="удаление профиля: сервер не снял часть устройств"),
+    Shot("adm.gw.dev.noslot", role="admin", press=[DeviceCB(action="open", device_id=NASPI)],
+         data=_gw_dev_no_slot, title="карточка устройства-шлюза без слота"),
+    Shot("adm.ev.generation_pending", role="admin", call=("notify_migration_needed", _ev_migration_needed),
+         data=_new_generation(False), title="новое поколение ядра: интерфейс под переезд не поднят"),
+    Shot("adm.ev.migration_needed", role="admin", call=("notify_migration_needed", _ev_migration_needed),
+         data=_new_generation(True), title="новое поколение ядра: нужен переезд"),
+    Shot("adm.ev.private_dns_offer", role="admin", call=("notify_private_dns_offer", _ev_private_dns_offer),
+         data=_dns_public, title="предложение своего DNS-резолвера"),
+]
+
 # у каждого снимка — построитель: он же сбрасывает модульные подмены прежних
 assert all(sh.data is not None for sh in SHOTS), [sh.id for sh in SHOTS if sh.data is None]
 
