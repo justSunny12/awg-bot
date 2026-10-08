@@ -25,6 +25,21 @@ def _friend_unblocked_text(device_name: str) -> str:
     return f"🟢 Доступ к устройству «{_e(device_name)}» снова активен."
 
 
+# Держателю при РУЧНОЙ блокировке — кто и что: не «закончилась подписка»
+def _friend_manual_blocked_text(device_name: str, by_admin: bool = False) -> str:
+    who = "администратором" if by_admin else "владельцем"
+    return f"🛑 Доступ к устройству «{_e(device_name)}» приостановлен {who}."
+
+
+def _friend_manual_unblocked_text(device_name: str) -> str:
+    return f"🟢 Доступ к устройству «{_e(device_name)}» восстановлен."
+
+
+def _skip_actor(notes: list, actor_tg) -> list:
+    """Тому, кто нажал, о его же действии не сообщаем: итог он видит на экране."""
+    return [n for n in notes if not (actor_tg and n.tg_id == actor_tg)]
+
+
 # ── Тексты ручных блокировок (админ/клиент) ──────────────────────────────────
 
 def _manual_device_blocked_client(name: str) -> str:
@@ -135,7 +150,7 @@ class BlocksMixin:
             raise ServiceError(self._TXT_GATEWAY_LOCKED)
 
     def block_device_manual(self, device_id: int, bit: DeviceBlock,
-                            notify: bool) -> list["Notification"]:
+                            notify: bool, actor_tg: int | None = None) -> list["Notification"]:
         """Ручной блок устройства заданным битом (ADMIN_SILENT/NOTIFIED/USER).
         notify=True → уведомить пользователя (клиента-владельца и/или друга).
         Тихий блок (notify=False) уведомлений не шлёт."""
@@ -151,12 +166,13 @@ class BlocksMixin:
                 notes.append(Notification(owner.tg_id,
                              _manual_device_blocked_client(dev.name)))
             if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
+                by_admin = bool(actor_tg) and actor_tg == config.ADMIN_ID and actor_tg != (owner.tg_id if owner else None)
                 notes.append(Notification(dev.friend_tg_id,
-                             _friend_blocked_text(dev.name)))
-        return notes
+                             _friend_manual_blocked_text(dev.name, by_admin=by_admin)))
+        return _skip_actor(notes, actor_tg)
 
     def unblock_device_manual(self, device_id: int, bit: DeviceBlock,
-                              notify: bool) -> list["Notification"]:
+                              notify: bool, actor_tg: int | None = None) -> list["Notification"]:
         """Снять ручной бит с устройства. notify → уведомить, если после снятия
         устройство разблокировано полностью (не осталось других причин)."""
         dev = self.db.get_device(device_id)
@@ -173,8 +189,8 @@ class BlocksMixin:
                              _manual_device_unblocked_client(dev.name)))
             if dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
                 notes.append(Notification(dev.friend_tg_id,
-                             _friend_unblocked_text(dev.name)))
-        return notes
+                             _friend_manual_unblocked_text(dev.name)))
+        return _skip_actor(notes, actor_tg)
 
     def block_client_manual(self, client_id: int, bit: ClientBlock,
                            notify: bool, pause_days=None) -> list["Notification"]:
@@ -201,7 +217,7 @@ class BlocksMixin:
                 self._device_set_block(dev.id, DeviceBlock.PAUSED)
             if notify and dev.friend_status == FriendStatus.ACTIVE and dev.friend_tg_id:
                 notes.append(Notification(dev.friend_tg_id,
-                             _friend_blocked_text(dev.name)))
+                             _friend_manual_blocked_text(dev.name, by_admin=True)))
         if notify and client.tg_id:
             notes.append(Notification(client.tg_id,
                          _manual_client_blocked()))

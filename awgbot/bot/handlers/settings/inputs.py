@@ -105,9 +105,10 @@ async def ssh_port_finisher_action(cb: CallbackQuery, callback_data: SetCB, stat
     if callback_data.key == "port_retry":
         await state.set_state(SshPort.value)
         st = await call(services.firewall_screen)
-        await send_menu(cb.message, services, texts.ssh_port_ask(st.get("ssh_port")), kb.cancel_input("set_fw"))
+        await send_menu(cb.message, services, texts.ssh_port_ask(st.get("ssh_port")), kb.cancel_input("set_fw"),
+                        keep_id=cb.message.message_id)         # финишер остаётся с одной «Скрыть»
     else:
-        await send_menu(cb.message, services, *await _screen("fw", services))
+        await send_menu(cb.message, services, *await _screen("fw", services), keep_id=cb.message.message_id)
     await cb.answer()
 
 

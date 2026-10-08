@@ -73,7 +73,8 @@ async def _show_main(target, services, client, *, via_edit=None):
     гасит прежнее. Стирает промежуточные служебные сообщения диалога."""
     text, markup = await main_payload(services, client)
     if via_edit is not None:
-        await cleanup_content(via_edit.bot, services, via_edit.message.chat.id)
+        await cleanup_content(via_edit.bot, services, via_edit.message.chat.id,
+                              keep=via_edit.message.message_id)      # финишер становится главной
         await edit_nav(via_edit, services, text, markup)
     else:
         await cleanup_content(target.bot, services, target.chat.id)
@@ -342,7 +343,7 @@ async def _issue(cb: CallbackQuery, services, client, dev, kind: str) -> None:
         await edit(cb, texts.UNMANAGED_DEVICE_DIALOG, kb.unmanaged_device_dialog(dev.id))
         await cb.answer()
         return
-    await drop_message(cb)                           # меню не должно висеть над ссылкой
+    await drop_message(cb, services)                 # меню не должно висеть над ссылкой
     try:
         await send_device_config(cb.message, services, dev, kind, finisher=kb.to_menu())
     except ServiceError as e:
@@ -527,7 +528,7 @@ async def device_transfer_do(cb: CallbackQuery, callback_data: DeviceCB, client,
     except ServiceError as e:
         await cb.answer(str(e), show_alert=True)
         return
-    await drop_message(cb)
+    await drop_message(cb, services)
     await _send_invite(cb.message, services, dev, code)
     await cb.answer()
 
@@ -543,7 +544,7 @@ async def device_reinvite(cb: CallbackQuery, callback_data: DeviceCB, client, se
     except ServiceError as e:
         await cb.answer(str(e), show_alert=True)
         return
-    await drop_message(cb)
+    await drop_message(cb, services)
     await _send_invite(cb.message, services, dev, code)
     await cb.answer()
 
@@ -675,7 +676,7 @@ async def device_add_limit_preset(cb: CallbackQuery, callback_data: PresetCB, cl
         await cb.answer(texts.device_limit_over(plimit), show_alert=True)
         return
     await state.clear()
-    await drop_message(cb)
+    await drop_message(cb, services)
     await _create_for_friend(cb.message, services, client, name, gb_value * BYTES_PER_GB, cb)
     await cb.answer()
 

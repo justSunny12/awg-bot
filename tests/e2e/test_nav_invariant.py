@@ -299,3 +299,58 @@ async def test_rf_lines_do_not_change_buttons_on_admin_screens(services, fake_bo
     assert not any("🇷🇺" in t for t in texts0), texts0
     assert all("🇷🇺" in t for t in texts1), "строка РФ не появилась — сравнение ничего не проверяет"
     assert after == before, "строка РФ поменяла кнопки на экранах админа"
+
+
+# ── удалённое живое меню забывается ──────────────────────────────────────────
+
+async def test_settings_input_does_not_touch_the_deleted_prompt(services, fake_bot, monkeypatch):
+    """Приглашение к вводу — живое меню; уборка после ввода его удаляет, и
+    следующий показ не должен снимать кнопки с того, чего в чате нет: раньше
+    на каждый ввод уходил лишний запрос к Bot API с ошибкой."""
+    from awgbot.core import settings
+    monkeypatch.setattr(settings, "set_value", lambda k, v: [k])
+    st = FakeState()
+    cb, prompt = _cb(fake_bot, ADMIN)
+    services.db.nav_touch(ADMIN, prompt.message_id)
+    await sh.edit_value(cb, SetCB(sec="mon", act="edit", key="app.scheduler.monitor_minutes"),
+                        st, services)
+    await sh.receive_value(_msg(fake_bot, ADMIN, "5"), st, services)
+    assert prompt.message_id in _deleted(fake_bot)
+    edited = [r[2] for r in fake_bot.records if r[0] == "edit_markup"]
+    assert prompt.message_id not in edited, "снятие кнопок с удалённого приглашения"
+
+
+async def test_menu_under_the_issued_link_becomes_the_main_screen(services, fake_bot, make_active_client):
+    """«⬅️ В меню» под выданной ссылкой: завершитель не удаляется, а правится в
+    главную — иначе правка удалённого падала, и человек оставался без меню."""
+    c = make_active_client("Вася", tg_id=4100)
+    dev = services.add_device(c.id, "Телефон")
+    cb, card = _cb(fake_bot, 4100)
+    await ch.device_gen(cb, DeviceCB(action="gen_link", device_id=dev.device_id), c, services)
+    finisher_id = services.db.get_nav_message_id(4100)
+    assert finisher_id is not None and finisher_id != card.message_id
+    cb2 = FakeCallback(message=FakeMessage(chat_id=4100, user_id=4100, bot=fake_bot, message_id=finisher_id),
+                       user_id=4100, bot=fake_bot)
+    await ch.menu_main(cb2, c, services, FakeState())
+    assert finisher_id not in _deleted(fake_bot), "завершитель удалён, а потом правился"
+    assert services.db.get_nav_message_id(4100) == finisher_id
+    assert [s for s in cb2.message.sent if s[0] == "edit_text"], "главная на месте завершителя"
+
+
+async def test_own_block_does_not_notify_the_one_who_pressed(services, fake_bot, make_active_client):
+    """Клиент блокирует своё устройство: итог он видит на экране, уведомление
+    самому себе — шум. Держатель узнаёт честную причину — «владельцем», а не
+    «закончилась подписка»."""
+    from awgbot.core.blocks import DeviceBlock
+    c = make_active_client("Вася", tg_id=4200)
+    dev = services.add_device(c.id, "Телефон")
+    code = services.make_device_friendly(dev.device_id)
+    services.activate_friend(code, tg_id=4201)
+    notes = services.block_device_manual(dev.device_id, DeviceBlock.USER, True, actor_tg=4200)
+    assert [n.tg_id for n in notes] == [4201], notes
+    assert "владельцем" in notes[0].text and "подписка" not in notes[0].text, notes[0].text
+    notes = services.unblock_device_manual(dev.device_id, DeviceBlock.USER, True, actor_tg=4201)
+    assert [n.tg_id for n in notes] == [4200], "держатель снял свой блок — владельцу сообщаем, ему нет"
+    notes = services.block_device_manual(dev.device_id, DeviceBlock.ADMIN_NOTIFIED, True, actor_tg=ADMIN)
+    assert sorted(n.tg_id for n in notes) == [4200, 4201]
+    assert any("администратором" in n.text for n in notes if n.tg_id == 4201)

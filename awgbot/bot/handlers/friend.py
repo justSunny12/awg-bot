@@ -117,7 +117,7 @@ async def friend_start(message: Message, client, services, state: FSMContext):
 async def friend_refresh(cb: CallbackQuery, client, services, state: FSMContext):
     """Главный экран на месте: «В меню» из завершителя, «Назад» из списка."""
     await state.clear()
-    await cleanup_content(cb.bot, services, cb.message.chat.id)
+    await cleanup_content(cb.bot, services, cb.message.chat.id, keep=cb.message.message_id)
     await edit_nav(cb, services, *await guest_main_payload(services, client))
     await cb.answer()
 
@@ -167,7 +167,7 @@ async def friend_gen(cb: CallbackQuery, callback_data: FriendCB, client, service
             await cb.answer("Устройство не найдено", show_alert=True)
             return
     kind = kb.gen_kind(callback_data.action)
-    await drop_message(cb)
+    await drop_message(cb, services)
     try:
         await send_device_config(cb.message, services, dev, kind, finisher=kb.friend_finisher())
     except ServiceError as e:

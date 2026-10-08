@@ -269,7 +269,7 @@ async def admin_main_menu(cb: CallbackQuery, services, state: FSMContext):
     await cb.answer()                                  # спиннер гаснет сразу
     await state.clear()
     card_from_main(cb.message.chat.id, False)          # с главной карточка открывается заново
-    await cleanup_content(cb.bot, services, cb.message.chat.id)
+    await cleanup_content(cb.bot, services, cb.message.chat.id, keep=cb.message.message_id)
     await edit_nav(cb, services, *await _panel_parts(services))
 
 

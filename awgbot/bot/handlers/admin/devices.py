@@ -171,7 +171,7 @@ async def device_card_parts(services, dev):
         if slot:
             from awgbot.bot.handlers.admin.panel import gateway_card_screen
             return await gateway_card_screen(services, slot)
-        return texts.gateway_device_card(dev, None), kb.gateway_card_button(0)
+        return texts.gateway_device_card(dev, None), kb.gateway_card_button(0)   # без слота — только «Назад»
     client = await call(services.db.get_client, dev.client_id)
     plimit = int(client.traffic_limit) if client else 0
     service_id = await call(services.db.get_service_client_id)
@@ -209,7 +209,7 @@ async def admin_dev_gen(cb: CallbackQuery, callback_data: DeviceCB, services):
         await edit(cb, texts.UNMANAGED_DEVICE_DIALOG, kb.unmanaged_device_dialog(dev.id))
         await cb.answer()
         return
-    await drop_message(cb)
+    await drop_message(cb, services)
     try:
         await send_device_config(cb.message, services, dev, kb.gen_kind(callback_data.action),
                                  finisher=kb.to_menu())
@@ -460,6 +460,6 @@ async def admin_del_confirm(cb: CallbackQuery, callback_data: DelDeviceCB, servi
         await edit(cb, note, None)
         await _return_panel(cb.message, services, keep_id=cb.message.message_id)
         return
-    await cleanup_content(cb.bot, services, cb.message.chat.id)
+    await cleanup_content(cb.bot, services, cb.message.chat.id, keep=cb.message.message_id)
     text, markup = parts
     await edit(cb, screens.with_note(text, note), markup)

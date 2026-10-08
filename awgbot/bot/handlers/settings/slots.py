@@ -29,11 +29,13 @@ async def _slot_state(cb: CallbackQuery, services, slot: int, *, lazy_ping: bool
         return None
 
 
-async def _render_card(cb: CallbackQuery, services, slot: int) -> None:
+async def _render_card(cb: CallbackQuery, services, slot: int) -> bool:
+    """False — слота нет, alert уже дан (второй ответ его бы перекрыл)."""
     st = await _slot_state(cb, services, slot)
     if st is None:
-        return
+        return False
     await edit(cb, texts.gateway_card_text(st, st["states"]), card_kb(st, cb.message.chat.id))
+    return True
 
 
 async def _render_list(cb: CallbackQuery, services) -> None:
@@ -51,8 +53,8 @@ async def gw_slot_list(cb: CallbackQuery, services, state: FSMContext):
 @router.callback_query(GwSlotCB.filter(F.action == "card"))
 async def gw_slot_card(cb: CallbackQuery, callback_data: GwSlotCB, services, state: FSMContext):
     await state.clear()
-    await _render_card(cb, services, callback_data.slot)
-    await cb.answer()
+    if await _render_card(cb, services, callback_data.slot):
+        await cb.answer()
 
 
 @router.callback_query(GwSlotCB.filter(F.action == "add"))

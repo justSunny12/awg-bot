@@ -410,7 +410,8 @@ async def gw_ssh_port_ask(cb: CallbackQuery, callback_data: GwCB, services, stat
         except Exception:                                 # noqa: BLE001
             pass
         await state.update_data(ctx_kind="set_ssh", ctx_ref=0)
-        await send_menu(cb.message, services, texts.gw_ssh_port_ask(st.get("port")), kb.cancel_input("set_ssh"))
+        await send_menu(cb.message, services, texts.gw_ssh_port_ask(st.get("port")), kb.cancel_input("set_ssh"),
+                        keep_id=cb.message.message_id)         # финишер остаётся с одной «Скрыть»
     else:
         await ask_here(cb, services, state, texts.gw_ssh_port_ask(st.get("port")), "set_ssh")
     await cb.answer()
@@ -423,7 +424,7 @@ async def gw_ssh_port_back(cb: CallbackQuery, services, state: FSMContext):
         await cb.message.edit_reply_markup(reply_markup=kb.hide_only())
     except Exception:                                     # noqa: BLE001
         pass
-    await send_menu(cb.message, services, *await _section(services, "ssh"))
+    await send_menu(cb.message, services, *await _section(services, "ssh"), keep_id=cb.message.message_id)
     await cb.answer()
 
 
@@ -561,8 +562,7 @@ async def gw_transit(cb: CallbackQuery, services, state: FSMContext):
     await state.clear()
     # сообщение под кнопкой — экран, а не служебное: приглашение к вводу
     # (core.ask) записало его в служебные, уборка снесла бы живое меню
-    await call(services.db.remove_content_msg_id, cb.message.chat.id, cb.message.message_id)
-    await cleanup_content(cb.message.bot, services, cb.message.chat.id)
+    await cleanup_content(cb.message.bot, services, cb.message.chat.id, keep=cb.message.message_id)
     await edit_nav(cb, services, *await _transit_screen(services, cb.message.chat.id))
     await cb.answer()
 

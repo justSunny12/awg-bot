@@ -155,7 +155,7 @@ async def guide_connect_deliver(cb: CallbackQuery, callback_data: GuideCB, servi
     if dev is None:
         await cb.answer("Устройство не найдено", show_alert=True)
         return
-    await drop_message(cb)                       # убрать сообщение с выбором способа
+    await drop_message(cb, services)             # убрать сообщение с выбором способа
     try:
         await send_device_config(cb.message, services, dev, callback_data.kind)
     except ServiceError as e:
@@ -205,7 +205,7 @@ async def guide_pick_device(cb: CallbackQuery, callback_data: DeviceCB, services
         await cb.answer("Устройство не найдено", show_alert=True)
         return
     # удалить сообщение-список, чтобы кнопки не висели над ссылкой
-    await drop_message(cb)
+    await drop_message(cb, services)
     await _deliver_and_advance(cb.message, services, client, dev, "connect")
     await cb.answer()
 

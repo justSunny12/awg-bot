@@ -50,4 +50,5 @@ def test_month_never_gets_the_30_day_threshold(services, make_active_client, mon
     y = make_active_client("Год", tg_id=2011)
     _set_period(services, y, now - dt.timedelta(days=340), now + dt.timedelta(days=25), "year")
     notes = services.check_expiry()
-    assert any("30 дней" in n.text for n in notes)
+    # порог «30 дней» проспали (осталось 25): уведомление называет остаток, а не подпись порога
+    assert any("25 дней" in n.text for n in notes) and not any("30 дней" in n.text for n in notes)

@@ -628,7 +628,6 @@ https://www.ozon.ru/catalog
 
 ### adm.cl — карточка: активен, РФ, устройства
 > press c:open:3
-~ (пустой ответ)
 = edit #1
 👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
 
@@ -642,10 +641,10 @@ https://www.ozon.ru/catalog
   [🟢 Телефон | d:open:3]
   [⚪ Ноутбук | d:open:4]
   [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
 
 ### adm.cl.pending — карточка: приглашение не принято
 > press c:open:5
-~ (пустой ответ)
 = edit #1
 👤 Петя ⚪ офлайн
 
@@ -658,10 +657,10 @@ https://www.ozon.ru/catalog
   [⏱ Продлить | c:extend:5] [✏️ Изменить | c:edit:5]
   [🛑 Блок | bl:cli:menu_block:5::-1]
   [➕ Устройство | c:add_device:5] [⬅️ Назад | m:clients]
+~ (пустой ответ)
 
 ### adm.cl.expiring — карточка: истекает, лимит исчерпан
 > press c:open:4
-~ (пустой ответ)
 = edit #1
 👤 <a href="tg://user?id=2002">Боря</a> ⚪ офлайн
 
@@ -673,10 +672,10 @@ https://www.ozon.ru/catalog
   [🛑 Блок | bl:cli:menu_block:4::-1]
   [⚪ Планшет | d:open:5]
   [➕ Устройство | c:add_device:4] [⬅️ Назад | m:clients]
+~ (пустой ответ)
 
 ### adm.cl.expired — карточка: подписка истекла
 > press c:open:4
-~ (пустой ответ)
 = edit #1
 👤 <a href="tg://user?id=2002">Боря</a> ⚪ офлайн
 
@@ -688,10 +687,10 @@ https://www.ozon.ru/catalog
   [🛑 Блок | bl:cli:menu_block:4::-1]
   [⚪ Планшет | d:open:5]
   [➕ Устройство | c:add_device:4] [⬅️ Назад | m:clients]
+~ (пустой ответ)
 
 ### adm.cl.paused — карточка: на паузе
 > press c:open:3
-~ (пустой ответ)
 = edit #1
 👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
 
@@ -707,10 +706,10 @@ https://www.ozon.ru/catalog
   [⛔ Телефон | d:open:3]
   [⛔ Ноутбук | d:open:4]
   [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
 
 ### adm.cl.blocked — карточка: тихий админ-блок
 > press c:open:3
-~ (пустой ответ)
 = edit #1
 👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
 
@@ -725,10 +724,10 @@ https://www.ozon.ru/catalog
   [⛔ Телефон | d:open:3]
   [⛔ Ноутбук | d:open:4]
   [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
 
 ### adm.cl.many — карточка: устройства не влезли
 > press c:open:3
-~ (пустой ответ)
 = edit #1
 👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
 
@@ -741,6 +740,7 @@ https://www.ozon.ru/catalog
   [🇷🇺 РФ-доступ | rt:panel:3:-1:] [🛑 Блок | bl:cli:menu_block:3::-1]
   [📱 Устройства: 9 | c:devices:3]
   [➕ Устройство | c:add_device:3] [⬅️ Назад | m:clients]
+~ (пустой ответ)
 
 ### adm.cl.devices — устройства профиля
 > press c:devices:3
@@ -760,8 +760,7 @@ https://www.ozon.ru/catalog
 
 ### adm.cl.missing — профиля нет
 > press c:open:99
-~ (пустой ответ)
-~ (повторный ответ) Профиль не найден
+~! Профиль не найден
 
 ### adm.cl.edit — «✏️ Изменить»
 > press c:edit:3
@@ -1225,7 +1224,7 @@ https://t.me/test_bot?start=CDUMMY000005
 ### adm.bc.next — текст объявления: приглашение
 > press bc:next:0
 = edit #1
-📢 <b>Текст для профилей:</b> <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>, <a href="https://t.me/test_bot?start=cl-5">Петя</a>
+📢 <b>Текст для профилей:</b> <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
 Форматирование Telegram сохранится; можно вложить до 10 изображений.
 <blockquote expandable>без картинок — до 4096 символов, с картинками — до 1024</blockquote>
   [⬅️ Отмена | bc:cancel:0]
@@ -1260,7 +1259,7 @@ https://t.me/test_bot?start=CDUMMY000005
 ### adm.bc.preview — превью
 > text «В субботу с 02:00 до 03:00 — <b>работы на сервере</b>»
 + send #3
-👆 <b>Так увидят получатели</b> · 2 адресата: профили <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>, <a href="https://t.me/test_bot?start=cl-5">Петя</a>
+👆 <b>Так увидят получатели</b> · 2 адресата: профили <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
 
 В субботу с 02:00 до 03:00 — &lt;b&gt;работы на сервере&lt;/b&gt;
   [⬅️ Отмена | bc:cancel:0] [📢 Отправить | bc:send:0]
@@ -2492,7 +2491,6 @@ Pi4 — 🟡 Резерв, проверка связи
 ### adm.gw.card.missing — слота нет
 > press gws:card:9:
 ~! такого слота шлюза нет
-~ (повторный ответ)
 
 ### adm.gw.dev — устройство-шлюз — карточка слота
 > press d:open:7
@@ -3140,7 +3138,7 @@ Pi4 — 🟢 Резерв
   [Месяц | p:month:extend:4:1] [Год | p:year:extend:4:1]
   [∞ | p:never:extend:4:0]
   [✅ Сохранить остаток | p:keep_tgl:extend:4:0]
-  [⬅️ Отмена | c:open:4]
+  [⬅️ Отмена | m:expiring]
 
 ### adm.link.cl — карточка профиля по ссылке
 > /start cl-3
@@ -3303,7 +3301,7 @@ GW1:RFVNTVk.RFVNTVk»
   [Месяц | p:month:extend:4:1] [Год | p:year:extend:4:1]
   [∞ | p:never:extend:4:0]
   [✅ Сохранить остаток | p:keep_tgl:extend:4:0]
-  [⬅️ Отмена | c:open:4]
+  [⬅️ Отмена | m:expiring]
 
 ### adm.note.unassigned — кнопка уведомления о пире без профиля
 > press nt:unassigned:0
@@ -3370,8 +3368,6 @@ GW1:RFVNTVk.RFVNTVk»
 > text «4»
 - delete #3
 - delete #4
-! правка удалённого #3
-- markup off #3
 + send #5
 ➕ <b>Маша</b> · 4 устройства — трафик в месяц? Общий на все устройства
   [50 ГБ | ps:new_traffic:0:50] [100 ГБ | ps:new_traffic:0:100] [200 ГБ | ps:new_traffic:0:200]
@@ -3392,8 +3388,6 @@ GW1:RFVNTVk.RFVNTVk»
 > press p:year:create:0:1
 ~ (пустой ответ)
 - delete #3
-! правка удалённого #3
-- markup off #3
 + send #4
 Привет! Тебе открыт доступ в свободный интернет 🎉
 Жми ссылку и «Старт» — дальше подскажу
@@ -3407,7 +3401,7 @@ https://t.me/test_bot?start=CDUMMY000005
 ### adm.bc.preview.markup — превью с разметкой Telegram
 > text «В субботу — <b>работы на сервере</b>»
 + send #3
-👆 <b>Так увидят получатели</b> · 2 адресата: профили <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>, <a href="https://t.me/test_bot?start=cl-5">Петя</a>
+👆 <b>Так увидят получатели</b> · 2 адресата: профили <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
 
 В субботу — <b>работы на сервере</b>
   [⬅️ Отмена | bc:cancel:0] [📢 Отправить | bc:send:0]
@@ -3427,7 +3421,7 @@ https://t.me/test_bot?start=CDUMMY000005
 = edit #3
 В субботу с 02:00 до 03:00 — работы на сервере
 + send #4
-✅ Доставлено: профили <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>, <a href="https://t.me/test_bot?start=cl-5">Петя</a> — 2 адресата
+✅ Доставлено: профили <a href="https://t.me/test_bot?start=cl-4">Боря</a>, <a href="https://t.me/test_bot?start=cl-3">Ксюша</a> — 2 адресата
 + send #5
 🛠 <b>pi</b> 🟢 · 3 дн
 
@@ -3730,11 +3724,11 @@ IMAP и SMTP отвечают, вход выполнен
 ### adm.ev.grace_offer — подписка истекает — владельцу кнопка отсрочки
 > call check_expiry
 + send #1 → чат tg 2002
-⏳ Подписка истекает через 7 дней
+⏳ Подписка истекает через 2 дня
   [💳 Подписка | nt:sub:0]
   [Скрыть | hd]
 + send #2
-⏳ <a href="https://t.me/test_bot?start=cl-4">Боря</a>: подписка истекает через 7 дней
+⏳ <a href="https://t.me/test_bot?start=cl-4">Боря</a>: подписка истекает через 2 дня
   [⏱ Продлить | nt:extend:4]
   [Скрыть | hd]
 + send #1 → чат tg 2001
@@ -3770,7 +3764,6 @@ IMAP и SMTP отвечают, вход выполнен
 Потребление: 0 ГБ (↑ 0 ГБ | ↓ 0 ГБ)
 
 <b>Это устройство — шлюз РФ-доступа, через него идёт трафик на РФ-домены.</b>
-  [🛰 Карточка шлюза | gws:card:0:]
   [⬅️ Назад | m:devices]
 ~ (пустой ответ)
 

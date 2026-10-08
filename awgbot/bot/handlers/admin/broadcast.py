@@ -50,7 +50,9 @@ async def _bc_clients(services, extend: bool = False):
 async def _bc_selected(services, data: dict) -> list:
     """Отмеченные профили — свежими объектами из БД, в порядке списка."""
     sel = set(data.get("targets") or ())
-    return [c for c in await _bc_clients(services, bool(data.get("extend"))) if c.id in sel]
+    # только те, кто получит: профиль без tg (приглашение не принято) в превью
+    # и отчёте назван не будет, а в число адресатов и так не входит
+    return [c for c in await _bc_clients(services, bool(data.get("extend"))) if c.id in sel and c.tg_id]
 
 
 async def _bc_show_targets(cb: CallbackQuery, state: FSMContext, services):
@@ -423,7 +425,7 @@ async def broadcast_cancel_h(cb: CallbackQuery, state: FSMContext, services):
         except Exception:                              # noqa: BLE001
             pass                                       # уже удалено/устарело
     await state.clear()
-    await cleanup_content(cb.bot, services, cb.message.chat.id)
+    await cleanup_content(cb.bot, services, cb.message.chat.id, keep=cb.message.message_id)
     await edit_nav(cb, services, *await _panel_parts(services))
     await cb.answer()
 
@@ -463,7 +465,7 @@ async def broadcast_send(cb: CallbackQuery, state: FSMContext, services):
     await cb.answer("Рассылаю…")                 # второе нажатие уже отсечётся
     # Переписку с набором черновика убираем и здесь, а не только при отмене:
     # после отправки она тем более не нужна, а превью само станет отчётом.
-    await cleanup_content(cb.bot, services, cb.message.chat.id)
+    await cleanup_content(cb.bot, services, cb.message.chat.id, keep=cb.message.message_id)
     await edit(cb, "📢 Рассылаю объявление…", None)   # и кнопки сняты (markup=None)
     tg_ids = await call(services.db.broadcast_recipients_for_clients,
                         sel, config.ADMIN_ID, owners_only=extend)

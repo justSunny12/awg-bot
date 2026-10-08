@@ -15,7 +15,7 @@ from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.handlers import updates_flow
 from awgbot.bot.notifier import send_notifications
 from awgbot.domain.services import ServiceError
-from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu, card_from_main
+from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu, card_from_main, drop_message
 
 log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
@@ -122,10 +122,7 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         return
     if callback_data.key == "bundle_menu":
         # кнопка файлов, выданных до 3.1.0: файл уходит из чата, главная — новым
-        try:
-            await cb.message.delete()
-        except Exception:                                  # noqa: BLE001
-            pass
+        await drop_message(cb, services)
         await show_main_menu(cb.message, services, "admin")
         await cb.answer()
         return

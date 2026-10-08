@@ -32,7 +32,7 @@ _KIND_TO_CLI = {"silent": ClientBlock.ADMIN_SILENT, "notified": ClientBlock.ADMI
 
 async def _rerender_after_block(cb, services, target: str, ref: int):
     if target == "cli":
-        await _show_client_card(cb, services, ref)
+        await _show_client_card(cb, services, ref, answer=False)   # всплывашку даёт вызывающий
     else:
         dev = await call(services.db.get_device, ref)
         if dev:
@@ -108,7 +108,8 @@ async def admin_block_do(cb: CallbackQuery, callback_data: BlockCB, services):
         obj = await call(services.db.get_client, callback_data.ref)
     else:
         bit = _KIND_TO_DEV["notified" if notify else "silent"]
-        notes = await call(services.block_device_manual, callback_data.ref, bit, notify)
+        notes = await call(services.block_device_manual, callback_data.ref, bit, notify,
+                           actor_tg=cb.from_user.id)
         obj = await call(services.db.get_device, callback_data.ref)
     owner = ""
     if callback_data.target != "cli" and obj is not None:
@@ -138,7 +139,8 @@ async def _do_unblock(cb, services, target: str, ref: int, kind: str):
             bit = _KIND_TO_DEV.get(k)
             if bit is None or not (mask & int(bit)):
                 continue
-            notes += await call(services.unblock_device_manual, ref, bit, k != "silent")
+            notes += await call(services.unblock_device_manual, ref, bit, k != "silent",
+                                actor_tg=cb.from_user.id)
     await send_notifications(cb.bot, notes)
     await _rerender_after_block(cb, services, target, ref)
 

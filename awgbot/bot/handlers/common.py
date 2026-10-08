@@ -191,6 +191,9 @@ async def show_screen(message: Message, services, role: str, client, kind: str, 
         try:
             await message.bot.edit_message_text(text, chat_id=message.chat.id, message_id=nav_id,
                                                 reply_markup=markup, link_preview_options=NO_PREVIEW)
+            # приглашение к вводу было служебным — теперь это экран, уборка
+            # при возврате в меню его не трогает
+            await call(services.db.remove_content_msg_id, message.chat.id, nav_id)
             return True
         except Exception:                             # noqa: BLE001
             pass
@@ -214,11 +217,24 @@ async def ask_tracked(message, services, text: str, **kw):
     return sent
 
 
-async def cleanup_content(bot, services, chat_id: int) -> None:
+async def cleanup_content(bot, services, chat_id: int, keep=None) -> None:
     """Удалить ранее выданные контент-сообщения (ссылка/QR/файл + инструкции) —
-    вызывается при возврате в меню, чтобы чат не захламлялся секретами."""
+    вызывается при возврате в меню, чтобы чат не захламлялся секретами.
+    keep — сообщение под нажатой кнопкой: оно станет экраном, а не улетит
+    (финишер под выдачей, приглашение к вводу). Удалённое живое меню
+    забывается — иначе следующий показ правил бы то, чего в чате нет."""
     ids = await call(services.db.pop_content_msg_ids, chat_id)
+    ids = [i for i in ids if i != keep]
     await delete_many(bot, chat_id, ids)
+    await forget_nav_if(services, chat_id, ids)
+
+
+async def forget_nav_if(services, chat_id: int, deleted) -> None:
+    """Живое меню среди удалённых — указатель долой."""
+    deleted = {int(i) for i in (deleted if isinstance(deleted, (list, tuple, set)) else [deleted])}
+    nav = await call(services.db.get_nav_message_id, chat_id)
+    if nav is not None and int(nav) in deleted:
+        await call(services.db.set_nav_message_id, chat_id, None)
 
 
 async def content_finisher(message: Message, services, text: str, role: str,
@@ -422,10 +438,11 @@ async def forget_secret(message: Message) -> None:
         pass                                               # >48 ч, уже удалено
 
 
-async def drop_message(cb: CallbackQuery) -> None:
+async def drop_message(cb: CallbackQuery, services=None) -> None:
     """Удалить сообщение под кнопкой (используется перед выдачей ссылки/файла,
     чтобы прежнее меню-с-кнопками не висело НАД присланной ссылкой). Если удалить
-    нельзя (>48ч, уже удалено) — хотя бы снять кнопки."""
+    нельзя (>48ч, уже удалено) — хотя бы снять кнопки. С services — удалённое
+    живое меню забывается, и следующий показ не правит пустоту."""
     try:
         await cb.message.delete()
     except Exception:
@@ -433,6 +450,9 @@ async def drop_message(cb: CallbackQuery) -> None:
             await cb.message.edit_reply_markup(reply_markup=None)
         except Exception:
             pass
+        return
+    if services is not None:
+        await forget_nav_if(services, cb.message.chat.id, cb.message.message_id)
 
 
 __all__ = ["call", "edit", "drop_message", "send_link", "send_conf", "cleanup_content", "ask_tracked",

@@ -29,7 +29,8 @@ async def apply_device_limit(services, dev, gb_value: int) -> tuple[str, bool]:
 
 async def block_device(cb: CallbackQuery, services, dev, card) -> None:
     """Своя блокировка (бит USER); card(dev) → (текст, клавиатура) карточки."""
-    notes = await call(services.block_device_manual, dev.id, DeviceBlock.USER, True)
+    notes = await call(services.block_device_manual, dev.id, DeviceBlock.USER, True,
+                       actor_tg=cb.from_user.id)
     await send_notifications(cb.bot, notes)
     dev = await call(services.db.get_device, dev.id)
     await edit(cb, *await card(dev))
@@ -41,7 +42,8 @@ async def unblock_device(cb: CallbackQuery, services, dev, card) -> None:
     if not (int(dev.block_reason) & int(DeviceBlock.USER)):
         await cb.answer("Ты не блокировал это устройство", show_alert=True)
         return
-    notes = await call(services.unblock_device_manual, dev.id, DeviceBlock.USER, True)
+    notes = await call(services.unblock_device_manual, dev.id, DeviceBlock.USER, True,
+                       actor_tg=cb.from_user.id)
     await send_notifications(cb.bot, notes)
     dev = await call(services.db.get_device, dev.id)
     await edit(cb, *await card(dev))

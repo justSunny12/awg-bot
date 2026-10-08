@@ -19,7 +19,7 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot.callbacks import ClientCB, Menu, PeriodCB, PresetCB
 from awgbot.bot.handlers.common import (call, edit, ask_here, ask_tracked, back_to_context,
-                                        cleanup_content, send_menu)
+                                        cleanup_content, send_menu, drop_message)
 from awgbot.bot.notifier import notify_one, send_notifications
 from awgbot.domain.services import BYTES_PER_GB, ServiceError
 from awgbot.bot.states import CreateClient, EditLimit, EditName, EditPeriod, EditTrafficLimit
@@ -68,23 +68,26 @@ async def client_edit_parts(services, client_id: int):
     return texts.client_edit_text(client), kb.client_edit_kb(client_id)
 
 
-async def _show_client_card(cb: CallbackQuery, services, client_id: int):
+async def _show_client_card(cb: CallbackQuery, services, client_id: int, *, answer: bool = True):
     parts = await client_card_parts(services, client_id)
     if parts is None:
         client = await call(services.db.get_client, client_id)
         if client is not None and client.tg_id == config.ADMIN_ID:
             from awgbot.bot.handlers.admin import panel      # профиль админа — главная
             await edit(cb, *await panel._panel_parts(services))
+            if answer:
+                await cb.answer()
             return
-        await cb.answer("Профиль не найден", show_alert=True)
+        await cb.answer("Профиль не найден", show_alert=True)   # единственный ответ: иначе alert теряется
         return
     await edit(cb, *parts)
+    if answer:                                 # answer=False — вызывающий ответит своей всплывашкой
+        await cb.answer()
 
 
 @router.callback_query(ClientCB.filter(F.action == "open"))
 async def client_open(cb: CallbackQuery, callback_data: ClientCB, services, state: FSMContext):
     await state.clear()
-    await cb.answer()
     await _show_client_card(cb, services, callback_data.client_id)
 
 
@@ -215,10 +218,7 @@ async def add_client_period(cb: CallbackQuery, callback_data: PeriodCB, services
         return
     client = await call(services.db.get_client, created.client_id)
     await cb.answer()
-    try:
-        await cb.message.delete()
-    except Exception:                                  # noqa: BLE001
-        pass
+    await drop_message(cb, services)
     await _invite_menu(cb.message, services, client, created.invite_code, new=True)
 
 
@@ -482,10 +482,7 @@ async def regen_invite(cb: CallbackQuery, callback_data: ClientCB, services):
         await cb.answer(str(e), show_alert=True)
         return
     await cb.answer("Новое приглашение")
-    try:
-        await cb.message.delete()
-    except Exception:                                  # noqa: BLE001
-        pass
+    await drop_message(cb, services)
     await _invite_menu(cb.message, services, client, code, new=False)
 
 
@@ -617,7 +614,7 @@ async def admin_resume_pause(cb: CallbackQuery, callback_data: ClientCB, service
     ok, actual, new_end, notes = await call(services.exit_pause, client.id, auto=False)
     if not ok:
         await cb.answer("Профиль не на паузе", show_alert=True)
-        await _show_client_card(cb, services, client.id)
+        await _show_client_card(cb, services, client.id, answer=False)
         return
     await send_notifications(cb.bot, notes)
     await cb.answer("Пауза снята")

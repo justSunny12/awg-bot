@@ -380,8 +380,11 @@ def add_device_addslot(client_id: int) -> InlineKeyboardMarkup:
 
 
 def gateway_card_button(slot: int) -> InlineKeyboardMarkup:
+    """Под карточкой устройства-шлюза: в карточку слота и назад; слота нет
+    (двойник в окне переезда) — только «Назад», кнопка в никуда не нужна."""
     kb = InlineKeyboardBuilder()
-    kb.button(text="🛰 Карточка шлюза", callback_data=GwSlotCB(action="card", slot=slot))
+    if slot:
+        kb.button(text="🛰 Карточка шлюза", callback_data=GwSlotCB(action="card", slot=slot))
     kb.button(text="⬅️ Назад", callback_data=Menu(action="devices"))
     kb.adjust(1, 1)
     return kb.as_markup()

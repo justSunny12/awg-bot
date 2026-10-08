@@ -10,9 +10,12 @@ from aiogram.types import CallbackQuery
 
 from awgbot.bot.callbacks import HideCB
 
-async def on_hide(cb: CallbackQuery):
+async def on_hide(cb: CallbackQuery, services=None):
     try:
         await cb.message.delete()
+        if services is not None:                      # спрятали живое меню — указатель долой
+            from awgbot.bot.handlers.common import forget_nav_if
+            await forget_nav_if(services, cb.message.chat.id, cb.message.message_id)
     except Exception:                                 # noqa: BLE001
         pass                                          # уже удалено/бот без прав — не страшно
     await cb.answer()

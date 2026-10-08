@@ -417,8 +417,6 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
 > text «example.org example.com localhost»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ✅ <code>example.org</code>: добавлен
 <code>example.com</code>: уже в списке
@@ -447,8 +445,6 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
 > text «example.org»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ✅ <code>example.org</code>: добавлен
 Изменения синхронизируются с другими шлюзами
@@ -474,8 +470,6 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
 > text «gosuslugi.ru»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ✅ <code>gosuslugi.ru</code>: добавлен
 
@@ -505,8 +499,6 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
 > text «example.org»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ⚠️ dnsmasq не перезапустился — откатываю
 
@@ -769,8 +761,6 @@ uci commit</pre>
 > text «70»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ✅ Порог температуры: 75 → 70 °C
 
@@ -910,8 +900,6 @@ SMTP-сервер и порт: <code>smtp.example.com:587</code>
 - delete #5
 - delete #6
 - delete #7
-! правка удалённого #1
-- markup off #1
 + send #9
 ✅ Ящик <code>admin@example.org</code> подключён
 IMAP и SMTP отвечают, вход выполнен
@@ -928,8 +916,6 @@ IMAP и SMTP отвечают, вход выполнен
 - delete #1
 - delete #2
 - delete #3
-! правка удалённого #1
-- markup off #1
 + send #5
 ✅ Ящик <code>admin@gmail.com</code> подключён
 IMAP и SMTP отвечают, вход выполнен
@@ -946,8 +932,6 @@ IMAP и SMTP отвечают, вход выполнен
 - delete #1
 - delete #2
 - delete #3
-! правка удалённого #1
-- markup off #1
 + send #5
 🔴 Не подключено: IMAP: вход отклонён — нужен пароль приложения
 Ничего не сохранено — попробуй ещё раз
@@ -1269,8 +1253,6 @@ IMAP и SMTP отвечают, вход выполнен
 > text «2222»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ✅ Порт SSH: 22 → 2222. Текущие сеансы не рвутся — проверь вход новым подключением на порт 2222; проброс порта на роутере (при наличии) поправь сам: снаружи &lt;любой порт&gt; → шлюз:2222
 
@@ -1293,8 +1275,6 @@ IMAP и SMTP отвечают, вход выполнен
 > text «22»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ℹ️ Порт SSH не изменился — выбран уже установленный (22)
   [✏️ Другой порт | gw:ssh_port_retry:] [⬅️ Назад | gw:ssh_port_back:]
@@ -1303,8 +1283,6 @@ IMAP и SMTP отвечают, вход выполнен
 > text «8080»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ⛔ Смена порта SSH не выполнена: порт 8080 уже занят процессом <code>nginx</code>
   [✏️ Другой порт | gw:ssh_port_retry:] [⬅️ Назад | gw:ssh_port_back:]
@@ -1318,8 +1296,6 @@ IMAP и SMTP отвечают, вход выполнен
 > text «2222»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ⚠️ Порт не изменён: sshd не поднялся на 2222 — вернул 22
 
@@ -1355,7 +1331,6 @@ IMAP и SMTP отвечают, вход выполнен
 > press gw:ssh_port_retry:
 = markup #3
   [Скрыть | hd]
-- markup off #3
 + send #4
 🅿️ <b>Порт SSH</b> · сейчас 22 · 1–65535. Занятый порт не возьму; текущие сеансы не рвутся — проверь вход новым подключением. Проброс порта на роутере (при наличии) поправь сам
   [✖️ Отмена | x:set_ssh:0]
@@ -1365,7 +1340,6 @@ IMAP и SMTP отвечают, вход выполнен
 > press gw:ssh_port_back:
 = markup #3
   [Скрыть | hd]
-- markup off #3
 + send #4
 <b>🛡 SSH-доступ</b>
 
@@ -1396,8 +1370,6 @@ IMAP и SMTP отвечают, вход выполнен
 > text «198.51.100.4 home.example.net»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ✅ Адреса для SSH-доступа: добавлено <code>198.51.100.4</code>, <code>home.example.net</code>
 
@@ -1422,8 +1394,6 @@ IMAP и SMTP отвечают, вход выполнен
 > text «203.0.113.0/24»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ✅ Адреса для SSH-доступа: добавлено <code>203.0.113.0/24</code>; объединено с новой подсетью: <code>203.0.113.7</code>, <code>203.0.113.9</code>
 
@@ -1448,8 +1418,6 @@ IMAP и SMTP отвечают, вход выполнен
 > text «203.0.113.7»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ℹ️ Всё из введённого уже в списке — ничего не менял
 
@@ -1532,8 +1500,6 @@ IMAP и SMTP отвечают, вход выполнен
 > text «10»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ✅ Линк молчит дольше: 5 → 10 мин
 
@@ -1613,8 +1579,6 @@ IMAP и SMTP отвечают, вход выполнен
 > text «5 3»
 - delete #1
 - delete #2
-! правка удалённого #1
-- markup off #1
 + send #3
 ✅ Автобэкап: 1-е, 12:00 → 5-е, 03:00
 
@@ -1708,8 +1672,6 @@ IMAP и SMTP отвечают, вход выполнен
 - delete #4
 - delete #1
 - delete #3
-! правка удалённого #1
-- markup off #1
 + send #5
 ✅ Фраза задана — следующие копии уйдут шифрованными
 
@@ -1886,8 +1848,6 @@ IMAP и SMTP отвечают, вход выполнен
 + send #3
 ⚠️ Не удалось обновить: sha256 не сошёлся
   [Скрыть | hd]
-! правка удалённого #1
-- markup off #1
 + send #4
 🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч
 

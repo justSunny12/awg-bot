@@ -70,7 +70,9 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
         if kind == "clients":
             return await clients.clients_screen(services, chat_id)
         if kind == "extend":
-            return await clients.extend_screen(services, ref)
+            # сюда — только по ссылке из «Истекают» и уведомления: «Отмена» туда же
+            from awgbot.bot.callbacks import Menu
+            return await clients.extend_screen(services, ref, cancel_to=Menu(action="expiring").pack())
         if kind == "dev":
             from awgbot.bot.handlers.common import call
             dev = await call(services.db.get_device, ref)

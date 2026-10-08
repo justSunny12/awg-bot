@@ -12,7 +12,7 @@ from aiogram.types import CallbackQuery
 
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
-from awgbot.bot.handlers.common import call, cleanup_content, dismiss_update_reports
+from awgbot.bot.handlers.common import call, cleanup_content, dismiss_update_reports, drop_message
 from awgbot.core import settings
 
 
@@ -41,10 +41,7 @@ async def install(cb: CallbackQuery, services, *, return_panel) -> None:
     await cb.answer(texts.UPDATE_STARTING)
     chat_id = cb.message.chat.id
     await cleanup_content(cb.bot, services, chat_id)
-    try:
-        await cb.message.delete()                     # сам шаг — тоже в утиль
-    except Exception:                                 # noqa: BLE001
-        pass
+    await drop_message(cb, services)                  # сам шаг — тоже в утиль
     wait = await cb.bot.send_message(chat_id, texts.update_wait(nxt.tag))
     await call(services.set_update_wait, chat_id, wait.message_id)
     try:

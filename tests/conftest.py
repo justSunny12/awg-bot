@@ -119,6 +119,7 @@ def fake_awg(monkeypatch):
         started_at="2026-01-01T00:00:00+03:00",
         _n=0, privpub={},
         fw_admin_ips=None,          # чем бот кормил nftguard.reconcile (None — не звал)
+        fw_applied=0,               # сколько раз просили перерисовать таблицу целиком
         fw_calls=0,
     )
     server_params = {
@@ -161,6 +162,10 @@ def fake_awg(monkeypatch):
         return "ok"
     monkeypatch.setattr(nftguard, "enabled", lambda: True)
     monkeypatch.setattr(nftguard, "reconcile", _fw_reconcile)
+    # полная перерисовка (порт линка слота) — тоже в фейк: иначе тест под root
+    # переписал бы /etc/nftables.conf хоста
+    monkeypatch.setattr(nftguard, "ensure_persistence", lambda: [])
+    monkeypatch.setattr(nftguard, "apply_text", lambda text: state.__setattr__("fw_applied", state.fw_applied + 1))
     return state
 
 

@@ -26,6 +26,18 @@ log = logging.getLogger("awgbot.services")
 _MONTH_CUT_MINUTES = 30 * 24 * 60             # порог, который месяцу не показываем
 
 _TXT_EXPIRED_CLIENT = "🔴 Подписка истекла — доступ приостановлен"
+def _left_label(mins_left: int) -> str:
+    """«3 дня» / «5 часов» / «меньше часа» — остаток словами для уведомления
+    о сроке, когда ближайший порог уже позади."""
+    from awgbot.bot.texts.fmt import plural_ru
+    days, hours = -(-mins_left // 1440), -(-mins_left // 60)      # вверх, как remaining_brief
+    if mins_left >= 1440:
+        return f"{days} {plural_ru(days, 'день', 'дня', 'дней')}"
+    if hours >= 1:
+        return f"{hours} {plural_ru(hours, 'час', 'часа', 'часов')}"
+    return "меньше часа"
+
+
 _TXT_EXPIRING_CLIENT = "⏳ Подписка истекает через {label}"
 _TXT_EXPIRING_ADMIN = "⏳ {name}: подписка истекает через {label}"     # name — ссылка
 _TXT_EXPIRED_ADMIN = "🔴 {name}: подписка истекла, доступ приостановлен"
@@ -514,9 +526,11 @@ class TrafficMixin:
                   and not (client.period_kind == "month" and th_min >= _MONTH_CUT_MINUTES)
               ]
               if crossed:
-                  # самый строгий = наименьший порог по времени (сам порог
-                  # дальше не нужен — только его подпись)
-                  _, tightest_label = min(crossed, key=lambda x: x[0])
+                  # самый строгий = наименьший порог по времени; порог проспали
+                  # (бот лежал, срок правили) — называем остаток, а не подпись
+                  tightest_min, tightest_label = min(crossed, key=lambda x: x[0])
+                  if mins_left < tightest_min:
+                      tightest_label = _left_label(mins_left)
                   if client.tg_id:
                       # кнопка отсрочки: только КЛИЕНТУ (не другу — друзья идут иным
                       # путём), только на ГОДОВОМ периоде и один раз за период.

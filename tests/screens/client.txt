@@ -1019,8 +1019,6 @@ https://t.me/test_bot?start=FTEST0000006
 ### cl.finisher.menu — «⬅️ В меню» под выдачей — главная
 > press m:main
 ~ (пустой ответ)
-- delete #2
-! правка удалённого #2
 = edit #2
 👋 <b>Вася</b>
 
@@ -1105,9 +1103,6 @@ https://t.me/test_bot?start=FTEST0000006
 
 ### cl.dev.block.do — 🛑 Заблокировать — итог на карточке
 > press bl:dev:block:1:user:-1
-+ send #2
-🛑 Устройство «Телефон» заблокировано.
-  [Скрыть | hd]
 = edit #1
 ⛔ <b>Телефон</b>
 Не подключался · 📊 0 ГБ (безлимит)
@@ -1120,9 +1115,6 @@ https://t.me/test_bot?start=FTEST0000006
 
 ### cl.dev.unblock — разблокировать своё
 > press bl:dev:menu_unblock:1:user:-1
-+ send #2
-🟢 Устройство «Телефон» разблокировано.
-  [Скрыть | hd]
 = edit #1
 ⚪ <b>Телефон</b>
 Не подключался · 📊 0 ГБ (безлимит)
@@ -1364,8 +1356,6 @@ VPN выключится сразу. Если Telegram у тебя только 
 https://t.me/test_bot?start=FTEST0000002
 или <a href="https://t.me/test_bot">в боте</a>: <code>/code FTEST0000002</code>
   [📤 Отправить | https://t.me/share/url?url=https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DFTEST0000002&text=%D0%A2%D0%B2%D0%BE%D1%91%20%D0%BF%D1%80%D0%B8%D0%B3%D0%BB%D0%B0%D1%88%D0%B5%D0%BD%D0%B8%D0%B5%20%D0%B4%D0%BB%D1%8F%20%D1%83%D1%81%D1%82%D1%80%D0%BE%D0%B9%D1%81%D1%82%D0%B2%D0%B0%20%C2%AB%D0%A2%D0%B5%D0%BB%D0%B5%D1%84%D0%BE%D0%BD%20%D0%BC%D0%B0%D0%BC%D1%8B%C2%BB%3A%20https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DFTEST0000002%20%D0%B8%D0%BB%D0%B8%20%D0%B2%20TG-%D0%B1%D0%BE%D1%82%D0%B5%20%28%40test_bot%29%3A%20%2Fcode%20FTEST0000002] [📋 Скопировать | copy:Твоё приглашение для устройства «Телефон мамы»: https://t.me/test_bot?start=FTEST0000002 или в TG-боте (@test_bot): /code FTEST0000002]
-! правка удалённого #3
-- markup off #3
 + send #5
 ☝️ Отправь приглашение другу — он активирует и получит устройство «Телефон мамы»
   [⬅️ В меню | m:main]
@@ -1392,8 +1382,6 @@ https://t.me/test_bot?start=FTEST0000002
 https://t.me/test_bot?start=FTEST0000002
 или <a href="https://t.me/test_bot">в боте</a>: <code>/code FTEST0000002</code>
   [📤 Отправить | https://t.me/share/url?url=https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DFTEST0000002&text=%D0%A2%D0%B2%D0%BE%D1%91%20%D0%BF%D1%80%D0%B8%D0%B3%D0%BB%D0%B0%D1%88%D0%B5%D0%BD%D0%B8%D0%B5%20%D0%B4%D0%BB%D1%8F%20%D1%83%D1%81%D1%82%D1%80%D0%BE%D0%B9%D1%81%D1%82%D0%B2%D0%B0%20%C2%AB%D0%A2%D0%B5%D0%BB%D0%B5%D1%84%D0%BE%D0%BD%20%D0%BC%D0%B0%D0%BC%D1%8B%C2%BB%3A%20https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DFTEST0000002%20%D0%B8%D0%BB%D0%B8%20%D0%B2%20TG-%D0%B1%D0%BE%D1%82%D0%B5%20%28%40test_bot%29%3A%20%2Fcode%20FTEST0000002] [📋 Скопировать | copy:Твоё приглашение для устройства «Телефон мамы»: https://t.me/test_bot?start=FTEST0000002 или в TG-боте (@test_bot): /code FTEST0000002]
-! правка удалённого #3
-- markup off #3
 + send #6
 ☝️ Отправь приглашение другу — он активирует и получит устройство «Телефон мамы»
   [⬅️ В меню | m:main]
@@ -1980,8 +1968,6 @@ https://www.ya.ru/path
 ### cl.rf.add.start_sub.back — «Назад» с подписки, открытой ссылкой во время ввода
 > press m:main
 ~ (пустой ответ)
-- delete #2
-! правка удалённого #2
 = edit #2
 👋 <b>Вася</b>
 
