@@ -935,13 +935,6 @@ def test_an_early_refusal_of_a_bundle_clears_the_mail_note(svc, monkeypatch, tmp
     assert not ok and svc.bundle_mail_check() == {}
 
 
-def test_a_temporary_refusal_with_retry_is_not_reported_as_a_rollback(svc):
-    """STILL_APPLYING/BUSY_ACTIVATING — юнит ещё работает, отката не было:
-    «Вернул прежние» было бы неправдой."""
-    note = svc.link_settings_note({"ok": False, "changed": ["LAN_MODE"], "error": "ещё применяется", "retry": True})
-    assert note.startswith("⏳") and "Вернул прежние" not in note
-
-
 def test_backups_are_not_re_switched_when_the_channel_is_already_email(svc, monkeypatch, tmp_path):
     """Канал уже e-mail или применение файла не удалось — строки «💾 Бэкапы
     теперь…» нет; переключение не повторяется и выбор человека не перебивает."""

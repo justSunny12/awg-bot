@@ -58,7 +58,12 @@
 #                          routing-gw-setup.sh) и скрипта линка в
 #                          /usr/local/sbin освежаются, если они там уже есть.
 #   uninstall              снять сервис (код и таблица учёта РФ-трафика всегда; данные,
-#                          секреты и файервол — по согласию).
+#                          секреты, файервол и обвязка роли — по согласию: у шлюза
+#                          линк до сервера AWG, юнит и таблицы, /etc/awg-gw,
+#                          /var/lib/awg-gw, скрипты списков; у ВПС линки до
+#                          шлюзов, таблицы маршрутизации, резолвер клиентов).
+#                          Что было до бота — аплинк шлюза, интерфейсы awg с
+#                          клиентами — остаётся.
 #   backup                 снимок состояния → $BACKUP_DIR/*.tgz тем же составом, что
 #                          копия из чата: сборщик tools/snapshot.py (БД через backup
 #                          API SQLite, conf, env, конфиги awg-интерфейсов; у ВПС —
@@ -1369,6 +1374,8 @@ cmd_uninstall() {
     require_root
     warn "Снятие сервиса awg-bot: будут удалены сервис, код и команда awg-bot."
     confirm "Точно снять awg-bot?" n || { log "отменено."; return 0; }
+    # Роль — до того, как конфиг исчезнет: хвост снимает обвязку своей роли
+    local role; role="$(sed -nE 's/^ *role: *"?([a-z]+)"?.*/\1/p' "$ETC_DIR/conf/app.yaml" 2>/dev/null | head -n1)"
     # ПОРЯДОК КРИТИЧЕН: сперва БЕЗУСЛОВНО и СИНХРОННО убираем
     # то, из-за чего установка считается установкой (код + симлинк), чтобы
     # прерывание на любом дальнейшем вопросе оставляло чистое поле, а не тупик.
@@ -1378,14 +1385,62 @@ cmd_uninstall() {
     local tmp_self; tmp_self="$(mktemp)"; cp "$SELF_PATH" "$tmp_self"; chmod +x "$tmp_self"
     rm -rf "$INSTALL_DIR"
     ok "сервис снят, код и команда удалены — хост чист для переустановки."
-    exec "$tmp_self" __post_uninstall
+    AWG_ROLE="${role:-client}" exec "$tmp_self" __post_uninstall
 }
-# Хвост: опциональная зачистка данных/секретов (из /tmp-копии, прерывание тут
-# уже безопасно — установка полностью снята).
+# Хвост: опциональная зачистка данных/секретов и обвязки роли (из /tmp-копии,
+# прерывание тут уже безопасно — установка полностью снята). Принцип: после
+# снятия приложение не должно наследить — всё, что оно само поставило на хост,
+# уходит; что было до него (аплинк шлюза, интерфейсы awg с клиентами на ВПС),
+# остаётся.
 cmd_post_uninstall() {
     warn "ДАННЫЕ: в $DATA_DIR — БД с приватными ключами устройств; в $ETC_DIR — секреты."
     confirm "Удалить $ETC_DIR (секреты + конфиг)?" n && { rm -rf "$ETC_DIR"; ok "удалён $ETC_DIR"; }
     confirm "Удалить $DATA_DIR (БД + бэкапы — НЕОБРАТИМО)?" n && { rm -rf "$DATA_DIR"; ok "удалён $DATA_DIR"; }
+    if [[ "${AWG_ROLE:-}" == "gateway" ]]; then
+        # Обвязка шлюза — целиком работа бота: линк до сервера AWG, юнит
+        # реассерта, таблицы (в них же SSH-фильтр шлюза), /etc/awg-gw,
+        # /var/lib/awg-gw, скрипты списков; /opt/awg-gw — остаток прежних
+        # выпусков. Аплинк — связь с сервером AWG, поднятая до бота, — не трогается.
+        if [[ -x /usr/local/sbin/routing-gw-setup.sh || -d /etc/awg-gw || -d /var/lib/awg-gw ]]; then
+            warn "Найдена обвязка шлюза (линк до сервера AWG, юнит и таблицы, /etc/awg-gw, /var/lib/awg-gw)."
+            if confirm "Снять её? (SSH-фильтр шлюза уйдёт вместе с таблицами — SSH снова станет открыт для всех адресов)" y; then
+                [[ -x /usr/local/sbin/routing-gw-setup.sh ]] \
+                    && sh /usr/local/sbin/routing-gw-setup.sh --rollback >/dev/null 2>&1 || true
+                rm -rf /etc/awg-gw /var/lib/awg-gw /opt/awg-gw
+                rm -f /usr/local/sbin/routing-gw-setup.sh /usr/local/sbin/awg-lan-lists.sh \
+                      /usr/local/sbin/awg-lan-domain.sh /usr/local/sbin/awg-lan-services.sh
+                ok "обвязка шлюза снята"
+            else
+                log "обвязка шлюза оставлена. Снять вручную: sh /usr/local/sbin/routing-gw-setup.sh --rollback"
+            fi
+        fi
+    else
+        # ВПС: линки до шлюзов и обвязка РФ-доступа (таблицы маршрутизации,
+        # резолвер клиентов) — тоже работа бота. Интерфейсы awg с клиентами
+        # остаются: VPN как таковой бот не ставил, только управлял им.
+        local f name had=""
+        for f in /etc/amnezia/amneziawg/awglink*.conf; do [[ -f "$f" ]] && had=1; done
+        if [[ -n "$had" || -x /usr/local/sbin/routing-host-setup.sh || -f /etc/dnsmasq.d/awgbot-resolver.conf ]]; then
+            warn "Найдена обвязка РФ-доступа (линки до шлюзов, таблицы маршрутизации, резолвер клиентов)."
+            if confirm "Снять её? (РФ-доступ у клиентов перестанет работать; интерфейсы awg с клиентами остаются)" y; then
+                for f in /etc/amnezia/amneziawg/awglink*.conf; do
+                    [[ -f "$f" ]] || continue
+                    name="$(basename "$f" .conf)"
+                    [[ -x /usr/local/sbin/routing-link-setup.sh ]] \
+                        && LINK_IF="$name" sh /usr/local/sbin/routing-link-setup.sh --rollback >/dev/null 2>&1 || true
+                done
+                [[ -x /usr/local/sbin/routing-host-setup.sh ]] \
+                    && sh /usr/local/sbin/routing-host-setup.sh --rollback >/dev/null 2>&1 || true
+                rm -f /usr/local/sbin/routing-link-setup.sh /usr/local/sbin/routing-host-setup.sh
+                rm -f /etc/dnsmasq.d/awgbot-resolver.conf /etc/systemd/system/dnsmasq.service.d/awgbot-resolver.conf
+                systemctl daemon-reload 2>/dev/null || true
+                systemctl try-restart dnsmasq 2>/dev/null || true
+                ok "обвязка РФ-доступа снята"
+            else
+                log "обвязка РФ-доступа оставлена. Снять вручную: sh /usr/local/sbin/routing-host-setup.sh --rollback"
+            fi
+        fi
+    fi
     # Firewall: снимаем ТОЛЬКО свою таблицу/файл (их создал awg-bot firewall setup).
     # Снятие адресных drop'ов делает SSH снова открытым для всех — доступ к хосту
     # при этом НЕ теряется (мы только убираем ограничение, а не рвём established).
