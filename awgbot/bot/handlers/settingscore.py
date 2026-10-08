@@ -23,7 +23,7 @@ from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from awgbot.core import settings
 from awgbot.bot import keyboards as kb
-from awgbot.bot import texts, roles
+from awgbot.bot import texts
 from awgbot.bot.states import BackupPassphrase, EmailSetup, SettingsInput
 from awgbot.bot.handlers.common import call, ask_tracked, cleanup_content, send_menu
 from awgbot.domain.services import ServiceError
@@ -31,18 +31,17 @@ from awgbot.domain.services import ServiceError
 
 @dataclass
 class Hooks:
-    """Чем роли различаются.
+    """Крючки роли (собирает sections.hooks_for из словаря роли).
 
     email_offer_kb(sec)   — «почта не настроена»: назад в sec / настроить;
-    email_forget_kb()     — подтверждение отключения ящика;
     render(cb, services, sec) — перерисовать раздел на месте кнопки;
-    screen(services, sec) — (text, markup) раздела, для показа новым сообщением.
+    screen(services, sec) — (text, markup) раздела, для показа новым сообщением;
+    br                    — словарь роли: тексты про почту и шифрование.
     """
     email_offer_kb: Callable[[str], object]
-    email_forget_kb: Callable[[], object]
     render: Callable[[CallbackQuery, object, str], Awaitable[None]]
     screen: Callable[[object, str], Awaitable[tuple]]
-    gateway: bool = False        # тексты про почту и шифрование — по роли
+    br: object
 
 
 _TOGGLE_DEFAULTS = {"notifications.email_fallback": False}
@@ -397,7 +396,7 @@ async def set_backup_channel(cb: CallbackQuery, services, hooks: Hooks, val: str
             await cb.answer()
             return
         if not await call(services.backup_encryption_enabled):
-            await cb.answer(texts.backup_needs_encryption(roles.pick(hooks.gateway)), show_alert=True)
+            await cb.answer(texts.backup_needs_encryption(hooks.br), show_alert=True)
             return
     try:
         await call(settings.set_value, "app.scheduler.backup_channel", val)
@@ -436,8 +435,7 @@ async def _render_with_note(cb: CallbackQuery, services, hooks: Hooks, sec: str,
 
 async def email_action(cb: CallbackQuery, services, hooks: Hooks, state: FSMContext,
                        key: str) -> bool:
-    """setup | check | test | forget | forget!. False — ключ не наш."""
-    from awgbot.bot.handlers.common import edit
+    """setup | check | test | forget! (вопрос «отключить?» — Confirm раздела). False — ключ не наш."""
     from awgbot.infra import mail
     if key == "setup":
         await state.clear()
@@ -465,10 +463,6 @@ async def email_action(cb: CallbackQuery, services, hooks: Hooks, state: FSMCont
         acc = await call(services.email_account)
         await _render_with_note(cb, services, hooks, "email",
                                 "✅ " + texts.email_test_sent(acc.login if acc else ""))
-        return True
-    if key == "forget":
-        await edit(cb, texts.email_forget_confirm(roles.pick(hooks.gateway)), hooks.email_forget_kb())
-        await cb.answer()
         return True
     if key == "forget!":
         await call(services.email_forget)

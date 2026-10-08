@@ -111,14 +111,16 @@ async def test_backup_channel_email_requires_mailbox_and_encryption(services, fa
     store = _email_store(monkeypatch)
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    await sh.pick(cb, SetCB(sec="backup", act="pick", key="channel", val="email"), services)
+    # «📨 Куда: Telegram» — цикл Telegram → E-mail с проверками ящика и шифрования
+    channel = SetCB(sec="backup", act="cycle", key="app.scheduler.backup_channel")
+    await sh.cycle(cb, channel, services)
     assert any("Почта не настроена" in t for kind, t, _ in msg.sent if kind == "edit_text")
     assert "app.scheduler.backup_channel" not in store
     services.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
-    await sh.pick(cb, SetCB(sec="backup", act="pick", key="channel", val="email"), services)
+    await sh.cycle(cb, channel, services)
     assert "app.scheduler.backup_channel" not in store, "без шифрования почтовый канал не включается"
     services.backup_set_passphrase("correct horse battery")
-    await sh.pick(cb, SetCB(sec="backup", act="pick", key="channel", val="email"), services)
+    await sh.cycle(cb, channel, services)
     assert store["app.scheduler.backup_channel"] == "email"
     # «создать сейчас» уходит письмом
     mailed = []
@@ -176,7 +178,8 @@ async def test_critical_alert_goes_to_email_when_telegram_is_down(monkeypatch):
 async def test_backup_passphrase_flow_deletes_messages_and_requires_match(services, fake_bot, monkeypatch):
     from awgbot.bot.handlers import settings as sh
     from awgbot.bot.callbacks import SetCB
-    from awgbot.bot import keyboards as kbs
+    from awgbot.bot import sections
+    from awgbot.bot.roles import MAIN
     from tests.conftest import FakeCallback, FakeMessage, FakeState
     import awgbot.core.config as cfg
     _email_store(monkeypatch)
@@ -206,7 +209,7 @@ async def test_backup_passphrase_flow_deletes_messages_and_requires_match(servic
     section = [t for kind, t, _ in ok.sent if kind == "answer"][-1]
     assert section.startswith("✅ Фраза задана — следующие копии уйдут шифрованными\n\n"
                               "💾 <b>Бэкапы</b> ✅ вкл · 🔐 фраза задана"), section
-    assert kbs.settings_backup(True).inline_keyboard[0][1].text == "🔐 Шифрование"
+    assert sections.backup.keyboard(MAIN, True).inline_keyboard[0][1].text == "🔐 Шифрование"
 
 
 # ── ♻️ восстановление из файла в чате ────────────────────────────────────────

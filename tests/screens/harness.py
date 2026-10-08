@@ -469,7 +469,7 @@ async def take(shot: base.Shot, tmp: pathlib.Path, fakes=()) -> Record:
 
 # ── полнота: какие построители клавиатур вызваны ────────────────────────────
 
-KEYBOARD_MODULES = ("admin", "broadcast", "client", "common", "gateway", "rolekb", "routing", "settings")
+KEYBOARD_MODULES = ("admin", "broadcast", "client", "common", "gateway", "routing", "settings")
 
 
 def keyboard_builders() -> dict[str, object]:

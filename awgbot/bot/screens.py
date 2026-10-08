@@ -55,6 +55,15 @@ async def render(kind: str, ref: int = 0, *, services, role: str, client=None,
 
 
 async def _render(kind: str, ref: int, services, role: str, client, chat_id: int):
+    from awgbot.bot import roles, sections
+    if roles.current() is roles.GATEWAY:
+        # агент: человек в чате — админ, экраны — панель и разделы настроек
+        from awgbot.bot.handlers import gateway as gwh
+        if kind == "main":
+            return await gwh._panel_parts(services)
+        if kind.startswith("set_"):
+            return await sections.screen(kind[4:], roles.GATEWAY, services, str(ref or ""))
+        return None
     if role == "admin":
         from awgbot.bot.handlers.admin import panel, clients, devices
         if kind == "main":
@@ -99,14 +108,12 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
             from awgbot.bot.handlers import settings as sh
             return await sh.gateway_edit_screen(services, ref)
         if kind == "upd":
-            from awgbot.bot.handlers.settings import _screen
-            return await _screen("upd", services)
+            return await sections.screen("upd", roles.MAIN, services)
         if kind.startswith("set_"):
             # раздел настроек (set_<раздел>): «✖️ Отмена» под приглашением к
             # вводу возвращает его на место приглашения (ref — параметр
-            # раздела, например слот)
-            from awgbot.bot.handlers.settings import _screen
-            return await _screen(kind[4:], services, str(ref or ""))
+            # раздела, например слот); общие разделы — sections, ролевые — экраны роли
+            return await sections.screen(kind[4:], roles.MAIN, services, str(ref or ""))
         return None
     if role == "client":
         from awgbot.bot.handlers import client as ch
@@ -126,11 +133,6 @@ async def _render(kind: str, ref: int, services, role: str, client, chat_id: int
         if kind == "guide":
             from awgbot.bot.handlers import guide as gh
             return await gh.connect_step0_payload(services, client, ref, chat_id)
-        return None
-    if role == "gateway":
-        from awgbot.bot.handlers import gateway as gwh
-        if kind.startswith("set_"):
-            return await gwh._section(services, kind[4:])
         return None
     if role == "invited":
         from awgbot.bot.handlers import friend as fh

@@ -36,6 +36,10 @@ class BundleMixin:
         tail = (base._out(up) + up.stderr.decode(errors="replace")).strip().splitlines()[-3:]
         return ok, "\n".join(tail) if tail else ("поднят" if ok else "не поднялся")
 
+    def restart_awg(self) -> tuple[bool, str]:
+        """То же, что restart_link, — общее имя для раздела «🔧 Сервис» обеих ролей."""
+        return self.restart_link()
+
     def reassert(self) -> tuple[bool, str]:
         """Полный реассерт: рестарт юнита шлюза — тот зовёт gw-скрипт, который
         идемпотентно переставляет правила и переподнимает линк. Под общим

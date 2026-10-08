@@ -10,9 +10,10 @@ from awgbot.core import settings
 from awgbot.bot import texts
 from awgbot.bot import keyboards as kb
 from awgbot.bot import screens
+from awgbot.bot import sections as secs
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot.handlers import settingscore as core
-from awgbot.bot.handlers import updates_flow
+from awgbot.bot.roles import MAIN
 from awgbot.bot.notifier import send_notifications
 from awgbot.domain.services import ServiceError
 from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu, card_from_main, drop_message
@@ -20,31 +21,30 @@ from awgbot.bot.handlers.common import call, edit, send_menu, show_main_menu, ca
 log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
 from .inputs import _routing_provision
-from .render import HOOKS, _drop_bundle_msgs, _render, _screen, card_kb
+from .render import _drop_bundle_msgs, _render, _screen, _shared, card_kb
 from .slots import _issue_bundle_here
 
 # ── открытие раздела ─────────────────────────────────────────────────────────
 @router.callback_query(SetCB.filter(F.act == "open"))
 async def open_section(cb: CallbackQuery, callback_data: SetCB, services, state: FSMContext):
+    """Ролевые разделы; общие — в sections (сюда их колбэк не доходит, вызов
+    напрямую — из тестов — передаётся туда же)."""
+    if await _shared(cb, callback_data, services, state):
+        return
     await state.clear()
     if callback_data.sec == "rt":
         card_from_main(cb.message.chat.id, False)
-    if callback_data.sec == "upd":
-        await cb.answer("Проверяю…")                     # раздел ходит к списку релизов
-        await _render(cb, callback_data.sec, services, callback_data.key or "")
-        return
     await _render(cb, callback_data.sec, services, callback_data.key or "")
     await cb.answer()
+
 
 
 # ── тумблеры (bool в YAML или mute обновлений в БД) ───────────────────────────
 @router.callback_query(SetCB.filter(F.act == "toggle"))
 async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
-    key = callback_data.key
-    if callback_data.sec == "upd" and key == "notify":
-        await updates_flow.toggle_mute(cb, services)
-        await _render(cb, "upd", services, "cached")
+    if await _shared(cb, callback_data, services):
         return
+    key = callback_data.key
     if key == "app.routing.enabled" and settings.get_bool(key, False):
         # Выключение бьёт по всем, кому фича разрешена, — только через
         # подтверждение; включение — сразу.
@@ -79,7 +79,7 @@ async def toggle(cb: CallbackQuery, callback_data: SetCB, services):
                                                          at_start=False)
                     if warn:
                         await cb.message.answer(f"⚠️ {warn}", reply_markup=kb.hide_only())
-    await core.toggle_bool(cb, services, HOOKS, key, callback_data.sec, after_set=_after_set)
+    await core.toggle_bool(cb, services, secs.hooks_for(MAIN), key, callback_data.sec, after_set=_after_set)
 
 
 @router.callback_query(SetCB.filter((F.sec == "rt") & (F.act == "do")))

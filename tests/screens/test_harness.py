@@ -418,8 +418,8 @@ def test_builder_list_counts_each_builder_once_and_skips_helpers():
     """Реэкспорт пакета keyboards не удваивает построитель; помощники (метки,
     теги, срез страницы) и кнопки-одиночки в список не входят."""
     b = harness.keyboard_builders()
-    assert "settings.settings_root" in b and "gateway.gateway_notify_kb" in b
+    assert "settings.settings_firewall" in b and "gateway.gateway_panel_kb" in b
     assert not any(k.startswith("__init__") for k in b)
     for helper in ("common.entry_tag", "common.page_slice", "common.select_all_button", "common.reply_hide",
-                   "rolekb.notify_rows", "settings.email_poll_label"):
+                   "gateway.link_minutes", "settings._cycle"):
         assert helper not in b, helper

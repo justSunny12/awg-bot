@@ -349,11 +349,6 @@ def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 330
     return ("✅ " if ok else "⚠️ ") + body + (f"\n{tail}" if tail else "")
 
 
-def gw_settings_text() -> str:
-    from .settings import settings_root_text
-    return settings_root_text()
-
-
 GW_BACKUP_NO_KEY = ("💾 Бэкап шлюза — только шифрованный: внутри приватные ключи линка. "
                     "Задай парольную фразу: 🔐 Шифрование")
 

@@ -1,39 +1,20 @@
-"""Экран «⚙️ Настройки» (админ): разделы в два столбца, почта, бэкапы, сервис, обновления, переезд."""
+"""Экран «⚙️ Настройки» (админ): ролевые разделы — сервер, SSH-доступ, подписки, переезд, свой резолвер;
+общие разделы обеих ролей — в bot/sections/."""
 
 from __future__ import annotations
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from awgbot.core import settings
-from awgbot.bot.callbacks import Menu, UpdateCB, SetCB, GwCB, HideCB
+from awgbot.bot.callbacks import Menu, UpdateCB, SetCB, HideCB
 
-from .common import paged_rows, _chk, _tick, entry_tag, confirm
-from . import rolekb
+from .common import paged_rows, entry_tag, confirm
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Экран «⚙️ Настройки» (админ). Значения читаются из settings в момент рендера —
 # после правки экран перерисовывается и показывает актуальное.
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-def settings_root() -> InlineKeyboardMarkup:
-    """Корень — десять кнопок в два столбца: слева то, что трогают при
-    настройке сервера, справа — реже. Шлюзы живут на главной («🛰 Шлюзы»),
-    в корне их нет."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="🔔 Уведомления", callback_data=SetCB(sec="notify"))
-    kb.button(text="🖥 Сервер AWG", callback_data=SetCB(sec="srv"))
-    kb.button(text="🛡 SSH-доступ", callback_data=SetCB(sec="fw"))
-    kb.button(text="✉️ E-mail", callback_data=SetCB(sec="email"))
-    kb.button(text="💳 Подписки", callback_data=SetCB(sec="subs"))
-    kb.button(text="💾 Бэкапы", callback_data=SetCB(sec="backup"))
-    kb.button(text="🩺 Мониторинг", callback_data=SetCB(sec="mon"))
-    kb.button(text="🔧 Сервис", callback_data=SetCB(sec="svc"))
-    kb.button(text="⬆️ Обновления", callback_data=SetCB(sec="upd"))
-    kb.button(text="⬅️ В меню", callback_data=Menu(action="main"))
-    kb.adjust(2)
-    return kb.as_markup()
 
 
 def restart_now_or_later() -> InlineKeyboardMarkup:
@@ -57,31 +38,9 @@ def _back(sec_to: str = "root") -> InlineKeyboardButton:
     return InlineKeyboardButton(text="⬅️ Назад", callback_data=SetCB(sec=sec_to).pack())
 
 
-def _role(sec: str) -> rolekb.RoleCB:
-    """Адаптер колбэков основного бота для общих клавиатур: раздел sec."""
-    return rolekb.RoleCB(
-        toggle=lambda key: SetCB(sec=sec, act="toggle", key=key),
-        edit=lambda key: SetCB(sec=sec, act="edit", key=key),
-        cycle=lambda key: SetCB(sec=sec, act="cycle", key=key),
-        actions={"encryption": SetCB(sec="backup", act="do", key="enc"),
-                 "encryption_set": SetCB(sec="backup", act="do", key="enc_set"),
-                 "backup_now": SetCB(sec="backup", act="do", key="now"),
-                 "email_setup": SetCB(sec="email", act="do", key="setup"),
-                 "email_check": SetCB(sec="email", act="do", key="check"),
-                 "email_test": SetCB(sec="email", act="do", key="test"),
-                 "email_forget": SetCB(sec="email", act="do", key="forget"),
-                 "updates_notify": SetCB(sec="upd", act="toggle", key="notify"),
-                 "port_retry": SetCB(sec="fw", act="do", key="port_retry"),
-                 "port_back": SetCB(sec="fw", act="do", key="port_back")},
-        back=lambda to: SetCB(sec=to))
-
-
-_ROLE = _role("fw")
-
-
 def _cycle(sec: str, key: str, label: str) -> InlineKeyboardButton:
-    """Кнопка-цикл: нажатие переставляет значение на следующее из ряда
-    (обработчик act="cycle"), подпись — текущее значение."""
+    """Кнопка-цикл ролевого раздела: нажатие переставляет значение на следующее
+    из ряда (обработчик act="cycle"), подпись — текущее значение."""
     return InlineKeyboardButton(text=label, callback_data=SetCB(sec=sec, act="cycle", key=key).pack())
 
 
@@ -183,87 +142,13 @@ def settings_firewall(st: dict, page: int = 0) -> InlineKeyboardMarkup:
 
 
 def ssh_port_finisher() -> InlineKeyboardMarkup:
-    return rolekb.port_finisher_kb(_ROLE)
-
-
-# ── 🔔 Уведомления ───────────────────────────────────────────────────────────
-
-def settings_notify() -> InlineKeyboardMarkup:
-    """Тихие часы и их границы, алерты хоста и пороги (общие с агентом —
-    rolekb.notify_rows), аварии на e-mail и события профилей."""
-    s = settings
+    """Финишер «порт не изменился / не выполнена»: другой порт или назад в
+    раздел; нажатие оставляет финишер с одной «Скрыть»."""
     kb = InlineKeyboardBuilder()
-    rows = rolekb.notify_rows(kb, _role("notify"), temp=False)
-    ef = s.get_bool("notifications.email_fallback", False)
-    kb.button(text=f"{_chk(ef)} Аварии на e-mail",
-              callback_data=SetCB(sec="notify", act="toggle", key="notifications.email_fallback"))
-    kb.button(text="👥 События", callback_data=SetCB(sec="ncl", act="open"))
-    rows.append(2)
-    kb.adjust(*rows)
-    kb.row(_back())
-    return kb.as_markup()
-
-
-CLIENT_EVENT_LABELS = (("activation", "Активация"), ("grace", "Отсрочка"),
-                       ("over_limit", "Лимит исчерпан"), ("bonus", "Бонусный объём"))
-
-
-def settings_notify_clients() -> InlineKeyboardMarkup:
-    s = settings
-    kb = InlineKeyboardBuilder()
-    for key, label in CLIENT_EVENT_LABELS:
-        on = s.get_bool(f"notifications.client_events.{key}", True)
-        kb.button(text=f"{_tick(on)} {label}",
-                  callback_data=SetCB(sec="ncl", act="toggle",
-                                      key=f"notifications.client_events.{key}"))
+    kb.button(text="✏️ Другой порт", callback_data=SetCB(sec="fw", act="do", key="port_retry"))
+    kb.button(text="⬅️ Назад", callback_data=SetCB(sec="fw", act="do", key="port_back"))
     kb.adjust(2)
-    kb.row(_back("notify"))
     return kb.as_markup()
-
-
-# ── ✉️ E-mail ────────────────────────────────────────────────────────────────
-
-EMAIL_POLL_CYCLE = (60, 300, 900)          # опрос ящика: 1 → 5 → 15 мин
-EMAIL_CODE_CYCLE = (6, 8, 12)              # длина кода аварийного выхода
-
-
-def email_poll_label(seconds: int) -> str:
-    return f"⏱ Опрос: {max(60, int(seconds)) // 60} мин"
-
-
-def email_code_label(n: int) -> str:
-    n = int(n)
-    word = "символа" if n in (2, 3, 4) else "символов"
-    return f"🔢 Код: {n} {word}"
-
-
-def settings_email(configured: bool) -> InlineKeyboardMarkup:
-    """Почтовый канал (общая часть с агентом — rolekb.email_kb) плюс аварийный
-    выход из паузы с адресом и циклами опроса и длины кода."""
-    s = settings
-
-    def _resume(kb, rows):
-        on = s.get_bool("email.resume_enabled", True)
-        kb.button(text=f"{_chk(on)} Аварийный выход",
-                  callback_data=SetCB(sec="email", act="toggle", key="email.resume_enabled"))
-        rows.append(1)
-        if on:
-            kb.button(text="✉️ Адрес для кода",
-                      callback_data=SetCB(sec="email", act="edit", key="email.resume_address"))
-            kb.add(_cycle("email", "email.poll_interval_sec",
-                          email_poll_label(s.get_int("email.poll_interval_sec", 60))))
-            kb.add(_cycle("email", "email.resume_code_len",
-                          email_code_label(s.get_int("email.resume_code_len", 8))))
-            rows += [2, 1]
-    return rolekb.email_kb(_role("email"), configured, extra=_resume)
-
-
-def email_forget_confirm() -> InlineKeyboardMarkup:
-    return confirm(SetCB(sec="email"), "🗑 Отключить", SetCB(sec="email", act="do", key="forget!"))
-
-
-def email_setup_offer(back_sec: str) -> InlineKeyboardMarkup:
-    return rolekb.email_offer_kb(_role("email"), back_sec)
 
 
 # ── 💳 Подписки ──────────────────────────────────────────────────────────────
@@ -284,92 +169,16 @@ def settings_subs() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-# ── 🩺 Мониторинг ────────────────────────────────────────────────────────────
-
-def settings_mon() -> InlineKeyboardMarkup:
-    s = settings
-    kb = InlineKeyboardBuilder()
-    kb.button(text=f"⏱ Опрос: {s.get_int('app.scheduler.monitor_minutes', 3)} мин",
-              callback_data=SetCB(sec="mon", act="edit", key="app.scheduler.monitor_minutes"))
-    kb.button(text=f"🔢 Замеров: {s.get_int('app.monitoring.alert_streak', 5)}",
-              callback_data=SetCB(sec="mon", act="edit", key="app.monitoring.alert_streak"))
-    kb.button(text=f"⏳ Простой: {s.get_int('app.monitoring.service_failure_alert_minutes', 5)} мин",
-              callback_data=SetCB(sec="mon", act="edit", key="app.monitoring.service_failure_alert_minutes"))
-    loud = s.get_bool("app.monitoring.service_failure_alert_loud", True)
-    kb.button(text=f"{_chk(loud)} Звук 24/7",
-              callback_data=SetCB(sec="mon", act="toggle", key="app.monitoring.service_failure_alert_loud"))
-    kb.adjust(2)
-    kb.row(_back())
-    return kb.as_markup()
-
-
-# ── 💾 Бэкапы ────────────────────────────────────────────────────────────────
-
-def settings_backup(encryption: bool = False) -> InlineKeyboardMarkup:
-    return rolekb.backup_kb(_role("backup"), encryption)
-
-
-def backup_encryption_kb(has_secret: bool) -> InlineKeyboardMarkup:
-    return rolekb.encryption_kb(_role("backup"), has_secret)
-
-
-def restore_confirm(gateway: bool = False) -> InlineKeyboardMarkup:
-    """«Отмена» первой: восстановление необратимо, промах пальцем не должен
-    возвращать всех на неделю назад."""
-    if gateway:
-        return confirm(GwCB(action="restore_drop"), "♻️ Восстановить", GwCB(action="restore!"))
-    return confirm(SetCB(sec="backup", act="do", key="restore_drop"), "♻️ Восстановить",
-                   SetCB(sec="backup", act="do", key="restore!"))
-
-
 # ── 🔧 Сервис ────────────────────────────────────────────────────────────────
-
-def settings_svc(migration: str = "", available: bool = False,
-                 orphans: int = 0) -> InlineKeyboardMarkup:
-    """Перезапуски парой; переезд — по состоянию: идёт — кто не переехал,
-    завершить и отменить; нет — начать (если настроен) и переехавшие после
-    отмены (если есть)."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="🔁 Перезапуск AWG", callback_data=SetCB(sec="svc", act="do", key="awg"))
-    kb.button(text="🔁 Перезапуск бота", callback_data=SetCB(sec="svc", act="do", key="bot"))
-    rows = [2]
-    if available:
-        if migration:
-            kb.button(text="👥 Кто не переехал", callback_data=SetCB(sec="mig", act="do", key="pending"))
-            kb.button(text="✅ Завершить", callback_data=SetCB(sec="mig", act="do", key="finish"))
-            kb.button(text="↩️ Отменить", callback_data=SetCB(sec="mig", act="do", key="cancel"))
-            rows += [1, 2]
-        else:
-            kb.button(text="🚚 Начать переезд", callback_data=SetCB(sec="mig", act="do", key="start"))
-            rows.append(1)
-            if orphans:
-                kb.button(text=f"⚠️ Переехавшие после отмены: {orphans}",
-                          callback_data=SetCB(sec="mig", act="do", key="orphans"))
-                rows.append(1)
-    kb.adjust(*rows)
-    kb.row(_back())
-    return kb.as_markup()
 
 
 _MIG_CONFIRM_LABEL = {"start": "🚚 Начать", "finish": "✅ Завершить",
                       "cancel": "↩️ Отменить"}
 
 
-def svc_confirm(key: str) -> InlineKeyboardMarkup:
-    """Подтверждение перезапуска AWG / бота: «Отмена» первой."""
-    return confirm(SetCB(sec="svc", act="open"), "🔁 Перезапустить", SetCB(sec="svc", act="do", key=f"{key}!"))
-
-
 def migration_confirm(key: str) -> InlineKeyboardMarkup:
     """Подтверждение входа в переезд и обоих выходов: «Отмена» первой."""
     return confirm(SetCB(sec="svc", act="open"), _MIG_CONFIRM_LABEL[key], SetCB(sec="mig", act="do", key=f"{key}!"))
-
-
-# ── ⬆️ Обновления ────────────────────────────────────────────────────────────
-
-def settings_updates(muted: bool, target_tag: str = "", blocked: str = "") -> InlineKeyboardMarkup:
-    return rolekb.updates_kb(_role("upd"), muted, target_tag, blocked)
-
 
 
 def update_notify() -> InlineKeyboardMarkup:

@@ -75,8 +75,10 @@ async def test_restart_needs_confirmation(svc, fake_bot):
 
     await gh.gw_execute(cb, GwCB(action="restart!"), svc)
     assert svc.restarted == 1
+    # итог — первой строкой раздела «🔧 Сервис», без отдельного сообщения
     edits = [t for kind, t, _ in msg.sent if kind == "edit_text"]
-    assert "Перезапуск AWG: готово" in edits[-1]
+    assert edits[-1].startswith("✅ AWG перезапущен\n\n🔧 <b>Сервис</b>"), edits[-1]
+    assert not [s for s in msg.sent if s[0] == "answer"], "итог перезапуска ушёл отдельным сообщением"
 
 
 async def test_foreign_document_is_refused_before_anything(svc):
@@ -164,6 +166,7 @@ async def test_update_failure_message_can_be_hidden(svc, fake_bot, monkeypatch):
     следом: отказ не итог ступени, держать его в истории незачем, а меню под
     кнопкой уже удалено."""
     import types
+    monkeypatch.setattr(cfg, "ROLE", "gateway")         # реестр экранов рисует панель агента
     nxt = types.SimpleNamespace(tag="v9.9.9", body="", awg_generation=lambda: 0)
     monkeypatch.setattr(svc, "update_next", lambda: nxt)
 
@@ -204,9 +207,10 @@ async def test_start_removes_all_previous_menus(svc, fake_bot):
     assert len(deleted) >= 2, "удаляется не всё прошлое"
 
 
-async def test_gateway_updates_screen_and_manual_check(svc, fake_bot, monkeypatch):
-    """У агента есть ручная точка входа в обновления: экран с версией и
-    «Проверить сейчас», который при наличии ступени даёт кнопку «Обновить»."""
+async def test_gateway_updates_screen_checks_on_every_open(svc, fake_bot, monkeypatch):
+    """У агента есть ручная точка входа в обновления: раздел проверяет при
+    каждом открытии — нет ступени — «актуальна», есть — кнопка «Обновить»
+    (живой колбэк обновления, без мёртвой «Скрыть»)."""
     import types
     msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
     cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
@@ -215,47 +219,17 @@ async def test_gateway_updates_screen_and_manual_check(svc, fake_bot, monkeypatc
     await gh.gw_updates_screen(cb, svc)
     shown = [t for k, t, _ in msg.sent if k == "edit_text"]
     assert shown and cfg.INSTALLED_VERSION in shown[-1]
-
-    monkeypatch.setattr(svc, "update_next", lambda: None)
-    await gh.gw_updates_check(cb, svc)
-    assert "актуальн" in [t for k, t, _ in msg.sent if k == "edit_text"][-1].lower()
+    assert "актуальн" in shown[-1].lower(), shown[-1]
 
     monkeypatch.setattr(svc, "update_next",
-                        lambda: types.SimpleNamespace(tag="v9.9.9", body="заметки"))
-    await gh.gw_updates_check(cb, svc)
+                        lambda: types.SimpleNamespace(tag="v9.9.9", body="заметки", title="",
+                                                      awg_generation=lambda: 0))
+    await gh.gw_updates_screen(cb, svc)
     kind, text, markup = [x for x in msg.sent if x[0] == "edit_text"][-1]
     assert "v9.9.9" in text and markup is not None, "нет кнопки «Обновить»"
     datas = [b.callback_data for row in markup.inline_keyboard for b in row]
     assert any(d.startswith("upd:install") for d in datas)
     assert not any(d.startswith("hide") for d in datas), "мёртвая «Скрыть» у агента"
-
-
-async def test_gateway_schedule_picker_mirrors_the_main_bot(svc, fake_bot, monkeypatch):
-    """Старый пикер расписания из сообщений 3.1.0: значение пишется в conf;
-    «никогда» больше нет — кнопка «никогда» из старого сообщения ставит
-    «месяц» и выключает уведомления, как при старте (проверка живёт, строка
-    «⬆️ Доступна vX» на панели не умирает); тумблер уведомлений не блокируется."""
-    from awgbot.core import settings
-    store = {"updates.poll_schedule": "day"}
-    monkeypatch.setattr(settings, "set_value", lambda k, v: store.__setitem__(k, v) or [])
-    monkeypatch.setattr(settings, "get", lambda k, d=None: store.get(k, d))
-    msg = FakeMessage(chat_id=cfg.ADMIN_ID, user_id=cfg.ADMIN_ID, bot=fake_bot)
-    cb = FakeCallback(message=msg, user_id=cfg.ADMIN_ID, bot=fake_bot)
-
-    await gh.gw_updates_sched(cb, GwCB(action="upd_sched", val="week"), svc)
-    assert store["updates.poll_schedule"] == "week"
-    assert cb.answers[-1] == ("Проверка: неделя", False)
-    assert not svc.updates_muted()
-
-    await gh.gw_updates_sched(cb, GwCB(action="upd_sched", val="never"), svc)
-    assert store["updates.poll_schedule"] == "month", "«никогда» из старого пикера записано"
-    assert cb.answers[-1] == ("Проверка: месяц", False)
-    assert svc.updates_muted(), "«никогда» 3.1.0 — это тишина: месяц плюс выключенные уведомления"
-
-    cb.answers.clear()
-    await gh.gw_updates_toggle(cb, svc)
-    assert cb.answers == [("Уведомления включены", False)], cb.answers
-    assert not svc.updates_muted()
 
 
 def test_gateway_update_check_hook_reschedules_and_reads_never_as_month(monkeypatch):

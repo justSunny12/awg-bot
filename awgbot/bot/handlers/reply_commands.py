@@ -21,7 +21,6 @@ from awgbot.bot.handlers.common import call, edit_nav, show_main_menu
 router = Router(name="reply_commands")
 
 
-@router.callback_query(CancelCB.filter())
 async def on_cancel_inline(cb: CallbackQuery, callback_data: CancelCB, state: FSMContext,
                            services, role: str = "", client=None):
     """«✖️ Отмена» под приглашением к вводу: диалог сброшен, экран-контекст —
@@ -41,6 +40,14 @@ async def on_cancel_inline(cb: CallbackQuery, callback_data: CancelCB, state: FS
     # приглашение снова стало экраном: из служебных долой, иначе уборка при
     # возврате в меню снесёт живое меню
     await call(services.db.remove_content_msg_id, cb.message.chat.id, cb.message.message_id)
+
+
+def make_cancel_router() -> Router:
+    """«✖️ Отмена» под приглашением к вводу — у обеих ролей; свой Router на
+    каждый диспетчер."""
+    r = Router(name="cancel")
+    r.callback_query(CancelCB.filter())(on_cancel_inline)
+    return r
 
 
 @router.callback_query(NoteCB.filter())
@@ -93,4 +100,4 @@ async def on_cancel(message: Message, state: FSMContext, services,
     await show_main_menu(message, services, role, client)
 
 
-__all__ = ["router"]
+__all__ = ["router", "make_cancel_router", "on_cancel_inline"]

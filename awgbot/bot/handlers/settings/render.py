@@ -9,8 +9,6 @@ from awgbot.core import settings
 from awgbot.bot import texts
 from awgbot.bot.roles import MAIN
 from awgbot.bot import keyboards as kb
-from awgbot.bot.handlers import settingscore as core
-from awgbot.bot.handlers import updates_flow
 from awgbot.domain.services import ServiceError
 from awgbot.util import bundlecrypt
 from awgbot.bot.handlers.common import send_menu_to
@@ -20,24 +18,18 @@ log = logging.getLogger("awgbot.handlers.settings")
 
 # ── рендер экранов ───────────────────────────────────────────────────────────
 async def _screen(sec: str, services, key: str = ""):
-    """(text, markup) для раздела sec.
+    """(text, markup) ролевого раздела sec; общие разделы обеих ролей — в
+    bot/sections/ (sections.screen), сюда они не приходят.
 
-    Корутина, а не обычная функция: разделы «upd» и «rt» ходят в БД и в
+    Корутина, а не обычная функция: разделы «rt» ходят в БД и в
     self_check (тот при холодном кэше запускает ip/ipset/iptables). Синхронный
     вызов держал бы event loop на время рисования экрана — а рядом крутятся
     тик живости и polling. Все остальные разделы чисто текстовые, им await
     ничего не стоит.
     """
-    if sec == "notify":
-        return texts.settings_notify_text(MAIN), kb.settings_notify()
-    if sec == "ncl":
-        return texts.SETTINGS_NOTIFY_CLIENTS, kb.settings_notify_clients()
-    if sec == "email":
-        acc = await call(services.email_account)
-        return (texts.settings_email_text(acc, await call(services.email_last_check), MAIN,
-                                          settings.get_bool("email.resume_enabled", True),
-                                          await call(services.email_resume_address)),
-                kb.settings_email(acc is not None))
+    from awgbot.bot import sections
+    if sections.available(MAIN, sec):
+        return await sections.screen(sec, MAIN, services, key)
     if sec == "subs":
         return texts.settings_subs_text(), kb.settings_subs()
     if sec == "srv":
@@ -60,32 +52,6 @@ async def _screen(sec: str, services, key: str = ""):
         from awgbot.bot import paging
         return texts.settings_firewall_text(st), kb.settings_firewall(
             st, page=paging.page_of(config.ADMIN_ID, "fw"))
-    if sec == "mon":
-        return texts.settings_mon_text(MAIN), kb.settings_mon()
-    if sec == "backup":
-        enc = await call(services.backup_encryption_enabled)
-        return (texts.settings_backup_text(enc, str(settings.get("app.scheduler.backup_channel", "telegram") or "")),
-                kb.settings_backup(enc))
-    if sec == "svc":
-        d = await call(services.svc_screen_data)          # один хоп вместо четырёх
-        return (texts.settings_svc_text(MAIN, d["state"], d["progress"], d["available"]),
-                kb.settings_svc(d["state"], available=d["available"], orphans=d["orphans"]))
-    if sec == "upd":
-        # проверка — при открытии раздела; «никогда» из старого конфига —
-        # «месяц» и уведомления выкл (расписания «никогда» больше нет)
-        await call(services.normalize_update_schedule)
-        if key == "cached":
-            # тумблер и цикл: без похода в сеть, по тегу последней проверки
-            tag = await call(services.update_available_tag)
-            found = updates_flow.CachedTarget(tag) if tag else None
-            blocked = ""
-        else:
-            found = await call(services.update_scan)
-            blocked = await call(services.update_block_reason, found) if found is not None else ""
-        return (texts.settings_upd_text(None, found, blocked,
-                                        scan_failed=bool(getattr(services, "update_scan_failed", False))),
-                kb.settings_updates(await call(services.updates_muted),
-                                    target_tag=found.tag if found is not None else "", blocked=blocked))
     if sec == "rt":
         return await gateways_screen(services)
     if sec == "rt_gw":
@@ -117,7 +83,7 @@ async def _screen(sec: str, services, key: str = ""):
         from awgbot.bot import paging
         return texts.routing_users_text(), kb.settings_routing_users(
             clients, page=paging.page_of(config.ADMIN_ID, "rtusers"))
-    return texts.settings_root_text(), kb.settings_root()
+    return await sections.screen("root", MAIN, services)
 
 
 async def gateways_screen(services):
@@ -156,15 +122,16 @@ async def _render_nav(cb: CallbackQuery, sec: str, services, key: str = ""):
     await edit_nav(cb, services, text, markup)
 
 
-# Общая механика диалогов настроек (ввод, фраза, бэкап, почта, тумблер) — в
-# settingscore; здесь только то, чем основной бот отличается: колбэки и
-# клавиатуры.
-HOOKS = core.Hooks(
-    email_offer_kb=kb.email_setup_offer,
-    email_forget_kb=kb.email_forget_confirm,
-    render=lambda cb, services, sec: _render_nav(cb, sec, services),
-    screen=lambda services, sec: _screen(sec, services),
-)
+async def _shared(cb: CallbackQuery, callback_data, services, state=None) -> bool:
+    """Колбэк общего раздела — диспетчеру bot/sections (сюда он приходит
+    только из тестов, которые зовут прежние обработчики напрямую); True —
+    обработан."""
+    from awgbot.bot import sections as secs
+    packed = secs.resolve(MAIN, callback_data.pack())
+    if packed is None:
+        return False
+    await secs.handle(cb, packed, services, state, MAIN)
+    return True
 
 
 async def _record(cb: CallbackQuery, text: str, services):
@@ -180,7 +147,8 @@ async def _record(cb: CallbackQuery, text: str, services):
     новым сообщением, как отчёт о рассылке.
     """
     await edit(cb, text, None)
-    await send_menu(cb.message, services, *await _screen("svc", services),
+    from awgbot.bot import sections
+    await send_menu(cb.message, services, *await sections.screen("svc", MAIN, services),
                     keep_id=cb.message.message_id)
 
 

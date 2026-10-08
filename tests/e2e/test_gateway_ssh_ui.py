@@ -472,12 +472,13 @@ def test_section_peer_nets_line_is_capped_and_escaped():
     assert "10.0.0.0/8&lt;b&gt;" in text and "10.0.0.0/8<b>" not in text, text
 
 
-async def test_cancel_under_a_prompt_closes_the_dialog_and_returns_the_section(svc, fake_bot):
+async def test_cancel_under_a_prompt_closes_the_dialog_and_returns_the_section(svc, fake_bot, monkeypatch):
     """У агента «✖️ Отмена» под приглашением шлёт CancelCB, а общий обработчик
     подключён только у основного бота: кнопка уходила в «устарела», и ввод
     оставался открытым — следующий текст менял порт. Свой обработчик агента:
     диалог сброшен, раздел на месте приглашения."""
     from awgbot.bot.callbacks import CancelCB
+    monkeypatch.setattr(cfg, "ROLE", "gateway")      # реестр экранов выбирает экраны агента по роли
     cb, nav = _cb(fake_bot)
     st = FakeState()
     await gh.gw_ssh_port_ask(cb, GwCB(action="ssh_port"), svc, st)

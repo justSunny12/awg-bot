@@ -313,6 +313,9 @@ def settings_upd_text(installed: str | None = None, target=None, blocked: str = 
     return "\n".join(lines)
 
 
+UPDATE_SCHEDULE_CYCLE = ("day", "week", "month")
+UPDATE_SCHEDULE_LABELS = {"day": "день", "week": "неделя", "month": "месяц"}
+
 # границы валидации ввода: dotted-ключ → (мин, макс, подпись, единица)
 SETTINGS_BOUNDS = {
     "quiet_hours.quiet_hours_start": (0, 23, "Тихие часы с", "ч"),
@@ -613,7 +616,6 @@ def cycle_toast(key: str, value) -> str:
     if key == "email.resume_code_len":
         return f"Код: {value} символов"
     if key == "updates.poll_schedule":
-        from awgbot.bot.keyboards.rolekb import UPDATE_SCHEDULE_LABELS
         return f"Проверка: {UPDATE_SCHEDULE_LABELS.get(str(value), value)}"
     if key == "app.scheduler.backup_channel":
         return "Куда: " + ("E-mail" if str(value) == "email" else "Telegram")

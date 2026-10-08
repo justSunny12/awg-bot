@@ -169,9 +169,10 @@ def test_the_sshd_config_head_points_at_the_real_buttons():
     """Шапка, которую бот пишет в sshd_config хоста, говорит человеку, где
     менять порт: «раздел → кнопка». Указывает на старые названия — человек
     на хосте ищет в боте раздел и кнопку, которых нет."""
-    from awgbot.bot import keyboards as kb
+    from awgbot.bot import keyboards as kb, sections
+    from awgbot.bot.roles import GATEWAY
     from awgbot.infra import sshd
-    labels = {b.text for row in kb.gateway_settings_kb().inline_keyboard for b in row}
+    labels = {b.text for row in sections.root.keyboard(GATEWAY).inline_keyboard for b in row}
     labels |= {b.text for row in kb.gateway_ssh_kb({"new_plumbing": True}).inline_keyboard for b in row}
     head = sshd.OUR_HEAD.splitlines()[0]
     assert "«🛡 SSH-доступ»" in head and "«🅿️ Порт»" in head, head

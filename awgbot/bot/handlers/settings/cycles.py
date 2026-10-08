@@ -7,15 +7,12 @@ from aiogram import F
 from aiogram.types import CallbackQuery
 from awgbot.core import settings
 from awgbot.bot import texts
-from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import SetCB
-from awgbot.bot.handlers import settingscore as core
-from awgbot.bot.handlers import updates_flow
 from awgbot.bot.handlers.common import call
 
 log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
-from .render import HOOKS, _render
+from .render import _render, _shared
 
 # ── выбор enum (расписание обновлений) ───────────────────────────────────────
 _RT_MON_PICKS = {
@@ -27,9 +24,6 @@ _RT_MON_PICKS = {
 
 # ── кнопки-циклы: значение переставляется на следующее из ряда ──────────────
 _CYCLES = {
-    "email.poll_interval_sec": kb.EMAIL_POLL_CYCLE,
-    "email.resume_code_len": kb.EMAIL_CODE_CYCLE,
-    "updates.poll_schedule": kb.UPDATE_SCHEDULE_CYCLE,
     "app.routing.probe_seconds": (30, 45, 60),
     "app.routing.failover.window_samples": (5, 10, 20),
     "app.routing.failover.min_availability": (25, 50, 75),
@@ -38,30 +32,17 @@ _CYCLES = {
 
 
 def _next_in_cycle(key: str, current) -> object:
-    """Следующее значение ряда; значение вне ряда (из конфига руками) —
-    ближайшее большее, за последним — первое."""
-    values = list(_CYCLES[key])
-    try:
-        cur = type(values[0])(current)
-    except (ValueError, TypeError):
-        return values[0]
-    if cur in values:
-        return values[(values.index(cur) + 1) % len(values)]
-    if isinstance(cur, (int, float)):
-        bigger = [v for v in values if v > cur]
-        return bigger[0] if bigger else values[0]
-    return values[0]
+    from awgbot.bot.sections import next_in_cycle
+    return next_in_cycle(_CYCLES[key], current)
 
 
 @router.callback_query(SetCB.filter(F.act == "cycle"))
 async def cycle(cb: CallbackQuery, callback_data: SetCB, services):
-    """Цикл вместо ввода: опрос почты, длина кода, расписание проверки
-    обновлений, канал бэкапа, параметры РФ-доступа. Итог — всплывашкой."""
-    key = callback_data.key
-    if key == "app.scheduler.backup_channel":
-        cur = str(settings.get(key, "telegram") or "telegram").lower()
-        await core.set_backup_channel(cb, services, HOOKS, "email" if cur == "telegram" else "telegram")
+    """Цикл вместо ввода у ролевых разделов — параметры РФ-доступа; циклы общих
+    разделов (почта, канал бэкапа, расписание проверки) — в sections."""
+    if await _shared(cb, callback_data, services):
         return
+    key = callback_data.key
     if key not in _CYCLES:
         await cb.answer("Кнопка устарела — открой раздел заново", show_alert=True)
         return
@@ -72,7 +53,7 @@ async def cycle(cb: CallbackQuery, callback_data: SetCB, services):
         await cb.answer(str(e), show_alert=True)
         return
     await cb.answer(texts.cycle_toast(key, new))
-    await _render(cb, callback_data.sec, services, "cached" if callback_data.sec == "upd" else "")
+    await _render(cb, callback_data.sec, services)
 
 
 @router.callback_query(SetCB.filter(F.act == "pick"))
@@ -105,11 +86,5 @@ async def pick(cb: CallbackQuery, callback_data: SetCB, services):
         await _render(cb, "rt_mon", services)
         await cb.answer()
         return
-    if callback_data.sec == "backup" and callback_data.key == "channel":
-        await core.set_backup_channel(cb, services, HOOKS, callback_data.val)
-        return
-    if callback_data.sec == "upd" and callback_data.key == "sched":
-        if not await updates_flow.set_schedule(cb, services, callback_data.val):
-            return
     await _render(cb, callback_data.sec, services)
     await cb.answer()

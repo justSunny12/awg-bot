@@ -19,7 +19,7 @@ import pytest
 
 import awgbot.core.config as cfg
 from awgbot.bot import keyboards as kb
-from awgbot.bot import texts
+from awgbot.bot import sections, texts
 from awgbot.bot.roles import GATEWAY
 from awgbot.bot.callbacks import GwCB
 from awgbot.bot.handlers import gateway as gh
@@ -330,8 +330,7 @@ def test_the_bundle_question_puts_cancel_first():
 # ── настройки ────────────────────────────────────────────────────────────────
 
 async def test_settings_root_is_the_version_and_two_columns(svc, fake_bot, monkeypatch):
-    """Корень — заголовок с версией и кнопки в два столбца; старое
-    «Обслуживание» из сообщений 3.1.0 открывает тот же корень."""
+    """Корень — заголовок с версией и кнопки в два столбца."""
     monkeypatch.setattr(cfg, "INSTALLED_VERSION", "3.1.0")
     cb, nav = _acb(fake_bot)
     await gh.gw_settings(cb, svc, FakeState())
@@ -339,9 +338,6 @@ async def test_settings_root_is_the_version_and_two_columns(svc, fake_bot, monke
     assert text == "⚙️ <b>Настройки</b> · v3.1.0"
     assert _rows(markup) == [["🔔 Уведомления", "✉️ E-mail"], ["🛡 SSH-доступ", "🩺 Мониторинг"],
                              ["💾 Бэкапы", "🔧 Сервис"], ["⬆️ Обновления", "⬅️ В меню"]]
-    cb, nav = _acb(fake_bot)
-    await gh.gw_maint(cb, svc, FakeState())
-    assert _last_edit(nav)[0] == "⚙️ <b>Настройки</b> · v3.1.0"
 
 
 async def test_notify_section_text_follows_the_values(svc, fake_bot, store):
@@ -421,10 +417,10 @@ def test_the_mon_keyboard_rounds_odd_seconds_up_and_never_to_zero(store):
     вверх (90 с — «2 мин»: алерт не должен казаться раньше, чем есть),
     меньше минуты — «1 мин», а не «0 мин»; текст раздела — то же число."""
     store["app.gateway.handshake_max_age"] = 90
-    assert "⏳ Линк: 2 мин" in [b for r in _rows(kb.gateway_mon_kb()) for b in r]
+    assert "⏳ Линк: 2 мин" in [b for r in _rows(sections.mon.keyboard(GATEWAY)) for b in r]
     assert "линк молчит дольше 2 мин" in texts.settings_mon_text(GATEWAY)
     store["app.gateway.handshake_max_age"] = 30
-    assert "⏳ Линк: 1 мин" in [b for r in _rows(kb.gateway_mon_kb()) for b in r]
+    assert "⏳ Линк: 1 мин" in [b for r in _rows(sections.mon.keyboard(GATEWAY)) for b in r]
 
 
 # ── 💾 бэкапы ────────────────────────────────────────────────────────────────
@@ -510,7 +506,8 @@ async def test_backup_day_and_hour_in_one_input(svc, fake_bot, store):
 def upd(svc, monkeypatch, store):
     """Проверка обновлений без сети: счётчик походов к списку релизов."""
     from awgbot.infra import updates
-    scene = {"next": types.SimpleNamespace(tag="v3.2.1", body="- пункт", title=""),
+    # поколение ядра 0 — блокировка обновления (update_block_reason) не срабатывает
+    scene = {"next": types.SimpleNamespace(tag="v3.2.1", body="- пункт", title="", awg_generation=lambda: 0),
              "fail": False, "calls": 0}
 
     def _next(max_generation=None):
@@ -573,13 +570,6 @@ async def test_notify_toggle_and_schedule_cycle_answer_at_once_without_the_netwo
         assert _rows(_last_edit(nav)[1])[1][1] == f"📅 Проверка: {word}"
     assert seen == ["week", "month", "day", "week"]
     assert upd["calls"] == calls, "тумблер или цикл сходили в сеть"
-
-
-async def test_the_old_check_button_redraws_the_section_that_checks_itself(svc, fake_bot, upd):
-    cb, nav = _acb(fake_bot)
-    await gh.gw_updates_check(cb, svc)
-    assert _last_edit(nav)[0].split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.2.1"
-    assert upd["calls"] == 1 and len(cb.answers) == 1
 
 
 async def test_never_from_an_old_config_becomes_month_and_mute_on_open(svc, fake_bot, upd, store):

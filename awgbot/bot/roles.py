@@ -17,7 +17,103 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from awgbot.bot.callbacks import GwCB, Menu, SetCB
+
+
+class RoleCB:
+    """Переводчик между внутренним языком разделов — (раздел, действие, ключ,
+    значение) — и колбэком роли. Классы колбэков не меняются: упакованные
+    строки в чатах должны работать. У основного бота перевод прямой (SetCB).
+    У агента — таблица имён, уже разосланных в чатах (GwCB), и общее правило
+    для всего остального: GwCB(action="<раздел>/<действие>", val="<ключ>[|значение]").
+    Разбор возвращает раздел пустым у ключевых действий (tgl/edit/cyc): его
+    находят по ключам разделов (sections.section_of)."""
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def pack(self, sec: str, act: str = "open", key: str = "", val: str = ""):
+        raise NotImplementedError
+
+    def parse(self, data: str):
+        raise NotImplementedError
+
+    def menu(self):
+        """Колбэк «⬅️ В меню» из корня настроек — главная роли."""
+        raise NotImplementedError
+
+
+class _MainCB(RoleCB):
+    def pack(self, sec, act="open", key="", val=""):
+        return SetCB(sec=sec, act=act, key=key, val=val)
+
+    def parse(self, data):
+        if not str(data or "").startswith("set:"):
+            return None
+        try:
+            cb = SetCB.unpack(data)
+        except (ValueError, TypeError):
+            return None
+        return cb.sec, cb.act, cb.key, cb.val
+
+    def menu(self):
+        return Menu(action="main")
+
+
+# имена агента, уже разосланные в чатах: открытие разделов, ключевые действия, действия
+_GW_OPEN = {"root": "settings", "notify": "notify", "email": "email", "mon": "mon",
+            "backup": "backup", "svc": "svc", "upd": "updates", "ssh": "ssh", "lan": "lan"}
+_GW_KEYED = {"toggle": "tgl", "edit": "edit", "cycle": "cyc"}
+_GW_DO = {("backup", "enc"): "enc", ("backup", "enc_set"): "enc_set", ("backup", "now"): "backup!",
+          ("backup", "restore!"): "restore!", ("backup", "restore_drop"): "restore_drop",
+          ("email", "setup"): "em_setup", ("email", "check"): "em_check", ("email", "test"): "em_test",
+          ("email", "forget"): "em_forget", ("email", "forget!"): "em_forget!",
+          ("svc", "awg"): "restart", ("svc", "awg!"): "restart!",
+          ("svc", "bot"): "botrestart", ("svc", "bot!"): "botrestart!"}
+_GW_OPEN_R = {v: k for k, v in _GW_OPEN.items()}
+_GW_KEYED_R = {v: k for k, v in _GW_KEYED.items()}
+_GW_DO_R = {v: k for k, v in _GW_DO.items()}
+
+
+class _GatewayCB(RoleCB):
+    def pack(self, sec, act="open", key="", val=""):
+        if act == "open" and sec in _GW_OPEN:
+            return GwCB(action=_GW_OPEN[sec], val=key)
+        if sec == "upd" and act == "toggle" and key == "notify":
+            return GwCB(action="upd_toggle")
+        if act in _GW_KEYED:
+            return GwCB(action=_GW_KEYED[act], val=key)
+        if act == "do" and (sec, key) in _GW_DO:
+            return GwCB(action=_GW_DO[(sec, key)], val=val)
+        return GwCB(action=f"{sec}/{act}", val=f"{key}|{val}" if val else key)
+
+    def parse(self, data):
+        if not str(data or "").startswith("gw:"):
+            return None
+        try:
+            cb = GwCB.unpack(data)
+        except (ValueError, TypeError):
+            return None
+        a, v = cb.action, cb.val or ""
+        if a == "upd_toggle":
+            return "upd", "toggle", "notify", ""
+        if a in _GW_OPEN_R:
+            return _GW_OPEN_R[a], "open", v, ""
+        if a in _GW_KEYED_R:
+            return "", _GW_KEYED_R[a], v, ""       # раздел — по ключу
+        if a in _GW_DO_R:
+            sec, key = _GW_DO_R[a]
+            return sec, "do", key, v
+        if "/" in a:
+            sec, act = a.split("/", 1)
+            key, _, val = v.partition("|")
+            return sec, act, key, val
+        return None
+
+    def menu(self):
+        return GwCB(action="panel")
 
 
 @dataclass(frozen=True)
@@ -57,8 +153,11 @@ class BotRole:
     ssh_port_tail: str           # хвост приглашения порта SSH (OPTIONAL)
     settings_root: tuple[str, ...]   # разделы корня настроек по порядку
     subsections: tuple[str, ...]     # вложенные разделы («ncl» — «👥 События»)
+    root_labels: dict            # подписи ролевых разделов корня (не из sections/): {id: «подпись»}
+    role_screens: str            # «модуль:функция» — экраны ролевых разделов: async fn(sec, services, key) -> (text, markup)
     keys: Keys
     has: Has
+    cb: RoleCB = field(compare=False)   # переводчик колбэков роли
 
 
 # Поля, которые у одной из ролей законно пусты — сторож заполненности их пропускает.
@@ -82,11 +181,14 @@ MAIN = BotRole(
     ssh_port_tail="",
     settings_root=("notify", "srv", "fw", "email", "subs", "backup", "mon", "svc", "upd"),
     subsections=("ncl",),
+    root_labels={"srv": "🖥 Сервер AWG", "fw": "🛡 SSH-доступ", "subs": "💳 Подписки"},
+    role_screens="awgbot.bot.handlers.settings.render:_screen",
     keys=Keys(monitor_minutes="app.scheduler.monitor_minutes",
               outage="app.monitoring.service_failure_alert_minutes", outage_scale=1,
               outage_loud="app.monitoring.service_failure_alert_loud",
               temp_alert=""),
     has=Has(email_resume=True, migration=True),
+    cb=_MainCB("main"),
 )
 
 GATEWAY = BotRole(
@@ -108,11 +210,14 @@ GATEWAY = BotRole(
     ssh_port_tail=". Проброс порта на роутере (при наличии) поправь сам",
     settings_root=("notify", "email", "ssh", "mon", "backup", "svc", "upd"),
     subsections=(),
+    root_labels={"ssh": "🛡 SSH-доступ"},
+    role_screens="awgbot.bot.handlers.gateway:_section",
     keys=Keys(monitor_minutes="app.gateway.monitor_minutes",
               outage="app.gateway.handshake_max_age", outage_scale=60,
               outage_loud="app.gateway.link_alert_loud",
               temp_alert="app.gateway.temp_alert_c"),
     has=Has(email_resume=False, migration=False),
+    cb=_GatewayCB("gateway"),
 )
 
 

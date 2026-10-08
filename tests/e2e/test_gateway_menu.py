@@ -4,9 +4,8 @@ from __future__ import annotations
 import pytest
 
 import awgbot.core.config as cfg
-from awgbot.bot import keyboards as kb
-from awgbot.bot import texts
-from awgbot.bot.roles import GATEWAY
+from awgbot.bot import sections, texts
+from awgbot.bot.roles import GATEWAY, MAIN
 from awgbot.bot.callbacks import GwCB
 from awgbot.bot.handlers import gateway as gh
 from awgbot.bot.handlers import hide as hide_h
@@ -39,31 +38,10 @@ def _labels(markup):
     return [[b.text for b in row] for row in markup.inline_keyboard]
 
 
-def test_main_menu_layout():
-    """Панель — пять кнопок в три ряда (VPN-транзит — только когда включён),
-    корень настроек в два столбца без «Обслуживания»: мониторинг, бэкапы и
-    перезапуски — прямо в корне. Съехала раскладка — человек ищет раздел,
-    которого на старом месте нет."""
-    assert _labels(kb.gateway_panel_kb()) == [["🩺 Здоровье", "🔧 Восстановить"],
-                                              ["🔄 Обновить", "⚙️ Настройки"]]
-    assert _labels(kb.gateway_panel_kb(True)) == [["🩺 Здоровье", "🔧 Восстановить"],
-                                                  ["🔀 VPN-транзит"],
-                                                  ["🔄 Обновить", "⚙️ Настройки"]]
-    assert _labels(kb.gateway_settings_kb()) == [["🔔 Уведомления", "✉️ E-mail"],
-                                                 ["🛡 SSH-доступ", "🩺 Мониторинг"],
-                                                 ["💾 Бэкапы", "🔧 Сервис"],
-                                                 ["⬆️ Обновления", "⬅️ В меню"]]
-    assert _labels(kb.gateway_svc_kb()) == [["🔁 Перезапуск AWG", "🔁 Перезапуск бота"], ["⬅️ Назад"]]
-    assert _labels(kb.gateway_health_kb()) == [["🔧 Восстановить", "⬅️ В меню"]]
-    # из разделов, бывших в «Обслуживании», назад — в корень настроек
-    for markup in (kb.gateway_mon_kb(), kb.gateway_backup_kb()):
-        assert markup.inline_keyboard[-1][0].callback_data == GwCB(action="settings").pack()
-
-
 def test_updates_back_leads_to_settings(monkeypatch):
     from awgbot.core import settings
     monkeypatch.setattr(settings, "get", lambda key, default=None: "day")
-    rows = kb.gateway_updates_kb(False).inline_keyboard
+    rows = sections.updates.keyboard(GATEWAY, False).inline_keyboard
     assert rows[-1][0].callback_data == GwCB(action="settings").pack()
 
 
@@ -130,14 +108,14 @@ def test_notify_section_layout_cpu_ram_then_disk_temp(monkeypatch):
     from awgbot.core import settings
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
     monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
-    rows = _labels(kb.gateway_notify_kb())
+    rows = _labels(sections.notify.keyboard(GATEWAY))
     assert rows == [["✅ Тихие часы"], ["С 20:00", "До 07:00"], ["✅ Алерты хоста"],
                     ["CPU 80%", "RAM 80%"], ["Диск 80%", "75 °C"],
                     ["✅ Аварии на e-mail", "⬅️ Назад"]], rows
     assert not any("клиент" in b.lower() for row in rows for b in row), "события клиентов у шлюза лишние"
     # выключенные тихие часы и алерты — без границ и порогов
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: False)
-    assert _labels(kb.gateway_notify_kb()) == [["☑️ Тихие часы"], ["☑️ Алерты хоста"],
+    assert _labels(sections.notify.keyboard(GATEWAY)) == [["☑️ Тихие часы"], ["☑️ Алерты хоста"],
                                                ["☑️ Аварии на e-mail", "⬅️ Назад"]]
 
 
@@ -147,7 +125,7 @@ def test_mon_section_mirrors_main(monkeypatch):
     from awgbot.core import settings
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
     monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
-    rows = _labels(kb.gateway_mon_kb())
+    rows = _labels(sections.mon.keyboard(GATEWAY))
     assert rows == [["⏱ Опрос: 3 мин", "🔢 Замеров: 5"], ["⏳ Линк: 5 мин", "✅ Звук 24/7"],
                     ["⬅️ Назад"]], rows
     assert texts.settings_mon_text(GATEWAY) == (
@@ -195,13 +173,13 @@ def test_backup_switch_hides_the_rest_in_both_bots(monkeypatch):
     monkeypatch.setattr(settings, "get_int", lambda key, default=0: default)
     monkeypatch.setattr(settings, "get", lambda key, default=None: default)
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: False)
-    assert _labels(kb.gateway_backup_kb(False)) == [["☑️ Автобэкапы", "🔐 Шифрование"], ["⬅️ Назад"]]
-    assert _labels(kb.settings_backup()) == _labels(kb.gateway_backup_kb(False))
+    assert _labels(sections.backup.keyboard(GATEWAY, False)) == [["☑️ Автобэкапы", "🔐 Шифрование"], ["⬅️ Назад"]]
+    assert _labels(sections.backup.keyboard(MAIN)) == _labels(sections.backup.keyboard(GATEWAY, False))
     monkeypatch.setattr(settings, "get_bool", lambda key, default=True: True)
-    rows = _labels(kb.gateway_backup_kb(True))
+    rows = _labels(sections.backup.keyboard(GATEWAY, True))
     assert rows == [["✅ Автобэкапы", "🔐 Шифрование"], ["📨 Куда: Telegram", "✏️ 1-е, 12:00"],
                     ["💾 Сделать сейчас"], ["⬅️ Назад"]], rows
-    assert rows == _labels(kb.settings_backup(True)), "раскладка агента разошлась с основным ботом"
+    assert rows == _labels(sections.backup.keyboard(MAIN, True)), "раскладка агента разошлась с основным ботом"
 
 
 async def test_gateway_passphrase_flow(svc, fake_bot):
@@ -230,13 +208,16 @@ async def test_gateway_email_section_and_channel_offer(svc, fake_bot, monkeypatc
     txt = [t for kind, t, _ in msg.sent if kind == "edit_text"][-1]
     assert txt.startswith("✉️ <b>E-mail</b> ящик не подключён") and "конфигурации шлюза" in txt, txt
     assert "паузы" not in txt and "Аварийный выход" not in txt, "аварийного выхода у агента нет"
-    await gh.gw_backup_channel(cb, GwCB(action="bk_ch", val="email"), svc)
+    # «📨 Куда» без ящика — предложение настроить почту, канал не меняется
+    channel = GwCB(action="cyc", val="app.scheduler.backup_channel")
+    await gh.gw_cycle(cb, channel, svc)
+    assert "app.scheduler.backup_channel" not in store
     assert any("Почта не настроена" in t for kind, t, _ in msg.sent if kind == "edit_text")
     await gh.gw_toggle(cb, GwCB(action="tgl", val="notifications.email_fallback"), svc)
     assert "notifications.email_fallback" not in store
     svc.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
     svc.backup_set_passphrase("correct horse battery")
-    await gh.gw_backup_channel(cb, GwCB(action="bk_ch", val="email"), svc)
+    await gh.gw_cycle(cb, channel, svc)
     assert store["app.scheduler.backup_channel"] == "email"
     await gh.gw_toggle(cb, GwCB(action="tgl", val="notifications.email_fallback"), svc)
     assert store["notifications.email_fallback"] is True

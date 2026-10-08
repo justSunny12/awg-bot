@@ -37,8 +37,11 @@ async def test_screens_match_the_reference_file(name, request, tmp_path, frozen,
     parts, bad = [], []
     for shot in shots:
         rec = await take(shot, tmp_path, fakes)
+        # ровно текст обработчика устаревшей кнопки (handlers/stale.py); alert
+        # раздела «Кнопка устарела — открой раздел заново» — осознанный ответ
+        from awgbot.bot.handlers.stale import STALE_BUTTON
         stale = [c.head for c in rec.everything
-                 if "Кнопка устарела" in (c.toast or "") or "Кнопка устарела" in (c.body or "")]
+                 if STALE_BUTTON in (c.toast or "") or STALE_BUTTON in (c.body or "")]
         assert not stale, f"{shot.id}: нажатие не поймал ни один экран — ушло в устаревшую кнопку: {stale}"
         assert rec.calls, f"{shot.id}: бот ничего не ответил на последнее действие"
         bad += harness.problems(shot.id, rec, catalog.LABEL_EXCEPTIONS)

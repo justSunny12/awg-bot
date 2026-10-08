@@ -679,7 +679,6 @@ SHOTS = [
 
     # ── W20 корень настроек ─────────────────────────────────────────────────
     _shot("gw.set", press=[GwCB(action="settings")], title="корень настроек"),
-    _shot("gw.set.maint", press=[GwCB(action="maint")], title="«Обслуживание» из старого меню — корень"),
 
     # ── W21 уведомления ─────────────────────────────────────────────────────
     _shot("gw.set.notify", press=[GwCB(action="notify")], title="по умолчанию"),
@@ -922,10 +921,6 @@ SHOTS = [
           release=_RELEASE, update_error="sha256 не сошёлся", title="отказ до апдейтера — итог и панель"),
     _shot("gw.upd.menu", press=[UpdateCB(action="menu")], title="«В меню» на итоге обновления"),
     _shot("gw.upd.mute", press=[UpdateCB(action="mute")], title="«Не уведомлять» на уведомлении"),
-    _shot("gw.upd.legacy.check", press=[GwCB(action="upd_check")], update_tag="v1.2.4",
-          title="кнопка «Проверить сейчас» прежних выпусков"),
-    _shot("gw.upd.legacy.sched", press=[GwCB(action="upd_sched", val="never")],
-          title="пикер расписания прежних выпусков: «никогда» → «месяц»"),
 
     # ── W50–W60 файл конфигурации и восстановление: кнопки без файла ────────
     _shot("gw.bundle.apply.nofile", press=[GwCB(action="apply!")], title="«📦 Применить», файла в памяти нет"),

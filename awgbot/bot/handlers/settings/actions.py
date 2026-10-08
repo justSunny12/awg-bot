@@ -16,7 +16,7 @@ from awgbot.bot.handlers.common import call, edit, send_menu
 log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
 from .inputs import _firewall_action, _migration_prepare, _routing_provision
-from .render import HOOKS, _record, _render, _screen, send_gw_bundle
+from .render import _record, _shared, send_gw_bundle
 
 # ── действия (бэкап сейчас, рестарты, проверка обновлений) ────────────────────
 # ── переезд профилей (docs/ROADMAP.md, п.3) ──────────────────────────────────
@@ -123,31 +123,27 @@ async def migration_action(cb: CallbackQuery, callback_data: SetCB, services):
 
     await cb.answer("Действие недоступно", show_alert=True)
 
-# ── ♻️ Восстановление из файла в чате ────────────────────────────────────────
-@router.callback_query(SetCB.filter((F.sec == "backup") & (F.act == "do") & (F.key.in_({"restore!", "restore_drop"}))))
+# Восстановление, шифрование, почта, бэкап сейчас, перезапуски — общие разделы
+# (bot/sections); сюда их колбэк не доходит. Имена ниже — для тестов, которые
+# зовут обработчики напрямую: они передают нажатие тому же диспетчеру.
 async def backup_restore_action(cb: CallbackQuery, callback_data: SetCB, services, state: FSMContext):
-    from awgbot.bot.handlers import restore as rs
-    if callback_data.key == "restore!":
-        await rs.run_restore(cb, services, state)
-    else:
-        await rs.drop_restore(cb, state)
+    await _shared(cb, callback_data, services, state)
 
 
-# ── 🔐 Шифрование бэкапов: фраза дважды (шаги — в settingscore) ─────────────
-@router.callback_query(SetCB.filter((F.sec == "backup") & (F.act == "do") & (F.key == "enc_set")))
 async def backup_passphrase_start(cb: CallbackQuery, state: FSMContext, services):
-    await core.passphrase_start(cb, services, HOOKS, state)
+    await _shared(cb, SetCB(sec="backup", act="do", key="enc_set"), services, state)
 
 
-# ── ✉️ E-mail: мастер подключения, проверка, отключение ─────────────────────
-@router.callback_query(SetCB.filter((F.sec == "email") & (F.act == "do")))
 async def email_action(cb: CallbackQuery, callback_data: SetCB, services, state: FSMContext):
-    if not await core.email_action(cb, services, HOOKS, state, callback_data.key):
-        await cb.answer("Действие недоступно", show_alert=True)
+    await _shared(cb, callback_data, services, state)
 
 
-# Ввод значения, парольная фраза и мастер почты — общие обработчики сообщений.
-_core = core.register(router, HOOKS, default_sec="root")
+from aiogram import Router as _Router                                      # noqa: E402
+from awgbot.bot import sections as _secs                                   # noqa: E402
+
+# Обработчики ввода (значение, парольная фраза, мастер почты) регистрирует
+# роутер общих разделов; те же функции по именам — для тестов.
+_core = core.register(_Router(name="settings.dialogs"), _secs.hooks_for(MAIN), default_sec="root")
 receive_value, backup_passphrase_first, backup_passphrase_second = (
     _core["receive_value"], _core["passphrase_first"], _core["passphrase_second"])
 email_address, email_imap_host, email_imap_port = _core["address"], _core["imap_host"], _core["imap_port"]
@@ -161,6 +157,8 @@ email_smtp_host, email_smtp_port, email_password = _core["smtp_host"], _core["sm
 # причине выше стоит и routing_action.
 @router.callback_query(SetCB.filter(F.act == "do"))
 async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
+    if await _shared(cb, callback_data, services):
+        return
     key = callback_data.key
     if callback_data.sec == "fw":
         await _firewall_action(cb, callback_data, services)
@@ -171,39 +169,4 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
     if callback_data.sec == "mig_prep" and key == "go":
         await _migration_prepare(cb, services, callback_data.val)
         return
-    if key == "enc":                                   # экран шифрования
-        mode = await call(services.backup_encryption_mode)
-        await edit(cb, texts.backup_encryption_text(mode, MAIN), kb.backup_encryption_kb(bool(mode)))
-        await cb.answer()
-        return
-    if key == "now":                                   # бэкап сейчас
-        await core.backup_now(cb, services, HOOKS)
-        return
-    if key in ("awg", "bot"):                          # сначала — цена действия
-        await edit(cb, texts.svc_confirm_awg(MAIN) if key == "awg" else texts.svc_confirm_bot(MAIN),
-                   kb.svc_confirm(key))
-        await cb.answer()
-        return
-    if key == "awg!":                                  # рестарт AWG — итог первой строкой раздела
-        await cb.answer("Перезапускаю AWG…")           # ответ сразу: рестарт может идти долго
-        try:
-            await call(services.restart_service)
-            note = texts.SVC_AWG_RESTARTED
-        except Exception as e:                         # noqa: BLE001
-            note = f"⚠️ Ошибка перезапуска AWG: {texts._e(str(e))}"
-        from awgbot.bot import screens
-        text, markup = await _screen("svc", services)
-        await edit(cb, screens.with_note(text, note), markup)
-        return
-    if key == "bot!":                                  # рестарт бота
-        await cb.answer("Перезапускаю бота…")
-        await edit(cb, "🔁 Бот перезапускается — вернётся через несколько секунд", None)
-        # Запоминаем ДО рестарта: обещание вернуться исполняет новый процесс,
-        # подменяя это же сообщение панелью.
-        await call(services.set_restart_wait, cb.message.chat.id, cb.message.message_id)
-        await call(services.restart_bot)
-        return
-    if key == "check":                                 # старая кнопка: раздел проверяет сам
-        await cb.answer("Проверяю…")
-        await _render(cb, "upd", services)
-        return
+    await cb.answer("Кнопка устарела — открой раздел заново", show_alert=True)

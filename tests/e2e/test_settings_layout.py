@@ -4,7 +4,9 @@
 import pytest
 
 from awgbot.bot.callbacks import SetCB
+from awgbot.bot import sections
 from awgbot.bot.handlers import settings as sh
+from awgbot.bot.roles import MAIN
 from awgbot.core import config
 from tests.conftest import FakeCallback, FakeMessage, FakeState
 
@@ -34,9 +36,8 @@ def test_settings_root_is_ten_buttons_in_two_columns():
     сервера, справа — реже; «⬅️ В меню» в паре с «⬆️ Обновления». РФ-доступа
     в корне нет — он живёт на главной («🛰 Шлюзы»), второй вход раздваивал бы
     одно и то же место."""
-    from awgbot.bot import keyboards as kb
     from awgbot.bot.callbacks import Menu
-    markup = kb.settings_root()
+    markup = sections.root.keyboard(MAIN)
     rows = [[b.text for b in r] for r in markup.inline_keyboard]
     assert rows == [["🔔 Уведомления", "🖥 Сервер AWG"], ["🛡 SSH-доступ", "✉️ E-mail"],
                     ["💳 Подписки", "💾 Бэкапы"], ["🩺 Мониторинг", "🔧 Сервис"],
@@ -60,9 +61,8 @@ def test_service_section_offers_restarts_and_migration_by_state(migration, avail
     переехал, завершить, отменить; нет — начать (если настроен) и
     переехавшие после отмены (если есть). Лишняя кнопка переезда при
     ненастроенном переезде упиралась бы в отказ."""
-    from awgbot.bot import keyboards as kb
-    rows = [[b.text for b in r] for r in kb.settings_svc(migration, available=available,
-                                                          orphans=orphans).inline_keyboard]
+    rows = [[b.text for b in r] for r in sections.svc.keyboard(MAIN, migration, available=available,
+                                                                orphans=orphans).inline_keyboard]
     assert rows == expected, rows
 
 
@@ -70,23 +70,26 @@ def test_sections_moved_to_the_root_return_to_the_root():
     """Мониторинг и бэкапы теперь в корне: «Назад» из них — в корень, иначе
     человек попадает в раздел, из которого не входил."""
     from awgbot.bot import keyboards as kb
-    for markup in (kb.settings_mon(), kb.settings_backup(), kb.settings_svc(), kb.settings_subs(),
-                   kb.settings_notify(), kb.settings_updates(False), kb.settings_email(True)):
+    for markup in (sections.mon.keyboard(MAIN), sections.backup.keyboard(MAIN), sections.svc.keyboard(MAIN),
+                   kb.settings_subs(), sections.notify.keyboard(MAIN), sections.updates.keyboard(MAIN, False),
+                   sections.email.keyboard(MAIN, True)):
         back = markup.inline_keyboard[-1][0]
         assert back.text == "⬅️ Назад" and back.callback_data == SetCB(sec="root").pack(), back
-    back = kb.settings_notify_clients().inline_keyboard[-1][0]
+    back = sections.ncl.keyboard(MAIN).inline_keyboard[-1][0]
     assert back.callback_data == SetCB(sec="notify").pack(), "«События» — назад в «Уведомления»"
 
 
 def test_every_edit_button_points_at_a_known_setting():
-    """Опечатка в ключе кнопки превращает её в «Эта настройка недоступна», и
-    раздел становится мёртвым. Сверяем ключи клавиатур со словарями текстов."""
+    """Опечатка в ключе кнопки превращает её в «Кнопка устарела», и
+    раздел становится мёртвым. Сверяем ключи клавиатур со словарями текстов
+    и границами разделов."""
     from awgbot.bot import keyboards as kb, texts
     from awgbot.bot.callbacks import SetCB
-    known = set(texts.SETTINGS_TEXT) | set(texts.SETTINGS_BOUNDS)
+    known = set(texts.SETTINGS_TEXT) | {k for k in texts.SETTINGS_BOUNDS} | {
+        k for m in sections.MODULES for k in m.BOUNDS}
     markups = [kb.settings_server(), kb.settings_firewall({"raw_allow": ["1.2.3.4"]}),
-               kb.settings_mon(), kb.settings_subs(), kb.settings_notify(), kb.settings_email(True),
-               kb.settings_backup()]
+               sections.mon.keyboard(MAIN), kb.settings_subs(), sections.notify.keyboard(MAIN),
+               sections.email.keyboard(MAIN, True), sections.backup.keyboard(MAIN)]
     checked = 0
     for m in markups:
         for row in m.inline_keyboard:
@@ -157,7 +160,7 @@ def test_lists_of_choices_use_ticks_not_circles():
     labels = [b.text for row in kb.settings_routing_users([_C(1, True), _C(2, False)]).inline_keyboard
               for b in row]
     assert labels[:2] == ["✅ К1", "☑️ К2"]
-    notify = [b.text for row in kb.settings_notify_clients().inline_keyboard for b in row]
+    notify = [b.text for row in sections.ncl.keyboard(MAIN).inline_keyboard for b in row]
     assert all(not l.startswith(("🟢", "🔴")) for l in notify), notify
     # переключатели «Шлюзов» — тоже тумблеры ✅/☑️: кружок остаётся состоянию
     # объектов (онлайн, работает), не настройкам
@@ -274,19 +277,18 @@ def test_notify_section_layout_and_profiles_submenu(monkeypatch):
     """«🔔 Уведомления»: тумблеры ✅/☑️, границы тихих часов и пороги — только
     у включённого; «Аварии на e-mail» и «👥 События» — парой; события
     профилей — в подменю по два в ряд."""
-    from awgbot.bot import keyboards as kbs
     from awgbot.core import settings
     monkeypatch.setattr(settings, "get_bool", lambda k, d=True: d)
     monkeypatch.setattr(settings, "get_int", lambda k, d=0: d)
-    rows = [[b.text for b in r] for r in kbs.settings_notify().inline_keyboard]
+    rows = [[b.text for b in r] for r in sections.notify.keyboard(MAIN).inline_keyboard]
     assert rows == [["✅ Тихие часы"], ["С 20:00", "До 07:00"], ["✅ Алерты хоста"],
                     ["CPU 80%", "RAM 80%", "Диск 80%"], ["☑️ Аварии на e-mail", "👥 События"],
                     ["⬅️ Назад"]], rows
     monkeypatch.setattr(settings, "get_bool", lambda k, d=True: False)
-    rows = [[b.text for b in r] for r in kbs.settings_notify().inline_keyboard]
+    rows = [[b.text for b in r] for r in sections.notify.keyboard(MAIN).inline_keyboard]
     assert rows == [["☑️ Тихие часы"], ["☑️ Алерты хоста"], ["☑️ Аварии на e-mail", "👥 События"],
                     ["⬅️ Назад"]], "выключено — без границ и порогов"
     monkeypatch.setattr(settings, "get_bool", lambda k, d=True: d)
-    sub = [[b.text for b in r] for r in kbs.settings_notify_clients().inline_keyboard]
+    sub = [[b.text for b in r] for r in sections.ncl.keyboard(MAIN).inline_keyboard]
     assert sub == [["✅ Активация", "✅ Отсрочка"], ["✅ Лимит исчерпан", "✅ Бонусный объём"],
                    ["⬅️ Назад"]], sub

@@ -503,14 +503,6 @@ async def test_a_huge_changelog_is_cut_with_a_link_to_the_full_journal(services,
     assert "GitHub" not in text, "влезло — ссылки на журнал не нужно"
 
 
-async def test_the_old_check_button_just_redraws_the_section(services, fake_bot, upd):
-    """«Проверить» из прежнего сообщения — тот же раздел, проверяющий сам."""
-    cb, nav = _acb(fake_bot)
-    await sh.do_action(cb, SetCB(sec="upd", act="do", key="check"), services)
-    assert _last_edit(nav)[0].split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.3.1"
-    assert len(cb.answers) == 1
-
-
 # ── прочие разделы ───────────────────────────────────────────────────────────
 
 async def test_notify_subs_and_monitoring_texts_follow_the_values(services, fake_bot, store):
@@ -559,7 +551,7 @@ async def test_awg_restart_result_is_the_first_line_of_the_service_section(servi
     cb, nav = _acb(fake_bot)
     await sh.do_action(cb, SetCB(sec="svc", act="do", key="awg!"), services)
     assert cb.answers == [("Перезапускаю AWG…", False)]
-    assert _last_edit(nav)[0].startswith("⚠️ Ошибка перезапуска AWG: docker: &lt;no such container&gt;\n\n🔧 <b>Сервис</b>")
+    assert _last_edit(nav)[0].startswith("🔴 AWG не перезапущен: docker: &lt;no such container&gt;\n\n🔧 <b>Сервис</b>")
 
 
 async def test_restart_confirmations_put_cancel_first(services, fake_bot):

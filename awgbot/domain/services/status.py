@@ -464,6 +464,20 @@ class StatusMixin:
         hostmetrics.collect_and_store(self.db)
         return self.poll_traffic() if ok else []
 
+    def restart_awg(self) -> tuple[bool, str]:
+        """Перезапуск AWG — одним именем у обеих ролей (раздел «🔧 Сервис»):
+        (ок, причина отказа)."""
+        try:
+            self.restart_service()
+        except Exception as e:                            # noqa: BLE001
+            return False, str(e)
+        return True, ""
+
+    @staticmethod
+    def carries_traffic() -> bool:
+        """Сервер AWG трафик несёт всегда: перезапуск рвёт соединения клиентов."""
+        return True
+
     def restart_service(self) -> None:
         """Перезапуск AmneziaWG по кнопке админа. На хосте это awg-quick
         down/up — метка старта не меняется, блокировки не слетают, и

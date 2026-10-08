@@ -10,7 +10,6 @@ import io
 
 from aiogram.types import CallbackQuery, Message
 
-from awgbot.bot import keyboards as kb
 from awgbot.bot import texts, roles
 from awgbot.bot.handlers.common import call, forget_secret
 
@@ -39,11 +38,12 @@ async def offer_restore(message: Message, services, state, *, gateway: bool) -> 
     await forget_secret(message)                       # в копии вся база — в чате ей не место
     await state.update_data(restore_plain=base64.b64encode(info["plain"]).decode(),
                             restore_at=info["created_at"])
-    carries = (await call(services.carries_traffic)) if gateway else True
+    carries = await call(services.carries_traffic)      # у сервера AWG — всегда True
     br = roles.pick(gateway)
     warning = texts.restore_warning(br, carries) if info.get("ifaces_changed") else ""
+    from awgbot.bot.sections import backup as _backup
     await message.answer(texts.restore_offer(info["created_at"], br, warning),
-                         reply_markup=kb.restore_confirm(gateway=gateway))
+                         reply_markup=_backup.restore_confirm_kb(br))
     return True
 
 

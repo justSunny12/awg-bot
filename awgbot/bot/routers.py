@@ -4,12 +4,12 @@
 настоящий диспетчер роли) собирают диспетчер отсюда — списков роутеров в
 двух местах больше нет, и порядок включения живёт здесь один раз:
 
-  paging → hide → [роутеры роли по порядку] → stale
+  paging → hide → cancel → sections(br) → [роутеры роли по порядку] → stale
 
 Роутеры только одной роли (admin, settings, client, gateway…) — модульные,
 в процессе их включает один диспетчер; общие для обеих ролей (листание,
-«Скрыть», устаревшая кнопка) — фабрики: в одном процессе тестов строятся оба
-диспетчера, а один Router в два не включить.
+«Скрыть», «✖️ Отмена», общие разделы настроек, устаревшая кнопка) — фабрики:
+в одном процессе тестов строятся оба диспетчера, а один Router в два не включить.
 """
 from __future__ import annotations
 
@@ -22,9 +22,13 @@ from awgbot.bot.middleware import AccessMiddleware
 def routers_for(role: str) -> list[Router]:
     """Роутеры роли установки («client» — основной бот, «gateway» — агент)
     в порядке включения. Импорты ленивые: модуль не тянет хендлеры при загрузке."""
-    from awgbot.bot import paging
-    from awgbot.bot.handlers import hide, stale
-    head = [paging.make_router(), hide.make_router()]
+    from awgbot.bot import paging, sections
+    from awgbot.bot.handlers import hide, reply_commands, stale
+    from awgbot.bot.roles import GATEWAY, MAIN
+    br = GATEWAY if role == "gateway" else MAIN
+    # общие разделы — раньше роутеров роли: у тех широкие фильтры (act == "do")
+    head = [paging.make_router(), hide.make_router(), reply_commands.make_cancel_router(),
+            sections.make_router(br)]
     if role == "gateway":
         from awgbot.bot.handlers import gateway as gateway_handlers
 

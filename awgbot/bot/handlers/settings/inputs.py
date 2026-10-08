@@ -17,7 +17,7 @@ from awgbot.bot.handlers.common import call, edit, send_menu, ask_here, ask_trac
 
 log = logging.getLogger("awgbot.handlers.settings")
 from ._router import router
-from .render import HOOKS, _render, _screen
+from .render import _render, _screen, _shared
 
 # ── свой DNS-резолвер: три решения ───────────────────────────────────────────
 # Выше do_action по той же причине, что и остальные специфичные обработчики:
@@ -90,7 +90,8 @@ def _port_dialog(services) -> core.PortDialog:
 
 @router.message(SshPort.value)
 async def ssh_port_received(message: Message, state: FSMContext, services):
-    await core.port_received(message, state, services, HOOKS, _port_dialog(services))
+    from awgbot.bot import sections as secs
+    await core.port_received(message, state, services, secs.hooks_for(MAIN), _port_dialog(services))
 
 
 @router.callback_query(SetCB.filter((F.sec == "fw") & (F.act == "do")
@@ -116,7 +117,11 @@ async def ssh_port_finisher_action(cb: CallbackQuery, callback_data: SetCB, stat
 # ── ввод значения (FSM) ──────────────────────────────────────────────────────
 @router.callback_query(SetCB.filter(F.act == "edit"))
 async def edit_value(cb: CallbackQuery, callback_data: SetCB, state: FSMContext, services):
-    await core.start_edit(cb, services, HOOKS, state, callback_data.key, callback_data.sec)
+    """Ввод значения ролевых разделов («Сервер», «Подписки»); общих — в sections."""
+    if await _shared(cb, callback_data, services, state):
+        return
+    from awgbot.bot import sections as secs
+    await core.start_edit(cb, services, secs.hooks_for(MAIN), state, callback_data.key, callback_data.sec)
 
 
 async def _migration_prepare(cb: CallbackQuery, services, want_port: str = "") -> None:

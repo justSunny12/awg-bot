@@ -425,15 +425,16 @@ async def test_settings_section_is_always_shown_but_its_content_depends_on_provi
     где её разворачивают. А вот содержимое разное — экран развёртывания, экран
     «интерфейс задан, но линка нет» или обычные переключатели.
     """
-    from awgbot.bot import keyboards as kb, texts
+    from awgbot.bot import keyboards as kb, sections, texts
     from awgbot.bot.handlers import settings as sh
+    from awgbot.bot.roles import MAIN
     from awgbot.core import config
 
     # вход — «🛰 Шлюзы» на главной, всегда; в корне настроек его больше нет
     from awgbot.bot.callbacks import SetCB
     main = [b for row in kb.admin_main().inline_keyboard for b in row]
     assert any(b.text == "🛰 Шлюзы" and b.callback_data == SetCB(sec="rt").pack() for b in main)
-    labels = [b.text for row in kb.settings_root().inline_keyboard for b in row]
+    labels = [b.text for row in sections.root.keyboard(MAIN).inline_keyboard for b in row]
     assert not any("РФ-доступ" in l for l in labels), labels
 
     monkeypatch.setattr(config, "ROUTING_ENABLED", False)
@@ -1002,6 +1003,11 @@ async def test_global_switch_off_needs_confirmation_and_on_is_immediate(
     monkeypatch.setattr(sh, "_render", _no_render)
     monkeypatch.setattr(sh.sections, "_render", _no_render)
     monkeypatch.setattr(sh.render, "_render_nav", _no_render)
+
+    async def _no_section_render(*a, **k):                # раздел после тумблера — через общий слой
+        pass
+    from awgbot.bot import sections as shared_sections
+    monkeypatch.setattr(shared_sections, "render", _no_section_render)
     monkeypatch.setattr(services, "routing_probe", lambda: rt.PROBE_DOWN)
     cb, nav = _cb(fake_bot, config.ADMIN_ID)
     await sh.toggle(cb, SetCB(sec="rt", act="toggle", key="app.routing.enabled"), services)

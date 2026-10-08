@@ -14,7 +14,6 @@ handlers/admin — роутер администратора: пакет роу�
   clients    профили: список, карточка, создание, имя/лимиты/период/продление/удаление
   devices    устройства: добавление профилю, выдача, без профиля, карточка, перенос
   gateway    пометка шлюза по пересланному сообщению агента
-  updates    self-update
   selfops    личные устройства админа (AdminSelfCB)
   blocks     ручные блокировки устройств и клиентов
   broadcast  объявления, в том числе с продлением
@@ -29,7 +28,7 @@ from aiogram import Router
 
 from awgbot.bot.filters import RoleFilter
 from awgbot.bot.handlers.admin import (blocks, broadcast, clients, devices, gateway, panel,
-                                       selfops, updates)
+                                       selfops)
 from awgbot.bot.handlers.admin.panel import (
     _panel_parts, restore_panel_after_restart,
     admin_start, admin_document, admin_expiring, admin_traffic_profiles, admin_online,
@@ -50,8 +49,8 @@ from awgbot.bot.handlers.admin.devices import (
     edit_device_traffic_start, device_limit_preset, admin_del_ask, admin_del_confirm,
     device_card_parts, my_devices_parts)
 from awgbot.bot.handlers.admin.gateway import has_gw_token, gateway_claim_message
-from awgbot.bot.handlers.admin.updates import update_install, update_menu, update_mute
 from awgbot.bot.handlers.admin.selfops import self_devices, self_gen_pick, self_add_start, self_add_name
+from awgbot.bot.sections.updates import install as update_install, menu as update_menu, mute as update_mute  # для тестов
 from awgbot.bot.handlers.admin.blocks import (
     admin_block_menu, admin_block_pause_no, admin_block_pause_yes,
     admin_unblock_menu, admin_block_do, admin_unblock_do, admin_block_cancel)
@@ -70,7 +69,6 @@ router.include_router(panel.router)
 router.include_router(clients.router)
 router.include_router(devices.router)
 router.include_router(gateway.router)
-router.include_router(updates.router)
 router.include_router(selfops.router)
 router.include_router(blocks.router)
 router.include_router(broadcast.router)
@@ -94,11 +92,11 @@ __all__ = [
     "edit_device_traffic_start", "device_limit_preset", "admin_del_ask", "admin_del_confirm",
     "device_card_parts", "my_devices_parts",
     "has_gw_token", "gateway_claim_message",
-    "update_install", "update_menu", "update_mute",
+    
     "self_devices", "self_gen_pick", "self_add_start", "self_add_name",
     "admin_block_menu", "admin_block_pause_no", "admin_block_pause_yes",
     "admin_unblock_menu", "admin_block_do", "admin_unblock_do", "admin_block_cancel",
     "broadcast_pick", "broadcast_mode", "broadcast_extend_toggle", "broadcast_toggle",
     "broadcast_toggle_all", "broadcast_next", "broadcast_days", "broadcast_days_preset",
     "broadcast_receive", "broadcast_cancel_h", "broadcast_send",
-]
+    "update_install", "update_menu", "update_mute"]

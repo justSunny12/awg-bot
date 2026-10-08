@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from awgbot.core import settings
+
 from awgbot.bot.callbacks import GwCB
 
-from .common import paged_rows, _chk, entry_tag, confirm
-from . import rolekb
+from .common import paged_rows, entry_tag, confirm
 
 
 def gateway_panel_kb(lan: bool = False) -> InlineKeyboardMarkup:
@@ -69,108 +68,14 @@ def gateway_transit_kb(items=(), page: int = 0) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def gateway_settings_kb() -> InlineKeyboardMarkup:
-    """Корень настроек агента в два столбца, как у основного бота: перезапуски —
-    в «🔧 Сервис», последние ряды — «Бэкапы | Сервис», «Обновления | В меню»."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="🔔 Уведомления", callback_data=GwCB(action="notify"))
-    kb.button(text="✉️ E-mail", callback_data=GwCB(action="email"))
-    kb.button(text="🛡 SSH-доступ", callback_data=GwCB(action="ssh"))
-    kb.button(text="🩺 Мониторинг", callback_data=GwCB(action="mon"))
-    kb.button(text="💾 Бэкапы", callback_data=GwCB(action="backup"))
-    kb.button(text="🔧 Сервис", callback_data=GwCB(action="svc"))
-    kb.button(text="⬆️ Обновления", callback_data=GwCB(action="updates"))
-    kb.button(text="⬅️ В меню", callback_data=GwCB(action="panel"))
-    kb.adjust(2, 2, 2, 2)
-    return kb.as_markup()
-
-
-def gateway_svc_kb() -> InlineKeyboardMarkup:
-    """«🔧 Сервис» агента: перезапуск AWG (линк) и перезапуск бота, назад в настройки."""
-    kb = InlineKeyboardBuilder()
-    kb.button(text="🔁 Перезапуск AWG", callback_data=GwCB(action="restart"))
-    kb.button(text="🔁 Перезапуск бота", callback_data=GwCB(action="botrestart"))
-    kb.button(text="⬅️ Назад", callback_data=GwCB(action="settings"))
-    kb.adjust(2, 1)
-    return kb.as_markup()
-
-
 def _gw_back(sec: str = "settings") -> InlineKeyboardButton:
     return InlineKeyboardButton(text="⬅️ Назад", callback_data=GwCB(action=sec).pack())
-
-
-# адаптер колбэков агента для общих клавиатур (rolekb): у агента один
-# обработчик на тумблеры, правки и циклы, «назад» из корня настроек — settings
-_ROLE = rolekb.RoleCB(
-    toggle=lambda key: GwCB(action="tgl", val=key),
-    edit=lambda key: GwCB(action="edit", val=key),
-    cycle=lambda key: GwCB(action="cyc", val=key),
-    actions={"encryption": GwCB(action="enc"), "encryption_set": GwCB(action="enc_set"),
-             "backup_now": GwCB(action="backup!"), "email_setup": GwCB(action="em_setup"),
-             "email_check": GwCB(action="em_check"), "email_test": GwCB(action="em_test"),
-             "email_forget": GwCB(action="em_forget"), "updates_notify": GwCB(action="upd_toggle"),
-             "port_retry": GwCB(action="ssh_port_retry"), "port_back": GwCB(action="ssh_port_back")},
-    back=lambda to: GwCB(action="settings" if to == "root" else to))
 
 
 def link_minutes(seconds: int) -> int:
     """Порог молчания линка в минутах — вверх: 90 с показываем как 2 мин, а
     не как 1, иначе алерт кажется более ранним, чем есть."""
     return max(1, -(-int(seconds or 0) // 60))
-
-
-def gateway_notify_kb() -> InlineKeyboardMarkup:
-    """Тихие часы и границы, алерты и четыре порога (общие с основным —
-    rolekb.notify_rows), аварии на e-mail — в один ряд с «Назад»."""
-    s = settings
-    kb = InlineKeyboardBuilder()
-    rows = rolekb.notify_rows(kb, _ROLE, temp=True)
-    ef = s.get_bool("notifications.email_fallback", False)
-    kb.button(text=f"{_chk(ef)} Аварии на e-mail", callback_data=GwCB(action="tgl", val="notifications.email_fallback"))
-    kb.add(_gw_back())
-    rows.append(2)
-    kb.adjust(*rows)
-    return kb.as_markup()
-
-
-def gateway_mon_kb() -> InlineKeyboardMarkup:
-    """«Мониторинг» агента: опрос, замеров до алерта, порог молчания линка в
-    минутах (хранится в секундах), звук 24/7."""
-    s = settings
-    kb = InlineKeyboardBuilder()
-    kb.button(text=f"⏱ Опрос: {s.get_int('app.gateway.monitor_minutes', 3)} мин",
-              callback_data=GwCB(action="edit", val="app.gateway.monitor_minutes"))
-    kb.button(text=f"🔢 Замеров: {s.get_int('app.monitoring.alert_streak', 5)}",
-              callback_data=GwCB(action="edit", val="app.monitoring.alert_streak"))
-    kb.button(text=f"⏳ Линк: {link_minutes(s.get_int('app.gateway.handshake_max_age', 300))} мин",
-              callback_data=GwCB(action="edit", val="app.gateway.handshake_max_age"))
-    loud = s.get_bool("app.gateway.link_alert_loud", True)
-    kb.button(text=f"{_chk(loud)} Звук 24/7", callback_data=GwCB(action="tgl", val="app.gateway.link_alert_loud"))
-    kb.adjust(2, 2)
-    kb.row(_gw_back())
-    return kb.as_markup()
-
-
-def gateway_backup_kb(encryption: bool = False) -> InlineKeyboardMarkup:
-    """Как у основного бота — общий построитель rolekb.backup_kb."""
-    return rolekb.backup_kb(_ROLE, encryption)
-
-
-def gateway_email_kb(configured: bool) -> InlineKeyboardMarkup:
-    """Почта у агента: те же кнопки, что у основного, без аварийного выхода."""
-    return rolekb.email_kb(_ROLE, configured)
-
-
-def gateway_email_forget_confirm() -> InlineKeyboardMarkup:
-    return confirm(GwCB(action="email"), "🗑 Отключить", GwCB(action="em_forget!"))
-
-
-def gateway_email_offer(back: str) -> InlineKeyboardMarkup:
-    return rolekb.email_offer_kb(_ROLE, back)
-
-
-def gateway_encryption_kb(has_secret: bool) -> InlineKeyboardMarkup:
-    return rolekb.encryption_kb(_ROLE, has_secret)
 
 
 def gateway_ssh_kb(st: dict, page: int = 0) -> InlineKeyboardMarkup:
@@ -196,19 +101,18 @@ def gateway_ssh_kb(st: dict, page: int = 0) -> InlineKeyboardMarkup:
 
 
 def gateway_ssh_port_finisher_kb() -> InlineKeyboardMarkup:
-    return rolekb.port_finisher_kb(_ROLE)
-
-
-
-def gateway_updates_kb(muted: bool, target_tag: str = "") -> InlineKeyboardMarkup:
-    """Раздел обновлений агента — как у основного (rolekb.updates_kb)."""
-    return rolekb.updates_kb(_ROLE, muted, target_tag)
+    """Финишер порта SSH агента — как у основного: другой порт или назад."""
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✏️ Другой порт", callback_data=GwCB(action="ssh_port_retry"))
+    kb.button(text="⬅️ Назад", callback_data=GwCB(action="ssh_port_back"))
+    kb.adjust(2)
+    return kb.as_markup()
 
 
 def gateway_confirm_kb(action: str, back: str = "panel") -> InlineKeyboardMarkup:
     """«Отмена» первой — необратимое не там, куда палец идёт по инерции.
-    back — куда возвращает отказ: восстановление живёт на панели,
-    перезапуски — в настройках."""
+    back — куда возвращает отказ (восстановление живёт на панели и экране
+    здоровья); перезапуски — в «🔧 Сервисе» общих разделов."""
     label = {"reassert": "🔧 Восстановить"}.get(action, "🔁 Перезапустить")
     return confirm(GwCB(action=back), label, GwCB(action=f"{action}!"))
 

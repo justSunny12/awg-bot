@@ -39,21 +39,23 @@ def test_settings_updates_kb_has_no_never_and_reads_it_as_month(conf):
     """«Никогда» из расписания ушло: старое значение в конфиге клавиатура
     показывает месяцем, а «Уведомлять» — только по мьюту в БД (его выставит
     раздел при открытии и старт бота). Кнопки «никогда» нет вовсе."""
-    from awgbot.bot import keyboards as kb
+    from awgbot.bot import sections
+    from awgbot.bot.roles import MAIN
     settings.set_value("updates.poll_schedule", "never")
-    labels = [b.text for row in kb.settings_updates(muted=True).inline_keyboard for b in row]
+    labels = [b.text for row in sections.updates.keyboard(MAIN, muted=True).inline_keyboard for b in row]
     assert labels == ["☑️ Уведомлять", "📅 Проверка: месяц", "⬅️ Назад"], labels
     assert not any("никогда" in t.lower() for t in labels)
-    labels = [b.text for row in kb.settings_updates(muted=False).inline_keyboard for b in row]
+    labels = [b.text for row in sections.updates.keyboard(MAIN, muted=False).inline_keyboard for b in row]
     assert labels[0] == "✅ Уведомлять", labels
 
 
 def test_settings_updates_kb_shows_current_schedule_on_the_cycle_button(conf):
-    from awgbot.bot import keyboards as kb
+    from awgbot.bot import sections
+    from awgbot.bot.roles import MAIN
     from awgbot.bot.callbacks import SetCB
     for sched, word in (("day", "день"), ("week", "неделя"), ("month", "месяц")):
         settings.set_value("updates.poll_schedule", sched)
-        markup = kb.settings_updates(muted=False)
+        markup = sections.updates.keyboard(MAIN, muted=False)
         btn = next(b for row in markup.inline_keyboard for b in row if b.text.startswith("📅"))
         assert btn.text == f"📅 Проверка: {word}", btn.text
         assert btn.callback_data == SetCB(sec="upd", act="cycle", key="updates.poll_schedule").pack()
@@ -62,11 +64,13 @@ def test_settings_updates_kb_shows_current_schedule_on_the_cycle_button(conf):
 def test_settings_updates_kb_offers_the_update_only_when_not_blocked(conf):
     """«⬆️ Обновить до vX» — первой кнопкой, когда цель найдена и не
     заблокирована; при блоке кнопки нет (причина — строкой в тексте)."""
-    from awgbot.bot import keyboards as kb
-    labels = [b.text for row in kb.settings_updates(False, target_tag="v3.3.1").inline_keyboard for b in row]
+    from awgbot.bot import sections
+    from awgbot.bot.roles import MAIN
+    upd = sections.updates.keyboard
+    labels = [b.text for row in upd(MAIN, False, target_tag="v3.3.1").inline_keyboard for b in row]
     assert labels[0] == "⬆️ Обновить до v3.3.1", labels
-    labels = [b.text for row in kb.settings_updates(False, target_tag="3.3.1").inline_keyboard for b in row]
+    labels = [b.text for row in upd(MAIN, False, target_tag="3.3.1").inline_keyboard for b in row]
     assert labels[0] == "⬆️ Обновить до v3.3.1", "тег без буквы — с буквой, а не голым числом"
-    labels = [b.text for row in kb.settings_updates(False, target_tag="v3.3.1",
-                                                    blocked="нужен python3.12").inline_keyboard for b in row]
+    labels = [b.text for row in upd(MAIN, False, target_tag="v3.3.1",
+                                    blocked="нужен python3.12").inline_keyboard for b in row]
     assert not any(t.startswith("⬆️") for t in labels), labels
