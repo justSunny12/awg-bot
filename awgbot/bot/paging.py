@@ -23,7 +23,6 @@ from awgbot.bot.callbacks import PageCB
 
 log = logging.getLogger(__name__)
 
-router = Router(name="paging")
 _pages: dict[tuple[int, str, int], int] = {}
 
 
@@ -35,7 +34,6 @@ def remember(chat_id: int, screen: str, ref: int, page: int) -> None:
     _pages[(int(chat_id or 0), screen, int(ref or 0))] = max(0, int(page))
 
 
-@router.callback_query(PageCB.filter())
 async def turn_page(cb: CallbackQuery, callback_data: PageCB, dispatcher: Dispatcher,
                     bot: Bot, event_update: Update):
     remember(cb.message.chat.id, callback_data.screen, callback_data.ref, callback_data.page)
@@ -50,3 +48,14 @@ async def turn_page(cb: CallbackQuery, callback_data: PageCB, dispatcher: Dispat
         await cb.answer()
     except Exception:                                     # noqa: BLE001
         pass                                              # хендлер экрана уже ответил
+
+
+def make_router() -> Router:
+    """Свой Router на каждый диспетчер (обе роли листают): один и тот же в два
+    не включить."""
+    router = Router(name="paging")
+    router.callback_query(PageCB.filter())(turn_page)
+    return router
+
+
+router = make_router()      # модульный экземпляр — для тестов, которые включают его сами

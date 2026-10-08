@@ -18,30 +18,21 @@ import hashlib
 import logging
 import os
 
-from aiogram import Bot, Dispatcher
+from aiogram import Bot
 from aiogram.exceptions import TelegramUnauthorizedError
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.fsm.storage.memory import MemoryStorage
 
 from awgbot.core import config
 from awgbot.core import settings
 from awgbot.infra import awg
 from awgbot.infra.db import Database
 from awgbot.domain.services import Services
-from awgbot.bot.middleware import AccessMiddleware
 from awgbot.bot.notifier import notify_one, send_notifications
+from awgbot.bot.routers import make_dispatcher
 from awgbot.runtime.scheduler import setup_scheduler
 from awgbot.runtime.watcher import AwgWatcher
 from awgbot.runtime.conf_watcher import ConfWatcher
-from awgbot.bot.handlers import admin as admin_handlers
-from awgbot.bot.handlers import settings as settings_handlers
-from awgbot.bot.handlers import reply_commands as reply_commands_handlers
-from awgbot.bot.handlers import client as client_handlers
-from awgbot.bot.handlers import friend as friend_handlers
-from awgbot.bot.handlers import guide as guide_handlers
-from awgbot.bot.handlers import routing as routing_handlers
-from awgbot.bot.handlers import hide as _hide
 
 logging.basicConfig(
     level=logging.INFO,
@@ -243,20 +234,9 @@ async def run_gateway() -> None:
         log.warning("getMe на старте не прошёл (сеть ещё не готова?): %s — "
                     "продолжаю, polling дождётся сети", e)
 
-    dp = Dispatcher(storage=MemoryStorage())
-    dp["services"] = services
-    access = AccessMiddleware(db)          # клиентов в БД нет: пускает админа,
-    dp.message.outer_middleware(access)    # остальных молча роняет — ровно то,
-    dp.callback_query.outer_middleware(access)  # что шлюзу и нужно
-    from awgbot.bot import paging as _paging
-    dp.include_router(_paging.router)              # листание списков — до экранов
-    dp.include_router(_hide.make_router())         # «Скрыть» — у обеих ролей
-    dp.include_router(gateway_handlers.router)
-    from awgbot.bot.handlers import stale as _stale
-
-    async def _gw_main(message, services, role="", client=None):
-        await gateway_handlers._panel(message, services)
-    dp.include_router(_stale.make_router(_gw_main))   # ПОСЛЕДНИМ: кнопка старого меню
+    # клиентов в БД нет: AccessMiddleware пускает админа, остальных молча
+    # роняет — ровно то, что шлюзу и нужно; роутеры — bot/routers.py
+    dp = make_dispatcher("gateway", services, db)
     await _menu_command(bot)
 
     conf_watcher = ConfWatcher(config.CONF_DIR)
@@ -397,31 +377,9 @@ async def main() -> None:
     except Exception as e:                               # noqa: BLE001
         log.warning("getMe на старте не прошёл (сеть ещё не готова?): %s — "
                     "продолжаю, polling дождётся сети", e)
-    dp = Dispatcher(storage=MemoryStorage())
-    dp["services"] = services
-
-    access = AccessMiddleware(db)
-    # ВАЖНО: outer_middleware — отрабатывает ДО фильтров роутеров. RoleFilter на
-    # роутерах читает data['role'], который кладёт этот middleware; при обычном
-    # .middleware() (inner) фильтры выполнились бы раньше и role ещё не было бы.
-    dp.message.outer_middleware(access)
-    dp.callback_query.outer_middleware(access)
-
-    from awgbot.bot import paging as _paging
-    dp.include_router(_paging.router)              # листание списков — до экранов
-    dp.include_router(_hide.make_router())         # «Скрыть» — у обеих ролей
-    dp.include_router(reply_commands_handlers.router)   # ПЕРВЫМ: reply-команды бьют раньше FSM
-    dp.include_router(admin_handlers.router)
-    dp.include_router(settings_handlers.router)
-    dp.include_router(guide_handlers.router)
-    dp.include_router(friend_handlers.router)
-    # ДО client: у обоих роль client, и FSM-состояние ввода адресов должно
-    # ловиться здесь, а не общим message-хендлером клиента
-    dp.include_router(routing_handlers.router)
-    dp.include_router(client_handlers.router)
-    from awgbot.bot.handlers import stale as _stale
-    from awgbot.bot.handlers.common import show_main_menu as _show_main_menu
-    dp.include_router(_stale.make_router(_show_main_menu))   # ПОСЛЕДНИМ: кнопка старого меню
+    # порядок роутеров и AccessMiddleware (outer — до фильтров роутеров) —
+    # bot/routers.py, один источник для запуска и тестов
+    dp = make_dispatcher("client", services, db)
     await _menu_command(bot)
 
     loop = asyncio.get_running_loop()
