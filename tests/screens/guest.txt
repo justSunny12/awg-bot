@@ -1,0 +1,559 @@
+### gst.start.activate — незнакомец: код друга — гость
+> /start FTEST0000002
++ send #2
+🎉 Тебе передали устройство «Телефон Артёма»
++ send #3
+👋 <b>Гена</b>
+
+🟢 VPN работает
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
++ send #4
+👤 Друг (Гена) активировал устройство «Телефон Артёма».
+  [Скрыть | hd]
+
+### gst.main.one — главная гостя: одно устройство
+> /start
++ send #2
+👋 <b>Артём</b>
+
+🟢 VPN работает
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
+
+### gst.main.many — главная гостя: несколько
+> /start
++ send #2
+👋 <b>Артём</b>
+
+🟢 VPN работает
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
+
+### gst.main.rf — главная гостя: РФ-доступ
+> /start
++ send #2
+👋 <b>Артём</b>
+
+🟢 VPN работает · 🇷🇺 РФ-доступ 🟢
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0] [🇷🇺 РФ-доступ | rt:panel:3:-1:]
+  [❓ Как подключить | fr:help:0]
+
+### gst.main.none — главная гостя: устройств нет
+> /start
++ send #2
+👋 <b>Артём</b> · устройств нет — попроси у друга новый код
+  [❓ Как подключить | fr:help:0]
+
+### gst.main.owner_expired — главная гостя: у владельца подписка истекла
+> /start
++ send #2
+👋 <b>Артём</b>
+
+🟢 VPN работает
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🔴 истекла
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
+
+### gst.main.owner_paused — главная гостя: владелец на паузе
+> /start
++ send #2
+👋 <b>Артём</b>
+
+🟢 VPN работает
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: ⏸️ на паузе
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
+
+### gst.main.usage — главная гостя: потребление
+> /start
++ send #2
+👋 <b>Артём</b>
+
+🟢 VPN работает
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+📊 <a href="https://t.me/test_bot?start=dev-1">Телефон Артёма</a>: 4 ГБ (безлимит)
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
+
+### gst.refresh — «Назад» из устройств — главная на месте
+> press fr:refresh:0
+= edit #1
+👋 <b>Артём</b>
+
+🟢 VPN работает
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
+~ (пустой ответ)
+
+### gst.code.more — ещё одно устройство от того же владельца
+> /start FTEST0000003
++ send #2
+✅ Устройство «Приставка» от <a href="tg://user?id=1000">Вася</a> успешно добавлено.
+Теперь у тебя 2 устройства.
++ send #3
+👋 <b>Артём</b>
+
+🟢 VPN работает
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
++ send #4
+👤 Друг (Артём) активировал устройство «Приставка».
+  [Скрыть | hd]
+
+### gst.code.other_donor — код от другого владельца — отказ
+> /start FTEST0000004
++ send #2
+У тебя уже есть устройство «Телефон Артёма», переданное <a href="tg://user?id=1000">Вася</a>.
+Владеть устройствами от разных друзей одновременно не получится 😔
+Ты можешь либо удалить устройство от <a href="tg://user?id=1000">Вася</a> и отправить мне этот код повторно, либо оставить всё как есть — решать тебе 🤷‍♂️
+
+### gst.code.upgrade — код клиента — гость становится владельцем
+> /start CTEST0000003
++ send #2
+🎉 Доступ открыт
+
+Переданные тебе устройства от профиля <a href="tg://user?id=1000">Вася</a> перенесены в твой профиль — перенастраивать ничего не нужно, они работают как раньше:
+• Телефон Артёма
++ send #3
+📤 Устройство «Телефон Артёма» перешло к <a href="tg://user?id=2000">Артём</a> — он активировал собственную подписку, и устройство переехало в его профиль. У тебя теперь 0 из 5 устройств.
+  [Скрыть | hd]
++ send #4
+👋 <b>Артём</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
++ send #5
+🎉 <a href="https://t.me/test_bot?start=cl-4">Артём</a>: доступ активирован (Артём)
+Перенесено переданных устройств: 1 (от Вася), лимит подписки 3.
+  [Скрыть | hd]
+
+### gst.code.no_arg — /code без кода
+> text «/code»
++ send #2
+Отправь код после команды: <code>/code КОД</code>
+
+### gst.code.invalid — /code с неверным кодом
+> text «/code FNOSUCHCODE1»
++ send #2
+🤔 Такого кода нет — проверь и пришли ещё раз
+
+### gst.link.rf — ссылка на РФ-доступ
+> /start rf
+- delete #1
++ send #2
+🇷🇺 <b>РФ-доступ:</b> вкл на всех
+  [✅ Телефон Артёма · от профиля Вася | rt:dev:1:-1:]
+  [✅ Выбрать все | rt:all:3:-1:]
+  [➕ Сайт | rt:add:3:-1:panel] [📋 Сайты | rt:sites:3:-1:]
+  [⬅️ Назад | fr:refresh:0]
+
+### gst.link.dev — ссылка на устройство
+> /start dev-1
+- delete #1
++ send #2
+⚪ <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
+Не подключался · 📊 0 ГБ (безлимит)
+  [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
+  [🛑 Блок | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
+  [⬅️ Назад | fr:list:0]
+
+### gst.link.sub — ссылка на подписку — у гостя главная
+> /start sub
++ send #2
+👋 <b>Артём</b>
+
+🟢 VPN работает
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
+
+### gst.devices — 📱 Устройства гостя
+> press fr:list:0
+= edit #1
+📱 <b>Устройства</b> · 1 · от профиля <a href="tg://user?id=1000">Вася</a>
+  [⚪ Телефон Артёма | fr:open:1]
+  [⬅️ Назад | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.devices.many — 📱 Устройства гостя: несколько
+> press fr:list:0
+= edit #1
+📱 <b>Устройства</b> · 2 · от профиля <a href="tg://user?id=1000">Вася</a>
+  [⚪ Телефон Артёма | fr:open:1]
+  [⚪ Ноутбук Артёма | fr:open:2]
+  [⬅️ Назад | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.dev — карточка гостя
+> press fr:open:1
+= edit #1
+⚪ <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
+Не подключался · 📊 0 ГБ (безлимит)
+  [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
+  [🛑 Блок | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
+  [⬅️ Назад | fr:list:0]
+~ (пустой ответ)
+
+### gst.dev.blocked — карточка гостя: заблокировано
+> press fr:open:1
+= edit #1
+⛔ <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
+Не подключался · 📊 0 ГБ (безлимит)
+⛔ Заблокировано: владельцем
+  [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
+  [✅ Разблок | bl:dev:menu_unblock:1::-1] [🗑 Удалить | dd:1:ask]
+  [⬅️ Назад | fr:list:0]
+~ (пустой ответ)
+
+### gst.dev.foreign — чужое устройство — отказ
+> press fr:open:99
+~! Устройство не найдено
+
+### gst.dev.connect_menu — кнопка прежнего образца — карточка
+> press fr:connect_menu:1
+= edit #1
+⚪ <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
+Не подключался · 📊 0 ГБ (безлимит)
+  [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
+  [🛑 Блок | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
+  [⬅️ Назад | fr:list:0]
+~ (пустой ответ)
+
+### gst.gen.one — 🔗 с главной: сразу
+> press fr:gen_link:0
+- delete #1
++ send #2
+<code>vpn://AAAJTXjadVZRbts4EL2Koe_UDSU7sQPkI5suYCZoIcTd_kSBwUhMy1qmBElO0wYB9ip7hQV6j_RGnTekHCrrjQP78c3z4ww5NPUY5ZXtlLG6aaOT0fVjpL59JvAYXeT0ER1GB6PoYmMsBsIN1AMGMQZLAZgwjAEnDBPAKcMJ4BHggrXHDFk7Y8jaOUPWCp5SsljwjJLVgieULBc8o3R6nlJOGfOcC60K3aRN1em8M5W91N85yFmcU7nadqkqCmM_n9E7JBzn1K70Wn8_u-t089FsNPOzHQ-q2nbMzh37leYYyGPO_1LrWpXmXgdfibma9-phoWzRflFrfdZ1elN3LUe5visKVZuPjTKl25Eo5lrfmVbdlvq8qtZGO57rLlXbrWgL7wx2LXrM7Ij-Mtq9jMZZdJhFBzuOttGxYsCqB8fGAbsUjktCLnbcJOQSx01DbuK4o4BbeL_jkPN-s5DzfvOQ834iLEZ6QxHWIr2jCEuR3lKEtcjeMyxGTj0ZVrOnm7wqrG9_W3lhWPSwv7xg9lrgu8aH54PwoOP8zoUr87r1vCRcp3096GXhyg2b0QvCVRx2pReEK6rKsvqmi5WpOXrteBc7HPPr7Uvujj85AeWYm51TXhpaX1m4SertbRwumovSNH2njGdjMY7_q6gbc79a91uI0T4fsg9Er-fi0-Zi15K2vblTub7JMkvb3ui2HZ2O-gTeJjHx7z4swY35dUAAhQsKpDS_6jS1FMV9Mpm9yGl0CEAHFl9kqB4Iwm0pCCQAMYEJQEJgCjAhcERgAc0xADQwXUAzB5hwfoQkRALuEioBcwmZgLtkHezlFAj-e84CQphx_wFAFGkMux7srGd9l4KbMzfob9SMXF83NXhkvq-TEUMtw_YFi7qGPQsWNdL_dap1g21Mt7elyV1ty6tP6V9_nJ7yZmmaptGFi6TLS6bPXIvLFF67nj4YcRtn9k9b1JWxSPhkkogYy5hSOqbFcu3KQh7TNwmiQat9qdrug-pPeRDYdNv-R-04_Bmqd87Uv7pesbc_l2wfSKuGfxo4qRe2Xb90vivx5Sutbu51MzwduwWiE_uEGwm-_CQAXyaoXaq8Klf3SM7dtXzXtdtbq7uVcqfG3f18bPgG7RplW5it2ADhbVFHTxTaPbKAVBurfxj1hp5b4ujphsKFvlPbsjv_XxVr2rwxdX_3P__z_PPX38__4n3E13RhW_cI4k6tp9yTiDu_oPoNAh09_QZJN6Ux</code>
+
+☝️ Ссылка для Телефон Артёма — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
+  [⬅️ В меню | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.gen.pick — 🔗 с главной: выбор
+> press fr:gen_link:0
+= edit #1
+🔗 <b>Ссылка</b> — для какого устройства?
+  [⚪ Телефон Артёма | fr:gen_link:1]
+  [⚪ Ноутбук Артёма | fr:gen_link:2]
+  [⬅️ Назад | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.gen.pick.qr — 🔳 с главной: выбор
+> press fr:gen_qr:0
+= edit #1
+🔳 <b>QR</b> — для какого устройства?
+  [⚪ Телефон Артёма | fr:gen_qr:1]
+  [⚪ Ноутбук Артёма | fr:gen_qr:2]
+  [⬅️ Назад | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.gen.pick.done — 🔳 выбор → QR
+> press fr:gen_qr:2
+- delete #1
++ animation #2
+🔳 Для Ноутбук Артёма — в AmneziaVPN «＋» → «Создать из QR-кода», наведи камеру
+  [⬅️ В меню | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.gen.none — выдача без устройств — отказ
+> press fr:gen_link:0
+~! Устройств нет
+
+### gst.dev.link — выдача: ссылка
+> press fr:gen_link:1
+- delete #1
++ send #2
+<code>vpn://AAAJTXjadVZRbts4EL2Koe_UDSW7sQPkI5sWMBNsIcRpf6LAYCSm5VqmBElO0wYB9ip7hQK9R_ZGO29IOVTWjQP78c3z4ww5NPUY5ZXtlLG6aaPj0fVjpL59IfAYnef0ER1GB6PofGMsBsIN1AMGMQZLAZgwjAEnDBPAKcMJ4DvABWuPGLJ2xpC1c4asFTylZLHgGSWrBU8oWS54Run0PKWcMuY5F1oVukmbqtN5Zyp7ob9zkLM4o3K17VJVFMZ-OaV3SDjOqV3qtf5-etfp5spsNPOzHQ-q2nbMzh37F80xkMec_4XWtSrNvQ6-EnM1f6qHhbJF-1Wt9WnX6U3dtRzl-i4pVG2uGmVKtyNRzLW-N626LfVZVa2NdjzXXaq2W9EW3hnsWvSY2RH9ZbR7GY2z6DCLDnYcbaNjxYBVD46NA3YpHJeEXOy4ScgljpuG3MRx7wJu4f2OQs77zULO-81DzvuJsBjpDUVYi_SOIixFeksR1iJ7z7AYOfVkWM2ebvKqsL79beWFYdHD_vKC2WuB7xofng_Cg47zOxeuzOvW85Jwnfb1oJeFKzdsRi8IV3HYlV4Qrqgqy-qbLlam5ui1413scMyvty-5O_74GJRjbnZOeWlofWXhJqm3t0m4_C5K0_SdMp6NxTj-v6JuzP1q3W8hRvt8yD4QvZ6LT5uLXUva9uZO5fomyyxte6PbdnQy6hN4m8TEv_-4BDfm1wEBFC4okNL8qtPUUhT3yWT2PKfRIQAdWHyRoXogCLelIJAAxAQmAAmBKcCEACwW0BwBQDMDgGYOMOH8CEmIBNwlVALmEjIBd8k62MspEPz3nAWEMOP-A4Ao0hh2PdhZz_ouBTdnbtDfqBm5vm5q8Mh8XycjhlqG7QsWdQ17FixqpP_rVOsG25hub0uTu9qWl5_TT3-cnPBmaZqm0YWLpMsLpk9di8sUXruePhhxG2f2gy3qylgkfDxJRIxlTCkd02K5dmUhj-mbBNGg1b5WbfdR9ac8CGy6bf-jdhT2Zr1zpv7V9Yq9_blk-0BaNfzTwEm9sO36pfNdiS9faXVzr5vh6dgtEJ3YJ9xI8OUnAfgyQe1S5VW5ukdy7q7lu67d3lrdrZQ7Ne7u52PDN2jXKNvCbMUGCG-LOnqi0O6RBaTaWP3DqDf03BJHTzcULvSd2pbd2W9VrGnzxtT93f_8z_Ovf_9-_on3EV_ThW3dI4g7tZ5yTyLu_ILqNwh09PQfOHylLQ</code>
+
+☝️ Ссылка для Телефон Артёма — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
+  [⬅️ В меню | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.dev.file — выдача: файл
+> press fr:gen_file:1
+- delete #1
++ document #2
+📄 Для Телефон Артёма — импортируй файл в AmneziaVPN
+  [⬅️ В меню | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.finisher.menu — «⬅️ В меню» под выдачей — главная
+> press fr:refresh:0
+- delete #2
+= edit #2
+👋 <b>Артём</b>
+
+🟢 VPN работает
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
+~ (пустой ответ)
+
+### gst.block.ask — 🛑 Заблокировать — подтверждение
+> press bl:dev:menu_block:1:user:-1
+= edit #1
+🛑 Заблокировать Телефон Артёма?
+Перестанет подключаться, пока не разблокируешь. Если Telegram у тебя только через этот VPN — до бота не достучаться
+  [⬅️ Отмена | fr:open:1] [🛑 Заблокировать | bl:dev:block:1:user:-1 | красная]
+~ (пустой ответ)
+
+### gst.block.do — 🛑 Заблокировать — итог
+> press bl:dev:block:1:user:-1
++ send #2
+🛑 Устройство «Телефон Артёма» заблокировано.
+  [Скрыть | hd]
++ send #3
+🔴 Доступ к устройству «Телефон Артёма» приостановлен: у владельца доступа закончилась подписка.
+  [Скрыть | hd]
+= edit #1
+⛔ <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
+Не подключался · 📊 0 ГБ (безлимит)
+⛔ Заблокировано: владельцем
+  [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
+  [✅ Разблок | bl:dev:menu_unblock:1::-1] [🗑 Удалить | dd:1:ask]
+  [⬅️ Назад | fr:list:0]
+~ Заблокировано
+
+### gst.block.cancel — 🛑 «⬅️ Отмена» — карточка
+> press fr:open:1
+= edit #1
+⚪ <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
+Не подключался · 📊 0 ГБ (безлимит)
+  [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
+  [🛑 Блок | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
+  [⬅️ Назад | fr:list:0]
+~ (пустой ответ)
+
+### gst.unblock — разблокировать
+> press bl:dev:menu_unblock:1:user:-1
++ send #2
+🟢 Устройство «Телефон Артёма» разблокировано.
+  [Скрыть | hd]
++ send #3
+🟢 Доступ к устройству «Телефон Артёма» снова активен.
+  [Скрыть | hd]
+= edit #1
+⚪ <b>Телефон Артёма</b> · от профиля <a href="tg://user?id=1000">Вася</a>
+Не подключался · 📊 0 ГБ (безлимит)
+  [🔗 Ссылка | fr:gen_link:1] [🔳 QR | fr:gen_qr:1] [📄 Файл | fr:gen_file:1]
+  [🛑 Блок | bl:dev:menu_block:1::-1] [🗑 Удалить | dd:1:ask]
+  [⬅️ Назад | fr:list:0]
+~ Разблокировано
+
+### gst.delete.ask — 🗑 Удалить — подтверждение
+> press dd:1:ask
+= edit #1
+🗑 Удалить Телефон Артёма?
+Новое устройство можно будет создать только по коду от друга
+  [⬅️ Отмена | fr:open:1] [🗑 Удалить | dd:1:confirm | красная]
+~ (пустой ответ)
+
+### gst.delete.yes — 🗑 удалено последнее — главная без устройств
+> press dd:1:confirm
+~ (пустой ответ)
++ send #2
+Устройство «Телефон Артёма», ранее переданное <a href="tg://user?id=2000">Артём</a>, удалено по его запросу.
+Теперь у тебя 0 из 5 устройств.
+  [Скрыть | hd]
+= edit #1
+🗑 Телефон Артёма удалено
+
+👋 <b>Артём</b> · устройств нет — попроси у друга новый код
+  [❓ Как подключить | fr:help:0]
+
+### gst.delete.yes.many — 🗑 удалено одно из двух
+> press dd:2:confirm
+~ (пустой ответ)
++ send #2
+Устройство «Ноутбук Артёма», ранее переданное <a href="tg://user?id=2000">Артём</a>, удалено по его запросу.
+Теперь у тебя 1 из 5 устройств.
+  [Скрыть | hd]
+= edit #1
+🗑 Ноутбук Артёма удалено
+
+👋 <b>Артём</b>
+
+🟢 VPN работает
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0]
+  [❓ Как подключить | fr:help:0]
+
+### gst.help — ❓ Как подключить
+> press fr:help:0
+= edit #1
+❓ <b>Помощь</b> — какое устройство?
+  [🍎 iPhone / iPad | h:apple] [🤖 Android | h:android]
+  [🪟 Windows | h:windows] [🍏 Mac | h:mac]
+  [✅ Настрою сам | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.guide.android.0 — гайд Android у гостя, шаг 1
+> press h:android
+= edit #1
+🤖 <b>Настройка на Android</b>
+
+Самый простой способ — установить из Google Play:
+
+1. Открой Play Маркет.
+2. Найди <b>AmneziaVPN</b>.
+3. Нажми «Установить».
+  [Далее ➡️ | g:android:1:0:]
+  [⬅️ В меню | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.guide.android.1 — гайд Android у гостя, последний шаг
+> press g:android:1:0:
+= edit #1
+<b>Если на телефоне нет Google Play</b>
+
+(бывает на некоторых телефонах, например Huawei)
+
+1. Открой в браузере: <a href="https://github.com/amnezia-vpn/amnezia-client/releases/latest">github.com/amnezia-vpn/amnezia-client/releases/latest</a>
+2. Пролистай вниз до раздела <b>Assets</b>.
+3. Скачай файл, в названии которого есть <b>android9+</b> (заканчивается на .apk).
+4. Открой скачанный файл и разреши установку, если телефон попросит.
+
+✅ Приложение установлено — дальше настройки
+  [⬅️ Назад | g:android:0:0:] [📶 Подключение | g:connect:0:0:]
+  [⬅️ В меню | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.guide.apple.0 — гайд Apple у гостя, шаг 1 (скриншот)
+> press h:apple
+= edit #1
+🍎 <b>Настройка на iPhone / iPad</b>
+
+В российском App Store нужного приложения нет — временно переключим магазин на Казахстан.
+После установки можно будет вернуть обратно. Аккаунт и приложения не пострадают 👇
+  [Далее ➡️ | g:apple:1:0:]
+  [⬅️ В меню | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.guide.connect.0 — подключение у гостя: устройства без ➕
+> press g:connect:0:0:
+= edit #1
+📶 <b>Получаем настройки</b>
+
+Для подключения тебе будет нужна ссылка — для каждого устройства своя.
+Выбери устройство ниже или добавь новое 👇
+  [🔗 Телефон Артёма | d:gen_guide:1]
+  [🔗 Ноутбук Артёма | d:gen_guide:2]
+  [⬅️ В меню | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.guide.connect.pick — подключение у гостя: способ
+> press d:gen_guide:2
+- delete #1
++ send #2
+📶 <b>Настраиваем подключение</b>
+
+Настраиваешь устройство, с которого пишешь — нужна 🔗 ссылка, другое устройство — 🔳 QR, можно и 📄 файлом.
+Затем открой AmneziaVPN и вставь ссылку/файл или отсканируй код
+  [🔗 Ссылка | g:connect:1:2:link] [🔳 QR | g:connect:1:2:qr] [📄 Файл | g:connect:1:2:file]
+  [⬅️ Назад | g:connect:0:0:]
+  [⬅️ В меню | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.guide.connect.link — подключение у гостя: ссылка и «Подключаемся»
+> press g:connect:1:1:link
+- delete #1
++ send #2
+<code>vpn://AAAJTXjadVbtTttIFH2VyL9pytgJJEj8YOlKGVAri3T7B6NosId2Gmds2Q6lRUj7KvsKK_U96Bv1njvjMGazgMKZc4_vx9w7GT9GeWU7Zaxu2uhkdP0YqW-fCTxGFzn9iw6jg1F0sTEWC-EW6gGLGIulAEwYxoAThgnglOEE8AhwwdpjhqydMWTtnCFrBYeULBYcUbJacEDJcsERpdNzSDllzDEXWhW6SZuq03lnKnupv7ORszincrXtUlUUxn4-o09I2M6pXem1_n521-nmo9lo5mc7HlS17ZidO_YrxRjIY87_UutaleZeB4_EXM179bBQtmi_qLU-6zq9qbuWrVzfFZmqzcdGmdJ1JIq51nemVbelPq-qtdGO57pL1XYrauGdQdeix8yO6Cej7mW0zqLDLDrYcdRGx4oBqx4cGwfsUjguCbnYcZOQSxw3DbmJ444CbuH9HYec9zcLOe9vHnLenwiLkd6hCGuR3qMIS5HepQhrkb3PsBg59WRYzZ5p8qqwvv1j5YVh0cP58oLZa4GfGm-eD8yDifOdC3fm9eh5SbhP-2bQy8KdGw6jF4S7OJxKLwh3VJVl9U0XK1Oz9drxznY45t-3L7k7_uQElGNudp7y0tD-ysIFqbe307BJzkph-kkZz8ZiHP9XUTfmfrXuW4jVPj_kPhC9jsWnzdmuJbW9uVO5vskyS21vdNuOTkd9Am-TmPh3H5bgxvx7QACFCzKkFF91mkaK7D6ZzF7ktDoEoAOLBxmqB4LwthQEEoCYwAQgIYAnlxMCRwQW0BwDQDMDgGYOMOH8CEmIBLxLqAScS8gEvEvWwb2cAsH_nrMAEyLuPwCwIo3h1IOd9ayfUnBz5gbzjZqR6-uhBo_M900ybKhlOL5gUddwZsGiRvq7TrVu0MZ0e1ua3NW2vPqU_vXH6Sk3S1OYRhfOki4vmT5zIy5T-NrN9MGIxzizf9qiroxFwieTRMTYxpTSMS22a1cW8pi-SWANRu1L1XYfVH_KA8Om2_Zfasfh11C980zzq-sV-_bnkt0H0qrhrwZO6oVt1y-T70p8eaTVzb1uhqdjt0F0Yp9wI8EvvwnALxM0LlVelat7JOfuWr7r2u2t1d1KuVPj7n4-NnyDdo2yLZyt2AHM26KOnsi0e2UBqTZW_zDqDb23xNHTDZkLfae2ZXf-vyrWtHlj6v7uf_7n-eevv5__xeeIr-nCtu4VxJ1aT7k3EXd-QfUNAh09_QZJQ6Ux</code>
++ send #3
+<b>Подключаемся</b>
+
+1. Нажми большую кнопку подключения в приложении.
+2. Проверь: открой любой заблокированный сайт.
+
+Работает — значит всё готово! 🎉
+  [⬅️ Назад | g:connect:1:1:]
+  [⬅️ В меню | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.rf.panel — 🇷🇺 РФ-доступ гостя
+> press rt:panel:3:-1:
+= edit #1
+🇷🇺 <b>РФ-доступ:</b> вкл на всех
+  [✅ Телефон Артёма · от профиля Вася | rt:dev:1:-1:]
+  [✅ Ноутбук Артёма · от профиля Вася | rt:dev:2:-1:]
+  [✅ Выбрать все | rt:all:3:-1:]
+  [➕ Сайт | rt:add:3:-1:panel] [📋 Сайты | rt:sites:3:-1:]
+  [⬅️ Назад | fr:refresh:0]
+~ (пустой ответ)
+
+### gst.rf.hidden — РФ-доступ не выдан — отказ
+> press rt:panel:3:-1:
+~! РФ-доступ временно недоступен. Попробуй позже
+
+### gst.rf.dev — переключить устройство
+> press rt:dev:1:-1:
+= edit #1
+🇷🇺 <b>РФ-доступ:</b> вкл на 1 из 2
+  [☑️ Телефон Артёма · от профиля Вася | rt:dev:1:-1:]
+  [✅ Ноутбук Артёма · от профиля Вася | rt:dev:2:-1:]
+  [☑️ Выбрать все | rt:all:3:-1:]
+  [➕ Сайт | rt:add:3:-1:panel] [📋 Сайты | rt:sites:3:-1:]
+  [⬅️ Назад | fr:refresh:0]
+~ выключено
+
+### gst.rf.sites — 📋 Сайты гостя
+> press rt:sites:3:-1:
+= edit #1
+📋 <b>Свои сайты</b>
+Тут пока пусто. Банки, госуслуги, маркетплейсы — уже в общем списке; добавляй то, что пишет «вы не из России»
+  [➕ Сайт | rt:add:3:-1:]
+  [⬅️ Назад | rt:panel:3:-1:]
+~ (пустой ответ)
+
+### gst.rf.add.done — ➕ Сайт гостя — итог
+> text «sber.ru»
+- delete #1
+- delete #2
++ send #3
+✅ Добавлено: <code>sber.ru</code> · применится в теч. минуты, не сработало — переподключись
+
+📋 <b>Свои сайты</b> · 1
+Открываются с российского адреса. Банки, госуслуги, маркетплейсы — уже в общем списке
+  [➖ sber.ru | rt:del:3:0:8960d643]
+  [➕ Сайт | rt:add:3:-1:] [🗑 Очистить | rt:clear:3:-1:]
+  [⬅️ Назад | rt:panel:3:-1:]
+
+### gst.rf.back — «Назад» из раздела — главная гостя
+> press fr:refresh:0
+= edit #1
+👋 <b>Артём</b>
+
+🟢 VPN работает · 🇷🇺 РФ-доступ 🟢
+💳 Подписка профиля <a href="tg://user?id=1000">Вася</a>: 🟢 активна
+  [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
+  [📱 Устройства | fr:list:0] [🇷🇺 РФ-доступ | rt:panel:3:-1:]
+  [❓ Как подключить | fr:help:0]
+~ (пустой ответ)
+
+### gst.hide — «Скрыть» на уведомлении
+> press hd
+- delete #1
+~ (пустой ответ)

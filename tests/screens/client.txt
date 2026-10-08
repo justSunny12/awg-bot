@@ -8,3 +8,1906 @@
 📱 Можно добавить до 3 устройств
   [➕ Устройство | d:add:0]
   [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.main.one — главная: одно устройство
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.main.many — главная: несколько устройств, есть место
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 2 из 5
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.main.full — главная: лимит устройств исчерпан
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 2 из 2
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.main.unlimited — главная: устройств без лимита
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств: 1
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.main.traffic — главная: лимит трафика и потребление
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 40 из 50 ГБ
+📱 Устройств 2 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.main.lent_held — главная: переданное, приглашение и чужое в держании
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 4 из 5 (+1 от профиля <a href="tg://user?id=3000">Петя</a>)
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.main.rf — главная: РФ-доступ выдан и включён
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает · 🇷🇺 РФ-доступ 🟢
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 2 из 5
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [🇷🇺 РФ-доступ | rt:panel:2:-1:] [💳 Подписка | m:info]
+  [❓ Как подключить | h:root]
+
+### cl.main.rf_off — главная: РФ-доступ выдан, выключен
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает · 🇷🇺 РФ-доступ выкл
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [🇷🇺 РФ-доступ | rt:panel:2:-1:] [💳 Подписка | m:info]
+  [❓ Как подключить | h:root]
+
+### cl.main.rf_down — главная: РФ-доступ не работает
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает · 🇷🇺 РФ-доступ 🔴 не работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [🇷🇺 РФ-доступ | rt:panel:2:-1:] [💳 Подписка | m:info]
+  [❓ Как подключить | h:root]
+
+### cl.main.expiring — главная: подписка истекает
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 🟡 истекает 18.09 12:00</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.main.expired — главная: подписка истекла
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+🟡 доступ приостановлен
+<a href="https://t.me/test_bot?start=sub">💳 🔴 истекла 10.09</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.main.paused — главная: своя пауза
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+🟡 доступ приостановлен
+<a href="https://t.me/test_bot?start=sub">💳 ⏸️ на паузе до 25.09</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.main.admin_paused — главная: приостановлена администратором
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+🟡 доступ приостановлен
+<a href="https://t.me/test_bot?start=sub">💳 ⏸️ приостановлена администратором</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.main.never — главная: бессрочная подписка
+> /start
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 бессрочная</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.main.back — «Назад» из устройств — главная на месте
+> press m:main
+~ (пустой ответ)
+= edit #1
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.start.cold — незнакомец: /start без кода
+> /start
++ send #2
+👋 Не узнаю тебя. Пришёл по приглашению, а код не подхватился? Отправь: <code>/code КОД</code>
+
+### cl.start.bad_code — незнакомец: неверный код
+> /start CNOSUCHCODE1
++ send #2
+🤔 Такого кода нет — проверь и пришли ещё раз
+
+### cl.start.activate — незнакомец: активация приглашения
+> /start CTEST0000001
++ send #2
+🎉 Доступ открыт. Какое у тебя устройство?
+  [🍎 iPhone / iPad | h:apple] [🤖 Android | h:android]
+  [🪟 Windows | h:windows] [🍏 Mac | h:mac]
+  [✅ Настрою сам | h:skip]
++ send #3
+🎉 <a href="https://t.me/test_bot?start=cl-2">Гена</a>: доступ активирован (Гена)
+  [Скрыть | hd]
+
+### cl.code.no_arg — незнакомец: /code без кода
+> text «/code»
++ send #2
+Отправь код после команды: <code>/code КОД</code>
+
+### cl.code.activate — незнакомец: активация командой /code
+> text «/code CTEST0000001»
++ send #2
+🎉 Доступ открыт. Какое у тебя устройство?
+  [🍎 iPhone / iPad | h:apple] [🤖 Android | h:android]
+  [🪟 Windows | h:windows] [🍏 Mac | h:mac]
+  [✅ Настрою сам | h:skip]
++ send #3
+🎉 <a href="https://t.me/test_bot?start=cl-2">Гена</a>: доступ активирован (Гена)
+  [Скрыть | hd]
+
+### cl.help.skip — после активации: «✅ Настрою сам»
+> press h:skip
+= edit #2
+👋 <b>Гена</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Можно добавить до 3 устройств
+  [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+~ (пустой ответ)
+
+### cl.code.already — код клиента у того, у кого уже есть доступ
+> /start CTEST0000002
++ send #2
+У тебя уже есть доступ
+
+### cl.code.own_device — код на своё же устройство
+> /start FTEST0000002
++ send #2
+Это твоё собственное устройство — держать его незачем 🙂
+
+### cl.code.friend — код друга: чужое устройство в держание
+> /start FTEST0000003
++ send #2
+✅ Устройство «Телефон Пети» от <a href="tg://user?id=3000">Петя</a> успешно добавлено.
+Теперь у тебя 1 из 3 устройств (+ 1 от <a href="tg://user?id=3000">Петя</a>).
++ send #3
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3 (+1 от профиля <a href="tg://user?id=3000">Петя</a>)
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
++ send #4
+👤 Друг (Вася) активировал устройство «Телефон Пети».
+  [Скрыть | hd]
+
+### cl.code.other_donor — код от второго дарителя — отказ
+> /start FTEST0000005
++ send #2
+У тебя уже есть устройство «Телефон Пети», переданное <a href="tg://user?id=3000">Петя</a>.
+Владеть устройствами от разных друзей одновременно не получится 😔
+Ты можешь либо удалить устройство от <a href="tg://user?id=3000">Петя</a> и отправить мне этот код повторно, либо оставить всё как есть — решать тебе 🤷‍♂️
+
+### cl.code.invalid — /code с неверным кодом друга
+> text «/code FNOSUCHCODE1»
++ send #2
+🤔 Такого кода нет — проверь и пришли ещё раз
+
+### cl.code.client_no_arg — /code без кода у клиента
+> text «/code»
++ send #2
+Отправь код после команды: <code>/code КОД</code>
+
+### cl.link.sub — ссылка на подписку
+> /start sub
+- delete #1
++ send #2
+💳 <b>Подписка:</b> годовая · 🟢 активна
+📅 15.09.26 → 15.09.27 · ост. 365 дн.
+
+⏸️ Пауза: 28 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⏸️ Пауза | pz:ask:2:0] [⬅️ Назад | m:main]
+
+### cl.link.rf — ссылка на РФ-доступ
+> /start rf
+- delete #1
++ send #2
+🇷🇺 <b>РФ-доступ:</b> вкл на всех
+  [✅ Телефон | rt:dev:1:-1:]
+  [✅ Ноутбук | rt:dev:2:-1:]
+  [✅ Выбрать все | rt:all:2:-1:]
+  [➕ Сайт | rt:add:2:-1:panel] [📋 Сайты | rt:sites:2:-1:]
+  [⬅️ Назад | m:main]
+
+### cl.link.rf_hidden — ссылка на РФ-доступ без разрешения
+> /start rf
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.link.dev — ссылка на устройство
+> /start dev-1
+- delete #1
++ send #2
+⚪ <b>Телефон</b>
+Не подключался · 📊 0 ГБ (безлимит)
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [👤 Другу | d:transfer:1] [🛑 Блок | bl:dev:menu_block:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | m:devices]
+
+### cl.link.dev_foreign — ссылка на чужое устройство
+> /start dev-99
++ send #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.sub — 💳 Подписка: годовая активна
+> press m:info
+= edit #1
+💳 <b>Подписка:</b> годовая · 🟢 активна
+📅 15.09.26 → 15.09.27 · ост. 365 дн.
+
+⏸️ Пауза: 28 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⏸️ Пауза | pz:ask:2:0] [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.sub.month — 💳 Подписка: ежемесячная
+> press m:info
+= edit #1
+💳 <b>Подписка:</b> ежемесячная · 🟢 активна
+📅 15.09 → 15.10 · ост. 30 дн.
+
+⏸️ Пауза: 2 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⏸️ Пауза | pz:ask:2:0] [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.sub.never — 💳 Подписка: бессрочная
+> press m:info
+= edit #1
+💳 <b>Подписка:</b> бессрочная · 🟢 активна
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.sub.rf — 💳 Подписка: с РФ-доступом
+> press m:info
+= edit #1
+💳 <b>Подписка:</b> годовая · 🟢 активна
+📅 15.09.26 → 15.09.27 · ост. 365 дн.
+
+⏸️ Пауза: 28 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: ∞ ГБ в месяц · 5 устройств · 🇷🇺 РФ-доступ
+  [⏸️ Пауза | pz:ask:2:0] [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.sub.capped — 💳 Подписка: лимит трафика
+> press m:info
+= edit #1
+💳 <b>Подписка:</b> годовая · 🟢 активна
+📅 15.09.26 → 15.09.27 · ост. 365 дн.
+
+⏸️ Пауза: 28 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: 50 ГБ в месяц · 3 устройства
+  [⏸️ Пауза | pz:ask:2:0] [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.sub.expiring — 💳 Подписка: истекает
+> press m:info
+= edit #1
+💳 <b>Подписка:</b> годовая · 🟡 истекает 18.09 12:00
+📅 15.09 → 18.09 · ост. 3 дн.
+
+⏸️ Пауза: 28 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⏸️ Пауза | pz:ask:2:0] [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.sub.expired — 💳 Подписка: истекла
+> press m:info
+= edit #1
+🟡 доступ приостановлен
+💳 <b>Подписка:</b> годовая · 🔴 истекла
+📅 15.09 → 10.09
+
+⏸️ Пауза: 28 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.sub.paused — 💳 Подписка: своя пауза
+> press m:info
+= edit #1
+🟡 доступ приостановлен
+💳 <b>Подписка:</b> годовая
+📅 15.09.26 → 25.09.27
+
+⏸️ на паузе с 15.09, до 25.09 · израсходовано 0 из 10 дн. — неиспользованный остаток вернётся при досрочном возобновлении
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [▶️ Снять паузу | pz:resume:2:0] [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.sub.admin_paused — 💳 Подписка: приостановлена администратором
+> press m:info
+= edit #1
+🟡 доступ приостановлен
+💳 <b>Подписка:</b> годовая · ⏸️ приостановлена администратором
+📅 15.09.26 → 15.09.27
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.sub.no_days — 💳 Подписка: дней паузы нет
+> press m:info
+= edit #1
+💳 <b>Подписка:</b> годовая · 🟢 активна
+📅 15.09.26 → 15.09.27 · ост. 365 дн.
+
+⏸️ Пауза: 0 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.pause.ask — ⏸️ Пауза: пресеты дней
+> press pz:ask:2:0
+= edit #1
+⏸️ <b>Пауза</b> — до 28 дн.
+Действие подписки приостановится; снимешь раньше — неизрасходованные дни вернутся
+⚠️ На паузе VPN выключен. Если Telegram у тебя только через этот VPN — до бота не достучаться, снять паузу будет нечем
+  [7 дн. | pz:pick:2:7] [14 дн. | pz:pick:2:14]
+  [28 дн. | pz:pick:2:28]
+  [✏️ Другое | pz:other:2:0] [⬅️ Отмена | pz:cancel:2:0]
+~ (пустой ответ)
+
+### cl.pause.ask.few — ⏸️ Пауза: дней меньше пресета
+> press pz:ask:2:0
+= edit #1
+⏸️ <b>Пауза</b> — до 5 дн.
+Действие подписки приостановится; снимешь раньше — неизрасходованные дни вернутся
+⚠️ На паузе VPN выключен. Если Telegram у тебя только через этот VPN — до бота не достучаться, снять паузу будет нечем
+  [5 дн. | pz:pick:2:5]
+  [✏️ Другое | pz:other:2:0] [⬅️ Отмена | pz:cancel:2:0]
+~ (пустой ответ)
+
+### cl.pause.ask.none — ⏸️ Пауза: дней нет — отказ
+> press pz:ask:2:0
+~! Дни паузы на счету закончились — пополнится при продлении подписки
+
+### cl.pause.pick — пауза на 7 дней — итог и подписка
+> press pz:pick:2:7
+~ Пауза: 7 дн.
+= edit #1
+⏸️ Подписка на паузе до 22.09 12:00 — снять раньше можно в разделе «💳 Подписка»
++ send #2
+🟡 доступ приостановлен
+💳 <b>Подписка:</b> годовая
+📅 15.09.26 → 22.09.27
+
+⏸️ на паузе с 15.09, до 22.09 · израсходовано 0 из 7 дн. — неиспользованный остаток вернётся при досрочном возобновлении
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [▶️ Снять паузу | pz:resume:2:0] [⬅️ Назад | m:main]
+
+### cl.pause.other — пауза: своё число — приглашение
+> press pz:other:2:0
+= edit #1
+✏️ Дней, 1–28
+  [✖️ Отмена | x:sub:0]
+~ (пустой ответ)
+
+### cl.pause.other.bad — пауза: своё число вне диапазона
+> text «100»
++ send #3
+⚠️ Нужно целое число от 1 до 28
+
+### cl.pause.other.done — пауза: своё число — итог
+> text «10»
+- delete #1
+- delete #2
++ send #3
+⏸️ Подписка на паузе до 25.09 12:00 — снять раньше можно в разделе «💳 Подписка»
++ send #4
+🟡 доступ приостановлен
+💳 <b>Подписка:</b> годовая
+📅 15.09.26 → 25.09.27
+
+⏸️ на паузе с 15.09, до 25.09 · израсходовано 0 из 10 дн. — неиспользованный остаток вернётся при досрочном возобновлении
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [▶️ Снять паузу | pz:resume:2:0] [⬅️ Назад | m:main]
+
+### cl.pause.other.cancel — пауза: «✖️ Отмена» ввода — подписка
+> press x:sub:0
+~ (пустой ответ)
+= edit #1
+💳 <b>Подписка:</b> годовая · 🟢 активна
+📅 15.09.26 → 15.09.27 · ост. 365 дн.
+
+⏸️ Пауза: 28 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⏸️ Пауза | pz:ask:2:0] [⬅️ Назад | m:main]
+
+### cl.pause.cancel — пауза: «⬅️ Отмена» — подписка
+> press pz:cancel:2:0
+= edit #1
+💳 <b>Подписка:</b> годовая · 🟢 активна
+📅 15.09.26 → 15.09.27 · ост. 365 дн.
+
+⏸️ Пауза: 28 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⏸️ Пауза | pz:ask:2:0] [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.pause.resume — ▶️ Снять паузу
+> press pz:resume:2:0
+~ Пауза снята
+= edit #1
+▶️ Пауза снята · 0 дн. израсходовано · подписка до 15.09.27
++ send #2
+💳 <b>Подписка:</b> годовая · 🟢 активна
+📅 15.09.26 → 15.09.27 · ост. 365 дн.
+
+⏸️ Пауза: 28 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⏸️ Пауза | pz:ask:2:0] [⬅️ Назад | m:main]
+
+### cl.pause.resume.admin — снять паузу администратора — отказ
+> press pz:resume:2:0
+~! Эту паузу поставил администратор — снять её может только он
+= edit #1
+🟡 доступ приостановлен
+💳 <b>Подписка:</b> годовая · ⏸️ приостановлена администратором
+📅 15.09.26 → 15.09.27
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⬅️ Назад | m:main]
+
+### cl.pause.resume.none — снять паузу, которой нет — отказ
+> press pz:resume:2:0
+~! Подписка не на паузе
+= edit #1
+💳 <b>Подписка:</b> годовая · 🟢 активна
+📅 15.09.26 → 15.09.27 · ост. 365 дн.
+
+⏸️ Пауза: 28 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⏸️ Пауза | pz:ask:2:0] [⬅️ Назад | m:main]
+
+### cl.grace.take — «Продли чуток?» — отсрочка
+> press gc:take:2
+= edit #1
+🙏 Продлено на 14 дн., до 02.10 — вычтется из следующего продления
++ send #2
+🙏 <a href="https://t.me/test_bot?start=cl-2">Вася</a>: взята отсрочка на 14 дн.
+  [Скрыть | hd]
+~ Продлено
+
+### cl.grace.stale — отсрочка неактуальна
+> press gc:take:2
+~! Это предложение уже неактуально
+- markup off #1
+
+### cl.devices.one — 📱 Устройства: одно
+> press m:devices
+= edit #1
+📱 <b>Устройства</b> · 1 из 3
+  [⚪ Телефон | d:open:1]
+  [➕ Устройство | d:add:1] [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.devices.full — 📱 Устройства: лимит исчерпан
+> press m:devices
+= edit #1
+📱 <b>Устройства</b> · 2 из 2
+Лимит исчерпан: чтобы добавить новое, удали 1
+  [⚪ Телефон | d:open:1]
+  [⚪ Ноутбук | d:open:2]
+  [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.devices.mixed — 📱 Устройства: переданное, приглашение, чужое
+> press m:devices
+= edit #1
+📱 <b>Устройства</b> · 4 из 5 (+1 от профиля <a href="tg://user?id=3000">Петя</a>)
+  [⚪ Телефон | d:open:1]
+  [⚪ Ноутбук | d:open:2]
+  [⚪ Планшет [Артём] | d:open:3]
+  [⏳ Часы | d:open:4]
+  [⚪ Телефон Пети · от профиля Петя | d:open:5]
+  [➕ Устройство | d:add:1] [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.devices.many — 📱 Устройства: первая страница
+> press m:devices
+= edit #1
+📱 <b>Устройства</b> · 12
+  [⚪ Устройство 1 | d:open:1]
+  [⚪ Устройство 2 | d:open:2]
+  [⚪ Устройство 3 | d:open:3]
+  [⚪ Устройство 4 | d:open:4]
+  [⚪ Устройство 5 | d:open:5]
+  [⚪ Устройство 6 | d:open:6]
+  [⚪ Устройство 7 | d:open:7]
+  [⚪ Устройство 8 | d:open:8]
+  [След. страница ▶️ | pg|devices|0|1|m:devices]
+  [➕ Устройство | d:add:1] [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.devices.page2 — 📱 Устройства: вторая страница
+> press pg|devices|0|1|m:devices
+= edit #1
+📱 <b>Устройства</b> · 12
+  [⚪ Устройство 9 | d:open:9]
+  [⚪ Устройство 10 | d:open:10]
+  [⚪ Устройство 11 | d:open:11]
+  [⚪ Устройство 12 | d:open:12]
+  [◀️ Пред. страница | pg|devices|0|0|m:devices]
+  [➕ Устройство | d:add:1] [⬅️ Назад | m:main]
+~ (пустой ответ)
+~ (пустой ответ)
+
+### cl.dev.own — карточка своего
+> press d:open:1
+= edit #1
+⚪ <b>Телефон</b>
+Не подключался · 📊 0 ГБ (безлимит)
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [👤 Другу | d:transfer:1] [🛑 Блок | bl:dev:menu_block:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | m:devices]
+~ (пустой ответ)
+
+### cl.dev.own.usage — карточка своего: потребление и лимит профиля
+> press d:open:1
+= edit #1
+⚪ <b>Телефон</b>
+Не подключался · 📊 35 из 50 ГБ (лимит профиля)
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [👤 Другу | d:transfer:1] [🛑 Блок | bl:dev:menu_block:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | m:devices]
+~ (пустой ответ)
+
+### cl.dev.own.blocked — карточка своего: заблокировано мной
+> press d:open:1
+= edit #1
+⛔ <b>Телефон</b>
+Не подключался · 📊 0 ГБ (безлимит)
+⛔ Заблокировано: владельцем
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [👤 Другу | d:transfer:1] [✅ Разблок | bl:dev:menu_unblock:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | m:devices]
+~ (пустой ответ)
+
+### cl.dev.pending — карточка своего: приглашение не принято
+> press d:open:4
+= edit #1
+⏳ <b>Часы</b>
+Не подключался · 📊 0 ГБ (безлимит)
+⏳ приглашение другу ждёт активации
+  [🔗 Ссылка | d:gen_link:4] [🔳 QR | d:gen_qr:4] [📄 Файл | d:gen_file:4]
+  [✏️ Имя | d:edit_name:4] [✏️ Лимит | d:edit_traffic:4]
+  [🔁 Приглашение | d:reinvite:4] [🛑 Блок | bl:dev:menu_block:4::-1]
+  [🗑 Удалить | dd:4:ask] [⬅️ Назад | m:devices]
+~ (пустой ответ)
+
+### cl.dev.lent — карточка переданного
+> press d:open:3
+= edit #1
+⚪ <b>Планшет</b> · управляется профилем <a href="tg://user?id=2000">Артём</a>
+Не подключался · 📊 0 ГБ (безлимит)
+  [✏️ Имя | d:edit_name:3] [✏️ Лимит | d:edit_traffic:3]
+  [🗑 Удалить | dd:3:ask] [⬅️ Назад | m:devices]
+~ (пустой ответ)
+
+### cl.dev.held — карточка чужого в держании
+> press d:open:5
+= edit #1
+⚪ <b>Телефон Пети</b> · от профиля <a href="tg://user?id=3000">Петя</a>
+Не подключался · 📊 0 ГБ (безлимит)
+  [🔗 Ссылка | d:gen_link:5] [🔳 QR | d:gen_qr:5] [📄 Файл | d:gen_file:5]
+  [🛑 Блок | bl:dev:menu_block:5::-1] [🗑 Удалить | dd:5:ask]
+  [⬅️ Назад | m:devices]
+~ (пустой ответ)
+
+### cl.dev.unmanaged — карточка пира без ключа
+> press d:open:2
+= edit #1
+⚪ <b>Пир</b>
+Не подключался · 📊 0 ГБ (безлимит)
+✳️ Добавлено не ботом — ссылки нет: удали и добавь заново
+  [✏️ Имя | d:edit_name:2] [✏️ Лимит | d:edit_traffic:2]
+  [🛑 Блок | bl:dev:menu_block:2::-1]
+  [🗑 Удалить | dd:2:ask] [⬅️ Назад | m:devices]
+~ (пустой ответ)
+
+### cl.dev.connect_menu — «Данные для подключения» прежнего образца — карточка
+> press d:connect_menu:1
+= edit #1
+⚪ <b>Телефон</b>
+Не подключался · 📊 0 ГБ (безлимит)
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [👤 Другу | d:transfer:1] [🛑 Блок | bl:dev:menu_block:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | m:devices]
+~ (пустой ответ)
+
+### cl.dev.foreign — чужое устройство — отказ
+> press d:open:99
+~! Устройство не найдено
+
+### cl.dev.rename — ✏️ Имя — приглашение
+> press d:edit_name:1
+= edit #1
+✏️ <b>Новое имя для устройства «Телефон»</b>
+  [✖️ Отмена | x:dev:1]
+~ (пустой ответ)
+
+### cl.dev.rename.empty — ✏️ Имя — пустое
+> text «   »
++ send #3
+⚠️ Имя пустое — пришли ещё раз
+
+### cl.dev.rename.done — ✏️ Имя — итог на карточке
+> text «Айфон»
+- delete #1
+- delete #2
++ send #3
+✅ Имя устройства: Телефон → Айфон
+
+⚪ <b>Айфон</b>
+Не подключался · 📊 0 ГБ (безлимит)
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [👤 Другу | d:transfer:1] [🛑 Блок | bl:dev:menu_block:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | m:devices]
+
+### cl.dev.rename.cancel — ✏️ Имя — «✖️ Отмена»
+> press x:dev:1
+~ (пустой ответ)
+= edit #1
+⚪ <b>Телефон</b>
+Не подключался · 📊 0 ГБ (безлимит)
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [👤 Другу | d:transfer:1] [🛑 Блок | bl:dev:menu_block:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | m:devices]
+
+### cl.dev.limit — ✏️ Лимит — пресеты, профиль без лимита
+> press d:edit_traffic:1
+= edit #1
+📊 <b>Лимит трафика устройства «Телефон»</b>
+  [10 ГБ | ps:devlimit:1:10] [50 ГБ | ps:devlimit:1:50] [100 ГБ | ps:devlimit:1:100]
+  [∞ | ps:devlimit:1:0]
+  [✏️ Другое | ps:devlimit:1:-1]
+  [⬅️ Отмена | d:open:1]
+~ (пустой ответ)
+
+### cl.dev.limit.capped — ✏️ Лимит — пресеты не выше лимита профиля
+> press d:edit_traffic:1
+= edit #1
+📊 <b>Лимит трафика устройства «Телефон»</b> · не больше 50 ГБ профиля
+  [10 ГБ | ps:devlimit:1:10] [50 ГБ | ps:devlimit:1:50]
+  [✏️ Другое | ps:devlimit:1:-1]
+  [⬅️ Отмена | d:open:1]
+~ (пустой ответ)
+
+### cl.dev.limit.preset — ✏️ Лимит — пресет, итог на карточке
+> press ps:devlimit:1:10
+= edit #1
+✅ Лимит: ∞ → 10 ГБ
+
+⚪ <b>Телефон</b>
+Не подключался · 📊 0 из 10 ГБ (лимит устройства)
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [👤 Другу | d:transfer:1] [🛑 Блок | bl:dev:menu_block:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | m:devices]
+~ (пустой ответ)
+
+### cl.dev.limit.preset_over — ✏️ Лимит — пресет выше лимита профиля (кнопка старого экрана)
+> press ps:devlimit:1:100
+~! ⚠️ Не больше 50 ГБ — лимита профиля
+
+### cl.dev.limit.other — ✏️ Лимит — своё число: приглашение
+> press ps:devlimit:1:-1
+= edit #1
+✏️ Число ГБ, не больше 50 (лимит профиля); 0 — без ограничений в рамках лимита
+  [✖️ Отмена | x:dev:1]
+~ (пустой ответ)
+
+### cl.dev.limit.other.bad — ✏️ Лимит — не число
+> text «много»
++ send #3
+⚠️ Нужно целое число ГБ
+
+### cl.dev.limit.other.over — ✏️ Лимит — выше лимита профиля
+> text «100»
++ send #3
+⚠️ Не больше 50 ГБ — лимита профиля
+
+### cl.dev.limit.other.done — ✏️ Лимит — своё число, итог на карточке
+> text «15»
+- delete #1
+- delete #2
++ send #3
+✅ Лимит: ∞ → 15 ГБ
+
+⚪ <b>Телефон</b>
+Не подключался · 📊 0 из 15 ГБ (лимит устройства)
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [👤 Другу | d:transfer:1] [🛑 Блок | bl:dev:menu_block:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | m:devices]
+
+### cl.dev.transfer — 👤 Другу — подтверждение
+> press d:transfer:1
+= edit #1
+👤 Передать Телефон другу?
+Друг получит это подключение; одно подключение на двух устройствах работать не будет
+Если устройство «Телефон» твоё — сначала заведи себе новое
+  [⬅️ Отмена | d:open:1] [👤 Передать | d:transfer_yes:1]
+~ (пустой ответ)
+
+### cl.dev.transfer.yes — 👤 Другу — приглашение и завершитель
+> press d:transfer_yes:1
+- delete #1
++ send #2
+Твоё приглашение для устройства «Телефон» 👇
+https://t.me/test_bot?start=FTEST0000002
+или <a href="https://t.me/test_bot">в боте</a>: <code>/code FTEST0000002</code>
+  [📤 Отправить | https://t.me/share/url?url=https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DFTEST0000002&text=%D0%A2%D0%B2%D0%BE%D1%91%20%D0%BF%D1%80%D0%B8%D0%B3%D0%BB%D0%B0%D1%88%D0%B5%D0%BD%D0%B8%D0%B5%20%D0%B4%D0%BB%D1%8F%20%D1%83%D1%81%D1%82%D1%80%D0%BE%D0%B9%D1%81%D1%82%D0%B2%D0%B0%20%C2%AB%D0%A2%D0%B5%D0%BB%D0%B5%D1%84%D0%BE%D0%BD%C2%BB%3A%20https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DFTEST0000002%20%D0%B8%D0%BB%D0%B8%20%D0%B2%20TG-%D0%B1%D0%BE%D1%82%D0%B5%20%28%40test_bot%29%3A%20%2Fcode%20FTEST0000002] [📋 Скопировать | copy:Твоё приглашение для устройства «Телефон»: https://t.me/test_bot?start=FTEST0000002 или в TG-боте (@test_bot): /code FTEST0000002]
++ send #3
+☝️ Отправь приглашение другу — он активирует и получит устройство «Телефон»
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.dev.reinvite — 🔁 Приглашение — новый код
+> press d:reinvite:4
+- delete #1
++ send #2
+Твоё приглашение для устройства «Часы» 👇
+https://t.me/test_bot?start=FTEST0000006
+или <a href="https://t.me/test_bot">в боте</a>: <code>/code FTEST0000006</code>
+  [📤 Отправить | https://t.me/share/url?url=https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DFTEST0000006&text=%D0%A2%D0%B2%D0%BE%D1%91%20%D0%BF%D1%80%D0%B8%D0%B3%D0%BB%D0%B0%D1%88%D0%B5%D0%BD%D0%B8%D0%B5%20%D0%B4%D0%BB%D1%8F%20%D1%83%D1%81%D1%82%D1%80%D0%BE%D0%B9%D1%81%D1%82%D0%B2%D0%B0%20%C2%AB%D0%A7%D0%B0%D1%81%D1%8B%C2%BB%3A%20https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DFTEST0000006%20%D0%B8%D0%BB%D0%B8%20%D0%B2%20TG-%D0%B1%D0%BE%D1%82%D0%B5%20%28%40test_bot%29%3A%20%2Fcode%20FTEST0000006] [📋 Скопировать | copy:Твоё приглашение для устройства «Часы»: https://t.me/test_bot?start=FTEST0000006 или в TG-боте (@test_bot): /code FTEST0000006]
++ send #3
+☝️ Отправь приглашение другу — он активирует и получит устройство «Часы»
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.dev.link — выдача: ссылка
+> press d:gen_link:1
+- delete #1
++ send #2
+<code>vpn://AAAJUXjadVbtTttIFH2VyL9pytgJJEj8YGmlDGgri7T7B6NosId2Ns7Ysh1KFyHtq_QVKvU92Dfae-6Mw5imgMKZc4_vx9w7GT9GeWU7Zaxu2uhkdP0Yqa-fCTxGFzn9iw6jg1F0sTEWC-EW6gGLGIulAEwYxoAThgnglOEE8AhwwdpjhqydMWTtnCFrBYeULBYcUbJacEDJcsERpdNzSDllzDEXWhW6SZuq03lnKnupv7GRszincrXtUlUUxn4-o09I2M6pXem1_nZ21-nmo9lo5mc7HlS17ZidO_ZvijGQx5z_pda1Ks29Dh6JuZo_1cNC2aL9otb6rOv0pu5atnJ9V2SqNh8bZUrXkSjmWt-ZVt2W-ryq1kY7nusuVdutqIV3Bl2LHjM7op-MupfROosOs-hgx1EbHSsGrHpwbBywS-G4JORix01CLnHcNOQmjjsKuIX3dxxy3t8s5Ly_ech5fyIsRnqHIqxFeo8iLEV6lyKsRfY-w2Lk1JNhNXumyavC-vaPlReGRQ_nywtmrwV-arx5PjAPJs53LtyZ16PnJeE-7ZtBLwt3bjiMXhDu4nAqvSDcUVWW1VddrEzN1mvHO9vhmH_fvuTu-JMTUI652XnKS0P7KwsXpN7eiiQM5MwUpx-V8WwsxvGvirox96t130Os9jqiAIHql2h84JzxWlLnmzuV65sss9T5Rrft6HTUp_A2iYl_92EJbsy_BwRQuyBDShmoTtNUkb1PJ7MXOS0PAejQ4kmG6oEg3C0FgQQgJoAHlgmBKcCEwBGBBTTHANDMAKCZA0w4QUISIgHvEioB5xIyAe-SdXAvp0Dwv-c8wISI-w8BrEhjOPlgZz3rJxXcnLnBjKNm5Pp6sMEj833TDBtqGY4wWNQ1nFuwqJH-rlOtG_Qx3d6WJne1La_-Sj_9cXrK3dIUptGFs6TLS6bP3JjLFL52c30w4lHO7Htb1JWxSPhkkogY25hSOqbFdu3KQh7TNwmswax9qdrug-pPemDYdNv-i-04_Cqqd55pgnW9Yt_-bLL7QFo1_PXASb2w7fpl9l2JL4-0urnXzfB87DaITu0TbiX45bcB-GWCxqXKq3J1j-Tcfcv3Xbu9tbpbKXds3P3P54Zv0a5RtoWzFTuAeVvU0ROZdq8tINXG6n-MekPvLnH0dEPmQt-pbdmd_1bFmjZvTN3f_8_fn3_-9-_zD3yO-KoubOteQ9yx9ZR7G3EHGFTfINDR0_-0bKXp</code>
+
+☝️ Ссылка для Телефон — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.dev.qr — выдача: QR
+> press d:gen_qr:1
+- delete #1
++ animation #2
+🔳 Для Телефон — в AmneziaVPN «＋» → «Создать из QR-кода», наведи камеру
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.dev.file — выдача: файл
+> press d:gen_file:1
+- delete #1
++ document #2
+📄 Для Телефон — импортируй файл в AmneziaVPN
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.dev.link.held — выдача: чужое в держании
+> press d:gen_link:5
+- delete #1
++ send #2
+<code>vpn://AAAJUXjadVbRbtMwFP2VKs-jzEm6tZP2MAZSvQkUrcDLMlVe4oFpmkRJOgbTJH6FX0DiP8Yfcc-10zmjrFN7fO7p9b32cZ37IKvKTplSN21wNLq8D9TXTwTug7OMPoL9YG8UnK1NiYGwA3WHQYjBQgBGDEPAmGEEOGEYAx4Azll7yJC1U4asnTFkreApJYsFzyhZLXhCyXLBM0qr5ynlhDHPOdcq103SVJ3OOlOV5_obB7mKU2pXl12i8tyUn07oHRKOc2kXeqW_ndx0unlv1pr56ZYHVW06ZmeW_UJzDOQh13-uda0Kc6u9r4TczVt1N1dl3n5WK33SdXpddy1Hub8LClXr940yhd2RIOReX5tWXRf6tKpWRlue-y5U2y1pC28Mdi24T8sR_aW0eymN02A_Dfa2HG2jZcWAVXeWDT12ISwX-VxoudjnIstNfC623IHHzV2-Q59z-aY-5_LNfM7lE34z0iUUfi_SZRR-K9KlFH4vss_pNyMnjvS72eEmp_L7220rJ_SbHvrLCabPBc41LjwbhAeOczvnr8xz6zmJv067POhk_soNzegE_ioOXekE_oqqoqi-6nxpao5eWt7G9sf8evlUu-WPjkBZ5mqbKSsMra_M7ST15lrEfkc2TPP0VhlPx2J88K-ibsztctXvIUY7E9EEnuqf2fjA2eClpJ1vblSmr9K0pJ1vdNuOjkd9CS-jkPjX7xbgxvzaI4DeBQUSqkB1mlxF8b6ctDzLaLgPQIcW32So7ggi3UIQiABCAjFARGACEBM4IDCH5hAAmikANDOAmAskJCESyC6hEkguIRPILlmH9HIChPw7zgNCmHH3IUAUZQydD3bas86p4GbMDTyOnlHrc2ODR-W73IwYehlaGCz6GvoWLHqk_8tE6wb7mGyuC5PZ3hYXH5MPr46Pebc0TdPo3EaSxTnTJ9bmMkGura_3RmzltHxT5nVlShR8FEcixDImVI5psVzbtlDH5EWEqOe1z1XbvVP9SfcC627T_7Ad-kavt5nJwbpecm53Njm9J60a_nngop7YdvXkfdvi01da3dzqZng-tgtEp_YBtxLy8tMA8jJBdqmyqljeojh73_J9126uS90tlT029v7nc8O3aNeoskWyJSdAeJPXwQOFto8tINW61N-NekHPLmHwcEXhXN-oTdGd_lfFmjZrTN3f_48_H3__-fH4C-8jvqrzsrWPIfbYOso-jdgDDKrfINDBw1-0cqXp</code>
+
+☝️ Ссылка для Телефон Пети — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.finisher.menu — «⬅️ В меню» под выдачей — главная
+> press m:main
+~ (пустой ответ)
+- delete #2
+= edit #2
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.gen.one — 🔗 с главной: одно устройство — сразу
+> press m:gen_link
+- delete #1
++ send #2
+<code>vpn://AAAJUXjadVZtbts4EL2Kod-pG8pyYgfIj2xawEywhRC3-ycKDEZiWq5lSpDkNN0gwF6lVyjQe2RvtPOGlEOlbhzYj2-e54MzNPUY5ZXtlLG6aaOT0fVjpL5-JvAYXeT0ER1GB6PoYmMsFsIt1AMWMRZLAThhGAMmDCeAU4YJ4BHggrXHDFk7Y8jaOUPWCg4pWSw4omS14ICS5YIjSqfnkHLKmGMutCp0kzZVp_POVPZSf2MjZ3FO5WrbpaoojP18Ru-QsJ1Tu9Jr_e3srtPNR7PRzM92PKhq2zE7d-zfFGMgjzn_S61rVZp7HXwl5mr-VA8LZYv2i1rrs67Tm7pr2cr1XZGp2nxslCldR6KYa31nWnVb6vOqWhvteK67VG23ohbeGXQteszsiP4y6l5G6yw6zKKDHUdtdKwYsOrBsXHALoXjJiEXOy4JuYnjpiGXOO4o4Bbe33HIeX-zkPP-5iHn_YmwGOkdirAW6T2KsBTpXYqwFtn7DIuRU0-G1eyZJq8K69s_Vl4YFj2cLy-YvRb4qfHm-cA8mDjfuXBnXo-el4T7tG8GvSzcueEwekG4i8Op9IJwR1VZVl91sTI1W68d72yHY369fcnd8ScnoBxzs_OUl4b2VxYuSL29FUmYiTNTnH5UxrOxGMe_KurG3K_WfQ-x2uuIAgSqX6LxgXPGa0mdb-5Urm-yzFLnG922o9NRn8LbSUz8uw9LcGN-HRBA7YIMKWWgOk1TRfY-ncxe5LQ8BKBDi28yVA8E4W4pCEC3jAkkABMCU4CEwBGBBTTHANDMAKCZAyScICEJkYB3CZWAcwmZgHfJOriXUyD433MeYELE_YcAVqQxnHyws571kwpuztxgxlEzcn092OCR-b5phg21DEcYLOoazi1Y1Ej_16nWDfqYbm9Lk7valld_pZ_-OD3lbmkK0-jCWdLlJdNnbsxlCl-7uT4Y8Shn9r0t6spYJHySTESMbUwpHdNiu3ZlIY_pmwmswax9qdrug-pPemDYdNv-h-04_Cmqd55pgnW9Yt_-bLL7QFo1_PPASb2w7fpl9l2JL19pdXOvm-H52G0Qndon3Erwy08D8MsEjUuVV-XqHsm5-5bvu3Z7a3W3Uu7YuPufzw3fol2jbAtnK3YA87aooycy7R5bQKqN1f8Y9YaeXeLo6YbMhb5T27I7_62KNW3emLq__5-_P__879_nH3gf8VVd2NY9hrhj6yn3NOIOMKi-QaCjp_8BtHCl6Q</code>
+
+☝️ Ссылка для Телефон — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.gen.pick — 🔗 с главной: выбор устройства
+> press m:gen_link
+= edit #1
+🔗 <b>Ссылка</b> — для какого устройства?
+  [⚪ Телефон | d:gen_link:1]
+  [⚪ Ноутбук | d:gen_link:2]
+  [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.gen.pick.qr — 🔳 с главной: выбор
+> press m:gen_qr
+= edit #1
+🔳 <b>QR</b> — для какого устройства?
+  [⚪ Телефон | d:gen_qr:1]
+  [⚪ Ноутбук | d:gen_qr:2]
+  [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.gen.pick.file — 📄 с главной: выбор
+> press m:gen_file
+= edit #1
+📄 <b>Файл</b> — для какого устройства?
+  [⚪ Телефон | d:gen_file:1]
+  [⚪ Ноутбук | d:gen_file:2]
+  [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.gen.pick.done — 📄 выбор → файл
+> press d:gen_file:2
+- delete #1
++ document #2
+📄 Для Ноутбук — импортируй файл в AmneziaVPN
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.gen.none — выдача без устройств — отказ
+> press m:gen_link
+~! Сначала добавь устройство
+
+### cl.gen.unmanaged — выдача пира без ключа — «удали»
+> press d:gen_link:2
+= edit #1
+✳️ Добавлено не ботом — ссылки нет: удали и добавь заново
+  [🗑 Удалить | dd:2:ask] [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.gen.unmanaged.delete — пир без ключа — 🗑 Удалить
+> press dd:2:ask
+= edit #1
+🗑 Удалить Пир?
+Ссылка перестанет работать; решишь добавить устройство снова — ссылка изменится
+  [⬅️ Отмена | d:open:2] [🗑 Удалить | dd:2:confirm | красная]
+~ (пустой ответ)
+
+### cl.dev.block.ask — 🛑 Заблокировать — подтверждение
+> press bl:dev:menu_block:1:user:-1
+= edit #1
+🛑 Заблокировать Телефон?
+Перестанет подключаться, пока не разблокируешь. Если Telegram у тебя только через этот VPN — до бота не достучаться
+  [⬅️ Отмена | d:open:1] [🛑 Заблокировать | bl:dev:block:1:user:-1 | красная]
+~ (пустой ответ)
+
+### cl.dev.block.do — 🛑 Заблокировать — итог на карточке
+> press bl:dev:block:1:user:-1
++ send #2
+🛑 Устройство «Телефон» заблокировано.
+  [Скрыть | hd]
+= edit #1
+⛔ <b>Телефон</b>
+Не подключался · 📊 0 ГБ (безлимит)
+⛔ Заблокировано: владельцем
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [👤 Другу | d:transfer:1] [✅ Разблок | bl:dev:menu_unblock:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | m:devices]
+~ Заблокировано
+
+### cl.dev.unblock — разблокировать своё
+> press bl:dev:menu_unblock:1:user:-1
++ send #2
+🟢 Устройство «Телефон» разблокировано.
+  [Скрыть | hd]
+= edit #1
+⚪ <b>Телефон</b>
+Не подключался · 📊 0 ГБ (безлимит)
+  [🔗 Ссылка | d:gen_link:1] [🔳 QR | d:gen_qr:1] [📄 Файл | d:gen_file:1]
+  [✏️ Имя | d:edit_name:1] [✏️ Лимит | d:edit_traffic:1]
+  [👤 Другу | d:transfer:1] [🛑 Блок | bl:dev:menu_block:1::-1]
+  [🗑 Удалить | dd:1:ask] [⬅️ Назад | m:devices]
+~ Разблокировано
+
+### cl.dev.block.held — 🛑 чужое в держании — подтверждение
+> press bl:dev:menu_block:5:user:-1
+= edit #1
+🛑 Заблокировать Телефон Пети?
+Перестанет подключаться, пока не разблокируешь. Если Telegram у тебя только через этот VPN — до бота не достучаться
+  [⬅️ Отмена | d:open:5] [🛑 Заблокировать | bl:dev:block:5:user:-1 | красная]
+~ (пустой ответ)
+
+### cl.dev.block.lent — 🛑 переданное — не моё управление, отказ
+> press bl:dev:menu_block:3:user:-1
+~! Устройство не найдено
+
+### cl.dev.delete.ask — 🗑 Удалить — своё
+> press dd:1:ask
+= edit #1
+🗑 Удалить Телефон?
+Ссылка перестанет работать; решишь добавить устройство снова — ссылка изменится
+  [⬅️ Отмена | d:open:1] [🗑 Удалить | dd:1:confirm | красная]
+~ (пустой ответ)
+
+### cl.dev.delete.ask.only — 🗑 Удалить — единственное
+> press dd:1:ask
+= edit #1
+⚠️ Удалить Телефон — единственное устройство?
+VPN выключится сразу. Если Telegram у тебя только через этот VPN — до бота не достучаться
+  [⬅️ Отмена | d:open:1] [🗑 Удалить | dd:1:confirm | красная]
+~ (пустой ответ)
+
+### cl.dev.delete.ask.lent — 🗑 Удалить — переданное
+> press dd:3:ask
+= edit #1
+🗑 Удалить Планшет?
+У профиля <a href="tg://user?id=2000">Артём</a> пропадёт доступ; новое устройство он получит только с новым приглашением от тебя
+  [⬅️ Отмена | d:open:3] [🗑 Удалить | dd:3:confirm | красная]
+~ (пустой ответ)
+
+### cl.dev.delete.ask.held — 🗑 Удалить — чужое в держании
+> press dd:5:ask
+= edit #1
+🗑 Удалить Телефон Пети?
+Новое устройство можно будет создать только по коду от друга
+  [⬅️ Отмена | d:open:5] [🗑 Удалить | dd:5:confirm | красная]
+~ (пустой ответ)
+
+### cl.dev.delete.yes — 🗑 удалено — итог на списке
+> press dd:1:confirm
+~ (пустой ответ)
+= edit #1
+🗑 Телефон удалено · можно добавить ещё 4
+
+📱 <b>Устройства</b> · 1 из 5
+  [⚪ Ноутбук | d:open:2]
+  [➕ Устройство | d:add:1] [⬅️ Назад | m:main]
+
+### cl.dev.delete.yes.last — 🗑 удалено последнее — итог на главной
+> press dd:1:confirm
+~ (пустой ответ)
+= edit #1
+🗑 Телефон удалено · можно добавить ещё 3
+
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Можно добавить до 3 устройств
+  [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.dev.delete.yes.lent — 🗑 удалено переданное — держателю уведомление
+> press dd:3:confirm
++ send #2
+Устройство «Планшет», которым ты управлял, удалено владельцем (<a href="tg://user?id=1000">Вася</a>) — доступ по нему больше не работает.
+  [Скрыть | hd]
+~ (пустой ответ)
+= edit #1
+🗑 Планшет удалено · можно добавить ещё 2
+
+📱 <b>Устройства</b> · 3 из 5 (+1 от профиля <a href="tg://user?id=3000">Петя</a>)
+  [⚪ Телефон | d:open:1]
+  [⚪ Ноутбук | d:open:2]
+  [⏳ Часы | d:open:4]
+  [⚪ Телефон Пети · от профиля Петя | d:open:5]
+  [➕ Устройство | d:add:1] [⬅️ Назад | m:main]
+
+### cl.dev.delete.yes.held — 🗑 удалено чужое — владельцу уведомление
+> press dd:5:confirm
+~ (пустой ответ)
++ send #2
+Устройство «Телефон Пети», ранее переданное <a href="tg://user?id=1000">Вася</a>, удалено по его запросу.
+Теперь у тебя 0 из 3 устройств.
+  [Скрыть | hd]
+= edit #1
+🗑 Телефон Пети удалено
+
+📱 <b>Устройства</b> · 4 из 5
+  [⚪ Телефон | d:open:1]
+  [⚪ Ноутбук | d:open:2]
+  [⚪ Планшет [Артём] | d:open:3]
+  [⏳ Часы | d:open:4]
+  [➕ Устройство | d:add:1] [⬅️ Назад | m:main]
+
+### cl.add — ➕ Устройство — имя, себе
+> press d:add:0
+= edit #1
+➕ <b>Новое устройство</b> · 1 из 3
+Как назвать? Например: «iPhone»
+  [👤 Это для друга | d:add_friend:0]
+  [✖️ Отмена | x:main:0]
+~ (пустой ответ)
+
+### cl.add.first — ➕ Устройство — первое
+> press d:add:0
+= edit #1
+➕ <b>Новое устройство</b> · 0 из 3
+Как назвать? Например: «iPhone»
+  [👤 Это для друга | d:add_friend:0]
+  [✖️ Отмена | x:main:0]
+~ (пустой ответ)
+
+### cl.add.unlimited — ➕ Устройство — без лимита
+> press d:add:0
+= edit #1
+➕ <b>Новое устройство</b>
+Как назвать? Например: «iPhone»
+  [👤 Это для друга | d:add_friend:0]
+  [✖️ Отмена | x:main:0]
+~ (пустой ответ)
+
+### cl.add.from_devices — ➕ Устройство из списка
+> press d:add:1
+= edit #1
+➕ <b>Новое устройство</b> · 1 из 3
+Как назвать? Например: «iPhone»
+  [👤 Это для друга | d:add_friend:0]
+  [✖️ Отмена | x:devices:0]
+~ (пустой ответ)
+
+### cl.add.friend — ➕ переключатель «для друга»
+> press d:add_friend:0
+= edit #1
+👤 <b>Устройство для друга</b> · 1 из 3 · займёт твой слот.
+Как назвать? Имя увидит друг
+  [📱 Это для меня | d:add_self:0]
+  [✖️ Отмена | x:main:0]
+~ (пустой ответ)
+
+### cl.add.self — ➕ переключатель обратно «для меня»
+> press d:add_self:0
+= edit #1
+➕ <b>Новое устройство</b> · 1 из 3
+Как назвать? Например: «iPhone»
+  [👤 Это для друга | d:add_friend:0]
+  [✖️ Отмена | x:main:0]
+~ (пустой ответ)
+
+### cl.add.toggle_stale — переключатель без диалога — приглашение заново
+> press d:add_friend:0
+= edit #1
+➕ <b>Новое устройство</b> · 1 из 3
+Как назвать? Например: «iPhone»
+  [👤 Это для друга | d:add_friend:0]
+  [✖️ Отмена | x:main:0]
+~ (пустой ответ)
+
+### cl.add.full — ➕ при исчерпанном лимите — отказ
+> press d:add:0
+~! Лимит исчерпан: чтобы добавить новое, удали 1
+
+### cl.add.cancel — ➕ «✖️ Отмена» — главная
+> press x:main:0
+~ (пустой ответ)
+= edit #1
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
+
+### cl.add.cancel.devices — ➕ из списка, «✖️ Отмена» — список
+> press x:devices:0
+~ (пустой ответ)
+= edit #1
+📱 <b>Устройства</b> · 1 из 3
+  [⚪ Телефон | d:open:1]
+  [➕ Устройство | d:add:1] [⬅️ Назад | m:main]
+
+### cl.add.name.empty — ➕ имя пустое
+> text «   »
++ send #3
+⚠️ Имя пустое — пришли ещё раз
+
+### cl.add.name.done — ➕ себе — создано, ряд выдачи
+> text «Ноутбук»
+- delete #1
+- delete #2
++ send #3
+✅ Ноутбук создано
+  [🔗 Ссылка | d:gen_link:2] [🔳 QR | d:gen_qr:2] [📄 Файл | d:gen_file:2]
+  [❓ Как подключить | h:root] [⬅️ В меню | m:main]
+
+### cl.add.friend.name — ➕ другу — лимит пресетами
+> text «Телефон мамы»
+- delete #1
+- delete #2
++ send #3
+📊 <b>Лимит трафика устройства «Телефон мамы»</b>
+  [10 ГБ | ps:devlimit:0:10] [50 ГБ | ps:devlimit:0:50] [100 ГБ | ps:devlimit:0:100]
+  [∞ | ps:devlimit:0:0]
+  [✏️ Другое | ps:devlimit:0:-1]
+  [⬅️ Отмена | x:main:0]
+
+### cl.add.friend.name.capped — ➕ другу — пресеты не выше лимита профиля
+> text «Телефон мамы»
+- delete #1
+- delete #2
++ send #3
+📊 <b>Лимит трафика устройства «Телефон мамы»</b> · не больше 50 ГБ профиля
+  [10 ГБ | ps:devlimit:0:10] [50 ГБ | ps:devlimit:0:50]
+  [✏️ Другое | ps:devlimit:0:-1]
+  [⬅️ Отмена | x:main:0]
+
+### cl.help — ❓ Как подключить
+> press h:root
+= edit #1
+❓ <b>Помощь</b> — какое устройство?
+  [🍎 iPhone / iPad | h:apple] [🤖 Android | h:android]
+  [🪟 Windows | h:windows] [🍏 Mac | h:mac]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.apple.0 — гайд apple, шаг 1
+> press h:apple
+= edit #1
+🍎 <b>Настройка на iPhone / iPad</b>
+
+В российском App Store нужного приложения нет — временно переключим магазин на Казахстан.
+После установки можно будет вернуть обратно. Аккаунт и приложения не пострадают 👇
+  [Далее ➡️ | g:apple:1:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.apple.1 — гайд apple, шаг 2
+> press g:apple:1:0:
+- delete #1
++ photo #2
+<b>Шаги 1-3. Открываем настройки региона</b>
+
+1. Открой «Настройки» (серая шестерёнка).
+2. Нажми на своё имя в самом верху.
+3. Выбери «Контент и покупки» → «Просмотреть».
+4. Нажми «Страна или регион».
+  [⬅️ Назад | g:apple:0:0:] [Далее ➡️ | g:apple:2:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.apple.2 — гайд apple, шаг 3
+> press g:apple:2:0:
+- delete #1
++ photo #2
+<b>Шаг 4. Меняем страну на Казахстан</b>
+
+1. Нажми «Изменить страну или регион».
+2. Выбери в списке «Казахстан».
+3. Согласись с условиями (кнопки «Продолжить», «Принять»).
+  [⬅️ Назад | g:apple:1:0:] [Далее ➡️ | g:apple:3:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.apple.3 — гайд apple, шаг 4
+> press g:apple:3:0:
+- delete #1
++ photo #2
+<b>Шаг 5. Заполняем адрес</b>
+
+Откроется форма. Заполни поля, как указано ниже:
+
+• Payment (Способ оплаты): выбери <b>«None»</b> (Нет) — карта не нужна
+• Street (Адрес): <b>проспект Абая, дом 8</b> — заполни только первую строку
+• City/Town (Город): <b>Алматы</b>
+• Region (Область): <b>Almaty</b>
+• Postcode (Индекс): <b>050010</b> (ровно эти цифры — это важно)
+• Phone (Телефон): твой обычный (российский подойдёт)
+
+Нажми «Готово» в правом верхнем углу. Магазин теперь казахстанский.
+  [⬅️ Назад | g:apple:2:0:] [Далее ➡️ | g:apple:4:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.apple.4 — гайд apple, шаг 5
+> press g:apple:4:0:
+= edit #1
+<b>Шаг 6. Устанавливаем приложение</b>
+
+1. Открой App Store.
+2. В поиске набери <b>AmneziaVPN</b>.
+3. Установи приложение (значок — буква «A»).
+4. Дождись установки.
+  [⬅️ Назад | g:apple:3:0:] [Далее ➡️ | g:apple:5:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.apple.5 — гайд apple, шаг 6
+> press g:apple:5:0:
+= edit #1
+<b>Шаг 7. Возврат магазина (по желанию)</b>
+
+Приложение уже установлено и никуда не денется — магазин можно вернуть на Россию тем же путём (Настройки → имя → Контент и покупки → Страна или регион → Россия).
+
+💡 Но это <i>не обязательно</i>: в казахстанском магазине есть все приложения, что и в российском. Многие остаются в KZ-сторе и возвращаются в РФ только ради обновления российских банков и госприложений. Решай сам.
+
+✅ Приложение установлено — дальше настройки
+  [⬅️ Назад | g:apple:4:0:] [📶 Подключение | g:connect_apple:0:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.android.0 — гайд android, шаг 1
+> press h:android
+= edit #1
+🤖 <b>Настройка на Android</b>
+
+Самый простой способ — установить из Google Play:
+
+1. Открой Play Маркет.
+2. Найди <b>AmneziaVPN</b>.
+3. Нажми «Установить».
+  [Далее ➡️ | g:android:1:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.android.1 — гайд android, шаг 2
+> press g:android:1:0:
+= edit #1
+<b>Если на телефоне нет Google Play</b>
+
+(бывает на некоторых телефонах, например Huawei)
+
+1. Открой в браузере: <a href="https://github.com/amnezia-vpn/amnezia-client/releases/latest">github.com/amnezia-vpn/amnezia-client/releases/latest</a>
+2. Пролистай вниз до раздела <b>Assets</b>.
+3. Скачай файл, в названии которого есть <b>android9+</b> (заканчивается на .apk).
+4. Открой скачанный файл и разреши установку, если телефон попросит.
+
+✅ Приложение установлено — дальше настройки
+  [⬅️ Назад | g:android:0:0:] [📶 Подключение | g:connect:0:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.windows.0 — гайд windows, шаг 1
+> press h:windows
+= edit #1
+🪟 <b>Настройка на Windows</b>
+
+1. Открой в браузере: <a href="https://github.com/amnezia-vpn/amnezia-client/releases/latest">github.com/amnezia-vpn/amnezia-client/releases/latest</a>
+2. Пролистай до раздела <b>Assets</b>.
+  [Далее ➡️ | g:windows:1:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.windows.1 — гайд windows, шаг 2
+> press g:windows:1:0:
+= edit #1
+<b>Устанавливаем</b>
+
+1. Скачай файл, заканчивающийся на <b>_x64.exe</b>.
+2. Запусти его.
+3. Следуй установщику (кнопка «Далее» до конца).
+
+✅ Приложение установлено — дальше настройки
+  [⬅️ Назад | g:windows:0:0:] [📶 Подключение | g:connect:0:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.mac.0 — гайд mac, шаг 1
+> press h:mac
+= edit #1
+🍏 <b>Настройка на Mac</b>
+
+1. Открой в браузере: <a href="https://github.com/amnezia-vpn/amnezia-client/releases/latest">github.com/amnezia-vpn/amnezia-client/releases/latest</a>
+2. Пролистай до раздела <b>Assets</b>.
+3. Скачай файл, в названии которого есть <b>macos</b> (это .zip, внутри установщик .pkg).
+  [Далее ➡️ | g:mac:1:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.mac.1 — гайд mac, шаг 2
+> press g:mac:1:0:
+= edit #1
+<b>Устанавливаем</b>
+
+1. Распакуй скачанный архив.
+2. Запусти установщик .pkg и пройди установку.
+
+<blockquote>Если у тебя уже стояла старая версия — сначала удали её (перетащи в Корзину из папки «Программы»), потом ставь новую.</blockquote>
+
+✅ Приложение установлено — дальше настройки
+  [⬅️ Назад | g:mac:0:0:] [📶 Подключение | g:connect:0:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.connect.0 — подключение, шаг 1: устройства
+> press g:connect:0:0:
+= edit #1
+📶 <b>Получаем настройки</b>
+
+Для подключения тебе будет нужна ссылка — для каждого устройства своя.
+Выбери устройство ниже или добавь новое 👇
+  [➕ Устройство | g:connect:-1:0:]
+  [🔗 Телефон | d:gen_guide:1]
+  [🔗 Ноутбук | d:gen_guide:2]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.connect.0.none — подключение, шаг 1: устройств нет
+> press g:connect:0:0:
+= edit #1
+📶 <b>Получаем настройки</b>
+
+Для подключения тебе будет нужна ссылка — для каждого устройства своя.
+Выбери устройство ниже или добавь новое 👇
+  [➕ Устройство | g:connect:-1:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.connect.0.full — подключение, шаг 1: лимит — без ➕
+> press g:connect:0:0:
+= edit #1
+📶 <b>Получаем настройки</b>
+
+Для подключения тебе будет нужна ссылка — для каждого устройства своя.
+Выбери устройство ниже или добавь новое 👇
+  [🔗 Телефон | d:gen_guide:1]
+  [🔗 Ноутбук | d:gen_guide:2]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.connect_apple.0 — подключение Apple, шаг 1
+> press g:connect_apple:0:0:
+= edit #1
+📶 <b>Получаем настройки</b>
+
+Для подключения тебе будет нужна ссылка — для каждого устройства своя.
+Выбери устройство ниже или добавь новое 👇
+  [➕ Устройство | g:connect_apple:-1:0:]
+  [🔗 Телефон | d:gen_guide:1]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.connect.pick — подключение: выбрано устройство — способ
+> press d:gen_guide:1
+- delete #1
++ send #2
+📶 <b>Настраиваем подключение</b>
+
+Настраиваешь устройство, с которого пишешь — нужна 🔗 ссылка, другое устройство — 🔳 QR, можно и 📄 файлом.
+Затем открой AmneziaVPN и вставь ссылку/файл или отсканируй код
+  [🔗 Ссылка | g:connect:1:1:link] [🔳 QR | g:connect:1:1:qr] [📄 Файл | g:connect:1:1:file]
+  [⬅️ Назад | g:connect:0:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.connect.link — подключение: ссылка и шаг «Подключаемся»
+> press g:connect:1:1:link
+- delete #1
++ send #2
+<code>vpn://AAAJUXjadVZRbts4EL2Koe_UDSW7sQPkI00XMBNsIcTp_kSBwUhMy7VMCZKcpg0C9Cp7hQV6j-yNOm9IOVTqjQP78c3zcIZ8NPUY5ZXtlLG6aaPj0fVjpL5-JvAYnef0ER1GB6PofGMsBsIN1AMGMQZLAZgwjAEnDBPAKcMJ4DvABWuPGLJ2xpC1c4asFTylZLHgGSWrBU8oWS54Run0PKWcMuY5F1oVukmbqtN5Zyp7ob9xkKs4o3a17VJVFMZ-PqV3SDjOpV3qtf52etfp5spsNPOzHQ-q2nbMzh37N80xkMdc_4XWtSrNvQ6-EnM3f6qHhbJF-0Wt9WnX6U3dtRzl_i4pVG2uGmVKtyNRzL1-MK26LfVZVa2Ndjz3Xaq2W9EW3hnsWvSY2RH9ZbR7GY2z6DCLDnYcbaNjxYBVD46NA3YpHJeEXOy4ScgljpuG3MRx7wJu4fMdhZzPNws5n28ecj6fCJuRPqEIe5E-owhbkT6lCHuRfc6wGTn1ZNjNHjd5Vdjfflt5Ydj00F9eMHst8K7x4fkgPHCc37lwZV5bz0vCddrnQS8LV25oRi8IV3HoSi8IV1SVZfVVFytTc_Ta8S52OObX25faHX98DMoxN7tMeWlofWXhJqm3t3Ecrr8L0zy9VcazsRjHvyvqxtyv1v0eYrQ3EU0QqH6bjQ-cC15L2vnmTuX6Jsss7Xyj23Z0MupLeJvExH_4uAQ35tcBAfQuKJBSBarT5CqK9-Vk9jyn4SEAHVp8k6F6IIh0S0EgAYgJTAASAlOACQGkWEBzBADNDACaOcCECyQkIRLILqESSC4hE8guWYf0cgqE_HvOA0KYcf8hQBRlDJ0Pdtaz3qng5swNPI6eUetrY4NH5fvcjBh6GVoYLPoa-hYseqT_61TrBvuYbm9Lk7velpd_pZ_en5zwbmmaptGFi6TLC6ZPnc1lilw7Xx-M2MqZ_cMWdWUsCj6eJCLGMqZUjmmxXLu2UMf0TYJo4LUvVdt9VP1JDwKbbtv_sB2F5qx3mcnBul5xbn82OX0grRr-eeCiXth2_eJ91-LLV1rd3OtmeD52C0Sn9gm3EvLy0wDyMkF2qfKqXN2jOHff8n3Xbm-t7lbKHRt3__O54Vu0a5RtkWzFCRDeFnX0RKHdYwtItbH6u1Fv6Nkljp5uKFzoO7Utu7P_VbGmzRtT9_f_8z_PP__78fwv3kd8VRe2dY8h7th6yj2NuAMMqt8g0NHTL9X6pfE</code>
++ send #3
+<b>Подключаемся</b>
+
+1. Нажми большую кнопку подключения в приложении.
+2. Проверь: открой любой заблокированный сайт.
+
+Работает — значит всё готово! 🎉
+  [⬅️ Назад | g:connect:1:1:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.connect_apple.qr — подключение Apple: QR и шаг со шторкой
+> press g:connect_apple:1:1:qr
+- delete #1
++ animation #2
+🔳 QR-код для AmneziaVPN
++ send #3
+<b>Подключаемся</b>
+
+1. Нажми большую кнопку подключения в приложении.
+2. Проверь: открой любой заблокированный сайт.
+
+Работает — значит всё готово! 🎉
+  [⬅️ Назад | g:connect_apple:1:1:]
+  [🎛 VPN в шторку | g:toggle:0:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.connect.back — подключение: «Назад» к способу
+> press g:connect:1:1:
+= edit #3
+📶 <b>Настраиваем подключение</b>
+
+Настраиваешь устройство, с которого пишешь — нужна 🔗 ссылка, другое устройство — 🔳 QR, можно и 📄 файлом.
+Затем открой AmneziaVPN и вставь ссылку/файл или отсканируй код
+  [🔗 Ссылка | g:connect:1:1:link] [🔳 QR | g:connect:1:1:qr] [📄 Файл | g:connect:1:1:file]
+  [⬅️ Назад | g:connect:0:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.add — подключение: ➕ имя
+> press g:connect:-1:0:
+= edit #1
+➕ <b>Новое устройство</b> · 1 из 3
+Как назвать? Например: «iPhone»
+  [✖️ Отмена | x:guide:0]
+~ (пустой ответ)
+
+### cl.guide.add.full — подключение: ➕ при лимите — отказ
+> press g:connect:-1:0:
+~! Лимит исчерпан: чтобы добавить новое, удали 1
+
+### cl.guide.add.done — подключение: ➕ создано — способ
+> text «Айпад»
+- delete #1
+- delete #2
++ send #3
+✅ Айпад создано
++ send #4
+📶 <b>Настраиваем подключение</b>
+
+Настраиваешь устройство, с которого пишешь — нужна 🔗 ссылка, другое устройство — 🔳 QR, можно и 📄 файлом.
+Затем открой AmneziaVPN и вставь ссылку/файл или отсканируй код
+  [🔗 Ссылка | g:connect:1:2:link] [🔳 QR | g:connect:1:2:qr] [📄 Файл | g:connect:1:2:file]
+  [⬅️ Назад | g:connect:0:0:]
+  [⬅️ В меню | m:main]
+
+### cl.guide.add.cancel — подключение: ➕ «✖️ Отмена» — тот же шаг
+> press x:guide:1
+~ (пустой ответ)
+= edit #1
+📶 <b>Получаем настройки</b>
+
+Для подключения тебе будет нужна ссылка — для каждого устройства своя.
+Выбери устройство ниже или добавь новое 👇
+  [➕ Устройство | g:connect_apple:-1:0:]
+  [🔗 Телефон | d:gen_guide:1]
+  [⬅️ В меню | m:main]
+
+### cl.guide.toggle.0 — шторка, шаг 1
+> press g:toggle:0:0:
+= edit #1
+🎛 <b>Переключатель VPN в шторке</b>
+
+<blockquote>Актуально для iOS 26. Проверить версию: Настройки → Основные → «Об этом устройстве» → строка «Версия ПО».</blockquote>
+
+1. Открой Пункт управления (свайп вниз от правого верхнего угла экрана).
+2. Нажми «+» в левом верхнем углу.
+3. Нажми «Добавить элемент управления».
+  [Далее ➡️ | g:toggle:1:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.guide.toggle.1 — шторка, шаг 2
+> press g:toggle:1:0:
+= edit #1
+<b>Добавляем кнопку VPN</b>
+
+1. В списке найди <b>VPN</b> (можно через поиск).
+2. Нажми на него — кнопка добавится в шторку.
+3. Закрой Пункт управления.
+
+Теперь VPN включается одним касанием из шторки 🎉
+  [⬅️ Назад | g:toggle:0:0:]
+  [⬅️ В меню | m:main]
+~ (пустой ответ)
+
+### cl.rf.panel — 🇷🇺 РФ-доступ: включён
+> press rt:panel:2:-1:
+= edit #1
+🇷🇺 <b>РФ-доступ:</b> вкл на всех
+  [✅ Телефон | rt:dev:1:-1:]
+  [✅ Ноутбук | rt:dev:2:-1:]
+  [✅ Выбрать все | rt:all:2:-1:]
+  [➕ Сайт | rt:add:2:-1:panel] [📋 Сайты | rt:sites:2:-1:]
+  [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.rf.panel.off — 🇷🇺 РФ-доступ: выключен
+> press rt:panel:2:-1:
+= edit #1
+🇷🇺 <b>РФ-доступ:</b> выкл
+Включишь — банки, госуслуги, маркетплейсы будут открываться с российского адреса, заблокированное — через VPN. Ссылки менять не нужно
+  [☑️ Телефон | rt:dev:1:-1:]
+  [☑️ Выбрать все | rt:all:2:-1:]
+  [➕ Сайт | rt:add:2:-1:panel] [📋 Сайты | rt:sites:2:-1:]
+  [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.rf.panel.down — 🇷🇺 РФ-доступ: шлюз не пропускает
+> press rt:panel:2:-1:
+= edit #1
+🇷🇺 <b>РФ-доступ:</b> вкл на всех
+🔴 временно недоступен
+  [✅ Телефон | rt:dev:1:-1:]
+  [✅ Выбрать все | rt:all:2:-1:]
+  [➕ Сайт | rt:add:2:-1:panel] [📋 Сайты | rt:sites:2:-1:]
+  [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.rf.panel.mixed — 🇷🇺 РФ-доступ: переданное и чужое, свой адрес
+> press rt:panel:2:-1:
+= edit #1
+🇷🇺 <b>РФ-доступ:</b> вкл на всех
+Свои сайты: <code>sber.ru</code>
+Планшет — у профиля <a href="tg://user?id=2000">Артём</a>, управляет функцией он
+  [✅ Телефон | rt:dev:1:-1:]
+  [✅ Ноутбук | rt:dev:2:-1:]
+  [✅ Выбрать все | rt:all:2:-1:]
+  [➕ Сайт | rt:add:2:-1:panel] [📋 Сайты: 1 | rt:sites:2:-1:]
+  [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.rf.panel.empty — 🇷🇺 РФ-доступ: устройств нет
+> press rt:panel:2:-1:
+= edit #1
+🇷🇺 <b>РФ-доступ:</b> устройств пока нет
+  [➕ Сайт | rt:add:2:-1:panel] [📋 Сайты | rt:sites:2:-1:]
+  [⬅️ Назад | m:main]
+~ (пустой ответ)
+
+### cl.rf.panel.hidden — РФ-доступ не выдан — отказ
+> press rt:panel:2:-1:
+~! РФ-доступ временно недоступен. Попробуй позже
+
+### cl.rf.dev — переключить устройство
+> press rt:dev:2:-1:
+= edit #1
+🇷🇺 <b>РФ-доступ:</b> вкл на 1 из 2
+  [✅ Телефон | rt:dev:1:-1:]
+  [☑️ Ноутбук | rt:dev:2:-1:]
+  [☑️ Выбрать все | rt:all:2:-1:]
+  [➕ Сайт | rt:add:2:-1:panel] [📋 Сайты | rt:sites:2:-1:]
+  [⬅️ Назад | m:main]
+~ выключено
+
+### cl.rf.all.off — выключить все
+> press rt:all:2:-1:
+= edit #1
+🇷🇺 <b>РФ-доступ:</b> выкл
+Включишь — банки, госуслуги, маркетплейсы будут открываться с российского адреса, заблокированное — через VPN. Ссылки менять не нужно
+  [☑️ Телефон | rt:dev:1:-1:]
+  [☑️ Ноутбук | rt:dev:2:-1:]
+  [☑️ Выбрать все | rt:all:2:-1:]
+  [➕ Сайт | rt:add:2:-1:panel] [📋 Сайты | rt:sites:2:-1:]
+  [⬅️ Назад | m:main]
+~ Выключено на всех
+
+### cl.rf.all.on — включить все
+> press rt:all:2:-1:
+= edit #1
+🇷🇺 <b>РФ-доступ:</b> вкл на всех
+  [✅ Телефон | rt:dev:1:-1:]
+  [✅ Выбрать все | rt:all:2:-1:]
+  [➕ Сайт | rt:add:2:-1:panel] [📋 Сайты | rt:sites:2:-1:]
+  [⬅️ Назад | m:main]
+~ Включено на всех
+
+### cl.rf.all.none — включить все без устройств
+> press rt:all:2:-1:
+~! Устройств пока нет
+
+### cl.rf.lent — переданное в разделе — всплывашка
+> press rt:lent:3:-1:
+~! Этим устройством управляет тот, кому оно передано
+
+### cl.rf.sites.empty — 📋 Сайты: пусто
+> press rt:sites:2:-1:
+= edit #1
+📋 <b>Свои сайты</b>
+Тут пока пусто. Банки, госуслуги, маркетплейсы — уже в общем списке; добавляй то, что пишет «вы не из России»
+  [➕ Сайт | rt:add:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:]
+~ (пустой ответ)
+
+### cl.rf.sites — 📋 Сайты: список
+> press rt:sites:2:-1:
+= edit #1
+📋 <b>Свои сайты</b> · 3
+Открываются с российского адреса. Банки, госуслуги, маркетплейсы — уже в общем списке
+  [➖ gosuslugi.ru | rt:del:2:0:e753a0ae]
+  [➖ sber.ru | rt:del:2:1:8960d643]
+  [➖ ya.ru | rt:del:2:2:e900769e]
+  [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:]
+~ (пустой ответ)
+
+### cl.rf.sites.many — 📋 Сайты: первая страница
+> press rt:sites:2:-1:
+= edit #1
+📋 <b>Свои сайты</b> · 14
+Открываются с российского адреса. Банки, госуслуги, маркетплейсы — уже в общем списке
+  [➖ site01.ru | rt:del:2:0:a1d46e81]
+  [➖ site02.ru | rt:del:2:1:fb77bb64]
+  [➖ site03.ru | rt:del:2:2:f625dc14]
+  [➖ site04.ru | rt:del:2:3:f23d8b1e]
+  [➖ site05.ru | rt:del:2:4:e86ca669]
+  [➖ site06.ru | rt:del:2:5:f90d47eb]
+  [➖ site07.ru | rt:del:2:6:7e83750c]
+  [След. страница ▶️ | pg|rtsites|2|1|rt:sites:2:-1:]
+  [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:]
+~ (пустой ответ)
+
+### cl.rf.add — ➕ Сайт из раздела — приглашение
+> press rt:add:2:-1:panel
+= edit #1
+➕ <b>Сайты с российского адреса</b>
+Пришли адреса — по одному в строке или через запятую, можно ссылками. Добавляй то, что пишет «вы не из России»
+  [✖️ Отмена | x:rf:2]
+~ (пустой ответ)
+
+### cl.rf.add.done — ➕ Сайт — итог на разделе
+> text «sber.ru
+https://www.ya.ru/path
+не домен»
+- delete #1
+- delete #2
++ send #3
+✅ Добавлено: <code>sber.ru</code>, <code>ya.ru</code> · ⚠️ Не добавлено: <code>не</code> — нужно полное имя с зоной, например sberbank.ru; <code>домен</code> — нужно полное имя с зоной, например sberbank.ru · применится в теч. минуты, не сработало — переподключись
+
+🇷🇺 <b>РФ-доступ:</b> вкл на всех
+Свои сайты: <code>sber.ru</code>, <code>ya.ru</code>
+  [✅ Телефон | rt:dev:1:-1:]
+  [✅ Ноутбук | rt:dev:2:-1:]
+  [✅ Выбрать все | rt:all:2:-1:]
+  [➕ Сайт | rt:add:2:-1:panel] [📋 Сайты: 2 | rt:sites:2:-1:]
+  [⬅️ Назад | m:main]
+
+### cl.rf.add.sites — ➕ Сайт из «Сайтов» — итог на «Сайтах»
+> text «vk.com»
+- delete #1
+- delete #2
++ send #3
+✅ Добавлено: <code>vk.com</code> · применится в теч. минуты, не сработало — переподключись
+
+📋 <b>Свои сайты</b> · 4
+Открываются с российского адреса. Банки, госуслуги, маркетплейсы — уже в общем списке
+  [➖ gosuslugi.ru | rt:del:2:0:e753a0ae]
+  [➖ sber.ru | rt:del:2:1:8960d643]
+  [➖ vk.com | rt:del:2:2:4894387e]
+  [➖ ya.ru | rt:del:2:3:e900769e]
+  [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:]
+
+### cl.rf.add.cancel — ➕ Сайт — «✖️ Отмена»
+> press x:sites:2
+~ (пустой ответ)
+= edit #1
+📋 <b>Свои сайты</b> · 3
+Открываются с российского адреса. Банки, госуслуги, маркетплейсы — уже в общем списке
+  [➖ gosuslugi.ru | rt:del:2:0:e753a0ae]
+  [➖ sber.ru | rt:del:2:1:8960d643]
+  [➖ ya.ru | rt:del:2:2:e900769e]
+  [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:]
+
+### cl.rf.del — удалить адрес
+> press rt:del:2:0:e753a0ae
+~ gosuslugi.ru убран · применится в теч. минуты
+= edit #1
+📋 <b>Свои сайты</b> · 2
+Открываются с российского адреса. Банки, госуслуги, маркетплейсы — уже в общем списке
+  [➖ sber.ru | rt:del:2:0:8960d643]
+  [➖ ya.ru | rt:del:2:1:e900769e]
+  [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:]
+
+### cl.rf.del.stale — удалить адрес из изменившегося списка — отказ
+> press rt:del:2:0:zz
+~! Список изменился — открой раздел заново
+= edit #1
+📋 <b>Свои сайты</b> · 3
+Открываются с российского адреса. Банки, госуслуги, маркетплейсы — уже в общем списке
+  [➖ gosuslugi.ru | rt:del:2:0:e753a0ae]
+  [➖ sber.ru | rt:del:2:1:8960d643]
+  [➖ ya.ru | rt:del:2:2:e900769e]
+  [➕ Сайт | rt:add:2:-1:] [🗑 Очистить | rt:clear:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:]
+
+### cl.rf.clear — 🗑 Очистить — подтверждение
+> press rt:clear:2:-1:
+= edit #1
+🗑 Удалить все свои сайты (3)? Общий список останется
+  [⬅️ Отмена | rt:sites:2:-1:] [🗑 Удалить все | rt:clear_yes:2:-1: | красная]
+~ (пустой ответ)
+
+### cl.rf.clear.yes — 🗑 Очистить — итог
+> press rt:clear_yes:2:-1:
+= edit #1
+📋 <b>Свои сайты</b>
+Тут пока пусто. Банки, госуслуги, маркетплейсы — уже в общем списке; добавляй то, что пишет «вы не из России»
+  [➕ Сайт | rt:add:2:-1:]
+  [⬅️ Назад | rt:panel:2:-1:]
+~ Удалено адресов: 3
+
+### cl.note.sub — кнопка уведомления — подписка новым меню
+> press nt:sub:2
+- markup off #1
+~ (пустой ответ)
++ send #2
+💳 <b>Подписка:</b> годовая · 🟢 активна
+📅 15.09.26 → 15.09.27 · ост. 365 дн.
+
+⏸️ Пауза: 28 дн. доступно
+<blockquote expandable>+2 дн. паузы за своевременное продление на месяц (до 24 дн.),
++28 дн. за продление на год (до 56 дн.)</blockquote>
+
+Включено в подписку: ∞ ГБ в месяц · 3 устройства
+  [⏸️ Пауза | pz:ask:2:0] [⬅️ Назад | m:main]
+
+### cl.hide — «Скрыть» на уведомлении
+> press hd
+- delete #1
+~ (пустой ответ)
+
+### cl.reply_cancel — reply-«✖️ Отмена» прежнего образца
+> text «✖️ Отмена»
++ send #3
+Переименование устройства отменено.
+  reply: (снята)
+- delete #1
++ send #4
+👋 <b>Вася</b>
+
+🟢 VPN работает
+<a href="https://t.me/test_bot?start=sub">💳 Подписка до 15.09.27</a> · 📊 0 ГБ (безлимит)
+📱 Устройств 1 из 3
+  [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
+  [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
+  [💳 Подписка | m:info] [❓ Как подключить | h:root]
