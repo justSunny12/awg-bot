@@ -425,7 +425,10 @@ def _pause_of(client) -> str:
         cap = 12 * settings.get_int("pause.monthly_pause_days", 2)
     else:
         return ""
-    return f"⏸️ Пауза: {int(client.pause_balance_days)} из {cap} дн."
+    bal = int(client.pause_balance_days)
+    if bal > cap:                      # счёт достался от прежнего вида подписки — потолок не его
+        return f"⏸️ Пауза: {bal} дн."
+    return f"⏸️ Пауза: {bal} из {cap} дн."
 
 
 _KIND_SHORT = {"day": "день", "week": "неделя", "month": "месяц", "year": "год"}
@@ -573,8 +576,8 @@ def extend_text(client, cut_days: int = 0, bot_username: str = "") -> str:
         now = "Сейчас: бессрочная"
     else:
         end = timeutil.parse_iso(client.period_end)
-        if client.status != SubStatus.ACTIVE:
-            now = f"Сейчас: истекла {timeutil.fmt_date_ui(end)}"
+        if client.status != SubStatus.ACTIVE or timeutil.remaining_seconds(end) <= 0:
+            now = f"Сейчас: истекла {timeutil.fmt_date_ui(end)}"      # и по сроку: статус переключает такт
         else:
             now = f"Сейчас до {timeutil.fmt_end_ui(end)} · осталось {timeutil.remaining_brief(end)}"
     lines = [head, now]

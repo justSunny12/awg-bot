@@ -35,6 +35,8 @@ def gateway_mark_ask(dev, prev, *, standby: bool = False, replace_state=None) ->
         head += f"\nСейчас шлюз — {_e(prev.name)}: прежнее устройство потеряет линк само"
     if replace_state is not None and replace_state.get("active"):
         head += "\nАктивный слот: трафик уйдёт на резерв, если он жив"
+    elif standby:
+        head += "\nСтанет резервным: трафик пойдёт через него, только если основной не отвечает"
     return head
 
 

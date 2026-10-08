@@ -22,6 +22,7 @@ from awgbot.bot.callbacks import CancelCB, SetCB
 from awgbot.bot.handlers import settings as sh
 from awgbot.core import config, settings
 from awgbot.infra import mail
+from awgbot.util import timeutil
 from tests.conftest import FakeCallback, FakeMessage, FakeState
 
 pytestmark = pytest.mark.e2e
@@ -208,10 +209,15 @@ async def test_check_and_test_mail_put_the_result_on_top_of_the_section(services
     assert cb.answers[0][0] == "Проверяю…"
     text, _ = _last_edit(nav)
     assert text.startswith("🟢 Вход по IMAP и SMTP прошёл\n\n✉️ <b>E-mail</b> "), text
-    monkeypatch.setattr(services, "email_check", lambda acc=None: (False, "IMAP: <auth> отказ"))
+    def _fail(acc=None):
+        # как настоящая проверка: итог записан, шапка раздела его показывает
+        services.db.set_state(services._MAIL_CHECK_KEY, f"fail|{timeutil.now_iso()}|IMAP: <auth> отказ")
+        return False, "IMAP: <auth> отказ"
+    monkeypatch.setattr(services, "email_check", _fail)
     cb, nav = _acb(fake_bot)
     await sh.email_action(cb, SetCB(sec="email", act="do", key="check"), services, FakeState())
-    assert _last_edit(nav)[0].startswith("🔴 IMAP: &lt;auth&gt; отказ\n\n✉️ <b>E-mail</b> "), "причина — экранированной"
+    # отказ — только в шапке раздела (вторая строка была дублем); причина экранирована
+    assert _last_edit(nav)[0].startswith("✉️ <b>E-mail</b> 🔴 IMAP: &lt;auth&gt; отказ"), _last_edit(nav)[0]
 
     sent = []
     monkeypatch.setattr(services, "email_send_test", lambda: sent.append(1))

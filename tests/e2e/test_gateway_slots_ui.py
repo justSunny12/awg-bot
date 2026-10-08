@@ -415,7 +415,8 @@ async def test_add_second_slot_from_my_devices(services, slots, fake_bot):
     await sh.gateway_pick(cb, GwMarkCB(action="pick", device_id=pi2.id, slot=0), services)
     text, labels = _screen(nav)
     assert text == ("🛰 Pi2 станет шлюзом? Выйдет из лимитов; удалить, заблокировать, выдать ссылку будет "
-                    "нельзя. Ключи линка — новые, файл первого применения выпущу сразу"), text
+                    "нельзя. Ключи линка — новые, файл первого применения выпущу сразу\n"
+                    "Станет резервным: трафик пойдёт через него, только если основной не отвечает"), text
     assert labels == ["⬅️ Отмена", "🛰 Назначить"]
     cb, nav = _acb(fake_bot)
     await sh.gateway_mark_yes(cb, GwMarkCB(action="mark_yes", device_id=pi2.id, slot=0), services, FakeState())

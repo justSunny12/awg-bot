@@ -334,7 +334,7 @@ async def test_the_lan_screen_groups_address_traffic_lists_and_smb(gw_svc, fake_
     assert lan.startswith(head), lan
     assert lan.endswith("</blockquote>") and lan.count("<blockquote expandable>") == 1, lan
     about = lan.split("<blockquote expandable>", 1)[1]
-    assert "свои списки синхронизируются между шлюзами" in about and \
+    assert "свои списки общие для всех шлюзов" in about and \
         "правила «напрямую» приоритетнее правил «в туннель»" in about, about
     assert "Личные" not in lan, "«Личные» → «Свои» во всех строках"
 

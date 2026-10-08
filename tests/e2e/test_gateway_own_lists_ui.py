@@ -128,12 +128,11 @@ ONLY_HERE = ("Списки применятся только для этого �
              "AWG — перевыпусти конфигурацию шлюза")
 SYNCED = "Изменения синхронизируются с другими шлюзами"
 LATER = "Изменения будут синхронизированы с другими шлюзами, когда появится связь с сервером AWG"
-LOCAL = ("Изменения применятся только для этого шлюза: для синхронизации нужен упр. канал до сервера "
-         "AWG — перевыпусти конфигурацию шлюза")
+LOCAL = "Применено только здесь: канала до сервера AWG нет"
 EMPTY_HINT = "добавь домены кнопками «➕ В туннель» и «➕ Напрямую»"
 SHARED_HINT = "списки общие для всех шлюзов — добавленное здесь появится и на остальных"
-SYNC_ABOUT = ("свои списки синхронизируются между шлюзами: добавленное или убранное здесь уходит "
-              "через сервер AWG на остальные шлюзы — сразу, если они на связи, иначе при подключении")
+SYNC_ABOUT = ("свои списки общие для всех шлюзов: добавленное или убранное здесь сервер AWG передаёт "
+              "остальным — сразу, если они на связи, иначе при подключении")
 
 
 def _open_lines(text: str) -> list[str]:
@@ -202,7 +201,7 @@ async def test_an_empty_shared_list_says_it_will_appear_everywhere(gw, host, fak
     text, _ = await _own_screen(gw, fake_bot)
     about = text.split("<blockquote expandable>", 1)[1]
     assert about.startswith(f"{EMPTY_HINT};\n"), about
-    assert "общие для всех шлюзов" not in text, text
+    assert SHARED_HINT not in text, text
     # не пусто — подсказки для пустого списка нет
     _synced(gw, host, {"a.com": "vpn"})
     text, _ = await _own_screen(gw, fake_bot)
@@ -214,7 +213,7 @@ async def test_without_the_channel_the_screen_says_the_lists_are_local(gw, host,
     host.write(vpn=["a.com"])
     text, _ = await _own_screen(gw, fake_bot)
     assert ONLY_HERE in _open_lines(text), text
-    assert "общие для всех шлюзов" not in text
+    assert SHARED_HINT not in text
     host.env["LAN_MODE"] = "0"
     text, _ = await _own_screen(gw, fake_bot)
     assert ONLY_HERE not in text, "режим выключен — про канал говорить нечего"

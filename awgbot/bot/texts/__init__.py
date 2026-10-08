@@ -56,7 +56,7 @@ from .routing import (
     gateway_router_text, ROUTER_IP_PLACEHOLDER, ROUTER_TABS, SETTINGS_ROUTING_SUBOFF,
     routing_users_text, routing_status_line, routing_admin_status_line, ROUTING_ABOUT, ROUTING_ABOUT_OFF,
     ROUTING_ADD_PROMPT, ROUTING_APPLY_HINT, ROUTING_ADDED_HINT, routing_domain_removed,
-    routing_panel_text, routing_sites_text, routing_add_report, routing_clear_ask, ROUTING_CLEAR_CONFIRM, ROUTING_UNAVAILABLE,
+    routing_panel_text, routing_sites_text, routing_add_report, routing_clear_ask, ROUTING_CLEAR_CONFIRM, ROUTING_UNAVAILABLE, ROUTING_NOT_ALLOWED_ADMIN,
     routing_gateway_warning, ROUTING_DISABLE_CONFIRM, ROUTING_GRANTED_NOTICE,
     routing_granted_holder_notice, routing_revoked_holder_notice,
     ROUTING_REVOKED_NOTICE, ROUTING_LENT_OUT_NOTE)
@@ -167,7 +167,7 @@ __all__ = [
     "routing_users_text", "routing_status_line", "routing_admin_status_line", "ROUTING_ABOUT",
     "ROUTING_ABOUT_OFF", "ROUTING_ADD_PROMPT", "ROUTING_APPLY_HINT",
     "ROUTING_ADDED_HINT", "routing_domain_removed", "routing_panel_text",
-    "routing_add_report", "routing_sites_text", "routing_clear_ask", "ROUTING_CLEAR_CONFIRM", "ROUTING_UNAVAILABLE",
+    "routing_add_report", "routing_sites_text", "routing_clear_ask", "ROUTING_CLEAR_CONFIRM", "ROUTING_UNAVAILABLE", "ROUTING_NOT_ALLOWED_ADMIN",
     "routing_gateway_warning", "ROUTING_DISABLE_CONFIRM", "ROUTING_GRANTED_NOTICE",
     "routing_granted_holder_notice", "routing_revoked_holder_notice",
     "ROUTING_REVOKED_NOTICE", "ROUTING_LENT_OUT_NOTE", "update_available", "update_wait", "UPDATE_NOTHING", "UPDATE_STARTING", "UPDATES_MUTED_TOAST",

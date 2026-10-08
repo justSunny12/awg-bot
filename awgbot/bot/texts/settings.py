@@ -166,7 +166,7 @@ def email_ask_password(address: str) -> str:
 
 
 def email_saved(address: str, detail: str) -> str:
-    return f"✅ Ящик <code>{_e(address)}</code> подключён\n{_e(detail)}"
+    return f"✅ Ящик <code>{_e(address)}</code> подключён" + (f"\n{_e(detail)}" if detail else "")
 
 
 def email_check_failed(detail: str) -> str:

@@ -452,8 +452,8 @@ async def email_action(cb: CallbackQuery, services, hooks: Hooks, state: FSMCont
         # итог — первой строкой раздела
         await cb.answer("Проверяю…")
         ok, detail = await call(services.email_check)
-        await _render_with_note(cb, services, hooks, "email",
-                                texts.EMAIL_CHECK_OK if ok else f"🔴 {texts._e(detail)}")
+        # отказ уже в шапке раздела («✉️ E-mail 🔴 …») — вторая строка была дублем
+        await _render_with_note(cb, services, hooks, "email", texts.EMAIL_CHECK_OK if ok else "")
         return True
     if key == "test":
         await cb.answer("Отправляю…")

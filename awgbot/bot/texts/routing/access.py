@@ -264,6 +264,7 @@ def routing_clear_ask(n: int) -> str:
 ROUTING_CLEAR_CONFIRM = routing_clear_ask(0)
 
 ROUTING_UNAVAILABLE = "РФ-доступ временно недоступен. Попробуй позже"
+ROUTING_NOT_ALLOWED_ADMIN = "РФ-доступ этому профилю не разрешён"     # админу — причина, а не «попробуй позже»
 
 
 def routing_gateway_warning(verdict: str, *, at_start: bool) -> str:

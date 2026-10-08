@@ -51,7 +51,8 @@ async def _guard(cb: CallbackQuery, services, client) -> bool:
     мог отозвать админ, пока у человека открыт экран со старыми кнопками."""
     if client is not None and await call(services.routing_client_visible, client):
         return True
-    await cb.answer(texts.ROUTING_UNAVAILABLE, show_alert=True)
+    admin = cb.from_user is not None and cb.from_user.id == config.ADMIN_ID
+    await cb.answer(texts.ROUTING_NOT_ALLOWED_ADMIN if admin else texts.ROUTING_UNAVAILABLE, show_alert=True)
     return False
 
 

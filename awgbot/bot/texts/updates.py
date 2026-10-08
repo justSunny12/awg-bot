@@ -33,7 +33,8 @@ def _changelog_block(body: str, header: str, tag: str = "") -> str:
     Тело экранируем целиком ДО обрезки (рвать нечего — тегов внутри нет), режем
     по границам строк под остаток бюджета. Обрезали — честный хвост. Возвращает
     готовую цитату (или пустую строку, если тела нет)."""
-    body = (body or "").strip()
+    # строки «#requires_…» и «#awg_genN» — адресация обновления, человеку не нужна
+    body = "\n".join(ln for ln in (body or "").splitlines() if not ln.lstrip().startswith("#")).strip()
     if not body:
         return ""
     tail = "\n…\n" + changelog_link(tag)
@@ -113,5 +114,5 @@ def update_applied(tag: str, body: str) -> str:
 
 
 def update_not_applied(tag: str, installed: str) -> str:
-    return (f"⚠️ Обновление до {_e(tag)} не применилось — версия осталась "
-            f"{_e(installed)}. Смотри журнал: journalctl -u awg-bot-selfupdate*")
+    return (f"⚠️ Обновление до {_e(_ver(tag))} не применилось — версия осталась "
+            f"{_e(_ver(installed))}. Смотри журнал: journalctl -u awg-bot-selfupdate*")
