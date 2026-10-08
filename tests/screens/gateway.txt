@@ -1,0 +1,13 @@
+### gw.set.notify — по умолчанию
+> press gw:notify:
+= edit #1
+🔔 <b>Уведомления</b>
+Тихие часы выключены — уведомления со звуком круглые сутки
+Алерты хоста: CPU 80% · RAM 80% · диск 80% · 75 °C
+<blockquote expandable>Аварии на e-mail — только когда Telegram недоступен: линк, выход наружу, обвязка, питание, перегрев, перегруз</blockquote>
+  [☑️ Тихие часы | gw:tgl:quiet_hours.quiet_hours_enabled]
+  [✅ Алерты хоста | gw:tgl:resource_alerts.enabled]
+  [CPU 80% | gw:edit:resource_alerts.thresholds_percent.cpu] [RAM 80% | gw:edit:resource_alerts.thresholds_percent.ram]
+  [Диск 80% | gw:edit:resource_alerts.thresholds_percent.disk] [75 °C | gw:edit:app.gateway.temp_alert_c]
+  [☑️ Аварии на e-mail | gw:tgl:notifications.email_fallback] [⬅️ Назад | gw:settings:]
+~ (пустой ответ)

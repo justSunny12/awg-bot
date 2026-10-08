@@ -1,0 +1,10 @@
+### adm.set.root — корень настроек
+> press set:root:open::
+= edit #1
+⚙️ <b>Настройки</b> · v1.2.3
+  [🔔 Уведомления | set:notify:open::] [🖥 Сервер AWG | set:srv:open::]
+  [🛡 SSH-доступ | set:fw:open::] [✉️ E-mail | set:email:open::]
+  [💳 Подписки | set:subs:open::] [💾 Бэкапы | set:backup:open::]
+  [🩺 Мониторинг | set:mon:open::] [🔧 Сервис | set:svc:open::]
+  [⬆️ Обновления | set:upd:open::] [⬅️ В меню | m:main]
+~ (пустой ответ)

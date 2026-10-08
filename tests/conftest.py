@@ -62,6 +62,13 @@ _REPO_CONF = pathlib.Path(_config.CONF_DIR).resolve()
 _REPO_CONF_NAMES = {os.path.abspath(str(_config.CONF_DIR)), str(_REPO_CONF)}
 
 
+def pytest_addoption(parser):
+    """--update-screens: эталоны экранов (tests/screens/*.txt) перезаписываются
+    снятым, а не сравниваются. Дифф эталона — в коммите, вычитка — по нему."""
+    parser.addoption("--update-screens", action="store_true", default=False,
+                     help="перезаписать эталоны экранов tests/screens/*.txt вместо сравнения")
+
+
 def restore_settings() -> None:
     """Вернуть горячий кэш настроек во временную копию conf.
 
