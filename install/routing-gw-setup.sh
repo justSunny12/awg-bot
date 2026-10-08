@@ -679,6 +679,9 @@ add_to() { printf '%s\n' "$1" >> "$TMPD/want_$2"; }
 added=""                       # «домен:набор» — наполнить после рестарта
 # «добавлен»/«убран» — только после удачного рестарта: при откате человек видел
 # бы «добавлен» рядом с «откатываю»
+# Домен в строке итога: боту — моноширинным (<code>, AWG_HTML=1 ставит агент),
+# в терминале и у агента прежних выпусков — голым текстом
+tag() { if [ "${AWG_HTML:-0}" = "1" ]; then printf '<code>%s</code>' "$1"; else printf '%s' "$1"; fi; }
 say() { printf '%s\n' "$1" >> "$TMPD/said"; }
 : > "$TMPD/said"
 if [ "$cmd" = "sync" ]; then
@@ -699,18 +702,18 @@ else
         valid "$d" || { echo "$d: не похоже на домен, пропущен"; continue; }
         if [ "$cmd" = "del" ]; then
             if in_list "$d" vpn || in_list "$d" ru; then
-                drop_from "$d" vpn; drop_from "$d" ru; say "<code>$d</code>: убран"
+                drop_from "$d" vpn; drop_from "$d" ru; say "$(tag "$d"): убран"
             else
-                echo "<code>$d</code>: в списках нет"
+                echo "$(tag "$d"): в списках нет"
             fi
             continue
         fi
-        [ -n "$deny" ] && [ "$d" = "$deny" ] && { echo "<code>$d</code>: это хост сервера — его добавить нельзя"; continue; }
+        [ -n "$deny" ] && [ "$d" = "$deny" ] && { echo "$(tag "$d"): это хост сервера — его добавить нельзя"; continue; }
         if [ "$cmd" = "add" ]; then k=vpn; other=ru; set_="lan_vpn4"; else k=ru; other=vpn; set_="lan_ru4"; fi
-        in_list "$d" "$k" && { echo "<code>$d</code>: уже в списке"; continue; }
+        in_list "$d" "$k" && { echo "$(tag "$d"): уже в списке"; continue; }
         drop_from "$d" "$other"; add_to "$d" "$k"
         added="$added $d:$set_"
-        say "<code>$d</code>: добавлен"
+        say "$(tag "$d"): добавлен"
     done
 fi
 sort -u -o "$TMPD/want_vpn" "$TMPD/want_vpn"; sort -u -o "$TMPD/want_ru" "$TMPD/want_ru"

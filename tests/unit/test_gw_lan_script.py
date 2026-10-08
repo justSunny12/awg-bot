@@ -76,7 +76,7 @@ def domain_env(script, tmp_path):
     tool.write_text(_heredoc(script, "LAN_DOMAIN", "DOMEOF"), encoding="utf-8"); tool.chmod(0o755)
     # AWG_LAN_DUMP — каталог блокировки lists.lock и исходника фида vpn-feed.src
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "AWG_DNSMASQ_D": str(dns_d), "AWG_UPLINK_CONF": str(conf),
-           "AWG_LAN_DUMP": str(tmp_path / "dump")}
+           "AWG_LAN_DUMP": str(tmp_path / "dump"), "AWG_HTML": "1"}     # как зовёт агент: домены в <code>
     return tool, dns_d, log, env
 
 
@@ -1986,3 +1986,13 @@ def test_helpers_are_replaced_by_mv_not_rewritten_in_place(script, tmp_path):
         f = sbin / name
         assert f.stat().st_ino != ino, f"{name} переписан на месте — работающий экземпляр дочитает новый текст"
         assert f.stat().st_mode & 0o777 == 0o755 and "# старый" not in f.read_text(), name
+
+
+def test_domain_tool_prints_plain_domains_without_the_html_flag(domain_env):
+    """В терминале (awg-bot lan …) и у агента прежних выпусков теги <code> не
+    нужны: без AWG_HTML скрипт печатает домен голым текстом."""
+    tool, dns_d, log, env = domain_env
+    env = {k: v for k, v in env.items() if k != "AWG_HTML"}
+    r = _run(tool, env, "add", "example.com")
+    assert r.returncode == 0, r.stderr
+    assert "example.com: добавлен" in r.stdout and "<code>" not in r.stdout, r.stdout

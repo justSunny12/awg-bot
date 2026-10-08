@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -825,7 +826,10 @@ def lan_domain_has_sync() -> bool:
 def run_lan_domain(cmd: str, domains: list[str], timeout: int = LAN_SCRIPT_TIMEOUT) -> tuple[bool, str]:
     """Свои списки: add | ru | del | list | sync. (ok, вывод)."""
     try:
-        proc = subprocess.run([LAN_DOMAIN_SCRIPT, cmd, *domains], capture_output=True, timeout=timeout)
+        # AWG_HTML=1 — домены в итоге моноширинным (<code>): вывод уходит в чат;
+        # в терминале (awg-bot lan …) скрипт печатает голый текст
+        proc = subprocess.run([LAN_DOMAIN_SCRIPT, cmd, *domains], capture_output=True, timeout=timeout,
+                              env={**os.environ, "AWG_HTML": "1"})
     except FileNotFoundError:
         return False, "отсутствует скрипт — перевыпусти конфигурацию шлюза"
     except subprocess.TimeoutExpired:

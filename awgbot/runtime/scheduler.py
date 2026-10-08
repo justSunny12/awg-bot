@@ -594,8 +594,8 @@ async def monthly_backup(services, bot, log_tag: str, *, catchup: bool = False,
         log.warning("%s: %s", log_tag, e)
 
 
-_UPDATE_JITTER = 1800          # ±полчаса к проверке обновлений: не ровно в 10:00
-BACKUP_JITTER = 1800           # ±полчаса к месячной копии — по той же причине
+_UPDATE_JITTER = 1800          # до получаса позже к проверке обновлений (джиттер APScheduler — только вперёд): не ровно в 10:00
+BACKUP_JITTER = 1800           # до получаса позже к месячной копии — по той же причине
 
 
 def update_check_trigger():

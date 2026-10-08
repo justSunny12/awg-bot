@@ -90,6 +90,8 @@ def check_imap(acc: MailAccount, timeout: float = 15.0) -> None:
         conn.login(acc.login, acc.password)
     except imaplib.IMAP4.error as e:
         raise MailError(f"IMAP отверг логин/пароль: {_clean(e)}") from e
+    except OSError as e:                                   # таймаут или обрыв уже после соединения
+        raise MailError(f"IMAP {acc.imap_host}:{acc.imap_port} не ответил на вход: {_clean(e)}") from e
     finally:
         try:
             conn.logout()

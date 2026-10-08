@@ -577,3 +577,15 @@ def test_the_gateways_own_egress_view_does_not_hold_the_traffic(services, two):
     for _ in range(services._rt_fail_need()):
         services.routing_liveness_tick()
     assert services.active_gateway().id == 2, "снимок шлюза удержал трафик на мёртвом пути"
+
+
+def test_the_first_feeds_download_is_not_held_back_when_there_are_no_feeds_at_all(services, link, monkeypatch):
+    """Восстановление на новом ВПС: файла фидов в копии нет, а момент следующего
+    похода в базе — в будущем. Гейт не должен держать первый поход — иначе
+    агенты до восьми часов без фидов; с файлом на месте гейт действует."""
+    _Net(monkeypatch)
+    services.db.set_state(services._LAN_FEEDS_AT_KEY, str(int(time.time()) + 6 * 3600))
+    assert not services.gwlink_lan_feeds_digest(), "фидов ещё нет"
+    assert services.gwlink_lan_feeds_update() is True, "первый поход задержан гейтом"
+    services.db.set_state(services._LAN_FEEDS_AT_KEY, str(int(time.time()) + 6 * 3600))
+    assert services.gwlink_lan_feeds_update() is False, "с фидами на месте гейт обязан действовать"
