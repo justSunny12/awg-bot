@@ -253,8 +253,41 @@ class BackupCryptoMixin:
         if role != self.backup_role():
             who = "агента шлюза" if role == "gw" else "основного бота"
             return {"ok": False, "error": f"это копия {who}, а здесь {'агент шлюза' if self.backup_role() == 'gw' else 'основной бот'}"}
+        gap = self._db_schema_gap(plain)
+        if gap:
+            # миграций ниже минимума в коде нет: такую базу нечем довести
+            return {"ok": False, "error": f"копия снята версией ниже 3.2.0 ({gap}) — "
+                                          "восстанови её на хосте с 3.2.0, потом обновись"}
         return {"ok": True, "role": role, "created_at": created, "plain": plain,
                 "ifaces_changed": self._ifaces_changed(plain)}
+
+    @staticmethod
+    def _db_schema_gap(plain: bytes) -> str:
+        """База из архива — во временный файл и под schema_gap; базы в архиве
+        нет — проверять нечего."""
+        import io
+        import os
+        import tarfile
+        import tempfile
+        from awgbot.infra.db.schema import schema_gap
+        try:
+            with tarfile.open(fileobj=io.BytesIO(plain), mode="r:gz") as tar:
+                f = tar.extractfile("state/bot.db")
+                raw = f.read() if f else None
+        except Exception:                              # noqa: BLE001
+            return ""
+        if raw is None:
+            return ""
+        fd, tmp = tempfile.mkstemp(prefix="awg-restore-", suffix=".db")
+        try:
+            with os.fdopen(fd, "wb") as out:
+                out.write(raw)
+            return schema_gap(tmp)
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
     @staticmethod
     def iface_conf_dir() -> str:

@@ -536,14 +536,6 @@ async def test_an_agent_that_does_not_know_sync_is_told_to_update_with_a_bot_lin
                     '<a href="https://t.me/pi2_gw_bot">Шлюз &lt;2&gt; &amp; co</a>)'), note
 
 
-async def test_an_old_agent_is_recognised_by_its_snapshot_before_any_hello(services, lan_slots, fake_bot):
-    """Сессии с новой версией ещё не было — судим по версии из снимка."""
-    services.gwlink_snapshot_in(2, {"bundle": {"lan_mode": "1"}, "agent_version": "3.0.2",
-                                    "link_contract": "1", "rev": 1}, 1, True)
-    _, note = _own_block((await _card(services, fake_bot, 2))[0])
-    assert note == "⚠️ Для синхронизации необходимо обновить шлюз Pi2", note
-
-
 async def test_without_lan_mode_the_card_has_no_own_lists_line(services, lan_slots, fake_bot):
     services.db.gateway_update(2, lan_mode=0)
     text, _ = await _card(services, fake_bot, 2)

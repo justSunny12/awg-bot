@@ -1215,6 +1215,14 @@ cmd_restore() {
         bk_at="$(grep -o '"created_at": *"[^"]*"' "$meta" | sed 's/.*"\([^"]*\)"$/\1/')"
         [[ -z "$bk_role" || "$bk_role" == "$my_role" ]] || { rm -rf "$tmp"; die "это копия роли «$bk_role», а здесь «$my_role» — не разворачиваю"; }
     fi
+    # Схема базы в копии не ниже минимума 3.2.0: миграций старше в коде нет,
+    # такую базу нечем довести — бот упал бы на первом запросе
+    local dbf
+    for dbf in "$src"/*.db; do
+        [[ -f "$dbf" ]] || continue
+        ( cd "$INSTALL_DIR" && ./venv/bin/python -m tools.check_backup "$dbf" ) \
+            || { rm -rf "$tmp"; die "копия снята версией ниже 3.2.0 — восстанови её на хосте с 3.2.0, потом обновись"; }
+    done
     log "останавливаю ${SERVICE}…"; systemctl stop "$SERVICE" 2>/dev/null || true
     # Снимок ТЕКУЩЕГО состояния — до перезаписи, и только после успешной
     # распаковки и остановки сервиса (иначе снимали бы БД под записью).
@@ -1241,7 +1249,7 @@ cmd_restore() {
     rm -f "$DATA_DIR"/*.db-wal "$DATA_DIR"/*.db-shm 2>/dev/null || true
     # через временный файл и mv: оборванная копия базы в рабочем пути с маркером
     # «восстановлено» — худший исход; не легла — прежняя база цела, сервис вверх
-    local dbf dbt
+    local dbt
     for dbf in "$src"/*.db; do
         [[ -f "$dbf" ]] || continue
         dbt="$DATA_DIR/.restore-$(basename "$dbf").tmp"

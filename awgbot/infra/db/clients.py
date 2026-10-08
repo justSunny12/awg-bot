@@ -166,15 +166,6 @@ class ClientsMixin:
                    ON CONFLICT(client_id) DO UPDATE SET pause_balance_days=excluded.pause_balance_days""",
                 (client_id, max(0, int(days))))
 
-    def monthly_renewals(self, client_id: int) -> int:
-        """Сколько раз подписка продлевалась с ежемесячного периода — по
-        снимкам закрытых периодов (для разового расчёта счёта паузы)."""
-        row = self._connection().execute(
-            "SELECT COUNT(*) AS n FROM client_subscription_histories "
-            " WHERE client_id = ? AND period_kind = 'month' AND close_reason = 'renewed'",
-            (client_id,)).fetchone()
-        return int(row["n"])
-
     def client_mask_apply(self, client_id: int, or_bits: int = 0, and_bits: int = -1) -> int:
         """block_reason клиента = (block_reason | or_bits) & and_bits одним UPDATE;
         возвращает новую маску."""

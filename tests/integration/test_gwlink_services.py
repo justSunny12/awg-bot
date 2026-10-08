@@ -296,8 +296,8 @@ async def test_a_failed_apply_is_not_resent_in_the_session_but_is_in_the_next(pa
 # ── совместимость ────────────────────────────────────────────────────────────
 
 async def test_an_old_agent_ignores_peer_svc_and_keeps_its_session(pair):
-    """ВПС 3.1, агент 3.0: `peer_svc` он пропускает и не отвечает. Сессия
-    жива, повторов нет, карточка говорит «обнови агента»."""
+    """Агент, не знающий `peer_svc`, пропускает его и не отвечает. Сессия
+    жива, повторов нет (терпимость канала к половине другой версии)."""
     s = pair.services
     _x_known(s)
     _y_snap(s, version="3.0.2")
@@ -307,7 +307,6 @@ async def test_an_old_agent_ignores_peer_svc_and_keeps_its_session(pair):
         await pair.srv.deliver_all()
     assert await _next(y, "peer_svc", 0.4) is None, "молчащему старому агенту записи шлются тактом"
     assert pair.srv.online(2) and s.gwlink_session(2)
-    assert s.gwlink_services_card(s.db.gateway(2))["state"] == "old_agent"
     await y.close()
 
 

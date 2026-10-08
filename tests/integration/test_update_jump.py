@@ -1,11 +1,10 @@
 """
-Прыжок через ступени: хост на минимальной поддерживаемой версии (v2.10.0 —
-манифест ядра, файл состояния, единый архив) обновляется на текущую одним
-шагом. Всё, что промежуточные версии делали с данными, обязано сработать разом:
-миграции БД идемпотентны, conf досеивается, отсутствующие ключи закрыты
-дефолтами, поколение усыновляется как первое.
+Прыжок с минимума: хост на минимальной поддерживаемой версии (v3.2.0)
+обновляется на текущую одним шагом. Миграций ниже минимума в коде нет — схема
+3.2.0 обязана открываться как есть (schema_gap пуст), conf досеивается,
+отсутствующие ключи закрыты дефолтами, поколение усыновляется как первое.
 
-Данные образца v2.10.0 создаются КОДОМ v2.10.0 (git archive во временный
+Данные образца v3.2.0 создаются КОДОМ v3.2.0 (git archive во временный
 каталог, отдельный интерпретатор), а не рукописной схемой: рукописная копия
 разошлась бы с реальностью первой же правкой.
 """
@@ -20,7 +19,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-FLOOR_TAG = "v2.10.0"
+FLOOR_TAG = "v3.2.0"
 
 
 def _have_tag() -> bool:
@@ -31,7 +30,7 @@ def _have_tag() -> bool:
 
 @pytest.fixture(scope="module")
 def floor_host(tmp_path_factory):
-    """Каталоги conf/ и data/ так, как их оставила бы установка v2.10.0 после
+    """Каталоги conf/ и data/ так, как их оставила бы установка минимума после
     первого старта бота: шаблоны conf той версии, БД её схемы с админом,
     клиентом и устройством."""
     if not _have_tag():
@@ -75,7 +74,7 @@ print("SEEDED", cid, did)
 
 @pytest.fixture()
 def current_on_floor_host(floor_host, monkeypatch):
-    """Текущий код поверх данных v2.10.0 — как после `awg-bot update`."""
+    """Текущий код поверх данных минимума — как после `awg-bot update`."""
     conf, data = floor_host
     monkeypatch.setenv("AWG_BOT_CONF_DIR", str(conf))
     monkeypatch.setenv("AWG_BOT_DATA_DIR", str(data))
@@ -94,11 +93,12 @@ def current_on_floor_host(floor_host, monkeypatch):
     restore_settings()      # во временную копию conf, не в conf/ репозитория
 
 
-def test_current_code_opens_and_migrates_the_floor_database(current_on_floor_host):
+def test_current_code_opens_the_floor_database_without_migrations(current_on_floor_host):
     cfg, conf, data = current_on_floor_host
-    from awgbot.infra.db import Database
+    from awgbot.infra.db import Database, schema
+    assert schema.schema_gap(str(cfg.DB_PATH)) == "", "схема минимума должна открываться как есть"
     db = Database(cfg.DB_PATH)
-    db.init_schema()                                  # все миграции разом, повторно — тоже
+    db.init_schema()                                  # идемпотентно, повторно — тоже
     db.init_schema()
     clients = db.list_clients()
     assert [c.name for c in clients] == ["Старый клиент"]
@@ -111,8 +111,8 @@ def test_current_code_opens_and_migrates_the_floor_database(current_on_floor_hos
 
 
 def test_current_code_validates_the_floor_conf_and_serves_screens(current_on_floor_host):
-    """Ключи, появившиеся после v2.10.0, отсутствуют в conf — код обязан жить на
-    дефолтах, а экраны рисоваться."""
+    """Ключи, появившиеся после минимума, отсутствуют в conf — код обязан жить
+    на дефолтах, а экраны рисоваться."""
     cfg, conf, data = current_on_floor_host
     from awgbot.core import settings
     from awgbot.infra.db import Database
@@ -124,14 +124,14 @@ def test_current_code_validates_the_floor_conf_and_serves_screens(current_on_flo
     screen = services.server_screen()
     assert screen["subnet"] == "10.8.1.0/24" and screen["iface"] == cfg.AWG_INTERFACE
     assert screen["port_conf"] == 51820 and screen["host"] == "203.0.113.10"
-    assert settings.get_bool("firewall.enabled", False) is False, "ключей firewall.* в conf v2.10 нет — дефолт"
+    assert settings.get_bool("firewall.enabled", False) is False, "файервол у свежей установки выключен"
     assert services.device_quota(services.db.list_clients()[0].id) == (1, 3)
     db.close()
 
 
 def test_floor_host_without_state_file_is_generation_one(current_on_floor_host):
-    """v2.10.0 файла состояния не заводила — текущий код считает хост первым
-    поколением, а поставка того же поколения переезда не требует."""
+    """Без файла состояния (образец его не заводит) текущий код считает хост
+    первым поколением, а поставка того же поколения переезда не требует."""
     from awgbot.infra import awglock
     assert not awglock.STATE_PATH.exists()
     assert awglock.applied_generation() == 1
@@ -139,7 +139,7 @@ def test_floor_host_without_state_file_is_generation_one(current_on_floor_host):
 
 
 def test_floor_updater_will_find_the_current_delivery(tmp_path):
-    """Апдейтер v2.10.0 ищет в архиве `*/awgbot/__main__.py` не глубже трёх
+    """Апдейтер минимума ищет в архиве `*/awgbot/__main__.py` не глубже трёх
     уровней и передаёт управление новому скрипту. Пока раскладка архива это
     держит, прыжок с floor'а возможен."""
     dist = tmp_path / "dist"

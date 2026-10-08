@@ -63,37 +63,6 @@ def test_slot_table_replaces_the_flag(services, make_active_client):
         services.db.gateway_update(2, link_if="x")
 
 
-def test_legacy_flag_migrates_into_slot_one(tmp_path, monkeypatch):
-    """БД v2.23: флаг is_gateway и ключи бандла без суффикса → слот 1,
-    предпочтительный, активный; ключи с суффиксом; повтор ничего не делает."""
-    from awgbot.infra.db import Database
-    monkeypatch.setattr(config, "ROUTING_HOME_SUBNETS", ["192.168.1.0/24"])
-    db = Database(str(tmp_path / "old.db")); db.init_schema()
-    cid = db.create_client(name="Админ", device_limit=0, period_start="2026-01-01",
-                           period_end="2027-01-01", invite_code="A")
-    a = db.create_device(cid, "NASPi", "PA", "S", "10.8.1.2", private_key="k")
-    with db._tx() as cur:
-        cur.execute("UPDATE devices SET is_gateway = 1 WHERE id = ?", (a,))
-    db.set_state("gw_bundle_issued_at", "2026-09-01T00:00:00+03:00")
-    db.set_state("gw_bundle_ssh_allow", "10.8.1.2")
-    db.close()
-    db = Database(str(tmp_path / "old.db")); db.init_schema()
-    gws = db.gateways()
-    assert len(gws) == 1 and gws[0].id == 1 and gws[0].device_id == a and gws[0].preferred == 1
-    assert gws[0].home_subnets == ["192.168.1.0/24"]
-    assert db.get_state("routing_active_gateway") == "1"
-    assert db.get_state("gw_bundle_issued_at_1") == "2026-09-01T00:00:00+03:00"
-    assert db.get_state("gw_bundle_ssh_allow_1") == "10.8.1.2"
-    assert db.get_state("gw_bundle_issued_at") is None
-    assert db.get_device(a).is_gateway == 1
-    row = db._connection().execute("SELECT is_gateway FROM devices WHERE id = ?", (a,)).fetchone()
-    assert row["is_gateway"] == 0, "колонка после переноса пуста"
-    db.close()
-    db = Database(str(tmp_path / "old.db")); db.init_schema()
-    assert len(db.gateways()) == 1
-    db.close()
-
-
 # ── назначение второго слота ─────────────────────────────────────────────────
 
 def test_second_slot_brings_its_own_link_and_needs_no_rekey_of_the_first(

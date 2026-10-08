@@ -97,26 +97,6 @@ def test_pause_spends_and_refunds_the_balance(services, fake_awg, make_active_cl
     assert services.pause_available_days(m.id) == 5 * _md() - 1
 
 
-def test_migration_from_history(services, fake_awg, make_active_client):
-    """Разово после обновления: ежемесячным — по оплаченным месяцам (все
-    своевременные), годовым — остаток старого лимита с учётом текущей паузы."""
-    m = make_active_client("M", tg_id=7550, period_kind="month")
-    services.extend_period(m.id, "month", keep_remainder=False)
-    services.extend_period(m.id, "month", keep_remainder=False)
-    y = make_active_client("Y", tg_id=7551, period_kind="year")
-    services.enter_pause(y.id, 4)                                     # резерв 4 на счету уже списан
-    # «до обновления»: счетов не было
-    for c in (m, y):
-        services.db.set_pause_balance(c.id, 0)
-    services.db.update_client_fields(y.id, pause_used_days=3)
-    assert services.migrate_pause_balances() == 2
-    assert services.db.get_client(m.id).pause_balance_days == 3 * _md()
-    assert services.db.get_client(y.id).pause_balance_days == _year() - 3 - 4
-    services.db.set_pause_balance(m.id, 0)
-    assert services.migrate_pause_balances() == 0, "миграция разовая"
-    assert services.db.get_client(m.id).pause_balance_days == 0
-
-
 def test_open_admin_pause_keeps_balance_and_period_none(services, make_active_client):
     y = make_active_client("Y", tg_id=7560, period_kind="year")
     services.enter_admin_pause(y.id, 0)

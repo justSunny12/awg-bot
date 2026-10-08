@@ -9,7 +9,6 @@ import pytest
 
 from awgbot.core import config
 from awgbot.core.blocks import DeviceBlock
-from awgbot.infra.db import Database
 
 pytestmark = pytest.mark.integration
 
@@ -155,58 +154,6 @@ def test_owner_activating_a_second_invite_is_still_refused(services, make_active
 
 
 # ── перенос прежних друзей при обновлении ────────────────────────────────────
-
-def test_legacy_friends_become_guest_holders_on_schema_init(tmp_path):
-    """БД прежней модели (друг = tg_id на устройстве, колонок kind/holder нет)
-    после init_schema: гостевой профиль «Друг» держит устройства, строк active
-    в device_friend не остаётся, ожидающий код цел. Идемпотентно."""
-    import re
-    import sqlite3
-    from awgbot.infra import db as dbmod
-    old_schema = "\n".join(
-        ln for ln in dbmod.SCHEMA.splitlines()
-        if not ln.lstrip().startswith("kind ") and "holder_client_id" not in ln)
-    old_schema = re.sub(r",(\s*\n\s*\);)", r"\1", old_schema)   # хвостовая запятая после снятой FK
-    path = tmp_path / "old.db"
-    con = sqlite3.connect(path)
-    con.executescript(old_schema)
-    con.execute("INSERT INTO clients (tg_id, name, device_limit, activation_status, "
-                "is_service, created_at) VALUES (100, 'Вася', 3, 'active', 0, 'x')")
-    oid = con.execute("SELECT id FROM clients WHERE tg_id = 100").fetchone()[0]
-    con.execute("INSERT INTO client_subscription (client_id) VALUES (?)", (oid,))
-    con.execute("INSERT INTO client_quota (client_id) VALUES (?)", (oid,))
-    for i, name in enumerate(("A", "B")):
-        con.execute("INSERT INTO devices (client_id, name, public_key, preshared_key, address, "
-                    "created_at) VALUES (?, ?, ?, 'psk', ?, ?)",
-                    (oid, name, f"pub{i}", f"10.8.1.{i + 2}", f"2026-01-0{i + 1}T00:00:00+03:00"))
-        did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
-        con.execute("INSERT INTO device_traffic (device_id) VALUES (?)", (did,))
-        con.execute("INSERT INTO device_friend (device_id, friend_tg_id, friend_code, friend_status) "
-                    "VALUES (?, 555, NULL, 'active')", (did,))
-    con.execute("INSERT INTO devices (client_id, name, public_key, preshared_key, address, "
-                "created_at) VALUES (?, 'C', 'pub9', 'psk', '10.8.1.9', 'x')", (oid,))
-    did = con.execute("SELECT last_insert_rowid()").fetchone()[0]
-    con.execute("INSERT INTO device_traffic (device_id) VALUES (?)", (did,))
-    con.execute("INSERT INTO device_friend (device_id, friend_tg_id, friend_code, friend_status) "
-                "VALUES (?, NULL, 'Fpending', 'pending')", (did,))
-    con.commit()
-    assert "holder_client_id" not in {r[1] for r in con.execute("PRAGMA table_info(devices)")}
-    con.close()
-
-    db = Database(path)
-    db.init_schema()                                       # обновление
-    guest = db.get_client_by_tg(555)
-    assert guest is not None and guest.is_guest and guest.name == "Друг"
-    held = db.list_held_devices(guest.id)
-    assert [d.name for d in held] == ["A", "B"] and all(d.client_id == oid for d in held)
-    n = db._connection().execute(
-        "SELECT COUNT(*) AS n FROM device_friend WHERE friend_status = 'active'").fetchone()["n"]
-    assert n == 0
-    pending = [d for d in db.list_devices(oid) if d.name == "C"][0]
-    assert pending.friend_status == "pending" and pending.friend_code == "Fpending"
-    db.init_schema()                                       # идемпотентно
-    assert db.get_client_by_tg(555).id == guest.id and len(db.list_held_devices(guest.id)) == 2
-
 
 def test_admin_cannot_take_a_friend_code(services, make_active_client):
     owner = make_active_client(tg_id=913)

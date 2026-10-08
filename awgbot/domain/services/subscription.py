@@ -304,36 +304,6 @@ class SubscriptionMixin:
             return 0
         return max(0, int(client.pause_balance_days))
 
-    _PAUSE_BALANCE_MIGRATED = "pause_balance_migrated"
-
-    def migrate_pause_balances(self) -> int:
-        """Разово после обновления на счёт паузы: годовым — остаток старого
-        лимита (28 − использовано − резерв текущей паузы), ежемесячным — по
-        числу оплаченных месяцев (создание + продления с месячного, все
-        считаются своевременными) в пределах максимума, минус то же. Возвращает
-        число профилей, получивших счёт."""
-        if self.db.get_state(self._PAUSE_BALANCE_MIGRATED) == "1":
-            return 0
-        n = 0
-        with self.db.transaction():
-            for c in self.db.list_clients(include_service=False):
-                spent = int(c.pause_used_days)
-                if c.is_paused and c.pause_mode == PauseMode.USER:
-                    spent += int(c.pause_reserved_days)
-                if c.period_kind == PeriodKind.YEAR:
-                    bal = self.pause_year_days() - spent
-                elif c.period_kind == PeriodKind.MONTH:
-                    months = 1 + self.db.monthly_renewals(c.id)
-                    bal = min(months * self.pause_month_days(), self.pause_month_cap()) - spent
-                else:
-                    continue
-                if bal > 0:
-                    self.db.set_pause_balance(c.id, bal)
-                    n += 1
-            self.db.set_state(self._PAUSE_BALANCE_MIGRATED, "1")
-        if n:
-            log.info("пауза: счёт дней выдан %d профилям", n)
-        return n
 
     def enter_pause(self, client_id: int, days: int = None):
         """Клиентский самоблок (mode=user). Резервирует `days` дней вперёд

@@ -368,7 +368,6 @@ async def main() -> None:
     db.init_schema()
     services = Services(db)
     services.ensure_admin_client()          # админ — тоже пользователь VPN
-    services.migrate_pause_balances()       # v2.22.0: счёт дней паузы — разово
     services.normalize_update_schedule()    # прежнее never → «месяц» и уведомления выкл
     # Сессии канала линка прошлого процесса мертвы вместе с его сокетами: без
     # сброса карточка слота зажгла бы «на связи» у шлюза, который ещё не

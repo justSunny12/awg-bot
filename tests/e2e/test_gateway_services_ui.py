@@ -115,28 +115,17 @@ async def test_a_refusal_without_details_has_no_dangling_colon(services, peers, 
 
 @pytest.mark.parametrize("peers_applied,version,note", [
     ("", "3.1.0", "⚠️ Необходим перевыпуск конфигурации шлюза Pi2"),
-    ("192.168.1.0/24", "3.0.2", "⚠️ Необходимо обновить шлюз Pi2"),
 ])
 async def test_the_slot_card_says_why_services_are_not_there_yet(services, peers, fake_bot,
                                                                  peers_applied, version, note):
-    """Подсети соседей на шлюзе ещё не применены — «необходим перевыпуск»;
-    агент старый — «необходимо обновить». Не «отправлены», которые не дойдут
-    никогда. Бот шлюза неизвестен — ссылки в скобках нет."""
+    """Подсети соседей на шлюзе ещё не применены — «необходим перевыпуск», а не
+    «отправлены», которые не дойдут никогда. Агента ниже минимума 3.2.0 на
+    связи не бывает — по версии из снимка карточка больше не судит."""
     _publish(services, peers=peers_applied, version=version)
     text, _ = await _card(services, fake_bot, 2)
     assert _svc_line(text) == HEAD, text
     assert _svc_note(text) == note, (
         f"у соседа сервер есть, а карточка не говорит, почему его нет на шлюзе: {text}")
-
-
-async def test_the_update_advice_links_the_gateway_bot_when_it_is_known(services, peers, fake_bot):
-    """Обновлять агент — в чате его бота: известен бот — ссылка на него прямо
-    в совете, имя профиля экранировано (оно из Telegram, не наше)."""
-    _publish(services, version="3.0.2")
-    services.set_gw_bot_identity(2, "pi2_gw_bot", "Шлюз <2> & co")
-    text, _ = await _card(services, fake_bot, 2)
-    assert _svc_note(text) == ('⚠️ Необходимо обновить шлюз Pi2 (бот: '
-                               '<a href="https://t.me/pi2_gw_bot">Шлюз &lt;2&gt; &amp; co</a>)'), text
 
 
 async def test_the_gateway_name_in_the_note_is_escaped_once(services, peers, fake_bot, slots):

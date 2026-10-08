@@ -1,9 +1,10 @@
-"""schema.py — схема SQLite, JOIN-выборки, конвертеры строк и миграции.
+"""schema.py — схема SQLite, JOIN-выборки, конвертеры строк.
 
 Здесь всё, что описывает ФОРМУ данных: DDL (SCHEMA), выборки, собирающие
 нормализованные таблицы в одну строку, builder'ы доменных моделей из строк и
-SchemaMixin с init_schema и миграциями. Порядок вызовов в init_schema —
-контракт совместимости с минимальной поддерживаемой версией.
+SchemaMixin с init_schema. Миграций нет: минимальная поддерживаемая версия —
+3.2.0, её схема полная, и хост ниже проходит через неё (README-bot §9a);
+копия с более старой схемой не разворачивается — schema_gap.
 """
 
 from __future__ import annotations
@@ -302,6 +303,8 @@ CREATE TABLE IF NOT EXISTS device_traffic (
     traffic_tx_month    INTEGER NOT NULL DEFAULT 0,
     traffic_rx_period   INTEGER NOT NULL DEFAULT 0,
     traffic_tx_period   INTEGER NOT NULL DEFAULT 0,
+    rf_rx_month         INTEGER NOT NULL DEFAULT 0,      -- РФ-часть потребления за месяц (v3.1.0)
+    rf_tx_month         INTEGER NOT NULL DEFAULT 0,
     last_handshake      INTEGER,                         -- unix; не затираем пустым
     missing_count       INTEGER NOT NULL DEFAULT 0,      -- сверок подряд без peer в конфиге
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
@@ -529,6 +532,8 @@ CREATE TABLE IF NOT EXISTS traffic_monthly (
     month               TEXT    NOT NULL,             -- 'YYYY-MM' завершившегося месяца
     rx                  INTEGER NOT NULL DEFAULT 0,
     tx                  INTEGER NOT NULL DEFAULT 0,
+    rf_rx               INTEGER NOT NULL DEFAULT 0,      -- РФ-часть месяца (v3.1.0)
+    rf_tx               INTEGER NOT NULL DEFAULT 0,
     archived_at         TEXT    NOT NULL
 );
 
@@ -554,9 +559,57 @@ CREATE INDEX IF NOT EXISTS idx_tm_cli       ON traffic_monthly(client_id);
 """
 
 
+# Что добавили в схему миграции версий ниже 3.2.0 (сняты): по этим признакам
+# сторож восстановления отличает копию, снятую до минимума, — такую базу
+# нечем довести, и бот на ней упадёт на первом же запросе.
+_FLOOR_COLUMNS = (
+    ("clients", "kind"), ("clients", "tg_name"), ("clients", "tg_name_at"), ("clients", "tg_username"),
+    ("devices", "holder_client_id"),
+    ("client_pause", "pause_balance_days"), ("client_pause_histories", "pause_balance_days"),
+    ("gateways", "lan_mode"),
+    ("device_traffic", "rf_rx_month"), ("device_traffic", "rf_tx_month"),
+    ("traffic_monthly", "rf_rx"), ("traffic_monthly", "rf_tx"),
+)
+
+
+def schema_gap(path: str) -> str:
+    """Чем схема базы в копии отстаёт от минимума 3.2.0: «» — ничем, иначе
+    первый признак словами. Таблицы, которых в базе нет вовсе, не в счёт —
+    их создаст SCHEMA; пустой или нечитаемый файл — «не база SQLite»."""
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return "не база SQLite"
+    try:
+        try:
+            tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        except sqlite3.DatabaseError:
+            return "не база SQLite"
+        if not tables:
+            return "не база SQLite"
+        for table, col in _FLOOR_COLUMNS:
+            if table not in tables:
+                continue
+            have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+            if col not in have:
+                return f"в таблице {table} нет колонки {col}"
+        if "devices" in tables:
+            have = {r[1] for r in con.execute("PRAGMA table_info(devices)")}
+            if "full_access_link" in have:
+                return "в таблице devices осталась колонка full_access_link"
+            if "is_gateway" in have and con.execute("SELECT 1 FROM devices WHERE is_gateway = 1 LIMIT 1").fetchone():
+                return "шлюз помечен флагом devices.is_gateway, а не слотом"
+        if "device_friend" in tables and con.execute(
+                "SELECT 1 FROM device_friend WHERE friend_status = 'active' LIMIT 1").fetchone():
+            return "в device_friend есть активные «друзья» прежнего образца"
+        return ""
+    finally:
+        con.close()
+
+
 class SchemaMixin:
-    """Инициализация схемы и миграции. Требует ядро (_connection/_tx) и
-    _insert_guest из ClientsMixin."""
+    """Инициализация схемы. Требует ядро (_connection/_tx) и _insert_guest
+    из ClientsMixin (служебный клиент)."""
 
     # ── Инициализация ────────────────────────────────────────────────────────
 
@@ -564,172 +617,15 @@ class SchemaMixin:
         """Создаёт таблицы (идемпотентно) и гарантирует служебного клиента.
 
         Схема нормализована (identity/подписка/квота/grace/pause разведены по
-        таблицам). Для БОЕВОЙ БД (не пересоздаём!) миграции идут после SCHEMA
-        и идемпотентны. Их одна: минимальная поддерживаемая версия — v2.10.0
-        (README-bot §9a), а её схема уже полная; всё, что доводило БД версий
-        старше (колонки маршрутизации и переезда, переименование sampled_at,
-        флаг шлюза, схлопывание режимов личных списков…), снято — хост старше
-        проходит через v2.10.0 и получает это там.
+        таблицам). Боевую БД не пересоздаём; миграций нет — минимальная
+        поддерживаемая версия 3.2.0 (README-bot §9a), её схема полная, всё,
+        что доводило БД версий старше (гостевые колонки, счёт паузы, слоты
+        шлюзов, режим без VPN, РФ-трафик), снято: хост старше проходит через
+        3.2.0 и получает это там, копия старше не разворачивается (schema_gap).
         """
-        self._migrate_guest_role_columns()
-        self._migrate_pause_balance_column()
         with self._tx() as cur:
             cur.executescript(SCHEMA)
-        self._migrate_drop_full_access()
         self._ensure_service_client()
-        self._migrate_friends_to_guests()
-        self._migrate_gateway_slots()
-        self._migrate_gateway_lan_mode()
-        self._migrate_rf_traffic()
-
-    def _migrate_gateway_slots(self) -> None:
-        """v2.24.0: флаг devices.is_gateway → строка
-        в gateways (слот 1, предпочтительный, линк из конфига). Порт и /30
-        линка — из живого конфига интерфейса, без него — умолчания слота 1.
-        Ключи состояния бандла получают суффикс слота. Идемпотентно: второй
-        проход не находит флага."""
-        from awgbot.core import config
-        con = self._connection()
-        row = con.execute("SELECT id FROM devices WHERE is_gateway = 1").fetchone()
-        if row is None:
-            return
-        link_if = config.ROUTING_GW_INTERFACE or "awglink"
-        port, cidr = _link_conf_params(link_if)
-        with self._tx() as cur:
-            have = cur.execute("SELECT 1 FROM gateways WHERE id = 1").fetchone()
-            if have is None:
-                cur.execute(
-                    "INSERT INTO gateways(id, device_id, link_if, link_port, link_cidr, preferred, "
-                    "home_subnets, label, created_at) VALUES (1, ?, ?, ?, ?, 1, ?, '', ?)",
-                    (int(row["id"]), link_if, port, cidr,
-                     " ".join(config.ROUTING_HOME_SUBNETS), _now_iso()))
-                for old, new in (("gw_bundle_issued_at", "gw_bundle_issued_at_1"),
-                                 ("gw_bundle_ssh_allow", "gw_bundle_ssh_allow_1"),
-                                 ("gw_bundle_ssh_allow_notified", "gw_bundle_ssh_allow_notified_1")):
-                    v = cur.execute("SELECT value FROM server_state WHERE key = ?", (old,)).fetchone()
-                    if v is not None:
-                        cur.execute("INSERT OR REPLACE INTO server_state(key, value) VALUES (?, ?)",
-                                    (new, v["value"]))
-                        cur.execute("DELETE FROM server_state WHERE key = ?", (old,))
-                cur.execute("INSERT OR REPLACE INTO server_state(key, value) VALUES ('routing_active_gateway', '1')")
-            cur.execute("UPDATE devices SET is_gateway = 0 WHERE is_gateway = 1")
-
-    def _migrate_gateway_lan_mode(self) -> None:
-        """v3.0.0: gateways.lan_mode — «за шлюзом — без
-        VPN» по слоту. Идемпотентно."""
-        con = self._connection()
-        tables = {r["name"] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if "gateways" not in tables:
-            return
-        have = {r["name"] for r in con.execute("PRAGMA table_info(gateways)")}
-        if "lan_mode" not in have:
-            with self._tx() as cur:
-                cur.execute("ALTER TABLE gateways ADD COLUMN lan_mode INTEGER NOT NULL DEFAULT 0")
-
-    def _migrate_rf_traffic(self) -> None:
-        """v3.1.0: device_traffic.rf_rx_month/rf_tx_month и
-        traffic_monthly.rf_rx/rf_tx — РФ-часть потребления. Идемпотентно."""
-        con = self._connection()
-        for table, cols in (("device_traffic", ("rf_rx_month", "rf_tx_month")),
-                            ("traffic_monthly", ("rf_rx", "rf_tx"))):
-            have = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
-            missing = [c for c in cols if c not in have]
-            if missing:
-                with self._tx() as cur:
-                    for c in missing:
-                        cur.execute(f"ALTER TABLE {table} ADD COLUMN {c} INTEGER NOT NULL DEFAULT 0")
-
-    def _migrate_guest_role_columns(self) -> None:
-        """v2.20.0: clients.kind и devices.holder_client_id.
-        CREATE TABLE IF NOT EXISTS существующие таблицы не доводит — колонки
-        добавляются здесь, ДО SCHEMA (индекс по holder_client_id в SCHEMA
-        требует колонку). Идемпотентно."""
-        con = self._connection()
-        tables = {r["name"] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if "clients" in tables:
-            have = {r["name"] for r in con.execute("PRAGMA table_info(clients)")}
-            if "kind" not in have:
-                with self._tx() as cur:
-                    cur.execute("ALTER TABLE clients ADD COLUMN kind TEXT NOT NULL DEFAULT 'owner'")
-            if "tg_name" not in have:
-                with self._tx() as cur:
-                    cur.execute("ALTER TABLE clients ADD COLUMN tg_name TEXT NOT NULL DEFAULT ''")
-            if "tg_name_at" not in have:
-                with self._tx() as cur:
-                    cur.execute("ALTER TABLE clients ADD COLUMN tg_name_at TEXT")
-            if "tg_username" not in have:
-                with self._tx() as cur:
-                    cur.execute("ALTER TABLE clients ADD COLUMN tg_username TEXT NOT NULL DEFAULT ''")
-                    # имена уже свежие — стартовый проход их не тронул бы;
-                    # юзернеймы нужны сразу у всех, поэтому «состарить» разово
-                    cur.execute("UPDATE clients SET tg_name_at = NULL")
-        if "devices" in tables:
-            have = {r["name"] for r in con.execute("PRAGMA table_info(devices)")}
-            if "holder_client_id" not in have:
-                with self._tx() as cur:
-                    cur.execute("ALTER TABLE devices ADD COLUMN holder_client_id INTEGER "
-                                "REFERENCES clients(id) ON DELETE SET NULL")
-
-    def _migrate_pause_balance_column(self) -> None:
-        """v2.22.0: счёт дней паузы (client_pause.pause_balance_days и та же
-        колонка в истории). Идемпотентно. Сами балансы для действующих профилей
-        считает services.migrate_pause_balances — разово, по истории продлений."""
-        con = self._connection()
-        for table in ("client_pause", "client_pause_histories"):
-            exists = con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                                 (table,)).fetchone()
-            if exists is None:
-                continue
-            have = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
-            if "pause_balance_days" not in have:
-                with self._tx() as cur:
-                    cur.execute(f"ALTER TABLE {table} ADD COLUMN pause_balance_days "
-                                "INTEGER NOT NULL DEFAULT 0")
-
-    def _migrate_friends_to_guests(self) -> None:
-        """v2.20.0: прежние «друзья» (device_friend.status = active, tg на
-        устройстве) становятся гостевыми профилями-держателями. Имя — «Друг» до
-        первого сообщения (middleware подтянет из Telegram). Друг, который уже
-        обычный клиент, держит устройство своим профилем. Идемпотентно: строк
-        active после переноса не остаётся."""
-        con = self._connection()
-        rows = con.execute(
-            "SELECT device_id, friend_tg_id FROM device_friend "
-            "WHERE friend_status = 'active' AND friend_tg_id IS NOT NULL").fetchall()
-        if not rows:
-            return
-        with self._tx() as cur:
-            for r in rows:
-                tg = int(r["friend_tg_id"])
-                holder = cur.execute("SELECT id FROM clients WHERE tg_id = ?", (tg,)).fetchone()
-                hid = int(holder["id"]) if holder is not None else self._insert_guest(cur, tg, "Друг")
-                cur.execute("UPDATE devices SET holder_client_id = ? WHERE id = ?",
-                            (hid, int(r["device_id"])))
-                cur.execute("DELETE FROM device_friend WHERE device_id = ?", (int(r["device_id"]),))
-
-    def _migrate_drop_full_access(self) -> None:
-        """Разовая зачистка: колонка devices.full_access_link осталась от
-        вырезанной фичи «устройство полного доступа».
-
-        В ней лежала зашифрованная vpn://-ссылка с root-доступом к хосту. Фичи
-        больше нет, а секрет — есть: он продолжал бы ездить в каждом бэкапе,
-        уходящем в Telegram. Поэтому сначала затираем значение, и только потом
-        пробуем убрать саму колонку. Порядок именно такой: DROP COLUMN появился
-        в SQLite 3.35 и может не пройти (старый sqlite, вьюха поверх таблицы) —
-        тогда секрет всё равно уже стёрт, а лишняя пустая колонка безвредна.
-        Идемпотентно: колонки нет → выходим сразу."""
-        con = self._connection()
-        have = {r["name"] for r in con.execute("PRAGMA table_info(devices)")}
-        if "full_access_link" not in have:
-            return
-        with self._tx() as cur:
-            cur.execute("UPDATE devices SET full_access_link = NULL "
-                        "WHERE full_access_link IS NOT NULL")
-        try:
-            with self._tx() as cur:
-                cur.execute("ALTER TABLE devices DROP COLUMN full_access_link")
-        except sqlite3.OperationalError:
-            pass                    # колонка осталась пустой — это безвредно
 
     def _ensure_service_client(self) -> None:
         """Служебный клиент «Устройства без клиента» — ровно один, создаётся один раз.
