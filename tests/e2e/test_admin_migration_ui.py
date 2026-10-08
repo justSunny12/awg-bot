@@ -95,7 +95,7 @@ async def test_overview_lists_laggards_first_and_links_only_them(services, fake_
     msg, text, buttons = await _open(services, fake_bot, "migration")
     ksu, petya = world["ksu"], world["petya"]
     assert text.split("\n\n") == [
-        "🚚 <b>Переезд</b> (порт: 51820 → 51821, подсеть: <code>10.8.1</code> → <code>10.9.1</code>, awg: gen1 → gen2)",
+        "🚚 <b>Переезд</b> · порт: 51820 → 51821 · подсеть: <code>10.8.1</code> → <code>10.9.1</code> · awg: gen1 → gen2",
         f"🔴 {_link(f'migration-{ksu.id}', 'Ксюша')}: 1/3 устройств",
         f"🔴 {_link(f'migration-{petya.id}', 'Петя')}: 0/1 устройств",
         "🟢 Коля: 2/2 устройств",
@@ -109,7 +109,7 @@ async def test_overview_head_drops_parameters_that_do_not_change(services, fake_
     читается как ошибка настройки."""
     _params(monkeypatch, port=(51820, 51820), generation=(2, 2))
     _, text, _ = await _open(services, fake_bot, "migration")
-    assert text.split("\n")[0] == "🚚 <b>Переезд</b> (подсеть: <code>10.8.1</code> → <code>10.9.1</code>)", text
+    assert text.split("\n")[0] == "🚚 <b>Переезд</b> · подсеть: <code>10.8.1</code> → <code>10.9.1</code>", text
 
 
 def test_overview_head_without_known_changes_and_without_profiles():
@@ -161,7 +161,7 @@ async def test_back_from_the_profile_leads_to_the_overview(services, fake_bot, w
     cb = FakeCallback(message=nav, user_id=ADMIN, bot=fake_bot)
     await panel.admin_migration_overview(cb, services)
     shown = [s for s in nav.sent if s[0] in ("edit_text", "answer")]
-    assert shown and shown[-1][1].startswith("🚚 <b>Переезд</b> (порт: 51820 → 51821"), shown
+    assert shown and shown[-1][1].startswith("🚚 <b>Переезд</b> · порт: 51820 → 51821"), shown
 
 
 async def test_stale_profile_link_falls_back_to_the_home(services, fake_bot, world):

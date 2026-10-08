@@ -34,13 +34,19 @@ def tick(on: bool) -> str:
     return "✅" if on else "☑️"
 
 
-def head(title: str, status: str = "", meta=()) -> str:
+def head(title: str, status: str = "", meta=(), value=None) -> str:
     """Шапка экрана: «🔔 <b>Уведомления</b>», «⬆️ <b>Обновления</b> · v3.2.0 🟢 актуальна»,
     «💾 <b>Бэкапы</b> ✅ вкл · 🔐 фраза задана». title — значок и имя через пробел
     (имя уже экранировано вызывающим, если пришло с хоста); status — вплотную
-    к имени через пробел; meta — через « · »."""
+    к имени через пробел; meta — через « · »; value — форма «ключ: значение»
+    («💳 <b>Подписка:</b> годовая», «📶 <b>Онлайн:</b> 2»), двоеточие внутри жирного."""
     icon, _, name = title.partition(" ")
-    out = f"{icon} <b>{name}</b>" if name else f"<b>{icon}</b>"
+    bold = name or icon
+    lead = icon if name else ""
+    if value is not None:
+        out = f"{lead} <b>{bold}:</b>".lstrip() + (f" {value}" if value != "" else "")
+    else:
+        out = f"{lead} <b>{bold}</b>".lstrip()
     if status:
         out += f" {status}"
     for m in meta:
@@ -48,6 +54,21 @@ def head(title: str, status: str = "", meta=()) -> str:
             continue
         out += f" · {m}"
     return out
+
+
+def prompt(title: str, text: str) -> str:
+    """Приглашение к вводу: «✉️ <b>Подключение ящика</b> — пришли адрес…»."""
+    return f"{head(title)} — {text}"
+
+
+def label(text: str) -> str:
+    """Подзаголовок-ярлык списка внутри экрана: «<b>Предупреждения:</b>»."""
+    return f"<b>{text}:</b>"
+
+
+def sub(text: str) -> str:
+    """Подзаголовок внутри экрана без двоеточия: «<b>OpenWrt</b>»."""
+    return f"<b>{text}</b>"
 
 
 def screen(title: str, status: str = "", *, meta=(), lines=(), details: str = "",

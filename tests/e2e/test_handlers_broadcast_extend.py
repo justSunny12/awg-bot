@@ -131,7 +131,7 @@ async def test_days_preset_moves_to_the_text_prompt(services, make_active_client
     text, labels = await _press(admin_h.broadcast_days_preset, fake_bot,
                                 PresetCB(kind="bc_days", val=7), state, services)
     assert (await state.get_data())["days"] == 7 and await state.get_state() == "Broadcast:text"
-    assert text.startswith("📢 <b>Текст для профиля</b> Анна · продление на 7 дней\n"), text
+    assert text.startswith("📢 <b>Текст для профиля:</b> Анна · продление на 7 дней\n"), text
     assert labels == ["⬅️ Отмена"]
 
 
@@ -154,7 +154,7 @@ async def test_days_other_validates_then_prompts_for_text(services, make_active_
     await admin_h.broadcast_days(ok, state, services)
     assert (await state.get_data())["days"] == 10 and await state.get_state() == "Broadcast:text"
     prompt = [s for s in ok.sent if s[0] == "answer"][-1]
-    assert prompt[1].startswith("📢 <b>Текст для профиля</b> Анна · продление на 10 дней\n"), prompt[1]
+    assert prompt[1].startswith("📢 <b>Текст для профиля:</b> Анна · продление на 10 дней\n"), prompt[1]
     assert prompt[2] is not None, "приглашение к тексту без кнопки отмены"
 
 

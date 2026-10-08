@@ -18,12 +18,9 @@ def settings_root_text(installed: str | None = None) -> str:
     return ui.head("⚙️ Настройки", meta=[_e(_ver(installed if installed is not None else config.INSTALLED_VERSION))])
 
 
-SETTINGS_ROOT = "⚙️ <b>Настройки</b>"
-
-
 # ── 🔔 Уведомления ───────────────────────────────────────────────────────────
 
-SETTINGS_NOTIFY_CLIENTS = "👥 <b>О чём сообщать:</b>"
+SETTINGS_NOTIFY_CLIENTS = ui.head("👥 О чём сообщать", value="")
 
 
 def settings_notify_text(br) -> str:
@@ -49,9 +46,6 @@ def settings_notify_text(br) -> str:
     return "\n".join(lines)
 
 
-SETTINGS_NOTIFY = "🔔 <b>Уведомления</b>"
-
-
 # ── 💳 Подписки ──────────────────────────────────────────────────────────────
 
 def settings_subs_text() -> str:
@@ -61,7 +55,7 @@ def settings_subs_text() -> str:
     year = s.get_int("pause.pause_max_total_days", 28)
     month = s.get_int("pause.monthly_pause_days", 2)
     return "\n".join([
-        "💳 <b>Подписки</b> — правила для всех",
+        ui.head("💳 Подписки", meta=["правила для всех"]),
         f"Бонус {bonus} ГБ при исчерпании · отсрочка {grace} дн.",
         f"Пауза: год +{year} (до {2 * year}), месяц +{month} (до {12 * month})",
         details("Действуют с момента правки и на уже выданные подписки тоже.\n"
@@ -74,9 +68,6 @@ def settings_subs_text() -> str:
                 "или отсрочка лишают бонуса за следующее продление на месяц.\n"
                 "Лимиты конкретного профиля — в его карточке"),
     ])
-
-
-SETTINGS_SUBS = "💳 <b>Подписки</b> — правила для всех"
 
 
 # ── ✉️ E-mail ────────────────────────────────────────────────────────────────
@@ -106,8 +97,8 @@ def settings_email_text(acc, last_check: tuple, br, resume_on=None, resume_addr:
     return "\n".join(lines)
 
 
-EMAIL_ASK_ADDRESS = ("✉️ <b>Подключение ящика</b> — пришли адрес, от имени которого бот будет читать и "
-                     "слать почту: <code>box@icloud.com</code>")
+EMAIL_ASK_ADDRESS = ui.prompt("✉️ Подключение ящика", "пришли адрес, от имени которого бот будет читать и "
+                              "слать почту: <code>box@icloud.com</code>")
 EMAIL_ASK_IMAP = ("Домен незнакомый — укажи серверы сам.\n"
                   "IMAP-сервер и порт: <code>imap.example.com:993</code>")
 EMAIL_ASK_SMTP = "SMTP-сервер и порт: <code>smtp.example.com:587</code>"
@@ -186,9 +177,6 @@ def settings_mon_text(br) -> str:
         f"{br.mon_outage} {mins} мин — " + ("со звуком круглые сутки" if loud else "по правилам тихих часов")])
 
 
-SETTINGS_MON = "🩺 <b>Мониторинг</b>"
-
-
 # ── 💾 Бэкапы ────────────────────────────────────────────────────────────────
 
 def settings_backup_text(encryption: bool = False, channel: str = "telegram") -> str:
@@ -205,15 +193,12 @@ def settings_backup_text(encryption: bool = False, channel: str = "telegram") ->
     return "\n".join(lines)
 
 
-SETTINGS_BACKUP = "💾 <b>Бэкапы</b>\nВосстановить — пришли боту файл бэкапа (.tgz.enc)"
-
-
 def restore_offer(created_at_iso: str, br, iface_warning: str = "") -> str:
     """Что в копии — у роли своё (backup_contents); iface_warning — цена
     перезапуска AWG (restore_warning), только если восстановление затронет
     интерфейсы."""
     when = timeutil.fmt_dt_ui(timeutil.parse_iso(created_at_iso)) if created_at_iso else "?"
-    text = ui.head(f"♻️ Бэкап от {when}", "— восстановить?") + f"\nВсё вернётся к тому моменту: {br.backup_contents}"
+    text = ui.prompt(f"♻️ Бэкап от {when}", "восстановить?") + f"\nВсё вернётся к тому моменту: {br.backup_contents}"
     return text + (f"\n\n{iface_warning}" if iface_warning else "")
 
 
@@ -259,11 +244,17 @@ def backup_encryption_text(mode: str, br) -> str:
                       "выбрасывай её, пока они нужны"))
 
 
-BACKUP_ASK_PASSPHRASE = "🔐 <b>Парольная фраза</b> — не короче 8 символов; сообщение удалю сразу после приёма"
+BACKUP_ASK_PASSPHRASE = ui.prompt("🔐 Парольная фраза", "не короче 8 символов; сообщение удалю сразу после приёма")
 BACKUP_ASK_PASSPHRASE_AGAIN = "Повтори фразу ещё раз — так исключим опечатку"
 BACKUP_PASSPHRASE_MISMATCH = "⚠️ Фразы не совпали — начнём заново: пришли фразу"
 BACKUP_PASSPHRASE_SET = "✅ Фраза задана — следующие копии уйдут шифрованными"
-BACKUP_WHEN_PROMPT = "✏️ <b>День и час автобэкапа</b> · сейчас {day}-го в {hour:02d}:00 · пришли два числа: <code>1 12</code>"
+
+
+def backup_when_prompt(day: int, hour: int) -> str:
+    return ui.head("✏️ День и час автобэкапа", meta=[f"сейчас {day}-го в {hour:02d}:00",
+                                                      "пришли два числа: <code>1 12</code>"])
+
+
 BACKUP_WHEN_BAD = "⚠️ Нужны два числа: день месяца 1–28 и час 0–23, например <code>1 12</code>"
 
 
@@ -300,9 +291,6 @@ def settings_svc_text(br, state: str = "", progress=None, available: bool = Fals
     return "\n".join(lines)
 
 
-SETTINGS_SVC = "🔧 <b>Сервис</b>"
-
-
 # ── ⬆️ Обновления ────────────────────────────────────────────────────────────
 
 def settings_upd_text(installed: str | None = None, target=None, blocked: str = "",
@@ -324,8 +312,6 @@ def settings_upd_text(installed: str | None = None, target=None, blocked: str = 
         lines.append(body)
     return "\n".join(lines)
 
-
-SETTINGS_UPD = "⬆️ <b>Обновления</b>"
 
 # границы валидации ввода: dotted-ключ → (мин, макс, подпись, единица)
 SETTINGS_BOUNDS = {
@@ -474,7 +460,7 @@ def address_list_line(n: int, tail: str = "") -> str:
 def warnings_block(items: list[str]) -> list[str]:
     """Предупреждения раздела — отдельным блоком после пустой строки, по
     одному на строку; нет предупреждений — ничего."""
-    return ["", "<b>Предупреждения:</b>", *items] if items else []
+    return ["", ui.label("Предупреждения"), *items] if items else []
 
 
 def settings_firewall_text(st: dict) -> str:
@@ -522,7 +508,8 @@ def ssh_owner_refusal(st: dict, listening: int | None, br) -> str:
         now = f"sshd слушает {listening}" if listening else "sshd не запущен"
         if st.get("owner_port"):
             now += f", в OMV задан {st['owner_port']}"
-        return (f"⛔ <b>Смена порта SSH не выполнена: файлом sshd_config на этом {place} управляет OMV.</b>\n\n"
+        return (ui.head("⛔ Смена порта SSH не выполнена",
+                        value=f"файлом sshd_config на этом {place} управляет OMV") + "\n\n"
                 "Порт задаётся в OMV: Службы → SSH → «Порт», затем «Применить» в жёлтой плашке. "
                 "Если поменять его здесь, настройка проживёт до первого применения изменений в OMV — "
                 "он перепишет sshd_config своим шаблоном, и sshd вернётся на порт из OMV.\n\n"
@@ -530,8 +517,9 @@ def ssh_owner_refusal(st: dict, listening: int | None, br) -> str:
                 "на него фильтр — из туннеля, из локальной сети и снаружи. Проброс порта на роутере "
                 f"(при наличии) поправь сам.\n\nСейчас: {now}.")
     f = (st.get("owner_files") or ["/etc/ssh/sshd_config"])[0]
-    return (f"⛔ <b>Смена порта SSH не выполнена: файлом sshd_config на этом {place} управляет другой "
-            f"процесс.</b>\n\nВ <code>{_e(f)}</code> сказано: «<i>{_e(st.get('owner_detail') or '')}</i>». "
+    return (ui.head("⛔ Смена порта SSH не выполнена",
+                    value=f"файлом sshd_config на этом {place} управляет другой процесс")
+            + f"\n\nВ <code>{_e(f)}</code> сказано: «<i>{_e(st.get('owner_detail') or '')}</i>». "
             "Порт меняй там, откуда файл генерируется, иначе настройка проживёт до его следующей "
             "генерации. Бот увидит новый порт сам и переведёт на него фильтр.")
 

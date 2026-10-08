@@ -208,7 +208,7 @@ async def test_profile_traffic_tree_sorts_devices_and_drops_zeros(
     _profile(services, make_active_client, "Чужой", 7132, traffic=(9 * GB, 9 * GB))
     text, labels, cbs = await _deep(services, fake_bot, f"traffic-{c.id}")
     assert text.split("\n") == [
-        f"📊 <b>Трафик за {texts.month_label()}</b>, Ксюша: 8 ГБ (↑2 ↓6)",
+        f"📊 <b>Трафик за {texts.month_label()}:</b> 8 ГБ (↑2 ↓6) · профиль Ксюша",
         f"└ {RF_ALL}: 3 ГБ (↑1 ↓2)",
         "",
         "⚪ iPhone: 6 ГБ (↑1 ↓5)",
@@ -275,7 +275,7 @@ async def test_both_home_links_open_the_traffic_tree_and_remove_the_command(
 async def test_profile_links_open_the_profile_traffic(services, fake_bot, make_active_client, fmt_):
     c, _ = _profile(services, make_active_client, "Ксюша", 7142, traffic=(GB, GB))
     text, labels, _ = await _deep(services, fake_bot, fmt_.format(id=c.id))
-    assert text.startswith(f"📊 <b>Трафик за {texts.month_label()}</b>, Ксюша: "), text
+    assert text.startswith(f"📊 <b>Трафик за {texts.month_label()}:</b> "), text
     assert labels == ["⬅️ Назад"]
 
 

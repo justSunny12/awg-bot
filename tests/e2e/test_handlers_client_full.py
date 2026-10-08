@@ -341,7 +341,7 @@ async def test_pause_full_cycle(services, fake_bot, make_active_client):
     cb, nav = _cb(fake_bot, 5017)
     await ch.pause_ask(cb, PauseCB(action="ask", ref=client.id), cl, services, FakeState())
     text, labels = last_screen(nav)
-    assert text.startswith("⏸️ <b>Пауза</b> — до 28 дн.\n") and labels == [
+    assert text.startswith("⏸️ <b>Пауза</b> · до 28 дн.\n") and labels == [
         "7 дн.", "14 дн.", "28 дн.", "✏️ Другое", "⬅️ Отмена"], labels
     assert not _fresh(services, client).is_paused, "экран паузы уже поставил паузу"
     cb2, nav2 = _cb(fake_bot, 5017)
@@ -396,7 +396,7 @@ async def test_pause_warning_only_without_mail_escape(services, fake_bot, make_a
     cb, nav = _cb(fake_bot, 5024)
     await ch.pause_ask(cb, PauseCB(action="ask", ref=client.id), cl, services, FakeState())
     text = last_screen(nav)[0]
-    assert "⚠️" not in text and text.startswith("⏸️ <b>Пауза</b> — до 28 дн."), text
+    assert "⚠️" not in text and text.startswith("⏸️ <b>Пауза</b> · до 28 дн."), text
 
 
 async def test_subscription_screen_variants(services, fake_bot, make_active_client):

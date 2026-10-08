@@ -87,8 +87,8 @@ async def start_edit(cb: CallbackQuery, services, hooks: Hooks, state: FSMContex
     if key == "email.resume_address":
         prompt = texts.email_ask_resume_address(await call(services.email_resume_address))
     elif key == "backup_when":
-        prompt = texts.BACKUP_WHEN_PROMPT.format(day=settings.get_int("app.scheduler.backup_day", 1),
-                                                 hour=settings.get_int("app.scheduler.backup_hour", 12))
+        prompt = texts.backup_when_prompt(settings.get_int("app.scheduler.backup_day", 1),
+                                          settings.get_int("app.scheduler.backup_hour", 12))
     elif key == "app.client_config.dns1":
         d1 = str(settings.get(key, "") or "")
         d2 = str(settings.get("app.client_config.dns2", "") or "")

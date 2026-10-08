@@ -167,7 +167,7 @@ def test_audience_names_are_profile_links(services, make_active_client):
     c = make_active_client(name="Один", tg_id=6002)
     link = f'<a href="https://t.me/awg_test_bot?start=cl-{c.id}">Один</a>'
     assert texts.broadcast_prompt([c], False, bot_username="awg_test_bot").startswith(
-        f"📢 <b>Текст для профиля</b> {link}\n")
+        f"📢 <b>Текст для профиля:</b> {link}\n")
     assert link in texts.broadcast_preview("т", 1, [c], False, bot_username="awg_test_bot")
 
 
@@ -176,7 +176,7 @@ def test_audience_wording_matches_number_of_profiles(make_active_client):
     from awgbot.bot import texts
     k = make_active_client(name="Ксюша", tg_id=6003)
     d = make_active_client(name="Дима", tg_id=6004)
-    assert texts.broadcast_prompt([k], False).startswith("📢 <b>Текст для профиля</b> Ксюша\n")
+    assert texts.broadcast_prompt([k], False).startswith("📢 <b>Текст для профиля:</b> Ксюша\n")
     assert texts.broadcast_prompt([k, d], False).startswith("📢 <b>Текст для профилей:</b> Ксюша, Дима\n")
     assert "с кем он делится" in texts.broadcast_preview("т", 2, [k], True)
     assert "с кем они делятся" in texts.broadcast_preview("т", 3, [k, d], True)

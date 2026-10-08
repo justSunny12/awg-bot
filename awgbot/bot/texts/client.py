@@ -316,7 +316,7 @@ def device_card_own(dev, profile_limit_bytes: int) -> str:
     """Карточка своего устройства: «🟢 iPhone» / «Был в сети 2 мин назад ·
     📊 3.2 из 50 ГБ (лимит устройства)» + блокировка, приглашение, пометка
     «добавлено не ботом». Адрес устройства — только у админа."""
-    parts = [f"{device_state(dev)} <b>{_e(dev.name)}</b>",
+    parts = [ui.head(f"{device_state(dev)} {_e(dev.name)}"),
              f"{_seen(dev)} · {_usage(dev, profile_limit_bytes, 'лимит профиля')}"]
     blocked = _blocked_line(dev)
     if blocked:
@@ -330,7 +330,7 @@ def device_card_own(dev, profile_limit_bytes: int) -> str:
 
 def device_card_lent(dev, profile_limit_bytes: int) -> str:
     """Своё переданное — у владельца: кто управляет, чей лимит."""
-    parts = [f"{device_state(dev)} <b>{_e(dev.name)}</b> · управляется профилем {holder_link(dev)}",
+    parts = [ui.head(f"{device_state(dev)} {_e(dev.name)}", meta=[f"управляется профилем {holder_link(dev)}"]),
              f"{_seen(dev)} · {_usage(dev, profile_limit_bytes, 'лимит твоего профиля')}"]
     blocked = _blocked_line(dev)
     if blocked:
@@ -340,7 +340,7 @@ def device_card_lent(dev, profile_limit_bytes: int) -> str:
 
 def device_card_held(dev, owner_limit_bytes: int) -> str:
     """Удерживаемое (от друга) — у держателя: от кого, чей лимит."""
-    parts = [f"{device_state(dev)} <b>{_e(dev.name)}</b> · от профиля {owner_link(dev)}",
+    parts = [ui.head(f"{device_state(dev)} {_e(dev.name)}", meta=[f"от профиля {owner_link(dev)}"]),
              f"{_seen(dev)} · {_usage(dev, owner_limit_bytes, f'лимит профиля {_e(owner_name(dev))}')}"]
     blocked = _blocked_line(dev)
     if blocked:
@@ -716,11 +716,11 @@ def subscription_text(client, *, routing_visible: bool) -> str:
     access = access_status_line(client)
     lines = [access] if access and (pause_visible or not paused) else []
     if pause_visible and mode == "user":
-        lines.append(f"💳 <b>Подписка:</b> {kind}")          # «на паузе» — строкой ниже, без повтора
+        lines.append(ui.head("💳 Подписка", value=kind))          # «на паузе» — строкой ниже, без повтора
     elif pause_visible:
-        lines.append(f"💳 <b>Подписка:</b> {kind} · ⏸️ приостановлена администратором")
+        lines.append(ui.head("💳 Подписка", value=kind, meta=["⏸️ приостановлена администратором"]))
     else:
-        lines.append(f"💳 <b>Подписка:</b> {kind} · {subscription_status_only(client, expiring=True)}")
+        lines.append(ui.head("💳 Подписка", value=kind, meta=[subscription_status_only(client, expiring=True)]))
     start = timeutil.parse_iso(client.period_start) if client.period_start else None
     end_iso = client.effective_period_end
     if end_iso:
@@ -772,7 +772,7 @@ PAUSE_WARNING_LINE = f"⚠️ На паузе VPN выключен. {TELEGRAM_RI
 def pause_ask(available_days: int, *, email_resume: bool = False) -> str:
     """Экран паузы: сколько доступно, что происходит, предупреждение — только
     когда аварийного выхода по почте нет."""
-    lines = [f"⏸️ <b>Пауза</b> — до {available_days} дн.",
+    lines = [ui.head("⏸️ Пауза", meta=[f"до {available_days} дн."]),
              "Действие подписки приостановится; снимешь раньше — неизрасходованные дни вернутся"]
     if not email_resume:
         lines.append(PAUSE_WARNING_LINE)

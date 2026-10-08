@@ -162,7 +162,7 @@ def migration_overview_text(d: dict, bot_username: str = "") -> str:
             fmt_ = ((lambda v: f"gen{v}") if key == "generation"
                     else (lambda v: f"<code>{_e(str(v))}</code>") if key == "subnet" else str)
             params.append(f"{label}: {fmt_(old)} → {fmt_(new)}")
-    head = "🚚 <b>Переезд</b>" + (f" ({', '.join(params)})" if params else "")
+    head = ui.head("🚚 Переезд", meta=params)
     rows = sorted(d.get("rows") or [], key=lambda r: -(int(r[2]) - int(r[1])))
     if not rows:
         return head + "\n\nПереезжать некому"
@@ -179,7 +179,7 @@ def migration_client_text(client, rows, bot_username: str = "") -> str:
     с датой последнего подключения. rows — [(устройство, переехало, unix-время
     последнего подключения)]."""
     done = sum(1 for _d, moved, _t in rows if moved)
-    head = f"🚚 <b>Переезд:</b> {profile_link(client, bot_username)}, {done}/{len(rows)} устройств"
+    head = ui.head("🚚 Переезд", value=f"{profile_link(client, bot_username)}, {done}/{len(rows)} устройств")
     items = []
     for dev, moved, ts in rows:
         seen = (timeutil.fmt_dt_ui(datetime.datetime.fromtimestamp(int(ts), tz=datetime.timezone.utc))
@@ -210,7 +210,7 @@ def online_devices_text(rows, bot_username: str = "") -> str:
     карточку, имя профиля — на карточку профиля; устройства без профиля (и
     служебного) — «без профиля». rows — [(устройство, профиль или None)]."""
     profiles = len({c.id for _d, c in rows if c is not None and not getattr(c, "is_service", 0)})
-    head = "📶 <b>Онлайн:</b> " + (f"{profiles} ({_n_devices(len(rows))})" if rows else "0")
+    head = ui.head("📶 Онлайн", value=f"{profiles} ({_n_devices(len(rows))})" if rows else "0")
     if not rows:
         return head + _LIST_SEP + "Сейчас никто не подключён"
     items = []
@@ -227,7 +227,7 @@ def online_devices_text(rows, bot_username: str = "") -> str:
 
 def expiring_text(rows, bot_username: str = "") -> str:
     """«⏳ Истекают: 2»; «[Ксюша] — 3 дн., до 27.09 18:00»."""
-    head = f"⏳ <b>Истекают:</b> {len(rows)}"
+    head = ui.head("⏳ Истекают", value=str(len(rows)))
     if not rows:
         return head + _LIST_SEP + "Истекающих подписок нет"
     items = []
@@ -240,8 +240,8 @@ def expiring_text(rows, bot_username: str = "") -> str:
 
 def unassigned_text(n: int) -> str:
     if not n:
-        return "📦 <b>Без профиля:</b> никого"
-    return f"📦 <b>Без профиля:</b> {n} — {'пир создан' if n == 1 else 'пиры созданы'} мимо бота"
+        return ui.head("📦 Без профиля", value="никого")
+    return ui.head("📦 Без профиля", value=f"{n} — {'пир создан' if n == 1 else 'пиры созданы'} мимо бота")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -263,7 +263,7 @@ def traffic_profiles_text(rows, bot_username: str = "", total: tuple[int, int] =
     """«📊 Трафик за 09.26: <итог>», под шапкой — РФ-итог и «🧐 Вне профилей»
     (только при ненулевых значениях), затем профили по убыванию общего трафика
     (нулевые не выводятся) со своей РФ-строкой."""
-    head = [f"📊 <b>Трафик за {month_label()}:</b> {_total(*total)}"]
+    head = [ui.head(f"📊 Трафик за {month_label()}", value=_total(*total))]
     if rf_total and int(rf_total[0]) + int(rf_total[1]) > 0:
         head.append(sub_line(f"🇷🇺 {ROUTING_NAME} (все): {rf_value(*rf_total)}"))
         # «Вне профилей» — часть РФ-итога (удалённые устройства и первые минуты
@@ -282,8 +282,9 @@ def traffic_profiles_text(rows, bot_username: str = "", total: tuple[int, int] =
 
 def traffic_devices_text(client, rows, total: tuple[int, int] = (0, 0),
                          rf_total: tuple[int, int] | None = None, bot_username: str = "") -> str:
-    """«📊 Трафик за 09.26, [Ксюша]: <итог>» — то же по устройствам профиля."""
-    head = [f"📊 <b>Трафик за {month_label()}</b>, {profile_link(client, bot_username)}: {_total(*total)}"]
+    """«📊 Трафик за 09.26: <итог> · профиль [Ксюша]» — то же по устройствам профиля."""
+    head = [ui.head(f"📊 Трафик за {month_label()}", value=_total(*total),
+                    meta=[f"профиль {profile_link(client, bot_username)}"])]
     if rf_total and int(rf_total[0]) + int(rf_total[1]) > 0:
         head.append(sub_line(f"🇷🇺 {ROUTING_NAME} (все): {rf_value(*rf_total)}"))
     branches = []
@@ -332,7 +333,7 @@ def admin_device_card(dev, client, *, rf=None, profile_limit_bytes: int = 0,
     who = profile_link(client, bot_username) if client is not None and not getattr(client, "is_service", 0) else "без профиля"
     ago = timeutil.fmt_ago(dev.last_handshake)
     seen = "Не подключался" if ago == "никогда" else f"Был в сети {ago}"
-    parts = [f"{device_state(dev, for_admin=True)} <b>{_e(dev.name)}</b> · {plain_ip(dev.address)} · {who}",
+    parts = [ui.head(f"{device_state(dev, for_admin=True)} {_e(dev.name)}", meta=[plain_ip(dev.address), who]),
              f"{seen} · 📊 {_admin_usage(dev, profile_limit_bytes)}"]
     if rf is not None:                            # ноль тоже — см. карточку профиля
         parts.append(rf_line(*rf, arrows=False))
@@ -572,7 +573,7 @@ NAME_EMPTY = "⚠️ Имя пустое — пришли ещё раз"
 
 def extend_text(client, cut_days: int = 0, bot_username: str = "") -> str:
     """«⏱ Продление: [Ксюша]» и текущий срок; отсрочка — предупреждением."""
-    head = f"⏱ <b>Продление:</b> {profile_link(client, bot_username)}"
+    head = ui.head("⏱ Продление", value=profile_link(client, bot_username))
     if not client.period_end:
         now = "Сейчас: бессрочная"
     else:
@@ -628,7 +629,7 @@ def period_changed_note(start, end) -> str:
 
 
 def block_client_ask(client, bot_username: str = "") -> str:
-    return (f"🛑 <b>Блокировка профиля {_e(client.name)}</b>\n"
+    return (ui.head(f"🛑 Блокировка профиля {_e(client.name)}") + "\n"
             "Поставить подписку на паузу на время блокировки?")
 
 

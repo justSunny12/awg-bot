@@ -529,7 +529,7 @@ async def test_notify_subs_and_monitoring_texts_follow_the_values(services, fake
     store.update({"limits.traffic_bonus_gb": 50, "grace.grace_days": 7, "pause.pause_max_total_days": 28,
                   "pause.monthly_pause_days": 2})
     text, markup = await sh._screen("subs", services)
-    assert text.split("\n")[:3] == ["💳 <b>Подписки</b> — правила для всех", "Бонус 50 ГБ при исчерпании · отсрочка 7 дн.",
+    assert text.split("\n")[:3] == ["💳 <b>Подписки</b> · правила для всех", "Бонус 50 ГБ при исчерпании · отсрочка 7 дн.",
                                     "Пауза: год +28 (до 56), месяц +2 (до 24)"], text
     assert _rows(markup) == [["📈 Бонус: 50 ГБ", "🙏 Отсрочка: 7 дн."], ["⏸️ Год: 28 дн.", "⏸️ Месяц: 2 дн."],
                              ["⬅️ Назад"]]

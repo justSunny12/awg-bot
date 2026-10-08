@@ -63,7 +63,7 @@ def gateway_installed_text(display: str, agent_bot: dict | None) -> str:
     me = agent_bot or {}
     text = f"✅ Шлюз <b>{_e(display)}</b> успешно настроен 🎉"
     if me.get("username"):
-        text += (f'\n<b>Бот шлюза:</b> <a href="https://t.me/{_e(me["username"])}">'
+        text += (f'\n{ui.label("Бот шлюза")} <a href="https://t.me/{_e(me["username"])}">'
                  f'{_e(me.get("name") or me["username"])}</a>')
     return text
 

@@ -81,7 +81,7 @@ def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list |
     recipes = []
     if tab in ("ow", "all"):
         ow_peer = "".join(f"ip route add {_e(p)} via {gw_ip}\n" for p in peers)
-        recipes.append("<b>OpenWrt</b>\n"
+        recipes.append(ui.sub("OpenWrt") + "\n"
                   "<pre>echo '200 vpn' &gt;&gt; /etc/iproute2/rt_tables\n"
                   f"ip route add default via {gw_ip} table vpn\n"
                   f"ip rule add from {gw_ip} priority 100 lookup main\n"
@@ -98,7 +98,7 @@ def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list |
                   "iptables — в /etc/firewall.user")
     if tab in ("mt", "all"):
         mt_peer = "".join(f"/ip route add dst-address={_e(p)} gateway={gw_ip}\n" for p in peers)
-        recipes.insert(0, "<b>MikroTik RouterOS 7</b>\n"
+        recipes.insert(0, ui.sub("MikroTik RouterOS 7") + "\n"
                   "<pre>/routing table add disabled=no fib name=antiblock\n"
                   "/ip firewall mangle\n"
                   f"add action=accept chain=prerouting comment=anti-loop src-address={gw_ip}\n"

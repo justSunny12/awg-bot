@@ -56,7 +56,7 @@ def broadcast_days_prompt(plan, bot_username: str = "") -> str:
     сколько дней продлеваем?»; бессрочные — с оговоркой."""
     names = ", ".join(profile_link(e.client, bot_username) + (" (∞, без продления)" if e.unlimited else "")
                       for e in plan)
-    return f"📢 <b>Профили для продления подписки:</b> {names}\nНа сколько дней продлеваем?"
+    return ui.head("📢 Профили для продления подписки", value=names) + "\nНа сколько дней продлеваем?"
 
 
 def extension_header(days: int, ext) -> str:
@@ -128,7 +128,8 @@ def broadcast_prompt(clients: list, with_friends: bool = False, *,
     """Приглашение ввести текст: «📢 Текст для профилей: [Ксюша], [Петя]»,
     адресаты поимённо — к подтверждению легко забыть, кого отметил."""
     r = extension_reserve() if extend_days is not None else 0
-    head = "📢 <b>Текст для " + ("профиля</b> " if len(clients) == 1 else "профилей:</b> ") + _names(clients, bot_username)
+    head = ui.head(f"📢 Текст для {'профиля' if len(clients) == 1 else 'профилей'}",
+                   value=_names(clients, bot_username))
     if extend_days is not None:
         head += f" · продление на {_days(extend_days)}"
     return head + "\n" + _how_to(config.TG_TEXT_MAX - r, config.TG_CAPTION_MAX - r)
@@ -142,7 +143,7 @@ def broadcast_preview(text: str, n: int, clients: list = (),
     else:
         w = plural_ru(n, "адресат", "адресата", "адресатов")
         foot = f"{n} {w}: {_bc_audience(list(clients), with_friends, bot_username)}"
-    return f"👆 <b>Так увидят получатели</b> · {foot}\n\n{text}"
+    return ui.head("👆 Так увидят получатели", meta=[foot]) + f"\n\n{text}"
 
 
 def broadcast_preview_photos(n: int, clients: list = (),
@@ -155,7 +156,7 @@ def broadcast_preview_photos(n: int, clients: list = (),
     else:
         w = plural_ru(n, "адресат", "адресата", "адресатов")
         foot = f"{n} {w}: {_bc_audience(list(clients), with_friends, bot_username)}"
-    head = f"👆 <b>Так увидят получатели</b> · {foot}"
+    head = ui.head("👆 Так увидят получатели", meta=[foot])
     if not has_text:
         head += "\n✍️ Текста нет — уйдут только картинки. Нужен текст — пришли его сообщением"
     return head
