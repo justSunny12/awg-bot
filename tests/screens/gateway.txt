@@ -393,7 +393,7 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
   [◀️ Пред. страница | pg|lanlist|0|0|gw:lan:]
   [❓ Роутер | gw:lan_router:] [⬅️ В меню | gw:panel:]
 ~ (пустой ответ)
-~ (пустой ответ)
+~ (повторный ответ)
 
 ### gw.lan.add.ask — приглашение «➕ В туннель»
 > press gw:lan_add:
@@ -417,6 +417,7 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
 > text «example.org example.com localhost»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ✅ <code>example.org</code>: добавлен
@@ -446,6 +447,7 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
 > text «example.org»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ✅ <code>example.org</code>: добавлен
@@ -472,6 +474,7 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
 > text «gosuslugi.ru»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ✅ <code>gosuslugi.ru</code>: добавлен
@@ -502,6 +505,7 @@ DNS — <code>10.8.0.1</code> через <code>awg0</code>
 > text «example.org»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ⚠️ dnsmasq не перезапустился — откатываю
@@ -765,6 +769,7 @@ uci commit</pre>
 > text «70»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ✅ Порог температуры: 75 → 70 °C
@@ -1184,6 +1189,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 > text «2222»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ✅ Порт SSH: 22 → 2222. Текущие сеансы не рвутся — проверь вход новым подключением на порт 2222; проброс порта на роутере (при наличии) поправь сам: снаружи &lt;любой порт&gt; → шлюз:2222
@@ -1207,6 +1213,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 > text «22»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ℹ️ Порт SSH не изменился — выбран уже установленный (22)
@@ -1216,6 +1223,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 > text «8080»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ⛔ Смена порта SSH не выполнена: порт 8080 уже занят процессом <code>nginx</code>
@@ -1230,6 +1238,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 > text «2222»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ⚠️ Порт не изменён: sshd не поднялся на 2222 — вернул 22
@@ -1307,6 +1316,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 > text «198.51.100.4 home.example.net»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ✅ Адреса для SSH-доступа: добавлено <code>198.51.100.4</code>, <code>home.example.net</code>
@@ -1332,6 +1342,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 > text «203.0.113.0/24»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ✅ Адреса для SSH-доступа: добавлено <code>203.0.113.0/24</code>; объединено с новой подсетью: <code>203.0.113.7</code>, <code>203.0.113.9</code>
@@ -1357,6 +1368,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 > text «203.0.113.7»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ℹ️ Всё из введённого уже в списке — ничего не менял
@@ -1440,6 +1452,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 > text «10»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ✅ Линк молчит дольше: 5 → 10 мин
@@ -1520,6 +1533,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 > text «5 3»
 - delete #1
 - delete #2
+! правка удалённого #1
 - markup off #1
 + send #3
 ✅ Автобэкап: 1-е, 12:00 → 5-е, 03:00
@@ -1767,6 +1781,7 @@ IMAP-сервер и порт: <code>imap.example.com:993</code>
 + send #3
 ⚠️ Не удалось обновить: sha256 не сошёлся
   [Скрыть | hd]
+! правка удалённого #1
 - markup off #1
 + send #4
 🛰 <b>pi</b> 🟢 линк поднят · 12 дн 3 ч

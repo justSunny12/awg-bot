@@ -12,16 +12,14 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-import sys
 
-import pytest
 
 from awgbot.bot.callbacks import (AdminSelfCB, BlockCB, BroadcastCB, CancelCB, ClientCB, DelDeviceCB,
                                   DeviceCB, GwMarkCB, GwSlotCB, Menu, NoteCB, PageCB, PeriodCB, PresetCB,
                                   ReassignCB, RoutingCB, SetCB, UpdateCB)
 from awgbot.core import config
 
-from tests.screens.base import HOST, NOW, Shot
+from tests.screens.base import NOW, Shot
 
 GB = 1024 ** 3
 
@@ -32,43 +30,6 @@ IPHONE, MAC, PHONE, LAPTOP, TABLET, ALIEN = 1, 2, 3, 4, 5, 6
 
 
 # ── построители состояния ────────────────────────────────────────────────────
-
-def _mp() -> pytest.MonkeyPatch:
-    """monkeypatch снимка — тот, с которым его снимает take() (откатится в
-    конце теста эталона). Построителю его не передают, а подменить надо и
-    модульные константы (config.ROUTING_ENABLED, интерфейс переезда), поэтому
-    берём его со стека вызова."""
-    f = sys._getframe(1)
-    while f is not None:
-        mp = f.f_locals.get("monkeypatch")
-        if isinstance(mp, pytest.MonkeyPatch):
-            return mp
-        f = f.f_back
-    raise RuntimeError("построитель вызван не из take(): monkeypatch снимка не найден")
-
-
-# Модульные подмены живут до конца теста эталона, а снимков в нём много:
-# каждый построитель начинает с того, что возвращает всё подменённое прежними
-# снимками в исходное (_reset), иначе экран зависел бы от порядка снимков.
-_PATCHED: dict = {"mp": None, "orig": {}}
-
-
-def _patch(obj, name: str, value) -> None:
-    mp = _mp()
-    if _PATCHED["mp"] is not mp:
-        _PATCHED["mp"], _PATCHED["orig"] = mp, {}
-    _PATCHED["orig"].setdefault((id(obj), name), (obj, name, getattr(obj, name)))
-    mp.setattr(obj, name, value)
-
-
-def _reset() -> None:
-    mp = _mp()
-    if _PATCHED["mp"] is not mp:
-        _PATCHED["mp"], _PATCHED["orig"] = mp, {}
-        return
-    for obj, name, orig in _PATCHED["orig"].values():
-        mp.setattr(obj, name, orig)
-
 
 def _iso(dt: _dt.datetime) -> str:
     from awgbot.util import timeutil
@@ -85,12 +46,7 @@ def _codes(services) -> None:
 def _base(services, *, status: bool = True):
     """Профиль админа, детерминированные коды приглашений, без живых
     замеров хоста; status — шапка «сервер работает, аптайм, метрики»."""
-    from awgbot.bot.texts import admin as admin_texts
     from awgbot.infra import hostmetrics
-    _reset()
-    # имя хоста в шапке главной кэшируется на процесс: первый рендер в другом
-    # тесте закрепил бы настоящее имя машины
-    _patch(admin_texts, "_HOSTNAME", HOST)
     _codes(services)
     # файервол хоста (nft, /etc/nftables.conf) — не трогаем: его перерисовку
     # зовут назначение и снятие шлюза и завершение переезда
@@ -430,23 +386,23 @@ PRIV = "RERERERERERERERERERERERERERERERERERERERERERE="   # ключ линка �
 TOKEN = "1234567890:DUMMYDUMMYDUMMYDUMMYDUMMY"
 
 
-def _routing(services, *, enabled: bool = True, awake: bool = True) -> None:
+def _routing(services, mp, *, enabled: bool = True, awake: bool = True) -> None:
     """Обвязка РФ-доступа развёрнута (awake — интерфейс линка прочитан при
     старте) и функция включена или выключена; сеть линка — заглушки."""
     from awgbot.core import settings
     from awgbot.infra import routing as rt
-    _patch(config, "ROUTING_ENABLED", awake)
+    mp.setattr(config, "ROUTING_ENABLED", awake)
     services.routing_provisioned = lambda: True
     # выключатель — настоящая настройка снимка (фейк маршрутизации держит его
     # константой): кнопки «Включить» и «Выключить» меняют экран, как в бою
     settings.set_value("app.routing.enabled", enabled)
     orig = settings.get_bool
-    _patch(settings, "get_bool", lambda k, d=None: (
+    mp.setattr(settings, "get_bool", lambda k, d=None: (
         str(settings.get(k, d)).lower() in ("1", "true", "yes") if k == "app.routing.enabled" else orig(k, d)))
-    _patch(rt.probes, "ping_peer", lambda iface="", **k: 43 if iface == "awglink2" else 61)
-    _patch(rt.probes, "link_peer_endpoint",
+    mp.setattr(rt.probes, "ping_peer", lambda iface="", **k: 43 if iface == "awglink2" else 61)
+    mp.setattr(rt.probes, "link_peer_endpoint",
            lambda iface="": "198.51.100.7" if iface == "awglink2" else "203.0.113.10")
-    _patch(rt.marking, "switch_active", lambda iface: None)
+    mp.setattr(rt.marking, "switch_active", lambda iface: None)
     services.routing_status = lambda: (True, "ок")
     services.routing_link_ok = lambda: True
     services._link_privkey = lambda gw=None: PRIV
@@ -469,13 +425,13 @@ def _slots(n: int = 1, *, standby: str = "alive", lan: bool = False, subnets: bo
     ещё и VPN-транзит;
     token — бот шлюза известен (ссылка в карточке); failover —
     автопереключение на резерв."""
-    def build(services):
+    def build(services, mp):
         from awgbot.core import settings
         who = _people(services)
         settings.set_value("app.routing.failover.enabled", failover)
         services.add_device(ADM, "NASPi")
         services.add_device(ADM, "Pi4")
-        _routing(services, enabled=enabled)
+        _routing(services, mp, enabled=enabled)
         if n >= 1:
             services.db.gateway_add(NASPI, "awglink", 443, "10.99.99.0/30", slot_id=1)
             if lan or subnets:
@@ -496,31 +452,31 @@ def _slots(n: int = 1, *, standby: str = "alive", lan: bool = False, subnets: bo
     return build
 
 
-def _rt_off(services):
+def _rt_off(services, mp):
     """РФ-доступ развёрнут, но выключен."""
     who = _people(services)
-    _routing(services, enabled=False)
+    _routing(services, mp, enabled=False)
     return who
 
 
-def _rt_asleep(services):
+def _rt_asleep(services, mp):
     """Обвязка развёрнута, бот ещё не перезапущен — функция спит."""
     who = _people(services)
-    _routing(services, awake=False)
+    _routing(services, mp, awake=False)
     return who
 
 
-def _rt_none(services):
+def _rt_none(services, mp):
     """Включено, шлюз ещё не назначен; у админа есть устройства-кандидаты."""
     who = _people(services)
-    _routing(services)
+    _routing(services, mp)
     return who
 
 
-def _rt_none_bare(services):
+def _rt_none_bare(services, mp):
     """Включено, кандидатов нет: у админа ни одного устройства."""
     who = _base(services)
-    _routing(services)
+    _routing(services, mp)
     return who
 
 
@@ -531,25 +487,25 @@ def _rt_unavailable(services):
     return who
 
 
-def _claim(services):
+def _claim(services, mp):
     """Пересланное сообщение агента: подпись проверена, устройство назначено."""
-    who = _slots(1)(services)
+    who = _slots(1)(services, mp)
     dev = services.db.get_device(NASPI)
     gw = services.db.gateways()[0]
     services.gateway_claim = lambda text: {"status": "marked", "device": dev, "gateway": gw}
     return who
 
 
-def _claim_already(services):
-    who = _slots(1)(services)
+def _claim_already(services, mp):
+    who = _slots(1)(services, mp)
     dev = services.db.get_device(NASPI)
     gw = services.db.gateways()[0]
     services.gateway_claim = lambda text: {"status": "already", "device": dev, "gateway": gw}
     return who
 
 
-def _claim_bad(services):
-    who = _slots(1)(services)
+def _claim_bad(services, mp):
+    who = _slots(1)(services, mp)
 
     def bad(text):
         raise ValueError("подпись не сходится — сообщение не от этого шлюза или ключ линка другой")
@@ -562,43 +518,43 @@ CLAIM = "✅ Шлюз настроен. Перешли это сообщение
 
 # ── переезд профилей: второй интерфейс настроен ─────────────────────────────
 
-def _mig_ready(services):
+def _mig_ready(services, mp):
     """Переезд настроен (awg1, 10.9.1), но не начат; параметры старого и
     нового интерфейса и поколение ядра — константы, а не чтение с хоста."""
     from awgbot.infra import awglock
     who = _people(services)
-    _patch(config, "AWG_INTERFACE", "awg0")
-    _patch(config, "MIGRATION_INTERFACE", "awg1")
-    _patch(config, "MIGRATION_SUBNET_PREFIX", "10.9.1")
-    _patch(config, "SERVER_PORT", 43125)
-    _patch(awglock, "applied_generation", lambda: 1)
-    _patch(awglock, "target_generation", lambda: 1)
+    mp.setattr(config, "AWG_INTERFACE", "awg0")
+    mp.setattr(config, "MIGRATION_INTERFACE", "awg1")
+    mp.setattr(config, "MIGRATION_SUBNET_PREFIX", "10.9.1")
+    mp.setattr(config, "SERVER_PORT", 43125)
+    mp.setattr(awglock, "applied_generation", lambda: 1)
+    mp.setattr(awglock, "target_generation", lambda: 1)
     return who
 
 
-def _mig_running(services):
+def _mig_running(services, mp):
     """Переезд идёт: двойники рождены, Ксюшин телефон уже переехал."""
-    who = _mig_ready(services)
+    who = _mig_ready(services, mp)
     services.migration_start()
     twins = services.db.twins_by_origin()
     _online(services, twins[PHONE])
     return who
 
 
-def _mig_finishing(services):
+def _mig_finishing(services, mp):
     """Переезд идёт, и его можно завершить: смена основного интерфейса на
     хосте (гашение старого, файл поколения) — заглушками."""
     from awgbot.infra import awglock
-    who = _mig_running(services)
+    who = _mig_running(services, mp)
     services._retire_interface = lambda *a, **k: None
-    _patch(awglock, "write_state", lambda **k: None)
-    _patch(awglock, "needs_migration", lambda: False)
+    mp.setattr(awglock, "write_state", lambda **k: None)
+    mp.setattr(awglock, "needs_migration", lambda: False)
     return who
 
 
-def _mig_cancelled(services):
+def _mig_cancelled(services, mp):
     """Переезд отменён, а один двойник уже успел переехать."""
-    who = _mig_running(services)
+    who = _mig_running(services, mp)
     services.migration_cancel()
     return who
 

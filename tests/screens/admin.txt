@@ -151,7 +151,7 @@
   [◀️ Пред. страница | pg|devices|0|0|m:devices]
   [➕ Устройство | as:add] [⬅️ Назад | m:main]
 ~ (пустой ответ)
-~ (пустой ответ)
+~ (повторный ответ)
 
 ### adm.gen.pick — ссылка с главной: выбор устройства
 > press m:gen_link
@@ -342,7 +342,7 @@
 
 ### adm.dev.reassign.go — перенос в профиль со свободным местом
 > press ra:6:3:go
-+ send #2
++ send #1 → чат tg 2001
 Устройство «app» добавлено в твой профиль администратором.
 Теперь у тебя 3 из 3 устройств
   [Скрыть | hd]
@@ -367,7 +367,7 @@
 
 ### adm.dev.reassign.slot_yes — перенос со слотом
 > press ra:6:4:slot_yes
-+ send #2
++ send #1 → чат tg 2002
 Устройство «app» добавлено в твой профиль администратором, максимальное количество устройств увеличено.
 Теперь у тебя 2 из 2 устройств
   [Скрыть | hd]
@@ -393,7 +393,7 @@
 
 ### adm.dev.block.do — блок с уведомлением
 > press bl:dev:block:3:notified:-1
-+ send #2
++ send #1 → чат tg 2001
 🛑 Устройство «Телефон» заблокировано.
   [Скрыть | hd]
 = edit #1
@@ -410,7 +410,7 @@
 
 ### adm.dev.unblock — разблок одной причины — сразу
 > press bl:dev:menu_unblock:3::-1
-+ send #2
++ send #1 → чат tg 2001
 🟢 Устройство «Телефон» разблокировано.
   [Скрыть | hd]
 = edit #1
@@ -624,7 +624,7 @@ https://www.ozon.ru/catalog
   [⏳ Петя | c:open:5]
   [◀️ Пред. страница | pg|clients|0|0|m:clients]
   [⬅️ Назад | m:main]
-~ (пустой ответ)
+~ (повторный ответ)
 
 ### adm.cl — карточка: активен, РФ, устройства
 > press c:open:3
@@ -761,7 +761,7 @@ https://www.ozon.ru/catalog
 ### adm.cl.missing — профиля нет
 > press c:open:99
 ~ (пустой ответ)
-~! Профиль не найден
+~ (повторный ответ) Профиль не найден
 
 ### adm.cl.edit — «✏️ Изменить»
 > press c:edit:3
@@ -806,7 +806,7 @@ https://www.ozon.ru/catalog
 
 ### adm.cl.limit.preset — лимит устройств пресетом
 > press ps:cli_devs:3:5
-+ send #2
++ send #1 → чат tg 2001
 Лимит устройств изменён: 3 → 5
   [Скрыть | hd]
 = edit #1
@@ -829,12 +829,12 @@ https://www.ozon.ru/catalog
 
 ### adm.cl.limit.other.done — лимит устройств своим числом
 > text «7»
-+ send #3
++ send #1 → чат tg 2001
 Лимит устройств изменён: 3 → 7
   [Скрыть | hd]
 - delete #1
 - delete #2
-+ send #4
++ send #3
 ✅ Устройств: 3 → 7
 
 ✏️ <b>Ксюша</b> — изменить
@@ -930,7 +930,7 @@ https://www.ozon.ru/catalog
 
 ### adm.cl.extend.done — продлено — след и карточка
 > press p:month:extend:3:1
-+ send #2
++ send #1 → чат tg 2001
 ✅ Подписка продлена до 15.10.27.
 ⏸️ Дни паузы не добавлены: достигнуто максимальное количество для ежемесячной подписки (24)
   [Скрыть | hd]
@@ -938,7 +938,7 @@ https://www.ozon.ru/catalog
 = edit #1
 ✅ <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>: подписка продлена на месяц,
 → 15.10.27 · дни паузы не начислены, доступно 28
-+ send #3
++ send #2
 👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
 
 💳 🟢 до 15.10.27 · 395 дн. · месяц, с 15.09
@@ -966,7 +966,7 @@ https://www.ozon.ru/catalog
 
 ### adm.cl.extend_exp.done — продлено из «Истекают» — список опустел, карточка
 > press p:month:extend:4:1
-+ send #2
++ send #1 → чат tg 2002
 ✅ Подписка продлена до 17.10.
 ⏸️ Дней паузы +2 → 4
   [Скрыть | hd]
@@ -974,7 +974,7 @@ https://www.ozon.ru/catalog
 = edit #1
 ✅ <a href="https://t.me/test_bot?start=cl-4">Боря</a>: подписка продлена на месяц,
 → 17.10 · дней паузы +2 → 4
-+ send #3
++ send #2
 👤 <a href="tg://user?id=2002">Боря</a> ⚪ офлайн
 
 💳 🟢 до 17.10 · 32 дн. · месяц, с 15.09
@@ -1016,9 +1016,7 @@ https://t.me/test_bot?start=CDUMMY000005
 —
 ☝️ Новое приглашение с индивидуальным кодом для профиля:
 Петя — 2 устройства · ∞ ГБ в месяц · → 15.09.27
-  [📤 Отправить | https://t.me/share/url?url=https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DCDUMMY000005&text=%D0%9F%D1%80%D0%B8%D0%B2%D0%B5%D1%82%21%20%D0%A2%D0%B5%D0%B1%D0%B5%20%D0%BE%D1%82%D0%BA%D1%80%D1%8B%D1%82%20%D0%B4%D0%BE%D1%81%D1%82%D1%83%D0%BF%20%D0%B2%20%D1%81%D0%B2%D0%BE%D0%B1%D0%BE%D0%B4%D0%BD%D1%8B%D0%B9%20%D0%B8%D0%BD%D1%82%D0%B5%D1%80%D0%BD%D0%B5%D1%82%20%F0%9F%8E%89%0A%D0%96%D0%BC%D0%B8%20%D1%81%D1%81%D1%8B%D0%BB%D0%BA%D1%83%20%D0%B8%20%C2%AB%D0%A1%D1%82%D0%B0%D1%80%D1%82%C2%BB%20%E2%80%94%20%D0%B4%D0%B0%D0%BB%D1%8C%D1%88%D0%B5%20%D0%BF%D0%BE%D0%B4%D1%81%D0%BA%D0%B0%D0%B6%D1%83%0Ahttps%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DCDUMMY000005] [📋 Скопировать | copy:Привет! Тебе открыт доступ в свободный интернет 🎉
-Жми ссылку и «Старт» — дальше подскажу
-https://t.me/test_bot?start=CDUMMY000005]
+  [📤 Отправить | https://t.me/share/url?url=https%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DCDUMMY000005&text=%D0%9F%D1%80%D0%B8%D0%B2%D0%B5%D1%82%21%20%D0%A2%D0%B5%D0%B1%D0%B5%20%D0%BE%D1%82%D0%BA%D1%80%D1%8B%D1%82%20%D0%B4%D0%BE%D1%81%D1%82%D1%83%D0%BF%20%D0%B2%20%D1%81%D0%B2%D0%BE%D0%B1%D0%BE%D0%B4%D0%BD%D1%8B%D0%B9%20%D0%B8%D0%BD%D1%82%D0%B5%D1%80%D0%BD%D0%B5%D1%82%20%F0%9F%8E%89%0A%D0%96%D0%BC%D0%B8%20%D1%81%D1%81%D1%8B%D0%BB%D0%BA%D1%83%20%D0%B8%20%C2%AB%D0%A1%D1%82%D0%B0%D1%80%D1%82%C2%BB%20%E2%80%94%20%D0%B4%D0%B0%D0%BB%D1%8C%D1%88%D0%B5%20%D0%BF%D0%BE%D0%B4%D1%81%D0%BA%D0%B0%D0%B6%D1%83%0Ahttps%3A%2F%2Ft.me%2Ftest_bot%3Fstart%3DCDUMMY000005] [📋 Скопировать | copy:Привет! Тебе открыт доступ в свободный интернет 🎉\nЖми ссылку и «Старт» — дальше подскажу\nhttps://t.me/test_bot?start=CDUMMY000005]
   [👤 В карточку | c:open:5] [⬅️ На главную | m:main]
 
 ### adm.cl.delete — удалить профиль?
@@ -1059,7 +1057,7 @@ https://t.me/test_bot?start=CDUMMY000005]
 
 ### adm.cl.block.do — профиль заблокирован с паузой
 > press bl:cli:block:3:notified:0
-+ send #2
++ send #1 → чат tg 2001
 🛑 Твой доступ приостановлен администратором.
   [Скрыть | hd]
 = edit #1
@@ -1098,7 +1096,7 @@ https://t.me/test_bot?start=CDUMMY000005]
 
 ### adm.cl.add_device.done — устройство профилю: итог в карточке
 > text «Планшет»
-+ send #3
++ send #1 → чат tg 2001
 Устройство «Планшет» добавлено в твой профиль администратором.
 Теперь у тебя 3 из 3 устройств
   [🔗 Ссылка | d:gen_link:7] [🔳 QR | d:gen_qr:7] [📄 Файл | d:gen_file:7]
@@ -1106,7 +1104,7 @@ https://t.me/test_bot?start=CDUMMY000005]
   [Скрыть | hd]
 - delete #1
 - delete #2
-+ send #4
++ send #3
 ✅ Планшет создано для профиля <a href="https://t.me/test_bot?start=cl-3">Ксюша</a>
 
 👤 <a href="tg://user?id=2001">Ксюша</a> 🟢 онлайн
@@ -1132,7 +1130,7 @@ https://t.me/test_bot?start=CDUMMY000005]
 
 ### adm.cl.add_device.slot — «➕ Слот и добавить»
 > press c:add_device_slot:4
-+ send #2
++ send #1 → чат tg 2002
 Лимит устройств изменён: 1 → 2
   [Скрыть | hd]
 = edit #1
@@ -2359,7 +2357,7 @@ Pi4 — 🟡 Резерв, проверка связи
 
 ### adm.rt.users.allow — разрешить профилю
 > press set:rt:do:allow:4
-+ send #2
++ send #1 → чат tg 2002
 🇷🇺 К твоей подписке добавлен РФ-доступ 🎉
 РФ-приложения и сайты теперь будут работать со включённым VPN. Включён на всех твоих устройствах; выключить и добавить свои сайты — в разделе «🇷🇺 РФ-доступ»
   [Скрыть | hd]
@@ -2494,7 +2492,7 @@ Pi4 — 🟡 Резерв, проверка связи
 ### adm.gw.card.missing — слота нет
 > press gws:card:9:
 ~! такого слота шлюза нет
-~ (пустой ответ)
+~ (повторный ответ)
 
 ### adm.gw.dev — устройство-шлюз — карточка слота
 > press d:open:7

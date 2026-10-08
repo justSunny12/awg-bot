@@ -10,7 +10,7 @@
   [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
   [📱 Устройства | fr:list:0]
   [❓ Как подключить | fr:help:0]
-+ send #4
++ send #1 → чат клиент
 👤 Друг (Гена) активировал устройство «Телефон Артёма».
   [Скрыть | hd]
 
@@ -112,7 +112,7 @@
   [🔗 Ссылка | fr:gen_link:0] [🔳 QR | fr:gen_qr:0] [📄 Файл | fr:gen_file:0]
   [📱 Устройства | fr:list:0]
   [❓ Как подключить | fr:help:0]
-+ send #4
++ send #1 → чат клиент
 👤 Друг (Артём) активировал устройство «Приставка».
   [Скрыть | hd]
 
@@ -130,10 +130,10 @@
 
 Переданные тебе устройства от профиля <a href="tg://user?id=1000">Вася</a> перенесены в твой профиль — перенастраивать ничего не нужно, они работают как раньше:
 • Телефон Артёма
-+ send #3
++ send #1 → чат клиент
 📤 Устройство «Телефон Артёма» перешло к <a href="tg://user?id=2000">Артём</a> — он активировал собственную подписку, и устройство переехало в его профиль. У тебя теперь 0 из 5 устройств.
   [Скрыть | hd]
-+ send #4
++ send #3
 👋 <b>Артём</b>
 
 🟢 VPN работает
@@ -142,7 +142,7 @@
   [🔗 Ссылка | m:gen_link] [🔳 QR | m:gen_qr] [📄 Файл | m:gen_file]
   [📱 Устройства | m:devices] [➕ Устройство | d:add:0]
   [💳 Подписка | m:info] [❓ Как подключить | h:root]
-+ send #5
++ send #1 → чат админ
 🎉 <a href="https://t.me/test_bot?start=cl-4">Артём</a>: доступ активирован (Артём)
 Перенесено переданных устройств: 1 (от Вася), лимит подписки 3.
   [Скрыть | hd]
@@ -244,7 +244,7 @@
 > press fr:gen_link:0
 - delete #1
 + send #2
-<code>vpn://AAAJTXjadVZRbts4EL2Koe_UDSU7sQPkI5suYCZoIcTd_kSBwUhMy1qmBElO0wYB9ip7hQV6j_RGnTekHCrrjQP78c3z4ww5NPUY5ZXtlLG6aaOT0fVjpL59JvAYXeT0ER1GB6PoYmMsBsIN1AMGMQZLAZgwjAEnDBPAKcMJ4BHggrXHDFk7Y8jaOUPWCp5SsljwjJLVgieULBc8o3R6nlJOGfOcC60K3aRN1em8M5W91N85yFmcU7nadqkqCmM_n9E7JBzn1K70Wn8_u-t089FsNPOzHQ-q2nbMzh37leYYyGPO_1LrWpXmXgdfibma9-phoWzRflFrfdZ1elN3LUe5visKVZuPjTKl25Eo5lrfmVbdlvq8qtZGO57rLlXbrWgL7wx2LXrM7Ij-Mtq9jMZZdJhFBzuOttGxYsCqB8fGAbsUjktCLnbcJOQSx01DbuK4o4BbeL_jkPN-s5DzfvOQ834iLEZ6QxHWIr2jCEuR3lKEtcjeMyxGTj0ZVrOnm7wqrG9_W3lhWPSwv7xg9lrgu8aH54PwoOP8zoUr87r1vCRcp3096GXhyg2b0QvCVRx2pReEK6rKsvqmi5WpOXrteBc7HPPr7Uvujj85AeWYm51TXhpaX1m4SertbRwumovSNH2njGdjMY7_q6gbc79a91uI0T4fsg9Er-fi0-Zi15K2vblTub7JMkvb3ui2HZ2O-gTeJjHx7z4swY35dUAAhQsKpDS_6jS1FMV9Mpm9yGl0CEAHFl9kqB4Iwm0pCCQAMYEJQEJgCjAhcERgAc0xADQwXUAzB5hwfoQkRALuEioBcwmZgLtkHezlFAj-e84CQphx_wFAFGkMux7srGd9l4KbMzfob9SMXF83NXhkvq-TEUMtw_YFi7qGPQsWNdL_dap1g21Mt7elyV1ty6tP6V9_nJ7yZmmaptGFi6TLS6bPXIvLFF67nj4YcRtn9k9b1JWxSPhkkogYy5hSOqbFcu3KQh7TNwmiQat9qdrug-pPeRDYdNv-R-04_Bmqd87Uv7pesbc_l2wfSKuGfxo4qRe2Xb90vivx5Sutbu51MzwduwWiE_uEGwm-_CQAXyaoXaq8Klf3SM7dtXzXtdtbq7uVcqfG3f18bPgG7RplW5it2ADhbVFHTxTaPbKAVBurfxj1hp5b4ujphsKFvlPbsjv_XxVr2rwxdX_3P__z_PPX38__4n3E13RhW_cI4k6tp9yTiDu_oPoNAh09_QZJN6Ux</code>
+<code>vpn://AAAJSXjadVZtbts4EL2Kod-pG0p2YgfIj2y6gJmghRB3-ycKDEZiWtYyJUhymjYIsFfZKyzQe6Q36rwh5VBZbxzYj2-e54MzNPUY5ZXtlLG6aaOT0fVjpL59JvAYXeT0ER1GB6PoYmMsFsIt1AMWMRZLAZgwjAEnDBPAKcMJ4BHggrXHDFk7Y8jaOUPWCg4pWSw4omS14ICS5YIjSqfnkHLKmGMutCp0kzZVp_POVPZSf2cjZ3FO5WrbpaoojP18Ru-QsJ1Tu9Jr_f3srtPNR7PRzM92PKhq2zE7d-xXijGQx5z_pda1Ks29Dr4SczXv1cNC2aL9otb6rOv0pu5atnJ9V2SqNh8bZUrXkSjmWt-ZVt2W-ryq1kY7nusuVdutqIV3Bl2LHjM7or-MupfROosOs-hgx1EbHSsGrHpwbBywS-G4JORix01CLnHcNOQmjjsKuIX3dxxy3t8s5Ly_ech5fyIsRnqHIqxFeo8iLEV6lyKsRfY-w2Lk1JNhNXumyavC-vaPlReGRQ_nywtmrwV-arx5PjAPJs53LtyZ16PnJeE-7ZtBLwt3bjiMXhDu4nAqvSDcUVWW1TddrEzN1mvHO9vhmF9vX3J3_MkJKMfc7DzlpaH9lYULUm9vw3qckaL0gzKejcU4_q-ibsz9at13EKs9bsh5oHkViY-aM11L6nlzp3J9k2WWet7oth2djvrwb5OY-HcfluDG_DoggKoFGVKKrjpN80R2l0pmL3JaHALQYcX3GKoHgnC2FAQSgJjABCAhMAWYEDgisIDmGACaGQA0c4AJp0dIQiTgXUIl4FxCJuBdsg7u5RQI_vecA5gQcf_ww4o0hhMPdtazfkLBzZkbzDZqRq6vBxo8Mt83xbChluHogkVdw3kFixrp_zrVukEX0-1taXJX2_LqU_rXH6en3CtNYRpdOEu6vGT6zI23TOFrN88HIx7hzP5pi7oyFgmfTBIRYxtTSse02K5dWchj-iaBNZi0L1XbfVD9CQ8Mm27b_6Adhz9B9c4zTa-uV-zbn0l2H0irhn8WOKkXtl2_zL0r8eUrrW7udTM8G7sNotP6hNsIfvkpAH6ZoHGp8qpc3SM5d8_yPddub63uVsodGnfv86nh27NrlG3hbMUOYN4WdfREpt3jCki1sfqHUW_omSWOnm7IXOg7tS278_9VsabNG1P39_7zP88_f_39_C_eR3xFF7Z1jx_u0HrKPYW44wuqbxDo6Ok3KOykTQ</code>
 
 ☝️ Ссылка для Телефон Артёма — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
   [⬅️ В меню | fr:refresh:0]
@@ -284,7 +284,7 @@
 > press fr:gen_link:1
 - delete #1
 + send #2
-<code>vpn://AAAJTXjadVZRbts4EL2Koe_UDSW7sQPkI5sWMBNsIcRpf6LAYCSm5VqmBElO0wYB9ip7hQK9R_ZGO29IOVTWjQP78c3z4ww5NPUY5ZXtlLG6aaPj0fVjpL59IfAYnef0ER1GB6PofGMsBsIN1AMGMQZLAZgwjAEnDBPAKcMJ4DvABWuPGLJ2xpC1c4asFTylZLHgGSWrBU8oWS54Run0PKWcMuY5F1oVukmbqtN5Zyp7ob9zkLM4o3K17VJVFMZ-OaV3SDjOqV3qtf5-etfp5spsNPOzHQ-q2nbMzh37F80xkMec_4XWtSrNvQ6-EnM1f6qHhbJF-1Wt9WnX6U3dtRzl-i4pVG2uGmVKtyNRzLW-N626LfVZVa2NdjzXXaq2W9EW3hnsWvSY2RH9ZbR7GY2z6DCLDnYcbaNjxYBVD46NA3YpHJeEXOy4ScgljpuG3MRx7wJu4f2OQs77zULO-81DzvuJsBjpDUVYi_SOIixFeksR1iJ7z7AYOfVkWM2ebvKqsL79beWFYdHD_vKC2WuB7xofng_Cg47zOxeuzOvW85Jwnfb1oJeFKzdsRi8IV3HYlV4Qrqgqy-qbLlam5ui1413scMyvty-5O_74GJRjbnZOeWlofWXhJqm3t0m4_C5K0_SdMp6NxTj-v6JuzP1q3W8hRvt8yD4QvZ6LT5uLXUva9uZO5fomyyxte6PbdnQy6hN4m8TEv_-4BDfm1wEBFC4okNL8qtPUUhT3yWT2PKfRIQAdWHyRoXogCLelIJAAxAQmAAmBKcCEACwW0BwBQDMDgGYOMOH8CEmIBNwlVALmEjIBd8k62MspEPz3nAWEMOP-A4Ao0hh2PdhZz_ouBTdnbtDfqBm5vm5q8Mh8XycjhlqG7QsWdQ17FixqpP_rVOsG25hub0uTu9qWl5_TT3-cnPBmaZqm0YWLpMsLpk9di8sUXruePhhxG2f2gy3qylgkfDxJRIxlTCkd02K5dmUhj-mbBNGg1b5WbfdR9ac8CGy6bf-jdhT2Zr1zpv7V9Yq9_blk-0BaNfzTwEm9sO36pfNdiS9faXVzr5vh6dgtEJ3YJ9xI8OUnAfgyQe1S5VW5ukdy7q7lu67d3lrdrZQ7Ne7u52PDN2jXKNvCbMUGCG-LOnqi0O6RBaTaWP3DqDf03BJHTzcULvSd2pbd2W9VrGnzxtT93f_8z_Ovf_9-_on3EV_ThW3dI4g7tZ5yTyLu_ILqNwh09PQfOHylLQ</code>
+<code>vpn://AAAJSXjadVZtbts4EL2Kod-pG0p2YgfIj2y6gJmghRB3-ycKDEZiWtYyJUhymjYIsFfZKyzQe6Q36rwh5VBZbxzYj2-e54MzNPUY5ZXtlLG6aaOT0fVjpL59JvAYXeT0ER1GB6PoYmMsFsIt1AMWMRZLAZgwjAEnDBPAKcMJ4BHggrXHDFk7Y8jaOUPWCg4pWSw4omS14ICS5YIjSqfnkHLKmGMutCp0kzZVp_POVPZSf2cjZ3FO5WrbpaoojP18Ru-QsJ1Tu9Jr_f3srtPNR7PRzM92PKhq2zE7d-xXijGQx5z_pda1Ks29Dr4SczXv1cNC2aL9otb6rOv0pu5atnJ9V2SqNh8bZUrXkSjmWt-ZVt2W-ryq1kY7nusuVdutqIV3Bl2LHjM7or-MupfROosOs-hgx1EbHSsGrHpwbBywS-G4JORix01CLnHcNOQmjjsKuIX3dxxy3t8s5Ly_ech5fyIsRnqHIqxFeo8iLEV6lyKsRfY-w2Lk1JNhNXumyavC-vaPlReGRQ_nywtmrwV-arx5PjAPJs53LtyZ16PnJeE-7ZtBLwt3bjiMXhDu4nAqvSDcUVWW1TddrEzN1mvHO9vhmF9vX3J3_MkJKMfc7DzlpaH9lYULUm9vw3qckaL0gzKejcU4_q-ibsz9at13EKs9bsh5oHkViY-aM11L6nlzp3J9k2WWet7oth2djvrwb5OY-HcfluDG_DoggKoFGVKKrjpN80R2l0pmL3JaHALQYcX3GKoHgnC2FAQSgJjABCAhMAWYEDgisIDmGACaGQA0c4AJp0dIQiTgXUIl4FxCJuBdsg7u5RQI_vecA5gQcf_ww4o0hhMPdtazfkLBzZkbzDZqRq6vBxo8Mt83xbChluHogkVdw3kFixrp_zrVukEX0-1taXJX2_LqU_rXH6en3CtNYRpdOEu6vGT6zI23TOFrN88HIx7hzP5pi7oyFgmfTBIRYxtTSse02K5dWchj-iaBNZi0L1XbfVD9CQ8Mm27b_6Adhz9B9c4zTa-uV-zbn0l2H0irhn8WOKkXtl2_zL0r8eUrrW7udTM8G7sNotP6hNsIfvkpAH6ZoHGp8qpc3SM5d8_yPddub63uVsodGnfv86nh27NrlG3hbMUOYN4WdfREpt3jCki1sfqHUW_omSWOnm7IXOg7tS278_9VsabNG1P39_7zP88_f_39_C_eR3xFF7Z1jx_u0HrKPYW44wuqbxDo6Ok3KOykTQ</code>
 
 ☝️ Ссылка для Телефон Артёма — нажми на неё, чтобы скопировать, и вставь в AmneziaVPN
   [⬅️ В меню | fr:refresh:0]
@@ -301,6 +301,7 @@
 ### gst.finisher.menu — «⬅️ В меню» под выдачей — главная
 > press fr:refresh:0
 - delete #2
+! правка удалённого #2
 = edit #2
 👋 <b>Артём</b>
 
@@ -321,10 +322,10 @@
 
 ### gst.block.do — 🛑 Заблокировать — итог
 > press bl:dev:block:1:user:-1
-+ send #2
++ send #1 → чат клиент
 🛑 Устройство «Телефон Артёма» заблокировано.
   [Скрыть | hd]
-+ send #3
++ send #2
 🔴 Доступ к устройству «Телефон Артёма» приостановлен: у владельца доступа закончилась подписка.
   [Скрыть | hd]
 = edit #1
@@ -348,10 +349,10 @@
 
 ### gst.unblock — разблокировать
 > press bl:dev:menu_unblock:1:user:-1
-+ send #2
++ send #1 → чат клиент
 🟢 Устройство «Телефон Артёма» разблокировано.
   [Скрыть | hd]
-+ send #3
++ send #2
 🟢 Доступ к устройству «Телефон Артёма» снова активен.
   [Скрыть | hd]
 = edit #1
@@ -373,7 +374,7 @@
 ### gst.delete.yes — 🗑 удалено последнее — главная без устройств
 > press dd:1:confirm
 ~ (пустой ответ)
-+ send #2
++ send #1 → чат клиент
 Устройство «Телефон Артёма», ранее переданное <a href="tg://user?id=2000">Артём</a>, удалено по его запросу.
 Теперь у тебя 0 из 5 устройств.
   [Скрыть | hd]
@@ -386,7 +387,7 @@
 ### gst.delete.yes.many — 🗑 удалено одно из двух
 > press dd:2:confirm
 ~ (пустой ответ)
-+ send #2
++ send #1 → чат клиент
 Устройство «Ноутбук Артёма», ранее переданное <a href="tg://user?id=2000">Артём</a>, удалено по его запросу.
 Теперь у тебя 1 из 5 устройств.
   [Скрыть | hd]
@@ -481,7 +482,7 @@
 > press g:connect:1:1:link
 - delete #1
 + send #2
-<code>vpn://AAAJTXjadVbtTttIFH2VyL9pytgJJEj8YOlKGVAri3T7B6NosId2Gmds2Q6lRUj7KvsKK_U96Bv1njvjMGazgMKZc4_vx9w7GT9GeWU7Zaxu2uhkdP0YqW-fCTxGFzn9iw6jg1F0sTEWC-EW6gGLGIulAEwYxoAThgnglOEE8AhwwdpjhqydMWTtnCFrBYeULBYcUbJacEDJcsERpdNzSDllzDEXWhW6SZuq03lnKnupv7ORszincrXtUlUUxn4-o09I2M6pXem1_n521-nmo9lo5mc7HlS17ZidO_YrxRjIY87_UutaleZeB4_EXM179bBQtmi_qLU-6zq9qbuWrVzfFZmqzcdGmdJ1JIq51nemVbelPq-qtdGO57pL1XYrauGdQdeix8yO6Cej7mW0zqLDLDrYcdRGx4oBqx4cGwfsUjguCbnYcZOQSxw3DbmJ444CbuH9HYec9zcLOe9vHnLenwiLkd6hCGuR3qMIS5HepQhrkb3PsBg59WRYzZ5p8qqwvv1j5YVh0cP58oLZa4GfGm-eD8yDifOdC3fm9eh5SbhP-2bQy8KdGw6jF4S7OJxKLwh3VJVl9U0XK1Oz9drxznY45t-3L7k7_uQElGNudp7y0tD-ysIFqbe307BJzkph-kkZz8ZiHP9XUTfmfrXuW4jVPj_kPhC9jsWnzdmuJbW9uVO5vskyS21vdNuOTkd9Am-TmPh3H5bgxvx7QACFCzKkFF91mkaK7D6ZzF7ktDoEoAOLBxmqB4LwthQEEoCYwAQgIYAnlxMCRwQW0BwDQDMDgGYOMOH8CEmIBLxLqAScS8gEvEvWwb2cAsH_nrMAEyLuPwCwIo3h1IOd9ayfUnBz5gbzjZqR6-uhBo_M900ybKhlOL5gUddwZsGiRvq7TrVu0MZ0e1ua3NW2vPqU_vXH6Sk3S1OYRhfOki4vmT5zIy5T-NrN9MGIxzizf9qiroxFwieTRMTYxpTSMS22a1cW8pi-SWANRu1L1XYfVH_KA8Om2_Zfasfh11C980zzq-sV-_bnkt0H0qrhrwZO6oVt1y-T70p8eaTVzb1uhqdjt0F0Yp9wI8EvvwnALxM0LlVelat7JOfuWr7r2u2t1d1KuVPj7n4-NnyDdo2yLZyt2AHM26KOnsi0e2UBqTZW_zDqDb23xNHTDZkLfae2ZXf-vyrWtHlj6v7uf_7n-eevv5__xeeIr-nCtu4VxJ1aT7k3EXd-QfUNAh09_QZJQ6Ux</code>
+<code>vpn://AAAJSXjadVZtbts4EL2Kod-pG0p2YgfIj2y6gJmghRB3-ycKDEZiWtYyJUhymjYIsFfZKyzQe6Q36rwh5VBZbxzYj2-e54MzNPUY5ZXtlLG6aaOT0fVjpL59JvAYXeT0ER1GB6PoYmMsFsIt1AMWMRZLAZgwjAEnDBPAKcMJ4BHggrXHDFk7Y8jaOUPWCg4pWSw4omS14ICS5YIjSqfnkHLKmGMutCp0kzZVp_POVPZSf2cjZ3FO5WrbpaoojP18Ru-QsJ1Tu9Jr_f3srtPNR7PRzM92PKhq2zE7d-xXijGQx5z_pda1Ks29Dr4SczXv1cNC2aL9otb6rOv0pu5atnJ9V2SqNh8bZUrXkSjmWt-ZVt2W-ryq1kY7nusuVdutqIV3Bl2LHjM7or-MupfROosOs-hgx1EbHSsGrHpwbBywS-G4JORix01CLnHcNOQmjjsKuIX3dxxy3t8s5Ly_ech5fyIsRnqHIqxFeo8iLEV6lyKsRfY-w2Lk1JNhNXumyavC-vaPlReGRQ_nywtmrwV-arx5PjAPJs53LtyZ16PnJeE-7ZtBLwt3bjiMXhDu4nAqvSDcUVWW1TddrEzN1mvHO9vhmF9vX3J3_MkJKMfc7DzlpaH9lYULUm9vw3qckaL0gzKejcU4_q-ibsz9at13EKs9bsh5oHkViY-aM11L6nlzp3J9k2WWet7oth2djvrwb5OY-HcfluDG_DoggKoFGVKKrjpN80R2l0pmL3JaHALQYcX3GKoHgnC2FAQSgJjABCAhMAWYEDgisIDmGACaGQA0c4AJp0dIQiTgXUIl4FxCJuBdsg7u5RQI_vecA5gQcf_ww4o0hhMPdtazfkLBzZkbzDZqRq6vBxo8Mt83xbChluHogkVdw3kFixrp_zrVukEX0-1taXJX2_LqU_rXH6en3CtNYRpdOEu6vGT6zI23TOFrN88HIx7hzP5pi7oyFgmfTBIRYxtTSse02K5dWchj-iaBNZi0L1XbfVD9CQ8Mm27b_6Adhz9B9c4zTa-uV-zbn0l2H0irhn8WOKkXtl2_zL0r8eUrrW7udTM8G7sNotP6hNsIfvkpAH6ZoHGp8qpc3SM5d8_yPddub63uVsodGnfv86nh27NrlG3hbMUOYN4WdfREpt3jCki1sfqHUW_omSWOnm7IXOg7tS278_9VsabNG1P39_7zP88_f_39_C_eR3xFF7Z1jx_u0HrKPYW44wuqbxDo6Ok3KOykTQ</code>
 + send #3
 <b>Подключаемся</b>
 

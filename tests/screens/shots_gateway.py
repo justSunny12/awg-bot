@@ -7,12 +7,10 @@ GatewayServices, построитель подменяет ему класс н�
 и свежие на каждый снимок, поэтому настройки, почта, фраза шифрования,
 мьют обновлений и снимок тика лежат там, где их ищет код.
 
-Упр. канал до сервера AWG: обвязка гасит `linkclient.enabled` на каждом
-снимке (monkeypatch — откат в конце теста), а клиента канала
-(`linkclient._client`) построитель ставит сам на КАЖДОМ снимке — подставной
-с открытой сессией или None. Поэтому у каждого снимка агента есть
-построитель (`_shot` подставляет умолчание), а последний снимок в списке —
-без канала: после теста клиент канала в процессе не остаётся.
+Упр. канал до сервера AWG: обвязка гасит `linkclient.enabled` и снимает
+клиента канала (`linkclient._client`) на каждом снимке, построитель ставит
+их monkeypatch'ем снимка — подмена откатывается в конце снимка и до
+следующего не доживает.
 
 Файлом (бандл, резервная копия) обвязка пока не умеет — экраны «📦 Получена
 конфигурация», вопрос о фразе, итог применения и предложение восстановления
@@ -354,7 +352,7 @@ def _inside(entry: str, net) -> bool:
 def _agent(**opts):
     """Построитель снимка: агент с хостом _Host(**opts); снимок тика, канал,
     почта, фраза, мьют — в БД и conf, где их читает код."""
-    def build(services):
+    def build(services, mp):
         h = _Host(**copy.deepcopy(opts))
         services.__class__ = _Agent
         services.h = h
@@ -369,8 +367,8 @@ def _agent(**opts):
         elif h.standby is not None:
             services.db.set_state(services._LINK_STANDBY_KEY, "1" if h.standby else "0")
         if h.channel:
-            linkclient.enabled = _channel_on
-        linkclient._client = _Channel(services) if h.channel in ("active", "standby") else None
+            mp.setattr(linkclient, "enabled", _channel_on)
+        mp.setattr(linkclient, "_client", _Channel(services) if h.channel in ("active", "standby") else None)
         if h.mail:
             services.email_save("admin@example.org", "DUMMY", "imap.example.org", 993,
                                 "smtp.example.org", 587)

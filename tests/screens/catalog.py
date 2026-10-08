@@ -6,9 +6,9 @@ LABEL_EXCEPTIONS; здесь — общий список, константы и 
 from __future__ import annotations
 
 from tests.screens import shots_admin, shots_client, shots_gateway
-from tests.screens.base import CLIENT_TG, DISPATCHER, HOST, NOW, VERSION, Shot, owner
+from tests.screens.base import CLIENT_TG, DISPATCHER, HOST, NOW, PEERS, VERSION, Shot, owner
 
-__all__ = ["CLIENT_TG", "DISPATCHER", "HOST", "NOW", "VERSION", "Shot", "owner", "SHOTS", "LABEL_EXCEPTIONS"]
+__all__ = ["CLIENT_TG", "DISPATCHER", "HOST", "NOW", "PEERS", "VERSION", "Shot", "owner", "SHOTS", "LABEL_EXCEPTIONS"]
 
 SHOTS = [*shots_admin.SHOTS, *shots_client.SHOTS, *shots_gateway.SHOTS]
 

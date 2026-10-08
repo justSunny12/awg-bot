@@ -154,8 +154,8 @@ async def test_stub_session_answers_aiogram_methods_and_records_them():
     await m2.edit_text("c")                         # объект ответа привязан к боту
     await bot.edit_message_reply_markup(chat_id=42, message_id=2, reply_markup=None)
     await bot.delete_message(42, 3)
-    await bot.answer_callback_query("cq", text="Сохранено", show_alert=True)
-    await bot.answer_callback_query("cq")
+    await bot.answer_callback_query("cq1", text="Сохранено", show_alert=True)
+    await bot.answer_callback_query("cq2")
     assert [c.head for c in session.calls] == [
         "+ send #2", "+ send #3", "= edit #2", "- markup off #2", "- delete #3",
         "~! Сохранено", "~ (пустой ответ)"]
@@ -203,3 +203,194 @@ def test_longest_general_packing_fits_64_bytes_for_both_roles():
     assert GwCB.unpack(worst).val == _LONGEST_KEY
     main = SetCB(sec="mon", act="toggle", key=_LONGEST_KEY).pack()
     assert len(main.encode()) <= 64 and SetCB.unpack(main).key == _LONGEST_KEY, main
+
+
+# ── шаги снимка ──────────────────────────────────────────────────────────────
+
+def test_shorthand_fields_unfold_into_steps_in_the_usual_order():
+    """press/start/text/call — сокращение: /start первым, нажатия, ввод,
+    событие последним. Явные steps — как есть; вместе с сокращениями —
+    ошибка каталога, а не молча выбранный порядок."""
+    from tests.screens.base import Shot
+
+    async def ev(services, bot):
+        pass
+    shot = Shot("cl.x", role="client", start="sub", press=["m:a", "m:b"], text="5", call=("уведомление", ev))
+    assert shot.all_steps() == (("start", "sub"), ("press", "m:a"), ("press", "m:b"), ("text", "5"),
+                                ("call", ev, "уведомление"))
+    steps = (("press", "m:a"), ("text", "5"), ("press", "m:b"), ("start", ""))
+    assert Shot("cl.y", role="client", steps=steps).all_steps() == steps
+    with pytest.raises(AssertionError, match="steps и сокращения"):
+        Shot("cl.z", role="client", steps=steps, press=["m:a"])
+
+
+@pytest.mark.parametrize("step, what", [
+    (("tap", "m:a"), "шаг не понят"),
+    (("press",), "неверное число полей"),
+    (("file", "a.enc", "не байты"), "байты"),
+    (("call", "не функция"), "не функция"),
+])
+def test_malformed_steps_are_refused(step, what):
+    """Опечатка в шаге каталога — внятная ошибка на месте, а не снимок
+    «ничего не произошло» в эталоне."""
+    with pytest.raises(AssertionError, match=what):
+        harness.check_step(step)
+
+
+async def test_text_with_markup_reaches_the_handler_as_html():
+    """Ввод с разметкой (entities) — обработчик видит html_text, как от
+    живого клиента Telegram; строка действия показывает ввод в HTML."""
+    from aiogram import Dispatcher, Router
+    from aiogram.types import Message
+
+    router = Router()
+
+    @router.message()
+    async def echo(message: Message):
+        await message.answer(message.html_text)
+    dp = Dispatcher()
+    dp.include_router(router)
+    session = harness.StubSession(42, catalog.NOW)
+    rec = await harness.run(dp, session, uid=42, name="U", steps=[
+        ("text", "Привет всем", [{"type": "bold", "offset": 0, "length": 6}])])
+    assert rec.action == "> text «<b>Привет</b> всем»", rec.action
+    assert [(c.head, c.body) for c in rec.calls] == [("+ send #2", "<b>Привет</b> всем")]
+
+
+# ── память заглушки: чаты, удалённые, повторные ответы ───────────────────────
+
+async def test_calls_to_another_chat_are_labelled_and_numbered_in_that_chat():
+    """Уведомление другому человеку — с адресатом в заголовке и своей
+    нумерацией; живое меню чата снимка от него не сдвигается."""
+    session = harness.StubSession(1000, catalog.NOW, {1: "админ"})
+    bot = harness.make_bot(session)
+    await bot.send_message(1, "x", reply_markup=_kb([("Скрыть", "hd")]))
+    await bot.send_message(77, "y")
+    await bot.edit_message_reply_markup(chat_id=1, message_id=1, reply_markup=None)
+    await bot.send_message(1000, "z")
+    assert [c.head for c in session.calls] == ["+ send #1 → чат админ", "+ send #1 → чат tg 77",
+                                               "- markup off #1 → чат админ", "+ send #2"]
+    assert session.nav == 1, "кнопки в чужом чате — не живое меню чата снимка"
+
+
+async def test_edit_of_a_deleted_message_and_a_second_answer_are_recorded_not_raised():
+    """Правка удалённого и второй ответ на тот же колбэк в Telegram молча
+    проваливаются (человек не видит ни правки, ни второй всплывашки) — в
+    записи это отдельные строки; снимок не падает, и в нарушения лимитов
+    эти строки не идут (известные баги не красят каталог)."""
+    session = harness.StubSession(42, catalog.NOW)
+    bot = harness.make_bot(session)
+    await bot.delete_message(42, 1)
+    await bot.edit_message_text("новый", chat_id=42, message_id=1)
+    await bot.edit_message_reply_markup(chat_id=42, message_id=1, reply_markup=None)
+    await bot.answer_callback_query("cq1")
+    await bot.answer_callback_query("cq1", text="Профиль не найден", show_alert=True)
+    await bot.answer_callback_query("cq1")
+    heads = [c.head for c in session.calls]
+    assert heads == ["- delete #1", "! правка удалённого #1", "= edit #1", "! правка удалённого #1",
+                     "- markup off #1", "~ (пустой ответ)", "~ (повторный ответ) Профиль не найден",
+                     "~ (повторный ответ)"], heads
+    rec = Record(action="> press x", calls=session.calls)
+    assert harness.problems("adm.x", rec, {}) == []
+
+
+def test_multiline_copy_text_stays_on_one_line():
+    """Текст копирования с переводами строк печатается с «\\n» буквально:
+    формат эталона построчный, иначе кнопка разъезжается на строки текста."""
+    from aiogram.types import CopyTextButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+        text="📋 Скопировать", copy_text=CopyTextButton(text="Привет!\nЖми ссылку\nhttps://t.me/test_bot"))]])
+    assert harness.markup_lines(kb) == ["  [📋 Скопировать | copy:Привет!\\nЖми ссылку\\nhttps://t.me/test_bot]"]
+
+
+# ── снимок целиком через настоящий диспетчер ─────────────────────────────────
+
+@pytest.mark.parametrize("blob, answer", [
+    (b"#!/bin/sh\n# awg-gw-bundle installer\n", "GW_FIRST_RUN_FILE"),
+    (b"DUMMY", "GW_BUNDLE_NOT_OURS"),
+])
+async def test_file_step_hands_the_bytes_to_the_handler(blob, answer, tmp_path, frozen, fakes):
+    """Шаг «файл»: документ с подписью уходит агенту, обработчик скачивает
+    его (getFile и поток байтов) и решает по содержимому — разные байты,
+    разный ответ. Иначе экраны «📦 Получена конфигурация» и восстановления
+    из копии не снять."""
+    from awgbot.bot import texts
+    from tests.screens.base import Shot
+    shot = Shot("gw.file", role="gateway", steps=[("file", "conf.bin", blob, "подпись")])
+    rec = await harness.take(shot, tmp_path, fakes)
+    assert rec.action == "> file conf.bin «подпись»", rec.action
+    sent = [c for c in rec.calls if c.head.startswith("+ send")]
+    assert sent and sent[-1].body == getattr(texts, answer), [(c.head, c.body) for c in rec.calls]
+
+
+async def test_call_step_records_a_notification_without_a_human_action(tmp_path, frozen, fakes):
+    """Шаг «событие»: функция зовётся с сервисами и ботом снимка, запись —
+    что бот отправил, с адресатом; строка действия — имя события."""
+    from awgbot.bot.notifier import notify_one
+    from tests.screens.base import CLIENT_TG, Shot, owner
+
+    async def ping(services, bot):
+        assert services.bot_username == harness.BOT_USERNAME
+        await notify_one(bot, CLIENT_TG, "🔔 <b>Тест</b>")
+    rec = await harness.take(Shot("adm.ev", role="admin", data=lambda s: (owner(s), (1, "Админ"))[1],
+                                  call=("notify_one", ping)), tmp_path, fakes)
+    assert rec.action == "> call notify_one", rec.action
+    assert [(c.head, c.body) for c in rec.calls] == [("+ send #1 → чат клиент", "🔔 <b>Тест</b>")]
+
+
+@pytest.mark.parametrize("photo, heads", [
+    (False, ["= edit #1"]),
+    (True, ["- delete #1", "+ send #2"]),
+])
+async def test_photo_flag_puts_the_button_under_a_photo(photo, heads, tmp_path, frozen, fakes):
+    """Под фото текстовый экран не правится, а пересоздаётся (гайд смотрит
+    cb.message.photo): флаг photo снимает именно эту ветку."""
+    from awgbot.bot.callbacks import GuideCB
+    from tests.screens.base import Shot, owner
+    shot = Shot("cl.g", role="client", press=[GuideCB(guide="connect", step=0)], data=owner, photo=photo)
+    rec = await harness.take(shot, tmp_path, fakes)
+    got = [c.head for c in rec.calls if not c.head.startswith("~")]
+    assert got == heads, got
+
+
+async def test_builder_gets_the_shot_monkeypatch_and_it_is_undone_after_the_shot(tmp_path, frozen, fakes):
+    """Построитель с двумя аргументами получает monkeypatch снимка; подмена
+    не доживает до следующего снимка. Старая сигнатура (services) и
+    ключевые параметры после неё — по-прежнему с одним аргументом."""
+    from awgbot.core import config
+    from tests.screens.base import Shot
+    before = config.SERVER_PORT
+    seen = []
+
+    def two(services, mp):
+        mp.setattr(config, "SERVER_PORT", 1)
+        seen.append(config.SERVER_PORT)
+        return 1, "Админ"
+
+    def one(services, *, status=True):
+        seen.append(config.SERVER_PORT)
+        return 1, "Админ"
+    for i, data in enumerate((two, one)):
+        await harness.take(Shot(f"adm.b{i}", role="admin", start="", data=data), tmp_path, fakes)
+    assert seen == [1, before], seen
+    assert config.SERVER_PORT == before
+
+
+async def test_fakes_and_module_state_start_clean_on_every_shot(tmp_path, frozen, fakes, fake_awg):
+    """Счётчик ключей фейкового awg, страницы листания, метки объявлений —
+    в исходном виде на каждом снимке: иначе vpn:// и экраны зависели бы от
+    места снимка в каталоге."""
+    from awgbot.bot import paging
+    from awgbot.bot.handlers.admin import broadcast
+    from tests.screens.base import Shot
+    seen = []
+
+    def look(services):
+        seen.append((fake_awg._n, dict(paging._pages), dict(broadcast._last_broadcast_at)))
+        fake_awg._n += 5
+        paging.remember(1, "devices", 0, 3)
+        broadcast._last_broadcast_at[("x",)] = 1.0
+        return 1, "Админ"
+    for i in range(2):
+        await harness.take(Shot(f"adm.r{i}", role="admin", start="", data=look), tmp_path, fakes)
+    assert seen == [(0, {}, {}), (0, {}, {})], seen

@@ -15,17 +15,11 @@ from __future__ import annotations
 
 import difflib
 import pathlib
-import shutil
 
 import pytest
 
-from awgbot.bot import paging
-from awgbot.bot.handlers import common
-from awgbot.bot.routers import make_dispatcher
-from awgbot.core import access_cache, config, settings
-from awgbot.util import timeutil
-from tests.conftest import _REPO_CONF, restore_settings
 from tests.screens import catalog, harness
+from tests.screens.harness import take
 
 pytestmark = pytest.mark.screens
 
@@ -33,79 +27,15 @@ HERE = pathlib.Path(__file__).parent
 FILES = sorted({s.role for s in catalog.SHOTS})
 
 
-def _fresh_conf(dst: pathlib.Path, overrides: dict) -> None:
-    """Своя копия conf/ репозитория на снимок: копия общего прогона живёт весь
-    процесс, и тест, записавший туда настройку раньше, менял бы эталон."""
-    dst.mkdir()
-    for f in _REPO_CONF.glob("*.yaml"):
-        shutil.copy2(f, dst / f.name)
-    settings.init(dst)
-    for k, v in overrides.items():
-        settings.set_value(k, v)
-
-
-def _services(role: str, db, monkeypatch):
-    if role == "gateway":
-        from awgbot.domain.gateway import GatewayServices
-        from awgbot.runtime import linkclient
-        monkeypatch.setattr(config, "ROLE", "gateway")
-        monkeypatch.setattr(linkclient, "enabled", lambda: False)
-        return GatewayServices(db)
-    from awgbot.domain.services import Services
-    monkeypatch.setattr(config, "ROLE", "client")
-    return Services(db)
-
-
-async def take(shot: catalog.Shot, tmp: pathlib.Path, monkeypatch) -> harness.Record:
-    """Снять один снимок: свежие conf и БД, сброс модульного состояния,
-    диспетчер роли, действия, запись."""
-    from awgbot.infra.db import Database
-    root = tmp / shot.id
-    root.mkdir()
-    _fresh_conf(root / "conf", shot.conf)
-    # модульное состояние процесса: страницы листания, «карточка с главной»,
-    # кэш «кто это» в middleware
-    paging._pages.clear()
-    common._card_home.clear()
-    access_cache.invalidate_all()
-    db = Database(str(root / "bot.db"))
-    db.init_schema()
-    try:
-        services = _services(shot.role, db, monkeypatch)
-        services.bot_username = harness.BOT_USERNAME
-        uid, name = shot.data(services) if shot.data else (config.ADMIN_ID, "Админ")
-        access_cache.invalidate_all()
-        dp = make_dispatcher(catalog.DISPATCHER[shot.role], services, db, reattach=True)
-        session = harness.StubSession(uid, catalog.NOW)
-        return await harness.run(dp, session, uid=uid, name=name, start=shot.start,
-                                 press=list(shot.press), text=shot.text)
-    finally:
-        db.close()
-
-
-@pytest.fixture()
-def frozen(monkeypatch):
-    """Часы, версия и хост — константы каталога."""
-    import socket
-    import time
-    monkeypatch.setattr(timeutil, "now", lambda: catalog.NOW)
-    monkeypatch.setattr(time, "time", lambda: catalog.NOW.timestamp())
-    monkeypatch.setattr(config, "INSTALLED_VERSION", catalog.VERSION)
-    monkeypatch.setattr(socket, "gethostname", lambda: catalog.HOST)
-    yield
-    restore_settings()
-
-
 @pytest.mark.parametrize("name", FILES)
-async def test_screens_match_the_reference_file(name, request, tmp_path, monkeypatch, frozen,
-                                               fake_awg, fake_routing):
+async def test_screens_match_the_reference_file(name, request, tmp_path, frozen, fakes):
     """Все снимки роли — через диспетчер; ни одно нажатие не ушло в обработчик
     устаревшей кнопки; лимиты и HTML в порядке; запись совпадает с эталоном
     байт в байт."""
     shots = [s for s in catalog.SHOTS if s.role == name]
     parts, bad = [], []
     for shot in shots:
-        rec = await take(shot, tmp_path, monkeypatch)
+        rec = await take(shot, tmp_path, fakes)
         stale = [c.head for c in rec.everything
                  if "Кнопка устарела" in (c.toast or "") or "Кнопка устарела" in (c.body or "")]
         assert not stale, f"{shot.id}: нажатие не поймал ни один экран — ушло в устаревшую кнопку: {stale}"
@@ -139,14 +69,13 @@ def test_every_shot_id_is_unique_and_names_its_role():
     assert not unknown, f"исключения для снимков, которых нет: {unknown}"
 
 
-async def test_a_button_no_screen_takes_is_seen_as_stale(tmp_path, monkeypatch, frozen,
-                                                         fake_awg, fake_routing):
+async def test_a_button_no_screen_takes_is_seen_as_stale(tmp_path, frozen, fakes):
     """Сторож достижимости не пустой: кнопка, которую не разбирает ни один
     экран (упаковка прежней версии), проходит весь диспетчер до обработчика
     устаревшей — и запись это показывает. Иначе проверка «ни одно нажатие не
     ушло в устаревшую» была бы зелёной всегда."""
     from awgbot.bot.handlers.stale import STALE_BUTTON
-    rec = await take(catalog.Shot("adm.stale", role="admin", press=["cs:manage:1"]), tmp_path, monkeypatch)
+    rec = await take(catalog.Shot("adm.stale", role="admin", press=["cs:manage:1"]), tmp_path, fakes)
     heads = [c.head for c in rec.everything]
     assert f"~ {STALE_BUTTON}" in heads, heads
     assert "- markup off #1" in heads, "у старого сообщения остались живые кнопки"
