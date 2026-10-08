@@ -42,12 +42,13 @@ def _module() -> types.ModuleType:
     m.ID, m.LABEL, m.BACK = ID, "🕒 Расписание", "root"
     m.KEYS = (ON, HOUR)
     m.BOUNDS = {HOUR: (0, 23, "Час запуска", "ч")}
+    m.DEFAULTS = {HOUR: 4}
     m.CYCLES = {}
     m.ACTIONS = {}
 
     def text(br) -> str:
         on = settings.get_bool(ON, True)
-        hour = settings.get_int(HOUR, 4)
+        hour = settings.get_int(HOUR, m.DEFAULTS[HOUR])
         return ui.screen(m.LABEL, f"{ui.tick(on)} {'вкл' if on else 'выкл'}",
                          lines=[f"Запуск в {hour:02d}:00 по часам {br.host_gen}" if on else None])
 
@@ -56,7 +57,8 @@ def _module() -> types.ModuleType:
         kb = InlineKeyboardBuilder()
         kb.button(text=f"{ui.tick(on)} Расписание", callback_data=br.cb.pack(ID, "toggle", ON))
         if on:
-            kb.button(text=f"✏️ {settings.get_int(HOUR, 4):02d}:00", callback_data=br.cb.pack(ID, "edit", HOUR))
+            kb.button(text=f"✏️ {settings.get_int(HOUR, m.DEFAULTS[HOUR]):02d}:00",
+                      callback_data=br.cb.pack(ID, "edit", HOUR))
         kb.adjust(2)
         kb.row(back_button(br))
         return kb.as_markup()
@@ -149,10 +151,10 @@ async def test_the_toggle_writes_conf_and_redraws_the_section(rails, tmp_path, r
 async def test_the_input_asks_with_cancel_writes_the_number_and_puts_the_result_on_top(rails, tmp_path, role):
     """Ввод: приглашение на месте раздела с «✖️ Отмена» (реестр экранов:
     set_schedule), «5» пишет ключ, раздел возвращается с итогом первой
-    строкой; переспрос на значение вне границ модуля. Умолчание ключа — в
-    conf (рецепт: «conf/app.yaml по нужде»), как у настоящего раздела."""
+    строкой; переспрос на значение вне границ модуля. Ключа в conf нет —
+    «сейчас» и «было» в итоге берутся из DEFAULTS модуля."""
     br = _br(role)
-    conf = {HOUR: 4}
+    conf: dict = {}
     rec = await _take(tmp_path, role, ("press", br.cb.pack(ID)), ("press", br.cb.pack(ID, "edit", HOUR)),
                       conf=conf)
     assert not _stale(rec), _stale(rec)
@@ -163,7 +165,7 @@ async def test_the_input_asks_with_cancel_writes_the_number_and_puts_the_result_
     assert labels == ["✖️ Отмена"] and CancelCB.unpack(datas[0]) == CancelCB(kind=f"set_{ID}", ref=0), datas
     rec = await _take(tmp_path, role, ("press", br.cb.pack(ID)), ("press", br.cb.pack(ID, "edit", HOUR)),
                       ("text", "24"), conf=conf)
-    assert settings.get_int(HOUR, 0) == 4, "значение вне границ записано"
+    assert settings.get(HOUR) is None, "значение вне границ записано"
     assert any("0–23" in (c.body or "") for c in rec.calls), [c.head for c in rec.calls]
     rec = await _take(tmp_path, role, ("press", br.cb.pack(ID)), ("press", br.cb.pack(ID, "edit", HOUR)),
                       ("text", "5"), conf=conf)

@@ -4,6 +4,7 @@
 отключения — settingscore.email_action."""
 from __future__ import annotations
 
+from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import texts
@@ -34,7 +35,7 @@ def email_code_label(n: int) -> str:
     return f"🔢 Код: {n} {word}"
 
 
-def keyboard(br, configured: bool):
+def keyboard(br, configured: bool) -> InlineKeyboardMarkup:
     s = settings
     kb = InlineKeyboardBuilder()
     rows: list[int] = []
@@ -63,7 +64,7 @@ def keyboard(br, configured: bool):
     return kb.as_markup()
 
 
-def offer_kb(br, back_sec: str):
+def offer_kb(br, back_sec: str) -> InlineKeyboardMarkup:
     """«Почта не настроена» — назад в раздел или настроить сейчас."""
     kb = InlineKeyboardBuilder()
     kb.add(back_button(br, back_sec))

@@ -3,6 +3,7 @@
 кнопкой, «сделать сейчас»; восстановление из файла в чате (handlers/restore)."""
 from __future__ import annotations
 
+from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import keyboards as kb
@@ -30,7 +31,7 @@ def backup_when_label(day: int, hour: int) -> str:
     return f"✏️ {_day_label(day)}, {int(hour):02d}:00"
 
 
-def keyboard(br, encryption: bool = False):
+def keyboard(br, encryption: bool = False) -> InlineKeyboardMarkup:
     s = settings
     kb_ = InlineKeyboardBuilder()
     on = s.get_bool("app.scheduler.backup_enabled", True)
@@ -51,7 +52,7 @@ def keyboard(br, encryption: bool = False):
     return kb_.as_markup()
 
 
-def encryption_kb(br, has_secret: bool):
+def encryption_kb(br, has_secret: bool) -> InlineKeyboardMarkup:
     kb_ = InlineKeyboardBuilder()
     kb_.button(text="✏️ Сменить фразу" if has_secret else "🔑 Задать фразу", callback_data=br.cb.pack(ID, "do", "enc_set"))
     kb_.add(back_button(br, ID))
@@ -59,7 +60,7 @@ def encryption_kb(br, has_secret: bool):
     return kb_.as_markup()
 
 
-def restore_confirm_kb(br):
+def restore_confirm_kb(br) -> InlineKeyboardMarkup:
     """«Отмена» первой: восстановление необратимо, промах пальцем не должен
     возвращать всех на неделю назад."""
     return kb.confirm(br.cb.pack(ID, "do", "restore_drop"), "♻️ Восстановить", br.cb.pack(ID, "do", "restore!"))

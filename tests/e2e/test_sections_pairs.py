@@ -240,10 +240,11 @@ async def test_never_from_an_old_config_becomes_month_and_mute_on_open(env, fake
 
 async def test_the_outage_threshold_is_minutes_on_screen_and_the_role_scale_in_the_config(env, fake_bot, store):
     """Порог простоя (у агента — молчания линка) правится в минутах, а в
-    br.keys.outage пишется с множителем роли (у агента секунды): «7» — это
-    7 мин на экране и 7 × outage_scale в конфиге."""
+    br.keys.outage пишется с множителем ключа (у агента секунды): «7» — это
+    7 мин на экране и 7 × sections.scale в конфиге."""
     br = env.br
-    store[br.keys.outage] = 5 * br.keys.outage_scale
+    k = sections.scale(br.keys.outage)
+    store[br.keys.outage] = 5 * k
     _, markup = await sections.screen("mon", br, env.services)
     btn = _button(markup, f"{br.mon_outage_button}: 5 мин").callback_data
     assert sections.resolve(br, btn) == ("mon", "edit", br.keys.outage, "")
@@ -252,7 +253,7 @@ async def test_the_outage_threshold_is_minutes_on_screen_and_the_role_scale_in_t
     cb, nav = await _press(env, fake_bot, btn, st)
     assert _last_edit(nav)[0] == f"✏️ <b>{label}</b> · сейчас 5 мин · 1–1440", _last_edit(nav)[0]
     msg = await _type(env, fake_bot, "7", st)
-    assert store[br.keys.outage] == 7 * br.keys.outage_scale, store[br.keys.outage]
+    assert store[br.keys.outage] == 7 * k, store[br.keys.outage]
     answers = [s for s in msg.sent if s[0] == "answer"]
     assert len(answers) == 1 and answers[0][1].split("\n")[0] == f"✅ {label}: 5 → 7 мин", answers
     assert f"{br.mon_outage_button}: 7 мин" in [b for r in _rows(answers[0][2]) for b in r]

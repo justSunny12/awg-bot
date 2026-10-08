@@ -72,6 +72,24 @@ def bounds(key: str):
     return texts.SETTINGS_BOUNDS.get(key)
 
 
+def default(key: str):
+    """Умолчание ключа, пока его нет в conf (в единицах хранения): DEFAULTS
+    модуля раздела; None — умолчания нет."""
+    for m in MODULES:
+        if key in getattr(m, "DEFAULTS", {}):
+            return m.DEFAULTS[key]
+    return None
+
+
+def scale(key: str) -> int:
+    """Множитель хранения ключа: человек вводит и видит одни единицы, conf
+    хранит другие (ввод × множитель = значение в conf). SCALE модуля; 1 — нет."""
+    for m in MODULES:
+        if key in getattr(m, "SCALE", {}):
+            return m.SCALE[key]
+    return 1
+
+
 def cycle_values(key: str):
     for m in MODULES:
         if key in m.CYCLES:

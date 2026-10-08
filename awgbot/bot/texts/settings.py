@@ -26,19 +26,19 @@ SETTINGS_NOTIFY_CLIENTS = ui.head("👥 О чём сообщать", value="")
 def settings_notify_text(br) -> str:
     """Тихие часы и алерты хоста — строками по текущим значениям; про аварии
     на e-mail — под «подробнее». Порог температуры и перечень аварий — роли."""
-    from awgbot.core import settings as s
+    from awgbot.bot.sections.notify import _bool, _int
     lines = [ui.head("🔔 Уведомления")]
-    if s.get_bool("quiet_hours.quiet_hours_enabled", True):
-        lines.append(f"Тихие часы {s.get_int('quiet_hours.quiet_hours_start', 20):02d}:00–"
-                     f"{s.get_int('quiet_hours.quiet_hours_end', 7):02d}:00 МСК — без звука, кроме аварий")
+    if _bool("quiet_hours.quiet_hours_enabled"):
+        lines.append(f"Тихие часы {_int('quiet_hours.quiet_hours_start'):02d}:00–"
+                     f"{_int('quiet_hours.quiet_hours_end'):02d}:00 МСК — без звука, кроме аварий")
     else:
         lines.append("Тихие часы выключены — уведомления со звуком круглые сутки")
-    if s.get_bool("resource_alerts.enabled", True):
-        line = (f"Алерты хоста: CPU {s.get_int('resource_alerts.thresholds_percent.cpu', 80)}% · "
-                f"RAM {s.get_int('resource_alerts.thresholds_percent.ram', 80)}% · "
-                f"диск {s.get_int('resource_alerts.thresholds_percent.disk', 80)}%")
+    if _bool("resource_alerts.enabled"):
+        line = (f"Алерты хоста: CPU {_int('resource_alerts.thresholds_percent.cpu')}% · "
+                f"RAM {_int('resource_alerts.thresholds_percent.ram')}% · "
+                f"диск {_int('resource_alerts.thresholds_percent.disk')}%")
         if br.keys.temp_alert:
-            line += f" · {s.get_int(br.keys.temp_alert, 75)} °C"
+            line += f" · {_int(br.keys.temp_alert)} °C"
         lines.append(line)
     else:
         lines.append("Алерты хоста выключены")
@@ -167,12 +167,12 @@ def settings_mon_text(br) -> str:
     """Одной строкой: опрос, порог алерта, порог простоя роли (у агента —
     молчание линка; хранится в секундах, показывается в минутах вверх)."""
     from awgbot.core import settings as s
+    from awgbot.bot.sections import mon
     loud = s.get_bool(br.keys.outage_loud, True)
-    streak = s.get_int("app.monitoring.alert_streak", 5)
-    raw = s.get_int(br.keys.outage, 5 * br.keys.outage_scale)
-    mins = max(1, -(-raw // br.keys.outage_scale))
+    streak = s.get_int("app.monitoring.alert_streak", mon.DEFAULTS["app.monitoring.alert_streak"])
+    mins = mon.outage_minutes(br)
     return ui.head("🩺 Мониторинг", meta=[
-        f"опрос раз в {s.get_int(br.keys.monitor_minutes, 3)} мин",
+        f"опрос раз в {s.get_int(br.keys.monitor_minutes, mon.DEFAULTS[br.keys.monitor_minutes])} мин",
         f"алерт после {streak} {plural_ru(streak, 'плохого замера', 'плохих замеров', 'плохих замеров')}",
         f"{br.mon_outage} {mins} мин — " + ("со звуком круглые сутки" if loud else "по правилам тихих часов")])
 

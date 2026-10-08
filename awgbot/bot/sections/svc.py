@@ -3,6 +3,7 @@
 (кнопки ведут в обработчики переезда основного бота)."""
 from __future__ import annotations
 
+from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import texts
@@ -19,7 +20,7 @@ CYCLES: dict = {}
 BOT_RESTARTING = "🔁 Бот перезапускается — вернётся через несколько секунд"
 
 
-def keyboard(br, migration: str = "", available: bool = False, orphans: int = 0):
+def keyboard(br, migration: str = "", available: bool = False, orphans: int = 0) -> InlineKeyboardMarkup:
     """Перезапуски парой; переезд — по состоянию: идёт — кто не переехал,
     завершить и отменить; нет — начать (если настроен) и переехавшие после
     отмены (если есть)."""

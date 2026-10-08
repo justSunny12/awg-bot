@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from aiogram import F
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import texts
@@ -28,7 +28,7 @@ AFTER_CYCLE_KEY = "cached"      # после цикла — раздел без 
 ACTIONS: dict = {}
 
 
-def keyboard(br, muted: bool, target_tag: str = "", blocked: str = ""):
+def keyboard(br, muted: bool, target_tag: str = "", blocked: str = "") -> InlineKeyboardMarkup:
     """target_tag — найденная цель (кнопка «⬆️ Обновить до vX», если не
     заблокирована); «Уведомлять» — мьют в БД; «Проверка» — цикл."""
     s = settings

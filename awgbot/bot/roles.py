@@ -121,7 +121,6 @@ class Keys:
     """Какие ключи настроек читает роль."""
     monitor_minutes: str         # частота опроса монитора
     outage: str                  # порог простоя (у агента — молчание линка)
-    outage_scale: int            # множитель хранения: агент хранит секунды, показывает минуты
     outage_loud: str             # «Звук 24/7» для аварии простоя/линка
     temp_alert: str              # порог температуры; "" — у роли его нет (OPTIONAL)
 
@@ -184,7 +183,7 @@ MAIN = BotRole(
     root_labels={"srv": "🖥 Сервер AWG", "fw": "🛡 SSH-доступ", "subs": "💳 Подписки"},
     role_screens="awgbot.bot.handlers.settings.render:_screen",
     keys=Keys(monitor_minutes="app.scheduler.monitor_minutes",
-              outage="app.monitoring.service_failure_alert_minutes", outage_scale=1,
+              outage="app.monitoring.service_failure_alert_minutes",
               outage_loud="app.monitoring.service_failure_alert_loud",
               temp_alert=""),
     has=Has(email_resume=True, migration=True),
@@ -213,7 +212,7 @@ GATEWAY = BotRole(
     root_labels={"ssh": "🛡 SSH-доступ"},
     role_screens="awgbot.bot.handlers.gateway:_section",
     keys=Keys(monitor_minutes="app.gateway.monitor_minutes",
-              outage="app.gateway.handshake_max_age", outage_scale=60,
+              outage="app.gateway.handshake_max_age",
               outage_loud="app.gateway.link_alert_loud",
               temp_alert="app.gateway.temp_alert_c"),
     has=Has(email_resume=False, migration=False),

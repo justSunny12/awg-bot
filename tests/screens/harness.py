@@ -492,14 +492,14 @@ def keyboard_builders() -> dict[str, object]:
 
 def section_builders() -> dict[str, object]:
     """Построители клавиатур общих разделов (awgbot/bot/sections/*): по
-    имени — keyboard и *_kb, объявленные в модуле раздела. Ключ —
+    аннотации результата (…KeyboardMarkup), как у модулей клавиатур. Ключ —
     «sections.<модуль>.<имя>»."""
     from awgbot.bot import sections
     out = {}
     for m in sections.MODULES:
         short = m.__name__.rsplit(".", 1)[-1]
         for name, fn in inspect.getmembers(m, inspect.isfunction):
-            if fn.__module__ == m.__name__ and (name == "keyboard" or name.endswith("_kb")):
+            if fn.__module__ == m.__name__ and "KeyboardMarkup" in str(fn.__annotations__.get("return", "")):
                 out[f"sections.{short}.{name}"] = fn
     return out
 
@@ -521,14 +521,20 @@ def record_section_screens(mp) -> set[tuple[str, str]]:
 
 
 def unannotated_keyboard_functions() -> list[str]:
-    """Публичные функции модулей клавиатур без аннотации результата: по ним
-    не понять, построитель ли это, — сторож полноты такую пропустил бы."""
+    """Публичные функции модулей клавиатур и общих разделов без аннотации
+    результата: по ним не понять, построитель ли это, — сторож полноты такую
+    пропустил бы. Корутины разделов (screen, действия) — не построители."""
     import importlib
+    from awgbot.bot import sections
     out = []
-    for short in KEYBOARD_MODULES:
-        mod = importlib.import_module(f"awgbot.bot.keyboards.{short}")
+    mods = [importlib.import_module(f"awgbot.bot.keyboards.{short}") for short in KEYBOARD_MODULES]
+    mods += list(sections.MODULES)
+    for mod in mods:
+        short = mod.__name__.rsplit(".", 1)[-1]
         for name, fn in inspect.getmembers(mod, inspect.isfunction):
-            if fn.__module__ == mod.__name__ and not name.startswith("_") and "return" not in fn.__annotations__:
+            if fn.__module__ != mod.__name__ or name.startswith("_") or inspect.iscoroutinefunction(fn):
+                continue
+            if "return" not in fn.__annotations__:
                 out.append(f"{short}.{name}")
     return out
 

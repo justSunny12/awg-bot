@@ -2,6 +2,7 @@
 «🔔 Уведомлений», есть у роли, в чьём словаре он назван подразделом."""
 from __future__ import annotations
 
+from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import texts
@@ -22,7 +23,7 @@ def text(br) -> str:
     return texts.SETTINGS_NOTIFY_CLIENTS
 
 
-def keyboard(br):
+def keyboard(br) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     for key, lbl in CLIENT_EVENT_LABELS:
         on = settings.get_bool(f"notifications.client_events.{key}", True)

@@ -117,6 +117,8 @@ def test_every_module_declares_the_whole_contract(m):
         assert m.BACK in sections.SECTIONS, f"«{m.ID}»: BACK «{m.BACK}» ведёт в никуда"
     assert set(m.BOUNDS) <= set(m.KEYS), f"«{m.ID}»: границы для ключей не своего раздела"
     assert set(m.CYCLES) <= set(m.KEYS), f"«{m.ID}»: цикл для ключа не своего раздела"
+    assert set(getattr(m, "DEFAULTS", {})) <= set(m.KEYS), f"«{m.ID}»: умолчание для ключа не своего раздела"
+    assert set(getattr(m, "SCALE", {})) <= set(m.BOUNDS), f"«{m.ID}»: множитель у ключа без ввода числа"
     for key, (lo, hi, label, _unit) in m.BOUNDS.items():
         assert lo <= hi and label, (m.ID, key)
 

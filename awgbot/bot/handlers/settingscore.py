@@ -46,13 +46,8 @@ class Hooks:
     br: object
 
 
-_TOGGLE_DEFAULTS = {"notifications.email_fallback": False}
-# ключи, которые человек видит в одних единицах, а конфиг хранит в других:
-# ключ → множитель (ввод × множитель = значение в конфиге)
-_SCALE = {"app.gateway.handshake_max_age": 60}
-# умолчания для приглашения, когда ключа в конфиге ещё нет (значение в единицах конфига)
-_DEFAULTS = {"app.gateway.handshake_max_age": 300, "app.gateway.monitor_minutes": 3,
-             "app.gateway.temp_alert_c": 75}
+# Умолчания и множители хранения ключей — DEFAULTS/SCALE модулей разделов
+# (sections.default, sections.scale): ядро знает ключ только через раздел.
 
 
 async def ask(cb: CallbackQuery, services, state: FSMContext, prompt: str, sec: str) -> None:
@@ -96,9 +91,10 @@ async def start_edit(cb: CallbackQuery, services, hooks: Hooks, state: FSMContex
         d2 = str(settings.get("app.client_config.dns2", "") or "")
         prompt = texts.settings_prompt(key, f"{d1}, {d2}" if d2 and d2 != d1 else d1)
     else:
-        cur = settings.get(key, _DEFAULTS.get(key))
-        if key in _SCALE and cur is not None:
-            cur = max(1, -(-int(cur) // _SCALE[key]))       # вверх: 90 с — «2 мин»
+        cur = settings.get(key, sections.default(key))
+        k = sections.scale(key)
+        if k != 1 and cur is not None:
+            cur = max(1, -(-int(cur) // k))                  # вверх: 90 с — «2 мин»
         prompt = texts.settings_prompt(key, cur)
     await ask(cb, services, state, prompt, sec)
     await cb.answer()
@@ -249,12 +245,12 @@ async def receive_value(message: Message, state: FSMContext, services, hooks: Ho
     except ValueError:
         await ask_tracked(message, services, texts.settings_bad_value(key))
         return
-    old = settings.get(key, _DEFAULTS.get(key))
-    scale = _SCALE.get(key, 1)
-    if scale != 1 and old is not None:
-        old = max(1, -(-int(old) // scale))
+    old = settings.get(key, sections.default(key))
+    k = sections.scale(key)
+    if k != 1 and old is not None:
+        old = max(1, -(-int(old) // k))
     try:
-        await call(settings.set_value, key, val * scale)
+        await call(settings.set_value, key, val * k)
     except settings.SettingsWriteError as e:
         await state.clear()
         await after_input(message, services, hooks, sec, f"⚠️ {texts._e(str(e))}")
@@ -279,7 +275,9 @@ async def toggle_bool(cb: CallbackQuery, services, hooks: Hooks, key: str, sec: 
         return
     # дефолт тумблера — по ключу: у большинства «включено», но у ключей с
     # дефолтом «выключено» первое нажатие иначе записало бы «выкл»
-    cur = settings.get_bool(key, _TOGGLE_DEFAULTS.get(key, True))
+    from awgbot.bot import sections
+    d = sections.default(key)
+    cur = settings.get_bool(key, True if d is None else bool(d))
     try:
         await call(settings.set_value, key, not cur)
     except settings.SettingsWriteError as e:

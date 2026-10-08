@@ -2,6 +2,7 @@
 «⬅️ В меню» — главная роли."""
 from __future__ import annotations
 
+from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from awgbot.bot import texts
@@ -17,7 +18,7 @@ def text(br) -> str:
     return texts.settings_root_text()
 
 
-def keyboard(br):
+def keyboard(br) -> InlineKeyboardMarkup:
     from . import label
     kb = InlineKeyboardBuilder()
     for sec in br.settings_root:
