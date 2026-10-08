@@ -5,18 +5,13 @@ from __future__ import annotations
 from awgbot.domain.gwchecks import CHECK_GROUPS_QUIET_UNKNOWN, failure_detail
 from awgbot.util import timeutil
 
-from .fmt import _e, human_bytes, updown_brief, plural_ru
-from .settings import SVC_CONFIRM_AWG, ssh_owner_refusal, warnings_block, address_list_line, ssh_port_ask
+from .fmt import _e, human_bytes, updown_brief, plural_ru, num, more
+from .settings import warnings_block, address_list_line
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Роль gateway (docs/ROADMAP.md, п.7)
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-def _n(n) -> str:
-    """«1 234 567» — разряды пробелом."""
-    return f"{int(n or 0):,}".replace(",", " ")
 
 
 def _gw_link_short(st) -> str:
@@ -156,9 +151,9 @@ def gateway_health(st) -> str:
         lines.append(f"{mark} {_e(c.name)}" + (f" — {_e(c.detail)}" if c.detail else ""))
     hw = []
     if st.ram_free_mb is not None:
-        hw.append(f"RAM свободно {_n(st.ram_free_mb)} МБ")
+        hw.append(f"RAM свободно {num(st.ram_free_mb)} МБ")
     if st.disk_free_gb is not None:
-        free = f"{st.disk_free_gb:.1f}" if st.disk_free_gb < 10 else _n(round(st.disk_free_gb))
+        free = f"{st.disk_free_gb:.1f}" if st.disk_free_gb < 10 else num(round(st.disk_free_gb))
         hw.append(f"диск свободно {free} ГБ" + (f", SMART {st.smart}" if st.smart else ""))
     if st.throttled is not None:
         now = st.throttled.get("now") or []
@@ -182,13 +177,13 @@ def _packets(pk) -> str:
     n = int(pk or 0)
     if not n:
         return "нет пакетов"
-    return _n(n) + " " + plural_ru(n, "пакет", "пакета", "пакетов")
+    return num(n) + " " + plural_ru(n, "пакет", "пакета", "пакетов")
 
 
 def _lists_counts(lan: dict) -> str:
     d, n = int(lan.get("domains", 0) or 0), int(lan.get("nets", 0) or 0)
-    return (f"{_n(d)} " + plural_ru(d, "домен", "домена", "доменов") + ", "
-            + f"{_n(n)} " + plural_ru(n, "подсеть", "подсети", "подсетей"))
+    return (f"{num(d)} " + plural_ru(d, "домен", "домена", "доменов") + ", "
+            + f"{num(n)} " + plural_ru(n, "подсеть", "подсети", "подсетей"))
 
 
 def _lists_updated_short(raw: str) -> str:
@@ -324,14 +319,6 @@ def short_name(name: str, limit: int = 80) -> str:
     return name if len(name) <= limit else name[:limit - 1] + "…"
 
 
-def note_budget(screen_text: str, reserve: int = 300) -> int:
-    """Сколько знаков остаётся под итог первой строкой экрана: 4096 минус
-    видимый текст экрана и запас на хвост и «…и ещё N строк»."""
-    import html as _html
-    import re as _re
-    visible = _html.unescape(_re.sub(r"<[^>]+>", "", screen_text))
-    return max(400, 4096 - len(visible) - reserve)
-
 
 def gateway_transit_result(ok: bool, out: str, sync: str = "", budget: int = 3300) -> str:
     """Итог add/ru/del — строки скрипта «домен: добавлен / убран / уже в
@@ -366,46 +353,6 @@ def gw_settings_text() -> str:
     return settings_root_text()
 
 
-GW_SETTINGS_SVC = ("🔧 <b>Сервис</b>\n"
-                   "Перезапуск AWG переподнимает линк до сервера AWG — РФ-доступ у всех прервётся на секунды; "
-                   "перезапуск бота на трафик не влияет")
-
-
-def gw_settings_notify_text() -> str:
-    from awgbot.core import settings as s
-    from .fmt import details
-    lines = ["🔔 <b>Уведомления</b>"]
-    if s.get_bool("quiet_hours.quiet_hours_enabled", True):
-        lines.append(f"Тихие часы {s.get_int('quiet_hours.quiet_hours_start', 20):02d}:00–"
-                     f"{s.get_int('quiet_hours.quiet_hours_end', 7):02d}:00 МСК — без звука, кроме аварий")
-    else:
-        lines.append("Тихие часы выключены — уведомления со звуком круглые сутки")
-    if s.get_bool("resource_alerts.enabled", True):
-        lines.append(f"Алерты хоста: CPU {s.get_int('resource_alerts.thresholds_percent.cpu', 80)}% · "
-                     f"RAM {s.get_int('resource_alerts.thresholds_percent.ram', 80)}% · "
-                     f"диск {s.get_int('resource_alerts.thresholds_percent.disk', 80)}% · "
-                     f"{s.get_int('app.gateway.temp_alert_c', 75)} °C")
-    else:
-        lines.append("Алерты хоста выключены")
-    lines.append(details("Аварии на e-mail — только когда Telegram недоступен: линк, выход наружу, "
-                         "обвязка, питание, перегрев, перегруз"))
-    return "\n".join(lines)
-
-
-def _streak(n: int) -> str:
-    return f"{n} " + plural_ru(n, "плохого замера", "плохих замеров", "плохих замеров")
-
-
-def gw_settings_mon_text() -> str:
-    from awgbot.core import settings as s
-    loud = s.get_bool("app.gateway.link_alert_loud", True)
-    from awgbot.bot.keyboards.gateway import link_minutes
-    mins = link_minutes(s.get_int("app.gateway.handshake_max_age", 300))
-    return (f"🩺 <b>Мониторинг</b> · опрос раз в {s.get_int('app.gateway.monitor_minutes', 3)} мин · алерт после "
-            f"{_streak(s.get_int('app.monitoring.alert_streak', 5))} · линк молчит дольше "
-            f"{mins} мин — " + ("со звуком круглые сутки" if loud else "по правилам тихих часов"))
-
-
 GW_BACKUP_NO_KEY = ("💾 Бэкап шлюза — только шифрованный: внутри приватные ключи линка. "
                     "Задай парольную фразу: 🔐 Шифрование")
 
@@ -415,21 +362,12 @@ def host_rebooted(hostname: str, who: str) -> str:
     return f"⚠️ Хост {_e(hostname)} был перезагружен.\n✅ Запуск {_e(who)} успешен"
 
 
-def gw_confirm_restart(carries: bool = True) -> str:
-    """carries — шлюз сейчас несёт трафик и линк жив: только тогда честно
-    предупреждать, что РФ-доступ прервётся."""
-    return ("🔁 Перезапустить AWG? Линк опустится и поднимется"
-            + (" — РФ-доступ у всех прервётся на секунды" if carries else ""))
-
-
 def gw_confirm_reassert(carries: bool = True) -> str:
     return ("🔧 Восстановить шлюз?\nЮнит переставит правила (маскарад, изоляция, метка) и "
             "переподнимет линк" + (" — РФ-доступ прервётся на секунды" if carries else ""))
 
 
-GW_CONFIRM_RESTART = gw_confirm_restart()
 GW_CONFIRM_REASSERT = gw_confirm_reassert()
-GW_CONFIRM_BOT_RESTART = "🔁 Перезапустить бота? Вернётся через несколько секунд; без влияния на пользователей"
 GW_BOT_RESTARTING = "🔁 Бот перезапускается — вернётся через несколько секунд"
 
 
@@ -539,13 +477,6 @@ def gateway_op_result(title: str, ok: bool, detail: str) -> str:
     return head + (f"\n<code>{_e(detail)}</code>" if detail else "")
 
 
-def awg_restart_warning_body(gateway: bool, carries: bool = True) -> str:
-    """Слово в слово предупреждение экрана «Перезапустить AWG» — у ролей оно разное."""
-    # у обеих ролей подтверждение однострочное: «🔁 Перезапустить AWG? <цена>»
-    src = gw_confirm_restart(carries) if gateway else SVC_CONFIRM_AWG
-    return src.split("? ", 1)[-1]
-
-
 def gateway_bundle_received(link_changed: bool, carries: bool = True) -> str:
     if link_changed:
         return ("📦 <b>Конфигурация с сервера AWG</b>\n"
@@ -559,9 +490,6 @@ def gateway_bundle_received(link_changed: bool, carries: bool = True) -> str:
 
 def _owner_name(kind: str) -> str:
     return {"omv": "OMV", "generator": "другой процесс"}.get(kind, "")
-
-
-_ALLOW_SHOWN = 12       # кнопки — до 8, текст — до 12: лимит 4096 при длинных именах
 
 
 def gateway_ssh_text(st: dict) -> str:
@@ -611,13 +539,8 @@ def gateway_ssh_text(st: dict) -> str:
     unresolved = st.get("unresolved") or []
     if unresolved:
         held = st.get("held") or []
-        names = ", ".join(f"<code>{_e(n)}</code>" for n in unresolved[:_ALLOW_SHOWN])
-        if len(unresolved) > _ALLOW_SHOWN:
-            names += f" и ещё {len(unresolved) - _ALLOW_SHOWN}"
-        held_s = ", ".join(f"<code>{_e(h)}</code>" for h in held[:_ALLOW_SHOWN])
-        if len(held) > _ALLOW_SHOWN:
-            held_s += f" и ещё {len(held) - _ALLOW_SHOWN}"
-        tail = (" — держу прошлый адрес: " + held_s
+        names = more(unresolved)
+        tail = (" — держу прошлый адрес: " + more(held)
                 if held else " — прошлого адреса нет, снаружи по этому имени не зайти")
         warns.append("⚠️ Не резолвится: " + names + tail)
     op = st.get("owner_port")
@@ -640,15 +563,6 @@ def gateway_ssh_text(st: dict) -> str:
     return "\n".join(lines + warnings_block(warns))
 
 
-def gw_ssh_port_ask(current: int | None = None) -> str:
-    return ssh_port_ask(current, gateway=True)
-
-
-def gateway_ssh_owner_refusal(st: dict, listening: int | None) -> str:
-    """Отказ смены порта на шлюзе — тот же текст, что у основного бота."""
-    return ssh_owner_refusal(st, listening, place="шлюзе")
-
-
 def gateway_ssh_port_changed(old: int, new: int) -> str:
     return (f"✅ Порт SSH: {old} → {new}. Текущие сеансы не рвутся — проверь вход новым подключением "
             f"на порт {new}; проброс порта на роутере (при наличии) поправь сам: снаружи &lt;любой порт&gt; → шлюз:{new}")
@@ -662,19 +576,11 @@ def gateway_ssh_allow_added(entries: list[str], merged: list[str] | None = None)
     """merged — записи, которые схлопнулись в добавленную подсеть (nft не
     принимает пересечения; человеку — что объединено, а не отказ)."""
     # адреса и подсети — моноширинным: жирный адрес Telegram превращает в ссылку
-    text = "✅ Адреса для SSH-доступа: добавлено " + _code_list(entries) \
+    text = "✅ Адреса для SSH-доступа: добавлено " + more(entries) \
         if entries else "✅ Адреса для SSH-доступа"
     if merged:
-        text += "; объединено с новой подсетью: " + _code_list(merged)
+        text += "; объединено с новой подсетью: " + more(merged)
     return text
-
-
-def _code_list(names: list[str]) -> str:
-    """Список адресов моноширинным, не длиннее _ALLOW_SHOWN — «и ещё K»."""
-    s = ", ".join(f"<code>{_e(n)}</code>" for n in names[:_ALLOW_SHOWN])
-    if len(names) > _ALLOW_SHOWN:
-        s += f" и ещё {len(names) - _ALLOW_SHOWN}"
-    return s
 
 
 GW_SSH_ALLOW_ALREADY = "ℹ️ Всё из введённого уже в списке — ничего не менял"

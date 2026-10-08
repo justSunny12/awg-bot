@@ -7,6 +7,7 @@ from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from awgbot.bot import texts
+from awgbot.bot.roles import MAIN
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot.states import MigrationPort, SshPort
@@ -70,11 +71,11 @@ async def ssh_port_ask(cb: CallbackQuery, state: FSMContext, services):
     if st.get("owner"):
         # Конфигом sshd владеет другая программа — отказ сразу по кнопке.
         await state.clear()
-        await edit(cb, texts.ssh_owner_refusal(st, st.get("listening")), kb.settings_back("fw"))
+        await edit(cb, texts.ssh_owner_refusal(st, st.get("listening"), MAIN), kb.settings_back("fw"))
         await cb.answer()
         return
     await state.set_state(SshPort.value)
-    await ask_here(cb, services, state, texts.ssh_port_ask(st.get("ssh_port")), "set_fw")
+    await ask_here(cb, services, state, texts.ssh_port_ask(st.get("ssh_port"), MAIN), "set_fw")
     await cb.answer()
 
 
@@ -82,7 +83,7 @@ def _port_dialog(services) -> core.PortDialog:
     return core.PortDialog(
         screen=services.firewall_screen, port_key="ssh_port", sec="fw",
         owner_refusal=lambda st, listening: (
-            texts.ssh_owner_refusal(st, st.get("listening") if listening is None else listening),
+            texts.ssh_owner_refusal(st, st.get("listening") if listening is None else listening, MAIN),
             kb.settings_back("fw")),
         finisher_kb=kb.ssh_port_finisher, changed_text=texts.ssh_port_changed)
 
@@ -105,7 +106,7 @@ async def ssh_port_finisher_action(cb: CallbackQuery, callback_data: SetCB, stat
     if callback_data.key == "port_retry":
         await state.set_state(SshPort.value)
         st = await call(services.firewall_screen)
-        await send_menu(cb.message, services, texts.ssh_port_ask(st.get("ssh_port")), kb.cancel_input("set_fw"),
+        await send_menu(cb.message, services, texts.ssh_port_ask(st.get("ssh_port"), MAIN), kb.cancel_input("set_fw"),
                         keep_id=cb.message.message_id)         # финишер остаётся с одной «Скрыть»
     else:
         await send_menu(cb.message, services, *await _screen("fw", services), keep_id=cb.message.message_id)

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from awgbot.util import timeutil
-from .fmt import _e, plural_ru, details
+from awgbot.bot.roles import MAIN
+from .fmt import _e, plural_ru, details, more
 from .updates import _ver
 
 
@@ -24,9 +25,9 @@ SETTINGS_ROOT = "⚙️ <b>Настройки</b>"
 SETTINGS_NOTIFY_CLIENTS = "👥 <b>О чём сообщать:</b>"
 
 
-def settings_notify_text() -> str:
+def settings_notify_text(br) -> str:
     """Тихие часы и алерты хоста — строками по текущим значениям; про аварии
-    на e-mail — под «подробнее»."""
+    на e-mail — под «подробнее». Порог температуры и перечень аварий — роли."""
     from awgbot.core import settings as s
     lines = ["🔔 <b>Уведомления</b>"]
     if s.get_bool("quiet_hours.quiet_hours_enabled", True):
@@ -35,13 +36,15 @@ def settings_notify_text() -> str:
     else:
         lines.append("Тихие часы выключены — уведомления со звуком круглые сутки")
     if s.get_bool("resource_alerts.enabled", True):
-        lines.append(f"Алерты хоста: CPU {s.get_int('resource_alerts.thresholds_percent.cpu', 80)}% · "
-                     f"RAM {s.get_int('resource_alerts.thresholds_percent.ram', 80)}% · "
-                     f"диск {s.get_int('resource_alerts.thresholds_percent.disk', 80)}%")
+        line = (f"Алерты хоста: CPU {s.get_int('resource_alerts.thresholds_percent.cpu', 80)}% · "
+                f"RAM {s.get_int('resource_alerts.thresholds_percent.ram', 80)}% · "
+                f"диск {s.get_int('resource_alerts.thresholds_percent.disk', 80)}%")
+        if br.keys.temp_alert:
+            line += f" · {s.get_int(br.keys.temp_alert, 75)} °C"
+        lines.append(line)
     else:
         lines.append("Алерты хоста выключены")
-    lines.append(details("Аварии на e-mail — только когда Telegram недоступен: падение VPN-сервиса, "
-                         "шлюз, перегруз хоста"))
+    lines.append(details(f"Аварии на e-mail — только когда Telegram недоступен: {br.mail_alarms}"))
     return "\n".join(lines)
 
 
@@ -77,17 +80,13 @@ SETTINGS_SUBS = "💳 <b>Подписки</b> — правила для всех
 
 # ── ✉️ E-mail ────────────────────────────────────────────────────────────────
 
-def settings_email_text(acc, last_check: tuple, resume_on=None, resume_addr: str = "") -> str:
+def settings_email_text(acc, last_check: tuple, br, resume_on=None, resume_addr: str = "") -> str:
     """Экран почтового канала: ящик и серверы одной строкой, состояние в
-    заголовке, аварийный выход — строкой. resume_on=None — у агента шлюза
-    аварийного выхода нет, строка не рисуется."""
+    заголовке, аварийный выход — строкой (только у роли с has.email_resume;
+    resume_on=None — строка не рисуется)."""
     if acc is None:
-        what = ("для аварийного выхода из паузы по коду в письме, бэкапов и критичных алертов"
-                if resume_on is not None
-                else "для бэкапов и критичных алертов, когда Telegram недоступен; настройки почты "
-                     "приезжают в конфигурации шлюза")
         return ("✉️ <b>E-mail</b> ящик не подключён\n"
-                f"Почта нужна {what}. Портов на хосте не открывается — бот сам ходит на почтовый сервер")
+                f"Почта нужна {br.email_purpose}. Портов на хосте не открывается — бот сам ходит на почтовый сервер")
     state, iso, detail = last_check
     if state == "ok":
         when = timeutil.age_ago((timeutil.now() - timeutil.parse_iso(iso)).total_seconds()) if iso else ""
@@ -98,7 +97,7 @@ def settings_email_text(acc, last_check: tuple, resume_on=None, resume_addr: str
         status = "⚪ ещё не проверялось"
     lines = [f"✉️ <b>E-mail</b> {status}",
              f"<code>{_e(acc.login)}</code> · IMAP <code>{_e(acc.imap_host)}:{acc.imap_port}</code> · SMTP <code>{_e(acc.smtp_host)}:{acc.smtp_port}</code>"]
-    if resume_on is not None:
+    if br.has.email_resume and resume_on is not None:
         if resume_on:
             lines.append(f"🆘 Аварийный выход из паузы: код на <code>{_e(resume_addr or acc.login)}</code>")
         else:
@@ -119,15 +118,12 @@ EMAIL_ASK_SMTP_PORT = "Порт SMTP (STARTTLS), обычно 587:"
 EMAIL_BAD_ADDRESS = "⚠️ Не похоже на адрес почты — пришли адрес вида <code>box@example.com</code>"
 EMAIL_BAD_PORT = "⚠️ Нужен номер порта от 1 до 65535"
 EMAIL_BAD_HOST = "⚠️ Нужно имя сервера и порт: <code>imap.example.com:993</code>"
-def email_forget_confirm(gateway: bool = False) -> str:
-    """У агента аварийного выхода из паузы нет — по почте у него бэкапы и
-    аварийные алерты."""
-    tail = ("бэкапы и аварийные алерты по почте перестанут уходить" if gateway
-            else "аварийный выход из паузы перестанет работать")
-    return f"🗑 Отключить почту?\nЛогин, пароль и серверы будут стёрты; {tail}"
+def email_forget_confirm(br) -> str:
+    """Что перестанет работать без почты — у роли своё (email_forget_tail)."""
+    return f"🗑 Отключить почту?\nЛогин, пароль и серверы будут стёрты; {br.email_forget_tail}"
 
 
-EMAIL_FORGET_CONFIRM = email_forget_confirm()
+EMAIL_FORGET_CONFIRM = email_forget_confirm(MAIN)
 EMAIL_FORGOTTEN = "✅ Почта отключена"
 
 
@@ -175,13 +171,17 @@ def email_check_failed(detail: str) -> str:
 
 # ── 🩺 Мониторинг ────────────────────────────────────────────────────────────
 
-def settings_mon_text() -> str:
+def settings_mon_text(br) -> str:
+    """Одной строкой: опрос, порог алерта, порог простоя роли (у агента —
+    молчание линка; хранится в секундах, показывается в минутах вверх)."""
     from awgbot.core import settings as s
-    loud = s.get_bool("app.monitoring.service_failure_alert_loud", True)
-    return (f"🩺 <b>Мониторинг</b> · опрос раз в {s.get_int('app.scheduler.monitor_minutes', 3)} мин · "
-            f"алерт после {s.get_int('app.monitoring.alert_streak', 5)} "
-            f"{plural_ru(s.get_int('app.monitoring.alert_streak', 5), 'плохого замера', 'плохих замеров', 'плохих замеров')} · "
-            f"простой AWG дольше {s.get_int('app.monitoring.service_failure_alert_minutes', 5)} мин — "
+    loud = s.get_bool(br.keys.outage_loud, True)
+    streak = s.get_int("app.monitoring.alert_streak", 5)
+    raw = s.get_int(br.keys.outage, 5 * br.keys.outage_scale)
+    mins = max(1, -(-raw // br.keys.outage_scale))
+    return (f"🩺 <b>Мониторинг</b> · опрос раз в {s.get_int(br.keys.monitor_minutes, 3)} мин · "
+            f"алерт после {streak} {plural_ru(streak, 'плохого замера', 'плохих замеров', 'плохих замеров')} · "
+            f"{br.mon_outage} {mins} мин — "
             + ("со звуком круглые сутки" if loud else "по правилам тихих часов"))
 
 
@@ -207,16 +207,18 @@ def settings_backup_text(encryption: bool = False, channel: str = "telegram") ->
 SETTINGS_BACKUP = "💾 <b>Бэкапы</b>\nВосстановить — пришли боту файл бэкапа (.tgz.enc)"
 
 
-def restore_offer(created_at_iso: str, iface_warning: str = "", gateway: bool = False) -> str:
-    """iface_warning — тело предупреждения экрана «Перезапустить AWG» своей
-    роли; добавляется, только если восстановление затронет интерфейсы.
-    gateway — у агента в копии нет профилей: конфиги линка и туннеля,
-    настройки, свои списки."""
+def restore_offer(created_at_iso: str, br, iface_warning: str = "") -> str:
+    """Что в копии — у роли своё (backup_contents); iface_warning — цена
+    перезапуска AWG (restore_warning), только если восстановление затронет
+    интерфейсы."""
     when = timeutil.fmt_dt_ui(timeutil.parse_iso(created_at_iso)) if created_at_iso else "?"
-    what = ("конфиги линка и туннеля, настройки, свои списки" if gateway
-            else "профили, устройства, подписки, ключи шифрования")
-    text = f"♻️ <b>Бэкап от {when}</b> — восстановить?\nВсё вернётся к тому моменту: {what}"
+    text = f"♻️ <b>Бэкап от {when}</b> — восстановить?\nВсё вернётся к тому моменту: {br.backup_contents}"
     return text + (f"\n\n{iface_warning}" if iface_warning else "")
+
+
+def restore_warning(br, carries: bool = True) -> str:
+    """Цена перезапуска AWG словами роли — та же, что в подтверждении «🔧 Сервиса»."""
+    return br.awg_restart_cost_carrying if carries else br.awg_restart_cost
 
 
 def restore_rejected(error: str) -> str:
@@ -234,16 +236,15 @@ def restore_done(created_at_iso: str) -> str:
 
 EMAIL_NOT_CONFIGURED = ("✉️ Почта не настроена — нужен подключённый ящик: ⚙️ Настройки → ✉️ E-mail. "
                         "Настроить сейчас?")
-def backup_needs_encryption(gateway: bool = False) -> str:
-    keys = "в копии приватные ключи линка и туннеля" if gateway else "в базе приватные ключи устройств"
-    return f"По почте уходят только шифрованные копии: {keys}. Задай фразу — 🔐 Шифрование"
+def backup_needs_encryption(br) -> str:
+    return f"По почте уходят только шифрованные копии: {br.backup_keys}. Задай фразу — 🔐 Шифрование"
 
 
-BACKUP_NEEDS_ENCRYPTION = backup_needs_encryption()
+BACKUP_NEEDS_ENCRYPTION = backup_needs_encryption(MAIN)
 
 
-def backup_encryption_text(mode: str, gateway: bool = False) -> str:
-    """Экран «Шифрование»: состояние и правила. gateway — «вне шлюза»."""
+def backup_encryption_text(mode: str, br) -> str:
+    """Экран «Шифрование»: состояние и правила; «вне сервера» / «вне шлюза» — роли."""
     if mode == "passphrase":
         state = "🔐 фраза задана"
     elif mode == "key":
@@ -251,7 +252,7 @@ def backup_encryption_text(mode: str, gateway: bool = False) -> str:
     else:
         state = "🔓 выключено — копии уходят открытыми и по почте не отправляются"
     return (f"🔐 <b>Шифрование бэкапов</b> {state}\n"
-            f"Фразу знаешь только ты — храни вне {'шлюза' if gateway else 'сервера'}, без неё бэкап не открыть"
+            f"Фразу знаешь только ты — храни вне {br.host_gen}, без неё бэкап не открыть"
             + details("Бот принимает фразу сообщением, тут же удаляет и никогда не показывает обратно. "
                       "Смена фразы не перешифровывает старые копии: они открываются прежней — не "
                       "выбрасывай её, пока они нужны"))
@@ -271,15 +272,26 @@ def backup_mailed(address: str, n: int = 1) -> str:
 
 # ── 🔧 Сервис ────────────────────────────────────────────────────────────────
 
-SVC_CONFIRM_AWG = "🔁 Перезапустить AWG? Все соединения оборвутся на несколько секунд и поднимутся сами"
-SVC_CONFIRM_BOT = "🔁 Перезапустить бота? Вернётся через несколько секунд; сервер и соединения не трогаются"
+def svc_confirm_awg(br, carries: bool = True) -> str:
+    """«🔁 Перезапустить AWG? <цена>» — цена словами роли; carries — роль
+    сейчас несёт трафик (у агента предупреждение про РФ-доступ только тогда)."""
+    return f"🔁 Перезапустить AWG? {br.awg_restart_cost_carrying if carries else br.awg_restart_cost}"
+
+
+def svc_confirm_bot(br) -> str:
+    return f"🔁 Перезапустить бота? {br.bot_restart_cost}"
+
+
+SVC_CONFIRM_AWG = svc_confirm_awg(MAIN)
+SVC_CONFIRM_BOT = svc_confirm_bot(MAIN)
 SVC_AWG_RESTARTED = "✅ AWG перезапущен"
 
 
-def settings_svc_text(state: str, progress=None, available: bool = False) -> str:
-    """«🔧 Сервис»: цена перезапусков одной строкой; переезд — только когда идёт."""
-    lines = ["🔧 <b>Сервис</b>", "Перезапуск AWG рвёт соединения на несколько секунд, перезапуск бота не влияет на пользователей"]
-    if state:
+def settings_svc_text(br, state: str = "", progress=None, available: bool = False) -> str:
+    """«🔧 Сервис»: цена перезапусков одной строкой роли; переезд — только у
+    роли с has.migration и только когда идёт."""
+    lines = ["🔧 <b>Сервис</b>", br.svc_about]
+    if br.has.migration and state:
         p = progress
         nums = (f" {p.clients_done}/{p.clients_total} профилей, {p.devices_done}/{p.devices_total} устройств"
                 if p is not None and getattr(p, "clients_total", 0) else "")
@@ -449,16 +461,6 @@ def settings_server_text(d: dict) -> str:
     return "\n".join(lines)
 
 
-_ALLOW_SHOWN = 12       # кнопки — до 8, текст — до 12: лимит 4096 при длинных именах
-
-
-def _shown(items, code: bool = True) -> str:
-    out = ", ".join((f"<code>{_e(a)}</code>" if code else _e(a)) for a in items[:_ALLOW_SHOWN])
-    if len(items) > _ALLOW_SHOWN:
-        out += f" и ещё {len(items) - _ALLOW_SHOWN}"
-    return out
-
-
 def address_list_line(n: int, tail: str = "") -> str:
     """Список адресов в инфобокс не выносится — он редактируется кнопками
     под ним; здесь только число и отсылка."""
@@ -494,7 +496,7 @@ def settings_firewall_text(st: dict) -> str:
     lines.append(address_list_line(len(allow)))
     warns: list[str] = []
     if st.get("unresolved"):
-        warns.append("⚠️ Не резолвятся: " + _shown(st["unresolved"]))
+        warns.append("⚠️ Не резолвятся: " + more(st["unresolved"]))
     if st.get("drift"):
         warns.append(f"⚠️ sshd слушает порт {st['listening']}, а фильтр держит {st.get('ssh_port')} — "
                      f"вход снаружи и из туннеля закрыт. Нажми «🅿️ Порт» → {st['listening']} "
@@ -511,9 +513,10 @@ def settings_firewall_text(st: dict) -> str:
     return "\n".join(lines + warnings_block(warns))
 
 
-def ssh_owner_refusal(st: dict, listening: int | None, place: str = "сервере") -> str:
+def ssh_owner_refusal(st: dict, listening: int | None, br) -> str:
     """Отказ смены порта: конфигом sshd владеет не бот. Экран, не alert —
-    текст длинный и нужен целиком. place — «сервере» / «шлюзе»."""
+    текст длинный и нужен целиком. Где файл — словами роли (host_loc)."""
+    place = br.host_loc
     if st.get("owner") == "omv":
         now = f"sshd слушает {listening}" if listening else "sshd не запущен"
         if st.get("owner_port"):
@@ -532,14 +535,13 @@ def ssh_owner_refusal(st: dict, listening: int | None, place: str = "серве�
             "генерации. Бот увидит новый порт сам и переведёт на него фильтр.")
 
 
-def ssh_port_ask(current: int | None = None, gateway: bool = False) -> str:
+def ssh_port_ask(current: int | None, br) -> str:
     cur = f" · сейчас {current}" if current else ""
-    tail = ". Проброс порта на роутере (при наличии) поправь сам" if gateway else ""
     return (f"🅿️ <b>Порт SSH</b>{cur} · 1–65535. Занятый порт не возьму; текущие сеансы не рвутся — "
-            f"проверь вход новым подключением{tail}")
+            f"проверь вход новым подключением{br.ssh_port_tail}")
 
 
-SSH_PORT_ASK = ssh_port_ask()
+SSH_PORT_ASK = ssh_port_ask(None, MAIN)
 
 
 def ssh_port_busy(port: int, proc: str = "") -> str:

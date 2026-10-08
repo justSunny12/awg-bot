@@ -5,7 +5,7 @@ from __future__ import annotations
 from awgbot.util import timeutil
 from awgbot.domain.gwchecks import WRITE_ERROR
 
-from ..fmt import _e, human_bytes, _updown, plain_ip, details
+from ..fmt import _e, human_bytes, _updown, plain_ip, details, num
 
 
 # ── шлюз условной маршрутизации ──────────────────────────────────────────────
@@ -220,10 +220,6 @@ GATEWAYS_AUTO_OFF = ("⚠️ Автопереключение выключено
                      "выключится, а не перейдёт на резерв")
 
 
-def _fmt_n(n: int) -> str:
-    return f"{int(n):,}".replace(",", " ")
-
-
 def _lists_tail(info: dict | None) -> str:
     """«списки 41 200, 2 ч назад» — для строки экрана «Шлюзы»; не обновлялись
     — без числа."""
@@ -232,7 +228,7 @@ def _lists_tail(info: dict | None) -> str:
     age = info.get("age_seconds")
     if age is None:
         return "списки ещё не обновлялись"
-    return f"списки {_fmt_n(info.get('count', 0))}, {timeutil.age_ago(age)}"
+    return f"списки {num(info.get('count', 0))}, {timeutil.age_ago(age)}"
 
 
 def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str = "",

@@ -101,11 +101,12 @@ def test_restore_reports_only_changed_interfaces(services, monkeypatch, tmp_path
         return buf.getvalue()
     assert services.inspect_backup(arc(b"[Interface]\nA\n"), "b.tgz")["ifaces_changed"] == []
     assert services.inspect_backup(arc(b"[Interface]\nB\n"), "b.tgz")["ifaces_changed"] == ["awg1"]
-    warn = texts.awg_restart_warning_body(False)
+    from awgbot.bot.roles import MAIN, GATEWAY
+    warn = texts.restore_warning(MAIN)
     assert warn.startswith("Все соединения оборвутся на несколько секунд")
-    assert texts.restore_offer("2026-09-09T10:00:00+03:00", warn).endswith(warn)
-    assert warn not in texts.restore_offer("2026-09-09T10:00:00+03:00")
-    assert texts.awg_restart_warning_body(True).startswith("Линк опустится и поднимется")
+    assert texts.restore_offer("2026-09-09T10:00:00+03:00", MAIN, warn).endswith(warn)
+    assert warn not in texts.restore_offer("2026-09-09T10:00:00+03:00", MAIN)
+    assert texts.restore_warning(GATEWAY).startswith("Линк опустится и поднимется")
 
 
 def test_db_snapshot_carries_transactions_still_in_the_wal(tmp_path):

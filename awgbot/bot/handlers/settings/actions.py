@@ -7,6 +7,7 @@ from aiogram import F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 from awgbot.bot import texts
+from awgbot.bot.roles import MAIN
 from awgbot.bot import keyboards as kb
 from awgbot.bot.callbacks import SetCB
 from awgbot.bot.handlers import settingscore as core
@@ -172,14 +173,14 @@ async def do_action(cb: CallbackQuery, callback_data: SetCB, services):
         return
     if key == "enc":                                   # экран шифрования
         mode = await call(services.backup_encryption_mode)
-        await edit(cb, texts.backup_encryption_text(mode), kb.backup_encryption_kb(bool(mode)))
+        await edit(cb, texts.backup_encryption_text(mode, MAIN), kb.backup_encryption_kb(bool(mode)))
         await cb.answer()
         return
     if key == "now":                                   # бэкап сейчас
         await core.backup_now(cb, services, HOOKS)
         return
     if key in ("awg", "bot"):                          # сначала — цена действия
-        await edit(cb, texts.SVC_CONFIRM_AWG if key == "awg" else texts.SVC_CONFIRM_BOT,
+        await edit(cb, texts.svc_confirm_awg(MAIN) if key == "awg" else texts.svc_confirm_bot(MAIN),
                    kb.svc_confirm(key))
         await cb.answer()
         return

@@ -6,6 +6,7 @@ import pytest
 import awgbot.core.config as cfg
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
+from awgbot.bot.roles import GATEWAY
 from awgbot.bot.callbacks import GwCB
 from awgbot.bot.handlers import gateway as gh
 from awgbot.bot.handlers import hide as hide_h
@@ -149,7 +150,7 @@ def test_mon_section_mirrors_main(monkeypatch):
     rows = _labels(kb.gateway_mon_kb())
     assert rows == [["⏱ Опрос: 3 мин", "🔢 Замеров: 5"], ["⏳ Линк: 5 мин", "✅ Звук 24/7"],
                     ["⬅️ Назад"]], rows
-    assert texts.gw_settings_mon_text() == (
+    assert texts.settings_mon_text(GATEWAY) == (
         "🩺 <b>Мониторинг</b> · опрос раз в 3 мин · алерт после 5 плохих замеров · "
         "линк молчит дольше 5 мин — со звуком круглые сутки")
 

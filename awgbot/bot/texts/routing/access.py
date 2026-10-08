@@ -6,7 +6,8 @@ from awgbot.util import timeutil
 
 from ..fmt import _e, plain_ip, client_link, holder_link, plural_ru, details
 
-from .slots import ROUTING_NAME, _fmt_n
+from .slots import ROUTING_NAME
+from ..fmt import num
 
 
 # ── параметры и доступ ───────────────────────────────────────────────────────
@@ -19,7 +20,7 @@ def routing_params_text(info: dict, lists: dict) -> str:
     if age is None:
         lists_line = f"Списки: ещё не обновлялись · раз в {lists.get('every_hours', 6)} ч"
     else:
-        lists_line = (f"Списки: {_fmt_n(cnt)} {plural_ru(cnt, 'запись', 'записи', 'записей')} из "
+        lists_line = (f"Списки: {num(cnt)} {plural_ru(cnt, 'запись', 'записи', 'записей')} из "
                       f"{src} {plural_ru(src, 'источника', 'источников', 'источников')}, {timeutil.age_ago(age)} · "
                       f"раз в {lists.get('every_hours', 6)} ч")
     need = int(info["need"])

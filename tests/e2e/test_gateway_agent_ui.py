@@ -20,6 +20,7 @@ import pytest
 import awgbot.core.config as cfg
 from awgbot.bot import keyboards as kb
 from awgbot.bot import texts
+from awgbot.bot.roles import GATEWAY
 from awgbot.bot.callbacks import GwCB
 from awgbot.bot.handlers import gateway as gh
 from awgbot.core import settings
@@ -421,7 +422,7 @@ def test_the_mon_keyboard_rounds_odd_seconds_up_and_never_to_zero(store):
     меньше минуты — «1 мин», а не «0 мин»; текст раздела — то же число."""
     store["app.gateway.handshake_max_age"] = 90
     assert "⏳ Линк: 2 мин" in [b for r in _rows(kb.gateway_mon_kb()) for b in r]
-    assert "линк молчит дольше 2 мин" in texts.gw_settings_mon_text()
+    assert "линк молчит дольше 2 мин" in texts.settings_mon_text(GATEWAY)
     store["app.gateway.handshake_max_age"] = 30
     assert "⏳ Линк: 1 мин" in [b for r in _rows(kb.gateway_mon_kb()) for b in r]
 
@@ -458,7 +459,7 @@ async def test_backup_channel_cycle_checks_mailbox_and_encryption(svc, fake_bot,
     cb, nav = _acb(fake_bot)
     await gh.gw_cycle(cb, cyc, svc)
     # у агента в копии ключи линка и туннеля, а не устройств — текст роли
-    assert store[key] == "telegram" and cb.answers == [(texts.backup_needs_encryption(gateway=True), True)], \
+    assert store[key] == "telegram" and cb.answers == [(texts.backup_needs_encryption(GATEWAY), True)], \
         cb.answers
     svc.backup_set_passphrase("correct horse battery")
     cb, nav = _acb(fake_bot)
@@ -726,10 +727,10 @@ def test_a_long_domain_does_not_eat_the_sync_tail_of_the_toast(sync):
 def test_the_monitoring_text_declines_the_streak(store):
     store.update({"app.monitoring.alert_streak": 1, "app.gateway.monitor_minutes": 3,
                   "app.gateway.handshake_max_age": 300, "app.gateway.link_alert_loud": False})
-    text = texts.gw_settings_mon_text()
+    text = texts.settings_mon_text(GATEWAY)
     assert "алерт после 1 плохого замера ·" in text and "по правилам тихих часов" in text, text
     store["app.monitoring.alert_streak"] = 5
-    assert "алерт после 5 плохих замеров ·" in texts.gw_settings_mon_text()
+    assert "алерт после 5 плохих замеров ·" in texts.settings_mon_text(GATEWAY)
 
 
 def test_many_added_addresses_are_capped_in_the_result():

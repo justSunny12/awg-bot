@@ -103,9 +103,8 @@ async def routing_action(cb: CallbackQuery, callback_data: SetCB, services):
         # (всплывашка терялась); итог — первой строкой перерисованного раздела
         await cb.answer("Обновляю списки…")
         n = await call(services.routing_update_lists, True)
-        from awgbot.bot.texts.fmt import plural_ru
-        note = (f"✅ Списки обновлены: {int(n):,} ".replace(",", " ")
-                + plural_ru(int(n), 'запись', 'записи', 'записей'))
+        from awgbot.bot.texts.fmt import plural_ru, num
+        note = f"✅ Списки обновлены: {num(n)} " + plural_ru(int(n), 'запись', 'записи', 'записей')
         text, markup = await _screen("rt_params", services)
         await edit(cb, screens.with_note(text, note), markup)
         return

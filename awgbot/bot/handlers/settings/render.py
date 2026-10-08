@@ -7,6 +7,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from awgbot.core import config
 from awgbot.core import settings
 from awgbot.bot import texts
+from awgbot.bot.roles import MAIN
 from awgbot.bot import keyboards as kb
 from awgbot.bot.handlers import settingscore as core
 from awgbot.bot.handlers import updates_flow
@@ -28,12 +29,12 @@ async def _screen(sec: str, services, key: str = ""):
     ничего не стоит.
     """
     if sec == "notify":
-        return texts.settings_notify_text(), kb.settings_notify()
+        return texts.settings_notify_text(MAIN), kb.settings_notify()
     if sec == "ncl":
         return texts.SETTINGS_NOTIFY_CLIENTS, kb.settings_notify_clients()
     if sec == "email":
         acc = await call(services.email_account)
-        return (texts.settings_email_text(acc, await call(services.email_last_check),
+        return (texts.settings_email_text(acc, await call(services.email_last_check), MAIN,
                                           settings.get_bool("email.resume_enabled", True),
                                           await call(services.email_resume_address)),
                 kb.settings_email(acc is not None))
@@ -60,14 +61,14 @@ async def _screen(sec: str, services, key: str = ""):
         return texts.settings_firewall_text(st), kb.settings_firewall(
             st, page=paging.page_of(config.ADMIN_ID, "fw"))
     if sec == "mon":
-        return texts.settings_mon_text(), kb.settings_mon()
+        return texts.settings_mon_text(MAIN), kb.settings_mon()
     if sec == "backup":
         enc = await call(services.backup_encryption_enabled)
         return (texts.settings_backup_text(enc, str(settings.get("app.scheduler.backup_channel", "telegram") or "")),
                 kb.settings_backup(enc))
     if sec == "svc":
         d = await call(services.svc_screen_data)          # один хоп вместо четырёх
-        return (texts.settings_svc_text(d["state"], d["progress"], d["available"]),
+        return (texts.settings_svc_text(MAIN, d["state"], d["progress"], d["available"]),
                 kb.settings_svc(d["state"], available=d["available"], orphans=d["orphans"]))
     if sec == "upd":
         # проверка — при открытии раздела; «никогда» из старого конфига —

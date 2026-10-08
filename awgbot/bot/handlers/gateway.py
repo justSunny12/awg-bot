@@ -22,7 +22,8 @@ from aiogram.types import CallbackQuery, Message
 
 from awgbot.bot import keyboards as kb
 from awgbot.core import config
-from awgbot.bot import texts
+from awgbot.bot import texts, ui
+from awgbot.bot.roles import GATEWAY
 from awgbot.bot.callbacks import CancelCB, GwCB, UpdateCB
 from awgbot.bot.states import GatewayTransitDomain
 from awgbot.bot.filters import RoleFilter
@@ -170,7 +171,7 @@ async def gw_maint(cb: CallbackQuery, services, state: FSMContext):
 
 def _email_section(services):
     acc = services.email_account()
-    return (texts.settings_email_text(acc, services.email_last_check()),
+    return (texts.settings_email_text(acc, services.email_last_check(), GATEWAY),
             kb.gateway_email_kb(acc is not None))
 
 
@@ -188,12 +189,12 @@ def _backup_section(services):
 
 
 _SECTIONS = {
-    "notify": lambda services: (texts.gw_settings_notify_text(), kb.gateway_notify_kb()),
+    "notify": lambda services: (texts.settings_notify_text(GATEWAY), kb.gateway_notify_kb()),
     "ssh": _ssh_section,
     "email": _email_section,
-    "mon": lambda services: (texts.gw_settings_mon_text(), kb.gateway_mon_kb()),
+    "mon": lambda services: (texts.settings_mon_text(GATEWAY), kb.gateway_mon_kb()),
     "backup": _backup_section,
-    "svc": lambda services: (texts.GW_SETTINGS_SVC, kb.gateway_svc_kb()),
+    "svc": lambda services: (texts.settings_svc_text(GATEWAY), kb.gateway_svc_kb()),
 }
 
 
@@ -252,7 +253,7 @@ async def gw_section(cb: CallbackQuery, callback_data: GwCB, services, state: FS
 async def gw_encryption(cb: CallbackQuery, services, state: FSMContext):
     await state.clear()
     mode = await call(services.backup_encryption_mode)
-    await edit_nav(cb, services, texts.backup_encryption_text(mode, gateway=True),
+    await edit_nav(cb, services, texts.backup_encryption_text(mode, GATEWAY),
                    kb.gateway_encryption_kb(bool(mode)))
     await cb.answer()
 
@@ -398,7 +399,7 @@ async def gw_ssh_port_ask(cb: CallbackQuery, callback_data: GwCB, services, stat
         # (OMV) это основной случай, лишний шаг ни к чему.
         await state.clear()
         await edit_nav(cb, services,
-                       texts.gateway_ssh_owner_refusal(st, None if st.get("sshd_down") else st["port"]),
+                       texts.ssh_owner_refusal(st, None if st.get("sshd_down") else st["port"], GATEWAY),
                        kb.gateway_back_kb("ssh"))
         await cb.answer()
         return
@@ -410,10 +411,10 @@ async def gw_ssh_port_ask(cb: CallbackQuery, callback_data: GwCB, services, stat
         except Exception:                                 # noqa: BLE001
             pass
         await state.update_data(ctx_kind="set_ssh", ctx_ref=0)
-        await send_menu(cb.message, services, texts.gw_ssh_port_ask(st.get("port")), kb.cancel_input("set_ssh"),
+        await send_menu(cb.message, services, texts.ssh_port_ask(st.get("port"), GATEWAY), kb.cancel_input("set_ssh"),
                         keep_id=cb.message.message_id)         # финишер остаётся с одной «Скрыть»
     else:
-        await ask_here(cb, services, state, texts.gw_ssh_port_ask(st.get("port")), "set_ssh")
+        await ask_here(cb, services, state, texts.ssh_port_ask(st.get("port"), GATEWAY), "set_ssh")
     await cb.answer()
 
 
@@ -431,7 +432,7 @@ async def gw_ssh_port_back(cb: CallbackQuery, services, state: FSMContext):
 def _port_dialog(services) -> core.PortDialog:
     return core.PortDialog(
         screen=services.ssh_screen, port_key="port", sec="ssh",
-        owner_refusal=lambda st, listening: (texts.gateway_ssh_owner_refusal(st, listening),
+        owner_refusal=lambda st, listening: (texts.ssh_owner_refusal(st, listening, GATEWAY),
                                              kb.gateway_back_kb("ssh")),
         finisher_kb=kb.gateway_ssh_port_finisher_kb, changed_text=texts.gateway_ssh_port_changed)
 
@@ -495,8 +496,8 @@ async def gw_ssh_action(cb: CallbackQuery, callback_data: GwCB, services, state:
 
 
 _CONFIRM = {                                          # текст(несёт трафик) и куда ведёт «Отмена»
-    "restart": (texts.gw_confirm_restart, "svc"),
-    "botrestart": (lambda carries: texts.GW_CONFIRM_BOT_RESTART, "svc"),
+    "restart": (lambda carries: texts.svc_confirm_awg(GATEWAY, carries), "svc"),
+    "botrestart": (lambda carries: texts.svc_confirm_bot(GATEWAY), "svc"),
     "reassert": (texts.gw_confirm_reassert, "panel"),
 }
 
@@ -591,7 +592,7 @@ async def gw_transit_domain_received(message: Message, state: FSMContext, servic
     from awgbot.bot import screens
     text, markup = await _transit_screen(services, message.chat.id)
     note = texts.gateway_transit_result(ok, out, await _own_sync_tail(services, ok, out),
-                                    budget=texts.note_budget(text))
+                                    budget=ui.note_budget(text))
     await send_menu(message, services, screens.with_note(text, note), markup)
 
 

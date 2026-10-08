@@ -281,6 +281,27 @@ def _n_devices(n: int) -> str:
 
 # ── Склонения, возраст данных, иконка устройства ──────────────────────────────
 
+def num(n) -> str:
+    """«1 234 567» — разряды пробелом; одно место на все счётчики."""
+    return f"{int(n or 0):,}".replace(",", " ")
+
+
+def more(items, shown: int = 12, code: bool = True) -> str:
+    """Список через запятую, не длиннее shown — «и ещё N»: адреса и домены
+    моноширинным (code), имена — текстом. Кнопки — до 8, текст — до 12:
+    лимит 4096 при длинных именах."""
+    items = list(items)
+    out = ", ".join((f"<code>{_e(x)}</code>" if code else _e(x)) for x in items[:shown])
+    if len(items) > shown:
+        out += f" и ещё {len(items) - shown}"
+    return out
+
+
+def unlimited(used: int) -> str:
+    """«3.2 ГБ (безлимит)» — и ноль тоже: «0 ГБ (безлимит)»."""
+    return f"{volume(used)} (безлимит)"
+
+
 def plural_ru(n: int, one: str, few: str, many: str) -> str:
     """Русское склонение по числу — переиспользует хелпер из timeutil
     (единая логика на весь проект). 1 устройство, 2 устройства, 5 устройств."""

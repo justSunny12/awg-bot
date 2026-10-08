@@ -23,7 +23,7 @@ from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from awgbot.core import settings
 from awgbot.bot import keyboards as kb
-from awgbot.bot import texts
+from awgbot.bot import texts, roles
 from awgbot.bot.states import BackupPassphrase, EmailSetup, SettingsInput
 from awgbot.bot.handlers.common import call, ask_tracked, cleanup_content, send_menu
 from awgbot.domain.services import ServiceError
@@ -397,7 +397,7 @@ async def set_backup_channel(cb: CallbackQuery, services, hooks: Hooks, val: str
             await cb.answer()
             return
         if not await call(services.backup_encryption_enabled):
-            await cb.answer(texts.backup_needs_encryption(hooks.gateway), show_alert=True)
+            await cb.answer(texts.backup_needs_encryption(roles.pick(hooks.gateway)), show_alert=True)
             return
     try:
         await call(settings.set_value, "app.scheduler.backup_channel", val)
@@ -467,7 +467,7 @@ async def email_action(cb: CallbackQuery, services, hooks: Hooks, state: FSMCont
                                 "✅ " + texts.email_test_sent(acc.login if acc else ""))
         return True
     if key == "forget":
-        await edit(cb, texts.email_forget_confirm(hooks.gateway), hooks.email_forget_kb())
+        await edit(cb, texts.email_forget_confirm(roles.pick(hooks.gateway)), hooks.email_forget_kb())
         await cb.answer()
         return True
     if key == "forget!":
