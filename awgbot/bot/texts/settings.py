@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from awgbot.bot import ui
 from awgbot.util import timeutil
 from awgbot.bot.roles import MAIN
 from .fmt import _e, plural_ru, details, more
@@ -14,7 +15,7 @@ def settings_root_text(installed: str | None = None) -> str:
     """«⚙️ Настройки · v3.1.0» — заголовок и версия, больше ничего: разделы
     говорят за себя кнопками."""
     from awgbot.core import config
-    return f"⚙️ <b>Настройки</b> · {_e(_ver(installed if installed is not None else config.INSTALLED_VERSION))}"
+    return ui.head("⚙️ Настройки", meta=[_e(_ver(installed if installed is not None else config.INSTALLED_VERSION))])
 
 
 SETTINGS_ROOT = "⚙️ <b>Настройки</b>"
@@ -29,7 +30,7 @@ def settings_notify_text(br) -> str:
     """Тихие часы и алерты хоста — строками по текущим значениям; про аварии
     на e-mail — под «подробнее». Порог температуры и перечень аварий — роли."""
     from awgbot.core import settings as s
-    lines = ["🔔 <b>Уведомления</b>"]
+    lines = [ui.head("🔔 Уведомления")]
     if s.get_bool("quiet_hours.quiet_hours_enabled", True):
         lines.append(f"Тихие часы {s.get_int('quiet_hours.quiet_hours_start', 20):02d}:00–"
                      f"{s.get_int('quiet_hours.quiet_hours_end', 7):02d}:00 МСК — без звука, кроме аварий")
@@ -85,7 +86,7 @@ def settings_email_text(acc, last_check: tuple, br, resume_on=None, resume_addr:
     заголовке, аварийный выход — строкой (только у роли с has.email_resume;
     resume_on=None — строка не рисуется)."""
     if acc is None:
-        return ("✉️ <b>E-mail</b> ящик не подключён\n"
+        return (ui.head("✉️ E-mail", "ящик не подключён") + "\n"
                 f"Почта нужна {br.email_purpose}. Портов на хосте не открывается — бот сам ходит на почтовый сервер")
     state, iso, detail = last_check
     if state == "ok":
@@ -95,7 +96,7 @@ def settings_email_text(acc, last_check: tuple, br, resume_on=None, resume_addr:
         status = f"🔴 {_e(detail)}"
     else:
         status = "⚪ ещё не проверялось"
-    lines = [f"✉️ <b>E-mail</b> {status}",
+    lines = [ui.head("✉️ E-mail", status),
              f"<code>{_e(acc.login)}</code> · IMAP <code>{_e(acc.imap_host)}:{acc.imap_port}</code> · SMTP <code>{_e(acc.smtp_host)}:{acc.smtp_port}</code>"]
     if br.has.email_resume and resume_on is not None:
         if resume_on:
@@ -135,13 +136,13 @@ EMAIL_CHECK_OK = "🟢 Вход по IMAP и SMTP прошёл"
 
 
 def email_ask_address_change(current: str) -> str:
-    return (f"✏️ <b>Смена ящика</b> · сейчас <code>{_e(current)}</code>\n"
+    return (ui.head("✏️ Смена ящика", meta=[f"сейчас <code>{_e(current)}</code>"]) + "\n"
             "Пришли адрес нового ящика — после проверки входа он заменит текущий; "
             "до этого старый продолжает работать")
 
 
 def email_ask_resume_address(current: str) -> str:
-    return (f"✉️ <b>Адрес для писем с кодом</b> · сейчас <code>{_e(current)}</code>\n"
+    return (ui.head("✉️ Адрес для писем с кодом", meta=[f"сейчас <code>{_e(current)}</code>"]) + "\n"
             "На него клиент, заперевшийся на паузе, шлёт письмо с кодом. Обычно это сам "
             "ящик; у ящика есть алиас — можно его. Пришли адрес, «-» — сам ящик")
 
@@ -179,10 +180,10 @@ def settings_mon_text(br) -> str:
     streak = s.get_int("app.monitoring.alert_streak", 5)
     raw = s.get_int(br.keys.outage, 5 * br.keys.outage_scale)
     mins = max(1, -(-raw // br.keys.outage_scale))
-    return (f"🩺 <b>Мониторинг</b> · опрос раз в {s.get_int(br.keys.monitor_minutes, 3)} мин · "
-            f"алерт после {streak} {plural_ru(streak, 'плохого замера', 'плохих замеров', 'плохих замеров')} · "
-            f"{br.mon_outage} {mins} мин — "
-            + ("со звуком круглые сутки" if loud else "по правилам тихих часов"))
+    return ui.head("🩺 Мониторинг", meta=[
+        f"опрос раз в {s.get_int(br.keys.monitor_minutes, 3)} мин",
+        f"алерт после {streak} {plural_ru(streak, 'плохого замера', 'плохих замеров', 'плохих замеров')}",
+        f"{br.mon_outage} {mins} мин — " + ("со звуком круглые сутки" if loud else "по правилам тихих часов")])
 
 
 SETTINGS_MON = "🩺 <b>Мониторинг</b>"
@@ -193,8 +194,8 @@ SETTINGS_MON = "🩺 <b>Мониторинг</b>"
 def settings_backup_text(encryption: bool = False, channel: str = "telegram") -> str:
     from awgbot.core import settings as s
     on = s.get_bool("app.scheduler.backup_enabled", True)
-    head = "💾 <b>Бэкапы</b> " + ("✅ вкл" if on else "☑️ выкл") + " · " \
-        + ("🔐 фраза задана" if encryption else "🔓 без шифрования")
+    head = ui.head("💾 Бэкапы", ui.tick(on) + (" вкл" if on else " выкл"),
+                   meta=["🔐 фраза задана" if encryption else "🔓 без шифрования"])
     lines = [head]
     if on:
         day, hour = s.get_int("app.scheduler.backup_day", 1), s.get_int("app.scheduler.backup_hour", 12)
@@ -212,7 +213,7 @@ def restore_offer(created_at_iso: str, br, iface_warning: str = "") -> str:
     перезапуска AWG (restore_warning), только если восстановление затронет
     интерфейсы."""
     when = timeutil.fmt_dt_ui(timeutil.parse_iso(created_at_iso)) if created_at_iso else "?"
-    text = f"♻️ <b>Бэкап от {when}</b> — восстановить?\nВсё вернётся к тому моменту: {br.backup_contents}"
+    text = ui.head(f"♻️ Бэкап от {when}", "— восстановить?") + f"\nВсё вернётся к тому моменту: {br.backup_contents}"
     return text + (f"\n\n{iface_warning}" if iface_warning else "")
 
 
@@ -251,7 +252,7 @@ def backup_encryption_text(mode: str, br) -> str:
         state = "🔐 случайный ключ (перенесён из env)"
     else:
         state = "🔓 выключено — копии уходят открытыми и по почте не отправляются"
-    return (f"🔐 <b>Шифрование бэкапов</b> {state}\n"
+    return (ui.head("🔐 Шифрование бэкапов", state) + "\n"
             f"Фразу знаешь только ты — храни вне {br.host_gen}, без неё бэкап не открыть"
             + details("Бот принимает фразу сообщением, тут же удаляет и никогда не показывает обратно. "
                       "Смена фразы не перешифровывает старые копии: они открываются прежней — не "
@@ -290,7 +291,7 @@ SVC_AWG_RESTARTED = "✅ AWG перезапущен"
 def settings_svc_text(br, state: str = "", progress=None, available: bool = False) -> str:
     """«🔧 Сервис»: цена перезапусков одной строкой роли; переезд — только у
     роли с has.migration и только когда идёт."""
-    lines = ["🔧 <b>Сервис</b>", br.svc_about]
+    lines = [ui.head("🔧 Сервис"), br.svc_about]
     if br.has.migration and state:
         p = progress
         nums = (f" {p.clients_done}/{p.clients_total} профилей, {p.devices_done}/{p.devices_total} устройств"
@@ -312,8 +313,8 @@ def settings_upd_text(installed: str | None = None, target=None, blocked: str = 
     from .updates import changelog_details
     cur = _ver(installed if installed is not None else config.INSTALLED_VERSION)
     if target is None:
-        return f"⬆️ <b>Обновления</b> · {_e(cur)} " + ("⚪ проверка не удалась" if scan_failed else "🟢 актуальна")
-    lines = [f"⬆️ <b>Обновления</b> · {_e(cur)} → {_e(_ver(target.tag))}"]
+        return ui.head("⬆️ Обновления", meta=[f"{_e(cur)} " + (ui.st("off", "проверка не удалась") if scan_failed else ui.st("ok", "актуальна"))])
+    lines = [ui.head("⬆️ Обновления", meta=[f"{_e(cur)} → {_e(_ver(target.tag))}"])]
     if blocked:
         lines.append(f"⛔ Обновление до {_e(_ver(target.tag))} сейчас недоступно: {_e(blocked)}")
     header = "\n".join(lines) + "\n"
@@ -417,7 +418,7 @@ PRIVATE_DNS_WHAT = (
 
 def private_dns_offer(target: str) -> str:
     """Экран решения (и инфобокс при старте): что даёт и как перейти."""
-    return (f"🔒 <b>Свой DNS-резолвер</b> сейчас публичный\n"
+    return (ui.head("🔒 Свой DNS-резолвер", "сейчас публичный") + "\n"
             f"Свой — <code>{_e(target)}</code>: меньшие задержки, запросы не уходят третьим лицам, защита от "
             "обхода через DoH. Цена — переезд профилей при включении"
             + details(PRIVATE_DNS_WHAT))
@@ -438,7 +439,7 @@ def settings_server_text(d: dict) -> str:
     gen = f", gen{d['generation']}" if d.get("generation") else ""
     dns_note = _private_dns_note(d.get("private_dns") or {})
     lines = [
-        f"🖥 <b>{_e(d['name'])}</b>"
+        ui.head(f"🖥 {_e(d['name'])}")
         + (f" · <code>{_e(host)}</code>" + ("" if _looks_like_domain(host) else " (домена нет — в ссылках IP)")
            if host else " · адрес сервера не задан"),
         "",
@@ -485,7 +486,7 @@ def settings_firewall_text(st: dict) -> str:
         port_line += " — <b>контролирует OMV</b> <i>(в его UI: Службы → SSH)</i>"
     elif st.get("owner"):
         port_line += " — <b>контролирует другой процесс</b>"
-    lines = ["<b>🛡 SSH-доступ</b>", "", port_line, ""]
+    lines = [ui.head("🛡 SSH-доступ"), "", port_line, ""]
     if st.get("admin_ips"):
         lines += [f"Из туннеля SSH открыт устройствам админа ({len(st['admin_ips'])})", ""]
     if st.get("enabled"):
@@ -536,9 +537,9 @@ def ssh_owner_refusal(st: dict, listening: int | None, br) -> str:
 
 
 def ssh_port_ask(current: int | None, br) -> str:
-    cur = f" · сейчас {current}" if current else ""
-    return (f"🅿️ <b>Порт SSH</b>{cur} · 1–65535. Занятый порт не возьму; текущие сеансы не рвутся — "
-            f"проверь вход новым подключением{br.ssh_port_tail}")
+    return (ui.head("🅿️ Порт SSH", meta=[f"сейчас {current}" if current else "",
+                                         "1–65535. Занятый порт не возьму; текущие сеансы не рвутся — "
+                                         f"проверь вход новым подключением{br.ssh_port_tail}"]))
 
 
 SSH_PORT_ASK = ssh_port_ask(None, MAIN)
@@ -579,13 +580,11 @@ def settings_prompt(key: str, current=None) -> str:
             shown = _setting_value(key, list(current)[:5]) + (f" и ещё {len(current) - 5}" if len(current) > 5 else "")
         else:
             shown = _setting_value(key, current) if current not in (None, "", []) else ""
-        cur = f" · сейчас {shown}" if shown else ""
         icon = "➕" if key == "app.firewall.ssh_allow" else "✏️"      # эмодзи кнопки «➕ Адрес»
-        return f"{icon} <b>{_e(label)}</b>{cur}\n{_e(hint)}"
+        return ui.head(f"{icon} {_e(label)}", meta=[f"сейчас {shown}" if shown else ""]) + f"\n{_e(hint)}"
     lo, hi, label, unit = SETTINGS_BOUNDS[key]
     u = unit_suffix(unit)
-    cur = f" · сейчас {current}{u}" if current is not None else ""
-    return f"✏️ <b>{_e(label)}</b>{cur} · {lo}–{hi}"
+    return ui.head(f"✏️ {_e(label)}", meta=[f"сейчас {current}{u}" if current is not None else "", f"{lo}–{hi}"])
 
 
 def unit_suffix(unit: str) -> str:

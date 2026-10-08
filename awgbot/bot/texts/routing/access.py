@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from awgbot.bot import ui
 from awgbot.util import timeutil
 
 from ..fmt import _e, plain_ip, client_link, holder_link, plural_ru, details
@@ -25,7 +26,7 @@ def routing_params_text(info: dict, lists: dict) -> str:
                       f"раз в {lists.get('every_hours', 6)} ч")
     need = int(info["need"])
     return "\n".join([
-        "⚙️ <b>Параметры РФ-доступа</b>",
+        ui.head("⚙️ Параметры РФ-доступа"),
         f"Проверка живости: такт {info['probe_seconds']} с · окно {info['window']} · "
         f"порог {info['availability']}% ({need} {plural_ru(need, 'неудача', 'неудачи', 'неудач')} из {info['window']})",
         lists_line,
@@ -38,7 +39,7 @@ def routing_params_text(info: dict, lists: dict) -> str:
 
 
 def routing_users_text() -> str:
-    return ("👥 <b>Кому доступен РФ-доступ</b> (тебе — всегда)\n"
+    return (ui.head("👥 Кому доступен РФ-доступ") + " (тебе — всегда)\n"
             "Владельцы устройств управляют настройкой на них сами")
 
 
@@ -75,7 +76,7 @@ def gateway_bundle_caption(display: str, agent_bot: dict | None) -> str:
     who = "боту шлюза"
     if me.get("username"):
         who += f' (<a href="https://t.me/{_e(me["username"])}">{_e(me.get("name") or me["username"])}</a>)'
-    return (f"📤 <b>Конфигурация шлюза {_e(display)}</b>\n"
+    return (ui.head(f"📤 Конфигурация шлюза {_e(display)}") + "\n"
             f"Перешли это сообщение {who} — он проверит и применит сам\n\n"
             "ℹ️ Возврат в меню удалит это сообщение")
 
@@ -181,7 +182,7 @@ ROUTING_ABOUT = (
 ROUTING_ABOUT_OFF = ROUTING_ABOUT
 
 ROUTING_ADD_PROMPT = (
-    "➕ <b>Сайты с российского адреса</b>\n"
+    ui.head("➕ Сайты с российского адреса") + "\n"
     "Пришли адреса — по одному в строке или через запятую, можно ссылками. "
     "Добавляй то, что пишет «вы не из России»"
 )
@@ -209,7 +210,7 @@ def routing_panel_text(*, enabled: int, total: int, domains: list, lent_out=(),
                        link_ok: bool = True) -> str:
     """Экран «🇷🇺 РФ-доступ»: охват первой строкой, свои сайты второй; на всех
     выключено — объяснение открытым текстом; переданные — строкой без кнопки."""
-    head = f"🇷🇺 <b>{ROUTING_NAME}:</b>"
+    head = ui.head(f"🇷🇺 {ROUTING_NAME}:")
     lines = []
     if not total:
         lines.append(f"{head} устройств пока нет")
@@ -230,10 +231,10 @@ def routing_panel_text(*, enabled: int, total: int, domains: list, lent_out=(),
 def routing_sites_text(domains: list) -> str:
     """Экран «📋 Сайты»: счётчик и подсказка; сами адреса — кнопками «➖»."""
     if not domains:
-        return ("📋 <b>Свои сайты</b>\n"
+        return (ui.head("📋 Свои сайты") + "\n"
                 "Тут пока пусто. Банки, госуслуги, маркетплейсы — уже в общем списке; "
                 "добавляй то, что пишет «вы не из России»")
-    return f"📋 <b>Свои сайты</b> · {len(domains)}\n{ROUTING_SITES_ABOUT}"
+    return f"{ui.head('📋 Свои сайты', meta=[len(domains)])}\n{ROUTING_SITES_ABOUT}"
 
 
 def routing_add_report(added: list, rejected: list, over_limit: int, limit: int) -> str:

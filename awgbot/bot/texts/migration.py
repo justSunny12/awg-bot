@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from awgbot.bot import ui
 from .fmt import _e, plural_ru
 
 
@@ -113,7 +114,7 @@ def migration_pending_text(rows) -> str:
     if not rows:
         return "✅ Непереехавших нет — все живые устройства уже на новом интерфейсе"
     lines = _rows_capped(rows)
-    return (f"🚚 <b>Ещё не переехали</b> ({len(rows)})\n{lines}\n"
+    return (ui.head("🚚 Ещё не переехали", f"({len(rows)})") + f"\n{lines}\n"
             "Каждому нужно переимпортировать конфиг: он выдаётся обычным путём, старый пир до "
             "завершения продолжает работать")
 
@@ -149,7 +150,7 @@ def migration_orphans_text(rows) -> str:
     if not rows:
         return "Переехавших после отмены нет"
     lines = _rows_capped(rows)
-    return (f"⚠️ <b>Переехали до отмены</b> ({len(rows)})\n{lines}\n"
+    return (ui.head("⚠️ Переехали до отмены", f"({len(rows)})") + f"\n{lines}\n"
             "Их соединения живы, но выдаются снова старые конфиги: перед удалением интерфейса под "
             "переезд необходимо вернуть пользователей на старые настройки")
 
@@ -189,7 +190,7 @@ def migration_prepare_intro(d: dict) -> str:
     from .fmt import details
     port = f"порт {d['want_port']}" if d.get("want_port") else "случайный высокий порт"
     dns = ", DNS клиентов — свой резолвер" if d.get("private_dns") else ""
-    return (f"🚚 <b>Порт или подсеть</b> · сейчас: {_e(d['iface'])}, {d['port']}, <code>{_e(d['subnet'])}</code>\n\n"
+    return (ui.head("🚚 Порт или подсеть", meta=[f"сейчас: {_e(d['iface'])}, {d['port']}, <code>{_e(d['subnet'])}</code>"]) + "\n\n"
             f"Новый интерфейс, {port}, свободная подсеть{dns}\n"
             f"В переезд {plural_ru(d['devices'], 'войдёт', 'войдут', 'войдут')} {d['devices']} "
             f"{plural_ru(d['devices'], 'устройство', 'устройства', 'устройств')} у {d['clients']} "
@@ -205,9 +206,9 @@ def migration_prepare_intro(d: dict) -> str:
                       "возможность переехать сохраняется"))
 
 
-MIGRATION_ASK_PORT = ("✏️ <b>Порт нового интерфейса</b> · 1–65535; пусто или «Отмена» — случайный высокий. "
+MIGRATION_ASK_PORT = (ui.head("✏️ Порт нового интерфейса", meta=["1–65535; пусто или «Отмена» — случайный высокий. "
                       "443 имеет смысл, когда на хосте его никто не слушает: UDP на нём неотличим от QUIC. "
-                      "Занятый порт не возьму")
+                      "Занятый порт не возьму"]))
 
 
 def migration_prepared(res: dict) -> str:

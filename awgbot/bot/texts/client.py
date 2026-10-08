@@ -6,6 +6,7 @@ import datetime
 
 from awgbot.core import settings
 from awgbot.util import timeutil
+from awgbot.bot import ui
 from awgbot.core.enums import SubStatus, ActivationStatus, FriendStatus
 
 from .fmt import (
@@ -211,7 +212,7 @@ def greeting_client(client, server_ok: bool, slots: tuple[int, int] = None,
                     *, routing_on: bool = False, bot_username: str = "") -> str:
     """Главная клиента: имя, пустая строка, затем VPN и РФ-доступ; подписка и
     трафик; устройства. routing_ok=None — РФ-доступ профилю не выдан, его нет вовсе."""
-    lines = [f"👋 <b>{_e(client.name)}</b>", "",
+    lines = [ui.head(f"👋 {_e(client.name)}"), "",
              status_line(server_ok, routing_ok, routing_on, bot_username)]
     paused, _, pause_visible = _pause_visibility(client)
     access = access_status_line(client)
@@ -254,8 +255,8 @@ def greeting_guest(name: str, server_ok: bool, donor, held, routing_ok: bool = N
     срок его дело); трафик по устройствам. name — имя из Telegram."""
     held = list(held)
     if donor is None or not held:
-        return f"👋 <b>{_e(name)}</b> · устройств нет — попроси у друга новый код"
-    lines = [f"👋 <b>{_e(name)}</b>", "",
+        return ui.head(f"👋 {_e(name)}", meta=["устройств нет — попроси у друга новый код"])
+    lines = [ui.head(f"👋 {_e(name)}"), "",
              status_line(server_ok, routing_ok, routing_on, bot_username),
              f"💳 Подписка профиля {client_link(donor)}: {subscription_status_only(donor)}"]
     lines += _guest_traffic_lines(held, donor, bot_username)
@@ -267,15 +268,15 @@ def devices_header(used: int, limit: int, held=(), *, guest: bool = False) -> st
     строка «Лимит исчерпан…»; гость — «· 2 · от профиля Вася»."""
     if guest:
         n = len(list(held))
-        return f"📱 <b>Устройства</b> · {n} · от профиля {owner_link(held[0])}" if n else "📱 <b>Устройства</b>"
-    head = f"📱 <b>Устройства</b> · {used}" + (f" из {limit}" if limit else "") + held_devices_tail(held)
+        return ui.head("📱 Устройства", meta=[str(n), f"от профиля {owner_link(held[0])}"]) if n else ui.head("📱 Устройства")
+    head = ui.head("📱 Устройства", meta=[f"{used}" + (f" из {limit}" if limit else "") + held_devices_tail(held)])
     tail = limit_exhausted_line(used, limit)
     return head + (f"\n{tail}" if tail else "")
 
 
 def pick_device_header(kind: str) -> str:
     """«🔗 Ссылка — для какого устройства?» по виду выдачи."""
-    label = {"link": "🔗 <b>Ссылка</b>", "qr": "🔳 <b>QR</b>", "file": "📄 <b>Файл</b>"}[kind]
+    label = {"link": ui.head("🔗 Ссылка"), "qr": ui.head("🔳 QR"), "file": ui.head("📄 Файл")}[kind]
     return f"{label} — для какого устройства?"
 
 
@@ -402,9 +403,9 @@ def transfer_ask(name: str) -> str:
 def add_device_prompt(used: int, limit: int, *, for_friend: bool) -> str:
     slots = f" · {used} из {limit}" if limit else ""
     if for_friend:
-        return (f"👤 <b>Устройство для друга</b>{slots}{' · займёт твой слот.' if limit else ''}\n"
+        return (f"{ui.head('👤 Устройство для друга')}{slots}{' · займёт твой слот.' if limit else ''}\n"
                 "Как назвать? Имя увидит друг")
-    return f"➕ <b>Новое устройство</b>{slots}\nКак назвать? Например: «iPhone»"
+    return f"{ui.head('➕ Новое устройство')}{slots}\nКак назвать? Например: «iPhone»"
 
 
 def device_created(name: str, profile_limit_bytes: int) -> str:
@@ -416,7 +417,7 @@ def device_created(name: str, profile_limit_bytes: int) -> str:
 
 
 def device_limit_prompt(name: str, profile_limit_bytes: int) -> str:
-    head = f"📊 <b>Лимит трафика устройства «{_e(name)}»</b>"
+    head = ui.head(f"📊 Лимит трафика устройства «{_e(name)}»")
     if profile_limit_bytes:
         return f"{head} · не больше {gb_str(profile_limit_bytes)} профиля"
     return head
@@ -452,7 +453,7 @@ def name_note(old: str, new: str) -> str:
 
 
 def device_name_prompt(name: str) -> str:
-    return f"✏️ <b>Новое имя для устройства «{_e(name)}»</b>"
+    return ui.head(f"✏️ Новое имя для устройства «{_e(name)}»")
 
 
 # ── приглашение другу ────────────────────────────────────────────────────────
@@ -818,7 +819,7 @@ def pause_resumed_self(actual_days: int, new_end) -> str:
 # Активация, помощь, коды
 # ─────────────────────────────────────────────────────────────────────────────
 
-HELP_INTRO = "❓ <b>Помощь</b> — какое устройство?"
+HELP_INTRO = ui.head("❓ Помощь") + " — какое устройство?"
 ACTIVATION_OK = "🎉 Доступ открыт"
 ACTIVATION_OK_HELP = "🎉 Доступ открыт. Какое у тебя устройство?"
 ACTIVATION_INVALID = "🤔 Такого кода нет — проверь и пришли ещё раз"

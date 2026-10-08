@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from awgbot.bot import ui
 from awgbot.util import timeutil
 from awgbot.domain.gwchecks import WRITE_ERROR
 
@@ -64,7 +65,7 @@ def gateway_device_card(dev, state=None) -> str:
     online = timeutil.handshake_is_online(dev.last_handshake)
     dot = "🟢" if online else "🔴"
     rx, tx = int(dev.traffic_rx_month), int(dev.traffic_tx_month)
-    head = (f"{dot} 🛰 <b>{_e(dev.name)}</b> ({plain_ip(dev.address)}), последний коннект: {last}\n"
+    head = (f"{dot} " + ui.head(f"🛰 {_e(dev.name)}") + f" ({plain_ip(dev.address)}), последний коннект: {last}\n"
             # стрелки — со стороны шлюза: его исходящее — это tx сервера
             f"Потребление: {human_bytes(rx + tx)} {_updown(tx, rx)}")
     if state is not None:
@@ -214,7 +215,7 @@ ROUTING_PROVISION_INTRO = ("🇷🇺 РФ-доступ не развёрнут\n
                            "Кнопка поставит dnsmasq, перехват DNS клиентов, NAT и маршруты, линк до "
                            "будущего шлюза — до минуты. Шлюз назначается следующим шагом")
 SETTINGS_ROUTING_ABSENT = "🇷🇺 Обвязка развёрнута, функция ждёт перезапуска бота"
-GATEWAYS_OFF = "🛰 <b>Шлюзы</b> · 🇷🇺 РФ-доступ выключен · разрешения и списки сохранены"
+GATEWAYS_OFF = ui.head("🛰 Шлюзы", meta=["🇷🇺 РФ-доступ выключен", "разрешения и списки сохранены"])
 SETTINGS_ROUTING_SUBOFF = "🇷🇺 РФ-доступ выключен — раздел пуст, пока он не включён"
 GATEWAYS_AUTO_OFF = ("⚠️ Автопереключение выключено: при падении активного шлюза РФ-доступ "
                      "выключится, а не перейдёт на резерв")
@@ -238,7 +239,7 @@ def gateways_text(states: list, *, status: tuple = (True, ""), switched_at: str 
     строки слотов, переключение и списки, «подробнее», связь подсетей,
     предупреждение об автопереключении, свёрнутая сноска про ⭐."""
     ok, reason = status
-    head = f"🛰 <b>Шлюзы</b> · 🇷🇺 {ROUTING_NAME} " + ("🟢" if ok else f"🔴 не работает: {_e(reason)}")
+    head = ui.head("🛰 Шлюзы", meta=[f"🇷🇺 {ROUTING_NAME} " + (ui.st("ok") if ok else ui.st("bad", f"не работает: {_e(reason)}"))])
     lines = [head]
     if not states:
         lines.append("Шлюз не назначен")

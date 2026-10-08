@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from awgbot.bot import ui
 from awgbot.core import config
 from awgbot.util import timeutil
 
@@ -17,10 +18,10 @@ def broadcast_targets_text(selected: int, extend: bool) -> str:
     """Экран адресатов: «📢 Объявление · отмечено 2»; с продлением — кто
     получит и что значат ∞ и 🟡 у имён."""
     if extend:
-        return (f"📢 <b>Объявление с продлением</b> · отмечено {selected}\n"
+        return (ui.head("📢 Объявление с продлением", meta=[f"отмечено {selected}"]) + "\n"
                 "Получат только владельцы профилей с подпиской\n"
                 "∞ — бессрочная (не продлится), 🟡 — истекла (продлится от текущего времени)")
-    return (f"📢 <b>Объявление</b> · отмечено {selected}\n"
+    return (ui.head("📢 Объявление", meta=[f"отмечено {selected}"]) + "\n"
             "Получат владельцы и те, с кем они делятся устройствами")
 
 

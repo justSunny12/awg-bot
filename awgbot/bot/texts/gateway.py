@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from awgbot.domain.gwchecks import CHECK_GROUPS_QUIET_UNKNOWN, failure_detail
+from awgbot.bot import ui
 from awgbot.util import timeutil
 
 from .fmt import _e, human_bytes, updown_brief, plural_ru, num, more
@@ -81,7 +82,7 @@ def gateway_panel(st, update_tag: str = "", chan: dict | None = None) -> str:
     host = _e(st.hostname) if st.hostname else "шлюз"
     up = f" · {timeutil.brief_units(timeutil.fmt_remaining_short(int(st.uptime_seconds)))}" \
         if st.uptime_seconds is not None else ""
-    parts = [f"🛰 <b>{host}</b> {_gw_role(st, chan)}{up}", ""]      # шапка — отдельно от остального
+    parts = [ui.head(f"🛰 {host}", _gw_role(st, chan)) + up, ""]      # шапка — отдельно от остального
     chan_line = channel_panel_line(chan)
     link = _gw_link_short(st)
     # всегда «Линк до …»: голое «Линк» читается как сетевой интерфейс
@@ -144,7 +145,7 @@ def gateway_health(st) -> str:
     модуль awg — справкой внизу."""
     host = _e(st.hostname) if st.hostname else "шлюза"
     bad = sum(1 for c in st.checks if c.ok is False)
-    lines = [f"🩺 <b>Здоровье {host}</b> " + ("✅ проблем нет" if not bad else f"🔴 проблем: {bad}")]
+    lines = [ui.head(f"🩺 Здоровье {host}", "✅ проблем нет" if not bad else f"🔴 проблем: {bad}")]
     for c in st.checks:
         mark = "✅" if c.ok else ("⚪" if c.ok is None else "🔴")
         # детали — с хоста (вывод скрипта, имена интерфейсов): экранируем
@@ -226,8 +227,8 @@ def gateway_transit_text(st, items=None, own: dict | None = None) -> str:
     lan = getattr(st, "lan", None) or {}
     own = own or lan.get("own") or {}
     bad = [c for c in st.checks if getattr(c, "group", "") == "lan" and c.ok is False]
-    state = "🔴 " + ", ".join(_uniq(c.name for c in bad)[:3]) if bad else "🟢 работает"
-    lines = [f"🔀 <b>VPN-транзит</b> {state}",
+    state = ui.st("bad", ", ".join(_uniq(c.name for c in bad)[:3])) if bad else ui.st("ok", "работает")
+    lines = [ui.head("🔀 VPN-транзит", state),
              f"<code>{_e(lan.get('iface', '') or '?')}</code> · <code>{_e(lan.get('addr', '') or '?')}</code> · "
              f"{_packets(lan.get('lan_pkts'))} с роутера",
              f"DNS — <code>{_e(lan.get('resolver', '') or '?')}</code> через "
@@ -253,7 +254,7 @@ def gateway_transit_text(st, items=None, own: dict | None = None) -> str:
 
 
 def gateway_transit_ask_domain(kind: str) -> str:
-    head = {"add": "➕ <b>В туннель</b>", "ru": "➕ <b>Напрямую</b>"}[kind]
+    head = {"add": ui.head("➕ В туннель"), "ru": ui.head("➕ Напрямую")}[kind]
     return f"{head}\n\nПришли домены через пробел: <code>example.com</code> — накрывает и поддомены"
 
 
@@ -473,16 +474,16 @@ def gateway_config_result(ok: bool, detail: str, mail: dict | None = None) -> st
 
 
 def gateway_op_result(title: str, ok: bool, detail: str) -> str:
-    head = f"{'✅' if ok else '🔴'} <b>{title}: {'готово' if ok else 'не удалось'}</b>"
+    head = ui.head(f"{'✅' if ok else '🔴'} {title}: {'готово' if ok else 'не удалось'}")
     return head + (f"\n<code>{_e(detail)}</code>" if detail else "")
 
 
 def gateway_bundle_received(link_changed: bool, carries: bool = True) -> str:
     if link_changed:
-        return ("📦 <b>Конфигурация с сервера AWG</b>\n"
+        return (ui.head("📦 Конфигурация с сервера AWG") + "\n"
                 "Линк перезапустится" + (" — РФ-доступ у всех прервётся на секунды" if carries else "")
                 + "; правила переставятся")
-    return ("📦 <b>Конфигурация с сервера AWG</b>\n"
+    return (ui.head("📦 Конфигурация с сервера AWG") + "\n"
             "Конфиг линка не изменился — линк не перезапустится; правила переставятся")
 
 
@@ -497,7 +498,7 @@ def gateway_ssh_text(st: dict) -> str:
     адреса, предупреждения — по месту. Блоки разделены пустой строкой;
     статусные строки — без точки в конце."""
     port = st.get("port")
-    lines = ["<b>🛡 SSH-доступ</b>", ""]
+    lines = [ui.head("🛡 SSH-доступ"), ""]
     if st.get("sshd_down"):
         lines.append(f"⚪ sshd не запущен. Порт в таблице: {port}")
     elif st.get("owner") == "omv":
@@ -568,7 +569,7 @@ def gateway_ssh_port_changed(old: int, new: int) -> str:
             f"на порт {new}; проброс порта на роутере (при наличии) поправь сам: снаружи &lt;любой порт&gt; → шлюз:{new}")
 
 
-GW_SSH_ALLOW_ASK = ("➕ <b>Адреса для SSH-доступа</b>\n\nПришли IP, подсеть или доменное имя через пробел. "
+GW_SSH_ALLOW_ASK = (ui.head("➕ Адреса для SSH-доступа") + "\n\nПришли IP, подсеть или доменное имя через пробел. "
                     "Только IPv4: проброса IPv6 через роутер нет; имя буду резолвить сам")
 
 

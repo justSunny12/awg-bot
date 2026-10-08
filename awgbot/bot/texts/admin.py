@@ -6,6 +6,7 @@ import datetime
 
 from awgbot.core import settings
 from awgbot.util import timeutil
+from awgbot.bot import ui
 from awgbot.core.enums import ActivationStatus, SubStatus
 
 from .fmt import (
@@ -76,7 +77,7 @@ def admin_panel(st: dict, routing_ok: bool = None, migration=None,
     else:
         dot = "🔴 не отвечает"
     host = _e(_hostname() or "AWG")
-    lines = [f"🛠 <b>{host}</b> {dot}"]
+    lines = [ui.head(f"🛠 {host}", dot)]
     if st.get("cpu") is not None or st.get("ram") is not None or st.get("disk") is not None:
         def _p(v):
             return f"{v:.0f}%" if v is not None else "?"
@@ -301,7 +302,7 @@ def traffic_devices_text(client, rows, total: tuple[int, int] = (0, 0),
 
 def my_devices_header(n: int, limit: int) -> str:
     tail = f" из {limit}" if limit else ", без лимита"
-    return f"📱 <b>Мои устройства</b> · {n}{tail}"
+    return ui.head("📱 Мои устройства", meta=[f"{n}{tail}"])
 
 
 def _admin_usage(dev, profile_limit_bytes: int) -> str:
@@ -319,7 +320,7 @@ def _admin_usage(dev, profile_limit_bytes: int) -> str:
 def client_devices_header(client, used: int, limit: int) -> str:
     """«📱 <b>Устройства профиля Ксюша</b> · 1 из 3» — список устройств
     профиля у админа, когда в карточку они не влезли."""
-    return f"📱 <b>Устройства профиля {_e(client.name)}</b> · {used}" + (f" из {limit}" if limit else "")
+    return ui.head(f"📱 Устройства профиля {_e(client.name)}", meta=[f"{used}" + (f" из {limit}" if limit else "")])
 
 
 def admin_device_card(dev, client, *, rf=None, profile_limit_bytes: int = 0,
@@ -376,7 +377,7 @@ def _owner_tail(client, bot_username: str = "") -> str:
 
 
 def reassign_ask(dev, client=None, bot_username: str = "") -> str:
-    return f"🔀 <b>Перенос устройства «{_e(dev.name)}»</b>{_owner_tail(client, bot_username)} — в какой профиль?"
+    return f"{ui.head(f'🔀 Перенос устройства «{_e(dev.name)}»')}{_owner_tail(client, bot_username)} — в какой профиль?"
 
 
 def reassign_slot_ask(client, bot_username: str = "", used: int | None = None) -> str:
@@ -404,7 +405,7 @@ def reassigned_note(name: str, client, bot_username: str = "", donor=None) -> st
 
 
 def block_device_ask_admin(name: str, client=None, bot_username: str = "") -> str:
-    return f"🛑 <b>Блокировка {_e(name)}</b>{_owner_tail(client, bot_username)}. Уведомить владельца?"
+    return f"{ui.head(f'🛑 Блокировка {_e(name)}')}{_owner_tail(client, bot_username)}. Уведомить владельца?"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -412,7 +413,7 @@ def block_device_ask_admin(name: str, client=None, bot_username: str = "") -> st
 # ─────────────────────────────────────────────────────────────────────────────
 
 def profiles_header(n: int, online: int) -> str:
-    return f"👥 <b>Профили</b> · {n} · онлайн {online}"
+    return ui.head("👥 Профили", meta=[str(n), f"онлайн {online}"])
 
 
 def _pause_of(client) -> str:
@@ -530,11 +531,11 @@ def client_edit_text(client) -> str:
         period = "Бессрочная"
     devs = _n_devices(client.device_limit) if client.device_limit else "∞ устройств"
     traf = f"{gb_str(client.traffic_limit)} в месяц" if client.traffic_limit else "∞ ГБ в месяц"
-    return f"✏️ <b>{_e(client.name)}</b> — изменить\n{period} · {devs} · {traf}"
+    return f"{ui.head(f'✏️ {_e(client.name)}')} — изменить\n{period} · {devs} · {traf}"
 
 
 def client_name_prompt(client) -> str:
-    return f"✏️ <b>Новое имя для профиля «{_e(client.name)}»</b>"
+    return ui.head(f"✏️ Новое имя для профиля «{_e(client.name)}»")
 
 
 def client_name_note(old: str, new: str) -> str:
@@ -543,7 +544,7 @@ def client_name_note(old: str, new: str) -> str:
 
 def devs_limit_prompt(client, used: int) -> str:
     cur = _limit_devices_str(client.device_limit)
-    return f"🔢 <b>Лимит устройств профиля {_e(client.name)}</b> · сейчас {cur}, занято {used}"
+    return ui.head(f"🔢 Лимит устройств профиля {_e(client.name)}", meta=[f"сейчас {cur}, занято {used}"])
 
 
 def devs_limit_note(old: int, new: int, used: int) -> str:
@@ -555,7 +556,7 @@ def devs_limit_note(old: int, new: int, used: int) -> str:
 
 def traffic_limit_prompt(client) -> str:
     cur = gb_str(client.traffic_limit) if client.traffic_limit else "∞"
-    return f"📊 <b>Трафик профиля {_e(client.name)} в месяц</b> · сейчас {cur}"
+    return ui.head(f"📊 Трафик профиля {_e(client.name)} в месяц", meta=[f"сейчас {cur}"])
 
 
 def traffic_limit_note(old_b: int, new_b: int) -> str:
@@ -606,14 +607,14 @@ def extended_note(client, kind: str, new_end, pause, bot_username: str = "") -> 
 
 def period_start_prompt(client) -> str:
     cur = timeutil.fmt_dt_ui(timeutil.parse_iso(client.period_start), seconds=True) if client.period_start else "—"
-    return (f"📅 <b>Начало периода профиля {_e(client.name)}</b> · сейчас {cur}\n"
+    return (ui.head(f"📅 Начало периода профиля {_e(client.name)}", meta=[f"сейчас {cur}"]) + "\n"
             "Введи дату в формате <code>ДД.ММ.ГГГГ ЧЧ:ММ</code> (без времени — 00:00), «-» — не менять")
 
 
 def period_end_prompt(client) -> str:
     cur = (timeutil.fmt_dt_ui(timeutil.parse_iso(client.period_end), seconds=True)
            if client.period_end else "бессрочно")
-    return (f"📅 <b>Окончание периода профиля {_e(client.name)}</b> · сейчас {cur}\n"
+    return (ui.head(f"📅 Окончание периода профиля {_e(client.name)}", meta=[f"сейчас {cur}"]) + "\n"
             "Дата в том же формате, «-» — не менять, «0» — бессрочно")
 
 
@@ -676,21 +677,21 @@ def resumed_note(client, actual: int, new_end, bot_username: str = "") -> str:
 # Новый профиль, приглашение, устройство профилю
 # ─────────────────────────────────────────────────────────────────────────────
 
-NEW_PROFILE_NAME = "➕ <b>Новый профиль</b> — как назвать?"
+NEW_PROFILE_NAME = ui.head("➕ Новый профиль") + " — как назвать?"
 
 
 def new_profile_devs(name: str) -> str:
-    return f"➕ <b>{_e(name)}</b> — сколько устройств?"
+    return ui.head(f"➕ {_e(name)}") + " — сколько устройств?"
 
 
 def new_profile_traffic(name: str, devs: int) -> str:
-    return f"➕ <b>{_e(name)}</b> · {_n_devices(devs) if devs else '∞ устройств'} — трафик в месяц? Общий на все устройства"
+    return ui.head(f"➕ {_e(name)}", meta=[_n_devices(devs) if devs else "∞ устройств"]) + " — трафик в месяц? Общий на все устройства"
 
 
 def new_profile_period(name: str, devs: int, gb_limit: int) -> str:
     d = _n_devices(devs) if devs else "∞ устройств"
     t = f"{gb_limit} ГБ" if gb_limit else "∞ ГБ"
-    return f"➕ <b>{_e(name)}</b> · {d} · {t} — срок подписки?"
+    return ui.head(f"➕ {_e(name)}", meta=[d, t]) + " — срок подписки?"
 
 
 INVITE_FORWARD_TEMPLATE = (
@@ -719,7 +720,7 @@ def invite_screen(link: str, client, *, new: bool = True) -> str:
 
 def add_device_prompt_admin(client, used: int, limit: int) -> str:
     slots = f" · {used} из {limit}" if limit else ""
-    return f"➕ <b>Устройство профилю {_e(client.name)}</b>{slots}\nКак назвать?"
+    return f"{ui.head(f'➕ Устройство профилю {_e(client.name)}')}{slots}\nКак назвать?"
 
 
 def device_created_admin(name: str, client, bot_username: str = "") -> str:

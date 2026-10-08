@@ -44,8 +44,9 @@ def head(title: str, status: str = "", meta=()) -> str:
     if status:
         out += f" {status}"
     for m in meta:
-        if m:
-            out += f" · {m}"
+        if m is None or m == "":            # ноль — значение, его показываем
+            continue
+        out += f" · {m}"
     return out
 
 

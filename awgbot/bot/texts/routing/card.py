@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from awgbot.bot import ui
 from awgbot.util import timeutil
 from awgbot.util import nets as nets_util
 from awgbot.domain.services.gwchannel import drift_lines   # строки расхождения рисует домен
@@ -148,7 +149,7 @@ def gateway_card_text(state: dict, states: list) -> str:
     gw, dev = state["gateway"], state.get("device")
     name = _e(dev.name) if dev is not None else f"слот {gw.id}"     # без кавычек, как в уведомлениях
     two = len(states) > 1
-    lines = [f"{'⭐' if state.get('preferred') and two else '🛰'} <b>{slot_name(state)}</b> — {slot_status(state)}"]
+    lines = [ui.head(f"{'⭐' if state.get('preferred') and two else '🛰'} {slot_name(state)}") + f" — {slot_status(state)}"]
     age = state.get("handshake_age")
     if age is None or age > 300:
         hs = "хендшейка нет"
@@ -208,4 +209,4 @@ def gateway_card_text(state: dict, states: list) -> str:
 
 
 def gateway_edit_text(state: dict) -> str:
-    return f"✏️ <b>{slot_name(state)}</b> — изменить:"
+    return ui.head(f"✏️ {slot_name(state)}") + " — изменить:"

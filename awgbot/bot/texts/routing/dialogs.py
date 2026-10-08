@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from awgbot.bot import ui
 from awgbot.util import nets as nets_util
 
 from ..fmt import _e, details
@@ -33,7 +34,7 @@ def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
     name = slot_ref(state)
     online = bool((state.get("channel") or {}).get("online"))
     if on:
-        lines = [f"🔀 <b>VPN-транзит на {name}</b> — включить?",
+        lines = [ui.head(f"🔀 VPN-транзит на {name}") + " — включить?",
                  "Роутер отдаёт весь трафик сети шлюзу, шлюз маршрутизирует: заблокированное — в туннель, "
                  "остальное — напрямую. VPN на устройствах в сети становится не нужен",
                  "Нужно от тебя: настроить роутер по рецепту — покажу после включения",
@@ -45,7 +46,7 @@ def gateway_lan_ask(state: dict, on: bool, resolver: str) -> str:
             lines.append("Потребуется перевыпуск конфигурации шлюза")
         return "\n".join(lines)
     return "\n".join([
-        f"🔀 <b>VPN-транзит на {name}</b> — выключить?",
+        ui.head(f"🔀 VPN-транзит на {name}") + " — выключить?",
         "⚠️ Сначала убери на роутере маршрутизацию всего трафика на шлюз — иначе сеть останется без интернета",
         f"Связь подсетей для {name} выключится; списки и резолвер снимутся, свои списки останутся"
         + ("" if online else ". " + _reissue_or_channel(False, "Выключение")),
@@ -66,7 +67,7 @@ def gateway_router_text(title: str, net: str, gw_ip: str = "", peer_nets: list |
     net = net or "ПОДСЕТЬ"
     gw_ip = _e(gw_ip) if gw_ip else ROUTER_IP_PLACEHOLDER
     peers = [str(p) for p in (peer_nets or []) if p]
-    head = (f"❓ <b>Роутер для {_e(title)}</b> · <code>{_e(net)}</code> · шлюз <code>{gw_ip}</code>\n"
+    head = (ui.head(f"❓ Роутер для {_e(title)}", meta=[f"<code>{_e(net)}</code>", f"шлюз <code>{gw_ip}</code>"]) + "\n"
             "Весь трафик сети, кроме шлюза и локального, — на шлюз; DNS по DHCP — шлюз; "
             "ускорение и IPv6 — выключить; асимметричный путь — разрешить")
     req = details("• весь трафик локальной сети, кроме самого шлюза и трафика внутри сети, — на адрес "
@@ -133,7 +134,7 @@ def gateway_peer_ask(on: bool) -> str:
     """Диалог тумблера «↔️ Связь подсетей»."""
     if on:
         return "\n".join([
-            "↔️ <b>Связь подсетей</b> — включить?",
+            ui.head("↔️ Связь подсетей") + " — включить?",
             "Устройства из подсети одного шлюза достанут до подсети другого по настоящим адресам, "
             "через AWG. Только твои локальные сети и только между шлюзами с включённым VPN-транзитом",
             "SMB-серверы подсетей: на Windows — <code>\\\\имя.awg.internal</code>, на macOS — в Finder: "
@@ -145,7 +146,7 @@ def gateway_peer_ask(on: bool) -> str:
                     "шлюзе запущен avahi-daemon · задержка складывается из задержек шлюзов до сервера AWG; "
                     "связь живёт, пока подняты оба линка"),
         ])
-    return ("↔️ <b>Связь подсетей</b> — выключить?\n"
+    return (ui.head("↔️ Связь подсетей") + " — выключить?\n"
             "Подсети шлюзов перестанут видеть друг друга сразу. Необходим перевыпуск конфигурации "
             "каждого шлюза")
 
@@ -154,7 +155,7 @@ def gateway_home_text(state: dict) -> str:
     gw = state["gateway"]
     nets = gw.home_subnets
     cur = ", ".join(f"<code>{_e(n)}</code>" for n in nets) if nets else "не заданы"
-    lines = [f"🗺 <b>Подсети {slot_ref(state)}</b> · сейчас: {cur}", "",
+    lines = [ui.head(f"🗺 Подсети {slot_ref(state)}", meta=[f"сейчас: {cur}"]), "",
              "Пришли подсети через пробел: <code>192.168.2.0/24</code>; «-» — убрать все. "
              "Доступ через туннель — только твоим устройствам"]
     if gw.lan_mode:
@@ -191,7 +192,7 @@ def gateway_home_report(res: dict, state: dict) -> str:
 
 
 def gateway_label_text(state: dict) -> str:
-    return (f"✏️ <b>Подпись {slot_ref(state)}</b> — место одним-двумя словами: «дача», «офис». "
+    return (ui.head(f"✏️ Подпись {slot_ref(state)}") + " — место одним-двумя словами: «дача», «офис». "
             "До 20 символов, «—» — убрать")
 
 

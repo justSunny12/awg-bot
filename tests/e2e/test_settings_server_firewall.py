@@ -126,7 +126,7 @@ async def test_firewall_screen_offers_enable_and_lists_addresses(services, fake_
     text, markup = await sh._screen("fw", services)
     assert "Порт SSH: 22" in text and "2 адреса — редактируемый список ниже" in text
     assert "203.0.113.7" not in text, "список — кнопками, не в инфобоксе"
-    assert text.startswith("<b>🛡 SSH-доступ</b>"), "заголовок раздела не по новому имени"
+    assert text.startswith("🛡 <b>SSH-доступ</b>"), "заголовок раздела не по новому имени"
     assert "таймер" not in text.lower(), "из чата таймера нет — текст не должен его обещать"
     rows = [[b.text for b in r] for r in markup.inline_keyboard]
     assert rows == [["🅿️ Порт", "➕ Адрес"], ["➖ 203.0.113.7"], ["➖ home.example.org"],
@@ -487,7 +487,7 @@ async def test_finisher_buttons_reopen_the_prompt_or_the_section(services, fake_
     st = FakeState()
     await sh.ssh_port_finisher_action(cb, SetCB(sec="fw", act="do", key="port_back"), st, services)
     assert await st.get_state() is None
-    assert any(s[0] == "answer" and s[1].startswith("<b>🛡 SSH-доступ</b>") for s in nav.sent)
+    assert any(s[0] == "answer" and s[1].startswith("🛡 <b>SSH-доступ</b>") for s in nav.sent)
 
 
 async def test_free_port_is_applied_and_the_section_is_redrawn(services, fake_bot, monkeypatch):

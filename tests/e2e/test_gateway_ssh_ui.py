@@ -100,7 +100,7 @@ async def test_section_shows_port_tunnel_lan_outside_and_buttons(svc, fake_bot):
     assert "Из локальной сети: открыт всегда" in text
     assert "фильтр выключен" in text and "home2.dyn.example" in text and "203.0.113.10" in text
     assert "⚠️ Не резолвится: <code>home2.dyn.example</code>" in text
-    assert text.startswith("<b>🛡 SSH-доступ</b>"), text
+    assert text.startswith("🛡 <b>SSH-доступ</b>"), text
     labels = _labels(nav.sent[-1][2])
     assert labels == ["🅿️ Порт", "➕ Адрес", "➖ home2.dyn.example",
                       "➖ 203.0.113.7", "☑️ Фильтр снаружи", "⬅️ Назад"]
@@ -182,7 +182,7 @@ async def test_port_change_success_and_sshd_refusal(svc, fake_bot, monkeypatch):
     assert len(texts_sent) == 1, texts_sent
     head, rest = texts_sent[0].split("\n", 1)
     assert head.startswith("✅ Порт SSH: 22 → 2222.") and "шлюз:2222" in head, head
-    assert rest.lstrip("\n").startswith("<b>🛡 SSH-доступ</b>") and "Порт SSH: 2222" in rest, "раздел не перерисован"
+    assert rest.lstrip("\n").startswith("🛡 <b>SSH-доступ</b>") and "Порт SSH: 2222" in rest, "раздел не перерисован"
 
     def boom(p):
         raise ServiceError("sshd -t: Bad configuration option")
@@ -256,7 +256,7 @@ async def test_finisher_buttons_reopen_prompt_or_section(svc, fake_bot):
     cb, nav = _cb(fake_bot)
     await gh.gw_ssh_port_back(cb, svc, st)
     assert await st.get_state() is None
-    assert any(k == "answer" and t.startswith("<b>🛡 SSH-доступ</b>") for k, t, _ in nav.sent)
+    assert any(k == "answer" and t.startswith("🛡 <b>SSH-доступ</b>") for k, t, _ in nav.sent)
 
 
 # ── адреса и фильтр ──────────────────────────────────────────────────────────
