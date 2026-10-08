@@ -267,13 +267,6 @@ async def test_a_value_outside_the_cycle_moves_to_the_next_bigger_one(services, 
     assert store["email.poll_interval_sec"] == 60, "за последним — первое"
 
 
-async def test_an_unknown_cycle_key_is_refused(services, fake_bot, store):
-    cb, _ = _acb(fake_bot)
-    await sh.cycle(cb, SetCB(sec="email", act="cycle", key="email.imap_port"), services)
-    assert cb.answers == [("Кнопка устарела — открой раздел заново", True)]
-    assert "email.imap_port" not in store
-
-
 # ── 💾 Бэкапы ────────────────────────────────────────────────────────────────
 
 async def test_backup_section_lines_and_rows(services, fake_bot, store):
@@ -287,54 +280,6 @@ async def test_backup_section_lines_and_rows(services, fake_bot, store):
     text, _ = await sh._screen("backup", services)
     assert text == ("💾 <b>Бэкапы</b> ☑️ выкл · 🔓 без шифрования\n"
                     "Восстановить — пришли боту файл бэкапа (.tgz.enc)"), "выключены — без расписания"
-
-
-async def test_backup_channel_cycle_checks_mailbox_and_encryption(services, fake_bot, store):
-    """«📨 Куда» — цикл Telegram ↔ E-mail с проверками: без ящика — экран
-    «почта не настроена», без шифрования — alert; прошло — значение записано,
-    раздел перерисован, всплывашка называет новое."""
-    key = "app.scheduler.backup_channel"
-    cb, nav = _acb(fake_bot)
-    await sh.cycle(cb, SetCB(sec="backup", act="cycle", key=key), services)
-    assert key not in store and _last_edit(nav)[0] == texts.EMAIL_NOT_CONFIGURED
-    _mailbox(services)
-    cb, nav = _acb(fake_bot)
-    await sh.cycle(cb, SetCB(sec="backup", act="cycle", key=key), services)
-    assert key not in store and cb.answers == [(texts.BACKUP_NEEDS_ENCRYPTION, True)]
-    services.backup_set_passphrase("correct horse battery")
-    cb, nav = _acb(fake_bot)
-    await sh.cycle(cb, SetCB(sec="backup", act="cycle", key=key), services)
-    assert store[key] == "email"
-    text, markup = _last_edit(nav)
-    assert "→ на e-mail" in text and "📨 Куда: E-mail" in [b for r in _rows(markup) for b in r]
-    assert cb.answers[-1][0] == "Куда: E-mail", f"цикл без всплывашки с новым значением: {cb.answers}"
-    cb, nav = _acb(fake_bot)
-    await sh.cycle(cb, SetCB(sec="backup", act="cycle", key=key), services)
-    assert store[key] == "telegram" and cb.answers[-1][0] == "Куда: Telegram"
-
-
-async def test_backup_day_and_hour_in_one_input(services, fake_bot, store):
-    """«✏️ 1-е, 12:00» → одно приглашение «день и час»; «5 9» — день и час
-    записаны, итог первой строкой раздела, расписание и кнопка — новые."""
-    store["app.scheduler.backup_day"], store["app.scheduler.backup_hour"] = 1, 12
-    _, markup = await sh._screen("backup", services)
-    when = markup.inline_keyboard[1][1]
-    assert SetCB.unpack(when.callback_data) == SetCB(sec="backup", act="edit", key="backup_when")
-    st = FakeState()
-    cb, nav = _acb(fake_bot)
-    await sh.edit_value(cb, SetCB.unpack(when.callback_data), st, services)
-    assert _last_edit(nav)[0] == ("✏️ <b>День и час автобэкапа</b> · сейчас 1-го в 12:00 · пришли два числа: "
-                                  "<code>1 12</code>")
-    msg = _msg(fake_bot, "5 9")
-    await sh.receive_value(msg, st, services)
-    assert (store["app.scheduler.backup_day"], store["app.scheduler.backup_hour"]) == (5, 9)
-    answers = [s for s in msg.sent if s[0] == "answer"]
-    assert len(answers) == 1
-    lines = answers[0][1].split("\n")
-    assert lines[0] == "✅ Автобэкап: 1-е, 12:00 → 5-е, 09:00", lines
-    assert "Каждое 5-е число в 09:00 → в этот чат" in lines
-    assert "✏️ 5-е, 09:00" in [b for r in _rows(answers[0][2]) for b in r]
-    assert await st.get_state() is None
 
 
 @pytest.mark.parametrize("raw", ["5", "31 12", "0 12", "5 24", "a b", "5 -1", ""])
@@ -375,19 +320,6 @@ def upd(services, monkeypatch, store):
     return scene
 
 
-async def test_opening_updates_checks_right_away(services, fake_bot, upd):
-    """Проверка — при открытии раздела: сразу «Проверяю…», найденная цель —
-    в шапке и кнопкой «⬆️ Обновить до vX»; тег ложится туда, откуда строку
-    «⬆️ Доступна vX» читает главная."""
-    cb, nav = _acb(fake_bot)
-    await sh.open_section(cb, SetCB(sec="upd", act="open"), services, FakeState())
-    assert cb.answers[0][0] == "Проверяю…" and upd["calls"] == 1
-    text, markup = _last_edit(nav)
-    assert text.split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.3.1", text
-    assert _rows(markup) == [["⬆️ Обновить до v3.3.1"], ["✅ Уведомлять", "📅 Проверка: день"], ["⬅️ Назад"]]
-    assert services.update_available_tag() == "v3.3.1"
-
-
 async def test_nothing_to_update_and_a_failed_check_are_different(services, fake_bot, upd):
     """«Актуальна» и «не проверилось» — разное: сбой сети не стирает прежний
     тег и говорит об этом шапкой, а не зелёным «актуальна»."""
@@ -410,29 +342,6 @@ async def test_a_blocked_update_is_a_line_and_not_a_button(services, fake_bot, u
     assert _rows(markup)[0] == ["✅ Уведомлять", "📅 Проверка: день"], "кнопки обновления при блоке нет"
 
 
-async def test_notify_toggle_and_schedule_cycle_answer_at_once_without_the_network(
-        services, fake_bot, upd, store):
-    """Тумблер «Уведомлять» и цикл «📅 Проверка» отвечают сразу и рисуют
-    раздел по сохранённому тегу — без похода к списку релизов на каждое
-    нажатие; «никогда» в цикле нет."""
-    await sh._screen("upd", services)
-    calls = upd["calls"]
-    cb, nav = _acb(fake_bot)
-    await sh.toggle(cb, SetCB(sec="upd", act="toggle", key="notify"), services)
-    assert services.updates_muted() and cb.answers[0][0] == "Уведомления выключены"
-    text, markup = _last_edit(nav)
-    assert text.split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.3.1" and _rows(markup)[1][0] == "☑️ Уведомлять"
-    seen = []
-    for word in ("неделя", "месяц", "день", "неделя"):
-        cb, nav = _acb(fake_bot)
-        await sh.cycle(cb, SetCB(sec="upd", act="cycle", key="updates.poll_schedule"), services)
-        seen.append(store["updates.poll_schedule"])
-        assert cb.answers[0][0] == f"Проверка: {word}"
-        assert _rows(_last_edit(nav)[1])[1][1] == f"📅 Проверка: {word}"
-    assert seen == ["week", "month", "day", "week"] and "never" not in seen
-    assert upd["calls"] == calls, "тумблер или цикл сходили в сеть"
-
-
 async def test_muted_updates_still_refresh_the_home_line(services, fake_bot, upd):
     """«☑️ Уведомлять» глушит уведомление, но не проверку: тег для строки
     «⬆️ Доступна vX» на главной обновляется, уведомлять — нечего."""
@@ -440,17 +349,6 @@ async def test_muted_updates_still_refresh_the_home_line(services, fake_bot, upd
     found = services.update_scan()
     assert found.tag == "v3.3.1" and services.update_available_tag() == "v3.3.1"
     assert services.update_to_notify(found) is None
-
-
-async def test_never_from_an_old_config_becomes_month_and_mute_on_open(services, fake_bot, upd, store):
-    """«никогда» из старого конфига: раздел при открытии переводит расписание
-    на «месяц» и выключает уведомления — проверка идёт ради строки на главной."""
-    store["updates.poll_schedule"] = "never"
-    assert not services.updates_muted()
-    text, markup = await sh._screen("upd", services)
-    assert store["updates.poll_schedule"] == "month" and services.updates_muted()
-    assert _rows(markup)[1] == ["☑️ Уведомлять", "📅 Проверка: месяц"]
-    assert upd["calls"] == 1, "проверка при «никогда» не пошла"
 
 
 async def test_never_from_an_old_config_becomes_month_and_mute_at_startup(services, monkeypatch, tmp_path):

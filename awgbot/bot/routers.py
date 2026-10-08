@@ -4,7 +4,8 @@
 настоящий диспетчер роли) собирают диспетчер отсюда — списков роутеров в
 двух местах больше нет, и порядок включения живёт здесь один раз:
 
-  paging → hide → cancel → sections(br) → [роутеры роли по порядку] → stale
+  paging → hide → cancel → [основной бот: reply_commands] → sections(br) →
+  [роутеры роли по порядку] → stale
 
 Роутеры только одной роли (admin, settings, client, gateway…) — модульные,
 в процессе их включает один диспетчер; общие для обеих ролей (листание,
@@ -27,21 +28,22 @@ def routers_for(role: str) -> list[Router]:
     from awgbot.bot.roles import GATEWAY, MAIN
     br = GATEWAY if role == "gateway" else MAIN
     # общие разделы — раньше роутеров роли: у тех широкие фильтры (act == "do")
-    head = [paging.make_router(), hide.make_router(), reply_commands.make_cancel_router(),
-            sections.make_router(br)]
+    head = [paging.make_router(), hide.make_router(), reply_commands.make_cancel_router()]
+    shared = sections.make_router(br)
     if role == "gateway":
         from awgbot.bot.handlers import gateway as gateway_handlers
 
         async def _gw_main(message, services, role="", client=None):
             await gateway_handlers._panel(message, services)
         # ПОСЛЕДНИМ: кнопка старого меню
-        return head + [gateway_handlers.router, stale.make_router(_gw_main)]
+        return head + [shared, gateway_handlers.router, stale.make_router(_gw_main)]
     from awgbot.bot.handlers import admin, client, friend, guide, reply_commands, routing, settings
     from awgbot.bot.handlers.common import show_main_menu
-    # reply_commands ПЕРВЫМ: reply-команды бьют раньше FSM; routing ДО client —
-    # у обоих роль client, и FSM ввода адресов должен ловиться в routing, а не
-    # общим message-хендлером клиента; stale ПОСЛЕДНИМ
-    return head + [reply_commands.router, admin.router, settings.router, guide.router,
+    # reply_commands ПЕРВЫМ — до общих разделов: reply-«✖️ Отмена» бьёт раньше
+    # FSM ввода (иначе записалась бы как значение); routing ДО client — у обоих
+    # роль client, и FSM ввода адресов должен ловиться в routing, а не общим
+    # message-хендлером клиента; stale ПОСЛЕДНИМ
+    return head + [reply_commands.router, shared, admin.router, settings.router, guide.router,
                    friend.router, routing.router, client.router, stale.make_router(show_main_menu)]
 
 

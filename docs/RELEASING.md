@@ -46,8 +46,9 @@ GitHub `vX.Y.Z.P — …`.
 - `#requires_main_…` — релиз адресован основному боту (ВПС);
   `#requires_gw_…` — агенту шлюза. **Строка ставится только той роли, чей
   код релиз меняет.** Только основной бот (клиентская механика, резолвер
-  клиентов, переезд, файервол ВПС, `handlers/settings/`, `handlers/admin/`, тексты и
-  клавиатуры основного бота, реестр экранов `bot/screens.py`, скрипт линка) —
+  клиентов, переезд, файервол ВПС, `handlers/settings/` — ролевые разделы
+  настроек основного бота, `handlers/admin/`, тексты и клавиатуры основного
+  бота, скрипт линка) —
   одна строка `main`. Только агент
   (`handlers/gateway.py`, `domain/gateway/`, `domain/gwchecks.py`,
   `infra/gwguard.py`, тексты и
@@ -55,7 +56,10 @@ GitHub `vX.Y.Z.P — …`.
   строка `gw`. Общий код (`selfupdate.py`, `updates.py`, `common.py`,
   `handlers/stale.py` — обработчик устаревших кнопок, его включают оба бота,
   `bot/routers.py` — роутеры и диспетчер обеих ролей, `bot/paging.py` —
-  листание списков,
+  листание списков, `bot/sections/` — общие разделы настроек обеих ролей,
+  `bot/roles.py` — словарь роли, `bot/ui.py` — сборщик экрана и атомы,
+  `bot/screens.py` — реестр экранов обеих ролей, `handlers/reply_commands.py`
+  — «✖️ Отмена» под вводом у обеих ролей,
   `keyboards/common.py` — тумблеры ✅/☑️ и листание у обеих ролей,
   `util/timeutil.py`, `main.py`, `awg-bot.sh`, установщик, preflight, `notifier.py`, `db/*`,
   `domain/backupcrypto.py` — состав копии по роли, `tools/snapshot.py` —

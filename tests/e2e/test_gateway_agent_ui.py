@@ -438,68 +438,6 @@ async def test_backup_section_is_the_main_bot_layout(svc, fake_bot, store):
     assert GwCB.unpack(markup.inline_keyboard[-1][0].callback_data).action == "settings"
 
 
-async def test_backup_channel_cycle_checks_mailbox_and_encryption(svc, fake_bot, store):
-    """«📨 Куда» — цикл Telegram ↔ E-mail: без ящика — экран «почта не
-    настроена», без шифрования — alert; прошло — записано, раздел
-    перерисован, всплывашка с новым значением; обратно — Telegram."""
-    key = "app.scheduler.backup_channel"
-    store.update({"app.scheduler.backup_enabled": True, key: "telegram"})
-    cb, nav = _acb(fake_bot)
-    await gh.gw_section(cb, GwCB(action="backup"), svc, FakeState())
-    cyc = GwCB.unpack(_button(_last_edit(nav)[1], "📨 Куда: Telegram").callback_data)
-    assert cyc == GwCB(action="cyc", val=key)
-    cb, nav = _acb(fake_bot)
-    await gh.gw_cycle(cb, cyc, svc)
-    assert store[key] == "telegram" and _last_edit(nav)[0] == texts.EMAIL_NOT_CONFIGURED
-    svc.email_save("box@icloud.com", "pw", "imap.mail.me.com", 993, "smtp.mail.me.com", 587)
-    cb, nav = _acb(fake_bot)
-    await gh.gw_cycle(cb, cyc, svc)
-    # у агента в копии ключи линка и туннеля, а не устройств — текст роли
-    assert store[key] == "telegram" and cb.answers == [(texts.backup_needs_encryption(GATEWAY), True)], \
-        cb.answers
-    svc.backup_set_passphrase("correct horse battery")
-    cb, nav = _acb(fake_bot)
-    await gh.gw_cycle(cb, cyc, svc)
-    assert store[key] == "email" and cb.answers[-1] == ("Куда: E-mail", False), cb.answers
-    assert "📨 Куда: E-mail" in [b for r in _rows(_last_edit(nav)[1]) for b in r]
-    cb, nav = _acb(fake_bot)
-    await gh.gw_cycle(cb, cyc, svc)
-    assert store[key] == "telegram" and cb.answers[-1] == ("Куда: Telegram", False)
-
-
-async def test_an_unknown_cycle_key_is_refused(svc, fake_bot, store):
-    cb, _ = _acb(fake_bot)
-    await gh.gw_cycle(cb, GwCB(action="cyc", val="app.gateway.monitor_minutes"), svc)
-    assert cb.answers == [("Кнопка устарела — открой раздел заново", True)]
-    assert "app.gateway.monitor_minutes" not in store
-
-
-async def test_backup_day_and_hour_in_one_input(svc, fake_bot, store):
-    """«✏️ 1-е, 12:00» → одно приглашение «день и час»; «5 9» — записано,
-    итог первой строкой раздела, кнопка — новая; «31 12» — переспрос."""
-    store.update({"app.scheduler.backup_enabled": True, "app.scheduler.backup_day": 1,
-                  "app.scheduler.backup_hour": 12})
-    cb, nav = _acb(fake_bot)
-    await gh.gw_section(cb, GwCB(action="backup"), svc, FakeState())
-    when = GwCB.unpack(_button(_last_edit(nav)[1], "✏️ 1-е, 12:00").callback_data)
-    st = FakeState()
-    cb, nav = _acb(fake_bot)
-    await gh.gw_edit(cb, when, svc, st)
-    assert _last_edit(nav)[0] == ("✏️ <b>День и час автобэкапа</b> · сейчас 1-го в 12:00 · пришли два числа: "
-                                  "<code>1 12</code>")
-    bad = _msg(fake_bot, "31 12")
-    await gh.gw_receive_value(bad, st, svc)
-    assert [s[1] for s in bad.sent if s[0] == "answer"] == [texts.BACKUP_WHEN_BAD]
-    assert store["app.scheduler.backup_day"] == 1
-    msg = _msg(fake_bot, "5 9")
-    await gh.gw_receive_value(msg, st, svc)
-    assert (store["app.scheduler.backup_day"], store["app.scheduler.backup_hour"]) == (5, 9)
-    answers = [s for s in msg.sent if s[0] == "answer"]
-    assert len(answers) == 1 and answers[0][1].split("\n")[0] == "✅ Автобэкап: 1-е, 12:00 → 5-е, 09:00"
-    assert "✏️ 5-е, 09:00" in [b for r in _rows(answers[0][2]) for b in r]
-    assert answers[0][1].split("\n", 2)[2].startswith("💾 <b>Бэкапы"), "итог — не в разделе бэкапов"
-
-
 # ── ⬆️ обновления ────────────────────────────────────────────────────────────
 
 @pytest.fixture()
@@ -521,23 +459,6 @@ def upd(svc, monkeypatch, store):
     return scene
 
 
-async def test_opening_updates_checks_right_away(svc, fake_bot, upd):
-    """Проверка — при открытии раздела: «Проверяю…», найденная цель — в шапке
-    и кнопкой «⬆️ Обновить до vX»; тег ложится туда, откуда строку
-    «⬆️ Доступна vX» читает панель."""
-    cb, nav = _acb(fake_bot)
-    await gh.gw_updates_screen(cb, svc)
-    assert cb.answers[0][0] == "Проверяю…" and upd["calls"] == 1
-    text, markup = _last_edit(nav)
-    assert text.split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.2.1", text
-    assert _rows(markup) == [["⬆️ Обновить до v3.2.1"], ["✅ Уведомлять", "📅 Проверка: день"], ["⬅️ Назад"]]
-    assert svc.update_available_tag() == "v3.2.1"
-    upd["next"] = None
-    await gh.gw_updates_screen(cb, svc)
-    text, markup = _last_edit(nav)
-    assert text == "⬆️ <b>Обновления</b> · v3.2.0 🟢 актуальна" and _rows(markup)[0] == ["✅ Уведомлять", "📅 Проверка: день"]
-
-
 async def test_a_failed_check_says_so_and_keeps_the_found_version(svc, fake_bot, upd):
     cb, nav = _acb(fake_bot)
     await gh.gw_updates_screen(cb, svc)
@@ -545,42 +466,6 @@ async def test_a_failed_check_says_so_and_keeps_the_found_version(svc, fake_bot,
     await gh.gw_updates_screen(cb, svc)
     assert _last_edit(nav)[0] == "⬆️ <b>Обновления</b> · v3.2.0 ⚪ проверка не удалась", _last_edit(nav)[0]
     assert svc.update_available_tag() == "v3.2.1", "сбой проверки стёр найденную версию"
-
-
-async def test_notify_toggle_and_schedule_cycle_answer_at_once_without_the_network(svc, fake_bot, upd, store):
-    """Тумблер и цикл «📅 Проверка» рисуют раздел по сохранённому тегу — без
-    похода к списку релизов на каждое нажатие; «никогда» в цикле нет."""
-    cb, nav = _acb(fake_bot)
-    await gh.gw_updates_screen(cb, svc)
-    calls = upd["calls"]
-    cb, nav = _acb(fake_bot)
-    await gh.gw_updates_toggle(cb, svc)
-    assert svc.updates_muted() and cb.answers[0][0] == "Уведомления выключены"
-    text, markup = _last_edit(nav)
-    assert text.split("\n")[0] == "⬆️ <b>Обновления</b> · v3.2.0 → v3.2.1" and _rows(markup)[1][0] == "☑️ Уведомлять"
-    assert _rows(markup)[0] == ["⬆️ Обновить до v3.2.1"], "кнопка обновления пропала без сети"
-    cyc = GwCB.unpack(_button(markup, "📅 Проверка: день").callback_data)
-    assert cyc == GwCB(action="cyc", val="updates.poll_schedule")
-    seen = []
-    for word in ("неделя", "месяц", "день", "неделя"):
-        cb, nav = _acb(fake_bot)
-        await gh.gw_cycle(cb, cyc, svc)
-        seen.append(store["updates.poll_schedule"])
-        assert cb.answers[0][0] == f"Проверка: {word}"
-        assert _rows(_last_edit(nav)[1])[1][1] == f"📅 Проверка: {word}"
-    assert seen == ["week", "month", "day", "week"]
-    assert upd["calls"] == calls, "тумблер или цикл сходили в сеть"
-
-
-async def test_never_from_an_old_config_becomes_month_and_mute_on_open(svc, fake_bot, upd, store):
-    """«никогда» из старого конфига: раздел при открытии ставит «месяц» и
-    выключает уведомления — проверка идёт ради строки на панели."""
-    store["updates.poll_schedule"] = "never"
-    cb, nav = _acb(fake_bot)
-    await gh.gw_updates_screen(cb, svc)
-    assert store["updates.poll_schedule"] == "month" and svc.updates_muted()
-    assert _rows(_last_edit(nav)[1])[1] == ["☑️ Уведомлять", "📅 Проверка: месяц"]
-    assert upd["calls"] == 1, "проверка при «никогда» не пошла"
 
 
 async def test_never_from_an_old_config_becomes_month_and_mute_at_agent_start(tmp_path, monkeypatch):

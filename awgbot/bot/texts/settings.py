@@ -316,32 +316,25 @@ def settings_upd_text(installed: str | None = None, target=None, blocked: str = 
 UPDATE_SCHEDULE_CYCLE = ("day", "week", "month")
 UPDATE_SCHEDULE_LABELS = {"day": "день", "week": "неделя", "month": "месяц"}
 
-# границы валидации ввода: dotted-ключ → (мин, макс, подпись, единица)
+# границы ввода ключей ролевых разделов: dotted-ключ → (мин, макс, подпись,
+# единица). Ключи общих разделов — в BOUNDS их модулей (bot/sections); единая
+# точка чтения — sections.bounds(key).
 SETTINGS_BOUNDS = {
-    "quiet_hours.quiet_hours_start": (0, 23, "Тихие часы с", "ч"),
-    "quiet_hours.quiet_hours_end": (0, 23, "Тихие часы до", "ч"),
-    "resource_alerts.thresholds_percent.cpu": (1, 100, "Порог CPU", "%"),
-    "resource_alerts.thresholds_percent.ram": (1, 100, "Порог RAM", "%"),
-    "resource_alerts.thresholds_percent.disk": (1, 100, "Порог диска", "%"),
     "limits.traffic_bonus_gb": (1, 100000, "Бонус", "ГБ"),
     "pause.pause_max_total_days": (1, 365, "Дней паузы за год", "дн."),
     "pause.monthly_pause_days": (0, 31, "Дней паузы за месяц", "дн."),
     "grace.grace_days": (1, 365, "Отсрочка", "дн."),
-    "app.scheduler.monitor_minutes": (1, 1440, "Частота опроса", "мин"),
-    "app.monitoring.alert_streak": (1, 100, "Замеров до алерта", ""),
-    "app.monitoring.service_failure_alert_minutes": (1, 1440, "Порог простоя", "мин"),
-    "email.poll_interval_sec": (60, 3600, "Опрос почты", "с"),
-    "email.resume_code_len": (6, 16, "Длина кода", "символов"),
-    "app.scheduler.backup_day": (1, 28, "День автобэкапа", ""),
-    "app.scheduler.backup_hour": (0, 23, "Час автобэкапа", "ч"),
-    # агент шлюза
-    "app.gateway.monitor_minutes": (1, 1440, "Частота опроса", "мин"),
-    "app.gateway.handshake_max_age": (1, 1440, "Линк молчит дольше", "мин"),   # хранится в секундах
-    "app.gateway.temp_alert_c": (40, 100, "Порог температуры", "°C"),
     # MTU — в новые ссылки. 1280 — минимум IPv6, 1500 — Ethernet без запаса на
     # заголовки туннеля; выше него пакеты начинают фрагментироваться.
     "app.client_config.mtu": (1280, 1500, "MTU", ""),
 }
+
+
+def _bounds(key: str):
+    """(мин, макс, подпись, единица) ключа — модули общих разделов, затем
+    таблица выше. Импорт при вызове: sections читает тексты."""
+    from awgbot.bot import sections
+    return sections.bounds(key)
 
 
 # Текстовые настройки (не числа): ключ → (подпись, подсказка). Ввод проверяется
@@ -573,7 +566,7 @@ def settings_prompt(key: str, current=None) -> str:
             shown = _setting_value(key, current) if current not in (None, "", []) else ""
         icon = "➕" if key == "app.firewall.ssh_allow" else "✏️"      # эмодзи кнопки «➕ Адрес»
         return ui.head(f"{icon} {_e(label)}", meta=[f"сейчас {shown}" if shown else ""]) + f"\n{_e(hint)}"
-    lo, hi, label, unit = SETTINGS_BOUNDS[key]
+    lo, hi, label, unit = _bounds(key)
     u = unit_suffix(unit)
     return ui.head(f"✏️ {_e(label)}", meta=[f"сейчас {current}{u}" if current is not None else "", f"{lo}–{hi}"])
 
@@ -590,7 +583,7 @@ def settings_changed(key: str, old, new) -> str:
     if key in SETTINGS_TEXT:
         label, unit = SETTINGS_TEXT[key][0], ""
     else:
-        _lo, _hi, label, unit = SETTINGS_BOUNDS[key]
+        _lo, _hi, label, unit = _bounds(key)
         unit = unit_suffix(unit)
     old_s = _setting_value(key, old) if old not in (None, "", []) else "—"
     new_s = _setting_value(key, new) if new not in (None, "", []) else "—"
@@ -604,7 +597,7 @@ def settings_ssh_allow_added(entries: list) -> str:
 
 
 def settings_bad_value(key: str) -> str:
-    lo, hi, _label, unit = SETTINGS_BOUNDS[key]
+    lo, hi, _label, unit = _bounds(key)
     return f"⚠️ Нужно целое число {lo}–{hi}{unit_suffix(unit)}"
 
 

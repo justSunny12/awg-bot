@@ -8,10 +8,12 @@ settingscore.py — общая механика экранов настроек 
 раздел после ввода приходил через send_menu, у основного — голым answer, и
 правка одной копии не доезжала до другой.
 
-Роль отдаёт сюда только то, чем действительно отличается, — колбэки и
-клавиатуры (Hooks); сами шаги диалогов здесь. Регистрируются на роутер роли
-обработчики сообщений (состояния одни на обе роли), действия по кнопкам роль
-зовёт из своих тонких обёрток: у неё свой класс callback_data.
+Роль отдаёт сюда только то, чем действительно отличается, — крючки (Hooks),
+которые собирает из словаря роли sections.hooks_for; сами шаги диалогов здесь.
+Обработчики сообщений (состояния одни на обе роли) регистрирует register() на
+роутер общих разделов (sections.make_router — по одному на диспетчер); кнопки
+общих разделов зовут шаги отсюда через диспетчер bot/sections, ролевые
+разделы основного бота (handlers/settings/) — напрямую с hooks_for(MAIN).
 """
 from __future__ import annotations
 
@@ -78,7 +80,8 @@ async def after_input(message: Message, services, hooks: Hooks, sec: str, note: 
 async def start_edit(cb: CallbackQuery, services, hooks: Hooks, state: FSMContext,
                      key: str, sec: str) -> bool:
     """Открыть ввод значения key; False — ключ неизвестен (старая клавиатура)."""
-    if key not in texts.SETTINGS_BOUNDS and key not in texts.SETTINGS_TEXT and key != "backup_when":
+    from awgbot.bot import sections
+    if sections.bounds(key) is None and key not in texts.SETTINGS_TEXT and key != "backup_when":
         await cb.answer("Эта настройка недоступна", show_alert=True)
         return False
     await state.set_state(SettingsInput.value)
@@ -231,11 +234,13 @@ async def receive_value(message: Message, state: FSMContext, services, hooks: Ho
     if key == "backup_when":
         await _receive_backup_when(message, state, services, hooks, sec)
         return
-    if key not in texts.SETTINGS_BOUNDS:      # рассинхрон state (не должен случаться)
+    from awgbot.bot import sections
+    bounds = sections.bounds(key)
+    if bounds is None:                        # рассинхрон state (не должен случаться)
         await state.clear()
         await after_input(message, services, hooks, sec)
         return
-    lo, hi, _label, _unit = texts.SETTINGS_BOUNDS[key]
+    lo, hi, _label, _unit = bounds
     raw = (message.text or "").strip()
     try:
         val = int(raw)

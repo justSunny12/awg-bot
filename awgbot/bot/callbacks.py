@@ -267,16 +267,18 @@ class PageCB(CallbackData, prefix="pg", sep="|"):
 class GwCB(CallbackData, prefix="gw"):
     """Кнопки агента шлюза (роль gateway). action:
       panel|refresh|health — панель и её обновление, проверки живьём;
-      settings и разделы notify|email|mon|backup|maint|updates;
-      tgl|edit|enc|enc_set|bk_ch (val — ключ/вариант) — правки настроек;
+      settings и общие разделы notify|email|mon|backup|updates с правками
+      tgl|edit|cyc (val — ключ), enc|enc_set, backup!, restore!|restore_drop,
+      em_setup|em_check|em_test|em_forget(!), upd_toggle — разосланные имена,
+      которые переводчик роли (bot/roles.py) отображает на действия общих
+      разделов (bot/sections); новые кнопки разделов — общим правилом
+      action="раздел/действие", val="ключ|значение";
       restart|reassert|botrestart — показ подтверждения, с «!» — исполнение;
-      backup!, restore!|restore_drop, em_setup|em_check|em_test|em_forget(!);
       apply!|apply_ow!|apply_keep!|drop — принять/отклонить бандл;
-      upd_toggle|upd_check|upd_sched (val — вариант расписания);
       lan — экран «🔀 VPN-транзит» (lan_list — прежнее имя); lan_add|lan_ru —
       ввод доменов в личные списки, lan_list — свои списки (домены кнопками,
       с листанием), lan_rm|lan_rm! (val — номер) — убрать домен с подтверждения.
-      ssh — раздел «Доступ по SSH», ssh_port|ssh_add|ssh_del (val — номер)|
+      ssh — раздел «🛡 SSH-доступ», ssh_port|ssh_add|ssh_del (val — номер)|
       ssh_on|ssh_on!|ssh_off|ssh_port_retry|ssh_port_back — его действия."""
     action: str
     val: str = ""

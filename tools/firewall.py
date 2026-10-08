@@ -105,7 +105,7 @@ def _flag(args: list[str], name: str) -> str | None:
 
 
 def _fw_cb(key: str) -> str:
-    """callback_data кнопки раздела «Файервол» — той же формы, что рисует бот."""
+    """callback_data кнопки раздела «🛡 SSH-доступ» — той же формы, что рисует бот."""
     from awgbot.bot.callbacks import SetCB
     return SetCB(sec="fw", act="do", key=key).pack()
 
@@ -358,7 +358,7 @@ def cmd_rollback(_args) -> int:
     tgsend.send("↩️ <b>Файервол: откат.</b>\n\nПодтверждения не было, правила сняты — "
                 "SSH снова открыт всем адресам. NAT клиентов на месте.\n\n"
                 "Похоже, новый вход по SSH не прошёл: проверь список адресов "
-                "(⚙️ Настройки → 🛡 Файервол) и включи фильтр заново.")
+                "(⚙️ Настройки → 🛡 SSH-доступ) и включи фильтр заново.")
     return 0
 
 

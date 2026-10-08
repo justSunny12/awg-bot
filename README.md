@@ -304,16 +304,29 @@ awgbot/
   bot/       texts, keyboards, guides   презентация; texts/routing/ — пакет
                         (slots, card, dialogs, assign, access)
              filters, middleware, callbacks, states   glue aiogram
-             routers    один источник роутеров роли: routers_for (порядок включения),
-                        make_dispatcher (FSM, middleware) — для запуска и тестов
-             paging     листание длинных списков; роутер — фабрика, как «Скрыть» и
-                        устаревшая кнопка (handlers/hide, handlers/stale)
-             screens    реестр экранов для возврата после ввода, ссылок /start, уведомлений
+             roles      словарь роли установки (BotRole: MAIN, GATEWAY) — слова роли,
+                        ключи настроек, блоки, корень настроек, переводчик колбэков
+                        (br.cb); общий текст пишется один раз с подстановкой слов роли
+             ui         сборщик экрана и атомы: head, screen, prompt, label, sub, st,
+                        toast, tick; правила оформления живут здесь один раз
+             sections/  общие разделы настроек обеих ролей — модуль на раздел: root,
+                        notify, ncl, mon, email, backup, updates, svc; один диспетчер
+                        open/toggle/edit/cycle/do и фабрика роутера make_router(br)
+             routers    один источник роутеров роли: routers_for (порядок включения:
+                        листание → «Скрыть» → «✖️ Отмена» → [основной бот:
+                        reply-команды] → общие разделы → роутеры роли → устаревшая
+                        кнопка), make_dispatcher (FSM, middleware) — для запуска и тестов
+             paging     листание длинных списков; роутер — фабрика, как «Скрыть»,
+                        «✖️ Отмена», общие разделы и устаревшая кнопка
+             screens    реестр экранов обеих ролей для возврата после ввода, ссылок
+                        /start, уведомлений (set_<раздел> — через sections)
              notifier   рассылка уведомлений (пейсинг + RetryAfter)
              handlers/  роутеры client + admin/ (пакет: panel, clients, devices, gateway,
-                        updates, selfops, blocks, broadcast) + friend + routing + settings/
-                        (пакет: render, gwmark, slots, sections, inputs, cycles, actions;
-                        роутер один — _router) + …
+                        selfops, blocks, broadcast) + friend + routing + settings/ (пакет
+                        ролевых разделов основного бота: render, gwmark, slots, sections,
+                        inputs, cycles, actions; роутер один — _router) + gateway (панель
+                        и ролевые разделы агента) + settingscore (шаги ввода настроек,
+                        общие для ролей) + updates_flow + …
   runtime/   main         сборка и запуск (диспетчер роли — из bot/routers)
              preflight    самопроверка окружения на старте (fatal / warning)
              scheduler    APScheduler-задачи (трафик, сроки, монитор, живость шлюза)
@@ -339,6 +352,35 @@ install/     awg-bot-install.sh      установщик (он же качае�
 conf/        *.yaml — конфигурация; run.sh — форграунд-запуск
 ```
 
+### Новый раздел настроек
+
+Разделы «⚙️ Настроек», общие для основного бота и агента шлюза, живут в
+`awgbot/bot/sections/` по модулю на раздел; роль приходит словарём
+(`bot/roles.py`, параметр `br`), ветвлений по имени роли в модулях нет —
+есть `br.has.<блок>` и слова роли. Новый раздел:
+
+1. модуль `awgbot/bot/sections/<id>.py`: `ID`, `LABEL`, `BACK`, `KEYS` (ключи
+   настроек раздела), `BOUNDS` (границы ввода), `CYCLES` (кнопки-циклы),
+   `ACTIONS` (действия сверх open/toggle/edit/cycle; `Confirm` — с
+   подтверждением), `text(br, …)`, `keyboard(br, …)`, `async screen(br,
+   services, key)`; колбэки кнопок — только через `br.cb.pack(раздел,
+   действие, ключ)`;
+2. модуль — в `MODULES` (`sections/__init__.py`);
+3. `ID` — в `settings_root` словаря той роли, у которой раздел есть (у
+   обеих — в оба экземпляра; вложенный раздел — в `subsections`); новое слово роли — поле `BotRole` без
+   умолчания и значение в `MAIN` и `GATEWAY` (законно пустое — в `OPTIONAL`);
+4. снимки раздела в каталоге эталонов (`tests/screens/shots_<роль>.py`) и
+   `pytest tests/screens --update-screens`.
+
+Диспетчеры, `routers_for`, реестр экранов (`set_<id>` находится сам), отмена
+под вводом и ядро ввода `handlers/settingscore.py` не трогаются: роутер
+разделов узнаёт колбэк через переводчик роли и доступность раздела, корень
+настроек рисуется из `br.settings_root`; границы, подпись и единицу ключа с
+вводом числа ядро ввода берёт из `BOUNDS` модуля (`sections.bounds`). Ролевые
+разделы, у которых свои обработчики («🖥 Сервер AWG», «💳 Подписки»,
+«🛡 SSH-доступ»), рисуются экранами роли (`br.role_screens`) и в `sections/`
+пока не переехали.
+
 ---
 
 ## Тесты
@@ -348,7 +390,8 @@ conf/        *.yaml — конфигурация; run.sh — форграунд-
 ```
 tests/unit/         чистая логика без БД/сети (timeutil, configgen, домены
                     маршрутизации, secrets_util, hostmetrics, awg-парсеры,
-                    а также разбор самих shell-скриптов поставки)
+                    атомы экрана и заполненность словаря роли, а также разбор
+                    самих shell-скриптов поставки)
 tests/smoke/        импорт всего пакета, config.validate(), сборка aiogram-роутеров
 tests/integration/  настоящая временная SQLite + фейковый awg-слой (db, services)
 tests/e2e/          сквозные сценарии: жизненный цикл, лимиты трафика,

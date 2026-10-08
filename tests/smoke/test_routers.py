@@ -58,14 +58,13 @@ def test_no_helper_is_registered_as_a_handler(mod):
 def test_routers_for_lists_both_roles_in_the_documented_order():
     """routers.py — единственное место с порядком включения: листание и
     «Скрыть» первыми, устаревшая кнопка последней; у основного бота
-    reply_commands раньше FSM, routing раньше client."""
+    reply_commands раньше общих разделов и FSM, routing раньше client."""
     from awgbot.bot.routers import routers_for
     main_names = [r.name for r in routers_for("client")]
     gw_names = [r.name for r in routers_for("gateway")]
-    assert main_names[:4] == ["paging", "hide", "cancel", "sections"] and main_names[-1] == "stale", main_names
+    assert main_names[:5] == ["paging", "hide", "cancel", "reply_commands", "sections"] and main_names[-1] == "stale", main_names
     assert gw_names[:4] == ["paging", "hide", "cancel", "sections"] and gw_names[-1] == "stale", gw_names
     assert main_names.index("sections") < main_names.index("settings"), "общие разделы — раньше настроек роли"
-    assert main_names.index("reply_commands") < main_names.index("admin"), main_names
     assert main_names.index("routing") < main_names.index("client"), main_names
     assert "gateway" in gw_names and "admin" not in gw_names, gw_names
 

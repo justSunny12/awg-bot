@@ -28,12 +28,23 @@ HERE = pathlib.Path(__file__).parent
 FILES = sorted({s.role for s in catalog.SHOTS})
 
 
+def _section_roles():
+    from awgbot.bot import roles
+    # файл эталона → словарь роли, чьи общие разделы он обязан снять целиком
+    return {"admin": roles.MAIN, "gateway": roles.GATEWAY}
+
+
+SECTION_ROLE = _section_roles()
+
+
 @pytest.mark.parametrize("name", FILES)
-async def test_screens_match_the_reference_file(name, request, tmp_path, frozen, fakes):
+async def test_screens_match_the_reference_file(name, request, tmp_path, frozen, fakes, monkeypatch):
     """Все снимки роли — через диспетчер; ни одно нажатие не ушло в обработчик
-    устаревшей кнопки; лимиты и HTML в порядке; запись совпадает с эталоном
-    байт в байт."""
+    устаревшей кнопки; лимиты и HTML в порядке; каждый общий раздел, доступный
+    роли файла, снят хотя бы одним снимком; запись совпадает с эталоном байт
+    в байт."""
     shots = [s for s in catalog.SHOTS if s.role == name]
+    drawn = harness.record_section_screens(monkeypatch)
     parts, bad = [], []
     for shot in shots:
         rec = await take(shot, tmp_path, fakes)
@@ -49,6 +60,12 @@ async def test_screens_match_the_reference_file(name, request, tmp_path, frozen,
         assert not spare, f"{shot.id}: исключение больше не нужно — убери из LABEL_EXCEPTIONS: {spare}"
         parts.append(harness.serialize(shot.id, shot.title, rec))
     assert not bad, "нарушения ограничений Telegram:\n" + "\n".join(bad)
+    br = SECTION_ROLE.get(name)
+    if br is not None:
+        from awgbot.bot import sections
+        unseen = sorted(m.ID for m in sections.MODULES
+                        if sections.available(br, m.ID) and (br.name, m.ID) not in drawn)
+        assert not unseen, f"{name}: общие разделы роли без снимка — их экран не виден в эталоне: {unseen}"
     got = "\n".join(parts)
     ref = HERE / f"{name}.txt"
     if request.config.getoption("--update-screens"):
